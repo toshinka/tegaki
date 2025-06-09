@@ -1,334 +1,88 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>新しいお絵かきツール (ドラフト - 再修正版)</title>
-    <style>
-        body { margin: 0; overflow: hidden; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; }
-        #app-container { display: flex; flex-grow: 1; overflow: hidden; }
-
-        #toolbar-top { background-color: #f0f0f0; padding: 5px; border-bottom: 1px solid #ccc; display: flex; align-items: center; }
-        #toolbar-left { background-color: #f0f0f0; width: 60px; border-right: 1px solid #ccc; display: flex; flex-direction: column; padding: 5px; }
-        #layer-panel { background-color: #f0f0f0; width: 200px; border-left: 1px solid #ccc; display: flex; flex-direction: column; padding: 5px; overflow-y: auto; }
-        #status-bar { background-color: #f0f0f0; padding: 5px; border-top: 1px solid #ccc; font-size: 0.9em; text-align: right; }
-
-        #canvas-area { flex-grow: 1; background-color: #fff; position: relative; overflow: hidden; display: flex; justify-content: center; align-items: center; }
-        .drawing-canvas { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: block; background-color: transparent; }
-
-        .tool-button, .layer-item-button, #add-layer-btn, #save-image-btn {
-            padding: 8px 12px; margin: 3px; cursor: pointer; border: 1px solid #ccc; border-radius: 4px;
-            background-color: #e0e0e0; font-size: 0.8em;
-        }
-        .tool-button.active, .layer-item-button.active { background-color: #a0c0ff; border-color: #60a0ff; }
-
-        #color-picker-wrapper { margin-left: 10px; display: flex; align-items: center; }
-        #color-display { width: 24px; height: 24px; border: 1px solid #666; margin-right: 5px; cursor: pointer; }
-        #color-input { height: 0; width: 0; visibility: hidden; } /* 非表示 */
-
-        .layer-item { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
-        .layer-item-button { flex-grow: 1; text-align: left; }
-        .layer-thumbnail { width: 40px; height: 30px; border: 1px solid #ddd; background-color: #fff; margin-left: 5px; }
-    </style>
+<meta charset="UTF-8">
+<title>二次裏風はっちゃんUIペイントツール</title>
+<style>
+  body {
+    margin: 0; background: #FFFCE5;
+    display: flex; flex-direction: row;
+  }
+  #toolbar {
+    background: #F7E8D5;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .toolbtn, .colorbtn, .sizebtn {
+    width: 32px; height: 32px;
+    border: 2px solid #A42C2C;
+    border-radius: 4px;
+    background: #FFFCE5;
+    cursor: pointer;
+  }
+  .colorbtn {
+    border-radius: 50%;
+  }
+  #canvas {
+    flex: 1;
+    cursor: crosshair;
+  }
+</style>
 </head>
 <body>
-    <div id="toolbar-top">
-        <button id="tool-pen" class="tool-button active">ペン</button>
-        <button id="tool-eraser" class="tool-button">消しゴム</button>
-        <div id="color-picker-wrapper">
-            <div id="color-display" style="background-color: #000000;"></div>
-            <input type="color" id="color-input" value="#000000">
-        </div>
-        <button id="save-image-btn">画像を保存</button>
-    </div>
+<div id="toolbar">
+  <button class="toolbtn" id="undo">↶</button>
+  <button class="toolbtn" id="redo">↷</button>
+  <button class="toolbtn" id="eraser">✕</button>
+  <div>
+    <div id="colors"></div>
+  </div>
+  <div>
+    <button class="sizebtn" data-size="1">1</button>
+    <button class="sizebtn" data-size="3">3</button>
+    <button class="sizebtn" data-size="5">5</button>
+    <button class="sizebtn" data-size="10">10</button>
+    <button class="sizebtn" data-size="30">30</button>
+  </div>
+</div>
+<canvas id="canvas" width="800" height="600"></canvas>
+<script>
+const colors = ['#FFFCE5','#A42C2C','#D28F8F','#EBC4B4','#F7E8D5','#FFFFFF','#FF9C4A','#77BB77'];
+const colorsDiv = document.getElementById('colors');
+colors.forEach(col => {
+  const c = document.createElement('button');
+  c.className = 'colorbtn';
+  c.style.background = col;
+  c.onclick = () => currentColor = col;
+  colorsDiv.appendChild(c);
+});
 
-    <div id="app-container">
-        <div id="toolbar-left">
-            </div>
-        <div id="canvas-area">
-            </div>
-        <div id="layer-panel">
-            <h3>レイヤー</h3>
-            <div id="layers-list">
-                </div>
-            <button id="add-layer-btn">レイヤー追加</button>
-        </div>
-    </div>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let currentColor = '#A42C2C';
+let currentSize = 3;
+let isDrawing = false;
 
-    <div id="status-bar">
-        <span>ステータス: 準備完了</span>
-    </div>
+canvas.addEventListener('mousedown', e => {
+  isDrawing = true;
+  ctx.beginPath();
+  ctx.moveTo(e.offsetX, e.offsetY);
+});
+canvas.addEventListener('mousemove', e => {
+  if (!isDrawing) return;
+  ctx.strokeStyle = currentColor;
+  ctx.lineWidth = currentSize;
+  ctx.lineTo(e.offsetX, e.offsetY);
+  ctx.stroke();
+});
+canvas.addEventListener('mouseup', () => isDrawing = false);
 
-    <script>
-        // --- 設定 ---
-        const CANVAS_WIDTH = 800; // 初期キャンバス幅 (はっちゃんの400x400を超えるサイズも可能に)
-        const CANVAS_HEIGHT = 600; // 初期キャンバス高さ
-        const DEFAULT_BRUSH_SIZE = 5;
-
-        // --- DOM要素 ---
-        const canvasArea = document.getElementById('canvas-area');
-        const layersList = document.getElementById('layers-list');
-        const addLayerBtn = document.getElementById('add-layer-btn');
-        const saveImageBtn = document.getElementById('save-image-btn');
-        const toolPenBtn = document.getElementById('tool-pen');
-        const toolEraserBtn = document.getElementById('tool-eraser');
-        const colorDisplay = document.getElementById('color-display');
-        const colorInput = document.getElementById('color-input');
-
-        // --- アプリケーションの状態 ---
-        let layers = []; // レイヤー情報を保持する配列 (新しいレイヤーが配列の先頭に来る)
-        let activeLayerIndex = -1;
-        let currentTool = 'pen';
-        let currentColor = '#000000';
-        let currentBrushSize = DEFAULT_BRUSH_SIZE;
-        let isDrawing = false;
-        let lastX = 0;
-        let lastY = 0;
-
-        // --- レイヤー管理クラス ---
-        class Layer {
-            constructor(id, width, height) {
-                this.id = id;
-                this.canvas = document.createElement('canvas');
-                this.canvas.id = `layer-${id}`;
-                this.canvas.classList.add('drawing-canvas');
-                this.canvas.width = width;
-                this.canvas.height = height;
-                this.ctx = this.canvas.getContext('2d', { willReadFrequently: true }); // willReadFrequentlyを考慮
-                this.ctx.lineCap = 'round';
-                this.ctx.lineJoin = 'round';
-                this.ctx.lineWidth = DEFAULT_BRUSH_SIZE;
-                this.ctx.strokeStyle = '#000000'; // デフォルト設定
-                this.isVisible = true;
-
-                canvasArea.appendChild(this.canvas);
-            }
-
-            // レイヤーのDOM要素を作成
-            createLayerItemElement() {
-                const layerItem = document.createElement('div');
-                layerItem.classList.add('layer-item');
-                layerItem.dataset.layerId = this.id;
-
-                const layerButton = document.createElement('button');
-                layerButton.classList.add('layer-item-button');
-                layerButton.textContent = `レイヤー ${this.id}`;
-                layerButton.addEventListener('click', () => {
-                    setActiveLayer(this.id);
-                });
-
-                const layerThumbnail = document.createElement('canvas');
-                layerThumbnail.classList.add('layer-thumbnail');
-                layerThumbnail.width = 40;
-                layerThumbnail.height = 30;
-                this.thumbnailCtx = layerThumbnail.getContext('2d');
-
-                layerItem.appendChild(layerButton);
-                layerItem.appendChild(layerThumbnail);
-                return layerItem;
-            }
-
-            // サムネイルを更新する
-            updateThumbnail() {
-                if (this.thumbnailCtx) {
-                    this.thumbnailCtx.clearRect(0, 0, this.thumbnailCtx.canvas.width, this.thumbnailCtx.canvas.height);
-                    // レイヤーのキャンバス全体をサムネイルに描画
-                    this.thumbnailCtx.drawImage(
-                        this.canvas,
-                        0, 0, this.canvas.width, this.canvas.height,
-                        0, 0, this.thumbnailCtx.canvas.width, this.thumbnailCtx.canvas.height
-                    );
-                }
-            }
-
-            // レイヤーの表示/非表示を切り替える
-            toggleVisibility() {
-                this.isVisible = !this.isVisible;
-                this.canvas.style.display = this.isVisible ? 'block' : 'none';
-                renderAllLayers(); // 全体を再描画
-            }
-        }
-
-        // --- レイヤー操作 ---
-        function addLayer() {
-            const newLayerId = layers.length + 1;
-            const newLayer = new Layer(newLayerId, CANVAS_WIDTH, CANVAS_HEIGHT);
-            // 新しいレイヤーを配列の先頭に追加 (UIリストの上に来るように)
-            layers.unshift(newLayer);
-
-            const layerItemElement = newLayer.createLayerItemElement();
-            // 新しいレイヤー項目をDOMリストの先頭に追加
-            layersList.prepend(layerItemElement);
-
-            setActiveLayer(newLayerId); // 新しいレイヤーをアクティブに
-            renderAllLayers(); // 全体を再描画
-        }
-
-        function setActiveLayer(id) {
-            layers.forEach((layer, index) => {
-                const layerButton = layersList.querySelector(`[data-layer-id="${layer.id}"] .layer-item-button`);
-                // レイヤーのZ-indexを設定 (配列の先頭が一番手前になるように)
-                layer.canvas.style.zIndex = layers.length - index;
-
-                if (layer.id === id) {
-                    activeLayerIndex = index;
-                    layerButton.classList.add('active');
-                } else {
-                    layerButton.classList.remove('active');
-                }
-            });
-            // ここで、現在選択されているツールの設定を、新しいアクティブレイヤーのコンテキストに再適用
-            applyCurrentToolSettings();
-        }
-
-        // 現在選択されているツールの設定をアクティブなレイヤーのコンテキストに適用する関数
-        function applyCurrentToolSettings() {
-            const ctx = getActiveContext();
-            if (!ctx) return;
-
-            ctx.lineWidth = currentBrushSize; // ブラシサイズも適用
-            if (currentTool === 'pen') {
-                ctx.globalCompositeOperation = 'source-over'; // ペンは通常描画
-                ctx.strokeStyle = currentColor;
-            } else if (currentTool === 'eraser') {
-                ctx.globalCompositeOperation = 'destination-out'; // 消しゴムは透明にする
-                ctx.strokeStyle = '#000000'; // 消しゴムの色は描画に影響しないため適当な色
-            }
-        }
-
-        // 全てのレイヤーを合成して表示する (現在は個々のcanvasを表示)
-        // 将来的には、統合された表示用canvasに合成するロジックが必要になる可能性あり
-        function renderAllLayers() {
-            // 各レイヤーが独立したcanvasとして表示されているため、個々のcanvasの表示/非表示を管理
-            // サムネイルの更新
-            layers.forEach(layer => layer.updateThumbnail());
-        }
-
-
-        // --- ツール機能 ---
-        function getActiveContext() {
-            return layers[activeLayerIndex] ? layers[activeLayerIndex].ctx : null;
-        }
-
-        function getCanvasRelativePos(e) {
-            const canvas = layers[activeLayerIndex].canvas;
-            const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            // canvasArea内でのマウス位置を、アクティブなcanvasの描画座標系に変換
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
-            return {
-                x: mouseX * scaleX,
-                y: mouseY * scaleY
-            };
-        }
-
-        function startDrawing(e) {
-            const ctx = getActiveContext();
-            if (!ctx) return; // アクティブなレイヤーがなければ何もしない
-
-            isDrawing = true;
-            const pos = getCanvasRelativePos(e);
-            lastX = pos.x;
-            lastY = pos.y;
-
-            ctx.beginPath();
-            ctx.moveTo(lastX, lastY);
-        }
-
-        function draw(e) {
-            if (!isDrawing) return;
-            const ctx = getActiveContext();
-            if (!ctx) return; // アクティブなレイヤーがなければ何もしない
-
-            const pos = getCanvasRelativePos(e);
-
-            ctx.lineTo(pos.x, pos.y);
-            ctx.stroke();
-
-            lastX = pos.x;
-            lastY = pos.y;
-        }
-
-        function stopDrawing() {
-            isDrawing = false;
-            const activeLayer = layers[activeLayerIndex];
-            if (activeLayer) {
-                activeLayer.updateThumbnail(); // 描画終了時にサムネイルを更新
-            }
-        }
-
-        function selectTool(tool) {
-            currentTool = tool;
-            // 全てのツールボタンのアクティブ状態をリセット
-            document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
-            // 現在のツールボタンをアクティブに
-            document.getElementById(`tool-${tool}`).classList.add('active');
-
-            // ツール設定をアクティブなレイヤーコンテキストに適用
-            applyCurrentToolSettings();
-        }
-
-        // --- イベントリスナー ---
-        addLayerBtn.addEventListener('click', addLayer);
-
-        saveImageBtn.addEventListener('click', () => {
-            // 全てのレイヤーを統合して単一の画像として保存
-            const exportCanvas = document.createElement('canvas');
-            exportCanvas.width = CANVAS_WIDTH;
-            exportCanvas.height = CANVAS_HEIGHT;
-            const exportCtx = exportCanvas.getContext('2d');
-
-            // レイヤー配列の最後（一番下）から順に描画して、一番上（配列の先頭）のレイヤーが最前面になるように合成
-            for (let i = layers.length - 1; i >= 0; i--) {
-                const layer = layers[i];
-                if (layer.isVisible) {
-                    exportCtx.drawImage(layer.canvas, 0, 0);
-                }
-            }
-
-            // PNG形式でダウンロード
-            const dataURL = exportCanvas.toDataURL('image/png');
-            const a = document.createElement('a');
-            a.href = dataURL;
-            a.download = 'my_drawing.png';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-        });
-
-        toolPenBtn.addEventListener('click', () => {
-            selectTool('pen');
-        });
-
-        toolEraserBtn.addEventListener('click', () => {
-            selectTool('eraser');
-        });
-
-        colorDisplay.addEventListener('click', () => {
-            colorInput.click(); // 非表示のカラーピッカーをクリック
-        });
-
-        colorInput.addEventListener('input', (e) => {
-            currentColor = e.target.value;
-            colorDisplay.style.backgroundColor = currentColor;
-            // 色が変更されたら、ペンツールの設定を再適用
-            if (currentTool === 'pen') {
-                applyCurrentToolSettings();
-            }
-        });
-
-        // --- キャンバスイベントハンドラ ---
-        // canvasArea全体でイベントを捕捉し、e.targetに関わらずactiveLayer.canvasに描画する
-        canvasArea.addEventListener('mousedown', startDrawing);
-        canvasArea.addEventListener('mousemove', draw);
-        canvasArea.addEventListener('mouseup', stopDrawing);
-        canvasArea.addEventListener('mouseleave', stopDrawing);
-
-        // --- 初期化 ---
-        addLayer(); // アプリケーション起動時に最初のレイヤーを追加
-        selectTool('pen'); // 初期ツールはペン
-    </script>
+const sizeBtns = document.querySelectorAll('.sizebtn');
+sizeBtns.forEach(btn => {
+  btn.onclick = () => currentSize = Number(btn.dataset.size);
+});
+</script>
 </body>
 </html>
