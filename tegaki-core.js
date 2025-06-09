@@ -3,7 +3,8 @@ if(!window.tegakiToolLoaded){
   (function(){
     console.log("二次裏用手書きブックマークレット起動！");
 
-    const palette = ['#FFFCE5','#A42C2C','#D28F8F','#EBC4B4','#F7E8D5','#FFFFFF','#FF9C4A','#77BB77'];
+    window.tegakiTool = window.tegakiTool || {};
+    window.tegakiTool.palette = ['#FFFCE5','#A42C2C','#D28F8F','#EBC4B4','#F7E8D5','#FFFFFF','#FF9C4A','#77BB77'];
 
     const targetCanvas = document.getElementById('oejs');
     if (!targetCanvas) {
