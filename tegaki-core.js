@@ -1,4 +1,11 @@
 console.log('tegaki-core.js is loaded and running!');
+if (!document.getElementById('momocan-container')) {
+    var div = document.createElement('div');
+    div.id = 'momocan-container';
+    div.className = 'run running';
+    document.body.appendChild(div);
+    console.log('Created momocan-container');
+}
 /*
  * <<<1 Smooth.js
  *
