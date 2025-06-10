@@ -1,3 +1,4 @@
+console.log('tegaki-core.js is loaded and running!');
 /*
  * <<<1 Smooth.js
  *
