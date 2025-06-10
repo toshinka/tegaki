@@ -1,4 +1,12 @@
-<!DOCTYPE html>
+// tegaki-core.js の内容
+(function() {
+    // 既に起動済みかチェック
+    if (window.futabaTegakiActive) {
+        return;
+    }
+    window.futabaTegakiActive = true;
+
+    // [<!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
@@ -476,4 +484,5 @@
         })(); // 即座実行関数の終了
     </script>
 </body>
-</html>
+</html>]
+})();
