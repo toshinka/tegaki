@@ -1,88 +1,479 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<title>二次裏風はっちゃんUIペイントツール</title>
-<style>
-  body {
-    margin: 0; background: #FFFCE5;
-    display: flex; flex-direction: row;
-  }
-  #toolbar {
-    background: #F7E8D5;
-    padding: 4px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .toolbtn, .colorbtn, .sizebtn {
-    width: 32px; height: 32px;
-    border: 2px solid #A42C2C;
-    border-radius: 4px;
-    background: #FFFCE5;
-    cursor: pointer;
-  }
-  .colorbtn {
-    border-radius: 50%;
-  }
-  #canvas {
-    flex: 1;
-    cursor: crosshair;
-  }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ふたば手書きツール</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 10px;
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+        }
+        
+        .container {
+            display: flex;
+            gap: 10px;
+            background-color: white;
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        
+        .toolbar {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            padding: 5px;
+            background-color: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            width: 60px;
+        }
+        
+        .canvas-area {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .top-bar {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+        
+        .main-canvas {
+            border: 1px solid #000;
+            cursor: crosshair;
+            background-color: white;
+        }
+        
+        .color-palette {
+            display: flex;
+            gap: 2px;
+            margin-top: 5px;
+        }
+        
+        .color-btn {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #333;
+            cursor: pointer;
+            border-radius: 2px;
+        }
+        
+        .color-btn.active {
+            border-color: #000;
+            border-width: 3px;
+        }
+        
+        .size-btn {
+            width: 50px;
+            height: 25px;
+            border: 1px solid #333;
+            background: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 1px 0;
+            font-size: 10px;
+        }
+        
+        .size-btn.active {
+            background-color: #ccc;
+        }
+        
+        .tool-btn {
+            width: 50px;
+            height: 30px;
+            border: 1px solid #333;
+            background: white;
+            cursor: pointer;
+            font-size: 10px;
+            margin: 1px 0;
+        }
+        
+        .tool-btn.active {
+            background-color: #ccc;
+        }
+        
+        .top-btn {
+            padding: 5px 10px;
+            border: 1px solid #333;
+            background: white;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .close-btn {
+            background-color: #ff4444;
+            color: white;
+            border: none;
+            padding: 5px 15px;
+            cursor: pointer;
+            border-radius: 3px;
+            margin-left: auto;
+        }
+        
+        .size-indicator {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background-color: #333;
+        }
+    </style>
 </head>
 <body>
-<div id="toolbar">
-  <button class="toolbtn" id="undo">↶</button>
-  <button class="toolbtn" id="redo">↷</button>
-  <button class="toolbtn" id="eraser">✕</button>
-  <div>
-    <div id="colors"></div>
-  </div>
-  <div>
-    <button class="sizebtn" data-size="1">1</button>
-    <button class="sizebtn" data-size="3">3</button>
-    <button class="sizebtn" data-size="5">5</button>
-    <button class="sizebtn" data-size="10">10</button>
-    <button class="sizebtn" data-size="30">30</button>
-  </div>
-</div>
-<canvas id="canvas" width="800" height="600"></canvas>
-<script>
-const colors = ['#FFFCE5','#A42C2C','#D28F8F','#EBC4B4','#F7E8D5','#FFFFFF','#FF9C4A','#77BB77'];
-const colorsDiv = document.getElementById('colors');
-colors.forEach(col => {
-  const c = document.createElement('button');
-  c.className = 'colorbtn';
-  c.style.background = col;
-  c.onclick = () => currentColor = col;
-  colorsDiv.appendChild(c);
-});
+    <div class="container">
+        <!-- 左側ツールバー -->
+        <div class="toolbar">
+            <button class="tool-btn active" id="pen-tool">ペン</button>
+            <button class="tool-btn" id="eraser-tool">消しゴム</button>
+            
+            <div style="margin-top: 10px; font-size: 10px;">サイズ</div>
+            <button class="size-btn active" data-size="1">
+                <div class="size-indicator" style="width: 2px; height: 2px;"></div>
+            </button>
+            <button class="size-btn" data-size="3">
+                <div class="size-indicator" style="width: 4px; height: 4px;"></div>
+            </button>
+            <button class="size-btn" data-size="5">
+                <div class="size-indicator" style="width: 6px; height: 6px;"></div>
+            </button>
+            <button class="size-btn" data-size="10">
+                <div class="size-indicator" style="width: 10px; height: 10px;"></div>
+            </button>
+            <button class="size-btn" data-size="30">
+                <div class="size-indicator" style="width: 14px; height: 14px;"></div>
+            </button>
+        </div>
+        
+        <!-- メインエリア -->
+        <div class="canvas-area">
+            <!-- 上部バー -->
+            <div class="top-bar">
+                <button class="top-btn" id="undo-btn">↶</button>
+                <button class="top-btn" id="redo-btn">↷</button>
+                <button class="top-btn" id="clear-btn">全消去</button>
+                <button class="close-btn" id="close-btn">×閉じる</button>
+            </div>
+            
+            <!-- キャンバス -->
+            <canvas id="drawingCanvas" class="main-canvas" width="344" height="135"></canvas>
+            
+            <!-- カラーパレット -->
+            <div class="color-palette">
+                <div class="color-btn active" data-color="#A42C2C" style="background-color: #A42C2C;" title="赤茶"></div>
+                <div class="color-btn" data-color="#C5393C" style="background-color: #C5393C;" title="中間色75%"></div>
+                <div class="color-btn" data-color="#E6464B" style="background-color: #E6464B;" title="中間色50%"></div>
+                <div class="color-btn" data-color="#F7A4A6" style="background-color: #F7A4A6;" title="中間色25%"></div>
+                <div class="color-btn" data-color="#FFFCE5" style="background-color: #FFFCE5;" title="肌色"></div>
+            </div>
+        </div>
+    </div>
 
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-let currentColor = '#A42C2C';
-let currentSize = 3;
-let isDrawing = false;
+    <script>
+        // ブックマークレット対応とペンタブレット対応
+        (function() {
+            // 既に起動済みかチェック
+            if (window.futabaTegakiActive) {
+                return;
+            }
+            window.futabaTegakiActive = true;
 
-canvas.addEventListener('mousedown', e => {
-  isDrawing = true;
-  ctx.beginPath();
-  ctx.moveTo(e.offsetX, e.offsetY);
-});
-canvas.addEventListener('mousemove', e => {
-  if (!isDrawing) return;
-  ctx.strokeStyle = currentColor;
-  ctx.lineWidth = currentSize;
-  ctx.lineTo(e.offsetX, e.offsetY);
-  ctx.stroke();
-});
-canvas.addEventListener('mouseup', () => isDrawing = false);
-
-const sizeBtns = document.querySelectorAll('.sizebtn');
-sizeBtns.forEach(btn => {
-  btn.onclick = () => currentSize = Number(btn.dataset.size);
-});
-</script>
+        class FutabaTegakiTool {
+            constructor() {
+                this.canvas = document.getElementById('drawingCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.isDrawing = false;
+                this.currentTool = 'pen';
+                this.currentColor = '#A42C2C';
+                this.currentSize = 1;
+                this.lastX = 0;
+                this.lastY = 0;
+                this.history = [];
+                this.historyIndex = -1;
+                
+                this.initCanvas();
+                this.bindEvents();
+                this.saveState();
+            }
+            
+            initCanvas() {
+                this.ctx.lineCap = 'round';
+                this.ctx.lineJoin = 'round';
+                this.ctx.fillStyle = 'white';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+            
+            bindEvents() {
+                // マウスイベント
+                this.canvas.addEventListener('mousedown', this.startDrawing.bind(this));
+                this.canvas.addEventListener('mousemove', this.draw.bind(this));
+                this.canvas.addEventListener('mouseup', this.stopDrawing.bind(this));
+                this.canvas.addEventListener('mouseout', this.stopDrawing.bind(this));
+                
+                // タッチイベント（スマホ・タブレット対応）
+                this.canvas.addEventListener('touchstart', this.handleTouch.bind(this));
+                this.canvas.addEventListener('touchmove', this.handleTouch.bind(this));
+                this.canvas.addEventListener('touchend', this.stopDrawing.bind(this));
+                
+                // ポインターイベント（ペンタブレット対応）
+                this.canvas.addEventListener('pointerdown', this.handlePointer.bind(this));
+                this.canvas.addEventListener('pointermove', this.handlePointer.bind(this));
+                this.canvas.addEventListener('pointerup', this.stopDrawing.bind(this));
+                this.canvas.addEventListener('pointerout', this.stopDrawing.bind(this));
+                
+                // ツールボタン
+                document.getElementById('pen-tool').addEventListener('click', () => this.setTool('pen'));
+                document.getElementById('eraser-tool').addEventListener('click', () => this.setTool('eraser'));
+                
+                // サイズボタン
+                document.querySelectorAll('.size-btn').forEach(btn => {
+                    btn.addEventListener('click', () => this.setSize(parseInt(btn.dataset.size)));
+                });
+                
+                // カラーボタン
+                document.querySelectorAll('.color-btn').forEach(btn => {
+                    btn.addEventListener('click', () => this.setColor(btn.dataset.color));
+                });
+                
+                // アクションボタン
+                document.getElementById('undo-btn').addEventListener('click', () => this.undo());
+                document.getElementById('redo-btn').addEventListener('click', () => this.redo());
+                document.getElementById('clear-btn').addEventListener('click', () => this.clearCanvas());
+                document.getElementById('close-btn').addEventListener('click', () => this.closeTool());
+            }
+            
+            
+            handlePointer(e) {
+                // ペンタブレット対応
+                e.preventDefault();
+                
+                // 筆圧対応（将来的な拡張用）
+                const pressure = e.pressure || 1.0;
+                
+                const rect = this.canvas.getBoundingClientRect();
+                const mouseEvent = new MouseEvent(e.type.replace('pointer', 'mouse'), {
+                    clientX: e.clientX,
+                    clientY: e.clientY,
+                    button: e.button,
+                    buttons: e.buttons
+                });
+                
+                if (e.type === 'pointerdown') {
+                    this.startDrawing(mouseEvent);
+                } else if (e.type === 'pointermove' && this.isDrawing) {
+                    this.draw(mouseEvent);
+                }
+            }
+            
+            handleTouch(e) {
+                e.preventDefault();
+                const touch = e.touches[0];
+                const rect = this.canvas.getBoundingClientRect();
+                const mouseEvent = new MouseEvent(e.type.replace('touch', 'mouse'), {
+                    clientX: touch.clientX,
+                    clientY: touch.clientY
+                });
+                this.canvas.dispatchEvent(mouseEvent);
+            }
+            
+            startDrawing(e) {
+                this.isDrawing = true;
+                const rect = this.canvas.getBoundingClientRect();
+                this.lastX = e.clientX - rect.left;
+                this.lastY = e.clientY - rect.top;
+            }
+            
+            draw(e) {
+                if (!this.isDrawing) return;
+                
+                const rect = this.canvas.getBoundingClientRect();
+                const currentX = e.clientX - rect.left;
+                const currentY = e.clientY - rect.top;
+                
+                this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
+                this.ctx.strokeStyle = this.currentColor;
+                this.ctx.lineWidth = this.currentSize;
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(this.lastX, this.lastY);
+                this.ctx.lineTo(currentX, currentY);
+                this.ctx.stroke();
+                
+                this.lastX = currentX;
+                this.lastY = currentY;
+            }
+            
+            stopDrawing() {
+                if (this.isDrawing) {
+                    this.isDrawing = false;
+                    this.saveState();
+                }
+            }
+            
+            setTool(tool) {
+                this.currentTool = tool;
+                document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+                document.getElementById(tool + '-tool').classList.add('active');
+            }
+            
+            setSize(size) {
+                this.currentSize = size;
+                document.querySelectorAll('.size-btn').forEach(btn => btn.classList.remove('active'));
+                document.querySelector(`[data-size="${size}"]`).classList.add('active');
+            }
+            
+            setColor(color) {
+                this.currentColor = color;
+                document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+                document.querySelector(`[data-color="${color}"]`).classList.add('active');
+            }
+            
+            saveState() {
+                this.historyIndex++;
+                this.history = this.history.slice(0, this.historyIndex);
+                this.history.push(this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height));
+            }
+            
+            undo() {
+                if (this.historyIndex > 0) {
+                    this.historyIndex--;
+                    this.ctx.putImageData(this.history[this.historyIndex], 0, 0);
+                }
+            }
+            
+            redo() {
+                if (this.historyIndex < this.history.length - 1) {
+                    this.historyIndex++;
+                    this.ctx.putImageData(this.history[this.historyIndex], 0, 0);
+                }
+            }
+            
+            clearCanvas() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.ctx.fillStyle = 'white';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                this.saveState();
+            }
+            
+            closeTool() {
+                // ここでふたばの手書きjsエリアに転写する処理を実装
+                const imageData = this.canvas.toDataURL('image/png');
+                
+                // ふたばの手書きjsエリアを探して画像を設定
+                const tegakiJs = document.getElementById('oejs');
+                if (tegakiJs) {
+                    // 既存のふたばの手書きjsキャンバスに描画
+                    const tegakiCtx = tegakiJs.getContext('2d');
+                    const img = new Image();
+                    img.onload = () => {
+                        tegakiCtx.clearRect(0, 0, tegakiJs.width, tegakiJs.height);
+                        tegakiCtx.drawImage(img, 0, 0);
+                    };
+                    img.src = imageData;
+                } else {
+                    console.log('手書きjsエリア(#oejs)が見つかりません');
+                }
+                
+                // ツールを閉じる
+                const container = document.querySelector('.futaba-tegaki-container');
+                if (container) {
+                    container.remove();
+                }
+                window.futabaTegakiActive = false;
+                
+                console.log('手書きツールを閉じました');
+            }
+        }
+        
+        // DOM要素を動的に作成してページに挿入
+        function createTegakiTool() {
+            // 既存のツールがあれば削除
+            const existingTool = document.querySelector('.futaba-tegaki-container');
+            if (existingTool) {
+                existingTool.remove();
+            }
+            
+            // ツールのHTML構造を作成
+            const toolContainer = document.createElement('div');
+            toolContainer.className = 'futaba-tegaki-container';
+            toolContainer.style.cssText = `
+                position: fixed;
+                top: 50px;
+                left: 50px;
+                z-index: 10000;
+                background: white;
+                border: 2px solid #333;
+                border-radius: 5px;
+                padding: 10px;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            `;
+            
+            toolContainer.innerHTML = `
+                <div style="display: flex; gap: 10px;">
+                    <!-- 左側ツールバー -->
+                    <div style="display: flex; flex-direction: column; gap: 5px; padding: 5px; background-color: #f5f5f5; border: 1px solid #ddd; border-radius: 3px; width: 60px;">
+                        <button class="tool-btn active" id="pen-tool" style="width: 50px; height: 30px; border: 1px solid #333; background: #ccc; cursor: pointer; font-size: 10px; margin: 1px 0;">ペン</button>
+                        <button class="tool-btn" id="eraser-tool" style="width: 50px; height: 30px; border: 1px solid #333; background: white; cursor: pointer; font-size: 10px; margin: 1px 0;">消しゴム</button>
+                        
+                        <div style="margin-top: 10px; font-size: 10px;">サイズ</div>
+                        <button class="size-btn active" data-size="1" style="width: 50px; height: 25px; border: 1px solid #333; background: #ccc; cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 1px 0; font-size: 10px;">
+                            <div style="width: 2px; height: 2px; border-radius: 50%; background-color: #333;"></div>
+                        </button>
+                        <button class="size-btn" data-size="3" style="width: 50px; height: 25px; border: 1px solid #333; background: white; cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 1px 0; font-size: 10px;">
+                            <div style="width: 4px; height: 4px; border-radius: 50%; background-color: #333;"></div>
+                        </button>
+                        <button class="size-btn" data-size="5" style="width: 50px; height: 25px; border: 1px solid #333; background: white; cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 1px 0; font-size: 10px;">
+                            <div style="width: 6px; height: 6px; border-radius: 50%; background-color: #333;"></div>
+                        </button>
+                        <button class="size-btn" data-size="10" style="width: 50px; height: 25px; border: 1px solid #333; background: white; cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 1px 0; font-size: 10px;">
+                            <div style="width: 10px; height: 10px; border-radius: 50%; background-color: #333;"></div>
+                        </button>
+                        <button class="size-btn" data-size="30" style="width: 50px; height: 25px; border: 1px solid #333; background: white; cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 1px 0; font-size: 10px;">
+                            <div style="width: 14px; height: 14px; border-radius: 50%; background-color: #333;"></div>
+                        </button>
+                    </div>
+                    
+                    <!-- メインエリア -->
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <!-- 上部バー -->
+                        <div style="display: flex; gap: 5px; align-items: center;">
+                            <button id="undo-btn" style="padding: 5px 10px; border: 1px solid #333; background: white; cursor: pointer; font-size: 12px;">↶</button>
+                            <button id="redo-btn" style="padding: 5px 10px; border: 1px solid #333; background: white; cursor: pointer; font-size: 12px;">↷</button>
+                            <button id="clear-btn" style="padding: 5px 10px; border: 1px solid #333; background: white; cursor: pointer; font-size: 12px;">全消去</button>
+                            <button id="close-btn" style="background-color: #ff4444; color: white; border: none; padding: 5px 15px; cursor: pointer; border-radius: 3px; margin-left: auto;">×閉じる</button>
+                        </div>
+                        
+                        <!-- キャンバス -->
+                        <canvas id="drawingCanvas" width="344" height="135" style="border: 1px solid #000; cursor: crosshair; background-color: white;"></canvas>
+                        
+                        <!-- カラーパレット -->
+                        <div style="display: flex; gap: 2px; margin-top: 5px;">
+                            <div class="color-btn active" data-color="#A42C2C" style="width: 20px; height: 20px; border: 3px solid #000; cursor: pointer; border-radius: 2px; background-color: #A42C2C;" title="赤茶"></div>
+                            <div class="color-btn" data-color="#C5393C" style="width: 20px; height: 20px; border: 2px solid #333; cursor: pointer; border-radius: 2px; background-color: #C5393C;" title="中間色75%"></div>
+                            <div class="color-btn" data-color="#E6464B" style="width: 20px; height: 20px; border: 2px solid #333; cursor: pointer; border-radius: 2px; background-color: #E6464B;" title="中間色50%"></div>
+                            <div class="color-btn" data-color="#F7A4A6" style="width: 20px; height: 20px; border: 2px solid #333; cursor: pointer; border-radius: 2px; background-color: #F7A4A6;" title="中間色25%"></div>
+                            <div class="color-btn" data-color="#FFFCE5" style="width: 20px; height: 20px; border: 2px solid #333; cursor: pointer; border-radius: 2px; background-color: #FFFCE5;" title="肌色"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(toolContainer);
+            
+            // ツール初期化
+            const tegakiTool = new FutabaTegakiTool();
+        }
+        
+        // ツール作成実行
+        createTegakiTool();
+        
+        })(); // 即座実行関数の終了
+    </script>
 </body>
 </html>
