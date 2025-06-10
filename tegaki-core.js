@@ -1,9 +1,13 @@
-// tegaki-core.js
+// tegaki-core.js 修正案
 // 二次裏用手書きブックマークレット
 
-(function() {
-    // 既にツールバーが存在するかチェック
-    if (document.getElementById("tegakiToolbar")) {
+// 独自のグローバルオブジェクト（名前空間）を定義し、競合を避ける
+// 既に存在する場合は再定義しない
+window.MyTegakiTool = window.MyTegakiTool || {};
+
+(function(T) { // MyTegakiToolオブジェクトをTとして渡す
+    // 既にツールバーが存在するかチェック (IDをユニークにする)
+    if (document.getElementById("myTegakiToolbar")) { // IDも衝突しない名前に変更
         console.log("二次裏手書きツールは既に起動しています。");
         alert("二次裏手書きツールは既に起動しています。");
         return; // 既に起動している場合は処理を中断
@@ -22,13 +26,16 @@
     // キャンバスのコンテキストを取得
     const ctx = tegakiCanvas.getContext("2d");
 
-    // 各種設定
-    let penSize = 5; // ペンサイズ
-    let penColor = "#000000"; // ペン色 (黒)
+    // 各種設定 (Tオブジェクトの下に格納)
+    T.penSize = 5; // ペンサイズ
+    T.penColor = "#000000"; // ペン色 (黒)
+    T.isDrawing = false;
+    T.lastX = 0;
+    T.lastY = 0;
 
     // === ツールバーの作成 ===
     const toolbar = document.createElement("div");
-    toolbar.id = "tegakiToolbar"; // IDを設定
+    toolbar.id = "myTegakiToolbar"; // ユニークなIDに変更
     toolbar.style.position = "absolute";
     toolbar.style.top = "10px";
     toolbar.style.right = "10px";
@@ -44,9 +51,9 @@
     penSizeInput.type = "range";
     penSizeInput.min = "1";
     penSizeInput.max = "50";
-    penSizeInput.value = penSize;
+    penSizeInput.value = T.penSize;
     penSizeInput.oninput = (e) => {
-        penSize = parseInt(e.target.value);
+        T.penSize = parseInt(e.target.value);
     };
     toolbar.appendChild(document.createTextNode("ペンサイズ: "));
     toolbar.appendChild(penSizeInput);
@@ -55,9 +62,9 @@
     // [ペン色]
     const penColorInput = document.createElement("input");
     penColorInput.type = "color";
-    penColorInput.value = penColor;
+    penColorInput.value = T.penColor;
     penColorInput.oninput = (e) => {
-        penColor = e.target.value;
+        T.penColor = e.target.value;
     };
     toolbar.appendChild(document.createTextNode("ペン色: "));
     toolbar.appendChild(penColorInput);
@@ -67,7 +74,7 @@
     const eraserButton = document.createElement("button");
     eraserButton.textContent = "消しゴム";
     eraserButton.onclick = () => {
-        penColor = "#FFFFFF"; // 白に設定
+        T.penColor = "#FFFFFF"; // 白に設定
     };
     toolbar.appendChild(eraserButton);
 
@@ -84,12 +91,8 @@
     const transferButton = document.createElement("button");
     transferButton.textContent = "画像を転写";
     transferButton.onclick = () => {
-        // キャンバスの内容をData URLとして取得
         const imageDataURL = tegakiCanvas.toDataURL("image/png");
-        // ここでふたばちゃんねるの投稿フォームの手書き.js入力欄にData URLをセットする処理を実装
-        // 例: document.querySelector('textarea[name="js"]').value = imageDataURL;
-        // 実際のセレクタは環境によって異なる可能性があります
-        const jsField = document.querySelector('textarea[name="js"]'); // ふたばの手書き.js欄を想定
+        const jsField = document.querySelector('textarea[name="js"]');
         if (jsField) {
             jsField.value = imageDataURL;
             alert("画像を手書き.js欄に転写しました！");
@@ -100,39 +103,35 @@
     toolbar.appendChild(transferButton);
 
     // === 描画処理 ===
-    let isDrawing = false;
-    let lastX = 0;
-    let lastY = 0;
-
     function draw(e) {
-        if (!isDrawing) return;
+        if (!T.isDrawing) return;
         ctx.beginPath();
-        ctx.moveTo(lastX, lastY);
+        ctx.moveTo(T.lastX, T.lastY);
         ctx.lineTo(e.offsetX, e.offsetY);
-        ctx.strokeStyle = penColor;
-        ctx.lineWidth = penSize;
+        ctx.strokeStyle = T.penColor;
+        ctx.lineWidth = T.penSize;
         ctx.lineCap = "round";
         ctx.stroke();
-        [lastX, lastY] = [e.offsetX, e.offsetY];
+        [T.lastX, T.lastY] = [e.offsetX, e.offsetY];
     }
 
-    // イベントリスナーはtegakiCanvasにアタッチ
     tegakiCanvas.addEventListener("mousedown", (e) => {
-        isDrawing = true;
-        [lastX, lastY] = [e.offsetX, e.offsetY];
+        T.isDrawing = true;
+        [T.lastX, T.lastY] = [e.offsetX, e.offsetY];
     });
 
     tegakiCanvas.addEventListener("mousemove", draw);
-
-    tegakiCanvas.addEventListener("mouseup", () => (isDrawing = false));
-    tegakiCanvas.addEventListener("mouseout", () => (isDrawing = false));
+    tegakiCanvas.addEventListener("mouseup", () => (T.isDrawing = false));
+    tegakiCanvas.addEventListener("mouseout", () => (T.isDrawing = false));
 
     // === カラーパレットの追加 ===
-    const palette = document.createElement("div"); // これはIIFE内部で宣言されているため、このIIFEが複数回実行されない限り問題ない
-    palette.id = "colorPalette";
-    palette.style.display = "flex";
-    palette.style.marginTop = "10px";
-    toolbar.appendChild(palette);
+    // 'palette'変数名が既存のスクリプトと競合する可能性があるので、
+    // ここもTオブジェクトの下に格納するか、よりユニークな名前を使用
+    const colorPaletteElement = document.createElement("div"); // 変数名を変更
+    colorPaletteElement.id = "myColorPalette"; // IDもユニークな名前に変更
+    colorPaletteElement.style.display = "flex";
+    colorPaletteElement.style.marginTop = "10px";
+    toolbar.appendChild(colorPaletteElement);
 
     const colors = ["#000000", "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF", "#FFFFFF"];
 
@@ -145,10 +144,10 @@
         colorBox.style.cursor = "pointer";
         colorBox.style.marginRight = "5px";
         colorBox.onclick = () => {
-            penColor = color;
-            penColorInput.value = color; // カラーピッカーも更新
+            T.penColor = color;
+            penColorInput.value = color;
         };
-        palette.appendChild(colorBox);
+        colorPaletteElement.appendChild(colorBox); // 変更した変数名を使用
     });
 
-})();
+})(window.MyTegakiTool); // MyTegakiToolオブジェクトを渡す
