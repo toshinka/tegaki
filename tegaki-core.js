@@ -1,4 +1,12 @@
-<!DOCTYPE html>
+// tegaki-core.js の内容
+(function() {
+    // 既に起動済みかチェック
+    if (window.futabaTegakiActive) {
+        return;
+    }
+    window.futabaTegakiActive = true;
+
+    // <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
@@ -176,6 +184,14 @@
     </div>
 
     <script>
+        // ブックマークレット対応とペンタブレット対応
+        (function() {
+            // 既に起動済みかチェック
+            if (window.futabaTegakiActive) {
+                return;
+            }
+            window.futabaTegakiActive = true;
+
         class FutabaTegakiTool {
             constructor() {
                 this.canvas = document.getElementById('drawingCanvas');
@@ -208,10 +224,16 @@
                 this.canvas.addEventListener('mouseup', this.stopDrawing.bind(this));
                 this.canvas.addEventListener('mouseout', this.stopDrawing.bind(this));
                 
-                // タッチイベント
+                // タッチイベント（スマホ・タブレット対応）
                 this.canvas.addEventListener('touchstart', this.handleTouch.bind(this));
                 this.canvas.addEventListener('touchmove', this.handleTouch.bind(this));
                 this.canvas.addEventListener('touchend', this.stopDrawing.bind(this));
+                
+                // ポインターイベント（ペンタブレット対応）
+                this.canvas.addEventListener('pointerdown', this.handlePointer.bind(this));
+                this.canvas.addEventListener('pointermove', this.handlePointer.bind(this));
+                this.canvas.addEventListener('pointerup', this.stopDrawing.bind(this));
+                this.canvas.addEventListener('pointerout', this.stopDrawing.bind(this));
                 
                 // ツールボタン
                 document.getElementById('pen-tool').addEventListener('click', () => this.setTool('pen'));
@@ -232,6 +254,29 @@
                 document.getElementById('redo-btn').addEventListener('click', () => this.redo());
                 document.getElementById('clear-btn').addEventListener('click', () => this.clearCanvas());
                 document.getElementById('close-btn').addEventListener('click', () => this.closeTool());
+            }
+            
+            
+            handlePointer(e) {
+                // ペンタブレット対応
+                e.preventDefault();
+                
+                // 筆圧対応（将来的な拡張用）
+                const pressure = e.pressure || 1.0;
+                
+                const rect = this.canvas.getBoundingClientRect();
+                const mouseEvent = new MouseEvent(e.type.replace('pointer', 'mouse'), {
+                    clientX: e.clientX,
+                    clientY: e.clientY,
+                    button: e.button,
+                    buttons: e.buttons
+                });
+                
+                if (e.type === 'pointerdown') {
+                    this.startDrawing(mouseEvent);
+                } else if (e.type === 'pointermove' && this.isDrawing) {
+                    this.draw(mouseEvent);
+                }
             }
             
             handleTouch(e) {
@@ -339,17 +384,105 @@
                         tegakiCtx.drawImage(img, 0, 0);
                     };
                     img.src = imageData;
+                } else {
+                    console.log('手書きjsエリア(#oejs)が見つかりません');
                 }
                 
                 // ツールを閉じる
-                document.querySelector('.container').style.display = 'none';
+                const container = document.querySelector('.futaba-tegaki-container');
+                if (container) {
+                    container.remove();
+                }
+                window.futabaTegakiActive = false;
                 
-                alert('手書きデータを転写しました！');
+                console.log('手書きツールを閉じました');
             }
         }
         
-        // ツール初期化
-        const tegakiTool = new FutabaTegakiTool();
+        // DOM要素を動的に作成してページに挿入
+        function createTegakiTool() {
+            // 既存のツールがあれば削除
+            const existingTool = document.querySelector('.futaba-tegaki-container');
+            if (existingTool) {
+                existingTool.remove();
+            }
+            
+            // ツールのHTML構造を作成
+            const toolContainer = document.createElement('div');
+            toolContainer.className = 'futaba-tegaki-container';
+            toolContainer.style.cssText = `
+                position: fixed;
+                top: 50px;
+                left: 50px;
+                z-index: 10000;
+                background: white;
+                border: 2px solid #333;
+                border-radius: 5px;
+                padding: 10px;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            `;
+            
+            toolContainer.innerHTML = `
+                <div style="display: flex; gap: 10px;">
+                    <!-- 左側ツールバー -->
+                    <div style="display: flex; flex-direction: column; gap: 5px; padding: 5px; background-color: #f5f5f5; border: 1px solid #ddd; border-radius: 3px; width: 60px;">
+                        <button class="tool-btn active" id="pen-tool" style="width: 50px; height: 30px; border: 1px solid #333; background: #ccc; cursor: pointer; font-size: 10px; margin: 1px 0;">ペン</button>
+                        <button class="tool-btn" id="eraser-tool" style="width: 50px; height: 30px; border: 1px solid #333; background: white; cursor: pointer; font-size: 10px; margin: 1px 0;">消しゴム</button>
+                        
+                        <div style="margin-top: 10px; font-size: 10px;">サイズ</div>
+                        <button class="size-btn active" data-size="1" style="width: 50px; height: 25px; border: 1px solid #333; background: #ccc; cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 1px 0; font-size: 10px;">
+                            <div style="width: 2px; height: 2px; border-radius: 50%; background-color: #333;"></div>
+                        </button>
+                        <button class="size-btn" data-size="3" style="width: 50px; height: 25px; border: 1px solid #333; background: white; cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 1px 0; font-size: 10px;">
+                            <div style="width: 4px; height: 4px; border-radius: 50%; background-color: #333;"></div>
+                        </button>
+                        <button class="size-btn" data-size="5" style="width: 50px; height: 25px; border: 1px solid #333; background: white; cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 1px 0; font-size: 10px;">
+                            <div style="width: 6px; height: 6px; border-radius: 50%; background-color: #333;"></div>
+                        </button>
+                        <button class="size-btn" data-size="10" style="width: 50px; height: 25px; border: 1px solid #333; background: white; cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 1px 0; font-size: 10px;">
+                            <div style="width: 10px; height: 10px; border-radius: 50%; background-color: #333;"></div>
+                        </button>
+                        <button class="size-btn" data-size="30" style="width: 50px; height: 25px; border: 1px solid #333; background: white; cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 1px 0; font-size: 10px;">
+                            <div style="width: 14px; height: 14px; border-radius: 50%; background-color: #333;"></div>
+                        </button>
+                    </div>
+                    
+                    <!-- メインエリア -->
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <!-- 上部バー -->
+                        <div style="display: flex; gap: 5px; align-items: center;">
+                            <button id="undo-btn" style="padding: 5px 10px; border: 1px solid #333; background: white; cursor: pointer; font-size: 12px;">↶</button>
+                            <button id="redo-btn" style="padding: 5px 10px; border: 1px solid #333; background: white; cursor: pointer; font-size: 12px;">↷</button>
+                            <button id="clear-btn" style="padding: 5px 10px; border: 1px solid #333; background: white; cursor: pointer; font-size: 12px;">全消去</button>
+                            <button id="close-btn" style="background-color: #ff4444; color: white; border: none; padding: 5px 15px; cursor: pointer; border-radius: 3px; margin-left: auto;">×閉じる</button>
+                        </div>
+                        
+                        <!-- キャンバス -->
+                        <canvas id="drawingCanvas" width="344" height="135" style="border: 1px solid #000; cursor: crosshair; background-color: white;"></canvas>
+                        
+                        <!-- カラーパレット -->
+                        <div style="display: flex; gap: 2px; margin-top: 5px;">
+                            <div class="color-btn active" data-color="#A42C2C" style="width: 20px; height: 20px; border: 3px solid #000; cursor: pointer; border-radius: 2px; background-color: #A42C2C;" title="赤茶"></div>
+                            <div class="color-btn" data-color="#C5393C" style="width: 20px; height: 20px; border: 2px solid #333; cursor: pointer; border-radius: 2px; background-color: #C5393C;" title="中間色75%"></div>
+                            <div class="color-btn" data-color="#E6464B" style="width: 20px; height: 20px; border: 2px solid #333; cursor: pointer; border-radius: 2px; background-color: #E6464B;" title="中間色50%"></div>
+                            <div class="color-btn" data-color="#F7A4A6" style="width: 20px; height: 20px; border: 2px solid #333; cursor: pointer; border-radius: 2px; background-color: #F7A4A6;" title="中間色25%"></div>
+                            <div class="color-btn" data-color="#FFFCE5" style="width: 20px; height: 20px; border: 2px solid #333; cursor: pointer; border-radius: 2px; background-color: #FFFCE5;" title="肌色"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(toolContainer);
+            
+            // ツール初期化
+            const tegakiTool = new FutabaTegakiTool();
+        }
+        
+        // ツール作成実行
+        createTegakiTool();
+        
+        })(); // 即座実行関数の終了
     </script>
 </body>
 </html>
+})();
