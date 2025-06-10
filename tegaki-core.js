@@ -1,25 +1,32 @@
-if(!window.tegakiToolLoaded){
-  window.tegakiToolLoaded = true;
-  (function(){
-    console.log("二次裏用手書きブックマークレット起動！");
+(function(){
+  // ボタン追加
+  const toolbar = document.getElementById("toolbar");
+  if(!toolbar){
+    alert("ツールバーが見つからんで！");
+    return;
+  }
 
-    window.tegakiTool = window.tegakiTool || {};
-    window.tegakiTool.palette = ['#FFFCE5','#A42C2C','#D28F8F','#EBC4B4','#F7E8D5','#FFFFFF','#FF9C4A','#77BB77'];
+  const futabaBtn = document.createElement("button");
+  futabaBtn.textContent = "🌱";  // 双葉マーク
+  futabaBtn.title = "ふたばのコメント欄に転写するで！";
+  futabaBtn.style.fontSize = "18px";
+  futabaBtn.style.marginLeft = "5px";
 
-    const targetCanvas = document.getElementById('oejs');
-    if (!targetCanvas) {
-      alert('手書きキャンバスが見つかりません！先に手書きモードを開いてください。');
-    } else {
-      const ctx = targetCanvas.getContext('2d', { willReadFrequently: true });
-      ctx.strokeStyle = '#A42C2C';
-      ctx.lineWidth = 5;
-      ctx.beginPath();
-      ctx.moveTo(10, 10);
-      ctx.lineTo(200, 50);
-      ctx.stroke();
-      console.log('描画完了！');
+  futabaBtn.onclick = function(){
+    const canvas = document.getElementById("oejs");
+    if (!canvas) {
+      alert("手書きキャンバスが見つからん！");
+      return;
     }
-  })();
-} else {
-  console.log('既に読み込み済み');
-}
+    const dataUrl = canvas.toDataURL("image/png");
+    const textarea = document.getElementById("ftxa");
+    if (!textarea) {
+      alert("コメント欄が無いで！");
+      return;
+    }
+    textarea.value = dataUrl;
+    alert("転写完了や！");
+  };
+
+  toolbar.appendChild(futabaBtn);
+})();
