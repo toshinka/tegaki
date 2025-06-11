@@ -5,7 +5,7 @@ javascript:(() => {
   canvas.style.position = 'fixed';
   canvas.style.top = '0';
   canvas.style.left = '0';
-  canvas.style.zIndex = '5000'; // FUTAKUROを上回る値
+  canvas.style.zIndex = '9999';
   document.body.appendChild(canvas);
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = 'white';
@@ -16,7 +16,7 @@ javascript:(() => {
   closeButton.style.position = 'absolute';
   closeButton.style.top = '5px';
   closeButton.style.right = '5px';
-  closeButton.style.zIndex = '5001'; // さらに高く
+  closeButton.style.zIndex = '10000';
   closeButton.addEventListener('click', () => canvas.remove());
   canvas.parentNode.insertBefore(closeButton, canvas.nextSibling);
 
