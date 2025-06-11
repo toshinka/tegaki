@@ -11,11 +11,21 @@ javascript:(() => {
   ctx.fillStyle = 'white';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+  // 閉じるボタンの追加
+  const closeButton = document.createElement('button');
+  closeButton.textContent = '☓';
+  closeButton.style.position = 'absolute';
+  closeButton.style.top = '5px';
+  closeButton.style.right = '5px';
+  closeButton.style.zIndex = '1001';
+  closeButton.addEventListener('click', () => canvas.remove());
+  document.body.appendChild(closeButton);
+
   let isDrawing = false;
   canvas.addEventListener('mousedown', (e) => {
     isDrawing = true;
     ctx.beginPath();
-    ctx.moveTo(e.offsetX, e.offsetY);
+    ctx.moveTo(e.offsetX, e.offsetX);
   });
   canvas.addEventListener('mousemove', (e) => {
     if (isDrawing) {
