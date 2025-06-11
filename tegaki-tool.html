@@ -69,6 +69,7 @@
             padding: 10px;
             cursor: move;
             position: relative;
+            transition: transform 0.2s ease;
         }
         
         .canvas-container:hover {
@@ -195,15 +196,12 @@
 </head>
 <body>
     <div class="main-container">
-        <!-- 左側ツールバー -->
         <div class="left-toolbar">
-            <!-- ツール選択 -->
             <button class="tool-btn active" id="pen-tool">ペン</button>
             <button class="tool-btn" id="eraser-tool">消しゴム</button>
             
             <div class="separator"></div>
             
-            <!-- サイズ選択 -->
             <div class="tool-label">サイズ</div>
             <button class="size-btn active" data-size="1">
                 <div class="size-indicator" style="width: 2px; height: 2px;"></div>
@@ -221,7 +219,6 @@
                 <div class="size-indicator" style="width: 14px; height: 14px;"></div>
             </button>
             
-            <!-- カラーパレット -->
             <div class="color-palette">
                 <div class="color-btn active" data-color="#800000" style="background-color: #800000;" title="暗赤"></div>
                 <div class="color-btn" data-color="#aa5a56" style="background-color: #aa5a56;" title="赤茶"></div>
@@ -231,15 +228,19 @@
             </div>
         </div>
         
-        <!-- 上部ツールバー -->
         <div class="top-toolbar">
             <button class="top-btn" id="undo-btn" title="元に戻す">↶</button>
             <button class="top-btn" id="redo-btn" title="やり直し">↷</button>
             <button class="top-btn" id="clear-btn" title="全消去">全消去</button>
+            <div class="separator" style="width: 1px; height: 25px; background-color: #ccc; margin: 0 5px;"></div>
+            <button class="top-btn" id="flip-h-btn" title="左右反転">⇄</button>
+            <button class="top-btn" id="flip-v-btn" title="上下反転">⇅</button>
+            <button class="top-btn" id="zoom-out-btn" title="縮小">－</button>
+            <button class="top-btn" id="zoom-in-btn" title="拡大">＋</button>
+            <button class="top-btn" id="rotate-btn" title="回転">↻</button>
             <button class="top-btn close-btn" id="close-btn">×閉じる</button>
         </div>
         
-        <!-- メインキャンバスエリア -->
         <div class="canvas-area">
             <div class="canvas-container" id="canvas-container">
                 <canvas id="drawingCanvas" class="main-canvas" width="344" height="135"></canvas>
@@ -272,6 +273,10 @@
                     this.dragStartY = 0;
                     this.canvasStartX = 0;
                     this.canvasStartY = 0;
+                    
+                    // 変形用
+                    this.scale = 1;
+                    this.rotation = 0;
                     
                     this.initCanvas();
                     this.bindEvents();
@@ -321,10 +326,16 @@
                     document.getElementById('redo-btn').addEventListener('click', () => this.redo());
                     document.getElementById('clear-btn').addEventListener('click', () => this.clearCanvas());
                     document.getElementById('close-btn').addEventListener('click', () => this.closeTool());
+                    
+                    // 変形ボタン
+                    document.getElementById('flip-h-btn').addEventListener('click', () => this.flipHorizontal());
+                    document.getElementById('flip-v-btn').addEventListener('click', () => this.flipVertical());
+                    document.getElementById('zoom-in-btn').addEventListener('click', () => this.zoomIn());
+                    document.getElementById('zoom-out-btn').addEventListener('click', () => this.zoomOut());
+                    document.getElementById('rotate-btn').addEventListener('click', () => this.rotate());
                 }
                 
                 startDrag(e) {
-                    // キャンバス上でのクリックの場合はドラッグしない
                     if (e.target === this.canvas) {
                         return;
                     }
@@ -379,21 +390,56 @@
                         this.draw(mouseEvent);
                     }
                 }
+
+                // 【新規追加】CSS変形後のマウス座標をCanvas内の座標に変換するメソッド
+                getCanvasCoordinates(e) {
+                    const rect = this.canvas.getBoundingClientRect();
+                    
+                    // 1. マウスのクライアント座標を、CSS変形後の矩形内での相対座標に変換
+                    let x = e.clientX - rect.left;
+                    let y = e.clientY - rect.top;
+
+                    // 2. CSS変形の逆計算を行い、元のCanvas座標系に戻す
+                    // a. 座標系の原点を矩形の中心に移動
+                    const centerX = rect.width / 2;
+                    const centerY = rect.height / 2;
+                    x -= centerX;
+                    y -= centerY;
+
+                    // b. 回転を逆向きに適用
+                    const rad = -this.rotation * Math.PI / 180;
+                    const cos = Math.cos(rad);
+                    const sin = Math.sin(rad);
+                    const rotatedX = x * cos - y * sin;
+                    const rotatedY = x * sin + y * cos;
+
+                    // c. スケールを元に戻す（割り算）
+                    const scaledX = rotatedX / this.scale;
+                    const scaledY = rotatedY / this.scale;
+
+                    // d. 原点をCanvasの本来の中心に戻し、最終的な座標を算出
+                    const finalX = scaledX + this.canvas.width / 2;
+                    const finalY = scaledY + this.canvas.height / 2;
+
+                    return { x: finalX, y: finalY };
+                }
                 
                 startDrawing(e) {
                     this.isDrawing = true;
-                    const rect = this.canvas.getBoundingClientRect();
-                    this.lastX = e.clientX - rect.left;
-                    this.lastY = e.clientY - rect.top;
+                    // 【修正】座標変換メソッドを呼び出すように変更
+                    const coords = this.getCanvasCoordinates(e);
+                    this.lastX = coords.x;
+                    this.lastY = coords.y;
                     this.canvas.style.cursor = 'crosshair';
                 }
                 
                 draw(e) {
                     if (!this.isDrawing) return;
                     
-                    const rect = this.canvas.getBoundingClientRect();
-                    const currentX = e.clientX - rect.left;
-                    const currentY = e.clientY - rect.top;
+                    // 【修正】座標変換メソッドを呼び出すように変更
+                    const coords = this.getCanvasCoordinates(e);
+                    const currentX = coords.x;
+                    const currentY = coords.y;
                     
                     this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
                     this.ctx.strokeStyle = this.currentColor;
@@ -460,8 +506,58 @@
                     this.saveState();
                 }
                 
+                // 【修正】反転処理の実装をdrawImageを使うように変更
+                flipHorizontal() {
+                    const img = new Image();
+                    img.onload = () => {
+                        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                        this.ctx.save();
+                        this.ctx.translate(this.canvas.width, 0);
+                        this.ctx.scale(-1, 1);
+                        this.ctx.drawImage(img, 0, 0);
+                        this.ctx.restore();
+                        this.saveState();
+                    };
+                    img.src = this.canvas.toDataURL();
+                }
+                
+                // 【修正】反転処理の実装をdrawImageを使うように変更
+                flipVertical() {
+                    const img = new Image();
+                    img.onload = () => {
+                        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                        this.ctx.save();
+                        this.ctx.translate(0, this.canvas.height);
+                        this.ctx.scale(1, -1);
+                        this.ctx.drawImage(img, 0, 0);
+                        this.ctx.restore();
+                        this.saveState();
+                    };
+                    img.src = this.canvas.toDataURL();
+                }
+                
+                zoomIn() {
+                    this.scale = Math.min(this.scale * 1.2, 3);
+                    this.updateCanvasTransform();
+                }
+                
+                zoomOut() {
+                    this.scale = Math.max(this.scale / 1.2, 0.2);
+                    this.updateCanvasTransform();
+                }
+                
+                // 【修正】回転角度を45度に変更
+                rotate() {
+                    this.rotation = (this.rotation + 45) % 360;
+                    this.updateCanvasTransform();
+                }
+                
+                updateCanvasTransform() {
+                    this.canvasContainer.style.transform = `scale(${this.scale}) rotate(${this.rotation}deg)`;
+                    this.canvasContainer.style.transformOrigin = 'center center';
+                }
+                
                 closeTool() {
-                    // ふたばの手書きjsエリアに転写
                     const imageData = this.canvas.toDataURL('image/png');
                     
                     const tegakiJs = document.getElementById('oejs');
@@ -481,14 +577,14 @@
                 }
             }
             
-            // DOMが読み込まれた後に初期化
             document.addEventListener('DOMContentLoaded', function() {
-                new FutabaTegakiTool();
+                if (!window.futabaTegakiToolInstance) {
+                    window.futabaTegakiToolInstance = new FutabaTegakiTool();
+                }
             });
             
-            // すでにDOMが読み込まれている場合の処理
-            if (document.readyState !== 'loading') {
-                new FutabaTegakiTool();
+            if (document.readyState !== 'loading' && !window.futabaTegakiToolInstance) {
+                window.futabaTegakiToolInstance = new FutabaTegakiTool();
             }
         }
     </script>
