@@ -17,7 +17,17 @@ javascript:(() => {
   closeButton.style.top = '5px';
   closeButton.style.right = '5px';
   closeButton.style.zIndex = '2000';
-  closeButton.addEventListener('click', () => canvas.remove());
+  closeButton.addEventListener('click', () => {
+    const targetCanvas = document.getElementById('oejs');
+    if (targetCanvas) {
+      const targetCtx = targetCanvas.getContext('2d');
+      targetCanvas.width = canvas.width;
+      targetCanvas.height = canvas.height;
+      targetCtx.drawImage(canvas, 0, 0);
+    }
+    canvas.remove();
+    closeButton.remove();
+  });
   canvas.parentNode.insertBefore(closeButton, canvas.nextSibling);
 
   let isDrawing = false;
