@@ -17,7 +17,21 @@ javascript:(() => {
   closeButton.style.top = '5px';
   closeButton.style.right = '5px';
   closeButton.style.zIndex = '2000000022';
-  closeButton.addEventListener('click', () => canvas.remove());
+  closeButton.addEventListener('click', () => {
+    const targetCanvas = document.getElementById('oejs');
+    if (targetCanvas) {
+      const targetCtx = targetCanvas.getContext('2d');
+      // サイズ調整（oejsの344x135にフィットさせる）
+      const scale = Math.min(344 / canvas.width, 135 / canvas.height);
+      const newWidth = canvas.width * scale;
+      const newHeight = canvas.height * scale;
+      targetCanvas.width = newWidth;
+      targetCanvas.height = newHeight;
+      targetCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, newWidth, newHeight);
+    }
+    canvas.remove();
+    closeButton.remove();
+  });
   canvas.parentNode.insertBefore(closeButton, canvas.nextSibling);
 
   let isDrawing = false;
