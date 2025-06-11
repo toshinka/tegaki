@@ -6,7 +6,7 @@ javascript:(() => {
   }
   const ctx = targetCanvas.getContext('2d');
 
-  // 閉じるボタン
+  // 閉じるボタンの追加
   const closeButton = document.createElement('button');
   closeButton.textContent = '☓';
   closeButton.style.position = 'absolute';
@@ -18,26 +18,6 @@ javascript:(() => {
     closeButton.remove();
   });
   document.body.appendChild(closeButton);
-
-  // 画像アップロード
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.onchange = function(e) {
-    const file = e.target.files[0];
-    const img = new Image();
-    img.onload = () => {
-      let scale = 1;
-      if (img.width > 400 || img.height > 400) {
-        scale = Math.min(400 / img.width, 400 / img.height);
-      }
-      targetCanvas.width = img.width * scale;
-      targetCanvas.height = img.height * scale;
-      ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, img.width * scale, img.height * scale);
-    };
-    img.onerror = () => console.error('読み込みエラー');
-    img.src = URL.createObjectURL(file);
-  };
-  document.getElementById('ftbl').insertRow(-1).insertCell(-1).appendChild(input);
 
   let isDrawing = false;
   targetCanvas.addEventListener('mousedown', (e) => {
