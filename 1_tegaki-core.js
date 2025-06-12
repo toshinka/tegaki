@@ -1,51 +1,873 @@
-javascript:(() => {
-  const canvas = document.createElement('canvas');
-  canvas.width = 400;
-  canvas.height = 400;
-  canvas.style.position = 'fixed';
-  canvas.style.top = '0';
-  canvas.style.left = '0';
-  canvas.style.zIndex = '2000000021';
-  document.body.appendChild(canvas);
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = 'white';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ふたば手書きツール</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background-color: #ffffee;
+            overflow: hidden;
+        }
+        
+        /* Define CSS variables for the new color scheme */
+        :root {
+            --main-bg-color: rgb(240, 208, 195); /* #F0D0C3 */
+            --dark-brown: #800000;
+            --light-brown-border: rgb(220, 188, 175); /* A slightly darker shade for borders */
+            --button-active-bg: white; /* Active/hover button background */
+            --button-inactive-bg: var(--main-bg-color); /* Inactive button background */
+        }
 
-  const closeButton = document.createElement('button');
-  closeButton.textContent = '☓';
-  closeButton.style.position = 'absolute';
-  closeButton.style.top = '5px';
-  closeButton.style.right = '5px';
-  closeButton.style.zIndex = '2000000022';
-  closeButton.addEventListener('click', () => {
-    const targetCanvas = document.getElementById('oejs');
-    if (targetCanvas) {
-      const targetCtx = targetCanvas.getContext('2d');
-      // サイズ調整（oejsの344x135にフィットさせる）
-      const scale = Math.min(344 / canvas.width, 135 / canvas.height);
-      const newWidth = canvas.width * scale;
-      const newHeight = canvas.height * scale;
-      targetCanvas.width = newWidth;
-      targetCanvas.height = newHeight;
-      targetCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, newWidth, newHeight);
-    }
-    canvas.remove();
-    closeButton.remove();
-  });
-  canvas.parentNode.insertBefore(closeButton, canvas.nextSibling);
+        .main-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            position: relative;
+        }
+        
+        /* 左側ツールバー */
+        .left-toolbar {
+            width: 30px; /* さらにナローに調整 */
+            background-color: var(--main-bg-color);
+            border-right: 1px solid var(--light-brown-border);
+            display: flex;
+            flex-direction: column;
+            padding: 2px; /* パディングを調整 */
+            gap: 5px; /* セクション間の隙間を調整 */
+            box-sizing: border-box;
+            align-items: center; /* 中央揃え */
+        }
+        
+        /* 上部ツールバー */
+        .top-toolbar {
+            position: absolute;
+            top: 0;
+            left: 30px; /* 左ツールバーの幅に合わせて調整 */
+            right: 0;
+            height: 30px; /* さらにナローに調整 */
+            background-color: var(--main-bg-color);
+            border-bottom: 1px solid var(--light-brown-border);
+            display: flex;
+            align-items: center;
+            padding: 0 3px; /* パディングを調整 */
+            gap: 2px; /* ボタン間の隙間を調整 */
+            box-sizing: border-box;
+        }
+        
+        /* メインキャンバスエリア */
+        .canvas-area {
+            position: absolute;
+            top: 30px; /* 上部ツールバーの高さに合わせて調整 */
+            left: 30px; /* 左ツールバーの幅に合わせて調整 */
+            right: 0;
+            bottom: 0;
+            background-color: #ffffee; /* キャンバスエリアの背景は元のまま */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        
+        /* キャンバスコンテナ */
+        .canvas-container {
+            background-color: white;
+            border: 2px solid #ccc;
+            padding: 10px;
+            position: relative;
+            transition: transform 0.2s ease;
+        }
+        
+        .canvas-container:hover {
+            border-color: #999;
+        }
+        
+        /* メインキャンバス */
+        .main-canvas {
+            display: block;
+            background-color: #f0e0d6;
+            cursor: crosshair;
+            border: 1px solid #ddd;
+            touch-action: none; /* ペン/タッチ操作時のブラウザデフォルト動作を抑制 */
+        }
 
-  let isDrawing = false;
-  canvas.addEventListener('mousedown', (e) => {
-    isDrawing = true;
-    ctx.beginPath();
-    ctx.moveTo(e.offsetX, e.offsetY);
-  });
-  canvas.addEventListener('mousemove', (e) => {
-    if (isDrawing) {
-      ctx.lineTo(e.offsetX, e.offsetY);
-      ctx.stroke();
-    }
-  });
-  canvas.addEventListener('mouseup', () => isDrawing = false);
-  canvas.addEventListener('mouseleave', () => isDrawing = false);
-})();
+        /* Undo/Redo/Clearボタン用コンテナ（左ツールバー上部） */
+        .top-left-controls {
+            display: flex;
+            flex-direction: row; /* 横並び */
+            gap: 2px; /* ボタン間の隙間 */
+            width: 100%;
+            align-items: center;
+            justify-content: center; /* 中央揃え */
+            margin-bottom: 5px; /* 下に少しスペース */
+        }
+        
+        /* カラーパレット */
+        .color-palette {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2px; /* 隙間を調整 */
+            justify-content: center;
+            width: 100%;
+        }
+        
+        .color-btn {
+            width: 20px; /* 小さく調整 */
+            height: 20px; /* 小さく調整 */
+            border: 1px solid var(--dark-brown); /* 濃い茶色のボーダー */
+            cursor: pointer;
+            border-radius: 2px;
+        }
+        
+        .color-btn.active {
+            border-color: var(--button-active-bg); /* アクティブな時は白のボーダー */
+            border-width: 2px;
+        }
+        
+        /* メイン/サブカラー表示 */
+        .color-mode-display {
+            width: 24px; /* サイズ調整 */
+            height: 24px; /* サイズ調整 */
+            position: relative;
+            cursor: pointer;
+            margin-top: 5px;
+            background-color: var(--main-bg-color); /* 周囲の背景も統一 */
+            border: 1px solid var(--light-brown-border); /* 軽い縁取り */
+            box-sizing: border-box;
+            border-radius: 2px;
+            overflow: hidden; /* 子要素がはみ出さないように */
+        }
+
+        .color-square {
+            width: 12px; /* 小さく調整 */
+            height: 12px; /* 小さく調整 */
+            border: 1px solid var(--dark-brown); /* 濃い茶色のボーダー */
+            position: absolute;
+            box-sizing: border-box;
+        }
+
+        .main-color-square {
+            top: 0;
+            left: 0;
+            z-index: 2;
+        }
+
+        .sub-color-square {
+            bottom: 0;
+            right: 0;
+            z-index: 1;
+            transform: translate(-2px, 2px); /* 重なり具合を調整 */
+        }
+
+        /* ツールセクション */
+        .tools {
+            display: flex;
+            flex-direction: column;
+            gap: 2px; /* 隙間を調整 */
+            width: 100%;
+            align-items: center;
+        }
+
+        /* ツールボタン */
+        .tool-btn {
+            width: 24px; /* サイズ調整 */
+            height: 24px; /* サイズ調整 */
+            border: 1px solid var(--light-brown-border); /* 軽い縁取り */
+            background: var(--button-inactive-bg); /* ボタンの背景色 */
+            cursor: pointer;
+            font-size: 16px; /* アイコンサイズ */
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 3px;
+            line-height: 1;
+            color: var(--dark-brown); /* アイコンの色 */
+        }
+
+        .tool-btn.active {
+            background-color: var(--button-active-bg); /* アクティブな時の背景色 */
+            color: var(--dark-brown); /* アクティブな時のアイコン色 */
+            border-color: var(--dark-brown); /* アクティブな時のボーダー */
+        }
+        
+        /* サイズセクション */
+        .sizes {
+            display: flex;
+            flex-direction: column;
+            gap: 4px; /* 隙間を調整 */
+            width: 100%;
+            align-items: center;
+        }
+        
+        /* サイズボタン */
+        .size-btn {
+            width: 24px; /* サイズ調整 */
+            height: 30px; /* 数字表示のために高さを確保 */
+            border: 1px solid var(--light-brown-border); /* 軽い縁取り */
+            background: var(--button-inactive-bg);
+            cursor: pointer;
+            display: flex;
+            flex-direction: column; /* 円と数字を縦に並べる */
+            align-items: center;
+            /* justify-content: center; */ /* パディングで間隔を調整 */
+            padding: 2px 0; /* 上下のパディングで間隔を調整 */
+            border-radius: 3px;
+        }
+
+        .size-btn.active {
+            border-color: var(--dark-brown); /* アクティブな時だけ濃い茶色の枠を表示 */
+            background-color: var(--button-active-bg); /* アクティブな時の背景色 */
+        }
+
+        /* ◎の外枠 */
+        .size-indicator { 
+            width: 18px; /* 外枠の固定サイズ */
+            height: 18px;
+            border-radius: 50%;
+            border: 1px solid var(--dark-brown); /* 外枠のボーダー */
+            background-color: transparent; /* 外枠は透明 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
+            /* margin-top: 2px; */ /* paddingで調整 */
+        }
+
+        /* ◎の内側の● */
+        .size-dot {
+            border-radius: 50%;
+            background-color: var(--dark-brown);
+        }
+
+        /* サイズ数値表示 */
+        .size-number {
+            font-size: 10px;
+            color: var(--dark-brown);
+            text-align: center;
+            display: block; /* 常に表示 */
+            line-height: 1; /* 行の高さを調整 */
+            margin-top: 2px; /* 円と数字の間にスペース */
+        }
+        
+        /* 上部ツールバーのボタン */
+        .top-btn {
+            height: 24px; /* 小さく調整 */
+            padding: 0 6px; /* パディングを調整 */
+            border: 1px solid var(--light-brown-border); /* 軽い縁取り */
+            background: var(--button-inactive-bg);
+            cursor: pointer;
+            font-size: 13px; /* フォントサイズ */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 3px;
+            color: var(--dark-brown); /* 文字色 */
+        }
+        
+        .top-btn:hover {
+            background-color: var(--button-active-bg); /* ホバー時の背景色 */
+            border-color: var(--dark-brown);
+        }
+        
+        .close-btn {
+            background-color: #ff4444; /* 赤はそのまま */
+            color: white;
+            border: none; /* 閉じるボタンはボーダーなし */
+            margin-left: auto; /* 右端に寄せる */
+        }
+        
+        .close-btn:hover {
+            background-color: #cc3333;
+        }
+        
+        /* セクション分割線 */
+        .separator {
+            width: 80%;
+            height: 1px;
+            background-color: var(--light-brown-border); /* 分割線の色 */
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="left-toolbar">
+            <div class="top-left-controls">
+                <button class="tool-btn" id="undo-btn" title="元に戻す (Ctrl+Z)">↶</button>
+                <button class="tool-btn" id="redo-btn" title="やり直し (Ctrl+Y)">↷</button>
+                <button class="tool-btn" id="clear-btn" title="全消去">&#128465;</button>
+            </div>
+
+            <div class="separator"></div>
+
+            <div class="color-palette">
+                <div class="color-btn active" data-color="#800000" style="background-color: #800000;" title="暗赤"></div>
+                <div class="color-btn" data-color="#aa5a56" style="background-color: #aa5a56;" title="赤茶"></div>
+                <div class="color-btn" data-color="#cf9c97" style="background-color: #cf9c97;" title="中間色"></div>
+                <div class="color-btn" data-color="#e9c2ba" style="background-color: #e9c2ba;" title="薄茶"></div>
+                <div class="color-btn" data-color="#f0e0d6" style="background-color: #f0e0d6;" title="肌色"></div>
+            </div>
+
+            <div class="color-mode-display" title="メイン/サブカラー切り替え (X)">
+                <div id="main-color-display" class="color-square main-color-square"></div>
+                <div id="sub-color-display" class="color-square sub-color-square"></div>
+            </div>
+
+            <div class="separator"></div>
+
+            <div class="tools">
+                <button class="tool-btn active" id="pen-tool" title="ペン (P)">&#9998;</button>
+                <button class="tool-btn" id="eraser-tool" title="消しゴム (E)">&#9003;</button>
+                <button class="tool-btn" id="move-tool" title="レイヤー移動 (V)">&#10021;</button>
+            </div>
+
+            <div class="separator"></div>
+
+            <div class="sizes">
+                <button class="size-btn active" data-size="1">
+                    <div class="size-indicator"><div class="size-dot" style="width: 2px; height: 2px;"></div></div>
+                    <span class="size-number">1</span>
+                </button>
+                <button class="size-btn" data-size="3">
+                    <div class="size-indicator"><div class="size-dot" style="width: 4px; height: 4px;"></div></div>
+                    <span class="size-number">3</span>
+                </button>
+                <button class="size-btn" data-size="5">
+                    <div class="size-indicator"><div class="size-dot" style="width: 6px; height: 6px;"></div></div>
+                    <span class="size-number">5</span>
+                </button>
+                <button class="size-btn" data-size="10">
+                    <div class="size-indicator"><div class="size-dot" style="width: 10px; height: 10px;"></div></div>
+                    <span class="size-number">10</span>
+                </button>
+                <button class="size-btn" data-size="30">
+                    <div class="size-indicator"><div class="size-dot" style="width: 16px; height: 16px;"></div></div>
+                    <span class="size-number">30</span>
+                </button>
+            </div>
+        </div>
+        
+        <div class="top-toolbar">
+            <div style="width: calc(50vw - 120px); min-width: 0;"></div>
+
+            <div class="canvas-ops-group" style="display: flex; gap: 2px;">
+                <button class="top-btn" id="flip-h-btn" title="左右反転 (H)">⇄</button>
+                <button class="top-btn" id="flip-v-btn" title="上下反転 (Shift+H)">⇅</button>
+                <button class="top-btn" id="zoom-out-btn" title="縮小 (↓ / Wheel Down)">－</button>
+                <button class="top-btn" id="zoom-in-btn" title="拡大 (↑ / Wheel Up)">＋</button>
+                <button class="top-btn" id="rotate-btn" title="回転 (Shift+Wheel)">↻</button>
+                <button class="top-btn" id="rotate-ccw-btn" title="反時計回りに回転 (Shift+Wheel)">↺</button>
+                <button class="top-btn" id="reset-view-btn" title="表示リセット (1)">&#9750;</button>
+            </div>
+            
+            <button class="top-btn close-btn" id="close-btn">×閉じる</button>
+        </div>
+        
+        <div class="canvas-area" id="canvas-area">
+            <div class="canvas-container" id="canvas-container">
+                <canvas id="drawingCanvas" class="main-canvas" width="344" height="135"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ツール初期化フラグ
+        if (!window.futabaTegakiInitialized) {
+            window.futabaTegakiInitialized = true;
+
+            class FutabaTegakiTool {
+                constructor() {
+                    this.canvas = document.getElementById('drawingCanvas');
+                    this.ctx = this.canvas.getContext('2d');
+                    this.canvasArea = document.getElementById('canvas-area');
+                    this.canvasContainer = document.getElementById('canvas-container');
+                    
+                    this.isDrawing = false;
+                    this.isPanning = false;
+                    this.isMovingLayer = false;
+                    this.isSpaceDown = false;
+
+                    this.currentTool = 'pen';
+                    this.mainColor = '#800000'; // 初期メインカラー
+                    this.subColor = '#f0e0d6';  // 初期サブカラー
+                    this.currentColor = this.mainColor; // 現在の描画色をメインカラーに設定
+                    this.currentSize = 1;
+                    this.lastX = 0;
+                    this.lastY = 0;
+                    this.history = [];
+                    this.historyIndex = -1;
+                    
+                    this.dragStartX = 0;
+                    this.dragStartY = 0;
+                    this.canvasStartX = 0;
+                    this.canvasStartY = 0;
+                    this.moveLayerStartX = 0;
+                    this.moveLayerStartY = 0;
+                    this.moveLayerImageData = null;
+                    
+                    this.scale = 1;
+                    this.rotation = 0;
+
+                    this.sizes = Array.from(document.querySelectorAll('.size-btn')).map(btn => parseInt(btn.dataset.size));
+                    this.colors = Array.from(document.querySelectorAll('.color-btn')).map(btn => btn.dataset.color);
+                    this.currentSizeIndex = this.sizes.indexOf(this.currentSize);
+                    this.currentColorIndex = this.colors.indexOf(this.currentColor); // メインカラーのインデックスを設定
+
+                    this.mainColorDisplay = document.getElementById('main-color-display');
+                    this.subColorDisplay = document.getElementById('sub-color-display');
+                    
+                    this.initCanvas();
+                    this.bindEvents();
+                    this.saveState();
+                    this.updateColorDisplays(); // メイン/サブカラー表示を初期化
+                    // 初期のアクティブカラーボタンをメインカラーに設定
+                    document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+                    document.querySelector(`[data-color="${this.mainColor}"]`)?.classList.add('active');
+                    this.updateSizeButtonVisuals(); // サイズボタンの初期表示を更新
+                }
+                
+                initCanvas() {
+                    this.ctx.lineCap = 'round';
+                    this.ctx.lineJoin = 'round';
+                    this.ctx.fillStyle = '#f0e0d6';
+                    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                }
+                
+                bindEvents() {
+                    // ポインタイベント
+                    this.canvas.addEventListener('pointerdown', this.onPointerDown.bind(this));
+                    document.addEventListener('pointermove', this.onPointerMove.bind(this)); // documentでリッスン
+                    document.addEventListener('pointerup', this.onPointerUp.bind(this));
+                    
+                    // キーボードとマウスホイール
+                    document.addEventListener('keydown', this.handleKeyDown.bind(this));
+                    document.addEventListener('keyup', this.handleKeyUp.bind(this));
+                    this.canvasArea.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
+
+                    this.bindButtonEvents();
+                }
+
+                bindButtonEvents() {
+                    // ボタンのイベントは 'click' で統一
+                    document.getElementById('pen-tool').addEventListener('click', () => this.setTool('pen'));
+                    document.getElementById('eraser-tool').addEventListener('click', () => this.setTool('eraser'));
+                    document.getElementById('move-tool').addEventListener('click', () => this.setTool('move'));
+                    document.querySelectorAll('.size-btn').forEach(btn => btn.addEventListener('click', () => this.setSize(parseInt(btn.dataset.size))));
+                    document.querySelectorAll('.color-btn').forEach(btn => btn.addEventListener('click', (e) => this.setColor(e.currentTarget.dataset.color)));
+                    document.getElementById('undo-btn').addEventListener('click', () => this.undo());
+                    document.getElementById('redo-btn').addEventListener('click', () => this.redo());
+                    document.getElementById('clear-btn').addEventListener('click', () => this.clearCanvas());
+                    document.getElementById('close-btn').addEventListener('click', () => this.closeTool());
+                    document.getElementById('flip-h-btn').addEventListener('click', () => this.flipHorizontal());
+                    document.getElementById('flip-v-btn').addEventListener('click', () => this.flipVertical());
+                    document.getElementById('zoom-in-btn').addEventListener('click', () => this.zoom(1.2));
+                    document.getElementById('zoom-out-btn').addEventListener('click', () => this.zoom(1 / 1.2));
+                    document.getElementById('rotate-btn').addEventListener('click', () => this.rotate(15));
+                    // 新しい逆回転ボタンのイベントリスナーを追加しました
+                    document.getElementById('rotate-ccw-btn').addEventListener('click', () => this.rotate(-15));
+                    document.getElementById('reset-view-btn').addEventListener('click', () => this.resetView());
+                    document.querySelector('.color-mode-display').addEventListener('click', () => this.swapColors()); // メイン/サブカラー表示アイコンクリックで色入れ替え
+                }
+
+                onPointerDown(e) {
+                    if (e.target !== this.canvas) return; // キャンバス以外でのpointerdownを無視
+                    
+                    if (this.isSpaceDown) {
+                        this.isPanning = true;
+                        this.dragStartX = e.clientX;
+                        this.dragStartY = e.clientY;
+                        this.setAbsolutePosition();
+                        e.target.setPointerCapture(e.pointerId);
+                    } else if (this.currentTool === 'move') {
+                        this.isMovingLayer = true;
+                        const coords = this.getCanvasCoordinates(e);
+                        this.moveLayerStartX = coords.x;
+                        this.moveLayerStartY = coords.y;
+                        this.moveLayerImageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+                        e.target.setPointerCapture(e.pointerId);
+                    } else {
+                        this.isDrawing = true;
+                        const coords = this.getCanvasCoordinates(e);
+                        this.lastX = coords.x;
+                        this.lastY = coords.y;
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(this.lastX, this.lastY);
+                        e.target.setPointerCapture(e.pointerId);
+                    }
+                }
+
+                onPointerMove(e) {
+                    if (!e.buttons) { // ドラッグ中じゃない場合は何もしない
+                        this.onPointerUp(e);
+                        return;
+                    }
+
+                    if (this.isPanning) {
+                        const deltaX = e.clientX - this.dragStartX;
+                        const deltaY = e.clientY - this.dragStartY;
+                        this.canvasContainer.style.left = (this.canvasStartX + deltaX) + 'px';
+                        this.canvasContainer.style.top = (this.canvasStartY + deltaY) + 'px';
+                    } else if (this.isMovingLayer) {
+                        const coords = this.getCanvasCoordinates(e);
+                        const dx = Math.round(coords.x - this.moveLayerStartX);
+                        const dy = Math.round(coords.y - this.moveLayerStartY);
+                        this.ctx.fillStyle = '#f0e0d6';
+                        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                        this.ctx.putImageData(this.moveLayerImageData, dx, dy);
+                    } else if (this.isDrawing) {
+                        const coords = this.getCanvasCoordinates(e);
+                        const currentX = coords.x;
+                        const currentY = coords.y;
+                        this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
+                        this.ctx.strokeStyle = this.currentColor;
+                        this.ctx.lineWidth = this.currentSize;
+                        this.ctx.lineTo(currentX, currentY);
+                        this.ctx.stroke();
+                        this.lastX = currentX;
+                        this.lastY = currentY;
+                    }
+                }
+
+                onPointerUp(e) {
+                    // イベントの発生源がアクティブなポインタIDを持つ要素かチェック
+                    // これにより、関係ないpointerupイベントを無視する
+                    if (!e.target.hasPointerCapture(e.pointerId)) return;
+                    e.target.releasePointerCapture(e.pointerId);
+                    
+                    if (this.isDrawing) {
+                        this.isDrawing = false;
+                        this.ctx.closePath();
+                        this.saveState();
+                    }
+                    if (this.isPanning) this.isPanning = false;
+                    if(this.isMovingLayer) {
+                        this.isMovingLayer = false;
+                        this.saveState();
+                    }
+                }
+                
+                setAbsolutePosition() {
+                    if (this.canvasContainer.style.position !== 'absolute') {
+                        const rect = this.canvasContainer.getBoundingClientRect();
+                        const areaRect = this.canvasArea.getBoundingClientRect();
+                        this.canvasStartX = rect.left - areaRect.left;
+                        this.canvasStartY = rect.top - areaRect.top;
+                        this.canvasContainer.style.position = 'absolute';
+                        this.canvasContainer.style.left = this.canvasStartX + 'px';
+                        this.canvasContainer.style.top = this.canvasStartY + 'px';
+                        this.canvasContainer.style.zIndex = '1000';
+                    } else {
+                        this.canvasStartX = parseFloat(this.canvasContainer.style.left || 0);
+                        this.canvasStartY = parseFloat(this.canvasContainer.style.top || 0);
+                    }
+                }
+                
+                getCanvasCoordinates(e) {
+                    const rect = this.canvas.getBoundingClientRect();
+                    let x = e.clientX - rect.left;
+                    let y = e.clientY - rect.top;
+                    const centerX = rect.width / 2;
+                    const centerY = rect.height / 2;
+                    x -= centerX;
+                    y -= centerY;
+                    const rad = -this.rotation * Math.PI / 180;
+                    const cos = Math.cos(rad);
+                    const sin = Math.sin(rad);
+                    const rotatedX = x * cos - y * sin;
+                    const rotatedY = x * sin + y * cos;
+                    const scaledX = rotatedX / this.scale;
+                    const scaledY = rotatedY / this.scale;
+                    const finalX = scaledX + this.canvas.width / 2;
+                    const finalY = scaledY + this.canvas.height / 2;
+                    return { x: finalX, y: finalY };
+                }
+                
+                setTool(tool) {
+                    this.currentTool = tool;
+                    document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+                    const toolButton = document.getElementById(tool + '-tool');
+                    if(toolButton) toolButton.classList.add('active');
+                    this.updateCursor();
+                }
+
+                updateCursor() {
+                     if (this.isSpaceDown) {
+                        this.canvas.style.cursor = 'grab';
+                        return;
+                    }
+                    switch(this.currentTool) {
+                        case 'move': this.canvas.style.cursor = 'move'; break;
+                        case 'pen':
+                        case 'eraser':
+                        default: this.canvas.style.cursor = 'crosshair'; break;
+                    }
+                }
+                
+                setSize(size) {
+                    this.currentSize = size;
+                    this.currentSizeIndex = this.sizes.indexOf(this.currentSize);
+                    document.querySelectorAll('.size-btn').forEach(btn => btn.classList.remove('active'));
+                    document.querySelector(`[data-size="${size}"]`)?.classList.add('active');
+                    this.updateSizeButtonVisuals(); // サイズボタンの表示を更新
+                }
+
+                updateSizeButtonVisuals() {
+                    document.querySelectorAll('.size-btn').forEach(btn => {
+                        const size = parseInt(btn.dataset.size);
+                        const sizeDot = btn.querySelector('.size-dot');
+                        const sizeNumber = btn.querySelector('.size-number');
+                        
+                        if (sizeDot) {
+                            // 内側の●のサイズを調整（最大16pxに制限、外枠の内部が16pxのため）
+                            const dotSize = Math.min(size, 16); 
+                            sizeDot.style.width = `${dotSize}px`;
+                            sizeDot.style.height = `${dotSize}px`;
+                        }
+                        if (sizeNumber) {
+                            sizeNumber.textContent = size;
+                        }
+                    });
+                }
+                
+                setColor(color) {
+                    this.mainColor = color; // メインカラーを更新
+                    this.currentColor = this.mainColor; // 現在の描画色をメインカラーに同期
+                    this.currentColorIndex = this.colors.indexOf(this.mainColor); // インデックスも更新
+
+                    // アクティブなカラーボタンを更新
+                    document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+                    document.querySelector(`[data-color="${color}"]`)?.classList.add('active');
+
+                    this.updateColorDisplays(); // メイン/サブカラー表示を更新
+                }
+
+                updateColorDisplays() {
+                    this.mainColorDisplay.style.backgroundColor = this.mainColor;
+                    this.subColorDisplay.style.backgroundColor = this.subColor;
+                }
+
+                swapColors() {
+                    [this.mainColor, this.subColor] = [this.subColor, this.mainColor];
+                    this.currentColor = this.mainColor; // 現在の描画色を新しいメインカラーに同期
+                    this.updateColorDisplays();
+                    // アクティブなカラーボタンも新しいメインカラーに同期
+                    document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+                    document.querySelector(`[data-color="${this.mainColor}"]`)?.classList.add('active');
+                }
+
+                resetColors() {
+                    this.mainColor = '#800000';
+                    this.subColor = '#f0e0d6';
+                    this.currentColor = this.mainColor; // 現在の描画色をリセットされたメインカラーに同期
+                    this.updateColorDisplays();
+                    // アクティブなカラーボタンもリセットされたメインカラーに同期
+                    document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+                    document.querySelector(`[data-color="${this.mainColor}"]`)?.classList.add('active');
+                }
+                
+                saveState() {
+                    if (this.historyIndex < this.history.length - 1) {
+                        this.history = this.history.slice(0, this.historyIndex + 1);
+                    }
+                    this.history.push(this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height));
+                    this.historyIndex++;
+                }
+                
+                undo() {
+                    if (this.historyIndex > 0) {
+                        this.historyIndex--;
+                        this.ctx.putImageData(this.history[this.historyIndex], 0, 0);
+                    }
+                }
+                
+                redo() {
+                    if (this.historyIndex < this.history.length - 1) {
+                        this.historyIndex++;
+                        this.ctx.putImageData(this.history[this.historyIndex], 0, 0);
+                    }
+                }
+                
+                clearCanvas() {
+                    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                    this.ctx.fillStyle = '#f0e0d6';
+                    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                    this.saveState();
+                }
+                
+                flipHorizontal() {
+                    const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+                    const tempCanvas = document.createElement('canvas');
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCanvas.width = this.canvas.width;
+                    tempCanvas.height = this.canvas.height;
+
+                    tempCtx.translate(tempCanvas.width, 0);
+                    tempCtx.scale(-1, 1);
+                    tempCtx.drawImage(this.canvas, 0, 0);
+
+                    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                    this.ctx.drawImage(tempCanvas, 0, 0);
+                    this.saveState();
+                }
+
+                flipVertical() {
+                    const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+                    const tempCanvas = document.createElement('canvas');
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCanvas.width = this.canvas.width;
+                    tempCanvas.height = this.canvas.height;
+
+                    tempCtx.translate(0, tempCanvas.height);
+                    tempCtx.scale(1, -1);
+                    tempCtx.drawImage(this.canvas, 0, 0);
+                    
+                    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                    this.ctx.drawImage(tempCanvas, 0, 0);
+                    this.saveState();
+                }
+                
+                zoom(factor) {
+                    const newScale = this.scale * factor;
+                    this.scale = Math.max(0.1, Math.min(newScale, 10)); // 10%～1000%
+                    this.updateCanvasTransform();
+                }
+                
+                rotate(degrees) {
+                    this.rotation = (this.rotation + degrees) % 360;
+                    this.updateCanvasTransform();
+                }
+                
+                updateCanvasTransform() {
+                    this.canvasContainer.style.transform = `scale(${this.scale}) rotate(${this.rotation}deg)`;
+                    this.canvasContainer.style.transformOrigin = 'center center';
+                }
+
+                resetView() {
+                    this.scale = 1;
+                    this.rotation = 0;
+                    this.updateCanvasTransform();
+                    this.canvasContainer.style.position = 'relative';
+                    this.canvasContainer.style.left = 'auto';
+                    this.canvasContainer.style.top = 'auto';
+                    this.canvasContainer.style.zIndex = 'auto';
+                }
+                
+                closeTool() { /* ... 既存のコード ... */ }
+
+                handleKeyDown(e) {
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.repeat) return;
+                    
+                    if (e.key === ' ' && !this.isSpaceDown) {
+                        this.isSpaceDown = true;
+                        this.updateCursor();
+                        e.preventDefault();
+                    }
+
+                    if (this.isSpaceDown) {
+                        let handled = true;
+                        const moveAmount = 10;
+                        switch(e.key) {
+                            case 'ArrowUp': this.setAbsolutePosition(); this.canvasContainer.style.top = (parseFloat(this.canvasContainer.style.top) - moveAmount) + 'px'; break;
+                            case 'ArrowDown': this.setAbsolutePosition(); this.canvasContainer.style.top = (parseFloat(this.canvasContainer.style.top) + moveAmount) + 'px'; break;
+                            case 'ArrowLeft': this.setAbsolutePosition(); this.canvasContainer.style.left = (parseFloat(this.canvasContainer.style.left) - moveAmount) + 'px'; break;
+                            case 'ArrowRight': this.setAbsolutePosition(); this.canvasContainer.style.left = (parseFloat(this.canvasContainer.style.left) + moveAmount) + 'px'; break;
+                            default: handled = false;
+                        }
+                        if(handled) e.preventDefault();
+                        return;
+                    }
+                    
+                    let handled = true;
+                    if (e.ctrlKey) {
+                        switch (e.key.toLowerCase()) {
+                            case 'z': this.undo(); break;
+                            case 'y': this.redo(); break;
+                            default: handled = false;
+                        }
+                    } else if (e.shiftKey) {
+                        switch (e.key) { // Shift + [ は }、Shift + ] は { になることを利用
+                            case '}': // Shift + [ (JIS配列の場合)
+                                this.changeColor(true); // 上方向
+                                break;
+                            case '{': // Shift + ] (JIS配列の場合)
+                                this.changeColor(false); // 下方向
+                                break;
+                            default:
+                                switch (e.key.toLowerCase()) {
+                                    case 'h': this.flipVertical(); break;
+                                    case 'arrowup': this.zoom(1.20); break;
+                                    case 'arrowdown': this.zoom(1 / 1.20); break;
+                                    case 'arrowleft': this.rotate(-15); break;
+                                    case 'arrowright': this.rotate(15); break;
+                                    default: handled = false;
+                                }
+                        }
+                    } else {
+                         switch (e.key.toLowerCase()) { // DとXキーのためにtoLowerCaseを使用
+                            case '[': this.changeSize(false); break; // [ でペンサイズを上に
+                            case ']': this.changeSize(true); break; // ] でペンサイズを下に
+                            case 'x': this.swapColors(); break; // Xキーでメイン/サブカラー入れ替え
+                            case 'd': this.resetColors(); break; // Dキーでメイン/サブカラーリセット
+                            default:
+                                switch (e.key.toLowerCase()) {
+                                    case 'p': this.setTool('pen'); break;
+                                    case 'e': this.setTool('eraser'); break;
+                                    case 'v': this.setTool('move'); break;
+                                    case 'h': this.flipHorizontal(); break;
+                                    case '1': this.resetView(); break;
+                                    case 'arrowup': this.zoom(1.05); break;
+                                    case 'arrowdown': this.zoom(1 / 1.05); break;
+                                    case 'arrowleft': this.rotate(-5); break;
+                                    case 'arrowright': this.rotate(5); break;
+                                    default: handled = false;
+                                }
+                        }
+                    }
+                    if (handled) e.preventDefault();
+                }
+
+                handleKeyUp(e) {
+                    if (e.key === ' ') {
+                        this.isSpaceDown = false;
+                        this.updateCursor();
+                        e.preventDefault();
+                    }
+                }
+
+                handleWheel(e) {
+                    e.preventDefault();
+                    const delta = e.deltaY > 0 ? -1 : 1;
+                    if (e.shiftKey) {
+                        this.rotate(delta * 15);
+                    } else {
+                        this.zoom(delta > 0 ? 1.1 : 1 / 1.1);
+                    }
+                }
+
+                changeSize(increase) {
+                    // increaseがfalse（[キー）ならサイズを小さく（上に移動）
+                    // increaseがtrue（]キー）ならサイズを大きく（下に移動）
+                    let newIndex = this.currentSizeIndex + (increase ? 1 : -1);
+                    newIndex = Math.max(0, Math.min(newIndex, this.sizes.length - 1));
+                    this.setSize(this.sizes[newIndex]);
+                }
+
+                changeColor(increase) {
+                    // increaseがtrueで下に移動 (インデックス増加)
+                    // increaseがfalseで上に移動 (インデックス減少)
+                     let newIndex = this.currentColorIndex + (increase ? 1 : -1);
+                     newIndex = Math.max(0, Math.min(newIndex, this.colors.length - 1));
+                     // パレットから選択された色を直接currentColorとして扱うのではなく、
+                     // mainColorとして更新し、currentColorはmainColorに同期させる
+                     this.setColor(this.colors[newIndex]);
+                }
+            }
+            
+            new FutabaTegakiTool();
+        }
+    </script>
+</body>
+</html>
