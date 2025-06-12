@@ -1,7 +1,7 @@
 javascript:(() => {
-  if (!document.querySelector('script[src="https://toshinka.github.io/tegaki/1_tegaki-core.js?1749718800000"]')) {
+  if (!document.querySelector('script[src="https://toshinka.github.io/tegaki/1_tegaki-core.js?1749718800001"]')) {
     const script = document.createElement('script');
-    script.src = 'https://toshinka.github.io/tegaki/1_tegaki-core.js?1749718800000';
+    script.src = 'https://toshinka.github.io/tegaki/1_tegaki-core.js?1749718800001';
     document.head.appendChild(script);
   }
 
@@ -17,7 +17,7 @@ javascript:(() => {
   ctx.fillStyle = 'white';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const closeButton = document.createElement('button'); // ここで定義
+  const closeButton = document.createElement('button');
   closeButton.textContent = '☓';
   closeButton.style.position = 'absolute';
   closeButton.style.top = '5px';
@@ -26,7 +26,9 @@ javascript:(() => {
   closeButton.addEventListener('click', () => {
     console.log('Closing canvas');
     const targetCanvas = document.getElementById('oejs');
-    if (targetCanvas) {
+    if (!targetCanvas) {
+      alert('手書きJSが起動していません。手書きJSを起動してから再度お試しください。');
+    } else {
       const targetCtx = targetCanvas.getContext('2d');
       const scale = Math.min(135 / canvas.width, 135 / canvas.height);
       const newWidth = canvas.width * scale;
@@ -34,6 +36,7 @@ javascript:(() => {
       targetCanvas.width = newWidth;
       targetCanvas.height = newHeight;
       targetCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, newWidth, newHeight);
+      alert('転写完了！手書きJSを確認してください。');
     }
     canvas.remove();
     closeButton.remove();
