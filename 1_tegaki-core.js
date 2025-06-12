@@ -1,18 +1,11 @@
 javascript:(() => {
-  // 既存スクリプトのチェック
-  if (!document.querySelector('script[src="https://toshinka.github.io/tegaki/1_tegaki-core.js?1749715200000"]')) {
-    const script = document.createElement('script');
-    script.src = 'https://toshinka.github.io/tegaki/1_tegaki-core.js?1749715200000';
-    document.head.appendChild(script);
-  }
-
   const canvas = document.createElement('canvas');
   canvas.width = 400;
   canvas.height = 400;
   canvas.style.position = 'fixed';
   canvas.style.top = '0';
   canvas.style.left = '0';
-  canvas.style.zIndex = '2000000021';
+  canvas.style.zIndex = '2000000021'; // FUTAKUROを上回る
   document.body.appendChild(canvas);
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = 'white';
@@ -23,21 +16,8 @@ javascript:(() => {
   closeButton.style.position = 'absolute';
   closeButton.style.top = '5px';
   closeButton.style.right = '5px';
-  closeButton.style.zIndex = '2000000022';
-  closeButton.addEventListener('click', () => {
-    const targetCanvas = document.getElementById('oejs');
-    if (targetCanvas) {
-      const targetCtx = targetCanvas.getContext('2d');
-      const scale = Math.min(135 / canvas.width, 135 / canvas.height); // 135x135に合わせる
-      const newWidth = canvas.width * scale;
-      const newHeight = canvas.height * scale;
-      targetCanvas.width = newWidth;
-      targetCanvas.height = newHeight;
-      targetCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, newWidth, newHeight);
-    }
-    canvas.remove();
-    closeButton.remove();
-  });
+  closeButton.style.zIndex = '2000000022'; // さらに高く
+  closeButton.addEventListener('click', () => canvas.remove());
   canvas.parentNode.insertBefore(closeButton, canvas.nextSibling);
 
   let isDrawing = false;
