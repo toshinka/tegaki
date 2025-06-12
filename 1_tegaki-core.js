@@ -1,4 +1,11 @@
 javascript:(() => {
+  // 既存スクリプトのチェック
+  if (!document.querySelector('script[src="https://toshinka.github.io/tegaki/1_tegaki-core.js?1749715200000"]')) {
+    const script = document.createElement('script');
+    script.src = 'https://toshinka.github.io/tegaki/1_tegaki-core.js?1749715200000';
+    document.head.appendChild(script);
+  }
+
   const canvas = document.createElement('canvas');
   canvas.width = 400;
   canvas.height = 400;
@@ -21,8 +28,7 @@ javascript:(() => {
     const targetCanvas = document.getElementById('oejs');
     if (targetCanvas) {
       const targetCtx = targetCanvas.getContext('2d');
-      // サイズ調整（oejsの344x135にフィットさせる）
-      const scale = Math.min(344 / canvas.width, 135 / canvas.height);
+      const scale = Math.min(135 / canvas.width, 135 / canvas.height); // 135x135に合わせる
       const newWidth = canvas.width * scale;
       const newHeight = canvas.height * scale;
       targetCanvas.width = newWidth;
