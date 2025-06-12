@@ -20,6 +20,7 @@ class FutabaTegakiTool {
         this.colorManager = new ColorManager(this); // this (FutabaTegakiToolインスタンス) を渡す
         this.toolManager = new ToolManager(this);
         this.canvasManager = new CanvasManager(this);
+        this.layerManager = new LayerManager(this);
         this.topBarManager = new TopBarManager(this);
         this.penSettingsManager = new PenSettingsManager(this);
         // this.layerManager = new LayerManager(this); // 予告: LayerManager
