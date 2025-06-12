@@ -1,4 +1,5 @@
 closeButton.addEventListener('click', () => {
+  console.log('Closing canvas');
   const targetCanvas = document.getElementById('oejs');
   if (targetCanvas) {
     const targetCtx = targetCanvas.getContext('2d');
@@ -8,8 +9,6 @@ closeButton.addEventListener('click', () => {
     targetCanvas.width = newWidth;
     targetCanvas.height = newHeight;
     targetCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, newWidth, newHeight);
-    targetCanvas.style.display = 'block'; // 強制再描画
-    alert('転写完了！手書きJSを確認してください。');
   }
   canvas.remove();
   closeButton.remove();
