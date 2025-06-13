@@ -13,7 +13,7 @@ javascript:(d => {
         oejs.style.position = 'absolute';
         d.querySelector('#oest1')?.appendChild(oejs);
       }
-      // 逆転写ロジック: 手書きJSから白四角に初期描画
+      // 逆転写ロジック: 手書きJSから白四角に描画
       const c = d.createElement('canvas');
       c.width = 400;
       c.height = 400;
@@ -24,8 +24,8 @@ javascript:(d => {
       c.getContext('2d', { willReadFrequently: true });
       d.body.appendChild(c);
       const ctx = c.getContext('2d');
-      if (oejs) {
-        ctx.drawImage(oejs, 0, 0); // 手書きJSから逆転写
+      if (oejs && oejs.width > 0 && oejs.height > 0) { // サイズ確認
+        ctx.drawImage(oejs, 0, 0, oejs.width, oejs.height, 0, 0, 400, 400); // サイズ調整
       } else {
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, c.width, c.height);
