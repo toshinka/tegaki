@@ -4,15 +4,16 @@ javascript:(d => {
   if (oebtnj) {
     oebtnj.click(); // 手書きモードをトリガー
     setTimeout(() => {
-      const oejs = d.getElementById('oejs');
+      let oejs = d.getElementById('oejs');
       if (!oejs) {
-        const t = d.createElement('canvas');
-        t.id = 'oejs';
-        t.width = 400;
-        t.height = 400;
-        t.style.position = 'absolute';
-        d.querySelector('#oest1')?.appendChild(t);
+        oejs = d.createElement('canvas');
+        oejs.id = 'oejs';
+        oejs.width = 400;
+        oejs.height = 400;
+        oejs.style.position = 'absolute';
+        d.querySelector('#oest1')?.appendChild(oejs);
       }
+      // 逆転写ロジック: 手書きJSから白四角に初期描画
       const c = d.createElement('canvas');
       c.width = 400;
       c.height = 400;
@@ -23,8 +24,12 @@ javascript:(d => {
       c.getContext('2d', { willReadFrequently: true });
       d.body.appendChild(c);
       const ctx = c.getContext('2d');
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, c.width, c.height);
+      if (oejs) {
+        ctx.drawImage(oejs, 0, 0); // 手書きJSから逆転写
+      } else {
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, c.width, c.height);
+      }
       const b = d.createElement('button');
       b.textContent = '☓';
       b.style.position = 'absolute';
@@ -32,21 +37,20 @@ javascript:(d => {
       b.style.right = '5px';
       b.style.zIndex = '2000000026';
       b.addEventListener('click', () => {
-        const t = d.getElementById('oejs');
-        if (t) {
-          const tc = t.getContext('2d', { willReadFrequently: true });
+        if (oejs) {
+          const tc = oejs.getContext('2d', { willReadFrequently: true });
           const maxSize = 400;
           let scale = 1;
           if (c.width <= maxSize && c.height <= maxSize) scale = 1;
           else scale = Math.min(maxSize / c.width, maxSize / c.height);
           const w = c.width * scale, h = c.height * scale;
-          t.width = w;
-          t.height = h;
-          tc.clearRect(0, 0, t.width, t.height);
+          oejs.width = w;
+          oejs.height = h;
+          tc.clearRect(0, 0, w, h);
           tc.drawImage(c, 0, 0, c.width, c.height, 0, 0, w, h);
           alert('転写完了！');
         } else {
-          alert('手書きJSの初期化に失敗しました。手動で起動してください。');
+          alert('手書きJSの初期化に失敗しました。');
         }
         c.remove();
         b.remove();
@@ -68,7 +72,7 @@ javascript:(d => {
       });
       c.addEventListener('mouseup', () => drawing = false);
       c.addEventListener('mouseleave', () => drawing = false);
-    }, 300); // 初期化待機時間を延長
+    }, 300); // 初期化待機
   } else {
     alert('手書きJSボタンが見つかりませんでした。');
   }
