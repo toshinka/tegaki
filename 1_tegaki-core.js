@@ -3,7 +3,16 @@ javascript:(d => {
   const oebtnj = d.getElementById('oebtnj');
   if (oebtnj) {
     oebtnj.click(); // 手書きモードをトリガー
-    setTimeout(() => { // 初期化待機
+    setTimeout(() => {
+      const oejs = d.getElementById('oejs');
+      if (!oejs) {
+        const t = d.createElement('canvas');
+        t.id = 'oejs';
+        t.width = 400;
+        t.height = 400;
+        t.style.position = 'absolute';
+        d.querySelector('#oest1')?.appendChild(t);
+      }
       const c = d.createElement('canvas');
       c.width = 400;
       c.height = 400;
@@ -59,7 +68,7 @@ javascript:(d => {
       });
       c.addEventListener('mouseup', () => drawing = false);
       c.addEventListener('mouseleave', () => drawing = false);
-    }, 200); // 初期化待機時間
+    }, 300); // 初期化待機時間を延長
   } else {
     alert('手書きJSボタンが見つかりませんでした。');
   }
