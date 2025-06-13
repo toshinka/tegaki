@@ -11,6 +11,7 @@ javascript:(d => {
   c.style.top = '50px';
   c.style.left = '0';
   c.style.zIndex = '2000000025';
+  c.getContext('2d', { willReadFrequently: true }); // パフォーマンス最適化
   d.body.appendChild(c);
   const ctx = c.getContext('2d');
   ctx.fillStyle = 'white';
@@ -29,12 +30,13 @@ javascript:(d => {
       t.width = 400;
       t.height = 400;
       t.style.position = 'absolute';
+      t.dataset.session = JSON.stringify({ canvasInitialized: true, canvasWidth: 400, canvasHeight: 400 }); // 状態保持
       d.querySelector('#oest1')?.appendChild(t);
     }
-    const tc = t.getContext('2d');
+    const tc = t.getContext('2d', { willReadFrequently: true });
     const maxSize = 400;
     let scale = 1;
-    if (c.width <= maxSize && c.height <= maxSize) scale = 1; // 400を維持
+    if (c.width <= maxSize && c.height <= maxSize) scale = 1; // 400維持
     else scale = Math.min(maxSize / c.width, maxSize / c.height);
     const w = c.width * scale, h = c.height * scale;
     t.width = w;
