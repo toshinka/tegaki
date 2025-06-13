@@ -1,17 +1,16 @@
-// CanvasManager.js (レイヤー化への下準備版)
+// CanvasManager.js (不具合修正版)
 class CanvasManager {
     constructor(app) {
         this.app = app;
         this.canvasArea = document.getElementById('canvas-area');
         this.canvasContainer = document.getElementById('canvas-container');
         
-        // --- ★下準備：特定のcanvasに依存しないように変更 ---
-        this.activeCanvas = document.getElementById('drawingCanvas'); // 今は固定で指定
+        this.activeCanvas = document.getElementById('drawingCanvas');
         this.activeCtx = this.activeCanvas.getContext('2d');
-        // --- ここまで ---
 
         this.isDrawing = false;
         this.isPanning = false;
+        // isMovingLayerはまだ使わないが、将来のために残しておく
         this.isMovingLayer = false;
         this.isSpaceDown = false;
 
@@ -108,21 +107,45 @@ class CanvasManager {
         if (this.isPanning) this.isPanning = false;
     }
     
-    setAbsolutePosition() { /* 変更なし */ }
+    setAbsolutePosition() {
+        if (this.canvasContainer.style.position !== 'absolute') {
+            const rect = this.canvasContainer.getBoundingClientRect();
+            const areaRect = this.canvasArea.getBoundingClientRect();
+            this.canvasStartX = rect.left - areaRect.left;
+            this.canvasStartY = rect.top - areaRect.top;
+            this.canvasContainer.style.position = 'absolute';
+            this.canvasContainer.style.left = this.canvasStartX + 'px';
+            this.canvasContainer.style.top = this.canvasStartY + 'px';
+            this.canvasContainer.style.zIndex = '1000';
+        } else {
+            this.canvasStartX = parseFloat(this.canvasContainer.style.left || 0);
+            this.canvasStartY = parseFloat(this.canvasContainer.style.top || 0);
+        }
+    }
     
     getCanvasCoordinates(e) {
         const rect = this.activeCanvas.getBoundingClientRect();
         let x = e.clientX - rect.left;
         let y = e.clientY - rect.top;
-        const centerX = this.canvasContainer.offsetWidth / 2;
-        const centerY = this.canvasContainer.offsetHeight / 2;
-        x -= centerX; y -= centerY;
+
+        // ★修正：計算の基準点を、コンテナではなく、操作対象のキャンバス自身の中心に修正
+        const centerX = this.activeCanvas.width / 2;
+        const centerY = this.activeCanvas.height / 2;
+        
+        x -= centerX;
+        y -= centerY;
+
         const rad = -this.rotation * Math.PI / 180;
-        const cos = Math.cos(rad); const sin = Math.sin(rad);
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        
         const rotatedX = x * cos - y * sin;
         const rotatedY = x * sin + y * cos;
-        const finalX = (rotatedX / this.scale) + (this.activeCanvas.width / 2);
-        const finalY = (rotatedY / this.scale) + (this.activeCanvas.height / 2);
+        
+        // ★修正：元の座標系に戻す際の基準点も、キャンバス自身の中心に修正
+        const finalX = (rotatedX / this.scale) + centerX;
+        const finalY = (rotatedY / this.scale) + centerY;
+
         return { x: finalX, y: finalY };
     }
 
@@ -158,55 +181,81 @@ class CanvasManager {
         this.saveState();
     }
     
-    flipHorizontal() { /* 安定版のロジックをactiveCanvas/Ctxで実行 */ }
-    flipVertical() { /* 安定版のロジックをactiveCanvas/Ctxで実行 */ }
-    zoom(factor) { /* 変更なし */ }
-    rotate(degrees) { /* 変更なし */ }
-    updateCanvasTransform() { /* 変更なし */ }
-    resetView() { /* 変更なし */ }
-    handleWheel(e) { /* 変更なし */ }
-    fill(startX, startY, fillColor) { /* 安定版のロジックをactiveCanvas/Ctxで実行 */ }
-    colorsMatch(a, b) { /* 変更なし */ }
-    getPixelColor(imageData, x, y) { /* 変更なし */ }
-    setPixelColor(imageData, x, y, color) { /* 変更なし */ }
-}
+    flipHorizontal() {
+        const tempCanvas = document.createElement('canvas'); const tempCtx = tempCanvas.getContext('2d');
+        tempCanvas.width = this.activeCanvas.width; tempCanvas.height = this.activeCanvas.height;
+        tempCtx.translate(tempCanvas.width, 0); tempCtx.scale(-1, 1);
+        tempCtx.drawImage(this.activeCanvas, 0, 0);
+        this.activeCtx.clearRect(0, 0, this.activeCanvas.width, this.activeCanvas.height);
+        this.activeCtx.drawImage(tempCanvas, 0, 0); this.saveState();
+    }
+    
+    flipVertical() {
+        const tempCanvas = document.createElement('canvas'); const tempCtx = tempCanvas.getContext('2d');
+        tempCanvas.width = this.activeCanvas.width; tempCanvas.height = this.activeCanvas.height;
+        tempCtx.translate(0, tempCanvas.height); tempCtx.scale(1, -1);
+        tempCtx.drawImage(this.activeCanvas, 0, 0);
+        this.activeCtx.clearRect(0, 0, this.activeCanvas.width, this.activeCanvas.height);
+        this.activeCtx.drawImage(tempCanvas, 0, 0); this.saveState();
+    }
 
-// 安定版と同じロジックをactiveCanvas/Ctxで実行するように修正
-CanvasManager.prototype.flipHorizontal = function() {
-    const tempCanvas = document.createElement('canvas'); const tempCtx = tempCanvas.getContext('2d');
-    tempCanvas.width = this.activeCanvas.width; tempCanvas.height = this.activeCanvas.height;
-    tempCtx.translate(tempCanvas.width, 0); tempCtx.scale(-1, 1);
-    tempCtx.drawImage(this.activeCanvas, 0, 0);
-    this.activeCtx.clearRect(0, 0, this.activeCanvas.width, this.activeCanvas.height);
-    this.activeCtx.drawImage(tempCanvas, 0, 0); this.saveState();
-};
-CanvasManager.prototype.flipVertical = function() {
-    const tempCanvas = document.createElement('canvas'); const tempCtx = tempCanvas.getContext('2d');
-    tempCanvas.width = this.activeCanvas.width; tempCanvas.height = this.activeCanvas.height;
-    tempCtx.translate(0, tempCanvas.height); tempCtx.scale(1, -1);
-    tempCtx.drawImage(this.activeCanvas, 0, 0);
-    this.activeCtx.clearRect(0, 0, this.activeCanvas.width, this.activeCanvas.height);
-    this.activeCtx.drawImage(tempCanvas, 0, 0); this.saveState();
-};
-CanvasManager.prototype.fill = function(startX, startY, fillColor) {
-    const canvasWidth = this.activeCanvas.width; const canvasHeight = this.activeCanvas.height;
-    const imageData = this.activeCtx.getImageData(0, 0, canvasWidth, canvasHeight);
-    const startColor = this.getPixelColor(imageData, startX, startY);
-    const tempCtx = document.createElement('canvas').getContext('2d');
-    tempCtx.fillStyle = fillColor; tempCtx.fillRect(0, 0, 1, 1);
-    const fillRGBA = tempCtx.getImageData(0, 0, 1, 1).data;
-    const targetFillColor = [fillRGBA[0], fillRGBA[1], fillRGBA[2], 255];
-    if (this.colorsMatch(startColor, targetFillColor)) return;
-    const stack = [[startX, startY]];
-    while (stack.length > 0) {
-        const [x, y] = stack.pop();
-        if (x < 0 || x >= canvasWidth || y < 0 || y >= canvasHeight) continue;
-        const currentColor = this.getPixelColor(imageData, x, y);
-        if (this.colorsMatch(currentColor, startColor)) {
-            this.setPixelColor(imageData, x, y, targetFillColor);
-            stack.push([x + 1, y]); stack.push([x - 1, y]);
-            stack.push([x, y + 1]); stack.push([x, y - 1]);
+    zoom(factor) {
+        this.scale = Math.max(0.1, Math.min(this.scale * factor, 10));
+        this.updateCanvasTransform();
+    }
+    
+    rotate(degrees) {
+        this.rotation = (this.rotation + degrees) % 360;
+        this.updateCanvasTransform();
+    }
+    
+    updateCanvasTransform() {
+        this.canvasContainer.style.transform = `scale(${this.scale}) rotate(${this.rotation}deg)`;
+    }
+
+    resetView() {
+        this.scale = 1;
+        this.rotation = 0;
+        this.updateCanvasTransform();
+        this.canvasContainer.style.position = 'relative';
+        this.canvasContainer.style.left = 'auto';
+        this.canvasContainer.style.top = 'auto';
+        this.canvasContainer.style.zIndex = 'auto';
+    }
+
+    handleWheel(e) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -1 : 1;
+        if (e.shiftKey) {
+            this.rotate(delta * 15);
+        } else {
+            this.zoom(delta > 0 ? 1.1 : 1 / 1.1);
         }
     }
-    this.activeCtx.putImageData(imageData, 0, 0);
-};
+    
+    fill(startX, startY, fillColor) {
+        const canvasWidth = this.activeCanvas.width; const canvasHeight = this.activeCanvas.height;
+        const imageData = this.activeCtx.getImageData(0, 0, canvasWidth, canvasHeight);
+        const startColor = this.getPixelColor(imageData, startX, startY);
+        const tempCtx = document.createElement('canvas').getContext('2d');
+        tempCtx.fillStyle = fillColor; tempCtx.fillRect(0, 0, 1, 1);
+        const fillRGBA = tempCtx.getImageData(0, 0, 1, 1).data;
+        const targetFillColor = [fillRGBA[0], fillRGBA[1], fillRGBA[2], 255];
+        if (this.colorsMatch(startColor, targetFillColor)) return;
+        const stack = [[startX, startY]];
+        while (stack.length > 0) {
+            const [x, y] = stack.pop();
+            if (x < 0 || x >= canvasWidth || y < 0 || y >= canvasHeight) continue;
+            const currentColor = this.getPixelColor(imageData, x, y);
+            if (this.colorsMatch(currentColor, startColor)) {
+                this.setPixelColor(imageData, x, y, targetFillColor);
+                stack.push([x + 1, y]); stack.push([x - 1, y]);
+                stack.push([x, y + 1]); stack.push([x, y - 1]);
+            }
+        }
+        this.activeCtx.putImageData(imageData, 0, 0);
+    }
+    colorsMatch(a, b) { return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3]; }
+    getPixelColor(imageData, x, y) { const i = (y * imageData.width + x) * 4; return [imageData.data[i], imageData.data[i + 1], imageData.data[i + 2], imageData.data[i + 3]]; }
+    setPixelColor(imageData, x, y, color) { const i = (y * imageData.width + x) * 4; imageData.data[i] = color[0]; imageData.data[i+1] = color[1]; imageData.data[i+2] = color[2]; imageData.data[i+3] = color[3]; }
+}
