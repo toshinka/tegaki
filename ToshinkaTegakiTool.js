@@ -6,7 +6,6 @@ class ToshinkaTegakiTool {
         this.canvasManager = null;
         this.topBarManager = null;
         this.penSettingsManager = null;
-        this.layerManager = null; // LayerManagerを追加
 
         this.initManagers();
         this.bindGlobalEvents();
@@ -18,7 +17,6 @@ class ToshinkaTegakiTool {
         this.canvasManager = new CanvasManager(this);
         this.topBarManager = new TopBarManager(this);
         this.penSettingsManager = new PenSettingsManager(this);
-        this.layerManager = new LayerManager(this); // LayerManagerを初期化
 
         // 初期設定
         this.toolManager.setTool('pen');
@@ -37,24 +35,51 @@ class ToshinkaTegakiTool {
     handleKeyDown(e) {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.repeat) return;
         
-        let handled = true;
         if (e.key === ' ' && !this.canvasManager.isSpaceDown) {
             this.canvasManager.isSpaceDown = true;
             this.canvasManager.updateCursor();
-            e.preventDefault(); // スペースキーによるスクロールを防止
-        } else if (e.key === 'v' || e.key === 'V') { // Vキーが押されたらレイヤー移動モードに
-            if (!this.canvasManager.isMovingLayer) {
-                this.canvasManager.isMovingLayer = true;
-                this.canvasManager.updateCursor();
+            e.preventDefault();
+        }
+
+        if (this.canvasManager.isSpaceDown) {
+            let handled = true;
+            const moveAmount = 10;
+            const style = this.canvasManager.canvasContainer.style;
+            this.canvasManager.setAbsolutePosition();
+            switch(e.key) {
+                case 'ArrowUp':    style.top = (parseFloat(style.top) - moveAmount) + 'px'; break;
+                case 'ArrowDown':  style.top = (parseFloat(style.top) + moveAmount) + 'px'; break;
+                case 'ArrowLeft':  style.left = (parseFloat(style.left) - moveAmount) + 'px'; break;
+                case 'ArrowRight': style.left = (parseFloat(style.left) + moveAmount) + 'px'; break;
+                default: handled = false;
             }
-        } else if (e.ctrlKey) {
-            switch (e.key) {
+            if(handled) e.preventDefault();
+            return;
+        }
+
+        let handled = true;
+        if (e.ctrlKey || e.metaKey) {
+            switch (e.key.toLowerCase()) {
                 case 'z': this.canvasManager.undo(); break;
                 case 'y': this.canvasManager.redo(); break;
                 default: handled = false;
             }
-        } else {
+        } else if (e.shiftKey) {
             switch (e.key) {
+                case '}': case ']': this.colorManager.changeColor(true); break;
+                case '{': case '[': this.colorManager.changeColor(false); break;
+                default:
+                    switch (e.key.toLowerCase()) {
+                        case 'h': this.canvasManager.flipVertical(); break;
+                        case 'arrowup': this.canvasManager.zoom(1.20); break;
+                        case 'arrowdown': this.canvasManager.zoom(1 / 1.20); break;
+                        case 'arrowleft': this.canvasManager.rotate(-15); break;
+                        case 'arrowright': this.canvasManager.rotate(15); break;
+                        default: handled = false;
+                    }
+            }
+        } else {
+             switch (e.key.toLowerCase()) {
                 case '[': this.penSettingsManager.changeSize(false); break;
                 case ']': this.penSettingsManager.changeSize(true); break;
                 case 'x': this.colorManager.swapColors(); break;
@@ -80,17 +105,13 @@ class ToshinkaTegakiTool {
             this.canvasManager.isSpaceDown = false;
             this.canvasManager.updateCursor();
             e.preventDefault();
-        } else if (e.key === 'v' || e.key === 'V') { // Vキーが離されたらレイヤー移動モードを終了
-            this.canvasManager.isMovingLayer = false;
-            this.canvasManager.updateCursor();
-            // レイヤー移動が終了したら、最後に状態を保存
-            // this.canvasManager.saveState(); // mouseUpで保存されるため重複回避
         }
     }
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-    if (!window.toshinkaTegakiToolApp) {
-        window.toshinkaTegakiToolApp = new ToshinkaTegakiTool();
+    if (!window.toshinkaTegakiInitialized) {
+        window.toshinkaTegakiInitialized = true;
+        window.toshinkaTegakiTool = new ToshinkaTegakiTool();
     }
 });
