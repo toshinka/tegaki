@@ -30,20 +30,12 @@ javascript:(d => {
       t.height = 400;
       t.style.position = 'absolute';
       d.querySelector('#oest1')?.appendChild(t);
-      const bg = d.createElement('canvas');
-      bg.width = 400;
-      bg.height = 400;
-      bg.style.position = 'absolute';
-      bg.style.zIndex = '-1';
-      d.querySelector('#oest1')?.appendChild(bg);
-      const bgCtx = bg.getContext('2d');
-      bgCtx.fillStyle = '#FFFFEE';
-      bgCtx.fillRect(0, 0, 400, 400);
     }
     const tc = t.getContext('2d');
     const maxSize = 400;
     let scale = 1;
-    if (c.width > maxSize || c.height > maxSize) scale = Math.min(maxSize / c.width, maxSize / c.height);
+    if (c.width <= maxSize && c.height <= maxSize) scale = 1; // 400を維持
+    else scale = Math.min(maxSize / c.width, maxSize / c.height);
     const w = c.width * scale, h = c.height * scale;
     t.width = w;
     t.height = h;
