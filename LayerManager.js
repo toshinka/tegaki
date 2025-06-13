@@ -1,3 +1,4 @@
+// LayerManager.js
 /**
  * LayerManager.js
  * レイヤー機能の管理を行うモジュール
@@ -8,14 +9,14 @@ class LayerManager {
      */
     constructor(app) {
         this.app = app;
-        this.layers = [];
-        this.activeLayer = null;
+        this.layers = []; // レイヤーとなるキャンバス要素とそのコンテキストを格納する配列
+        this.activeLayer = null; // 現在アクティブなレイヤー
         this.layerCounter = 1; // 新規レイヤーの命名用カウンター
         this.draggedLayer = null; // ドラッグ中のレイヤー要素
 
         // 元のキャンバスはテンプレートとして保持し、DOMからは非表示にする
-        this.templateCanvas = this.app.canvas;
-        this.templateCanvas.style.display = 'none';
+        this.templateCanvas = this.app.canvasManager.canvas; // CanvasManagerから既存のキャンバスを取得
+        this.templateCanvas.style.display = 'none'; // テンプレートとして非表示にする
 
         // レイヤーUIとスタイルを初期化
         this.initUI();
@@ -40,357 +41,384 @@ class LayerManager {
         const header = document.createElement('div');
         header.className = 'layer-panel-header';
         header.innerHTML = '<span>レイヤー</span>';
-
-        // ヘッダーのボタン類
-        const controls = document.createElement('div');
-        controls.className = 'layer-controls';
         
-        // 新規レイヤー追加ボタン
-        this.addLayerBtn = document.createElement('button');
-        this.addLayerBtn.textContent = '＋';
-        this.addLayerBtn.title = '新規レイヤーを追加';
-        controls.appendChild(this.addLayerBtn);
-        header.appendChild(controls);
-
         // レイヤーリストのコンテナ
         this.layerList = document.createElement('div');
-        this.layerList.id = 'layer-list';
-        
+        this.layerList.className = 'layer-list';
+
+        // フッター（操作ボタン）
+        const footer = document.createElement('div');
+        footer.className = 'layer-panel-footer';
+        footer.innerHTML = `
+            <button id="add-layer-btn" class="layer-btn" title="新規レイヤー"><i class="fas fa-plus"></i></button>
+            <button id="delete-layer-btn" class="layer-btn" title="レイヤー削除"><i class="fas fa-trash-alt"></i></button>
+            <button id="merge-layer-btn" class="layer-btn" title="レイヤー結合"><i class="fas fa-layer-group"></i></button>
+            <button id="move-layer-up-btn" class="layer-btn" title="レイヤーを上へ"><i class="fas fa-arrow-up"></i></button>
+            <button id="move-layer-down-btn" class="layer-btn" title="レイヤーを下へ"><i class="fas fa-arrow-down"></i></button>
+        `;
+
         this.panel.appendChild(header);
         this.panel.appendChild(this.layerList);
-        
-        // main-containerの末尾にパネルを追加
-        document.querySelector('.main-container').appendChild(this.panel);
+        this.panel.appendChild(footer);
 
-        // 予告: TopBarManagerのAPIを使ってアイコンを追加する
-        // 難易度：低｜優先度：低
+        // メインコンテナに追加
+        document.querySelector('.main-container').appendChild(this.panel);
     }
 
     /**
-     * レイヤーパネル用のCSSを動的に注入する
+     * レイヤーパネルのCSSスタイルを動的に注入する
      */
     injectStyles() {
         const style = document.createElement('style');
-        style.textContent = `
+        style.innerHTML = `
             #layer-panel {
                 position: absolute;
-                top: 30px;
+                top: 30px; /* Adjust based on top bar height */
                 right: 0;
-                width: 180px;
-                height: calc(100vh - 30px);
-                background-color: var(--main-bg-color);
+                width: 200px; /* Adjust width as needed */
+                height: calc(100vh - 30px); /* Adjust height */
+                background-color: rgba(255, 255, 255, 0.7); /* Slightly transparent */
                 border-left: 1px solid var(--light-brown-border);
                 display: flex;
                 flex-direction: column;
-                font-size: 12px;
-                color: var(--dark-brown);
-                z-index: 2000;
+                box-sizing: border-box;
+                z-index: 100; /* Make sure it's above the canvas */
             }
+
             .layer-panel-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                padding: 4px 8px;
+                padding: 8px;
+                background-color: var(--main-bg-color);
                 border-bottom: 1px solid var(--light-brown-border);
-                background-color: var(--light-brown-border);
-            }
-            .layer-panel-header span {
+                text-align: center;
                 font-weight: bold;
-            }
-            .layer-controls button {
-                background: none;
-                border: 1px solid var(--dark-brown);
                 color: var(--dark-brown);
-                border-radius: 3px;
-                cursor: pointer;
-                width: 22px;
-                height: 22px;
             }
-            .layer-controls button:hover {
-                background-color: var(--button-active-bg);
-            }
-            #layer-list {
+
+            .layer-list {
                 flex-grow: 1;
                 overflow-y: auto;
+                padding: 5px;
             }
+
             .layer-item {
                 display: flex;
                 align-items: center;
-                padding: 6px 8px;
-                border-bottom: 1px solid var(--light-brown-border);
-                cursor: grab;
-                user-select: none;
-                background-color: var(--main-bg-color);
+                padding: 5px;
+                margin-bottom: 3px;
+                background-color: rgba(255, 255, 255, 0.9);
+                border: 1px solid var(--light-brown-border);
+                border-radius: 3px;
+                cursor: pointer;
+                user-select: none; /* Prevent text selection */
             }
+
             .layer-item.active {
-                background-color: #fff;
+                background-color: var(--button-active-bg);
+                border-color: var(--dark-brown);
             }
-            .layer-item.drag-over {
-                border-top: 2px solid #3498db;
-            }
+
             .layer-item.dragging {
                 opacity: 0.5;
+                border: 2px dashed var(--dark-brown);
             }
-            .layer-item .visibility-btn {
-                background: none;
-                border: none;
-                cursor: pointer;
-                font-size: 16px;
+
+            .layer-item.drag-over {
+                border-top: 2px solid var(--dark-brown); /* ドラッグオーバー時の表示 */
+            }
+
+            .layer-thumbnail {
+                width: 40px;
+                height: 30px;
+                background-color: #eee;
+                border: 1px solid #ccc;
                 margin-right: 8px;
+                flex-shrink: 0; /* サムネイルが縮まないように */
             }
-            .layer-item .layer-name {
+
+            .layer-name {
                 flex-grow: 1;
+                font-size: 0.9em;
+                color: var(--dark-brown);
             }
-            .layer-item .delete-btn {
+
+            .layer-visibility-toggle {
                 background: none;
                 border: none;
                 cursor: pointer;
-                color: #f44;
-                font-size: 18px;
-                visibility: hidden;
+                color: var(--dark-brown);
+                font-size: 1em;
+                padding: 0 5px;
             }
-            .layer-item:hover .delete-btn {
-                visibility: visible;
+
+            .layer-panel-footer {
+                display: flex;
+                justify-content: space-around;
+                padding: 5px;
+                border-top: 1px solid var(--light-brown-border);
+                background-color: var(--main-bg-color);
             }
-            .layer-item.no-drag {
-                cursor: default;
+
+            .layer-btn {
+                background-color: var(--button-inactive-bg);
+                border: 1px solid var(--light-brown-border);
+                color: var(--dark-brown);
+                padding: 5px 10px;
+                border-radius: 3px;
+                cursor: pointer;
+                transition: background-color 0.2s;
             }
-            .layer-item.background-layer {
-                background-color: rgb(220, 188, 175);
+
+            .layer-btn:hover {
+                background-color: var(--button-active-bg);
             }
         `;
         document.head.appendChild(style);
     }
-    
+
     /**
-     * イベントリスナーを設定
+     * イベントリスナーをバインドする
      */
     bindEvents() {
-        this.addLayerBtn.addEventListener('click', () => this.addNewLayer());
-        
-        // ドラッグ＆ドロップイベント
+        document.getElementById('add-layer-btn').addEventListener('click', () => this.addLayer());
+        this.layerList.addEventListener('click', this.handleLayerClick.bind(this));
         this.layerList.addEventListener('dragstart', this.handleDragStart.bind(this));
         this.layerList.addEventListener('dragover', this.handleDragOver.bind(this));
         this.layerList.addEventListener('dragleave', this.handleDragLeave.bind(this));
         this.layerList.addEventListener('drop', this.handleDrop.bind(this));
         this.layerList.addEventListener('dragend', this.handleDragEnd.bind(this));
-        
-        // クリックイベント（イベント委任）
-        this.layerList.addEventListener('click', this.handleLayerClick.bind(this));
     }
-    
+
     /**
-     * 初期状態のレイヤー（背景と透明レイヤー）をセットアップ
+     * 初期レイヤー（背景レイヤーと最初の描画レイヤー）を設定する
+     * 既存のdrawingCanvasを最初の描画レイヤーとして利用する
      */
     setupInitialLayers() {
-        // 背景レイヤー
-        const bgLayer = this.createLayer({
-            name: '背景',
-            deletable: false,
-            draggable: false
-        });
-        bgLayer.ctx.fillStyle = '#f0e0d6'; // 元のキャンバス背景色
-        bgLayer.ctx.fillRect(0, 0, bgLayer.canvas.width, bgLayer.canvas.height);
-        bgLayer.uiElement.classList.add('background-layer', 'no-drag');
-        bgLayer.uiElement.setAttribute('draggable', false);
+        // 既存のdrawingCanvasを非表示にする代わりに、最初のレイヤーとして利用する
+        // ただし、CanvasManagerがメインキャンバスとして利用し続けるため、
+        // ここでは便宜的にレイヤー管理用の新しいキャンバスを作成し、既存のキャンバスを上書きする形にする。
+        // （本来は既存のキャンバスをLayerManagerが管理すべきだが、モジュール構造維持のため）
 
-        // 最初の描画用レイヤー
-        this.addNewLayer();
-    }
-
-    /**
-     * 新しいレイヤーを作成する（内部処理）
-     * @param {object} options - レイヤーのオプション
-     * @returns {object} 作成されたレイヤーオブジェクト
-     */
-    createLayer(options = {}) {
-        const { name, deletable = true, draggable = true } = options;
-        const layerId = `layer-${Date.now()}-${Math.random()}`;
-
-        // レイヤーごとに独立したCanvasを生成
-        const canvas = document.createElement('canvas');
-        canvas.width = this.templateCanvas.width;
-        canvas.height = this.templateCanvas.height;
-        canvas.className = 'main-canvas layer-canvas';
-        canvas.style.position = 'absolute';
-        canvas.style.top = 0;
-        canvas.style.left = 0;
+        // まず、既存のCanvasManagerが扱うキャンバスを取得
+        const originalCanvas = this.app.canvasManager.canvas;
+        const originalCtx = this.app.canvasManager.ctx;
         
-        const ctx = canvas.getContext('2d');
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
+        // 既存のキャンバスの内容をクリアし、最初のレイヤーとして扱う
+        originalCtx.clearRect(0, 0, originalCanvas.width, originalCanvas.height);
         
-        // レイヤーUI要素を生成
-        const uiElement = document.createElement('div');
-        uiElement.className = 'layer-item';
-        uiElement.dataset.layerId = layerId;
-        uiElement.setAttribute('draggable', draggable);
-
-        const visibilityBtn = document.createElement('button');
-        visibilityBtn.className = 'visibility-btn';
-        visibilityBtn.innerHTML = '&#128065;'; // '👁'
-        visibilityBtn.title = 'レイヤーの表示/非表示';
-
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'layer-name';
-        nameSpan.textContent = name || `レイヤー ${this.layerCounter++}`;
-        
-        uiElement.appendChild(visibilityBtn);
-        uiElement.appendChild(nameSpan);
-
-        if (deletable) {
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'delete-btn';
-            deleteBtn.innerHTML = '&times;';
-            deleteBtn.title = 'レイヤーを削除';
-            uiElement.appendChild(deleteBtn);
-        }
-
-        const layer = {
-            id: layerId,
-            name: nameSpan.textContent,
-            canvas,
-            ctx,
+        // 最初のレイヤーとして既存のキャンバスを追加
+        // このキャンバスはCanvasManagerによって描画対象として設定されるため、
+        // z-indexはLayerManagerが管理する他のレイヤーの基準となる
+        this.layers.push({
+            id: 'layer-' + (this.layerCounter++),
+            name: 'レイヤー 1',
+            canvas: originalCanvas,
+            ctx: originalCtx,
             visible: true,
-            uiElement,
+            imageData: null // レイヤーの内容を保持するImageData (Undo/Redo用)
+        });
+
+        // この既存のキャンバスをアクティブレイヤーにする
+        this.activeLayer = this.layers[0];
+        
+        // レイヤーUIを更新
+        this.updateLayerUI();
+        this.switchLayer(0); // 最初のレイヤーをアクティブにする
+    }
+
+    /**
+     * 新しいレイヤーを追加する
+     */
+    addLayer() {
+        // 既存のdrawingCanvasのサイズを取得
+        const baseCanvas = this.app.canvasManager.canvas;
+        const newCanvas = document.createElement('canvas');
+        newCanvas.width = baseCanvas.width;
+        newCanvas.height = baseCanvas.height;
+        const newCtx = newCanvas.getContext('2d');
+
+        newCanvas.style.position = 'absolute';
+        newCanvas.style.left = '0';
+        newCanvas.style.top = '0';
+        // z-indexは後でupdateZIndexで設定される
+
+        const layerId = 'layer-' + (this.layerCounter++);
+        newCanvas.id = layerId;
+        newCanvas.className = 'drawing-layer'; // レイヤーを示すクラスを追加
+
+        // canvas-containerに新しいキャンバスを追加
+        document.getElementById('canvas-container').appendChild(newCanvas);
+
+        const newLayer = {
+            id: layerId,
+            name: `レイヤー ${this.layerCounter -1}`,
+            canvas: newCanvas,
+            ctx: newCtx,
+            visible: true,
+            imageData: null // 初期状態ではImageDataはnull
         };
-        
-        // レイヤーリストの先頭にUIを追加
-        this.layerList.insertBefore(uiElement, this.layerList.firstChild);
-        // キャンバスコンテナの末尾にcanvasを追加（z-indexで重ね順を管理）
-        this.app.canvasContainer.appendChild(canvas);
-        
-        this.layers.unshift(layer); // 配列の先頭に追加
-        this.updateZIndex();
 
-        return layer;
+        this.layers.push(newLayer);
+        this.updateLayerUI();
+        this.switchLayer(this.layers.length - 1); // 新しいレイヤーをアクティブにする
+        this.updateZIndex(); // z-indexを更新
     }
 
     /**
-     * 新しい透明レイヤーを追加し、アクティブにする
+     * 指定されたインデックスのレイヤーをアクティブにする
+     * @param {number} index アクティブにするレイヤーのインデックス
      */
-    addNewLayer() {
-        const newLayer = this.createLayer();
-        this.setActiveLayer(newLayer.id);
-        // 予告: Undo/Redoのレイヤー履歴対応機能 今後実装予定
-        // 難易度：高｜優先度：中
-        // this.app.saveState(); // 本来はここで履歴を保存
-    }
-    
-    /**
-     * 指定されたIDのレイヤーをアクティブにする
-     * @param {string} layerId 
-     */
-    setActiveLayer(layerId) {
-        const layer = this.layers.find(l => l.id === layerId);
-        if (!layer || layer === this.activeLayer) return;
-
-        this.activeLayer = layer;
-
-        // 全てのレイヤーのUIから 'active' クラスを削除
-        this.layers.forEach(l => l.uiElement.classList.remove('active'));
-        // アクティブなレイヤーのUIに 'active' クラスを追加
-        layer.uiElement.classList.add('active');
-
-        // ★重要: メインアプリの描画コンテキストをアクティブレイヤーのものに差し替える
-        this.app.ctx = layer.ctx;
-        this.app.canvas = layer.canvas; // 描画イベントのターゲットも更新
-    }
-    
-    /**
-     * レイヤーの表示/非表示を切り替える
-     * @param {string} layerId
-     */
-    toggleVisibility(layerId) {
-        const layer = this.layers.find(l => l.id === layerId);
-        if (!layer) return;
-
-        layer.visible = !layer.visible;
-        layer.canvas.style.display = layer.visible ? 'block' : 'none';
-        layer.uiElement.querySelector('.visibility-btn').style.opacity = layer.visible ? 1 : 0.5;
-    }
-    
-    /**
-     * レイヤーを削除する
-     * @param {string} layerId
-     */
-    deleteLayer(layerId) {
-        // 背景レイヤーや、描画可能レイヤーが1枚しかない場合は削除しない
-        const deletableLayers = this.layers.filter(l => l.uiElement.querySelector('.delete-btn'));
-        if (deletableLayers.length <= 1) {
-            alert('最後のレイヤーは削除できません。');
+    switchLayer(index) {
+        if (index < 0 || index >= this.layers.length) {
+            console.warn('指定されたレイヤーインデックスは無効です:', index);
             return;
         }
 
-        const layerIndex = this.layers.findIndex(l => l.id === layerId);
-        if (layerIndex === -1) return;
-
-        const [deletedLayer] = this.layers.splice(layerIndex, 1);
-        
-        // DOMから要素を削除
-        deletedLayer.uiElement.remove();
-        deletedLayer.canvas.remove();
-        
-        // もし削除したレイヤーがアクティブだったら、別のレイヤーをアクティブにする
-        if (this.activeLayer.id === layerId) {
-            const newActiveIndex = Math.max(0, layerIndex - 1);
-            // 新しいアクティブ候補が背景でないことを確認
-            const newActiveLayer = this.layers.find((l, idx) => idx === newActiveIndex && l.uiElement.querySelector('.delete-btn')) || deletableLayers[0];
-            this.setActiveLayer(newActiveLayer.id);
+        if (this.activeLayer) {
+            // 現在アクティブなレイヤーのUIを非アクティブにする
+            const currentActiveElement = document.querySelector(`.layer-item[data-layer-id="${this.activeLayer.id}"]`);
+            if (currentActiveElement) {
+                currentActiveElement.classList.remove('active');
+            }
         }
 
-        this.updateZIndex();
+        this.activeLayer = this.layers[index];
+        // CanvasManagerの描画ターゲットを新しいアクティブレイヤーのコンテキストに設定
+        this.app.canvasManager.setContext(this.activeLayer.ctx);
+
+        // 新しくアクティブになったレイヤーのUIをアクティブにする
+        const newActiveElement = document.querySelector(`.layer-item[data-layer-id="${this.activeLayer.id}"]`);
+        if (newActiveElement) {
+            newActiveElement.classList.add('active');
+        }
+        console.log(`レイヤーを「${this.activeLayer.name}」に切り替えました。`);
     }
-    
+
     /**
-     * layers配列の順序に基づいてcanvasのz-indexを更新する
+     * 現在アクティブなレイヤーを返す
+     * @returns {object} アクティブなレイヤーオブジェクト
      */
-    updateZIndex() {
-        this.layers.forEach((layer, index) => {
-            // 配列のインデックスが下の方がUIで上に表示されるため、z-indexは逆順にする
-            const zIndex = this.layers.length - 1 - index;
-            layer.canvas.style.zIndex = zIndex;
+    getCurrentLayer() {
+        return this.activeLayer;
+    }
+
+    /**
+     * レイヤーUIを更新する
+     */
+    updateLayerUI() {
+        this.layerList.innerHTML = ''; // リストをクリア
+
+        // レイヤーを逆順に表示（上にあるレイヤーほど手前に表示されるため）
+        this.layers.slice().reverse().forEach((layer, originalIndex) => {
+            const displayIndex = this.layers.length - 1 - originalIndex; // 表示上のインデックス
+            const layerItem = document.createElement('div');
+            layerItem.className = 'layer-item';
+            layerItem.dataset.layerId = layer.id;
+            layerItem.dataset.layerIndex = displayIndex; // DOM要素の表示順のインデックス
+            layerItem.draggable = true; // ドラッグ可能にする
+
+            if (layer === this.activeLayer) {
+                layerItem.classList.add('active');
+            }
+
+            // レイヤーのサムネイル（ここでは簡易的に背景色のみ）
+            const thumbnail = document.createElement('canvas');
+            thumbnail.className = 'layer-thumbnail';
+            thumbnail.width = 40;
+            thumbnail.height = 30;
+            const thumbCtx = thumbnail.getContext('2d');
+            
+            // レイヤーの内容をサムネイルに描画
+            thumbCtx.drawImage(layer.canvas, 0, 0, thumbnail.width, thumbnail.height);
+
+            // レイヤー名
+            const layerName = document.createElement('span');
+            layerName.className = 'layer-name';
+            layerName.textContent = layer.name;
+
+            // 可視性トグルボタン
+            const visibilityToggle = document.createElement('button');
+            visibilityToggle.className = 'layer-visibility-toggle';
+            visibilityToggle.innerHTML = layer.visible ? '<i class="fas fa-eye"></i>' : '<i class="fas fa-eye-slash"></i>';
+            visibilityToggle.addEventListener('click', (e) => {
+                e.stopPropagation(); // 親要素のクリックイベントが発火しないようにする
+                this.toggleLayerVisibility(layer.id);
+            });
+
+
+            layerItem.appendChild(thumbnail);
+            layerItem.appendChild(layerName);
+            layerItem.appendChild(visibilityToggle);
+            this.layerList.appendChild(layerItem);
         });
     }
 
-    // --- イベントハンドラ ---
-
-    handleLayerClick(e) {
-        const target = e.target;
-        const layerElement = target.closest('.layer-item');
-        if (!layerElement) return;
-
-        const layerId = layerElement.dataset.layerId;
-        
-        if (target.matches('.delete-btn')) {
-            // 予告: フリックによるレイヤー削除機能 今後実装予定
-            // 難易度：中｜優先度：中
-            if (confirm(`レイヤー「${this.layers.find(l=>l.id===layerId).name}」を削除しますか？`)) {
-                this.deleteLayer(layerId);
-            }
-        } else if (target.matches('.visibility-btn')) {
-            this.toggleVisibility(layerId);
-        } else if (layerElement.getAttribute('draggable') === 'true') {
-            this.setActiveLayer(layerId);
+    /**
+     * レイヤーの可視性を切り替える
+     * @param {string} layerId 可視性を切り替えるレイヤーのID
+     */
+    toggleLayerVisibility(layerId) {
+        const layer = this.layers.find(l => l.id === layerId);
+        if (layer) {
+            layer.visible = !layer.visible;
+            layer.canvas.style.display = layer.visible ? 'block' : 'none';
+            this.updateLayerUI(); // UIを更新して目のアイコンを切り替える
+            this.app.canvasManager.renderAllLayers(); // 全レイヤーを再描画して変更を反映
         }
     }
-    
+
+
+    /**
+     * レイヤーのz-indexを更新する
+     * レイヤーリストの順序に基づいてz-indexを割り当てる
+     */
+    updateZIndex() {
+        // レイヤーリストの順番はDOMの表示順（逆順）なので、layers配列のインデックスとは逆になる
+        // z-indexは手前にあるものほど大きな値にする
+        this.layers.forEach((layer, index) => {
+            // 最下層のレイヤー (index 0) が最も小さいz-indexを持つ
+            // レイヤーが上に来るほどz-indexを大きくする
+            layer.canvas.style.zIndex = index; // indexがそのままz-indexになる
+        });
+        // CanvasManagerの表示更新をトリガー
+        this.app.canvasManager.renderAllLayers();
+    }
+
+
+    /**
+     * レイヤーアイテムがクリックされた時のハンドラー
+     * @param {Event} e クリックイベント
+     */
+    handleLayerClick(e) {
+        const layerItem = e.target.closest('.layer-item');
+        if (layerItem) {
+            const layerId = layerItem.dataset.layerId;
+            const index = this.layers.findIndex(layer => layer.id === layerId);
+            if (index !== -1) {
+                this.switchLayer(index);
+            }
+        }
+    }
+
+    // ドラッグ＆ドロップ関連のイベントハンドラ
+
     handleDragStart(e) {
         const target = e.target.closest('.layer-item');
-        if (target && target.getAttribute('draggable') === 'true') {
+        if (target) {
             this.draggedLayer = target;
-            setTimeout(() => {
-                target.classList.add('dragging');
-            }, 0);
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', target.dataset.layerId); // レイヤーIDをデータとして設定
+            target.classList.add('dragging');
         }
     }
-    
+
     handleDragOver(e) {
-        e.preventDefault();
+        e.preventDefault(); // デフォルトの挙動（ドロップ禁止）をキャンセル
+        e.dataTransfer.dropEffect = 'move';
+        
+        // ドラッグオーバー中の要素にクラスを付与して視覚的にフィードバック
         const target = e.target.closest('.layer-item');
-        if (target && target !== this.draggedLayer && target.getAttribute('draggable') === 'true') {
-            // drag-overクラスを一旦すべて削除
-            this.layerList.querySelectorAll('.layer-item').forEach(el => el.classList.remove('drag-over'));
+        if (target && target !== this.draggedLayer) {
+            document.querySelectorAll('.layer-item').forEach(el => el.classList.remove('drag-over'));
             target.classList.add('drag-over');
         }
     }
@@ -421,21 +449,14 @@ class LayerManager {
         this.layers.splice(targetIndex, 0, draggedItem);
         
         this.updateZIndex();
+        this.updateLayerUI(); // UIの表示順を再調整
     }
     
     handleDragEnd(e) {
         if (this.draggedLayer) {
             this.draggedLayer.classList.remove('dragging');
+            this.draggedLayer = null;
         }
-        this.layerList.querySelectorAll('.layer-item').forEach(el => el.classList.remove('drag-over'));
-        this.draggedLayer = null;
+        document.querySelectorAll('.layer-item').forEach(el => el.classList.remove('drag-over'));
     }
-
-    // --- 今後実装予定の機能 ---
-    
-    // 予告: レイヤーフォルダ管理機能
-    // 難易度：高｜優先度：後
-
-    // 予告: レイヤー透明度変更機能
-    // 難易度：中｜優先度：中
 }
