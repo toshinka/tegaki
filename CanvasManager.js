@@ -1,4 +1,4 @@
-// CanvasManager.js (再改修版)
+// CanvasManager.js (最終修正版)
 class CanvasManager {
     constructor(app) {
         this.app = app;
@@ -30,9 +30,11 @@ class CanvasManager {
     }
     
     bindEvents() {
-        this.canvasArea.addEventListener('pointerdown', this.onPointerDown.bind(this));
+        // マウスの主要な操作はdocument全体で監視し、場所を後から判定する方式に変更
+        document.addEventListener('pointerdown', this.onPointerDown.bind(this));
         document.addEventListener('pointermove', this.onPointerMove.bind(this));
         document.addEventListener('pointerup', this.onPointerUp.bind(this));
+        // ホイール操作はこれまで通りcanvasArea内のみで有効
         this.canvasArea.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
     }
 
@@ -41,8 +43,12 @@ class CanvasManager {
     setCurrentSize(size) { this.currentSize = size; }
 
     onPointerDown(e) {
+        // クリックされたのがレイヤーキャンバスでなければ、一切の処理を中断
         const targetCanvas = e.target;
         if (!targetCanvas.classList.contains('layer-canvas')) return;
+        
+        // 念のため、クリックされた場所がcanvas-area内であることも確認
+        if (!this.canvasArea.contains(targetCanvas)) return;
 
         this.activeCanvas = this.app.canvas;
         this.activeCtx = this.app.ctx;
@@ -60,6 +66,9 @@ class CanvasManager {
             this.setAbsolutePosition();
             return;
         }
+        
+        // 操作はアクティブなレイヤーに対してのみ許可する
+        if (targetCanvas !== this.activeCanvas) return;
         
         switch(this.currentTool) {
             case 'move':
@@ -177,6 +186,7 @@ class CanvasManager {
     }
     
     saveState() {
+        if (!this.activeCtx) return;
         if (this.historyIndex < this.history.length - 1) {
             this.history = this.history.slice(0, this.historyIndex + 1);
         }
