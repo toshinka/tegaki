@@ -1,7 +1,7 @@
 javascript:(() => {
-  if (!document.querySelector('script[src="https://toshinka.github.io/tegaki/1_tegaki-core.js?1749718800001"]')) {
+  if (!document.querySelector('script[src="https://toshinka.github.io/tegaki/1_tegaki-core.js?1749722400001"]')) {
     const script = document.createElement('script');
-    script.src = 'https://toshinka.github.io/tegaki/1_tegaki-core.js?1749718800001';
+    script.src = 'https://toshinka.github.io/tegaki/1_tegaki-core.js?1749722400001';
     document.head.appendChild(script);
   }
 
@@ -11,7 +11,7 @@ javascript:(() => {
   canvas.style.position = 'fixed';
   canvas.style.top = '0';
   canvas.style.left = '0';
-  canvas.style.zIndex = '2000000021';
+  canvas.style.zIndex = '2000000023'; // FUTAKUROを上回る
   document.body.appendChild(canvas);
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = 'white';
@@ -22,24 +22,28 @@ javascript:(() => {
   closeButton.style.position = 'absolute';
   closeButton.style.top = '5px';
   closeButton.style.right = '5px';
-  closeButton.style.zIndex = '2000000022';
+  closeButton.style.zIndex = '2000000024';
+  let isClosed = false; // 状態管理
   closeButton.addEventListener('click', () => {
-    console.log('Closing canvas');
+    if (isClosed) {
+      canvas.remove();
+      closeButton.remove();
+      return;
+    }
     const targetCanvas = document.getElementById('oejs');
     if (!targetCanvas) {
-      alert('手書きJSが起動していません。手書きJSを起動してから再度お試しください。');
-    } else {
-      const targetCtx = targetCanvas.getContext('2d');
-      const scale = Math.min(135 / canvas.width, 135 / canvas.height);
-      const newWidth = canvas.width * scale;
-      const newHeight = canvas.height * scale;
-      targetCanvas.width = newWidth;
-      targetCanvas.height = newHeight;
-      targetCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, newWidth, newHeight);
-      alert('転写完了！手書きJSを確認してください。');
+      alert('手書きJSが起動していません。起動してから再度お試しください。');
+      return; // 消去せずに待機
     }
-    canvas.remove();
-    closeButton.remove();
+    const targetCtx = targetCanvas.getContext('2d');
+    const scale = Math.min(135 / canvas.width, 135 / canvas.height);
+    const newWidth = canvas.width * scale;
+    const newHeight = canvas.height * scale;
+    targetCanvas.width = newWidth;
+    targetCanvas.height = newHeight;
+    targetCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, newWidth, newHeight);
+    alert('転写完了！手書きJSを確認してください。');
+    isClosed = true; // 2回目用にフラグ
   });
   canvas.parentNode.insertBefore(closeButton, canvas.nextSibling);
 
