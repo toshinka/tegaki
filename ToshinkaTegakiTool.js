@@ -6,8 +6,6 @@ class ToshinkaTegakiTool {
         this.canvasManager = null;
         this.topBarManager = null;
         this.penSettingsManager = null;
-        this.layerManager = null;
-        // this.shortcutManager = null; // 予告: ショートカットマネージャー
 
         this.initManagers();
         this.bindGlobalEvents();
@@ -19,12 +17,14 @@ class ToshinkaTegakiTool {
         this.canvasManager = new CanvasManager(this);
         this.topBarManager = new TopBarManager(this);
         this.penSettingsManager = new PenSettingsManager(this);
-        this.layerManager = new LayerManager(this); 
 
         // 初期設定
         this.toolManager.setTool('pen');
         this.penSettingsManager.setSize(1);
         this.colorManager.setColor(this.colorManager.mainColor);
+        
+        // 初期状態を履歴に保存
+        this.canvasManager.saveState();
     }
 
     bindGlobalEvents() {
@@ -33,12 +33,7 @@ class ToshinkaTegakiTool {
     }
 
     handleKeyDown(e) {
-        // ★修正：レイヤー名編集中などはショートカットを無効化
-        const activeElement = document.activeElement;
-        if (activeElement.isContentEditable || ['INPUT', 'TEXTAREA'].includes(activeElement.tagName)) {
-            if (e.key === "Escape") activeElement.blur();
-            return;
-        }
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.repeat) return;
         
         if (e.key === ' ' && !this.canvasManager.isSpaceDown) {
             this.canvasManager.isSpaceDown = true;
