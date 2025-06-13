@@ -14,16 +14,14 @@ class ToshinkaTegakiTool {
     }
 
     initManagers() {
-        // 各Managerの初期化と依存関係の注入
         this.colorManager = new ColorManager(this);
         this.toolManager = new ToolManager(this);
         this.canvasManager = new CanvasManager(this);
         this.topBarManager = new TopBarManager(this);
         this.penSettingsManager = new PenSettingsManager(this);
-        // LayerManagerを正式に有効化
         this.layerManager = new LayerManager(this); 
 
-        // 初期設定の適用
+        // 初期設定
         this.toolManager.setTool('pen');
         this.penSettingsManager.setSize(1);
         this.colorManager.setColor(this.colorManager.mainColor);
@@ -35,9 +33,10 @@ class ToshinkaTegakiTool {
     }
 
     handleKeyDown(e) {
-        if (e.target.closest('#layer-panel') || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.repeat) {
-            // レイヤーパネル上での操作や入力中はショートカットを無効化
-             if (e.key === "Escape") { e.target.blur(); } // Escapeでフォーカスを外す
+        // ★修正：レイヤー名編集中などはショートカットを無効化
+        const activeElement = document.activeElement;
+        if (activeElement.isContentEditable || ['INPUT', 'TEXTAREA'].includes(activeElement.tagName)) {
+            if (e.key === "Escape") activeElement.blur();
             return;
         }
         
