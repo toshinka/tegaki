@@ -1,33 +1,39 @@
 // ToshinkaTegakiTool.js
 class ToshinkaTegakiTool {
     constructor() {
+        // 各Managerのインスタンスを保持
         this.colorManager = null;
         this.toolManager = null;
         this.canvasManager = null;
         this.topBarManager = null;
         this.penSettingsManager = null;
+        // this.layerManager = null; // 予告: 次のステップで有効化します
+        // this.shortcutManager = null; // 予告: ショートカットマネージャー
 
         this.initManagers();
         this.bindGlobalEvents();
     }
 
     initManagers() {
+        // 各Managerの初期化と依存関係の注入
         this.colorManager = new ColorManager(this);
         this.toolManager = new ToolManager(this);
         this.canvasManager = new CanvasManager(this);
         this.topBarManager = new TopBarManager(this);
         this.penSettingsManager = new PenSettingsManager(this);
+        // this.layerManager = new LayerManager(this); // 予告: LayerManager
 
-        // 初期設定
+        // 初期設定の適用
         this.toolManager.setTool('pen');
         this.penSettingsManager.setSize(1);
-        this.colorManager.setColor(this.colorManager.mainColor);
+        this.colorManager.setColor(this.colorManager.mainColor); // 初期メインカラーを設定
         
         // 初期状態を履歴に保存
         this.canvasManager.saveState();
     }
 
     bindGlobalEvents() {
+        // アプリケーション全体で監視すべきキーボードイベントなどを処理
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
         document.addEventListener('keyup', this.handleKeyUp.bind(this));
     }
@@ -35,6 +41,7 @@ class ToshinkaTegakiTool {
     handleKeyDown(e) {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.repeat) return;
         
+        // スペースキーによるパニングの管理
         if (e.key === ' ' && !this.canvasManager.isSpaceDown) {
             this.canvasManager.isSpaceDown = true;
             this.canvasManager.updateCursor();
@@ -58,7 +65,7 @@ class ToshinkaTegakiTool {
         }
 
         let handled = true;
-        if (e.ctrlKey || e.metaKey) {
+        if (e.ctrlKey || e.metaKey) { // MacのCommandキー対応
             switch (e.key.toLowerCase()) {
                 case 'z': this.canvasManager.undo(); break;
                 case 'y': this.canvasManager.redo(); break;
@@ -66,8 +73,14 @@ class ToshinkaTegakiTool {
             }
         } else if (e.shiftKey) {
             switch (e.key) {
-                case '}': case ']': this.colorManager.changeColor(true); break;
-                case '{': case '[': this.colorManager.changeColor(false); break;
+                case '}': // Shift + [ (JIS)
+                case ']': // Shift + ] (US)
+                    this.colorManager.changeColor(true); // パレットで下へ
+                    break;
+                case '{': // Shift + ] (JIS)
+                case '[': // Shift + [ (US)
+                    this.colorManager.changeColor(false); // パレットで上へ
+                    break;
                 default:
                     switch (e.key.toLowerCase()) {
                         case 'h': this.canvasManager.flipVertical(); break;
@@ -80,8 +93,8 @@ class ToshinkaTegakiTool {
             }
         } else {
              switch (e.key.toLowerCase()) {
-                case '[': this.penSettingsManager.changeSize(false); break;
-                case ']': this.penSettingsManager.changeSize(true); break;
+                case '[': this.penSettingsManager.changeSize(false); break; // サイズ縮小
+                case ']': this.penSettingsManager.changeSize(true); break;  // サイズ拡大
                 case 'x': this.colorManager.swapColors(); break;
                 case 'd': this.colorManager.resetColors(); break;
                 case 'p': this.toolManager.setTool('pen'); break;
@@ -109,6 +122,7 @@ class ToshinkaTegakiTool {
     }
 }
 
+// ツール初期化
 window.addEventListener('DOMContentLoaded', () => {
     if (!window.toshinkaTegakiInitialized) {
         window.toshinkaTegakiInitialized = true;
