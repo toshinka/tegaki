@@ -2,16 +2,7 @@
 // 予告: ショートカットキー管理機能はまだ実装されていません。
 // 難易度：低｜優先度：先 (一部FutabaTegakiTool.jsで仮実装中)
 
-/**
- * ShortcutManagerクラス
- * ショートカットキーの管理と、それに対応するアクションの実行を担います。
- * 現在、主要なショートカットはFutabaTegakiTool.jsに直接実装されていますが、
- * 将来的にこのクラスに集約する予定です。
- */
 class ShortcutManager {
-    /**
-     * @param {FutabaTegakiTool} app - メインアプリケーションのインスタンス
-     */
     constructor(app) {
         this.app = app;
         // 予告: ショートカットと対応するアクションのマッピングを管理
