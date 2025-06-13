@@ -1,4 +1,4 @@
-// CanvasManager.js (不具合修正版)
+// CanvasManager.js (再改修版)
 class CanvasManager {
     constructor(app) {
         this.app = app;
@@ -10,7 +10,6 @@ class CanvasManager {
 
         this.isDrawing = false;
         this.isPanning = false;
-        // isMovingLayerはまだ使わないが、将来のために残しておく
         this.isMovingLayer = false;
         this.isSpaceDown = false;
 
@@ -23,22 +22,15 @@ class CanvasManager {
         
         this.dragStartX = 0; this.dragStartY = 0;
         this.canvasStartX = 0; this.canvasStartY = 0;
+        this.layerStartX = 0; this.layerStartY = 0;
         
         this.scale = 1; this.rotation = 0;
 
-        this.initCanvas();
         this.bindEvents();
     }
     
-    initCanvas() {
-        this.activeCtx.lineCap = 'round';
-        this.activeCtx.lineJoin = 'round';
-        this.activeCtx.fillStyle = '#f0e0d6';
-        this.activeCtx.fillRect(0, 0, this.activeCanvas.width, this.activeCanvas.height);
-    }
-    
     bindEvents() {
-        this.activeCanvas.addEventListener('pointerdown', this.onPointerDown.bind(this));
+        this.canvasArea.addEventListener('pointerdown', this.onPointerDown.bind(this));
         document.addEventListener('pointermove', this.onPointerMove.bind(this));
         document.addEventListener('pointerup', this.onPointerUp.bind(this));
         this.canvasArea.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
@@ -49,36 +41,59 @@ class CanvasManager {
     setCurrentSize(size) { this.currentSize = size; }
 
     onPointerDown(e) {
-        if (e.target.tagName !== 'CANVAS') return;
+        const targetCanvas = e.target;
+        if (!targetCanvas.classList.contains('layer-canvas')) return;
 
-        e.target.setPointerCapture(e.pointerId);
+        this.activeCanvas = this.app.canvas;
+        this.activeCtx = this.app.ctx;
+
+        targetCanvas.setPointerCapture(e.pointerId);
         
         const coords = this.getCanvasCoordinates(e);
         this.lastX = coords.x;
         this.lastY = coords.y;
-
+        
         if (this.isSpaceDown) {
             this.isPanning = true;
             this.dragStartX = e.clientX;
             this.dragStartY = e.clientY;
             this.setAbsolutePosition();
-        } else if (this.currentTool === 'bucket') {
-            this.fill(Math.floor(this.lastX), Math.floor(this.lastY), this.currentColor);
-            this.saveState();
-        } else {
-            this.isDrawing = true;
-            this.activeCtx.beginPath();
-            this.activeCtx.moveTo(this.lastX, this.lastY);
+            return;
+        }
+        
+        switch(this.currentTool) {
+            case 'move':
+                this.isMovingLayer = true;
+                this.dragStartX = e.clientX;
+                this.dragStartY = e.clientY;
+                this.layerStartX = parseFloat(this.activeCanvas.style.left) || 0;
+                this.layerStartY = parseFloat(this.activeCanvas.style.top) || 0;
+                break;
+            case 'bucket':
+                this.fill(Math.floor(this.lastX), Math.floor(this.lastY), this.currentColor);
+                this.saveState();
+                break;
+            case 'pen':
+            case 'eraser':
+                this.isDrawing = true;
+                this.activeCtx.beginPath();
+                this.activeCtx.moveTo(this.lastX, this.lastY);
+                break;
         }
     }
 
     onPointerMove(e) {
         if (!e.buttons) {
-            if (this.isDrawing || this.isPanning) this.onPointerUp(e);
+            if (this.isDrawing || this.isPanning || this.isMovingLayer) this.onPointerUp(e);
             return;
         }
 
-        if (this.isPanning) {
+        if (this.isMovingLayer) {
+            const deltaX = e.clientX - this.dragStartX;
+            const deltaY = e.clientY - this.dragStartY;
+            this.activeCanvas.style.left = (this.layerStartX + deltaX) + 'px';
+            this.activeCanvas.style.top = (this.layerStartY + deltaY) + 'px';
+        } else if (this.isPanning) {
             const deltaX = e.clientX - this.dragStartX;
             const deltaY = e.clientY - this.dragStartY;
             this.canvasContainer.style.left = (this.canvasStartX + deltaX) + 'px';
@@ -96,9 +111,12 @@ class CanvasManager {
     }
 
     onPointerUp(e) {
-        if (e.target.hasPointerCapture(e.pointerId)) {
-            e.target.releasePointerCapture(e.pointerId);
+        const targetCanvas = e.target;
+        if (targetCanvas.hasPointerCapture && targetCanvas.hasPointerCapture(e.pointerId)) {
+            targetCanvas.releasePointerCapture(e.pointerId);
         }
+        
+        if (this.isMovingLayer) this.isMovingLayer = false;
         if (this.isDrawing) {
             this.isDrawing = false;
             this.activeCtx.closePath();
@@ -127,30 +145,35 @@ class CanvasManager {
         const rect = this.activeCanvas.getBoundingClientRect();
         let x = e.clientX - rect.left;
         let y = e.clientY - rect.top;
-
-        // ★修正：計算の基準点を、コンテナではなく、操作対象のキャンバス自身の中心に修正
         const centerX = this.activeCanvas.width / 2;
         const centerY = this.activeCanvas.height / 2;
-        
         x -= centerX;
         y -= centerY;
-
         const rad = -this.rotation * Math.PI / 180;
         const cos = Math.cos(rad);
         const sin = Math.sin(rad);
-        
         const rotatedX = x * cos - y * sin;
         const rotatedY = x * sin + y * cos;
-        
-        // ★修正：元の座標系に戻す際の基準点も、キャンバス自身の中心に修正
         const finalX = (rotatedX / this.scale) + centerX;
         const finalY = (rotatedY / this.scale) + centerY;
-
         return { x: finalX, y: finalY };
     }
 
     updateCursor() {
-        this.activeCanvas.style.cursor = this.isSpaceDown ? 'grab' : 'crosshair';
+        let cursor = 'crosshair';
+        if (this.isSpaceDown) {
+            cursor = 'grab';
+        } else {
+            switch(this.currentTool) {
+                case 'move': cursor = 'move'; break;
+                case 'bucket': cursor = 'pointer'; break;
+                default: cursor = 'crosshair'; break;
+            }
+        }
+        document.querySelectorAll('.layer-canvas').forEach(canvas => {
+            canvas.style.cursor = cursor;
+        });
+        if(this.app.canvas) this.app.canvas.style.cursor = cursor;
     }
     
     saveState() {
@@ -176,8 +199,7 @@ class CanvasManager {
     }
     
     clearCanvas() {
-        this.activeCtx.fillStyle = '#f0e0d6';
-        this.activeCtx.fillRect(0, 0, this.activeCanvas.width, this.activeCanvas.height);
+        this.activeCtx.clearRect(0, 0, this.activeCanvas.width, this.activeCanvas.height);
         this.saveState();
     }
     
@@ -227,7 +249,7 @@ class CanvasManager {
         e.preventDefault();
         const delta = e.deltaY > 0 ? -1 : 1;
         if (e.shiftKey) {
-            this.rotate(delta * 15);
+            this.rotate(delta * 5);
         } else {
             this.zoom(delta > 0 ? 1.1 : 1 / 1.1);
         }
