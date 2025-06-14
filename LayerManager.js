@@ -193,13 +193,12 @@ class LayerManager {
      * 既存のdrawingCanvasを最初の描画レイヤーとして利用する
      */
 javascript
-
-setupInitialLayers() {
-    console.log("setupInitialLayers started");
-    const originalCanvas = this.app.canvasManager.canvas;
-    console.log("Canvas size:", originalCanvas.width, originalCanvas.height);
-    ...
-}
+ setupInitialLayers() {
+ console.log("setupInitialLayers started");
+ const originalCanvas = this.app.canvasManager.canvas;
+ console.log("Canvas size:", originalCanvas.width, originalCanvas.height);
+ // const layer = ...;
+ }
 
 
         // 既存のdrawingCanvasを非表示にする代わりに、最初のレイヤーとして利用する
