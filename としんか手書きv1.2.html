@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>としんか手書きツール (レイヤー対応版)</title>
+    <title>としんか手書きv1.2</title>
     <style>
         body {
             margin: 0;
@@ -14,7 +14,7 @@
         }
         
         :root {
-            --main-bg-color: rgb(240, 208, 195);
+            --main-bg-color: rgb(240, 208, 195); /* #F0D0C3 */
             --dark-brown: #800000;
             --light-brown-border: rgb(220, 188, 175);
             --button-active-bg: white;
@@ -80,7 +80,7 @@
             padding: 10px;
             position: relative;
             transition: transform 0.2s ease;
-            /* canvas要素がabsolute配置されるための基準点 */
+            /* 複数のcanvasを重ねるための基準 */
             transform-style: preserve-3d;
         }
         
@@ -88,47 +88,204 @@
             border-color: #999;
         }
         
+        /* キャンバスの基本スタイル */
         .main-canvas {
             display: block;
+            background-color: transparent; /* レイヤーは透明が基本 */
             cursor: crosshair;
             border: 1px solid #ddd;
             touch-action: none;
-            /* レイヤー対応のため、重ね合わせられるようにする */
-            position: absolute;
-            top: 10px; /* padding分 */
-            left: 10px; /* padding分 */
         }
 
-        .top-left-controls { display: flex; flex-direction: row; gap: 2px; align-items: center; }
+        /* レイヤー用のcanvasは絶対配置で重ねる */
+        .layer-canvas {
+            position: absolute;
+            top: 10px; /* canvas-containerのpaddingに合わせる */
+            left: 10px; /* canvas-containerのpaddingに合わせる */
+        }
         
-        .color-palette { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; width: 100%; }
-        
-        .color-btn { width: 20px; height: 20px; border: 1px solid var(--dark-brown); cursor: pointer; border-radius: 2px; }
-        .color-btn.active { border-color: var(--button-active-bg); border-width: 2px; }
-        
-        .color-mode-display { width: 24px; height: 24px; position: relative; cursor: pointer; margin-top: 5px; background-color: var(--main-bg-color); border: 1px solid var(--light-brown-border); box-sizing: border-box; border-radius: 2px; overflow: hidden; }
-        .color-square { width: 16px; height: 16px; border: 1px solid var(--dark-brown); position: absolute; box-sizing: border-box; }
-        .main-color-square { top: 0; left: 0; z-index: 2; }
-        .sub-color-square { bottom: 0; right: 0; z-index: 1; }
+        #drawingCanvas {
+             /* 初期HTMLのキャンバスはテンプレートとして使うため、非表示に */
+             visibility: hidden;
+        }
 
-        .tools { display: flex; flex-direction: column; gap: 2px; width: 100%; align-items: center; }
-        .tool-btn { width: 24px; height: 24px; border: 1px solid var(--light-brown-border); background: var(--button-inactive-bg); cursor: pointer; font-size: 16px; margin: 0; display: flex; align-items: center; justify-content: center; border-radius: 3px; line-height: 1; color: var(--dark-brown); }
-        .tool-btn.active { background-color: var(--button-active-bg); color: var(--dark-brown); border-color: var(--dark-brown); }
+        .top-left-controls {
+            display: flex;
+            flex-direction: row;
+            gap: 2px;
+            align-items: center;
+        }
         
-        .sizes { display: flex; flex-direction: column; gap: 4px; width: 100%; align-items: center; }
-        .size-btn { width: 24px; height: 34px; border: 1px solid var(--light-brown-border); background: var(--button-inactive-bg); cursor: pointer; display: flex; flex-direction: column; align-items: center; padding: 2px 0; border-radius: 3px; }
-        .size-btn.active { border-color: var(--dark-brown); background-color: var(--button-active-bg); }
-        .size-indicator { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--dark-brown); background-color: transparent; display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
-        .size-dot { border-radius: 50%; background-color: var(--dark-brown); }
-        .size-number { font-size: 10px; color: var(--dark-brown); text-align: center; display: block; line-height: 1; margin-top: 2px; }
+        .color-palette {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2px;
+            justify-content: center;
+            width: 100%;
+        }
         
-        .top-btn { height: 24px; padding: 0 6px; border: 1px solid var(--light-brown-border); background: var(--button-inactive-bg); cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; border-radius: 3px; color: var(--dark-brown); }
-        .top-btn:hover { background-color: var(--button-active-bg); border-color: var(--dark-brown); }
+        .color-btn {
+            width: 20px;
+            height: 20px;
+            border: 1px solid var(--dark-brown);
+            cursor: pointer;
+            border-radius: 2px;
+        }
         
-        .close-btn { background-color: #ff4444; color: white; border: none; }
-        .close-btn:hover { background-color: #cc3333; }
+        .color-btn.active {
+            border-color: var(--button-active-bg);
+            border-width: 2px;
+        }
         
-        .separator { width: 80%; height: 1px; background-color: var(--light-brown-border); }
+        .color-mode-display {
+            width: 24px;
+            height: 24px;
+            position: relative;
+            cursor: pointer;
+            margin-top: 5px;
+            background-color: var(--main-bg-color);
+            border: 1px solid var(--light-brown-border);
+            box-sizing: border-box;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .color-square {
+            width: 16px;
+            height: 16px;
+            border: 1px solid var(--dark-brown);
+            position: absolute;
+            box-sizing: border-box;
+        }
+
+        .main-color-square {
+            top: 0;
+            left: 0;
+            z-index: 2;
+        }
+
+        .sub-color-square {
+            bottom: 0;
+            right: 0;
+            z-index: 1;
+        }
+
+        .tools {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            width: 100%;
+            align-items: center;
+        }
+
+        .tool-btn {
+            width: 24px;
+            height: 24px;
+            border: 1px solid var(--light-brown-border);
+            background: var(--button-inactive-bg);
+            cursor: pointer;
+            font-size: 16px;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 3px;
+            line-height: 1;
+            color: var(--dark-brown);
+        }
+
+        .tool-btn.active {
+            background-color: var(--button-active-bg);
+            color: var(--dark-brown);
+            border-color: var(--dark-brown);
+        }
+        
+        .sizes {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            width: 100%;
+            align-items: center;
+        }
+        
+        .size-btn {
+            width: 24px;
+            height: 34px;
+            border: 1px solid var(--light-brown-border);
+            background: var(--button-inactive-bg);
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2px 0;
+            border-radius: 3px;
+        }
+
+        .size-btn.active {
+            border-color: var(--dark-brown);
+            background-color: var(--button-active-bg);
+        }
+
+        .size-indicator { 
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 1px solid var(--dark-brown);
+            background-color: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
+        }
+
+        .size-dot {
+            border-radius: 50%;
+            background-color: var(--dark-brown);
+        }
+
+        .size-number {
+            font-size: 10px;
+            color: var(--dark-brown);
+            text-align: center;
+            display: block;
+            line-height: 1;
+            margin-top: 2px;
+        }
+        
+        .top-btn {
+            height: 24px;
+            padding: 0 6px;
+            border: 1px solid var(--light-brown-border);
+            background: var(--button-inactive-bg);
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 3px;
+            color: var(--dark-brown);
+        }
+        
+        .top-btn:hover {
+            background-color: var(--button-active-bg);
+            border-color: var(--dark-brown);
+        }
+        
+        .close-btn {
+            background-color: #ff4444;
+            color: white;
+            border: none;
+        }
+        
+        .close-btn:hover {
+            background-color: #cc3333;
+        }
+        
+        .separator {
+            width: 80%;
+            height: 1px;
+            background-color: var(--light-brown-border);
+        }
     </style>
 </head>
 <body>
@@ -137,7 +294,14 @@
             <div class="top-left-controls">
                 <button class="tool-btn" id="undo-btn" title="元に戻す (Ctrl+Z)">↶</button>
                 <button class="tool-btn" id="redo-btn" title="やり直し (Ctrl+Y)">↷</button>
-                <button class="tool-btn" id="clear-btn" title="レイヤー全消去">&#128465;</button>
+                <button class="tool-btn" id="clear-btn" title="全消去">&#128465;</button>
+
+                <!-- v1.2 レイヤー機能テスト用の仮設ボタン (将来的にUIパネルに移行) -->
+                <div id="test-layer-controls" style="display: flex; gap: 2px; margin-left: 10px;">
+                    <button class="top-btn" id="add-layer-btn-test">レイヤー追加</button>
+                    <button class="top-btn" id="next-layer-btn-test">次のレイヤー</button>
+                    <span id="layer-info-test" style="color: #800000; align-self: center; font-size: 12px; margin-left: 5px;"></span>
+                </div>
             </div>
 
             <div class="canvas-ops-group" style="display: flex; gap: 2px;">
@@ -180,43 +344,45 @@
 
             <div class="sizes">
                 <button class="size-btn active" data-size="1">
-                    <div class="size-indicator"><div class="size-dot"></div></div><span class="size-number">1</span></button>
+                    <div class="size-indicator"><div class="size-dot"></div></div>
+                    <span class="size-number">1</span>
+                </button>
                 <button class="size-btn" data-size="3">
-                    <div class="size-indicator"><div class="size-dot"></div></div><span class="size-number">3</span></button>
+                    <div class="size-indicator"><div class="size-dot"></div></div>
+                    <span class="size-number">3</span>
+                </button>
                 <button class="size-btn" data-size="5">
-                    <div class="size-indicator"><div class="size-dot"></div></div><span class="size-number">5</span></button>
+                    <div class="size-indicator"><div class="size-dot"></div></div>
+                    <span class="size-number">5</span>
+                </button>
                 <button class="size-btn" data-size="10">
-                    <div class="size-indicator"><div class="size-dot"></div></div><span class="size-number">10</span></button>
+                    <div class="size-indicator"><div class="size-dot"></div></div>
+                    <span class="size-number">10</span>
+                </button>
                 <button class="size-btn" data-size="30">
-                    <div class="size-indicator"><div class="size-dot"></div></div><span class="size-number">30</span></button>
+                    <div class="size-indicator"><div class="size-dot"></div></div>
+                    <span class="size-number">30</span>
+                </button>
             </div>
         </div>
         
         <div class="canvas-area" id="canvas-area">
             <div class="canvas-container" id="canvas-container">
-                <!-- 初期キャンバス。LayerManagerによって管理される -->
+                <!-- 初期キャンバス: レイヤー機能のテンプレートとして使用 -->
                 <canvas id="drawingCanvas" class="main-canvas" width="344" height="135"></canvas>
+                <!-- レイヤーのキャンバスはLayerManagerによってここに追加されます -->
             </div>
         </div>
-
-        <!-- ▼▼▼ 将来的に削除するレイヤー機能のテスト用ボタン ▼▼▼ -->
-        <div id="layer-test-controls" style="position: absolute; top: 35px; right: 10px; z-index: 3000; display: flex; flex-direction: column; gap: 5px;">
-            <button id="add-layer-btn-test" style="padding: 5px;">新規レイヤー</button>
-            <button id="switch-layer-btn-test" style="padding: 5px;">次のレイヤーへ</button>
-        </div>
-        <!-- ▲▲▲ テスト用ボタンここまで ▲▲▲ -->
-
     </div>
 
-    <!-- 既存のJSファイルをそのまま使用 -->
+    <!-- 読み込み順序が重要です -->
     <script src="ColorManager.js"></script>
     <script src="PenSettingsManager.js"></script>
     <script src="ToolManager.js"></script>
     <script src="TopBarManager.js"></script>
-
-    <!-- レイヤー対応で改修・新規作成したJSファイル -->
-    <script src="20250614_1435_CanvasManager.js"></script>
-    <script src="20250614_1435_LayerManager.js"></script>
-    <script src="20250614_1435_ToshinkaTegakiTool.js"></script>
+    <!-- CanvasManagerとLayerManagerはToshinkaTegakiToolより前に読み込む -->
+    <script src="20250614_1730_CanvasManager.js"></script>
+    <script src="20250614_1730_LayerManager.js"></script>
+    <script src="20250614_1730_ToshinkaTegakiTool.js"></script>
 </body>
 </html>
