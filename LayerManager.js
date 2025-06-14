@@ -192,7 +192,16 @@ class LayerManager {
      * 初期レイヤー（背景レイヤーと最初の描画レイヤー）を設定する
      * 既存のdrawingCanvasを最初の描画レイヤーとして利用する
      */
-    setupInitialLayers() {
+javascript
+
+setupInitialLayers() {
+    console.log("setupInitialLayers started");
+    const originalCanvas = this.app.canvasManager.canvas;
+    console.log("Canvas size:", originalCanvas.width, originalCanvas.height);
+    ...
+}
+
+
         // 既存のdrawingCanvasを非表示にする代わりに、最初のレイヤーとして利用する
         // ただし、CanvasManagerがメインキャンバスとして利用し続けるため、
         // ここでは便宜的にレイヤー管理用の新しいキャンバスを作成し、既存のキャンバスを上書きする形にする。
