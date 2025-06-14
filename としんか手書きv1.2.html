@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>としんか手書きツール</title>
+    <title>としんか手書きツール (レイヤー対応版)</title>
     <style>
         body {
             margin: 0;
@@ -13,13 +13,12 @@
             overflow: hidden;
         }
         
-        /* Define CSS variables for the new color scheme */
         :root {
-            --main-bg-color: rgb(240, 208, 195); /* #F0D0C3 */
+            --main-bg-color: rgb(240, 208, 195);
             --dark-brown: #800000;
-            --light-brown-border: rgb(220, 188, 175); /* A slightly darker shade for borders */
-            --button-active-bg: white; /* Active/hover button background */
-            --button-inactive-bg: var(--main-bg-color); /* Inactive button background */
+            --light-brown-border: rgb(220, 188, 175);
+            --button-active-bg: white;
+            --button-inactive-bg: var(--main-bg-color);
         }
 
         .main-container {
@@ -29,265 +28,107 @@
             position: relative;
         }
         
-        /* 左側ツールバー */
         .left-toolbar {
-            position: absolute; /* 絶対位置指定 */
-            top: 30px; /* 上部ツールバーの下から開始 */
-            left: 0; /* 左端に配置 */
-            width: 28px; /* 大幅にスリム化 */
+            position: absolute;
+            top: 30px;
+            left: 0;
+            width: 28px;
             background-color: var(--main-bg-color);
             border-right: 1px solid var(--light-brown-border);
             display: flex;
             flex-direction: column;
-            padding: 2px 0; /* 左右のパディングを減らしてスリムに */
-            gap: 5px; /* セクション間の隙間を調整 */
+            padding: 2px 0;
+            gap: 5px;
             box-sizing: border-box;
-            align-items: center; /* 中央揃え */
+            align-items: center;
+            z-index: 100;
         }
         
-        /* 上部ツールバー */
         .top-toolbar {
             position: absolute;
             top: 0;
-            left: 0; /* 左端から開始 */
-            right: 0; /* 右端まで広がる */
-            height: 30px; /* ナローに調整 */
+            left: 0;
+            right: 0;
+            height: 30px;
             background-color: var(--main-bg-color);
             border-bottom: 1px solid var(--light-brown-border);
             display: flex;
             align-items: center;
-            padding: 0 3px; /* パディングを調整 */
-            gap: 2px; /* ボタン間の隙間を調整 */
+            padding: 0 3px;
+            gap: 2px;
             box-sizing: border-box;
-            justify-content: space-between; /* 要素間のスペースを均等に配分 */
+            justify-content: space-between;
+            z-index: 100;
         }
         
-        /* メインキャンバスエリア */
         .canvas-area {
             position: absolute;
-            top: 30px; /* 上部ツールバーの高さに合わせて調整 */
-            left: 28px; /* 左ツールバーの幅に合わせて調整 */
+            top: 30px;
+            left: 28px;
             right: 0;
             bottom: 0;
-            background-color: #ffffee; /* キャンバスエリアの背景は元のまま */
+            background-color: #ffffee;
             display: flex;
             align-items: center;
             justify-content: center;
             overflow: hidden;
         }
         
-        /* キャンバスコンテナ */
         .canvas-container {
             background-color: white;
             border: 2px solid #ccc;
             padding: 10px;
             position: relative;
             transition: transform 0.2s ease;
+            /* canvas要素がabsolute配置されるための基準点 */
+            transform-style: preserve-3d;
         }
         
         .canvas-container:hover {
             border-color: #999;
         }
         
-        /* メインキャンバス */
         .main-canvas {
             display: block;
-            background-color: #f0e0d6;
             cursor: crosshair;
             border: 1px solid #ddd;
-            touch-action: none; /* ペン/タッチ操作時のブラウザデフォルト動作を抑制 */
-        }
-
-        /* Undo/Redo/Clearボタン用コンテナ（上部ツールバー左端） */
-        .top-left-controls {
-            display: flex;
-            flex-direction: row; /* 横並び */
-            gap: 2px; /* ボタン間の隙間 */
-            align-items: center;
-            /* widthはボタンのコンテンツに合わせて自動調整される */
-        }
-        
-        /* カラーパレット */
-        .color-palette {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 2px; /* 隙間を調整 */
-            justify-content: center;
-            width: 100%; /* 親の幅に合わせる */
-        }
-        
-        .color-btn {
-            width: 20px; /* 小さく調整 */
-            height: 20px; /* 小さく調整 */
-            border: 1px solid var(--dark-brown); /* 濃い茶色のボーダー */
-            cursor: pointer;
-            border-radius: 2px;
-        }
-        
-        .color-btn.active {
-            border-color: var(--button-active-bg); /* アクティブな時は白のボーダー */
-            border-width: 2px;
-        }
-        
-        /* メイン/サブカラー表示 */
-        .color-mode-display {
-            width: 24px; /* サイズ調整 */
-            height: 24px; /* サイズ調整 */
-            position: relative;
-            cursor: pointer;
-            margin-top: 5px;
-            background-color: var(--main-bg-color); /* 周囲の背景も統一 */
-            border: 1px solid var(--light-brown-border); /* 軽い縁取り */
-            box-sizing: border-box;
-            border-radius: 2px;
-            overflow: hidden; /* 子要素がはみ出さないように */
-        }
-
-        .color-square {
-            width: 16px; /* 少し大きく調整 */
-            height: 16px; /* 少し大きく調整 */
-            border: 1px solid var(--dark-brown); /* 濃い茶色のボーダー */
+            touch-action: none;
+            /* レイヤー対応のため、重ね合わせられるようにする */
             position: absolute;
-            box-sizing: border-box;
+            top: 10px; /* padding分 */
+            left: 10px; /* padding分 */
         }
 
-        .main-color-square {
-            top: 0;
-            left: 0;
-            z-index: 2;
-        }
-
-        .sub-color-square {
-            bottom: 0; /* 右下に配置 */
-            right: 0; /* 右下に配置 */
-            z-index: 1;
-        }
-
-        /* ツールセクション */
-        .tools {
-            display: flex;
-            flex-direction: column;
-            gap: 2px; /* 隙間を調整 */
-            width: 100%; /* 親の幅に合わせる */
-            align-items: center;
-        }
-
-        /* ツールボタン */
-        .tool-btn {
-            width: 24px; /* サイズ調整 */
-            height: 24px; /* サイズ調整 */
-            border: 1px solid var(--light-brown-border); /* 軽い縁取り */
-            background: var(--button-inactive-bg); /* ボタンの背景色 */
-            cursor: pointer;
-            font-size: 16px; /* アイコンサイズ */
-            margin: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 3px;
-            line-height: 1;
-            color: var(--dark-brown); /* アイコンの色 */
-        }
-
-        .tool-btn.active {
-            background-color: var(--button-active-bg); /* アクティブな時の背景色 */
-            color: var(--dark-brown); /* アクティブな時のアイコン色 */
-            border-color: var(--dark-brown); /* アクティブな時のボーダー */
-        }
+        .top-left-controls { display: flex; flex-direction: row; gap: 2px; align-items: center; }
         
-        /* サイズセクション */
-        .sizes {
-            display: flex;
-            flex-direction: column;
-            gap: 4px; /* 隙間を調整 */
-            width: 100%; /* 親の幅に合わせる */
-            align-items: center;
-        }
+        .color-palette { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; width: 100%; }
         
-        /* サイズボタン */
-        .size-btn {
-            width: 24px; /* サイズ調整 */
-            height: 34px; /* 数字と◎が収まるように高さを確保 */
-            border: 1px solid var(--light-brown-border); /* 軽い縁取り */
-            background: var(--button-inactive-bg);
-            cursor: pointer;
-            display: flex;
-            flex-direction: column; /* 円と数字を縦に並べる */
-            align-items: center;
-            padding: 2px 0; /* 上下のパディングで間隔を調整 */
-            border-radius: 3px;
-        }
+        .color-btn { width: 20px; height: 20px; border: 1px solid var(--dark-brown); cursor: pointer; border-radius: 2px; }
+        .color-btn.active { border-color: var(--button-active-bg); border-width: 2px; }
+        
+        .color-mode-display { width: 24px; height: 24px; position: relative; cursor: pointer; margin-top: 5px; background-color: var(--main-bg-color); border: 1px solid var(--light-brown-border); box-sizing: border-box; border-radius: 2px; overflow: hidden; }
+        .color-square { width: 16px; height: 16px; border: 1px solid var(--dark-brown); position: absolute; box-sizing: border-box; }
+        .main-color-square { top: 0; left: 0; z-index: 2; }
+        .sub-color-square { bottom: 0; right: 0; z-index: 1; }
 
-        .size-btn.active {
-            border-color: var(--dark-brown); /* アクティブな時だけ濃い茶色の枠を表示 */
-            background-color: var(--button-active-bg); /* アクティブな時の背景色 */
-        }
-
-        /* ◎の外枠 */
-        .size-indicator { 
-            width: 18px; /* 外枠の固定サイズ */
-            height: 18px;
-            border-radius: 50%;
-            border: 1px solid var(--dark-brown); /* 外枠のボーダー */
-            background-color: transparent; /* 外枠は透明 */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-sizing: border-box;
-        }
-
-        /* ◎の内側の● */
-        .size-dot {
-            border-radius: 50%;
-            background-color: var(--dark-brown);
-        }
-
-        /* サイズ数値表示 */
-        .size-number {
-            font-size: 10px;
-            color: var(--dark-brown);
-            text-align: center;
-            display: block; /* 常に表示 */
-            line-height: 1; /* 行の高さを調整 */
-            margin-top: 2px; /* 円と数字の間にスペース */
-        }
+        .tools { display: flex; flex-direction: column; gap: 2px; width: 100%; align-items: center; }
+        .tool-btn { width: 24px; height: 24px; border: 1px solid var(--light-brown-border); background: var(--button-inactive-bg); cursor: pointer; font-size: 16px; margin: 0; display: flex; align-items: center; justify-content: center; border-radius: 3px; line-height: 1; color: var(--dark-brown); }
+        .tool-btn.active { background-color: var(--button-active-bg); color: var(--dark-brown); border-color: var(--dark-brown); }
         
-        /* 上部ツールバーのボタン */
-        .top-btn {
-            height: 24px; /* 小さく調整 */
-            padding: 0 6px; /* パディングを調整 */
-            border: 1px solid var(--light-brown-border); /* 軽い縁取り */
-            background: var(--button-inactive-bg);
-            cursor: pointer;
-            font-size: 13px; /* フォントサイズ */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 3px;
-            color: var(--dark-brown); /* 文字色 */
-        }
+        .sizes { display: flex; flex-direction: column; gap: 4px; width: 100%; align-items: center; }
+        .size-btn { width: 24px; height: 34px; border: 1px solid var(--light-brown-border); background: var(--button-inactive-bg); cursor: pointer; display: flex; flex-direction: column; align-items: center; padding: 2px 0; border-radius: 3px; }
+        .size-btn.active { border-color: var(--dark-brown); background-color: var(--button-active-bg); }
+        .size-indicator { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--dark-brown); background-color: transparent; display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
+        .size-dot { border-radius: 50%; background-color: var(--dark-brown); }
+        .size-number { font-size: 10px; color: var(--dark-brown); text-align: center; display: block; line-height: 1; margin-top: 2px; }
         
-        .top-btn:hover {
-            background-color: var(--button-active-bg); /* ホバー時の背景色 */
-            border-color: var(--dark-brown);
-        }
+        .top-btn { height: 24px; padding: 0 6px; border: 1px solid var(--light-brown-border); background: var(--button-inactive-bg); cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; border-radius: 3px; color: var(--dark-brown); }
+        .top-btn:hover { background-color: var(--button-active-bg); border-color: var(--dark-brown); }
         
-        .close-btn {
-            background-color: #ff4444; /* 赤はそのまま */
-            color: white;
-            border: none; /* 閉じるボタンはボーダーなし */
-        }
+        .close-btn { background-color: #ff4444; color: white; border: none; }
+        .close-btn:hover { background-color: #cc3333; }
         
-        .close-btn:hover {
-            background-color: #cc3333;
-        }
-        
-        /* セクション分割線 */
-        .separator {
-            width: 80%;
-            height: 1px;
-            background-color: var(--light-brown-border); /* 分割線の色 */
-        }
+        .separator { width: 80%; height: 1px; background-color: var(--light-brown-border); }
     </style>
 </head>
 <body>
@@ -296,7 +137,7 @@
             <div class="top-left-controls">
                 <button class="tool-btn" id="undo-btn" title="元に戻す (Ctrl+Z)">↶</button>
                 <button class="tool-btn" id="redo-btn" title="やり直し (Ctrl+Y)">↷</button>
-                <button class="tool-btn" id="clear-btn" title="全消去">&#128465;</button>
+                <button class="tool-btn" id="clear-btn" title="レイヤー全消去">&#128465;</button>
             </div>
 
             <div class="canvas-ops-group" style="display: flex; gap: 2px;">
@@ -339,41 +180,43 @@
 
             <div class="sizes">
                 <button class="size-btn active" data-size="1">
-                    <div class="size-indicator"><div class="size-dot" style="width: 2px; height: 2px;"></div></div>
-                    <span class="size-number">1</span>
-                </button>
+                    <div class="size-indicator"><div class="size-dot"></div></div><span class="size-number">1</span></button>
                 <button class="size-btn" data-size="3">
-                    <div class="size-indicator"><div class="size-dot" style="width: 4px; height: 4px;"></div></div>
-                    <span class="size-number">3</span>
-                </button>
+                    <div class="size-indicator"><div class="size-dot"></div></div><span class="size-number">3</span></button>
                 <button class="size-btn" data-size="5">
-                    <div class="size-indicator"><div class="size-dot" style="width: 6px; height: 6px;"></div></div>
-                    <span class="size-number">5</span>
-                </button>
+                    <div class="size-indicator"><div class="size-dot"></div></div><span class="size-number">5</span></button>
                 <button class="size-btn" data-size="10">
-                    <div class="size-indicator"><div class="size-dot" style="width: 10px; height: 10px;"></div></div>
-                    <span class="size-number">10</span>
-                </button>
+                    <div class="size-indicator"><div class="size-dot"></div></div><span class="size-number">10</span></button>
                 <button class="size-btn" data-size="30">
-                    <div class="size-indicator"><div class="size-dot" style="width: 16px; height: 16px;"></div></div>
-                    <span class="size-number">30</span>
-                </button>
+                    <div class="size-indicator"><div class="size-dot"></div></div><span class="size-number">30</span></button>
             </div>
         </div>
         
         <div class="canvas-area" id="canvas-area">
             <div class="canvas-container" id="canvas-container">
+                <!-- 初期キャンバス。LayerManagerによって管理される -->
                 <canvas id="drawingCanvas" class="main-canvas" width="344" height="135"></canvas>
             </div>
         </div>
+
+        <!-- ▼▼▼ 将来的に削除するレイヤー機能のテスト用ボタン ▼▼▼ -->
+        <div id="layer-test-controls" style="position: absolute; top: 35px; right: 10px; z-index: 3000; display: flex; flex-direction: column; gap: 5px;">
+            <button id="add-layer-btn-test" style="padding: 5px;">新規レイヤー</button>
+            <button id="switch-layer-btn-test" style="padding: 5px;">次のレイヤーへ</button>
+        </div>
+        <!-- ▲▲▲ テスト用ボタンここまで ▲▲▲ -->
+
     </div>
 
+    <!-- 既存のJSファイルをそのまま使用 -->
     <script src="ColorManager.js"></script>
     <script src="PenSettingsManager.js"></script>
     <script src="ToolManager.js"></script>
     <script src="TopBarManager.js"></script>
-    <script src="CanvasManager.js"></script>
-    <script src="LayerManager.js"></script> <script src="ShortcutManager.js"></script>
-    <script src="ToshinkaTegakiTool.js"></script>
+
+    <!-- レイヤー対応で改修・新規作成したJSファイル -->
+    <script src="20250614_1435_CanvasManager.js"></script>
+    <script src="20250614_1435_LayerManager.js"></script>
+    <script src="20250614_1435_ToshinkaTegakiTool.js"></script>
 </body>
 </html>

@@ -1,47 +1,79 @@
-// ToshinkaTegakiTool.js
+// 20250614_1435_ToshinkaTegakiTool.js
 class ToshinkaTegakiTool {
     constructor() {
-        // 各Managerのインスタンスを保持
         this.colorManager = null;
         this.toolManager = null;
         this.canvasManager = null;
         this.topBarManager = null;
         this.penSettingsManager = null;
-        this.layerManager = null; // layer実装中の為有効化します
-        // this.shortcutManager = null; // 予告: ショートカットマネージャー
+        this.layerManager = null; // LayerManagerを追加
 
         this.initManagers();
         this.bindGlobalEvents();
+        this.bindTestControlEvents(); // テスト用ボタンのイベントを設定
     }
 
     initManagers() {
-        // 各Managerの初期化と依存関係の注入
+        // 依存関係を考慮して初期化順序を調整
         this.colorManager = new ColorManager(this);
         this.toolManager = new ToolManager(this);
-        this.canvasManager = new CanvasManager(this);
-        this.topBarManager = new TopBarManager(this);
         this.penSettingsManager = new PenSettingsManager(this);
-        this.layerManager = new LayerManager(this); // layer実装中の為有効化します
+        this.topBarManager = new TopBarManager(this);
+        
+        // CanvasManagerを先に初期化
+        this.canvasManager = new CanvasManager(this);
+        
+        // 次にLayerManagerを初期化
+        this.layerManager = new LayerManager(this);
+        this.layerManager.setupInitialLayers(); // 初期レイヤーを作成し、アクティブレイヤーを設定
 
         // 初期設定の適用
         this.toolManager.setTool('pen');
         this.penSettingsManager.setSize(1);
-        this.colorManager.setColor(this.colorManager.mainColor); // 初期メインカラーを設定
+        this.colorManager.setColor(this.colorManager.mainColor);
         
-        // 初期状態を履歴に保存
+        // 全ての準備が整ってから、初期状態を履歴に保存
         this.canvasManager.saveState();
     }
 
     bindGlobalEvents() {
-        // アプリケーション全体で監視すべきキーボードイベントなどを処理
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
         document.addEventListener('keyup', this.handleKeyUp.bind(this));
     }
 
+    /**
+     * 将来的に削除されるテスト用コントロールのイベントを設定
+     */
+    bindTestControlEvents() {
+        const addLayerBtn = document.getElementById('add-layer-btn-test');
+        const switchLayerBtn = document.getElementById('switch-layer-btn-test');
+
+        if (addLayerBtn) {
+            addLayerBtn.addEventListener('click', () => {
+                this.layerManager.addLayer();
+                // 新しく追加した最後のレイヤーに切り替える
+                const newLayerIndex = this.layerManager.layers.length - 1;
+                this.layerManager.switchLayer(newLayerIndex);
+                this.canvasManager.saveState(); // 新規レイヤー作成を履歴に保存
+            });
+        }
+
+        if (switchLayerBtn) {
+            switchLayerBtn.addEventListener('click', () => {
+                let nextIndex = this.layerManager.activeLayerIndex + 1;
+                // レイヤーを循環させる
+                if (nextIndex >= this.layerManager.layers.length) {
+                    nextIndex = 0;
+                }
+                this.layerManager.switchLayer(nextIndex);
+            });
+        }
+    }
+
+
     handleKeyDown(e) {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.repeat) return;
         
-        // スペースキーによるパニングの管理
         if (e.key === ' ' && !this.canvasManager.isSpaceDown) {
             this.canvasManager.isSpaceDown = true;
             this.canvasManager.updateCursor();
@@ -65,7 +97,7 @@ class ToshinkaTegakiTool {
         }
 
         let handled = true;
-        if (e.ctrlKey || e.metaKey) { // MacのCommandキー対応
+        if (e.ctrlKey || e.metaKey) {
             switch (e.key.toLowerCase()) {
                 case 'z': this.canvasManager.undo(); break;
                 case 'y': this.canvasManager.redo(); break;
@@ -73,14 +105,8 @@ class ToshinkaTegakiTool {
             }
         } else if (e.shiftKey) {
             switch (e.key) {
-                case '}': // Shift + [ (JIS)
-                case ']': // Shift + ] (US)
-                    this.colorManager.changeColor(true); // パレットで下へ
-                    break;
-                case '{': // Shift + ] (JIS)
-                case '[': // Shift + [ (US)
-                    this.colorManager.changeColor(false); // パレットで上へ
-                    break;
+                case '}': case ']': this.colorManager.changeColor(true); break;
+                case '{': case '[': this.colorManager.changeColor(false); break;
                 default:
                     switch (e.key.toLowerCase()) {
                         case 'h': this.canvasManager.flipVertical(); break;
@@ -93,8 +119,8 @@ class ToshinkaTegakiTool {
             }
         } else {
              switch (e.key.toLowerCase()) {
-                case '[': this.penSettingsManager.changeSize(false); break; // サイズ縮小
-                case ']': this.penSettingsManager.changeSize(true); break;  // サイズ拡大
+                case '[': this.penSettingsManager.changeSize(false); break;
+                case ']': this.penSettingsManager.changeSize(true); break;
                 case 'x': this.colorManager.swapColors(); break;
                 case 'd': this.colorManager.resetColors(); break;
                 case 'p': this.toolManager.setTool('pen'); break;
