@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>としんか手書きツール v1.2</title>
+    <title>としんか手書きツール v1.2改</title>
     <style>
         body {
             margin: 0;
@@ -80,8 +80,9 @@
             padding: 10px;
             position: relative;
             transition: transform 0.2s ease;
-            /* canvasがabsolute配置されるための基準 */
-            transform-style: preserve-3d; 
+            /* ★修正：座標基準点を明示的に中央に設定 */
+            transform-origin: center;
+            transform-style: preserve-3d;
         }
         
         .canvas-container:hover {
@@ -90,13 +91,14 @@
         
         .main-canvas {
             display: block;
-            background-color: transparent; /* 背景色はレイヤー1番目で描画するため透明に */
+            background-color: transparent;
             cursor: crosshair;
             touch-action: none;
-            /* レイヤーとして重ねるためにabsolute配置 */
             position: absolute;
-            top: 10px; /* 親のpaddingに合わせる */
-            left: 10px;/* 親のpaddingに合わせる */
+            top: 10px;
+            left: 10px;
+            /* ★修正：初期状態ではイベントを透過させる */
+            pointer-events: none;
         }
 
         .top-left-controls {
@@ -375,14 +377,15 @@
         </div>
     </div>
 
-    <!-- 読み込み順序に注意 -->
+    
     <script src="20250614_1800_ColorManager.js"></script>
     <script src="20250614_1800_PenSettingsManager.js"></script>
     <script src="20250614_1800_ToolManager.js"></script>
     <script src="20250614_1800_TopBarManager.js"></script>
-    <script src="20250614_1800_CanvasManager.js"></script>
-    <script src="20250614_1800_LayerManager.js"></script>
-    <script src="20250614_1800_ShortcutManager.js"></script>
-    <script src="20250614_1800_ToshinkaTegakiTool.js"></script>
+    <script src="20250614_1800_ShortcutManager.js"></script>   
+    <script src="20250614_1850_CanvasManager.js"></script>
+    <script src="20250614_1850_LayerManager.js"></script>
+    <script src="20250614_1850_ToshinkaTegakiTool.js"></script>
+
 </body>
 </html>

@@ -1,4 +1,6 @@
-// 20250614_1800_ToshinkaTegakiTool.js
+// 20250614_1850_ToshinkaTegakiTool.js
+// このファイルはLayerManager/CanvasManagerの修正に伴い、ロジックの変更は不要です。
+// 指示に基づき、新しいプレフィックスでファイルを提供します。
 class ToshinkaTegakiTool {
     constructor() {
         this.colorManager = null;
@@ -6,7 +8,7 @@ class ToshinkaTegakiTool {
         this.canvasManager = null;
         this.topBarManager = null;
         this.penSettingsManager = null;
-        this.layerManager = null; // ★レイヤーマネージャーを有効化
+        this.layerManager = null;
         this.shortcutManager = null;
 
         // テスト用変数
@@ -14,7 +16,7 @@ class ToshinkaTegakiTool {
 
         this.initManagers();
         this.bindGlobalEvents();
-        this.bindTestButtons(); // ★テスト用ボタンのイベントを設定
+        this.bindTestButtons();
     }
 
     initManagers() {
@@ -23,20 +25,16 @@ class ToshinkaTegakiTool {
         this.penSettingsManager = new PenSettingsManager(this);
         this.topBarManager = new TopBarManager(this);
 
-        // ★指示書通り、CanvasManager -> LayerManager の順で初期化
         this.canvasManager = new CanvasManager(this);
         this.layerManager = new LayerManager(this);
         this.shortcutManager = new ShortcutManager(this);
 
-        // ★LayerManagerの初期化を実行
         this.layerManager.setupInitialLayers();
         
-        // 初期設定の適用
         this.toolManager.setTool('pen');
         this.penSettingsManager.setSize(1);
         this.colorManager.setColor(this.colorManager.mainColor);
         
-        // ★初期状態を履歴に保存するタイミングをLayerManagerの初期化後に変更
         this.canvasManager.saveState();
     }
 
@@ -46,7 +44,7 @@ class ToshinkaTegakiTool {
     }
 
     /**
-     * ★新規：将来的に削除されるテスト用ボタンのイベントリスナーを設定する
+     * 将来的に削除されるテスト用ボタンのイベントリスナーを設定する
      */
     bindTestButtons() {
         const addBtn = document.getElementById('add-layer-btn-test');
@@ -56,7 +54,6 @@ class ToshinkaTegakiTool {
             addBtn.addEventListener('click', () => {
                 const newLayer = this.layerManager.addLayer();
                 if (newLayer) {
-                    // 新規レイヤー追加後、そのレイヤーがアクティブになるのでインデックスを更新
                     this.test_currentLayerIndex = this.layerManager.activeLayerIndex;
                 }
             });

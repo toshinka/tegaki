@@ -1,8 +1,9 @@
-// 20250614_1800_CanvasManager.js
+// 20250614_1850_CanvasManager.js
+// このファイルはLayerManagerの修正により、意図通りに動作するようになります。
+// v1.1互換のロジックを維持するため、このファイル自体のロジック変更はありません。
 class CanvasManager {
     constructor(app) {
         this.app = app;
-        // ★レイヤー機能対応：this.canvasとthis.ctxは動的に切り替わるため、初期値はnullにしておく
         this.canvas = null;
         this.ctx = null;
         this.canvasArea = document.getElementById('canvas-area');
@@ -33,15 +34,10 @@ class CanvasManager {
         this.scale = 1;
         this.rotation = 0;
 
-        // ★レイヤー機能対応：初期化はLayerManagerから最初のレイヤーが設定された後に行う
-        // this.initCanvas(); 
         this.bindEvents();
     }
     
-    // initCanvasはLayerManager側でレイヤー作成時に実行されるため、ここでは不要。
-
     bindEvents() {
-        // ★レイヤー機能対応：個別のcanvasではなく、コンテナでイベントを捕捉する
         this.canvasContainer.addEventListener('pointerdown', this.onPointerDown.bind(this));
         document.addEventListener('pointermove', this.onPointerMove.bind(this));
         document.addEventListener('pointerup', this.onPointerUp.bind(this));
@@ -49,14 +45,14 @@ class CanvasManager {
     }
     
     /**
-     * ★新規：LayerManagerから呼び出され、描画対象のレイヤーを設定する
+     * LayerManagerから呼び出され、描画対象のレイヤーを設定する
      * @param {HTMLCanvasElement} canvas アクティブにするcanvas要素
      * @param {CanvasRenderingContext2D} ctx アクティブにするcanvasのcontext
      */
     setActiveLayerContext(canvas, ctx) {
         this.canvas = canvas;
         this.ctx = ctx;
-        this.updateCursor(); // カーソルも更新しておく
+        this.updateCursor();
     }
 
     setCurrentTool(tool) { this.currentTool = tool; }
@@ -64,9 +60,7 @@ class CanvasManager {
     setCurrentSize(size) { this.currentSize = size; }
 
     onPointerDown(e) {
-        // ★レイヤー機能対応: ターゲットが'main-canvas'クラスを持つcanvas以外なら無視
-        if (!e.target.classList.contains('main-canvas')) return;
-        // 現在アクティブでないレイヤーへの操作も無視
+        // LayerManagerのpointer-events制御により、e.targetは常にアクティブなcanvasになるはず
         if (e.target !== this.canvas) return;
 
         const coords = this.getCanvasCoordinates(e);
@@ -78,35 +72,26 @@ class CanvasManager {
             this.dragStartX = e.clientX;
             this.dragStartY = e.clientY;
             this.setAbsolutePosition();
-            // ポインターキャプチャはdocumentに設定した方が安定するかもしれない
-            // e.target.setPointerCapture(e.pointerId);
         } else if (this.currentTool === 'move') {
             this.isMovingLayer = true;
             this.moveLayerStartX = coords.x;
             this.moveLayerStartY = coords.y;
             this.moveLayerImageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-            // e.target.setPointerCapture(e.pointerId);
         } else if (this.currentTool === 'bucket') {
-            // バケツツールは整数座標を必要とする
             this.fill(Math.floor(this.lastX), Math.floor(this.lastY), this.currentColor);
             this.saveState();
         } else {
             this.isDrawing = true;
             this.ctx.beginPath();
             this.ctx.moveTo(this.lastX, this.lastY);
-            // e.target.setPointerCapture(e.pointerId);
         }
-        // ポインタキャプチャの対象をdocumentにしてみるテスト
         try {
             document.documentElement.setPointerCapture(e.pointerId);
-        } catch (err) {
-            // console.warn("Could not set pointer capture:", err);
-        }
+        } catch (err) {}
     }
 
     onPointerMove(e) {
         if (!e.buttons) {
-            // onPointerUp(e); // ボタンが離れていたらUpイベントを発火させる
             return;
         }
 
@@ -119,7 +104,7 @@ class CanvasManager {
             const coords = this.getCanvasCoordinates(e);
             const dx = Math.round(coords.x - this.moveLayerStartX);
             const dy = Math.round(coords.y - this.moveLayerStartY);
-            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height); // 移動なので一度クリア
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
             this.ctx.putImageData(this.moveLayerImageData, dx, dy);
         } else if (this.isDrawing) {
             const coords = this.getCanvasCoordinates(e);
@@ -140,9 +125,7 @@ class CanvasManager {
             if (document.documentElement.hasPointerCapture(e.pointerId)) {
                document.documentElement.releasePointerCapture(e.pointerId);
             }
-        } catch (err) {
-            // console.warn("Could not release pointer capture:", err);
-        }
+        } catch (err) {}
 
         if (this.isDrawing) {
             this.isDrawing = false;
@@ -152,8 +135,6 @@ class CanvasManager {
         if (this.isPanning) this.isPanning = false;
         if (this.isMovingLayer) {
             this.isMovingLayer = false;
-            // 'move'ツールはレイヤーをクリアして再描画するため、背景色で塗りつぶさない
-            // this.ctx.fillStyle は設定しない
             this.saveState();
         }
     }
@@ -173,8 +154,6 @@ class CanvasManager {
         }
     }
     
-    // このメソッドはthis.canvasを参照するため、setActiveLayerContextで正しく設定されていれば問題ない
-    // 互換性維持のため、このメソッドのロジックは一切変更しない
     getCanvasCoordinates(e) {
         const rect = this.canvas.getBoundingClientRect();
         let x = e.clientX - rect.left;
@@ -194,7 +173,7 @@ class CanvasManager {
     }
 
     updateCursor() {
-         if (!this.canvas) return; // canvasが未設定の場合は何もしない
+         if (!this.canvas) return;
          if (this.isSpaceDown) {
             this.canvasArea.style.cursor = 'grab';
             return;
@@ -216,7 +195,6 @@ class CanvasManager {
         if (this.historyIndex < this.history.length - 1) {
             this.history = this.history.slice(0, this.historyIndex + 1);
         }
-        // ★指示通りImageDataのみを履歴に保存する
         this.history.push(this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height));
         this.historyIndex++;
     }
@@ -236,7 +214,6 @@ class CanvasManager {
     }
     
     clearCanvas() {
-        // アクティブなレイヤーを透明にする
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         this.saveState();
     }
@@ -278,7 +255,6 @@ class CanvasManager {
     }
     
     updateCanvasTransform() {
-        // コンテナを操作するので、全レイヤーに影響する。これはv1.1の仕様通り。
         this.canvasContainer.style.transform = `scale(${this.scale}) rotate(${this.rotation}deg)`;
     }
 
@@ -301,7 +277,6 @@ class CanvasManager {
         }
     }
 
-    // --- バケツツール関連メソッド (変更なし) ---
     colorsMatch(a, b) {
         return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
     }
