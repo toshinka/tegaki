@@ -32,7 +32,7 @@ class ToshinkaTegakiTool {
 
 
         // 初期状態の設定
-        this.layerManager.setupInitialLayers();
+
         this.toolManager.setTool('pen');
         this.penSettingsManager.setSize(1);
         this.colorManager.setColor(this.colorManager.mainColor);
