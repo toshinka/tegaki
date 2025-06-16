@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>としんか手書き v1-3-rev7</title>
+  <style>
+    body {
+      background: #f0e0d6;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    #display-canvas {
+      display: block;
+      margin: 0 auto;
+      background: #ffffee;
+      border: 1px solid #aaa;
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 1;
+    }
+    #current-layer-info {
+      position: absolute;
+      left: 0; top: 0;
+      background: rgba(255,255,255,0.6);
+      font-size: 14px;
+      padding: 2px 8px;
+      border-radius: 0 0 8px 0;
+      z-index: 10;
+    }
+    #add-layer-btn-test, #switch-layer-btn-test {
+      position: absolute;
+      left: 10px; bottom: 10px;
+      z-index: 10;
+    }
+    #switch-layer-btn-test {
+      left: 120px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="display-canvas" width="344" height="135"></canvas>
+  <div id="current-layer-info"></div>
+  <button id="add-layer-btn-test">レイヤー追加</button>
+  <button id="switch-layer-btn-test">レイヤー切替</button>
+  <script src="ColorManager-v1-3-rev4.js"></script>
+  <script src="PenSettingsManager-v1-3-rev4.js"></script>
+  <script src="ToolManager-v1-3-rev4.js"></script>
+  <script src="TopBarManager-v1-3-rev4.js"></script>
+  <script src="LayerManager-v1-3-rev7.js"></script>
+  <script src="CanvasManager-v1-3-rev7.js"></script>
+  <script src="ShortcutManager-v1-3-rev7.js"></script>
+  <script src="ToshinkaTegakiTool-v1-3-rev7.js"></script>
+</body>
+</html>
