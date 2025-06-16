@@ -7,20 +7,22 @@
     return;
   }
   // iframeの作成
-  const iframe = d.createElement('iframe');
-  iframe.id = 'toshinka-tegaki-iframe';
-  iframe.src = 'https://toshinka.github.io/tegaki/v1-3/%E3%81%A8%E3%81%97%E3%82%93%E3%81%8B%E6%89%8B%E6%9B%B8%E3%81%8D-v1-3-rev4b.html';
-  iframe.style.position = 'fixed';
-  iframe.style.top = '40px';
-  iframe.style.left = '50%';
-  iframe.style.transform = 'translateX(-50%)';
-  iframe.style.width = '700px';
-  iframe.style.height = '520px';
-  iframe.style.zIndex = '2147483647';
-  iframe.style.background = 'white';
-  iframe.style.boxShadow = '0 4px 24px rgba(0,0,0,0.35)';
-  iframe.style.border = '2px solid #666';
-  iframe.allow = 'clipboard-read; clipboard-write';
+const iframe = document.createElement('iframe');
+iframe.src = 'https://toshinka.github.io/tegaki/v1-3/としんか手書き-v1-3-rev4b.html'; // ←絶対必要
+iframe.id = 'toshinka-tegaki-iframe';
+iframe.style.position = "fixed";
+iframe.style.top = 0;
+iframe.style.left = 0;
+iframe.style.width = "100vw";
+iframe.style.height = "100vh";
+iframe.style.zIndex = "99999";
+iframe.style.border = "none";
+document.body.appendChild(iframe);
+
+window.addEventListener("resize", () => {
+  iframe.style.width = "100vw";
+  iframe.style.height = "100vh";
+});
 
   // 閉じるボタンの作成
   const closeBtn = d.createElement('button');
