@@ -19,19 +19,17 @@ class ToshinkaTegakiTool {
     }
 
     initManagers() {
-        this.canvasManager = new CanvasManager(this);  // 必ず最初に
+
+        this.canvasManager = new CanvasManager(this);
         this.layerManager = new LayerManager(this);
-        this.toolManager = new ToolManager(this);
+        this.layerManager.setupInitialLayers();
         this.penSettingsManager = new PenSettingsManager(this);
+        this.toolManager = new ToolManager(this);
         this.colorManager = new ColorManager(this);
         this.topBarManager = new TopBarManager(this);
-
-
-        
-        // ShortcutManagerを初期化し、イベントリスナーの登録を委譲する
-        this.layerManager.setupInitialLayers();
         this.shortcutManager = new ShortcutManager(this);
         this.shortcutManager.initialize();
+
 
         // 初期状態の設定
         this.layerManager.setupInitialLayers();
