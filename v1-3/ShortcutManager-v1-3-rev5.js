@@ -12,7 +12,7 @@ class ShortcutManager {
     initialize() {
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
         document.addEventListener('keyup', this.handleKeyUp.bind(this));
-        // ホイールイベントはCanvasManagerから移譲されるため、ここでは登録しない。
+        document.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
     }
 
     /**
