@@ -15,7 +15,7 @@ iframe.style.top = 0;
 iframe.style.left = 0;
 iframe.style.width = "100vw";
 iframe.style.height = "100vh";
-iframe.style.zIndex = "99999";
+iframe.style.zIndex = "2000000025";
 iframe.style.border = "none";
 document.body.appendChild(iframe);
 
