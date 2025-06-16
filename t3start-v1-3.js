@@ -9,7 +9,7 @@
   // iframeの作成
   const iframe = d.createElement('iframe');
   iframe.id = 'toshinka-tegaki-iframe';
-  iframe.src = 'https://tosinka.github.io/tegaki/v1-3/%E3%81%A8%E3%81%97%E3%82%93%E3%81%8B%E6%89%8B%E6%9B%B8%E3%81%8D-v1-3-rev4b.html';
+  iframe.src = 'https://toshinka.github.io/tegaki/v1-3/%E3%81%A8%E3%81%97%E3%82%93%E3%81%8B%E6%89%8B%E6%9B%B8%E3%81%8D-v1-3-rev4b.html';
   iframe.style.position = 'fixed';
   iframe.style.top = '40px';
   iframe.style.left = '50%';
