@@ -187,3 +187,187 @@ class TegakiLayerManager {
             }
         `);
     }
+
+    async createShaderProgram(name, vertexSource, fragmentSource) {
+        const gl = this.gl;
+        
+        // シェーダーのコンパイル
+        const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vertexShader, vertexSource);
+        gl.compileShader(vertexShader);
+
+        const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fragmentShader, fragmentSource);
+        gl.compileShader(fragmentShader);
+
+        // シェーダープログラムの作成
+        const program = gl.createProgram();
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragmentShader);
+        gl.linkProgram(program);
+
+        // エラーチェック
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            const info = gl.getProgramInfoLog(program);
+            throw new Error(`Could not compile WebGL program: ${info}`);
+        }
+
+        // プログラム情報の保存
+        this.glPrograms.set(name, {
+            program: program,
+            attributes: {
+                position: gl.getAttribLocation(program, 'position'),
+                texcoord: gl.getAttribLocation(program, 'texcoord')
+            },
+            uniforms: {
+                uTexture: gl.getUniformLocation(program, 'uTexture'),
+                uSource: gl.getUniformLocation(program, 'uSource'),
+                uDestination: gl.getUniformLocation(program, 'uDestination'),
+                uBlendMode: gl.getUniformLocation(program, 'uBlendMode'),
+                uOpacity: gl.getUniformLocation(program, 'uOpacity')
+            }
+        });
+    }
+
+    async createDefaultLayer() {
+        const layer = {
+            id: `layer_${Date.now()}`,
+            name: 'Background',
+            visible: true,
+            opacity: this.state.defaultOpacity,
+            blendMode: this.state.defaultBlendMode,
+            locked: false,
+            canvas: document.createElement('canvas'),
+            texture: null
+        };
+
+        // キャンバスの初期化
+        layer.canvas.width = this.state.defaultWidth;
+        layer.canvas.height = this.state.defaultHeight;
+        
+        const ctx = layer.canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, layer.canvas.width, layer.canvas.height);
+
+        // テクスチャの作成
+        if (this.gl) {
+            layer.texture = this.createLayerTexture(layer.canvas);
+        }
+
+        // レイヤーの追加
+        this.state.layers.push(layer);
+        this.state.currentLayer = layer;
+
+        return layer;
+    }
+
+    createLayerTexture(canvas) {
+        const gl = this.gl;
+        const texture = gl.createTexture();
+        
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.RGBA,
+            gl.RGBA,
+            gl.UNSIGNED_BYTE,
+            canvas
+        );
+
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        return texture;
+    }
+
+    addLayer(options = {}) {
+        if (this.state.layers.length >= this.state.maxLayers) {
+            throw new Error('Maximum number of layers reached');
+        }
+
+        const layer = {
+            id: `layer_${Date.now()}`,
+            name: options.name || `Layer ${this.state.layers.length + 1}`,
+            visible: options.visible !== undefined ? options.visible : true,
+            opacity: options.opacity || this.state.defaultOpacity,
+            blendMode: options.blendMode || this.state.defaultBlendMode,
+            locked: options.locked || false,
+            canvas: document.createElement('canvas'),
+            texture: null
+        };
+
+        // キャンバスの初期化
+        layer.canvas.width = this.state.defaultWidth;
+        layer.canvas.height = this.state.defaultHeight;
+        
+        const ctx = layer.canvas.getContext('2d');
+        ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+
+        if (options.data) {
+            ctx.putImageData(options.data, 0, 0);
+        }
+
+        // テクスチャの作成
+        if (this.gl) {
+            layer.texture = this.createLayerTexture(layer.canvas);
+        }
+
+        // レイヤーの追加
+        const index = options.index !== undefined ? 
+            Math.min(options.index, this.state.layers.length) : 
+            this.state.layers.length;
+        
+        this.state.layers.splice(index, 0, layer);
+        this.state.currentLayer = layer;
+
+        return layer;
+    }
+
+    removeLayer(layerId) {
+        const index = this.state.layers.findIndex(layer => layer.id === layerId);
+        if (index === -1) return false;
+
+        const layer = this.state.layers[index];
+        
+        // WebGLリソースの解放
+        if (this.gl && layer.texture) {
+            this.gl.deleteTexture(layer.texture);
+        }
+
+        // キャンバスの解放
+        layer.canvas.width = 0;
+        layer.canvas.height = 0;
+        layer.canvas = null;
+
+        // レイヤーの削除
+        this.state.layers.splice(index, 1);
+
+        // 現在のレイヤーの更新
+        if (this.state.currentLayer.id === layerId) {
+            this.state.currentLayer = this.state.layers[
+                Math.min(index, this.state.layers.length - 1)
+            ];
+        }
+
+        return true;
+    }
+
+    getLayer(layerId) {
+        return this.state.layers.find(layer => layer.id === layerId);
+    }
+
+    getCurrentLayer() {
+        return this.state.currentLayer;
+    }
+
+    setCurrentLayer(layerId) {
+        const layer = this.getLayer(layerId);
+        if (layer) {
+            this.state.currentLayer = layer;
+            return true;
+        }
+        return false;
+    }
