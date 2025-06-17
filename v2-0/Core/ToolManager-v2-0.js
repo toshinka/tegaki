@@ -154,3 +154,221 @@ class TegakiToolManager {
         // デフォルトツールの設定
         await this.setActiveTool('brush');
     }
+
+    setupShortcuts() {
+        // ツールのショートカット
+        for (const [id, tool] of this.tools) {
+            if (tool.shortcut) {
+                this.shortcuts.set(tool.shortcut, () => this.setActiveTool(id));
+            }
+        }
+
+        // その他のショートカット
+        this.shortcuts.set('[', () => this.decreaseToolSize());
+        this.shortcuts.set(']', () => this.increaseToolSize());
+        this.shortcuts.set('x', () => this.swapColors());
+        this.shortcuts.set('d', () => this.resetColors());
+    }
+
+    async setActiveTool(toolId) {
+        const tool = this.tools.get(toolId);
+        if (!tool) return false;
+
+        this.previousTool = this.activeTool;
+        this.activeTool = tool;
+
+        // ツール変更イベントの発火
+        this.notifyToolChange('active', {
+            previous: this.previousTool?.name,
+            current: tool.name
+        });
+
+        return true;
+    }
+
+    // ここから既存のgetPointerPosition等のメソッドが続く...
+
+    async initializeInputDevices() {
+        // ペンタブレットのサポート
+        if (navigator.pentablet) {
+            await this.initializePenTablet();
+        }
+
+        // タッチデバイスのサポート
+        if ('ontouchstart' in window) {
+            this.initializeTouchInput();
+        }
+
+        // ポインターイベントの初期設定
+        this.initializePointerEvents();
+    }
+
+    async initializePenTablet() {
+        try {
+            const tablet = await navigator.pentablet.connect();
+            tablet.addEventListener('pressure', this.handlePressureChange.bind(this));
+            tablet.addEventListener('tilt', this.handleTiltChange.bind(this));
+            console.log('Pen tablet initialized');
+        } catch (error) {
+            console.warn('Pen tablet initialization failed:', error);
+        }
+    }
+
+    initializeTouchInput() {
+        const options = {
+            passive: false,
+            capture: true
+        };
+
+        document.addEventListener('touchstart', this.handleTouchStart.bind(this), options);
+        document.addEventListener('touchmove', this.handleTouchMove.bind(this), options);
+        document.addEventListener('touchend', this.handleTouchEnd.bind(this), options);
+    }
+
+    initializePointerEvents() {
+        const canvas = this.app.getManager('canvas').getCanvas('display');
+        const options = {
+            passive: false,
+            capture: true
+        };
+
+        canvas.addEventListener('pointerdown', this.handlePointerDown.bind(this), options);
+        canvas.addEventListener('pointermove', this.handlePointerMove.bind(this), options);
+        canvas.addEventListener('pointerup', this.handlePointerUp.bind(this), options);
+        canvas.addEventListener('pointercancel', this.handlePointerCancel.bind(this), options);
+    }
+
+    // ユーティリティメソッド
+    getPointerPosition(event) {
+        const canvas = this.app.getManager('canvas').getCanvas('display');
+        const rect = canvas.getBoundingClientRect();
+        
+        return {
+            x: (event.clientX - rect.left) / this.app.getManager('canvas').state.scale,
+            y: (event.clientY - rect.top) / this.app.getManager('canvas').state.scale,
+            pressure: event.pressure || 1.0,
+            tilt: {
+                x: event.tiltX || 0,
+                y: event.tiltY || 0
+            },
+            timestamp: Date.now()
+        };
+    }
+
+    smoothPoints(points) {
+        if (points.length < 2) return points[0];
+
+        let x = 0;
+        let y = 0;
+        let pressure = 0;
+        let tiltX = 0;
+        let tiltY = 0;
+
+        const weights = points.map((_, i) => 
+            Math.pow(0.5, points.length - i - 1));
+        const totalWeight = weights.reduce((a, b) => a + b, 0);
+
+        points.forEach((point, i) => {
+            const weight = weights[i] / totalWeight;
+            x += point.x * weight;
+            y += point.y * weight;
+            pressure += point.pressure * weight;
+            tiltX += point.tilt.x * weight;
+            tiltY += point.tilt.y * weight;
+        });
+
+        return {
+            x,
+            y,
+            pressure,
+            tilt: { x: tiltX, y: tiltY },
+            timestamp: Date.now()
+        };
+    }
+
+    resetInputState() {
+        this.inputState = {
+            isDrawing: false,
+            pressure: 1.0,
+            tilt: { x: 0, y: 0 },
+            rotation: 0,
+            lastPoint: null,
+            points: []
+        };
+    }
+
+    // ツール操作メソッド
+    increaseToolSize() {
+        if (!this.activeTool) return;
+        
+        const toolType = this.activeTool.name.toLowerCase();
+        if (this.settings[toolType]?.size !== undefined) {
+            this.settings[toolType].size = Math.min(
+                this.settings[toolType].size * 1.2,
+                1000
+            );
+            this.notifyToolChange('size');
+        }
+    }
+
+    decreaseToolSize() {
+        if (!this.activeTool) return;
+        
+        const toolType = this.activeTool.name.toLowerCase();
+        if (this.settings[toolType]?.size !== undefined) {
+            this.settings[toolType].size = Math.max(
+                this.settings[toolType].size / 1.2,
+                1
+            );
+            this.notifyToolChange('size');
+        }
+    }
+
+    swapColors() {
+        const colorManager = this.app.getManager('color');
+        const primary = colorManager.state.primaryColor;
+        const secondary = colorManager.state.secondaryColor;
+
+        colorManager.setPrimaryColor(secondary);
+        colorManager.setSecondaryColor(primary);
+    }
+
+    resetColors() {
+        const colorManager = this.app.getManager('color');
+        colorManager.setPrimaryColor('#000000');
+        colorManager.setSecondaryColor('#ffffff');
+    }
+
+    notifyToolChange(type, data = {}) {
+        this.app.config.container.dispatchEvent(new CustomEvent('tool-change', {
+            detail: {
+                type,
+                data,
+                state: this.getState()
+            }
+        }));
+    }
+
+    getState() {
+        return {
+            activeTool: this.activeTool?.name,
+            previousTool: this.previousTool?.name,
+            settings: { ...this.settings },
+            inputState: { ...this.inputState }
+        };
+    }
+
+    setState(state) {
+        if (!state) return;
+
+        if (state.activeTool) {
+            this.setActiveTool(state.activeTool);
+        }
+
+        if (state.settings) {
+            this.settings = { ...this.settings, ...state.settings };
+        }
+
+        this.notifyToolChange('state');
+    }
+}
