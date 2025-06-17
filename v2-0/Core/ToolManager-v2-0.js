@@ -150,8 +150,12 @@ class TegakiToolManager {
             },
             shortcut: 'g'
         });
-        
-            setupShortcuts() {
+
+        // デフォルトツールの設定
+        await this.setActiveTool('brush');
+    }
+
+    setupShortcuts() {
         // ツールのショートカット
         for (const [id, tool] of this.tools) {
             if (tool.shortcut) {
@@ -165,6 +169,24 @@ class TegakiToolManager {
         this.shortcuts.set('x', () => this.swapColors());
         this.shortcuts.set('d', () => this.resetColors());
     }
+
+    async setActiveTool(toolId) {
+        const tool = this.tools.get(toolId);
+        if (!tool) return false;
+
+        this.previousTool = this.activeTool;
+        this.activeTool = tool;
+
+        // ツール変更イベントの発火
+        this.notifyToolChange('active', {
+            previous: this.previousTool?.name,
+            current: tool.name
+        });
+
+        return true;
+    }
+
+    // ここから既存のgetPointerPosition等のメソッドが続く...
 
     async initializeInputDevices() {
         // ペンタブレットのサポート
