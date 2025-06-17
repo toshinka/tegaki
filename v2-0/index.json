@@ -1,0 +1,32 @@
+{
+  "BrushEngine": [
+    "BrushEngine-v2-0_Version2.js"
+  ],
+  "ColorProcessor": [
+    "ColorProcessor-v2-0_Version2.js"
+  ],
+  "Core": [
+    "AppManager-v2-0_Version2.js",
+    "CanvasManager-v2-0_Version2.js",
+    "ColorManager-v2-0_Version2.js",
+    "LayerManager-v2-0_Version2.js",
+    "ToolManager-v2-0_Version2.js"
+  ],
+  "CSS": [
+    "style-v2-0_Version2.css"
+  ],
+  "LayerManager": [
+    "LayerManager-v2-0.js"
+  ],
+  "UI": [
+    "index-v2-0-dev_Version2.html",
+    "style-v2-0.css",
+    "UI_app-v2-0.js"
+  ],
+  "Workers": [
+    "brush-worker-v2-0_Version2.js",
+    "color-worker-v2-0.js",
+    "composite-worker-v2-0.js",
+    "stroke-worker-v2-0_Version2.js"
+  ]
+}
