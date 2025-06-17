@@ -363,5 +363,166 @@ class TegakiLayerManager {
     }
 
     cleanupLayerCache() {
-        *
-
+        const now = Date.now();
+        for (const layer of this.layers) {
+            const lastAccess = new Date(layer.cache.lastModified).getTime();
+            if (now - lastAccess > 300000) { // 5分以上アクセスがない
+                // プレビューキャッシュのクリア
+                layer.cache.preview = null;
+            }
+        }
+    }
+
+    recordHistory(action) {
+        // 現在の位置より先の履歴を削除
+        if (this.history.currentIndex < this.history.actions.length - 1) {
+            this.history.actions = this.history.actions.slice(
+                0,
+                this.history.currentIndex + 1
+            );
+        }
+
+        // 新しいアクションを追加
+        this.history.actions.push({
+            ...action,
+            timestamp: this.currentTimestamp
+        });
+
+        // 履歴サイズの制限
+        if (this.history.actions.length > this.history.maxSize) {
+            this.history.actions.shift();
+        } else {
+            this.history.currentIndex++;
+        }
+    }
+
+    async undo() {
+        if (this.history.currentIndex < 0) return false;
+
+        const action = this.history.actions[this.history.currentIndex];
+        await this.revertAction(action);
+        this.history.currentIndex--;
+
+        return true;
+    }
+
+    async redo() {
+        if (this.history.currentIndex >= this.history.actions.length - 1) {
+            return false;
+        }
+
+        this.history.currentIndex++;
+        const action = this.history.actions[this.history.currentIndex];
+        await this.applyAction(action);
+
+        return true;
+    }
+
+    async revertAction(action) {
+        switch (action.type) {
+            case 'layer_update':
+                await this.revertLayerUpdate(action);
+                break;
+            case 'layer_add':
+                await this.revertLayerAdd(action);
+                break;
+            case 'layer_delete':
+                await this.revertLayerDelete(action);
+                break;
+            case 'layer_move':
+                await this.revertLayerMove(action);
+                break;
+            default:
+                console.warn('Unknown action type:', action.type);
+        }
+    }
+
+    async applyAction(action) {
+        switch (action.type) {
+            case 'layer_update':
+                await this.applyLayerUpdate(action);
+                break;
+            case 'layer_add':
+                await this.applyLayerAdd(action);
+                break;
+            case 'layer_delete':
+                await this.applyLayerDelete(action);
+                break;
+            case 'layer_move':
+                await this.applyLayerMove(action);
+                break;
+            default:
+                console.warn('Unknown action type:', action.type);
+        }
+    }
+
+    async revertLayerUpdate(action) {
+        const layer = this.findLayer(action.layerId);
+        if (!layer) return;
+
+        const backup = this.layerCache.get(`${layer.id}_backup_${action.timestamp}`);
+        if (backup) {
+            await this.restoreLayerState(layer, backup);
+        }
+    }
+
+    async applyLayerUpdate(action) {
+        const layer = this.findLayer(action.layerId);
+        if (!layer) return;
+
+        const backup = this.layerCache.get(`${layer.id}_redo_${action.timestamp}`);
+        if (backup) {
+            await this.restoreLayerState(layer, backup);
+        }
+    }
+
+    notifyLayerChange(type, data = {}) {
+        this.app.config.container.dispatchEvent(new CustomEvent('layer-change', {
+            detail: {
+                type,
+                data,
+                state: this.getState()
+            }
+        }));
+    }
+
+    getState() {
+        return {
+            layers: this.layers.map(layer => ({
+                id: layer.id,
+                name: layer.name,
+                type: layer.type,
+                visible: layer.visible,
+                locked: layer.locked,
+                opacity: layer.opacity,
+                blendMode: layer.blendMode
+            })),
+            activeLayer: this.activeLayer?.id,
+            activeGroup: this.activeGroup?.id
+        };
+    }
+
+    setState(state) {
+        if (!state) return;
+
+        // レイヤー状態の復元
+        for (const layerState of state.layers) {
+            const layer = this.findLayer(layerState.id);
+            if (layer) {
+                Object.assign(layer, layerState);
+            }
+        }
+
+        // アクティブレイヤーの復元
+        if (state.activeLayer) {
+            this.setActiveLayer(state.activeLayer);
+        }
+
+        // アクティブグループの復元
+        if (state.activeGroup) {
+            this.setActiveGroup(state.activeGroup);
+        }
+
+        this.notifyLayerChange('state');
+    }
+}
