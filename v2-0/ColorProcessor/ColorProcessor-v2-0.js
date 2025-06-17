@@ -2,7 +2,7 @@
 class TegakiColorProcessor {
     constructor(manager) {
         this.currentUser = 'toshinka';
-        this.currentTimestamp = '2025-06-17 14:42:02';
+        this.currentTimestamp = '2025-06-17 14:44:27';
         
         // managerへの参照は1つだけにします
         this.coreManager = manager;
@@ -23,6 +23,9 @@ class TegakiColorProcessor {
             hsl: new Map(),
             cmyk: new Map()
         };
+
+        this.initialize();
+    }
 
         // CoreのColorManagerへの参照
         this.colorManager = this.app.colorManager;
