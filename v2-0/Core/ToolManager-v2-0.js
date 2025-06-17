@@ -150,6 +150,79 @@ class TegakiToolManager {
             },
             shortcut: 'g'
         });
+        
+            setupShortcuts() {
+        // ツールのショートカット
+        for (const [id, tool] of this.tools) {
+            if (tool.shortcut) {
+                this.shortcuts.set(tool.shortcut, () => this.setActiveTool(id));
+            }
+        }
+
+        // その他のショートカット
+        this.shortcuts.set('[', () => this.decreaseToolSize());
+        this.shortcuts.set(']', () => this.increaseToolSize());
+        this.shortcuts.set('x', () => this.swapColors());
+        this.shortcuts.set('d', () => this.resetColors());
+    }
+
+    async initializeInputDevices() {
+        // ペンタブレットのサポート
+        if (navigator.pentablet) {
+            await this.initializePenTablet();
+        }
+
+        // タッチデバイスのサポート
+        if ('ontouchstart' in window) {
+            this.initializeTouchInput();
+        }
+
+        // ポインターイベントの初期設定
+        this.initializePointerEvents();
+    }
+
+    async initializePenTablet() {
+        try {
+            const tablet = await navigator.pentablet.connect();
+            tablet.addEventListener('pressure', this.handlePressureChange.bind(this));
+            tablet.addEventListener('tilt', this.handleTiltChange.bind(this));
+            console.log('Pen tablet initialized');
+        } catch (error) {
+            console.warn('Pen tablet initialization failed:', error);
+        }
+    }
+
+    initializeTouchInput() {
+        const options = {
+            passive: false,
+            capture: true
+        };
+
+        document.addEventListener('touchstart', this.handleTouchStart.bind(this), options);
+        document.addEventListener('touchmove', this.handleTouchMove.bind(this), options);
+        document.addEventListener('touchend', this.handleTouchEnd.bind(this), options);
+    }
+
+    initializePointerEvents() {
+        const canvas = this.app.getManager('canvas').getCanvas('display');
+        const options = {
+            passive: false,
+            capture: true
+        };
+
+        canvas.addEventListener('pointerdown', this.handlePointerDown.bind(this), options);
+        canvas.addEventListener('pointermove', this.handlePointerMove.bind(this), options);
+        canvas.addEventListener('pointerup', this.handlePointerUp.bind(this), options);
+        canvas.addEventListener('pointercancel', this.handlePointerCancel.bind(this), options);
+    }
+
+    async setActiveTool(toolId) {
+        const tool = this.tools.get(toolId);
+        if (!tool) return false;
+
+        this.previousTool = this.activeTool;
+        this
+
 
         // デフォルトツールの設定
         await this.setActiveTool('brush');
