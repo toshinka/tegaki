@@ -424,3 +424,152 @@ class TegakiBrushEngine {
 
         return true;
     }
+
+    async drawStrokeSegment(points) {
+        if (!this.state.currentBrush || points.length === 0) {
+            return false;
+        }
+
+        const worker = this.workers.get('stroke');
+        
+        return new Promise((resolve, reject) => {
+            worker.onmessage = (e) => {
+                if (e.data.error) {
+                    reject(new Error(e.data.error));
+                    return;
+                }
+
+                this.renderStrokeSegment(e.data.segments);
+                resolve(true);
+            };
+
+            worker.postMessage({
+                type: 'process',
+                points: points,
+                brush: this.state.currentBrush
+            });
+        });
+    }
+
+    renderStrokeSegment(segments) {
+        const gl = this.gl;
+        const program = this.glPrograms.get('brush');
+
+        gl.useProgram(program.program);
+
+        // ブラシテクスチャの設定
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.state.currentBrush.texture);
+        gl.uniform1i(program.uniforms.uTexture, 0);
+
+        // ブラシパラメータの設定
+        gl.uniform1f(program.uniforms.uHardness, this.state.currentBrush.hardness);
+        gl.uniform1f(program.uniforms.uOpacity, this.state.currentBrush.opacity);
+
+        // 各セグメントの描画
+        for (const segment of segments) {
+            this.drawBrushSegment(segment);
+        }
+    }
+
+    drawBrushSegment(segment) {
+        const gl = this.gl;
+        const program = this.glPrograms.get('brush');
+
+        // 位置とスケールの設定
+        gl.uniform2f(program.uniforms.uScale, 
+            segment.scale * 2,
+            segment.scale * 2
+        );
+        gl.uniform2f(program.uniforms.uTranslate,
+            segment.x * 2 - 1,
+            segment.y * 2 - 1
+        );
+
+        // 描画
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+
+    async applyStroke() {
+        const gl = this.gl;
+        const program = this.glPrograms.get('blend');
+
+        gl.useProgram(program.program);
+
+        // ソーステクスチャ（ストロークバッファ）
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.state.strokeBuffer);
+        gl.uniform1i(program.uniforms.uSource, 0);
+
+        // デスティネーションテクスチャ（レイヤー）
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.app.getManager('layer').getCurrentLayer().texture);
+        gl.uniform1i(program.uniforms.uDestination, 1);
+
+        // フローの設定
+        gl.uniform1f(program.uniforms.uFlow, this.state.currentBrush.flow);
+
+        // 描画
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+
+    interpolatePoints(start, end) {
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < this.state.currentBrush.spacing) {
+            return [end];
+        }
+
+        const points = [];
+        const steps = Math.ceil(distance / this.state.currentBrush.spacing);
+        
+        for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            points.push({
+                x: start.x + dx * t,
+                y: start.y + dy * t,
+                pressure: start.pressure + (end.pressure - start.pressure) * t,
+                tilt: {
+                    x: start.tilt.x + (end.tilt.x - start.tilt.x) * t,
+                    y: start.tilt.y + (end.tilt.y - start.tilt.y) * t
+                },
+                timestamp: start.timestamp + (end.timestamp - start.timestamp) * t
+            });
+        }
+
+        return points;
+    }
+
+    dispose() {
+        // WebGLリソースの解放
+        if (this.gl) {
+            for (const [_, program] of this.glPrograms) {
+                this.gl.deleteProgram(program.program);
+            }
+            for (const [_, brush] of this.state.brushCache) {
+                this.gl.deleteTexture(brush.texture);
+            }
+        }
+
+        // ワーカーの終了
+        for (const [_, worker] of this.workers) {
+            worker.terminate();
+        }
+
+        // キャンバスの解放
+        for (const canvas of Object.values(this.offscreen)) {
+            canvas.width = 0;
+            canvas.height = 0;
+        }
+
+        // 状態のリセット
+        this.state = null;
+        this.settings = null;
+        this.offscreen = null;
+        this.gl = null;
+        this.glPrograms = null;
+        this.workers = null;
+    }
+}
