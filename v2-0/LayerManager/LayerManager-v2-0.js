@@ -371,3 +371,167 @@ class TegakiLayerManager {
         }
         return false;
     }
+
+    updateLayerTexture(layer) {
+        if (!this.gl || !layer.texture) return;
+
+        const gl = this.gl;
+        gl.bindTexture(gl.TEXTURE_2D, layer.texture);
+        gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.RGBA,
+            gl.RGBA,
+            gl.UNSIGNED_BYTE,
+            layer.canvas
+        );
+    }
+
+    compositeLayer(layer, destination) {
+        if (!layer.visible || layer.opacity === 0) return;
+
+        if (this.gl) {
+            this.compositeLayerWebGL(layer, destination);
+        } else {
+            this.compositeLayerCanvas(layer, destination);
+        }
+    }
+
+    compositeLayerWebGL(layer, destination) {
+        const gl = this.gl;
+        const program = this.glPrograms.get('blend');
+
+        gl.useProgram(program.program);
+
+        // ソーステクスチャ（レイヤー）
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, layer.texture);
+        gl.uniform1i(program.uniforms.uSource, 0);
+
+        // デスティネーションテクスチャ
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, destination);
+        gl.uniform1i(program.uniforms.uDestination, 1);
+
+        // ブレンドモードとオパシティの設定
+        gl.uniform1i(program.uniforms.uBlendMode, this.getBlendModeIndex(layer.blendMode));
+        gl.uniform1f(program.uniforms.uOpacity, layer.opacity);
+
+        // 描画
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+
+    compositeLayerCanvas(layer, destination) {
+        const ctx = this.offscreen.composite.getContext('2d');
+        ctx.globalAlpha = layer.opacity;
+        ctx.globalCompositeOperation = layer.blendMode;
+        ctx.drawImage(layer.canvas, 0, 0);
+    }
+
+    compositeAll() {
+        const gl = this.gl;
+        const composite = this.offscreen.composite;
+        
+        if (gl) {
+            gl.viewport(0, 0, composite.width, composite.height);
+            gl.clearColor(0, 0, 0, 0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+        } else {
+            const ctx = composite.getContext('2d');
+            ctx.clearRect(0, 0, composite.width, composite.height);
+        }
+
+        // 下から順にレイヤーを合成
+        for (const layer of this.state.layers) {
+            this.compositeLayer(layer, composite);
+        }
+
+        return composite;
+    }
+
+    getBlendModeIndex(mode) {
+        const modes = {
+            'normal': 0,
+            'multiply': 1,
+            'screen': 2,
+            'overlay': 3
+        };
+        return modes[mode] || 0;
+    }
+
+    moveLayer(layerId, newIndex) {
+        const currentIndex = this.state.layers.findIndex(layer => layer.id === layerId);
+        if (currentIndex === -1) return false;
+
+        const layer = this.state.layers[currentIndex];
+        this.state.layers.splice(currentIndex, 1);
+        this.state.layers.splice(
+            Math.min(newIndex, this.state.layers.length),
+            0,
+            layer
+        );
+
+        return true;
+    }
+
+    setLayerVisibility(layerId, visible) {
+        const layer = this.getLayer(layerId);
+        if (layer) {
+            layer.visible = visible;
+            return true;
+        }
+        return false;
+    }
+
+    setLayerOpacity(layerId, opacity) {
+        const layer = this.getLayer(layerId);
+        if (layer) {
+            layer.opacity = Math.max(0, Math.min(1, opacity));
+            return true;
+        }
+        return false;
+    }
+
+    setLayerBlendMode(layerId, blendMode) {
+        const layer = this.getLayer(layerId);
+        if (layer) {
+            layer.blendMode = blendMode;
+            return true;
+        }
+        return false;
+    }
+
+    dispose() {
+        // WebGLリソースの解放
+        if (this.gl) {
+            for (const [_, program] of this.glPrograms) {
+                this.gl.deleteProgram(program.program);
+            }
+            for (const layer of this.state.layers) {
+                if (layer.texture) {
+                    this.gl.deleteTexture(layer.texture);
+                }
+            }
+        }
+
+        // キャンバスの解放
+        for (const canvas of Object.values(this.offscreen)) {
+            canvas.width = 0;
+            canvas.height = 0;
+        }
+        for (const layer of this.state.layers) {
+            if (layer.canvas) {
+                layer.canvas.width = 0;
+                layer.canvas.height = 0;
+            }
+        }
+
+        // 状態のリセット
+        this.state = null;
+        this.cache.clear();
+        this.cache = null;
+        this.offscreen = null;
+        this.gl = null;
+        this.glPrograms = null;
+    }
+}
