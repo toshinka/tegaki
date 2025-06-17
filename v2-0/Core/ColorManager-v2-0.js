@@ -2,10 +2,11 @@
 class TegakiCoreColorManager {
     constructor(app) {
         this.app = app;
-        this.processor = new TegakiColorProcessor(this); // appではなくthisを渡す
+        this.currentUser = 'toshinka';
+        this.currentTimestamp = '2025-06-17 14:42:02';
         
-        // ColorProcessorのインスタンス化
-        this.processor = new TegakiColorProcessor(this.app);
+        // processorは1回だけ作ります
+        this.processor = new TegakiColorProcessor(this);
         
         // カラー状態の管理
         this.state = {
