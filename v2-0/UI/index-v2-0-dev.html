@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="author" content="toshinka">
     <meta name="description" content="Tegaki - Advanced Drawing Application">
-    <meta name="last-modified" content="2025-06-17 17:13:09">
     <title>Tegaki v2.0 - Development Build</title>
     <link rel="stylesheet" href="style-v2-0.css">
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
@@ -225,22 +224,37 @@
     </div>
 
     <!-- スクリプトの読み込み -->
+    <!-- 基本ライブラリ -->
+    <script src="../ColorProcessor/ColorProcessor-v2-0.js"></script>
+    <script src="../BrushEngine/BrushEngine-v2-0.js"></script>
+
+    <!-- コアモジュール -->
     <script src="../Core/AppManager-v2-0.js"></script>
     <script src="../Core/CanvasManager-v2-0.js"></script>
     <script src="../Core/ColorManager-v2-0.js"></script>
     <script src="../Core/LayerManager-v2-0.js"></script>
     <script src="../Core/ToolManager-v2-0.js"></script>
-    <script src="../BrushEngine/BrushEngine-v2-0.js"></script>
-    <script src="../ColorProcessor/ColorProcessor-v2-0.js"></script>
+
+    <!-- UIモジュール -->
+    <script src="app-v2-0.js"></script>
 
     <!-- 初期化スクリプト -->
     <script>
+        // Worker設定
+        const workerConfig = {
+            brushWorker: new URL('../Workers/brush-worker-v2-0.js', window.location.href).href,
+            strokeWorker: new URL('../Workers/stroke-worker-v2-0.js', window.location.href).href,
+            colorWorker: new URL('../Workers/color-worker-v2-0.js', window.location.href).href,
+            compositeWorker: new URL('../Workers/composite-worker-v2-0.js', window.location.href).href
+        };
+
         document.addEventListener('DOMContentLoaded', function() {
             window.tegakiApp = new TegakiAppManager({
                 container: 'tegaki-app',
                 width: 1920,
                 height: 1080,
-                debug: true
+                debug: true,
+                workers: workerConfig
             });
         });
     </script>
