@@ -236,3 +236,135 @@ class TegakiColorProcessor {
         }
     }
 }
+
+    // HSL -> RGB変換
+    hslToRgb(hsl) {
+        const h = hsl.h;
+        const s = hsl.s / 100;
+        const l = hsl.l / 100;
+
+        const c = (1 - Math.abs(2 * l - 1)) * s;
+        const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+        const m = l - c / 2;
+
+        let r = 0;
+        let g = 0;
+        let b = 0;
+
+        if (h >= 0 && h < 60) {
+            r = c; g = x; b = 0;
+        } else if (h >= 60 && h < 120) {
+            r = x; g = c; b = 0;
+        } else if (h >= 120 && h < 180) {
+            r = 0; g = c; b = x;
+        } else if (h >= 180 && h < 240) {
+            r = 0; g = x; b = c;
+        } else if (h >= 240 && h < 300) {
+            r = x; g = 0; b = c;
+        } else {
+            r = c; g = 0; b = x;
+        }
+
+        return {
+            r: Math.round((r + m) * 255),
+            g: Math.round((g + m) * 255),
+            b: Math.round((b + m) * 255),
+            a: hsl.a
+        };
+    }
+
+    // CMYK -> RGB変換
+    cmykToRgb(cmyk) {
+        const c = cmyk.c / 100;
+        const m = cmyk.m / 100;
+        const y = cmyk.y / 100;
+        const k = cmyk.k / 100;
+
+        return {
+            r: Math.round(255 * (1 - c) * (1 - k)),
+            g: Math.round(255 * (1 - m) * (1 - k)),
+            b: Math.round(255 * (1 - y) * (1 - k)),
+            a: cmyk.a
+        };
+    }
+
+    // グラデーション生成機能
+    generateGradient(startColor, endColor, steps = this.state.defaultGradientSteps) {
+        const colors = [];
+        const start = this.convertColor(startColor, 'rgb', 'hsl');
+        const end = this.convertColor(endColor, 'rgb', 'hsl');
+
+        for (let i = 0; i < steps; i++) {
+            const t = i / (steps - 1);
+            const hsl = {
+                h: this.interpolateHue(start.h, end.h, t),
+                s: start.s + (end.s - start.s) * t,
+                l: start.l + (end.l - start.l) * t,
+                a: start.a + (end.a - start.a) * t
+            };
+            colors.push(this.convertColor(hsl, 'hsl', 'rgb'));
+        }
+
+        return colors;
+    }
+
+    // 色相の補間（360度周りの最短経路）
+    interpolateHue(h1, h2, t) {
+        const diff = h2 - h1;
+        if (Math.abs(diff) <= 180) {
+            return h1 + diff * t;
+        } else if (diff > 180) {
+            return h1 + (diff - 360) * t;
+        } else {
+            return h1 + (diff + 360) * t;
+        }
+    }
+
+    // カラーハーモニー生成
+    generateColorHarmony(baseColor, type = 'complementary') {
+        const hsl = this.convertColor(baseColor, 'rgb', 'hsl');
+        const harmony = [baseColor];
+
+        switch (type) {
+            case 'complementary':
+                harmony.push(this.rotateHue(hsl, 180));
+                break;
+            case 'analogous':
+                harmony.push(this.rotateHue(hsl, -30));
+                harmony.push(this.rotateHue(hsl, 30));
+                break;
+            case 'triadic':
+                harmony.push(this.rotateHue(hsl, 120));
+                harmony.push(this.rotateHue(hsl, 240));
+                break;
+            case 'split-complementary':
+                harmony.push(this.rotateHue(hsl, 150));
+                harmony.push(this.rotateHue(hsl, 210));
+                break;
+            case 'tetradic':
+                harmony.push(this.rotateHue(hsl, 90));
+                harmony.push(this.rotateHue(hsl, 180));
+                harmony.push(this.rotateHue(hsl, 270));
+                break;
+            default:
+                throw new Error(`Unsupported harmony type: ${type}`);
+        }
+
+        return harmony.map(color => this.convertColor(color, 'hsl', 'rgb'));
+    }
+
+    // 色相の回転
+    rotateHue(hsl, degrees) {
+        return {
+            h: (hsl.h + degrees + 360) % 360,
+            s: hsl.s,
+            l: hsl.l,
+            a: hsl.a
+        };
+    }
+
+    // カラーブレンド機能
+    blendColors(color1, color2, mode = 'normal', opacity = 1) {
+        const c1 = this.convertColor(color1, 'rgb', 'rgb');
+        const c2 = this.convertColor(color2,*
+
