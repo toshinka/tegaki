@@ -1,9 +1,7 @@
-// ColorProcessor/ColorProcessor-v2-0.js
+// ColorProcessor-v2-0.js
 class TegakiColorProcessor {
-    constructor(app) {
-        this.app = app;
-        this.currentUser = 'toshinka';
-        this.currentTimestamp = '2025-06-17 14:30:28';
+    constructor(manager) {  // managerを受け取る
+        this.coreManager = manager;  // 直接参照を保存
         
         // 参照の更新
         this.coreManager = this.app.coreColorManager;
