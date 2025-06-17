@@ -25,11 +25,6 @@ class TegakiColorProcessor {
         this.initialize();
     }
 
-        // CoreのColorManagerへの参照
-        this.colorManager = this.app.colorManager;
-
-        this.initialize();
-    }
 
     initialize() {
         console.log(`Initializing Color Processor at ${this.currentTimestamp}`);
