@@ -2,9 +2,7 @@
 class TegakiColorProcessor {
     constructor(manager) {
         this.currentUser = 'toshinka';
-        this.currentTimestamp = '2025-06-17 14:44:27';
-        
-        // managerへの参照は1つだけにします
+        this.currentTimestamp = '2025-06-17 15:01:14';
         this.coreManager = manager;
         
         // カラー処理の状態
