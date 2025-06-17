@@ -116,3 +116,164 @@ class TegakiBrushEngine {
             this.gl = null;
         }
     }
+
+    async initializeShaders() {
+        // 基本的なブラシシェーダー
+        await this.createShaderProgram('brush', `
+            #version 300 es
+            precision highp float;
+            
+            in vec2 position;
+            in vec2 texcoord;
+            
+            uniform vec2 uScale;
+            uniform vec2 uTranslate;
+            
+            out vec2 vTexCoord;
+            
+            void main() {
+                vec2 pos = position * uScale + uTranslate;
+                gl_Position = vec4(pos, 0.0, 1.0);
+                vTexCoord = texcoord;
+            }
+        `, `
+            #version 300 es
+            precision highp float;
+            
+            in vec2 vTexCoord;
+            
+            uniform sampler2D uTexture;
+            uniform float uHardness;
+            uniform float uOpacity;
+            
+            out vec4 fragColor;
+            
+            void main() {
+                float dist = length(vTexCoord - vec2(0.5));
+                float alpha = smoothstep(0.5, 0.5 * uHardness, dist);
+                vec4 color = texture(uTexture, vTexCoord);
+                fragColor = vec4(color.rgb, color.a * alpha * uOpacity);
+            }
+        `);
+
+        // 混合用シェーダー
+        await this.createShaderProgram('blend', `
+            #version 300 es
+            precision highp float;
+            
+            in vec2 position;
+            in vec2 texcoord;
+            
+            out vec2 vTexCoord;
+            
+            void main() {
+                gl_Position = vec4(position, 0.0, 1.0);
+                vTexCoord = texcoord;
+            }
+        `, `
+            #version 300 es
+            precision highp float;
+            
+            in vec2 vTexCoord;
+            
+            uniform sampler2D uSource;
+            uniform sampler2D uDestination;
+            uniform float uFlow;
+            
+            out vec4 fragColor;
+            
+            void main() {
+                vec4 src = texture(uSource, vTexCoord);
+                vec4 dst = texture(uDestination, vTexCoord);
+                fragColor = mix(dst, src, src.a * uFlow);
+            }
+        `);
+    }
+
+    async createShaderProgram(name, vertexSource, fragmentSource) {
+        const gl = this.gl;
+        
+        // シェーダーのコンパイル
+        const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vertexShader, vertexSource);
+        gl.compileShader(vertexShader);
+
+        const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fragmentShader, fragmentSource);
+        gl.compileShader(fragmentShader);
+
+        // シェーダープログラムの作成
+        const program = gl.createProgram();
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragmentShader);
+        gl.linkProgram(program);
+
+        // エラーチェック
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            const info = gl.getProgramInfoLog(program);
+            throw new Error(`Could not compile WebGL program: ${info}`);
+        }
+
+        // プログラム情報の保存
+        this.glPrograms.set(name, {
+            program: program,
+            attributes: {
+                position: gl.getAttribLocation(program, 'position'),
+                texcoord: gl.getAttribLocation(program, 'texcoord')
+            },
+            uniforms: {
+                uScale: gl.getUniformLocation(program, 'uScale'),
+                uTranslate: gl.getUniformLocation(program, 'uTranslate'),
+                uTexture: gl.getUniformLocation(program, 'uTexture'),
+                uHardness: gl.getUniformLocation(program, 'uHardness'),
+                uOpacity: gl.getUniformLocation(program, 'uOpacity'),
+                uFlow: gl.getUniformLocation(program, 'uFlow')
+            }
+        });
+    }
+
+    async initializeWorkers() {
+        // ブラシ生成ワーカー
+        this.workers.set('brush', new Worker('../Workers/brush-worker-v2-0.js'));
+        
+        // ストローク処理ワーカー
+        this.workers.set('stroke', new Worker('../Workers/stroke-worker-v2-0.js'));
+
+        // ワーカーの初期化
+        for (const [name, worker] of this.workers) {
+            worker.postMessage({
+                type: 'init',
+                settings: this.settings,
+                timestamp: this.currentTimestamp
+            });
+        }
+    }
+
+    async generateBasicBrushes() {
+        // 基本的な円形ブラシ
+        await this.generateBrush('circle', {
+            size: this.settings.defaultSize,
+            hardness: this.settings.defaultHardness,
+            opacity: this.settings.defaultOpacity,
+            flow: this.settings.defaultFlow,
+            spacing: this.settings.defaultSpacing
+        });
+
+        // ソフトブラシ
+        await this.generateBrush('soft', {
+            size: this.settings.defaultSize,
+            hardness: 0.5,
+            opacity: 0.7,
+            flow: 0.8,
+            spacing: 0.15
+        });
+
+        // ハードブラシ
+        await this.generateBrush('hard', {
+            size: this.settings.defaultSize,
+            hardness: 1.0,
+            opacity: 1.0,
+            flow: 1.0,
+            spacing: 0.05
+        });
+    }
