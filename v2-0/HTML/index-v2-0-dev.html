@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tegaki v2.0 - Development</title>
+    <link rel="stylesheet" href="../CSS/style-v2-0.css">
+</head>
+<body>
+    <div id="tegaki-app" class="tegaki-container">
+        <!-- メインツールバー -->
+        <div id="tegaki-toolbar" class="tegaki-toolbar">
+            <div class="tegaki-tool-group">
+                <button id="brush-tool" class="tegaki-tool" title="ブラシ (B)">
+                    <i class="tegaki-icon">🖌️</i>
+                </button>
+                <button id="eraser-tool" class="tegaki-tool" title="消しゴム (E)">
+                    <i class="tegaki-icon">🧹</i>
+                </button>
+                <button id="eyedropper-tool" class="tegaki-tool" title="スポイト (I)">
+                    <i class="tegaki-icon">👁️</i>
+                </button>
+            </div>
+        </div>
+
+        <!-- カラーパレット -->
+        <div id="tegaki-color-palette" class="tegaki-color-palette">
+            <div class="tegaki-color-primary" title="メインカラー"></div>
+            <div class="tegaki-color-secondary" title="サブカラー"></div>
+            <div class="tegaki-color-swatches"></div>
+        </div>
+
+        <!-- レイヤーパネル -->
+        <div id="tegaki-layers" class="tegaki-layers">
+            <div class="tegaki-layers-header">
+                <span>レイヤー</span>
+                <button id="add-layer" title="新規レイヤー">+</button>
+            </div>
+            <div id="tegaki-layer-list" class="tegaki-layer-list"></div>
+        </div>
+
+        <!-- キャンバスエリア -->
+        <div id="tegaki-canvas-area" class="tegaki-canvas-area">
+            <!-- キャンバスはJSで動的に追加 -->
+        </div>
+
+        <!-- ステータスバー -->
+        <div id="tegaki-statusbar" class="tegaki-statusbar">
+            <span id="tegaki-coords">X: 0 Y: 0</span>
+            <span id="tegaki-zoom">100%</span>
+        </div>
+    </div>
+
+    <!-- スクリプトの読み込み -->
+    <script src="../Core/AppManager-v2-0.js"></script>
+    <script src="../Core/CanvasManager-v2-0.js"></script>
+    <script src="../Core/ColorManager-v2-0.js"></script>
+    <script src="../Core/LayerManager-v2-0.js"></script>
+    <script src="../Core/ToolManager-v2-0.js"></script>
+    <script src="../ColorProcessor/ColorProcessor-v2-0.js"></script>
+    <script src="../BrushEngine/BrushEngine-v2-0.js"></script>
+    
+    <!-- アプリケーションの初期化 -->
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            // 現在の日時とユーザー情報
+            const currentUser = 'toshinka';
+            const currentTimestamp = '2025-06-17 15:53:53';
+
+            // アプリケーションの初期化
+            const app = new TegakiAppManager({
+                container: document.getElementById('tegaki-app'),
+                width: 1920,
+                height: 1080,
+                debug: true,
+                currentUser: currentUser,
+                currentTimestamp: currentTimestamp
+            });
+
+            // イベントリスナーの設定
+            app.config.container.addEventListener('tegaki-ready', () => {
+                console.log(`Tegaki application is ready (${currentTimestamp})`);
+                
+                // UIイベントのバインド
+                bindUIEvents(app);
+            });
+
+            // エラーハンドリング
+            app.config.container.addEventListener('tegaki-error', (event) => {
+                console.error('Tegaki error:', event.detail.error);
+            });
+        });
+
+        function bindUIEvents(app) {
+            // ツールの選択
+            document.getElementById('brush-tool').addEventListener('click', () => {
+                app.getManager('tool').setActiveTool('brush');
+            });
+
+            document.getElementById('eraser-tool').addEventListener('click', () => {
+                app.getManager('tool').setActiveTool('eraser');
+            });
+
+            document.getElementById('eyedropper-tool').addEventListener('click', () => {
+                app.getManager('tool').setActiveTool('eyedropper');
+            });
+
+            // レイヤー追加
+            document.getElementById('add-layer').addEventListener('click', () => {
+                app.getManager('layer').addLayer();
+                updateLayerList(app);
+            });
+
+            // カラー選択
+            const colorPrimary = document.querySelector('.tegaki-color-primary');
+            const colorSecondary = document.querySelector('.tegaki-color-secondary');
+
+            colorPrimary.addEventListener('click', () => {
+                // カラーピッカーの実装が必要
+                console.log('Primary color clicked');
+            });
+
+            colorSecondary.addEventListener('click', () => {
+                // カラーピッカーの実装が必要
+                console.log('Secondary color clicked');
+            });
+
+            // キャンバス座標の更新
+            const canvasArea = document.getElementById('tegaki-canvas-area');
+            canvasArea.addEventListener('mousemove', (event) => {
+                const rect = canvasArea.getBoundingClientRect();
+                const x = Math.round(event.clientX - rect.left);
+                const y = Math.round(event.clientY - rect.top);
+                document.getElementById('tegaki-coords').textContent = `X: ${x} Y: ${y}`;
+            });
+        }
+
+        function updateLayerList(app) {
+            const layerList = document.getElementById('tegaki-layer-list');
+            const layers = app.getManager('layer').state.layers;
+            
+            layerList.innerHTML = '';
+            layers.forEach((layer) => {
+                const layerElement = document.createElement('div');
+                layerElement.className = 'tegaki-layer-item';
+                layerElement.innerHTML = `
+                    <input type="checkbox" ${layer.visible ? 'checked' : ''}>
+                    <span>${layer.name}</span>
+                    <div class="tegaki-layer-opacity">
+                        ${Math.round(layer.opacity * 100)}%
+                    </div>
+                `;
+                layerList.appendChild(layerElement);
+            });
+        }
+    </script>
+</body>
+</html>
