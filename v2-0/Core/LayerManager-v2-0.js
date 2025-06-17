@@ -139,3 +139,229 @@ class TegakiLayerManager {
         // レイヤーキャッシュの設定
         this.setupLayerCaching(layer);
     }
+    async setupLayerCaching(layer) {
+        // キャッシュの初期設定
+        layer.cache = {
+            lastModified: this.currentTimestamp,
+            dirtyRegions: new Set(),
+            thumbnail: null,
+            preview: null
+        };
+
+        // サムネイルの生成
+        await this.generateThumbnail(layer);
+
+        // プレビューキャッシュの生成
+        await this.generatePreviewCache(layer);
+    }
+
+    async generateThumbnail(layer) {
+        const thumbnailCanvas = document.createElement('canvas');
+        thumbnailCanvas.width = this.settings.thumbnailSize;
+        thumbnailCanvas.height = this.settings.thumbnailSize * 
+                                (layer.canvas.height / layer.canvas.width);
+
+        const ctx = thumbnailCanvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(
+            layer.canvas,
+            0, 0,
+            thumbnailCanvas.width,
+            thumbnailCanvas.height
+        );
+
+        layer.cache.thumbnail = thumbnailCanvas;
+    }
+
+    async generatePreviewCache(layer) {
+        const previewCanvas = document.createElement('canvas');
+        previewCanvas.width = layer.canvas.width / 2;
+        previewCanvas.height = layer.canvas.height / 2;
+
+        const ctx = previewCanvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'medium';
+        ctx.drawImage(
+            layer.canvas,
+            0, 0,
+            previewCanvas.width,
+            previewCanvas.height
+        );
+
+        layer.cache.preview = previewCanvas;
+    }
+
+    setupLayerCache() {
+        // キャッシュクリーンアップの定期実行
+        setInterval(() => {
+            this.cleanupLayerCache();
+        }, 30000); // 30秒ごと
+    }
+
+    setupOptimization() {
+        // レイヤー合成の最適化設定
+        this.compositingStrategy = {
+            method: this.selectCompositingMethod(),
+            quality: this.determineCompositingQuality(),
+            batchSize: this.calculateBatchSize()
+        };
+    }
+
+    selectCompositingMethod() {
+        if (this.isWebGL2Supported()) {
+            return 'webgl2';
+        } else if (this.isWebGLSupported()) {
+            return 'webgl';
+        }
+        return 'canvas2d';
+    }
+
+    isWebGL2Supported() {
+        try {
+            const canvas = document.createElement('canvas');
+            return !!canvas.getContext('webgl2');
+        } catch (e) {
+            return false;
+        }
+    }
+
+    isWebGLSupported() {
+        try {
+            const canvas = document.createElement('canvas');
+            return !!(canvas.getContext('webgl') || 
+                     canvas.getContext('experimental-webgl'));
+        } catch (e) {
+            return false;
+        }
+    }
+
+    determineCompositingQuality() {
+        // デバイスの性能に基づいて品質を決定
+        if (navigator.hardwareConcurrency >= 8) {
+            return 'high';
+        } else if (navigator.hardwareConcurrency >= 4) {
+            return 'medium';
+        }
+        return 'low';
+    }
+
+    calculateBatchSize() {
+        // デバイスのメモリに基づいてバッチサイズを計算
+        const memory = navigator.deviceMemory || 4;
+        return Math.max(2, Math.min(10, Math.floor(memory / 2)));
+    }
+
+    async setActiveLayer(layerId) {
+        const layer = this.findLayer(layerId);
+        if (!layer) return false;
+
+        this.activeLayer = layer;
+        this.notifyLayerChange('active');
+        return true;
+    }
+
+    findLayer(layerId) {
+        return this.layers.find(layer => layer.id === layerId);
+    }
+
+    async updateLayer(layerId, updateFunction) {
+        const layer = this.findLayer(layerId);
+        if (!layer || layer.locked) return false;
+
+        try {
+            // 更新前の状態を保存
+            await this.saveLayerState(layer);
+
+            // レイヤーの更新
+            await updateFunction(layer);
+
+            // キャッシュの更新
+            await this.updateLayerCache(layer);
+
+            // 履歴の記録
+            this.recordHistory({
+                type: 'layer_update',
+                layerId: layer.id,
+                timestamp: this.currentTimestamp
+            });
+
+            return true;
+
+        } catch (error) {
+            console.error('Layer update failed:', error);
+            await this.restoreLayerState(layer);
+            return false;
+        }
+    }
+
+    async saveLayerState(layer) {
+        const state = {
+            canvas: await this.cloneCanvas(layer.canvas),
+            properties: {
+                visible: layer.visible,
+                opacity: layer.opacity,
+                blendMode: layer.blendMode
+            }
+        };
+
+        this.layerCache.set(`${layer.id}_backup`, state);
+    }
+
+    async cloneCanvas(canvas) {
+        const cloned = document.createElement('canvas');
+        cloned.width = canvas.width;
+        cloned.height = canvas.height;
+
+        const ctx = cloned.getContext('2d');
+        ctx.drawImage(canvas, 0, 0);
+
+        return cloned;
+    }
+
+    async restoreLayerState(layer) {
+        const state = this.layerCache.get(`${layer.id}_backup`);
+        if (!state) return;
+
+        const ctx = layer.context;
+        ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+        ctx.drawImage(state.canvas, 0, 0);
+
+        Object.assign(layer, state.properties);
+    }
+
+    async updateLayerCache(layer) {
+        layer.cache.lastModified = this.currentTimestamp;
+
+        // サムネイルとプレビューの更新
+        await this.generateThumbnail(layer);
+        await this.generatePreviewCache(layer);
+
+        // キャッシュサイズの確認
+        this.checkCacheSize();
+    }
+
+    checkCacheSize() {
+        let totalSize = 0;
+        for (const layer of this.layers) {
+            if (layer.cache.thumbnail) {
+                totalSize += this.estimateCanvasSize(layer.cache.thumbnail);
+            }
+            if (layer.cache.preview) {
+                totalSize += this.estimateCanvasSize(layer.cache.preview);
+            }
+        }
+
+        if (totalSize > this.settings.cacheSize) {
+            this.cleanupLayerCache();
+        }
+    }
+
+    estimateCanvasSize(canvas) {
+        // キャンバスのメモリサイズを推定（バイト単位）
+        return canvas.width * canvas.height * 4;
+    }
+
+    cleanupLayerCache() {
+        *
+
