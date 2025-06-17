@@ -197,6 +197,7 @@ class TegakiColorProcessor {
 
         const k = 1 - Math.max(r, g, b);
         const c = k === 1 ? 0 : (1 - r - k) / (1 - k);
+<<<<<<< HEAD
         const m = k === 1 ? 0 : (1 - g - k) / (1 - k);
         const y = k === 1 ? 0 : (1 - b - k) / (1 - k);
 
@@ -435,3 +436,7 @@ class TegakiColorProcessor {
         this.colorManager = null;
     }
 }
+=======
+        const](#)*
+
+>>>>>>> d7677e77fa29ef9ca0bc65f9b68e784166105bfb
