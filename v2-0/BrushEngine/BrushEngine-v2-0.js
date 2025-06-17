@@ -277,3 +277,150 @@ class TegakiBrushEngine {
             spacing: 0.05
         });
     }
+
+    async generateBrush(name, options) {
+        if (this.state.brushCache.has(name)) {
+            return this.state.brushCache.get(name);
+        }
+
+        const worker = this.workers.get('brush');
+        
+        return new Promise((resolve, reject) => {
+            worker.onmessage = (e) => {
+                if (e.data.error) {
+                    reject(new Error(e.data.error));
+                    return;
+                }
+
+                const brush = {
+                    name: name,
+                    texture: this.createBrushTexture(e.data.imageData),
+                    ...options,
+                    timestamp: Date.now()
+                };
+
+                this.state.brushCache.set(name, brush);
+                this.cleanupBrushCache();
+                
+                resolve(brush);
+            };
+
+            worker.postMessage({
+                type: 'generate',
+                name: name,
+                options: options
+            });
+        });
+    }
+
+    createBrushTexture(imageData) {
+        const gl = this.gl;
+        const texture = gl.createTexture();
+        
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.RGBA,
+            imageData.width,
+            imageData.height,
+            0,
+            gl.RGBA,
+            gl.UNSIGNED_BYTE,
+            imageData.data
+        );
+
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        return texture;
+    }
+
+    cleanupBrushCache() {
+        const now = Date.now();
+        let totalSize = 0;
+
+        // 古いブラシの削除
+        for (const [name, brush] of this.state.brushCache) {
+            if (now - brush.timestamp > this.settings.cacheTTL) {
+                this.gl?.deleteTexture(brush.texture);
+                this.state.brushCache.delete(name);
+                continue;
+            }
+
+            totalSize += this.estimateBrushSize(brush);
+        }
+
+        // キャッシュサイズの制限
+        if (totalSize > this.settings.maxCacheSize) {
+            const brushes = Array.from(this.state.brushCache.entries())
+                .sort((a, b) => b[1].timestamp - a[1].timestamp);
+
+            for (const [name, brush] of brushes) {
+                if (totalSize <= this.settings.maxCacheSize) break;
+                
+                totalSize -= this.estimateBrushSize(brush);
+                this.gl?.deleteTexture(brush.texture);
+                this.state.brushCache.delete(name);
+            }
+        }
+    }
+
+    estimateBrushSize(brush) {
+        // テクスチャのメモリサイズを推定（バイト単位）
+        return 512 * 512 * 4; // 512x512 RGBA
+    }
+
+    async startStroke(point) {
+        if (!this.state.isInitialized || this.state.isProcessing) {
+            return false;
+        }
+
+        this.state.isProcessing = true;
+        this.state.lastPoint = point;
+        this.state.points = [point];
+
+        // ストロークバッファの初期化
+        const ctx = this.offscreen.stroke.getContext('2d');
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+        return true;
+    }
+
+    async continueStroke(point) {
+        if (!this.state.isProcessing || !this.state.lastPoint) {
+            return false;
+        }
+
+        this.state.points.push(point);
+        
+        // ポイント間の補間
+        const interpolatedPoints = this.interpolatePoints(
+            this.state.lastPoint,
+            point
+        );
+
+        // ストロークの描画
+        await this.drawStrokeSegment(interpolatedPoints);
+        
+        this.state.lastPoint = point;
+        return true;
+    }
+
+    async endStroke() {
+        if (!this.state.isProcessing) {
+            return false;
+        }
+
+        // 最終結果の適用
+        await this.applyStroke();
+
+        // 状態のリセット
+        this.state.isProcessing = false;
+        this.state.lastPoint = null;
+        this.state.points = [];
+
+        return true;
+    }
