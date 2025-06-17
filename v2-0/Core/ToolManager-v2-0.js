@@ -221,7 +221,16 @@ class TegakiToolManager {
         if (!tool) return false;
 
         this.previousTool = this.activeTool;
-        this
+        this.activeTool = tool;
+
+        // ツール変更イベントの発火
+        this.notifyToolChange('active', {
+            previous: this.previousTool?.name,
+            current: tool.name
+        });
+
+        return true;
+    }
 
 
     // デフォルトツールの設定
