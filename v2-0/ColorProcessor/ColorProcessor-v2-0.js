@@ -366,5 +366,60 @@ class TegakiColorProcessor {
     // カラーブレンド機能
     blendColors(color1, color2, mode = 'normal', opacity = 1) {
         const c1 = this.convertColor(color1, 'rgb', 'rgb');
-        const c2 = this.convertColor(color2,*
-
+        const c2 = this.convertColor(color2, 'rgb', 'rgb');
+
+        let result;
+        switch (mode) {
+            case 'multiply':
+                result = {
+                    r: (c1.r * c2.r) / 255,
+                    g: (c1.g * c2.g) / 255,
+                    b: (c1.b * c2.b) / 255
+                };
+                break;
+            case 'screen':
+                result = {
+                    r: 255 - ((255 - c1.r) * (255 - c2.r)) / 255,
+                    g: 255 - ((255 - c1.g) * (255 - c2.g)) / 255,
+                    b: 255 - ((255 - c1.b) * (255 - c2.b)) / 255
+                };
+                break;
+            case 'overlay':
+                result = {
+                    r: this.overlayChannel(c1.r, c2.r),
+                    g: this.overlayChannel(c1.g, c2.g),
+                    b: this.overlayChannel(c1.b, c2.b)
+                };
+                break;
+            default: // normal
+                result = c2;
+        }
+
+        return {
+            r: Math.round(result.r),
+            g: Math.round(result.g),
+            b: Math.round(result.b),
+            a: opacity
+        };
+    }
+
+    // オーバーレイブレンドモードの計算
+    overlayChannel(a, b) {
+        return a < 128 ?
+            (2 * a * b) / 255 :
+            255 - (2 * (255 - a) * (255 - b)) / 255;
+    }
+
+    // リソース解放
+    dispose() {
+        // キャッシュのクリア
+        for (const cache of Object.values(this.cache)) {
+            cache.clear();
+        }
+
+        // 状態のリセット
+        this.state = null;
+        this.cache = null;
+        this.colorManager = null;
+    }
+}
