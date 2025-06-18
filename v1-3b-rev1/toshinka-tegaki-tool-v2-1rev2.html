@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>トシンカ手描きツール v2-1rev2</title>
+  <link rel="stylesheet" href="style-v2-1rev1.css">
+  <style>
+    /* 必要なら追加スタイルをここに */
+  </style>
+</head>
+<body>
+  <div id="top-bar"></div>
+  <div id="canvas-area">
+    <div id="canvas-container">
+      <canvas id="drawingCanvas" width="344" height="135" class="main-canvas"></canvas>
+      <!-- レイヤーcanvas・合成canvas・額縁canvasはJSで追加 -->
+    </div>
+  </div>
+  <div id="tool-bar"></div>
+  <div id="pen-settings"></div>
+  <div id="current-layer-info"></div>
+
+  <!-- Manager群の読み込み順序に注意 -->
+  <script src="layer-manager-v2-1rev2.js"></script>
+  <script src="canvas-manager-v2-1rev2.js"></script>
+  <script src="top-bar-manager-v2-1rev2.js"></script>
+  <script src="tool-manager-v2-1rev2.js"></script>
+  <script src="pen-settings-manager-v2-1rev2.js"></script>
+  <script src="shortcut-manager-v2-1rev2.js"></script>
+  <script src="toshinka-tegaki-tool-v2-1rev2.js"></script>
+</body>
+</html>
