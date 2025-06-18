@@ -188,9 +188,14 @@ class ToshinkaTegakiTool {
         this.startAnimation();
     }
     initManagers() {
+        // 1. CanvasManagerを先に初期化！
+        this.canvasManager = new CanvasManager(this);
+
+        // 2. LayerManagerを次に初期化
         this.layerManager = new LayerManager(this);
         this.layerManager.setupInitialLayers();
-        this.canvasManager = new CanvasManager(this);
+
+        // 3. 残りのマネージャを初期化
         this.penSettingsManager = new PenSettingsManager(this);
         this.toolManager = new ToolManager(this);
         this.colorManager = new ColorManager(this);
