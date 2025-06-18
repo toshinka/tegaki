@@ -1,5 +1,3 @@
-// 2025/06 transform刷新対応
-
 class TopBarManager {
     constructor(app) {
         this.app = app;
@@ -33,7 +31,7 @@ class TopBarManager {
         document.getElementById('zoom-out-btn').addEventListener('click', () => this.app.canvasManager.zoom(1 / 1.2));
         document.getElementById('rotate-btn').addEventListener('click', () => this.app.canvasManager.rotate(15));
         document.getElementById('rotate-ccw-btn').addEventListener('click', () => this.app.canvasManager.rotate(-15));
-        document.getElementById('reset-view-btn').addEventListener('click', () => this.app.canvasManager.resetView());
+        document.getElementById('reset-view-btn').addEventListener('click', () => this.app.canvasManager.resetViewAndLayer());
     }
     closeTool() {
         if (confirm('ウィンドウを閉じますか？')) {
@@ -41,7 +39,6 @@ class TopBarManager {
         }
     }
 }
-
 class ShortcutManager {
     constructor(app) {
         this.app = app;
@@ -64,6 +61,19 @@ class ShortcutManager {
             this.app.canvasManager.isSpaceDown = true;
             this.app.canvasManager.updateCursor();
             e.preventDefault();
+        }
+        if (this.app.canvasManager.isSpaceDown) {
+            let handled = true;
+            const moveAmount = 10;
+            switch (e.key) {
+                case 'ArrowUp': this.app.canvasManager.viewTransform.y -= moveAmount; break;
+                case 'ArrowDown': this.app.canvasManager.viewTransform.y += moveAmount; break;
+                case 'ArrowLeft': this.app.canvasManager.viewTransform.x -= moveAmount; break;
+                case 'ArrowRight': this.app.canvasManager.viewTransform.x += moveAmount; break;
+                default: handled = false;
+            }
+            if (handled) e.preventDefault();
+            return;
         }
         let handled = false;
         if (this.app.toolManager.getCurrentTool() === 'move') {
@@ -135,7 +145,7 @@ class ShortcutManager {
                 case 'v': this.app.toolManager.setTool('move'); break;
                 case 'g': this.app.toolManager.setTool('bucket'); break;
                 case 'h': this.app.canvasManager.flipHorizontal(); break;
-                case '1': this.app.canvasManager.resetView(); break;
+                case '1': this.app.canvasManager.resetViewAndLayer(); break;
                 case 'arrowup': this.app.canvasManager.zoom(1.05); break;
                 case 'arrowdown': this.app.canvasManager.zoom(1 / 1.05); break;
                 case 'arrowleft': this.app.canvasManager.rotate(-5); break;
@@ -146,9 +156,7 @@ class ShortcutManager {
         return handled;
     }
     handleWheel(e) {
-        if (this.app.toolManager.getCurrentTool() !== 'move') {
-            return false;
-        }
+        if (this.app.toolManager.getCurrentTool() !== 'move') return false;
         const delta = e.deltaY > 0 ? -1 : 1;
         let handled = true;
         if (e.shiftKey && e.ctrlKey) {
@@ -165,7 +173,6 @@ class ShortcutManager {
         return handled;
     }
 }
-
 class ToshinkaTegakiTool {
     constructor() {
         this.colorManager = null;
@@ -178,15 +185,12 @@ class ToshinkaTegakiTool {
         this.test_currentLayerIndex = 0;
         this.initManagers();
         this.bindTestButtons();
-        this.compositeCanvas = null;
-        this.compositeCtx = null;
-        this.setupCompositePreview();
+        this.startAnimation();
     }
-
     initManagers() {
-        this.canvasManager = new CanvasManager(this);
         this.layerManager = new LayerManager(this);
         this.layerManager.setupInitialLayers();
+        this.canvasManager = new CanvasManager(this);
         this.penSettingsManager = new PenSettingsManager(this);
         this.toolManager = new ToolManager(this);
         this.colorManager = new ColorManager(this);
@@ -198,7 +202,6 @@ class ToshinkaTegakiTool {
         this.colorManager.setColor(this.colorManager.mainColor);
         this.canvasManager.saveState();
     }
-
     bindTestButtons() {
         const addBtn = document.getElementById('add-layer-btn-test');
         const switchBtn = document.getElementById('switch-layer-btn-test');
@@ -219,16 +222,15 @@ class ToshinkaTegakiTool {
             });
         }
     }
-
-    // 2025/06 transform刷新: 合成描画プレビュー
-    setupCompositePreview() {
-        // 任意で利用: compositeCanvasを導入する場合、ここでctxを管理
-        // this.compositeCanvas = ...;
-        // this.compositeCtx = ...;
-        // 合成描画時は: this.canvasManager.drawComposite(this.compositeCtx, width, height);
+    startAnimation() {
+        const loop = () => {
+            this.canvasManager.drawComposite();
+            this.canvasManager.drawFrame();
+            requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
     }
 }
-
 window.addEventListener('DOMContentLoaded', () => {
     if (!window.toshinkaTegakiInitialized) {
         window.toshinkaTegakiInitialized = true;

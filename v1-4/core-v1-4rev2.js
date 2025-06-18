@@ -1,36 +1,11 @@
-// 2025/06 transform刷新対応
-
 class CanvasManager {
     constructor(app) {
         this.app = app;
-        this.canvasArea = document.getElementById('canvas-area');
-        this.canvasContainer = document.getElementById('canvas-container');
-        this.frameCanvas = null;
-        this.currentTool = 'pen';
-        this.currentColor = '#800000';
-        this.currentSize = 1;
-        this.isDrawing = false;
-        this.isPanning = false;
-        this.isMovingLayer = false;
-        this.isSpaceDown = false;
-        this.lastX = 0;
-        this.lastY = 0;
-        this.history = [];
-        this.historyIndex = -1;
-        this.dragStartX = 0;
-        this.dragStartY = 0;
-        this.moveLayerStartX = 0;
-        this.moveLayerStartY = 0;
-        this.scale = 1;
-        this.rotation = 0;
-        this.transformState = { scaleX: 1, scaleY: 1 };
-        this.activeLayer = null;
-        this.activeCtx = null;
-        this.createAndDrawFrame();
-        this.bindEvents();
-    }
-
-    createAndDrawFrame() {
+        this.compositeCanvas = document.createElement('canvas');
+        this.compositeCanvas.width = 344;
+        this.compositeCanvas.height = 135;
+        this.compositeCanvas.className = 'main-canvas';
+        this.compositeCtx = this.compositeCanvas.getContext('2d');
         this.frameCanvas = document.createElement('canvas');
         this.frameCanvas.width = 364;
         this.frameCanvas.height = 145;
@@ -39,196 +14,276 @@ class CanvasManager {
         this.frameCanvas.style.top = '-5px';
         this.frameCanvas.style.zIndex = '-1';
         this.frameCanvas.style.pointerEvents = 'none';
-        this.canvasContainer.insertBefore(this.frameCanvas, this.canvasContainer.firstChild);
-        const frameCtx = this.frameCanvas.getContext('2d');
-        frameCtx.fillStyle = '#ffffff';
-        frameCtx.strokeStyle = '#cccccc';
-        frameCtx.lineWidth = 1;
-        frameCtx.beginPath();
-        frameCtx.roundRect(0.5, 0.5, this.frameCanvas.width - 1, this.frameCanvas.height - 1, 8);
-        frameCtx.fill();
-        frameCtx.stroke();
+        this.viewTransform = {
+            x: 0,
+            y: 0,
+            scale: 1,
+            rotation: 0
+        };
+        this.currentTool = 'pen';
+        this.currentColor = '#800000';
+        this.currentSize = 1;
+        this.isDrawing = false;
+        this.isSpaceDown = false;
+        this.lastX = 0;
+        this.lastY = 0;
+        this.history = [];
+        this.historyIndex = -1;
+        this.initDOM();
+        this.createAndDrawFrame();
+        this.bindEvents();
     }
-
+    initDOM() {
+        const area = document.getElementById('canvas-area');
+        const container = document.getElementById('canvas-container');
+        container.innerHTML = '';
+        container.appendChild(this.frameCanvas);
+        container.appendChild(this.compositeCanvas);
+        this.canvasArea = area;
+        this.canvasContainer = container;
+    }
+    createAndDrawFrame() {
+        const ctx = this.frameCanvas.getContext('2d');
+        ctx.clearRect(0, 0, this.frameCanvas.width, this.frameCanvas.height);
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#cccccc';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(0.5, 0.5, this.frameCanvas.width - 1, this.frameCanvas.height - 1, 8);
+        ctx.fill();
+        ctx.stroke();
+    }
     bindEvents() {
-        this.canvasArea.addEventListener('pointerdown', this.onPointerDown.bind(this));
+        this.compositeCanvas.addEventListener('pointerdown', this.onPointerDown.bind(this));
         document.addEventListener('pointermove', this.onPointerMove.bind(this));
         document.addEventListener('pointerup', this.onPointerUp.bind(this));
         this.canvasArea.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
     }
-
-    setActiveLayerContext(canvas, ctx) {
-        this.activeLayer = canvas;
-        this.activeCtx = ctx;
-        this.updateCursor();
-    }
-
     setCurrentTool(tool) {
         this.currentTool = tool;
+        this.updateCursor();
     }
-
     setCurrentColor(color) {
         this.currentColor = color;
     }
-
     setCurrentSize(size) {
         this.currentSize = size;
     }
-
-    onPointerDown(e) {
-        if (!this.app.layerManager) return;
-        if (!this.activeLayer || e.target !== this.activeLayer) return;
-        const coords = this.getCanvasCoordinates(e, this.app.layerManager.activeLayerIndex);
-        this.lastX = coords.x;
-        this.lastY = coords.y;
-        if (this.currentTool === 'move') {
-            this.isMovingLayer = true;
-            this.moveLayerStartX = e.clientX;
-            this.moveLayerStartY = e.clientY;
-        } else if (this.currentTool === 'bucket') {
-            this.fill(Math.floor(this.lastX), Math.floor(this.lastY), this.currentColor);
-            this.saveState();
-        } else {
-            this.isDrawing = true;
-            this.activeCtx.beginPath();
-            this.activeCtx.moveTo(this.lastX, this.lastY);
-        }
-        try { document.documentElement.setPointerCapture(e.pointerId); } catch (err) {}
+    setActiveLayer(layerObj) {
+        this.activeLayer = layerObj;
+        this.updateCursor();
     }
-
-    onPointerMove(e) {
-        if (!e.buttons) return;
-        if (!this.app.layerManager) return;
-        if (this.isMovingLayer) {
-            const dx = e.clientX - this.moveLayerStartX;
-            const dy = e.clientY - this.moveLayerStartY;
-            this.app.layerManager.moveActiveLayer(dx, dy);
-            this.moveLayerStartX = e.clientX;
-            this.moveLayerStartY = e.clientY;
-        } else if (this.isDrawing) {
-            const coords = this.getCanvasCoordinates(e, this.app.layerManager.activeLayerIndex);
-            const currentX = coords.x;
-            const currentY = coords.y;
-            this.activeCtx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
-            this.activeCtx.strokeStyle = this.currentColor;
-            this.activeCtx.lineWidth = this.currentSize;
-            this.activeCtx.lineTo(currentX, currentY);
-            this.activeCtx.stroke();
-            this.lastX = currentX;
-            this.lastY = currentY;
-        }
-    }
-
-    onPointerUp(e) {
-        try {
-            if (document.documentElement.hasPointerCapture(e.pointerId)) {
-                document.documentElement.releasePointerCapture(e.pointerId);
-            }
-        } catch (err) {}
-        if (this.isDrawing) {
-            this.isDrawing = false;
-            this.activeCtx.closePath();
-            this.saveState();
-        }
-        if (this.isMovingLayer) this.isMovingLayer = false;
-    }
-
-    getCanvasCoordinates(e, layerIndex) {
-        // 2025/06 transform刷新: レイヤーごとのtransform情報を逆変換
-        const layer = this.app.layerManager.layers[layerIndex];
-        if (!layer) return { x: 0, y: 0 };
-        const rect = this.activeLayer.getBoundingClientRect();
-        const cx = rect.left + rect.width / 2;
-        const cy = rect.top + rect.height / 2;
-        let x = e.clientX - cx;
-        let y = e.clientY - cy;
-        // 逆transform
-        const t = layer.transform;
-        const rad = -t.rotation * Math.PI / 180;
-        const cos = Math.cos(rad), sin = Math.sin(rad);
-        let tx = x * cos - y * sin;
-        let ty = x * sin + y * cos;
-        tx = tx / t.scale / t.scaleX;
-        ty = ty / t.scale / t.scaleY;
-        return {
-            x: tx + this.activeLayer.width / 2,
-            y: ty + this.activeLayer.height / 2
-        };
-    }
-
     updateCursor() {
-        if (!this.activeLayer) return;
+        if (!this.compositeCanvas) return;
+        if (this.isSpaceDown) {
+            this.canvasArea.style.cursor = 'grab';
+            this.compositeCanvas.style.cursor = 'grab';
+            return;
+        }
+        this.canvasArea.style.cursor = 'default';
         switch (this.currentTool) {
-            case 'move': this.activeLayer.style.cursor = 'move'; break;
+            case 'move': this.compositeCanvas.style.cursor = 'move'; break;
             case 'pen':
             case 'eraser':
             case 'bucket':
-            default: this.activeLayer.style.cursor = 'crosshair'; break;
+            default: this.compositeCanvas.style.cursor = 'crosshair'; break;
         }
     }
+    getCanvasCoordinates(e) {
+        // 逆変換(view→layer→canvas)でcanvas座標を取得
+        const rect = this.compositeCanvas.getBoundingClientRect();
+        let x = e.clientX - rect.left;
+        let y = e.clientY - rect.top;
 
+        // viewTransform逆変換
+        const vt = this.viewTransform;
+        const cx = this.compositeCanvas.width / 2;
+        const cy = this.compositeCanvas.height / 2;
+        x -= cx; y -= cy;
+        let r = -vt.rotation * Math.PI / 180;
+        let cos = Math.cos(r), sin = Math.sin(r);
+        let tx = (x * cos - y * sin) / vt.scale - vt.x;
+        let ty = (x * sin + y * cos) / vt.scale - vt.y;
+        tx += cx; ty += cy;
+
+        // layer.transform逆変換
+        if (this.activeLayer) {
+            const t = this.activeLayer.transform;
+            let lx = tx - cx, ly = ty - cy;
+            let r2 = -t.rotation * Math.PI / 180;
+            let c2 = Math.cos(r2), s2 = Math.sin(r2);
+            let fx = (lx * c2 - ly * s2) / (t.scale * t.scaleX) - t.x;
+            let fy = (lx * s2 + ly * c2) / (t.scale * t.scaleY) - t.y;
+            tx = fx + cx; ty = fy + cy;
+        }
+        return { x: tx, y: ty };
+    }
+    onPointerDown(e) {
+        if (!this.activeLayer) return;
+        if (this.isSpaceDown) { this.spaceDragStart = { x: e.clientX, y: e.clientY }; this.spaceViewStart = { ...this.viewTransform }; this.isPanning = true; e.preventDefault(); return; }
+        if (this.currentTool === 'move') {
+            this.moveLayerStart = { x: e.clientX, y: e.clientY };
+            this.moveLayerOrig = { x: this.activeLayer.transform.x, y: this.activeLayer.transform.y };
+            this.isMovingLayer = true;
+        } else if (this.currentTool === 'bucket') {
+            const coords = this.getCanvasCoordinates(e);
+            this.fill(Math.floor(coords.x), Math.floor(coords.y), this.currentColor);
+            this.saveState();
+        } else if (this.currentTool === 'pen' || this.currentTool === 'eraser') {
+            const coords = this.getCanvasCoordinates(e);
+            this.lastX = coords.x;
+            this.lastY = coords.y;
+            this.isDrawing = true;
+            const ctx = this.activeLayer.ctx;
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(this.lastX, this.lastY);
+            ctx.restore();
+        }
+    }
+    onPointerMove(e) {
+        if (!e.buttons) { this.isDrawing = false; this.isMovingLayer = false; this.isPanning = false; return; }
+        if (this.isPanning) {
+            const dx = e.clientX - this.spaceDragStart.x;
+            const dy = e.clientY - this.spaceDragStart.y;
+            this.viewTransform.x = this.spaceViewStart.x + dx;
+            this.viewTransform.y = this.spaceViewStart.y + dy;
+        } else if (this.isMovingLayer) {
+            const dx = e.clientX - this.moveLayerStart.x;
+            const dy = e.clientY - this.moveLayerStart.y;
+            this.activeLayer.transform.x = this.moveLayerOrig.x + dx;
+            this.activeLayer.transform.y = this.moveLayerOrig.y + dy;
+        } else if (this.isDrawing) {
+            const coords = this.getCanvasCoordinates(e);
+            const ctx = this.activeLayer.ctx;
+            ctx.save();
+            ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
+            ctx.strokeStyle = this.currentColor;
+            ctx.lineWidth = this.currentSize;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.lineTo(coords.x, coords.y);
+            ctx.stroke();
+            ctx.moveTo(coords.x, coords.y);
+            ctx.restore();
+            this.lastX = coords.x;
+            this.lastY = coords.y;
+        }
+    }
+    onPointerUp(e) {
+        this.isDrawing = false;
+        this.isMovingLayer = false;
+        this.isPanning = false;
+        if (this.activeLayer && (this.currentTool === 'pen' || this.currentTool === 'eraser')) {
+            this.activeLayer.ctx.closePath();
+            this.saveState();
+        }
+    }
     saveState() {
-        if (!this.activeCtx) return;
-        if (this.historyIndex < this.history.length - 1) {
-            this.history = this.history.slice(0, this.historyIndex + 1);
+        if (!this.activeLayer) return;
+        if (!this.activeLayer.history) this.activeLayer.history = [];
+        if (!this.activeLayer.historyIndex) this.activeLayer.historyIndex = -1;
+        const ctx = this.activeLayer.ctx;
+        if (this.activeLayer.historyIndex < this.activeLayer.history.length - 1) {
+            this.activeLayer.history = this.activeLayer.history.slice(0, this.activeLayer.historyIndex + 1);
         }
-        this.history.push(this.activeCtx.getImageData(0, 0, this.activeLayer.width, this.activeLayer.height));
-        this.historyIndex++;
+        this.activeLayer.history.push(ctx.getImageData(0, 0, this.activeLayer.canvas.width, this.activeLayer.canvas.height));
+        this.activeLayer.historyIndex++;
     }
-
     undo() {
-        if (this.historyIndex > 0) {
-            this.historyIndex--;
-            this.activeCtx.putImageData(this.history[this.historyIndex], 0, 0);
+        if (!this.activeLayer) return;
+        if ((this.activeLayer.historyIndex ?? -1) > 0) {
+            this.activeLayer.historyIndex--;
+            this.activeLayer.ctx.putImageData(this.activeLayer.history[this.activeLayer.historyIndex], 0, 0);
         }
     }
-
     redo() {
-        if (this.historyIndex < this.history.length - 1) {
-            this.historyIndex++;
-            this.activeCtx.putImageData(this.history[this.historyIndex], 0, 0);
+        if (!this.activeLayer) return;
+        if ((this.activeLayer.historyIndex ?? -1) < (this.activeLayer.history?.length ?? 0) - 1) {
+            this.activeLayer.historyIndex++;
+            this.activeLayer.ctx.putImageData(this.activeLayer.history[this.activeLayer.historyIndex], 0, 0);
         }
     }
-
     clearCanvas() {
-        this.activeCtx.clearRect(0, 0, this.activeLayer.width, this.activeLayer.height);
+        if (!this.activeLayer) return;
+        this.activeLayer.ctx.clearRect(0, 0, this.activeLayer.canvas.width, this.activeLayer.canvas.height);
         this.saveState();
     }
-
     clearAllLayers() {
-        if (!this.app.layerManager || !this.app.layerManager.layers) return;
-        this.app.layerManager.layers.forEach((layer, index) => {
-            const lw = layer.canvas.width;
-            const lh = layer.canvas.height;
-            layer.ctx.clearRect(0, 0, lw, lh);
-            if (index === 0) {
+        if (!this.app.layerManager.layers) return;
+        this.app.layerManager.layers.forEach((layer, idx) => {
+            layer.ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+            if (idx === 0) {
                 layer.ctx.fillStyle = '#f0e0d6';
-                layer.ctx.fillRect(0, 0, lw, lh);
+                layer.ctx.fillRect(0, 0, layer.canvas.width, layer.canvas.height);
             }
         });
         this.saveState();
     }
-
     flipHorizontal() {
-        this.app.layerManager.flipActiveLayerHorizontal();
+        if (this.activeLayer) {
+            this.activeLayer.transform.scaleX *= -1;
+        }
     }
-
     flipVertical() {
-        this.app.layerManager.flipActiveLayerVertical();
+        if (this.activeLayer) {
+            this.activeLayer.transform.scaleY *= -1;
+        }
     }
-
     zoom(factor) {
-        this.app.layerManager.scaleActiveLayer(factor);
+        this.viewTransform.scale = Math.max(0.1, Math.min(this.viewTransform.scale * factor, 10));
     }
-
-    rotate(degrees) {
-        this.app.layerManager.rotateActiveLayer(degrees);
+    rotate(deg) {
+        this.viewTransform.rotation = (this.viewTransform.rotation + deg) % 360;
     }
-
-    resetView() {
-        this.app.layerManager.resetActiveLayerTransform();
+    resetViewAndLayer() {
+        this.viewTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
+        this.app.layerManager.layers.forEach(l => {
+            l.transform = this.app.layerManager.getDefaultTransform();
+        });
     }
+    drawComposite() {
+        const ctx = this.compositeCtx;
+        ctx.clearRect(0, 0, this.compositeCanvas.width, this.compositeCanvas.height);
+        ctx.save();
+        const vt = this.viewTransform;
+        const cx = this.compositeCanvas.width / 2;
+        const cy = this.compositeCanvas.height / 2;
+        ctx.translate(cx + vt.x, cy + vt.y);
+        ctx.rotate(vt.rotation * Math.PI / 180);
+        ctx.scale(vt.scale, vt.scale);
 
+        for (const layer of this.app.layerManager.layers) {
+            ctx.save();
+            const t = layer.transform;
+            ctx.translate(t.x, t.y);
+            ctx.rotate(t.rotation * Math.PI / 180);
+            ctx.scale((t.scale ?? 1) * (t.scaleX ?? 1), (t.scale ?? 1) * (t.scaleY ?? 1));
+            ctx.drawImage(layer.canvas, -cx, -cy);
+            ctx.restore();
+        }
+        ctx.restore();
+    }
+    drawFrame() {
+        const ctx = this.frameCanvas.getContext('2d');
+        ctx.clearRect(0, 0, this.frameCanvas.width, this.frameCanvas.height);
+        ctx.save();
+        const vt = this.viewTransform;
+        const cx = this.compositeCanvas.width / 2;
+        const cy = this.compositeCanvas.height / 2;
+        ctx.translate(cx + vt.x, cy + vt.y);
+        ctx.rotate(vt.rotation * Math.PI / 180);
+        ctx.scale(vt.scale, vt.scale);
+        ctx.translate(-this.frameCanvas.width / 2, -this.frameCanvas.height / 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#cccccc';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(0.5, 0.5, this.frameCanvas.width - 1, this.frameCanvas.height - 1, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+    }
     handleWheel(e) {
         if (this.app.shortcutManager && this.app.shortcutManager.handleWheel(e)) {
             e.preventDefault();
@@ -242,16 +297,13 @@ class CanvasManager {
             this.zoom(delta > 0 ? 1.1 : 1 / 1.1);
         }
     }
-
     colorsMatch(a, b) {
         return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
     }
-
     getPixelColor(imageData, x, y) {
         const i = (y * imageData.width + x) * 4;
         return [imageData.data[i], imageData.data[i + 1], imageData.data[i + 2], imageData.data[i + 3]];
     }
-
     setPixelColor(imageData, x, y, color) {
         const i = (y * imageData.width + x) * 4;
         imageData.data[i] = color[0];
@@ -259,11 +311,12 @@ class CanvasManager {
         imageData.data[i + 2] = color[2];
         imageData.data[i + 3] = color[3];
     }
-
     fill(startX, startY, fillColor) {
-        const canvasWidth = this.activeLayer.width;
-        const canvasHeight = this.activeLayer.height;
-        const imageData = this.activeCtx.getImageData(0, 0, canvasWidth, canvasHeight);
+        if (!this.activeLayer) return;
+        const canvasWidth = this.activeLayer.canvas.width;
+        const canvasHeight = this.activeLayer.canvas.height;
+        const ctx = this.activeLayer.ctx;
+        const imageData = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
         const startColor = this.getPixelColor(imageData, startX, startY);
         const fillColorArr = this.hexToRgba(fillColor);
         if (this.colorsMatch(startColor, fillColorArr)) return;
@@ -275,9 +328,8 @@ class CanvasManager {
             this.setPixelColor(imageData, x, y, fillColorArr);
             queue.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
         }
-        this.activeCtx.putImageData(imageData, 0, 0);
+        ctx.putImageData(imageData, 0, 0);
     }
-
     hexToRgba(hex) {
         const c = hex.replace('#', '');
         if (c.length === 3) {
@@ -293,25 +345,6 @@ class CanvasManager {
         }
         return [0, 0, 0, 255];
     }
-
-    // 2025/06 transform刷新: 合成描画メソッド
-    drawComposite(ctx, width, height) {
-        if (!this.app.layerManager) return;
-        ctx.clearRect(0, 0, width, height);
-        this.app.layerManager.layers.forEach((layer, idx) => {
-            if (!layer || !layer.canvas) return;
-            ctx.save();
-            const t = layer.transform;
-            ctx.translate(width / 2 + t.x, height / 2 + t.y);
-            ctx.rotate(t.rotation * Math.PI / 180);
-            ctx.scale(t.scale * t.scaleX, t.scale * t.scaleY);
-            ctx.beginPath();
-            ctx.rect(-layer.canvas.width / 2, -layer.canvas.height / 2, layer.canvas.width, layer.canvas.height);
-            ctx.clip();
-            ctx.drawImage(layer.canvas, -layer.canvas.width / 2, -layer.canvas.height / 2);
-            ctx.restore();
-        });
-    }
 }
 
 class LayerManager {
@@ -321,113 +354,95 @@ class LayerManager {
         this.activeLayerIndex = -1;
         this.canvasContainer = document.getElementById('canvas-container');
     }
-
     getDefaultTransform() {
         return {
-            x: 0, y: 0, scale: 1, rotation: 0, scaleX: 1, scaleY: 1,
+            x: 0,
+            y: 0,
+            scale: 1,
+            rotation: 0,
+            scaleX: 1,
+            scaleY: 1,
         };
     }
-
     setupInitialLayers() {
-        const initialCanvas = document.getElementById('drawingCanvas');
-        if (!initialCanvas) return;
-        this.layers.push({
-            canvas: initialCanvas,
-            ctx: initialCanvas.getContext('2d'),
-            transform: this.getDefaultTransform(),
-        });
-        const firstLayerCtx = this.layers[0].ctx;
-        firstLayerCtx.fillStyle = '#f0e0d6';
-        firstLayerCtx.fillRect(0, 0, initialCanvas.width, initialCanvas.height);
+        const initial = document.createElement('canvas');
+        initial.width = 344;
+        initial.height = 135;
+        initial.className = 'main-canvas';
+        const ctx = initial.getContext('2d');
+        ctx.fillStyle = '#f0e0d6';
+        ctx.fillRect(0, 0, initial.width, initial.height);
+        const layer = {
+            canvas: initial,
+            ctx: ctx,
+            transform: this.getDefaultTransform()
+        };
+        this.layers.push(layer);
         this.switchLayer(0);
+        this.updateAllLayerZIndexes();
     }
-
     addLayer() {
         if (this.layers.length === 0) return null;
-        const baseCanvas = this.layers[0].canvas;
-        const newCanvas = document.createElement('canvas');
-        newCanvas.width = baseCanvas.width;
-        newCanvas.height = baseCanvas.height;
-        newCanvas.className = 'main-canvas';
-        newCanvas.style.position = 'absolute';
-        newCanvas.style.top = '0';
-        newCanvas.style.left = '0';
-        this.canvasContainer.appendChild(newCanvas);
-        const newLayer = {
-            canvas: newCanvas,
-            ctx: newCanvas.getContext('2d'),
-            transform: this.getDefaultTransform(),
+        const base = this.layers[0].canvas;
+        const newC = document.createElement('canvas');
+        newC.width = base.width; newC.height = base.height;
+        newC.className = 'main-canvas';
+        const newL = {
+            canvas: newC,
+            ctx: newC.getContext('2d'),
+            transform: this.getDefaultTransform()
         };
-        this.layers.push(newLayer);
-        newLayer.ctx.lineCap = 'round';
-        newLayer.ctx.lineJoin = 'round';
+        this.layers.push(newL);
+        this.updateAllLayerZIndexes();
         this.switchLayer(this.layers.length - 1);
-        return newLayer;
+        return newL;
     }
-
     switchLayer(index) {
         if (index < 0 || index >= this.layers.length) return;
         this.activeLayerIndex = index;
         const activeLayer = this.getCurrentLayer();
         if (activeLayer) {
-            this.app.canvasManager.setActiveLayerContext(activeLayer.canvas, activeLayer.ctx);
-            this.layers.forEach((layer, i) => {
-                layer.canvas.style.pointerEvents = (i === index) ? 'auto' : 'none';
-            });
+            this.app.canvasManager.setActiveLayer(activeLayer);
             const infoEl = document.getElementById('current-layer-info');
-            if (infoEl) {
-                infoEl.textContent = `L: ${this.activeLayerIndex + 1}/${this.layers.length}`;
-            }
+            if (infoEl) infoEl.textContent = `L: ${this.activeLayerIndex + 1}/${this.layers.length}`;
         }
     }
-
     getCurrentLayer() {
         if (this.activeLayerIndex >= 0 && this.activeLayerIndex < this.layers.length) {
             return this.layers[this.activeLayerIndex];
         }
         return null;
     }
-
+    updateAllLayerZIndexes() {}
     moveActiveLayer(dx, dy) {
         const layer = this.getCurrentLayer();
         if (layer) {
             layer.transform.x += dx;
-        layer.transform.y += dy;
+            layer.transform.y += dy;
         }
     }
-
     scaleActiveLayer(factor) {
         const layer = this.getCurrentLayer();
         if (layer) {
             layer.transform.scale *= factor;
         }
     }
-
     rotateActiveLayer(degrees) {
         const layer = this.getCurrentLayer();
         if (layer) {
             layer.transform.rotation = (layer.transform.rotation + degrees) % 360;
         }
     }
-
     flipActiveLayerHorizontal() {
         const layer = this.getCurrentLayer();
         if (layer) {
             layer.transform.scaleX *= -1;
         }
     }
-
     flipActiveLayerVertical() {
         const layer = this.getCurrentLayer();
         if (layer) {
             layer.transform.scaleY *= -1;
-        }
-    }
-
-    resetActiveLayerTransform() {
-        const layer = this.getCurrentLayer();
-        if (layer) {
-            layer.transform = this.getDefaultTransform();
         }
     }
 }
