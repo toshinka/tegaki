@@ -926,3 +926,178 @@ class ColorManager {
 }
 
 // このコードでツール切り替えUIと連携処理が動作可能
+
+// ToshinkaTegakiTool main implementation
+class ToshinkaTegakiTool {
+    constructor() {
+        // マネージャーの初期化
+        this.layerManager = new LayerManager(this);
+        this.canvasManager = new CanvasManager(this);
+        this.toolUIManager = new ToolUIManager(this);
+        this.colorManager = new ColorManager(this.toolUIManager);
+
+        // 初期レイヤーとUIの設定
+        this.layerManager.setupInitialLayers();
+        this.setupShortcuts();
+        this.setupEventBindings();
+
+        // 描画イベントの初期化
+        this.initializeDrawingEvents();
+    }
+
+    setupShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            // スペースキー押下時の処理
+            if (e.code === 'Space' && !this.canvasManager.isSpaceDown) {
+                this.canvasManager.isSpaceDown = true;
+                this.canvasManager.updateCursor();
+                e.preventDefault();
+            }
+
+            // ツール切り替えショートカット
+            if (e.code === 'KeyV') {
+                this.toolUIManager.setTool('move');
+            }
+            if (e.code === 'KeyP') {
+                this.toolUIManager.setTool('pen');
+            }
+            if (e.code === 'KeyE') {
+                this.toolUIManager.setTool('eraser');
+            }
+            if (e.code === 'KeyG') {
+                this.toolUIManager.setTool('bucket');
+            }
+
+            // カラー切り替え
+            if (e.code === 'KeyX') {
+                this.colorManager.swapColors();
+            }
+
+            // Undo/Redo
+            if (e.ctrlKey && e.code === 'KeyZ') {
+                if (e.shiftKey) {
+                    this.canvasManager.redo();
+                } else {
+                    this.canvasManager.undo();
+                }
+                e.preventDefault();
+            }
+
+            // 表示リセット
+            if (e.code === 'Digit1' && !e.ctrlKey && !e.altKey) {
+                this.canvasManager.resetView();
+            }
+
+            // レイヤー反転
+            if (e.code === 'KeyH') {
+                if (e.shiftKey) {
+                    this.layerManager.flipActiveLayerVertical();
+                } else {
+                    this.layerManager.flipActiveLayerHorizontal();
+                }
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.code === 'Space') {
+                this.canvasManager.isSpaceDown = false;
+                this.canvasManager.updateCursor();
+            }
+        });
+    }
+
+    setupEventBindings() {
+        // 上部ツールバーのイベント
+        document.getElementById('undo-btn').onclick = () => this.canvasManager.undo();
+        document.getElementById('redo-btn').onclick = () => this.canvasManager.redo();
+        document.getElementById('clear-btn').onclick = () => this.canvasManager.clearCanvas();
+        
+        document.getElementById('flip-h-btn').onclick = () => this.layerManager.flipActiveLayerHorizontal();
+        document.getElementById('flip-v-btn').onclick = () => this.layerManager.flipActiveLayerVertical();
+        document.getElementById('zoom-in-btn').onclick = () => this.canvasManager.zoom(1.1);
+        document.getElementById('zoom-out-btn').onclick = () => this.canvasManager.zoom(0.9);
+        document.getElementById('rotate-btn').onclick = () => this.canvasManager.rotate(15);
+        document.getElementById('rotate-ccw-btn').onclick = () => this.canvasManager.rotate(-15);
+        document.getElementById('reset-view-btn').onclick = () => this.canvasManager.resetView();
+
+        // テスト用コントロール
+        document.getElementById('add-layer-btn-test').onclick = () => this.layerManager.addLayer();
+        document.getElementById('switch-layer-btn-test').onclick = () => {
+            const nextIndex = (this.layerManager.activeLayerIndex + 1) % this.layerManager.layers.length;
+            this.layerManager.switchLayer(nextIndex);
+        };
+    }
+
+    initializeDrawingEvents() {
+        let isDrawing = false;
+        let lastX, lastY;
+
+        this.canvasManager.canvas.addEventListener('pointerdown', (e) => {
+            if (this.canvasManager.isSpaceDown) return;
+
+            const coords = this.canvasManager.getCanvasCoordinates(e);
+            lastX = coords.x;
+            lastY = coords.y;
+
+            const currentTool = this.toolUIManager.currentTool;
+            
+            if (currentTool === 'bucket') {
+                const color = this.colorManager.getMainColor();
+                this.canvasManager.fill(Math.floor(lastX), Math.floor(lastY), color);
+                this.canvasManager.saveState();
+            } else if (currentTool === 'move') {
+                this.canvasManager.isMovingLayer = true;
+                this.canvasManager.moveLayerStartX = e.clientX;
+                this.canvasManager.moveLayerStartY = e.clientY;
+            } else {
+                isDrawing = true;
+                this.canvasManager.ctx.beginPath();
+                this.canvasManager.ctx.moveTo(lastX, lastY);
+            }
+        });
+
+        document.addEventListener('pointermove', (e) => {
+            if (!isDrawing || this.canvasManager.isSpaceDown) return;
+
+            const coords = this.canvasManager.getCanvasCoordinates(e);
+            const currentTool = this.toolUIManager.currentTool;
+
+            if (currentTool === 'move' && this.canvasManager.isMovingLayer) {
+                const dx = e.clientX - this.canvasManager.moveLayerStartX;
+                const dy = e.clientY - this.canvasManager.moveLayerStartY;
+                this.layerManager.moveActiveLayer(dx, dy);
+                this.canvasManager.moveLayerStartX = e.clientX;
+                this.canvasManager.moveLayerStartY = e.clientY;
+            } else if (currentTool === 'pen' || currentTool === 'eraser') {
+                this.canvasManager.ctx.lineWidth = this.toolUIManager.getCurrentSize();
+                this.canvasManager.ctx.lineCap = 'round';
+                this.canvasManager.ctx.lineJoin = 'round';
+                this.canvasManager.ctx.globalCompositeOperation = 
+                    currentTool === 'eraser' ? 'destination-out' : 'source-over';
+                this.canvasManager.ctx.strokeStyle = this.colorManager.getMainColor();
+
+                this.canvasManager.ctx.lineTo(coords.x, coords.y);
+                this.canvasManager.ctx.stroke();
+                lastX = coords.x;
+                lastY = coords.y;
+            }
+        });
+
+        document.addEventListener('pointerup', () => {
+            if (isDrawing) {
+                isDrawing = false;
+                this.canvasManager.saveState();
+            }
+            if (this.canvasManager.isMovingLayer) {
+                this.canvasManager.isMovingLayer = false;
+            }
+        });
+    }
+}
+
+// 起動処理
+window.onload = () => {
+    window.app = new ToshinkaTegakiTool();
+};
+
+// このコードで完全起動セットのUIと描画動作が可能
