@@ -1,4 +1,4 @@
-// 🚨 Toshinka Tegaki Tool v1-4系 UI/初期化/ショートカット管理（命令書完全準拠）🚨
+// 🚨 Toshinka Tegaki Tool v1-4系 UI/初期化/ショートカット管理（命令書完全準拠・rev2eデバッグ追加）🚨
 
 class TopBarManager {
     constructor(app) {
@@ -85,9 +85,9 @@ class ShortcutManager {
             this.app.layerManager.redo(); e.preventDefault(); return;
         }
 
-        // --- カラーパレット移動ショートカット (最優先/必ず効く) ---
-        // [ / ] および Shift+[ / Shift+]、国際配列/日本語配列も網羅
-        // BracketLeft, BracketRight, [, {, ], }
+        // --- rev2e修正: [ / Shift+[ ショートカット競合防止 ---
+        // [ / ] でペンサイズ
+        // Shift+[/]（国際配列対応含む）でカラーパレット
         let isBracketLeft = (
             e.code === 'BracketLeft' ||
             e.key === '[' || e.key === '{'
@@ -96,14 +96,30 @@ class ShortcutManager {
             e.code === 'BracketRight' ||
             e.key === ']' || e.key === '}'
         );
-        if (isBracketLeft) {
-            this.app.colorManager.changeColor(false);
+        // [ / ] 単独 → ペンサイズ
+        if (isBracketLeft && !e.shiftKey) {
+            this.app.penSettingsManager.changeSize(false);
             e.preventDefault();
+            console.log('ペンサイズDOWN [ ショートカット');
             return;
         }
-        if (isBracketRight) {
+        if (isBracketRight && !e.shiftKey) {
+            this.app.penSettingsManager.changeSize(true);
+            e.preventDefault();
+            console.log('ペンサイズUP ] ショートカット');
+            return;
+        }
+        // Shift+[ / Shift+] → カラーパレット移動
+        if (isBracketLeft && e.shiftKey) {
+            this.app.colorManager.changeColor(false);
+            e.preventDefault();
+            console.log('カラーパレット← Shift+[ ショートカット');
+            return;
+        }
+        if (isBracketRight && e.shiftKey) {
             this.app.colorManager.changeColor(true);
             e.preventDefault();
+            console.log('カラーパレット→ Shift+] ショートカット');
             return;
         }
         // -----------------------------------------------------
@@ -133,9 +149,6 @@ class ShortcutManager {
         // drawing-layer0ではtransform/消しゴム/バケツ系ショートカットを無効化
         // ペンサイズ・色・ツール
         switch (e.key.toLowerCase()) {
-            // ペンサイズ変更ショートカットは削除・競合防止のためコメントアウト/無効化
-            //case '[': this.app.penSettingsManager.changeSize(false); e.preventDefault(); break;
-            //case ']': this.app.penSettingsManager.changeSize(true); e.preventDefault(); break;
             case 'x': this.app.colorManager.swapColors(); e.preventDefault(); break;
             case 'd': this.app.colorManager.resetColors(); e.preventDefault(); break;
             case 'p': this.app.toolManager.setTool('pen'); e.preventDefault(); break;
@@ -146,6 +159,8 @@ class ShortcutManager {
     }
     // ペン描画系
     handlePenPointerDown(e) {
+        // rev2e: デバッグログ
+        console.log("handlePenPointerDown called", e);
         const layer = this.app.layerManager.getActiveLayer();
         const isBaseLayer = layer?._isBaseLayer;
         const tool = this.app.toolManager.getCurrentTool();
@@ -179,6 +194,8 @@ class ShortcutManager {
             };
             window.addEventListener('pointermove', move, true);
             window.addEventListener('pointerup', up, true);
+            // rev2e: デバッグ即時描画
+            console.log("ペン描画スタート", x, y, "色:", layer.ctx.strokeStyle, "太さ:", layer.ctx.lineWidth);
         } else if (tool === 'bucket') {
             // drawing-layer0もバケツOK（命令書では消しゴムのみ禁止）
             const { x, y } = this.app.canvasManager.getLayerDrawCoord(e.clientX, e.clientY, layer);
@@ -229,7 +246,6 @@ class ShortcutManager {
     handleLayerWheel(e) {
         const layer = this.app.layerManager.getActiveLayer();
         if (!layer || layer._isBaseLayer) {
-            // drawing-layer0はmove/transform禁止
             return;
         }
         if (this.app.toolManager.getCurrentTool() === 'move') {
@@ -260,6 +276,8 @@ class ToshinkaTegakiTool {
         this.initManagers();
         this.bindTestButtons();
         this.ensureLayerStack();
+        // rev2e: デバッグ用可視化
+        if (window.ensureCanvasVisibilityDebug) window.ensureCanvasVisibilityDebug();
     }
     initManagers() {
         this.canvasManager = new CanvasManager(this);
@@ -275,6 +293,7 @@ class ToshinkaTegakiTool {
         this.penSettingsManager.setSize(1);
         this.colorManager.setColor(this.colorManager.mainColor);
         this.layerManager.saveState();
+        console.log("ToshinkaTegakiTool initialized");
     }
     bindTestButtons() {
         const addBtn = document.getElementById('add-layer-btn-test');
@@ -294,9 +313,7 @@ class ToshinkaTegakiTool {
             });
         }
     }
-    // drawing-layer0を基準にレイヤーstack DOMエリアを用意
     ensureLayerStack() {
-        // drawing-layer0の親要素(canvas-container)内にlayer-stack divを用意
         const baseCanvas = document.getElementById('drawing-layer0');
         if (!baseCanvas) return;
         let stack = document.getElementById('layer-stack');
@@ -309,21 +326,79 @@ class ToshinkaTegakiTool {
             stack.style.width = '100%';
             stack.style.height = '100%';
             stack.style.pointerEvents = 'none';
-            stack.style.zIndex = '0';
-            // drawing-layer0の直後(composite-canvasの前)に挿入
+            stack.style.zIndex = '10';
             baseCanvas.parentNode.insertBefore(stack, baseCanvas.nextSibling);
-        } else {
-            stack.style.zIndex = '0';
         }
         // drawing-layer0だけはlayer-stackには絶対に移動させない
     }
 }
 
+// デバッグ用: 強制的に赤線を引く関数
+window.forceDebugDraw = function() {
+    const base = document.getElementById('drawing-layer0');
+    if (base) {
+        const ctx = base.getContext('2d');
+        ctx.save();
+        ctx.strokeStyle = '#ff2222';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0,0);
+        ctx.lineTo(base.width, base.height);
+        ctx.moveTo(base.width, 0);
+        ctx.lineTo(0, base.height);
+        ctx.stroke();
+        ctx.restore();
+        console.log("forceDebugDraw: 赤線描画 (drawing-layer0)");
+    }
+    const composite = document.getElementById('composite-canvas');
+    if (composite) {
+        // 薄い青線も描く
+        const ctx = composite.getContext('2d');
+        ctx.save();
+        ctx.strokeStyle = 'rgba(20,80,255,0.4)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0,0);
+        ctx.lineTo(composite.width, composite.height);
+        ctx.stroke();
+        ctx.restore();
+        console.log("forceDebugDraw: 青線描画 (composite-canvas)");
+    }
+    const frame = document.getElementById('frame-canvas');
+    if (frame) {
+        // 額縁上にも緑線
+        const ctx = frame.getContext('2d');
+        ctx.save();
+        ctx.strokeStyle = 'rgba(30,220,30,0.6)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0,0);
+        ctx.lineTo(frame.width, frame.height);
+        ctx.stroke();
+        ctx.restore();
+        console.log("forceDebugDraw: 緑線描画 (frame-canvas)");
+    }
+};
+
+// デバッグ用: canvasタグの可視性・Z順を強制確認
+window.ensureCanvasVisibilityDebug = function() {
+    ['drawing-layer0','composite-canvas','frame-canvas'].forEach(id=>{
+        const c = document.getElementById(id);
+        if (c) {
+            c.style.display = 'block';
+            c.style.opacity = 1;
+            c.style.visibility = 'visible';
+            c.style.pointerEvents = id === 'frame-canvas' ? 'none' : 'auto';
+            c.style.zIndex = id==='drawing-layer0'?2:(id==='composite-canvas'?3:4);
+            console.log(`ensureCanvasVisibilityDebug: ${id} display/opacity/zIndex/pointer-events set`);
+        }
+    });
+};
+
+// DOMContentLoadedで初期化
 window.addEventListener('DOMContentLoaded', () => {
     if (!window.toshinkaTegakiInitialized) {
         window.toshinkaTegakiInitialized = true;
         window.toshinkaTegakiTool = new ToshinkaTegakiTool();
     }
-    // デバッグ: canvas強制可視化
-    if (window.ensureCanvasVisibilityDebug) window.ensureCanvasVisibilityDebug();
 });

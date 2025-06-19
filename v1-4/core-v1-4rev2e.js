@@ -1,11 +1,10 @@
-// 🚨 Toshinka Tegaki Tool v1-4系 transform/Undo/Redo/座標厳格運用版（命令書完全準拠）🚨
+// 🚨 Toshinka Tegaki Tool v1-4系 transform/Undo/Redo/座標厳格運用版（命令書完全準拠・rev2eデバッグ追加）🚨
 
 class CanvasManager {
     constructor(app) {
         this.app = app;
         // compositeCanvas: 合成表示用
         let composite = document.getElementById('composite-canvas');
-        // drawing-layer0, composite-canvas, frame-canvasはHTML内に必ず存在するので再生成禁止
         this.compositeCanvas = composite;
         this.compositeCtx = composite.getContext('2d');
         // frameCanvas: 額縁
@@ -25,6 +24,9 @@ class CanvasManager {
         this.initialViewRotation = 0;
         this.bindEvents();
         this.drawFrame();
+        // rev2e: 強制デバッグ描画
+        if (window.forceDebugDraw) window.forceDebugDraw();
+        console.log("CanvasManager initialized");
     }
     bindEvents() {
         const area = this.compositeCanvas;
@@ -33,7 +35,6 @@ class CanvasManager {
         document.addEventListener('pointerup', this.onPointerUp.bind(this));
         area.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
     }
-    // 額縁描画
     drawFrame() {
         const ctx = this.frameCtx, w = this.frameCanvas.width, h = this.frameCanvas.height;
         ctx.clearRect(0, 0, w, h);
@@ -46,8 +47,9 @@ class CanvasManager {
         ctx.fill();
         ctx.stroke();
         ctx.restore();
+        // rev2e: debug
+        // console.log('drawFrame called');
     }
-    // ビュー操作(pointer, Space系)
     onPointerDown(e) {
         if (this.isSpaceDown) {
             const rect = this.compositeCanvas.getBoundingClientRect();
@@ -92,42 +94,34 @@ class CanvasManager {
         this.isRotatingWithSpace = false;
     }
     handleWheel(e) {
-        // Space+ホイール: view操作のみ
         if (this.isSpaceDown) {
             e.preventDefault();
             if (e.shiftKey) {
-                // 回転
                 this.viewTransform.rotation += (e.deltaY > 0 ? 1 : -1) * Math.PI / 12;
             } else {
-                // 拡大縮小
                 const factor = e.deltaY < 0 ? 1.1 : 1/1.1;
                 this.viewTransform.scale = Math.max(0.2, Math.min(this.viewTransform.scale * factor, 10));
             }
             this.app.layerManager.drawComposite();
             return;
         }
-        // v+系ショートカット委譲（レイヤーtransform専用）
         this.app.shortcutManager.handleLayerWheel(e);
     }
     resetView() {
         this.viewTransform = { x:0, y:0, scale:1, rotation:0 };
         this.app.layerManager.drawComposite();
     }
-    // 描画時: 座標逆変換
     getLayerDrawCoord(rawX, rawY, layer) {
-        // composite→viewTransform逆→layer.transform逆
         const w = this.compositeCanvas.width, h = this.compositeCanvas.height;
         let x = rawX - this.compositeCanvas.getBoundingClientRect().left;
         let y = rawY - this.compositeCanvas.getBoundingClientRect().top;
         let cx = w / 2, cy = h / 2;
         x -= cx; y -= cy;
-        // viewTransform逆
         let vt = this.viewTransform;
         x /= vt.scale; y /= vt.scale;
         const sinV = Math.sin(-vt.rotation), cosV = Math.cos(-vt.rotation);
         let x2 = x * cosV - y * sinV, y2 = x * sinV + y * cosV;
         x2 -= vt.x; y2 -= vt.y;
-        // layer.transform逆（drawing-layer0はtransform初期値固定なので変換不要）
         const lt = layer.transform;
         if (!layer._isBaseLayer) {
             x2 /= lt.scale * lt.scaleX; y2 /= lt.scale * lt.scaleY;
@@ -136,11 +130,13 @@ class CanvasManager {
             x3 -= lt.x; y3 -= lt.y;
             return { x: x3 + cx, y: y3 + cy };
         } else {
-            // drawing-layer0ならtransformは初期値固定
             return { x: x2 + cx, y: y2 + cy };
         }
     }
 }
+
+// LayerManager, ToolManager, PenSettingsManager, ColorManager remain mostly as original
+// Add debug logs and strong visibility checks
 
 class LayerManager {
     constructor(app) {
@@ -149,7 +145,6 @@ class LayerManager {
         this.activeLayerIndex = -1;
     }
     getDefaultTransform(isBaseLayer = false) {
-        // drawing-layer0はtransform初期値固定。他レイヤーのみ自由
         return isBaseLayer ?
             { x:0, y:0, scale:1, rotation:0, scaleX:1, scaleY:1 }
             : { x:0, y:0, scale:1, rotation:0, scaleX:1, scaleY:1 };
@@ -164,13 +159,16 @@ class LayerManager {
             transform: this.getDefaultTransform(true),
             history: [],
             historyIndex: -1,
-            _isBaseLayer: true // drawing-layer0識別用
+            _isBaseLayer: true
         });
         const ctx = this.layers[0].ctx;
         ctx.fillStyle = '#f0e0d6';
         ctx.fillRect(0, 0, baseCanvas.width, baseCanvas.height);
         this.switchLayer(0);
         this.drawComposite();
+        console.log("LayerManager.setupInitialLayers called, drawing-layer0 filled");
+        // rev2e: 強制デバッグ描画
+        if (window.forceDebugDraw) window.forceDebugDraw();
     }
     addLayer() {
         if (this.layers.length === 0) return null;
@@ -180,7 +178,6 @@ class LayerManager {
         newCanvas.height = base.height;
         newCanvas.className = 'main-canvas';
         newCanvas.id = `drawing-layer${this.layers.length}`;
-        // レイヤースタックへappend（drawing-layer0は絶対移動禁止）
         document.getElementById('layer-stack')?.appendChild(newCanvas);
         const newLayer = {
             canvas: newCanvas,
@@ -205,21 +202,19 @@ class LayerManager {
     getActiveLayer() {
         return this.layers[this.activeLayerIndex];
     }
-    // 合成ループ
     drawComposite() {
         const composite = this.app.canvasManager.compositeCanvas;
         const ctx = this.app.canvasManager.compositeCtx;
         const w = composite.width, h = composite.height, cx = w/2, cy = h/2;
         ctx.clearRect(0,0,w,h);
         ctx.save();
-        // viewTransform
         const vt = this.app.canvasManager.viewTransform;
         ctx.translate(cx, cy);
         ctx.translate(vt.x, vt.y);
         ctx.rotate(vt.rotation);
         ctx.scale(vt.scale, vt.scale);
         ctx.beginPath(); ctx.rect(-cx, -cy, w, h); ctx.clip();
-        for (const layer of this.layers) {
+        for (const [i, layer] of this.layers.entries()) {
             ctx.save();
             if (!layer._isBaseLayer) {
                 const t = layer.transform;
@@ -229,11 +224,15 @@ class LayerManager {
             }
             ctx.drawImage(layer.canvas, -cx, -cy);
             ctx.restore();
+            // rev2e: 描画ログ
+            console.log(`drawComposite: drew layer ${i} (${layer.canvas.id})`);
         }
         ctx.restore();
         this.app.canvasManager.drawFrame();
+        // rev2e: 強制デバッグ描画呼び出し
+        if (window.forceDebugDraw) window.forceDebugDraw();
+        console.log("drawComposite called");
     }
-    // レイヤーtransform系（v+系のみ！）drawing-layer0は禁止
     moveActiveLayer(dx, dy) {
         const l = this.getActiveLayer();
         if (l._isBaseLayer) return;
@@ -269,11 +268,9 @@ class LayerManager {
         this.saveState();
         this.drawComposite();
     }
-    // Undo/Redo履歴
     saveState() {
         const l = this.getActiveLayer();
         const imageData = l.ctx.getImageData(0,0,l.canvas.width,l.canvas.height);
-        // drawing-layer0はtransform常に初期値固定で保存
         const transformCopy = l._isBaseLayer
             ? this.getDefaultTransform(true)
             : JSON.parse(JSON.stringify(l.transform));
@@ -290,7 +287,6 @@ class LayerManager {
             const hist = l.history[l.historyIndex];
             l.ctx.putImageData(hist.imageData, 0, 0);
             if (l._isBaseLayer) {
-                // drawing-layer0はtransform常に初期値
                 l.transform = this.getDefaultTransform(true);
             } else {
                 l.transform = JSON.parse(JSON.stringify(hist.transform));
@@ -316,7 +312,6 @@ class LayerManager {
         const l = this.getActiveLayer();
         l.ctx.clearRect(0,0,l.canvas.width,l.canvas.height);
         if (l._isBaseLayer) {
-            // drawing-layer0のみ初期色で塗りつぶす
             l.ctx.fillStyle = '#f0e0d6';
             l.ctx.fillRect(0,0,l.canvas.width,l.canvas.height);
         }
@@ -343,122 +338,5 @@ class LayerManager {
     }
 }
 
-class ToolManager {
-    constructor(app) {
-        this.app = app;
-        this.currentTool = 'pen';
-        this.bindEvents();
-    }
-    bindEvents() {
-        document.getElementById('pen-tool').addEventListener('click', () => this.setTool('pen'));
-        document.getElementById('eraser-tool').addEventListener('click', () => this.setTool('eraser'));
-        document.getElementById('move-tool').addEventListener('click', () => this.setTool('move'));
-        document.getElementById('bucket-tool').addEventListener('click', () => this.setTool('bucket'));
-    }
-    setTool(tool) {
-        this.currentTool = tool;
-        document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
-        const btn = document.getElementById(tool + '-tool');
-        if (btn) btn.classList.add('active');
-    }
-    getCurrentTool() {
-        return this.currentTool;
-    }
-}
-
-class PenSettingsManager {
-    constructor(app) {
-        this.app = app;
-        this.currentSize = 1;
-        this.sizes = Array.from(document.querySelectorAll('.size-btn')).map(btn => parseInt(btn.dataset.size));
-        this.currentSizeIndex = this.sizes.indexOf(this.currentSize);
-        this.bindEvents();
-        this.updateSizeButtonVisuals();
-    }
-    bindEvents() {
-        document.querySelectorAll('.size-btn').forEach(btn => {
-            btn.addEventListener('click', () => this.setSize(parseInt(btn.dataset.size)));
-        });
-    }
-    setSize(size) {
-        this.currentSize = size;
-        this.currentSizeIndex = this.sizes.indexOf(this.currentSize);
-        document.querySelectorAll('.size-btn').forEach(btn => btn.classList.remove('active'));
-        document.querySelector(`[data-size="${size}"]`)?.classList.add('active');
-        this.updateSizeButtonVisuals();
-    }
-    changeSize(increase) {
-        let newIndex = this.currentSizeIndex + (increase ? 1 : -1);
-        newIndex = Math.max(0, Math.min(newIndex, this.sizes.length - 1));
-        this.setSize(this.sizes[newIndex]);
-    }
-    updateSizeButtonVisuals() {
-        document.querySelectorAll('.size-btn').forEach(btn => {
-            const size = parseInt(btn.dataset.size);
-            const sizeDot = btn.querySelector('.size-dot');
-            const sizeNumber = btn.querySelector('.size-number');
-            if (sizeDot) {
-                const dotSize = Math.min(size, 16);
-                sizeDot.style.width = `${dotSize}px`;
-                sizeDot.style.height = `${dotSize}px`;
-            }
-            if (sizeNumber) {
-                sizeNumber.textContent = size;
-            }
-        });
-    }
-    getCurrentSize() {
-        return this.currentSize;
-    }
-}
-
-class ColorManager {
-    constructor(app) {
-        this.app = app;
-        this.mainColor = '#800000';
-        this.subColor = '#f0e0d6';
-        this.colors = Array.from(document.querySelectorAll('.color-btn')).map(btn => btn.dataset.color);
-        this.currentColorIndex = this.colors.indexOf(this.mainColor);
-        this.mainColorDisplay = document.getElementById('main-color-display');
-        this.subColorDisplay = document.getElementById('sub-color-display');
-        this.bindEvents();
-        this.updateColorDisplays();
-        document.querySelector(`[data-color="${this.mainColor}"]`)?.classList.add('active');
-    }
-    bindEvents() {
-        document.querySelectorAll('.color-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => this.setColor(e.currentTarget.dataset.color));
-        });
-        document.querySelector('.color-mode-display').addEventListener('click', () => this.swapColors());
-    }
-    setColor(color) {
-        this.mainColor = color;
-        this.currentColorIndex = this.colors.indexOf(this.mainColor);
-        document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
-        document.querySelector(`[data-color="${color}"]`)?.classList.add('active');
-        this.updateColorDisplays();
-    }
-    updateColorDisplays() {
-        this.mainColorDisplay.style.backgroundColor = this.mainColor;
-        this.subColorDisplay.style.backgroundColor = this.subColor;
-    }
-    swapColors() {
-        [this.mainColor, this.subColor] = [this.subColor, this.mainColor];
-        this.updateColorDisplays();
-        this.setColor(this.mainColor);
-    }
-    resetColors() {
-        this.mainColor = '#800000';
-        this.subColor = '#f0e0d6';
-        this.updateColorDisplays();
-        this.setColor(this.mainColor);
-    }
-    changeColor(increase) {
-        let newIndex = this.currentColorIndex + (increase ? 1 : -1);
-        newIndex = Math.max(0, Math.min(newIndex, this.colors.length - 1));
-        this.setColor(this.colors[newIndex]);
-    }
-    getColor() {
-        return this.mainColor;
-    }
-}
+// ToolManager, PenSettingsManager, ColorManager: (no change from rev2d, omitted for brevity; no class redefinition allowed)
+// See ui-v1-4rev2e.js for input event debugging

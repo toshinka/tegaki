@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=344, initial-scale=1.0">
-    <title>ToshinkaTegakiTool-v1-4-rev2</title>
+    <title>ToshinkaTegakiTool-v1-4-rev2e</title>
     <style>
         body {
             margin: 0;
@@ -78,7 +78,6 @@
             padding: 0;
             transition: transform 0.2s ease;
             transform-style: preserve-3d;
-            /* z-index: 50; 不要 */
         }
         .main-canvas {
             display: block;
@@ -88,16 +87,14 @@
             position: absolute;
             top: 0; 
             left: 0;
-            pointer-events: auto;
+            /* pointer-events: none; ←rev2e: pointer-eventsは外すことでペン操作可 */
+            pointer-events: auto !important;
             z-index: 1;
-            opacity: 1 !important;
-            visibility: visible !important;
+            opacity: 1;
         }
-        /* 強制可視化用 (デバッグ時はコメント解除)
-        .main-canvas {
-            outline: 1px solid #f00 !important;
-        }
-        */
+        #drawing-layer0 { z-index: 2; }
+        #composite-canvas { z-index: 3; }
+        #frame-canvas { z-index: 4; pointer-events: none !important; }
         .top-left-controls {
             display: flex;
             flex-direction: row;
@@ -264,12 +261,6 @@
             border: 1px solid #000;
             opacity: 0.8;
         }
-        /* デバッグ: layer-stackはcanvasより下に */
-        #layer-stack {
-            pointer-events: none;
-            z-index: 0 !important;
-            /* 強制下層 */
-        }
     </style>
 </head>
 <body>
@@ -336,10 +327,10 @@
         </div>
         <div class="canvas-area" id="canvas-area">
             <div class="canvas-container" id="canvas-container">
-                <!-- rev2必須: 初期レイヤーcanvas -->
-                <canvas id="drawing-layer0" class="main-canvas" width="344" height="135" style="z-index:3;"></canvas>
-                <canvas id="composite-canvas" class="main-canvas" width="344" height="135" style="z-index:4;"></canvas>
-                <canvas id="frame-canvas" class="main-canvas" width="344" height="135" style="z-index:5; pointer-events:none;"></canvas>
+                <!-- rev2e: z-index順の明示とpointer-events修正に注意 -->
+                <canvas id="drawing-layer0" class="main-canvas" width="344" height="135"></canvas>
+                <canvas id="composite-canvas" class="main-canvas" width="344" height="135"></canvas>
+                <canvas id="frame-canvas" class="main-canvas" width="344" height="135"></canvas>
             </div>
         </div>
         <div id="test-controls">
@@ -348,45 +339,8 @@
             <span id="current-layer-info"></span>
         </div>
     </div>
+    <!-- rev2e: JSファイル名もrev2eに変更 -->
     <script src="core-v1-4rev2e.js"></script>
     <script src="ui-v1-4rev2e.js"></script>
-    <script>
-    // --- デバッグ用可視化・強制表示関数 ---
-    window.ensureCanvasVisibilityDebug = function() {
-        // 1. 各canvasの可視化強制
-        ["drawing-layer0","composite-canvas","frame-canvas"].forEach(id=>{
-            const c = document.getElementById(id);
-            if (!c) {console.warn("未検出canvas:",id); return;}
-            c.style.display = 'block';
-            c.style.visibility = 'visible';
-            c.style.opacity = '1';
-            c.style.pointerEvents = (id==="frame-canvas") ? "none" : "auto";
-            // z-index再設定
-            if (id==="drawing-layer0") c.style.zIndex = 3;
-            if (id==="composite-canvas") c.style.zIndex = 4;
-            if (id==="frame-canvas") c.style.zIndex = 5;
-        });
-        // 2. canvas-container, canvas-areaも強制可視化
-        ["canvas-container","canvas-area"].forEach(id=>{
-            const e = document.getElementById(id);
-            if (e) {
-                e.style.display = 'flex';
-                e.style.visibility = 'visible';
-                e.style.opacity = '1';
-            }
-        });
-        // 3. #layer-stackは下層へ
-        const stack = document.getElementById('layer-stack');
-        if (stack) stack.style.zIndex = '0';
-        // 4. デバッグ: DOM順
-        const cc = document.getElementById('canvas-container');
-        if (cc) {
-            const arr = Array.from(cc.children).map(e=>`${e.id||e.nodeName}(z:${e.style.zIndex||'?'})`);
-            console.log("canvas-container DOM順:", arr.join(" > "));
-        }
-    };
-    // 起動時にも実行
-    window.addEventListener('DOMContentLoaded',()=>window.ensureCanvasVisibilityDebug());
-    </script>
 </body>
 </html>
