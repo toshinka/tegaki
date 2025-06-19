@@ -5,6 +5,13 @@ class CanvasManager {
         this.ctx = null;
         this.canvasArea = document.getElementById('canvas-area');
         this.canvasContainer = document.getElementById('canvas-container');
+
+        // ★追加: イベントを受け取るための透明なキャンバス
+        this.eventCanvas = document.getElementById('eventCanvas');
+        // ★追加: 大きさを描画キャンバスと合わせる
+        this.eventCanvas.width = 344;
+        this.eventCanvas.height = 135;
+
         this.frameCanvas = null;
         this.isDrawing = false;
         this.isPanning = false;
@@ -26,7 +33,6 @@ class CanvasManager {
         this.canvasStartY = 0;
         this.moveLayerStartX = 0;
         this.moveLayerStartY = 0;
-        this.moveLayerImageData = null;
         this.scale = 1;
         this.rotation = 0;
         this.transformState = { scaleX: 1, scaleY: 1 };
@@ -54,10 +60,11 @@ class CanvasManager {
         frameCtx.stroke();
     }
     bindEvents() {
-        this.canvasArea.addEventListener('pointerdown', this.onPointerDown.bind(this));
+        // ★修正: イベントはすべて eventCanvas で受け取る
+        this.eventCanvas.addEventListener('pointerdown', this.onPointerDown.bind(this));
         document.addEventListener('pointermove', this.onPointerMove.bind(this));
         document.addEventListener('pointerup', this.onPointerUp.bind(this));
-        this.canvasArea.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
+        this.eventCanvas.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
     }
     setActiveLayerContext(canvas, ctx) {
         this.canvas = canvas;
@@ -94,9 +101,8 @@ class CanvasManager {
             }
             e.preventDefault();
         } else {
-            // ★修正: アクティブレイヤーのキャンバス以外を触っても反応しないようにする
-            const activeLayer = this.app.layerManager.getCurrentLayer();
-            if (!activeLayer || e.target !== activeLayer.canvas) return;
+            // ★修正: e.target のチェックを削除し、アクティブレイヤーの存在だけ確認
+            if (!this.app.layerManager.getCurrentLayer()) return;
             
             const coords = this.getCanvasCoordinates(e);
             this.lastX = coords.x;
@@ -115,11 +121,14 @@ class CanvasManager {
             }
         }
         try {
-            document.documentElement.setPointerCapture(e.pointerId);
+            // ★修正: キャプチャ対象を eventCanvas にする
+            this.eventCanvas.setPointerCapture(e.pointerId);
         } catch (err) { }
     }
     onPointerMove(e) {
-        if (!e.buttons) return;
+        // ★修正: ボタンが押されていない場合もキャプチャ中なら処理を続ける
+        if (!e.buttons && !this.eventCanvas.hasPointerCapture(e.pointerId)) return;
+
         if (this.isRotatingWithSpace) {
             const rect = this.canvasContainer.getBoundingClientRect();
             const centerX = rect.left + rect.width / 2;
@@ -154,8 +163,8 @@ class CanvasManager {
     }
     onPointerUp(e) {
         try {
-            if (document.documentElement.hasPointerCapture(e.pointerId)) {
-                document.documentElement.releasePointerCapture(e.pointerId);
+            if (this.eventCanvas.hasPointerCapture(e.pointerId)) {
+                this.eventCanvas.releasePointerCapture(e.pointerId);
             }
         } catch (err) { }
         if (this.isDrawing) {
@@ -167,7 +176,6 @@ class CanvasManager {
         if (this.isRotatingWithSpace) this.isRotatingWithSpace = false;
         if (this.isMovingLayer) {
             this.isMovingLayer = false;
-            // ★修正: レイヤー移動後もアンドゥ履歴に保存する
             this.saveState();
         }
     }
@@ -185,10 +193,7 @@ class CanvasManager {
             this.canvasStartY = parseFloat(this.canvasContainer.style.top || 0);
         }
     }
-
-    // ★★★修正: レイヤーの変形も考慮した座標計算を行う
     getCanvasCoordinates(e) {
-        // --- 1. グローバル変換の逆変換 (ビューポート -> コンテナ) ---
         const containerRect = this.canvasContainer.getBoundingClientRect();
         const viewCenterX = containerRect.left + containerRect.width / 2;
         const viewCenterY = containerRect.top + containerRect.height / 2;
@@ -196,18 +201,15 @@ class CanvasManager {
         let mouseX = e.clientX - viewCenterX;
         let mouseY = e.clientY - viewCenterY;
 
-        // グローバル回転の逆
         const globalRad = -this.rotation * Math.PI / 180;
         const globalCos = Math.cos(globalRad);
         const globalSin = Math.sin(globalRad);
         let unrotatedX = mouseX * globalCos - mouseY * globalSin;
         let unrotatedY = mouseX * globalSin + mouseY * globalCos;
 
-        // グローバルスケール・反転の逆
         let unscaledX = unrotatedX / (this.scale * this.transformState.scaleX);
         let unscaledY = unrotatedY / (this.scale * this.transformState.scaleY);
 
-        // --- 2. アクティブレイヤーの個別変換の逆変換 (コンテナ -> レイヤー) ---
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !this.canvas) {
              const fallbackCanvasX = unscaledX + (this.canvas ? this.canvas.width / 2 : 0);
@@ -215,26 +217,22 @@ class CanvasManager {
              return { x: fallbackCanvasX, y: fallbackCanvasY };
         }
 
-        const lt = activeLayer.transform; // Layer Transform
+        const lt = activeLayer.transform;
 
-        // レイヤーの移動の逆
         let layerRelativeX = unscaledX - lt.x;
         let layerRelativeY = unscaledY - lt.y;
 
-        // レイヤーの回転の逆
         const layerRad = -lt.rotation * Math.PI / 180;
         const layerCos = Math.cos(layerRad);
         const layerSin = Math.sin(layerRad);
         let unrotatedLayerX = layerRelativeX * layerCos - layerRelativeY * layerSin;
         let unrotatedLayerY = layerRelativeX * layerSin + layerRelativeY * layerCos;
 
-        // レイヤーのスケール・反転の逆
         const finalScaleX = lt.scale * lt.scaleX;
         const finalScaleY = lt.scale * lt.scaleY;
         const unscaledLayerX = finalScaleX !== 0 ? unrotatedLayerX / finalScaleX : 0;
         const unscaledLayerY = finalScaleY !== 0 ? unrotatedLayerY / finalScaleY : 0;
         
-        // --- 3. キャンバスローカル座標へ変換 ---
         const canvasX = unscaledLayerX + this.canvas.width / 2;
         const canvasY = unscaledLayerY + this.canvas.height / 2;
 
@@ -242,27 +240,25 @@ class CanvasManager {
     }
 
     updateCursor() {
-        if (!this.canvas) return;
-        const activeLayerCanvas = this.app.layerManager.getCurrentLayer()?.canvas;
-        if (!activeLayerCanvas) return;
-
+        // ★修正: カーソルは eventCanvas に設定する
+        if (!this.eventCanvas) return;
+        
         if (this.isSpaceDown) {
             this.canvasArea.style.cursor = 'grab';
-            activeLayerCanvas.style.cursor = 'grab';
+            this.eventCanvas.style.cursor = 'grab';
             return;
         } else {
             this.canvasArea.style.cursor = 'default';
         }
         switch (this.currentTool) {
-            case 'move': activeLayerCanvas.style.cursor = 'move'; break;
+            case 'move': this.eventCanvas.style.cursor = 'move'; break;
             case 'pen':
             case 'eraser':
             case 'bucket':
-            default: activeLayerCanvas.style.cursor = 'crosshair'; break;
+            default: this.eventCanvas.style.cursor = 'crosshair'; break;
         }
     }
 
-    // ★★★修正: 履歴に全レイヤーの変形情報と描画情報を保存する
     saveState() {
         if (!this.app.layerManager.layers.length) return;
 
@@ -277,7 +273,6 @@ class CanvasManager {
         if (this.historyIndex < this.history.length - 1) {
             this.history = this.history.slice(0, this.historyIndex + 1);
         }
-        // 履歴が深くなりすぎないように制限（例：50件）
         if (this.history.length >= 50) {
             this.history.shift();
             this.historyIndex--;
@@ -286,37 +281,29 @@ class CanvasManager {
         this.historyIndex++;
     }
 
-    // ★★★追加: 履歴から状態を復元するための共通メソッド
     applyState(state) {
         if (!state) return;
         
-        // 全レイヤーの状態を復元
         this.app.layerManager.layers.forEach((layer, index) => {
             if (state.layersData[index]) {
                 const layerState = state.layersData[index];
-                // transformを復元
                 layer.transform = JSON.parse(JSON.stringify(layerState.transform));
                 this.app.layerManager.updateLayerTransform(layer);
-                // imageDataを復元
                 layer.ctx.putImageData(layerState.imageData, 0, 0);
             }
         });
 
-        // アクティブレイヤーを復元
         this.app.layerManager.switchLayer(state.activeLayerIndex);
     }
 
-    // ★★★修正: applyStateを使ってアンドゥを行う
     undo() {
         if (this.historyIndex > 0) {
             this.historyIndex--;
-            // 履歴0は初期状態なので、その一つ手前の状態を復元する
             const state = this.history[this.historyIndex];
             this.applyState(state);
         }
     }
 
-    // ★★★修正: applyStateを使ってリドゥを行う
     redo() {
         if (this.historyIndex < this.history.length - 1) {
             this.historyIndex++;
@@ -326,6 +313,7 @@ class CanvasManager {
     }
 
     clearCanvas() {
+        if (!this.ctx) return;
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         this.saveState();
     }
@@ -457,6 +445,8 @@ class LayerManager {
         if (!initialCanvas) {
             return;
         }
+        // ★追加: 描画レイヤーはイベントを受け取らないようにする
+        initialCanvas.style.pointerEvents = 'none';
         const initialCtx = initialCanvas.getContext('2d');
         initialCtx.lineCap = 'round';
         initialCtx.lineJoin = 'round';
@@ -481,7 +471,10 @@ class LayerManager {
         newCanvas.width = baseCanvas.width;
         newCanvas.height = baseCanvas.height;
         newCanvas.className = 'main-canvas';
-        this.canvasContainer.appendChild(newCanvas);
+        // ★追加: 描画レイヤーはイベントを受け取らないようにする
+        newCanvas.style.pointerEvents = 'none';
+        this.canvasContainer.insertBefore(newCanvas, this.app.canvasManager.eventCanvas);
+
         const newLayer = {
             canvas: newCanvas,
             ctx: newCanvas.getContext('2d'),
@@ -493,7 +486,6 @@ class LayerManager {
         this.updateAllLayerZIndexes();
         this.switchLayer(this.layers.length - 1);
         
-        // ★追加: 新規レイヤー追加時もアンドゥ履歴に保存する
         this.app.canvasManager.saveState();
         return newLayer;
     }
@@ -505,9 +497,12 @@ class LayerManager {
         const activeLayer = this.getCurrentLayer();
         if (activeLayer) {
             this.app.canvasManager.setActiveLayerContext(activeLayer.canvas, activeLayer.ctx);
-            this.layers.forEach((layer, i) => {
-                layer.canvas.style.pointerEvents = (i === index) ? 'auto' : 'none';
-            });
+            
+            // ★削除: pointerEventsの切り替えは不要になった
+            // this.layers.forEach((layer, i) => {
+            //     layer.canvas.style.pointerEvents = (i === index) ? 'auto' : 'none';
+            // });
+
             const infoEl = document.getElementById('current-layer-info');
             if (infoEl) {
                 infoEl.textContent = `L: ${this.activeLayerIndex + 1}/${this.layers.length}`;
@@ -559,7 +554,6 @@ class LayerManager {
         if (layer) {
             layer.transform.scaleX *= -1;
             this.updateLayerTransform(layer);
-            // ★追加: 操作後にアンドゥ履歴に保存
             this.app.canvasManager.saveState();
         }
     }
@@ -568,7 +562,6 @@ class LayerManager {
         if (layer) {
             layer.transform.scaleY *= -1;
             this.updateLayerTransform(layer);
-            // ★追加: 操作後にアンドゥ履歴に保存
             this.app.canvasManager.saveState();
         }
     }
