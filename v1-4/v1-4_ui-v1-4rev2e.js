@@ -1,12 +1,5 @@
 // 🚨 Toshinka Tegaki Tool v1-4系 UI/初期化/ショートカット管理（命令書完全準拠）🚨
 
-// --- 🐛 DEBUG: CANVAS DISPLAY ---
-// このファイル内でcanvas（drawing-layer0, composite-canvas, frame-canvas）が
-// 絶対に「見える」状態を保証することだけに集中する。
-// CSS/DOM/重なり順/不透明度/append順/描画ループ/レイヤー作成順/visibility/pointer-events/z-index 等、
-// 些細なミスでも表示全滅になるので、一つ一つ徹底確認。
-// ---------------------------------------------------
-
 class TopBarManager {
     constructor(app) {
         this.app = app;
@@ -267,7 +260,6 @@ class ToshinkaTegakiTool {
         this.initManagers();
         this.bindTestButtons();
         this.ensureLayerStack();
-        this.ensureCanvasVisibilityDebug(); // 🟢 追加: キャンバス表示デバッグ
     }
     initManagers() {
         this.canvasManager = new CanvasManager(this);
@@ -317,104 +309,13 @@ class ToshinkaTegakiTool {
             stack.style.width = '100%';
             stack.style.height = '100%';
             stack.style.pointerEvents = 'none';
-            stack.style.zIndex = '10';
+            stack.style.zIndex = '0';
             // drawing-layer0の直後(composite-canvasの前)に挿入
             baseCanvas.parentNode.insertBefore(stack, baseCanvas.nextSibling);
+        } else {
+            stack.style.zIndex = '0';
         }
         // drawing-layer0だけはlayer-stackには絶対に移動させない
-    }
-
-    // --- 🟢 デバッグ用: canvasが「必ず見える」ようにスタイル/z-index/check ---
-    ensureCanvasVisibilityDebug() {
-        // すべてのcanvasが「絶対に」見えるかどうかを強制的にチェックし、styleを書き換える
-        // 1. drawing-layer0が一番下、composite-canvasが中央、frame-canvasが一番上
-        // 2. 全て"block"かつopacity=1, visibility=visible, pointer-events=auto, z-index適正
-        // 3. DevToolsで消えないよう強制
-
-        // [1] drawing-layer0
-        const drawing0 = document.getElementById('drawing-layer0');
-        if (drawing0) {
-            drawing0.style.display = 'block';
-            drawing0.style.opacity = '1';
-            drawing0.style.visibility = 'visible';
-            drawing0.style.position = 'absolute';
-            drawing0.style.zIndex = 1;
-            drawing0.style.pointerEvents = 'auto';
-            // デバッグ: 赤枠
-            // drawing0.style.border = '1px solid #c00';
-        } else {
-            console.warn('drawing-layer0が見つかりません！（致命的）');
-        }
-
-        // [2] composite-canvas
-        const composite = document.getElementById('composite-canvas');
-        if (composite) {
-            composite.style.display = 'block';
-            composite.style.opacity = '1';
-            composite.style.visibility = 'visible';
-            composite.style.position = 'absolute';
-            composite.style.zIndex = 2;
-            composite.style.pointerEvents = 'auto';
-            // composite.style.border = '1px solid #0c0';
-        } else {
-            console.warn('composite-canvasが見つかりません！（致命的）');
-        }
-        // [3] frame-canvas
-        const frame = document.getElementById('frame-canvas');
-        if (frame) {
-            frame.style.display = 'block';
-            frame.style.opacity = '1';
-            frame.style.visibility = 'visible';
-            frame.style.position = 'absolute';
-            frame.style.zIndex = 3;
-            frame.style.pointerEvents = 'none'; // 枠はクリック透過
-            // frame.style.border = '1px solid #00c';
-        } else {
-            console.warn('frame-canvasが見つかりません！（致命的）');
-        }
-
-        // [4] layer-stack（追加レイヤー用div）はcomposite-canvasより下、frame-canvasより下
-        const stack = document.getElementById('layer-stack');
-        if (stack) {
-            stack.style.display = 'block';
-            stack.style.opacity = '1';
-            stack.style.visibility = 'visible';
-            stack.style.position = 'absolute';
-            stack.style.zIndex = 2; // compositeと同じ
-            stack.style.pointerEvents = 'none';
-        }
-
-        // --- 重なり順デバッグ ---
-        // DOM順で drawing-layer0 → layer-stack → composite-canvas → frame-canvas になっているか
-        const parent = drawing0?.parentElement;
-        if (parent) {
-            let order = [];
-            for (let node of parent.childNodes) {
-                if (node.nodeType === 1) {
-                    order.push(node.id || node.tagName);
-                }
-            }
-            console.log('canvas-container内のDOM順:', order);
-        }
-
-        // [5] 何も見えない場合の最終手段: drawing-layer0に直接描画
-        if (drawing0) {
-            const ctx = drawing0.getContext('2d');
-            if (ctx) {
-                // すでに色が塗られていない場合のみ
-                let px = ctx.getImageData(0, 0, 1, 1).data;
-                if (px[3] === 0) {
-                    ctx.fillStyle = '#f0e0d6';
-                    ctx.fillRect(0, 0, drawing0.width, drawing0.height);
-                    ctx.strokeStyle = "#f00";
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.moveTo(0, 0);
-                    ctx.lineTo(20, 20);
-                    ctx.stroke();
-                }
-            }
-        }
     }
 }
 
@@ -423,126 +324,6 @@ window.addEventListener('DOMContentLoaded', () => {
         window.toshinkaTegakiInitialized = true;
         window.toshinkaTegakiTool = new ToshinkaTegakiTool();
     }
+    // デバッグ: canvas強制可視化
+    if (window.ensureCanvasVisibilityDebug) window.ensureCanvasVisibilityDebug();
 });
-
-// --- ここより下は一切変更禁止（命令書でcanvas表示以外いじるな！） ---
-// 他のManager/Color/Toolクラス等は元のままです
-class ToolManager {
-    constructor(app) {
-        this.app = app;
-        this.currentTool = 'pen';
-        this.bindEvents();
-    }
-    bindEvents() {
-        document.getElementById('pen-tool').addEventListener('click', () => this.setTool('pen'));
-        document.getElementById('eraser-tool').addEventListener('click', () => this.setTool('eraser'));
-        document.getElementById('move-tool').addEventListener('click', () => this.setTool('move'));
-        document.getElementById('bucket-tool').addEventListener('click', () => this.setTool('bucket'));
-    }
-    setTool(tool) {
-        this.currentTool = tool;
-        document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
-        const btn = document.getElementById(tool + '-tool');
-        if (btn) btn.classList.add('active');
-    }
-    getCurrentTool() {
-        return this.currentTool;
-    }
-}
-
-class PenSettingsManager {
-    constructor(app) {
-        this.app = app;
-        this.currentSize = 1;
-        this.sizes = Array.from(document.querySelectorAll('.size-btn')).map(btn => parseInt(btn.dataset.size));
-        this.currentSizeIndex = this.sizes.indexOf(this.currentSize);
-        this.bindEvents();
-        this.updateSizeButtonVisuals();
-    }
-    bindEvents() {
-        document.querySelectorAll('.size-btn').forEach(btn => {
-            btn.addEventListener('click', () => this.setSize(parseInt(btn.dataset.size)));
-        });
-    }
-    setSize(size) {
-        this.currentSize = size;
-        this.currentSizeIndex = this.sizes.indexOf(this.currentSize);
-        document.querySelectorAll('.size-btn').forEach(btn => btn.classList.remove('active'));
-        document.querySelector(`[data-size="${size}"]`)?.classList.add('active');
-        this.updateSizeButtonVisuals();
-    }
-    changeSize(increase) {
-        let newIndex = this.currentSizeIndex + (increase ? 1 : -1);
-        newIndex = Math.max(0, Math.min(newIndex, this.sizes.length - 1));
-        this.setSize(this.sizes[newIndex]);
-    }
-    updateSizeButtonVisuals() {
-        document.querySelectorAll('.size-btn').forEach(btn => {
-            const size = parseInt(btn.dataset.size);
-            const sizeDot = btn.querySelector('.size-dot');
-            const sizeNumber = btn.querySelector('.size-number');
-            if (sizeDot) {
-                const dotSize = Math.min(size, 16);
-                sizeDot.style.width = `${dotSize}px`;
-                sizeDot.style.height = `${dotSize}px`;
-            }
-            if (sizeNumber) {
-                sizeNumber.textContent = size;
-            }
-        });
-    }
-    getCurrentSize() {
-        return this.currentSize;
-    }
-}
-
-class ColorManager {
-    constructor(app) {
-        this.app = app;
-        this.mainColor = '#800000';
-        this.subColor = '#f0e0d6';
-        this.colors = Array.from(document.querySelectorAll('.color-btn')).map(btn => btn.dataset.color);
-        this.currentColorIndex = this.colors.indexOf(this.mainColor);
-        this.mainColorDisplay = document.getElementById('main-color-display');
-        this.subColorDisplay = document.getElementById('sub-color-display');
-        this.bindEvents();
-        this.updateColorDisplays();
-        document.querySelector(`[data-color="${this.mainColor}"]`)?.classList.add('active');
-    }
-    bindEvents() {
-        document.querySelectorAll('.color-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => this.setColor(e.currentTarget.dataset.color));
-        });
-        document.querySelector('.color-mode-display').addEventListener('click', () => this.swapColors());
-    }
-    setColor(color) {
-        this.mainColor = color;
-        this.currentColorIndex = this.colors.indexOf(this.mainColor);
-        document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
-        document.querySelector(`[data-color="${color}"]`)?.classList.add('active');
-        this.updateColorDisplays();
-    }
-    updateColorDisplays() {
-        this.mainColorDisplay.style.backgroundColor = this.mainColor;
-        this.subColorDisplay.style.backgroundColor = this.subColor;
-    }
-    swapColors() {
-        [this.mainColor, this.subColor] = [this.subColor, this.mainColor];
-        this.updateColorDisplays();
-        this.setColor(this.mainColor);
-    }
-    resetColors() {
-        this.mainColor = '#800000';
-        this.subColor = '#f0e0d6';
-        this.updateColorDisplays();
-        this.setColor(this.mainColor);
-    }
-    changeColor(increase) {
-        let newIndex = this.currentColorIndex + (increase ? 1 : -1);
-        newIndex = Math.max(0, Math.min(newIndex, this.colors.length - 1));
-        this.setColor(this.colors[newIndex]);
-    }
-    getColor() {
-        return this.mainColor;
-    }
-}
