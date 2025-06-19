@@ -1,0 +1,739 @@
+class CanvasManager {
+    constructor(app) {
+        this.app = app;
+        this.canvas = null;
+        this.ctx = null;
+        this.canvasArea = document.getElementById('canvas-area');
+        this.canvasContainer = document.getElementById('canvas-container');
+
+        // ★追加: イベントを受け取るための透明なキャンバス
+        this.eventCanvas = document.getElementById('eventCanvas');
+        // ★追加: 大きさを描画キャンバスと合わせる
+        this.eventCanvas.width = 344;
+        this.eventCanvas.height = 135;
+
+        this.frameCanvas = null;
+        this.isDrawing = false;
+        this.isPanning = false;
+        this.isMovingLayer = false;
+        this.isSpaceDown = false;
+        this.isRotatingWithSpace = false;
+        this.rotateStartAngle = 0;
+        this.initialRotation = 0;
+        this.currentTool = 'pen';
+        this.currentColor = '#800000';
+        this.currentSize = 1;
+        this.lastX = 0;
+        this.lastY = 0;
+        this.history = [];
+        this.historyIndex = -1;
+        this.dragStartX = 0;
+        this.dragStartY = 0;
+        this.canvasStartX = 0;
+        this.canvasStartY = 0;
+        this.moveLayerStartX = 0;
+        this.moveLayerStartY = 0;
+        this.scale = 1;
+        this.rotation = 0;
+        this.transformState = { scaleX: 1, scaleY: 1 };
+        this.createAndDrawFrame();
+        this.bindEvents();
+        this.temporaryTool = null; // ← Vキー押下中の退避ツール名
+        this.isVKeyDown = false; // ← Vキー押しっぱなし状態を追跡
+    }
+    createAndDrawFrame() {
+        this.frameCanvas = document.createElement('canvas');
+        this.frameCanvas.width = 364;
+        this.frameCanvas.height = 145;
+        this.frameCanvas.style.position = 'absolute';
+        this.frameCanvas.style.left = '-10px';
+        this.frameCanvas.style.top = '-5px';
+        this.frameCanvas.style.zIndex = '-1';
+        this.frameCanvas.style.pointerEvents = 'none';
+        const firstLayer = this.canvasContainer.querySelector('.main-canvas');
+        this.canvasContainer.insertBefore(this.frameCanvas, firstLayer);
+        const frameCtx = this.frameCanvas.getContext('2d');
+        frameCtx.fillStyle = '#ffffff';
+        frameCtx.strokeStyle = '#cccccc';
+        frameCtx.lineWidth = 1;
+        frameCtx.beginPath();
+        frameCtx.roundRect(0.5, 0.5, this.frameCanvas.width - 1, this.frameCanvas.height - 1, 8);
+        frameCtx.fill();
+        frameCtx.stroke();
+    }
+    bindEvents() {
+        // ★修正: イベントはすべて eventCanvas で受け取る
+        this.eventCanvas.addEventListener('pointerdown', this.onPointerDown.bind(this));
+        document.addEventListener('pointermove', this.onPointerMove.bind(this));
+        document.addEventListener('pointerup', this.onPointerUp.bind(this));
+        this.eventCanvas.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'v' || e.key === 'V') {
+                if (this.currentTool !== 'move') {
+                    this.temporaryTool = this.currentTool;
+                    this.setCurrentTool('move');
+                }
+            }
+        });
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'v' || e.key === 'V') {
+                if (this.temporaryTool) {
+                    this.setCurrentTool(this.temporaryTool);
+                    this.temporaryTool = null;
+                }
+            }
+        });
+        document.addEventListener('keydown', (e) => {
+            if ((e.key === 'v' || e.key === 'V') && !this.temporaryTool) {
+                this.temporaryTool = this.currentTool;
+                this.setCurrentTool('move', true);
+            }
+        });
+        document.addEventListener('keyup', (e) => {
+            if ((e.key === 'v' || e.key === 'V') && this.temporaryTool) {
+                this.setCurrentTool(this.temporaryTool, true);
+                this.temporaryTool = null;
+            }
+        });
+        document.addEventListener('keydown', (e) => {
+            if ((e.key === 'v' || e.key === 'V') && !this.isVKeyDown) {
+                this.isVKeyDown = true;
+                this.temporaryTool = this.currentTool;
+                this.setCurrentTool('move', true);
+            }
+        });
+        document.addEventListener('keyup', (e) => {
+            if ((e.key === 'v' || e.key === 'V') && this.isVKeyDown) {
+                this.isVKeyDown = false;
+                this.setCurrentTool(this.temporaryTool, true);
+                this.temporaryTool = null;
+            }
+        });
+    }
+
+    setActiveLayerContext(canvas, ctx) {
+        this.canvas = canvas;
+        this.ctx = ctx;
+        this.updateCursor();
+    }
+    setCurrentTool(tool, fromKey = false) {
+        this.currentTool = tool;
+        this.updateCursor();
+    // 🔽 追加：ツールアイコンの見た目も更新する
+    if (this.app.toolManager && this.app.toolManager.updateActiveToolButton) {
+        this.app.toolManager.currentTool = tool; // toolManager側の状態も更新
+        this.app.toolManager.updateActiveToolButton();
+    }
+    }
+    setCurrentColor(color) {
+        this.currentColor = color;
+    }
+    setCurrentSize(size) {
+        this.currentSize = size;
+    }
+    onPointerDown(e) {
+        if (this.isSpaceDown) {
+            this.dragStartX = e.clientX;
+            this.dragStartY = e.clientY;
+            const rect = this.canvasContainer.getBoundingClientRect();
+            const isInside = e.clientX >= rect.left && e.clientX <= rect.right &&
+                e.clientY >= rect.top && e.clientY <= rect.bottom;
+            if (isInside) {
+                this.isPanning = true;
+                this.isRotatingWithSpace = false;
+                this.setAbsolutePosition();
+            } else {
+                this.isPanning = false;
+                this.isRotatingWithSpace = true;
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                this.rotateStartAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
+                this.initialRotation = this.rotation;
+            }
+            e.preventDefault();
+        } else {
+            // ★修正: e.target のチェックを削除し、アクティブレイヤーの存在だけ確認
+            if (!this.app.layerManager.getCurrentLayer()) return;
+            
+            const coords = this.getCanvasCoordinates(e);
+            this.lastX = coords.x;
+            this.lastY = coords.y;
+            if (this.currentTool === 'move') {
+                this.isMovingLayer = true;
+                this.moveLayerStartX = e.clientX;
+                this.moveLayerStartY = e.clientY;
+            } else if (this.currentTool === 'bucket') {
+                this.fill(Math.floor(this.lastX), Math.floor(this.lastY), this.currentColor);
+                this.saveState();
+            } else {
+                this.isDrawing = true;
+                this.ctx.beginPath();
+                this.ctx.moveTo(this.lastX, this.lastY);
+            }
+        }
+        try {
+            // ★修正: キャプチャ対象を eventCanvas にする
+            this.eventCanvas.setPointerCapture(e.pointerId);
+        } catch (err) { }
+    }
+    onPointerMove(e) {
+        // ★修正: ボタンが押されていない場合もキャプチャ中なら処理を続ける
+        if (!e.buttons && !this.eventCanvas.hasPointerCapture(e.pointerId)) return;
+
+        if (this.isRotatingWithSpace) {
+            const rect = this.canvasContainer.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            const currentAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
+            const deltaAngle = (currentAngle - this.rotateStartAngle) * 180 / Math.PI;
+            this.rotation = this.initialRotation + deltaAngle;
+            this.updateCanvasTransform();
+        } else if (this.isPanning) {
+            const deltaX = e.clientX - this.dragStartX;
+            const deltaY = e.clientY - this.dragStartY;
+            this.canvasContainer.style.left = (this.canvasStartX + deltaX) + 'px';
+            this.canvasContainer.style.top = (this.canvasStartY + deltaY) + 'px';
+        } else if (this.isMovingLayer) {
+            const dx = e.clientX - this.moveLayerStartX;
+            const dy = e.clientY - this.moveLayerStartY;
+            this.app.layerManager.moveActiveLayer(dx, dy);
+            this.moveLayerStartX = e.clientX;
+            this.moveLayerStartY = e.clientY;
+        } else if (this.isDrawing) {
+            const coords = this.getCanvasCoordinates(e);
+            const currentX = coords.x;
+            const currentY = coords.y;
+            this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
+            this.ctx.strokeStyle = this.currentColor;
+            this.ctx.lineWidth = this.currentSize;
+            this.ctx.lineTo(currentX, currentY);
+            this.ctx.stroke();
+            this.lastX = currentX;
+            this.lastY = currentY;
+        }
+    }
+    onPointerUp(e) {
+        try {
+            if (this.eventCanvas.hasPointerCapture(e.pointerId)) {
+                this.eventCanvas.releasePointerCapture(e.pointerId);
+            }
+        } catch (err) { }
+        if (this.isDrawing) {
+            this.isDrawing = false;
+            this.ctx.closePath();
+            this.saveState();
+        }
+        if (this.isPanning) this.isPanning = false;
+        if (this.isRotatingWithSpace) this.isRotatingWithSpace = false;
+        if (this.isMovingLayer) {
+            this.isMovingLayer = false;
+            this.saveState();
+        }
+    }
+    setAbsolutePosition() {
+        if (this.canvasContainer.style.position !== 'absolute') {
+            const rect = this.canvasContainer.getBoundingClientRect();
+            const areaRect = this.canvasArea.getBoundingClientRect();
+            this.canvasStartX = rect.left - areaRect.left;
+            this.canvasStartY = rect.top - areaRect.top;
+            this.canvasContainer.style.position = 'absolute';
+            this.canvasContainer.style.left = this.canvasStartX + 'px';
+            this.canvasContainer.style.top = this.canvasStartY + 'px';
+        } else {
+            this.canvasStartX = parseFloat(this.canvasContainer.style.left || 0);
+            this.canvasStartY = parseFloat(this.canvasContainer.style.top || 0);
+        }
+    }
+    getCanvasCoordinates(e) {
+        const containerRect = this.canvasContainer.getBoundingClientRect();
+        const viewCenterX = containerRect.left + containerRect.width / 2;
+        const viewCenterY = containerRect.top + containerRect.height / 2;
+
+        let mouseX = e.clientX - viewCenterX;
+        let mouseY = e.clientY - viewCenterY;
+
+        const globalRad = -this.rotation * Math.PI / 180;
+        const globalCos = Math.cos(globalRad);
+        const globalSin = Math.sin(globalRad);
+        let unrotatedX = mouseX * globalCos - mouseY * globalSin;
+        let unrotatedY = mouseX * globalSin + mouseY * globalCos;
+
+        let unscaledX = unrotatedX / (this.scale * this.transformState.scaleX);
+        let unscaledY = unrotatedY / (this.scale * this.transformState.scaleY);
+
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+        if (!activeLayer || !this.canvas) {
+             const fallbackCanvasX = unscaledX + (this.canvas ? this.canvas.width / 2 : 0);
+             const fallbackCanvasY = unscaledY + (this.canvas ? this.canvas.height / 2 : 0);
+             return { x: fallbackCanvasX, y: fallbackCanvasY };
+        }
+
+        const lt = activeLayer.transform;
+
+        let layerRelativeX = unscaledX - lt.x;
+        let layerRelativeY = unscaledY - lt.y;
+
+        const layerRad = -lt.rotation * Math.PI / 180;
+        const layerCos = Math.cos(layerRad);
+        const layerSin = Math.sin(layerRad);
+        let unrotatedLayerX = layerRelativeX * layerCos - layerRelativeY * layerSin;
+        let unrotatedLayerY = layerRelativeX * layerSin + layerRelativeY * layerCos;
+
+        const finalScaleX = lt.scale * lt.scaleX;
+        const finalScaleY = lt.scale * lt.scaleY;
+        const unscaledLayerX = finalScaleX !== 0 ? unrotatedLayerX / finalScaleX : 0;
+        const unscaledLayerY = finalScaleY !== 0 ? unrotatedLayerY / finalScaleY : 0;
+        
+        const canvasX = unscaledLayerX + this.canvas.width / 2;
+        const canvasY = unscaledLayerY + this.canvas.height / 2;
+
+        return { x: canvasX, y: canvasY };
+    }
+
+    updateCursor() {
+        // ★修正: カーソルは eventCanvas に設定する
+        if (!this.eventCanvas) return;
+        
+        if (this.isSpaceDown) {
+            this.canvasArea.style.cursor = 'grab';
+            this.eventCanvas.style.cursor = 'grab';
+            return;
+        } else {
+            this.canvasArea.style.cursor = 'default';
+        }
+        switch (this.currentTool) {
+            case 'move': this.eventCanvas.style.cursor = 'move'; break;
+            case 'pen':
+            case 'eraser':
+            case 'bucket':
+            default: this.eventCanvas.style.cursor = 'crosshair'; break;
+        }
+    }
+
+    saveState() {
+        if (!this.app.layerManager.layers.length) return;
+
+        const state = {
+            layersData: this.app.layerManager.layers.map(layer => ({
+                imageData: layer.ctx.getImageData(0, 0, layer.canvas.width, layer.canvas.height),
+                transform: JSON.parse(JSON.stringify(layer.transform))
+            })),
+            activeLayerIndex: this.app.layerManager.activeLayerIndex
+        };
+
+        if (this.historyIndex < this.history.length - 1) {
+            this.history = this.history.slice(0, this.historyIndex + 1);
+        }
+        if (this.history.length >= 50) {
+            this.history.shift();
+            this.historyIndex--;
+        }
+        this.history.push(state);
+        this.historyIndex++;
+    }
+
+    applyState(state) {
+        if (!state) return;
+        
+        this.app.layerManager.layers.forEach((layer, index) => {
+            if (state.layersData[index]) {
+                const layerState = state.layersData[index];
+                layer.transform = JSON.parse(JSON.stringify(layerState.transform));
+                this.app.layerManager.updateLayerTransform(layer);
+                layer.ctx.putImageData(layerState.imageData, 0, 0);
+            }
+        });
+
+        this.app.layerManager.switchLayer(state.activeLayerIndex);
+    }
+
+    undo() {
+        if (this.historyIndex > 0) {
+            this.historyIndex--;
+            const state = this.history[this.historyIndex];
+            this.applyState(state);
+        }
+    }
+
+    redo() {
+        if (this.historyIndex < this.history.length - 1) {
+            this.historyIndex++;
+            const state = this.history[this.historyIndex];
+            this.applyState(state);
+        }
+    }
+
+    clearCanvas() {
+        if (!this.ctx) return;
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.saveState();
+    }
+    clearAllLayers() {
+        if (!this.app.layerManager || !this.app.layerManager.layers) return;
+        this.app.layerManager.layers.forEach((layer, index) => {
+            const lw = layer.canvas.width;
+            const lh = layer.canvas.height;
+            layer.ctx.clearRect(0, 0, lw, lh);
+            if (index === 0) {
+                layer.ctx.fillStyle = '#f0e0d6';
+                layer.ctx.fillRect(0, 0, lw, lh);
+            }
+        });
+        this.saveState();
+    }
+    flipHorizontal() {
+        this.transformState.scaleX *= -1;
+        this.updateCanvasTransform();
+    }
+    flipVertical() {
+        this.transformState.scaleY *= -1;
+        this.updateCanvasTransform();
+    }
+    zoom(factor) {
+        this.scale = Math.max(0.1, Math.min(this.scale * factor, 10));
+        this.updateCanvasTransform();
+    }
+    rotate(degrees) {
+        this.rotation = (this.rotation + degrees) % 360;
+        this.updateCanvasTransform();
+    }
+    updateCanvasTransform() {
+        const scaleX = this.scale * this.transformState.scaleX;
+        const scaleY = this.scale * this.transformState.scaleY;
+        this.canvasContainer.style.transform = `rotate(${this.rotation}deg) scale(${scaleX}, ${scaleY})`;
+    }
+    resetView() {
+        this.scale = 1;
+        this.rotation = 0;
+        this.transformState.scaleX = 1;
+        this.transformState.scaleY = 1;
+        this.updateCanvasTransform();
+        this.canvasContainer.style.position = '';
+        this.canvasContainer.style.left = '';
+        this.canvasContainer.style.top = '';
+    }
+    handleWheel(e) {
+        if (this.app.shortcutManager && this.app.shortcutManager.handleWheel(e)) {
+            e.preventDefault();
+            return;
+        }
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -1 : 1;
+        if (e.shiftKey) {
+            this.rotate(delta * 15);
+        } else {
+            this.zoom(delta > 0 ? 1.1 : 1 / 1.1);
+        }
+    }
+    colorsMatch(a, b) {
+        return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
+    }
+    getPixelColor(imageData, x, y) {
+        const i = (y * imageData.width + x) * 4;
+        return [imageData.data[i], imageData.data[i + 1], imageData.data[i + 2], imageData.data[i + 3]];
+    }
+    setPixelColor(imageData, x, y, color) {
+        const i = (y * imageData.width + x) * 4;
+        imageData.data[i] = color[0];
+        imageData.data[i + 1] = color[1];
+        imageData.data[i + 2] = color[2];
+        imageData.data[i + 3] = color[3];
+    }
+    fill(startX, startY, fillColor) {
+        const canvasWidth = this.canvas.width;
+        const canvasHeight = this.canvas.height;
+        if (startX < 0 || startX >= canvasWidth || startY < 0 || startY >= canvasHeight) return;
+
+        const imageData = this.ctx.getImageData(0, 0, canvasWidth, canvasHeight);
+        const startColor = this.getPixelColor(imageData, startX, startY);
+        const fillColorArr = this.hexToRgba(fillColor);
+        if (this.colorsMatch(startColor, fillColorArr)) return;
+        const queue = [[startX, startY]];
+        while (queue.length > 0) {
+            const [x, y] = queue.pop();
+            if (x < 0 || x >= canvasWidth || y < 0 || y >= canvasHeight) continue;
+            if (!this.colorsMatch(this.getPixelColor(imageData, x, y), startColor)) continue;
+            this.setPixelColor(imageData, x, y, fillColorArr);
+            queue.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+        }
+        this.ctx.putImageData(imageData, 0, 0);
+    }
+    hexToRgba(hex) {
+        const c = hex.replace('#', '');
+        if (c.length === 3) {
+            const r = parseInt(c[0] + c[0], 16);
+            const g = parseInt(c[1] + c[1], 16);
+            const b = parseInt(c[2] + c[2], 16);
+            return [r, g, b, 255];
+        } else if (c.length === 6) {
+            const r = parseInt(c.substring(0, 2), 16);
+            const g = parseInt(c.substring(2, 4), 16);
+            const b = parseInt(c.substring(4, 6), 16);
+            return [r, g, b, 255];
+        }
+        return [0, 0, 0, 255];
+    }
+}
+class LayerManager {
+    constructor(app) {
+        this.app = app;
+        this.layers = [];
+        this.activeLayerIndex = -1;
+        this.canvasContainer = document.getElementById('canvas-container');
+    }
+    getDefaultTransform() {
+        return {
+            x: 0,
+            y: 0,
+            scale: 1,
+            rotation: 0,
+            scaleX: 1,
+            scaleY: 1,
+        };
+    }
+    setupInitialLayers() {
+        const initialCanvas = document.getElementById('drawingCanvas');
+        if (!initialCanvas) {
+            return;
+        }
+        // ★追加: 描画レイヤーはイベントを受け取らないようにする
+        initialCanvas.style.pointerEvents = 'none';
+        const initialCtx = initialCanvas.getContext('2d');
+        initialCtx.lineCap = 'round';
+        initialCtx.lineJoin = 'round';
+
+        this.layers.push({
+            canvas: initialCanvas,
+            ctx: initialCtx,
+            transform: this.getDefaultTransform(),
+        });
+        const firstLayerCtx = this.layers[0].ctx;
+        firstLayerCtx.fillStyle = '#f0e0d6';
+        firstLayerCtx.fillRect(0, 0, initialCanvas.width, initialCanvas.height);
+        this.switchLayer(0);
+        this.updateAllLayerZIndexes();
+    }
+    addLayer() {
+        if (this.layers.length === 0) {
+            return null;
+        }
+        const baseCanvas = this.layers[0].canvas;
+        const newCanvas = document.createElement('canvas');
+        newCanvas.width = baseCanvas.width;
+        newCanvas.height = baseCanvas.height;
+        newCanvas.className = 'main-canvas';
+        // ★追加: 描画レイヤーはイベントを受け取らないようにする
+        newCanvas.style.pointerEvents = 'none';
+        this.canvasContainer.insertBefore(newCanvas, this.app.canvasManager.eventCanvas);
+
+        const newLayer = {
+            canvas: newCanvas,
+            ctx: newCanvas.getContext('2d'),
+            transform: this.getDefaultTransform(),
+        };
+        this.layers.push(newLayer);
+        newLayer.ctx.lineCap = 'round';
+        newLayer.ctx.lineJoin = 'round';
+        this.updateAllLayerZIndexes();
+        this.switchLayer(this.layers.length - 1);
+        
+        this.app.canvasManager.saveState();
+        return newLayer;
+    }
+    switchLayer(index) {
+        if (index < 0 || index >= this.layers.length) {
+            return;
+        }
+        this.activeLayerIndex = index;
+        const activeLayer = this.getCurrentLayer();
+        if (activeLayer) {
+            this.app.canvasManager.setActiveLayerContext(activeLayer.canvas, activeLayer.ctx);
+            
+            // ★削除: pointerEventsの切り替えは不要になった
+            // this.layers.forEach((layer, i) => {
+            //     layer.canvas.style.pointerEvents = (i === index) ? 'auto' : 'none';
+            // });
+
+            const infoEl = document.getElementById('current-layer-info');
+            if (infoEl) {
+                infoEl.textContent = `L: ${this.activeLayerIndex + 1}/${this.layers.length}`;
+            }
+        }
+    }
+    getCurrentLayer() {
+        if (this.activeLayerIndex >= 0 && this.activeLayerIndex < this.layers.length) {
+            return this.layers[this.activeLayerIndex];
+        }
+        return null;
+    }
+    updateLayerTransform(layer) {
+        if (!layer || !layer.transform) return;
+        const t = layer.transform;
+        const finalScaleX = t.scale * t.scaleX;
+        const finalScaleY = t.scale * t.scaleY;
+        layer.canvas.style.transform = `translate(${t.x}px, ${t.y}px) rotate(${t.rotation}deg) scale(${finalScaleX}, ${finalScaleY})`;
+    }
+    updateAllLayerZIndexes() {
+        this.layers.forEach((layer, index) => {
+            layer.canvas.style.zIndex = index;
+        });
+    }
+    moveActiveLayer(dx, dy) {
+        const layer = this.getCurrentLayer();
+        if (layer) {
+            layer.transform.x += dx;
+            layer.transform.y += dy;
+            this.updateLayerTransform(layer);
+        }
+    }
+    scaleActiveLayer(factor) {
+        const layer = this.getCurrentLayer();
+        if (layer) {
+            layer.transform.scale *= factor;
+            this.updateLayerTransform(layer);
+        }
+    }
+    rotateActiveLayer(degrees) {
+        const layer = this.getCurrentLayer();
+        if (layer) {
+            layer.transform.rotation = (layer.transform.rotation + degrees) % 360;
+            this.updateLayerTransform(layer);
+        }
+    }
+    flipActiveLayerHorizontal() {
+        const layer = this.getCurrentLayer();
+        if (layer) {
+            layer.transform.scaleX *= -1;
+            this.updateLayerTransform(layer);
+            this.app.canvasManager.saveState();
+        }
+    }
+    flipActiveLayerVertical() {
+        const layer = this.getCurrentLayer();
+        if (layer) {
+            layer.transform.scaleY *= -1;
+            this.updateLayerTransform(layer);
+            this.app.canvasManager.saveState();
+        }
+    }
+}
+class ToolManager {
+    constructor(app) {
+        this.app = app;
+        this.currentTool = 'pen';
+        this.bindEvents();
+    }
+    bindEvents() {
+        document.getElementById('pen-tool').addEventListener('click', () => this.setTool('pen'));
+        document.getElementById('eraser-tool').addEventListener('click', () => this.setTool('eraser'));
+        // document.getElementById('move-tool').addEventListener('click', () => this.setTool('move'));
+        document.getElementById('bucket-tool').addEventListener('click', () => this.setTool('bucket'));
+    }
+    setTool(tool) {
+        this.currentTool = tool;
+        document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+        const toolButton = document.getElementById(tool + '-tool');
+        if (toolButton) toolButton.classList.add('active');
+        this.app.canvasManager.setCurrentTool(tool);
+        this.app.canvasManager.updateCursor();
+    }
+    getCurrentTool() {
+        return this.currentTool;
+    }
+    updateActiveToolButton() {
+        document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+        const toolButton = document.getElementById(this.currentTool + '-tool');
+        if (toolButton) toolButton.classList.add('active');
+    }
+}
+class PenSettingsManager {
+    constructor(app) {
+        this.app = app;
+        this.currentSize = 1;
+        this.sizes = Array.from(document.querySelectorAll('.size-btn')).map(btn => parseInt(btn.dataset.size));
+        this.currentSizeIndex = this.sizes.indexOf(this.currentSize);
+        this.bindEvents();
+        this.updateSizeButtonVisuals();
+    }
+    bindEvents() {
+        document.querySelectorAll('.size-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.setSize(parseInt(btn.dataset.size)));
+        });
+    }
+    setSize(size) {
+        this.currentSize = size;
+        this.currentSizeIndex = this.sizes.indexOf(this.currentSize);
+        document.querySelectorAll('.size-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelector(`[data-size="${size}"]`)?.classList.add('active');
+        this.app.canvasManager.setCurrentSize(this.currentSize);
+        this.updateSizeButtonVisuals();
+    }
+    changeSize(increase) {
+        let newIndex = this.currentSizeIndex + (increase ? 1 : -1);
+        newIndex = Math.max(0, Math.min(newIndex, this.sizes.length - 1));
+        this.setSize(this.sizes[newIndex]);
+    }
+    updateSizeButtonVisuals() {
+        document.querySelectorAll('.size-btn').forEach(btn => {
+            const size = parseInt(btn.dataset.size);
+            const sizeDot = btn.querySelector('.size-dot');
+            const sizeNumber = btn.querySelector('.size-number');
+            if (sizeDot) {
+                const dotSize = Math.min(size, 16);
+                sizeDot.style.width = `${dotSize}px`;
+                sizeDot.style.height = `${dotSize}px`;
+            }
+            if (sizeNumber) {
+                sizeNumber.textContent = size;
+            }
+        });
+    }
+}
+class ColorManager {
+    constructor(app) {
+        this.app = app;
+        this.mainColor = '#800000';
+        this.subColor = '#f0e0d6';
+        this.colors = Array.from(document.querySelectorAll('.color-btn')).map(btn => btn.dataset.color);
+        this.currentColorIndex = this.colors.indexOf(this.mainColor);
+        this.mainColorDisplay = document.getElementById('main-color-display');
+        this.subColorDisplay = document.getElementById('sub-color-display');
+        this.bindEvents();
+        this.updateColorDisplays();
+        document.querySelector(`[data-color="${this.mainColor}"]`)?.classList.add('active');
+    }
+    bindEvents() {
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => this.setColor(e.currentTarget.dataset.color));
+        });
+        document.querySelector('.color-mode-display').addEventListener('click', () => this.swapColors());
+    }
+    setColor(color) {
+        this.mainColor = color;
+        this.currentColorIndex = this.colors.indexOf(this.mainColor);
+        document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelector(`[data-color="${color}"]`)?.classList.add('active');
+        this.updateColorDisplays();
+        this.app.canvasManager.setCurrentColor(this.mainColor);
+    }
+    updateColorDisplays() {
+        this.mainColorDisplay.style.backgroundColor = this.mainColor;
+        this.subColorDisplay.style.backgroundColor = this.subColor;
+    }
+    swapColors() {
+        [this.mainColor, this.subColor] = [this.subColor, this.mainColor];
+        this.updateColorDisplays();
+        this.setColor(this.mainColor);
+    }
+    resetColors() {
+        this.mainColor = '#800000';
+        this.subColor = '#f0e0d6';
+        this.updateColorDisplays();
+        this.setColor(this.mainColor);
+    }
+    changeColor(increase) {
+        let newIndex = this.currentColorIndex + (increase ? 1 : -1);
+        newIndex = Math.max(0, Math.min(newIndex, this.colors.length - 1));
+        this.setColor(this.colors[newIndex]);
+    }
+}
