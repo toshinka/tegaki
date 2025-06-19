@@ -1,4 +1,4 @@
-// 🚨 Toshinka Tegaki Tool v1-4系 UI/初期化/ショートカット管理（命令書完全準拠）🚨
+// 🚨 Toshinka Tegaki Tool v1-4系 UI/初期化/ショートカット管理（rev2d仕様復元/バグ修正版）🚨
 
 // ==== PenSettingsManager ====
 // [復活] ペンサイズのUI管理クラス
@@ -165,7 +165,7 @@ class TopBarManager {
 }
 
 // ==== ShortcutManager ====
-// [復活] ショートカット管理クラス
+// [rev2d仕様準拠/ショートカット競合修正]
 class ShortcutManager {
     constructor(app) {
         this.app = app;
@@ -215,9 +215,8 @@ class ShortcutManager {
             this.app.layerManager.redo(); e.preventDefault(); return;
         }
 
-        // --- カラーパレット移動ショートカット (最優先/必ず効く) ---
-        // [ / ] および Shift+[ / Shift+]、国際配列/日本語配列も網羅
-        // BracketLeft, BracketRight, [, {, ], }
+        // ---- [ / ]/Shift+[ / Shift+] ショートカット仕様完全復元 ----
+        // [ / ]単独押しでペンサイズ、Shift+[ / ]でカラーパレット
         let isBracketLeft = (
             e.code === 'BracketLeft' ||
             e.key === '[' || e.key === '{'
@@ -226,13 +225,14 @@ class ShortcutManager {
             e.code === 'BracketRight' ||
             e.key === ']' || e.key === '}'
         );
-        if (isBracketLeft) {
-            this.app.colorManager.changeColor(false);
-            e.preventDefault();
-            return;
-        }
-        if (isBracketRight) {
-            this.app.colorManager.changeColor(true);
+        if (isBracketLeft || isBracketRight) {
+            if (e.shiftKey) {
+                // Shift+[ / Shift+]
+                this.app.colorManager.changeColor(isBracketRight); // 右なら+1, 左なら-1
+            } else {
+                // 単独[ / ]
+                this.app.penSettingsManager.changeSize(isBracketRight); // 右なら+1, 左なら-1
+            }
             e.preventDefault();
             return;
         }
@@ -263,9 +263,6 @@ class ShortcutManager {
         // drawing-layer0ではtransform/消しゴム/バケツ系ショートカットを無効化
         // ペンサイズ・色・ツール
         switch (e.key.toLowerCase()) {
-            // ペンサイズ変更ショートカットは削除・競合防止のためコメントアウト/無効化
-            //case '[': this.app.penSettingsManager.changeSize(false); e.preventDefault(); break;
-            //case ']': this.app.penSettingsManager.changeSize(true); e.preventDefault(); break;
             case 'x': this.app.colorManager.swapColors(); e.preventDefault(); break;
             case 'd': this.app.colorManager.resetColors(); e.preventDefault(); break;
             case 'p': this.app.toolManager.setTool('pen'); e.preventDefault(); break;
@@ -304,6 +301,17 @@ class ShortcutManager {
                 window.removeEventListener('pointermove', move, true);
                 window.removeEventListener('pointerup', up, true);
                 layer.ctx.closePath();
+
+                // --- ペン描画反映確認: drawing-layer0のgetImageData(px10) ---
+                // どのレイヤーに描いたかは layer でOK
+                if (isBaseLayer) {
+                    try {
+                        const img = layer.ctx.getImageData(0,0,layer.canvas.width,layer.canvas.height);
+                        const px10 = Array.from(img.data).slice(0, 40);
+                        console.log('[PenDraw] drawing-layer0 getImageData px10', px10);
+                    } catch(e) { console.warn('[PenDraw] drawing-layer0 getImageData failed', e); }
+                }
+
                 this.app.layerManager.saveState();
                 this.app.layerManager.drawComposite();
             };
