@@ -8,21 +8,27 @@ class TopBarManager {
         document.getElementById('redo-btn').addEventListener('click', () => this.app.canvasManager.redo());
         document.getElementById('close-btn').addEventListener('click', () => this.closeTool());
         const clearBtn = document.getElementById('clear-btn');
-        clearBtn.title = 'アクティブレイヤーを消去 (Delete)';
-        clearBtn.addEventListener('click', () => this.app.canvasManager.clearCanvas());
-        const clearAllBtn = document.createElement('button');
-        clearAllBtn.id = 'clear-all-btn';
-        clearAllBtn.className = 'tool-btn';
-        clearAllBtn.innerHTML = '🗑️*';
-        clearAllBtn.title = '全レイヤーを消去 (Shift+Delete)';
-        clearBtn.parentNode.insertBefore(clearAllBtn, clearBtn.nextSibling);
-        clearAllBtn.addEventListener('click', () => {
-            if (confirm('すべてのレイヤーを消去しますか？')) {
-                this.app.canvasManager.clearAllLayers();
-            }
-        });
-        document.getElementById('flip-h-btn').addEventListener('click', () => this.app.canvasManager.flipViewHorizontal());
-        document.getElementById('flip-v-btn').addEventListener('click', () => this.app.canvasManager.flipViewVertical());
+        if (clearBtn) {
+            clearBtn.title = 'アクティブレイヤーを消去 (Delete)';
+            clearBtn.addEventListener('click', () => this.app.canvasManager.clearCanvas());
+            const clearAllBtn = document.createElement('button');
+            clearAllBtn.id = 'clear-all-btn';
+            clearAllBtn.style.fontSize = "16px";
+            clearAllBtn.style.padding = "0 4px";
+            clearAllBtn.className = 'tool-btn';
+            clearAllBtn.innerHTML = '🗑️*';
+            clearAllBtn.title = '全レイヤーを消去 (Shift+Delete)';
+            clearBtn.parentNode.insertBefore(clearAllBtn, clearBtn.nextSibling);
+            clearAllBtn.addEventListener('click', () => {
+                if (confirm('すべてのレイヤーを消去しますか？\nこの操作は元に戻すのが難しい場合があります。')) {
+                    this.app.canvasManager.clearAllLayers();
+                }
+            });
+        }
+        
+        // --- View Operations ---
+        document.getElementById('flip-h-btn').addEventListener('click', () => this.app.layerManager.flipActiveLayerHorizontal()); // This should be layer-specific
+        document.getElementById('flip-v-btn').addEventListener('click', () => this.app.layerManager.flipActiveLayerVertical()); // This should be layer-specific
         document.getElementById('zoom-in-btn').addEventListener('click', () => this.app.canvasManager.zoomView(1.2));
         document.getElementById('zoom-out-btn').addEventListener('click', () => this.app.canvasManager.zoomView(1 / 1.2));
         document.getElementById('rotate-btn').addEventListener('click', () => this.app.canvasManager.rotateView(15));
@@ -35,6 +41,7 @@ class TopBarManager {
         }
     }
 }
+
 class ShortcutManager {
     constructor(app) {
         this.app = app;
@@ -42,25 +49,38 @@ class ShortcutManager {
     initialize() {
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
         document.addEventListener('keyup', this.handleKeyUp.bind(this));
+        // Wheel event is now handled in CanvasManager
     }
     handleKeyUp(e) {
         if (e.key === ' ') {
             this.app.canvasManager.isSpaceDown = false;
-            this.app.canvasManager.isPanning = false;
-            this.app.canvasManager.isRotatingWithSpace = false;
             this.app.canvasManager.updateCursor();
             e.preventDefault();
         }
     }
     handleKeyDown(e) {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.repeat) return;
+        
         if (e.key === ' ' && !this.app.canvasManager.isSpaceDown) {
             this.app.canvasManager.isSpaceDown = true;
             this.app.canvasManager.updateCursor();
             e.preventDefault();
+        }
+
+        if (this.app.canvasManager.isSpaceDown) {
+            let handled = true;
+            const moveAmount = 10;
+            switch (e.key) {
+                case 'ArrowUp': this.app.canvasManager.panView(0, -moveAmount); break;
+                case 'ArrowDown': this.app.canvasManager.panView(0, moveAmount); break;
+                case 'ArrowLeft': this.app.canvasManager.panView(-moveAmount, 0); break;
+                case 'ArrowRight': this.app.canvasManager.panView(moveAmount, 0); break;
+                default: handled = false;
+            }
+            if (handled) e.preventDefault();
             return;
         }
-        if (this.app.canvasManager.isSpaceDown) return;
+
         let handled = false;
         if (this.app.toolManager.getCurrentTool() === 'move') {
             handled = this.handleLayerTransformKeys(e);
@@ -68,34 +88,27 @@ class ShortcutManager {
         if (!handled) {
             handled = this.handleGlobalKeys(e);
         }
-        if (handled) e.preventDefault();
+        if (handled) {
+            e.preventDefault();
+        }
     }
+
     handleLayerTransformKeys(e) {
         let handled = true;
-        const moveAmount = 1;
-        const rotateAmount = 1;
-        const scaleFactor = 1.02;
-        if (e.shiftKey) {
-            switch (e.key.toLowerCase()) {
-                case 'h': this.app.layerManager.flipActiveLayerVertical(); break;
-                case 'arrowup': this.app.layerManager.scaleActiveLayer(scaleFactor); break;
-                case 'arrowdown': this.app.layerManager.scaleActiveLayer(1 / scaleFactor); break;
-                case 'arrowleft': this.app.layerManager.rotateActiveLayer(-rotateAmount); break;
-                case 'arrowright': this.app.layerManager.rotateActiveLayer(rotateAmount); break;
-                default: handled = false;
-            }
-        } else {
-            switch (e.key.toLowerCase()) {
-                case 'h': this.app.layerManager.flipActiveLayerHorizontal(); break;
-                case 'arrowup': this.app.layerManager.moveActiveLayer(0, -moveAmount); this.app.layerManager.endMove(); break;
-                case 'arrowdown': this.app.layerManager.moveActiveLayer(0, moveAmount); this.app.layerManager.endMove(); break;
-                case 'arrowleft': this.app.layerManager.moveActiveLayer(-moveAmount, 0); this.app.layerManager.endMove(); break;
-                case 'arrowright': this.app.layerManager.moveActiveLayer(moveAmount, 0); this.app.layerManager.endMove(); break;
-                default: handled = false;
-            }
+        const moveAmount = e.shiftKey ? 10 : 1;
+        const rotateAmount = e.shiftKey ? 15 : 1;
+        const scaleFactor = e.shiftKey ? 1.1 : 1.02;
+
+        switch (e.key.toLowerCase()) {
+            case 'arrowup': this.app.layerManager.moveActiveLayer(0, -moveAmount); break;
+            case 'arrowdown': this.app.layerManager.moveActiveLayer(0, moveAmount); break;
+            case 'arrowleft': this.app.layerManager.moveActiveLayer(-moveAmount, 0); break;
+            case 'arrowright': this.app.layerManager.moveActiveLayer(moveAmount, 0); break;
+            default: handled = false;
         }
         return handled;
     }
+
     handleGlobalKeys(e) {
         let handled = true;
         if (e.ctrlKey || e.metaKey) {
@@ -108,13 +121,21 @@ class ShortcutManager {
             switch (e.key) {
                 case '}': case ']': this.app.colorManager.changeColor(true); break;
                 case '{': case '[': this.app.colorManager.changeColor(false); break;
+                case 'Delete': 
+                     if (confirm('すべてのレイヤーを消去しますか？')) {
+                        this.app.canvasManager.clearAllLayers();
+                    }
+                    break;
                 default:
-                    switch (e.key.toLowerCase()) {
-                        case 'h': this.app.canvasManager.flipViewVertical(); break;
-                        case 'arrowup': this.app.canvasManager.zoomView(1.20); break;
-                        case 'arrowdown': this.app.canvasManager.zoomView(1 / 1.20); break;
-                        case 'arrowleft': this.app.canvasManager.rotateView(-15); break;
-                        case 'arrowright': this.app.canvasManager.rotateView(15); break;
+                     // Layer transforms with shift
+                    const rotateAmount = 15;
+                    const scaleFactor = 1.2;
+                     switch (e.key.toLowerCase()) {
+                        case 'h': this.app.layerManager.flipActiveLayerVertical(); break;
+                        case 'arrowup': this.app.layerManager.scaleActiveLayer(scaleFactor); break;
+                        case 'arrowdown': this.app.layerManager.scaleActiveLayer(1 / scaleFactor); break;
+                        case 'arrowleft': this.app.layerManager.rotateActiveLayer(-rotateAmount); break;
+                        case 'arrowright': this.app.layerManager.rotateActiveLayer(rotateAmount); break;
                         default: handled = false;
                     }
             }
@@ -128,8 +149,10 @@ class ShortcutManager {
                 case 'e': this.app.toolManager.setTool('eraser'); break;
                 case 'v': this.app.toolManager.setTool('move'); break;
                 case 'g': this.app.toolManager.setTool('bucket'); break;
-                case 'h': this.app.canvasManager.flipViewHorizontal(); break;
+                case 'h': this.app.layerManager.flipActiveLayerHorizontal(); break;
                 case '1': this.app.canvasManager.resetView(); break;
+                case 'delete': this.app.canvasManager.clearCanvas(); break;
+                // View transforms without shift
                 case 'arrowup': this.app.canvasManager.zoomView(1.05); break;
                 case 'arrowdown': this.app.canvasManager.zoomView(1 / 1.05); break;
                 case 'arrowleft': this.app.canvasManager.rotateView(-5); break;
@@ -139,19 +162,24 @@ class ShortcutManager {
         }
         return handled;
     }
-    handleWheel(e) {
+
+    handleWheel(e) { // This is called from CanvasManager's wheel handler
+        if (this.app.toolManager.getCurrentTool() !== 'move') {
+            return false; // Let CanvasManager handle it (view zoom/rotate)
+        }
+        
         const delta = e.deltaY > 0 ? -1 : 1;
         let handled = true;
-        if (e.shiftKey && e.ctrlKey) {
+        if (e.ctrlKey || e.metaKey) {
             this.app.layerManager.rotateActiveLayer(delta * 5);
-        } else if (e.shiftKey) {
-            this.app.layerManager.scaleActiveLayer(delta > 0 ? 1.1 : 1 / 1.1);
         } else {
-            handled = false;
+            const scaleFactor = delta > 0 ? 1.1 : 1 / 1.1;
+            this.app.layerManager.scaleActiveLayer(scaleFactor);
         }
         return handled;
     }
 }
+
 class ToshinkaTegakiTool {
     constructor() {
         this.canvasManager = new CanvasManager(this);
@@ -161,26 +189,26 @@ class ToshinkaTegakiTool {
         this.colorManager = new ColorManager(this);
         this.topBarManager = new TopBarManager(this);
         this.shortcutManager = new ShortcutManager(this);
-        this.test_currentLayerIndex = 0;
-        this.initialize();
-    }
-    initialize() {
-        this.canvasManager.initCanvases();
+        
         this.layerManager.setupInitialLayers();
-        this.toolManager.bindEvents();
-        this.penSettingsManager.bindEvents();
-        this.colorManager.bindEvents();
         this.shortcutManager.initialize();
+
         this.toolManager.setTool('pen');
         this.penSettingsManager.setSize(1);
         this.colorManager.setColor(this.colorManager.mainColor);
-        this.canvasManager.saveState();
-        this.canvasManager.drawComposite();
-        this.bindTestButtons();
+        
+        this.appReady();
     }
+    
+    appReady() {
+        this.canvasManager.drawComposite();
+        this.bindTestButtons(); // For dev/test purposes
+    }
+
     bindTestButtons() {
         const addBtn = document.getElementById('add-layer-btn-test');
         const switchBtn = document.getElementById('switch-layer-btn-test');
+        
         if (addBtn) {
             addBtn.addEventListener('click', () => {
                 this.layerManager.addLayer();
@@ -188,14 +216,19 @@ class ToshinkaTegakiTool {
         }
         if (switchBtn) {
             switchBtn.addEventListener('click', () => {
-                if (this.layerManager.layers.length > 1) {
-                    const newIndex = (this.layerManager.activeLayerIndex + 1) % this.layerManager.layers.length;
-                    this.layerManager.switchLayer(newIndex);
-                }
+                 let nextIndex = this.layerManager.activeLayerIndex + 1;
+                 // Skip base layer 0, cycle through drawing layers
+                 if (nextIndex >= this.layerManager.layers.length) {
+                     nextIndex = 1; 
+                 }
+                 if(this.layerManager.layers.length > 1) {
+                    this.layerManager.switchLayer(nextIndex);
+                 }
             });
         }
     }
 }
+
 window.addEventListener('DOMContentLoaded', () => {
     if (!window.toshinkaTegakiInitialized) {
         window.toshinkaTegakiInitialized = true;
