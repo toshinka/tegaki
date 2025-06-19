@@ -275,8 +275,7 @@ class ShortcutManager {
             // 強制色テスト(2): ここで色を一時的に赤に
             // let strokeStyle = "rgba(255,0,0,1)";
             let strokeStyle = this.app.colorManager.getColor();
-            // strokeStyle = "rgba(255,0,0,1)"; // ← テスト時にコメント外して
-
+            strokeStyle = "rgba(255,0,0,1)"; 
             layer.ctx.beginPath();
             layer.ctx.moveTo(x, y);
             this.lastDrawPos = { x, y };
