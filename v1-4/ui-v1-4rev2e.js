@@ -1,326 +1,346 @@
-// 🚨 Toshinka Tegaki Tool v1-4系 UI/初期化/ショートカット管理（命令書完全準拠）rev2e 🚨
-// rev2e: canvas/context参照の正規化・追加レイヤー操作無効化
-
-class TopBarManager {
-    constructor(app) {
-        this.app = app;
-        this.bindEvents();
-    }
-    bindEvents() {
-        document.getElementById('undo-btn').addEventListener('click', () => this.app.layerManager.undo());
-        document.getElementById('redo-btn').addEventListener('click', () => this.app.layerManager.redo());
-        document.getElementById('close-btn').addEventListener('click', () => this.closeTool());
-        const clearBtn = document.getElementById('clear-btn');
-        if (clearBtn) {
-            clearBtn.title = 'アクティブレイヤーを消去 (Delete)';
-            clearBtn.addEventListener('click', () => this.app.layerManager.clearActiveLayer());
-            // 全レイヤー消去ボタンは1レイヤーのみなら非表示
-            const clearAllBtn = document.createElement('button');
-            clearAllBtn.id = 'clear-all-btn';
-            clearAllBtn.style.fontSize = "16px";
-            clearAllBtn.style.padding = "0 4px";
-            clearAllBtn.className = 'tool-btn';
-            clearAllBtn.innerHTML = '🗑️*';
-            clearAllBtn.title = '全レイヤーを消去 (Shift+Delete)';
-            clearBtn.parentNode.insertBefore(clearAllBtn, clearBtn.nextSibling);
-            clearAllBtn.addEventListener('click', () => {
-                if (confirm('すべてのレイヤーを消去しますか？\nこの操作は元に戻すのが難しい場合があります。')) {
-                    this.app.layerManager.clearAllLayers();
-                }
-            });
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=344, initial-scale=1.0">
+    <title>ToshinkaTegakiTool-v1-4-rev2e</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background-color: #ffffee;
+            overflow: hidden;
         }
-        document.getElementById('reset-view-btn').addEventListener('click', () => this.app.canvasManager.resetView());
-    }
-    closeTool() {
-        if (confirm('ウィンドウを閉じますか？')) {
-            window.close();
+        :root {
+            --main-bg-color: rgb(240, 208, 195);
+            --dark-brown: #800000;
+            --light-brown-border: rgb(220, 188, 175);
+            --button-active-bg: white;
+            --button-inactive-bg: var(--main-bg-color);
         }
-    }
-}
-
-class ShortcutManager {
-    constructor(app) {
-        this.app = app;
-        this.lastDrawPos = null;
-    }
-    initialize() {
-        document.addEventListener('keydown', this.handleKeyDown.bind(this), true);
-        document.addEventListener('keyup', this.handleKeyUp.bind(this), true);
-    }
-    handleKeyUp(e) {
-        if (e.key === ' ') {
-            this.app.canvasManager.isSpaceDown = false;
-            e.preventDefault();
+        .main-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            position: relative;
         }
-    }
-    handleKeyDown(e) {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.repeat) return;
-        const layer = this.app.layerManager.getActiveLayer();
-        const isBaseLayer = layer?._isBaseLayer;
-
-        if (e.key === ' ' && !this.app.canvasManager.isSpaceDown) {
-            this.app.canvasManager.isSpaceDown = true;
-            e.preventDefault();
-            return;
+        .left-toolbar {
+            position: absolute;
+            top: 30px;
+            left: 0;
+            width: 28px;
+            background-color: var(--main-bg-color);
+            border-right: 1px solid var(--light-brown-border);
+            display: flex;
+            flex-direction: column;
+            padding: 2px 0;
+            gap: 5px;
+            box-sizing: border-box;
+            align-items: center;
+            z-index: 100;
         }
-        // ビューショートカット（Space+やCtrl/Cmd系）
-        if (this.app.canvasManager.isSpaceDown) {
-            let handled = true;
-            switch (e.key) {
-                case 'ArrowUp': this.app.canvasManager.viewTransform.y -= 10; break;
-                case 'ArrowDown': this.app.canvasManager.viewTransform.y += 10; break;
-                case 'ArrowLeft': this.app.canvasManager.viewTransform.x -= 10; break;
-                case 'ArrowRight': this.app.canvasManager.viewTransform.x += 10; break;
-                default: handled = false;
-            }
-            if (handled) {
-                this.app.layerManager.drawComposite();
-                e.preventDefault();
-            }
-            return;
+        .top-toolbar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 30px;
+            background-color: var(--main-bg-color);
+            border-bottom: 1px solid var(--light-brown-border);
+            display: flex;
+            align-items: center;
+            padding: 0 3px;
+            gap: 2px;
+            box-sizing: border-box;
+            justify-content: space-between;
+            z-index: 100;
         }
-        // Undo/Redo
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-            this.app.layerManager.undo(); e.preventDefault(); return;
+        .canvas-area {
+            position: absolute;
+            top: 30px;
+            left: 28px;
+            right: 0;
+            bottom: 0;
+            background-color: #ffffee;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
-            this.app.layerManager.redo(); e.preventDefault(); return;
+        .canvas-container {
+            position: relative; 
+            transform-origin: center;
+            width: 344px;
+            height: 135px;
+            background-color: transparent; 
+            border: none;
+            padding: 0;
+            transition: transform 0.2s ease;
+            transform-style: preserve-3d;
         }
-
-        // --- カラーパレット移動ショートカット (最優先/必ず効く) ---
-        let isBracketLeft = (
-            e.code === 'BracketLeft' ||
-            e.key === '[' || e.key === '{'
-        );
-        let isBracketRight = (
-            e.code === 'BracketRight' ||
-            e.key === ']' || e.key === '}'
-        );
-        if (isBracketLeft) {
-            this.app.colorManager.changeColor(false);
-            e.preventDefault();
-            return;
+        .main-canvas {
+            display: block;
+            background-color: transparent;
+            cursor: crosshair;
+            touch-action: none;
+            position: absolute;
+            top: 0; 
+            left: 0;
+            pointer-events: none;
+            image-rendering: pixelated;
         }
-        if (isBracketRight) {
-            this.app.colorManager.changeColor(true);
-            e.preventDefault();
-            return;
+        #drawing-layer0 {
+            pointer-events: auto;
         }
-        // -----------------------------------------------------
-
-        // v+系（アクティブレイヤーtransform）drawing-layer0は禁止
-        let handled = false;
-        if (!isBaseLayer) {
-            if (e.shiftKey) {
-                switch (e.key.toLowerCase()) {
-                    case 'h': this.app.layerManager.flipActiveLayerVertical(); handled = true; break;
-                    case 'arrowup': this.app.layerManager.scaleActiveLayer(1.02); handled = true; break;
-                    case 'arrowdown': this.app.layerManager.scaleActiveLayer(1/1.02); handled = true; break;
-                    case 'arrowleft': this.app.layerManager.rotateActiveLayer(-1); handled = true; break;
-                    case 'arrowright': this.app.layerManager.rotateActiveLayer(1); handled = true; break;
-                }
-            } else {
-                switch (e.key.toLowerCase()) {
-                    case 'h': this.app.layerManager.flipActiveLayerHorizontal(); handled = true; break;
-                    case 'arrowup': this.app.layerManager.moveActiveLayer(0, -1); handled = true; break;
-                    case 'arrowdown': this.app.layerManager.moveActiveLayer(0, 1); handled = true; break;
-                    case 'arrowleft': this.app.layerManager.moveActiveLayer(-1, 0); handled = true; break;
-                    case 'arrowright': this.app.layerManager.moveActiveLayer(1, 0); handled = true; break;
-                }
-            }
+        #composite-canvas {
+            z-index: 1;
         }
-        if (handled) { e.preventDefault(); return; }
-        // drawing-layer0ではtransform/消しゴム/バケツ系ショートカットを無効化
-        // ペンサイズ・色・ツール
-        switch (e.key.toLowerCase()) {
-            case 'x': this.app.colorManager.swapColors(); e.preventDefault(); break;
-            case 'd': this.app.colorManager.resetColors(); e.preventDefault(); break;
-            case 'p': this.app.toolManager.setTool('pen'); e.preventDefault(); break;
-            case 'e': this.app.toolManager.setTool('eraser'); e.preventDefault(); break;
-            case 'v': this.app.toolManager.setTool('move'); e.preventDefault(); break;
-            case 'g': this.app.toolManager.setTool('bucket'); e.preventDefault(); break;
+        .top-left-controls {
+            display: flex;
+            flex-direction: row;
+            gap: 2px;
+            align-items: center;
         }
-    }
-    // ペン描画系
-    handlePenPointerDown(e) {
-        const layer = this.app.layerManager.getActiveLayer();
-        const isBaseLayer = layer?._isBaseLayer;
-        const tool = this.app.toolManager.getCurrentTool();
-
-        if ((tool === 'pen') || (tool === 'eraser')) {
-            if (isBaseLayer && tool === 'eraser') {
-                // drawing-layer0は消しゴム禁止
-                return;
-            }
-            const { x, y } = this.app.canvasManager.getLayerDrawCoord(e.clientX, e.clientY, layer);
-            // デバッグ: 描画座標確認
-            // console.log("draw", x, y, "canvas", layer.canvas.width, layer.canvas.height);
-            if (isNaN(x) || isNaN(y) || x < 0 || y < 0 || x > layer.canvas.width || y > layer.canvas.height) {
-                console.warn("描画座標範囲外", x, y);
-                return;
-            }
-            layer.ctx.beginPath();
-            layer.ctx.moveTo(x, y);
-            this.lastDrawPos = { x, y };
-            layer.ctx.globalCompositeOperation = (tool === 'eraser') ? 'destination-out' : 'source-over';
-            layer.ctx.strokeStyle = this.app.colorManager.getColor();
-            layer.ctx.lineWidth = this.app.penSettingsManager.getCurrentSize();
-
-            // pointermove/up: windowバインド
-            const move = (ev) => {
-                if (!ev.buttons) return;
-                const { x:mx, y:my } = this.app.canvasManager.getLayerDrawCoord(ev.clientX, ev.clientY, layer);
-                if (isNaN(mx) || isNaN(my) || mx < 0 || my < 0 || mx > layer.canvas.width || my > layer.canvas.height) {
-                    console.warn("描画座標範囲外", mx, my);
-                    return;
-                }
-                layer.ctx.lineTo(mx, my);
-                layer.ctx.stroke();
-                this.lastDrawPos = { x:mx, y:my };
-            };
-            const up = () => {
-                window.removeEventListener('pointermove', move, true);
-                window.removeEventListener('pointerup', up, true);
-                layer.ctx.closePath();
-                this.app.layerManager.saveState();
-                this.app.layerManager.drawComposite();
-
-                // ピクセル変化確認
-                const img = layer.ctx.getImageData(0,0,layer.canvas.width,layer.canvas.height);
-                let changed = false;
-                for (let i=0; i<img.data.length; i+=4) {
-                    if (img.data[i+3] !== 255) { changed = true; break; }
-                }
-                // console.log("draw changed?", changed);
-            };
-            window.addEventListener('pointermove', move, true);
-            window.addEventListener('pointerup', up, true);
-        } else if (tool === 'bucket') {
-            // drawing-layer0もバケツOK
-            const { x, y } = this.app.canvasManager.getLayerDrawCoord(e.clientX, e.clientY, layer);
-            this.floodFill(layer, Math.floor(x), Math.floor(y), this.app.colorManager.getColor());
-            this.app.layerManager.saveState();
-            this.app.layerManager.drawComposite();
+        .color-palette {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2px;
+            justify-content: center;
+            width: 100%;
         }
-    }
-    // バケツ: RGBA変換ユーティリティ
-    hexToRgba(hex) {
-        const c = hex.replace('#', '');
-        if (c.length === 3) {
-            return [parseInt(c[0]+c[0],16), parseInt(c[1]+c[1],16), parseInt(c[2]+c[2],16), 255];
-        } else if (c.length === 6) {
-            return [parseInt(c.substr(0,2),16), parseInt(c.substr(2,2),16), parseInt(c.substr(4,2),16), 255];
+        .color-btn {
+            width: 20px;
+            height: 20px;
+            border: 1px solid var(--dark-brown);
+            cursor: pointer;
+            border-radius: 2px;
         }
-        return [0,0,0,255];
-    }
-    floodFill(layer, sx, sy, fillColor) {
-        const w = layer.canvas.width, h = layer.canvas.height;
-        const ctx = layer.ctx;
-        const img = ctx.getImageData(0,0,w,h);
-        const startColor = this.getPixel(img, sx, sy);
-        const fc = this.hexToRgba(fillColor);
-        if (this.colorsMatch(startColor, fc)) return;
-        const q = [[sx,sy]];
-        while(q.length) {
-            const [x, y] = q.pop();
-            if (x<0||x>=w||y<0||y>=h) continue;
-            if (!this.colorsMatch(this.getPixel(img, x, y), startColor)) continue;
-            this.setPixel(img, x, y, fc);
-            q.push([x+1,y],[x-1,y],[x,y+1],[x,y-1]);
+        .color-btn.active {
+            border-color: var(--button-active-bg);
+            border-width: 2px;
         }
-        ctx.putImageData(img, 0, 0);
-    }
-    getPixel(img,x,y) {
-        const i = (y*img.width+x)*4;
-        return [img.data[i],img.data[i+1],img.data[i+2],img.data[i+3]];
-    }
-    setPixel(img,x,y,rgba) {
-        const i = (y*img.width+x)*4;
-        [img.data[i],img.data[i+1],img.data[i+2],img.data[i+3]] = rgba;
-    }
-    colorsMatch(a,b) {
-        return a[0]===b[0] && a[1]===b[1] && a[2]===b[2] && a[3]===b[3];
-    }
-    // v+系ホイール
-    handleLayerWheel(e) {
-        const layer = this.app.layerManager.getActiveLayer();
-        if (!layer || layer._isBaseLayer) {
-            return;
+        .color-mode-display {
+            width: 24px;
+            height: 24px;
+            position: relative;
+            cursor: pointer;
+            margin-top: 5px;
+            background-color: var(--main-bg-color);
+            border: 1px solid var(--light-brown-border);
+            box-sizing: border-box;
+            border-radius: 2px;
+            overflow: hidden;
         }
-        if (this.app.toolManager.getCurrentTool() === 'move') {
-            const delta = e.deltaY > 0 ? -1 : 1;
-            if (e.shiftKey && e.ctrlKey) {
-                this.app.layerManager.rotateActiveLayer(delta * 5);
-                e.preventDefault();
-            } else if (e.shiftKey) {
-                this.app.layerManager.scaleActiveLayer(delta > 0 ? 1.1 : 1/1.1);
-                e.preventDefault();
-            } else if (!e.shiftKey && !e.ctrlKey) {
-                this.app.layerManager.scaleActiveLayer(delta > 0 ? 1.05 : 1/1.05);
-                e.preventDefault();
-            }
+        .color-square {
+            width: 16px;
+            height: 16px;
+            border: 1px solid var(--dark-brown);
+            position: absolute;
+            box-sizing: border-box;
         }
-    }
-}
-
-class ToshinkaTegakiTool {
-    constructor() {
-        this.colorManager = null;
-        this.toolManager = null;
-        this.canvasManager = null;
-        this.topBarManager = null;
-        this.penSettingsManager = null;
-        this.layerManager = null;
-        this.shortcutManager = null;
-        this.initManagers();
-        this.bindTestButtons();
-        this.ensureLayerStack();
-    }
-    initManagers() {
-        this.canvasManager = new CanvasManager(this);
-        this.layerManager = new LayerManager(this);
-        this.layerManager.setupInitialLayers();
-        this.penSettingsManager = new PenSettingsManager(this);
-        this.toolManager = new ToolManager(this);
-        this.colorManager = new ColorManager(this);
-        this.topBarManager = new TopBarManager(this);
-        this.shortcutManager = new ShortcutManager(this);
-        this.shortcutManager.initialize();
-        this.toolManager.setTool('pen');
-        this.penSettingsManager.setSize(1);
-        this.colorManager.setColor(this.colorManager.mainColor);
-        this.layerManager.saveState();
-    }
-    bindTestButtons() {
-        // レイヤー追加・切替ボタンは無効化 rev2e
-        const addBtn = document.getElementById('add-layer-btn-test');
-        const switchBtn = document.getElementById('switch-layer-btn-test');
-        if (addBtn) addBtn.disabled = true;
-        if (switchBtn) switchBtn.disabled = true;
-    }
-    ensureLayerStack() {
-        // drawing-layer0の親要素(canvas-container)内にlayer-stack divを用意
-        const baseCanvas = document.getElementById('drawing-layer0');
-        if (!baseCanvas) return;
-        let stack = document.getElementById('layer-stack');
-        if (!stack) {
-            stack = document.createElement('div');
-            stack.id = 'layer-stack';
-            stack.style.position = 'absolute';
-            stack.style.top = '0';
-            stack.style.left = '0';
-            stack.style.width = '100%';
-            stack.style.height = '100%';
-            stack.style.pointerEvents = 'none';
-            stack.style.zIndex = '10';
-            baseCanvas.parentNode.insertBefore(stack, baseCanvas.nextSibling);
+        .main-color-square {
+            top: 0;
+            left: 0;
+            z-index: 2;
         }
-    }
-}
-
-window.addEventListener('DOMContentLoaded', () => {
-    if (!window.toshinkaTegakiInitialized) {
-        window.toshinkaTegakiInitialized = true;
-        window.toshinkaTegakiTool = new ToshinkaTegakiTool();
-    }
-});
+        .sub-color-square {
+            bottom: 0;
+            right: 0;
+            z-index: 1;
+        }
+        .tools {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            width: 100%;
+            align-items: center;
+        }
+        .tool-btn {
+            width: 24px;
+            height: 24px;
+            border: 1px solid var(--light-brown-border);
+            background: var(--button-inactive-bg);
+            cursor: pointer;
+            font-size: 16px;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 3px;
+            line-height: 1;
+            color: var(--dark-brown);
+        }
+        .tool-btn.active {
+            background-color: var(--button-active-bg);
+            color: var(--dark-brown);
+            border-color: var(--dark-brown);
+        }
+        .sizes {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            width: 100%;
+            align-items: center;
+        }
+        .size-btn {
+            width: 24px;
+            height: 34px;
+            border: 1px solid var(--light-brown-border);
+            background: var(--button-inactive-bg);
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2px 0;
+            border-radius: 3px;
+        }
+        .size-btn.active {
+            border-color: var(--dark-brown);
+            background-color: var(--button-active-bg);
+        }
+        .size-indicator { 
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 1px solid var(--dark-brown);
+            background-color: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
+        }
+        .size-dot {
+            border-radius: 50%;
+            background-color: var(--dark-brown);
+        }
+        .size-number {
+            font-size: 10px;
+            color: var(--dark-brown);
+            text-align: center;
+            display: block;
+            line-height: 1;
+            margin-top: 2px;
+        }
+        .top-btn {
+            height: 24px;
+            padding: 0 6px;
+            border: 1px solid var(--light-brown-border);
+            background: var(--button-inactive-bg);
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 3px;
+            color: var(--dark-brown);
+        }
+        .top-btn:hover {
+            background-color: var(--button-active-bg);
+            border-color: var(--dark-brown);
+        }
+        .close-btn {
+            background-color: #ff4444;
+            color: white;
+            border: none;
+        }
+        .close-btn:hover {
+            background-color: #cc3333;
+        }
+        .separator {
+            width: 80%;
+            height: 1px;
+            background-color: var(--light-brown-border);
+        }
+        #test-controls {
+            position: absolute; 
+            top: 35px; 
+            right: 10px; 
+            z-index: 9999; 
+            background: #fff; 
+            padding: 5px; 
+            border: 1px solid #000;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="top-toolbar">
+            <div class="top-left-controls">
+                <button class="tool-btn" id="undo-btn" title="元に戻す (Ctrl+Z)">↶</button>
+                <button class="tool-btn" id="redo-btn" title="やり直し (Ctrl+Y)">↷</button>
+                <button class="tool-btn" id="clear-btn" title="全消去">&#128465;</button>
+            </div>
+            <div class="canvas-ops-group" style="display: flex; gap: 2px;">
+                <button class="top-btn" id="flip-h-btn" title="左右反転 (H)">⇄</button>
+                <button class="top-btn" id="flip-v-btn" title="上下反転 (Shift+H)">⇅</button>
+                <button class="top-btn" id="zoom-out-btn" title="縮小 (↓ / Wheel Down)">－</button>
+                <button class="top-btn" id="zoom-in-btn" title="拡大 (↑ / Wheel Up)">＋</button>
+                <button class="top-btn" id="rotate-btn" title="回転 (Shift+Wheel)">↻</button>
+                <button class="top-btn" id="rotate-ccw-btn" title="反時計回りに回転 (Shift+Wheel)">↺</button>
+                <button class="top-btn" id="reset-view-btn" title="表示リセット (1)">&#9750;</button>
+            </div>
+            <button class="top-btn close-btn" id="close-btn">×閉じる</button>
+        </div>
+        <div class="left-toolbar">
+            <div class="color-palette">
+                <div class="color-btn active" data-color="#800000" style="background-color: #800000;" title="暗赤"></div>
+                <div class="color-btn" data-color="#aa5a56" style="background-color: #aa5a56;" title="赤茶"></div>
+                <div class="color-btn" data-color="#cf9c97" style="background-color: #cf9c97;" title="中間色"></div>
+                <div class="color-btn" data-color="#e9c2ba" style="background-color: #e9c2ba;" title="薄茶"></div>
+                <div class="color-btn" data-color="#f0e0d6" style="background-color: #f0e0d6;" title="肌色"></div>
+            </div>
+            <div class="color-mode-display" title="メイン/サブカラー切り替え (X)">
+                <div id="main-color-display" class="color-square main-color-square"></div>
+                <div id="sub-color-display" class="color-square sub-color-square"></div>
+            </div>
+            <div class="separator"></div>
+            <div class="tools">
+                <button class="tool-btn active" id="pen-tool" title="ペン (P)">&#9998;</button>
+                <button class="tool-btn" id="eraser-tool" title="消しゴム (E)">&#9003;</button>
+                <button class="tool-btn" id="bucket-tool" title="塗りつぶし (G)">&#x1F5F3;</button>
+                <button class="tool-btn" id="move-tool" title="レイヤー移動 (V)">&#10021;</button>
+            </div>
+            <div class="separator"></div>
+            <div class="sizes">
+                <button class="size-btn active" data-size="1">
+                    <div class="size-indicator"><div class="size-dot" style="width: 2px; height: 2px;"></div></div>
+                    <span class="size-number">1</span>
+                </button>
+                <button class="size-btn" data-size="3">
+                    <div class="size-indicator"><div class="size-dot" style="width: 4px; height: 4px;"></div></div>
+                    <span class="size-number">3</span>
+                </button>
+                <button class="size-btn" data-size="5">
+                    <div class="size-indicator"><div class="size-dot" style="width: 6px; height: 6px;"></div></div>
+                    <span class="size-number">5</span>
+                </button>
+                <button class="size-btn" data-size="10">
+                    <div class="size-indicator"><div class="size-dot" style="width: 10px; height: 10px;"></div></div>
+                    <span class="size-number">10</span>
+                </button>
+                <button class="size-btn" data-size="30">
+                    <div class="size-indicator"><div class="size-dot" style="width: 16px; height: 16px;"></div></div>
+                    <span class="size-number">30</span>
+                </button>
+            </div>
+        </div>
+        <div class="canvas-area" id="canvas-area">
+            <div class="canvas-container" id="canvas-container">
+                <canvas id="drawing-layer0" class="main-canvas" width="344" height="135"></canvas>
+                <div id="layer-stack"></div>
+                <canvas id="composite-canvas" class="main-canvas" width="344" height="135"></canvas>
+                <canvas id="frame-canvas" class="main-canvas" width="344" height="135"></canvas>
+            </div>
+        </div>
+        <div id="test-controls">
+            <button id="add-layer-btn-test">新規レイヤー</button>
+            <button id="switch-layer-btn-test">次のレイヤー</button>
+            <span id="current-layer-info"></span>
+        </div>
+    </div>
+    <script src="core-v1-4rev2e.js"></script>
+    <script src="ui-v1-4rev2e.js"></script>
+</body>
+</html>

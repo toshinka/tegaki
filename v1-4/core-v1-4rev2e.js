@@ -1,18 +1,12 @@
-// 🚨 Toshinka Tegaki Tool v1-4系 transform/Undo/Redo/座標厳格運用版（命令書完全準拠）rev2e 🚨
-// rev2e: canvas/context取得・初期化・レイヤー管理バグ修正
+// 🚨 Toshinka Tegaki Tool v1-4系 transform/Undo/Redo/座標厳格運用版（rev2e: 命令書完全準拠・座標/合成バグ修正版）🚨
 
 class CanvasManager {
     constructor(app) {
         this.app = app;
-
-        // DOMContentLoaded後に必ず実行
-        // canvas参照は静的HTML定義のみ
         this.compositeCanvas = document.getElementById('composite-canvas');
         this.compositeCtx = this.compositeCanvas.getContext('2d');
         this.frameCanvas = document.getElementById('frame-canvas');
         this.frameCtx = this.frameCanvas.getContext('2d');
-
-        // ビュー変換
         this.viewTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
         this.isSpaceDown = false;
         this.isPanning = false;
@@ -23,11 +17,9 @@ class CanvasManager {
         this.panStartY = 0;
         this.rotateStartAngle = 0;
         this.initialViewRotation = 0;
-
         this.bindEvents();
         this.drawFrame();
     }
-
     bindEvents() {
         const area = this.compositeCanvas;
         area.addEventListener('pointerdown', this.onPointerDown.bind(this));
@@ -35,7 +27,6 @@ class CanvasManager {
         document.addEventListener('pointerup', this.onPointerUp.bind(this));
         area.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
     }
-
     drawFrame() {
         const ctx = this.frameCtx, w = this.frameCanvas.width, h = this.frameCanvas.height;
         ctx.clearRect(0, 0, w, h);
@@ -44,16 +35,11 @@ class CanvasManager {
         ctx.strokeStyle = '#cccccc';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        if (ctx.roundRect) {
-            ctx.roundRect(0.5, 0.5, w - 1, h - 1, 8);
-        } else {
-            ctx.rect(0.5, 0.5, w - 1, h - 1);
-        }
+        ctx.roundRect(0.5, 0.5, w - 1, h - 1, 8);
         ctx.fill();
         ctx.stroke();
         ctx.restore();
     }
-
     onPointerDown(e) {
         if (this.isSpaceDown) {
             const rect = this.compositeCanvas.getBoundingClientRect();
@@ -73,10 +59,8 @@ class CanvasManager {
             try { document.documentElement.setPointerCapture(e.pointerId); } catch (_){}
             return;
         }
-        // ペン/レイヤー操作はShortcutManagerに委譲
         this.app.shortcutManager.handlePenPointerDown(e);
     }
-
     onPointerMove(e) {
         if (!e.buttons) return;
         if (this.isRotatingWithSpace) {
@@ -93,13 +77,11 @@ class CanvasManager {
             this.app.layerManager.drawComposite();
         }
     }
-
     onPointerUp(e) {
         try { if (document.documentElement.hasPointerCapture(e.pointerId)) document.documentElement.releasePointerCapture(e.pointerId); } catch (_){}
         this.isPanning = false;
         this.isRotatingWithSpace = false;
     }
-
     handleWheel(e) {
         if (this.isSpaceDown) {
             e.preventDefault();
@@ -114,28 +96,30 @@ class CanvasManager {
         }
         this.app.shortcutManager.handleLayerWheel(e);
     }
-
     resetView() {
         this.viewTransform = { x:0, y:0, scale:1, rotation:0 };
         this.app.layerManager.drawComposite();
     }
-
+    // 修正版: 座標変換（バグ・範囲チェック付き）
     getLayerDrawCoord(rawX, rawY, layer) {
-        // composite→viewTransform逆→layer.transform逆
+        const rect = this.compositeCanvas.getBoundingClientRect();
+        const scaleX = this.compositeCanvas.width / rect.width;
+        const scaleY = this.compositeCanvas.height / rect.height;
+        let x = (rawX - rect.left) * scaleX;
+        let y = (rawY - rect.top) * scaleY;
+        if (isNaN(x) || isNaN(y) || x < 0 || y < 0 || 
+            x > this.compositeCanvas.width || y > this.compositeCanvas.height) {
+            console.warn("描画座標範囲外", x, y);
+            return null;
+        }
         const w = this.compositeCanvas.width, h = this.compositeCanvas.height;
-        let x = rawX - this.compositeCanvas.getBoundingClientRect().left;
-        let y = rawY - this.compositeCanvas.getBoundingClientRect().top;
         let cx = w / 2, cy = h / 2;
         x -= cx; y -= cy;
-
-        // viewTransform逆
         let vt = this.viewTransform;
         x /= vt.scale; y /= vt.scale;
         const sinV = Math.sin(-vt.rotation), cosV = Math.cos(-vt.rotation);
         let x2 = x * cosV - y * sinV, y2 = x * sinV + y * cosV;
         x2 -= vt.x; y2 -= vt.y;
-
-        // layer.transform逆
         const lt = layer.transform;
         if (!layer._isBaseLayer) {
             x2 /= lt.scale * lt.scaleX; y2 /= lt.scale * lt.scaleY;
@@ -155,24 +139,14 @@ class LayerManager {
         this.layers = [];
         this.activeLayerIndex = -1;
     }
-
     getDefaultTransform(isBaseLayer = false) {
         return isBaseLayer ?
             { x:0, y:0, scale:1, rotation:0, scaleX:1, scaleY:1 }
             : { x:0, y:0, scale:1, rotation:0, scaleX:1, scaleY:1 };
     }
-
     setupInitialLayers() {
-        // drawing-layer0はHTML静的定義のみ
         const baseCanvas = document.getElementById('drawing-layer0');
         if (!baseCanvas) return;
-
-        // width/height属性とstyleが一致しているか必ず合わせる
-        baseCanvas.width = 344;
-        baseCanvas.height = 135;
-        baseCanvas.style.width = "344px";
-        baseCanvas.style.height = "135px";
-
         this.layers = [];
         this.layers.push({
             canvas: baseCanvas,
@@ -182,22 +156,34 @@ class LayerManager {
             historyIndex: -1,
             _isBaseLayer: true
         });
-
         const ctx = this.layers[0].ctx;
         ctx.fillStyle = '#f0e0d6';
         ctx.fillRect(0, 0, baseCanvas.width, baseCanvas.height);
-
         this.switchLayer(0);
         this.drawComposite();
     }
-
     addLayer() {
-        // JSでcanvasを新規生成しない rev2e:禁止
-        // レイヤー追加機能は本revでは未サポート（静的canvasのみ）
-        alert('レイヤー追加は現在サポートされていません（rev2e仕様）');
-        return null;
+        if (this.layers.length === 0) return null;
+        const base = this.layers[0].canvas;
+        const newCanvas = document.createElement('canvas');
+        newCanvas.width = base.width;
+        newCanvas.height = base.height;
+        newCanvas.className = 'main-canvas';
+        newCanvas.id = `drawing-layer${this.layers.length}`;
+        document.getElementById('layer-stack')?.appendChild(newCanvas);
+        const newLayer = {
+            canvas: newCanvas,
+            ctx: newCanvas.getContext('2d'),
+            transform: this.getDefaultTransform(false),
+            history: [],
+            historyIndex: -1,
+            _isBaseLayer: false
+        };
+        this.layers.push(newLayer);
+        this.switchLayer(this.layers.length - 1);
+        this.drawComposite();
+        return newLayer;
     }
-
     switchLayer(index) {
         if (index < 0 || index >= this.layers.length) return;
         this.activeLayerIndex = index;
@@ -205,17 +191,19 @@ class LayerManager {
             document.getElementById('current-layer-info').textContent = `L: ${index+1}/${this.layers.length}`;
         }
     }
-
     getActiveLayer() {
         return this.layers[this.activeLayerIndex];
     }
-
-    // 合成ループ
+    // 合成処理：命令書準拠・transform適用順序・save/restore完全対応
     drawComposite() {
         const composite = this.app.canvasManager.compositeCanvas;
         const ctx = this.app.canvasManager.compositeCtx;
         const w = composite.width, h = composite.height, cx = w/2, cy = h/2;
+        ctx.save();
+        ctx.setTransform(1,0,0,1,0,0); // 完全リセット
         ctx.clearRect(0,0,w,h);
+        ctx.restore();
+
         ctx.save();
         // viewTransform
         const vt = this.app.canvasManager.viewTransform;
@@ -238,8 +226,7 @@ class LayerManager {
         ctx.restore();
         this.app.canvasManager.drawFrame();
     }
-
-    // レイヤーtransform系（v+系のみ！）drawing-layer0は禁止
+    // 以下、transform・undo/redo・クリア等も命令書準拠
     moveActiveLayer(dx, dy) {
         const l = this.getActiveLayer();
         if (l._isBaseLayer) return;
@@ -275,12 +262,9 @@ class LayerManager {
         this.saveState();
         this.drawComposite();
     }
-
-    // Undo/Redo履歴
     saveState() {
         const l = this.getActiveLayer();
         const imageData = l.ctx.getImageData(0,0,l.canvas.width,l.canvas.height);
-        // drawing-layer0はtransform常に初期値固定で保存
         const transformCopy = l._isBaseLayer
             ? this.getDefaultTransform(true)
             : JSON.parse(JSON.stringify(l.transform));
@@ -324,8 +308,6 @@ class LayerManager {
         if (l._isBaseLayer) {
             l.ctx.fillStyle = '#f0e0d6';
             l.ctx.fillRect(0,0,l.canvas.width,l.canvas.height);
-        }
-        if (l._isBaseLayer) {
             l.transform = this.getDefaultTransform(true);
         }
         this.saveState();
