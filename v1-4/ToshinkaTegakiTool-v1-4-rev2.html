@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=344, initial-scale=1.0">
+    <title>ToshinkaTegakiTool-v1-4-rev2</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background-color: #ffffee;
+            overflow: hidden;
+        }
+        .main-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            position: relative;
+        }
+        .canvas-area {
+            position: absolute;
+            top: 30px;
+            left: 28px;
+            right: 0;
+            bottom: 0;
+            background-color: #ffffee;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .canvas-container {
+            position: relative;
+            width: 344px;
+            height: 135px;
+            background-color: transparent;
+        }
+        .main-canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 344px;
+            height: 135px;
+            background-color: transparent;
+            pointer-events: none;
+        }
+        .layer-stack-canvas {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <!-- ...（ツールバーなどは省略）... -->
+        <div class="canvas-area" id="canvas-area">
+            <div class="canvas-container" id="canvas-container">
+                <!-- 初期レイヤーcanvas（drawing-layer0, レイヤー管理必須/背景用） -->
+                <canvas id="drawing-layer0" class="main-canvas" width="344" height="135"></canvas>
+                <!-- 合成用canvas（全レイヤー重ねて見せる） -->
+                <canvas id="composite-canvas" class="main-canvas" width="344" height="135"></canvas>
+                <!-- 額縁用canvas -->
+                <canvas id="frame-canvas" class="main-canvas" width="344" height="135"></canvas>
+            </div>
+        </div>
+        <!-- ...（他UI部分はrev1を流用 or 必要に応じて追加）... -->
+    </div>
+    <script src="core-v1-4rev2.js"></script>
+    <script src="ui-v1-4rev2.js"></script>
+</body>
+</html>
