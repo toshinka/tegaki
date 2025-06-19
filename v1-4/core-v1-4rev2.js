@@ -4,11 +4,27 @@ class CanvasManager {
     constructor(app) {
         this.app = app;
         // compositeCanvas: 合成表示用
-        this.compositeCanvas = document.getElementById('composite-canvas');
-        this.compositeCtx = this.compositeCanvas.getContext('2d');
+        let composite = document.getElementById('composite-canvas');
+        if (!composite) {
+            composite = document.createElement('canvas');
+            composite.id = 'composite-canvas';
+            composite.width = 344;
+            composite.height = 135;
+            document.getElementById('canvas-container').appendChild(composite);
+        }
+        this.compositeCanvas = composite;
+        this.compositeCtx = composite.getContext('2d');
         // frameCanvas: 額縁
-        this.frameCanvas = document.getElementById('frame-canvas');
-        this.frameCtx = this.frameCanvas.getContext('2d');
+        let frame = document.getElementById('frame-canvas');
+        if (!frame) {
+            frame = document.createElement('canvas');
+            frame.id = 'frame-canvas';
+            frame.width = 344;
+            frame.height = 135;
+            document.getElementById('canvas-container').appendChild(frame);
+        }
+        this.frameCanvas = frame;
+        this.frameCtx = frame.getContext('2d');
         // ビュー変換（compositeCanvas, frameCanvas専用）
         this.viewTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
         this.isSpaceDown = false;
