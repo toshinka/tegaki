@@ -53,6 +53,9 @@ class ShortcutManager {
     }
     handleKeyDown(e) {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.repeat) return;
+        const layer = this.app.layerManager.getActiveLayer();
+        const isBaseLayer = layer?._isBaseLayer;
+
         if (e.key === ' ' && !this.app.canvasManager.isSpaceDown) {
             this.app.canvasManager.isSpaceDown = true;
             e.preventDefault();
@@ -81,26 +84,29 @@ class ShortcutManager {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
             this.app.layerManager.redo(); e.preventDefault(); return;
         }
-        // v+系（アクティブレイヤーtransform）
+        // v+系（アクティブレイヤーtransform）drawing-layer0は禁止
         let handled = false;
-        if (e.shiftKey) {
-            switch (e.key.toLowerCase()) {
-                case 'h': this.app.layerManager.flipActiveLayerVertical(); handled = true; break;
-                case 'arrowup': this.app.layerManager.scaleActiveLayer(1.02); handled = true; break;
-                case 'arrowdown': this.app.layerManager.scaleActiveLayer(1/1.02); handled = true; break;
-                case 'arrowleft': this.app.layerManager.rotateActiveLayer(-1); handled = true; break;
-                case 'arrowright': this.app.layerManager.rotateActiveLayer(1); handled = true; break;
-            }
-        } else {
-            switch (e.key.toLowerCase()) {
-                case 'h': this.app.layerManager.flipActiveLayerHorizontal(); handled = true; break;
-                case 'arrowup': this.app.layerManager.moveActiveLayer(0, -1); handled = true; break;
-                case 'arrowdown': this.app.layerManager.moveActiveLayer(0, 1); handled = true; break;
-                case 'arrowleft': this.app.layerManager.moveActiveLayer(-1, 0); handled = true; break;
-                case 'arrowright': this.app.layerManager.moveActiveLayer(1, 0); handled = true; break;
+        if (!isBaseLayer) {
+            if (e.shiftKey) {
+                switch (e.key.toLowerCase()) {
+                    case 'h': this.app.layerManager.flipActiveLayerVertical(); handled = true; break;
+                    case 'arrowup': this.app.layerManager.scaleActiveLayer(1.02); handled = true; break;
+                    case 'arrowdown': this.app.layerManager.scaleActiveLayer(1/1.02); handled = true; break;
+                    case 'arrowleft': this.app.layerManager.rotateActiveLayer(-1); handled = true; break;
+                    case 'arrowright': this.app.layerManager.rotateActiveLayer(1); handled = true; break;
+                }
+            } else {
+                switch (e.key.toLowerCase()) {
+                    case 'h': this.app.layerManager.flipActiveLayerHorizontal(); handled = true; break;
+                    case 'arrowup': this.app.layerManager.moveActiveLayer(0, -1); handled = true; break;
+                    case 'arrowdown': this.app.layerManager.moveActiveLayer(0, 1); handled = true; break;
+                    case 'arrowleft': this.app.layerManager.moveActiveLayer(-1, 0); handled = true; break;
+                    case 'arrowright': this.app.layerManager.moveActiveLayer(1, 0); handled = true; break;
+                }
             }
         }
         if (handled) { e.preventDefault(); return; }
+        // drawing-layer0ではtransform/消しゴム/バケツ系ショートカットを無効化
         // ペンサイズ・色・ツール
         switch (e.key.toLowerCase()) {
             case '[': this.app.penSettingsManager.changeSize(false); e.preventDefault(); break;
@@ -115,9 +121,12 @@ class ShortcutManager {
     }
     // ペン描画系
     handlePenPointerDown(e) {
-        if (this.app.toolManager.getCurrentTool() === 'pen' || this.app.toolManager.getCurrentTool() === 'eraser') {
-            const layer = this.app.layerManager.getActiveLayer();
-            if (this.app.layerManager.activeLayerIndex === 0 && this.app.toolManager.getCurrentTool() === 'eraser') {
+        const layer = this.app.layerManager.getActiveLayer();
+        const isBaseLayer = layer?._isBaseLayer;
+        const tool = this.app.toolManager.getCurrentTool();
+
+        if ((tool === 'pen') || (tool === 'eraser')) {
+            if (isBaseLayer && tool === 'eraser') {
                 // drawing-layer0は消しゴム禁止
                 return;
             }
@@ -125,7 +134,7 @@ class ShortcutManager {
             layer.ctx.beginPath();
             layer.ctx.moveTo(x, y);
             this.lastDrawPos = { x, y };
-            layer.ctx.globalCompositeOperation = this.app.toolManager.getCurrentTool() === 'eraser' ? 'destination-out' : 'source-over';
+            layer.ctx.globalCompositeOperation = (tool === 'eraser') ? 'destination-out' : 'source-over';
             layer.ctx.strokeStyle = this.app.colorManager.getColor();
             layer.ctx.lineWidth = this.app.penSettingsManager.getCurrentSize();
             // pointermove/up: windowバインド
@@ -145,9 +154,8 @@ class ShortcutManager {
             };
             window.addEventListener('pointermove', move, true);
             window.addEventListener('pointerup', up, true);
-        } else if (this.app.toolManager.getCurrentTool() === 'bucket') {
-            // バケツ塗り
-            const layer = this.app.layerManager.getActiveLayer();
+        } else if (tool === 'bucket') {
+            // drawing-layer0もバケツOK（命令書では消しゴムのみ禁止）
             const { x, y } = this.app.canvasManager.getLayerDrawCoord(e.clientX, e.clientY, layer);
             this.floodFill(layer, Math.floor(x), Math.floor(y), this.app.colorManager.getColor());
             this.app.layerManager.saveState();
@@ -194,11 +202,12 @@ class ShortcutManager {
     }
     // v+系ホイール
     handleLayerWheel(e) {
+        const layer = this.app.layerManager.getActiveLayer();
+        if (!layer || layer._isBaseLayer) {
+            // drawing-layer0はmove/transform禁止
+            return;
+        }
         if (this.app.toolManager.getCurrentTool() === 'move') {
-            if (this.app.layerManager.activeLayerIndex === 0) {
-                // drawing-layer0はmove/transform禁止
-                return;
-            }
             const delta = e.deltaY > 0 ? -1 : 1;
             if (e.shiftKey && e.ctrlKey) {
                 this.app.layerManager.rotateActiveLayer(delta * 5);
