@@ -5,24 +5,11 @@ class CanvasManager {
         this.app = app;
         // compositeCanvas: 合成表示用
         let composite = document.getElementById('composite-canvas');
-        if (!composite) {
-            composite = document.createElement('canvas');
-            composite.id = 'composite-canvas';
-            composite.width = 344;
-            composite.height = 135;
-            document.getElementById('canvas-container').appendChild(composite);
-        }
+        // drawing-layer0, composite-canvas, frame-canvasはHTML内に必ず存在するので再生成禁止
         this.compositeCanvas = composite;
         this.compositeCtx = composite.getContext('2d');
         // frameCanvas: 額縁
         let frame = document.getElementById('frame-canvas');
-        if (!frame) {
-            frame = document.createElement('canvas');
-            frame.id = 'frame-canvas';
-            frame.width = 344;
-            frame.height = 135;
-            document.getElementById('canvas-container').appendChild(frame);
-        }
         this.frameCanvas = frame;
         this.frameCtx = frame.getContext('2d');
         // ビュー変換（compositeCanvas, frameCanvas専用）
@@ -140,13 +127,18 @@ class CanvasManager {
         const sinV = Math.sin(-vt.rotation), cosV = Math.cos(-vt.rotation);
         let x2 = x * cosV - y * sinV, y2 = x * sinV + y * cosV;
         x2 -= vt.x; y2 -= vt.y;
-        // layer.transform逆
+        // layer.transform逆（drawing-layer0はtransform初期値固定なので変換不要）
         const lt = layer.transform;
-        x2 /= lt.scale * lt.scaleX; y2 /= lt.scale * lt.scaleY;
-        const sinL = Math.sin(-lt.rotation), cosL = Math.cos(-lt.rotation);
-        let x3 = x2 * cosL - y2 * sinL, y3 = x2 * sinL + y2 * cosL;
-        x3 -= lt.x; y3 -= lt.y;
-        return { x: x3 + cx, y: y3 + cy };
+        if (!layer._isBaseLayer) {
+            x2 /= lt.scale * lt.scaleX; y2 /= lt.scale * lt.scaleY;
+            const sinL = Math.sin(-lt.rotation), cosL = Math.cos(-lt.rotation);
+            let x3 = x2 * cosL - y2 * sinL, y3 = x2 * sinL + y2 * cosL;
+            x3 -= lt.x; y3 -= lt.y;
+            return { x: x3 + cx, y: y3 + cy };
+        } else {
+            // drawing-layer0ならtransformは初期値固定
+            return { x: x2 + cx, y: y2 + cy };
+        }
     }
 }
 
@@ -156,19 +148,23 @@ class LayerManager {
         this.layers = [];
         this.activeLayerIndex = -1;
     }
-    getDefaultTransform() {
-        return { x:0, y:0, scale:1, rotation:0, scaleX:1, scaleY:1 };
+    getDefaultTransform(isBaseLayer = false) {
+        // drawing-layer0はtransform初期値固定。他レイヤーのみ自由
+        return isBaseLayer ?
+            { x:0, y:0, scale:1, rotation:0, scaleX:1, scaleY:1 }
+            : { x:0, y:0, scale:1, rotation:0, scaleX:1, scaleY:1 };
     }
     setupInitialLayers() {
         const baseCanvas = document.getElementById('drawing-layer0');
         if (!baseCanvas) return;
-        this.layers = []; // ←明示的に初期化
+        this.layers = [];
         this.layers.push({
             canvas: baseCanvas,
             ctx: baseCanvas.getContext('2d'),
-            transform: this.getDefaultTransform(),
+            transform: this.getDefaultTransform(true),
             history: [],
             historyIndex: -1,
+            _isBaseLayer: true // drawing-layer0識別用
         });
         const ctx = this.layers[0].ctx;
         ctx.fillStyle = '#f0e0d6';
@@ -184,14 +180,15 @@ class LayerManager {
         newCanvas.height = base.height;
         newCanvas.className = 'main-canvas';
         newCanvas.id = `drawing-layer${this.layers.length}`;
+        // レイヤースタックへappend（drawing-layer0は絶対移動禁止）
         document.getElementById('layer-stack')?.appendChild(newCanvas);
-        // HTML構造は触らずappendだけ
         const newLayer = {
             canvas: newCanvas,
             ctx: newCanvas.getContext('2d'),
-            transform: this.getDefaultTransform(),
+            transform: this.getDefaultTransform(false),
             history: [],
             historyIndex: -1,
+            _isBaseLayer: false
         };
         this.layers.push(newLayer);
         this.switchLayer(this.layers.length - 1);
@@ -224,48 +221,50 @@ class LayerManager {
         ctx.beginPath(); ctx.rect(-cx, -cy, w, h); ctx.clip();
         for (const layer of this.layers) {
             ctx.save();
-            const t = layer.transform;
-            ctx.translate(t.x, t.y);
-            ctx.rotate(t.rotation);
-            ctx.scale(t.scale * t.scaleX, t.scale * t.scaleY);
+            if (!layer._isBaseLayer) {
+                const t = layer.transform;
+                ctx.translate(t.x, t.y);
+                ctx.rotate(t.rotation);
+                ctx.scale(t.scale * t.scaleX, t.scale * t.scaleY);
+            }
             ctx.drawImage(layer.canvas, -cx, -cy);
             ctx.restore();
         }
         ctx.restore();
         this.app.canvasManager.drawFrame();
     }
-    // レイヤーtransform系（v+系のみ！）
+    // レイヤーtransform系（v+系のみ！）drawing-layer0は禁止
     moveActiveLayer(dx, dy) {
-        if (this.activeLayerIndex === 0) return; // drawing-layer0は移動禁止
         const l = this.getActiveLayer();
+        if (l._isBaseLayer) return;
         l.transform.x += dx;
         this.saveState();
         this.drawComposite();
     }
     scaleActiveLayer(factor) {
-        if (this.activeLayerIndex === 0) return; // drawing-layer0はスケール禁止
         const l = this.getActiveLayer();
+        if (l._isBaseLayer) return;
         l.transform.scale *= factor;
         this.saveState();
         this.drawComposite();
     }
     rotateActiveLayer(deg) {
-        if (this.activeLayerIndex === 0) return; // drawing-layer0は回転禁止
         const l = this.getActiveLayer();
+        if (l._isBaseLayer) return;
         l.transform.rotation += deg * Math.PI / 180;
         this.saveState();
         this.drawComposite();
     }
     flipActiveLayerHorizontal() {
-        if (this.activeLayerIndex === 0) return; // drawing-layer0は反転禁止
         const l = this.getActiveLayer();
+        if (l._isBaseLayer) return;
         l.transform.scaleX *= -1;
         this.saveState();
         this.drawComposite();
     }
     flipActiveLayerVertical() {
-        if (this.activeLayerIndex === 0) return; // drawing-layer0は反転禁止
         const l = this.getActiveLayer();
+        if (l._isBaseLayer) return;
         l.transform.scaleY *= -1;
         this.saveState();
         this.drawComposite();
@@ -274,7 +273,10 @@ class LayerManager {
     saveState() {
         const l = this.getActiveLayer();
         const imageData = l.ctx.getImageData(0,0,l.canvas.width,l.canvas.height);
-        const transformCopy = JSON.parse(JSON.stringify(l.transform));
+        // drawing-layer0はtransform常に初期値固定で保存
+        const transformCopy = l._isBaseLayer
+            ? this.getDefaultTransform(true)
+            : JSON.parse(JSON.stringify(l.transform));
         if (l.historyIndex < l.history.length - 1) {
             l.history = l.history.slice(0, l.historyIndex+1);
         }
@@ -287,7 +289,12 @@ class LayerManager {
             l.historyIndex--;
             const hist = l.history[l.historyIndex];
             l.ctx.putImageData(hist.imageData, 0, 0);
-            l.transform = JSON.parse(JSON.stringify(hist.transform));
+            if (l._isBaseLayer) {
+                // drawing-layer0はtransform常に初期値
+                l.transform = this.getDefaultTransform(true);
+            } else {
+                l.transform = JSON.parse(JSON.stringify(hist.transform));
+            }
             this.drawComposite();
         }
     }
@@ -297,17 +304,24 @@ class LayerManager {
             l.historyIndex++;
             const hist = l.history[l.historyIndex];
             l.ctx.putImageData(hist.imageData, 0, 0);
-            l.transform = JSON.parse(JSON.stringify(hist.transform));
+            if (l._isBaseLayer) {
+                l.transform = this.getDefaultTransform(true);
+            } else {
+                l.transform = JSON.parse(JSON.stringify(hist.transform));
+            }
             this.drawComposite();
         }
     }
     clearActiveLayer() {
         const l = this.getActiveLayer();
         l.ctx.clearRect(0,0,l.canvas.width,l.canvas.height);
-        if (this.activeLayerIndex === 0) {
+        if (l._isBaseLayer) {
             // drawing-layer0のみ初期色で塗りつぶす
             l.ctx.fillStyle = '#f0e0d6';
             l.ctx.fillRect(0,0,l.canvas.width,l.canvas.height);
+        }
+        if (l._isBaseLayer) {
+            l.transform = this.getDefaultTransform(true);
         }
         this.saveState();
         this.drawComposite();
@@ -316,11 +330,13 @@ class LayerManager {
         for (let i=0; i<this.layers.length; ++i) {
             const l = this.layers[i];
             l.ctx.clearRect(0,0,l.canvas.width,l.canvas.height);
-            if (i===0) {
+            if (l._isBaseLayer) {
                 l.ctx.fillStyle = '#f0e0d6';
                 l.ctx.fillRect(0,0,l.canvas.width,l.canvas.height);
+                l.transform = this.getDefaultTransform(true);
+            } else {
+                l.transform = this.getDefaultTransform(false);
             }
-            l.transform = this.getDefaultTransform();
             this.saveState();
         }
         this.drawComposite();
