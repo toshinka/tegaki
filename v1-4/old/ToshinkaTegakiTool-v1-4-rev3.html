@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ToshinkaTegakiTool-v1-4-rev2</title>
+    <title>ToshinkaTegakiTool-v1-4-rev3</title>
     <style>
         body {
             margin: 0;
@@ -74,6 +74,8 @@
             justify-content: center;
         }
         
+        /* ★修正: JSで動的に生成するため、静的なCSS定義は削除 */
+
         .canvas-container {
             position: relative; 
             transform-origin: center;
@@ -95,8 +97,6 @@
             top: 0; 
             left: 0;
             pointer-events: none;
-            /* ★修正: レイヤー個別変形はJSで直接styleに適用するため、transform-originを中央に設定 */
-            transform-origin: center;
         }
 
         .top-left-controls {
@@ -315,9 +315,9 @@
             <div class="color-palette">
                 <div class="color-btn active" data-color="#800000" style="background-color: #800000;" title="暗赤"></div>
                 <div class="color-btn" data-color="#aa5a56" style="background-color: #aa5a56;" title="赤茶"></div>
-                <div class.btn" data-color="#cf9c97" style="background-color: #cf9c97;" title="中間色"></div>
-                <div class.btn" data-color="#e9c2ba" style="background-color: #e9c2ba;" title="薄茶"></div>
-                <div class.btn" data-color="#f0e0d6" style="background-color: #f0e0d6;" title="肌色"></div>
+                <div class="color-btn" data-color="#cf9c97" style="background-color: #cf9c97;" title="中間色"></div>
+                <div class="color-btn" data-color="#e9c2ba" style="background-color: #e9c2ba;" title="薄茶"></div>
+                <div class="color-btn" data-color="#f0e0d6" style="background-color: #f0e0d6;" title="肌色"></div>
             </div>
 
             <div class="color-mode-display" title="メイン/サブカラー切り替え (X)">
@@ -374,8 +374,8 @@
     </div>
 
     
-    <script src="core-v1-4rev1b.js"></script>
-    <script src="ui-v1-4rev1b.js"></script>
+    <script src="core-v1-4rev3.js"></script>
+    <script src="ui-v1-4rev3.js"></script>
 
 
 </body>
