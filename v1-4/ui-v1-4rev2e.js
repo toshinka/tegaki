@@ -1,7 +1,5 @@
-// 🚨 Toshinka Tegaki Tool v1-4系 UI/初期化/ショートカット管理（rev2d仕様復元/バグ修正版）🚨
+// 🚨 Toshinka Tegaki Tool v1-4系 UI/初期化/ショートカット管理（ペンデバッグ強化）🚨
 
-// ==== PenSettingsManager ====
-// [復活] ペンサイズのUI管理クラス
 class PenSettingsManager {
     constructor(app) {
         this.app = app;
@@ -48,8 +46,6 @@ class PenSettingsManager {
     }
 }
 
-// ==== ToolManager ====
-// [復活] ツール選択UI管理クラス
 class ToolManager {
     constructor(app) {
         this.app = app;
@@ -73,8 +69,6 @@ class ToolManager {
     }
 }
 
-// ==== ColorManager ====
-// [復活] カラーパレットUI管理クラス
 class ColorManager {
     constructor(app) {
         this.app = app;
@@ -126,8 +120,6 @@ class ColorManager {
     }
 }
 
-// ==== TopBarManager ====
-// [復活] トップバーUI管理クラス
 class TopBarManager {
     constructor(app) {
         this.app = app;
@@ -164,8 +156,6 @@ class TopBarManager {
     }
 }
 
-// ==== ShortcutManager ====
-// [rev2d仕様準拠/ショートカット競合修正]
 class ShortcutManager {
     constructor(app) {
         this.app = app;
@@ -191,7 +181,6 @@ class ShortcutManager {
             e.preventDefault();
             return;
         }
-        // ビューショートカット（Space+やCtrl/Cmd系）
         if (this.app.canvasManager.isSpaceDown) {
             let handled = true;
             switch (e.key) {
@@ -207,7 +196,6 @@ class ShortcutManager {
             }
             return;
         }
-        // Undo/Redo
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
             this.app.layerManager.undo(); e.preventDefault(); return;
         }
@@ -215,8 +203,6 @@ class ShortcutManager {
             this.app.layerManager.redo(); e.preventDefault(); return;
         }
 
-        // ---- [ / ]/Shift+[ / Shift+] ショートカット仕様完全復元 ----
-        // [ / ]単独押しでペンサイズ、Shift+[ / ]でカラーパレット
         let isBracketLeft = (
             e.code === 'BracketLeft' ||
             e.key === '[' || e.key === '{'
@@ -227,18 +213,14 @@ class ShortcutManager {
         );
         if (isBracketLeft || isBracketRight) {
             if (e.shiftKey) {
-                // Shift+[ / Shift+]
-                this.app.colorManager.changeColor(isBracketRight); // 右なら+1, 左なら-1
+                this.app.colorManager.changeColor(isBracketRight);
             } else {
-                // 単独[ / ]
-                this.app.penSettingsManager.changeSize(isBracketRight); // 右なら+1, 左なら-1
+                this.app.penSettingsManager.changeSize(isBracketRight);
             }
             e.preventDefault();
             return;
         }
-        // -----------------------------------------------------
 
-        // v+系（アクティブレイヤーtransform）drawing-layer0は禁止
         let handled = false;
         if (!isBaseLayer) {
             if (e.shiftKey) {
@@ -260,8 +242,6 @@ class ShortcutManager {
             }
         }
         if (handled) { e.preventDefault(); return; }
-        // drawing-layer0ではtransform/消しゴム/バケツ系ショートカットを無効化
-        // ペンサイズ・色・ツール
         switch (e.key.toLowerCase()) {
             case 'x': this.app.colorManager.swapColors(); e.preventDefault(); break;
             case 'd': this.app.colorManager.resetColors(); e.preventDefault(); break;
@@ -277,22 +257,50 @@ class ShortcutManager {
         const isBaseLayer = layer?._isBaseLayer;
         const tool = this.app.toolManager.getCurrentTool();
 
+        // canvas情報デバッグ出力
+        console.log("[PenDraw] layer info", {
+            id: layer.canvas.id,
+            width: layer.canvas.width,
+            height: layer.canvas.height,
+            ctx: layer.ctx
+        });
+
         if ((tool === 'pen') || (tool === 'eraser')) {
             if (isBaseLayer && tool === 'eraser') {
-                // drawing-layer0は消しゴム禁止
                 return;
             }
             const { x, y } = this.app.canvasManager.getLayerDrawCoord(e.clientX, e.clientY, layer);
+
+            // ペン設定デバッグ
+            // 強制色テスト(2): ここで色を一時的に赤に
+            // let strokeStyle = "rgba(255,0,0,1)";
+            let strokeStyle = this.app.colorManager.getColor();
+            // strokeStyle = "rgba(255,0,0,1)"; // ← テスト時にコメント外して
+
             layer.ctx.beginPath();
             layer.ctx.moveTo(x, y);
             this.lastDrawPos = { x, y };
+
             layer.ctx.globalCompositeOperation = (tool === 'eraser') ? 'destination-out' : 'source-over';
-            layer.ctx.strokeStyle = this.app.colorManager.getColor();
+            layer.ctx.strokeStyle = strokeStyle;
             layer.ctx.lineWidth = this.app.penSettingsManager.getCurrentSize();
-            // pointermove/up: windowバインド
+
+            // 設定値ログ
+            console.log("[PenDraw] set:", {
+                tool,
+                strokeStyle: layer.ctx.strokeStyle,
+                lineWidth: layer.ctx.lineWidth,
+                globalCompositeOperation: layer.ctx.globalCompositeOperation,
+                moveTo: { x, y }
+            });
+
             const move = (ev) => {
                 if (!ev.buttons) return;
                 const { x:mx, y:my } = this.app.canvasManager.getLayerDrawCoord(ev.clientX, ev.clientY, layer);
+
+                // 描画座標・lineToテスト
+                console.log("[PenDraw] lineTo:", { x: mx, y: my });
+
                 layer.ctx.lineTo(mx, my);
                 layer.ctx.stroke();
                 this.lastDrawPos = { x:mx, y:my };
@@ -302,15 +310,12 @@ class ShortcutManager {
                 window.removeEventListener('pointerup', up, true);
                 layer.ctx.closePath();
 
-                // --- ペン描画反映確認: drawing-layer0のgetImageData(px10) ---
-                // どのレイヤーに描いたかは layer でOK
-                if (isBaseLayer) {
-                    try {
-                        const img = layer.ctx.getImageData(0,0,layer.canvas.width,layer.canvas.height);
-                        const px10 = Array.from(img.data).slice(0, 40);
-                        console.log('[PenDraw] drawing-layer0 getImageData px10', px10);
-                    } catch(e) { console.warn('[PenDraw] drawing-layer0 getImageData failed', e); }
-                }
+                // 描画直後のgetImageData(px10)
+                try {
+                    const img = layer.ctx.getImageData(0,0,layer.canvas.width,layer.canvas.height);
+                    const px10 = Array.from(img.data).slice(0, 40);
+                    console.log('[PenDraw] getImageData(px10) after stroke:', px10);
+                } catch(e) { console.warn('[PenDraw] getImageData failed', e); }
 
                 this.app.layerManager.saveState();
                 this.app.layerManager.drawComposite();
@@ -318,14 +323,12 @@ class ShortcutManager {
             window.addEventListener('pointermove', move, true);
             window.addEventListener('pointerup', up, true);
         } else if (tool === 'bucket') {
-            // drawing-layer0もバケツOK（命令書では消しゴムのみ禁止）
             const { x, y } = this.app.canvasManager.getLayerDrawCoord(e.clientX, e.clientY, layer);
             this.floodFill(layer, Math.floor(x), Math.floor(y), this.app.colorManager.getColor());
             this.app.layerManager.saveState();
             this.app.layerManager.drawComposite();
         }
     }
-    // バケツ: RGBA変換ユーティリティ
     hexToRgba(hex) {
         const c = hex.replace('#', '');
         if (c.length === 3) {
@@ -363,11 +366,9 @@ class ShortcutManager {
     colorsMatch(a,b) {
         return a[0]===b[0] && a[1]===b[1] && a[2]===b[2] && a[3]===b[3];
     }
-    // v+系ホイール
     handleLayerWheel(e) {
         const layer = this.app.layerManager.getActiveLayer();
         if (!layer || layer._isBaseLayer) {
-            // drawing-layer0はmove/transform禁止
             return;
         }
         if (this.app.toolManager.getCurrentTool() === 'move') {
@@ -386,8 +387,6 @@ class ShortcutManager {
     }
 }
 
-// ==== ToshinkaTegakiTool ====
-// [必要部分のみ] UIの初期化でこれらのManagerクラスを利用
 class ToshinkaTegakiTool {
     constructor() {
         this.colorManager = null;
@@ -435,7 +434,6 @@ class ToshinkaTegakiTool {
         }
     }
     ensureLayerStack() {
-        // drawing-layer0の親要素(canvas-container)内にlayer-stack divを用意
         const baseCanvas = document.getElementById('drawing-layer0');
         if (!baseCanvas) return;
         let stack = document.getElementById('layer-stack');
@@ -449,16 +447,12 @@ class ToshinkaTegakiTool {
             stack.style.height = '100%';
             stack.style.pointerEvents = 'none';
             stack.style.zIndex = '10';
-            // drawing-layer0の直後(composite-canvasの前)に挿入
             baseCanvas.parentNode.insertBefore(stack, baseCanvas.nextSibling);
         }
-        // drawing-layer0だけはlayer-stackには絶対に移動させない
     }
 }
 
 // ==== デバッグ用window関数等（そのまま残してOK） ====
-
-// ...（forceDebugDraw, ensureCanvasVisibilityDebug等があればそのまま残す）
 
 // ==== DOMContentLoadedでの初期化 ==== 
 window.addEventListener('DOMContentLoaded', () => {
