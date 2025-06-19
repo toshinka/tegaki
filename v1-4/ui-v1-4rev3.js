@@ -1,6 +1,3 @@
-// [座標変換再構築対応] UIインタフェースの最低限修正
-// 既存UI/UX・HTML構造・ボタン配置等は一切変更しない（命令書通り）
-
 class TopBarManager {
     constructor(app) {
         this.app = app;

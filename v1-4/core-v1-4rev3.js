@@ -1,103 +1,3 @@
-// [座標変換再構築版] Toshinka Tegaki Tool v1-4 core (rev1-based)
-// 命令書に従い「TransformManager」新設・Undo/Redo拡張・変換制約・UI/UX完全維持
-// [!!] 既存のHTML/CSS/UI/操作感は一切変更しないこと
-
-// --- TransformManager定義 ---
-const TRANSFORM_LIMITS = {
-    scale: { min: 0.1, max: 5.0 },
-    rotation: { min: -Math.PI, max: Math.PI },
-    position: {
-        x: { min: -100, max: 100 },
-        y: { min: -100, max: 100 }
-    }
-};
-
-// 変換管理クラス（グローバル＋レイヤー）
-class TransformManager {
-    constructor() {
-        // グローバル変換
-        this.globalTransform = {
-            x: 0, y: 0,
-            scale: 1,
-            rotation: 0 // [ラジアン]
-        };
-        // レイヤーごとの変換
-        this.layerTransforms = new Map(); // layerId(string) → {x,y,scale,rotation}
-    }
-
-    setGlobalTransform(t) {
-        this.globalTransform = this._clampTransform(t);
-    }
-    getGlobalTransform() {
-        return { ...this.globalTransform };
-    }
-
-    setLayerTransform(layerId, t) {
-        this.layerTransforms.set(layerId, this._clampTransform(t));
-    }
-    getLayerTransform(layerId) {
-        return this.layerTransforms.has(layerId)
-            ? { ...this.layerTransforms.get(layerId) }
-            : { x: 0, y: 0, scale: 1, rotation: 0 };
-    }
-
-    // [重要] グローバル→レイヤーの順で合成
-    transformCoordinates(x, y, layerId = null) {
-        let [px, py] = this._applyTransform(x, y, this.globalTransform);
-        if (layerId && this.layerTransforms.has(layerId)) {
-            [px, py] = this._applyTransform(px, py, this.layerTransforms.get(layerId));
-        }
-        return this._validateCoordinates(px, py);
-    }
-
-    // --- 内部: 2D変換適用 ---
-    _applyTransform(x, y, t) {
-        // スケール・回転・平行移動
-        const rad = t.rotation;
-        const cos = Math.cos(rad), sin = Math.sin(rad);
-        let nx = x * t.scale, ny = y * t.scale;
-        // 回転
-        let rx = nx * cos - ny * sin;
-        let ry = nx * sin + ny * cos;
-        return [rx + t.x, ry + t.y];
-    }
-
-    // --- 範囲クランプ ---
-    _clampTransform(t) {
-        return {
-            x: Math.max(TRANSFORM_LIMITS.position.x.min, Math.min(t.x, TRANSFORM_LIMITS.position.x.max)),
-            y: Math.max(TRANSFORM_LIMITS.position.y.min, Math.min(t.y, TRANSFORM_LIMITS.position.y.max)),
-            scale: Math.max(TRANSFORM_LIMITS.scale.min, Math.min(t.scale, TRANSFORM_LIMITS.scale.max)),
-            rotation: Math.max(TRANSFORM_LIMITS.rotation.min, Math.min(t.rotation, TRANSFORM_LIMITS.rotation.max))
-        };
-    }
-
-    _validateCoordinates(x, y) {
-        // 無限大・NaNは強制0
-        if (!isFinite(x) || isNaN(x)) x = 0;
-        if (!isFinite(y) || isNaN(y)) y = 0;
-        // 画面外にはみ出させない（キャンバスの中心から±100px）
-        x = Math.max(-100, Math.min(x, 344 + 100));
-        y = Math.max(-100, Math.min(y, 135 + 100));
-        return [x, y];
-    }
-}
-
-// --- Undo/Redo用: 変換も保存 ---
-class HistoryState {
-    constructor(imageData, globalTransform, layerTransforms) {
-        this.imageData = imageData;
-        this.globalTransform = { ...globalTransform };
-        // Map複製
-        this.layerTransforms = new Map();
-        for (let [k, v] of layerTransforms.entries()) {
-            this.layerTransforms.set(k, { ...v });
-        }
-        this.timestamp = Date.now();
-    }
-}
-
-// --- ここから従来のCanvasManagerを再構築 ---
 class CanvasManager {
     constructor(app) {
         this.app = app;
@@ -106,10 +6,6 @@ class CanvasManager {
         this.canvasArea = document.getElementById('canvas-area');
         this.canvasContainer = document.getElementById('canvas-container');
         this.frameCanvas = null;
-
-        // --- 変換管理 ---
-        this.transformManager = new TransformManager();
-
         this.isDrawing = false;
         this.isPanning = false;
         this.isMovingLayer = false;
@@ -122,11 +18,8 @@ class CanvasManager {
         this.currentSize = 1;
         this.lastX = 0;
         this.lastY = 0;
-
-        // --- Undo/Redo拡張 ---
         this.history = [];
         this.historyIndex = -1;
-
         this.dragStartX = 0;
         this.dragStartY = 0;
         this.canvasStartX = 0;
@@ -134,17 +27,12 @@ class CanvasManager {
         this.moveLayerStartX = 0;
         this.moveLayerStartY = 0;
         this.moveLayerImageData = null;
-
-        // [廃止] scale/rotation/transformState
-        //this.scale = 1;
-        //this.rotation = 0;
-        //this.transformState = { scaleX: 1, scaleY: 1 };
-
+        this.scale = 1;
+        this.rotation = 0;
+        this.transformState = { scaleX: 1, scaleY: 1 };
         this.createAndDrawFrame();
         this.bindEvents();
     }
-
-    // --- フレーム描画は従来通り ---
     createAndDrawFrame() {
         this.frameCanvas = document.createElement('canvas');
         this.frameCanvas.width = 364;
@@ -165,14 +53,12 @@ class CanvasManager {
         frameCtx.fill();
         frameCtx.stroke();
     }
-
     bindEvents() {
         this.canvasArea.addEventListener('pointerdown', this.onPointerDown.bind(this));
         document.addEventListener('pointermove', this.onPointerMove.bind(this));
         document.addEventListener('pointerup', this.onPointerUp.bind(this));
         this.canvasArea.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
     }
-
     setActiveLayerContext(canvas, ctx) {
         this.canvas = canvas;
         this.ctx = ctx;
@@ -187,8 +73,6 @@ class CanvasManager {
     setCurrentSize(size) {
         this.currentSize = size;
     }
-
-    // --- ポインタイベント ---
     onPointerDown(e) {
         if (this.isSpaceDown) {
             this.dragStartX = e.clientX;
@@ -206,7 +90,7 @@ class CanvasManager {
                 const centerX = rect.left + rect.width / 2;
                 const centerY = rect.top + rect.height / 2;
                 this.rotateStartAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
-                this.initialRotation = this.transformManager.globalTransform.rotation;
+                this.initialRotation = this.rotation;
             }
             e.preventDefault();
         } else {
@@ -227,9 +111,10 @@ class CanvasManager {
                 this.ctx.moveTo(this.lastX, this.lastY);
             }
         }
-        try { document.documentElement.setPointerCapture(e.pointerId); } catch (err) { }
+        try {
+            document.documentElement.setPointerCapture(e.pointerId);
+        } catch (err) { }
     }
-
     onPointerMove(e) {
         if (!e.buttons) return;
         if (this.isRotatingWithSpace) {
@@ -237,11 +122,8 @@ class CanvasManager {
             const centerX = rect.left + rect.width / 2;
             const centerY = rect.top + rect.height / 2;
             const currentAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
-            const deltaAngle = (currentAngle - this.rotateStartAngle);
-            // --- [重要] グローバル回転を制約付きで更新 ---
-            let newRad = this.initialRotation + deltaAngle;
-            newRad = Math.max(TRANSFORM_LIMITS.rotation.min, Math.min(newRad, TRANSFORM_LIMITS.rotation.max));
-            this.transformManager.globalTransform.rotation = newRad;
+            const deltaAngle = (currentAngle - this.rotateStartAngle) * 180 / Math.PI;
+            this.rotation = this.initialRotation + deltaAngle;
             this.updateCanvasTransform();
         } else if (this.isPanning) {
             const deltaX = e.clientX - this.dragStartX;
@@ -267,7 +149,6 @@ class CanvasManager {
             this.lastY = currentY;
         }
     }
-
     onPointerUp(e) {
         try {
             if (document.documentElement.hasPointerCapture(e.pointerId)) {
@@ -285,7 +166,6 @@ class CanvasManager {
             this.isMovingLayer = false;
         }
     }
-
     setAbsolutePosition() {
         if (this.canvasContainer.style.position !== 'absolute') {
             const rect = this.canvasContainer.getBoundingClientRect();
@@ -300,45 +180,23 @@ class CanvasManager {
             this.canvasStartY = parseFloat(this.canvasContainer.style.top || 0);
         }
     }
-
-    // --- 座標変換: グローバル→レイヤー一元化 ---
     getCanvasCoordinates(e) {
-        // 画面中心を原点とする
         const containerRect = this.canvasContainer.getBoundingClientRect();
         const centerX = containerRect.left + containerRect.width / 2;
         const centerY = containerRect.top + containerRect.height / 2;
         let mouseX = e.clientX - centerX;
         let mouseY = e.clientY - centerY;
-        // [逆変換] グローバル→レイヤーの逆を順に
-        let t_global = this.transformManager.globalTransform;
-        let t_layer = this.app.layerManager.getCurrentLayerTransform();
-
-        // --- 逆順で逆変換を適用 ---
-        [mouseX, mouseY] = this.inverseApplyTransform(mouseX, mouseY, t_layer);
-        [mouseX, mouseY] = this.inverseApplyTransform(mouseX, mouseY, t_global);
-
-        const canvasX = mouseX + this.canvas.width / 2;
-        const canvasY = mouseY + this.canvas.height / 2;
+        const rad = -this.rotation * Math.PI / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        let unrotatedX = mouseX * cos - mouseY * sin;
+        let unrotatedY = mouseX * sin + mouseY * cos;
+        const unscaledX = unrotatedX / this.scale / this.transformState.scaleX;
+        const unscaledY = unrotatedY / this.scale / this.transformState.scaleY;
+        const canvasX = unscaledX + this.canvas.width / 2;
+        const canvasY = unscaledY + this.canvas.height / 2;
         return { x: canvasX, y: canvasY };
     }
-
-    // 逆変換: 回転→スケール→平行移動
-    inverseApplyTransform(x, y, t) {
-        // 平行移動逆
-        let nx = x - t.x, ny = y - t.y;
-        // 回転逆
-        const rad = -t.rotation;
-        const cos = Math.cos(rad), sin = Math.sin(rad);
-        let rx = nx * cos - ny * sin;
-        let ry = nx * sin + ny * cos;
-        // スケール逆
-        if (t.scale !== 0) {
-            rx /= t.scale;
-            ry /= t.scale;
-        }
-        return [rx, ry];
-    }
-
     updateCursor() {
         if (!this.canvas) return;
         if (this.isSpaceDown) {
@@ -356,39 +214,26 @@ class CanvasManager {
             default: this.canvas.style.cursor = 'crosshair'; break;
         }
     }
-
-    // --- Undo/Redo: 変換状態も保存 ---
     saveState() {
         if (!this.ctx) return;
         if (this.historyIndex < this.history.length - 1) {
             this.history = this.history.slice(0, this.historyIndex + 1);
         }
-        const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-        const globalTransform = this.transformManager.getGlobalTransform();
-        const layerTransforms = this.app.layerManager.getAllLayerTransforms();
-        this.history.push(new HistoryState(imageData, globalTransform, layerTransforms));
+        this.history.push(this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height));
         this.historyIndex++;
     }
     undo() {
         if (this.historyIndex > 0) {
             this.historyIndex--;
-            this.restoreHistoryState(this.history[this.historyIndex]);
+            this.ctx.putImageData(this.history[this.historyIndex], 0, 0);
         }
     }
     redo() {
         if (this.historyIndex < this.history.length - 1) {
             this.historyIndex++;
-            this.restoreHistoryState(this.history[this.historyIndex]);
+            this.ctx.putImageData(this.history[this.historyIndex], 0, 0);
         }
     }
-    restoreHistoryState(state) {
-        this.ctx.putImageData(state.imageData, 0, 0);
-        this.transformManager.setGlobalTransform(state.globalTransform);
-        this.app.layerManager.setAllLayerTransforms(state.layerTransforms);
-        this.updateCanvasTransform();
-        this.app.layerManager.updateAllLayerTransforms();
-    }
-
     clearCanvas() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         this.saveState();
@@ -406,46 +251,37 @@ class CanvasManager {
         });
         this.saveState();
     }
-
-    // --- グローバル変換API ---
     flipHorizontal() {
-        let t = this.transformManager.getGlobalTransform();
-        t.scale *= -1;
-        this.transformManager.setGlobalTransform(t);
+        this.transformState.scaleX *= -1;
         this.updateCanvasTransform();
     }
     flipVertical() {
-        // flipYは未サポート（命令書通り変換制約）
-        // 必要ならscaleY導入
-        // 今回はグローバルY反転禁止
+        this.transformState.scaleY *= -1;
+        this.updateCanvasTransform();
     }
     zoom(factor) {
-        let t = this.transformManager.getGlobalTransform();
-        t.scale *= factor;
-        this.transformManager.setGlobalTransform(t);
+        this.scale = Math.max(0.1, Math.min(this.scale * factor, 10));
         this.updateCanvasTransform();
     }
     rotate(degrees) {
-        let t = this.transformManager.getGlobalTransform();
-        t.rotation += degrees * Math.PI / 180;
-        this.transformManager.setGlobalTransform(t);
+        this.rotation = (this.rotation + degrees) % 360;
         this.updateCanvasTransform();
     }
     updateCanvasTransform() {
-        // [UI] グローバル変換のみcanvasContainerに反映
-        const t = this.transformManager.getGlobalTransform();
-        const deg = t.rotation * 180 / Math.PI;
-        this.canvasContainer.style.transform =
-            `rotate(${deg}deg) scale(${t.scale},${t.scale})`;
+        const scaleX = this.scale * this.transformState.scaleX;
+        const scaleY = this.scale * this.transformState.scaleY;
+        this.canvasContainer.style.transform = `rotate(${this.rotation}deg) scale(${scaleX}, ${scaleY})`;
     }
     resetView() {
-        this.transformManager.setGlobalTransform({ x: 0, y: 0, scale: 1, rotation: 0 });
+        this.scale = 1;
+        this.rotation = 0;
+        this.transformState.scaleX = 1;
+        this.transformState.scaleY = 1;
         this.updateCanvasTransform();
         this.canvasContainer.style.position = '';
         this.canvasContainer.style.left = '';
         this.canvasContainer.style.top = '';
     }
-
     handleWheel(e) {
         if (this.app.shortcutManager && this.app.shortcutManager.handleWheel(e)) {
             e.preventDefault();
@@ -459,8 +295,6 @@ class CanvasManager {
             this.zoom(delta > 0 ? 1.1 : 1 / 1.1);
         }
     }
-
-    // --- 塗りつぶし系は従来通り ---
     colorsMatch(a, b) {
         return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
     }
@@ -508,8 +342,6 @@ class CanvasManager {
         return [0, 0, 0, 255];
     }
 }
-
-// --- LayerManager: 変換管理をTransformManagerに委譲 ---
 class LayerManager {
     constructor(app) {
         this.app = app;
@@ -522,7 +354,9 @@ class LayerManager {
             x: 0,
             y: 0,
             scale: 1,
-            rotation: 0
+            rotation: 0,
+            scaleX: 1,
+            scaleY: 1,
         };
     }
     setupInitialLayers() {
@@ -533,10 +367,8 @@ class LayerManager {
         this.layers.push({
             canvas: initialCanvas,
             ctx: initialCanvas.getContext('2d'),
-            id: "layer0"
+            transform: this.getDefaultTransform(),
         });
-        // TransformManagerに登録
-        this.app.canvasManager.transformManager.setLayerTransform("layer0", this.getDefaultTransform());
         const firstLayerCtx = this.layers[0].ctx;
         firstLayerCtx.fillStyle = '#f0e0d6';
         firstLayerCtx.fillRect(0, 0, initialCanvas.width, initialCanvas.height);
@@ -556,11 +388,9 @@ class LayerManager {
         const newLayer = {
             canvas: newCanvas,
             ctx: newCanvas.getContext('2d'),
-            id: "layer" + this.layers.length
+            transform: this.getDefaultTransform(),
         };
         this.layers.push(newLayer);
-        // TransformManager登録
-        this.app.canvasManager.transformManager.setLayerTransform(newLayer.id, this.getDefaultTransform());
         newLayer.ctx.lineCap = 'round';
         newLayer.ctx.lineJoin = 'round';
         this.updateAllLayerZIndexes();
@@ -590,89 +420,55 @@ class LayerManager {
         }
         return null;
     }
-    getCurrentLayerTransform() {
-        const layer = this.getCurrentLayer();
-        if (layer) {
-            return this.app.canvasManager.transformManager.getLayerTransform(layer.id);
-        }
-        return this.getDefaultTransform();
-    }
     updateLayerTransform(layer) {
-        if (!layer) return;
-        const t = this.app.canvasManager.transformManager.getLayerTransform(layer.id);
-        // レイヤーのcanvasにのみ適用
-        const deg = t.rotation * 180 / Math.PI;
-        layer.canvas.style.transform =
-            `translate(${t.x}px,${t.y}px) rotate(${deg}deg) scale(${t.scale},${t.scale})`;
-    }
-    updateAllLayerTransforms() {
-        this.layers.forEach(layer => this.updateLayerTransform(layer));
+        if (!layer || !layer.transform) return;
+        const t = layer.transform;
+        const finalScaleX = t.scale * t.scaleX;
+        const finalScaleY = t.scale * t.scaleY;
+        layer.canvas.style.transform = `translate(${t.x}px, ${t.y}px) rotate(${t.rotation}deg) scale(${finalScaleX}, ${finalScaleY})`;
     }
     updateAllLayerZIndexes() {
         this.layers.forEach((layer, index) => {
             layer.canvas.style.zIndex = index;
         });
     }
-    // 変換API（制約付きでTransformManagerに反映）
     moveActiveLayer(dx, dy) {
         const layer = this.getCurrentLayer();
         if (layer) {
-            let t = this.app.canvasManager.transformManager.getLayerTransform(layer.id);
-            t.x += dx;
-            this.app.canvasManager.transformManager.setLayerTransform(layer.id, t);
+            layer.transform.x += dx;
+            layer.transform.y += dy;
             this.updateLayerTransform(layer);
         }
     }
     scaleActiveLayer(factor) {
         const layer = this.getCurrentLayer();
         if (layer) {
-            let t = this.app.canvasManager.transformManager.getLayerTransform(layer.id);
-            t.scale *= factor;
-            this.app.canvasManager.transformManager.setLayerTransform(layer.id, t);
+            layer.transform.scale *= factor;
             this.updateLayerTransform(layer);
         }
     }
     rotateActiveLayer(degrees) {
         const layer = this.getCurrentLayer();
         if (layer) {
-            let t = this.app.canvasManager.transformManager.getLayerTransform(layer.id);
-            t.rotation += degrees * Math.PI / 180;
-            this.app.canvasManager.transformManager.setLayerTransform(layer.id, t);
+            layer.transform.rotation = (layer.transform.rotation + degrees) % 360;
             this.updateLayerTransform(layer);
         }
     }
     flipActiveLayerHorizontal() {
-        // 水平反転 → scale *= -1
         const layer = this.getCurrentLayer();
         if (layer) {
-            let t = this.app.canvasManager.transformManager.getLayerTransform(layer.id);
-            t.scale *= -1;
-            this.app.canvasManager.transformManager.setLayerTransform(layer.id, t);
+            layer.transform.scaleX *= -1;
             this.updateLayerTransform(layer);
         }
     }
     flipActiveLayerVertical() {
-        // 垂直反転は未サポート（拡張時のみ）
-    }
-    // Undo/Redo用
-    getAllLayerTransforms() {
-        const map = new Map();
-        for (let layer of this.layers) {
-            map.set(layer.id, this.app.canvasManager.transformManager.getLayerTransform(layer.id));
+        const layer = this.getCurrentLayer();
+        if (layer) {
+            layer.transform.scaleY *= -1;
+            this.updateLayerTransform(layer);
         }
-        return map;
-    }
-    setAllLayerTransforms(map) {
-        for (let layer of this.layers) {
-            if (map.has(layer.id)) {
-                this.app.canvasManager.transformManager.setLayerTransform(layer.id, map.get(layer.id));
-            }
-        }
-        this.updateAllLayerTransforms();
     }
 }
-
-// --- 以下はToolManager/PenSettingsManager/ColorManagerは変更不要（命令書どおり） ---
 class ToolManager {
     constructor(app) {
         this.app = app;
