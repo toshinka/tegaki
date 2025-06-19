@@ -1,5 +1,129 @@
 // 🚨 Toshinka Tegaki Tool v1-4系 UI/初期化/ショートカット管理（命令書完全準拠・rev2eデバッグ追加）🚨
 
+// ----- PenSettingsManager（rev2dそのまま） -----
+class PenSettingsManager {
+    constructor(app) {
+        this.app = app;
+        this.currentSize = 1;
+        this.sizes = Array.from(document.querySelectorAll('.size-btn')).map(btn => parseInt(btn.dataset.size));
+        this.currentSizeIndex = this.sizes.indexOf(this.currentSize);
+        this.bindEvents();
+        this.updateSizeButtonVisuals();
+    }
+    bindEvents() {
+        document.querySelectorAll('.size-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.setSize(parseInt(btn.dataset.size)));
+        });
+    }
+    setSize(size) {
+        this.currentSize = size;
+        this.currentSizeIndex = this.sizes.indexOf(this.currentSize);
+        document.querySelectorAll('.size-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelector(`[data-size="${size}"]`)?.classList.add('active');
+        this.updateSizeButtonVisuals();
+    }
+    changeSize(increase) {
+        let newIndex = this.currentSizeIndex + (increase ? 1 : -1);
+        newIndex = Math.max(0, Math.min(newIndex, this.sizes.length - 1));
+        this.setSize(this.sizes[newIndex]);
+    }
+    updateSizeButtonVisuals() {
+        document.querySelectorAll('.size-btn').forEach(btn => {
+            const size = parseInt(btn.dataset.size);
+            const sizeDot = btn.querySelector('.size-dot');
+            const sizeNumber = btn.querySelector('.size-number');
+            if (sizeDot) {
+                const dotSize = Math.min(size, 16);
+                sizeDot.style.width = `${dotSize}px`;
+                sizeDot.style.height = `${dotSize}px`;
+            }
+            if (sizeNumber) {
+                sizeNumber.textContent = size;
+            }
+        });
+    }
+    getCurrentSize() {
+        return this.currentSize;
+    }
+}
+
+// ----- ToolManager（rev2dそのまま） -----
+class ToolManager {
+    constructor(app) {
+        this.app = app;
+        this.currentTool = 'pen';
+        this.bindEvents();
+    }
+    bindEvents() {
+        document.getElementById('pen-tool').addEventListener('click', () => this.setTool('pen'));
+        document.getElementById('eraser-tool').addEventListener('click', () => this.setTool('eraser'));
+        document.getElementById('move-tool').addEventListener('click', () => this.setTool('move'));
+        document.getElementById('bucket-tool').addEventListener('click', () => this.setTool('bucket'));
+    }
+    setTool(tool) {
+        this.currentTool = tool;
+        document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+        const btn = document.getElementById(tool + '-tool');
+        if (btn) btn.classList.add('active');
+    }
+    getCurrentTool() {
+        return this.currentTool;
+    }
+}
+
+// ----- ColorManager（rev2dそのまま） -----
+class ColorManager {
+    constructor(app) {
+        this.app = app;
+        this.mainColor = '#800000';
+        this.subColor = '#f0e0d6';
+        this.colors = Array.from(document.querySelectorAll('.color-btn')).map(btn => btn.dataset.color);
+        this.currentColorIndex = this.colors.indexOf(this.mainColor);
+        this.mainColorDisplay = document.getElementById('main-color-display');
+        this.subColorDisplay = document.getElementById('sub-color-display');
+        this.bindEvents();
+        this.updateColorDisplays();
+        document.querySelector(`[data-color="${this.mainColor}"]`)?.classList.add('active');
+    }
+    bindEvents() {
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => this.setColor(e.currentTarget.dataset.color));
+        });
+        document.querySelector('.color-mode-display').addEventListener('click', () => this.swapColors());
+    }
+    setColor(color) {
+        this.mainColor = color;
+        this.currentColorIndex = this.colors.indexOf(this.mainColor);
+        document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelector(`[data-color="${color}"]`)?.classList.add('active');
+        this.updateColorDisplays();
+    }
+    updateColorDisplays() {
+        this.mainColorDisplay.style.backgroundColor = this.mainColor;
+        this.subColorDisplay.style.backgroundColor = this.subColor;
+    }
+    swapColors() {
+        [this.mainColor, this.subColor] = [this.subColor, this.mainColor];
+        this.updateColorDisplays();
+        this.setColor(this.mainColor);
+    }
+    resetColors() {
+        this.mainColor = '#800000';
+        this.subColor = '#f0e0d6';
+        this.updateColorDisplays();
+        this.setColor(this.mainColor);
+    }
+    changeColor(increase) {
+        let newIndex = this.currentColorIndex + (increase ? 1 : -1);
+        newIndex = Math.max(0, Math.min(newIndex, this.colors.length - 1));
+        this.setColor(this.colors[newIndex]);
+    }
+    getColor() {
+        return this.mainColor;
+    }
+}
+
+// ----- TopBarManager（rev2dそのまま） -----
 class TopBarManager {
     constructor(app) {
         this.app = app;
@@ -36,6 +160,7 @@ class TopBarManager {
     }
 }
 
+// ----- ShortcutManager（rev2dそのまま/一部rev2eショートカット反映） -----
 class ShortcutManager {
     constructor(app) {
         this.app = app;
@@ -85,9 +210,7 @@ class ShortcutManager {
             this.app.layerManager.redo(); e.preventDefault(); return;
         }
 
-        // --- rev2e修正: [ / Shift+[ ショートカット競合防止 ---
-        // [ / ] でペンサイズ
-        // Shift+[/]（国際配列対応含む）でカラーパレット
+        // ----- rev2e仕様: [ / ]でペンサイズ, Shift+[ / Shift+]でカラーパレット -----
         let isBracketLeft = (
             e.code === 'BracketLeft' ||
             e.key === '[' || e.key === '{'
@@ -264,6 +387,7 @@ class ShortcutManager {
     }
 }
 
+// ----- ToshinkaTegakiTool（rev2e用; クラス構造のみ） -----
 class ToshinkaTegakiTool {
     constructor() {
         this.colorManager = null;
