@@ -1,124 +1,5 @@
-// 🚨 Toshinka Tegaki Tool v1-4系 UI/初期化/ショートカット管理（ペンデバッグ強化）🚨
-
-class PenSettingsManager {
-    constructor(app) {
-        this.app = app;
-        this.currentSize = 1;
-        this.sizes = Array.from(document.querySelectorAll('.size-btn')).map(btn => parseInt(btn.dataset.size));
-        this.currentSizeIndex = this.sizes.indexOf(this.currentSize);
-        this.bindEvents();
-        this.updateSizeButtonVisuals();
-    }
-    bindEvents() {
-        document.querySelectorAll('.size-btn').forEach(btn => {
-            btn.addEventListener('click', () => this.setSize(parseInt(btn.dataset.size)));
-        });
-    }
-    setSize(size) {
-        this.currentSize = size;
-        this.currentSizeIndex = this.sizes.indexOf(this.currentSize);
-        document.querySelectorAll('.size-btn').forEach(btn => btn.classList.remove('active'));
-        document.querySelector(`[data-size="${size}"]`)?.classList.add('active');
-        this.updateSizeButtonVisuals();
-    }
-    changeSize(increase) {
-        let newIndex = this.currentSizeIndex + (increase ? 1 : -1);
-        newIndex = Math.max(0, Math.min(newIndex, this.sizes.length - 1));
-        this.setSize(this.sizes[newIndex]);
-    }
-    updateSizeButtonVisuals() {
-        document.querySelectorAll('.size-btn').forEach(btn => {
-            const size = parseInt(btn.dataset.size);
-            const sizeDot = btn.querySelector('.size-dot');
-            const sizeNumber = btn.querySelector('.size-number');
-            if (sizeDot) {
-                const dotSize = Math.min(size, 16);
-                sizeDot.style.width = `${dotSize}px`;
-                sizeDot.style.height = `${dotSize}px`;
-            }
-            if (sizeNumber) {
-                sizeNumber.textContent = size;
-            }
-        });
-    }
-    getCurrentSize() {
-        return this.currentSize;
-    }
-}
-
-class ToolManager {
-    constructor(app) {
-        this.app = app;
-        this.currentTool = 'pen';
-        this.bindEvents();
-    }
-    bindEvents() {
-        document.getElementById('pen-tool').addEventListener('click', () => this.setTool('pen'));
-        document.getElementById('eraser-tool').addEventListener('click', () => this.setTool('eraser'));
-        document.getElementById('move-tool').addEventListener('click', () => this.setTool('move'));
-        document.getElementById('bucket-tool').addEventListener('click', () => this.setTool('bucket'));
-    }
-    setTool(tool) {
-        this.currentTool = tool;
-        document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
-        const btn = document.getElementById(tool + '-tool');
-        if (btn) btn.classList.add('active');
-    }
-    getCurrentTool() {
-        return this.currentTool;
-    }
-}
-
-class ColorManager {
-    constructor(app) {
-        this.app = app;
-        this.mainColor = '#800000';
-        this.subColor = '#f0e0d6';
-        this.colors = Array.from(document.querySelectorAll('.color-btn')).map(btn => btn.dataset.color);
-        this.currentColorIndex = this.colors.indexOf(this.mainColor);
-        this.mainColorDisplay = document.getElementById('main-color-display');
-        this.subColorDisplay = document.getElementById('sub-color-display');
-        this.bindEvents();
-        this.updateColorDisplays();
-        document.querySelector(`[data-color="${this.mainColor}"]`)?.classList.add('active');
-    }
-    bindEvents() {
-        document.querySelectorAll('.color-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => this.setColor(e.currentTarget.dataset.color));
-        });
-        document.querySelector('.color-mode-display').addEventListener('click', () => this.swapColors());
-    }
-    setColor(color) {
-        this.mainColor = color;
-        this.currentColorIndex = this.colors.indexOf(this.mainColor);
-        document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
-        document.querySelector(`[data-color="${color}"]`)?.classList.add('active');
-        this.updateColorDisplays();
-    }
-    updateColorDisplays() {
-        this.mainColorDisplay.style.backgroundColor = this.mainColor;
-        this.subColorDisplay.style.backgroundColor = this.subColor;
-    }
-    swapColors() {
-        [this.mainColor, this.subColor] = [this.subColor, this.mainColor];
-        this.updateColorDisplays();
-        this.setColor(this.mainColor);
-    }
-    resetColors() {
-        this.mainColor = '#800000';
-        this.subColor = '#f0e0d6';
-        this.updateColorDisplays();
-        this.setColor(this.mainColor);
-    }
-    changeColor(increase) {
-        let newIndex = this.currentColorIndex + (increase ? 1 : -1);
-        newIndex = Math.max(0, Math.min(newIndex, this.colors.length - 1));
-        this.setColor(this.colors[newIndex]);
-    }
-    getColor() {
-        return this.mainColor;
-    }
-}
+// 🚨 Toshinka Tegaki Tool v1-4系 UI/初期化/ショートカット管理（命令書完全準拠）rev2e 🚨
+// rev2e: canvas/context参照の正規化・追加レイヤー操作無効化
 
 class TopBarManager {
     constructor(app) {
@@ -133,6 +14,7 @@ class TopBarManager {
         if (clearBtn) {
             clearBtn.title = 'アクティブレイヤーを消去 (Delete)';
             clearBtn.addEventListener('click', () => this.app.layerManager.clearActiveLayer());
+            // 全レイヤー消去ボタンは1レイヤーのみなら非表示
             const clearAllBtn = document.createElement('button');
             clearAllBtn.id = 'clear-all-btn';
             clearAllBtn.style.fontSize = "16px";
@@ -181,6 +63,7 @@ class ShortcutManager {
             e.preventDefault();
             return;
         }
+        // ビューショートカット（Space+やCtrl/Cmd系）
         if (this.app.canvasManager.isSpaceDown) {
             let handled = true;
             switch (e.key) {
@@ -196,6 +79,7 @@ class ShortcutManager {
             }
             return;
         }
+        // Undo/Redo
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
             this.app.layerManager.undo(); e.preventDefault(); return;
         }
@@ -203,6 +87,7 @@ class ShortcutManager {
             this.app.layerManager.redo(); e.preventDefault(); return;
         }
 
+        // --- カラーパレット移動ショートカット (最優先/必ず効く) ---
         let isBracketLeft = (
             e.code === 'BracketLeft' ||
             e.key === '[' || e.key === '{'
@@ -211,16 +96,19 @@ class ShortcutManager {
             e.code === 'BracketRight' ||
             e.key === ']' || e.key === '}'
         );
-        if (isBracketLeft || isBracketRight) {
-            if (e.shiftKey) {
-                this.app.colorManager.changeColor(isBracketRight);
-            } else {
-                this.app.penSettingsManager.changeSize(isBracketRight);
-            }
+        if (isBracketLeft) {
+            this.app.colorManager.changeColor(false);
             e.preventDefault();
             return;
         }
+        if (isBracketRight) {
+            this.app.colorManager.changeColor(true);
+            e.preventDefault();
+            return;
+        }
+        // -----------------------------------------------------
 
+        // v+系（アクティブレイヤーtransform）drawing-layer0は禁止
         let handled = false;
         if (!isBaseLayer) {
             if (e.shiftKey) {
@@ -242,6 +130,8 @@ class ShortcutManager {
             }
         }
         if (handled) { e.preventDefault(); return; }
+        // drawing-layer0ではtransform/消しゴム/バケツ系ショートカットを無効化
+        // ペンサイズ・色・ツール
         switch (e.key.toLowerCase()) {
             case 'x': this.app.colorManager.swapColors(); e.preventDefault(); break;
             case 'd': this.app.colorManager.resetColors(); e.preventDefault(); break;
@@ -257,49 +147,33 @@ class ShortcutManager {
         const isBaseLayer = layer?._isBaseLayer;
         const tool = this.app.toolManager.getCurrentTool();
 
-        // canvas情報デバッグ出力
-        console.log("[PenDraw] layer info", {
-            id: layer.canvas.id,
-            width: layer.canvas.width,
-            height: layer.canvas.height,
-            ctx: layer.ctx
-        });
-
         if ((tool === 'pen') || (tool === 'eraser')) {
             if (isBaseLayer && tool === 'eraser') {
+                // drawing-layer0は消しゴム禁止
                 return;
             }
             const { x, y } = this.app.canvasManager.getLayerDrawCoord(e.clientX, e.clientY, layer);
-
-            // ペン設定デバッグ
-            // 強制色テスト(2): ここで色を一時的に赤に
-            // let strokeStyle = "rgba(255,0,0,1)";
-            let strokeStyle = this.app.colorManager.getColor();
-            strokeStyle = "rgba(255,0,0,1)"; 
+            // デバッグ: 描画座標確認
+            // console.log("draw", x, y, "canvas", layer.canvas.width, layer.canvas.height);
+            if (isNaN(x) || isNaN(y) || x < 0 || y < 0 || x > layer.canvas.width || y > layer.canvas.height) {
+                console.warn("描画座標範囲外", x, y);
+                return;
+            }
             layer.ctx.beginPath();
             layer.ctx.moveTo(x, y);
             this.lastDrawPos = { x, y };
-
             layer.ctx.globalCompositeOperation = (tool === 'eraser') ? 'destination-out' : 'source-over';
-            layer.ctx.strokeStyle = strokeStyle;
+            layer.ctx.strokeStyle = this.app.colorManager.getColor();
             layer.ctx.lineWidth = this.app.penSettingsManager.getCurrentSize();
 
-            // 設定値ログ
-            console.log("[PenDraw] set:", {
-                tool,
-                strokeStyle: layer.ctx.strokeStyle,
-                lineWidth: layer.ctx.lineWidth,
-                globalCompositeOperation: layer.ctx.globalCompositeOperation,
-                moveTo: { x, y }
-            });
-
+            // pointermove/up: windowバインド
             const move = (ev) => {
                 if (!ev.buttons) return;
                 const { x:mx, y:my } = this.app.canvasManager.getLayerDrawCoord(ev.clientX, ev.clientY, layer);
-
-                // 描画座標・lineToテスト
-                console.log("[PenDraw] lineTo:", { x: mx, y: my });
-
+                if (isNaN(mx) || isNaN(my) || mx < 0 || my < 0 || mx > layer.canvas.width || my > layer.canvas.height) {
+                    console.warn("描画座標範囲外", mx, my);
+                    return;
+                }
                 layer.ctx.lineTo(mx, my);
                 layer.ctx.stroke();
                 this.lastDrawPos = { x:mx, y:my };
@@ -308,26 +182,28 @@ class ShortcutManager {
                 window.removeEventListener('pointermove', move, true);
                 window.removeEventListener('pointerup', up, true);
                 layer.ctx.closePath();
-
-                // 描画直後のgetImageData(px10)
-                try {
-                    const img = layer.ctx.getImageData(0,0,layer.canvas.width,layer.canvas.height);
-                    const px10 = Array.from(img.data).slice(0, 40);
-                    console.log('[PenDraw] getImageData(px10) after stroke:', px10);
-                } catch(e) { console.warn('[PenDraw] getImageData failed', e); }
-
                 this.app.layerManager.saveState();
                 this.app.layerManager.drawComposite();
+
+                // ピクセル変化確認
+                const img = layer.ctx.getImageData(0,0,layer.canvas.width,layer.canvas.height);
+                let changed = false;
+                for (let i=0; i<img.data.length; i+=4) {
+                    if (img.data[i+3] !== 255) { changed = true; break; }
+                }
+                // console.log("draw changed?", changed);
             };
             window.addEventListener('pointermove', move, true);
             window.addEventListener('pointerup', up, true);
         } else if (tool === 'bucket') {
+            // drawing-layer0もバケツOK
             const { x, y } = this.app.canvasManager.getLayerDrawCoord(e.clientX, e.clientY, layer);
             this.floodFill(layer, Math.floor(x), Math.floor(y), this.app.colorManager.getColor());
             this.app.layerManager.saveState();
             this.app.layerManager.drawComposite();
         }
     }
+    // バケツ: RGBA変換ユーティリティ
     hexToRgba(hex) {
         const c = hex.replace('#', '');
         if (c.length === 3) {
@@ -365,6 +241,7 @@ class ShortcutManager {
     colorsMatch(a,b) {
         return a[0]===b[0] && a[1]===b[1] && a[2]===b[2] && a[3]===b[3];
     }
+    // v+系ホイール
     handleLayerWheel(e) {
         const layer = this.app.layerManager.getActiveLayer();
         if (!layer || layer._isBaseLayer) {
@@ -415,24 +292,14 @@ class ToshinkaTegakiTool {
         this.layerManager.saveState();
     }
     bindTestButtons() {
+        // レイヤー追加・切替ボタンは無効化 rev2e
         const addBtn = document.getElementById('add-layer-btn-test');
         const switchBtn = document.getElementById('switch-layer-btn-test');
-        if (addBtn) {
-            addBtn.addEventListener('click', () => {
-                this.layerManager.addLayer();
-            });
-        }
-        if (switchBtn) {
-            switchBtn.addEventListener('click', () => {
-                if (this.layerManager.layers.length > 1) {
-                    let idx = (this.layerManager.activeLayerIndex + 1) % this.layerManager.layers.length;
-                    this.layerManager.switchLayer(idx);
-                    this.layerManager.drawComposite();
-                }
-            });
-        }
+        if (addBtn) addBtn.disabled = true;
+        if (switchBtn) switchBtn.disabled = true;
     }
     ensureLayerStack() {
+        // drawing-layer0の親要素(canvas-container)内にlayer-stack divを用意
         const baseCanvas = document.getElementById('drawing-layer0');
         if (!baseCanvas) return;
         let stack = document.getElementById('layer-stack');
@@ -451,9 +318,6 @@ class ToshinkaTegakiTool {
     }
 }
 
-// ==== デバッグ用window関数等（そのまま残してOK） ====
-
-// ==== DOMContentLoadedでの初期化 ==== 
 window.addEventListener('DOMContentLoaded', () => {
     if (!window.toshinkaTegakiInitialized) {
         window.toshinkaTegakiInitialized = true;
