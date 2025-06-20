@@ -44,7 +44,8 @@ class CanvasManager {
 
         this.isDrawing = false;
         this.isPanning = false;
-        this.isLayerMoving = false;
+        // this.isLayerMoving = false; // ← isLayerTransforming に役割を統合します
+        this.isLayerTransforming = false; // レイヤー変形操作中かどうかのフラグ
         this.isSpaceDown = false;
         this.isVDown = false;
         this.currentTool = 'pen';
@@ -62,10 +63,18 @@ class CanvasManager {
         this.canvasStartY = 0;
         this.moveLayerStartX = 0;
         this.moveLayerStartY = 0;
-        this.moveLayerImageData = null;
-this.wheelTimeout = null;
-this.lastWheelTime = 0;
-this.wheelThrottle = 50;
+        this.moveLayerImageData = null; // 変形前のオリジナル画像データを保持
+        this.wheelTimeout = null;
+        this.lastWheelTime = 0;
+        this.wheelThrottle = 50;
+
+        // ↓ 新しく追加
+        this.layerTransform = { // 現在の変形パラメータを保持するオブジェクト
+            translateX: 0,
+            translateY: 0,
+            scale: 1,
+            rotation: 0, // 角度はラジアンで管理します
+        };
 
         // キャンバス全体の見た目transform値
         this.transform = {
@@ -141,11 +150,12 @@ this.wheelThrottle = 50;
             return;
         }
         if (this.isVDown && this.canvas && e.target === this.canvas) {
+            this.startLayerTransform(); // ★変形処理を開始
+
             const coords = this.getCanvasCoordinates(e);
             this.moveLayerStartX = coords.x;
             this.moveLayerStartY = coords.y;
-            this.moveLayerImageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-            this.isLayerMoving = true;
+        
             e.preventDefault();
             return;
         }
@@ -173,12 +183,14 @@ this.wheelThrottle = 50;
             this.transform.top = this.canvasStartY + dy;
             this.applyTransform();
         }
-        else if (this.isLayerMoving) {
+        else if (this.isLayerTransforming && e.buttons) { // e.buttonsでドラッグ中かを判定
             const coords = this.getCanvasCoordinates(e);
-            const dx = Math.round(coords.x - this.moveLayerStartX);
-            const dy = Math.round(coords.y - this.moveLayerStartY);
-            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-            this.ctx.putImageData(this.moveLayerImageData, dx, dy);
+            // 移動量を計算して変形パラメータを更新
+            this.layerTransform.translateX = Math.round(coords.x - this.moveLayerStartX);
+            this.layerTransform.translateY = Math.round(coords.y - this.moveLayerStartY);
+
+            // プレビューを更新
+            this.applyLayerTransformPreview();
         }
         else if (this.isDrawing) {
             const coords = this.getCanvasCoordinates(e);
@@ -205,9 +217,8 @@ this.wheelThrottle = 50;
             this.ctx.closePath();
             this.saveState();
         }
-        if (this.isLayerMoving) {
-            this.isLayerMoving = false;
-            this.saveState();
+        if (this.isLayerTransforming) {
+            this.commitLayerTransform(); // ★変形を確定させる
         }
         if (this.isPanning) {
             this.isPanning = false;
@@ -215,31 +226,31 @@ this.wheelThrottle = 50;
     }
 
     // --- 逆行列対応完全版 ---
-getCanvasCoordinates(e) {
-    const containerRect = this.canvas.getBoundingClientRect();
-    const centerX = containerRect.left + containerRect.width / 2;
-    const centerY = containerRect.top + containerRect.height / 2;
+    getCanvasCoordinates(e) {
+        const containerRect = this.canvas.getBoundingClientRect();
+        const centerX = containerRect.left + containerRect.width / 2;
+        const centerY = containerRect.top + containerRect.height / 2;
 
-    let mouseX = e.clientX - centerX;
-    let mouseY = e.clientY - centerY;
+        let mouseX = e.clientX - centerX;
+        let mouseY = e.clientY - centerY;
 
-    const rad = -this.transform.rotation * Math.PI / 180;
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
+        const rad = -this.transform.rotation * Math.PI / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
 
-    let unrotatedX = mouseX * cos - mouseY * sin;
-    let unrotatedY = mouseX * sin + mouseY * cos;
+        let unrotatedX = mouseX * cos - mouseY * sin;
+        let unrotatedY = mouseX * sin + mouseY * cos;
 
-    let scaleX = this.transform.scale * this.transform.flipX;
-    let scaleY = this.transform.scale * this.transform.flipY;
-    const unscaledX = unrotatedX / scaleX;
-    const unscaledY = unrotatedY / scaleY;
+        let scaleX = this.transform.scale * this.transform.flipX;
+        let scaleY = this.transform.scale * this.transform.flipY;
+        const unscaledX = unrotatedX / scaleX;
+        const unscaledY = unrotatedY / scaleY;
 
-    const canvasX = unscaledX + this.canvas.width / 2;
-    const canvasY = unscaledY + this.canvas.height / 2;
+        const canvasX = unscaledX + this.canvas.width / 2;
+        const canvasY = unscaledY + this.canvas.height / 2;
 
-    return { x: canvasX, y: canvasY };
-}
+        return { x: canvasX, y: canvasY };
+    }
 
     updateCursor() {
         if (!this.canvas) return;
@@ -257,16 +268,68 @@ getCanvasCoordinates(e) {
         this.canvas.style.cursor = 'crosshair';
     }
 
-applyTransform() {
-    this.canvasContainer.style.transformOrigin = "center";
-    this.canvasContainer.style.transform =
-        `translate(${this.transform.left}px, ${this.transform.top}px) ` +
-        `scale(${this.transform.scale}, ${this.transform.scale}) ` +
-        `rotate(${this.transform.rotation}deg) ` +
-        `scale(${this.transform.flipX}, ${this.transform.flipY})`;
-}
+    applyTransform() {
+        this.canvasContainer.style.transformOrigin = "center";
+        this.canvasContainer.style.transform =
+            `translate(${this.transform.left}px, ${this.transform.top}px) ` +
+            `scale(${this.transform.scale}, ${this.transform.scale}) ` +
+            `rotate(${this.transform.rotation}deg) ` +
+            `scale(${this.transform.flipX}, ${this.transform.flipY})`;
+    }
 
+    startLayerTransform() {
+        if (this.isLayerTransforming || !this.ctx) return;
 
+        this.isLayerTransforming = true;
+        this.moveLayerImageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+        this.layerTransform = { translateX: 0, translateY: 0, scale: 1, rotation: 0 };
+
+        // プレビュー表示のために、元レイヤーの絵を一旦消しておきます
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+
+    applyLayerTransformPreview() {
+        if (!this.isLayerTransforming || !this.moveLayerImageData) return;
+
+        const ctx = this.ctx;
+        const canvas = this.canvas;
+
+        // オリジナル画像を一時的な別キャンバスに用意します
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        tempCanvas.getContext('2d').putImageData(this.moveLayerImageData, 0, 0);
+
+        // アクティブレイヤーをクリアして、変形した絵を描画し直します
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.save(); // 現在の描画設定を一時保存
+
+        // --- ここからが変形処理の心臓部です ---
+        // 1. 変形の中心をキャンバス中央に移動
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        // 2. パラメータに従って、移動・回転・スケールを実行
+        ctx.translate(this.layerTransform.translateX, this.layerTransform.translateY);
+        ctx.rotate(this.layerTransform.rotation); // 角度はラジアン
+        ctx.scale(this.layerTransform.scale, this.layerTransform.scale);
+        // 3. 描画の基準点を元の左上に戻す
+        ctx.translate(-canvas.width / 2, -canvas.height / 2);
+        // ------------------------------------
+
+        // 変形された状態で、一時キャンバス（＝オリジナル画像）を描画します
+        ctx.drawImage(tempCanvas, 0, 0);
+
+        ctx.restore(); // 保存しておいた描画設定を元に戻す
+    }
+
+    commitLayerTransform() {
+        if (!this.isLayerTransforming) return;
+
+        // プレビューが既にキャンバスに描かれているので、
+        // ここでは変形モードを終了し、アンドゥ履歴に保存するだけでOKです。
+        this.isLayerTransforming = false;
+        this.moveLayerImageData = null; // 記憶していたオリジナル画像は不要になるので解放
+        this.saveState(); // 現在のキャンバスの状態を履歴に保存
+    }
 
     saveState() {
         if (!this.ctx) return;
@@ -338,75 +401,91 @@ applyTransform() {
         this.transform.flipX = this.transform.flipX >= 0 ? 1 : -1;
         this.transform.flipY = this.transform.flipY >= 0 ? 1 : -1;
 
-    if (this.transform.flipX === -1 && this.transform.flipY === -1) {
-        this.transform.rotation = (this.transform.rotation + 180) % 360;
-        this.transform.flipX = 1;
-        this.transform.flipY = 1;
-    }
+        if (this.transform.flipX === -1 && this.transform.flipY === -1) {
+            this.transform.rotation = (this.transform.rotation + 180) % 360;
+            this.transform.flipX = 1;
+            this.transform.flipY = 1;
+        }
 
-    if (Math.abs(this.transform.rotation - 270) < 0.1 && this.transform.flipX === -1) {
-        this.transform.rotation = 90;
-        this.transform.flipX = 1;
-        this.transform.flipY *= -1;
-    }
+        if (Math.abs(this.transform.rotation - 270) < 0.1 && this.transform.flipX === -1) {
+            this.transform.rotation = 90;
+            this.transform.flipX = 1;
+            this.transform.flipY *= -1;
+        }
 
-    if (Math.abs(this.transform.rotation - 90) < 0.1 && this.transform.flipX === -1) {
-        this.transform.rotation = 270;
-        this.transform.flipX = 1;
-        this.transform.flipY *= -1;
+        if (Math.abs(this.transform.rotation - 90) < 0.1 && this.transform.flipX === -1) {
+            this.transform.rotation = 270;
+            this.transform.flipX = 1;
+            this.transform.flipY *= -1;
+        }
     }
-}
 
     resetView() {
         this.transform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
         this.applyTransform();
     }
 
-handleWheel(e) {
-    e.preventDefault();
+    handleWheel(e) {
+        e.preventDefault();
 
-    const now = Date.now();
-    if (now - this.lastWheelTime < this.wheelThrottle) {
-        return;
-    }
-    this.lastWheelTime = now;
-
-    let deltaY = e.deltaY;
-    if (Math.abs(deltaY) > 100) {
-        deltaY = deltaY > 0 ? 100 : -100;
-    }
-    deltaY = Math.max(-30, Math.min(30, deltaY));
-
-    if (e.shiftKey) {
-        let degrees;
-        if (Math.abs(deltaY) > 20) {
-            degrees = deltaY > 0 ? -10 : 10;
-        } else if (Math.abs(deltaY) > 10) {
-            degrees = deltaY > 0 ? -5 : 5;
-        } else {
-            degrees = deltaY > 0 ? -2 : 2;
+        const now = Date.now();
+        if (now - this.lastWheelTime < this.wheelThrottle) {
+            return;
         }
-        this.rotate(degrees);
-    } else {
-        let zoomFactor;
-        if (Math.abs(deltaY) > 20) {
-            zoomFactor = deltaY > 0 ? 1.05 : 1 / 1.05;
-        } else {
-            zoomFactor = deltaY > 0 ? 1.02 : 1 / 1.02;
+        this.lastWheelTime = now;
+
+        let deltaY = e.deltaY;
+        if (Math.abs(deltaY) > 100) {
+            deltaY = deltaY > 0 ? 100 : -100;
         }
-        this.zoom(zoomFactor);
+        deltaY = Math.max(-30, Math.min(30, deltaY));
+
+        if (this.isVDown) {
+            // 変形操作がまだ開始されていなければ、ここで開始します
+            if (!this.isLayerTransforming) {
+                this.startLayerTransform();
+            }
+
+            if (e.shiftKey) {
+                // レイヤー回転
+                const degrees = deltaY > 0 ? -5 : 5;
+                this.layerTransform.rotation += degrees * Math.PI / 180; // ラジアンに変換して加算
+            } else {
+                // レイヤー拡大縮小
+                const factor = deltaY > 0 ? 0.95 : 1.05;
+                this.layerTransform.scale = Math.max(0.1, Math.min(this.layerTransform.scale * factor, 10));
+            }
+            this.applyLayerTransformPreview(); // プレビュー更新
+        } else {
+            // 既存のキャンバス全体の変形処理
+            if (e.shiftKey) {
+                let degrees;
+                if (Math.abs(deltaY) > 20) {
+                    degrees = deltaY > 0 ? -10 : 10;
+                } else if (Math.abs(deltaY) > 10) {
+                    degrees = deltaY > 0 ? -5 : 5;
+                } else {
+                    degrees = deltaY > 0 ? -2 : 2;
+                }
+                this.rotate(degrees);
+            } else {
+                let zoomFactor;
+                if (Math.abs(deltaY) > 20) {
+                    zoomFactor = deltaY > 0 ? 1.05 : 1 / 1.05;
+                } else {
+                    zoomFactor = deltaY > 0 ? 1.02 : 1 / 1.02;
+                }
+                this.zoom(zoomFactor);
+            }
+        }
+
+        if (this.wheelTimeout) {
+            clearTimeout(this.wheelTimeout);
+        }
+        this.wheelTimeout = setTimeout(() => {
+            this.lastWheelTime = 0;
+        }, 200);
     }
-
-    if (this.wheelTimeout) {
-        clearTimeout(this.wheelTimeout);
-    }
-    this.wheelTimeout = setTimeout(() => {
-        this.lastWheelTime = 0;
-    }, 200);
-}
-
-
-
 
     colorsMatch(a, b) {
         return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];

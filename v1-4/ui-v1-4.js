@@ -7,8 +7,8 @@ class TopBarManager {
     constructor(app) {
         this.app = app;
         this.bindEvents();
-this.lastWheelTime = 0;
-this.wheelThrottle = 50;
+        this.lastWheelTime = 0;
+        this.wheelThrottle = 50;
 
     }
     bindEvents() {
@@ -68,6 +68,12 @@ class ShortcutManager {
         }
         if (e.key.toLowerCase() === 'v') {
             this.app.canvasManager.isVDown = false;
+
+            // ★もし変形操作の途中だったら、ここで変形を確定させる
+            if (this.app.canvasManager.isLayerTransforming) {
+                this.app.canvasManager.commitLayerTransform();
+            }
+
             this.app.canvasManager.updateCursor();
             e.preventDefault();
         }
@@ -145,15 +151,15 @@ class ShortcutManager {
         if (handled) e.preventDefault();
     }
 
-handleWheel(e) {
-    const now = Date.now();
-    if (now - this.lastWheelTime < this.wheelThrottle) {
-        return;
-    }
-    this.lastWheelTime = now;
+    handleWheel(e) {
+        const now = Date.now();
+        if (now - this.lastWheelTime < this.wheelThrottle) {
+            return;
+        }
+        this.lastWheelTime = now;
 
-    this.app.canvasManager.handleWheel(e);
-}
+        this.app.canvasManager.handleWheel(e);
+    }
 
     _movePan(dx, dy) {
         const t = this.app.canvasManager.transform;
