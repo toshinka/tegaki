@@ -7,8 +7,8 @@ class TopBarManager {
     constructor(app) {
         this.app = app;
         this.bindEvents();
-        this.lastWheelTime = 0;
-        this.wheelThrottle = 50;
+this.lastWheelTime = 0;
+this.wheelThrottle = 50;
 
     }
     bindEvents() {
@@ -57,7 +57,7 @@ class ShortcutManager {
     initialize() {
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
         document.addEventListener('keyup', this.handleKeyUp.bind(this));
-        // ★注意：wheelイベントのリスナーはcore.jsのCanvasManagerで一元管理するため、ここからは削除
+        document.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
     }
 
     handleKeyUp(e) {
@@ -104,26 +104,8 @@ class ShortcutManager {
             if (handled) e.preventDefault();
             return;
         }
-        
-        // ★修正：vモード時の処理を追加
-        if (this.app.canvasManager.isVDown) {
-            if (e.shiftKey) {
-                let handled = true;
-                switch (e.key) {
-                    case 'ArrowUp': this.app.canvasManager.scaleActiveLayer(1.1); break;
-                    case 'ArrowDown': this.app.canvasManager.scaleActiveLayer(1/1.1); break; // 0.9より逆数の方が挙動が良い
-                    case 'ArrowLeft': this.app.canvasManager.rotateActiveLayer(-10); break;
-                    case 'ArrowRight': this.app.canvasManager.rotateActiveLayer(10); break;
-                    default: handled = false;
-                }
-                if (handled) {
-                    e.preventDefault();
-                    return;
-                }
-            }
-            // v単体の場合はドラッグ移動に任せるので、キー操作は何もしない
-            return;
-        }
+        // vモード中はショートカット無し（ドラッグのみ）
+        if (this.app.canvasManager.isVDown) return;
 
         let handled = false;
         if (e.ctrlKey || e.metaKey) {
@@ -163,8 +145,16 @@ class ShortcutManager {
         if (handled) e.preventDefault();
     }
 
-    // ★削除：wheelイベントのハンドラはcore.jsに移行したため不要
-    
+handleWheel(e) {
+    const now = Date.now();
+    if (now - this.lastWheelTime < this.wheelThrottle) {
+        return;
+    }
+    this.lastWheelTime = now;
+
+    this.app.canvasManager.handleWheel(e);
+}
+
     _movePan(dx, dy) {
         const t = this.app.canvasManager.transform;
         t.left += dx;
