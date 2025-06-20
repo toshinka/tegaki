@@ -1,5 +1,5 @@
 // t3start-v1-3.js
-// 掲示板ページ上に、としんか手書き-v1-3-rev4b.htmlをiframeとして埋め込み表示するスクリプト
+// 掲示板ページ上に、としんか手書き-v1-4-rev4b.htmlをiframeとして埋め込み表示するスクリプト
 (function(d){
   // 既に起動している場合は多重起動防止
   if (d.getElementById('toshinka-tegaki-iframe')) {
