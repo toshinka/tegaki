@@ -7,8 +7,8 @@ class TopBarManager {
     constructor(app) {
         this.app = app;
         this.bindEvents();
-this.lastWheelTime = 0;
-this.wheelThrottle = 50;
+        this.lastWheelTime = 0;
+        this.wheelThrottle = 50;
 
     }
     bindEvents() {
@@ -104,8 +104,27 @@ class ShortcutManager {
             if (handled) e.preventDefault();
             return;
         }
-        // vモード中はショートカット無し（ドラッグのみ）
-        if (this.app.canvasManager.isVDown) return;
+        
+        // ★指示書に基づき修正: vモード時の処理
+        if (this.app.canvasManager.isVDown) {
+            if (e.shiftKey) {
+                let handled = true;
+                switch (e.key) {
+                    case 'ArrowUp': this.app.canvasManager.scaleActiveLayer(1.1); break;
+                    case 'ArrowDown': this.app.canvasManager.scaleActiveLayer(0.9); break;
+                    case 'ArrowLeft': this.app.canvasManager.rotateActiveLayer(-10); break;
+                    case 'ArrowRight': this.app.canvasManager.rotateActiveLayer(10); break;
+                    default: handled = false;
+                }
+                if (handled) {
+                    e.preventDefault();
+                    return;
+                }
+            }
+            // v単体の場合は既存の移動処理（ドラッグ）のみを有効にするため、ここでreturn
+            return;
+        }
+
 
         let handled = false;
         if (e.ctrlKey || e.metaKey) {
@@ -145,15 +164,15 @@ class ShortcutManager {
         if (handled) e.preventDefault();
     }
 
-handleWheel(e) {
-    const now = Date.now();
-    if (now - this.lastWheelTime < this.wheelThrottle) {
-        return;
-    }
-    this.lastWheelTime = now;
+    handleWheel(e) {
+        const now = Date.now();
+        if (now - this.lastWheelTime < this.wheelThrottle) {
+            return;
+        }
+        this.lastWheelTime = now;
 
-    this.app.canvasManager.handleWheel(e);
-}
+        this.app.canvasManager.handleWheel(e);
+    }
 
     _movePan(dx, dy) {
         const t = this.app.canvasManager.transform;
