@@ -1,3 +1,16 @@
 
-rev2  Bezierによる線補正＋筆圧対応拡張
-rev2　Smooth.jsによる線補正＋筆圧対応拡張
+rev1    Bezierによる線補正＋筆圧対応拡張
+rev1.1  保存ボタン追加
+rev2　  Smooth.jsによる線補正＋筆圧対応拡張
+
+📌 今回の補間候補
+1️⃣ Bezier曲線補間
+👉 実装簡単。2点ずつ結ぶより自然に滑らか
+👉 ctx.bezierCurveTo() か ctx.quadraticCurveTo()
+
+2️⃣ Smooth.js ちゃんと直したやつ
+👉 Cubic補間（Catmull-Romなど）で超スムーズにできる
+👉 今ならエラーも解消できるので乗せられる
+
+rev1：リアルタイム直線＋筆圧
+rev2：Smooth.jsのCubic補間版
