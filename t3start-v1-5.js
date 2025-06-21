@@ -1,5 +1,5 @@
-// t3start-v1-3.js
-// 掲示板ページ上に、としんか手書き-v1-4-rev4b.htmlをiframeとして埋め込み表示するスクリプト
+// t3start-v1-5.js
+// 掲示板ページ上に、としんか手書き-v1-5.htmlをiframeとして埋め込み表示するスクリプト
 (function(d){
   // 既に起動している場合は多重起動防止
   if (d.getElementById('toshinka-tegaki-iframe')) {
@@ -8,7 +8,7 @@
   }
   // iframeの作成
 const iframe = document.createElement('iframe');
-iframe.src = 'https://toshinka.github.io/tegaki/v1-4/ToshinkaTegakiTool-v1-4.html'; // ←絶対必要
+iframe.src = 'https://toshinka.github.io/tegaki/v1-5/ToshinkaTegakiTool-v1-5.html'; // ←絶対必要
 iframe.id = 'toshinka-tegaki-iframe';
 iframe.style.position = "fixed";
 iframe.style.top = 0;
