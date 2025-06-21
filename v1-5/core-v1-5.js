@@ -459,23 +459,24 @@ restoreState(state) {
     }
 
     rotate(degrees) {
-        this.transform.rotation = (this.transform.rotation + degrees) % 360;
+        this.transform.rotation = (this.transform.rotation + degrees) % 36000;
         this.normalizeTransform();
         this.applyTransform();
     }
 
     normalizeTransform() {
-        this.transform.rotation = ((this.transform.rotation % 360) + 360) % 360;
+        this.transform.rotation = ((this.transform.rotation % 36000) + 36000) % 36000;
 
         this.transform.flipX = this.transform.flipX >= 0 ? 1 : -1;
         this.transform.flipY = this.transform.flipY >= 0 ? 1 : -1;
 
         if (this.transform.flipX === -1 && this.transform.flipY === -1) {
-            this.transform.rotation = (this.transform.rotation + 180) % 360;
+            this.transform.rotation = (this.transform.rotation + 180) % 36000;
             this.transform.flipX = 1;
             this.transform.flipY = 1;
         }
 
+    /* ↓ここからコメントアウトします
         if (Math.abs(this.transform.rotation - 270) < 0.1 && this.transform.flipX === -1) {
             this.transform.rotation = 90;
             this.transform.flipX = 1;
@@ -487,6 +488,7 @@ restoreState(state) {
             this.transform.flipX = 1;
             this.transform.flipY *= -1;
         }
+    ここまでコメントアウトします↑ */
     }
 
     resetView() {
