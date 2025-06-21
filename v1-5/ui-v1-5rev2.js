@@ -14,9 +14,7 @@ class TopBarManager {
     bindEvents() {
         document.getElementById('undo-btn').addEventListener('click', () => this.app.canvasManager.undo());
         document.getElementById('redo-btn').addEventListener('click', () => this.app.canvasManager.redo());
-        
-        // ★ここを修正します。既存のcloseTool()ではなく、新しい転送&閉じる処理を呼び出します。
-        document.getElementById('close-btn').addEventListener('click', () => this.transferAndCloseTool());
+        document.getElementById('close-btn').addEventListener('click', () => this.closeTool());
 
         const clearBtn = document.getElementById('clear-btn');
         if (clearBtn) {
@@ -32,400 +30,260 @@ class TopBarManager {
             clearAllBtn.title = '全レイヤーを消去 (Ctrl+Shift+Delete)'; // ツールチップを更新
             clearBtn.parentNode.insertBefore(clearAllBtn, clearBtn.nextSibling);
             clearAllBtn.addEventListener('click', () => {
-                if (confirm('全てのレイヤーを消去します。よろしいですか？')) {
+                if (confirm('すべてのレイヤーを消去しますか？\nこの操作は元に戻すのが難しい場合があります。')) {
                     this.app.canvasManager.clearAllLayers();
                 }
             });
         }
-
-        // Spaceキー関連のイベントはCanvasManagerで処理されるため、ここでは不要。
-        // Shift+H 反転もショートカットマネージャーで処理。
+        document.getElementById('flip-h-btn').addEventListener('click', () => this.app.canvasManager.flipHorizontal());
+        document.getElementById('flip-v-btn').addEventListener('click', () => this.app.canvasManager.flipVertical());
+        document.getElementById('zoom-in-btn').addEventListener('click', () => this.app.canvasManager.zoom(1.2));
+        document.getElementById('zoom-out-btn').addEventListener('click', () => this.app.canvasManager.zoom(1/1.2));
+        document.getElementById('rotate-btn').addEventListener('click', () => this.app.canvasManager.rotate(15));
+        document.getElementById('rotate-ccw-btn').addEventListener('click', () => this.app.canvasManager.rotate(-15));
+        document.getElementById('reset-view-btn').addEventListener('click', () => this.app.canvasManager.resetView());
     }
-
-    // 既存の closeTool() メソッドがある場合、その内容を確認し、以下のように変更するか、
-    // この新しいメソッドに統合してください。
-    // もし closeTool() が単に window.close() や iframe削除を親に求めるだけなら、
-    // 以下のロジックを closeTool() に組み込む形でも良いです。
-    // 例：元のcloseTool()が以下のような内容だった場合
-    // closeTool() {
-    //   window.parent.postMessage({type: 'closeTool'}, '*');
-    // }
-    // その場合、この transferAndCloseTool() がその役割も兼ねる。
-
-    // ★追加: 描画内容を親フレームに転送してツールを閉じるメソッド
-    transferAndCloseTool() {
-        console.log('転送とツールの終了処理を開始します。');
-        
-        let mergedImageDataURL = null;
-        try {
-            // CanvasManagerに、全レイヤーを統合した画像をCanvasとして返すメソッドが必要です。
-            // core-v1-5rev2.js に getMergedImageCanvas() を追加しています。
-            const mergedCanvas = this.app.canvasManager.getMergedImageCanvas();
-            if (mergedCanvas) {
-                mergedImageDataURL = mergedCanvas.toDataURL('image/png');
-                console.log('統合された画像データを取得しました。');
-            } else {
-                console.warn('統合画像のCanvasが取得できませんでした。');
-            }
-        } catch (e) {
-            console.error('画像データ取得中にエラーが発生しました:', e);
-            alert('描画データの取得中にエラーが発生しました。');
+    closeTool() {
+        if (confirm('ウィンドウを閉じますか？')) {
+            window.close();
         }
-
-        if (mergedImageDataURL) {
-            // 親フレームに画像データを送信
-            // 注意: targetOriginは、実際の二次元裏のオリジンに厳密に設定してください。
-            // 例: window.parent.postMessage({ type: 'drawingData', data: mergedImageDataURL }, 'https://may.2chan.net');
-            window.parent.postMessage({
-                type: 'drawingData',
-                data: mergedImageDataURL
-            }, '*'); // 開発・テスト用に '*' を使用。本番では適切なオリジンを指定
-            console.log('描画データを親フレームに送信しました。');
-        } else {
-            // 画像データがない場合、閉じるメッセージのみ送信
-            window.parent.postMessage({
-                type: 'closeTool'
-            }, '*'); // 開発・テスト用に '*' を使用。本番では適切なオリジンを指定
-            console.log('画像データなしで閉じるメッセージを親フレームに送信しました。');
-        }
-
-        // iframe自体は親フレームが閉じるので、ここでは何もしない。
-        // もしここでiframeを閉じたい場合は以下のようにする
-        // window.parent.document.getElementById('toshinka-tegaki-iframe')?.remove();
     }
 }
 
 class ShortcutManager {
     constructor(app) {
         this.app = app;
-        this.activeKeys = new Set(); // 現在押されているキーを追跡
     }
-
     initialize() {
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
         document.addEventListener('keyup', this.handleKeyUp.bind(this));
-    }
-
-    handleKeyDown(e) {
-        this.activeKeys.add(e.key);
-
-        // Ctrl + Z (Undo)
-        if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-            e.preventDefault();
-            this.app.canvasManager.undo();
-        }
-        // Ctrl + Shift + Z (Redo)
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Z') {
-            e.preventDefault();
-            this.app.canvasManager.redo();
-        }
-        // Delete (アクティブレイヤーを消去)
-        if (e.key === 'Delete' && !e.ctrlKey && !e.metaKey) {
-            e.preventDefault();
-            this.app.canvasManager.clearCanvas();
-        }
-        // Ctrl + Shift + Delete (全レイヤーを消去)
-        if (e.key === 'Delete' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
-            e.preventDefault();
-            if (confirm('全てのレイヤーを消去します。よろしいですか？')) {
-                this.app.canvasManager.clearAllLayers();
-            }
-        }
-        // Shift + H (左右反転)
-        if (e.key === 'H' && e.shiftKey) {
-            e.preventDefault();
-            this.flipHorizontal();
-        }
-        // Shift + V (上下反転)
-        if (e.key === 'V' && e.shiftKey) {
-            e.preventDefault();
-            this.flipVertical();
-        }
-        // Rキー (回転)
-        if (e.key === 'r') {
-            e.preventDefault();
-            this.rotate90Degrees();
-        }
-        // Lキー (拡大)
-        if (e.key === 'l') {
-            e.preventDefault();
-            this.scaleCanvas(1.1); // 10%拡大
-        }
-        // Sキー (縮小)
-        if (e.key === 's') {
-            e.preventDefault();
-            this.scaleCanvas(0.9); // 10%縮小
-        }
-        // ↑ ↓ ← → (移動)
-        switch (e.key) {
-            case 'ArrowUp':
-                e.preventDefault();
-                this.translateCanvas(0, -10);
-                break;
-            case 'ArrowDown':
-                e.preventDefault();
-                this.translateCanvas(0, 10);
-                break;
-            case 'ArrowLeft':
-                e.preventDefault();
-                this.translateCanvas(-10, 0);
-                break;
-            case 'ArrowRight':
-                e.preventDefault();
-                this.translateCanvas(10, 0);
-                break;
-        }
-
-        // Vキーを押したままで移動モード
-        if (e.key === 'v') {
-            document.body.style.cursor = 'move';
-        }
+        document.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
     }
 
     handleKeyUp(e) {
-        this.activeKeys.delete(e.key);
+        if (e.key === ' ') {
+            this.app.canvasManager.isSpaceDown = false;
+            this.app.canvasManager.updateCursor();
+            e.preventDefault();
+        }
+        if (e.key.toLowerCase() === 'v') {
+            this.app.canvasManager.isVDown = false;
 
-        // Vキーを離したらカーソルを元に戻す
-        if (e.key === 'v') {
-            this.app.canvasManager.updateCursor(); // ツールに応じたカーソルに戻す
+            // ★もし変形操作の途中だったら、ここで変形を確定させる
+            if (this.app.canvasManager.isLayerTransforming) {
+                this.app.canvasManager.commitLayerTransform();
+            }
+
+            this.app.canvasManager.updateCursor();
+            e.preventDefault();
         }
     }
 
-    // キャンバスを左右反転
-    flipHorizontal() {
-        const matrix = this.app.canvasManager.matrix;
-        const width = this.app.canvasManager.drawingCanvas.width;
-        
-        // 左右反転の行列: [-1, 0, 0, 1, width, 0]
-        // 変換の中心をキャンバスの中心に設定
-        const centerX = width / 2;
-        
-        let newMatrix = multiplyMatrix(matrix, [1, 0, 0, 1, -centerX, 0]); // 中心に移動
-        newMatrix = multiplyMatrix(newMatrix, [-1, 0, 0, 1, width, 0]); // 反転 (width は反転後のオフセット)
-        newMatrix = multiplyMatrix(newMatrix, [1, 0, 0, 1, centerX, 0]); // 元に戻す
+handleKeyDown(e) {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.repeat) return;
 
-        this.app.canvasManager.matrix = newMatrix;
-        this.app.canvasManager.updateLayerTransforms(newMatrix);
-        this.app.canvasManager.renderAllLayers();
-        this.app.canvasManager.saveCanvasState();
+        // Spaceキーによるパン
+        if (e.key === ' ' && !this.app.canvasManager.isSpaceDown) {
+            this.app.canvasManager.isSpaceDown = true;
+            this.app.canvasManager.updateCursor();
+            e.preventDefault();
+            return;
+        }
+        // vキーによるレイヤー移動モード
+        if (e.key.toLowerCase() === 'v' && !this.app.canvasManager.isVDown) {
+            this.app.canvasManager.isVDown = true;
+            this.app.canvasManager.updateCursor();
+            e.preventDefault();
+            return;
+        }
+
+        // パン中
+        if (this.app.canvasManager.isSpaceDown) {
+            let handled = true;
+            const moveAmount = 10;
+            switch (e.key) {
+                case 'ArrowUp':    this._movePan(0, -moveAmount); break;
+                case 'ArrowDown':  this._movePan(0, moveAmount); break;
+                case 'ArrowLeft':  this._movePan(-moveAmount, 0); break;
+                case 'ArrowRight': this._movePan(moveAmount, 0); break;
+                default: handled = false;
+            }
+            if (handled) e.preventDefault();
+            return;
+        }
+
+        // vモード中の特別なショートカット
+        if (this.app.canvasManager.isVDown) {
+            let handled = false;
+            if (e.shiftKey) {
+                switch (e.key.toLowerCase()) {
+                    case 'h':
+                        this.app.layerManager.flipActiveLayerVertical();
+                        handled = true;
+                        break;
+                }
+            } else {
+                switch (e.key.toLowerCase()) {
+                    case 'h':
+                        this.app.layerManager.flipActiveLayerHorizontal();
+                        handled = true;
+                        break;
+                }
+            }
+            if (handled) e.preventDefault();
+            return;
+        }
+
+        let handled = false;
+
+        // Ctrl + Shift の組み合わせ
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
+            switch (e.key.toLowerCase()) {
+                case 'l': // Ctrl + Shift + L で新規レイヤー
+                    this.app.layerManager.addLayer();
+                    handled = true;
+                    break;
+                case 'delete': // Ctrl + Shift + Delete で全レイヤー消去
+                    if (confirm('すべてのレイヤーを消去しますか？\nこの操作は元に戻すのが難しい場合があります。')) {
+                        this.app.canvasManager.clearAllLayers();
+                        handled = true;
+                    }
+                    break;
+                case ',':case '<': // Ctrl + Shift + , でアクティブレイヤー複製
+                    this.app.layerManager.duplicateActiveLayer();
+                    handled = true;
+                    break;
+                case 'm': // Ctrl + Shift + M でアクティブレイヤーを下と結合
+                    this.app.layerManager.mergeDownActiveLayer();
+                    handled = true;
+                    break;
+                default: handled = false;
+            }
+        }
+        // Ctrl の組み合わせ
+        else if (e.ctrlKey || e.metaKey) {
+            switch (e.key.toLowerCase()) {
+                case 'z': this.app.canvasManager.undo(); handled = true; break;
+                case 'y': this.app.canvasManager.redo(); handled = true; break;
+                case '[': // Ctrl + [ で次のレイヤーへ
+                    this.app.layerManager.switchLayer(this.app.layerManager.activeLayerIndex + 1);
+                    handled = true;
+                    break;
+                case ']': // Ctrl + ] で前のレイヤーへ
+                    this.app.layerManager.switchLayer(this.app.layerManager.activeLayerIndex - 1);
+                    handled = true;
+                    break;
+                case 'delete': // Ctrl + Delete でアクティブレイヤー削除
+                    // LayerManager.deleteActiveLayer() 内で確認メッセージを表示するように変更
+                    this.app.layerManager.deleteActiveLayer(); 
+                    handled = true;
+                    break;
+                default: handled = false;
+            }
+        }
+        // Shift の組み合わせ
+        else if (e.shiftKey) {
+            switch (e.key.toLowerCase()) {
+                case '}': case ']': this.app.colorManager.changeColor(true); handled = true; break;
+                case '{': case '[': this.app.colorManager.changeColor(false); handled = true; break;
+                case 'h': this.app.canvasManager.flipVertical(); handled = true; break;
+                case 'arrowup': this.app.canvasManager.zoom(1.20); handled = true; break;
+                case 'arrowdown': this.app.canvasManager.zoom(1/1.20); handled = true; break;
+                case 'arrowleft': this.app.canvasManager.rotate(-15); handled = true; break;
+                case 'arrowright': this.app.canvasManager.rotate(15); handled = true; break;
+                default: handled = false;
+            }
+        }
+        // その他のキー (Delete はここにそのまま残します)
+        else {
+            switch (e.key.toLowerCase()) {
+                case '[': this.app.penSettingsManager.changeSize(false); handled = true; break;
+                case ']': this.app.penSettingsManager.changeSize(true); handled = true; break;
+                case 'x': this.app.colorManager.swapColors(); handled = true; break;
+                case 'd': this.app.colorManager.resetColors(); handled = true; break;
+                case 'p': this.app.toolManager.setTool('pen'); handled = true; break;
+                case 'e': this.app.toolManager.setTool('eraser'); handled = true; break;
+                case 'g': this.app.toolManager.setTool('bucket'); handled = true; break;
+                case 'h': this.app.canvasManager.flipHorizontal(); handled = true; break;
+                case '1': this.app.canvasManager.resetView(); handled = true; break;
+                case 'arrowup': this.app.canvasManager.zoom(1.05); handled = true; break;
+                case 'arrowdown': this.app.canvasManager.zoom(1/1.05); handled = true; break;
+                case 'arrowleft': this.app.canvasManager.rotate(-5); handled = true; break;
+                case 'arrowright': this.app.canvasManager.rotate(5); handled = true; break;
+                case 'delete': // Deleteでアクティブレイヤー消去（レイヤー内の描画内容を消去）
+                    this.app.canvasManager.clearCanvas();
+                    handled = true;
+                    break;
+                default: handled = false;
+            }
+        }
+
+        if (handled) e.preventDefault();
+    }
+    handleWheel(e) {
+        const now = Date.now();
+        if (now - this.lastWheelTime < this.wheelThrottle) {
+            return;
+        }
+        this.lastWheelTime = now;
+
+        this.app.canvasManager.handleWheel(e);
     }
 
-    // キャンバスを上下反転
-    flipVertical() {
-        const matrix = this.app.canvasManager.matrix;
-        const height = this.app.canvasManager.drawingCanvas.height;
-
-        // 上下反転の行列: [1, 0, 0, -1, 0, height]
-        // 変換の中心をキャンバスの中心に設定
-        const centerY = height / 2;
-
-        let newMatrix = multiplyMatrix(matrix, [1, 0, 0, 1, 0, -centerY]); // 中心に移動
-        newMatrix = multiplyMatrix(newMatrix, [1, 0, 0, -1, 0, height]); // 反転 (height は反転後のオフセット)
-        newMatrix = multiplyMatrix(newMatrix, [1, 0, 0, 1, 0, centerY]); // 元に戻す
-
-        this.app.canvasManager.matrix = newMatrix;
-        this.app.canvasManager.updateLayerTransforms(newMatrix);
-        this.app.canvasManager.renderAllLayers();
-        this.app.canvasManager.saveCanvasState();
-    }
-
-    // キャンバスを90度回転
-    rotate90Degrees() {
-        const matrix = this.app.canvasManager.matrix;
-        const width = this.app.canvasManager.drawingCanvas.width;
-        const height = this.app.canvasManager.drawingCanvas.height;
-        const centerX = width / 2;
-        const centerY = height / 2;
-        const angle = Math.PI / 2; // 90度
-
-        const cos = Math.cos(angle);
-        const sin = Math.sin(angle);
-
-        let newMatrix = multiplyMatrix(matrix, [1, 0, 0, 1, -centerX, -centerY]); // 中心に移動
-        newMatrix = multiplyMatrix(newMatrix, [cos, sin, -sin, cos, 0, 0]); // 回転
-        
-        // 回転後の中心位置を調整
-        // 新しい中心座標 = transformPoint([cos, sin, -sin, cos, 0, 0], centerX, centerY)
-        // const newCenterX = centerX * cos + centerY * (-sin);
-        // const newCenterY = centerX * sin + centerY * cos;
-        
-        // 中心に戻す計算は、元の中心からの相対位置で行う
-        newMatrix = multiplyMatrix(newMatrix, [1, 0, 0, 1, centerX, centerY]); // 元に戻す
-
-        this.app.canvasManager.matrix = newMatrix;
-        this.app.canvasManager.updateLayerTransforms(newMatrix);
-        this.app.canvasManager.renderAllLayers();
-        this.app.canvasManager.saveCanvasState();
-    }
-
-    // キャンバスを拡縮
-    scaleCanvas(factor) {
-        const matrix = this.app.canvasManager.matrix;
-        const width = this.app.canvasManager.drawingCanvas.width;
-        const height = this.app.canvasManager.drawingCanvas.height;
-        const centerX = width / 2;
-        const centerY = height / 2;
-
-        let newMatrix = multiplyMatrix(matrix, [1, 0, 0, 1, -centerX, -centerY]); // 中心に移動
-        newMatrix = multiplyMatrix(newMatrix, [factor, 0, 0, factor, 0, 0]); // 拡縮
-        newMatrix = multiplyMatrix(newMatrix, [1, 0, 0, 1, centerX, centerY]); // 元に戻す
-
-        this.app.canvasManager.matrix = newMatrix;
-        this.app.canvasManager.updateLayerTransforms(newMatrix);
-        this.app.canvasManager.renderAllLayers();
-        this.app.canvasManager.saveCanvasState();
-    }
-
-    // キャンバスを移動
-    translateCanvas(dx, dy) {
-        const matrix = this.app.canvasManager.matrix;
-        matrix[4] += dx;
-        matrix[5] += dy;
-        this.app.canvasManager.matrix = matrix; // 参照渡しなのでこれは不要だが念のため
-        this.app.canvasManager.updateLayerTransforms(matrix);
-        this.app.canvasManager.renderAllLayers();
-        this.app.canvasManager.saveCanvasState();
+    _movePan(dx, dy) {
+        const t = this.app.canvasManager.transform;
+        t.left += dx;
+        t.top += dy;
+        this.app.canvasManager.applyTransform();
     }
 }
 
-
+// === レイヤーUIを管理するクラス (新規追加) ===
 class LayerUIManager {
     constructor(app) {
         this.app = app;
         this.layerListContainer = document.getElementById('layer-list');
-        this.addLayerBtn = document.getElementById('add-layer-btn');
-        this.duplicateLayerBtn = document.getElementById('duplicate-layer-btn');
-        this.mergeLayerBtn = document.getElementById('merge-layer-btn');
-        this.deleteLayerBtn = document.getElementById('delete-layer-btn');
-        
+        this.addBtn = document.getElementById('add-layer-btn');
+        this.deleteBtn = document.getElementById('delete-layer-btn');
+        this.duplicateBtn = document.getElementById('duplicate-layer-btn'); // 追加
+        this.mergeBtn = document.getElementById('merge-layer-btn');     // 追加
         this.bindEvents();
     }
 
     bindEvents() {
-        this.addLayerBtn.addEventListener('click', () => this.app.layerManager.addLayer());
-        this.duplicateLayerBtn.addEventListener('click', () => this.app.layerManager.duplicateLayer());
-        this.mergeLayerBtn.addEventListener('click', () => this.app.layerManager.mergeLayer());
-        this.deleteLayerBtn.addEventListener('click', () => this.app.layerManager.deleteLayer());
+        this.addBtn.addEventListener('click', () => {
+            this.app.layerManager.addLayer();
+        });
 
+        this.deleteBtn.addEventListener('click', () => {
+            // ボタンからの削除もLayerManagerのメソッド経由で統一
+            this.app.layerManager.deleteActiveLayer(); 
+        });
+
+        this.duplicateBtn.addEventListener('click', () => { // 追加
+            this.app.layerManager.duplicateActiveLayer();
+        });
+
+        this.mergeBtn.addEventListener('click', () => { // 追加
+            this.app.layerManager.mergeDownActiveLayer();
+        });
+        
+        // イベント委任を使って、レイヤーリスト全体のクリックを監視
         this.layerListContainer.addEventListener('click', (e) => {
             const layerItem = e.target.closest('.layer-item');
-            if (!layerItem) return;
-
-            const index = parseInt(layerItem.dataset.index);
-
-            // 表示/非表示の切り替え
-            const visibilityToggle = e.target.closest('.layer-visibility-toggle');
-            if (visibilityToggle) {
-                this.app.layerManager.toggleLayerVisibility(index);
-                return;
-            }
-
-            // 不透明度スライダーの操作
-            const opacitySlider = e.target.closest('.layer-opacity-slider');
-            if (opacitySlider) {
-                // スライダーのイベントはinputイベントで別途処理
-                return;
-            }
-            
-            // レイヤーのアクティブ化
-            this.app.layerManager.switchLayer(index);
-        });
-
-        // 不透明度スライダーの input イベントはレイヤーアイテムではなくスライダー自体に付けるべき
-        this.layerListContainer.addEventListener('input', (e) => {
-            if (e.target.classList.contains('layer-opacity-slider')) {
-                const layerItem = e.target.closest('.layer-item');
-                if (!layerItem) return;
-                const index = parseInt(layerItem.dataset.index);
-                const opacity = parseFloat(e.target.value);
-                this.app.layerManager.setLayerOpacity(index, opacity);
-            }
-        });
-
-        // ドラッグアンドドロップによるレイヤー順序変更
-        let draggedItem = null;
-        this.layerListContainer.addEventListener('dragstart', (e) => {
-            draggedItem = e.target.closest('.layer-item');
-            if (draggedItem) {
-                e.dataTransfer.effectAllowed = 'move';
-                e.dataTransfer.setData('text/plain', draggedItem.dataset.index);
-                setTimeout(() => {
-                    draggedItem.classList.add('dragging');
-                }, 0);
-            }
-        });
-
-        this.layerListContainer.addEventListener('dragover', (e) => {
-            e.preventDefault(); // dropを許可
-            const targetItem = e.target.closest('.layer-item');
-            if (targetItem && draggedItem && targetItem !== draggedItem) {
-                const bounding = targetItem.getBoundingClientRect();
-                const offset = bounding.y + (bounding.height / 2);
-                if (e.clientY > offset) {
-                    targetItem.style.borderBottom = '2px solid blue';
-                    targetItem.style.borderTop = '';
-                } else {
-                    targetItem.style.borderTop = '2px solid blue';
-                    targetItem.style.borderBottom = '';
+            if (layerItem && layerItem.dataset.index) {
+                const index = parseInt(layerItem.dataset.index, 10);
+                if (index !== this.app.layerManager.activeLayerIndex) {
+                    this.app.layerManager.switchLayer(index);
                 }
             }
-        });
-
-        this.layerListContainer.addEventListener('dragleave', (e) => {
-            const targetItem = e.target.closest('.layer-item');
-            if (targetItem) {
-                targetItem.style.borderTop = '';
-                targetItem.style.borderBottom = '';
-            }
-        });
-
-        this.layerListContainer.addEventListener('drop', (e) => {
-            e.preventDefault();
-            const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
-            const targetItem = e.target.closest('.layer-item');
-            if (targetItem && draggedItem) {
-                const toIndex = parseInt(targetItem.dataset.index);
-                
-                // borderスタイルをリセット
-                targetItem.style.borderTop = '';
-                targetItem.style.borderBottom = '';
-
-                // ドラッグ要素のclassをリセット
-                draggedItem.classList.remove('dragging');
-
-                const bounding = targetItem.getBoundingClientRect();
-                const offset = bounding.y + (bounding.height / 2);
-
-                let actualToIndex = toIndex;
-                if (e.clientY > offset && fromIndex < toIndex) {
-                    actualToIndex = toIndex; // 下に挿入
-                } else if (e.clientY <= offset && fromIndex > toIndex) {
-                    actualToIndex = toIndex; // 上に挿入
-                } else if (e.clientY > offset && fromIndex > toIndex) {
-                    actualToIndex = toIndex + 1; // 下に移動
-                } else if (e.clientY <= offset && fromIndex < toIndex) {
-                    actualToIndex = toIndex - 1; // 上に移動
-                }
-
-                this.app.layerManager.moveLayer(fromIndex, actualToIndex);
-            }
-            draggedItem = null;
-        });
-
-        this.layerListContainer.addEventListener('dragend', (e) => {
-            const layerItems = this.layerListContainer.querySelectorAll('.layer-item');
-            layerItems.forEach(item => {
-                item.classList.remove('dragging');
-                item.style.borderTop = '';
-                item.style.borderBottom = '';
-            });
-            draggedItem = null;
         });
     }
 
     renderLayers() {
-        this.layerListContainer.innerHTML = ''; // Clear existing list
-        const layers = this.app.layerManager.getLayers();
+        if (!this.layerListContainer) return;
+        this.layerListContainer.innerHTML = ''; // リストを一旦空にする
+        const layers = this.app.layerManager.layers;
         const activeLayerIndex = this.app.layerManager.activeLayerIndex;
 
         // レイヤーを逆順に表示（上にあるレイヤーほどリストの上に来るように）
@@ -434,29 +292,11 @@ class LayerUIManager {
             const item = document.createElement('div');
             item.className = 'layer-item';
             item.dataset.index = i; // インデックスは元の配列のものを保持
-            item.draggable = true; // ドラッグ可能にする
-
-            const visibilityToggle = document.createElement('span');
-            visibilityToggle.className = 'layer-visibility-toggle';
-            visibilityToggle.textContent = layer.visible ? '👁️' : '🚫';
-            visibilityToggle.title = layer.visible ? '表示' : '非表示';
-            item.appendChild(visibilityToggle);
             
             const nameSpan = document.createElement('span');
             nameSpan.className = 'layer-name';
             nameSpan.textContent = layer.name;
             item.appendChild(nameSpan);
-
-            // 不透明度スライダー
-            const opacitySlider = document.createElement('input');
-            opacitySlider.type = 'range';
-            opacitySlider.min = '0';
-            opacitySlider.max = '1';
-            opacitySlider.step = '0.01';
-            opacitySlider.value = layer.opacity;
-            opacitySlider.className = 'layer-opacity-slider';
-            opacitySlider.title = '不透明度';
-            item.appendChild(opacitySlider);
 
             if (i === activeLayerIndex) {
                 item.classList.add('active');
@@ -483,7 +323,7 @@ window.addEventListener('DOMContentLoaded', () => {
         // ★テスト用のボタンに関する記述はすべて削除
         const testControls = document.getElementById('test-controls');
         if (testControls) {
-            testControls.remove();
+            testControls.parentNode.removeChild(testControls);
         }
     }
 });
