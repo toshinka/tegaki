@@ -1,1 +1,3 @@
-rev1　Smooth.jsによる線補正＋筆圧対応拡張
+
+rev2  Bezierによる線補正＋筆圧対応拡張
+rev2　Smooth.jsによる線補正＋筆圧対応拡張

@@ -174,99 +174,93 @@ class CanvasManager {
         try { document.documentElement.setPointerCapture(e.pointerId); } catch (err) {}
     }
 
-    onPointerMove(e) {
-        if (!e.buttons) return;
-        if (this.isPanning) {
-            const dx = e.clientX - this.dragStartX;
-            const dy = e.clientY - this.dragStartY;
-            this.transform.left = this.canvasStartX + dx;
-            this.transform.top = this.canvasStartY + dy;
-            this.applyTransform();
-        }
-        else if (this.isLayerTransforming && e.buttons) {
-            const coords = this.getCanvasCoordinates(e);
-            this.layerTransform.translateX = Math.round(coords.x - this.moveLayerStartX);
-            this.layerTransform.translateY = Math.round(coords.y - this.moveLayerStartY);
-            this.applyLayerTransformPreview();
-        }
-        // ★【変更点】リアルタイム描画から、座標の記録処理へ変更
-        else if (this.isDrawing) {
-            const coords = this.getCanvasCoordinates(e);
-            this.points.push({ x: coords.x, y: coords.y, pressure: e.pressure === 0 ? 1.0 : e.pressure || 1.0 });
-        }
-        // ★ ここまで
+onPointerMove(e) {
+  if (!e.buttons) return;
+
+  if (this.isPanning) {
+    const dx = e.clientX - this.dragStartX;
+    const dy = e.clientY - this.dragStartY;
+    this.transform.left = this.canvasStartX + dx;
+    this.transform.top = this.canvasStartY + dy;
+    this.applyTransform();
+  }
+  else if (this.isLayerTransforming && e.buttons) {
+    const coords = this.getCanvasCoordinates(e);
+    this.layerTransform.translateX = Math.round(coords.x - this.moveLayerStartX);
+    this.layerTransform.translateY = Math.round(coords.y - this.moveLayerStartY);
+    this.applyLayerTransformPreview();
+  }
+  else if (this.isDrawing) {
+    const coords = this.getCanvasCoordinates(e);
+    const newPoint = {
+      x: coords.x,
+      y: coords.y,
+      pressure: e.pressure === 0 ? 1.0 : e.pressure || 1.0
+    };
+
+    const pointsLen = this.points.length;
+    if (pointsLen > 0) {
+      const lastPoint = this.points[pointsLen - 1];
+      const avgPressure = (lastPoint.pressure + newPoint.pressure) / 2;
+      const lineWidth = this.currentSize * avgPressure;
+      this.ctx.lineWidth = Math.max(0.1, lineWidth);
+
+      this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
+      this.ctx.strokeStyle = this.currentColor;
+      this.ctx.lineCap = 'round';
+      this.ctx.lineJoin = 'round';
+
+      this.ctx.beginPath();
+      this.ctx.moveTo(lastPoint.x, lastPoint.y);
+
+      // Bezierの制御点は前後点の中点
+      const cpX = (lastPoint.x + newPoint.x) / 2;
+      const cpY = (lastPoint.y + newPoint.y) / 2;
+
+      this.ctx.quadraticCurveTo(lastPoint.x, lastPoint.y, cpX, cpY);
+      this.ctx.stroke();
     }
 
-    onPointerUp(e) {
-        try {
-            if (document.documentElement.hasPointerCapture(e.pointerId)) {
-                document.documentElement.releasePointerCapture(e.pointerId);
-            }
-        } catch (err) {}
+    this.points.push(newPoint);
+  }
+}
 
-        // ★【変更点】記録した点から滑らかな線を描画する処理
-        if (this.isDrawing) {
-            this.isDrawing = false;
-            
-            // 点が少なすぎる場合は処理を終了
-            if (this.points.length < 2) {
-                // 点が1つの場合（クリック）は、点を描画する
-                if (this.points.length === 1) {
-                    const p = this.points[0];
-                    this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
-                    this.ctx.fillStyle = this.currentColor;
-                    // 筆圧に応じたサイズの円を描画
-                    const radius = (this.currentSize * p.pressure) / 2;
-                    this.ctx.beginPath();
-                    this.ctx.arc(p.x, p.y, Math.max(0.1, radius), 0, Math.PI * 2, true);
-                    this.ctx.fill();
-                }
-            } else {
-                // Smooth.jsを使って線の座標を補正
-                const path = new Smooth(this.points, {
-                    method: Smooth.METHOD_CUBIC,
-                    clip: 'clamp',
-                    cubicTension: Smooth.CUBIC_TENSION_CATMULL_ROM // 自然な補間方法
-                });
 
-                this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
-                this.ctx.strokeStyle = this.currentColor;
-                this.ctx.lineCap = 'round';
-                this.ctx.lineJoin = 'round';
 
-                // 補正されたパスを、短い線分の集まりとして描画していく
-                const step = 0.05; // 描画の細かさ
-                let lastPoint = path(0);
 
-                for (let t = step; t <= 1 + step; t += step) {
-                    const currentPoint = path(Math.min(t, 1));
-                    
-                    // 各線分の太さを、始点と終点の筆圧の平均値で計算
-                    const avgPressure = (lastPoint.pressure + currentPoint.pressure) / 2;
-                    const lineWidth = this.currentSize * avgPressure;
-                    
-                    this.ctx.lineWidth = Math.max(0.1, lineWidth); // 太さが0にならないようにする
-
-                    this.ctx.beginPath();
-                    this.ctx.moveTo(lastPoint.x, lastPoint.y);
-                    this.ctx.lineTo(currentPoint.x, currentPoint.y);
-                    this.ctx.stroke();
-                    
-                    lastPoint = currentPoint;
-                }
-            }
-            this.points = []; // 座標配列をクリア
-            this.saveState(); // 描画が完了したら履歴に保存
-        }
-        // ★ ここまで
-
-        if (this.isLayerTransforming) {
-            this.commitLayerTransform();
-        }
-        if (this.isPanning) {
-            this.isPanning = false;
-        }
+onPointerUp(e) {
+  try {
+    if (document.documentElement.hasPointerCapture(e.pointerId)) {
+      document.documentElement.releasePointerCapture(e.pointerId);
     }
+  } catch (err) {}
+
+  if (this.isDrawing) {
+    this.isDrawing = false;
+
+    if (this.points.length === 1) {
+      const p = this.points[0];
+      this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
+      this.ctx.fillStyle = this.currentColor;
+      const radius = (this.currentSize * p.pressure) / 2;
+      this.ctx.beginPath();
+      this.ctx.arc(p.x, p.y, Math.max(0.1, radius), 0, Math.PI * 2, true);
+      this.ctx.fill();
+    }
+
+    this.points = [];
+    this.saveState();
+  }
+
+  if (this.isLayerTransforming) {
+    this.commitLayerTransform();
+  }
+  if (this.isPanning) {
+    this.isPanning = false;
+  }
+}
+
+
 
     getCanvasCoordinates(e) {
         const containerRect = this.canvas.getBoundingClientRect();
@@ -463,17 +457,17 @@ class CanvasManager {
     }
 
     rotate(degrees) {
-        this.transform.rotation = (this.transform.rotation + degrees) % 3060;
+        this.transform.rotation = (this.transform.rotation + degrees) % 3600;
         this.normalizeTransform();
         this.applyTransform();
     }
 
     normalizeTransform() {
-        this.transform.rotation = ((this.transform.rotation % 3060) + 3060) % 3060;
+        this.transform.rotation = ((this.transform.rotation % 3600) + 3600) % 3600;
         this.transform.flipX = this.transform.flipX >= 0 ? 1 : -1;
         this.transform.flipY = this.transform.flipY >= 0 ? 1 : -1;
         if (this.transform.flipX === -1 && this.transform.flipY === -1) {
-            this.transform.rotation = (this.transform.rotation + 180) % 3060;
+            this.transform.rotation = (this.transform.rotation + 180) % 3600;
             this.transform.flipX = 1;
             this.transform.flipY = 1;
         }
@@ -509,16 +503,9 @@ class CanvasManager {
             }
             this.applyLayerTransformPreview();
         } else {
-            if (e.shiftKey) {
-                let degrees;
-                if (Math.abs(deltaY) > 20) {
-                    degrees = deltaY > 0 ? -10 : 10;
-                } else if (Math.abs(deltaY) > 10) {
-                    degrees = deltaY > 0 ? -5 : 5;
-                } else {
-                    degrees = deltaY > 0 ? -15 : 15;
-                }
-                this.rotate(degrees);
+        if (e.shiftKey) {
+          const degrees = -deltaY * 0.2; // マイナス付けるとホイール方向と回転が揃う
+          this.rotate(degrees);
             } else {
                 let zoomFactor;
                 if (Math.abs(deltaY) > 20) {

@@ -1,0 +1,216 @@
+CSS・SVG・Canvas（WebGL）
+
+☆CSS transform注意
+
+定規に CSS transform を使い、ペンツールは Canvas 
+
+・Adobe Illustrator（Web版）: ペンツールでベジェ曲線の制御点は SVG や DOM 要素で表示され、CSS transform で移動や回転を処理。実際のパス描画は SVG や Canvas で行う。
+
+・Figma: ペンツールのハンドルは SVG で実装され、CSS transform でドラッグ操作を滑らかに表示。描画は Canvas や SVG で処理。
+
+・Photopea: ブラシのカーソルプレビューに CSS transform を使い、ストローク描画は Canvas で処理。
+
+■CSS transformを使う場合  
+・レイヤーのプレビューやUIアニメーション（ズーム、パン、回転）に限定。
+
+・マウス座標の変換処理を必ず実装して、ズレを防ぐ。
+
+・例: キャンバス全体をズームするUIアニメーション。
+
+■Canvasのコンテキストを使う場合  
+・実際の描画（ペンのストローク、レイヤーの合成）に使う。
+
+・座標系が一貫するため、バグが起こりにくい。
+
+・例: レイヤーごとにctx.translateやctx.rotateを適用。
+
+■ハイブリッドアプローチ  
+・CSS transformでUIの動きを滑らかにしつつ、描画はCanvasのコンテキストで処理。
+
+・例: キャンバスのプレビューをCSS transformで回転表示しつつ、ペンの描画はctxで管理。
+
+
+📖 キャンバス回転座標補正・手法別まとめ
+📌 ① Canvasコンテキストのtransform方式（今のやり方）
+ctx.translate(), ctx.rotate()で内部座標を回転
+
+描画時にそのまま座標渡せばズレない
+
+UI側でのプレビュー回転も同じCanvasでやるなら超安定
+
+逆変換いらん。
+むしろ、描画前に回転戻して座標読み取るなら
+
+js
+コードをコピーする
+ctx.save();
+ctx.setTransform(1, 0, 0, 1, 0, 0); // transformリセット
+// getImageDataとかする
+ctx.restore();
+📌 ② CSS transform方式（キャンバスのDOMをCSSで回す）
+問題点
+
+マウス座標とキャンバス内座標がズレる
+
+回転角度・拡大縮小を考慮してマウス座標を逆変換する必要
+
+逆変換式（座標補正）
+
+js
+コードをコピーする
+function getCanvasCoords(e, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  // ここで回転と拡大縮小の逆変換をする
+  const rotation = canvasRotationInRadians;
+  const scale = canvasScale;
+
+  const centerX = canvas.width / 2;
+  const centerY = canvas.height / 2;
+
+  const dx = (x - centerX) / scale;
+  const dy = (y - centerY) / scale;
+
+  const rx =  Math.cos(-rotation) * dx - Math.sin(-rotation) * dy + centerX;
+  const ry =  Math.sin(-rotation) * dx + Math.cos(-rotation) * dy + centerY;
+
+  return { x: rx, y: ry };
+}
+※ canvasRotationInRadians と canvasScale はCSSでかけてるtransformの値
+
+📌 ③ SVGで回転する場合（定規ツール用）
+SVGの定規要素を transform="rotate(角度, 中心X, 中心Y)" で回せばOK
+座標計算は基本Canvasと同じ
+
+例：
+
+xml
+コードをコピーする
+<line x1="0" y1="0" x2="100" y2="0" transform="rotate(45, 50, 0)" />
+📌 ④ WebGL (将来もし本気で速いお絵描きにしたくなったら)
+描画もプレビューも全部シェーダで行う
+
+マウス座標は常にWebGLのクリッピング座標（-1〜1）に正規化して渡す
+
+変換式
+
+js
+コードをコピーする
+function getWebGLCoords(e, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const x = ( (e.clientX - rect.left) / rect.width ) * 2 - 1;
+  const y = - ( (e.clientY - rect.top) / rect.height ) * 2 + 1;
+  return { x, y };
+}
+📜 👑まとめ
+手法	安定性	座標変換の難易度	パフォーマンス	推奨用途
+Canvasのtransform	◎	低	◎	描画・基本の回転・合成
+CSS transform	○	中（逆変換要）	◎	プレビューアニメーション
+SVG	◎	低	◎	定規・UIガイド
+WebGL	◎	中	◎◎	高速お絵描きエンジン
+
+✅ とりあえず今のrev1はCanvas transformで安定化
+rev2でBezier
+rev3でCSS transform導入＋逆変換試作
+って感じでフェーズ分けると後で地獄見ない。
+
+📦 キャンバス描画基盤テンプレセット
+📌 ① Canvas描画＋transform回転テンプレ
+html
+コードをコピーする
+<canvas id="myCanvas" width="800" height="600"></canvas>
+<script>
+const canvas = document.getElementById('myCanvas');
+const ctx = canvas.getContext('2d');
+
+function drawRotated(x, y, angle) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle * Math.PI / 180);
+  ctx.fillStyle = 'red';
+  ctx.fillRect(-25, -25, 50, 50);
+  ctx.restore();
+}
+
+drawRotated(200, 200, 45);
+</script>
+📌 ② CSS transform回転＋座標逆変換テンプレ
+html
+コードをコピーする
+<canvas id="canvasCss" width="800" height="600" style="border:1px solid;"></canvas>
+<script>
+const canvas = document.getElementById('canvasCss');
+const ctx = canvas.getContext('2d');
+
+canvas.style.transform = 'rotate(30deg)';
+
+function getCorrectedCoords(e) {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  const rad = 30 * Math.PI / 180; // 30度の逆回転
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+
+  const dx = x - cx;
+  const dy = y - cy;
+
+  const rx = Math.cos(-rad) * dx - Math.sin(-rad) * dy + cx;
+  const ry = Math.sin(-rad) * dx + Math.cos(-rad) * dy + cy;
+
+  return { x: rx, y: ry };
+}
+
+canvas.addEventListener('click', e => {
+  const pos = getCorrectedCoords(e);
+  console.log('補正後座標', pos);
+});
+</script>
+📌 ③ SVGで定規回転テンプレ
+html
+コードをコピーする
+
+📌 ④ WebGL用座標正規化テンプレ
+html
+コードをコピーする
+<canvas id="webglCanvas" width="800" height="600"></canvas>
+<script>
+const canvas = document.getElementById('webglCanvas');
+
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  console.log('クリッピング座標', {x, y});
+});
+</script>
+📖 まとめて保存用
+この4パターンが全部揃ってれば、将来
+定規ツールでもSAI風ペンでもブラウザデスクトップアプリ風UIでも全部対応できる。
+
+✅ おすすめ運用：
+今のTegakiTool用：①のみ
+
+定規ツール用：①＋③
+
+プレビュー回転UI試作：①＋②（要逆変換）
+
+もしWebGL高速化する時：④
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

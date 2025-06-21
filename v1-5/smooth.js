@@ -1,4 +1,4 @@
-(function (global) {
+(function(global) {
   function Smooth(points, options) {
     options = options || {};
     this.points = points;
@@ -9,7 +9,7 @@
 
   Smooth.METHOD_CUBIC = 'cubic';
 
-  Smooth.prototype.value = function (i, t) {
+  Smooth.prototype.value = function(i, t) {
     var points = this.points;
     if (i < 0) i = 0;
     if (i >= points.length - 1) i = points.length - 2;
@@ -26,7 +26,7 @@
     };
   };
 
-  Smooth.prototype._cubic = function (p0, p1, p2, p3, t, t2, t3) {
+  Smooth.prototype._cubic = function(p0, p1, p2, p3, t, t2, t3) {
     var tension = this.cubicTension;
     return (
       ((-tension * t3 + 2 * tension * t2 - tension * t) * p0) +
