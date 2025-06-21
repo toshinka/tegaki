@@ -149,14 +149,6 @@ handleKeyDown(e) {
                         handled = true;
                     }
                     break;
-                case ',':case '<': // Ctrl + Shift + D でアクティブレイヤー複製
-                    this.app.layerManager.duplicateActiveLayer();
-                    handled = true;
-                    break;
-                case 'm': // Ctrl + Shift + M でアクティブレイヤーを下と結合
-                    this.app.layerManager.mergeDownActiveLayer();
-                    handled = true;
-                    break;
                 default: handled = false;
             }
         }
@@ -176,6 +168,14 @@ handleKeyDown(e) {
                 case 'delete': // Ctrl + Delete でアクティブレイヤー削除
                     // LayerManager.deleteActiveLayer() 内で確認メッセージを表示するように変更
                     this.app.layerManager.deleteActiveLayer(); 
+                    handled = true;
+                    break;
+                case ',': // Ctrl + Shift + D でアクティブレイヤー複製
+                    this.app.layerManager.duplicateActiveLayer();
+                    handled = true;
+                    break;
+                case '.': // Ctrl + Shift + M でアクティブレイヤーを下と結合
+                    this.app.layerManager.mergeDownActiveLayer();
                     handled = true;
                     break;
                 default: handled = false;

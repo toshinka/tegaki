@@ -6,34 +6,22 @@ https://github.com/toshinka/tegaki/blob/main/
 
 ## 🔗【参照用：v1-4系ファイルリンク】
 
-@toshinka/tegaki/files/v1-4/ToshinkaTegakiTool-v1-4.html
-@toshinka/tegaki/files/v1-4/core-v1-4.js
-@toshinka/tegaki/files/v1-4/ui-v1-4.js
+@toshinka/tegaki/files/v1-5/ToshinkaTegakiTool-v1-5.html
+@toshinka/tegaki/files/v1-5/core-v1-5.js
+@toshinka/tegaki/files/v1-5/ui-v1-5.js
 
-https://toshinka.github.io/tegaki/v1-4/ToshinkaTegakiTool-v1-4.html
-https://toshinka.github.io/tegaki/v1-4/core-v1-4.js
-https://toshinka.github.io/tegaki/v1-4/ui-v1-4.js
+https://toshinka.github.io/tegaki/v1-5/ToshinkaTegakiTool-v1-5.html
+https://toshinka.github.io/tegaki/v1-5/core-v1-5.js
+https://toshinka.github.io/tegaki/v1-5/ui-v1-5.js
 https://toshinka.github.io/tegaki/TestImage/hacchan.png
-
-
-https://toshinka.github.io/tegaki/v1-4/ToshinkaTegakiTool-v1-4rev1.html
-https://toshinka.github.io/tegaki/v1-4/core-v1-4rev1.js
-https://toshinka.github.io/tegaki/v1-4/ui-v1-4rev1.js
-
-https://toshinka.github.io/tegaki/v1-4/v1-4rev1.png
-
-
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/v1-4/ToshinkaTegakiTool-v1-4rev1.html
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/v1-4/core-v1-4rev1.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/v1-4/ui-v1-4rev1.js
+https://toshinka.github.io/tegaki/TestImage/Reference.png
+https://toshinka.github.io/tegaki/v1-5/Roadmap-v1-5.txt
 
 
 
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TestImage/%E5%AE%9F%E8%A3%85%E7%94%A8%E6%8C%87%E7%A4%BA%E3%81%BE%E3%81%A8%E3%82%81%E8%A1%A8%EF%BC%88%E6%A9%9F%E8%83%BD%E6%95%B4%E7%90%86%EF%BC%8B%E9%9B%A3%E6%98%93%E5%BA%A6%E3%83%BB%E5%84%AA%E5%85%88%E5%BA%A6%E3%83%BB%E4%BA%88%E5%91%8A%EF%BC%89.txt
-
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TestImage/1.2-0%E6%A7%8B%E6%83%B3.txt
-
-
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/v1-5/ToshinkaTegakiTool-v1-5rev1.html
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/v1-5/core-v1-5rev1.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/v1-5/ui-v1-5rev1.js
 
 
 
@@ -43,11 +31,16 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TestImage/1.2-
 
 https://github.com/toshinka/tegaki/blob/main/TestImage/%E5%AE%9F%E8%A3%85%E7%94%A8%E6%8C%87%E7%A4%BA%E3%81%BE%E3%81%A8%E3%82%81%E8%A1%A8%EF%BC%88%E6%A9%9F%E8%83%BD%E6%95%B4%E7%90%86%EF%BC%8B%E9%9B%A3%E6%98%93%E5%BA%A6%E3%83%BB%E5%84%AA%E5%85%88%E5%BA%A6%E3%83%BB%E4%BA%88%E5%91%8A%EF%BC%89.txt
 
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TestImage/%E5%AE%9F%E8%A3%85%E7%94%A8%E6%8C%87%E7%A4%BA%E3%81%BE%E3%81%A8%E3%82%81%E8%A1%A8%EF%BC%88%E6%A9%9F%E8%83%BD%E6%95%B4%E7%90%86%EF%BC%8B%E9%9B%A3%E6%98%93%E5%BA%A6%E3%83%BB%E5%84%AA%E5%85%88%E5%BA%A6%E3%83%BB%E4%BA%88%E5%91%8A%EF%BC%89.txt
+
 1.2-0構想
 
 @toshinka/tegaki/files/TestImage/1.2-0%E6%A7%8B%E6%83%B3.txt
 
 https://github.com/toshinka/tegaki/blob/main/TestImage/1.2-0%E6%A7%8B%E6%83%B3.txt
+
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/TestImage/1.2-0%E6%A7%8B%E6%83%B3.txt
+
 
 2.としんか手書きツール パフォーマンス・UIUX改善 技術仕様書
 @toshinka/tegaki/files/TestImage/2.%E3%81%A8%E3%81%97%E3%82%93%E3%81%8B%E6%89%8B%E6%9B%B8%E3%81%8D%E3%83%84%E3%83%BC%E3%83%AB%20%E3%83%91%E3%83%95%E3%82%A9%E3%83%BC%E3%83%9E%E3%83%B3%E3%82%B9%E3%83%BBUIUX%E6%94%B9%E5%96%84%20%E6%8A%80%E8%A1%93%E4%BB%95%E6%A7%98%E6%9B%B8.txt
@@ -76,7 +69,7 @@ https://toshinka.github.io/tegaki/TestImage/hacchan.png
 
 javascript:(d=>{d=d.body.appendChild(d.createElement('script'));d.src=`https://toshinka.github.io/tegaki/t3start.js?${parseInt(Date.now()/36e+5)*36e+5}`})(document)
 
-javascript:(d=>{d=d.body.appendChild(d.createElement('script'));d.src=`https://toshinka.github.io/tegaki/t3start-v1-4.js?${parseInt(Date.now()/36e+5)*36e+5}`})(document)
+javascript:(d=>{d=d.body.appendChild(d.createElement('script'));d.src=`https://toshinka.github.io/tegaki/t3start-v1-5.js?${parseInt(Date.now()/36e+5)*36e+5}`})(document)
 
 
 
