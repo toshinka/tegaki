@@ -37,24 +37,30 @@ function applyMatrix(m, x, y) {
 class CanvasManager {
     constructor(app) {
         this.app = app;
+
+        // 要素
         this.canvas = null;
         this.ctx = null;
         this.canvasArea = document.getElementById('canvas-area');
         this.canvasContainer = document.getElementById('canvas-container');
         this.frameCanvas = null;
 
+        // 描画状態
         this.isDrawing = false;
         this.isPanning = false;
         this.isLayerTransforming = false;
         this.isSpaceDown = false;
         this.isVDown = false;
+
+        // 設定
         this.currentTool = 'pen';
         this.currentColor = '#800000';
         this.currentSize = 1;
 
-        // ★【変更点】描画中の座標と筆圧を保存する配列を追加
+        // 筆圧・座標
         this.points = [];
 
+        // 履歴・移動情報
         this.lastX = 0;
         this.lastY = 0;
         this.history = [];
@@ -67,16 +73,21 @@ class CanvasManager {
         this.moveLayerStartX = 0;
         this.moveLayerStartY = 0;
         this.moveLayerImageData = null;
+
+        // ホイールイベント制御
         this.wheelTimeout = null;
         this.lastWheelTime = 0;
         this.wheelThrottle = 50;
-        
+
+        // レイヤー操作
         this.layerTransform = {
             translateX: 0,
             translateY: 0,
             scale: 1,
-            rotation: 0,
+            rotation: 0
         };
+
+        // キャンバスの変形情報
         this.transform = {
             scale: 1,
             rotation: 0,
@@ -85,16 +96,34 @@ class CanvasManager {
             left: 0,
             top: 0
         };
-        this.transform.scale = 1;
-        this.transform.rotation = 0;
-        this.transform.flipX = 1;
-        this.transform.flipY = 1;
-        this.transform.left = 0;
-        this.transform.top = 0;
 
+        // レイヤー配列の初期化 ←ここ追加！
+        this.layers = [];
+
+        // フレームとイベントセットアップ
         this.createAndDrawFrame();
         this.bindEvents();
     }
+
+    // ★ 全レイヤー統合して保存する
+exportMergedImage() {
+    const mergedCanvas = document.createElement('canvas');
+    mergedCanvas.width = this.canvas.width;
+    mergedCanvas.height = this.canvas.height;
+    const mergedCtx = mergedCanvas.getContext('2d');
+
+    // 全レイヤー描画 (LayerManager経由)
+    this.app.layerManager.layers.forEach(layer => {
+        mergedCtx.drawImage(layer.canvas, 0, 0);
+    });
+
+    // PNGとして保存
+    const dataURL = mergedCanvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.href = dataURL;
+    link.download = 'merged_image.png';
+    link.click();
+}
 
     createAndDrawFrame() {
         this.frameCanvas = document.createElement('canvas');
@@ -105,8 +134,10 @@ class CanvasManager {
         this.frameCanvas.style.top = '-5px';
         this.frameCanvas.style.zIndex = '-1';
         this.frameCanvas.style.pointerEvents = 'none';
+
         const firstLayer = this.canvasContainer.querySelector('.main-canvas');
         this.canvasContainer.insertBefore(this.frameCanvas, firstLayer);
+
         const frameCtx = this.frameCanvas.getContext('2d');
         frameCtx.fillStyle = '#ffffff';
         frameCtx.strokeStyle = '#cccccc';
@@ -128,6 +159,7 @@ class CanvasManager {
         this.canvasArea.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
     }
 
+    // 各種設定
     setActiveLayerContext(canvas, ctx) {
         this.canvas = canvas;
         this.ctx = ctx;
@@ -136,6 +168,8 @@ class CanvasManager {
     setCurrentTool(tool) { this.currentTool = tool; }
     setCurrentColor(color) { this.currentColor = color; }
     setCurrentSize(size) { this.currentSize = size; }
+
+
 
     onPointerDown(e) {
         if (this.isSpaceDown) {
