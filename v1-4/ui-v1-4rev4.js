@@ -170,14 +170,6 @@ handleKeyDown(e) {
                     this.app.layerManager.deleteActiveLayer(); 
                     handled = true;
                     break;
-                case ',': // Ctrl + Shift + D でアクティブレイヤー複製
-                    this.app.layerManager.duplicateActiveLayer();
-                    handled = true;
-                    break;
-                case '.': // Ctrl + Shift + M でアクティブレイヤーを下と結合
-                    this.app.layerManager.mergeDownActiveLayer();
-                    handled = true;
-                    break;
                 default: handled = false;
             }
         }
