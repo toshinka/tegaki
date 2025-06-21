@@ -8,9 +8,32 @@
     return;
   }
 
-  let oejs = d.getElementById('oejs');
-  let initialDrawingData = null;
+  // t3start.jsのoejs強制初期化ロジック
+  const oebtnj = d.getElementById('oebtnj');
+  if (oebtnj) {
+    oebtnj.click(); // 手書きモードをトリガー
+    console.log('手書きJSの初期化を試みました (oebtnj.click())。');
+  }
 
+  let oejs = d.getElementById('oejs');
+  // oejsが存在しない場合、ここで作成・初期化する（t3start.jsのロジック）
+  if (!oejs) {
+    oejs = d.createElement('canvas');
+    oejs.id = 'oejs';
+    oejs.width = 400;
+    oejs.height = 400;
+    oejs.style.position = 'absolute'; // t3start.jsのスタイル
+    const oest1 = d.querySelector('#oest1');
+    if (oest1) {
+      oest1.appendChild(oejs);
+      console.log('oejsを新しく作成しました (#oest1内)。');
+    } else {
+      d.body.appendChild(oejs); // fallback
+      console.warn('oejsの配置場所 (#oest1) が見つかりませんでした。bodyに直接追加しました。');
+    }
+  }
+
+  let initialDrawingData = null;
   // oejsに既存の描画がある場合、そのデータを取得
   // t3start.js の逆転写ロジックに似た処理
   if (oejs && oejs.width > 0 && oejs.height > 0) {
@@ -44,9 +67,13 @@
   iframe.style.border = "none";
   d.body.appendChild(iframe);
 
-  // iframeロード後に初期描画データを送信
-  iframe.onload = () => {
-    if (initialDrawingData) {
+  // iframeが完全にロードされるのを待たずに、すぐにメッセージを送信する（t3start.jsに近い挙動）
+  // ただし、子フレーム側がまだメッセージリスナーを設定していない可能性があるため、
+  // iframe.onload でも再送するロジックを子フレーム側に持つとより確実。
+  // ここでは、iframeがDOMに追加された直後にメッセージを送信。
+  if (initialDrawingData) {
+    // 短い遅延を入れることで、iframeがDOMに追加され、最低限のJSが実行されるのを待つ
+    setTimeout(() => {
       // postMessageで子フレームに初期画像データを送信
       // 注意: targetOriginは、実際のToshinkaTegakiTool-v1-5rev2.htmlがホストされているオリジンに厳密に設定してください。
       // ローカルでテストする場合は 'null' もしくは '*' を使用できますが、本番環境ではセキュリティリスクがあります。
@@ -55,9 +82,9 @@
         type: 'initialDrawing',
         data: initialDrawingData
       }, '*'); // 開発・テスト用に '*' を使用。本番では適切なオリジンを指定
-      console.log('初期画像データを子フレームに送信しました。');
-    }
-  };
+      console.log('初期画像データを子フレームに送信しました (初回)。');
+    }, 100); // 100msの遅延
+  }
 
   // 子フレームからのメッセージ（描画データや閉じる指示）を受信するためのリスナー
   window.addEventListener('message', (event) => {
@@ -80,7 +107,7 @@
         oejs.width = 400; // t3start.jsのデフォルトサイズ
         oejs.height = 400; // t3start.jsのデフォルトサイズ
         oejs.style.position = 'absolute';
-        const oest1 = d.querySelector('#oest1'); // ふたばの投稿フォーム下の要素
+        const oest1 = d.querySelector('#oest1');
         if (oest1) {
           oest1.appendChild(oejs);
           console.log('oejsを新しく作成しました (#oest1内)。');

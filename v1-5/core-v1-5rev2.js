@@ -389,6 +389,7 @@ class CanvasManager {
                 newMatrix = multiplyMatrix(newMatrix, [1, 0, 0, 1, -centerX, -centerY]);
                 // 2. 回転
                 newMatrix = multiplyMatrix(newMatrix, [cos, sin, -sin, cos, 0, 0]);
+                
                 // 3. 元に戻す
                 newMatrix = multiplyMatrix(newMatrix, [1, 0, 0, 1, centerX, centerY]);
                 break;
@@ -757,11 +758,14 @@ class LayerManager {
             if (this.layers.length === 0) {
                 this.addLayer('背景'); // レイヤーがない場合は「背景」として追加
             }
-            const targetLayer = this.layers[0]; // 最初のレイヤーを対象とする
+            const targetLayer = this.layers[0]; // 最初のレイヤー (レイヤー0) を対象とする
             
             // キャンバスのサイズを画像に合わせるか、画像をキャンバスサイズに合わせるか選択
             // ここではキャンバスサイズに合わせて画像を縮小・拡大して描画
             const mainCanvas = this.app.canvasManager.getMainCanvas();
+            // まずレイヤーをクリア
+            targetLayer.getContext().clearRect(0, 0, targetLayer.canvas.width, targetLayer.canvas.height);
+            // 画像を描画
             targetLayer.getContext().drawImage(img, 0, 0, img.width, img.height, 0, 0, mainCanvas.width, mainCanvas.height);
             this.app.canvasManager.renderAllLayers();
             this.app.canvasManager.saveCanvasState(); // ロード後の状態を履歴に保存
@@ -883,7 +887,7 @@ class LayerManager {
         const [movedLayer] = this.layers.splice(fromIndex, 1);
         this.layers.splice(toIndex, 0, movedLayer);
 
-        // アクティブレイヤーのインデックスを更新
+        // アクティブレイヤーのインデックスを調整
         if (this.activeLayerIndex === fromIndex) {
             this.activeLayerIndex = toIndex;
         } else if (this.activeLayerIndex >= Math.min(fromIndex, toIndex) &&
@@ -1014,7 +1018,13 @@ class ToshinkaTegakiTool {
             if (event.data && event.data.type === 'initialDrawing') {
                 const initialDataURL = event.data.data;
                 console.log('親フレームから初期描画データを受信しました。');
-                this.layerManager.loadInitialImage(initialDataURL); // LayerManagerに処理を移譲
+                // LayerManagerが完全に初期化されていることを確認してからロード
+                if (this.layerManager.layers.length > 0) {
+                    this.layerManager.loadInitialImage(initialDataURL); // LayerManagerに処理を移譲
+                } else {
+                    // もし初期化がまだなら、少し待ってから再試行
+                    setTimeout(() => this.layerManager.loadInitialImage(initialDataURL), 100);
+                }
             }
         });
     }
