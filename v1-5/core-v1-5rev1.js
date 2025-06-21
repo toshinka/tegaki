@@ -1,5 +1,6 @@
 // Toshinka Tegaki Tool core.js 最終安定版
 // （transform-origin:center＋逆行列座標変換・Space+ドラッグ/回転/反転/拡縮/移動すべて対応）
+// ★ v1-5改：Smooth.jsによる線補正＋筆圧対応拡張版 ★
 
 // --- 2D行列の合成・逆行列・座標適用 ---
 function multiplyMatrix(a, b) {
@@ -44,13 +45,15 @@ class CanvasManager {
 
         this.isDrawing = false;
         this.isPanning = false;
-        // this.isLayerMoving = false; // ← isLayerTransforming に役割を統合します
-        this.isLayerTransforming = false; // レイヤー変形操作中かどうかのフラグ
+        this.isLayerTransforming = false;
         this.isSpaceDown = false;
         this.isVDown = false;
         this.currentTool = 'pen';
         this.currentColor = '#800000';
         this.currentSize = 1;
+
+        // ★【変更点】描画中の座標と筆圧を保存する配列を追加
+        this.points = [];
 
         this.lastX = 0;
         this.lastY = 0;
@@ -63,20 +66,17 @@ class CanvasManager {
         this.canvasStartY = 0;
         this.moveLayerStartX = 0;
         this.moveLayerStartY = 0;
-        this.moveLayerImageData = null; // 変形前のオリジナル画像データを保持
+        this.moveLayerImageData = null;
         this.wheelTimeout = null;
         this.lastWheelTime = 0;
         this.wheelThrottle = 50;
-
-        // ↓ 新しく追加
-        this.layerTransform = { // 現在の変形パラメータを保持するオブジェクト
+        
+        this.layerTransform = {
             translateX: 0,
             translateY: 0,
             scale: 1,
-            rotation: 0, // 角度はラジアンで管理します
+            rotation: 0,
         };
-
-        // キャンバス全体の見た目transform値
         this.transform = {
             scale: 1,
             rotation: 0,
@@ -85,7 +85,6 @@ class CanvasManager {
             left: 0,
             top: 0
         };
-        // 強制transform初期化（デバッグ用・リセット防止）
         this.transform.scale = 1;
         this.transform.rotation = 0;
         this.transform.flipX = 1;
@@ -98,7 +97,6 @@ class CanvasManager {
     }
 
     createAndDrawFrame() {
-        // 額縁キャンバス
         this.frameCanvas = document.createElement('canvas');
         this.frameCanvas.width = 364;
         this.frameCanvas.height = 145;
@@ -150,27 +148,29 @@ class CanvasManager {
             return;
         }
         if (this.isVDown && this.canvas && e.target === this.canvas) {
-            this.startLayerTransform(); // ★変形処理を開始
-
+            this.startLayerTransform();
             const coords = this.getCanvasCoordinates(e);
             this.moveLayerStartX = coords.x;
             this.moveLayerStartY = coords.y;
-        
             e.preventDefault();
             return;
         }
         if (!this.canvas || e.target !== this.canvas) return;
+
+        // ★【変更点】ここから描画処理の変更
         const coords = this.getCanvasCoordinates(e);
-        this.lastX = coords.x;
-        this.lastY = coords.y;
+
         if (this.currentTool === 'bucket') {
-            this.fill(Math.floor(this.lastX), Math.floor(this.lastY), this.currentColor);
+            this.fill(Math.floor(coords.x), Math.floor(coords.y), this.currentColor);
             this.saveState();
         } else {
             this.isDrawing = true;
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.lastX, this.lastY);
+            this.points = []; // 描画点の配列を初期化
+            // 座標と筆圧（e.pressure）を配列に追加。筆圧が取れない場合は1.0とする
+            this.points.push({ x: coords.x, y: coords.y, pressure: e.pressure === 0 ? 1.0 : e.pressure || 1.0 });
         }
+        // ★ ここまで描画処理の変更
+
         try { document.documentElement.setPointerCapture(e.pointerId); } catch (err) {}
     }
 
@@ -183,27 +183,18 @@ class CanvasManager {
             this.transform.top = this.canvasStartY + dy;
             this.applyTransform();
         }
-        else if (this.isLayerTransforming && e.buttons) { // e.buttonsでドラッグ中かを判定
+        else if (this.isLayerTransforming && e.buttons) {
             const coords = this.getCanvasCoordinates(e);
-            // 移動量を計算して変形パラメータを更新
             this.layerTransform.translateX = Math.round(coords.x - this.moveLayerStartX);
             this.layerTransform.translateY = Math.round(coords.y - this.moveLayerStartY);
-
-            // プレビューを更新
             this.applyLayerTransformPreview();
         }
+        // ★【変更点】リアルタイム描画から、座標の記録処理へ変更
         else if (this.isDrawing) {
             const coords = this.getCanvasCoordinates(e);
-            const currentX = coords.x;
-            const currentY = coords.y;
-            this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
-            this.ctx.strokeStyle = this.currentColor;
-            this.ctx.lineWidth = this.currentSize;
-            this.ctx.lineTo(currentX, currentY);
-            this.ctx.stroke();
-            this.lastX = currentX;
-            this.lastY = currentY;
+            this.points.push({ x: coords.x, y: coords.y, pressure: e.pressure === 0 ? 1.0 : e.pressure || 1.0 });
         }
+        // ★ ここまで
     }
 
     onPointerUp(e) {
@@ -212,43 +203,88 @@ class CanvasManager {
                 document.documentElement.releasePointerCapture(e.pointerId);
             }
         } catch (err) {}
+
+        // ★【変更点】記録した点から滑らかな線を描画する処理
         if (this.isDrawing) {
             this.isDrawing = false;
-            this.ctx.closePath();
-            this.saveState();
+            
+            // 点が少なすぎる場合は処理を終了
+            if (this.points.length < 2) {
+                // 点が1つの場合（クリック）は、点を描画する
+                if (this.points.length === 1) {
+                    const p = this.points[0];
+                    this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
+                    this.ctx.fillStyle = this.currentColor;
+                    // 筆圧に応じたサイズの円を描画
+                    const radius = (this.currentSize * p.pressure) / 2;
+                    this.ctx.beginPath();
+                    this.ctx.arc(p.x, p.y, Math.max(0.1, radius), 0, Math.PI * 2, true);
+                    this.ctx.fill();
+                }
+            } else {
+                // Smooth.jsを使って線の座標を補正
+                const path = new Smooth(this.points, {
+                    method: Smooth.METHOD_CUBIC,
+                    clip: 'clamp',
+                    cubicTension: Smooth.CUBIC_TENSION_CATMULL_ROM // 自然な補間方法
+                });
+
+                this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
+                this.ctx.strokeStyle = this.currentColor;
+                this.ctx.lineCap = 'round';
+                this.ctx.lineJoin = 'round';
+
+                // 補正されたパスを、短い線分の集まりとして描画していく
+                const step = 0.05; // 描画の細かさ
+                let lastPoint = path(0);
+
+                for (let t = step; t <= 1 + step; t += step) {
+                    const currentPoint = path(Math.min(t, 1));
+                    
+                    // 各線分の太さを、始点と終点の筆圧の平均値で計算
+                    const avgPressure = (lastPoint.pressure + currentPoint.pressure) / 2;
+                    const lineWidth = this.currentSize * avgPressure;
+                    
+                    this.ctx.lineWidth = Math.max(0.1, lineWidth); // 太さが0にならないようにする
+
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(lastPoint.x, lastPoint.y);
+                    this.ctx.lineTo(currentPoint.x, currentPoint.y);
+                    this.ctx.stroke();
+                    
+                    lastPoint = currentPoint;
+                }
+            }
+            this.points = []; // 座標配列をクリア
+            this.saveState(); // 描画が完了したら履歴に保存
         }
+        // ★ ここまで
+
         if (this.isLayerTransforming) {
-            this.commitLayerTransform(); // ★変形を確定させる
+            this.commitLayerTransform();
         }
         if (this.isPanning) {
             this.isPanning = false;
         }
     }
 
-    // --- 逆行列対応完全版 ---
     getCanvasCoordinates(e) {
         const containerRect = this.canvas.getBoundingClientRect();
         const centerX = containerRect.left + containerRect.width / 2;
         const centerY = containerRect.top + containerRect.height / 2;
-
         let mouseX = e.clientX - centerX;
         let mouseY = e.clientY - centerY;
-
         const rad = -this.transform.rotation * Math.PI / 180;
         const cos = Math.cos(rad);
         const sin = Math.sin(rad);
-
         let unrotatedX = mouseX * cos - mouseY * sin;
         let unrotatedY = mouseX * sin + mouseY * cos;
-
         let scaleX = this.transform.scale * this.transform.flipX;
         let scaleY = this.transform.scale * this.transform.flipY;
         const unscaledX = unrotatedX / scaleX;
         const unscaledY = unrotatedY / scaleY;
-
         const canvasX = unscaledX + this.canvas.width / 2;
         const canvasY = unscaledY + this.canvas.height / 2;
-
         return { x: canvasX, y: canvasY };
     }
 
@@ -277,68 +313,43 @@ class CanvasManager {
             `scale(${this.transform.flipX}, ${this.transform.flipY})`;
     }
 
-startLayerTransform() {
-    if (this.isLayerTransforming || !this.ctx) return;
-
-    this.isLayerTransforming = true;
-    this.moveLayerImageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-    this.layerTransform = { translateX: 0, translateY: 0, scale: 1, rotation: 0 };
-
-    // ★★★ この行の直前に以下を追加 ★★★
-    this.ctx.globalCompositeOperation = 'source-over';
-    
-    // プレビュー表示のために、元レイヤーの絵を一旦消しておきます
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-}
+    startLayerTransform() {
+        if (this.isLayerTransforming || !this.ctx) return;
+        this.isLayerTransforming = true;
+        this.moveLayerImageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+        this.layerTransform = { translateX: 0, translateY: 0, scale: 1, rotation: 0 };
+        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
 
     applyLayerTransformPreview() {
         if (!this.isLayerTransforming || !this.moveLayerImageData) return;
-
         const ctx = this.ctx;
         const canvas = this.canvas;
-
-        // オリジナル画像を一時的な別キャンバスに用意します
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = canvas.width;
         tempCanvas.height = canvas.height;
         tempCanvas.getContext('2d').putImageData(this.moveLayerImageData, 0, 0);
-
-        // アクティブレイヤーをクリアして、変形した絵を描画し直します
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.save(); // 現在の描画設定を一時保存
-
-        // --- ここからが変形処理の心臓部です ---
-        // 1. 変形の中心をキャンバス中央に移動
+        ctx.save();
         ctx.translate(canvas.width / 2, canvas.height / 2);
-        // 2. パラメータに従って、移動・回転・スケールを実行
         ctx.translate(this.layerTransform.translateX, this.layerTransform.translateY);
-        ctx.rotate(this.layerTransform.rotation); // 角度はラジアン
+        ctx.rotate(this.layerTransform.rotation);
         ctx.scale(this.layerTransform.scale, this.layerTransform.scale);
-        // 3. 描画の基準点を元の左上に戻す
         ctx.translate(-canvas.width / 2, -canvas.height / 2);
-        // ------------------------------------
-
-        // 変形された状態で、一時キャンバス（＝オリジナル画像）を描画します
         ctx.drawImage(tempCanvas, 0, 0);
-
-        ctx.restore(); // 保存しておいた描画設定を元に戻す
+        ctx.restore();
     }
 
     commitLayerTransform() {
         if (!this.isLayerTransforming) return;
-
-        // プレビューが既にキャンバスに描かれているので、
-        // ここでは変形モードを終了し、アンドゥ履歴に保存するだけでOKです。
         this.isLayerTransforming = false;
-        this.moveLayerImageData = null; // 記憶していたオリジナル画像は不要になるので解放
-        this.saveState(); // 現在のキャンバスの状態を履歴に保存
+        this.moveLayerImageData = null;
+        this.saveState();
     }
 
-    // CanvasManager内の既存の反転機能は、全体のtransform操作なので変更しません。
-    // レイヤー単位の反転はLayerManagerに移譲します。
     flipActiveLayerHorizontal() {
         console.warn("CanvasManager.flipActiveLayerHorizontal() は非推奨です。LayerManager.flipActiveLayerHorizontal() を使用してください。");
-        // このメソッドは使われなくなる想定ですが、もしどこかで呼ばれる場合は動作を保証するために残しておきます。
         if (!this.ctx) return;
         if (this.isLayerTransforming) {
             this.commitLayerTransform();
@@ -355,7 +366,6 @@ startLayerTransform() {
 
     flipActiveLayerVertical() {
         console.warn("CanvasManager.flipActiveLayerVertical() は非推奨です。LayerManager.flipActiveLayerVertical() を使用してください。");
-        // このメソッドは使われなくなる想定ですが、もしどこかで呼ばれる場合は動作を保証するために残しておきます。
         if (!this.ctx) return;
         if (this.isLayerTransforming) {
             this.commitLayerTransform();
@@ -370,26 +380,23 @@ startLayerTransform() {
         this.saveState();
     }
 
-saveState() {
-    const snapshot = this.app.layerManager.layers.map(layer => ({
-        name: layer.name,
-        width: layer.canvas.width,
-        height: layer.canvas.height,
-        imageData: layer.ctx.getImageData(0, 0, layer.canvas.width, layer.canvas.height)
-    }));
-
-    const state = {
-        layers: snapshot,
-        activeLayerIndex: this.app.layerManager.activeLayerIndex
-    };
-
-    if (this.historyIndex < this.history.length - 1) {
-        this.history = this.history.slice(0, this.historyIndex + 1);
+    saveState() {
+        const snapshot = this.app.layerManager.layers.map(layer => ({
+            name: layer.name,
+            width: layer.canvas.width,
+            height: layer.canvas.height,
+            imageData: layer.ctx.getImageData(0, 0, layer.canvas.width, layer.canvas.height)
+        }));
+        const state = {
+            layers: snapshot,
+            activeLayerIndex: this.app.layerManager.activeLayerIndex
+        };
+        if (this.historyIndex < this.history.length - 1) {
+            this.history = this.history.slice(0, this.historyIndex + 1);
+        }
+        this.history.push(state);
+        this.historyIndex++;
     }
-    this.history.push(state);
-    this.historyIndex++;
-}
-
 
     undo() {
         if (this.historyIndex > 0) {
@@ -397,6 +404,7 @@ saveState() {
             this.restoreState(this.history[this.historyIndex]);
         }
     }
+
     redo() {
         if (this.historyIndex < this.history.length - 1) {
             this.historyIndex++;
@@ -404,21 +412,17 @@ saveState() {
         }
     }
 
-restoreState(state) {
-    this.app.layerManager.clearAllLayersHard();
-
-    for (const layerData of state.layers) {
-        this.app.layerManager.addLayerFromData(layerData);
+    restoreState(state) {
+        this.app.layerManager.clearAllLayersHard();
+        for (const layerData of state.layers) {
+            this.app.layerManager.addLayerFromData(layerData);
+        }
+        this.app.layerManager.switchLayer(state.activeLayerIndex);
     }
-
-    this.app.layerManager.switchLayer(state.activeLayerIndex);
-}
-
 
     clearCanvas() {
         if (this.ctx) {
             this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-            // レイヤー0の場合は背景色で塗りつぶし直す
             if (this.app.layerManager.activeLayerIndex === 0) {
                 this.ctx.fillStyle = '#f0e0d6';
                 this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -433,12 +437,12 @@ restoreState(state) {
             const lw = layer.canvas.width;
             const lh = layer.canvas.height;
             layer.ctx.clearRect(0, 0, lw, lh);
-            if (index === 0) { // 背景レイヤーのみ背景色で塗りつぶす
+            if (index === 0) {
                 layer.ctx.fillStyle = '#f0e0d6';
                 layer.ctx.fillRect(0, 0, lw, lh);
             }
         });
-        this.saveState(); // 全クリアも履歴に保存
+        this.saveState();
     }
 
     flipHorizontal() {
@@ -466,29 +470,13 @@ restoreState(state) {
 
     normalizeTransform() {
         this.transform.rotation = ((this.transform.rotation % 3060) + 3060) % 3060;
-
         this.transform.flipX = this.transform.flipX >= 0 ? 1 : -1;
         this.transform.flipY = this.transform.flipY >= 0 ? 1 : -1;
-
         if (this.transform.flipX === -1 && this.transform.flipY === -1) {
             this.transform.rotation = (this.transform.rotation + 180) % 3060;
             this.transform.flipX = 1;
             this.transform.flipY = 1;
         }
-
-    /* ↓ここからコメントアウトします
-        if (Math.abs(this.transform.rotation - 270) < 0.1 && this.transform.flipX === -1) {
-            this.transform.rotation = 90;
-            this.transform.flipX = 1;
-            this.transform.flipY *= -1;
-        }
-
-        if (Math.abs(this.transform.rotation - 90) < 0.1 && this.transform.flipX === -1) {
-            this.transform.rotation = 270;
-            this.transform.flipX = 1;
-            this.transform.flipY *= -1;
-        }
-    ここまでコメントアウトします↑ */
     }
 
     resetView() {
@@ -498,37 +486,29 @@ restoreState(state) {
 
     handleWheel(e) {
         e.preventDefault();
-
         const now = Date.now();
         if (now - this.lastWheelTime < this.wheelThrottle) {
             return;
         }
         this.lastWheelTime = now;
-
         let deltaY = e.deltaY;
         if (Math.abs(deltaY) > 100) {
             deltaY = deltaY > 0 ? 100 : -100;
         }
         deltaY = Math.max(-30, Math.min(30, deltaY));
-
         if (this.isVDown) {
-            // 変形操作がまだ開始されていなければ、ここで開始します
             if (!this.isLayerTransforming) {
                 this.startLayerTransform();
             }
-
             if (e.shiftKey) {
-                // レイヤー回転
                 const degrees = deltaY > 0 ? -5 : 5;
-                this.layerTransform.rotation += degrees * Math.PI / 180; // ラジアンに変換して加算
+                this.layerTransform.rotation += degrees * Math.PI / 180;
             } else {
-                // レイヤー拡大縮小
                 const factor = deltaY > 0 ? 0.95 : 1.05;
                 this.layerTransform.scale = Math.max(0.1, Math.min(this.layerTransform.scale * factor, 10));
             }
-            this.applyLayerTransformPreview(); // プレビュー更新
+            this.applyLayerTransformPreview();
         } else {
-            // 既存のキャンバス全体の変形処理
             if (e.shiftKey) {
                 let degrees;
                 if (Math.abs(deltaY) > 20) {
@@ -549,7 +529,6 @@ restoreState(state) {
                 this.zoom(zoomFactor);
             }
         }
-
         if (this.wheelTimeout) {
             clearTimeout(this.wheelTimeout);
         }
@@ -600,7 +579,7 @@ restoreState(state) {
     }
 }
 
-// --- LayerManager (★改修箇所) ---
+// --- LayerManager (変更なし) ---
 class LayerManager {
     constructor(app) {
         this.app = app;
@@ -608,12 +587,9 @@ class LayerManager {
         this.activeLayerIndex = -1;
         this.canvasContainer = document.getElementById('canvas-container');
     }
-
     setupInitialLayers() {
         const initialCanvas = document.getElementById('drawingCanvas');
         if (!initialCanvas) return;
-
-        // レイヤー0 (背景) を設定
         const bgLayer = {
             canvas: initialCanvas,
             ctx: initialCanvas.getContext('2d'),
@@ -621,164 +597,110 @@ class LayerManager {
         };
         this.layers.push(bgLayer);
         const firstLayerCtx = bgLayer.ctx;
-        firstLayerCtx.fillStyle = '#f0e0d6'; // 指示された背景色
+        firstLayerCtx.fillStyle = '#f0e0d6';
         firstLayerCtx.fillRect(0, 0, initialCanvas.width, initialCanvas.height);
-        
-        // レイヤー1 (描画用) を追加
-        // addLayer()は新しいレイヤーを追加し、それをアクティブに設定します。
-        // すでに switchLayer(1) が呼ばれているので、重複を避けるためにコメントアウトまたは削除します。
-        // this.addLayer(); 
-        // 以下のように、直接レイヤーを追加し、その後アクティブレイヤーを明示的に設定する形にします。
         const baseCanvas = this.layers[0].canvas;
         const newCanvas = document.createElement('canvas');
         newCanvas.width = baseCanvas.width;
         newCanvas.height = baseCanvas.height;
         newCanvas.className = 'main-canvas';
-        
-        // レイヤー0のすぐ上に挿入
         this.canvasContainer.insertBefore(newCanvas, this.layers[0]?.canvas.nextSibling || null);
-
         const newLayer = {
             canvas: newCanvas,
             ctx: newCanvas.getContext('2d'),
-            name: `レイヤー ${this.layers.length}` // 一時的な名前
+            name: `レイヤー ${this.layers.length}`
         };
-        
-        this.layers.push(newLayer); // レイヤー配列の最後に新しいレイヤーを追加
-
+        this.layers.push(newLayer);
         newLayer.ctx.lineCap = 'round';
         newLayer.ctx.lineJoin = 'round';
-        
-        this.updateAllLayerZIndexes(); // Z-indexを更新
-        this.renameLayers(); // レイヤー名をインデックスに合わせて更新
-        this.switchLayer(1); // 明示的にレイヤー1をアクティブにする
-        this.app.canvasManager.saveState(); // 初期状態を履歴に保存
+        this.updateAllLayerZIndexes();
+        this.renameLayers();
+        this.switchLayer(1);
+        this.app.canvasManager.saveState();
     }
-
     addLayer() {
-        if (this.layers.length >= 99) { // レイヤー上限を仮で設定
+        if (this.layers.length >= 99) {
             alert("レイヤー数の上限に達しました。");
             return null;
         }
-
         const baseCanvas = this.layers[0].canvas;
         const newCanvas = document.createElement('canvas');
         newCanvas.width = baseCanvas.width;
         newCanvas.height = baseCanvas.height;
         newCanvas.className = 'main-canvas';
-        
-        // 新しいレイヤーはアクティブレイヤーのすぐ上に挿入
         const insertIndex = this.activeLayerIndex + 1;
-        // DOM上でも正しい位置に挿入する
         this.canvasContainer.insertBefore(newCanvas, this.layers[insertIndex]?.canvas || null);
-
         const newLayer = {
             canvas: newCanvas,
             ctx: newCanvas.getContext('2d'),
-            name: `レイヤー ${this.layers.length}` // 一時的な名前
+            name: `レイヤー ${this.layers.length}`
         };
-        
         this.layers.splice(insertIndex, 0, newLayer);
-        
         newLayer.ctx.lineCap = 'round';
         newLayer.ctx.lineJoin = 'round';
-        
         this.updateAllLayerZIndexes();
-        this.renameLayers(); // レイヤー名をインデックスに合わせて更新
-        this.switchLayer(insertIndex); // 新しく追加したレイヤーをアクティブに
-        this.app.canvasManager.saveState(); // レイヤー追加も履歴に
+        this.renameLayers();
+        this.switchLayer(insertIndex);
+        this.app.canvasManager.saveState();
         return newLayer;
     }
-
     deleteActiveLayer() {
         const indexToDelete = this.activeLayerIndex;
-
         if (indexToDelete === 0) {
             alert('背景レイヤーは削除できません。');
             return;
         }
         if (indexToDelete < 0 || indexToDelete >= this.layers.length) return;
-
-        // DOMからcanvasを削除
         const layerToRemove = this.layers[indexToDelete];
         this.canvasContainer.removeChild(layerToRemove.canvas);
-
-        // 配列から削除
         this.layers.splice(indexToDelete, 1);
-        
-        this.renameLayers(); // レイヤー名を更新
-
-        // 新しいアクティブレイヤーのインデックスを決定
-        // 削除されたレイヤーの一つ上、なければ一つ下のレイヤー（レイヤー0は除く）
+        this.renameLayers();
         let newActiveIndex = indexToDelete - 1;
-        if (newActiveIndex < 0) { // 削除したのがレイヤー1で、残りが背景だけの場合
-            newActiveIndex = 0; // 背景レイヤーをアクティブにする
-        } else if (newActiveIndex === 0 && this.layers.length > 1) { // 背景をアクティブにしない場合は、次のレイヤー
-            newActiveIndex = 1; // 背景の次のレイヤー
+        if (newActiveIndex < 0) {
+            newActiveIndex = 0;
+        } else if (newActiveIndex === 0 && this.layers.length > 1) {
+            newActiveIndex = 1;
         }
-        
         this.updateAllLayerZIndexes();
         this.switchLayer(newActiveIndex);
-        this.app.canvasManager.saveState(); // レイヤー削除も履歴に
+        this.app.canvasManager.saveState();
     }
-
     duplicateActiveLayer() {
         const activeLayer = this.getCurrentLayer();
         if (!activeLayer) return;
-
         const baseCanvas = this.layers[0].canvas;
         const newCanvas = document.createElement('canvas');
         newCanvas.width = baseCanvas.width;
         newCanvas.height = baseCanvas.height;
         newCanvas.className = 'main-canvas';
-
-        // アクティブレイヤーのすぐ上に挿入
         const insertIndex = this.activeLayerIndex + 1;
         this.canvasContainer.insertBefore(newCanvas, this.layers[insertIndex]?.canvas || null);
-
         const newLayer = {
             canvas: newCanvas,
             ctx: newCanvas.getContext('2d'),
-            name: `レイヤー ${this.layers.length}` // 一時的な名前
+            name: `レイヤー ${this.layers.length}`
         };
         this.layers.splice(insertIndex, 0, newLayer);
-
-        // 元のレイヤーの内容を新しいレイヤーにコピー
         newLayer.ctx.drawImage(activeLayer.canvas, 0, 0);
-
         newLayer.ctx.lineCap = 'round';
         newLayer.ctx.lineJoin = 'round';
-
         this.updateAllLayerZIndexes();
         this.renameLayers();
         this.switchLayer(insertIndex);
-        this.app.canvasManager.saveState(); // レイヤー複製も履歴に
+        this.app.canvasManager.saveState();
     }
-
     mergeDownActiveLayer() {
         const activeIndex = this.activeLayerIndex;
-        // レイヤー0（背景）またはレイヤー1（アクティブレイヤーが一つしかない場合）は合成不可
         if (activeIndex === 0 || this.layers.length <= 1) {
             alert('背景レイヤーは合成できません。または、合成できるレイヤーがありません。');
             return;
         }
-
         const activeLayer = this.layers[activeIndex];
-        const targetLayer = this.layers[activeIndex - 1]; // 直下のレイヤー
-
+        const targetLayer = this.layers[activeIndex - 1];
         if (!activeLayer || !targetLayer) return;
-
-        // 直下のレイヤーにアクティブレイヤーの内容を描画
         targetLayer.ctx.drawImage(activeLayer.canvas, 0, 0);
-
-        // アクティブレイヤーを削除
-        // deleteActiveLayerは履歴に保存するので、ここではsaveStateを呼ばない
-        this.deleteActiveLayer(); 
-        // deleteActiveLayer内でswitchLayerとrenameLayersが呼ばれるため、ここでは不要
-        // ただし、deleteActiveLayerのsaveStateが呼ばれるため、mergeDownの操作自体が履歴に残る
+        this.deleteActiveLayer();
     }
-
-    // レイヤー名をインデックスに合わせて再設定する
     renameLayers() {
         this.layers.forEach((layer, index) => {
             if (index === 0) {
@@ -788,7 +710,6 @@ class LayerManager {
             }
         });
     }
-
     switchLayer(index) {
         if (index < 0 || index >= this.layers.length) return;
         this.activeLayerIndex = index;
@@ -798,152 +719,98 @@ class LayerManager {
             this.layers.forEach((layer, i) => {
                 layer.canvas.style.pointerEvents = (i === index) ? 'auto' : 'none';
             });
-            // UIマネージャーにUI更新を依頼する
             if (this.app.layerUIManager) {
                 this.app.layerUIManager.renderLayers();
             }
         }
     }
-
     getCurrentLayer() {
         if (this.activeLayerIndex >= 0 && this.activeLayerIndex < this.layers.length) {
             return this.layers[this.activeLayerIndex];
         }
         return null;
     }
-
     updateAllLayerZIndexes() {
         this.layers.forEach((layer, index) => {
             layer.canvas.style.zIndex = index;
         });
     }
-
-    // ★★★ここから変更★★★
     flipActiveLayerHorizontal() {
         const activeLayer = this.getCurrentLayer();
         if (!activeLayer) {
-            console.warn('アクティブレイヤーが見つかりません'); // このwarnは残しました
+            console.warn('アクティブレイヤーが見つかりません');
             return;
         }
-        // 変形操作中の場合は一旦確定
         if (this.app.canvasManager.isLayerTransforming) {
             this.app.canvasManager.commitLayerTransform();
         }
         const canvas = activeLayer.canvas;
         const ctx = activeLayer.ctx;
-            
-        // 現在の描画設定を保存
         ctx.save();
-                
-        // globalCompositeOperationを確実にsource-overに設定
         ctx.globalCompositeOperation = 'source-over';
-                
-        // 画像データを取得
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                
-        // キャンバスをクリア
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-                
-        // 一時キャンバスを作成して反転処理
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = canvas.width;
         tempCanvas.height = canvas.height;
         const tempCtx = tempCanvas.getContext('2d');
-                
-        // 一時キャンバスに元画像を配置
         tempCtx.putImageData(imageData, 0, 0);
-                
-        // メインキャンバスで左右反転描画
         ctx.scale(-1, 1);
         ctx.translate(-canvas.width, 0);
         ctx.drawImage(tempCanvas, 0, 0);
-                
-        // 描画設定を復元
         ctx.restore();
-                
-        // アンドゥ履歴に保存
         this.app.canvasManager.saveState();
     }
-
     flipActiveLayerVertical() {
         const activeLayer = this.getCurrentLayer();
         if (!activeLayer) {
-            console.warn('アクティブレイヤーが見つかりません'); // このwarnは残しました
+            console.warn('アクティブレイヤーが見つかりません');
             return;
         }
-        // 変形操作中の場合は一旦確定
         if (this.app.canvasManager.isLayerTransforming) {
             this.app.canvasManager.commitLayerTransform();
         }
         const canvas = activeLayer.canvas;
         const ctx = activeLayer.ctx;
-            
-        // 現在の描画設定を保存
         ctx.save();
-                
-        // globalCompositeOperationを確実にsource-overに設定
         ctx.globalCompositeOperation = 'source-over';
-                
-        // 画像データを取得
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                
-        // キャンバスをクリア
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-                
-        // 一時キャンバスを作成して反転処理
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = canvas.width;
         tempCanvas.height = canvas.height;
         const tempCtx = tempCanvas.getContext('2d');
-                
-        // 一時キャンバスに元画像を配置
         tempCtx.putImageData(imageData, 0, 0);
-                
-        // メインキャンバスで上下反転描画
         ctx.scale(1, -1);
         ctx.translate(0, -canvas.height);
         ctx.drawImage(tempCanvas, 0, 0);
-                
-        // 描画設定を復元
         ctx.restore();
-                
-        // アンドゥ履歴に保存
         this.app.canvasManager.saveState();
     }
-    // ★★★ここまで変更★★★
-
-clearAllLayersHard() {
-    for (const layer of this.layers) {
-        this.canvasContainer.removeChild(layer.canvas);
+    clearAllLayersHard() {
+        for (const layer of this.layers) {
+            this.canvasContainer.removeChild(layer.canvas);
+        }
+        this.layers = [];
+        this.activeLayerIndex = -1;
     }
-    this.layers = [];
-    this.activeLayerIndex = -1;
+    addLayerFromData(data) {
+        const newCanvas = document.createElement('canvas');
+        newCanvas.width = data.width;
+        newCanvas.height = data.height;
+        newCanvas.className = 'main-canvas';
+        const ctx = newCanvas.getContext('2d');
+        ctx.putImageData(data.imageData, 0, 0);
+        this.canvasContainer.appendChild(newCanvas);
+        const newLayer = {
+            canvas: newCanvas,
+            ctx: ctx,
+            name: data.name
+        };
+        this.layers.push(newLayer);
+        this.renameLayers();
+    }
 }
-
-addLayerFromData(data) {
-    const newCanvas = document.createElement('canvas');
-    newCanvas.width = data.width;
-    newCanvas.height = data.height;
-    newCanvas.className = 'main-canvas';
-
-    const ctx = newCanvas.getContext('2d');
-    ctx.putImageData(data.imageData, 0, 0);
-
-    this.canvasContainer.appendChild(newCanvas);
-
-    const newLayer = {
-        canvas: newCanvas,
-        ctx: ctx,
-        name: data.name
-    };
-
-    this.layers.push(newLayer);
-    this.renameLayers();
-}
-
-
-}
-
 
 // --- PenSettingsManager, ColorManager, ToolManager, ToshinkaTegakiTool（ここから下は変更ありません） ---
 class PenSettingsManager {
@@ -952,7 +819,6 @@ class PenSettingsManager {
         this.currentSize = 1;
         this.sizes = Array.from(document.querySelectorAll('.size-btn')).map(btn => parseInt(btn.dataset.size));
         this.currentSizeIndex = this.sizes.indexOf(this.currentSize);
-
         this.bindEvents();
         this.updateSizeButtonVisuals();
     }
@@ -997,10 +863,8 @@ class ColorManager {
         this.subColor = '#f0e0d6';
         this.colors = Array.from(document.querySelectorAll('.color-btn')).map(btn => btn.dataset.color);
         this.currentColorIndex = this.colors.indexOf(this.mainColor);
-
         this.mainColorDisplay = document.getElementById('main-color-display');
         this.subColorDisplay = document.getElementById('sub-color-display');
-
         this.bindEvents();
         this.updateColorDisplays();
         document.querySelector(`[data-color="${this.mainColor}"]`)?.classList.add('active');
@@ -1070,7 +934,7 @@ class ToshinkaTegakiTool {
         this.canvasManager = null;
         this.penSettingsManager = null;
         this.layerManager = null;
-        this.layerUIManager = null; // UI Managerを追加
+        this.layerUIManager = null;
         this.initManagers();
     }
     initManagers() {
@@ -1083,14 +947,12 @@ class ToshinkaTegakiTool {
         this.toolManager.setTool('pen');
         this.penSettingsManager.setSize(1);
         this.colorManager.setColor(this.colorManager.mainColor);
-        // this.canvasManager.saveState(); // 初期化時にsaveStateを呼ぶのはsetupInitialLayersの後で良い
     }
 }
 window.addEventListener('DOMContentLoaded', () => {
     if (!window.toshinkaTegakiInitialized) {
         window.toshinkaTegakiInitialized = true;
         window.toshinkaTegakiTool = new ToshinkaTegakiTool();
-        // 初期状態の保存を確実にするため、ここで一度saveStateを呼ぶ
-        window.toshinkaTegakiTool.canvasManager.saveState(); 
+        window.toshinkaTegakiTool.canvasManager.saveState();
     }
 });

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ToshinkaTegakiTool-v1-5</title>
+    <title>ToshinkaTegakiTool-v1-5 (rev1:線補正)</title>
     <style>
         body {
             margin: 0;
@@ -275,15 +275,14 @@
             background-color: var(--light-brown-border);
         }
 
-        /* レイヤーサイドバーのスタイル */
-        .right-sidebar { /* 変更 */
+        .right-sidebar {
             position: absolute;
             top: 30px;
-            right: 0; /* 変更 */
-            width: 120px; /* 参考画像に合わせる */
-            height: calc(100vh - 30px); /* 画面全体に広げる */
-            background-color: rgba(0, 0, 0, 0); /* 透過 */
-            border-left: 0px solid var(--light-brown-border); /* 変更 */
+            right: 0;
+            width: 120px;
+            height: calc(100vh - 30px);
+            background-color: rgba(0, 0, 0, 0);
+            border-left: 0px solid var(--light-brown-border);
             display: flex;
             flex-direction: column;
             padding: 5px;
@@ -295,7 +294,7 @@
             flex-grow: 1;
             overflow-y: auto;
             border: 0px solid var(--light-brown-border);
-            background-color: rgba(0, 0, 0, 0); /* リスト部分も透過 */
+            background-color: rgba(0, 0, 0, 0);
             border-radius: 3px;
             margin-bottom: 5px;
         }
@@ -306,7 +305,7 @@
             padding: 5px;
             border-bottom: 1px solid var(--light-brown-border);
             cursor: pointer;
-            background-color: rgba(255, 255, 255, 0.8); /* 各アイテムの背景 */
+            background-color: rgba(255, 255, 255, 0.8);
         }
 
         .layer-item:last-child {
@@ -325,7 +324,7 @@
             color: var(--dark-brown);
         }
         
-        #layer-controls { /* 新規追加 */
+        #layer-controls {
             display: flex;
             gap: 2px;
             justify-content: center;
@@ -333,14 +332,12 @@
             padding-bottom: 5px;
         }
 
-        #layer-controls .tool-btn { /* 既存のtool-btnスタイルを再利用 */
+        #layer-controls .tool-btn {
             width: 28px;
             height: 28px;
             font-size: 18px;
         }
-
     </style>
-
 </head>
 <body>
     <div class="main-container">
@@ -350,7 +347,6 @@
                 <button class="tool-btn" id="redo-btn" title="やり直し (Ctrl+Y)">↷</button>
                 <button class="tool-btn" id="clear-btn" title="アクティブレイヤーを消去 (Delete)">&#128465;</button>
             </div>
-
             <div class="canvas-ops-group" style="display: flex; gap: 2px;">
                 <button class="top-btn" id="flip-h-btn" title="左右反転 (H)">⇄</button>
                 <button class="top-btn" id="flip-v-btn" title="上下反転 (Shift+H)">⇅</button>
@@ -360,7 +356,6 @@
                 <button class="top-btn" id="rotate-ccw-btn" title="反時計回りに回転 (Shift+Wheel)">↺</button>
                 <button class="top-btn" id="reset-view-btn" title="表示リセット (1)">&#9750;</button>
             </div>
-            
             <button class="top-btn close-btn" id="close-btn">×閉じる</button>
         </div>
 
@@ -372,23 +367,18 @@
                 <div class="color-btn" data-color="#e9c2ba" style="background-color: #e9c2ba;" title="薄茶"></div>
                 <div class="color-btn" data-color="#f0e0d6" style="background-color: #f0e0d6;" title="肌色"></div>
             </div>
-
             <div class="color-mode-display" title="メイン/サブカラー切り替え (X)">
                 <div id="main-color-display" class="color-square main-color-square"></div>
                 <div id="sub-color-display" class="color-square sub-color-square"></div>
             </div>
-
             <div class="separator"></div>
-
             <div class="tools">
                 <button class="tool-btn active" id="pen-tool" title="ペン (P)">&#9998;</button>
                 <button class="tool-btn" id="eraser-tool" title="消しゴム (E)">&#9003;</button>
                 <button class="tool-btn" id="bucket-tool" title="塗りつぶし (G)">&#x1F5F3;</button>
                 <button class="tool-btn" id="move-tool" title="レイヤー移動 (V)">&#10021;</button>
             </div>
-
             <div class="separator"></div>
-
             <div class="sizes">
                 <button class="size-btn active" data-size="1">
                     <div class="size-indicator"><div class="size-dot" style="width: 2px; height: 2px;"></div></div>
@@ -427,14 +417,12 @@
                 <button class="tool-btn" id="delete-layer-btn" title="アクティブレイヤーを削除">🗑️</button>
             </div>
             <div class="layer-list" id="layer-list">
-                </div>
+            </div>
         </div>
     </div>
 
-    
-    <script src="core-v1-5.js"></script>
-    <script src="ui-v1-5.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/osuushi/Smooth.js/smooth.js"></script>
 
-
+    <script src="core-v1-5rev1.js"></script> <script src="ui-v1-5.js"></script>
 </body>
 </html>
