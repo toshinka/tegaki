@@ -121,8 +121,8 @@ javascript:((d) => {
             <div class="layer-list" id="layer-list"></div>
         </div>
     </div>
-    <script src="https://toshinka.github.io/tegaki/v1-5/core-v1-5rev2.js"></script> 
-    <script src="https://toshinka.github.io/tegaki/v1-5/ui-v1-5rev2.js"></script>
+    <script src="https://toshinka.github.io/tegaki/v1-5/core-v1-5rev3.js"></script> 
+    <script src="https://toshinka.github.io/tegaki/v1-5/ui-v1-5rev3.js"></script>
 </body>
 </html>`;
 
