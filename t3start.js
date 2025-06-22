@@ -2,7 +2,7 @@ javascript:((async (d) => {
     /*
      * ToshinkaTegakiTool Loader for Futaba Channel
      * v3.0 (srcdoc + fetch version)
-     * このファイルは t3start-rev3.js です。
+     * このファイルは t3start-over.js です。
      * 動作安定性を確保するため、最初のバージョンのsrcdoc方式に回帰しつつ、
      * fetchによるHTMLの外部読み込みを実現します。
      */
