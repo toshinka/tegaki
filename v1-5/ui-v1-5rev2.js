@@ -43,9 +43,10 @@ class TopBarManager {
         document.getElementById('rotate-ccw-btn').addEventListener('click', () => this.app.canvasManager.rotate(-15));
         document.getElementById('reset-view-btn').addEventListener('click', () => this.app.canvasManager.resetView());
     }
-    if (confirm('描画内容を手書きJSに転写して閉じますか？')) {
-        // 親ウィンドウに完成画像を送信する専用の処理を呼び出す
-        this.app.canvasManager.transferToParent();
+    closeTool() {
+        if (confirm('ウィンドウを閉じますか？')) {
+            window.close();
+        }
     }
 }
 
@@ -138,7 +139,7 @@ handleKeyDown(e) {
         // Ctrl + Shift の組み合わせ
         if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
             switch (e.key.toLowerCase()) {
-                case 'l': // Ctrl + Shift + L で新規レイヤー
+                case '.': // Ctrl + Shift + . で新規レイヤー
                     this.app.layerManager.addLayer();
                     handled = true;
                     break;
