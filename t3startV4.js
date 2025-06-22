@@ -71,6 +71,9 @@ javascript:((async (d) => {
         iframe.id = 'toshinka-tegaki-tool-iframe';
         iframe.style.cssText = `position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; border: none; z-index: 9999999999; background-color: rgba(0, 0, 0, 0.3);`;
         iframe.srcdoc = patchedToolHtml; // HTML文字列を直接埋め込む
++        // ★ 親ドキュメントのスクロールバーを隠す
++        const prevOverflow = d.body.style.overflow;
++        d.body.style.overflow = 'hidden';
 
         // *** ここから追加・変更する部分 ***
 
@@ -115,7 +118,9 @@ javascript:((async (d) => {
                                 // ツールが閉じられた際の処理 (export時もツールは閉じる)
                                 iframe.remove();
                                 window.removeEventListener('message', messageHandler);
-                                // *** ここも追加 ***
+                                iframe.remove();
+                                d.body.style.overflow = prevOverflow; // スクロールバー設定を戻す
+                                window.removeEventListener('message', messageHandler);
                                 // 親ページのスクロールバーを元に戻す
                                 d.body.style.overflow = originalBodyOverflow;
                                 d.documentElement.style.overflow = originalHtmlOverflow;
