@@ -1,4 +1,4 @@
-// Toshinka Tegaki Tool core.js v1.5rev7
+// Toshinka Tegaki Tool core.js v1.5rev8
 // 
 
 // --- 2D行列の合成・逆行列・座標適用 ---

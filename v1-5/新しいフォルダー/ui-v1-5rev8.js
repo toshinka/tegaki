@@ -1,4 +1,4 @@
-// ui-v1-5rev7.js
+// ui-v1-5rev8.js
 
 class TopBarManager {
     constructor(app) {

@@ -1,4 +1,4 @@
-// ui-v1-5rev7.js
+// ui-v1-5rev5.js
 
 class TopBarManager {
     constructor(app) {
@@ -44,8 +44,8 @@ class TopBarManager {
 
         document.getElementById('flip-h-btn').addEventListener('click', () => this.app.canvasManager.flipHorizontal());
         document.getElementById('flip-v-btn').addEventListener('click', () => this.app.canvasManager.flipVertical());
-        document.getElementById('zoom-in-btn').addEventListener('click', () => this.app.canvasManager.zoom(1.5));
-        document.getElementById('zoom-out-btn').addEventListener('click', () => this.app.canvasManager.zoom(1/1.5));
+        document.getElementById('zoom-in-btn').addEventListener('click', () => this.app.canvasManager.zoom(1.2));
+        document.getElementById('zoom-out-btn').addEventListener('click', () => this.app.canvasManager.zoom(1/1.2));
         document.getElementById('rotate-btn').addEventListener('click', () => this.app.canvasManager.rotate(15));
         document.getElementById('rotate-ccw-btn').addEventListener('click', () => this.app.canvasManager.rotate(-15));
         document.getElementById('reset-view-btn').addEventListener('click', () => this.app.canvasManager.resetView());
@@ -194,8 +194,8 @@ handleKeyDown(e) {
                 case '}': case ']': this.app.colorManager.changeColor(true); handled = true; break;
                 case '{': case '[': this.app.colorManager.changeColor(false); handled = true; break;
                 case 'h': this.app.canvasManager.flipVertical(); handled = true; break;
-                case 'arrowup': this.app.canvasManager.zoom(2.00); handled = true; break;
-                case 'arrowdown': this.app.canvasManager.zoom(1/2.00); handled = true; break;
+                case 'arrowup': this.app.canvasManager.zoom(1.20); handled = true; break;
+                case 'arrowdown': this.app.canvasManager.zoom(1/1.20); handled = true; break;
                 case 'arrowleft': this.app.canvasManager.rotate(-45); handled = true; break;
                 case 'arrowright': this.app.canvasManager.rotate(45); handled = true; break;
                 default: handled = false;
@@ -213,8 +213,8 @@ handleKeyDown(e) {
                 case 'g': this.app.toolManager.setTool('bucket'); handled = true; break;
                 case 'h': this.app.canvasManager.flipHorizontal(); handled = true; break;
                 case 'home': this.app.canvasManager.resetView(); handled = true; break;
-                case 'arrowup': this.app.canvasManager.zoom(1.50); handled = true; break;
-                case 'arrowdown': this.app.canvasManager.zoom(1/1.50); handled = true; break;
+                case 'arrowup': this.app.canvasManager.zoom(1.05); handled = true; break;
+                case 'arrowdown': this.app.canvasManager.zoom(1/1.05); handled = true; break;
                 case 'arrowleft': this.app.canvasManager.rotate(-5); handled = true; break;
                 case 'arrowright': this.app.canvasManager.rotate(5); handled = true; break;
                 case 'delete':
