@@ -8,7 +8,7 @@
   }
   // iframeの作成
 const iframe = document.createElement('iframe');
-iframe.src = 'https://toshinka.github.io/tegaki/v1-5/ToshinkaTegakiTool-v1-5rev2.html'; // ←絶対必要
+iframe.src = 'https://toshinka.github.io/tegaki/v1-5/ToshinkaTegakiTool-v1-5rev3.html'; // ←絶対必要
 iframe.id = 'toshinka-tegaki-iframe';
 iframe.style.position = "fixed";
 iframe.style.top = 0;
