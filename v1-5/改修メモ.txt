@@ -2,7 +2,10 @@
 rev1    Bezierによる線補正＋筆圧対応拡張
 rev1.1  保存ボタン追加
 rev2　  二次裏連携
-rev3　　rAF方式＋Smooth.js補間のハイブリッド
+rev3　　smooth.jsによる線補正
+rev4　　「lineTo（直線を描け！）」を「quadraticCurveTo（曲線を描け！）」に差し替え　
+rev5　　Pointer Events API 
+
 
 📌 今回の補間候補
 1️⃣ Bezier曲線補間
@@ -17,3 +20,5 @@ rev1：リアルタイム直線＋筆圧
 rev2：Smooth.jsのCubic補間版
 
 
+requestAnimationFrameでリアルタイム線補正
+requestAnimationFrame＋SAI風線補正

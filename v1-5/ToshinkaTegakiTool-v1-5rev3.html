@@ -343,10 +343,10 @@
     <div class="main-container">
         <div class="top-toolbar">
             <div class="top-left-controls">
-                <button id="saveMergedButton">📜</button>
+                <button id="saveMergedButton"title="PNG保存">📜</button>
                 <button class="tool-btn" id="undo-btn" title="元に戻す (Ctrl+Z)">↶</button>
                 <button class="tool-btn" id="redo-btn" title="やり直し (Ctrl+Y)">↷</button>
-                <button class="tool-btn" id="clear-btn" title="アクティブレイヤーを消去 (Delete)">&#128465;</button>
+                <button class="tool-btn" id="clear-btn" title="アクティブレイヤーを消去(ctrl+del) (Delete)">&#128465;</button>
             </div>
             <div class="canvas-ops-group" style="display: flex; gap: 2px;">
                 <button class="top-btn" id="flip-h-btn" title="左右反転 (H)">⇄</button>
@@ -355,7 +355,7 @@
                 <button class="top-btn" id="zoom-in-btn" title="拡大 (↑ / Wheel Up)">＋</button>
                 <button class="top-btn" id="rotate-btn" title="回転 (Shift+Wheel)">↻</button>
                 <button class="top-btn" id="rotate-ccw-btn" title="反時計回りに回転 (Shift+Wheel)">↺</button>
-                <button class="top-btn" id="reset-view-btn" title="表示リセット (1)">&#9750;</button>
+                <button class="top-btn" id="reset-view-btn" title="表示リセット (home)">&#9750;</button>
             </div>
             <button class="top-btn close-btn" id="close-btn">×閉じる</button>
         </div>
@@ -377,7 +377,7 @@
                 <button class="tool-btn active" id="pen-tool" title="ペン (P)">&#9998;</button>
                 <button class="tool-btn" id="eraser-tool" title="消しゴム (E)">&#9003;</button>
                 <button class="tool-btn" id="bucket-tool" title="塗りつぶし (G)">&#x1F5F3;</button>
-                <button class="tool-btn" id="move-tool" title="レイヤー移動 (V)">&#10021;</button>
+                <button class="tool-btn" id="move-tool" title="レイヤー移動 (V+ドラッグ)">&#10021;</button>
             </div>
             <div class="separator"></div>
             <div class="sizes">
@@ -412,10 +412,10 @@
 
         <div class="right-sidebar">
             <div id="layer-controls">
-                <button class="tool-btn" id="add-layer-btn" title="新規レイヤーを追加">+</button>
-                <button class="tool-btn" id="duplicate-layer-btn" title="アクティブレイヤーを複製">📋</button>
-                <button class="tool-btn" id="merge-layer-btn" title="アクティブレイヤーを結合">⬇️</button>
-                <button class="tool-btn" id="delete-layer-btn" title="アクティブレイヤーを削除">🗑️</button>
+                <button class="tool-btn" id="add-layer-btn" title="新規レイヤーを追加(ctrl+insert)">+</button>
+                <button class="tool-btn" id="duplicate-layer-btn" title="アクティブレイヤーを複製(ctrl+shift+,)">📋</button>
+                <button class="tool-btn" id="merge-layer-btn" title="アクティブレイヤーを結合(ctrl+shift+M)">⬇️</button>
+                <button class="tool-btn" id="delete-layer-btn" title="アクティブレイヤーを削除(ctrl+del)">🗑️</button>
             </div>
             <div class="layer-list" id="layer-list">
             </div>

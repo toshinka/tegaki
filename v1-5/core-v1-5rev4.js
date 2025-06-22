@@ -217,7 +217,7 @@ class CanvasManager {
         try { document.documentElement.setPointerCapture(e.pointerId); } catch (err) {}
     }
 
-onPointerMove(e) {
+    onPointerMove(e) {
       if (!e.buttons) return;
     
       if (this.isPanning) {
@@ -238,43 +238,15 @@ onPointerMove(e) {
       }
       
       if (this.isDrawing) {
-        // if (e.movementX === 0 && e.movementY === 0) return; // この行はコメントアウトのままでOKです
-        
-        const currentCoords = this.getCanvasCoordinates(e);
-        const currentPressure = e.pressure === 0 ? 1.0 : e.pressure || 1.0; // ★ 変更: 筆圧を定義
+        if (e.movementX === 0 && e.movementY === 0) return;
 
-        // ★ 追加: 前回の点から現在の点までの距離を計算し、必要に応じて中間点を補完する
-        if (this.points.length > 0) { // 最初の点を除いて処理
-            const lastPoint = this.points[this.points.length - 1];
-            const dist = Math.sqrt(
-                Math.pow(currentCoords.x - lastPoint.x, 2) +
-                Math.pow(currentCoords.y - lastPoint.y, 2)
-            );
-
-            // 補間する距離の閾値 (ピクセル単位)。この値を小さくすると線が密になりますが、処理は重くなります。
-            // 2〜3ピクセル程度が一般的です。
-            const interpolationThreshold = 2; // ★ 調整可能: この値を変更して試してください
-
-            if (dist > interpolationThreshold) {
-                const steps = Math.ceil(dist / interpolationThreshold);
-                
-                for (let i = 1; i < steps; i++) {
-                    const t = i / steps; // 補間比率 (0から1)
-                    const interpolatedX = lastPoint.x + (currentCoords.x - lastPoint.x) * t;
-                    const interpolatedY = lastPoint.y + (currentCoords.y - lastPoint.y) * t;
-                    // 筆圧も線形補間
-                    const interpolatedPressure = lastPoint.pressure + (currentPressure - lastPoint.pressure) * t;
-                    
-                    this.points.push({
-                        x: interpolatedX,
-                        y: interpolatedY,
-                        pressure: interpolatedPressure
-                    });
-                }
-            }
-        }
-        // 現在のイベントからの点を常にリストの最後に追加
-        this.points.push({ x: currentCoords.x, y: currentCoords.y, pressure: currentPressure });
+        const coords = this.getCanvasCoordinates(e);
+        const newPoint = {
+          x: coords.x,
+          y: coords.y,
+          pressure: e.pressure === 0 ? 1.0 : e.pressure || 1.0
+        };
+        this.points.push(newPoint);
       }
     }
 

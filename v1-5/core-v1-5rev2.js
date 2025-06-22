@@ -1,6 +1,6 @@
 // Toshinka Tegaki Tool core.js 最終安定版
 // （transform-origin:center＋逆行列座標変換・Space+ドラッグ/回転/反転/拡縮/移動すべて対応）
-// ★ v1-5改：Smooth.jsによる線補正＋筆圧対応拡張版 ★
+// 
 
 // --- 2D行列の合成・逆行列・座標適用 ---
 function multiplyMatrix(a, b) {

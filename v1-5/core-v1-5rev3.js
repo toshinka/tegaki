@@ -1,5 +1,4 @@
-// Toshinka Tegaki Tool core.js 最終安定版
-// （transform-origin:center＋逆行列座標変換・Space+ドラッグ/回転/反転/拡縮/移動すべて対応）
+// Toshinka Tegaki Tool core.js v1.5rev3 (requestAnimationFrame + Smooth.js対応版)
 // ★ v1-5改：Smooth.jsによる線補正＋筆圧対応拡張版 ★
 
 // --- 2D行列の合成・逆行列・座標適用 ---
@@ -78,6 +77,11 @@ class CanvasManager {
         this.wheelTimeout = null;
         this.lastWheelTime = 0;
         this.wheelThrottle = 50;
+        
+        // ★ 線補正用のプロパティを追加
+        this.animationFrameId = null;
+        this.lastRenderedPointIndex = 0;
+        this.smoother = null;
 
         // レイヤー操作
         this.layerTransform = {
@@ -97,7 +101,7 @@ class CanvasManager {
             top: 0
         };
 
-        // レイヤー配列の初期化 ←ここ追加！
+        // レイヤー配列の初期化
         this.layers = [];
 
         // フレームとイベントセットアップ
@@ -105,25 +109,22 @@ class CanvasManager {
         this.bindEvents();
     }
 
-    // ★ 全レイヤー統合して保存する
-exportMergedImage() {
-    const mergedCanvas = document.createElement('canvas');
-    mergedCanvas.width = this.canvas.width;
-    mergedCanvas.height = this.canvas.height;
-    const mergedCtx = mergedCanvas.getContext('2d');
+    exportMergedImage() {
+        const mergedCanvas = document.createElement('canvas');
+        mergedCanvas.width = this.canvas.width;
+        mergedCanvas.height = this.canvas.height;
+        const mergedCtx = mergedCanvas.getContext('2d');
 
-    // 全レイヤー描画 (LayerManager経由)
-    this.app.layerManager.layers.forEach(layer => {
-        mergedCtx.drawImage(layer.canvas, 0, 0);
-    });
+        this.app.layerManager.layers.forEach(layer => {
+            mergedCtx.drawImage(layer.canvas, 0, 0);
+        });
 
-    // PNGとして保存
-    const dataURL = mergedCanvas.toDataURL('image/png');
-    const link = document.createElement('a');
-    link.href = dataURL;
-    link.download = 'merged_image.png';
-    link.click();
-}
+        const dataURL = mergedCanvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.href = dataURL;
+        link.download = 'merged_image.png';
+        link.click();
+    }
 
     createAndDrawFrame() {
         this.frameCanvas = document.createElement('canvas');
@@ -152,26 +153,22 @@ exportMergedImage() {
         frameCtx.stroke();
     }
 
-bindEvents() {
-    this.canvasArea.addEventListener('pointerdown', this.onPointerDown.bind(this));
-    document.addEventListener('pointermove', this.onPointerMove.bind(this));
-    document.addEventListener('pointerup', this.onPointerUp.bind(this));
-    this.canvasArea.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
+    bindEvents() {
+        this.canvasArea.addEventListener('pointerdown', this.onPointerDown.bind(this));
+        document.addEventListener('pointermove', this.onPointerMove.bind(this));
+        document.addEventListener('pointerup', this.onPointerUp.bind(this));
+        this.canvasArea.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
 
-    // 保存ボタンイベント追加
-const saveBtn = document.getElementById('saveMergedButton');
-if (saveBtn) {
-    saveBtn.addEventListener('click', () => {
-        this.exportMergedImage();
-    });
-} else {
-    console.warn('保存ボタンが見つからないよ');
-}
+        const saveBtn = document.getElementById('saveMergedButton');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', () => {
+                this.exportMergedImage();
+            });
+        } else {
+            console.warn('保存ボタンが見つからないよ');
+        }
+    }
 
-}
-
-
-    // 各種設定
     setActiveLayerContext(canvas, ctx) {
         this.canvas = canvas;
         this.ctx = ctx;
@@ -181,8 +178,7 @@ if (saveBtn) {
     setCurrentColor(color) { this.currentColor = color; }
     setCurrentSize(size) { this.currentSize = size; }
 
-
-
+    // ★★★ onPointerDown: 描画開始処理を修正 ★★★
     onPointerDown(e) {
         if (this.isSpaceDown) {
             this.dragStartX = e.clientX;
@@ -203,7 +199,6 @@ if (saveBtn) {
         }
         if (!this.canvas || e.target !== this.canvas) return;
 
-        // ★【変更点】ここから描画処理の変更
         const coords = this.getCanvasCoordinates(e);
 
         if (this.currentTool === 'bucket') {
@@ -212,98 +207,174 @@ if (saveBtn) {
         } else {
             this.isDrawing = true;
             this.points = []; // 描画点の配列を初期化
-            // 座標と筆圧（e.pressure）を配列に追加。筆圧が取れない場合は1.0とする
+            
+            // 最初の点を追加
             this.points.push({ x: coords.x, y: coords.y, pressure: e.pressure === 0 ? 1.0 : e.pressure || 1.0 });
+            
+            // 点が1つの場合を描画しておく（クリック操作）
+            this.drawDot(this.points[0]);
+
+            // 補正描画ループを開始
+            this.startSmoothDrawing();
         }
-        // ★ ここまで描画処理の変更
 
         try { document.documentElement.setPointerCapture(e.pointerId); } catch (err) {}
     }
 
-onPointerMove(e) {
-    if (!e.buttons) return;
-
-    if (this.isPanning) {
+    // ★★★ onPointerMove: 座標をpoints配列に追加するだけに修正 ★★★
+    onPointerMove(e) {
+      if (!e.buttons) return;
+    
+      if (this.isPanning) {
         const dx = e.clientX - this.dragStartX;
         const dy = e.clientY - this.dragStartY;
         this.transform.left = this.canvasStartX + dx;
         this.transform.top = this.canvasStartY + dy;
         this.applyTransform();
-    }
-    else if (this.isLayerTransforming && e.buttons) {
+        return;
+      }
+      
+      if (this.isLayerTransforming) {
         const coords = this.getCanvasCoordinates(e);
         this.layerTransform.translateX = Math.round(coords.x - this.moveLayerStartX);
         this.layerTransform.translateY = Math.round(coords.y - this.moveLayerStartY);
         this.applyLayerTransformPreview();
-    }
-    // ★ここ！描画なし・座標と筆圧のみ記録
-    else if (this.isDrawing) {
+        return;
+      }
+      
+      if (this.isDrawing) {
+        // ポインターが動いていない場合は処理しない
+        if (e.movementX === 0 && e.movementY === 0) return;
+
         const coords = this.getCanvasCoordinates(e);
-        this.points.push({
-            x: coords.x,
-            y: coords.y,
-            pressure: e.pressure === 0 ? 1.0 : e.pressure || 1.0
-        });
+        const newPoint = {
+          x: coords.x,
+          y: coords.y,
+          pressure: e.pressure === 0 ? 1.0 : e.pressure || 1.0
+        };
+        this.points.push(newPoint);
+      }
     }
-}
 
-
-
-
-onPointerUp(e) {
-    try {
+    // ★★★ onPointerUp: 描画終了処理を修正 ★★★
+    onPointerUp(e) {
+      try {
         if (document.documentElement.hasPointerCapture(e.pointerId)) {
-            document.documentElement.releasePointerCapture(e.pointerId);
+          document.documentElement.releasePointerCapture(e.pointerId);
         }
-    } catch (err) {}
-
-    if (this.isDrawing) {
+      } catch (err) {}
+    
+      if (this.isDrawing) {
         this.isDrawing = false;
-
-        if (this.points.length < 2) {
-            if (this.points.length === 1) {
-                const p = this.points[0];
-                this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
-                this.ctx.fillStyle = this.currentColor;
-                const radius = (this.currentSize * p.pressure) / 2;
-                this.ctx.beginPath();
-                this.ctx.arc(p.x, p.y, Math.max(0.1, radius), 0, Math.PI * 2, true);
-                this.ctx.fill();
-            }
-        } else {
-            const path = new Smooth(this.points, {
-                method: Smooth.METHOD_CUBIC,
-                cubicTension: Smooth.CUBIC_TENSION_CATMULL_ROM
-            });
-
-            this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
-            this.ctx.strokeStyle = this.currentColor;
-            this.ctx.lineCap = 'round';
-            this.ctx.lineJoin = 'round';
-
-            const step = 0.05;
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.points[0].x, this.points[0].y);
-
-            for (let i = 0; i < this.points.length - 1; i++) {
-                for (let t = 0; t <= 1; t += step) {
-                    const p = path.value(i, t);
-                    this.ctx.lineTo(p.x, p.y);
-                }
-            }
-
-            this.ctx.stroke();
-        }
-
-        this.points = [];
+        
+        // 描画ループを停止
+        this.stopSmoothDrawing();
+    
+        // 残りの点を描画して線を完成させる
+        this.renderSmoothedLine(true); // trueは最終描画フラグ
+    
+        // 履歴に保存
         this.saveState();
+        
+        // ポイントをクリア
+        this.points = [];
+        this.lastRenderedPointIndex = 0;
+      }
+    
+      if (this.isLayerTransforming) {
+        this.commitLayerTransform();
+      }
+      if (this.isPanning) {
+        this.isPanning = false;
+      }
     }
 
-    if (this.isLayerTransforming) this.commitLayerTransform();
-    if (this.isPanning) this.isPanning = false;
-}
+    // --- ここから下は、線補正のために追加・修正したヘルパー関数です ---
 
+    // ★ 新しいメソッド: 点を描画する (クリック操作用)
+    drawDot(p) {
+        if (!this.ctx) return;
+        this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
+        this.ctx.fillStyle = this.currentColor;
+        const radius = (this.currentSize * p.pressure) / 2;
+        this.ctx.beginPath();
+        this.ctx.arc(p.x, p.y, Math.max(0.1, radius), 0, Math.PI * 2, true);
+        this.ctx.fill();
+    }
+    
+    // ★ 新しいメソッド: 補正描画ループを開始
+    startSmoothDrawing() {
+        this.lastRenderedPointIndex = 0;
+        this.smoother = new Smooth(this.points, { method: 'cubic' });
+        if (!this.animationFrameId) {
+            this.animationFrameId = requestAnimationFrame(this.smoothDrawLoop.bind(this));
+        }
+    }
 
+    // ★ 新しいメソッド: 補正描画ループを停止
+    stopSmoothDrawing() {
+        if (this.animationFrameId) {
+            cancelAnimationFrame(this.animationFrameId);
+            this.animationFrameId = null;
+        }
+    }
+
+    // ★ 新しいメソッド: 補正描画のメインループ (requestAnimationFrameで呼び出される)
+    smoothDrawLoop() {
+        if (this.isDrawing) {
+            this.renderSmoothedLine(false); // isFinal=falseで中間描画
+            this.animationFrameId = requestAnimationFrame(this.smoothDrawLoop.bind(this));
+        }
+    }
+
+    // ★ 新しいメソッド: 補正された線を描画する
+    renderSmoothedLine(isFinal) {
+        if (!this.smoother || this.points.length < 2) return;
+        
+        this.smoother.points = this.points; // smootherに最新のポイント配列を渡す
+
+        this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
+        this.ctx.strokeStyle = this.currentColor;
+        this.ctx.lineCap = 'round';
+        this.ctx.lineJoin = 'round';
+
+        const points = this.points;
+        const maxIndex = isFinal ? points.length - 1 : points.length - 2;
+
+        while (this.lastRenderedPointIndex < maxIndex) {
+            const i = this.lastRenderedPointIndex;
+            if (i === 0) {
+                this.lastRenderedPointIndex++;
+                continue;
+            }
+
+            const p1 = points[i];
+            
+            // 最後の描画でなければ、最初の点をp0として描画する
+            const lastCurvePoint = (i === 1) ? points[0] : this.smoother.value(i - 1, 0);
+
+            // セグメント(p_i-1 から p_i)を複数の細かい線で描画
+            const segments = 15; // 1セグメントあたりの分割数。大きいほど滑らか
+            
+            for (let j = 1; j <= segments; j++) {
+                const t = j / segments;
+                const curvePoint = this.smoother.value(i - 1, t);
+                
+                this.ctx.lineWidth = Math.max(0.1, this.currentSize * curvePoint.pressure);
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(lastCurvePoint.x, lastCurvePoint.y);
+                this.ctx.lineTo(curvePoint.x, curvePoint.y);
+                this.ctx.stroke();
+
+                lastCurvePoint.x = curvePoint.x;
+                lastCurvePoint.y = curvePoint.y;
+            }
+            this.lastRenderedPointIndex++;
+        }
+    }
+
+    // --- ここから下は、既存のメソッドです (変更なし) ---
 
     getCanvasCoordinates(e) {
         const containerRect = this.canvas.getBoundingClientRect();
@@ -547,7 +618,7 @@ onPointerUp(e) {
             this.applyLayerTransformPreview();
         } else {
         if (e.shiftKey) {
-          const degrees = -deltaY * 0.2; // マイナス付けるとホイール方向と回転が揃う
+          const degrees = -deltaY * 0.2;
           this.rotate(degrees);
             } else {
                 let zoomFactor;

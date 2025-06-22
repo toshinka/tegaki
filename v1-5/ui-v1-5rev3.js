@@ -1,7 +1,4 @@
-// ui.js
-// v+ドラッグはv押下中のみレイヤー移動モード
-// それ以外は全てキャンバス全体transform操作
-// Shift+Hで上下反転も対応
+// ui-v1-5rev3.js
 
 class TopBarManager {
     constructor(app) {
@@ -44,7 +41,7 @@ class TopBarManager {
         document.getElementById('reset-view-btn').addEventListener('click', () => this.app.canvasManager.resetView());
     }
     closeTool() {
-        if (confirm('ウィンドウを閉じますか？')) {
+        if (confirm('あうぅ…閉じるけど平気…？')) {
             window.close();
         }
     }
@@ -189,12 +186,12 @@ handleKeyDown(e) {
                 case 'h': this.app.canvasManager.flipVertical(); handled = true; break;
                 case 'arrowup': this.app.canvasManager.zoom(1.20); handled = true; break;
                 case 'arrowdown': this.app.canvasManager.zoom(1/1.20); handled = true; break;
-                case 'arrowleft': this.app.canvasManager.rotate(-15); handled = true; break;
-                case 'arrowright': this.app.canvasManager.rotate(15); handled = true; break;
+                case 'arrowleft': this.app.canvasManager.rotate(-45); handled = true; break;
+                case 'arrowright': this.app.canvasManager.rotate(45); handled = true; break;
                 default: handled = false;
             }
         }
-        // その他のキー (Delete はここにそのまま残します)
+        // その他のキー 
         else {
             switch (e.key.toLowerCase()) {
                 case '[': this.app.penSettingsManager.changeSize(false); handled = true; break;
@@ -205,12 +202,13 @@ handleKeyDown(e) {
                 case 'e': this.app.toolManager.setTool('eraser'); handled = true; break;
                 case 'g': this.app.toolManager.setTool('bucket'); handled = true; break;
                 case 'h': this.app.canvasManager.flipHorizontal(); handled = true; break;
-                case '1': this.app.canvasManager.resetView(); handled = true; break;
+                case 'home': this.app.canvasManager.resetView(); handled = true; break;
                 case 'arrowup': this.app.canvasManager.zoom(1.05); handled = true; break;
                 case 'arrowdown': this.app.canvasManager.zoom(1/1.05); handled = true; break;
                 case 'arrowleft': this.app.canvasManager.rotate(-5); handled = true; break;
                 case 'arrowright': this.app.canvasManager.rotate(5); handled = true; break;
-                case 'delete': // Deleteでアクティブレイヤー消去（レイヤー内の描画内容を消去）
+                case 'delete':
+
                     this.app.canvasManager.clearCanvas();
                     handled = true;
                     break;
