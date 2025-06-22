@@ -106,9 +106,73 @@ class CanvasManager {
     }
 
     // ★ 全レイヤー統合して保存する
-// ★ここから変更
-// v1-5rev2b.js内のexportMergedImageメソッドを、以下のコードに置き換えてください。
 exportMergedImage() {
+    const mergedCanvas = document.createElement('canvas');
+    mergedCanvas.width = this.canvas.width;
+    mergedCanvas.height = this.canvas.height;
+    const mergedCtx = mergedCanvas.getContext('2d');
+
+    // 全レイヤー描画 (LayerManager経由)
+    this.app.layerManager.layers.forEach(layer => {
+        mergedCtx.drawImage(layer.canvas, 0, 0);
+    });
+
+    // PNGとして保存
+    const dataURL = mergedCanvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.href = dataURL;
+    link.download = 'merged_image.png';
+    link.click();
+}
+
+    createAndDrawFrame() {
+        this.frameCanvas = document.createElement('canvas');
+        this.frameCanvas.width = 364;
+        this.frameCanvas.height = 145;
+        this.frameCanvas.style.position = 'absolute';
+        this.frameCanvas.style.left = '-10px';
+        this.frameCanvas.style.top = '-5px';
+        this.frameCanvas.style.zIndex = '-1';
+        this.frameCanvas.style.pointerEvents = 'none';
+
+        const firstLayer = this.canvasContainer.querySelector('.main-canvas');
+        this.canvasContainer.insertBefore(this.frameCanvas, firstLayer);
+
+        const frameCtx = this.frameCanvas.getContext('2d');
+        frameCtx.fillStyle = '#ffffff';
+        frameCtx.strokeStyle = '#cccccc';
+        frameCtx.lineWidth = 1;
+        frameCtx.beginPath();
+        if (frameCtx.roundRect) {
+            frameCtx.roundRect(0.5, 0.5, this.frameCanvas.width - 1, this.frameCanvas.height - 1, 8);
+        } else {
+            frameCtx.rect(0.5, 0.5, this.frameCanvas.width - 1, this.frameCanvas.height - 1);
+        }
+        frameCtx.fill();
+        frameCtx.stroke();
+    }
+
+bindEvents() {
+    this.canvasArea.addEventListener('pointerdown', this.onPointerDown.bind(this));
+    document.addEventListener('pointermove', this.onPointerMove.bind(this));
+    document.addEventListener('pointerup', this.onPointerUp.bind(this));
+    this.canvasArea.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
+
+    // 保存ボタンイベント追加
+const saveBtn = document.getElementById('saveMergedButton');
+if (saveBtn) {
+    saveBtn.addEventListener('click', () => {
+        this.exportMergedImage();
+    });
+} else {
+    console.warn('保存ボタンが見つからないよ');
+}
+
+// exportMergedImage() { ... } の後に追加
+
+// ★ここから追加
+// 完成した画像を親ウィンドウに転送する専用のメソッド
+transferToParent() {
     const mergedCanvas = document.createElement('canvas');
     mergedCanvas.width = this.canvas.width;
     mergedCanvas.height = this.canvas.height;
@@ -125,7 +189,8 @@ exportMergedImage() {
     // 親ウィンドウに画像データを送信
     window.parent.postMessage({ type: 'toshinka-tegaki-tool-export', imageDataUrl: dataURL }, '*');
 }
-// ★ここまで変更
+// ★ここまで追加
+
 }
 
 
