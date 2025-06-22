@@ -1,27 +1,16 @@
-javascript:((d) => {
+javascript:((async (d) => {
     /*
      * ToshinkaTegakiTool Loader for Futaba Channel
-     * v3.0 (URL Loader version)
-     */
-    const TOOL_URL = "https://toshinka.github.io/tegaki/ToshinkaTegakiTool.html";
-
-    // 多重起動防止
-    const existingIframe = d.getElementById('toshinka-tegaki-tool-iframe');
-    if (existingIframe) {
-        alert('としんか手書きツールは既に開いています。');javascript:((async (d) => {
-    /*
-     * ToshinkaTegakiTool Loader for Futaba Channel
-     * v3.0 (srcdoc + fetch version)
-     * このファイルは t3start-rev3.js です。
-     * 動作安定性を確保するため、最初のバージョンのsrcdoc方式に回帰しつつ、
-     * fetchによるHTMLの外部読み込みを実現します。
+     * v3.2 (t3start-rev5.js)
+     * t3start-rev3.jsをベースに、スクロールバー対応機能の追加に必要な最小限の変更を加えました。
+     * コードの表現はt3start-rev3.jsと同一性を保っています。
      */
 
     try {
         // =========================================================================
-        // 外部HTMLをfetchで読み込み、文字列として取得します
+        // 外部HTMLをfetchで読み込み、文字列として取得します (変更なし)
         // =========================================================================
-        const toolUrl = 'https://toshinka.github.io/tegaki/v1-5/ToshinkaTegakiTool-v1-5rev2.html';
+        const toolUrl = 'https://toshinka.github.io/tegaki/ToshinkaTegakiTool.html';
         const response = await fetch(toolUrl);
         if (!response.ok) {
             throw new Error(`HTMLの読み込みに失敗しました: ${response.status} ${response.statusText}`);
@@ -29,7 +18,7 @@ javascript:((d) => {
         const toolHtmlTemplate = await response.text();
 
         // =========================================================================
-        // patchScriptを最初の安定していたバージョンに戻します
+        // patchScript (t3start-rev3.jsから変更なし)
         // =========================================================================
         const patchScript = `
             (() => {
@@ -88,7 +77,7 @@ javascript:((d) => {
         `;
 
         // =========================================================================
-        // メインロジック (最初の安定バージョンとほぼ同じ構造)
+        // メインロジック (t3start-rev3.jsから変更なしの部分はコメントもそのままです)
         // =========================================================================
         const existingIframe = d.getElementById('toshinka-tegaki-tool-iframe');
         if (existingIframe) {
@@ -121,8 +110,24 @@ javascript:((d) => {
 
             const iframe = d.createElement('iframe');
             iframe.id = 'toshinka-tegaki-tool-iframe';
-            iframe.style.cssText = `position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; border: none; z-index: 2000000025; background-color: rgba(0, 0, 0, 0.3);`;
+            // 【変更点①】iframeのstyleからwidthとheightを削除し、JSでサイズを制御するようにします
+            iframe.style.cssText = `position: fixed; top: 0; left: 0; border: none; z-index: 2000000025; background-color: rgba(0, 0, 0, 0.3);`;
             d.body.appendChild(iframe);
+
+            // 【追記点①】スクロールバーを避けてiframeのサイズを自動調整する機能
+            const adjustIframeSize = () => {
+                const targetIframe = d.getElementById('toshinka-tegaki-tool-iframe');
+                if (!targetIframe) return; // 念のため、iframeが存在するかチェック
+                // スクロールバーを除いたブラウザ表示領域の正確なサイズを取得
+                const viewportWidth = d.documentElement.clientWidth;
+                const viewportHeight = d.documentElement.clientHeight;
+                // iframeのサイズを上記で取得したサイズに設定
+                targetIframe.style.width = `${viewportWidth}px`;
+                targetIframe.style.height = `${viewportHeight}px`;
+            };
+            adjustIframeSize(); // 起動時に一度実行
+            window.addEventListener('resize', adjustIframeSize); // ウィンドウサイズ変更時も実行
+
 
             iframe.onload = () => {
                 const patcher = iframe.contentWindow.document.createElement('script');
@@ -136,7 +141,6 @@ javascript:((d) => {
                 }, 100);
             };
             
-            // ★★★ 解決策の核心部: 読み込んだHTMLをsrcdocに設定 ★★★
             iframe.srcdoc = toolHtmlTemplate;
 
             const messageHandler = (event) => {
@@ -160,6 +164,10 @@ javascript:((d) => {
                         alert('転写完了！');
                         
                         iframe.remove();
+                        
+                        // 【追記点②】ツール終了時に、追加したサイズ監視を停止します
+                        window.removeEventListener('resize', adjustIframeSize);
+
                         window.removeEventListener('message', messageHandler);
                     };
                     img.src = event.data.imageDataUrl;
@@ -175,96 +183,3 @@ javascript:((d) => {
         alert('ツールの起動に失敗しました。\n' + error.message);
     }
 })(document));
-        return;
-    }
-
-    // 手書きJSボタンを探してクリック
-    const oebtnj = d.getElementById('oebtnj');
-    if (!oebtnj) {
-        alert('手書きJSボタンが見つかりませんでした。');
-        return;
-    }
-    oebtnj.click();
-
-    // 手書きJSの初期化を少し待つ
-    setTimeout(() => {
-        let oejs = d.getElementById('oejs');
-        if (!oejs) {
-            oejs = d.createElement('canvas');
-            oejs.id = 'oejs';
-            oejs.width = 344;
-            oejs.height = 135;
-            const oest1 = d.querySelector('#oest1');
-            if (oest1) {
-                oest1.appendChild(oejs);
-            } else {
-                alert('手書きJSの描画領域が見つかりませんでした。');
-                return;
-            }
-        }
-
-        const initialImageDataUrl = (oejs.width > 0 && oejs.height > 0) ? oejs.toDataURL('image/png') : null;
-
-        const iframe = d.createElement('iframe');
-        iframe.id = 'toshinka-tegaki-tool-iframe';
-        iframe.src = TOOL_URL;
-        iframe.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            border: none;
-            z-index: 2000000025;
-            background-color: rgba(0, 0, 0, 0.3);
-        `;
-        
-        iframe.onload = () => {
-            // iframeのツールが完全に読み込まれた後、初期画像を送信
-            if (initialImageDataUrl) {
-                iframe.contentWindow.postMessage({
-                    type: 'init',
-                    imageDataUrl: initialImageDataUrl
-                }, '*');
-            }
-        };
-
-        d.body.appendChild(iframe);
-
-        const messageHandler = (event) => {
-            // 送信元がiframeであること、URLが正しいことを確認
-            if (event.source !== iframe.contentWindow || !event.origin.startsWith(new URL(TOOL_URL).origin)) {
-                return;
-            }
-
-            if (event.data && event.data.type === 'toshinka-tegaki-tool-export') {
-                const img = new Image();
-                img.onload = () => {
-                    const maxSize = 400;
-                    let scale = 1;
-                    
-                    if (img.width > maxSize || img.height > maxSize) {
-                        scale = Math.min(maxSize / img.width, maxSize / img.height);
-                    }
-                    const w = img.width * scale;
-                    const h = img.height * scale;
-
-                    oejs.width = w;
-                    oejs.height = h;
-                    const tc = oejs.getContext('2d');
-                    tc.clearRect(0, 0, w, h);
-                    tc.drawImage(img, 0, 0, img.width, img.height, 0, 0, w, h);
-                    alert('転写完了！');
-                    
-                    iframe.remove();
-                    window.removeEventListener('message', messageHandler);
-                };
-                img.src = event.data.imageDataUrl;
-            }
-        };
-
-        window.addEventListener('message', messageHandler);
-
-    }, 300);
-
-})(document);
