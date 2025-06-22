@@ -144,4 +144,4 @@ javascript:((async (d) => {
         console.error('ToshinkaTegakiTool Loader Error:', error);
         alert('ツールの起動に失敗しました。\n' + error.message);
     }
-})(document);}
+})(document);
