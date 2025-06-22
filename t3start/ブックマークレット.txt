@@ -1,0 +1,1 @@
+javascript:(d=>{d=d.body.appendChild(d.createElement('script'));d.src=`https://toshinka.github.io/tegaki/t3start/P2html-t3start.js?${parseInt(Date.now()/36e+5)*36e+5}`})(document)
