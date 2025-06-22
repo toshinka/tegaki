@@ -149,7 +149,7 @@ handleKeyDown(e) {
                         handled = true;
                     }
                     break;
-                case ',':case '<': // Ctrl + Shift + , でアクティブレイヤー複製
+                case 'l':case '<': // Ctrl + Shift + L でアクティブレイヤー複製
                     this.app.layerManager.duplicateActiveLayer();
                     handled = true;
                     break;
