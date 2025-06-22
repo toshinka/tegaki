@@ -168,6 +168,29 @@ if (saveBtn) {
     console.warn('保存ボタンが見つからないよ');
 }
 
+// exportMergedImage() { ... } の後に追加
+
+// ★ここから追加
+// 完成した画像を親ウィンドウに転送する専用のメソッド
+transferToParent() {
+    const mergedCanvas = document.createElement('canvas');
+    mergedCanvas.width = this.canvas.width;
+    mergedCanvas.height = this.canvas.height;
+    const mergedCtx = mergedCanvas.getContext('2d');
+
+    // 全レイヤー描画 (LayerManager経由)
+    this.app.layerManager.layers.forEach(layer => {
+        mergedCtx.drawImage(layer.canvas, 0, 0);
+    });
+
+    // PNGとしてDataURLを取得
+    const dataURL = mergedCanvas.toDataURL('image/png');
+    
+    // 親ウィンドウに画像データを送信
+    window.parent.postMessage({ type: 'toshinka-tegaki-tool-export', imageDataUrl: dataURL }, '*');
+}
+// ★ここまで追加
+
 }
 
 
@@ -843,6 +866,23 @@ class LayerManager {
         this.layers.push(newLayer);
         this.renameLayers();
     }
+    // ★ここから追加
+    // 外部から渡された画像データを背景レイヤーに描画する
+    loadBackgroundImage(imageDataUrl) {
+        const bgLayer = this.layers[0]; // 背景レイヤーは常にインデックス0
+        if (!bgLayer) return;
+
+        const img = new Image();
+        img.onload = () => {
+            // 背景レイヤーを一旦クリア
+            bgLayer.ctx.clearRect(0, 0, bgLayer.canvas.width, bgLayer.canvas.height);
+            // 画像を手書きツールのキャンバスサイズに合わせて描画
+            bgLayer.ctx.drawImage(img, 0, 0, bgLayer.canvas.width, bgLayer.canvas.height);
+            this.app.canvasManager.saveState(); // 変更を履歴の初期状態として保存
+        };
+        img.src = imageDataUrl;
+    }
+
 }
 
 // --- PenSettingsManager, ColorManager, ToolManager, ToshinkaTegakiTool（ここから下は変更ありません） ---
@@ -980,6 +1020,17 @@ class ToshinkaTegakiTool {
         this.toolManager.setTool('pen');
         this.penSettingsManager.setSize(1);
         this.colorManager.setColor(this.colorManager.mainColor);
+ // ★ここから追加
+        // 親ウィンドウからのメッセージを監視し、初期画像データを受け取る
+        window.addEventListener('message', (event) => {
+            // ブックマークレットからの実行なので、オリジンチェックは省略
+            if (event.data && event.data.type === 'init' && event.data.imageDataUrl) {
+                // LayerManagerの機能を使って背景画像を設定する
+                this.layerManager.loadBackgroundImage(event.data.imageDataUrl);
+            }
+        });
+        // ★ここまで追加
+
     }
 }
 window.addEventListener('DOMContentLoaded', () => {
