@@ -3,7 +3,7 @@ javascript:((d) => {
      * ToshinkaTegakiTool Loader for Futaba Channel
      * v3.0 (URL Loader version)
      */
-    const TOOL_URL = "ここに、あなたがアップロードしたHTMLファイルのURL";
+    const TOOL_URL = "https://toshinka.github.io/tegaki/ToshinkaTegakiTool.html";
 
     // 多重起動防止
     const existingIframe = d.getElementById('toshinka-tegaki-tool-iframe');
