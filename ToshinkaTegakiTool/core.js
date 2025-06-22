@@ -221,86 +221,89 @@ if (saveBtn) {
     }
 
 onPointerMove(e) {
-    if (!e.buttons) return;
+  if (!e.buttons) return;
 
-    if (this.isPanning) {
-        const dx = e.clientX - this.dragStartX;
-        const dy = e.clientY - this.dragStartY;
-        this.transform.left = this.canvasStartX + dx;
-        this.transform.top = this.canvasStartY + dy;
-        this.applyTransform();
+  if (this.isPanning) {
+    const dx = e.clientX - this.dragStartX;
+    const dy = e.clientY - this.dragStartY;
+    this.transform.left = this.canvasStartX + dx;
+    this.transform.top = this.canvasStartY + dy;
+    this.applyTransform();
+  }
+  else if (this.isLayerTransforming && e.buttons) {
+    const coords = this.getCanvasCoordinates(e);
+    this.layerTransform.translateX = Math.round(coords.x - this.moveLayerStartX);
+    this.layerTransform.translateY = Math.round(coords.y - this.moveLayerStartY);
+    this.applyLayerTransformPreview();
+  }
+  else if (this.isDrawing) {
+    const coords = this.getCanvasCoordinates(e);
+    const newPoint = {
+      x: coords.x,
+      y: coords.y,
+      pressure: e.pressure === 0 ? 1.0 : e.pressure || 1.0
+    };
+
+    const pointsLen = this.points.length;
+    if (pointsLen > 0) {
+      const lastPoint = this.points[pointsLen - 1];
+      const avgPressure = (lastPoint.pressure + newPoint.pressure) / 2;
+      const lineWidth = this.currentSize * avgPressure;
+      this.ctx.lineWidth = Math.max(0.1, lineWidth);
+
+      this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
+      this.ctx.strokeStyle = this.currentColor;
+      this.ctx.lineCap = 'round';
+      this.ctx.lineJoin = 'round';
+
+      this.ctx.beginPath();
+      this.ctx.moveTo(lastPoint.x, lastPoint.y);
+
+      // Bezierの制御点は前後点の中点
+      const cpX = (lastPoint.x + newPoint.x) / 2;
+      const cpY = (lastPoint.y + newPoint.y) / 2;
+
+      this.ctx.quadraticCurveTo(lastPoint.x, lastPoint.y, cpX, cpY);
+      this.ctx.stroke();
     }
-    else if (this.isLayerTransforming && e.buttons) {
-        const coords = this.getCanvasCoordinates(e);
-        this.layerTransform.translateX = Math.round(coords.x - this.moveLayerStartX);
-        this.layerTransform.translateY = Math.round(coords.y - this.moveLayerStartY);
-        this.applyLayerTransformPreview();
-    }
-    // ★ここ！描画なし・座標と筆圧のみ記録
-    else if (this.isDrawing) {
-        const coords = this.getCanvasCoordinates(e);
-        this.points.push({
-            x: coords.x,
-            y: coords.y,
-            pressure: e.pressure === 0 ? 1.0 : e.pressure || 1.0
-        });
-    }
+
+    this.points.push(newPoint);
+  }
 }
 
 
 
 
 onPointerUp(e) {
-    try {
-        if (document.documentElement.hasPointerCapture(e.pointerId)) {
-            document.documentElement.releasePointerCapture(e.pointerId);
-        }
-    } catch (err) {}
+  try {
+    if (document.documentElement.hasPointerCapture(e.pointerId)) {
+      document.documentElement.releasePointerCapture(e.pointerId);
+    }
+  } catch (err) {}
 
-    if (this.isDrawing) {
-        this.isDrawing = false;
+  if (this.isDrawing) {
+    this.isDrawing = false;
 
-        if (this.points.length < 2) {
-            if (this.points.length === 1) {
-                const p = this.points[0];
-                this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
-                this.ctx.fillStyle = this.currentColor;
-                const radius = (this.currentSize * p.pressure) / 2;
-                this.ctx.beginPath();
-                this.ctx.arc(p.x, p.y, Math.max(0.1, radius), 0, Math.PI * 2, true);
-                this.ctx.fill();
-            }
-        } else {
-            const path = new Smooth(this.points, {
-                method: Smooth.METHOD_CUBIC,
-                cubicTension: Smooth.CUBIC_TENSION_CATMULL_ROM
-            });
-
-            this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
-            this.ctx.strokeStyle = this.currentColor;
-            this.ctx.lineCap = 'round';
-            this.ctx.lineJoin = 'round';
-
-            const step = 0.05;
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.points[0].x, this.points[0].y);
-
-            for (let i = 0; i < this.points.length - 1; i++) {
-                for (let t = 0; t <= 1; t += step) {
-                    const p = path.value(i, t);
-                    this.ctx.lineTo(p.x, p.y);
-                }
-            }
-
-            this.ctx.stroke();
-        }
-
-        this.points = [];
-        this.saveState();
+    if (this.points.length === 1) {
+      const p = this.points[0];
+      this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
+      this.ctx.fillStyle = this.currentColor;
+      const radius = (this.currentSize * p.pressure) / 2;
+      this.ctx.beginPath();
+      this.ctx.arc(p.x, p.y, Math.max(0.1, radius), 0, Math.PI * 2, true);
+      this.ctx.fill();
     }
 
-    if (this.isLayerTransforming) this.commitLayerTransform();
-    if (this.isPanning) this.isPanning = false;
+    this.points = [];
+    this.saveState();
+  }
+
+  if (this.isLayerTransforming) {
+    this.commitLayerTransform();
+  }
+  if (this.isPanning) {
+    this.isPanning = false;
+  }
 }
 
 
