@@ -139,10 +139,6 @@ handleKeyDown(e) {
         // Ctrl + Shift の組み合わせ
         if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
             switch (e.key.toLowerCase()) {
-                case 'l': // Ctrl + Shift + L で新規レイヤー
-                    this.app.layerManager.addLayer();
-                    handled = true;
-                    break;
                 case 'delete': // Ctrl + Shift + Delete で全レイヤー消去
                     if (confirm('すべてのレイヤーを消去しますか？\nこの操作は元に戻すのが難しい場合があります。')) {
                         this.app.canvasManager.clearAllLayers();
@@ -176,6 +172,10 @@ handleKeyDown(e) {
                 case 'delete': // Ctrl + Delete でアクティブレイヤー削除
                     // LayerManager.deleteActiveLayer() 内で確認メッセージを表示するように変更
                     this.app.layerManager.deleteActiveLayer(); 
+                    handled = true;
+                    break;
+                case 'insert': // Ctrl + Insert で新規レイヤー
+                    this.app.layerManager.addLayer();
                     handled = true;
                     break;
                 default: handled = false;
