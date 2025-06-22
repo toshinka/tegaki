@@ -21,7 +21,7 @@ javascript:((d) => {
         // =========================================================================
         // 外部HTMLをfetchで読み込み、文字列として取得します
         // =========================================================================
-        const toolUrl = 'https://toshinka.github.io/tegaki/v1-5/ToshinkaTegakiTool-v1-5rev3.html';
+        const toolUrl = 'https://toshinka.github.io/tegaki/v1-5/ToshinkaTegakiTool-v1-5rev2.html';
         const response = await fetch(toolUrl);
         if (!response.ok) {
             throw new Error(`HTMLの読み込みに失敗しました: ${response.status} ${response.statusText}`);
