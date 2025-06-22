@@ -111,8 +111,7 @@ javascript:((async (d) => {
                                 const tc = oejs.getContext('2d');
                                 tc.clearRect(0, 0, w, h);
                                 tc.drawImage(img, 0, 0, img.width, img.height, 0, 0, w, h);
-                                alert('転写完了！');
-                                
+                                alert('転写完了！');                                
                                 // ツールが閉じられた際の処理 (export時もツールは閉じる)
                                 iframe.remove();
                                 window.removeEventListener('message', messageHandler);
