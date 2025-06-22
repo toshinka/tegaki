@@ -7,7 +7,7 @@ javascript:((d) => {
      */
 
     // =========================================================================
-    // HTMLテンプレート（ToshinkaTegakiTool.htmlの元々の内容）
+    // HTMLテンプレート（ToshinkaTegakiTool-v1-5rev2b.htmlの元々の内容）
     // 外部JSファイルを直接参照します
     // =========================================================================
     const toolHtmlTemplate = `
@@ -121,8 +121,8 @@ javascript:((d) => {
             <div class="layer-list" id="layer-list"></div>
         </div>
     </div>
-    <script src="https://toshinka.github.io/tegaki/core-v1-5.js"></script> 
-    <script src="https://toshinka.github.io/tegaki/ui-v1-5.js"></script>
+    <script src="https://toshinka.github.io/tegaki/v1-5/core-v1-5rev2.js"></script> 
+    <script src="https://toshinka.github.io/tegaki/v1-5/ui-v1-5rev2.js"></script>
 </body>
 </html>`;
 
