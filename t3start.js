@@ -29,46 +29,32 @@ javascript:((async (d) => {
 
                         // --- 1. 機能追加: 親ウィンドウから画像を受け取って背景に描画 ---
                         tool.layerManager.loadBackgroundImage = function(imageDataUrl) {
-                            const bgLayer = this.layers[0];
-                            if (!bgLayer) return;
-                            const img = new Image();
-                            img.onload = () => {
-                                bgLayer.ctx.clearRect(0, 0, bgLayer.canvas.width, bgLayer.canvas.height);
-                                bgLayer.ctx.drawImage(img, 0, 0, bgLayer.canvas.width, bgLayer.canvas.height);
-                                this.app.canvasManager.saveState();
-                            };
-                            img.src = imageDataUrl;
+                            // ... 既存のコード ...
                         };
 
-                        // --- 2. 機能追加: 完成した画像を親ウィンドウに転送 ---
-                        tool.canvasManager.transferToParent = function() {
-                            const mergedCanvas = document.createElement('canvas');
-                            mergedCanvas.width = this.canvas.width;
-                            mergedCanvas.height = this.canvas.height;
-                            const mergedCtx = mergedCanvas.getContext('2d');
-                            this.app.layerManager.layers.forEach(layer => {
-                                mergedCtx.drawImage(layer.canvas, 0, 0);
-                            });
-                            const dataURL = mergedCanvas.toDataURL('image/png');
-                            window.parent.postMessage({ type: 'toshinka-tegaki-tool-export', imageDataUrl: dataURL }, '*');
+                        // --- 2. 閉じるボタンの動作を拡張して、親ウィンドウにメッセージを送る ---
+                        // 元のcloseTool関数を保存
+                        const originalCloseTool = tool.closeTool;
+                        tool.closeTool = function() {
+                            // 親ウィンドウにツールが閉じられたことを通知
+                            window.parent.postMessage({ type: 'toshinka-tegaki-tool-closed' }, '*');
+                            // 元のcloseTool関数を実行
+                            originalCloseTool.apply(this, arguments);
                         };
 
-                        // --- 3. 挙動変更: 「×閉じる」ボタンの動作を上書き ---
-                        if (tool.topBarManager) {
-                            tool.topBarManager.closeTool = function() {
-                                if (confirm('描画内容を手書きJSに転写して閉じますか？')) {
-                                    this.app.canvasManager.transferToParent();
-                                }
-                            };
-                        }
+                        // --- 3. 転写ボタンの動作を拡張して、親ウィンドウにメッセージを送る ---
+                        // 元のexportImage関数を保存
+                        const originalExportImage = tool.exportImage;
+                        tool.exportImage = function() {
+                            // 元のexportImage関数を実行
+                            const result = originalExportImage.apply(this, arguments);
+                            // 親ウィンドウにツールが閉じられたことを通知 (転写時もツールは閉じるので)
+                            window.parent.postMessage({ type: 'toshinka-tegaki-tool-closed' }, '*');
+                            return result;
+                        };
 
-                        // --- 4. 待受開始: 親ウィンドウからのメッセージを監視 ---
-                        window.addEventListener('message', (event) => {
-                            if (event.data && event.data.type === 'init' && event.data.imageDataUrl) {
-                                tool.layerManager.loadBackgroundImage(event.data.imageDataUrl);
-                            }
-                        });
-
+                        // ... 既存のpatchWhenReady関数の残りの部分 ...
+                        // (もしあれば、ここに続く)
                     } else {
                         setTimeout(patchWhenReady, 100);
                     }
@@ -76,92 +62,86 @@ javascript:((async (d) => {
                 patchWhenReady();
             })();
         `;
+        const patchedToolHtml = toolHtmlTemplate.replace('', patchScript);
 
         // =========================================================================
-        // メインロジック (最初の安定バージョンとほぼ同じ構造)
+        // iframeを作成し、bodyに追加します
         // =========================================================================
-        const existingIframe = d.getElementById('toshinka-tegaki-tool-iframe');
-        if (existingIframe) {
-            existingIframe.remove();
-            return;
-        }
+        const iframe = d.createElement('iframe');
+        iframe.id = 'toshinka-tegaki-tool-iframe';
+        iframe.style.cssText = `position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; border: none; z-index: 9999999999; background-color: rgba(0, 0, 0, 0.3);`;
+        iframe.srcdoc = patchedToolHtml; // HTML文字列を直接埋め込む
 
-        const oebtnj = d.getElementById('oebtnj');
-        if (!oebtnj) {
-            alert('手書きJSボタンが見つかりませんでした。');
-            return;
-        }
-        oebtnj.click();
+        // *** ここから追加・変更する部分 ***
 
-        setTimeout(() => {
-            let oejs = d.getElementById('oejs');
-            if (!oejs) {
-                oejs = d.createElement('canvas');
-                oejs.id = 'oejs';
-                const oest1 = d.querySelector('#oest1');
-                if (oest1) {
-                    oest1.appendChild(oejs);
-                } else {
-                    alert('手書きJSの描画領域が見つかりませんでした。');
-                    return;
-                }
-            }
+        // 親ページのスクロールバーを一時的に非表示にする
+        // body要素にoverflow: hidden;を適用する
+        // 既存のスタイルを保存しておくことで、元に戻せるようにする
+        const originalBodyOverflow = d.body.style.overflow;
+        const originalHtmlOverflow = d.documentElement.style.overflow; // html要素も対象にするのが安全
+        d.body.style.overflow = 'hidden';
+        d.documentElement.style.overflow = 'hidden';
 
-            const initialImageDataUrl = (oejs.width > 0 && oejs.height > 0) ? oejs.toDataURL('image/png') : null;
+        d.body.appendChild(iframe);
 
-            const iframe = d.createElement('iframe');
-            iframe.id = 'toshinka-tegaki-tool-iframe';
-            iframe.style.cssText = `position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; border: none; z-index: 9999999999; background-color: rgba(0, 0, 0, 0.3);`;
-            d.body.appendChild(iframe);
-
-            iframe.onload = () => {
-                const patcher = iframe.contentWindow.document.createElement('script');
-                patcher.textContent = patchScript;
-                iframe.contentWindow.document.body.appendChild(patcher);
-
+        // iframeが完全に読み込まれるまで待機
+        iframe.onload = () => {
+            // iframe内のDOMContentLoadedイベントを待つ
+            // これはiframe内部のスクリプトが確実に実行されるようにするため
+            iframe.contentWindow.addEventListener('DOMContentLoaded', () => {
+                // iframe内のスクリプトがすべて実行された後にメッセージハンドラを設定
+                // この setTimeout はなくても動く可能性が高いですが、念のため。
                 setTimeout(() => {
-                    if (initialImageDataUrl) {
-                        iframe.contentWindow.postMessage({ type: 'init', imageDataUrl: initialImageDataUrl }, '*');
-                    }
-                }, 100);
-            };
-            
-            // ★★★ 解決策の核心部: 読み込んだHTMLをsrcdocに設定 ★★★
-            iframe.srcdoc = toolHtmlTemplate;
+                    const messageHandler = (event) => {
+                        if (event.source !== iframe.contentWindow) return;
 
-            const messageHandler = (event) => {
-                if (event.source !== iframe.contentWindow) return;
-                if (event.data && event.data.type === 'toshinka-tegaki-tool-export') {
-                    const img = new Image();
-                    img.onload = () => {
-                        const maxSize = 400;
-                        let scale = 1;
-                        if (img.width > maxSize || img.height > maxSize) {
-                            scale = Math.min(maxSize / img.width, maxSize / img.height);
+                        if (event.data && event.data.type === 'toshinka-tegaki-tool-export') {
+                            const img = new Image();
+                            img.onload = () => {
+                                const maxSize = 400;
+                                let scale = 1;
+                                if (img.width > maxSize || img.height > maxSize) {
+                                    scale = Math.min(maxSize / img.width, maxSize / img.height);
+                                }
+                                const w = img.width * scale;
+                                const h = img.height * scale;
+
+                                oejs.width = w;
+                                oejs.height = h;
+                                const tc = oejs.getContext('2d');
+                                tc.clearRect(0, 0, w, h);
+                                tc.drawImage(img, 0, 0, img.width, img.height, 0, 0, w, h);
+                                alert('転写完了！');
+                                
+                                // ツールが閉じられた際の処理 (export時もツールは閉じる)
+                                iframe.remove();
+                                window.removeEventListener('message', messageHandler);
+                                // *** ここも追加 ***
+                                // 親ページのスクロールバーを元に戻す
+                                d.body.style.overflow = originalBodyOverflow;
+                                d.documentElement.style.overflow = originalHtmlOverflow;
+                            };
+                            img.src = event.data.imageDataUrl;
                         }
-                        const w = img.width * scale;
-                        const h = img.height * scale;
-
-                        oejs.width = w;
-                        oejs.height = h;
-                        const tc = oejs.getContext('2d');
-                        tc.clearRect(0, 0, w, h);
-                        tc.drawImage(img, 0, 0, img.width, img.height, 0, 0, w, h);
-                        alert('転写完了！');
-                        
-                        iframe.remove();
-                        window.removeEventListener('message', messageHandler);
+                        // *** ここから追加 ***
+                        else if (event.data && event.data.type === 'toshinka-tegaki-tool-closed') {
+                            // ツールが「閉じる」ボタンで閉じられた際の処理
+                            iframe.remove();
+                            window.removeEventListener('message', messageHandler);
+                            // 親ページのスクロールバーを元に戻す
+                            d.body.style.overflow = originalBodyOverflow;
+                            d.documentElement.style.overflow = originalHtmlOverflow;
+                        }
+                        // *** 追加ここまで ***
                     };
-                    img.src = event.data.imageDataUrl;
-                }
-            };
 
-            window.addEventListener('message', messageHandler);
-
-        }, 300);
+                    window.addEventListener('message', messageHandler);
+                }, 300); // 念のため少し遅延
+            });
+        };
 
     } catch (error) {
         console.error('ToshinkaTegakiTool Loader Error:', error);
         alert('ツールの起動に失敗しました。\n' + error.message);
     }
-})(document));
+})(document);}
