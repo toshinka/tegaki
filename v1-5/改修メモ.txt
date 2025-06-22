@@ -1,7 +1,8 @@
 
 rev1    Bezierによる線補正＋筆圧対応拡張
 rev1.1  保存ボタン追加
-rev2　  Smooth.jsによる線補正＋筆圧対応拡張
+rev2　  二次裏連携
+rev3　　rAF方式＋Smooth.js補間のハイブリッド
 
 📌 今回の補間候補
 1️⃣ Bezier曲線補間
@@ -14,3 +15,5 @@ rev2　  Smooth.jsによる線補正＋筆圧対応拡張
 
 rev1：リアルタイム直線＋筆圧
 rev2：Smooth.jsのCubic補間版
+
+
