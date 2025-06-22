@@ -118,17 +118,22 @@ javascript:((async (d) => {
             const prevOverflow = d.body.style.overflow;
             d.body.style.overflow = 'hidden';
 
-            iframe.onload = () => {
-                const patcher = iframe.contentWindow.document.createElement('script');
-                patcher.textContent = patchScript;
-                iframe.contentWindow.document.body.appendChild(patcher);
+iframe.onload = () => {
+    const patcher = iframe.contentWindow.document.createElement('script');
+    patcher.textContent = patchScript;
+    iframe.contentWindow.document.body.appendChild(patcher);
 
-                setTimeout(() => {
-                    if (initialImageDataUrl) {
-                        iframe.contentWindow.postMessage({ type: 'init', imageDataUrl: initialImageDataUrl }, '*');
-                    }
-                }, 100);
-            };
+    // ★ iframe内の表示が消える問題に対処：overflowを強制復元
+    const styleFix = iframe.contentWindow.document.createElement('style');
+    styleFix.textContent = `html, body { overflow: auto !important; }`;
+    iframe.contentWindow.document.head.appendChild(styleFix);
+
+    setTimeout(() => {
+        if (initialImageDataUrl) {
+            iframe.contentWindow.postMessage({ type: 'init', imageDataUrl: initialImageDataUrl }, '*');
+        }
+    }, 100);
+};
 
             // ★★★ 解決策の核心部: 読み込んだHTMLをsrcdocに設定 ★★★
             iframe.srcdoc = toolHtmlTemplate;
