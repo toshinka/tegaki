@@ -139,7 +139,7 @@ handleKeyDown(e) {
         // Ctrl + Shift の組み合わせ
         if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
             switch (e.key.toLowerCase()) {
-                case '.': // Ctrl + Shift + . で新規レイヤー
+                case 'Period': // Ctrl + Shift + . で新規レイヤー
                     this.app.layerManager.addLayer();
                     handled = true;
                     break;
