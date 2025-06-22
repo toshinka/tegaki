@@ -54,7 +54,7 @@ javascript:((async (d) => {
                         // --- 3. 挙動変更: 「×閉じる」ボタンの動作を上書き ---
                         if (tool.topBarManager) {
                             tool.topBarManager.closeTool = function() {
-                                if (confirm('描画内容を手書きJSに転写して閉じますか？')) {
+                                if (confirm('お絵かき…終わった…？')) {
                                     this.app.canvasManager.transferToParent();
                                 }
                             };
@@ -95,7 +95,7 @@ javascript:((async (d) => {
 
         const oebtnj = d.getElementById('oebtnj');
         if (!oebtnj) {
-            alert('手書きJSボタンが見つかりませんでした。');
+            alert('あうぅ…手書きJSボタンが見つかんない…。');
             return;
         }
         oebtnj.click();
@@ -109,7 +109,7 @@ javascript:((async (d) => {
                 if (oest1) {
                     oest1.appendChild(oejs);
                 } else {
-                    alert('手書きJSの描画領域が見つかりませんでした。');
+                    alert('ひぃん…手書きJSの描画領域が見つかんない…。');
                     return;
                 }
             }
@@ -176,7 +176,7 @@ javascript:((async (d) => {
                         const tc = oejs.getContext('2d');
                         tc.clearRect(0, 0, w, h);
                         tc.drawImage(img, 0, 0, img.width, img.height, 0, 0, w, h);
-                        alert('転写完了！');
+                        alert('にへへ…');
                         
                         // ★★★ 終了時にスクロール設定を復元 ★★★
                         d.body.style.overflow = d.body.dataset.originalOverflow;
