@@ -111,7 +111,7 @@ javascript:((async (d) => {
 
             const iframe = d.createElement('iframe');
             iframe.id = 'toshinka-tegaki-tool-iframe';
-            iframe.style.cssText = `position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; border: none; z-index: 2000000025; background-color: rgba(0, 0, 0, 0.3);`;
+            iframe.style.cssText = `position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; border: none; z-index: 2147483647; background-color: rgba(0, 0, 0, 0.3);`;
             d.body.appendChild(iframe);
 
             iframe.onload = () => {
