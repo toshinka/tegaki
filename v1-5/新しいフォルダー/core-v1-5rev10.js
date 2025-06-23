@@ -1,4 +1,4 @@
-// Toshinka Tegaki Tool core.js v1.5rev5 (quadraticCurveToによる曲線描画対応版)
+// Toshinka Tegaki Tool core.js v1.5rev10
 // 
 
 // --- 2D行列の合成・逆行列・座標適用 ---
@@ -52,6 +52,7 @@ class CanvasManager {
         this.isVDown = false;
         this.isShiftDown = false; // ★ Shiftキーの状態
         this.isScalingRotatingLayer = false; // ★ 拡縮・回転モードのフラグ
+        this.isScalingRotatingCanvas = false; // ▼▼▼ 追加 ▼▼▼ キャンバス拡縮・回転モードのフラグ
 
         // 設定
         this.currentTool = 'pen';
@@ -92,7 +93,6 @@ class CanvasManager {
             flipX: 1,
             flipY: 1
         };
-        // ★ 変形開始時の値を保持
         this.originalLayerTransform = {}; 
 
         // キャンバスの変形情報
@@ -104,6 +104,7 @@ class CanvasManager {
             left: 0,
             top: 0
         };
+        this.originalCanvasTransform = {}; // ▼▼▼ 追加 ▼▼▼
 
         // フレームとイベントセットアップ
         this.createAndDrawFrame();
@@ -205,15 +206,25 @@ class CanvasManager {
             return;
         }
 
+        // ▼▼▼ 修正 ▼▼▼
         if (this.isSpaceDown) {
             this.dragStartX = e.clientX;
             this.dragStartY = e.clientY;
-            this.canvasStartX = this.transform.left;
-            this.canvasStartY = this.transform.top;
-            this.isPanning = true;
+
+            if (this.isShiftDown) {
+                // Shiftキーが押されている場合はキャンバスの拡縮・回転モード
+                this.isScalingRotatingCanvas = true;
+                this.originalCanvasTransform = { ...this.transform }; // 現在の変形状態を保存
+            } else {
+                // Shiftキーが押されていない場合はパンニングモード（既存の処理）
+                this.canvasStartX = this.transform.left;
+                this.canvasStartY = this.transform.top;
+                this.isPanning = true;
+            }
             e.preventDefault();
             return;
         }
+        // ▲▲▲ 修正 ▲▲▲
         
         if (!this.canvas || e.target !== this.canvas) return;
 
@@ -236,6 +247,24 @@ class CanvasManager {
     onPointerMove(e) {
         if (!e.buttons) return;
     
+        // ▼▼▼ 追加 ▼▼▼
+        if (this.isScalingRotatingCanvas) {
+            const dx = e.clientX - this.dragStartX;
+            const dy = e.clientY - this.dragStartY;
+
+            // 上下ドラッグで拡縮 (感度調整)
+            const scaleFactor = 1 - dy * 0.005;
+            this.transform.scale = Math.max(0.1, this.originalCanvasTransform.scale * scaleFactor);
+
+            // 左右ドラッグで回転 (感度調整)
+            const rotationAmount = dx * 0.5; // 度
+            this.transform.rotation = this.originalCanvasTransform.rotation + rotationAmount;
+            
+            this.applyTransform();
+            return;
+        }
+        // ▲▲▲ 追加 ▲▲▲
+
         if (this.isPanning) {
             const dx = e.clientX - this.dragStartX;
             const dy = e.clientY - this.dragStartY;
@@ -312,9 +341,14 @@ class CanvasManager {
             this.isScalingRotatingLayer = false;
         }
         
+        // ▼▼▼ 修正 ▼▼▼
+        if (this.isScalingRotatingCanvas) {
+            this.isScalingRotatingCanvas = false;
+        }
         if (this.isPanning) {
             this.isPanning = false;
         }
+        // ▲▲▲ 修正 ▲▲▲
     }
 
     startSmoothDrawing() {
@@ -418,6 +452,10 @@ class CanvasManager {
         if (this.isSpaceDown) {
             this.canvasArea.style.cursor = 'grab';
             this.canvas.style.cursor = 'grab';
+            if (this.isShiftDown) {
+                // ここでカーソルを変えても良いが、grabのままでも良いだろう
+                this.canvas.style.cursor = 'move'; 
+            }
             return;
         }
         if (this.isVDown) {
@@ -436,13 +474,11 @@ class CanvasManager {
     applyTransform() {
         const container = this.canvasContainer;
         const t = this.transform;
-        // ▼▼▼ 修正 ▼▼▼
         container.style.transform = `
             translate(${t.left}px, ${t.top}px)
             scale(${t.scale * t.flipX}, ${t.scale * t.flipY})
             rotate(${t.rotation}deg)
         `;
-        // ▲▲▲ 修正 ▲▲▲
     }
 
     startLayerTransform() {
@@ -531,7 +567,6 @@ class CanvasManager {
         }
     }
     
-    // ▼▼▼ 追加（復元） ▼▼▼
     clearAllLayers() {
         if (!this.app.layerManager || !this.app.layerManager.layers) return;
         this.app.layerManager.layers.forEach((layer, index) => {
@@ -545,7 +580,6 @@ class CanvasManager {
         });
         this.saveState();
     }
-    // ▲▲▲ 追加（復元） ▲▲▲
 
     flipHorizontal() {
         this.transform.flipX *= -1;
@@ -570,7 +604,6 @@ class CanvasManager {
         this.applyTransform();
     }
 
-    // ▼▼▼ 修正 ▼▼▼
     normalizeTransform() {
         this.transform.rotation = ((this.transform.rotation % 360) + 360) % 360;
         this.transform.flipX = this.transform.flipX >= 0 ? 1 : -1;
@@ -581,7 +614,6 @@ class CanvasManager {
             this.transform.flipY = 1;
         }
     }
-    // ▲▲▲ 修正 ▲▲▲
 
     resetView() {
         this.transform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
