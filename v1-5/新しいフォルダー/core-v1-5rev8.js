@@ -441,24 +441,76 @@ if (this.isRotatingLayer) {
         }
     }
 
-    getCanvasCoordinates(e) {
-        const containerRect = this.canvas.getBoundingClientRect();
-        const centerX = containerRect.left + containerRect.width / 2;
-        const centerY = containerRect.top + containerRect.height / 2;
-        let mouseX = e.clientX - centerX;
-        let mouseY = e.clientY - centerY;
-        const rad = -this.transform.rotation * Math.PI / 180;
+    // 補助メソッド：transformオブジェクトからCSS transformと等価な行列を生成
+    _createMatrixForTransform(t, w, h) {
+        const originX = w / 2;
+        const originY = h / 2;
+
+        // 1. 平行移動
+        const translateMat = [1, 0, 0, 1, t.left || 0, t.top || 0];
+    
+        // 2. 回転とスケールのための原点移動
+        const toOrigin = [1, 0, 0, 1, originX, originY];
+        const fromOrigin = [1, 0, 0, 1, -originX, -originY];
+
+        // 3. 回転
+        const rad = (t.rotation || 0) * Math.PI / 180;
         const cos = Math.cos(rad);
         const sin = Math.sin(rad);
-        let unrotatedX = mouseX * cos - mouseY * sin;
-        let unrotatedY = mouseX * sin + mouseY * cos;
-        let scaleX = this.transform.scale * this.transform.flipX;
-        let scaleY = this.transform.scale * this.transform.flipY;
-        const unscaledX = unrotatedX / scaleX;
-        const unscaledY = unrotatedY / scaleY;
-        const canvasX = unscaledX + this.canvas.width / 2;
-        const canvasY = unscaledY + this.canvas.height / 2;
-        return { x: canvasX, y: canvasY };
+        const rotateMat = [cos, sin, -sin, cos, 0, 0];
+        
+        // 4. スケールと反転
+        const scaleX = (t.scale || 1) * (t.flipX || 1);
+        const scaleY = (t.scale || 1) * (t.flipY || 1);
+        const scaleMat = [scaleX, 0, 0, scaleY, 0, 0];
+
+        // 5. 行列を合成する
+        // CSSの transform: translate(...) rotate(...) scale(...) と同じ結果になるように合成
+        // 適用順は scale -> rotate -> translate
+        let m = multiplyMatrix(rotateMat, scaleMat);
+        m = multiplyMatrix(toOrigin, m);
+        m = multiplyMatrix(m, fromOrigin);
+        m = multiplyMatrix(translateMat, m);
+        
+        return m;
+    }
+
+    // 新しい座標計算メソッド
+    getCanvasCoordinates(e) {
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+        if (!this.canvas || !activeLayer) {
+            const rect = e.target.getBoundingClientRect();
+            return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        }
+
+        const canvasWidth = this.canvas.width;
+        const canvasHeight = this.canvas.height;
+
+        // 1. ビュー全体の変換行列を作成 (canvas-containerの変形)
+        const viewMatrix = this._createMatrixForTransform(this.transform, canvasWidth, canvasHeight);
+
+        // 2. アクティブレイヤーの変換行列を作成 (レイヤーcanvasの変形)
+        const layerMatrix = this._createMatrixForTransform(activeLayer.transform, canvasWidth, canvasHeight);
+
+        // 3. 2つの行列を合成して、最終的な変換行列を作成
+        const totalMatrix = multiplyMatrix(viewMatrix, layerMatrix);
+        
+        // 4. 逆行列を計算（スクリーン座標→ローカル座標への変換に使う）
+        const invMatrix = invertMatrix(totalMatrix);
+
+        if (!invMatrix) {
+            return { x: 0, y: 0 }; 
+        }
+
+        // 5. マウスのスクリーン座標を、canvas-areaを基準とした相対座標に変換
+        const areaRect = this.canvasArea.getBoundingClientRect();
+        const mouseX = e.clientX - areaRect.left;
+        const mouseY = e.clientY - areaRect.top;
+
+        // 6. 逆行列を適用して、レイヤーのローカル座標を算出
+        const localCoords = applyMatrix(invMatrix, mouseX, mouseY);
+
+        return localCoords;
     }
 
     updateCursor() {
@@ -764,7 +816,14 @@ class LayerManager {
             canvas: initialCanvas,
             ctx: initialCanvas.getContext('2d'),
             name: '背景',
-            transform: { left: 0, top: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }
+            transform: {
+                left: 0,
+                top: 0,
+                scale: 1,
+                rotation: 0,
+                flipX: 1,
+                flipY: 1
+            }
         };
         this.layers.push(bgLayer);
         bgLayer.ctx.fillStyle = '#f0e0d6';
@@ -780,7 +839,14 @@ class LayerManager {
             canvas: newCanvas,
             ctx: newCanvas.getContext('2d'),
             name: 'レイヤー 1',
-            transform: { left: 0, top: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }
+            transform: {
+                left: 0,
+                top: 0,
+                scale: 1,
+                rotation: 0,
+                flipX: 1,
+                flipY: 1
+            }
         };
         this.layers.push(newLayer);
         newLayer.ctx.lineCap = 'round';
@@ -808,7 +874,14 @@ class LayerManager {
             canvas: newCanvas,
             ctx: newCanvas.getContext('2d'),
             name: `レイヤー ${this.layers.length}`,
-            transform: { left: 0, top: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }
+            transform: {
+                left: 0,
+                top: 0,
+                scale: 1,
+                rotation: 0,
+                flipX: 1,
+                flipY: 1
+            }
         };
         this.layers.splice(insertIndex, 0, newLayer);
         newLayer.ctx.lineCap = 'round';
@@ -913,7 +986,8 @@ class LayerManager {
             translate(${t.left}px, ${t.top}px)
             scale(${t.scale})
             rotate(${t.rotation}deg)
-            scale(${t.flipX}, ${t.flipY})
+            scaleX(${t.flipX})
+            scaleY(${t.flipY})
         `;
     }
 
@@ -982,7 +1056,14 @@ class LayerManager {
             canvas: newCanvas,
             ctx: ctx,
             name: data.name,
-            transform: { left: 0, top: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }
+            transform: {
+                left: 0,
+                top: 0,
+                scale: 1,
+                rotation: 0,
+                flipX: 1,
+                flipY: 1
+            }
         };
         this.layers.push(newLayer);
         this.renameLayers();

@@ -764,7 +764,14 @@ class LayerManager {
             canvas: initialCanvas,
             ctx: initialCanvas.getContext('2d'),
             name: '背景',
-            transform: { left: 0, top: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }
+            transform: {
+                left: 0,
+                top: 0,
+                scale: 1,
+                rotation: 0,
+                flipX: 1,
+                flipY: 1
+            }
         };
         this.layers.push(bgLayer);
         bgLayer.ctx.fillStyle = '#f0e0d6';
@@ -780,7 +787,14 @@ class LayerManager {
             canvas: newCanvas,
             ctx: newCanvas.getContext('2d'),
             name: 'レイヤー 1',
-            transform: { left: 0, top: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }
+            transform: {
+                left: 0,
+                top: 0,
+                scale: 1,
+                rotation: 0,
+                flipX: 1,
+                flipY: 1
+            }
         };
         this.layers.push(newLayer);
         newLayer.ctx.lineCap = 'round';
@@ -808,7 +822,14 @@ class LayerManager {
             canvas: newCanvas,
             ctx: newCanvas.getContext('2d'),
             name: `レイヤー ${this.layers.length}`,
-            transform: { left: 0, top: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }
+            transform: {
+                left: 0,
+                top: 0,
+                scale: 1,
+                rotation: 0,
+                flipX: 1,
+                flipY: 1
+            }
         };
         this.layers.splice(insertIndex, 0, newLayer);
         newLayer.ctx.lineCap = 'round';
@@ -913,7 +934,8 @@ class LayerManager {
             translate(${t.left}px, ${t.top}px)
             scale(${t.scale})
             rotate(${t.rotation}deg)
-            scale(${t.flipX}, ${t.flipY})
+            scaleX(${t.flipX})
+            scaleY(${t.flipY})
         `;
     }
 
@@ -982,7 +1004,14 @@ class LayerManager {
             canvas: newCanvas,
             ctx: ctx,
             name: data.name,
-            transform: { left: 0, top: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }
+            transform: {
+                left: 0,
+                top: 0,
+                scale: 1,
+                rotation: 0,
+                flipX: 1,
+                flipY: 1
+            }
         };
         this.layers.push(newLayer);
         this.renameLayers();
