@@ -109,64 +109,80 @@ class ShortcutManager {
         }
 
 
-// vモード中の特別なショートカット
-if (this.app.canvasManager.isVDown) {
-    let handled = false;
-    const moveAmount = 5; // 移動ピクセル数
-    const scaleAmount = 1.05;
-    const rotateAmount = 5; // 度数
+        // ▼▼▼ ここから全面的に修正 ▼▼▼
+        // vモード中の特別なショートカット
+        if (this.app.canvasManager.isVDown) {
+            let handled = true;
+            const moveAmount = 5;
+            const scaleAmount = 1.05;
+            const rotateAmount = 5; // 度
 
-    if (e.shiftKey) {
-        switch (e.key.toLowerCase()) {
-            case 'arrowup':
-                this.app.layerManager.scaleActiveLayer(scaleAmount); // 拡大
-                handled = true;
-                break;
-            case 'arrowdown':
-                this.app.layerManager.scaleActiveLayer(1 / scaleAmount); // 縮小
-                handled = true;
-                break;
-            case 'arrowleft':
-                this.app.layerManager.rotateActiveLayer(-rotateAmount); // 左回転
-                handled = true;
-                break;
-            case 'arrowright':
-                this.app.layerManager.rotateActiveLayer(rotateAmount); // 右回転
-                handled = true;
-                break;
-            case 'h':
-                this.app.layerManager.flipActiveLayerVertical();
-                handled = true;
-                break;
-        }
-    } else {
-        switch (e.key.toLowerCase()) {
-            case 'arrowup':
-                this.app.layerManager.moveActiveLayer(0, -moveAmount);
-                handled = true;
-                break;
-            case 'arrowdown':
-                this.app.layerManager.moveActiveLayer(0, moveAmount);
-                handled = true;
-                break;
-            case 'arrowleft':
-                this.app.layerManager.moveActiveLayer(-moveAmount, 0);
-                handled = true;
-                break;
-            case 'arrowright':
-                this.app.layerManager.moveActiveLayer(moveAmount, 0);
-                handled = true;
-                break;
-            case 'h':
-                this.app.layerManager.flipActiveLayerHorizontal();
-                handled = true;
-                break;
-        }
-    }
+            // Vキーを押しながらの操作が始まったら、必ず変形モードを開始する
+            const startTransformIfNeeded = () => {
+                if (!this.app.canvasManager.isLayerTransforming) {
+                    this.app.canvasManager.startLayerTransform();
+                }
+            };
 
-    if (handled) e.preventDefault();
-    return;
-}
+            if (e.shiftKey) {
+                switch (e.key.toLowerCase()) {
+                    case 'arrowup':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.scale *= scaleAmount;
+                        break;
+                    case 'arrowdown':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.scale /= scaleAmount;
+                        break;
+                    case 'arrowleft':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.rotation -= (rotateAmount * Math.PI / 180);
+                        break;
+                    case 'arrowright':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.rotation += (rotateAmount * Math.PI / 180);
+                        break;
+                    case 'h':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.flipY *= -1;
+                        break;
+                    default:
+                        handled = false;
+                }
+            } else {
+                switch (e.key.toLowerCase()) {
+                    case 'arrowup':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.translateY -= moveAmount;
+                        break;
+                    case 'arrowdown':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.translateY += moveAmount;
+                        break;
+                    case 'arrowleft':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.translateX -= moveAmount;
+                        break;
+                    case 'arrowright':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.translateX += moveAmount;
+                        break;
+                    case 'h':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.flipX *= -1;
+                        break;
+                    default:
+                        handled = false;
+                }
+            }
+
+            if (handled) {
+                this.app.canvasManager.applyLayerTransformPreview();
+                e.preventDefault();
+            }
+            return;
+        }
+        // ▲▲▲ ここまで全面的に修正 ▲▲▲
 
 
         let handled = false;
