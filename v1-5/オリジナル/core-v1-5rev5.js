@@ -106,17 +106,6 @@ class CanvasManager {
         // フレームとイベントセットアップ
         this.createAndDrawFrame();
         this.bindEvents();
-
-        //回転モードを追加
-        this.isRotatingCanvas = false;
-        this.isRotatingLayer = false;
-        this.dragStartAngle = 0;
-        this.originalRotation = 0;
-        //CanvasManager に状態記録用変数を追加
-        this.isShiftDown = false;
-        this.isCtrlDown = false;
-
-
     }
 
     exportMergedImage() {
@@ -225,26 +214,6 @@ class CanvasManager {
             this.startSmoothDrawing();
         }
 
-            //回転モード判定を追加
-            if (this.isSpaceDown && (this.isShiftDown || this.isCtrlDown)) {
-                this.isRotatingCanvas = true;
-                this.dragStartX = e.clientX;
-                this.dragStartY = e.clientY;
-                this.originalRotation = this.transform.rotation;
-                e.preventDefault();
-                return;
-            }
-
-            if (this.isVDown && (this.isShiftDown || this.isCtrlDown) && e.target === this.canvas) {
-                this.isRotatingLayer = true;
-                this.dragStartX = e.clientX;
-    this.dragStartY = e.clientY;
-    const layer = this.app.layerManager.getCurrentLayer();
-    if (layer) this.originalRotation = layer.transform.rotation;
-    e.preventDefault();
-    return;
-}
-
         try { document.documentElement.setPointerCapture(e.pointerId); } catch (err) {}
     }
 
@@ -267,27 +236,6 @@ onPointerMove(e) {
         this.applyLayerTransformPreview();
         return;
       }
-//回転ロジックを追加
-if (this.isRotatingCanvas) {
-    const dx = e.clientX - this.dragStartX;
-    this.transform.rotation = this.originalRotation + dx * 0.3; // ←感度調整可
-    this.applyTransform();
-    e.preventDefault();
-    return;
-}
-
-if (this.isRotatingLayer) {
-    const dx = e.clientX - this.dragStartX;
-    const layer = this.app.layerManager.getCurrentLayer();
-    if (layer) {
-        layer.transform.rotation = this.originalRotation + dx * 0.3;
-        this.app.layerManager.applyLayerTransform(layer);
-    }
-    e.preventDefault();
-    return;
-}
-
-
       
       if (this.isDrawing) {
         // if (e.movementX === 0 && e.movementY === 0) return; // この行はコメントアウトのままでOKです
@@ -477,17 +425,14 @@ if (this.isRotatingLayer) {
         this.canvas.style.cursor = 'crosshair';
     }
 
-applyTransform() {
-    const container = this.canvasContainer;
-    const t = this.transform;
-
-    container.style.transform = `
-        translate(${t.left}px, ${t.top}px)
-        scale(${t.scale})
-        rotate(${t.rotation}deg)
-    `;
-}
-
+    applyTransform() {
+        this.canvasContainer.style.transformOrigin = "center";
+        this.canvasContainer.style.transform =
+            `translate(${this.transform.left}px, ${this.transform.top}px) ` +
+            `scale(${this.transform.scale}, ${this.transform.scale}) ` +
+            `rotate(${this.transform.rotation}deg) ` +
+            `scale(${this.transform.flipX}, ${this.transform.flipY})`;
+    }
 
     startLayerTransform() {
         if (this.isLayerTransforming || !this.ctx) return;
@@ -748,7 +693,7 @@ applyTransform() {
     }
 }
 
-// --- LayerManager ---
+// --- LayerManager (変更なし) ---
 class LayerManager {
     constructor(app) {
         this.app = app;
@@ -756,31 +701,28 @@ class LayerManager {
         this.activeLayerIndex = -1;
         this.canvasContainer = document.getElementById('canvas-container');
     }
-
     setupInitialLayers() {
         const initialCanvas = document.getElementById('drawingCanvas');
         if (!initialCanvas) return;
         const bgLayer = {
             canvas: initialCanvas,
             ctx: initialCanvas.getContext('2d'),
-            name: '背景',
-            transform: { left: 0, top: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }
+            name: '背景'
         };
         this.layers.push(bgLayer);
-        bgLayer.ctx.fillStyle = '#f0e0d6';
-        bgLayer.ctx.fillRect(0, 0, initialCanvas.width, initialCanvas.height);
-
+        const firstLayerCtx = bgLayer.ctx;
+        firstLayerCtx.fillStyle = '#f0e0d6';
+        firstLayerCtx.fillRect(0, 0, initialCanvas.width, initialCanvas.height);
+        const baseCanvas = this.layers[0].canvas;
         const newCanvas = document.createElement('canvas');
-        newCanvas.width = initialCanvas.width;
-        newCanvas.height = initialCanvas.height;
+        newCanvas.width = baseCanvas.width;
+        newCanvas.height = baseCanvas.height;
         newCanvas.className = 'main-canvas';
-        this.canvasContainer.insertBefore(newCanvas, bgLayer.canvas.nextSibling);
-
+        this.canvasContainer.insertBefore(newCanvas, this.layers[0]?.canvas.nextSibling || null);
         const newLayer = {
             canvas: newCanvas,
             ctx: newCanvas.getContext('2d'),
-            name: 'レイヤー 1',
-            transform: { left: 0, top: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }
+            name: `レイヤー ${this.layers.length}`
         };
         this.layers.push(newLayer);
         newLayer.ctx.lineCap = 'round';
@@ -790,7 +732,6 @@ class LayerManager {
         this.switchLayer(1);
         this.app.canvasManager.saveState();
     }
-
     addLayer() {
         if (this.layers.length >= 99) {
             alert("レイヤー数の上限に達しました。");
@@ -803,12 +744,10 @@ class LayerManager {
         newCanvas.className = 'main-canvas';
         const insertIndex = this.activeLayerIndex + 1;
         this.canvasContainer.insertBefore(newCanvas, this.layers[insertIndex]?.canvas || null);
-
         const newLayer = {
             canvas: newCanvas,
             ctx: newCanvas.getContext('2d'),
-            name: `レイヤー ${this.layers.length}`,
-            transform: { left: 0, top: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }
+            name: `レイヤー ${this.layers.length}`
         };
         this.layers.splice(insertIndex, 0, newLayer);
         newLayer.ctx.lineCap = 'round';
@@ -819,7 +758,6 @@ class LayerManager {
         this.app.canvasManager.saveState();
         return newLayer;
     }
-
     deleteActiveLayer() {
         const indexToDelete = this.activeLayerIndex;
         if (indexToDelete === 0) {
@@ -831,12 +769,16 @@ class LayerManager {
         this.canvasContainer.removeChild(layerToRemove.canvas);
         this.layers.splice(indexToDelete, 1);
         this.renameLayers();
-        let newActiveIndex = Math.max(1, indexToDelete - 1);
+        let newActiveIndex = indexToDelete - 1;
+        if (newActiveIndex < 0) {
+            newActiveIndex = 0;
+        } else if (newActiveIndex === 0 && this.layers.length > 1) {
+            newActiveIndex = 1;
+        }
         this.updateAllLayerZIndexes();
         this.switchLayer(newActiveIndex);
         this.app.canvasManager.saveState();
     }
-
     duplicateActiveLayer() {
         const activeLayer = this.getCurrentLayer();
         if (!activeLayer) return;
@@ -847,12 +789,10 @@ class LayerManager {
         newCanvas.className = 'main-canvas';
         const insertIndex = this.activeLayerIndex + 1;
         this.canvasContainer.insertBefore(newCanvas, this.layers[insertIndex]?.canvas || null);
-
         const newLayer = {
             canvas: newCanvas,
             ctx: newCanvas.getContext('2d'),
-            name: `レイヤー ${this.layers.length}`,
-            transform: { ...activeLayer.transform }
+            name: `レイヤー ${this.layers.length}`
         };
         this.layers.splice(insertIndex, 0, newLayer);
         newLayer.ctx.drawImage(activeLayer.canvas, 0, 0);
@@ -863,10 +803,9 @@ class LayerManager {
         this.switchLayer(insertIndex);
         this.app.canvasManager.saveState();
     }
-
     mergeDownActiveLayer() {
         const activeIndex = this.activeLayerIndex;
-        if (activeIndex <= 0 || this.layers.length <= 1) {
+        if (activeIndex === 0 || this.layers.length <= 1) {
             alert('背景レイヤーは合成できません。または、合成できるレイヤーがありません。');
             return;
         }
@@ -876,13 +815,15 @@ class LayerManager {
         targetLayer.ctx.drawImage(activeLayer.canvas, 0, 0);
         this.deleteActiveLayer();
     }
-
     renameLayers() {
         this.layers.forEach((layer, index) => {
-            layer.name = index === 0 ? '背景' : `レイヤー ${index}`;
+            if (index === 0) {
+                layer.name = '背景';
+            } else {
+                layer.name = `レイヤー ${index}`;
+            }
         });
     }
-
     switchLayer(index) {
         if (index < 0 || index >= this.layers.length) return;
         this.activeLayerIndex = index;
@@ -891,77 +832,75 @@ class LayerManager {
             this.app.canvasManager.setActiveLayerContext(activeLayer.canvas, activeLayer.ctx);
             this.layers.forEach((layer, i) => {
                 layer.canvas.style.pointerEvents = (i === index) ? 'auto' : 'none';
-                this.applyLayerTransform(layer);
             });
             if (this.app.layerUIManager) {
                 this.app.layerUIManager.renderLayers();
             }
         }
     }
-
     getCurrentLayer() {
         if (this.activeLayerIndex >= 0 && this.activeLayerIndex < this.layers.length) {
             return this.layers[this.activeLayerIndex];
         }
         return null;
     }
-
-    applyLayerTransform(layer) {
-        const t = layer.transform;
-        layer.canvas.style.transformOrigin = 'center';
-        layer.canvas.style.transform = `
-            translate(${t.left}px, ${t.top}px)
-            scale(${t.scale})
-            rotate(${t.rotation}deg)
-            scale(${t.flipX}, ${t.flipY})
-        `;
-    }
-
-    moveActiveLayer(dx, dy) {
-        const layer = this.getCurrentLayer();
-        if (!layer) return;
-        const t = layer.transform;
-        t.left += dx;
-        t.top += dy;
-        this.applyLayerTransform(layer);
-    }
-
-    scaleActiveLayer(factor) {
-        const layer = this.getCurrentLayer();
-        if (!layer) return;
-        const t = layer.transform;
-        t.scale *= factor;
-        this.applyLayerTransform(layer);
-    }
-
-    rotateActiveLayer(degrees) {
-        const layer = this.getCurrentLayer();
-        if (!layer) return;
-        const t = layer.transform;
-        t.rotation = (t.rotation + degrees) % 360;
-        this.applyLayerTransform(layer);
-    }
-
-    flipActiveLayerHorizontal() {
-        const layer = this.getCurrentLayer();
-        if (!layer) return;
-        layer.transform.flipX *= -1;
-        this.applyLayerTransform(layer);
-    }
-
-    flipActiveLayerVertical() {
-        const layer = this.getCurrentLayer();
-        if (!layer) return;
-        layer.transform.flipY *= -1;
-        this.applyLayerTransform(layer);
-    }
-
     updateAllLayerZIndexes() {
         this.layers.forEach((layer, index) => {
             layer.canvas.style.zIndex = index;
         });
     }
-
+    flipActiveLayerHorizontal() {
+        const activeLayer = this.getCurrentLayer();
+        if (!activeLayer) {
+            console.warn('アクティブレイヤーが見つかりません');
+            return;
+        }
+        if (this.app.canvasManager.isLayerTransforming) {
+            this.app.canvasManager.commitLayerTransform();
+        }
+        const canvas = activeLayer.canvas;
+        const ctx = activeLayer.ctx;
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-over';
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.putImageData(imageData, 0, 0);
+        ctx.scale(-1, 1);
+        ctx.translate(-canvas.width, 0);
+        ctx.drawImage(tempCanvas, 0, 0);
+        ctx.restore();
+        this.app.canvasManager.saveState();
+    }
+    flipActiveLayerVertical() {
+        const activeLayer = this.getCurrentLayer();
+        if (!activeLayer) {
+            console.warn('アクティブレイヤーが見つかりません');
+            return;
+        }
+        if (this.app.canvasManager.isLayerTransforming) {
+            this.app.canvasManager.commitLayerTransform();
+        }
+        const canvas = activeLayer.canvas;
+        const ctx = activeLayer.ctx;
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-over';
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.putImageData(imageData, 0, 0);
+        ctx.scale(1, -1);
+        ctx.translate(0, -canvas.height);
+        ctx.drawImage(tempCanvas, 0, 0);
+        ctx.restore();
+        this.app.canvasManager.saveState();
+    }
     clearAllLayersHard() {
         for (const layer of this.layers) {
             this.canvasContainer.removeChild(layer.canvas);
@@ -969,7 +908,6 @@ class LayerManager {
         this.layers = [];
         this.activeLayerIndex = -1;
     }
-
     addLayerFromData(data) {
         const newCanvas = document.createElement('canvas');
         newCanvas.width = data.width;
@@ -981,8 +919,7 @@ class LayerManager {
         const newLayer = {
             canvas: newCanvas,
             ctx: ctx,
-            name: data.name,
-            transform: { left: 0, top: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }
+            name: data.name
         };
         this.layers.push(newLayer);
         this.renameLayers();
