@@ -1,12 +1,14 @@
 
-rev1    Bezierによる線補正＋筆圧対応拡張
-rev2　  二次裏連携・保存ボタン追加
-rev3　　smooth.jsによる線補正
-rev4　　「lineTo（直線を描け！）」を「quadraticCurveTo（曲線を描け！）」に差し替え　
-rev5　　Pointer Events API
-rev6　　右クリック殺し 
-rev7　　高DPIディスプレイ対応（ジャギー改善）計画
-rev8　　
+
+rev1    Bezierによる線補正＋筆圧対応拡張。
+rev2　  二次裏連携・保存ボタン追加。
+rev3　　smooth.jsによる線補正。
+rev4　　「lineTo（直線を描け）」を「quadraticCurveTo（曲線を描け）」に差し替え。　
+rev5　　Pointer Events化による破線修正。smooth.js廃止。
+rev6　　右クリック+CTRL+S殺し。 
+rev7　　高DPIディスプレイ対応（ジャギー改善）計画←レイヤー消去バグ他。
+rev8　　rev5にロールバック。イベントハンドリングの修正。V時のカーソル十字追加。V/Space+方向キーのショートカット。CSSの機能から書き直し式変更でミラーバグ消去。
+rev9　　V/Space+ドラッグ追加。
 
 ・高DPIディスプレイ対応
 1. ジャギーのさらなる改善 (高DPI対応)
