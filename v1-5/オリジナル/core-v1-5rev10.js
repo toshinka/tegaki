@@ -160,9 +160,6 @@ class CanvasManager {
         document.addEventListener('pointermove', this.onPointerMove.bind(this));
         document.addEventListener('pointerup', this.onPointerUp.bind(this));
         this.canvasArea.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
-        // 右クリックメニューを無効化
-        document.addEventListener('contextmenu', e => e.preventDefault());
-
 
         const saveBtn = document.getElementById('saveMergedButton');
         if (saveBtn) {
@@ -184,9 +181,6 @@ class CanvasManager {
     setCurrentSize(size) { this.currentSize = size; }
 
     onPointerDown(e) {
-        // 右クリック・中クリックは無効化
-        if (e.button !== 0) return;
-
         if (this.isVDown && this.canvas && e.target === this.canvas) {
             // Vキーモード中のドラッグ開始
             if (!this.isLayerTransforming) {
@@ -329,7 +323,6 @@ class CanvasManager {
     }
 
     onPointerUp(e) {
-        if (e.button !== 0) return;
         try {
             if (document.documentElement.hasPointerCapture(e.pointerId)) {
                 document.documentElement.releasePointerCapture(e.pointerId);
@@ -570,7 +563,6 @@ class CanvasManager {
                 this.ctx.fillStyle = '#f0e0d6';
                 this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
             }
-            this.app.layerManager.switchLayer(state.activeLayerIndex);
             this.saveState();
         }
     }

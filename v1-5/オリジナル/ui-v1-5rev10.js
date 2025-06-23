@@ -61,7 +61,6 @@ class ShortcutManager {
     }
 
     handleKeyDown(e) {
-        if (e.repeat) return;
         if (document.activeElement && typeof document.activeElement.blur === 'function') {
             document.activeElement.blur();
         }
