@@ -1,4 +1,4 @@
-// Toshinka Tegaki Tool core.js v1.5rev7
+// Toshinka Tegaki Tool core.js v1.5rev10
 // 
 
 // --- 2D行列の合成・逆行列・座標適用 ---
@@ -50,6 +50,9 @@ class CanvasManager {
         this.isLayerTransforming = false;
         this.isSpaceDown = false;
         this.isVDown = false;
+        this.isShiftDown = false; // ★ Shiftキーの状態
+        this.isScalingRotatingLayer = false; // ★ 拡縮・回転モードのフラグ
+        this.isScalingRotatingCanvas = false; // ▼▼▼ 追加 ▼▼▼ キャンバス拡縮・回転モードのフラグ
 
         // 設定
         this.currentTool = 'pen';
@@ -78,7 +81,6 @@ class CanvasManager {
         this.lastWheelTime = 0;
         this.wheelThrottle = 50;
         
-        // ★ 線補正用のプロパティ (smootherは今回使わないので削除)
         this.animationFrameId = null;
         this.lastRenderedPointIndex = 0;
 
@@ -87,8 +89,11 @@ class CanvasManager {
             translateX: 0,
             translateY: 0,
             scale: 1,
-            rotation: 0
+            rotation: 0,
+            flipX: 1,
+            flipY: 1
         };
+        this.originalLayerTransform = {}; 
 
         // キャンバスの変形情報
         this.transform = {
@@ -99,36 +104,29 @@ class CanvasManager {
             left: 0,
             top: 0
         };
-
-        // レイヤー配列の初期化
-        this.layers = [];
+        this.originalCanvasTransform = {}; // ▼▼▼ 追加 ▼▼▼
 
         // フレームとイベントセットアップ
         this.createAndDrawFrame();
         this.bindEvents();
     }
 
-exportMergedImage() {
-    const dpr = window.devicePixelRatio || 1;
-    const outputCanvas = document.createElement('canvas');
-    const cssW = this.canvas.clientWidth;
-    const cssH = this.canvas.clientHeight;
-    outputCanvas.width = cssW;
-    outputCanvas.height = cssH;
+    exportMergedImage() {
+        const mergedCanvas = document.createElement('canvas');
+        mergedCanvas.width = this.canvas.width;
+        mergedCanvas.height = this.canvas.height;
+        const mergedCtx = mergedCanvas.getContext('2d');
 
-    const outCtx = outputCanvas.getContext('2d');
-    outCtx.scale(1 / dpr, 1 / dpr); // DPR補正
+        this.app.layerManager.layers.forEach(layer => {
+            mergedCtx.drawImage(layer.canvas, 0, 0);
+        });
 
-    this.app.layerManager.layers.forEach(layer => {
-        outCtx.drawImage(layer.canvas, 0, 0);
-    });
-
-    const dataURL = outputCanvas.toDataURL('image/png');
-    const link = document.createElement('a');
-    link.href = dataURL;
-    link.download = 'merged_image.png';
-    link.click();
-}
+        const dataURL = mergedCanvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.href = dataURL;
+        link.download = 'merged_image.png';
+        link.click();
+    }
 
     createAndDrawFrame() {
         this.frameCanvas = document.createElement('canvas');
@@ -162,6 +160,13 @@ exportMergedImage() {
         document.addEventListener('pointermove', this.onPointerMove.bind(this));
         document.addEventListener('pointerup', this.onPointerUp.bind(this));
         this.canvasArea.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
+        // 右クリックメニューを無効化
+        document.addEventListener('contextmenu', e => e.preventDefault());
+        this.canvasArea.addEventListener('mousedown', e => {
+            if (e.button !== 0) e.preventDefault();
+        });
+
+
 
         const saveBtn = document.getElementById('saveMergedButton');
         if (saveBtn) {
@@ -174,40 +179,70 @@ exportMergedImage() {
     }
 
     setActiveLayerContext(canvas, ctx) {
-        const dpr = window.devicePixelRatio || 1;
-        if (!canvas._dprScaled) {
-            canvas.width = canvas.clientWidth * dpr;
-            canvas.height = canvas.clientHeight * dpr;
-            ctx.scale(dpr, dpr);
-            canvas._dprScaled = true;
-        }
         this.canvas = canvas;
         this.ctx = ctx;
         this.updateCursor();
     }
-
     setCurrentTool(tool) { this.currentTool = tool; }
     setCurrentColor(color) { this.currentColor = color; }
     setCurrentSize(size) { this.currentSize = size; }
 
     onPointerDown(e) {
+
+console.log("tool:", this.currentTool, "isLayerTransforming:", this.isLayerTransforming);
+
+        // 右クリック・中クリックは無効化
+        if (e.button !== 0) return;
+        // もし変形プレビュー中ならここで強制終了
+        if (this.isLayerTransforming) {
+            this.commitLayerTransform();
+        }
+
+        if (this.isVDown && this.canvas && e.target === this.canvas) {
+            // Vキーモード中のドラッグ開始
+            if (!this.isLayerTransforming) {
+                this.startLayerTransform();
+            }
+            this.dragStartX = e.clientX;
+            this.dragStartY = e.clientY;
+
+            if (this.isShiftDown) {
+                // 拡縮・回転モード
+                this.isScalingRotatingLayer = true;
+                // 現在のプレビュー状態を開始値として保存
+                this.originalLayerTransform = { ...this.layerTransform };
+            } else {
+                // 通常の移動モード
+                this.isScalingRotatingLayer = false;
+                const coords = this.getCanvasCoordinates(e);
+                // 現在のプレビューからの相対位置を計算して開始点とする
+                this.moveLayerStartX = coords.x - this.layerTransform.translateX;
+                this.moveLayerStartY = coords.y - this.layerTransform.translateY;
+            }
+            e.preventDefault();
+            return;
+        }
+
+        // ▼▼▼ 修正 ▼▼▼
         if (this.isSpaceDown) {
             this.dragStartX = e.clientX;
             this.dragStartY = e.clientY;
-            this.canvasStartX = this.transform.left;
-            this.canvasStartY = this.transform.top;
-            this.isPanning = true;
+
+            if (this.isShiftDown) {
+                // Shiftキーが押されている場合はキャンバスの拡縮・回転モード
+                this.isScalingRotatingCanvas = true;
+                this.originalCanvasTransform = { ...this.transform }; // 現在の変形状態を保存
+            } else {
+                // Shiftキーが押されていない場合はパンニングモード（既存の処理）
+                this.canvasStartX = this.transform.left;
+                this.canvasStartY = this.transform.top;
+                this.isPanning = true;
+            }
             e.preventDefault();
             return;
         }
-        if (this.isVDown && this.canvas && e.target === this.canvas) {
-            this.startLayerTransform();
-            const coords = this.getCanvasCoordinates(e);
-            this.moveLayerStartX = coords.x;
-            this.moveLayerStartY = coords.y;
-            e.preventDefault();
-            return;
-        }
+        // ▲▲▲ 修正 ▲▲▲
+        
         if (!this.canvas || e.target !== this.canvas) return;
 
         const coords = this.getCanvasCoordinates(e);
@@ -217,108 +252,121 @@ exportMergedImage() {
             this.saveState();
         } else {
             this.isDrawing = true;
-            this.points = []; // 描画点の配列を初期化
-            this.lastRenderedPointIndex = 0; // 描画済みインデックスをリセット
-            
-            // 最初の点を追加
+            this.points = [];
+            this.lastRenderedPointIndex = 0;
             this.points.push({ x: coords.x, y: coords.y, pressure: e.pressure === 0 ? 1.0 : e.pressure || 1.0 });
-            
-            // 描画ループを開始
             this.startSmoothDrawing();
         }
-
+        
         try { document.documentElement.setPointerCapture(e.pointerId); } catch (err) {}
     }
 
-onPointerMove(e) {
-      if (!e.buttons) return;
+    onPointerMove(e) {
+        if (!e.buttons) return;
     
-      if (this.isPanning) {
-        const dx = e.clientX - this.dragStartX;
-        const dy = e.clientY - this.dragStartY;
-        this.transform.left = this.canvasStartX + dx;
-        this.transform.top = this.canvasStartY + dy;
-        this.applyTransform();
-        return;
-      }
+        // ▼▼▼ 追加 ▼▼▼
+        if (this.isScalingRotatingCanvas) {
+            const dx = e.clientX - this.dragStartX;
+            const dy = e.clientY - this.dragStartY;
+
+            // 上下ドラッグで拡縮 (感度調整)
+            const scaleFactor = 1 - dy * 0.005;
+            this.transform.scale = Math.max(0.1, this.originalCanvasTransform.scale * scaleFactor);
+
+            // 左右ドラッグで回転 (感度調整)
+            const rotationAmount = dx * 0.5; // 度
+            this.transform.rotation = this.originalCanvasTransform.rotation + rotationAmount;
+            
+            this.applyTransform();
+            return;
+        }
+        // ▲▲▲ 追加 ▲▲▲
+
+        if (this.isPanning) {
+            const dx = e.clientX - this.dragStartX;
+            const dy = e.clientY - this.dragStartY;
+            this.transform.left = this.canvasStartX + dx;
+            this.transform.top = this.canvasStartY + dy;
+            this.applyTransform();
+            return;
+        }
+
+        if (this.isLayerTransforming) {
+            if (this.isScalingRotatingLayer) {
+                // 拡縮・回転の処理
+                const dx = e.clientX - this.dragStartX;
+                const dy = e.clientY - this.dragStartY;
+
+                // 上下ドラッグで拡縮 (感度調整)
+                const scaleFactor = 1 - dy * 0.005;
+                this.layerTransform.scale = Math.max(0.01, this.originalLayerTransform.scale * scaleFactor);
+
+                // 左右ドラッグで回転 (感度調整)
+                const rotationAmount = dx * 0.5; // 度
+                this.layerTransform.rotation = this.originalLayerTransform.rotation + (rotationAmount * Math.PI / 180);
+
+            } else {
+                // 通常の移動の処理
+                const coords = this.getCanvasCoordinates(e);
+                this.layerTransform.translateX = Math.round(coords.x - this.moveLayerStartX);
+                this.layerTransform.translateY = Math.round(coords.y - this.moveLayerStartY);
+            }
+            this.applyLayerTransformPreview();
+            return;
+        }
       
-      if (this.isLayerTransforming) {
-        const coords = this.getCanvasCoordinates(e);
-        this.layerTransform.translateX = Math.round(coords.x - this.moveLayerStartX);
-        this.layerTransform.translateY = Math.round(coords.y - this.moveLayerStartY);
-        this.applyLayerTransformPreview();
-        return;
-      }
-      
-      if (this.isDrawing) {
-        // if (e.movementX === 0 && e.movementY === 0) return; // この行はコメントアウトのままでOKです
-        
-        const currentCoords = this.getCanvasCoordinates(e);
-        const currentPressure = e.pressure === 0 ? 1.0 : e.pressure || 1.0; // ★ 変更: 筆圧を定義
+        if (this.isDrawing) {
+            const currentCoords = this.getCanvasCoordinates(e);
+            const currentPressure = e.pressure === 0 ? 1.0 : e.pressure || 1.0;
 
-        // ★ 追加: 前回の点から現在の点までの距離を計算し、必要に応じて中間点を補完する
-        if (this.points.length > 0) { // 最初の点を除いて処理
-            const lastPoint = this.points[this.points.length - 1];
-            const dist = Math.sqrt(
-                Math.pow(currentCoords.x - lastPoint.x, 2) +
-                Math.pow(currentCoords.y - lastPoint.y, 2)
-            );
+            if (this.points.length > 0) {
+                const lastPoint = this.points[this.points.length - 1];
+                const dist = Math.sqrt(Math.pow(currentCoords.x - lastPoint.x, 2) + Math.pow(currentCoords.y - lastPoint.y, 2));
+                const interpolationThreshold = 0.5;
 
-            // 補間する距離の閾値 (ピクセル単位)。この値を小さくすると線が密になりますが、処理は重くなります。
-            // 2〜3ピクセル程度が一般的です。
-            const interpolationThreshold = 0.5; // ★ 調整可能: この値を変更して試してください
-
-            if (dist > interpolationThreshold) {
-                const steps = Math.ceil(dist / interpolationThreshold);
-                
-                for (let i = 1; i < steps; i++) {
-                    const t = i / steps; // 補間比率 (0から1)
-                    const interpolatedX = lastPoint.x + (currentCoords.x - lastPoint.x) * t;
-                    const interpolatedY = lastPoint.y + (currentCoords.y - lastPoint.y) * t;
-                    // 筆圧も線形補間
-                    const interpolatedPressure = lastPoint.pressure + (currentPressure - lastPoint.pressure) * t;
-                    
-                    this.points.push({
-                        x: interpolatedX,
-                        y: interpolatedY,
-                        pressure: interpolatedPressure
-                    });
+                if (dist > interpolationThreshold) {
+                    const steps = Math.ceil(dist / interpolationThreshold);
+                    for (let i = 1; i < steps; i++) {
+                        const t = i / steps;
+                        const interpolatedX = lastPoint.x + (currentCoords.x - lastPoint.x) * t;
+                        const interpolatedY = lastPoint.y + (currentCoords.y - lastPoint.y) * t;
+                        const interpolatedPressure = lastPoint.pressure + (currentPressure - lastPoint.pressure) * t;
+                        this.points.push({ x: interpolatedX, y: interpolatedY, pressure: interpolatedPressure });
+                    }
                 }
             }
+            this.points.push({ x: currentCoords.x, y: currentCoords.y, pressure: currentPressure });
         }
-        // 現在のイベントからの点を常にリストの最後に追加
-        this.points.push({ x: currentCoords.x, y: currentCoords.y, pressure: currentPressure });
-      }
     }
 
     onPointerUp(e) {
-      try {
-        if (document.documentElement.hasPointerCapture(e.pointerId)) {
-          document.documentElement.releasePointerCapture(e.pointerId);
+        if (e.button !== 0) return;
+        try {
+            if (document.documentElement.hasPointerCapture(e.pointerId)) {
+                document.documentElement.releasePointerCapture(e.pointerId);
+            }
+        } catch (err) {}
+    
+        if (this.isDrawing) {
+            this.isDrawing = false;
+            this.stopSmoothDrawing();
+            this.renderSmoothedLine(true);
+            this.saveState();
+            this.points = [];
         }
-      } catch (err) {}
-    
-      if (this.isDrawing) {
-        this.isDrawing = false;
+
+        if (this.isScalingRotatingLayer) {
+            this.isScalingRotatingLayer = false;
+        }
         
-        // 描画ループを停止
-        this.stopSmoothDrawing();
-    
-        // 残りの点を描画して線を完成させる
-        this.renderSmoothedLine(true); // trueは最終描画フラグ
-    
-        // 履歴に保存
-        this.saveState();
-        
-        this.points = [];
-      }
-    
-      if (this.isLayerTransforming) {
-        this.commitLayerTransform();
-      }
-      if (this.isPanning) {
-        this.isPanning = false;
-      }
+        // ▼▼▼ 修正 ▼▼▼
+        if (this.isScalingRotatingCanvas) {
+            this.isScalingRotatingCanvas = false;
+        }
+        if (this.isPanning) {
+            this.isPanning = false;
+        }
+        // ▲▲▲ 修正 ▲▲▲
     }
 
     startSmoothDrawing() {
@@ -341,15 +389,13 @@ onPointerMove(e) {
             this.animationFrameId = requestAnimationFrame(this.smoothDrawLoop.bind(this));
         }
     }
-
-    // ★★★ ジャギジャギ修正版の描画メソッド ★★★
+    
     renderSmoothedLine(isFinal) {
         if (!this.ctx || !this.points) return;
         const points = this.points;
         const pointsCount = points.length;
 
         if (pointsCount < 2) {
-             // 点が1つだけの場合（クリック）
              if (isFinal && pointsCount === 1) {
                 const p = points[0];
                 this.ctx.globalCompositeOperation = this.currentTool === 'eraser' ? 'destination-out' : 'source-over';
@@ -367,13 +413,11 @@ onPointerMove(e) {
         this.ctx.lineCap = 'round';
         this.ctx.lineJoin = 'round';
         
-        // isFinalがtrueなら最後まで、そうでなければ最後から2つ手前までループ
         const limit = isFinal ? pointsCount : pointsCount - 1;
 
         while (this.lastRenderedPointIndex < limit - 1) {
             const i = this.lastRenderedPointIndex;
             
-            // 最初のセグメントは直線で描画
             if (i === 0) {
                 const p0 = points[0];
                 const p1 = points[1];
@@ -383,7 +427,6 @@ onPointerMove(e) {
                 this.ctx.lineTo(p1.x, p1.y);
                 this.ctx.stroke();
             }
-            // 2番目以降のセグメントは曲線で滑らかに繋ぐ
             else {
                 const p0 = points[i - 1];
                 const p1 = points[i];
@@ -402,49 +445,43 @@ onPointerMove(e) {
         }
     }
 
-getCanvasCoordinates(e) {
-    const dpr = window.devicePixelRatio || 1;
-
-    const containerRect = this.canvas.getBoundingClientRect();
-    const centerX = containerRect.left + containerRect.width / 2;
-    const centerY = containerRect.top + containerRect.height / 2;
-
-    let mouseX = e.clientX - centerX;
-    let mouseY = e.clientY - centerY;
-
-    const rad = -this.transform.rotation * Math.PI / 180;
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
-    let unrotatedX = mouseX * cos - mouseY * sin;
-    let unrotatedY = mouseX * sin + mouseY * cos;
-
-    let scaleX = this.transform.scale * this.transform.flipX;
-    let scaleY = this.transform.scale * this.transform.flipY;
-
-    const unscaledX = unrotatedX / scaleX;
-    const unscaledY = unrotatedY / scaleY;
-
-    // ⭐ canvas.clientWidth を中心として使うことでズレを無くす！
-    const logicalW = this.canvas.clientWidth;
-    const logicalH = this.canvas.clientHeight;
-
-    const canvasX = unscaledX + logicalW / 2;
-    const canvasY = unscaledY + logicalH / 2;
-
-    return { x: canvasX, y: canvasY };
-}
-
-
+    getCanvasCoordinates(e) {
+        const containerRect = this.canvas.getBoundingClientRect();
+        const centerX = containerRect.left + containerRect.width / 2;
+        const centerY = containerRect.top + containerRect.height / 2;
+        let mouseX = e.clientX - centerX;
+        let mouseY = e.clientY - centerY;
+        const rad = -this.transform.rotation * Math.PI / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        let unrotatedX = mouseX * cos - mouseY * sin;
+        let unrotatedY = mouseX * sin + mouseY * cos;
+        let scaleX = this.transform.scale * this.transform.flipX;
+        let scaleY = this.transform.scale * this.transform.flipY;
+        const unscaledX = unrotatedX / scaleX;
+        const unscaledY = unrotatedY / scaleY;
+        const canvasX = unscaledX + this.canvas.width / 2;
+        const canvasY = unscaledY + this.canvas.height / 2;
+        return { x: canvasX, y: canvasY };
+    }
 
     updateCursor() {
         if (!this.canvas) return;
         if (this.isSpaceDown) {
             this.canvasArea.style.cursor = 'grab';
             this.canvas.style.cursor = 'grab';
+            if (this.isShiftDown) {
+                // ここでカーソルを変えても良いが、grabのままでも良いだろう
+                this.canvas.style.cursor = 'move'; 
+            }
             return;
         }
         if (this.isVDown) {
-            this.canvas.style.cursor = 'move';
+            if (this.isShiftDown) {
+                this.canvas.style.cursor = 'move';
+            } else {
+                this.canvas.style.cursor = 'move';
+            }
             this.canvasArea.style.cursor = 'default';
             return;
         }
@@ -453,19 +490,20 @@ getCanvasCoordinates(e) {
     }
 
     applyTransform() {
-        this.canvasContainer.style.transformOrigin = "center";
-        this.canvasContainer.style.transform =
-            `translate(${this.transform.left}px, ${this.transform.top}px) ` +
-            `scale(${this.transform.scale}, ${this.transform.scale}) ` +
-            `rotate(${this.transform.rotation}deg) ` +
-            `scale(${this.transform.flipX}, ${this.transform.flipY})`;
+        const container = this.canvasContainer;
+        const t = this.transform;
+        container.style.transform = `
+            translate(${t.left}px, ${t.top}px)
+            scale(${t.scale * t.flipX}, ${t.scale * t.flipY})
+            rotate(${t.rotation}deg)
+        `;
     }
 
     startLayerTransform() {
         if (this.isLayerTransforming || !this.ctx) return;
         this.isLayerTransforming = true;
         this.moveLayerImageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-        this.layerTransform = { translateX: 0, translateY: 0, scale: 1, rotation: 0 };
+        this.layerTransform = { translateX: 0, translateY: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
         this.ctx.globalCompositeOperation = 'source-over';
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
@@ -483,7 +521,7 @@ getCanvasCoordinates(e) {
         ctx.translate(canvas.width / 2, canvas.height / 2);
         ctx.translate(this.layerTransform.translateX, this.layerTransform.translateY);
         ctx.rotate(this.layerTransform.rotation);
-        ctx.scale(this.layerTransform.scale, this.layerTransform.scale);
+        ctx.scale(this.layerTransform.scale * this.layerTransform.flipX, this.layerTransform.scale * this.layerTransform.flipY);
         ctx.translate(-canvas.width / 2, -canvas.height / 2);
         ctx.drawImage(tempCanvas, 0, 0);
         ctx.restore();
@@ -493,38 +531,6 @@ getCanvasCoordinates(e) {
         if (!this.isLayerTransforming) return;
         this.isLayerTransforming = false;
         this.moveLayerImageData = null;
-        this.saveState();
-    }
-
-    flipActiveLayerHorizontal() {
-        console.warn("CanvasManager.flipActiveLayerHorizontal() は非推奨です。LayerManager.flipActiveLayerHorizontal() を使用してください。");
-        if (!this.ctx) return;
-        if (this.isLayerTransforming) {
-            this.commitLayerTransform();
-        }
-        const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.save();
-        this.ctx.scale(-1, 1);
-        this.ctx.translate(-this.canvas.width, 0);
-        this.ctx.putImageData(imageData, 0, 0);
-        this.ctx.restore();
-        this.saveState();
-    }
-
-    flipActiveLayerVertical() {
-        console.warn("CanvasManager.flipActiveLayerVertical() は非推奨です。LayerManager.flipActiveLayerVertical() を使用してください。");
-        if (!this.ctx) return;
-        if (this.isLayerTransforming) {
-            this.commitLayerTransform();
-        }
-        const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.save();
-        this.ctx.scale(1, -1);
-        this.ctx.translate(0, -this.canvas.height);
-        this.ctx.putImageData(imageData, 0, 0);
-        this.ctx.restore();
         this.saveState();
     }
 
@@ -565,7 +571,7 @@ getCanvasCoordinates(e) {
         for (const layerData of state.layers) {
             this.app.layerManager.addLayerFromData(layerData);
         }
-        this.app.layerManager.switchLayer(state.activeLayerIndex);
+
     }
 
     clearCanvas() {
@@ -575,10 +581,11 @@ getCanvasCoordinates(e) {
                 this.ctx.fillStyle = '#f0e0d6';
                 this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
             }
+            this.app.layerManager.switchLayer(state.activeLayerIndex);
             this.saveState();
         }
     }
-
+    
     clearAllLayers() {
         if (!this.app.layerManager || !this.app.layerManager.layers) return;
         this.app.layerManager.layers.forEach((layer, index) => {
@@ -611,17 +618,17 @@ getCanvasCoordinates(e) {
     }
 
     rotate(degrees) {
-        this.transform.rotation = (this.transform.rotation + degrees) % 3600;
+        this.transform.rotation = (this.transform.rotation + degrees) % 360;
         this.normalizeTransform();
         this.applyTransform();
     }
 
     normalizeTransform() {
-        this.transform.rotation = ((this.transform.rotation % 3600) + 3600) % 3600;
+        this.transform.rotation = ((this.transform.rotation % 360) + 360) % 360;
         this.transform.flipX = this.transform.flipX >= 0 ? 1 : -1;
         this.transform.flipY = this.transform.flipY >= 0 ? 1 : -1;
         if (this.transform.flipX === -1 && this.transform.flipY === -1) {
-            this.transform.rotation = (this.transform.rotation + 180) % 3600;
+            this.transform.rotation = (this.transform.rotation + 180) % 360;
             this.transform.flipX = 1;
             this.transform.flipY = 1;
         }
@@ -677,7 +684,7 @@ getCanvasCoordinates(e) {
             this.lastWheelTime = 0;
         }, 200);
     }
-
+    
     colorsMatch(a, b) {
         return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
     }
@@ -720,8 +727,7 @@ getCanvasCoordinates(e) {
     }
 }
 
-// --- LayerManager (変更なし) ---
-// ✅ 高DPI対応済 LayerManager（全貼替え）
+// (以下、LayerManagerや他のクラスは変更ありません)
 class LayerManager {
     constructor(app) {
         this.app = app;
@@ -733,59 +739,36 @@ class LayerManager {
     setupInitialLayers() {
         const initialCanvas = document.getElementById('drawingCanvas');
         if (!initialCanvas) return;
-
-        const bgCtx = initialCanvas.getContext('2d');
-        this._scaleCanvasDPI(initialCanvas, bgCtx);
-
         const bgLayer = {
             canvas: initialCanvas,
-            ctx: bgCtx,
-            name: '背景'
+            ctx: initialCanvas.getContext('2d'),
+            name: '背景',
+            transform: { left: 0, top: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }
         };
         this.layers.push(bgLayer);
-        bgCtx.fillStyle = '#f0e0d6';
-        bgCtx.fillRect(0, 0, initialCanvas.width, initialCanvas.height);
+        bgLayer.ctx.fillStyle = '#f0e0d6';
+        bgLayer.ctx.fillRect(0, 0, initialCanvas.width, initialCanvas.height);
 
-        const baseCanvas = this.layers[0].canvas;
         const newCanvas = document.createElement('canvas');
-        newCanvas.width = baseCanvas.width;
-        newCanvas.height = baseCanvas.height;
+        newCanvas.width = initialCanvas.width;
+        newCanvas.height = initialCanvas.height;
         newCanvas.className = 'main-canvas';
-        const newCtx = newCanvas.getContext('2d');
-        this._scaleCanvasDPI(newCanvas, newCtx);
+        this.canvasContainer.insertBefore(newCanvas, bgLayer.canvas.nextSibling);
 
-        this.canvasContainer.insertBefore(newCanvas, this.layers[0]?.canvas.nextSibling || null);
         const newLayer = {
             canvas: newCanvas,
-            ctx: newCtx,
-            name: `レイヤー ${this.layers.length}`
+            ctx: newCanvas.getContext('2d'),
+            name: 'レイヤー 1',
+            transform: { left: 0, top: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }
         };
         this.layers.push(newLayer);
-        newCtx.lineCap = 'round';
-        newCtx.lineJoin = 'round';
+        newLayer.ctx.lineCap = 'round';
+        newLayer.ctx.lineJoin = 'round';
         this.updateAllLayerZIndexes();
         this.renameLayers();
         this.switchLayer(1);
         this.app.canvasManager.saveState();
     }
-
-_scaleCanvasDPI(canvas, ctx) {
-    const dpr = window.devicePixelRatio || 1;
-
-    // 元のCSSサイズを固定（これが表示上の大きさ）
-    const logicalWidth = canvas.getAttribute('data-width') || 344;
-    const logicalHeight = canvas.getAttribute('data-height') || 135;
-
-    canvas.style.width = logicalWidth + 'px';
-    canvas.style.height = logicalHeight + 'px';
-
-    canvas.width = logicalWidth * dpr;
-    canvas.height = logicalHeight * dpr;
-
-    ctx.scale(dpr, dpr);
-}
-
-
 
     addLayer() {
         if (this.layers.length >= 99) {
@@ -799,13 +782,12 @@ _scaleCanvasDPI(canvas, ctx) {
         newCanvas.className = 'main-canvas';
         const insertIndex = this.activeLayerIndex + 1;
         this.canvasContainer.insertBefore(newCanvas, this.layers[insertIndex]?.canvas || null);
-        const newCtx = newCanvas.getContext('2d');
-        this._scaleCanvasDPI(newCanvas, newCtx);
 
         const newLayer = {
             canvas: newCanvas,
-            ctx: newCtx,
-            name: `レイヤー ${this.layers.length}`
+            ctx: newCanvas.getContext('2d'),
+            name: `レイヤー ${this.layers.length}`,
+            transform: { left: 0, top: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }
         };
         this.layers.splice(insertIndex, 0, newLayer);
         newLayer.ctx.lineCap = 'round';
@@ -828,12 +810,7 @@ _scaleCanvasDPI(canvas, ctx) {
         this.canvasContainer.removeChild(layerToRemove.canvas);
         this.layers.splice(indexToDelete, 1);
         this.renameLayers();
-        let newActiveIndex = indexToDelete - 1;
-        if (newActiveIndex < 0) {
-            newActiveIndex = 0;
-        } else if (newActiveIndex === 0 && this.layers.length > 1) {
-            newActiveIndex = 1;
-        }
+        let newActiveIndex = Math.max(1, indexToDelete - 1);
         this.updateAllLayerZIndexes();
         this.switchLayer(newActiveIndex);
         this.app.canvasManager.saveState();
@@ -849,18 +826,17 @@ _scaleCanvasDPI(canvas, ctx) {
         newCanvas.className = 'main-canvas';
         const insertIndex = this.activeLayerIndex + 1;
         this.canvasContainer.insertBefore(newCanvas, this.layers[insertIndex]?.canvas || null);
-        const newCtx = newCanvas.getContext('2d');
-        this._scaleCanvasDPI(newCanvas, newCtx);
 
         const newLayer = {
             canvas: newCanvas,
-            ctx: newCtx,
-            name: `レイヤー ${this.layers.length}`
+            ctx: newCanvas.getContext('2d'),
+            name: `レイヤー ${this.layers.length}`,
+            transform: { ...activeLayer.transform }
         };
         this.layers.splice(insertIndex, 0, newLayer);
-        newCtx.drawImage(activeLayer.canvas, 0, 0);
-        newCtx.lineCap = 'round';
-        newCtx.lineJoin = 'round';
+        newLayer.ctx.drawImage(activeLayer.canvas, 0, 0);
+        newLayer.ctx.lineCap = 'round';
+        newLayer.ctx.lineJoin = 'round';
         this.updateAllLayerZIndexes();
         this.renameLayers();
         this.switchLayer(insertIndex);
@@ -869,7 +845,7 @@ _scaleCanvasDPI(canvas, ctx) {
 
     mergeDownActiveLayer() {
         const activeIndex = this.activeLayerIndex;
-        if (activeIndex === 0 || this.layers.length <= 1) {
+        if (activeIndex <= 0 || this.layers.length <= 1) {
             alert('背景レイヤーは合成できません。または、合成できるレイヤーがありません。');
             return;
         }
@@ -882,11 +858,7 @@ _scaleCanvasDPI(canvas, ctx) {
 
     renameLayers() {
         this.layers.forEach((layer, index) => {
-            if (index === 0) {
-                layer.name = '背景';
-            } else {
-                layer.name = `レイヤー ${index}`;
-            }
+            layer.name = index === 0 ? '背景' : `レイヤー ${index}`;
         });
     }
 
@@ -898,6 +870,7 @@ _scaleCanvasDPI(canvas, ctx) {
             this.app.canvasManager.setActiveLayerContext(activeLayer.canvas, activeLayer.ctx);
             this.layers.forEach((layer, i) => {
                 layer.canvas.style.pointerEvents = (i === index) ? 'auto' : 'none';
+                this.applyLayerTransform(layer);
             });
             if (this.app.layerUIManager) {
                 this.app.layerUIManager.renderLayers();
@@ -912,64 +885,60 @@ _scaleCanvasDPI(canvas, ctx) {
         return null;
     }
 
+    applyLayerTransform(layer) {
+        const t = layer.transform;
+        layer.canvas.style.transformOrigin = 'center';
+        layer.canvas.style.transform = `
+            translate(${t.left}px, ${t.top}px)
+            scale(${t.scale})
+            rotate(${t.rotation}deg)
+            scale(${t.flipX}, ${t.flipY})
+        `;
+    }
+
+    moveActiveLayer(dx, dy) {
+        const layer = this.getCurrentLayer();
+        if (!layer) return;
+        const t = layer.transform;
+        t.left += dx;
+        t.top += dy;
+        this.applyLayerTransform(layer);
+    }
+
+    scaleActiveLayer(factor) {
+        const layer = this.getCurrentLayer();
+        if (!layer) return;
+        const t = layer.transform;
+        t.scale *= factor;
+        this.applyLayerTransform(layer);
+    }
+
+    rotateActiveLayer(degrees) {
+        const layer = this.getCurrentLayer();
+        if (!layer) return;
+        const t = layer.transform;
+        t.rotation = (t.rotation + degrees) % 360;
+        this.applyLayerTransform(layer);
+    }
+
+    flipActiveLayerHorizontal() {
+        const layer = this.getCurrentLayer();
+        if (!layer) return;
+        layer.transform.flipX *= -1;
+        this.applyLayerTransform(layer);
+    }
+
+    flipActiveLayerVertical() {
+        const layer = this.getCurrentLayer();
+        if (!layer) return;
+        layer.transform.flipY *= -1;
+        this.applyLayerTransform(layer);
+    }
+
     updateAllLayerZIndexes() {
         this.layers.forEach((layer, index) => {
             layer.canvas.style.zIndex = index;
         });
-    }
-
-    flipActiveLayerHorizontal() {
-        const activeLayer = this.getCurrentLayer();
-        if (!activeLayer) {
-            console.warn('アクティブレイヤーが見つかりません');
-            return;
-        }
-        if (this.app.canvasManager.isLayerTransforming) {
-            this.app.canvasManager.commitLayerTransform();
-        }
-        const canvas = activeLayer.canvas;
-        const ctx = activeLayer.ctx;
-        ctx.save();
-        ctx.globalCompositeOperation = 'source-over';
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = canvas.width;
-        tempCanvas.height = canvas.height;
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCtx.putImageData(imageData, 0, 0);
-        ctx.scale(-1, 1);
-        ctx.translate(-canvas.width, 0);
-        ctx.drawImage(tempCanvas, 0, 0);
-        ctx.restore();
-        this.app.canvasManager.saveState();
-    }
-
-    flipActiveLayerVertical() {
-        const activeLayer = this.getCurrentLayer();
-        if (!activeLayer) {
-            console.warn('アクティブレイヤーが見つかりません');
-            return;
-        }
-        if (this.app.canvasManager.isLayerTransforming) {
-            this.app.canvasManager.commitLayerTransform();
-        }
-        const canvas = activeLayer.canvas;
-        const ctx = activeLayer.ctx;
-        ctx.save();
-        ctx.globalCompositeOperation = 'source-over';
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = canvas.width;
-        tempCanvas.height = canvas.height;
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCtx.putImageData(imageData, 0, 0);
-        ctx.scale(1, -1);
-        ctx.translate(0, -canvas.height);
-        ctx.drawImage(tempCanvas, 0, 0);
-        ctx.restore();
-        this.app.canvasManager.saveState();
     }
 
     clearAllLayersHard() {
@@ -986,20 +955,19 @@ _scaleCanvasDPI(canvas, ctx) {
         newCanvas.height = data.height;
         newCanvas.className = 'main-canvas';
         const ctx = newCanvas.getContext('2d');
-        this._scaleCanvasDPI(newCanvas, ctx);
         ctx.putImageData(data.imageData, 0, 0);
         this.canvasContainer.appendChild(newCanvas);
         const newLayer = {
             canvas: newCanvas,
             ctx: ctx,
-            name: data.name
+            name: data.name,
+            transform: { left: 0, top: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }
         };
         this.layers.push(newLayer);
         this.renameLayers();
     }
 }
 
-// --- PenSettingsManager, ColorManager, ToolManager, ToshinkaTegakiTool（ここから下は変更ありません） ---
 class PenSettingsManager {
     constructor(app) {
         this.app = app;
