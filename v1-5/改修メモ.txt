@@ -1,3 +1,5 @@
+preventDefault()
+
 
 
 rev1    Bezierによる線補正＋筆圧対応拡張。

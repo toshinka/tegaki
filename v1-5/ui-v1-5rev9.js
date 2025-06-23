@@ -61,19 +61,24 @@ class ShortcutManager {
     }
 
     handleKeyDown(e) {
-        // 🩹 フォーカスによる暴発防止
         if (document.activeElement && typeof document.activeElement.blur === 'function') {
             document.activeElement.blur();
         }
 
+        // ▼▼▼ 修正 ▼▼▼
+        // Shiftキーの状態を更新
+        if (e.key === 'Shift') {
+            this.app.canvasManager.isShiftDown = true;
+            this.app.canvasManager.updateCursor();
+        }
+        // ▲▲▲ 修正 ▲▲▲
+
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.repeat) return;
 
-        // 🩹 Ctrl+Sをキャンセル（return しない）
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
             e.preventDefault();
         }
 
-        // Spaceキーでパン
         if (e.key === ' ' && !this.app.canvasManager.isSpaceDown) {
             this.app.canvasManager.isSpaceDown = true;
             this.app.canvasManager.updateCursor();
@@ -81,19 +86,15 @@ class ShortcutManager {
             return;
         }
 
-        // vキーでレイヤー移動モード
         if (e.key.toLowerCase() === 'v' && !this.app.canvasManager.isVDown) {
             this.app.canvasManager.isVDown = true;
             this.app.canvasManager.updateCursor();
-
             const cross = document.getElementById('center-crosshair');
-            if (cross) cross.style.display = 'block'; // ★ 表示
-
+            if (cross) cross.style.display = 'block';
             e.preventDefault();
             return;
         }
 
-        // パン中の矢印キー処理
         if (this.app.canvasManager.isSpaceDown) {
             let handled = true;
             const moveAmount = 10;
@@ -108,70 +109,79 @@ class ShortcutManager {
             return;
         }
 
+        if (this.app.canvasManager.isVDown) {
+            let handled = true;
+            const moveAmount = 5;
+            const scaleAmount = 1.05;
+            const rotateAmount = 5;
 
-// vモード中の特別なショートカット
-if (this.app.canvasManager.isVDown) {
-    let handled = false;
-    const moveAmount = 5; // 移動ピクセル数
-    const scaleAmount = 1.05;
-    const rotateAmount = 5; // 度数
+            const startTransformIfNeeded = () => {
+                if (!this.app.canvasManager.isLayerTransforming) {
+                    this.app.canvasManager.startLayerTransform();
+                }
+            };
 
-    if (e.shiftKey) {
-        switch (e.key.toLowerCase()) {
-            case 'arrowup':
-                this.app.layerManager.scaleActiveLayer(scaleAmount); // 拡大
-                handled = true;
-                break;
-            case 'arrowdown':
-                this.app.layerManager.scaleActiveLayer(1 / scaleAmount); // 縮小
-                handled = true;
-                break;
-            case 'arrowleft':
-                this.app.layerManager.rotateActiveLayer(-rotateAmount); // 左回転
-                handled = true;
-                break;
-            case 'arrowright':
-                this.app.layerManager.rotateActiveLayer(rotateAmount); // 右回転
-                handled = true;
-                break;
-            case 'h':
-                this.app.layerManager.flipActiveLayerVertical();
-                handled = true;
-                break;
+            if (e.shiftKey) {
+                switch (e.key.toLowerCase()) {
+                    case 'arrowup':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.scale *= scaleAmount;
+                        break;
+                    case 'arrowdown':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.scale /= scaleAmount;
+                        break;
+                    case 'arrowleft':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.rotation -= (rotateAmount * Math.PI / 180);
+                        break;
+                    case 'arrowright':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.rotation += (rotateAmount * Math.PI / 180);
+                        break;
+                    case 'h':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.flipY *= -1;
+                        break;
+                    default:
+                        handled = false;
+                }
+            } else {
+                switch (e.key.toLowerCase()) {
+                    case 'arrowup':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.translateY -= moveAmount;
+                        break;
+                    case 'arrowdown':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.translateY += moveAmount;
+                        break;
+                    case 'arrowleft':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.translateX -= moveAmount;
+                        break;
+                    case 'arrowright':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.translateX += moveAmount;
+                        break;
+                    case 'h':
+                        startTransformIfNeeded();
+                        this.app.canvasManager.layerTransform.flipX *= -1;
+                        break;
+                    default:
+                        handled = false;
+                }
+            }
+
+            if (handled) {
+                this.app.canvasManager.applyLayerTransformPreview();
+                e.preventDefault();
+            }
+            return;
         }
-    } else {
-        switch (e.key.toLowerCase()) {
-            case 'arrowup':
-                this.app.layerManager.moveActiveLayer(0, -moveAmount);
-                handled = true;
-                break;
-            case 'arrowdown':
-                this.app.layerManager.moveActiveLayer(0, moveAmount);
-                handled = true;
-                break;
-            case 'arrowleft':
-                this.app.layerManager.moveActiveLayer(-moveAmount, 0);
-                handled = true;
-                break;
-            case 'arrowright':
-                this.app.layerManager.moveActiveLayer(moveAmount, 0);
-                handled = true;
-                break;
-            case 'h':
-                this.app.layerManager.flipActiveLayerHorizontal();
-                handled = true;
-                break;
-        }
-    }
-
-    if (handled) e.preventDefault();
-    return;
-}
-
 
         let handled = false;
 
-        // Ctrl + Shift
         if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
             switch (e.key.toLowerCase()) {
                 case 'delete':
@@ -190,8 +200,6 @@ if (this.app.canvasManager.isVDown) {
                     break;
             }
         }
-
-        // Ctrl
         else if (e.ctrlKey || e.metaKey) {
             switch (e.key.toLowerCase()) {
                 case 'z': this.app.canvasManager.undo(); handled = true; break;
@@ -202,8 +210,6 @@ if (this.app.canvasManager.isVDown) {
                 case 'insert': this.app.layerManager.addLayer(); handled = true; break;
             }
         }
-
-        // Shift
         else if (e.shiftKey) {
             switch (e.key.toLowerCase()) {
                 case '}': case ']': this.app.colorManager.changeColor(true); handled = true; break;
@@ -215,8 +221,6 @@ if (this.app.canvasManager.isVDown) {
                 case 'arrowright': this.app.canvasManager.rotate(45); handled = true; break;
             }
         }
-
-        // その他
         else {
             switch (e.key.toLowerCase()) {
                 case '[': this.app.penSettingsManager.changeSize(false); handled = true; break;
@@ -240,6 +244,13 @@ if (this.app.canvasManager.isVDown) {
     }
 
     handleKeyUp(e) {
+        // ▼▼▼ 修正 ▼▼▼
+        if (e.key === 'Shift') {
+            this.app.canvasManager.isShiftDown = false;
+            this.app.canvasManager.updateCursor();
+        }
+        // ▲▲▲ 修正 ▲▲▲
+
         if (e.key === ' ') {
             this.app.canvasManager.isSpaceDown = false;
             this.app.canvasManager.updateCursor();
@@ -251,10 +262,8 @@ if (this.app.canvasManager.isVDown) {
                 this.app.canvasManager.commitLayerTransform();
             }
             this.app.canvasManager.updateCursor();
-
             const cross = document.getElementById('center-crosshair');
             if (cross) cross.style.display = 'none';
-
             e.preventDefault();
         }
     }
@@ -276,8 +285,9 @@ if (this.app.canvasManager.isVDown) {
     }
 }
 
-
-// === レイヤーUIを管理するクラス (新規追加) ===
+// --- LayerUIManager は変更なし ---
+// (コードの長さの都合上、変更のないクラスは省略します。お手元のファイルではそのままにしてください)
+// ...
 class LayerUIManager {
     constructor(app) {
         this.app = app;

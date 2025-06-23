@@ -61,19 +61,24 @@ class ShortcutManager {
     }
 
     handleKeyDown(e) {
-        // 🩹 フォーカスによる暴発防止
         if (document.activeElement && typeof document.activeElement.blur === 'function') {
             document.activeElement.blur();
         }
 
+        // ▼▼▼ 修正 ▼▼▼
+        // Shiftキーの状態を更新
+        if (e.key === 'Shift') {
+            this.app.canvasManager.isShiftDown = true;
+            this.app.canvasManager.updateCursor();
+        }
+        // ▲▲▲ 修正 ▲▲▲
+
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.repeat) return;
 
-        // 🩹 Ctrl+Sをキャンセル（return しない）
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
             e.preventDefault();
         }
 
-        // Spaceキーでパン
         if (e.key === ' ' && !this.app.canvasManager.isSpaceDown) {
             this.app.canvasManager.isSpaceDown = true;
             this.app.canvasManager.updateCursor();
@@ -81,19 +86,15 @@ class ShortcutManager {
             return;
         }
 
-        // vキーでレイヤー移動モード
         if (e.key.toLowerCase() === 'v' && !this.app.canvasManager.isVDown) {
             this.app.canvasManager.isVDown = true;
             this.app.canvasManager.updateCursor();
-
             const cross = document.getElementById('center-crosshair');
-            if (cross) cross.style.display = 'block'; // ★ 表示
-
+            if (cross) cross.style.display = 'block';
             e.preventDefault();
             return;
         }
 
-        // パン中の矢印キー処理
         if (this.app.canvasManager.isSpaceDown) {
             let handled = true;
             const moveAmount = 10;
@@ -108,16 +109,12 @@ class ShortcutManager {
             return;
         }
 
-
-        // ▼▼▼ ここから全面的に修正 ▼▼▼
-        // vモード中の特別なショートカット
         if (this.app.canvasManager.isVDown) {
             let handled = true;
             const moveAmount = 5;
             const scaleAmount = 1.05;
-            const rotateAmount = 5; // 度
+            const rotateAmount = 5;
 
-            // Vキーを押しながらの操作が始まったら、必ず変形モードを開始する
             const startTransformIfNeeded = () => {
                 if (!this.app.canvasManager.isLayerTransforming) {
                     this.app.canvasManager.startLayerTransform();
@@ -182,12 +179,9 @@ class ShortcutManager {
             }
             return;
         }
-        // ▲▲▲ ここまで全面的に修正 ▲▲▲
-
 
         let handled = false;
 
-        // Ctrl + Shift
         if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
             switch (e.key.toLowerCase()) {
                 case 'delete':
@@ -196,43 +190,33 @@ class ShortcutManager {
                         handled = true;
                     }
                     break;
-                case ',': case '<':
-                    this.app.layerManager.duplicateActiveLayer();
-                    handled = true;
-                    break;
-                case 'm':
-                    this.app.layerManager.mergeDownActiveLayer();
-                    handled = true;
-                    break;
             }
         }
-
-        // Ctrl
         else if (e.ctrlKey || e.metaKey) {
             switch (e.key.toLowerCase()) {
                 case 'z': this.app.canvasManager.undo(); handled = true; break;
                 case 'y': this.app.canvasManager.redo(); handled = true; break;
-                case '[': this.app.layerManager.switchLayer(this.app.layerManager.activeLayerIndex + 1); handled = true; break;
-                case ']': this.app.layerManager.switchLayer(this.app.layerManager.activeLayerIndex - 1); handled = true; break;
-                case 'delete': this.app.layerManager.deleteActiveLayer(); handled = true; break;
-                case 'insert': this.app.layerManager.addLayer(); handled = true; break;
+                case '[': this.app.colorManager.changeColor(false); handled = true; break;
+                case ']': this.app.colorManager.changeColor(true); handled = true; break;
             }
         }
-
-        // Shift
         else if (e.shiftKey) {
             switch (e.key.toLowerCase()) {
-                case '}': case ']': this.app.colorManager.changeColor(true); handled = true; break;
-                case '{': case '[': this.app.colorManager.changeColor(false); handled = true; break;
+                case '}': case ']': this.app.layerManager.switchLayer(this.app.layerManager.activeLayerIndex - 1); handled = true; break;
+                case '{': case '[': this.app.layerManager.switchLayer(this.app.layerManager.activeLayerIndex + 1); handled = true; break;
                 case 'h': this.app.canvasManager.flipVertical(); handled = true; break;
                 case 'arrowup': this.app.canvasManager.zoom(1.2); handled = true; break;
                 case 'arrowdown': this.app.canvasManager.zoom(1 / 1.2); handled = true; break;
                 case 'arrowleft': this.app.canvasManager.rotate(-45); handled = true; break;
                 case 'arrowright': this.app.canvasManager.rotate(45); handled = true; break;
+                // ▼▼▼ ショートカット変更 ▼▼▼
+                case 'n': this.app.layerManager.addLayer(); handled = true; break;
+                case 'd': this.app.layerManager.deleteActiveLayer(); handled = true; break;
+                case 'c': this.app.layerManager.duplicateActiveLayer(); handled = true; break;
+                case 'b': this.app.layerManager.mergeDownActiveLayer(); handled = true; break;
+                // ▲▲▲ ショートカット変更 ▲▲▲
             }
         }
-
-        // その他
         else {
             switch (e.key.toLowerCase()) {
                 case '[': this.app.penSettingsManager.changeSize(false); handled = true; break;
@@ -256,6 +240,13 @@ class ShortcutManager {
     }
 
     handleKeyUp(e) {
+        // ▼▼▼ 修正 ▼▼▼
+        if (e.key === 'Shift') {
+            this.app.canvasManager.isShiftDown = false;
+            this.app.canvasManager.updateCursor();
+        }
+        // ▲▲▲ 修正 ▲▲▲
+
         if (e.key === ' ') {
             this.app.canvasManager.isSpaceDown = false;
             this.app.canvasManager.updateCursor();
@@ -267,10 +258,8 @@ class ShortcutManager {
                 this.app.canvasManager.commitLayerTransform();
             }
             this.app.canvasManager.updateCursor();
-
             const cross = document.getElementById('center-crosshair');
             if (cross) cross.style.display = 'none';
-
             e.preventDefault();
         }
     }
@@ -292,8 +281,9 @@ class ShortcutManager {
     }
 }
 
-
-// === レイヤーUIを管理するクラス (新規追加) ===
+// --- LayerUIManager は変更なし ---
+// (コードの長さの都合上、変更のないクラスは省略します。お手元のファイルではそのままにしてください)
+// ...
 class LayerUIManager {
     constructor(app) {
         this.app = app;
