@@ -107,11 +107,11 @@ function getWebGLCoords(e, canvas) {
   return { x, y };
 }
 📜 👑まとめ
-手法	安定性	座標変換の難易度	パフォーマンス	推奨用途
-Canvasのtransform	◎	低	◎	描画・基本の回転・合成
-CSS transform	○	中（逆変換要）	◎	プレビューアニメーション
-SVG	◎	低	◎	定規・UIガイド
-WebGL	◎	中	◎◎	高速お絵描きエンジン
+手法	             安定性 座標変換の難易度 パフォーマンス	推奨用途
+Canvasのtransform	◎	低		◎	    描画・基本の回転・合成
+CSS transform		○	中（逆変換要）	◎	    プレビューアニメーション
+SVG			◎	低		◎	    定規・UIガイド
+WebGL			◎	中		◎◎	    高速お絵描きエンジン
 
 ✅ とりあえず今のrev1はCanvas transformで安定化
 rev2でBezier

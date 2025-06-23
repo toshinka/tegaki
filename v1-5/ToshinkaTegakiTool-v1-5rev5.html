@@ -337,6 +337,21 @@
             height: 28px;
             font-size: 18px;
         }
+
+            -webkit-user-select: none; /* Safari/Chrome */
+            -moz-user-select: none;    /* Firefox */
+            -ms-user-select: none;     /* IE/Edge */
+            user-select: none;         /* 標準 */
+        }
+
+        /* キャンバスやその親要素にも適用するとより確実 */
+        #canvas-area, #canvas-container, #drawingCanvas {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
     </style>
 </head>
 <body>

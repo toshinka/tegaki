@@ -4,7 +4,7 @@ https://github.com/toshinka/tegaki/blob/main/
 
 
 
-## 🔗【参照用：v1-4系ファイルリンク】
+## 🔗【参照用：v1-5系ファイルリンク】
 
 @toshinka/tegaki/files/v1-5/ToshinkaTegakiTool-v1-5.html
 @toshinka/tegaki/files/v1-5/core-v1-5.js
