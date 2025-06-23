@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>T3v1-5rev8</title>
+    <title>T3v1-5rev5</title>
     <style>
         body {
             margin: 0;
@@ -343,8 +343,47 @@
             -moz-user-select: none;
             -ms-user-select: none;
             user-select: none;
+        }
+
+        .tool-btn:focus {
+            outline: none;
+        }
+
+#center-crosshair {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;  /* ← canvas-containerのサイズと一致 */
+    height: 100%;
+    pointer-events: none;
+    z-index: 9999;
 }
+
+.cross-line {
+    position: absolute;
+    background-color: rgba(128, 0, 0, 0.5); /* #800000 50% */
+    mix-blend-mode: screen;
+}
+
+.cross-line.horizontal {
+    top: 50%;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    transform: translateY(-1px);
+}
+
+.cross-line.vertical {
+    left: 50%;
+    top: 0;
+    width: 1px;
+    height: 100%;
+    transform: translateX(-1px);
+}
+
+
     </style>
+
 </head>
 <body>
     <div class="main-container">
@@ -414,6 +453,13 @@
         <div class="canvas-area" id="canvas-area">
             <div class="canvas-container" id="canvas-container">
                 <canvas id="drawingCanvas" class="main-canvas" width="344" height="135"></canvas>
+
+                <div id="center-crosshair" style="display: none;">
+                     <div class="cross-line horizontal"></div>
+                     <div class="cross-line vertical"></div>
+                </div>
+
+
             </div>
         </div>
 
@@ -429,8 +475,8 @@
         </div>
     </div>
 
-    <script src="core-v1-5rev8.js"></script> 
-    <script src="ui-v1-5rev8.js"></script>
+    <script src="core-v1-5rev5.js"></script> 
+    <script src="ui-v1-5rev5.js"></script>
 
 </body>
 </html>
