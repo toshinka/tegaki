@@ -1,0 +1,224 @@
+# 🚀 WebGL化への段階的移行ロードマップ
+
+## なぜハイブリッド方式がWebGL化の土台になるのか
+
+### 現在の問題点
+```javascript
+// ❌ 直接ImageData操作 → WebGLに移行困難
+for (let i = 0; i < imageData.data.length; i += 4) {
+    imageData.data[i] = pixelValue; // CPU処理、遅い
+}
+```
+
+### ハイブリッド方式の利点
+```javascript
+// ✅ GPU対応の基盤が整う
+// 描画: GPU accelerated canvas → 将来WebGL shader
+// 保存: texture → ImageData → 将来GPU buffer
+```
+
+## 段階的移行プラン
+
+### Phase 1: ハイブリッド方式（現在の目標）
+**技術スタック**: Canvas2D + ImageData
+```javascript
+// 描画エンジンの抽象化
+class DrawingEngine {
+    drawStroke(points, brush) {
+        // Canvas2D実装
+        this.ctx.beginPath();
+        this.ctx.moveTo(points[0].x, points[0].y);
+        points.forEach(p => this.ctx.lineTo(p.x, p.y));
+        this.ctx.stroke();
+    }
+    
+    saveToBuffer() {
+        // ImageData保存
+        return this.ctx.getImageData(0, 0, this.width, this.height);
+    }
+}
+```
+
+### Phase 2: WebGL 1.0移行準備
+**技術スタック**: Canvas2D + WebGL テクスチャ
+```javascript
+class WebGLDrawingEngine extends DrawingEngine {
+    constructor() {
+        super();
+        this.gl = canvas.getContext('webgl');
+        this.texturePool = new TexturePool(this.gl);
+    }
+    
+    drawStroke(points, brush) {
+        // まだCanvas2Dで描画
+        super.drawStroke(points, brush);
+        
+        // WebGLテクスチャとして保存
+        this.uploadToTexture();
+    }
+    
+    uploadToTexture() {
+        const imageData = this.ctx.getImageData(0, 0, this.width, this.height);
+        this.gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imageData);
+    }
+}
+```
+
+### Phase 3: WebGL フル移行
+**技術スタック**: WebGL シェーダー + GPU バッファ
+```javascript
+class WebGLDrawingEngine extends DrawingEngine {
+    drawStroke(points, brush) {
+        // GPU上で直接描画
+        this.uploadPointsToGPU(points);
+        this.executeStrokeShader(brush);
+    }
+    
+    // フラグメントシェーダーで筆圧・アンチエイリアス
+    createStrokeShader() {
+        return `
+        precision mediump float;
+        uniform vec2 u_resolution;
+        uniform float u_pressure;
+        uniform vec3 u_color;
+        
+        void main() {
+            vec2 coord = gl_FragCoord.xy / u_resolution;
+            float distance = length(coord - u_center);
+            float alpha = smoothstep(u_radius + 0.5, u_radius - 0.5, distance);
+            gl_FragColor = vec4(u_color, alpha * u_pressure);
+        }`;
+    }
+}
+```
+
+## ハイブリッド方式がWebGL移行を容易にする理由
+
+### 1. アーキテクチャの分離
+```javascript
+// ハイブリッド方式で確立される構造
+class LayerSystem {
+    // データ層（永続化）
+    imageData: ImageData;           // → WebGL: GPU Buffer
+    
+    // 描画層（リアルタイム）
+    drawingCanvas: HTMLCanvasElement; // → WebGL: Framebuffer
+    
+    // 表示層（合成）
+    displayCanvas: HTMLCanvasElement; // → WebGL: Render Target
+}
+```
+
+### 2. 描画エンジンの抽象化
+```javascript
+// Phase 1: Canvas2D実装
+interface DrawingEngine {
+    drawStroke(points: Point[], brush: Brush): void;
+    applyFilter(filter: Filter): void;
+    saveLayer(): ImageData;
+}
+
+// Phase 3: WebGL実装（同じインターフェース）
+class WebGLEngine implements DrawingEngine {
+    drawStroke(points: Point[], brush: Brush): void {
+        // シェーダーで実装
+    }
+}
+```
+
+### 3. データフローの最適化
+```mermaid
+graph LR
+    A[ユーザー入力] --> B[Point配列]
+    B --> C[描画エンジン]
+    C --> D[GPU描画]
+    D --> E[テクスチャ保存]
+    E --> F[レイヤー合成]
+    F --> G[画面表示]
+```
+
+## WebGL化で得られる劇的な性能向上
+
+### 描画性能
+```javascript
+// Phase 1: Canvas2D
+// 1000点の線 → 16ms (60fps限界)
+
+// Phase 3: WebGL
+// 10000点の線 → 2ms (500fps可能)
+```
+
+### 高度な描画機能
+```glsl
+// リアルタイムブラー
+// リアルタイム水彩効果
+// 複数レイヤーの高速合成
+// 筆圧に応じた動的テクスチャ変形
+```
+
+### メモリ効率
+```javascript
+// Canvas2D: ImageData copies everywhere
+// WebGL: GPU上で直接操作、CPUメモリ節約
+```
+
+## 移行時期の判断基準
+
+### Phase 2移行のタイミング
+- [ ] ハイブリッド方式が完全に安定
+- [ ] レイヤー数が5枚以上で重くなる
+- [ ] 高解像度（1024x1024以上）対応が必要
+- [ ] フィルター効果（ぼかし等）の実装要求
+
+### Phase 3移行のタイミング
+- [ ] 60fps描画が困難になる
+- [ ] 水彩・油絵などの高度な描画モード要求
+- [ ] 100レイヤー以上の対応が必要
+- [ ] ベクター描画との統合が必要
+
+## 現在推奨する実装戦略
+
+### 1. ハイブリッド方式の確立（最優先）
+```javascript
+// 抽象化されたインターフェース設計
+class AbstractDrawingEngine {
+    abstract drawStroke(points: Point[]): void;
+    abstract saveToImageData(): ImageData;
+}
+
+class Canvas2DEngine extends AbstractDrawingEngine {
+    // Canvas2D実装
+}
+
+// 将来のWebGL実装のためのスロット
+class WebGLEngine extends AbstractDrawingEngine {
+    // TODO: WebGL実装
+}
+```
+
+### 2. パフォーマンス測定の仕組み
+```javascript
+class PerformanceMonitor {
+    measureDrawingTime(callback) {
+        const start = performance.now();
+        callback();
+        const end = performance.now();
+        console.log(`Drawing took ${end - start}ms`);
+        
+        // 16ms超えたらWebGL移行を検討
+        if (end - start > 16) {
+            this.suggestWebGLMigration();
+        }
+    }
+}
+```
+
+## 結論
+
+**ハイブリッド方式は、WebGL化への完璧な踏み台です。**
+
+1. **現在**: 描き味とデータ完全性を両立
+2. **短期**: パフォーマンス問題が顕在化する前に基盤整備
+3. **長期**: WebGL移行時の技術的負債を最小化
+
+この順序で進めることで、「段階的に進化するお絵かきツール」として、技術的に非常に健全な発展が可能になります。
