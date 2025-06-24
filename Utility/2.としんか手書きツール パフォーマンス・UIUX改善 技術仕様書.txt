@@ -258,7 +258,7 @@ class LayerCompositor {
         this.ctx.restore();
     }
 }
-3. 実装時の注意点
+3. 実装時の注意点(これらは実装しないかも？）
 パフォーマンスモニタリング
 JavaScript
 const metrics = {
