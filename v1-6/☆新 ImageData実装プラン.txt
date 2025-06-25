@@ -1,0 +1,540 @@
+# 🎨 シンプルImageData実装プラン v2.0
+
+## 問題の根本原因
+**ハイブリッド方式の複雑さが原因**
+- 描画中：canvas操作
+- 描画完了：ImageData変換
+- 二重の状態管理によるイベント処理の複雑化
+- 座標変換の不整合
+
+## 新しいアプローチ：**完全ImageDataベース**
+
+### 基本コンセプト
+```
+すべての描画処理をImageDataで統一
+↓
+シンプルな構造で安定性を重視
+↓
+描画品質は後から最適化
+```
+
+---
+
+## Rev1: 完全ImageDataベースの土台作り
+
+### 1.1 レイヤー構造の単純化
+
+```javascript
+class Layer {
+    constructor(name, width, height) {
+        this.name = name;
+        this.visible = true;
+        this.imageData = new ImageData(width, height);
+        // canvasは一切使わない
+    }
+    
+    clear() {
+        this.imageData.data.fill(0);
+    }
+    
+    fill(hexColor) {
+        const color = hexToRgba(hexColor);
+        const data = this.imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+            data[i] = color.r;
+            data[i + 1] = color.g;
+            data[i + 2] = color.b;
+            data[i + 3] = color.a;
+        }
+    }
+}
+```
+
+### 1.2 表示システムの単純化
+
+```javascript
+class CanvasManager {
+    renderAllLayers() {
+        this.displayCtx.clearRect(0, 0, this.displayCanvas.width, this.displayCanvas.height);
+        
+        this.app.layerManager.layers.forEach(layer => {
+            if (layer.visible) {
+                // ImageDataを直接表示（シンプル）
+                this.displayCtx.putImageData(layer.imageData, 0, 0);
+            }
+        });
+    }
+}
+```
+
+---
+
+## Rev2: 直接ピクセル描画システム
+
+### 2.1 ピクセル描画の基本関数
+
+```javascript
+class PixelDrawer {
+    constructor(imageData) {
+        this.imageData = imageData;
+        this.width = imageData.width;
+        this.height = imageData.height;
+        this.data = imageData.data;
+    }
+    
+    // 単一ピクセルを描画
+    setPixel(x, y, color) {
+        x = Math.floor(x);
+        y = Math.floor(y);
+        
+        if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
+        
+        const index = (y * this.width + x) * 4;
+        this.data[index] = color.r;
+        this.data[index + 1] = color.g;
+        this.data[index + 2] = color.b;
+        this.data[index + 3] = color.a;
+    }
+    
+    // 円形ブラシでピクセルを描画
+    drawCircle(centerX, centerY, radius, color) {
+        const r = Math.ceil(radius);
+        
+        for (let x = -r; x <= r; x++) {
+            for (let y = -r; y <= r; y++) {
+                const distance = Math.sqrt(x * x + y * y);
+                if (distance <= radius) {
+                    // アンチエイリアシング
+                    const alpha = Math.max(0, 1 - Math.max(0, distance - radius + 1));
+                    const finalColor = {
+                        ...color,
+                        a: Math.floor(color.a * alpha)
+                    };
+                    this.setPixel(centerX + x, centerY + y, finalColor);
+                }
+            }
+        }
+    }
+    
+    // 線分を描画（ブレゼンハムアルゴリズム）
+    drawLine(x0, y0, x1, y1, size, color) {
+        const dx = Math.abs(x1 - x0);
+        const dy = Math.abs(y1 - y0);
+        const sx = x0 < x1 ? 1 : -1;
+        const sy = y0 < y1 ? 1 : -1;
+        let err = dx - dy;
+        
+        let x = x0;
+        let y = y0;
+        
+        while (true) {
+            this.drawCircle(x, y, size / 2, color);
+            
+            if (x === x1 && y === y1) break;
+            
+            const e2 = 2 * err;
+            if (e2 > -dy) {
+                err -= dy;
+                x += sx;
+            }
+            if (e2 < dx) {
+                err += dx;   
+                y += sy;
+            }
+        }
+    }
+}
+```
+
+### 2.2 描画イベントの単純化
+
+```javascript
+class CanvasManager {
+    onPointerDown(e) {
+        // 複雑な状態管理を排除
+        if (e.button !== 0) return;
+        
+        const coords = this.getCanvasCoordinates(e);
+        if (!coords) return;
+        
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+        if (!activeLayer) return;
+        
+        // 塗りつぶしツール
+        if (this.currentTool === 'bucket') {
+            this.fill(coords.x, coords.y, this.currentColor);
+            this.renderAllLayers();
+            this.app.historyManager.saveState();
+            return;
+        }
+        
+        // 描画開始
+        this.isDrawing = true;
+        this.lastPoint = coords;
+        
+        // 最初の点を描画
+        const drawer = new PixelDrawer(activeLayer.imageData);
+        const color = hexToRgba(this.currentColor);
+        drawer.drawCircle(coords.x, coords.y, this.currentSize / 2, color);
+        
+        this.renderAllLayers();
+    }
+    
+    onPointerMove(e) {
+        if (!this.isDrawing) return;
+        
+        const coords = this.getCanvasCoordinates(e);
+        if (!coords) return;
+        
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+        if (!activeLayer) return;
+        
+        // 前の点から現在の点まで線を引く
+        const drawer = new PixelDrawer(activeLayer.imageData);
+        const color = hexToRgba(this.currentColor);
+        
+        drawer.drawLine(
+            this.lastPoint.x, this.lastPoint.y,
+            coords.x, coords.y,
+            this.currentSize, color
+        );
+        
+        this.lastPoint = coords;
+        this.renderAllLayers();
+    }
+    
+    onPointerUp(e) {
+        if (!this.isDrawing) return;
+        
+        this.isDrawing = false;
+        this.lastPoint = null;
+        
+        // 履歴保存
+        this.app.historyManager.saveState();
+    }
+}
+```
+
+---
+
+## Rev3: 消しゴムと筆圧対応
+
+### 3.1 消しゴムの実装
+
+```javascript
+class PixelDrawer {
+    // 消しゴム用のピクセル消去
+    erasePixel(x, y) {
+        x = Math.floor(x);
+        y = Math.floor(y);
+        
+        if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
+        
+        const index = (y * this.width + x) * 4;
+        this.data[index + 3] = 0; // アルファ値を0にして透明化
+    }
+    
+    // 消しゴム用の円形ブラシ
+    eraseCircle(centerX, centerY, radius) {
+        const r = Math.ceil(radius);
+        
+        for (let x = -r; x <= r; x++) {
+            for (let y = -r; y <= r; y++) {
+                const distance = Math.sqrt(x * x + y * y);
+                if (distance <= radius) {
+                    this.erasePixel(centerX + x, centerY + y);
+                }
+            }
+        }
+    }
+    
+    // 消しゴム用の線分
+    eraseLine(x0, y0, x1, y1, size) {
+        // drawLineと同じアルゴリズムで消去
+        const dx = Math.abs(x1 - x0);
+        const dy = Math.abs(y1 - y0);
+        const sx = x0 < x1 ? 1 : -1;
+        const sy = y0 < y1 ? 1 : -1;
+        let err = dx - dy;
+        
+        let x = x0;
+        let y = y0;
+        
+        while (true) {
+            this.eraseCircle(x, y, size / 2);
+            
+            if (x === x1 && y === y1) break;
+            
+            const e2 = 2 * err;
+            if (e2 > -dy) {
+                err -= dy;
+                x += sx;
+            }
+            if (e2 < dx) {
+                err += dx;   
+                y += sy;
+            }
+        }
+    }
+}
+```
+
+### 3.2 筆圧対応
+
+```javascript
+onPointerMove(e) {
+    if (!this.isDrawing) return;
+    
+    const coords = this.getCanvasCoordinates(e);
+    if (!coords) return;
+    
+    // 筆圧取得（0.0-1.0、デフォルト1.0）
+    const pressure = e.pressure || 1.0;
+    const adjustedSize = this.currentSize * pressure;
+    
+    const activeLayer = this.app.layerManager.getCurrentLayer();
+    const drawer = new PixelDrawer(activeLayer.imageData);
+    
+    if (this.currentTool === 'eraser') {
+        drawer.eraseLine(
+            this.lastPoint.x, this.lastPoint.y,
+            coords.x, coords.y,
+            adjustedSize
+        );
+    } else {
+        const color = hexToRgba(this.currentColor);
+        drawer.drawLine(
+            this.lastPoint.x, this.lastPoint.y,
+            coords.x, coords.y,
+            adjustedSize, color
+        );
+    }
+    
+    this.lastPoint = coords;
+    this.renderAllLayers();
+}
+```
+
+---
+
+## Rev4: 履歴管理とレイヤー操作
+
+### 4.1 完全なImageDataコピー
+
+```javascript
+class HistoryManager {
+    saveState() {
+        const state = {
+            layers: this.app.layerManager.layers.map(layer => {
+                // ImageDataを完全コピー
+                return {
+                    name: layer.name,
+                    visible: layer.visible,
+                    imageData: new ImageData(
+                        new Uint8ClampedArray(layer.imageData.data),
+                        layer.imageData.width,
+                        layer.imageData.height
+                    )
+                };
+            }),
+            activeLayerIndex: this.app.layerManager.activeLayerIndex
+        };
+        
+        this.history = this.history.slice(0, this.historyIndex + 1);
+        this.history.push(state);
+        this.historyIndex++;
+    }
+    
+    restoreState(state) {
+        // レイヤー数を合わせる
+        while (this.app.layerManager.layers.length > state.layers.length) {
+            this.app.layerManager.layers.pop();
+        }
+        
+        while (this.app.layerManager.layers.length < state.layers.length) {
+            this.app.layerManager.layers.push(new Layer('', 344, 135));
+        }
+        
+        // 各レイヤーを復元
+        state.layers.forEach((savedLayer, index) => {
+            const layer = this.app.layerManager.layers[index];
+            layer.name = savedLayer.name;
+            layer.visible = savedLayer.visible;
+            layer.imageData.data.set(savedLayer.imageData.data);
+        });
+        
+        this.app.layerManager.activeLayerIndex = state.activeLayerIndex;
+        this.app.canvasManager.renderAllLayers();
+    }
+}
+```
+
+### 4.2 レイヤー複製の完全実装
+
+```javascript
+class LayerManager {
+    duplicateActiveLayer() {
+        const activeLayer = this.getCurrentLayer();
+        if (!activeLayer) return;
+        
+        // 完全なImageDataコピー
+        const newLayer = new Layer(`${activeLayer.name}のコピー`, this.width, this.height);
+        newLayer.imageData.data.set(activeLayer.imageData.data);
+        newLayer.visible = activeLayer.visible;
+        
+        // アクティブレイヤーの上に挿入
+        const insertIndex = this.activeLayerIndex + 1;
+        this.layers.splice(insertIndex, 0, newLayer);
+        
+        this.switchLayer(insertIndex);
+        this.app.historyManager.saveState();
+    }
+    
+    mergeDownActiveLayer() {
+        if (this.activeLayerIndex <= 0) return;
+        
+        const topLayer = this.layers[this.activeLayerIndex];
+        const bottomLayer = this.layers[this.activeLayerIndex - 1];
+        
+        // アルファブレンディング
+        const topData = topLayer.imageData.data;
+        const bottomData = bottomLayer.imageData.data;
+        
+        for (let i = 0; i < topData.length; i += 4) {
+            const topAlpha = topData[i + 3] / 255;
+            const bottomAlpha = bottomData[i + 3] / 255;
+            
+            if (topAlpha === 0) continue;
+            
+            const resultAlpha = topAlpha + bottomAlpha * (1 - topAlpha);
+            
+            if (resultAlpha > 0) {
+                bottomData[i] = (topData[i] * topAlpha + bottomData[i] * bottomAlpha * (1 - topAlpha)) / resultAlpha;
+                bottomData[i + 1] = (topData[i + 1] * topAlpha + bottomData[i + 1] * bottomAlpha * (1 - topAlpha)) / resultAlpha;
+                bottomData[i + 2] = (topData[i + 2] * topAlpha + bottomData[i + 2] * bottomAlpha * (1 - topAlpha)) / resultAlpha;
+                bottomData[i + 3] = resultAlpha * 255;
+            }
+        }
+        
+        // 上のレイヤーを削除
+        this.layers.splice(this.activeLayerIndex, 1);
+        this.switchLayer(this.activeLayerIndex - 1);
+        this.app.historyManager.saveState();
+    }
+}
+```
+
+---
+
+## Rev5: パフォーマンス最適化
+
+### 5.1 描画領域の限定
+
+```javascript
+class PixelDrawer {
+    constructor(imageData) {
+        this.imageData = imageData;
+        this.width = imageData.width;
+        this.height = imageData.height;
+        this.data = imageData.data;
+        
+        // 変更領域の追跡
+        this.dirtyRect = {
+            minX: Infinity,
+            minY: Infinity,
+            maxX: -Infinity,
+            maxY: -Infinity
+        };
+    }
+    
+    markDirty(x, y) {
+        this.dirtyRect.minX = Math.min(this.dirtyRect.minX, x);
+        this.dirtyRect.minY = Math.min(this.dirtyRect.minY, y);
+        this.dirtyRect.maxX = Math.max(this.dirtyRect.maxX, x);
+        this.dirtyRect.maxY = Math.max(this.dirtyRect.maxY, y);
+    }
+    
+    setPixel(x, y, color) {
+        x = Math.floor(x);
+        y = Math.floor(y);
+        
+        if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
+        
+        const index = (y * this.width + x) * 4;
+        this.data[index] = color.r;
+        this.data[index + 1] = color.g;
+        this.data[index + 2] = color.b;
+        this.data[index + 3] = color.a;
+        
+        this.markDirty(x, y);
+    }
+}
+```
+
+### 5.2 部分描画更新
+
+```javascript
+class CanvasManager {
+    renderDirtyRegion(drawer) {
+        const rect = drawer.dirtyRect;
+        
+        if (rect.minX === Infinity) return; // 変更なし
+        
+        // 少し余裕を持たせる
+        const margin = 2;
+        const x = Math.max(0, rect.minX - margin);
+        const y = Math.max(0, rect.minY - margin);
+        const width = Math.min(this.displayCanvas.width - x, rect.maxX - rect.minX + margin * 2);
+        const height = Math.min(this.displayCanvas.height - y, rect.maxY - rect.minY + margin * 2);
+        
+        // 該当領域のみ再描画
+        this.displayCtx.clearRect(x, y, width, height);
+        
+        this.app.layerManager.layers.forEach(layer => {
+            if (layer.visible) {
+                this.displayCtx.putImageData(
+                    layer.imageData, 
+                    0, 0, 
+                    x, y, width, height
+                );
+            }
+        });
+    }
+}
+```
+
+---
+
+## 実装優先順位
+
+1. **Rev1-Rev2**: 基本的なImageDataベース描画（最重要）
+2. **Rev3**: 消しゴムと筆圧対応
+3. **Rev4**: 履歴管理とレイヤー操作
+4. **Rev5**: パフォーマンス最適化
+
+---
+
+## 期待される効果
+
+### ✅ 解決される問題
+- **ペン入力の不具合**: 単純な描画フローで解決
+- **コピー時の劣化**: ImageDataダイレクトコピーで完全解決
+- **状態管理の複雑さ**: 一元化により解決
+- **座標変換の不整合**: シンプルな座標系で解決
+
+### ✅ 新しい利点
+- **安定性**: 単純な構造で動作が予測可能
+- **デバッグしやすさ**: 状態が明確
+- **拡張性**: 新機能の追加が容易
+- **メモリ効率**: 余計なcanvas要素が不要
+
+### ⚠️ トレードオフ
+- **描画品質**: 初期段階では基本的な描画
+- **パフォーマンス**: 最適化前は重い可能性
+- **滑らかさ**: 後から改善予定
+
+---
+
+## まとめ
+
+この新しいプランは「安定性第一」の方針で、複雑なハイブリッド構造を排除し、完全にImageDataベースの単純な構造を採用します。まず動作を安定させてから、描画品質やパフォーマンスを段階的に改善していきます。

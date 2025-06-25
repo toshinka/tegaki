@@ -89,12 +89,12 @@ rev5	全機能統合の安定版リリース
 
 
 🔒「見た目と保存の一致」を保証するための方針
-処理	方法
-描いてるときの表示	ctx.stroke() で滑らかに描く
-表示用	drawImage()（高品質な見た目）
-複製・Undo保存	getImageData() で描画済みのピクセルを取得（描き終わったものだけ）
-復元・貼り付け	putImageData()（忠実に復元）
-PNG出力	drawImage() 結合で高品質出力
+      処理	                   方法
+描いてるときの表示     ctx.stroke() で滑らかに描く
+表示用	               drawImage()（高品質な見た目）
+複製・Undo保存	       getImageData() で描画済みのピクセルを取得（描き終わったものだけ）
+復元・貼り付け         putImageData()（忠実に復元）
+PNG出力	               drawImage() 結合で高品質出力
 
 
 

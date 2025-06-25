@@ -38,6 +38,9 @@
 2. 同一ブラウザ間（別タブ/別ウィンドウ）の連携可能性
 同一ブラウザ間での別タブや別ウィンドウの連携は、現代のWeb技術（特にJavaScriptのAPI）で実現可能です。以下、絵描きブラウザツールのアニメGIFタイムラインに適用可能な技術と、その利点・課題を整理します。
 技術的実現性
+
+
+
 BroadcastChannel API:
 概要: 同一オリジン（同じドメイン）のタブやウィンドウ間でリアルタイム通信を行うための軽量API。web10
 
@@ -63,6 +66,9 @@ BroadcastChannel API:
 
 フォルダごとのタイムライン状態（例：コマのON/OFF、再生時間）をJSON形式でBroadcastChannel経由で送信。
 
+
+
+
 localStorageとStorageEvent:
 概要: localStorageにデータを保存し、変更時にStorageEventで他のタブ/ウィンドウに通知。web14
 
@@ -85,6 +91,9 @@ localStorageとStorageEvent:
 低頻度の更新（例：コマの追加/削除、フォルダ切り替え）に適する。
 
 例：Shift+Delete（コマ削除）をメインウィンドウで実行→localStorage更新→サブウィンドウのタイムライン反映。
+
+
+
 
 SharedWorker:
 概要: 同一オリジンの複数タブ/ウィンドウで共有されるバックグラウンドスレッド。状態管理や通信を一元化。web10
@@ -132,6 +141,9 @@ WebSocket:
 
 コラボ機能（例：複数アーティストでGIF編集）が必要な場合に有効。
 
+
+
+
 Window Management API（実験的）:
 概要: 複数スクリーンやウィンドウの配置を管理するAPI（Chrome/Edgeで実験中）。web13web16
 
@@ -155,11 +167,15 @@ Window Management API（実験的）:
 
 例：Shift+Delete（コマ削除）をメインウィンドウで実行→サブウィンドウのタイムラインが同期。
 
+
+
+
 実現性の結論
 別タブの連携:
 BroadcastChannelやlocalStorageで可能だが、タブは単一ウィンドウ内に収まるため、液タブ＋サブディスプレイの分離表示には不向き。
 
 タブ間同期はシンプル（例：タイムラインタブとキャンバスタブ）だが、UIスペースを圧迫し、液タブの狭い画面では非効率。
+
 
 別ウィンドウの連携:
 BroadcastChannel, localStorage, SharedWorkerでリアルタイム同期可能。
