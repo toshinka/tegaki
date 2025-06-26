@@ -1,0 +1,117 @@
+﻿# 🏗️ Toshinka構造変革ステップガイド（v1-6 → core主導構造へ）
+
+## 🎯 目的
+
+rev1開発が完了次第、従来のHTML主導・分散呼び出し構造から脱却し、`core-engine.js` を中心にモジュールを統合管理する本来の「Core主導型アーキテクチャ」へ移行する。
+
+この指示書は、そのために必要な構造整理と移行ステップを明確に定め、他AIや今後の作業者が迷わないようにするもの。
+
+---
+
+## ✅ 移行後の基本方針
+
+1. **HTMLは`core-engine.js`のみを読み込む**。
+
+   ```html
+   <script type="module" src="js/core/core-engine.js"></script>
+   ```
+
+2. **HTMLから呼び出す他JSファイル（ui.jsやtools.jsなど）はすべて廃止**。
+
+3. **DOMとのやりとり（取得・イベント登録）は全てcore側に記述**。
+
+   * `document.getElementById()` を含むHTML要素操作は `core-engine.js` 側で完結させる。
+   * HTML構造の変更が必要な場合も、core側から参照可能な形にしておく（例: `id="main-canvas"`）。
+
+4. **モジュール構成は以下のように統一・統括する**：
+
+```plaintext
+project-root/
+├─ index.html            ← 読み込むのは core-engine.js のみ
+└─ js/
+   ├─ core/
+   │   ├─ core-engine.js         ← 起動・制御・初期化の中心
+   │   ├─ rendering-bridge.js    ← 描画エンジンの抽象化
+   │   └─ webgl-engine.js        ← WebGL描画処理（将来）
+   ├─ tools/
+   │   └─ toolset.js             ← ToolRegistryと各種ツール
+   ├─ ui/
+   │   └─ shortcut-manager.js    ← ショートカット制御
+   ├─ data/
+   │   └─ constants.js           ← 色・サイズなど定数定義
+   └─ utils/
+       └─ utils.js               ← 補助関数（色補間など）
+```
+
+---
+
+## 🔄 構造移行ステップ
+
+### Step 1️⃣：`core-engine.js` の役割を拡張する
+
+* [ ] DOM取得・canvas初期化などを `core-engine.js` 側へ移す
+* [ ] `window.addEventListener('DOMContentLoaded', ...)` にて初期化を制御
+* [ ] UI要素とのやりとり（ボタン、ツール選択）もここで登録
+
+### Step 2️⃣：HTML依存要素の抽象化
+
+* [ ] HTML内の `id`, `class` を core 側で参照可能に（例: `getElementById('tool-pen')`）
+* [ ] 可能であれば HTML構造変更時も core 側のコードを更新するだけで済むようにする
+
+### Step 3️⃣：`toolset.js`, `shortcut-manager.js` の統合
+
+* [ ] `core-engine.js` 側から明示的に `import` を行い、HTMLからの直接読み込みを廃止
+* [ ] `ToolRegistry` の呼び出しは core 側の `useTool()` を通じて実行
+
+### Step 4️⃣：旧構成の削除・封印
+
+* [ ] `index.html` 内のすべての `<script>` を `core-engine.js` のみに統一
+* [ ] `ui.js`, `tools.js` 等を `js/` 下の正しいフォルダに再配置
+* [ ] 残存する古いグローバル定義やイベントリスナは `core-engine.js` に移植
+
+---
+
+## 🧩 HTMLから見た最低要件（core側で対応すること）
+
+| 要素例     | id/class名      | coreがやるべき処理                     |
+| ------- | -------------- | ------------------------------- |
+| キャンバス   | `#main-canvas` | getContext, resize, renderAllなど |
+| ペン選択ボタン | `#tool-pen`    | イベント登録して useTool('pen')         |
+| Undoボタン | `#undo-btn`    | click → core.undo() を呼ぶ         |
+| ショートカット | ---            | shortcut-manager.js に登録する       |
+
+> 上記のHTML要素が存在していれば、AI側はHTMLを参照しなくても動作可能。
+
+---
+
+## ✅ 最終形におけるファイル接続イメージ
+
+```html
+<!-- index.html 側はこれだけで完結 -->
+<script type="module" src="js/core/core-engine.js"></script>
+```
+
+```js
+// core-engine.js 側の構成例
+import { ToolRegistry } from '../tools/toolset.js';
+import { ShortcutManager } from '../ui/shortcut-manager.js';
+import { COLORS, SHORTCUTS } from '../data/constants.js';
+
+window.addEventListener('DOMContentLoaded', () => {
+  const app = new DrawingApp();
+  app.init();
+});
+```
+
+---
+
+## ✅ この作業を終えると得られるもの
+
+* AIにHTMLを渡さなくてもコード解析・追加が可能な構造
+* `core-engine.js` による全体制御の一本化
+* 機能拡張時の初期化・依存構成の明確化
+* HTMLとの分離によるUI再設計の自由度向上
+
+---
+
+必要であれば、この計画に合わせた `DrawingApp` クラスの雛形や、イベント登録テンプレも別途ご用意できます。
