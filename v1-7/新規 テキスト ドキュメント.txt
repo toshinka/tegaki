@@ -25,17 +25,6 @@
 core-engine.jsのみをAIに渡すだけで、実装に必要なjsファイルやHTMLをAI側からこちらに要求できるようなものとしてるので、そういった部分を崩さぬようお願いします。
 
 
-core-engine.js　⇐----　ToshinkaTegakiTool.html
-│
-│-- core------rendering-bridge.js（Phase3）
-│        │
-│　　　　　----shortcut-manager.js（Phase3）
-│
-│
-│-- ui--------ui-manager.js
-│        │
-│　　　　　---shortcut-manager.js
-│
-│-- tools-----toolset.js
+
         
 　　　　　
