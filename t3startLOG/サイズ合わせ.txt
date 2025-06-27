@@ -1,0 +1,122 @@
+☆動作のまとめ
+🚀ブックマークレット経由 (t3start.js を使用):
+
+t3start.js が oejs の現在のサイズを取得し、そのサイズを ToshinkaTegakiTool.html へ postMessage で送ります。
+
+ToshinkaTegakiTool.html 内の追加スクリプトがこのメッセージを受け取り、window.initialCanvasWidth と window.initialCanvasHeight をそのサイズに設定します。
+
+DOMContentLoaded で、drawingCanvas と canvas-container の実際のサイズが、受け取ったサイズに動的に変更されます。
+
+その後、core-engine.js がロードされ、LayerManager は window.initialCanvasWidth と window.initialCanvasHeight を参照するため、正しいサイズでレイヤーが初期化されます。
+
+HTML単体で開いた場合 (ToshinkaTegakiTool.html を直接):
+
+t3start.js からの postMessage はありません。
+
+ToshinkaTegakiTool.html 内の追加スクリプトはメッセージを受信しないため、window.initialCanvasWidth と window.initialCanvasHeight はデフォルト値の 344 と 135 のままです。
+
+DOMContentLoaded で、drawingCanvas と canvas-container のサイズがこのデフォルト値で設定されます。
+
+core-engine.js の LayerManager もデフォルト値を使用してレイヤーを初期化します。
+
+
+
+
+
+
+// t3start.js の該当箇所 (iframe.onload 内)
+
+iframe.onload = () => {
+    const patcher = iframe.contentWindow.document.createElement('script');
+    patcher.textContent = patchScript;
+    iframe.contentWindow.document.body.appendChild(patcher);
+
+    setTimeout(() => {
+        // oejs の実際の幅と高さを取得し、メッセージに含める
+        // oejs が存在しない場合やサイズが0以下の場合は、デフォルトとして 344x135 を仮定 (実際は HTML 側でデフォルトが適用される)
+        const initialWidth = oejs ? oejs.width : 344;
+        const initialHeight = oejs ? oejs.height : 135;
+
+        iframe.contentWindow.postMessage({
+            type: 'init',
+            imageDataUrl: initialImageDataUrl, // 既存の画像データ
+            canvasWidth: initialWidth,         // 追加: oejs の幅
+            canvasHeight: initialHeight        // 追加: oejs の高さ
+        }, '*');
+    }, 100);
+};
+
+
+
+// ToshinkaTegakiTool.html の修正
+
+
+<script>
+        // グローバル変数として初期キャンバスサイズを定義
+        // HTML単体で開いた場合のデフォルト値
+        window.initialCanvasWidth = 344;
+        window.initialCanvasHeight = 135;
+
+        // 親ウィンドウからのメッセージをリッスン
+        window.addEventListener('message', (event) => {
+            // セキュリティのため、event.origin の確認も推奨されますが、
+            // 今回はユーザーが信頼できるソースからのブックマークレットと仮定し省略します。
+            if (event.data && event.data.type === 'init') {
+                if (event.data.canvasWidth && event.data.canvasHeight) {
+                    // t3start.js (親ウィンドウ) からサイズが指定された場合
+                    window.initialCanvasWidth = event.data.canvasWidth;
+                    window.initialCanvasHeight = event.data.canvasHeight;
+                    console.log(`Canvas dimensions updated from parent: ${window.initialCanvasWidth}x${window.initialCanvasHeight}`);
+                }
+                // imageDataUrl があれば、core-engine.js 側でロードされるのでここでは特に処理しない
+            }
+        });
+
+        // DOMContentLoaded で canvas 要素と container 要素のサイズを動的に設定
+        // core-engine.js がロードされる前に実行されるように、DOMContentLoaded で設定
+        // これにより、CanvasManager がこれらの値を拾うことができる
+        document.addEventListener('DOMContentLoaded', () => {
+            const canvasContainer = document.getElementById('canvas-container');
+            const drawingCanvas = document.getElementById('drawingCanvas');
+
+            if (canvasContainer && drawingCanvas) {
+                // CSS の width/height を設定
+                canvasContainer.style.width = `${window.initialCanvasWidth}px`;
+                canvasContainer.style.height = `${window.initialCanvasHeight}px`;
+
+                // canvas 要素の width/height 属性を設定
+                drawingCanvas.width = window.initialCanvasWidth;
+                drawingCanvas.height = window.initialCanvasHeight;
+
+                console.log(`Applied final canvas size: ${drawingCanvas.width}x${drawingCanvas.height}`);
+
+                // CSSで設定されたwidth/heightも更新
+                // スタイルシートを動的に変更する方法は複雑なので、
+                // 今回はインラインスタイルと属性変更で対応し、HTMLのstyleタグの固定値は削除を推奨
+                // もしくは、JavaScriptでStyleSheetを操作する方法を検討
+            }
+        });
+    </script>
+    <script type="module" src="core-engine.js"></script>
+</body>
+</html>
+
+
+
+
+
+// core-engine.js の該当箇所
+
+class LayerManager {
+    constructor(app) {
+        this.app = app;
+        this.layers = [];
+        this.activeLayerIndex = -1;
+        // グローバル変数から幅と高さを取得する
+        // window.initialCanvasWidth と window.initialCanvasHeight は
+        // ToshinkaTegakiTool.html のスクリプトで設定されることを期待
+        this.width = window.initialCanvasWidth || 344; // フォールバックとしてデフォルト値も残す
+        this.height = window.initialCanvasHeight || 135; // フォールバックとしてデフォルト値も残す
+    }
+    // ... (その他のメソッドは変更なし)
+}
