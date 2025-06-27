@@ -6,6 +6,50 @@
  * このファイルはアプリケーションの中核です。
  * 分割されたUIモジュールやツールを読み込み、全体を統括します。
  * ===================================================================================
+ *
+ * --- HTML依存リスト ---
+ * このスクリプトが動作するために、HTML側に以下のidまたはclassを持つ要素が必要です。
+ *
+ * [Canvas/Area]
+ * - drawingCanvas: メインの描画キャンバス
+ * - canvas-area: キャンバスを内包する領域（ポインタイベント用）
+ * - canvas-container: キャンバスの拡縮・回転用コンテナ
+ * - center-crosshair: Vキー押下時に表示される十字線
+ *
+ * [Top Toolbar]
+ * - saveMergedButton: PNG保存ボタン
+ * - undo-btn: 元に戻すボタン
+ * - redo-btn: やり直しボタン
+ * - clear-btn: アクティブレイヤー消去ボタン
+ * - clear-all-btn: (動的生成) 全レイヤー消去ボタン
+ * - flip-h-btn: 左右反転ボタン
+ * - flip-v-btn: 上下反転ボタン
+ * - zoom-in-btn: 拡大ボタン
+ * - zoom-out-btn: 縮小ボタン
+ * - rotate-btn: 時計回り回転ボタン
+ * - rotate-ccw-btn: 反時計回り回転ボタン
+ * - reset-view-btn: 表示リセットボタン
+ * - close-btn: 閉じるボタン
+ *
+ * [Left Toolbar]
+ * - main-color-display: メインカラー表示部
+ * - sub-color-display: サブカラー表示部
+ * - pen-tool: ペンツールボタン
+ * - eraser-tool: 消しゴムツールボタン
+ * - bucket-tool: 塗りつぶしツールボタン
+ * - move-tool: レイヤー移動ツールボタン
+ * - (class) color-btn: 各カラーボタン
+ * - (class) color-mode-display: カラー切り替え表示エリア
+ * - (class) size-btn: 各サイズボタン
+ *
+ * [Right Sidebar (Layers)]
+ * - layer-list: レイヤー一覧を表示するコンテナ
+ * - add-layer-btn: 新規レイヤー追加ボタン
+ * - delete-layer-btn: レイヤー削除ボタン
+ * - duplicate-layer-btn: レイヤー複製ボタン
+ * - merge-layer-btn: レイヤー結合ボタン
+ *
+ * ===================================================================================
  */
 
 // --- Module Imports ---
