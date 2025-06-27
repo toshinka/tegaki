@@ -1,0 +1,138 @@
+🚀 Toshinkaお絵かきツール：統合開発ロードマップ（改訂版）
+【Phase 0】 現状分析 (現在地)
+状態: core.jsとui.jsがHTMLから個別に読み込まれており、機能は動作するものの、ファイル間の依存関係が密になっている状態。
+
+課題: 将来の機能追加（定規、アニメ対応など）を見据えると、拡張性と保守性に課題がある。AIへの情報提示も煩雑になりがち。
+
+【Phase 1】 Core主導アーキテクチャへの移行 (改訂版)
+🎯 目標: core-engine.jsを唯一の司令塔とし、HTML上のUI要素に振る舞いを注入する構造を確立する。
+
+📝 主な作業:
+
+core-v1-6rev7.js のファイル名を core-engine.js に変更します。
+
+ui-v1-6rev0.jsで定義されていたTopBarManager, ShortcutManager, LayerUIManagerといったクラスの定義を、core-engine.jsのファイル内に移動・統合します。
+
+HTMLファイル (ToshinkaTegakiTool-v1-6rev7.html) を編集し、<script>タグを <script src="core-engine.js"></script> の一行のみにします。
+
+core-engine.jsの起動処理の中で、new TopBarManager(this)のように各UI管理クラスを初期化します。
+
+各UI管理クラス（例: TopBarManager）のコンストラクタやbindEventsメソッド内で、document.getElementById('undo-btn')のようにHTML上の要素を取得し、addEventListenerでイベント（クリック動作など）を登録します。
+
+📦 このPhaseで生まれるファイル:
+
+core-engine.js（アプリケーションのロジックと、HTML要素へのイベント登録処理を内包）
+
+ToshinkaTegakiTool-v1-6rev7.html（スクリプト読み込みが一行になった更新版）
+
+🏆 完了条件:
+
+HTMLとJSの役割が明確に分離される。
+
+すべてのUIが以前と全く同じように動作する。
+
+core-engine.jsの先頭に、**「HTML依存リスト」**として必要なidの一覧をコメントで記述する。
+
+【Phase 2】 関心の分離 (UIモジュールの独立)
+🎯 目標: core-engine.jsからUI関連の責務を分離し、コードの見通しを良くする。最初の新機能としてバケツツールを復活させる。
+
+📝 主な作業:
+
+ファイル分割:
+
+core-engine.jsからShortcutManagerクラスを、新ファイル ui/shortcut-manager.js へ切り出します。
+
+TopBarManagerとLayerUIManagerを、新ファイルui/ui-manager.jsへ切り出します。
+
+core-engine.jsの先頭で、これらのファイルをimportして利用する形に変更します。
+
+機能実装（バケツツール）:
+
+tools/toolset.js（なければ新規作成）に、バケツツールのロジックを実装します。
+
+core-engine.js内のToolManager（または同等のクラス）が、この新しいツールを認識して使えるようにします。
+
+📦 このPhaseで生まれるファイル:
+
+ui/shortcut-manager.js
+
+ui/ui-manager.js
+
+tools/toolset.js
+
+🏆 完了条件:
+
+UI関連のロジックが別ファイルとして独立し、core-engine.jsがスリムになる。
+
+バケツツールが利用可能になる。
+
+AIに「ショートカットを修正して」と依頼する際、core-engine.jsとui/shortcut-manager.jsだけを渡せば済むようになる。
+
+【Phase 3】 描画エンジンの抽象化とレイヤー機能拡張
+🎯 目標: 将来のWebGL化に備え、描画方法（Canvas2DかWebGLか）を簡単に切り替えられる設計にする。レイヤー機能を強化する。
+
+📝 主な作業:
+
+描画エンジン抽象化:
+
+core/rendering-bridge.jsを作成し、描画の基本的な命令（drawLine, drawCircle, clearCanvasなど）を定義した抽象クラス（DrawingEngine）を作ります。
+
+現在のCanvasManagerにある描画関連のロジックを、core/canvas2d-engine.jsへ移動し、DrawingEngineを実装させます。
+
+core-engine.jsは、具体的な描画方法を知ることなく、rendering-bridge.jsを通じて描画を命令する形になります。
+
+レイヤー機能強化:
+
+実装計画案.txtにあるレイヤーフォルダや**ブレンドモード（乗算など）**を実装します。ブレンドモードはcanvas2d-engine.jsのglobalCompositeOperationを使って実現できます。
+
+📦 このPhaseで生まれるファイル:
+
+core/rendering-bridge.js
+
+core/canvas2d-engine.js
+
+🏆 完了条件:
+
+描画エンジンが交換可能な構造になる。
+
+レイヤーフォルダとブレンドモードが利用可能になる。
+
+この時点で、WebGLへの道筋が完全に見えるようになります。
+
+【Phase 4】 WebGLハイブリッド導入と高度な描画
+🎯 目標: 負荷の高い処理（多数のレイヤー合成）をWebGLで高速化し、Canvas2Dでは難しい表現（エアブラシなど）を実装する。
+
+📝 主な作業:
+
+WebGL合成エンジンの実装:
+
+core/webgl-engine.jsを作成し、DrawingEngineを実装します。
+
+このエンジンは、各レイヤー（canvas2d-engine.jsで描画されたもの）をWebGLテクスチャとして受け取り、GPU上で高速に合成する責務を持ちます。
+
+高度なツールの実装:
+
+エアブラシツールを実装します。パーティクル的な表現はWebGLの得意分野です。
+
+実装計画案.txtにある定規ツール（SVG or WebGL）や回転デフォーマなども、この拡張性の高いアーキテクチャの上で実装していきます。
+
+📦 このPhaseで生まれるファイル:
+
+core/webgl-engine.js
+
+🏆 完了条件:
+
+多くのレイヤーを重ねてもパフォーマンスが維持される。
+
+エアブラシや定規ツールなどが利用可能になる。
+
+【Phase 5以降】 WebGL完全移行と最終目標へ
+🎯 目標: 線の描画自体もWebGLで行い、究極のパフォーマンスと表現力を手に入れる。実装計画案.txtにある高度な機能（アニメ制作、LIVE2D的変形）を目指す。
+
+📝 主な作業:
+
+webgl-engine.jsに、アンチエイリアシングされた滑らかな線を描画するシェーダーを実装する。
+
+オニオンスキン機能やタイムラインUIなどを実装していく。
+
+このロードマップに沿って進めることで、巨大で複雑な計画を、着実かつ管理可能なステップで達成できます。そして、各段階でコードの健全性が保たれ、AIとの連携もスムーズに進むはずです。素晴らしいプロジェクトの完成を応援しています！

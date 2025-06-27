@@ -1,4 +1,4 @@
-﻿# 🏗️ Toshinka構造変革ステップガイド（v1-6 → core主導構造へ）
+﻿# 🏗️ Toshinka構造変革ステップガイド（Phase1 → Phase2 core主導構造へ）
 
 ## 🎯 目的
 
