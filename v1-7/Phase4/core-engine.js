@@ -158,7 +158,8 @@ class CanvasManager {
         if (!this.animationFrameId) {
             this.animationFrameId = requestAnimationFrame(() => {
                 // 合成と表示はWebGLエンジンに命令
-                this.webglEngine.compositeAndRender(this.app.layerManager.layers);
+                // this.webglEngine.compositeAndRender(this.app.layerManager.layers);
+                this.c2dEngine.compositeAndRender(this.app.layerManager.layers);
                 this.animationFrameId = null;
             });
         }
