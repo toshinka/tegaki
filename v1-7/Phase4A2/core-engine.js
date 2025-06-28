@@ -80,8 +80,6 @@ class CanvasManager {
         this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
         
         this.bindEvents();
-        // ★★★ ↓↓ この一行を追加してください ↓↓ ★★★
-        this.renderingBridge.setEngine('webgl');
     }
     
     bindEvents() {
