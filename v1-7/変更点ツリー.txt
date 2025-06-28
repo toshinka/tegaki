@@ -1,3 +1,28 @@
+core-engine.js（Phase4A1）    ⇐----　ToshinkaTegakiTool.html（Phase2）
+│  　　　　　　　　　　　　《htmlはイグニッションとバーアイコンレイアウト担当》
+├core/             
+│　└ rendering/              
+│      ├── drawing-engine.js    <-- （Phase3B）
+│      ├── canvas2d-engine.js   <-- （Phase3A）
+│      ├── webgl-engine.js      <-- （Phase4A1）
+│      ├── webgpu-engine.js     //  （仮空ファイル）
+│      ├── rendering-bridge.js  <-- （Phase4A1）
+│      ├── shader-programs/     // シェーダー管理（仮空ファイル）
+│      │   ├─ blend-shaders.js  // ブレンドモード（仮空ファイル）
+│      │   └─ filter-shaders.js // フィルター効果（仮空ファイル） 
+│      └── texture-manager.js   // テクスチャ管理（仮空ファイル）
+├ui/ 
+│├─ ui-manager.js         　　　 <-- （Phase2）
+│└─ shortcut-manager.js     　　 <-- （Phase3B）
+│　　
+└tools/ 
+　├─ toolset.js              　　 <-- （Phase2）
+　├── advanced-toolset.js   　　 // エアブラシ、グラデーション（仮空ファイル）
+　├── ruler-tool.js         　　 // 定規ツール（仮空ファイル）
+　└── bucket-fill-improved.js    // アンチエイリアス対応（仮空ファイル）
+
+
+
 core-engine.js（Phase3B）           ⇐----　ToshinkaTegakiTool.html（Phase2）
 │   │   │
 │   │   ui/ 
@@ -9,8 +34,23 @@ core/
 └── rendering/              
         ├── drawing-engine.js    <-- （Phase3B）
         ├── canvas2d-engine.js   <-- （Phase3A）
-        ├── rendering-bridge.js  <-- （Phase3A）
-        └── webgl-engine.js      <-- （Phase4A）
+        ├── rendering-bridge.js  <-- （Phase4A1）
+        └── webgl-engine.js      <-- （Phase4A1）
+
+
+core-engine.js（Phase3B）           ⇐----　ToshinkaTegakiTool.html（Phase2）
+│   │   │
+│   │   ui/ 
+│   │   ├── ui-manager.js         <-- （Phase2）
+│   │   └── shortcut-manager.js   <-- （Phase3B）
+│  tools/ 
+│   └── toolset.js                <-- （Phase2）
+core/             
+└── rendering/              
+        ├── drawing-engine.js    <-- （Phase3B）
+        ├── canvas2d-engine.js   <-- （Phase3A）
+        ├── rendering-bridge.js  <-- （Phase4A1）
+        └── webgl-engine.js      <-- （Phase4A1）
 
 
 core-engine.js（Phase3B）           ⇐----　ToshinkaTegakiTool.html（Phase2）

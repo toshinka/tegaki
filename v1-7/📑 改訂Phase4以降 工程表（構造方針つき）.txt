@@ -1,3 +1,40 @@
+現在（Phase 4A実装中）のファイルツリー
+
+core-engine.js（Phase3B）    ⇐----　ToshinkaTegakiTool.html（Phase2）
+│  　　　　　　　　　　　　《htmlはイグニッションとバーアイコンレイアウト担当》
+├core/             
+│├ rendering/              
+││  ├── drawing-engine.js    <-- （Phase3B）
+││  ├── canvas2d-engine.js   <-- （Phase3A）
+││  ├── webgl-engine.js      <-- （Phase4A1）
+││  ├── webgpu-engine.js     //  （仮空ファイル）
+││  ├── rendering-bridge.js  <-- （Phase4A1）
+││  ├── shader-programs/     // シェーダー管理（仮空ファイル）
+││  │   ├─ blend-shaders.js  // ブレンドモード（仮空ファイル）
+││  │   └─ filter-shaders.js // フィルター効果（仮空ファイル） 
+││  └── texture-manager.js   // テクスチャ管理（仮空ファイル）
+│├ layer-manager/
+│├ animation/
+││  ├── timeline-manager.js  // タイムライン制御（仮空ファイル）
+││  ├── keyframe-manager.js  // キーフレーム管理（仮空ファイル）
+││  └── interpolation.js     // 補間システム（仮空ファイル）
+│└ deformation/
+│　  ├── mesh-deformer.js     // メッシュ変形・ワープデフォーマ（仮空ファイル
+│　　├── bone-system.js       // ボーンシステム（仮空ファイル
+│　　└── physics-engine.js    // 簡易物理演算（仮空ファイル
+├ui/ 
+│├─ ui-manager.js         　　 <-- （Phase2）
+│├─ shortcut-manager.js     　 <-- （Phase3B）
+│└─ timeline-ui.js             // タイムラインUI（仮空ファイル）
+│　　
+└tools/ 
+　├─ toolset.js              　 <-- （Phase2）
+　├─ advanced-toolset.js   　   // エアブラシ、グラデーション（仮空ファイル）
+　├─ ruler-tool.js         　   // 定規ツール（仮空ファイル）
+　└─ bucket-fill-improved.js    // アンチエイリアス対応（仮空ファイル）
+
+
+
 🚀 Toshinkaお絵かきツール：改訂Phase3以降 工程表（GPT監修。後のClaude案やGEMINI案はコレをベースとしてる）
 
 【Phase 3 改訂：描画エンジン抽象化＋レイヤー機能拡張】
