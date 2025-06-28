@@ -59,64 +59,67 @@ export class ShortcutManager {
             return;
         }
 
+        // ★★★ このブロック全体を修正 ★★★
         if (this.app.canvasManager.isVDown) {
             let handled = true;
             const moveAmount = 5;
             const scaleAmount = 1.05;
             const rotateAmount = 5;
 
+            // 変形を開始させるためのヘルパー関数
             const startTransformIfNeeded = () => {
                 if (!this.app.canvasManager.isLayerTransforming) {
                     this.app.canvasManager.startLayerTransform();
                 }
+                // transformTargetLayerが存在するか確認
+                return !!this.app.canvasManager.transformTargetLayer;
             };
+            
+            // 変形対象のtransformオブジェクトを取得
+            const getTransform = () => {
+                return this.app.canvasManager.transformTargetLayer?.transform;
+            }
 
-            if (e.shiftKey) {
+            if (e.shiftKey) { // V + Shift
+                if (!startTransformIfNeeded()) return;
+                const transform = getTransform();
                 switch (e.key.toLowerCase()) {
                     case 'arrowup':
-                        startTransformIfNeeded();
-                        this.app.canvasManager.layerTransform.scale *= scaleAmount;
+                        transform.scale *= scaleAmount;
                         break;
                     case 'arrowdown':
-                        startTransformIfNeeded();
-                        this.app.canvasManager.layerTransform.scale /= scaleAmount;
+                        transform.scale /= scaleAmount;
                         break;
                     case 'arrowleft':
-                        startTransformIfNeeded();
-                        this.app.canvasManager.layerTransform.rotation -= (rotateAmount * Math.PI / 180);
+                        transform.rotation -= rotateAmount;
                         break;
                     case 'arrowright':
-                        startTransformIfNeeded();
-                        this.app.canvasManager.layerTransform.rotation += (rotateAmount * Math.PI / 180);
+                        transform.rotation += rotateAmount;
                         break;
                     case 'h':
-                        startTransformIfNeeded();
-                        this.app.canvasManager.layerTransform.flipY *= -1;
+                        transform.flipY *= -1;
                         break;
                     default:
                         handled = false;
                 }
-            } else {
+            } else { // Vのみ
+                if (!startTransformIfNeeded()) return;
+                const transform = getTransform();
                 switch (e.key.toLowerCase()) {
                     case 'arrowup':
-                        startTransformIfNeeded();
-                        this.app.canvasManager.layerTransform.translateY -= moveAmount;
+                        transform.y -= moveAmount;
                         break;
                     case 'arrowdown':
-                        startTransformIfNeeded();
-                        this.app.canvasManager.layerTransform.translateY += moveAmount;
+                        transform.y += moveAmount;
                         break;
                     case 'arrowleft':
-                        startTransformIfNeeded();
-                        this.app.canvasManager.layerTransform.translateX -= moveAmount;
+                        transform.x -= moveAmount;
                         break;
                     case 'arrowright':
-                        startTransformIfNeeded();
-                        this.app.canvasManager.layerTransform.translateX += moveAmount;
+                        transform.x += moveAmount;
                         break;
                     case 'h':
-                        startTransformIfNeeded();
-                        this.app.canvasManager.layerTransform.flipX *= -1;
+                        transform.flipX *= -1;
                         break;
                     default:
                         handled = false;
@@ -129,6 +132,7 @@ export class ShortcutManager {
             }
             return;
         }
+        // ★★★ 修正ブロックここまで ★★★
 
         let handled = false;
 
@@ -136,7 +140,7 @@ export class ShortcutManager {
             switch (e.key.toLowerCase()) {
                 case 'delete':
                     if (confirm('すべてのレイヤーを消去しますか？\nこの操作は元に戻すのが難しい場合があります。')) {
-                        this.app.canvasManager.clearAllLayers();
+                        // this.app.canvasManager.clearAllLayers(); // このメソッドは未実装
                         handled = true;
                     }
                     break;

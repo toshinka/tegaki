@@ -1,7 +1,7 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Canvas2D Engine
- * Version: 1.0
+ * Version: 1.0.1
  *
  * DrawingEngineの設計図に基づき、Canvas2D APIを使用して
  * 実際の描画処理を行うエンジンです。
@@ -103,7 +103,8 @@ export class Canvas2DEngine extends DrawingEngine {
         const sdata = sourceImageData.data;
         const destImageData = new ImageData(sw, sh);
         const ddata = destImageData.data;
-        const { x: tx, y: ty, scale, rotation } = transform;
+        // ★★★ 修正箇所: transformから反転情報も取得 ★★★
+        const { x: tx, y: ty, scale, rotation, flipX, flipY } = transform;
         const rad = -rotation * Math.PI / 180;
         const cos = Math.cos(rad);
         const sin = Math.sin(rad);
@@ -117,6 +118,11 @@ export class Canvas2DEngine extends DrawingEngine {
                 curY -= ty;
                 curX /= scale;
                 curY /= scale;
+                
+                // ★★★ 修正箇所: 回転前に反転を適用 ★★★
+                curX *= flipX || 1;
+                curY *= flipY || 1;
+
                 const rotatedX = curX * cos - curY * sin;
                 const rotatedY = curX * sin + curY * cos;
                 const sx = Math.round(rotatedX + cx);
@@ -149,7 +155,6 @@ export class Canvas2DEngine extends DrawingEngine {
                 const i = (y * width + x) * 4;
                 let r = 0, g = 0, b = 0, a = 0;
 
-                // TODO: Phase3改訂でここにブレンドモード処理が入る
                 for (const layer of layers) {
                     if (!layer.visible) continue;
                     const layerData = layer.imageData.data;
@@ -182,7 +187,6 @@ export class Canvas2DEngine extends DrawingEngine {
         const dirtyH = Math.min(this.height, Math.ceil(dirtyRect.maxY)) - dirtyY;
 
         if (dirtyW > 0 && dirtyH > 0) {
-            // ImageDataを部分的に作成してputImageDataで描画する最適化
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = dirtyW;
             tempCanvas.height = dirtyH;
@@ -205,7 +209,7 @@ export class Canvas2DEngine extends DrawingEngine {
         }
     }
 
-    // --- プライベートヘルパーメソッド (移植) ---
+    // --- プライベートヘルパーメソッド ---
 
     _drawSinglePixel(imageData, x, y, color, isEraser, intensity = 1.0) {
         const alpha = Math.min(1.0, intensity);

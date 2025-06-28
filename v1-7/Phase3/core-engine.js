@@ -1,7 +1,7 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 1.9.1 (Phase 3-rev1 Architecture - Fix)
+ * Version: 1.9.2 (Phase 3-rev1 Architecture - Fix)
  *
  * このファイルはアプリケーションの中核です。
  * 描画処理をRenderingBridge経由に分離し、拡張性を向上させました。
@@ -32,8 +32,8 @@ class Layer {
         this.name = name;
         this.visible = true;
         this.imageData = new ImageData(width, height);
-        // TODO: Phase3改訂でここに透明度やブレンドモードのプロパティを追加
-        this.transform = { x: 0, y: 0, scale: 1, rotation: 0 };
+        // ★★★ 修正箇所: transformに反転情報を追加 ★★★
+        this.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
         this.originalImageData = null;
     }
     clear() { this.imageData.data.fill(0); }
@@ -143,14 +143,13 @@ class CanvasManager {
                 t.rotation = ot.rotation + dx * 0.5;
                 const scaleFactor = 1 - dy * 0.005; t.scale = Math.max(0.1, ot.scale * scaleFactor);
             }
-            this._applyLiveTransform(); return;
+            this.applyLayerTransformPreview(); return;
         }
         if (this.isPanning) {
             const dx = e.clientX - this.dragStartX; const dy = e.clientY - this.dragStartY;
             this.viewTransform.left = this.canvasStartX + dx; this.viewTransform.top = this.canvasStartY + dy;
             this.applyViewTransform(); return;
         }
-        // ★★★ 修正箇所: 'this.' を追記 ★★★
         if (!this.isDrawing) return;
         const coords = this.getCanvasCoordinates(e);
         if (!coords) { this.lastPoint = null; return; }
@@ -290,8 +289,9 @@ class CanvasManager {
             this.transformStartY = e.clientY;
         }
     }
-
-    _applyLiveTransform() {
+    
+    // ★★★ 修正箇所: メソッド名を変更 (_applyLiveTransform -> applyLayerTransformPreview) ★★★
+    applyLayerTransformPreview() {
         if (!this.transformTargetLayer || !this.transformTargetLayer.originalImageData) return;
         const layer = this.transformTargetLayer;
         const transformedImageData = this.renderingBridge.getTransformedImageData(layer.originalImageData, layer.transform);
@@ -301,10 +301,11 @@ class CanvasManager {
 
     commitLayerTransform() {
         if (!this.isLayerTransforming) return;
-        this._applyLiveTransform();
+        this.applyLayerTransformPreview();
         const layer = this.transformTargetLayer;
         layer.originalImageData = null;
-        layer.transform = { x: 0, y: 0, scale: 1, rotation: 0 };
+        // ★★★ 修正箇所: transformリセット時に反転情報もリセット ★★★
+        layer.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
         
         this.isLayerTransforming = false;
         this.transformTargetLayer = null;
@@ -323,7 +324,9 @@ class CanvasManager {
                     new Uint8ClampedArray(layer.imageData.data),
                     layer.imageData.width,
                     layer.imageData.height
-                )
+                ),
+                // ★★★ 修正箇所: ヒストリーにtransform情報も保存 ★★★
+                transform: { ...layer.transform }
             })),
             activeLayerIndex: this.app.layerManager.activeLayerIndex
         };
@@ -337,6 +340,10 @@ class CanvasManager {
             const layer = new Layer(layerData.name, layerData.imageData.width, layerData.imageData.height);
             layer.visible = layerData.visible;
             layer.imageData.data.set(layerData.imageData.data);
+            // ★★★ 修正箇所: ヒストリーからtransform情報も復元 ★★★
+            if (layerData.transform) {
+                layer.transform = { ...layerData.transform };
+            }
             return layer;
         });
         this.app.layerManager.switchLayer(state.activeLayerIndex);
