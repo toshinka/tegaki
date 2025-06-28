@@ -1,4 +1,4 @@
-🚀 Toshinkaお絵かきツール：改訂Phase3以降 工程表
+🚀 Toshinkaお絵かきツール：改訂Phase3以降 工程表（GPT監修。後のClaude案やGEMINI案はコレをベースとしてる）
 
 【Phase 3 改訂：描画エンジン抽象化＋レイヤー機能拡張】
 
@@ -264,7 +264,7 @@ ui/
 ### 📝 実装内容:
 ```
 core/deformation/
-├── mesh-deformer.js      // メッシュ変形
+├── mesh-deformer.js      // メッシュ変形・ワープデフォーマ
 ├── bone-system.js        // ボーンシステム
 └── physics-engine.js     // 簡易物理演算
 ```
