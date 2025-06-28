@@ -1,3 +1,39 @@
+
+
+
+
+core-engine.js           ⇐----　ToshinkaTegakiTool.html（Phase2）
+│   │   │
+│   │   ui/ 
+│   │   ├── drawing-engine.js    <-- （Phase2）
+│   │   └── canvas2d-engine.js   <-- （Phase2）
+│  tools/ 
+│   └── toolset.js           <-- （Phase2）
+core/             
+└── rendering/              
+        ├── drawing-engine.js    <-- （Phase3）
+        ├── canvas2d-engine.js   <-- （Phase3）
+        └── rendering-bridge.js  <-- （Phase3）
+
+
+
+
+
+
+core-engine.js（Phase2）　⇐----　ToshinkaTegakiTool.html（Phase2）
+│
+│
+│
+│-- ui--------ui-manager.js（Phase2）
+│        │
+│　　　　　---shortcut-manager.js（Phase2）
+│
+│-- tools-----toolset.js（Phase2）
+
+
+
+
+
 core-engine.js（Phase3）　⇐----　ToshinkaTegakiTool.html（Phase2）
 │
 │-- core------rendering-bridge.js（Phase3）
