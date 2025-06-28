@@ -1,10 +1,10 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.0.0 (Phase 3-rev2 Architecture - Layer Enhancements)
+ * Version: 2.0.1 (Phase 3-rev2 Architecture - Bug Fix)
  *
- * このファイルはアプリケーションの中核です。
- * Layerクラスに不透明度とブレンドモードを追加し、それに対応する機能を更新しました。
+ * ・レイヤー結合時のエラーを修正
+ * ・ビュー拡大縮小時のペン座標ズレを修正
  * ===================================================================================
  */
 
@@ -30,9 +30,8 @@ class Layer {
     constructor(name, width, height) {
         this.name = name;
         this.visible = true;
-        // ★★★ 修正箇所: 不透明度とブレンドモードを追加 ★★★
-        this.opacity = 100; // 0-100のパーセント値
-        this.blendMode = 'normal'; // 'normal', 'multiply'など
+        this.opacity = 100;
+        this.blendMode = 'normal';
         this.imageData = new ImageData(width, height);
         this.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
         this.originalImageData = null;
@@ -94,7 +93,9 @@ class CanvasManager {
 
     onPointerDown(e) {
         if (e.button !== 0) return;
-
+        
+        const coords = this.getCanvasCoordinates(e); // ★座標取得を先に行う
+        
         if (this.isVDown) {
             this.startLayerTransform(e);
             e.preventDefault(); return;
@@ -105,7 +106,6 @@ class CanvasManager {
             e.preventDefault(); return;
         }
 
-        const coords = this.getCanvasCoordinates(e);
         if (!coords) return;
         
         const activeLayer = this.app.layerManager.getCurrentLayer();
@@ -139,7 +139,9 @@ class CanvasManager {
             const dx = e.clientX - this.transformStartX; const dy = e.clientY - this.transformStartY;
             const t = this.transformTargetLayer.transform; const ot = this.originalLayerTransform;
             if (this.transformMode === 'move') {
-                t.x = ot.x + dx; t.y = ot.y + dy;
+                // ★★★ 座標ズレ修正: 移動量にもスケールを反映 ★★★
+                t.x = ot.x + dx / this.viewTransform.scale;
+                t.y = ot.y + dy / this.viewTransform.scale;
             } else {
                 t.rotation = ot.rotation + dx * 0.5;
                 const scaleFactor = 1 - dy * 0.005; t.scale = Math.max(0.1, ot.scale * scaleFactor);
@@ -250,12 +252,24 @@ class CanvasManager {
         return Math.max(0.1, finalSize);
     }
 
+    // ★★★ 座標ズレ修正: getCanvasCoordinatesを修正 ★★★
     getCanvasCoordinates(e) {
         try {
             const rect = this.displayCanvas.getBoundingClientRect();
+            // rect.widthが0になるのを防ぐ
+            if (rect.width === 0 || rect.height === 0) return null;
+
+            // ビューポート上のクリック位置から、canvas要素の左上隅までの相対座標を計算
             let x = e.clientX - rect.left;
             let y = e.clientY - rect.top;
 
+            // 表示上のサイズ(rect.width)と、ImageDataの本来のサイズ(this.width)の比率を使って座標をスケールする
+            // これにより、CSSによる拡大・縮小を逆算する
+            // ※注意: この計算は回転がない場合には正確ですが、回転がかかるとズレが生じます。
+            x = x * (this.width / rect.width);
+            y = y * (this.height / rect.height);
+
+            // ビューの反転を考慮 (これはImageDataに対する反転なので、スケール後に適用)
             if (this.viewTransform.flipX === -1) { x = this.width - x; }
             if (this.viewTransform.flipY === -1) { y = this.height - y; }
 
@@ -315,7 +329,6 @@ class CanvasManager {
 
     saveState() {
         if(this.isLayerTransforming) return;
-        // ★★★ 修正箇所: ヒストリーに不透明度とブレンドモードも保存 ★★★
         const state = {
             layers: this.app.layerManager.layers.map(layer => ({
                 name: layer.name,
@@ -337,19 +350,18 @@ class CanvasManager {
     }
 
     restoreState(state) {
-        // ★★★ 修正箇所: ヒストリーから不透明度とブレンドモードも復元 ★★★
         this.app.layerManager.layers = state.layers.map(layerData => {
             const layer = new Layer(layerData.name, layerData.imageData.width, layerData.imageData.height);
             layer.visible = layerData.visible;
-            layer.opacity = layerData.opacity ?? 100; // 以前のデータとの互換性のため
-            layer.blendMode = layerData.blendMode ?? 'normal'; // 以前のデータとの互換性のため
+            layer.opacity = layerData.opacity ?? 100;
+            layer.blendMode = layerData.blendMode ?? 'normal';
             layer.imageData.data.set(layerData.imageData.data);
             if (layerData.transform) {
                 layer.transform = { ...layerData.transform };
             }
             return layer;
         });
-        this.app.layerManager.switchLayer(state.activeLayerIndex); // UIも更新
+        this.app.layerManager.switchLayer(state.activeLayerIndex);
         this.renderAllLayers();
     }
 
@@ -422,7 +434,61 @@ class CanvasManager {
     handleWheel(e) { e.preventDefault(); if (e.shiftKey) { this.rotate(-e.deltaY * 0.2); } else { this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); } }
 }
 
-class LayerManager { constructor(app) { this.app = app; this.layers = []; this.activeLayerIndex = -1; this.width = 344; this.height = 135; } setupInitialLayers() { const bgLayer = new Layer('背景', this.width, this.height); bgLayer.fill('#f0e0d6'); this.layers.push(bgLayer); const drawingLayer = new Layer('レイヤー 1', this.width, this.height); this.layers.push(drawingLayer); this.switchLayer(1); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } addLayer() { if (this.layers.length >= 99) return; const insertIndex = this.activeLayerIndex + 1; const newLayer = new Layer(`レイヤー ${this.layers.length + 1}`, this.width, this.height); this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } deleteActiveLayer() { if (this.activeLayerIndex === 0 || this.layers.length <= 1) return; this.layers.splice(this.activeLayerIndex, 1); const newActiveIndex = Math.min(this.layers.length - 1, this.activeLayerIndex); this.renameLayers(); this.switchLayer(newActiveIndex); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } renameLayers() { this.layers.forEach((layer, index) => { layer.name = index === 0 ? '背景' : `レイヤー ${index}`; }); } switchLayer(index) { if (index < 0 || index >= this.layers.length) return; this.activeLayerIndex = index; if (this.app.layerUIManager) { this.app.layerUIManager.renderLayers(); } } getCurrentLayer() { return this.layers[this.activeLayerIndex] || null; } duplicateActiveLayer() { const activeLayer = this.getCurrentLayer(); if (!activeLayer) return; const newLayer = new Layer(`${activeLayer.name}のコピー`, this.width, this.height); newLayer.imageData.data.set(activeLayer.imageData.data); newLayer.visible = activeLayer.visible; newLayer.opacity = activeLayer.opacity; newLayer.blendMode = activeLayer.blendMode; const insertIndex = this.activeLayerIndex + 1; this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } mergeDownActiveLayer() { if (this.activeLayerIndex <= 0) return; const topLayer = this.layers[this.activeLayerIndex]; const bottomLayer = this.layers[this.activeLayerIndex - 1]; const tempCanvas = document.createElement('canvas'); tempCanvas.width = this.width; tempCanvas.height = this.height; const tempCtx = tempCanvas.getContext('2d'); tempCtx.putImageData(bottomLayer.imageData, 0, 0); tempCtx.globalAlpha = topLayer.opacity / 100; tempCtx.globalCompositeOperation = topLayer.blendMode; tempCtx.drawImage(new CanvasImageSource(topLayer.imageData), 0, 0); bottomLayer.imageData = tempCtx.getImageData(0, 0, this.width, this.height); this.layers.splice(this.activeLayerIndex, 1); this.switchLayer(this.activeLayerIndex - 1); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } }
+class LayerManager { 
+    constructor(app) { 
+        this.app = app; 
+        this.layers = []; 
+        this.activeLayerIndex = -1; 
+        this.width = 344; 
+        this.height = 135;
+        // ★★★ エラー修正: レイヤー結合で使う一時キャンバスを保持 ★★★
+        this.mergeCanvas = document.createElement('canvas');
+        this.mergeCanvas.width = this.width;
+        this.mergeCanvas.height = this.height;
+        this.mergeCtx = this.mergeCanvas.getContext('2d');
+    } 
+    setupInitialLayers() { const bgLayer = new Layer('背景', this.width, this.height); bgLayer.fill('#f0e0d6'); this.layers.push(bgLayer); const drawingLayer = new Layer('レイヤー 1', this.width, this.height); this.layers.push(drawingLayer); this.switchLayer(1); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
+    addLayer() { if (this.layers.length >= 99) return; const insertIndex = this.activeLayerIndex + 1; const newLayer = new Layer(`レイヤー ${this.layers.length + 1}`, this.width, this.height); this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
+    deleteActiveLayer() { if (this.activeLayerIndex === 0 || this.layers.length <= 1) return; this.layers.splice(this.activeLayerIndex, 1); const newActiveIndex = Math.min(this.layers.length - 1, this.activeLayerIndex); this.renameLayers(); this.switchLayer(newActiveIndex); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
+    renameLayers() { this.layers.forEach((layer, index) => { layer.name = index === 0 ? '背景' : `レイヤー ${index}`; }); } 
+    switchLayer(index) { if (index < 0 || index >= this.layers.length) return; this.activeLayerIndex = index; if (this.app.layerUIManager) { this.app.layerUIManager.renderLayers(); } } 
+    getCurrentLayer() { return this.layers[this.activeLayerIndex] || null; } 
+    duplicateActiveLayer() { const activeLayer = this.getCurrentLayer(); if (!activeLayer) return; const newLayer = new Layer(`${activeLayer.name}のコピー`, this.width, this.height); newLayer.imageData.data.set(activeLayer.imageData.data); newLayer.visible = activeLayer.visible; newLayer.opacity = activeLayer.opacity; newLayer.blendMode = activeLayer.blendMode; const insertIndex = this.activeLayerIndex + 1; this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
+    // ★★★ エラー修正: レイヤー結合処理を修正 ★★★
+    mergeDownActiveLayer() {
+        if (this.activeLayerIndex <= 0) return;
+        const topLayer = this.layers[this.activeLayerIndex];
+        const bottomLayer = this.layers[this.activeLayerIndex - 1];
+
+        const tempCtx = this.mergeCtx;
+        
+        // 1. 下のレイヤーを描画
+        tempCtx.clearRect(0, 0, this.width, this.height);
+        tempCtx.putImageData(bottomLayer.imageData, 0, 0);
+
+        // 2. 上のレイヤーを合成
+        tempCtx.globalAlpha = topLayer.opacity / 100;
+        tempCtx.globalCompositeOperation = topLayer.blendMode;
+        
+        // 一時キャンバスにImageDataを描画してから合成
+        const topLayerCanvas = document.createElement('canvas');
+        topLayerCanvas.width = this.width;
+        topLayerCanvas.height = this.height;
+        const topLayerCtx = topLayerCanvas.getContext('2d');
+        topLayerCtx.putImageData(topLayer.imageData, 0, 0);
+        
+        tempCtx.drawImage(topLayerCanvas, 0, 0);
+
+        // 3. 合成結果を下のレイヤーのimageDataに書き戻す
+        bottomLayer.imageData = tempCtx.getImageData(0, 0, this.width, this.height);
+
+        // 4. 上のレイヤーを削除
+        this.layers.splice(this.activeLayerIndex, 1);
+        this.switchLayer(this.activeLayerIndex - 1);
+        this.app.canvasManager.renderAllLayers();
+        this.app.canvasManager.saveState();
+    } 
+}
 class PenSettingsManager { constructor(app) { this.app = app; this.currentSize = 1; this.sizes = Array.from(document.querySelectorAll('.size-btn')).map(btn => parseInt(btn.dataset.size)); this.currentSizeIndex = this.sizes.indexOf(this.currentSize); this.bindEvents(); this.updateSizeButtonVisuals(); } bindEvents() { document.querySelectorAll('.size-btn').forEach(btn => btn.addEventListener('click', () => this.setSize(parseInt(btn.dataset.size)))); } setSize(size) { this.currentSize = size; this.currentSizeIndex = this.sizes.indexOf(this.currentSize); document.querySelectorAll('.size-btn').forEach(btn => btn.classList.remove('active')); document.querySelector(`[data-size="${size}"]`)?.classList.add('active'); this.app.canvasManager.setCurrentSize(this.currentSize); this.updateSizeButtonVisuals(); } changeSize(increase) { let newIndex = this.currentSizeIndex + (increase ? 1 : -1); newIndex = Math.max(0, Math.min(newIndex, this.sizes.length - 1)); this.setSize(this.sizes[newIndex]); } updateSizeButtonVisuals() { document.querySelectorAll('.size-btn').forEach(btn => { const size = parseInt(btn.dataset.size); btn.querySelector('.size-dot').style.width = `${Math.min(size, 16)}px`; btn.querySelector('.size-dot').style.height = `${Math.min(size, 16)}px`; btn.querySelector('.size-number').textContent = size; }); } }
 class ColorManager { constructor(app) { this.app = app; this.mainColor = '#800000'; this.subColor = '#f0e0d6'; this.colors = Array.from(document.querySelectorAll('.color-btn')).map(btn => btn.dataset.color); this.currentColorIndex = this.colors.indexOf(this.mainColor); this.mainColorDisplay = document.getElementById('main-color-display'); this.subColorDisplay = document.getElementById('sub-color-display'); this.bindEvents(); this.updateColorDisplays(); document.querySelector(`[data-color="${this.mainColor}"]`)?.classList.add('active'); } bindEvents() { document.querySelectorAll('.color-btn').forEach(btn => btn.addEventListener('click', (e) => this.setColor(e.currentTarget.dataset.color))); document.querySelector('.color-mode-display').addEventListener('click', () => this.swapColors()); } setColor(color) { this.mainColor = color; this.currentColorIndex = this.colors.indexOf(this.mainColor); document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active')); document.querySelector(`[data-color="${color}"]`)?.classList.add('active'); this.updateColorDisplays(); this.app.canvasManager.setCurrentColor(this.mainColor); } updateColorDisplays() { this.mainColorDisplay.style.backgroundColor = this.mainColor; this.subColorDisplay.style.backgroundColor = this.subColor; } swapColors() { [this.mainColor, this.subColor] = [this.subColor, this.mainColor]; this.updateColorDisplays(); this.setColor(this.mainColor); } resetColors() { this.setColor('#800000'); this.subColor = '#f0e0d6'; this.updateColorDisplays(); } changeColor(increase) { let newIndex = this.currentColorIndex + (increase ? 1 : -1); newIndex = (newIndex + this.colors.length) % this.colors.length; this.setColor(this.colors[newIndex]); } }
 class ToolManager { constructor(app) { this.app = app; this.currentTool = 'pen'; this.bindEvents(); } bindEvents() { document.getElementById('pen-tool').addEventListener('click', () => this.setTool('pen')); document.getElementById('eraser-tool').addEventListener('click', () => this.setTool('eraser')); document.getElementById('bucket-tool').addEventListener('click', () => this.setTool('bucket')); document.getElementById('move-tool').addEventListener('click', () => this.setTool('move')); } setTool(tool) { this.currentTool = tool; document.querySelectorAll('.left-toolbar .tool-btn').forEach(btn => btn.classList.remove('active')); document.getElementById(tool + '-tool')?.classList.add('active'); this.app.canvasManager.setCurrentTool(tool); } }
