@@ -44,7 +44,7 @@ class CanvasManager {
     constructor(app) {
         this.app = app;
         this.displayCanvas = document.getElementById('drawingCanvas');
-        this.displayCtx = this.displayCanvas.getContext('2d', { willReadFrequently: true });
+        // this.displayCtx = this.displayCanvas.getContext('2d', { willReadFrequently: true });
         this.canvasArea = document.getElementById('canvas-area');
         this.canvasContainer = document.getElementById('canvas-container');
         this.width = this.displayCanvas.width;
