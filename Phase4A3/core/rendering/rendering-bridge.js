@@ -1,15 +1,10 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Rendering Bridge (Dynamic Switching) - FIXED VERSION
- * Version: 2.1.1 (Phase 4A-3: WebGL Canvas Display Fix)
+ * Version: 2.1.2 (Phase 4A-4: Mouse Event Fix)
  *
- * 描画エンジンを動的に切り替える機能を持つ、新しいブリッジです。
- * core-engineからの描画命令を、現在選択されているエンジン（Canvas2D or WebGL）
- * に適切に振り分けます。
- *
- * 【修正点】
- * ・WebGLキャンバスの表示問題を修正
- * ・適切なスタイル設定とDOM操作を追加
+ * WebGL化後にペンで書けなくなる問題を修正しました。
+ * WebGL使用時も元のキャンバスでイベントを受け取り、描画結果だけをWebGLで処理します。
  * ===================================================================================
  */
 import { Canvas2DEngine } from './canvas2d-engine.js';
@@ -21,36 +16,29 @@ export class RenderingBridge {
         this.engines = {};
         this.currentEngine = null;
         this.currentEngineType = '';
-        this.webglCanvasAdded = false; // WebGLキャンバスがDOMに追加済みかのフラグ
 
         // 1. Canvas2Dエンジンは必ず初期化
         try {
-            // Canvas2Dは表示用のキャンバスを直接使う
             this.engines['canvas2d'] = new Canvas2DEngine(this.displayCanvas);
             console.log("Canvas2D Engine initialized successfully.");
         } catch (e) {
             console.error("Failed to initialize Canvas2D engine:", e);
-            throw e; // Canvas2Dは必須なので、失敗したらここで処理を止める
+            throw e;
         }
 
         // 2. WebGLエンジンが利用可能かチェックして、試行する
         if (WebGLEngine.isSupported()) {
             try {
-                // ★重要★ WebGL用には、メモリ上に新しい非表示のキャンバスを作成して渡す
-                // これにより「同一Canvas要素で複数コンテキスト取得不可」問題を回避する
+                // ★修正★ WebGL用キャンバスを元のキャンバスと同じ位置・サイズで作成
                 const webglCanvas = document.createElement('canvas');
                 webglCanvas.width = this.displayCanvas.width;
                 webglCanvas.height = this.displayCanvas.height;
                 
-                // ★修正★ WebGLキャンバスに適切なスタイルを設定
                 this._setupWebGLCanvasStyle(webglCanvas);
-                
                 this.engines['webgl'] = new WebGLEngine(webglCanvas);
 
-                // .glプロパティが正常に作られていれば成功とみなす
                 if (this.engines['webgl'].gl) {
                     console.log("WebGL Engine initialized successfully.");
-                    // ★修正★ 初期化時にWebGLキャンバスをDOMに追加
                     this._addWebGLCanvasToDOM();
                 } else {
                      console.warn("WebGL Engine initialization returned no context. It will be unavailable.");
@@ -62,59 +50,50 @@ export class RenderingBridge {
             console.warn("WebGL is not supported in this browser.");
         }
 
-        // ★改修点: デフォルトのエンジンをWebGLに設定 (利用可能な場合)
+        // デフォルトのエンジンをWebGLに設定 (利用可能な場合)
         if (this.engines['webgl'] && this.engines['webgl'].gl) {
             this.setEngine('webgl');
         } else {
-            // WebGLが利用できない場合はCanvas2Dにフォールバック
             this.setEngine('canvas2d');
             console.warn("Falling back to Canvas2D engine as WebGL is not available or failed to initialize.");
         }
     }
 
     /**
-     * ★新規追加★ WebGLキャンバスのスタイルを設定
-     * @param {HTMLCanvasElement} webglCanvas 
+     * ★修正★ WebGLキャンバスのスタイルを設定（イベント処理は元のキャンバスで継続）
      */
     _setupWebGLCanvasStyle(webglCanvas) {
         const displayStyle = window.getComputedStyle(this.displayCanvas);
         
-        // 基本的なスタイルをコピー
+        // 元のキャンバスと全く同じ位置・サイズに配置
         webglCanvas.style.position = displayStyle.position || 'absolute';
         webglCanvas.style.left = displayStyle.left || '0px';
         webglCanvas.style.top = displayStyle.top || '0px';
         webglCanvas.style.width = displayStyle.width || `${this.displayCanvas.width}px`;
         webglCanvas.style.height = displayStyle.height || `${this.displayCanvas.height}px`;
-        webglCanvas.style.zIndex = displayStyle.zIndex || '1';
-        webglCanvas.style.pointerEvents = 'none'; // イベントは元のキャンバスで処理
+        webglCanvas.style.zIndex = (parseInt(displayStyle.zIndex) || 0) + 1; // 元のキャンバスより前面に
+        
+        // ★重要★ WebGLキャンバスはイベントを受け取らない（元のキャンバスで処理）
+        webglCanvas.style.pointerEvents = 'none';
         webglCanvas.style.display = 'none'; // 初期は非表示
         
-        // デバッグ用のボーダー（必要に応じて削除）
-        webglCanvas.style.border = '2px solid red';
-        
-        console.log("WebGL canvas style setup completed:", {
-            width: webglCanvas.style.width,
-            height: webglCanvas.style.height,
-            position: webglCanvas.style.position
-        });
+        console.log("WebGL canvas style setup completed");
     }
 
     /**
-     * ★新規追加★ WebGLキャンバスをDOMに追加
+     * WebGLキャンバスをDOMに追加
      */
     _addWebGLCanvasToDOM() {
-        if (!this.webglCanvasAdded && this.engines['webgl'] && this.displayCanvas.parentNode) {
+        if (this.engines['webgl'] && this.displayCanvas.parentNode) {
             const webglCanvas = this.engines['webgl'].canvas;
-            this.displayCanvas.parentNode.insertBefore(webglCanvas, this.displayCanvas);
-            this.webglCanvasAdded = true;
+            // 元のキャンバスの直後に挿入
+            this.displayCanvas.parentNode.insertBefore(webglCanvas, this.displayCanvas.nextSibling);
             console.log("WebGL canvas added to DOM");
         }
     }
 
     /**
-     * 使用する描画エンジンを切り替えます。
-     * @param {'canvas2d' | 'webgl'} type - 切り替えたいエンジンの種類
-     * @returns {boolean} 切り替えが成功したかどうか
+     * ★修正★ エンジン切り替え（表示の切り替えのみ、イベント処理は常に元のキャンバス）
      */
     setEngine(type) {
         if (this.engines[type] && (type !== 'webgl' || this.engines[type].gl)) {
@@ -122,36 +101,27 @@ export class RenderingBridge {
             this.currentEngineType = type;
             console.log(`Switched rendering engine to: ${type}`);
             
-            // ★修正★ より確実なキャンバス表示切り替え
             if (type === 'webgl') {
-                // WebGLに切り替え
-                if (!this.webglCanvasAdded) {
-                    this._addWebGLCanvasToDOM();
+                // WebGLに切り替え：WebGLキャンバスを表示、元のキャンバスは透明に
+                if (this.engines['webgl'].canvas) {
+                    this.engines['webgl'].canvas.style.display = 'block';
                 }
+                // ★重要★ 元のキャンバスは非表示にせず、透明にしてイベント処理を継続
+                this.displayCanvas.style.opacity = '0';
+                this.displayCanvas.style.pointerEvents = 'auto'; // イベントは受け取る
+                console.log("WebGL canvas displayed, original canvas made transparent for events");
                 
-                // WebGLキャンバスを表示
-                this.currentEngine.canvas.style.display = 'block';
-                console.log("WebGL canvas display set to block");
-                
-                // Canvas2Dキャンバスを非表示
-                this.displayCanvas.style.display = 'none';
-                console.log("Canvas2D canvas hidden");
-                
-            } else { // Canvas2Dに戻す場合
-                // WebGLキャンバスを非表示
+            } else {
+                // Canvas2Dに戻す：元のキャンバスを表示、WebGLキャンバスを非表示
                 if (this.engines['webgl'] && this.engines['webgl'].canvas) {
                     this.engines['webgl'].canvas.style.display = 'none';
-                    console.log("WebGL canvas hidden");
                 }
-                
-                // Canvas2Dキャンバスを表示
-                this.displayCanvas.style.display = 'block';
-                console.log("Canvas2D canvas displayed");
+                this.displayCanvas.style.opacity = '1';
+                this.displayCanvas.style.pointerEvents = 'auto';
+                console.log("Canvas2D canvas restored to full visibility");
             }
 
-            // ★デバッグ用★ 現在の表示状態をログ出力
             this._logCanvasVisibility();
-
             return true;
         } else {
             console.warn(`'${type}' engine is not available. Staying on '${this.currentEngineType}'.`);
@@ -164,19 +134,20 @@ export class RenderingBridge {
      */
     _logCanvasVisibility() {
         console.log("Canvas visibility status:");
-        console.log("- Canvas2D display:", this.displayCanvas.style.display);
+        console.log("- Canvas2D opacity:", this.displayCanvas.style.opacity);
+        console.log("- Canvas2D pointerEvents:", this.displayCanvas.style.pointerEvents);
         console.log("- Canvas2D visible:", this.displayCanvas.offsetWidth > 0 && this.displayCanvas.offsetHeight > 0);
         
         if (this.engines['webgl'] && this.engines['webgl'].canvas) {
             const webglCanvas = this.engines['webgl'].canvas;
             console.log("- WebGL display:", webglCanvas.style.display);
+            console.log("- WebGL pointerEvents:", webglCanvas.style.pointerEvents);
             console.log("- WebGL visible:", webglCanvas.offsetWidth > 0 && webglCanvas.offsetHeight > 0);
-            console.log("- WebGL in DOM:", document.contains(webglCanvas));
         }
     }
 
     /**
-     * ★新規追加★ エンジン切り替えテスト用メソッド
+     * エンジン切り替えテスト用メソッド
      */
     testEngineSwitch() {
         console.log("Testing engine switch...");
@@ -195,7 +166,6 @@ export class RenderingBridge {
     }
 
     // --- DrawingEngineのインターフェースを現在のエンジンに委譲 ---
-
     drawCircle(...args) { this.currentEngine.drawCircle(...args); }
     drawLine(...args) { this.currentEngine.drawLine(...args); }
     fill(...args) { this.currentEngine.fill(...args); }
