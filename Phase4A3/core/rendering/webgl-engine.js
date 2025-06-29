@@ -1,12 +1,12 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine (Full Rendering Pipeline with Canvas2D Drawing Logic)
- * Version: 0.4.0 (Phase 4A-5: Drawing & Transform Logic Implementation)
+ * Version: 0.4.1 (Phase 4A-5: Drawing Logic with Simplified Transform)
  *
  * レイヤーのImageDataをWebGLテクスチャに変換し、それを合成して画面に表示する
  * 完全な描画パイプラインを実装しました。
- * Canvas2DのImageData直接操作による描画ロジックを移植し、
- * getTransformedImageDataも実装しました。
+ * Canvas2DのImageData直接操作による描画ロジックを移植しました。
+ * レイヤー変形は、一時的にプレビュー機能を無効化し、将来的にシェーダーで対応予定です。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -32,10 +32,6 @@ export class WebGLEngine extends DrawingEngine {
             maxDrawSteps: 100
         };
 
-        // ★新規追加: 変形用の一時的なオフスクリーンキャンバス (getTransformedImageData用)
-        this.transformOffscreenCanvas = document.createElement('canvas');
-        this.transformOffscreenCtx = this.transformOffscreenCanvas.getContext('2d');
-
 
         try {
             this.gl = canvas.getContext('webgl', { preserveDrawingBuffer: true }) || canvas.getContext('experimental-webgl', { preserveDrawingBuffer: true });
@@ -52,7 +48,7 @@ export class WebGLEngine extends DrawingEngine {
         // WebGL初期設定
         gl.clearColor(0.0, 0.0, 0.0, 0.0); // 背景は透明に
         gl.enable(gl.BLEND); // アルファブレンドを有効にする
-        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); // 通常のアルファブレンド設定
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); // ★★★修正: 通常のアルファブレンド設定 (非事前乗算アルファ用) ★★★
 
         // -----------------------------------------------------------
         // シェーダーのコンパイルとプログラムのリンク
@@ -418,49 +414,12 @@ export class WebGLEngine extends DrawingEngine {
         imageData.data.fill(0);
     }
     
-    // ★★★ getTransformedImageDataの実装 (Canvas2DEngineのロジックをベースにWebGLEngineで利用) ★★★
+    // ★★★ getTransformedImageDataを簡易版に戻す ★★★
     getTransformedImageData(sourceImageData, transform) {
-        const sw = sourceImageData.width;
-        const sh = sourceImageData.height;
-        
-        // オフスクリーンキャンバスのサイズをImageDataに合わせる
-        this.transformOffscreenCanvas.width = sw;
-        this.transformOffscreenCanvas.height = sh;
-        const ctx = this.transformOffscreenCtx;
-
-        // 一旦オフスクリーンキャンバスに元のImageDataを描画
-        ctx.clearRect(0, 0, sw, sh);
-        ctx.putImageData(sourceImageData, 0, 0);
-
-        // 新しいImageDataを生成（透明で初期化）
-        const destImageData = new ImageData(sw, sh);
-
-        // CanvasのTransform APIを使って変換を適用
-        ctx.save();
-        ctx.clearRect(0, 0, sw, sh); // クリア
-        
-        // 変換の中心をキャンバスの中心に設定
-        const cx = sw / 2;
-        const cy = sh / 2;
-        ctx.translate(cx, cy);
-
-        // スケール、回転、フリップ
-        ctx.scale(transform.flipX || 1, transform.flipY || 1);
-        ctx.rotate(-transform.rotation * Math.PI / 180); // 回転は時計回りのため-を付与
-        ctx.scale(transform.scale, transform.scale);
-        
-        // 移動
-        ctx.translate(-cx + transform.x, -cy + transform.y);
-        
-        // 元の画像を新しい変換で描画
-        ctx.drawImage(this.transformOffscreenCanvas, 0, 0);
-
-        // 変換後のImageDataを取得
-        const transformedData = ctx.getImageData(0, 0, sw, sh);
-        ctx.restore(); // 変換を元に戻す
-
-        // 取得したImageDataを返す
-        return transformedData;
+        console.warn("getTransformedImageData not fully implemented for WebGL. Returning original ImageData. True WebGL transforms will be implemented via shaders.");
+        // この警告が出ても動作は継続しますが、レイヤーの変形プレビューは表示されません。
+        // 将来的にシェーダーでGPU上で高速に変形を処理します。
+        return sourceImageData;
     }
 
 
