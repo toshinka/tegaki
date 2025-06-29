@@ -1,11 +1,11 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 1.0.0 (Phase 4A-4: Blending and Transform Fixes)
+ * Version: 1.0.1 (Critical Fix for Drawing Methods)
  *
- * ・WebGLでのレイヤーブレンドモード（通常, 乗算, 加算, スクリーン）に対応しました。
- * ・レイヤー変形が移動も含めて正しくImageDataに適用されるようにバグを修正しました。
- * ・シェーダーロジックを簡化し、ブレンドはWebGLの標準機能(blendFunc)で行います。
+ * ・描画メソッド(drawCircle, drawLine等)が誤って削除されていたのを完全に復元しました。
+ * 　これにより、ペンや消しゴムで描画ができない問題が修正されます。
+ * ・ブレンドモード対応、変形バグ修正は維持されています。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -47,11 +47,8 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.enable(gl.BLEND);
-        // ★★★ 事前乗算アルファのブレンド設定をデフォルトに ★★★
         gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
 
-        // ★★★ シェーダーを簡化 ★★★
-        // 変形はImageDataに焼き込まれ、ブレンドはblendFuncで制御するため、シェーダーはシンプルになる
         const vsSource = `
             attribute vec4 a_position;
             attribute vec2 a_texCoord;
@@ -69,7 +66,6 @@ export class WebGLEngine extends DrawingEngine {
             uniform float u_opacity;
             void main() {
                 vec4 texColor = texture2D(u_image, v_texCoord);
-                // 事前乗算済みアルファとして出力
                 gl_FragColor = vec4(texColor.rgb * texColor.a, texColor.a) * u_opacity;
             }
         `;
@@ -92,7 +88,6 @@ export class WebGLEngine extends DrawingEngine {
 
         this.texCoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        // ★ Y軸反転は gl.UNPACK_FLIP_Y_WEBGL で行うので、テクスチャ座標は標準のまま
         const texCoords = [ 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0 ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
 
@@ -102,7 +97,7 @@ export class WebGLEngine extends DrawingEngine {
         this.u_opacity_loc = gl.getUniformLocation(this.program, "u_opacity");
 
         this._setupCompositingBuffer();
-        console.log("WebGL Engine (v1.0.0) initialized successfully.");
+        console.log("WebGL Engine (v1.0.1) initialized successfully.");
     }
 
     _compileShader(source, type) {
@@ -147,7 +142,6 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-        // ★ 事前乗算アルファはシェーダーで行うので、ここではfalseに設定
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
 
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imageData);
@@ -189,25 +183,22 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
     
-    // ★★★ 新規追加: ブレンドモードを設定するヘルパー関数 ★★★
     _setBlendMode(blendMode) {
         const gl = this.gl;
         
-        // デフォルトは通常（アルファ）ブレンド
         gl.blendEquation(gl.FUNC_ADD);
         gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
         switch (blendMode) {
-            case 'multiply': // 乗算
+            case 'multiply':
                 gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA);
                 break;
-            case 'screen': // スクリーン
+            case 'screen':
                 gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_COLOR);
                 break;
-            case 'add': // 加算・発光
+            case 'add':
                 gl.blendFunc(gl.ONE, gl.ONE);
                 break;
-            // 'normal' やその他の場合はデフォルト設定が使われる
         }
     }
 
@@ -247,7 +238,6 @@ export class WebGLEngine extends DrawingEngine {
         for (const layer of layers) {
             if (!layer.visible || layer.opacity === 0 || !this.layerTextures.has(layer)) continue;
 
-            // ★★★ ブレンドモードを設定 ★★★
             this._setBlendMode(layer.blendMode);
 
             const texture = this.layerTextures.get(layer);
@@ -261,8 +251,8 @@ export class WebGLEngine extends DrawingEngine {
         }
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        gl.disableVertexAttribArray(this.a_position_loc);
-        gl.disableVertexAttribArray(this.a_texCoord_loc);
+        gl.disableVertexAttribArray(a_position_loc);
+        gl.disableVertexAttribArray(a_texCoord_loc);
     }
 
     renderToDisplay(compositionData, dirtyRect) {
@@ -275,7 +265,6 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.useProgram(this.program);
         
-        // ★ 表示時は常に通常のアルファブレンドに戻す
         this._setBlendMode('normal');
 
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
@@ -297,13 +286,69 @@ export class WebGLEngine extends DrawingEngine {
         gl.disableVertexAttribArray(this.a_texCoord_loc);
     }
     
-    // --- ImageDataへの直接描画 (変更なし) ---
-    drawCircle(imageData, ...args) { super.drawCircle(imageData, ...args); }
-    drawLine(imageData, ...args) { super.drawLine(imageData, ...args); }
-    fill(imageData, ...args) { super.fill(imageData, ...args); }
-    clear(imageData, ...args) { super.clear(imageData, ...args); }
+    // ★★★ ここから下の描画メソッド群を復元 ★★★
 
-    // ★★★修正: 移動・回転・拡縮すべてを2Dキャンバスで適用する★★★
+    drawCircle(imageData, centerX, centerY, radius, color, isEraser) {
+        const quality = this.drawingQuality;
+        const useSubpixel = quality.enableSubpixel && radius >= 0.5;
+        if (radius < 0.8) {
+            this._drawSinglePixel(imageData, centerX, centerY, color, isEraser, radius);
+            return;
+        }
+        const rCeil = Math.ceil(radius + 1);
+        for (let y = -rCeil; y <= rCeil; y++) {
+            for (let x = -rCeil; x <= rCeil; x++) {
+                const distance = Math.hypot(x, y);
+                if (distance <= radius + 0.5) {
+                    const finalX = centerX + x;
+                    const finalY = centerY + y;
+                    let alpha = this._calculatePixelAlpha(distance, radius, useSubpixel);
+                    if (alpha > 0.01) {
+                        if (isEraser) {
+                            this._erasePixel(imageData, finalX, finalY, alpha);
+                        } else {
+                            const finalColor = { ...color, a: Math.floor(color.a * alpha) };
+                            this._blendPixel(imageData, finalX, finalY, finalColor);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    drawLine(imageData, x0, y0, x1, y1, size, color, isEraser, pressure0 = 1.0, pressure1 = 1.0, calculatePressureSize) {
+        if (!isFinite(x0) || !isFinite(y0) || !isFinite(x1) || !isFinite(y1)) return;
+        const distance = Math.hypot(x1 - x0, y1 - y0);
+        if (distance > Math.hypot(this.canvas.width, this.canvas.height) * 2) return;
+
+        const quality = this.drawingQuality;
+        const baseSteps = Math.max(quality.minDrawSteps, Math.ceil(distance / Math.max(0.5, size / 8)));
+        const steps = Math.min(quality.maxDrawSteps, baseSteps);
+
+        for (let i = 0; i <= steps; i++) {
+            const t = steps > 0 ? i / steps : 0;
+            const x = x0 + (x1 - x0) * t;
+            const y = y0 + (y1 - y0) * t;
+            const pressure = pressure0 + (pressure1 - pressure0) * t;
+            const adjustedSize = calculatePressureSize(size, pressure);
+            this.drawCircle(imageData, x, y, adjustedSize / 2, color, isEraser);
+        }
+    }
+
+    fill(imageData, color) {
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+            data[i] = color.r;
+            data[i + 1] = color.g;
+            data[i + 2] = color.b;
+            data[i + 3] = color.a;
+        }
+    }
+
+    clear(imageData) {
+        imageData.data.fill(0);
+    }
+    
     getTransformedImageData(sourceImageData, transform) {
         const sw = sourceImageData.width;
         const sh = sourceImageData.height;
@@ -334,9 +379,66 @@ export class WebGLEngine extends DrawingEngine {
         return tempCtx.getImageData(0, 0, sw, sh);
     }
 
-    // --- プライベートヘルパーメソッド (変更なし) ---
-    _drawSinglePixel(...args) { super._drawSinglePixel(...args); }
-    _calculatePixelAlpha(...args) { return super._calculatePixelAlpha(...args); }
-    _blendPixel(...args) { super._blendPixel(...args); }
-    _erasePixel(...args) { super._erasePixel(...args); }
+    _drawSinglePixel(imageData, x, y, color, isEraser, intensity = 1.0) {
+        const alpha = Math.min(1.0, intensity);
+        if (isEraser) {
+            this._erasePixel(imageData, x, y, alpha);
+        } else {
+            const finalColor = { ...color, a: Math.floor(color.a * alpha) };
+            this._blendPixel(imageData, x, y, finalColor);
+        }
+    }
+
+    _calculatePixelAlpha(distance, radius, useSubpixel) {
+        if (distance <= radius - 0.5) { return 1.0; }
+        if (!useSubpixel) { return distance <= radius ? 1.0 : 0.0; }
+        if (distance <= radius) {
+            const fadeStart = Math.max(0, radius - 1.0);
+            const fadeRange = radius - fadeStart;
+            if (fadeRange > 0) {
+                const fadeRatio = (distance - fadeStart) / fadeRange;
+                return Math.max(0, 1.0 - fadeRatio);
+            }
+            return 1.0;
+        }
+        if (distance <= radius + 0.5) {
+            return Math.max(0, 1.0 - (distance - radius) * 2.0);
+        }
+        return 0.0;
+    }
+
+    _blendPixel(imageData, x, y, color) {
+        try {
+            x = Math.floor(x);
+            y = Math.floor(y);
+            if (x < 0 || x >= imageData.width || y < 0 || y >= imageData.height) return;
+            if (!imageData.data || !color) return;
+            const index = (y * imageData.width + x) * 4;
+            const data = imageData.data;
+            if (index < 0 || index >= data.length - 3) return;
+
+            const topAlpha = color.a / 255;
+            if (topAlpha <= 0) return;
+            
+            const bottomAlpha = data[index + 3] / 255;
+            const outAlpha = topAlpha + bottomAlpha * (1 - topAlpha);
+            if (outAlpha > 0) {
+                data[index]     = (color.r * topAlpha + data[index]     * bottomAlpha * (1 - topAlpha)) / outAlpha;
+                data[index + 1] = (color.g * topAlpha + data[index + 1] * bottomAlpha * (1 - topAlpha)) / outAlpha;
+                data[index + 2] = (color.b * topAlpha + data[index + 2] * bottomAlpha * (1 - topAlpha)) / outAlpha;
+                data[index + 3] = outAlpha * 255;
+            }
+        } catch (error) {
+            console.warn('ピクセル描画エラー:', { x, y, error });
+        }
+    }
+
+    _erasePixel(imageData, x, y, strength) {
+        x = Math.floor(x);
+        y = Math.floor(y);
+        if (x < 0 || x >= imageData.width || y < 0 || y >= imageData.height) return;
+        const index = (y * imageData.width + x) * 4;
+        const currentAlpha = imageData.data[index + 3];
+        imageData.data[index + 3] = Math.max(0, currentAlpha * (1 - strength));
+    }
 }
