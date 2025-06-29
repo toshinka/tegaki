@@ -1,18 +1,22 @@
 /*
  * ===================================================================================
- * Toshinka Tegaki Tool - WebGL Engine (Renderer Implementation)
- * Version: 0.3.2 (Phase 4A-4 Bugfix - Color & Blending)
+ * Toshinka Tegaki Tool - Core Engine
+ * Version: 2.0.4 (Phase 4A-4 Bugfix - getCanvasCoordinates active canvas fix)
  *
- * ・最終描画時のブレンド関数を修正し、キャンバスが黒くなる問題を解決。
- * ・合成時と最終表示時でブレンド設定を明確に切り替えるように変更。
- * ・★★不透明度とブレンド設定をストレートアルファに統一★★
- * ・★★フラグメントシェーダーでのカラー計算を修正★★
- * ・★★drawCircle/drawLineでの色適用ロジックを強化★★
+ * ・レイヤー結合時のエラーを修正
+ * ・ビュー拡大縮小時のペン座標ズレを修正
+ * ・★★getCanvasCoordinatesがアクティブなキャンバスを参照するように修正★★
  * ===================================================================================
  */
-import { DrawingEngine } from './drawing-engine.js';
 
-// hexToRgba関数をWebGL Engine内でも利用可能にする (core-engine.jsからコピー)
+// --- Module Imports ---
+import { TopBarManager, LayerUIManager } from './ui/ui-manager.js';
+import { ShortcutManager } from './ui/shortcut-manager.js';
+import { BucketTool } from './tools/toolset.js';
+import { RenderingBridge } from './core/rendering/rendering-bridge.js';
+
+// --- Core Logic Classes ---
+
 function hexToRgba(hex) {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
     return result ? {
@@ -23,395 +27,546 @@ function hexToRgba(hex) {
     } : { r: 0, g: 0, b: 0, a: 255 };
 }
 
-// --- シェーダーコード ---
-const vertexShaderSource = `
-    attribute vec4 a_position;
-    attribute vec2 a_texCoord;
-    varying vec2 v_texCoord;
-    void main() {
-        gl_Position = a_position;
-        v_texCoord = a_texCoord;
+class Layer {
+    constructor(name, width, height) {
+        this.name = name;
+        this.visible = true;
+        this.opacity = 100;
+        this.blendMode = 'normal';
+        this.imageData = new ImageData(width, height);
+        this.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
+        this.originalImageData = null;
     }
-`;
+    clear() { this.imageData.data.fill(0); }
+    fill(hexColor) { const color = hexToRgba(hexColor); const data = this.imageData.data; for (let i = 0; i < data.length; i += 4) { data[i] = color.r; data[i + 1] = color.g; data[i + 2] = color.b; data[i + 3] = color.a; } }
+}
 
-const fragmentShaderSource = `
-    precision mediump float;
-    varying vec2 v_texCoord;
-    uniform sampler2D u_texture;
-    uniform float u_opacity;
-    void main() {
-        vec4 textureColor = texture2D(u_texture, v_texCoord);
-        // ★修正: ストレートアルファ用にカラー計算を変更 (textureColor.rgbを直接使用)
-        // ここでのtextureColor.a * u_opacity は、最終的なアルファ値を決定します。
-        gl_FragColor = vec4(textureColor.rgb, textureColor.a * u_opacity); 
+class CanvasManager {
+    constructor(app) {
+        this.app = app;
+        this.displayCanvas = document.getElementById('drawingCanvas');
+        this.displayCtx = this.displayCanvas.getContext('2d', { willReadFrequently: true });
+        this.canvasArea = document.getElementById('canvas-area');
+        this.canvasContainer = document.getElementById('canvas-container');
+        this.width = this.displayCanvas.width;
+        this.height = this.displayCanvas.height;
+
+        this.renderingBridge = new RenderingBridge(this.displayCanvas);
+
+        this.compositionData = new ImageData(this.width, this.height);
+        this.isDrawing = false; this.isPanning = false; this.isSpaceDown = false;
+        this.isVDown = false; this.isShiftDown = false;
+        
+        this.isLayerTransforming = false;
+        this.transformTargetLayer = null;
+        this.originalLayerTransform = null;
+        this.transformMode = 'move'; this.transformStartX = 0; this.transformStartY = 0;
+        
+        this.currentTool = 'pen';
+        this.currentColor = '#800000'; this.currentSize = 1; this.lastPoint = null;
+        
+        this.pressureSettings = {
+            sensitivity: 0.8, minPressure: 0.1, maxPressure: 1.0, curve: 0.7,
+            minSizeRatio: 0.3, dynamicRange: true
+        };
+        this.pressureHistory = [];
+        this.maxPressureHistory = 5;
+
+        this.history = []; this.historyIndex = -1;
+
+        this.dirtyRect = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+        this.animationFrameId = null;
+
+        this.dragStartX = 0; this.dragStartY = 0; this.canvasStartX = 0; this.canvasStartY = 0;
+        this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
+        
+        this.bindEvents();
     }
-`;
-
-
-export class WebGLEngine extends DrawingEngine {
-    constructor(canvas) {
-        super(canvas);
-        this.gl = null;
-        this.program = null;
-        this.canvas = canvas; // Ensure canvas property is set
-        this.layerTextures = new Map(); // 各レイヤーに対応するテクスチャを保持
-        this.framebuffer = null; // レイヤー合成用フレームバッファ
-        this.currentActiveLayer = null; // updateTextureで利用するため、現在の描画対象レイヤーを追跡
-
-        this._initGL();
-        this._compileShaders();
-        this._initBuffers();
-        this._setupTextureRendering();
-
-        // 描画モードの初期設定 (ストレートアルファに統一)
-        this.gl.clearColor(0.0, 0.0, 0.0, 0.0); // 透明な黒でクリア
-        this.gl.enable(this.gl.BLEND);
-        this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA); // ★修正: ストレートアルファ
+    
+    bindEvents() {
+        this.canvasArea.addEventListener('pointerdown', this.onPointerDown.bind(this));
+        document.addEventListener('pointermove', this.onPointerMove.bind(this));
+        document.addEventListener('pointerup', this.onPointerUp.bind(this));
+        this.canvasArea.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
+        document.addEventListener('contextmenu', e => e.preventDefault());
+        document.getElementById('saveMergedButton')?.addEventListener('click', () => this.exportMergedImage());
     }
 
-    static isSupported() {
+    onPointerDown(e) {
+        console.log('CanvasManager.onPointerDown: Pointer Down Event Detected');
+        if (e.button !== 0) return;
+        
+        const coords = this.getCanvasCoordinates(e);
+        console.log('CanvasManager.onPointerDown: Canvas Coordinates:', coords);
+        
+        if (this.isVDown) {
+            this.startLayerTransform(e);
+            e.preventDefault(); return;
+        }
+        if (this.isSpaceDown) {
+            this.dragStartX = e.clientX; this.dragStartY = e.clientY; this.isPanning = true;
+            this.canvasStartX = this.viewTransform.left; this.canvasStartY = this.viewTransform.top;
+            e.preventDefault(); return;
+        }
+
+        if (!coords) {
+            console.log('CanvasManager.onPointerDown: Coordinates are null. Skipping drawing.');
+            return;
+        }
+        
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+        if (!activeLayer || !activeLayer.visible) {
+            console.log('CanvasManager.onPointerDown: No active layer or layer not visible. Skipping drawing.');
+            return;
+        }
+        
+        if (this.currentTool === 'bucket') {
+            console.log('CanvasManager.onPointerDown: Tool is Bucket. Calling bucketTool.fill');
+            this.app.bucketTool.fill(activeLayer.imageData, coords.x, coords.y, hexToRgba(this.currentColor));
+            this.renderAllLayers();
+            this.saveState();
+            return;
+        }
+
+        this.isDrawing = true;
+        this.lastPoint = { ...coords, pressure: e.pressure || 1.0 };
+        this.pressureHistory = [e.pressure || 1.0];
+        
+        const size = this.calculatePressureSize(this.currentSize, e.pressure || 1.0);
+        
+        this._updateDirtyRect(coords.x, coords.y, size);
+        console.log('CanvasManager.onPointerDown: Calling renderingBridge.drawCircle');
+        this.renderingBridge.drawCircle(
+            activeLayer.imageData, coords.x, coords.y, size / 2, 
+            this.currentColor, this.currentTool === 'eraser'
+        );
+        
+        this._requestRender();
+        document.documentElement.setPointerCapture(e.pointerId);
+    }
+    
+    onPointerMove(e) {
+        // console.log('CanvasManager.onPointerMove: Pointer Move Event Detected');
+        if (this.isLayerTransforming) {
+            const dx = e.clientX - this.transformStartX; const dy = e.clientY - this.transformStartY;
+            const t = this.transformTargetLayer.transform; const ot = this.originalLayerTransform;
+            if (this.transformMode === 'move') {
+                t.x = ot.x + dx / this.viewTransform.scale;
+                t.y = ot.y + dy / this.viewTransform.scale;
+            } else {
+                t.rotation = ot.rotation + dx * 0.5;
+                const scaleFactor = 1 - dy * 0.005; t.scale = Math.max(0.1, ot.scale * scaleFactor);
+            }
+            this.applyLayerTransformPreview(); return;
+        }
+        if (this.isPanning) {
+            const dx = e.clientX - this.dragStartX; const dy = e.clientY - this.dragStartY;
+            this.viewTransform.left = this.canvasStartX + dx; this.viewTransform.top = this.canvasStartY + dy;
+            this.applyViewTransform(); return;
+        }
+        if (!this.isDrawing) return;
+        
+        const coords = this.getCanvasCoordinates(e);
+        if (!coords) {
+            this.lastPoint = null;
+            console.log('CanvasManager.onPointerMove: Coordinates are null. Stopping drawing for this move.');
+            return;
+        }
+        
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+        if (!activeLayer || !activeLayer.visible) {
+            console.log('CanvasManager.onPointerMove: No active layer or layer not visible. Skipping drawing.');
+            return;
+        }
+        if (!this.lastPoint) { this.lastPoint = { ...coords, pressure: e.pressure || 1.0 }; return; }
+        
+        const currentPressure = e.pressure || 1.0;
+        
+        this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, this.currentSize * 2);
+        this._updateDirtyRect(coords.x, coords.y, this.currentSize * 2);
+        
+        console.log('CanvasManager.onPointerMove: Calling renderingBridge.drawLine');
+        this.renderingBridge.drawLine(
+            activeLayer.imageData, this.lastPoint.x, this.lastPoint.y, coords.x, coords.y,
+            this.currentSize, this.currentColor, this.currentTool === 'eraser',
+            this.lastPoint.pressure, currentPressure, 
+            this.calculatePressureSize.bind(this)
+        );
+        
+        this.lastPoint = { ...coords, pressure: currentPressure };
+        this._requestRender();
+    }
+    onPointerUp(e) {
+        console.log('CanvasManager.onPointerUp: Pointer Up Event Detected');
+        if (this.isLayerTransforming) { this.commitLayerTransform(); }
+        if (this.isDrawing) {
+            this.isDrawing = false; this.pressureHistory = [];
+            if (this.animationFrameId) { cancelAnimationFrame(this.animationFrameId); this.animationFrameId = null; }
+            this._renderDirty();
+            this.lastPoint = null; this.saveState();
+        }
+        this.isPanning = false;
+        if (document.documentElement.hasPointerCapture(e.pointerId)) {
+            document.documentElement.releasePointerCapture(e.pointerId);
+        }
+    }
+
+    _renderDirty() {
+        console.log('CanvasManager._renderDirty: Rendering dirty rect.');
+        const rect = this.dirtyRect;
+        if (rect.minX > rect.maxX) return;
+
+        this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, rect);
+        
+        this.renderingBridge.renderToDisplay(this.compositionData, rect);
+
+        this._resetDirtyRect();
+    }
+
+    renderAllLayers() {
+        console.log('CanvasManager.renderAllLayers: Rendering all layers.');
+        this._updateDirtyRect(this.width / 2, this.height / 2, Math.max(this.width, this.height));
+        this._requestRender();
+    }
+
+    _requestRender() {
+        if (!this.animationFrameId) {
+            this.animationFrameId = requestAnimationFrame(() => {
+                this._renderDirty();
+                this.animationFrameId = null;
+            });
+        }
+    }
+
+    _updateDirtyRect(x, y, radius) {
+        const margin = Math.ceil(radius) + 2;
+        this.dirtyRect.minX = Math.min(this.dirtyRect.minX, x - margin);
+        this.dirtyRect.minY = Math.min(this.dirtyRect.minY, y - margin);
+        this.dirtyRect.maxX = Math.max(this.dirtyRect.maxX, x + margin);
+        this.dirtyRect.maxY = Math.max(this.dirtyRect.maxY, y + margin);
+    }
+    
+    _resetDirtyRect() {
+        this.dirtyRect = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    }
+
+    calculatePressureSize(baseSizeInput, pressure) {
+        const baseSize = Math.max(0.1, baseSizeInput);
+        let normalizedPressure = Math.max(0, Math.min(1, pressure || 0));
+        if (normalizedPressure === 0) {
+            normalizedPressure = this.pressureSettings.minPressure;
+        }
+        this.pressureHistory.push(normalizedPressure);
+        if (this.pressureHistory.length > this.maxPressureHistory) {
+            this.pressureHistory.shift();
+        }
+        const smoothedPressure = this.pressureHistory.reduce((sum, p) => sum + p, 0) / this.pressureHistory.length;
+        let adjustedPressure = smoothedPressure;
+        if (this.pressureSettings.dynamicRange) {
+            const minHist = Math.min(...this.pressureHistory);
+            const maxHist = Math.max(...this.pressureHistory);
+            const range = maxHist - minHist;
+            if (range > 0.1) {
+                adjustedPressure = (smoothedPressure - minHist) / range;
+            }
+        }
+        const curve = this.pressureSettings.curve;
+        const curvedPressure = Math.pow(adjustedPressure, curve);
+        const minSize = baseSize * this.pressureSettings.minSizeRatio;
+        const maxSize = baseSize;
+        const finalSize = minSize + (maxSize - minSize) * curvedPressure * this.pressureSettings.sensitivity;
+        return Math.max(0.1, finalSize);
+    }
+
+    getCanvasCoordinates(e) {
         try {
-            const canvas = document.createElement('canvas');
-            return !!(canvas.getContext('webgl') || canvas.getContext('experimental-webgl'));
-        } catch (e) {
-            return false;
-        }
-    }
+            // ★変更点: displayCanvasではなく、現在アクティブな描画エンジンが使用しているキャンバスを参照
+            const activeDrawingCanvas = this.renderingBridge.currentEngine.canvas;
+            
+            const rect = activeDrawingCanvas.getBoundingClientRect();
+            console.log('getCanvasCoordinates: Bounding Rect:', rect.left, rect.top, rect.width, rect.height);
 
-    _initGL() {
-        this.gl = this.canvas.getContext('webgl', { alpha: true });
-        if (!this.gl) {
-            throw new Error('WebGL not supported or context lost.');
-        }
-    }
-
-    _compileShaders() {
-        const gl = this.gl;
-        const vertexShader = gl.createShader(gl.VERTEX_SHADER);
-        gl.shaderSource(vertexShader, vertexShaderSource);
-        gl.compileShader(vertexShader);
-        if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
-            console.error('Vertex shader compilation failed:', gl.getShaderInfoLog(vertexShader));
-            throw new Error('Vertex shader compilation failed.');
-        }
-
-        const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
-        gl.shaderSource(fragmentShader, fragmentShaderSource);
-        gl.compileShader(fragmentShader);
-        if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
-            console.error('Fragment shader compilation failed:', gl.getShaderInfoLog(fragmentShader));
-            throw new Error('Fragment shader compilation failed.');
-        }
-
-        this.program = gl.createProgram();
-        gl.attachShader(this.program, vertexShader);
-        gl.attachShader(this.program, fragmentShader);
-        gl.linkProgram(this.program);
-        if (!gl.getProgramParameter(this.program, gl.LINK_STATUS)) {
-            console.error('Shader program linking failed:', gl.getProgramInfoLog(this.program));
-            throw new Error('Shader program linking failed.');
-        }
-
-        gl.useProgram(this.program);
-        this.locations = {
-            position: gl.getAttribLocation(this.program, 'a_position'),
-            texCoord: gl.getAttribLocation(this.program, 'a_texCoord'),
-            texture: gl.getUniformLocation(this.program, 'u_texture'),
-            opacity: gl.getUniformLocation(this.program, 'u_opacity')
-        };
-    }
-
-    _initBuffers() {
-        const gl = this.gl;
-
-        // Quad for drawing textures
-        const positions = [
-            -1, -1, // bottom-left
-             1, -1, // bottom-right
-            -1,  1, // top-left
-            -1,  1, // top-left
-             1, -1, // bottom-right
-             1,  1  // top-right
-        ];
-        this.positionBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-
-        const texCoords = [
-            0, 1, // bottom-left
-            1, 1, // bottom-right
-            0, 0, // top-left
-            0, 0, // top-left
-            1, 1, // bottom-right
-            1, 0  // top-right
-        ];
-        this.texCoordBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
-
-        // Framebuffer for offscreen rendering (layer compositing)
-        this.framebuffer = gl.createFramebuffer();
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
-
-        this.compositeTexture = gl.createTexture();
-        this._setupTexture(this.compositeTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.compositeTexture, 0);
-
-        gl.bindTexture(gl.TEXTURE_2D, null);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    }
-
-    _setupTextureRendering() {
-        const gl = this.gl;
-        gl.vertexAttribPointer(this.locations.position, 2, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(this.locations.position);
-        gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(this.locations.texCoord);
-    }
-
-    _setupTexture(texture) {
-        const gl = this.gl;
-        gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    }
-    
-    _bindVertexBuffers() {
-        const gl = this.gl;
-        gl.enableVertexAttribArray(this.locations.position);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.vertexAttribPointer(this.locations.position, 2, gl.FLOAT, false, 0, 0);
-
-        gl.enableVertexAttribArray(this.locations.texCoord);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
-    }
-    
-    _drawLayer(layer) {
-        const texture = this.layerTextures.get(layer);
-        const opacity = (layer.opacity ?? 100) / 100;
-        if (texture) {
-            // TODO: ブレンドモードに応じた処理を追加
-            // ★修正: ストレートアルファ
-            this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA); 
-            this._drawTexture(texture, opacity);
-        }
-    }
-    
-    _drawTexture(texture, opacity) {
-        const gl = this.gl;
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.uniform1i(this.locations.texture, 0);
-        gl.uniform1f(this.locations.opacity, opacity);
-
-        this._bindVertexBuffers(); // Ensure buffers are bound before drawing
-
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-    }
-
-    // imageDataに直接描画するメソッド群 (Canvas2Dライクな描画をエミュレート)
-    // WebGLでは、ImageDataをテクスチャとして扱い、GPUで描画を行う
-    // 現時点では、imageDataをCPU側で操作し、その結果をテクスチャにアップロードする方式
-    drawCircle(imageData, centerX, centerY, radius, color, isEraser) {
-        // CPU側でImageDataを操作して描画
-        // ★修正: colorがhexToRgbaで変換されたオブジェクトか、直接RGBA値を持つかを確認
-        const rgbaColor = typeof color === 'string' ? hexToRgba(color) : color;
-
-        const r = rgbaColor.r;
-        const g = rgbaColor.g;
-        const b = rgbaColor.b;
-        const a = rgbaColor.a;
-
-        const data = imageData.data;
-        const width = imageData.width;
-        const height = imageData.height;
-
-        // 簡単な円描画の例 (アンチエイリアシングなし)
-        const radiusSq = radius * radius;
-        for (let y = Math.max(0, Math.floor(centerY - radius)); y <= Math.min(height - 1, Math.ceil(centerY + radius)); y++) {
-            for (let x = Math.max(0, Math.floor(centerX - radius)); x <= Math.min(width - 1, Math.ceil(centerX + radius)); x++) {
-                const distSq = (x - centerX) * (x - centerX) + (y - centerY) * (y - centerY);
-                if (distSq <= radiusSq) {
-                    const i = (y * width + x) * 4;
-                    if (isEraser) {
-                        data[i] = 0; data[i + 1] = 0; data[i + 2] = 0; data[i + 3] = 0; // 透明
-                    } else {
-                        data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = a;
-                    }
-                }
+            // rect.widthが0になるのを防ぐ
+            if (rect.width === 0 || rect.height === 0) {
+                console.warn('getCanvasCoordinates: Bounding Rect has zero width or height.', rect);
+                return null;
             }
-        }
-        // 変更されたImageDataを対応するテクスチャにアップロード
-        this.updateTexture(imageData, 0, 0, width, height);
-    }
 
-    drawLine(imageData, x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize) {
-        // CPU側でImageDataを操作して描画
-        // ★修正: colorがhexToRgbaで変換されたオブジェクトか、直接RGBA値を持つかを確認
-        const rgbaColor = typeof color === 'string' ? hexToRgba(color) : color;
+            // ビューポート上のクリック位置から、canvas要素の左上隅までの相対座標を計算
+            let x = e.clientX - rect.left;
+            let y = e.clientY - rect.top;
+            console.log('getCanvasCoordinates: Raw Relative Coords (after rect offset):', x, y);
 
-        const r = rgbaColor.r;
-        const g = rgbaColor.g;
-        const b = rgbaColor.b;
-        const a = rgbaColor.a;
+            // 表示上のサイズ(rect.width)と、ImageDataの本来のサイズ(this.width)の比率を使って座標をスケールする
+            x = x * (this.width / rect.width);
+            y = y * (this.height / rect.height);
+            console.log('getCanvasCoordinates: Scaled Coords:', x, y);
 
-        const data = imageData.data;
-        const width = imageData.width;
-        const height = imageData.height;
+            // ビューの反転を考慮 (これはImageDataに対する反転なので、スケール後に適用)
+            if (this.viewTransform.flipX === -1) { x = this.width - x; }
+            if (this.viewTransform.flipY === -1) { y = this.height - y; }
+            console.log('getCanvasCoordinates: Flipped Coords:', x, y);
 
-        const dx = Math.abs(x1 - x0);
-        const dy = Math.abs(y1 - y0);
-        const sx = (x0 < x1) ? 1 : -1;
-        const sy = (y0 < y1) ? 1 : -1;
-        let err = dx - dy;
-
-        let currentX = x0;
-        let currentY = y0;
-
-        const drawPixel = (px, py, currentSize) => {
-            const pixelRadius = currentSize / 2;
-            const pixelRadiusSq = pixelRadius * pixelRadius;
-
-            for (let y = Math.max(0, Math.floor(py - pixelRadius)); y <= Math.min(height - 1, Math.ceil(py + pixelRadius)); y++) {
-                for (let x = Math.max(0, Math.floor(px - pixelRadius)); x <= Math.min(width - 1, Math.ceil(px + pixelRadius)); x++) {
-                    const distSq = (x - px) * (x - px) + (y - py) * (y - py);
-                    if (distSq <= pixelRadiusSq) {
-                        const i = (y * width + x) * 4;
-                        if (isEraser) {
-                            data[i] = 0; data[i + 1] = 0; data[i + 2] = 0; data[i + 3] = 0; // 透明
-                        } else {
-                            data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = a;
-                        }
-                    }
-                }
+            // 座標がキャンバスの範囲外に出ていないかチェック
+            if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
+                console.warn('getCanvasCoordinates: Final Coords out of bounds:', x, y, 'Canvas size:', this.width, this.height);
+                return null;
             }
-        };
 
-        while (true) {
-            const t = (Math.sqrt(Math.pow(currentX - x0, 2) + Math.pow(currentY - y0, 2))) / (Math.sqrt(Math.pow(x1 - x0, 2) + Math.pow(y1 - y0, 2)));
-            const currentPressure = p0 + (p1 - p0) * t;
-            const currentSize = calculatePressureSize(size, currentPressure);
-            drawPixel(currentX, currentY, currentSize);
-
-            if (currentX === x1 && currentY === y1) break;
-            const e2 = 2 * err;
-            if (e2 > -dy) { err -= dy; currentX += sx; }
-            if (e2 < dx) { err += dx; currentY += sy; }
+            return { x: Math.floor(x), y: Math.floor(y) };
+        } catch (error) {
+            console.warn('CanvasManager.getCanvasCoordinates: 座標変換エラー:', error);
+            return null;
         }
-        // 変更されたImageDataを対応するテクスチャにアップロード
-        this.updateTexture(imageData, 0, 0, width, height);
     }
 
-    fill(imageData, color) {
-        // このメソッドはバケツツール用。CanvasManagerのbucketTool.fillが直接ImageDataを操作しているため、
-        // WebGLEngine側では特に描画処理は不要。ImageDataが変更されたらテクスチャを更新するのみ。
-        const gl = this.gl;
-        // ★修正: currentActiveLayerが設定されていることを確認
-        if (!this.currentActiveLayer) {
-            console.warn("WebGL fill: currentActiveLayer is not set. Cannot update texture.");
-            return;
-        }
-        gl.bindTexture(gl.TEXTURE_2D, this.layerTextures.get(this.currentActiveLayer)); // activeLayerのテクスチャをバインド
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imageData);
-    }
-
-    clear(imageData) {
-        // imageDataの内容をクリア
-        imageData.data.fill(0);
-        // テクスチャを更新
-        this.updateTexture(imageData, 0, 0, imageData.width, imageData.height);
-    }
-
-    // ImageDataをWebGLテクスチャに更新するヘルパー
-    updateTexture(imageData, x, y, width, height) {
-        const gl = this.gl;
-        // ★修正: currentActiveLayerが設定されていることを確認
-        if (!this.currentActiveLayer) {
-            console.warn("WebGL updateTexture: currentActiveLayer is not set. Cannot update texture.");
-            return;
-        }
-        let texture = this.layerTextures.get(this.currentActiveLayer); // 現在アクティブなレイヤーのテクスチャを取得
-        if (!texture) {
-            texture = gl.createTexture();
-            this._setupTexture(texture);
-            this.layerTextures.set(this.currentActiveLayer, texture);
-        }
-        gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, width, height, gl.RGBA, gl.UNSIGNED_BYTE, imageData.data);
-    }
-
-    getTransformedImageData(sourceImageData, transform) {
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = sourceImageData.width;
-        tempCanvas.height = sourceImageData.height;
-        const tempCtx = tempCanvas.getContext('2d');
+    startLayerTransform(e = null) {
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+        if (!activeLayer || this.app.layerManager.layers.indexOf(activeLayer) === 0) return;
         
-        tempCtx.putImageData(sourceImageData, 0, 0);
-
-        const transformedCanvas = document.createElement('canvas');
-        transformedCanvas.width = sourceImageData.width;
-        transformedCanvas.height = sourceImageData.height;
-        const transformedCtx = transformedCanvas.getContext('2d');
-
-        transformedCtx.translate(transformedCanvas.width / 2, transformedCanvas.height / 2);
-        transformedCtx.rotate(transform.rotation * Math.PI / 180);
-        transformedCtx.scale(transform.scale * transform.flipX, transform.scale * transform.flipY);
-        transformedCtx.translate(-transformedCanvas.width / 2 + transform.x, -transformedCanvas.height / 2 + transform.y);
-
-        transformedCtx.drawImage(tempCanvas, 0, 0);
+        this.isLayerTransforming = true;
+        this.transformTargetLayer = activeLayer;
         
-        return transformedCtx.getImageData(0, 0, transformedCanvas.width, transformedCanvas.height);
+        if (!this.transformTargetLayer.originalImageData) {
+            this.transformTargetLayer.originalImageData = new ImageData(
+                new Uint8ClampedArray(this.transformTargetLayer.imageData.data),
+                this.transformTargetLayer.imageData.width,
+                this.transformTargetLayer.imageData.height
+            );
+        }
+        this.originalLayerTransform = { ...this.transformTargetLayer.transform };
+
+        if (e) {
+            this.transformMode = this.isShiftDown ? 'rotate_scale' : 'move';
+            this.transformStartX = e.clientX;
+            this.transformStartY = e.clientY;
+        }
+    }
+    
+    applyLayerTransformPreview() {
+        if (!this.transformTargetLayer || !this.transformTargetLayer.originalImageData) return;
+        const layer = this.transformTargetLayer;
+        const transformedImageData = this.renderingBridge.getTransformedImageData(layer.originalImageData, layer.transform);
+        layer.imageData = transformedImageData;
+        this.renderAllLayers();
     }
 
-    compositeLayers(layers, compositionData, dirtyRect) {
-        const gl = this.gl;
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer); // フレームバッファに描画
-        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    commitLayerTransform() {
+        if (!this.isLayerTransforming) return;
+        this.applyLayerTransformPreview();
+        const layer = this.transformTargetLayer;
+        layer.originalImageData = null;
+        layer.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
+        
+        this.isLayerTransforming = false;
+        this.transformTargetLayer = null;
+        this.originalLayerTransform = null;
+        this.renderAllLayers();
+        this.saveState();
+    }
 
-        // フレームバッファをクリア (透明な黒)
-        gl.clearColor(0.0, 0.0, 0.0, 0.0); // レイヤー合成時のクリアカラー
-        gl.clear(gl.COLOR_BUFFER_BIT);
+    saveState() {
+        if(this.isLayerTransforming) return;
+        const state = {
+            layers: this.app.layerManager.layers.map(layer => ({
+                name: layer.name,
+                visible: layer.visible,
+                opacity: layer.opacity,
+                blendMode: layer.blendMode,
+                imageData: new ImageData(
+                    new Uint8ClampedArray(layer.imageData.data),
+                    layer.imageData.width,
+                    layer.imageData.height
+                ),
+                transform: { ...layer.transform }
+            })),
+            activeLayerIndex: this.app.layerManager.activeLayerIndex
+        };
+        this.history = this.history.slice(0, this.historyIndex + 1);
+        this.history.push(state);
+        this.historyIndex++;
+    }
 
-        // 各レイヤーを合成
-        layers.forEach(layer => {
-            if (layer.visible) {
-                // ★追加: 現在描画しているレイヤーを追跡 (updateTextureで使用)
-                this.currentActiveLayer = layer; 
-                this._drawLayer(layer); // ここで各レイヤーのテクスチャを描画
+    restoreState(state) {
+        this.app.layerManager.layers = state.layers.map(layerData => {
+            const layer = new Layer(layerData.name, layerData.imageData.width, layerData.imageData.height);
+            layer.visible = layerData.visible;
+            layer.opacity = layerData.opacity ?? 100;
+            layer.blendMode = layerData.blendMode ?? 'normal';
+            layer.imageData.data.set(layerData.imageData.data);
+            if (layerData.transform) {
+                layer.transform = { ...layerData.transform };
             }
+            return layer;
         });
-
-        // フレームバッファの内容をcompositionDataに読み戻す
-        // TODO: dirtyRectを考慮した読み込みに修正
-        gl.readPixels(0, 0, this.canvas.width, this.canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, compositionData.data);
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null); // デフォルトフレームバッファに戻す
+        this.app.layerManager.switchLayer(state.activeLayerIndex);
+        this.renderAllLayers();
     }
 
-    renderToDisplay(compositionData, dirtyRect) {
-        const gl = this.gl;
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null); // デフォルトのキャンバスに描画
-
-        // 表示用のクリアカラー（最終的なキャンバスの背景色）
-        gl.clearColor(0.0, 0.0, 0.0, 0.0); // 背景を透明にクリア
-        gl.clear(gl.COLOR_BUFFER_BIT);
-
-        // compositionDataをテクスチャに変換して描画
-        if (!this.finalTexture) {
-            this.finalTexture = gl.createTexture();
-            this._setupTexture(this.finalTexture);
+    undo() {
+        if (this.historyIndex > 0) {
+            this.historyIndex--;
+            this.restoreState(this.history[this.historyIndex]);
         }
-        gl.bindTexture(gl.TEXTURE_2D, this.finalTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, compositionData);
-        
-        // 最終表示時のブレンド設定 (ストレートアルファに統一)
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); // ★修正: ストレートアルファ
+    }
 
-        this._drawTexture(this.finalTexture, 1.0); // 合成結果を不透明度1.0で描画
+    redo() {
+        if (this.historyIndex < this.history.length - 1) {
+            this.historyIndex++;
+            this.restoreState(this.history[this.historyIndex]);
+        }
+    }
+
+    setCurrentTool(tool) { this.currentTool = tool; this.updateCursor(); }
+    setCurrentColor(color) { this.currentColor = color; }
+    setCurrentSize(size) { this.currentSize = size; }
+
+    clearCanvas() {
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+        if (activeLayer) {
+            activeLayer.clear();
+            if (this.app.layerManager.activeLayerIndex === 0) {
+                activeLayer.fill('#f0e0d6');
+            }
+            this.renderAllLayers();
+            this.saveState();
+        }
+    }
+
+    exportMergedImage() {
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = this.width;
+        exportCanvas.height = this.height;
+        const exportCtx = exportCanvas.getContext('2d');
+        
+        const fullRect = { minX: 0, minY: 0, maxX: this.width, maxY: this.height };
+        this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, fullRect);
+        
+        exportCtx.putImageData(this.compositionData, 0, 0);
+        
+        const dataURL = exportCanvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.href = dataURL;
+        link.download = 'merged_image.png';
+        link.click();
+    }
+
+    updateCursor() {
+        let cursor = 'crosshair';
+        if (this.isVDown) cursor = 'move';
+        if (this.isSpaceDown) cursor = 'grab';
+        if (this.currentTool === 'eraser') cursor = 'cell';
+        if (this.currentTool === 'bucket') cursor = 'copy';
+        this.canvasArea.style.cursor = cursor;
+    }
+
+    applyViewTransform() {
+        const t = this.viewTransform;
+        this.canvasContainer.style.transform = `translate(${t.left}px, ${t.top}px) scale(${t.scale * t.flipX}, ${t.scale * t.flipY}) rotate(${t.rotation}deg)`;
+    }
+    flipHorizontal() { this.viewTransform.flipX *= -1; this.applyViewTransform(); }
+    flipVertical() { this.viewTransform.flipY *= -1; this.applyViewTransform(); }
+    zoom(factor) { this.viewTransform.scale = Math.max(0.1, this.viewTransform.scale * factor); this.applyViewTransform(); }
+    rotate(degrees) { this.viewTransform.rotation = (this.viewTransform.rotation + degrees) % 360; this.applyViewTransform(); }
+    resetView() { this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 }; this.applyViewTransform(); }
+    handleWheel(e) { e.preventDefault(); if (e.shiftKey) { this.rotate(-e.deltaY * 0.2); } else { this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); } }
+}
+
+class LayerManager { 
+    constructor(app) { 
+        this.app = app; 
+        this.layers = []; 
+        this.activeLayerIndex = -1; 
+        this.width = 344; 
+        this.height = 135;
+        this.mergeCanvas = document.createElement('canvas');
+        this.mergeCanvas.width = this.width;
+        this.mergeCanvas.height = this.height;
+        this.mergeCtx = this.mergeCanvas.getContext('2d');
+    } 
+    setupInitialLayers() { const bgLayer = new Layer('背景', this.width, this.height); bgLayer.fill('#f0e0d6'); this.layers.push(bgLayer); const drawingLayer = new Layer('レイヤー 1', this.width, this.height); this.layers.push(drawingLayer); this.switchLayer(1); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
+    addLayer() { if (this.layers.length >= 99) return; const insertIndex = this.activeLayerIndex + 1; const newLayer = new Layer(`レイヤー ${this.layers.length + 1}`, this.width, this.height); this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
+    deleteActiveLayer() { if (this.activeLayerIndex === 0 || this.layers.length <= 1) return; this.layers.splice(this.activeLayerIndex, 1); const newActiveIndex = Math.min(this.layers.length - 1, this.activeLayerIndex); this.renameLayers(); this.switchLayer(newActiveIndex); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
+    renameLayers() { this.layers.forEach((layer, index) => { layer.name = index === 0 ? '背景' : `レイヤー ${index}`; }); } 
+    switchLayer(index) { if (index < 0 || index >= this.layers.length) return; this.activeLayerIndex = index; if (this.app.layerUIManager) { this.app.layerUIManager.renderLayers(); } } 
+    getCurrentLayer() { return this.layers[this.activeLayerIndex] || null; } 
+    duplicateActiveLayer() { const activeLayer = this.getCurrentLayer(); if (!activeLayer) return; const newLayer = new Layer(`${activeLayer.name}のコピー`, this.width, this.height); newLayer.imageData.data.set(activeLayer.imageData.data); newLayer.visible = activeLayer.visible; newLayer.opacity = activeLayer.opacity; newLayer.blendMode = activeLayer.blendMode; const insertIndex = this.activeLayerIndex + 1; this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
+    mergeDownActiveLayer() {
+        if (this.activeLayerIndex <= 0) return;
+        const topLayer = this.layers[this.activeLayerIndex];
+        const bottomLayer = this.layers[this.activeLayerIndex - 1];
+
+        const tempCtx = this.mergeCtx;
+        
+        // 1. 下のレイヤーを描画
+        tempCtx.clearRect(0, 0, this.width, this.height);
+        tempCtx.putImageData(bottomLayer.imageData, 0, 0);
+
+        // 2. 上のレイヤーを合成
+        tempCtx.globalAlpha = topLayer.opacity / 100;
+        tempCtx.globalCompositeOperation = topLayer.blendMode;
+        
+        // 一時キャンバスにImageDataを描画してから合成
+        const topLayerCanvas = document.createElement('canvas');
+        topLayerCanvas.width = this.width;
+        topLayerCanvas.height = this.height;
+        const topLayerCtx = topLayerCanvas.getContext('2d');
+        topLayerCtx.putImageData(topLayer.imageData, 0, 0);
+        
+        tempCtx.drawImage(topLayerCanvas, 0, 0);
+
+        // 3. 合成結果を下のレイヤーのimageDataに書き戻す
+        bottomLayer.imageData = tempCtx.getImageData(0, 0, this.width, this.height);
+
+        // 4. 上のレイヤーを削除
+        this.layers.splice(this.activeLayerIndex, 1);
+        this.switchLayer(this.activeLayerIndex - 1);
+        this.app.canvasManager.renderAllLayers();
+        this.app.canvasManager.saveState();
+    } 
+}
+class PenSettingsManager { constructor(app) { this.app = app; this.currentSize = 1; this.sizes = Array.from(document.querySelectorAll('.size-btn')).map(btn => parseInt(btn.dataset.size)); this.currentSizeIndex = this.sizes.indexOf(this.currentSize); this.bindEvents(); this.updateSizeButtonVisuals(); } bindEvents() { document.querySelectorAll('.size-btn').forEach(btn => btn.addEventListener('click', () => this.setSize(parseInt(btn.dataset.size)))); } setSize(size) { this.currentSize = size; this.currentSizeIndex = this.sizes.indexOf(this.currentSize); document.querySelectorAll('.size-btn').forEach(btn => btn.classList.remove('active')); document.querySelector(`[data-size="${size}"]`)?.classList.add('active'); this.app.canvasManager.setCurrentSize(this.currentSize); this.updateSizeButtonVisuals(); } changeSize(increase) { let newIndex = this.currentSizeIndex + (increase ? 1 : -1); newIndex = Math.max(0, Math.min(newIndex, this.sizes.length - 1)); this.setSize(this.sizes[newIndex]); } updateSizeButtonVisuals() { document.querySelectorAll('.size-btn').forEach(btn => { const size = parseInt(btn.dataset.size); btn.querySelector('.size-dot').style.width = `${Math.min(size, 16)}px`; btn.querySelector('.size-dot').style.height = `${Math.min(size, 16)}px`; btn.querySelector('.size-number').textContent = size; }); } }
+class ColorManager { constructor(app) { this.app = app; this.mainColor = '#800000'; this.subColor = '#f0e0d6'; this.colors = Array.from(document.querySelectorAll('.color-btn')).map(btn => btn.dataset.color); this.currentColorIndex = this.colors.indexOf(this.mainColor); this.mainColorDisplay = document.getElementById('main-color-display'); this.subColorDisplay = document.getElementById('sub-color-display'); this.bindEvents(); this.updateColorDisplays(); document.querySelector(`[data-color="${this.mainColor}"]`)?.classList.add('active'); } bindEvents() { document.querySelectorAll('.color-btn').forEach(btn => btn.addEventListener('click', (e) => this.setColor(e.currentTarget.dataset.color))); document.querySelector('.color-mode-display').addEventListener('click', () => this.swapColors()); } setColor(color) { this.mainColor = color; this.currentColorIndex = this.colors.indexOf(this.mainColor); document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active')); document.querySelector(`[data-color="${color}"]`)?.classList.add('active'); this.updateColorDisplays(); this.app.canvasManager.setCurrentColor(this.mainColor); } updateColorDisplays() { this.mainColorDisplay.style.backgroundColor = this.mainColor; this.subColorDisplay.style.backgroundColor = this.subColor; } swapColors() { [this.mainColor, this.subColor] = [this.subColor, this.mainColor]; this.updateColorDisplays(); this.setColor(this.mainColor); } resetColors() { this.setColor('#800000'); this.subColor = '#f0e0d6'; this.updateColorDisplays(); } changeColor(increase) { let newIndex = this.currentColorIndex + (increase ? 1 : -1); newIndex = (newIndex + this.colors.length) % this.colors.length; this.setColor(this.colors[newIndex]); } }
+class ToolManager { constructor(app) { this.app = app; this.currentTool = 'pen'; this.bindEvents(); } bindEvents() { document.getElementById('pen-tool').addEventListener('click', () => this.setTool('pen')); document.getElementById('eraser-tool').addEventListener('click', () => this.setTool('eraser')); document.getElementById('bucket-tool').addEventListener('click', () => this.setTool('bucket')); document.getElementById('move-tool').addEventListener('click', () => this.setTool('move')); } setTool(tool) { this.currentTool = tool; document.querySelectorAll('.left-toolbar .tool-btn').forEach(btn => btn.classList.remove('active')); document.getElementById(tool + '-tool')?.classList.add('active'); this.app.canvasManager.setCurrentTool(tool); } }
+
+
+// --- Main Application Class ---
+
+class ToshinkaTegakiTool {
+    constructor() {
+        this.initManagers();
+    }
+
+    initManagers() {
+        // Core Logic Managers
+        this.canvasManager = new CanvasManager(this);
+        this.layerManager = new LayerManager(this);
+        this.penSettingsManager = new PenSettingsManager(this);
+        this.colorManager = new ColorManager(this);
+        this.toolManager = new ToolManager(this);
+
+        // UI Managers (Loaded from modules)
+        this.topBarManager = new TopBarManager(this);
+        this.shortcutManager = new ShortcutManager(this);
+        this.layerUIManager = new LayerUIManager(this);
+
+        // Tool Managers (Loaded from modules)
+        this.bucketTool = new BucketTool(this);
+
+        // Initialize System
+        this.shortcutManager.initialize();
+        this.layerManager.setupInitialLayers();
+        this.toolManager.setTool('pen');
+        this.penSettingsManager.setSize(1);
+        this.colorManager.setColor(this.colorManager.mainColor);
     }
 }
+
+// --- Application Entry Point ---
+
+window.addEventListener('DOMContentLoaded', () => {
+    if (!window.toshinkaTegakiInitialized) {
+        window.toshinkaTegakiInitialized = true;
+        window.toshinkaTegakiTool = new ToshinkaTegakiTool();
+    }
+});
