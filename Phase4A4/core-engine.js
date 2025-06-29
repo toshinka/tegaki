@@ -1,11 +1,11 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.0.2 (Phase 4A-4 Debugging)
+ * Version: 2.0.3 (Phase 4A-4 Debugging - getCanvasCoordinates focus)
  *
  * ・レイヤー結合時のエラーを修正
  * ・ビュー拡大縮小時のペン座標ズレを修正
- * ・★★デバッグ用ログを追加★★
+ * ・★★getCanvasCoordinatesに詳細デバッグログを追加★★
  * ===================================================================================
  */
 
@@ -283,32 +283,40 @@ class CanvasManager {
     getCanvasCoordinates(e) {
         try {
             const rect = this.displayCanvas.getBoundingClientRect();
+            console.log('getCanvasCoordinates: Bounding Rect:', rect.left, rect.top, rect.width, rect.height); // ★追加ログ
+
             // rect.widthが0になるのを防ぐ
-            if (rect.width === 0 || rect.height === 0) return null;
+            if (rect.width === 0 || rect.height === 0) {
+                console.warn('getCanvasCoordinates: Bounding Rect has zero width or height.', rect); // ★追加ログ
+                return null;
+            }
 
             // ビューポート上のクリック位置から、canvas要素の左上隅までの相対座標を計算
             let x = e.clientX - rect.left;
             let y = e.clientY - rect.top;
+            console.log('getCanvasCoordinates: Raw Relative Coords (after rect offset):', x, y); // ★追加ログ
 
             // 表示上のサイズ(rect.width)と、ImageDataの本来のサイズ(this.width)の比率を使って座標をスケールする
             // これにより、CSSによる拡大・縮小を逆算する
             // ※注意: この計算は回転がない場合には正確ですが、回転がかかるとズレが生じます。
             x = x * (this.width / rect.width);
             y = y * (this.height / rect.height);
+            console.log('getCanvasCoordinates: Scaled Coords:', x, y); // ★追加ログ
 
             // ビューの反転を考慮 (これはImageDataに対する反転なので、スケール後に適用)
             if (this.viewTransform.flipX === -1) { x = this.width - x; }
             if (this.viewTransform.flipY === -1) { y = this.height - y; }
+            console.log('getCanvasCoordinates: Flipped Coords:', x, y); // ★追加ログ
 
             // 座標がキャンバスの範囲外に出ていないかチェック
             if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
-                // console.warn('CanvasManager.getCanvasCoordinates: Coordinates out of bounds:', x, y); // ★デバッグログ (量が多いのでコメントアウト)
+                console.warn('getCanvasCoordinates: Final Coords out of bounds:', x, y, 'Canvas size:', this.width, this.height); // ★追加ログ
                 return null;
             }
 
             return { x: Math.floor(x), y: Math.floor(y) };
         } catch (error) {
-            console.warn('CanvasManager.getCanvasCoordinates: 座標変換エラー:', error); // ★デバッグログ
+            console.warn('CanvasManager.getCanvasCoordinates: 座標変換エラー:', error); // ★追加ログ
             return null;
         }
     }
