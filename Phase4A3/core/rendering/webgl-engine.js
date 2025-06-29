@@ -1,12 +1,10 @@
 /*
  * ===================================================================================
- * Toshinka Tegaki Tool - WebGL Engine (Phase 4A-4: Final Compositing Fix)
- * Version: 0.3.6 (Fix: Avoid overwriting GPU-drawn textures with stale CPU ImageData)
+ * Toshinka Tegaki Tool - WebGL Engine (Full Rendering Pipeline) - FIXED VERSION
+ * Version: 0.3.0 (Phase 4A-4: WebGL Compositing & Display Fix)
  *
- * 【今回修正】
- * ・compositeLayersメソッド内で、LayerのImageDataからWebGLテクスチャを更新する処理を削除。
- * これにより、drawCircle/drawLineでGPUに描画された内容が正しく反映されるようになります。
- * ・renderToDisplayメソッド内のデバッグ用の赤色クリアを、元の透明クリアに戻しました。
+ * レイヤーのImageDataをWebGLテクスチャに変換し、それを合成して画面に表示する
+ * 完全な描画パイプラインを実装しました。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -15,53 +13,137 @@ export class WebGLEngine extends DrawingEngine {
     constructor(canvas) {
         super(canvas);
         this.gl = null;
+        this.program = null; // シェーダープログラム
+        this.positionBuffer = null; // 頂点バッファ
+        this.texCoordBuffer = null; // テクスチャ座標バッファ
+        this.compositeTexture = null; // 合成結果を格納するテクスチャ
+        this.compositeFBO = null; // 合成用フレームバッファ
 
-        console.log("WebGL Engine: Canvas element passed:", canvas);
-        console.log("WebGL Engine: Canvas width (from element):", canvas.width);
-        console.log("WebGL Engine: Canvas height (from element):", canvas.height);
-
-        this.width = canvas.width;
-        this.height = canvas.height;
-        console.log("WebGL Engine: Stored width:", this.width);
-        console.log("WebGL Engine: Stored height:", this.height);
-
-        this.layerTextures = new Map(); // Map<Layer, WebGLTexture>
-        this.framebuffers = new Map();  // Map<Layer, WebGLFramebuffer>
-        this.currentLayerTexture = null; // 現在描画中のレイヤーのテクスチャ
-
-        // 合成結果を保持するテクスチャとFBO
-        this.compositeTexture = null;
-        this.compositeFramebuffer = null;
-
-        // ペン描画用の一時的なFBOとテクスチャ
-        this.penDrawFramebuffer = null;
-        this.penDrawTexture = null;
+        // ★新規追加: 作成したテクスチャをレイヤーごとに保管する場所
+        this.layerTextures = new Map();
 
         try {
             this.gl = canvas.getContext('webgl', { preserveDrawingBuffer: true }) || canvas.getContext('experimental-webgl', { preserveDrawingBuffer: true });
             if (!this.gl) {
                 throw new Error('WebGL is not supported in this browser.');
             }
-            this.gl.clearColor(0.0, 0.0, 0.0, 0.0); // 透明でクリア
-            this.gl.enable(this.gl.BLEND);
-            this.gl.blendFunc(this.gl.ONE, this.gl.ONE_MINUS_SRC_ALPHA); // 通常のアルファブレンド
-
-            this._initShaders();
-            this._initBuffers();
-            this._initCompositeResources(); // 合成用リソースの初期化
-            this._initPenDrawResources(); // ペン描画用リソースの初期化
-
-            console.log("WebGL Engine initialized successfully.");
-            // 初期化後のcompositeTextureの状態を確認
-            console.log("Initial compositeTexture:", this.compositeTexture);
-            console.log("Is initial compositeTexture a WebGLTexture?", this.gl.isTexture(this.compositeTexture));
-
         } catch (e) {
             console.error("WebGL Engine initialization failed:", e);
-            // エラー時はWebGLコンテキストをnullに設定し、isSupportedでfalseを返す
-            this.gl = null;
             return;
         }
+
+        const gl = this.gl;
+
+        // WebGL初期設定
+        gl.clearColor(0.0, 0.0, 0.0, 0.0); // 背景は透明に
+        gl.enable(gl.BLEND); // アルファブレンドを有効にする
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); // 通常のアルファブレンド設定
+
+        // -----------------------------------------------------------
+        // シェーダーのコンパイルとプログラムのリンク
+        // -----------------------------------------------------------
+        const vsSource = `
+            attribute vec4 a_position;
+            attribute vec2 a_texCoord;
+            varying vec2 v_texCoord;
+            void main() {
+                gl_Position = a_position;
+                v_texCoord = a_texCoord;
+            }
+        `;
+
+        const fsSource = `
+            precision mediump float;
+            varying vec2 v_texCoord;
+            uniform sampler2D u_image;
+            void main() {
+                gl_FragColor = texture2D(u_image, v_texCoord);
+            }
+        `;
+
+        const vertexShader = this._compileShader(vsSource, gl.VERTEX_SHADER);
+        const fragmentShader = this._compileShader(fsSource, gl.FRAGMENT_SHADER);
+        this.program = this._createProgram(vertexShader, fragmentShader);
+
+        if (!this.program) {
+            console.error("Failed to create WebGL program.");
+            return;
+        }
+
+        gl.useProgram(this.program);
+
+        // -----------------------------------------------------------
+        // 画面全体を覆うクアッド（四角形）の頂点バッファ
+        // -----------------------------------------------------------
+        this.positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        // x, y 座標 (-1 to 1 のクリップ空間)
+        const positions = [
+            -1.0, 1.0,  // top-left
+            -1.0, -1.0, // bottom-left
+            1.0, 1.0,   // top-right
+            1.0, -1.0,  // bottom-right
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+        // -----------------------------------------------------------
+        // テクスチャ座標バッファ (画像の上から下へ)
+        // -----------------------------------------------------------
+        this.texCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        // WebGLのテクスチャ座標は左下(0,0)、右上(1,1)だが、
+        // 画像のY軸は上から下なので、Y座標を反転させる (0,1 -> 0,0) (1,1 -> 1,0)
+        const texCoords = [
+            0.0, 0.0,  // top-left -> mapped to (0,1) for image
+            0.0, 1.0,  // bottom-left -> mapped to (0,0) for image
+            1.0, 0.0,  // top-right -> mapped to (1,1) for image
+            1.0, 1.0,   // bottom-right -> mapped to (1,0) for image
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
+
+        // -----------------------------------------------------------
+        // アトリビュートとユニフォームのロケーション取得
+        // -----------------------------------------------------------
+        this.a_position_loc = gl.getAttribLocation(this.program, "a_position");
+        this.a_texCoord_loc = gl.getAttribLocation(this.program, "a_texCoord");
+        this.u_image_loc = gl.getUniformLocation(this.program, "u_image");
+
+        // 初期化時に合成用バッファをセットアップ
+        this._setupCompositingBuffer();
+        console.log("WebGL Engine initialized successfully.");
+    }
+
+    /**
+     * シェーダーをコンパイルするヘルパーメソッド
+     */
+    _compileShader(source, type) {
+        const gl = this.gl;
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
+            gl.deleteShader(shader);
+            return null;
+        }
+        return shader;
+    }
+
+    /**
+     * シェーダープログラムを作成するヘルパーメソッド
+     */
+    _createProgram(vs, fs) {
+        const gl = this.gl;
+        const program = gl.createProgram();
+        gl.attachShader(program, vs);
+        gl.attachShader(program, fs);
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(program));
+            gl.deleteProgram(program);
+            return null;
+        }
+        return program;
     }
 
     /**
@@ -78,502 +160,214 @@ export class WebGLEngine extends DrawingEngine {
     }
 
     /**
-     * 各種シェーダープログラムの初期化
+     * ImageDataからWebGLテクスチャを作成または更新します。
+     * @param {ImageData} imageData ソースとなるImageData
+     * @param {WebGLTexture} [existingTexture] 更新する既存のテクスチャ (オプション)
+     * @returns {WebGLTexture} 作成または更新されたテクスチャ
      */
-    _initShaders() {
+    _createOrUpdateTextureFromImageData(imageData, existingTexture = null) {
         const gl = this.gl;
-
-        // ======================================================
-        // 1. テクスチャ描画用シェーダー (レイヤー表示・合成用)
-        // ======================================================
-        const textureVertexShaderSource = `
-            attribute vec4 a_position;
-            attribute vec2 a_texCoord;
-            varying vec2 v_texCoord;
-            void main() {
-                gl_Position = a_position;
-                v_texCoord = a_texCoord;
-            }
-        `;
-        const textureFragmentShaderSource = `
-            precision mediump float;
-            varying vec2 v_texCoord;
-            uniform sampler2D u_image;
-            uniform float u_opacity;
-
-            void main() {
-                vec4 texColor = texture2D(u_image, v_texCoord);
-                gl_FragColor = vec4(texColor.rgb, texColor.a * u_opacity);
-            }
-        `;
-        this.textureProgram = this._createProgram(textureVertexShaderSource, textureFragmentShaderSource);
-        this.textureProgram.positionLocation = gl.getAttribLocation(this.textureProgram, "a_position");
-        this.textureProgram.texCoordLocation = gl.getAttribLocation(this.textureProgram, "a_texCoord");
-        this.textureProgram.imageLocation = gl.getUniformLocation(this.textureProgram, "u_image");
-        this.textureProgram.opacityLocation = gl.getUniformLocation(this.textureProgram, "u_opacity");
-
-        // ======================================================
-        // 2. 円描画用シェーダー (ペン・消しゴム用)
-        // ======================================================
-        const circleVertexShaderSource = `
-            attribute vec2 a_position;
-            uniform vec2 u_resolution;
-            uniform vec2 u_center;
-            uniform float u_radius;
-            void main() {
-                vec2 zeroToOne = a_position / u_resolution;
-                vec2 zeroToTwo = zeroToOne * 2.0;
-                vec2 clipSpace = zeroToTwo - 1.0;
-                gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
-            }
-        `;
-        const circleFragmentShaderSource = `
-            precision mediump float;
-            uniform vec2 u_resolution;
-            uniform vec2 u_center;
-            uniform float u_radius;
-            uniform vec4 u_color; // RGBA
-            uniform bool u_isEraser;
-
-            void main() {
-                vec2 coord = gl_FragCoord.xy;
-                float dist = distance(coord, u_center);
-                float alpha = 1.0 - smoothstep(u_radius - 0.5, u_radius + 0.5, dist);
-
-                if (u_isEraser) {
-                    // 消しゴムの場合、ターゲットのアルファ値を減衰させる
-                    gl_FragColor = vec4(u_color.rgb, u_color.a * alpha); // 色情報は無視し、アルファのみ
-                } else {
-                    // ペンの場合、指定された色とアルファで描画
-                    gl_FragColor = vec4(u_color.rgb, u_color.a * alpha);
-                }
-            }
-        `;
-        this.circleProgram = this._createProgram(circleVertexShaderSource, circleFragmentShaderSource);
-        this.circleProgram.positionLocation = gl.getAttribLocation(this.circleProgram, "a_position");
-        this.circleProgram.resolutionLocation = gl.getUniformLocation(this.circleProgram, "u_resolution");
-        this.circleProgram.centerLocation = gl.getUniformLocation(this.circleProgram, "u_center");
-        this.circleProgram.radiusLocation = gl.getUniformLocation(this.circleProgram, "u_radius");
-        this.circleProgram.colorLocation = gl.getUniformLocation(this.circleProgram, "u_color");
-        this.circleProgram.isEraserLocation = gl.getUniformLocation(this.circleProgram, "u_isEraser");
-
-        // ======================================================
-        // 3. 線描画用シェーダー (ペン・消しゴム用) - 円を複数描画する方式
-        // ======================================================
-        // 線の描画は、複数の円をつなぎ合わせる方式で簡易的に実装します。
-        // より高度な線描画はgeometry shaderなどが必要ですが、WebGL1では利用できないため。
-        // このシェーダーは、基本的にはcircleProgramと同じものを使用します。
-        // drawLineメソッド内で、中心座標を連続的に更新してdrawCircleを呼び出す形になります。
-        // 複雑な描画（アンチエイリアシングされた線など）には、別途専用のシェーダー検討が必要。
-
-        // ======================================================
-        // 4. ブレンドモード用シェーダー (ここでは単純なアルファブレンド)
-        // ======================================================
-        // 現時点ではgl.blendFuncで対応するため、専用シェーダーは不要。
-        // 将来的に複雑なブレンドモード（乗算、スクリーンなど）を実装する際に必要になります。
-    }
-
-    /**
-     * 頂点バッファとテクスチャ座標バッファの初期化
-     */
-    _initBuffers() {
-        const gl = this.gl;
-
-        // 矩形を描画するための頂点データ (クリップ空間座標)
-        this.positionBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-            -1, -1,
-             1, -1,
-            -1,  1,
-            -1,  1,
-             1, -1,
-             1,  1,
-        ]), gl.STATIC_DRAW);
-
-        // テクスチャ座標 (0.0 から 1.0)
-        this.texCoordBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-            0, 0,
-            1, 0,
-            0, 1,
-            0, 1,
-            1, 0,
-            1, 1,
-        ]), gl.STATIC_DRAW);
-    }
-
-    /**
-     * 合成結果を保持するためのテクスチャとフレームバッファを初期化
-     */
-    _initCompositeResources() {
-        const gl = this.gl;
-
-        // 合成結果用テクスチャ
-        this.compositeTexture = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, this.compositeTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.width, this.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-        // 合成結果用フレームバッファ
-        this.compositeFramebuffer = gl.createFramebuffer();
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.compositeFramebuffer);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.compositeTexture, 0);
-
-        gl.bindTexture(gl.TEXTURE_2D, null);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    }
-
-    /**
-     * ペン描画用の一時的なFBOとテクスチャを初期化
-     */
-    _initPenDrawResources() {
-        const gl = this.gl;
-        this.penDrawTexture = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, this.penDrawTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.width, this.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-        this.penDrawFramebuffer = gl.createFramebuffer();
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.penDrawFramebuffer);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.penDrawTexture, 0);
-
-        gl.bindTexture(gl.TEXTURE_2D, null);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    }
-
-    /**
-     * シェーダーを作成
-     * @param {string} type - 'vertex' or 'fragment'
-     * @param {string} source - シェーダーソースコード
-     * @returns {WebGLShader}
-     */
-    _createShader(type, source) {
-        const gl = this.gl;
-        const shader = gl.createShader(type === 'vertex' ? gl.VERTEX_SHADER : gl.FRAGMENT_SHADER);
-        gl.shaderSource(shader, source);
-        gl.compileShader(shader);
-        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-            console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
-            gl.deleteShader(shader);
-            return null;
-        }
-        return shader;
-    }
-
-    /**
-     * シェーダープログラムを作成
-     * @param {string} vertexSource
-     * @param {string} fragmentSource
-     * @returns {WebGLProgram}
-     */
-    _createProgram(vertexSource, fragmentSource) {
-        const gl = this.gl;
-        const vertexShader = this._createShader('vertex', vertexSource);
-        const fragmentShader = this._createShader('fragment', fragmentSource);
-
-        const program = gl.createProgram();
-        gl.attachShader(program, vertexShader);
-        gl.attachShader(program, fragmentShader);
-        gl.linkProgram(program);
-        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-            console.error('Program linking error:', gl.getProgramInfoLog(program));
-            gl.deleteProgram(program);
-            return null;
-        }
-        return program;
-    }
-
-    /**
-     * ImageDataからWebGLテクスチャを作成または更新
-     * @param {ImageData} imageData
-     * @param {WebGLTexture} [textureToUpdate=null] 既存のテクスチャを更新する場合
-     * @returns {WebGLTexture}
-     */
-    _createOrUpdateTextureFromImageData(imageData, textureToUpdate = null) {
-        const gl = this.gl;
-        const texture = textureToUpdate || gl.createTexture();
+        const texture = existingTexture || gl.createTexture();
 
         gl.bindTexture(gl.TEXTURE_2D, texture);
 
-        // テクスチャパラメータを設定
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-
-        // ImageDataをテクスチャに転送
+        // ピクセル形式とデータ型を設定
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imageData);
 
-        gl.bindTexture(gl.TEXTURE_2D, null); // バインド解除
+        // テクスチャのパラメータを設定 (線形補間、端をクランプ)
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        // 他のテクスチャに影響を与えないように、バインドを解除
+        gl.bindTexture(gl.TEXTURE_2D, null);
+
         return texture;
     }
 
     /**
-     * 特定のレイヤーのテクスチャとフレームバッファを取得または作成
-     * @param {Layer} layer
-     * @returns {{texture: WebGLTexture, framebuffer: WebGLFramebuffer}}
+     * ★新規追加★ 合成結果を格納するFBOとテクスチャをセットアップします。
      */
-    _getOrCreateLayerResources(layer) {
+    _setupCompositingBuffer() {
         const gl = this.gl;
-        let texture = this.layerTextures.get(layer);
-        let framebuffer = this.framebuffers.get(layer);
+        const width = this.canvas.width;
+        const height = this.canvas.height;
 
-        if (!texture) {
-            texture = gl.createTexture();
-            gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.width, this.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-            this.layerTextures.set(layer, texture);
+        // 既存のリソースがあれば解放
+        if (this.compositeFBO) {
+            gl.deleteFramebuffer(this.compositeFBO);
+        }
+        if (this.compositeTexture) {
+            gl.deleteTexture(this.compositeTexture);
         }
 
-        if (!framebuffer) {
-            framebuffer = gl.createFramebuffer();
-            gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-            this.framebuffers.set(layer, framebuffer);
-        }
-
+        // テクスチャの作成 (合成結果をここに描画する)
+        this.compositeTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.compositeTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.bindTexture(gl.TEXTURE_2D, null);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        return { texture, framebuffer };
+
+        // フレームバッファの作成とテクスチャの紐付け
+        this.compositeFBO = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.compositeFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.compositeTexture, 0);
+
+        // フレームバッファの完了チェック
+        const fbStatus = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+        if (fbStatus !== gl.FRAMEBUFFER_COMPLETE) {
+            console.error('Framebuffer not complete, status: ' + fbStatus);
+        }
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null); // デフォルトのフレームバッファに戻す
+        console.log("Compositing buffer (FBO & Texture) setup completed.");
     }
 
     /**
-     * WebGLで円を描画
-     * @param {ImageData} imageData - 描画対象のImageData (WebGLでは内部テクスチャに対応)
-     * @param {number} centerX
-     * @param {number} centerY
-     * @param {number} radius
-     * @param {object} color - {r, g, b, a}
-     * @param {boolean} isEraser
-     */
-    drawCircle(imageData, centerX, centerY, radius, color, isEraser) {
-        const gl = this.gl;
-        if (!gl || !this.circleProgram) {
-            console.warn("WebGL not initialized or circle program missing.");
-            return;
-        }
-
-        // 描画対象のImageDataに対応するテクスチャとFBOを取得 (ここではimageDataをキーとしてLayerを紐づける必要がある)
-        // ここでは簡易的に、現在のactiveLayerのテクスチャに描画することを想定
-        // 実際にはImageDataのLayerオブジェクトから対応するテクスチャを探し出す必要がある
-        const layer = imageData.layer; // 仮定: imageDataオブジェクトにlayerプロパティがある
-        if (!layer) {
-            console.error("Layer not found for ImageData in WebGL drawCircle.");
-            return;
-        }
-        const { texture: targetTexture, framebuffer: targetFBO } = this._getOrCreateLayerResources(layer);
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO); // 描画ターゲットをレイヤーのFBOに設定
-        gl.viewport(0, 0, this.width, this.height); // ビューポートをキャンバスサイズに設定
-
-        gl.useProgram(this.circleProgram);
-
-        // 頂点バッファを設定
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.enableVertexAttribArray(this.circleProgram.positionLocation);
-        gl.vertexAttribPointer(this.circleProgram.positionLocation, 2, gl.FLOAT, false, 0, 0);
-
-        // Uniform変数を設定
-        gl.uniform2f(this.circleProgram.resolutionLocation, this.width, this.height);
-        gl.uniform2f(this.circleProgram.centerLocation, centerX, centerY);
-        gl.uniform1f(this.circleProgram.radiusLocation, radius);
-        gl.uniform4f(this.circleProgram.colorLocation, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
-        gl.uniform1i(this.circleProgram.isEraserLocation, isEraser ? 1 : 0);
-
-        // ブレンド設定を消しゴムモードに合わせて調整
-        if (isEraser) {
-            // 消しゴムの場合、ターゲットのアルファを減衰させるためのブレンド設定
-            gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
-        } else {
-            // ペンの場合、通常のアルファブレンド
-            gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-        }
-
-        // 描画
-        gl.drawArrays(gl.TRIANGLES, 0, 6); // 矩形を描画することで円の範囲をカバー
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null); // 描画ターゲットをデフォルトに戻す
-        gl.useProgram(null);
-        // ブレンド設定を元に戻す（次回の描画に備えて）
-        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    }
-
-    /**
-     * WebGLで線を描画 (複数の円をつなぎ合わせる方式)
-     * @param {ImageData} imageData
-     * @param {number} x0
-     * @param {number} y0
-     * @param {number} x1
-     * @param {number} y1
-     * @param {number} size
-     * @param {object} color - {r, g, b, a}
-     * @param {boolean} isEraser
-     * @param {object} [p0=null] - 筆圧情報 (previous point)
-     * @param {object} [p1=null] - 筆圧情報 (current point)
-     */
-    drawLine(imageData, x0, y0, x1, y1, size, color, isEraser, p0, p1) {
-        // 筆圧に応じた太さの計算
-        const startRadius = (p0 && p0.pressure !== undefined) ? size * (0.5 + p0.pressure * 0.5) / 2 : size / 2;
-        const endRadius = (p1 && p1.pressure !== undefined) ? size * (0.5 + p1.pressure * 0.5) / 2 : size / 2;
-
-        const dist = Math.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2);
-        if (dist === 0) {
-            this.drawCircle(imageData, x0, y0, startRadius, color, isEraser);
-            return;
-        }
-
-        const numSteps = Math.max(1, Math.ceil(dist / (size / 4))); // 太さに応じてステップ数を増やす
-        for (let i = 0; i <= numSteps; i++) {
-            const t = i / numSteps;
-            const currentX = x0 + (x1 - x0) * t;
-            const currentY = y0 + (y1 - y0) * t;
-            const currentRadius = startRadius + (endRadius - startRadius) * t;
-            this.drawCircle(imageData, currentX, currentY, currentRadius, color, isEraser);
-        }
-    }
-
-    /**
-     * 画像データをクリア (WebGLではテクスチャをクリア)
-     * @param {ImageData} imageData
-     */
-    clear(imageData) {
-        const gl = this.gl;
-        const layer = imageData.layer; // 仮定: imageDataオブジェクトにlayerプロパティがある
-        if (!layer) {
-            console.error("Layer not found for ImageData in WebGL clear.");
-            return;
-        }
-        const { framebuffer: targetFBO } = this._getOrCreateLayerResources(layer);
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO);
-        gl.viewport(0, 0, this.width, this.height);
-        gl.clearColor(0.0, 0.0, 0.0, 0.0); // 透明でクリア
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    }
-
-    /**
-     * WebGLでレイヤー群を合成
-     * @param {Array<Layer>} layers - レイヤーの配列
-     * @param {object} compositionData - 合成に必要な追加データ (例: dirtyRect)
-     * @param {object} [dirtyRect=null] - 更新範囲 (現時点では無視)
+     * ★処理を更新: レイヤーをテクスチャに変換し、合成バッファに描画します。
      */
     compositeLayers(layers, compositionData, dirtyRect) {
-        const gl = this.gl;
-        if (!gl || !this.textureProgram || !this.compositeFramebuffer || !this.compositeTexture) {
-            console.warn("WebGL not initialized or resources missing for compositing.");
+        if (!this.gl || !this.program || !this.compositeFBO || !this.compositeTexture) {
+            console.warn("WebGL not ready for compositing.");
             return;
         }
+
+        const gl = this.gl;
 
         console.log(`Compositing ${layers.length} layers for WebGL...`);
 
-        // 合成ターゲットをcompositeFramebufferに設定
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.compositeFramebuffer);
-        gl.viewport(0, 0, this.width, this.height);
-        gl.clearColor(0.0, 0.0, 0.0, 0.0); // 合成前にクリア
-        gl.clear(gl.COLOR_BUFFER_BIT);
+        // レイヤーテクスチャを更新
+        // 既存のテクスチャを一旦クリア（簡単のため。将来的には差分更新が望ましい）
+        // this.layerTextures.forEach(texture => gl.deleteTexture(texture)); // ここでの削除はしない
+        // this.layerTextures.clear(); // ここでのクリアもしない
 
-        gl.useProgram(this.textureProgram);
-
-        // 頂点とテクスチャ座標バッファを設定
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.enableVertexAttribArray(this.textureProgram.positionLocation);
-        gl.vertexAttribPointer(this.textureProgram.positionLocation, 2, gl.FLOAT, false, 0, 0);
-
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        gl.enableVertexAttribArray(this.textureProgram.texCoordLocation);
-        gl.vertexAttribPointer(this.textureProgram.texCoordLocation, 2, gl.FLOAT, false, 0, 0);
-
-        gl.activeTexture(gl.TEXTURE0); // テクスチャユニット0をアクティブに
-        gl.uniform1i(this.textureProgram.imageLocation, 0); // uniformにテクスチャユニット0を設定
-
-        // レイヤーを順番に合成
+        // レイヤーテクスチャを管理するためのMapを更新
+        const currentLayerNames = new Set();
         for (const layer of layers) {
-            if (!layer.visible || layer.opacity === 0) continue;
-
-            const { texture: layerTexture } = this._getOrCreateLayerResources(layer);
-            // ★ここから下の行を削除しました: this._createOrUpdateTextureFromImageData(layer.imageData, layerTexture);
-
-            gl.bindTexture(gl.TEXTURE_2D, layerTexture);
-            gl.uniform1f(this.textureProgram.opacityLocation, layer.opacity / 100.0); // 不透明度をuniformに設定
-
-            // ここでブレンドモードを切り替えるロジックが必要（現在は通常のアルファブレンドのみ）
-            // 将来的に `layer.blendMode` に応じて gl.blendFunc を変更するか、
-            // 別途ブレンドシェーダーを用意して切り替える。
-            gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); // 通常のアルファブレンド
-
-            gl.drawArrays(gl.TRIANGLES, 0, 6); // 矩形を描画してレイヤーテクスチャを合成
+            currentLayerNames.add(layer.name);
+            // 既存のテクスチャがあれば更新、なければ新規作成
+            const existingTexture = this.layerTextures.get(layer);
+            const texture = this._createOrUpdateTextureFromImageData(layer.imageData, existingTexture);
+            this.layerTextures.set(layer, texture); // Mapにレイヤーとテクスチャのペアを保存
+            // console.log(`Texture created/updated for layer: "${layer.name}"`, texture);
+        }
+        // 存在しないレイヤーのテクスチャを削除
+        for (const [layer, texture] of this.layerTextures.entries()) {
+            if (!currentLayerNames.has(layer.name)) {
+                gl.deleteTexture(texture);
+                this.layerTextures.delete(layer);
+            }
         }
 
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null); // 描画ターゲットをデフォルトに戻す
-        gl.useProgram(null);
+
+        // オフスクリーン（FBO）に描画
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.compositeFBO);
+        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        gl.clear(gl.COLOR_BUFFER_BIT); // FBOをクリア
+
+        gl.useProgram(this.program);
+
+        // 頂点アトリビュートの設定
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        gl.vertexAttribPointer(this.a_position_loc, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.a_position_loc);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        gl.vertexAttribPointer(this.a_texCoord_loc, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.a_texCoord_loc);
+
+        // 各レイヤーを合成FBOに描画
+        let layerCount = 0;
+        for (const layer of layers) {
+            if (!layer.visible || layer.opacity === 0 || !this.layerTextures.has(layer)) continue;
+
+            const texture = this.layerTextures.get(layer);
+            
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.uniform1i(this.u_image_loc, 0); // テクスチャユニット0を使用
+
+            // レイヤーの不透明度をユニフォームとして渡すことも可能だが、今回は単純に描画
+            // gl.uniform1f(gl.getUniformLocation(this.program, "u_opacity"), layer.opacity / 100.0);
+
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); // クアッドを描画
+            layerCount++;
+        }
+        console.log(`Rendered ${layerCount} layers onto compositing FBO.`);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null); // デフォルトのフレームバッファに戻す
+        gl.disableVertexAttribArray(this.a_position_loc);
+        gl.disableVertexAttribArray(this.a_texCoord_loc);
     }
 
     /**
-     * 合成された画像を画面にレンダリングする
-     * @param {*} [anyArgs] - core-engine.jsから渡される可能性のある任意の引数。ここでは無視。
+     * ★処理を更新: 合成されたテクスチャをディスプレイにレンダリングします。
      */
-    renderToDisplay(...anyArgs) {
-        const gl = this.gl;
-        if (!gl || !this.textureProgram) {
-            console.warn("WebGL not initialized or texture program missing for display.");
+    renderToDisplay(imageData, compositionData) { // ImageDataとcompositionDataはCanvas2D向けでWebGLでは無視
+        if (!this.gl || !this.program || !this.compositeTexture) {
+            console.warn("WebGL not ready for display rendering.");
             return;
         }
+        const gl = this.gl;
 
         console.log("renderToDisplay called.");
-        console.log("Received arguments (ignored for WebGL rendering):", anyArgs);
-        console.log("Composite texture:", this.compositeTexture);
-        if (this.compositeTexture) {
-            console.log("Is compositeTexture a WebGLTexture (gl.isTexture)?", gl.isTexture(this.compositeTexture));
-        } else {
-            console.log("compositeTexture is null or undefined.");
-        }
 
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null); // 画面に直接描画
-        gl.viewport(0, 0, this.width, this.height);
+        // デフォルトのフレームバッファ（画面）に描画
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        gl.clear(gl.COLOR_BUFFER_BIT); // 画面をクリア
 
-        // === デバッグ用: 画面全体を赤く塗りつぶす処理を削除し、元の透明クリアに戻す ===
-        gl.clearColor(0.0, 0.0, 0.0, 0.0); // 透明でクリア (RGBA)
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        // ===========================================
+        gl.useProgram(this.program);
 
-        gl.useProgram(this.textureProgram);
-
+        // 頂点アトリビュートの設定
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.enableVertexAttribArray(this.textureProgram.positionLocation);
-        gl.vertexAttribPointer(this.textureProgram.positionLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.vertexAttribPointer(this.a_position_loc, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.a_position_loc);
 
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        gl.enableVertexAttribArray(this.textureProgram.texCoordLocation);
-        gl.vertexAttribPointer(this.textureProgram.texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.vertexAttribPointer(this.a_texCoord_loc, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.a_texCoord_loc);
 
+        // 合成されたテクスチャをバインド
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.compositeTexture);
-        gl.uniform1i(this.textureProgram.imageLocation, 0);
-        gl.uniform1f(this.textureProgram.opacityLocation, 1.0); // 画面表示時は不透明度100%
+        gl.uniform1i(this.u_image_loc, 0); // テクスチャユニット0を使用
 
-        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); // 通常のアルファブレンドで描画
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); // クアッドを描画
 
-        gl.drawArrays(gl.TRIANGLES, 0, 6); // 画面全体に描画
+        gl.disableVertexAttribArray(this.a_position_loc);
+        gl.disableVertexAttribArray(this.a_texCoord_loc);
 
-        gl.useProgram(null);
-        gl.bindTexture(gl.TEXTURE_2D, null);
+        console.log("Composite texture rendered to display.");
     }
-
-    /**
-     * 未実装のDrawingEngineメソッド
-     * 現在はWebGLでの直接操作を前提としないため、エラーをスロー。
-     * 必要に応じて実装を検討。
-     */
-    fill(imageData, color) { throw new Error("Method 'fill()' must be implemented in WebGLEngine."); }
-    getTransformedImageData(sourceImageData, transform) { throw new Error("Method 'getTransformedImageData()' must be implemented in WebGLEngine."); }
+    
+    // imageDataに直接描画するメソッド群 (Canvas2Dと同様に実装が必要だが、WebGLでは複雑)
+    // これらはcore-engineが呼び出すため、ダミー実装または後でシェーダーベースの実装が必要
+    drawCircle(imageData, centerX, centerY, radius, color, isEraser) {
+        // console.warn("drawCircle not fully implemented for WebGL.");
+        // 現在はImageDataに直接描画し、それをテクスチャとして更新する方式
+        // Canvas2DEngineのdrawCircleロジックをここに移植するか、
+        // ImageData更新後にcompositeLayersを再度呼び出す必要がある
+    }
+    drawLine(imageData, x0, y0, x1, y1, size, color, isEraser, p0, p1) {
+        // console.warn("drawLine not fully implemented for WebGL.");
+        // 同上
+    }
+    fill(imageData, color) {
+        // console.warn("fill not fully implemented for WebGL.");
+        // 同上
+    }
+    clear(imageData) {
+        // console.warn("clear not fully implemented for WebGL.");
+        // ImageDataをクリアし、compositeLayersを再度呼び出す
+    }
+    getTransformedImageData(sourceImageData, transform) {
+        console.warn("getTransformedImageData not fully implemented for WebGL.");
+        // WebGLで変換を適用したImageDataを返すのは複雑なため、現状はダミー
+        return sourceImageData;
+    }
 }
