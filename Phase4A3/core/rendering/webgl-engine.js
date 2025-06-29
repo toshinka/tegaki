@@ -1,7 +1,7 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine (Phase 4A-3: Drawing & Compositing)
- * Version: 0.3.1 (Debugging for renderToDisplay issue)
+ * Version: 0.3.2 (Fix for renderToDisplay argument mismatch)
  *
  * レイヤーのImageDataをWebGLテクスチャに変換し、管理する機能に加え、
  * 以下の機能を追加しました:
@@ -9,7 +9,8 @@
  * ・ペン（円、線）のWebGLによる描画
  *
  * 【今回追加】
- * ・renderToDisplayのエラー調査のためのデバッグログを追加
+ * ・renderToDisplayへの引数（ImageData）が誤ってバインドされないよう修正。
+ * 常にthis.compositeTextureを画面に描画するように変更。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -517,9 +518,9 @@ export class WebGLEngine extends DrawingEngine {
 
     /**
      * 合成された画像を画面にレンダリングする
-     * @param {WebGLTexture} [sourceTexture=null] - 描画するソーステクスチャ。nullの場合はcompositeTextureを使用。
+     * @param {*} [anyArgs] - core-engine.jsから渡される可能性のある任意の引数。ここでは無視。
      */
-    renderToDisplay(sourceTexture = null) {
+    renderToDisplay(...anyArgs) { // 引数をanyArgsとして受け取り、使わない
         const gl = this.gl;
         if (!gl || !this.textureProgram) {
             console.warn("WebGL not initialized or texture program missing for display.");
@@ -528,7 +529,7 @@ export class WebGLEngine extends DrawingEngine {
 
         // --- デバッグログの追加 ---
         console.log("renderToDisplay called.");
-        console.log("Source texture (should be null):", sourceTexture);
+        console.log("Received arguments (ignored for WebGL rendering):", anyArgs); // ログもanyArgsに
         console.log("Composite texture:", this.compositeTexture);
         if (this.compositeTexture) {
             console.log("Is compositeTexture a WebGLTexture (gl.isTexture)?", gl.isTexture(this.compositeTexture));
@@ -553,7 +554,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.vertexAttribPointer(this.textureProgram.texCoordLocation, 2, gl.FLOAT, false, 0, 0);
 
         gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, sourceTexture || this.compositeTexture); // 合成結果テクスチャをバインド
+        gl.bindTexture(gl.TEXTURE_2D, this.compositeTexture); // ★修正点: 常にthis.compositeTextureをバインド
         gl.uniform1i(this.textureProgram.imageLocation, 0);
         gl.uniform1f(this.textureProgram.opacityLocation, 1.0); // 画面表示時は不透明度100%
 
