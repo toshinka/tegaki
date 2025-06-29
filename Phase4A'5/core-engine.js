@@ -1,10 +1,9 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.1.0 (Phase 4A-4 Architecture - Transform & Blend Ready)
+ * Version: 2.1.1 (Phase 4A'5 Fix)
  *
- * ・レイヤー変形確定時のバグを修正
- * ・連続した変形操作に対応するため、originalImageDataの管理を改善
+ * ・GPU描画エンジンに描画対象のレイヤーオブジェクトを渡すように修正。
  * ===================================================================================
  */
 
@@ -34,7 +33,6 @@ class Layer {
         this.blendMode = 'normal';
         this.imageData = new ImageData(width, height);
         this.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
-        // ★修正: 変形前のオリジナルデータ。変形開始時にコピーされる。
         this.originalImageData = null; 
     }
     clear() { this.imageData.data.fill(0); }
@@ -129,7 +127,8 @@ class CanvasManager {
         this._updateDirtyRect(coords.x, coords.y, size);
         this.renderingBridge.drawCircle(
             activeLayer.imageData, coords.x, coords.y, size / 2, 
-            hexToRgba(this.currentColor), this.currentTool === 'eraser'
+            hexToRgba(this.currentColor), this.currentTool === 'eraser',
+            activeLayer // ★★★修正点★★★ activeLayerオブジェクトを渡す
         );
         
         this._requestRender();
@@ -142,7 +141,7 @@ class CanvasManager {
             const t = this.transformTargetLayer.transform; const ot = this.originalLayerTransform;
             if (this.transformMode === 'move') {
                 t.x = ot.x + dx / this.viewTransform.scale;
-                t.y = ot.y / this.viewTransform.scale;
+                t.y = ot.y + dy / this.viewTransform.scale; // Y軸の移動も追加
             } else {
                 t.rotation = ot.rotation + dx * 0.5;
                 const scaleFactor = 1 - dy * 0.005; t.scale = Math.max(0.1, ot.scale * scaleFactor);
@@ -168,7 +167,8 @@ class CanvasManager {
             activeLayer.imageData, this.lastPoint.x, this.lastPoint.y, coords.x, coords.y,
             this.currentSize, hexToRgba(this.currentColor), this.currentTool === 'eraser',
             this.lastPoint.pressure, currentPressure, 
-            this.calculatePressureSize.bind(this)
+            this.calculatePressureSize.bind(this),
+            activeLayer // ★★★修正点★★★ activeLayerオブジェクトを渡す
         );
         
         this.lastPoint = { ...coords, pressure: currentPressure };
@@ -191,16 +191,13 @@ class CanvasManager {
     _renderDirty() {
         const rect = this.dirtyRect;
         if (rect.minX > rect.maxX) return;
-
         this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, rect);
-        
         this.renderingBridge.renderToDisplay(this.compositionData, rect);
-
         this._resetDirtyRect();
     }
 
     renderAllLayers() {
-        this._updateDirtyRect(this.width / 2, this.height / 2, Math.max(this.width, this.height));
+        this._updateDirtyRect(0, 0, Math.max(this.width, this.height)); // 範囲を全体に
         this._requestRender();
     }
 
@@ -269,7 +266,7 @@ class CanvasManager {
 
             if (x < 0 || x >= this.width || y < 0 || y >= this.height) { return null; }
 
-            return { x: Math.floor(x), y: Math.floor(y) };
+            return { x: x, y: y }; // 整数化しない方が精度が良い
         } catch (error) {
             console.warn('座標変換エラー:', error);
             return null;
@@ -283,7 +280,6 @@ class CanvasManager {
         this.isLayerTransforming = true;
         this.transformTargetLayer = activeLayer;
         
-        // ★修正: 変形開始時に、現在のImageDataをoriginalImageDataにバックアップ
         if (!this.transformTargetLayer.originalImageData) {
             this.transformTargetLayer.originalImageData = new ImageData(
                 new Uint8ClampedArray(this.transformTargetLayer.imageData.data),
@@ -304,9 +300,7 @@ class CanvasManager {
         if (!this.transformTargetLayer || !this.transformTargetLayer.originalImageData) return;
         const layer = this.transformTargetLayer;
         
-        // 描画エンジンに、オリジナル画像と現在の変形情報を渡して、変形後のImageDataを生成してもらう
         const transformedImageData = this.renderingBridge.getTransformedImageData(layer.originalImageData, layer.transform);
-        // 生成された変形後ImageDataを、レイヤーの現在の見た目として設定
         layer.imageData = transformedImageData;
         
         this.renderAllLayers();
@@ -315,25 +309,21 @@ class CanvasManager {
     commitLayerTransform() {
         if (!this.isLayerTransforming) return;
         
-        // ★★★ロジック修正★★★
-        // 1. 最後のプレビュー状態をImageDataに適用
         this.applyLayerTransformPreview();
         const layer = this.transformTargetLayer;
 
-        // 2. 変形後のImageDataを、新しいオリジナルとして確定させる
-        // これにより、次の変形操作は、この確定した状態から開始される
         layer.originalImageData = new ImageData(
             new Uint8ClampedArray(layer.imageData.data),
             layer.imageData.width,
             layer.imageData.height
         );
         
-        // 3. レイヤーの変形パラメータを初期状態にリセット
         layer.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
         
         this.isLayerTransforming = false;
         this.transformTargetLayer = null;
         this.originalLayerTransform = null;
+        this.originalImageData = null; // リセット
 
         this.renderAllLayers();
         this.saveState();
@@ -352,7 +342,6 @@ class CanvasManager {
                     layer.imageData.width,
                     layer.imageData.height
                 ),
-                // transformは確定時にリセットされるので保存不要だが、念のため
                 transform: { ...layer.transform } 
             })),
             activeLayerIndex: this.app.layerManager.activeLayerIndex
@@ -399,9 +388,10 @@ class CanvasManager {
     clearCanvas() {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (activeLayer) {
-            activeLayer.clear();
+            this.renderingBridge.clear(activeLayer.imageData);
             if (this.app.layerManager.activeLayerIndex === 0) {
-                activeLayer.fill('#f0e0d6');
+                // 背景レイヤーの場合、色で塗りつぶす
+                this.renderingBridge.fill(activeLayer.imageData, hexToRgba('#f0e0d6'));
             }
             this.renderAllLayers();
             this.saveState();
@@ -462,7 +452,7 @@ class LayerManager {
     setupInitialLayers() { const bgLayer = new Layer('背景', this.width, this.height); bgLayer.fill('#f0e0d6'); this.layers.push(bgLayer); const drawingLayer = new Layer('レイヤー 1', this.width, this.height); this.layers.push(drawingLayer); this.switchLayer(1); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
     addLayer() { if (this.layers.length >= 99) return; const insertIndex = this.activeLayerIndex + 1; const newLayer = new Layer(`レイヤー ${this.layers.length + 1}`, this.width, this.height); this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
     deleteActiveLayer() { if (this.activeLayerIndex === 0 || this.layers.length <= 1) return; this.layers.splice(this.activeLayerIndex, 1); const newActiveIndex = Math.min(this.layers.length - 1, this.activeLayerIndex); this.renameLayers(); this.switchLayer(newActiveIndex); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
-    renameLayers() { this.layers.forEach((layer, index) => { layer.name = index === 0 ? '背景' : `レイヤー ${index}`; }); } 
+    renameLayers() { this.layers.forEach((layer, index) => { if (index > 0) layer.name = `レイヤー ${index}`; }); } 
     switchLayer(index) { if (index < 0 || index >= this.layers.length) return; this.activeLayerIndex = index; if (this.app.layerUIManager) { this.app.layerUIManager.renderLayers(); } } 
     getCurrentLayer() { return this.layers[this.activeLayerIndex] || null; } 
     duplicateActiveLayer() { const activeLayer = this.getCurrentLayer(); if (!activeLayer) return; const newLayer = new Layer(`${activeLayer.name}のコピー`, this.width, this.height); newLayer.imageData.data.set(activeLayer.imageData.data); newLayer.visible = activeLayer.visible; newLayer.opacity = activeLayer.opacity; newLayer.blendMode = activeLayer.blendMode; const insertIndex = this.activeLayerIndex + 1; this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 

@@ -1,10 +1,13 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Drawing Engine Interface
+ * Version 1.1.0 (GPU Drawing Support)
  *
  * このファイルは、すべての描画エンジン（Canvas2D, WebGLなど）が
  * 共通して持つべき機能（API）を定義する、いわば「設計図」や「インターフェース」です。
  * core-engine.jsは、この設計図に書かれた命令だけを使います。
+ *
+ * ・drawCircle, drawLineに描画対象レイヤーを渡すための引数を追加。
  * ===================================================================================
  */
 export class DrawingEngine {
@@ -17,8 +20,8 @@ export class DrawingEngine {
     }
 
     // imageDataに直接描画するメソッド群
-    drawCircle(imageData, centerX, centerY, radius, color, isEraser) { throw new Error("Method 'drawCircle()' must be implemented."); }
-    drawLine(imageData, x0, y0, x1, y1, size, color, isEraser, p0, p1) { throw new Error("Method 'drawLine()' must be implemented."); }
+    drawCircle(imageData, centerX, centerY, radius, color, isEraser, layer) { throw new Error("Method 'drawCircle()' must be implemented."); }
+    drawLine(imageData, x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize, layer) { throw new Error("Method 'drawLine()' must be implemented."); }
     fill(imageData, color) { throw new Error("Method 'fill()' must be implemented."); }
     clear(imageData) { throw new Error("Method 'clear()' must be implemented."); }
     getTransformedImageData(sourceImageData, transform) { throw new Error("Method 'getTransformedImageData()' must be implemented."); }

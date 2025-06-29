@@ -1,10 +1,10 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Canvas2D Engine
- * Version: 1.2.0 (Transform Logic Unification)
+ * Version: 1.2.1 (Interface Alignment)
  *
- * getTransformedImageDataが移動・回転・拡縮のすべてを適用するように修正し、
- * WebGLエンジンとの動作一貫性を確保しました。
+ * DrawingEngineのインターフェース変更に合わせ、描画メソッドにlayer引数を追加。
+ * (Canvas2Dエンジンではこの引数は使用されません)
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -42,14 +42,13 @@ export class Canvas2DEngine extends DrawingEngine {
         this.layerCanvas.height = this.height;
         this.layerCtx = this.layerCanvas.getContext('2d');
         
-        // ★追加: 変形処理用の一時キャンバス
         this.transformCanvas = document.createElement('canvas');
         this.transformCtx = this.transformCanvas.getContext('2d');
     }
 
-    // --- ImageDataへの直接描画 (変更なし) ---
+    // --- ImageDataへの直接描画 (layer引数を追加) ---
 
-    drawCircle(imageData, centerX, centerY, radius, color, isEraser) {
+    drawCircle(imageData, centerX, centerY, radius, color, isEraser, layer) { // layer引数は未使用
         const quality = this.drawingQuality;
         const useSubpixel = quality.enableSubpixel && radius >= 0.5;
         if (radius < 0.8) {
@@ -77,7 +76,7 @@ export class Canvas2DEngine extends DrawingEngine {
         }
     }
 
-    drawLine(imageData, x0, y0, x1, y1, size, color, isEraser, pressure0 = 1.0, pressure1 = 1.0, calculatePressureSize) {
+    drawLine(imageData, x0, y0, x1, y1, size, color, isEraser, pressure0 = 1.0, pressure1 = 1.0, calculatePressureSize, layer) { // layer引数は未使用
         if (!isFinite(x0) || !isFinite(y0) || !isFinite(x1) || !isFinite(y1)) return;
         const distance = Math.hypot(x1 - x0, y1 - y0);
         if (distance > Math.hypot(this.width, this.height) * 2) return;
@@ -92,7 +91,7 @@ export class Canvas2DEngine extends DrawingEngine {
             const y = y0 + (y1 - y0) * t;
             const pressure = pressure0 + (pressure1 - pressure0) * t;
             const adjustedSize = calculatePressureSize(size, pressure);
-            this.drawCircle(imageData, x, y, adjustedSize / 2, color, isEraser);
+            this.drawCircle(imageData, x, y, adjustedSize / 2, color, isEraser, layer); // layerを渡すが使われない
         }
     }
 
@@ -110,7 +109,6 @@ export class Canvas2DEngine extends DrawingEngine {
         imageData.data.fill(0);
     }
     
-    // ★★★修正: WebGL版とロジックを統一し、移動・回転・拡縮すべてを適用する★★★
     getTransformedImageData(sourceImageData, transform) {
         const sw = sourceImageData.width;
         const sh = sourceImageData.height;
@@ -120,108 +118,92 @@ export class Canvas2DEngine extends DrawingEngine {
         tempCanvas.width = sw;
         tempCanvas.height = sh;
 
-        // 一時的な2Dキャンバスに変換元画像を描画
         const sourceCanvas = document.createElement('canvas');
         sourceCanvas.width = sw;
         sourceCanvas.height = sh;
         sourceCanvas.getContext('2d').putImageData(sourceImageData, 0, 0);
 
-        // 変換を適用
         tempCtx.clearRect(0, 0, sw, sh);
         tempCtx.save();
         
-        // 1. 移動 (Translate)
         tempCtx.translate(transform.x, transform.y);
-        
-        // 2. 回転と拡縮の中心を画像の中心に設定
         tempCtx.translate(sw / 2, sh / 2);
-
-        // 3. 回転 (Rotate)
         tempCtx.rotate(transform.rotation * Math.PI / 180);
-
-        // 4. 拡縮 (Scale) と 反転 (Flip)
         tempCtx.scale(transform.scale * transform.flipX, transform.scale * transform.flipY);
-        
-        // 5. 中心を元に戻す
         tempCtx.translate(-sw / 2, -sh / 2);
-
-        // 6. 画像を描画
         tempCtx.drawImage(sourceCanvas, 0, 0);
-        
         tempCtx.restore();
 
-        // 変換後のImageDataを返す
         return tempCtx.getImageData(0, 0, sw, sh);
     }
-
-    // --- レイヤー合成と画面表示 ---
 
     compositeLayers(layers, compositionData, dirtyRect) {
         const ctx = this.offscreenCtx;
         const width = this.width;
         const height = this.height;
-
+    
         const x = Math.max(0, Math.floor(dirtyRect.minX));
         const y = Math.max(0, Math.floor(dirtyRect.minY));
         const w = Math.min(width, Math.ceil(dirtyRect.maxX)) - x;
         const h = Math.min(height, Math.ceil(dirtyRect.maxY)) - y;
+    
         if (w <= 0 || h <= 0) return;
+    
+        // ダーティ矩形領域のみをクリア
         ctx.clearRect(x, y, w, h);
-
+    
         for (const layer of layers) {
             if (!layer.visible || layer.opacity === 0) continue;
-
+    
+            // layer.imageDataを一時キャンバスに転送
             this.layerCtx.putImageData(layer.imageData, 0, 0);
-
+    
             ctx.globalAlpha = (layer.opacity ?? 100) / 100;
             ctx.globalCompositeOperation = layer.blendMode ?? 'normal';
-
+    
+            // ダーティ矩形領域のみを描画
             ctx.drawImage(this.layerCanvas, x, y, w, h, x, y, w, h);
         }
-
-        const composed = ctx.getImageData(x, y, w, h);
-        const finalData = compositionData.data;
-        for (let j = 0; j < h; j++) {
-            for (let i = 0; i < w; i++) {
-                const sourceIndex = (j * w + i) * 4;
-                const destIndex = ((y + j) * width + (x + i)) * 4;
-                finalData[destIndex]     = composed.data[sourceIndex];
-                finalData[destIndex + 1] = composed.data[sourceIndex + 1];
-                finalData[destIndex + 2] = composed.data[sourceIndex + 2];
-                finalData[destIndex + 3] = composed.data[sourceIndex + 3];
+    
+        // 最終的な合成結果をcompositionDataに部分的にコピー
+        if (w > 0 && h > 0) {
+            const composed = ctx.getImageData(x, y, w, h);
+            const finalData = compositionData.data;
+            const finalWidth = compositionData.width;
+    
+            for (let j = 0; j < h; j++) {
+                const sourceIndex = j * w * 4;
+                const destIndex = ((y + j) * finalWidth + x) * 4;
+                finalData.set(composed.data.subarray(sourceIndex, sourceIndex + w * 4), destIndex);
             }
         }
     }
-
 
     renderToDisplay(compositionData, dirtyRect) {
         if (dirtyRect.minX > dirtyRect.maxX) return;
+        
+        const x = Math.max(0, Math.floor(dirtyRect.minX));
+        const y = Math.max(0, Math.floor(dirtyRect.minY));
+        const w = Math.min(this.width, Math.ceil(dirtyRect.maxX)) - x;
+        const h = Math.min(this.height, Math.ceil(dirtyRect.maxY)) - y;
 
-        const dirtyX = Math.max(0, Math.floor(dirtyRect.minX));
-        const dirtyY = Math.max(0, Math.floor(dirtyRect.minY));
-        const dirtyW = Math.min(this.width, Math.ceil(dirtyRect.maxX)) - dirtyX;
-        const dirtyH = Math.min(this.height, Math.ceil(dirtyRect.maxY)) - dirtyY;
-
-        if (dirtyW > 0 && dirtyH > 0) {
-             const partialData = this.displayCtx.createImageData(dirtyW, dirtyH);
-
+        if (w > 0 && h > 0) {
+            // putImageDataはImageDataオブジェクトを直接受け取れる
+            // compositionDataからダーティ矩形領域を切り出して新しいImageDataを作成する
+            const partialData = new ImageData(w, h);
             const sourceData = compositionData.data;
             const destData = partialData.data;
-            for (let y = 0; y < dirtyH; y++) {
-                for (let x = 0; x < dirtyW; x++) {
-                    const sourceIndex = ((dirtyY + y) * this.width + (dirtyX + x)) * 4;
-                    const destIndex = (y * dirtyW + x) * 4;
-                    destData[destIndex]     = sourceData[sourceIndex];
-                    destData[destIndex + 1] = sourceData[sourceIndex + 1];
-                    destData[destIndex + 2] = sourceData[sourceIndex + 2];
-                    destData[destIndex + 3] = sourceData[sourceIndex + 3];
-                }
+            const sourceWidth = compositionData.width;
+
+            for (let j = 0; j < h; j++) {
+                const sourceRowStart = ((y + j) * sourceWidth + x) * 4;
+                const sourceRowEnd = sourceRowStart + w * 4;
+                const destRowStart = j * w * 4;
+                destData.set(sourceData.subarray(sourceRowStart, sourceRowEnd), destRowStart);
             }
-            this.displayCtx.putImageData(partialData, dirtyX, dirtyY);
+            this.displayCtx.putImageData(partialData, x, y);
         }
     }
-
-    // --- プライベートヘルパーメソッド (変更なし) ---
 
     _drawSinglePixel(imageData, x, y, color, isEraser, intensity = 1.0) {
         const alpha = Math.min(1.0, intensity);
@@ -232,7 +214,6 @@ export class Canvas2DEngine extends DrawingEngine {
             this._blendPixel(imageData, x, y, finalColor);
         }
     }
-
     _calculatePixelAlpha(distance, radius, useSubpixel) {
         if (distance <= radius - 0.5) { return 1.0; }
         if (!useSubpixel) { return distance <= radius ? 1.0 : 0.0; }
@@ -250,7 +231,6 @@ export class Canvas2DEngine extends DrawingEngine {
         }
         return 0.0;
     }
-
     _blendPixel(imageData, x, y, color) {
         try {
             x = Math.floor(x);
@@ -263,14 +243,7 @@ export class Canvas2DEngine extends DrawingEngine {
 
             const topAlpha = color.a / 255;
             if (topAlpha <= 0) return;
-            if (topAlpha >= 1) {
-                data[index] = color.r;
-                data[index + 1] = color.g;
-                data[index + 2] = color.b;
-                data[index + 3] = color.a;
-                return;
-            }
-
+            
             const bottomAlpha = data[index + 3] / 255;
             const outAlpha = topAlpha + bottomAlpha * (1 - topAlpha);
             if (outAlpha > 0) {
@@ -283,7 +256,6 @@ export class Canvas2DEngine extends DrawingEngine {
             console.warn('ピクセル描画エラー:', { x, y, error });
         }
     }
-
     _erasePixel(imageData, x, y, strength) {
         x = Math.floor(x);
         y = Math.floor(y);
