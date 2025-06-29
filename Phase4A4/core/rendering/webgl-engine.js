@@ -345,6 +345,11 @@ export class WebGLEngine extends DrawingEngine {
 
         // FBOを現在の描画ターゲットとしてバインド
         gl.bindFramebuffer(gl.FRAMEBUFFER, targetFbo);
+// ★★★ デバッグコード開始 ★★★
+// ここでフレームバッファを赤色でクリアしてみる
+gl.clearColor(1.0, 0.0, 0.0, 1.0); // 赤色に設定 (RGBA)
+gl.clear(gl.COLOR_BUFFER_BIT); // クリアを実行
+// ★★★ デバッグコード終了 ★★★
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
         return { fbo: targetFbo, texture: targetTexture };
