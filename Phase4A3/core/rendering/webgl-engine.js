@@ -1,10 +1,12 @@
 /*
  * ===================================================================================
- * Toshinka Tegaki Tool - WebGL Engine (Full Rendering Pipeline) - FIXED VERSION
- * Version: 0.3.0 (Phase 4A-4: WebGL Compositing & Display Fix)
+ * Toshinka Tegaki Tool - WebGL Engine (Full Rendering Pipeline with Canvas2D Drawing Logic)
+ * Version: 0.4.0 (Phase 4A-5: Drawing & Transform Logic Implementation)
  *
  * レイヤーのImageDataをWebGLテクスチャに変換し、それを合成して画面に表示する
  * 完全な描画パイプラインを実装しました。
+ * Canvas2DのImageData直接操作による描画ロジックを移植し、
+ * getTransformedImageDataも実装しました。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -21,6 +23,19 @@ export class WebGLEngine extends DrawingEngine {
 
         // ★新規追加: 作成したテクスチャをレイヤーごとに保管する場所
         this.layerTextures = new Map();
+
+        // ★新規追加: 描画品質設定 (Canvas2DEngineから移植)
+        this.drawingQuality = {
+            enableSubpixel: true,
+            antialiasThreshold: 2.0,
+            minDrawSteps: 1,
+            maxDrawSteps: 100
+        };
+
+        // ★新規追加: 変形用の一時的なオフスクリーンキャンバス (getTransformedImageData用)
+        this.transformOffscreenCanvas = document.createElement('canvas');
+        this.transformOffscreenCtx = this.transformOffscreenCanvas.getContext('2d');
+
 
         try {
             this.gl = canvas.getContext('webgl', { preserveDrawingBuffer: true }) || canvas.getContext('experimental-webgl', { preserveDrawingBuffer: true });
@@ -240,11 +255,6 @@ export class WebGLEngine extends DrawingEngine {
 
         console.log(`Compositing ${layers.length} layers for WebGL...`);
 
-        // レイヤーテクスチャを更新
-        // 既存のテクスチャを一旦クリア（簡単のため。将来的には差分更新が望ましい）
-        // this.layerTextures.forEach(texture => gl.deleteTexture(texture)); // ここでの削除はしない
-        // this.layerTextures.clear(); // ここでのクリアもしない
-
         // レイヤーテクスチャを管理するためのMapを更新
         const currentLayerNames = new Set();
         for (const layer of layers) {
@@ -307,7 +317,7 @@ export class WebGLEngine extends DrawingEngine {
     /**
      * ★処理を更新: 合成されたテクスチャをディスプレイにレンダリングします。
      */
-    renderToDisplay(imageData, compositionData) { // ImageDataとcompositionDataはCanvas2D向けでWebGLでは無視
+    renderToDisplay(compositionData, dirtyRect) { // ImageDataとcompositionDataはCanvas2D向けでWebGLでは無視
         if (!this.gl || !this.program || !this.compositeTexture) {
             console.warn("WebGL not ready for display rendering.");
             return;
@@ -345,29 +355,184 @@ export class WebGLEngine extends DrawingEngine {
         console.log("Composite texture rendered to display.");
     }
     
-    // imageDataに直接描画するメソッド群 (Canvas2Dと同様に実装が必要だが、WebGLでは複雑)
-    // これらはcore-engineが呼び出すため、ダミー実装または後でシェーダーベースの実装が必要
+    // --- ImageDataへの直接描画 (Canvas2DEngineから移植) ---
+
     drawCircle(imageData, centerX, centerY, radius, color, isEraser) {
-        // console.warn("drawCircle not fully implemented for WebGL.");
-        // 現在はImageDataに直接描画し、それをテクスチャとして更新する方式
-        // Canvas2DEngineのdrawCircleロジックをここに移植するか、
-        // ImageData更新後にcompositeLayersを再度呼び出す必要がある
+        const quality = this.drawingQuality;
+        const useSubpixel = quality.enableSubpixel && radius >= 0.5;
+        if (radius < 0.8) {
+            this._drawSinglePixel(imageData, centerX, centerY, color, isEraser, radius);
+            return;
+        }
+        const rCeil = Math.ceil(radius + 1);
+        for (let y = -rCeil; y <= rCeil; y++) {
+            for (let x = -rCeil; x <= rCeil; x++) {
+                const distance = Math.hypot(x, y);
+                if (distance <= radius + 0.5) {
+                    const finalX = centerX + x;
+                    const finalY = centerY + y;
+                    let alpha = this._calculatePixelAlpha(distance, radius, useSubpixel);
+                    if (alpha > 0.01) {
+                        if (isEraser) {
+                            this._erasePixel(imageData, finalX, finalY, alpha);
+                        } else {
+                            const finalColor = { ...color, a: Math.floor(color.a * alpha) };
+                            this._blendPixel(imageData, finalX, finalY, finalColor);
+                        }
+                    }
+                }
+            }
+        }
     }
-    drawLine(imageData, x0, y0, x1, y1, size, color, isEraser, p0, p1) {
-        // console.warn("drawLine not fully implemented for WebGL.");
-        // 同上
+
+    drawLine(imageData, x0, y0, x1, y1, size, color, isEraser, pressure0 = 1.0, pressure1 = 1.0, calculatePressureSize) {
+        if (!isFinite(x0) || !isFinite(y0) || !isFinite(x1) || !isFinite(y1)) return;
+        const distance = Math.hypot(x1 - x0, y1 - y0);
+        if (distance > Math.hypot(this.canvas.width, this.canvas.height) * 2) return;
+
+        const quality = this.drawingQuality;
+        const baseSteps = Math.max(quality.minDrawSteps, Math.ceil(distance / Math.max(0.5, size / 8)));
+        const steps = Math.min(quality.maxDrawSteps, baseSteps);
+
+        for (let i = 0; i <= steps; i++) {
+            const t = steps > 0 ? i / steps : 0;
+            const x = x0 + (x1 - x0) * t;
+            const y = y0 + (y1 - y0) * t;
+            const pressure = pressure0 + (pressure1 - pressure0) * t;
+            const adjustedSize = calculatePressureSize(size, pressure);
+            this.drawCircle(imageData, x, y, adjustedSize / 2, color, isEraser);
+        }
     }
+
     fill(imageData, color) {
-        // console.warn("fill not fully implemented for WebGL.");
-        // 同上
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+            data[i] = color.r;
+            data[i + 1] = color.g;
+            data[i + 2] = color.b;
+            data[i + 3] = color.a;
+        }
     }
+
     clear(imageData) {
-        // console.warn("clear not fully implemented for WebGL.");
-        // ImageDataをクリアし、compositeLayersを再度呼び出す
+        imageData.data.fill(0);
     }
+    
+    // ★★★ getTransformedImageDataの実装 (Canvas2DEngineのロジックをベースにWebGLEngineで利用) ★★★
     getTransformedImageData(sourceImageData, transform) {
-        console.warn("getTransformedImageData not fully implemented for WebGL.");
-        // WebGLで変換を適用したImageDataを返すのは複雑なため、現状はダミー
-        return sourceImageData;
+        const sw = sourceImageData.width;
+        const sh = sourceImageData.height;
+        
+        // オフスクリーンキャンバスのサイズをImageDataに合わせる
+        this.transformOffscreenCanvas.width = sw;
+        this.transformOffscreenCanvas.height = sh;
+        const ctx = this.transformOffscreenCtx;
+
+        // 一旦オフスクリーンキャンバスに元のImageDataを描画
+        ctx.clearRect(0, 0, sw, sh);
+        ctx.putImageData(sourceImageData, 0, 0);
+
+        // 新しいImageDataを生成（透明で初期化）
+        const destImageData = new ImageData(sw, sh);
+
+        // CanvasのTransform APIを使って変換を適用
+        ctx.save();
+        ctx.clearRect(0, 0, sw, sh); // クリア
+        
+        // 変換の中心をキャンバスの中心に設定
+        const cx = sw / 2;
+        const cy = sh / 2;
+        ctx.translate(cx, cy);
+
+        // スケール、回転、フリップ
+        ctx.scale(transform.flipX || 1, transform.flipY || 1);
+        ctx.rotate(-transform.rotation * Math.PI / 180); // 回転は時計回りのため-を付与
+        ctx.scale(transform.scale, transform.scale);
+        
+        // 移動
+        ctx.translate(-cx + transform.x, -cy + transform.y);
+        
+        // 元の画像を新しい変換で描画
+        ctx.drawImage(this.transformOffscreenCanvas, 0, 0);
+
+        // 変換後のImageDataを取得
+        const transformedData = ctx.getImageData(0, 0, sw, sh);
+        ctx.restore(); // 変換を元に戻す
+
+        // 取得したImageDataを返す
+        return transformedData;
+    }
+
+
+    // --- プライベートヘルパーメソッド (Canvas2DEngineから移植) ---
+
+    _drawSinglePixel(imageData, x, y, color, isEraser, intensity = 1.0) {
+        const alpha = Math.min(1.0, intensity);
+        if (isEraser) {
+            this._erasePixel(imageData, x, y, alpha);
+        } else {
+            const finalColor = { ...color, a: Math.floor(color.a * alpha) };
+            this._blendPixel(imageData, x, y, finalColor);
+        }
+    }
+
+    _calculatePixelAlpha(distance, radius, useSubpixel) {
+        if (distance <= radius - 0.5) { return 1.0; }
+        if (!useSubpixel) { return distance <= radius ? 1.0 : 0.0; }
+        if (distance <= radius) {
+            const fadeStart = Math.max(0, radius - 1.0);
+            const fadeRange = radius - fadeStart;
+            if (fadeRange > 0) {
+                const fadeRatio = (distance - fadeStart) / fadeRange;
+                return Math.max(0, 1.0 - fadeRatio);
+            }
+            return 1.0;
+        }
+        if (distance <= radius + 0.5) {
+            return Math.max(0, 1.0 - (distance - radius) * 2.0);
+        }
+        return 0.0;
+    }
+
+    _blendPixel(imageData, x, y, color) {
+        try {
+            x = Math.floor(x);
+            y = Math.floor(y);
+            if (x < 0 || x >= imageData.width || y < 0 || y >= imageData.height) return;
+            if (!imageData.data || !color) return;
+            const index = (y * imageData.width + x) * 4;
+            const data = imageData.data;
+            if (index < 0 || index >= data.length - 3) return;
+
+            const topAlpha = color.a / 255;
+            if (topAlpha <= 0) return;
+            if (topAlpha >= 1) {
+                data[index] = color.r;
+                data[index + 1] = color.g;
+                data[index + 2] = color.b;
+                data[index + 3] = color.a;
+                return;
+            }
+
+            const bottomAlpha = data[index + 3] / 255;
+            const outAlpha = topAlpha + bottomAlpha * (1 - topAlpha);
+            if (outAlpha > 0) {
+                data[index]     = (color.r * topAlpha + data[index]     * bottomAlpha * (1 - topAlpha)) / outAlpha;
+                data[index + 1] = (color.g * topAlpha + data[index + 1] * bottomAlpha * (1 - topAlpha)) / outAlpha;
+                data[index + 2] = (color.b * topAlpha + data[index + 2] * bottomAlpha * (1 - topAlpha)) / outAlpha;
+                data[index + 3] = outAlpha * 255;
+            }
+        } catch (error) {
+            console.warn('ピクセル描画エラー:', { x, y, error });
+        }
+    }
+
+    _erasePixel(imageData, x, y, strength) {
+        x = Math.floor(x);
+        y = Math.floor(y);
+        if (x < 0 || x >= imageData.width || y < 0 || y >= imageData.height) return;
+        const index = (y * imageData.width + x) * 4;
+        const currentAlpha = imageData.data[index + 3];
+        imageData.data[index + 3] = Math.max(0, currentAlpha * (1 - strength));
     }
 }
