@@ -6,7 +6,8 @@ javascript:((async (d) => {
      */
 
     try {
-        const toolUrl = 'https://toshinka.github.io/tegaki/ToshinkaTegakiTool-v4.html';
+        const toolUrl = 'https://toshinka.github.io/tegaki/Phase4A1/ToshinkaTegakiTool.html
+';
         const response = await fetch(toolUrl);
         if (!response.ok) {
             throw new Error(`HTMLの読み込みに失敗しました: ${response.status} ${response.statusText}`);
