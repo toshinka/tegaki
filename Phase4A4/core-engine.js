@@ -1,10 +1,11 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.0.1 (Phase 3-rev2 Architecture - Bug Fix)
+ * Version: 2.0.2 (Phase 4A-4 Debugging)
  *
  * ・レイヤー結合時のエラーを修正
  * ・ビュー拡大縮小時のペン座標ズレを修正
+ * ・★★デバッグ用ログを追加★★
  * ===================================================================================
  */
 
@@ -92,9 +93,11 @@ class CanvasManager {
     }
 
     onPointerDown(e) {
+        console.log('CanvasManager.onPointerDown: Pointer Down Event Detected'); // ★デバッグログ
         if (e.button !== 0) return;
         
-        const coords = this.getCanvasCoordinates(e); // ★座標取得を先に行う
+        const coords = this.getCanvasCoordinates(e);
+        console.log('CanvasManager.onPointerDown: Canvas Coordinates:', coords); // ★デバッグログ
         
         if (this.isVDown) {
             this.startLayerTransform(e);
@@ -106,12 +109,19 @@ class CanvasManager {
             e.preventDefault(); return;
         }
 
-        if (!coords) return;
+        if (!coords) {
+            console.log('CanvasManager.onPointerDown: Coordinates are null. Skipping drawing.'); // ★デバッグログ
+            return;
+        }
         
         const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (!activeLayer || !activeLayer.visible) return;
+        if (!activeLayer || !activeLayer.visible) {
+            console.log('CanvasManager.onPointerDown: No active layer or layer not visible. Skipping drawing.'); // ★デバッグログ
+            return;
+        }
         
         if (this.currentTool === 'bucket') {
+            console.log('CanvasManager.onPointerDown: Tool is Bucket. Calling bucketTool.fill'); // ★デバッグログ
             this.app.bucketTool.fill(activeLayer.imageData, coords.x, coords.y, hexToRgba(this.currentColor));
             this.renderAllLayers();
             this.saveState();
@@ -125,9 +135,10 @@ class CanvasManager {
         const size = this.calculatePressureSize(this.currentSize, e.pressure || 1.0);
         
         this._updateDirtyRect(coords.x, coords.y, size);
+        console.log('CanvasManager.onPointerDown: Calling renderingBridge.drawCircle'); // ★デバッグログ
         this.renderingBridge.drawCircle(
             activeLayer.imageData, coords.x, coords.y, size / 2, 
-            hexToRgba(this.currentColor), this.currentTool === 'eraser'
+            this.currentColor, this.currentTool === 'eraser' // WebGL EngineはhexColorを受け取る
         );
         
         this._requestRender();
@@ -135,6 +146,7 @@ class CanvasManager {
     }
     
     onPointerMove(e) {
+        // console.log('CanvasManager.onPointerMove: Pointer Move Event Detected'); // ★デバッグログ (量が多いのでコメントアウト)
         if (this.isLayerTransforming) {
             const dx = e.clientX - this.transformStartX; const dy = e.clientY - this.transformStartY;
             const t = this.transformTargetLayer.transform; const ot = this.originalLayerTransform;
@@ -154,18 +166,30 @@ class CanvasManager {
             this.applyViewTransform(); return;
         }
         if (!this.isDrawing) return;
+        
         const coords = this.getCanvasCoordinates(e);
-        if (!coords) { this.lastPoint = null; return; }
+        if (!coords) {
+            this.lastPoint = null;
+            console.log('CanvasManager.onPointerMove: Coordinates are null. Stopping drawing for this move.'); // ★デバッグログ
+            return;
+        }
+        
         const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (!activeLayer || !activeLayer.visible) return;
+        if (!activeLayer || !activeLayer.visible) {
+            console.log('CanvasManager.onPointerMove: No active layer or layer not visible. Skipping drawing.'); // ★デバッグログ
+            return;
+        }
         if (!this.lastPoint) { this.lastPoint = { ...coords, pressure: e.pressure || 1.0 }; return; }
+        
         const currentPressure = e.pressure || 1.0;
         
         this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, this.currentSize * 2);
         this._updateDirtyRect(coords.x, coords.y, this.currentSize * 2);
+        
+        console.log('CanvasManager.onPointerMove: Calling renderingBridge.drawLine'); // ★デバッグログ
         this.renderingBridge.drawLine(
             activeLayer.imageData, this.lastPoint.x, this.lastPoint.y, coords.x, coords.y,
-            this.currentSize, hexToRgba(this.currentColor), this.currentTool === 'eraser',
+            this.currentSize, this.currentColor, this.currentTool === 'eraser', // WebGL EngineはhexColorを受け取る
             this.lastPoint.pressure, currentPressure, 
             this.calculatePressureSize.bind(this)
         );
@@ -174,6 +198,7 @@ class CanvasManager {
         this._requestRender();
     }
     onPointerUp(e) {
+        console.log('CanvasManager.onPointerUp: Pointer Up Event Detected'); // ★デバッグログ
         if (this.isLayerTransforming) { this.commitLayerTransform(); }
         if (this.isDrawing) {
             this.isDrawing = false; this.pressureHistory = [];
@@ -188,6 +213,7 @@ class CanvasManager {
     }
 
     _renderDirty() {
+        console.log('CanvasManager._renderDirty: Rendering dirty rect.'); // ★デバッグログ
         const rect = this.dirtyRect;
         if (rect.minX > rect.maxX) return;
 
@@ -199,6 +225,7 @@ class CanvasManager {
     }
 
     renderAllLayers() {
+        console.log('CanvasManager.renderAllLayers: Rendering all layers.'); // ★デバッグログ
         this._updateDirtyRect(this.width / 2, this.height / 2, Math.max(this.width, this.height));
         this._requestRender();
     }
@@ -273,11 +300,15 @@ class CanvasManager {
             if (this.viewTransform.flipX === -1) { x = this.width - x; }
             if (this.viewTransform.flipY === -1) { y = this.height - y; }
 
-            if (x < 0 || x >= this.width || y < 0 || y >= this.height) { return null; }
+            // 座標がキャンバスの範囲外に出ていないかチェック
+            if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
+                // console.warn('CanvasManager.getCanvasCoordinates: Coordinates out of bounds:', x, y); // ★デバッグログ (量が多いのでコメントアウト)
+                return null;
+            }
 
             return { x: Math.floor(x), y: Math.floor(y) };
         } catch (error) {
-            console.warn('座標変換エラー:', error);
+            console.warn('CanvasManager.getCanvasCoordinates: 座標変換エラー:', error); // ★デバッグログ
             return null;
         }
     }
