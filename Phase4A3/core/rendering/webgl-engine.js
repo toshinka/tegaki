@@ -1,10 +1,10 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine (Comprehensive Fixes for Display and Features)
- * Version: 0.5.0 (Phase 4A-7: Y-Flip, Blending, Full Transform, Anti-aliasing)
+ * Version: 0.5.0 (Phase 4A-3: Y-Flip, Blending, Full Transform, Anti-aliasing)
  *
  * WebGL表示のY軸反転、ブレンドアーティファクトを修正し、
- * レイヤー変形プレビューを完全に再実装しました。
+ * レイヤー変形プレビューを完全に再実装しました。v
  * Canvas2DのImageData直接操作による描画ロジックは維持しています。
  * ===================================================================================
  */
@@ -415,45 +415,55 @@ export class WebGLEngine extends DrawingEngine {
         imageData.data.fill(0);
     }
     
-    // ★★★ getTransformedImageDataの実装 (Canvas2DEngineのロジックをベースにWebGLEngineで利用) ★★★
+/**
+     * ★修正: レイヤーのImageDataに変換を適用する
+     * 現在、WebGLエンジンは直接ImageDataの変換をサポートしていないため、
+     * 一時的に2Dキャンバスを使用して変換を適用します。
+     * 最終的にはWebGLシェーダーで直接変換を扱うように変更することが望ましいです。
+     * @param {ImageData} sourceImageData - 変換元となるImageData
+     * @param {object} transform - 適用する変換情報 (x, y, scale, rotation, flipX, flipY)
+     * @returns {ImageData} 変換が適用された新しいImageData
+     */
     getTransformedImageData(sourceImageData, transform) {
-        const sw = sourceImageData.width;
-        const sh = sourceImageData.height;
-        
-        // オフスクリーンキャンバスのサイズをImageDataに合わせる
-        this.transformOffscreenCanvas.width = sw;
-        this.transformOffscreenCanvas.height = sh;
-        const ctx = this.transformOffscreenCtx;
+        const width = sourceImageData.width;
+        const height = sourceImageData.height;
 
-        // 一旦オフスクリーンキャンバスに元のImageDataを描画
-        ctx.clearRect(0, 0, sw, sh);
-        ctx.putImageData(sourceImageData, 0, 0);
+        // 一時的な2Dキャンバスを作成
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = width;
+        tempCanvas.height = height;
+        // willReadFrequently を true に設定することで、getImageData のパフォーマンスを向上させます。
+        const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true }); 
 
-        // CanvasのTransform APIを使って変換を適用
-        ctx.save();
-        ctx.clearRect(0, 0, sw, sh); // 変換前のキャンバスをクリア
-        
+        // 元のImageDataを一時キャンバスに描画
+        tempCtx.putImageData(sourceImageData, 0, 0);
+
+        // 変換を適用するための状態を保存
+        tempCtx.save();
+
         // 変換の中心をキャンバスの中心に設定
-        const cx = sw / 2;
-        const cy = sh / 2;
-        ctx.translate(cx, cy);
+        tempCtx.translate(width / 2, height / 2);
 
-        // スケール、回転、フリップ
-        ctx.scale(transform.flipX || 1, transform.flipY || 1);
-        ctx.rotate(-transform.rotation * Math.PI / 180); // 回転は時計回りのため-を付与
-        ctx.scale(transform.scale, transform.scale);
-        
-        // 移動
-        ctx.translate(-cx + transform.x, -cy + transform.y);
-        
-        // 元の画像を新しい変換で描画
-        ctx.drawImage(this.transformOffscreenCanvas, 0, 0);
+        // 回転
+        tempCtx.rotate(transform.rotation * Math.PI / 180);
 
-        // 変換後のImageDataを取得
-        const transformedData = ctx.getImageData(0, 0, sw, sh);
-        ctx.restore(); // 変換を元に戻す
+        // スケールと反転
+        // transform.flipX, transform.flipY が -1 の場合、画像が反転します。
+        tempCtx.scale(transform.scale * transform.flipX, transform.scale * transform.flipY);
 
-        // 取得したImageDataを返す
+        // 元の座標系に戻す
+        tempCtx.translate(-width / 2, -height / 2);
+
+        // 変換された画像を一時キャンバスに描画
+        // transform.x, transform.y はピクセル単位のオフセット
+        tempCtx.drawImage(tempCanvas, transform.x, transform.y, width, height);
+
+        // 変換を適用した後のImageDataを取得
+        const transformedData = tempCtx.getImageData(0, 0, width, height);
+
+        // 状態を復元
+        tempCtx.restore();
+
         return transformedData;
     }
 

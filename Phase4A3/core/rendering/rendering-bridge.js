@@ -1,7 +1,7 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Rendering Bridge (Dynamic Switching) - FIXED VERSION
- * Version: 2.1.2 (Phase 4A-4: Mouse Event Fix)
+ * Version: 2.1.2 (Phase 4A-3: Mouse Event Fix)
  *
  * WebGL化後にペンで書けなくなる問題を修正しました。
  * WebGL使用時も元のキャンバスでイベントを受け取り、描画結果だけをWebGLで処理します。
