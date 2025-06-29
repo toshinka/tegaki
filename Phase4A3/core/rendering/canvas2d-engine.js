@@ -1,10 +1,10 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Canvas2D Engine
- * Version: 1.2.0 (Transform Logic Unification)
+ * Version: 1.1.0 (Layer Enhancement compatible)
  *
- * getTransformedImageDataが移動・回転・拡縮のすべてを適用するように修正し、
- * WebGLエンジンとの動作一貫性を確保しました。
+ * レイヤーの不透明度・ブレンドモードに対応するため、compositeLayersを
+ * オフスクリーンキャンバスを用いた描画方式に改修しました。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -32,6 +32,7 @@ export class Canvas2DEngine extends DrawingEngine {
             maxDrawSteps: 100
         };
 
+        // ★★★ 追加: レイヤー合成用の一時的なキャンバス ★★★
         this.offscreenCanvas = document.createElement('canvas');
         this.offscreenCanvas.width = this.width;
         this.offscreenCanvas.height = this.height;
@@ -41,10 +42,6 @@ export class Canvas2DEngine extends DrawingEngine {
         this.layerCanvas.width = this.width;
         this.layerCanvas.height = this.height;
         this.layerCtx = this.layerCanvas.getContext('2d');
-        
-        // ★追加: 変形処理用の一時キャンバス
-        this.transformCanvas = document.createElement('canvas');
-        this.transformCtx = this.transformCanvas.getContext('2d');
     }
 
     // --- ImageDataへの直接描画 (変更なし) ---
@@ -110,57 +107,54 @@ export class Canvas2DEngine extends DrawingEngine {
         imageData.data.fill(0);
     }
     
-    // ★★★修正: WebGL版とロジックを統一し、移動・回転・拡縮すべてを適用する★★★
     getTransformedImageData(sourceImageData, transform) {
         const sw = sourceImageData.width;
         const sh = sourceImageData.height;
-        
-        const tempCanvas = this.transformCanvas;
-        const tempCtx = this.transformCtx;
-        tempCanvas.width = sw;
-        tempCanvas.height = sh;
-
-        // 一時的な2Dキャンバスに変換元画像を描画
-        const sourceCanvas = document.createElement('canvas');
-        sourceCanvas.width = sw;
-        sourceCanvas.height = sh;
-        sourceCanvas.getContext('2d').putImageData(sourceImageData, 0, 0);
-
-        // 変換を適用
-        tempCtx.clearRect(0, 0, sw, sh);
-        tempCtx.save();
-        
-        // 1. 移動 (Translate)
-        tempCtx.translate(transform.x, transform.y);
-        
-        // 2. 回転と拡縮の中心を画像の中心に設定
-        tempCtx.translate(sw / 2, sh / 2);
-
-        // 3. 回転 (Rotate)
-        tempCtx.rotate(transform.rotation * Math.PI / 180);
-
-        // 4. 拡縮 (Scale) と 反転 (Flip)
-        tempCtx.scale(transform.scale * transform.flipX, transform.scale * transform.flipY);
-        
-        // 5. 中心を元に戻す
-        tempCtx.translate(-sw / 2, -sh / 2);
-
-        // 6. 画像を描画
-        tempCtx.drawImage(sourceCanvas, 0, 0);
-        
-        tempCtx.restore();
-
-        // 変換後のImageDataを返す
-        return tempCtx.getImageData(0, 0, sw, sh);
+        const sdata = sourceImageData.data;
+        const destImageData = new ImageData(sw, sh);
+        const ddata = destImageData.data;
+        const { x: tx, y: ty, scale, rotation, flipX, flipY } = transform;
+        const rad = -rotation * Math.PI / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        const cx = sw / 2;
+        const cy = sh / 2;
+        for (let y = 0; y < sh; y++) {
+            for (let x = 0; x < sw; x++) {
+                let curX = x - cx;
+                let curY = y - cy;
+                curX -= tx;
+                curY -= ty;
+                curX /= scale;
+                curY /= scale;
+                curX *= flipX || 1;
+                curY *= flipY || 1;
+                const rotatedX = curX * cos - curY * sin;
+                const rotatedY = curX * sin + curY * cos;
+                const sx = Math.round(rotatedX + cx);
+                const sy = Math.round(rotatedY + cy);
+                const destIndex = (y * sw + x) * 4;
+                if (sx >= 0 && sx < sw && sy >= 0 && sy < sh) {
+                    const sourceIndex = (sy * sw + sx) * 4;
+                    ddata[destIndex] = sdata[sourceIndex];
+                    ddata[destIndex + 1] = sdata[sourceIndex + 1];
+                    ddata[destIndex + 2] = sdata[sourceIndex + 2];
+                    ddata[destIndex + 3] = sdata[sourceIndex + 3];
+                }
+            }
+        }
+        return destImageData;
     }
 
     // --- レイヤー合成と画面表示 ---
 
+    // ★★★ 修正箇所: 不透明度とブレンドモードに対応した新しい合成ロジック ★★★
     compositeLayers(layers, compositionData, dirtyRect) {
         const ctx = this.offscreenCtx;
         const width = this.width;
         const height = this.height;
 
+        // dirtyRectの範囲をクリア (最適化のため)
         const x = Math.max(0, Math.floor(dirtyRect.minX));
         const y = Math.max(0, Math.floor(dirtyRect.minY));
         const w = Math.min(width, Math.ceil(dirtyRect.maxX)) - x;
@@ -168,17 +162,23 @@ export class Canvas2DEngine extends DrawingEngine {
         if (w <= 0 || h <= 0) return;
         ctx.clearRect(x, y, w, h);
 
+        // レイヤーを描画
         for (const layer of layers) {
             if (!layer.visible || layer.opacity === 0) continue;
 
+            // 各レイヤーのImageDataを一時キャンバスに置いてから合成する
+            // (putImageDataはglobalCompositeOperationを無視するため)
             this.layerCtx.putImageData(layer.imageData, 0, 0);
 
+            // 合成方法を設定
             ctx.globalAlpha = (layer.opacity ?? 100) / 100;
             ctx.globalCompositeOperation = layer.blendMode ?? 'normal';
 
+            // オフスクリーンキャンバスに描画
             ctx.drawImage(this.layerCanvas, x, y, w, h, x, y, w, h);
         }
 
+        // 合成結果をcompositionDataにコピー
         const composed = ctx.getImageData(x, y, w, h);
         const finalData = compositionData.data;
         for (let j = 0; j < h; j++) {
@@ -203,6 +203,8 @@ export class Canvas2DEngine extends DrawingEngine {
         const dirtyH = Math.min(this.height, Math.ceil(dirtyRect.maxY)) - dirtyY;
 
         if (dirtyW > 0 && dirtyH > 0) {
+            // putImageDataは重いので、可能ならdrawImageを使う
+            // ここではImageDataを直接扱う必要があるため、putImageDataを継続
              const partialData = this.displayCtx.createImageData(dirtyW, dirtyH);
 
             const sourceData = compositionData.data;
