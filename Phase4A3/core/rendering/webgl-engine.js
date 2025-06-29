@@ -1,15 +1,15 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine (Phase 4A-3: Drawing & Compositing)
- * Version: 0.3.3 (Debug: Canvas Dimension Check)
+ * Version: 0.3.4 (Bug Fix: gl is not defined in constructor)
  *
  * レイヤーのImageDataをWebGLテクスチャに変換し、管理する機能に加え、
  * 以下の機能を追加しました:
  * ・レイヤーの合成と画面への描画
  * ・ペン（円、線）のWebGLによる描画
  *
- * 【今回追加】
- * ・WebGLキャンバスの幅と高さをコンソールに出力するログを追加。
+ * 【今回修正】
+ * ・コンストラクタ内のgl.blendFuncでの`gl`未定義エラーを修正。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -19,14 +19,12 @@ export class WebGLEngine extends DrawingEngine {
         super(canvas);
         this.gl = null;
 
-        // ★追加: キャンバスの寸法をログに出力
         console.log("WebGL Engine: Canvas element passed:", canvas);
         console.log("WebGL Engine: Canvas width (from element):", canvas.width);
         console.log("WebGL Engine: Canvas height (from element):", canvas.height);
 
         this.width = canvas.width;
         this.height = canvas.height;
-        // ★追加: エンジンに格納された寸法をログに出力
         console.log("WebGL Engine: Stored width:", this.width);
         console.log("WebGL Engine: Stored height:", this.height);
 
@@ -49,7 +47,8 @@ export class WebGLEngine extends DrawingEngine {
             }
             this.gl.clearColor(0.0, 0.0, 0.0, 0.0); // 透明でクリア
             this.gl.enable(this.gl.BLEND);
-            this.gl.blendFunc(this.gl.ONE, gl.ONE_MINUS_SRC_ALPHA); // 通常のアルファブレンド
+            // ★ここを修正しました！ gl => this.gl
+            this.gl.blendFunc(this.gl.ONE, this.gl.ONE_MINUS_SRC_ALPHA); // 通常のアルファブレンド
 
             this._initShaders();
             this._initBuffers();
@@ -535,16 +534,14 @@ export class WebGLEngine extends DrawingEngine {
             return;
         }
 
-        // --- デバッグログの追加 ---
         console.log("renderToDisplay called.");
-        console.log("Received arguments (ignored for WebGL rendering):", anyArgs); // ログもanyArgsに
+        console.log("Received arguments (ignored for WebGL rendering):", anyArgs);
         console.log("Composite texture:", this.compositeTexture);
         if (this.compositeTexture) {
             console.log("Is compositeTexture a WebGLTexture (gl.isTexture)?", gl.isTexture(this.compositeTexture));
         } else {
             console.log("compositeTexture is null or undefined.");
         }
-        // -----------------------
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null); // 画面に直接描画
         gl.viewport(0, 0, this.width, this.height);
