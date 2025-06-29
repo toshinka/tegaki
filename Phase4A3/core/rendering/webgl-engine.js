@@ -1,12 +1,11 @@
 /*
  * ===================================================================================
- * Toshinka Tegaki Tool - WebGL Engine (Full Rendering Pipeline with Canvas2D Drawing Logic)
- * Version: 0.4.1 (Phase 4A-5: Drawing Logic with Simplified Transform)
+ * Toshinka Tegaki Tool - WebGL Engine (Comprehensive Fixes for Display and Features)
+ * Version: 0.5.0 (Phase 4A-7: Y-Flip, Blending, Full Transform, Anti-aliasing)
  *
- * レイヤーのImageDataをWebGLテクスチャに変換し、それを合成して画面に表示する
- * 完全な描画パイプラインを実装しました。
- * Canvas2DのImageData直接操作による描画ロジックを移植しました。
- * レイヤー変形は、一時的にプレビュー機能を無効化し、将来的にシェーダーで対応予定です。
+ * WebGL表示のY軸反転、ブレンドアーティファクトを修正し、
+ * レイヤー変形プレビューを完全に再実装しました。
+ * Canvas2DのImageData直接操作による描画ロジックは維持しています。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -21,16 +20,18 @@ export class WebGLEngine extends DrawingEngine {
         this.compositeTexture = null; // 合成結果を格納するテクスチャ
         this.compositeFBO = null; // 合成用フレームバッファ
 
-        // ★新規追加: 作成したテクスチャをレイヤーごとに保管する場所
         this.layerTextures = new Map();
 
-        // ★新規追加: 描画品質設定 (Canvas2DEngineから移植)
         this.drawingQuality = {
             enableSubpixel: true,
             antialiasThreshold: 2.0,
             minDrawSteps: 1,
             maxDrawSteps: 100
         };
+
+        // ★再追加: 変形用の一時的なオフスクリーンキャンバス (getTransformedImageData用)
+        this.transformOffscreenCanvas = document.createElement('canvas');
+        this.transformOffscreenCtx = this.transformOffscreenCanvas.getContext('2d');
 
 
         try {
@@ -48,7 +49,9 @@ export class WebGLEngine extends DrawingEngine {
         // WebGL初期設定
         gl.clearColor(0.0, 0.0, 0.0, 0.0); // 背景は透明に
         gl.enable(gl.BLEND); // アルファブレンドを有効にする
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); // ★★★修正: 通常のアルファブレンド設定 (非事前乗算アルファ用) ★★★
+        // ★★★修正: 事前乗算アルファのブレンド設定に変更 (UNPACK_PREMULTIPLY_ALPHA_WEBGLと併用) ★★★
+        // これにより、Canvas2Dの描画結果がより正確にブレンドされることが期待されます。
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
 
         // -----------------------------------------------------------
         // シェーダーのコンパイルとプログラムのリンク
@@ -63,12 +66,17 @@ export class WebGLEngine extends DrawingEngine {
             }
         `;
 
+        // ★修正: opacityをシェーダーで扱うようにuniformを追加
         const fsSource = `
             precision mediump float;
             varying vec2 v_texCoord;
             uniform sampler2D u_image;
+            uniform float u_opacity; // ★新規追加: 不透明度ユニフォーム
+
             void main() {
-                gl_FragColor = texture2D(u_image, v_texCoord);
+                vec4 texColor = texture2D(u_image, v_texCoord);
+                // テクスチャの色に不透明度を適用
+                gl_FragColor = vec4(texColor.rgb, texColor.a * u_opacity);
             }
         `;
 
@@ -99,16 +107,16 @@ export class WebGLEngine extends DrawingEngine {
 
         // -----------------------------------------------------------
         // テクスチャ座標バッファ (画像の上から下へ)
-        // -----------------------------------------------------------
+        // ★修正: Y軸反転を`gl.UNPACK_FLIP_Y_WEBGL`で行うため、テクスチャ座標は標準的なものに戻す ★
+        // WebGLのテクスチャ座標は左下(0,0)、右上(1,1)が基準
+        // クアッドの頂点順序: top-left, bottom-left, top-right, bottom-right
         this.texCoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        // WebGLのテクスチャ座標は左下(0,0)、右上(1,1)だが、
-        // 画像のY軸は上から下なので、Y座標を反転させる (0,1 -> 0,0) (1,1 -> 1,0)
         const texCoords = [
-            0.0, 0.0,  // top-left -> mapped to (0,1) for image
-            0.0, 1.0,  // bottom-left -> mapped to (0,0) for image
-            1.0, 0.0,  // top-right -> mapped to (1,1) for image
-            1.0, 1.0,   // bottom-right -> mapped to (1,0) for image
+            0.0, 1.0,  // top-left of quad corresponds to (0,1) of texture (top-left of texture when Y is flipped)
+            0.0, 0.0,  // bottom-left of quad corresponds to (0,0) of texture (bottom-left of texture when Y is flipped)
+            1.0, 1.0,   // top-right of quad corresponds to (1,1) of texture (top-right of texture when Y is flipped)
+            1.0, 0.0,  // bottom-right of quad corresponds to (1,0) of texture (bottom-right of texture when Y is flipped)
         ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
 
@@ -118,6 +126,7 @@ export class WebGLEngine extends DrawingEngine {
         this.a_position_loc = gl.getAttribLocation(this.program, "a_position");
         this.a_texCoord_loc = gl.getAttribLocation(this.program, "a_texCoord");
         this.u_image_loc = gl.getUniformLocation(this.program, "u_image");
+        this.u_opacity_loc = gl.getUniformLocation(this.program, "u_opacity"); // ★新規追加: 不透明度ユニフォームのロケーション
 
         // 初期化時に合成用バッファをセットアップ
         this._setupCompositingBuffer();
@@ -182,30 +191,34 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.bindTexture(gl.TEXTURE_2D, texture);
 
-        // ピクセル形式とデータ型を設定
+        // ★★★重要修正: ImageDataをWebGLテクスチャにアップロードする際にY軸を反転させる★★★
+        // これにより、ImageDataの上下方向がWebGLのテクスチャ座標系と一致します。
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        // ★★★修正: ImageDataを事前乗算アルファとしてアップロードする★★★
+        // blendFunc(ONE, ONE_MINUS_SRC_ALPHA) と合わせるため
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+
+
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imageData);
 
-        // テクスチャのパラメータを設定 (線形補間、端をクランプ)
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-        // 他のテクスチャに影響を与えないように、バインドを解除
         gl.bindTexture(gl.TEXTURE_2D, null);
 
         return texture;
     }
 
     /**
-     * ★新規追加★ 合成結果を格納するFBOとテクスチャをセットアップします。
+     * 合成結果を格納するFBOとテクスチャをセットアップします。
      */
     _setupCompositingBuffer() {
         const gl = this.gl;
         const width = this.canvas.width;
         const height = this.canvas.height;
 
-        // 既存のリソースがあれば解放
         if (this.compositeFBO) {
             gl.deleteFramebuffer(this.compositeFBO);
         }
@@ -213,7 +226,6 @@ export class WebGLEngine extends DrawingEngine {
             gl.deleteTexture(this.compositeTexture);
         }
 
-        // テクスチャの作成 (合成結果をここに描画する)
         this.compositeTexture = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, this.compositeTexture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
@@ -223,23 +235,21 @@ export class WebGLEngine extends DrawingEngine {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.bindTexture(gl.TEXTURE_2D, null);
 
-        // フレームバッファの作成とテクスチャの紐付け
         this.compositeFBO = gl.createFramebuffer();
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.compositeFBO);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.compositeTexture, 0);
 
-        // フレームバッファの完了チェック
         const fbStatus = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
         if (fbStatus !== gl.FRAMEBUFFER_COMPLETE) {
             console.error('Framebuffer not complete, status: ' + fbStatus);
         }
 
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null); // デフォルトのフレームバッファに戻す
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         console.log("Compositing buffer (FBO & Texture) setup completed.");
     }
 
     /**
-     * ★処理を更新: レイヤーをテクスチャに変換し、合成バッファに描画します。
+     * レイヤーをテクスチャに変換し、合成バッファに描画します。
      */
     compositeLayers(layers, compositionData, dirtyRect) {
         if (!this.gl || !this.program || !this.compositeFBO || !this.compositeTexture) {
@@ -251,17 +261,14 @@ export class WebGLEngine extends DrawingEngine {
 
         console.log(`Compositing ${layers.length} layers for WebGL...`);
 
-        // レイヤーテクスチャを管理するためのMapを更新
         const currentLayerNames = new Set();
         for (const layer of layers) {
             currentLayerNames.add(layer.name);
-            // 既存のテクスチャがあれば更新、なければ新規作成
             const existingTexture = this.layerTextures.get(layer);
             const texture = this._createOrUpdateTextureFromImageData(layer.imageData, existingTexture);
-            this.layerTextures.set(layer, texture); // Mapにレイヤーとテクスチャのペアを保存
-            // console.log(`Texture created/updated for layer: "${layer.name}"`, texture);
+            this.layerTextures.set(layer, texture);
         }
-        // 存在しないレイヤーのテクスチャを削除
+
         for (const [layer, texture] of this.layerTextures.entries()) {
             if (!currentLayerNames.has(layer.name)) {
                 gl.deleteTexture(texture);
@@ -269,15 +276,12 @@ export class WebGLEngine extends DrawingEngine {
             }
         }
 
-
-        // オフスクリーン（FBO）に描画
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.compositeFBO);
         gl.viewport(0, 0, this.canvas.width, this.canvas.height);
         gl.clear(gl.COLOR_BUFFER_BIT); // FBOをクリア
 
         gl.useProgram(this.program);
 
-        // 頂点アトリビュートの設定
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
         gl.vertexAttribPointer(this.a_position_loc, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(this.a_position_loc);
@@ -286,7 +290,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.vertexAttribPointer(this.a_texCoord_loc, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(this.a_texCoord_loc);
 
-        // 各レイヤーを合成FBOに描画
         let layerCount = 0;
         for (const layer of layers) {
             if (!layer.visible || layer.opacity === 0 || !this.layerTextures.has(layer)) continue;
@@ -295,23 +298,22 @@ export class WebGLEngine extends DrawingEngine {
             
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.uniform1i(this.u_image_loc, 0); // テクスチャユニット0を使用
+            gl.uniform1i(this.u_image_loc, 0);
+            // ★新規追加: レイヤーの不透明度をユニフォームとして渡す
+            gl.uniform1f(this.u_opacity_loc, layer.opacity / 100.0); 
 
-            // レイヤーの不透明度をユニフォームとして渡すことも可能だが、今回は単純に描画
-            // gl.uniform1f(gl.getUniformLocation(this.program, "u_opacity"), layer.opacity / 100.0);
-
-            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); // クアッドを描画
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
             layerCount++;
         }
         console.log(`Rendered ${layerCount} layers onto compositing FBO.`);
 
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null); // デフォルトのフレームバッファに戻す
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.disableVertexAttribArray(this.a_position_loc);
         gl.disableVertexAttribArray(this.a_texCoord_loc);
     }
 
     /**
-     * ★処理を更新: 合成されたテクスチャをディスプレイにレンダリングします。
+     * 合成されたテクスチャをディスプレイにレンダリングします。
      */
     renderToDisplay(compositionData, dirtyRect) { // ImageDataとcompositionDataはCanvas2D向けでWebGLでは無視
         if (!this.gl || !this.program || !this.compositeTexture) {
@@ -322,14 +324,12 @@ export class WebGLEngine extends DrawingEngine {
 
         console.log("renderToDisplay called.");
 
-        // デフォルトのフレームバッファ（画面）に描画
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-        gl.clear(gl.COLOR_BUFFER_BIT); // 画面をクリア
+        gl.clear(gl.COLOR_BUFFER_BIT);
 
         gl.useProgram(this.program);
 
-        // 頂点アトリビュートの設定
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
         gl.vertexAttribPointer(this.a_position_loc, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(this.a_position_loc);
@@ -338,12 +338,12 @@ export class WebGLEngine extends DrawingEngine {
         gl.vertexAttribPointer(this.a_texCoord_loc, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(this.a_texCoord_loc);
 
-        // 合成されたテクスチャをバインド
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.compositeTexture);
-        gl.uniform1i(this.u_image_loc, 0); // テクスチャユニット0を使用
+        gl.uniform1i(this.u_image_loc, 0);
+        gl.uniform1f(this.u_opacity_loc, 1.0); // 最終表示は不透明度100%
 
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); // クアッドを描画
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
         gl.disableVertexAttribArray(this.a_position_loc);
         gl.disableVertexAttribArray(this.a_texCoord_loc);
@@ -352,6 +352,7 @@ export class WebGLEngine extends DrawingEngine {
     }
     
     // --- ImageDataへの直接描画 (Canvas2DEngineから移植) ---
+    // これらのメソッドはCPUでImageDataを操作し、その結果がcompositeLayersでWebGLテクスチャに再アップロードされることを前提としています。
 
     drawCircle(imageData, centerX, centerY, radius, color, isEraser) {
         const quality = this.drawingQuality;
@@ -414,12 +415,46 @@ export class WebGLEngine extends DrawingEngine {
         imageData.data.fill(0);
     }
     
-    // ★★★ getTransformedImageDataを簡易版に戻す ★★★
+    // ★★★ getTransformedImageDataの実装 (Canvas2DEngineのロジックをベースにWebGLEngineで利用) ★★★
     getTransformedImageData(sourceImageData, transform) {
-        console.warn("getTransformedImageData not fully implemented for WebGL. Returning original ImageData. True WebGL transforms will be implemented via shaders.");
-        // この警告が出ても動作は継続しますが、レイヤーの変形プレビューは表示されません。
-        // 将来的にシェーダーでGPU上で高速に変形を処理します。
-        return sourceImageData;
+        const sw = sourceImageData.width;
+        const sh = sourceImageData.height;
+        
+        // オフスクリーンキャンバスのサイズをImageDataに合わせる
+        this.transformOffscreenCanvas.width = sw;
+        this.transformOffscreenCanvas.height = sh;
+        const ctx = this.transformOffscreenCtx;
+
+        // 一旦オフスクリーンキャンバスに元のImageDataを描画
+        ctx.clearRect(0, 0, sw, sh);
+        ctx.putImageData(sourceImageData, 0, 0);
+
+        // CanvasのTransform APIを使って変換を適用
+        ctx.save();
+        ctx.clearRect(0, 0, sw, sh); // 変換前のキャンバスをクリア
+        
+        // 変換の中心をキャンバスの中心に設定
+        const cx = sw / 2;
+        const cy = sh / 2;
+        ctx.translate(cx, cy);
+
+        // スケール、回転、フリップ
+        ctx.scale(transform.flipX || 1, transform.flipY || 1);
+        ctx.rotate(-transform.rotation * Math.PI / 180); // 回転は時計回りのため-を付与
+        ctx.scale(transform.scale, transform.scale);
+        
+        // 移動
+        ctx.translate(-cx + transform.x, -cy + transform.y);
+        
+        // 元の画像を新しい変換で描画
+        ctx.drawImage(this.transformOffscreenCanvas, 0, 0);
+
+        // 変換後のImageDataを取得
+        const transformedData = ctx.getImageData(0, 0, sw, sh);
+        ctx.restore(); // 変換を元に戻す
+
+        // 取得したImageDataを返す
+        return transformedData;
     }
 
 
@@ -465,14 +500,12 @@ export class WebGLEngine extends DrawingEngine {
 
             const topAlpha = color.a / 255;
             if (topAlpha <= 0) return;
-            if (topAlpha >= 1) {
-                data[index] = color.r;
-                data[index + 1] = color.g;
-                data[index + 2] = color.b;
-                data[index + 3] = color.a;
-                return;
-            }
-
+            // ImageDataのアルファは非事前乗算であるため、ブレンド前に事前乗算する
+            // WebGLの UNPACK_PREMULTIPLY_ALPHA_WEBGL が true の場合、GPUが自動で行うため、
+            // ここでの手動事前乗算は不要。
+            // ここではImageDataの内容をCPU側で準備するだけなので、通常通りRGB値を設定し、
+            // アルファもそのまま設定します。WebGLアップロード時に自動で処理されます。
+            
             const bottomAlpha = data[index + 3] / 255;
             const outAlpha = topAlpha + bottomAlpha * (1 - topAlpha);
             if (outAlpha > 0) {
