@@ -1,7 +1,7 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine (Phase 4A-3: Drawing & Compositing)
- * Version: 0.3.2 (Fix for renderToDisplay argument mismatch)
+ * Version: 0.3.3 (Debug: Canvas Dimension Check)
  *
  * レイヤーのImageDataをWebGLテクスチャに変換し、管理する機能に加え、
  * 以下の機能を追加しました:
@@ -9,8 +9,7 @@
  * ・ペン（円、線）のWebGLによる描画
  *
  * 【今回追加】
- * ・renderToDisplayへの引数（ImageData）が誤ってバインドされないよう修正。
- * 常にthis.compositeTextureを画面に描画するように変更。
+ * ・WebGLキャンバスの幅と高さをコンソールに出力するログを追加。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -19,8 +18,17 @@ export class WebGLEngine extends DrawingEngine {
     constructor(canvas) {
         super(canvas);
         this.gl = null;
+
+        // ★追加: キャンバスの寸法をログに出力
+        console.log("WebGL Engine: Canvas element passed:", canvas);
+        console.log("WebGL Engine: Canvas width (from element):", canvas.width);
+        console.log("WebGL Engine: Canvas height (from element):", canvas.height);
+
         this.width = canvas.width;
         this.height = canvas.height;
+        // ★追加: エンジンに格納された寸法をログに出力
+        console.log("WebGL Engine: Stored width:", this.width);
+        console.log("WebGL Engine: Stored height:", this.height);
 
         this.layerTextures = new Map(); // Map<Layer, WebGLTexture>
         this.framebuffers = new Map();  // Map<Layer, WebGLFramebuffer>
@@ -41,7 +49,7 @@ export class WebGLEngine extends DrawingEngine {
             }
             this.gl.clearColor(0.0, 0.0, 0.0, 0.0); // 透明でクリア
             this.gl.enable(this.gl.BLEND);
-            this.gl.blendFunc(this.gl.ONE, this.gl.ONE_MINUS_SRC_ALPHA); // 通常のアルファブレンド
+            this.gl.blendFunc(this.gl.ONE, gl.ONE_MINUS_SRC_ALPHA); // 通常のアルファブレンド
 
             this._initShaders();
             this._initBuffers();
@@ -554,7 +562,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.vertexAttribPointer(this.textureProgram.texCoordLocation, 2, gl.FLOAT, false, 0, 0);
 
         gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.compositeTexture); // ★修正点: 常にthis.compositeTextureをバインド
+        gl.bindTexture(gl.TEXTURE_2D, this.compositeTexture);
         gl.uniform1i(this.textureProgram.imageLocation, 0);
         gl.uniform1f(this.textureProgram.opacityLocation, 1.0); // 画面表示時は不透明度100%
 
