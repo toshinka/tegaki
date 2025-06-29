@@ -1,11 +1,14 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Rendering Bridge (Dynamic Switching)
- * Version: 2.0.0 (Phase 4A-1)
+ * Version: 2.1.0 (Phase 4A-3: Default WebGL & WebGL RenderToDisplay)
  *
  * 描画エンジンを動的に切り替える機能を持つ、新しいブリッジです。
  * core-engineからの描画命令を、現在選択されているエンジン（Canvas2D or WebGL）
  * に適切に振り分けます。
+ *
+ * 【改修点】
+ * ・デフォルトの描画エンジンをWebGLに設定しました。
  * ===================================================================================
  */
 import { Canvas2DEngine } from './canvas2d-engine.js';
@@ -52,8 +55,14 @@ export class RenderingBridge {
             console.warn("WebGL is not supported in this browser.");
         }
 
-        // デフォルトのエンジンをCanvas2Dに設定
-        this.setEngine('canvas2d');
+        // ★改修点: デフォルトのエンジンをWebGLに設定 (利用可能な場合)
+        if (this.engines['webgl'] && this.engines['webgl'].gl) {
+            this.setEngine('webgl');
+        } else {
+            // WebGLが利用できない場合はCanvas2Dにフォールバック
+            this.setEngine('canvas2d');
+            console.warn("Falling back to Canvas2D engine as WebGL is not available or failed to initialize.");
+        }
     }
 
     /**
@@ -67,19 +76,19 @@ export class RenderingBridge {
             this.currentEngineType = type;
             console.log(`Switched rendering engine to: ${type}`);
             
-            // WebGLに切り替えた場合、一度キャンバス全体をクリアして表示を更新する
+            // WebGLに切り替えた場合、WebGL用キャンバスを表示し、2D用キャンバスを非表示にする
             if (type === 'webgl') {
-                this.currentEngine.canvas.style.display = 'block'; // 表示
-                this.displayCanvas.style.display = 'none'; // 非表示
+                this.currentEngine.canvas.style.display = 'block'; // WebGLキャンバスを表示
+                this.displayCanvas.style.display = 'none'; // Canvas2Dキャンバスを非表示
                 // WebGLキャンバスをDOMに追加（一度だけ）
                 if (!this.displayCanvas.parentNode.contains(this.currentEngine.canvas)) {
                      this.displayCanvas.parentNode.insertBefore(this.currentEngine.canvas, this.displayCanvas);
                 }
             } else { // Canvas2Dに戻す場合
                 if (this.engines['webgl'] && this.engines['webgl'].canvas) {
-                    this.engines['webgl'].canvas.style.display = 'none'; // 非表示
+                    this.engines['webgl'].canvas.style.display = 'none'; // WebGLキャンバスを非表示
                 }
-                this.displayCanvas.style.display = 'block'; // 表示
+                this.displayCanvas.style.display = 'block'; // Canvas2Dキャンバスを表示
             }
 
             return true;
