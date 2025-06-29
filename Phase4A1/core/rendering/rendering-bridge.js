@@ -1,101 +1,85 @@
 /*
  * ===================================================================================
- * Toshinka Tegaki Tool - Rendering Bridge (Dynamic Switching)
- * Version: 2.0.0 (Phase 4A-1)
+ * Toshinka Tegaki Tool - Rendering Bridge
+ * Version: 2.0.0 (Engine Switching support)
  *
- * 描画エンジンを動的に切り替える機能を持つ、新しいブリッジです。
- * core-engineからの描画命令を、現在選択されているエンジン（Canvas2D or WebGL）
- * に適切に振り分けます。
+ * このファイルは、アプリケーション本体 (core-engine) と
+ * 実際の描画エンジン (Canvas2D, WebGL等) との間に立つ「橋渡し役」です。
+ *
+ * core-engineはこのブリッジに描画を依頼するだけで、裏でどのエンジンが
+ * 動いているかを気にする必要がなくなります。
+ * ★★★ WebGLエンジンを組み込み、切り替えられるように改修 ★★★
  * ===================================================================================
  */
 import { Canvas2DEngine } from './canvas2d-engine.js';
-import { WebGLEngine } from './webgl-engine.js';
+import { WebGLEngine } from './webgl-engine.js'; // ★ WebGLエンジンをインポート
 
 export class RenderingBridge {
-    constructor(displayCanvas) {
-        this.displayCanvas = displayCanvas;
+    constructor(canvas) {
+        this.canvas = canvas;
+        
+        // 利用可能なエンジンを保持
         this.engines = {};
-        this.currentEngine = null;
-        this.currentEngineType = '';
+        this.engines.canvas2d = new Canvas2DEngine(this.canvas);
+        this.engines.webgl = new WebGLEngine(this.canvas);
 
-        // 1. Canvas2Dエンジンは必ず初期化
-        try {
-            // Canvas2Dは表示用のキャンバスを直接使う
-            this.engines['canvas2d'] = new Canvas2DEngine(this.displayCanvas);
-            console.log("Canvas2D Engine initialized successfully.");
-        } catch (e) {
-            console.error("Failed to initialize Canvas2D engine:", e);
-            throw e; // Canvas2Dは必須なので、失敗したらここで処理を止める
-        }
-
-        // 2. WebGLエンジンが利用可能かチェックして、試行する
-        if (WebGLEngine.isSupported()) {
-            try {
-                // ★重要★ WebGL用には、メモリ上に新しい非表示のキャンバスを作成して渡す
-                // これにより「同一Canvas要素で複数コンテキスト取得不可」問題を回避する
-                const webglCanvas = document.createElement('canvas');
-                webglCanvas.width = this.displayCanvas.width;
-                webglCanvas.height = this.displayCanvas.height;
-                
-                this.engines['webgl'] = new WebGLEngine(webglCanvas);
-
-                // .glプロパティが正常に作られていれば成功とみなす
-                if (this.engines['webgl'].gl) {
-                    console.log("WebGL Engine initialized successfully.");
-                } else {
-                     console.warn("WebGL Engine initialization returned no context. It will be unavailable.");
-                }
-            } catch (e) {
-                console.warn("WebGL Engine initialization failed:", e);
-            }
-        } else {
-            console.warn("WebGL is not supported in this browser.");
-        }
-
-        // デフォルトのエンジンをCanvas2Dに設定
-        this.setEngine('canvas2d');
+        // デフォルトの描画エンジン
+        this.engine = this.engines.canvas2d;
+        this.activeEngineType = 'canvas2d';
     }
 
     /**
-     * 使用する描画エンジンを切り替えます。
-     * @param {'canvas2d' | 'webgl'} type - 切り替えたいエンジンの種類
-     * @returns {boolean} 切り替えが成功したかどうか
+     * 描画エンジンを切り替えるメソッド
+     * @param {'canvas2d' | 'webgl'} type - 使用するエンジンの種類
      */
     setEngine(type) {
-        if (this.engines[type] && (type !== 'webgl' || this.engines[type].gl)) {
-            this.currentEngine = this.engines[type];
-            this.currentEngineType = type;
-            console.log(`Switched rendering engine to: ${type}`);
-            
-            // WebGLに切り替えた場合、一度キャンバス全体をクリアして表示を更新する
-            if (type === 'webgl') {
-                this.currentEngine.canvas.style.display = 'block'; // 表示
-                this.displayCanvas.style.display = 'none'; // 非表示
-                // WebGLキャンバスをDOMに追加（一度だけ）
-                if (!this.displayCanvas.parentNode.contains(this.currentEngine.canvas)) {
-                     this.displayCanvas.parentNode.insertBefore(this.currentEngine.canvas, this.displayCanvas);
-                }
-            } else { // Canvas2Dに戻す場合
-                if (this.engines['webgl'] && this.engines['webgl'].canvas) {
-                    this.engines['webgl'].canvas.style.display = 'none'; // 非表示
-                }
-                this.displayCanvas.style.display = 'block'; // 表示
+        if (this.engines[type]) {
+            // WebGLエンジンが初期化に失敗している場合は切り替えない
+            if (type === 'webgl' && !this.engines.webgl.gl) {
+                console.error("WebGL engine is not available. Cannot switch.");
+                return;
+            }
+            this.engine = this.engines[type];
+            this.activeEngineType = type;
+            console.log(`Rendering engine switched to: ${this.activeEngineType}`);
+
+            // エンジン切り替え時にキャンバスをクリアする
+            if (this.engine.compositeLayers) {
+                 this.engine.compositeLayers([], null, null);
             }
 
-            return true;
         } else {
-            console.warn(`'${type}' engine is not available. Staying on '${this.currentEngineType}'.`);
-            return false;
+            console.error(`Engine type "${type}" is not supported.`);
         }
     }
 
-    // --- DrawingEngineのインターフェースを現在のエンジンに委譲 ---
+    // --- DrawingEngineのインターフェースをそのまま呼び出す (変更なし) ---
 
-    drawCircle(...args) { this.currentEngine.drawCircle(...args); }
-    drawLine(...args) { this.currentEngine.drawLine(...args); }
-    fill(...args) { this.currentEngine.fill(...args); }
-    clear(...args) { this.currentEngine.clear(...args); }
-    getTransformedImageData(...args) { return this.currentEngine.getTransformedImageData(...args); }
-    compositeLayers(...args) { this.currentEngine.compositeLayers(...args); }
-    renderToDisplay(...args) { this.currentEngine.renderToDisplay(...args); }
+    drawCircle(imageData, centerX, centerY, radius, color, isEraser) {
+        this.engine.drawCircle(imageData, centerX, centerY, radius, color, isEraser);
+    }
+
+    drawLine(imageData, x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize) {
+        this.engine.drawLine(imageData, x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize);
+    }
+
+    fill(imageData, color) {
+        this.engine.fill(imageData, color);
+    }
+    
+    clear(imageData) {
+        this.engine.clear(imageData);
+    }
+
+    getTransformedImageData(sourceImageData, transform) {
+        return this.engine.getTransformedImageData(sourceImageData, transform);
+    }
+
+    compositeLayers(layers, compositionData, dirtyRect) {
+        this.engine.compositeLayers(layers, compositionData, dirtyRect);
+    }
+
+    renderToDisplay(compositionData, dirtyRect) {
+        this.engine.renderToDisplay(compositionData, dirtyRect);
+    }
 }
