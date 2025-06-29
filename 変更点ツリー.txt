@@ -1,14 +1,14 @@
 現在（Phase 4A実装中）のファイルツリー
 
-core-engine.js（Phase4A4）    ⇐----　ToshinkaTegakiTool.html（Phase2）
+core-engine.js（Phase4A'6）    ⇐----　ToshinkaTegakiTool.html（Phase4A'6）
 │  　　　　　　　　　　　　《htmlはイグニッションとバーアイコンレイアウト担当》
 ├core/             
 │├ rendering/              
 ││  ├── drawing-engine.js    <-- （Phase3B）
 ││  ├── canvas2d-engine.js   <-- （Phase4A4）
-││  ├── webgl-engine.js      <-- （Phase4A2）
+││  ├── webgl-engine.js      <-- （Phase4A'6）
 ││  ├── webgpu-engine.js     //  （仮空ファイル）
-││  ├── rendering-bridge.js  <-- （Phase4A4）
+││  ├── rendering-bridge.js  <-- （Phase4A'6）
 ││  ├── shader-programs/     // シェーダー管理（仮空ファイル）
 ││  │   ├─ blend-shaders.js  // ブレンドモード（仮空ファイル）
 ││  │   └─ filter-shaders.js // フィルター効果（仮空ファイル） 
