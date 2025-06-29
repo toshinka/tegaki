@@ -1,4 +1,8 @@
-core-engine.js（Phase4A1）    ⇐----　ToshinkaTegakiTool.html（Phase2）
+
+
+
+
+core-engine.js（Phase3B）    ⇐----　ToshinkaTegakiTool.html（Phase2）
 │  　　　　　　　　　　　　《htmlはイグニッションとバーアイコンレイアウト担当》
 ├core/             
 │　└ rendering/              

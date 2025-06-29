@@ -44,7 +44,7 @@ class CanvasManager {
     constructor(app) {
         this.app = app;
         this.displayCanvas = document.getElementById('drawingCanvas');
-        // this.displayCtx = this.displayCanvas.getContext('2d', { willReadFrequently: true });
+        this.displayCtx = this.displayCanvas.getContext('2d', { willReadFrequently: true });
         this.canvasArea = document.getElementById('canvas-area');
         this.canvasContainer = document.getElementById('canvas-container');
         this.width = this.displayCanvas.width;
@@ -80,8 +80,6 @@ class CanvasManager {
         this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
         
         this.bindEvents();
-        // ★★★ ↓↓ この一行を追加してください ↓↓ ★★★
-        this.renderingBridge.setEngine('webgl');
     }
     
     bindEvents() {

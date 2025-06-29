@@ -1,0 +1,165 @@
+# WebGL初期化問題の分析と解決策
+
+## 🚨 主要問題点
+
+### 1. **WebGLコンテキスト取得失敗**
+```javascript
+// 現在のコード（webgl-engine.js:23）
+this.gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+if (!this.gl) {
+    throw new Error('WebGL is not supported in this browser.');
+}
+```
+
+**問題**: Canvas2Dコンテキストが既に取得されているcanvasからWebGLコンテキストを取得しようとしている
+
+### 2. **Canvas要素の重複使用**
+- `core-engine.js`でCanvas2Dコンテキストを取得
+- 同じcanvas要素でWebGLコンテキストを取得しようとして失敗
+
+### 3. **rendering-bridge.js の初期化タイミング**
+```javascript
+// core-engine.js:53
+this.renderingBridge = new RenderingBridge(this.displayCanvas);
+
+// core-engine.js:58 
+this.renderingBridge.setEngine('webgl');
+```
+**問題**: RenderingBridge初期化時にWebGLエンジンが失敗していても、後でsetEngineが呼ばれている
+
+## 🔧 解決策
+
+### 解決策1: Canvas要素の分離（推奨）
+```javascript
+// core-engine.js の修正案
+constructor(app) {
+    this.app = app;
+    this.displayCanvas = document.getElementById('drawingCanvas');
+    
+    // WebGL用の隠れcanvasを作成
+    this.webglCanvas = document.createElement('canvas');
+    this.webglCanvas.width = this.displayCanvas.width;
+    this.webglCanvas.height = this.displayCanvas.height;
+    
+    this.canvasArea = document.getElementById('canvas-area');
+    this.canvasContainer = document.getElementById('canvas-container');
+    this.width = this.displayCanvas.width;
+    this.height = this.displayCanvas.height;
+
+    // WebGL用canvasを使用してRenderingBridgeを初期化
+    this.renderingBridge = new RenderingBridge(this.webglCanvas, this.displayCanvas);
+    
+    // 以下省略...
+}
+```
+
+### 解決策2: WebGL対応状況の事前チェック
+```javascript
+// webgl-engine.js の修正案
+static isSupported(canvas) {
+    try {
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        return !!gl;
+    } catch (e) {
+        return false;
+    }
+}
+
+constructor(canvas) {
+    super(canvas);
+    
+    if (!WebGLEngine.isSupported(canvas)) {
+        console.warn('WebGL is not supported, falling back to Canvas2D');
+        this.gl = null;
+        return;
+    }
+    
+    // WebGL初期化処理...
+}
+```
+
+### 解決策3: RenderingBridge の初期化フロー改善
+```javascript
+// rendering-bridge.js の修正案
+constructor(webglCanvas, displayCanvas = null) {
+    this.engines = {};
+    this.currentEngine = null;
+    this.webglCanvas = webglCanvas;
+    this.displayCanvas = displayCanvas || webglCanvas;
+    
+    // Canvas2Dエンジンを優先的に初期化
+    try {
+        this.engines['canvas2d'] = new Canvas2DEngine(this.displayCanvas);
+        this.currentEngine = this.engines['canvas2d'];
+        this.currentEngineType = 'canvas2d';
+    } catch (error) {
+        console.error('Failed to initialize Canvas2D engine:', error);
+    }
+    
+    // WebGLエンジンの初期化を試行
+    if (WebGLEngine.isSupported(this.webglCanvas)) {
+        try {
+            this.engines['webgl'] = new WebGLEngine(this.webglCanvas);
+        } catch (error) {
+            console.warn('WebGL engine initialization failed:', error);
+        }
+    }
+}
+
+setEngine(type) {
+    if (this.engines[type] && this.engines[type].gl !== null) {
+        this.currentEngine = this.engines[type];
+        this.currentEngineType = type;
+        return true;
+    } else {
+        console.warn(`${type} engine is not available. Cannot switch.`);
+        return false;
+    }
+}
+```
+
+## 🎯 実装優先順位
+
+### Phase 4A-1 修正版の推奨アプローチ
+
+1. **即座に実装すべき修正**:
+   - WebGL対応チェック機能
+   - Canvas2Dへのフォールバック機能
+   - エラーハンドリングの改善
+
+2. **段階的な実装**:
+   - Canvas要素分離（WebGL専用canvas作成）
+   - RenderingBridgeの初期化フロー改善
+   - WebGLエンジンの段階的機能実装
+
+3. **テスト項目**:
+   - WebGL非対応ブラウザでの動作確認
+   - Canvas2D↔WebGL切り替えテスト
+   - 既存機能の動作継続確認
+
+## 🚀 次のステップ
+
+### Phase 4A-1 完了目標
+- [ ] WebGL初期化エラーの解決
+- [ ] Canvas2D/WebGL切り替え機能の確立
+- [ ] 既存機能の100%動作継続
+- [ ] WebGL基本描画（クリア）の動作確認
+
+### Phase 4A-2 準備
+- レイヤーのテクスチャ化設計
+- シェーダープログラム管理システム設計
+- パフォーマンス測定方法の確立
+
+## 💡 技術的考慮事項
+
+### WebGL制限事項
+- 同一Canvas要素で複数コンテキスト取得不可
+- ブラウザ対応状況の差異
+- メモリ管理の複雑さ
+
+### 回避策
+- Canvas要素の分離使用
+- 段階的フォールバック実装
+- エラー処理の充実
+
+この修正により、WebGL対応環境では高速描画、非対応環境では安定したCanvas2D描画が可能になります。
