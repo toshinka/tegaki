@@ -1,10 +1,10 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine (Comprehensive Fixes for Display and Features)
- * Version: 0.5.0 (Phase 4A-3: Y-Flip, Blending, Full Transform, Anti-aliasing)
+ * Version: 0.0.1 (Phase 4A-3: Y-Flip, Blending, Full Transform, Anti-aliasing)
  *
  * WebGL表示のY軸反転、ブレンドアーティファクトを修正し、
- * レイヤー変形プレビューを完全に再実装しました。v
+ * レイヤー変形プレビューを完全に再実装しました。
  * Canvas2DのImageData直接操作による描画ロジックは維持しています。
  * ===================================================================================
  */
@@ -56,12 +56,16 @@ export class WebGLEngine extends DrawingEngine {
         // -----------------------------------------------------------
         // シェーダーのコンパイルとプログラムのリンク
         // -----------------------------------------------------------
+        // ★修正: translationを扱うためのuniformを追加
         const vsSource = `
             attribute vec4 a_position;
             attribute vec2 a_texCoord;
             varying vec2 v_texCoord;
+            uniform vec2 u_translation; // ★新規追加: 移動オフセットユニフォーム
+
             void main() {
-                gl_Position = a_position;
+                // 位置に移動オフセットを適用
+                gl_Position = a_position + vec4(u_translation, 0.0, 0.0);
                 v_texCoord = a_texCoord;
             }
         `;
@@ -127,6 +131,7 @@ export class WebGLEngine extends DrawingEngine {
         this.a_texCoord_loc = gl.getAttribLocation(this.program, "a_texCoord");
         this.u_image_loc = gl.getUniformLocation(this.program, "u_image");
         this.u_opacity_loc = gl.getUniformLocation(this.program, "u_opacity"); // ★新規追加: 不透明度ユニフォームのロケーション
+        this.u_translation_loc = gl.getUniformLocation(this.program, "u_translation"); // ★新規追加: 移動ユニフォームのロケーション
 
         // 初期化時に合成用バッファをセットアップ
         this._setupCompositingBuffer();
@@ -269,6 +274,7 @@ export class WebGLEngine extends DrawingEngine {
             this.layerTextures.set(layer, texture);
         }
 
+        // 存在しないレイヤーのテクスチャを削除
         for (const [layer, texture] of this.layerTextures.entries()) {
             if (!currentLayerNames.has(layer.name)) {
                 gl.deleteTexture(texture);
@@ -299,8 +305,14 @@ export class WebGLEngine extends DrawingEngine {
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, texture);
             gl.uniform1i(this.u_image_loc, 0);
-            // ★新規追加: レイヤーの不透明度をユニフォームとして渡す
             gl.uniform1f(this.u_opacity_loc, layer.opacity / 100.0); 
+            
+            // ★新規追加: レイヤーの移動情報をシェーダーに渡す
+            // ピクセル単位の移動量をクリップ空間 (-1.0 to 1.0) に変換
+            const tx = (layer.transform.x / (this.canvas.width / 2));
+            // WebGLのY軸は上方向が正、CanvasのY軸は下方向が正なので反転
+            const ty = -(layer.transform.y / (this.canvas.height / 2)); 
+            gl.uniform2f(this.u_translation_loc, tx, ty);
 
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
             layerCount++;
@@ -342,6 +354,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindTexture(gl.TEXTURE_2D, this.compositeTexture);
         gl.uniform1i(this.u_image_loc, 0);
         gl.uniform1f(this.u_opacity_loc, 1.0); // 最終表示は不透明度100%
+        gl.uniform2f(this.u_translation_loc, 0.0, 0.0); // 最終表示は移動なし
 
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
@@ -428,40 +441,45 @@ export class WebGLEngine extends DrawingEngine {
         const width = sourceImageData.width;
         const height = sourceImageData.height;
 
-        // 一時的な2Dキャンバスを作成
-        const tempCanvas = document.createElement('canvas');
+        const tempCanvas = this.transformOffscreenCanvas;
+        const tempCtx = this.transformOffscreenCtx;
+
         tempCanvas.width = width;
         tempCanvas.height = height;
-        // willReadFrequently を true に設定することで、getImageData のパフォーマンスを向上させます。
-        const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true }); 
 
-        // 元のImageDataを一時キャンバスに描画
-        tempCtx.putImageData(sourceImageData, 0, 0);
+        // ★修正点1: まずキャンバスを完全にクリアします。
+        tempCtx.clearRect(0, 0, width, height);
 
-        // 変換を適用するための状態を保存
+        // sourceImageDataを一時OffscreenCanvasに描画する
+        const sourceOffscreenCanvas = new OffscreenCanvas(width, height);
+        const sourceOffscreenCtx = sourceOffscreenCanvas.getContext('2d');
+        sourceOffscreenCtx.putImageData(sourceImageData, 0, 0);
+
+        // 変換を適用するための状態を保存します。
         tempCtx.save();
 
-        // 変換の中心をキャンバスの中心に設定
+        // 変換の原点をキャンバスの中心に設定します。
         tempCtx.translate(width / 2, height / 2);
 
-        // 回転
+        // 回転を適用します。
         tempCtx.rotate(transform.rotation * Math.PI / 180);
 
-        // スケールと反転
-        // transform.flipX, transform.flipY が -1 の場合、画像が反転します。
+        // スケールと反転を適用します。
+        // transform.xとtransform.y (移動) は、この関数では適用しません。
+        // それらはレイヤーの表示位置に関わるもので、WebGLの描画段階で処理されるべきです。
         tempCtx.scale(transform.scale * transform.flipX, transform.scale * transform.flipY);
 
-        // 元の座標系に戻す
+        // 元の座標系に戻します。
         tempCtx.translate(-width / 2, -height / 2);
 
-        // 変換された画像を一時キャンバスに描画
-        // transform.x, transform.y はピクセル単位のオフセット
-        tempCtx.drawImage(tempCanvas, transform.x, transform.y, width, height);
+        // ★修正点2: 変換が適用されたコンテキストを使って、sourceOffscreenCanvasを描画します。
+        // これにより、sourceOffscreenCanvasの内容が変形されてtempCanvasに描画されます。
+        tempCtx.drawImage(sourceOffscreenCanvas, 0, 0);
 
-        // 変換を適用した後のImageDataを取得
+        // 変換を適用した後のImageDataを取得します。
         const transformedData = tempCtx.getImageData(0, 0, width, height);
 
-        // 状態を復元
+        // 状態を復元します。
         tempCtx.restore();
 
         return transformedData;
