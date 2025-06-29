@@ -1,11 +1,11 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.0.3 (Phase 4A-4 Debugging - getCanvasCoordinates focus)
+ * Version: 2.0.4 (Phase 4A-4 Bugfix - getCanvasCoordinates active canvas fix)
  *
  * ・レイヤー結合時のエラーを修正
  * ・ビュー拡大縮小時のペン座標ズレを修正
- * ・★★getCanvasCoordinatesに詳細デバッグログを追加★★
+ * ・★★getCanvasCoordinatesがアクティブなキャンバスを参照するように修正★★
  * ===================================================================================
  */
 
@@ -93,11 +93,11 @@ class CanvasManager {
     }
 
     onPointerDown(e) {
-        console.log('CanvasManager.onPointerDown: Pointer Down Event Detected'); // ★デバッグログ
+        console.log('CanvasManager.onPointerDown: Pointer Down Event Detected');
         if (e.button !== 0) return;
         
         const coords = this.getCanvasCoordinates(e);
-        console.log('CanvasManager.onPointerDown: Canvas Coordinates:', coords); // ★デバッグログ
+        console.log('CanvasManager.onPointerDown: Canvas Coordinates:', coords);
         
         if (this.isVDown) {
             this.startLayerTransform(e);
@@ -110,18 +110,18 @@ class CanvasManager {
         }
 
         if (!coords) {
-            console.log('CanvasManager.onPointerDown: Coordinates are null. Skipping drawing.'); // ★デバッグログ
+            console.log('CanvasManager.onPointerDown: Coordinates are null. Skipping drawing.');
             return;
         }
         
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) {
-            console.log('CanvasManager.onPointerDown: No active layer or layer not visible. Skipping drawing.'); // ★デバッグログ
+            console.log('CanvasManager.onPointerDown: No active layer or layer not visible. Skipping drawing.');
             return;
         }
         
         if (this.currentTool === 'bucket') {
-            console.log('CanvasManager.onPointerDown: Tool is Bucket. Calling bucketTool.fill'); // ★デバッグログ
+            console.log('CanvasManager.onPointerDown: Tool is Bucket. Calling bucketTool.fill');
             this.app.bucketTool.fill(activeLayer.imageData, coords.x, coords.y, hexToRgba(this.currentColor));
             this.renderAllLayers();
             this.saveState();
@@ -135,10 +135,10 @@ class CanvasManager {
         const size = this.calculatePressureSize(this.currentSize, e.pressure || 1.0);
         
         this._updateDirtyRect(coords.x, coords.y, size);
-        console.log('CanvasManager.onPointerDown: Calling renderingBridge.drawCircle'); // ★デバッグログ
+        console.log('CanvasManager.onPointerDown: Calling renderingBridge.drawCircle');
         this.renderingBridge.drawCircle(
             activeLayer.imageData, coords.x, coords.y, size / 2, 
-            this.currentColor, this.currentTool === 'eraser' // WebGL EngineはhexColorを受け取る
+            this.currentColor, this.currentTool === 'eraser'
         );
         
         this._requestRender();
@@ -146,12 +146,11 @@ class CanvasManager {
     }
     
     onPointerMove(e) {
-        // console.log('CanvasManager.onPointerMove: Pointer Move Event Detected'); // ★デバッグログ (量が多いのでコメントアウト)
+        // console.log('CanvasManager.onPointerMove: Pointer Move Event Detected');
         if (this.isLayerTransforming) {
             const dx = e.clientX - this.transformStartX; const dy = e.clientY - this.transformStartY;
             const t = this.transformTargetLayer.transform; const ot = this.originalLayerTransform;
             if (this.transformMode === 'move') {
-                // ★★★ 座標ズレ修正: 移動量にもスケールを反映 ★★★
                 t.x = ot.x + dx / this.viewTransform.scale;
                 t.y = ot.y + dy / this.viewTransform.scale;
             } else {
@@ -170,13 +169,13 @@ class CanvasManager {
         const coords = this.getCanvasCoordinates(e);
         if (!coords) {
             this.lastPoint = null;
-            console.log('CanvasManager.onPointerMove: Coordinates are null. Stopping drawing for this move.'); // ★デバッグログ
+            console.log('CanvasManager.onPointerMove: Coordinates are null. Stopping drawing for this move.');
             return;
         }
         
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) {
-            console.log('CanvasManager.onPointerMove: No active layer or layer not visible. Skipping drawing.'); // ★デバッグログ
+            console.log('CanvasManager.onPointerMove: No active layer or layer not visible. Skipping drawing.');
             return;
         }
         if (!this.lastPoint) { this.lastPoint = { ...coords, pressure: e.pressure || 1.0 }; return; }
@@ -186,10 +185,10 @@ class CanvasManager {
         this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, this.currentSize * 2);
         this._updateDirtyRect(coords.x, coords.y, this.currentSize * 2);
         
-        console.log('CanvasManager.onPointerMove: Calling renderingBridge.drawLine'); // ★デバッグログ
+        console.log('CanvasManager.onPointerMove: Calling renderingBridge.drawLine');
         this.renderingBridge.drawLine(
             activeLayer.imageData, this.lastPoint.x, this.lastPoint.y, coords.x, coords.y,
-            this.currentSize, this.currentColor, this.currentTool === 'eraser', // WebGL EngineはhexColorを受け取る
+            this.currentSize, this.currentColor, this.currentTool === 'eraser',
             this.lastPoint.pressure, currentPressure, 
             this.calculatePressureSize.bind(this)
         );
@@ -198,7 +197,7 @@ class CanvasManager {
         this._requestRender();
     }
     onPointerUp(e) {
-        console.log('CanvasManager.onPointerUp: Pointer Up Event Detected'); // ★デバッグログ
+        console.log('CanvasManager.onPointerUp: Pointer Up Event Detected');
         if (this.isLayerTransforming) { this.commitLayerTransform(); }
         if (this.isDrawing) {
             this.isDrawing = false; this.pressureHistory = [];
@@ -213,7 +212,7 @@ class CanvasManager {
     }
 
     _renderDirty() {
-        console.log('CanvasManager._renderDirty: Rendering dirty rect.'); // ★デバッグログ
+        console.log('CanvasManager._renderDirty: Rendering dirty rect.');
         const rect = this.dirtyRect;
         if (rect.minX > rect.maxX) return;
 
@@ -225,7 +224,7 @@ class CanvasManager {
     }
 
     renderAllLayers() {
-        console.log('CanvasManager.renderAllLayers: Rendering all layers.'); // ★デバッグログ
+        console.log('CanvasManager.renderAllLayers: Rendering all layers.');
         this._updateDirtyRect(this.width / 2, this.height / 2, Math.max(this.width, this.height));
         this._requestRender();
     }
@@ -279,44 +278,44 @@ class CanvasManager {
         return Math.max(0.1, finalSize);
     }
 
-    // ★★★ 座標ズレ修正: getCanvasCoordinatesを修正 ★★★
     getCanvasCoordinates(e) {
         try {
-            const rect = this.displayCanvas.getBoundingClientRect();
-            console.log('getCanvasCoordinates: Bounding Rect:', rect.left, rect.top, rect.width, rect.height); // ★追加ログ
+            // ★変更点: displayCanvasではなく、現在アクティブな描画エンジンが使用しているキャンバスを参照
+            const activeDrawingCanvas = this.renderingBridge.currentEngine.canvas;
+            
+            const rect = activeDrawingCanvas.getBoundingClientRect();
+            console.log('getCanvasCoordinates: Bounding Rect:', rect.left, rect.top, rect.width, rect.height);
 
             // rect.widthが0になるのを防ぐ
             if (rect.width === 0 || rect.height === 0) {
-                console.warn('getCanvasCoordinates: Bounding Rect has zero width or height.', rect); // ★追加ログ
+                console.warn('getCanvasCoordinates: Bounding Rect has zero width or height.', rect);
                 return null;
             }
 
             // ビューポート上のクリック位置から、canvas要素の左上隅までの相対座標を計算
             let x = e.clientX - rect.left;
             let y = e.clientY - rect.top;
-            console.log('getCanvasCoordinates: Raw Relative Coords (after rect offset):', x, y); // ★追加ログ
+            console.log('getCanvasCoordinates: Raw Relative Coords (after rect offset):', x, y);
 
             // 表示上のサイズ(rect.width)と、ImageDataの本来のサイズ(this.width)の比率を使って座標をスケールする
-            // これにより、CSSによる拡大・縮小を逆算する
-            // ※注意: この計算は回転がない場合には正確ですが、回転がかかるとズレが生じます。
             x = x * (this.width / rect.width);
             y = y * (this.height / rect.height);
-            console.log('getCanvasCoordinates: Scaled Coords:', x, y); // ★追加ログ
+            console.log('getCanvasCoordinates: Scaled Coords:', x, y);
 
             // ビューの反転を考慮 (これはImageDataに対する反転なので、スケール後に適用)
             if (this.viewTransform.flipX === -1) { x = this.width - x; }
             if (this.viewTransform.flipY === -1) { y = this.height - y; }
-            console.log('getCanvasCoordinates: Flipped Coords:', x, y); // ★追加ログ
+            console.log('getCanvasCoordinates: Flipped Coords:', x, y);
 
             // 座標がキャンバスの範囲外に出ていないかチェック
             if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
-                console.warn('getCanvasCoordinates: Final Coords out of bounds:', x, y, 'Canvas size:', this.width, this.height); // ★追加ログ
+                console.warn('getCanvasCoordinates: Final Coords out of bounds:', x, y, 'Canvas size:', this.width, this.height);
                 return null;
             }
 
             return { x: Math.floor(x), y: Math.floor(y) };
         } catch (error) {
-            console.warn('CanvasManager.getCanvasCoordinates: 座標変換エラー:', error); // ★追加ログ
+            console.warn('CanvasManager.getCanvasCoordinates: 座標変換エラー:', error);
             return null;
         }
     }
@@ -480,7 +479,6 @@ class LayerManager {
         this.activeLayerIndex = -1; 
         this.width = 344; 
         this.height = 135;
-        // ★★★ エラー修正: レイヤー結合で使う一時キャンバスを保持 ★★★
         this.mergeCanvas = document.createElement('canvas');
         this.mergeCanvas.width = this.width;
         this.mergeCanvas.height = this.height;
@@ -493,7 +491,6 @@ class LayerManager {
     switchLayer(index) { if (index < 0 || index >= this.layers.length) return; this.activeLayerIndex = index; if (this.app.layerUIManager) { this.app.layerUIManager.renderLayers(); } } 
     getCurrentLayer() { return this.layers[this.activeLayerIndex] || null; } 
     duplicateActiveLayer() { const activeLayer = this.getCurrentLayer(); if (!activeLayer) return; const newLayer = new Layer(`${activeLayer.name}のコピー`, this.width, this.height); newLayer.imageData.data.set(activeLayer.imageData.data); newLayer.visible = activeLayer.visible; newLayer.opacity = activeLayer.opacity; newLayer.blendMode = activeLayer.blendMode; const insertIndex = this.activeLayerIndex + 1; this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
-    // ★★★ エラー修正: レイヤー結合処理を修正 ★★★
     mergeDownActiveLayer() {
         if (this.activeLayerIndex <= 0) return;
         const topLayer = this.layers[this.activeLayerIndex];
