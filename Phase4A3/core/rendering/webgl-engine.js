@@ -1,11 +1,12 @@
 /*
  * ===================================================================================
- * Toshinka Tegaki Tool - WebGL Engine (Phase 4A-3: Drawing & Compositing)
- * Version: 0.3.5 (Debug: Solid Red Fill for Visibility Test)
+ * Toshinka Tegaki Tool - WebGL Engine (Phase 4A-4: Final Compositing Fix)
+ * Version: 0.3.6 (Fix: Avoid overwriting GPU-drawn textures with stale CPU ImageData)
  *
- * 【今回追加】
- * ・renderToDisplayメソッドの最後に、デバッグ用にキャンバスを赤色で塗りつぶす処理を追加。
- * これにより、キャンバス自体が画面に表示されているかを確認します。
+ * 【今回修正】
+ * ・compositeLayersメソッド内で、LayerのImageDataからWebGLテクスチャを更新する処理を削除。
+ * これにより、drawCircle/drawLineでGPUに描画された内容が正しく反映されるようになります。
+ * ・renderToDisplayメソッド内のデバッグ用の赤色クリアを、元の透明クリアに戻しました。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -499,9 +500,8 @@ export class WebGLEngine extends DrawingEngine {
         for (const layer of layers) {
             if (!layer.visible || layer.opacity === 0) continue;
 
-            // ImageDataが更新されている可能性があるため、テクスチャを更新
             const { texture: layerTexture } = this._getOrCreateLayerResources(layer);
-            this._createOrUpdateTextureFromImageData(layer.imageData, layerTexture);
+            // ★ここから下の行を削除しました: this._createOrUpdateTextureFromImageData(layer.imageData, layerTexture);
 
             gl.bindTexture(gl.TEXTURE_2D, layerTexture);
             gl.uniform1f(this.textureProgram.opacityLocation, layer.opacity / 100.0); // 不透明度をuniformに設定
@@ -541,8 +541,8 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindFramebuffer(gl.FRAMEBUFFER, null); // 画面に直接描画
         gl.viewport(0, 0, this.width, this.height);
 
-        // === デバッグ用: 画面全体を赤く塗りつぶす ===
-        gl.clearColor(1.0, 0.0, 0.0, 1.0); // 赤色でクリア (RGBA)
+        // === デバッグ用: 画面全体を赤く塗りつぶす処理を削除し、元の透明クリアに戻す ===
+        gl.clearColor(0.0, 0.0, 0.0, 0.0); // 透明でクリア (RGBA)
         gl.clear(gl.COLOR_BUFFER_BIT);
         // ===========================================
 
