@@ -1,13 +1,15 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine (Phase 4A-3: Drawing & Compositing)
- * Version: 0.3.0
+ * Version: 0.3.1 (Debugging for renderToDisplay issue)
  *
  * レイヤーのImageDataをWebGLテクスチャに変換し、管理する機能に加え、
  * 以下の機能を追加しました:
  * ・レイヤーの合成と画面への描画
  * ・ペン（円、線）のWebGLによる描画
- * これにより、描画ツールの主要な機能がWebGLで動作するようになります。
+ *
+ * 【今回追加】
+ * ・renderToDisplayのエラー調査のためのデバッグログを追加
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -46,6 +48,10 @@ export class WebGLEngine extends DrawingEngine {
             this._initPenDrawResources(); // ペン描画用リソースの初期化
 
             console.log("WebGL Engine initialized successfully.");
+            // 初期化後のcompositeTextureの状態を確認
+            console.log("Initial compositeTexture:", this.compositeTexture);
+            console.log("Is initial compositeTexture a WebGLTexture?", this.gl.isTexture(this.compositeTexture));
+
         } catch (e) {
             console.error("WebGL Engine initialization failed:", e);
             // エラー時はWebGLコンテキストをnullに設定し、isSupportedでfalseを返す
@@ -519,6 +525,17 @@ export class WebGLEngine extends DrawingEngine {
             console.warn("WebGL not initialized or texture program missing for display.");
             return;
         }
+
+        // --- デバッグログの追加 ---
+        console.log("renderToDisplay called.");
+        console.log("Source texture (should be null):", sourceTexture);
+        console.log("Composite texture:", this.compositeTexture);
+        if (this.compositeTexture) {
+            console.log("Is compositeTexture a WebGLTexture (gl.isTexture)?", gl.isTexture(this.compositeTexture));
+        } else {
+            console.log("compositeTexture is null or undefined.");
+        }
+        // -----------------------
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null); // 画面に直接描画
         gl.viewport(0, 0, this.width, this.height);
