@@ -1,17 +1,14 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 2.0.0 (Phase 4A'5: GPU Accelerated Drawing)
+ * Version: 2.0.1 (Critical Bugfix Release)
  *
- * 従来のCPUベースのImageData操作による描画から、シェーダーを用いた
- * GPUアクセラレーションによる直接描画へとロジックを全面的に刷新しました。
- * これにより、ブラシ描画のパフォーマンスが大幅に向上します。
- *
- * - 新機能：
- * - 点描画用の専用シェーダープログラムを追加。
- * - 各レイヤーテクスチャに対応するフレームバッファ(FBO)を管理。
- * - drawCircle/drawLineを、FBOへのレンダリング命令に置換。
- * - 描画後にGPUからCPUへピクセルデータを読み戻し、Undo機能を維持。
+ * - 修正：
+ * - _readPixelsFromTexture内で発生していた 'const-sourceRow' という
+ * SyntaxErrorを修正しました。
+ * - gl.readPixelsのY座標の計算を修正し、正しい領域を読み取るようにしました。
+ * - GPUから読み取ったピクセルデータをImageDataへ正しく矩形コピーするように
+ * 書き込みロジックを修正しました。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -78,7 +75,7 @@ export class WebGLEngine extends DrawingEngine {
         // --- レイヤー合成用FBOのセットアップ ---
         this._setupCompositingBuffer();
 
-        console.log("WebGL Engine (v2.0.0 GPU Drawing) initialized successfully.");
+        console.log("WebGL Engine (v2.0.1 GPU Drawing, Bugfixed) initialized successfully.");
     }
 
     // --- 初期化ヘルパーメソッド ---
@@ -155,7 +152,7 @@ export class WebGLEngine extends DrawingEngine {
     }
 
     // --- WebGL コアメソッド ---
-    _compileShader(source, type) { /* (変更なし) */ const gl = this.gl; const shader = gl.createShader(type); gl.shaderSource(shader, source); gl.compileShader(shader); if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) { console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader)); gl.deleteShader(shader); return null; } return shader; }
+    _compileShader(source, type) { const gl = this.gl; const shader = gl.createShader(type); gl.shaderSource(shader, source); gl.compileShader(shader); if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) { console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader)); gl.deleteShader(shader); return null; } return shader; }
     _createProgram(vsSource, fsSource) { const gl = this.gl; const vs = this._compileShader(vsSource, gl.VERTEX_SHADER); const fs = this._compileShader(fsSource, gl.FRAGMENT_SHADER); if (!vs || !fs) return null; const program = gl.createProgram(); gl.attachShader(program, vs); gl.attachShader(program, fs); gl.linkProgram(program); if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(program)); gl.deleteProgram(program); return null; } program.locations = {}; const locs = (p) => { p.locations.a_position = gl.getAttribLocation(p, 'a_position'); p.locations.a_texCoord = gl.getAttribLocation(p, 'a_texCoord'); p.locations.u_image = gl.getUniformLocation(p, 'u_image'); p.locations.u_opacity = gl.getUniformLocation(p, 'u_opacity'); p.locations.u_resolution = gl.getUniformLocation(p, 'u_resolution'); p.locations.u_center = gl.getUniformLocation(p, 'u_center'); p.locations.u_radius = gl.getUniformLocation(p, 'u_radius'); p.locations.u_color = gl.getUniformLocation(p, 'u_color'); p.locations.u_is_eraser = gl.getUniformLocation(p, 'u_is_eraser'); }; locs(program); return program; }
     static isSupported() { try { const canvas = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))); } catch (e) { return false; } }
 
@@ -198,12 +195,11 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
-    _setupCompositingBuffer() { /* (変更なし) */ const gl = this.gl; const width = this.canvas.width; const height = this.canvas.height; if (this.compositeFBO) gl.deleteFramebuffer(this.compositeFBO); if (this.compositeTexture) gl.deleteTexture(this.compositeTexture); this.compositeTexture = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.compositeTexture); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); this.compositeFBO = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, this.compositeFBO); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.compositeTexture, 0); if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) { console.error('Compositing Framebuffer not complete'); } gl.bindFramebuffer(gl.FRAMEBUFFER, null); }
+    _setupCompositingBuffer() { const gl = this.gl; const width = this.canvas.width; const height = this.canvas.height; if (this.compositeFBO) gl.deleteFramebuffer(this.compositeFBO); if (this.compositeTexture) gl.deleteTexture(this.compositeTexture); this.compositeTexture = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.compositeTexture); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); this.compositeFBO = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, this.compositeFBO); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.compositeTexture, 0); if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) { console.error('Compositing Framebuffer not complete'); } gl.bindFramebuffer(gl.FRAMEBUFFER, null); }
     
     _setBlendMode(blendMode, isEraser = false) {
         const gl = this.gl;
         if (isEraser) {
-            // 消しゴム: ソースのアルファが0なので、先のブレンド関数でDSTの色がそのまま残り、ソースが重なった部分だけアルファが(1-1=0)になる。
             gl.blendFuncSeparate(gl.ZERO, gl.ONE, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
             return;
         }
@@ -231,18 +227,35 @@ export class WebGLEngine extends DrawingEngine {
         const fbo = this.layerFBOs.get(layer);
         if (!fbo) return;
 
+        // 対象領域がキャンバス範囲外なら何もしない
+        if (x + width <= 0 || y + height <= 0 || x >= this.canvas.width || y >= this.canvas.height) {
+            return;
+        }
+
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const data = new Uint8ClampedArray(width * height * 4);
-        gl.readPixels(x, y, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+        // gl.readPixelsのyは左下原点なので、ImageDataのy(左上原点)から変換する
+        const readY = this.canvas.height - (y + height);
+        gl.readPixels(x, readY, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-        // ImageDataは左上が原点なのでY軸を反転させる必要がある
-        const flippedData = new Uint8ClampedArray(width * height * 4);
+        // GPUから読み出したデータは上下が逆なので、CPU側(ImageData)に書き込む際に反転させる
+        const originalData = layer.imageData.data;
+        const stride = layer.imageData.width * 4;
         for (let row = 0; row < height; row++) {
-            const-sourceRow = data.subarray((height - 1 - row) * width * 4, (height - row) * width * 4);
-            flippedData.set(sourceRow, row * width * 4);
+            const destY = y + row;
+            // 書き込み先のy座標が範囲内かチェック
+            if (destY < 0 || destY >= layer.imageData.height) continue;
+            
+            const sourceOffset = (height - 1 - row) * width * 4;
+            const destOffset = destY * stride + x * 4;
+            const rowData = data.subarray(sourceOffset, sourceOffset + width * 4);
+            
+            // 書き込み先のx座標が範囲内かチェック
+            if (x < layer.imageData.width) {
+                 originalData.set(rowData, destOffset);
+            }
         }
-        layer.imageData.data.set(flippedData, (y * layer.imageData.width + x) * 4);
     }
     
     // ### 描画メソッド (GPU実装) ###
@@ -304,9 +317,9 @@ export class WebGLEngine extends DrawingEngine {
         }
     }
 
-    fill(imageData, color) { /* (変更なし) */ const data = imageData.data; for (let i = 0; i < data.length; i += 4) { data[i] = color.r; data[i + 1] = color.g; data[i + 2] = color.b; data[i + 3] = color.a; } }
-    clear(imageData) { /* (変更なし) */ imageData.data.fill(0); }
-    getTransformedImageData(sourceImageData, transform) { /* (変更なし) */ const sw = sourceImageData.width; const sh = sourceImageData.height; const tempCanvas = this.transformOffscreenCanvas; const tempCtx = this.transformOffscreenCtx; tempCanvas.width = sw; tempCanvas.height = sh; const sourceCanvas = document.createElement('canvas'); sourceCanvas.width = sw; sourceCanvas.height = sh; sourceCanvas.getContext('2d').putImageData(sourceImageData, 0, 0); tempCtx.clearRect(0, 0, sw, sh); tempCtx.save(); tempCtx.translate(transform.x, transform.y); tempCtx.translate(sw / 2, sh / 2); tempCtx.rotate(transform.rotation * Math.PI / 180); tempCtx.scale(transform.scale * transform.flipX, transform.scale * transform.flipY); tempCtx.translate(-sw / 2, -sh / 2); tempCtx.drawImage(sourceCanvas, 0, 0); tempCtx.restore(); return tempCtx.getImageData(0, 0, sw, sh); }
+    fill(imageData, color) { const data = imageData.data; for (let i = 0; i < data.length; i += 4) { data[i] = color.r; data[i + 1] = color.g; data[i + 2] = color.b; data[i + 3] = color.a; } }
+    clear(imageData) { imageData.data.fill(0); }
+    getTransformedImageData(sourceImageData, transform) { const sw = sourceImageData.width; const sh = sourceImageData.height; const tempCanvas = this.transformOffscreenCanvas; const tempCtx = this.transformOffscreenCtx; tempCanvas.width = sw; tempCanvas.height = sh; const sourceCanvas = document.createElement('canvas'); sourceCanvas.width = sw; sourceCanvas.height = sh; sourceCanvas.getContext('2d').putImageData(sourceImageData, 0, 0); tempCtx.clearRect(0, 0, sw, sh); tempCtx.save(); tempCtx.translate(transform.x, transform.y); tempCtx.translate(sw / 2, sh / 2); tempCtx.rotate(transform.rotation * Math.PI / 180); tempCtx.scale(transform.scale * transform.flipX, transform.scale * transform.flipY); tempCtx.translate(-sw / 2, -sh / 2); tempCtx.drawImage(sourceCanvas, 0, 0); tempCtx.restore(); return tempCtx.getImageData(0, 0, sw, sh); }
 
     // --- レイヤー合成と画面表示 (変更あり) ---
 
