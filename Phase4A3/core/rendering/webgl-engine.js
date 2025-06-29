@@ -1,15 +1,11 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine (Phase 4A-3: Drawing & Compositing)
- * Version: 0.3.4 (Bug Fix: gl is not defined in constructor)
+ * Version: 0.3.5 (Debug: Solid Red Fill for Visibility Test)
  *
- * レイヤーのImageDataをWebGLテクスチャに変換し、管理する機能に加え、
- * 以下の機能を追加しました:
- * ・レイヤーの合成と画面への描画
- * ・ペン（円、線）のWebGLによる描画
- *
- * 【今回修正】
- * ・コンストラクタ内のgl.blendFuncでの`gl`未定義エラーを修正。
+ * 【今回追加】
+ * ・renderToDisplayメソッドの最後に、デバッグ用にキャンバスを赤色で塗りつぶす処理を追加。
+ * これにより、キャンバス自体が画面に表示されているかを確認します。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -47,7 +43,6 @@ export class WebGLEngine extends DrawingEngine {
             }
             this.gl.clearColor(0.0, 0.0, 0.0, 0.0); // 透明でクリア
             this.gl.enable(this.gl.BLEND);
-            // ★ここを修正しました！ gl => this.gl
             this.gl.blendFunc(this.gl.ONE, this.gl.ONE_MINUS_SRC_ALPHA); // 通常のアルファブレンド
 
             this._initShaders();
@@ -527,7 +522,7 @@ export class WebGLEngine extends DrawingEngine {
      * 合成された画像を画面にレンダリングする
      * @param {*} [anyArgs] - core-engine.jsから渡される可能性のある任意の引数。ここでは無視。
      */
-    renderToDisplay(...anyArgs) { // 引数をanyArgsとして受け取り、使わない
+    renderToDisplay(...anyArgs) {
         const gl = this.gl;
         if (!gl || !this.textureProgram) {
             console.warn("WebGL not initialized or texture program missing for display.");
@@ -545,8 +540,11 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null); // 画面に直接描画
         gl.viewport(0, 0, this.width, this.height);
-        gl.clearColor(0.0, 0.0, 0.0, 0.0); // 画面を透明でクリア
+
+        // === デバッグ用: 画面全体を赤く塗りつぶす ===
+        gl.clearColor(1.0, 0.0, 0.0, 1.0); // 赤色でクリア (RGBA)
         gl.clear(gl.COLOR_BUFFER_BIT);
+        // ===========================================
 
         gl.useProgram(this.textureProgram);
 
