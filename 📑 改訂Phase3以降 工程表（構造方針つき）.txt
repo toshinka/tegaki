@@ -6,9 +6,9 @@ core-engine.js（Phase3B）    ⇐----　ToshinkaTegakiTool.html（Phase2）
 │├ rendering/              
 ││  ├── drawing-engine.js    <-- （Phase3B）
 ││  ├── canvas2d-engine.js   <-- （Phase3A）
-││  ├── webgl-engine.js      <-- （Phase4A1予定）
+││  ├── webgl-engine.js      <-- （Phase4A2）
 ││  ├── webgpu-engine.js     //  （仮空ファイル）
-││  ├── rendering-bridge.js  <-- （Phase4A1予定）
+││  ├── rendering-bridge.js  <-- （Phase4A1）
 ││  ├── shader-programs/     // シェーダー管理（仮空ファイル）
 ││  │   ├─ blend-shaders.js  // ブレンドモード（仮空ファイル）
 ││  │   └─ filter-shaders.js // フィルター効果（仮空ファイル） 
