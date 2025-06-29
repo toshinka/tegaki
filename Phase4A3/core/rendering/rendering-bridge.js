@@ -1,206 +1,373 @@
 /*
  * ===================================================================================
- * Toshinka Tegaki Tool - Rendering Bridge (Dynamic Switching) - FIXED VERSION
- * Version: 2.1.1 (Phase 4A-3: WebGL Canvas Display Fix)
+ * Toshinka Tegaki Tool - WebGL Engine (Full Rendering Pipeline) - FIXED VERSION
+ * Version: 0.3.0 (Phase 4A-4: WebGL Compositing & Display Fix)
  *
- * 描画エンジンを動的に切り替える機能を持つ、新しいブリッジです。
- * core-engineからの描画命令を、現在選択されているエンジン（Canvas2D or WebGL）
- * に適切に振り分けます。
- *
- * 【修正点】
- * ・WebGLキャンバスの表示問題を修正
- * ・適切なスタイル設定とDOM操作を追加
+ * レイヤーのImageDataをWebGLテクスチャに変換し、それを合成して画面に表示する
+ * 完全な描画パイプラインを実装しました。
  * ===================================================================================
  */
-import { Canvas2DEngine } from './canvas2d-engine.js';
-import { WebGLEngine } from './webgl-engine.js';
+import { DrawingEngine } from './drawing-engine.js';
 
-export class RenderingBridge {
-    constructor(displayCanvas) {
-        this.displayCanvas = displayCanvas;
-        this.engines = {};
-        this.currentEngine = null;
-        this.currentEngineType = '';
-        this.webglCanvasAdded = false; // WebGLキャンバスがDOMに追加済みかのフラグ
+export class WebGLEngine extends DrawingEngine {
+    constructor(canvas) {
+        super(canvas);
+        this.gl = null;
+        this.program = null; // シェーダープログラム
+        this.positionBuffer = null; // 頂点バッファ
+        this.texCoordBuffer = null; // テクスチャ座標バッファ
+        this.compositeTexture = null; // 合成結果を格納するテクスチャ
+        this.compositeFBO = null; // 合成用フレームバッファ
 
-        // 1. Canvas2Dエンジンは必ず初期化
+        // ★新規追加: 作成したテクスチャをレイヤーごとに保管する場所
+        this.layerTextures = new Map();
+
         try {
-            // Canvas2Dは表示用のキャンバスを直接使う
-            this.engines['canvas2d'] = new Canvas2DEngine(this.displayCanvas);
-            console.log("Canvas2D Engine initialized successfully.");
+            this.gl = canvas.getContext('webgl', { preserveDrawingBuffer: true }) || canvas.getContext('experimental-webgl', { preserveDrawingBuffer: true });
+            if (!this.gl) {
+                throw new Error('WebGL is not supported in this browser.');
+            }
         } catch (e) {
-            console.error("Failed to initialize Canvas2D engine:", e);
-            throw e; // Canvas2Dは必須なので、失敗したらここで処理を止める
+            console.error("WebGL Engine initialization failed:", e);
+            return;
         }
 
-        // 2. WebGLエンジンが利用可能かチェックして、試行する
-        if (WebGLEngine.isSupported()) {
-            try {
-                // ★重要★ WebGL用には、メモリ上に新しい非表示のキャンバスを作成して渡す
-                // これにより「同一Canvas要素で複数コンテキスト取得不可」問題を回避する
-                const webglCanvas = document.createElement('canvas');
-                webglCanvas.width = this.displayCanvas.width;
-                webglCanvas.height = this.displayCanvas.height;
-                
-                // ★修正★ WebGLキャンバスに適切なスタイルを設定
-                this._setupWebGLCanvasStyle(webglCanvas);
-                
-                this.engines['webgl'] = new WebGLEngine(webglCanvas);
+        const gl = this.gl;
 
-                // .glプロパティが正常に作られていれば成功とみなす
-                if (this.engines['webgl'].gl) {
-                    console.log("WebGL Engine initialized successfully.");
-                    // ★修正★ 初期化時にWebGLキャンバスをDOMに追加
-                    this._addWebGLCanvasToDOM();
-                } else {
-                     console.warn("WebGL Engine initialization returned no context. It will be unavailable.");
-                }
-            } catch (e) {
-                console.warn("WebGL Engine initialization failed:", e);
+        // WebGL初期設定
+        gl.clearColor(0.0, 0.0, 0.0, 0.0); // 背景は透明に
+        gl.enable(gl.BLEND); // アルファブレンドを有効にする
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); // 通常のアルファブレンド設定
+
+        // -----------------------------------------------------------
+        // シェーダーのコンパイルとプログラムのリンク
+        // -----------------------------------------------------------
+        const vsSource = `
+            attribute vec4 a_position;
+            attribute vec2 a_texCoord;
+            varying vec2 v_texCoord;
+            void main() {
+                gl_Position = a_position;
+                v_texCoord = a_texCoord;
             }
-        } else {
-            console.warn("WebGL is not supported in this browser.");
-        }
+        `;
 
-        // ★改修点: デフォルトのエンジンをWebGLに設定 (利用可能な場合)
-        if (this.engines['webgl'] && this.engines['webgl'].gl) {
-            this.setEngine('webgl');
-        } else {
-            // WebGLが利用できない場合はCanvas2Dにフォールバック
-            this.setEngine('canvas2d');
-            console.warn("Falling back to Canvas2D engine as WebGL is not available or failed to initialize.");
-        }
-    }
-
-    /**
-     * ★新規追加★ WebGLキャンバスのスタイルを設定
-     * @param {HTMLCanvasElement} webglCanvas 
-     */
-    _setupWebGLCanvasStyle(webglCanvas) {
-        const displayStyle = window.getComputedStyle(this.displayCanvas);
-        
-        // 基本的なスタイルをコピー
-        webglCanvas.style.position = displayStyle.position || 'absolute';
-        webglCanvas.style.left = displayStyle.left || '0px';
-        webglCanvas.style.top = displayStyle.top || '0px';
-        webglCanvas.style.width = displayStyle.width || `${this.displayCanvas.width}px`;
-        webglCanvas.style.height = displayStyle.height || `${this.displayCanvas.height}px`;
-        webglCanvas.style.zIndex = displayStyle.zIndex || '1';
-        webglCanvas.style.pointerEvents = 'none'; // イベントは元のキャンバスで処理
-        webglCanvas.style.display = 'none'; // 初期は非表示
-        
-        // デバッグ用のボーダー（必要に応じて削除）
-        webglCanvas.style.border = '2px solid red';
-        
-        console.log("WebGL canvas style setup completed:", {
-            width: webglCanvas.style.width,
-            height: webglCanvas.style.height,
-            position: webglCanvas.style.position
-        });
-    }
-
-    /**
-     * ★新規追加★ WebGLキャンバスをDOMに追加
-     */
-    _addWebGLCanvasToDOM() {
-        if (!this.webglCanvasAdded && this.engines['webgl'] && this.displayCanvas.parentNode) {
-            const webglCanvas = this.engines['webgl'].canvas;
-            this.displayCanvas.parentNode.insertBefore(webglCanvas, this.displayCanvas);
-            this.webglCanvasAdded = true;
-            console.log("WebGL canvas added to DOM");
-        }
-    }
-
-    /**
-     * 使用する描画エンジンを切り替えます。
-     * @param {'canvas2d' | 'webgl'} type - 切り替えたいエンジンの種類
-     * @returns {boolean} 切り替えが成功したかどうか
-     */
-    setEngine(type) {
-        if (this.engines[type] && (type !== 'webgl' || this.engines[type].gl)) {
-            this.currentEngine = this.engines[type];
-            this.currentEngineType = type;
-            console.log(`Switched rendering engine to: ${type}`);
-            
-            // ★修正★ より確実なキャンバス表示切り替え
-            if (type === 'webgl') {
-                // WebGLに切り替え
-                if (!this.webglCanvasAdded) {
-                    this._addWebGLCanvasToDOM();
-                }
-                
-                // WebGLキャンバスを表示
-                this.currentEngine.canvas.style.display = 'block';
-                console.log("WebGL canvas display set to block");
-                
-                // Canvas2Dキャンバスを非表示
-                this.displayCanvas.style.display = 'none';
-                console.log("Canvas2D canvas hidden");
-                
-            } else { // Canvas2Dに戻す場合
-                // WebGLキャンバスを非表示
-                if (this.engines['webgl'] && this.engines['webgl'].canvas) {
-                    this.engines['webgl'].canvas.style.display = 'none';
-                    console.log("WebGL canvas hidden");
-                }
-                
-                // Canvas2Dキャンバスを表示
-                this.displayCanvas.style.display = 'block';
-                console.log("Canvas2D canvas displayed");
+        const fsSource = `
+            precision mediump float;
+            varying vec2 v_texCoord;
+            uniform sampler2D u_image;
+            void main() {
+                gl_FragColor = texture2D(u_image, v_texCoord);
             }
+        `;
 
-            // ★デバッグ用★ 現在の表示状態をログ出力
-            this._logCanvasVisibility();
+        const vertexShader = this._compileShader(vsSource, gl.VERTEX_SHADER);
+        const fragmentShader = this._compileShader(fsSource, gl.FRAGMENT_SHADER);
+        this.program = this._createProgram(vertexShader, fragmentShader);
 
-            return true;
-        } else {
-            console.warn(`'${type}' engine is not available. Staying on '${this.currentEngineType}'.`);
+        if (!this.program) {
+            console.error("Failed to create WebGL program.");
+            return;
+        }
+
+        gl.useProgram(this.program);
+
+        // -----------------------------------------------------------
+        // 画面全体を覆うクアッド（四角形）の頂点バッファ
+        // -----------------------------------------------------------
+        this.positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        // x, y 座標 (-1 to 1 のクリップ空間)
+        const positions = [
+            -1.0, 1.0,  // top-left
+            -1.0, -1.0, // bottom-left
+            1.0, 1.0,   // top-right
+            1.0, -1.0,  // bottom-right
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+        // -----------------------------------------------------------
+        // テクスチャ座標バッファ (画像の上から下へ)
+        // -----------------------------------------------------------
+        this.texCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        // WebGLのテクスチャ座標は左下(0,0)、右上(1,1)だが、
+        // 画像のY軸は上から下なので、Y座標を反転させる (0,1 -> 0,0) (1,1 -> 1,0)
+        const texCoords = [
+            0.0, 0.0,  // top-left -> mapped to (0,1) for image
+            0.0, 1.0,  // bottom-left -> mapped to (0,0) for image
+            1.0, 0.0,  // top-right -> mapped to (1,1) for image
+            1.0, 1.0,   // bottom-right -> mapped to (1,0) for image
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
+
+        // -----------------------------------------------------------
+        // アトリビュートとユニフォームのロケーション取得
+        // -----------------------------------------------------------
+        this.a_position_loc = gl.getAttribLocation(this.program, "a_position");
+        this.a_texCoord_loc = gl.getAttribLocation(this.program, "a_texCoord");
+        this.u_image_loc = gl.getUniformLocation(this.program, "u_image");
+
+        // 初期化時に合成用バッファをセットアップ
+        this._setupCompositingBuffer();
+        console.log("WebGL Engine initialized successfully.");
+    }
+
+    /**
+     * シェーダーをコンパイルするヘルパーメソッド
+     */
+    _compileShader(source, type) {
+        const gl = this.gl;
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
+            gl.deleteShader(shader);
+            return null;
+        }
+        return shader;
+    }
+
+    /**
+     * シェーダープログラムを作成するヘルパーメソッド
+     */
+    _createProgram(vs, fs) {
+        const gl = this.gl;
+        const program = gl.createProgram();
+        gl.attachShader(program, vs);
+        gl.attachShader(program, fs);
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(program));
+            gl.deleteProgram(program);
+            return null;
+        }
+        return program;
+    }
+
+    /**
+     * WebGLが利用可能か事前にチェックするための静的メソッド
+     * @returns {boolean}
+     */
+    static isSupported() {
+        try {
+            const canvas = document.createElement('canvas');
+            return !!(canvas.getContext('webgl') || canvas.getContext('experimental-webgl'));
+        } catch (e) {
             return false;
         }
     }
 
     /**
-     * ★デバッグ用★ キャンバスの表示状態をログ出力
+     * ImageDataからWebGLテクスチャを作成または更新します。
+     * @param {ImageData} imageData ソースとなるImageData
+     * @param {WebGLTexture} [existingTexture] 更新する既存のテクスチャ (オプション)
+     * @returns {WebGLTexture} 作成または更新されたテクスチャ
      */
-    _logCanvasVisibility() {
-        console.log("Canvas visibility status:");
-        console.log("- Canvas2D display:", this.displayCanvas.style.display);
-        console.log("- Canvas2D visible:", this.displayCanvas.offsetWidth > 0 && this.displayCanvas.offsetHeight > 0);
-        
-        if (this.engines['webgl'] && this.engines['webgl'].canvas) {
-            const webglCanvas = this.engines['webgl'].canvas;
-            console.log("- WebGL display:", webglCanvas.style.display);
-            console.log("- WebGL visible:", webglCanvas.offsetWidth > 0 && webglCanvas.offsetHeight > 0);
-            console.log("- WebGL in DOM:", document.contains(webglCanvas));
-        }
+    _createOrUpdateTextureFromImageData(imageData, existingTexture = null) {
+        const gl = this.gl;
+        const texture = existingTexture || gl.createTexture();
+
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+
+        // ピクセル形式とデータ型を設定
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imageData);
+
+        // テクスチャのパラメータを設定 (線形補間、端をクランプ)
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        // 他のテクスチャに影響を与えないように、バインドを解除
+        gl.bindTexture(gl.TEXTURE_2D, null);
+
+        return texture;
     }
 
     /**
-     * ★新規追加★ エンジン切り替えテスト用メソッド
+     * ★新規追加★ 合成結果を格納するFBOとテクスチャをセットアップします。
      */
-    testEngineSwitch() {
-        console.log("Testing engine switch...");
-        const currentType = this.currentEngineType;
-        const targetType = currentType === 'webgl' ? 'canvas2d' : 'webgl';
-        
-        console.log(`Switching from ${currentType} to ${targetType}`);
-        const success = this.setEngine(targetType);
-        
-        if (success) {
-            setTimeout(() => {
-                console.log(`Switching back from ${targetType} to ${currentType}`);
-                this.setEngine(currentType);
-            }, 2000);
+    _setupCompositingBuffer() {
+        const gl = this.gl;
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+
+        // 既存のリソースがあれば解放
+        if (this.compositeFBO) {
+            gl.deleteFramebuffer(this.compositeFBO);
         }
+        if (this.compositeTexture) {
+            gl.deleteTexture(this.compositeTexture);
+        }
+
+        // テクスチャの作成 (合成結果をここに描画する)
+        this.compositeTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.compositeTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+
+        // フレームバッファの作成とテクスチャの紐付け
+        this.compositeFBO = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.compositeFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.compositeTexture, 0);
+
+        // フレームバッファの完了チェック
+        const fbStatus = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+        if (fbStatus !== gl.FRAMEBUFFER_COMPLETE) {
+            console.error('Framebuffer not complete, status: ' + fbStatus);
+        }
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null); // デフォルトのフレームバッファに戻す
+        console.log("Compositing buffer (FBO & Texture) setup completed.");
     }
 
-    // --- DrawingEngineのインターフェースを現在のエンジンに委譲 ---
+    /**
+     * ★処理を更新: レイヤーをテクスチャに変換し、合成バッファに描画します。
+     */
+    compositeLayers(layers, compositionData, dirtyRect) {
+        if (!this.gl || !this.program || !this.compositeFBO || !this.compositeTexture) {
+            console.warn("WebGL not ready for compositing.");
+            return;
+        }
 
-    drawCircle(...args) { this.currentEngine.drawCircle(...args); }
-    drawLine(...args) { this.currentEngine.drawLine(...args); }
-    fill(...args) { this.currentEngine.fill(...args); }
-    clear(...args) { this.currentEngine.clear(...args); }
-    getTransformedImageData(...args) { return this.currentEngine.getTransformedImageData(...args); }
-    compositeLayers(...args) { this.currentEngine.compositeLayers(...args); }
-    renderToDisplay(...args) { this.currentEngine.renderToDisplay(...args); }
+        const gl = this.gl;
+
+        console.log(`Compositing ${layers.length} layers for WebGL...`);
+
+        // レイヤーテクスチャを更新
+        // 既存のテクスチャを一旦クリア（簡単のため。将来的には差分更新が望ましい）
+        // this.layerTextures.forEach(texture => gl.deleteTexture(texture)); // ここでの削除はしない
+        // this.layerTextures.clear(); // ここでのクリアもしない
+
+        // レイヤーテクスチャを管理するためのMapを更新
+        const currentLayerNames = new Set();
+        for (const layer of layers) {
+            currentLayerNames.add(layer.name);
+            // 既存のテクスチャがあれば更新、なければ新規作成
+            const existingTexture = this.layerTextures.get(layer);
+            const texture = this._createOrUpdateTextureFromImageData(layer.imageData, existingTexture);
+            this.layerTextures.set(layer, texture); // Mapにレイヤーとテクスチャのペアを保存
+            // console.log(`Texture created/updated for layer: "${layer.name}"`, texture);
+        }
+        // 存在しないレイヤーのテクスチャを削除
+        for (const [layer, texture] of this.layerTextures.entries()) {
+            if (!currentLayerNames.has(layer.name)) {
+                gl.deleteTexture(texture);
+                this.layerTextures.delete(layer);
+            }
+        }
+
+
+        // オフスクリーン（FBO）に描画
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.compositeFBO);
+        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        gl.clear(gl.COLOR_BUFFER_BIT); // FBOをクリア
+
+        gl.useProgram(this.program);
+
+        // 頂点アトリビュートの設定
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        gl.vertexAttribPointer(this.a_position_loc, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.a_position_loc);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        gl.vertexAttribPointer(this.a_texCoord_loc, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.a_texCoord_loc);
+
+        // 各レイヤーを合成FBOに描画
+        let layerCount = 0;
+        for (const layer of layers) {
+            if (!layer.visible || layer.opacity === 0 || !this.layerTextures.has(layer)) continue;
+
+            const texture = this.layerTextures.get(layer);
+            
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.uniform1i(this.u_image_loc, 0); // テクスチャユニット0を使用
+
+            // レイヤーの不透明度をユニフォームとして渡すことも可能だが、今回は単純に描画
+            // gl.uniform1f(gl.getUniformLocation(this.program, "u_opacity"), layer.opacity / 100.0);
+
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); // クアッドを描画
+            layerCount++;
+        }
+        console.log(`Rendered ${layerCount} layers onto compositing FBO.`);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null); // デフォルトのフレームバッファに戻す
+        gl.disableVertexAttribArray(this.a_position_loc);
+        gl.disableVertexAttribArray(this.a_texCoord_loc);
+    }
+
+    /**
+     * ★処理を更新: 合成されたテクスチャをディスプレイにレンダリングします。
+     */
+    renderToDisplay(imageData, compositionData) { // ImageDataとcompositionDataはCanvas2D向けでWebGLでは無視
+        if (!this.gl || !this.program || !this.compositeTexture) {
+            console.warn("WebGL not ready for display rendering.");
+            return;
+        }
+        const gl = this.gl;
+
+        console.log("renderToDisplay called.");
+
+        // デフォルトのフレームバッファ（画面）に描画
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        gl.clear(gl.COLOR_BUFFER_BIT); // 画面をクリア
+
+        gl.useProgram(this.program);
+
+        // 頂点アトリビュートの設定
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        gl.vertexAttribPointer(this.a_position_loc, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.a_position_loc);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        gl.vertexAttribPointer(this.a_texCoord_loc, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.a_texCoord_loc);
+
+        // 合成されたテクスチャをバインド
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.compositeTexture);
+        gl.uniform1i(this.u_image_loc, 0); // テクスチャユニット0を使用
+
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); // クアッドを描画
+
+        gl.disableVertexAttribArray(this.a_position_loc);
+        gl.disableVertexAttribArray(this.a_texCoord_loc);
+
+        console.log("Composite texture rendered to display.");
+    }
+    
+    // imageDataに直接描画するメソッド群 (Canvas2Dと同様に実装が必要だが、WebGLでは複雑)
+    // これらはcore-engineが呼び出すため、ダミー実装または後でシェーダーベースの実装が必要
+    drawCircle(imageData, centerX, centerY, radius, color, isEraser) {
+        // console.warn("drawCircle not fully implemented for WebGL.");
+        // 現在はImageDataに直接描画し、それをテクスチャとして更新する方式
+        // Canvas2DEngineのdrawCircleロジックをここに移植するか、
+        // ImageData更新後にcompositeLayersを再度呼び出す必要がある
+    }
+    drawLine(imageData, x0, y0, x1, y1, size, color, isEraser, p0, p1) {
+        // console.warn("drawLine not fully implemented for WebGL.");
+        // 同上
+    }
+    fill(imageData, color) {
+        // console.warn("fill not fully implemented for WebGL.");
+        // 同上
+    }
+    clear(imageData) {
+        // console.warn("clear not fully implemented for WebGL.");
+        // ImageDataをクリアし、compositeLayersを再度呼び出す
+    }
+    getTransformedImageData(sourceImageData, transform) {
+        console.warn("getTransformedImageData not fully implemented for WebGL.");
+        // WebGLで変換を適用したImageDataを返すのは複雑なため、現状はダミー
+        return sourceImageData;
+    }
 }
