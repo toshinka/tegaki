@@ -1,16 +1,34 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 2.3.1 (Typo and Eraser Logic Fix)
+ * Version: 2.4.0 (Canonical Coordinate System Fix)
  *
  * - 修正：
- * - 1. 致命的なタイプミスを修正: `gl.TEXTURE_D` -> `gl.TEXTURE_2D`。
- * これが画面が真っ黒になる問題の直接的な原因でした。
- * - 2. 消しゴムの描画ロジックを修正。
- * - ブラシシェーダーに `u_is_eraser` フラグを復活。
- * - 消しゴムモードの際に正しいブレンド処理が行われるように、シェーダーの出力と
- * ブレンド関数を修正しました。
- * - 3. テクスチャ座標バッファの初期化方法を `DYNAMIC_DRAW` に統一。
+ * - 上下反転問題を根本的に解決するため、WebGLの標準的な座標系に完全に統一。
+ *
+ * -【新しい基本方針：すべてを「Y-up」で統一】
+ * - WebGL内部では、座標もテクスチャも、すべてY軸が上を向いている(Y-up)状態に統一する。
+ * - CPU(JavaScript)側との座標系の違いは、データの出入り口でのみ吸収する。
+ *
+ * -【具体的な修正】
+ * - 1. テクスチャアップロード時 (_createOrUpdateTextureFromImageData):
+ * -   `gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)` に変更。
+ * -   これにより、ImageData(Y-down)がGPUに転送される際に自動で反転され、
+ * -   WebGL内では常に正しい向き(Y-up)のテクスチャとして扱われる。
+ *
+ * - 2. ブラシ描画時 (drawCircle):
+ * -   マウス座標(Y-down)をWebGL座標(Y-up)に変換する処理 (`canvas.height - y`) は
+ * -   「データの出入り口」での正しい変換なので、これを維持する。
+ *
+ * - 3. レイヤー合成時 (compositeLayers):
+ * -   Y-upのテクスチャ同士を合成するため、反転の必要はなく、標準のテクスチャ座標を使用する。
+ *
+ * - 4. 最終画面表示時 (renderToDisplay):
+ * -   合成済みのテクスチャもY-upであり、画面への描画もY-up空間で行われるため、
+ * -   ここでも反転は不要。標準のテクスチャ座標を使用する。これによりロジックが大幅に簡素化された。
+ *
+ * - 5. GPUデータ読み戻し時 (syncDirtyRectToImageData):
+ * -   Y-upのGPUデータをY-downのImageDataに書き戻すため、手動での行反転処理を維持する。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -58,7 +76,7 @@ export class WebGLEngine extends DrawingEngine {
         this._initBuffers();
         this._setupCompositingBuffer();
 
-        console.log("WebGL Engine (v2.3.1 Typo and Eraser Logic Fix) initialized successfully.");
+        console.log("WebGL Engine (v2.4.0 Canonical Coordinate System Fix) initialized successfully.");
     }
 
     _initShaderPrograms() {
@@ -77,7 +95,7 @@ export class WebGLEngine extends DrawingEngine {
             uniform float u_opacity;
             void main() {
                 vec4 texColor = texture2D(u_image, v_texCoord);
-                gl_FragColor = vec4(texColor.rgb, texColor.a) * u_opacity;
+                gl_FragColor = vec4(texColor.rgb, texColor.a * u_opacity);
             }`;
 
         const vsBrush = `
@@ -94,7 +112,7 @@ export class WebGLEngine extends DrawingEngine {
             uniform vec2 u_center;
             uniform float u_radius;
             uniform vec4 u_color;
-            uniform bool u_is_eraser; // ★消しゴムフラグを復活
+            uniform bool u_is_eraser;
 
             void main() {
                 vec2 coord = (v_pos * 0.5 + 0.5) * u_resolution;
@@ -107,10 +125,8 @@ export class WebGLEngine extends DrawingEngine {
                 }
 
                 if (u_is_eraser) {
-                    // 消しゴムの場合、ブレンド用にアルファ値のみを出力
                     gl_FragColor = vec4(0.0, 0.0, 0.0, alpha); 
                 } else {
-                    // ペンの場合、pre-multiplied alphaで色を出力
                     gl_FragColor = vec4(u_color.rgb * u_color.a * alpha, u_color.a * alpha);
                 }
             }`;
@@ -128,9 +144,9 @@ export class WebGLEngine extends DrawingEngine {
 
         this.texCoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        const texCoords = [ 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0 ];
-        // ★修正: 後で更新するので DYNAMIC_DRAW に変更
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.DYNAMIC_DRAW);
+        // 標準的なテクスチャ座標 (Y-up。左下が(0,0))
+        const texCoords = [ 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0 ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
     }
 
     _compileShader(source, type) { const gl = this.gl; const shader = gl.createShader(type); gl.shaderSource(shader, source); gl.compileShader(shader); if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) { console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader)); gl.deleteShader(shader); return null; } return shader; }
@@ -145,14 +161,22 @@ export class WebGLEngine extends DrawingEngine {
             this.layerTextures.set(layer, texture);
         }
         gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+
+        // ★★★★★ 方針1: Y-up統一の要 ★★★★★
+        // ImageDataをGPUに送る際にY軸を反転させる
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+        
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imageData);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.bindTexture(gl.TEXTURE_2D, null);
+
+        // 次回以降の他の画像読込のために設定を戻しておくのが安全
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+
         layer.gpuDirty = false; 
         this._setupLayerFBO(layer, texture);
         return texture;
@@ -185,9 +209,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-        // ★ タイプミス修正： gl.TEXTURE_D -> gl.TEXTURE_2D ★
-        // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         this.compositeFBO = gl.createFramebuffer();
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.compositeFBO);
@@ -201,11 +222,8 @@ export class WebGLEngine extends DrawingEngine {
     _setBlendMode(blendMode, isEraser = false) {
         const gl = this.gl;
         if (isEraser) {
-            // ★消しゴムロジック修正: このブレンドでアルファを削る
-            // FinalAlpha = SrcAlpha * 0 + DstAlpha * (1 - SrcAlpha)
             gl.blendFuncSeparate(gl.ZERO, gl.ONE, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
         } else {
-             // ★ペンロジック修正: pre-multiplied alpha用の標準ブレンド
             gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
             switch (blendMode) {
                 case 'multiply': 
@@ -249,11 +267,12 @@ export class WebGLEngine extends DrawingEngine {
         
         gl.uniform2f(program.locations.u_resolution, this.canvas.width, this.canvas.height);
         
+        // ★★★★★ 方針2: Y-down -> Y-upへの変換 ★★★★★
+        // マウス座標をWebGL座標系に変換する。これは正しい。
         const webglY = this.canvas.height - centerY;
         gl.uniform2f(program.locations.u_center, centerX, webglY);
         gl.uniform1f(program.locations.u_radius, radius);
         gl.uniform4f(program.locations.u_color, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
-        // ★消しゴムフラグをシェーダーに渡す
         gl.uniform1i(program.locations.u_is_eraser, isEraser);
 
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -311,9 +330,8 @@ export class WebGLEngine extends DrawingEngine {
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_position);
         
+        // ★★★★★ 方針3: Y-upテクスチャなので標準座標を使用 ★★★★★
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        const originalTexCoords = [ 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0 ];
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(originalTexCoords), gl.DYNAMIC_DRAW);
         gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_texCoord);
 
@@ -350,12 +368,11 @@ export class WebGLEngine extends DrawingEngine {
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_position);
         
+        // ★★★★★ 方針4: 最終表示もY-upなので標準座標を使用 ★★★★★
+        // (バッファは既に標準座標が設定されているので再設定は不要だが、念のため)
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
         gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_texCoord);
-
-        const flippedTexCoords = [ 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0 ];
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(flippedTexCoords), gl.DYNAMIC_DRAW);
 
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.compositeTexture);
@@ -383,14 +400,18 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const buffer = new Uint8Array(width * height * 4);
         
-        const readY = this.canvas.height - (y + height);
-        gl.readPixels(x, readY, width, height, gl.RGBA, gl.UNSIGNED_BYTE, buffer);
+        // ★★★★★ 方針5: Y-upのFBOから読み出す ★★★★★
+        // readPixelsはFBOの左下(0,0)から読み出すので、Y座標の計算は不要。
+        // ただし、得られるデータは視覚的に上下反転している。
+        gl.readPixels(x, y, width, height, gl.RGBA, gl.UNSIGNED_BYTE, buffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
         const targetImageData = layer.imageData;
         const targetData = targetImageData.data;
         const canvasWidth = targetImageData.width;
         
+        // ★★★★★ 方針5: Y-downのImageDataに書き込むため手動で反転 ★★★★★
+        // このロジックは正しいので維持する。
         for (let row = 0; row < height; row++) {
             const destY = y + row;
             if (destY < 0 || destY >= targetImageData.height) continue;
