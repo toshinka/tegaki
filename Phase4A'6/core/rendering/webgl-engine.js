@@ -1,14 +1,12 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 2.2.0 (Phase 4A'6 Performance Patch)
+ * Version: 2.2.1 (Phase 4A'7 Logic Fix)
  *
  * - 修正：
- * - パフォーマンス改善：drawCircle実行時のリアルタイムなピクセルデータ同期を廃止。
- * これにより描画遅延が解消され、滑らかな線が描けるようになります。
- * - 追加：
- * - syncDirtyRectToImageDataメソッドを追加。描画ストローク完了後、
- * このメソッドでUndo用のピクセルデータを一度だけ同期します。
+ * - compositeLayersのロジックを修正。core-engine側で立てられた`gpuDirty`フラグを
+ * 確認し、フラグが立っているレイヤーのテクスチャのみを更新するように変更。
+ * - これにより、描画中の不要なテクスチャ更新がなくなり、描画結果が正しく表示される。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -75,7 +73,7 @@ export class WebGLEngine extends DrawingEngine {
         // --- レイヤー合成用FBOのセットアップ ---
         this._setupCompositingBuffer();
 
-        console.log("WebGL Engine (v2.2.0 PerfPatch) initialized successfully.");
+        console.log("WebGL Engine (v2.2.1 LogicFix) initialized successfully.");
     }
 
     // --- 初期化ヘルパーメソッド ---
@@ -166,7 +164,7 @@ export class WebGLEngine extends DrawingEngine {
         }
 
         gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); // ImageDataはY反転不要
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imageData);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -174,6 +172,8 @@ export class WebGLEngine extends DrawingEngine {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.bindTexture(gl.TEXTURE_2D, null);
+        
+        layer.gpuDirty = false; // ★★★ 修正 ★★★ 更新が終わったのでフラグを下ろす
 
         // このテクスチャを描画先とするFBOも作成/更新
         this._setupLayerFBO(layer, texture);
@@ -231,9 +231,12 @@ export class WebGLEngine extends DrawingEngine {
         
         const targetFBO = this.layerFBOs.get(layer);
         if (!targetFBO) {
-            console.warn("Target FBO for drawing not found for layer:", layer.name);
+            // FBOがない場合は初回なのでテクスチャごと作成する
+            this._createOrUpdateTextureFromImageData(layer.imageData, layer);
+            this.drawCircle(imageData, centerX, centerY, radius, color, isEraser, layer); // 再帰呼び出し
             return;
         }
+
         gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO);
         gl.viewport(0, 0, this.canvas.width, this.canvas.height);
         
@@ -253,10 +256,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-
-        // ★★★ 修正点 ★★★
-        // 描画中のリアルタイム同期はパフォーマンスを著しく低下させるため削除。
-        // ストローク完了後にsyncDirtyRectToImageDataを呼ぶ方式に変更。
     }
     
     drawLine(imageData, x0, y0, x1, y1, size, color, isEraser, p0 = 1.0, p1 = 1.0, calculatePressureSize, layer) {
@@ -288,11 +287,15 @@ export class WebGLEngine extends DrawingEngine {
         const gl = this.gl;
         const program = this.programs.compositor;
 
-        // --- テクスチャとFBOの更新 ---
+        // --- ★★★ 修正 ★★★ ---
+        // テクスチャとFBOの更新を、gpuDirtyフラグが立っている時だけ行う
         const currentLayerSet = new Set(layers);
         for (const layer of layers) {
-             this._createOrUpdateTextureFromImageData(layer.imageData, layer);
+            if (layer.gpuDirty || !this.layerTextures.has(layer)) {
+                this._createOrUpdateTextureFromImageData(layer.imageData, layer);
+            }
         }
+        // 不要になったレイヤーのGPUリソースを削除
         for (const layer of this.layerTextures.keys()) {
             if (!currentLayerSet.has(layer)) {
                 gl.deleteTexture(this.layerTextures.get(layer));
@@ -356,13 +359,11 @@ export class WebGLEngine extends DrawingEngine {
         gl.uniform1i(program.locations.u_image, 0);
         gl.uniform1f(program.locations.u_opacity, 1.0);
         
-        // Y軸を反転させるためにテクスチャ座標を調整
-        const texCoords = [ 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0 ]; // Yを反転
+        const texCoords = [ 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0 ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
 
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-        // テクスチャ座標を元に戻す
         const originalTexCoords = [ 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0 ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(originalTexCoords), gl.STATIC_DRAW);
         
@@ -370,13 +371,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.disableVertexAttribArray(program.locations.a_texCoord);
     }
 
-    /**
-     * ★★★ 追加したメソッド ★★★
-     * 描画ストローク完了後、Undo履歴保存のためにGPUテクスチャから
-     * CPU側のImageDataへピクセルデータを同期する。
-     * @param {Layer} layer 対象レイヤー
-     * @param {object} dirtyRect 同期する矩形領域 {minX, minY, maxX, maxY}
-     */
     syncDirtyRectToImageData(layer, dirtyRect) {
         const gl = this.gl;
         const fbo = this.layerFBOs.get(layer);
@@ -391,19 +385,17 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const buffer = new Uint8Array(width * height * 4);
-        // gl.readPixelsのyは左下原点なので、ImageDataのy(左上原点)から変換する
         const readY = this.canvas.height - (y + height);
         gl.readPixels(x, readY, width, height, gl.RGBA, gl.UNSIGNED_BYTE, buffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-        // GPUから読み出したデータは上下が逆なので、CPU側(ImageData)に書き込む際に反転させる
         const targetImageData = layer.imageData;
         const targetData = targetImageData.data;
         const canvasWidth = targetImageData.width;
 
         for (let row = 0; row < height; row++) {
             const destY = y + row;
-            if (destY < 0 || destY >= canvasWidth) continue;
+            if (destY < 0 || destY >= targetImageData.height) continue;
 
             const sourceOffset = (height - 1 - row) * width * 4;
             const destOffset = destY * canvasWidth * 4 + x * 4;
