@@ -1,14 +1,17 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 2.2.2 (Phase 4A'7 Flip Fix)
+ * Version: 2.2.3 (Phase 4A'8 Final Flip Fix)
  *
  * - 修正：
- * - 描画が上下反転する問題を修正。
- * - _createOrUpdateTextureFromImageDataで `UNPACK_FLIP_Y_WEBGL` を `true` に設定し、
- * テクスチャをGPUにアップロードする時点でY軸を反転。
- * - これにより、エンジン内の座標系が統一され、描画や表示の際の複雑な反転処理が不要に。
- * - drawCircleとrenderToDisplayのロジックを、上記の変更に合わせて簡潔化。
+ * - 描画が上下反転する問題に対し、アプローチを変更して根本解決。
+ * - UNPACK_FLIP_Y_WEBGLに頼るのをやめ、描画ロジックを座標系の違いに合わせる方式に統一。
+ * - 1. テクスチャのアップロード時は反転させない (`UNPACK_FLIP_Y_WEBGL: false`)
+ * - 2. ブラシ描画時(`drawCircle`)に、Y座標を `canvas.height - y` で反転させ、
+ * WebGLの座標系（Y軸が上向き）に合わせる。
+ * - 3. 最終的な画面表示時(`renderToDisplay`)に、テクスチャ座標を動的に反転させて
+ * 正しい向きで表示する。
+ * - この変更により、環境に依存しにくい安定した描画を実現。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -55,7 +58,7 @@ export class WebGLEngine extends DrawingEngine {
         this._initBuffers();
         this._setupCompositingBuffer();
 
-        console.log("WebGL Engine (v2.2.2 FlipFix) initialized successfully.");
+        console.log("WebGL Engine (v2.2.3 FinalFlipFix) initialized successfully.");
     }
 
     _initShaderPrograms() {
@@ -123,7 +126,6 @@ export class WebGLEngine extends DrawingEngine {
 
         this.texCoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        // 標準的な（反転していない）テクスチャ座標
         const texCoords = [ 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0 ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
     }
@@ -143,9 +145,9 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindTexture(gl.TEXTURE_2D, texture);
         
         // ★★★ 修正点 ★★★
-        // trueにすることで、ImageDataをテクスチャにロードする際にY軸を反転させます。
-        // これでGPU上のテクスチャが「正位置」になります。
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        // UNPACK_FLIP_Y_WEBGLを `false` に戻します。
+        // これでImageDataはそのままの向き（Yが下向き）でGPUにアップロードされます。
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
 
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imageData);
@@ -216,9 +218,11 @@ export class WebGLEngine extends DrawingEngine {
         gl.enableVertexAttribArray(program.locations.a_position);
         
         gl.uniform2f(program.locations.u_resolution, this.canvas.width, this.canvas.height);
+        
         // ★★★ 修正点 ★★★
-        // Y座標の反転が不要になったため、 `this.canvas.height - centerY` を `centerY` に変更。
-        gl.uniform2f(program.locations.u_center, centerX, centerY);
+        // 再びY座標を反転させる処理を復活させます。
+        // これでマウスの座標(Yが下向き)をWebGLの座標(Yが上向き)に変換します。
+        gl.uniform2f(program.locations.u_center, centerX, this.canvas.height - centerY);
         gl.uniform1f(program.locations.u_radius, radius);
         gl.uniform4f(program.locations.u_color, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
         gl.uniform1i(program.locations.u_is_eraser, isEraser);
@@ -319,16 +323,22 @@ export class WebGLEngine extends DrawingEngine {
         gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_texCoord);
 
+        // ★★★ 修正点 ★★★
+        // 最終表示用のテクスチャ座標を動的に反転させて、画面に正しく表示します。
+        const flippedTexCoords = [ 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0 ]; // Yを反転
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(flippedTexCoords), gl.STATIC_DRAW);
+
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.compositeTexture);
         gl.uniform1i(program.locations.u_image, 0);
         gl.uniform1f(program.locations.u_opacity, 1.0);
         
-        // ★★★ 修正点 ★★★
-        // テクスチャ自体が正位置になったため、ここでテクスチャ座標を反転させる
-        // 必要がなくなり、ロジックがシンプルになりました。
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         
+        // 後続の処理のためにテクスチャ座標を元に戻しておきます。
+        const originalTexCoords = [ 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0 ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(originalTexCoords), gl.STATIC_DRAW);
+
         gl.disableVertexAttribArray(program.locations.a_position);
         gl.disableVertexAttribArray(program.locations.a_texCoord);
     }
@@ -348,7 +358,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const buffer = new Uint8Array(width * height * 4);
         
-        // readPixelsは左下原点のため、y座標の変換は引き続き必要。
+        // FBOから読み出す際は、FBOの座標系（左下が原点）に合わせる必要があります。
         const readY = this.canvas.height - (y + height);
         gl.readPixels(x, readY, width, height, gl.RGBA, gl.UNSIGNED_BYTE, buffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -357,8 +367,7 @@ export class WebGLEngine extends DrawingEngine {
         const targetData = targetImageData.data;
         const canvasWidth = targetImageData.width;
         
-        // GPUから読み出すデータは常に「左下から右上」の順になるため、
-        // 上下を反転させてImageDataに書き込む処理は引き続き必要です。
+        // 読み出したデータは上下が逆なので、反転させながらImageDataに書き込みます。
         for (let row = 0; row < height; row++) {
             const destY = y + row;
             if (destY < 0 || destY >= targetImageData.height) continue;
