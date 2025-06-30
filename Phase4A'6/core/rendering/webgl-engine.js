@@ -1,12 +1,14 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 2.2.1 (Phase 4A'7 Logic Fix)
+ * Version: 2.2.2 (Phase 4A'7 Flip Fix)
  *
  * - 修正：
- * - compositeLayersのロジックを修正。core-engine側で立てられた`gpuDirty`フラグを
- * 確認し、フラグが立っているレイヤーのテクスチャのみを更新するように変更。
- * - これにより、描画中の不要なテクスチャ更新がなくなり、描画結果が正しく表示される。
+ * - 描画が上下反転する問題を修正。
+ * - _createOrUpdateTextureFromImageDataで `UNPACK_FLIP_Y_WEBGL` を `true` に設定し、
+ * テクスチャをGPUにアップロードする時点でY軸を反転。
+ * - これにより、エンジン内の座標系が統一され、描画や表示の際の複雑な反転処理が不要に。
+ * - drawCircleとrenderToDisplayのロジックを、上記の変更に合わせて簡潔化。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -16,37 +18,21 @@ export class WebGLEngine extends DrawingEngine {
         super(canvas);
         this.gl = null;
         
-        // シェーダープログラムを管理するオブジェクト
         this.programs = {
-            compositor: null, // レイヤー合成用
-            brush: null       // ブラシ描画用
+            compositor: null, 
+            brush: null       
         };
 
-        // 頂点バッファ
         this.positionBuffer = null;
         this.texCoordBuffer = null;
-
-        // レイヤー合成用FBO
         this.compositeTexture = null;
         this.compositeFBO = null;
-
-        // 各レイヤーのテクスチャとFBOを管理
         this.layerTextures = new Map();
         this.layerFBOs = new Map();
-
-        // 描画品質設定（CPU描画ロジックは残しつつ、当面は未使用）
-        this.drawingQuality = {
-            enableSubpixel: true,
-            antialiasThreshold: 2.0,
-            minDrawSteps: 1,
-            maxDrawSteps: 100
-        };
         
-        // 従来の変形処理用オフスクリーンCanvas（getTransformedImageDataで使用）
         this.transformOffscreenCanvas = document.createElement('canvas');
         this.transformOffscreenCtx = this.transformOffscreenCanvas.getContext('2d');
 
-        // --- WebGL初期化 ---
         try {
             this.gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, premultipliedAlpha: true }) || canvas.getContext('experimental-webgl', { preserveDrawingBuffer: true, premultipliedAlpha: true });
             if (!this.gl) throw new Error('WebGL is not supported in this browser.');
@@ -60,23 +46,17 @@ export class WebGLEngine extends DrawingEngine {
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
-        // --- シェーダーのコンパイルとリンク ---
         this._initShaderPrograms();
         if (!this.programs.compositor || !this.programs.brush) {
             console.error("Failed to create all required WebGL programs.");
             return;
         }
 
-        // --- 頂点バッファの作成 ---
         this._initBuffers();
-
-        // --- レイヤー合成用FBOのセットアップ ---
         this._setupCompositingBuffer();
 
-        console.log("WebGL Engine (v2.2.1 LogicFix) initialized successfully.");
+        console.log("WebGL Engine (v2.2.2 FlipFix) initialized successfully.");
     }
-
-    // --- 初期化ヘルパーメソッド ---
 
     _initShaderPrograms() {
         const vsCompositor = `
@@ -97,7 +77,6 @@ export class WebGLEngine extends DrawingEngine {
                 gl_FragColor = vec4(texColor.rgb, texColor.a) * u_opacity;
             }`;
 
-        // ブラシ描画用シェーダー
         const vsBrush = `
             attribute vec4 a_position;
             varying vec2 v_pos;
@@ -125,7 +104,6 @@ export class WebGLEngine extends DrawingEngine {
                 }
 
                 if (u_is_eraser) {
-                    // 消しゴムの場合、アルファを0にする（ブレンドで合成）
                     gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
                 } else {
                     gl_FragColor = vec4(u_color.rgb, u_color.a * alpha);
@@ -145,16 +123,15 @@ export class WebGLEngine extends DrawingEngine {
 
         this.texCoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        // 標準的な（反転していない）テクスチャ座標
         const texCoords = [ 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0 ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
     }
 
-    // --- WebGL コアメソッド ---
     _compileShader(source, type) { const gl = this.gl; const shader = gl.createShader(type); gl.shaderSource(shader, source); gl.compileShader(shader); if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) { console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader)); gl.deleteShader(shader); return null; } return shader; }
     _createProgram(vsSource, fsSource) { const gl = this.gl; const vs = this._compileShader(vsSource, gl.VERTEX_SHADER); const fs = this._compileShader(fsSource, gl.FRAGMENT_SHADER); if (!vs || !fs) return null; const program = gl.createProgram(); gl.attachShader(program, vs); gl.attachShader(program, fs); gl.linkProgram(program); if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(program)); gl.deleteProgram(program); return null; } program.locations = {}; const locs = (p) => { p.locations.a_position = gl.getAttribLocation(p, 'a_position'); p.locations.a_texCoord = gl.getAttribLocation(p, 'a_texCoord'); p.locations.u_image = gl.getUniformLocation(p, 'u_image'); p.locations.u_opacity = gl.getUniformLocation(p, 'u_opacity'); p.locations.u_resolution = gl.getUniformLocation(p, 'u_resolution'); p.locations.u_center = gl.getUniformLocation(p, 'u_center'); p.locations.u_radius = gl.getUniformLocation(p, 'u_radius'); p.locations.u_color = gl.getUniformLocation(p, 'u_color'); p.locations.u_is_eraser = gl.getUniformLocation(p, 'u_is_eraser'); }; locs(program); return program; }
     static isSupported() { try { const canvas = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))); } catch (e) { return false; } }
 
-    // --- テクスチャ・FBO管理 ---
     _createOrUpdateTextureFromImageData(imageData, layer) {
         const gl = this.gl;
         let texture = this.layerTextures.get(layer);
@@ -164,8 +141,13 @@ export class WebGLEngine extends DrawingEngine {
         }
 
         gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        
+        // ★★★ 修正点 ★★★
+        // trueにすることで、ImageDataをテクスチャにロードする際にY軸を反転させます。
+        // これでGPU上のテクスチャが「正位置」になります。
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imageData);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -173,9 +155,8 @@ export class WebGLEngine extends DrawingEngine {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.bindTexture(gl.TEXTURE_2D, null);
         
-        layer.gpuDirty = false; // ★★★ 修正 ★★★ 更新が終わったのでフラグを下ろす
+        layer.gpuDirty = false; 
 
-        // このテクスチャを描画先とするFBOも作成/更新
         this._setupLayerFBO(layer, texture);
         return texture;
     }
@@ -203,27 +184,15 @@ export class WebGLEngine extends DrawingEngine {
             gl.blendFuncSeparate(gl.ZERO, gl.ONE, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
             return;
         }
-
         gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-
         switch (blendMode) {
-            case 'multiply':
-                gl.blendFuncSeparate(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-                break;
-            case 'screen':
-                gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_COLOR, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-                break;
-            case 'add':
-                gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE);
-                break;
-            default: // normal
-                gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-                break;
+            case 'multiply': gl.blendFuncSeparate(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); break;
+            case 'screen': gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_COLOR, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); break;
+            case 'add': gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE); break;
+            default: gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); break;
         }
     }
 
-    // ### 描画メソッド (GPU実装) ###
-    
     drawCircle(imageData, centerX, centerY, radius, color, isEraser, layer) {
         if (!this.gl || !this.programs.brush) return;
         const gl = this.gl;
@@ -231,9 +200,8 @@ export class WebGLEngine extends DrawingEngine {
         
         const targetFBO = this.layerFBOs.get(layer);
         if (!targetFBO) {
-            // FBOがない場合は初回なのでテクスチャごと作成する
             this._createOrUpdateTextureFromImageData(layer.imageData, layer);
-            this.drawCircle(imageData, centerX, centerY, radius, color, isEraser, layer); // 再帰呼び出し
+            this.drawCircle(imageData, centerX, centerY, radius, color, isEraser, layer); 
             return;
         }
 
@@ -248,7 +216,9 @@ export class WebGLEngine extends DrawingEngine {
         gl.enableVertexAttribArray(program.locations.a_position);
         
         gl.uniform2f(program.locations.u_resolution, this.canvas.width, this.canvas.height);
-        gl.uniform2f(program.locations.u_center, centerX, this.canvas.height - centerY); // WebGLは左下が原点
+        // ★★★ 修正点 ★★★
+        // Y座標の反転が不要になったため、 `this.canvas.height - centerY` を `centerY` に変更。
+        gl.uniform2f(program.locations.u_center, centerX, centerY);
         gl.uniform1f(program.locations.u_radius, radius);
         gl.uniform4f(program.locations.u_color, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
         gl.uniform1i(program.locations.u_is_eraser, isEraser);
@@ -280,22 +250,17 @@ export class WebGLEngine extends DrawingEngine {
     clear(imageData) { imageData.data.fill(0); }
     getTransformedImageData(sourceImageData, transform) { const sw = sourceImageData.width; const sh = sourceImageData.height; const tempCanvas = this.transformOffscreenCanvas; const tempCtx = this.transformOffscreenCtx; tempCanvas.width = sw; tempCanvas.height = sh; const sourceCanvas = document.createElement('canvas'); sourceCanvas.width = sw; sourceCanvas.height = sh; sourceCanvas.getContext('2d').putImageData(sourceImageData, 0, 0); tempCtx.clearRect(0, 0, sw, sh); tempCtx.save(); tempCtx.translate(transform.x, transform.y); tempCtx.translate(sw / 2, sh / 2); tempCtx.rotate(transform.rotation * Math.PI / 180); tempCtx.scale(transform.scale * transform.flipX, transform.scale * transform.flipY); tempCtx.translate(-sw / 2, -sh / 2); tempCtx.drawImage(sourceCanvas, 0, 0); tempCtx.restore(); return tempCtx.getImageData(0, 0, sw, sh); }
 
-    // --- レイヤー合成と画面表示 (変更あり) ---
-
     compositeLayers(layers, compositionData, dirtyRect) {
         if (!this.gl || !this.programs.compositor || !this.compositeFBO) return;
         const gl = this.gl;
         const program = this.programs.compositor;
 
-        // --- ★★★ 修正 ★★★ ---
-        // テクスチャとFBOの更新を、gpuDirtyフラグが立っている時だけ行う
         const currentLayerSet = new Set(layers);
         for (const layer of layers) {
             if (layer.gpuDirty || !this.layerTextures.has(layer)) {
                 this._createOrUpdateTextureFromImageData(layer.imageData, layer);
             }
         }
-        // 不要になったレイヤーのGPUリソースを削除
         for (const layer of this.layerTextures.keys()) {
             if (!currentLayerSet.has(layer)) {
                 gl.deleteTexture(this.layerTextures.get(layer));
@@ -305,7 +270,6 @@ export class WebGLEngine extends DrawingEngine {
             }
         }
 
-        // --- 合成描画 ---
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.compositeFBO);
         gl.viewport(0, 0, this.canvas.width, this.canvas.height);
         gl.clear(gl.COLOR_BUFFER_BIT);
@@ -342,7 +306,7 @@ export class WebGLEngine extends DrawingEngine {
         
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-        gl.clear(gl.COLOR_BUFFER_BIT); // 画面をクリア
+        gl.clear(gl.COLOR_BUFFER_BIT);
 
         gl.useProgram(program);
         this._setBlendMode('normal');
@@ -350,6 +314,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_position);
+        
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
         gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_texCoord);
@@ -359,13 +324,10 @@ export class WebGLEngine extends DrawingEngine {
         gl.uniform1i(program.locations.u_image, 0);
         gl.uniform1f(program.locations.u_opacity, 1.0);
         
-        const texCoords = [ 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0 ];
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
-
+        // ★★★ 修正点 ★★★
+        // テクスチャ自体が正位置になったため、ここでテクスチャ座標を反転させる
+        // 必要がなくなり、ロジックがシンプルになりました。
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-        const originalTexCoords = [ 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0 ];
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(originalTexCoords), gl.STATIC_DRAW);
         
         gl.disableVertexAttribArray(program.locations.a_position);
         gl.disableVertexAttribArray(program.locations.a_texCoord);
@@ -385,6 +347,8 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const buffer = new Uint8Array(width * height * 4);
+        
+        // readPixelsは左下原点のため、y座標の変換は引き続き必要。
         const readY = this.canvas.height - (y + height);
         gl.readPixels(x, readY, width, height, gl.RGBA, gl.UNSIGNED_BYTE, buffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -392,7 +356,9 @@ export class WebGLEngine extends DrawingEngine {
         const targetImageData = layer.imageData;
         const targetData = targetImageData.data;
         const canvasWidth = targetImageData.width;
-
+        
+        // GPUから読み出すデータは常に「左下から右上」の順になるため、
+        // 上下を反転させてImageDataに書き込む処理は引き続き必要です。
         for (let row = 0; row < height; row++) {
             const destY = y + row;
             if (destY < 0 || destY >= targetImageData.height) continue;
