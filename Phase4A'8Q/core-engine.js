@@ -1,13 +1,13 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.5.0 (Quality Tuning: Brush Stroke Feel)
+ * Version: 2.6.0 (Refined Pen Pressure Curve)
  *
  * - 修正：
- * - 描き味の品質向上のため、筆圧計算ロジックを改善。
- * - calculatePressureSizeメソッドに、描き始めの数点の筆圧を穏やかにする
- * 「initialStrokeDamping」処理を追加。これにより、線の「入り」がより自然になる。
- * - onPointerDownでdrawCircleを呼ぶ際の半径計算が正しいことを再確認。
+ * - ペンの「ON荷重」が強いというフィードバックに対応。
+ * - calculatePressureSizeメソッドの筆圧計算ロジックを再調整。
+ * - 描き始めの数点の筆圧をより積極的に抑え、繊細な先細りの線を表現しやすくした。
+ * これにより、弱いタッチへの反応性が向上し、リニアな描き味に近づける。
  * ===================================================================================
  */
 
@@ -140,7 +140,7 @@ class CanvasManager {
         }
 
         this.isDrawing = true;
-        this.pressureHistory = [e.pressure || 1.0];
+        this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5]; // 0圧を回避
         this.lastPoint = { ...coords, pressure: this.pressureHistory[0] };
         
         const size = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
@@ -181,12 +181,12 @@ class CanvasManager {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
         if (!this.lastPoint) { 
-            this.pressureHistory = [e.pressure || 1.0];
-            this.lastPoint = { ...coords, pressure: e.pressure || 1.0 }; 
+            this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
+            this.lastPoint = { ...coords, pressure: e.pressure > 0 ? e.pressure : 0.5 }; 
             return;
         }
 
-        const currentPressure = e.pressure || 1.0;
+        const currentPressure = e.pressure > 0 ? e.pressure : 0.5;
         this.pressureHistory.push(currentPressure);
         if (this.pressureHistory.length > this.maxPressureHistory) {
             this.pressureHistory.shift();
@@ -214,7 +214,7 @@ class CanvasManager {
         
         if (this.isDrawing) {
             this.isDrawing = false;
-            this.pressureHistory = [];
+            // pressureHistoryをクリアしないことで、次のストロークへの影響を無くす
             
             if (this.animationFrameId) {
                 cancelAnimationFrame(this.animationFrameId);
@@ -271,39 +271,42 @@ class CanvasManager {
         this.dirtyRect = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
     }
 
-    // ★★★ 品質向上のための筆圧計算ロジック ★★★
+    // ★★★★★ 修正箇所: ON荷重を軽減するための筆圧計算ロジック ★★★★★
     calculatePressureSize(baseSizeInput, pressure) {
         const baseSize = Math.max(0.1, baseSizeInput);
         let normalizedPressure = Math.max(0, Math.min(1, pressure || 0));
         
+        // 直近の筆圧を平滑化
         const tempHistory = [...this.pressureHistory, normalizedPressure];
         if (tempHistory.length > this.maxPressureHistory) tempHistory.shift();
         const smoothedPressure = tempHistory.reduce((sum, p) => sum + p, 0) / tempHistory.length;
 
-        // 描き始めの筆圧を穏やかにする
-        let initialStrokeDamping = 1.0;
+        let finalPressure = smoothedPressure;
+
+        // ★★★ 描き始めの筆圧をより積極的に抑える ★★★
         const historyLength = this.pressureHistory.length;
-        if (historyLength <= 3) {
-            initialStrokeDamping = 0.4 + (historyLength -1) * 0.3; // 0.4 -> 0.7 -> 1.0
+        if (this.isDrawing && historyLength <= 5) {
+            // 描き始めの5点までは、指数関数的に筆圧を抑える
+            // 0.3から始まり、5点目で1.0に近づく係数
+            const initialDamping = 0.3 + Math.pow(historyLength / 5, 2) * 0.7;
+            finalPressure *= initialDamping;
         }
 
-        let finalPressure = smoothedPressure * initialStrokeDamping;
-
         if (this.pressureSettings.dynamicRange) {
-            const minHist = Math.min(...tempHistory);
-            const maxHist = Math.max(...tempHistory);
+            const minHist = Math.min(...tempHistory, finalPressure);
+            const maxHist = Math.max(...tempHistory, finalPressure);
             const range = maxHist - minHist;
             if (range > 0.1) {
                 finalPressure = (finalPressure - minHist) / range;
             }
         }
         
-        const curve = this.pressureSettings.curve;
+        const curve = this.pressureSettings.curve; // 0.7
         const curvedPressure = Math.pow(finalPressure, curve);
         
-        const minSize = baseSize * this.pressureSettings.minSizeRatio;
+        const minSize = baseSize * this.pressureSettings.minSizeRatio; // 0.3
         const maxSize = baseSize;
-        const finalSize = minSize + (maxSize - minSize) * curvedPressure * this.pressureSettings.sensitivity;
+        const finalSize = minSize + (maxSize - minSize) * curvedPressure;
         
         return Math.max(0.1, finalSize);
     }
