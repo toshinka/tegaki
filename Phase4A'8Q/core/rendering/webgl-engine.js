@@ -1,20 +1,20 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 2.8.0 (Super-Sampling & Quality Tuning)
+ * Version: 2.8.1 (Critical Fix & Feature Completion)
  *
  * - 修正：
  * - 1. 重大なバグ修正:
- * -   シェーダーのuniform変数'u_radius'の精度が異なっていた問題を修正。
- * -   頂点シェーダーにも精度宣言を追加し、エンジンの初期化が失敗する問題を解決。
+ * -   _createOrUpdateTextureFromImageData内で、texSubImage2DにImageDataオブジェクトを
+ * -   渡す際の引数の形式が誤っていたため、TypeErrorが発生し描画が停止する問題を修正。
+ * -   これにより、起動時にキャンバスが表示されない問題が解決される。
+ * * - 2. 機能実装:
+ * -   DrawingEngineインターフェースで定義されていたgetTransformedImageDataを実装。
+ * -   これにより、Vキーによるレイヤーの移動・回転・拡縮がWebGLエンジンでも動作するようになる。
  *
- * - 2. スーパーサンプリング実装による品質向上 (ジャギ対策):
- * -   SUPER_SAMPLING_FACTORを導入し、内部的に高解像度で描画してから縮小することで、
- * -   非常に滑らかなアンチエイリアスを実現。斜め線のジャギが劇的に軽減される。
- *
- * - 3. CPUへのデータ同期処理の改善:
- * -   スーパーサンプリングされた高解像度バッファから、CPU側の通常解像度ImageDataへ
- * -   ピクセルを書き戻す際に、簡易的なダウンサンプリングを行うように修正。
+ * - 3. 既存の品質向上機能は維持:
+ * -   スーパーサンプリングによるアンチエイリアス品質向上。
+ * -   シェーダーの精度問題の修正。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -68,7 +68,7 @@ export class WebGLEngine extends DrawingEngine {
         this._initBuffers();
         this._setupCompositingBuffer();
 
-        console.log(`WebGL Engine (v2.8.0 Super-Sampling) initialized successfully with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v2.8.1 Super-Sampling) initialized successfully with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
@@ -169,8 +169,11 @@ export class WebGLEngine extends DrawingEngine {
         
         // ★★★ 高解像度テクスチャを作成 ★★★
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.superWidth, this.superHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        
+        // ★★★★★ 修正箇所 ★★★★★
         // ImageDataの内容を高解像度テクスチャにアップロード
-        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, imageData);
+        // ImageDataオブジェクトを渡す際は、width/height引数を含まない7引数の形式を使用する
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, imageData);
 
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -292,9 +295,40 @@ export class WebGLEngine extends DrawingEngine {
         }
     }
 
-    fill(imageData, color) { /* ... 変更なし ... */ }
-    clear(imageData) { /* ... 変更なし ... */ }
-    getTransformedImageData(sourceImageData, transform) { /* ... 変更なし ... */ }
+    fill(imageData, color) { /* 未実装 */ }
+    clear(imageData) { /* 未実装 */ }
+
+    // ★★★ 機能実装: レイヤー変形をサポートするためのメソッド ★★★
+    getTransformedImageData(sourceImageData, transform) {
+        const canvas = this.transformOffscreenCanvas;
+        const ctx = this.transformOffscreenCtx;
+        const w = sourceImageData.width;
+        const h = sourceImageData.height;
+        canvas.width = w;
+        canvas.height = h;
+
+        ctx.save();
+        ctx.clearRect(0, 0, w, h);
+        
+        // ImageDataは直接変形できないため、一時的なキャンバスに描画してから変形を適用する
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = w;
+        tempCanvas.height = h;
+        tempCanvas.getContext('2d').putImageData(sourceImageData, 0, 0);
+
+        // 変形を適用
+        const centerX = w / 2;
+        const centerY = h / 2;
+        ctx.translate(centerX + transform.x, centerY + transform.y);
+        ctx.rotate(transform.rotation * Math.PI / 180);
+        ctx.scale(transform.scale * transform.flipX, transform.scale * transform.flipY);
+        ctx.translate(-centerX, -centerY);
+        
+        ctx.drawImage(tempCanvas, 0, 0);
+        ctx.restore();
+
+        return ctx.getImageData(0, 0, w, h);
+    }
 
     compositeLayers(layers, compositionData, dirtyRect) {
         if (!this.gl || !this.programs.compositor || !this.compositeFBO) return;
@@ -345,7 +379,35 @@ export class WebGLEngine extends DrawingEngine {
         gl.disableVertexAttribArray(program.locations.a_texCoord);
     }
     
-    renderToDisplay(compositionData, dirtyRect) { /* ... 変更なし ... */ }
+    renderToDisplay(compositionData, dirtyRect) {
+        if (!this.gl || !this.compositeTexture) return;
+        const gl = this.gl;
+        const program = this.programs.compositor;
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        
+        // ブレンドモードを通常に戻す
+        this._setBlendMode('normal');
+
+        gl.useProgram(program);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(program.locations.a_position);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(program.locations.a_texCoord);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.compositeTexture);
+        gl.uniform1i(program.locations.u_image, 0);
+        gl.uniform1f(program.locations.u_opacity, 1.0);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+        gl.disableVertexAttribArray(program.locations.a_position);
+        gl.disableVertexAttribArray(program.locations.a_texCoord);
+    }
 
     syncDirtyRectToImageData(layer, dirtyRect) {
         const gl = this.gl;
