@@ -1,7 +1,7 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.3.0 (Non-Destructive Transform Fixes v3)
+ * Version: 3.3.0 (Non-Destructive Transform Fix Final)
  *
  * - 修正：
  * - 1. 【座標系の分離と確立】
@@ -43,8 +43,8 @@ class Layer {
         this.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
         
         // ★★★ 修正: 行列を役割で分離 ★★★
-        this.modelMatrix = glMatrix.mat4.create(); // レイヤー自体の変形
-        this.mvpMatrix = glMatrix.mat4.create();   // 最終的にシェーダーに渡す行列
+        this.modelMatrix = glMatrix.mat4.create(); // レイヤー自体の変形(Y-down)
+        this.mvpMatrix = glMatrix.mat4.create();   // 最終的にシェーダーに渡す行列(Y-up)
         
         this.gpuDirty = true;
     }
@@ -270,7 +270,6 @@ class CanvasManager {
             if (rect.width === 0 || rect.height === 0) return null;
             let x = (e.clientX - rect.left) * (this.width / rect.width);
             let y = (e.clientY - rect.top) * (this.height / rect.height);
-            // ビューの反転はここで適用
             if (this.viewTransform.flipX === -1) { x = this.width - x; }
             if (this.viewTransform.flipY === -1) { y = this.height - y; }
             return { x: x, y: y };
@@ -281,18 +280,16 @@ class CanvasManager {
     convertCanvasToLayerCoords(canvasCoords, layer) {
         if (!layer) return canvasCoords;
 
-        // レイヤーのモデル行列の逆行列を計算
         const invModelMatrix = glMatrix.mat4.create();
         glMatrix.mat4.invert(invModelMatrix, layer.modelMatrix);
 
-        // マウス座標をベクトルとして逆行列で変換
         const point = [canvasCoords.x, canvasCoords.y, 0];
         const transformedPoint = glMatrix.vec3.create();
         glMatrix.vec3.transformMat4(transformedPoint, point, invModelMatrix);
         
         const [x, y] = transformedPoint;
         
-        if (x < 0 || x > this.width || y < 0 || y > this.height) {
+        if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
             return null;
         }
         return { x, y };
@@ -304,7 +301,6 @@ class CanvasManager {
         const model = layer.modelMatrix;
         const mvp = layer.mvpMatrix;
         
-        // --- 1. モデル行列の計算 (レイヤーのローカルな変形) ---
         glMatrix.mat4.identity(model);
         const centerX = this.width / 2;
         const centerY = this.height / 2;
@@ -312,21 +308,15 @@ class CanvasManager {
         const sx = t.scale * t.flipX;
         const sy = t.scale * t.flipY;
 
-        // 行列の計算順序: T * R * S (実際には逆順に適用)
-        // 中心を基準に変形させるため、中心への移動と復帰を挟む
-        // M = T(layer) * T(center) * R(angle) * S(scale) * T(-center)
         glMatrix.mat4.translate(model, model, [t.x, t.y, 0]);
         glMatrix.mat4.translate(model, model, [centerX, centerY, 0]);
         glMatrix.mat4.rotateZ(model, model, angle);
         glMatrix.mat4.scale(model, model, [sx, sy, 1]);
         glMatrix.mat4.translate(model, model, [-centerX, -centerY, 0]);
 
-        // --- 2. MVP行列の計算 (シェーダーに渡す最終的な行列) ---
-        // 射影行列: Canvas座標(Y-down)をWebGLクリップスペース(Y-up)に変換
         const projection = glMatrix.mat4.create();
         glMatrix.mat4.ortho(projection, 0, this.width, this.height, 0, -1, 1);
         
-        // MVP = Projection * Model
         glMatrix.mat4.multiply(mvp, projection, model);
     }
 
@@ -351,6 +341,10 @@ class CanvasManager {
 
     commitLayerTransform() {
         if (!this.isLayerTransforming) return;
+        // GPTくん案採用：念のためダーティフラグを立てる
+        if (this.transformTargetLayer) {
+            this.transformTargetLayer.gpuDirty = true;
+        }
         this.isLayerTransforming = false;
         this.transformTargetLayer = null;
         this.originalLayerTransform = null;
@@ -418,7 +412,6 @@ class CanvasManager {
              this.renderingBridge.renderToDisplay(null, fullRect);
              gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 
-             // アンプレマルチプライ処理
              for (let i = 0; i < pixels.length; i += 4) {
                 const a = pixels[i + 3];
                 if (a > 0) {
