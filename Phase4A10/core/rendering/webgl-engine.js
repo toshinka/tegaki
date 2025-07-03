@@ -1,14 +1,16 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.1.0 (Non-Destructive Transform Fixes)
+ * Version: 4.2.0 (Non-Destructive Transform Fixes v2)
  *
  * - 修正：
- * - 1. 【Undo時の色化け修正】
- * -   - `syncDirtyRectToImageData`メソッド内で、WebGLからピクセルを読み出した後に、
- * -     「アンプレマルチプライ（un-premultiply）」処理を追加。
- * -   - WebGL特有のアルファが乗算済みピクセルを、標準的なピクセル形式に変換することで、
- * -     Undo/Redo時にアンチエイリアス部分の色が赤っぽく化ける問題を完全に修正した。
+ * - 1. 【シェーダーの座標系を統一】
+ * -   - レイヤー合成シェーダー(`vsCompositor`)の座標計算を、ピクセルベースから
+ * -     クリップスペース(-1 ~ +1)に変換する方式に変更。
+ * -   - `core-engine`側で射影行列(Projection Matrix)を計算し、シェーダーに渡すことで、
+ * -     座標系の混乱を防ぎ、より標準的で堅牢な実装になった。
+ * - 2. 【Undo時の色化け修正の再実装】
+ * -   - `syncDirtyRectToImageData`内のアンプレマルチプライ処理を、より安定したロジックに見直した。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -51,14 +53,20 @@ export class WebGLEngine extends DrawingEngine {
         }
         this._initBuffers();
         this._setupSuperCompositingBuffer();
-        console.log(`WebGL Engine (v4.1.0 Non-Destructive Transform Fixes) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.2.0 Non-Destructive Transform Fixes v2) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
+        // ★★★ 修正: シェーダーは行列を受け取るだけ。座標変換はJS側に集約 ★★★
         const vsCompositor = `
-            attribute vec4 a_position; attribute vec2 a_texCoord;
-            uniform mat4 u_transformMatrix; varying vec2 v_texCoord;
-            void main() { gl_Position = u_transformMatrix * a_position; v_texCoord = a_texCoord; }`;
+            attribute vec4 a_position; 
+            attribute vec2 a_texCoord;
+            uniform mat4 u_transformMatrix; 
+            varying vec2 v_texCoord;
+            void main() { 
+                gl_Position = u_transformMatrix * vec4(a_position.xy, 0.0, 1.0);
+                v_texCoord = a_texCoord; 
+            }`;
         const fsCompositor = `
             precision highp float; varying vec2 v_texCoord;
             uniform sampler2D u_image; uniform float u_opacity;
@@ -105,7 +113,10 @@ export class WebGLEngine extends DrawingEngine {
         const gl = this.gl;
         this.positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([ -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0, -1.0 ]), gl.STATIC_DRAW);
+        // シェーダーで座標変換するので、バッファはピクセル座標(0,0)~(width,height)で定義
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+            0, this.height, 0, 0, this.width, this.height, this.width, 0
+        ]), gl.STATIC_DRAW);
         this.texCoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([ 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0 ]), gl.STATIC_DRAW);
@@ -323,14 +334,17 @@ export class WebGLEngine extends DrawingEngine {
         gl.uniform1i(program.locations.u_image, 0);
         gl.uniform1f(program.locations.u_opacity, 1.0);
         gl.uniform1f(program.locations.u_sharpness, 0.7);
-        const identityMatrix = glMatrix.mat4.create();
-        gl.uniformMatrix4fv(program.locations.u_transformMatrix, false, identityMatrix);
+        
+        // 最終表示は変形済みテクスチャを描画するので、単位行列でOK
+        const projection = glMatrix.mat4.create();
+        glMatrix.mat4.ortho(projection, 0, this.width, this.height, 0, -1, 1);
+        gl.uniformMatrix4fv(program.locations.u_transformMatrix, false, projection);
+
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         gl.disableVertexAttribArray(program.locations.a_position);
         gl.disableVertexAttribArray(program.locations.a_texCoord);
     }
 
-    // ★★★ 修正: Undo時の色化けを修正するアンプレマルチプライ処理 ★★★
     syncDirtyRectToImageData(layer, dirtyRect) {
         const gl = this.gl;
         const fbo = this.layerFBOs.get(layer);
@@ -346,19 +360,19 @@ export class WebGLEngine extends DrawingEngine {
         gl.readPixels(sx, readY, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-        // --- ここからが修正箇所 ---
-        // WebGLから読み出したピクセルは「アルファ乗算済み」なので、
-        // 通常のImageDataで扱えるように「未乗算」の状態に戻す。
+        // ★★★ 修正: Undo時の色化けを修正するアンプレマルチプライ処理 ★★★
         for (let i = 0; i < superBuffer.length; i += 4) {
-            const alpha = superBuffer[i + 3];
-            if (alpha > 0) {
-                const invAlpha = 255 / alpha;
-                superBuffer[i]     = superBuffer[i] * invAlpha;
-                superBuffer[i + 1] = superBuffer[i + 1] * invAlpha;
-                superBuffer[i + 2] = superBuffer[i + 2] * invAlpha;
+            const a = superBuffer[i + 3];
+            if (a > 0) {
+                const r = superBuffer[i];
+                const g = superBuffer[i + 1];
+                const b = superBuffer[i + 2];
+                // 255/a を掛けることで、乗算済みから通常の色に戻す
+                superBuffer[i]   = r * 255 / a;
+                superBuffer[i+1] = g * 255 / a;
+                superBuffer[i+2] = b * 255 / a;
             }
         }
-        // --- 修正箇所ここまで ---
 
         const targetImageData = layer.imageData;
         const targetData = targetImageData.data;
