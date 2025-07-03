@@ -1,17 +1,17 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 3.1.1 (Shader Precision Fix)
+ * Version: 3.1.0 (Sharpness Control & Final Quality Tuning)
  *
  * - 修正：
- * - 1. シェーダーの初期化エラーを修正:
- * -   ブラシ描画用シェーダー(vsBrush, fsBrush)間で、uniform変数 'u_radius' の
- * -   精度(precision)が異なっていたため、プログラムのリンクに失敗していた。
- * -   両方のシェーダーのデフォルト精度を 'highp float' に統一し、問題を解決。
- * - 2. シャープネス調整機能の追加: (v3.1.0の機能)
- * -   最終合成シェーダーにアンシャープマスク風ロジックと `u_sharpness` を導入。
- * - 3. ブレンドモードの厳格化: (v3.1.0の機能)
- * -   消しゴム使用時のブレンドモードを修正。
+ * - 1. シャープネス調整機能の追加:
+ * -   ユーザーからの「引いて見ると競合よりシャープさが足りない」というフィードバックに対応。
+ * -   最終合成シェーダー(fsCompositor)に、アンシャープマスクに近いロジックを導入。
+ * -   uniform変数 `u_sharpness` を追加し、描画のシャープさを外部から調整可能にした。
+ * -   これにより、滑らかさと鮮明さのバランスを任意にコントロールできる。
+ *
+ * - 2. ブレンドモードの厳格化:
+ * -   消しゴム使用時のブレンドモードを、より正確にアルファチャンネルのみを削るように修正。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -65,7 +65,7 @@ export class WebGLEngine extends DrawingEngine {
         this._initBuffers();
         this._setupSuperCompositingBuffer();
 
-        console.log(`WebGL Engine (v3.1.1 Shader Precision Fix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v3.1.0 Sharpness Control) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
@@ -78,6 +78,7 @@ export class WebGLEngine extends DrawingEngine {
                 v_texCoord = a_texCoord;
             }`;
         
+        // ★★★★★ 修正箇所: シャープネス処理を追加した最終合成シェーダー ★★★★★
         const fsCompositor = `
             precision highp float;
             varying vec2 v_texCoord;
@@ -107,9 +108,8 @@ export class WebGLEngine extends DrawingEngine {
                 gl_FragColor = vec4(final_color.rgb, final_color.a * u_opacity);
             }`;
 
-        // ★★★★★ 修正箇所: 精度を highp に統一 ★★★★★
         const vsBrush = `
-            precision highp float;
+            precision mediump float;
             attribute vec2 a_position; 
             uniform vec2 u_resolution;
             uniform vec2 u_center;
@@ -410,6 +410,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.disableVertexAttribArray(program.locations.a_texCoord);
     }
     
+    // ★★★★★ 修正箇所: 最終描画時にシャープネスの値を渡す ★★★★★
     renderToDisplay(compositionData, dirtyRect) {
         if (!this.gl || !this.superCompositeTexture) return;
         const gl = this.gl;
