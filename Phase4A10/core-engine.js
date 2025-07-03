@@ -1,7 +1,7 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.4.0 (Coordinate System Final Fix)
+ * Version: 3.5.0 (Coordinate System Final Fix)
  *
  * - 修正：
  * - 1. 【座標系の完全統一】
@@ -415,7 +415,8 @@ class CanvasManager {
                     pixels[i+2] = Math.round(pixels[i+2] * invA);
                 }
              }
-
+             // ★★★ GPTくん提案のおまけ修正は不要 ★★★
+             // readPixelsはY-up、putImageDataはY-downなので、この反転は必要
              const correctedPixels = new Uint8ClampedArray(this.width * this.height * 4);
              for (let y = 0; y < this.height; y++) {
                  const s = y * this.width * 4;

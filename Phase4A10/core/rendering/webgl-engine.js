@@ -1,7 +1,7 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.4.0 (Coordinate System Final Fix)
+ * Version: 4.5.0 (Coordinate System Final Fix)
  *
  * - 修正：
  * - 1. 【Y軸反転ルールの統一】
@@ -55,7 +55,7 @@ export class WebGLEngine extends DrawingEngine {
         }
         this._initBuffers();
         this._setupSuperCompositingBuffer();
-        console.log(`WebGL Engine (v4.4.0 Final Fix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.5.0 Final Fix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
@@ -138,7 +138,7 @@ export class WebGLEngine extends DrawingEngine {
         let texture = this.layerTextures.get(layer);
         let fbo = this.layerFBOs.get(layer);
         
-        // ★★★ 修正: テクスチャアップロード時にY軸を反転させる設定 ★★★
+        // ★★★ 修正: テクスチャアップロード時にY軸を反転させる設定に統一 ★★★
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 
         if (!texture) {
@@ -350,6 +350,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.disableVertexAttribArray(program.locations.a_texCoord);
     }
 
+    // ★★★ 修正: Y軸反転と色化けを修正した最終版 ★★★
     syncDirtyRectToImageData(layer, dirtyRect) {
         const gl = this.gl;
         const fbo = this.layerFBOs.get(layer);
@@ -362,18 +363,18 @@ export class WebGLEngine extends DrawingEngine {
         if (sWidth <= 0 || sHeight <= 0) return;
         
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-        const superBuffer = new Uint8Array(sWidth * sHeight * 4);
+        const pixelBuffer = new Uint8Array(sWidth * sHeight * 4);
         
-        gl.readPixels(sx, sy, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer);
+        gl.readPixels(sx, sy, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixelBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-        for (let i = 0; i < superBuffer.length; i += 4) {
-            const a = superBuffer[i + 3];
+        for (let i = 0; i < pixelBuffer.length; i += 4) {
+            const a = pixelBuffer[i + 3];
             if (a > 0) {
                 const invA = 255.0 / a;
-                superBuffer[i]   = Math.round(superBuffer[i]   * invA);
-                superBuffer[i+1] = Math.round(superBuffer[i+1] * invA);
-                superBuffer[i+2] = Math.round(superBuffer[i+2] * invA);
+                pixelBuffer[i]   = Math.round(pixelBuffer[i]   * invA);
+                pixelBuffer[i+1] = Math.round(pixelBuffer[i+1] * invA);
+                pixelBuffer[i+2] = Math.round(pixelBuffer[i+2] * invA);
             }
         }
 
@@ -388,16 +389,17 @@ export class WebGLEngine extends DrawingEngine {
                 if (targetX >= targetImageData.width || targetY >= targetImageData.height) continue;
                 
                 const sourceX = Math.min(sWidth - 1, Math.max(0, Math.round(x * factor)));
-                const sourceY = Math.min(sHeight - 1, Math.max(0, Math.round(y * factor)));
+                // Y軸を反転させて読み取る
+                const sourceY = sHeight - 1 - Math.min(sHeight - 1, Math.max(0, Math.round(y * factor)));
                 
                 const sourceIndex = (sourceY * sWidth + sourceX) * 4;
                 const targetIndex = (targetY * targetImageData.width + targetX) * 4;
 
-                if (sourceIndex >= 0 && sourceIndex < superBuffer.length) {
-                    targetData[targetIndex]     = superBuffer[sourceIndex];
-                    targetData[targetIndex + 1] = superBuffer[sourceIndex + 1];
-                    targetData[targetIndex + 2] = superBuffer[sourceIndex + 2];
-                    targetData[targetIndex + 3] = superBuffer[sourceIndex + 3];
+                if (sourceIndex >= 0 && sourceIndex < pixelBuffer.length) {
+                    targetData[targetIndex]     = pixelBuffer[sourceIndex];
+                    targetData[targetIndex + 1] = pixelBuffer[sourceIndex + 1];
+                    targetData[targetIndex + 2] = pixelBuffer[sourceIndex + 2];
+                    targetData[targetIndex + 3] = pixelBuffer[sourceIndex + 3];
                 }
             }
         }
