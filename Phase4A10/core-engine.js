@@ -1,12 +1,21 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.7.0 (Refined Pen Pressure Curve - Mk.II)
+ * Version: 3.0.0 (Non-Destructive Transform)
  *
  * - 修正：
- * - ペンの「ON荷重」問題をさらに改善するため、筆圧計算ロジックを再々調整。
- * - 描き始めの数点の筆圧を抑制するロジックを強化し、より立ち上がりの遅いカーブに変更。
- * - これにより、弱いタッチでの繊細な「入り」の表現がさらに向上し、シャープな先細り線を描きやすくする。
+ * - 1. 【非破壊変形の導入】
+ * -   - レイヤー変形を、ピクセルデータを直接書き換える「破壊的」な方法から、
+ * -     変形情報(行列)のみを保持し、描画時にGPUで変形させる「非破壊的」な方法に根本的に変更。
+ * -   - これにより、拡大・縮小・回転を繰り返しても画質が一切劣化しなくなった。
+ * - 2. 【gl-matrixライブラリの活用】
+ * -   - Layerクラスに変形行列を保持する `transformMatrix` プロパティを追加。
+ * -   - レイヤー変形時(Vキー)に、`transform` プロパティ(x, y, scale等)から
+ * -     `updateLayerMatrix` メソッドで変形行列をリアルタイムに計算する。
+ * - 3. 【ロジックの簡素化】
+ * -   - 変形のたびにピクセルを再計算していた `getTransformedImageData` の呼び出しを廃止。
+ * -   - 変形を確定させる `commitLayerTransform` は、変形モードを終了するだけのシンプルな役割になった。
+ * -   - 変形前の状態を保持していた `originalImageData` を廃止し、コードを簡潔にした。
  * ===================================================================================
  */
 
@@ -35,8 +44,13 @@ class Layer {
         this.opacity = 100;
         this.blendMode = 'normal';
         this.imageData = new ImageData(width, height);
+        
+        // ★★★ 修正: 非破壊変形のためのプロパティ ★★★
+        // ユーザーフレンドリーな変形情報
         this.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
-        this.originalImageData = null;
+        // GPUに渡すための変形行列 (gl-matrix.jsが必要)
+        this.transformMatrix = glMatrix.mat4.create();
+        
         this.gpuDirty = true; // GPUテクスチャが更新を必要とするか
     }
     clear() {
@@ -59,7 +73,6 @@ class Layer {
 class CanvasManager {
     constructor(app) {
         this.app = app;
-        // displayCanvasはポインタイベントの座標計算と、Canvas2Dフォールバック用に保持
         this.displayCanvas = document.getElementById('drawingCanvas'); 
         this.displayCtx = this.displayCanvas.getContext('2d', { willReadFrequently: true });
         this.canvasArea = document.getElementById('canvas-area');
@@ -69,15 +82,15 @@ class CanvasManager {
 
         this.renderingBridge = new RenderingBridge(this.displayCanvas);
 
-        // compositionDataは主にPNGエクスポートやCanvas2Dモードで使用
         this.compositionData = new ImageData(this.width, this.height);
         this.isDrawing = false; this.isPanning = false; this.isSpaceDown = false;
         
         this.isVDown = false; this.isShiftDown = false;
         
+        // ★★★ 修正: 非破壊変形に伴いロジックを簡素化 ★★★
         this.isLayerTransforming = false;
         this.transformTargetLayer = null;
-        this.originalLayerTransform = null;
+        this.originalLayerTransform = null; // 変形開始時のtransform値を保持
         this.transformMode = 'move'; this.transformStartX = 0; this.transformStartY = 0;
         
         this.currentTool = 'pen';
@@ -134,14 +147,14 @@ class CanvasManager {
         
         if (this.currentTool === 'bucket') {
             this.app.bucketTool.fill(activeLayer.imageData, coords.x, coords.y, hexToRgba(this.currentColor));
-            activeLayer.gpuDirty = true; // バケツツールはCPUでImageDataを直接変更するので、GPUに更新を通知
+            activeLayer.gpuDirty = true;
             this.renderAllLayers();
             this.saveState();
             return;
         }
 
         this.isDrawing = true;
-        this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5]; // 0圧を回避
+        this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
         this.lastPoint = { ...coords, pressure: this.pressureHistory[0] };
         
         const size = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
@@ -160,16 +173,22 @@ class CanvasManager {
     
     onPointerMove(e) {
         if (this.isLayerTransforming) {
-            const dx = e.clientX - this.transformStartX; const dy = e.clientY - this.transformStartY;
-            const t = this.transformTargetLayer.transform; const ot = this.originalLayerTransform;
+            const dx = e.clientX - this.transformStartX; 
+            const dy = e.clientY - this.transformStartY;
+            const t = this.transformTargetLayer.transform; 
+            const ot = this.originalLayerTransform;
+            
             if (this.transformMode === 'move') {
                 t.x = ot.x + dx / this.viewTransform.scale;
                 t.y = ot.y + dy / this.viewTransform.scale;
             } else {
                 t.rotation = ot.rotation + dx * 0.5;
-                const scaleFactor = 1 - dy * 0.005; t.scale = Math.max(0.1, ot.scale * scaleFactor);
+                const scaleFactor = 1 - dy * 0.005; 
+                t.scale = Math.max(0.1, ot.scale * scaleFactor);
             }
-            this.applyLayerTransformPreview(); return;
+            // ★★★ 修正: プレビュー処理を呼び出す ★★★
+            this.applyLayerTransformPreview(); 
+            return;
         }
         if (this.isPanning) {
             const dx = e.clientX - this.dragStartX; const dy = e.clientY - this.dragStartY;
@@ -221,12 +240,10 @@ class CanvasManager {
                 this.animationFrameId = null;
             }
             
-            // 描画の最後に最終レンダリングをかける
             this._renderDirty();
 
             const activeLayer = this.app.layerManager.getCurrentLayer();
             if (activeLayer) {
-                // GPU上の描画結果をCPUのImageDataに同期する（次の描画や保存のため）
                 this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
             }
             
@@ -243,9 +260,7 @@ class CanvasManager {
     _renderDirty() {
         const rect = this.dirtyRect;
         if (rect.minX > rect.maxX) return;
-        // ステップ1: レイヤー合成
         this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, rect);
-        // ステップ2: 画面への表示
         this.renderingBridge.renderToDisplay(this.compositionData, rect);
     }
 
@@ -275,27 +290,19 @@ class CanvasManager {
         this.dirtyRect = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
     }
 
-    // ★★★★★ 修正箇所: ON荷重をさらに軽減するための筆圧計算ロジック ★★★★★
     calculatePressureSize(baseSizeInput, pressure) {
         const baseSize = Math.max(0.1, baseSizeInput);
         let normalizedPressure = Math.max(0, Math.min(1, pressure || 0));
-        
         const tempHistory = [...this.pressureHistory, normalizedPressure];
         if (tempHistory.length > this.maxPressureHistory) tempHistory.shift();
         const smoothedPressure = tempHistory.reduce((sum, p) => sum + p, 0) / tempHistory.length;
-
         let finalPressure = smoothedPressure;
-
-        // ★★★ 描き始めの筆圧抑制を強化 ★★★
         const historyLength = this.pressureHistory.length;
         if (this.isDrawing && historyLength <= this.maxPressureHistory) {
-            // 描き始めの数点は、より立ち上がりが遅い3次関数で筆圧を抑える
-            // 係数を調整し、より繊細なタッチを反映させる (例: 0.2から始まり、5点目で1.0に近づく)
             const dampingFactor = historyLength / this.maxPressureHistory;
             const initialDamping = 0.2 + Math.pow(dampingFactor, 3) * 0.8;
             finalPressure *= initialDamping;
         }
-
         if (this.pressureSettings.dynamicRange) {
             const minHist = Math.min(...tempHistory, finalPressure);
             const maxHist = Math.max(...tempHistory, finalPressure);
@@ -304,21 +311,16 @@ class CanvasManager {
                 finalPressure = (finalPressure - minHist) / range;
             }
         }
-        
         const curve = this.pressureSettings.curve;
         const curvedPressure = Math.pow(finalPressure, curve);
-        
         const minSize = baseSize * this.pressureSettings.minSizeRatio;
         const maxSize = baseSize;
         const finalSize = minSize + (maxSize - minSize) * curvedPressure;
-        
         return Math.max(0.1, finalSize);
     }
 
-
     getCanvasCoordinates(e) {
         try {
-            // WebGL利用時も、イベント座標の基準はオリジナルのdisplayCanvasとする
             const rect = this.displayCanvas.getBoundingClientRect();
             if (rect.width === 0 || rect.height === 0) return null;
             let x = e.clientX - rect.left;
@@ -335,20 +337,35 @@ class CanvasManager {
         }
     }
 
+    // ★★★ 新規: transformオブジェクトから変形行列を計算するヘルパー関数 ★★★
+    updateLayerMatrix(layer) {
+        const t = layer.transform;
+        const m = layer.transformMatrix;
+        glMatrix.mat4.identity(m);
+
+        // WebGLのクリップスペース(-1 ~ +1)に合わせて変形を適用
+        // 1. 移動 (Translate)
+        glMatrix.mat4.translate(m, m, [t.x / (this.width / 2), -t.y / (this.height / 2), 0]);
+        
+        // 2. 回転 (Rotate)
+        glMatrix.mat4.rotateZ(m, m, t.rotation * Math.PI / 180);
+
+        // 3. 拡縮 (Scale)
+        glMatrix.mat4.scale(m, m, [t.scale * t.flipX, t.scale * t.flipY, 1]);
+    }
+
+    // ★★★ 修正: 非破壊変形の開始 ★★★
     startLayerTransform(e = null) {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || this.app.layerManager.layers.indexOf(activeLayer) === 0) return;
+        
         this.isLayerTransforming = true;
         this.transformTargetLayer = activeLayer;
-        // 非破壊変形ではないので、変形開始前の状態を保存
-        if (!this.transformTargetLayer.originalImageData) {
-            this.transformTargetLayer.originalImageData = new ImageData(
-                new Uint8ClampedArray(this.transformTargetLayer.imageData.data),
-                this.transformTargetLayer.imageData.width,
-                this.transformTargetLayer.imageData.height
-            );
-        }
+        
+        // 破壊的なピクセル操作は行わないので、originalImageDataは不要
+        // 変形開始時のtransform値を保存するだけ
         this.originalLayerTransform = { ...this.transformTargetLayer.transform };
+
         if (e) {
             this.transformMode = this.isShiftDown ? 'rotate_scale' : 'move';
             this.transformStartX = e.clientX;
@@ -356,34 +373,30 @@ class CanvasManager {
         }
     }
     
+    // ★★★ 修正: 非破壊変形のプレビュー ★★★
     applyLayerTransformPreview() {
-        if (!this.transformTargetLayer || !this.transformTargetLayer.originalImageData) return;
-        const layer = this.transformTargetLayer;
-        // この処理はCPU負荷が高い。将来的にはGPUによる非破壊変形に移行したい。
-        const transformedImageData = this.renderingBridge.getTransformedImageData(layer.originalImageData, layer.transform);
-        layer.imageData = transformedImageData;
-        layer.gpuDirty = true; // ImageDataが変更されたのでGPUに通知
+        if (!this.transformTargetLayer) return;
+        
+        // 1. レイヤーの変形行列を更新
+        this.updateLayerMatrix(this.transformTargetLayer);
+        
+        // 2. 再描画をリクエスト (GPUがリアルタイムに変形を適用する)
         this.renderAllLayers();
     }
 
+    // ★★★ 修正: 非破壊変形の確定 ★★★
     commitLayerTransform() {
         if (!this.isLayerTransforming) return;
-        this.applyLayerTransformPreview();
-        const layer = this.transformTargetLayer;
-        // 変形を確定させ、ピクセルデータとして焼き込む
-        layer.originalImageData = new ImageData(
-            new Uint8ClampedArray(layer.imageData.data),
-            layer.imageData.width,
-            layer.imageData.height
-        );
-        layer.gpuDirty = true;
-        layer.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }; // transform情報をリセット
+        
+        // ピクセルデータの焼き付けやtransformのリセットは行わない
+        // これが「非破壊」の核！
+        
         this.isLayerTransforming = false;
         this.transformTargetLayer = null;
         this.originalLayerTransform = null;
-        this.originalImageData = null; 
+        
         this.renderAllLayers();
-        this.saveState();
+        this.saveState(); // 変形後の状態でヒストリを保存
     }
 
     saveState() {
@@ -399,6 +412,7 @@ class CanvasManager {
                     layer.imageData.width,
                     layer.imageData.height
                 ),
+                // ★★★ 修正: transform情報を保存 ★★★
                 transform: { ...layer.transform } 
             })),
             activeLayerIndex: this.app.layerManager.activeLayerIndex
@@ -415,10 +429,14 @@ class CanvasManager {
             layer.opacity = layerData.opacity ?? 100;
             layer.blendMode = layerData.blendMode ?? 'normal';
             layer.imageData.data.set(layerData.imageData.data);
+            
+            // ★★★ 修正: transform情報を復元し、行列を再計算 ★★★
             if (layerData.transform) {
                 layer.transform = { ...layerData.transform };
             }
-            layer.gpuDirty = true; // 状態復元時は全レイヤーをGPUに再アップロード
+            this.updateLayerMatrix(layer);
+
+            layer.gpuDirty = true;
             return layer;
         });
         this.app.layerManager.switchLayer(state.activeLayerIndex);
@@ -442,25 +460,20 @@ class CanvasManager {
         }
     }
     exportMergedImage() {
-        // WebGLから最終的な描画結果を読み出してPNGを生成
         const exportCanvas = document.createElement('canvas');
         exportCanvas.width = this.width;
         exportCanvas.height = this.height;
         const exportCtx = exportCanvas.getContext('2d');
         
-        // 最終合成結果をcompositionDataに取得
         const fullRect = { minX: 0, minY: 0, maxX: this.width, maxY: this.height };
         this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, fullRect);
 
-        // WebGLエンジンから直接ピクセルデータを読み込む
         const gl = this.renderingBridge.engines['webgl']?.gl;
         if (gl && this.renderingBridge.currentEngineType === 'webgl') {
              const pixels = new Uint8Array(this.width * this.height * 4);
-             // 画面に描画した内容を読み出す
              this.renderingBridge.renderToDisplay(null, fullRect);
              gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
              
-             // Y軸反転を補正
              const correctedPixels = new Uint8ClampedArray(this.width * this.height * 4);
              for (let y = 0; y < this.height; y++) {
                  const s = y * this.width * 4;
@@ -470,7 +483,7 @@ class CanvasManager {
              const finalImageData = new ImageData(correctedPixels, this.width, this.height);
              exportCtx.putImageData(finalImageData, 0, 0);
 
-        } else { // Fallback for Canvas2D
+        } else { 
             exportCtx.putImageData(this.compositionData, 0, 0);
         }
         
@@ -490,33 +503,46 @@ class CanvasManager {
     handleWheel(e) { e.preventDefault(); if (e.shiftKey) { this.rotate(-e.deltaY * 0.2); } else { this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); } }
 }
 
-// LayerManagerと他のマネージャークラスは変更なし
 class LayerManager { 
     constructor(app) { this.app = app; this.layers = []; this.activeLayerIndex = -1; this.width = 344; this.height = 135; this.mergeCanvas = document.createElement('canvas'); this.mergeCanvas.width = this.width; this.mergeCanvas.height = this.height; this.mergeCtx = this.mergeCanvas.getContext('2d'); } 
-    setupInitialLayers() { const bgLayer = new Layer('背景', this.width, this.height); bgLayer.fill('#f0e0d6'); this.layers.push(bgLayer); const drawingLayer = new Layer('レイヤー 1', this.width, this.height); this.layers.push(drawingLayer); this.switchLayer(1); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
-    addLayer() { if (this.layers.length >= 99) return; const insertIndex = this.activeLayerIndex + 1; const newLayer = new Layer(`レイヤー ${this.layers.length + 1}`, this.width, this.height); this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
+    setupInitialLayers() { const bgLayer = new Layer('背景', this.width, this.height); bgLayer.fill('#f0e0d6'); this.app.canvasManager.updateLayerMatrix(bgLayer); this.layers.push(bgLayer); const drawingLayer = new Layer('レイヤー 1', this.width, this.height); this.app.canvasManager.updateLayerMatrix(drawingLayer); this.layers.push(drawingLayer); this.switchLayer(1); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
+    addLayer() { if (this.layers.length >= 99) return; const insertIndex = this.activeLayerIndex + 1; const newLayer = new Layer(`レイヤー ${this.layers.length + 1}`, this.width, this.height); this.app.canvasManager.updateLayerMatrix(newLayer); this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
     deleteActiveLayer() { if (this.activeLayerIndex === 0 || this.layers.length <= 1) return; this.layers.splice(this.activeLayerIndex, 1); const newActiveIndex = Math.min(this.layers.length - 1, this.activeLayerIndex); this.renameLayers(); this.switchLayer(newActiveIndex); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
     renameLayers() { this.layers.forEach((layer, index) => { if (index > 0) layer.name = `レイヤー ${index}`; }); } 
     switchLayer(index) { if (index < 0 || index >= this.layers.length) return; this.activeLayerIndex = index; if (this.app.layerUIManager) { this.app.layerUIManager.renderLayers(); } } 
     getCurrentLayer() { return this.layers[this.activeLayerIndex] || null; } 
-    duplicateActiveLayer() { const activeLayer = this.getCurrentLayer(); if (!activeLayer) return; const newLayer = new Layer(`${activeLayer.name}のコピー`, this.width, this.height); newLayer.imageData.data.set(activeLayer.imageData.data); newLayer.visible = activeLayer.visible; newLayer.opacity = activeLayer.opacity; newLayer.blendMode = activeLayer.blendMode; newLayer.gpuDirty = true; const insertIndex = this.activeLayerIndex + 1; this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
+    duplicateActiveLayer() { const activeLayer = this.getCurrentLayer(); if (!activeLayer) return; const newLayer = new Layer(`${activeLayer.name}のコピー`, this.width, this.height); newLayer.imageData.data.set(activeLayer.imageData.data); newLayer.visible = activeLayer.visible; newLayer.opacity = activeLayer.opacity; newLayer.blendMode = activeLayer.blendMode; newLayer.transform = {...activeLayer.transform}; this.app.canvasManager.updateLayerMatrix(newLayer); newLayer.gpuDirty = true; const insertIndex = this.activeLayerIndex + 1; this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
     mergeDownActiveLayer() {
         if (this.activeLayerIndex <= 0) return;
+        // この処理はピクセルを直接操作するため、非破壊変形の結果を一度焼き付ける必要がある
+        console.warn("下のレイヤーと結合は、変形をピクセルに焼き付けます。");
         const topLayer = this.layers[this.activeLayerIndex];
         const bottomLayer = this.layers[this.activeLayerIndex - 1];
+
+        // トップレイヤーの変形を適用したImageDataを取得する
+        const transformedTopImageData = this.renderingBridge.getTransformedImageData(topLayer.imageData, topLayer.transform);
+
         const tempCtx = this.mergeCtx;
         tempCtx.clearRect(0, 0, this.width, this.height);
-        tempCtx.putImageData(bottomLayer.imageData, 0, 0);
+        // ボトムレイヤーは変形を考慮して描画
+        const transformedBottomImageData = this.renderingBridge.getTransformedImageData(bottomLayer.imageData, bottomLayer.transform);
+        tempCtx.putImageData(transformedBottomImageData, 0, 0);
+
         tempCtx.globalAlpha = topLayer.opacity / 100;
         tempCtx.globalCompositeOperation = topLayer.blendMode;
+        
         const topLayerCanvas = document.createElement('canvas');
         topLayerCanvas.width = this.width;
         topLayerCanvas.height = this.height;
-        const topLayerCtx = topLayerCanvas.getContext('2d');
-        topLayerCtx.putImageData(topLayer.imageData, 0, 0);
+        topLayerCanvas.getContext('2d').putImageData(transformedTopImageData, 0, 0);
         tempCtx.drawImage(topLayerCanvas, 0, 0);
+        
         bottomLayer.imageData = tempCtx.getImageData(0, 0, this.width, this.height);
+        // 結合後は変形情報をリセット
+        bottomLayer.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
+        this.app.canvasManager.updateLayerMatrix(bottomLayer);
         bottomLayer.gpuDirty = true;
+        
         this.layers.splice(this.activeLayerIndex, 1);
         this.switchLayer(this.activeLayerIndex - 1);
         this.app.canvasManager.renderAllLayers();
