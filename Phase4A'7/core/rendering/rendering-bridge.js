@@ -1,9 +1,10 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Rendering Bridge (Dynamic Switching)
- * Version: 2.2.0 (Phase 4A'6 Performance Patch)
+ * Version: 2.3.0 (Phase 4A'-7 GPU Drawing Prep)
  *
- * - syncDirtyRectToImageDataメソッドの委譲を追加。
+ * - 修正：
+ * - DrawingEngineのインターフェース変更に伴い、委譲するメソッドの引数を更新。
  * ===================================================================================
  */
 import { Canvas2DEngine } from './canvas2d-engine.js';
@@ -16,7 +17,6 @@ export class RenderingBridge {
         this.currentEngine = null;
         this.currentEngineType = '';
 
-        // 1. Canvas2Dエンジンは必ず初期化
         try {
             this.engines['canvas2d'] = new Canvas2DEngine(this.displayCanvas);
             console.log("Canvas2D Engine initialized successfully.");
@@ -25,7 +25,6 @@ export class RenderingBridge {
             throw e;
         }
 
-        // 2. WebGLエンジンが利用可能かチェックして、試行する
         if (WebGLEngine.isSupported()) {
             try {
                 const webglCanvas = document.createElement('canvas');
@@ -48,7 +47,6 @@ export class RenderingBridge {
             console.warn("WebGL is not supported in this browser.");
         }
 
-        // デフォルトのエンジンをWebGLに設定 (利用可能な場合)
         if (this.engines['webgl'] && this.engines['webgl'].gl) {
             this.setEngine('webgl');
         } else {
@@ -113,7 +111,7 @@ export class RenderingBridge {
     }
 
     _logCanvasVisibility() {
-        if (console.debug) { // デバッグログは通常のログより目立たないように
+        if (console.debug) {
             console.debug("Canvas visibility status:");
             console.debug("- Canvas2D opacity:", this.displayCanvas.style.opacity);
             console.debug("- Canvas2D pointerEvents:", this.displayCanvas.style.pointerEvents);
@@ -128,24 +126,8 @@ export class RenderingBridge {
         }
     }
 
-    testEngineSwitch() {
-        console.log("Testing engine switch...");
-        const currentType = this.currentEngineType;
-        const targetType = currentType === 'webgl' ? 'canvas2d' : 'webgl';
-        
-        console.log(`Switching from ${currentType} to ${targetType}`);
-        const success = this.setEngine(targetType);
-        
-        if (success) {
-            setTimeout(() => {
-                console.log(`Switching back from ${targetType} to ${currentType}`);
-                this.setEngine(currentType);
-            }, 2000);
-        }
-    }
-
     // --- DrawingEngineのインターフェースを現在のエンジンに委譲 ---
-    // スプレッド構文(...)を使っているため、引数の数が変わっても自動的に全てが渡される
+    // ★★★ 修正: メソッドのシグネチャ（引数）をインターフェースに合わせる ★★★
     drawCircle(...args) { this.currentEngine.drawCircle(...args); }
     drawLine(...args) { this.currentEngine.drawLine(...args); }
     fill(...args) { this.currentEngine.fill(...args); }
@@ -153,11 +135,5 @@ export class RenderingBridge {
     getTransformedImageData(...args) { return this.currentEngine.getTransformedImageData(...args); }
     compositeLayers(...args) { this.currentEngine.compositeLayers(...args); }
     renderToDisplay(...args) { this.currentEngine.renderToDisplay(...args); }
-
-    /**
-     * ★★★ 追加したメソッド委譲 ★★★
-     * GPU->CPUのデータ同期用。オプショナルチェイニング(?.)を使い、
-     * このメソッドを持たないエンジン（Canvas2Dなど）でもエラーにならないようにします。
-     */
     syncDirtyRectToImageData(...args) { this.currentEngine.syncDirtyRectToImageData?.(...args); }
 }

@@ -1,13 +1,12 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Drawing Engine Interface
- * Version 1.1.0 (GPU Drawing Support)
+ * Version 1.2.0 (GPU Drawing Prep)
  *
- * このファイルは、すべての描画エンジン（Canvas2D, WebGLなど）が
- * 共通して持つべき機能（API）を定義する、いわば「設計図」や「インターフェース」です。
- * core-engine.jsは、この設計図に書かれた命令だけを使います。
- *
- * ・drawCircle, drawLineに描画対象レイヤーを渡すための引数を追加。
+ * - 修正：
+ * - GPUへの直接描画を前提としたインターフェースに変更。
+ * - drawCircle, drawLineからimageData引数を削除。
+ * - 各エンジンは、代わりに渡されるlayerオブジェクトから描画対象を判断する責務を負う。
  * ===================================================================================
  */
 export class DrawingEngine {
@@ -16,19 +15,17 @@ export class DrawingEngine {
             throw new Error("DrawingEngine is an abstract class and cannot be instantiated directly.");
         }
         this.canvas = canvas;
-        this.ctx = null; // 各エンジンで初期化
+        this.ctx = null;
     }
 
-    // imageDataに直接描画するメソッド群
-    drawCircle(imageData, centerX, centerY, radius, color, isEraser, layer) { throw new Error("Method 'drawCircle()' must be implemented."); }
-    drawLine(imageData, x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize, layer) { throw new Error("Method 'drawLine()' must be implemented."); }
+    // ★★★ 修正: imageData引数を削除 ★★★
+    drawCircle(centerX, centerY, radius, color, isEraser, layer) { throw new Error("Method 'drawCircle()' must be implemented."); }
+    drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize, layer) { throw new Error("Method 'drawLine()' must be implemented."); }
+    
+    // 以下は変更なし
     fill(imageData, color) { throw new Error("Method 'fill()' must be implemented."); }
     clear(imageData) { throw new Error("Method 'clear()' must be implemented."); }
     getTransformedImageData(sourceImageData, transform) { throw new Error("Method 'getTransformedImageData()' must be implemented."); }
-
-    // レイヤー群を合成するメソッド
     compositeLayers(layers, compositionData, dirtyRect) { throw new Error("Method 'compositeLayers()' must be implemented."); }
-
-    // 合成結果をディスプレイに表示するメソッド
     renderToDisplay(compositionData, dirtyRect) { throw new Error("Method 'renderToDisplay()' must be implemented."); }
 }

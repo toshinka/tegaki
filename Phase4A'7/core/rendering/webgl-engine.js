@@ -1,34 +1,12 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 2.4.0 (Canonical Coordinate System Fix)
+ * Version: 2.5.0 (Phase 4A'-7 GPU Drawing Prep)
  *
  * - 修正：
- * - 上下反転問題を根本的に解決するため、WebGLの標準的な座標系に完全に統一。
- *
- * -【新しい基本方針：すべてを「Y-up」で統一】
- * - WebGL内部では、座標もテクスチャも、すべてY軸が上を向いている(Y-up)状態に統一する。
- * - CPU(JavaScript)側との座標系の違いは、データの出入り口でのみ吸収する。
- *
- * -【具体的な修正】
- * - 1. テクスチャアップロード時 (_createOrUpdateTextureFromImageData):
- * -   `gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)` に変更。
- * -   これにより、ImageData(Y-down)がGPUに転送される際に自動で反転され、
- * -   WebGL内では常に正しい向き(Y-up)のテクスチャとして扱われる。
- *
- * - 2. ブラシ描画時 (drawCircle):
- * -   マウス座標(Y-down)をWebGL座標(Y-up)に変換する処理 (`canvas.height - y`) は
- * -   「データの出入り口」での正しい変換なので、これを維持する。
- *
- * - 3. レイヤー合成時 (compositeLayers):
- * -   Y-upのテクスチャ同士を合成するため、反転の必要はなく、標準のテクスチャ座標を使用する。
- *
- * - 4. 最終画面表示時 (renderToDisplay):
- * -   合成済みのテクスチャもY-upであり、画面への描画もY-up空間で行われるため、
- * -   ここでも反転は不要。標準のテクスチャ座標を使用する。これによりロジックが大幅に簡素化された。
- *
- * - 5. GPUデータ読み戻し時 (syncDirtyRectToImageData):
- * -   Y-upのGPUデータをY-downのImageDataに書き戻すため、手動での行反転処理を維持する。
+ * - DrawingEngineのインターフェース変更に伴い、drawCircle, drawLineの引数から
+ * imageDataを削除。内部ロジックは既にlayerオブジェクトを使用していたため、
+ * シグネチャの変更のみで対応完了。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -76,7 +54,7 @@ export class WebGLEngine extends DrawingEngine {
         this._initBuffers();
         this._setupCompositingBuffer();
 
-        console.log("WebGL Engine (v2.4.0 Canonical Coordinate System Fix) initialized successfully.");
+        console.log("WebGL Engine (v2.5.0 GPU Drawing Prep) initialized successfully.");
     }
 
     _initShaderPrograms() {
@@ -144,7 +122,6 @@ export class WebGLEngine extends DrawingEngine {
 
         this.texCoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        // 標準的なテクスチャ座標 (Y-up。左下が(0,0))
         const texCoords = [ 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0 ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
     }
@@ -161,22 +138,15 @@ export class WebGLEngine extends DrawingEngine {
             this.layerTextures.set(layer, texture);
         }
         gl.bindTexture(gl.TEXTURE_2D, texture);
-
-        // ★★★★★ 方針1: Y-up統一の要 ★★★★★
-        // ImageDataをGPUに送る際にY軸を反転させる
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-        
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imageData);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.bindTexture(gl.TEXTURE_2D, null);
-
-        // 次回以降の他の画像読込のために設定を戻しておくのが安全
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-
         layer.gpuDirty = false; 
         this._setupLayerFBO(layer, texture);
         return texture;
@@ -243,7 +213,8 @@ export class WebGLEngine extends DrawingEngine {
         }
     }
 
-    drawCircle(imageData, centerX, centerY, radius, color, isEraser, layer) {
+    // ★★★ 修正: imageData引数を削除 ★★★
+    drawCircle(centerX, centerY, radius, color, isEraser, layer) {
         if (!this.gl || !this.programs.brush) return;
         const gl = this.gl;
         const program = this.programs.brush;
@@ -251,7 +222,8 @@ export class WebGLEngine extends DrawingEngine {
         const targetFBO = this.layerFBOs.get(layer);
         if (!targetFBO) {
             this._createOrUpdateTextureFromImageData(layer.imageData, layer);
-            this.drawCircle(imageData, centerX, centerY, radius, color, isEraser, layer); 
+            // 再帰呼び出しの引数も修正
+            this.drawCircle(centerX, centerY, radius, color, isEraser, layer); 
             return;
         }
 
@@ -267,8 +239,6 @@ export class WebGLEngine extends DrawingEngine {
         
         gl.uniform2f(program.locations.u_resolution, this.canvas.width, this.canvas.height);
         
-        // ★★★★★ 方針2: Y-down -> Y-upへの変換 ★★★★★
-        // マウス座標をWebGL座標系に変換する。これは正しい。
         const webglY = this.canvas.height - centerY;
         gl.uniform2f(program.locations.u_center, centerX, webglY);
         gl.uniform1f(program.locations.u_radius, radius);
@@ -280,7 +250,8 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
     
-    drawLine(imageData, x0, y0, x1, y1, size, color, isEraser, p0 = 1.0, p1 = 1.0, calculatePressureSize, layer) {
+    // ★★★ 修正: imageData引数を削除 ★★★
+    drawLine(x0, y0, x1, y1, size, color, isEraser, p0 = 1.0, p1 = 1.0, calculatePressureSize, layer) {
         if (!isFinite(x0) || !isFinite(y0) || !isFinite(x1) || !isFinite(y1)) return;
         const distance = Math.hypot(x1 - x0, y1 - y0);
         if (distance > Math.hypot(this.canvas.width, this.canvas.height) * 2) return;
@@ -293,7 +264,8 @@ export class WebGLEngine extends DrawingEngine {
             const y = y0 + (y1 - y0) * t;
             const pressure = p0 + (p1 - p0) * t;
             const adjustedSize = calculatePressureSize(size, pressure);
-            this.drawCircle(imageData, x, y, adjustedSize / 2, color, isEraser, layer);
+            // 再帰呼び出しの引数も修正
+            this.drawCircle(x, y, adjustedSize / 2, color, isEraser, layer);
         }
     }
 
@@ -330,7 +302,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_position);
         
-        // ★★★★★ 方針3: Y-upテクスチャなので標準座標を使用 ★★★★★
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
         gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_texCoord);
@@ -368,8 +339,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_position);
         
-        // ★★★★★ 方針4: 最終表示もY-upなので標準座標を使用 ★★★★★
-        // (バッファは既に標準座標が設定されているので再設定は不要だが、念のため)
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
         gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_texCoord);
@@ -400,9 +369,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const buffer = new Uint8Array(width * height * 4);
         
-        // ★★★★★ 方針5: Y-upのFBOから読み出す ★★★★★
-        // readPixelsはFBOの左下(0,0)から読み出すので、Y座標の計算は不要。
-        // ただし、得られるデータは視覚的に上下反転している。
         gl.readPixels(x, y, width, height, gl.RGBA, gl.UNSIGNED_BYTE, buffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
@@ -410,8 +376,6 @@ export class WebGLEngine extends DrawingEngine {
         const targetData = targetImageData.data;
         const canvasWidth = targetImageData.width;
         
-        // ★★★★★ 方針5: Y-downのImageDataに書き込むため手動で反転 ★★★★★
-        // このロジックは正しいので維持する。
         for (let row = 0; row < height; row++) {
             const destY = y + row;
             if (destY < 0 || destY >= targetImageData.height) continue;
