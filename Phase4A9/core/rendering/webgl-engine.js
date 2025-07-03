@@ -439,7 +439,7 @@ export class WebGLEngine extends DrawingEngine {
         
         // ★★★ ここでシャープネスの値を設定 ★★★
         // 0.5を基準に調整してみてください (0.0でソフト、1.0でクッキリ)
-        gl.uniform1f(program.locations.u_sharpness, 0.5);
+        gl.uniform1f(program.locations.u_sharpness, 0.7);
 
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
