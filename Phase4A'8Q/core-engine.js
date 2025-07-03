@@ -1,13 +1,12 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.6.0 (Refined Pen Pressure Curve)
+ * Version: 2.7.0 (Refined Pen Pressure Curve - Mk.II)
  *
  * - 修正：
- * - ペンの「ON荷重」が強いというフィードバックに対応。
- * - calculatePressureSizeメソッドの筆圧計算ロジックを再調整。
- * - 描き始めの数点の筆圧をより積極的に抑え、繊細な先細りの線を表現しやすくした。
- * これにより、弱いタッチへの反応性が向上し、リニアな描き味に近づける。
+ * - ペンの「ON荷重」問題をさらに改善するため、筆圧計算ロジックを再々調整。
+ * - 描き始めの数点の筆圧を抑制するロジックを強化し、より立ち上がりの遅いカーブに変更。
+ * - これにより、弱いタッチでの繊細な「入り」の表現がさらに向上し、シャープな先細り線を描きやすくする。
  * ===================================================================================
  */
 
@@ -38,7 +37,7 @@ class Layer {
         this.imageData = new ImageData(width, height);
         this.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
         this.originalImageData = null;
-        this.gpuDirty = true;
+        this.gpuDirty = true; // GPUテクスチャが更新を必要とするか
     }
     clear() {
         this.imageData.data.fill(0);
@@ -60,7 +59,8 @@ class Layer {
 class CanvasManager {
     constructor(app) {
         this.app = app;
-        this.displayCanvas = document.getElementById('drawingCanvas');
+        // displayCanvasはポインタイベントの座標計算と、Canvas2Dフォールバック用に保持
+        this.displayCanvas = document.getElementById('drawingCanvas'); 
         this.displayCtx = this.displayCanvas.getContext('2d', { willReadFrequently: true });
         this.canvasArea = document.getElementById('canvas-area');
         this.canvasContainer = document.getElementById('canvas-container');
@@ -69,6 +69,7 @@ class CanvasManager {
 
         this.renderingBridge = new RenderingBridge(this.displayCanvas);
 
+        // compositionDataは主にPNGエクスポートやCanvas2Dモードで使用
         this.compositionData = new ImageData(this.width, this.height);
         this.isDrawing = false; this.isPanning = false; this.isSpaceDown = false;
         
@@ -133,7 +134,7 @@ class CanvasManager {
         
         if (this.currentTool === 'bucket') {
             this.app.bucketTool.fill(activeLayer.imageData, coords.x, coords.y, hexToRgba(this.currentColor));
-            activeLayer.gpuDirty = true;
+            activeLayer.gpuDirty = true; // バケツツールはCPUでImageDataを直接変更するので、GPUに更新を通知
             this.renderAllLayers();
             this.saveState();
             return;
@@ -214,17 +215,18 @@ class CanvasManager {
         
         if (this.isDrawing) {
             this.isDrawing = false;
-            // pressureHistoryをクリアしないことで、次のストロークへの影響を無くす
             
             if (this.animationFrameId) {
                 cancelAnimationFrame(this.animationFrameId);
                 this.animationFrameId = null;
             }
             
+            // 描画の最後に最終レンダリングをかける
             this._renderDirty();
 
             const activeLayer = this.app.layerManager.getCurrentLayer();
             if (activeLayer) {
+                // GPU上の描画結果をCPUのImageDataに同期する（次の描画や保存のため）
                 this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
             }
             
@@ -241,7 +243,9 @@ class CanvasManager {
     _renderDirty() {
         const rect = this.dirtyRect;
         if (rect.minX > rect.maxX) return;
+        // ステップ1: レイヤー合成
         this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, rect);
+        // ステップ2: 画面への表示
         this.renderingBridge.renderToDisplay(this.compositionData, rect);
     }
 
@@ -271,24 +275,24 @@ class CanvasManager {
         this.dirtyRect = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
     }
 
-    // ★★★★★ 修正箇所: ON荷重を軽減するための筆圧計算ロジック ★★★★★
+    // ★★★★★ 修正箇所: ON荷重をさらに軽減するための筆圧計算ロジック ★★★★★
     calculatePressureSize(baseSizeInput, pressure) {
         const baseSize = Math.max(0.1, baseSizeInput);
         let normalizedPressure = Math.max(0, Math.min(1, pressure || 0));
         
-        // 直近の筆圧を平滑化
         const tempHistory = [...this.pressureHistory, normalizedPressure];
         if (tempHistory.length > this.maxPressureHistory) tempHistory.shift();
         const smoothedPressure = tempHistory.reduce((sum, p) => sum + p, 0) / tempHistory.length;
 
         let finalPressure = smoothedPressure;
 
-        // ★★★ 描き始めの筆圧をより積極的に抑える ★★★
+        // ★★★ 描き始めの筆圧抑制を強化 ★★★
         const historyLength = this.pressureHistory.length;
-        if (this.isDrawing && historyLength <= 5) {
-            // 描き始めの5点までは、指数関数的に筆圧を抑える
-            // 0.3から始まり、5点目で1.0に近づく係数
-            const initialDamping = 0.3 + Math.pow(historyLength / 5, 2) * 0.7;
+        if (this.isDrawing && historyLength <= this.maxPressureHistory) {
+            // 描き始めの数点は、より立ち上がりが遅い3次関数で筆圧を抑える
+            // 係数を調整し、より繊細なタッチを反映させる (例: 0.2から始まり、5点目で1.0に近づく)
+            const dampingFactor = historyLength / this.maxPressureHistory;
+            const initialDamping = 0.2 + Math.pow(dampingFactor, 3) * 0.8;
             finalPressure *= initialDamping;
         }
 
@@ -301,18 +305,20 @@ class CanvasManager {
             }
         }
         
-        const curve = this.pressureSettings.curve; // 0.7
+        const curve = this.pressureSettings.curve;
         const curvedPressure = Math.pow(finalPressure, curve);
         
-        const minSize = baseSize * this.pressureSettings.minSizeRatio; // 0.3
+        const minSize = baseSize * this.pressureSettings.minSizeRatio;
         const maxSize = baseSize;
         const finalSize = minSize + (maxSize - minSize) * curvedPressure;
         
         return Math.max(0.1, finalSize);
     }
 
+
     getCanvasCoordinates(e) {
         try {
+            // WebGL利用時も、イベント座標の基準はオリジナルのdisplayCanvasとする
             const rect = this.displayCanvas.getBoundingClientRect();
             if (rect.width === 0 || rect.height === 0) return null;
             let x = e.clientX - rect.left;
@@ -334,6 +340,7 @@ class CanvasManager {
         if (!activeLayer || this.app.layerManager.layers.indexOf(activeLayer) === 0) return;
         this.isLayerTransforming = true;
         this.transformTargetLayer = activeLayer;
+        // 非破壊変形ではないので、変形開始前の状態を保存
         if (!this.transformTargetLayer.originalImageData) {
             this.transformTargetLayer.originalImageData = new ImageData(
                 new Uint8ClampedArray(this.transformTargetLayer.imageData.data),
@@ -352,9 +359,10 @@ class CanvasManager {
     applyLayerTransformPreview() {
         if (!this.transformTargetLayer || !this.transformTargetLayer.originalImageData) return;
         const layer = this.transformTargetLayer;
+        // この処理はCPU負荷が高い。将来的にはGPUによる非破壊変形に移行したい。
         const transformedImageData = this.renderingBridge.getTransformedImageData(layer.originalImageData, layer.transform);
         layer.imageData = transformedImageData;
-        layer.gpuDirty = true;
+        layer.gpuDirty = true; // ImageDataが変更されたのでGPUに通知
         this.renderAllLayers();
     }
 
@@ -362,13 +370,14 @@ class CanvasManager {
         if (!this.isLayerTransforming) return;
         this.applyLayerTransformPreview();
         const layer = this.transformTargetLayer;
+        // 変形を確定させ、ピクセルデータとして焼き込む
         layer.originalImageData = new ImageData(
             new Uint8ClampedArray(layer.imageData.data),
             layer.imageData.width,
             layer.imageData.height
         );
         layer.gpuDirty = true;
-        layer.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
+        layer.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }; // transform情報をリセット
         this.isLayerTransforming = false;
         this.transformTargetLayer = null;
         this.originalLayerTransform = null;
@@ -409,7 +418,7 @@ class CanvasManager {
             if (layerData.transform) {
                 layer.transform = { ...layerData.transform };
             }
-            layer.gpuDirty = true;
+            layer.gpuDirty = true; // 状態復元時は全レイヤーをGPUに再アップロード
             return layer;
         });
         this.app.layerManager.switchLayer(state.activeLayerIndex);
@@ -433,13 +442,38 @@ class CanvasManager {
         }
     }
     exportMergedImage() {
+        // WebGLから最終的な描画結果を読み出してPNGを生成
         const exportCanvas = document.createElement('canvas');
         exportCanvas.width = this.width;
         exportCanvas.height = this.height;
         const exportCtx = exportCanvas.getContext('2d');
+        
+        // 最終合成結果をcompositionDataに取得
         const fullRect = { minX: 0, minY: 0, maxX: this.width, maxY: this.height };
         this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, fullRect);
-        exportCtx.putImageData(this.compositionData, 0, 0);
+
+        // WebGLエンジンから直接ピクセルデータを読み込む
+        const gl = this.renderingBridge.engines['webgl']?.gl;
+        if (gl && this.renderingBridge.currentEngineType === 'webgl') {
+             const pixels = new Uint8Array(this.width * this.height * 4);
+             // 画面に描画した内容を読み出す
+             this.renderingBridge.renderToDisplay(null, fullRect);
+             gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+             
+             // Y軸反転を補正
+             const correctedPixels = new Uint8ClampedArray(this.width * this.height * 4);
+             for (let y = 0; y < this.height; y++) {
+                 const s = y * this.width * 4;
+                 const d = (this.height - 1 - y) * this.width * 4;
+                 correctedPixels.set(pixels.subarray(s, s + this.width * 4), d);
+             }
+             const finalImageData = new ImageData(correctedPixels, this.width, this.height);
+             exportCtx.putImageData(finalImageData, 0, 0);
+
+        } else { // Fallback for Canvas2D
+            exportCtx.putImageData(this.compositionData, 0, 0);
+        }
+        
         const dataURL = exportCanvas.toDataURL('image/png');
         const link = document.createElement('a');
         link.href = dataURL;
@@ -456,6 +490,7 @@ class CanvasManager {
     handleWheel(e) { e.preventDefault(); if (e.shiftKey) { this.rotate(-e.deltaY * 0.2); } else { this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); } }
 }
 
+// LayerManagerと他のマネージャークラスは変更なし
 class LayerManager { 
     constructor(app) { this.app = app; this.layers = []; this.activeLayerIndex = -1; this.width = 344; this.height = 135; this.mergeCanvas = document.createElement('canvas'); this.mergeCanvas.width = this.width; this.mergeCanvas.height = this.height; this.mergeCtx = this.mergeCanvas.getContext('2d'); } 
     setupInitialLayers() { const bgLayer = new Layer('背景', this.width, this.height); bgLayer.fill('#f0e0d6'); this.layers.push(bgLayer); const drawingLayer = new Layer('レイヤー 1', this.width, this.height); this.layers.push(drawingLayer); this.switchLayer(1); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
