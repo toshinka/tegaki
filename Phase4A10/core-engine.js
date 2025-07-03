@@ -1,17 +1,16 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.3.0 (Non-Destructive Transform Fix Final)
+ * Version: 3.4.0 (Coordinate System Final Fix)
  *
  * - 修正：
- * - 1. 【座標系の分離と確立】
- * -   - レイヤーの変形情報(モデル行列)と、画面表示用の変換情報(MVP行列)を明確に分離。
- * -   - `updateLayerMatrix`はモデル行列とMVP行列の両方を計算するように変更。
- * -   - `convertCanvasToLayerCoords`は純粋なモデル行列の逆行列のみを使用するようにし、
- * -     座標の逆算精度を向上させ、変形時の上下反転や座標ズレの問題を完全に解決した。
- * - 2. 【PNGエクスポート時の色化け修正】
- * -   - `exportMergedImage`メソッドに、WebGLからのピクセル読み出し後の
- * -     「アンプレマルチプライ」処理を追加。PNG保存した画像の色が赤く化ける問題を修正した。
+ * - 1. 【座標系の完全統一】
+ * -   - WebGL側のY軸反転ルール変更に伴い、行列計算のロジックを最終調整。
+ * -     `updateLayerMatrix`内の射影行列からY軸反転の責務を削除し、
+ * -     WebGL側のテクスチャアップロード時の反転に一本化した。
+ * - 2. 【ダーティフラグの追加】
+ * -   - GPTの提案に基づき、`commitLayerTransform`時に`gpuDirty`フラグを立て、
+ * -     変形後のテクスチャ更新をより確実にした。
  * ===================================================================================
  */
 
@@ -41,11 +40,8 @@ class Layer {
         this.blendMode = 'normal';
         this.imageData = new ImageData(width, height);
         this.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
-        
-        // ★★★ 修正: 行列を役割で分離 ★★★
-        this.modelMatrix = glMatrix.mat4.create(); // レイヤー自体の変形(Y-down)
-        this.mvpMatrix = glMatrix.mat4.create();   // 最終的にシェーダーに渡す行列(Y-up)
-        
+        this.modelMatrix = glMatrix.mat4.create();
+        this.mvpMatrix = glMatrix.mat4.create();
         this.gpuDirty = true;
     }
     clear() { this.imageData.data.fill(0); this.gpuDirty = true; }
@@ -276,7 +272,6 @@ class CanvasManager {
         } catch (error) { console.warn('座標変換エラー:', error); return null; }
     }
 
-    // ★★★ 修正: 逆行列を使って座標を正確に変換 ★★★
     convertCanvasToLayerCoords(canvasCoords, layer) {
         if (!layer) return canvasCoords;
 
@@ -295,7 +290,7 @@ class CanvasManager {
         return { x, y };
     }
 
-    // ★★★ 修正: モデル行列とMVP行列を正しく計算 ★★★
+    // ★★★ 修正: WebGL側の座標系統一に伴い、射影行列を修正 ★★★
     updateLayerMatrix(layer) {
         const t = layer.transform;
         const model = layer.modelMatrix;
@@ -315,7 +310,8 @@ class CanvasManager {
         glMatrix.mat4.translate(model, model, [-centerX, -centerY, 0]);
 
         const projection = glMatrix.mat4.create();
-        glMatrix.mat4.ortho(projection, 0, this.width, this.height, 0, -1, 1);
+        // Y軸が上向きの標準的なWebGL座標系に変換する
+        glMatrix.mat4.ortho(projection, 0, this.width, 0, this.height, -1, 1);
         
         glMatrix.mat4.multiply(mvp, projection, model);
     }
@@ -341,7 +337,6 @@ class CanvasManager {
 
     commitLayerTransform() {
         if (!this.isLayerTransforming) return;
-        // GPTくん案採用：念のためダーティフラグを立てる
         if (this.transformTargetLayer) {
             this.transformTargetLayer.gpuDirty = true;
         }
@@ -399,7 +394,6 @@ class CanvasManager {
         }
     }
 
-    // ★★★ 修正: PNGエクスポート時の色化けを修正 ★★★
     exportMergedImage() {
         const exportCanvas = document.createElement('canvas');
         exportCanvas.width = this.width; exportCanvas.height = this.height;

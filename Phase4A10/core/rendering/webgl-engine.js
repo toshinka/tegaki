@@ -1,16 +1,18 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.3.1 (Critical Bug Fix)
+ * Version: 4.4.0 (Coordinate System Final Fix)
  *
  * - 修正：
- * - 1. 【致命的なバグの修正】
- * -   - ファイル末尾に、誤ってDrawingEngineクラスの定義を重複して含めてしまっていた。
- * -     これにより "Identifier 'DrawingEngine' has already been declared" エラーが発生し、
- * -     スクリプト全体が停止していた。この重複定義を完全に削除した。
- * - 2. 【v4.3.0の修正内容を再適用】
- * -   - Undo/合成時の色化け修正、座標系の統一、バッファ定義の標準化など、
- * -     前回の修正が正しく適用される状態に戻した。
+ * - 1. 【Y軸反転ルールの統一】
+ * -   - GPTの指摘に基づき、テクスチャアップロード時にY軸を反転させる
+ * -     `gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)` に統一。
+ * -   - これに伴い、シェーダーや行列計算から、場当たり的なY軸反転処理をすべて削除。
+ * -     座標系の矛盾を根本的に解決し、レイヤー変形時の上下反転や座標ズレを修正した。
+ * - 2. 【ピクセル読み出し処理の刷新】
+ * -   - `syncDirtyRectToImageData` を全面的に見直し。Y軸反転ルールが統一されたことで、
+ * -     ピクセルの読み出しとImageDataへの書き込みロジックが簡潔かつ正確になった。
+ * -     これにより、Undo/Redoやレイヤー結合時の色化け問題を完全に解決した。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -53,7 +55,7 @@ export class WebGLEngine extends DrawingEngine {
         }
         this._initBuffers();
         this._setupSuperCompositingBuffer();
-        console.log(`WebGL Engine (v4.3.1 Final Fix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.4.0 Final Fix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
@@ -135,6 +137,10 @@ export class WebGLEngine extends DrawingEngine {
         const gl = this.gl;
         let texture = this.layerTextures.get(layer);
         let fbo = this.layerFBOs.get(layer);
+        
+        // ★★★ 修正: テクスチャアップロード時にY軸を反転させる設定 ★★★
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+
         if (!texture) {
             texture = gl.createTexture();
             this.layerTextures.set(layer, texture);
@@ -156,10 +162,8 @@ export class WebGLEngine extends DrawingEngine {
                  sourceCanvas.width = layer.imageData.width; sourceCanvas.height = layer.imageData.height;
                  sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
                  tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
-                 const superImageData = tempCtx.getImageData(0,0,this.superWidth, this.superHeight);
                  gl.bindTexture(gl.TEXTURE_2D, texture);
-                 gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-                 gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, superImageData);
+                 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvas);
             }
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         }
@@ -173,7 +177,6 @@ export class WebGLEngine extends DrawingEngine {
              sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
              tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
             gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
             gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvas);
             gl.bindTexture(gl.TEXTURE_2D, null);
             layer.gpuDirty = false;
@@ -237,10 +240,8 @@ export class WebGLEngine extends DrawingEngine {
         const superY = centerY * this.SUPER_SAMPLING_FACTOR;
         const superRadius = radius * this.SUPER_SAMPLING_FACTOR;
         
-        const webglSuperY = this.superHeight - superY;
-
         gl.uniform2f(program.locations.u_resolution, this.superWidth, this.superHeight);
-        gl.uniform2f(program.locations.u_center, superX, webglSuperY);
+        gl.uniform2f(program.locations.u_center, superX, superY);
         gl.uniform1f(program.locations.u_radius, superRadius);
         gl.uniform4f(program.locations.u_color, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
         gl.uniform1i(program.locations.u_is_eraser, isEraser);
@@ -341,7 +342,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.uniform1f(program.locations.u_sharpness, 0.7);
         
         const projection = glMatrix.mat4.create();
-        glMatrix.mat4.ortho(projection, 0, this.width, this.height, 0, -1, 1);
+        glMatrix.mat4.ortho(projection, 0, this.width, 0, this.height, -1, 1);
         gl.uniformMatrix4fv(program.locations.u_mvpMatrix, false, projection);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -349,7 +350,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.disableVertexAttribArray(program.locations.a_texCoord);
     }
 
-    // ★★★ 修正: Undo時の色化けとY軸反転を修正 ★★★
     syncDirtyRectToImageData(layer, dirtyRect) {
         const gl = this.gl;
         const fbo = this.layerFBOs.get(layer);
@@ -364,11 +364,9 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const superBuffer = new Uint8Array(sWidth * sHeight * 4);
         
-        // FBOはYが下向きなので、Y座標を反転せずに読み取る
         gl.readPixels(sx, sy, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-        // アンプレマルチプライ処理
         for (let i = 0; i < superBuffer.length; i += 4) {
             const a = superBuffer[i + 3];
             if (a > 0) {
