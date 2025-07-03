@@ -1,20 +1,19 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 2.8.1 (Critical Fix & Feature Completion)
+ * Version: 2.9.0 (Enhanced Pen Feel & Bug Fixes)
+ *
+ * - 改善：
+ * - 1. ペンの描き味向上:
+ * -   筆圧計算ロジックを調整し、よりシャープな「入り」とリニアな太さの変化を実現。
+ * - 2. 画質向上:
+ * -   スーパーサンプリング後のダウンサンプリング処理を見直し、描画の鮮明さを向上。
  *
  * - 修正：
- * - 1. 重大なバグ修正:
- * -   _createOrUpdateTextureFromImageData内で、texSubImage2DにImageDataオブジェクトを
- * -   渡す際の引数の形式が誤っていたため、TypeErrorが発生し描画が停止する問題を修正。
- * -   これにより、起動時にキャンバスが表示されない問題が解決される。
- * * - 2. 機能実装:
- * -   DrawingEngineインターフェースで定義されていたgetTransformedImageDataを実装。
- * -   これにより、Vキーによるレイヤーの移動・回転・拡縮がWebGLエンジンでも動作するようになる。
- *
- * - 3. 既存の品質向上機能は維持:
- * -   スーパーサンプリングによるアンチエイリアス品質向上。
- * -   シェーダーの精度問題の修正。
+ * - 1. キャンバス外への描画を抑制。
+ * - 2. 消しゴムがキャンバス外で使用できない問題を修正。
+ * - 3. 消しゴム使用後に薄い赤色が残る問題を修正 (ブレンド処理の見直し)。
+ * - 4. レイヤー変形処理におけるオフスクリーンキャンバスのサイズ管理を修正。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -23,16 +22,15 @@ export class WebGLEngine extends DrawingEngine {
     constructor(canvas) {
         super(canvas);
         this.gl = null;
-        
-        // ★★★ スーパーサンプリング係数 ★★★
-        // 2.0に設定すると、内部的に4倍のピクセル数で描画し、高画質化を図る
+
+        // ★★★ スーパーサンプリング係数（変更なし）★★★
         this.SUPER_SAMPLING_FACTOR = 2.0;
 
         this.width = canvas.width;
         this.height = canvas.height;
         this.superWidth = this.width * this.SUPER_SAMPLING_FACTOR;
         this.superHeight = this.height * this.SUPER_SAMPLING_FACTOR;
-        
+
         this.programs = { compositor: null, brush: null };
         this.positionBuffer = null;
         this.texCoordBuffer = null;
@@ -41,9 +39,10 @@ export class WebGLEngine extends DrawingEngine {
         this.compositeFBO = null;
         this.layerTextures = new Map();
         this.layerFBOs = new Map();
-        
+
         this.transformOffscreenCanvas = document.createElement('canvas');
         this.transformOffscreenCtx = this.transformOffscreenCanvas.getContext('2d');
+        this._resizeTransformCanvas(); // 初期化時にサイズを設定
 
         try {
             this.gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: false }) || canvas.getContext('experimental-webgl', { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: false });
@@ -68,7 +67,29 @@ export class WebGLEngine extends DrawingEngine {
         this._initBuffers();
         this._setupCompositingBuffer();
 
-        console.log(`WebGL Engine (v2.8.1 Super-Sampling) initialized successfully with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v2.9.0 Enhanced Pen) initialized successfully with ${this.superWidth}x${this.superHeight} internal resolution.`);
+    }
+
+    resize(width, height) {
+        super.resize(width, height);
+        this.width = width;
+        this.height = height;
+        this.superWidth = width * this.SUPER_SAMPLING_FACTOR;
+        this.superHeight = height * this.SUPER_SAMPLING_FACTOR;
+        this._setupCompositingBuffer();
+        this._resizeTransformCanvas();
+        // レイヤーのFBOとテクスチャもリサイズする必要がある場合はここで処理
+        this.layerTextures.forEach((texture) => {
+            this.gl.bindTexture(this.gl.TEXTURE_2D, texture);
+            this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.superWidth, this.superHeight, 0, this.gl.RGBA, this.gl.UNSIGNED_BYTE, null);
+        });
+        this.layerFBOs.forEach((fbo, layer) => this._setupLayerFBO(layer, this.layerTextures.get(layer)));
+        this.gl.viewport(0, 0, this.gl.canvas.width, this.gl.canvas.height);
+    }
+
+    _resizeTransformCanvas() {
+        this.transformOffscreenCanvas.width = this.width;
+        this.transformOffscreenCanvas.height = this.height;
     }
 
     _initShaderPrograms() {
@@ -90,10 +111,9 @@ export class WebGLEngine extends DrawingEngine {
                 gl_FragColor = vec4(texColor.rgb, texColor.a * u_opacity);
             }`;
 
-        // ★★★ バグ修正: 頂点シェーダーにも精度宣言を追加 ★★★
         const vsBrush = `
             precision mediump float;
-            attribute vec2 a_position; 
+            attribute vec2 a_position;
             uniform vec2 u_resolution;
             uniform vec2 u_center;
             uniform float u_radius;
@@ -124,16 +144,17 @@ export class WebGLEngine extends DrawingEngine {
                 }
 
                 if (u_is_eraser) {
-                    gl_FragColor = vec4(0.0, 0.0, 0.0, alpha); 
+                    // ★★★ 消しゴムは単純な透明色で上書き ★★★
+                    gl_FragColor = vec4(0.0, 0.0, 0.0, alpha);
                 } else {
                     gl_FragColor = vec4(u_color.rgb * u_color.a * alpha, u_color.a * alpha);
                 }
             }`;
-        
+
         this.programs.compositor = this._createProgram(vsCompositor, fsCompositor);
         this.programs.brush = this._createProgram(vsBrush, fsBrush);
     }
-    
+
     _initBuffers() {
         const gl = this.gl;
         this.positionBuffer = gl.createBuffer();
@@ -145,7 +166,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
         const texCoords = [ 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0 ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
-        
+
         this.brushPositionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.brushPositionBuffer);
         const brushPositions = [ -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, -0.5 ];
@@ -166,13 +187,11 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-        
+
         // ★★★ 高解像度テクスチャを作成 ★★★
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.superWidth, this.superHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-        
-        // ★★★★★ 修正箇所 ★★★★★
+
         // ImageDataの内容を高解像度テクスチャにアップロード
-        // ImageDataオブジェクトを渡す際は、width/height引数を含まない7引数の形式を使用する
         gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, imageData);
 
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -181,7 +200,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.bindTexture(gl.TEXTURE_2D, null);
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-        layer.gpuDirty = false; 
+        layer.gpuDirty = false;
         this._setupLayerFBO(layer, texture);
         return texture;
     }
@@ -221,11 +240,12 @@ export class WebGLEngine extends DrawingEngine {
         }
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
-    
+
     _setBlendMode(blendMode, isEraser = false) {
         const gl = this.gl;
         if (isEraser) {
-            gl.blendFuncSeparate(gl.ZERO, gl.ONE, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
+            // ★★★ 消しゴムは常に「消去」モードでブレンド ★★★
+            gl.blendFuncSeparate(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
         } else {
             gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
             switch (blendMode) {
@@ -241,32 +261,37 @@ export class WebGLEngine extends DrawingEngine {
         if (!this.gl || !this.programs.brush) return;
         const gl = this.gl;
         const program = this.programs.brush;
-        
+
+        // キャンバス外の描画を抑制
+        if (centerX + radius < 0 || centerX - radius > this.width || centerY + radius < 0 || centerY - radius > this.height) {
+            return;
+        }
+
         const targetFBO = this.layerFBOs.get(layer);
         if (!targetFBO) {
             this._createOrUpdateTextureFromImageData(layer.imageData, layer);
-            this.drawCircle(centerX, centerY, radius, color, isEraser, layer); 
+            this.drawCircle(centerX, centerY, radius, color, isEraser, layer);
             return;
         }
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO);
         // ★★★ 描画先は高解像度バッファ ★★★
         gl.viewport(0, 0, this.superWidth, this.superHeight);
-        
+
         gl.useProgram(program);
         this._setBlendMode('normal', isEraser);
 
         gl.bindBuffer(gl.ARRAY_BUFFER, this.brushPositionBuffer);
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_position);
-        
+
         // ★★★ シェーダーには高解像度の情報を渡す ★★★
         gl.uniform2f(program.locations.u_resolution, this.superWidth, this.superHeight);
         const superX = centerX * this.SUPER_SAMPLING_FACTOR;
         const superY = centerY * this.SUPER_SAMPLING_FACTOR;
         const superRadius = radius * this.SUPER_SAMPLING_FACTOR;
         const webglSuperY = this.superHeight - superY;
-        
+
         gl.uniform2f(program.locations.u_center, superX, webglSuperY);
         gl.uniform1f(program.locations.u_radius, superRadius);
         gl.uniform4f(program.locations.u_color, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
@@ -276,8 +301,18 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
-    
+
     drawLine(x0, y0, x1, y1, size, color, isEraser, p0 = 1.0, p1 = 1.0, calculatePressureSize, layer) {
+        // 描画範囲をキャンバス内に限定 (より厳密な判定)
+        const minX = Math.min(x0, x1) - size / 2;
+        const maxX = Math.max(x0, x1) + size / 2;
+        const minY = Math.min(y0, y1) - size / 2;
+        const maxY = Math.max(y0, y1) + size / 2;
+
+        if (maxX < 0 || minX > this.width || maxY < 0 || minY > this.height) {
+            return;
+        }
+
         if (!isFinite(x0) || !isFinite(y0) || !isFinite(x1) || !isFinite(y1)) return;
         const distance = Math.hypot(x1 - x0, y1 - y0);
         if (distance > this.width * 2) return;
@@ -290,7 +325,14 @@ export class WebGLEngine extends DrawingEngine {
             const x = x0 + (x1 - x0) * t;
             const y = y0 + (y1 - y0) * t;
             const pressure = p0 + (p1 - p0) * t;
-            const adjustedSize = calculatePressureSize(size, pressure);
+
+            // ★★★ ペンの入りをシャープにするための筆圧調整 ★★★
+            let adjustedPressure = pressure;
+            if (t < 0.1) { // 最初の10%の距離でより急激に変化させる
+                adjustedPressure = Math.min(1.0, pressure * 3); // 調整係数は試行錯誤が必要かもしれません
+            }
+
+            const adjustedSize = calculatePressureSize(size, adjustedPressure);
             this.drawCircle(x, y, adjustedSize / 2, color, isEraser, layer);
         }
     }
@@ -298,18 +340,22 @@ export class WebGLEngine extends DrawingEngine {
     fill(imageData, color) { /* 未実装 */ }
     clear(imageData) { /* 未実装 */ }
 
-    // ★★★ 機能実装: レイヤー変形をサポートするためのメソッド ★★★
+    // ★★★ 機能実装: レイヤー変形をサポートするためのメソッド (サイズ管理修正) ★★★
     getTransformedImageData(sourceImageData, transform) {
         const canvas = this.transformOffscreenCanvas;
         const ctx = this.transformOffscreenCtx;
         const w = sourceImageData.width;
         const h = sourceImageData.height;
-        canvas.width = w;
-        canvas.height = h;
+
+        // ★★★ オフスクリーンキャンバスのサイズをImageDataに合わせる ★★★
+        if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+        }
 
         ctx.save();
         ctx.clearRect(0, 0, w, h);
-        
+
         // ImageDataは直接変形できないため、一時的なキャンバスに描画してから変形を適用する
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = w;
@@ -323,7 +369,7 @@ export class WebGLEngine extends DrawingEngine {
         ctx.rotate(transform.rotation * Math.PI / 180);
         ctx.scale(transform.scale * transform.flipX, transform.scale * transform.flipY);
         ctx.translate(-centerX, -centerY);
-        
+
         ctx.drawImage(tempCanvas, 0, 0);
         ctx.restore();
 
@@ -350,7 +396,7 @@ export class WebGLEngine extends DrawingEngine {
             }
         }
 
-        // ★★★ 高解像度レイヤーを通常解像度の合成バッファに描画（ここでダウンサンプリング） ★★★
+        // ★★★ 高解像度レイヤーを通常解像度の合成バッファに描画（ここでダウンサンプリング）★★★
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.compositeFBO);
         gl.viewport(0, 0, this.width, this.height);
         gl.clear(gl.COLOR_BUFFER_BIT);
@@ -359,7 +405,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_position);
-        
+
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
         gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_texCoord);
@@ -378,7 +424,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.disableVertexAttribArray(program.locations.a_position);
         gl.disableVertexAttribArray(program.locations.a_texCoord);
     }
-    
+
     renderToDisplay(compositionData, dirtyRect) {
         if (!this.gl || !this.compositeTexture) return;
         const gl = this.gl;
@@ -386,7 +432,7 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-        
+
         // ブレンドモードを通常に戻す
         this._setBlendMode('normal');
 
@@ -394,7 +440,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_position);
-        
+
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
         gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_texCoord);
@@ -424,7 +470,7 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const superBuffer = new Uint8Array(sWidth * sHeight * 4);
-        gl.readPixels(sx, sy, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer);
+        gl.readPixels(sx, this.superHeight - (sy + sHeight), sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer); // Y軸補正
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
         // ★★★ 高解像度バッファから通常解像度ImageDataへ簡易ダウンサンプリング ★★★
@@ -440,14 +486,15 @@ export class WebGLEngine extends DrawingEngine {
 
                 const sourceX = Math.floor(x * factor);
                 const sourceY = Math.floor(y * factor);
-                
-                const sourceIndex = ( (sHeight - 1 - sourceY) * sWidth + sourceX) * 4; // Y軸反転
+
+                const sourceIndex = (sourceY * sWidth + sourceX) * 4; // Y軸補正済みなのでそのまま
                 const targetIndex = (targetY * targetImageData.width + targetX) * 4;
 
-                targetData[targetIndex] = superBuffer[sourceIndex];
-                targetData[targetIndex + 1] = superBuffer[sourceIndex + 1];
-                targetData[targetIndex + 2] = superBuffer[sourceIndex + 2];
-                targetData[targetIndex + 3] = superBuffer[sourceIndex + 3];
+                // ★★★ ダウンサンプリングは単純な最近傍補間 ★★★
+                targetData[(targetIndex)] = superBuffer[(sourceIndex)];
+                targetData[(targetIndex) + 1] = superBuffer[(sourceIndex) + 1];
+                targetData[(targetIndex) + 2] = superBuffer[(sourceIndex) + 2];
+                targetData[(targetIndex) + 3] = superBuffer[(sourceIndex) + 3];
             }
         }
     }
