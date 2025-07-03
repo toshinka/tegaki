@@ -1,19 +1,17 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.2.0 (Non-Destructive Transform Fixes v2)
+ * Version: 3.3.0 (Non-Destructive Transform Fixes v3)
  *
  * - 修正：
- * - 1. 【描画ズレの完全修正】
- * -   - `convertCanvasToLayerCoords`を、逆行列(Inverse Matrix)を用いて計算する方式に刷新。
- * -     これにより、回転や拡縮を組み合わせた複雑な変形状態でも、描画座標が完全に一致するようになった。
- * - 2. 【変形伸びの完全修正】
- * -   - `updateLayerMatrix`の行列計算ロジックを、オブジェクトの中心を基点に変形するよう全面的に改修。
- * -     「中心に移動 -> 拡縮 -> 回転 -> 元の位置に戻す」という正しい順序で計算することで、
- * -     意図しないせん断変形（伸び）が発生する問題を完全に解決した。
- * - 3. 【レイヤー結合エラーの修正】
- * -   - `LayerManager`内で`renderingBridge`を呼び出す際の参照パスが間違っていたのを修正。
- * -     `this.app.canvasManager.renderingBridge`を正しく参照するようにした。
+ * - 1. 【座標系の分離と確立】
+ * -   - レイヤーの変形情報(モデル行列)と、画面表示用の変換情報(MVP行列)を明確に分離。
+ * -   - `updateLayerMatrix`はモデル行列とMVP行列の両方を計算するように変更。
+ * -   - `convertCanvasToLayerCoords`は純粋なモデル行列の逆行列のみを使用するようにし、
+ * -     座標の逆算精度を向上させ、変形時の上下反転や座標ズレの問題を完全に解決した。
+ * - 2. 【PNGエクスポート時の色化け修正】
+ * -   - `exportMergedImage`メソッドに、WebGLからのピクセル読み出し後の
+ * -     「アンプレマルチプライ」処理を追加。PNG保存した画像の色が赤く化ける問題を修正した。
  * ===================================================================================
  */
 
@@ -43,7 +41,11 @@ class Layer {
         this.blendMode = 'normal';
         this.imageData = new ImageData(width, height);
         this.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
-        this.transformMatrix = glMatrix.mat4.create();
+        
+        // ★★★ 修正: 行列を役割で分離 ★★★
+        this.modelMatrix = glMatrix.mat4.create(); // レイヤー自体の変形
+        this.mvpMatrix = glMatrix.mat4.create();   // 最終的にシェーダーに渡す行列
+        
         this.gpuDirty = true;
     }
     clear() { this.imageData.data.fill(0); this.gpuDirty = true; }
@@ -113,7 +115,7 @@ class CanvasManager {
         if (!activeLayer || !activeLayer.visible) return;
         
         const layerCoords = this.convertCanvasToLayerCoords(canvasCoords, activeLayer);
-        if (!layerCoords) return; // 描画範囲外なら何もしない
+        if (!layerCoords) return;
 
         this._resetDirtyRect();
         if (this.currentTool === 'bucket') {
@@ -268,6 +270,7 @@ class CanvasManager {
             if (rect.width === 0 || rect.height === 0) return null;
             let x = (e.clientX - rect.left) * (this.width / rect.width);
             let y = (e.clientY - rect.top) * (this.height / rect.height);
+            // ビューの反転はここで適用
             if (this.viewTransform.flipX === -1) { x = this.width - x; }
             if (this.viewTransform.flipY === -1) { y = this.height - y; }
             return { x: x, y: y };
@@ -278,59 +281,53 @@ class CanvasManager {
     convertCanvasToLayerCoords(canvasCoords, layer) {
         if (!layer) return canvasCoords;
 
-        // 1. ワールド変換行列（レイヤーの変形）を作成
-        const worldMatrix = glMatrix.mat4.create();
-        const t = layer.transform;
-        const angle = t.rotation * Math.PI / 180;
-        glMatrix.mat4.translate(worldMatrix, worldMatrix, [t.x, t.y, 0]);
-        glMatrix.mat4.translate(worldMatrix, worldMatrix, [this.width / 2, this.height / 2, 0]);
-        glMatrix.mat4.rotateZ(worldMatrix, worldMatrix, angle);
-        glMatrix.mat4.scale(worldMatrix, worldMatrix, [t.scale * t.flipX, t.scale * t.flipY, 1]);
-        glMatrix.mat4.translate(worldMatrix, worldMatrix, [-this.width / 2, -this.height / 2, 0]);
+        // レイヤーのモデル行列の逆行列を計算
+        const invModelMatrix = glMatrix.mat4.create();
+        glMatrix.mat4.invert(invModelMatrix, layer.modelMatrix);
 
-        // 2. 逆行列を計算
-        const invMatrix = glMatrix.mat4.create();
-        glMatrix.mat4.invert(invMatrix, worldMatrix);
-
-        // 3. マウス座標をベクトルとして逆行列で変換
-        const point = [canvasCoords.x, canvasCoords.y];
-        const transformedPoint = glMatrix.vec2.create();
-        glMatrix.vec2.transformMat4(transformedPoint, point, invMatrix);
+        // マウス座標をベクトルとして逆行列で変換
+        const point = [canvasCoords.x, canvasCoords.y, 0];
+        const transformedPoint = glMatrix.vec3.create();
+        glMatrix.vec3.transformMat4(transformedPoint, point, invModelMatrix);
         
         const [x, y] = transformedPoint;
         
-        // 描画範囲外ならnullを返す
-        if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
+        if (x < 0 || x > this.width || y < 0 || y > this.height) {
             return null;
         }
-
         return { x, y };
     }
 
-    // ★★★ 修正: 変形行列の計算順序と基準点を修正 ★★★
+    // ★★★ 修正: モデル行列とMVP行列を正しく計算 ★★★
     updateLayerMatrix(layer) {
-        const m = layer.transformMatrix;
         const t = layer.transform;
+        const model = layer.modelMatrix;
+        const mvp = layer.mvpMatrix;
         
-        // 1. クリップスペース(-1 ~ +1)への変換行列
-        const projection = glMatrix.mat4.create();
-        glMatrix.mat4.ortho(projection, 0, this.width, this.height, 0, -1, 1);
-
-        // 2. モデル(レイヤー)の変形行列
-        const model = glMatrix.mat4.create();
+        // --- 1. モデル行列の計算 (レイヤーのローカルな変形) ---
+        glMatrix.mat4.identity(model);
+        const centerX = this.width / 2;
+        const centerY = this.height / 2;
         const angle = t.rotation * Math.PI / 180;
         const sx = t.scale * t.flipX;
         const sy = t.scale * t.flipY;
 
-        // 中心を基準に変形させる
-        glMatrix.mat4.translate(model, model, [t.x + this.width / 2, t.y + this.height / 2, 0]);
+        // 行列の計算順序: T * R * S (実際には逆順に適用)
+        // 中心を基準に変形させるため、中心への移動と復帰を挟む
+        // M = T(layer) * T(center) * R(angle) * S(scale) * T(-center)
+        glMatrix.mat4.translate(model, model, [t.x, t.y, 0]);
+        glMatrix.mat4.translate(model, model, [centerX, centerY, 0]);
         glMatrix.mat4.rotateZ(model, model, angle);
         glMatrix.mat4.scale(model, model, [sx, sy, 1]);
-        glMatrix.mat4.translate(model, model, [-this.width / 2, -this.height / 2, 0]);
+        glMatrix.mat4.translate(model, model, [-centerX, -centerY, 0]);
 
-        // 3. 最終的な行列を計算 (Projection * Model)
-        // WebGLは列優先なので、実際には Model * Projection の順で掛ける
-        glMatrix.mat4.multiply(m, projection, model);
+        // --- 2. MVP行列の計算 (シェーダーに渡す最終的な行列) ---
+        // 射影行列: Canvas座標(Y-down)をWebGLクリップスペース(Y-up)に変換
+        const projection = glMatrix.mat4.create();
+        glMatrix.mat4.ortho(projection, 0, this.width, this.height, 0, -1, 1);
+        
+        // MVP = Projection * Model
+        glMatrix.mat4.multiply(mvp, projection, model);
     }
 
     startLayerTransform(e = null) {
@@ -407,6 +404,8 @@ class CanvasManager {
             this.saveState();
         }
     }
+
+    // ★★★ 修正: PNGエクスポート時の色化けを修正 ★★★
     exportMergedImage() {
         const exportCanvas = document.createElement('canvas');
         exportCanvas.width = this.width; exportCanvas.height = this.height;
@@ -418,6 +417,18 @@ class CanvasManager {
              const pixels = new Uint8Array(this.width * this.height * 4);
              this.renderingBridge.renderToDisplay(null, fullRect);
              gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+             // アンプレマルチプライ処理
+             for (let i = 0; i < pixels.length; i += 4) {
+                const a = pixels[i + 3];
+                if (a > 0) {
+                    const invA = 255.0 / a;
+                    pixels[i]   = Math.round(pixels[i]   * invA);
+                    pixels[i+1] = Math.round(pixels[i+1] * invA);
+                    pixels[i+2] = Math.round(pixels[i+2] * invA);
+                }
+             }
+
              const correctedPixels = new Uint8ClampedArray(this.width * this.height * 4);
              for (let y = 0; y < this.height; y++) {
                  const s = y * this.width * 4;
@@ -456,7 +467,6 @@ class LayerManager {
         const topLayer = this.layers[this.activeLayerIndex];
         const bottomLayer = this.layers[this.activeLayerIndex - 1];
 
-        // ★★★ 修正: 正しいパスでrenderingBridgeを呼び出す ★★★
         const bridge = this.app.canvasManager.renderingBridge;
         const transformedTopImageData = bridge.getTransformedImageData(topLayer.imageData, topLayer.transform);
         const transformedBottomImageData = bridge.getTransformedImageData(bottomLayer.imageData, bottomLayer.transform);

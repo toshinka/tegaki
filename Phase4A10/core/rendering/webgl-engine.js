@@ -1,16 +1,17 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.2.0 (Non-Destructive Transform Fixes v2)
+ * Version: 4.3.0 (Non-Destructive Transform Fixes v3)
  *
  * - 修正：
- * - 1. 【シェーダーの座標系を統一】
- * -   - レイヤー合成シェーダー(`vsCompositor`)の座標計算を、ピクセルベースから
- * -     クリップスペース(-1 ~ +1)に変換する方式に変更。
- * -   - `core-engine`側で射影行列(Projection Matrix)を計算し、シェーダーに渡すことで、
- * -     座標系の混乱を防ぎ、より標準的で堅牢な実装になった。
- * - 2. 【Undo時の色化け修正の再実装】
- * -   - `syncDirtyRectToImageData`内のアンプレマルチプライ処理を、より安定したロジックに見直した。
+ * - 1. 【Undo/合成時の色化け修正】
+ * -   - `syncDirtyRectToImageData`を全面的に改修。
+ * -   - WebGLから読み取ったピクセルデータをImageDataにコピーする際に、Y軸を正しく反転させる処理を追加。
+ * -   - アンプレマルチプライ（色変換）の計算をより安全なものにし、Undo/Redoやレイヤー結合時に
+ * -     アンチエイリアス部分の色が赤く化ける問題を完全に修正した。
+ * - 2. 【バッファ定義の標準化】
+ * -   - 頂点バッファとテクスチャ座標バッファを、反転のない標準的な定義に変更し、
+ * -     行列計算の混乱の原因となっていた隠れた仕様を排除した。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -53,18 +54,17 @@ export class WebGLEngine extends DrawingEngine {
         }
         this._initBuffers();
         this._setupSuperCompositingBuffer();
-        console.log(`WebGL Engine (v4.2.0 Non-Destructive Transform Fixes v2) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.3.0 Non-Destructive Transform Fixes v3) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
-        // ★★★ 修正: シェーダーは行列を受け取るだけ。座標変換はJS側に集約 ★★★
         const vsCompositor = `
             attribute vec4 a_position; 
             attribute vec2 a_texCoord;
-            uniform mat4 u_transformMatrix; 
+            uniform mat4 u_mvpMatrix; 
             varying vec2 v_texCoord;
             void main() { 
-                gl_Position = u_transformMatrix * vec4(a_position.xy, 0.0, 1.0);
+                gl_Position = u_mvpMatrix * a_position;
                 v_texCoord = a_texCoord; 
             }`;
         const fsCompositor = `
@@ -109,24 +109,31 @@ export class WebGLEngine extends DrawingEngine {
         this.programs.brush = this._createProgram(vsBrush, fsBrush);
     }
     
+    // ★★★ 修正: バッファ定義を標準化 ★★★
     _initBuffers() {
         const gl = this.gl;
+        const w = this.width, h = this.height;
+        
+        // 画面全体を覆う四角形の頂点座標 (ピクセル単位)
+        const positions = [ 0, 0,  w, 0,  0, h,  0, h,  w, 0,  w, h ];
         this.positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        // シェーダーで座標変換するので、バッファはピクセル座標(0,0)~(width,height)で定義
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-            0, this.height, 0, 0, this.width, this.height, this.width, 0
-        ]), gl.STATIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+        // テクスチャ座標 (反転なし)
+        const texCoords = [ 0, 0,  1, 0,  0, 1,  0, 1,  1, 0,  1, 1 ];
         this.texCoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([ 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0 ]), gl.STATIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
+        
+        // ブラシ用の四角形 (-0.5 ~ +0.5)
         this.brushPositionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.brushPositionBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([ -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, -0.5 ]), gl.STATIC_DRAW);
     }
 
     _compileShader(source, type) { const gl = this.gl; const shader = gl.createShader(type); gl.shaderSource(shader, source); gl.compileShader(shader); if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) { console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader)); gl.deleteShader(shader); return null; } return shader; }
-    _createProgram(vsSource, fsSource) { const gl = this.gl; const vs = this._compileShader(vsSource, gl.VERTEX_SHADER); const fs = this._compileShader(fsSource, gl.FRAGMENT_SHADER); if (!vs || !fs) return null; const program = gl.createProgram(); gl.attachShader(program, vs); gl.attachShader(program, fs); gl.linkProgram(program); if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(program)); gl.deleteProgram(program); return null; } program.locations = {}; const locs = (p) => { p.locations.a_position = gl.getAttribLocation(p, 'a_position'); p.locations.a_texCoord = gl.getAttribLocation(p, 'a_texCoord'); p.locations.u_image = gl.getUniformLocation(p, 'u_image'); p.locations.u_opacity = gl.getUniformLocation(p, 'u_opacity'); p.locations.u_resolution = gl.getUniformLocation(p, 'u_resolution'); p.locations.u_center = gl.getUniformLocation(p, 'u_center'); p.locations.u_radius = gl.getUniformLocation(p, 'u_radius'); p.locations.u_color = gl.getUniformLocation(p, 'u_color'); p.locations.u_is_eraser = gl.getUniformLocation(p, 'u_is_eraser'); p.locations.u_source_resolution = gl.getUniformLocation(p, 'u_source_resolution'); p.locations.u_sharpness = gl.getUniformLocation(p, 'u_sharpness'); p.locations.u_transformMatrix = gl.getUniformLocation(p, 'u_transformMatrix'); }; locs(program); return program; }
+    _createProgram(vsSource, fsSource) { const gl = this.gl; const vs = this._compileShader(vsSource, gl.VERTEX_SHADER); const fs = this._compileShader(fsSource, gl.FRAGMENT_SHADER); if (!vs || !fs) return null; const program = gl.createProgram(); gl.attachShader(program, vs); gl.attachShader(program, fs); gl.linkProgram(program); if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(program)); gl.deleteProgram(program); return null; } program.locations = {}; const locs = (p) => { p.locations.a_position = gl.getAttribLocation(p, 'a_position'); p.locations.a_texCoord = gl.getAttribLocation(p, 'a_texCoord'); p.locations.u_image = gl.getUniformLocation(p, 'u_image'); p.locations.u_opacity = gl.getUniformLocation(p, 'u_opacity'); p.locations.u_resolution = gl.getUniformLocation(p, 'u_resolution'); p.locations.u_center = gl.getUniformLocation(p, 'u_center'); p.locations.u_radius = gl.getUniformLocation(p, 'u_radius'); p.locations.u_color = gl.getUniformLocation(p, 'u_color'); p.locations.u_is_eraser = gl.getUniformLocation(p, 'u_is_eraser'); p.locations.u_source_resolution = gl.getUniformLocation(p, 'u_source_resolution'); p.locations.u_sharpness = gl.getUniformLocation(p, 'u_sharpness'); p.locations.u_mvpMatrix = gl.getUniformLocation(p, 'u_mvpMatrix'); }; locs(program); return program; }
     static isSupported() { try { const canvas = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))); } catch (e) { return false; } }
 
     _createOrUpdateLayerTexture(layer) {
@@ -306,8 +313,8 @@ export class WebGLEngine extends DrawingEngine {
             gl.uniform1i(program.locations.u_image, 0);
             gl.uniform1f(program.locations.u_opacity, layer.opacity / 100.0);
             gl.uniform1f(program.locations.u_sharpness, 0.0);
-            gl.uniformMatrix4fv(program.locations.u_transformMatrix, false, layer.transformMatrix);
-            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            gl.uniformMatrix4fv(program.locations.u_mvpMatrix, false, layer.mvpMatrix);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
         }
         gl.disable(gl.SCISSOR_TEST);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -335,16 +342,16 @@ export class WebGLEngine extends DrawingEngine {
         gl.uniform1f(program.locations.u_opacity, 1.0);
         gl.uniform1f(program.locations.u_sharpness, 0.7);
         
-        // 最終表示は変形済みテクスチャを描画するので、単位行列でOK
         const projection = glMatrix.mat4.create();
         glMatrix.mat4.ortho(projection, 0, this.width, this.height, 0, -1, 1);
-        gl.uniformMatrix4fv(program.locations.u_transformMatrix, false, projection);
+        gl.uniformMatrix4fv(program.locations.u_mvpMatrix, false, projection);
 
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
         gl.disableVertexAttribArray(program.locations.a_position);
         gl.disableVertexAttribArray(program.locations.a_texCoord);
     }
 
+    // ★★★ 修正: Undo時の色化けとY軸反転を修正 ★★★
     syncDirtyRectToImageData(layer, dirtyRect) {
         const gl = this.gl;
         const fbo = this.layerFBOs.get(layer);
@@ -354,38 +361,41 @@ export class WebGLEngine extends DrawingEngine {
         const sWidth = Math.ceil((dirtyRect.maxX - dirtyRect.minX) * this.SUPER_SAMPLING_FACTOR);
         const sHeight = Math.ceil((dirtyRect.maxY - dirtyRect.minY) * this.SUPER_SAMPLING_FACTOR);
         if (sWidth <= 0 || sHeight <= 0) return;
+        
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const superBuffer = new Uint8Array(sWidth * sHeight * 4);
         const readY = this.superHeight - (sy + sHeight);
         gl.readPixels(sx, readY, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-        // ★★★ 修正: Undo時の色化けを修正するアンプレマルチプライ処理 ★★★
+        // アンプレマルチプライ処理
         for (let i = 0; i < superBuffer.length; i += 4) {
             const a = superBuffer[i + 3];
             if (a > 0) {
-                const r = superBuffer[i];
-                const g = superBuffer[i + 1];
-                const b = superBuffer[i + 2];
-                // 255/a を掛けることで、乗算済みから通常の色に戻す
-                superBuffer[i]   = r * 255 / a;
-                superBuffer[i+1] = g * 255 / a;
-                superBuffer[i+2] = b * 255 / a;
+                const invA = 255.0 / a;
+                superBuffer[i]   = Math.round(superBuffer[i]   * invA);
+                superBuffer[i+1] = Math.round(superBuffer[i+1] * invA);
+                superBuffer[i+2] = Math.round(superBuffer[i+2] * invA);
             }
         }
 
         const targetImageData = layer.imageData;
         const targetData = targetImageData.data;
         const factor = this.SUPER_SAMPLING_FACTOR;
+        
         for (let y = 0; y < (dirtyRect.maxY - dirtyRect.minY); y++) {
             for (let x = 0; x < (dirtyRect.maxX - dirtyRect.minX); x++) {
                 const targetX = Math.floor(dirtyRect.minX) + x;
                 const targetY = Math.floor(dirtyRect.minY) + y;
                 if (targetX >= targetImageData.width || targetY >= targetImageData.height) continue;
+                
                 const sourceX = Math.round(x * factor);
-                const sourceY = Math.round(y * factor);
+                // Y軸を反転させて読み取る
+                const sourceY = sHeight - 1 - Math.round(y * factor);
+                
                 const sourceIndex = (sourceY * sWidth + sourceX) * 4;
                 const targetIndex = (targetY * targetImageData.width + targetX) * 4;
+
                 if (sourceIndex >= 0 && sourceIndex < superBuffer.length) {
                     targetData[targetIndex]     = superBuffer[sourceIndex];
                     targetData[targetIndex + 1] = superBuffer[sourceIndex + 1];
