@@ -1,10 +1,13 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Rendering Bridge (Dynamic Switching)
- * Version: 2.3.0 (Phase 4A'-7 GPU Drawing Prep)
+ * Version: 2.4.0 (Non-Destructive Transform Compatibility)
  *
  * - 修正：
- * - DrawingEngineのインターフェース変更に伴い、委譲するメソッドの引数を更新。
+ * - 非破壊変形への移行に伴い、CPUベースの破壊的変形メソッドであった
+ * - `getTransformedImageData`への参照を完全に削除。
+ * - これにより、新しいDrawingEngineインターフェースと完全に互換性が保たれ、
+ * - スクリプトの実行が停止する問題を解決。
  * ===================================================================================
  */
 import { Canvas2DEngine } from './canvas2d-engine.js';
@@ -127,13 +130,18 @@ export class RenderingBridge {
     }
 
     // --- DrawingEngineのインターフェースを現在のエンジンに委譲 ---
-    // ★★★ 修正: メソッドのシグネチャ（引数）をインターフェースに合わせる ★★★
     drawCircle(...args) { this.currentEngine.drawCircle(...args); }
     drawLine(...args) { this.currentEngine.drawLine(...args); }
     fill(...args) { this.currentEngine.fill(...args); }
     clear(...args) { this.currentEngine.clear(...args); }
-    getTransformedImageData(...args) { return this.currentEngine.getTransformedImageData(...args); }
+    // ★★★ 削除: 不要になったメソッドへの参照を削除 ★★★
+    // getTransformedImageData(...args) { return this.currentEngine.getTransformedImageData(...args); }
     compositeLayers(...args) { this.currentEngine.compositeLayers(...args); }
     renderToDisplay(...args) { this.currentEngine.renderToDisplay(...args); }
-    syncDirtyRectToImageData(...args) { this.currentEngine.syncDirtyRectToImageData?.(...args); }
+    syncDirtyRectToImageData(...args) {
+        // syncDirtyRectToImageDataはWebGLエンジンにしか無い可能性があるため、存在チェックを行う
+        if (typeof this.currentEngine.syncDirtyRectToImageData === 'function') {
+            this.currentEngine.syncDirtyRectToImageData(...args);
+        }
+    }
 }
