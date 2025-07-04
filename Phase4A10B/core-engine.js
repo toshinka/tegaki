@@ -1,13 +1,13 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.5.1 (Coordinate System UNIFIED FIX)
+ * Version: 3.5.0 (Coordinate System Final Fix)
  *
  * - 修正：
  * - 1. 【座標系の完全統一】
- * -   - WebGL側の射影行列を、ブラウザ標準の「Y軸ダウン（左上原点）」に統一。
- * -     これにより、マウス座標、2D Canvas、WebGLのすべての座標系が一致し、
- * -     レイヤー変形時の座標ズレや意図しない反転を根本的に解決。
+ * -   - WebGL側のY軸反転ルール変更に伴い、行列計算のロジックを最終調整。
+ * -     `updateLayerMatrix`内の射影行列からY軸反転の責務を削除し、
+ * -     WebGL側のテクスチャアップロード時の反転に一本化した。
  * - 2. 【ダーティフラグの追加】
  * -   - GPTの提案に基づき、`commitLayerTransform`時に`gpuDirty`フラグを立て、
  * -     変形後のテクスチャ更新をより確実にした。
@@ -190,12 +190,9 @@ class CanvasManager {
         if (this.isDrawing) {
             this.isDrawing = false;
             if (this.animationFrameId) { cancelAnimationFrame(this.animationFrameId); this.animationFrameId = null; }
+            this._renderDirty();
             const activeLayer = this.app.layerManager.getCurrentLayer();
-            if (activeLayer) {
-                // syncDirtyRectToImageDataを呼ぶ前に一度描画を確定させる
-                this._renderDirty(); 
-                this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
-            }
+            if (activeLayer) { this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect); }
             this.lastPoint = null;
             this.saveState();
         }
@@ -293,7 +290,7 @@ class CanvasManager {
         return { x, y };
     }
 
-    // ★★★ 修正: WebGLとCanvasの座標系を完全に一致させるための修正 ★★★
+    // ★★★ 修正: WebGL側の座標系統一に伴い、射影行列を修正 ★★★
     updateLayerMatrix(layer) {
         const t = layer.transform;
         const model = layer.modelMatrix;
@@ -313,8 +310,8 @@ class CanvasManager {
         glMatrix.mat4.translate(model, model, [-centerX, -centerY, 0]);
 
         const projection = glMatrix.mat4.create();
-        // Y軸が下向きの、ブラウザやCanvas2Dと同じ標準的な座標系に変換する
-        glMatrix.mat4.ortho(projection, 0, this.width, this.height, 0, -1, 1);
+        // Y軸が上向きの標準的なWebGL座標系に変換する
+        glMatrix.mat4.ortho(projection, 0, this.width, 0, this.height, -1, 1);
         
         glMatrix.mat4.multiply(mvp, projection, model);
     }
@@ -341,7 +338,6 @@ class CanvasManager {
     commitLayerTransform() {
         if (!this.isLayerTransforming) return;
         if (this.transformTargetLayer) {
-            // ★★★ 修正: 変形をGPUテクスチャに反映させるためのダーティフラグ ★★★
             this.transformTargetLayer.gpuDirty = true;
         }
         this.isLayerTransforming = false;
@@ -403,17 +399,13 @@ class CanvasManager {
         exportCanvas.width = this.width; exportCanvas.height = this.height;
         const exportCtx = exportCanvas.getContext('2d');
         const fullRect = { minX: 0, minY: 0, maxX: this.width, maxY: this.height };
-        
+        this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, fullRect);
         const gl = this.renderingBridge.engines['webgl']?.gl;
         if (gl && this.renderingBridge.currentEngineType === 'webgl') {
-             // WebGLから直接ピクセルを読み込む
-             this.renderingBridge.compositeLayers(this.app.layerManager.layers, null, fullRect);
-             this.renderingBridge.renderToDisplay(null, fullRect);
-
              const pixels = new Uint8Array(this.width * this.height * 4);
+             this.renderingBridge.renderToDisplay(null, fullRect);
              gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 
-             // 乗算済みアルファをストレートアルファに変換
              for (let i = 0; i < pixels.length; i += 4) {
                 const a = pixels[i + 3];
                 if (a > 0) {
@@ -423,8 +415,8 @@ class CanvasManager {
                     pixels[i+2] = Math.round(pixels[i+2] * invA);
                 }
              }
-
-             // readPixelsはYがボトムアップなので、ImageData用に反転させる
+             // ★★★ GPTくん提案のおまけ修正は不要 ★★★
+             // readPixelsはY-up、putImageDataはY-downなので、この反転は必要
              const correctedPixels = new Uint8ClampedArray(this.width * this.height * 4);
              for (let y = 0; y < this.height; y++) {
                  const s = y * this.width * 4;
@@ -433,17 +425,11 @@ class CanvasManager {
              }
              const finalImageData = new ImageData(correctedPixels, this.width, this.height);
              exportCtx.putImageData(finalImageData, 0, 0);
-        } else { 
-            // Canvas2Dの場合はcompositionDataをそのまま使う
-            this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, fullRect);
-            exportCtx.putImageData(this.compositionData, 0, 0); 
-        }
-
+        } else { exportCtx.putImageData(this.compositionData, 0, 0); }
         const dataURL = exportCanvas.toDataURL('image/png');
         const link = document.createElement('a');
         link.href = dataURL; link.download = 'merged_image.png'; link.click();
     }
-
     updateCursor() { let cursor = 'crosshair'; if (this.isVDown) cursor = 'move'; if (this.isSpaceDown) cursor = 'grab'; if (this.currentTool === 'eraser') cursor = 'cell'; if (this.currentTool === 'bucket') cursor = 'copy'; this.canvasArea.style.cursor = cursor; }
     applyViewTransform() { const t = this.viewTransform; this.canvasContainer.style.transform = `translate(${t.left}px, ${t.top}px) scale(${t.scale * t.flipX}, ${t.scale * t.flipY}) rotate(${t.rotation}deg)`; }
     flipHorizontal() { this.viewTransform.flipX *= -1; this.applyViewTransform(); }
@@ -470,15 +456,12 @@ class LayerManager {
         const bottomLayer = this.layers[this.activeLayerIndex - 1];
 
         const bridge = this.app.canvasManager.renderingBridge;
-        const transformedTopImageData = bridge.getTransformedImageData(topLayer);
-        const transformedBottomImageData = bridge.getTransformedImageData(bottomLayer);
+        const transformedTopImageData = bridge.getTransformedImageData(topLayer.imageData, topLayer.transform);
+        const transformedBottomImageData = bridge.getTransformedImageData(bottomLayer.imageData, bottomLayer.transform);
         
         const tempCtx = this.mergeCtx;
         tempCtx.clearRect(0, 0, this.width, this.height);
-        tempCtx.globalCompositeOperation = 'source-over';
-        tempCtx.globalAlpha = 1.0;
         tempCtx.putImageData(transformedBottomImageData, 0, 0);
-
         tempCtx.globalAlpha = topLayer.opacity / 100;
         tempCtx.globalCompositeOperation = topLayer.blendMode;
         
