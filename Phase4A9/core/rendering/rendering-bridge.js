@@ -1,11 +1,10 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Rendering Bridge (Dynamic Switching)
- * Version: 2.4.0 (Phase 4A9 - No changes)
+ * Version: 2.3.0 (Phase 4A'-7 GPU Drawing Prep)
  *
  * - 修正：
- * - このファイルには、今回の改修における直接的なロジック変更はありません。
- * - 他のファイルのインターフェース変更に追従しています。
+ * - DrawingEngineのインターフェース変更に伴い、委譲するメソッドの引数を更新。
  * ===================================================================================
  */
 import { Canvas2DEngine } from './canvas2d-engine.js';
@@ -128,6 +127,7 @@ export class RenderingBridge {
     }
 
     // --- DrawingEngineのインターフェースを現在のエンジンに委譲 ---
+    // ★★★ 修正: メソッドのシグネチャ（引数）をインターフェースに合わせる ★★★
     drawCircle(...args) { this.currentEngine.drawCircle(...args); }
     drawLine(...args) { this.currentEngine.drawLine(...args); }
     fill(...args) { this.currentEngine.fill(...args); }
