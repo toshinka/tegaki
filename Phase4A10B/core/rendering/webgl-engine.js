@@ -1,18 +1,18 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.8.0 (FINAL COORDINATE & COLOR FIX)
+ * Version: 4.9.0 (Unified Coordinate System)
  *
  * - 修正：
- * - 1. 【ブラシシェーダーの座標系を統一】(v4.7.0の修正を維持)
- * -   - ブラシ用頂点シェーダー内のY軸反転処理は削除されたまま。
- * -     これにより、全てのWebGL処理がY-down（左上原点）座標系に統一されている。
- * - 2. 【GPU→CPUへのデータ同期処理を完全修正】
- * -   - `syncDirtyRectToImageData`メソッドを全面的に改修。
- * -   - (A) WebGL(左下原点)から読み取ったピクセルデータを、手動でY軸反転させる処理を追加。
- * -   - (B) 乗算済みアルファから通常アルファへの変換を、色が飽和しない安全な方法に変更。
- * -   - (C) スーパーサンプリングからの縮小処理を、よりシンプルで確実な`drawImage`に統一。
- * -   - これらにより、描画後のImageDataが正しく生成され、連続描画時のズレや色の問題を解消。
+ * - 1. 【Y-down座標系への完全統一】
+ * -   - `drawCircle`: 描画座標のY軸反転 (`this.height - centerY`) を削除。
+ * -     core-engineから渡されるY-down座標をそのまま使用する。
+ * -   - `_createOrUpdateLayerTexture`: テクスチャアップロード時のY軸反転命令
+ * -     (`gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)`) を完全に削除。
+ * -     ImageData(Y-down)を、テクスチャ(Y-downとして扱う)にそのまま転送する。
+ * -
+ * -   これにより、アプリケーション全体の座標系がY-downで統一され、
+ * -   レイヤー移動や変形時の描画ズレ・反転の問題が根本的に解決される。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -55,7 +55,7 @@ export class WebGLEngine extends DrawingEngine {
         }
         this._initBuffers();
         this._setupSuperCompositingBuffer();
-        console.log(`WebGL Engine (v4.8.0 FINAL FIX) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.9.0 UNIFIED) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
@@ -85,7 +85,6 @@ export class WebGLEngine extends DrawingEngine {
                 gl_FragColor = vec4(final_color.rgb, final_color.a * u_opacity);
             }`;
 
-        // Y軸反転処理は削除済みのまま（Y-down座標系で統一）
         const vsBrush = `
             precision highp float; attribute vec2 a_position; 
             uniform vec2 u_resolution; uniform vec2 u_center; uniform float u_radius;
@@ -94,6 +93,7 @@ export class WebGLEngine extends DrawingEngine {
                 vec2 quad_size_pixels = vec2(u_radius * 2.0 + 4.0);
                 vec2 quad_size_clip = quad_size_pixels / u_resolution * 2.0;
                 vec2 center_clip = (u_center / u_resolution) * 2.0 - 1.0;
+                center_clip.y *= -1.0; // Y-downの描画座標をクリップスペース(Y-up)に変換
                 gl_Position = vec4(a_position * quad_size_clip + center_clip, 0.0, 1.0);
                 v_texCoord = a_position + 0.5;
             }`;
@@ -158,9 +158,8 @@ export class WebGLEngine extends DrawingEngine {
                  sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
                  tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
                  gl.bindTexture(gl.TEXTURE_2D, texture);
-                 gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); // Y-downのImageDataをY-upのテクスチャに正しくアップロード
+                 // ★★★ 修正: Y軸反転命令を削除 ★★★
                  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvas);
-                 gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
             }
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         }
@@ -174,9 +173,8 @@ export class WebGLEngine extends DrawingEngine {
              sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
              tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
             gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            // ★★★ 修正: Y軸反転命令を削除 ★★★
             gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvas);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
             gl.bindTexture(gl.TEXTURE_2D, null);
             layer.gpuDirty = false;
         }
@@ -234,7 +232,8 @@ export class WebGLEngine extends DrawingEngine {
         gl.enableVertexAttribArray(program.locations.a_position);
         
         const superX = centerX * this.SUPER_SAMPLING_FACTOR;
-        const superY = (this.height - centerY) * this.SUPER_SAMPLING_FACTOR; // Y-down to Y-up
+        // ★★★ 修正: Y座標の反転を削除。Y-downで統一。 ★★★
+        const superY = centerY * this.SUPER_SAMPLING_FACTOR;
         const superRadius = radius * this.SUPER_SAMPLING_FACTOR;
         
         gl.uniform2f(program.locations.u_resolution, this.superWidth, this.superHeight);
@@ -360,13 +359,11 @@ export class WebGLEngine extends DrawingEngine {
         gl.disableVertexAttribArray(program.locations.a_texCoord);
     }
 
-    // ★★★ 修正: GPUからCPUへピクセルデータを同期する処理を全面的に改修 ★★★
     syncDirtyRectToImageData(layer, dirtyRect) {
         const gl = this.gl;
         const fbo = this.layerFBOs.get(layer);
         if (!fbo || dirtyRect.minX > dirtyRect.maxX) return;
 
-        // 1. スーパーサンプリング解像度でダーティ矩形の範囲を計算
         const sx = Math.floor(dirtyRect.minX * this.SUPER_SAMPLING_FACTOR);
         const sy = Math.floor(dirtyRect.minY * this.SUPER_SAMPLING_FACTOR);
         const sWidth = Math.ceil((dirtyRect.maxX - dirtyRect.minX) * this.SUPER_SAMPLING_FACTOR);
@@ -374,13 +371,11 @@ export class WebGLEngine extends DrawingEngine {
 
         if (sWidth <= 0 || sHeight <= 0) return;
 
-        // 2. FBOからピクセルデータを読み出す (readPixelsは左下原点)
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const pixelBuffer = new Uint8Array(sWidth * sHeight * 4);
         gl.readPixels(sx, sy, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixelBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-        // 3. Y軸反転 (左下原点 -> 左上原点)
         const flippedBuffer = new Uint8ClampedArray(sWidth * sHeight * 4);
         for (let y = 0; y < sHeight; y++) {
             const srcRowIndex = y;
@@ -390,7 +385,6 @@ export class WebGLEngine extends DrawingEngine {
             flippedBuffer.set(pixelBuffer.subarray(srcOffset, srcOffset + sWidth * 4), destOffset);
         }
 
-        // 4. 乗算済みアルファを通常アルファに変換（安全な方法で）
         for (let i = 0; i < flippedBuffer.length; i += 4) {
             const a = flippedBuffer[i + 3];
             if (a > 0 && a < 255) {
@@ -401,14 +395,12 @@ export class WebGLEngine extends DrawingEngine {
             }
         }
         
-        // 5. 高品質な縮小のために一時キャンバスにピクセルデータを描画
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = sWidth;
         tempCanvas.height = sHeight;
         const tempCtx = tempCanvas.getContext('2d');
         tempCtx.putImageData(new ImageData(flippedBuffer, sWidth, sHeight), 0, 0);
 
-        // 6. 元の解像度のImageDataに、縮小した画像を合成
         const targetImageData = layer.imageData;
         const targetCtx = document.createElement('canvas').getContext('2d');
         targetCtx.canvas.width = targetImageData.width;
@@ -420,8 +412,8 @@ export class WebGLEngine extends DrawingEngine {
         const dWidth = Math.ceil(dirtyRect.maxX - dirtyRect.minX);
         const dHeight = Math.ceil(dirtyRect.maxY - dirtyRect.minY);
         
-        targetCtx.clearRect(dx, dy, dWidth, dHeight); // 更新領域をクリア
-        targetCtx.drawImage(tempCanvas, dx, dy, dWidth, dHeight); // 縮小して描画
+        targetCtx.clearRect(dx, dy, dWidth, dHeight);
+        targetCtx.drawImage(tempCanvas, dx, dy, dWidth, dHeight);
 
         layer.imageData = targetCtx.getImageData(0, 0, targetImageData.width, targetImageData.height);
     }

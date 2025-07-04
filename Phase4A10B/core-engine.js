@@ -291,7 +291,6 @@ class CanvasManager {
         return { x, y };
     }
 
-    // ★★★ 修正: WebGL側の座標系統一に伴い、射影行列をY-down(左上原点)に修正 ★★★
     updateLayerMatrix(layer) {
         const t = layer.transform;
         const model = layer.modelMatrix;
@@ -311,7 +310,7 @@ class CanvasManager {
         glMatrix.mat4.translate(model, model, [-centerX, -centerY, 0]);
 
         const projection = glMatrix.mat4.create();
-        // Y軸が下向きのY-down座標系（左上原点）に変換する
+        // Y軸が下向きのY-down座標系（左上原点）で統一
         glMatrix.mat4.ortho(projection, 0, this.width, this.height, 0, -1, 1);
         
         glMatrix.mat4.multiply(mvp, projection, model);
@@ -404,12 +403,10 @@ class CanvasManager {
         const gl = this.renderingBridge.engines['webgl']?.gl;
         if (gl && this.renderingBridge.currentEngineType === 'webgl') {
              const pixels = new Uint8Array(this.width * this.height * 4);
-             // 画面に最終結果をレンダリングさせてからピクセルを読み取る
              this.renderingBridge.renderToDisplay(null, fullRect);
              gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 
-             // ★★★ 修正: 乗算済みアルファから通常アルファへの安全な変換 ★★★
-             // 色が飽和して赤くなるのを防ぐ
+             // 乗算済みアルファから通常アルファへの安全な変換
              for (let i = 0; i < pixels.length; i += 4) {
                 const a = pixels[i + 3];
                 if (a > 0 && a < 255) {
@@ -420,7 +417,7 @@ class CanvasManager {
                 }
              }
 
-             // Y軸反転処理：WebGLのreadPixels(左下原点)とCanvas2DのputImageData(左上原点)の違いを吸収するために、この反転は【必要】です。
+             // Y軸反転処理：WebGL(左下原点)とCanvas2D(左上原点)の違いを吸収
              const correctedPixels = new Uint8ClampedArray(this.width * this.height * 4);
              for (let y = 0; y < this.height; y++) {
                  const s = y * this.width * 4;
@@ -462,7 +459,6 @@ class LayerManager {
         const bottomLayer = this.layers[this.activeLayerIndex - 1];
 
         const bridge = this.app.canvasManager.renderingBridge;
-        // getTransformedImageData now correctly uses WebGL engine if available
         const transformedTopImageData = bridge.getTransformedImageData(topLayer);
         const transformedBottomImageData = bridge.getTransformedImageData(bottomLayer);
         
