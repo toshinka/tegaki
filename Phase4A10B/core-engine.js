@@ -1,15 +1,15 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.7.0 (Definitive Coordinate Fix)
+ * Version: 3.8.0 (THE TRULY FINAL COORDINATE FIX)
  *
  * - 最終修正：
- * - 1. 【描画直前の座標確定】(最重要)
- * -   - `onPointerDown`メソッド内で、描画処理を開始する直前に
- * -     `this.updateLayerMatrix(activeLayer);` と `activeLayer.gpuDirty = true;`
- * -     を呼び出す処理を追加。
- * -   - これにより、ペンで描画する瞬間の座標と、レイヤーを変形・合成する際の座標が
- * -     完全に同期され、初回描画の反転、移動時のズレ、座標範囲のバグをすべて解決する。
+ * - 1. 【座標系の完全統一】(最重要)
+ * -   - `updateLayerMatrix`内の射影行列の作り方を、WebGL標準の「Y-up(左下原点)」
+ * -     `glMatrix.mat4.ortho(projection, 0, this.width, 0, this.height, -1, 1);`
+ * -     に変更。
+ * -   - これにより、レイヤー合成時の座標ルールと、ペン描画時の座標ルールが完全に一致し、
+ * -     すべての反転・ズレ問題が解決する。
  * ===================================================================================
  */
 
@@ -109,9 +109,8 @@ class CanvasManager {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
         
-        // ★★★ 最終修正: 描画直前に座標変換行列を必ず更新し、GPUと状態を同期する ★★★
         this.updateLayerMatrix(activeLayer);
-        activeLayer.gpuDirty = true; // このおまじないが重要！
+        activeLayer.gpuDirty = true;
         
         const layerCoords = this.convertCanvasToLayerCoords(canvasCoords, activeLayer);
         if (!layerCoords) return;
@@ -312,7 +311,8 @@ class CanvasManager {
         glMatrix.mat4.translate(model, model, [-centerX, -centerY, 0]);
 
         const projection = glMatrix.mat4.create();
-        glMatrix.mat4.ortho(projection, 0, this.width, this.height, 0, -1, 1);
+        // ★★★ 最終修正: WebGL標準のY-up(左下が原点)の座標系で指示を出す！ ★★★
+        glMatrix.mat4.ortho(projection, 0, this.width, 0, this.height, -1, 1);
         
         glMatrix.mat4.multiply(mvp, projection, model);
     }
