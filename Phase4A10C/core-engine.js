@@ -1,17 +1,15 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.8.5 (Robust Transform FIX)
+ * Version: 3.9.0 (INPUT/OUTPUT SEPARATION FIX)
  *
  * - 主な修正：
- * - 1. 【レイヤー変形ロジック修正】
- * -   - `onPointerMove` 内のレイヤー変形処理で、Y軸方向のドラッグ移動が正しく計算されるように修正。
- * - 2. 【行列計算の可読性と正確性の向上】
- * -   - `updateLayerMatrix` の行列計算を、各変換行列を個別に生成してから乗算する方式に変更。
- * -     これにより計算順序が明確になり、変形時の座標ズレを完全に防止する。
- * - 3. 【安定性と同期の強化】 (GPTからの指摘を反映)
- * -   - `convertCanvasToLayerCoords` に逆行列計算の失敗を検知するnullチェックを追加。
- * -   - ペン描画開始時に `gpuDirty` フラグを立て、CPUとGPUの状態同期を徹底。
+ * - 1. 【入力と表示のロジックを完全分離】(最重要)
+ * -   - `convertCanvasToLayerCoords` がレイヤー固有の変形を完全に無視するように修正。
+ * -     ユーザーは常に変形していない元のレイヤーに対して描画し、変形は表示時にのみ適用される。
+ * -     これにより、レイヤーを移動・回転させても描画座標がズレる問題が根本的に解決される。
+ * - 2. 【ロジックの明確化】
+ * -   - `onPointerDown` 内の不要な行列更新処理を削除し、責務を明確化した。
  * ===================================================================================
  */
 
@@ -111,21 +109,24 @@ class CanvasManager {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
         
-        this.updateLayerMatrix(activeLayer);
-        
+        // ★修正★ レイヤーの変形を無視し、キャンバス座標を描画座標として扱う
         const layerCoords = this.convertCanvasToLayerCoords(canvasCoords, activeLayer);
-        if (!layerCoords) return;
+
+        // 描画範囲のチェック
+        if (!layerCoords || layerCoords.x < 0 || layerCoords.x >= this.width || layerCoords.y < 0 || layerCoords.y >= this.height) {
+            return;
+        }
 
         this._resetDirtyRect();
         if (this.currentTool === 'bucket') {
-            this.app.bucketTool.fill(activeLayer.imageData, layerCoords.x, layerCoords.y, hexToRgba(this.currentColor));
+            this.app.bucketTool.fill(activeLayer.imageData, Math.floor(layerCoords.x), Math.floor(layerCoords.y), hexToRgba(this.currentColor));
             activeLayer.gpuDirty = true;
             this.renderAllLayers();
             this.saveState();
             return;
         }
         this.isDrawing = true;
-        activeLayer.gpuDirty = true; // ★修正★ 描画が始まるのでダーティフラグを立てる 
+        activeLayer.gpuDirty = true;
         this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
         this.lastPoint = { ...layerCoords, pressure: this.pressureHistory[0] };
         const size = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
@@ -147,7 +148,7 @@ class CanvasManager {
             const ot = this.originalLayerTransform;
             if (this.transformMode === 'move') {
                 t.x = ot.x + dx / this.viewTransform.scale;
-                t.y = ot.y + dy / this.viewTransform.scale; // ★修正★ Y軸のドラッグ移動を復活
+                t.y = ot.y + dy / this.viewTransform.scale;
             } else {
                 t.rotation = ot.rotation + dx * 0.5;
                 const scaleFactor = 1 - dy * 0.005;
@@ -172,6 +173,12 @@ class CanvasManager {
 
         const layerCoords = this.convertCanvasToLayerCoords(canvasCoords, activeLayer);
         if (!layerCoords) { this.lastPoint = null; return; }
+        
+        // 範囲外なら描画を中断
+        if (layerCoords.x < 0 || layerCoords.x >= this.width || layerCoords.y < 0 || layerCoords.y >= this.height) {
+            this.lastPoint = null;
+            return;
+        }
         
         if (!this.lastPoint) { 
             this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
@@ -218,6 +225,7 @@ class CanvasManager {
     _renderDirty() {
         const rect = this.dirtyRect;
         if (rect.minX > rect.maxX) return;
+        // 描画の直前に、全レイヤーの最新の変形状態を行列に反映する
         this.app.layerManager.layers.forEach(layer => this.updateLayerMatrix(layer));
         this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, rect);
         this.renderingBridge.renderToDisplay(this.compositionData, rect);
@@ -280,29 +288,15 @@ class CanvasManager {
         } catch (error) { console.warn('座標変換エラー:', error); return null; }
     }
     
-    // ★修正★ 逆行列の計算失敗に対するフォールバックを追加 
+    // ★修正★ 入力と表示を分離するための核心部分
     convertCanvasToLayerCoords(canvasCoords, layer) {
-        if (!layer) return canvasCoords;
-
-        const invModelMatrix = glMatrix.mat4.create();
-        if (!glMatrix.mat4.invert(invModelMatrix, layer.modelMatrix)) {
-            console.error("レイヤーのモデル行列から逆行列を計算できませんでした。");
-            return null; // 安全に終了 
-        }
-
-        const point = glMatrix.vec3.fromValues(canvasCoords.x, canvasCoords.y, 0);
-        glMatrix.vec3.transformMat4(point, point, invModelMatrix);
-        
-        const [x, y] = point;
-
-        if (x < 0 || x > this.width || y < 0 || y > this.height) {
-            return null;
-        }
-        
-        return { x, y };
+        // この関数は、レイヤー固有の変形（移動、回転、拡縮）を「無視」します。
+        // ユーザーは、常に変形していない元のレイヤーデータ（ImageData）に対して描画するためです。
+        // レイヤーの変形は、表示(レンダリング)時にのみ適用されます。
+        // これにより、レイヤーを動かしても描画エリアがズレる問題が解決します。
+        return canvasCoords;
     }
 
-    // ★修正★ 行列計算の順序をより明確で堅牢な記述に修正 [cite: 1]
     updateLayerMatrix(layer) {
         const t = layer.transform;
         const model = layer.modelMatrix;
@@ -314,29 +308,24 @@ class CanvasManager {
         const sx = t.scale * t.flipX;
         const sy = t.scale * t.flipY;
 
-        // 各変換行列を個別に作成
         const translationMatrix = glMatrix.mat4.create();
         const rotationMatrix = glMatrix.mat4.create();
         const scaleMatrix = glMatrix.mat4.create();
         const toOriginMatrix = glMatrix.mat4.create();
         const fromOriginMatrix = glMatrix.mat4.create();
 
-        // 各変換を定義
         glMatrix.mat4.fromTranslation(toOriginMatrix, [-centerX, -centerY, 0]);
         glMatrix.mat4.fromScaling(scaleMatrix, [sx, sy, 1]);
         glMatrix.mat4.fromZRotation(rotationMatrix, angle);
         glMatrix.mat4.fromTranslation(fromOriginMatrix, [centerX, centerY, 0]);
         glMatrix.mat4.fromTranslation(translationMatrix, [t.x, t.y, 0]);
 
-        // 行列を正しい順序で乗算 (M = Translate * FromOrigin * Rotate * Scale * ToOrigin)
-        // glMatrix.mat4.multiply(out, A, B) は out = A * B
         const transformMatrix = glMatrix.mat4.create();
         glMatrix.mat4.multiply(transformMatrix, scaleMatrix, toOriginMatrix);
         glMatrix.mat4.multiply(transformMatrix, rotationMatrix, transformMatrix);
         glMatrix.mat4.multiply(transformMatrix, fromOriginMatrix, transformMatrix);
         glMatrix.mat4.multiply(model, translationMatrix, transformMatrix);
 
-        // プロジェクション行列を作成し、最終的なMVP行列を計算
         const projection = glMatrix.mat4.create();
         glMatrix.mat4.ortho(projection, 0, this.width, this.height, 0, -1, 1);
         glMatrix.mat4.multiply(mvp, projection, model);
