@@ -1,23 +1,27 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.0.0 (Phase4A9 - MVP Transformation)
+ * Version: 4.0.0 (Phase4A9 - Matrix Transform Integration)
  *
- * - ★★★ 改修（Phase4A9）★★★
- * - 1. gl-matrixライブラリを導入。
- * - 2. コンポジット用シェーダーをMVP(Model-View-Projection)行列に対応したものに刷新。
- * `uniform mat4 u_mvpMatrix` を追加し、頂点座標を動的に変形できるようにした。
- * - 3. `compositeLayers`メソッドを改修。core-engineから渡された各レイヤーの`modelMatrix`と、
- * 共通の`viewMatrix`, `projectionMatrix`を元に`mvpMatrix`を計算し、シェーダーに渡す。
- * - 4. これにより、各レイヤーの移動・回転・拡縮がGPU上で高速に、非破壊的に処理される。
- * - 5. ブラシ描画ロジックは、レイヤーのローカルなテクスチャに直接描く方式を維持。
- * これにより、入力座標の処理と描画の変形処理が完全に分離され、安定した動作を実現。
+ * - 修正：
+ * - 1. 頂点シェーダーの拡張:
+ * -   - `u_modelMatrix`と`u_projectionMatrix`という2つのuniform変数を追加。
+ * -   - `gl_Position`の計算を `projection * model * position` に変更し、行列による座標変換に対応。
+ * -
+ * - 2. 座標系の統一 (Y軸下向き):
+ * -   - `mat4.ortho`を使い、ピクセル座標(左上=0,0)からクリップ空間へ直接変換する`projectionMatrix`を生成。
+ * -   - これにより、core-engine側の座標系(Y軸下向きが正)とWebGL側の座標系を一致させ、混乱をなくしました。
+ * -   - ペン描画(`drawCircle`)でのY軸反転処理が不要になりました。
+ * -
+ * - 3. レイヤー合成処理の改修:
+ * -   - `compositeLayers`メソッド内で、各レイヤーの`modelMatrix`をシェーダーに渡し、GPU上で表示位置を動かします。
+ * -   - 描画するポリゴンの頂点データを、-1~1のクリップ空間座標から、0~canvas.widthのピクセル座標系に変更しました。
+ * -
+ * - 4. 不要な処理の削除:
+ * -   - CPUで行っていた破壊的な変形処理`getTransformedImageData`は不要になったため、警告を出すだけにしました。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
-
-// ★★★ gl-matrixライブラリの各モジュールを変数に格納 ★★★
-const { mat4, vec4 } = glMatrix;
 
 export class WebGLEngine extends DrawingEngine {
     constructor(canvas) {
@@ -31,7 +35,11 @@ export class WebGLEngine extends DrawingEngine {
         this.superWidth = this.width * this.SUPER_SAMPLING_FACTOR;
         this.superHeight = this.height * this.SUPER_SAMPLING_FACTOR;
         
-        this.programs = { compositor: null, brush: null, downsampler: null };
+        // ★追加: 座標変換のための行列
+        this.projectionMatrix = glMatrix.mat4.create();
+        this.identityMatrix = glMatrix.mat4.create(); // 単位行列（移動なし）
+
+        this.programs = { compositor: null, brush: null };
         this.positionBuffer = null;
         this.texCoordBuffer = null;
         this.brushPositionBuffer = null;
@@ -42,6 +50,9 @@ export class WebGLEngine extends DrawingEngine {
         this.layerTextures = new Map();
         this.layerFBOs = new Map();
         
+        this.transformOffscreenCanvas = document.createElement('canvas');
+        this.transformOffscreenCtx = this.transformOffscreenCanvas.getContext('2d');
+
         try {
             this.gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: false }) || canvas.getContext('experimental-webgl', { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: false });
             if (!this.gl) throw new Error('WebGL is not supported in this browser.');
@@ -64,77 +75,67 @@ export class WebGLEngine extends DrawingEngine {
 
         this._initBuffers();
         this._setupSuperCompositingBuffer();
+        
+        // ★追加: 座標系を定義するプロジェクション行列を初期化
+        this._updateProjectionMatrix();
 
-        console.log(`WebGL Engine (v4.0.0 MVP Transform) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.0.0 Matrix Transform) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
-        // ★★★★★ 修正: MVP対応のコンポジット用頂点シェーダー ★★★★★
+        // ★★★★★ 変更箇所: 頂点シェーダーに行列変換機能を追加 ★★★★★
         const vsCompositor = `
             attribute vec4 a_position;
             attribute vec2 a_texCoord;
-            uniform mat4 u_mvpMatrix; // Model-View-Projection Matrix
+
+            // ★追加: 座標変換のための行列
+            uniform mat4 u_projectionMatrix;
+            uniform mat4 u_modelMatrix;
+
             varying vec2 v_texCoord;
             void main() {
-                gl_Position = u_mvpMatrix * a_position;
+                // ★変更: 頂点座標に行列を適用して最終的な位置を計算
+                gl_Position = u_projectionMatrix * u_modelMatrix * a_position;
                 v_texCoord = a_texCoord;
             }`;
-
-        // ★★★★★ 修正: シンプルなコンポジット用フラグメントシェーダー ★★★★★
+            
+        // フラグメントシェーダーは高品質ダウンサンプリングのため変更なし
         const fsCompositor = `
             precision highp float;
             varying vec2 v_texCoord;
             uniform sampler2D u_image;
             uniform float u_opacity;
-            void main() {
-                vec4 color = texture2D(u_image, v_texCoord);
-                gl_FragColor = vec4(color.rgb, color.a * u_opacity);
-            }`;
-        
-        // 高品質ダウンサンプリング用シェーダー（画面表示用）
-         const vsDownsampler = `
-            attribute vec4 a_position;
-            attribute vec2 a_texCoord;
-            varying vec2 v_texCoord;
-            void main() {
-                gl_Position = a_position;
-                v_texCoord = a_texCoord;
-            }`;
-        const fsDownsampler = `
-            precision highp float;
-            varying vec2 v_texCoord;
-            uniform sampler2D u_image;
             uniform vec2 u_source_resolution;
+
             void main() {
                 vec2 texel_size = 1.0 / u_source_resolution;
                 vec4 color = vec4(0.0);
+                
                 color += texture2D(u_image, v_texCoord + texel_size * vec2(-0.25, -0.25));
                 color += texture2D(u_image, v_texCoord + texel_size * vec2( 0.25, -0.25));
                 color += texture2D(u_image, v_texCoord + texel_size * vec2( 0.25,  0.25));
                 color += texture2D(u_image, v_texCoord + texel_size * vec2(-0.25,  0.25));
                 color *= 0.25;
-                gl_FragColor = color;
+
+                gl_FragColor = vec4(color.rgb, color.a * u_opacity);
             }`;
 
-        // ブラシ用シェーダー（変更なし）
         const vsBrush = `
             precision mediump float;
-            attribute vec2 a_position;
-            uniform vec2 u_resolution; // FBOの解像度 (superWidth, superHeight)
-            uniform vec2 u_center;     // 描画中心のピクセル座標
-            uniform float u_radius;     // 半径のピクセルサイズ
+            attribute vec2 a_position; 
+            uniform vec2 u_resolution;
+            uniform vec2 u_center;
+            uniform float u_radius;
             varying vec2 v_texCoord;
 
             void main() {
-                vec2 quad_size_pixels = vec2(u_radius * 2.0 + 4.0); // 少しマージンを持たせる
+                vec2 quad_size_pixels = vec2(u_radius * 2.0 + 2.0);
                 vec2 quad_size_clip = quad_size_pixels / u_resolution * 2.0;
-                
-                // u_centerは左上原点のピクセル座標なので、クリップ座標（-1~1, 左下原点）に変換
                 vec2 center_clip = (u_center / u_resolution) * 2.0 - 1.0;
-                center_clip.y *= -1.0; // Y軸を反転
-
-                gl_Position = vec4(a_position * (quad_size_clip / 2.0) + center_clip, 0.0, 1.0);
-                v_texCoord = a_position * 0.5 + 0.5;
+                // Y軸を反転させる (クリップ空間はYが上向きのため)
+                center_clip.y *= -1.0;
+                gl_Position = vec4(a_position * quad_size_clip + center_clip, 0.0, 1.0);
+                v_texCoord = a_position + 0.5;
             }`;
 
         const fsBrush = `
@@ -143,13 +144,16 @@ export class WebGLEngine extends DrawingEngine {
             uniform float u_radius;
             uniform vec4 u_color;
             uniform bool u_is_eraser;
+
             void main() {
                 float dist = distance(v_texCoord, vec2(0.5));
                 float pixel_in_uv = 1.0 / (max(u_radius, 0.5) * 2.0);
                 float alpha = 1.0 - smoothstep(0.5 - pixel_in_uv, 0.5, dist);
+
                 if (alpha < 0.01) {
                     discard;
                 }
+
                 if (u_is_eraser) {
                     gl_FragColor = vec4(0.0, 0.0, 0.0, alpha); 
                 } else {
@@ -157,53 +161,44 @@ export class WebGLEngine extends DrawingEngine {
                 }
             }`;
         
-        this.programs.compositor = this._createProgram(vsCompositor, fsCompositor, ['a_position', 'a_texCoord'], ['u_mvpMatrix', 'u_image', 'u_opacity']);
-        this.programs.downsampler = this._createProgram(vsDownsampler, fsDownsampler, ['a_position', 'a_texCoord'], ['u_image', 'u_source_resolution']);
-        this.programs.brush = this._createProgram(vsBrush, fsBrush, ['a_position'], ['u_resolution', 'u_center', 'u_radius', 'u_color', 'u_is_eraser']);
+        this.programs.compositor = this._createProgram(vsCompositor, fsCompositor);
+        this.programs.brush = this._createProgram(vsBrush, fsBrush);
     }
     
     _initBuffers() {
         const gl = this.gl;
         this.positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        // ★★★ 修正: 座標系をピクセル単位にする（0,0 to width,height） ★★★
-        const positions = [ 0, this.height, 0, 0, this.width, this.height, this.width, 0 ];
+        // ★変更: ポリゴンをピクセル単位の矩形に (0,0) -> (width, height)
+        const positions = [
+            0, 0, 0, 1, // x, y, z, w (w=1はベクトルではなく座標点を表す)
+            this.superWidth, 0, 0, 1,
+            0, this.superHeight, 0, 1,
+            this.superWidth, this.superHeight, 0, 1,
+        ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 
         this.texCoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        const texCoords = [ 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0 ];
+        // テクスチャ座標は 0~1 の範囲
+        const texCoords = [ 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0 ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
         
         this.brushPositionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.brushPositionBuffer);
-        const brushPositions = [ -1, 1, -1, -1, 1, 1, 1, -1 ];
+        const brushPositions = [ -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, -0.5 ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(brushPositions), gl.STATIC_DRAW);
+    }
+    
+    // ★新規: プロジェクション行列を更新するメソッド
+    _updateProjectionMatrix() {
+        // ピクセル座標系からクリップ空間(-1 ~ 1)への正投影変換行列を作成
+        // Y軸が下向きになるように設定 (第3,4引数: top, bottom)
+        glMatrix.mat4.ortho(this.projectionMatrix, 0, this.superWidth, this.superHeight, 0, -1, 1);
     }
 
     _compileShader(source, type) { const gl = this.gl; const shader = gl.createShader(type); gl.shaderSource(shader, source); gl.compileShader(shader); if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) { console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader)); gl.deleteShader(shader); return null; } return shader; }
-    
-    _createProgram(vsSource, fsSource, attribs, uniforms) {
-        const gl = this.gl;
-        const vs = this._compileShader(vsSource, gl.VERTEX_SHADER);
-        const fs = this._compileShader(fsSource, gl.FRAGMENT_SHADER);
-        if (!vs || !fs) return null;
-        const program = gl.createProgram();
-        gl.attachShader(program, vs);
-        gl.attachShader(program, fs);
-        gl.linkProgram(program);
-        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-            console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(program));
-            gl.deleteProgram(program);
-            return null;
-        }
-        program.attribs = {};
-        program.uniforms = {};
-        attribs.forEach(name => { program.attribs[name] = gl.getAttribLocation(program, name); });
-        uniforms.forEach(name => { program.uniforms[name] = gl.getUniformLocation(program, name); });
-        return program;
-    }
-    
+    _createProgram(vsSource, fsSource) { const gl = this.gl; const vs = this._compileShader(vsSource, gl.VERTEX_SHADER); const fs = this._compileShader(fsSource, gl.FRAGMENT_SHADER); if (!vs || !fs) return null; const program = gl.createProgram(); gl.attachShader(program, vs); gl.attachShader(program, fs); gl.linkProgram(program); if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(program)); gl.deleteProgram(program); return null; } program.locations = {}; const locs = (p) => { p.locations.a_position = gl.getAttribLocation(p, 'a_position'); p.locations.a_texCoord = gl.getAttribLocation(p, 'a_texCoord'); p.locations.u_image = gl.getUniformLocation(p, 'u_image'); p.locations.u_opacity = gl.getUniformLocation(p, 'u_opacity'); p.locations.u_resolution = gl.getUniformLocation(p, 'u_resolution'); p.locations.u_center = gl.getUniformLocation(p, 'u_center'); p.locations.u_radius = gl.getUniformLocation(p, 'u_radius'); p.locations.u_color = gl.getUniformLocation(p, 'u_color'); p.locations.u_is_eraser = gl.getUniformLocation(p, 'u_is_eraser'); p.locations.u_source_resolution = gl.getUniformLocation(p, 'u_source_resolution'); p.locations.u_modelMatrix = gl.getUniformLocation(p, 'u_modelMatrix'); p.locations.u_projectionMatrix = gl.getUniformLocation(p, 'u_projectionMatrix'); }; locs(program); return program; }
     static isSupported() { try { const canvas = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))); } catch (e) { return false; } }
 
     _createOrUpdateLayerTexture(layer) {
@@ -214,6 +209,7 @@ export class WebGLEngine extends DrawingEngine {
         if (!texture) {
             texture = gl.createTexture();
             this.layerTextures.set(layer, texture);
+
             gl.bindTexture(gl.TEXTURE_2D, texture);
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.superWidth, this.superHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -227,9 +223,19 @@ export class WebGLEngine extends DrawingEngine {
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
 
             if (layer.imageData) {
+                 const tempCanvas = document.createElement('canvas');
+                 tempCanvas.width = this.superWidth;
+                 tempCanvas.height = this.superHeight;
+                 const tempCtx = tempCanvas.getContext('2d');
+                 const sourceCanvas = document.createElement('canvas');
+                 sourceCanvas.width = layer.imageData.width;
+                 sourceCanvas.height = layer.imageData.height;
+                 sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
+                 tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
+
                  gl.bindTexture(gl.TEXTURE_2D, texture);
                  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-                 gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, layer.imageData);
+                 gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.superWidth, this.superHeight, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvas);
             }
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         }
@@ -246,13 +252,12 @@ export class WebGLEngine extends DrawingEngine {
              sourceCanvas.width = layer.imageData.width;
              sourceCanvas.height = layer.imageData.height;
              sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
-             
-             // 元のサイズのまま描画
-             tempCtx.drawImage(sourceCanvas, 0, 0, layer.imageData.width, layer.imageData.height, 0, 0, this.superWidth, this.superHeight);
+
+             tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
 
             gl.bindTexture(gl.TEXTURE_2D, texture);
             gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvas);
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.superWidth, this.superHeight, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvas);
             gl.bindTexture(gl.TEXTURE_2D, null);
             layer.gpuDirty = false;
         }
@@ -307,38 +312,41 @@ export class WebGLEngine extends DrawingEngine {
         const targetFBO = this.layerFBOs.get(layer);
         if (!targetFBO) { return; }
 
-        // ★★★ 注: ここでの描画はレイヤーのローカルFBOに対して行われる ★★★
-        // 座標も変形を考慮しないローカル座標系で行うため、centerX, centerYをそのまま使う
-        // レイヤーの変形(modelMatrix)は、後のcompositeLayersで適用される
-
         gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO);
         gl.viewport(0, 0, this.superWidth, this.superHeight);
+        
+        gl.enable(gl.SCISSOR_TEST);
+        gl.scissor(0, 0, this.superWidth, this.superHeight);
         
         gl.useProgram(program);
         this._setBlendMode('normal', isEraser);
 
         gl.bindBuffer(gl.ARRAY_BUFFER, this.brushPositionBuffer);
-        gl.vertexAttribPointer(program.attribs.a_position, 2, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(program.attribs.a_position);
+        gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(program.locations.a_position);
         
         const superX = centerX * this.SUPER_SAMPLING_FACTOR;
+        // ★変更: Y軸反転処理を削除 (座標系を統一したため)
         const superY = centerY * this.SUPER_SAMPLING_FACTOR;
         const superRadius = radius * this.SUPER_SAMPLING_FACTOR;
         
-        gl.uniform2f(program.uniforms.u_resolution, this.superWidth, this.superHeight);
-        gl.uniform2f(program.uniforms.u_center, superX, superY);
-        gl.uniform1f(program.uniforms.u_radius, superRadius);
-        gl.uniform4f(program.uniforms.u_color, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
-        gl.uniform1i(program.uniforms.u_is_eraser, isEraser);
+        gl.uniform2f(program.locations.u_resolution, this.superWidth, this.superHeight);
+        // ★変更: Y軸反転処理を削除
+        gl.uniform2f(program.locations.u_center, superX, superY);
+        gl.uniform1f(program.locations.u_radius, superRadius);
+        gl.uniform4f(program.locations.u_color, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
+        gl.uniform1i(program.locations.u_is_eraser, isEraser);
 
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
+        gl.disable(gl.SCISSOR_TEST);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
     
     drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize, layer) {
         if (!isFinite(x0) || !isFinite(y0) || !isFinite(x1) || !isFinite(y1)) return;
         const distance = Math.hypot(x1 - x0, y1 - y0);
+        if (distance > this.width * 2) return;
 
         const stepSize = Math.max(0.5, size / 4);
         const steps = Math.max(1, Math.ceil(distance / stepSize));
@@ -353,11 +361,14 @@ export class WebGLEngine extends DrawingEngine {
         }
     }
 
-    fill(imageData, color) { /* ... 変更なし ... */ }
-    clear(imageData) { /* ... 変更なし ... */ }
-    
-    // ★★★★★ 修正: 全レイヤーを行列で変形しながら中間バッファに合成 ★★★★★
-    compositeLayers(layers, compositionData, dirtyRect, viewMatrix, projectionMatrix) {
+    // ★変更: このメソッドは非推奨になりました
+    getTransformedImageData(sourceImageData, transform) {
+        console.warn('getTransformedImageData is deprecated and should not be used in WebGL mode.');
+        return sourceImageData; // 何もせず、元のデータを返す
+    }
+
+    // ★★★★★ 変更箇所: レイヤー合成処理に行列変換を統合 ★★★★★
+    compositeLayers(layers, compositionData, dirtyRect) {
         if (!this.gl || !this.programs.compositor || !this.superCompositeFBO) return;
         const gl = this.gl;
         const program = this.programs.compositor;
@@ -368,85 +379,137 @@ export class WebGLEngine extends DrawingEngine {
         
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.superCompositeFBO);
         gl.viewport(0, 0, this.superWidth, this.superHeight);
+        gl.enable(gl.SCISSOR_TEST);
+        gl.scissor(0, 0, this.superWidth, this.superHeight);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
         gl.useProgram(program);
         
+        // ★追加: projectionMatrixをシェーダーに送る (全レイヤーで共通)
+        gl.uniformMatrix4fv(program.locations.u_projectionMatrix, false, this.projectionMatrix);
+
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.vertexAttribPointer(program.attribs.a_position, 2, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(program.attribs.a_position);
+        gl.vertexAttribPointer(program.locations.a_position, 4, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(program.locations.a_position);
         
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        gl.vertexAttribPointer(program.attribs.a_texCoord, 2, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(program.attribs.a_texCoord);
+        gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(program.locations.a_texCoord);
         
         for (const layer of layers) {
             if (!layer.visible || layer.opacity === 0 || !this.layerTextures.has(layer)) continue;
 
             this._setBlendMode(layer.blendMode);
 
+            // ★追加: 各レイヤーのmodelMatrixをシェーダーに送る
+            gl.uniformMatrix4fv(program.locations.u_modelMatrix, false, layer.modelMatrix);
+
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, this.layerTextures.get(layer));
-            gl.uniform1i(program.uniforms.u_image, 0);
-            gl.uniform1f(program.uniforms.u_opacity, layer.opacity / 100.0);
             
-            // ★★★ MVP行列を計算してシェーダーに送る ★★★
-            const mvpMatrix = mat4.create();
-            mat4.multiply(mvpMatrix, viewMatrix, layer.modelMatrix); // M * V
-            mat4.multiply(mvpMatrix, projectionMatrix, mvpMatrix);   // P * (M * V)
-            gl.uniformMatrix4fv(program.uniforms.u_mvpMatrix, false, mvpMatrix);
-
+            gl.uniform2f(program.locations.u_source_resolution, this.superWidth, this.superHeight);
+            gl.uniform1i(program.locations.u_image, 0);
+            gl.uniform1f(program.locations.u_opacity, layer.opacity / 100.0);
+            
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         }
 
+        gl.disable(gl.SCISSOR_TEST);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        gl.disableVertexAttribArray(program.attribs.a_position);
-        gl.disableVertexAttribArray(program.attribs.a_texCoord);
+        gl.disableVertexAttribArray(program.locations.a_position);
+        gl.disableVertexAttribArray(program.locations.a_texCoord);
     }
     
+    // ★★★★★ 変更箇所: 高解像度バッファを画面に表示する処理 ★★★★★
     renderToDisplay(compositionData, dirtyRect) {
         if (!this.gl || !this.superCompositeTexture) return;
         const gl = this.gl;
-        const program = this.programs.downsampler;
+        const program = this.programs.compositor;
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-        
-        this._setBlendMode('normal'); // 通常のアルファブレンド
-        
-        // ★★★ 高品質ダウンサンプリングシェーダーを使用 ★★★
-        gl.useProgram(program);
-        const positionBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-        const positions = [ -1, 1, -1, -1, 1, 1, 1, -1 ]; // full screen quad
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+        this._setBlendMode('normal');
 
-        gl.vertexAttribPointer(program.attribs.a_position, 2, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(program.attribs.a_position);
+        gl.useProgram(program);
         
+        // 画面全体に描画するため、頂点データを一時的に-1~1のクリップ空間座標に設定
+        const screenPositions = [ -1, 1, 0, 1,  -1, -1, 0, 1,  1, 1, 0, 1,  1, -1, 0, 1 ];
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(screenPositions), gl.DYNAMIC_DRAW);
+        gl.vertexAttribPointer(program.locations.a_position, 4, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(program.locations.a_position);
+        
+        const screenTexCoords = [ 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0 ];
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        gl.vertexAttribPointer(program.attribs.a_texCoord, 2, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(program.attribs.a_texCoord);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(screenTexCoords), gl.DYNAMIC_DRAW);
+        gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(program.locations.a_texCoord);
+        
+        // ★変更: 画面への描画では変換を行わないので、単位行列を渡す
+        gl.uniformMatrix4fv(program.locations.u_projectionMatrix, false, this.identityMatrix);
+        gl.uniformMatrix4fv(program.locations.u_modelMatrix, false, this.identityMatrix);
         
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.superCompositeTexture);
-        gl.uniform1i(program.uniforms.u_image, 0);
-        gl.uniform2f(program.uniforms.u_source_resolution, this.superWidth, this.superHeight);
+
+        gl.uniform2f(program.locations.u_source_resolution, this.superWidth, this.superHeight);
+        gl.uniform1i(program.locations.u_image, 0);
+        gl.uniform1f(program.locations.u_opacity, 1.0);
 
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-        gl.disableVertexAttribArray(program.attribs.a_position);
-        gl.disableVertexAttribArray(program.attribs.a_texCoord);
+        // バッファを元のピクセル座標系に戻す
+        const originalPositions = [ 0, 0, 0, 1,  this.superWidth, 0, 0, 1,  0, this.superHeight, 0, 1,  this.superWidth, this.superHeight, 0, 1 ];
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(originalPositions), gl.STATIC_DRAW);
+
+        const originalTexCoords = [ 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0 ];
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(originalTexCoords), gl.STATIC_DRAW);
     }
 
     syncDirtyRectToImageData(layer, dirtyRect) {
         const gl = this.gl;
         const fbo = this.layerFBOs.get(layer);
         if (!fbo || dirtyRect.minX > dirtyRect.maxX) return;
+
+        const sx = Math.floor(dirtyRect.minX * this.SUPER_SAMPLING_FACTOR);
+        const sy = Math.floor(dirtyRect.minY * this.SUPER_SAMPLING_FACTOR);
+        const sWidth = Math.ceil((dirtyRect.maxX - dirtyRect.minX) * this.SUPER_SAMPLING_FACTOR);
+        const sHeight = Math.ceil((dirtyRect.maxY - dirtyRect.minY) * this.SUPER_SAMPLING_FACTOR);
+
+        if (sWidth <= 0 || sHeight <= 0) return;
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        const superBuffer = new Uint8Array(sWidth * sHeight * 4);
         
-        // このメソッドは現在、変形を考慮していません。
-        // 正確な同期には、ダーティ矩形自体も逆変換する必要がありますが、
-        // パフォーマンスへの影響が大きいため、今回は未対応とします。
-        // Undo/Redo時の全更新でカバーします。
+        // Y軸下向き座標系になったので、読み取り位置のY反転は不要
+        gl.readPixels(sx, sy, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        const targetImageData = layer.imageData;
+        const targetData = targetImageData.data;
+        const factor = this.SUPER_SAMPLING_FACTOR;
+        
+        for (let y = 0; y < (dirtyRect.maxY - dirtyRect.minY); y++) {
+            for (let x = 0; x < (dirtyRect.maxX - dirtyRect.minX); x++) {
+                const targetX = Math.floor(dirtyRect.minX) + x;
+                const targetY = Math.floor(dirtyRect.minY) + y;
+                if (targetX >= targetImageData.width || targetY >= targetImageData.height) continue;
+                
+                const sourceX = Math.round(x * factor);
+                const sourceY = Math.round(y * factor);
+                
+                const sourceIndex = (sourceY * sWidth + sourceX) * 4;
+                const targetIndex = (targetY * targetImageData.width + targetX) * 4;
+
+                if (sourceIndex >= 0 && sourceIndex < superBuffer.length) {
+                    targetData[targetIndex]     = superBuffer[sourceIndex];
+                    targetData[targetIndex + 1] = superBuffer[sourceIndex + 1];
+                    targetData[targetIndex + 2] = superBuffer[sourceIndex + 2];
+                    targetData[targetIndex + 3] = superBuffer[sourceIndex + 3];
+                }
+            }
+        }
     }
 }

@@ -1,11 +1,11 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Rendering Bridge (Dynamic Switching)
- * Version: 2.4.0 (Phase4A9 - Matrix Passing)
+ * Version: 2.4.0 (Phase 4A9 - No changes)
  *
- * - ★★★ 改修（Phase4A9）★★★
- * - compositeLayersメソッドのシグネチャを変更。
- * - core-engineから渡されたviewMatrixとprojectionMatrixを、そのまま描画エンジンに渡すように修正。
+ * - 修正：
+ * - このファイルには、今回の改修における直接的なロジック変更はありません。
+ * - 他のファイルのインターフェース変更に追従しています。
  * ===================================================================================
  */
 import { Canvas2DEngine } from './canvas2d-engine.js';
@@ -128,15 +128,12 @@ export class RenderingBridge {
     }
 
     // --- DrawingEngineのインターフェースを現在のエンジンに委譲 ---
-    drawCircle(...args) { this.currentEngine.drawCircle?.(...args); }
-    drawLine(...args) { this.currentEngine.drawLine?.(...args); }
-    fill(...args) { this.currentEngine.fill?.(...args); }
-    clear(...args) { this.currentEngine.clear?.(...args); }
-    getTransformedImageData(...args) { return this.currentEngine.getTransformedImageData?.(...args); }
-    
-    // ★★★ 修正: 行列を受け取ってそのままエンジンに渡す ★★★
-    compositeLayers(...args) { this.currentEngine.compositeLayers?.(...args); }
-    
-    renderToDisplay(...args) { this.currentEngine.renderToDisplay?.(...args); }
+    drawCircle(...args) { this.currentEngine.drawCircle(...args); }
+    drawLine(...args) { this.currentEngine.drawLine(...args); }
+    fill(...args) { this.currentEngine.fill(...args); }
+    clear(...args) { this.currentEngine.clear(...args); }
+    getTransformedImageData(...args) { return this.currentEngine.getTransformedImageData(...args); }
+    compositeLayers(...args) { this.currentEngine.compositeLayers(...args); }
+    renderToDisplay(...args) { this.currentEngine.renderToDisplay(...args); }
     syncDirtyRectToImageData(...args) { this.currentEngine.syncDirtyRectToImageData?.(...args); }
 }

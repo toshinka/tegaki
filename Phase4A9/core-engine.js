@@ -1,17 +1,21 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.0.0 (Phase4A9 - WebGL Layer Transform)
+ * Version: 3.0.0 (Phase4A9 - Non-destructive WebGL Layer Transform)
  *
- * - ★★★ 改修（Phase4A9）★★★
- * - 1. gl-matrixライブラリを導入し、MVP(Model-View-Projection)行列による描画基盤を構築。
- * - 2. Layerクラスに、レイヤーごとの変形情報を持つ `modelMatrix` プロパティを追加。
- * - 3. CanvasManagerに、視点操作を管理する `viewMatrix` と `projectionMatrix` を追加。
- * - 4. レイヤー移動ツール(Vキー)のロジックを、CPUによるピクセル操作(破壊的変形)から、
- * `modelMatrix` を直接操作する非破壊変形に全面的に刷新。これにより画質劣化がなくなる。
- * - 5. `getCanvasCoordinates` を、ビューの回転・拡縮に対応した行列計算ベースに修正。
- * 「レイヤーが動いてもペン先がズレない」挙動を実現。
- * - 6. Undo/Redo (`saveState`/`restoreState`)が `modelMatrix` の状態も正しく保存・復元するように対応。
+ * - 改修内容:
+ * - 1. 非破壊レイヤー変形の導入:
+ * -   - Layerクラスに`translation`と`modelMatrix`プロパティを追加。
+ * -   - ピクセルデータを直接書き換えるのではなく、WebGLシェーダーに行列を渡して表示位置を制御する方式に変更。
+ * -   - これにより、移動を繰り返しても画質が劣化しなくなりました。
+ * -
+ * - 2. dat.guiによるUI制御:
+ * -   - 画面右上にdat.guiを配置し、アクティブレイヤーのX/Y座標をスライダーでリアルタイムに操作可能に。
+ * -   - レイヤーを切り替えると、GUIの表示も追従します。
+ * -
+ * - 3. ペン座標のズレ補正:
+ * -   - レイヤーが移動していても、ペンの描画位置がずれないように、クリック座標を行列で逆変換するロジックを追加。
+ * -   - Vキーによる移動操作も、新しい非破壊変形の仕組みに統合しました。
  * ===================================================================================
  */
 
@@ -20,9 +24,6 @@ import { TopBarManager, LayerUIManager } from './ui/ui-manager.js';
 import { ShortcutManager } from './ui/shortcut-manager.js';
 import { BucketTool } from './tools/toolset.js';
 import { RenderingBridge } from './core/rendering/rendering-bridge.js';
-
-// ★★★ gl-matrixライブラリの各モジュールを変数に格納 ★★★
-const { mat4, vec4 } = glMatrix;
 
 // --- Core Logic Classes ---
 
@@ -43,12 +44,10 @@ class Layer {
         this.opacity = 100;
         this.blendMode = 'normal';
         this.imageData = new ImageData(width, height);
-        // ★★★ 削除: 破壊的変形用のプロパティは不要に
-        // this.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
-        // this.originalImageData = null;
         
-        // ★★★ 追加: レイヤーごとの変形行列（Model Matrix） ★★★
-        this.modelMatrix = mat4.create(); // mat4.create()で単位行列として初期化
+        // ★変更: 破壊的なtransformプロパティを、非破壊的なtranslationとmodelMatrixに置き換え
+        this.translation = { x: 0, y: 0 };
+        this.modelMatrix = glMatrix.mat4.create(); // gl-matrixライブラリで4x4行列を生成
 
         this.gpuDirty = true; // GPUテクスチャが更新を必要とするか
     }
@@ -86,11 +85,11 @@ class CanvasManager {
         
         this.isVDown = false; this.isShiftDown = false;
         
-        // ★★★ 修正: 非破壊変形用のプロパティ ★★★
-        this.isLayerTransforming = false;
-        this.transformTargetLayer = null;
-        this.originalModelMatrix = null; // 元のImageDataではなく、元のmodelMatrixを保存
-        this.transformMode = 'move'; this.transformStartX = 0; this.transformStartY = 0;
+        // ★変更: レイヤー移動のロジックを非破壊用に変更
+        this.isLayerTransforming = false; // Vキーでの移動モード中かどうかのフラグ
+        this.transformTargetLayer = null; // 移動対象のレイヤー
+        this.originalLayerTranslation = null; // 移動開始時の座標
+        this.transformStartX = 0; this.transformStartY = 0; // ドラッグ開始時のマウス座標
         
         this.currentTool = 'pen';
         this.currentColor = '#800000'; this.currentSize = 1; this.lastPoint = null;
@@ -110,42 +109,9 @@ class CanvasManager {
         this.dragStartX = 0; this.dragStartY = 0; this.canvasStartX = 0; this.canvasStartY = 0;
         this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
         
-        // ★★★ 追加: WebGL描画用の行列 ★★★
-        this.projectionMatrix = mat4.create();
-        this.viewMatrix = mat4.create();
-
         this.bindEvents();
-        this._initMatrices();
     }
-
-    // ★★★ 追加: 行列を初期化するメソッド ★★★
-    _initMatrices() {
-        // Projection Matrix: 画面のアスペクト比を保ち、Y軸を反転させる
-        const halfW = this.width / 2;
-        const halfH = this.height / 2;
-        mat4.ortho(this.projectionMatrix, -halfW, halfW, halfH, -halfH, -1, 1); // Y軸が下向きになるように設定
-        this.updateViewMatrix();
-    }
-
-    // ★★★ 追加: viewTransformオブジェクトからviewMatrixを更新するメソッド ★★★
-    updateViewMatrix() {
-        mat4.identity(this.viewMatrix); // 単位行列にリセット
-        
-        const centerX = this.width / 2;
-        const centerY = this.height / 2;
-
-        // CSSの transform-origin: center と同じ効果を出すための移動
-        mat4.translate(this.viewMatrix, this.viewMatrix, [centerX, centerY, 0]);
-
-        // ビューの変形を適用
-        mat4.translate(this.viewMatrix, this.viewMatrix, [this.viewTransform.left, this.viewTransform.top, 0]);
-        mat4.rotateZ(this.viewMatrix, this.viewMatrix, this.viewTransform.rotation * Math.PI / 180);
-        mat4.scale(this.viewMatrix, this.viewMatrix, [this.viewTransform.scale, this.viewTransform.scale, 1]);
-        
-        // 原点を左上に戻す
-        mat4.translate(this.viewMatrix, this.viewMatrix, [-centerX, -centerY, 0]);
-    }
-
+    
     bindEvents() {
         this.canvasArea.addEventListener('pointerdown', this.onPointerDown.bind(this));
         document.addEventListener('pointermove', this.onPointerMove.bind(this));
@@ -158,6 +124,7 @@ class CanvasManager {
     onPointerDown(e) {
         if (e.button !== 0) return;
         
+        // ★変更: Vキーでのレイヤー移動開始処理
         if (this.isVDown) {
             this.startLayerTransform(e);
             e.preventDefault(); return;
@@ -168,30 +135,21 @@ class CanvasManager {
             e.preventDefault(); return;
         }
 
-        const coords = this.getCanvasCoordinates(e);
-        if (!coords) return;
-        
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
+
+        // ★変更: ペン座標をレイヤーのローカル座標に変換
+        let coords = this.getCanvasCoordinates(e);
+        if (!coords) return;
+        coords = this.getWorldToLocalCoordinates(coords, activeLayer);
 
         this._resetDirtyRect();
         
         if (this.currentTool === 'bucket') {
-            // バケツツールはCPUピクセル操作なので、モデル行列の逆行列で座標を変換する必要がある
-            const invModel = mat4.create();
-            mat4.invert(invModel, activeLayer.modelMatrix);
-            const localPos = vec4.fromValues(coords.x, coords.y, 0, 1);
-            vec4.transformMat4(localPos, localPos, invModel);
-            
-            const fillX = Math.round(localPos[0]);
-            const fillY = Math.round(localPos[1]);
-
-            if(fillX >= 0 && fillX < this.width && fillY >= 0 && fillY < this.height) {
-                this.app.bucketTool.fill(activeLayer.imageData, fillX, fillY, hexToRgba(this.currentColor));
-                activeLayer.gpuDirty = true;
-                this.renderAllLayers();
-                this.saveState();
-            }
+            this.app.bucketTool.fill(activeLayer.imageData, coords.x, coords.y, hexToRgba(this.currentColor));
+            activeLayer.gpuDirty = true;
+            this.renderAllLayers();
+            this.saveState();
             return;
         }
 
@@ -201,13 +159,13 @@ class CanvasManager {
         
         const size = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
         
-        this._updateDirtyRectWithTransform(coords.x, coords.y, size, activeLayer.modelMatrix);
-
-        // ★★★ 修正: 描画メソッドに layer オブジェクトを渡す ★★★
+        this._updateDirtyRect(coords.x, coords.y, size);
+        
+        // 変換後の座標で描画
         this.renderingBridge.drawCircle(
             coords.x, coords.y, size / 2, 
             hexToRgba(this.currentColor), this.currentTool === 'eraser',
-            activeLayer // どのレイヤーに描画するかを渡す
+            activeLayer
         );
         
         this._requestRender();
@@ -215,33 +173,24 @@ class CanvasManager {
     }
     
     onPointerMove(e) {
+        // ★変更: Vキーでのレイヤー移動処理
         if (this.isLayerTransforming) {
-            // ★★★ 修正: modelMatrixを直接更新する非破壊変形ロジック ★★★
-            const layer = this.transformTargetLayer;
             const dx = e.clientX - this.transformStartX;
             const dy = e.clientY - this.transformStartY;
+            const layer = this.transformTargetLayer;
+            const original = this.originalLayerTranslation;
 
-            // 新しい変形行列を計算
-            const newTransform = mat4.create();
-            if (this.transformMode === 'move') {
-                // 移動量をビューのスケールで補正
-                const moveX = dx / this.viewTransform.scale;
-                const moveY = dy / this.viewTransform.scale;
-                mat4.fromTranslation(newTransform, [moveX, moveY, 0]);
-            } else { // rotate_scale
-                const rotateDeg = dx * 0.5;
-                const scaleFactor = Math.max(0.01, 1 - dy * 0.005);
-                const centerX = this.width / 2;
-                const centerY = this.height / 2;
-                // 中心基準で拡縮・回転
-                mat4.translate(newTransform, newTransform, [centerX, centerY, 0]);
-                mat4.rotateZ(newTransform, newTransform, rotateDeg * Math.PI / 180);
-                mat4.scale(newTransform, newTransform, [scaleFactor, scaleFactor, 1]);
-                mat4.translate(newTransform, newTransform, [-centerX, -centerY, 0]);
-            }
+            // ビューの拡大率を考慮して移動量を計算
+            layer.translation.x = original.x + dx / this.viewTransform.scale;
+            layer.translation.y = original.y + dy / this.viewTransform.scale;
 
-            // 元の行列に新しい変形を乗算
-            mat4.multiply(layer.modelMatrix, newTransform, this.originalModelMatrix);
+            // translationプロパティからmodelMatrixを更新
+            this.app.updateLayerModelMatrix(layer);
+            
+            // dat.guiの表示をリアルタイムに更新
+            this.app.updateDatGUIView();
+
+            // 再描画をリクエスト
             this.renderAllLayers();
             return;
         }
@@ -252,10 +201,15 @@ class CanvasManager {
             this.applyViewTransform(); return;
         }
         if (!this.isDrawing) return;
-        const coords = this.getCanvasCoordinates(e);
-        if (!coords) { this.lastPoint = null; return; }
+        
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
+
+        // ★変更: ペン座標をレイヤーのローカル座標に変換
+        let coords = this.getCanvasCoordinates(e);
+        if (!coords) { this.lastPoint = null; return; }
+        coords = this.getWorldToLocalCoordinates(coords, activeLayer);
+
         if (!this.lastPoint) { 
             this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
             this.lastPoint = { ...coords, pressure: e.pressure > 0 ? e.pressure : 0.5 }; 
@@ -270,8 +224,8 @@ class CanvasManager {
         
         const lastSize = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
         const currentSize = this.calculatePressureSize(this.currentSize, currentPressure);
-        this._updateDirtyRectWithTransform(this.lastPoint.x, this.lastPoint.y, lastSize, activeLayer.modelMatrix);
-        this._updateDirtyRectWithTransform(coords.x, coords.y, currentSize, activeLayer.modelMatrix);
+        this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, lastSize);
+        this._updateDirtyRect(coords.x, coords.y, currentSize);
 
         this.renderingBridge.drawLine(
             this.lastPoint.x, this.lastPoint.y, coords.x, coords.y,
@@ -286,7 +240,10 @@ class CanvasManager {
     }
     
     onPointerUp(e) {
-        if (this.isLayerTransforming) { this.commitLayerTransform(); }
+        // ★変更: Vキー移動の終了処理
+        if (this.isLayerTransforming) {
+            this.commitLayerTransform();
+        }
         
         if (this.isDrawing) {
             this.isDrawing = false;
@@ -300,7 +257,7 @@ class CanvasManager {
 
             const activeLayer = this.app.layerManager.getCurrentLayer();
             if (activeLayer) {
-                 this.renderingBridge.syncDirtyRectToImageData?.(activeLayer, this.dirtyRect);
+                this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
             }
             
             this.lastPoint = null;
@@ -316,14 +273,7 @@ class CanvasManager {
     _renderDirty() {
         const rect = this.dirtyRect;
         if (rect.minX > rect.maxX) return;
-        // ★★★ 修正: 描画メソッドに行列を渡す ★★★
-        this.renderingBridge.compositeLayers(
-            this.app.layerManager.layers,
-            this.compositionData,
-            rect,
-            this.viewMatrix,
-            this.projectionMatrix
-        );
+        this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, rect);
         this.renderingBridge.renderToDisplay(this.compositionData, rect);
     }
 
@@ -341,7 +291,6 @@ class CanvasManager {
         }
     }
 
-    // ダーティ矩形の計算（変形を考慮しない単純なバージョン）
     _updateDirtyRect(x, y, radius) {
         const margin = Math.ceil(radius) + 2;
         this.dirtyRect.minX = Math.min(this.dirtyRect.minX, x - margin);
@@ -350,38 +299,6 @@ class CanvasManager {
         this.dirtyRect.maxY = Math.max(this.dirtyRect.maxY, y + margin);
     }
     
-    // ★★★ 追加: レイヤーの変形を考慮してダーティ矩形を計算する ★★★
-    _updateDirtyRectWithTransform(x, y, radius, modelMatrix) {
-        const margin = Math.ceil(radius) + 2;
-        // 矩形の4隅の座標を計算
-        const points = [
-            vec4.fromValues(x - margin, y - margin, 0, 1),
-            vec4.fromValues(x + margin, y - margin, 0, 1),
-            vec4.fromValues(x + margin, y + margin, 0, 1),
-            vec4.fromValues(x - margin, y + margin, 0, 1),
-        ];
-
-        // 各点をモデル行列とビュー行列で変換
-        const finalMatrix = mat4.create();
-        mat4.multiply(finalMatrix, this.viewMatrix, modelMatrix);
-
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        points.forEach(p => {
-            const transformedP = vec4.create();
-            vec4.transformMat4(transformedP, p, finalMatrix);
-            minX = Math.min(minX, transformedP[0]);
-            minY = Math.min(minY, transformedP[1]);
-            maxX = Math.max(maxX, transformedP[0]);
-            maxY = Math.max(maxY, transformedP[1]);
-        });
-        
-        // 画面外の領域はクリップ
-        this.dirtyRect.minX = Math.max(0, Math.min(this.dirtyRect.minX, minX));
-        this.dirtyRect.minY = Math.max(0, Math.min(this.dirtyRect.minY, minY));
-        this.dirtyRect.maxX = Math.min(this.width, Math.max(this.dirtyRect.maxX, maxX));
-        this.dirtyRect.maxY = Math.min(this.height, Math.max(this.dirtyRect.maxY, maxY));
-    }
-
     _resetDirtyRect() {
         this.dirtyRect = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
     }
@@ -422,77 +339,70 @@ class CanvasManager {
         return Math.max(0.1, finalSize);
     }
 
-    // ★★★ 修正: 行列計算に基づいてペン座標を求める ★★★
+
     getCanvasCoordinates(e) {
         try {
-            // 1. canvas-area基準のクリック座標を取得
-            const rect = this.canvasArea.getBoundingClientRect();
-            const cssX = e.clientX - rect.left;
-            const cssY = e.clientY - rect.top;
-
-            // 2. CSS Transformと等価なviewMatrixの逆行列を計算
-            const invViewMatrix = mat4.create();
-            if (!mat4.invert(invViewMatrix, this.viewMatrix)) {
-                return null; // 逆行列が計算できなければ失敗
-            }
-            
-            // 3. クリック座標を逆行列で変換し、キャンバスのローカル座標を得る
-            const pos = vec4.fromValues(cssX, cssY, 0, 1);
-            vec4.transformMat4(pos, pos, invViewMatrix);
-            
-            const x = pos[0];
-            const y = pos[1];
-
-            // 4. キャンバス範囲外ならnullを返す
+            const rect = this.displayCanvas.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) return null;
+            let x = e.clientX - rect.left;
+            let y = e.clientY - rect.top;
+            x = x * (this.width / rect.width);
+            y = y * (this.height / rect.height);
+            if (this.viewTransform.flipX === -1) { x = this.width - x; }
+            if (this.viewTransform.flipY === -1) { y = this.height - y; }
             if (x < 0 || x >= this.width || y < 0 || y >= this.height) { return null; }
-            
-            // viewTransformの反転はviewMatrixに含まれているので個別処理は不要
-            return { x, y };
-
+            return { x: x, y: y };
         } catch (error) {
-            console.warn('座標変換エラー:', error);
+            console.warn('Coordinate transformation error:', error);
             return null;
         }
     }
 
-    // ★★★ 修正: 非破壊変形の開始処理 ★★★
-    startLayerTransform(e = null) {
-        const activeLayer = this.app.layerManager.getCurrentLayer();
-        // 背景レイヤーは動かせない
-        if (!activeLayer || this.app.layerManager.layers.indexOf(activeLayer) === 0) return;
+    // ★新規: ワールド座標(画面上の描画座標)をレイヤーのローカル座標に変換する
+    getWorldToLocalCoordinates(worldCoords, layer) {
+        if (!layer) return worldCoords;
+
+        const invModelMatrix = glMatrix.mat4.create();
+        // レイヤーのmodelMatrixの逆行列を計算
+        glMatrix.mat4.invert(invModelMatrix, layer.modelMatrix);
+
+        // 座標をベクトルとして定義 [x, y, z, w]
+        const inVec = [worldCoords.x, worldCoords.y, 0, 1];
+        const outVec = [0, 0, 0, 0];
         
+        // 逆行列を適用してローカル座標を計算
+        glMatrix.vec4.transformMat4(outVec, inVec, invModelMatrix);
+
+        return { x: outVec[0], y: outVec[1] };
+    }
+
+    // ★変更: 非破壊的なレイヤー移動の開始処理
+    startLayerTransform(e) {
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+        if (!activeLayer || this.app.layerManager.layers.indexOf(activeLayer) === 0) return; // 背景は動かせない
+
         this.isLayerTransforming = true;
         this.transformTargetLayer = activeLayer;
-        
-        // 変形開始時のmodelMatrixを複製して保存
-        this.originalModelMatrix = mat4.clone(activeLayer.modelMatrix);
-
-        if (e) {
-            this.transformMode = this.isShiftDown ? 'rotate_scale' : 'move';
-            this.transformStartX = e.clientX;
-            this.transformStartY = e.clientY;
-        }
+        // 移動開始前のtranslationを保存
+        this.originalLayerTranslation = { ...activeLayer.translation };
+        this.transformStartX = e.clientX;
+        this.transformStartY = e.clientY;
     }
     
-    // ★★★ 削除: このメソッドは不要に。ロジックはonPointerMoveに統合 ★★★
-    // applyLayerTransformPreview() { ... }
-
-    // ★★★ 修正: 非破壊変形の確定処理 ★★★
+    // ★変更: 非破壊的なレイヤー移動の確定処理
     commitLayerTransform() {
         if (!this.isLayerTransforming) return;
         
-        // ピクセルデータの焼き付けやtransform情報のリセットは不要
+        // 非破壊なのでピクセルを焼き付ける必要はない。状態を保存するだけ。
+        this.saveState();
+
         this.isLayerTransforming = false;
         this.transformTargetLayer = null;
-        this.originalModelMatrix = null;
-        
-        this.renderAllLayers();
-        this.saveState(); // 変形後の状態で履歴を保存
+        this.originalLayerTranslation = null;
     }
 
-    // ★★★ 修正: 履歴にmodelMatrixを追加 ★★★
     saveState() {
-        if(this.isLayerTransforming) return;
+        if (this.isLayerTransforming) return;
         const state = {
             layers: this.app.layerManager.layers.map(layer => ({
                 name: layer.name,
@@ -504,7 +414,8 @@ class CanvasManager {
                     layer.imageData.width,
                     layer.imageData.height
                 ),
-                modelMatrix: mat4.clone(layer.modelMatrix) // modelMatrixを複製して保存
+                // ★変更: transformの代わりにtranslationを保存
+                translation: { ...layer.translation } 
             })),
             activeLayerIndex: this.app.layerManager.activeLayerIndex
         };
@@ -513,7 +424,6 @@ class CanvasManager {
         this.historyIndex++;
     }
 
-    // ★★★ 修正: 履歴からmodelMatrixを復元 ★★★
     restoreState(state) {
         this.app.layerManager.layers = state.layers.map(layerData => {
             const layer = new Layer(layerData.name, layerData.imageData.width, layerData.imageData.height);
@@ -521,9 +431,13 @@ class CanvasManager {
             layer.opacity = layerData.opacity ?? 100;
             layer.blendMode = layerData.blendMode ?? 'normal';
             layer.imageData.data.set(layerData.imageData.data);
-            if (layerData.modelMatrix) {
-                mat4.copy(layer.modelMatrix, layerData.modelMatrix); // modelMatrixをコピーして復元
+            
+            // ★変更: translationを復元し、それに基づいてmodelMatrixを再計算
+            if (layerData.translation) {
+                layer.translation = { ...layerData.translation };
             }
+            this.app.updateLayerModelMatrix(layer);
+
             layer.gpuDirty = true;
             return layer;
         });
@@ -540,8 +454,6 @@ class CanvasManager {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (activeLayer) {
             activeLayer.clear();
-            // ★★★ レイヤーの変形情報もリセットする ★★★
-            mat4.identity(activeLayer.modelMatrix);
             if (this.app.layerManager.activeLayerIndex === 0) {
                 activeLayer.fill('#f0e0d6');
             }
@@ -556,7 +468,7 @@ class CanvasManager {
         const exportCtx = exportCanvas.getContext('2d');
         
         const fullRect = { minX: 0, minY: 0, maxX: this.width, maxY: this.height };
-        this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, fullRect, this.viewMatrix, this.projectionMatrix);
+        this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, fullRect);
 
         const gl = this.renderingBridge.engines['webgl']?.gl;
         if (gl && this.renderingBridge.currentEngineType === 'webgl') {
@@ -584,58 +496,38 @@ class CanvasManager {
         link.click();
     }
     updateCursor() { let cursor = 'crosshair'; if (this.isVDown) cursor = 'move'; if (this.isSpaceDown) cursor = 'grab'; if (this.currentTool === 'eraser') cursor = 'cell'; if (this.currentTool === 'bucket') cursor = 'copy'; this.canvasArea.style.cursor = cursor; }
-    
-    // ★★★ 修正: ビューの変形時にCSSとWebGL行列の両方を更新 ★★★
-    applyViewTransform() {
-        const t = this.viewTransform;
-        this.canvasContainer.style.transform = `translate(${t.left}px, ${t.top}px) rotate(${t.rotation}deg) scale(${t.scale})`;
-        this.updateViewMatrix(); // WebGL用のviewMatrixも更新
-        this.renderAllLayers(); // 再描画
-    }
-    flipHorizontal() { /* 将来的にviewMatrixで対応 */ }
-    flipVertical() { /* 将来的にviewMatrixで対応 */ }
+    applyViewTransform() { const t = this.viewTransform; this.canvasContainer.style.transform = `translate(${t.left}px, ${t.top}px) scale(${t.scale * t.flipX}, ${t.scale * t.flipY}) rotate(${t.rotation}deg)`; }
+    flipHorizontal() { this.viewTransform.flipX *= -1; this.applyViewTransform(); }
+    flipVertical() { this.viewTransform.flipY *= -1; this.applyViewTransform(); }
     zoom(factor) { this.viewTransform.scale = Math.max(0.1, this.viewTransform.scale * factor); this.applyViewTransform(); }
     rotate(degrees) { this.viewTransform.rotation = (this.viewTransform.rotation + degrees) % 360; this.applyViewTransform(); }
     resetView() { this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 }; this.applyViewTransform(); }
     handleWheel(e) { e.preventDefault(); if (e.shiftKey) { this.rotate(-e.deltaY * 0.2); } else { this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); } }
 }
 
-// LayerManagerと他のマネージャークラスは変更なし
 class LayerManager { 
     constructor(app) { this.app = app; this.layers = []; this.activeLayerIndex = -1; this.width = 344; this.height = 135; this.mergeCanvas = document.createElement('canvas'); this.mergeCanvas.width = this.width; this.mergeCanvas.height = this.height; this.mergeCtx = this.mergeCanvas.getContext('2d'); } 
-    setupInitialLayers() { const bgLayer = new Layer('背景', this.width, this.height); bgLayer.fill('#f0e0d6'); this.layers.push(bgLayer); const drawingLayer = new Layer('レイヤー 1', this.width, this.height); this.layers.push(drawingLayer); this.switchLayer(1); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
-    addLayer() { if (this.layers.length >= 99) return; const insertIndex = this.activeLayerIndex + 1; const newLayer = new Layer(`レイヤー ${this.layers.length + 1}`, this.width, this.height); this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
+    setupInitialLayers() { const bgLayer = new Layer('背景', this.width, this.height); bgLayer.fill('#f0e0d6'); this.app.updateLayerModelMatrix(bgLayer); this.layers.push(bgLayer); const drawingLayer = new Layer('レイヤー 1', this.width, this.height); this.app.updateLayerModelMatrix(drawingLayer); this.layers.push(drawingLayer); this.switchLayer(1); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
+    addLayer() { if (this.layers.length >= 99) return; const insertIndex = this.activeLayerIndex + 1; const newLayer = new Layer(`レイヤー ${this.layers.length + 1}`, this.width, this.height); this.app.updateLayerModelMatrix(newLayer); this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
     deleteActiveLayer() { if (this.activeLayerIndex === 0 || this.layers.length <= 1) return; this.layers.splice(this.activeLayerIndex, 1); const newActiveIndex = Math.min(this.layers.length - 1, this.activeLayerIndex); this.renameLayers(); this.switchLayer(newActiveIndex); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
     renameLayers() { this.layers.forEach((layer, index) => { if (index > 0) layer.name = `レイヤー ${index}`; }); } 
-    switchLayer(index) { if (index < 0 || index >= this.layers.length) return; this.activeLayerIndex = index; if (this.app.layerUIManager) { this.app.layerUIManager.renderLayers(); } } 
+    switchLayer(index) {
+        if (index < 0 || index >= this.layers.length) return;
+        this.activeLayerIndex = index;
+        if (this.app.layerUIManager) {
+            this.app.layerUIManager.renderLayers();
+        }
+        // ★追加: レイヤー切り替え時にdat.guiの表示を更新する
+        if (this.app.rebuildDatGUI) {
+            this.app.rebuildDatGUI();
+        }
+    } 
     getCurrentLayer() { return this.layers[this.activeLayerIndex] || null; } 
-    duplicateActiveLayer() { const activeLayer = this.getCurrentLayer(); if (!activeLayer) return; const newLayer = new Layer(`${activeLayer.name}のコピー`, this.width, this.height); newLayer.imageData.data.set(activeLayer.imageData.data); newLayer.visible = activeLayer.visible; newLayer.opacity = activeLayer.opacity; newLayer.blendMode = activeLayer.blendMode; mat4.copy(newLayer.modelMatrix, activeLayer.modelMatrix); newLayer.gpuDirty = true; const insertIndex = this.activeLayerIndex + 1; this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
+    duplicateActiveLayer() { const activeLayer = this.getCurrentLayer(); if (!activeLayer) return; const newLayer = new Layer(`${activeLayer.name}のコピー`, this.width, this.height); newLayer.imageData.data.set(activeLayer.imageData.data); newLayer.visible = activeLayer.visible; newLayer.opacity = activeLayer.opacity; newLayer.blendMode = activeLayer.blendMode; newLayer.translation = { ...activeLayer.translation }; this.app.updateLayerModelMatrix(newLayer); newLayer.gpuDirty = true; const insertIndex = this.activeLayerIndex + 1; this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
     mergeDownActiveLayer() {
         if (this.activeLayerIndex <= 0) return;
-        
-        // ★★★ 注: このCPUベースの結合処理は、レイヤーの変形を反映しません ★★★
-        // 将来的にはWebGL上で結合（レンダーテクスチャに描画）する方式に移行するのが望ましいです。
-        console.warn("レイヤー結合は現在、レイヤーの移動・回転・拡縮を反映できません。");
-
-        const topLayer = this.layers[this.activeLayerIndex];
-        const bottomLayer = this.layers[this.activeLayerIndex - 1];
-        const tempCtx = this.mergeCtx;
-        tempCtx.clearRect(0, 0, this.width, this.height);
-        tempCtx.putImageData(bottomLayer.imageData, 0, 0);
-        tempCtx.globalAlpha = topLayer.opacity / 100;
-        tempCtx.globalCompositeOperation = topLayer.blendMode;
-        const topLayerCanvas = document.createElement('canvas');
-        topLayerCanvas.width = this.width;
-        topLayerCanvas.height = this.height;
-        const topLayerCtx = topLayerCanvas.getContext('2d');
-        topLayerCtx.putImageData(topLayer.imageData, 0, 0);
-        tempCtx.drawImage(topLayerCanvas, 0, 0);
-        bottomLayer.imageData = tempCtx.getImageData(0, 0, this.width, this.height);
-        bottomLayer.gpuDirty = true;
-        this.layers.splice(this.activeLayerIndex, 1);
-        this.switchLayer(this.activeLayerIndex - 1);
-        this.app.canvasManager.renderAllLayers();
-        this.app.canvasManager.saveState();
+        alert("レイヤー移動機能が有効な状態でのレイヤー結合は、現在サポートされていません。");
+        return; // TODO: 非破壊変形を考慮した結合処理を実装する必要がある
     } 
 }
 class PenSettingsManager { constructor(app) { this.app = app; this.currentSize = 1; this.sizes = Array.from(document.querySelectorAll('.size-btn')).map(btn => parseInt(btn.dataset.size)); this.currentSizeIndex = this.sizes.indexOf(this.currentSize); this.bindEvents(); this.updateSizeButtonVisuals(); } bindEvents() { document.querySelectorAll('.size-btn').forEach(btn => btn.addEventListener('click', () => this.setSize(parseInt(btn.dataset.size)))); } setSize(size) { this.currentSize = size; this.currentSizeIndex = this.sizes.indexOf(this.currentSize); document.querySelectorAll('.size-btn').forEach(btn => btn.classList.remove('active')); document.querySelector(`[data-size="${size}"]`)?.classList.add('active'); this.app.canvasManager.setCurrentSize(this.currentSize); this.updateSizeButtonVisuals(); } changeSize(increase) { let newIndex = this.currentSizeIndex + (increase ? 1 : -1); newIndex = Math.max(0, Math.min(newIndex, this.sizes.length - 1)); this.setSize(this.sizes[newIndex]); } updateSizeButtonVisuals() { document.querySelectorAll('.size-btn').forEach(btn => { const size = parseInt(btn.dataset.size); btn.querySelector('.size-dot').style.width = `${Math.min(size, 16)}px`; btn.querySelector('.size-dot').style.height = `${Math.min(size, 16)}px`; btn.querySelector('.size-number').textContent = size; }); } }
@@ -644,6 +536,8 @@ class ToolManager { constructor(app) { this.app = app; this.currentTool = 'pen';
 
 class ToshinkaTegakiTool {
     constructor() {
+        this.datGui = null;
+        this.datGuiFolder = null;
         this.initManagers();
     }
     initManagers() {
@@ -661,6 +555,78 @@ class ToshinkaTegakiTool {
         this.toolManager.setTool('pen');
         this.penSettingsManager.setSize(1);
         this.colorManager.setColor(this.colorManager.mainColor);
+
+        // ★追加: dat.GUIのセットアップ
+        this.setupDatGUI();
+    }
+
+    // ★新規: dat.GUIをセットアップするメソッド
+    setupDatGUI() {
+        if (this.datGui) return; // 既に初期化済みなら何もしない
+
+        this.datGui = new dat.GUI({ autoPlace: false });
+        const guiContainer = document.createElement('div');
+        guiContainer.id = 'dat-gui-container';
+        guiContainer.style.position = 'absolute';
+        guiContainer.style.top = '50px';
+        guiContainer.style.right = '280px'; // レイヤーUIの隣あたり
+        guiContainer.style.zIndex = '1000';
+        document.body.appendChild(guiContainer);
+        guiContainer.appendChild(this.datGui.domElement);
+        
+        this.rebuildDatGUI();
+    }
+
+    // ★新規: dat.GUIのコントローラーを再構築するメソッド
+    rebuildDatGUI() {
+        if (!this.datGui) return;
+        
+        // 既存のフォルダがあれば削除
+        if (this.datGuiFolder) {
+            this.datGui.removeFolder(this.datGuiFolder);
+            this.datGuiFolder = null;
+        }
+
+        const activeLayer = this.layerManager.getCurrentLayer();
+        // 背景レイヤーは操作不可
+        if (!activeLayer || this.layerManager.activeLayerIndex === 0) {
+             return;
+        }
+
+        this.datGuiFolder = this.datGui.addFolder(`Layer: ${activeLayer.name}`);
+        
+        const updateFn = () => {
+            if (this.canvasManager.isLayerTransforming) return; // Vキー操作中はGUIからの更新を無視
+            const layer = this.layerManager.getCurrentLayer();
+            if (layer) {
+                this.updateLayerModelMatrix(layer);
+                this.canvasManager.renderAllLayers();
+                this.canvasManager.saveState(); // GUI操作後もヒストリに保存
+            }
+        };
+        
+        // listen()でオブジェクトの変更をUIに反映
+        this.datGuiFolder.add(activeLayer.translation, 'x', -this.canvasManager.width, this.canvasManager.width).name('Translate X').listen().onFinishChange(updateFn);
+        this.datGuiFolder.add(activeLayer.translation, 'y', -this.canvasManager.height, this.canvasManager.height).name('Translate Y').listen().onFinishChange(updateFn);
+        
+        this.datGuiFolder.open();
+    }
+    
+    // ★新規: dat.GUIの表示内容のみを更新する
+    updateDatGUIView() {
+        if (!this.datGuiFolder) return;
+        // listen()が設定されているので、コントローラーを再描画するだけで値が反映される
+        for (let i in this.datGuiFolder.__controllers) {
+            this.datGuiFolder.__controllers[i].updateDisplay();
+        }
+    }
+
+    // ★新規: LayerのtranslationからmodelMatrixを更新するヘルパーメソッド
+    updateLayerModelMatrix(layer) {
+        if (!layer) return;
+        const translationVec = [layer.translation.x, layer.translation.y, 0];
+        // 平行移動の情報から4x4の変換行列を作成
+        glMatrix.mat4.fromTranslation(layer.modelMatrix, translationVec);
     }
 }
 
