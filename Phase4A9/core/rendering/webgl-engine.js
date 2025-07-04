@@ -76,8 +76,10 @@ export class WebGLEngine extends DrawingEngine {
         console.log(`WebGL Engine (v4.0.0 Non-Destructive Transform) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
+// webgl-engine.js の _initShaderPrograms 関数
+
     _initShaderPrograms() {
-        // ★★★★★ 修正箇所: 変形行列を受け取るようにシェーダーを改修 ★★★★★
+        // ★★★★★ 修正箇所: このシェーダーは高解像度テクスチャを高品質にサンプリングするために使われる ★★★★★
         const vsCompositor = `
             attribute vec4 a_position;
             attribute vec2 a_texCoord;
@@ -102,8 +104,11 @@ export class WebGLEngine extends DrawingEngine {
                 gl_FragColor = vec4(color.rgb, color.a * u_opacity);
             }`;
 
+        // ★★★★★★★★★★★★★★★★★★★★
+        // ★★★ 修正点：シェーダーの精度を highp に統一 ★★★
+        // ★★★★★★★★★★★★★★★★★★★★
         const vsBrush = `
-            precision mediump float;
+            precision highp float; // mediump から highp に変更
             attribute vec2 a_position; 
             uniform vec2 u_resolution;
             uniform vec2 u_center;
@@ -123,7 +128,7 @@ export class WebGLEngine extends DrawingEngine {
             }`;
 
         const fsBrush = `
-            precision highp float;
+            precision highp float; // こちらは元々 highp だったので変更なし
             varying vec2 v_texCoord;
             uniform float u_radius;
             uniform vec4 u_color;
