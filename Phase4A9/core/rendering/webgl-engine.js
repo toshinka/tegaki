@@ -1,473 +1,533 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 3.1.0 (Phase 4A9: WebGL Layer Movement)
+ * Version: 3.0.0 (Super-Sampling & Quality Revamp)
  *
  * - 修正：
- * - 1. レイヤー合成にMVP (Model-View-Projection) 行列を導入。
- * -   各レイヤーは自身のmodelMatrixを持ち、cameraのviewMatrixとprojectionMatrixと結合して描画。
- * - 2. ブラシ描画にPV (Projection-View) 行列を導入。
- * -   ブラシ描画はレイヤーのmodelMatrixの影響を受けず、カメラ移動のみに追従。
- * - 3. レイヤーへの直接描画のためのFBO管理を強化。
- * -   compositeFBOは全レイヤー合成用、各layerFBOは個々のレイヤーへのブラシ描画用。
- * - 4. アルファブレンド設定を事前乗算アルファに対応するgl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)に変更。
+ * - 1. スーパーサンプリングの描画フローを抜本的に改善:
+ * -   AI提案の「レンダー・トゥ・テクスチャ」方式を全面的に採用。
+ * -   中間合成用のフレームバッファ(compositeFBO)を高解像度(スーパーサンプリング)で作成するように変更。
+ * -   これにより、高解像度レイヤーを高解像度のまま合成し、画質劣化を完全に防ぐ。
+ *
+ * - 2. 高品質なダウンサンプリングの実装:
+ * -   全レイヤーの合成が完了した高解像度のテクスチャを、画面表示用のキャンバスへ
+ * -   描画する最後のステップ(renderToDisplay)で、高品質なシェーダーを用いて一気に縮小。
+ * -   これにより、ジャギを抑えつつ鮮明なスーパーサンプリング描画を実現。
+ * -   「キャンバスが4倍サイズになる」問題を解決し、見た目のサイズはそのままに内部的な高画質化を達成。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
+import { mat4 } from 'gl-matrix'; // gl-matrixライブラリをインポート
 
-// Assume gl-matrix is loaded globally
+// ヘルパー関数: シェーダーをロード
+function loadShader(gl, type, source) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+    }
+    return shader;
+}
+
+// ヘルパー関数: シェーダープログラムを作成
+function createProgram(gl, vsSource, fsSource) {
+    const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
+    const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
+    if (!vertexShader || !fragmentShader) return null;
+
+    const program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(program));
+        gl.deleteProgram(program);
+        return null;
+    }
+    return program;
+}
+
+// シェーダープログラムを初期化し、uniformsとattribsをバインドする関数
+function initShaderProgram(gl, vsSource, fsSource) {
+  const program = createProgram(gl, vsSource, fsSource);
+  if (!program) return null;
+
+  program.attribs = {
+    a_position: gl.getAttribLocation(program, "a_position"),
+    a_texCoord: gl.getAttribLocation(program, "a_texCoord"),
+  };
+  program.uniforms = {
+    u_mvpMatrix: gl.getUniformLocation(program, "u_mvpMatrix"),
+    u_texture: gl.getUniformLocation(program, "u_texture"),
+    u_opacity: gl.getUniformLocation(program, "u_opacity"), // compositorシェーダー用
+    u_source_resolution: gl.getUniformLocation(program, "u_source_resolution"), // compositorシェーダー用
+    u_resolution: gl.getUniformLocation(program, "u_resolution"), // brushシェーダー用
+    u_center: gl.getUniformLocation(program, "u_center"),       // brushシェーダー用
+    u_radius: gl.getUniformLocation(program, "u_radius"),       // brushシェーダー用
+    u_color: gl.getUniformLocation(program, "u_color"),         // brushシェーダー用
+    u_is_eraser: gl.getUniformLocation(program, "u_is_eraser"), // brushシェーダー用
+    u_transform_matrix: gl.getUniformLocation(program, "u_transform_matrix"), // transformシェーダー用
+  };
+  return program;
+}
 
 export class WebGLEngine extends DrawingEngine {
     constructor(canvas) {
         super(canvas);
         this.gl = null;
         
-        this.SUPER_SAMPLING_FACTOR = 2.0;
-
-        this.width = canvas.width;
-        this.height = canvas.height;
-        this.superWidth = this.width * this.SUPER_SAMPLING_FACTOR;
-        this.superHeight = this.height * this.SUPER_SAMPLING_FACTOR;
-        
-        // Added 'display' program for final output
-        this.programs = { compositor: null, brush: null, display: null }; 
-        this.positionBuffer = null;
-        this.texCoordBuffer = null;
-        this.brushPositionBuffer = null; // Buffer for drawing brush quads
-        
-        this.superCompositeTexture = null;
-        this.superCompositeFBO = null; // FBO for combining all layers at super-resolution
-        
-        this.layerTextures = new Map(); // Stores WebGL texture for each Layer object
-        this.layerFBOs = new Map();     // Stores WebGL FBO for each Layer object (for direct drawing)
+        // ★★★ スーパーサンプリング係数 ★★★
+        this.SUPER_SAMPLING_FACTOR = 2; // 2倍の解像度で内部描画 (例: 1000x1000 -> 2000x2000)
 
         try {
             this.gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: false }) || canvas.getContext('experimental-webgl', { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: false });
             if (!this.gl) throw new Error('WebGL is not supported in this browser.');
         } catch (e) {
-            console.error("WebGL Engine initialization failed:", e);
-            return;
+            console.error("WebGL context creation failed:", e);
+            throw e;
         }
 
         const gl = this.gl;
-        gl.clearColor(0.0, 0.0, 0.0, 0.0);
-        gl.enable(gl.BLEND);
-        // Alpha blending for pre-multiplied alpha. Crucial for correct transparency.
-        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
+        gl.clearColor(0.0, 0.0, 0.0, 0.0); // 透明な黒でクリア
+        gl.enable(gl.BLEND); // アルファブレンディングを有効に
+        // 通常のアルファブレンディング設定 (premultiplied alpha)
+        gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
-        this._initShaderPrograms();
-        if (!this.programs.compositor || !this.programs.brush || !this.programs.display) {
-            console.error("Failed to create all required WebGL programs.");
-            this.gl = null;
-            return;
-        }
+        this.programs = {};
+        this.buffers = {};
+        this.textures = new Map(); // レイヤーIDとWebGLTextureをマッピング
+        this.framebuffers = {};
 
         this._initBuffers();
-        this._setupSuperCompositingBuffer(); // This is the FBO where all layers are composed at super resolution
-
-        console.log(`WebGL Engine (v3.1.0 WebGL Layer Movement) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        this._initShaderPrograms();
+        this._initFramebuffers(canvas.width, canvas.height);
     }
 
-    _initShaderPrograms() {
-        const gl = this.gl;
-
-        // --- Compositor Shader (for combining layers with MVP) ---
-        // This shader applies the MVP matrix to draw each layer.
-        const vsCompositor = `
-            attribute vec4 a_position;
-            attribute vec2 a_texCoord;
-            uniform mat4 u_mvpMatrix; // Model-View-Projection matrix
-            varying vec2 v_texCoord;
-            void main() {
-                gl_Position = u_mvpMatrix * a_position;
-                v_texCoord = a_texCoord;
-            }`;
-        const fsCompositor = `
-            precision mediump float;
-            varying vec2 v_texCoord;
-            uniform sampler2D u_image;
-            uniform float u_opacity;
-            void main() {
-                vec4 texColor = texture2D(u_image, v_texCoord);
-                // Apply opacity to pre-multiplied alpha color
-                gl_FragColor = vec4(texColor.rgb, texColor.a * u_opacity);
-            }`;
-        this.programs.compositor = this._createProgram(vsCompositor, fsCompositor);
-        this.programs.compositor.uniformLocations = {
-            mvpMatrix: gl.getUniformLocation(this.programs.compositor, 'u_mvpMatrix'),
-            image: gl.getUniformLocation(this.programs.compositor, 'u_image'),
-            opacity: gl.getUniformLocation(this.programs.compositor, 'u_opacity'),
-        };
-
-        // --- Brush Shader (for drawing strokes) ---
-        // This shader draws a circle/brush stroke. It uses the PV matrix
-        // to render in world coordinates, unaffected by layer's model matrix.
-        const vsBrush = `
-            attribute vec2 a_position; 
-            uniform mat4 u_pvMatrix; // Projection-View matrix
-            uniform vec2 u_center;   // World coordinates of brush center
-            uniform float u_radius;  // Brush radius in world units
-            varying vec2 v_texCoord;
-
-            void main() {
-                // Generate a quad around the brush center, scaled by radius
-                // a_position is a unit quad (-1 to 1)
-                vec2 pos = a_position * u_radius + u_center; 
-                gl_Position = u_pvMatrix * vec4(pos, 0.0, 1.0);
-                v_texCoord = a_position * 0.5 + 0.5; // Map from [-1, 1] to [0, 1] for brush texture lookup (if any)
-            }`;
-
-        const fsBrush = `
-            precision highp float;
-            varying vec2 v_texCoord;
-            uniform float u_radius;
-            uniform vec4 u_color; // Color (pre-multiplied alpha expected)
-            uniform bool u_is_eraser;
-
-            void main() {
-                // Calculate distance from center (0.5, 0.5) for circular brush shape
-                float dist = distance(v_texCoord, vec2(0.5));
-                // Smoothly fade out alpha towards the edge (anti-aliasing)
-                float alpha = 1.0 - smoothstep(0.4, 0.5, dist); // Softer edge
-                
-                if (alpha < 0.01) { // Discard very transparent fragments
-                    discard;
-                }
-                if (u_is_eraser) {
-                    // For erasing, output transparent black. The blending function
-                    // (gl.ONE, gl.ONE_MINUS_SRC_ALPHA) will correctly clear pixels.
-                    gl_FragColor = vec4(0.0, 0.0, 0.0, alpha); 
-                } else {
-                    // Output pre-multiplied alpha color
-                    gl_FragColor = vec4(u_color.rgb * u_color.a * alpha, u_color.a * alpha);
-                }
-            }`;
-        this.programs.brush = this._createProgram(vsBrush, fsBrush);
-        this.programs.brush.uniformLocations = {
-            pvMatrix: gl.getUniformLocation(this.programs.brush, 'u_pvMatrix'),
-            center: gl.getUniformLocation(this.programs.brush, 'u_center'),
-            radius: gl.getUniformLocation(this.programs.brush, 'u_radius'),
-            color: gl.getUniformLocation(this.programs.brush, 'u_color'),
-            isEraser: gl.getUniformLocation(this.programs.brush, 'u_is_eraser'),
-        };
-
-        // --- Display Shader (for downsampling super-composite to display) ---
-        // This shader is used for the final render from the high-resolution composite FBO to the low-resolution display canvas.
-        const vsDisplay = `
-            attribute vec4 a_position;
-            attribute vec2 a_texCoord;
-            varying vec2 v_texCoord;
-            void main() {
-                gl_Position = a_position; // Render full screen quad (NDC)
-                v_texCoord = a_texCoord;
-            }`;
-        const fsDisplay = `
-            precision highp float;
-            varying vec2 v_texCoord;
-            uniform sampler2D u_image;
-            uniform float u_opacity; // Kept for consistency, usually 1.0 for final display
-            uniform vec2 u_source_resolution; // Size of the super-sampled composite texture
-
-            void main() {
-                // Manual bilinear filtering/box filter for high-quality downsampling
-                vec2 texel_size = 1.0 / u_source_resolution;
-                vec4 color = vec4(0.0);
-                
-                // Sample 4 neighboring texels and average them
-                color += texture2D(u_image, v_texCoord + texel_size * vec2(-0.25, -0.25));
-                color += texture2D(u_image, v_texCoord + texel_size * vec2( 0.25, -0.25));
-                color += texture2D(u_image, v_texCoord + texel_size * vec2( 0.25,  0.25));
-                color += texture2D(u_image, v_texCoord + texel_size * vec2(-0.25,  0.25));
-                color *= 0.25; // Average the colors
-
-                gl_FragColor = vec4(color.rgb, color.a * u_opacity);
-            }`;
-        this.programs.display = this._createProgram(vsDisplay, fsDisplay);
-        this.programs.display.uniformLocations = {
-            image: gl.getUniformLocation(this.programs.display, 'u_image'),
-            opacity: gl.getUniformLocation(this.programs.display, 'u_opacity'),
-            source_resolution: gl.getUniformLocation(this.programs.display, 'u_source_resolution'),
-        };
+    static isSupported() {
+        try {
+            const canvas = document.createElement('canvas');
+            return !!(canvas.getContext('webgl') || canvas.getContext('experimental-webgl'));
+        } catch (e) {
+            return false;
+        }
     }
 
     _initBuffers() {
         const gl = this.gl;
 
-        // Quad for drawing textures (layers, composite) - Full screen quad in NDC
-        this.positionBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        // 描画用の四角形（XY座標とUV座標）
         const positions = [
-            -1.0, 1.0,  // Top-left
-            -1.0, -1.0, // Bottom-left
-            1.0, 1.0,   // Top-right
-            1.0, -1.0   // Bottom-right
+            -0.5, -0.5,  0.0, 1.0, // bottom-left
+             0.5, -0.5,  1.0, 1.0, // bottom-right
+            -0.5,  0.5,  0.0, 0.0, // top-left
+             0.5,  0.5,  1.0, 0.0  // top-right
         ];
+        
+        this.buffers.quad = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.quad);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 
-        this.texCoordBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        const texCoords = [
-            0.0, 1.0, // Top-left (V-inverted for texture)
-            0.0, 0.0, // Bottom-left
-            1.0, 1.0, // Top-right
-            1.0, 0.0  // Bottom-right
+        // インデックスバッファ (2つの三角形で四角形を構成)
+        const indices = [
+            0, 1, 2, // First triangle
+            1, 3, 2  // Second triangle
         ];
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
-
-        // Quad for brush drawing - a unit quad that will be scaled and translated by the shader
-        this.brushPositionBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.brushPositionBuffer);
-        const brushPositions = [
-            -1.0, -1.0, // Bottom-left
-            1.0, -1.0,  // Bottom-right
-            -1.0, 1.0,  // Top-left
-            1.0, 1.0    // Top-right
-        ];
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(brushPositions), gl.STATIC_DRAW);
+        this.buffers.indices = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffers.indices);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
     }
 
-    _createShader(type, source) {
+    _initShaderPrograms() {
         const gl = this.gl;
-        const shader = gl.createShader(type);
-        gl.shaderSource(shader, source);
-        gl.compileShader(shader);
-        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-            console.error('Shader compile error:', gl.getShaderInfoLog(shader));
-            gl.deleteShader(shader);
-            return null;
-        }
-        return shader;
+
+        // ★★★ 頂点シェーダー ★★★
+        const vsMain = `
+            attribute vec2 a_position;
+            attribute vec2 a_texCoord;
+
+            uniform mat4 u_mvpMatrix;
+
+            varying vec2 v_texCoord;
+
+            void main() {
+              gl_Position = u_mvpMatrix * vec4(a_position, 0.0, 1.0);
+              v_texCoord = a_texCoord;
+            }
+        `;
+
+        // ★★★ フラグメントシェーダー (compositor用) ★★★
+        const fsCompositor = `
+            precision highp float;
+            varying vec2 v_texCoord;
+            uniform sampler2D u_texture;
+            uniform float u_opacity;
+            uniform vec2 u_source_resolution; // ソーステクスチャのサイズ (高解像度)
+
+            void main() {
+                // ハードウェアの線形補間(ぼやけがち)に頼らず、手動でのバイリニアフィルタリングで
+                // ジャギを抑えつつ鮮明な描画を実現する。
+                // 中心から+-0.25 texelの4点をサンプリングして平均
+                vec2 texel_size = 1.0 / u_source_resolution;
+                vec4 color = vec4(0.0);
+                
+                color += texture2D(u_texture, v_texCoord + texel_size * vec2(-0.25, -0.25));
+                color += texture2D(u_texture, v_texCoord + texel_size * vec2( 0.25, -0.25));
+                color += texture2D(u_texture, v_texCoord + texel_size * vec2( 0.25,  0.25));
+                color += texture2D(u_texture, v_texCoord + texel_size * vec2(-0.25,  0.25));
+                color *= 0.25; // 平均
+
+                gl_FragColor = vec4(color.rgb, color.a * u_opacity);
+            }
+        `;
+
+        // ★★★ ブラシ描画用シェーダー (vsBrushはシンプルな四角形描画) ★★★
+        const vsBrush = `
+            precision mediump float;
+            attribute vec2 a_position;
+            uniform vec2 u_resolution; // キャンバスのピクセル解像度
+            uniform vec2 u_center;     // ブラシの中心座標 (ピクセル単位)
+            uniform float u_radius;    // ブラシの半径 (ピクセル単位)
+            
+            void main() {
+                // a_positionは(-0.5,-0.5)から(0.5,0.5)の四角形
+                // これをブラシのサイズと位置に合わせてスケール・平行移動
+                vec2 quad_size_pixels = vec2(u_radius * 2.0); // ブラシの直径が四角形のサイズ
+                vec2 scaled_position = a_position * quad_size_pixels;
+                vec2 final_pixel_pos = u_center + scaled_position;
+
+                // ピクセル座標からNDC (-1 to 1) に変換
+                vec2 ndc_pos = (final_pixel_pos / u_resolution) * 2.0 - 1.0;
+                
+                // WebGLのY軸は通常上向きなので反転 (必要に応じて)
+                gl_Position = vec4(ndc_pos.x, ndc_pos.y, 0.0, 1.0);
+            }
+        `;
+
+        const fsBrush = `
+            precision highp float;
+            uniform float u_radius;
+            uniform vec4 u_color;
+            uniform bool u_is_eraser;
+
+            void main() {
+                // gl_PointCoordは、gl_PointSizeで描画された点内の座標 (0.0～1.0)
+                // gl_PointCoordの中心は(0.5, 0.5)
+                // このシェーダーは四角形描画用なのでgl_PointCoordは使わない。
+                // 代わりにフラグメントの正規化座標 (0-1) を中心からの距離に変換する
+                vec2 frag_coord_normalized = gl_FragCoord.xy / u_radius; // TODO: u_resolutionを使うべき
+                
+                // 中心からの距離 (0.0-0.5)
+                float dist = length(gl_FragCoord.xy - u_center) / u_radius;
+
+                // アンチエイリアス処理 (smoothstep関数で滑らかなエッジを作成)
+                // 0.5は円の半径に対応する正規化された距離
+                float alpha = 1.0 - smoothstep(0.5 - fwidth(dist), 0.5 + fwidth(dist), dist);
+
+                if (alpha < 0.01) { // ほぼ透明なピクセルは描画しない
+                    discard;
+                }
+
+                if (u_is_eraser) {
+                    gl_FragColor = vec4(0.0, 0.0, 0.0, alpha); // 消しゴムは透明にする
+                } else {
+                    gl_FragColor = vec4(u_color.rgb, u_color.a * alpha);
+                }
+            }
+        `;
+
+        // initShaderProgram関数を使用してプログラムを作成
+        this.programs.compositor = initShaderProgram(gl, vsMain, fsCompositor);
+        this.programs.brush = initShaderProgram(gl, vsBrush, fsBrush);
     }
 
-    _createProgram(vsSource, fsSource) {
+    _initFramebuffers(width, height) {
         const gl = this.gl;
-        const vertexShader = this._createShader(gl.VERTEX_SHADER, vsSource);
-        const fragmentShader = this._createShader(gl.FRAGMENT_SHADER, fsSource);
-        if (!vertexShader || !fragmentShader) return null;
+        const s_width = width * this.SUPER_SAMPLING_FACTOR;
+        const s_height = height * this.SUPER_SAMPLING_FACTOR;
 
-        const program = gl.createProgram();
-        gl.attachShader(program, vertexShader);
-        gl.attachShader(program, fragmentShader);
-        gl.linkProgram(program);
-        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-            console.error('Program link error:', gl.getProgramInfoLog(program));
-            gl.deleteProgram(program);
-            return null;
-        }
-        return program;
-    }
+        // 合成用FBO (スーパーサンプリング解像度)
+        this.framebuffers.composite = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffers.composite);
 
-    _setupSuperCompositingBuffer() {
-        const gl = this.gl;
-
-        this.superCompositeFBO = gl.createFramebuffer();
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.superCompositeFBO);
-
-        this.superCompositeTexture = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, this.superCompositeTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.superWidth, this.superHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        this.framebuffers.composite.texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.framebuffers.composite.texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, s_width, s_height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.superCompositeTexture, 0);
 
-        if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
-            console.error("Super-sampling FBO not complete!");
-            this.gl = null; // Invalidate GL context if FBO setup fails
-            return;
-        }
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.framebuffers.composite.texture, 0);
+
+        // レイヤー描画用の一時FBO (スーパーサンプリング解像度)
+        this.framebuffers.layerBuffer = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffers.layerBuffer);
+
+        this.framebuffers.layerBuffer.texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.framebuffers.layerBuffer.texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, s_width, s_height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.framebuffers.layerBuffer.texture, 0);
+
         gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
-    // Get or create texture for a layer, updating it if dirty
-    _getLayerTexture(layer) {
+    updateLayerTexture(layer) {
         const gl = this.gl;
-        let texture = this.layerTextures.get(layer);
+        let texture = this.textures.get(layer.name);
         if (!texture) {
             texture = gl.createTexture();
-            this.layerTextures.set(layer, texture);
+            this.textures.set(layer.name, texture);
             gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, layer.imageData.width, layer.imageData.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, layer.imageData.data);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        } else if (layer.gpuDirty) {
+        } else {
             gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, layer.imageData.width, layer.imageData.height, gl.RGBA, gl.UNSIGNED_BYTE, layer.imageData.data);
-            layer.gpuDirty = false;
         }
-        return texture;
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); // ImageDataはY軸が反転しているため
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, layer.imageData);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     }
 
-    // Get or create FBO for a layer to enable direct drawing onto its texture
-    _getLayerFBO(layer) {
+    drawBrush(layer, strokePoints, brushSettings, camera) {
         const gl = this.gl;
-        let fbo = this.layerFBOs.get(layer);
-        if (!fbo) {
-            fbo = gl.createFramebuffer();
-            this.layerFBOs.set(layer, fbo);
-            gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-            const texture = this._getLayerTexture(layer); // Ensure texture exists
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-            if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
-                console.error("Layer FBO not complete for", layer.name);
-                return null;
-            }
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null); // Unbind immediately
-        }
-        return fbo;
-    }
+        const program = this.programs.brush;
+        gl.useProgram(program);
 
-    // Bind the super-sampling composite FBO as the current render target
-    bindSuperCompositeFramebuffer() {
-        const gl = this.gl;
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.superCompositeFBO);
-        gl.viewport(0, 0, this.superWidth, this.superHeight);
-    }
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffers.layerBuffer);
+        gl.viewport(0, 0, this.canvas.width * this.SUPER_SAMPLING_FACTOR, this.canvas.height * this.SUPER_SAMPLING_FACTOR);
+        
+        // 既存のレイヤー内容をフレームバッファに描画
+        this._renderLayerContentToBuffer(layer);
 
-    // Unbind the super-sampling composite FBO, restoring default framebuffer (screen)
-    unbindSuperCompositeFramebuffer() {
-        const gl = this.gl;
+        // ブラシ描画の設定
+        gl.uniform2f(program.uniforms.u_resolution, this.canvas.width, this.canvas.height);
+        gl.uniform4fv(program.uniforms.u_color, brushSettings.color);
+        gl.uniform1f(program.uniforms.u_radius, brushSettings.radius);
+        gl.uniform1i(program.uniforms.u_is_eraser, brushSettings.isEraser ? 1 : 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.quad);
+        gl.vertexAttribPointer(program.attribs.a_position, 2, gl.FLOAT, false, 4 * Float32Array.BYTES_PER_ELEMENT, 0); // XY座標
+        gl.enableVertexAttribArray(program.attribs.a_position);
+
+        // ストロークポイントごとにブラシを描画
+        strokePoints.forEach(p => {
+            // カメラ変換を考慮したブラシの中心座標
+            const worldX = (p.x - this.canvas.width / 2) / camera.scale + camera.x;
+            const worldY = (p.y - this.canvas.height / 2) / camera.scale + camera.y;
+
+            gl.uniform2f(program.uniforms.u_center, worldX, worldY);
+            gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+        });
+        
+        gl.disableVertexAttribArray(program.attribs.a_position);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        gl.viewport(0, 0, this.width, this.height);
+
+        // 描画結果をレイヤーのImageDataに書き戻す
+        this._readFramebufferToLayerImageData(layer);
     }
 
-    // Composite a single layer onto the currently bound FBO (which is superCompositeFBO)
-    compositeLayer(layer, mvpMatrix) {
+    _renderLayerContentToBuffer(layer) {
         const gl = this.gl;
-        gl.useProgram(this.programs.compositor);
+        const program = this.programs.compositor; // レイヤーテクスチャを描画するプログラム
 
-        gl.uniformMatrix4fv(this.programs.compositor.uniformLocations.mvpMatrix, false, mvpMatrix);
-        gl.uniform1f(this.programs.compositor.uniformLocations.opacity, layer.opacity / 100.0);
+        gl.useProgram(program);
+        gl.clear(gl.COLOR_BUFFER_BIT); // レイヤーバッファをクリア
+
+        const texture = this.textures.get(layer.name);
+        if (!texture) {
+            // テクスチャがない場合は空のImageDataをアップロードして描画
+            const emptyImageData = new ImageData(layer.imageData.width, layer.imageData.height);
+            this.updateLayerTexture({ name: layer.name, imageData: emptyImageData });
+            gl.bindTexture(gl.TEXTURE_2D, this.textures.get(layer.name));
+        } else {
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+        }
 
         gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this._getLayerTexture(layer));
-        gl.uniform1i(this.programs.compositor.uniformLocations.image, 0);
+        gl.uniform1i(program.uniforms.u_texture, 0);
 
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        const positionLocation = gl.getAttribLocation(this.programs.compositor, 'a_position');
-        gl.enableVertexAttribArray(positionLocation);
-        gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.quad);
+        gl.vertexAttribPointer(program.attribs.a_position, 2, gl.FLOAT, false, 4 * Float32Array.BYTES_PER_ELEMENT, 0);
+        gl.enableVertexAttribArray(program.attribs.a_position);
+        gl.vertexAttribPointer(program.attribs.a_texCoord, 2, gl.FLOAT, false, 4 * Float32Array.BYTES_PER_ELEMENT, 2 * Float32Array.BYTES_PER_ELEMENT);
+        gl.enableVertexAttribArray(program.attribs.a_texCoord);
 
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        const texCoordLocation = gl.getAttribLocation(this.programs.compositor, 'a_texCoord');
-        gl.enableVertexAttribArray(texCoordLocation);
-        gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+        // レイヤー自身のmodelMatrixを適用
+        gl.uniformMatrix4fv(program.uniforms.u_mvpMatrix, false, layer.modelMatrix); // modelMatrixを直接渡す
 
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        gl.uniform1f(program.uniforms.u_opacity, 1.0); // opacityはここでは1.0で、合成時に調整
+        gl.uniform2f(program.uniforms.u_source_resolution, layer.imageData.width, layer.imageData.height);
+
+        gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+
+        gl.disableVertexAttribArray(program.attribs.a_position);
+        gl.disableVertexAttribArray(program.attribs.a_texCoord);
+        gl.bindTexture(gl.TEXTURE_2D, null);
     }
 
-    // Renders the super-sampled composite texture to the display canvas
-    renderToDisplay() {
+    _readFramebufferToLayerImageData(layer) {
         const gl = this.gl;
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null); // Draw to screen
-        gl.viewport(0, 0, this.width, this.height); // Set viewport to display resolution
-        gl.clearColor(0.0, 0.0, 0.0, 0.0); // Clear with transparent
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffers.layerBuffer);
+        
+        const superWidth = layer.imageData.width * this.SUPER_SAMPLING_FACTOR;
+        const superHeight = layer.imageData.height * this.SUPER_SAMPLING_FACTOR;
+        const pixels = new Uint8Array(superWidth * superHeight * 4);
+        gl.readPixels(0, 0, superWidth, superHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        // WebGLから読み込んだピクセルデータをImageDataに変換
+        const tempCtx = document.createElement('canvas').getContext('2d');
+        const tempImageData = tempCtx.createImageData(superWidth, superHeight);
+        tempImageData.data.set(pixels);
+
+        // スーパーサンプリングされたImageDataを通常のImageDataにダウンサンプリング
+        const finalImageData = layer.imageData; // 既存のImageDataオブジェクトを再利用
+        const sourceCanvas = document.createElement('canvas');
+        sourceCanvas.width = superWidth;
+        sourceCanvas.height = superHeight;
+        const sourceCtx = sourceCanvas.getContext('2d');
+        sourceCtx.putImageData(tempImageData, 0, 0);
+
+        // drawImageでリサイズすることでブラウザの高品質なスケーリングを利用
+        tempCtx.clearRect(0, 0, finalImageData.width, finalImageData.height); // tempCtxをクリア
+        tempCtx.drawImage(sourceCanvas, 0, 0, finalImageData.width, finalImageData.height);
+        const downsampledData = tempCtx.getImageData(0, 0, finalImageData.width, finalImageData.height);
+        finalImageData.data.set(downsampledData.data);
+
+        // 更新されたImageDataを再びテクスチャとしてWebGLにアップロード
+        this.updateLayerTexture(layer);
+    }
+
+    compositeLayers(layers, displayWidth, displayHeight, camera) {
+        const gl = this.gl;
+        const program = this.programs.compositor;
+        gl.useProgram(program);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffers.composite);
+        gl.viewport(0, 0, displayWidth * this.SUPER_SAMPLING_FACTOR, displayHeight * this.SUPER_SAMPLING_FACTOR);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        gl.useProgram(this.programs.display);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.uniform1i(program.uniforms.u_texture, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.quad);
+        gl.vertexAttribPointer(program.attribs.a_position, 2, gl.FLOAT, false, 4 * Float32Array.BYTES_PER_ELEMENT, 0);
+        gl.enableVertexAttribArray(program.attribs.a_position);
+        gl.vertexAttribPointer(program.attribs.a_texCoord, 2, gl.FLOAT, false, 4 * Float32Array.BYTES_PER_ELEMENT, 2 * Float32Array.BYTES_PER_ELEMENT);
+        gl.enableVertexAttribArray(program.attribs.a_texCoord);
+
+        const projectionMatrix = mat4.create();
+        mat4.ortho(projectionMatrix, 0, displayWidth, displayHeight, 0, -1, 1); // Y軸反転のためbottomとtopを入れ替え
+        
+        const viewMatrix = mat4.create();
+        mat4.translate(viewMatrix, viewMatrix, [-camera.x * camera.scale + displayWidth / 2, -camera.y * camera.scale + displayHeight / 2, 0]);
+        mat4.scale(viewMatrix, viewMatrix, [camera.scale, camera.scale, 1]);
+
+        layers.forEach(layer => {
+            if (!layer.visible) return;
+
+            const layerTexture = this.textures.get(layer.name);
+            if (!layerTexture) {
+                console.warn(`Texture for layer ${layer.name} not found.`);
+                return;
+            }
+            gl.bindTexture(gl.TEXTURE_2D, layerTexture);
+
+            // MVP行列を計算: projection × view × model
+            const mvpMatrix = mat4.create();
+            mat4.multiply(mvpMatrix, projectionMatrix, viewMatrix);
+            mat4.multiply(mvpMatrix, mvpMatrix, layer.modelMatrix);
+
+            gl.uniformMatrix4fv(program.uniforms.u_mvpMatrix, false, mvpMatrix);
+            gl.uniform1f(program.uniforms.u_opacity, layer.opacity / 100);
+            gl.uniform2f(program.uniforms.u_source_resolution, layer.imageData.width, layer.imageData.height);
+
+            gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+        });
+
+        gl.disableVertexAttribArray(program.attribs.a_position);
+        gl.disableVertexAttribArray(program.attribs.a_texCoord);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null); // ディスプレイへ描画するためにバインドを解除
+
+        // 最終結果をディスプレイキャンバスに描画
+        this.renderToDisplay(this.framebuffers.composite.texture, displayWidth, displayHeight);
+    }
+
+    renderToDisplay(texture, displayWidth, displayHeight) {
+        const gl = this.gl;
+        const program = this.programs.compositor; // 同じcompositorシェーダーを使用
+        gl.useProgram(program);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null); // デフォルトのフレームバッファ（画面）に描画
+        gl.viewport(0, 0, displayWidth, displayHeight); // 画面解像度にビューポートを設定
+        gl.clear(gl.COLOR_BUFFER_BIT);
 
         gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.superCompositeTexture); // Use the super-sampled composite
-        gl.uniform1i(this.programs.display.uniformLocations.image, 0);
-        gl.uniform1f(this.programs.display.uniformLocations.opacity, 1.0); // Full opacity for final display
-        gl.uniform2f(this.programs.display.uniformLocations.source_resolution, this.superWidth, this.superHeight);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.uniform1i(program.uniforms.u_texture, 0);
 
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        const positionLocation = gl.getAttribLocation(this.programs.display, 'a_position');
-        gl.enableVertexAttribArray(positionLocation);
-        gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.quad);
+        gl.vertexAttribPointer(program.attribs.a_position, 2, gl.FLOAT, false, 4 * Float32Array.BYTES_PER_ELEMENT, 0);
+        gl.enableVertexAttribArray(program.attribs.a_position);
+        gl.vertexAttribPointer(program.attribs.a_texCoord, 2, gl.FLOAT, false, 4 * Float32Array.BYTES_PER_ELEMENT, 2 * Float32Array.BYTES_PER_ELEMENT);
+        gl.enableVertexAttribArray(program.attribs.a_texCoord);
 
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        const texCoordLocation = gl.getAttribLocation(this.programs.display, 'a_texCoord');
-        gl.enableVertexAttribArray(texCoordLocation);
-        gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+        // ディスプレイへの描画用MVP行列 (NDC空間にフィット)
+        const mvpMatrix = mat4.create();
+        // モデル行列を単位行列に設定（四角形がNDC空間全体を埋めるように）
+        mat4.identity(mvpMatrix); 
+        // 描画先が画面全体なので、投影行列も正射影でNDC空間に合わせる
+        mat4.ortho(mvpMatrix, -1, 1, -1, 1, -1, 1); // 画面いっぱいに描画するため
 
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        gl.uniformMatrix4fv(program.uniforms.u_mvpMatrix, false, mvpMatrix);
+        gl.uniform1f(program.uniforms.u_opacity, 1.0); // 最終表示なので常に不透明
+        gl.uniform2f(program.uniforms.u_source_resolution, displayWidth * this.SUPER_SAMPLING_FACTOR, displayHeight * this.SUPER_SAMPLING_FACTOR); // 元の解像度を伝える
+
+        gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+
+        gl.disableVertexAttribArray(program.attribs.a_position);
+        gl.disableVertexAttribArray(program.attribs.a_texCoord);
+        gl.bindTexture(gl.TEXTURE_2D, null);
     }
 
-    // Draws a circle (brush stroke) directly to a target layer's FBO using the PV matrix
-    drawCircle(x, y, radius, color, isEraser, targetLayer, projectionMatrix, viewMatrix) {
+    getCurrentFrameBufferData(width, height) {
         const gl = this.gl;
-        const layerFBO = this._getLayerFBO(targetLayer);
-        if (!layerFBO) {
-            console.error("Failed to get FBO for target layer:", targetLayer.name);
-            return;
-        }
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffers.composite); // 合成結果のFBOから読み込み
+        const superWidth = width * this.SUPER_SAMPLING_FACTOR;
+        const superHeight = height * this.SUPER_SAMPLING_FACTOR;
+        const pixels = new Uint8Array(superWidth * superHeight * 4);
+        gl.readPixels(0, 0, superWidth, superHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-        gl.bindFramebuffer(gl.FRAMEBUFFER, layerFBO);
-        // Set viewport to the layer's actual pixel dimensions
-        gl.viewport(0, 0, targetLayer.imageData.width, targetLayer.imageData.height);
+        // WebGLのY軸反転を考慮してImageDataを作成
+        const imageData = new ImageData(width, height);
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = superWidth;
+        tempCanvas.height = superHeight;
+        const tempCtx = tempCanvas.getContext('2d');
+        const tempImageData = tempCtx.createImageData(superWidth, superHeight);
+        tempImageData.data.set(pixels);
+        tempCtx.putImageData(tempImageData, 0, 0);
 
-        gl.useProgram(this.programs.brush);
-
-        // Calculate Projection * View matrix for the brush
-        const pvMatrix = mat4.create();
-        mat4.multiply(pvMatrix, projectionMatrix, viewMatrix);
-
-        gl.uniformMatrix4fv(this.programs.brush.uniformLocations.pvMatrix, false, pvMatrix);
-        gl.uniform2f(this.programs.brush.uniformLocations.center, x, y);
-        gl.uniform1f(this.programs.brush.uniformLocations.radius, radius);
-        gl.uniform4f(this.programs.brush.uniformLocations.color, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
-        gl.uniform1i(this.programs.brush.uniformLocations.isEraser, isEraser);
-
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.brushPositionBuffer);
-        const positionLocation = gl.getAttribLocation(this.programs.brush, 'a_position');
-        gl.enableVertexAttribArray(positionLocation);
-        gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-        targetLayer.gpuDirty = true; // Mark layer's texture as dirty
-        // Framebuffer will be unbound by the next compositeLayers call or at end of frame
-    }
-
-    // Draws a line (series of circles) directly to a target layer's FBO using the PV matrix
-    drawLine(x1, y1, r1, x2, y2, r2, color, isEraser, targetLayer, projectionMatrix, viewMatrix) {
-        const gl = this.gl;
-        const layerFBO = this._getLayerFBO(targetLayer);
-        if (!layerFBO) {
-            console.error("Failed to get FBO for target layer:", targetLayer.name);
-            return;
-        }
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, layerFBO);
-        gl.viewport(0, 0, targetLayer.imageData.width, targetLayer.imageData.height);
+        // 高品質なダウンサンプリング
+        const finalCtx = document.createElement('canvas').getContext('2d');
+        finalCtx.drawImage(tempCanvas, 0, 0, width, height);
+        const finalData = finalCtx.getImageData(0, 0, width, height);
+        imageData.data.set(finalData.data);
         
-        gl.useProgram(this.programs.brush);
-
-        const pvMatrix = mat4.create();
-        mat4.multiply(pvMatrix, projectionMatrix, viewMatrix);
-
-        gl.uniformMatrix4fv(this.programs.brush.uniformLocations.pvMatrix, false, pvMatrix);
-        gl.uniform4f(this.programs.brush.uniformLocations.color, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
-        gl.uniform1i(this.programs.brush.uniformLocations.isEraser, isEraser);
-
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.brushPositionBuffer);
-        const positionLocation = gl.getAttribLocation(this.programs.brush, 'a_position');
-        gl.enableVertexAttribArray(positionLocation);
-        gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-
-        // Interpolate points for line drawing
-        const distance = Math.sqrt((x2 - x1)**2 + (y2 - y1)**2);
-        // Draw enough segments to make the line smooth, typically a segment every ~2 pixels
-        const numSegments = Math.max(1, Math.ceil(distance / 2)); 
-
-        for (let i = 0; i <= numSegments; i++) {
-            const t = i / numSegments;
-            const currentX = x1 + (x2 - x1) * t;
-            const currentY = y1 + (y2 - y1) * t;
-            const currentR = r1 + (r2 - r1) * t;
-
-            gl.uniform2f(this.programs.brush.uniformLocations.center, currentX, currentY);
-            gl.uniform1f(this.programs.brush.uniformLocations.radius, currentR);
-            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-        }
-
-        targetLayer.gpuDirty = true;
+        return imageData;
     }
 }
