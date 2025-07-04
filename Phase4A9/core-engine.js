@@ -1,19 +1,37 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.0.1 (Phase4A9 Bugfix)
+ * Version: 2.8.0 (Phase4A9 - Non-Destructive Transform)
  *
  * - 修正：
- * - 1. レイヤー変形開始ロジックの修正:
- * -   `startLayerTransform`がキーボードショートカットからマウスイベント無しで
- * -   呼び出された場合に、安全に処理を継続できるように修正。
+ * - 1. 非破壊変形の導入:
+ * -   Layerクラスから従来の`transform`プロパティを廃止し、`modelMatrix` (mat4)を導入。
+ * -   `transform-utils.js`を全面的に採用し、レイヤーの移動・回転・拡縮を行列操作で完結。
+ * -   `start/apply/commitLayerTransform`といった破壊的変形メソッドを廃止。
+ *
+ * - 2. ペン座標のズレを解消:
+ * -   描画時に`getLayerCoordinates`ヘルパーを追加。`modelMatrix`の逆行列を使い、
+ * -   マウスのワールド座標を変形後のレイヤーのローカル座標へ正確に変換する。
+ *
+ * - 3. dat.guiによるリアルタイム制御:
+ * -   アクティブレイヤーの`modelMatrix`を直接操作できるGUIを導入。
+ * -   X/Y座標のスライダーでリアルタイムに表示位置を変更可能。
+ * -   レイヤー切り替え時にGUIの値も追従して更新される。
+ *
+ * - 4. 安定性と保守性の向上:
+ * -   座標変換ロジックを`transform-utils.js`に集約し、コードの見通しを改善。
+ * -   状態の保存・復元(`save/restoreState`)も`modelMatrix`に対応。
  * ===================================================================================
  */
+
+// --- Module Imports ---
 import { TopBarManager, LayerUIManager } from './ui/ui-manager.js';
 import { ShortcutManager } from './ui/shortcut-manager.js';
 import { BucketTool } from './tools/toolset.js';
 import { RenderingBridge } from './core/rendering/rendering-bridge.js';
 import * as transformUtils from './core/utils/transform-utils.js';
+
+// --- Core Logic Classes ---
 
 function hexToRgba(hex) {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -32,7 +50,8 @@ class Layer {
         this.opacity = 100;
         this.blendMode = 'normal';
         this.imageData = new ImageData(width, height);
-        this.modelMatrix = transformUtils.create();
+        // ★★★ 修正: transformプロパティをmodelMatrixに置き換え ★★★
+        this.modelMatrix = transformUtils.create(); 
         this.gpuDirty = true;
     }
     clear() {
@@ -66,12 +85,8 @@ class CanvasManager {
 
         this.compositionData = new ImageData(this.width, this.height);
         this.isDrawing = false; this.isPanning = false; this.isSpaceDown = false;
-        this.isVDown = false; this.isShiftDown = false;
         
-        this.isLayerTransforming = false;
-        this.transformTargetLayer = null;
-        this.originalLayerMatrix = null;
-        this.transformStartX = 0; this.transformStartY = 0;
+        // ★★★ 削除: isLayerTransformingなどの古い変形関連フラグは不要に ★★★
         
         this.currentTool = 'pen';
         this.currentColor = '#800000'; this.currentSize = 1; this.lastPoint = null;
@@ -91,16 +106,10 @@ class CanvasManager {
         this.dragStartX = 0; this.dragStartY = 0; this.canvasStartX = 0; this.canvasStartY = 0;
         this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
 
-        this.gui = new dat.GUI();
-        this.transformControls = { x: 0, y: 0, 'reset': () => this.resetActiveLayerTransform() };
-        const transformFolder = this.gui.addFolder('Layer Transform');
-        this.xController = transformFolder.add(this.transformControls, 'x', -this.width, this.width).name('Translate X').listen();
-        this.yController = transformFolder.add(this.transformControls, 'y', -this.height, this.height).name('Translate Y').listen();
-        transformFolder.add(this.transformControls, 'reset').name('Reset Transform');
-        transformFolder.open();
-
-        this.xController.onChange(() => this.updateLayerPositionFromGui());
-        this.yController.onChange(() => this.updateLayerPositionFromGui());
+        // ★★★ 追加: dat.guiのセットアップ ★★★
+        this.gui = null;
+        this.transformControls = { x: 0, y: 0 };
+        this._initDatGUI();
         
         this.bindEvents();
     }
@@ -117,29 +126,23 @@ class CanvasManager {
     onPointerDown(e) {
         if (e.button !== 0) return;
         
-        if (this.isVDown) {
-            this.startLayerTransform(e);
-            e.preventDefault(); return;
-        }
         if (this.isSpaceDown) {
             this.dragStartX = e.clientX; this.dragStartY = e.clientY; this.isPanning = true;
             this.canvasStartX = this.viewTransform.left; this.canvasStartY = this.viewTransform.top;
             e.preventDefault(); return;
         }
 
-        const worldCoords = this.getCanvasCoordinates(e);
-        if (!worldCoords) return;
-        
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
 
-        const localCoords = this.getWorldToLocalCoords(worldCoords, activeLayer);
+        // ★★★ 修正: 座標変換ロジック ★★★
+        const localCoords = this.getLayerCoordinates(e, activeLayer);
         if (!localCoords) return;
-
+        
         this._resetDirtyRect();
         
         if (this.currentTool === 'bucket') {
-            this.app.bucketTool.fill(activeLayer.imageData, Math.round(localCoords.x), Math.round(localCoords.y), hexToRgba(this.currentColor));
+            this.app.bucketTool.fill(activeLayer.imageData, localCoords.x, localCoords.y, hexToRgba(this.currentColor));
             activeLayer.gpuDirty = true;
             this.renderAllLayers();
             this.saveState();
@@ -151,7 +154,8 @@ class CanvasManager {
         this.lastPoint = { ...localCoords, pressure: this.pressureHistory[0] };
         
         const size = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
-        this._updateDirtyRectWithTransform(activeLayer, localCoords.x, localCoords.y, size);
+        
+        this._updateDirtyRect(localCoords.x, localCoords.y, size);
         
         this.renderingBridge.drawCircle(
             localCoords.x, localCoords.y, size / 2, 
@@ -164,34 +168,18 @@ class CanvasManager {
     }
     
     onPointerMove(e) {
-        if (this.isLayerTransforming) {
-            const dx = (e.clientX - this.transformStartX) / this.viewTransform.scale;
-            const dy = (e.clientY - this.transformStartY) / this.viewTransform.scale;
-            
-            const newMatrix = transformUtils.clone(this.originalLayerMatrix);
-            transformUtils.translate(newMatrix, dx, dy);
-            this.transformTargetLayer.modelMatrix = newMatrix;
-
-            this.updateGuiForLayer();
-            this.renderAllLayers();
-            return;
-        }
-
         if (this.isPanning) {
             const dx = e.clientX - this.dragStartX; const dy = e.clientY - this.dragStartY;
             this.viewTransform.left = this.canvasStartX + dx; this.viewTransform.top = this.canvasStartY + dy;
             this.applyViewTransform(); return;
         }
         if (!this.isDrawing) return;
-
-        const worldCoords = this.getCanvasCoordinates(e);
-        if (!worldCoords) { this.lastPoint = null; return; }
         
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
-        
-        const localCoords = this.getWorldToLocalCoords(worldCoords, activeLayer);
-        if(!localCoords) { this.lastPoint = null; return; }
+
+        const localCoords = this.getLayerCoordinates(e, activeLayer);
+        if (!localCoords) { this.lastPoint = null; return; }
 
         if (!this.lastPoint) { 
             this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
@@ -207,9 +195,8 @@ class CanvasManager {
         
         const lastSize = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
         const currentSize = this.calculatePressureSize(this.currentSize, currentPressure);
-        
-        this._updateDirtyRectWithTransform(activeLayer, this.lastPoint.x, this.lastPoint.y, lastSize);
-        this._updateDirtyRectWithTransform(activeLayer, localCoords.x, localCoords.y, currentSize);
+        this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, lastSize);
+        this._updateDirtyRect(localCoords.x, localCoords.y, currentSize);
 
         this.renderingBridge.drawLine(
             this.lastPoint.x, this.lastPoint.y, localCoords.x, localCoords.y,
@@ -224,19 +211,21 @@ class CanvasManager {
     }
     
     onPointerUp(e) {
-        if (this.isLayerTransforming) { this.commitLayerTransform(); }
-        
         if (this.isDrawing) {
             this.isDrawing = false;
+            
             if (this.animationFrameId) {
                 cancelAnimationFrame(this.animationFrameId);
                 this.animationFrameId = null;
             }
+            
             this._renderDirty();
+
             const activeLayer = this.app.layerManager.getCurrentLayer();
             if (activeLayer) {
                 this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
             }
+            
             this.lastPoint = null;
             this.saveState();
         }
@@ -262,7 +251,8 @@ class CanvasManager {
     _requestRender() {
         if (!this.animationFrameId) {
             this.animationFrameId = requestAnimationFrame(() => {
-                this._renderDirty();
+                this.renderingBridge.compositeLayers(this.app.layerManager.layers);
+                this.renderingBridge.renderToDisplay();
                 this.animationFrameId = null;
             });
         }
@@ -276,12 +266,6 @@ class CanvasManager {
         this.dirtyRect.maxY = Math.max(this.dirtyRect.maxY, y + margin);
     }
     
-    _updateDirtyRectWithTransform(layer, localX, localY, radius) {
-        const worldPos = [0, 0];
-        transformUtils.transformVec2(worldPos, [localX, localY], layer.modelMatrix);
-        this._updateDirtyRect(worldPos[0], worldPos[1], radius * 1.5); // 少しマージンを増やす
-    }
-
     _resetDirtyRect() {
         this.dirtyRect = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
     }
@@ -322,16 +306,6 @@ class CanvasManager {
         return Math.max(0.1, finalSize);
     }
 
-    getWorldToLocalCoords(worldCoords, layer) {
-        const invMatrix = transformUtils.invert(transformUtils.create(), layer.modelMatrix);
-        if (!invMatrix) return null;
-        
-        const out = [0, 0];
-        transformUtils.transformVec2(out, [worldCoords.x, worldCoords.y], invMatrix);
-        
-        return { x: out[0], y: out[1] };
-    }
-
     getCanvasCoordinates(e) {
         try {
             const rect = this.displayCanvas.getBoundingClientRect();
@@ -342,44 +316,37 @@ class CanvasManager {
             y = y * (this.height / rect.height);
             if (this.viewTransform.flipX === -1) { x = this.width - x; }
             if (this.viewTransform.flipY === -1) { y = this.height - y; }
-            return { x: x, y: y };
+            // ここではキャンバス外のチェックはしない。レイヤーがはみ出している場合があるため。
+            return { x, y };
         } catch (error) {
-            console.warn('Coordinate transformation error:', error);
+            console.warn('座標変換エラー:', error);
             return null;
         }
     }
 
-    // ★★★★★★★★★★★★★★★★★★★★
-    // ★★★ 修正点：キーボードからの呼び出しでも安全なように修正 ★★★
-    // ★★★★★★★★★★★★★★★★★★★★
-    startLayerTransform(e = null) {
-        const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (!activeLayer) return;
+    // ★★★ 追加: マウス座標をレイヤーのローカル座標に変換するヘルパー ★★★
+    getLayerCoordinates(e, layer) {
+        const worldCoords = this.getCanvasCoordinates(e);
+        if (!worldCoords) return null;
 
-        // マウスイベントがある場合のみ、変形を開始/続行する
-        if (e) {
-            this.isLayerTransforming = true;
-            this.transformTargetLayer = activeLayer;
-            this.originalLayerMatrix = transformUtils.clone(activeLayer.modelMatrix);
-            this.transformStartX = e.clientX;
-            this.transformStartY = e.clientY;
-        } else {
-            // ショートカットキーで呼ばれた場合(e is null)は何もしない。
-            // 実際の変形開始は onPointerDown で行われる。
-            console.log("Move tool activated by key. Waiting for pointer down to start transform.");
+        const localCoordsVec2 = [0, 0];
+        transformUtils.transformWorldToLocal(localCoordsVec2, [worldCoords.x, worldCoords.y], layer.modelMatrix);
+
+        const localX = localCoordsVec2[0];
+        const localY = localCoordsVec2[1];
+
+        // 描画範囲外ならnullを返す（描画処理をスキップさせる）
+        if (localX < 0 || localX >= this.width || localY < 0 || localY >= this.height) {
+             return null;
         }
+        return { x: localX, y: localY };
     }
 
-    commitLayerTransform() {
-        if (!this.isLayerTransforming) return;
-        this.isLayerTransforming = false;
-        this.transformTargetLayer = null;
-        this.originalLayerMatrix = null;
-        this.saveState();
-    }
+
+    // ★★★ 削除: 古い破壊的変形メソッド群は不要 ★★★
+    // startLayerTransform, applyLayerTransformPreview, commitLayerTransform は削除
 
     saveState() {
-        if(this.isLayerTransforming) return;
         const state = {
             layers: this.app.layerManager.layers.map(layer => ({
                 name: layer.name,
@@ -391,7 +358,8 @@ class CanvasManager {
                     layer.imageData.width,
                     layer.imageData.height
                 ),
-                modelMatrix: transformUtils.clone(layer.modelMatrix)
+                // ★★★ 修正: modelMatrixを保存 ★★★
+                modelMatrix: [...layer.modelMatrix]
             })),
             activeLayerIndex: this.app.layerManager.activeLayerIndex
         };
@@ -407,38 +375,15 @@ class CanvasManager {
             layer.opacity = layerData.opacity ?? 100;
             layer.blendMode = layerData.blendMode ?? 'normal';
             layer.imageData.data.set(layerData.imageData.data);
+            // ★★★ 修正: modelMatrixを復元 ★★★
             if (layerData.modelMatrix) {
-                layer.modelMatrix = transformUtils.clone(layerData.modelMatrix);
+                layer.modelMatrix = new Float32Array(layerData.modelMatrix);
             }
             layer.gpuDirty = true;
             return layer;
         });
         this.app.layerManager.switchLayer(state.activeLayerIndex);
         this.renderAllLayers();
-    }
-
-    updateLayerPositionFromGui() {
-        const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (!activeLayer || this.isLayerTransforming) return;
-        transformUtils.resetToTranslation(activeLayer.modelMatrix, this.transformControls.x, this.transformControls.y);
-        this.renderAllLayers();
-    }
-
-    updateGuiForLayer() {
-        const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (!activeLayer) return;
-        const translation = transformUtils.getTranslation(activeLayer.modelMatrix);
-        this.transformControls.x = translation.x;
-        this.transformControls.y = translation.y;
-    }
-
-    resetActiveLayerTransform() {
-        const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (!activeLayer) return;
-        transformUtils.reset(activeLayer.modelMatrix);
-        this.updateGuiForLayer();
-        this.renderAllLayers();
-        this.saveState();
     }
 
     undo() { if (this.historyIndex > 0) { this.historyIndex--; this.restoreState(this.history[this.historyIndex]); } }
@@ -462,13 +407,16 @@ class CanvasManager {
         exportCanvas.width = this.width;
         exportCanvas.height = this.height;
         const exportCtx = exportCanvas.getContext('2d');
+        
         const fullRect = { minX: 0, minY: 0, maxX: this.width, maxY: this.height };
         this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, fullRect);
+
         const gl = this.renderingBridge.engines['webgl']?.gl;
         if (gl && this.renderingBridge.currentEngineType === 'webgl') {
              const pixels = new Uint8Array(this.width * this.height * 4);
              this.renderingBridge.renderToDisplay(null, fullRect);
              gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+             
              const correctedPixels = new Uint8ClampedArray(this.width * this.height * 4);
              for (let y = 0; y < this.height; y++) {
                  const s = y * this.width * 4;
@@ -477,32 +425,19 @@ class CanvasManager {
              }
              const finalImageData = new ImageData(correctedPixels, this.width, this.height);
              exportCtx.putImageData(finalImageData, 0, 0);
+
         } else {
-            exportCtx.fillStyle = '#f0e0d6';
-            exportCtx.fillRect(0,0,this.width, this.height);
-            for(const layer of this.app.layerManager.layers) {
-                if(!layer.visible) continue;
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = this.width;
-                tempCanvas.height = this.height;
-                const tempCtx = tempCanvas.getContext('2d');
-                tempCtx.putImageData(layer.imageData, 0, 0);
-                exportCtx.save();
-                exportCtx.globalAlpha = layer.opacity / 100;
-                exportCtx.globalCompositeOperation = layer.blendMode;
-                const m = layer.modelMatrix;
-                exportCtx.transform(m[0], m[1], m[4], m[5], m[12], m[13]);
-                exportCtx.drawImage(tempCanvas, 0, 0);
-                exportCtx.restore();
-            }
+            this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, fullRect);
+            exportCtx.putImageData(this.compositionData, 0, 0);
         }
+        
         const dataURL = exportCanvas.toDataURL('image/png');
         const link = document.createElement('a');
         link.href = dataURL;
         link.download = 'merged_image.png';
         link.click();
     }
-    updateCursor() { let cursor = 'crosshair'; if (this.isVDown) cursor = 'move'; if (this.isSpaceDown) cursor = 'grab'; if (this.currentTool === 'eraser') cursor = 'cell'; if (this.currentTool === 'bucket') cursor = 'copy'; this.canvasArea.style.cursor = cursor; }
+    updateCursor() { let cursor = 'crosshair'; if (this.isSpaceDown) cursor = 'grab'; if (this.currentTool === 'eraser') cursor = 'cell'; if (this.currentTool === 'bucket') cursor = 'copy'; this.canvasArea.style.cursor = cursor; }
     applyViewTransform() { const t = this.viewTransform; this.canvasContainer.style.transform = `translate(${t.left}px, ${t.top}px) scale(${t.scale * t.flipX}, ${t.scale * t.flipY}) rotate(${t.rotation}deg)`; }
     flipHorizontal() { this.viewTransform.flipX *= -1; this.applyViewTransform(); }
     flipVertical() { this.viewTransform.flipY *= -1; this.applyViewTransform(); }
@@ -510,54 +445,86 @@ class CanvasManager {
     rotate(degrees) { this.viewTransform.rotation = (this.viewTransform.rotation + degrees) % 360; this.applyViewTransform(); }
     resetView() { this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 }; this.applyViewTransform(); }
     handleWheel(e) { e.preventDefault(); if (e.shiftKey) { this.rotate(-e.deltaY * 0.2); } else { this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); } }
+
+    // ★★★ 追加: dat.gui関連のメソッド ★★★
+    _initDatGUI() {
+        if (!window.dat) {
+            console.warn("dat.gui library not found.");
+            return;
+        }
+        this.gui = new dat.GUI();
+        this.gui.add(this.transformControls, 'x', -this.width, this.width * 2).name('Translate X').onChange(val => {
+            this._updateLayerTransformFromGUI('x', val);
+        });
+        this.gui.add(this.transformControls, 'y', -this.height, this.height * 2).name('Translate Y').onChange(val => {
+            this._updateLayerTransformFromGUI('y', val);
+        });
+    }
+
+    _updateLayerTransformFromGUI(axis, value) {
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+        if (!activeLayer) return;
+
+        const currentPos = transformUtils.getTranslation(activeLayer.modelMatrix);
+        const newX = (axis === 'x') ? value : currentPos[0];
+        const newY = (axis === 'y') ? value : currentPos[1];
+        
+        // 既存の行列から回転・スケールを維持しつつ平行移動だけを更新するのは複雑なため、
+        // 平行移動の差分を適用する方式を取る
+        transformUtils.updateTranslation(activeLayer.modelMatrix, newX, newY);
+        
+        this.renderAllLayers();
+    }
+    
+    updateTransformGUI() {
+        if (!this.gui) return;
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+        if (!activeLayer) return;
+
+        const pos = transformUtils.getTranslation(activeLayer.modelMatrix);
+        this.transformControls.x = pos[0];
+        this.transformControls.y = pos[1];
+
+        this.gui.__controllers.forEach(c => c.updateDisplay());
+    }
 }
 
+// LayerManagerと他のマネージャークラスは変更なし
 class LayerManager { 
     constructor(app) { this.app = app; this.layers = []; this.activeLayerIndex = -1; this.width = 344; this.height = 135; this.mergeCanvas = document.createElement('canvas'); this.mergeCanvas.width = this.width; this.mergeCanvas.height = this.height; this.mergeCtx = this.mergeCanvas.getContext('2d'); } 
     setupInitialLayers() { const bgLayer = new Layer('背景', this.width, this.height); bgLayer.fill('#f0e0d6'); this.layers.push(bgLayer); const drawingLayer = new Layer('レイヤー 1', this.width, this.height); this.layers.push(drawingLayer); this.switchLayer(1); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
     addLayer() { if (this.layers.length >= 99) return; const insertIndex = this.activeLayerIndex + 1; const newLayer = new Layer(`レイヤー ${this.layers.length + 1}`, this.width, this.height); this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
     deleteActiveLayer() { if (this.activeLayerIndex === 0 || this.layers.length <= 1) return; this.layers.splice(this.activeLayerIndex, 1); const newActiveIndex = Math.min(this.layers.length - 1, this.activeLayerIndex); this.renameLayers(); this.switchLayer(newActiveIndex); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
     renameLayers() { this.layers.forEach((layer, index) => { if (index > 0) layer.name = `レイヤー ${index}`; }); } 
-    switchLayer(index) {
-        if (index < 0 || index >= this.layers.length) return;
-        this.activeLayerIndex = index;
-        if (this.app.layerUIManager) {
-            this.app.layerUIManager.renderLayers();
-        }
-        if (this.app.canvasManager) {
-            this.app.canvasManager.updateGuiForLayer();
-        }
+    switchLayer(index) { 
+        if (index < 0 || index >= this.layers.length) return; 
+        this.activeLayerIndex = index; 
+        if (this.app.layerUIManager) { this.app.layerUIManager.renderLayers(); } 
+        // ★★★ 追加: レイヤー切り替え時にGUIを更新
+        if (this.app.canvasManager) { this.app.canvasManager.updateTransformGUI(); }
     } 
     getCurrentLayer() { return this.layers[this.activeLayerIndex] || null; } 
-    duplicateActiveLayer() { const activeLayer = this.getCurrentLayer(); if (!activeLayer) return; const newLayer = new Layer(`${activeLayer.name}のコピー`, this.width, this.height); newLayer.imageData.data.set(activeLayer.imageData.data); newLayer.visible = activeLayer.visible; newLayer.opacity = activeLayer.opacity; newLayer.blendMode = activeLayer.blendMode; newLayer.modelMatrix = transformUtils.clone(activeLayer.modelMatrix); newLayer.gpuDirty = true; const insertIndex = this.activeLayerIndex + 1; this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
+    duplicateActiveLayer() { const activeLayer = this.getCurrentLayer(); if (!activeLayer) return; const newLayer = new Layer(`${activeLayer.name}のコピー`, this.width, this.height); newLayer.imageData.data.set(activeLayer.imageData.data); newLayer.visible = activeLayer.visible; newLayer.opacity = activeLayer.opacity; newLayer.blendMode = activeLayer.blendMode; newLayer.gpuDirty = true; newLayer.modelMatrix = new Float32Array(activeLayer.modelMatrix); const insertIndex = this.activeLayerIndex + 1; this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
     mergeDownActiveLayer() {
         if (this.activeLayerIndex <= 0) return;
-        console.warn("Merge down will bake the transform into pixels.");
+        // 注意: この結合処理はmodelMatrixを考慮していません。
+        // 正確に結合するには、一度modelMatrixを適用した状態でピクセルを焼き付ける必要があります。
+        // 今回の改修範囲外として、ひとまず既存のロジックのまま残します。
+        console.warn("Merge down does not currently account for layer transformations (modelMatrix).");
         const topLayer = this.layers[this.activeLayerIndex];
         const bottomLayer = this.layers[this.activeLayerIndex - 1];
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = this.width; tempCanvas.height = this.height;
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCtx.save();
-        const bm = bottomLayer.modelMatrix;
-        tempCtx.transform(bm[0], bm[1], bm[4], bm[5], bm[12], bm[13]);
-        const bottomLayerCanvas = document.createElement('canvas');
-        bottomLayerCanvas.width = this.width; bottomLayerCanvas.height = this.height;
-        bottomLayerCanvas.getContext('2d').putImageData(bottomLayer.imageData, 0, 0);
-        tempCtx.drawImage(bottomLayerCanvas, 0, 0);
-        tempCtx.restore();
-        tempCtx.save();
+        const tempCtx = this.mergeCtx;
+        tempCtx.clearRect(0, 0, this.width, this.height);
+        tempCtx.putImageData(bottomLayer.imageData, 0, 0);
         tempCtx.globalAlpha = topLayer.opacity / 100;
         tempCtx.globalCompositeOperation = topLayer.blendMode;
-        const tm = topLayer.modelMatrix;
-        tempCtx.transform(tm[0], tm[1], tm[4], tm[5], tm[12], tm[13]);
         const topLayerCanvas = document.createElement('canvas');
-        topLayerCanvas.width = this.width; topLayerCanvas.height = this.height;
-        topLayerCanvas.getContext('2d').putImageData(topLayer.imageData, 0, 0);
+        topLayerCanvas.width = this.width;
+        topLayerCanvas.height = this.height;
+        const topLayerCtx = topLayerCanvas.getContext('2d');
+        topLayerCtx.putImageData(topLayer.imageData, 0, 0);
         tempCtx.drawImage(topLayerCanvas, 0, 0);
-        tempCtx.restore();
         bottomLayer.imageData = tempCtx.getImageData(0, 0, this.width, this.height);
-        transformUtils.reset(bottomLayer.modelMatrix);
         bottomLayer.gpuDirty = true;
         this.layers.splice(this.activeLayerIndex, 1);
         this.switchLayer(this.activeLayerIndex - 1);
