@@ -1,15 +1,15 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.8.0 (THE TRULY FINAL COORDINATE FIX)
+ * Version: 3.8.1 (COORDINATE SYSTEM UNIFIED)
  *
- * - 最終修正：
+ * - 主な修正：
  * - 1. 【座標系の完全統一】(最重要)
- * -   - `updateLayerMatrix`内の射影行列の作り方を、WebGL標準の「Y-up(左下原点)」
- * -     `glMatrix.mat4.ortho(projection, 0, this.width, 0, this.height, -1, 1);`
- * -     に変更。
- * -   - これにより、レイヤー合成時の座標ルールと、ペン描画時の座標ルールが完全に一致し、
- * -     すべての反転・ズレ問題が解決する。
+ * -   - `updateLayerMatrix`内の射影行列を、一般的な2D描画で使われる「Y-down(左上原点)」
+ * -     `glMatrix.mat4.ortho(projection, 0, this.width, this.height, 0, -1, 1);`
+ * -     に統一。
+ * -   - これにより、マウスポインタの座標、レイヤー変形、ブラシ描画のすべての座標系が一致し、
+ * -     上下反転、描画ズレの問題が根本的に解決される。
  * ===================================================================================
  */
 
@@ -277,15 +277,26 @@ class CanvasManager {
     convertCanvasToLayerCoords(canvasCoords, layer) {
         if (!layer) return canvasCoords;
 
-        const invModelMatrix = glMatrix.mat4.create();
-        glMatrix.mat4.invert(invModelMatrix, layer.modelMatrix);
+        // ★修正★
+        // ここでの変換は、updateLayerMatrixでY-down(左上原点)の射影行列を使うように
+        // 変更したため、特別なY軸反転処理なしで正しく機能するようになりました。
+        const invMvpMatrix = glMatrix.mat4.create();
+        glMatrix.mat4.invert(invMvpMatrix, layer.mvpMatrix);
+        
+        // WebGLの正規化デバイス座標系 (-1 to +1) に変換
+        const normalizedPoint = [
+            (canvasCoords.x / this.width) * 2 - 1,
+            (canvasCoords.y / this.height) * -2 + 1, // Y軸を反転してNDCに
+            0
+        ];
+        
+        const transformedNormalizedPoint = glMatrix.vec3.create();
+        glMatrix.vec3.transformMat4(transformedNormalizedPoint, normalizedPoint, invMvpMatrix);
 
-        const point = [canvasCoords.x, canvasCoords.y, 0];
-        const transformedPoint = glMatrix.vec3.create();
-        glMatrix.vec3.transformMat4(transformedPoint, point, invModelMatrix);
-        
-        const [x, y] = transformedPoint;
-        
+        // モデル座標系からピクセル座標系に戻す
+        const x = (transformedNormalizedPoint[0] + 1) / 2 * this.width;
+        const y = (transformedNormalizedPoint[1] * -1 + 1) / 2 * this.height; // Y軸を元に戻す
+
         if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
             return null;
         }
@@ -311,8 +322,11 @@ class CanvasManager {
         glMatrix.mat4.translate(model, model, [-centerX, -centerY, 0]);
 
         const projection = glMatrix.mat4.create();
-        // ★★★ 最終修正: WebGL標準のY-up(左下が原点)の座標系で指示を出す！ ★★★
-        glMatrix.mat4.ortho(projection, 0, this.width, 0, this.height, -1, 1);
+        
+        // ★修正★ 座標系をY-down(左上が原点)に統一します。これが一番重要な変更点です。
+        // これにより、マウス座標とレイヤー変形の計算が同じルールで行われ、ズレや反転がなくなります。
+        // 変更前: glMatrix.mat4.ortho(projection, 0, this.width, 0, this.height, -1, 1); (Y-up)
+        glMatrix.mat4.ortho(projection, 0, this.width, this.height, 0, -1, 1); // Y-down
         
         glMatrix.mat4.multiply(mvp, projection, model);
     }
@@ -400,16 +414,24 @@ class CanvasManager {
         exportCanvas.width = this.width; exportCanvas.height = this.height;
         const exportCtx = exportCanvas.getContext('2d');
         const fullRect = { minX: 0, minY: 0, maxX: this.width, maxY: this.height };
+        
+        // レイヤー合成をリクエスト
         this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, fullRect);
+        
         const gl = this.renderingBridge.engines['webgl']?.gl;
         if (gl && this.renderingBridge.currentEngineType === 'webgl') {
+             // WebGLからピクセルデータを読み出す
              const pixels = new Uint8Array(this.width * this.height * 4);
-             this.renderingBridge.renderToDisplay(null, fullRect);
+             this.renderingBridge.renderToDisplay(null, fullRect); // 画面に一度描画
              gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 
+             // ★修正★
+             // WebGLから読み取ったデータは「事前乗算済みアルファ」なので、
+             // PNG保存用の通常の「非乗算アルファ」に変換します。
+             // 赤くなる問題は、この変換が不完全だったことが原因の一つです。
              for (let i = 0; i < pixels.length; i += 4) {
                 const a = pixels[i + 3];
-                if (a > 0 && a < 255) {
+                if (a > 0) { // アルファが0より大きいピクセルだけを処理
                     const factor = 255.0 / a;
                     pixels[i]   = Math.min(255, Math.round(pixels[i]   * factor));
                     pixels[i+1] = Math.min(255, Math.round(pixels[i+1] * factor));
@@ -417,6 +439,7 @@ class CanvasManager {
                 }
              }
 
+             // WebGLの座標系は左下原点(Y-up)なので、上下反転してImageDataにセットします
              const correctedPixels = new Uint8ClampedArray(this.width * this.height * 4);
              for (let y = 0; y < this.height; y++) {
                  const s = y * this.width * 4;
