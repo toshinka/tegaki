@@ -1,24 +1,14 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.0.0 (Phase4A9 - Matrix Transform Integration)
+ * Version: 4.0.1 (Phase4A9 - Shader Precision Fix)
  *
  * - 修正：
- * - 1. 頂点シェーダーの拡張:
- * -   - `u_modelMatrix`と`u_projectionMatrix`という2つのuniform変数を追加。
- * -   - `gl_Position`の計算を `projection * model * position` に変更し、行列による座標変換に対応。
- * -
- * - 2. 座標系の統一 (Y軸下向き):
- * -   - `mat4.ortho`を使い、ピクセル座標(左上=0,0)からクリップ空間へ直接変換する`projectionMatrix`を生成。
- * -   - これにより、core-engine側の座標系(Y軸下向きが正)とWebGL側の座標系を一致させ、混乱をなくしました。
- * -   - ペン描画(`drawCircle`)でのY軸反転処理が不要になりました。
- * -
- * - 3. レイヤー合成処理の改修:
- * -   - `compositeLayers`メソッド内で、各レイヤーの`modelMatrix`をシェーダーに渡し、GPU上で表示位置を動かします。
- * -   - 描画するポリゴンの頂点データを、-1~1のクリップ空間座標から、0~canvas.widthのピクセル座標系に変更しました。
- * -
- * - 4. 不要な処理の削除:
- * -   - CPUで行っていた破壊的な変形処理`getTransformedImageData`は不要になったため、警告を出すだけにしました。
+ * - 1. シェーダーの精度問題を修正:
+ * -   - ブラシ描画用の頂点シェーダー(vsBrush)の精度宣言を `precision mediump float;` から
+ * -     `precision highp float;` に変更しました。
+ * -   - これにより、フラグメントシェーダーとの精度が一致し、コンパイルエラー
+ * -     "Precisions of uniform 'u_radius' differ" が解消され、WebGLエンジンが正しく初期化されるようになります。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -35,9 +25,8 @@ export class WebGLEngine extends DrawingEngine {
         this.superWidth = this.width * this.SUPER_SAMPLING_FACTOR;
         this.superHeight = this.height * this.SUPER_SAMPLING_FACTOR;
         
-        // ★追加: 座標変換のための行列
         this.projectionMatrix = glMatrix.mat4.create();
-        this.identityMatrix = glMatrix.mat4.create(); // 単位行列（移動なし）
+        this.identityMatrix = glMatrix.mat4.create();
 
         this.programs = { compositor: null, brush: null };
         this.positionBuffer = null;
@@ -76,30 +65,25 @@ export class WebGLEngine extends DrawingEngine {
         this._initBuffers();
         this._setupSuperCompositingBuffer();
         
-        // ★追加: 座標系を定義するプロジェクション行列を初期化
         this._updateProjectionMatrix();
 
-        console.log(`WebGL Engine (v4.0.0 Matrix Transform) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.0.1 Shader Precision Fix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
-        // ★★★★★ 変更箇所: 頂点シェーダーに行列変換機能を追加 ★★★★★
         const vsCompositor = `
             attribute vec4 a_position;
             attribute vec2 a_texCoord;
 
-            // ★追加: 座標変換のための行列
             uniform mat4 u_projectionMatrix;
             uniform mat4 u_modelMatrix;
 
             varying vec2 v_texCoord;
             void main() {
-                // ★変更: 頂点座標に行列を適用して最終的な位置を計算
                 gl_Position = u_projectionMatrix * u_modelMatrix * a_position;
                 v_texCoord = a_texCoord;
             }`;
             
-        // フラグメントシェーダーは高品質ダウンサンプリングのため変更なし
         const fsCompositor = `
             precision highp float;
             varying vec2 v_texCoord;
@@ -120,8 +104,9 @@ export class WebGLEngine extends DrawingEngine {
                 gl_FragColor = vec4(color.rgb, color.a * u_opacity);
             }`;
 
+        // ★★★★★ 修正箇所 ★★★★★
         const vsBrush = `
-            precision mediump float;
+            precision highp float; // mediump から highp に変更してフラグメントシェーダーと一致させる
             attribute vec2 a_position; 
             uniform vec2 u_resolution;
             uniform vec2 u_center;
@@ -132,7 +117,6 @@ export class WebGLEngine extends DrawingEngine {
                 vec2 quad_size_pixels = vec2(u_radius * 2.0 + 2.0);
                 vec2 quad_size_clip = quad_size_pixels / u_resolution * 2.0;
                 vec2 center_clip = (u_center / u_resolution) * 2.0 - 1.0;
-                // Y軸を反転させる (クリップ空間はYが上向きのため)
                 center_clip.y *= -1.0;
                 gl_Position = vec4(a_position * quad_size_clip + center_clip, 0.0, 1.0);
                 v_texCoord = a_position + 0.5;
@@ -169,9 +153,8 @@ export class WebGLEngine extends DrawingEngine {
         const gl = this.gl;
         this.positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        // ★変更: ポリゴンをピクセル単位の矩形に (0,0) -> (width, height)
         const positions = [
-            0, 0, 0, 1, // x, y, z, w (w=1はベクトルではなく座標点を表す)
+            0, 0, 0, 1,
             this.superWidth, 0, 0, 1,
             0, this.superHeight, 0, 1,
             this.superWidth, this.superHeight, 0, 1,
@@ -180,7 +163,6 @@ export class WebGLEngine extends DrawingEngine {
 
         this.texCoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        // テクスチャ座標は 0~1 の範囲
         const texCoords = [ 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0 ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
         
@@ -190,10 +172,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(brushPositions), gl.STATIC_DRAW);
     }
     
-    // ★新規: プロジェクション行列を更新するメソッド
     _updateProjectionMatrix() {
-        // ピクセル座標系からクリップ空間(-1 ~ 1)への正投影変換行列を作成
-        // Y軸が下向きになるように設定 (第3,4引数: top, bottom)
         glMatrix.mat4.ortho(this.projectionMatrix, 0, this.superWidth, this.superHeight, 0, -1, 1);
     }
 
@@ -326,12 +305,10 @@ export class WebGLEngine extends DrawingEngine {
         gl.enableVertexAttribArray(program.locations.a_position);
         
         const superX = centerX * this.SUPER_SAMPLING_FACTOR;
-        // ★変更: Y軸反転処理を削除 (座標系を統一したため)
         const superY = centerY * this.SUPER_SAMPLING_FACTOR;
         const superRadius = radius * this.SUPER_SAMPLING_FACTOR;
         
         gl.uniform2f(program.locations.u_resolution, this.superWidth, this.superHeight);
-        // ★変更: Y軸反転処理を削除
         gl.uniform2f(program.locations.u_center, superX, superY);
         gl.uniform1f(program.locations.u_radius, superRadius);
         gl.uniform4f(program.locations.u_color, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
@@ -361,13 +338,11 @@ export class WebGLEngine extends DrawingEngine {
         }
     }
 
-    // ★変更: このメソッドは非推奨になりました
     getTransformedImageData(sourceImageData, transform) {
         console.warn('getTransformedImageData is deprecated and should not be used in WebGL mode.');
-        return sourceImageData; // 何もせず、元のデータを返す
+        return sourceImageData;
     }
 
-    // ★★★★★ 変更箇所: レイヤー合成処理に行列変換を統合 ★★★★★
     compositeLayers(layers, compositionData, dirtyRect) {
         if (!this.gl || !this.programs.compositor || !this.superCompositeFBO) return;
         const gl = this.gl;
@@ -385,7 +360,6 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.useProgram(program);
         
-        // ★追加: projectionMatrixをシェーダーに送る (全レイヤーで共通)
         gl.uniformMatrix4fv(program.locations.u_projectionMatrix, false, this.projectionMatrix);
 
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
@@ -401,7 +375,6 @@ export class WebGLEngine extends DrawingEngine {
 
             this._setBlendMode(layer.blendMode);
 
-            // ★追加: 各レイヤーのmodelMatrixをシェーダーに送る
             gl.uniformMatrix4fv(program.locations.u_modelMatrix, false, layer.modelMatrix);
 
             gl.activeTexture(gl.TEXTURE0);
@@ -420,7 +393,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.disableVertexAttribArray(program.locations.a_texCoord);
     }
     
-    // ★★★★★ 変更箇所: 高解像度バッファを画面に表示する処理 ★★★★★
     renderToDisplay(compositionData, dirtyRect) {
         if (!this.gl || !this.superCompositeTexture) return;
         const gl = this.gl;
@@ -432,7 +404,6 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.useProgram(program);
         
-        // 画面全体に描画するため、頂点データを一時的に-1~1のクリップ空間座標に設定
         const screenPositions = [ -1, 1, 0, 1,  -1, -1, 0, 1,  1, 1, 0, 1,  1, -1, 0, 1 ];
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(screenPositions), gl.DYNAMIC_DRAW);
@@ -445,7 +416,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_texCoord);
         
-        // ★変更: 画面への描画では変換を行わないので、単位行列を渡す
         gl.uniformMatrix4fv(program.locations.u_projectionMatrix, false, this.identityMatrix);
         gl.uniformMatrix4fv(program.locations.u_modelMatrix, false, this.identityMatrix);
         
@@ -458,7 +428,6 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-        // バッファを元のピクセル座標系に戻す
         const originalPositions = [ 0, 0, 0, 1,  this.superWidth, 0, 0, 1,  0, this.superHeight, 0, 1,  this.superWidth, this.superHeight, 0, 1 ];
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(originalPositions), gl.STATIC_DRAW);
@@ -483,7 +452,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const superBuffer = new Uint8Array(sWidth * sHeight * 4);
         
-        // Y軸下向き座標系になったので、読み取り位置のY反転は不要
         gl.readPixels(sx, sy, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 

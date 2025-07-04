@@ -1,21 +1,13 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.0.0 (Phase4A9 - Non-destructive WebGL Layer Transform)
+ * Version: 3.0.1 (Phase4A9 - Bug Fix)
  *
  * - 改修内容:
- * - 1. 非破壊レイヤー変形の導入:
- * -   - Layerクラスに`translation`と`modelMatrix`プロパティを追加。
- * -   - ピクセルデータを直接書き換えるのではなく、WebGLシェーダーに行列を渡して表示位置を制御する方式に変更。
- * -   - これにより、移動を繰り返しても画質が劣化しなくなりました。
- * -
- * - 2. dat.guiによるUI制御:
- * -   - 画面右上にdat.guiを配置し、アクティブレイヤーのX/Y座標をスライダーでリアルタイムに操作可能に。
- * -   - レイヤーを切り替えると、GUIの表示も追従します。
- * -
- * - 3. ペン座標のズレ補正:
- * -   - レイヤーが移動していても、ペンの描画位置がずれないように、クリック座標を行列で逆変換するロジックを追加。
- * -   - Vキーによる移動操作も、新しい非破壊変形の仕組みに統合しました。
+ * - 1. キーボード操作での移動に対応:
+ * -   - startLayerTransformメソッドがマウスイベント(e)なしで呼び出された際に、
+ * -     e.clientXを読み込もうとして発生していたTypeErrorを修正しました。
+ * -     これにより、ショートカットキー（方向キーなど）でのレイヤー移動がエラーなく実行されます。
  * ===================================================================================
  */
 
@@ -45,11 +37,10 @@ class Layer {
         this.blendMode = 'normal';
         this.imageData = new ImageData(width, height);
         
-        // ★変更: 破壊的なtransformプロパティを、非破壊的なtranslationとmodelMatrixに置き換え
         this.translation = { x: 0, y: 0 };
-        this.modelMatrix = glMatrix.mat4.create(); // gl-matrixライブラリで4x4行列を生成
+        this.modelMatrix = glMatrix.mat4.create();
 
-        this.gpuDirty = true; // GPUテクスチャが更新を必要とするか
+        this.gpuDirty = true;
     }
     clear() {
         this.imageData.data.fill(0);
@@ -85,11 +76,10 @@ class CanvasManager {
         
         this.isVDown = false; this.isShiftDown = false;
         
-        // ★変更: レイヤー移動のロジックを非破壊用に変更
-        this.isLayerTransforming = false; // Vキーでの移動モード中かどうかのフラグ
-        this.transformTargetLayer = null; // 移動対象のレイヤー
-        this.originalLayerTranslation = null; // 移動開始時の座標
-        this.transformStartX = 0; this.transformStartY = 0; // ドラッグ開始時のマウス座標
+        this.isLayerTransforming = false;
+        this.transformTargetLayer = null;
+        this.originalLayerTranslation = null;
+        this.transformStartX = 0; this.transformStartY = 0;
         
         this.currentTool = 'pen';
         this.currentColor = '#800000'; this.currentSize = 1; this.lastPoint = null;
@@ -124,7 +114,6 @@ class CanvasManager {
     onPointerDown(e) {
         if (e.button !== 0) return;
         
-        // ★変更: Vキーでのレイヤー移動開始処理
         if (this.isVDown) {
             this.startLayerTransform(e);
             e.preventDefault(); return;
@@ -138,7 +127,6 @@ class CanvasManager {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
 
-        // ★変更: ペン座標をレイヤーのローカル座標に変換
         let coords = this.getCanvasCoordinates(e);
         if (!coords) return;
         coords = this.getWorldToLocalCoordinates(coords, activeLayer);
@@ -161,7 +149,6 @@ class CanvasManager {
         
         this._updateDirtyRect(coords.x, coords.y, size);
         
-        // 変換後の座標で描画
         this.renderingBridge.drawCircle(
             coords.x, coords.y, size / 2, 
             hexToRgba(this.currentColor), this.currentTool === 'eraser',
@@ -173,24 +160,17 @@ class CanvasManager {
     }
     
     onPointerMove(e) {
-        // ★変更: Vキーでのレイヤー移動処理
         if (this.isLayerTransforming) {
             const dx = e.clientX - this.transformStartX;
             const dy = e.clientY - this.transformStartY;
             const layer = this.transformTargetLayer;
             const original = this.originalLayerTranslation;
 
-            // ビューの拡大率を考慮して移動量を計算
             layer.translation.x = original.x + dx / this.viewTransform.scale;
             layer.translation.y = original.y + dy / this.viewTransform.scale;
 
-            // translationプロパティからmodelMatrixを更新
             this.app.updateLayerModelMatrix(layer);
-            
-            // dat.guiの表示をリアルタイムに更新
             this.app.updateDatGUIView();
-
-            // 再描画をリクエスト
             this.renderAllLayers();
             return;
         }
@@ -205,7 +185,6 @@ class CanvasManager {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
 
-        // ★変更: ペン座標をレイヤーのローカル座標に変換
         let coords = this.getCanvasCoordinates(e);
         if (!coords) { this.lastPoint = null; return; }
         coords = this.getWorldToLocalCoordinates(coords, activeLayer);
@@ -240,7 +219,6 @@ class CanvasManager {
     }
     
     onPointerUp(e) {
-        // ★変更: Vキー移動の終了処理
         if (this.isLayerTransforming) {
             this.commitLayerTransform();
         }
@@ -358,42 +336,41 @@ class CanvasManager {
         }
     }
 
-    // ★新規: ワールド座標(画面上の描画座標)をレイヤーのローカル座標に変換する
     getWorldToLocalCoordinates(worldCoords, layer) {
         if (!layer) return worldCoords;
 
         const invModelMatrix = glMatrix.mat4.create();
-        // レイヤーのmodelMatrixの逆行列を計算
         glMatrix.mat4.invert(invModelMatrix, layer.modelMatrix);
 
-        // 座標をベクトルとして定義 [x, y, z, w]
         const inVec = [worldCoords.x, worldCoords.y, 0, 1];
         const outVec = [0, 0, 0, 0];
         
-        // 逆行列を適用してローカル座標を計算
         glMatrix.vec4.transformMat4(outVec, inVec, invModelMatrix);
 
         return { x: outVec[0], y: outVec[1] };
     }
 
-    // ★変更: 非破壊的なレイヤー移動の開始処理
-    startLayerTransform(e) {
+    // ★★★★★ 修正箇所 ★★★★★
+    startLayerTransform(e = null) {
         const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (!activeLayer || this.app.layerManager.layers.indexOf(activeLayer) === 0) return; // 背景は動かせない
+        if (!activeLayer || this.app.layerManager.layers.indexOf(activeLayer) === 0) return;
 
-        this.isLayerTransforming = true;
         this.transformTargetLayer = activeLayer;
-        // 移動開始前のtranslationを保存
         this.originalLayerTranslation = { ...activeLayer.translation };
-        this.transformStartX = e.clientX;
-        this.transformStartY = e.clientY;
+        
+        // マウスイベントがある場合のみ、ドラッグ移動モードとしてフラグを立て、開始座標を記録
+        if (e) {
+            this.isLayerTransforming = true;
+            this.transformStartX = e.clientX;
+            this.transformStartY = e.clientY;
+        }
+        // マウスイベントがない場合(e.g. キーボード操作)は、isLayerTransforming は false のまま。
+        // これにより onPointerUp での commitLayerTransform の二重呼び出しを防ぐ。
     }
     
-    // ★変更: 非破壊的なレイヤー移動の確定処理
     commitLayerTransform() {
         if (!this.isLayerTransforming) return;
         
-        // 非破壊なのでピクセルを焼き付ける必要はない。状態を保存するだけ。
         this.saveState();
 
         this.isLayerTransforming = false;
@@ -414,7 +391,6 @@ class CanvasManager {
                     layer.imageData.width,
                     layer.imageData.height
                 ),
-                // ★変更: transformの代わりにtranslationを保存
                 translation: { ...layer.translation } 
             })),
             activeLayerIndex: this.app.layerManager.activeLayerIndex
@@ -432,7 +408,6 @@ class CanvasManager {
             layer.blendMode = layerData.blendMode ?? 'normal';
             layer.imageData.data.set(layerData.imageData.data);
             
-            // ★変更: translationを復元し、それに基づいてmodelMatrixを再計算
             if (layerData.translation) {
                 layer.translation = { ...layerData.translation };
             }
@@ -517,7 +492,6 @@ class LayerManager {
         if (this.app.layerUIManager) {
             this.app.layerUIManager.renderLayers();
         }
-        // ★追加: レイヤー切り替え時にdat.guiの表示を更新する
         if (this.app.rebuildDatGUI) {
             this.app.rebuildDatGUI();
         }
@@ -527,7 +501,7 @@ class LayerManager {
     mergeDownActiveLayer() {
         if (this.activeLayerIndex <= 0) return;
         alert("レイヤー移動機能が有効な状態でのレイヤー結合は、現在サポートされていません。");
-        return; // TODO: 非破壊変形を考慮した結合処理を実装する必要がある
+        return;
     } 
 }
 class PenSettingsManager { constructor(app) { this.app = app; this.currentSize = 1; this.sizes = Array.from(document.querySelectorAll('.size-btn')).map(btn => parseInt(btn.dataset.size)); this.currentSizeIndex = this.sizes.indexOf(this.currentSize); this.bindEvents(); this.updateSizeButtonVisuals(); } bindEvents() { document.querySelectorAll('.size-btn').forEach(btn => btn.addEventListener('click', () => this.setSize(parseInt(btn.dataset.size)))); } setSize(size) { this.currentSize = size; this.currentSizeIndex = this.sizes.indexOf(this.currentSize); document.querySelectorAll('.size-btn').forEach(btn => btn.classList.remove('active')); document.querySelector(`[data-size="${size}"]`)?.classList.add('active'); this.app.canvasManager.setCurrentSize(this.currentSize); this.updateSizeButtonVisuals(); } changeSize(increase) { let newIndex = this.currentSizeIndex + (increase ? 1 : -1); newIndex = Math.max(0, Math.min(newIndex, this.sizes.length - 1)); this.setSize(this.sizes[newIndex]); } updateSizeButtonVisuals() { document.querySelectorAll('.size-btn').forEach(btn => { const size = parseInt(btn.dataset.size); btn.querySelector('.size-dot').style.width = `${Math.min(size, 16)}px`; btn.querySelector('.size-dot').style.height = `${Math.min(size, 16)}px`; btn.querySelector('.size-number').textContent = size; }); } }
@@ -556,20 +530,18 @@ class ToshinkaTegakiTool {
         this.penSettingsManager.setSize(1);
         this.colorManager.setColor(this.colorManager.mainColor);
 
-        // ★追加: dat.GUIのセットアップ
         this.setupDatGUI();
     }
 
-    // ★新規: dat.GUIをセットアップするメソッド
     setupDatGUI() {
-        if (this.datGui) return; // 既に初期化済みなら何もしない
+        if (this.datGui) return;
 
         this.datGui = new dat.GUI({ autoPlace: false });
         const guiContainer = document.createElement('div');
         guiContainer.id = 'dat-gui-container';
         guiContainer.style.position = 'absolute';
         guiContainer.style.top = '50px';
-        guiContainer.style.right = '280px'; // レイヤーUIの隣あたり
+        guiContainer.style.right = '280px';
         guiContainer.style.zIndex = '1000';
         document.body.appendChild(guiContainer);
         guiContainer.appendChild(this.datGui.domElement);
@@ -577,18 +549,15 @@ class ToshinkaTegakiTool {
         this.rebuildDatGUI();
     }
 
-    // ★新規: dat.GUIのコントローラーを再構築するメソッド
     rebuildDatGUI() {
         if (!this.datGui) return;
         
-        // 既存のフォルダがあれば削除
         if (this.datGuiFolder) {
             this.datGui.removeFolder(this.datGuiFolder);
             this.datGuiFolder = null;
         }
 
         const activeLayer = this.layerManager.getCurrentLayer();
-        // 背景レイヤーは操作不可
         if (!activeLayer || this.layerManager.activeLayerIndex === 0) {
              return;
         }
@@ -596,36 +565,31 @@ class ToshinkaTegakiTool {
         this.datGuiFolder = this.datGui.addFolder(`Layer: ${activeLayer.name}`);
         
         const updateFn = () => {
-            if (this.canvasManager.isLayerTransforming) return; // Vキー操作中はGUIからの更新を無視
+            if (this.canvasManager.isLayerTransforming) return;
             const layer = this.layerManager.getCurrentLayer();
             if (layer) {
                 this.updateLayerModelMatrix(layer);
                 this.canvasManager.renderAllLayers();
-                this.canvasManager.saveState(); // GUI操作後もヒストリに保存
+                this.canvasManager.saveState();
             }
         };
         
-        // listen()でオブジェクトの変更をUIに反映
         this.datGuiFolder.add(activeLayer.translation, 'x', -this.canvasManager.width, this.canvasManager.width).name('Translate X').listen().onFinishChange(updateFn);
         this.datGuiFolder.add(activeLayer.translation, 'y', -this.canvasManager.height, this.canvasManager.height).name('Translate Y').listen().onFinishChange(updateFn);
         
         this.datGuiFolder.open();
     }
     
-    // ★新規: dat.GUIの表示内容のみを更新する
     updateDatGUIView() {
         if (!this.datGuiFolder) return;
-        // listen()が設定されているので、コントローラーを再描画するだけで値が反映される
         for (let i in this.datGuiFolder.__controllers) {
             this.datGuiFolder.__controllers[i].updateDisplay();
         }
     }
 
-    // ★新規: LayerのtranslationからmodelMatrixを更新するヘルパーメソッド
     updateLayerModelMatrix(layer) {
         if (!layer) return;
         const translationVec = [layer.translation.x, layer.translation.y, 0];
-        // 平行移動の情報から4x4の変換行列を作成
         glMatrix.mat4.fromTranslation(layer.modelMatrix, translationVec);
     }
 }
