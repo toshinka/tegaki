@@ -1,17 +1,15 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.6.0 (Coordinate System UNIFIED FIX)
+ * Version: 4.7.0 (Coordinate System FINAL FIX)
  *
  * - 修正：
- * - 1. 【Y軸反転の完全撤廃】
- * -   - 座標系がY-downに統一されたことに伴い、テクスチャアップロード時の
- * -     `gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)` を完全に削除。
- * -     これにより、すべてのY軸フリップ処理がなくなり、ロジックが大幅に簡略化された。
- * - 2. 【ピクセル読み出し処理の刷新】
- * -   - `syncDirtyRectToImageData` を全面的に書き換え。手動でのピクセル操作を廃止し、
- * -     オフスクリーンCanvasを利用した高品質な縮小と安全な書き込み処理に変更。
- * -     これにより、Undo/Redoやレイヤー結合時の色化け問題を完全に解決する。
+ * - 1. 【ブラシシェーダーの座標系を統一】
+ * -   - 前回の修正で唯一残ってしまっていた、ブラシ用頂点シェーダー内の
+ * -     Y軸反転処理 (`center_clip.y *= -1.0;`) を完全に削除。
+ * -   - これにより、レイヤー合成とブラシ描画を含む、すべてのWebGL処理が
+ * -     ブラウザ標準の「Y-down（左上原点）」座標系に完全に統一された。
+ * -     レイヤー移動・変形・描画時の上下反転と座標ズレがこれで完全に解消される。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -54,11 +52,10 @@ export class WebGLEngine extends DrawingEngine {
         }
         this._initBuffers();
         this._setupSuperCompositingBuffer();
-        console.log(`WebGL Engine (v4.6.0 UNIFIED) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.7.0 FINAL FIX) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
-        // ★★★ 修正: シェーダー内のY軸反転処理をすべて削除、シンプル化 ★★★
         const vsCompositor = `
             attribute vec4 a_position; 
             attribute vec2 a_texCoord;
@@ -84,6 +81,8 @@ export class WebGLEngine extends DrawingEngine {
                 vec4 final_color = mix(color_smooth, color_original, u_sharpness);
                 gl_FragColor = vec4(final_color.rgb, final_color.a * u_opacity);
             }`;
+
+        // ★★★ 修正: ブラシ描画シェーダーのY軸反転処理を完全に削除 ★★★
         const vsBrush = `
             precision highp float; attribute vec2 a_position; 
             uniform vec2 u_resolution; uniform vec2 u_center; uniform float u_radius;
@@ -91,9 +90,13 @@ export class WebGLEngine extends DrawingEngine {
             void main() {
                 vec2 quad_size_pixels = vec2(u_radius * 2.0 + 4.0);
                 vec2 quad_size_clip = quad_size_pixels / u_resolution * 2.0;
+                
+                // Y-down座標系（左上原点）を、-1.0〜+1.0のクリップスペースに正規化する
                 vec2 center_clip = (u_center / u_resolution) * 2.0 - 1.0;
-                // Y-down座標系に合わせるため、Y方向のクリップ座標を反転
-                center_clip.y *= -1.0;
+                
+                // Y軸の反転は不要！ 全ての座標系がY-downに統一されたため。
+                // center_clip.y *= -1.0; // ← この行を削除したことが最重要！
+
                 gl_Position = vec4(a_position * quad_size_clip + center_clip, 0.0, 1.0);
                 v_texCoord = a_position + 0.5;
             }`;
@@ -140,9 +143,6 @@ export class WebGLEngine extends DrawingEngine {
         let texture = this.layerTextures.get(layer);
         let fbo = this.layerFBOs.get(layer);
         
-        // ★★★ 修正: Y軸反転設定を完全に削除 ★★★
-        // gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); // ← この行を削除
-
         if (!texture) {
             texture = gl.createTexture();
             this.layerTextures.set(layer, texture);
@@ -212,14 +212,11 @@ export class WebGLEngine extends DrawingEngine {
             gl.blendFuncSeparate(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
         } else {
             gl.blendEquation(gl.FUNC_ADD);
-            // premultiplied alphaの標準的なブレンド設定
             gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
             switch (blendMode) {
-                // 乗算済みアルファ環境での正しいブレンドモード設定
                 case 'multiply': gl.blendFuncSeparate(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); break;
                 case 'screen': gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_COLOR, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); break;
                 case 'add': gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE); break;
-                // 'normal' (source-over) is already set above
             }
         }
     }
@@ -256,7 +253,7 @@ export class WebGLEngine extends DrawingEngine {
     drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize, layer) {
         if (!isFinite(x0) || !isFinite(y0) || !isFinite(x1) || !isFinite(y1)) return;
         const distance = Math.hypot(x1 - x0, y1 - y0);
-        if (distance <= 0) { // 点の場合はdrawCircleを一度だけ呼ぶ
+        if (distance <= 0) {
             const adjustedSize = calculatePressureSize(size, p1);
             this.drawCircle(x1, y1, adjustedSize / 2, color, isEraser, layer);
             return;
@@ -287,12 +284,10 @@ export class WebGLEngine extends DrawingEngine {
         ctx.save();
         ctx.clearRect(0, 0, w, h);
         
-        // 元のImageDataを一時Canvasに描画
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = w; tempCanvas.height = h;
         tempCanvas.getContext('2d').putImageData(sourceImageData, 0, 0);
 
-        // 変形を適用
         const centerX = w / 2; const centerY = h / 2;
         ctx.translate(centerX + transform.x, centerY + transform.y);
         ctx.rotate(transform.rotation * Math.PI / 180);
@@ -344,7 +339,7 @@ export class WebGLEngine extends DrawingEngine {
         const gl = this.gl; const program = this.programs.compositor;
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-        this._setBlendMode('normal'); // 画面への描画は常に通常モード
+        this._setBlendMode('normal');
         gl.useProgram(program);
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
@@ -360,7 +355,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.uniform1f(program.locations.u_sharpness, 0.7);
         
         const projection = glMatrix.mat4.create();
-        // ★★★ 修正: ここもY-down座標系に統一 ★★★
         glMatrix.mat4.ortho(projection, 0, this.width, this.height, 0, -1, 1);
         gl.uniformMatrix4fv(program.locations.u_mvpMatrix, false, projection);
 
@@ -369,26 +363,22 @@ export class WebGLEngine extends DrawingEngine {
         gl.disableVertexAttribArray(program.locations.a_texCoord);
     }
 
-    // ★★★ 修正: Y軸反転と色化けを修正した、より安全で確実な最終版 ★★★
     syncDirtyRectToImageData(layer, dirtyRect) {
         const gl = this.gl;
         const fbo = this.layerFBOs.get(layer);
         if (!fbo || dirtyRect.minX > dirtyRect.maxX) return;
         
-        // 1. スーパーサンプリング解像度でダーティ矩形の範囲を計算
         const sx = Math.floor(dirtyRect.minX * this.SUPER_SAMPLING_FACTOR);
         const sy = Math.floor(dirtyRect.minY * this.SUPER_SAMPLING_FACTOR);
         const sWidth = Math.ceil((dirtyRect.maxX - dirtyRect.minX) * this.SUPER_SAMPLING_FACTOR);
         const sHeight = Math.ceil((dirtyRect.maxY - dirtyRect.minY) * this.SUPER_SAMPLING_FACTOR);
         if (sWidth <= 0 || sHeight <= 0) return;
         
-        // 2. FBOからピクセルデータを読み出す
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const pixelBuffer = new Uint8Array(sWidth * sHeight * 4);
         gl.readPixels(sx, sy, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixelBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-        // 3. 乗算済みアルファをストレートアルファに変換（WebGL形式 → Canvas2D形式）
         for (let i = 0; i < pixelBuffer.length; i += 4) {
             const a = pixelBuffer[i + 3];
             if (a > 0) {
@@ -399,8 +389,6 @@ export class WebGLEngine extends DrawingEngine {
             }
         }
 
-        // 4. 一時的な2Dキャンバスを使って、安全にImageDataを更新する
-        // (手動でのピクセル操作は複雑でバグりやすいため、ブラウザの最適化された機能に任せる)
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = sWidth;
         tempCanvas.height = sHeight;
@@ -408,8 +396,6 @@ export class WebGLEngine extends DrawingEngine {
         const tempData = new ImageData(new Uint8ClampedArray(pixelBuffer), sWidth, sHeight);
         tempCtx.putImageData(tempData, 0, 0);
 
-        // 5. 元レイヤーのImageDataに、高品質にダウンスケールしながら描画する
-        // (OffscreenCanvasが使えるなら、そちらの方がパフォーマンスが良い場合がある)
         const targetImageData = layer.imageData;
         const targetCanvas = document.createElement('canvas');
         targetCanvas.width = targetImageData.width;
@@ -423,11 +409,9 @@ export class WebGLEngine extends DrawingEngine {
         const dWidth = Math.ceil(dirtyRect.maxX - dirtyRect.minX);
         const dHeight = Math.ceil(dirtyRect.maxY - dirtyRect.minY);
         
-        // 描画先の矩形を一度クリアしてから描画することで、不要なアルファ合成を防ぐ
         targetCtx.clearRect(dx, dy, dWidth, dHeight);
         targetCtx.drawImage(tempCanvas, 0, 0, sWidth, sHeight, dx, dy, dWidth, dHeight);
 
-        // 6. 最終結果をレイヤーのImageDataに書き戻す
         layer.imageData = targetCtx.getImageData(0, 0, targetImageData.width, targetImageData.height);
     }
 }
