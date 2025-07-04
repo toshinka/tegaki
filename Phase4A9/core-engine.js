@@ -1,37 +1,124 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.8.0 (Phase4A9 - Non-Destructive Transform)
+ * Version: 2.8.1 (V-Key Transform & Shortcut Fix)
  *
  * - 修正：
- * - 1. 非破壊変形の導入:
- * -   Layerクラスから従来の`transform`プロパティを廃止し、`modelMatrix` (mat4)を導入。
- * -   `transform-utils.js`を全面的に採用し、レイヤーの移動・回転・拡縮を行列操作で完結。
- * -   `start/apply/commitLayerTransform`といった破壊的変形メソッドを廃止。
+ * - 1. Vキーによるレイヤー移動の復活:
+ * -   ShortcutManagerに、Vキーを押しながら矢印キーでアクティブレイヤーを
+ * -   移動させるロジックを追加。
+ * -   Shiftキー併用で高速移動も可能に。
  *
- * - 2. ペン座標のズレを解消:
- * -   描画時に`getLayerCoordinates`ヘルパーを追加。`modelMatrix`の逆行列を使い、
- * -   マウスのワールド座標を変形後のレイヤーのローカル座標へ正確に変換する。
+ * - 2. イベントハンドラの整理:
+ * -   ポインタイベント(onPointerDown)から古いVキー関連の処理を削除。
+ * -   キーボードショートカットの状態管理をShortcutManagerに一元化。
  *
- * - 3. dat.guiによるリアルタイム制御:
- * -   アクティブレイヤーの`modelMatrix`を直接操作できるGUIを導入。
- * -   X/Y座標のスライダーでリアルタイムに表示位置を変更可能。
- * -   レイヤー切り替え時にGUIの値も追従して更新される。
- *
- * - 4. 安定性と保守性の向上:
- * -   座標変換ロジックを`transform-utils.js`に集約し、コードの見通しを改善。
- * -   状態の保存・復元(`save/restoreState`)も`modelMatrix`に対応。
+ * - 3. カーソル表示の修正:
+ * -   updateCursorがShortcutManagerのVキー状態(isVDown)を参照するように変更し、
+ * -   移動モード時にカーソルが正しく'move'に変わるように修正。
  * ===================================================================================
  */
 
 // --- Module Imports ---
 import { TopBarManager, LayerUIManager } from './ui/ui-manager.js';
-import { ShortcutManager } from './ui/shortcut-manager.js';
+import { ShortcutManager as OriginalShortcutManager } from './ui/shortcut-manager.js';
 import { BucketTool } from './tools/toolset.js';
 import { RenderingBridge } from './core/rendering/rendering-bridge.js';
 import * as transformUtils from './core/utils/transform-utils.js';
 
-// --- Core Logic Classes ---
+
+// ★★★★★ 修正: ShortcutManagerをVキー対応版に置き換え ★★★★★
+class ShortcutManager {
+    constructor(app) {
+        this.app = app;
+        this.canvasManager = app.canvasManager;
+        this.layerManager = app.layerManager;
+        this.penSettingsManager = app.penSettingsManager;
+        this.colorManager = app.colorManager;
+        this.isVDown = false; // Vキーの状態を管理
+    }
+
+    initialize() {
+        document.addEventListener('keydown', this.handleKeyDown.bind(this));
+        document.addEventListener('keyup', this.handleKeyUp.bind(this));
+    }
+
+    handleKeyDown(e) {
+        // テキスト入力中などはショートカットを無効化
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+        if (e.key.toLowerCase() === 'v') {
+            this.isVDown = true;
+            this.canvasManager.updateCursor();
+            e.preventDefault();
+        }
+
+        // Vキー押下中のレイヤー移動処理
+        if (this.isVDown) {
+            const activeLayer = this.layerManager.getCurrentLayer();
+            if (activeLayer) {
+                let dx = 0;
+                let dy = 0;
+                const moveAmount = e.shiftKey ? 10 : 1;
+
+                switch (e.key) {
+                    case 'ArrowUp':    dy = -moveAmount; break;
+                    case 'ArrowDown':  dy =  moveAmount; break;
+                    case 'ArrowLeft':  dx = -moveAmount; break;
+                    case 'ArrowRight': dx =  moveAmount; break;
+                }
+
+                if (dx !== 0 || dy !== 0) {
+                    e.preventDefault();
+                    transformUtils.translate(activeLayer.modelMatrix, dx, dy);
+                    this.canvasManager.updateTransformGUI();
+                    this.canvasManager.renderAllLayers();
+                }
+            }
+            return; // Vキー押下中は他のショートカットを無視
+        }
+
+        // --- 既存のショートカット ---
+        if (e.ctrlKey || e.metaKey) {
+            switch (e.key.toLowerCase()) {
+                case 'z': e.preventDefault(); e.shiftKey ? this.canvasManager.redo() : this.canvasManager.undo(); break;
+                case 'y': e.preventDefault(); this.canvasManager.redo(); break;
+            }
+        } else {
+             switch (e.key.toLowerCase()) {
+                case 'p': this.app.toolManager.setTool('pen'); break;
+                case 'e': this.app.toolManager.setTool('eraser'); break;
+                case 'g': this.app.toolManager.setTool('bucket'); break;
+                case 'b': this.app.toolManager.setTool('pen'); break; // Bもブラシとして扱う
+                case 'd': e.preventDefault(); this.colorManager.resetColors(); break;
+                case 'x': e.preventDefault(); this.colorManager.swapColors(); break;
+                case '[': this.penSettingsManager.changeSize(false); break;
+                case ']': this.penSettingsManager.changeSize(true); break;
+                case 'arrowleft': this.colorManager.changeColor(false); break;
+                case 'arrowright': this.colorManager.changeColor(true); break;
+                case 'h': this.canvasManager.flipHorizontal(); break;
+             }
+        }
+
+        if (e.key === ' ' && !this.canvasManager.isSpaceDown) {
+            e.preventDefault();
+            this.canvasManager.isSpaceDown = true;
+            this.canvasManager.updateCursor();
+        }
+    }
+
+    handleKeyUp(e) {
+        if (e.key.toLowerCase() === 'v') {
+            this.isVDown = false;
+            this.canvasManager.updateCursor();
+        }
+        if (e.key === ' ') {
+            this.canvasManager.isSpaceDown = false;
+            this.canvasManager.updateCursor();
+        }
+    }
+}
+
 
 function hexToRgba(hex) {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -50,7 +137,6 @@ class Layer {
         this.opacity = 100;
         this.blendMode = 'normal';
         this.imageData = new ImageData(width, height);
-        // ★★★ 修正: transformプロパティをmodelMatrixに置き換え ★★★
         this.modelMatrix = transformUtils.create(); 
         this.gpuDirty = true;
     }
@@ -86,8 +172,6 @@ class CanvasManager {
         this.compositionData = new ImageData(this.width, this.height);
         this.isDrawing = false; this.isPanning = false; this.isSpaceDown = false;
         
-        // ★★★ 削除: isLayerTransformingなどの古い変形関連フラグは不要に ★★★
-        
         this.currentTool = 'pen';
         this.currentColor = '#800000'; this.currentSize = 1; this.lastPoint = null;
         
@@ -106,7 +190,6 @@ class CanvasManager {
         this.dragStartX = 0; this.dragStartY = 0; this.canvasStartX = 0; this.canvasStartY = 0;
         this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
 
-        // ★★★ 追加: dat.guiのセットアップ ★★★
         this.gui = null;
         this.transformControls = { x: 0, y: 0 };
         this._initDatGUI();
@@ -134,8 +217,7 @@ class CanvasManager {
 
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
-
-        // ★★★ 修正: 座標変換ロジック ★★★
+        
         const localCoords = this.getLayerCoordinates(e, activeLayer);
         if (!localCoords) return;
         
@@ -316,7 +398,6 @@ class CanvasManager {
             y = y * (this.height / rect.height);
             if (this.viewTransform.flipX === -1) { x = this.width - x; }
             if (this.viewTransform.flipY === -1) { y = this.height - y; }
-            // ここではキャンバス外のチェックはしない。レイヤーがはみ出している場合があるため。
             return { x, y };
         } catch (error) {
             console.warn('座標変換エラー:', error);
@@ -324,7 +405,6 @@ class CanvasManager {
         }
     }
 
-    // ★★★ 追加: マウス座標をレイヤーのローカル座標に変換するヘルパー ★★★
     getLayerCoordinates(e, layer) {
         const worldCoords = this.getCanvasCoordinates(e);
         if (!worldCoords) return null;
@@ -335,16 +415,11 @@ class CanvasManager {
         const localX = localCoordsVec2[0];
         const localY = localCoordsVec2[1];
 
-        // 描画範囲外ならnullを返す（描画処理をスキップさせる）
         if (localX < 0 || localX >= this.width || localY < 0 || localY >= this.height) {
              return null;
         }
         return { x: localX, y: localY };
     }
-
-
-    // ★★★ 削除: 古い破壊的変形メソッド群は不要 ★★★
-    // startLayerTransform, applyLayerTransformPreview, commitLayerTransform は削除
 
     saveState() {
         const state = {
@@ -358,7 +433,6 @@ class CanvasManager {
                     layer.imageData.width,
                     layer.imageData.height
                 ),
-                // ★★★ 修正: modelMatrixを保存 ★★★
                 modelMatrix: [...layer.modelMatrix]
             })),
             activeLayerIndex: this.app.layerManager.activeLayerIndex
@@ -375,7 +449,6 @@ class CanvasManager {
             layer.opacity = layerData.opacity ?? 100;
             layer.blendMode = layerData.blendMode ?? 'normal';
             layer.imageData.data.set(layerData.imageData.data);
-            // ★★★ 修正: modelMatrixを復元 ★★★
             if (layerData.modelMatrix) {
                 layer.modelMatrix = new Float32Array(layerData.modelMatrix);
             }
@@ -437,7 +510,24 @@ class CanvasManager {
         link.download = 'merged_image.png';
         link.click();
     }
-    updateCursor() { let cursor = 'crosshair'; if (this.isSpaceDown) cursor = 'grab'; if (this.currentTool === 'eraser') cursor = 'cell'; if (this.currentTool === 'bucket') cursor = 'copy'; this.canvasArea.style.cursor = cursor; }
+    
+    updateCursor() {
+        let cursor = 'crosshair';
+        if (this.app.shortcutManager && this.app.shortcutManager.isVDown) {
+            cursor = 'move';
+        } else if (this.isSpaceDown) {
+            cursor = 'grab';
+        }
+        
+        if (this.currentTool === 'eraser') {
+            cursor = 'cell';
+        } else if (this.currentTool === 'bucket') {
+            cursor = 'copy';
+        }
+        
+        this.canvasArea.style.cursor = cursor;
+    }
+
     applyViewTransform() { const t = this.viewTransform; this.canvasContainer.style.transform = `translate(${t.left}px, ${t.top}px) scale(${t.scale * t.flipX}, ${t.scale * t.flipY}) rotate(${t.rotation}deg)`; }
     flipHorizontal() { this.viewTransform.flipX *= -1; this.applyViewTransform(); }
     flipVertical() { this.viewTransform.flipY *= -1; this.applyViewTransform(); }
@@ -446,7 +536,6 @@ class CanvasManager {
     resetView() { this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 }; this.applyViewTransform(); }
     handleWheel(e) { e.preventDefault(); if (e.shiftKey) { this.rotate(-e.deltaY * 0.2); } else { this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); } }
 
-    // ★★★ 追加: dat.gui関連のメソッド ★★★
     _initDatGUI() {
         if (!window.dat) {
             console.warn("dat.gui library not found.");
@@ -469,8 +558,6 @@ class CanvasManager {
         const newX = (axis === 'x') ? value : currentPos[0];
         const newY = (axis === 'y') ? value : currentPos[1];
         
-        // 既存の行列から回転・スケールを維持しつつ平行移動だけを更新するのは複雑なため、
-        // 平行移動の差分を適用する方式を取る
         transformUtils.updateTranslation(activeLayer.modelMatrix, newX, newY);
         
         this.renderAllLayers();
@@ -489,7 +576,6 @@ class CanvasManager {
     }
 }
 
-// LayerManagerと他のマネージャークラスは変更なし
 class LayerManager { 
     constructor(app) { this.app = app; this.layers = []; this.activeLayerIndex = -1; this.width = 344; this.height = 135; this.mergeCanvas = document.createElement('canvas'); this.mergeCanvas.width = this.width; this.mergeCanvas.height = this.height; this.mergeCtx = this.mergeCanvas.getContext('2d'); } 
     setupInitialLayers() { const bgLayer = new Layer('背景', this.width, this.height); bgLayer.fill('#f0e0d6'); this.layers.push(bgLayer); const drawingLayer = new Layer('レイヤー 1', this.width, this.height); this.layers.push(drawingLayer); this.switchLayer(1); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
@@ -500,16 +586,12 @@ class LayerManager {
         if (index < 0 || index >= this.layers.length) return; 
         this.activeLayerIndex = index; 
         if (this.app.layerUIManager) { this.app.layerUIManager.renderLayers(); } 
-        // ★★★ 追加: レイヤー切り替え時にGUIを更新
         if (this.app.canvasManager) { this.app.canvasManager.updateTransformGUI(); }
     } 
     getCurrentLayer() { return this.layers[this.activeLayerIndex] || null; } 
     duplicateActiveLayer() { const activeLayer = this.getCurrentLayer(); if (!activeLayer) return; const newLayer = new Layer(`${activeLayer.name}のコピー`, this.width, this.height); newLayer.imageData.data.set(activeLayer.imageData.data); newLayer.visible = activeLayer.visible; newLayer.opacity = activeLayer.opacity; newLayer.blendMode = activeLayer.blendMode; newLayer.gpuDirty = true; newLayer.modelMatrix = new Float32Array(activeLayer.modelMatrix); const insertIndex = this.activeLayerIndex + 1; this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
     mergeDownActiveLayer() {
         if (this.activeLayerIndex <= 0) return;
-        // 注意: この結合処理はmodelMatrixを考慮していません。
-        // 正確に結合するには、一度modelMatrixを適用した状態でピクセルを焼き付ける必要があります。
-        // 今回の改修範囲外として、ひとまず既存のロジックのまま残します。
         console.warn("Merge down does not currently account for layer transformations (modelMatrix).");
         const topLayer = this.layers[this.activeLayerIndex];
         const bottomLayer = this.layers[this.activeLayerIndex - 1];

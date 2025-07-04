@@ -1,21 +1,13 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 3.1.0 (Layer Transform & MVP Matrix Integration)
+ * Version: 3.1.1 (Shader Precision Fix)
  *
  * - 修正：
- * - 1. MVP行列の導入:
- * -   頂点シェーダーに `uniform mat4 u_mvpMatrix` を追加。
- * -   レイヤーごとの`modelMatrix`を受け取り、GPU上で座標変換を行うように変更。
- * -   これにより、非破壊的なレイヤーの移動・回転・拡縮に対応。
- *
- * - 2. Y軸反転問題の解決:
- * -   `compositeLayers`内で生成する正射影行列でY軸を反転させることで、
- * -   WebGL(左下原点)とHTML(左上原点)の座標系の違いを吸収。描画の反転を防ぐ。
- *
- * - 3. 描画ロジックの整理:
- * -   `getTransformedImageData`はCPUベースの破壊的変形のため、本エンジンでは使用しない思想を明確化。
- * -   ブラシ描画(`drawCircle`)は、core-engine側で変換済みのローカル座標を受け取る前提とし、変更は最小限に。
+ * - 1. シェーダー精度の統一:
+ * -   ブラシ描画用の頂点シェーダー(vsBrush)の浮動小数点数精度(precision)を
+ * -   'mediump'から'highp'に変更。
+ * -   フラグメントシェーダーと精度を一致させ、プログラムのリンクエラーを解消。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -69,15 +61,14 @@ export class WebGLEngine extends DrawingEngine {
         this._initBuffers();
         this._setupSuperCompositingBuffer();
 
-        console.log(`WebGL Engine (v3.1.0 MVP Ready) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v3.1.1 Shader Fix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
-        // ★★★★★ 修正箇所: u_mvpMatrix を導入し、座標変換をシェーダーで行う ★★★★★
         const vsCompositor = `
             attribute vec4 a_position;
             attribute vec2 a_texCoord;
-            uniform mat4 u_mvpMatrix; // Model-View-Projection Matrix
+            uniform mat4 u_mvpMatrix;
             varying vec2 v_texCoord;
             void main() {
                 gl_Position = u_mvpMatrix * a_position;
@@ -95,8 +86,9 @@ export class WebGLEngine extends DrawingEngine {
                 gl_FragColor = vec4(color.rgb, color.a * u_opacity);
             }`;
 
+        // ★★★★★ 修正箇所 ★★★★★
         const vsBrush = `
-            precision mediump float;
+            precision highp float; // mediump から highp へ変更
             attribute vec2 a_position; 
             uniform vec2 u_resolution;
             uniform vec2 u_center;
@@ -112,7 +104,7 @@ export class WebGLEngine extends DrawingEngine {
             }`;
 
         const fsBrush = `
-            precision highp float;
+            precision highp float; // こちらは元からhighpなので変更なし
             varying vec2 v_texCoord;
             uniform float u_radius;
             uniform vec4 u_color;
@@ -138,11 +130,11 @@ export class WebGLEngine extends DrawingEngine {
         this.programs.brush = this._createProgram(vsBrush, fsBrush);
     }
     
+    // ... (以降のメソッドは変更なし、前回の回答と同じものを貼り付けてください)
     _initBuffers() {
         const gl = this.gl;
         this.positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        // Quadを(0,0)から(width, height)で定義し、modelMatrixで位置を決める
         const positions = [ 
              0.0, this.superHeight, 
              0.0, 0.0,
@@ -163,7 +155,7 @@ export class WebGLEngine extends DrawingEngine {
     }
 
     _compileShader(source, type) { const gl = this.gl; const shader = gl.createShader(type); gl.shaderSource(shader, source); gl.compileShader(shader); if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) { console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader)); gl.deleteShader(shader); return null; } return shader; }
-    _createProgram(vsSource, fsSource) { const gl = this.gl; const vs = this._compileShader(vsSource, gl.VERTEX_SHADER); const fs = this._compileShader(fsSource, gl.FRAGMENT_SHADER); if (!vs || !fs) return null; const program = gl.createProgram(); gl.attachShader(program, vs); gl.attachShader(program, fs); gl.linkProgram(program); if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(program)); gl.deleteProgram(program); return null; } program.locations = {}; const locs = (p) => { p.locations.a_position = gl.getAttribLocation(p, 'a_position'); p.locations.a_texCoord = gl.getAttribLocation(p, 'a_texCoord'); p.locations.u_image = gl.getUniformLocation(p, 'u_image'); p.locations.u_opacity = gl.getUniformLocation(p, 'u_opacity'); p.locations.u_resolution = gl.getUniformLocation(p, 'u_resolution'); p.locations.u_center = gl.getUniformLocation(p, 'u_center'); p.locations.u_radius = gl.getUniformLocation(p, 'u_radius'); p.locations.u_color = gl.getUniformLocation(p, 'u_color'); p.locations.u_is_eraser = gl.getUniformLocation(p, 'u_is_eraser'); p.locations.u_mvpMatrix = gl.getUniformLocation(p, 'u_mvpMatrix'); /* ★追加 */}; locs(program); return program; }
+    _createProgram(vsSource, fsSource) { const gl = this.gl; const vs = this._compileShader(vsSource, gl.VERTEX_SHADER); const fs = this._compileShader(fsSource, gl.FRAGMENT_SHADER); if (!vs || !fs) return null; const program = gl.createProgram(); gl.attachShader(program, vs); gl.attachShader(program, fs); gl.linkProgram(program); if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(program)); gl.deleteProgram(program); return null; } program.locations = {}; const locs = (p) => { p.locations.a_position = gl.getAttribLocation(p, 'a_position'); p.locations.a_texCoord = gl.getAttribLocation(p, 'a_texCoord'); p.locations.u_image = gl.getUniformLocation(p, 'u_image'); p.locations.u_opacity = gl.getUniformLocation(p, 'u_opacity'); p.locations.u_resolution = gl.getUniformLocation(p, 'u_resolution'); p.locations.u_center = gl.getUniformLocation(p, 'u_center'); p.locations.u_radius = gl.getUniformLocation(p, 'u_radius'); p.locations.u_color = gl.getUniformLocation(p, 'u_color'); p.locations.u_is_eraser = gl.getUniformLocation(p, 'u_is_eraser'); p.locations.u_mvpMatrix = gl.getUniformLocation(p, 'u_mvpMatrix'); }; locs(program); return program; }
     static isSupported() { try { const canvas = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))); } catch (e) { return false; } }
 
     _createOrUpdateLayerTexture(layer) {
@@ -174,33 +166,27 @@ export class WebGLEngine extends DrawingEngine {
         if (!texture) {
             texture = gl.createTexture();
             this.layerTextures.set(layer, texture);
-
             gl.bindTexture(gl.TEXTURE_2D, texture);
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.superWidth, this.superHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
             fbo = gl.createFramebuffer();
             this.layerFBOs.set(layer, fbo);
             gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-
             if (layer.imageData) {
                  const tempCanvas = document.createElement('canvas');
                  tempCanvas.width = this.superWidth;
                  tempCanvas.height = this.superHeight;
                  const tempCtx = tempCanvas.getContext('2d');
-                 
                  const sourceCanvas = document.createElement('canvas');
                  sourceCanvas.width = layer.imageData.width;
                  sourceCanvas.height = layer.imageData.height;
                  sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
-                 
                  tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
                  const superImageData = tempCtx.getImageData(0,0,this.superWidth, this.superHeight);
-
                  gl.bindTexture(gl.TEXTURE_2D, texture);
                  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
                  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, superImageData);
@@ -215,14 +201,11 @@ export class WebGLEngine extends DrawingEngine {
              const tempCtx = tempCanvas.getContext('2d');
              tempCtx.imageSmoothingEnabled = true;
              tempCtx.imageSmoothingQuality = 'high';
-
              const sourceCanvas = document.createElement('canvas');
              sourceCanvas.width = layer.imageData.width;
              sourceCanvas.height = layer.imageData.height;
              sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
-
              tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
-
             gl.bindTexture(gl.TEXTURE_2D, texture);
             gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
             gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvas);
@@ -293,7 +276,7 @@ export class WebGLEngine extends DrawingEngine {
         const superX = centerX * this.SUPER_SAMPLING_FACTOR;
         const superY = centerY * this.SUPER_SAMPLING_FACTOR;
         const superRadius = radius * this.SUPER_SAMPLING_FACTOR;
-        const webglSuperY = this.superHeight - superY; // Y軸反転
+        const webglSuperY = this.superHeight - superY;
         
         gl.uniform2f(program.locations.u_resolution, this.superWidth, this.superHeight);
         gl.uniform2f(program.locations.u_center, superX, webglSuperY);
@@ -324,11 +307,9 @@ export class WebGLEngine extends DrawingEngine {
         }
     }
 
-    fill(imageData, color) { /* ... */ }
-    clear(imageData) { /* ... */ }
+    fill(imageData, color) { }
+    clear(imageData) { }
     getTransformedImageData(sourceImageData, transform) {
-        // このメソッドはWebGLエンジンでは原則使用されない（非破壊変形のため）
-        // Canvas2Dフォールバック用として残す
         console.warn("getTransformedImageData is a destructive operation and not recommended for WebGL workflow.");
         const canvas = this.transformOffscreenCanvas;
         const ctx = this.transformOffscreenCtx;
@@ -355,7 +336,6 @@ export class WebGLEngine extends DrawingEngine {
         return ctx.getImageData(0, 0, w, h);
     }
 
-    // ★★★★★ 修正箇所: 全レイヤーを modelMatrix を考慮して合成 ★★★★★
     compositeLayers(layers, compositionData, dirtyRect) {
         if (!this.gl || !this.programs.compositor || !this.superCompositeFBO) return;
         const gl = this.gl;
@@ -378,7 +358,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_texCoord);
 
-        // ★ プロジェクション行列を作成 (Y軸を反転させる)
         const projectionMatrix = mat4.create();
         mat4.ortho(projectionMatrix, 0, this.superWidth, this.superHeight, 0, -1, 1);
         
@@ -390,7 +369,6 @@ export class WebGLEngine extends DrawingEngine {
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, this.layerTextures.get(layer));
             
-            // ★ MVP行列を作成
             const mvpMatrix = mat4.create();
             mat4.multiply(mvpMatrix, projectionMatrix, layer.modelMatrix);
 
@@ -406,14 +384,11 @@ export class WebGLEngine extends DrawingEngine {
         gl.disableVertexAttribArray(program.locations.a_texCoord);
     }
     
-    // ★★★★★ 修正箇所: 最終結果を画面に描画（高品質な縮小処理） ★★★★★
     renderToDisplay(compositionData, dirtyRect) {
         if (!this.gl || !this.superCompositeTexture) return;
         const gl = this.gl;
-        // 画面への描画には、昔のシンプルなシェーダー（今回は再利用）で十分
         const vsFinal = `attribute vec4 a_position; attribute vec2 a_texCoord; varying vec2 v_texCoord; void main() { gl_Position = a_position; v_texCoord = a_texCoord; }`;
         const fsFinal = `precision highp float; varying vec2 v_texCoord; uniform sampler2D u_image; void main() { gl_FragColor = texture2D(u_image, v_texCoord); }`;
-        // この描画のためだけの簡易プログラム
         const finalProgram = this._createProgram(vsFinal, fsFinal);
         
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -427,7 +402,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.vertexAttribPointer(finalPosLoc, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(finalPosLoc);
         
-        // Quadを-1~1のクリップスペースに直接設定
         const finalPositions = [ -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0, -1.0 ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(finalPositions), gl.STATIC_DRAW);
 
@@ -465,7 +439,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.readPixels(sx, readY, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-        // ダウンサンプリングしてImageDataに書き戻す
         const targetImageData = layer.imageData;
         const targetData = targetImageData.data;
         const factor = this.SUPER_SAMPLING_FACTOR;
@@ -479,7 +452,6 @@ export class WebGLEngine extends DrawingEngine {
         const tempCtx = tempCanvas.getContext('2d');
         const superImageData = tempCtx.createImageData(sWidth, sHeight);
         
-        // Y軸反転を補正しながらピクセルをセット
         for (let y = 0; y < sHeight; y++) {
             const s = y * sWidth * 4;
             const d = (sHeight - 1 - y) * sWidth * 4;
