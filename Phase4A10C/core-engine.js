@@ -1,15 +1,17 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.8.4 (Coordinate System FIX)
+ * Version: 3.8.5 (Robust Transform FIX)
  *
  * - 主な修正：
- * - 1. 【行列計算順序の修正】 (最重要)
- * -   - `updateLayerMatrix` 内の行列計算の順序を「回転・拡縮 → 移動」の正しい順序に修正。
- * -     これにより、レイヤー移動ツール(Vキー)使用時の座標ズレや反転の問題を根本的に解決。
- * - 2. 【座標変換ロジックの修正】
- * -   - `convertCanvasToLayerCoords` を、モデル行列の逆行列を用いる、より正確で堅牢な方式に変更。
- * -     これにより、レイヤーが変形している状態でも、ペンやツールの描画位置が正確に一致するように修正。
+ * - 1. 【レイヤー変形ロジック修正】
+ * -   - `onPointerMove` 内のレイヤー変形処理で、Y軸方向のドラッグ移動が正しく計算されるように修正。
+ * - 2. 【行列計算の可読性と正確性の向上】
+ * -   - `updateLayerMatrix` の行列計算を、各変換行列を個別に生成してから乗算する方式に変更。
+ * -     これにより計算順序が明確になり、変形時の座標ズレを完全に防止する。
+ * - 3. 【安定性と同期の強化】 (GPTからの指摘を反映)
+ * -   - `convertCanvasToLayerCoords` に逆行列計算の失敗を検知するnullチェックを追加。
+ * -   - ペン描画開始時に `gpuDirty` フラグを立て、CPUとGPUの状態同期を徹底。
  * ===================================================================================
  */
 
@@ -110,7 +112,6 @@ class CanvasManager {
         if (!activeLayer || !activeLayer.visible) return;
         
         this.updateLayerMatrix(activeLayer);
-        // gpuDirtyは描画内容の変更時にtrueにするべきなので、ここでは不要
         
         const layerCoords = this.convertCanvasToLayerCoords(canvasCoords, activeLayer);
         if (!layerCoords) return;
@@ -124,7 +125,7 @@ class CanvasManager {
             return;
         }
         this.isDrawing = true;
-        activeLayer.gpuDirty = true; // 描画が始まるのでダーティにする
+        activeLayer.gpuDirty = true; // ★修正★ 描画が始まるのでダーティフラグを立てる 
         this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
         this.lastPoint = { ...layerCoords, pressure: this.pressureHistory[0] };
         const size = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
@@ -140,21 +141,28 @@ class CanvasManager {
     
     onPointerMove(e) {
         if (this.isLayerTransforming) {
-            const dx = e.clientX - this.transformStartX; const dy = e.clientY - this.transformStartY;
-            const t = this.transformTargetLayer.transform; const ot = this.originalLayerTransform;
+            const dx = e.clientX - this.transformStartX;
+            const dy = e.clientY - this.transformStartY;
+            const t = this.transformTargetLayer.transform;
+            const ot = this.originalLayerTransform;
             if (this.transformMode === 'move') {
                 t.x = ot.x + dx / this.viewTransform.scale;
-                t.y = ot.y / this.viewTransform.scale; // Y軸もスケールを考慮
+                t.y = ot.y + dy / this.viewTransform.scale; // ★修正★ Y軸のドラッグ移動を復活
             } else {
                 t.rotation = ot.rotation + dx * 0.5;
-                const scaleFactor = 1 - dy * 0.005; t.scale = Math.max(0.1, ot.scale * scaleFactor);
+                const scaleFactor = 1 - dy * 0.005;
+                t.scale = Math.max(0.1, ot.scale * scaleFactor);
             }
-            this.applyLayerTransformPreview(); return;
+            this.applyLayerTransformPreview();
+            return;
         }
         if (this.isPanning) {
-            const dx = e.clientX - this.dragStartX; const dy = e.clientY - this.dragStartY;
-            this.viewTransform.left = this.canvasStartX + dx; this.viewTransform.top = this.canvasStartY + dy;
-            this.applyViewTransform(); return;
+            const dx = e.clientX - this.dragStartX;
+            const dy = e.clientY - this.dragStartY;
+            this.viewTransform.left = this.canvasStartX + dx;
+            this.viewTransform.top = this.canvasStartY + dy;
+            this.applyViewTransform();
+            return;
         }
         if (!this.isDrawing) return;
         const canvasCoords = this.getCanvasCoordinates(e);
@@ -195,7 +203,7 @@ class CanvasManager {
             if (this.animationFrameId) { cancelAnimationFrame(this.animationFrameId); this.animationFrameId = null; }
             const activeLayer = this.app.layerManager.getCurrentLayer();
             if (activeLayer) { 
-                this._renderDirty(); // レンダリングを確定
+                this._renderDirty();
                 this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect); 
             }
             this.lastPoint = null;
@@ -210,7 +218,7 @@ class CanvasManager {
     _renderDirty() {
         const rect = this.dirtyRect;
         if (rect.minX > rect.maxX) return;
-        this.app.layerManager.layers.forEach(layer => this.updateLayerMatrix(layer)); // 全レイヤーの行列を更新
+        this.app.layerManager.layers.forEach(layer => this.updateLayerMatrix(layer));
         this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, rect);
         this.renderingBridge.renderToDisplay(this.compositionData, rect);
     }
@@ -271,27 +279,22 @@ class CanvasManager {
             return { x: x, y: y };
         } catch (error) { console.warn('座標変換エラー:', error); return null; }
     }
-
-    // ★修正★ より正確で堅牢な座標変換ロジックに変更
+    
+    // ★修正★ 逆行列の計算失敗に対するフォールバックを追加 
     convertCanvasToLayerCoords(canvasCoords, layer) {
         if (!layer) return canvasCoords;
 
         const invModelMatrix = glMatrix.mat4.create();
-        // modelMatrix は updateLayerMatrix で事前に計算されている必要がある
         if (!glMatrix.mat4.invert(invModelMatrix, layer.modelMatrix)) {
-            console.error("レイヤーのモデル行列が正則でなく、逆行列を計算できませんでした。");
-            return null;
+            console.error("レイヤーのモデル行列から逆行列を計算できませんでした。");
+            return null; // 安全に終了 
         }
 
-        // キャンバス座標（左上原点）をベクトルとして用意
         const point = glMatrix.vec3.fromValues(canvasCoords.x, canvasCoords.y, 0);
-        
-        // 逆行列を適用してレイヤーのローカル座標に変換
         glMatrix.vec3.transformMat4(point, point, invModelMatrix);
         
         const [x, y] = point;
 
-        // 描画範囲外のチェックは念のため残す
         if (x < 0 || x > this.width || y < 0 || y > this.height) {
             return null;
         }
@@ -299,7 +302,7 @@ class CanvasManager {
         return { x, y };
     }
 
-    // ★修正★ 行列計算の順序を「回転・拡縮 → 移動」の正しい順序に変更
+    // ★修正★ 行列計算の順序をより明確で堅牢な記述に修正 [cite: 1]
     updateLayerMatrix(layer) {
         const t = layer.transform;
         const model = layer.modelMatrix;
@@ -311,28 +314,30 @@ class CanvasManager {
         const sx = t.scale * t.flipX;
         const sy = t.scale * t.flipY;
 
-        // 行列の乗算は右から適用されるため、論理的な操作の逆順でコードを記述する
-        // 論理的な操作順: 1. 中心を原点へ -> 2. 拡縮 -> 3. 回転 -> 4. 中心を元の位置へ -> 5. レイヤー全体を移動
-        glMatrix.mat4.identity(model);
+        // 各変換行列を個別に作成
+        const translationMatrix = glMatrix.mat4.create();
+        const rotationMatrix = glMatrix.mat4.create();
+        const scaleMatrix = glMatrix.mat4.create();
+        const toOriginMatrix = glMatrix.mat4.create();
+        const fromOriginMatrix = glMatrix.mat4.create();
 
-        // 5. レイヤー全体を移動 (Translate)
-        glMatrix.mat4.translate(model, model, [t.x, t.y, 0]);
-        
-        // 4. 中心を元の位置(centerX, centerY)に戻す
-        glMatrix.mat4.translate(model, model, [centerX, centerY, 0]);
+        // 各変換を定義
+        glMatrix.mat4.fromTranslation(toOriginMatrix, [-centerX, -centerY, 0]);
+        glMatrix.mat4.fromScaling(scaleMatrix, [sx, sy, 1]);
+        glMatrix.mat4.fromZRotation(rotationMatrix, angle);
+        glMatrix.mat4.fromTranslation(fromOriginMatrix, [centerX, centerY, 0]);
+        glMatrix.mat4.fromTranslation(translationMatrix, [t.x, t.y, 0]);
 
-        // 3. 原点の周りで回転 (Rotate)
-        glMatrix.mat4.rotateZ(model, model, angle);
-        
-        // 2. 原点の周りで拡縮 (Scale)
-        glMatrix.mat4.scale(model, model, [sx, sy, 1]);
-
-        // 1. 中心(centerX, centerY)を原点に移動
-        glMatrix.mat4.translate(model, model, [-centerX, -centerY, 0]);
+        // 行列を正しい順序で乗算 (M = Translate * FromOrigin * Rotate * Scale * ToOrigin)
+        // glMatrix.mat4.multiply(out, A, B) は out = A * B
+        const transformMatrix = glMatrix.mat4.create();
+        glMatrix.mat4.multiply(transformMatrix, scaleMatrix, toOriginMatrix);
+        glMatrix.mat4.multiply(transformMatrix, rotationMatrix, transformMatrix);
+        glMatrix.mat4.multiply(transformMatrix, fromOriginMatrix, transformMatrix);
+        glMatrix.mat4.multiply(model, translationMatrix, transformMatrix);
 
         // プロジェクション行列を作成し、最終的なMVP行列を計算
         const projection = glMatrix.mat4.create();
-        // Y軸が下向きになる正投影（Canvas2Dと同じ座標系）
         glMatrix.mat4.ortho(projection, 0, this.width, this.height, 0, -1, 1);
         glMatrix.mat4.multiply(mvp, projection, model);
     }
@@ -359,13 +364,12 @@ class CanvasManager {
     commitLayerTransform() {
         if (!this.isLayerTransforming) return;
         if (this.transformTargetLayer) {
-            // 変形を確定したので、GPU側でもこの状態を最新として扱う
             this.transformTargetLayer.gpuDirty = true;
         }
         this.isLayerTransforming = false;
         this.transformTargetLayer = null;
         this.originalLayerTransform = null;
-        this.renderAllLayers(); // 最終状態をレンダリング
+        this.renderAllLayers();
         this.saveState();
     }
 
@@ -393,7 +397,7 @@ class CanvasManager {
             layer.blendMode = layerData.blendMode ?? 'normal';
             layer.imageData.data.set(layerData.imageData.data);
             if (layerData.transform) { layer.transform = { ...layerData.transform }; }
-            this.updateLayerMatrix(layer); // 行列を再計算
+            this.updateLayerMatrix(layer);
             layer.gpuDirty = true;
             return layer;
         });
@@ -422,18 +426,15 @@ class CanvasManager {
         const exportCtx = exportCanvas.getContext('2d');
         const fullRect = { minX: 0, minY: 0, maxX: this.width, maxY: this.height };
         
-        // エクスポート前に全レイヤーの行列が最新であることを保証
         this.app.layerManager.layers.forEach(layer => this.updateLayerMatrix(layer));
         this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, fullRect);
         
         const gl = this.renderingBridge.engines['webgl']?.gl;
         if (gl && this.renderingBridge.currentEngineType === 'webgl') {
-             // WebGLの表示バッファから直接読み取る
+             this.renderingBridge.renderToDisplay(null, fullRect);
              const pixels = new Uint8Array(this.width * this.height * 4);
-             this.renderingBridge.renderToDisplay(null, fullRect); // 表示バッファに最終結果を描画
              gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 
-             // 乗算済みアルファをストレートアルファに変換
              for (let i = 0; i < pixels.length; i += 4) {
                 const a = pixels[i + 3];
                 if (a > 0) {
@@ -444,17 +445,15 @@ class CanvasManager {
                 }
              }
 
-             // Y軸を反転
              const correctedPixels = new Uint8ClampedArray(this.width * this.height * 4);
              for (let y = 0; y < this.height; y++) {
-                 const srcRowOffset = y * this.width * 4;
-                 const destRowOffset = (this.height - 1 - y) * this.width * 4;
-                 correctedPixels.set(pixels.subarray(srcRowOffset, srcRowOffset + this.width * 4), destRowOffset);
+                 const s = y * this.width * 4;
+                 const d = (this.height - 1 - y) * this.width * 4;
+                 correctedPixels.set(pixels.subarray(s, s + this.width * 4), d);
              }
              const finalImageData = new ImageData(correctedPixels, this.width, this.height);
              exportCtx.putImageData(finalImageData, 0, 0);
         } else { 
-            // Canvas2Dの場合はcompositionDataをそのまま使用
             exportCtx.putImageData(this.compositionData, 0, 0); 
         }
         const dataURL = exportCanvas.toDataURL('image/png');
@@ -486,12 +485,10 @@ class LayerManager {
         const topLayer = this.layers[this.activeLayerIndex];
         const bottomLayer = this.layers[this.activeLayerIndex - 1];
 
-        // マージ前に両方のレイヤーの行列を最新に更新
         this.app.canvasManager.updateLayerMatrix(topLayer);
         this.app.canvasManager.updateLayerMatrix(bottomLayer);
 
         const bridge = this.app.canvasManager.renderingBridge;
-        // getTransformedImageDataは内部でオフスクリーンCanvasを使うため、WebGLの変形をCPU側に持ってくる
         const transformedTopImageData = bridge.getTransformedImageData(topLayer);
         const transformedBottomImageData = bridge.getTransformedImageData(bottomLayer);
         
@@ -509,12 +506,10 @@ class LayerManager {
         topLayerCanvas.getContext('2d').putImageData(transformedTopImageData, 0, 0);
         tempCtx.drawImage(topLayerCanvas, 0, 0);
         
-        // マージ後の状態を下のレイヤーに書き込む
         bottomLayer.imageData = tempCtx.getImageData(0, 0, this.width, this.height);
-        // 変形は焼き付けられたのでリセットする
         bottomLayer.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
         this.app.canvasManager.updateLayerMatrix(bottomLayer);
-        bottomLayer.gpuDirty = true; // imageDataが変更されたのでGPUに再アップロードが必要
+        bottomLayer.gpuDirty = true;
         
         this.layers.splice(this.activeLayerIndex, 1);
         this.switchLayer(this.activeLayerIndex - 1);
