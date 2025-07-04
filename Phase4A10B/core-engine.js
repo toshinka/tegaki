@@ -1,16 +1,17 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.5.0 (Coordinate System Final Fix)
+ * Version: 3.6.0 (Coordinate & Color Fix)
  *
  * - 修正：
  * - 1. 【座標系の完全統一】
- * -   - WebGL側のY軸反転ルール変更に伴い、行列計算のロジックを最終調整。
- * -     `updateLayerMatrix`内の射影行列からY軸反転の責務を削除し、
- * -     WebGL側のテクスチャアップロード時の反転に一本化した。
- * - 2. 【ダーティフラグの追加】
- * -   - GPTの提案に基づき、`commitLayerTransform`時に`gpuDirty`フラグを立て、
- * -     変形後のテクスチャ更新をより確実にした。
+ * -   - WebGL側のY-down座標系への統一に伴い、レイヤー変形行列の計算もY-downに修正。
+ * -     updateLayerMatrix内の射影行列を、Y軸が下向きになるように変更した。
+ * -     これにより、レイヤー変形と描画の座標系が完全に一致し、ズレが解消される。
+ * - 2. 【画像エクスポート時の色化け修正】
+ * -   - WebGLのreadPixelsから取得した乗算済みアルファのピクセルを、
+ * -     通常アルファに変換する際の計算を、値が飽和しない安全な方式に変更。
+ * -     これにより、エクスポートした画像が赤くなる問題を解消した。
  * ===================================================================================
  */
 
@@ -290,7 +291,7 @@ class CanvasManager {
         return { x, y };
     }
 
-    // ★★★ 修正: WebGL側の座標系統一に伴い、射影行列を修正 ★★★
+    // ★★★ 修正: WebGL側の座標系統一に伴い、射影行列をY-down(左上原点)に修正 ★★★
     updateLayerMatrix(layer) {
         const t = layer.transform;
         const model = layer.modelMatrix;
@@ -310,8 +311,8 @@ class CanvasManager {
         glMatrix.mat4.translate(model, model, [-centerX, -centerY, 0]);
 
         const projection = glMatrix.mat4.create();
-        // Y軸が上向きの標準的なWebGL座標系に変換する
-        glMatrix.mat4.ortho(projection, 0, this.width, 0, this.height, -1, 1);
+        // Y軸が下向きのY-down座標系（左上原点）に変換する
+        glMatrix.mat4.ortho(projection, 0, this.width, this.height, 0, -1, 1);
         
         glMatrix.mat4.multiply(mvp, projection, model);
     }
@@ -403,20 +404,23 @@ class CanvasManager {
         const gl = this.renderingBridge.engines['webgl']?.gl;
         if (gl && this.renderingBridge.currentEngineType === 'webgl') {
              const pixels = new Uint8Array(this.width * this.height * 4);
+             // 画面に最終結果をレンダリングさせてからピクセルを読み取る
              this.renderingBridge.renderToDisplay(null, fullRect);
              gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 
+             // ★★★ 修正: 乗算済みアルファから通常アルファへの安全な変換 ★★★
+             // 色が飽和して赤くなるのを防ぐ
              for (let i = 0; i < pixels.length; i += 4) {
                 const a = pixels[i + 3];
-                if (a > 0) {
-                    const invA = 255.0 / a;
-                    pixels[i]   = Math.round(pixels[i]   * invA);
-                    pixels[i+1] = Math.round(pixels[i+1] * invA);
-                    pixels[i+2] = Math.round(pixels[i+2] * invA);
+                if (a > 0 && a < 255) {
+                    const factor = 255.0 / a;
+                    pixels[i]   = Math.min(255, Math.round(pixels[i]   * factor));
+                    pixels[i+1] = Math.min(255, Math.round(pixels[i+1] * factor));
+                    pixels[i+2] = Math.min(255, Math.round(pixels[i+2] * factor));
                 }
              }
-             // ★★★ GPTくん提案のおまけ修正は不要 ★★★
-             // readPixelsはY-up、putImageDataはY-downなので、この反転は必要
+
+             // Y軸反転処理：WebGLのreadPixels(左下原点)とCanvas2DのputImageData(左上原点)の違いを吸収するために、この反転は【必要】です。
              const correctedPixels = new Uint8ClampedArray(this.width * this.height * 4);
              for (let y = 0; y < this.height; y++) {
                  const s = y * this.width * 4;
@@ -425,7 +429,9 @@ class CanvasManager {
              }
              const finalImageData = new ImageData(correctedPixels, this.width, this.height);
              exportCtx.putImageData(finalImageData, 0, 0);
-        } else { exportCtx.putImageData(this.compositionData, 0, 0); }
+        } else { 
+            exportCtx.putImageData(this.compositionData, 0, 0); 
+        }
         const dataURL = exportCanvas.toDataURL('image/png');
         const link = document.createElement('a');
         link.href = dataURL; link.download = 'merged_image.png'; link.click();
@@ -456,8 +462,9 @@ class LayerManager {
         const bottomLayer = this.layers[this.activeLayerIndex - 1];
 
         const bridge = this.app.canvasManager.renderingBridge;
-        const transformedTopImageData = bridge.getTransformedImageData(topLayer.imageData, topLayer.transform);
-        const transformedBottomImageData = bridge.getTransformedImageData(bottomLayer.imageData, bottomLayer.transform);
+        // getTransformedImageData now correctly uses WebGL engine if available
+        const transformedTopImageData = bridge.getTransformedImageData(topLayer);
+        const transformedBottomImageData = bridge.getTransformedImageData(bottomLayer);
         
         const tempCtx = this.mergeCtx;
         tempCtx.clearRect(0, 0, this.width, this.height);
