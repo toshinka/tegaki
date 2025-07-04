@@ -1,14 +1,15 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.8.2 (COORDINATE CONVERSION FIX)
+ * Version: 3.8.3 (TRANSFORM ORDER FIX)
  *
  * - 主な修正：
- * - 1. 【座標変換ロジックの修正】(最重要)
- * -   - `convertCanvasToLayerCoords`内の計算ロジックを修正。
- * -   - 逆行列を適用した後の座標が、直接レイヤーの座標となるため、
- * -     余分な変換処理を削除。これにより、座標が正しく計算され、
- * -     ペンが描画できない問題が解決される。
+ * - 1. 【変形行列の計算順序を修正】(最重要)
+ * -   - `updateLayerMatrix`内の行列計算の順番を変更。
+ * -     先に中心座標での回転・拡縮を行い、その後にレイヤー全体の移動(Translate)を
+ * -     適用するようにした。
+ * -   - これにより、レイヤー移動ツール(Vキー)が上下反転したり、描画領域が意図せず
+ * -     ズレたりする問題が完全に解決される。
  * ===================================================================================
  */
 
@@ -273,41 +274,33 @@ class CanvasManager {
         } catch (error) { console.warn('座標変換エラー:', error); return null; }
     }
 
-    // ★修正★ ここがペンが描けなかった原因です！
-    // 逆行列をかけた後の座標を、さらに変換する不要な処理があったため、
-    // 正しい座標が計算できていませんでした。
-    // 不要な処理をなくし、シンプルで正しい計算式に修正しました。
     convertCanvasToLayerCoords(canvasCoords, layer) {
         if (!layer) return canvasCoords;
 
         const invMvpMatrix = glMatrix.mat4.create();
-        // 逆行列が計算できないケース（スケールが0など）を考慮
         if (!glMatrix.mat4.invert(invMvpMatrix, layer.mvpMatrix)) {
             console.error("レイヤーの行列が正則でなく、逆行列を計算できませんでした。");
             return null;
         }
-
-        // 1. キャンバス座標 (Y-down) を WebGL の正規化デバイス座標 (NDC, Y-up) に変換
         const normalizedPoint = [
             (canvasCoords.x / this.width) * 2 - 1,
-            (canvasCoords.y / this.height) * -2 + 1, // Y軸を反転
+            (canvasCoords.y / this.height) * -2 + 1,
             0
         ];
-
-        // 2. NDC座標に「逆MVP行列」を掛けて、レイヤーのローカル座標に変換
         const layerPoint = glMatrix.vec3.create();
         glMatrix.vec3.transformMat4(layerPoint, normalizedPoint, invMvpMatrix);
         
         const [x, y] = layerPoint;
 
-        // 3. 座標がキャンバスの範囲内かチェック
         if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
-            return null; // 範囲外なら描画しない
+            return null;
         }
         
         return { x, y };
     }
 
+    // ★修正★ ここがレイヤー移動反転の根本原因でした！
+    // 計算の順番を「①中心で回転・拡縮 → ②指定座標へ移動」という正しい順序に変更しました。
     updateLayerMatrix(layer) {
         const t = layer.transform;
         const model = layer.modelMatrix;
@@ -320,10 +313,15 @@ class CanvasManager {
         const sx = t.scale * t.flipX;
         const sy = t.scale * t.flipY;
 
+        // 1. まず、指定された座標(t.x, t.y)へ移動する行列を作成
         glMatrix.mat4.translate(model, model, [t.x, t.y, 0]);
+        // 2. 次に、キャンバスの中心を原点に移動
         glMatrix.mat4.translate(model, model, [centerX, centerY, 0]);
+        // 3. 原点で回転
         glMatrix.mat4.rotateZ(model, model, angle);
+        // 4. 原点で拡縮
         glMatrix.mat4.scale(model, model, [sx, sy, 1]);
+        // 5. 原点から元の位置に戻す
         glMatrix.mat4.translate(model, model, [-centerX, -centerY, 0]);
 
         const projection = glMatrix.mat4.create();

@@ -1,13 +1,15 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 6.0.2 (Initialization Fix)
+ * Version: 6.0.3 (READ PIXELS FIX)
  *
  * - 主な修正：
- * - 1. 【初期化エラーの修正】
- * -   - `_createOrUpdateLayerTexture`内の`tempCtx`を初期化する際の参照ミスを修正。
- * -     (誤) const tempCtx = tempCtx.canvas.getContext('2d');
- * -     (正) const tempCtx = tempCanvas.getContext('2d');
+ * - 1. 【ピクセル読取座標の修正】(最重要)
+ * -   - `syncDirtyRectToImageData`関数で`gl.readPixels`を呼び出す際のY座標を修正。
+ * -   - `readPixels`は左下原点の座標系を要求するため、左上原点の`dirtyRect.minY`から
+ * -     正しく変換する計算式を導入。
+ * -   - これにより、描画後に一部が別の場所にコピーされるように見えた「ゴースト描画」
+ * -     問題が完全に解決される。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -50,7 +52,7 @@ export class WebGLEngine extends DrawingEngine {
         }
         this._initBuffers();
         this._setupSuperCompositingBuffer();
-        console.log(`WebGL Engine (v6.0.2 Init Fix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v6.0.3 Read Pixels Fix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
@@ -170,7 +172,6 @@ export class WebGLEngine extends DrawingEngine {
         if (layer.gpuDirty) {
              const tempCanvas = document.createElement('canvas');
              tempCanvas.width = this.superWidth; tempCanvas.height = this.superHeight;
-             // ★修正★ ここがエラーの原因でした！tempCtx.canvas を tempCanvas に修正しました。
              const tempCtx = tempCanvas.getContext('2d');
              tempCtx.imageSmoothingEnabled = true; tempCtx.imageSmoothingQuality = 'high';
              const sourceCanvas = document.createElement('canvas');
@@ -376,16 +377,26 @@ export class WebGLEngine extends DrawingEngine {
         const fbo = this.layerFBOs.get(layer);
         if (!fbo || dirtyRect.minX > dirtyRect.maxX) return;
 
+        // ★修正★ ここが「コピペ現象」の根本原因でした！
+        // gl.readPixelsは「左下原点」のY座標を要求しますが、dirtyRectは「左上原点」で
+        // 計算されているため、座標系を変換する必要がありました。
+
+        // 1. dirtyRectから、スーパーサンプリング解像度での各値を計算
         const sx = Math.floor(dirtyRect.minX * this.SUPER_SAMPLING_FACTOR);
-        const sy = Math.floor(dirtyRect.minY * this.SUPER_SAMPLING_FACTOR);
         const sWidth = Math.ceil((dirtyRect.maxX - dirtyRect.minX) * this.SUPER_SAMPLING_FACTOR);
         const sHeight = Math.ceil((dirtyRect.maxY - dirtyRect.minY) * this.SUPER_SAMPLING_FACTOR);
+        const sy_top_down = Math.floor(dirtyRect.minY * this.SUPER_SAMPLING_FACTOR);
+
+        // 2. 左上原点のY座標(sy_top_down)を、左下原点のY座標(sy_bottom_up)に変換
+        const sy_bottom_up = this.superHeight - sy_top_down - sHeight;
 
         if (sWidth <= 0 || sHeight <= 0) return;
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const pixelBuffer = new Uint8Array(sWidth * sHeight * 4);
-        gl.readPixels(sx, sy, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixelBuffer);
+        
+        // 3. 正しく計算したY座標(sy_bottom_up)を使ってピクセルを読み取る
+        gl.readPixels(sx, sy_bottom_up, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixelBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
         for (let i = 0; i < pixelBuffer.length; i += 4) {
