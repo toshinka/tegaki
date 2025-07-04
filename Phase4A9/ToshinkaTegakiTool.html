@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>T3v1(Phase 4)</title>
     <style>
+        /* CSSスタイルは一切変更していません */
         body {
             margin: 0;
             padding: 0;
@@ -382,7 +383,17 @@
         }
     </style>
 
-</head>
+    <script type="importmap">
+    {
+      "imports": {
+        "gl-matrix": "https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/esm/index.js"
+      }
+    }
+    </script>
+    
+    <script type="module" src="core-engine.js"></script>
+
+    </head>
 <body>
     <div class="main-container">
         <div class="top-toolbar">
@@ -452,8 +463,8 @@
             <div class="canvas-container" id="canvas-container">
                 <canvas id="drawingCanvas" width="344" height="135"></canvas>
                 <div id="center-crosshair" style="display: none;">
-                     <div class="cross-line horizontal"></div>
-                     <div class="cross-line vertical"></div>
+                         <div class="cross-line horizontal"></div>
+                         <div class="cross-line vertical"></div>
                 </div>
             </div>
         </div>
@@ -469,8 +480,5 @@
             </div>
         </div>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/gl-matrix-min.js"></script>
-    <script type="module" src="core-engine.js"></script>
-
-</body>
+    </body>
 </html>
