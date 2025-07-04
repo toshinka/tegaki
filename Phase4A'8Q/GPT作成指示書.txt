@@ -1,10 +1,3 @@
-コーディング初心者なので指示書もGPTに作ってもらいました。
-
-実は実装を別AIで試してました。Phase4A8はペンの動作に関しては満足の行くものに仕上がってます。これがレイヤー移動にもとなるとY軸問題やら移動・コピー後に赤くなるやら…と言った状態です。下記にも書いてあるかと思いますが、当初はhtml内に<script src="https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/gl-matrix-min.js"></script>と記述してましたが、ファイルをコピーして内包するものに変えました。
-
-尚、私はコーディング赤ちゃんなので、全貼り付けできる提出物を望みます(´・ω・`)以下コピペ。
-
-
 【プロジェクトの概要】
 このプロジェクトは、コーディング初心者が無料AI任せでどこまでブラウザお絵描きツールを作れるかを試す長期実験です。
 
@@ -126,3 +119,56 @@ dat.gui によってリアルタイムで調整でき、アクティブレイヤ
 既存のショートカットやUndo/Redo、その他の描画機能は壊さないよう注意してください。
 
 modelMatrix の導入で既存の描画パイプラインを破壊しないよう構造的整合を意識してください。
+
+【追加ルール】
+- レイヤーの modelMatrix に関する操作（平行移動・回転・スケーリング）は core/utils/transform-utils.js に切り出してください。
+- 各種処理（UI・描画前処理など）は transform-utils.js に定義された関数を通じて modelMatrix にアクセスしてください。
+- 将来的なアニメーションや補間機能にも拡張しやすい構造にしてください。
+
+【補足資料】transform-utils.js のテンプレコード
+
+以下のように core/utils/transform-utils.js にユーティリティ関数を定義し、
+レイヤーの変換処理はすべてこのファイル経由で統一してください。
+📦 core/utils/transform-utils.js（テンプレート）
+js
+コピーする
+編集する
+// core/utils/transform-utils.js
+
+// レイヤーの行列処理を集約するユーティリティ
+
+// gl-matrix を使用（HTMLですでに読み込み済み前提）
+export function resetTransform(layer) {
+  if (!layer) return;
+  layer.modelMatrix = mat4.create();
+}
+
+export function applyTranslation(layer, dx, dy) {
+  if (!layer || !layer.modelMatrix) return;
+  mat4.translate(layer.modelMatrix, layer.modelMatrix, [dx, dy, 0]);
+}
+
+export function applyUniformScale(layer, scale) {
+  if (!layer || !layer.modelMatrix) return;
+  mat4.scale(layer.modelMatrix, layer.modelMatrix, [scale, scale, 1]);
+}
+
+export function applyRotation(layer, radian) {
+  if (!layer || !layer.modelMatrix) return;
+  mat4.rotateZ(layer.modelMatrix, layer.modelMatrix, radian);
+}
+
+// 今後の拡張例（アニメーション用補間など）
+// export function interpolateMatrix(out, a, b, t) { ... }
+🧠 補足
+責任分離のため、レイヤーの座標処理は必ずこのユーティリティを通すようにしてください。
+
+今後の transformAnimator.js などの拡張ファイルでも再利用しやすくなります。
+
+使用例（core-engine内など）：
+
+js
+コピーする
+編集する
+import { applyTranslation } from './core/utils/transform-utils.js';
+applyTranslation(activeLayer, 10, -5);
