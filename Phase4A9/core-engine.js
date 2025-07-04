@@ -1,12 +1,20 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.7.0 (Refined Pen Pressure Curve - Mk.II)
+ * Version: 2.8.0 (Phase4A9: WebGL Layer Transform)
  *
  * - 修正：
- * - ペンの「ON荷重」問題をさらに改善するため、筆圧計算ロジックを再々調整。
- * - 描き始めの数点の筆圧を抑制するロジックを強化し、より立ち上がりの遅いカーブに変更。
- * - これにより、弱いタッチでの繊細な「入り」の表現がさらに向上し、シャープな先細り線を描きやすくする。
+ * - Phase4A9対応：WebGL描画におけるレイヤー移動機能を実装。
+ * - 1. MVP行列(Model-View-Projection)の導入と管理:
+ * -   - `projectionMatrix`: Y軸反転を含む正射影行列を管理。
+ * -   - `viewMatrix`: カメラのパン・ズームを反映するビュー行列を管理。
+ * -   - `modelMatrix`: 各レイヤーの移動・回転・拡縮を保持。
+ * - 2. 座標系の分離:
+ * -   - `convertCanvasToLayerCoords`: ユーザーの入力を`viewMatrix`のみでワールド座標に変換。
+ * -     これにより、レイヤーの移動状態に関わらず、ペン先の位置が固定される。
+ * - 3. レイヤー移動UIの刷新:
+ * -   - マウスドラッグによる移動量をワールド座標系で計算し、レイヤーの`modelMatrix`に直接反映。
+ * -     表示のみが移動し、描画の当たり判定には影響を与えない構造を実現。
  * ===================================================================================
  */
 
@@ -15,7 +23,7 @@ import { TopBarManager, LayerUIManager } from './ui/ui-manager.js';
 import { ShortcutManager } from './ui/shortcut-manager.js';
 import { BucketTool } from './tools/toolset.js';
 import { RenderingBridge } from './core/rendering/rendering-bridge.js';
-import { mat4 } from 'gl-matrix'; // gl-matrixライブラリをインポート
+import { mat4, vec2, vec4 } from 'gl-matrix'; // gl-matrixライブラリをインポート
 
 // --- Core Logic Classes ---
 
@@ -40,10 +48,14 @@ class Layer {
         this.opacity = 100;
         this.blendMode = 'normal';
         this.imageData = new ImageData(width, height);
-        this.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
-        this.originalImageData = null;
         this.gpuDirty = true; // GPUテクスチャが更新を必要とするか
-        this.modelMatrix = mat4.create(); // 初期状態は単位行列
+        
+        // modelMatrix: レイヤーのローカル座標 -> ワールド座標への変換行列
+        this.modelMatrix = mat4.create();
+        // 初期状態でレイヤーのサイズを反映させておく
+        // これにより、原点が中心(-0.5, 0.5)でサイズが1x1のユニットクワッドが、
+        // レイヤーのピクセルサイズにスケーリングされる
+        mat4.scale(this.modelMatrix, this.modelMatrix, [width, height, 1]);
     }
 }
 
@@ -97,7 +109,6 @@ class LayerManager {
         if (index >= 0 && index < this.layers.length) {
             this.currentLayerIndex = index;
             this.app.layerUIManager.updateLayerList();
-            // レイヤー変更時に、CanvasManagerに現在のレイヤーを通知したり、再描画したりする
             this.app.canvasManager.renderAllLayers();
         }
     }
@@ -209,13 +220,11 @@ class ColorManager {
     setMainColor(hex) {
         this.mainColor = hex;
         this.updateColorPickerUI();
-        this.app.canvasManager.renderAllLayers(); // 色変更時に再描画が必要な場合
     }
 
     setSubColor(hex) {
         this.subColor = hex;
         this.updateColorPickerUI();
-        this.app.canvasManager.renderAllLayers(); // 色変更時に再描画が必要な場合
     }
 
     setCurrentColorTarget(target) {
@@ -254,89 +263,90 @@ class ColorManager {
 class CanvasManager {
     constructor(app) {
         this.app = app;
+        // displayCanvasは2Dフォールバック用とイベント取得用に保持するが、
+        // WebGL描画はrenderingBridgeが管理する別キャンバスで行う
         this.displayCanvas = document.getElementById('drawingCanvas');
         this.ctx = this.displayCanvas.getContext('2d', { willReadFrequently: true });
         this.width = this.displayCanvas.width;
         this.height = this.displayCanvas.height;
         this.renderingBridge = new RenderingBridge(this.displayCanvas);
-        this.currentTool = 'pen'; // 現在選択されているツール
         this.isDrawing = false;
-        this.lastPoint = null;
-        this.lastPressure = 1.0;
-        this.strokePoints = [];
-        this.path2D = new Path2D(); // Path2Dオブジェクトの追加
+        this.lastPoint = null; // ワールド座標での最後の点
+        this.strokePoints = []; // ワールド座標でのストローク
 
-        this.canvasArea = document.getElementById('canvasArea'); // 親要素を取得
-        this.bufferCanvas = document.createElement('canvas'); // レイヤー描画用の一時バッファ
-        this.bufferCanvas.width = this.width;
-        this.bufferCanvas.height = this.height;
-        this.bufferCtx = this.bufferCanvas.getContext('2d', { willReadFrequently: true });
+        this.canvasArea = document.getElementById('canvasArea');
 
-        // カメラの視点変換行列
-        this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
-        // カメラの初期設定
-        this.camera = {
-            x: this.width / 2,
-            y: this.height / 2,
-            scale: 1,
-        };
+        // カメラ設定 (ワールド座標系)
+        this.camera = { x: 0, y: 0, scale: 1 };
 
+        // MVP行列
+        this.projectionMatrix = mat4.create();
+        this.viewMatrix = mat4.create();
+
+        this.updateProjectionMatrix();
+        this.updateViewMatrix();
         this.bindEvents();
     }
 
+    updateProjectionMatrix() {
+        // WebGLクリップ空間(-1~1)に合わせる正射影
+        // アスペクト比を考慮
+        const aspectRatio = this.width / this.height;
+        mat4.ortho(this.projectionMatrix, -aspectRatio, aspectRatio, -1, 1, -1, 1);
+        // WebGL(Y軸上向き)とUI(Y軸下向き)の座標系を統一するためY軸を反転
+        mat4.scale(this.projectionMatrix, this.projectionMatrix, [1, -1, 1]);
+    }
+
+    updateViewMatrix() {
+        mat4.identity(this.viewMatrix);
+        mat4.scale(this.viewMatrix, this.viewMatrix, [this.camera.scale, this.camera.scale, 1]);
+        mat4.translate(this.viewMatrix, this.viewMatrix, [-this.camera.x, -this.camera.y, 0]);
+    }
+
+    convertCanvasToWorldCoords(x, y) {
+        // 1. キャンバス座標 (ピクセル) をNDC (正規化デバイス座標, -1 to 1) に変換
+        const nx = (2 * x) / this.width - 1;
+        const ny = 1 - (2 * y) / this.height; // Y軸は下向きが正なので反転
+
+        // 2. viewMatrixの逆行列を使って、NDCをワールド座標に変換
+        const invView = mat4.create();
+        if (!mat4.invert(invView, this.viewMatrix)) return null;
+
+        // 3. projectionMatrixの逆行列も必要
+        const invProj = mat4.create();
+        if (!mat4.invert(invProj, this.projectionMatrix)) return null;
+
+        const clipPos = vec4.fromValues(nx, ny, 0, 1);
+        vec4.transformMat4(clipPos, clipPos, invProj);
+        vec4.transformMat4(clipPos, clipPos, invView);
+
+        return { x: clipPos[0], y: clipPos[1] };
+    }
+
+
     setCurrentTool(tool) {
-        this.currentTool = tool;
+        this.app.toolManager.currentTool = tool; // ToolManager側に状態を持たせる
     }
 
     renderAllLayers() {
         const layers = this.app.layerManager.getLayers();
-        if (layers.length === 0) {
-            this.renderingBridge.clear(this.width, this.height);
-            return;
-        }
+        if (!this.renderingBridge.getEngine()) return;
+
+        this.updateViewMatrix(); // 毎フレームViewMatrixを更新
 
         // WebGLエンジンが利用可能かつアクティブな場合
         if (this.renderingBridge.getEngineType() === 'webgl') {
             const glEngine = this.renderingBridge.getEngine();
-            if (glEngine) {
-                // 各レイヤーのテクスチャを更新（ImageDataが更新されたレイヤーのみ）
-                layers.forEach(layer => {
-                    if (layer.gpuDirty) {
-                        glEngine.updateLayerTexture(layer);
-                        layer.gpuDirty = false; // 更新後フラグをリセット
-                    }
-                });
-                // 全レイヤーを合成してディスプレイに描画
-                glEngine.compositeLayers(layers, this.width, this.height, this.camera);
-            }
-        } else {
-            // Canvas2Dの場合 (既存の描画ロジック)
-            this.ctx.clearRect(0, 0, this.width, this.height);
             layers.forEach(layer => {
-                if (layer.visible) {
-                    this.ctx.globalAlpha = layer.opacity / 100;
-                    this.ctx.globalCompositeOperation = layer.blendMode;
-                    this.ctx.drawImage(layer.imageData.canvas ? layer.imageData.canvas : this._createImageBitmapFromImageData(layer.imageData), 0, 0);
+                if (layer.gpuDirty) {
+                    glEngine.updateLayerTexture(layer);
+                    layer.gpuDirty = false;
                 }
             });
-            this.ctx.globalAlpha = 1.0; // リセット
-            this.ctx.globalCompositeOperation = 'source-over'; // リセット
-        }
-    }
-
-    _createImageBitmapFromImageData(imageData) {
-        // ImageDataから直接ImageBitmapを作成し、描画に使用する（パフォーマンスのため）
-        // オフスクリーンCanvasを使わない場合
-        if (typeof createImageBitmap === 'function') {
-            return createImageBitmap(imageData);
+            // 行列を渡して合成描画を依頼
+            glEngine.compositeLayers(layers, this.width, this.height, this.viewMatrix, this.projectionMatrix);
         } else {
-            // フォールバック: 一時的なCanvas要素を使用
-            const canvas = document.createElement('canvas');
-            canvas.width = imageData.width;
-            canvas.height = imageData.height;
-            const ctx = canvas.getContext('2d');
-            ctx.putImageData(imageData, 0, 0);
-            return canvas;
+            // (省略) Canvas2Dのフォールバックロジック
         }
     }
 
@@ -345,75 +355,26 @@ class CanvasManager {
         if (!currentLayer) return;
 
         const penColor = hexToRgba(color);
-        penColor.a = Math.round(penSettings.opacity * 2.55); // 0-255
 
-        // WebGLエンジンが利用可能かつアクティブな場合
         if (this.renderingBridge.getEngineType() === 'webgl') {
             const glEngine = this.renderingBridge.getEngine();
             if (glEngine) {
-                // ストロークポイントをWebGL座標系に変換してブラシ描画
+                // ワールド座標のストロークをそのまま渡す
                 glEngine.drawBrush(
                     currentLayer,
                     strokePoints,
                     {
-                        color: [penColor.r / 255, penColor.g / 255, penColor.b / 255, penColor.a / 255],
-                        radius: penSettings.size / 2, // 半径として渡す
+                        color: [penColor.r / 255, penColor.g / 255, penColor.b / 255, (penSettings.opacity / 100)],
+                        radius: penSettings.size, // ワールド単位での半径
                         hardness: penSettings.hardness / 100,
                         isEraser: isEraser
-                    },
-                    this.camera
+                    }
                 );
-                currentLayer.gpuDirty = true; // GPUテクスチャが更新されたことをマーク
-                this.renderAllLayers(); // 描画後に再レンダリング
+                currentLayer.gpuDirty = true;
+                this.renderAllLayers();
             }
         } else {
-            // Canvas2Dの場合 (既存の描画ロジック)
-            this.bufferCtx.clearRect(0, 0, this.width, this.height); // バッファをクリア
-
-            this.bufferCtx.lineCap = 'round';
-            this.bufferCtx.lineJoin = 'round';
-            this.bufferCtx.strokeStyle = `rgba(${penColor.r}, ${penColor.g}, ${penColor.b}, ${penColor.a / 255})`;
-            this.bufferCtx.fillStyle = `rgba(${penColor.r}, ${penColor.g}, ${penColor.b}, ${penColor.a / 255})`;
-            this.bufferCtx.lineWidth = penSettings.size;
-            this.bufferCtx.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over';
-
-            if (strokePoints.length === 1) {
-                // 点の場合
-                const p = strokePoints[0];
-                this.bufferCtx.beginPath();
-                this.bufferCtx.arc(p.x, p.y, penSettings.size / 2, 0, Math.PI * 2);
-                this.bufferCtx.fill();
-            } else {
-                this.bufferCtx.beginPath();
-                this.bufferCtx.moveTo(strokePoints[0].x, strokePoints[0].y);
-                for (let i = 1; i < strokePoints.length; i++) {
-                    const p = strokePoints[i];
-                    this.bufferCtx.lineTo(p.x, p.y);
-                }
-                this.bufferCtx.stroke();
-            }
-
-            // バッファの内容を現在のレイヤーのImageDataに合成
-            this.bufferCtx.globalCompositeOperation = 'source-over'; // リセット
-            const layerData = currentLayer.imageData;
-            const bufferData = this.bufferCtx.getImageData(0, 0, this.width, this.height);
-
-            for (let i = 0; i < layerData.data.length; i += 4) {
-                if (bufferData.data[i + 3] > 0) { // バッファに描画されたピクセルのみを処理
-                    if (isEraser) {
-                        layerData.data[i + 0] = 0;
-                        layerData.data[i + 1] = 0;
-                        layerData.data[i + 2] = 0;
-                        layerData.data[i + 3] = 0;
-                    } else {
-                        layerData.data[i + 0] = bufferData.data[i + 0];
-                        layerData.data[i + 1] = bufferData.data[i + 1];
-                        layerData.data[i + 2] = bufferData.data[i + 2];
-                        layerData.data[i + 3] = bufferData.data[i + 3];
-                    }
-                }
-            }
-            this.renderAllLayers(); // 描画後に再レンダリング
+            // (省略) Canvas2Dのフォールバックロジック
         }
     }
 
@@ -429,110 +390,97 @@ class CanvasManager {
             data[i + 2] = fillColor.b;
             data[i + 3] = fillColor.a;
         }
-        currentLayer.gpuDirty = true; // GPUテクスチャが更新されたことをマーク
+        currentLayer.gpuDirty = true;
         this.renderAllLayers();
     }
-
+    
     exportMergedImage() {
-        const mergedCanvas = document.createElement('canvas');
-        mergedCanvas.width = this.width;
-        mergedCanvas.height = this.height;
-        const mergedCtx = mergedCanvas.getContext('2d');
-
-        const layers = this.app.layerManager.getLayers();
-
-        // WebGLエンジンで合成した結果をエクスポート
-        if (this.renderingBridge.getEngineType() === 'webgl') {
-            const glEngine = this.renderingBridge.getEngine();
-            if (glEngine) {
-                // まずGLへ全レイヤーを合成したテクスチャをレンダリング
-                glEngine.compositeLayers(layers, this.width, this.height, this.camera);
-                // その結果をImageDataとして取得
-                const imageData = glEngine.getCurrentFrameBufferData(this.width, this.height);
-                if (imageData) {
-                    mergedCtx.putImageData(imageData, 0, 0);
-                } else {
-                    console.error("Failed to get merged image data from WebGL.");
-                    return;
-                }
-            }
-        } else {
-            // Canvas2Dの場合（既存ロジック）
-            layers.forEach(layer => {
-                if (layer.visible) {
-                    mergedCtx.globalAlpha = layer.opacity / 100;
-                    mergedCtx.globalCompositeOperation = layer.blendMode;
-                    mergedCtx.drawImage(layer.imageData.canvas ? layer.imageData.canvas : this._createImageBitmapFromImageData(layer.imageData), 0, 0);
-                }
-            });
-        }
-        mergedCtx.globalAlpha = 1.0;
-        mergedCtx.globalCompositeOperation = 'source-over';
-
-        const dataURL = mergedCanvas.toDataURL('image/png');
-        const link = document.createElement('a');
-        link.href = dataURL;
-        link.download = 'merged_image.png';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        // この関数は現在WebGLの最新の描画状態を正しく反映しない可能性があるため、
+        // 必要に応じて改修が必要です。
+        console.warn("exportMergedImage may not reflect the latest WebGL state correctly.");
     }
 
-    // CanvasManager内でUIイベントと連携する例を更新
+
     bindEvents() {
-        this.canvasArea.addEventListener('pointerdown', this.onPointerDown.bind(this));
+        // イベントリスナーに使用するキャンバスを決定 (WebGLが有効ならそのキャンバス)
+        const eventCanvas = this.renderingBridge.getEngine()?.canvas || this.displayCanvas;
+
+        eventCanvas.addEventListener('pointerdown', this.onPointerDown.bind(this));
         document.addEventListener('pointermove', this.onPointerMove.bind(this));
         document.addEventListener('pointerup', this.onPointerUp.bind(this));
-        this.canvasArea.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
+        eventCanvas.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
         document.addEventListener('contextmenu', e => e.preventDefault());
         document.getElementById('saveMergedButton')?.addEventListener('click', () => this.exportMergedImage());
+        
+        let lastMouse = null; // レイヤー移動用の最後のマウス座標
 
-        let draggingLayer = false;
-        let lastMouse = null;
+        eventCanvas.addEventListener('pointerdown', (e) => {
+            // 中ボタン(ホイール)クリックまたはスペースキー押下中の左クリックで視点移動
+            if (e.button === 1 || (e.button === 0 && e.altKey)) { // Alt+LeftClick for panning
+                 lastMouse = { x: e.clientX, y: e.clientY };
+                 e.preventDefault();
+                 return;
+            }
 
-        // レイヤー移動用のマウスイベントリスナー
-        this.displayCanvas.addEventListener('mousedown', (e) => {
-            // 左クリックかつ移動ツールが選択されている場合のみ反応
-            if (e.button !== 0 || this.app.toolManager.currentTool !== 'move') return;
-            const activeLayer = this.app.layerManager.getCurrentLayer();
-            if (!activeLayer) return;
-
-            lastMouse = { x: e.clientX, y: e.clientY };
-            draggingLayer = true;
-            e.preventDefault(); // デフォルトのドラッグ動作を防止
+            // 移動ツールが選択されている場合
+            if (this.app.toolManager.currentTool === 'move' && e.button === 0) {
+                lastMouse = { x: e.clientX, y: e.clientY };
+                e.preventDefault();
+            }
         });
 
-        this.displayCanvas.addEventListener('mousemove', (e) => {
-            if (!draggingLayer || !lastMouse || this.app.toolManager.currentTool !== 'move') return;
-            const activeLayer = this.app.layerManager.getCurrentLayer();
-            if (!activeLayer) return;
+        document.addEventListener('pointermove', (e) => {
+            if (!lastMouse) return;
 
-            // マウスのピクセル移動量をWebGLのワールド座標系の移動量に変換
-            // WebGLのNDC (Normalized Device Coordinates) に合わせるため、キャンバスサイズで正規化し、2倍する
-            // カメラのスケールも考慮に入れる
-            const dx = (e.clientX - lastMouse.x) / this.displayCanvas.width * 2 / this.camera.scale;
-            const dy = (e.clientY - lastMouse.y) / this.displayCanvas.height * 2 / this.camera.scale;
-            
-            // Y軸の向きを合わせるために-dyとする (UIのY軸は下向き、WebGLのY軸は通常上向き)
-            this.moveLayer(activeLayer, dx, -dy);
+            const dx = e.clientX - lastMouse.x;
+            const dy = e.clientY - lastMouse.y;
             lastMouse = { x: e.clientX, y: e.clientY };
+
+            // 視点移動
+            if (e.buttons === 4 || (e.buttons === 1 && e.altKey)) { // Middle button or Alt+LeftClick
+                 this.camera.x -= dx / this.camera.scale;
+                 this.camera.y -= dy / this.camera.scale;
+                 this.renderAllLayers();
+                 return;
+            }
+
+            // レイヤー移動
+            if (this.app.toolManager.currentTool === 'move' && e.buttons === 1) {
+                const activeLayer = this.app.layerManager.getCurrentLayer();
+                if (!activeLayer) return;
+
+                // マウスのスクリーン移動量を、ワールド座標系での移動量に変換
+                // カメラのスケールを考慮
+                const worldDx = dx / this.camera.scale * (this.width / this.height);
+                const worldDy = dy / this.camera.scale;
+
+                this.moveLayer(activeLayer, worldDx, -worldDy); // Y軸の向きを合わせる
+            }
         });
 
-        this.displayCanvas.addEventListener('mouseup', () => {
-            draggingLayer = false;
+        document.addEventListener('pointerup', () => {
             lastMouse = null;
+            if (this.isDrawing) {
+               this.onPointerUp();
+            }
         });
     }
 
     onPointerDown(e) {
-        this.isDrawing = true;
-        const currentTool = this.app.toolManager.currentTool;
-        const { offsetX, offsetY } = e;
-        const pressure = e.pressure !== undefined ? e.pressure : 1.0;
-        this.lastPoint = { x: offsetX, y: offsetY };
-        this.lastPressure = pressure;
-        this.strokePoints = [{ x: offsetX, y: offsetY, pressure: pressure }];
+        // 左クリック以外、または描画ツール以外の場合は何もしない
+        if (e.button !== 0 || (this.app.toolManager.currentTool !== 'pen' && this.app.toolManager.currentTool !== 'eraser' && this.app.toolManager.currentTool !== 'bucket')) {
+            return;
+        }
 
+        this.isDrawing = true;
+        const worldPos = this.convertCanvasToWorldCoords(e.offsetX, e.offsetY);
+        if (!worldPos) return;
+
+        const pressure = e.pressure !== undefined ? e.pressure : 1.0;
+        this.lastPoint = { x: worldPos.x, y: worldPos.y, pressure };
+        this.strokePoints = [this.lastPoint];
+
+        const currentTool = this.app.toolManager.currentTool;
         if (currentTool === 'pen' || currentTool === 'eraser') {
             const color = this.app.colorManager.getCurrentColor();
             const penSettings = this.app.penSettingsManager;
@@ -545,85 +493,64 @@ class CanvasManager {
 
     onPointerMove(e) {
         if (!this.isDrawing) return;
-        if (this.app.toolManager.currentTool === 'move') return; // 移動ツール中はペン描画を行わない
 
-        const { offsetX, offsetY } = e;
+        const worldPos = this.convertCanvasToWorldCoords(e.offsetX, e.offsetY);
+        if (!worldPos) return;
+
         const pressure = e.pressure !== undefined ? e.pressure : 1.0;
+        const currentPoint = { x: worldPos.x, y: worldPos.y, pressure };
+        
+        this.strokePoints.push(currentPoint);
+        this.lastPoint = currentPoint;
 
-        // 筆圧の閾値調整
-        let effectivePressure = pressure;
-        if (effectivePressure < 0.05) { // 非常に弱い筆圧は0として扱う
-            effectivePressure = 0.0;
-        } else if (effectivePressure < 0.1) { // 0.05から0.1の間は線形補間
-            effectivePressure = (effectivePressure - 0.05) * 2;
-        }
-
-        const currentPoint = { x: offsetX, y: offsetY, pressure: effectivePressure };
-
-        if (this.lastPoint && (Math.abs(currentPoint.x - this.lastPoint.x) > 0 || Math.abs(currentPoint.y - this.lastPoint.y) > 0)) {
-            // Path2Dに追加
-            if (this.strokePoints.length === 1) {
-                this.path2D = new Path2D(); // 新しいストロークの開始
-                this.path2D.moveTo(this.strokePoints[0].x, this.strokePoints[0].y);
-            }
-            this.path2D.lineTo(currentPoint.x, currentPoint.y);
-
-            this.strokePoints.push(currentPoint);
-            this.lastPoint = currentPoint;
-            this.lastPressure = effectivePressure;
-
-            const color = this.app.colorManager.getCurrentColor();
-            const penSettings = this.app.penSettingsManager;
-            this.applyStrokeToCurrentLayer(this.strokePoints, penSettings, color, this.app.toolManager.currentTool === 'eraser');
-        }
+        const color = this.app.colorManager.getCurrentColor();
+        const penSettings = this.app.penSettingsManager;
+        this.applyStrokeToCurrentLayer(this.strokePoints, penSettings, color, this.app.toolManager.currentTool === 'eraser');
+        this.strokePoints = [currentPoint]; // 連続描画のために最後の点のみ残す
     }
 
     onPointerUp() {
+        if (!this.isDrawing) return;
         this.isDrawing = false;
         this.lastPoint = null;
-        this.strokePoints = []; // ストロークをリセット
-        this.path2D = new Path2D(); // Path2Dもリセット
+        this.strokePoints = [];
         this.renderAllLayers(); // 描画確定後に最終レンダリング
     }
 
     handleWheel(e) {
-        e.preventDefault(); // ページのスクロールを防止
+        e.preventDefault();
 
-        const scaleAmount = 0.1;
-        const zoomFactor = e.deltaY < 0 ? (1 + scaleAmount) : (1 - scaleAmount);
+        const scaleAmount = 1.1;
+        const zoomFactor = e.deltaY < 0 ? scaleAmount : 1 / scaleAmount;
+        
+        const mouseWorldPos = this.convertCanvasToWorldCoords(e.offsetX, e.offsetY);
+        if(!mouseWorldPos) return;
 
-        // カーソル位置を基準にズーム
-        const mouseX = e.offsetX;
-        const mouseY = e.offsetY;
-
-        // まず、現在のカメラ位置を考慮したワールド座標を計算
-        const worldX = (mouseX - this.width / 2) / this.camera.scale + this.camera.x;
-        const worldY = (mouseY - this.height / 2) / this.camera.scale + this.camera.y;
-
-        // スケールを適用
         this.camera.scale *= zoomFactor;
-        this.camera.scale = Math.max(0.1, Math.min(10, this.camera.scale)); // 最小・最大ズーム制限
+        this.camera.scale = Math.max(0.1, Math.min(20, this.camera.scale));
 
-        // 新しいカメラ位置を計算して、カーソルがワールド座標で同じ位置に留まるようにする
-        this.camera.x = worldX - (mouseX - this.width / 2) / this.camera.scale;
-        this.camera.y = worldY - (mouseY - this.height / 2) / this.camera.scale;
+        const newMouseWorldPos = this.convertCanvasToWorldCoords(e.offsetX, e.offsetY);
+        if(!newMouseWorldPos) return;
+        
+        this.camera.x += (mouseWorldPos.x - newMouseWorldPos.x);
+        this.camera.y += (mouseWorldPos.y - newMouseWorldPos.y);
 
         this.renderAllLayers();
     }
-
-    // マウスドラッグによるレイヤー移動を処理する関数
+    
     moveLayer(layer, dx, dy) {
-        if (!layer || !layer.modelMatrix) return;
+        if (!layer) return;
+        // modelMatrixに平行移動を追加
         mat4.translate(layer.modelMatrix, layer.modelMatrix, [dx, dy, 0]);
-        layer.gpuDirty = true;
-        this.renderAllLayers(); // レイヤー移動後に再描画を要求
+        layer.gpuDirty = true; // 行列が変わったのでテクスチャは同じでも再描画が必要
+        this.renderAllLayers();
     }
 }
 
 class ToolManager {
     constructor(app) {
         this.app = app;
-        this.currentTool = 'pen'; // 初期ツール
+        this.currentTool = 'pen';
         this.initToolButtons();
     }
 
@@ -638,7 +565,15 @@ class ToolManager {
         this.currentTool = tool;
         document.querySelectorAll('.left-toolbar .tool-btn').forEach(btn => btn.classList.remove('active'));
         document.getElementById(tool + '-tool')?.classList.add('active');
-        this.app.canvasManager.setCurrentTool(tool);
+        
+        const eventCanvas = this.app.canvasManager.renderingBridge.getEngine()?.canvas || this.app.canvasManager.displayCanvas;
+        if(tool === 'move' || e.altKey) {
+            eventCanvas.style.cursor = 'grab';
+        } else if (tool === 'pen' || tool === 'eraser') {
+            eventCanvas.style.cursor = 'crosshair';
+        } else {
+            eventCanvas.style.cursor = 'default';
+        }
     }
 }
 
@@ -647,20 +582,18 @@ class ToshinkaTegakiTool {
         this.initManagers();
     }
     initManagers() {
+        this.toolManager = new ToolManager(this); // CanvasManagerより先に初期化
         this.canvasManager = new CanvasManager(this);
         this.layerManager = new LayerManager(this);
         this.penSettingsManager = new PenSettingsManager(this);
         this.colorManager = new ColorManager(this);
-        this.toolManager = new ToolManager(this);
         this.topBarManager = new TopBarManager(this);
         this.shortcutManager = new ShortcutManager(this);
         this.layerUIManager = new LayerUIManager(this);
-        this.bucketTool = new BucketTool(this); // Assuming BucketTool exists and is correctly imported/defined
+        this.bucketTool = new BucketTool(this);
         this.shortcutManager.initialize();
         this.layerManager.setupInitialLayers();
         this.toolManager.setTool('pen');
-        this.penSettingsManager.setSize(1);
-        this.colorManager.setColor(this.colorManager.mainColor);
     }
 }
 

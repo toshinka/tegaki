@@ -1,12 +1,12 @@
 現在（Phase 4A実装中）のファイルツリー
 
-core-engine.js（Phase4A'9）    ⇐----　ToshinkaTegakiTool.html（Phase4A'8）
+core-engine.js（Phase4A'8）    ⇐----　ToshinkaTegakiTool.html（Phase4A'8）
 │  　　　　　　　　　　　　《htmlはイグニッションとバーアイコンレイアウト担当》
 ├core/             
 │├ rendering/              
 ││  ├── drawing-engine.js    <-- （Phase4A'7）
 ││  ├── canvas2d-engine.js   <-- （Phase4A'7）
-││  ├── webgl-engine.js      <-- （Phase4A9）
+││  ├── webgl-engine.js      <-- （Phase4A'8）
 ││  ├── webgpu-engine.js     //  （仮空ファイル）
 ││  ├── rendering-bridge.js  <-- （Phase4A'7）
 ││  ├── shader-programs/     // シェーダー管理（仮空ファイル）

@@ -201,3 +201,125 @@ UI側でレイヤーを選択・ハイライトする処理
 
 MVP合成を含む getLayerMVP() ユーティリティ関数
 
+
+※下記は別のGEMINIが上記改修でキャンバスが出ない等のミスが多かったため、再度GPTに作り直してもらった指示書
+
+🛠 GEMINI向け指示書：Phase4A'8Q → Phase4A9 強化改修版
+（前回の失敗を教訓とした、行列構造と役割の徹底分離）
+
+🎯 目標
+WebGLによる**正しいMVP描画（Model × View × Projection）**を導入
+
+**レイヤーの見た目の変形（modelMatrix）とペン座標判定（viewMatrix）**を完全に分離
+
+Y軸反転補正を projectionMatrix に含めて、UI座標系と一致させる
+
+最終的に 「レイヤーだけが動く」「描画座標はズレない」 を実現
+
+📌 前回のGEMINIの主な誤り（教訓）
+誤り	教訓
+modelMatrix をペン座標変換に使ってしまった	描画の見た目だけに使うこと。入力には使わない。
+shaderのuniformやattribの管理が曖昧だった	GLSLとJSのバインドを明示し、名前を統一すること
+MVP順序が不定だった	必ず projection × view × model の順に合成すること
+viewMatrix の更新を忘れていた	毎フレーム updateViewMatrix() を呼ぶ必要あり
+mat4.invert() の失敗チェック不足	invert に失敗した場合は null や early return で安全に止める
+
+✅ 実装要点（必ず満たすべき要件）
+1. 座標系の責務分離
+行列	用途	更新頻度
+projectionMatrix	WebGLの標準正射影。Y軸反転込み。	初期化時に1回
+viewMatrix	カメラによるパン・ズーム	毎描画前に更新
+modelMatrix	各レイヤーの表示上の移動・回転・拡縮	レイヤー操作時に個別更新
+
+2. convertCanvasToLayerCoords(x, y) の仕様
+js
+コピーする
+編集する
+// 入力 → GL座標（-1〜1）→ viewMatrixの逆行列で変換 → world座標
+function convertCanvasToLayerCoords(x, y) {
+  const nx = (2 * x) / canvas.width - 1;
+  const ny = 1 - (2 * y) / canvas.height;
+  const invView = mat4.create();
+  if (!mat4.invert(invView, viewMatrix)) return null;
+
+  const clipPos = vec4.fromValues(nx, ny, 0, 1);
+  vec4.transformMat4(clipPos, clipPos, invView);
+  return { x: clipPos[0], y: clipPos[1] };
+}
+🔴 modelMatrix は 絶対に使わないこと！
+👉 これにより描画と当たり判定がズレない
+
+3. MVP行列の構築と描画呼び出し
+js
+コピーする
+編集する
+const mvpMatrix = mat4.create();
+mat4.multiply(mvpMatrix, projectionMatrix, viewMatrix);
+mat4.multiply(mvpMatrix, mvpMatrix, layer.modelMatrix);
+
+drawLayerToFramebuffer(layer, mvpMatrix);
+4. Shaderとの明示的バインド（JS側）
+js
+コピーする
+編集する
+shaderProgram.attribs = {
+  a_position: gl.getAttribLocation(program, "a_position"),
+  a_texCoord: gl.getAttribLocation(program, "a_texCoord"),
+};
+
+shaderProgram.uniforms = {
+  u_mvpMatrix: gl.getUniformLocation(program, "u_mvpMatrix"),
+  u_texture: gl.getUniformLocation(program, "u_texture"),
+};
+5. GLSL側のコード（固定）
+頂点シェーダー
+glsl
+コピーする
+編集する
+attribute vec2 a_position;
+attribute vec2 a_texCoord;
+uniform mat4 u_mvpMatrix;
+varying vec2 v_texCoord;
+
+void main() {
+  gl_Position = u_mvpMatrix * vec4(a_position, 0.0, 1.0);
+  v_texCoord = a_texCoord;
+}
+フラグメントシェーダー
+glsl
+コピーする
+編集する
+precision mediump float;
+uniform sampler2D u_texture;
+varying vec2 v_texCoord;
+
+void main() {
+  gl_FragColor = texture2D(u_texture, v_texCoord);
+}
+🧪 テスト項目
+ ペンで描いた位置がズレず、固定されている
+
+ レイヤーだけが見た目上で移動する
+
+ Y軸反転のせいで上下がズレたりしていない
+
+ projection × view × model の順で描画されている
+
+ UIドラッグで modelMatrix に反映されている
+
+📎 ファイル構成例（Phase4A9）
+bash
+コピーする
+編集する
+/core-engine.js              → camera / viewMatrix /座標変換
+/core/rendering/rendering-bridge.js  → MVP合成と描画ルーティング
+/core/rendering/webgl-engine.js     → shaderとGL描画の実行
+📌 備考・重要
+これらの行列は毎フレーム再計算してよい前提で書くこと
+
+書き込み (drawToLayer) と表示 (compositeLayers) の区別を今後行う場合にも、この構造が安定して活きる
+
+以上を満たすように Phase4A'8Q → Phase4A9 の改修を実施してください。
+前回の改修ではこの構造が一部破綻していたため、再構築するつもりで取り組んでください。
+
+

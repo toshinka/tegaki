@@ -1,10 +1,11 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Rendering Bridge (Dynamic Switching)
- * Version: 2.3.0 (Phase 4A'-7 GPU Drawing Prep)
+ * Version: 2.4.0 (Phase4A9 MVP Bridge)
  *
  * - 修正：
- * - DrawingEngineのインターフェース変更に伴い、委譲するメソッドの引数を更新。
+ * - Phase4A9対応：`compositeLayers`と`drawBrush`の引数を新しい仕様に更新。
+ * - `core-engine`から渡されるMVP行列やワールド座標を、`webgl-engine`に正しく中継する。
  * ===================================================================================
  */
 import { Canvas2DEngine } from './canvas2d-engine.js';
@@ -17,6 +18,7 @@ export class RenderingBridge {
         this.engines = {};
         this.currentEngine = null;
         this.currentEngineType = '';
+        this.eventTargetCanvas = null;
 
         try {
             this.engines['canvas2d'] = new Canvas2DEngine(this.displayCanvas);
@@ -29,10 +31,13 @@ export class RenderingBridge {
         if (WebGLEngine.isSupported()) {
             try {
                 const webglCanvas = document.createElement('canvas');
+                webglCanvas.id = 'webglCanvas';
                 webglCanvas.width = this.displayCanvas.width;
                 webglCanvas.height = this.displayCanvas.height;
                 
                 this._setupWebGLCanvasStyle(webglCanvas);
+                this.displayCanvas.parentNode.appendChild(webglCanvas);
+
                 this.engines['webgl'] = new WebGLEngine(webglCanvas);
 
                 if (this.engines['webgl']) {
@@ -57,6 +62,7 @@ export class RenderingBridge {
         if (this.engines[engineType]) {
             this.currentEngineType = engineType;
             this.currentEngine = this.engines[engineType];
+            this.eventTargetCanvas = this.currentEngine.canvas;
             console.log(`Rendering engine set to: ${engineType}`);
             this._updateCanvasDisplay();
         } else {
@@ -73,57 +79,33 @@ export class RenderingBridge {
     }
 
     _setupWebGLCanvasStyle(webglCanvas) {
-        // WebGLキャンバスをdisplayCanvasの上に重ねるように配置
         webglCanvas.style.position = 'absolute';
         webglCanvas.style.left = '0';
         webglCanvas.style.top = '0';
         webglCanvas.style.width = '100%';
         webglCanvas.style.height = '100%';
-        this.displayCanvas.parentNode.insertBefore(webglCanvas, this.displayCanvas.nextSibling);
+        webglCanvas.style.zIndex = '1'; // displayCanvasの上に表示
     }
 
     _updateCanvasDisplay() {
         if (this.currentEngineType === 'webgl') {
-            this.displayCanvas.style.display = 'none'; // Canvas2Dを非表示
+            this.displayCanvas.style.display = 'none';
             if (this.engines['webgl'] && this.engines['webgl'].canvas) {
-                this.engines['webgl'].canvas.style.display = 'block'; // WebGLを表示
+                this.engines['webgl'].canvas.style.display = 'block';
             }
         } else {
-            this.displayCanvas.style.display = 'block'; // Canvas2Dを表示
+            this.displayCanvas.style.display = 'block';
             if (this.engines['webgl'] && this.engines['webgl'].canvas) {
-                this.engines['webgl'].canvas.style.display = 'none'; // WebGLを非表示
-            }
-        }
-        this._debugCanvasVisibility();
-    }
-
-    _debugCanvasVisibility() {
-        if (true) { // デバッグフラグ
-            console.debug("--- Canvas Visibility Status:");
-            console.debug("- Canvas2D display:", this.displayCanvas.style.display);
-            console.debug("- Canvas2D opacity:", this.displayCanvas.style.opacity);
-            console.debug("- Canvas2D pointerEvents:", this.displayCanvas.style.pointerEvents);
-            console.debug("- Canvas2D visible:", this.displayCanvas.offsetWidth > 0 && this.displayCanvas.offsetHeight > 0);
-            
-            if (this.engines['webgl'] && this.engines['webgl'].canvas) {
-                const webglCanvas = this.engines['webgl'].canvas;
-                console.debug("- WebGL display:", webglCanvas.style.display);
-                console.debug("- WebGL pointerEvents:", webglCanvas.style.pointerEvents);
-                console.debug("- WebGL visible:", webglCanvas.offsetWidth > 0 && webglCanvas.offsetHeight > 0);
+                this.engines['webgl'].canvas.style.display = 'none';
             }
         }
     }
 
     // --- DrawingEngineのインターフェースを現在のエンジンに委譲 ---
-    // ★★★ 修正: メソッドのシグネチャ（引数）をインターフェースに合わせる ★★★
-    drawCircle(...args) { this.currentEngine.drawCircle(...args); }
-    drawLine(...args) { this.currentEngine.drawLine(...args); }
-    fill(...args) { this.currentEngine.fill(...args); }
+    // 可変長引数(...)を使用して、すべての引数をそのまま現在のエンジンに渡す
     clear(...args) { this.currentEngine.clear(...args); }
-    getTransformedImageData(...args) { return this.currentEngine.getTransformedImageData(...args); }
     compositeLayers(...args) { this.currentEngine.compositeLayers(...args); }
-    renderToDisplay(...args) { this.currentEngine.renderToDisplay(...args); }
     updateLayerTexture(...args) { this.currentEngine.updateLayerTexture(...args); }
-    renderLayerToBuffer(...args) { this.currentEngine.renderLayerToBuffer(...args); }
+    drawBrush(...args) { this.currentEngine.drawBrush(...args); }
     getCurrentFrameBufferData(...args) { return this.currentEngine.getCurrentFrameBufferData(...args); }
 }
