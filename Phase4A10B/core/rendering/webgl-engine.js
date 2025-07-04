@@ -1,26 +1,20 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 5.0.0 (Definitive Coordinate Fix)
+ * Version: 6.0.0 (FINAL Coordinate Fix)
  *
  * - 最終修正：
- * - 1. 【Y-down座標系への完全統一】
- * -   - アプリケーション全体のルールを「Y-down(左上原点)」に統一するため、
- * -     WebGL内部の矛盾点を完全に解消する。
+ * - 1. 【Y軸反転処理の復活】(最重要)
+ * -   - ブラシ頂点シェーダー(`vsBrush`)内で、Y-down座標をクリップスペースに変換するための
+ * -     `center_clip.y *= -1.0;` を復活。これが無いと描画が上下反転する。
+ * -   - テクスチャ更新時(`_createOrUpdateLayerTexture`)に、ImageData(Y-down)から
+ * -     テクスチャ(Y-up)へ正しく変換するための `gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)`
+ * -     を復活。これが無いとレイヤーの絵自体が反転する。
  * -
- * - 2. 【ブラシシェーダーの修正】 (最重要)
- * -   - ブラシ頂点シェーダー(`vsBrush`)内のY軸反転(`center_clip.y *= -1.0;`)を削除。
- * -     レイヤー合成とブラシ描画の座標系を完全に一致させる。
- * -
- * - 3. 【テクスチャアップロードの修正】
- * -   - `_createOrUpdateLayerTexture`内のY軸反転命令(`UNPACK_FLIP_Y_WEBGL`)を削除。
- * -     ImageData(Y-down)を、テクスチャもY-downとしてそのままGPUに転送する。
- * -
- * - 4. 【描画座標の修正】
- * -   - `drawCircle`でY座標を変換せず、Y-downのままシェーダーに渡す。
- * -
- * - これにより、レイヤー移動、変形、描画時のすべての座標ズレ、反転、表示外への飛び出し、
- * - およびそれに伴う色の問題を根本的に解決する。
+ * - 2. 【座標系の統一思想】
+ * -   - この修正により、「core-engine.jsはY-downで座標を渡し、webgl-engine.jsが
+ * -     WebGLのY-up座標系に適切に変換する」という役割分担が明確になり、
+ * -     すべての動作が正しく行われる。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -63,7 +57,7 @@ export class WebGLEngine extends DrawingEngine {
         }
         this._initBuffers();
         this._setupSuperCompositingBuffer();
-        console.log(`WebGL Engine (v5.0.0 DEFINITIVE FIX) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v6.0.0 FINAL) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
@@ -93,8 +87,7 @@ export class WebGLEngine extends DrawingEngine {
                 gl_FragColor = vec4(final_color.rgb, final_color.a * u_opacity);
             }`;
 
-        // ★★★ 最終修正 (1/3): ブラシ描画シェーダーのY軸反転を完全に削除 ★★★
-        // これですべての描画処理がY-down（左上原点）に統一される。
+        // ★★★ 最終修正 (1/2): ブラシ描画時のY軸反転を「復活」させる ★★★
         const vsBrush = `
             precision highp float; attribute vec2 a_position; 
             uniform vec2 u_resolution; uniform vec2 u_center; uniform float u_radius;
@@ -103,11 +96,10 @@ export class WebGLEngine extends DrawingEngine {
                 vec2 quad_size_pixels = vec2(u_radius * 2.0 + 4.0);
                 vec2 quad_size_clip = quad_size_pixels / u_resolution * 2.0;
                 
-                // Y-down座標系（左上原点）を、-1.0〜+1.0のクリップスペースに正規化する
                 vec2 center_clip = (u_center / u_resolution) * 2.0 - 1.0;
                 
-                // Y軸の反転は不要！ 全ての座標系がY-downに統一されたため。
-                // center_clip.y *= -1.0; // ← この行を削除したことが最重要！
+                // Y-down(左上原点)で渡された座標を、WebGLのクリップスペース(Y-up)に変換するために必須
+                center_clip.y *= -1.0; 
 
                 gl_Position = vec4(a_position * quad_size_clip + center_clip, 0.0, 1.0);
                 v_texCoord = a_position + 0.5;
@@ -152,6 +144,9 @@ export class WebGLEngine extends DrawingEngine {
         let texture = this.layerTextures.get(layer);
         let fbo = this.layerFBOs.get(layer);
         
+        // ★★★ 最終修正 (2/2): テクスチャアップロード時のY軸反転設定を「復活」させる ★★★
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+
         if (!texture) {
             texture = gl.createTexture();
             this.layerTextures.set(layer, texture);
@@ -174,7 +169,6 @@ export class WebGLEngine extends DrawingEngine {
                  sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
                  tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
                  gl.bindTexture(gl.TEXTURE_2D, texture);
-                 // ★★★ 最終修正 (2/3): Y軸反転命令を完全に削除。Y-downのままGPUへ転送する ★★★
                  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvas);
             }
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -189,11 +183,12 @@ export class WebGLEngine extends DrawingEngine {
              sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
              tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
             gl.bindTexture(gl.TEXTURE_2D, texture);
-            // ★★★ 最終修正 (2/3): Y軸反転命令を完全に削除 ★★★
             gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvas);
             gl.bindTexture(gl.TEXTURE_2D, null);
             layer.gpuDirty = false;
         }
+        
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); // 設定を元に戻す
     }
     
     _setupSuperCompositingBuffer() {
@@ -248,7 +243,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.enableVertexAttribArray(program.locations.a_position);
         
         const superX = centerX * this.SUPER_SAMPLING_FACTOR;
-        // ★★★ 最終修正 (3/3): Y座標の反転を削除。Y-downで統一。 ★★★
         const superY = centerY * this.SUPER_SAMPLING_FACTOR;
         const superRadius = radius * this.SUPER_SAMPLING_FACTOR;
         
@@ -375,8 +369,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.disableVertexAttribArray(program.locations.a_texCoord);
     }
 
-    // この関数は、WebGL(Y-up)からImageData(Y-down)への変換を行うため、
-    // 内部でのピクセル反転処理と色変換は正しい挙動であり、変更は不要です。
     syncDirtyRectToImageData(layer, dirtyRect) {
         const gl = this.gl;
         const fbo = this.layerFBOs.get(layer);

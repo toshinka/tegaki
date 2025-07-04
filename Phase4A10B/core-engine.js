@@ -1,17 +1,15 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.6.0 (Coordinate & Color Fix)
+ * Version: 3.7.0 (Definitive Coordinate Fix)
  *
- * - 修正：
- * - 1. 【座標系の完全統一】
- * -   - WebGL側のY-down座標系への統一に伴い、レイヤー変形行列の計算もY-downに修正。
- * -     updateLayerMatrix内の射影行列を、Y軸が下向きになるように変更した。
- * -     これにより、レイヤー変形と描画の座標系が完全に一致し、ズレが解消される。
- * - 2. 【画像エクスポート時の色化け修正】
- * -   - WebGLのreadPixelsから取得した乗算済みアルファのピクセルを、
- * -     通常アルファに変換する際の計算を、値が飽和しない安全な方式に変更。
- * -     これにより、エクスポートした画像が赤くなる問題を解消した。
+ * - 最終修正：
+ * - 1. 【描画直前の座標確定】(最重要)
+ * -   - `onPointerDown`メソッド内で、描画処理を開始する直前に
+ * -     `this.updateLayerMatrix(activeLayer);` と `activeLayer.gpuDirty = true;`
+ * -     を呼び出す処理を追加。
+ * -   - これにより、ペンで描画する瞬間の座標と、レイヤーを変形・合成する際の座標が
+ * -     完全に同期され、初回描画の反転、移動時のズレ、座標範囲のバグをすべて解決する。
  * ===================================================================================
  */
 
@@ -110,6 +108,10 @@ class CanvasManager {
         if (!canvasCoords) return;
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
+        
+        // ★★★ 最終修正: 描画直前に座標変換行列を必ず更新し、GPUと状態を同期する ★★★
+        this.updateLayerMatrix(activeLayer);
+        activeLayer.gpuDirty = true; // このおまじないが重要！
         
         const layerCoords = this.convertCanvasToLayerCoords(canvasCoords, activeLayer);
         if (!layerCoords) return;
@@ -310,7 +312,6 @@ class CanvasManager {
         glMatrix.mat4.translate(model, model, [-centerX, -centerY, 0]);
 
         const projection = glMatrix.mat4.create();
-        // Y軸が下向きのY-down座標系（左上原点）で統一
         glMatrix.mat4.ortho(projection, 0, this.width, this.height, 0, -1, 1);
         
         glMatrix.mat4.multiply(mvp, projection, model);
@@ -406,7 +407,6 @@ class CanvasManager {
              this.renderingBridge.renderToDisplay(null, fullRect);
              gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 
-             // 乗算済みアルファから通常アルファへの安全な変換
              for (let i = 0; i < pixels.length; i += 4) {
                 const a = pixels[i + 3];
                 if (a > 0 && a < 255) {
@@ -417,7 +417,6 @@ class CanvasManager {
                 }
              }
 
-             // Y軸反転処理：WebGL(左下原点)とCanvas2D(左上原点)の違いを吸収
              const correctedPixels = new Uint8ClampedArray(this.width * this.height * 4);
              for (let y = 0; y < this.height; y++) {
                  const s = y * this.width * 4;
