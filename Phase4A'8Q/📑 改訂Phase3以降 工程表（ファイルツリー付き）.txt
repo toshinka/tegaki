@@ -17,6 +17,9 @@
 │ │ │  │   ├─ blend-shaders.js  // ブレンドモード（仮空ファイル）
 │ │ │  │   └─ filter-shaders.js // フィルター効果（仮空ファイル） 
 │ │ │  └── texture-manager.js   // テクスチャ管理（仮空ファイル）
+│ │ │
+│ │ ├ utils/
+│ │ │  └── transform-utils.js   // テクスチャ管理（仮空ファイル）
 │ │ │ 
 │ │ ├ animation/
 │ │ │  ├── timeline-manager.js  // タイムライン制御（仮空ファイル）
