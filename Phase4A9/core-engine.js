@@ -1,34 +1,19 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.0.0 (Phase4A9 Non-Destructive Transform)
+ * Version: 3.0.1 (Phase4A9 Bugfix)
  *
- * - 機能追加・修正：
- * - 1. 非破壊レイヤー変形の導入:
- * -   Layerクラスから破壊的なtransformプロパティを削除し、`mat4`型の`modelMatrix`を導入。 [cite: 1, 3]
- * -   レイヤーの移動は`modelMatrix`を更新することで行い、ピクセルデータは変更しない。
- * - 2. dat.guiによるリアルタイム制御:
- * -   アクティブレイヤーのX, Y座標をスライダーでリアルタイムに操作できるUIを追加。 
- * -   レイヤーを切り替えると、GUIの表示も連動して更新される。
- * - 3. ペン座標のズレ解消:
- * -   マウスポインタの座標を、アクティブレイヤーの`modelMatrix`の逆行列を使って変換。 
- * -   これにより、レイヤーを移動・回転・拡縮しても、意図した場所に正確に描画される。
- * - 4. 変形ロジックの刷新:
- * -   `startLayerTransform`, `commitLayerTransform`を`modelMatrix`ベースの処理に書き換え。
- * -   `getTransformedImageData`への依存を完全に撤廃。
- * - 5. Undo/Redoの強化:
- * -   ヒストリーに`modelMatrix`の状態も保存し、変形操作のUndo/Redoに対応。
+ * - 修正：
+ * - 1. レイヤー変形開始ロジックの修正:
+ * -   `startLayerTransform`がキーボードショートカットからマウスイベント無しで
+ * -   呼び出された場合に、安全に処理を継続できるように修正。
  * ===================================================================================
  */
-
-// --- Module Imports ---
 import { TopBarManager, LayerUIManager } from './ui/ui-manager.js';
 import { ShortcutManager } from './ui/shortcut-manager.js';
 import { BucketTool } from './tools/toolset.js';
 import { RenderingBridge } from './core/rendering/rendering-bridge.js';
-import * as transformUtils from './core/utils/transform-utils.js'; // [cite: 7]
-
-// --- Core Logic Classes ---
+import * as transformUtils from './core/utils/transform-utils.js';
 
 function hexToRgba(hex) {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -47,10 +32,7 @@ class Layer {
         this.opacity = 100;
         this.blendMode = 'normal';
         this.imageData = new ImageData(width, height);
-        
-        // ★★★ 非破壊変形のためのモデル行列を導入 ★★★
-        this.modelMatrix = transformUtils.create(); // [cite: 2]
-        
+        this.modelMatrix = transformUtils.create();
         this.gpuDirty = true;
     }
     clear() {
@@ -84,12 +66,11 @@ class CanvasManager {
 
         this.compositionData = new ImageData(this.width, this.height);
         this.isDrawing = false; this.isPanning = false; this.isSpaceDown = false;
-        
         this.isVDown = false; this.isShiftDown = false;
         
         this.isLayerTransforming = false;
         this.transformTargetLayer = null;
-        this.originalLayerMatrix = null; // 変形前の行列を保存
+        this.originalLayerMatrix = null;
         this.transformStartX = 0; this.transformStartY = 0;
         
         this.currentTool = 'pen';
@@ -110,7 +91,6 @@ class CanvasManager {
         this.dragStartX = 0; this.dragStartY = 0; this.canvasStartX = 0; this.canvasStartY = 0;
         this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
 
-        // ★★★ dat.gui の初期化 ★★★
         this.gui = new dat.GUI();
         this.transformControls = { x: 0, y: 0, 'reset': () => this.resetActiveLayerTransform() };
         const transformFolder = this.gui.addFolder('Layer Transform');
@@ -137,8 +117,6 @@ class CanvasManager {
     onPointerDown(e) {
         if (e.button !== 0) return;
         
-        const worldCoords = this.getCanvasCoordinates(e);
-        
         if (this.isVDown) {
             this.startLayerTransform(e);
             e.preventDefault(); return;
@@ -149,12 +127,12 @@ class CanvasManager {
             e.preventDefault(); return;
         }
 
+        const worldCoords = this.getCanvasCoordinates(e);
         if (!worldCoords) return;
         
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
 
-        // ★★★ ワールド座標を描画対象レイヤーのローカル座標に変換 ★★★
         const localCoords = this.getWorldToLocalCoords(worldCoords, activeLayer);
         if (!localCoords) return;
 
@@ -173,7 +151,6 @@ class CanvasManager {
         this.lastPoint = { ...localCoords, pressure: this.pressureHistory[0] };
         
         const size = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
-        
         this._updateDirtyRectWithTransform(activeLayer, localCoords.x, localCoords.y, size);
         
         this.renderingBridge.drawCircle(
@@ -251,19 +228,15 @@ class CanvasManager {
         
         if (this.isDrawing) {
             this.isDrawing = false;
-            
             if (this.animationFrameId) {
                 cancelAnimationFrame(this.animationFrameId);
                 this.animationFrameId = null;
             }
-            
             this._renderDirty();
-
             const activeLayer = this.app.layerManager.getCurrentLayer();
             if (activeLayer) {
                 this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
             }
-            
             this.lastPoint = null;
             this.saveState();
         }
@@ -304,13 +277,9 @@ class CanvasManager {
     }
     
     _updateDirtyRectWithTransform(layer, localX, localY, radius) {
-        // ローカル座標の点をワールド座標に変換してダーティ矩形を計算
         const worldPos = [0, 0];
         transformUtils.transformVec2(worldPos, [localX, localY], layer.modelMatrix);
-        this._updateDirtyRect(worldPos[0], worldPos[1], radius);
-        
-        // 移動前の位置もダーティ矩形に含める必要があるが、描画ストローク中は連続しているので
-        // この実装でもほぼカバーできる
+        this._updateDirtyRect(worldPos[0], worldPos[1], radius * 1.5); // 少しマージンを増やす
     }
 
     _resetDirtyRect() {
@@ -353,10 +322,9 @@ class CanvasManager {
         return Math.max(0.1, finalSize);
     }
 
-    // ★★★ マウス座標(ワールド)をレイヤーのローカル座標に変換 ★★★
     getWorldToLocalCoords(worldCoords, layer) {
         const invMatrix = transformUtils.invert(transformUtils.create(), layer.modelMatrix);
-        if (!invMatrix) return null; // 逆行列が計算できない場合
+        if (!invMatrix) return null;
         
         const out = [0, 0];
         transformUtils.transformVec2(out, [worldCoords.x, worldCoords.y], invMatrix);
@@ -374,7 +342,6 @@ class CanvasManager {
             y = y * (this.height / rect.height);
             if (this.viewTransform.flipX === -1) { x = this.width - x; }
             if (this.viewTransform.flipY === -1) { y = this.height - y; }
-            // 座標がキャンバス範囲外でも変換は行う
             return { x: x, y: y };
         } catch (error) {
             console.warn('Coordinate transformation error:', error);
@@ -382,14 +349,25 @@ class CanvasManager {
         }
     }
 
-    startLayerTransform(e) {
+    // ★★★★★★★★★★★★★★★★★★★★
+    // ★★★ 修正点：キーボードからの呼び出しでも安全なように修正 ★★★
+    // ★★★★★★★★★★★★★★★★★★★★
+    startLayerTransform(e = null) {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer) return;
-        this.isLayerTransforming = true;
-        this.transformTargetLayer = activeLayer;
-        this.originalLayerMatrix = transformUtils.clone(activeLayer.modelMatrix);
-        this.transformStartX = e.clientX;
-        this.transformStartY = e.clientY;
+
+        // マウスイベントがある場合のみ、変形を開始/続行する
+        if (e) {
+            this.isLayerTransforming = true;
+            this.transformTargetLayer = activeLayer;
+            this.originalLayerMatrix = transformUtils.clone(activeLayer.modelMatrix);
+            this.transformStartX = e.clientX;
+            this.transformStartY = e.clientY;
+        } else {
+            // ショートカットキーで呼ばれた場合(e is null)は何もしない。
+            // 実際の変形開始は onPointerDown で行われる。
+            console.log("Move tool activated by key. Waiting for pointer down to start transform.");
+        }
     }
 
     commitLayerTransform() {
@@ -413,7 +391,6 @@ class CanvasManager {
                     layer.imageData.width,
                     layer.imageData.height
                 ),
-                // ★★★ modelMatrixも保存 ★★★
                 modelMatrix: transformUtils.clone(layer.modelMatrix)
             })),
             activeLayerIndex: this.app.layerManager.activeLayerIndex
@@ -430,27 +407,21 @@ class CanvasManager {
             layer.opacity = layerData.opacity ?? 100;
             layer.blendMode = layerData.blendMode ?? 'normal';
             layer.imageData.data.set(layerData.imageData.data);
-            
-            // ★★★ modelMatrixも復元 ★★★
             if (layerData.modelMatrix) {
                 layer.modelMatrix = transformUtils.clone(layerData.modelMatrix);
             }
-            
             layer.gpuDirty = true;
             return layer;
         });
-        this.app.layerManager.switchLayer(state.activeLayerIndex); // これがGUIも更新する
+        this.app.layerManager.switchLayer(state.activeLayerIndex);
         this.renderAllLayers();
     }
 
-    // ★★★ dat.gui関連のメソッド ★★★
     updateLayerPositionFromGui() {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || this.isLayerTransforming) return;
-        
         transformUtils.resetToTranslation(activeLayer.modelMatrix, this.transformControls.x, this.transformControls.y);
         this.renderAllLayers();
-        // マウスを離したときにUndoスタックに積むため、ここではsaveStateを呼ばない
     }
 
     updateGuiForLayer() {
@@ -491,16 +462,13 @@ class CanvasManager {
         exportCanvas.width = this.width;
         exportCanvas.height = this.height;
         const exportCtx = exportCanvas.getContext('2d');
-        
         const fullRect = { minX: 0, minY: 0, maxX: this.width, maxY: this.height };
         this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, fullRect);
-
         const gl = this.renderingBridge.engines['webgl']?.gl;
         if (gl && this.renderingBridge.currentEngineType === 'webgl') {
              const pixels = new Uint8Array(this.width * this.height * 4);
              this.renderingBridge.renderToDisplay(null, fullRect);
              gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-             
              const correctedPixels = new Uint8ClampedArray(this.width * this.height * 4);
              for (let y = 0; y < this.height; y++) {
                  const s = y * this.width * 4;
@@ -509,21 +477,16 @@ class CanvasManager {
              }
              const finalImageData = new ImageData(correctedPixels, this.width, this.height);
              exportCtx.putImageData(finalImageData, 0, 0);
-
         } else {
-            // Canvas2D フォールバック (現在はWebGL前提だが念のため)
-            // この場合、各レイヤーを手動で変形させて合成する必要がある
-            exportCtx.fillStyle = '#f0e0d6'; // 背景色
+            exportCtx.fillStyle = '#f0e0d6';
             exportCtx.fillRect(0,0,this.width, this.height);
             for(const layer of this.app.layerManager.layers) {
                 if(!layer.visible) continue;
-                
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = this.width;
                 tempCanvas.height = this.height;
                 const tempCtx = tempCanvas.getContext('2d');
                 tempCtx.putImageData(layer.imageData, 0, 0);
-
                 exportCtx.save();
                 exportCtx.globalAlpha = layer.opacity / 100;
                 exportCtx.globalCompositeOperation = layer.blendMode;
@@ -533,7 +496,6 @@ class CanvasManager {
                 exportCtx.restore();
             }
         }
-        
         const dataURL = exportCanvas.toDataURL('image/png');
         const link = document.createElement('a');
         link.href = dataURL;
@@ -562,7 +524,6 @@ class LayerManager {
         if (this.app.layerUIManager) {
             this.app.layerUIManager.renderLayers();
         }
-        // ★★★ GUIの表示を新しいアクティブレイヤーに合わせる ★★★
         if (this.app.canvasManager) {
             this.app.canvasManager.updateGuiForLayer();
         }
@@ -571,30 +532,20 @@ class LayerManager {
     duplicateActiveLayer() { const activeLayer = this.getCurrentLayer(); if (!activeLayer) return; const newLayer = new Layer(`${activeLayer.name}のコピー`, this.width, this.height); newLayer.imageData.data.set(activeLayer.imageData.data); newLayer.visible = activeLayer.visible; newLayer.opacity = activeLayer.opacity; newLayer.blendMode = activeLayer.blendMode; newLayer.modelMatrix = transformUtils.clone(activeLayer.modelMatrix); newLayer.gpuDirty = true; const insertIndex = this.activeLayerIndex + 1; this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
     mergeDownActiveLayer() {
         if (this.activeLayerIndex <= 0) return;
-        
-        // WebGLが有効な場合、GPU上で合成して結果を読み取るのが最も正確
-        const gl = this.app.canvasManager.renderingBridge.engines['webgl']?.gl;
-        if(gl && this.app.canvasManager.renderingBridge.currentEngineType === 'webgl') {
-            // この実装は複雑になるため、今回はCanvas2Dベースのロジックを維持します。
-            // 注意：この処理はレイヤーの変形(modelMatrix)をピクセルに焼き付けます。
-            console.warn("Merge down will bake the transform into pixels.");
-        }
-
+        console.warn("Merge down will bake the transform into pixels.");
         const topLayer = this.layers[this.activeLayerIndex];
         const bottomLayer = this.layers[this.activeLayerIndex - 1];
-        
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = this.width; tempCanvas.height = this.height;
         const tempCtx = tempCanvas.getContext('2d');
-        
-        // 1. 下のレイヤーを描画 (変形を適用)
         tempCtx.save();
         const bm = bottomLayer.modelMatrix;
         tempCtx.transform(bm[0], bm[1], bm[4], bm[5], bm[12], bm[13]);
-        tempCtx.putImageData(bottomLayer.imageData, 0, 0);
+        const bottomLayerCanvas = document.createElement('canvas');
+        bottomLayerCanvas.width = this.width; bottomLayerCanvas.height = this.height;
+        bottomLayerCanvas.getContext('2d').putImageData(bottomLayer.imageData, 0, 0);
+        tempCtx.drawImage(bottomLayerCanvas, 0, 0);
         tempCtx.restore();
-
-        // 2. 上のレイヤーを描画 (変形とブレンドモードを適用)
         tempCtx.save();
         tempCtx.globalAlpha = topLayer.opacity / 100;
         tempCtx.globalCompositeOperation = topLayer.blendMode;
@@ -605,12 +556,9 @@ class LayerManager {
         topLayerCanvas.getContext('2d').putImageData(topLayer.imageData, 0, 0);
         tempCtx.drawImage(topLayerCanvas, 0, 0);
         tempCtx.restore();
-
-        // 3. 結果を下のレイヤーに書き戻し、変形をリセット
         bottomLayer.imageData = tempCtx.getImageData(0, 0, this.width, this.height);
         transformUtils.reset(bottomLayer.modelMatrix);
         bottomLayer.gpuDirty = true;
-
         this.layers.splice(this.activeLayerIndex, 1);
         this.switchLayer(this.activeLayerIndex - 1);
         this.app.canvasManager.renderAllLayers();

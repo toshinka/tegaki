@@ -1,19 +1,14 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.0.0 (Phase4A9 Non-Destructive Transform)
+ * Version: 4.0.1 (Phase4A9 Bugfix)
  *
- * - 機能追加：
- * - 1. 非破壊レイヤー変形の導入:
- * -   各レイヤーにmodelMatrixを持たせ、GPU上で直接位置・回転・拡縮を適用する方式に変更。
- * -   これにより、変形を繰り返しても画質が一切劣化しない「非破壊編集」を実現。 
- * - 2. シェーダーの行列対応:
- * -   頂点シェーダーが `u_projectionMatrix` と `u_modelMatrix` を受け取り、座標変換を行うように改修。 [cite: 39]
- * -   Y軸の反転問題をプロジェクション行列で吸収し、座標系の混乱を排除。 [cite: 40, 41]
- * - 3. 描画パイプラインの更新:
- * -   `compositeLayers` で、レイヤーごとに `modelMatrix` をシェーダーに送信する処理を追加。 [cite: 46]
- * - 4. 破壊的変形メソッドの削除:
- * -   `getTransformedImageData` を削除し、非破壊変形に完全移行。
+ * - 修正：
+ * - 1. レイヤーテクスチャ生成時のクラッシュを修正:
+ * -   `_createOrUpdateLayerTexture`内で、存在しない`layer.canvas`プロパティを参照していた問題を修正。
+ * -   正しく`layer.imageData`から一時的なCanvasを作成し、テクスチャに転送するように変更。
+ * - 2. シェーダー精度の統一:
+ * -   ブラシ描画用シェーダー(vsBrush)の精度をhighpに統一し、シェーダーコンパイルエラーを解消。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -41,7 +36,6 @@ export class WebGLEngine extends DrawingEngine {
         this.layerTextures = new Map();
         this.layerFBOs = new Map();
 
-        // ★★★ 変形対応 ★★★
         this.projectionMatrix = glMatrix.mat4.create();
         
         try {
@@ -51,7 +45,7 @@ export class WebGLEngine extends DrawingEngine {
             }
         } catch (e) {
             console.error("WebGL Engine initialization failed:", e);
-            alert("WebGLが利用できません。"); // [cite: 2]
+            alert("WebGLが利用できません。");
             return;
         }
 
@@ -70,26 +64,19 @@ export class WebGLEngine extends DrawingEngine {
         this._initBuffers();
         this._setupSuperCompositingBuffer();
 
-        // ★★★ Y軸反転問題を吸収するプロジェクション行列を作成 ★★★
-        glMatrix.mat4.ortho(this.projectionMatrix, 0, this.superWidth, this.superHeight, 0, -1, 1); // [cite: 41]
+        glMatrix.mat4.ortho(this.projectionMatrix, 0, this.superWidth, this.superHeight, 0, -1, 1);
 
-        console.log(`WebGL Engine (v4.0.0 Non-Destructive Transform) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.0.1 Bugfix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
-// webgl-engine.js の _initShaderPrograms 関数
-
     _initShaderPrograms() {
-        // ★★★★★ 修正箇所: このシェーダーは高解像度テクスチャを高品質にサンプリングするために使われる ★★★★★
         const vsCompositor = `
             attribute vec4 a_position;
             attribute vec2 a_texCoord;
-
             uniform mat4 u_projectionMatrix;
-            uniform mat4 u_modelMatrix; // 各レイヤーの変形情報
-
+            uniform mat4 u_modelMatrix;
             varying vec2 v_texCoord;
             void main() {
-                // モデル行列とプロジェクション行列を適用して最終的な座標を計算
                 gl_Position = u_projectionMatrix * u_modelMatrix * a_position;
                 v_texCoord = a_texCoord;
             }`;
@@ -98,51 +85,40 @@ export class WebGLEngine extends DrawingEngine {
             varying vec2 v_texCoord;
             uniform sampler2D u_image;
             uniform float u_opacity;
-            
             void main() {
                 vec4 color = texture2D(u_image, v_texCoord);
                 gl_FragColor = vec4(color.rgb, color.a * u_opacity);
             }`;
 
-        // ★★★★★★★★★★★★★★★★★★★★
-        // ★★★ 修正点：シェーダーの精度を highp に統一 ★★★
-        // ★★★★★★★★★★★★★★★★★★★★
         const vsBrush = `
-            precision highp float; // mediump から highp に変更
+            precision highp float;
             attribute vec2 a_position; 
             uniform vec2 u_resolution;
             uniform vec2 u_center;
             uniform float u_radius;
             varying vec2 v_texCoord;
-
             void main() {
                 vec2 quad_size_pixels = vec2(u_radius * 2.0 + 2.0);
                 vec2 quad_size_clip = quad_size_pixels / u_resolution * 2.0;
                 vec2 center_clip = (u_center / u_resolution) * 2.0 - 1.0;
-                
-                // Y軸を反転
                 center_clip.y = -center_clip.y;
-
                 gl_Position = vec4(a_position * quad_size_clip + center_clip, 0.0, 1.0);
                 v_texCoord = a_position + 0.5;
             }`;
 
         const fsBrush = `
-            precision highp float; // こちらは元々 highp だったので変更なし
+            precision highp float;
             varying vec2 v_texCoord;
             uniform float u_radius;
             uniform vec4 u_color;
             uniform bool u_is_eraser;
-
             void main() {
                 float dist = distance(v_texCoord, vec2(0.5));
                 float pixel_in_uv = 1.0 / (max(u_radius, 0.5) * 2.0);
                 float alpha = 1.0 - smoothstep(0.5 - pixel_in_uv, 0.5, dist);
-
                 if (alpha < 0.01) {
                     discard;
                 }
-
                 if (u_is_eraser) {
                     gl_FragColor = vec4(0.0, 0.0, 0.0, alpha); 
                 } else {
@@ -158,13 +134,7 @@ export class WebGLEngine extends DrawingEngine {
         const gl = this.gl;
         this.positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        // 原点を左上に変更
-        const positions = [ 
-            0,  this.superHeight, 
-            0,  0, 
-            this.superWidth, this.superHeight, 
-            this.superWidth, 0 
-        ];
+        const positions = [ 0,  this.superHeight, 0,  0, this.superWidth, this.superHeight, this.superWidth, 0 ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 
         this.texCoordBuffer = gl.createBuffer();
@@ -203,21 +173,30 @@ export class WebGLEngine extends DrawingEngine {
             gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
 
+            // ★★★★★★★★★★★★★★★★★★★★
+            // ★★★ 修正点: layer.canvas の参照を止め、imageData からテクスチャを生成 ★★★
+            // ★★★★★★★★★★★★★★★★★★★★
             if (layer.imageData) {
-                 const tempCanvas = document.createElement('canvas');
-                 tempCanvas.width = this.superWidth;
-                 tempCanvas.height = this.superHeight;
-                 const tempCtx = tempCanvas.getContext('2d');
-                 tempCtx.drawImage(layer.canvas, 0, 0, layer.canvas.width, layer.canvas.height, 0, 0, this.superWidth, this.superHeight);
-                 const superImageData = tempCtx.getImageData(0,0,this.superWidth, this.superHeight);
+                const sourceCanvas = document.createElement('canvas');
+                sourceCanvas.width = layer.imageData.width;
+                sourceCanvas.height = layer.imageData.height;
+                sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
 
-                 gl.bindTexture(gl.TEXTURE_2D, texture);
-                 gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-                 gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, superImageData);
+                const superCanvas = document.createElement('canvas');
+                superCanvas.width = this.superWidth;
+                superCanvas.height = this.superHeight;
+                const superCtx = superCanvas.getContext('2d');
+                superCtx.imageSmoothingEnabled = true;
+                superCtx.imageSmoothingQuality = 'high';
+                superCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
+
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+                gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, superCanvas);
             }
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         }
-        
+
         if (layer.gpuDirty) {
              const tempCanvas = document.createElement('canvas');
              tempCanvas.width = this.superWidth;
@@ -337,19 +316,15 @@ export class WebGLEngine extends DrawingEngine {
         }
     }
 
-    fill(imageData, color) { /* ... 変更なし ... */ }
-    clear(imageData) { /* ... 変更なし ... */ }
-
-    // このメソッドは非破壊変形への移行に伴い不要
-    // getTransformedImageData(sourceImageData, transform) { ... }
-
     compositeLayers(layers, compositionData, dirtyRect) {
         if (!this.gl || !this.programs.compositor || !this.superCompositeFBO) return;
         const gl = this.gl;
         const program = this.programs.compositor;
 
         for (const layer of layers) {
-            this._createOrUpdateLayerTexture(layer);
+            if (layer.visible) {
+                this._createOrUpdateLayerTexture(layer);
+            }
         }
         
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.superCompositeFBO);
@@ -371,12 +346,11 @@ export class WebGLEngine extends DrawingEngine {
         gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_texCoord);
         
-        const identityMatrix = glMatrix.mat4.create(); // [cite: 2]
+        const identityMatrix = glMatrix.mat4.create();
 
         for (const layer of layers) {
             if (!layer.visible || layer.opacity === 0 || !this.layerTextures.has(layer)) continue;
 
-            // ★★★ レイヤーのmodelMatrixをシェーダーに送る ★★★
             const modelMatrix = layer.modelMatrix || identityMatrix;
             gl.uniformMatrix4fv(program.locations.u_modelMatrix, false, modelMatrix);
 
@@ -408,7 +382,11 @@ export class WebGLEngine extends DrawingEngine {
         this._setBlendMode('normal');
 
         gl.useProgram(program);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+
+        // 画面表示用の位置とテクスチャ座標を再設定
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,1, -1,-1, 1,1, 1,-1]), gl.STATIC_DRAW);
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_position);
         
@@ -416,10 +394,9 @@ export class WebGLEngine extends DrawingEngine {
         gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_texCoord);
         
-        // ★★★ ダウンサンプリング描画では、変形は行わないので単位行列を使う ★★★
         const identityMatrix = glMatrix.mat4.create();
-        glMatrix.mat4.ortho(this.projectionMatrix, 0, this.width, this.height, 0, -1, 1); // 画面表示用のProjection
-        gl.uniformMatrix4fv(program.locations.u_projectionMatrix, false, this.projectionMatrix);
+        const screenProjection = glMatrix.mat4.create(); //
+        gl.uniformMatrix4fv(program.locations.u_projectionMatrix, false, screenProjection);
         gl.uniformMatrix4fv(program.locations.u_modelMatrix, false, identityMatrix);
 
         gl.activeTexture(gl.TEXTURE0);
@@ -432,9 +409,6 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.disableVertexAttribArray(program.locations.a_position);
         gl.disableVertexAttribArray(program.locations.a_texCoord);
-
-        // プロジェクション行列をスーパーサンプリング用に戻す
-        glMatrix.mat4.ortho(this.projectionMatrix, 0, this.superWidth, this.superHeight, 0, -1, 1);
     }
 
     syncDirtyRectToImageData(layer, dirtyRect) {
@@ -452,7 +426,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const superBuffer = new Uint8Array(sWidth * sHeight * 4);
         
-        // Y軸の反転を考慮
         const readY = this.superHeight - (sy + sHeight);
         gl.readPixels(sx, readY, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -461,7 +434,6 @@ export class WebGLEngine extends DrawingEngine {
         const targetData = targetImageData.data;
         const factor = this.SUPER_SAMPLING_FACTOR;
         
-        // ダウンサンプリングしてImageDataに書き戻す
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = sWidth;
         tempCanvas.height = sHeight;
@@ -477,7 +449,6 @@ export class WebGLEngine extends DrawingEngine {
         destCanvas.height = destH;
         const destCtx = destCanvas.getContext('2d');
         
-        // Y軸反転を補正しつつ描画
         destCtx.translate(0, destH);
         destCtx.scale(1, -1);
         destCtx.drawImage(tempCanvas, 0, 0, destW, destH);
