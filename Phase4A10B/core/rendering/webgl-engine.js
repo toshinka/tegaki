@@ -1,19 +1,13 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 6.0.1 (COLOR & COORDINATE FIX)
+ * Version: 6.0.2 (Initialization Fix)
  *
  * - 主な修正：
- * - 1. 【色の扱いを統一】(赤化問題の解決)
- * -   - `_createOrUpdateLayerTexture`で`gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true)`
- * -     を追加。ImageDataをテクスチャに変換する際に、WebGLに「事前乗算済みアルファ」へ
- * -     変換させることで、後続のブレンド処理が正しく行われるようにする。
- *
- * - 2. 【座標系の役割分担の維持】
- * -   - `core-engine.js`がY-down(左上原点)で座標を渡すようになったため、このエンジン内で
- * -     Y-up(左下原点)に変換する処理は非常に重要。
- * -   - ブラシ描画シェーダー内の `center_clip.y *= -1.0;` は維持。
- * -   - テクスチャ更新時の `gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)` も維持。
+ * - 1. 【初期化エラーの修正】
+ * -   - `_createOrUpdateLayerTexture`内の`tempCtx`を初期化する際の参照ミスを修正。
+ * -     (誤) const tempCtx = tempCtx.canvas.getContext('2d');
+ * -     (正) const tempCtx = tempCanvas.getContext('2d');
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -47,7 +41,6 @@ export class WebGLEngine extends DrawingEngine {
         const gl = this.gl;
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.enable(gl.BLEND);
-        // ★修正★ 事前乗算済みアルファを扱うための標準的なブレンド関数に設定
         gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
         this._initShaderPrograms();
         if (!this.programs.compositor || !this.programs.brush) {
@@ -57,7 +50,7 @@ export class WebGLEngine extends DrawingEngine {
         }
         this._initBuffers();
         this._setupSuperCompositingBuffer();
-        console.log(`WebGL Engine (v6.0.1 COLOR & COORD FIX) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v6.0.2 Init Fix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
@@ -84,11 +77,9 @@ export class WebGLEngine extends DrawingEngine {
                 color_smooth *= 0.25;
                 vec4 color_original = texture2D(u_image, v_texCoord);
                 vec4 final_color = mix(color_smooth, color_original, u_sharpness);
-                // ★修正★ テクスチャは事前乗算済みなので、opacityをかけるだけでOK
                 gl_FragColor = final_color * u_opacity;
             }`;
 
-        // ブラシ描画用のシェーダー (core-engineから渡されるY-down座標をY-upに変換する)
         const vsBrush = `
             precision highp float; attribute vec2 a_position; 
             uniform vec2 u_resolution; uniform vec2 u_center; uniform float u_radius;
@@ -99,7 +90,6 @@ export class WebGLEngine extends DrawingEngine {
                 
                 vec2 center_clip = (u_center / u_resolution) * 2.0 - 1.0;
                 
-                // Y-down(左上原点)で渡された座標を、WebGLのクリップスペース(Y-up)に変換するために必須
                 center_clip.y *= -1.0; 
 
                 gl_Position = vec4(a_position * quad_size_clip + center_clip, 0.0, 1.0);
@@ -114,9 +104,8 @@ export class WebGLEngine extends DrawingEngine {
                 float alpha = 1.0 - smoothstep(0.5 - pixel_in_uv, 0.5, dist);
                 if (alpha < 0.01) { discard; }
                 if (u_is_eraser) { 
-                    gl_FragColor = vec4(0.0, 0.0, 0.0, alpha); // 消しゴムは黒のアルファとして出力
+                    gl_FragColor = vec4(0.0, 0.0, 0.0, alpha);
                 } else { 
-                    // ★修正★ 色とアルファを乗算した「事前乗算済みアルファ」で出力。ブレンド処理と一致させる。
                     gl_FragColor = vec4(u_color.rgb * u_color.a, u_color.a) * alpha; 
                 }
             }`;
@@ -149,10 +138,7 @@ export class WebGLEngine extends DrawingEngine {
         let texture = this.layerTextures.get(layer);
         let fbo = this.layerFBOs.get(layer);
         
-        // ★修正★ ここから2つの重要な設定を行います。
-        // 1. ImageData(左上原点)をWebGLのテクスチャ(左下原点)に正しくマッピングするため、Y軸を反転させます。
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-        // 2. ImageData(非乗算アルファ)を、WebGLでの合成に適した「事前乗算済みアルファ」に自動変換させます。これが赤化を防ぎます。
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
 
         if (!texture) {
@@ -184,7 +170,8 @@ export class WebGLEngine extends DrawingEngine {
         if (layer.gpuDirty) {
              const tempCanvas = document.createElement('canvas');
              tempCanvas.width = this.superWidth; tempCanvas.height = this.superHeight;
-             const tempCtx = tempCtx.canvas.getContext('2d');
+             // ★修正★ ここがエラーの原因でした！tempCtx.canvas を tempCanvas に修正しました。
+             const tempCtx = tempCanvas.getContext('2d');
              tempCtx.imageSmoothingEnabled = true; tempCtx.imageSmoothingQuality = 'high';
              const sourceCanvas = document.createElement('canvas');
              sourceCanvas.width = layer.imageData.width; sourceCanvas.height = layer.imageData.height;
@@ -196,7 +183,6 @@ export class WebGLEngine extends DrawingEngine {
             layer.gpuDirty = false;
         }
         
-        // 設定を元に戻す
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     }
@@ -224,23 +210,19 @@ export class WebGLEngine extends DrawingEngine {
     _setBlendMode(blendMode, isEraser = false) {
         const gl = this.gl;
         if (isEraser) {
-            // 消しゴムは、描画先のアルファチャンネルのみを減算する
-            gl.blendEquation(gl.FUNC_REVERSE_SUBTRACT); // Dst - Src
+            gl.blendEquation(gl.FUNC_REVERSE_SUBTRACT);
             gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
         } else {
-            gl.blendEquation(gl.FUNC_ADD); // Src + Dst
-             // デフォルトは事前乗算アルファ用の加算合成 (Src*1 + Dst*(1-SrcA))
+            gl.blendEquation(gl.FUNC_ADD);
             gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
             switch (blendMode) {
                 case 'multiply': 
-                    // 乗算 (Dst*Src + Dst*(1-SrcA)) = Dst * (Src + 1 - SrcA)
                     gl.blendFuncSeparate(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
                     break;
                 case 'screen': 
-                    // スクリーン (Src + Dst - Src*Dst) => (Src*1 + Dst*(1-Src))
                      gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_COLOR, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
                     break;
-                case 'add': // 加算 (リニア覆い焼き)
+                case 'add':
                      gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE); 
                     break;
             }
@@ -406,12 +388,9 @@ export class WebGLEngine extends DrawingEngine {
         gl.readPixels(sx, sy, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixelBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-        // ★修正★
-        // ここでも、読みだした「事前乗算済みアルファ」を「非乗算」に戻します。
-        // これにより、ImageDataとして正しく状態を保存できます。
         for (let i = 0; i < pixelBuffer.length; i += 4) {
             const a = pixelBuffer[i + 3];
-            if (a > 0) { // アルファが0より大きいピクセルだけを処理
+            if (a > 0) {
                 const factor = 255.0 / a;
                 pixelBuffer[i]   = Math.min(255, Math.round(pixelBuffer[i]   * factor));
                 pixelBuffer[i+1] = Math.min(255, Math.round(pixelBuffer[i+1] * factor));
@@ -419,7 +398,6 @@ export class WebGLEngine extends DrawingEngine {
             }
         }
 
-        // 読みだしたデータはY-upなので、上下反転させてから2D Canvasで処理します。
         const flippedBuffer = new Uint8ClampedArray(sWidth * sHeight * 4);
         for (let y = 0; y < sHeight; y++) {
             const srcRowIndex = y;
