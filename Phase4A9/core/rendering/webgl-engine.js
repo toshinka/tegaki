@@ -1,22 +1,13 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.0.0 (Layer Transform with modelMatrix - Phase4A9)
+ * Version: 4.0.1 (Shader Precision Fix - Phase4A9 Hotfix)
  *
- * - 改修：
- * - 1. レイヤーごとのモデル行列(modelMatrix)に対応:
- * -   各レイヤーが持つ modelMatrix を uniform 変数としてシェーダーに渡し、
- * -   GPU上で直接、レイヤーの移動・回転・拡縮を適用するように変更。
- * -   これにより、画質劣化のない非破壊的なレイヤー変形を実現。
- *
- * - 2. Y軸反転処理のシェーダーへの集約:
- * -   指示書に基づき、座標系のY軸反転をすべて頂点シェーダー内で行うように統一。
- * -   JS側で `superHeight - y` のような計算を行っていた箇所を削除し、
- * -   座標系の混乱に起因する描画ズレのリスクを根本的に解消。
- *
- * - 3. 破壊的変形処理の廃止:
- * -   非破壊変形の導入に伴い、ピクセルを直接書き換えていた高負荷な
- * -   `getTransformedImageData` メソッドを廃止し、コードをシンプル化。
+ * - 修正：
+ * - 1. シェーダー精度の不一致を修正:
+ * -   ブラシ描画用の頂点シェーダー(vsBrush)の浮動小数点数精度(precision)を
+ * -   'mediump'から'highp'に変更。これによりフラグメントシェーダーと精度が一致し、
+ * -   'Unable to initialize the shader program'エラーを解消。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -33,7 +24,6 @@ export class WebGLEngine extends DrawingEngine {
         this.superWidth = this.width * this.SUPER_SAMPLING_FACTOR;
         this.superHeight = this.height * this.SUPER_SAMPLING_FACTOR;
         
-        // ★★★ Phase4A9 改修: 正投影行列をプロパティとして保持 ★★★
         this.projectionMatrix = glMatrix.mat4.create();
         
         this.programs = { compositor: null, brush: null };
@@ -70,29 +60,19 @@ export class WebGLEngine extends DrawingEngine {
         this._initBuffers();
         this._setupSuperCompositingBuffer();
         
-        // ★★★ Phase4A9 改修: 正投影行列を初期化 ★★★
-        // Y軸が下向き（HTMLの座標系と同じ）になるように設定
         glMatrix.mat4.ortho(this.projectionMatrix, 0, this.superWidth, this.superHeight, 0, -1, 1);
 
-        console.log(`WebGL Engine (v4.0.0 Layer Transform) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.0.1 Shader Fix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
-        // ★★★★★ Phase4A9 改修: レイヤー変形とY軸反転を行う頂点シェーダー ★★★★★
         const vsCompositor = `
-            attribute vec4 a_position; // 描画する四角形の頂点座標
-            attribute vec2 a_texCoord; // テクスチャ座標
-            
-            // modelMatrix(レイヤー変形)とprojectionMatrix(投影)を乗算済みの行列
+            attribute vec4 a_position;
+            attribute vec2 a_texCoord;
             uniform mat4 u_mvpMatrix; 
-            
             varying vec2 v_texCoord;
             void main() {
-                // モデル変形と投影を適用して頂点の最終位置を決定
                 gl_Position = u_mvpMatrix * a_position;
-                
-                // テクスチャ座標はそのままフラグメントシェーダーへ渡す
-                // Y軸反転は行列で行うため、ここでは何もしない
                 v_texCoord = a_texCoord;
             }`;
             
@@ -106,29 +86,25 @@ export class WebGLEngine extends DrawingEngine {
                 gl_FragColor = vec4(color.rgb, color.a * u_opacity);
             }`;
 
-        // ★★★★★ Phase4A9 改修: ブラシ描画用の頂点シェーダーもY軸反転に対応 ★★★★★
+        // ★★★★★ HOTFIX: シェーダーの精度を 'highp' に統一 ★★★★★
         const vsBrush = `
-            precision mediump float;
+            precision highp float; // mediump から highp に変更
             attribute vec2 a_position; 
-            
-            uniform mat4 u_projectionMatrix; // ブラシ描画も全体の投影に合わせる
+            uniform mat4 u_projectionMatrix;
             uniform vec2 u_center;
-            uniform float u_radius;
+            uniform float u_radius; // この uniform の精度を揃える
             varying vec2 v_texCoord;
 
             void main() {
-                // ブラシの四角形をピクセル単位で定義
                 vec2 quad_pos = a_position * (u_radius * 2.0 + 2.0) + u_center;
-                
-                // 投影行列を適用してクリップ座標に変換
                 gl_Position = u_projectionMatrix * vec4(quad_pos, 0.0, 1.0);
                 v_texCoord = a_position + 0.5;
             }`;
 
         const fsBrush = `
-            precision highp float;
+            precision highp float; // こちらは元から highp だった
             varying vec2 v_texCoord;
-            uniform float u_radius;
+            uniform float u_radius; // この uniform の精度を揃える
             uniform vec4 u_color;
             uniform bool u_is_eraser;
 
@@ -154,27 +130,20 @@ export class WebGLEngine extends DrawingEngine {
     
     _initBuffers() {
         const gl = this.gl;
-        // ★★★ Phase4A9 改修: レイヤーの頂点バッファをピクセル単位に変更 ★★★
-        // レイヤーはそれぞれ原点(0,0)を持つサイズ可変のオブジェクトとして扱う
         this.positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
         const positions = [
-            0.0, 0.0, // 左上
-            this.width, 0.0, // 右上
-            0.0, this.height, // 左下
-            this.width, this.height, // 右下
+            0.0, 0.0, this.width, 0.0, 0.0, this.height, this.width, this.height,
         ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 
         this.texCoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        // テクスチャ座標は 0.0-1.0 のまま
         const texCoords = [ 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0 ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
         
         this.brushPositionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.brushPositionBuffer);
-        // ブラシの頂点は-0.5~0.5の単位四角形
         const brushPositions = [ -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5 ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(brushPositions), gl.STATIC_DRAW);
     }
@@ -188,7 +157,7 @@ export class WebGLEngine extends DrawingEngine {
         let texture = this.layerTextures.get(layer);
         let fbo = this.layerFBOs.get(layer);
 
-        const targetWidth = this.width; // テクスチャ自体のサイズは不変
+        const targetWidth = this.width;
         const targetHeight = this.height;
 
         if (!texture) {
@@ -224,8 +193,6 @@ export class WebGLEngine extends DrawingEngine {
     }
     
     _setupSuperCompositingBuffer() {
-        // この関数はスーパーサンプリング用の中間バッファを作成します。
-        // レイヤー変形とは直接関係ないため、処理は変更しません。
         const gl = this.gl;
         if (this.superCompositeFBO) gl.deleteFramebuffer(this.superCompositeFBO);
         if (this.superCompositeTexture) gl.deleteTexture(this.superCompositeTexture);
@@ -287,12 +254,11 @@ export class WebGLEngine extends DrawingEngine {
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_position);
         
-        // ★★★ Phase4A9 修正: Y軸反転処理を削除し、シェーダーに任せる ★★★
         const projectionMatrixForBrush = glMatrix.mat4.create();
         glMatrix.mat4.ortho(projectionMatrixForBrush, 0, this.width, this.height, 0, -1, 1);
 
         gl.uniformMatrix4fv(program.locations.u_projectionMatrix, false, projectionMatrixForBrush);
-        gl.uniform2f(program.locations.u_center, centerX, centerY); // Y座標をそのまま渡す
+        gl.uniform2f(program.locations.u_center, centerX, centerY);
         gl.uniform1f(program.locations.u_radius, radius);
         gl.uniform4f(program.locations.u_color, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
         gl.uniform1i(program.locations.u_is_eraser, isEraser);
@@ -321,9 +287,6 @@ export class WebGLEngine extends DrawingEngine {
         }
     }
 
-    // ★★★ Phase4A9 廃止: 非破壊変形に移行するため不要に ★★★
-    // getTransformedImageData() {}
-
     compositeLayers(layers, compositionData, dirtyRect) {
         if (!this.gl || !this.programs.compositor || !this.superCompositeFBO) return;
         const gl = this.gl;
@@ -341,7 +304,6 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.useProgram(program);
         
-        // ★★★ Phase4A9 改修: 頂点バッファのセットアップ ★★★
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(program.locations.a_position);
@@ -358,9 +320,7 @@ export class WebGLEngine extends DrawingEngine {
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, this.layerTextures.get(layer));
             
-            // ★★★ Phase4A9 改修: MVP行列を計算してシェーダーに送信 ★★★
             const mvpMatrix = glMatrix.mat4.create();
-            // 投影行列とモデル行列を掛け合わせる
             glMatrix.mat4.multiply(mvpMatrix, this.projectionMatrix, layer.modelMatrix);
             
             const u_mvpMatrixLoc = program.locations.u_mvpMatrix;
@@ -391,8 +351,6 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.useProgram(program);
 
-        // ★★★ Phase4A9 改修: 画面表示用の頂点設定 ★★★
-        // 画面全体に描画するための-1~1のクリップ座標を直接使う
         const screenPosBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, screenPosBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,1, 1,1, -1,-1, 1,-1]), gl.STATIC_DRAW);
@@ -406,8 +364,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.superCompositeTexture);
 
-        // ★★★ Phase4A9 改修: 画面表示では単位行列を使用（変形は既に適用済み） ★★★
-        const mvpMatrix = glMatrix.mat4.create(); // 単位行列
+        const mvpMatrix = glMatrix.mat4.create();
         gl.uniformMatrix4fv(program.locations.u_mvpMatrix, false, mvpMatrix);
         
         gl.uniform1i(program.locations.u_image, 0);
@@ -425,7 +382,6 @@ export class WebGLEngine extends DrawingEngine {
         const fbo = this.layerFBOs.get(layer);
         if (!fbo || dirtyRect.minX > dirtyRect.maxX) return;
 
-        // ★★★ Phase4A9 修正: スーパーサンプリングではなく等倍で読み出す ★★★
         const sx = Math.floor(dirtyRect.minX);
         const sy = Math.floor(dirtyRect.minY);
         const sWidth = Math.ceil(dirtyRect.maxX - dirtyRect.minX);
@@ -436,14 +392,12 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const buffer = new Uint8Array(sWidth * sHeight * 4);
         
-        // ★★★ Phase4A9 修正: Y軸反転がシェーダーで行われたので、JSでの反転計算は不要 ★★★
         gl.readPixels(sx, sy, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, buffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
         const targetImageData = layer.imageData;
         const targetData = targetImageData.data;
         
-        // 読み取ったバッファをImageDataに書き戻す
         for (let y = 0; y < sHeight; y++) {
             for (let x = 0; x < sWidth; x++) {
                 const targetX = sx + x;
