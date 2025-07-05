@@ -1,12 +1,13 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.0.1 (Phase 4A9 - Hotfix)
+ * Version: 4.0.2 (Phase 4A9 - Hotfix 2)
  *
- * - 修正 (Phase 4A9.1):
- * - プログラムリンクエラーの修正:
- * -   ブラシシェーダー(vsBrush)の浮動小数点数精度を`mediump`から`highp`に変更。
- * -   頂点シェーダーとフラグメントシェーダー間の uniform 変数 `u_radius` の精度を統一し、リンクエラーを解消。
+ * - 修正 (Phase 4A9.2):
+ * - Uncaught TypeErrorの修正:
+ * -   _createOrUpdateLayerTextureメソッド内で、存在しない `layer.canvas` プロパティを参照していた問題を修正。
+ * -   `layer.imageData` を使って一時的なキャンバスを作成し、そこからテクスチャデータを転送するようにロジックを統一。
+ * -   テクスチャの新規作成時とダーティ時のデータ転送処理を統合し、コードの重複を解消。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -69,7 +70,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        console.log(`WebGL Engine (v4.0.1 Phase4A9-fix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.0.2 Phase4A9-fix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
@@ -102,7 +103,7 @@ export class WebGLEngine extends DrawingEngine {
             }`;
 
         const vsBrush = `
-            precision highp float; /* ★★★ 修正箇所: mediump から highp に変更 ★★★ */
+            precision highp float;
             attribute vec2 a_position; 
             uniform vec2 u_resolution;
             uniform vec2 u_center;
@@ -219,11 +220,12 @@ export class WebGLEngine extends DrawingEngine {
 
     static isSupported() { try { const canvas = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))); } catch (e) { return false; } }
 
+    // ▼▼▼▼▼ 修正箇所 ▼▼▼▼▼
     _createOrUpdateLayerTexture(layer) {
         const gl = this.gl;
         let texture = this.layerTextures.get(layer);
-        let fbo = this.layerFBOs.get(layer);
 
+        // テクスチャが存在しない場合、FBOと共に新規作成
         if (!texture) {
             texture = gl.createTexture();
             this.layerTextures.set(layer, texture);
@@ -235,48 +237,42 @@ export class WebGLEngine extends DrawingEngine {
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-            fbo = gl.createFramebuffer();
+            const fbo = gl.createFramebuffer();
             this.layerFBOs.set(layer, fbo);
             gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-
-            if (layer.imageData) {
-                 const tempCanvas = document.createElement('canvas');
-                 tempCanvas.width = this.superWidth;
-                 tempCanvas.height = this.superHeight;
-                 const tempCtx = tempCanvas.getContext('2d');
-                 tempCtx.drawImage(layer.canvas, 0, 0, layer.canvas.width, layer.canvas.height, 0, 0, this.superWidth, this.superHeight);
-                 const superImageData = tempCtx.getImageData(0,0,this.superWidth, this.superHeight);
-
-                 gl.bindTexture(gl.TEXTURE_2D, texture);
-                 gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-                 gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, superImageData);
-            }
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         }
 
-        if (layer.gpuDirty) {
+        // ダーティフラグが立っている場合、CPUのImageDataからGPUテクスチャを更新
+        // (テクスチャ新規作成時もこのルートを通ります)
+        if (layer.gpuDirty && layer.imageData) {
+             // 一時的なキャンバスに imageData を描画
+             const sourceCanvas = document.createElement('canvas');
+             sourceCanvas.width = layer.imageData.width;
+             sourceCanvas.height = layer.imageData.height;
+             sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
+
+             // ソースキャンバスを高解像度バッファに引き伸ばして描画
              const tempCanvas = document.createElement('canvas');
              tempCanvas.width = this.superWidth;
              tempCanvas.height = this.superHeight;
              const tempCtx = tempCanvas.getContext('2d');
              tempCtx.imageSmoothingEnabled = true;
              tempCtx.imageSmoothingQuality = 'high';
-
-             const sourceCanvas = document.createElement('canvas');
-             sourceCanvas.width = layer.imageData.width;
-             sourceCanvas.height = layer.imageData.height;
-             sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
-
              tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
 
+            // 高解像度化したキャンバスからテクスチャにデータを転送
             gl.bindTexture(gl.TEXTURE_2D, texture);
             gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
             gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvas);
             gl.bindTexture(gl.TEXTURE_2D, null);
+
+            // 更新が完了したので、ダーティフラグを降ろす
             layer.gpuDirty = false;
         }
     }
+    // ▲▲▲▲▲ 修正箇所 ▲▲▲▲▲
     
     _setupSuperCompositingBuffer() {
         const gl = this.gl;
