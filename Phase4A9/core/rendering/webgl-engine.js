@@ -1,20 +1,12 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.0.0 (Phase 4A9 - Robust Initialization & Error Detection)
+ * Version: 4.0.1 (Phase 4A9 - Hotfix)
  *
- * - 修正 (Phase 4A9):
- * - 1. WebGL初期化処理の堅牢化:
- * -   WebGLコンテキストが取得できない場合、アラートでユーザーに通知し、処理を安全に停止するように修正。
- * -   シェーダープログラムの初期化に失敗した場合も、エラーログを残してエンジンを無効化するガードを追加。
- * -   初期化完了時に、viewport設定とキャンバスクリアを明示的に行い、描画の土台を安定させる。
- *
- * - 2. エラー検出システムの確立:
- * -   シェーダーのコンパイルやプログラムのリンクに失敗した際、コンソールに詳細なエラーログを出力するように強化。
- * -   これにより「キャンバスが真っ白になる」問題の原因特定が容易になる。
- * * - 3. 将来の拡張に向けた準備:
- * -   将来のレイヤー移動で使用する`u_mvpMatrix` uniform変数の場所を取得する処理を追加。
- * -   現時点ではシェーダーに存在しないため警告が出るが、これは意図した動作であり、次のフェーズへの準備となる。
+ * - 修正 (Phase 4A9.1):
+ * - プログラムリンクエラーの修正:
+ * -   ブラシシェーダー(vsBrush)の浮動小数点数精度を`mediump`から`highp`に変更。
+ * -   頂点シェーダーとフラグメントシェーダー間の uniform 変数 `u_radius` の精度を統一し、リンクエラーを解消。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -24,12 +16,10 @@ export class WebGLEngine extends DrawingEngine {
         super(canvas);
         this.gl = null;
         
-        // ★★★ スーパーサンプリング係数 ★★★
         this.SUPER_SAMPLING_FACTOR = 2.0;
 
         this.width = canvas.width;
         this.height = canvas.height;
-        // ★★★ 内部処理用の高解像度 ★★★
         this.superWidth = this.width * this.SUPER_SAMPLING_FACTOR;
         this.superHeight = this.height * this.SUPER_SAMPLING_FACTOR;
         
@@ -38,7 +28,6 @@ export class WebGLEngine extends DrawingEngine {
         this.texCoordBuffer = null;
         this.brushPositionBuffer = null;
         
-        // ★★★ 高解像度の中間合成用バッファ ★★★
         this.superCompositeTexture = null;
         this.superCompositeFBO = null;
         
@@ -48,14 +37,12 @@ export class WebGLEngine extends DrawingEngine {
         this.transformOffscreenCanvas = document.createElement('canvas');
         this.transformOffscreenCtx = this.transformOffscreenCanvas.getContext('2d');
 
-        // ▼▼▼▼▼ Phase 4A9 修正箇所 1: WebGL初期化処理の堅牢化 ▼▼▼▼▼
         try {
             this.gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: false }) || canvas.getContext('experimental-webgl', { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: false });
-            // ★ 最重要ガード: WebGLコンテキストが取得できない場合 ★
             if (!this.gl) {
                 alert('お使いのブラウザはWebGLをサポートしていません。別のブラウザをお試しください。');
                 console.error('WebGLコンテキストの取得に失敗しました。');
-                return; // 処理を即座に終了
+                return;
             }
         } catch (e) {
             console.error("WebGL Engine initialization failed:", e);
@@ -65,32 +52,27 @@ export class WebGLEngine extends DrawingEngine {
 
         const gl = this.gl;
         
-        // ★ 初期化時のブレンド設定 ★
         gl.enable(gl.BLEND);
         gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
         this._initShaderPrograms();
-        // ★ プログラム作成失敗時に処理を停止するガード ★
         if (!this.programs.compositor || !this.programs.brush) {
             console.error("シェーダープログラムの初期化に失敗したため、WebGLエンジンのセットアップを中断します。");
-            this.gl = null; // WebGLエンジンを無効化
+            this.gl = null;
             return;
         }
 
         this._initBuffers();
         this._setupSuperCompositingBuffer();
 
-        // ★ 初期化完了時点で一度キャンバスをクリア ★
-        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height); // 描画領域をキャンバスサイズに設定
-        gl.clearColor(0.0, 0.0, 0.0, 0.0); // 透明な黒でクリア色設定
-        gl.clear(gl.COLOR_BUFFER_BIT); // キャンバスをクリア
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        gl.clearColor(0.0, 0.0, 0.0, 0.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
 
-        console.log(`WebGL Engine (v4.0.0 Phase4A9) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
-        // ▲▲▲▲▲ Phase 4A9 修正箇所 1 ▲▲▲▲▲
+        console.log(`WebGL Engine (v4.0.1 Phase4A9-fix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
-        // ★★★★★ このシェーダーは高解像度テクスチャを高品質にサンプリングするために使われる ★★★★★
         const vsCompositor = `
             attribute vec4 a_position;
             attribute vec2 a_texCoord;
@@ -120,7 +102,7 @@ export class WebGLEngine extends DrawingEngine {
             }`;
 
         const vsBrush = `
-            precision mediump float;
+            precision highp float; /* ★★★ 修正箇所: mediump から highp に変更 ★★★ */
             attribute vec2 a_position; 
             uniform vec2 u_resolution;
             uniform vec2 u_center;
@@ -180,13 +162,11 @@ export class WebGLEngine extends DrawingEngine {
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(brushPositions), gl.STATIC_DRAW);
     }
 
-    // ▼▼▼▼▼ Phase 4A9 修正箇所 2: エラーチェック実装 ▼▼▼▼▼
     _compileShader(source, type) {
         const gl = this.gl;
         const shader = gl.createShader(type);
         gl.shaderSource(shader, source);
         gl.compileShader(shader);
-        // ★ シェーダーコンパイルエラーのチェック ★
         if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
             const info = gl.getShaderInfoLog(shader);
             console.error(`シェーダーコンパイルエラー (${type === gl.VERTEX_SHADER ? 'Vertex' : 'Fragment'}):`, info);
@@ -207,7 +187,6 @@ export class WebGLEngine extends DrawingEngine {
         gl.attachShader(program, fs);
         gl.linkProgram(program);
 
-        // ★ プログラムリンクエラーのチェック ★
         if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
             const info = gl.getProgramInfoLog(program);
             console.error('プログラムリンクエラー:', info);
@@ -215,7 +194,6 @@ export class WebGLEngine extends DrawingEngine {
             return null;
         }
         
-        // ▼▼▼▼▼ Phase 4A9 修正箇所 3: u_mvpMatrixLoc の安全な取得 ▼▼▼▼▼
         program.locations = {};
         const locs = (p) => {
             p.locations.a_position = gl.getAttribLocation(p, 'a_position');
@@ -228,21 +206,16 @@ export class WebGLEngine extends DrawingEngine {
             p.locations.u_color = gl.getUniformLocation(p, 'u_color');
             p.locations.u_is_eraser = gl.getUniformLocation(p, 'u_is_eraser');
             p.locations.u_source_resolution = gl.getUniformLocation(p, 'u_source_resolution');
-            // ★ u_mvpMatrix の location を取得しようと試みる
             p.locations.u_mvpMatrix = gl.getUniformLocation(p, 'u_mvpMatrix');
         };
         locs(program);
         
-        // ★ 取得できなかった場合に警告ログを出力
         if (program.locations.u_mvpMatrix === null) {
-            // この時点ではシェーダーにu_mvpMatrixが存在しないため、警告が出るのが正常な動作です。
             console.warn('u_mvpMatrix Uniform Locationが見つかりませんでした。シェーダー変数名を確認してください。これはPhase 4A9では想定内の警告です。');
         }
-        // ▲▲▲▲▲ Phase 4A9 修正箇所 3 ▲▲▲▲▲
         
         return program;
     }
-    // ▲▲▲▲▲ Phase 4A9 修正箇所 2 ▲▲▲▲▲
 
     static isSupported() { try { const canvas = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))); } catch (e) { return false; } }
 
