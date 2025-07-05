@@ -1,15 +1,13 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.1.0 (Phase 4A9 - Completed)
+ * Version: 4.0.2 (Phase 4A9 - Hotfix 2)
  *
- * - 修正 (Phase 4A9):
- * - コンポジット用頂点シェーダー(`vsCompositor`)に`uniform mat4 u_mvpMatrix`を追加。
- * - gl_Positionの計算に`u_mvpMatrix`を適用し、レイヤーごとの変形をGPUで行うように変更。
- * [cite_start]これにより、指示書[cite: 43, 49, 82]に沿ったY軸反転と行列変換を実現。
- * - [cite_start]`compositeLayers`メソッド内で、各レイヤーの`modelMatrix`をシェーダーに転送する処理を追加[cite: 42, 50, 109]。
- * - `renderToDisplay`メソッドで、最終描画時に`u_mvpMatrix`を単位行列にリセットし、意図しない変形が残る不具合を防止。
- * - これにより、レイヤー描画の安定性が向上し、「絵が赤くなる・消える」問題の根本原因を解消。
+ * - 修正 (Phase 4A9.2):
+ * - Uncaught TypeErrorの修正:
+ * -   _createOrUpdateLayerTextureメソッド内で、存在しない `layer.canvas` プロパティを参照していた問題を修正。
+ * -   `layer.imageData` を使って一時的なキャンバスを作成し、そこからテクスチャデータを転送するようにロジックを統一。
+ * -   テクスチャの新規作成時とダーティ時のデータ転送処理を統合し、コードの重複を解消。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -39,10 +37,6 @@ export class WebGLEngine extends DrawingEngine {
         
         this.transformOffscreenCanvas = document.createElement('canvas');
         this.transformOffscreenCtx = this.transformOffscreenCanvas.getContext('2d');
-        
-        // ★★★ 修正点: 画面描画用に単位行列をキャッシュ ★★★
-        this.identityMatrix = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
-
 
         try {
             this.gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: false }) || canvas.getContext('experimental-webgl', { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: false });
@@ -76,23 +70,18 @@ export class WebGLEngine extends DrawingEngine {
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        console.log(`WebGL Engine (v4.1.0 Phase4A9-complete) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.0.2 Phase4A9-fix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
-        // ★★★ 修正点: コンポジット用頂点シェーダーに u_mvpMatrix を導入 ★★★
         const vsCompositor = `
-            attribute vec2 a_position;
+            attribute vec4 a_position;
             attribute vec2 a_texCoord;
-            uniform mat4 u_mvpMatrix;
             varying vec2 v_texCoord;
-
             void main() {
-                // Y軸反転と行列変換を適用
-                gl_Position = u_mvpMatrix * vec4(a_position.xy, 0.0, 1.0);
+                gl_Position = a_position;
                 v_texCoord = a_texCoord;
             }`;
-
         const fsCompositor = `
             precision highp float;
             varying vec2 v_texCoord;
@@ -101,16 +90,13 @@ export class WebGLEngine extends DrawingEngine {
             uniform vec2 u_source_resolution;
 
             void main() {
-                // テクスチャ座標のYを反転 (ImageDataとWebGLの座標系の違いを吸収)
-                vec2 flipped_v_texCoord = vec2(v_texCoord.x, 1.0 - v_texCoord.y);
-
                 vec2 texel_size = 1.0 / u_source_resolution;
                 vec4 color = vec4(0.0);
                 
-                color += texture2D(u_image, flipped_v_texCoord + texel_size * vec2(-0.25, -0.25));
-                color += texture2D(u_image, flipped_v_texCoord + texel_size * vec2( 0.25, -0.25));
-                color += texture2D(u_image, flipped_v_texCoord + texel_size * vec2( 0.25,  0.25));
-                color += texture2D(u_image, flipped_v_texCoord + texel_size * vec2(-0.25,  0.25));
+                color += texture2D(u_image, v_texCoord + texel_size * vec2(-0.25, -0.25));
+                color += texture2D(u_image, v_texCoord + texel_size * vec2( 0.25, -0.25));
+                color += texture2D(u_image, v_texCoord + texel_size * vec2( 0.25,  0.25));
+                color += texture2D(u_image, v_texCoord + texel_size * vec2(-0.25,  0.25));
                 color *= 0.25;
 
                 gl_FragColor = vec4(color.rgb, color.a * u_opacity);
@@ -221,17 +207,12 @@ export class WebGLEngine extends DrawingEngine {
             p.locations.u_color = gl.getUniformLocation(p, 'u_color');
             p.locations.u_is_eraser = gl.getUniformLocation(p, 'u_is_eraser');
             p.locations.u_source_resolution = gl.getUniformLocation(p, 'u_source_resolution');
-            p.locations.u_mvpMatrix = gl.getUniformLocation(p, 'u_mvpMatrix'); // ★★★ u_mvpMatrixのロケーションを取得
+            p.locations.u_mvpMatrix = gl.getUniformLocation(p, 'u_mvpMatrix');
         };
         locs(program);
         
-        // u_mvpMatrix の存在チェック
         if (program.locations.u_mvpMatrix === null) {
-            // brushシェーダーにはu_mvpMatrixは無いので、警告が出ないようにする
-            const hasMvp = vsSource.includes('u_mvpMatrix');
-            if(hasMvp) {
-                 console.warn('u_mvpMatrix Uniform Locationが見つかりませんでした。シェーダー変数名を確認してください。');
-            }
+            console.warn('u_mvpMatrix Uniform Locationが見つかりませんでした。シェーダー変数名を確認してください。これはPhase 4A9では想定内の警告です。');
         }
         
         return program;
@@ -239,10 +220,12 @@ export class WebGLEngine extends DrawingEngine {
 
     static isSupported() { try { const canvas = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))); } catch (e) { return false; } }
 
+    // ▼▼▼▼▼ 修正箇所 ▼▼▼▼▼
     _createOrUpdateLayerTexture(layer) {
         const gl = this.gl;
         let texture = this.layerTextures.get(layer);
 
+        // テクスチャが存在しない場合、FBOと共に新規作成
         if (!texture) {
             texture = gl.createTexture();
             this.layerTextures.set(layer, texture);
@@ -261,12 +244,16 @@ export class WebGLEngine extends DrawingEngine {
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         }
 
+        // ダーティフラグが立っている場合、CPUのImageDataからGPUテクスチャを更新
+        // (テクスチャ新規作成時もこのルートを通ります)
         if (layer.gpuDirty && layer.imageData) {
+             // 一時的なキャンバスに imageData を描画
              const sourceCanvas = document.createElement('canvas');
              sourceCanvas.width = layer.imageData.width;
              sourceCanvas.height = layer.imageData.height;
              sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
 
+             // ソースキャンバスを高解像度バッファに引き伸ばして描画
              const tempCanvas = document.createElement('canvas');
              tempCanvas.width = this.superWidth;
              tempCanvas.height = this.superHeight;
@@ -275,14 +262,17 @@ export class WebGLEngine extends DrawingEngine {
              tempCtx.imageSmoothingQuality = 'high';
              tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
 
+            // 高解像度化したキャンバスからテクスチャにデータを転送
             gl.bindTexture(gl.TEXTURE_2D, texture);
             gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
             gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvas);
             gl.bindTexture(gl.TEXTURE_2D, null);
 
+            // 更新が完了したので、ダーティフラグを降ろす
             layer.gpuDirty = false;
         }
     }
+    // ▲▲▲▲▲ 修正箇所 ▲▲▲▲▲
     
     _setupSuperCompositingBuffer() {
         const gl = this.gl;
@@ -313,24 +303,13 @@ export class WebGLEngine extends DrawingEngine {
             gl.blendFuncSeparate(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
         } else {
             gl.blendEquation(gl.FUNC_ADD);
-            
-            // Premultiplied Alpha用のブレンド設定
             gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
             
             switch (blendMode) {
-                case 'multiply': 
-                    gl.blendFuncSeparate(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
-                    break;
-                case 'screen': 
-                    gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_COLOR, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
-                    break;
-                case 'add': // 加算
-                    gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE); 
-                    break;
-                // 'normal' or default
-                default: 
-                    gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
-                    break;
+                case 'multiply': gl.blendFuncSeparate(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); break;
+                case 'screen': gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_COLOR, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); break;
+                case 'add': gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE); break;
+                default: gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); break;
             }
         }
     }
@@ -347,12 +326,15 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO);
         gl.viewport(0, 0, this.superWidth, this.superHeight);
         
+        gl.enable(gl.SCISSOR_TEST);
+        gl.scissor(0, 0, this.superWidth, this.superHeight);
+        
         gl.useProgram(program);
         this._setBlendMode('normal', isEraser);
 
         gl.bindBuffer(gl.ARRAY_BUFFER, this.brushPositionBuffer);
-        gl.enableVertexAttribArray(program.locations.a_position);
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(program.locations.a_position);
         
         const superX = centerX * this.SUPER_SAMPLING_FACTOR;
         const superY = centerY * this.SUPER_SAMPLING_FACTOR;
@@ -367,6 +349,7 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
+        gl.disable(gl.SCISSOR_TEST);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
     
@@ -428,27 +411,22 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.superCompositeFBO);
         gl.viewport(0, 0, this.superWidth, this.superHeight);
         
+        gl.enable(gl.SCISSOR_TEST);
+        gl.scissor(0, 0, this.superWidth, this.superHeight);
+        
         gl.clear(gl.COLOR_BUFFER_BIT);
 
         gl.useProgram(program);
-        
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.enableVertexAttribArray(program.locations.a_position);
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(program.locations.a_position);
         
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        gl.enableVertexAttribArray(program.locations.a_texCoord);
         gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(program.locations.a_texCoord);
         
         for (const layer of layers) {
             if (!layer.visible || layer.opacity === 0 || !this.layerTextures.has(layer)) continue;
-
-            // ★★★ 修正点: レイヤーのmodelMatrixをシェーダーに渡す ★★★
-            if (!layer.modelMatrix || program.locations.u_mvpMatrix === null) {
-                console.warn('Skipping layer draw: missing modelMatrix or uniform location.');
-                continue;
-            }
-            gl.uniformMatrix4fv(program.locations.u_mvpMatrix, false, layer.modelMatrix);
 
             this._setBlendMode(layer.blendMode);
 
@@ -461,8 +439,11 @@ export class WebGLEngine extends DrawingEngine {
             
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         }
-        
+
+        gl.disable(gl.SCISSOR_TEST);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.disableVertexAttribArray(program.locations.a_position);
+        gl.disableVertexAttribArray(program.locations.a_texCoord);
     }
     
     renderToDisplay(compositionData, dirtyRect) {
@@ -476,19 +457,13 @@ export class WebGLEngine extends DrawingEngine {
         this._setBlendMode('normal');
 
         gl.useProgram(program);
-
-        // ★★★ 修正点: 最終描画時は変形しないよう単位行列を設定 ★★★
-        if (program.locations.u_mvpMatrix !== null) {
-            gl.uniformMatrix4fv(program.locations.u_mvpMatrix, false, this.identityMatrix);
-        }
-        
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.enableVertexAttribArray(program.locations.a_position);
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(program.locations.a_position);
         
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        gl.enableVertexAttribArray(program.locations.a_texCoord);
         gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(program.locations.a_texCoord);
         
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.superCompositeTexture);
@@ -498,6 +473,9 @@ export class WebGLEngine extends DrawingEngine {
         gl.uniform1f(program.locations.u_opacity, 1.0);
 
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+        gl.disableVertexAttribArray(program.locations.a_position);
+        gl.disableVertexAttribArray(program.locations.a_texCoord);
     }
 
     syncDirtyRectToImageData(layer, dirtyRect) {

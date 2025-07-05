@@ -1,0 +1,174 @@
+【プロジェクトの概要】
+このプロジェクトは、コーディング初心者が無料AI任せでどこまでブラウザお絵描きツールを作れるかを試す長期実験です。
+
+現在は Phase4A9 に入り、レイヤー移動のWebGL化に挑戦しています。
+
+【背景と技術課題】
+今回の改修対象であるレイヤー移動機能には以下の問題が予見されています：
+
+HTML CanvasとWebGLでのY軸座標基準の違いによるズレ
+
+ペン位置と描画内容の非一致
+
+回転や拡大による不自然な歪み
+
+描画対象（ImageData等）と表示位置の整合がとれない
+
+core-engine.js と webgl-engine.js 双方でY軸変換を二重に管理しようとする構造破綻
+
+レイヤーを動かしたあとに貼り付け・呼び出し操作をすると描画物が赤くなったり表示されなくなる
+
+これらの問題が再発しないように、構造設計の分離と責務整理を意識して改修を行ってください。
+
+【技術前提】
+HTMLでは gl-matrix と dat.gui をローカル配置で読み込んでいます：
+
+html
+コピーする
+編集する
+<script src="./libs/gl-matrix-min.js"></script>
+<script src="./libs/dat.gui.min.js"></script>
+使用できるライブラリ（グローバルに定義済み）：
+
+mat4, vec2, vec3 など（glMatrix）
+
+dat.GUI（GUI制御）
+
+添付ファイルのうち、以下のように構造と責務が分かれています：
+
+core-engine.js … UIやペン処理、レイヤー制御など主処理ロジック
+
+rendering-bridge.js … JSエンジンからWebGL描画エンジンへの橋渡し
+
+webgl-engine.js … WebGLでの描画処理専用、状態を持たず描画に集中
+
+工程表.txt … プロジェクト構造のガイド（ファイルツリーと設計方針）
+
+【今回の目的】
+各レイヤーの描画表示位置を、個別に modelMatrix を通じて変化させられるようにすること
+
+dat.gui によってアクティブレイヤーの描画位置をリアルタイムで変更可能にすること
+
+✅ タスク詳細
+🧱 1. modelMatrix の導入と構造整理
+各レイヤーに mat4 型の modelMatrix を導入し、mat4.translate 等による平行移動を可能にしてください。
+
+modelMatrix の内容は、表示位置にのみ影響し、描画内容の内部データそのものには影響を与えない構造でお願いします。
+
+WebGL描画（webgl-engine.js）では、必ずこの modelMatrix をシェーダーへ渡して反映する構造にしてください。
+
+🖼️ 2. rendering-bridge.js を通じた描画連携
+core-engine.js 側のレイヤー状態（含む modelMatrix）を rendering-bridge.js 経由で webgl-engine.js に渡してください。
+
+その際、必要な座標情報や初期状態が欠けないよう、nullやundefinedのまま描画されないように注意してください。
+
+🎛️ 3. dat.gui との接続と制御UI
+dat.gui を使って、アクティブレイヤー（layers[activeLayer]）の modelMatrix に対し以下の操作を可能にしてください：
+
+X軸移動（translateX）
+
+Y軸移動（translateY）
+
+GUIのスライダー調整が即座に modelMatrix に反映されるようにしてください。
+
+また、activeLayer の切り替えに伴って GUIの表示も更新される構造を実現してください。
+
+🛡️ 4. 安定化のためのガード設計
+WebGLが未対応の環境でも落ちないよう、下記のような防御コードを入れてください：
+
+js
+コピーする
+編集する
+const gl = canvas.getContext('webgl');
+if (!gl) {
+  alert("WebGLが利用できません。");
+  return;
+}
+レイヤー初期化時には必ず以下を行ってください：
+
+js
+コピーする
+編集する
+layer.modelMatrix = mat4.create();
+WebGL描画前には描画対象（texture等）と modelMatrix の有無をチェックしてください。
+
+🚨 5. バグ予防のための構造設計ガイドライン
+modelMatrix は描画の表示処理に限って使用し、ImageData等の内部データ変形には使用しないように分離してください。
+
+WebGLの描画責任は webgl-engine.js にのみ集約し、UI・制御・ロジックは core-engine.js 側で完結させてください。
+
+ペン位置・選択範囲・描画クリックの挙動がズレないよう、マウス座標系変換の調整も必要な場合は対応してください。
+
+✅ 成果物として期待する状態
+WebGLによってレイヤーの表示位置が移動可能
+
+dat.gui によってリアルタイムで調整でき、アクティブレイヤー切替に連動
+
+ペン・選択範囲などとの不整合が起きない
+
+描画物が赤くなる、消える、反転するなどのバグが発生しない
+
+✅ 添付ファイル一覧
+ファイル名	説明
+📄 改訂Phase3以降 工程表.txt	ファイル構造・設計指針
+🧠 core-engine.js	メイン制御ロジック
+🖼️ rendering-bridge.js	描画処理の橋渡し
+🎨 webgl-engine.js	WebGL描画の実体
+
+📌 備考
+既存のショートカットやUndo/Redo、その他の描画機能は壊さないよう注意してください。
+
+modelMatrix の導入で既存の描画パイプラインを破壊しないよう構造的整合を意識してください。
+
+【追加ルール】
+- レイヤーの modelMatrix に関する操作（平行移動・回転・スケーリング）は core/utils/transform-utils.js に切り出してください。
+- 各種処理（UI・描画前処理など）は transform-utils.js に定義された関数を通じて modelMatrix にアクセスしてください。
+- 将来的なアニメーションや補間機能にも拡張しやすい構造にしてください。
+
+【補足資料】transform-utils.js のテンプレコード
+
+以下のように core/utils/transform-utils.js にユーティリティ関数を定義し、
+レイヤーの変換処理はすべてこのファイル経由で統一してください。
+📦 core/utils/transform-utils.js（テンプレート）
+js
+コピーする
+編集する
+// core/utils/transform-utils.js
+
+// レイヤーの行列処理を集約するユーティリティ
+
+// gl-matrix を使用（HTMLですでに読み込み済み前提）
+export function resetTransform(layer) {
+  if (!layer) return;
+  layer.modelMatrix = mat4.create();
+}
+
+export function applyTranslation(layer, dx, dy) {
+  if (!layer || !layer.modelMatrix) return;
+  mat4.translate(layer.modelMatrix, layer.modelMatrix, [dx, dy, 0]);
+}
+
+export function applyUniformScale(layer, scale) {
+  if (!layer || !layer.modelMatrix) return;
+  mat4.scale(layer.modelMatrix, layer.modelMatrix, [scale, scale, 1]);
+}
+
+export function applyRotation(layer, radian) {
+  if (!layer || !layer.modelMatrix) return;
+  mat4.rotateZ(layer.modelMatrix, layer.modelMatrix, radian);
+}
+
+// 今後の拡張例（アニメーション用補間など）
+// export function interpolateMatrix(out, a, b, t) { ... }
+🧠 補足
+責任分離のため、レイヤーの座標処理は必ずこのユーティリティを通すようにしてください。
+
+今後の transformAnimator.js などの拡張ファイルでも再利用しやすくなります。
+
+使用例（core-engine内など）：
+
+js
+コピーする
+編集する
+import { applyTranslation } from './core/utils/transform-utils.js';
+applyTranslation(activeLayer, 10, -5);
