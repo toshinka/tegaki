@@ -188,7 +188,7 @@ if (layer.imageData) {
         gl.UNSIGNED_BYTE,
         imgData.data
     );
-}
+
 
 
         if (layer.gpuDirty) {
@@ -221,8 +221,7 @@ if (layer.imageData) {
         }
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
-}
-    
+   
     _setBlendMode(blendMode, isEraser = false) { /* (変更なし) */ const gl = this.gl; if (isEraser) { gl.blendEquation(gl.FUNC_ADD); gl.blendFuncSeparate(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA); } else { gl.blendEquation(gl.FUNC_ADD); gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); switch (blendMode) { case 'multiply': gl.blendFuncSeparate(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); break; case 'screen': gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_COLOR, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); break; case 'add': gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE); break; default: gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); break; } } }
 
     drawCircle(centerX, centerY, radius, color, isEraser, layer) { /* (変更なし) */ if (!this.gl || !this.programs.brush) return; const gl = this.gl; const program = this.programs.brush; this._createOrUpdateLayerTexture(layer); const targetFBO = this.layerFBOs.get(layer); if (!targetFBO) return; gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO); gl.viewport(0, 0, this.width, this.height); gl.enable(gl.SCISSOR_TEST); gl.scissor(0, 0, this.width, this.height); gl.useProgram(program); this._setBlendMode('normal', isEraser); gl.bindBuffer(gl.ARRAY_BUFFER, this.brushPositionBuffer); gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(program.locations.a_position); const projectionMatrixForBrush = glMatrix.mat4.create(); glMatrix.mat4.ortho(projectionMatrixForBrush, 0, this.width, this.height, 0, -1, 1); gl.uniformMatrix4fv(program.locations.u_projectionMatrix, false, projectionMatrixForBrush); gl.uniform2f(program.locations.u_center, centerX, centerY); gl.uniform1f(program.locations.u_radius, radius); gl.uniform4f(program.locations.u_color, color.r / 255, color.g / 255, color.b / 255, color.a / 255); gl.uniform1i(program.locations.u_is_eraser, isEraser); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); gl.disable(gl.SCISSOR_TEST); gl.bindFramebuffer(gl.FRAMEBUFFER, null); }
