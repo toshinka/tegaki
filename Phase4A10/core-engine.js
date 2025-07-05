@@ -1,12 +1,12 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.7.0 (Refined Pen Pressure Curve - Mk.II)
+ * Version: 2.8.0 (Phase 4A9 - WebGL Matrix Integration)
  *
  * - 修正：
- * - ペンの「ON荷重」問題をさらに改善するため、筆圧計算ロジックを再々調整。
- * - 描き始めの数点の筆圧を抑制するロジックを強化し、より立ち上がりの遅いカーブに変更。
- * - これにより、弱いタッチでの繊細な「入り」の表現がさらに向上し、シャープな先細り線を描きやすくする。
+ * - LayerクラスにWebGL描画用の`modelMatrix`プロパティを追加。
+ * - 各レイヤーが個別の変形状態をGPU上で持てるようにするための準備。
+ * - saveState/restoreStateが`modelMatrix`に対応し、アンドゥ・リドゥで変形が失われないように修正。
  * ===================================================================================
  */
 
@@ -36,6 +36,11 @@ class Layer {
         this.blendMode = 'normal';
         this.imageData = new ImageData(width, height);
         this.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
+        
+        // ★★★ Phase4A9 修正点: WebGL用のモデル行列を追加 ★★★
+        // gl-matrix-min.jsがグローバルに読み込まれている前提
+        this.modelMatrix = glMatrix.mat4.create();
+
         this.originalImageData = null;
         this.gpuDirty = true; // GPUテクスチャが更新を必要とするか
     }
@@ -275,7 +280,6 @@ class CanvasManager {
         this.dirtyRect = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
     }
 
-    // ★★★★★ 修正箇所: ON荷重をさらに軽減するための筆圧計算ロジック ★★★★★
     calculatePressureSize(baseSizeInput, pressure) {
         const baseSize = Math.max(0.1, baseSizeInput);
         let normalizedPressure = Math.max(0, Math.min(1, pressure || 0));
@@ -286,11 +290,8 @@ class CanvasManager {
 
         let finalPressure = smoothedPressure;
 
-        // ★★★ 描き始めの筆圧抑制を強化 ★★★
         const historyLength = this.pressureHistory.length;
         if (this.isDrawing && historyLength <= this.maxPressureHistory) {
-            // 描き始めの数点は、より立ち上がりが遅い3次関数で筆圧を抑える
-            // 係数を調整し、より繊細なタッチを反映させる (例: 0.2から始まり、5点目で1.0に近づく)
             const dampingFactor = historyLength / this.maxPressureHistory;
             const initialDamping = 0.2 + Math.pow(dampingFactor, 3) * 0.8;
             finalPressure *= initialDamping;
@@ -314,7 +315,6 @@ class CanvasManager {
         
         return Math.max(0.1, finalSize);
     }
-
 
     getCanvasCoordinates(e) {
         try {
@@ -378,6 +378,12 @@ class CanvasManager {
         );
         layer.gpuDirty = true;
         layer.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }; // transform情報をリセット
+        
+        // ★★★ Phase4A9 修正点: modelMatrixもリセット ★★★
+        if (layer.modelMatrix) {
+            glMatrix.mat4.identity(layer.modelMatrix);
+        }
+
         this.isLayerTransforming = false;
         this.transformTargetLayer = null;
         this.originalLayerTransform = null;
@@ -399,7 +405,9 @@ class CanvasManager {
                     layer.imageData.width,
                     layer.imageData.height
                 ),
-                transform: { ...layer.transform } 
+                transform: { ...layer.transform },
+                // ★★★ Phase4A9 修正点: modelMatrixを保存 ★★★
+                modelMatrix: new Float32Array(layer.modelMatrix) // コピーを保存
             })),
             activeLayerIndex: this.app.layerManager.activeLayerIndex
         };
@@ -417,6 +425,10 @@ class CanvasManager {
             layer.imageData.data.set(layerData.imageData.data);
             if (layerData.transform) {
                 layer.transform = { ...layerData.transform };
+            }
+            // ★★★ Phase4A9 修正点: modelMatrixを復元 ★★★
+            if (layerData.modelMatrix) {
+                layer.modelMatrix.set(layerData.modelMatrix);
             }
             layer.gpuDirty = true; // 状態復元時は全レイヤーをGPUに再アップロード
             return layer;
