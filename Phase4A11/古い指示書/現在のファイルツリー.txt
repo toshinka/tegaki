@@ -1,16 +1,16 @@
 現在（Phase 4A実装中）のファイルツリー
 
-├ Phase4A9/
+├ Phase4A10/
 │ │
 │ ├ ToshinkaTegakiTool.html（Phase4A'8）
 │ │
-│ ├ core-engine.js（Phase4A9）  
+│ ├ core-engine.js（Phase4A10）  
 │ │
 │ ├ core/ 
 │ │ ├ rendering/              
 │ │ │  ├── drawing-engine.js    <-- （Phase4A'7）
 │ │ │  ├── canvas2d-engine.js   <-- （Phase4A'7）
-│ │ │  ├── webgl-engine.js      <-- （Phase4A'8）
+│ │ │  ├── webgl-engine.js      <-- （Phase4A10）
 │ │ │  ├── webgpu-engine.js     //  （仮空ファイル）
 │ │ │  ├── rendering-bridge.js  <-- （Phase4A9）
 │ │ │  ├── shader-programs/     // シェーダー管理（仮空ファイル）
@@ -19,7 +19,7 @@
 │ │ │  └── texture-manager.js   // テクスチャ管理（仮空ファイル）
 │ │ │
 │ │ ├ utils/
-│ │ │  └── transform-utils.js   <-- （Phase4A9）
+│ │ │  └── transform-utils.js   <-- （Phase4A10）
 │ │ │ 
 │ │ ├ animation/
 │ │ │  ├── timeline-manager.js  // タイムライン制御（仮空ファイル）
