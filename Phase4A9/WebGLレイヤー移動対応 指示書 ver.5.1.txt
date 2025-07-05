@@ -1,0 +1,106 @@
+📘 WebGLレイヤー移動対応 指示書 ver.5.1（GEMINI用）
+
+この指示書は、Phase4A9における「レイヤー移動のWebGL統合」の改修に向けたガイドです。
+あなた（GEMINI）は以下のルールを厳守しながら、バグを起こしやすい箇所を自らチェックし、必要な改修のみを行ってください。
+
+---
+
+🔒【重要なルール】
+
+- ❌ 関数・クラス・構造の削除や再配置は禁止です。
+- ✅ 必要な関数や処理は追加しても構いません（ただし既存処理の保守を優先）
+- ❌ core-engine.js などの UI制御・レイヤー管理側には原則手を加えないでください。
+- ✅ WebGL描画責任は webgl-engine.js に集約してください。
+- ✅ 判断に迷う場合は「はい／いいえ」で質問を返してください。
+
+---
+
+🧠【チェックリスト】— ミスが起きやすい箇所
+
+1. ✅ Y軸反転の処理は shader だけで行い、JS内で重ねて行わないこと
+
+   ❌ NG（重複反転）:
+   ```js
+   y = canvas.height - y;
+   ```
+
+   ✅ OK:
+   ```glsl
+   gl_Position = u_mvpMatrix * vec4(pos.x, -pos.y, 0.0, 1.0);
+   ```
+
+2. ✅ modelMatrix を `mat4.create()` で生成し、すべての描画処理に渡しているか確認
+
+   ❌ NG（nullのまま）:
+   ```js
+   if (!layer.modelMatrix) return;
+   ```
+
+   ✅ OK:
+   ```js
+   layer.modelMatrix = mat4.create();
+   ```
+
+3. ✅ gl.texSubImage2D() に渡すのは `imageData.data` であること
+
+   ❌ NG:
+   ```js
+   gl.texSubImage2D(..., imageData);
+   ```
+
+   ✅ OK:
+   ```js
+   gl.texSubImage2D(..., imageData.data);
+   ```
+
+4. ✅ canvas サイズを元に gl.viewport() を呼び出しているか
+
+   ✅ OK:
+   ```js
+   gl.viewport(0, 0, canvas.width, canvas.height);
+   ```
+
+5. ✅ framebuffer が complete であるかを必ずチェック
+
+   ✅ OK:
+   ```js
+   if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+     console.error("FBO incomplete");
+   }
+   ```
+
+6. ✅ transform-utils.js を経由して translate, rotate などを行っているか
+
+   ❌ NG:
+   ```js
+   mat4.translate(modelMatrix, modelMatrix, [x, y, 0]);
+   ```
+
+   ✅ OK:
+   ```js
+   applyTranslation(layer, x, y);
+   ```
+
+7. ✅ shader に渡す uniform（u_mvpMatrix 等）は nullチェックしているか
+
+   ✅ OK:
+   ```js
+   if (u_mvpMatrixLoc) {
+     gl.uniformMatrix4fv(u_mvpMatrixLoc, false, modelMatrix);
+   }
+   ```
+
+---
+
+📎 補足
+
+- 描画が赤くなる、何も表示されない、座標がズレる、canvasが出ないといった症状は、上記チェックのいずれかを通すことで必ず回避できます。
+- すべての描画パイプラインは「ImageData → texture → framebuffer → screen」の流れを守ってください。
+- アクティブレイヤー切替時、GUIの transform 値も update する必要があります（dat.gui 連携）
+
+---
+
+📌 あなたは、上記チェックリストに沿ってコード全体を見直し、必要最小限の改修を行ってください。
+改修に迷いがある場合や仕様不明な部分がある場合は、勝手に判断せず、質問を返してください。
+
+(｀・ω・´)ゞ
