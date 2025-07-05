@@ -1,13 +1,14 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.2.1 (Phase 4A10 - Y-Axis Flip Unified FIX)
+ * Version: 4.2.2 (Phase 4A10 - Y-Axis Flip Final Fix)
  *
- * - 修正 (Phase 4A10 Y-Flip FIX):
- * - Y軸反転ルールを「シェーダーで統一」に徹底。
- * - ブラシ描画シェーダー(vsBrush)にY軸反転処理を追加。
- * - 上記に伴い、JavaScript側のブラシ描画メソッド(drawCircle)にあったY座標の反転計算を削除。
- * これにより、すべての描画処理でY軸反転が一貫してシェーダー側で行われるようになり、座標系の混乱を解消。
+ * - 修正 (Phase 4A10 Y-Flip Final Fix):
+ * - Claudeさんの分析に基づき、Y軸反転の戦略を全面的に見直し。
+ * - 1. テクスチャアップロード時にY軸を反転させるよう変更 (UNPACK_FLIP_Y_WEBGL: true)。
+ * - 2. 上記に伴い、コンポジター用とブラシ用の両方の頂点シェーダーから、Y軸を反転させる処理をすべて削除。
+ * - 3. ブラシ描画時、マウス座標(Y-down)をFBO座標(Y-up)に変換するため、JS側のY座標反転計算を復活。
+ * - これにより、データフローの最初（テクスチャロード時）に座標系を統一し、シェーダーをシンプルに保つことで問題を根本解決する。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -72,10 +73,11 @@ export class WebGLEngine extends DrawingEngine {
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        console.log(`WebGL Engine (v4.2.1 Phase4A10-FIX) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.2.2 Phase4A10-Final-FIX) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initShaderPrograms() {
+        // ★★★ 修正点: シェーダー内でのY軸反転を削除 ★★★
         const vsCompositor = `
             attribute vec2 a_position;
             attribute vec2 a_texCoord;
@@ -83,8 +85,8 @@ export class WebGLEngine extends DrawingEngine {
             varying vec2 v_texCoord;
 
             void main() {
-                // Y軸反転をこの頂点シェーダーの一箇所でのみ行う 
-                gl_Position = u_mvpMatrix * vec4(a_position.x, -a_position.y, 0.0, 1.0);
+                // テクスチャロード時に反転するため、シェーダーでの反転は不要
+                gl_Position = u_mvpMatrix * vec4(a_position, 0.0, 1.0);
                 v_texCoord = a_texCoord;
             }`;
 
@@ -108,7 +110,7 @@ export class WebGLEngine extends DrawingEngine {
                 gl_FragColor = vec4(color.rgb, color.a * u_opacity);
             }`;
 
-        // ★★★ Y軸反転対応: ブラシ用頂点シェーダー ★★★
+        // ★★★ 修正点: シェーダー内でのY軸反転を削除 ★★★
         const vsBrush = `
             precision highp float;
             attribute vec2 a_position; 
@@ -122,9 +124,8 @@ export class WebGLEngine extends DrawingEngine {
                 vec2 quad_size_clip = quad_size_pixels / u_resolution;
                 vec2 center_clip = (u_center / u_resolution) * 2.0 - 1.0;
                 
-                // Y軸反転をシェーダー側で統一的に行う
+                // シェーダーでのY軸反転は不要になったため削除
                 vec4 final_pos = vec4(a_position * quad_size_clip + center_clip, 0.0, 1.0);
-                final_pos.y *= -1.0; // Y軸をクリップスペースで反転
                 gl_Position = final_pos;
 
                 v_texCoord = a_position + 0.5;
@@ -272,8 +273,8 @@ export class WebGLEngine extends DrawingEngine {
              tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
 
             gl.bindTexture(gl.TEXTURE_2D, texture);
-            // テクスチャをY反転せずそのままアップロードし、シェーダー側で座標を反転させる方針
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+            // ★★★ 修正点: テクスチャアップロード時にY軸を反転させる ★★★
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
             gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvas);
             gl.bindTexture(gl.TEXTURE_2D, null);
 
@@ -353,9 +354,8 @@ export class WebGLEngine extends DrawingEngine {
         const superY = centerY * this.SUPER_SAMPLING_FACTOR;
         const superRadius = radius * this.SUPER_SAMPLING_FACTOR;
         
-        // ★★★ Y軸反転対応: JS側のY座標反転計算を削除 ★★★
-        // 座標反転はシェーダー側で行うため、ここではY座標をそのまま渡す
-        const webglSuperY = superY;
+        // ★★★ 修正点: マウス座標(Y-down)をFBO座標(Y-up)に変換 ★★★
+        const webglSuperY = this.superHeight - superY;
         
         gl.uniform2f(program.locations.u_resolution, this.superWidth, this.superHeight);
         gl.uniform2f(program.locations.u_center, superX, webglSuperY);
@@ -510,7 +510,8 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const superBuffer = new Uint8Array(sWidth * sHeight * 4);
-        const readY = this.superHeight - (sy + sHeight);
+        // gl.readPixelsは左下原点なので、Y座標の計算はこれで正しい
+        const readY = sy;
         gl.readPixels(sx, readY, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
@@ -518,6 +519,7 @@ export class WebGLEngine extends DrawingEngine {
         const targetData = targetImageData.data;
         const factor = this.SUPER_SAMPLING_FACTOR;
         
+        // superBuffer(Y-up)からtargetImageData(Y-down)へピクセルを転写
         for (let y = 0; y < (dirtyRect.maxY - dirtyRect.minY); y++) {
             for (let x = 0; x < (dirtyRect.maxX - dirtyRect.minX); x++) {
                 const targetX = Math.floor(dirtyRect.minX) + x;
@@ -525,7 +527,8 @@ export class WebGLEngine extends DrawingEngine {
                 if (targetX >= targetImageData.width || targetY >= targetImageData.height) continue;
                 
                 const sourceX = Math.round(x * factor);
-                const sourceY = Math.round(y * factor);
+                // Y軸を反転させてサンプリング
+                const sourceY = sHeight - 1 - Math.round(y * factor);
                 
                 const sourceIndex = (sourceY * sWidth + sourceX) * 4;
                 const targetIndex = (targetY * targetImageData.width + targetX) * 4;
