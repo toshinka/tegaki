@@ -198,7 +198,7 @@ if (layer.imageData) {
             gl.bindTexture(gl.TEXTURE_2D, null);
             layer.gpuDirty = false;
         }
-    }
+
     
     _setupSuperCompositingBuffer() {
         const gl = this.gl;
