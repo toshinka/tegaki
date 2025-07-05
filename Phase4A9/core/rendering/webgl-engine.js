@@ -170,13 +170,26 @@ export class WebGLEngine extends DrawingEngine {
             gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
 
-            if (layer.imageData) {
-                 gl.bindTexture(gl.TEXTURE_2D, texture);
-                 gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-                 gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, layer.imageData.data);
-            }
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        }
+if (layer.imageData) {
+    const imgData = layer.imageData;
+    const width = imgData.width;
+    const height = imgData.height;
+
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texSubImage2D(
+        gl.TEXTURE_2D,
+        0,
+        0,
+        0,
+        width,
+        height,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        imgData.data
+    );
+}
+
 
         if (layer.gpuDirty) {
             gl.bindTexture(gl.TEXTURE_2D, texture);
