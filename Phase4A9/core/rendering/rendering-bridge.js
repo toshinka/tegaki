@@ -1,59 +1,139 @@
 /*
  * ===================================================================================
- * Toshinka Tegaki Tool - Rendering Bridge
- * Version: 4.0.4 (Consolidated)
+ * Toshinka Tegaki Tool - Rendering Bridge (Dynamic Switching)
+ * Version: 2.3.0 (Phase 4A'-7 GPU Drawing Prep)
  *
- * - 変更なし
- * - 他のファイルとのバージョン整合性のため更新
+ * - 修正：
+ * - DrawingEngineのインターフェース変更に伴い、委譲するメソッドの引数を更新。
  * ===================================================================================
  */
-
+import { Canvas2DEngine } from './canvas2d-engine.js';
 import { WebGLEngine } from './webgl-engine.js';
 
 export class RenderingBridge {
-    constructor(canvas) {
-        this.canvas = canvas;
-        this.width = canvas.width;
-        this.height = canvas.height;
+    constructor(displayCanvas) {
+        this.displayCanvas = displayCanvas;
         this.engines = {};
-        this.currentEngineType = 'webgl';
+        this.currentEngine = null;
+        this.currentEngineType = '';
 
-        this.initEngines();
-    }
+        try {
+            this.engines['canvas2d'] = new Canvas2DEngine(this.displayCanvas);
+            console.log("Canvas2D Engine initialized successfully.");
+        } catch (e) {
+            console.error("Failed to initialize Canvas2D engine:", e);
+            throw e;
+        }
 
-    initEngines() {
         if (WebGLEngine.isSupported()) {
-            this.engines['webgl'] = new WebGLEngine(this.canvas);
-            console.log("Rendering Bridge: WebGL engine initialized.");
+            try {
+                const webglCanvas = document.createElement('canvas');
+                webglCanvas.width = this.displayCanvas.width;
+                webglCanvas.height = this.displayCanvas.height;
+                
+                this._setupWebGLCanvasStyle(webglCanvas);
+                this.engines['webgl'] = new WebGLEngine(webglCanvas);
+
+                if (this.engines['webgl'].gl) {
+                    console.log("WebGL Engine initialized successfully.");
+                    this._addWebGLCanvasToDOM();
+                } else {
+                     console.warn("WebGL Engine initialization returned no context. It will be unavailable.");
+                }
+            } catch (e) {
+                console.warn("WebGL Engine initialization failed:", e);
+            }
         } else {
-            // 将来的に2D Canvasフォールバックを実装する場合
-            // this.engines['canvas2d'] = new Canvas2DEngine(this.canvas);
-            // this.currentEngineType = 'canvas2d';
-            console.error("Rendering Bridge: WebGL not supported, and no fallback engine is available.");
+            console.warn("WebGL is not supported in this browser.");
+        }
+
+        if (this.engines['webgl'] && this.engines['webgl'].gl) {
+            this.setEngine('webgl');
+        } else {
+            this.setEngine('canvas2d');
+            console.warn("Falling back to Canvas2D engine as WebGL is not available or failed to initialize.");
         }
     }
 
-    get activeEngine() {
-        return this.engines[this.currentEngineType];
+    _setupWebGLCanvasStyle(webglCanvas) {
+        const displayStyle = window.getComputedStyle(this.displayCanvas);
+        
+        webglCanvas.style.position = displayStyle.position || 'absolute';
+        webglCanvas.style.left = displayStyle.left || '0px';
+        webglCanvas.style.top = displayStyle.top || '0px';
+        webglCanvas.style.width = displayStyle.width || `${this.displayCanvas.width}px`;
+        webglCanvas.style.height = displayStyle.height || `${this.displayCanvas.height}px`;
+        webglCanvas.style.zIndex = (parseInt(displayStyle.zIndex) || 0) + 1;
+        
+        webglCanvas.style.pointerEvents = 'none';
+        webglCanvas.style.display = 'none';
+        
+        console.log("WebGL canvas style setup completed");
     }
 
-    drawCircle(centerX, centerY, radius, color, isEraser, layer) {
-        this.activeEngine?.drawCircle(centerX, centerY, radius, color, isEraser, layer);
-    }
-    
-    drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize, layer) {
-        this.activeEngine?.drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize, layer);
-    }
-    
-    compositeLayers(layers, compositionData, dirtyRect) {
-        this.activeEngine?.compositeLayers(layers, compositionData, dirtyRect);
-    }
-    
-    renderToDisplay(compositionData, dirtyRect) {
-        this.activeEngine?.renderToDisplay(compositionData, dirtyRect);
+    _addWebGLCanvasToDOM() {
+        if (this.engines['webgl'] && this.displayCanvas.parentNode) {
+            const webglCanvas = this.engines['webgl'].canvas;
+            this.displayCanvas.parentNode.insertBefore(webglCanvas, this.displayCanvas.nextSibling);
+            console.log("WebGL canvas added to DOM");
+        }
     }
 
-    syncDirtyRectToImageData(layer, dirtyRect) {
-        this.activeEngine?.syncDirtyRectToImageData(layer, dirtyRect);
+    setEngine(type) {
+        if (this.engines[type] && (type !== 'webgl' || this.engines[type].gl)) {
+            this.currentEngine = this.engines[type];
+            this.currentEngineType = type;
+            console.log(`Switched rendering engine to: ${type}`);
+            
+            if (type === 'webgl') {
+                if (this.engines['webgl'].canvas) {
+                    this.engines['webgl'].canvas.style.display = 'block';
+                }
+                this.displayCanvas.style.opacity = '0';
+                this.displayCanvas.style.pointerEvents = 'auto';
+                console.log("WebGL canvas displayed, original canvas made transparent for events");
+                
+            } else {
+                if (this.engines['webgl'] && this.engines['webgl'].canvas) {
+                    this.engines['webgl'].canvas.style.display = 'none';
+                }
+                this.displayCanvas.style.opacity = '1';
+                this.displayCanvas.style.pointerEvents = 'auto';
+                console.log("Canvas2D canvas restored to full visibility");
+            }
+
+            this._logCanvasVisibility();
+            return true;
+        } else {
+            console.warn(`'${type}' engine is not available. Staying on '${this.currentEngineType}'.`);
+            return false;
+        }
     }
+
+    _logCanvasVisibility() {
+        if (console.debug) {
+            console.debug("Canvas visibility status:");
+            console.debug("- Canvas2D opacity:", this.displayCanvas.style.opacity);
+            console.debug("- Canvas2D pointerEvents:", this.displayCanvas.style.pointerEvents);
+            console.debug("- Canvas2D visible:", this.displayCanvas.offsetWidth > 0 && this.displayCanvas.offsetHeight > 0);
+            
+            if (this.engines['webgl'] && this.engines['webgl'].canvas) {
+                const webglCanvas = this.engines['webgl'].canvas;
+                console.debug("- WebGL display:", webglCanvas.style.display);
+                console.debug("- WebGL pointerEvents:", webglCanvas.style.pointerEvents);
+                console.debug("- WebGL visible:", webglCanvas.offsetWidth > 0 && webglCanvas.offsetHeight > 0);
+            }
+        }
+    }
+
+    // --- DrawingEngineのインターフェースを現在のエンジンに委譲 ---
+    // ★★★ 修正: メソッドのシグネチャ（引数）をインターフェースに合わせる ★★★
+    drawCircle(...args) { this.currentEngine.drawCircle(...args); }
+    drawLine(...args) { this.currentEngine.drawLine(...args); }
+    fill(...args) { this.currentEngine.fill(...args); }
+    clear(...args) { this.currentEngine.clear(...args); }
+    getTransformedImageData(...args) { return this.currentEngine.getTransformedImageData(...args); }
+    compositeLayers(...args) { this.currentEngine.compositeLayers(...args); }
+    renderToDisplay(...args) { this.currentEngine.renderToDisplay(...args); }
+    syncDirtyRectToImageData(...args) { this.currentEngine.syncDirtyRectToImageData?.(...args); }
 }
