@@ -519,26 +519,26 @@ export class WebGLEngine extends DrawingEngine {
 
 現在（Phase 4A実装中）のファイルツリー
 
-├ Phase4A9/
+├ Phase4A10/
 │ │
-│ ├ ToshinkaTegakiTool.html（Phase4A'8）
+│ ├ ToshinkaTegakiTool.html（Phase4A9） （core-engine.js・gl-matrix-min.js・dat.gui.min.をscriptしてる）
 │ │
-│ ├ core-engine.js（Phase4A'8）  
+│ ├ core-engine.js（Phase4A10）  
 │ │
 │ ├ core/ 
 │ │ ├ rendering/              
 │ │ │  ├── drawing-engine.js    <-- （Phase4A'7）
 │ │ │  ├── canvas2d-engine.js   <-- （Phase4A'7）
-│ │ │  ├── webgl-engine.js      <-- （Phase4A'8）
+│ │ │  ├── webgl-engine.js      <-- （Phase4A10）
 │ │ │  ├── webgpu-engine.js     //  （仮空ファイル）
-│ │ │  ├── rendering-bridge.js  <-- （Phase4A'7）
+│ │ │  ├── rendering-bridge.js  <-- （Phase4A9）
 │ │ │  ├── shader-programs/     // シェーダー管理（仮空ファイル）
 │ │ │  │   ├─ blend-shaders.js  // ブレンドモード（仮空ファイル）
 │ │ │  │   └─ filter-shaders.js // フィルター効果（仮空ファイル） 
 │ │ │  └── texture-manager.js   // テクスチャ管理（仮空ファイル）
 │ │ │
 │ │ ├ utils/
-│ │ │  └── transform-utils.js   // テクスチャ管理（仮空ファイル）
+│ │ │  └── transform-utils.js   <-- （Phase4A10）
 │ │ │ 
 │ │ ├ animation/
 │ │ │  ├── timeline-manager.js  // タイムライン制御（仮空ファイル）
@@ -562,5 +562,5 @@ export class WebGLEngine extends DrawingEngine {
 │ │ └─ bucket-fill-improved.js    // アンチエイリアス対応（仮空ファイル）
 │ │ 
 │ └ libs/                           // ライブラリ専用フォルダ（←★追加）
-│ 　 ├─ gl-matrix-min.js           // glMatrix 3.4.3（CDNから丸コピー）
-│ 　 └─ dat.gui.min.js             // dat.GUI（CDNから丸コピー）
+│ 　 ├─ gl-matrix-min.js           <-- （Phase4A9) glMatrix 3.4.3（CDNから丸コピー）
+│ 　 └─ dat.gui.min.js             <-- （Phase4A9) dat.GUI（CDNから丸コピー）

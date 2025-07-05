@@ -1,15 +1,15 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.9.2 (Phase 4A11 - Comprehensive FIX)
+ * Version: 2.9.3 (Phase 4A11 - Layer Transform FIX)
  *
- * - 修正 (v2.9.2):
- * - Claudeさんのアドバイスに基づき、複数の問題を一括修正。
- * - transform-utils.jsに`transformWorldToLocal`を追加し、座標系を統一。
- * - バケツ、ペン/消しゴムの描画時にローカル座標へ変換し、位置ズレを解消。
- * - レイヤー移動の計算を修正し、「吹き飛ぶ」問題を解決。
- * - save/restoreStateでのmatrix保存形式を修正し、Undo/Redoの不整合を解消。
- * - dat.guiのレイアウトを修正し、めり込みを解消。
+ * - 修正 (v2.9.3):
+ * - Phase4A11の作業を適用し、レイヤー移動時のバグを修正。
+ * - Claudeさんのアドバイスに基づき、onPointerMoveでのレイヤー移動計算を修正。
+ * - ビューポート座標(e.clientX/Y)をgetCanvasCoordinatesでキャンバス座標に変換し、
+ * その差分を移動量として使うことで、「レイヤーが吹き飛ぶ」問題を根本的に解決。
+ * - 回転・スケールモードは既存の操作感を維持。
+ * - これにより、ズームや視点回転の状態に関わらず、直感的なレイヤー移動が可能になります。
  * ===================================================================================
  */
 
@@ -39,7 +39,7 @@ class Layer {
         this.opacity = 100;
         this.blendMode = 'normal';
         this.imageData = new ImageData(width, height);
-        this.modelMatrix = glMatrix.mat4.create();
+        this.modelMatrix = glMatrix.mat4.create(); // [cite: 6, 15, 47]
         this.gpuDirty = true;
     }
     clear() {
@@ -127,7 +127,7 @@ class CanvasManager {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
 
-        // ★★★ 修正: ワールド座標をアクティブレイヤーのローカル座標に変換 ★★★
+        // ワールド座標をアクティブレイヤーのローカル座標に変換 [cite: 21, 23]
         const localCoords = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
 
         this._resetDirtyRect();
@@ -161,35 +161,54 @@ class CanvasManager {
     }
     
     onPointerMove(e) {
-        if (this.isLayerTransforming) {
-            if (!this.transformTargetLayer) return;
+        if (this.isLayerTransforming) { // [cite: 121]
+            if (!this.transformTargetLayer) return; // [cite: 121]
 
-            const dx = (e.clientX - this.transformStartX) / this.viewTransform.scale;
-            const dy = (e.clientY - this.transformStartY) / this.viewTransform.scale;
-            
-            const newMatrix = glMatrix.mat4.clone(this.originalModelMatrix);
+            // 開始時の行列を常にコピーして、それに対して変換を適用する
+            const newMatrix = glMatrix.mat4.clone(this.originalModelMatrix); // [cite: 124]
 
             if (this.transformMode === 'move') {
-                translate(newMatrix, dx, dy);
+                // ★★★ バグ修正 ★★★
+                // 「レイヤーが吹き飛ぶ」問題の原因は、マウスの移動量をキャンバスの座標系で
+                // 計算していなかったためです。以下のように修正します。
+
+                // 1. マウスの開始座標と現在座標を、ビューポート座標(clientX/Y)からキャンバス座標に変換 [cite: 122]
+                const startCoords = this.getCanvasCoordinates({ clientX: this.transformStartX, clientY: this.transformStartY }); // [cite: 122]
+                const currentCoords = this.getCanvasCoordinates(e); // [cite: 122]
+                
+                // 2. 座標がキャンバスの外などで取得できなかった場合は、処理を中断
+                if (!startCoords || !currentCoords) return; 
+                
+                // 3. キャンバス座標系での移動差分(dx, dy)を計算 [cite: 123]
+                const dx = currentCoords.x - startCoords.x; // [cite: 123]
+                const dy = currentCoords.y - startCoords.y; // [cite: 123]
+                
+                // 4. 開始時の行列(newMatrix)に、計算した移動量を「追加」で適用 [cite: 125]
+                // これにより、ビューのズームや回転状態に関わらず、見た目通りにレイヤーが移動します。
+                translate(newMatrix, dx, dy); // [cite: 125]
+
             } else if (this.transformMode === 'rotate_scale') {
-                // 中心を基準に移動、回転、スケールを行う
-                const centerX = this.width / 2;
-                const centerY = this.height / 2;
+                // こちらのモードは既存の操作感を維持します。
+                const dx = (e.clientX - this.transformStartX);
+                const dy = (e.clientY - this.transformStartY);
+                const viewScale = this.viewTransform.scale;
                 
+                const angle = (dx / viewScale) * 0.01; // [cite: 127]
+                const scaleFactor = Math.max(0.1, 1 - (dy / viewScale) * 0.005); // [cite: 128]
+                
+                const centerX = this.width / 2; // [cite: 126]
+                const centerY = this.height / 2; // [cite: 126]
+                
+                // 既存のロジック: 累積的に変換を適用
                 translate(newMatrix, centerX, centerY);
-                
-                // ★★★ 修正: 回転・スケール量の調整 ★★★
-                const angle = dx * 0.01; // 回転量を穏やかに
-                const scaleFactor = Math.max(0.1, 1 - dy * 0.005);
                 rotate(newMatrix, angle);
                 scale(newMatrix, scaleFactor, scaleFactor);
-                
                 translate(newMatrix, -centerX, -centerY);
             }
 
             this.transformTargetLayer.modelMatrix = newMatrix;
-            this.renderAllLayers();
-            return;
+            this.renderAllLayers(); // [cite: 129]
+            return; // [cite: 129]
         }
 
         if (this.isPanning) {
@@ -203,7 +222,7 @@ class CanvasManager {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
 
-        const localCoords = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
+        const localCoords = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix); // [cite: 21, 23]
 
         if (!this.lastPoint) { 
             this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
@@ -289,10 +308,8 @@ class CanvasManager {
     }
 
     _updateDirtyRect(x, y, radius) {
-        // This logic might need adjustment since x,y are now local.
-        // For now, we assume the dirty rect is for the whole canvas when drawing.
-        // A more advanced solution would transform the local dirty rect to world space.
-        this.dirtyRect = { minX: 0, minY: 0, maxX: this.width, maxY: this.height };
+        // ローカル座標での描画のため、安全にキャンバス全体を更新対象とする
+        this.dirtyRect = { minX: 0, minY: 0, maxX: this.width, maxY: this.height }; // [cite: 158]
     }
     
     _resetDirtyRect() {
@@ -330,10 +347,10 @@ class CanvasManager {
 
     getCanvasCoordinates(e) {
         try {
-            const rect = this.displayCanvas.getBoundingClientRect();
+            const rect = this.displayCanvas.getBoundingClientRect(); // [cite: 22]
             if (rect.width === 0 || rect.height === 0) return null;
-            let x = (e.clientX - rect.left) * (this.width / rect.width);
-            let y = (e.clientY - rect.top) * (this.height / rect.height);
+            let x = (e.clientX - rect.left) * (this.width / rect.width); // [cite: 22]
+            let y = (e.clientY - rect.top) * (this.height / rect.height); // [cite: 22]
             if (this.viewTransform.flipX === -1) { x = this.width - x; }
             if (this.viewTransform.flipY === -1) { y = this.height - y; }
             if (x < 0 || x >= this.width || y < 0 || y >= this.height) { return null; }
@@ -345,18 +362,17 @@ class CanvasManager {
     }
 
     startLayerTransform(e) {
-        const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (!activeLayer || this.app.layerManager.layers.indexOf(activeLayer) === 0) return;
+        const activeLayer = this.app.layerManager.getCurrentLayer(); // [cite: 169]
+        if (!activeLayer || this.app.layerManager.layers.indexOf(activeLayer) === 0) return; // [cite: 169]
 
-        this.isLayerTransforming = true;
-        this.transformTargetLayer = activeLayer;
-        this.originalModelMatrix = glMatrix.mat4.clone(this.transformTargetLayer.modelMatrix);
-        this.transformMode = this.isShiftDown ? 'rotate_scale' : 'move';
-        this.transformStartX = e.clientX;
-        this.transformStartY = e.clientY;
+        this.isLayerTransforming = true; // [cite: 171]
+        this.transformTargetLayer = activeLayer; // [cite: 171]
+        this.originalModelMatrix = glMatrix.mat4.clone(this.transformTargetLayer.modelMatrix); // [cite: 171]
+        this.transformMode = this.isShiftDown ? 'rotate_scale' : 'move'; // [cite: 171]
+        this.transformStartX = e.clientX; // [cite: 172]
+        this.transformStartY = e.clientY; // [cite: 172]
     }
 
-    // ★★★ 修正: saveStateでmodelMatrixを正しく保存 ★★★
     saveState() {
         if(this.isLayerTransforming) return;
         const state = {
@@ -379,7 +395,6 @@ class CanvasManager {
         this.historyIndex++;
     }
 
-    // ★★★ 修正: restoreStateでmodelMatrixを正しく復元 ★★★
     restoreState(state) {
         this.app.layerManager.layers = state.layers.map(layerData => {
             const layer = new Layer(layerData.name, layerData.imageData.width, layerData.imageData.height);
@@ -461,16 +476,15 @@ class CanvasManager {
     resetView() { this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 }; this.applyViewTransform(); }
     handleWheel(e) { e.preventDefault(); if (e.shiftKey) { this.rotate(-e.deltaY * 0.2); } else { this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); } }
 
-    // ★★★ 修正: dat.gui のレイアウトを修正 ★★★
     setupDebugGui() {
-        const gui = new dat.GUI({ autoPlace: false, width: "100%" });
-        const guiContainer = document.querySelector('.right-sidebar');
-        guiContainer.prepend(gui.domElement);
-        gui.domElement.style.position = 'relative';
-        gui.domElement.style.width = '100%';
-        gui.domElement.style.maxWidth = '280px';
-        gui.domElement.style.margin = '10px 0';
-        gui.domElement.style.zIndex = '1000';
+        const gui = new dat.GUI({ autoPlace: false, width: "100%" }); // [cite: 65, 130]
+        const guiContainer = document.querySelector('.right-sidebar'); // [cite: 130]
+        guiContainer.prepend(gui.domElement); // [cite: 130]
+        gui.domElement.style.position = 'relative'; // [cite: 131]
+        gui.domElement.style.width = '100%'; // [cite: 131]
+        gui.domElement.style.maxWidth = '280px'; // [cite: 131]
+        gui.domElement.style.margin = '10px 0'; // [cite: 131]
+        gui.domElement.style.zIndex = '1000'; // [cite: 131]
         
         const transformSettings = {
             translateX: 0,
@@ -478,45 +492,50 @@ class CanvasManager {
             rotation: 0,
             scale: 1,
             _apply: () => {
-                const activeLayer = this.app.layerManager.getCurrentLayer();
-                if (!activeLayer) return;
+                const activeLayer = this.app.layerManager.getCurrentLayer(); // [cite: 132]
+                if (!activeLayer) return; // [cite: 132]
 
-                reset(activeLayer.modelMatrix);
+                reset(activeLayer.modelMatrix); // [cite: 9, 52, 133]
                 
-                const centerX = this.width / 2;
-                const centerY = this.height / 2;
+                const centerX = this.width / 2; // [cite: 135]
+                const centerY = this.height / 2; // [cite: 135]
                 
-                translate(activeLayer.modelMatrix, transformSettings.translateX, transformSettings.translateY);
-                translate(activeLayer.modelMatrix, centerX, centerY);
-                rotate(activeLayer.modelMatrix, transformSettings.rotation * Math.PI / 180);
-                scale(activeLayer.modelMatrix, transformSettings.scale, transformSettings.scale);
-                translate(activeLayer.modelMatrix, -centerX, -centerY);
+                // GUIの値を順番に適用
+                translate(activeLayer.modelMatrix, transformSettings.translateX, transformSettings.translateY); // [cite: 134]
+                translate(activeLayer.modelMatrix, centerX, centerY); // [cite: 138]
+                rotate(activeLayer.modelMatrix, transformSettings.rotation * Math.PI / 180); // [cite: 136]
+                scale(activeLayer.modelMatrix, transformSettings.scale, transformSettings.scale); // [cite: 137]
+                translate(activeLayer.modelMatrix, -centerX, -centerY); // [cite: 138]
 
-                this.renderAllLayers();
-                this.saveState();
+                this.renderAllLayers(); // [cite: 10, 139]
+                this.saveState(); // [cite: 139]
             },
             _sync: () => {
-                const activeLayer = this.app.layerManager.getCurrentLayer();
-                if (!activeLayer) return;
+                const activeLayer = this.app.layerManager.getCurrentLayer(); // [cite: 140]
+                if (!activeLayer) return; // [cite: 140]
 
-                const translation = getTranslation(activeLayer.modelMatrix);
-                transformSettings.translateX = translation.x;
-                transformSettings.translateY = translation.y;
-                transformSettings.rotation = 0;
-                transformSettings.scale = 1;
+                // 行列から平行移動量を取得してGUIに反映
+                const translation = getTranslation(activeLayer.modelMatrix); // [cite: 32, 67, 141]
+                transformSettings.translateX = translation.x; // [cite: 32, 67, 141]
+                transformSettings.translateY = translation.y; // [cite: 32, 67, 141]
                 
-                for (let i in gui.__controllers) {
-                    gui.__controllers[i].updateDisplay();
+                // 回転とスケールは複雑なため、レイヤー切り替え時はリセット
+                transformSettings.rotation = 0; // [cite: 142]
+                transformSettings.scale = 1; // [cite: 142]
+                
+                // GUIの表示を更新
+                for (let i in gui.__controllers) { // [cite: 68, 143]
+                    gui.__controllers[i].updateDisplay(); // [cite: 68, 143]
                 }
             }
         };
 
-        gui.add(transformSettings, 'translateX', -this.width, this.width).onChange(transformSettings._apply).listen();
-        gui.add(transformSettings, 'translateY', -this.height, this.height).onChange(transformSettings._apply).listen();
-        gui.add(transformSettings, 'rotation', -180, 180).onChange(transformSettings._apply).listen();
-        gui.add(transformSettings, 'scale', 0.1, 5).onChange(transformSettings._apply).listen();
+        gui.add(transformSettings, 'translateX', -this.width, this.width).onChange(transformSettings._apply).listen(); // [cite: 144]
+        gui.add(transformSettings, 'translateY', -this.height, this.height).onChange(transformSettings._apply).listen(); // [cite: 144]
+        gui.add(transformSettings, 'rotation', -180, 180).onChange(transformSettings._apply).listen(); // [cite: 144]
+        gui.add(transformSettings, 'scale', 0.1, 5).onChange(transformSettings._apply).listen(); // [cite: 144]
         
-        this.app.transformSync = transformSettings._sync;
+        this.app.transformSync = transformSettings._sync; // [cite: 145]
     }
 }
 
@@ -530,6 +549,7 @@ class LayerManager {
         if (index < 0 || index >= this.layers.length) return; 
         this.activeLayerIndex = index; 
         if (this.app.layerUIManager) { this.app.layerUIManager.renderLayers(); }
+        // レイヤー切り替え時にGUIの値を同期する
         if (this.app.transformSync) {
             this.app.transformSync();
         }

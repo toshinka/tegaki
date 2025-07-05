@@ -529,7 +529,7 @@ export class WebGLEngine extends DrawingEngine {
 │ │ ├ rendering/              
 │ │ │  ├── drawing-engine.js    <-- （Phase4A'7）
 │ │ │  ├── canvas2d-engine.js   <-- （Phase4A'7）
-│ │ │  ├── webgl-engine.js      <-- （Phase4A'8）
+│ │ │  ├── webgl-engine.js      <-- （Phase4A9）
 │ │ │  ├── webgpu-engine.js     //  （仮空ファイル）
 │ │ │  ├── rendering-bridge.js  <-- （Phase4A'7）
 │ │ │  ├── shader-programs/     // シェーダー管理（仮空ファイル）
@@ -538,7 +538,7 @@ export class WebGLEngine extends DrawingEngine {
 │ │ │  └── texture-manager.js   // テクスチャ管理（仮空ファイル）
 │ │ │
 │ │ ├ utils/
-│ │ │  └── transform-utils.js   // テクスチャ管理（仮空ファイル）
+│ │ │  └── transform-utils.js   <-- （Phase4A9）
 │ │ │ 
 │ │ ├ animation/
 │ │ │  ├── timeline-manager.js  // タイムライン制御（仮空ファイル）
