@@ -1,14 +1,13 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.9.0 (Phase 4A11 - GUI & Non-destructive Transform)
+ * Version: 2.9.1 (Phase 4A11 - Initialization Order FIX)
  *
- * - 修正：
- * - dat.guiを導入し、アクティブレイヤーのmodelMatrixを操作するUIを追加。
- * - レイヤー移動ツール(Vキー)を、modelMatrixを直接操作する非破壊的な方式に改修。
- * - これにより、CPUベースの破壊的変形(applyLayerTransformPreview/commitLayerTransform)を廃止。
- * - レイヤーをキャンバス外に動かしても画像が欠損する問題を解消。
- * - transform-utils.jsを導入し、行列操作を専用モジュールに集約。
+ * - 修正 (v2.9.1):
+ * - 初期化順序の問題を修正。CanvasManagerのコンストラクタ内で実行していた
+ * GUIの初期同期処理(transformSync)を、ToshinkaTegakiToolのinitManagersの
+ * 最後に移動。これにより、LayerManagerが未定義の状態でアクセスされる
+ * ことによる起動時エラーを解消。
  * ===================================================================================
  */
 
@@ -103,7 +102,7 @@ class CanvasManager {
         this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
         
         this.bindEvents();
-        this.setupDebugGui(); // ★★★ Phase4A11: デバッグGUIをセットアップ ★★★
+        this.setupDebugGui();
     }
     
     bindEvents() {
@@ -119,7 +118,6 @@ class CanvasManager {
         if (e.button !== 0) return;
         
         if (this.isVDown) {
-            // ★★★ Phase4A11: 新しい非破壊変形を開始 ★★★
             this.startLayerTransform(e);
             e.preventDefault(); return;
         }
@@ -164,34 +162,28 @@ class CanvasManager {
     }
     
     onPointerMove(e) {
-        // ★★★ Phase4A11: 新しい非破壊変形処理 ★★★
         if (this.isLayerTransforming) {
             if (!this.transformTargetLayer) return;
 
             const dx = (e.clientX - this.transformStartX) / this.viewTransform.scale;
             const dy = (e.clientY - this.transformStartY) / this.viewTransform.scale;
             
-            // 元のMatrixのコピーに対して変形を行う
             const newMatrix = glMatrix.mat4.clone(this.originalModelMatrix);
 
             if (this.transformMode === 'move') {
                 translate(newMatrix, dx, dy);
             } else if (this.transformMode === 'rotate_scale') {
-                // 中心を基準に移動、回転、スケールを行う
                 const rect = this.displayCanvas.getBoundingClientRect();
                 const centerX = this.width / 2;
                 const centerY = this.height / 2;
                 
-                // 1. 中心へ移動
                 translate(newMatrix, centerX, centerY);
                 
-                // 2. 回転とスケール
-                const angle = dx * 0.5; // 回転角度
-                const scaleFactor = Math.max(0.1, 1 - dy * 0.005); // スケール係数
+                const angle = dx * 0.5;
+                const scaleFactor = Math.max(0.1, 1 - dy * 0.005);
                 rotate(newMatrix, angle * Math.PI / 180);
                 scale(newMatrix, scaleFactor, scaleFactor);
                 
-                // 3. 元の位置へ戻す
                 translate(newMatrix, -centerX, -centerY);
             }
 
@@ -240,12 +232,11 @@ class CanvasManager {
     }
     
     onPointerUp(e) {
-        // ★★★ Phase4A11: 変形終了処理 ★★★
         if (this.isLayerTransforming) {
             this.isLayerTransforming = false;
             this.transformTargetLayer = null;
             this.originalModelMatrix = null;
-            this.saveState(); // 変形後の状態を保存
+            this.saveState();
         }
         
         if (this.isDrawing) {
@@ -359,16 +350,13 @@ class CanvasManager {
         }
     }
 
-    // ★★★ Phase4A11: 新しい非破壊変形開始メソッド ★★★
     startLayerTransform(e) {
         const activeLayer = this.app.layerManager.getCurrentLayer();
-        // 背景レイヤーは動かせない
         if (!activeLayer || this.app.layerManager.layers.indexOf(activeLayer) === 0) return;
 
         this.isLayerTransforming = true;
         this.transformTargetLayer = activeLayer;
         
-        // 変形開始時のMatrixを保存
         this.originalModelMatrix = glMatrix.mat4.clone(this.transformTargetLayer.modelMatrix);
 
         this.transformMode = this.isShiftDown ? 'rotate_scale' : 'move';
@@ -389,7 +377,7 @@ class CanvasManager {
                     layer.imageData.width,
                     layer.imageData.height
                 ),
-                modelMatrix: new Float32Array(layer.modelMatrix) // modelMatrixを保存
+                modelMatrix: new Float32Array(layer.modelMatrix)
             })),
             activeLayerIndex: this.app.layerManager.activeLayerIndex
         };
@@ -457,7 +445,6 @@ class CanvasManager {
              exportCtx.putImageData(finalImageData, 0, 0);
 
         } else {
-            // Fallback: This part needs a proper implementation if Canvas2D is the primary engine
             console.warn("Export for Canvas2D fallback not fully implemented with new rendering flow.");
         }
         
@@ -477,7 +464,6 @@ class CanvasManager {
     resetView() { this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 }; this.applyViewTransform(); }
     handleWheel(e) { e.preventDefault(); if (e.shiftKey) { this.rotate(-e.deltaY * 0.2); } else { this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); } }
 
-    // ★★★ Phase4A11: dat.gui のセットアップメソッド ★★★
     setupDebugGui() {
         const gui = new dat.GUI({ autoPlace: true });
         const guiContainer = document.querySelector('.right-sidebar');
@@ -497,7 +483,6 @@ class CanvasManager {
                 reset(activeLayer.modelMatrix);
                 translate(activeLayer.modelMatrix, transformSettings.translateX, transformSettings.translateY);
                 
-                // 回転とスケールを適用 (中心基準)
                 const centerX = this.width / 2;
                 const centerY = this.height / 2;
                 translate(activeLayer.modelMatrix, centerX, centerY);
@@ -515,12 +500,9 @@ class CanvasManager {
                 const translation = getTranslation(activeLayer.modelMatrix);
                 transformSettings.translateX = translation.x;
                 transformSettings.translateY = translation.y;
-                // Note: Extracting scale/rotation from a matrix is complex.
-                // We'll just reset them in the GUI for now.
                 transformSettings.rotation = 0;
                 transformSettings.scale = 1;
                 
-                // Update all controllers
                 for (let i in gui.__controllers) {
                     gui.__controllers[i].updateDisplay();
                 }
@@ -532,9 +514,9 @@ class CanvasManager {
         gui.add(transformSettings, 'rotation', -180, 180).onChange(transformSettings._apply);
         gui.add(transformSettings, 'scale', 0.1, 5).onChange(transformSettings._apply);
         
-        // Make this object accessible for external updates (e.g., on layer switch)
         this.app.transformSync = transformSettings._sync;
-        this.app.transformSync(); // Initial sync
+        // ★★★ 修正点: 初期呼び出しを削除 ★★★
+        // this.app.transformSync();
     }
 }
 
@@ -548,7 +530,6 @@ class LayerManager {
         if (index < 0 || index >= this.layers.length) return; 
         this.activeLayerIndex = index; 
         if (this.app.layerUIManager) { this.app.layerUIManager.renderLayers(); }
-        // ★★★ Phase4A11: レイヤー切り替え時にGUIを同期 ★★★
         if (this.app.transformSync) {
             this.app.transformSync();
         }
@@ -558,21 +539,16 @@ class LayerManager {
     mergeDownActiveLayer() {
         if (this.activeLayerIndex <= 0) return;
         
-        // This function would require significant rewrite for non-destructive transforms.
-        // For now, we'll merge the pixel data and reset the transform of the bottom layer.
         alert("レイヤー結合は現在、変形情報をリセットします。");
 
         const topLayer = this.layers[this.activeLayerIndex];
         const bottomLayer = this.layers[this.activeLayerIndex - 1];
         
-        // Render top layer with its transform onto a temporary canvas
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = this.width;
         tempCanvas.height = this.height;
         const tempCtx = tempCanvas.getContext('2d');
         
-        // This is a simplified merge and doesn't use the full WebGL pipeline.
-        // A proper implementation would render the transformed layer to a texture.
         tempCtx.putImageData(bottomLayer.imageData, 0, 0);
         tempCtx.globalAlpha = topLayer.opacity / 100;
         
@@ -581,12 +557,11 @@ class LayerManager {
         topLayerCanvas.height = this.height;
         topLayerCanvas.getContext('2d').putImageData(topLayer.imageData, 0, 0);
         
-        // Apply transform to temp canvas context before drawing
-        const t = getTranslation(topLayer.modelMatrix); // Simplified: only uses translation
+        const t = getTranslation(topLayer.modelMatrix);
         tempCtx.drawImage(topLayerCanvas, t.x, t.y);
         
         bottomLayer.imageData = tempCtx.getImageData(0, 0, this.width, this.height);
-        reset(bottomLayer.modelMatrix); // Reset transform on merge
+        reset(bottomLayer.modelMatrix);
         bottomLayer.gpuDirty = true;
 
         this.layers.splice(this.activeLayerIndex, 1);
@@ -618,6 +593,11 @@ class ToshinkaTegakiTool {
         this.toolManager.setTool('pen');
         this.penSettingsManager.setSize(1);
         this.colorManager.setColor(this.colorManager.mainColor);
+        
+        // ★★★ 修正点: 全てのManagerの準備完了後にGUIを同期 ★★★
+        if (this.transformSync) {
+            this.transformSync();
+        }
     }
 }
 
