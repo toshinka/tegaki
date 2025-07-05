@@ -100,17 +100,8 @@ export function getTranslation(matrix) {
  * @param {number} y - 新しいY座標
  */
 export function setTranslation(matrix, x, y) {
-    const newMatrix = mat4.clone(matrix);
-    // 元の行列から移動、回転、スケールを分離することは複雑なため、
-    // XYZの移動だけを更新するアプローチを取ります。
-    // 注：この方法は回転やスケール後に適用すると予期せぬ挙動をすることがあります。
-    // より正確な実装にはTRS（Translate-Rotate-Scale）の分離が必要です。
-    // 今回の要件では、スライダーによるX,Y移動が主目的なので、この実装で進めます。
-
-    // 一旦、単位行列から再構成する方法をとります。
-    // 既存のスケールと回転を維持しつつ平行移動を更新するのは複雑なため、
-    // 今回は「行列をリセットして指定の位置に移動させる」という単純な方法で実装します。
-    mat4.fromTranslation(matrix, [x, y, 0]);
+    matrix[12] = x;
+    matrix[13] = y;
 }
 
 /**
@@ -121,4 +112,28 @@ export function setTranslation(matrix, x, y) {
  */
 export function resetToTranslation(matrix, x, y) {
     mat4.fromTranslation(matrix, [x, y, 0]);
+}
+
+// ==================================================================
+// ▼▼▼ Phase4A9で追加 ▼▼▼
+// ==================================================================
+
+/**
+ * ワールド座標（描画領域全体の座標）を、特定の行列（レイヤー）のローカル座標に変換します。
+ * ペン描画位置をレイヤーの移動や回転に追従させるために使用します。
+ * @param {number} worldX - ワールド座標X
+ * @param {number} worldY - ワールド座標Y
+ * @param {mat4} modelMatrix - 変換元となるレイヤーのモデル行列
+ * @returns {vec2 | null} ローカル座標[x, y]、または変換失敗時にnull
+ */
+export function transformWorldToLocal(worldX, worldY, modelMatrix) {
+    const invMatrix = mat4.create();
+    if (!mat4.invert(invMatrix, modelMatrix)) {
+        // 逆行列が計算できない場合（スケールが0など）、変換は不可能
+        return null;
+    }
+    const worldPos = [worldX, worldY, 0, 1];
+    const localPos = vec4.create();
+    vec4.transformMat4(localPos, worldPos, invMatrix);
+    return [localPos[0], localPos[1]];
 }
