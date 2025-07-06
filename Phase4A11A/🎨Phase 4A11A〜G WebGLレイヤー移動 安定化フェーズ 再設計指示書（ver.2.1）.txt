@@ -1,0 +1,266 @@
+🎨 **Phase 4A11A〜G: WebGLレイヤー移動 安定化フェーズ 再設計指示書（ver.2.1）**
+
+---
+
+## ✅ 概要
+
+本フェーズ群では、レイヤー移動時に発生する「吹き飛び」「上下反転」「描画ズレ」などの複合的な不具合を、段階的・再現性のある方法で根本解決することを目的とします。
+
+本指示書は以下の原則に基づいて構成されています：
+
+* **1フェーズ1目的**：問題の切り分けを容易にし、再発検証ができるようにする
+* **既存構造の尊重**：責務やレイヤー構造を壊さない
+* **エラー時に原因を特定可能に**：ログやチェックを徹底
+
+---
+
+## 🧱 Phase 4A11-Pre: 旧transform系移動機能の一時無効化
+
+### 🎯 目的
+
+旧 `transform` プロパティを使ったレイヤー移動を無効化し、`modelMatrix` ベース移動との競合を防止する。
+
+### 🛠 実装手順
+
+* `startLayerTransform()`, `applyLayerTransformPreview()` をコメントアウトまたは無効化
+* `isVDown` 判定時に旧処理を実行しないよう分岐条件を調整
+* `transform` プロパティに依存する箇所はすべてデバッグログ出力に切り替え
+
+### ✅ 確認ポイント
+
+* `transform` ベースの移動が一切発生しない
+* `modelMatrix` ベースの移動のみが有効
+
+---
+
+## 🧱 Phase 4A11A-1: 座標系の統一確認
+
+### 🎯 目的
+
+`getCanvasCoordinates()` によるクライアント座標→キャンバス座標変換の正確性を検証
+
+### 🛠 実装手順
+
+* `getCanvasCoordinates()` に以下のログを追加：
+
+```js
+console.log("Canvas座標:", { x: result.x, y: result.y });
+```
+
+* ブラウザ上でマウスを (0,0), (width-1, height-1) に移動し、想定通りの座標が返るか確認
+
+### ✅ 確認ポイント
+
+* マウス位置と `getCanvasCoordinates` の出力が直感的に一致するか
+* NaN や Infinity の出力が発生しないか
+
+---
+
+## 🧱 Phase 4A11A: レイヤー移動の基本安定化（v1）
+
+### 🎯 目的
+
+マウスドラッグによる平行移動を `modelMatrix` ベースで実装。累積誤差・異常移動の排除
+
+### 🛠 実装手順
+
+* `onPointerDown`:
+
+```js
+this.transformStartX = e.clientX;
+this.transformStartY = e.clientY;
+this.originalModelMatrix = mat4.clone(layer.modelMatrix);
+```
+
+* `onPointerMove`:
+
+```js
+const dx = e.clientX - this.transformStartX;
+const dy = e.clientY - this.transformStartY;
+if (Math.abs(dx) > 1000 || Math.abs(dy) > 1000) {
+  console.warn("異常な移動量:", { dx, dy });
+  return;
+}
+const newMatrix = mat4.clone(this.originalModelMatrix);
+translate(newMatrix, dx, dy);
+layer.modelMatrix = newMatrix;
+```
+
+### ✅ 確認ポイント
+
+* 数pxずつ何度も動かしても吹き飛びが起きないか
+* dx/dyが NaN や Infinity、異常値でないことをログ出力で確認
+
+---
+
+## 🧱 Phase 4A11B: modelMatrix の完全初期化と生存確認
+
+### 🎯 目的
+
+すべてのレイヤーが `modelMatrix` を常に正しく保持し、未初期化状態で描画・移動が行われないようにする
+
+### 🛠 実装手順
+
+* `Layer` コンストラクタで:
+
+```js
+this.modelMatrix = mat4.create();
+console.log('Layer created with modelMatrix:', this.modelMatrix);
+if (!this.modelMatrix || this.modelMatrix.length !== 16) {
+  console.error('modelMatrix initialization failed:', this.name);
+  this.modelMatrix = mat4.create();
+}
+```
+
+* `setActiveLayer()` などで:
+
+```js
+if (!layer.modelMatrix) {
+  layer.modelMatrix = mat4.create();
+  console.warn('modelMatrix was missing. Initialized for:', layer.name);
+}
+```
+
+### ✅ 確認ポイント
+
+* すべてのレイヤーで `modelMatrix` が16要素の行列であること
+* 未定義や壊れた行列が自動修正されること
+
+---
+
+## 🧱 Phase 4A11C: マウス移動量の詳細検証
+
+### 🎯 目的
+
+`onPointerMove` における移動量の計算精度と不正挙動の検出を強化
+
+### 🛠 実装手順
+
+```js
+const dx = e.clientX - this.transformStartX;
+const dy = e.clientY - this.transformStartY;
+if (Math.abs(dx) > 1000 || Math.abs(dy) > 1000) {
+  console.warn('異常な移動量を検出:', { dx, dy });
+  return;
+}
+console.log('移動量:', { dx, dy });
+```
+
+### ✅ 確認ポイント
+
+* ユーザーの意図に反する大ジャンプがないこと
+* dx/dyが徐々に大きくなることがないか観察
+
+---
+
+## 🧱 Phase 4A11D: drawLayer() への modelMatrix の伝搬確認
+
+### 🎯 目的
+
+`rendering-bridge.js` → `webgl-engine.js` の `drawLayer()` 経由で `modelMatrix` が GPU に確実に渡っているかを確認
+
+### 🛠 実装手順
+
+* `drawLayer()` で：
+
+```js
+if (!layer.modelMatrix) {
+  console.warn('drawLayer: modelMatrix missing for', layer);
+  return;
+}
+gl.uniformMatrix4fv(program.locations.u_mvpMatrix, false, layer.modelMatrix);
+```
+
+* `u_mvpMatrix` の取得・設定を確認
+
+### ✅ 確認ポイント
+
+* レイヤー描画時に `modelMatrix` が使用されている
+* シェーダー内での変換が反映されている
+
+---
+
+## 🧱 Phase 4A11E: GUI／状態切替との整合性検証
+
+### 🎯 目的
+
+`dat.GUI` での変更やレイヤー切替時に、GUIと `modelMatrix` の値が正しく同期されること
+
+### 🛠 実装手順
+
+* GUI変更時：
+
+```js
+reset(layer.modelMatrix);
+translate(...);
+rotate(...);
+scale(...);
+```
+
+* レイヤー切替時：
+
+```js
+updateGUIValuesFromMatrix(layer.modelMatrix);
+```
+
+### ✅ 確認ポイント
+
+* GUIと実際の描画がズレない
+* リセット後の位置が初期状態に戻る
+
+---
+
+## 🧱 Phase 4A11F: 強制エラー注入と最終確認
+
+### 🎯 目的
+
+例外・不正値が与えられた場合でも、描画が止まらずログが残る設計にする
+
+### 🛠 実装手順
+
+* `translate()`, `rotate()`, `scale()` に：
+
+```js
+if (isNaN(dx) || !isFinite(dx)) {
+  console.error('translate: invalid dx:', dx);
+  return;
+}
+```
+
+* `onPointerMove()` 内で意図的に `dx = NaN` を注入して確認
+
+### ✅ 確認ポイント
+
+* NaNやInfinityでクラッシュせず、ログが残る
+* 描画が安全にスキップされる
+
+---
+
+## 🧱 Phase 4A11G: 累積誤差の耐性テスト
+
+### 🎯 目的
+
+少しずつレイヤーを移動した際に、最終位置が正確に保たれることを検証
+
+### 🛠 実装手順
+
+* `for` ループで `dx = 1` を100回実行
+* 移動前後の `modelMatrix[12]` の差分を記録
+* 許容誤差1px以内か確認
+
+### ✅ 確認ポイント
+
+* 100px移動したとき、最終位置が±1px以内に収まる
+* 行列内部の値が発散していない
+
+---
+
+## 🔚 最終成果
+
+* 各フェーズごとにチェック・ログ・目視確認により安定性を確保
+* 「どのフェーズで不具合が起きたか」を明確にできる構造
+* 将来の 4A12（回転・拡大縮小）フェーズへの布石としても堅牢な状態に
+
+---
+
+次のフェーズごとに指示をGEMINIへ渡す場合は、このテンプレートの各ブロックを個別に抽出して活用してください。

@@ -531,7 +531,7 @@ export class WebGLEngine extends DrawingEngine {
 │ │ │  ├── canvas2d-engine.js   <-- （Phase4A'7）
 │ │ │  ├── webgl-engine.js      <-- （Phase4A10）
 │ │ │  ├── webgpu-engine.js     //  （仮空ファイル）
-│ │ │  ├── rendering-bridge.js  <-- （Phase4A9）
+│ │ │  ├── rendering-bridge.js  <-- （Phase4A11Z）
 │ │ │  ├── shader-programs/     // シェーダー管理（仮空ファイル）
 │ │ │  │   ├─ blend-shaders.js  // ブレンドモード（仮空ファイル）
 │ │ │  │   └─ filter-shaders.js // フィルター効果（仮空ファイル） 
