@@ -1,7 +1,7 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.9.1 (Phase 4A11-Refactor) - 座標変換修正版
+ * Version: 2.9.1 (Phase 4A11-Refactor)
  *
  * - 修正：
  * - 巨大化した core-engine.js の責務を分離するため、関連クラスを外部モジュールに分割。
@@ -10,10 +10,6 @@
  * - ColorManager -> ui/color-manager.js
  * - ToolManager -> ui/tool-manager.js
  * - 上記モジュールをインポートして利用するように変更。
- * 
- * - 【座標変換修正】レイヤー移動後の描画位置ズレを修正
- * - transformWorldToLocal() を追加してローカル座標変換を実装
- * - 全ての描画処理でローカル座標を使用するように修正
  * ===================================================================================
  */
 
@@ -43,40 +39,21 @@ function hexToRgba(hex) {
     } : { r: 0, g: 0, b: 0, a: 255 };
 }
 
-// ✨座標変換ユーティリティ関数を追加
-function transformWorldToLocal(worldX, worldY, layer) {
-    try {
-        if (!layer || !layer.modelMatrix) {
-            console.warn('transformWorldToLocal: Invalid layer or missing modelMatrix');
-            return { x: worldX, y: worldY };
-        }
+// 📌 2. modelMatrix が壊れていないかをチェックする関数を追加
+function isValidMatrix(m) {
+    return Array.isArray(m) && m.length === 16 && m.every(Number.isFinite);
+}
 
-        // 4x4行列の逆行列を計算
-        const inverseMatrix = glMatrix.mat4.create();
-        const success = glMatrix.mat4.invert(inverseMatrix, layer.modelMatrix);
-        
-        if (!success) {
-            console.warn('transformWorldToLocal: Failed to invert matrix');
-            return { x: worldX, y: worldY };
-        }
+// 📌 3. transformWorldToLocal 関数をこのファイル内に定義
+function transformWorldToLocal(worldX, worldY, modelMatrix) {
+    const invMatrix = mat4.create();
+    mat4.invert(invMatrix, modelMatrix);
+    const worldPos = vec4.fromValues(worldX, worldY, 0, 1);
+    const localPos = vec4.create();
+    vec4.transformMat4(localPos, worldPos, invMatrix);
 
-        // ワールド座標をベクター形式に変換 [x, y, 0, 1]
-        const worldPoint = glMatrix.vec4.fromValues(worldX, worldY, 0, 1);
-        
-        // ローカル座標に変換
-        const localPoint = glMatrix.vec4.create();
-        glMatrix.vec4.transformMat4(localPoint, worldPoint, inverseMatrix);
-        
-        const result = {
-            x: localPoint[0],
-            y: localPoint[1]
-        };
-        
-        return result;
-    } catch (error) {
-        console.error('transformWorldToLocal error:', error);
-        return { x: worldX, y: worldY };
-    }
+    console.log('[座標変換] World:', worldX, worldY, '→ Local:', localPos[0], localPos[1]);
+    return { x: localPos[0], y: localPos[1] };
 }
 
 // ✨Layerクラスは他のファイルから参照されるので「export」を追加します
@@ -87,7 +64,8 @@ export class Layer {
         this.opacity = 100;
         this.blendMode = 'normal';
         this.imageData = new ImageData(width, height);
-        this.modelMatrix = glMatrix.mat4.create();
+        // 📌 1. レイヤーオブジェクトに modelMatrix を初期化する処理を追加
+        this.modelMatrix = mat4.create();
         this.gpuDirty = true;
     }
     clear() {
@@ -122,7 +100,14 @@ class CanvasManager {
         this.compositionData = new ImageData(this.width, this.height);
         this.isDrawing = false; this.isPanning = false; this.isSpaceDown = false;
         
+        // 📌 5. Vキーを押している間だけレイヤーが移動できるようにする
         this.isVDown = false; this.isShiftDown = false;
+        
+        // 📌 6. レイヤー移動処理用の変数を追加
+        this.isLayerMoving = false;
+        this.transformStartX = 0;
+        this.transformStartY = 0;
+        this.originalModelMatrix = null;
         
         this.currentTool = 'pen';
         this.currentColor = '#800000'; this.currentSize = 1; this.lastPoint = null;
@@ -143,6 +128,7 @@ class CanvasManager {
         this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
         
         this.bindEvents();
+        this.bindKeyEvents();
     }
     
     bindEvents() {
@@ -154,6 +140,16 @@ class CanvasManager {
         document.getElementById('saveMergedButton')?.addEventListener('click', () => this.exportMergedImage());
     }
 
+    // 📌 5. Vキーを押している間だけレイヤーが移動できるようにする
+    bindKeyEvents() {
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "v" || e.key === "V") this.isVDown = true;
+        });
+        document.addEventListener("keyup", (e) => {
+            if (e.key === "v" || e.key === "V") this.isVDown = false;
+        });
+    }
+
     onPointerDown(e) {
         if (e.button !== 0) return;
         
@@ -163,21 +159,36 @@ class CanvasManager {
             e.preventDefault(); return;
         }
         
-        const coords = this.getCanvasCoordinates(e);
-        if (!coords) return;
-        
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
 
-        // ✨ワールド座標をローカル座標に変換
-        const localCoords = transformWorldToLocal(coords.x, coords.y, activeLayer);
-        console.log('[描画位置] World:', coords.x, coords.y, '→ Local:', localCoords.x, localCoords.y);
+        // 📌 2. modelMatrix が壊れていないかをチェック
+        if (!isValidMatrix(activeLayer.modelMatrix)) {
+            console.error('Invalid modelMatrix detected, reinitializing...');
+            activeLayer.modelMatrix = mat4.create();
+        }
+
+        // 📌 6. レイヤー移動処理（V + ドラッグ）をマウスイベントに追加
+        if (this.isVDown) {
+            this.isLayerMoving = true;
+            this.transformStartX = e.clientX;
+            this.transformStartY = e.clientY;
+            this.originalModelMatrix = mat4.clone(activeLayer.modelMatrix);
+            e.preventDefault();
+            return;
+        }
+        
+        const coords = this.getCanvasCoordinates(e);
+        if (!coords) return;
+        
+        // 📌 4. マウス描画処理では transformWorldToLocal を必ず通して描く
+        const local = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
+        console.log('[描画位置] World(' + coords.x + ', ' + coords.y + ') → Local(' + local.x + ', ' + local.y + ')');
 
         this._resetDirtyRect();
         
         if (this.currentTool === 'bucket') {
-            // ✨バケットツールでもローカル座標を使用
-            this.app.bucketTool.fill(activeLayer.imageData, localCoords.x, localCoords.y, hexToRgba(this.currentColor));
+            this.app.bucketTool.fill(activeLayer.imageData, local.x, local.y, hexToRgba(this.currentColor));
             activeLayer.gpuDirty = true;
             this.renderAllLayers();
             this.saveState();
@@ -186,17 +197,14 @@ class CanvasManager {
 
         this.isDrawing = true;
         this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
-        // ✨lastPointにもローカル座標を保存
-        this.lastPoint = { x: localCoords.x, y: localCoords.y, pressure: this.pressureHistory[0] };
+        this.lastPoint = { x: local.x, y: local.y, pressure: this.pressureHistory[0] };
         
         const size = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
         
-        // ✨Dirty rectの更新もローカル座標で
-        this._updateDirtyRect(localCoords.x, localCoords.y, size);
+        this._updateDirtyRect(local.x, local.y, size);
         
-        // ✨描画処理でローカル座標を使用
         this.renderingBridge.drawCircle(
-            localCoords.x, localCoords.y, size / 2, 
+            local.x, local.y, size / 2, 
             hexToRgba(this.currentColor), this.currentTool === 'eraser',
             activeLayer
         );
@@ -212,20 +220,40 @@ class CanvasManager {
             this.applyViewTransform(); return;
         }
 
-        if (!this.isDrawing) return;
-        const coords = this.getCanvasCoordinates(e);
-        if (!coords) { this.lastPoint = null; return; }
-        
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
 
-        // ✨ワールド座標をローカル座標に変換
-        const localCoords = transformWorldToLocal(coords.x, coords.y, activeLayer);
-        console.log('[描画位置] World:', coords.x, coords.y, '→ Local:', localCoords.x, localCoords.y);
+        // 📌 2. modelMatrix が壊れていないかをチェック
+        if (!isValidMatrix(activeLayer.modelMatrix)) {
+            console.error('Invalid modelMatrix detected, reinitializing...');
+            activeLayer.modelMatrix = mat4.create();
+        }
+
+        // 📌 6. レイヤー移動処理（V + ドラッグ）
+        if (this.isLayerMoving) {
+            const dx = e.clientX - this.transformStartX;
+            const dy = e.clientY - this.transformStartY;
+            if (!isFinite(dx) || !isFinite(dy)) return;
+
+            const newMatrix = mat4.clone(this.originalModelMatrix);
+            mat4.translate(newMatrix, newMatrix, [dx, dy, 0]);
+            activeLayer.modelMatrix = newMatrix;
+            activeLayer.gpuDirty = true;
+            this.renderAllLayers();
+            return;
+        }
+
+        if (!this.isDrawing) return;
+        const coords = this.getCanvasCoordinates(e);
+        if (!coords) { this.lastPoint = null; return; }
+
+        // 📌 4. マウス描画処理では transformWorldToLocal を必ず通して描く
+        const local = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
+        console.log('[描画位置] World(' + coords.x + ', ' + coords.y + ') → Local(' + local.x + ', ' + local.y + ')');
 
         if (!this.lastPoint) { 
             this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
-            this.lastPoint = { x: localCoords.x, y: localCoords.y, pressure: e.pressure > 0 ? e.pressure : 0.5 }; 
+            this.lastPoint = { x: local.x, y: local.y, pressure: e.pressure > 0 ? e.pressure : 0.5 }; 
             return;
         }
 
@@ -237,22 +265,18 @@ class CanvasManager {
         
         const lastSize = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
         const currentSize = this.calculatePressureSize(this.currentSize, currentPressure);
-        
-        // ✨Dirty rectの更新もローカル座標で
         this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, lastSize);
-        this._updateDirtyRect(localCoords.x, localCoords.y, currentSize);
+        this._updateDirtyRect(local.x, local.y, currentSize);
 
-        // ✨線描画処理でローカル座標を使用
         this.renderingBridge.drawLine(
-            this.lastPoint.x, this.lastPoint.y, localCoords.x, localCoords.y,
+            this.lastPoint.x, this.lastPoint.y, local.x, local.y,
             this.currentSize, hexToRgba(this.currentColor), this.currentTool === 'eraser',
             this.lastPoint.pressure, currentPressure, 
             this.calculatePressureSize.bind(this),
             activeLayer
         );
         
-        // ✨lastPointの更新もローカル座標で
-        this.lastPoint = { x: localCoords.x, y: localCoords.y, pressure: currentPressure };
+        this.lastPoint = { x: local.x, y: local.y, pressure: currentPressure };
         this._requestRender();
     }
     
@@ -273,6 +297,12 @@ class CanvasManager {
             }
             
             this.lastPoint = null;
+            this.saveState();
+        }
+
+        // 📌 6. レイヤー移動処理終了
+        if (this.isLayerMoving) {
+            this.isLayerMoving = false;
             this.saveState();
         }
 
@@ -400,6 +430,9 @@ class CanvasManager {
             
             if (layerData.modelMatrix) {
                 layer.modelMatrix.set(layerData.modelMatrix);
+            } else {
+                // 📌 1. レイヤー読み込み時もmodelMatrixを初期化
+                layer.modelMatrix = mat4.create();
             }
             layer.gpuDirty = true;
             return layer;
@@ -458,7 +491,14 @@ class CanvasManager {
         link.download = 'merged_image.png';
         link.click();
     }
-    updateCursor() { let cursor = 'crosshair'; if (this.isVDown) cursor = 'move'; if (this.isSpaceDown) cursor = 'grab'; if (this.currentTool === 'eraser') cursor = 'cell'; if (this.currentTool === 'bucket') cursor = 'copy'; this.canvasArea.style.cursor = cursor; }
+    updateCursor() { 
+        let cursor = 'crosshair'; 
+        if (this.isVDown) cursor = 'move'; 
+        if (this.isSpaceDown) cursor = 'grab'; 
+        if (this.currentTool === 'eraser') cursor = 'cell'; 
+        if (this.currentTool === 'bucket') cursor = 'copy'; 
+        this.canvasArea.style.cursor = cursor; 
+    }
     applyViewTransform() { const t = this.viewTransform; this.canvasContainer.style.transform = `translate(${t.left}px, ${t.top}px) scale(${t.scale * t.flipX}, ${t.scale * t.flipY}) rotate(${t.rotation}deg)`; }
     flipHorizontal() { this.viewTransform.flipX *= -1; this.applyViewTransform(); }
     flipVertical() { this.viewTransform.flipY *= -1; this.applyViewTransform(); }
