@@ -23,6 +23,10 @@
  * - modelMatrix の保存・復元処理を修正
  * - Float32Array(16) 形式の正確な保持
  * - レイヤー移動時の画像飛びバグを修正
+ * 
+ * Phase4A11A-1Δ 改修:
+ * - isValidMatrix() 関数のFloat32Array対応修正
+ * - 正常な行列の誤判定を解消
  * ===================================================================================
  */
 
@@ -55,8 +59,9 @@ function hexToRgba(hex) {
     } : { r: 0, g: 0, b: 0, a: 255 };
 }
 
+// 🔧 修正: Float32Array対応版のisValidMatrix
 function isValidMatrix(m) {
-    return Array.isArray(m) && m.length === 16 && m.every(Number.isFinite);
+    return m && m.length === 16 && Array.from(m).every(Number.isFinite);
 }
 
 function transformWorldToLocal(worldX, worldY, modelMatrix) {
