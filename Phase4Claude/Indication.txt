@@ -1,0 +1,206 @@
+# 📜 Claude用指示書：Phase 4A11A-1 描画とレイヤー移動の座標統一改修（完全版）
+
+## 🎯 目的：
+ブラウザお絵かきツールのレイヤー移動・描画ズレ・吹き飛びバグをなくすために、
+描画座標とレイヤー変換行列（modelMatrix）を統一した処理に修正してください。
+
+## 🧱 この作業は「Phase 4A11A-0/core-engine.js」をベースに行います。
+このファイルに、以下の機能を **すべて1ファイル内で完結するように**追加してください。
+
+---
+
+## ✅ 必須の新機能（全部入れること）：
+
+### 1. 🔧 gl-matrixの mat4, vec4 を次のように定義（ファイル冒頭）
+
+```js
+const mat4 = window.glMatrix.mat4;
+const vec4 = window.glMatrix.vec4;
+```
+
+### 2. 🧱 レイヤー作成時に modelMatrix を初期化
+
+```js
+layer.modelMatrix = mat4.create(); // 単位行列
+```
+
+### 3. 🛡 modelMatrix の妥当性チェック関数を追加
+
+```js
+function isValidMatrix(m) {
+  return Array.isArray(m) && m.length === 16 && m.every(Number.isFinite);
+}
+```
+- onPointerDown, onPointerMove の先頭で `if (!isValidMatrix(layer.modelMatrix)) return;` を入れる
+
+### 4. 🔁 transformWorldToLocal 関数を追加（逆行列）
+
+```js
+function transformWorldToLocal(worldX, worldY, modelMatrix) {
+  const invMatrix = mat4.create();
+  if (!mat4.invert(invMatrix, modelMatrix)) {
+    console.warn("Matrix inversion failed");
+    return { x: worldX, y: worldY }; // fallback
+  }
+  const worldPos = vec4.fromValues(worldX, worldY, 0, 1);
+  const localPos = vec4.create();
+  vec4.transformMat4(localPos, worldPos, invMatrix);
+  console.log('[座標変換] World:', worldX, worldY, '→ Local:', localPos[0], localPos[1]);
+  return { x: localPos[0], y: localPos[1] };
+}
+```
+
+### 5. 🖊️ ペン描画や塗りつぶしでは必ず transformWorldToLocal() を使う
+
+```js
+// getCanvasCoordinates() の後に変換を追加
+const canvasCoords = this.getCanvasCoordinates(e);
+if (!canvasCoords) return;
+const local = transformWorldToLocal(canvasCoords.x, canvasCoords.y, activeLayer.modelMatrix);
+// 描画は local.x, local.y を使うこと
+```
+
+### 6. 🧲 Vキーを押している間だけレイヤー移動モードにする
+
+```js
+// CanvasManager のコンストラクタで初期化
+this.isVDown = false;
+this.isLayerMoving = false;
+this.transformStartX = 0;
+this.transformStartY = 0;
+this.originalModelMatrix = null;
+
+// bindEvents() でキーボードイベントを追加
+document.addEventListener("keydown", (e) => {
+  if (e.key === "v" || e.key === "V") {
+    this.isVDown = true;
+    this.updateCursor();
+  }
+});
+document.addEventListener("keyup", (e) => {
+  if (e.key === "v" || e.key === "V") {
+    this.isVDown = false;
+    this.updateCursor();
+  }
+});
+```
+
+### 7. ✋ レイヤー移動処理を追加（V + ドラッグ）
+
+```js
+// onPointerDown に追加
+if (this.isVDown && activeLayer) {
+  this.isLayerMoving = true;
+  this.transformStartX = e.clientX;
+  this.transformStartY = e.clientY;
+  this.originalModelMatrix = mat4.clone(activeLayer.modelMatrix);
+  e.preventDefault();
+  return;
+}
+```
+
+```js
+// onPointerMove に追加
+if (this.isLayerMoving) {
+  const dx = e.clientX - this.transformStartX;
+  const dy = e.clientY - this.transformStartY;
+  const activeLayer = this.app.layerManager.getCurrentLayer();
+  if (activeLayer) {
+    const newMatrix = mat4.clone(this.originalModelMatrix);
+    mat4.translate(newMatrix, newMatrix, [dx, dy, 0]);
+    activeLayer.modelMatrix = newMatrix;
+    activeLayer.gpuDirty = true;
+    this.renderAllLayers();
+  }
+  return;
+}
+```
+
+```js
+// onPointerUp に追加
+if (this.isLayerMoving) {
+  this.isLayerMoving = false;
+  this.saveState(); // 履歴に保存
+  return;
+}
+```
+
+### 8. 📊 レンダリング時にmodelMatrixを適用
+
+```js
+// RenderingBridge での描画時にmodelMatrixを考慮する処理を追加
+// WebGLレンダリングでlayerのmodelMatrixを使用してシェーダーに渡す
+```
+
+### 9. 🔄 updateCursor() を修正
+
+```js
+updateCursor() {
+  let cursor = 'crosshair';
+  if (this.isVDown) cursor = 'move';
+  if (this.isSpaceDown) cursor = 'grab';
+  if (this.isPanning) cursor = 'grabbing';
+  if (this.currentTool === 'eraser') cursor = 'cell';
+  if (this.currentTool === 'bucket') cursor = 'copy';
+  this.canvasArea.style.cursor = cursor;
+}
+```
+
+### 10. 🏠 レイヤーリセット機能を追加
+
+```js
+resetLayerTransform() {
+  const activeLayer = this.app.layerManager.getCurrentLayer();
+  if (activeLayer) {
+    activeLayer.modelMatrix = mat4.create();
+    activeLayer.gpuDirty = true;
+    this.renderAllLayers();
+    this.saveState();
+  }
+}
+```
+
+### 11. 🐛 座標変換のデバッグログを追加
+
+```js
+// 描画時に座標変換の詳細をログ出力
+console.log('[描画位置] Canvas:', canvasCoords.x, canvasCoords.y, 'Local:', local.x, local.y);
+```
+
+### 12. 🔧 WebGLシェーダー用の行列処理
+
+```js
+// RenderingBridge で使用するためのヘルパー関数
+function matrixToWebGLFormat(matrix) {
+  // mat4をWebGLシェーダーに渡せる形式に変換
+  return new Float32Array(matrix);
+}
+```
+
+---
+
+## ✅ 成功条件（すべて満たしてください）：
+
+- ✅ Vキーを押しながらドラッグでレイヤーが自然に移動する
+- ✅ 描画もレイヤー移動に合わせてズレなく表示される
+- ✅ transformWorldToLocal によって描画座標が正確に一致する
+- ✅ Consoleに [座標変換] や [描画位置] ログが表示される
+- ✅ modelMatrixの再初期化ログが連続で出ない
+- ✅ 他のUIや保存・履歴機能にバグがない
+- ✅ レイヤー移動後も描画が正しい位置に入る
+- ✅ 複数レイヤーの移動が独立して動作する
+- ✅ アンドゥ・リドゥでレイヤー位置も正しく復元される
+
+## 📦 添付ファイル：
+Phase4A11A-0/core-engine.js を元に上記を組み込んでください。
+このファイルのみで動く状態を想定して修正してください。
+
+## 🔧 実装時の注意点：
+
+1. **座標系の統一**: Canvas座標 → World座標 → Local座標の変換を必ず行う
+2. **行列の検証**: modelMatrix が壊れていないか毎回チェック
+3. **GPU同期**: modelMatrix変更時は必ず `gpuDirty = true` を設定
+4. **イベントの優先順位**: V+ドラッグ > Space+ドラッグ > 通常描画の順
+5. **履歴管理**: レイヤー移動も履歴に保存する
+
+この指示書は「レイヤー変形と描画の座標整合性を完全に保証する」ための最終フェーズとして設計されています。中間的なコードではなく、完成形を出力してください。

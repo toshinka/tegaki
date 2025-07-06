@@ -1,0 +1,117 @@
+📜 Claude用指示書：Phase 4A11A-1 描画とレイヤー移動の座標統一改修（完全版）
+
+🎯 目的：
+ブラウザお絵かきツールのレイヤー移動・描画ズレ・吹き飛びバグをなくすために、
+描画座標とレイヤー変換行列（modelMatrix）を統一した処理に修正してください。
+
+🧱 この作業は「Phase 4A11A-0/core-engine.js」をベースに行います。
+このファイルに、以下の機能を **すべて1ファイル内で完結するように**追加してください。
+
+---
+
+✅ 必須の新機能（全部入れること）：
+
+1. 🔧 gl-matrixの mat4, vec4 を次のように定義（ファイル冒頭）
+
+```js
+const mat4 = window.glMatrix.mat4;
+const vec4 = window.glMatrix.vec4;
+🧱 レイヤー作成時に modelMatrix を初期化
+
+js
+コピーする
+編集する
+layer.modelMatrix = mat4.create(); // 単位行列
+🛡 modelMatrix の妥当性チェック関数を追加
+
+js
+コピーする
+編集する
+function isValidMatrix(m) {
+  return Array.isArray(m) && m.length === 16 && m.every(Number.isFinite);
+}
+onPointerDown, onPointerMove の先頭で if (!isValidMatrix(layer.modelMatrix)) return; を入れる
+
+🔁 transformWorldToLocal 関数を追加（逆行列）
+
+js
+コピーする
+編集する
+function transformWorldToLocal(worldX, worldY, modelMatrix) {
+  const invMatrix = mat4.create();
+  if (!mat4.invert(invMatrix, modelMatrix)) {
+    console.warn("Matrix inversion failed");
+    return { x: worldX, y: worldY }; // fallback
+  }
+  const worldPos = vec4.fromValues(worldX, worldY, 0, 1);
+  const localPos = vec4.create();
+  vec4.transformMat4(localPos, worldPos, invMatrix);
+  console.log('[座標変換] World:', worldX, worldY, '→ Local:', localPos[0], localPos[1]);
+  return { x: localPos[0], y: localPos[1] };
+}
+🖊️ ペン描画や塗りつぶしでは必ず transformWorldToLocal() を使う
+
+js
+コピーする
+編集する
+const local = transformWorldToLocal(e.clientX, e.clientY, activeLayer.modelMatrix);
+// 描画は local.x, local.y を使うこと
+🧲 Vキーを押している間だけレイヤー移動モードにする
+
+js
+コピーする
+編集する
+let isVDown = false;
+document.addEventListener("keydown", (e) => {
+  if (e.key === "v") isVDown = true;
+});
+document.addEventListener("keyup", (e) => {
+  if (e.key === "v") isVDown = false;
+});
+✋ レイヤー移動処理を追加（V + ドラッグ）
+
+js
+コピーする
+編集する
+// onPointerDown
+if (isVDown) {
+  this.isLayerMoving = true;
+  this.transformStartX = e.clientX;
+  this.transformStartY = e.clientY;
+  this.originalModelMatrix = mat4.clone(activeLayer.modelMatrix);
+}
+js
+コピーする
+編集する
+// onPointerMove
+if (this.isLayerMoving) {
+  const dx = e.clientX - this.transformStartX;
+  const dy = e.clientY - this.transformStartY;
+  const newMatrix = mat4.clone(this.originalModelMatrix);
+  mat4.translate(newMatrix, newMatrix, [dx, dy, 0]);
+  activeLayer.modelMatrix = newMatrix;
+}
+js
+コピーする
+編集する
+// onPointerUp
+this.isLayerMoving = false;
+✅ 成功条件（すべて満たしてください）：
+
+ Vキーを押しながらドラッグでレイヤーが自然に移動する
+
+ 描画もレイヤー移動に合わせてズレなく表示される
+
+ transformWorldToLocal によって描画座標が正確に一致する
+
+ Consoleに [座標変換] や [描画位置] ログが表示される
+
+ modelMatrixの再初期化ログが連続で出ない
+
+ 他のUIや保存・履歴機能にバグがない
+
+📦 添付ファイル：
+Phase4A11A-0/core-engine.js を元に上記を組み込んでください。
+このファイルのみで動く状態を想定して修正してください。
+
+この指示書は「レイヤー変形と描画の座標整合性を完全に保証する」ための最終フェーズとして設計されています。中間的なコードではなく、完成形を出力してください。
