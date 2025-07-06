@@ -18,11 +18,6 @@
  * - transformWorldToLocal() 関数追加
  * - Vキーによるレイヤー移動モード実装
  * - 座標変換の正常化
- * 
- * Phase4A11A-1Γ 改修:
- * - modelMatrix の保存・復元処理を修正
- * - Float32Array(16) 形式の正確な保持
- * - レイヤー移動時の画像飛びバグを修正
  * ===================================================================================
  */
 
@@ -464,35 +459,30 @@ class CanvasManager {
     }
 
     saveState() {
-        // 💾 modelMatrix の保存処理を修正
+        // modelMatrix の有効性チェック
+        const validatedLayers = this.app.layerManager.layers.map(layer => {
+            if (!isValidMatrix(layer.modelMatrix)) {
+                console.warn("⚠ saveState: invalid modelMatrix detected, resetting");
+                layer.modelMatrix = mat4.create();
+            }
+            return layer;
+        });
+
         const state = {
-            layers: this.app.layerManager.layers.map(layer => {
-                // modelMatrix の有効性チェック
-                if (!isValidMatrix(layer.modelMatrix)) {
-                    console.warn("⚠ saveState: invalid modelMatrix detected, resetting");
-                    layer.modelMatrix = mat4.create();
-                }
-                
-                // Float32Array を 16要素配列に変換して保存
-                const savedModelMatrix = Array.from(layer.modelMatrix);
-                console.log("💾 modelMatrix saved:", savedModelMatrix);
-                
-                return {
-                    name: layer.name,
-                    visible: layer.visible,
-                    opacity: layer.opacity,
-                    blendMode: layer.blendMode,
-                    imageData: new ImageData(
-                        new Uint8ClampedArray(layer.imageData.data),
-                        layer.imageData.width,
-                        layer.imageData.height
-                    ),
-                    modelMatrix: savedModelMatrix
-                };
-            }),
+            layers: validatedLayers.map(layer => ({
+                name: layer.name,
+                visible: layer.visible,
+                opacity: layer.opacity,
+                blendMode: layer.blendMode,
+                imageData: new ImageData(
+                    new Uint8ClampedArray(layer.imageData.data),
+                    layer.imageData.width,
+                    layer.imageData.height
+                ),
+                modelMatrix: new Float32Array(layer.modelMatrix)
+            })),
             activeLayerIndex: this.app.layerManager.activeLayerIndex
         };
-        
         this.history = this.history.slice(0, this.historyIndex + 1);
         this.history.push(state);
         this.historyIndex++;
@@ -506,25 +496,14 @@ class CanvasManager {
             layer.blendMode = layerData.blendMode ?? 'normal';
             layer.imageData.data.set(layerData.imageData.data);
             
-            // 📥 modelMatrix の復元処理を修正
-            // まず初期化
+            // modelMatrix の明示初期化と復元
             layer.modelMatrix = mat4.create();
-            
-            // 保存されたデータが有効な16要素配列かチェック
-            if (layerData.modelMatrix && Array.isArray(layerData.modelMatrix) && layerData.modelMatrix.length === 16) {
-                // 配列からFloat32Arrayに変換
-                layer.modelMatrix = new Float32Array(layerData.modelMatrix);
-                console.log("📥 modelMatrix restored:", layer.modelMatrix);
-            } else {
-                // データが壊れている場合は単位行列で初期化
-                console.warn("⚠ restoreState: invalid saved modelMatrix, using identity");
-                layer.modelMatrix = mat4.create();
+            if (layerData.modelMatrix && isValidMatrix(Array.from(layerData.modelMatrix))) {
+                layer.modelMatrix.set(layerData.modelMatrix);
             }
-            
             layer.gpuDirty = true;
             return layer;
         });
-        
         this.app.layerManager.switchLayer(state.activeLayerIndex);
         this.renderAllLayers();
     }

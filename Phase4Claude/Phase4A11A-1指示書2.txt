@@ -1,0 +1,69 @@
+🎯 今回の修正目的：
+modelMatrix を Float32Array(16) のまま正確に保持し、保存・復元しても壊れないようにしてください
+
+それ以外の描画・レイヤー移動処理などは、現在のままでOKです（修正しないでください）
+
+✅ 守ってほしいこと
+🔹 modelMatrix を保存（saveState）する際、Array.from(mat4) のように変換してOK
+
+🔹 復元時（restoreState）には必ず Float32Array に戻すか、mat4.fromValues(...) や mat4.clone() を使って再構築
+
+🔹 modelMatrix が 4要素（壊れてる）になったり、NaN を含まないように
+
+🔁 修正すべき箇所（例）
+📍 保存時（saveState内など）：
+js
+コピーする
+編集する
+// 修正前（壊れやすい）
+savedLayer.modelMatrix = activeLayer.modelMatrix;
+
+// 修正後（安全に16要素をArray化）
+savedLayer.modelMatrix = Array.from(activeLayer.modelMatrix);
+📍 復元時（restoreStateなどで new Layer() や LayerManager.addLayer）：
+js
+コピーする
+編集する
+// 修正前（直接代入で壊れる）
+layer.modelMatrix = saved.modelMatrix;
+
+// 修正後（Float32Arrayに戻す or mat4再構築）
+if (Array.isArray(saved.modelMatrix) && saved.modelMatrix.length === 16) {
+  layer.modelMatrix = new Float32Array(saved.modelMatrix);
+} else {
+  layer.modelMatrix = mat4.create();
+}
+mat4.fromValues(...saved.modelMatrix) を使っても構いません
+
+✅ テストログの出力（保存・復元時にログ確認可能にしてください）
+js
+コピーする
+編集する
+console.log("💾 modelMatrix saved:", savedLayer.modelMatrix);
+console.log("📥 modelMatrix restored:", layer.modelMatrix);
+✅ 成功条件（Claudeが出力後に必ず満たすべきこと）
+ modelMatrix が保存時に16要素配列で格納される
+
+ 復元時に Float32Array(16) へ完全復元される
+
+ isValidMatrix() に引っかからず、ログに invalid modelMatrix が出ない
+
+ saveState() や onPointerMove() の中で resetting ログが出なくなる
+
+ レイヤーを動かしても画像が飛ばず、描画後も復元される
+
+ このファイルは Phase4A11A-1Γ.js として新しく保存される
+
+📁 添付ファイル前提
+このチャットには、Phase4A11A-1β.js の core-engine.js が添付されているものとします。
+
+Claudeはそのコードに対して、上記の保存・復元処理だけを修正してください。
+
+他の機能（transformWorldToLocal, Vドラッグ移動）はそのままで構いません。
+
+⚠ Claudeへの特別注意
+❌ import / export / require は使わない
+
+✅ mat4, vec4 は const mat4 = window.glMatrix.mat4 で定義済
+
+✅ modelMatrix は mat4.create() で初期化される前提
