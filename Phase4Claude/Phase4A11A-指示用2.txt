@@ -1,0 +1,51 @@
+✅ 今回の目的
+「Vキー＋ドラッグ」で activeLayer の modelMatrix に対して translate が正しく反映されるようにしてください。
+
+🧱 問題の症状
+isVDown や isLayerMoving のフラグ処理はあります
+
+mat4.translate() も onPointerMove にあります
+
+しかし、実際にはキャンバス上でレイヤーが動きません
+
+📌 修正してほしいこと
+onPointerMove で、以下の処理を確認・修正してください：
+
+js
+コピーする
+編集する
+if (this.isLayerMoving) {
+  const dx = e.clientX - this.transformStartX;
+  const dy = e.clientY - this.transformStartY;
+  if (!isFinite(dx) || !isFinite(dy)) return;
+
+  const newMatrix = mat4.clone(this.originalModelMatrix);
+  mat4.translate(newMatrix, newMatrix, [dx, dy, 0]);
+  activeLayer.modelMatrix = newMatrix; // ← ここが効いていない可能性
+}
+👉 この modelMatrix が描画側で使われていない or 上書きされているかもしれません
+
+必要に応じて console.log() を以下のように入れて動作確認してください：
+
+js
+コピーする
+編集する
+console.log("🔧 レイヤー移動", dx, dy, activeLayer.modelMatrix);
+最終的に以下を満たしてください：
+
+ Vキーを押しながらドラッグでレイヤーが滑らかに動く
+
+ 描画後の線も、その移動後の位置で正しく描かれる（ズレなし）
+
+ Consoleに [描画位置] と [座標変換] のログが出続ける
+
+ 他のUIや描画機能にバグを出していない
+
+📦 添付ファイル
+このチャットに添付される core-engine.js は、あなたが前回修正した Phase4Claude/core-engine.js です。
+今回の指示はそれに対する「仕上げ」で、差分は少ないです。
+
+🔚 備考
+このコードは glMatrix を使用しており、mat4, vec4 は利用可能です。
+layerManager や activeLayer などは外部ファイルから供給されると仮定して構いません。
+このファイルだけで完成するように修正してください。

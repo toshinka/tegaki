@@ -143,10 +143,16 @@ class CanvasManager {
     // 📌 5. Vキーを押している間だけレイヤーが移動できるようにする
     bindKeyEvents() {
         document.addEventListener("keydown", (e) => {
-            if (e.key === "v" || e.key === "V") this.isVDown = true;
+            if (e.key === "v" || e.key === "V") {
+                this.isVDown = true;
+                this.updateCursor();
+            }
         });
         document.addEventListener("keyup", (e) => {
-            if (e.key === "v" || e.key === "V") this.isVDown = false;
+            if (e.key === "v" || e.key === "V") {
+                this.isVDown = false;
+                this.updateCursor();
+            }
         });
     }
 
@@ -171,9 +177,13 @@ class CanvasManager {
         // 📌 6. レイヤー移動処理（V + ドラッグ）をマウスイベントに追加
         if (this.isVDown) {
             this.isLayerMoving = true;
-            this.transformStartX = e.clientX;
-            this.transformStartY = e.clientY;
-            this.originalModelMatrix = mat4.clone(activeLayer.modelMatrix);
+            const coords = this.getCanvasCoordinates(e);
+            if (coords) {
+                this.transformStartX = coords.x;
+                this.transformStartY = coords.y;
+                this.originalModelMatrix = mat4.clone(activeLayer.modelMatrix);
+                console.log('🔧 レイヤー移動開始', coords.x, coords.y);
+            }
             e.preventDefault();
             return;
         }
@@ -229,17 +239,24 @@ class CanvasManager {
             activeLayer.modelMatrix = mat4.create();
         }
 
-        // 📌 6. レイヤー移動処理（V + ドラッグ）
+        // 📌 6. レイヤー移動処理（V + ドラッグ）- 修正版
         if (this.isLayerMoving) {
-            const dx = e.clientX - this.transformStartX;
-            const dy = e.clientY - this.transformStartY;
-            if (!isFinite(dx) || !isFinite(dy)) return;
-
-            const newMatrix = mat4.clone(this.originalModelMatrix);
-            mat4.translate(newMatrix, newMatrix, [dx, dy, 0]);
-            activeLayer.modelMatrix = newMatrix;
-            activeLayer.gpuDirty = true;
-            this.renderAllLayers();
+            const coords = this.getCanvasCoordinates(e);
+            if (coords) {
+                const dx = coords.x - this.transformStartX;
+                const dy = coords.y - this.transformStartY;
+                
+                if (isFinite(dx) && isFinite(dy)) {
+                    const newMatrix = mat4.clone(this.originalModelMatrix);
+                    mat4.translate(newMatrix, newMatrix, [dx, dy, 0]);
+                    activeLayer.modelMatrix = newMatrix;
+                    activeLayer.gpuDirty = true;
+                    
+                    console.log("🔧 レイヤー移動", dx, dy, activeLayer.modelMatrix);
+                    
+                    this.renderAllLayers();
+                }
+            }
             return;
         }
 
@@ -303,6 +320,7 @@ class CanvasManager {
         // 📌 6. レイヤー移動処理終了
         if (this.isLayerMoving) {
             this.isLayerMoving = false;
+            console.log('🔧 レイヤー移動終了');
             this.saveState();
         }
 
