@@ -1,0 +1,485 @@
+/*
+ * ===================================================================================
+ * Toshinka Tegaki Tool - WebGL Engine
+ * Version: 4.2.1 (Phase 4A10 - Y-Axis Flip Fix)
+ *
+ * - 修正 (Phase 4A10 Fix):
+ * - Y軸反転の責務を明確化し、一貫性のある座標系を確立
+ * - テクスチャアップロード時のY軸フリップ設定を修正
+ * - レイヤー描画時の座標変換を統一
+ * ===================================================================================
+ */
+import { DrawingEngine } from './drawing-engine.js';
+
+export class WebGLEngine extends DrawingEngine {
+    constructor(canvas) {
+        super(canvas);
+        this.gl = null;
+        
+        this.SUPER_SAMPLING_FACTOR = 2.0;
+
+        this.width = canvas.width;
+        this.height = canvas.height;
+        this.superWidth = this.width * this.SUPER_SAMPLING_FACTOR;
+        this.superHeight = this.height * this.SUPER_SAMPLING_FACTOR;
+        
+        this.programs = { compositor: null, brush: null };
+        this.positionBuffer = null;
+        this.texCoordBuffer = null;
+        this.brushPositionBuffer = null;
+        
+        this.superCompositeTexture = null;
+        this.superCompositeFBO = null;
+        
+        this.layerTextures = new Map();
+        this.layerFBOs = new Map();
+        
+        this.transformOffscreenCanvas = document.createElement('canvas');
+        this.transformOffscreenCtx = this.transformOffscreenCanvas.getContext('2d');
+        
+        this.identityMatrix = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+
+        try {
+            this.gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: false }) || canvas.getContext('experimental-webgl', { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: false });
+            if (!this.gl) {
+                alert('お使いのブラウザはWebGLをサポートしていません。別のブラウザをお試しください。');
+                console.error('WebGLコンテキストの取得に失敗しました。');
+                return;
+            }
+        } catch (e) {
+            console.error("WebGL Engine initialization failed:", e);
+            alert('WebGLの初期化中に予期せぬエラーが発生しました。');
+            return;
+        }
+
+        const gl = this.gl;
+        
+        gl.enable(gl.BLEND);
+        gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+        this._initShaderPrograms();
+        if (!this.programs.compositor || !this.programs.brush) {
+            console.error("シェーダープログラムの初期化に失敗したため、WebGLエンジンのセットアップを中断します。");
+            this.gl = null;
+            return;
+        }
+
+        this._initBuffers();
+        this._setupSuperCompositingBuffer();
+
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        gl.clearColor(0.0, 0.0, 0.0, 0.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        console.log(`WebGL Engine (v4.2.1 Phase4A10-Fix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+    }
+
+    _initShaderPrograms() {
+        // ★★★ 修正: コンポジット用頂点シェーダー - Y軸反転を削除 ★★★
+        const vsCompositor = `
+            attribute vec2 a_position;
+            attribute vec2 a_texCoord;
+            uniform mat4 u_mvpMatrix;
+            varying vec2 v_texCoord;
+
+            void main() {
+                // Y軸反転を削除し、modelMatrixに委ねる
+                gl_Position = u_mvpMatrix * vec4(a_position.x, a_position.y, 0.0, 1.0);
+                v_texCoord = a_texCoord;
+            }`;
+
+        // ★★★ 修正: コンポジット用フラグメントシェーダー - テクスチャ座標の調整 ★★★
+        const fsCompositor = `
+            precision highp float;
+            varying vec2 v_texCoord;
+            uniform sampler2D u_image;
+            uniform float u_opacity;
+            uniform vec2 u_source_resolution;
+
+            void main() {
+                vec2 texel_size = 1.0 / u_source_resolution;
+                vec4 color = vec4(0.0);
+                
+                // アンチエイリアシングサンプリング
+                color += texture2D(u_image, v_texCoord + texel_size * vec2(-0.25, -0.25));
+                color += texture2D(u_image, v_texCoord + texel_size * vec2( 0.25, -0.25));
+                color += texture2D(u_image, v_texCoord + texel_size * vec2( 0.25,  0.25));
+                color += texture2D(u_image, v_texCoord + texel_size * vec2(-0.25,  0.25));
+                color *= 0.25;
+
+                gl_FragColor = vec4(color.rgb, color.a * u_opacity);
+            }`;
+
+        // ★★★ 修正: ブラシ用頂点シェーダー - 座標系を統一 ★★★
+        const vsBrush = `
+            precision highp float;
+            attribute vec2 a_position; 
+            uniform vec2 u_resolution;
+            uniform vec2 u_center;
+            uniform float u_radius;
+            varying vec2 v_texCoord;
+
+            void main() {
+                vec2 quad_size_pixels = vec2(u_radius * 2.0 + 2.0);
+                vec2 quad_size_clip = quad_size_pixels / u_resolution;
+                
+                // WebGL座標系に変換（Y軸を上向き正に）
+                vec2 center_webgl = vec2(u_center.x, u_resolution.y - u_center.y);
+                vec2 center_clip = (center_webgl / u_resolution) * 2.0 - 1.0;
+                
+                gl_Position = vec4(a_position * quad_size_clip + center_clip, 0.0, 1.0);
+                v_texCoord = a_position + 0.5;
+            }`;
+
+        const fsBrush = `
+            precision highp float;
+            varying vec2 v_texCoord;
+            uniform float u_radius;
+            uniform vec4 u_color;
+            uniform bool u_is_eraser;
+
+            void main() {
+                float dist = distance(v_texCoord, vec2(0.5));
+                float pixel_in_uv = 1.0 / (max(u_radius, 0.5) * 2.0);
+                float alpha = 1.0 - smoothstep(0.5 - pixel_in_uv, 0.5, dist);
+
+                if (alpha < 0.01) {
+                    discard;
+                }
+
+                if (u_is_eraser) {
+                    gl_FragColor = vec4(0.0, 0.0, 0.0, alpha); 
+                } else {
+                    gl_FragColor = vec4(u_color.rgb * u_color.a * alpha, u_color.a * alpha);
+                }
+            }`;
+        
+        this.programs.compositor = this._createProgram(vsCompositor, fsCompositor);
+        this.programs.brush = this._createProgram(vsBrush, fsBrush);
+    }
+    
+    _initBuffers() {
+        const gl = this.gl;
+        this.positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        const positions = [ -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0, -1.0 ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+        this.texCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        const texCoords = [ 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0 ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
+        
+        this.brushPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.brushPositionBuffer);
+        const brushPositions = [ -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, -0.5 ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(brushPositions), gl.STATIC_DRAW);
+    }
+
+    _compileShader(source, type) {
+        const gl = this.gl;
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            const info = gl.getShaderInfoLog(shader);
+            console.error(`シェーダーコンパイルエラー (${type === gl.VERTEX_SHADER ? 'Vertex' : 'Fragment'}):`, info);
+            gl.deleteShader(shader);
+            return null;
+        }
+        return shader;
+    }
+
+    _createProgram(vsSource, fsSource) {
+        const gl = this.gl;
+        const vs = this._compileShader(vsSource, gl.VERTEX_SHADER);
+        const fs = this._compileShader(fsSource, gl.FRAGMENT_SHADER);
+        if (!vs || !fs) return null;
+
+        const program = gl.createProgram();
+        gl.attachShader(program, vs);
+        gl.attachShader(program, fs);
+        gl.linkProgram(program);
+
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            const info = gl.getProgramInfoLog(program);
+            console.error('プログラムリンクエラー:', info);
+            gl.deleteProgram(program);
+            return null;
+        }
+        
+        program.locations = {};
+        const locs = (p) => {
+            p.locations.a_position = gl.getAttribLocation(p, 'a_position');
+            p.locations.a_texCoord = gl.getAttribLocation(p, 'a_texCoord');
+            p.locations.u_image = gl.getUniformLocation(p, 'u_image');
+            p.locations.u_opacity = gl.getUniformLocation(p, 'u_opacity');
+            p.locations.u_resolution = gl.getUniformLocation(p, 'u_resolution');
+            p.locations.u_center = gl.getUniformLocation(p, 'u_center');
+            p.locations.u_radius = gl.getUniformLocation(p, 'u_radius');
+            p.locations.u_color = gl.getUniformLocation(p, 'u_color');
+            p.locations.u_is_eraser = gl.getUniformLocation(p, 'u_is_eraser');
+            p.locations.u_source_resolution = gl.getUniformLocation(p, 'u_source_resolution');
+            p.locations.u_mvpMatrix = gl.getUniformLocation(p, 'u_mvpMatrix');
+        };
+        locs(program);
+        
+        if (program.locations.u_mvpMatrix === null) {
+            const hasMvp = vsSource.includes('u_mvpMatrix');
+            if(hasMvp) {
+                 console.warn('u_mvpMatrix Uniform Locationが見つかりませんでした。シェーダー変数名を確認してください。');
+            }
+        }
+        
+        return program;
+    }
+
+    static isSupported() { try { const canvas = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))); } catch (e) { return false; } }
+
+    _createOrUpdateLayerTexture(layer) {
+        const gl = this.gl;
+        let texture = this.layerTextures.get(layer);
+
+        if (!texture) {
+            texture = gl.createTexture();
+            this.layerTextures.set(layer, texture);
+
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.superWidth, this.superHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+            const fbo = gl.createFramebuffer();
+            this.layerFBOs.set(layer, fbo);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        }
+
+        if (layer.gpuDirty && layer.imageData) {
+             const sourceCanvas = document.createElement('canvas');
+             sourceCanvas.width = layer.imageData.width;
+             sourceCanvas.height = layer.imageData.height;
+             sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
+
+             const tempCanvas = document.createElement('canvas');
+             tempCanvas.width = this.superWidth;
+             tempCanvas.height = this.superHeight;
+             const tempCtx = tempCanvas.getContext('2d');
+             tempCtx.imageSmoothingEnabled = true;
+             tempCtx.imageSmoothingQuality = 'high';
+             tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
+
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            // ★★★ 修正: Y軸フリップを有効化 ★★★
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvas);
+            gl.bindTexture(gl.TEXTURE_2D, null);
+
+            layer.gpuDirty = false;
+        }
+    }
+    
+    _setupSuperCompositingBuffer() {
+        const gl = this.gl;
+        if (this.superCompositeFBO) gl.deleteFramebuffer(this.superCompositeFBO);
+        if (this.superCompositeTexture) gl.deleteTexture(this.superCompositeTexture);
+
+        this.superCompositeTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.superCompositeTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.superWidth, this.superHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        
+        this.superCompositeFBO = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.superCompositeFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.superCompositeTexture, 0);
+        if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+            console.error('Super-Sampling Compositing Framebuffer not complete');
+        }
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+    
+    _setBlendMode(blendMode, isEraser = false) {
+        const gl = this.gl;
+        if (isEraser) {
+            gl.blendEquation(gl.FUNC_ADD);
+            gl.blendFuncSeparate(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
+        } else {
+            gl.blendEquation(gl.FUNC_ADD);
+            
+            gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+            
+            switch (blendMode) {
+                case 'multiply': 
+                    gl.blendFuncSeparate(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
+                    break;
+                case 'screen': 
+                    gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_COLOR, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
+                    break;
+                case 'add':
+                    gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE); 
+                    break;
+                default: 
+                    gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
+                    break;
+            }
+        }
+    }
+
+    drawCircle(centerX, centerY, radius, color, isEraser, layer) {
+        if (!this.gl || !this.programs.brush) return;
+        const gl = this.gl;
+        const program = this.programs.brush;
+        
+        this._createOrUpdateLayerTexture(layer);
+        const targetFBO = this.layerFBOs.get(layer);
+        if (!targetFBO) { return; }
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO);
+        gl.viewport(0, 0, this.superWidth, this.superHeight);
+        
+        gl.useProgram(program);
+        this._setBlendMode('normal', isEraser);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.brushPositionBuffer);
+        gl.enableVertexAttribArray(program.locations.a_position);
+        gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
+        
+        const superX = centerX * this.SUPER_SAMPLING_FACTOR;
+        const superY = centerY * this.SUPER_SAMPLING_FACTOR;
+        const superRadius = radius * this.SUPER_SAMPLING_FACTOR;
+        
+        // ★★★ 修正: Y軸反転を削除し、直接座標を使用 ★★★
+        gl.uniform2f(program.locations.u_resolution, this.superWidth, this.superHeight);
+        gl.uniform2f(program.locations.u_center, superX, superY);
+        gl.uniform1f(program.locations.u_radius, superRadius);
+        gl.uniform4f(program.locations.u_color, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
+        gl.uniform1i(program.locations.u_is_eraser, isEraser);
+
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+    
+    drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize, layer) {
+        if (!isFinite(x0) || !isFinite(y0) || !isFinite(x1) || !isFinite(y1)) return;
+        const distance = Math.hypot(x1 - x0, y1 - y0);
+        if (distance > this.width * 2) return;
+
+        const stepSize = Math.max(0.5, size / 4);
+        const steps = Math.max(1, Math.ceil(distance / stepSize));
+
+        for (let i = 0; i <= steps; i++) {
+            const t = steps > 0 ? i / steps : 0;
+            const x = x0 + (x1 - x0) * t;
+            const y = y0 + (y1 - y0) * t;
+            const pressure = p0 + (p1 - p0) * t;
+            const adjustedSize = calculatePressureSize(size, pressure);
+            this.drawCircle(x, y, adjustedSize / 2, color, isEraser, layer);
+        }
+    }
+
+    // ★★★ 修正: modelMatrixを使用したレイヤー描画 ★★★
+    drawLayer(layer) {
+        if (!this.gl || !this.programs.compositor) return;
+        const gl = this.gl;
+        const program = this.programs.compositor;
+
+        this._createOrUpdateLayerTexture(layer);
+        
+        if (!layer.visible || layer.opacity === 0 || !this.layerTextures.has(layer)) return;
+
+        gl.useProgram(program);
+        
+        // modelMatrixの存在確認
+        if (!layer.modelMatrix) {
+            console.warn('Layer modelMatrix is missing, skipping draw');
+            return;
+        }
+
+        // ★★★ 修正: Y軸反転を考慮した変換行列の作成 ★★★
+        const flipMatrix = new Float32Array([
+            1, 0, 0, 0,
+            0, -1, 0, 0,  // Y軸を反転
+            0, 0, 1, 0,
+            0, 0, 0, 1
+        ]);
+
+        // 変換行列を組み合わせ（flipMatrix * modelMatrix）
+        const combinedMatrix = new Float32Array(16);
+        this._multiplyMatrices(combinedMatrix, flipMatrix, layer.modelMatrix);
+
+        gl.uniformMatrix4fv(program.locations.u_mvpMatrix, false, combinedMatrix);
+
+        this._setBlendMode(layer.blendMode || 'normal');
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        gl.enableVertexAttribArray(program.locations.a_position);
+        gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        gl.enableVertexAttribArray(program.locations.a_texCoord);
+        gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.layerTextures.get(layer));
+        
+        gl.uniform2f(program.locations.u_source_resolution, this.superWidth, this.superHeight);
+        gl.uniform1i(program.locations.u_image, 0);
+        gl.uniform1f(program.locations.u_opacity, layer.opacity / 100.0);
+        
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+
+    // ★★★ 追加: 行列の乗算ヘルパー関数 ★★★
+    _multiplyMatrices(result, a, b) {
+        const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+        const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+        const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+        const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+
+        const b00 = b[0], b01 = b[1], b02 = b[2], b03 = b[3];
+        const b10 = b[4], b11 = b[5], b12 = b[6], b13 = b[7];
+        const b20 = b[8], b21 = b[9], b22 = b[10], b23 = b[11];
+        const b30 = b[12], b31 = b[13], b32 = b[14], b33 = b[15];
+
+        result[0] = a00 * b00 + a01 * b10 + a02 * b20 + a03 * b30;
+        result[1] = a00 * b01 + a01 * b11 + a02 * b21 + a03 * b31;
+        result[2] = a00 * b02 + a01 * b12 + a02 * b22 + a03 * b32;
+        result[3] = a00 * b03 + a01 * b13 + a02 * b23 + a03 * b33;
+
+        result[4] = a10 * b00 + a11 * b10 + a12 * b20 + a13 * b30;
+        result[5] = a10 * b01 + a11 * b11 + a12 * b21 + a13 * b31;
+        result[6] = a10 * b02 + a11 * b12 + a12 * b22 + a13 * b32;
+        result[7] = a10 * b03 + a11 * b13 + a12 * b23 + a13 * b33;
+
+        result[8] = a20 * b00 + a21 * b10 + a22 * b20 + a23 * b30;
+        result[9] = a20 * b01 + a21 * b11 + a22 * b21 + a23 * b31;
+        result[10] = a20 * b02 + a21 * b12 + a22 * b22 + a23 * b32;
+        result[11] = a20 * b03 + a21 * b13 + a22 * b23 + a23 * b33;
+
+        result[12] = a30 * b00 + a31 * b10 + a32 * b20 + a33 * b30;
+        result[13] = a30 * b01 + a31 * b11 + a32 * b21 + a33 * b31;
+        result[14] = a30 * b02 + a31 * b12 + a32 * b22 + a33 * b32;
+        result[15] = a30 * b03 + a31 * b13 + a32 * b23 + a33 * b33;
+    }
+
+    fill(imageData, color) { /* ... 変更なし ... */ }
+    clear(imageData) { /* ... 変更なし ... */ }
+    
+    getTransformedImageData(sourceImageData, transform) {
+        const canvas = this.transformOffscreenCanvas;
+        const ctx = this.transformOffscreenCtx;
+        const w = sourceImageData.width;
+        const h = sourceImageData.height;
+        if (canvas.width !== w || canvas.height !== h) {
+             canvas.width = w;
+             canvas.height = h;
+        }
+        ctx.save();
+        ctx.clearRect(0, 0, w, h);
