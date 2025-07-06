@@ -1,7 +1,7 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.9.1 (Phase 4A11-Refactor)
+ * Version: 2.9.1 (Phase 4A11-Refactor) - 座標変換修正版
  *
  * - 修正：
  * - 巨大化した core-engine.js の責務を分離するため、関連クラスを外部モジュールに分割。
@@ -10,6 +10,10 @@
  * - ColorManager -> ui/color-manager.js
  * - ToolManager -> ui/tool-manager.js
  * - 上記モジュールをインポートして利用するように変更。
+ * 
+ * - 【座標変換修正】レイヤー移動後の描画位置ズレを修正
+ * - transformWorldToLocal() を追加してローカル座標変換を実装
+ * - 全ての描画処理でローカル座標を使用するように修正
  * ===================================================================================
  */
 
@@ -39,31 +43,38 @@ function hexToRgba(hex) {
     } : { r: 0, g: 0, b: 0, a: 255 };
 }
 
-// ✨座標変換関数を追加
-function transformWorldToLocal(worldX, worldY, modelMatrix) {
-    if (!modelMatrix) {
-        console.warn('modelMatrix が未定義です。変換をスキップします。');
-        return { x: worldX, y: worldY };
-    }
-    
+// ✨座標変換ユーティリティ関数を追加
+function transformWorldToLocal(worldX, worldY, layer) {
     try {
-        // modelMatrixの逆行列を計算
-        const invMatrix = glMatrix.mat4.create();
-        const success = glMatrix.mat4.invert(invMatrix, modelMatrix);
-        
-        if (!success) {
-            console.warn('modelMatrix の逆行列計算に失敗しました。変換をスキップします。');
+        if (!layer || !layer.modelMatrix) {
+            console.warn('transformWorldToLocal: Invalid layer or missing modelMatrix');
             return { x: worldX, y: worldY };
         }
+
+        // 4x4行列の逆行列を計算
+        const inverseMatrix = glMatrix.mat4.create();
+        const success = glMatrix.mat4.invert(inverseMatrix, layer.modelMatrix);
         
-        // ワールド座標をローカル座標に変換
-        const worldPos = glMatrix.vec4.fromValues(worldX, worldY, 0, 1);
-        const localPos = glMatrix.vec4.create();
-        glMatrix.vec4.transformMat4(localPos, worldPos, invMatrix);
+        if (!success) {
+            console.warn('transformWorldToLocal: Failed to invert matrix');
+            return { x: worldX, y: worldY };
+        }
+
+        // ワールド座標をベクター形式に変換 [x, y, 0, 1]
+        const worldPoint = glMatrix.vec4.fromValues(worldX, worldY, 0, 1);
         
-        return { x: localPos[0], y: localPos[1] };
+        // ローカル座標に変換
+        const localPoint = glMatrix.vec4.create();
+        glMatrix.vec4.transformMat4(localPoint, worldPoint, inverseMatrix);
+        
+        const result = {
+            x: localPoint[0],
+            y: localPoint[1]
+        };
+        
+        return result;
     } catch (error) {
-        console.error('座標変換エラー:', error);
+        console.error('transformWorldToLocal error:', error);
         return { x: worldX, y: worldY };
     }
 }
@@ -158,14 +169,15 @@ class CanvasManager {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
 
-        // ✅ 座標変換を適用
-        const local = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
-        console.log(`[描画位置] World(${coords.x}, ${coords.y}) → Local(${local.x}, ${local.y})`);
+        // ✨ワールド座標をローカル座標に変換
+        const localCoords = transformWorldToLocal(coords.x, coords.y, activeLayer);
+        console.log('[描画位置] World:', coords.x, coords.y, '→ Local:', localCoords.x, localCoords.y);
 
         this._resetDirtyRect();
         
         if (this.currentTool === 'bucket') {
-            this.app.bucketTool.fill(activeLayer.imageData, local.x, local.y, hexToRgba(this.currentColor));
+            // ✨バケットツールでもローカル座標を使用
+            this.app.bucketTool.fill(activeLayer.imageData, localCoords.x, localCoords.y, hexToRgba(this.currentColor));
             activeLayer.gpuDirty = true;
             this.renderAllLayers();
             this.saveState();
@@ -174,14 +186,17 @@ class CanvasManager {
 
         this.isDrawing = true;
         this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
-        this.lastPoint = { x: local.x, y: local.y, pressure: this.pressureHistory[0] };
+        // ✨lastPointにもローカル座標を保存
+        this.lastPoint = { x: localCoords.x, y: localCoords.y, pressure: this.pressureHistory[0] };
         
         const size = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
         
-        this._updateDirtyRect(local.x, local.y, size);
+        // ✨Dirty rectの更新もローカル座標で
+        this._updateDirtyRect(localCoords.x, localCoords.y, size);
         
+        // ✨描画処理でローカル座標を使用
         this.renderingBridge.drawCircle(
-            local.x, local.y, size / 2, 
+            localCoords.x, localCoords.y, size / 2, 
             hexToRgba(this.currentColor), this.currentTool === 'eraser',
             activeLayer
         );
@@ -200,16 +215,17 @@ class CanvasManager {
         if (!this.isDrawing) return;
         const coords = this.getCanvasCoordinates(e);
         if (!coords) { this.lastPoint = null; return; }
+        
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
 
-        // ✅ 座標変換を適用
-        const local = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
-        console.log(`[描画位置] World(${coords.x}, ${coords.y}) → Local(${local.x}, ${local.y})`);
+        // ✨ワールド座標をローカル座標に変換
+        const localCoords = transformWorldToLocal(coords.x, coords.y, activeLayer);
+        console.log('[描画位置] World:', coords.x, coords.y, '→ Local:', localCoords.x, localCoords.y);
 
         if (!this.lastPoint) { 
             this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
-            this.lastPoint = { x: local.x, y: local.y, pressure: e.pressure > 0 ? e.pressure : 0.5 }; 
+            this.lastPoint = { x: localCoords.x, y: localCoords.y, pressure: e.pressure > 0 ? e.pressure : 0.5 }; 
             return;
         }
 
@@ -221,18 +237,22 @@ class CanvasManager {
         
         const lastSize = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
         const currentSize = this.calculatePressureSize(this.currentSize, currentPressure);
+        
+        // ✨Dirty rectの更新もローカル座標で
         this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, lastSize);
-        this._updateDirtyRect(local.x, local.y, currentSize);
+        this._updateDirtyRect(localCoords.x, localCoords.y, currentSize);
 
+        // ✨線描画処理でローカル座標を使用
         this.renderingBridge.drawLine(
-            this.lastPoint.x, this.lastPoint.y, local.x, local.y,
+            this.lastPoint.x, this.lastPoint.y, localCoords.x, localCoords.y,
             this.currentSize, hexToRgba(this.currentColor), this.currentTool === 'eraser',
             this.lastPoint.pressure, currentPressure, 
             this.calculatePressureSize.bind(this),
             activeLayer
         );
         
-        this.lastPoint = { x: local.x, y: local.y, pressure: currentPressure };
+        // ✨lastPointの更新もローカル座標で
+        this.lastPoint = { x: localCoords.x, y: localCoords.y, pressure: currentPressure };
         this._requestRender();
     }
     
