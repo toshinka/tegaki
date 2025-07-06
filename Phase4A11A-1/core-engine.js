@@ -21,7 +21,7 @@ import { TopBarManager, LayerUIManager } from './ui/ui-manager.js';
 import { ShortcutManager } from './ui/shortcut-manager.js';
 import { BucketTool } from './tools/toolset.js';
 import { RenderingBridge } from './core/rendering/rendering-bridge.js';
-import { Layer, LayerManager } from '.core/layer-manager/layer-manager.js'; // ★追加: LayerManagerとLayerをインポート
+import { Layer, LayerManager } from './layer-manager/layer-manager.js'; // ★追加: LayerManagerとLayerをインポート
 
 // --- Core Logic Classes ---
 
