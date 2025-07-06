@@ -1,61 +1,47 @@
-🎯 目的
-この core-engine.js はブラウザお絵かきツールの中核ファイルです。このファイルに、以下の2つの機能を1ファイル内で完結するように実装してください。
+ Claudeがやるべき改修（この通りに入れてください）
+glMatrix定義（ファイル冒頭）：
 
-主な目的：
-✅ Vキー＋ドラッグでレイヤーを動かせるようにする
-
-✅ レイヤー移動後も、描画が正確にマウスの下に行われるようにする
-
-✅ 描画のズレや画像の吹き飛びを完全に防ぐ
-
-📦 使用前提
-glMatrix ライブラリが HTML 側で <script src="..."> により読み込まれており、window.glMatrix.mat4 および vec4 が使えます。
-
-他ファイル（transform-utils.js, rendering-bridge.jsなど）は読み込めません。このファイル内で完結してください。
-
-import や require などのモジュール構文は使わないでください。
-
-✅ 実装すべき内容一覧（すべてこのファイル内）
-1. 🔧 ファイル冒頭に glMatrix の参照を定義
 js
 コピーする
 編集する
 const mat4 = window.glMatrix.mat4;
 const vec4 = window.glMatrix.vec4;
-2. 🧱 各レイヤーに modelMatrix を明示的に初期化（作成時）
+modelMatrix の明示初期化（レイヤー生成・復元時）：
+
 js
 コピーする
 編集する
 layer.modelMatrix = mat4.create();
-保存/復元時にも if (!layer.modelMatrix || layer.modelMatrix.length !== 16) layer.modelMatrix = mat4.create(); を入れてください
+保存/復元/新規作成すべてにおいて mat4.create() が必ず呼ばれるようにしてください。
 
-3. 🛡 modelMatrix の検査関数（NaNや短縮配列の検出）
+isValidMatrix() 関数と使用：
+
 js
 コピーする
 編集する
 function isValidMatrix(m) {
   return Array.isArray(m) && m.length === 16 && m.every(Number.isFinite);
 }
-onPointerDown, onPointerMove, saveState などで呼んでください
-例：if (!isValidMatrix(activeLayer.modelMatrix)) { console.warn("Invalid modelMatrix"); return; }
+onPointerDown, onPointerMove, saveState の先頭で使用し、壊れた行列が使われないようにしてください。
 
-4. 🧭 座標変換関数：transformWorldToLocal（逆行列変換）
+transformWorldToLocal() の定義：
+
 js
 コピーする
 編集する
 function transformWorldToLocal(worldX, worldY, modelMatrix) {
   const invMatrix = mat4.create();
   if (!mat4.invert(invMatrix, modelMatrix)) {
-    console.warn("⚠ Matrix inversion failed");
-    return { x: worldX, y: worldY }; // fallback
+    console.warn("⚠ transformWorldToLocal: inversion failed");
+    return { x: worldX, y: worldY };
   }
   const worldPos = vec4.fromValues(worldX, worldY, 0, 1);
   const localPos = vec4.create();
   vec4.transformMat4(localPos, worldPos, invMatrix);
-  console.log('[座標変換] World:', worldX, worldY, '→ Local:', localPos[0], localPos[1]);
   return { x: localPos[0], y: localPos[1] };
 }
-5. 🖱️ getCanvasCoordinates 関数（画面→キャンバス座標）
+getCanvasCoordinates() 関数（マウス座標取得）：
+
 js
 コピーする
 編集する
@@ -66,14 +52,16 @@ function getCanvasCoordinates(e) {
     y: e.clientY - rect.top
   };
 }
-6. ✍️ 描画時に transformWorldToLocal を使用（全ツールで）
+全ての描画処理は transformWorldToLocal() を通す：
+
 js
 コピーする
 編集する
 const coords = getCanvasCoordinates(e);
 const local = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
-// 描画には local.x, local.y を使うこと！
-7. ⌨️ Vキーの状態を管理するフラグ（移動モードトグル）
+// 描画には local.x, local.y を使用
+Vキーによるレイヤー移動モード（フラグ管理）：
+
 js
 コピーする
 編集する
@@ -84,69 +72,41 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keyup", (e) => {
   if (e.key === "v") isVDown = false;
 });
-8. 🧲 レイヤー移動処理（Vキー＋ドラッグ）
-✅ onPointerDown：
+レイヤー移動処理（onPointerDown / Move / Up）：
+
 js
 コピーする
 編集する
+// onPointerDown
 if (isVDown) {
   this.isLayerMoving = true;
   const coords = getCanvasCoordinates(e);
   this.transformStartX = coords.x;
   this.transformStartY = coords.y;
   this.originalModelMatrix = mat4.clone(activeLayer.modelMatrix);
-  console.log("🔧 レイヤー移動開始", coords.x, coords.y);
 }
-✅ onPointerMove：
-js
-コピーする
-編集する
+
+// onPointerMove
 if (this.isLayerMoving) {
   const coords = getCanvasCoordinates(e);
   const dx = coords.x - this.transformStartX;
   const dy = coords.y - this.transformStartY;
-
-  if (!isFinite(dx) || !isFinite(dy) || Math.abs(dx) > 1000 || Math.abs(dy) > 1000) {
-    console.warn("⛔️ 移動値異常", dx, dy);
-    return;
-  }
-
+  if (!isFinite(dx) || !isFinite(dy)) return;
   const newMatrix = mat4.clone(this.originalModelMatrix);
   mat4.translate(newMatrix, newMatrix, [dx, dy, 0]);
   activeLayer.modelMatrix = newMatrix;
-  console.log("🔧 レイヤー移動", dx, dy, newMatrix);
 }
-✅ onPointerUp：
-js
-コピーする
-編集する
+
+// onPointerUp
 this.isLayerMoving = false;
-console.log("🔧 レイヤー移動終了");
-✅ 成功条件（Claudeが出力後に満たすべきこと）
- レイヤー作成時に modelMatrix が正しく初期化されている（壊れない）
+✅ 成功条件（すべて満たしていればOK）
+ Vキー + ドラッグでレイヤーが正しく動く（画像が飛ばない）
 
- transformWorldToLocal で描画位置がレイヤー移動に追従し、ズレない
+ 描画が常にマウスの下に出る（ズレが無い）
 
- Vキーを押しながらドラッグするとレイヤーが滑らかに動く
+ Consoleに座標変換や移動ログが出力される
 
- 描画・消しゴム・塗りつぶしなど、全ての描画系操作がローカル座標で行われている
+ modelMatrix に NaN や短縮配列が出ない（常に長さ16）
 
- Consoleに [座標変換], [レイヤー移動] などのログが出る
+ この .js ファイルをコピペで全置換するだけでツールが正常に動作する
 
- NaN, undefined, Float32Array(4) などの誤動作が一切発生しない
-
-📁 添付ファイルについて
-このチャットには Phase4A11A-0/core-engine.js が添付される前提です。
-
-Claudeはそのコードをベースに上記の改修を追加し、完成された1ファイルの core-engine.js を出力してください。
-
-🧠 注意点（Claude用）
-import / export / requireは禁止（1ファイル内で完結するように）
-
-gl-matrix ライブラリは window.glMatrix でグローバルに提供されている前提です
-
-「破壊されるmodelMatrix」の原因を避けるため、clone・代入時には .slice() や mat4.clone() を使って完全コピーを行うこと
-
-Float32Array(4) にならないように、16要素行列の整合性を常に保つこと
-
-この内容を1回で正確に実装し、エラー・飛び・ズレの無い Phase 4A11A-1 を完成させてください。

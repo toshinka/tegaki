@@ -10,20 +10,8 @@
  * - ColorManager -> ui/color-manager.js
  * - ToolManager -> ui/tool-manager.js
  * - 上記モジュールをインポートして利用するように変更。
- * 
- * Phase4A11A-1 改修:
- * - glMatrix定義追加
- * - modelMatrix の明示初期化
- * - isValidMatrix() 関数追加
- * - transformWorldToLocal() 関数追加
- * - Vキーによるレイヤー移動モード実装
- * - 座標変換の正常化
  * ===================================================================================
  */
-
-// --- glMatrix 定義 ---
-const mat4 = window.glMatrix.mat4;
-const vec4 = window.glMatrix.vec4;
 
 // --- Module Imports ---
 // 既存のインポート
@@ -38,7 +26,8 @@ import { PenSettingsManager } from './ui/pen-settings-manager.js';
 import { ColorManager } from './ui/color-manager.js';
 import { ToolManager } from './ui/tool-manager.js';
 
-// --- Utility Functions ---
+
+// --- Core Logic Classes ---
 
 function hexToRgba(hex) {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -50,32 +39,6 @@ function hexToRgba(hex) {
     } : { r: 0, g: 0, b: 0, a: 255 };
 }
 
-function isValidMatrix(m) {
-    return Array.isArray(m) && m.length === 16 && m.every(Number.isFinite);
-}
-
-function transformWorldToLocal(worldX, worldY, modelMatrix) {
-    const invMatrix = mat4.create();
-    if (!mat4.invert(invMatrix, modelMatrix)) {
-        console.warn("⚠ transformWorldToLocal: inversion failed");
-        return { x: worldX, y: worldY };
-    }
-    const worldPos = vec4.fromValues(worldX, worldY, 0, 1);
-    const localPos = vec4.create();
-    vec4.transformMat4(localPos, worldPos, invMatrix);
-    return { x: localPos[0], y: localPos[1] };
-}
-
-function getCanvasCoordinates(e, canvas) {
-    const rect = canvas.getBoundingClientRect();
-    return {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top
-    };
-}
-
-// --- Core Logic Classes ---
-
 // ✨Layerクラスは他のファイルから参照されるので「export」を追加します
 export class Layer {
     constructor(name, width, height) {
@@ -84,8 +47,7 @@ export class Layer {
         this.opacity = 100;
         this.blendMode = 'normal';
         this.imageData = new ImageData(width, height);
-        // modelMatrix の明示初期化
-        this.modelMatrix = mat4.create();
+        this.modelMatrix = glMatrix.mat4.create();
         this.gpuDirty = true;
     }
     clear() {
@@ -118,23 +80,12 @@ class CanvasManager {
         this.renderingBridge = new RenderingBridge(this.displayCanvas);
 
         this.compositionData = new ImageData(this.width, this.height);
-        this.isDrawing = false; 
-        this.isPanning = false; 
-        this.isSpaceDown = false;
-        this.isLayerMoving = false;
+        this.isDrawing = false; this.isPanning = false; this.isSpaceDown = false;
         
-        this.isVDown = false; 
-        this.isShiftDown = false;
+        this.isVDown = false; this.isShiftDown = false;
         
         this.currentTool = 'pen';
-        this.currentColor = '#800000'; 
-        this.currentSize = 1; 
-        this.lastPoint = null;
-        
-        // レイヤー移動用の変数
-        this.transformStartX = 0;
-        this.transformStartY = 0;
-        this.originalModelMatrix = null;
+        this.currentColor = '#800000'; this.currentSize = 1; this.lastPoint = null;
         
         this.pressureSettings = {
             sensitivity: 0.8, minPressure: 0.1, maxPressure: 1.0, curve: 0.7,
@@ -143,16 +94,12 @@ class CanvasManager {
         this.pressureHistory = [];
         this.maxPressureHistory = 5;
 
-        this.history = []; 
-        this.historyIndex = -1;
+        this.history = []; this.historyIndex = -1;
 
         this.dirtyRect = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
         this.animationFrameId = null;
 
-        this.dragStartX = 0; 
-        this.dragStartY = 0; 
-        this.canvasStartX = 0; 
-        this.canvasStartY = 0;
+        this.dragStartX = 0; this.dragStartY = 0; this.canvasStartX = 0; this.canvasStartY = 0;
         this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
         
         this.bindEvents();
@@ -165,78 +112,27 @@ class CanvasManager {
         this.canvasArea.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
         document.addEventListener('contextmenu', e => e.preventDefault());
         document.getElementById('saveMergedButton')?.addEventListener('click', () => this.exportMergedImage());
-        
-        // Vキーによるレイヤー移動モード
-        document.addEventListener("keydown", (e) => {
-            if (e.key === "v" || e.key === "V") {
-                this.isVDown = true;
-                this.updateCursor();
-            }
-            if (e.key === " ") {
-                this.isSpaceDown = true;
-                this.updateCursor();
-            }
-        });
-        
-        document.addEventListener("keyup", (e) => {
-            if (e.key === "v" || e.key === "V") {
-                this.isVDown = false;
-                this.updateCursor();
-            }
-            if (e.key === " ") {
-                this.isSpaceDown = false;
-                this.updateCursor();
-            }
-        });
     }
 
     onPointerDown(e) {
         if (e.button !== 0) return;
         
-        const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (!activeLayer) return;
-        
-        // modelMatrix の有効性チェック
-        if (!isValidMatrix(activeLayer.modelMatrix)) {
-            console.warn("⚠ onPointerDown: invalid modelMatrix detected, resetting");
-            activeLayer.modelMatrix = mat4.create();
-        }
-        
         if (this.isSpaceDown) {
-            this.dragStartX = e.clientX; 
-            this.dragStartY = e.clientY; 
-            this.isPanning = true;
-            this.canvasStartX = this.viewTransform.left; 
-            this.canvasStartY = this.viewTransform.top;
-            e.preventDefault(); 
-            return;
+            this.dragStartX = e.clientX; this.dragStartY = e.clientY; this.isPanning = true;
+            this.canvasStartX = this.viewTransform.left; this.canvasStartY = this.viewTransform.top;
+            e.preventDefault(); return;
         }
         
-        // Vキーによるレイヤー移動モード
-        if (this.isVDown) {
-            this.isLayerMoving = true;
-            const coords = getCanvasCoordinates(e, this.displayCanvas);
-            this.transformStartX = coords.x;
-            this.transformStartY = coords.y;
-            this.originalModelMatrix = mat4.clone(activeLayer.modelMatrix);
-            console.log("🔵 レイヤー移動開始:", coords);
-            e.preventDefault();
-            return;
-        }
-        
-        const coords = getCanvasCoordinates(e, this.displayCanvas);
+        const coords = this.getCanvasCoordinates(e);
         if (!coords) return;
         
-        // 座標変換: ワールド座標からローカル座標へ
-        const local = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
-        console.log("📍 描画座標変換:", { world: coords, local: local });
-        
-        if (!activeLayer.visible) return;
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+        if (!activeLayer || !activeLayer.visible) return;
 
         this._resetDirtyRect();
         
         if (this.currentTool === 'bucket') {
-            this.app.bucketTool.fill(activeLayer.imageData, local.x, local.y, hexToRgba(this.currentColor));
+            this.app.bucketTool.fill(activeLayer.imageData, coords.x, coords.y, hexToRgba(this.currentColor));
             activeLayer.gpuDirty = true;
             this.renderAllLayers();
             this.saveState();
@@ -245,14 +141,14 @@ class CanvasManager {
 
         this.isDrawing = true;
         this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
-        this.lastPoint = { ...local, pressure: this.pressureHistory[0] };
+        this.lastPoint = { ...coords, pressure: this.pressureHistory[0] };
         
         const size = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
         
-        this._updateDirtyRect(local.x, local.y, size);
+        this._updateDirtyRect(coords.x, coords.y, size);
         
         this.renderingBridge.drawCircle(
-            local.x, local.y, size / 2, 
+            coords.x, coords.y, size / 2, 
             hexToRgba(this.currentColor), this.currentTool === 'eraser',
             activeLayer
         );
@@ -262,56 +158,20 @@ class CanvasManager {
     }
     
     onPointerMove(e) {
-        const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (!activeLayer) return;
-        
-        // modelMatrix の有効性チェック
-        if (!isValidMatrix(activeLayer.modelMatrix)) {
-            console.warn("⚠ onPointerMove: invalid modelMatrix detected, resetting");
-            activeLayer.modelMatrix = mat4.create();
-        }
-        
         if (this.isPanning) {
-            const dx = e.clientX - this.dragStartX; 
-            const dy = e.clientY - this.dragStartY;
-            this.viewTransform.left = this.canvasStartX + dx; 
-            this.viewTransform.top = this.canvasStartY + dy;
-            this.applyViewTransform(); 
-            return;
-        }
-        
-        // レイヤー移動処理
-        if (this.isLayerMoving) {
-            const coords = getCanvasCoordinates(e, this.displayCanvas);
-            const dx = coords.x - this.transformStartX;
-            const dy = coords.y - this.transformStartY;
-            if (!isFinite(dx) || !isFinite(dy)) return;
-            
-            const newMatrix = mat4.clone(this.originalModelMatrix);
-            mat4.translate(newMatrix, newMatrix, [dx, dy, 0]);
-            activeLayer.modelMatrix = newMatrix;
-            activeLayer.gpuDirty = true;
-            
-            console.log("🔄 レイヤー移動:", { dx, dy, matrix: Array.from(newMatrix) });
-            this.renderAllLayers();
-            return;
+            const dx = e.clientX - this.dragStartX; const dy = e.clientY - this.dragStartY;
+            this.viewTransform.left = this.canvasStartX + dx; this.viewTransform.top = this.canvasStartY + dy;
+            this.applyViewTransform(); return;
         }
 
         if (!this.isDrawing) return;
-        
-        const coords = getCanvasCoordinates(e, this.displayCanvas);
-        if (!coords) { 
-            this.lastPoint = null; 
-            return; 
-        }
-        
-        // 座標変換: ワールド座標からローカル座標へ
-        const local = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
-        
-        if (!activeLayer.visible) return;
+        const coords = this.getCanvasCoordinates(e);
+        if (!coords) { this.lastPoint = null; return; }
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+        if (!activeLayer || !activeLayer.visible) return;
         if (!this.lastPoint) { 
             this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
-            this.lastPoint = { ...local, pressure: e.pressure > 0 ? e.pressure : 0.5 }; 
+            this.lastPoint = { ...coords, pressure: e.pressure > 0 ? e.pressure : 0.5 }; 
             return;
         }
 
@@ -324,17 +184,17 @@ class CanvasManager {
         const lastSize = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
         const currentSize = this.calculatePressureSize(this.currentSize, currentPressure);
         this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, lastSize);
-        this._updateDirtyRect(local.x, local.y, currentSize);
+        this._updateDirtyRect(coords.x, coords.y, currentSize);
 
         this.renderingBridge.drawLine(
-            this.lastPoint.x, this.lastPoint.y, local.x, local.y,
+            this.lastPoint.x, this.lastPoint.y, coords.x, coords.y,
             this.currentSize, hexToRgba(this.currentColor), this.currentTool === 'eraser',
             this.lastPoint.pressure, currentPressure, 
             this.calculatePressureSize.bind(this),
             activeLayer
         );
         
-        this.lastPoint = { ...local, pressure: currentPressure };
+        this.lastPoint = { ...coords, pressure: currentPressure };
         this._requestRender();
     }
     
@@ -355,13 +215,6 @@ class CanvasManager {
             }
             
             this.lastPoint = null;
-            this.saveState();
-        }
-        
-        // レイヤー移動終了
-        if (this.isLayerMoving) {
-            this.isLayerMoving = false;
-            console.log("🔴 レイヤー移動終了");
             this.saveState();
         }
 
@@ -459,17 +312,8 @@ class CanvasManager {
     }
 
     saveState() {
-        // modelMatrix の有効性チェック
-        const validatedLayers = this.app.layerManager.layers.map(layer => {
-            if (!isValidMatrix(layer.modelMatrix)) {
-                console.warn("⚠ saveState: invalid modelMatrix detected, resetting");
-                layer.modelMatrix = mat4.create();
-            }
-            return layer;
-        });
-
         const state = {
-            layers: validatedLayers.map(layer => ({
+            layers: this.app.layerManager.layers.map(layer => ({
                 name: layer.name,
                 visible: layer.visible,
                 opacity: layer.opacity,
@@ -496,9 +340,7 @@ class CanvasManager {
             layer.blendMode = layerData.blendMode ?? 'normal';
             layer.imageData.data.set(layerData.imageData.data);
             
-            // modelMatrix の明示初期化と復元
-            layer.modelMatrix = mat4.create();
-            if (layerData.modelMatrix && isValidMatrix(Array.from(layerData.modelMatrix))) {
+            if (layerData.modelMatrix) {
                 layer.modelMatrix.set(layerData.modelMatrix);
             }
             layer.gpuDirty = true;
@@ -508,33 +350,11 @@ class CanvasManager {
         this.renderAllLayers();
     }
 
-    undo() { 
-        if (this.historyIndex > 0) { 
-            this.historyIndex--; 
-            this.restoreState(this.history[this.historyIndex]); 
-        } 
-    }
-    
-    redo() { 
-        if (this.historyIndex < this.history.length - 1) { 
-            this.historyIndex++; 
-            this.restoreState(this.history[this.historyIndex]); 
-        } 
-    }
-    
-    setCurrentTool(tool) { 
-        this.currentTool = tool; 
-        this.updateCursor(); 
-    }
-    
-    setCurrentColor(color) { 
-        this.currentColor = color; 
-    }
-    
-    setCurrentSize(size) { 
-        this.currentSize = size; 
-    }
-    
+    undo() { if (this.historyIndex > 0) { this.historyIndex--; this.restoreState(this.history[this.historyIndex]); } }
+    redo() { if (this.historyIndex < this.history.length - 1) { this.historyIndex++; this.restoreState(this.history[this.historyIndex]); } }
+    setCurrentTool(tool) { this.currentTool = tool; this.updateCursor(); }
+    setCurrentColor(color) { this.currentColor = color; }
+    setCurrentSize(size) { this.currentSize = size; }
     clearCanvas() {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (activeLayer) {
@@ -546,7 +366,6 @@ class CanvasManager {
             this.saveState();
         }
     }
-    
     exportMergedImage() {
         const exportCanvas = document.createElement('canvas');
         exportCanvas.width = this.width;
@@ -581,54 +400,14 @@ class CanvasManager {
         link.download = 'merged_image.png';
         link.click();
     }
-    
-    updateCursor() { 
-        let cursor = 'crosshair'; 
-        if (this.isVDown) cursor = 'move'; 
-        if (this.isSpaceDown) cursor = 'grab'; 
-        if (this.currentTool === 'eraser') cursor = 'cell'; 
-        if (this.currentTool === 'bucket') cursor = 'copy'; 
-        this.canvasArea.style.cursor = cursor; 
-    }
-    
-    applyViewTransform() { 
-        const t = this.viewTransform; 
-        this.canvasContainer.style.transform = `translate(${t.left}px, ${t.top}px) scale(${t.scale * t.flipX}, ${t.scale * t.flipY}) rotate(${t.rotation}deg)`; 
-    }
-    
-    flipHorizontal() { 
-        this.viewTransform.flipX *= -1; 
-        this.applyViewTransform(); 
-    }
-    
-    flipVertical() { 
-        this.viewTransform.flipY *= -1; 
-        this.applyViewTransform(); 
-    }
-    
-    zoom(factor) { 
-        this.viewTransform.scale = Math.max(0.1, this.viewTransform.scale * factor); 
-        this.applyViewTransform(); 
-    }
-    
-    rotate(degrees) { 
-        this.viewTransform.rotation = (this.viewTransform.rotation + degrees) % 360; 
-        this.applyViewTransform(); 
-    }
-    
-    resetView() { 
-        this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 }; 
-        this.applyViewTransform(); 
-    }
-    
-    handleWheel(e) { 
-        e.preventDefault(); 
-        if (e.shiftKey) { 
-            this.rotate(-e.deltaY * 0.2); 
-        } else { 
-            this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); 
-        } 
-    }
+    updateCursor() { let cursor = 'crosshair'; if (this.isVDown) cursor = 'move'; if (this.isSpaceDown) cursor = 'grab'; if (this.currentTool === 'eraser') cursor = 'cell'; if (this.currentTool === 'bucket') cursor = 'copy'; this.canvasArea.style.cursor = cursor; }
+    applyViewTransform() { const t = this.viewTransform; this.canvasContainer.style.transform = `translate(${t.left}px, ${t.top}px) scale(${t.scale * t.flipX}, ${t.scale * t.flipY}) rotate(${t.rotation}deg)`; }
+    flipHorizontal() { this.viewTransform.flipX *= -1; this.applyViewTransform(); }
+    flipVertical() { this.viewTransform.flipY *= -1; this.applyViewTransform(); }
+    zoom(factor) { this.viewTransform.scale = Math.max(0.1, this.viewTransform.scale * factor); this.applyViewTransform(); }
+    rotate(degrees) { this.viewTransform.rotation = (this.viewTransform.rotation + degrees) % 360; this.applyViewTransform(); }
+    resetView() { this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 }; this.applyViewTransform(); }
+    handleWheel(e) { e.preventDefault(); if (e.shiftKey) { this.rotate(-e.deltaY * 0.2); } else { this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); } }
 }
 
 // ✨ LayerManager, PenSettingsManager, ColorManager, ToolManager のクラス定義はここからゴッソリ削除されました。
