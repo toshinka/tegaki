@@ -1,0 +1,92 @@
+📜 Phase 4A11A: 描画座標とレイヤー変換の同期確認（Claude用・core-engine.js単体実装版）
+
+---
+
+🧠 前提
+
+本フェーズでは、`modelMatrix` を用いたレイヤー移動後に、描画がズレたり視界外に飛んだりしないように、**「マウス入力座標」と「実際に描かれる位置」を一致させる**ための調整を行います。
+
+今回は `core-engine.js` のみを改修対象とし、**外部モジュール（transform-utils.js など）に依存せず、単体で完結する実装**としてください。
+
+---
+
+✅ 目的
+
+`layer.modelMatrix` によってレイヤーが移動しているとき、ユーザーが描こうとした位置（ワールド座標）を、レイヤーのローカル座標に変換して描画処理を行う必要があります。
+
+---
+
+🛠 やってほしいこと（改修内容）
+
+🧩 1. `transformWorldToLocal()` 関数を `core-engine.js` に直接組み込んでください
+
+```js
+function transformWorldToLocal(worldX, worldY, modelMatrix) {
+  if (!modelMatrix || modelMatrix.length !== 16) return { x: worldX, y: worldY };
+
+  const invMatrix = mat4.create();
+  mat4.invert(invMatrix, modelMatrix);
+
+  const worldPos = vec4.fromValues(worldX, worldY, 0, 1);
+  const localPos = vec4.create();
+  vec4.transformMat4(localPos, worldPos, invMatrix);
+
+  return { x: localPos[0], y: localPos[1] };
+}
+```
+
+🧩 2. `drawToLayerTexture()` のような描画処理内で `transformWorldToLocal()` を使い、座標変換してください
+
+例：
+
+```js
+function drawToLayerTexture(worldX, worldY) {
+  const layer = layerManager.getCurrentLayer();
+  if (!layer || !layer.modelMatrix) return;
+
+  const local = transformWorldToLocal(worldX, worldY, layer.modelMatrix);
+
+  // ここでローカル座標を使って実際の描画を行う（既存処理に合わせてください）
+  drawToLayerCanvasAt(local.x, local.y); // ←この関数は仮名です。既存の描画命令を置き換えてください
+
+  console.log(`[描画位置] World(${worldX}, ${worldY}) → Local(${local.x}, ${local.y})`);
+}
+```
+
+---
+
+✅ 守ってほしい条件
+
+- `transformWorldToLocal()` は必ず `core-engine.js` 内に完結させること
+- `modelMatrix` が未定義の場合も安全に動作するように条件分岐を入れてください
+- `transformWorldToLocal()` を**描画処理に毎回適用しないと、ズレは発生します**
+- 関数・変数名は既存構成に自然になじむ形で調整しても構いません
+- `core-engine.js` の他機能（undo処理・入力イベント・GUIなど）は壊さず保ってください
+
+---
+
+✅ 成功判定
+
+- レイヤーを移動（Vキーなど）した後でも、ペンで描いた線が **マウスカーソルと一致した場所に描かれる**
+- `console.log()` で `World → Local` の変換結果が確認でき、誤差やズレが起きていない
+
+---
+
+🧪 オプション（デバッグ補助：必要なら入れても良い）
+
+```js
+function debugMatrix(label, mat) {
+  console.log(`[${label}] matrix:`, mat);
+  const tx = mat[12], ty = mat[13];
+  console.log(`[${label}] translation: (${tx.toFixed(2)}, ${ty.toFixed(2)})`);
+}
+```
+
+`onPointerMove()` の最後に `debugMatrix('layer.modelMatrix', layer.modelMatrix);` を入れることで、吹き飛びやNaNの検出にも役立ちます。
+
+---
+
+✍️ 補足
+
+- 本改修は **見た目の表示行列（modelMatrix）と、描画の当たり座標の不一致**によるズレ・消失バグを防ぐために不可欠な処置です。
+- これが済んでいないと、描画が「元の位置に」起きてしまい、レイヤーを移動しても描いた内容が追従しない現象が起こります。

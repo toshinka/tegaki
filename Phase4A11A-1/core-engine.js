@@ -1,27 +1,30 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.9.2 (Phase 4A11A-1 Implemented)
+ * Version: 2.9.1 (Phase 4A11-Refactor)
  *
  * - 修正：
- * - 「Phase 4A11A-1 超細分化実装手順」に基づき、modelMatrixによるレイヤー移動機能を実装。
- * - Vキーでの移動モード切り替え、マウスドラッグによる安全な移動処理を追加。
- * - 描画時に transformWorldToLocal を使用し、移動したレイヤー上でも座標がズレないように修正。
+ * - 巨大化した core-engine.js の責務を分離するため、関連クラスを外部モジュールに分割。
+ * - LayerManager -> layer-manager/layer-manager.js
+ * - PenSettingsManager -> ui/pen-settings-manager.js
+ * - ColorManager -> ui/color-manager.js
+ * - ToolManager -> ui/tool-manager.js
+ * - 上記モジュールをインポートして利用するように変更。
  * ===================================================================================
  */
 
 // --- Module Imports ---
+// 既存のインポート
 import { TopBarManager, LayerUIManager } from './ui/ui-manager.js';
 import { ShortcutManager } from './ui/shortcut-manager.js';
 import { BucketTool } from './tools/toolset.js';
 import { RenderingBridge } from './core/rendering/rendering-bridge.js';
+
+// ✨分割したクラスを新しくインポートします
 import { LayerManager } from './layer-manager/layer-manager.js';
 import { PenSettingsManager } from './ui/pen-settings-manager.js';
 import { ColorManager } from './ui/color-manager.js';
 import { ToolManager } from './ui/tool-manager.js';
-
-// ✨ Step 2, 3 の関数を新しいファイルからインポートします
-import { isValidMatrix, transformWorldToLocal } from './core/utils/transform-utils.js';
 
 
 // --- Core Logic Classes ---
@@ -36,6 +39,7 @@ function hexToRgba(hex) {
     } : { r: 0, g: 0, b: 0, a: 255 };
 }
 
+// ✨Layerクラスは他のファイルから参照されるので「export」を追加します
 export class Layer {
     constructor(name, width, height) {
         this.name = name;
@@ -43,7 +47,6 @@ export class Layer {
         this.opacity = 100;
         this.blendMode = 'normal';
         this.imageData = new ImageData(width, height);
-        // ✨ Step 1: modelMatrix の初期化を再確認 [cite: 27]
         this.modelMatrix = glMatrix.mat4.create();
         this.gpuDirty = true;
     }
@@ -78,15 +81,16 @@ class CanvasManager {
 
         this.compositionData = new ImageData(this.width, this.height);
         this.isDrawing = false; this.isPanning = false; this.isSpaceDown = false;
-        
-        // ✨ Step 4 & 5: レイヤー移動用のプロパティを追加
-        this.isVDown = false; // Vキーが押されているか [cite: 32, 33]
+
+        // ▼▼▼ 【ここから追加】Step 4: 移動モード用のプロパティ ▼▼▼
+        this.isVDown = false; // Vキーが押されているか
         this.isLayerMoving = false; // レイヤー移動中か
         this.transformStartX = 0;
         this.transformStartY = 0;
         this.originalModelMatrix = null; // 移動開始時の行列を保存
-
-        this.isShiftDown = false;
+        // ▲▲▲ 【ここまで追加】▲▲▲
+        
+        this.isVDown = false; this.isShiftDown = false;
         
         this.currentTool = 'pen';
         this.currentColor = '#800000'; this.currentSize = 1; this.lastPoint = null;
@@ -117,7 +121,7 @@ class CanvasManager {
         document.addEventListener('contextmenu', e => e.preventDefault());
         document.getElementById('saveMergedButton')?.addEventListener('click', () => this.exportMergedImage());
 
-        // ✨ Step 4: Vキーによる移動モードのトグル [cite: 32, 33]
+        // ▼▼▼ 【ここから追加】Step 4: Vキーのイベントリスナー ▼▼▼
         document.addEventListener('keydown', (e) => {
             if (e.key.toLowerCase() === 'v') {
                 this.isVDown = true;
@@ -130,27 +134,29 @@ class CanvasManager {
                 this.updateCursor();
             }
         });
+        // ▲▲▲ 【ここまで追加】▲▲▲
     }
 
+    // ▼▼▼ onPointerDown をまるごと置き換え ▼▼▼
     onPointerDown(e) {
         if (e.button !== 0) return;
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer) return;
 
-        // ✨ Step 2: 行列が壊れていないかチェック
+        // Step 2 のチェック（transform-utils.jsが正しければ機能する）
         if (!isValidMatrix(activeLayer.modelMatrix)) {
             console.error("レイヤーの modelMatrix が壊れています。処理を中断します。", activeLayer.modelMatrix);
             return;
         }
 
-        // ✨ Step 5: `onPointerDown` の実装 [cite: 34]
+        // Step 5: `onPointerDown` の移動処理
         if (this.isVDown) {
             this.isLayerMoving = true;
             this.transformStartX = e.clientX;
             this.transformStartY = e.clientY;
-            this.originalModelMatrix = glMatrix.mat4.clone(activeLayer.modelMatrix); // 必ず複製して保存
+            this.originalModelMatrix = glMatrix.mat4.clone(activeLayer.modelMatrix);
             e.preventDefault();
-            return;
+            return; // 移動モードの時はここで処理を終える
         }
 
         if (this.isSpaceDown) {
@@ -165,12 +171,12 @@ class CanvasManager {
         if (!activeLayer.visible) return;
 
         this._resetDirtyRect();
-        
-        // ✨ Step 6: 描画前にワールド座標をローカル座標に変換 [cite: 37]
-        const localCoordsForBucket = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
 
+        // Step 6: 描画座標の変換
+        const localCoords = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
+        
         if (this.currentTool === 'bucket') {
-            this.app.bucketTool.fill(activeLayer.imageData, localCoordsForBucket.x, localCoordsForBucket.y, hexToRgba(this.currentColor));
+            this.app.bucketTool.fill(activeLayer.imageData, localCoords.x, localCoords.y, hexToRgba(this.currentColor));
             activeLayer.gpuDirty = true;
             this.renderAllLayers();
             this.saveState();
@@ -179,18 +185,34 @@ class CanvasManager {
 
         this.isDrawing = true;
         this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
+        this.lastPoint = { ...coords, pressure: this.pressureHistory[0] }; // lastPointはworld座標で保持
+        
+        const size = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
+        
+        // updateDirtyRectは見た目（world）の範囲で更新
+        this._updateDirtyRect(coords.x, coords.y, size); 
+        
+        console.log(`[描画位置] World(${coords.x}, ${coords.y}) → Local(${localCoords.x}, ${localCoords.y})`);
+
+        this.renderingBridge.drawCircle(
+            localCoords.x, localCoords.y, size / 2, 
+            hexToRgba(this.currentColor), this.currentTool === 'eraser',
+            activeLayer
+        );
+        
+        this._requestRender();
+        document.documentElement.setPointerCapture(e.pointerId);
+    }
+        this.isDrawing = true;
+        this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
         this.lastPoint = { ...coords, pressure: this.pressureHistory[0] };
         
         const size = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
         
         this._updateDirtyRect(coords.x, coords.y, size);
         
-        // ✨ Step 6: 描画前にワールド座標をローカル座標に変換 [cite: 37]
-        const localCoordsForDraw = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
-        console.log(`[描画位置] World(${coords.x}, ${coords.y}) → Local(${localCoordsForDraw.x}, ${localCoordsForDraw.y})`); // [cite: 38]
-        
         this.renderingBridge.drawCircle(
-            localCoordsForDraw.x, localCoordsForDraw.y, size / 2, 
+            coords.x, coords.y, size / 2, 
             hexToRgba(this.currentColor), this.currentTool === 'eraser',
             activeLayer
         );
@@ -199,8 +221,9 @@ class CanvasManager {
         document.documentElement.setPointerCapture(e.pointerId);
     }
     
+    // ▼▼▼ onPointerMove をまるごと置き換え ▼▼▼
     onPointerMove(e) {
-        // ✨ Step 5: `onPointerMove` の実装 [cite: 35]
+        // Step 5: `onPointerMove` の移動処理
         if (this.isLayerMoving) {
             const activeLayer = this.app.layerManager.getCurrentLayer();
             if (!activeLayer || !this.originalModelMatrix) return;
@@ -208,24 +231,16 @@ class CanvasManager {
             const dx = e.clientX - this.transformStartX;
             const dy = e.clientY - this.transformStartY;
 
-            // 安全処理：異常な移動量を無視 [cite: 35]
-            if (!isFinite(dx) || !isFinite(dy) || Math.abs(dx) > 2000 || Math.abs(dy) > 2000) {
-                console.warn("異常な移動量を検出したため、移動をスキップします:", { dx, dy });
+            if (!isFinite(dx) || !isFinite(dy) || Math.abs(dx) > 1000 || Math.abs(dy) > 1000) {
                 return;
             }
 
-            // 毎回、移動開始時の行列から計算することで累積誤差を防ぐ
             const newMatrix = glMatrix.mat4.clone(this.originalModelMatrix);
-
-            // 平行移動を適用
             glMatrix.mat4.translate(newMatrix, newMatrix, [dx, dy, 0]);
-
-            // レイヤーの行列を更新 [cite: 36]
             activeLayer.modelMatrix = newMatrix;
             
-            // 画面を再描画して移動を反映
-            this.renderAllLayers();
-            return;
+            this.renderAllLayers(); // 移動中は全体を再描画
+            return; // 移動モードの時はここで処理を終える
         }
 
         if (this.isPanning) {
@@ -244,6 +259,10 @@ class CanvasManager {
             this.lastPoint = { ...coords, pressure: e.pressure > 0 ? e.pressure : 0.5 }; 
             return;
         }
+    
+        // Step 6: 描画座標の変換
+        const lastLocal = transformWorldToLocal(this.lastPoint.x, this.lastPoint.y, activeLayer.modelMatrix);
+        const currentLocal = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
 
         const currentPressure = e.pressure > 0 ? e.pressure : 0.5;
         this.pressureHistory.push(currentPressure);
@@ -256,10 +275,6 @@ class CanvasManager {
         this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, lastSize);
         this._updateDirtyRect(coords.x, coords.y, currentSize);
 
-        // ✨ Step 6: 描画前にワールド座標をローカル座標に変換 [cite: 37]
-        const lastLocal = transformWorldToLocal(this.lastPoint.x, this.lastPoint.y, activeLayer.modelMatrix);
-        const currentLocal = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
-
         this.renderingBridge.drawLine(
             lastLocal.x, lastLocal.y, currentLocal.x, currentLocal.y,
             this.currentSize, hexToRgba(this.currentColor), this.currentTool === 'eraser',
@@ -271,15 +286,16 @@ class CanvasManager {
         this.lastPoint = { ...coords, pressure: currentPressure };
         this._requestRender();
     }
-    
+
+    // ▼▼▼ onPointerUp をまるごと置き換え ▼▼▼
     onPointerUp(e) {
-        // ✨ Step 5: `onPointerUp` の実装
+        // Step 5: `onPointerUp` の移動処理
         if (this.isLayerMoving) {
             this.isLayerMoving = false;
             this.originalModelMatrix = null;
-            this.saveState(); // 移動履歴を保存
+            this.saveState(); // ここで移動後の状態を履歴に保存
         }
-        
+
         if (this.isDrawing) {
             this.isDrawing = false;
             
@@ -304,8 +320,6 @@ class CanvasManager {
             document.documentElement.releasePointerCapture(e.pointerId);
         }
     }
-
-    // (中略：_renderDirty から restoreState までは変更なし)
     _renderDirty() {
         const rect = this.dirtyRect;
         if (rect.minX > rect.maxX) return;
@@ -314,7 +328,6 @@ class CanvasManager {
     }
 
     renderAllLayers() {
-        // 全画面をダーティとして再描画リクエスト
         this.dirtyRect = { minX: 0, minY: 0, maxX: this.width, maxY: this.height };
         this._requestRender();
     }
@@ -393,11 +406,12 @@ class CanvasManager {
             return null;
         }
     }
-    
+
+    // ▼▼▼ saveState をまるごと置き換え ▼▼▼
     saveState() {
-        // ✨ isLayerMoving 中は履歴を保存しないようにする（onPointerUpで保存）
+        // 移動操作のドラッグ中はアンドゥ履歴を保存しないようにする
         if (this.isLayerMoving) return;
-        
+
         const state = {
             layers: this.app.layerManager.layers.map(layer => ({
                 name: layer.name,
@@ -417,28 +431,6 @@ class CanvasManager {
         this.history.push(state);
         this.historyIndex++;
     }
-
-    restoreState(state) {
-        this.app.layerManager.layers = state.layers.map(layerData => {
-            const layer = new Layer(layerData.name, layerData.imageData.width, layerData.imageData.height);
-            layer.visible = layerData.visible;
-            layer.opacity = layerData.opacity ?? 100;
-            layer.blendMode = layerData.blendMode ?? 'normal';
-            layer.imageData.data.set(layerData.imageData.data);
-            
-            if (layerData.modelMatrix) {
-                layer.modelMatrix.set(layerData.modelMatrix);
-            } else {
-                // 念のため、古いデータ用に初期化
-                glMatrix.mat4.identity(layer.modelMatrix);
-            }
-            layer.gpuDirty = true;
-            return layer;
-        });
-        this.app.layerManager.switchLayer(state.activeLayerIndex);
-        this.renderAllLayers();
-    }
-
     undo() { if (this.historyIndex > 0) { this.historyIndex--; this.restoreState(this.history[this.historyIndex]); } }
     redo() { if (this.historyIndex < this.history.length - 1) { this.historyIndex++; this.restoreState(this.history[this.historyIndex]); } }
     setCurrentTool(tool) { this.currentTool = tool; this.updateCursor(); }
@@ -489,14 +481,7 @@ class CanvasManager {
         link.download = 'merged_image.png';
         link.click();
     }
-    updateCursor() {
-        let cursor = 'crosshair';
-        if (this.isVDown) cursor = 'move';
-        else if (this.isSpaceDown) cursor = 'grab';
-        else if (this.currentTool === 'eraser') cursor = 'cell';
-        else if (this.currentTool === 'bucket') cursor = 'copy';
-        this.canvasArea.style.cursor = cursor;
-    }
+    updateCursor() { let cursor = 'crosshair'; if (this.isVDown) cursor = 'move'; if (this.isSpaceDown) cursor = 'grab'; if (this.currentTool === 'eraser') cursor = 'cell'; if (this.currentTool === 'bucket') cursor = 'copy'; this.canvasArea.style.cursor = cursor; }
     applyViewTransform() { const t = this.viewTransform; this.canvasContainer.style.transform = `translate(${t.left}px, ${t.top}px) scale(${t.scale * t.flipX}, ${t.scale * t.flipY}) rotate(${t.rotation}deg)`; }
     flipHorizontal() { this.viewTransform.flipX *= -1; this.applyViewTransform(); }
     flipVertical() { this.viewTransform.flipY *= -1; this.applyViewTransform(); }
@@ -505,6 +490,8 @@ class CanvasManager {
     resetView() { this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 }; this.applyViewTransform(); }
     handleWheel(e) { e.preventDefault(); if (e.shiftKey) { this.rotate(-e.deltaY * 0.2); } else { this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); } }
 }
+
+// ✨ LayerManager, PenSettingsManager, ColorManager, ToolManager のクラス定義はここからゴッソリ削除されました。
 
 class ToshinkaTegakiTool {
     constructor() {
