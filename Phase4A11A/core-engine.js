@@ -1,24 +1,19 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.0.0 (Phase 4A11A - Stabilized Matrix Transform)
+ * Version: 3.0.1 (Phase 4A11A - Hotfix and View-Scale Correction)
  *
- * - 修正：
+ * - 修正 (v3.0.1):
+ * - PenSettingsManager, ColorManager, ToolManager のクラス定義が1行に圧縮され、
+ * 構文エラーを引き起こしていた問題を修正。正しいクラス構文に整形。
+ * - onPointerMoveでのレイヤー移動量計算時に、現在のビューの拡大率(viewTransform.scale)を
+ * 考慮するように修正。これにより、キャンバスを拡大・縮小した状態でも、マウスの
+ * 動きとレイヤーの移動量が一致し、直感的な操作が可能になる。
+ *
+ * - 修正 (v3.0.0):
  * - 「Phase 4A11A〜G WebGLレイヤー移動 安定化フェーズ 再設計指示書」に基づき、
- * Phase 4A11A-1 および 4A11A の改修を実施。
- * - 従来のtransformプロパティベースの移動処理に代わり、modelMatrixを直接操作する
- * 新しいレイヤー移動機能を実装。
- * - onPointerDown:
- * - 移動開始時のマウス座標(clientX, clientY)を記録。 
- * - 移動対象レイヤーのmodelMatrixをcloneして退避。これにより、以降の計算で元の値が
- * 汚染されるのを防ぐ。 
- * - onPointerMove:
- * - 移動開始点からの差分(dx, dy)のみを計算。 
- * - 毎回、退避しておいた元のmodelMatrixからcloneして新しい行列を生成。 
- * - 新しく生成した行列に対して、差分(dx, dy)だけの移動を適用。 
- * - 計算結果の行列をレイヤーのmodelMatrixに「上書き」する。 
- * - この「毎回リセットして差分適用」方式により、計算誤差の累積による「吹き飛び」バグを根絶する。
- * - デバッグ機能として、座標変換のログ [cite: 2] や行列情報の詳細ログ [cite: 7, 8] を追加。
+ * modelMatrixを直接操作する新しいレイヤー移動機能を実装。
+ * - 誤差の累積による「吹き飛び」バグを根絶するため、「毎回リセットして差分適用」方式を採用。
  * ===================================================================================
  */
 
@@ -135,11 +130,11 @@ class CanvasManager {
             this.isLayerMoving = true;
             this.transformTargetLayer = activeLayer;
             
-            // 座標の初期取得 
+            // 座標の初期取得
             this.transformStartX = e.clientX;
             this.transformStartY = e.clientY;
 
-            // 【重要】layer.modelMatrix を clone して記録（元を絶対に触らないこと） 
+            // 【重要】layer.modelMatrix を clone して記録（元を絶対に触らないこと）
             this.originalModelMatrix = glMatrix.mat4.clone(activeLayer.modelMatrix);
 
             e.preventDefault(); 
@@ -190,27 +185,27 @@ class CanvasManager {
         if (this.isLayerMoving) {
             if (!this.transformTargetLayer) return;
 
-            // dx/dy はあくまで開始時からの差分 
-            const dx = e.clientX - this.transformStartX;
-            const dy = e.clientY - this.transformStartY;
+            // ★★★ 改善点: ビューのスケールを考慮して移動量を計算 ★★★
+            const dx = (e.clientX - this.transformStartX) / this.viewTransform.scale;
+            const dy = (e.clientY - this.transformStartY) / this.viewTransform.scale;
 
-            // 【安全処理】異常値の検出 [cite: 5]
+            // 【安全処理】異常値の検出
             if (!isFinite(dx) || !isFinite(dy) || Math.abs(dx) > 2000 || Math.abs(dy) > 2000) {
-              console.warn("異常な移動量を検出したため処理を中断します:", { dx, dy }); [cite: 5]
+              console.warn("異常な移動量を検出したため処理を中断します:", { dx, dy });
               return;
             }
 
-            // 【重要】毎回 originalModelMatrix から clone して新行列を生成 
+            // 【重要】毎回 originalModelMatrix から clone して新行列を生成
             const newMatrix = glMatrix.mat4.clone(this.originalModelMatrix);
             
             // translate のみに差分を加算（累積ではなく差分だけを使うこと）
             // glMatrix.mat4.translate(out, a, v) -> vはベクトル[x, y, z]
             glMatrix.mat4.translate(newMatrix, newMatrix, [dx, dy, 0]);
 
-            // layer に反映（上書き）※絶対に += しないこと！ 
+            // layer に反映（上書き）※絶対に += しないこと！
             this.transformTargetLayer.modelMatrix = newMatrix;
             
-            // デバッグログ出力 [cite: 8]
+            // デバッグログ出力
             this._debugMatrix('newMatrix', newMatrix);
 
             // プレビューを更新
@@ -313,10 +308,10 @@ class CanvasManager {
         }
     }
     
-    // --- Phase 4A11A: デバッグ用行列出力関数 --- [cite: 7]
+    // --- Phase 4A11A: デバッグ用行列出力関数 ---
     _debugMatrix(label, mat) {
       const tx = mat[12], ty = mat[13];
-      console.log(`[${label}] matrix:`, mat);
+      // console.log(`[${label}] matrix:`, mat); // 詳細すぎるので普段はコメントアウト
       console.log(`[${label}] translation: (${tx.toFixed(2)}, ${ty.toFixed(2)})`);
     }
 
@@ -379,8 +374,8 @@ class CanvasManager {
             if (this.viewTransform.flipX === -1) { x = this.width - x; }
             if (this.viewTransform.flipY === -1) { y = this.height - y; }
 
-            // --- Phase 4A11A-1: 座標系の統一確認ログ --- [cite: 2]
-            console.log("Canvas座標:", { x: x, y: y });
+            // --- Phase 4A11A-1: 座標系の統一確認ログ ---
+            // console.log("Canvas座標:", { x: x, y: y }); // 普段はコメントアウト
 
             if (x < 0 || x >= this.width || y < 0 || y >= this.height) { return null; }
             return { x: x, y: y };
@@ -497,16 +492,77 @@ class CanvasManager {
     handleWheel(e) { e.preventDefault(); if (e.shiftKey) { this.rotate(-e.deltaY * 0.2); } else { this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); } }
 }
 
-// LayerManager, PenSettingsManager, ColorManager, ToolManager, ToshinkaTegakiTool クラスは変更ありません
+// ★★★ 修正点: 構文エラーの原因だったクラス定義を正しいフォーマットに修正 ★★★
 class LayerManager { 
-    constructor(app) { this.app = app; this.layers = []; this.activeLayerIndex = -1; this.width = 344; this.height = 135; this.mergeCanvas = document.createElement('canvas'); this.mergeCanvas.width = this.width; this.mergeCanvas.height = this.height; this.mergeCtx = this.mergeCanvas.getContext('2d'); } 
-    setupInitialLayers() { const bgLayer = new Layer('背景', this.width, this.height); bgLayer.fill('#f0e0d6'); this.layers.push(bgLayer); const drawingLayer = new Layer('レイヤー 1', this.width, this.height); this.layers.push(drawingLayer); this.switchLayer(1); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
-    addLayer() { if (this.layers.length >= 99) return; const insertIndex = this.activeLayerIndex + 1; const newLayer = new Layer(`レイヤー ${this.layers.length + 1}`, this.width, this.height); this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
-    deleteActiveLayer() { if (this.activeLayerIndex === 0 || this.layers.length <= 1) return; this.layers.splice(this.activeLayerIndex, 1); const newActiveIndex = Math.min(this.layers.length - 1, this.activeLayerIndex); this.renameLayers(); this.switchLayer(newActiveIndex); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
-    renameLayers() { this.layers.forEach((layer, index) => { if (index > 0) layer.name = `レイヤー ${index}`; }); } 
-    switchLayer(index) { if (index < 0 || index >= this.layers.length) return; this.activeLayerIndex = index; if (this.app.layerUIManager) { this.app.layerUIManager.renderLayers(); } } 
-    getCurrentLayer() { return this.layers[this.activeLayerIndex] || null; } 
-    duplicateActiveLayer() { const activeLayer = this.getCurrentLayer(); if (!activeLayer) return; const newLayer = new Layer(`${activeLayer.name}のコピー`, this.width, this.height); newLayer.imageData.data.set(activeLayer.imageData.data); newLayer.visible = activeLayer.visible; newLayer.opacity = activeLayer.opacity; newLayer.blendMode = activeLayer.blendMode; newLayer.gpuDirty = true; const insertIndex = this.activeLayerIndex + 1; this.layers.splice(insertIndex, 0, newLayer); this.renameLayers(); this.switchLayer(insertIndex); this.app.canvasManager.saveState(); } 
+    constructor(app) { 
+        this.app = app; 
+        this.layers = []; 
+        this.activeLayerIndex = -1; 
+        this.width = 344; 
+        this.height = 135; 
+        this.mergeCanvas = document.createElement('canvas'); 
+        this.mergeCanvas.width = this.width; 
+        this.mergeCanvas.height = this.height; 
+        this.mergeCtx = this.mergeCanvas.getContext('2d'); 
+    } 
+    setupInitialLayers() { 
+        const bgLayer = new Layer('背景', this.width, this.height); 
+        bgLayer.fill('#f0e0d6'); 
+        this.layers.push(bgLayer); 
+        const drawingLayer = new Layer('レイヤー 1', this.width, this.height); 
+        this.layers.push(drawingLayer); 
+        this.switchLayer(1); 
+        this.app.canvasManager.renderAllLayers(); 
+        this.app.canvasManager.saveState(); 
+    } 
+    addLayer() { 
+        if (this.layers.length >= 99) return; 
+        const insertIndex = this.activeLayerIndex + 1; 
+        const newLayer = new Layer(`レイヤー ${this.layers.length + 1}`, this.width, this.height); 
+        this.layers.splice(insertIndex, 0, newLayer); 
+        this.renameLayers(); 
+        this.switchLayer(insertIndex); 
+        this.app.canvasManager.saveState(); 
+    } 
+    deleteActiveLayer() { 
+        if (this.activeLayerIndex === 0 || this.layers.length <= 1) return; 
+        this.layers.splice(this.activeLayerIndex, 1); 
+        const newActiveIndex = Math.min(this.layers.length - 1, this.activeLayerIndex); 
+        this.renameLayers(); 
+        this.switchLayer(newActiveIndex); 
+        this.app.canvasManager.renderAllLayers(); 
+        this.app.canvasManager.saveState(); 
+    } 
+    renameLayers() { 
+        this.layers.forEach((layer, index) => { 
+            if (index > 0) layer.name = `レイヤー ${index}`; 
+        }); 
+    } 
+    switchLayer(index) { 
+        if (index < 0 || index >= this.layers.length) return; 
+        this.activeLayerIndex = index; 
+        if (this.app.layerUIManager) { 
+            this.app.layerUIManager.renderLayers(); 
+        } 
+    } 
+    getCurrentLayer() { 
+        return this.layers[this.activeLayerIndex] || null; 
+    } 
+    duplicateActiveLayer() { 
+        const activeLayer = this.getCurrentLayer(); 
+        if (!activeLayer) return; 
+        const newLayer = new Layer(`${activeLayer.name}のコピー`, this.width, this.height); 
+        newLayer.imageData.data.set(activeLayer.imageData.data); 
+        newLayer.visible = activeLayer.visible; 
+        newLayer.opacity = activeLayer.opacity; 
+        newLayer.blendMode = activeLayer.blendMode; 
+        newLayer.gpuDirty = true; 
+        const insertIndex = this.activeLayerIndex + 1; 
+        this.layers.splice(insertIndex, 0, newLayer); 
+        this.renameLayers(); 
+        this.switchLayer(insertIndex); 
+        this.app.canvasManager.saveState(); 
+    } 
     mergeDownActiveLayer() {
         if (this.activeLayerIndex <= 0) return;
         const topLayer = this.layers[this.activeLayerIndex];
@@ -530,9 +586,107 @@ class LayerManager {
         this.app.canvasManager.saveState();
     } 
 }
-class PenSettingsManager { constructor(app) { this.app = app; this.currentSize = 1; this.sizes = Array.from(document.querySelectorAll('.size-btn')).map(btn => parseInt(btn.dataset.size)); this.currentSizeIndex = this.sizes.indexOf(this.currentSize); this.bindEvents(); this.updateSizeButtonVisuals(); } bindEvents() { document.querySelectorAll('.size-btn').forEach(btn => btn.addEventListener('click', () => this.setSize(parseInt(btn.dataset.size)))); } setSize(size) { this.currentSize = size; this.currentSizeIndex = this.sizes.indexOf(this.currentSize); document.querySelectorAll('.size-btn').forEach(btn => btn.classList.remove('active')); document.querySelector(`[data-size="${size}"]`)?.classList.add('active'); this.app.canvasManager.setCurrentSize(this.currentSize); this.updateSizeButtonVisuals(); } changeSize(increase) { let newIndex = this.currentSizeIndex + (increase ? 1 : -1); newIndex = Math.max(0, Math.min(newIndex, this.sizes.length - 1)); this.setSize(this.sizes[newIndex]); } updateSizeButtonVisuals() { document.querySelectorAll('.size-btn').forEach(btn => { const size = parseInt(btn.dataset.size); btn.querySelector('.size-dot').style.width = `${Math.min(size, 16)}px`; btn.querySelector('.size-dot').style.height = `${Math.min(size, 16)}px`; btn.querySelector('.size-number').textContent = size; }); } }
-class ColorManager { constructor(app) { this.app = app; this.mainColor = '#800000'; this.subColor = '#f0e0d6'; this.colors = Array.from(document.querySelectorAll('.color-btn')).map(btn => btn.dataset.color); this.currentColorIndex = this.colors.indexOf(this.mainColor); this.mainColorDisplay = document.getElementById('main-color-display'); this.subColorDisplay = document.getElementById('sub-color-display'); this.bindEvents(); this.updateColorDisplays(); document.querySelector(`[data-color="${this.mainColor}"]`)?.classList.add('active'); } bindEvents() { document.querySelectorAll('.color-btn').forEach(btn => btn.addEventListener('click', (e) => this.setColor(e.currentTarget.dataset.color))); document.querySelector('.color-mode-display').addEventListener('click', () => this.swapColors()); } setColor(color) { this.mainColor = color; this.currentColorIndex = this.colors.indexOf(this.mainColor); document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active')); document.querySelector(`[data-color="${color}"]`)?.classList.add('active'); this.updateColorDisplays(); this.app.canvasManager.setCurrentColor(this.mainColor); } updateColorDisplays() { this.mainColorDisplay.style.backgroundColor = this.mainColor; this.subColorDisplay.style.backgroundColor = this.subColor; } swapColors() { [this.mainColor, this.subColor] = [this.subColor, this.mainColor]; this.updateColorDisplays(); this.setColor(this.mainColor); } resetColors() { this.setColor('#800000'); this.subColor = '#f0e0d6'; this.updateColorDisplays(); } changeColor(increase) { let newIndex = this.currentColorIndex + (increase ? 1 : -1); newIndex = (newIndex + this.colors.length) % this.colors.length; this.setColor(this.colors[newIndex]); } }
-class ToolManager { constructor(app) { this.app = app; this.currentTool = 'pen'; this.bindEvents(); } bindEvents() { document.getElementById('pen-tool').addEventListener('click', () => this.setTool('pen')); document.getElementById('eraser-tool').addEventListener('click', () => this.setTool('eraser')); document.getElementById('bucket-tool').addEventListener('click', () => this.setTool('bucket')); document.getElementById('move-tool').addEventListener('click', () => this.setTool('move')); } setTool(tool) { this.currentTool = tool; document.querySelectorAll('.left-toolbar .tool-btn').forEach(btn => btn.classList.remove('active')); document.getElementById(tool + '-tool')?.classList.add('active'); this.app.canvasManager.setCurrentTool(tool); } }
+
+class PenSettingsManager { 
+    constructor(app) { 
+        this.app = app; 
+        this.currentSize = 1; 
+        this.sizes = Array.from(document.querySelectorAll('.size-btn')).map(btn => parseInt(btn.dataset.size)); 
+        this.currentSizeIndex = this.sizes.indexOf(this.currentSize); 
+        this.bindEvents(); 
+        this.updateSizeButtonVisuals(); 
+    } 
+    bindEvents() { 
+        document.querySelectorAll('.size-btn').forEach(btn => btn.addEventListener('click', () => this.setSize(parseInt(btn.dataset.size)))); 
+    } 
+    setSize(size) { 
+        this.currentSize = size; 
+        this.currentSizeIndex = this.sizes.indexOf(this.currentSize); 
+        document.querySelectorAll('.size-btn').forEach(btn => btn.classList.remove('active')); 
+        document.querySelector(`[data-size="${size}"]`)?.classList.add('active'); 
+        this.app.canvasManager.setCurrentSize(this.currentSize); 
+        this.updateSizeButtonVisuals(); 
+    } 
+    changeSize(increase) { 
+        let newIndex = this.currentSizeIndex + (increase ? 1 : -1); 
+        newIndex = Math.max(0, Math.min(newIndex, this.sizes.length - 1)); 
+        this.setSize(this.sizes[newIndex]); 
+    } 
+    updateSizeButtonVisuals() { 
+        document.querySelectorAll('.size-btn').forEach(btn => { 
+            const size = parseInt(btn.dataset.size); 
+            btn.querySelector('.size-dot').style.width = `${Math.min(size, 16)}px`; 
+            btn.querySelector('.size-dot').style.height = `${Math.min(size, 16)}px`; 
+            btn.querySelector('.size-number').textContent = size; 
+        }); 
+    } 
+}
+
+class ColorManager { 
+    constructor(app) { 
+        this.app = app; 
+        this.mainColor = '#800000'; 
+        this.subColor = '#f0e0d6'; 
+        this.colors = Array.from(document.querySelectorAll('.color-btn')).map(btn => btn.dataset.color); 
+        this.currentColorIndex = this.colors.indexOf(this.mainColor); 
+        this.mainColorDisplay = document.getElementById('main-color-display'); 
+        this.subColorDisplay = document.getElementById('sub-color-display'); 
+        this.bindEvents(); 
+        this.updateColorDisplays(); 
+        document.querySelector(`[data-color="${this.mainColor}"]`)?.classList.add('active'); 
+    } 
+    bindEvents() { 
+        document.querySelectorAll('.color-btn').forEach(btn => btn.addEventListener('click', (e) => this.setColor(e.currentTarget.dataset.color))); 
+        document.querySelector('.color-mode-display').addEventListener('click', () => this.swapColors()); 
+    } 
+    setColor(color) { 
+        this.mainColor = color; 
+        this.currentColorIndex = this.colors.indexOf(this.mainColor); 
+        document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active')); 
+        document.querySelector(`[data-color="${color}"]`)?.classList.add('active'); 
+        this.updateColorDisplays(); 
+        this.app.canvasManager.setCurrentColor(this.mainColor); 
+    } 
+    updateColorDisplays() { 
+        this.mainColorDisplay.style.backgroundColor = this.mainColor; 
+        this.subColorDisplay.style.backgroundColor = this.subColor; 
+    } 
+    swapColors() { 
+        [this.mainColor, this.subColor] = [this.subColor, this.mainColor]; 
+        this.updateColorDisplays(); 
+        this.setColor(this.mainColor); 
+    } 
+    resetColors() { 
+        this.setColor('#800000'); 
+        this.subColor = '#f0e0d6'; 
+        this.updateColorDisplays(); 
+    } 
+    changeColor(increase) { 
+        let newIndex = this.currentColorIndex + (increase ? 1 : -1); 
+        newIndex = (newIndex + this.colors.length) % this.colors.length; 
+        this.setColor(this.colors[newIndex]); 
+    } 
+}
+
+class ToolManager { 
+    constructor(app) { 
+        this.app = app; 
+        this.currentTool = 'pen'; 
+        this.bindEvents(); 
+    } 
+    bindEvents() { 
+        document.getElementById('pen-tool').addEventListener('click', () => this.setTool('pen')); 
+        document.getElementById('eraser-tool').addEventListener('click', () => this.setTool('eraser')); 
+        document.getElementById('bucket-tool').addEventListener('click', () => this.setTool('bucket')); 
+        document.getElementById('move-tool').addEventListener('click', () => this.setTool('move')); 
+    } 
+    setTool(tool) { 
+        this.currentTool = tool; 
+        document.querySelectorAll('.left-toolbar .tool-btn').forEach(btn => btn.classList.remove('active')); 
+        document.getElementById(tool + '-tool')?.classList.add('active'); 
+        this.app.canvasManager.setCurrentTool(tool); 
+    } 
+}
 
 class ToshinkaTegakiTool {
     constructor() {
