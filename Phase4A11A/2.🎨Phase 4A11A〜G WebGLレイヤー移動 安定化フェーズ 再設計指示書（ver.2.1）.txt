@@ -56,41 +56,67 @@ console.log("Canvas座標:", { x: result.x, y: result.y });
 
 ---
 
-## 🧱 Phase 4A11A: レイヤー移動の基本安定化（v1）
+🧱 Phase 4A11A: レイヤー移動の基本安定化（ver.1.1 強化版）
+🎯 目的
+マウスドラッグによる平行移動を modelMatrix ベースで実装。累積誤差・描画座標のズレ・変換の不一致を排除
 
-### 🎯 目的
-
-マウスドラッグによる平行移動を `modelMatrix` ベースで実装。累積誤差・異常移動の排除
-
-### 🛠 実装手順
-
-* `onPointerDown`:
-
-```js
+🛠 実装手順（変更箇所強調）
+✅ onPointerDown：
+js
+コピーする
+編集する
+// 座標の初期取得
 this.transformStartX = e.clientX;
 this.transformStartY = e.clientY;
+
+// 【重要】layer.modelMatrix を clone して記録（元を絶対に触らないこと）
 this.originalModelMatrix = mat4.clone(layer.modelMatrix);
-```
-
-* `onPointerMove`:
-
-```js
+✅ onPointerMove：
+js
+コピーする
+編集する
+// dx/dy はあくまで開始時からの差分
 const dx = e.clientX - this.transformStartX;
 const dy = e.clientY - this.transformStartY;
-if (Math.abs(dx) > 1000 || Math.abs(dy) > 1000) {
+
+// 【安全処理】異常値の検出
+if (!isFinite(dx) || !isFinite(dy) || Math.abs(dx) > 1000 || Math.abs(dy) > 1000) {
   console.warn("異常な移動量:", { dx, dy });
   return;
 }
+
+// 【重要】毎回 originalModelMatrix から clone して新行列を生成
 const newMatrix = mat4.clone(this.originalModelMatrix);
+
+// translate のみに差分を加算（累積ではなく差分だけを使うこと）
 translate(newMatrix, dx, dy);
+
+// layer に反映（上書き）※絶対に += しないこと！
 layer.modelMatrix = newMatrix;
-```
+✅ 安全チェック
+onPointerMove() 中で 絶対に layer.modelMatrix をそのまま更新・加算してはいけない
 
-### ✅ 確認ポイント
+originalModelMatrix から clone → translate → 上書き の流れだけを守ること
 
-* 数pxずつ何度も動かしても吹き飛びが起きないか
-* dx/dyが NaN や Infinity、異常値でないことをログ出力で確認
+位置が吹き飛んだ場合、Console.log(newMatrix, newMatrix) を確認して、値が爆発していないかをチェック
 
+transformWorldToLocal(...) を使って、実際に描く位置と移動結果が一致しているかも追跡できるようにしておくと◎
+
+📌 オプションで有効な追加コード（開発デバッグ用）
+js
+コピーする
+編集する
+function debugMatrix(label, mat) {
+  console.log(`[${label}] matrix:`, mat);
+  const tx = mat[12], ty = mat[13];
+  console.log(`[${label}] translation: (${tx.toFixed(2)}, ${ty.toFixed(2)})`);
+}
+→ onPointerMove() の最後に：
+
+js
+コピーする
+編集する
+debugMatrix('newMatrix', newMatrix);
 ---
 
 ## 🧱 Phase 4A11B: modelMatrix の完全初期化と生存確認

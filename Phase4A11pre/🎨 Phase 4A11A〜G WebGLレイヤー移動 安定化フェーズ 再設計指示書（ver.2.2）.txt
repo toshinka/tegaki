@@ -1,0 +1,73 @@
+🎨 **Phase 4A11A〜G: WebGLレイヤー移動 安定化フェーズ 再設計指示書（ver.2.2）**
+
+---
+
+## ✅ 概要
+
+本フェーズ群では、レイヤー移動時に発生する「吹き飛び」「上下反転」「描画ズレ」などの複合的な不具合を、段階的・再現性のある方法で根本解決することを目的とします。
+
+加えて、本フェーズ完了時点で **Canvas2D を完全に廃止し、WebGL 専用構成へ移行** することを正式に目指します。
+
+---
+
+## 🆕 Phase 4A11Z: WebGL専用構成への完全移行（Canvas2D 廃止）
+
+### 🎯 目的
+
+WebGL描画のみに一本化し、Canvas2Dの混入によるバグや描画差異・責務の重複を排除。4A11で実現したmodelMatrixの整合性と組み合わせ、GPU描画の一貫性を保証する。
+
+### 🛠 実装手順
+
+#### 1. `rendering-bridge.js` を WebGL専用構成に変更
+
+* `this.setEngine('webgl')` を強制デフォルトに
+* `canvas2d` に関する初期化処理・Fallbackをすべて削除
+
+#### 2. Canvas2D専用エンジンの物理削除
+
+* `canvas2d-engine.js` をプロジェクトから削除（または読み込み対象から外す）
+* `Canvas2DEngine` の import・インスタンス生成も全て削除
+
+#### 3. `renderingBridge.currentEngine` が WebGL で固定であることを前提にリファクタ
+
+* `drawLine`, `drawCircle`, `fill` など、委譲部分の型分岐ロジックを削除
+* それぞれ `WebGLEngine` の API に直接合わせる形で整理
+
+#### 4. `displayCanvas.style.opacity = 0` を常時適用
+
+* WebGLキャンバスのみが表示される状態にする
+* 元の Canvas2D（displayCanvas）には描画はされないが、イベント用として残すのは可
+
+#### 5. WebGL非対応時の処理を `alert()` に一本化
+
+```js
+if (!WebGLEngine.isSupported()) {
+  alert('このブラウザはWebGLをサポートしていません。対応環境で開いてください。');
+  throw new Error('WebGL not supported');
+}
+```
+
+### ✅ 確認ポイント
+
+* 開発環境で `Canvas2D` に一切描画されなくなること（透明である）
+* `WebGLEngine` で描画される内容のみが画面出力として確認できること
+* 古いPCや非対応ブラウザでは `alert()` により起動が停止されること
+
+---
+
+## ✅ 残りのPhase 4A11A〜Gについて
+
+（以下、4A11A〜Gの各定義は前回ver.2.1と同じ。既存のバグ修正・行列検証・GUI同期などを担当。詳細は省略）
+
+---
+
+## 🔚 最終成果
+
+* `modelMatrix` による非破壊GPU変形が完全安定化
+* WebGL専用構成により描画ロジックが一貫し、Canvas2Dとの干渉リスクがゼロに
+* 「移動したら吹き飛ぶ」「描画されない」などの再発バグが劇的に減少
+* 将来の `4A12: 回転・スケール` 実装に向けて、描画系統が明確に一本化
+
+---
+
+次にGEMINIへ渡す場合は `Phase 4A11Z` ブロックを単体で送信し、「WebGL構成専用に切り替えてください」と伝えてください。
