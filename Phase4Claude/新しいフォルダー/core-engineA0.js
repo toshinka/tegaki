@@ -39,35 +39,6 @@ function hexToRgba(hex) {
     } : { r: 0, g: 0, b: 0, a: 255 };
 }
 
-// ✨座標変換関数を追加
-function transformWorldToLocal(worldX, worldY, modelMatrix) {
-    if (!modelMatrix) {
-        console.warn('modelMatrix が未定義です。変換をスキップします。');
-        return { x: worldX, y: worldY };
-    }
-    
-    try {
-        // modelMatrixの逆行列を計算
-        const invMatrix = glMatrix.mat4.create();
-        const success = glMatrix.mat4.invert(invMatrix, modelMatrix);
-        
-        if (!success) {
-            console.warn('modelMatrix の逆行列計算に失敗しました。変換をスキップします。');
-            return { x: worldX, y: worldY };
-        }
-        
-        // ワールド座標をローカル座標に変換
-        const worldPos = glMatrix.vec4.fromValues(worldX, worldY, 0, 1);
-        const localPos = glMatrix.vec4.create();
-        glMatrix.vec4.transformMat4(localPos, worldPos, invMatrix);
-        
-        return { x: localPos[0], y: localPos[1] };
-    } catch (error) {
-        console.error('座標変換エラー:', error);
-        return { x: worldX, y: worldY };
-    }
-}
-
 // ✨Layerクラスは他のファイルから参照されるので「export」を追加します
 export class Layer {
     constructor(name, width, height) {
@@ -158,14 +129,10 @@ class CanvasManager {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
 
-        // ✅ 座標変換を適用
-        const local = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
-        console.log(`[描画位置] World(${coords.x}, ${coords.y}) → Local(${local.x}, ${local.y})`);
-
         this._resetDirtyRect();
         
         if (this.currentTool === 'bucket') {
-            this.app.bucketTool.fill(activeLayer.imageData, local.x, local.y, hexToRgba(this.currentColor));
+            this.app.bucketTool.fill(activeLayer.imageData, coords.x, coords.y, hexToRgba(this.currentColor));
             activeLayer.gpuDirty = true;
             this.renderAllLayers();
             this.saveState();
@@ -174,14 +141,14 @@ class CanvasManager {
 
         this.isDrawing = true;
         this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
-        this.lastPoint = { x: local.x, y: local.y, pressure: this.pressureHistory[0] };
+        this.lastPoint = { ...coords, pressure: this.pressureHistory[0] };
         
         const size = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
         
-        this._updateDirtyRect(local.x, local.y, size);
+        this._updateDirtyRect(coords.x, coords.y, size);
         
         this.renderingBridge.drawCircle(
-            local.x, local.y, size / 2, 
+            coords.x, coords.y, size / 2, 
             hexToRgba(this.currentColor), this.currentTool === 'eraser',
             activeLayer
         );
@@ -202,14 +169,9 @@ class CanvasManager {
         if (!coords) { this.lastPoint = null; return; }
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
-
-        // ✅ 座標変換を適用
-        const local = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
-        console.log(`[描画位置] World(${coords.x}, ${coords.y}) → Local(${local.x}, ${local.y})`);
-
         if (!this.lastPoint) { 
             this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
-            this.lastPoint = { x: local.x, y: local.y, pressure: e.pressure > 0 ? e.pressure : 0.5 }; 
+            this.lastPoint = { ...coords, pressure: e.pressure > 0 ? e.pressure : 0.5 }; 
             return;
         }
 
@@ -222,17 +184,17 @@ class CanvasManager {
         const lastSize = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
         const currentSize = this.calculatePressureSize(this.currentSize, currentPressure);
         this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, lastSize);
-        this._updateDirtyRect(local.x, local.y, currentSize);
+        this._updateDirtyRect(coords.x, coords.y, currentSize);
 
         this.renderingBridge.drawLine(
-            this.lastPoint.x, this.lastPoint.y, local.x, local.y,
+            this.lastPoint.x, this.lastPoint.y, coords.x, coords.y,
             this.currentSize, hexToRgba(this.currentColor), this.currentTool === 'eraser',
             this.lastPoint.pressure, currentPressure, 
             this.calculatePressureSize.bind(this),
             activeLayer
         );
         
-        this.lastPoint = { x: local.x, y: local.y, pressure: currentPressure };
+        this.lastPoint = { ...coords, pressure: currentPressure };
         this._requestRender();
     }
     
