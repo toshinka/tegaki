@@ -1,15 +1,11 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.9.0 (Phase 4A11A - Stable ModelMatrix Translation)
+ * Version: 2.9.1 (Phase 4A11A - Bugfix)
  *
- * - 修正 (Phase 4A11A):
- * - 「🎨Phase 4A11A〜G ... 再設計指示書」に基づき、レイヤー移動処理を安定化。
- * - onPointerDownでドラッグ開始時のmodelMatrixを複製して保持 。
- * - onPointerMoveでは、毎回オリジナルの行列から移動量を再計算することで累積誤差を排除 。
- * - これにより、レイヤー移動時に座標が吹き飛ぶ、ちらつくといった不安定な挙動を根本的に解決。
- * - 旧来のtransformプロパティベースの移動処理をコメントアウトし、modelMatrix方式に一本化。
- * - getCanvasCoordinatesにデバッグ用のログを追加 。
+ * - 修正 (Phase 4A11A Bugfix):
+ * - onPointerMove内で発生していた 'active.visible' のタイプミスを 'activeLayer.visible' に修正。
+ * - これにより、描画処理中の 'ReferenceError' を解消。
  * ===================================================================================
  */
 
@@ -18,7 +14,6 @@ import { TopBarManager, LayerUIManager } from './ui/ui-manager.js';
 import { ShortcutManager } from './ui/shortcut-manager.js';
 import { BucketTool } from './tools/toolset.js';
 import { RenderingBridge } from './core/rendering/rendering-bridge.js';
-// ★★★ Phase4A11A 修正点: transform-utilsからtranslate関数をインポート ★★★
 import { translate } from './core/utils/transform-utils.js';
 
 
@@ -41,15 +36,10 @@ class Layer {
         this.opacity = 100;
         this.blendMode = 'normal';
         this.imageData = new ImageData(width, height);
-        
-        // 旧transformプロパティは今後使用しないが、互換性のために残す
         this.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 };
-        
-        // WebGL用のモデル行列。gl-matrix-min.jsがグローバルに読み込まれている前提
         this.modelMatrix = glMatrix.mat4.create();
-
         this.originalImageData = null;
-        this.gpuDirty = true; // GPUテクスチャが更新を必要とするか
+        this.gpuDirty = true;
     }
     clear() {
         this.imageData.data.fill(0);
@@ -85,10 +75,9 @@ class CanvasManager {
         
         this.isVDown = false; this.isShiftDown = false;
         
-        // ★★★ Phase4A11A 修正点: modelMatrixベースの移動処理のためのプロパティ ★★★
         this.isLayerTransforming = false;
         this.transformTargetLayer = null;
-        this.originalModelMatrix = null; // ドラッグ開始時の行列を保持
+        this.originalModelMatrix = null;
         this.transformStartX = 0; 
         this.transformStartY = 0;
         
@@ -125,19 +114,15 @@ class CanvasManager {
     onPointerDown(e) {
         if (e.button !== 0) return;
         
-        // ★★★ Phase4A11A 修正点: 新しいmodelMatrixベースの移動開始処理 ★★★
         if (this.isVDown) {
             const activeLayer = this.app.layerManager.getCurrentLayer();
-            // 背景レイヤーは移動させない
             if (activeLayer && this.app.layerManager.layers.indexOf(activeLayer) > 0) {
                 this.isLayerTransforming = true;
                 this.transformTargetLayer = activeLayer;
                 
-                // ドラッグ開始座標を記録
-                this.transformStartX = e.clientX; [cite: 42]
-                this.transformStartY = e.clientY; [cite: 42]
+                this.transformStartX = e.clientX;
+                this.transformStartY = e.clientY;
                 
-                // ★重要: 累積誤差を防ぐため、ドラッグ開始時の行列を複製して保持する
                 this.originalModelMatrix = glMatrix.mat4.clone(activeLayer.modelMatrix);
                 
                 e.preventDefault();
@@ -186,30 +171,22 @@ class CanvasManager {
     }
     
     onPointerMove(e) {
-        // ★★★ Phase4A11A 修正点: 新しいmodelMatrixベースの移動中処理 ★★★
         if (this.isLayerTransforming) {
             if (this.transformTargetLayer && this.originalModelMatrix) {
-                // ドラッグ開始位置からの総移動量を計算
-                const dx = e.clientX - this.transformStartX; [cite: 43]
-                const dy = e.clientY - this.transformStartY; [cite: 43]
+                const dx = e.clientX - this.transformStartX;
+                const dy = e.clientY - this.transformStartY;
                 
-                // 異常な移動量を検知して処理を中断（吹き飛び防止のセーフティネット）
-                if (Math.abs(dx) > 2000 || Math.abs(dy) > 2000) { [cite: 43]
+                if (Math.abs(dx) > 2000 || Math.abs(dy) > 2000) {
                     console.warn("異常な移動量を検出したため、レイヤー移動を中断しました。", { dx, dy });
-                    this.isLayerTransforming = false; // 強制終了
+                    this.isLayerTransforming = false;
                     return;
                 }
 
-                // ★重要: 毎回、ドラッグ開始時の行列をコピーしてから移動を適用する
-                const newMatrix = glMatrix.mat4.clone(this.originalModelMatrix); [cite: 44]
+                const newMatrix = glMatrix.mat4.clone(this.originalModelMatrix);
                 
-                // transform-utils.jsの関数を使って平行移動
-                // 注意: viewTransform.scaleを考慮して移動量を調整する必要があるが、
-                // まずは基本実装として単純な移動を行う。
-                translate(newMatrix, dx / this.viewTransform.scale, dy / this.viewTransform.scale); [cite: 44]
+                translate(newMatrix, dx / this.viewTransform.scale, dy / this.viewTransform.scale);
 
-                // レイヤーのmodelMatrixを更新
-                this.transformTargetLayer.modelMatrix = newMatrix; [cite: 44]
+                this.transformTargetLayer.modelMatrix = newMatrix;
 
                 this.renderAllLayers();
             }
@@ -228,7 +205,9 @@ class CanvasManager {
         if (!coords) { this.lastPoint = null; return; }
         
         const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (!activeLayer || !active.visible) return;
+        // ★★★ ここがエラーの原因でした！ 'active.visible' -> 'activeLayer.visible' に修正 ★★★
+        if (!activeLayer || !activeLayer.visible) return; 
+        
         if (!this.lastPoint) { 
             this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
             this.lastPoint = { ...coords, pressure: e.pressure > 0 ? e.pressure : 0.5 }; 
@@ -259,12 +238,10 @@ class CanvasManager {
     }
     
     onPointerUp(e) {
-        // ★★★ Phase4A11A 修正点: 新しいmodelMatrixベースの移動終了処理 ★★★
         if (this.isLayerTransforming) {
             this.isLayerTransforming = false;
             this.transformTargetLayer = null;
             this.originalModelMatrix = null;
-            // 移動が完了したので、状態をヒストリに保存
             this.saveState();
         }
         
@@ -374,78 +351,12 @@ class CanvasManager {
             if (this.viewTransform.flipY === -1) { y = this.height - y; }
             if (x < 0 || x >= this.width || y < 0 || y >= this.height) { return null; }
             
-            // ★★★ Phase4A11A-1 修正点: 座標変換の正確性検証用ログ ★★★
-            // console.log("Canvas座標:", { x: x, y: y });  // 動作確認後、コメントアウトしてもOKです
-            
             return { x: x, y: y };
         } catch (error) {
             console.warn('座標変換エラー:', error);
             return null;
         }
     }
-
-    // ★★★ Phase4A11A 修正点: 旧transformベースの移動処理は使用しないためコメントアウト ★★★
-    /*
-    startLayerTransform(e = null) {
-        const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (!activeLayer || this.app.layerManager.layers.indexOf(activeLayer) === 0) return;
-        this.isLayerTransforming = true;
-        this.transformTargetLayer = activeLayer;
-        // 非破壊変形ではないので、変形開始前の状態を保存
-        if (!this.transformTargetLayer.originalImageData) {
-            this.transformTargetLayer.originalImageData = new ImageData(
-                new Uint8ClampedArray(this.transformTargetLayer.imageData.data),
-                this.transformTargetLayer.imageData.width,
-                this.transformTargetLayer.imageData.height
-            );
-        }
-        this.originalLayerTransform = { ...this.transformTargetLayer.transform };
-        if (e) {
-            this.transformMode = this.isShiftDown ? 'rotate_scale' : 'move';
-            this.transformStartX = e.clientX;
-            this.transformStartY = e.clientY;
-        }
-    }
-    */
-    
-    /*
-    applyLayerTransformPreview() {
-        if (!this.transformTargetLayer || !this.transformTargetLayer.originalImageData) return;
-        const layer = this.transformTargetLayer;
-        // この処理はCPU負荷が高い。将来的にはGPUによる非破壊変形に移行したい。
-        const transformedImageData = this.renderingBridge.getTransformedImageData(layer.originalImageData, layer.transform);
-        layer.imageData = transformedImageData;
-        layer.gpuDirty = true; // ImageDataが変更されたのでGPUに通知
-        this.renderAllLayers();
-    }
-    */
-
-    /*
-    commitLayerTransform() {
-        if (!this.isLayerTransforming) return;
-        this.applyLayerTransformPreview();
-        const layer = this.transformTargetLayer;
-        // 変形を確定させ、ピクセルデータとして焼き込む
-        layer.originalImageData = new ImageData(
-            new Uint8ClampedArray(layer.imageData.data),
-            layer.imageData.width,
-            layer.imageData.height
-        );
-        layer.gpuDirty = true;
-        layer.transform = { x: 0, y: 0, scale: 1, rotation: 0, flipX: 1, flipY: 1 }; // transform情報をリセット
-        
-        if (layer.modelMatrix) {
-            glMatrix.mat4.identity(layer.modelMatrix);
-        }
-
-        this.isLayerTransforming = false;
-        this.transformTargetLayer = null;
-        this.originalLayerTransform = null;
-        this.originalImageData = null; 
-        this.renderAllLayers();
-        this.saveState();
-    }
-    */
 
     saveState() {
         if(this.isLayerTransforming) return;
@@ -531,7 +442,6 @@ class CanvasManager {
              exportCtx.putImageData(finalImageData, 0, 0);
 
         } else {
-            // This fallback is unlikely to be used in WebGL-only mode, but kept for safety.
             exportCtx.putImageData(this.compositionData, 0, 0);
         }
         
@@ -610,7 +520,6 @@ class ToshinkaTegakiTool {
             this.colorManager.setColor(this.colorManager.mainColor);
         } catch (error) {
             console.error("アプリケーションの起動に失敗しました:", error);
-            // ユーザーへの通知はRenderingBridge内で行われるため、ここではログ出力に留める
         }
     }
 }
