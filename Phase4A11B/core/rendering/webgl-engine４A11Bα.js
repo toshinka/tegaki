@@ -1,21 +1,21 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.4.0 (Phase 4A11B-2 - Y-Axis Unification)
+ * Version: 4.3.0 (Phase 4A11B - Model Matrix Integration)
  *
- * - 修正点 (Phase 4A11B-2):
- * - 📜 Phase4A11B-2 指示書に基づき、描画と表示のY軸を完全に一致させる。
- * - 1. 座標系の完全統一 (Y-Down):
- * - webgl-engine内のすべての座標系を、ブラウザ標準の「Y軸は下向きが正」(Y-Down)に統一。
- * - これにより、マウス座標、2D Canvas、WebGLのすべてのレイヤーでY軸の扱いが同じになり、変換時の混乱を根本的に解決。
- * - 2. 投影行列(Projection Matrix)の変更:
- * - mat4.orthoのパラメータを変更し、WebGLのレンダリング空間自体をY-Downに変更。 [cite: 32]
- * - 3. Y軸反転処理の削除:
- * - 上記に伴い、これまで暫定対応として入れていた以下のY軸反転処理をすべて削除。
- * - テクスチャアップロード時のY軸反転 (`UNPACK_FLIP_Y_WEBGL`) を無効化。
- * - ブラシ描画時のY座標計算の反転 (`this.superHeight - superY`) を削除。
- * - 4. 頂点データとテクスチャ座標の修正:
- * - Y-Down座標系に合わせて、レイヤー描画用の頂点バッファとテクスチャ座標バッファのデータを修正。
+ * - 変更点 (Phase 4A11B):
+ * - 📜 Phase4A11B 初期指示書に基づき、レイヤーのmodelMatrixをWebGL表示に正しく反映するよう改修。
+ * - 1. 座標系の統一:
+ * - これまで-1から1のクリップスペースで扱っていた頂点座標を、キャンバスのピクセル座標系で扱うように変更。
+ * - これにより、core-engineで計算されるピクセル単位のmodelMatrix（移動行列）を直接、正しく適用できるようになった。
+ * - 2. 投影行列 (Projection Matrix) の導入:
+ * - ピクセル座標系を最終的にWebGLのクリップスペースに変換するため、正投影行列を導入。
+ * - レイヤー合成時: `最終的な行列 = 投影行列 * レイヤーのモデル行列` として計算し、シェーダーに渡す。
+ * - 3. 頂点バッファの更新:
+ * - レイヤーを描画する矩形（クアッド）の頂点データを、クリップスペースからスーパーサンプリング解像度のピクセル座標に変更。
+ * - 4. 描画関数の更新:
+ * - compositeLayers: 各レイヤーのmodelMatrixを投影行列と掛け合わせてからシェーダーに送るように変更。
+ * - renderToDisplay: 最終表示用のテクスチャを描画する際も、同様に投影行列を適用するように修正。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -35,6 +35,7 @@ export class WebGLEngine extends DrawingEngine {
         this.superWidth = this.width * this.SUPER_SAMPLING_FACTOR;
         this.superHeight = this.height * this.SUPER_SAMPLING_FACTOR;
         
+        // ✨(修正) 座標系変換の要となる投影行列をプロパティとして保持
         this.projectionMatrix = null;
 
         this.programs = { compositor: null, brush: null };
@@ -71,6 +72,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.enable(gl.BLEND);
         gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
+        // ✨(修正) 投影行列をここで初期化
         this._initProjectionMatrix();
 
         this._initShaderPrograms();
@@ -87,18 +89,18 @@ export class WebGLEngine extends DrawingEngine {
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        console.log(`WebGL Engine (v4.4.0 Phase4A11B-2) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.3.0 Phase4A11B) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
+    // ✨(新設) 正投影行列を生成する関数
     _initProjectionMatrix() {
         this.projectionMatrix = mat4.create();
-        // ✨(修正) 座標系をY-Downに統一するため、orthoのtopとbottomを入れ替える
-        // (left, right, bottom, top) -> topが0, bottomがsuperHeightになる
-        mat4.ortho(this.projectionMatrix, 0, this.superWidth, this.superHeight, 0, -1, 1);
+        // WebGLのFBOはY軸が上向きなので、(left, right, bottom, top)の順で指定する
+        mat4.ortho(this.projectionMatrix, 0, this.superWidth, 0, this.superHeight, -1, 1);
     }
 
     _initShaderPrograms() {
-        // シェーダーコードの変更は不要
+        // シェーダー自体は変更なし。受け取る行列(u_mvpMatrix)の意味合いが変わるだけ。
         const vsCompositor = `
             attribute vec2 a_position;
             attribute vec2 a_texCoord;
@@ -140,12 +142,9 @@ export class WebGLEngine extends DrawingEngine {
 
             void main() {
                 vec2 quad_size_pixels = vec2(u_radius * 2.0 + 2.0);
-                vec2 quad_size_clip = quad_size_pixels / u_resolution * 2.0; // now -1 to 1 range
+                vec2 quad_size_clip = quad_size_pixels / u_resolution;
                 vec2 center_clip = (u_center / u_resolution) * 2.0 - 1.0;
                 
-                // Y-Downに統一したため、Y軸反転は不要
-                center_clip.y *= -1.0; 
-
                 vec4 final_pos = vec4(a_position * quad_size_clip + center_clip, 0.0, 1.0);
                 gl_Position = final_pos;
 
@@ -184,24 +183,25 @@ export class WebGLEngine extends DrawingEngine {
         this.positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
 
-        // ✨(修正) Y-Down座標系に合わせた頂点データ (TL, BL, TR, BR)
+        // ✨(修正) 頂点座標をクリップスペース(-1~1)からピクセル座標(0~superWidth/Height)に変更
+        // テクスチャ座標の順序と合わせるため、(TL, BL, TR, BR)の順で定義
         const positions = [
-            0, 0,                               // Top-Left
-            0, this.superHeight,                // Bottom-Left
-            this.superWidth, 0,                 // Top-Right
-            this.superWidth, this.superHeight   // Bottom-Right
+            0, this.superHeight,                // Top-Left
+            0, 0,                               // Bottom-Left
+            this.superWidth, this.superHeight,  // Top-Right
+            this.superWidth, 0                  // Bottom-Right
         ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 
         this.texCoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        
-        // ✨(修正) Y-Down座標系に合わせたテクスチャ座標 (TL, BL, TR, BR)
+        // ✨(修正) 上記の頂点順序(TL, BL, TR, BR)に合わせたテクスチャ座標
+        // Y軸はテクスチャアップロード時に反転(FLIP_Y)されるため、(0,1)がテクスチャの下側(描画の上側)に対応
         const texCoords = [
-            0.0, 0.0, // Top-Left
-            0.0, 1.0, // Bottom-Left
-            1.0, 0.0, // Top-Right
-            1.0, 1.0  // Bottom-Right
+            0.0, 1.0, // Top-Left
+            0.0, 0.0, // Bottom-Left
+            1.0, 1.0, // Top-Right
+            1.0, 0.0  // Bottom-Right
         ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
         
@@ -301,8 +301,7 @@ export class WebGLEngine extends DrawingEngine {
              tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
 
             gl.bindTexture(gl.TEXTURE_2D, texture);
-            // ✨(修正) Y-Down座標系に統一したため、テクスチャアップロード時のY軸反転を無効化
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
             gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvas);
             gl.bindTexture(gl.TEXTURE_2D, null);
 
@@ -382,8 +381,7 @@ export class WebGLEngine extends DrawingEngine {
         const superY = centerY * this.SUPER_SAMPLING_FACTOR;
         const superRadius = radius * this.SUPER_SAMPLING_FACTOR;
         
-        // ✨(修正) Y-Down座標系に統一したため、Y座標の反転計算を削除
-        const webglSuperY = superY;
+        const webglSuperY = this.superHeight - superY;
         
         gl.uniform2f(program.locations.u_resolution, this.superWidth, this.superHeight);
         gl.uniform2f(program.locations.u_center, superX, webglSuperY);
@@ -454,6 +452,8 @@ export class WebGLEngine extends DrawingEngine {
                 continue;
             }
 
+            // ✨(修正) ここが最重要ポイント！
+            // 投影行列とレイヤーのモデル行列を掛け合わせて、最終的な変換行列(mvpMatrix)を作成する
             const mvpMatrix = mat4.create();
             mat4.multiply(mvpMatrix, this.projectionMatrix, layer.modelMatrix);
             gl.uniformMatrix4fv(program.locations.u_mvpMatrix, false, mvpMatrix);
@@ -488,6 +488,8 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.useProgram(program);
 
+        // ✨(修正) 最終表示時も投影行列を適用する
+        // モデル行列は単位行列なので、最終的なテクスチャをそのまま画面全体に描画する
         const mvpMatrix = mat4.create();
         mat4.multiply(mvpMatrix, this.projectionMatrix, this.identityMatrix);
         gl.uniformMatrix4fv(program.locations.u_mvpMatrix, false, mvpMatrix);
@@ -524,8 +526,6 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const superBuffer = new Uint8Array(sWidth * sHeight * 4);
-        
-        // gl.readPixelsは左下原点(Y-Up)だが、我々の系はY-Downなので、読み取り位置はこれで正しい
         const readY = sy;
         gl.readPixels(sx, readY, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -534,20 +534,19 @@ export class WebGLEngine extends DrawingEngine {
         const targetData = targetImageData.data;
         const factor = this.SUPER_SAMPLING_FACTOR;
         
-        // gl.readPixelsの結果はY-Upなので、Y-DownのImageDataに転写する際にY軸を反転させる
-        for (let y = 0; y < sHeight; y++) {
-            for (let x = 0; x < sWidth; x++) {
-                const targetX = Math.floor(sx / factor) + Math.floor(x / factor);
-                const targetY = Math.floor(sy / factor) + Math.floor(y / factor);
-
+        for (let y = 0; y < (dirtyRect.maxY - dirtyRect.minY); y++) {
+            for (let x = 0; x < (dirtyRect.maxX - dirtyRect.minX); x++) {
+                const targetX = Math.floor(dirtyRect.minX) + x;
+                const targetY = Math.floor(dirtyRect.minY) + y;
                 if (targetX >= targetImageData.width || targetY >= targetImageData.height) continue;
                 
-                const sourceY = sHeight - 1 - y;
+                const sourceX = Math.round(x * factor);
+                const sourceY = sHeight - 1 - Math.round(y * factor);
                 
-                const sourceIndex = (sourceY * sWidth + x) * 4;
+                const sourceIndex = (sourceY * sWidth + sourceX) * 4;
                 const targetIndex = (targetY * targetImageData.width + targetX) * 4;
 
-                if (sourceIndex >= 0 && sourceIndex < superBuffer.length && targetIndex < targetData.length) {
+                if (sourceIndex >= 0 && sourceIndex < superBuffer.length) {
                     targetData[targetIndex]     = superBuffer[sourceIndex];
                     targetData[targetIndex + 1] = superBuffer[sourceIndex + 1];
                     targetData[targetIndex + 2] = superBuffer[sourceIndex + 2];
