@@ -27,10 +27,13 @@
 │ │ │  └── interpolation.js     // 補間システム（仮空ファイル）
 │ │ │ 
 │ │ ├ deformation/
-│ │ ├── mesh-deformer.js     // メッシュ変形・ワープデフォーマ（仮空ファイル）
-│ │ ├── bone-system.js       // ボーンシステム（仮空ファイル）
-│ │ └── physics-engine.js    // 簡易物理演算（仮空ファイル）
-│ │ 
+│ │ ├── mesh-deformer.js         // メッシュ変形・ワープデフォーマ（仮空ファイル）
+│ │ ├── bone-system.js           // ボーンシステム（仮空ファイル）
+│ │ └── physics-engine.js        // 簡易物理演算（仮空ファイル）
+│ │
+│ ├─ layer-manager/
+│ │ └─ layer-manager.js           <-- （Phase4A11A0
+│ │
 │ ├ ui/ 
 │ │ ├─ ui-manager.js         　　 <-- （Phase2）
 │ │ ├─ shortcut-manager.js     　 <-- （Phase3B）
@@ -48,7 +51,7 @@
 
 
 ※以下は改修で必要になったら組み込む
-├─ layer-manager/           ← レイヤー改修時に付加予定
+
 
 ├─ data/
 │   ├─ constants.js           ← 色、サイズ、ショートカット定義など
