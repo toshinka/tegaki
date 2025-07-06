@@ -14,26 +14,35 @@
 
 ---
 
-## 🧱 Phase 4A11-Pre: 旧transform系移動機能の一時無効化
+🧱 Phase 4A11A-1: 描画座標とレイヤー変換の同期確認（新設）
 
-### 🎯 目的
+🎯 目的
 
-旧 `transform` プロパティを使ったレイヤー移動を無効化し、`modelMatrix` ベース移動との競合を防止する。
+modelMatrix を使ってレイヤー移動した際、実際の描画もその位置に行われるよう座標変換の整合性を確認・修正する。
 
-### 🛠 実装手順
+🛠 実装手順
 
-* `startLayerTransform()`, `applyLayerTransformPreview()` をコメントアウトまたは無効化
-* `isVDown` 判定時に旧処理を実行しないよう分岐条件を調整
-* `transform` プロパティに依存する箇所はすべてデバッグログ出力に切り替え
+drawToLayerTexture() 内で transformWorldToLocal() を使って、クリック座標をローカル空間に変換してから描画処理を行うこと。
 
-### ✅ 確認ポイント
+const localCoords = transformWorldToLocal(x, y, layer.modelMatrix);
+drawAt(localCoords.x, localCoords.y);
 
-* `transform` ベースの移動が一切発生しない
-* `modelMatrix` ベースの移動のみが有効
+transformWorldToLocal() 関数に以下のログを加える：
 
----
+console.log('[座標変換] World:', worldX, worldY, '→ Local:', localPos[0], localPos[1]);
 
-## 🧱 Phase 4A11A-1: 座標系の統一確認
+表示用の modelMatrix と、描画対象の変換行列がズレていないことを確認する
+
+✅ 確認ポイント
+
+マウスクリックと描画が視覚的に一致する
+
+移動後に描いた線が「視界外に出る」「ズレる」などの不具合が発生しない
+
+座標ログが常に「描かれた場所と一致」している
+
+
+## 🧱 Phase 4A11A-2A: 座標系の統一確認
 
 ### 🎯 目的
 
@@ -56,7 +65,7 @@ console.log("Canvas座標:", { x: result.x, y: result.y });
 
 ---
 
-🧱 Phase 4A11A: レイヤー移動の基本安定化（ver.1.1 強化版）
+🧱 Phase 4A11A-2B: レイヤー移動の基本安定化（ver.1.1 強化版）
 🎯 目的
 マウスドラッグによる平行移動を modelMatrix ベースで実装。累積誤差・描画座標のズレ・変換の不一致を排除
 
