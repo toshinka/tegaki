@@ -42,7 +42,7 @@ console.log('[座標変換] World:', worldX, worldY, '→ Local:', localPos[0], 
 座標ログが常に「描かれた場所と一致」している
 
 
-## 🧱 Phase 4A11A-2A: 座標系の統一確認
+## 🧱 Phase 4A11A-1': 座標系の統一確認(Phase 4A11A-1と同時実装）
 
 ### 🎯 目的
 
@@ -65,7 +65,7 @@ console.log("Canvas座標:", { x: result.x, y: result.y });
 
 ---
 
-🧱 Phase 4A11A-2B: レイヤー移動の基本安定化（ver.1.1 強化版）
+🧱 Phase 4A11A-2: レイヤー移動の基本安定化（ver.1.1 強化版）
 🎯 目的
 マウスドラッグによる平行移動を modelMatrix ベースで実装。累積誤差・描画座標のズレ・変換の不一致を排除
 
