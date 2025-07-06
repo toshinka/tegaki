@@ -1,17 +1,24 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.10.0 (Phase 4A11A - Stabilize ModelMatrix Translation)
+ * Version: 3.0.0 (Phase 4A11A - Stabilized Matrix Transform)
  *
- * - 修正 (Phase 4A11A-1, 4A11A):
+ * - 修正：
  * - 「Phase 4A11A〜G WebGLレイヤー移動 安定化フェーズ 再設計指示書」に基づき、
- * Phase 4A11A-1および4A11Aの改修を実施。
- * - 1. Phase 4A11-Preで無効化したレイヤー移動機能を、modelMatrixベースで再実装。
- * - 2. onPointerDownで移動開始時のclientX/YとmodelMatrixを保存。
- * - 3. onPointerMoveでは、保存したoriginalModelMatrixを基に毎回新しい行列を計算。
- * これにより、移動量の累積による誤差（吹き飛びバグ）を防止する。
- * - 4. 異常な移動量を検知するガード節を導入。
- * - 5. getCanvasCoordinatesに関数の結果をコンソール出力するログを追加し、座標系の統一を確認。
+ * Phase 4A11A-1 および 4A11A の改修を実施。
+ * - 従来のtransformプロパティベースの移動処理に代わり、modelMatrixを直接操作する
+ * 新しいレイヤー移動機能を実装。
+ * - onPointerDown:
+ * - 移動開始時のマウス座標(clientX, clientY)を記録。 
+ * - 移動対象レイヤーのmodelMatrixをcloneして退避。これにより、以降の計算で元の値が
+ * 汚染されるのを防ぐ。 
+ * - onPointerMove:
+ * - 移動開始点からの差分(dx, dy)のみを計算。 
+ * - 毎回、退避しておいた元のmodelMatrixからcloneして新しい行列を生成。 
+ * - 新しく生成した行列に対して、差分(dx, dy)だけの移動を適用。 
+ * - 計算結果の行列をレイヤーのmodelMatrixに「上書き」する。 
+ * - この「毎回リセットして差分適用」方式により、計算誤差の累積による「吹き飛び」バグを根絶する。
+ * - デバッグ機能として、座標変換のログ [cite: 2] や行列情報の詳細ログ [cite: 7, 8] を追加。
  * ===================================================================================
  */
 
@@ -20,7 +27,6 @@ import { TopBarManager, LayerUIManager } from './ui/ui-manager.js';
 import { ShortcutManager } from './ui/shortcut-manager.js';
 import { BucketTool } from './tools/toolset.js';
 import { RenderingBridge } from './core/rendering/rendering-bridge.js';
-import { translate } from './core/utils/transform-utils.js'; // ★ Phase 4A11A: translate関数をインポート
 
 // --- Core Logic Classes ---
 
@@ -81,12 +87,12 @@ class CanvasManager {
         
         this.isVDown = false; this.isShiftDown = false;
         
-        // ★ Phase 4A11A: 新しいmodelMatrixベースの移動処理用のプロパティ
-        this.isLayerTransforming = false;
-        this.transformTargetLayer = null;
+        // --- Phase 4A11A: 新しいmodelMatrixベースの移動処理用のプロパティ ---
+        this.isLayerMoving = false; // 新しいレイヤー移動中フラグ
+        this.transformTargetLayer = null; // 移動対象のレイヤー
         this.originalModelMatrix = null; // 移動開始時の行列を保存
-        this.transformStartX = 0;
-        this.transformStartY = 0;
+        this.transformStartX = 0; // 移動開始時のマウスX座標
+        this.transformStartY = 0; // 移動開始時のマウスY座標
         
         this.currentTool = 'pen';
         this.currentColor = '#800000'; this.currentSize = 1; this.lastPoint = null;
@@ -121,21 +127,23 @@ class CanvasManager {
     onPointerDown(e) {
         if (e.button !== 0) return;
         
-        // ★ Phase 4A11A: 新しいmodelMatrixベースの移動処理トリガー
-        // Vキーが押されているか、移動ツールが選択されている場合に処理を開始
-        if (this.isVDown || this.currentTool === 'move') {
-            const activeLayer = this.app.layerManager.getCurrentLayer();
-            // 背景レイヤーは移動させない
-            if (activeLayer && this.app.layerManager.layers.indexOf(activeLayer) > 0) {
-                this.isLayerTransforming = true;
-                this.transformTargetLayer = activeLayer;
-                this.transformStartX = e.clientX; // [cite: 7]
-                this.transformStartY = e.clientY; // [cite: 7]
-                // 移動開始時の行列を複製して保存
-                this.originalModelMatrix = glMatrix.mat4.clone(activeLayer.modelMatrix); // 
-                e.preventDefault();
-                return;
-            }
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+
+        // --- Phase 4A11A: 新しいレイヤー移動処理の開始トリガー ---
+        // Vキーが押されていて、かつアクティブなレイヤーが背景以外の場合
+        if (this.isVDown && activeLayer && this.app.layerManager.layers.indexOf(activeLayer) > 0) {
+            this.isLayerMoving = true;
+            this.transformTargetLayer = activeLayer;
+            
+            // 座標の初期取得 
+            this.transformStartX = e.clientX;
+            this.transformStartY = e.clientY;
+
+            // 【重要】layer.modelMatrix を clone して記録（元を絶対に触らないこと） 
+            this.originalModelMatrix = glMatrix.mat4.clone(activeLayer.modelMatrix);
+
+            e.preventDefault(); 
+            return;
         }
 
         if (this.isSpaceDown) {
@@ -147,7 +155,6 @@ class CanvasManager {
         const coords = this.getCanvasCoordinates(e);
         if (!coords) return;
         
-        const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
 
         this._resetDirtyRect();
@@ -179,28 +186,35 @@ class CanvasManager {
     }
     
     onPointerMove(e) {
-        // ★ Phase 4A11A: 新しいmodelMatrixベースの移動処理
-        if (this.isLayerTransforming) {
-            const dx = e.clientX - this.transformStartX; // [cite: 8]
-            const dy = e.clientY - this.transformStartY; // [cite: 8]
+        // --- Phase 4A11A: 新しいレイヤー移動処理 ---
+        if (this.isLayerMoving) {
+            if (!this.transformTargetLayer) return;
 
-            // 異常な移動量を検知して処理を中断するガード節 
-            if (Math.abs(dx) > 2000 || Math.abs(dy) > 2000) {
-              console.warn("異常な移動量を検出したため、処理を中断しました:", { dx, dy });
+            // dx/dy はあくまで開始時からの差分 
+            const dx = e.clientX - this.transformStartX;
+            const dy = e.clientY - this.transformStartY;
+
+            // 【安全処理】異常値の検出 [cite: 5]
+            if (!isFinite(dx) || !isFinite(dy) || Math.abs(dx) > 2000 || Math.abs(dy) > 2000) {
+              console.warn("異常な移動量を検出したため処理を中断します:", { dx, dy }); [cite: 5]
               return;
             }
 
-            // 毎回、移動開始時の行列をコピーして、そこからの差分で新しい行列を計算する 
-            const newMatrix = glMatrix.mat4.clone(this.originalModelMatrix); 
-
-            // transform-utilsのtranslate関数を使って平行移動を適用
-            // Y軸はWebGLの座標系とCSSの座標系で方向が違うため、-dyとするのが一般的だが
-            // webgl-engine側でY軸反転を吸収しているため、ここでは見た目通りのdyで良い
-            translate(newMatrix, dx, dy);
+            // 【重要】毎回 originalModelMatrix から clone して新行列を生成 
+            const newMatrix = glMatrix.mat4.clone(this.originalModelMatrix);
             
+            // translate のみに差分を加算（累積ではなく差分だけを使うこと）
+            // glMatrix.mat4.translate(out, a, v) -> vはベクトル[x, y, z]
+            glMatrix.mat4.translate(newMatrix, newMatrix, [dx, dy, 0]);
+
+            // layer に反映（上書き）※絶対に += しないこと！ 
             this.transformTargetLayer.modelMatrix = newMatrix;
             
-            this.renderAllLayers(); // プレビューを更新
+            // デバッグログ出力 [cite: 8]
+            this._debugMatrix('newMatrix', newMatrix);
+
+            // プレビューを更新
+            this.renderAllLayers();
             return;
         }
         
@@ -245,12 +259,12 @@ class CanvasManager {
     }
     
     onPointerUp(e) {
-        // ★ Phase 4A11A: 移動処理の終了
-        if (this.isLayerTransforming) {
-            this.isLayerTransforming = false;
+        // --- Phase 4A11A: 新しいレイヤー移動処理の終了 ---
+        if (this.isLayerMoving) {
+            this.isLayerMoving = false;
             this.transformTargetLayer = null;
             this.originalModelMatrix = null;
-            this.saveState(); // 移動を履歴に保存
+            this.saveState(); // 移動が完了したら履歴に保存
         }
         
         if (this.isDrawing) {
@@ -297,6 +311,13 @@ class CanvasManager {
                 this.animationFrameId = null;
             });
         }
+    }
+    
+    // --- Phase 4A11A: デバッグ用行列出力関数 --- [cite: 7]
+    _debugMatrix(label, mat) {
+      const tx = mat[12], ty = mat[13];
+      console.log(`[${label}] matrix:`, mat);
+      console.log(`[${label}] translation: (${tx.toFixed(2)}, ${ty.toFixed(2)})`);
     }
 
     _updateDirtyRect(x, y, radius) {
@@ -357,21 +378,26 @@ class CanvasManager {
             y = y * (this.height / rect.height);
             if (this.viewTransform.flipX === -1) { x = this.width - x; }
             if (this.viewTransform.flipY === -1) { y = this.height - y; }
-            if (x < 0 || x >= this.width || y < 0 || y >= this.height) { return null; }
-            
-            // ★ Phase 4A11A-1: 指示書に基づき、座標確認用のログを追加 
+
+            // --- Phase 4A11A-1: 座標系の統一確認ログ --- [cite: 2]
             console.log("Canvas座標:", { x: x, y: y });
 
+            if (x < 0 || x >= this.width || y < 0 || y >= this.height) { return null; }
             return { x: x, y: y };
         } catch (error) {
             console.warn('座標変換エラー:', error);
             return null;
         }
     }
+    
+    // Phase 4A11-Pre: 旧レイヤー移動関連のメソッドはコメントアウトされたまま
+    /*
+    startLayerTransform(e = null) { ... }
+    applyLayerTransformPreview() { ... }
+    commitLayerTransform() { ... }
+    */
 
     saveState() {
-        if(this.isLayerTransforming) return; // 移動中は保存しない
-        
         const state = {
             layers: this.app.layerManager.layers.map(layer => ({
                 name: layer.name,
@@ -383,7 +409,8 @@ class CanvasManager {
                     layer.imageData.width,
                     layer.imageData.height
                 ),
-                modelMatrix: new Float32Array(layer.modelMatrix) // コピーを保存
+                // modelMatrixはFloat32Arrayとしてコピーを保存
+                modelMatrix: new Float32Array(layer.modelMatrix)
             })),
             activeLayerIndex: this.app.layerManager.activeLayerIndex
         };
@@ -399,7 +426,7 @@ class CanvasManager {
             layer.opacity = layerData.opacity ?? 100;
             layer.blendMode = layerData.blendMode ?? 'normal';
             layer.imageData.data.set(layerData.imageData.data);
-
+            
             if (layerData.modelMatrix) {
                 layer.modelMatrix.set(layerData.modelMatrix);
             }
@@ -460,14 +487,7 @@ class CanvasManager {
         link.download = 'merged_image.png';
         link.click();
     }
-    updateCursor() { 
-        let cursor = 'crosshair'; 
-        if (this.isVDown || this.currentTool === 'move') cursor = 'move'; 
-        if (this.isSpaceDown) cursor = 'grab'; 
-        if (this.currentTool === 'eraser') cursor = 'cell'; 
-        if (this.currentTool === 'bucket') cursor = 'copy'; 
-        this.canvasArea.style.cursor = cursor; 
-    }
+    updateCursor() { let cursor = 'crosshair'; if (this.isVDown) cursor = 'move'; if (this.isSpaceDown) cursor = 'grab'; if (this.currentTool === 'eraser') cursor = 'cell'; if (this.currentTool === 'bucket') cursor = 'copy'; this.canvasArea.style.cursor = cursor; }
     applyViewTransform() { const t = this.viewTransform; this.canvasContainer.style.transform = `translate(${t.left}px, ${t.top}px) scale(${t.scale * t.flipX}, ${t.scale * t.flipY}) rotate(${t.rotation}deg)`; }
     flipHorizontal() { this.viewTransform.flipX *= -1; this.applyViewTransform(); }
     flipVertical() { this.viewTransform.flipY *= -1; this.applyViewTransform(); }
@@ -477,6 +497,7 @@ class CanvasManager {
     handleWheel(e) { e.preventDefault(); if (e.shiftKey) { this.rotate(-e.deltaY * 0.2); } else { this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); } }
 }
 
+// LayerManager, PenSettingsManager, ColorManager, ToolManager, ToshinkaTegakiTool クラスは変更ありません
 class LayerManager { 
     constructor(app) { this.app = app; this.layers = []; this.activeLayerIndex = -1; this.width = 344; this.height = 135; this.mergeCanvas = document.createElement('canvas'); this.mergeCanvas.width = this.width; this.mergeCanvas.height = this.height; this.mergeCtx = this.mergeCanvas.getContext('2d'); } 
     setupInitialLayers() { const bgLayer = new Layer('背景', this.width, this.height); bgLayer.fill('#f0e0d6'); this.layers.push(bgLayer); const drawingLayer = new Layer('レイヤー 1', this.width, this.height); this.layers.push(drawingLayer); this.switchLayer(1); this.app.canvasManager.renderAllLayers(); this.app.canvasManager.saveState(); } 
