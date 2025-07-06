@@ -13,6 +13,10 @@
  * ===================================================================================
  */
 
+// 📌 1. gl-matrix ライブラリの関数を使うため、これを冒頭に追加
+const mat4 = window.glMatrix.mat4;
+const vec4 = window.glMatrix.vec4;
+
 // --- Module Imports ---
 // 既存のインポート
 import { TopBarManager, LayerUIManager } from './ui/ui-manager.js';
@@ -147,10 +151,18 @@ class CanvasManager {
                 this.isVDown = true;
                 this.updateCursor();
             }
+            if (e.key === " ") {
+                this.isSpaceDown = true;
+                this.updateCursor();
+            }
         });
         document.addEventListener("keyup", (e) => {
             if (e.key === "v" || e.key === "V") {
                 this.isVDown = false;
+                this.updateCursor();
+            }
+            if (e.key === " ") {
+                this.isSpaceDown = false;
                 this.updateCursor();
             }
         });
@@ -254,6 +266,7 @@ class CanvasManager {
                     
                     console.log("🔧 レイヤー移動", dx, dy, activeLayer.modelMatrix);
                     
+                    // 📌 2. レイヤー移動時に即座に再描画を実行
                     this.renderAllLayers();
                 }
             }
