@@ -1,15 +1,18 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.9.6 (Phase 4A11B - Final Bake & Coordinate Fix)
+ * Version: 2.9.5 (Phase 4A11B - Final Bake & Manager Fix)
  *
- * - 修正 (Phase 4A11B-5):
- * - 1. レイヤー移動時の座標ズレ問題を修正:
- * - Claudeからの指摘に基づき、onPointerMove内のレイヤー移動処理を修正。
- * - dx, dyにSUPER_SAMPLING_FACTORを乗算していた二重変換処理を撤廃。
- * これにより、レイヤー移動を繰り返しても描画座標がズレる問題を根本的に解決。
- * - 2. マネージャ参照の完全統一: (前回修正済み)
- * - 3. 「変形の確定」機能の司令塔を実装: (前回修正済み)
+ * - 修正 (Phase 4A11B):
+ * - 1. マネージャ参照の完全統一:
+ * - CanvasManager内でツール、色、サイズなどを参照する際、常に最新のマネージャ
+ * (this.app.toolManagerなど)を参照するように修正。色が黒に固定される問題を解決。
+ * - 2. 「変形の確定」機能の司令塔を実装:
+ * - CanvasManagerに `bakeActiveLayerTransform` メソッドを追加。
+ * - 3. レイヤー移動ツールの役割変更:
+ * - 左ツールバーの「レイヤー移動」ボタンを押した際に、この `bakeActiveLayerTransform`
+ * が呼び出されるようにToolManagerとの連携を修正。Vキー移動は一時移動、
+ * ボタンは確定、と役割を分担。
  * ===================================================================================
  */
 
@@ -249,12 +252,12 @@ class CanvasManager {
             const dx = coords.x - this.transformStartX;
             const dy = coords.y - this.transformStartY;
             
-            // 🚀【バグ修正点】
-            // Claudeの指摘通り、ここでSUPER_SAMPLING_FACTORを乗算していたのが座標ズレの根本原因でした。
-            // getCanvasCoordinatesで得られる座標は既にスケーリング済みのため、ここでの乗算は不要です。
-            // この二重変換を削除し、dxとdyを直接使うように修正します。[cite: 2]
+            const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
+            const adjustedDx = dx * SUPER_SAMPLING_FACTOR;
+            const adjustedDy = dy * SUPER_SAMPLING_FACTOR;
+
             const newMatrix = mat4.clone(this.originalModelMatrix);
-            mat4.translate(newMatrix, newMatrix, [dx, dy, 0]); // 修正: adjustedDx, adjustedDy を dx, dy に変更 
+            mat4.translate(newMatrix, newMatrix, [adjustedDx, adjustedDy, 0]);
             activeLayer.modelMatrix = newMatrix;
             
             this.renderAllLayers();
