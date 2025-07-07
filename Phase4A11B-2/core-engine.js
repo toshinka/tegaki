@@ -1,29 +1,19 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.9.1 (Phase 4A11-Refactor)
+ * Version: 2.9.2 (Phase 4A11B - Speed & Y-Axis Fix)
  *
- * - 修正：
- * - 巨大化した core-engine.js の責務を分離するため、関連クラスを外部モジュールに分割。
- * - LayerManager -> layer-manager/layer-manager.js
- * - PenSettingsManager -> ui/pen-settings-manager.js
- * - ColorManager -> ui/color-manager.js
- * - ToolManager -> ui/tool-manager.js
- * - 上記モジュールをインポートして利用するように変更。
- * * Phase4A11A-1 改修:
- * - glMatrix定義追加
- * - modelMatrix の明示初期化
- * - isValidMatrix() 関数追加
- * - transformWorldToLocal() 関数追加
- * - Vキーによるレイヤー移動モード実装
- * - 座標変換の正常化
- * * Phase4A11A-1Γ 改修:
- * - modelMatrix の保存・復元処理を修正
- * - Float32Array(16) 形式の正確な保持
- * - レイヤー移動時の画像飛びバグを修正
- * * Phase4A11A-1Δ 改修:
- * - isValidMatrix() 関数のFloat32Array対応修正
- * - 正常な行列の誤判定を解消
+ * - 修正 (Phase 4A11B):
+ * - 「Phase4A11B 指示書」に基づき、レイヤー移動とペン入力の問題を修正。
+ * - 1. レイヤー移動速度の修正:
+ * - onPointerMove内のレイヤー移動処理において、マウスの移動量(dx, dy)に
+ * WebGLエンジンのスーパーサンプリング係数(SUPER_SAMPLING_FACTOR)を乗算。
+ * - これにより、画面上のドラッグ距離とレイヤーの移動距離が一致するようになり、
+ * 移動速度が半分になる問題を解決しました。
+ * - 2. ペン入力の反転問題の修正:
+ * - この問題は主にwebgl-engine.js側でのY軸座標系の統一によって解決されています。
+ * 本ファイルでは、座標変換関数(transformWorldToLocal)や描画処理でY軸を反転させる
+ * コードが含まれていないことを確認し、WebGL側の修正と整合性をとりました。
  * ===================================================================================
  */
 
@@ -70,12 +60,13 @@ function transformWorldToLocal(worldX, worldY, modelMatrix) {
     const worldPos = vec4.fromValues(worldX, worldY, 0, 1);
     const localPos = vec4.create();
     vec4.transformMat4(localPos, worldPos, invMatrix);
+    // ✅ 指示書通り、Y軸は反転させずにそのまま返す
     return { x: localPos[0], y: localPos[1] };
 }
 
-// ✏️ 修正: canvas.styleとcanvas.width/heightのズレを補正する
 function getCanvasCoordinates(e, canvas) {
     const rect = canvas.getBoundingClientRect();
+    // ✅ 指示書に基づき、CSSサイズとcanvas解像度のスケールを補正 [cite: 14]
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
     return {
@@ -128,17 +119,17 @@ class CanvasManager {
         this.renderingBridge = new RenderingBridge(this.displayCanvas);
 
         this.compositionData = new ImageData(this.width, this.height);
-        this.isDrawing = false; 
-        this.isPanning = false; 
+        this.isDrawing = false;
+        this.isPanning = false;
         this.isSpaceDown = false;
         this.isLayerMoving = false;
         
-        this.isVDown = false; 
+        this.isVDown = false;
         this.isShiftDown = false;
         
         this.currentTool = 'pen';
-        this.currentColor = '#800000'; 
-        this.currentSize = 1; 
+        this.currentColor = '#800000';
+        this.currentSize = 1;
         this.lastPoint = null;
         
         // レイヤー移動用の変数
@@ -153,15 +144,15 @@ class CanvasManager {
         this.pressureHistory = [];
         this.maxPressureHistory = 5;
 
-        this.history = []; 
+        this.history = [];
         this.historyIndex = -1;
 
         this.dirtyRect = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
         this.animationFrameId = null;
 
-        this.dragStartX = 0; 
-        this.dragStartY = 0; 
-        this.canvasStartX = 0; 
+        this.dragStartX = 0;
+        this.dragStartY = 0;
+        this.canvasStartX = 0;
         this.canvasStartY = 0;
         this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
         
@@ -213,12 +204,12 @@ class CanvasManager {
         }
         
         if (this.isSpaceDown) {
-            this.dragStartX = e.clientX; 
-            this.dragStartY = e.clientY; 
+            this.dragStartX = e.clientX;
+            this.dragStartY = e.clientY;
             this.isPanning = true;
-            this.canvasStartX = this.viewTransform.left; 
+            this.canvasStartX = this.viewTransform.left;
             this.canvasStartY = this.viewTransform.top;
-            e.preventDefault(); 
+            e.preventDefault();
             return;
         }
         
@@ -262,7 +253,7 @@ class CanvasManager {
         this._updateDirtyRect(local.x, local.y, size);
         
         this.renderingBridge.drawCircle(
-            local.x, local.y, size / 2, 
+            local.x, local.y, size / 2,
             hexToRgba(this.currentColor), this.currentTool === 'eraser',
             activeLayer
         );
@@ -282,42 +273,51 @@ class CanvasManager {
         }
         
         if (this.isPanning) {
-            const dx = e.clientX - this.dragStartX; 
+            const dx = e.clientX - this.dragStartX;
             const dy = e.clientY - this.dragStartY;
-            this.viewTransform.left = this.canvasStartX + dx; 
+            this.viewTransform.left = this.canvasStartX + dx;
             this.viewTransform.top = this.canvasStartY + dy;
-            this.applyViewTransform(); 
+            this.applyViewTransform();
             return;
         }
         
-        // レイヤー移動処理
+        // 🚀【修正箇所】レイヤー移動処理
         if (this.isLayerMoving) {
             const coords = getCanvasCoordinates(e, this.displayCanvas);
             const dx = coords.x - this.transformStartX;
             const dy = coords.y - this.transformStartY;
             if (!isFinite(dx) || !isFinite(dy)) return;
+            
+            // WebGLエンジンは内部的に高解像度（スーパーサンプリング）で描画しているため、
+            // 画面上のマウス移動量 (dx, dy) をそのまま使うと移動量が半分になってしまいます。
+            // そこで、WebGLエンジンのスーパーサンプリング係数を取得し、移動量を補正します。
+            const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
+            const adjustedDx = dx * SUPER_SAMPLING_FACTOR;
+            const adjustedDy = dy * SUPER_SAMPLING_FACTOR;
+
             const newMatrix = mat4.clone(this.originalModelMatrix);
-            mat4.translate(newMatrix, newMatrix, [dx, dy, 0]);
+            // 補正した移動量 (adjustedDx, adjustedDy) を使って行列を更新します。 
+            mat4.translate(newMatrix, newMatrix, [adjustedDx, adjustedDy, 0]);
             activeLayer.modelMatrix = newMatrix;
-            activeLayer.gpuDirty = true;
-            console.log("🔄 レイヤー移動:", { dx, dy, matrix: Array.from(newMatrix) });
-            this.renderAllLayers();
+            
+            // console.log(`🔄 レイヤー移動: factor=${SUPER_SAMPLING_FACTOR}, dx=${dx.toFixed(2)}, dy=${dy.toFixed(2)} -> adjustedDx=${adjustedDx.toFixed(2)}, adjustedDy=${adjustedDy.toFixed(2)}`);
+            
+            this.renderAllLayers(); // リアルタイムで描画を更新
             return;
         }
 
         if (!this.isDrawing) return;
-
+        
         const coords = getCanvasCoordinates(e, this.displayCanvas);
         if (!coords) {
             this.lastPoint = null;
             return;
         }
-
+        
         // 座標変換: ワールド座標からローカル座標へ
         const local = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
-
+        
         if (!activeLayer.visible) return;
-
         if (!this.lastPoint) {
             this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
             this.lastPoint = { ...local, pressure: e.pressure > 0 ? e.pressure : 0.5 };
@@ -329,74 +329,60 @@ class CanvasManager {
         if (this.pressureHistory.length > this.maxPressureHistory) {
             this.pressureHistory.shift();
         }
-
+        
         const lastSize = this.calculatePressureSize(this.currentSize, this.lastPoint.pressure);
         const currentSize = this.calculatePressureSize(this.currentSize, currentPressure);
-
         this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, lastSize);
         this._updateDirtyRect(local.x, local.y, currentSize);
 
         this.renderingBridge.drawLine(
             this.lastPoint.x, this.lastPoint.y, local.x, local.y,
             this.currentSize, hexToRgba(this.currentColor), this.currentTool === 'eraser',
-            this.lastPoint.pressure, currentPressure, this.calculatePressureSize.bind(this),
+            this.lastPoint.pressure, currentPressure,
+            this.calculatePressureSize.bind(this),
             activeLayer
         );
+        
         this.lastPoint = { ...local, pressure: currentPressure };
         this._requestRender();
     }
-
+    
     onPointerUp(e) {
         if (this.isDrawing) {
             this.isDrawing = false;
+            
             if (this.animationFrameId) {
                 cancelAnimationFrame(this.animationFrameId);
                 this.animationFrameId = null;
             }
+            
             this._renderDirty();
+
             const activeLayer = this.app.layerManager.getCurrentLayer();
             if (activeLayer) {
                 this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
             }
+            
             this.lastPoint = null;
             this.saveState();
         }
+        
         // レイヤー移動終了
         if (this.isLayerMoving) {
             this.isLayerMoving = false;
             console.log("🔴 レイヤー移動終了");
             this.saveState();
         }
+
         this.isPanning = false;
         if (document.documentElement.hasPointerCapture(e.pointerId)) {
             document.documentElement.releasePointerCapture(e.pointerId);
         }
     }
 
-    _resetDirtyRect() {
-        this.dirtyRect = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-    }
-
-    _updateDirtyRect(x, y, size) {
-        this.dirtyRect.minX = Math.min(this.dirtyRect.minX, x - size);
-        this.dirtyRect.minY = Math.min(this.dirtyRect.minY, y - size);
-        this.dirtyRect.maxX = Math.max(this.dirtyRect.maxX, x + size);
-        this.dirtyRect.maxY = Math.max(this.dirtyRect.maxY, y + size);
-    }
-    
-    _requestRender() {
-        if (!this.animationFrameId) {
-            this.animationFrameId = requestAnimationFrame(() => {
-                this._renderDirty();
-                this.animationFrameId = null;
-            });
-        }
-    }
-
     _renderDirty() {
         const rect = this.dirtyRect;
-        if (rect.minX > rect.maxX) return; // ダーティ領域が不正な場合は何もしない
-
+        if (rect.minX > rect.maxX) return;
         this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, rect);
         this.renderingBridge.renderToDisplay(this.compositionData, rect);
     }
@@ -406,110 +392,245 @@ class CanvasManager {
         this._requestRender();
     }
 
-    calculatePressureSize(baseSize, pressure) {
-        if (!this.pressureSettings.dynamicRange) {
-            return baseSize;
+    _requestRender() {
+        if (!this.animationFrameId) {
+            this.animationFrameId = requestAnimationFrame(() => {
+                this._renderDirty();
+                this.animationFrameId = null;
+            });
         }
-
-        const clampedPressure = Math.max(this.pressureSettings.minPressure, Math.min(pressure, this.pressureSettings.maxPressure));
-        const normalizedPressure = (clampedPressure - this.pressureSettings.minPressure) / (this.pressureSettings.maxPressure - this.pressureSettings.minPressure);
-        const adjustedPressure = Math.pow(normalizedPressure, this.pressureSettings.curve) * this.pressureSettings.sensitivity;
-
-        const sizeRange = baseSize * (1 - this.pressureSettings.minSizeRatio);
-        return baseSize * this.pressureSettings.minSizeRatio + sizeRange * adjustedPressure;
     }
 
+    _updateDirtyRect(x, y, radius) {
+        const margin = Math.ceil(radius) + 2;
+        this.dirtyRect.minX = Math.min(this.dirtyRect.minX, x - margin);
+        this.dirtyRect.minY = Math.min(this.dirtyRect.minY, y - margin);
+        this.dirtyRect.maxX = Math.max(this.dirtyRect.maxX, x + margin);
+        this.dirtyRect.maxY = Math.max(this.dirtyRect.maxY, y + margin);
+    }
+    
+    _resetDirtyRect() {
+        this.dirtyRect = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    }
+
+    calculatePressureSize(baseSizeInput, pressure) {
+        const baseSize = Math.max(0.1, baseSizeInput);
+        let normalizedPressure = Math.max(0, Math.min(1, pressure || 0));
+        
+        const tempHistory = [...this.pressureHistory, normalizedPressure];
+        if (tempHistory.length > this.maxPressureHistory) tempHistory.shift();
+        const smoothedPressure = tempHistory.reduce((sum, p) => sum + p, 0) / tempHistory.length;
+
+        let finalPressure = smoothedPressure;
+
+        const historyLength = this.pressureHistory.length;
+        if (this.isDrawing && historyLength <= this.maxPressureHistory) {
+            const dampingFactor = historyLength / this.maxPressureHistory;
+            const initialDamping = 0.2 + Math.pow(dampingFactor, 3) * 0.8;
+            finalPressure *= initialDamping;
+        }
+
+        if (this.pressureSettings.dynamicRange) {
+            const minHist = Math.min(...tempHistory, finalPressure);
+            const maxHist = Math.max(...tempHistory, finalPressure);
+            const range = maxHist - minHist;
+            if (range > 0.1) {
+                finalPressure = (finalPressure - minHist) / range;
+            }
+        }
+        
+        const curve = this.pressureSettings.curve;
+        const curvedPressure = Math.pow(finalPressure, curve);
+        
+        const minSize = baseSize * this.pressureSettings.minSizeRatio;
+        const maxSize = baseSize;
+        const finalSize = minSize + (maxSize - minSize) * curvedPressure;
+        
+        return Math.max(0.1, finalSize);
+    }
+
+    // このメソッドはクラス内で重複していましたが、 getCanvasCoordinates(e, canvas) グローバル関数に統一されました
+    // getCanvasCoordinates(e) { ... }
+
     saveState() {
-        // 現在のレイヤーの状態を保存
-        // TODO: レイヤー全体ではなく、ダーティ矩形領域のみを保存するように最適化
-        const currentState = this.app.layerManager.layers.map(layer => ({
-            name: layer.name,
-            visible: layer.visible,
-            opacity: layer.opacity,
-            blendMode: layer.blendMode,
-            imageData: new ImageData(layer.imageData.data, layer.imageData.width, layer.imageData.height), // ディープコピー
-            modelMatrix: mat4.clone(layer.modelMatrix) // modelMatrix も保存
-        }));
-
+        // 💾 modelMatrix の保存処理を修正
+        const state = {
+            layers: this.app.layerManager.layers.map(layer => {
+                // modelMatrix の有効性チェック
+                if (!isValidMatrix(layer.modelMatrix)) {
+                    console.warn("⚠ saveState: invalid modelMatrix detected, resetting");
+                    layer.modelMatrix = mat4.create();
+                }
+                
+                // Float32Array を 16要素配列に変換して保存
+                const savedModelMatrix = Array.from(layer.modelMatrix);
+                // console.log("💾 modelMatrix saved:", savedModelMatrix);
+                
+                return {
+                    name: layer.name,
+                    visible: layer.visible,
+                    opacity: layer.opacity,
+                    blendMode: layer.blendMode,
+                    imageData: new ImageData(
+                        new Uint8ClampedArray(layer.imageData.data),
+                        layer.imageData.width,
+                        layer.imageData.height
+                    ),
+                    modelMatrix: savedModelMatrix
+                };
+            }),
+            activeLayerIndex: this.app.layerManager.activeLayerIndex
+        };
+        
         this.history = this.history.slice(0, this.historyIndex + 1);
-        this.history.push(currentState);
-        this.historyIndex = this.history.length - 1;
+        this.history.push(state);
+        this.historyIndex++;
+    }
 
-        console.log("History saved. Index:", this.historyIndex, "Total:", this.history.length);
+    restoreState(state) {
+        this.app.layerManager.layers = state.layers.map(layerData => {
+            const layer = new Layer(layerData.name, layerData.imageData.width, layerData.imageData.height);
+            layer.visible = layerData.visible;
+            layer.opacity = layerData.opacity ?? 100;
+            layer.blendMode = layerData.blendMode ?? 'normal';
+            layer.imageData.data.set(layerData.imageData.data);
+            
+            // 📥 modelMatrix の復元処理を修正
+            // まず初期化
+            layer.modelMatrix = mat4.create();
+            
+            // 保存されたデータが有効な16要素配列かチェック
+            if (layerData.modelMatrix && Array.isArray(layerData.modelMatrix) && layerData.modelMatrix.length === 16) {
+                // 配列からFloat32Arrayに変換
+                layer.modelMatrix = new Float32Array(layerData.modelMatrix);
+                // console.log("📥 modelMatrix restored:", layer.modelMatrix);
+            } else {
+                // データが壊れている場合は単位行列で初期化
+                console.warn("⚠ restoreState: invalid saved modelMatrix, using identity");
+                layer.modelMatrix = mat4.create();
+            }
+            
+            layer.gpuDirty = true;
+            return layer;
+        });
+        
+        this.app.layerManager.switchLayer(state.activeLayerIndex);
+        this.renderAllLayers();
     }
 
     undo() {
         if (this.historyIndex > 0) {
             this.historyIndex--;
-            this.restoreState();
-            console.log("Undo. Index:", this.historyIndex);
-        } else {
-            console.log("No more undo history.");
+            this.restoreState(this.history[this.historyIndex]);
         }
     }
-
+    
     redo() {
         if (this.historyIndex < this.history.length - 1) {
             this.historyIndex++;
-            this.restoreState();
-            console.log("Redo. Index:", this.historyIndex);
-        } else {
-            console.log("No more redo history.");
+            this.restoreState(this.history[this.historyIndex]);
         }
     }
-
-    restoreState() {
-        if (this.history.length === 0) return;
-
-        const savedState = this.history[this.historyIndex];
-        this.app.layerManager.layers = savedState.map(savedLayer => {
-            const newLayer = new Layer(savedLayer.name, savedLayer.imageData.width, savedLayer.imageData.height);
-            newLayer.visible = savedLayer.visible;
-            newLayer.opacity = savedLayer.opacity;
-            newLayer.blendMode = savedLayer.blendMode;
-            newLayer.imageData = new ImageData(savedLayer.imageData.data, savedLayer.imageData.width, savedLayer.imageData.height);
-            newLayer.modelMatrix = mat4.clone(savedLayer.modelMatrix); // modelMatrix も復元
-            newLayer.gpuDirty = true; // GPU側もダーティにする
-            return newLayer;
-        });
-
-        this.app.layerManager.currentLayerIndex = 0; // 必要に応じて調整
-        this.renderAllLayers();
-        this.app.layerUIManager.updateLayerList(this.app.layerManager.layers); // UIも更新
+    
+    setCurrentTool(tool) {
+        this.currentTool = tool;
+        this.updateCursor();
     }
-
+    
+    setCurrentColor(color) {
+        this.currentColor = color;
+    }
+    
+    setCurrentSize(size) {
+        this.currentSize = size;
+    }
+    
+    clearCanvas() {
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+        if (activeLayer) {
+            activeLayer.clear();
+            if (this.app.layerManager.activeLayerIndex === 0) {
+                activeLayer.fill('#f0e0d6');
+            }
+            this.renderAllLayers();
+            this.saveState();
+        }
+    }
+    
     exportMergedImage() {
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = this.width;
-        tempCanvas.height = this.height;
-        const tempCtx = tempCanvas.getContext('2d');
-
-        // WebGL Engineから最終的な合成結果をImageDataとして取得
-        const mergedImageData = new ImageData(this.width, this.height);
-        this.renderingBridge.compositeLayers(this.app.layerManager.layers, mergedImageData, { minX: 0, minY: 0, maxX: this.width, maxY: this.height });
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = this.width;
+        exportCanvas.height = this.height;
+        const exportCtx = exportCanvas.getContext('2d');
         
-        tempCtx.putImageData(mergedImageData, 0, 0);
+        const fullRect = { minX: 0, minY: 0, maxX: this.width, maxY: this.height };
+        this.renderingBridge.compositeLayers(this.app.layerManager.layers, this.compositionData, fullRect);
 
-        const dataURL = tempCanvas.toDataURL('image/png');
-        const a = document.createElement('a');
-        a.href = dataURL;
-        a.download = 'toshinka_tegaki_tool_merged.png';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        console.log("画像をエクスポートしました。");
-    }
+        const gl = this.renderingBridge.currentEngine?.gl;
+        if (gl) {
+             const pixels = new Uint8Array(this.width * this.height * 4);
+             this.renderingBridge.renderToDisplay(null, fullRect);
+             gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+             
+             const correctedPixels = new Uint8ClampedArray(this.width * this.height * 4);
+             for (let y = 0; y < this.height; y++) {
+                 const s = y * this.width * 4;
+                 const d = (this.height - 1 - y) * this.width * 4;
+                 correctedPixels.set(pixels.subarray(s, s + this.width * 4), d);
+             }
+             const finalImageData = new ImageData(correctedPixels, this.width, this.height);
+             exportCtx.putImageData(finalImageData, 0, 0);
 
-    updateCursor() {
-        if (this.isSpaceDown || this.isPanning) {
-            this.canvasArea.style.cursor = 'grab';
-        } else if (this.isVDown || this.isLayerMoving) {
-            this.canvasArea.style.cursor = 'move';
         } else {
-            this.canvasArea.style.cursor = 'crosshair';
+            console.error("WebGL context not available for export.");
         }
+        
+        const dataURL = exportCanvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.href = dataURL;
+        link.download = 'merged_image.png';
+        link.click();
     }
-
+    
+    updateCursor() {
+        let cursor = 'crosshair';
+        if (this.isVDown) cursor = 'move';
+        if (this.isSpaceDown) cursor = 'grab';
+        if (this.currentTool === 'eraser') cursor = 'cell';
+        if (this.currentTool === 'bucket') cursor = 'copy';
+        this.canvasArea.style.cursor = cursor;
+    }
+    
+    applyViewTransform() {
+        const t = this.viewTransform;
+        this.canvasContainer.style.transform = `translate(${t.left}px, ${t.top}px) scale(${t.scale * t.flipX}, ${t.scale * t.flipY}) rotate(${t.rotation}deg)`;
+    }
+    
+    flipHorizontal() {
+        this.viewTransform.flipX *= -1;
+        this.applyViewTransform();
+    }
+    
+    flipVertical() {
+        this.viewTransform.flipY *= -1;
+        this.applyViewTransform();
+    }
+    
+    zoom(factor) {
+        this.viewTransform.scale = Math.max(0.1, this.viewTransform.scale * factor);
+        this.applyViewTransform();
+    }
+    
+    rotate(degrees) {
+        this.viewTransform.rotation = (this.viewTransform.rotation + degrees) % 360;
+        this.applyViewTransform();
+    }
+    
+    resetView() {
+        this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
+        this.applyViewTransform();
+    }
+    
     handleWheel(e) {
         e.preventDefault();
         if (e.shiftKey) {
@@ -518,10 +639,9 @@ class CanvasManager {
             this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05);
         }
     }
-    
-    // ✨ LayerManager, PenSettingsManager, ColorManager, ToolManager のクラス定義はここからゴッソリ削除されました。
-
 }
+
+// ✨ LayerManager, PenSettingsManager, ColorManager, ToolManager のクラス定義はここからゴッソリ削除されました。
 
 class ToshinkaTegakiTool {
     constructor() {
@@ -540,17 +660,14 @@ class ToshinkaTegakiTool {
         this.shortcutManager.initialize();
         this.layerManager.setupInitialLayers();
         this.toolManager.setTool('pen');
-        this.canvasManager.renderAllLayers();
+        this.penSettingsManager.setSize(1);
+        this.colorManager.setColor(this.colorManager.mainColor);
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    // WebGLがサポートされているかチェック
-    if (!WebGLEngine.isSupported()) {
-        alert("お使いのブラウザはWebGLをサポートしていません。描画ツールが正しく動作しない可能性があります。");
+window.addEventListener('DOMContentLoaded', () => {
+    if (!window.toshinkaTegakiInitialized) {
+        window.toshinkaTegakiInitialized = true;
+        window.toshinkaTegakiTool = new ToshinkaTegakiTool();
     }
-
-    const app = new ToshinkaTegakiTool();
-    window.app = app; // デバッグ用にグローバルに公開
-    console.log("Toshinka Tegaki Tool initialized.");
 });

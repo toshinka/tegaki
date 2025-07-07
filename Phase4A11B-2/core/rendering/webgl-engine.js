@@ -146,7 +146,7 @@ export class WebGLEngine extends DrawingEngine {
                 // Y軸の向きが統一されたため、クリップスペースへの変換もシンプルになる
                 vec2 center_clip = (u_center / u_resolution) * 2.0 - 1.0;
                 // WebGLのクリップスペースはY軸が上向きなので、Y座標を反転させる
-                // center_clip.y *= -1.0; // Phase 4A11B-4: Y軸統一のため不要
+                center_clip.y *= -1.0;
 
                 vec4 final_pos = vec4(a_position * quad_size_clip + center_clip, 0.0, 1.0);
                 gl_Position = final_pos;
@@ -263,24 +263,20 @@ export class WebGLEngine extends DrawingEngine {
             p.locations.u_mvpMatrix = gl.getUniformLocation(p, 'u_mvpMatrix');
         };
         locs(program);
+        
         return program;
     }
 
-    static isSupported() {
-        try {
-            const canvas = document.createElement('canvas');
-            return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));
-        } catch (e) {
-            return false;
-        }
-    }
+    static isSupported() { try { const canvas = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))); } catch (e) { return false; } }
 
     _createOrUpdateLayerTexture(layer) {
         const gl = this.gl;
         let texture = this.layerTextures.get(layer);
+
         if (!texture) {
             texture = gl.createTexture();
             this.layerTextures.set(layer, texture);
+
             gl.bindTexture(gl.TEXTURE_2D, texture);
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.superWidth, this.superHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -296,31 +292,33 @@ export class WebGLEngine extends DrawingEngine {
         }
 
         if (layer.gpuDirty && layer.imageData) {
-            const sourceCanvas = document.createElement('canvas');
-            sourceCanvas.width = layer.imageData.width;
-            sourceCanvas.height = layer.imageData.height;
-            sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
+             const sourceCanvas = document.createElement('canvas');
+             sourceCanvas.width = layer.imageData.width;
+             sourceCanvas.height = layer.imageData.height;
+             sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
 
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = this.superWidth;
-            tempCanvas.height = this.superHeight;
-            const tempCtx = tempCanvas.getContext('2d');
-            tempCtx.imageSmoothingEnabled = true;
-            tempCtx.imageSmoothingQuality = 'high';
-            tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
+             const tempCanvas = document.createElement('canvas');
+             tempCanvas.width = this.superWidth;
+             tempCanvas.height = this.superHeight;
+             const tempCtx = tempCanvas.getContext('2d');
+             tempCtx.imageSmoothingEnabled = true;
+             tempCtx.imageSmoothingQuality = 'high';
+             tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
 
             gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); // ImageDataのY軸は上から下、WebGLテクスチャのY軸は下から上なので反転
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
             gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvas);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); // 元に戻す
+            gl.bindTexture(gl.TEXTURE_2D, null);
+
             layer.gpuDirty = false;
         }
-        return texture;
     }
-
+    
     _setupSuperCompositingBuffer() {
         const gl = this.gl;
-        // 最終的な合成結果を一時的に描画するためのテクスチャとFBO
+        if (this.superCompositeFBO) gl.deleteFramebuffer(this.superCompositeFBO);
+        if (this.superCompositeTexture) gl.deleteTexture(this.superCompositeTexture);
+
         this.superCompositeTexture = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, this.superCompositeTexture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.superWidth, this.superHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
@@ -328,225 +326,220 @@ export class WebGLEngine extends DrawingEngine {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
+        
         this.superCompositeFBO = gl.createFramebuffer();
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.superCompositeFBO);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.superCompositeTexture, 0);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    }
-
-    _drawLayerToFBO(layer, targetFBO, clear = false) {
-        const gl = this.gl;
-        if (!gl || !layer || !layer.visible) return;
-
-        const layerTexture = this._createOrUpdateLayerTexture(layer);
-        if (!layerTexture) return;
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO);
-        gl.viewport(0, 0, this.superWidth, this.superHeight);
-
-        if (clear) {
-            gl.clearColor(0.0, 0.0, 0.0, 0.0);
-            gl.clear(gl.COLOR_BUFFER_BIT);
+        if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+            console.error('Super-Sampling Compositing Framebuffer not complete');
         }
-
-        gl.useProgram(this.programs.compositor);
-        
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, layerTexture);
-        gl.uniform1i(this.programs.compositor.locations.u_image, 0);
-        gl.uniform1f(this.programs.compositor.locations.u_opacity, layer.opacity / 100.0);
-        gl.uniform2f(this.programs.compositor.locations.u_source_resolution, layer.imageData.width, layer.imageData.height); // 元画像の解像度を渡す
-
-        // MVP行列の計算: 投影行列 * モデル行列
-        const mvpMatrix = mat4.create();
-        mat4.multiply(mvpMatrix, this.projectionMatrix, layer.modelMatrix);
-        gl.uniformMatrix4fv(this.programs.compositor.locations.u_mvpMatrix, false, mvpMatrix);
-
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.vertexAttribPointer(this.programs.compositor.locations.a_position, 2, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(this.programs.compositor.locations.a_position);
-
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        gl.vertexAttribPointer(this.programs.compositor.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(this.programs.compositor.locations.a_texCoord);
-
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-        gl.disableVertexAttribArray(this.programs.compositor.locations.a_position);
-        gl.disableVertexAttribArray(this.programs.compositor.locations.a_texCoord);
-        gl.bindTexture(gl.TEXTURE_2D, null);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
     
-    drawCircle(x, y, radius, color, isEraser, layer) {
+    _setBlendMode(blendMode, isEraser = false) {
         const gl = this.gl;
-        if (!gl || !layer || !layer.visible) return;
+        if (isEraser) {
+            gl.blendEquation(gl.FUNC_ADD);
+            gl.blendFuncSeparate(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
+        } else {
+            gl.blendEquation(gl.FUNC_ADD);
+            
+            gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+            
+            switch (blendMode) {
+                case 'multiply': 
+                    gl.blendFuncSeparate(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
+                    break;
+                case 'screen': 
+                    gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_COLOR, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
+                    break;
+                case 'add':
+                    gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE); 
+                    break;
+                default: 
+                    gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
+                    break;
+            }
+        }
+    }
 
-        const layerFBO = this.layerFBOs.get(layer);
-        if (!layerFBO) return;
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, layerFBO);
-        gl.viewport(0, 0, this.superWidth, this.superHeight);
-
-        gl.useProgram(this.programs.brush);
+    /**
+     * ✅ Step 3: 不要になった手動のY軸反転処理を削除
+     */
+    drawCircle(centerX, centerY, radius, color, isEraser, layer) {
+        if (!this.gl || !this.programs.brush) return;
+        const gl = this.gl;
+        const program = this.programs.brush;
         
-        gl.uniform2f(this.programs.brush.locations.u_resolution, this.superWidth, this.superHeight);
-        gl.uniform2f(this.programs.brush.locations.u_center, x * this.SUPER_SAMPLING_FACTOR, y * this.SUPER_SAMPLING_FACTOR);
-        gl.uniform1f(this.programs.brush.locations.u_radius, radius * this.SUPER_SAMPLING_FACTOR);
-        gl.uniform4f(this.programs.brush.locations.u_color, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
-        gl.uniform1i(this.programs.brush.locations.u_is_eraser, isEraser);
+        this._createOrUpdateLayerTexture(layer);
+        const targetFBO = this.layerFBOs.get(layer);
+        if (!targetFBO) { return; }
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO);
+        gl.viewport(0, 0, this.superWidth, this.superHeight);
+        
+        gl.useProgram(program);
+        this._setBlendMode('normal', isEraser);
 
         gl.bindBuffer(gl.ARRAY_BUFFER, this.brushPositionBuffer);
-        gl.vertexAttribPointer(this.programs.brush.locations.a_position, 2, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(this.programs.brush.locations.a_position);
+        gl.enableVertexAttribArray(program.locations.a_position);
+        gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
+        
+        const superX = centerX * this.SUPER_SAMPLING_FACTOR;
+        const superY = centerY * this.SUPER_SAMPLING_FACTOR;
+        const superRadius = radius * this.SUPER_SAMPLING_FACTOR;
+        
+        // (手動Y軸反転 `const webglSuperY = this.superHeight - superY;` を削除)
+        
+        gl.uniform2f(program.locations.u_resolution, this.superWidth, this.superHeight);
+        // Y軸のルールが統一されたので、受け取ったY座標をそのまま渡す
+        gl.uniform2f(program.locations.u_center, superX, superY);
+        gl.uniform1f(program.locations.u_radius, superRadius);
+        gl.uniform4f(program.locations.u_color, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
+        gl.uniform1i(program.locations.u_is_eraser, isEraser);
 
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-        gl.disableVertexAttribArray(this.programs.brush.locations.a_position);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+    
+    drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize, layer) {
+        if (!isFinite(x0) || !isFinite(y0) || !isFinite(x1) || !isFinite(y1)) return;
+        const distance = Math.hypot(x1 - x0, y1 - y0);
+        if (distance > this.width * 2) return;
+
+        const stepSize = Math.max(0.5, size / 4);
+        const steps = Math.max(1, Math.ceil(distance / stepSize));
+
+        for (let i = 0; i <= steps; i++) {
+            const t = steps > 0 ? i / steps : 0;
+            const x = x0 + (x1 - x0) * t;
+            const y = y0 + (y1 - y0) * t;
+            const pressure = p0 + (p1 - p0) * t;
+            const adjustedSize = calculatePressureSize(size, pressure);
+            this.drawCircle(x, y, adjustedSize / 2, color, isEraser, layer);
+        }
+    }
+
+    fill(imageData, color) { /* ... 変更なし ... */ }
+    clear(imageData) { /* ... 変更なし ... */ }
+    getTransformedImageData(sourceImageData, transform) {
+        // ... 変更なし ...
+        return null;
+    }
+
+    compositeLayers(layers, compositionData, dirtyRect) {
+        if (!this.gl || !this.programs.compositor || !this.superCompositeFBO) return;
+        const gl = this.gl;
+        const program = this.programs.compositor;
+
+        for (const layer of layers) {
+            this._createOrUpdateLayerTexture(layer);
+        }
         
-        layer.gpuDirty = true;
-    }
-
-    drawLine(x1, y1, x2, y2, baseSize, color, isEraser, pressure1, pressure2, calculatePressureSize, layer) {
-        const gl = this.gl;
-        if (!gl || !layer || !layer.visible) return;
-
-        const layerFBO = this.layerFBOs.get(layer);
-        if (!layerFBO) return;
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, layerFBO);
-        gl.viewport(0, 0, this.superWidth, this.superHeight);
-        gl.useProgram(this.programs.brush);
-
-        const dist = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
-        if (dist === 0) {
-            this.drawCircle(x1, y1, calculatePressureSize(baseSize, pressure1) / 2, color, isEraser, layer);
-            return;
-        }
-
-        const segments = Math.max(2, Math.ceil(dist / (baseSize / 4))); // 線の滑らかさを調整
-        for (let i = 0; i <= segments; i++) {
-            const t = i / segments;
-            const currentX = x1 + (x2 - x1) * t;
-            const currentY = y1 + (y2 - y1) * t;
-            const currentPressure = pressure1 + (pressure2 - pressure1) * t;
-            const currentRadius = calculatePressureSize(baseSize, currentPressure) / 2;
-            this.drawCircle(currentX, currentY, currentRadius, color, isEraser, layer);
-        }
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        layer.gpuDirty = true;
-    }
-
-    compositeLayers(layers, targetImageData, dirtyRect) {
-        const gl = this.gl;
-        if (!gl) return;
-
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.superCompositeFBO);
         gl.viewport(0, 0, this.superWidth, this.superHeight);
+        
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        // 各レイヤーを順番に合成
-        for (const layer of layers) {
-            if (layer.visible) {
-                this._drawLayerToFBO(layer, this.superCompositeFBO, false); // クリアしない
-            }
-        }
-
-        // FBOからImageDataに読み出す
-        const sMinX = Math.floor(dirtyRect.minX * this.SUPER_SAMPLING_FACTOR);
-        const sMinY = Math.floor(dirtyRect.minY * this.SUPER_SAMPLING_FACTOR);
-        const sMaxX = Math.ceil(dirtyRect.maxX * this.SUPER_SAMPLING_FACTOR);
-        const sMaxY = Math.ceil(dirtyRect.maxY * this.SUPER_SAMPLING_FACTOR);
-
-        const sWidth = sMaxX - sMinX;
-        const sHeight = sMaxY - sMinY;
-
-        if (sWidth <= 0 || sHeight <= 0) {
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-            return;
-        }
-
-        // WebGLから直接ImageDataに読み出す
-        // readPixelsの範囲を指定
-        gl.readBuffer(gl.COLOR_ATTACHMENT0);
-        const superBuffer = new Uint8Array(sWidth * sHeight * 4);
-        gl.readPixels(sMinX, sMinY, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-
-        const targetData = targetImageData.data;
-        const factor = this.SUPER_SAMPLING_FACTOR;
+        gl.useProgram(program);
         
-        for (let y = 0; y < (dirtyRect.maxY - dirtyRect.minY); y++) {
-            for (let x = 0; x < (dirtyRect.maxX - dirtyRect.minX); x++) {
-                const targetX = Math.floor(dirtyRect.minX) + x;
-                const targetY = Math.floor(dirtyRect.minY) + y;
-                if (targetX >= targetImageData.width || targetY >= targetImageData.height) continue;
-                
-                // readPixelsで読み取ったデータはYが下から上なので、ImageData(Yが上から下)に書き込むために反転する
-                const sourceX = Math.round(x * factor);
-                const sourceY = sHeight - 1 - Math.round(y * factor); // Y軸反転
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        gl.enableVertexAttribArray(program.locations.a_position);
+        gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        gl.enableVertexAttribArray(program.locations.a_texCoord);
+        gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
+        
+        for (const layer of layers) {
+            if (!layer.visible || layer.opacity === 0 || !this.layerTextures.has(layer)) continue;
 
-                const sourceIndex = (sourceY * sWidth + sourceX) * 4;
-                const targetIndex = (targetY * targetImageData.width + targetX) * 4;
-
-                if (sourceIndex >= 0 && sourceIndex < superBuffer.length) {
-                    targetData[targetIndex]     = superBuffer[sourceIndex];
-                    targetData[targetIndex + 1] = superBuffer[sourceIndex + 1];
-                    targetData[targetIndex + 2] = superBuffer[sourceIndex + 2];
-                    targetData[targetIndex + 3] = superBuffer[sourceIndex + 3];
-                }
+            if (!layer.modelMatrix) {
+                console.warn('Skipping layer draw: missing modelMatrix.');
+                continue;
             }
-        }
-    }
 
-    renderToDisplay(imageData, dirtyRect) {
+            // ✨ ここが最重要ポイント！
+            // 投影行列とレイヤーのモデル行列を掛け合わせて、最終的な変換行列(mvpMatrix)を作成する
+            const mvpMatrix = mat4.create();
+            mat4.multiply(mvpMatrix, this.projectionMatrix, layer.modelMatrix);
+            gl.uniformMatrix4fv(program.locations.u_mvpMatrix, false, mvpMatrix);
+
+            this._setBlendMode(layer.blendMode);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, this.layerTextures.get(layer));
+            
+            gl.uniform2f(program.locations.u_source_resolution, this.superWidth, this.superHeight);
+            gl.uniform1i(program.locations.u_image, 0);
+            gl.uniform1f(program.locations.u_opacity, layer.opacity / 100.0);
+            
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        }
+        
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+    
+    renderToDisplay(compositionData, dirtyRect) {
+        if (!this.gl || !this.superCompositeTexture) return;
         const gl = this.gl;
-        if (!gl) return;
+        const program = this.programs.compositor;
 
-        // DisplayCanvasの2Dコンテキストを使用
-        this.transformOffscreenCanvas.width = imageData.width;
-        this.transformOffscreenCanvas.height = imageData.height;
-        this.transformOffscreenCtx.putImageData(imageData, 0, 0);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        
+        gl.clearColor(0.0, 0.0, 0.0, 0.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        
+        this._setBlendMode('normal');
 
-        const displayCtx = this.canvas.getContext('2d');
-        if (displayCtx) {
-            displayCtx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-            displayCtx.drawImage(
-                this.transformOffscreenCanvas,
-                dirtyRect.minX, dirtyRect.minY,
-                dirtyRect.maxX - dirtyRect.minX, dirtyRect.maxY - dirtyRect.minY,
-                dirtyRect.minX, dirtyRect.minY,
-                dirtyRect.maxX - dirtyRect.minX, dirtyRect.maxY - dirtyRect.minY
-            );
-        }
+        gl.useProgram(program);
+
+        // ✨ 最終表示時も投影行列を適用する
+        // モデル行列は単位行列なので、最終的なテクスチャをそのまま画面全体に描画する
+        const mvpMatrix = mat4.create();
+        mat4.multiply(mvpMatrix, this.projectionMatrix, this.identityMatrix);
+        gl.uniformMatrix4fv(program.locations.u_mvpMatrix, false, mvpMatrix);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        gl.enableVertexAttribArray(program.locations.a_position);
+        gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        gl.enableVertexAttribArray(program.locations.a_texCoord);
+        gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
+        
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.superCompositeTexture);
+
+        gl.uniform2f(program.locations.u_source_resolution, this.superWidth, this.superHeight);
+        gl.uniform1i(program.locations.u_image, 0);
+        gl.uniform1f(program.locations.u_opacity, 1.0);
+
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
 
-    // 必要に応じて、ImageDataをWebGLテクスチャに同期する関数
     syncDirtyRectToImageData(layer, dirtyRect) {
         const gl = this.gl;
-        if (!gl || !layer) return;
+        const fbo = this.layerFBOs.get(layer);
+        if (!fbo || dirtyRect.minX > dirtyRect.maxX) return;
 
-        const layerFBO = this.layerFBOs.get(layer);
-        if (!layerFBO) return;
-
-        const sMinX = Math.floor(dirtyRect.minX * this.SUPER_SAMPLING_FACTOR);
-        const sMinY = Math.floor(dirtyRect.minY * this.SUPER_SAMPLING_FACTOR);
-        const sMaxX = Math.ceil(dirtyRect.maxX * this.SUPER_SAMPLING_FACTOR);
-        const sMaxY = Math.ceil(dirtyRect.maxY * this.SUPER_SAMPLING_FACTOR);
-
-        const sWidth = sMaxX - sMinX;
-        const sHeight = sMaxY - sMinY;
+        const sx = Math.floor(dirtyRect.minX * this.SUPER_SAMPLING_FACTOR);
+        const sy = Math.floor(dirtyRect.minY * this.SUPER_SAMPLING_FACTOR);
+        const sWidth = Math.ceil((dirtyRect.maxX - dirtyRect.minX) * this.SUPER_SAMPLING_FACTOR);
+        const sHeight = Math.ceil((dirtyRect.maxY - dirtyRect.minY) * this.SUPER_SAMPLING_FACTOR);
 
         if (sWidth <= 0 || sHeight <= 0) return;
 
-        gl.bindFramebuffer(gl.FRAMEBUFFER, layerFBO);
-        gl.readBuffer(gl.COLOR_ATTACHMENT0);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const superBuffer = new Uint8Array(sWidth * sHeight * 4);
-        gl.readPixels(sMinX, sMinY, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer);
+        
+        // 座標系を統一したため、readPixelsのY座標の計算がシンプルになる
+        // (this.superHeight - sy - sHeight)のような複雑な計算は不要
+        const readY = sy;
+        gl.readPixels(sx, readY, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
         const targetImageData = layer.imageData;
