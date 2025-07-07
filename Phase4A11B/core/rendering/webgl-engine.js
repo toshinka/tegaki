@@ -96,7 +96,7 @@ export class WebGLEngine extends DrawingEngine {
     _initProjectionMatrix() {
         this.projectionMatrix = mat4.create();
         // WebGLのFBOはY軸が上向きなので、(left, right, bottom, top)の順で指定する
-        mat4.ortho(this.projectionMatrix, 0, this.superWidth, 0, this.superHeight, -1, 1);
+        mat4.ortho(this.projectionMatrix, 0, this.superWidth, 0, this.superHeight, 0, -1, 1);
     }
 
     _initShaderPrograms() {
