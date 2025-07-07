@@ -31,7 +31,7 @@ import { ColorManager } from './ui/color-manager.js';
 import { ToolManager } from './ui/tool-manager.js';
 
 // ✅ 指示書Step3, 4, 5 に基づく修正: transform-utilsから関数をインポート
-import { isValidMatrix, transformWorldToLocal } from './transform-utils.js';
+import { isValidMatrix, transformWorldToLocal } from './core/utils/transform-utils.js';
 
 // --- Utility Functions ---
 
