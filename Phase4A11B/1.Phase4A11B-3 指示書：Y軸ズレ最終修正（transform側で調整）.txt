@@ -1,86 +1,95 @@
-📌 目的：描画・移動・入力の三者で、Y軸と座標の一貫性を保つ
-🎯 背景
-Phase4A11Bでは modelMatrix の導入と、transformWorldToLocal による描画座標の補正が導入された。しかし：
+🎯 改修の目的
+レイヤーの移動・描画・表示が上下含めて完全に一致し、
+すべてのレイヤーが常に modelMatrix を正しく保持・運用できるようにします。
 
-WebGLの表示に使われる projectionMatrix や modelMatrix のY軸と、
+🧠 背景と問題の要点
+❗現在の課題：
+レイヤー移動の Y軸方向がペン入力と反転
 
-マウス入力 (getCanvasCoordinates) や描画ロジックのY軸が、
+ペンで上に描いたのに、線は下に伸びる
 
-統一されておらず、描画・移動・表示が一致していない。
+transformWorldToLocal() と WebGLの projectionMatrix が 異なるY軸基準で計算されている
 
-🛠 修正タスク一覧（以下すべて満たすこと）
-✅ 1. projectionMatrix のY軸を Canvas 準拠にする
+レイヤー移動で「見た目は動いても描画がズレる」ことがある
+
+✅ 修正指示一覧（Step by Step）
+🟩 Step 1. Y軸基準の責任分担マップを守ること
+ファイル名	担当範囲	Y軸方向（Canvasと一致）	処理内容
+core-engine.js	入力処理と描画制御	上が0 / 下が＋	getCanvasCoordinates() は補正なし
+transform-utils.js	ローカル変換	上が0 / 下が＋	transformWorldToLocal() にY反転不要
+webgl-engine.js	表示制御（WebGL）	上が0 / 下が＋	mat4.ortho()で補正済みにすること
+
+🟡 どこか1つでY軸反転を行い、他では行わないこと
+
+🟩 Step 2. webgl-engine.js の Y軸反転を解除
 js
 コピーする
 編集する
-// webgl-engine.js にて
-// Y軸の下方向が正の方向（Canvasと一致）
-mat4.ortho(this.projectionMatrix, 0, this.superWidth, this.superHeight, 0, -1, 1);
-※既に正しい方向なら変更不要
+// 修正前（上下反転してしまう）
+mat4.ortho(this.projectionMatrix, 0, width, 0, height, -1, 1);
 
-✅ 2. transformWorldToLocal() にY軸反転を入れない
+// 修正後（Canvasと同じ向き：上0、下+）
+mat4.ortho(this.projectionMatrix, 0, width, height, 0, -1, 1);
+✅ これにより WebGL表示が Canvasと同じ座標系になります。
+
+🟩 Step 3. transformWorldToLocal() の反転処理を削除
 js
 コピーする
 編集する
-return {
-  x: localPos[0],
-  y: localPos[1]
-};
-✅ 3. getCanvasCoordinates() の出力と描画座標がズレないように、canvasとglの解像度を統一
+export function transformWorldToLocal(worldX, worldY, modelMatrix) {
+  const invMatrix = mat4.create();
+  mat4.invert(invMatrix, modelMatrix);
+
+  const worldPos = vec4.fromValues(worldX, worldY, 0, 1);
+  const localPos = vec4.create();
+  vec4.transformMat4(localPos, worldPos, invMatrix);
+
+  return { x: localPos[0], y: localPos[1] }; // ✅ Y反転しない
+}
+🟩 Step 4. すべての描画系処理は transformWorldToLocal() を経由
+drawLine() / drawCircle() / fillBucket() など、
+
+すべて worldX, worldY をローカル座標に変換してから描くこと！
+
+js
+コピーする
+編集する
+const { x, y } = transformWorldToLocal(worldX, worldY, activeLayer.modelMatrix);
+ctx.lineTo(x, y);
+🟩 Step 5. 入力系（getCanvasCoordinates()）はスケーリングのみ。Y軸反転は絶対に行わない
 js
 コピーする
 編集する
 const rect = canvas.getBoundingClientRect();
 const scaleX = canvas.width / rect.width;
 const scaleY = canvas.height / rect.height;
-const x = (e.clientX - rect.left) * scaleX;
-const y = (e.clientY - rect.top) * scaleY;
-確認点：
+return {
+  x: (e.clientX - rect.left) * scaleX,
+  y: (e.clientY - rect.top) * scaleY // ✅ ここで反転しない
+};
+🟩 Step 6. modelMatrix を正しく保存・復元すること
+saveState() 時に modelMatrix を Float32Arrayで保存
 
-canvas.width は gl.viewport() と一致しているか？
+restoreState() 時に mat4として読み込み、Layerに再適用
 
-canvas.height は WebGL用描画領域の高さと一致しているか？
+✅ 保存前後で Consoleに matrixが一致していることを確認
 
-✅ 4. ペン描画・消しゴム・バケツツール等の全座標は transformWorldToLocal() のみ通す
-例：
-
+🟩 Step 7. Vキーによるレイヤー移動では translate() を使い、modelMatrixを毎回更新
 js
 コピーする
 編集する
-const { x: localX, y: localY } = transformWorldToLocal(worldX, worldY, activeLayer.modelMatrix);
-ctx.lineTo(localX, localY);
-→ ctx.lineTo(worldX, worldY) のような未変換描画を排除
+mat4.translate(layer.modelMatrix, originalMatrix, [dx, dy, 0]);
+✅ 成功判定チェックリスト
+チェック項目	判定基準
+🖊 ペンで上に描いたら、上に線が出る	✅ YES
+🧩 レイヤーを上に動かしたら、画像も上に動く	✅ YES
+🧠 描画範囲がズレない（移動後も正確に描ける）	✅ YES
+🔁 Undo/Redoで画像と位置が正しく復元される	✅ YES
+⚠ Consoleに modelMatrix が未定義・NaN の警告が出ない	✅ YES
 
-✅ 5. レイヤー移動時、transform後の modelMatrix を必ず saveState() に保存・復元
-modelMatrix が復元されても、描画時にその行列を反映していないと「移動してないように見える」ことがある
-
-すべての描画時に modelMatrix を transformWorldToLocal() に渡して描くこと
-
-✅ 6. （任意補正）レイヤー移動時の dx/dy に devicePixelRatio を加味（速度補正）
-js
-コピーする
-編集する
-const ratio = window.devicePixelRatio || 1;
-const dx = (coords.x - this.transformStartX) * ratio;
-✅ 成功判定（すべて満たす）
-動作	成功条件
-🖊 上にペンを描く	上に線が出る
-🧩 レイヤーを上にドラッグ	レイヤーが上に動く
-🔁 レイヤー移動後の描画	元の座標に対してズレがない
-🧠 transformWorldToLocal()のローカル座標	入力と表示と一致
-💾 Undo/Redo	描画・位置が復元される（モデル行列も）
-
-📎 対象ファイル一覧（すべてを読み込んで修正すること）
+📎 対象ファイル（全て読み込むこと）
 core-engine.js
-
-core/utils/transform-utils.js
 
 core/rendering/webgl-engine.js
 
-💬 備考
-transformWorldToLocal() は 描画と入力を繋ぐ中核です。絶対にすべての描画関数で使うこと。
-
-projectionMatrix を変えると見た目に直結するため、そこがY軸反転していないか常に確認。
-
-modelMatrix の保存と復元が動いていても、表示と一致しなければ意味がないので、座標系一貫性がすべてのカギ。
-
+core/utils/transform-utils.js
