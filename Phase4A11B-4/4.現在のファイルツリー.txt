@@ -10,7 +10,7 @@
 │ │ ├ rendering/              
 │ │ │  ├─ drawing-engine.js    <-- （Phase4A'7）
 │ │ │  ├─ canvas2d-engine.js   <-- （Phase4A'7）
-│ │ │  ├─ webgl-engine.js      <-- （Phase4A11B）
+│ │ │  ├─ webgl-engine.js      <-- （Phase4A11B-3）
 │ │ │  ├─ webgpu-engine.js     //  （仮空ファイル）
 │ │ │  ├─ rendering-bridge.js  <-- （Phase4A11Z）
 │ │ │  ├─ shader-programs/     // シェーダー管理（仮空ファイル）
@@ -19,7 +19,7 @@
 │ │ │  └─ texture-manager.js   // テクスチャ管理（仮空ファイル）
 │ │ │
 │ │ ├ utils/
-│ │ │  └─ transform-utils.js   <-- （Phase4A11B）
+│ │ │  └─ transform-utils.js   <-- （Phase4A11A-1）
 │ │ │ 
 │ │ ├ animation/
 │ │ │  ├─ timeline-manager.js  // タイムライン制御（仮空ファイル）

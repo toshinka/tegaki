@@ -77,25 +77,6 @@
 
 ---
 
-※レイヤー機能改修時にWebGL2化を検討すること
-
-1. レイヤーサムネイル生成でWebGL2の恩恵
-
-Multiple Render Targets: 複数レイヤーのサムネイルを同時生成可能
-Framebuffer Objects: サムネイル用の小さなバッファを効率的に管理
-Texture Arrays: 複数レイヤーのテクスチャを一括管理
-
-2. ドラッグ&ドロップ時の描画最適化
-
-Vertex Array Objects: ドラッグ中の描画設定を高速切り替え
-Instancing: 移動プレビュー表示の高速化
-Uniform Buffer Objects: 複数レイヤーの透明度・位置を一括更新
-
-3. フォルダ階層とWebGL2の相性
-
-Multiple Render Targets: 親フォルダ→子レイヤーの階層合成
-Transform Feedback: 階層変換の計算をGPU側で実行
-
 ## 【Phase 4B】 アニメーション基盤
 **期間目案: 2-3週間**
 
