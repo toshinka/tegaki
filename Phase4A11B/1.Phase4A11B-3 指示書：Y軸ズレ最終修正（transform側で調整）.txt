@@ -1,40 +1,86 @@
-🎯 目的
-WebGLの projectionMatrix は 非反転（正方向Y軸） で固定
+📌 目的：描画・移動・入力の三者で、Y軸と座標の一貫性を保つ
+🎯 背景
+Phase4A11Bでは modelMatrix の導入と、transformWorldToLocal による描画座標の補正が導入された。しかし：
 
-Canvas描画系で使う transformWorldToLocal() にだけ、Y軸反転を導入する
+WebGLの表示に使われる projectionMatrix や modelMatrix のY軸と、
 
-これにより、表示と描画が上下含めて完全一致
+マウス入力 (getCanvasCoordinates) や描画ロジックのY軸が、
 
-✅ 修正対象：core-engine.js 内の transformWorldToLocal()
-修正前（現状）：
+統一されておらず、描画・移動・表示が一致していない。
+
+🛠 修正タスク一覧（以下すべて満たすこと）
+✅ 1. projectionMatrix のY軸を Canvas 準拠にする
 js
 コピーする
 編集する
-return { x: localPos[0], y: localPos[1] };
-修正後：
+// webgl-engine.js にて
+// Y軸の下方向が正の方向（Canvasと一致）
+mat4.ortho(this.projectionMatrix, 0, this.superWidth, this.superHeight, 0, -1, 1);
+※既に正しい方向なら変更不要
+
+✅ 2. transformWorldToLocal() にY軸反転を入れない
 js
 コピーする
 編集する
-const canvasHeight = drawingCanvas.height;
 return {
   x: localPos[0],
-  y: canvasHeight - localPos[1]
+  y: localPos[1]
 };
-✅ 注意：
-webgl-engine.js 側の projectionMatrix は上下反転を含めない
+✅ 3. getCanvasCoordinates() の出力と描画座標がズレないように、canvasとglの解像度を統一
+js
+コピーする
+編集する
+const rect = canvas.getBoundingClientRect();
+const scaleX = canvas.width / rect.width;
+const scaleY = canvas.height / rect.height;
+const x = (e.clientX - rect.left) * scaleX;
+const y = (e.clientY - rect.top) * scaleY;
+確認点：
 
-transformWorldToLocal() のみで上下補正を行うこと
+canvas.width は gl.viewport() と一致しているか？
 
-modelMatrix の変換式などは変更不要
+canvas.height は WebGL用描画領域の高さと一致しているか？
 
-isValidMatrix() や mat4.create() 周辺は現在のまま維持
+✅ 4. ペン描画・消しゴム・バケツツール等の全座標は transformWorldToLocal() のみ通す
+例：
 
-✅ 成功条件
- ペン描画とレイヤー移動後の表示が完全一致
+js
+コピーする
+編集する
+const { x: localX, y: localY } = transformWorldToLocal(worldX, worldY, activeLayer.modelMatrix);
+ctx.lineTo(localX, localY);
+→ ctx.lineTo(worldX, worldY) のような未変換描画を排除
 
- 描画直後のズレや逆方向移動がなくなる
+✅ 5. レイヤー移動時、transform後の modelMatrix を必ず saveState() に保存・復元
+modelMatrix が復元されても、描画時にその行列を反映していないと「移動してないように見える」ことがある
 
- undo操作で画像が消えず、復元される（modelMatrixと描画の整合）
+すべての描画時に modelMatrix を transformWorldToLocal() に渡して描くこと
 
- 画面表示とユーザー操作の方向が一致し、自然な描き味になる
+✅ 6. （任意補正）レイヤー移動時の dx/dy に devicePixelRatio を加味（速度補正）
+js
+コピーする
+編集する
+const ratio = window.devicePixelRatio || 1;
+const dx = (coords.x - this.transformStartX) * ratio;
+✅ 成功判定（すべて満たす）
+動作	成功条件
+🖊 上にペンを描く	上に線が出る
+🧩 レイヤーを上にドラッグ	レイヤーが上に動く
+🔁 レイヤー移動後の描画	元の座標に対してズレがない
+🧠 transformWorldToLocal()のローカル座標	入力と表示と一致
+💾 Undo/Redo	描画・位置が復元される（モデル行列も）
+
+📎 対象ファイル一覧（すべてを読み込んで修正すること）
+core-engine.js
+
+core/utils/transform-utils.js
+
+core/rendering/webgl-engine.js
+
+💬 備考
+transformWorldToLocal() は 描画と入力を繋ぐ中核です。絶対にすべての描画関数で使うこと。
+
+projectionMatrix を変えると見た目に直結するため、そこがY軸反転していないか常に確認。
+
+modelMatrix の保存と復元が動いていても、表示と一致しなければ意味がないので、座標系一貫性がすべてのカギ。
 
