@@ -1,0 +1,93 @@
+提案するフェーズ分けの例
+Claudeのアドバイスと、今回作成した WebGLレイヤー移動対応 指示書 ver.5.0 の内容を考慮し、以下のようなフェーズ分けを推奨します。
+
+📌 Phase 4A9: WebGLエンジンと行列ユーティリティの基盤構築
+目的: WebGLの描画基盤と、行列操作のユーティリティを確立し、安定した動作を確認する。
+
+主な作業内容:
+
+core/rendering/webgl-engine.js の初期化とエラーハンドリングの強化:
+
+_initWebGL 関数で gl コンテキストが null の場合の alert とエラーログ出力を実装する。
+
+_createShader および _createProgram 関数内で、シェーダーコンパイルエラーとプログラムリンクエラーのチェックを厳密に実装し、エラーログをコンソールに出力する（これが「キャンバスが出ない」問題の究明に最も重要です）。
+
+gl.viewport の設定と gl.clearColor, gl.clear の呼び出しを適切に配置する。
+
+u_mvpMatrixLoc の取得タイミングが gl.linkProgram 後であることを確認する。
+
+core/utils/transform-utils.js の基本実装:
+
+create(), reset(), translate(), rotate(), scale() といった基本的な行列操作関数を実装する。
+
+現時点では、これらの関数が正しく行列を操作できることを確認する（テスト用の簡単なコードなどで）。
+
+レイヤーへの modelMatrix の導入:
+
+各レイヤーオブジェクトに modelMatrix プロパティ（mat4.create() で初期化）を追加する。
+
+rendering-bridge.js の連携確認:
+
+drawLayer メソッドが webgl-engine.js の drawLayer にレイヤーオブジェクトを適切に渡していることを確認する。
+
+期待する成果:
+
+Webページを開いたときに、WebGLコンテキストの初期化に失敗した場合、明確なアラートとコンソールログが表示される。
+
+シェーダーやプログラムにエラーがあった場合、その詳細なログがコンソールに出力される。
+
+キャンバスが正しくクリアされ、WebGLエンジンがエラーなく初期化される。
+
+📌 Phase 4A10: レイヤーの描画と基本変換の検証
+目的: modelMatrix を用いたレイヤーの描画と、Y軸反転、基本的な平行移動が正しく機能することを確認する。
+
+主な作業内容:
+
+webgl-engine.js の drawLayer 実装:
+
+layer.modelMatrix を u_mvpMatrix に設定し、レイヤーを描画するロジックを実装する。
+
+頂点シェーダーで gl_Position のY軸反転（a_position.y * -1.0）を実装する。 これ以外の場所ではY軸反転を行わない。
+
+drawLayer 内で layer.modelMatrix, layer.texture, u_mvpMatrixLoc が null/undefined の場合に描画をスキップするガードを実装する。
+
+core-engine.js からの transform-utils.js 利用と描画:
+
+テスト目的で、アクティブレイヤーに対して transform-utils.js の translate() を呼び出し、レイヤーを移動させる簡単なボタンやイベントハンドラを設定する。
+
+移動後に canvasManager.redraw() （または同等の描画更新関数）を呼び出し、描画が更新されることを確認する。
+
+期待する成果:
+
+レイヤーがキャンバスに表示される。
+
+レイヤーの移動操作を行うと、正しく水平・垂直に移動する。
+
+Y軸が反転する問題（上下が逆になる）が発生しない。
+
+📌 Phase 4A11: GUI連携とマウス操作、および回転・拡大縮小の実装
+目的: dat.gui を用いたレイヤーの精密制御と、マウス操作時の座標変換を正確に実装する。
+
+主な作業内容:
+
+core-engine.js での dat.gui 連携:
+
+dat.gui をセットアップし、アクティブレイヤーの modelMatrix を操作するためのコントローラー（位置X/Y、回転、スケールX/Y）を追加する。
+
+dat.gui の onChange イベント内で、transform-utils.js の reset(), translate(), rotate(), scale() を組み合わせて modelMatrix を更新し、描画を更新する。
+
+アクティブレイヤー切り替え時に dat.gui の表示を同期するロジックを実装する。
+
+マウス座標とレイヤーローカル座標の変換:
+
+transform-utils.js に transformWorldToLocal 関数（および必要であれば getTranslation など）を実装する。
+
+マウスイベント（例: ドラッグ）でレイヤーを移動させる際に、マウス座標をレイヤーのローカル座標に正確に変換し、レイヤーの modelMatrix に適用する。
+
+期待する成果:
+
+dat.gui からレイヤーの位置、回転、スケールを自由に調整できる。
+
+dat.gui の値と画面上のレイヤーの描画が完全に一致する。
+
+マウスでのドラッグ操作でレイヤーを移動させると、描画位置とマウスカーソルがズレることなく追従する。

@@ -1,0 +1,86 @@
+📜 Phase4A11B-2（GEMINI継続改修指示書）
+🎯「表示と描画のY軸整合性を完全一致させる」
+✅ 現在の達成点（GEMINIがすでに成功したこと）
+WebGL側に modelMatrix を適用し、レイヤー移動で絵が吹き飛ばなくなった（大成功）
+
+Consoleエラーはゼロ。全ての modelMatrix 操作が安定している
+
+projectionMatrix 導入により、CanvasとWebGL間の「ピクセル→NDC座標」の変換が安定化された
+
+❌ 残された課題（上下の座標反転ズレ）
+状態	現象
+描画処理	ペンはローカル座標系で transformWorldToLocal() を通じて下方向へ描かれる
+表示処理	modelMatrix経由で WebGL は上方向へ移動する（Y軸がCanvasと反転している）
+
+このせいで、描画と表示が上下で逆になり、レイヤー移動後に描いた線が逆方向へズレて見える問題が発生しています。
+
+🛠 修正の指示（以下のいずれかでOK）
+🅰 方法1：transformWorldToLocal() に Y軸反転を導入（推奨）
+該当ファイル：
+core-engine.js または transform-utils.js
+
+修正コード例：
+js
+コピーする
+編集する
+function transformWorldToLocal(worldX, worldY, modelMatrix) {
+  const invMatrix = mat4.create();
+  if (!mat4.invert(invMatrix, modelMatrix)) {
+    return { x: worldX, y: worldY };
+  }
+  const worldPos = vec4.fromValues(worldX, worldY, 0, 1);
+  const localPos = vec4.create();
+  vec4.transformMat4(localPos, worldPos, invMatrix);
+
+  // Y軸を反転する（WebGLは上が＋、Canvasは下が＋）
+  const canvasHeight = drawingCanvas.height;
+  return {
+    x: localPos[0],
+    y: canvasHeight - localPos[1]
+  };
+}
+drawingCanvas はすでに core-engine.js に存在しています。未定義なら getCanvasCoordinates() 同様に参照可。
+
+🅱 方法2：projectionMatrixにY反転を含める
+該当ファイル：
+webgl-engine.js
+
+補正コード（例）：
+投影行列のYスケーリングを -1 にして Canvas基準に揃える
+
+js
+コピーする
+編集する
+const projectionMatrix = mat4.create();
+mat4.ortho(projectionMatrix, 0, canvasWidth, canvasHeight, 0, -1, 1); // 上下を逆転
+canvasHeight, canvasWidth は実際の描画解像度から取得（例：drawingCanvas.width）
+
+✅ 成功判定
+ ペンで描いた線と、レイヤーの移動が上下方向で完全に一致する
+
+ 画面上での描画結果と視覚的な動きが完全に同期する
+
+ 描いた直後に位置がズレる 現象が発生しない
+
+ その他の描画・表示・バケツ塗り等に影響なし
+
+✅ 参考：簡易パッチ案（transformWorldToLocal内）
+js
+コピーする
+編集する
+const canvasHeight = drawingCanvas.height;
+return {
+  x: localPos[0],
+  y: canvasHeight - localPos[1] // ここが補正
+};
+✳ 注意事項
+Y軸反転を入れる場所は、1箇所のみにしてください
+
+transformWorldToLocal() 側で行う場合、WebGLのY反転処理は不要です
+
+逆に WebGLの projectionMatrix 側でやる場合は、transform関数側ではそのままで
+
+✅ 完了後
+修正が成功すれば、Phase4A11Bは完全達成扱い
+
+次フェーズの準備へ
