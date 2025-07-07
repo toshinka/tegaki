@@ -4,12 +4,13 @@
  * @returns {boolean}
  */
 export function isValidMatrix(m) {
-  // Step 2: `modelMatrix` が壊れていないかのチェック関数 (修正版)
+  // この関数は、行列が計算不能な値（NaNなど）を含んでいないかチェックします。
   if (!m || m.length !== 16) {
     return false;
   }
-  // Float32Array にも確実に対応できるforループでチェックします
+  // 行列の16個の全要素をチェックします。
   for (let i = 0; i < 16; i++) {
+    // isFinite で、数値が無限大やNaNでないことを確認します。
     if (!Number.isFinite(m[i])) {
       return false;
     }
@@ -25,16 +26,44 @@ export function isValidMatrix(m) {
  * @returns {{x: number, y: number}} ローカル座標
  */
 export function transformWorldToLocal(worldX, worldY, modelMatrix) {
-  // Step 3: transformWorldToLocal の安全実装
-  const invMatrix = glMatrix.mat4.create();
-  glMatrix.mat4.invert(invMatrix, modelMatrix); // 逆行列を計算
+  // [修正点①] 逆行列を計算する前に、渡された行列が壊れていないかチェックします。
+  // これで、レイヤー移動を繰り返した時に発生する不正なデータによるエラーを防ぎます。
+  if (!isValidMatrix(modelMatrix)) {
+    console.warn('不正な modelMatrix が渡されたため、座標変換をスキップします。World:', {x: worldX, y: worldY});
+    // 安全のため、変換せずに元のワールド座標をそのまま返します。
+    return { x: worldX, y: worldY };
+  }
 
-  const worldPos = glMatrix.vec4.fromValues(worldX, worldY, 0, 1);
-  const localPos = glMatrix.vec4.create();
+  const invMatrix = mat4.create();
 
-  glMatrix.vec4.transformMat4(localPos, worldPos, invMatrix); // 逆行列を使って座標を変換
+  // [修正点②] 逆行列の計算が成功したかチェックします。
+  // 計算に失敗すると `null` が返るので、その場合の対策（フォールバック）を追加します。
+  if (!mat4.invert(invMatrix, modelMatrix)) {
+    console.warn('逆行列の計算に失敗しました。単位行列をフォールバックとして使用します。');
+    // 指示通り、失敗時は「単位行列」を使います。
+    // 単位行列は「何も変換しない」行列なので、結果的にワールド座標がそのまま使われます。
+    mat4.identity(invMatrix);
+  }
 
-  console.log('[座標変換] World:', worldX, worldY, '→ Local:', localPos[0], localPos[1]);
+  const worldPos = vec4.fromValues(worldX, worldY, 0, 1);
+  const localPos = vec4.create();
 
-  return { x: localPos[0], y: localPos[1] };
+  // 逆行列を使って、ワールド座標をローカル座標に変換します。
+  vec4.transformMat4(localPos, worldPos, invMatrix);
+
+  const localX = localPos[0];
+  const localY = localPos[1];
+
+  // [修正点③] 変換後の座標が計算不能な値（Infinity や NaN）になっていないかチェックします。
+  if (!Number.isFinite(localX) || !Number.isFinite(localY)) {
+    console.error('座標変換の結果が不正な値 (Infinity/NaN) になりました。ワールド座標を返します。');
+    // 万が一、計算結果がおかしくなった場合も、安全のために元のワールド座標を返します。
+    return { x: worldX, y: worldY };
+  }
+
+  // 指示通り、変換結果のログは残します。
+  console.log('[座標変換] World:', worldX, worldY, '→ Local:', localX, localY);
+
+  // 計算したローカル座標を返します。
+  return { x: localX, y: localY };
 }
