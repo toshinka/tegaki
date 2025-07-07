@@ -31,8 +31,8 @@
 │ │     ├─ bone-system.js       // ボーンシステム（仮空ファイル）
 │ │     └─ physics-engine.js    // 簡易物理演算（仮空ファイル）
 │ │ 
-│ ├ layer-manager/              <-- （Phase4A11A-0）
-│ │ └─ layer-manager.js         <-- （Phase4A11A-0）
+│ ├ layer-manager/
+│ │ └─ layer-manager.js         <-- （Phase4A11B-4）
 │ │
 │ ├ ui/ 
 │ │ ├─ ui-manager.js         　　 <-- （Phase2）

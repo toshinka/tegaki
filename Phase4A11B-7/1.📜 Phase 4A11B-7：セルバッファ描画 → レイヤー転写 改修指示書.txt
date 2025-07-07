@@ -1,0 +1,82 @@
+🎯 改修の目的
+レイヤー移動後に「描画できない」「位置がズレる」といった問題を完全に解消するため、
+直接レイヤーへ描く構造を廃止し、以下のような仕組みに変更します：
+
+✅ 新方式（今回導入）
+✏️ セルバッファ（仮の用紙）に描画 → 描画後にレイヤーに転写（コピー）する
+
+❌ 旧方式（問題があった）
+✏️ マウスの座標を直接レイヤーのmodelMatrixに逆変換して描く
+→ modelMatrixの蓄積により座標がズレ、描けなくなる。
+
+🖼️ 現実世界の例え（AI向け補足）
+このツールでやりたいことは、**「台紙（画用紙）を勝手に動かさずに絵を描くこと」**です。
+
+台紙（= layer.canvas）：作品そのもの。勝手に動いてはいけない。
+
+セル（= 仮の一時canvas）：絵を描いている間だけ使う仮のレイヤー。動かしてもいい。
+
+マウス操作：このセル上に描き、その後でセルをレイヤーに貼り付け（転写）る。
+
+🔧 改修内容：必要なステップ
+✅ 1. 描画時、直接 layer.canvas に描かないよう変更
+onPointerDown() / onPointerMove() / onPointerUp() に関わる描画処理を、
+「一時セル（仮描画canvas）」に描くように変更してください。
+
+一時セルには modelMatrix 変換は反映しないでください。
+→ つまりマウス座標そのままで、セルに直接描きます。
+
+✅ 2. 描画終了後に、その一時セルの内容を、レイヤー(canvas)に「転写」
+ctx.drawImage(tempCanvas, 0, 0) 等を使って、レイヤーの canvas に貼り付けてください。
+
+この転写には、modelMatrixを適用して、レイヤーが移動していても正しく貼られるようにします。
+
+転写処理は onPointerUp() 時点で実行されるのが基本です。
+
+✅ 3. modelMatrix は「転写先の位置決め」にのみ使用
+modelMatrix は描画処理には一切使いません。
+
+転写（drawImageなど）で「どこに貼り付けるか」の判断にだけ使ってください。
+
+✅ 4. transformWorldToLocal の役割を変更
+もう「マウス入力を逆変換」しないでください。
+
+代わりに「転写時の貼り付け先をmodelMatrixで決める」だけの用途にします。
+
+✅ 成功判定
+すべての条件を満たしたら成功です：
+
+✅ レイヤー移動後でも、マウスカーソルの位置に描画できる
+
+✅ 台紙（layer.canvas）は描画中に動かない
+
+✅ modelMatrix は描画では使わず、転写時の位置決めにのみ使用
+
+✅ Consoleに「描画 → 転写」が記録されている
+
+✅ undo/redoやdirtyRect等のロジックが壊れていない（軽微な乱れはPhase11で調整予定）
+
+🔗 想定中のファイル
+Claude または Gemini がどこに実装するかで迷わないよう、構造も明記：
+
+機能	実装候補ファイル
+tempCanvas作成・管理	core-engine.js or toolset.js
+描画処理	toolset.js
+転写処理（drawImage）	core-engine.js（onPointerUp） or rendering-bridge.js
+modelMatrix取得	layer-manager.js 内 layer から取得
+
+💡 実装ヒント
+document.createElement('canvas') で一時canvasを生成
+
+サイズはアクティブレイヤーのcanvasと同じにする
+
+一時canvasは ctx.clearRect() で毎回クリアして再利用可能
+
+転写は targetCtx.drawImage(tempCanvas, offsetX, offsetY) 等で行う
+
+mat4.getTranslation() で modelMatrix の位置を取り出して転写位置に変換
+
+🧼 備考：UIとの整合性
+描画中、セルの内容を仮表示してもよい（Phase5以降で検討）
+
+今回は台紙移動バグの解消を最優先とするため、表示最適化は次フェーズ

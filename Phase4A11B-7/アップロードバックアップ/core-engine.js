@@ -1,13 +1,14 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.9.6 (Phase 4A11B - 座標系整合性修正)
+ * Version: 2.9.7 (Phase 4A11B - UI/UX改善)
  *
- * - 修正 (Phase 4A11B-Fix3):
- * - 描画時の座標変換プロセスを修正
- * - 1. ワールド座標をmodelMatrixで変換する前に、SUPER_SAMPLING_FACTORを
- * 使ってWebGL内部座標系に変換するよう修正。
- * - 2. これにより、core-engineとwebgl-engine間の座標系の不整合を解消。
+ * - 修正 (Phase 4A11B-Fix4):
+ * - レイヤー範囲外での描画を禁止し、カーソルでフィードバックする機能を追加
+ * - 1. マウスカーソル下の座標がレイヤー範囲内か判定するヘルパー関数を追加。
+ * - 2. 描画開始時(onPointerDown)に範囲外であれば処理を中断。
+ * - 3. マウス移動時(onPointerMove)に範囲外であればカーソルを禁止マークに変更。
+ * - 4. これにより、描画可能範囲がどこにあるか直感的にわかるようにする。
  * ===================================================================================
  */
 
@@ -161,14 +162,36 @@ class CanvasManager {
         document.addEventListener("keydown", (e) => {
             if (e.key === "v" || e.key === "V") this.isVDown = true;
             if (e.key === " ") this.isSpaceDown = true;
-            this.updateCursor();
+            this.updateCursor(getCanvasCoordinates(e, this.displayCanvas, this.viewTransform));
         });
         
         document.addEventListener("keyup", (e) => {
             if (e.key === "v" || e.key === "V") this.isVDown = false;
             if (e.key === " ") this.isSpaceDown = false;
-            this.updateCursor();
+            this.updateCursor(getCanvasCoordinates(e, this.displayCanvas, this.viewTransform));
         });
+    }
+
+    /**
+     * ★★★★★ 新規追加 ★★★★★
+     * 指定したワールド座標が、レイヤーの範囲内に収まっているか判定する
+     * @param {{x: number, y: number}} worldCoords - getCanvasCoordinatesで取得した座標
+     * @param {Layer} layer - 判定対象のレイヤー
+     * @returns {boolean} - 範囲内であればtrue
+     */
+    _isPointOnLayer(worldCoords, layer) {
+        if (!layer) return false;
+
+        const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
+        const superX = worldCoords.x * SUPER_SAMPLING_FACTOR;
+        const superY = worldCoords.y * SUPER_SAMPLING_FACTOR;
+
+        const local = transformWorldToLocal(superX, superY, layer.modelMatrix);
+
+        const layerWidth = this.width * SUPER_SAMPLING_FACTOR;
+        const layerHeight = this.height * SUPER_SAMPLING_FACTOR;
+
+        return local.x >= 0 && local.x < layerWidth && local.y >= 0 && local.y < layerHeight;
     }
 
     onPointerDown(e) {
@@ -182,6 +205,16 @@ class CanvasManager {
             activeLayer.modelMatrix = mat4.create();
         }
         
+        const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
+
+        // ★★★★★ 修正点 ★★★★★
+        // パンやレイヤー移動でない場合、レイヤー範囲外なら描画を開始しない
+        if (!this.isSpaceDown && !this.isVDown) {
+            if (!this._isPointOnLayer(coords, activeLayer)) {
+                return;
+            }
+        }
+        
         if (this.isSpaceDown) {
             this.isPanning = true;
             this.dragStartX = e.clientX; 
@@ -190,8 +223,6 @@ class CanvasManager {
             this.canvasStartY = this.viewTransform.top;
             return;
         }
-
-        const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
 
         if (this.isVDown) {
             this.isLayerMoving = true;
@@ -203,8 +234,6 @@ class CanvasManager {
         
         if (!activeLayer.visible) return;
 
-        // ★★★★★ 修正点 Part 1 ★★★★★
-        // ワールド座標をWebGL内部座標(Super Sampling後)に変換してから、ローカル座標に変換する
         const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
         const superX = coords.x * SUPER_SAMPLING_FACTOR;
         const superY = coords.y * SUPER_SAMPLING_FACTOR;
@@ -215,7 +244,6 @@ class CanvasManager {
         this._resetDirtyRect();
         
         if (this.app.toolManager.currentTool === 'bucket') {
-             // バケツツールは整数座標を期待するため、丸める
             this.app.bucketTool.fill(activeLayer.imageData, Math.round(local.x), Math.round(local.y), hexToRgba(this.app.colorManager.currentColor));
             activeLayer.gpuDirty = true;
             this.renderAllLayers();
@@ -229,10 +257,8 @@ class CanvasManager {
         
         const size = this.calculatePressureSize(this.app.penSettingsManager.currentSize, this.lastPoint.pressure);
         
-        // ダーティレクトの計算もローカル座標を基準にする
         this._updateDirtyRect(local.x, local.y, size);
         
-        // 描画エンジンには、すでに高解像度化されたローカル座標を渡す
         this.renderingBridge.drawCircle(
             local.x, local.y, size / 2, 
             hexToRgba(this.app.colorManager.currentColor), this.app.toolManager.currentTool === 'eraser',
@@ -244,6 +270,9 @@ class CanvasManager {
     }
     
     onPointerMove(e) {
+        const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+
         if (this.isPanning) {
             const dx = e.clientX - this.dragStartX; 
             const dy = e.clientY - this.dragStartY;
@@ -252,13 +281,9 @@ class CanvasManager {
             this.applyViewTransform(); 
             return;
         }
-        
-        const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (!activeLayer) return;
-
-        const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
 
         if (this.isLayerMoving) {
+            if (!activeLayer) return;
             const dx = coords.x - this.transformStartWorldX;
             const dy = coords.y - this.transformStartWorldY;
             
@@ -278,35 +303,40 @@ class CanvasManager {
             return;
         }
 
-        if (!this.isDrawing) return;
-        
-        // ★★★★★ 修正点 Part 1 (こちらも同様に) ★★★★★
-        const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
-        const superX = coords.x * SUPER_SAMPLING_FACTOR;
-        const superY = coords.y * SUPER_SAMPLING_FACTOR;
-        const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix);
-        
-        const currentPressure = e.pressure > 0 ? e.pressure : 0.5;
-        this.pressureHistory.push(currentPressure);
-        if (this.pressureHistory.length > this.maxPressureHistory) {
-            this.pressureHistory.shift();
-        }
-        
-        const lastSize = this.calculatePressureSize(this.app.penSettingsManager.currentSize, this.lastPoint.pressure);
-        const currentSize = this.calculatePressureSize(this.app.penSettingsManager.currentSize, currentPressure);
-        this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, lastSize);
-        this._updateDirtyRect(local.x, local.y, currentSize);
+        if (this.isDrawing) {
+            if (!activeLayer) return;
+            const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
+            const superX = coords.x * SUPER_SAMPLING_FACTOR;
+            const superY = coords.y * SUPER_SAMPLING_FACTOR;
+            const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix);
+            
+            const currentPressure = e.pressure > 0 ? e.pressure : 0.5;
+            this.pressureHistory.push(currentPressure);
+            if (this.pressureHistory.length > this.maxPressureHistory) {
+                this.pressureHistory.shift();
+            }
+            
+            const lastSize = this.calculatePressureSize(this.app.penSettingsManager.currentSize, this.lastPoint.pressure);
+            const currentSize = this.calculatePressureSize(this.app.penSettingsManager.currentSize, currentPressure);
+            this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, lastSize);
+            this._updateDirtyRect(local.x, local.y, currentSize);
 
-        this.renderingBridge.drawLine(
-            this.lastPoint.x, this.lastPoint.y, local.x, local.y,
-            this.app.penSettingsManager.currentSize, hexToRgba(this.app.colorManager.currentColor), this.app.toolManager.currentTool === 'eraser',
-            this.lastPoint.pressure, currentPressure, 
-            this.calculatePressureSize.bind(this),
-            activeLayer
-        );
-        
-        this.lastPoint = { ...local, pressure: currentPressure };
-        this._requestRender();
+            this.renderingBridge.drawLine(
+                this.lastPoint.x, this.lastPoint.y, local.x, local.y,
+                this.app.penSettingsManager.currentSize, hexToRgba(this.app.colorManager.currentColor), this.app.toolManager.currentTool === 'eraser',
+                this.lastPoint.pressure, currentPressure, 
+                this.calculatePressureSize.bind(this),
+                activeLayer
+            );
+            
+            this.lastPoint = { ...local, pressure: currentPressure };
+            this._requestRender();
+            return; // 描画中は以降のカーソル更新をスキップ
+        }
+
+        // ★★★★★ 修正点 ★★★★★
+        // 描画中でない場合、カーソルの状態を更新する
+        this.updateCursor(coords);
     }
     
     onPointerUp(e) {
@@ -322,8 +352,6 @@ class CanvasManager {
 
             const activeLayer = this.app.layerManager.getCurrentLayer();
             if (activeLayer) {
-                // ToDo: dirtyRectの座標系もローカル座標基準にしているので、
-                // syncDirtyRectToImageDataに渡す際に変換が必要になる可能性がある
                 this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
             }
             
@@ -350,7 +378,6 @@ class CanvasManager {
     }
 
     renderAllLayers() {
-        // renderAllLayersは全域更新なので、ダーティレクトは最大にする
         const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
         this.dirtyRect = { 
             minX: 0, 
@@ -487,13 +514,36 @@ class CanvasManager {
         } 
     }
     
-    updateCursor() { 
-        let cursor = 'crosshair'; 
-        if (this.isVDown) cursor = 'move'; 
-        if (this.isSpaceDown) cursor = 'grab'; 
-        if (this.app.toolManager.currentTool === 'eraser') cursor = 'cell'; 
-        if (this.app.toolManager.currentTool === 'bucket') cursor = 'copy'; 
-        this.canvasArea.style.cursor = cursor; 
+    // ★★★★★ 修正点 ★★★★★
+    // カーソル更新ロジックを分離・強化
+    updateCursor(coords) {
+        if (this.isSpaceDown) {
+            this.canvasArea.style.cursor = 'grab';
+            return;
+        }
+        if (this.isVDown) {
+            this.canvasArea.style.cursor = 'move';
+            return;
+        }
+
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+        if (this._isPointOnLayer(coords, activeLayer)) {
+            switch(this.app.toolManager.currentTool) {
+                case 'pen':
+                    this.canvasArea.style.cursor = 'crosshair';
+                    break;
+                case 'eraser':
+                    this.canvasArea.style.cursor = 'cell';
+                    break;
+                case 'bucket':
+                    this.canvasArea.style.cursor = 'copy';
+                    break;
+                default:
+                    this.canvasArea.style.cursor = 'crosshair';
+            }
+        } else {
+            this.canvasArea.style.cursor = 'not-allowed';
+        }
     }
     
     applyViewTransform() { 

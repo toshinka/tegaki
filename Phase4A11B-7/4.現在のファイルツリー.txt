@@ -4,13 +4,13 @@
 │ │
 │ ├ ToshinkaTegakiTool.html（Phase4A'8）
 │ │
-│ ├ core-engine.js（Phase4A11B-4）  
+│ ├ core-engine.js（Phase4A11B-6）  
 │ │
 │ ├ core/ 
 │ │ ├ rendering/              
 │ │ │  ├─ drawing-engine.js    <-- （Phase4A'7）
 │ │ │  ├─ canvas2d-engine.js   <-- （Phase4A'7）
-│ │ │  ├─ webgl-engine.js      <-- （Phase4A11B-3）
+│ │ │  ├─ webgl-engine.js      <-- （Phase4A11B-6）
 │ │ │  ├─ webgpu-engine.js     //  （仮空ファイル）
 │ │ │  ├─ rendering-bridge.js  <-- （Phase4A11Z）
 │ │ │  ├─ shader-programs/     // シェーダー管理（仮空ファイル）
@@ -19,7 +19,7 @@
 │ │ │  └─ texture-manager.js   // テクスチャ管理（仮空ファイル）
 │ │ │
 │ │ ├ utils/
-│ │ │  └─ transform-utils.js   <-- （Phase4A11A-1）
+│ │ │  └─ transform-utils.js   <-- （Phase4A11A-5）
 │ │ │ 
 │ │ ├ animation/
 │ │ │  ├─ timeline-manager.js  // タイムライン制御（仮空ファイル）
