@@ -1,7 +1,7 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.9.2 (Phase 4A11B-3 Y-Axis Fix)
+ * Version: 2.9.1 (Phase 4A11-Refactor)
  *
  * - 修正：
  * - 巨大化した core-engine.js の責務を分離するため、関連クラスを外部モジュールに分割。
@@ -10,7 +10,7 @@
  * - ColorManager -> ui/color-manager.js
  * - ToolManager -> ui/tool-manager.js
  * - 上記モジュールをインポートして利用するように変更。
- *
+ * 
  * Phase4A11A-1 改修:
  * - glMatrix定義追加
  * - modelMatrix の明示初期化
@@ -18,19 +18,15 @@
  * - transformWorldToLocal() 関数追加
  * - Vキーによるレイヤー移動モード実装
  * - 座標変換の正常化
- *
+ * 
  * Phase4A11A-1Γ 改修:
  * - modelMatrix の保存・復元処理を修正
  * - Float32Array(16) 形式の正確な保持
  * - レイヤー移動時の画像飛びバグを修正
- *
+ * 
  * Phase4A11A-1Δ 改修:
  * - isValidMatrix() 関数のFloat32Array対応修正
  * - 正常な行列の誤判定を解消
- * * Phase 4A11B-3 改修:
- * - 📜 指示書に基づき、transformWorldToLocal関数を修正。
- * - WebGL座標系とCanvas座標系のY軸の向きの違いをこの関数内で吸収。
- * - 変換後のY座標を `canvasHeight - y` とすることで、描画とレイヤー移動の座標を完全に一致させた。
  * ===================================================================================
  */
 
@@ -68,11 +64,6 @@ function isValidMatrix(m) {
     return m && m.length === 16 && Array.from(m).every(Number.isFinite);
 }
 
-/**
- * ✅ Phase4A11B-3 修正箇所
- * ワールド座標（画面上のマウス位置）を、レイヤーのローカル座標に変換します。
- * WebGLのY軸は下から上、CanvasのY軸は上から下なので、ここで差を吸収します。
- */
 function transformWorldToLocal(worldX, worldY, modelMatrix) {
     const invMatrix = mat4.create();
     if (!mat4.invert(invMatrix, modelMatrix)) {
@@ -82,17 +73,8 @@ function transformWorldToLocal(worldX, worldY, modelMatrix) {
     const worldPos = vec4.fromValues(worldX, worldY, 0, 1);
     const localPos = vec4.create();
     vec4.transformMat4(localPos, worldPos, invMatrix);
-    
-    // 指示書[2]に基づき、Y軸のズレをここで修正します
-    const drawingCanvas = document.getElementById('drawingCanvas');
-    const canvasHeight = drawingCanvas.height;
-    
-    return {
-      x: localPos[0],
-      y: canvasHeight - localPos[1] // Y座標をキャンバスの高さで反転
-    };
+    return { x: localPos[0], y: localPos[1] };
 }
-
 
 function getCanvasCoordinates(e, canvas) {
     const rect = canvas.getBoundingClientRect();
@@ -146,17 +128,17 @@ class CanvasManager {
         this.renderingBridge = new RenderingBridge(this.displayCanvas);
 
         this.compositionData = new ImageData(this.width, this.height);
-        this.isDrawing = false;
-        this.isPanning = false;
+        this.isDrawing = false; 
+        this.isPanning = false; 
         this.isSpaceDown = false;
         this.isLayerMoving = false;
         
-        this.isVDown = false;
+        this.isVDown = false; 
         this.isShiftDown = false;
         
         this.currentTool = 'pen';
-        this.currentColor = '#800000';
-        this.currentSize = 1;
+        this.currentColor = '#800000'; 
+        this.currentSize = 1; 
         this.lastPoint = null;
         
         // レイヤー移動用の変数
@@ -171,15 +153,15 @@ class CanvasManager {
         this.pressureHistory = [];
         this.maxPressureHistory = 5;
 
-        this.history = [];
+        this.history = []; 
         this.historyIndex = -1;
 
         this.dirtyRect = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
         this.animationFrameId = null;
 
-        this.dragStartX = 0;
-        this.dragStartY = 0;
-        this.canvasStartX = 0;
+        this.dragStartX = 0; 
+        this.dragStartY = 0; 
+        this.canvasStartX = 0; 
         this.canvasStartY = 0;
         this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
         
@@ -231,12 +213,12 @@ class CanvasManager {
         }
         
         if (this.isSpaceDown) {
-            this.dragStartX = e.clientX;
-            this.dragStartY = e.clientY;
+            this.dragStartX = e.clientX; 
+            this.dragStartY = e.clientY; 
             this.isPanning = true;
-            this.canvasStartX = this.viewTransform.left;
+            this.canvasStartX = this.viewTransform.left; 
             this.canvasStartY = this.viewTransform.top;
-            e.preventDefault();
+            e.preventDefault(); 
             return;
         }
         
@@ -280,7 +262,7 @@ class CanvasManager {
         this._updateDirtyRect(local.x, local.y, size);
         
         this.renderingBridge.drawCircle(
-            local.x, local.y, size / 2,
+            local.x, local.y, size / 2, 
             hexToRgba(this.currentColor), this.currentTool === 'eraser',
             activeLayer
         );
@@ -300,11 +282,11 @@ class CanvasManager {
         }
         
         if (this.isPanning) {
-            const dx = e.clientX - this.dragStartX;
+            const dx = e.clientX - this.dragStartX; 
             const dy = e.clientY - this.dragStartY;
-            this.viewTransform.left = this.canvasStartX + dx;
+            this.viewTransform.left = this.canvasStartX + dx; 
             this.viewTransform.top = this.canvasStartY + dy;
-            this.applyViewTransform();
+            this.applyViewTransform(); 
             return;
         }
         
@@ -328,18 +310,18 @@ class CanvasManager {
         if (!this.isDrawing) return;
         
         const coords = getCanvasCoordinates(e, this.displayCanvas);
-        if (!coords) {
-            this.lastPoint = null;
-            return;
+        if (!coords) { 
+            this.lastPoint = null; 
+            return; 
         }
         
         // 座標変換: ワールド座標からローカル座標へ
         const local = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
         
         if (!activeLayer.visible) return;
-        if (!this.lastPoint) {
+        if (!this.lastPoint) { 
             this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
-            this.lastPoint = { ...local, pressure: e.pressure > 0 ? e.pressure : 0.5 };
+            this.lastPoint = { ...local, pressure: e.pressure > 0 ? e.pressure : 0.5 }; 
             return;
         }
 
@@ -357,7 +339,7 @@ class CanvasManager {
         this.renderingBridge.drawLine(
             this.lastPoint.x, this.lastPoint.y, local.x, local.y,
             this.currentSize, hexToRgba(this.currentColor), this.currentTool === 'eraser',
-            this.lastPoint.pressure, currentPressure,
+            this.lastPoint.pressure, currentPressure, 
             this.calculatePressureSize.bind(this),
             activeLayer
         );
@@ -552,31 +534,31 @@ class CanvasManager {
         this.renderAllLayers();
     }
 
-    undo() {
-        if (this.historyIndex > 0) {
-            this.historyIndex--;
-            this.restoreState(this.history[this.historyIndex]);
-        }
+    undo() { 
+        if (this.historyIndex > 0) { 
+            this.historyIndex--; 
+            this.restoreState(this.history[this.historyIndex]); 
+        } 
     }
     
-    redo() {
-        if (this.historyIndex < this.history.length - 1) {
-            this.historyIndex++;
-            this.restoreState(this.history[this.historyIndex]);
-        }
+    redo() { 
+        if (this.historyIndex < this.history.length - 1) { 
+            this.historyIndex++; 
+            this.restoreState(this.history[this.historyIndex]); 
+        } 
     }
     
-    setCurrentTool(tool) {
-        this.currentTool = tool;
-        this.updateCursor();
+    setCurrentTool(tool) { 
+        this.currentTool = tool; 
+        this.updateCursor(); 
     }
     
-    setCurrentColor(color) {
-        this.currentColor = color;
+    setCurrentColor(color) { 
+        this.currentColor = color; 
     }
     
-    setCurrentSize(size) {
-        this.currentSize = size;
+    setCurrentSize(size) { 
+        this.currentSize = size; 
     }
     
     clearCanvas() {
@@ -626,52 +608,52 @@ class CanvasManager {
         link.click();
     }
     
-    updateCursor() {
-        let cursor = 'crosshair';
-        if (this.isVDown) cursor = 'move';
-        if (this.isSpaceDown) cursor = 'grab';
-        if (this.currentTool === 'eraser') cursor = 'cell';
-        if (this.currentTool === 'bucket') cursor = 'copy';
-        this.canvasArea.style.cursor = cursor;
+    updateCursor() { 
+        let cursor = 'crosshair'; 
+        if (this.isVDown) cursor = 'move'; 
+        if (this.isSpaceDown) cursor = 'grab'; 
+        if (this.currentTool === 'eraser') cursor = 'cell'; 
+        if (this.currentTool === 'bucket') cursor = 'copy'; 
+        this.canvasArea.style.cursor = cursor; 
     }
     
-    applyViewTransform() {
-        const t = this.viewTransform;
-        this.canvasContainer.style.transform = `translate(${t.left}px, ${t.top}px) scale(${t.scale * t.flipX}, ${t.scale * t.flipY}) rotate(${t.rotation}deg)`;
+    applyViewTransform() { 
+        const t = this.viewTransform; 
+        this.canvasContainer.style.transform = `translate(${t.left}px, ${t.top}px) scale(${t.scale * t.flipX}, ${t.scale * t.flipY}) rotate(${t.rotation}deg)`; 
     }
     
-    flipHorizontal() {
-        this.viewTransform.flipX *= -1;
-        this.applyViewTransform();
+    flipHorizontal() { 
+        this.viewTransform.flipX *= -1; 
+        this.applyViewTransform(); 
     }
     
-    flipVertical() {
-        this.viewTransform.flipY *= -1;
-        this.applyViewTransform();
+    flipVertical() { 
+        this.viewTransform.flipY *= -1; 
+        this.applyViewTransform(); 
     }
     
-    zoom(factor) {
-        this.viewTransform.scale = Math.max(0.1, this.viewTransform.scale * factor);
-        this.applyViewTransform();
+    zoom(factor) { 
+        this.viewTransform.scale = Math.max(0.1, this.viewTransform.scale * factor); 
+        this.applyViewTransform(); 
     }
     
-    rotate(degrees) {
-        this.viewTransform.rotation = (this.viewTransform.rotation + degrees) % 360;
-        this.applyViewTransform();
+    rotate(degrees) { 
+        this.viewTransform.rotation = (this.viewTransform.rotation + degrees) % 360; 
+        this.applyViewTransform(); 
     }
     
-    resetView() {
-        this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
-        this.applyViewTransform();
+    resetView() { 
+        this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 }; 
+        this.applyViewTransform(); 
     }
     
-    handleWheel(e) {
-        e.preventDefault();
-        if (e.shiftKey) {
-            this.rotate(-e.deltaY * 0.2);
-        } else {
-            this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05);
-        }
+    handleWheel(e) { 
+        e.preventDefault(); 
+        if (e.shiftKey) { 
+            this.rotate(-e.deltaY * 0.2); 
+        } else { 
+            this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); 
+        } 
     }
 }
 
