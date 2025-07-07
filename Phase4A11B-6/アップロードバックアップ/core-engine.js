@@ -1,13 +1,13 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.9.5 (Phase 4A11B - レイヤー移動ロジック修正)
+ * Version: 2.9.4 (Phase 4A11B - レイヤー移動累積誤差修正)
  *
- * - 修正 (Phase 4A11B-Fix2):
- * - レイヤー移動時の変換行列の計算方法を修正
- * - 1. 移動行列を右からではなく、左から乗算するように変更
- * - 2. これにより、ユーザーの直感（ワールド座標系での移動）と一致させ、
- * 意図しない座標へのジャンプを防ぐ
+ * - 修正 (Phase 4A11B-Fix):
+ * - レイヤー移動時の座標累積誤差を修正
+ * - 1. レイヤー移動開始時の初期座標を記録
+ * - 2. 移動中は初期座標からの相対位置で計算
+ * - 3. modelMatrix の累積計算を回避
  * ===================================================================================
  */
 
@@ -252,6 +252,7 @@ class CanvasManager {
         const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
 
         if (this.isLayerMoving) {
+            // 🚀【修正点】初期位置からの相対移動量を計算
             const dx = coords.x - this.transformStartWorldX;
             const dy = coords.y - this.transformStartWorldY;
             
@@ -259,17 +260,9 @@ class CanvasManager {
             const adjustedDx = dx * SUPER_SAMPLING_FACTOR;
             const adjustedDy = dy * SUPER_SAMPLING_FACTOR;
 
-            // ★★★★★★★★★★★★★★★★★★★★
-            // ★★★   バグ修正箇所   ★★★
-            // ★★★★★★★★★★★★★★★★★★★★
-            // 今回の移動量からワールド座標系での移動行列を作成します
-            const translationMatrix = mat4.create();
-            mat4.fromTranslation(translationMatrix, [adjustedDx, adjustedDy, 0]);
-
-            // 元の行列(originalModelMatrix)に、"左から"移動行列を乗算し、ワールド座標系で移動させます
-            const newMatrix = mat4.create();
-            mat4.multiply(newMatrix, translationMatrix, this.originalModelMatrix);
-
+            // 🚀【修正点】元の行列をクローンして、そこに変換を適用
+            const newMatrix = mat4.clone(this.originalModelMatrix);
+            mat4.translate(newMatrix, newMatrix, [adjustedDx, adjustedDy, 0]);
             activeLayer.modelMatrix = newMatrix;
             
             this.renderAllLayers();
