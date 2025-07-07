@@ -1,0 +1,85 @@
+🧩 概要（目的）
+本フェーズでは、**前フェーズ（Phase4A11B-7）で導入された「セルバッファ転写式のレイヤー移動システム」**を以下の観点から整理・改善します。
+
+🎯 目標
+セルバッファの描画と転写タイミングを最適化し、レスポンスを向上させる
+
+getTransformedImageData() からの null エラーの解消
+
+レイヤー位置と描画位置の同期の完全保証
+
+移動後も描画が正しい位置に転写される
+
+📋 現在の仕様（Phase4A11B-7）
+✅ 構造は実装済み
+セルバッファ（cellBuffer）を一時的な描画用キャンバスとして導入
+
+描画はこのセルに行い、レイヤー移動後に本レイヤーへ転写
+
+❌ 残っている問題
+問題内容	備考
+getTransformedImageData() が null を返す	転写元 canvas/context の null or 無効化
+転写失敗時の .x 読み取りエラー	layer.canvas の未定義参照が原因
+全ての pointerMove でセルバッファ描画が実行	過剰な描画負荷による遅延
+Vキー押下せずとも転写処理が走る	描画体験が常に重くなる
+レイヤー移動後、セル描画が元の位置に戻る	バッファのローカル基準と移動先の座標が一致していない
+
+✅ 修正方針
+① セル描画トリガー制御の導入
+Vキーが押された時のみ セルバッファを生成し描画を開始
+
+pointerMove のたびに描画はせず、座標変化時や描画時のみ処理
+
+pointerUp 時に cellBuffer → レイヤー への転写処理を実行
+
+描画モード中はセルバッファが常に表示される
+
+② null返却防止処理
+getTransformedImageData(layer) では、layer または canvas が null の場合は
+
+console.warn("転写失敗: canvas未定義") を表示し return null
+
+それ以上の処理はスキップし、例外は投げない
+
+③ 転写時に modelMatrix を適用した位置補正
+cellBuffer 上の描画は常にローカル座標と一致
+
+cellBuffer → layer.canvas 転写時には layer.modelMatrix に基づいた平行移動を反映させる
+
+🔧 作業対象ファイル（Phase4A11B-7）
+core-engine.js
+
+webgl-engine.js
+
+rendering-bridge.js
+
+transform-utils.js
+
+layer-manager.js
+
+必要であれば以下も参照：
+
+ui/tool-manager.js
+
+tools/toolset.js
+
+💡 補足：動作イメージ
+markdown
+コピーする
+編集する
+🖊️ ペン描画中：
+  描画は通常通り layer.canvas に行われる（cellBuffer は使わない）
+
+🧲 Vキー押下中：
+  - 現在のレイヤーの imageData を cellBuffer にコピー
+  - 描画は cellBuffer に行われる（オーバーレイで表示）
+  - pointerUp 時に転写＆破棄
+
+✅ 結果：
+  レイヤー本体は動かさず、「描画内容だけを動かして転写」する方式
+🚨 注意点（AI実装者向け）
+cellBuffer の座標変換はレイヤーと同じ modelMatrix を用いること
+
+レイヤー転写に失敗した場合でも、アプリがクラッシュしないよう null チェックを徹底
+
+必要なら layer.modelMatrix を使って drawImage のオフセット補正を行うこと
