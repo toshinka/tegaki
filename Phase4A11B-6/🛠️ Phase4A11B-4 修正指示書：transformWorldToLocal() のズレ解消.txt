@@ -1,0 +1,61 @@
+🎯 目的
+現在、レイヤーを右に移動した後、左上に線を引こうとしても描画されない問題があります。これは、transformWorldToLocal() の座標変換に ズレが累積して正しくローカル座標が出せなくなっていることが原因です。
+
+以下の修正で、このズレを解消してください。
+
+🔎 問題の具体例（変換結果）
+操作	World座標	Local座標	状態
+初期状態（左上）	world: (0, 4)	local: (0, 4)	✅ 正常
+レイヤーを右に移動後	world: (6, 6)	local: (-605, 10)	❌ ローカル座標が不正に大きくズレている
+
+このように、レイヤー移動後のmodelMatrixが不正に扱われ、逆変換で描画位置が大きく外れているのが本バグです。
+
+✅ 対象ファイル
+transform-utils.js の transformWorldToLocal() 関数
+
+✅ 期待される正しい動作
+World座標が同じなら、レイヤーを移動しても Local座標も見た目通りの相対位置になること
+
+特に world: (0, 4) 付近で打った点が、移動後も local.x が -600 などにならないこと
+
+ローカル座標のオフセットは、modelMatrixによる正しい平行移動成分だけになること
+
+🛠 修正内容の指示
+次のように transformWorldToLocal(worldX, worldY, modelMatrix) を安全・正確に修正してください：
+
+mat4.invert() を使う前に modelMatrix の妥当性チェックをしてください（null、undefined、NaN等）
+
+mat4.invert() の結果が null になることがあるため、失敗時は単位行列を使う fallback 処理を追加
+
+vec4.transformMat4() による変換のあと、結果が Infinity や NaN でないことを確認
+
+正常時は { x, y } のオブジェクトを返す
+
+console.log('[座標変換] World:', worldX, worldY, '→ Local:', localX, localY) はそのまま残してOKです
+
+🚨 注意
+この関数は core-engine.js や描画処理から呼び出されており、外部から modelMatrix は必ず渡されます。不要な再定義や関数名の変更をしないでください。
+
+glMatrix は読み込まれており、mat4, vec4 は直接使えます。import構文を追加する必要はありません。
+
+transform-utils.js だけの修正で対応してください。。
+
+✅ 成功判定（チェックリスト）
+レイヤーを右に大きく移動しても、マウスカーソルの見た目通りに点を打てる
+
+Console に出力される local座標が、合理的な値（-600などではない）になっている
+
+transformWorldToLocal() の中で例外や不正な戻り値（NaNなど）が発生していない
+
+🧪 テスト用例
+
+transformWorldToLocal(6, 6, modelMatrix);
+→ 正常な { x: ～, y: ～ } が返る
+
+
+📄 参考ファイル構成
+diff
+
+- core-engine.js（呼び出し元）
+- core/utils/transform-utils.js ← 🔧 このファイルのみ修正対象
+- glMatrix ライブラリは読み込み済み（mat4, vec4 使用可）

@@ -1,0 +1,186 @@
+承知いたしました。
+これまでの分析と解決策を統合し、Y軸問題を根本から解決するための新しい改修指示書を作成します。この指示書に従って修正すれば、座標系の混乱がなくなり、今後の開発もスムーズに進められるはずです。
+
+Phase4A11B-4 統合指示書：Y軸座標系の完全統一による不具合修正
+
+🎯 1. 改修の目的
+
+    レイヤー移動時にY軸の向きが反転してしまう問題を完全に解決します 。
+
+    レイヤーを移動させた後、マウスポインタの位置と描画位置がズレる問題を根本から解消します。
+
+    プロジェクト全体の座標系を、混乱の少ない**「Y軸下向き（画面上が0、下がプラス）」**に統一し、コードの可読性とメンテナンス性を向上させます。
+
+🧠 2. 根本原因の要約
+
+これまで問題が解決しなかったのは、以下の2つの異なる「Y軸のルール」がコード内に混在していたためです。
+
+    入力処理 (core-engine.js): Y軸は下向きで処理 。
+
+WebGL表示 (webgl-engine.js): Y軸は上向きで処理し、ズレを吸収するために手動で座標を反転させていた 。
+
+このルールの不一致が、Y軸反転や描画ズレを引き起こしていました。今回の改修で、この不一致を完全に解消します。
+
+🛠️ 3. 修正ステップ
+
+以下の3つのステップを順番に実行し、すべてのY軸ルールを「下向き」に統一します。主な修正対象は webgl-engine.js です。
+
+✅ Step 1: webgl-engine.js - 射影行列のY軸の向きを修正する
+
+まず、WebGLの座標系の基準となる射影行列 (projectionMatrix) の設定を変更し、Y軸の向きを他のファイルと一致させます。
+
+    対象ファイル: core/rendering/webgl-engine.js
+
+    対象関数: _initProjectionMatrix()
+
+JavaScript
+
+// [修正前]
+_initProjectionMatrix() {
+    this.projectionMatrix = mat4.create();
+    // Y軸が上向き (bottom: 0, top: superHeight) になってしまっている
+    mat4.ortho(this.projectionMatrix, 0, this.superWidth, 0, this.superHeight, -1, 1);
+}
+
+// [修正後]
+_initProjectionMatrix() {
+    this.projectionMatrix = mat4.create();
+    // Y軸が下向き (bottom: superHeight, top: 0) になるように引数を入れ替える
+    mat4.ortho(this.projectionMatrix, 0, this.superWidth, this.superHeight, 0, -1, 1);
+}
+
+理由: この修正により、WebGLが表示を行う際のY軸の向きが、Canvas 2D標準の「Y軸下向き」になります 。これが全ての基本となります。
+
+✅ Step 2: webgl-engine.js - 頂点バッファの座標定義を新しいY軸ルールに合わせる
+
+次に、Step 1で変更した「Y軸下向き」のルールに合わせて、テクスチャを描画するための四角形（クアッド）の頂点座標を修正します。
+
+    対象ファイル: core/rendering/webgl-engine.js
+
+    対象関数: _initBuffers()
+
+JavaScript
+
+// [修正前]
+_initBuffers() {
+    // ...
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+    // Y軸が上向き (Y=0が下) の定義になっている
+    const positions = [
+        0, this.superHeight,                // Top-Left
+        0, 0,                               // Bottom-Left
+        this.superWidth, this.superHeight,  // Top-Right
+        this.superWidth, 0                  // Bottom-Right
+    ];
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+    // ...
+}
+
+
+// [修正後]
+_initBuffers() {
+    // ...
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+    // Y軸が下向き (Y=0が上) の定義に修正する
+    const positions = [
+        0, 0,                               // Top-Left
+        0, this.superHeight,                // Bottom-Left
+        this.superWidth, 0,                 // Top-Right
+        this.superWidth, this.superHeight   // Bottom-Right
+    ];
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+    // ...
+}
+
+理由: 座標系の基準を変更したため、その基準で描画されるオブジェクト（この場合はテクスチャを貼り付ける四角形）の頂点定義も、新しい基準に合わせる必要があります。
+
+⚠️ Step 3: webgl-engine.js - 不要になった手動のY軸反転処理を削除する (最重要)
+
+Y軸のルールが統一されたことで、これまでズレを吸収するために行っていた手動のY軸反転処理は不要になります。これを残しておくと、逆に描画がおかしくなるため、必ず削除してください。
+
+    対象ファイル: core/rendering/webgl-engine.js
+
+    対象関数: drawCircle()
+
+JavaScript
+
+// [修正前]
+drawCircle(centerX, centerY, radius, color, isEraser, layer) {
+    // ...
+    const superX = centerX * this.SUPER_SAMPLING_FACTOR;
+    const superY = centerY * this.SUPER_SAMPLING_FACTOR;
+    const superRadius = radius * this.SUPER_SAMPLING_FACTOR;
+    
+    // この手動反転が描画ズレの原因の一つだった
+    const webglSuperY = this.superHeight - superY;
+    
+    gl.uniform2f(program.locations.u_resolution, this.superWidth, this.superHeight);
+    // 反転させた値をuniformに渡していた
+    gl.uniform2f(program.locations.u_center, superX, webglSuperY);
+    // ...
+}
+
+// [修正後]
+drawCircle(centerX, centerY, radius, color, isEraser, layer) {
+    // ...
+    const superX = centerX * this.SUPER_SAMPLING_FACTOR;
+    const superY = centerY * this.SUPER_SAMPLING_FACTOR;
+    const superRadius = radius * this.SUPER_SAMPLING_FACTOR;
+    
+    // (webglSuperY の行を完全に削除)
+    
+    gl.uniform2f(program.locations.u_resolution, this.superWidth, this.superHeight);
+    // Y軸のルールが統一されたので、受け取ったY座標をそのまま渡す
+    gl.uniform2f(program.locations.u_center, superX, superY);
+    // ...
+}
+
+理由: この手動反転こそが、座標系が不統一だったために必要だった「応急処置」です。根本原因が解決された今、この処理は副作用しか生まないため、削除が必須です。
+
+🔍 4. 成功判定チェックリスト
+
+上記の修正完了後、以下の項目をすべて満たしていることを確認してください。
+
+チェック項目
+	
+
+期待される結果
+
+🖊️ ペンで上に動かして描画する
+	
+
+	
+
+上に線が描かれる ✅ 
+
+🧩 レイヤー選択ツール（Vキー）で上にドラッグする
+	
+
+レイヤー（画像）が
+	
+
+上に移動する ✅ 
+
+🧠 レイヤー移動後に描画する
+	
+
+マウスの位置と描画位置が
+	
+
+ズレない ✅ 
+
+🔁 レイヤー移動や描画の後にUndo/Redoを実行する
+	
+
+画像と位置が
+	
+
+正しく復元される ✅ 
+
+⚠ ブラウザのコンソールを確認する
+	
+
+行列 (
+	
+
+modelMatrix) に関する警告やエラーが出ない 

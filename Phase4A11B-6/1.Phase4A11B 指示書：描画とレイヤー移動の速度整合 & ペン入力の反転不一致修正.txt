@@ -1,0 +1,106 @@
+🎯 目的
+ペン描画時の入力（マウス操作）と表示出力の向きを完全一致させる
+
+レイヤー移動がマウス操作と比べて「半分の速度」で動く問題を修正する
+
+これにより、自然な操作感の描画とレイヤー移動を実現し、ペンで描いた方向と絵がズレることがないようにします。
+
+🔍 問題の詳細
+🖊 問題1：ペンで上に線を描くと、下に描かれてしまう（Y軸反転）
+描画処理で transformWorldToLocal() を通してローカル座標に変換しているが、
+
+WebGL側でさらに反転しているため、「入力も反転、出力も反転」になってしまっている
+
+その結果、「入力は上に動かしたのに、描画は下に出る」などの不自然な操作感になる
+
+🧭 問題2：レイヤー移動がマウスよりも「半分の速度」になる
+mat4.translate() に渡している dx / dy が transformWorldToLocal() のスケールと不一致の可能性
+
+または、**CanvasとWebGLの座標解像度差（SuperSamplingなど）**が影響している
+
+✅ 修正指示（Step by Step）
+🟩 Step 1：transformWorldToLocal() に 描画出力反転処理を追加しないよう注意
+js
+コピーする
+編集する
+export function transformWorldToLocal(worldX, worldY, modelMatrix) {
+  const invMatrix = mat4.create();
+  mat4.invert(invMatrix, modelMatrix);
+
+  const worldPos = vec4.fromValues(worldX, worldY, 0, 1);
+  const localPos = vec4.create();
+  vec4.transformMat4(localPos, worldPos, invMatrix);
+
+  return { x: localPos[0], y: localPos[1] }; // ✅ Yを反転しない、ありのまま使う
+}
+🟩 Step 2：描画関数（例：drawLine()）では、localYの向きをそのまま使用する
+js
+コピーする
+編集する
+const { x: localX, y: localY } = transformWorldToLocal(worldX, worldY, modelMatrix);
+ctx.lineTo(localX, localY); // ✅ localYのまま使用
+🛑 NG例：
+
+js
+コピーする
+編集する
+ctx.lineTo(localX, canvas.height - localY); // ❌ 反転してしまう
+🟩 Step 3：レイヤー移動時の速度差の原因を統一（SuperSampling補正 or スケーリング）
+✅ 原因1：dx, dy が半分に補正されてしまっている？
+チェックポイント：
+
+js
+コピーする
+編集する
+const dx = currentX - startX;
+const dy = currentY - startY;
+mat4.translate(layer.modelMatrix, originalMatrix, [dx, dy, 0]); // ✅ dx/dyをそのまま使って良い
+🛑 NG例：
+
+js
+コピーする
+編集する
+mat4.translate(..., [dx * 0.5, dy * 0.5, 0]); // ❌ 半分補正していると遅くなる
+✅ 原因2：canvas.styleとcanvas.width/heightがズレているとき
+getCanvasCoordinates() 内で以下のようなコードが必要：
+
+js
+コピーする
+編集する
+const scaleX = canvas.width / rect.width;
+const scaleY = canvas.height / rect.height;
+return {
+  x: (e.clientX - rect.left) * scaleX,
+  y: (e.clientY - rect.top) * scaleY
+};
+🟩 Step 4：レイヤー移動と描画のスケール倍率を揃える
+WebGLのスーパースケーリング倍率が SUPER_SAMPLING_FACTOR になっている場合：
+
+transformWorldToLocal() で補正しない
+
+mat4.translate() に渡す dx/dy に補正を入れることで統一する
+
+例：
+
+js
+コピーする
+編集する
+const adjustedDx = dx * SUPER_SAMPLING_FACTOR;
+const adjustedDy = dy * SUPER_SAMPLING_FACTOR;
+mat4.translate(layer.modelMatrix, originalMatrix, [adjustedDx, adjustedDy, 0]);
+⚠ または、その逆で 描画系をSuperSamplingに合わせる方が望ましいか検討（ツール方針次第）
+
+✅ 成功判定チェック
+項目	判定基準
+ペンを上に動かせば、上に線が描かれる	✅
+レイヤーを上に動かせば、絵が上に動く	✅
+レイヤー移動とマウスドラッグの距離が一致する	✅
+変換や補正が重複しておらず、自然な挙動である	✅
+
+📎 対象ファイル
+core-engine.js
+
+core/utils/transform-utils.js
+
+core/rendering/webgl-engine.js
+
