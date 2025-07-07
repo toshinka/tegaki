@@ -1,0 +1,64 @@
+現在（Phase 4A実装中）のファイルツリー
+
+├ Phase4A11B/
+│ │
+│ ├ ToshinkaTegakiTool.html（Phase4A'8）
+│ │
+│ ├ core-engine.js（Phase4A11B-4）  
+│ │
+│ ├ core/ 
+│ │ ├ rendering/              
+│ │ │  ├─ drawing-engine.js    <-- （Phase4A'7）
+│ │ │  ├─ canvas2d-engine.js   <-- （Phase4A'7）
+│ │ │  ├─ webgl-engine.js      <-- （Phase4A11B-3）
+│ │ │  ├─ webgpu-engine.js     //  （仮空ファイル）
+│ │ │  ├─ rendering-bridge.js  <-- （Phase4A11Z）
+│ │ │  ├─ shader-programs/     // シェーダー管理（仮空ファイル）
+│ │ │  │  ├─ blend-shaders.js  // ブレンドモード（仮空ファイル）
+│ │ │  │  └─ filter-shaders.js // フィルター効果（仮空ファイル） 
+│ │ │  └─ texture-manager.js   // テクスチャ管理（仮空ファイル）
+│ │ │
+│ │ ├ utils/
+│ │ │  └─ transform-utils.js   <-- （Phase4A11A-1）
+│ │ │ 
+│ │ ├ animation/
+│ │ │  ├─ timeline-manager.js  // タイムライン制御（仮空ファイル）
+│ │ │  ├─ keyframe-manager.js  // キーフレーム管理（仮空ファイル）
+│ │ │  └─ interpolation.js     // 補間システム（仮空ファイル）
+│ │ │ 
+│ │ └ deformation/
+│ │     ├─ mesh-deformer.js     // メッシュ変形・ワープデフォーマ（仮空ファイル）
+│ │     ├─ bone-system.js       // ボーンシステム（仮空ファイル）
+│ │     └─ physics-engine.js    // 簡易物理演算（仮空ファイル）
+│ │ 
+│ ├ layer-manager/              <-- （Phase4A11A-0）
+│ │ └─ layer-manager.js         <-- （Phase4A11A-0）
+│ │
+│ ├ ui/ 
+│ │ ├─ ui-manager.js         　　 <-- （Phase2）
+│ │ ├─ shortcut-manager.js     　 <-- （Phase3B）
+│ │ ├─ pen-settings-manager.js   <-- （Phase4A11A-0）
+│ │ ├─ color-manager.js          <-- （Phase4A11A-0）
+│ │ ├─ tool-manager.js           <-- （Phase4A11A-0）
+│ │ └─ timeline-ui.js             // タイムラインUI（仮空ファイル）
+│ │　　
+│ ├ tools/ 
+│ │ ├─ toolset.js              　 <-- （Phase2）
+│ │ ├─ advanced-toolset.js   　   // エアブラシ、グラデーション（仮空ファイル）
+│ │ ├─ ruler-tool.js         　   // 定規ツール（仮空ファイル）
+│ │ └─ bucket-fill-improved.js    // アンチエイリアス対応（仮空ファイル）
+│ │ 
+│ └ libs/                           // ライブラリ専用フォルダ（←★追加）
+│ 　 ├─ gl-matrix-min.js           // glMatrix 3.4.3（CDNから丸コピー）
+│ 　 └─ dat.gui.min.js             // dat.GUI（CDNから丸コピー）
+
+
+※以下は改修で必要になったら組み込む
+
+
+├─ data/
+│   ├─ constants.js           ← 色、サイズ、ショートカット定義など
+│   └─ user-settings.js       ← ユーザー保存設定（LocalStorage等）
+│
+├─ utils/
+│   └─ utils.js               ← 汎用関数（色処理、補間等）
