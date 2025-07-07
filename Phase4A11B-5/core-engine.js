@@ -1,19 +1,15 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.9.3 (Phase 4A11B - View Transform Fix)
+ * Version: 2.9.6 (Phase 4A11B - Final Bake & Coordinate Fix)
  *
- * - 修正 (Phase 4A11B):
- * - キャンバス反転時に描画位置がズレる問題を修正。
- * - 1. getCanvasCoordinates 関数の修正:
- * - マウス座標をキャンバス座標に変換する `getCanvasCoordinates` 関数に、
- * キャンバスの反転状態 `viewTransform` を引数として渡すように変更。
- * - `viewTransform.flipX` や `viewTransform.flipY` の状態に応じて、
- * 座標を正しく反転させる処理を追加。
- * - これにより、座標変換の最初の段階でズレがなくなり、反転時も正しい位置に描画される。
- * - 2. onPointerDown/onPointerMove の修正:
- * - 上記の変更に伴い、イベントハンドラから `getCanvasCoordinates` を呼び出す際に
- * `this.viewTransform` を渡すように修正した。
+ * - 修正 (Phase 4A11B-5):
+ * - 1. レイヤー移動時の座標ズレ問題を修正:
+ * - Claudeからの指摘に基づき、onPointerMove内のレイヤー移動処理を修正。
+ * - dx, dyにSUPER_SAMPLING_FACTORを乗算していた二重変換処理を撤廃。
+ * これにより、レイヤー移動を繰り返しても描画座標がズレる問題を根本的に解決。
+ * - 2. マネージャ参照の完全統一: (前回修正済み)
+ * - 3. 「変形の確定」機能の司令塔を実装: (前回修正済み)
  * ===================================================================================
  */
 
@@ -59,38 +55,23 @@ function transformWorldToLocal(worldX, worldY, modelMatrix) {
     return { x: localPos[0], y: localPos[1] };
 }
 
-// 🚀【修正点１】getCanvasCoordinates 関数を修正
-/**
- * マウスイベントの座標を、キャンバスの反転状態を考慮した正しい座標に変換します。
- * @param {PointerEvent} e - マウスイベント
- * @param {HTMLCanvasElement} canvas - 対象のキャンバス
- * @param {object} viewTransform - キャンバスの表示状態（反転など）
- * @returns {{x: number, y: number}} キャンバス座標
- */
 function getCanvasCoordinates(e, canvas, viewTransform) {
     const rect = canvas.getBoundingClientRect();
     let x = e.clientX - rect.left;
     let y = e.clientY - rect.top;
 
-    // キャンバスの表示サイズと実際の解像度が違う場合を考慮してスケールを調整
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
     x *= scaleX;
     y *= scaleY;
 
-    // キャンバスの反転状態 `viewTransform` を元に座標を補正
     if (viewTransform) {
-        if (viewTransform.flipX === -1) {
-            x = canvas.width - x;
-        }
-        if (viewTransform.flipY === -1) {
-            y = canvas.height - y;
-        }
+        if (viewTransform.flipX === -1) x = canvas.width - x;
+        if (viewTransform.flipY === -1) y = canvas.height - y;
     }
     
     return { x, y };
 }
-
 
 // --- Core Logic Classes ---
 export class Layer {
@@ -124,7 +105,6 @@ class CanvasManager {
     constructor(app) {
         this.app = app;
         this.displayCanvas = document.getElementById('drawingCanvas');
-        this.displayCtx = this.displayCanvas.getContext('2d', { willReadFrequently: true });
         this.canvasArea = document.getElementById('canvas-area');
         this.canvasContainer = document.getElementById('canvas-container');
         this.width = this.displayCanvas.width;
@@ -136,7 +116,6 @@ class CanvasManager {
         this.isPanning = false; 
         this.isSpaceDown = false;
         this.isLayerMoving = false;
-        
         this.isVDown = false; 
         
         this.lastPoint = null;
@@ -195,7 +174,6 @@ class CanvasManager {
         if (!activeLayer) return;
         
         if (!isValidMatrix(activeLayer.modelMatrix)) {
-            console.warn("⚠ onPointerDown: invalid modelMatrix detected, resetting");
             activeLayer.modelMatrix = mat4.create();
         }
         
@@ -208,7 +186,6 @@ class CanvasManager {
             return;
         }
 
-        // 🚀【修正点２】getCanvasCoordinates呼び出し時に `this.viewTransform` を渡す
         const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
 
         if (this.isVDown) {
@@ -220,7 +197,7 @@ class CanvasManager {
         }
         
         const local = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
-        console.log("📍 描画座標変換:", { world: coords, local: local });
+        console.log("📍 描画座標変換: ", { world: coords, local: local });
         
         if (!activeLayer.visible) return;
 
@@ -244,7 +221,8 @@ class CanvasManager {
         
         this.renderingBridge.drawCircle(
             local.x, local.y, size / 2, 
-            hexToRgba(this.app.colorManager.currentColor), this.app.toolManager.currentTool === 'eraser',
+            hexToRgba(this.app.colorManager.currentColor), 
+            this.app.toolManager.currentTool === 'eraser',
             activeLayer
         );
         
@@ -265,19 +243,18 @@ class CanvasManager {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer) return;
 
-        // 🚀【修正点２】getCanvasCoordinates呼び出し時に `this.viewTransform` を渡す
         const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
 
         if (this.isLayerMoving) {
             const dx = coords.x - this.transformStartX;
             const dy = coords.y - this.transformStartY;
             
-            const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
-            const adjustedDx = dx * SUPER_SAMPLING_FACTOR;
-            const adjustedDy = dy * SUPER_SAMPLING_FACTOR;
-
+            // 🚀【バグ修正点】
+            // Claudeの指摘通り、ここでSUPER_SAMPLING_FACTORを乗算していたのが座標ズレの根本原因でした。
+            // getCanvasCoordinatesで得られる座標は既にスケーリング済みのため、ここでの乗算は不要です。
+            // この二重変換を削除し、dxとdyを直接使うように修正します。[cite: 2]
             const newMatrix = mat4.clone(this.originalModelMatrix);
-            mat4.translate(newMatrix, newMatrix, [adjustedDx, adjustedDy, 0]);
+            mat4.translate(newMatrix, newMatrix, [dx, dy, 0]); // 修正: adjustedDx, adjustedDy を dx, dy に変更 
             activeLayer.modelMatrix = newMatrix;
             
             this.renderAllLayers();
@@ -301,7 +278,9 @@ class CanvasManager {
 
         this.renderingBridge.drawLine(
             this.lastPoint.x, this.lastPoint.y, local.x, local.y,
-            this.app.penSettingsManager.currentSize, hexToRgba(this.app.colorManager.currentColor), this.app.toolManager.currentTool === 'eraser',
+            this.app.penSettingsManager.currentSize, 
+            hexToRgba(this.app.colorManager.currentColor), 
+            this.app.toolManager.currentTool === 'eraser',
             this.lastPoint.pressure, currentPressure, 
             this.calculatePressureSize.bind(this),
             activeLayer
@@ -314,19 +293,14 @@ class CanvasManager {
     onPointerUp(e) {
         if (this.isDrawing) {
             this.isDrawing = false;
-            
-            if (this.animationFrameId) {
-                cancelAnimationFrame(this.animationFrameId);
-                this.animationFrameId = null;
-            }
-            
+            if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+            this.animationFrameId = null;
             this._renderDirty();
 
             const activeLayer = this.app.layerManager.getCurrentLayer();
             if (activeLayer) {
                 this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
             }
-            
             this.lastPoint = null;
             this.saveState();
         }
@@ -376,7 +350,6 @@ class CanvasManager {
     }
 
     calculatePressureSize(baseSizeInput, pressure) {
-        // ... (この関数の中身は変更なし)
         const baseSize = Math.max(0.1, baseSizeInput);
         let normalizedPressure = Math.max(0, Math.min(1, pressure || 0));
         
@@ -386,51 +359,29 @@ class CanvasManager {
 
         let finalPressure = smoothedPressure;
 
-        const historyLength = this.pressureHistory.length;
-        if (this.isDrawing && historyLength <= this.maxPressureHistory) {
-            const dampingFactor = historyLength / this.maxPressureHistory;
-            const initialDamping = 0.2 + Math.pow(dampingFactor, 3) * 0.8;
-            finalPressure *= initialDamping;
-        }
-
         if (this.pressureSettings.dynamicRange) {
             const minHist = Math.min(...tempHistory, finalPressure);
             const maxHist = Math.max(...tempHistory, finalPressure);
             const range = maxHist - minHist;
-            if (range > 0.1) {
-                finalPressure = (finalPressure - minHist) / range;
-            }
+            if (range > 0.1) finalPressure = (finalPressure - minHist) / range;
         }
         
-        const curve = this.pressureSettings.curve;
-        const curvedPressure = Math.pow(finalPressure, curve);
-        
-        const minSize = baseSize * this.pressureSettings.minSizeRatio;
-        const maxSize = baseSize;
-        const finalSize = minSize + (maxSize - minSize) * curvedPressure;
-        
+        const curvedPressure = Math.pow(finalPressure, this.pressureSettings.curve);
+        const finalSize = (baseSize * this.pressureSettings.minSizeRatio) + (baseSize - (baseSize * this.pressureSettings.minSizeRatio)) * curvedPressure;
         return Math.max(0.1, finalSize);
     }
 
     saveState() {
         const state = {
             layers: this.app.layerManager.layers.map(layer => {
-                if (!isValidMatrix(layer.modelMatrix)) {
-                    console.warn("⚠ saveState: invalid modelMatrix detected, resetting");
-                    layer.modelMatrix = mat4.create();
-                }
-                const savedModelMatrix = Array.from(layer.modelMatrix);
+                if (!isValidMatrix(layer.modelMatrix)) layer.modelMatrix = mat4.create();
                 return {
                     name: layer.name,
                     visible: layer.visible,
                     opacity: layer.opacity,
                     blendMode: layer.blendMode,
-                    imageData: new ImageData(
-                        new Uint8ClampedArray(layer.imageData.data),
-                        layer.imageData.width,
-                        layer.imageData.height
-                    ),
-                    modelMatrix: savedModelMatrix
+                    imageData: new ImageData( new Uint8ClampedArray(layer.imageData.data), layer.imageData.width, layer.imageData.height),
+                    modelMatrix: Array.from(layer.modelMatrix)
                 };
             }),
             activeLayerIndex: this.app.layerManager.activeLayerIndex
@@ -448,14 +399,9 @@ class CanvasManager {
             layer.opacity = layerData.opacity ?? 100;
             layer.blendMode = layerData.blendMode ?? 'normal';
             layer.imageData.data.set(layerData.imageData.data);
-            
-            layer.modelMatrix = mat4.create();
-            if (layerData.modelMatrix && Array.isArray(layerData.modelMatrix) && layerData.modelMatrix.length === 16) {
-                layer.modelMatrix = new Float32Array(layerData.modelMatrix);
-            } else {
-                console.warn("⚠ restoreState: invalid saved modelMatrix, using identity");
-            }
-            
+            layer.modelMatrix = (layerData.modelMatrix && Array.isArray(layerData.modelMatrix) && layerData.modelMatrix.length === 16)
+                ? new Float32Array(layerData.modelMatrix)
+                : mat4.create();
             layer.gpuDirty = true;
             return layer;
         });
@@ -464,19 +410,8 @@ class CanvasManager {
         this.renderAllLayers();
     }
 
-    undo() { 
-        if (this.historyIndex > 0) { 
-            this.historyIndex--; 
-            this.restoreState(this.history[this.historyIndex]); 
-        } 
-    }
-    
-    redo() { 
-        if (this.historyIndex < this.history.length - 1) { 
-            this.historyIndex++; 
-            this.restoreState(this.history[this.historyIndex]); 
-        } 
-    }
+    undo() { if (this.historyIndex > 0) { this.historyIndex--; this.restoreState(this.history[this.historyIndex]); } }
+    redo() { if (this.historyIndex < this.history.length - 1) { this.historyIndex++; this.restoreState(this.history[this.historyIndex]); } }
     
     updateCursor() { 
         let cursor = 'crosshair'; 
@@ -492,44 +427,67 @@ class CanvasManager {
         this.canvasContainer.style.transform = `translate(${t.left}px, ${t.top}px) scale(${t.scale * t.flipX}, ${t.scale * t.flipY}) rotate(${t.rotation}deg)`; 
     }
     
-    flipHorizontal() { 
-        this.viewTransform.flipX *= -1; 
-        this.applyViewTransform(); 
-    }
-    
-    flipVertical() { 
-        this.viewTransform.flipY *= -1; 
-        this.applyViewTransform(); 
-    }
-    
-    zoom(factor) { 
-        this.viewTransform.scale = Math.max(0.1, this.viewTransform.scale * factor); 
-        this.applyViewTransform(); 
-    }
-    
-    rotate(degrees) { 
-        this.viewTransform.rotation = (this.viewTransform.rotation + degrees) % 360; 
-        this.applyViewTransform(); 
-    }
-    
-    resetView() { 
-        this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 }; 
-        this.applyViewTransform(); 
-    }
+    flipHorizontal() { this.viewTransform.flipX *= -1; this.applyViewTransform(); }
+    flipVertical() { this.viewTransform.flipY *= -1; this.applyViewTransform(); }
+    zoom(factor) { this.viewTransform.scale = Math.max(0.1, this.viewTransform.scale * factor); this.applyViewTransform(); }
+    rotate(degrees) { this.viewTransform.rotation = (this.viewTransform.rotation + degrees) % 360; this.applyViewTransform(); }
+    resetView() { this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 }; this.applyViewTransform(); }
     
     handleWheel(e) { 
         e.preventDefault(); 
-        if (e.shiftKey) { 
-            this.rotate(-e.deltaY * 0.2); 
-        } else { 
-            this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); 
-        } 
+        if (e.shiftKey) { this.rotate(-e.deltaY * 0.2); } 
+        else { this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); } 
+    }
+
+    bakeActiveLayerTransform() {
+        console.log("変形を確定します...");
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+        if (!activeLayer) return;
+
+        this.app.layerManager.bakeLayerTransform(activeLayer, this.renderingBridge.currentEngine);
+
+        this.renderAllLayers();
+        this.saveState();
+    }
+
+    exportMergedImage() {
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = this.width;
+        exportCanvas.height = this.height;
+        const exportCtx = exportCanvas.getContext('2d');
+        
+        const fullRect = { minX: 0, minY: 0, maxX: this.width, maxY: this.height };
+        this.renderingBridge.compositeLayers(this.app.layerManager.layers, null, fullRect);
+
+        const gl = this.renderingBridge.currentEngine?.gl;
+        if (gl) {
+             const pixels = new Uint8Array(this.width * this.height * 4);
+             this.renderingBridge.renderToDisplay(null, fullRect);
+             gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+             
+             const correctedPixels = new Uint8ClampedArray(this.width * this.height * 4);
+             for (let y = 0; y < this.height; y++) {
+                 const s = y * this.width * 4;
+                 const d = (this.height - 1 - y) * this.width * 4;
+                 correctedPixels.set(pixels.subarray(s, s + this.width * 4), d);
+             }
+             const finalImageData = new ImageData(correctedPixels, this.width, this.height);
+             exportCtx.putImageData(finalImageData, 0, 0);
+
+        } else {
+            console.error("WebGL context not available for export.");
+        }
+        
+        const dataURL = exportCanvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.href = dataURL;
+        link.download = 'merged_image.png';
+        link.click();
     }
 }
 
 class ToshinkaTegakiTool {
     constructor() {
-        // 構成が複雑になるため、明示的にappインスタンスを渡す
         this.layerManager = new LayerManager(this);
         this.canvasManager = new CanvasManager(this);
         this.penSettingsManager = new PenSettingsManager(this);
@@ -542,6 +500,9 @@ class ToshinkaTegakiTool {
 
         this.shortcutManager.initialize();
         this.layerManager.setupInitialLayers();
+
+        // 🚀【修正点】ToolManagerにCanvasManagerを渡して、変形確定処理を呼び出せるようにする
+        this.toolManager.setCanvasManager(this.canvasManager);
         this.toolManager.setTool('pen');
     }
 }
