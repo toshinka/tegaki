@@ -1,19 +1,13 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.9.3 (Phase 4A11B - View Transform Fix)
+ * Version: 2.9.4 (Phase 4A11B - レイヤー移動累積誤差修正)
  *
- * - 修正 (Phase 4A11B):
- * - キャンバス反転時に描画位置がズレる問題を修正。
- * - 1. getCanvasCoordinates 関数の修正:
- * - マウス座標をキャンバス座標に変換する `getCanvasCoordinates` 関数に、
- * キャンバスの反転状態 `viewTransform` を引数として渡すように変更。
- * - `viewTransform.flipX` や `viewTransform.flipY` の状態に応じて、
- * 座標を正しく反転させる処理を追加。
- * - これにより、座標変換の最初の段階でズレがなくなり、反転時も正しい位置に描画される。
- * - 2. onPointerDown/onPointerMove の修正:
- * - 上記の変更に伴い、イベントハンドラから `getCanvasCoordinates` を呼び出す際に
- * `this.viewTransform` を渡すように修正した。
+ * - 修正 (Phase 4A11B-Fix):
+ * - レイヤー移動時の座標累積誤差を修正
+ * - 1. レイヤー移動開始時の初期座標を記録
+ * - 2. 移動中は初期座標からの相対位置で計算
+ * - 3. modelMatrix の累積計算を回避
  * ===================================================================================
  */
 
@@ -59,26 +53,16 @@ function transformWorldToLocal(worldX, worldY, modelMatrix) {
     return { x: localPos[0], y: localPos[1] };
 }
 
-// 🚀【修正点１】getCanvasCoordinates 関数を修正
-/**
- * マウスイベントの座標を、キャンバスの反転状態を考慮した正しい座標に変換します。
- * @param {PointerEvent} e - マウスイベント
- * @param {HTMLCanvasElement} canvas - 対象のキャンバス
- * @param {object} viewTransform - キャンバスの表示状態（反転など）
- * @returns {{x: number, y: number}} キャンバス座標
- */
 function getCanvasCoordinates(e, canvas, viewTransform) {
     const rect = canvas.getBoundingClientRect();
     let x = e.clientX - rect.left;
     let y = e.clientY - rect.top;
 
-    // キャンバスの表示サイズと実際の解像度が違う場合を考慮してスケールを調整
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
     x *= scaleX;
     y *= scaleY;
 
-    // キャンバスの反転状態 `viewTransform` を元に座標を補正
     if (viewTransform) {
         if (viewTransform.flipX === -1) {
             x = canvas.width - x;
@@ -90,7 +74,6 @@ function getCanvasCoordinates(e, canvas, viewTransform) {
     
     return { x, y };
 }
-
 
 // --- Core Logic Classes ---
 export class Layer {
@@ -141,8 +124,9 @@ class CanvasManager {
         
         this.lastPoint = null;
         
-        this.transformStartX = 0;
-        this.transformStartY = 0;
+        // 🚀【修正点】レイヤー移動の累積誤差を防ぐための変数
+        this.transformStartWorldX = 0;
+        this.transformStartWorldY = 0;
         this.originalModelMatrix = null;
         
         this.pressureSettings = {
@@ -208,13 +192,13 @@ class CanvasManager {
             return;
         }
 
-        // 🚀【修正点２】getCanvasCoordinates呼び出し時に `this.viewTransform` を渡す
         const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
 
         if (this.isVDown) {
             this.isLayerMoving = true;
-            this.transformStartX = coords.x;
-            this.transformStartY = coords.y;
+            // 🚀【修正点】初期のワールド座標を記録
+            this.transformStartWorldX = coords.x;
+            this.transformStartWorldY = coords.y;
             this.originalModelMatrix = mat4.clone(activeLayer.modelMatrix);
             return;
         }
@@ -265,20 +249,21 @@ class CanvasManager {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer) return;
 
-        // 🚀【修正点２】getCanvasCoordinates呼び出し時に `this.viewTransform` を渡す
         const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
 
         if (this.isLayerMoving) {
-            const dx = coords.x - this.transformStartX;
-            const dy = coords.y - this.transformStartY;
+            // 🚀【修正点】初期位置からの相対移動量を計算
+            const dx = coords.x - this.transformStartWorldX;
+            const dy = coords.y - this.transformStartWorldY;
             
             const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
             const adjustedDx = dx * SUPER_SAMPLING_FACTOR;
             const adjustedDy = dy * SUPER_SAMPLING_FACTOR;
 
-const newMatrix = mat4.create(); // ← 1. 常に新しい行列を作る
-mat4.fromTranslation(newMatrix, [adjustedDx, adjustedDy, 0]); // ← 2. 絶対位置の平行移動に変換
-activeLayer.modelMatrix = newMatrix; // ← 3. 上書き（蓄積しない）
+            // 🚀【修正点】元の行列をクローンして、そこに変換を適用
+            const newMatrix = mat4.clone(this.originalModelMatrix);
+            mat4.translate(newMatrix, newMatrix, [adjustedDx, adjustedDy, 0]);
+            activeLayer.modelMatrix = newMatrix;
             
             this.renderAllLayers();
             return;
@@ -376,7 +361,6 @@ activeLayer.modelMatrix = newMatrix; // ← 3. 上書き（蓄積しない）
     }
 
     calculatePressureSize(baseSizeInput, pressure) {
-        // ... (この関数の中身は変更なし)
         const baseSize = Math.max(0.1, baseSizeInput);
         let normalizedPressure = Math.max(0, Math.min(1, pressure || 0));
         
@@ -529,7 +513,6 @@ activeLayer.modelMatrix = newMatrix; // ← 3. 上書き（蓄積しない）
 
 class ToshinkaTegakiTool {
     constructor() {
-        // 構成が複雑になるため、明示的にappインスタンスを渡す
         this.layerManager = new LayerManager(this);
         this.canvasManager = new CanvasManager(this);
         this.penSettingsManager = new PenSettingsManager(this);
