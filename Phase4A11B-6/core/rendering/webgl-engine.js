@@ -1,21 +1,15 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.4.1 (Phase 4A11B-3 - Brush & ReadPixels Fix)
+ * Version: 4.4.2 (Phase 4A11B-6 - 座標系整合性修正)
  *
- * - 変更点 (Phase 4A11B-5):
- * - 📜 Phase4A11B 指示書で解決しなかったペン入力反転問題を修正。
- * - 1. ブラシ用頂点シェーダー (vsBrush) の修正:
- * - レイヤー合成シェーダーと同様に `u_mvpMatrix` を使用する方式に統一。
- * - シェーダー内で行っていた手動の座標計算とY軸反転 (`center_clip.y *= -1.0`) を撤廃。
- * これにより、座標変換パイプラインが統一され、レイヤー反転時に描画方向がズレる問題を根本的に解決。
- * - 2. drawCircle() の修正:
- * - 上記シェーダーの変更に伴い、ブラシ用のモデル行列とMVP行列を計算し、
- * `u_mvpMatrix` としてシェーダーに渡すように処理を変更。
- * - 3. syncDirtyRectToImageData() の修正:
- * - gl.readPixels() に渡すY座標の計算が誤っていたため、WebGLの仕様（左下原点）に
- * 基づく正しい計算式 `this.superHeight - sy - sHeight` に修正。
- * - これにより、GPU上の描画内容をCPU側のImageDataへ正しく同期できるようになる。
+ * - 変更点 (Phase 4A11B-6):
+ * - 座標系の二重変換問題を修正
+ * - 1. drawCircle() の修正:
+ * - core-engineから渡される座標は、すでに高解像度化済みとみなし、
+ * この関数内でのSUPER_SAMPLING_FACTORの乗算を撤廃。
+ * - これにより、core-engineとwebgl-engine間での座標系の不整合と
+ * 二重変換問題を根本的に解決する。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -89,7 +83,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        console.log(`WebGL Engine (v4.4.1 Phase4A11B-5) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.4.2 Phase4A11B-6) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     /**
@@ -131,18 +125,14 @@ export class WebGLEngine extends DrawingEngine {
                 gl_FragColor = vec4(color.rgb, color.a * u_opacity);
             }`;
 
-        // 🚀【修正点１】ブラシの頂点シェーダーを修正
         const vsBrush = `
             precision highp float;
             attribute vec2 a_position;
-            // u_resolution, u_center, u_radius は削除し、u_mvpMatrix に統一
             uniform mat4 u_mvpMatrix;
             varying vec2 v_texCoord;
 
             void main() {
-                // MVP行列を使って座標変換。手動での反転や計算は不要に。
                 gl_Position = u_mvpMatrix * vec4(a_position, 0.0, 1.0);
-                // テクスチャ座標は [-0.5, 0.5] の範囲から [0, 1] の範囲に変換
                 v_texCoord = a_position + 0.5;
             }`;
 
@@ -197,7 +187,6 @@ export class WebGLEngine extends DrawingEngine {
         
         this.brushPositionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.brushPositionBuffer);
-        // [-0.5, 0.5] の範囲の四角形を定義
         const brushPositions = [ -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, -0.5 ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(brushPositions), gl.STATIC_DRAW);
     }
@@ -348,7 +337,7 @@ export class WebGLEngine extends DrawingEngine {
         }
     }
 
-    // 🚀【修正点２】drawCircleの処理を修正
+    // ★★★★★ 修正点 Part 2 ★★★★★
     drawCircle(centerX, centerY, radius, color, isEraser, layer) {
         if (!this.gl || !this.programs.brush) return;
         const gl = this.gl;
@@ -368,9 +357,12 @@ export class WebGLEngine extends DrawingEngine {
         gl.enableVertexAttribArray(program.locations.a_position);
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
         
-        const superX = centerX * this.SUPER_SAMPLING_FACTOR;
-        const superY = centerY * this.SUPER_SAMPLING_FACTOR;
-        const superRadius = radius * this.SUPER_SAMPLING_FACTOR;
+        // core-engineから渡される座標は、すでに高解像度化済みとみなす
+        // このため、ここでの SUPER_SAMPLING_FACTOR の乗算は不要
+        const superX = centerX;
+        const superY = centerY;
+        // 半径(size)はcore-engine側で高解像度化されているので、そのまま使う
+        const superRadius = radius; 
         
         // MVP (Model-View-Projection) 行列を計算する
         const modelMatrix = mat4.create();
@@ -398,9 +390,11 @@ export class WebGLEngine extends DrawingEngine {
     
     drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize, layer) {
         if (!isFinite(x0) || !isFinite(y0) || !isFinite(x1) || !isFinite(y1)) return;
+        // 距離の計算も高解像度座標で行うため、大きな値になりうる
         const distance = Math.hypot(x1 - x0, y1 - y0);
-        if (distance > this.width * 2) return;
+        if (distance > this.superWidth * 2) return;
 
+        // ステップサイズも高解像度座標基準で考える
         const stepSize = Math.max(0.5, size / 4);
         const steps = Math.max(1, Math.ceil(distance / stepSize));
 
@@ -410,6 +404,7 @@ export class WebGLEngine extends DrawingEngine {
             const y = y0 + (y1 - y0) * t;
             const pressure = p0 + (p1 - p0) * t;
             const adjustedSize = calculatePressureSize(size, pressure);
+             // drawCircleに渡すsizeは、calculatePressureSizeですでに高解像度化されている
             this.drawCircle(x, y, adjustedSize / 2, color, isEraser, layer);
         }
     }
@@ -510,23 +505,22 @@ export class WebGLEngine extends DrawingEngine {
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
 
-    // 🚀【修正点３】syncDirtyRectToImageDataの処理を修正
     syncDirtyRectToImageData(layer, dirtyRect) {
         const gl = this.gl;
         const fbo = this.layerFBOs.get(layer);
         if (!fbo || dirtyRect.minX > dirtyRect.maxX) return;
-
-        const sx = Math.floor(dirtyRect.minX * this.SUPER_SAMPLING_FACTOR);
-        const sy = Math.floor(dirtyRect.minY * this.SUPER_SAMPLING_FACTOR);
-        const sWidth = Math.ceil((dirtyRect.maxX - dirtyRect.minX) * this.SUPER_SAMPLING_FACTOR);
-        const sHeight = Math.ceil((dirtyRect.maxY - dirtyRect.minY) * this.SUPER_SAMPLING_FACTOR);
+        
+        // dirtyRectはすでに高解像度座標系になっているはずなので、そのまま使う
+        const sx = Math.floor(dirtyRect.minX);
+        const sy = Math.floor(dirtyRect.minY);
+        const sWidth = Math.ceil(dirtyRect.maxX - dirtyRect.minX);
+        const sHeight = Math.ceil(dirtyRect.maxY - dirtyRect.minY);
 
         if (sWidth <= 0 || sHeight <= 0) return;
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const superBuffer = new Uint8Array(sWidth * sHeight * 4);
         
-        // readPixelsは左下原点のため、左上原点の座標系から変換する必要がある。
         const readY = this.superHeight - sy - sHeight;
         gl.readPixels(sx, readY, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -535,20 +529,24 @@ export class WebGLEngine extends DrawingEngine {
         const targetData = targetImageData.data;
         const factor = this.SUPER_SAMPLING_FACTOR;
         
-        for (let y = 0; y < (dirtyRect.maxY - dirtyRect.minY); y++) {
-            for (let x = 0; x < (dirtyRect.maxX - dirtyRect.minX); x++) {
-                const targetX = Math.floor(dirtyRect.minX) + x;
-                const targetY = Math.floor(dirtyRect.minY) + y;
-                if (targetX >= targetImageData.width || targetY >= targetImageData.height) continue;
-                
-                // readPixelsで読み取ったデータはYが下から上なので、ImageData(Yが上から下)に書き込むために反転する
-                const sourceX = Math.round(x * factor);
-                const sourceY = sHeight - 1 - Math.round(y * factor);
-                
-                const sourceIndex = (sourceY * sWidth + sourceX) * 4;
-                const targetIndex = (targetY * targetImageData.width + targetX) * 4;
+        // ここはImageData(低解像度)にダウンスケールして書き込む処理
+        // dirtyRectも低解像度での範囲が必要になる
+        const dx_min = Math.floor(dirtyRect.minX / factor);
+        const dy_min = Math.floor(dirtyRect.minY / factor);
+        const dx_max = Math.ceil(dirtyRect.maxX / factor);
+        const dy_max = Math.ceil(dirtyRect.maxY / factor);
 
-                if (sourceIndex >= 0 && sourceIndex < superBuffer.length) {
+        for (let y = dy_min; y < dy_max; y++) {
+            for (let x = dx_min; x < dx_max; x++) {
+                if (x >= targetImageData.width || y >= targetImageData.height) continue;
+                
+                const sourceX = Math.floor((x - dx_min) * factor);
+                const sourceY = Math.floor((y - dy_min) * factor);
+                
+                const sourceIndex = ((sHeight - 1 - sourceY) * sWidth + sourceX) * 4;
+                const targetIndex = (y * targetImageData.width + x) * 4;
+
+                if (sourceIndex >= 0 && sourceIndex + 3 < superBuffer.length) {
                     targetData[targetIndex]     = superBuffer[sourceIndex];
                     targetData[targetIndex + 1] = superBuffer[sourceIndex + 1];
                     targetData[targetIndex + 2] = superBuffer[sourceIndex + 2];
@@ -556,5 +554,6 @@ export class WebGLEngine extends DrawingEngine {
                 }
             }
         }
+        layer.gpuDirty = false;
     }
 }

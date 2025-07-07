@@ -1,13 +1,13 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.9.5 (Phase 4A11B - レイヤー移動ロジック修正)
+ * Version: 2.9.6 (Phase 4A11B - 座標系整合性修正)
  *
- * - 修正 (Phase 4A11B-Fix2):
- * - レイヤー移動時の変換行列の計算方法を修正
- * - 1. 移動行列を右からではなく、左から乗算するように変更
- * - 2. これにより、ユーザーの直感（ワールド座標系での移動）と一致させ、
- * 意図しない座標へのジャンプを防ぐ
+ * - 修正 (Phase 4A11B-Fix3):
+ * - 描画時の座標変換プロセスを修正
+ * - 1. ワールド座標をmodelMatrixで変換する前に、SUPER_SAMPLING_FACTORを
+ * 使ってWebGL内部座標系に変換するよう修正。
+ * - 2. これにより、core-engineとwebgl-engine間の座標系の不整合を解消。
  * ===================================================================================
  */
 
@@ -124,7 +124,6 @@ class CanvasManager {
         
         this.lastPoint = null;
         
-        // 🚀【修正点】レイヤー移動の累積誤差を防ぐための変数
         this.transformStartWorldX = 0;
         this.transformStartWorldY = 0;
         this.originalModelMatrix = null;
@@ -196,22 +195,28 @@ class CanvasManager {
 
         if (this.isVDown) {
             this.isLayerMoving = true;
-            // 🚀【修正点】初期のワールド座標を記録
             this.transformStartWorldX = coords.x;
             this.transformStartWorldY = coords.y;
             this.originalModelMatrix = mat4.clone(activeLayer.modelMatrix);
             return;
         }
         
-        const local = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
-        console.log("📍 描画座標変換:", { world: coords, local: local });
-        
         if (!activeLayer.visible) return;
+
+        // ★★★★★ 修正点 Part 1 ★★★★★
+        // ワールド座標をWebGL内部座標(Super Sampling後)に変換してから、ローカル座標に変換する
+        const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
+        const superX = coords.x * SUPER_SAMPLING_FACTOR;
+        const superY = coords.y * SUPER_SAMPLING_FACTOR;
+        const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix);
+        
+        console.log("📍 描画座標変換:", { world: coords, super: {x: superX, y: superY}, local: local });
 
         this._resetDirtyRect();
         
         if (this.app.toolManager.currentTool === 'bucket') {
-            this.app.bucketTool.fill(activeLayer.imageData, local.x, local.y, hexToRgba(this.app.colorManager.currentColor));
+             // バケツツールは整数座標を期待するため、丸める
+            this.app.bucketTool.fill(activeLayer.imageData, Math.round(local.x), Math.round(local.y), hexToRgba(this.app.colorManager.currentColor));
             activeLayer.gpuDirty = true;
             this.renderAllLayers();
             this.saveState();
@@ -224,8 +229,10 @@ class CanvasManager {
         
         const size = this.calculatePressureSize(this.app.penSettingsManager.currentSize, this.lastPoint.pressure);
         
+        // ダーティレクトの計算もローカル座標を基準にする
         this._updateDirtyRect(local.x, local.y, size);
         
+        // 描画エンジンには、すでに高解像度化されたローカル座標を渡す
         this.renderingBridge.drawCircle(
             local.x, local.y, size / 2, 
             hexToRgba(this.app.colorManager.currentColor), this.app.toolManager.currentTool === 'eraser',
@@ -259,14 +266,9 @@ class CanvasManager {
             const adjustedDx = dx * SUPER_SAMPLING_FACTOR;
             const adjustedDy = dy * SUPER_SAMPLING_FACTOR;
 
-            // ★★★★★★★★★★★★★★★★★★★★
-            // ★★★   バグ修正箇所   ★★★
-            // ★★★★★★★★★★★★★★★★★★★★
-            // 今回の移動量からワールド座標系での移動行列を作成します
             const translationMatrix = mat4.create();
             mat4.fromTranslation(translationMatrix, [adjustedDx, adjustedDy, 0]);
 
-            // 元の行列(originalModelMatrix)に、"左から"移動行列を乗算し、ワールド座標系で移動させます
             const newMatrix = mat4.create();
             mat4.multiply(newMatrix, translationMatrix, this.originalModelMatrix);
 
@@ -278,7 +280,11 @@ class CanvasManager {
 
         if (!this.isDrawing) return;
         
-        const local = transformWorldToLocal(coords.x, coords.y, activeLayer.modelMatrix);
+        // ★★★★★ 修正点 Part 1 (こちらも同様に) ★★★★★
+        const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
+        const superX = coords.x * SUPER_SAMPLING_FACTOR;
+        const superY = coords.y * SUPER_SAMPLING_FACTOR;
+        const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix);
         
         const currentPressure = e.pressure > 0 ? e.pressure : 0.5;
         this.pressureHistory.push(currentPressure);
@@ -316,6 +322,8 @@ class CanvasManager {
 
             const activeLayer = this.app.layerManager.getCurrentLayer();
             if (activeLayer) {
+                // ToDo: dirtyRectの座標系もローカル座標基準にしているので、
+                // syncDirtyRectToImageDataに渡す際に変換が必要になる可能性がある
                 this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
             }
             
@@ -342,7 +350,14 @@ class CanvasManager {
     }
 
     renderAllLayers() {
-        this.dirtyRect = { minX: 0, minY: 0, maxX: this.width, maxY: this.height };
+        // renderAllLayersは全域更新なので、ダーティレクトは最大にする
+        const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
+        this.dirtyRect = { 
+            minX: 0, 
+            minY: 0, 
+            maxX: this.width * SUPER_SAMPLING_FACTOR, 
+            maxY: this.height * SUPER_SAMPLING_FACTOR 
+        };
         this._requestRender();
     }
 
@@ -396,11 +411,14 @@ class CanvasManager {
         const curve = this.pressureSettings.curve;
         const curvedPressure = Math.pow(finalPressure, curve);
         
-        const minSize = baseSize * this.pressureSettings.minSizeRatio;
-        const maxSize = baseSize;
+        const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
+        const superSamplingBaseSize = baseSize * SUPER_SAMPLING_FACTOR;
+
+        const minSize = superSamplingBaseSize * this.pressureSettings.minSizeRatio;
+        const maxSize = superSamplingBaseSize;
         const finalSize = minSize + (maxSize - minSize) * curvedPressure;
         
-        return Math.max(0.1, finalSize);
+        return Math.max(0.1 * SUPER_SAMPLING_FACTOR, finalSize);
     }
 
     saveState() {
