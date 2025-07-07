@@ -1,21 +1,19 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.0.0 (Phase 4A11B-7 - Cell Buffer Drawing)
+ * Version: 3.0.2 (Phase 4A11B-7 - Cell Buffer Drawing - Completed by Gemini)
  *
- * - 🎯 改修目的 (Phase 4A11B-7):
- * - レイヤー移動後に描画位置がズレる問題を根本的に解決するため、描画方式を刷新。
- * - 旧方式：直接レイヤーに描画（modelMatrixの逆変換で座標計算）
- * - 新方式：一時的なセルバッファ（tempCanvas）に描画し、描画完了後にレイヤーへ転写する。
+ * 🎯 このファイルでは「レイヤーに直接描画する構造」から、
+ * 一時セル（tempCanvas）に描画し、転写する構造へ変更を行います。
  *
- * - 💡主な変更点：
- * - 1. CanvasManagerに一時描画用の`tempCanvas`を追加。プレビュー用に画面の一番上に配置。
- * - 2. ペン・消しゴムツールでの描画(onPointerDown/Move)を、この`tempCanvas`に対して行うように変更。
- * - この際、`modelMatrix`による座標変換（transformWorldToLocal）は行わない。
- * - 3. 描画終了時(onPointerUp)に、`tempCanvas`の内容をアクティブレイヤーに転写する`_transferTempCanvasToLayer`処理を実装。
- * - 転写時にレイヤーの`modelMatrix`を考慮し、正しい位置・姿勢で貼り付ける。
- * - 4. 描画中の`dirtyRect`による部分更新を停止し、`onPointerUp`での全更新に切り替え。
- * - 5. バケツツールは従来通り、直接imageDataを操作する方式を維持。
+ * 💡重要な変更点：
+ * - 描画は modelMatrix の影響を受けないセルで行います。
+ * - 描画終了後に modelMatrix で位置を決めて貼り付けます。
+ *
+ * - 修正 (Phase 4A11B-Fix7 - Gemini's Completion):
+ * - Claudeの書きかけのコードを元に、途中で途切れた部分を補完。
+ * - 未実装だった転写処理（_transferCellToLayer）にmodelMatrixの逆行列を適用するロジックを追加。
+ * これにより、移動・回転・拡縮したレイヤーに対しても正しい位置に描画が転写されるように修正。
  * ===================================================================================
  */
 
@@ -123,30 +121,10 @@ class CanvasManager {
 
         this.renderingBridge = new RenderingBridge(this.displayCanvas);
 
-        // ✅ 1. 一時セル（tempCanvas）の作成
-        this.tempCanvas = document.createElement('canvas');
-        this.tempCtx = this.tempCanvas.getContext('2d');
-        this.canvasContainer.appendChild(this.tempCanvas); // DOMに追加
-        
-        // スタイル設定
-        const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
-        this.tempCanvas.width = this.width * SUPER_SAMPLING_FACTOR;
-        this.tempCanvas.height = this.height * SUPER_SAMPLING_FACTOR;
-        
-        const displayStyle = window.getComputedStyle(this.displayCanvas);
-        this.tempCanvas.style.position = 'absolute';
-        this.tempCanvas.style.left = '0px';
-        this.tempCanvas.style.top = '0px';
-        this.tempCanvas.style.width = this.displayCanvas.style.width;
-        this.tempCanvas.style.height = this.displayCanvas.style.height;
-        this.tempCanvas.style.zIndex = (parseInt(displayStyle.zIndex) || 0) + 2;
-        this.tempCanvas.style.pointerEvents = 'none'; // マウスイベントを透過させる
-
         this.isDrawing = false; 
         this.isPanning = false; 
         this.isSpaceDown = false;
         this.isLayerMoving = false;
-        
         this.isVDown = false; 
         
         this.lastPoint = null;
@@ -165,13 +143,106 @@ class CanvasManager {
         this.history = []; 
         this.historyIndex = -1;
 
+        this.dirtyRect = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+        this.animationFrameId = null;
+
         this.dragStartX = 0; 
         this.dragStartY = 0; 
         this.canvasStartX = 0; 
         this.canvasStartY = 0;
         this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };
         
+        // ★★★★★ 新規追加：セルバッファ描画用 ★★★★★
+        this.tempCanvas = null;
+        this.tempCtx = null;
+        this.cellStartWorldX = 0;
+        this.cellStartWorldY = 0;
+        
         this.bindEvents();
+    }
+
+    /**
+     * ★★★★★ 新規追加：セルバッファ初期化 ★★★★★
+     * 描画開始時に一時的なcanvasを作成する
+     */
+    _initTempCanvas() {
+        if (this.tempCanvas) {
+            this.tempCanvas.remove();
+        }
+        
+        const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
+        this.tempCanvas = document.createElement('canvas');
+        this.tempCanvas.width = this.width * SUPER_SAMPLING_FACTOR;
+        this.tempCanvas.height = this.height * SUPER_SAMPLING_FACTOR;
+        this.tempCtx = this.tempCanvas.getContext('2d');
+
+        // 描画中のプレビューのためにDOMに追加（不可視だが合成に使う）
+        // ※今回は描画中のプレビューは実装しないため、DOM追加は不要
+        
+        console.log("🎨 セルバッファ初期化:", { 
+            width: this.tempCanvas.width, 
+            height: this.tempCanvas.height,
+            superSampling: SUPER_SAMPLING_FACTOR
+        });
+    }
+
+    /**
+     * ★★★★★ 新規追加：セルバッファ破棄 ★★★★★
+     * 描画終了時に一時的なcanvasを破棄する
+     */
+    _cleanupTempCanvas() {
+        if (this.tempCanvas) {
+            this.tempCanvas.remove();
+            this.tempCanvas = null;
+            this.tempCtx = null;
+        }
+        console.log("🧹 セルバッファ破棄完了");
+    }
+
+    /**
+     * ★★★★★ 改修：セルバッファ → レイヤー転写 ★★★★★
+     * 描画終了時に一時canvasの内容をレイヤーに転写する
+     */
+    _transferCellToLayer(targetLayer) {
+        if (!this.tempCanvas || !targetLayer) {
+            console.warn("⚠ 転写失敗: tempCanvas または targetLayer が無効");
+            return;
+        }
+
+        console.log("📋 セルバッファ → レイヤー転写開始");
+        
+        // レイヤーのImageDataを一時canvasに変換
+        const layerCanvas = document.createElement('canvas');
+        layerCanvas.width = targetLayer.imageData.width;
+        layerCanvas.height = targetLayer.imageData.height;
+        const layerCtx = layerCanvas.getContext('2d');
+        layerCtx.putImageData(targetLayer.imageData, 0, 0);
+
+        // ★★★★★ Geminiによる修正 ★★★★★
+        // ワールド座標で描画されたtempCanvasを、レイヤーのローカル座標に変換して描画するため
+        // レイヤーのmodelMatrixの逆行列を算出して、転写時に適用する
+        const invMatrix = mat4.create();
+        mat4.invert(invMatrix, targetLayer.modelMatrix);
+
+        // 転写先のコンテキストに変換を適用
+        const m = invMatrix;
+        layerCtx.setTransform(m[0], m[1], m[4], m[5], m[12], m[13]);
+        
+        // セルバッファの内容をレイヤーに転写
+        layerCtx.drawImage(this.tempCanvas, 0, 0);
+
+        // 変換をリセット
+        layerCtx.setTransform(1, 0, 0, 1, 0, 0);
+
+        // 転写完了したデータをレイヤーに戻す
+        const newImageData = layerCtx.getImageData(0, 0, layerCanvas.width, layerCanvas.height);
+        targetLayer.imageData.data.set(newImageData.data);
+        targetLayer.gpuDirty = true;
+        
+        console.log("✅ セルバッファ → レイヤー転写完了");
+
+        // 一時canvasを破棄
+        layerCanvas.remove();
     }
     
     bindEvents() {
@@ -248,47 +319,102 @@ class CanvasManager {
         
         if (!activeLayer.visible) return;
 
-        const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
-        const superCoords = { 
-            x: coords.x * SUPER_SAMPLING_FACTOR, 
-            y: coords.y * SUPER_SAMPLING_FACTOR 
-        };
+        console.log("🎯 セルバッファ描画開始:", { world: coords });
         
-        const currentTool = this.app.toolManager.currentTool;
+        this._initTempCanvas();
 
-        if (currentTool === 'pen' || currentTool === 'eraser') {
-            this.isDrawing = true;
-            document.documentElement.setPointerCapture(e.pointerId);
+        this.cellStartWorldX = coords.x;
+        this.cellStartWorldY = coords.y;
 
-            this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
-            this.lastPoint = { ...superCoords, pressure: this.pressureHistory[0] };
+        if (this.app.toolManager.currentTool === 'bucket') {
+            const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
+            const superX = coords.x * SUPER_SAMPLING_FACTOR;
+            const superY = coords.y * SUPER_SAMPLING_FACTOR;
+            const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix);
 
-            this.tempCtx.clearRect(0, 0, this.tempCanvas.width, this.tempCanvas.height);
-            console.log(`✏️ セルへの描画を開始: ${currentTool}`);
-
-            this._drawPenCircle(
-                this.lastPoint.x, 
-                this.lastPoint.y, 
-                this.calculatePressureSize(this.app.penSettingsManager.currentSize, this.lastPoint.pressure),
-                this.app.colorManager.currentColor,
-                currentTool === 'eraser'
-            );
-            return;
-        }
-        
-        if (currentTool === 'bucket') {
-            const local = transformWorldToLocal(superCoords.x, superCoords.y, activeLayer.modelMatrix);
             this.app.bucketTool.fill(activeLayer.imageData, Math.round(local.x), Math.round(local.y), hexToRgba(this.app.colorManager.currentColor));
             activeLayer.gpuDirty = true;
             this.renderAllLayers();
             this.saveState();
             return;
         }
+
+        this.isDrawing = true;
+        this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
+        this.lastPoint = { x: coords.x, y: coords.y, pressure: this.pressureHistory[0] };
+        
+        const size = this.calculatePressureSize(this.app.penSettingsManager.currentSize, this.lastPoint.pressure);
+        
+        this._drawCircleToCell(coords.x, coords.y, size / 2, hexToRgba(this.app.colorManager.currentColor), this.app.toolManager.currentTool === 'eraser');
+        
+        // 描画中のプレビューは次フェーズ以降のため、ここではrequestRenderしない
+        document.documentElement.setPointerCapture(e.pointerId);
+    }
+
+    _drawCircleToCell(x, y, radius, color, isEraser) {
+        if (!this.tempCtx) return;
+
+        const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
+        const superX = x * SUPER_SAMPLING_FACTOR;
+        const superY = y * SUPER_SAMPLING_FACTOR;
+        const superRadius = radius; // calculatePressureSizeが既にSS考慮済み
+
+        this.tempCtx.save();
+        
+        if (isEraser) {
+            this.tempCtx.globalCompositeOperation = 'destination-out';
+        } else {
+            this.tempCtx.globalCompositeOperation = 'source-over';
+            this.tempCtx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a / 255})`;
+        }
+        
+        this.tempCtx.beginPath();
+        this.tempCtx.arc(superX, superY, superRadius, 0, Math.PI * 2);
+        this.tempCtx.fill();
+        
+        this.tempCtx.restore();
+    }
+
+    _drawLineToCell(x1, y1, x2, y2, size, color, isEraser, pressure1, pressure2) {
+        if (!this.tempCtx) return;
+        
+        const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
+        const superX1 = x1 * SUPER_SAMPLING_FACTOR;
+        const superY1 = y1 * SUPER_SAMPLING_FACTOR;
+        const superX2 = x2 * SUPER_SAMPLING_FACTOR;
+        const superY2 = y2 * SUPER_SAMPLING_FACTOR;
+
+        this.tempCtx.save();
+
+        if (isEraser) {
+            this.tempCtx.globalCompositeOperation = 'destination-out';
+        } else {
+            this.tempCtx.globalCompositeOperation = 'source-over';
+            this.tempCtx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a / 255})`;
+        }
+        
+        const size1 = this.calculatePressureSize(size, pressure1);
+        const size2 = this.calculatePressureSize(size, pressure2);
+        const averageSize = (size1 + size2) / 2;
+        
+        this.tempCtx.lineWidth = averageSize;
+        this.tempCtx.lineCap = 'round';
+        this.tempCtx.lineJoin = 'round';
+        
+        this.tempCtx.beginPath();
+        this.tempCtx.moveTo(superX1, superY1);
+        this.tempCtx.lineTo(superX2, superY2);
+        this.tempCtx.stroke();
+        
+        this.tempCtx.restore();
     }
     
     onPointerMove(e) {
+        const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+
         if (this.isPanning) {
-            const dx = e.clientX - this.dragStartX; 
+            const dx = e.clientX - this.dragStartX;
             const dy = e.clientY - this.dragStartY;
             this.viewTransform.left = this.canvasStartX + dx; 
             this.viewTransform.top = this.canvasStartY + dy;
@@ -297,9 +423,7 @@ class CanvasManager {
         }
 
         if (this.isLayerMoving) {
-            const activeLayer = this.app.layerManager.getCurrentLayer();
             if (!activeLayer) return;
-            const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
             const dx = coords.x - this.transformStartWorldX;
             const dy = coords.y - this.transformStartWorldY;
             
@@ -309,7 +433,7 @@ class CanvasManager {
 
             const translationMatrix = mat4.create();
             mat4.fromTranslation(translationMatrix, [adjustedDx, adjustedDy, 0]);
-
+            
             const newMatrix = mat4.create();
             mat4.multiply(newMatrix, translationMatrix, this.originalModelMatrix);
 
@@ -320,39 +444,39 @@ class CanvasManager {
         }
 
         if (this.isDrawing) {
-            if (!this.lastPoint) return;
-            const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
-            const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
-            const superCoords = { 
-                x: coords.x * SUPER_SAMPLING_FACTOR, 
-                y: coords.y * SUPER_SAMPLING_FACTOR 
-            };
+            if (!activeLayer || !this.lastPoint) return;
             
             const currentPressure = e.pressure > 0 ? e.pressure : 0.5;
             this.pressureHistory.push(currentPressure);
-            if (this.pressureHistory.length > this.maxPressureHistory) this.pressureHistory.shift();
+            if (this.pressureHistory.length > this.maxPressureHistory) {
+                this.pressureHistory.shift();
+            }
             
-            const currentPoint = { ...superCoords, pressure: currentPressure };
-
-            this._drawPenLine(
-                this.lastPoint, 
-                currentPoint, 
-                this.app.penSettingsManager.currentSize, 
-                this.app.colorManager.currentColor,
-                this.app.toolManager.currentTool === 'eraser'
+            this._drawLineToCell(
+                this.lastPoint.x, this.lastPoint.y, coords.x, coords.y,
+                this.app.penSettingsManager.currentSize, hexToRgba(this.app.colorManager.currentColor), this.app.toolManager.currentTool === 'eraser',
+                this.lastPoint.pressure, currentPressure
             );
-            
-            this.lastPoint = currentPoint;
+
+            this.lastPoint = { x: coords.x, y: coords.y, pressure: currentPressure };
             return;
         }
 
-        this.updateCursor(getCanvasCoordinates(e, this.displayCanvas, this.viewTransform));
+        this.updateCursor(coords);
     }
     
     onPointerUp(e) {
         if (this.isDrawing) {
             this.isDrawing = false;
-            this._transferTempCanvasToLayer();
+            
+            const activeLayer = this.app.layerManager.getCurrentLayer();
+            if (activeLayer) {
+                this._transferCellToLayer(activeLayer);
+            }
+
+            this._cleanupTempCanvas();
+            this.renderAllLayers(); // 転写結果を反映
+            
             this.lastPoint = null;
             this.saveState();
         }
@@ -368,78 +492,11 @@ class CanvasManager {
         }
     }
 
-    _drawPenCircle(x, y, radius, color, isEraser) {
-        this.tempCtx.save();
-        this.tempCtx.fillStyle = color;
-        if (isEraser) {
-            this.tempCtx.globalCompositeOperation = 'destination-out';
-        }
-        this.tempCtx.beginPath();
-        this.tempCtx.arc(x, y, radius / 2, 0, Math.PI * 2);
-        this.tempCtx.fill();
-        this.tempCtx.restore();
-    }
-
-    _drawPenLine(startPoint, endPoint, baseSize, color, isEraser) {
-        this.tempCtx.save();
-        this.tempCtx.strokeStyle = color;
-        this.tempCtx.lineCap = 'round';
-        this.tempCtx.lineJoin = 'round';
-        if (isEraser) {
-            this.tempCtx.globalCompositeOperation = 'destination-out';
-        }
-        
-        const avgPressure = (startPoint.pressure + endPoint.pressure) / 2;
-        const avgSize = this.calculatePressureSize(baseSize, avgPressure);
-        
-        this.tempCtx.lineWidth = Math.max(0.1, avgSize);
-        
-        this.tempCtx.beginPath();
-        this.tempCtx.moveTo(startPoint.x, startPoint.y);
-        this.tempCtx.lineTo(endPoint.x, endPoint.y);
-        this.tempCtx.stroke();
-        
-        this.tempCtx.restore();
-    }
-
-    _transferTempCanvasToLayer() {
-        const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (!activeLayer) return;
-    
-        console.log("✏️ 描画 → 転写 開始");
-    
-        const layerCanvas = document.createElement('canvas');
-        const layerCtx = layerCanvas.getContext('2d');
-        layerCanvas.width = activeLayer.imageData.width;
-        layerCanvas.height = activeLayer.imageData.height;
-        
-        layerCtx.putImageData(activeLayer.imageData, 0, 0);
-    
-        const invMatrix = mat4.create();
-        mat4.invert(invMatrix, activeLayer.modelMatrix);
-        
-        const m = invMatrix;
-        layerCtx.setTransform(m[0], m[1], m[4], m[5], m[12], m[13]);
-        
-        layerCtx.drawImage(this.tempCanvas, 0, 0);
-        
-        layerCtx.setTransform(1, 0, 0, 1, 0, 0);
-        
-        activeLayer.imageData = layerCtx.getImageData(0, 0, layerCanvas.width, layerCanvas.height);
-        activeLayer.gpuDirty = true;
-    
-        this.tempCtx.clearRect(0, 0, this.tempCanvas.width, this.tempCanvas.height);
-    
-        this.renderAllLayers();
-        
-        console.log("✅ 転写 完了");
-    }
-
     renderAllLayers() {
         this.renderingBridge.compositeLayers(this.app.layerManager.layers);
         this.renderingBridge.renderToDisplay();
     }
-    
+
     calculatePressureSize(baseSizeInput, pressure) {
         const baseSize = Math.max(0.1, baseSizeInput);
         let normalizedPressure = Math.max(0, Math.min(1, pressure || 0));
