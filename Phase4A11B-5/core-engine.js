@@ -256,9 +256,9 @@ class CanvasManager {
             const adjustedDx = dx * SUPER_SAMPLING_FACTOR;
             const adjustedDy = dy * SUPER_SAMPLING_FACTOR;
 
-            const newMatrix = mat4.clone(this.originalModelMatrix);
-            mat4.translate(newMatrix, newMatrix, [adjustedDx, adjustedDy, 0]);
-            activeLayer.modelMatrix = newMatrix;
+const newMatrix = mat4.create(); // ← 1. 常に新しい行列を作る
+mat4.fromTranslation(newMatrix, [adjustedDx, adjustedDy, 0]); // ← 2. 絶対位置の平行移動に変換
+activeLayer.modelMatrix = newMatrix; // ← 3. 上書き（蓄積しない）
             
             this.renderAllLayers();
             return;
