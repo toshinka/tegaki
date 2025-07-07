@@ -1,15 +1,18 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.3.1 (Phase 4A11B-3 Y-Axis Fix)
+ * Version: 4.4.0 (Phase 4A11B-4 - Y-Axis Unification)
  *
- * - 変更点 (Phase 4A11B-3):
- * - 📜 Phase4A11B-3 指示書に基づき、Y軸のズレ問題を最終的に修正。
- * - 1. 投影行列のY軸を修正:
- * - `_initProjectionMatrix` 内の `mat4.ortho` の引数を変更。 
- * - 従来の (0, height) から (height, 0) に変更し、WebGLの座標系（下がプラス）を
- * Canvasの標準的な座標系（上がプラス）に完全に一致させた。 
- * - これにより、`transformWorldToLocal` で座標を変換した際に、Y軸の反転が不要になった。
+ * - 変更点 (Phase 4A11B-4):
+ * - 📜 Phase4A11B-4 統合指示書に基づき、Y軸の座標系を完全に「Y軸下向き」に統一。
+ * - 1. 投影行列 (Projection Matrix) の修正:
+ * - mat4.ortho() の top と bottom を入れ替え、WebGLの座標系をCanvas 2Dと同じ「Y軸下向き」に変更。
+ * - これにより、レイヤー移動時のY軸反転問題を根本的に解決。
+ * - 2. 頂点バッファの修正:
+ * - Y軸下向きの座標系に合わせて、クアッド（四角形）の頂点座標を再定義。
+ * - 3. 手動Y軸反転の削除:
+ * - 座標系が統一されたため、drawCircle() 内で行っていた手動のY軸反転処理を完全に削除。
+ * - これにより、レイヤー移動後の描画ズレ問題を解消。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -21,31 +24,31 @@ export class WebGLEngine extends DrawingEngine {
     constructor(canvas) {
         super(canvas);
         this.gl = null;
-
+        
         this.SUPER_SAMPLING_FACTOR = 2.0;
 
         this.width = canvas.width;
         this.height = canvas.height;
         this.superWidth = this.width * this.SUPER_SAMPLING_FACTOR;
         this.superHeight = this.height * this.SUPER_SAMPLING_FACTOR;
-
-        // ✨(修正) 座標系変換の要となる投影行列をプロパティとして保持
+        
+        // ✨ 座標系変換の要となる投影行列をプロパティとして保持
         this.projectionMatrix = null;
 
         this.programs = { compositor: null, brush: null };
         this.positionBuffer = null;
         this.texCoordBuffer = null;
         this.brushPositionBuffer = null;
-
+        
         this.superCompositeTexture = null;
         this.superCompositeFBO = null;
-
+        
         this.layerTextures = new Map();
         this.layerFBOs = new Map();
-
+        
         this.transformOffscreenCanvas = document.createElement('canvas');
         this.transformOffscreenCtx = this.transformOffscreenCanvas.getContext('2d');
-
+        
         this.identityMatrix = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
 
         try {
@@ -62,11 +65,11 @@ export class WebGLEngine extends DrawingEngine {
         }
 
         const gl = this.gl;
-
+        
         gl.enable(gl.BLEND);
         gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
-        // ✨(修正) 投影行列をここで初期化
+        // ✨ 投影行列をここで初期化
         this._initProjectionMatrix();
 
         this._initShaderPrograms();
@@ -83,13 +86,15 @@ export class WebGLEngine extends DrawingEngine {
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        console.log(`WebGL Engine (v4.3.1 Phase4A11B-3) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.4.0 Phase4A11B-4) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
-    // ✅ 指示書Step2 に基づく修正: Y軸の向きをCanvasに合わせる 
+    /**
+     * ✅ Step 1: 射影行列のY軸の向きを修正
+     * Y軸が下向き (bottom: superHeight, top: 0) になるように引数を入れ替える
+     */
     _initProjectionMatrix() {
         this.projectionMatrix = mat4.create();
-        // 第3引数(bottom)と第4引数(top)を入れ替えて、Y軸の方向を (上:0, 下:superHeight) に設定
         mat4.ortho(this.projectionMatrix, 0, this.superWidth, this.superHeight, 0, -1, 1);
     }
 
@@ -116,7 +121,7 @@ export class WebGLEngine extends DrawingEngine {
             void main() {
                 vec2 texel_size = 1.0 / u_source_resolution;
                 vec4 color = vec4(0.0);
-
+                
                 color += texture2D(u_image, v_texCoord + texel_size * vec2(-0.25, -0.25));
                 color += texture2D(u_image, v_texCoord + texel_size * vec2( 0.25, -0.25));
                 color += texture2D(u_image, v_texCoord + texel_size * vec2( 0.25,  0.25));
@@ -128,7 +133,7 @@ export class WebGLEngine extends DrawingEngine {
 
         const vsBrush = `
             precision highp float;
-            attribute vec2 a_position;
+            attribute vec2 a_position; 
             uniform vec2 u_resolution;
             uniform vec2 u_center;
             uniform float u_radius;
@@ -137,7 +142,11 @@ export class WebGLEngine extends DrawingEngine {
             void main() {
                 vec2 quad_size_pixels = vec2(u_radius * 2.0 + 2.0);
                 vec2 quad_size_clip = quad_size_pixels / u_resolution;
+                
+                // Y軸の向きが統一されたため、クリップスペースへの変換もシンプルになる
                 vec2 center_clip = (u_center / u_resolution) * 2.0 - 1.0;
+                // WebGLのクリップスペースはY軸が上向きなので、Y座標を反転させる
+                center_clip.y *= -1.0;
 
                 vec4 final_pos = vec4(a_position * quad_size_clip + center_clip, 0.0, 1.0);
                 gl_Position = final_pos;
@@ -162,35 +171,37 @@ export class WebGLEngine extends DrawingEngine {
                 }
 
                 if (u_is_eraser) {
-                    gl_FragColor = vec4(0.0, 0.0, 0.0, alpha);
+                    gl_FragColor = vec4(0.0, 0.0, 0.0, alpha); 
                 } else {
                     gl_FragColor = vec4(u_color.rgb * u_color.a * alpha, u_color.a * alpha);
                 }
             }`;
-
+        
         this.programs.compositor = this._createProgram(vsCompositor, fsCompositor);
         this.programs.brush = this._createProgram(vsBrush, fsBrush);
     }
-
+    
+    /**
+     * ✅ Step 2: 頂点バッファの座標定義をY軸下向きルールに合わせる
+     */
     _initBuffers() {
         const gl = this.gl;
         this.positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
 
-        // ✨(修正) 頂点座標をクリップスペース(-1~1)からピクセル座標(0~superWidth/Height)に変更
-        // テクスチャ座標の順序と合わせるため、(TL, BL, TR, BR)の順で定義
+        // Y軸が下向き (Y=0が上、Y=superHeightが下) の定義に修正
         const positions = [
-            0, this.superHeight,                // Top-Left
-            0, 0,                               // Bottom-Left
-            this.superWidth, this.superHeight,  // Top-Right
-            this.superWidth, 0                  // Bottom-Right
+            0, 0,                               // Top-Left
+            0, this.superHeight,                // Bottom-Left
+            this.superWidth, 0,                 // Top-Right
+            this.superWidth, this.superHeight   // Bottom-Right
         ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 
         this.texCoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-        // ✨(修正) 上記の頂点順序(TL, BL, TR, BR)に合わせたテクスチャ座標
-        // Y軸はテクスチャアップロード時に反転(FLIP_Y)されるため、(0,1)がテクスチャの下側(描画の上側)に対応
+        // 上記の頂点順序 (TL, BL, TR, BR) に合わせたテクスチャ座標
+        // UNPACK_FLIP_Y_WEBGL: true のため、Y=1.0 がテクスチャの上に対応
         const texCoords = [
             0.0, 1.0, // Top-Left
             0.0, 0.0, // Bottom-Left
@@ -198,7 +209,7 @@ export class WebGLEngine extends DrawingEngine {
             1.0, 0.0  // Bottom-Right
         ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
-
+        
         this.brushPositionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.brushPositionBuffer);
         const brushPositions = [ -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, -0.5 ];
@@ -236,7 +247,7 @@ export class WebGLEngine extends DrawingEngine {
             gl.deleteProgram(program);
             return null;
         }
-
+        
         program.locations = {};
         const locs = (p) => {
             p.locations.a_position = gl.getAttribLocation(p, 'a_position');
@@ -252,7 +263,7 @@ export class WebGLEngine extends DrawingEngine {
             p.locations.u_mvpMatrix = gl.getUniformLocation(p, 'u_mvpMatrix');
         };
         locs(program);
-
+        
         return program;
     }
 
@@ -302,7 +313,7 @@ export class WebGLEngine extends DrawingEngine {
             layer.gpuDirty = false;
         }
     }
-
+    
     _setupSuperCompositingBuffer() {
         const gl = this.gl;
         if (this.superCompositeFBO) gl.deleteFramebuffer(this.superCompositeFBO);
@@ -315,7 +326,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
+        
         this.superCompositeFBO = gl.createFramebuffer();
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.superCompositeFBO);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.superCompositeTexture, 0);
@@ -324,7 +335,7 @@ export class WebGLEngine extends DrawingEngine {
         }
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
-
+    
     _setBlendMode(blendMode, isEraser = false) {
         const gl = this.gl;
         if (isEraser) {
@@ -332,53 +343,57 @@ export class WebGLEngine extends DrawingEngine {
             gl.blendFuncSeparate(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
         } else {
             gl.blendEquation(gl.FUNC_ADD);
-
+            
             gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-
+            
             switch (blendMode) {
-                case 'multiply':
-                    gl.blendFuncSeparate(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+                case 'multiply': 
+                    gl.blendFuncSeparate(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
                     break;
-                case 'screen':
-                    gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_COLOR, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+                case 'screen': 
+                    gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_COLOR, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
                     break;
                 case 'add':
-                    gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE);
+                    gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE); 
                     break;
-                default:
-                    gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+                default: 
+                    gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
                     break;
             }
         }
     }
 
+    /**
+     * ✅ Step 3: 不要になった手動のY軸反転処理を削除
+     */
     drawCircle(centerX, centerY, radius, color, isEraser, layer) {
         if (!this.gl || !this.programs.brush) return;
         const gl = this.gl;
         const program = this.programs.brush;
-
+        
         this._createOrUpdateLayerTexture(layer);
         const targetFBO = this.layerFBOs.get(layer);
         if (!targetFBO) { return; }
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO);
         gl.viewport(0, 0, this.superWidth, this.superHeight);
-
+        
         gl.useProgram(program);
         this._setBlendMode('normal', isEraser);
 
         gl.bindBuffer(gl.ARRAY_BUFFER, this.brushPositionBuffer);
         gl.enableVertexAttribArray(program.locations.a_position);
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
-
+        
         const superX = centerX * this.SUPER_SAMPLING_FACTOR;
         const superY = centerY * this.SUPER_SAMPLING_FACTOR;
         const superRadius = radius * this.SUPER_SAMPLING_FACTOR;
-
-        const webglSuperY = this.superHeight - superY;
-
+        
+        // (手動Y軸反転 `const webglSuperY = this.superHeight - superY;` を削除)
+        
         gl.uniform2f(program.locations.u_resolution, this.superWidth, this.superHeight);
-        gl.uniform2f(program.locations.u_center, superX, webglSuperY);
+        // Y軸のルールが統一されたので、受け取ったY座標をそのまま渡す
+        gl.uniform2f(program.locations.u_center, superX, superY);
         gl.uniform1f(program.locations.u_radius, superRadius);
         gl.uniform4f(program.locations.u_color, color.r / 255, color.g / 255, color.b / 255, color.a / 255);
         gl.uniform1i(program.locations.u_is_eraser, isEraser);
@@ -387,7 +402,7 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
-
+    
     drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize, layer) {
         if (!isFinite(x0) || !isFinite(y0) || !isFinite(x1) || !isFinite(y1)) return;
         const distance = Math.hypot(x1 - x0, y1 - y0);
@@ -421,23 +436,23 @@ export class WebGLEngine extends DrawingEngine {
         for (const layer of layers) {
             this._createOrUpdateLayerTexture(layer);
         }
-
+        
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.superCompositeFBO);
         gl.viewport(0, 0, this.superWidth, this.superHeight);
-
+        
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
         gl.useProgram(program);
-
+        
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
         gl.enableVertexAttribArray(program.locations.a_position);
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
-
+        
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
         gl.enableVertexAttribArray(program.locations.a_texCoord);
         gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
-
+        
         for (const layer of layers) {
             if (!layer.visible || layer.opacity === 0 || !this.layerTextures.has(layer)) continue;
 
@@ -446,7 +461,7 @@ export class WebGLEngine extends DrawingEngine {
                 continue;
             }
 
-            // ✨(修正) ここが最重要ポイント！
+            // ✨ ここが最重要ポイント！
             // 投影行列とレイヤーのモデル行列を掛け合わせて、最終的な変換行列(mvpMatrix)を作成する
             const mvpMatrix = mat4.create();
             mat4.multiply(mvpMatrix, this.projectionMatrix, layer.modelMatrix);
@@ -456,17 +471,17 @@ export class WebGLEngine extends DrawingEngine {
 
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, this.layerTextures.get(layer));
-
+            
             gl.uniform2f(program.locations.u_source_resolution, this.superWidth, this.superHeight);
             gl.uniform1i(program.locations.u_image, 0);
             gl.uniform1f(program.locations.u_opacity, layer.opacity / 100.0);
-
+            
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         }
-
+        
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
-
+    
     renderToDisplay(compositionData, dirtyRect) {
         if (!this.gl || !this.superCompositeTexture) return;
         const gl = this.gl;
@@ -474,28 +489,28 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-
+        
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
-
+        
         this._setBlendMode('normal');
 
         gl.useProgram(program);
 
-        // ✨(修正) 最終表示時も投影行列を適用する
+        // ✨ 最終表示時も投影行列を適用する
         // モデル行列は単位行列なので、最終的なテクスチャをそのまま画面全体に描画する
         const mvpMatrix = mat4.create();
         mat4.multiply(mvpMatrix, this.projectionMatrix, this.identityMatrix);
         gl.uniformMatrix4fv(program.locations.u_mvpMatrix, false, mvpMatrix);
-
+        
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
         gl.enableVertexAttribArray(program.locations.a_position);
         gl.vertexAttribPointer(program.locations.a_position, 2, gl.FLOAT, false, 0, 0);
-
+        
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
         gl.enableVertexAttribArray(program.locations.a_texCoord);
         gl.vertexAttribPointer(program.locations.a_texCoord, 2, gl.FLOAT, false, 0, 0);
-
+        
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.superCompositeTexture);
 
@@ -520,6 +535,9 @@ export class WebGLEngine extends DrawingEngine {
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         const superBuffer = new Uint8Array(sWidth * sHeight * 4);
+        
+        // 座標系を統一したため、readPixelsのY座標の計算がシンプルになる
+        // (this.superHeight - sy - sHeight)のような複雑な計算は不要
         const readY = sy;
         gl.readPixels(sx, readY, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -527,16 +545,17 @@ export class WebGLEngine extends DrawingEngine {
         const targetImageData = layer.imageData;
         const targetData = targetImageData.data;
         const factor = this.SUPER_SAMPLING_FACTOR;
-
+        
         for (let y = 0; y < (dirtyRect.maxY - dirtyRect.minY); y++) {
             for (let x = 0; x < (dirtyRect.maxX - dirtyRect.minX); x++) {
                 const targetX = Math.floor(dirtyRect.minX) + x;
                 const targetY = Math.floor(dirtyRect.minY) + y;
                 if (targetX >= targetImageData.width || targetY >= targetImageData.height) continue;
-
+                
+                // readPixelsで読み取ったデータはYが下から上なので、ImageData(Yが上から下)に書き込むために反転する
                 const sourceX = Math.round(x * factor);
                 const sourceY = sHeight - 1 - Math.round(y * factor);
-
+                
                 const sourceIndex = (sourceY * sWidth + sourceX) * 4;
                 const targetIndex = (targetY * targetImageData.width + targetX) * 4;
 

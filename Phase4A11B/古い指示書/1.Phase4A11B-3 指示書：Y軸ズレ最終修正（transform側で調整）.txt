@@ -10,7 +10,77 @@
 
 transformWorldToLocal() と WebGLの projectionMatrix が 異なるY軸基準で計算されている
 
-レイヤー移動で「見た目は動いても描画がズレる」ことがある
+レイヤー移動で「見た目は動いても描画がズレる」ことがある🎯 最終目的
+マウスの描画入力・レイヤーの移動・表示結果が上下方向を含め完全一致
+
+すべての描画処理が modelMatrix を通じて制御され、ローカル座標系に統一
+
+transformWorldToLocal() は全描画処理に通すこと
+
+✅ 座標系責任マップ v6.2
+ファイル	役割	Y軸方向	補正するべき？
+core-engine.js	入力管理	上0 → 下+（Canvas）	❌
+transform-utils.js	ローカル変換	上0 → 下+（Canvas準拠）	❌
+webgl-engine.js	WebGL表示	上0 → 下+（Canvas統一）	✅ mat4.ortho(height, 0) を設定済
+
+🛠 修正チェックリスト（全て徹底確認）
+✅ 1. webgl-engine.js: mat4.ortho() のY軸方向
+js
+コピーする
+編集する
+mat4.ortho(this.projectionMatrix, 0, width, height, 0, -1, 1);
+// ✅ 上0 → 下+ （Canvasと一致）
+✅ 2. transformWorldToLocal() の出力
+js
+コピーする
+編集する
+return { x: localPos[0], y: localPos[1] }; // ✅ Y反転しない
+✅ 3. getCanvasCoordinates() のY取得が反転していないこと
+js
+コピーする
+編集する
+const y = (e.clientY - rect.top) * scaleY; // ✅ OK
+// ❌ NG例: canvas.height - y などで反転させてはいけない
+✅ 4. 全描画処理は 必ず transformWorldToLocal() を通す
+🔍 例（描画時）：
+
+js
+コピーする
+編集する
+const { x, y } = transformWorldToLocal(worldX, worldY, layer.modelMatrix);
+ctx.lineTo(x, y); // ✅ localY を使っていること
+🛑 worldY のまま ctx.lineTo に渡していたら反転は解決しません。
+
+✅ 5. レイヤー移動の dy 値の符号が逆でないか確認
+js
+コピーする
+編集する
+mat4.translate(layer.modelMatrix, originalMatrix, [dx, dy, 0]); // ✅ 正しい向き
+🟡 dy が正しく canvas方向に一致しているかログを確認
+🟡 反転しているなら dy = -dy が必要
+
+✅ デバッグ補助ログ（任意）
+追加して確認しやすくする：
+
+js
+コピーする
+編集する
+console.log('[描画入力]', { worldX, worldY, localX, localY });
+console.log('[移動量]', { dx, dy, layer: activeLayer.name });
+✅ 成功条件まとめ
+動作	結果
+ペンで上に動かす	上に描かれる ✅
+レイヤーを上に動かす	上に動く ✅
+再描画時にズレなし	✅
+移動後の描画範囲一致	✅
+Undo/Redoで全て復元	✅
+
+📎 対象ファイル：
+core-engine.js
+
+core/rendering/webgl-engine.js
+
+core/utils/transform-utils.j
 
 ✅ 修正指示一覧（Step by Step）
 🟩 Step 1. Y軸基準の責任分担マップを守ること
