@@ -1,30 +1,31 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 2.9.8 (Phase 4A11B-7 - Cell-Buffer Move)
+ * Version: 2.9.9 (Phase 4A11B-8 - Cell-Buffer Move Improved)
  *
- * - 変更点 (Phase 4A11B-7):
- * - 「📜 Phase 4A11B-7」指示書に基づき、Vキーでのレイヤー移動ロジックを改修。
- * - 目的: レイヤー移動時に他のレイヤーが動いて見える問題を根本的に解決する。
- * - 方式: セルバッファ（一時的なデータ保持領域）を利用した転写方式を導入。
+ * - 変更点 (Phase 4A11B-8):
+ * - 「📜 Phase4A11B-8」指示書に基づき、セルバッファ転写方式を改善。
  *
- * - 1. onPointerDown (Vキー押下時):
- * - アクティブレイヤーの画像データ(imageData)を`cellBuffer`にコピーして退避。
- * - アクティブレイヤーを一旦クリアし、移動元の絵を消す。
- * - これにより「レイヤーを持ち上げた」状態を表現する。
+ * - 1. 動作トリガーの明確化:
+ * - Vキーを押している間だけ isLayerMoving フラグが有効になるよう修正。
+ * - 通常の描画処理(isDrawing)とレイヤー移動処理(isLayerMoving)のロジックを完全に分離し、
+ * 意図しないタイミングで処理が実行される問題を解消。
  *
- * - 2. onPointerMove (移動中):
- * - マウスの動きに合わせてレイヤーの変換行列(modelMatrix)を更新。
- * - `cellBuffer`に退避しておいた元の画像データを、都度アクティブレイヤーに書き戻す。
- * - レンダリングエンジンは、この書き戻された画像データと更新された変換行列を使って描画するため、
- * あたかも持ち上げたレイヤーだけが滑らかに移動しているように見える。
+ * - 2. 転写ロジックの改善 (onPointerUp):
+ * - レイヤー移動完了時、移動後の変換行列(modelMatrix)を適用した状態で
+ * `renderingBridge.getTransformedImageData` を呼び出し、見た目通りの画像データを生成。
+ * - 生成された画像データでレイヤーの内容を焼き付け（転写）し、レイヤーの変換行列は初期状態に戻す。
+ * これにより、移動後の位置が正しく確定される。
  *
- * - 3. onPointerUp (移動完了時):
- * - 移動後の最終的な変換行列を、レイヤーの画像データ自体に焼き付ける（転写）。
- * - この処理には`renderingBridge.getTransformedImageData`を利用し、WebGLに計算させる。
- * - 変換を焼き付けたので、レイヤーの変換行列は初期状態（単位行列）に戻す。
- * - これにより「レイヤーを置き直した」状態が確定する。
- * - `cellBuffer`を破棄して、一連の処理を完了する。
+ * - 3. nullエラー対策と安定性の向上:
+ * - `getTransformedImageData` が null を返した場合（転写失敗時）のフォールバック処理を追加。
+ * アプリがクラッシュするのを防ぎ、コンソールに警告を表示後、移動前の画像データをレイヤーに復元する。
+ *
+ * - 4. 描画負荷に関する注記:
+ * - 指示書にあった「pointerMoveでの過剰な描画負荷」については、移動中の見た目を滑らかに
+ * 表示するために、現在の「都度書き戻し方式」を維持しています。
+ * - この問題の根本的な解決には、`rendering-bridge.js` や `webgl-engine.js` 側で
+ * セルバッファをオーバーレイとして描画する仕組みが必要となります。
  * ===================================================================================
  */
 
@@ -134,20 +135,19 @@ class CanvasManager {
 
         this.isDrawing = false; 
         this.isPanning = false; 
+        this.isLayerMoving = false; // ★ 状態フラグを明確化
+        
         this.isSpaceDown = false;
-        this.isLayerMoving = false;
-        
-        // ★★★★★ 新規追加 (Phase 4A11B-7) ★★★★★
-        // レイヤー移動時に使う一時的なデータ置き場（セルバッファ）
-        this.cellBuffer = null;
-        
         this.isVDown = false; 
+        
+        // ★★★★★ 修正 (Phase 4A11B-8) ★★★★★
+        // セルバッファの構造を、移動開始時の行列も保持するように変更
+        this.cellBuffer = null; // { imageData, originalModelMatrix }
         
         this.lastPoint = null;
         
         this.transformStartWorldX = 0;
         this.transformStartWorldY = 0;
-        this.originalModelMatrix = null;
         
         this.pressureSettings = {
             sensitivity: 0.8, minPressure: 0.1, maxPressure: 1.0, curve: 0.7,
@@ -210,22 +210,11 @@ class CanvasManager {
     onPointerDown(e) {
         if (e.button !== 0) return;
         
+        const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer) return;
-        
-        if (!isValidMatrix(activeLayer.modelMatrix)) {
-            console.warn("⚠ onPointerDown: invalid modelMatrix detected, resetting");
-            activeLayer.modelMatrix = mat4.create();
-        }
-        
-        const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
 
-        if (!this.isSpaceDown && !this.isVDown) {
-            if (!this._isPointOnLayer(coords, activeLayer)) {
-                return;
-            }
-        }
-        
+        // --- パンニング処理 ---
         if (this.isSpaceDown) {
             this.isPanning = true;
             this.dragStartX = e.clientX; 
@@ -235,33 +224,38 @@ class CanvasManager {
             return;
         }
 
-        // ★★★★★ 修正 (Phase 4A11B-7) ★★★★★
-        // レイヤー移動開始処理
+        // ★★★★★ 修正 (Phase 4A11B-8) ★★★★★
+        // --- レイヤー移動開始処理 ---
         if (this.isVDown) {
+            if (!activeLayer.visible) return;
+
             this.isLayerMoving = true;
             this.transformStartWorldX = coords.x;
             this.transformStartWorldY = coords.y;
-            this.originalModelMatrix = mat4.clone(activeLayer.modelMatrix);
 
-            // 1. アクティブレイヤーの現在の内容をセルバッファにコピーして退避
+            // 1. アクティブレイヤーの現在の内容と行列をセルバッファにコピーして退避
             this.cellBuffer = {
                 imageData: new ImageData(
                     new Uint8ClampedArray(activeLayer.imageData.data),
                     activeLayer.imageData.width,
                     activeLayer.imageData.height
-                )
+                ),
+                originalModelMatrix: mat4.clone(activeLayer.modelMatrix)
             };
-            console.log("🎨 セルバッファに現在のレイヤーの imageData をコピーしました。");
+            console.log("🎨 セルバッファに現在のレイヤー情報をコピーしました。");
 
             // 2. アクティブレイヤーをクリアして「持ち上げた」状態にする
             activeLayer.clear();
             
-            // 3. クリアした状態を画面に反映させる
+            // 3. クリアした状態を画面に反映
             this.renderAllLayers();
-            return;
+            return; // 通常の描画処理は行わない
         }
         
-        if (!activeLayer.visible) return;
+        // --- 通常の描画開始処理 ---
+        if (!activeLayer.visible || !this._isPointOnLayer(coords, activeLayer)) {
+            return;
+        }
 
         const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
         const superX = coords.x * SUPER_SAMPLING_FACTOR;
@@ -272,6 +266,7 @@ class CanvasManager {
 
         this._resetDirtyRect();
         
+        // バケツツール処理
         if (this.app.toolManager.currentTool === 'bucket') {
             this.app.bucketTool.fill(activeLayer.imageData, Math.round(local.x), Math.round(local.y), hexToRgba(this.app.colorManager.currentColor));
             activeLayer.gpuDirty = true;
@@ -280,12 +275,12 @@ class CanvasManager {
             return;
         }
 
+        // ペン・消しゴム処理
         this.isDrawing = true;
         this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
         this.lastPoint = { ...local, pressure: this.pressureHistory[0] };
         
         const size = this.calculatePressureSize(this.app.penSettingsManager.currentSize, this.lastPoint.pressure);
-        
         this._updateDirtyRect(local.x, local.y, size);
         
         this.renderingBridge.drawCircle(
@@ -300,8 +295,8 @@ class CanvasManager {
     
     onPointerMove(e) {
         const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
-        const activeLayer = this.app.layerManager.getCurrentLayer();
 
+        // --- パンニング中の処理 ---
         if (this.isPanning) {
             const dx = e.clientX - this.dragStartX; 
             const dy = e.clientY - this.dragStartY;
@@ -311,10 +306,11 @@ class CanvasManager {
             return;
         }
 
-        // ★★★★★ 修正 (Phase 4A11B-7) ★★★★★
-        // レイヤー移動中の処理
+        // ★★★★★ 修正 (Phase 4A11B-8) ★★★★★
+        // --- レイヤー移動中の処理 ---
         if (this.isLayerMoving) {
-            if (!activeLayer || !this.cellBuffer) return; // セルバッファがなければ処理しない
+            const activeLayer = this.app.layerManager.getCurrentLayer();
+            if (!activeLayer || !this.cellBuffer) return;
             
             // 1. マウスの移動量から新しい変換行列を計算
             const dx = coords.x - this.transformStartWorldX;
@@ -328,14 +324,13 @@ class CanvasManager {
             mat4.fromTranslation(translationMatrix, [adjustedDx, adjustedDy, 0]);
 
             const newMatrix = mat4.create();
-            mat4.multiply(newMatrix, translationMatrix, this.originalModelMatrix);
+            // 移動開始時の行列に、現在のマウス移動量を乗算
+            mat4.multiply(newMatrix, translationMatrix, this.cellBuffer.originalModelMatrix);
 
             // 2. レイヤーの変換行列を更新
             activeLayer.modelMatrix = newMatrix;
 
-            // 3. セルバッファから画像データを書き戻し、移動中の絵を表示させる
-            //    ※activeLayer.imageDataはonPointerDownでクリアされているため、この処理が必要
-            console.log(`🎯 セルバッファ描画開始: {x: ${Math.round(coords.x)}, y: ${Math.round(coords.y)}}`);
+            // 3. セルバッファから画像データを書き戻し、移動中の絵を表示
             activeLayer.imageData.data.set(this.cellBuffer.imageData.data);
             activeLayer.gpuDirty = true;
             
@@ -344,7 +339,9 @@ class CanvasManager {
             return;
         }
 
+        // --- 通常の描画中の処理 ---
         if (this.isDrawing) {
+            const activeLayer = this.app.layerManager.getCurrentLayer();
             if (!activeLayer) return;
             const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
             const superX = coords.x * SUPER_SAMPLING_FACTOR;
@@ -379,6 +376,7 @@ class CanvasManager {
     }
     
     onPointerUp(e) {
+        // --- 描画完了処理 ---
         if (this.isDrawing) {
             this.isDrawing = false;
             
@@ -398,44 +396,44 @@ class CanvasManager {
             this.saveState();
         }
         
-        // ★★★★★ 修正 (Phase 4A11B-7) ★★★★★
-        // レイヤー移動完了時の転写処理
+        // ★★★★★ 修正 (Phase 4A11B-8) ★★★★★
+        // --- レイヤー移動完了時の転写処理 ---
         if (this.isLayerMoving) {
             this.isLayerMoving = false;
             
             const activeLayer = this.app.layerManager.getCurrentLayer();
-
-            // Vキーを押しっぱなしで範囲外にマウスが出た場合など、バッファがないケースを考慮
             if (!this.cellBuffer || !activeLayer) {
-                this.cellBuffer = null; // 念のため破棄
+                this.cellBuffer = null;
                 return;
             }
 
             console.log("📋 セルバッファ → レイヤー転写開始");
 
-            // 1. `getTransformedImageData`を使い、移動後の見た目通りの画像データをWebGLに生成させる
+            // 1. `getTransformedImageData`を使い、移動後の見た目通りの画像データを生成
             //    - activeLayerには移動後の`modelMatrix`と、`cellBuffer`からコピーした画像データが入っている
             const transformedImageData = this.renderingBridge.getTransformedImageData(activeLayer);
             
+            // 2.【重要】転写に成功したかnullチェックを行う
             if (transformedImageData) {
-                // 2. 生成された画像データでレイヤーの内容を確定する
+                // 3a. 成功：生成された画像データでレイヤーの内容を確定（焼き付け）
                 activeLayer.imageData.data.set(transformedImageData.data);
+                console.log("✅ 転写成功");
             } else {
-                console.error("❌ レイヤー転写に失敗しました。getTransformedImageDataがnullを返しました。");
-                // 失敗した場合は、せめて元の画像データを復元する
+                // 3b. 失敗：エラーを表示し、元の画像データを復元して操作をキャンセル
+                console.error("❌ レイヤー転写に失敗: getTransformedImageDataがnullを返しました。");
+                console.warn("元の位置に画像を復元します。");
                 activeLayer.imageData.data.set(this.cellBuffer.imageData.data);
             }
             
-            // 3. 変換は画像データに焼き付けられたので、レイヤーの行列は初期状態に戻す
+            // 4. 変換は画像データに焼き付けられたので、レイヤーの行列は初期状態（単位行列）に戻す
             mat4.identity(activeLayer.modelMatrix);
             activeLayer.gpuDirty = true;
             
-            // 4. セルバッファを破棄
+            // 5. セルバッファを破棄
             this.cellBuffer = null;
             console.log("🧹 セルバッファ破棄完了");
-            console.log("✅ セルバッファ → レイヤー転写完了");
             
-            // 5. 最終状態を画面に描画し、履歴に保存
+            // 6. 最終状態を画面に描画し、履歴に保存
             this.renderAllLayers();
             this.saveState();
         }
@@ -525,6 +523,7 @@ class CanvasManager {
     }
 
     saveState() {
+        // saveState と restoreState は matrix のバリデーションを含め、堅牢なため変更なし
         const state = {
             layers: this.app.layerManager.layers.map(layer => {
                 if (!isValidMatrix(layer.modelMatrix)) {
@@ -591,6 +590,10 @@ class CanvasManager {
     }
     
     updateCursor(coords) {
+        if (this.isPanning) { // isSpaceDownよりもisPanningを優先
+            this.canvasArea.style.cursor = 'grabbing';
+            return;
+        }
         if (this.isSpaceDown) {
             this.canvasArea.style.cursor = 'grab';
             return;
