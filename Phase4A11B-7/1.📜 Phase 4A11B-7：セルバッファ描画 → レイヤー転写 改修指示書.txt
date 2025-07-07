@@ -1,82 +1,105 @@
-🎯 改修の目的
-レイヤー移動後に「描画できない」「位置がズレる」といった問題を完全に解消するため、
-直接レイヤーへ描く構造を廃止し、以下のような仕組みに変更します：
+🧠 目的
+「台紙が動く描画ズレ問題」を根本的に解消するため、レイヤー移動時に「セルバッファ」に一時描画し、転写（blit）して戻す方式を導入します。
 
-✅ 新方式（今回導入）
-✏️ セルバッファ（仮の用紙）に描画 → 描画後にレイヤーに転写（コピー）する
+この方式により：
 
-❌ 旧方式（問題があった）
-✏️ マウスの座標を直接レイヤーのmodelMatrixに逆変換して描く
-→ modelMatrixの蓄積により座標がズレ、描けなくなる。
+キャンバス（背景・台紙）は一切動かさず
 
-🖼️ 現実世界の例え（AI向け補足）
-このツールでやりたいことは、**「台紙（画用紙）を勝手に動かさずに絵を描くこと」**です。
+レイヤー（描画セル）だけが「持ち上げて→移動して→置き直す」動作になります
 
-台紙（= layer.canvas）：作品そのもの。勝手に動いてはいけない。
+描画レスポンスやUIを損なわず、処理を分離できます
 
-セル（= 仮の一時canvas）：絵を描いている間だけ使う仮のレイヤー。動かしてもいい。
+🖼️ 基本イメージ（現実例）
+**机（台紙）**の上に **紙（セル）**がある
 
-マウス操作：このセル上に描き、その後でセルをレイヤーに貼り付け（転写）る。
+紙を持ち上げて移動し、好きな位置に置き直す
 
-🔧 改修内容：必要なステップ
-✅ 1. 描画時、直接 layer.canvas に描かないよう変更
-onPointerDown() / onPointerMove() / onPointerUp() に関わる描画処理を、
-「一時セル（仮描画canvas）」に描くように変更してください。
+この操作中も、机は一切動かない
 
-一時セルには modelMatrix 変換は反映しないでください。
-→ つまりマウス座標そのままで、セルに直接描きます。
+✅ 変更概要
+項目	内容
+対象機能	Vキーによるレイヤー移動処理
+新導入要素	cellBuffer（描画一時キャンバス）による一時描画と転写
+キャンバス座標系	SUPER_SAMPLING_FACTOR × 通常Canvasの描画解像度を維持
+描画責任の明確化	modelMatrixはレイヤー単位に限定、viewTransformは画面制御用に限定
+時間最適化	不要なセル初期化は極力遅延実行（トリガー起点で発動）
 
-✅ 2. 描画終了後に、その一時セルの内容を、レイヤー(canvas)に「転写」
-ctx.drawImage(tempCanvas, 0, 0) 等を使って、レイヤーの canvas に貼り付けてください。
+🎯 仕様詳細
+🔁 1. 通常描画（Vキー未押下時）
+直接 layer.canvas に描く
 
-この転写には、modelMatrixを適用して、レイヤーが移動していても正しく貼られるようにします。
+cellBuffer は使用しない
 
-転写処理は onPointerUp() 時点で実行されるのが基本です。
+高速描画優先
 
-✅ 3. modelMatrix は「転写先の位置決め」にのみ使用
-modelMatrix は描画処理には一切使いません。
+🧱 2. レイヤー移動時（Vキー押下トリガー）
+Vキー押下時：
+layer.canvas を cellBuffer.canvas にコピー（スーパーサンプリング対応）
 
-転写（drawImageなど）で「どこに貼り付けるか」の判断にだけ使ってください。
+isLayerMoving = true
 
-✅ 4. transformWorldToLocal の役割を変更
-もう「マウス入力を逆変換」しないでください。
+onPointerMove 内では cellBuffer の内容を移動させながら表示
 
-代わりに「転写時の貼り付け先をmodelMatrixで決める」だけの用途にします。
+PointerUp（Vキー解除または移動終了）：
+cellBuffer.canvas を layer.canvas に modelMatrix 反映した形で転写
 
-✅ 成功判定
-すべての条件を満たしたら成功です：
+cellBuffer を破棄して終了
 
-✅ レイヤー移動後でも、マウスカーソルの位置に描画できる
+🧩 関連ログ出力例（開発時必須）
+イベント	ログ例
+転写開始	📋 セルバッファ → レイヤー転写開始
+転写完了	✅ セルバッファ → レイヤー転写完了
+バッファ破棄	🧹 セルバッファ破棄完了
+初期化時	🎨 セルバッファ初期化: {width, height, superSampling}
+描画開始	🎯 セルバッファ描画開始: {x, y}
 
-✅ 台紙（layer.canvas）は描画中に動かない
+⚙️ 実装上の留意点
+💡 1. cellBuffer の構造（例）：
+js
+コピーする
+編集する
+this.cellBuffer = {
+  canvas: document.createElement('canvas'),
+  ctx: this.cellBuffer.canvas.getContext('2d'),
+  width: layer.canvas.width,
+  height: layer.canvas.height,
+  superSampling: 2
+};
+💡 2. 転写処理
+js
+コピーする
+編集する
+layer.ctx.setTransform(layer.modelMatrix); // レイヤー変換を反映
+layer.ctx.drawImage(cellBuffer.canvas, 0, 0);
+layer.ctx.setTransform(1, 0, 0, 1, 0, 0); // 元に戻す
+🧹 3. 転写後のクリーンアップ
+js
+コピーする
+編集する
+this.cellBuffer = null; // 破棄
+🚫 注意：次のようなケースでは転写しない
+Vキーが押されていない場合
 
-✅ modelMatrix は描画では使わず、転写時の位置決めにのみ使用
+cellBuffer が未初期化な場合
 
-✅ Consoleに「描画 → 転写」が記録されている
+アクティブレイヤーがnullの場合
 
-✅ undo/redoやdirtyRect等のロジックが壊れていない（軽微な乱れはPhase11で調整予定）
+📎 関連ファイルのY軸処理責任（備忘）
+ファイル	Y軸向き	主な責任範囲
+core-engine.js	下向き正	UI入力処理、modelMatrix、描画トリガー
+webgl-engine.js	下向き正（projection修正済）	実際の描画処理・転写
+transform-utils.js	modelMatrix基準	ワールド→ローカル変換（Y軸に手を加えない）
 
-🔗 想定中のファイル
-Claude または Gemini がどこに実装するかで迷わないよう、構造も明記：
+🏁 成功判定
+✅ レイヤー移動中、台紙（キャンバス背景）は動かない
 
-機能	実装候補ファイル
-tempCanvas作成・管理	core-engine.js or toolset.js
-描画処理	toolset.js
-転写処理（drawImage）	core-engine.js（onPointerUp） or rendering-bridge.js
-modelMatrix取得	layer-manager.js 内 layer から取得
+✅ レイヤー画像のみが動き、描画位置は一致
 
-💡 実装ヒント
-document.createElement('canvas') で一時canvasを生成
+✅ ペン描画は今まで通り自然に反映
 
-サイズはアクティブレイヤーのcanvasと同じにする
+✅ 不必要な cellBuffer の生成・転写は行われない
 
-一時canvasは ctx.clearRect() で毎回クリアして再利用可能
+✅ SUPER_SAMPLING_FACTOR によるズレ・拡大も起きない
 
-転写は targetCtx.drawImage(tempCanvas, offsetX, offsetY) 等で行う
+✅ Console ログで処理状況が可視化されている
 
-mat4.getTranslation() で modelMatrix の位置を取り出して転写位置に変換
-
-🧼 備考：UIとの整合性
-描画中、セルの内容を仮表示してもよい（Phase5以降で検討）
-
-今回は台紙移動バグの解消を最優先とするため、表示最適化は次フェーズ
