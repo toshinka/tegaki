@@ -1,13 +1,11 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.2.1 (Phase 4A11B-11 - Hotfix for Module Load Order)
+ * Version: 3.2.2 (Phase 4A11B-11 - Hotfix for 'Layer' export)
  *
- * - 変更点 (v3.2.1):
- * - ESモジュールの評価順序を考慮し、トップレベルawaitを使用して、すべてのimport文が
- * 評価されるよりも前に、外部ライブラリ(gl-matrix等)の読み込みが完了するように修正。
- * - これにより、webgl-engine.jsなどの依存モジュールが初期化される際に、
- * `window.glMatrix`が未定義であることに起因するTypeErrorを解決。
+ * - 変更点 (v3.2.2):
+ * - `layer-manager.js`が`Layer`クラスをインポートできるよう、`class Layer`の定義に
+ * `export`キーワードを追加。モジュール間の依存関係を正しく解決。
  * ===================================================================================
  */
 
@@ -100,7 +98,9 @@ function getCanvasCoordinates(e, canvas, viewTransform) {
 }
 
 // --- Core Logic Classes ---
-class Layer {
+// ★★★★★ 修正 (Phase 4A11B-11 Hotfix) ★★★★★
+// classの前に`export`を追加して、他のファイルからimportできるようにする
+export class Layer {
     constructor(name, width, height) {
         this.name = name;
         this.visible = true;
