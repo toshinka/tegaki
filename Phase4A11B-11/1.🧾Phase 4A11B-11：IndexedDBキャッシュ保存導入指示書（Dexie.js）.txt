@@ -1,46 +1,34 @@
-🎯目的
-レイヤーの状態をIndexedDBに保存・復元できるようにする。
-保存後にページを再読み込みしても、前回の状態が復元されるように実装する。
+🎯 目的
+レイヤーの描画状態をIndexedDBに保存・復元できるようにする
+
+初期レイヤー破壊・描画不能・転写時のアンチエイリアスなどの重大バグを防ぐ構造で構築する
 
 📁 作業対象ファイル
-ファイル名	内容	対応
-core-engine.js	全マネージャー構築・起動処理・復元処理	修正・復元・追加
-core/db/db-indexed.js	IndexedDB保存・復元ロジック	新規作成
-tool-manager.js	setTool()が正常動作するように	調整あり
-layerUI-manager.js	renderLayerList()関数が必ず存在	調整あり
-ToshinkaTegakiTool.html	dexie.min.jsを読み込む	<script>追加済みでOK
+ファイル	内容
+core-engine.js	全マネージャー構築、描画・保存・復元の起点
+core/db/db-indexed.js	IndexedDB保存・復元（Dexie.js使用）
+tool-manager.js	setTool()が正しくツール設定できるよう調整
+layerUI-manager.js	renderLayerList()必須。UI更新関数として動作
+canvasManager系	setCurrentTool()、描画対象切替対応必須
 
-✅ 実装手順
-1. HTMLにDexieの読み込みを追加（済）
+✅ 構築ステップ（安全な初期化・保存・復元のための順序）
+🛠️ Step 0: 初期セットアップ（HTML）
+HTMLに以下を含める（済）：
+
 html
 コピーする
 編集する
 <script src="./libs/dexie.min.js"></script>
-2. core/db/db-indexed.js を新規作成
+🧱 Step 1: モジュール読み込み・マネージャーの構築
 js
 コピーする
 編集する
-const db = new Dexie("TegakiProjectDB");
-db.version(1).stores({
-  layers: "++id, name, imageData"
-});
-
-export async function saveLayerToIndexedDB(layerId, name, dataURL) {
-  await db.layers.put({ id: layerId, name, imageData: dataURL });
-}
-
-export async function loadLayersFromIndexedDB() {
-  return await db.layers.toArray();
-}
-3. core-engine.js を再構成して初期化を確実に行う
-js
-コピーする
-編集する
+// core-engine.js より
 import { CanvasManager } from './core/rendering/canvas-manager.js';
 import { LayerManager } from './layer-manager/layer-manager.js';
 import { ToolManager } from './tools/tool-manager.js';
 import { LayerUIManager } from './ui/layer-ui-manager.js';
-import { loadLayersFromIndexedDB, saveLayerToIndexedDB } from './core/db/db-indexed.js';
+import { saveLayerToIndexedDB, loadLayersFromIndexedDB } from './core/db/db-indexed.js';
 
 window.addEventListener('load', async () => {
   console.log("🛠️ アプリケーションの初期化を開始します...");
@@ -50,55 +38,66 @@ window.addEventListener('load', async () => {
   const toolManager = new ToolManager({ canvasManager });
   const layerUIManager = new LayerUIManager(layerManager);
 
-  // 初期ツールを必ず設定
-  toolManager.setTool('pen');
-
-  // IndexedDBから復元（描画エンジン初期化後に行うこと！）
-  console.log("💾 IndexedDBからレイヤーデータを復元します。");
+  toolManager.setTool('pen'); // ✅ ツール未設定によるバグ防止
+💾 Step 2: IndexedDBからの復元
+js
+コピーする
+編集する
+  console.log("💾 IndexedDBからレイヤーデータの復元を試みます...");
   const layers = await loadLayersFromIndexedDB();
+
   for (const layer of layers) {
     layerManager.createLayer(layer.id, layer.name);
-    canvasManager.drawFromDataURL(layer.imageData, layer.id);
+
+    // ✅ 描画前に補間を明示的にOFFにする
+    const ctx = canvasManager.getLayerContext(layer.id);
+    if (ctx) {
+      ctx.imageSmoothingEnabled = false;
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0);
+      img.src = layer.imageData;
+    }
   }
 
-  // UI反映（未定義だとクラッシュするので必ず定義すること！）
-  if (typeof layerUIManager.renderLayerList === 'function') {
-    layerUIManager.renderLayerList();
-  } else {
-    console.warn("⚠️ layerUIManager.renderLayerList() が未定義です！");
-  }
-
-  console.log("✅ アプリケーションの初期化が完了しました。");
-});
-4. 必ず renderLayerList() を layerUI-manager.js に実装すること
+  layerManager.setCurrentLayer(layers.at(-1)?.id ?? 0); // ✅ 最終レイヤーを描画対象に
+  layerUIManager.renderLayerList?.(); // ✅ レイヤーUIが未定義でも安全に
+  console.log(`✅ ${layers.length}件のレイヤーをIndexedDBから復元しました。`);
+🖌️ Step 3: 新規描画時の保存処理
 js
 コピーする
 編集する
-renderLayerList() {
-  // レイヤーリストのDOM表示を更新する処理
-}
-5. canvasManager に setCurrentTool() が必要なら実装
+canvasManager.onDrawEnd = async () => {
+  const current = layerManager.getCurrentLayer();
+  const canvas = canvasManager.getLayerCanvas(current.id);
+  await saveLayerToIndexedDB(current.id, current.name, canvas.toDataURL());
+};
+🚫 Step 4: 転写（Vキー）時のアンチエイリアス防止
+drawImage() を使わず、以下のように明示的に getImageData → putImageData に変更：
+
 js
 コピーする
 編集する
-setCurrentTool(tool) {
-  this.currentTool = tool;
-}
-✅ バグ再発防止ポイント
-症状	対策
-setCurrentTool is not a function	canvasManagerに関数が存在するかチェック・定義
-renderLayerList is not a function	layerUIManagerに関数が定義されているかチェック
-謎の線が左上から伸びる	toolManager.setTool('pen') を初期化直後に呼ぶ
-canvasが表示されない	canvasManager/WebGL初期化の順序に注意すること
+const srcCtx = canvasManager.getLayerContext(sourceId);
+const dstCtx = canvasManager.getLayerContext(destId);
+const imgData = srcCtx.getImageData(0, 0, width, height);
+dstCtx.putImageData(imgData, 0, 0);
+🚨 Step 5: バグになりやすいパターンに対する対策一覧
+問題	対策
+復元後にキャンバスが出ない	createLayer() → drawImage() の順守
+描けない／ツール不明	toolManager.setTool("pen") を初期化時に実行
+転写でジャギー／ぼやけ	imageSmoothingEnabled = false または putImageData 使用
+renderLayerList()でクラッシュ	layerUIManager.renderLayerList?.() で安全呼び出し
+setCurrentTool is not a function	canvasManager.setCurrentTool(tool) を定義すること
 
-✅ 成果物チェックリスト
- db-indexed.js があり、Dexie保存/復元関数が定義済み
+✅ 完了チェックリスト（GEMINI確認用）
+ db-indexed.js にDexie処理がある
 
- core-engine.js に全てのマネージャー構築・復元処理が書かれている
+ core-engine.js で全マネージャーが初期化されている
 
- toolManager.setTool('pen') が初期化後に呼ばれている
+ IndexedDBからの復元が新規レイヤー生成を伴って行われている
 
- layerUIManager.renderLayerList() が存在し、呼び出されている
+ 描画ツールは初期化時に「pen」に設定されている
 
- エラーがなく、キャンバス上に復元されたレイヤーが描画されている
+ drawImage()前に imageSmoothingEnabled = false を設定している
 
+ 転写時は putImageData() を使ってアンチエイリアスを抑制している
