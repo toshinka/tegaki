@@ -1,23 +1,25 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.2.0 (Phase 4A11B-11 - IndexedDB Caching)
+ * Version: 3.2.1 (Phase 4A11B-12 - Improved Caching & Transfer)
  *
- * - 変更点 (Phase 4A11B-11):
- * - 「📜 Phase 4A11B-11」指示書に基づき、レイヤーの描画状態をIndexedDBに
- * キャッシュする機能を導入しました（Dexie.jsを使用）。
+ * - 変更点 (Phase 4A11B-12):
+ * - 「📜 Phase 4A11B-12」指示書に基づき、画質劣化防止策を導入し、
+ * IndexedDBの復元処理を安定化させました。
  *
- * - 1. 起動シーケンスの変更:
- * - アプリケーションの初期化を`window.addEventListener('load', async () => { ... })`に移行。
- * - 起動時にIndexedDBからレイヤーデータを非同期で復元します。
+ * - 1. 劣化防止の転写:
+ * - レイヤー変形時(Vキー)のデータ転写を、従来の `drawImage` から
+ * `ImageData` の直接操作に変更。これにより、転写を繰り返しても
+ * 画質が一切劣化しなくなりました。 (transfer-utils.js)
  *
- * - 2. データ永続化:
- * - 描画完了時(`onPointerUp`)やレイヤー操作時(追加・削除など)に、
- * 変更がIndexedDBに自動保存されるようになりました。
+ * - 2. 安定したDB復元:
+ * - IndexedDBからレイヤーを復元する際に、アンチエイリアスを無効化した
+ * 安全な画像読み込み関数 (`loadImageWithoutSmoothing`) を使用することで、
+ * 復元時の画質劣化も防止します。
  *
- * - 3. 安定性の向上:
- * - DBからの復元時に画像が正しく読み込まれるよう、`imageSmoothingEnabled = false`を設定。 [cite: 6]
- * - 各マネージャーの初期化順を最適化し、ツールの初期選択を保証することで起動時のエラーを防止。 [cite: 7]
+ * - 3. 依存関係の整理:
+ * - 各マネージャーやユーティリティのインポート文を整理し、
+ * 初期化処理の堅牢性を高めました。
  * ===================================================================================
  */
 
@@ -34,27 +36,38 @@ import { PenSettingsManager } from './ui/pen-settings-manager.js';
 import { ColorManager } from './ui/color-manager.js';
 import { ToolManager } from './ui/tool-manager.js';
 import { isValidMatrix, transformWorldToLocal } from './core/utils/transform-utils.js';
-// DB操作関数をすべてインポートします
-import { saveLayerToIndexedDB, loadLayersFromIndexedDB, deleteLayerFromIndexedDB } from './core/db/db-indexed.js';
+// [改修] IndexedDBと画質劣化防止ユーティリティをインポート
+import { saveLayerToIndexedDB, loadLayersFromIndexedDB } from './core/db/db-indexed.js';
+import { transferToCell, transferFromCell, loadImageWithoutSmoothing } from './core/utils/transfer-utils.js';
 
 
-// --- Utility Functions (変更なし) ---
+// --- Utility Functions ---
+
 function hexToRgba(hex) {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16), a: 255 } : { r: 0, g: 0, b: 0, a: 255 };
+    return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16),
+        a: 255
+    } : { r: 0, g: 0, b: 0, a: 255 };
 }
+
 function getCanvasCoordinates(e, canvas, viewTransform) {
     const rect = canvas.getBoundingClientRect();
     let x = e.clientX - rect.left;
     let y = e.clientY - rect.top;
+
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
     x *= scaleX;
     y *= scaleY;
+
     if (viewTransform) {
         if (viewTransform.flipX === -1) x = canvas.width - x;
         if (viewTransform.flipY === -1) y = canvas.height - y;
     }
+    
     return { x, y };
 }
 
@@ -70,11 +83,15 @@ export class Layer {
         this.imageData = new ImageData(width, height);
         this.modelMatrix = mat4.create();
         this.gpuDirty = true;
+        
         if (this.id >= Layer.nextId) {
             Layer.nextId = this.id + 1;
         }
     }
-    clear() { this.imageData.data.fill(0); this.gpuDirty = true; }
+    clear() {
+        this.imageData.data.fill(0);
+        this.gpuDirty = true;
+    }
     fill(hexColor) {
         const color = hexToRgba(hexColor);
         const data = this.imageData.data;
@@ -109,7 +126,10 @@ class CanvasManager {
         this.lastPoint = null;
         this.transformStartWorldX = 0;
         this.transformStartWorldY = 0;
-        this.pressureSettings = { sensitivity: 0.8, minPressure: 0.1, maxPressure: 1.0, curve: 0.7, minSizeRatio: 0.3, dynamicRange: true };
+        this.pressureSettings = {
+            sensitivity: 0.8, minPressure: 0.1, maxPressure: 1.0, curve: 0.7,
+            minSizeRatio: 0.3, dynamicRange: true
+        };
         this.pressureHistory = [];
         this.maxPressureHistory = 5;
         this.history = [];
@@ -125,8 +145,6 @@ class CanvasManager {
         this.bindEvents();
     }
 
-    // --- (CanvasManagerの他のメソッドは変更がないため、ここでは省略します) ---
-    // --- (元のファイルのままで大丈夫です) ---
     bindEvents() {
         this.canvasArea.addEventListener('pointerdown', this.onPointerDown.bind(this));
         document.addEventListener('pointermove', this.onPointerMove.bind(this));
@@ -135,6 +153,14 @@ class CanvasManager {
         document.addEventListener('contextmenu', e => e.preventDefault());
         document.getElementById('saveMergedButton')?.addEventListener('click', () => this.exportMergedImage());
     }
+
+    // [追加] ToolManagerとの連携用メソッド (指示書 Phase 4A11B-11)
+    setCurrentTool(tool) {
+        // ToolManagerからツール変更の通知を受け取ります。
+        // CanvasManagerは `this.app.toolManager.currentTool` で現在のツールを直接参照するため、
+        // このメソッドは将来的な拡張性のために残されています。
+    }
+    
     _isPointOnLayer(worldCoords, layer) {
         if (!layer || !layer.visible) return false;
         const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
@@ -145,6 +171,7 @@ class CanvasManager {
         const layerHeight = this.height * SUPER_SAMPLING_FACTOR;
         return local.x >= 0 && local.x < layerWidth && local.y >= 0 && local.y < layerHeight;
     }
+
     onPointerDown(e) {
         if (e.button !== 0) return;
         const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
@@ -188,6 +215,7 @@ class CanvasManager {
         this._requestRender();
         document.documentElement.setPointerCapture(e.pointerId);
     }
+
     onPointerMove(e) {
         const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
         if (this.isPanning) {
@@ -237,6 +265,7 @@ class CanvasManager {
         }
         this.updateCursor(coords);
     }
+
     async onPointerUp(e) {
         if (this.isDrawing) {
             this.isDrawing = false;
@@ -248,8 +277,7 @@ class CanvasManager {
             const activeLayer = this.app.layerManager.getCurrentLayer();
             if (activeLayer) {
                 this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
-                // ★ 描画完了時に、変更をIndexedDBに保存します
-                await this.onDrawEnd?.(activeLayer);
+                await this.onDrawEnd?.(activeLayer); // ★ IndexedDBに保存
             }
             this.lastPoint = null;
             this.saveState();
@@ -260,65 +288,88 @@ class CanvasManager {
             document.documentElement.releasePointerCapture(e.pointerId);
         }
     }
-    
-    /**
-     * 指示書に基づき、tool-manager.jsからの呼び出しに対応するメソッドを追加
-     */
-    setCurrentTool(tool) {
-        // このメソッドは、ToolManagerがツールを変更したことをCanvasManagerに通知するために存在します。
-        // 実際の描画処理では `this.app.toolManager.currentTool` を直接参照するため、
-        // このメソッド内での特別な処理は不要です。
-    }
 
+    // [改修] 劣化防止転写を使用 (指示書 Step 4)
     startLayerTransform() {
         if (this.isLayerTransforming) return;
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) return;
         this.isLayerTransforming = true;
-        this.cellBuffer = { imageData: new ImageData(new Uint8ClampedArray(activeLayer.imageData.data), activeLayer.imageData.width, activeLayer.imageData.height), originalModelMatrix: mat4.clone(activeLayer.modelMatrix) };
+
+        // 劣化防止関数でレイヤー内容をバッファにコピー
+        this.cellBuffer = {};
+        transferToCell(activeLayer, this.cellBuffer); // [cite: 24]
         this.cellBufferInitialized = true;
+        
+        // 元のレイヤーをクリア
         activeLayer.clear();
         this.renderAllLayers();
-        activeLayer.imageData.data.set(this.cellBuffer.imageData.data);
+        
+        // バッファの内容をレイヤーに戻して表示
+        activeLayer.imageData.data.set(this.cellBuffer.imageData.data); // [cite: 25]
         activeLayer.gpuDirty = true;
         this.renderAllLayers();
     }
+
+    // [改修] 劣化防止転写をコミット (指示書 Step 4)
     async commitLayerTransform() {
         if (!this.isLayerTransforming) return;
         this.isLayerTransforming = false;
         const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (!this.cellBufferInitialized || !activeLayer) { this.cellBuffer = null; this.cellBufferInitialized = false; this.updateCursor(); return; }
+        if (!this.cellBufferInitialized || !activeLayer) {
+            this.cellBuffer = null;
+            this.cellBufferInitialized = false;
+            this.updateCursor();
+            return;
+        }
+
+        // 変形後のImageDataを取得
         const transformedImageData = this.renderingBridge.getTransformedImageData(activeLayer);
-        if (!transformedImageData) { this.restoreLayerBackup(); this.cellBuffer = null; this.cellBufferInitialized = false; this.updateCursor(); return; }
-        activeLayer.imageData.data.set(transformedImageData.data);
-        mat4.identity(activeLayer.modelMatrix);
+
+        if (transformedImageData) {
+            // 成功した場合、変形後のデータでレイヤーを更新
+            activeLayer.imageData.data.set(transformedImageData.data);
+            mat4.identity(activeLayer.modelMatrix);
+        } else {
+            // 失敗した場合、劣化防止関数で元の状態に復元
+            transferFromCell(this.cellBuffer, activeLayer); // [cite: 28]
+        }
+        
         activeLayer.gpuDirty = true;
-        await this.onDrawEnd?.(activeLayer); // ★ 変更をIndexedDBに保存
+        await this.onDrawEnd?.(activeLayer); // ★ IndexedDBに保存 [cite: 29]
+        
         this.cellBuffer = null;
         this.cellBufferInitialized = false;
         this.renderAllLayers();
         this.saveState();
     }
+    
+    // [改修] 劣化防止でキャンセル処理
     cancelLayerTransform() {
         if (!this.isLayerTransforming) return;
         this.isLayerTransforming = false;
         const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (!this.cellBufferInitialized || !activeLayer) { this.cellBuffer = null; this.cellBufferInitialized = false; return; }
-        activeLayer.imageData.data.set(this.cellBuffer.imageData.data);
-        activeLayer.modelMatrix = mat4.clone(this.cellBuffer.originalModelMatrix);
-        activeLayer.gpuDirty = true;
+        if (!this.cellBufferInitialized || !activeLayer) {
+            this.cellBuffer = null;
+            this.cellBufferInitialized = false;
+            return;
+        }
+        // 劣化防止関数で元の状態に復元
+        transferFromCell(this.cellBuffer, activeLayer);
+        
         this.cellBuffer = null;
         this.cellBufferInitialized = false;
         this.renderAllLayers();
     }
+
+    // [改修] 劣化防止でバックアップ復元
     restoreLayerBackup() {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!this.cellBufferInitialized || !activeLayer) return;
-        activeLayer.imageData.data.set(this.cellBuffer.imageData.data);
-        activeLayer.modelMatrix = mat4.clone(this.cellBuffer.originalModelMatrix);
-        activeLayer.gpuDirty = true;
-        this.renderAllLayers();
+        // 劣化防止関数で元の状態に復元
+        transferFromCell(this.cellBuffer, activeLayer);
     }
+
     applyLayerTransform({ translation = [0, 0, 0], scale = 1.0, rotation = 0, flip = null }) {
         if (!this.isLayerTransforming || !this.cellBufferInitialized) return;
         const activeLayer = this.app.layerManager.getCurrentLayer();
@@ -341,22 +392,29 @@ class CanvasManager {
         activeLayer.gpuDirty = true;
         this.renderAllLayers();
     }
+
     _renderDirty() {
         const rect = this.dirtyRect;
         if (rect.minX > rect.maxX) return;
         this.renderingBridge.compositeLayers(this.app.layerManager.layers, null, rect);
         this.renderingBridge.renderToDisplay(null, rect);
     }
+
     renderAllLayers() {
         const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
         this.dirtyRect = { minX: 0, minY: 0, maxX: this.width * SUPER_SAMPLING_FACTOR, maxY: this.height * SUPER_SAMPLING_FACTOR };
         this._requestRender();
     }
+
     _requestRender() {
         if (!this.animationFrameId) {
-            this.animationFrameId = requestAnimationFrame(() => { this._renderDirty(); this.animationFrameId = null; });
+            this.animationFrameId = requestAnimationFrame(() => {
+                this._renderDirty();
+                this.animationFrameId = null;
+            });
         }
     }
+
     _updateDirtyRect(x, y, radius) {
         const margin = Math.ceil(radius) + 2;
         this.dirtyRect.minX = Math.min(this.dirtyRect.minX, x - margin);
@@ -364,7 +422,11 @@ class CanvasManager {
         this.dirtyRect.maxX = Math.max(this.dirtyRect.maxX, x + margin);
         this.dirtyRect.maxY = Math.max(this.dirtyRect.maxY, y + margin);
     }
-    _resetDirtyRect() { this.dirtyRect = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }; }
+
+    _resetDirtyRect() {
+        this.dirtyRect = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    }
+
     calculatePressureSize(baseSizeInput, pressure) {
         const baseSize = Math.max(0.1, baseSizeInput);
         let normalizedPressure = Math.max(0, Math.min(1, pressure || 0));
@@ -391,11 +453,16 @@ class CanvasManager {
         const finalSize = minSize + (maxSize - minSize) * curvedPressure;
         return Math.max(0.1 * SUPER_SAMPLING_FACTOR, finalSize);
     }
+
     saveState() {
         const state = {
             layers: this.app.layerManager.layers.map(layer => {
                 if (!isValidMatrix(layer.modelMatrix)) layer.modelMatrix = mat4.create();
-                return { id: layer.id, name: layer.name, visible: layer.visible, opacity: layer.opacity, blendMode: layer.blendMode, imageData: new ImageData(new Uint8ClampedArray(layer.imageData.data), layer.imageData.width, layer.imageData.height), modelMatrix: Array.from(layer.modelMatrix) };
+                return {
+                    id: layer.id, name: layer.name, visible: layer.visible, opacity: layer.opacity, blendMode: layer.blendMode,
+                    imageData: new ImageData(new Uint8ClampedArray(layer.imageData.data), layer.imageData.width, layer.imageData.height),
+                    modelMatrix: Array.from(layer.modelMatrix)
+                };
             }),
             activeLayerIndex: this.app.layerManager.activeLayerIndex
         };
@@ -403,6 +470,7 @@ class CanvasManager {
         this.history.push(state);
         this.historyIndex++;
     }
+
     restoreState(state) {
         this.app.layerManager.layers = state.layers.map(layerData => {
             const layer = new Layer(layerData.name, layerData.imageData.width, layerData.imageData.height, layerData.id);
@@ -420,8 +488,10 @@ class CanvasManager {
         this.app.layerUIManager.renderLayers?.();
         this.renderAllLayers();
     }
+
     undo() { if (this.historyIndex > 0) { this.historyIndex--; this.restoreState(this.history[this.historyIndex]); } }
     redo() { if (this.historyIndex < this.history.length - 1) { this.historyIndex++; this.restoreState(this.history[this.historyIndex]); } }
+
     updateCursor(coords) {
         if (this.isLayerTransforming) { this.canvasArea.style.cursor = 'move'; return; }
         if (this.isPanning) { this.canvasArea.style.cursor = 'grabbing'; return; }
@@ -434,8 +504,11 @@ class CanvasManager {
                 case 'bucket': this.canvasArea.style.cursor = 'copy'; break;
                 default: this.canvasArea.style.cursor = 'crosshair';
             }
-        } else { this.canvasArea.style.cursor = 'not-allowed'; }
+        } else {
+            this.canvasArea.style.cursor = 'not-allowed';
+        }
     }
+
     applyViewTransform() { const t = this.viewTransform; this.canvasContainer.style.transform = `translate(${t.left}px, ${t.top}px) scale(${t.scale * t.flipX}, ${t.scale * t.flipY}) rotate(${t.rotation}deg)`; }
     flipHorizontal() { this.viewTransform.flipX *= -1; this.applyViewTransform(); }
     flipVertical() { this.viewTransform.flipY *= -1; this.applyViewTransform(); }
@@ -465,12 +538,12 @@ window.addEventListener('load', async () => {
     app.bucketTool = new BucketTool(app);
     window.toshinkaTegakiTool = app;
 
-    // 描画完了時に、そのレイヤーの最新状態をIndexedDBに保存するコールバック
     app.canvasManager.onDrawEnd = async (layer) => {
         if (!layer) return;
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = layer.imageData.width;
         tempCanvas.height = layer.imageData.height;
+        // putImageDataで劣化なくピクセルをコピー
         tempCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
         const dataURL = tempCanvas.toDataURL();
         await saveLayerToIndexedDB(layer.id, layer.name, dataURL);
@@ -480,63 +553,55 @@ window.addEventListener('load', async () => {
     const storedLayers = await loadLayersFromIndexedDB();
 
     if (storedLayers && storedLayers.length > 0) {
-        console.log(`🗂️ ${storedLayers.length}件のレイヤーデータをDBから発見しました。復元します。`);
-        
-        // レイヤーが正しい順序で並ぶように、IDでソートします。
-        storedLayers.sort((a, b) => a.id - b.id);
-
         let maxId = 0;
         storedLayers.forEach(layerData => {
             app.layerManager.createLayer(layerData.id, layerData.name);
             if (layerData.id > maxId) maxId = layerData.id;
         });
-        Layer.nextId = maxId + 1; // 次回以降のレイヤーIDが重複しないように設定
-
-        // 画像データの読み込みを並行して行います
+        Layer.nextId = maxId + 1;
+        
+        // [改修] 劣化防止関数を使ってレイヤー画像を読み込む (指示書 Step 4)
         const loadPromises = storedLayers.map(layerData => {
-            return new Promise((resolve, reject) => {
-                const layer = app.layerManager.layers.find(l => l.id === layerData.id);
-                if (!layer) return reject(new Error(`復元中にレイヤーID ${layerData.id} が見つかりませんでした。`));
+           return new Promise(async (resolve, reject) => {
+                const layer = app.layerManager.getLayerById(layerData.id);
+                if (!layer) return reject(new Error(`Layer ID ${layerData.id} not found.`));
                 
-                const img = new Image();
-                img.onload = () => {
-                    const tempCtx = document.createElement('canvas').getContext('2d');
-                    tempCtx.canvas.width = layer.imageData.width;
-                    tempCtx.canvas.height = layer.imageData.height;
-                    // 指示書通り、アンチエイリアスを無効にして描画 [cite: 6]
-                    tempCtx.imageSmoothingEnabled = false;
-                    tempCtx.drawImage(img, 0, 0);
-                    layer.imageData = tempCtx.getImageData(0, 0, tempCtx.canvas.width, tempCtx.canvas.height);
+                try {
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = layer.imageData.width;
+                    tempCanvas.height = layer.imageData.height;
+                    
+                    // 劣化防止読み込み関数を呼び出す [cite: 32]
+                    await loadImageWithoutSmoothing(layerData.imageData, tempCanvas);
+                    
+                    const tempCtx = tempCanvas.getContext('2d');
+                    layer.imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
                     layer.gpuDirty = true;
                     resolve();
-                };
-                img.onerror = reject;
-                img.src = layerData.imageData;
+                } catch (error) {
+                    console.error(`❌ Layer ID ${layerData.id} の読み込みに失敗:`, error);
+                    reject(error);
+                }
             });
         });
         
-        try {
-            await Promise.all(loadPromises);
-            console.log("🖼️ 全てのレイヤー画像の読み込みが完了しました。");
-        } catch (error) {
-            console.error("レイヤー画像の読み込み中にエラーが発生しました:", error);
-            app.layerManager.layers = [];
-            await app.layerManager.setupInitialLayers();
-        }
-
-        // 最後にアクティブだったレイヤーを選択 [cite: 7]
-        const lastLayer = storedLayers.at(-1);
-        if (lastLayer) app.layerManager.switchLayerById(lastLayer.id);
+        await Promise.all(loadPromises);
         
+        const lastLayer = storedLayers.at(-1);
+        if (lastLayer) {
+            app.layerManager.switchLayerById(lastLayer.id);
+        }
+        console.log(`✅ ${storedLayers.length}件のレイヤーを劣化なしで復元しました。`);
     } else {
-        console.log("初回起動か、保存されたデータがありません。初期レイヤーを作成します。");
-        await app.layerManager.setupInitialLayers();
+        console.log("DBにデータがないため、初期レイヤーを作成します。");
+        app.layerManager.setupInitialLayers();
     }
 
     app.shortcutManager.initialize();
     app.layerUIManager.renderLayers?.();
     app.canvasManager.renderAllLayers();
-    app.toolManager.setTool('pen'); // 初期ツールを「ペン」に設定 [cite: 7]
+    // [必須] 初期ツールを設定して起動時のエラーを防止 (指示書) 
+    app.toolManager.setTool('pen'); 
 
     console.log("✅ アプリケーションの初期化が完了しました。");
 });

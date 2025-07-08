@@ -1,49 +1,72 @@
-/**
- * データベース操作を管理するファイル (Dexie.jsを使用)
- * 
- */
+// core/db/db-indexed.js
 
-// Dexie.jsはHTMLで読み込まれているため、ここでは new Dexie() で直接使えます。
+// Dexie.jsを使用してIndexedDBを簡単に扱います
 const db = new Dexie("TegakiProjectDB");
 
-// データベースのバージョンと構造を定義します。
-// 'layers' というテーブルに、id, name, imageData の3つのデータを保存します。
-// '++id' は、データを追加するたびに自動でユニークな番号を振る設定です。
+// データベースのバージョンとテーブル構成を定義します
 db.version(1).stores({
-  layers: "++id, name, imageData"
+  // 'layers' テーブル: 'id'を主キーとし、'timestamp'でインデックスを作成
+  layers: "id, name, imageData, timestamp"
 });
 
 /**
- * 指定されたレイヤーの画像データをIndexedDBに保存または更新します。
- * @param {number} layerId - レイヤーの一意のID。
- * @param {string} name - レイヤー名。
- * @param {string} dataURL - レイヤーの画像データ (Data URL形式)。
+ * レイヤーの描画データをIndexedDBに保存または更新します
+ * @param {number} layerId - レイヤーの一意なID
+ * @param {string} name - レイヤー名
+ * @param {string} dataURL - レイヤーの画像データ (toDataURL()で生成)
  */
 export async function saveLayerToIndexedDB(layerId, name, dataURL) {
-  // IDが不正な場合はエラーを防ぐために処理を中断します。
-  if (layerId === null || typeof layerId === 'undefined') {
-    console.error("無効なレイヤーIDのため、IndexedDBへの保存をスキップしました:", layerId);
-    return;
+  try {
+    // putは、同じIDがあれば更新、なければ新規作成する便利なメソッドです
+    await db.layers.put({ 
+      id: layerId, 
+      name, 
+      imageData: dataURL,
+      timestamp: Date.now() // 保存日時を記録
+    });
+    console.log(`✅ Layer ${layerId} saved to IndexedDB`);
+  } catch (error) {
+    console.error("❌ Failed to save layer:", error);
   }
-  await db.layers.put({ id: layerId, name: name, imageData: dataURL });
 }
 
 /**
- * IndexedDBからすべてのレイヤーデータを読み込みます。
- * @returns {Promise<Array>} レイヤーデータの配列を返します。
+ * IndexedDBから全てのレイヤーデータを読み込みます
+ * @returns {Promise<Array>} レイヤーデータの配列
  */
 export async function loadLayersFromIndexedDB() {
-  return await db.layers.toArray();
+  try {
+    // timestampでソートして、レイヤーの順序を保ったまま読み込みます
+    const layers = await db.layers.orderBy('timestamp').toArray();
+    console.log(`📥 Loaded ${layers.length} layers from IndexedDB`);
+    return layers;
+  } catch (error) {
+    console.error("❌ Failed to load layers:", error);
+    return []; // エラー時は空の配列を返す
+  }
 }
 
 /**
- * 指定されたIDのレイヤーをIndexedDBから削除します。
- * @param {number} layerId - 削除するレイヤーのID。
+ * 指定したIDのレイヤーをIndexedDBから削除します
+ * @param {number} layerId - 削除するレイヤーのID
  */
 export async function deleteLayerFromIndexedDB(layerId) {
-    if (layerId === null || typeof layerId === 'undefined') {
-        console.error("無効なレイヤーIDのため、IndexedDBからの削除をスキップしました:", layerId);
-        return;
-    }
+  try {
     await db.layers.delete(layerId);
+    console.log(`🗑️ Layer ${layerId} deleted from IndexedDB`);
+  } catch (error) {
+    console.error("❌ Failed to delete layer:", error);
+  }
+}
+
+/**
+ * 全てのレイヤーデータをIndexedDBから削除します
+ */
+export async function clearAllLayersFromIndexedDB() {
+  try {
+    await db.layers.clear();
+    console.log("🧹 All layers cleared from IndexedDB");
+  } catch (error) {
+    console.error("❌ Failed to clear layers:", error);
+  }
 }

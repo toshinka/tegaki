@@ -1,0 +1,390 @@
+# 📜 Phase 4A11B-12：IndexedDBキャッシュ保存＋転写劣化完全防止指示書（改良版）
+
+## 🎯 目的
+1. **IndexedDBによる描画キャッシュ保存／復元を安定化**
+2. **転写（Vキー）モードにおける画質劣化を完全に防止**
+3. **ツール・マネージャー構成の整合性を確保し、想定される初期バグを全て封じ込める**
+
+## 🚨 **重要：二段階劣化問題の詳細分析**
+
+### 現在の問題パターン
+```
+台紙 → セル転写（Vキー押下）→ セル移動 → 台紙転写戻し（Vキー離し）
+  ↓        ↓                      ↓
+原画質   劣化1回目              劣化2回目（最終的にボケボケ）
+```
+
+### 劣化の原因
+1. **drawImage()使用時の自動アンチエイリアス**
+2. **Canvas→Canvas転写時の色空間変換**
+3. **imageSmoothingEnabled設定の不統一**
+4. **ImageDataの不適切な取り扱い**
+
+## 📁 対象ファイル（優先度順）
+
+| ファイル名 | 主な変更内容 | 優先度 |
+|-----------|-------------|--------|
+| `core-engine.js` | 初期化順序の整理、復元、転写処理統合 | 🔴 最高 |
+| `core/db/db-indexed.js` | IndexedDB保存・復元（Dexie.js） | 🔴 最高 |
+| `core/utils/transfer-utils.js` | 劣化防止転写関数群 | 🔴 最高 |
+| `core/rendering/rendering-bridge.js` | 転写時の設定統一 | 🟡 中 |
+| `ui/tool-manager.js` | setCurrentTool安定化対応 | 🟡 中 |
+
+## ✅ 構築ステップ（詳細版）
+
+### 🛠️ Step 1. HTML に Dexie を読み込み（確認）
+```html
+<script src="./libs/dexie.min.js"></script>
+```
+
+### 📥 Step 2. IndexedDB（db-indexed.js）- 完全版
+```javascript
+// core/db/db-indexed.js
+const db = new Dexie("TegakiProjectDB");
+db.version(1).stores({
+  layers: "++id, name, imageData, timestamp"
+});
+
+export async function saveLayerToIndexedDB(layerId, name, dataURL) {
+  try {
+    await db.layers.put({ 
+      id: layerId, 
+      name, 
+      imageData: dataURL,
+      timestamp: Date.now()
+    });
+    console.log(`✅ Layer ${layerId} saved to IndexedDB`);
+  } catch (error) {
+    console.error("❌ Failed to save layer:", error);
+  }
+}
+
+export async function loadLayersFromIndexedDB() {
+  try {
+    const layers = await db.layers.orderBy('timestamp').toArray();
+    console.log(`📥 Loaded ${layers.length} layers from IndexedDB`);
+    return layers;
+  } catch (error) {
+    console.error("❌ Failed to load layers:", error);
+    return [];
+  }
+}
+
+export async function deleteLayerFromIndexedDB(layerId) {
+  try {
+    await db.layers.delete(layerId);
+    console.log(`🗑️ Layer ${layerId} deleted from IndexedDB`);
+  } catch (error) {
+    console.error("❌ Failed to delete layer:", error);
+  }
+}
+
+export async function clearAllLayersFromIndexedDB() {
+  try {
+    await db.layers.clear();
+    console.log("🧹 All layers cleared from IndexedDB");
+  } catch (error) {
+    console.error("❌ Failed to clear layers:", error);
+  }
+}
+```
+
+### 🎨 Step 3. 劣化防止転写関数（transfer-utils.js）- 新規作成
+```javascript
+// core/utils/transfer-utils.js
+
+/**
+ * 画質劣化を完全に防ぐピクセル完全コピー関数
+ * drawImage()は一切使用しない！
+ */
+export function copyLayerWithoutSmoothing(sourceImageData, destCtx, width, height) {
+  // ImageDataを直接putImageDataで転写（劣化ゼロ）
+  destCtx.putImageData(sourceImageData, 0, 0);
+}
+
+/**
+ * Canvas→ImageData→Canvas の完全転写
+ * 中間でdrawImage()を挟まない
+ */
+export function transferCanvasToCanvas(sourceCanvas, destCanvas) {
+  const sourceCtx = sourceCanvas.getContext('2d');
+  const destCtx = destCanvas.getContext('2d');
+  
+  // 必ずimageSmoothingを無効化
+  sourceCtx.imageSmoothingEnabled = false;
+  destCtx.imageSmoothingEnabled = false;
+  
+  // ImageDataで直接転写
+  const imageData = sourceCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+  destCtx.putImageData(imageData, 0, 0);
+}
+
+/**
+ * セル転写専用関数（Vキー押下時）
+ * 台紙→セル転写時の劣化を防ぐ
+ */
+export function transferToCell(sourceLayer, cellBuffer) {
+  // ImageDataを直接クローン
+  const sourceData = sourceLayer.imageData;
+  cellBuffer.imageData = new ImageData(
+    new Uint8ClampedArray(sourceData.data), 
+    sourceData.width, 
+    sourceData.height
+  );
+  
+  // モデルマトリックスもクローン
+  cellBuffer.originalModelMatrix = mat4.clone(sourceLayer.modelMatrix);
+  
+  console.log("📋 Cell transfer completed without quality loss");
+}
+
+/**
+ * 台紙復帰専用関数（Vキー離し時）
+ * セル→台紙転写時の劣化を防ぐ
+ */
+export function transferFromCell(cellBuffer, destLayer) {
+  // ImageDataを直接復帰
+  destLayer.imageData.data.set(cellBuffer.imageData.data);
+  
+  // モデルマトリックスも復帰
+  destLayer.modelMatrix = mat4.clone(cellBuffer.originalModelMatrix);
+  
+  destLayer.gpuDirty = true;
+  console.log("📋 Cell restore completed without quality loss");
+}
+
+/**
+ * 画像読み込み時の劣化防止
+ * Image→Canvas転写時に使用
+ */
+export function loadImageWithoutSmoothing(imgSrc, canvas) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;  // 🔑 必須設定
+      ctx.drawImage(img, 0, 0);
+      resolve();
+    };
+    img.onerror = reject;
+    img.src = imgSrc;
+  });
+}
+```
+
+### 🎨 Step 4. core-engine.js の修正（劣化防止統合）
+```javascript
+// core-engine.js の修正箇所
+
+import { 
+  transferToCell, 
+  transferFromCell, 
+  loadImageWithoutSmoothing 
+} from './core/utils/transfer-utils.js';
+
+// CanvasManagerクラス内の修正
+
+// 🔧 セル転写開始（Vキー押下時）
+startLayerTransform() {
+  if (this.isLayerTransforming) return;
+  const activeLayer = this.app.layerManager.getCurrentLayer();
+  if (!activeLayer || !activeLayer.visible) return;
+  
+  this.isLayerTransforming = true;
+  
+  // 🔑 劣化防止転写を使用
+  this.cellBuffer = {};
+  transferToCell(activeLayer, this.cellBuffer);
+  this.cellBufferInitialized = true;
+  
+  // 台紙をクリア
+  activeLayer.clear();
+  this.renderAllLayers();
+  
+  // セルを台紙に表示
+  activeLayer.imageData.data.set(this.cellBuffer.imageData.data);
+  activeLayer.gpuDirty = true;
+  this.renderAllLayers();
+}
+
+// 🔧 セル転写終了（Vキー離し時）
+async commitLayerTransform() {
+  if (!this.isLayerTransforming) return;
+  this.isLayerTransforming = false;
+  
+  const activeLayer = this.app.layerManager.getCurrentLayer();
+  if (!this.cellBufferInitialized || !activeLayer) {
+    this.cellBuffer = null;
+    this.cellBufferInitialized = false;
+    return;
+  }
+  
+  // 🔑 劣化防止復帰を使用
+  const transformedImageData = this.renderingBridge.getTransformedImageData(activeLayer);
+  if (transformedImageData) {
+    activeLayer.imageData.data.set(transformedImageData.data);
+    mat4.identity(activeLayer.modelMatrix);
+  } else {
+    // 変形失敗時は元に戻す
+    transferFromCell(this.cellBuffer, activeLayer);
+  }
+  
+  activeLayer.gpuDirty = true;
+  await this.onDrawEnd?.(activeLayer); // IndexedDBに保存
+  
+  this.cellBuffer = null;
+  this.cellBufferInitialized = false;
+  this.renderAllLayers();
+  this.saveState();
+}
+
+// 🔧 IndexedDB復元処理の修正
+window.addEventListener('load', async () => {
+  // ... 既存の初期化 ...
+  
+  console.log("💾 IndexedDBからレイヤーデータの復元を試みます...");
+  const storedLayers = await loadLayersFromIndexedDB();
+  
+  if (storedLayers && storedLayers.length > 0) {
+    let maxId = 0;
+    storedLayers.forEach(layerData => {
+      app.layerManager.createLayer(layerData.id, layerData.name);
+      if (layerData.id > maxId) maxId = layerData.id;
+    });
+    Layer.nextId = maxId + 1;
+    
+    // 🔑 劣化防止読み込み
+    const loadPromises = storedLayers.map(layerData => {
+      return new Promise(async (resolve, reject) => {
+        const layer = app.layerManager.getLayerById(layerData.id);
+        if (!layer) return reject(new Error(`Layer ID ${layerData.id} not found.`));
+        
+        try {
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = layer.imageData.width;
+          tempCanvas.height = layer.imageData.height;
+          
+          await loadImageWithoutSmoothing(layerData.imageData, tempCanvas);
+          
+          const tempCtx = tempCanvas.getContext('2d');
+          layer.imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+          layer.gpuDirty = true;
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    
+    await Promise.all(loadPromises);
+    console.log(`✅ ${storedLayers.length}件のレイヤーを劣化なしで復元しました。`);
+  } else {
+    console.log("DBにデータがないため、初期レイヤーを作成します。");
+    app.layerManager.setupInitialLayers();
+  }
+  
+  // 🔑 必須：初期ツール設定
+  app.toolManager.setTool('pen');
+  
+  // ... 残りの初期化 ...
+});
+```
+
+### 🔧 Step 5. RenderingBridge の修正
+```javascript
+// core/rendering/rendering-bridge.js への追加
+
+// 🔑 レンダリング時の劣化防止設定
+setupContext(ctx) {
+  ctx.imageSmoothingEnabled = false;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+}
+
+// 🔑 レイヤー合成時の劣化防止
+compositeLayers(layers, targetRect, dirtyRect) {
+  // 全てのコンテキストで劣化防止設定
+  layers.forEach(layer => {
+    if (layer.context) {
+      this.setupContext(layer.context);
+    }
+  });
+  
+  // ... 既存の合成処理 ...
+}
+```
+
+## 🚫 **絶対にやってはいけないこと**
+
+### ❌ NGコード例
+```javascript
+// 🚫 これは劣化する！
+ctx.drawImage(sourceCanvas, 0, 0);
+
+// 🚫 これも劣化する！
+ctx.imageSmoothingEnabled = true; // または未設定
+
+// 🚫 これも劣化する！
+const newImageData = ctx.createImageData(width, height);
+newImageData.data.set(sourceData); // 正しいが...
+ctx.putImageData(newImageData, 0, 0);
+ctx.drawImage(canvas, 0, 0); // ここで劣化！
+```
+
+### ✅ OKコード例
+```javascript
+// ✅ これは劣化しない！
+ctx.imageSmoothingEnabled = false;
+const imageData = sourceCtx.getImageData(0, 0, width, height);
+destCtx.putImageData(imageData, 0, 0);
+
+// ✅ これも劣化しない！
+layer.imageData.data.set(sourceImageData.data);
+```
+
+## ✅ **安定化ポイント（必ず守る）**
+
+| 項目 | やること | 理由 |
+|------|----------|------|
+| `imageSmoothingEnabled = false` | 全てのコンテキストで設定 | アンチエイリアス劣化防止 |
+| `putImageData()` 使用 | `drawImage()` の代わりに使用 | ピクセル完全コピー |
+| `ImageData` 直接操作 | `data.set()` で直接コピー | 中間変換を回避 |
+| `toolManager.setTool("pen")` | 初期化時に必ず設定 | 未定義ツールエラー防止 |
+| `onDrawEnd` コールバック | 描画終了時に IndexedDB 保存 | データ永続化 |
+
+## 🔍 **デバッグ用チェックリスト**
+
+- [ ] Dexie.js が正常に読み込まれている
+- [ ] `transfer-utils.js` が作成され、インポートされている
+- [ ] 全ての Canvas コンテキストで `imageSmoothingEnabled = false` 設定済み
+- [ ] セル転写で `transferToCell()` を使用している
+- [ ] セル復帰で `transferFromCell()` を使用している
+- [ ] IndexedDB 復元で `loadImageWithoutSmoothing()` を使用している
+- [ ] 初期ツールが "pen" に設定されている
+- [ ] `onDrawEnd` コールバックが適切に設定されている
+
+## 🧪 **テスト手順**
+
+1. **基本描画テスト**
+   - ペンで線を描く
+   - ページを再読み込みして復元確認
+
+2. **転写劣化テスト**
+   - レイヤーに詳細な絵を描く
+   - Vキーを押してセル転写
+   - セルを移動
+   - Vキーを離して台紙復帰
+   - **画質が劣化していないことを確認**
+
+3. **長時間テスト**
+   - 上記の転写を10回繰り返す
+   - 最終的に画質が保たれていることを確認
+
+## 📋 **実装優先順位**
+
+1. **最優先**: `transfer-utils.js` の作成
+2. **次**: `core-engine.js` の転写処理修正
+3. **その次**: `db-indexed.js` の完全版実装
+4. **最後**: デバッグとテスト
+
+この指示書に従って実装すれば、転写時の画質劣化問題は完全に解決されるはずです。
