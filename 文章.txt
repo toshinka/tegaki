@@ -27,14 +27,9 @@ WEBGL化をしてるところだけどレイヤー移動すると画像がどこ
 
 ブラウザお絵描きツールをコーディング初心者が無料AI達にコーディングを全委任して、どれだけ作れるかの実験プロジェクトです。
 GPTくんが作った、指示書に沿って改修してください。
-toolset.jsも付けるけどcore-engine.js周りを弄ってもらってたら参照しなくなったので、そっち側はそのままでいいかも？
-大丈夫だった時代のがcore-engineB1.jsなので参考にして欲しい。
+htmlの改修は軽微なため既に私が行いました。
 
 尚、私はコーディング赤ちゃんなので、一括コピペで差し替えができる提出物を望みます(´・ω・`)
 
 
-補足１：htmlには下記構文が含まれています。
-    <script src="./libs/gl-matrix-min.js"></script>
-    <script src="./libs/dat.gui.min.js"></script>
-    <script type="module" src="core-engine.js"></script>
 

@@ -1,22 +1,20 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.6.0 (Phase 4A11C - Drawing Quality & Color Fix)
+ * Version: 4.5.0 (Phase 4A11B-10 - Transform Baking Stabilized)
  *
- * - 変更点 (Phase 4A11C):
- * - 「📜 Phase 4A11C」指示書に基づき、描画品質を改善。
+ * - 変更点 (Phase 4A11B-10):
+ * - 「📜 Phase4A11B-10」指示書に基づき、レイヤー変形確定時の画像生成処理を実装・安定化。
  *
- * - 1. 転写時のぼやけ・滲み修正:
- * - `_createOrUpdateLayerTexture`内でImageDataからテクスチャを生成する際、
- * 意図せずアンチエイリアス(imageSmoothing)が有効になっていた。
- * これを明示的に`false`に設定し、ピクセルがぼやけるのを防止。
+ * - 1. `getTransformedImageData`の実装:
+ * - レイヤーの変形情報(`modelMatrix`)を適用した結果を、オフスクリーンの
+ * フレームバッファに描画し、その結果を読み出して`ImageData`として返す機能を実装。
+ * - これにより、変形後の見た目をレイヤーに「焼き付ける」ことが可能になった。
  *
- * - 2. 赤縁・薄化現象の修正:
- * - レイヤー合成用シェーダー(`fsCompositor`)が独自実装のバイリニアフィルタを
- * 使用しており、これがアルファチャンネルの扱いで色滲み（カラーブリーディング）を
- * 起こしている可能性があった。
- * - シェーダーを単純なテクスチャフェッチ処理に修正し、ピクセルがそのまま
- * 転写されるように変更。これにより、エッジの品質を向上させた。
+ * - 2. 描画同期の強化:
+ * - `getTransformedImageData`内で、ピクセルを読み出す直前に`gl.finish()`を呼び出し、 
+ * GPUの描画処理が完了するのを待つようにした。これにより、不完全な状態の画像が
+ * 読み出されるのを防ぎ、転写の信頼性を向上させた。 
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -87,7 +85,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        console.log(`WebGL Engine (v4.6.0 Phase4A11C) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.5.0 Phase4A11B-10) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initProjectionMatrix() {
@@ -107,22 +105,23 @@ export class WebGLEngine extends DrawingEngine {
                 v_texCoord = a_texCoord;
             }`;
 
-        // --- ✨ここから修正 (Phase 4A11C) ---
         const fsCompositor = `
             precision highp float;
             varying vec2 v_texCoord;
             uniform sampler2D u_image;
             uniform float u_opacity;
+            uniform vec2 u_source_resolution;
 
             void main() {
-                // 手動での複雑なサンプリングを止め、単純なテクスチャ読み出しに戻す。
-                // これにより、意図しないぼやけや色の滲み（赤縁など）をなくす。
-                vec4 color = texture2D(u_image, v_texCoord);
-                
-                // 乗算済みアルファを正しく扱う
+                vec2 texel_size = 1.0 / u_source_resolution;
+                vec4 color = vec4(0.0);
+                color += texture2D(u_image, v_texCoord + texel_size * vec2(-0.25, -0.25));
+                color += texture2D(u_image, v_texCoord + texel_size * vec2( 0.25, -0.25));
+                color += texture2D(u_image, v_texCoord + texel_size * vec2( 0.25,  0.25));
+                color += texture2D(u_image, v_texCoord + texel_size * vec2(-0.25,  0.25));
+                color *= 0.25;
                 gl_FragColor = vec4(color.rgb, color.a * u_opacity);
             }`;
-        // --- ✨ここまで修正 (Phase 4A11C) ---
 
         const vsBrush = `
             precision highp float;
@@ -275,12 +274,8 @@ export class WebGLEngine extends DrawingEngine {
              tempCanvas.width = this.superWidth;
              tempCanvas.height = this.superHeight;
              const tempCtx = tempCanvas.getContext('2d');
-             
-             // --- ✨ここから修正 (Phase 4A11C) ---
-             // 転写時の補間を無効にして、ドットがぼやけるのを防ぐ
-             tempCtx.imageSmoothingEnabled = false;
-             // --- ✨ここまで修正 (Phase 4A11C) ---
-             
+             tempCtx.imageSmoothingEnabled = true;
+             tempCtx.imageSmoothingQuality = 'high';
              tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
 
             gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -322,7 +317,6 @@ export class WebGLEngine extends DrawingEngine {
         } else {
             gl.blendEquation(gl.FUNC_ADD);
             
-            // 乗算済みアルファ(premultiplied alpha)を前提としたブレンドモード設定
             switch (blendMode) {
                 case 'multiply': 
                     gl.blendFuncSeparate(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
@@ -402,6 +396,13 @@ export class WebGLEngine extends DrawingEngine {
     fill(imageData, color) { /* ... 変更なし ... */ }
     clear(imageData) { /* ... 変更なし ... */ }
 
+    // ★★★★★ 修正 (Phase 4A11B-10) ★★★★★
+    /**
+     * 指定されたレイヤーの現在のモデル行列(transform)を適用した状態のImageDataを生成して返す。
+     * この処理は、変形をレイヤーに「焼き付ける」ために使われる。
+     * @param {Layer} layer - 変換を適用するレイヤーオブジェクト
+     * @returns {ImageData | null} 変換後のImageData、または失敗時にnull
+     */
     getTransformedImageData(layer) {
         if (!this.gl || !this.programs.compositor || !layer) {
             console.error("getTransformedImageData: WebGLコンテキスト、シェーダー、またはレイヤーが無効です。");
@@ -410,6 +411,7 @@ export class WebGLEngine extends DrawingEngine {
         const gl = this.gl;
         const program = this.programs.compositor;
 
+        // 1. レイヤーテクスチャが最新であることを保証
         this._createOrUpdateLayerTexture(layer);
         const sourceTexture = this.layerTextures.get(layer);
         if (!sourceTexture) {
@@ -417,13 +419,14 @@ export class WebGLEngine extends DrawingEngine {
             return null;
         }
 
+        // 2. 焼き付け結果をレンダリングするための一時的なフレームバッファ(FBO)を作成
         const tempFBO = gl.createFramebuffer();
         gl.bindFramebuffer(gl.FRAMEBUFFER, tempFBO);
 
         const tempTexture = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, tempTexture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.superWidth, this.superHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-        // 焼き付けなので、補間はニアレストネイバー(Nearest Neighbor)で行う
+        // 焼き付けなので、補間はニアレストネイバーで行う
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -439,6 +442,7 @@ export class WebGLEngine extends DrawingEngine {
             return null;
         }
         
+        // 3. 一時FBOにレイヤーを描画
         gl.viewport(0, 0, this.superWidth, this.superHeight);
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
@@ -466,15 +470,19 @@ export class WebGLEngine extends DrawingEngine {
         
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
+        // 指示書 Step 1: GPUコマンドがすべて実行されるのを待つ 
         gl.finish();
 
+        // 4. 描画結果をCPUメモリに読み出す
         const pixelBuffer = new Uint8Array(this.superWidth * this.superHeight * 4);
         gl.readPixels(0, 0, this.superWidth, this.superHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixelBuffer);
         
+        // 5. 後片付け
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.deleteTexture(tempTexture);
         gl.deleteFramebuffer(tempFBO);
         
+        // 6. 読み出したピクセルデータを低解像度のImageDataに変換（ダウンスケール）
         const destWidth = this.width;
         const destHeight = this.height;
         const destImageData = new ImageData(destWidth, destHeight);
@@ -486,6 +494,7 @@ export class WebGLEngine extends DrawingEngine {
                 const sx = Math.floor(x * factor);
                 const sy = Math.floor(y * factor);
 
+                // WebGLのreadPixelsは左下原点なので、Y座標を反転させる
                 const sourceY_flipped = this.superHeight - 1 - sy;
                 const sourceIndex = (sourceY_flipped * this.superWidth + sx) * 4;
                 const destIndex = (y * destWidth + x) * 4;
