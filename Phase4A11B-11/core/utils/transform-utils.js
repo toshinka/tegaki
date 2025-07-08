@@ -1,61 +1,40 @@
-// core/utils/transfer-utils.js
-
-// gl-matrixライブラリから行列計算用のmat4オブジェクトを取得します
-const mat4 = window.glMatrix.mat4;
-
 /**
- * セル転写専用関数（Vキー押下時など）
- * 台紙レイヤーからバッファへ、画質劣化なしでデータをコピーします。
- * @param {Layer} sourceLayer - コピー元のレイヤー
- * @param {object} cellBuffer - コピー先のバッファオブジェクト
+ * 行列が有効か（壊れていないか）をチェックする関数
+ * @param {mat4} m - チェック対象の行列
+ * @returns {boolean}
  */
-export function transferToCell(sourceLayer, cellBuffer) {
-  const sourceData = sourceLayer.imageData;
-  // ImageDataをピクセル単位で直接クローンすることで、drawImage()による劣化を完全に防ぎます
-  cellBuffer.imageData = new ImageData(
-    new Uint8ClampedArray(sourceData.data), 
-    sourceData.width, 
-    sourceData.height
-  );
-  // 位置や変形情報（モデル行列）も正確にクローンします
-  cellBuffer.originalModelMatrix = mat4.clone(sourceLayer.modelMatrix);
-  
-  console.log("📋 Cell transfer completed without quality loss.");
+export function isValidMatrix(m) {
+  // Step 2: `modelMatrix` が壊れていないかのチェック関数 (修正版)
+  if (!m || m.length !== 16) {
+    return false;
+  }
+  // Float32Array にも確実に対応できるforループでチェックします
+  for (let i = 0; i < 16; i++) {
+    if (!Number.isFinite(m[i])) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**
- * 台紙復帰専用関数（Vキー離し時など）
- * バッファから台紙レイヤーへ、画質劣化なしでデータを復元します。
- * @param {object} cellBuffer - 復元元のバッファオブジェクト
- * @param {Layer} destLayer - 復元先のレイヤー
+ * ワールド座標（画面上の座標）をレイヤーのローカル座標に変換する
+ * @param {number} worldX - ワールドX座標
+ * @param {number} worldY - ワールドY座標
+ * @param {mat4} modelMatrix - レイヤーのモデル行列
+ * @returns {{x: number, y: number}} ローカル座標
  */
-export function transferFromCell(cellBuffer, destLayer) {
-  // バッファのImageDataを直接レイヤーのデータに書き戻します
-  destLayer.imageData.data.set(cellBuffer.imageData.data);
-  // 位置や変形情報（モデル行列）も元に戻します
-  destLayer.modelMatrix = mat4.clone(cellBuffer.originalModelMatrix);
-  
-  destLayer.gpuDirty = true; // 描画更新のフラグを立てる
-  console.log("📋 Cell restore completed without quality loss.");
-}
+export function transformWorldToLocal(worldX, worldY, modelMatrix) {
+  // Step 3: transformWorldToLocal の安全実装
+  const invMatrix = glMatrix.mat4.create();
+  glMatrix.mat4.invert(invMatrix, modelMatrix); // 逆行列を計算
 
-/**
- * IndexedDB等から読み込んだ画像データ(DataURL)を、画質劣化なしでCanvasに描画します
- * @param {string} imgSrc - 画像のDataURL
- * @param {HTMLCanvasElement} canvas - 描画先のCanvas要素
- * @returns {Promise<void>}
- */
-export function loadImageWithoutSmoothing(imgSrc, canvas) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const ctx = canvas.getContext('2d');
-      // 🔑 この設定が最重要！drawImage()実行時のアンチエイリアス（ぼかし）を無効化します
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, 0, 0);
-      resolve();
-    };
-    img.onerror = reject;
-    img.src = imgSrc;
-  });
+  const worldPos = glMatrix.vec4.fromValues(worldX, worldY, 0, 1);
+  const localPos = glMatrix.vec4.create();
+
+  glMatrix.vec4.transformMat4(localPos, worldPos, invMatrix); // 逆行列を使って座標を変換
+
+  console.log('[座標変換] World:', worldX, worldY, '→ Local:', localPos[0], localPos[1]);
+
+  return { x: localPos[0], y: localPos[1] };
 }
