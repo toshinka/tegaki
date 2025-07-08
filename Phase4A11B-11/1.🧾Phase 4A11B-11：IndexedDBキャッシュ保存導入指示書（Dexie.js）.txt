@@ -1,103 +1,89 @@
 🎯 目的
-レイヤーの描画状態をIndexedDBに保存・復元できるようにする
+IndexedDBによる描画キャッシュ保存／復元を安定化
 
-初期レイヤー破壊・描画不能・転写時のアンチエイリアスなどの重大バグを防ぐ構造で構築する
+転写（Vキー）モードにおける画質劣化を完全に防止
 
-📁 作業対象ファイル
-ファイル	内容
-core-engine.js	全マネージャー構築、描画・保存・復元の起点
-core/db/db-indexed.js	IndexedDB保存・復元（Dexie.js使用）
-tool-manager.js	setTool()が正しくツール設定できるよう調整
-layerUI-manager.js	renderLayerList()必須。UI更新関数として動作
-canvasManager系	setCurrentTool()、描画対象切替対応必須
+ツール・マネージャー構成の整合性を確保し、想定される初期バグを全て封じ込める
 
-✅ 構築ステップ（安全な初期化・保存・復元のための順序）
-🛠️ Step 0: 初期セットアップ（HTML）
-HTMLに以下を含める（済）：
+📁 対象ファイル
+ファイル名	主な変更内容
+core-engine.js	初期化順序の整理、復元、転写処理統合
+core/db/db-indexed.js	IndexedDB保存・復元（Dexie.js）
+canvas-manager.js	setCurrentTool() 追加
+tool-manager.js	this.app.canvasManager.setCurrentTool 安定化対応
+core/utils/transfer-utils.js（推奨）	copyLayerWithoutSmoothing() を追加（転写時用）
 
+✅ 構築ステップ
+🛠️ Step 1. HTML に Dexie を読み込み（済）
 html
 コピーする
 編集する
 <script src="./libs/dexie.min.js"></script>
-🧱 Step 1: モジュール読み込み・マネージャーの構築
+📥 Step 2. IndexedDB（db-indexed.js）
 js
 コピーする
 編集する
-// core-engine.js より
-import { CanvasManager } from './core/rendering/canvas-manager.js';
-import { LayerManager } from './layer-manager/layer-manager.js';
-import { ToolManager } from './tools/tool-manager.js';
-import { LayerUIManager } from './ui/layer-ui-manager.js';
-import { saveLayerToIndexedDB, loadLayersFromIndexedDB } from './core/db/db-indexed.js';
+const db = new Dexie("TegakiProjectDB");
+db.version(1).stores({
+  layers: "++id, name, imageData"
+});
 
-window.addEventListener('load', async () => {
-  console.log("🛠️ アプリケーションの初期化を開始します...");
+export async function saveLayerToIndexedDB(layerId, name, dataURL) {
+  await db.layers.put({ id: layerId, name, imageData: dataURL });
+}
 
-  const canvasManager = new CanvasManager();
-  const layerManager = new LayerManager(canvasManager);
-  const toolManager = new ToolManager({ canvasManager });
-  const layerUIManager = new LayerUIManager(layerManager);
-
-  toolManager.setTool('pen'); // ✅ ツール未設定によるバグ防止
-💾 Step 2: IndexedDBからの復元
+export async function loadLayersFromIndexedDB() {
+  return await db.layers.toArray();
+}
+🎨 Step 3. 復元処理（core-engine.js）
 js
 コピーする
 編集する
-  console.log("💾 IndexedDBからレイヤーデータの復元を試みます...");
-  const layers = await loadLayersFromIndexedDB();
-
-  for (const layer of layers) {
-    layerManager.createLayer(layer.id, layer.name);
-
-    // ✅ 描画前に補間を明示的にOFFにする
-    const ctx = canvasManager.getLayerContext(layer.id);
-    if (ctx) {
+const layers = await loadLayersFromIndexedDB();
+for (const layer of layers) {
+  layerManager.createLayer(layer.id, layer.name);
+  const ctx = canvasManager.getLayerContext(layer.id);
+  if (ctx) {
+    const img = new Image();
+    img.onload = () => {
       ctx.imageSmoothingEnabled = false;
-      const img = new Image();
-      img.onload = () => ctx.drawImage(img, 0, 0);
-      img.src = layer.imageData;
-    }
+      ctx.drawImage(img, 0, 0);
+    };
+    img.src = layer.imageData;
   }
-
-  layerManager.setCurrentLayer(layers.at(-1)?.id ?? 0); // ✅ 最終レイヤーを描画対象に
-  layerUIManager.renderLayerList?.(); // ✅ レイヤーUIが未定義でも安全に
-  console.log(`✅ ${layers.length}件のレイヤーをIndexedDBから復元しました。`);
-🖌️ Step 3: 新規描画時の保存処理
+}
+layerManager.setCurrentLayer(layers.at(-1)?.id ?? 0);
+toolManager.setTool("pen"); // 初期ツール指定
+🚫 Step 4. セル転写バグの対策（2段階劣化防止）
+❌ NGコード（劣化する）
 js
 コピーする
 編集する
-canvasManager.onDrawEnd = async () => {
-  const current = layerManager.getCurrentLayer();
-  const canvas = canvasManager.getLayerCanvas(current.id);
-  await saveLayerToIndexedDB(current.id, current.name, canvas.toDataURL());
-};
-🚫 Step 4: 転写（Vキー）時のアンチエイリアス防止
-drawImage() を使わず、以下のように明示的に getImageData → putImageData に変更：
-
+ctx.drawImage(sourceCanvas, 0, 0); // アンチエイリアス発生！
+✅ OKコード（劣化ゼロ）
 js
 コピーする
 編集する
-const srcCtx = canvasManager.getLayerContext(sourceId);
-const dstCtx = canvasManager.getLayerContext(destId);
-const imgData = srcCtx.getImageData(0, 0, width, height);
-dstCtx.putImageData(imgData, 0, 0);
-🚨 Step 5: バグになりやすいパターンに対する対策一覧
-問題	対策
-復元後にキャンバスが出ない	createLayer() → drawImage() の順守
-描けない／ツール不明	toolManager.setTool("pen") を初期化時に実行
-転写でジャギー／ぼやけ	imageSmoothingEnabled = false または putImageData 使用
-renderLayerList()でクラッシュ	layerUIManager.renderLayerList?.() で安全呼び出し
-setCurrentTool is not a function	canvasManager.setCurrentTool(tool) を定義すること
+export function copyLayerWithoutSmoothing(sourceCtx, destCtx, width, height) {
+  const imageData = sourceCtx.getImageData(0, 0, width, height);
+  destCtx.putImageData(imageData, 0, 0);
+}
+この関数は core/utils/transfer-utils.js などに切り出しておくと安全。
 
-✅ 完了チェックリスト（GEMINI確認用）
- db-indexed.js にDexie処理がある
+✅ 安定化ポイント（必ず守る）
+項目	やること
+canvasManager.setCurrentTool()	必ず定義する（内部でtoolを保存するだけでも可）
+toolManager.setTool("pen")	初期ツール未定義による「左上線バグ」防止
+imageSmoothingEnabled = false	すべての drawImage() の前に入れる
+転写は putImageData()	drawImage()で2回変換しない！完全ピクセルコピー推奨
 
- core-engine.js で全マネージャーが初期化されている
+✅ チェックリスト（新人向け）
+ Dexie導入済（db-indexed.js作成、HTMLに読み込みあり）
 
- IndexedDBからの復元が新規レイヤー生成を伴って行われている
+ core-engine.js に復元処理と初期化処理が揃っている
 
- 描画ツールは初期化時に「pen」に設定されている
+ canvasManager.setCurrentTool() が存在
 
- drawImage()前に imageSmoothingEnabled = false を設定している
+ 転写は getImageData → putImageData を使用
 
- 転写時は putImageData() を使ってアンチエイリアスを抑制している
+ ツール未設定時の描画バグが発生しない（初期で「pen」に設定）

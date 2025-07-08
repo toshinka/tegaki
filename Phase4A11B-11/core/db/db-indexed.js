@@ -1,55 +1,49 @@
-// DexieはHTMLでグローバルに読み込まれているため、importは不要です。
+/**
+ * データベース操作を管理するファイル (Dexie.jsを使用)
+ * 
+ */
 
-// データベースの定義
-export const db = new Dexie('ToshinkaTegakiDB');
+// Dexie.jsはHTMLで読み込まれているため、ここでは new Dexie() で直接使えます。
+const db = new Dexie("TegakiProjectDB");
+
+// データベースのバージョンと構造を定義します。
+// 'layers' というテーブルに、id, name, imageData の3つのデータを保存します。
+// '++id' は、データを追加するたびに自動でユニークな番号を振る設定です。
 db.version(1).stores({
-    // layersテーブルのスキーマ定義
-    // "&id"はidがユニークなプライマリキーであることを示します
-    layers: '&id, name, imageData'
+  layers: "++id, name, imageData"
 });
 
 /**
- * 指定されたレイヤーデータをIndexedDBに保存または更新します。
- * @param {number} id - レイヤーの一意のID
- * @param {string} name - レイヤー名
- * @param {string} imageData - レイヤーの描画内容を表すData URL
+ * 指定されたレイヤーの画像データをIndexedDBに保存または更新します。
+ * @param {number} layerId - レイヤーの一意のID。
+ * @param {string} name - レイヤー名。
+ * @param {string} dataURL - レイヤーの画像データ (Data URL形式)。
  */
-export async function saveLayerToIndexedDB(id, name, imageData) {
-    if (id === undefined || name === undefined || imageData === undefined) {
-        console.error("保存データが不完全なため、IndexedDBへの保存をスキップしました。", {id, name});
-        return;
-    }
-    try {
-        await db.layers.put({ id, name, imageData });
-    } catch (error) {
-        console.error(`IndexedDBへのレイヤー保存に失敗しました (ID: ${id}):`, error);
-    }
+export async function saveLayerToIndexedDB(layerId, name, dataURL) {
+  // IDが不正な場合はエラーを防ぐために処理を中断します。
+  if (layerId === null || typeof layerId === 'undefined') {
+    console.error("無効なレイヤーIDのため、IndexedDBへの保存をスキップしました:", layerId);
+    return;
+  }
+  await db.layers.put({ id: layerId, name: name, imageData: dataURL });
 }
 
 /**
  * IndexedDBからすべてのレイヤーデータを読み込みます。
- * @returns {Promise<Array<{id: number, name: string, imageData: string}>>} レイヤーデータの配列
+ * @returns {Promise<Array>} レイヤーデータの配列を返します。
  */
 export async function loadLayersFromIndexedDB() {
-    try {
-        const layers = await db.layers.toArray();
-        return layers.sort((a, b) => a.id - b.id);
-    } catch (error) {
-        console.error("IndexedDBからのレイヤー読み込みに失敗しました:", error);
-        return [];
-    }
+  return await db.layers.toArray();
 }
 
 /**
  * 指定されたIDのレイヤーをIndexedDBから削除します。
- * @param {number} id - 削除するレイヤーのID
+ * @param {number} layerId - 削除するレイヤーのID。
  */
-// ✅ この関数の前に export を追加しました！
-export async function deleteLayerFromIndexedDB(id) {
-    try {
-        await db.layers.delete(id);
-        console.log(`🗑️ レイヤー [ID: ${id}] をIndexedDBから削除しました。`);
-    } catch (error) {
-        console.error(`IndexedDBからのレイヤー削除に失敗しました (ID: ${id}):`, error);
+export async function deleteLayerFromIndexedDB(layerId) {
+    if (layerId === null || typeof layerId === 'undefined') {
+        console.error("無効なレイヤーIDのため、IndexedDBからの削除をスキップしました:", layerId);
+        return;
     }
+    await db.layers.delete(layerId);
 }
