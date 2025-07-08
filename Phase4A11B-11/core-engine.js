@@ -1,31 +1,43 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.2.1 (Phase 4A11B-11 - Hotfix)
+ * Version: 4.0.0 (Phase 4A11B-11 - IndexedDB Caching)
  *
- * - 変更点 (v3.2.1):
- * - GPTくんの診断に基づき、ツールの切り替え時に発生していた
- * `this.app.canvasManager.setCurrentTool is not a function` エラーを修正。
- * - `CanvasManager` クラスに、`ToolManager` から呼び出される `setCurrentTool` メソッドを新設し、
- * エラーが発生しないように対応した。
+ * - 変更点 (Phase 4A11B-11):
+ * - 「📜 Phase4A11B-11」指示書に基づき、IndexedDBへのレイヤー状態保存・復元機能を実装。
+ *
+ * - 1. IndexedDB連携:
+ * - Dexie.jsを使用し、レイヤーデータをブラウザのIndexedDBに保存する仕組みを導入。
+ * - `core/db/db-indexed.js`を新設し、保存・復元ロジックをカプセル化。
+ *
+ * - 2. アプリケーション初期化フローの刷新:
+ * - `window.addEventListener('load', ...)`で初期化処理を一本化。
+ * - 起動時にIndexedDBからレイヤーデータを非同期で読み込み、キャンバス状態を復元する。
+ * - データがない場合は、従来の初期レイヤーを作成する。
+ *
+ * - 3. 自動保存の実装:
+ * - `canvasManager.saveState()`を改修し、Undo/Redo用の履歴管理に加え、
+ * IndexedDBへの状態保存も自動的に行うようにした。
  * ===================================================================================
  */
 
 // --- glMatrix 定義 ---
 const mat4 = window.glMatrix.mat4;
-const vec4 = window.glMatrix.vec4;
 
 // --- Module Imports ---
+// ファイルツリーと指示書に基づき、インポートパスを整理
 import { TopBarManager, LayerUIManager } from './ui/ui-manager.js';
 import { ShortcutManager } from './ui/shortcut-manager.js';
 import { BucketTool } from './tools/toolset.js';
 import { RenderingBridge } from './core/rendering/rendering-bridge.js';
-import { LayerManager } from './layer-manager/layer-manager.js';
+import { LayerManager } from './layer-manager.js'; // 提供されたファイル名に合わせて修正
 import { PenSettingsManager } from './ui/pen-settings-manager.js';
 import { ColorManager } from './ui/color-manager.js';
-import { ToolManager } from './ui/tool-manager.js';
+import { ToolManager } from './tool-manager.js'; // 提供されたファイル名に合わせて修正
 import { isValidMatrix, transformWorldToLocal } from './core/utils/transform-utils.js';
-import { saveLayerToIndexedDB, loadLayersFromIndexedDB, clearAllLayersFromIndexedDB } from './core/db/db-indexed.js';
+
+// IndexedDB連携モジュールのインポート
+import { saveLayerToDB, loadLayersFromDB, clearDB } from './core/db/db-indexed.js';
 
 
 // --- Utility Functions ---
@@ -64,7 +76,8 @@ function getCanvasCoordinates(e, canvas, viewTransform) {
 
 // --- Core Logic Classes ---
 export class Layer {
-    constructor(name, width, height) {
+    constructor(name, width, height, id = null) {
+        this.id = id; // IndexedDBのプライマリキー
         this.name = name;
         this.visible = true;
         this.opacity = 100;
@@ -141,30 +154,6 @@ class CanvasManager {
         this.bindEvents();
     }
     
-    // ✅✅✅✅✅ ここからが修正箇所 ✅✅✅✅✅
-    /**
-     * ToolManagerから呼び出されるメソッド。ツールの切り替えをCanvasManagerに通知します。
-     * @param {object} tool - 新しく選択されたツールオブジェクト。
-     */
-    setCurrentTool(tool) {
-        // この関数が存在しないためにエラーが出ていました。
-        // これでToolManagerから呼び出されてもエラーにならなくなります。
-        // 将来的に、ツールの種類に応じてカーソル以外の特別な処理が必要になった場合、
-        // この中に追加していくことができます。
-        const toolName = tool?.name || 'unknown'; // ツール名を取得（なければ'unknown'）
-        console.log(`🖌️ ツールが「${toolName}」に切り替わりました。`);
-        
-        // 即座にカーソルを更新するために、updateCursorを呼び出します。
-        // マウスを動かさなくてもカーソルが変わるようになります。
-        // ただし、updateCursorは座標を必要とするため、最後にマウスがあった座標を使います。
-        // lastPointがない場合は何もしません。
-        if(this.lastPoint) {
-           this.updateCursor(this.lastPoint);
-        }
-    }
-    // ✅✅✅✅✅ ここまでが修正箇所 ✅✅✅✅✅
-
-
     bindEvents() {
         this.canvasArea.addEventListener('pointerdown', this.onPointerDown.bind(this));
         document.addEventListener('pointermove', this.onPointerMove.bind(this));
@@ -234,7 +223,6 @@ class CanvasManager {
             activeLayer.gpuDirty = true;
             this.renderAllLayers();
             this.saveState();
-            this.saveActiveLayerToDB();
             return;
         }
 
@@ -257,10 +245,6 @@ class CanvasManager {
     
     onPointerMove(e) {
         const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
-        
-        // 座標情報を lastPoint の world 座標として保持しておく
-        this.lastPoint = { ...this.lastPoint, ...coords };
-
 
         if (this.isPanning) {
             const dx = e.clientX - this.dragStartX; 
@@ -323,7 +307,7 @@ class CanvasManager {
                 activeLayer
             );
             
-            this.lastPoint = { ...local, pressure: currentPressure, ...coords };
+            this.lastPoint = { ...local, pressure: currentPressure };
             this._requestRender();
             return;
         }
@@ -347,15 +331,8 @@ class CanvasManager {
                 this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
             }
             
-            // lastPointからローカル座標を削除し、ワールド座標のみ残す
-            if(this.lastPoint) {
-                delete this.lastPoint.x;
-                delete this.lastPoint.y;
-                delete this.lastPoint.pressure;
-            }
-
+            this.lastPoint = null;
             this.saveState();
-            this.saveActiveLayerToDB();
         }
         
         if (this.isDraggingLayer) {
@@ -437,7 +414,6 @@ class CanvasManager {
         
         this.renderAllLayers();
         this.saveState();
-        this.saveActiveLayerToDB();
     }
 
     cancelLayerTransform() {
@@ -591,15 +567,17 @@ class CanvasManager {
         return Math.max(0.1 * SUPER_SAMPLING_FACTOR, finalSize);
     }
 
-    saveState() {
+    async saveState() {
+        // 1. Undo/Redo用の履歴を作成
         const state = {
             layers: this.app.layerManager.layers.map(layer => {
                 if (!isValidMatrix(layer.modelMatrix)) {
                     console.warn("⚠ saveState: 不正な modelMatrix を検出したため、リセットします。");
                     layer.modelMatrix = mat4.create();
                 }
-                const savedModelMatrix = Array.from(layer.modelMatrix);
+                // ImageDataを含めてディープコピー
                 return {
+                    id: layer.id,
                     name: layer.name,
                     visible: layer.visible,
                     opacity: layer.opacity,
@@ -609,7 +587,7 @@ class CanvasManager {
                         layer.imageData.width,
                         layer.imageData.height
                     ),
-                    modelMatrix: savedModelMatrix
+                    modelMatrix: Array.from(layer.modelMatrix)
                 };
             }),
             activeLayerIndex: this.app.layerManager.activeLayerIndex
@@ -618,35 +596,25 @@ class CanvasManager {
         this.history = this.history.slice(0, this.historyIndex + 1);
         this.history.push(state);
         this.historyIndex++;
-    }
-
-    _imageDataToDataURL(imageData) {
-        const tempCanvas = document.createElement('canvas');
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCanvas.width = imageData.width;
-        tempCanvas.height = imageData.height;
-        tempCtx.putImageData(imageData, 0, 0);
-        return tempCanvas.toDataURL();
-    }
-
-    async saveActiveLayerToDB() {
-        const activeLayer = this.app.layerManager.getCurrentLayer();
-        const activeIndex = this.app.layerManager.activeLayerIndex;
-        if (activeLayer) {
-            try {
-                const imageDataUrl = this._imageDataToDataURL(activeLayer.imageData);
-                await saveLayerToIndexedDB(activeIndex, activeLayer.name, imageDataUrl);
-                console.log(`💾 レイヤー "${activeLayer.name}" (ID: ${activeIndex}) をIndexedDBに保存しました。`);
-            } catch (err) {
-                console.error("IndexedDBへのレイヤー保存に失敗しました。", err);
+        
+        // 2. IndexedDBへの非同期保存処理
+        try {
+            await clearDB(); // 現在の状態を保存するので、古いDBデータは全削除
+            for (const layer of this.app.layerManager.layers) {
+                const newId = await saveLayerToDB(layer);
+                if (layer.id === null) {
+                    layer.id = newId; // 新規レイヤーの場合、DBが採番したIDをオブジェクトに反映
+                }
             }
+            console.log("💾 すべてのレイヤーの状態をIndexedDBに保存しました。");
+        } catch (error) {
+            console.error("❌ IndexedDBへのレイヤー保存に失敗しました:", error);
         }
     }
 
-
     restoreState(state) {
         this.app.layerManager.layers = state.layers.map(layerData => {
-            const layer = new Layer(layerData.name, layerData.imageData.width, layerData.imageData.height);
+            const layer = new Layer(layerData.name, layerData.imageData.width, layerData.imageData.height, layerData.id);
             layer.visible = layerData.visible;
             layer.opacity = layerData.opacity ?? 100;
             layer.blendMode = layerData.blendMode ?? 'normal';
@@ -696,7 +664,7 @@ class CanvasManager {
         }
 
         const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (activeLayer && coords && this._isPointOnLayer(coords, activeLayer)) {
+        if (activeLayer && this._isPointOnLayer(coords, activeLayer)) {
             switch(this.app.toolManager.currentTool) {
                 case 'pen':
                     this.canvasArea.style.cursor = 'crosshair';
@@ -753,96 +721,96 @@ class CanvasManager {
             this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); 
         } 
     }
+
+    // 指示書に基づき、ToolManagerからの呼び出しに対応するためのメソッドを追加
+    setCurrentTool(tool) {
+        // ToolManagerがツール状態の主たる管理元であるため、
+        // このメソッドは呼び出されることを保証するためのプレースホルダーとする。
+        // CanvasManager内の処理は this.app.toolManager.currentTool を直接参照する。
+    }
 }
 
-class ToshinkaTegakiTool {
-    constructor() {
-        this.layerManager = new LayerManager(this);
-        this.canvasManager = new CanvasManager(this);
-        this.penSettingsManager = new PenSettingsManager(this);
-        this.colorManager = new ColorManager(this);
-        this.toolManager = new ToolManager(this);
-        this.topBarManager = new TopBarManager(this);
-        this.shortcutManager = new ShortcutManager(this);
-        this.layerUIManager = new LayerUIManager(this);
-        this.bucketTool = new BucketTool(this);
+// 指示書に沿った新しいアプリケーション初期化フロー
+window.addEventListener('load', async () => {
+    if (window.toshinkaTegakiInitialized) return;
+    window.toshinkaTegakiInitialized = true;
+    
+    console.log("🛠️ アプリケーションの初期化を開始します...");
 
-        this.shortcutManager.initialize();
-        this.toolManager.setTool('pen');
-    }
+    // アプリケーションの各モジュールを管理するappオブジェクト
+    const app = {};
 
-    async initialize() {
-        console.log("🛠️ アプリケーションの初期化を開始します...");
+    // 各マネージャーをインスタンス化
+    app.layerManager = new LayerManager(app);
+    app.canvasManager = new CanvasManager(app);
+    app.penSettingsManager = new PenSettingsManager(app);
+    app.colorManager = new ColorManager(app);
+    app.toolManager = new ToolManager(app);
+    app.topBarManager = new TopBarManager(app);
+    app.shortcutManager = new ShortcutManager(app);
+    app.layerUIManager = new LayerUIManager(app);
+    app.bucketTool = new BucketTool(app);
 
-        const dataURLToImageData = (dataURL, width, height) => {
-            return new Promise((resolve, reject) => {
-                const img = new Image();
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-                    canvas.width = width;
-                    canvas.height = height;
-                    ctx.drawImage(img, 0, 0);
-                    resolve(ctx.getImageData(0, 0, width, height));
-                };
-                img.onerror = reject;
-                img.src = dataURL;
-            });
-        };
+    // グローバルからもアクセス可能にする
+    window.toshinkaTegakiTool = app;
 
-        const savedLayers = await loadLayersFromIndexedDB();
+    // IndexedDBからレイヤーデータを非同期で復元
+    try {
+        console.log("💾 IndexedDBからレイヤーデータの復元を試みます...");
+        const layersFromDB = await loadLayersFromDB();
 
-        if (savedLayers && savedLayers.length > 0) {
-            console.log("💾 IndexedDBからレイヤーデータを復元します。", savedLayers);
+        if (layersFromDB && layersFromDB.length > 0) {
             const restoredLayers = [];
-            for (const savedLayer of savedLayers) {
-                const newLayer = new Layer(
-                    savedLayer.name,
-                    this.canvasManager.width,
-                    this.canvasManager.height
-                );
-                try {
-                    const imageData = await dataURLToImageData(
-                        savedLayer.imageData,
-                        newLayer.imageData.width,
-                        newLayer.imageData.height
-                    );
-                    newLayer.imageData = imageData;
-                    restoredLayers.push(newLayer);
-                } catch (error) {
-                     console.error(`レイヤー "${savedLayer.name}" のImageData復元に失敗しました。`, error);
-                     restoredLayers.push(newLayer);
-                }
+            for (const dbLayer of layersFromDB) {
+                const img = await new Promise((resolve, reject) => {
+                    const image = new Image();
+                    image.onload = () => resolve(image);
+                    image.onerror = reject;
+                    image.src = dbLayer.imageData;
+                });
+                
+                const newLayer = new Layer(dbLayer.name, app.canvasManager.width, app.canvasManager.height, dbLayer.id);
+                newLayer.visible = dbLayer.visible;
+                newLayer.opacity = dbLayer.opacity;
+                newLayer.blendMode = dbLayer.blendMode;
+                newLayer.modelMatrix = new Float32Array(dbLayer.modelMatrix);
+
+                const tempCtx = document.createElement('canvas').getContext('2d');
+                tempCtx.canvas.width = newLayer.imageData.width;
+                tempCtx.canvas.height = newLayer.imageData.height;
+                tempCtx.drawImage(img, 0, 0);
+                newLayer.imageData = tempCtx.getImageData(0, 0, tempCtx.canvas.width, tempCtx.canvas.height);
+                
+                newLayer.gpuDirty = true;
+                restoredLayers.push(newLayer);
             }
-            this.layerManager.layers = restoredLayers;
-            this.layerManager.switchLayer(0);
-            this.layerUIManager.renderLayerList();
-            this.canvasManager.saveState();
-
+            app.layerManager.layers = restoredLayers;
+            app.layerManager.switchLayer(restoredLayers.length - 1); // 最後のレイヤーをアクティブに
+            console.log(`✅ ${layersFromDB.length}件のレイヤーをIndexedDBから復元しました。`);
         } else {
-            console.log("💾 保存されたデータがないため、初期レイヤーを作成します。");
-            await clearAllLayersFromIndexedDB();
-            this.layerManager.setupInitialLayers();
-            this.canvasManager.saveActiveLayerToDB();
+            console.log("ℹ️ 保存されたデータがありません。初期レイヤーを作成します。");
+            app.layerManager.setupInitialLayers();
         }
-
-        this.canvasManager.renderAllLayers();
-        console.log("✅ アプリケーションの初期化が完了しました。");
+    } catch (error) {
+        console.error("❌ IndexedDBからの復元中にエラーが発生しました。初期状態で起動します。", error);
+        app.layerManager.setupInitialLayers();
     }
-}
 
-window.addEventListener('DOMContentLoaded', async () => {
-    if (!window.toshinkaTegakiInitialized) {
-        window.toshinkaTegakiInitialized = true;
-        
-        if (typeof RenderingBridge.init === 'function') {
-            RenderingBridge.init();
-            console.log("🚀 RenderingBridge.init() を呼び出しました。");
-        } else {
-            console.warn("⚠️ RenderingBridge.init() が見つかりませんでした。このメソッドは指示書で必須とされています。");
-        }
-        
-        window.toshinkaTegakiTool = new ToshinkaTegakiTool();
-        await window.toshinkaTegakiTool.initialize();
+    // ショートカットを初期化
+    app.shortcutManager.initialize();
+
+    // レイヤーUIを更新
+    if (app.layerUIManager && typeof app.layerUIManager.renderLayers === 'function') {
+        app.layerUIManager.renderLayers();
+    } else {
+        console.warn("⚠️ app.layerUIManager.renderLayers() が未定義です！");
     }
+
+    // 初期ツールを設定
+    app.toolManager.setTool('pen');
+    
+    // キャンバス全体を再描画
+    app.canvasManager.renderAllLayers();
+
+    console.log("✅ アプリケーションの初期化が完了しました。");
 });
