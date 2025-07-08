@@ -1,22 +1,31 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.2.0 (Phase 4A11C - Drawing Quality & Color Fix)
+ * Version: 3.2.0 (Phase 4A11B-11 - IndexedDB Cache)
  *
- * - 変更点 (Phase 4A11C):
- * - 「📜 Phase 4A11C」指示書に基づき、描画品質とカラーパレットの不具合を修正。
+ * - 変更点 (Phase 4A11B-11):
+ * - 「📜 Phase 4A11B-11」指示書に基づき、レイヤーキャッシュ機能を導入。
  *
- * - 1. カラーパレット連携の修正:
- * - アプリ起動時に色管理(ColorManager)の初期化処理が抜けていたため、
- * 描画色が常に黒になる不具合が発生していた。
- * - ToshinkaTegakiToolのコンストラクタに、ペンサイズと色の初期化処理を追加し、
- * UIで選択した色が正しく描画に反映されるように修正。
+ * - 1. Dexie.jsの導入:
+ * - IndexedDBを容易に操作するため、Dexie.jsライブラリを導入。
+ * - 起動時に 'TegakiLayerCache' データベースと 'layers' ストアを初期化。
  *
- * - 2. デバッグログの追加:
- * - onPointerDownイベント発生時に、現在の描画色とImageDataの情報を
- * コンソールに出力するよう指示書に基づき追加。
+ * - 2. キャッシュ保存・復元関数の実装:
+ * - `saveCurrentLayerToCache`: アクティブレイヤーのImageDataをBlobに変換しDBに保存。
+ * - `loadLatestLayerFromCache`: DBから最新のレイヤーデータを読み込み、アクティブレイヤーに復元。
+ *
+ * - 3. テスト用ショートカットの追加:
+ * - Ctrl+S: 現在のレイヤーをキャッシュに保存。
+ * - Ctrl+L: 最新のレイヤーをキャッシュから復元。
  * ===================================================================================
  */
+
+// --- Library Imports (for side effects) ---
+// これらのimport文は、HTML側で読み込む代わりに、依存関係をJSファイル内に明記するためのものです。
+// ライブラリはグローバルの `window` オブジェクトに登録されます。
+import './libs/gl-matrix-min.js';
+import './libs/dat.gui.min.js';
+import './libs/Dexie.js';
 
 // --- glMatrix 定義 ---
 const mat4 = window.glMatrix.mat4;
@@ -33,11 +42,88 @@ import { ColorManager } from './ui/color-manager.js';
 import { ToolManager } from './ui/tool-manager.js';
 import { isValidMatrix, transformWorldToLocal } from './core/utils/transform-utils.js';
 
+// --- IndexedDB Setup (Dexie.js) ---
+const TegakiDB = new Dexie("TegakiLayerCache");
+TegakiDB.version(1).stores({
+  layers: "++id, name, timestamp" // 主キー 'id' は自動採番
+});
+
+// --- Cache Functions ---
+/**
+ * 現在のレイヤーをIndexedDBに保存する
+ * @param {Layer} layer 保存するレイヤーオブジェクト
+ */
+async function saveCurrentLayerToCache(layer) {
+  if (!layer) {
+    console.warn("⚠️ 保存対象のレイヤーがありません。");
+    return;
+  }
+  
+  // 指示書のロジックをプロジェクトの構造に合わせて修正
+  const imageData = layer.imageData; 
+  // imageData.dataは直接保存できないため、Blob形式に変換
+  const blob = new Blob([imageData.data.buffer], { type: "application/octet-stream" });
+
+  try {
+    await TegakiDB.layers.add({
+      name: layer.name || "unnamed",
+      timestamp: Date.now(),
+      width: imageData.width,
+      height: imageData.height,
+      buffer: blob
+    });
+    console.log("✅ レイヤーをIndexedDBに保存しました:", layer.name);
+  } catch (error) {
+    console.error("❌ レイヤーの保存に失敗しました:", error);
+  }
+}
+
+/**
+ * IndexedDBから最新のレイヤーを復元する
+ * @param {Layer} layer 復元先のレイヤーオブジェクト
+ * @param {ToshinkaTegakiTool} app アプリケーション本体。再描画に利用
+ */
+async function loadLatestLayerFromCache(layer, app) {
+  if (!layer) {
+    console.warn("⚠️ 復元対象のレイヤーがありません。");
+    return;
+  }
+  
+  try {
+    const latest = await TegakiDB.layers.orderBy("timestamp").last();
+    if (!latest) {
+      console.warn("⚠️ 保存されたレイヤーが見つかりませんでした");
+      return;
+    }
+
+    const buffer = await latest.buffer.arrayBuffer();
+    const uint8 = new Uint8ClampedArray(buffer);
+    
+    // 復元前にサイズが同じか確認
+    if (layer.imageData.width !== latest.width || layer.imageData.height !== latest.height) {
+        console.warn(`⚠️ レイヤーサイズが異なります (現在: ${layer.imageData.width}x${layer.imageData.height}, 保存データ: ${latest.width}x${latest.height})。復元を中断しました。`);
+        return;
+    }
+
+    const imageData = new ImageData(uint8, latest.width, latest.height);
+    
+    // プロジェクトの構造に合わせ、ImageDataを直接更新し、再描画を指示
+    layer.imageData.data.set(imageData.data);
+    layer.gpuDirty = true; // GPUにデータが変更されたことを伝える
+    
+    // 画面全体を再描画して変更を反映
+    app.canvasManager.renderAllLayers();
+
+    console.log("📥 レイヤーを復元しました:", latest.name);
+  } catch (error) {
+    console.error("❌ レイヤーの復元に失敗しました:", error);
+  }
+}
+
 
 // --- Utility Functions ---
 
 function hexToRgba(hex) {
-    if (!hex) return { r: 0, g: 0, b: 0, a: 255 }; // hexがnullやundefinedの場合のフォールバック
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
     return result ? {
         r: parseInt(result[1], 16),
@@ -158,6 +244,8 @@ class CanvasManager {
     }
 
     _isPointOnLayer(worldCoords, layer) {
+        // ★★★★★ 修正 (Phase 4A11B-10) ★★★★★
+        // レイヤーが存在しない場合はfalseを返す 
         if (!layer || !layer.visible) return false;
 
         const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
@@ -208,17 +296,12 @@ class CanvasManager {
         const superY = coords.y * SUPER_SAMPLING_FACTOR;
         const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix);
         
-        // --- ✨ここから修正 (Phase 4A11C) ---
-        const currentColor = this.app.colorManager.currentColor;
-        // 指示書に基づき、現在の描画色とImageDataを確認するためのログを追加
-        console.log('[描画色]', currentColor);
-        console.log('[ImageData]', activeLayer.imageData.width, activeLayer.imageData.height, activeLayer.imageData.data.slice(0, 20));
-        // --- ✨ここまで修正 (Phase 4A11C) ---
+        console.log("📍 描画座標変換:", { world: coords, super: {x: superX, y: superY}, local: local });
 
         this._resetDirtyRect();
         
         if (this.app.toolManager.currentTool === 'bucket') {
-            this.app.bucketTool.fill(activeLayer.imageData, Math.round(local.x), Math.round(local.y), hexToRgba(currentColor));
+            this.app.bucketTool.fill(activeLayer.imageData, Math.round(local.x), Math.round(local.y), hexToRgba(this.app.colorManager.currentColor));
             activeLayer.gpuDirty = true;
             this.renderAllLayers();
             this.saveState();
@@ -234,7 +317,7 @@ class CanvasManager {
         
         this.renderingBridge.drawCircle(
             local.x, local.y, size / 2, 
-            hexToRgba(currentColor), this.app.toolManager.currentTool === 'eraser',
+            hexToRgba(this.app.colorManager.currentColor), this.app.toolManager.currentTool === 'eraser',
             activeLayer
         );
         
@@ -298,13 +381,9 @@ class CanvasManager {
             this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, lastSize);
             this._updateDirtyRect(local.x, local.y, currentSize);
 
-            // --- ✨ここから修正 (Phase 4A11C) ---
-            const currentColor = this.app.colorManager.currentColor;
-            // --- ✨ここまで修正 (Phase 4A11C) ---
-
             this.renderingBridge.drawLine(
                 this.lastPoint.x, this.lastPoint.y, local.x, local.y,
-                this.app.penSettingsManager.currentSize, hexToRgba(currentColor), this.app.toolManager.currentTool === 'eraser',
+                this.app.penSettingsManager.currentSize, hexToRgba(this.app.colorManager.currentColor), this.app.toolManager.currentTool === 'eraser',
                 this.lastPoint.pressure, currentPressure, 
                 this.calculatePressureSize.bind(this),
                 activeLayer
@@ -330,6 +409,8 @@ class CanvasManager {
             this._renderDirty();
 
             const activeLayer = this.app.layerManager.getCurrentLayer();
+            // ★★★★★ 修正 (Phase 4A11B-10) ★★★★★
+            // activeLayerの存在を確認してからGPU->CPUデータ同期を行う 
             if (activeLayer) {
                 this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
             }
@@ -379,6 +460,10 @@ class CanvasManager {
         this.renderAllLayers();
     }
 
+    // ★★★★★ 修正 (Phase 4A11B-10) ★★★★★
+    /**
+     * レイヤー変形を確定する。転写に失敗した場合は安全に元の状態に復元する。
+     */
     commitLayerTransform() {
         if (!this.isLayerTransforming) return;
         this.isLayerTransforming = false;
@@ -392,33 +477,44 @@ class CanvasManager {
             return;
         }
         
+        // 1. `getTransformedImageData`を使い、移動後の見た目通りの画像データを生成
         const transformedImageData = this.renderingBridge.getTransformedImageData(activeLayer);
         
+        // 2. 転写が成功したかチェック 
         if (!transformedImageData) {
+            // 2b. 失敗: エラーログを出し、バックアップから復元して操作をキャンセル 
             console.warn("❌ レイヤー転写に失敗: getTransformedImageDataがnullを返しました。変形前の状態に復元します。");
-            this.restoreLayerBackup();
+            this.restoreLayerBackup(); // バックアップから復元
             this.cellBuffer = null;
             this.cellBufferInitialized = false;
             this.updateCursor();
             return;
         }
         
+        // ログ強化 
         console.log("📋 転写開始:", { w: transformedImageData.width, h: transformedImageData.height });
 
+        // 3a. 成功：生成された画像データでレイヤーの内容を確定（焼き付け）
         activeLayer.imageData.data.set(transformedImageData.data);
         console.info("✅ 転写成功");
 
+        // 4. 変形は画像に焼き付けられたので、レイヤーの行列は初期状態（単位行列）に戻す
         mat4.identity(activeLayer.modelMatrix);
         activeLayer.gpuDirty = true;
         
+        // 5. セルバッファを破棄
         this.cellBuffer = null;
         this.cellBufferInitialized = false;
         console.log("🧹 セルバッファを破棄し、変形モードを終了しました。");
         
+        // 6. 最終状態を画面に描画し、履歴に保存
         this.renderAllLayers();
         this.saveState();
     }
 
+    /**
+     * レイヤー変形をキャンセルする
+     */
     cancelLayerTransform() {
         if (!this.isLayerTransforming) return;
         this.isLayerTransforming = false;
@@ -441,6 +537,10 @@ class CanvasManager {
         this.renderAllLayers();
     }
 
+    // ★★★★★ 新設 (Phase 4A11B-10) ★★★★★
+    /**
+     * 変形に失敗した際などに、セルバッファに退避しておいた情報を使ってレイヤーを元の状態に戻す
+     */
     restoreLayerBackup() {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!this.cellBufferInitialized || !activeLayer) {
@@ -449,6 +549,7 @@ class CanvasManager {
         }
 
         console.warn("↩️ 変形をキャンセルし、バックアップからレイヤーを復元します。");
+        // 退避しておいた元のデータと行列をレイヤーに戻す
         activeLayer.imageData.data.set(this.cellBuffer.imageData.data);
         activeLayer.modelMatrix = mat4.clone(this.cellBuffer.originalModelMatrix);
         activeLayer.gpuDirty = true;
@@ -651,6 +752,8 @@ class CanvasManager {
         }
 
         const activeLayer = this.app.layerManager.getCurrentLayer();
+        // ★★★★★ 修正 (Phase 4A11B-10) ★★★★★
+        // activeLayerの存在を確認してからカーソル表示を判断 
         if (activeLayer && this._isPointOnLayer(coords, activeLayer)) {
             switch(this.app.toolManager.currentTool) {
                 case 'pen':
@@ -725,15 +828,6 @@ class ToshinkaTegakiTool {
         this.shortcutManager.initialize();
         this.layerManager.setupInitialLayers();
         this.toolManager.setTool('pen');
-
-        // --- ✨ここから修正 (Phase 4A11C) ---
-        // 色とペンサイズが初期化されていなかった問題を修正
-        // 参考ファイル(core-engineB1.js)の動作に基づき、デフォルト値を設定
-        this.penSettingsManager.setSize(1);
-        // ColorManager側にデフォルト色が設定されていることを期待し、それを設定
-        // (もしcolor-manager.jsにmainColorプロパティがなければ、この行を this.colorManager.setColor('#000000'); のように変更してください)
-        this.colorManager.setColor(this.colorManager.mainColor); 
-        // --- ✨ここまで修正 (Phase 4A11C) ---
     }
 }
 
@@ -741,5 +835,30 @@ window.addEventListener('DOMContentLoaded', () => {
     if (!window.toshinkaTegakiInitialized) {
         window.toshinkaTegakiInitialized = true;
         window.toshinkaTegakiTool = new ToshinkaTegakiTool();
+
+        // --- IndexedDB Cache Test Shortcuts ---
+        // このリスナーは、既存のShortcutManagerとは独立して、テスト目的で追加します。
+        window.addEventListener("keydown", (e) => {
+            // テキスト入力中などはショートカットが反応しないようにする
+            if (e.target.tagName === 'INPUT' || e.target.isContentEditable) return;
+            
+            const app = window.toshinkaTegakiTool;
+            if (!app) return;
+
+            const currentLayer = app.layerManager.getCurrentLayer();
+
+            // Ctrl+S で保存
+            if (e.ctrlKey && e.key === "s") {
+                e.preventDefault();
+                console.log("⌨️ Ctrl+S: 現在のレイヤーをキャッシュに保存します...");
+                saveCurrentLayerToCache(currentLayer);
+            }
+            // Ctrl+L で復元
+            if (e.ctrlKey && e.key === "l") {
+                e.preventDefault();
+                console.log("⌨️ Ctrl+L: 最新のレイヤーをキャッシュから復元します...");
+                loadLatestLayerFromCache(currentLayer, app);
+            }
+        });
     }
 });
