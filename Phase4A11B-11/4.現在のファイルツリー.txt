@@ -19,7 +19,7 @@
 │ │ │  └─ texture-manager.js     // テクスチャ管理（仮空ファイル）
 │ │ │
 │ │ ├ db/
-│ │ │  └─ db-indexed.js          <-- （Phase4A11B-11）
+│ │ │  └─ db-indexed.js          <-- （B-11新規作成）
 │ │ │
 │ │ ├ utils/
 │ │ │  └─ transform-utils.js     <-- （Phase4A11A-5）
