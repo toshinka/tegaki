@@ -1,62 +1,57 @@
-/*
+/**
  * ===================================================================================
- * Toshinka Tegaki Tool - IndexedDB Module (using Dexie.js)
- * Version: 1.0.0 (Phase 4A11B-11)
- *
- * - 機能:
- * - Dexie.jsライブラリを使い、ブラウザのIndexedDBへのアクセスを簡略化する。
- * - レイヤーデータをDataURL形式で保存、読み込み、全件取得するAPIを提供する。
+ * IndexedDB 操作モジュール (using Dexie.js)
+ * Phase 4A11B-11
+ * 目的: レイヤーデータをブラウザのIndexedDBに保存・復元する機能を提供します。
  * ===================================================================================
  */
 
-// Dexieのインスタンスを生成し、データベース名とバージョン、テーブルスキーマを定義
-// 'TegakiCanvasDB' という名前のデータベースを作成
-const db = new Dexie('TegakiCanvasDB');
+// Dexieは ToshinkaTegakiTool.html でグローバルに読み込まれているため、直接使用します。
+const db = new Dexie("TegakiProjectDB");
 
-// バージョン1のスキーマを定義
+// データベースのバージョンとスキーマ（テーブル定義）を設定します。
+// 
 db.version(1).stores({
-  // 'layers' というテーブル（オブジェクトストア）を作成
-  // '++id'は自動インクリメントのプライマリキー
-  // 'name'と'data'は保存するデータのフィールド
-  layers: '++id, name, data'
+  // 'layers' という名前のテーブルを作成します。
+  // '++id' は自動インクリメントのプライマリキーですが、今回はレイヤー固有のIDを外部から指定して使います。
+  // 'name' はレイヤー名、 'imageData' はDataURL形式の画像データです。
+  layers: "++id, name, imageData"
 });
 
 /**
- * レイヤーデータをデータベースに保存する
- * @param {string} name - レイヤー名
- * @param {string} dataURL - canvas.toDataURL()で取得した画像データ
- * @returns {Promise<number>} 保存されたアイテムのID
+ * 指定されたレイヤーの情報をIndexedDBに保存（または上書き）する関数
+ * @param {string} layerId - 保存するレイヤーのユニークID
+ * @param {string} layerName - 保存するレイヤーの名前
+ * @param {string} imageDataUrl - 保存するレイヤーの画像データ (Data URL形式)
  */
-export async function saveLayer(name, dataURL) {
-  // db.layers.add()でデータを追加し、そのPromiseを返す
-  console.log(`💾 Saving layer "${name}" to IndexedDB...`);
-  return await db.layers.add({ name, data: dataURL });
+export async function saveLayerToIndexedDB(layerId, layerName, imageDataUrl) {
+  try {
+    // 
+    await db.layers.put({
+      id: layerId,
+      name: layerName,
+      imageData: imageDataUrl
+    });
+    console.log(`✅ レイヤー「${layerName}」(ID: ${layerId})をIndexedDBに保存しました。`);
+  } catch (error) {
+    console.error(`❌ レイヤー(ID: ${layerId})のIndexedDBへの保存に失敗しました:`, error);
+  }
 }
 
 /**
- * IDを指定してレイヤーデータを読み込む
- * @param {number} id - 読み込むレイヤーのID
- * @returns {Promise<object|undefined>} 読み込まれたレイヤーデータ、または見つからない場合はundefined
+ * IndexedDBからすべてのレイヤー情報を復元する関数
+ * @returns {Promise<Array>} 保存されているレイヤー情報の配列を返すPromise
  */
-export async function loadLayerById(id) {
-  // db.layers.get()でIDに対応するデータを取得し、そのPromiseを返す
-  console.log(`💾 Loading layer with ID: ${id} from IndexedDB...`);
-  return await db.layers.get(id);
+export async function loadLayersFromIndexedDB() {
+  try {
+    // 
+    const layers = await db.layers.toArray();
+    if (layers.length > 0) {
+        console.log(`✅ IndexedDBから ${layers.length} 件のレイヤーを読み込みました。`);
+    }
+    return layers;
+  } catch (error) {
+    console.error("❌ IndexedDBからのレイヤー読み込みに失敗しました:", error);
+    return []; // エラー時は空の配列を返す
+  }
 }
-
-/**
- * 保存されている全てのレイヤーデータを取得する
- * @returns {Promise<Array<object>>} 全レイヤーデータの配列
- */
-export async function getAllLayers() {
-  // db.layers.toArray()で全データを配列として取得し、そのPromiseを返す
-  console.log("💾 Fetching all layers from IndexedDB...");
-  return await db.layers.toArray();
-}
-
-// テスト用に、コンソールからアクセスできるようにグローバルスコープにdbオブジェクトを公開
-window.db = {
-    saveLayer,
-    loadLayerById,
-    getAllLayers
-};
