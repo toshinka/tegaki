@@ -15,7 +15,6 @@ db.version(1).stores({
  * @param {string} imageData - レイヤーの描画内容を表すData URL
  */
 export async function saveLayerToIndexedDB(id, name, imageData) {
-    // 保存データが不完全な場合は処理を中断
     if (id === undefined || name === undefined || imageData === undefined) {
         console.error("保存データが不完全なため、IndexedDBへの保存をスキップしました。", {id, name});
         return;
@@ -34,7 +33,6 @@ export async function saveLayerToIndexedDB(id, name, imageData) {
 export async function loadLayersFromIndexedDB() {
     try {
         const layers = await db.layers.toArray();
-        // 念のためIDでソートして返す
         return layers.sort((a, b) => a.id - b.id);
     } catch (error) {
         console.error("IndexedDBからのレイヤー読み込みに失敗しました:", error);
@@ -46,6 +44,7 @@ export async function loadLayersFromIndexedDB() {
  * 指定されたIDのレイヤーをIndexedDBから削除します。
  * @param {number} id - 削除するレイヤーのID
  */
+// ✅ この関数の前に export を追加しました！
 export async function deleteLayerFromIndexedDB(id) {
     try {
         await db.layers.delete(id);
