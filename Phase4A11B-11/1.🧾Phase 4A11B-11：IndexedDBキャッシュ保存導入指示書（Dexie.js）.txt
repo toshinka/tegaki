@@ -1,106 +1,102 @@
-🎯 目的
-レイヤー画像（ImageData）を永続保存できる「キャッシュ保存機能」を実装する。
+🎯 Phase 4A11B-11 指示書（再構築版）
+✅ 作業概要
+この指示書は、Phase 4A11B-10 の安定状態を起点として、以下の再構築を行うことを目的としています。
 
-使用ライブラリは Dexie.js。IndexedDB操作をシンプル・安定化するため。
+gl-matrix-min.js の読み込みを webgl-engine.js に移植
 
-将来的な「レイヤーの自動バックアップ」や「セッション復元」の基盤とする。
+dat.gui.min.js の読み込みを core-engine.js に移植
 
-📁 対象ファイル
-ファイル名	目的
-core-engine.js	レイヤー保存・読込の呼び出しロジック追加
-libs/Dexie.js	IndexedDB用ライブラリ（CDN不要、自前設置）
+IndexedDBベースの保存機構の土台を構築
 
-✅ ステップ1：ライブラリの読み込み
+ライブラリ：dexie.min.js を使用
+
+モジュール：/core/db/db-indexed.js を新設し、保存機構のインターフェースを定義
+
+🧱 作業ファイル
+変更対象ファイル：
+/core/core-engine.js
+
+/core/rendering/webgl-engine.js
+
+/core/db/db-indexed.js（新規作成）
+
+追加ライブラリ（CDN or ローカル）：
+gl-matrix-min.js（WebGL数学演算用）
+
+dat.gui.min.js（デバッグUI）
+
+Dexie.js（IndexedDBラッパー）
+
+🔁 ロールバック元
+以下の状態にロールバックされている前提で作業を行ってください：
+
+Phase 4A11B-10 の core-engine.js / webgl-engine.js(これは私が添付したものになります。）
+
+🔧 作業内容詳細
+① gl-matrix の移植（webgl-engine.js）
 js
 コピーする
 編集する
-// core-engine.js の冒頭付近に追記
-importScripts('./libs/Dexie.js'); // ※この行はWebWorker等で必要な形式
-// 通常環境では HTML 側で <script> タグで読み込まれていれば OK
-または、既に HTML に <script src="./libs/Dexie.js"> を含めている場合は、この行は不要です。
-Dexie クラスがグローバルに使えることを前提に記述を進めます。
+// 最上部に追加（CDN or ローカル）
+importScriptsIfNeeded('/libs/gl-matrix-min.js');
 
-またhtml側にあった他ライブラリインポートをcore-engine.jsに移植追記
-import './libs/gl-matrix-min.js';  // glMatrixをグローバルに提供
-import './libs/dat.gui.min.js';    // GUI用
-
-✅ ステップ2：IndexedDB用のDB初期化コードを追加
+// ※ glMatrix.mat4, .vec2, .vec4 など使用する構文がある前提で書き換えられている必要があります
+② dat.gui の移植（core-engine.js）
 js
 コピーする
 編集する
-// core-engine.js の初期化付近（例: DOMContentLoaded後）に追記
+// 最上部に追加
+importScriptsIfNeeded('/libs/dat.gui.min.js');
 
-const TegakiDB = new Dexie("TegakiLayerCache");
-TegakiDB.version(1).stores({
-  layers: "++id, name, timestamp"
+// GUIデバッグコード用にGUI構築の初期化部分などが書かれているか、または未使用ならコメントアウト状態で設置しても良い
+③ dexie の導入（core-engine.js）
+js
+コピーする
+編集する
+// 最上部に追加
+importScriptsIfNeeded('/libs/dexie.min.js');
+importScriptsIfNeeded('/core/db/db-indexed.js');
+④ /core/db/db-indexed.js の新設内容（最低限）
+このファイルは IndexedDB の保存インターフェースを担います。以下のような構成が基本です。
+
+js
+コピーする
+編集する
+// db-indexed.js
+
+// Dexieの初期化
+const db = new Dexie('TegakiCanvasDB');
+db.version(1).stores({
+  layers: '++id,name,data'
 });
 
-
-
-✅ ステップ3：ImageDataを保存する関数を追加
-js
-コピーする
-編集する
-async function saveCurrentLayerToCache(layer) {
-  const ctx = layer.canvas.getContext("2d");
-  const imageData = ctx.getImageData(0, 0, layer.canvas.width, layer.canvas.height);
-  const blob = new Blob([imageData.data], { type: "application/octet-stream" });
-
-  await TegakiDB.layers.add({
-    name: layer.name || "unnamed",
-    timestamp: Date.now(),
-    width: imageData.width,
-    height: imageData.height,
-    buffer: blob
-  });
-
-  console.log("✅ レイヤーをIndexedDBに保存しました");
+// 保存API
+export async function saveLayer(name, dataURL) {
+  return await db.layers.add({ name, data: dataURL });
 }
-✅ ステップ4：保存したレイヤーを復元する関数を追加
-js
-コピーする
-編集する
-async function loadLatestLayerFromCache(layer) {
-  const latest = await TegakiDB.layers.orderBy("timestamp").last();
-  if (!latest) {
-    console.warn("⚠️ 保存されたレイヤーが見つかりませんでした");
-    return;
-  }
 
-  const buffer = await latest.buffer.arrayBuffer();
-  const uint8 = new Uint8ClampedArray(buffer);
-  const imageData = new ImageData(uint8, latest.width, latest.height);
-
-  const ctx = layer.canvas.getContext("2d");
-  ctx.putImageData(imageData, 0, 0);
-  console.log("📥 レイヤーを復元しました");
+// 読込API
+export async function loadLayerById(id) {
+  return await db.layers.get(id);
 }
-✅ ステップ5：ショートカットで保存・読込をテスト可能に（例）
-js
-コピーする
-編集する
-window.addEventListener("keydown", (e) => {
-  if (e.ctrlKey && e.key === "s") {
-    // Ctrl+S → 現在のレイヤーを保存
-    e.preventDefault();
-    saveCurrentLayerToCache(currentLayer);
-  }
-  if (e.ctrlKey && e.key === "l") {
-    // Ctrl+L → 最後に保存されたレイヤーを復元
-    e.preventDefault();
-    loadLatestLayerFromCache(currentLayer);
-  }
-});
-💡 注意点・備考
-imageData.data は Uint8ClampedArray であり、IndexedDBにはそのまま保存できないため、Blobとして保存します。
 
-複数レイヤーやセッション管理は今後のPhaseで拡張予定です（例：レイヤーID, layerId, transform など）。
+// 全件取得（オプション）
+export async function getAllLayers() {
+  return await db.layers.toArray();
+}
+※ dataURL は canvas.toDataURL() で得られるPNG文字列として設計
 
-Dexie.js のバージョンは 3.x を想定。CDN使用時でも動作しますが、ローカル ./libs/ に設置済なのでそちらを優先。
+🔒 注意事項
+**HTMLファイル（ToshinkaTegakiTool.html）は変更しません。**依存関係の記述やスクリプト読み込みは、JSファイル内で importScriptsIfNeeded() や script.appendChild() 的な実装で対応してください。
 
-🚀 今後のPhaseでの拡張予定
-Phase	拡張内容
-4A11B-12	レイヤー全体の複数同時保存（複数 ImageData）
-4A11C	キャンバスサイズやレイヤー構成を含めたセッション保存
-4A11D	オートセーブ機能と起動時の復元確認
+ファイルが存在しない場合にのみロードするようなチェック処理が望ましいですが、最初は script.src = ... でも問題ありません。
+
+/libs/ 配下にライブラリファイル（gl-matrix, dat.gui, Dexie）がある前提で記述してください。
+
+🧪 テスト観点
+コンソールに glMatrix / dat.GUI / Dexie が正常に展開されているか
+
+レイヤー描画後に saveLayer() を使って保存が可能か（簡易テストUIでもよい）
+
+loadLayerById() で再描画できるか（転写的に canvas に戻せる）
 

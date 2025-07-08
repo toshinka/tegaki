@@ -1,31 +1,25 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.2.0 (Phase 4A11B-11 - IndexedDB Cache)
+ * Version: 3.1.0 (Phase 4A11B-10 - Transform Finalized)
  *
- * - 変更点 (Phase 4A11B-11):
- * - 「📜 Phase 4A11B-11」指示書に基づき、レイヤーキャッシュ機能を導入。
+ * - 変更点 (Phase 4A11B-10):
+ * - 「📜 Phase4A11B-10」指示書に基づき、レイヤー変形確定時の処理を安定化。
  *
- * - 1. Dexie.jsの導入:
- * - IndexedDBを容易に操作するため、Dexie.jsライブラリを導入。
- * - 起動時に 'TegakiLayerCache' データベースと 'layers' ストアを初期化。
+ * - 1. 転写処理の安定化:
+ * - 変形確定(`commitLayerTransform`)時に、描画エンジンから画像データ(`ImageData`)を
+ * 取得できなかった場合(`null`が返された場合)のフォールバック処理を追加。
+ * - 失敗時には、変形前の状態にレイヤーを安全に復元する`restoreLayerBackup`を呼び出すようにした。
  *
- * - 2. キャッシュ保存・復元関数の実装:
- * - `saveCurrentLayerToCache`: アクティブレイヤーのImageDataをBlobに変換しDBに保存。
- * - `loadLatestLayerFromCache`: DBから最新のレイヤーデータを読み込み、アクティブレイヤーに復元。
+ * - 2. 例外処理の強化:
+ * - レイヤーが未選択の状態などで処理が進んでエラーにならないよう、
+ * `onPointerUp`や`updateCursor`といった関数内で、アクティブレイヤーの存在を
+ * チェックする処理を追加し、安全性を向上させた。
  *
- * - 3. テスト用ショートカットの追加:
- * - Ctrl+S: 現在のレイヤーをキャッシュに保存。
- * - Ctrl+L: 最新のレイヤーをキャッシュから復元。
+ * - 3. ログの強化:
+ * - 変形処理の開始、成功、失敗時のコンソールログをより分かりやすく色分け・整理した。
  * ===================================================================================
  */
-
-// --- Library Imports (for side effects) ---
-// これらのimport文は、HTML側で読み込む代わりに、依存関係をJSファイル内に明記するためのものです。
-// ライブラリはグローバルの `window` オブジェクトに登録されます。
-import './libs/gl-matrix-min.js';
-import './libs/dat.gui.min.js';
-import './libs/Dexie.js';
 
 // --- glMatrix 定義 ---
 const mat4 = window.glMatrix.mat4;
@@ -41,84 +35,6 @@ import { PenSettingsManager } from './ui/pen-settings-manager.js';
 import { ColorManager } from './ui/color-manager.js';
 import { ToolManager } from './ui/tool-manager.js';
 import { isValidMatrix, transformWorldToLocal } from './core/utils/transform-utils.js';
-
-// --- IndexedDB Setup (Dexie.js) ---
-const TegakiDB = new Dexie("TegakiLayerCache");
-TegakiDB.version(1).stores({
-  layers: "++id, name, timestamp" // 主キー 'id' は自動採番
-});
-
-// --- Cache Functions ---
-/**
- * 現在のレイヤーをIndexedDBに保存する
- * @param {Layer} layer 保存するレイヤーオブジェクト
- */
-async function saveCurrentLayerToCache(layer) {
-  if (!layer) {
-    console.warn("⚠️ 保存対象のレイヤーがありません。");
-    return;
-  }
-  
-  // 指示書のロジックをプロジェクトの構造に合わせて修正
-  const imageData = layer.imageData; 
-  // imageData.dataは直接保存できないため、Blob形式に変換
-  const blob = new Blob([imageData.data.buffer], { type: "application/octet-stream" });
-
-  try {
-    await TegakiDB.layers.add({
-      name: layer.name || "unnamed",
-      timestamp: Date.now(),
-      width: imageData.width,
-      height: imageData.height,
-      buffer: blob
-    });
-    console.log("✅ レイヤーをIndexedDBに保存しました:", layer.name);
-  } catch (error) {
-    console.error("❌ レイヤーの保存に失敗しました:", error);
-  }
-}
-
-/**
- * IndexedDBから最新のレイヤーを復元する
- * @param {Layer} layer 復元先のレイヤーオブジェクト
- * @param {ToshinkaTegakiTool} app アプリケーション本体。再描画に利用
- */
-async function loadLatestLayerFromCache(layer, app) {
-  if (!layer) {
-    console.warn("⚠️ 復元対象のレイヤーがありません。");
-    return;
-  }
-  
-  try {
-    const latest = await TegakiDB.layers.orderBy("timestamp").last();
-    if (!latest) {
-      console.warn("⚠️ 保存されたレイヤーが見つかりませんでした");
-      return;
-    }
-
-    const buffer = await latest.buffer.arrayBuffer();
-    const uint8 = new Uint8ClampedArray(buffer);
-    
-    // 復元前にサイズが同じか確認
-    if (layer.imageData.width !== latest.width || layer.imageData.height !== latest.height) {
-        console.warn(`⚠️ レイヤーサイズが異なります (現在: ${layer.imageData.width}x${layer.imageData.height}, 保存データ: ${latest.width}x${latest.height})。復元を中断しました。`);
-        return;
-    }
-
-    const imageData = new ImageData(uint8, latest.width, latest.height);
-    
-    // プロジェクトの構造に合わせ、ImageDataを直接更新し、再描画を指示
-    layer.imageData.data.set(imageData.data);
-    layer.gpuDirty = true; // GPUにデータが変更されたことを伝える
-    
-    // 画面全体を再描画して変更を反映
-    app.canvasManager.renderAllLayers();
-
-    console.log("📥 レイヤーを復元しました:", latest.name);
-  } catch (error) {
-    console.error("❌ レイヤーの復元に失敗しました:", error);
-  }
-}
 
 
 // --- Utility Functions ---
@@ -835,30 +751,5 @@ window.addEventListener('DOMContentLoaded', () => {
     if (!window.toshinkaTegakiInitialized) {
         window.toshinkaTegakiInitialized = true;
         window.toshinkaTegakiTool = new ToshinkaTegakiTool();
-
-        // --- IndexedDB Cache Test Shortcuts ---
-        // このリスナーは、既存のShortcutManagerとは独立して、テスト目的で追加します。
-        window.addEventListener("keydown", (e) => {
-            // テキスト入力中などはショートカットが反応しないようにする
-            if (e.target.tagName === 'INPUT' || e.target.isContentEditable) return;
-            
-            const app = window.toshinkaTegakiTool;
-            if (!app) return;
-
-            const currentLayer = app.layerManager.getCurrentLayer();
-
-            // Ctrl+S で保存
-            if (e.ctrlKey && e.key === "s") {
-                e.preventDefault();
-                console.log("⌨️ Ctrl+S: 現在のレイヤーをキャッシュに保存します...");
-                saveCurrentLayerToCache(currentLayer);
-            }
-            // Ctrl+L で復元
-            if (e.ctrlKey && e.key === "l") {
-                e.preventDefault();
-                console.log("⌨️ Ctrl+L: 最新のレイヤーをキャッシュから復元します...");
-                loadLatestLayerFromCache(currentLayer, app);
-            }
-        });
     }
 });
