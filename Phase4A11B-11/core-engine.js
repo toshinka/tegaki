@@ -1,10 +1,11 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 4.0.0 (Phase 4A11B-11 - IndexedDB Caching)
+ * Version: 4.0.1 (Phase 4A11B-11 - Path Fix)
  *
  * - 変更点 (Phase 4A11B-11):
  * - 「📜 Phase4A11B-11」指示書に基づき、IndexedDBへのレイヤー状態保存・復元機能を実装。
+ * - importパスの間違いを修正し、404エラーを解決。
  *
  * - 1. IndexedDB連携:
  * - Dexie.jsを使用し、レイヤーデータをブラウザのIndexedDBに保存する仕組みを導入。
@@ -25,15 +26,15 @@
 const mat4 = window.glMatrix.mat4;
 
 // --- Module Imports ---
-// ファイルツリーと指示書に基づき、インポートパスを整理
+// ファイルツリーに記載の正しいパスに修正
 import { TopBarManager, LayerUIManager } from './ui/ui-manager.js';
 import { ShortcutManager } from './ui/shortcut-manager.js';
 import { BucketTool } from './tools/toolset.js';
 import { RenderingBridge } from './core/rendering/rendering-bridge.js';
-import { LayerManager } from './layer-manager.js'; // 提供されたファイル名に合わせて修正
+import { LayerManager } from './layer-manager/layer-manager.js'; // 修正
 import { PenSettingsManager } from './ui/pen-settings-manager.js';
 import { ColorManager } from './ui/color-manager.js';
-import { ToolManager } from './tool-manager.js'; // 提供されたファイル名に合わせて修正
+import { ToolManager } from './ui/tool-manager.js'; // 修正
 import { isValidMatrix, transformWorldToLocal } from './core/utils/transform-utils.js';
 
 // IndexedDB連携モジュールのインポート
