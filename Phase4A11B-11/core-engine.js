@@ -1,44 +1,40 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 4.0.1 (Phase 4A11B-11 - Path Fix)
+ * Version: 3.1.0 (Phase 4A11B-10 - Transform Finalized)
  *
- * - 変更点 (Phase 4A11B-11):
- * - 「📜 Phase4A11B-11」指示書に基づき、IndexedDBへのレイヤー状態保存・復元機能を実装。
- * - importパスの間違いを修正し、404エラーを解決。
+ * - 変更点 (Phase 4A11B-10):
+ * - 「📜 Phase4A11B-10」指示書に基づき、レイヤー変形確定時の処理を安定化。
  *
- * - 1. IndexedDB連携:
- * - Dexie.jsを使用し、レイヤーデータをブラウザのIndexedDBに保存する仕組みを導入。
- * - `core/db/db-indexed.js`を新設し、保存・復元ロジックをカプセル化。
+ * - 1. 転写処理の安定化:
+ * - 変形確定(`commitLayerTransform`)時に、描画エンジンから画像データ(`ImageData`)を
+ * 取得できなかった場合(`null`が返された場合)のフォールバック処理を追加。
+ * - 失敗時には、変形前の状態にレイヤーを安全に復元する`restoreLayerBackup`を呼び出すようにした。
  *
- * - 2. アプリケーション初期化フローの刷新:
- * - `window.addEventListener('load', ...)`で初期化処理を一本化。
- * - 起動時にIndexedDBからレイヤーデータを非同期で読み込み、キャンバス状態を復元する。
- * - データがない場合は、従来の初期レイヤーを作成する。
+ * - 2. 例外処理の強化:
+ * - レイヤーが未選択の状態などで処理が進んでエラーにならないよう、
+ * `onPointerUp`や`updateCursor`といった関数内で、アクティブレイヤーの存在を
+ * チェックする処理を追加し、安全性を向上させた。
  *
- * - 3. 自動保存の実装:
- * - `canvasManager.saveState()`を改修し、Undo/Redo用の履歴管理に加え、
- * IndexedDBへの状態保存も自動的に行うようにした。
+ * - 3. ログの強化:
+ * - 変形処理の開始、成功、失敗時のコンソールログをより分かりやすく色分け・整理した。
  * ===================================================================================
  */
 
 // --- glMatrix 定義 ---
 const mat4 = window.glMatrix.mat4;
+const vec4 = window.glMatrix.vec4;
 
 // --- Module Imports ---
-// ファイルツリーに記載の正しいパスに修正
 import { TopBarManager, LayerUIManager } from './ui/ui-manager.js';
 import { ShortcutManager } from './ui/shortcut-manager.js';
 import { BucketTool } from './tools/toolset.js';
 import { RenderingBridge } from './core/rendering/rendering-bridge.js';
-import { LayerManager } from './layer-manager/layer-manager.js'; // 修正
+import { LayerManager } from './layer-manager/layer-manager.js';
 import { PenSettingsManager } from './ui/pen-settings-manager.js';
 import { ColorManager } from './ui/color-manager.js';
-import { ToolManager } from './ui/tool-manager.js'; // 修正
+import { ToolManager } from './ui/tool-manager.js';
 import { isValidMatrix, transformWorldToLocal } from './core/utils/transform-utils.js';
-
-// IndexedDB連携モジュールのインポート
-import { saveLayerToDB, loadLayersFromDB, clearDB } from './core/db/db-indexed.js';
 
 
 // --- Utility Functions ---
@@ -77,8 +73,7 @@ function getCanvasCoordinates(e, canvas, viewTransform) {
 
 // --- Core Logic Classes ---
 export class Layer {
-    constructor(name, width, height, id = null) {
-        this.id = id; // IndexedDBのプライマリキー
+    constructor(name, width, height) {
         this.name = name;
         this.visible = true;
         this.opacity = 100;
@@ -165,6 +160,8 @@ class CanvasManager {
     }
 
     _isPointOnLayer(worldCoords, layer) {
+        // ★★★★★ 修正 (Phase 4A11B-10) ★★★★★
+        // レイヤーが存在しない場合はfalseを返す 
         if (!layer || !layer.visible) return false;
 
         const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
@@ -328,6 +325,8 @@ class CanvasManager {
             this._renderDirty();
 
             const activeLayer = this.app.layerManager.getCurrentLayer();
+            // ★★★★★ 修正 (Phase 4A11B-10) ★★★★★
+            // activeLayerの存在を確認してからGPU->CPUデータ同期を行う 
             if (activeLayer) {
                 this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
             }
@@ -377,6 +376,10 @@ class CanvasManager {
         this.renderAllLayers();
     }
 
+    // ★★★★★ 修正 (Phase 4A11B-10) ★★★★★
+    /**
+     * レイヤー変形を確定する。転写に失敗した場合は安全に元の状態に復元する。
+     */
     commitLayerTransform() {
         if (!this.isLayerTransforming) return;
         this.isLayerTransforming = false;
@@ -390,33 +393,44 @@ class CanvasManager {
             return;
         }
         
+        // 1. `getTransformedImageData`を使い、移動後の見た目通りの画像データを生成
         const transformedImageData = this.renderingBridge.getTransformedImageData(activeLayer);
         
+        // 2. 転写が成功したかチェック 
         if (!transformedImageData) {
+            // 2b. 失敗: エラーログを出し、バックアップから復元して操作をキャンセル 
             console.warn("❌ レイヤー転写に失敗: getTransformedImageDataがnullを返しました。変形前の状態に復元します。");
-            this.restoreLayerBackup();
+            this.restoreLayerBackup(); // バックアップから復元
             this.cellBuffer = null;
             this.cellBufferInitialized = false;
             this.updateCursor();
             return;
         }
         
+        // ログ強化 
         console.log("📋 転写開始:", { w: transformedImageData.width, h: transformedImageData.height });
 
+        // 3a. 成功：生成された画像データでレイヤーの内容を確定（焼き付け）
         activeLayer.imageData.data.set(transformedImageData.data);
         console.info("✅ 転写成功");
 
+        // 4. 変形は画像に焼き付けられたので、レイヤーの行列は初期状態（単位行列）に戻す
         mat4.identity(activeLayer.modelMatrix);
         activeLayer.gpuDirty = true;
         
+        // 5. セルバッファを破棄
         this.cellBuffer = null;
         this.cellBufferInitialized = false;
         console.log("🧹 セルバッファを破棄し、変形モードを終了しました。");
         
+        // 6. 最終状態を画面に描画し、履歴に保存
         this.renderAllLayers();
         this.saveState();
     }
 
+    /**
+     * レイヤー変形をキャンセルする
+     */
     cancelLayerTransform() {
         if (!this.isLayerTransforming) return;
         this.isLayerTransforming = false;
@@ -439,6 +453,10 @@ class CanvasManager {
         this.renderAllLayers();
     }
 
+    // ★★★★★ 新設 (Phase 4A11B-10) ★★★★★
+    /**
+     * 変形に失敗した際などに、セルバッファに退避しておいた情報を使ってレイヤーを元の状態に戻す
+     */
     restoreLayerBackup() {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!this.cellBufferInitialized || !activeLayer) {
@@ -447,6 +465,7 @@ class CanvasManager {
         }
 
         console.warn("↩️ 変形をキャンセルし、バックアップからレイヤーを復元します。");
+        // 退避しておいた元のデータと行列をレイヤーに戻す
         activeLayer.imageData.data.set(this.cellBuffer.imageData.data);
         activeLayer.modelMatrix = mat4.clone(this.cellBuffer.originalModelMatrix);
         activeLayer.gpuDirty = true;
@@ -568,17 +587,15 @@ class CanvasManager {
         return Math.max(0.1 * SUPER_SAMPLING_FACTOR, finalSize);
     }
 
-    async saveState() {
-        // 1. Undo/Redo用の履歴を作成
+    saveState() {
         const state = {
             layers: this.app.layerManager.layers.map(layer => {
                 if (!isValidMatrix(layer.modelMatrix)) {
                     console.warn("⚠ saveState: 不正な modelMatrix を検出したため、リセットします。");
                     layer.modelMatrix = mat4.create();
                 }
-                // ImageDataを含めてディープコピー
+                const savedModelMatrix = Array.from(layer.modelMatrix);
                 return {
-                    id: layer.id,
                     name: layer.name,
                     visible: layer.visible,
                     opacity: layer.opacity,
@@ -588,7 +605,7 @@ class CanvasManager {
                         layer.imageData.width,
                         layer.imageData.height
                     ),
-                    modelMatrix: Array.from(layer.modelMatrix)
+                    modelMatrix: savedModelMatrix
                 };
             }),
             activeLayerIndex: this.app.layerManager.activeLayerIndex
@@ -597,25 +614,11 @@ class CanvasManager {
         this.history = this.history.slice(0, this.historyIndex + 1);
         this.history.push(state);
         this.historyIndex++;
-        
-        // 2. IndexedDBへの非同期保存処理
-        try {
-            await clearDB(); // 現在の状態を保存するので、古いDBデータは全削除
-            for (const layer of this.app.layerManager.layers) {
-                const newId = await saveLayerToDB(layer);
-                if (layer.id === null) {
-                    layer.id = newId; // 新規レイヤーの場合、DBが採番したIDをオブジェクトに反映
-                }
-            }
-            console.log("💾 すべてのレイヤーの状態をIndexedDBに保存しました。");
-        } catch (error) {
-            console.error("❌ IndexedDBへのレイヤー保存に失敗しました:", error);
-        }
     }
 
     restoreState(state) {
         this.app.layerManager.layers = state.layers.map(layerData => {
-            const layer = new Layer(layerData.name, layerData.imageData.width, layerData.imageData.height, layerData.id);
+            const layer = new Layer(layerData.name, layerData.imageData.width, layerData.imageData.height);
             layer.visible = layerData.visible;
             layer.opacity = layerData.opacity ?? 100;
             layer.blendMode = layerData.blendMode ?? 'normal';
@@ -665,6 +668,8 @@ class CanvasManager {
         }
 
         const activeLayer = this.app.layerManager.getCurrentLayer();
+        // ★★★★★ 修正 (Phase 4A11B-10) ★★★★★
+        // activeLayerの存在を確認してからカーソル表示を判断 
         if (activeLayer && this._isPointOnLayer(coords, activeLayer)) {
             switch(this.app.toolManager.currentTool) {
                 case 'pen':
@@ -722,96 +727,29 @@ class CanvasManager {
             this.zoom(e.deltaY > 0 ? 1 / 1.05 : 1.05); 
         } 
     }
+}
 
-    // 指示書に基づき、ToolManagerからの呼び出しに対応するためのメソッドを追加
-    setCurrentTool(tool) {
-        // ToolManagerがツール状態の主たる管理元であるため、
-        // このメソッドは呼び出されることを保証するためのプレースホルダーとする。
-        // CanvasManager内の処理は this.app.toolManager.currentTool を直接参照する。
+class ToshinkaTegakiTool {
+    constructor() {
+        this.layerManager = new LayerManager(this);
+        this.canvasManager = new CanvasManager(this);
+        this.penSettingsManager = new PenSettingsManager(this);
+        this.colorManager = new ColorManager(this);
+        this.toolManager = new ToolManager(this);
+        this.topBarManager = new TopBarManager(this);
+        this.shortcutManager = new ShortcutManager(this);
+        this.layerUIManager = new LayerUIManager(this);
+        this.bucketTool = new BucketTool(this);
+
+        this.shortcutManager.initialize();
+        this.layerManager.setupInitialLayers();
+        this.toolManager.setTool('pen');
     }
 }
 
-// 指示書に沿った新しいアプリケーション初期化フロー
-window.addEventListener('load', async () => {
-    if (window.toshinkaTegakiInitialized) return;
-    window.toshinkaTegakiInitialized = true;
-    
-    console.log("🛠️ アプリケーションの初期化を開始します...");
-
-    // アプリケーションの各モジュールを管理するappオブジェクト
-    const app = {};
-
-    // 各マネージャーをインスタンス化
-    app.layerManager = new LayerManager(app);
-    app.canvasManager = new CanvasManager(app);
-    app.penSettingsManager = new PenSettingsManager(app);
-    app.colorManager = new ColorManager(app);
-    app.toolManager = new ToolManager(app);
-    app.topBarManager = new TopBarManager(app);
-    app.shortcutManager = new ShortcutManager(app);
-    app.layerUIManager = new LayerUIManager(app);
-    app.bucketTool = new BucketTool(app);
-
-    // グローバルからもアクセス可能にする
-    window.toshinkaTegakiTool = app;
-
-    // IndexedDBからレイヤーデータを非同期で復元
-    try {
-        console.log("💾 IndexedDBからレイヤーデータの復元を試みます...");
-        const layersFromDB = await loadLayersFromDB();
-
-        if (layersFromDB && layersFromDB.length > 0) {
-            const restoredLayers = [];
-            for (const dbLayer of layersFromDB) {
-                const img = await new Promise((resolve, reject) => {
-                    const image = new Image();
-                    image.onload = () => resolve(image);
-                    image.onerror = reject;
-                    image.src = dbLayer.imageData;
-                });
-                
-                const newLayer = new Layer(dbLayer.name, app.canvasManager.width, app.canvasManager.height, dbLayer.id);
-                newLayer.visible = dbLayer.visible;
-                newLayer.opacity = dbLayer.opacity;
-                newLayer.blendMode = dbLayer.blendMode;
-                newLayer.modelMatrix = new Float32Array(dbLayer.modelMatrix);
-
-                const tempCtx = document.createElement('canvas').getContext('2d');
-                tempCtx.canvas.width = newLayer.imageData.width;
-                tempCtx.canvas.height = newLayer.imageData.height;
-                tempCtx.drawImage(img, 0, 0);
-                newLayer.imageData = tempCtx.getImageData(0, 0, tempCtx.canvas.width, tempCtx.canvas.height);
-                
-                newLayer.gpuDirty = true;
-                restoredLayers.push(newLayer);
-            }
-            app.layerManager.layers = restoredLayers;
-            app.layerManager.switchLayer(restoredLayers.length - 1); // 最後のレイヤーをアクティブに
-            console.log(`✅ ${layersFromDB.length}件のレイヤーをIndexedDBから復元しました。`);
-        } else {
-            console.log("ℹ️ 保存されたデータがありません。初期レイヤーを作成します。");
-            app.layerManager.setupInitialLayers();
-        }
-    } catch (error) {
-        console.error("❌ IndexedDBからの復元中にエラーが発生しました。初期状態で起動します。", error);
-        app.layerManager.setupInitialLayers();
+window.addEventListener('DOMContentLoaded', () => {
+    if (!window.toshinkaTegakiInitialized) {
+        window.toshinkaTegakiInitialized = true;
+        window.toshinkaTegakiTool = new ToshinkaTegakiTool();
     }
-
-    // ショートカットを初期化
-    app.shortcutManager.initialize();
-
-    // レイヤーUIを更新
-    if (app.layerUIManager && typeof app.layerUIManager.renderLayers === 'function') {
-        app.layerUIManager.renderLayers();
-    } else {
-        console.warn("⚠️ app.layerUIManager.renderLayers() が未定義です！");
-    }
-
-    // 初期ツールを設定
-    app.toolManager.setTool('pen');
-    
-    // キャンバス全体を再描画
-    app.canvasManager.renderAllLayers();
-
-    console.log("✅ アプリケーションの初期化が完了しました。");
 });

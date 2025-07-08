@@ -1,60 +1,56 @@
-// Dexie.jsはHTMLでグローバルに読み込まれていることを前提とします
-const { Dexie } = window;
+// DexieはHTMLでグローバルに読み込まれているため、importは不要です。
 
-if (!Dexie) {
-    throw new Error("Dexie.jsが読み込まれていません。ToshinkaTegakiTool.htmlを確認してください。");
-}
-
-const db = new Dexie("TegakiProjectDB");
-
-// データベースのスキーマを定義
+// データベースの定義
+export const db = new Dexie('ToshinkaTegakiDB');
 db.version(1).stores({
-  layers: "++id, name, opacity, visible, blendMode, modelMatrix, imageData"
+    // layersテーブルのスキーマ定義
+    // "&id"はidがユニークなプライマリキーであることを示します
+    layers: '&id, name, imageData'
 });
 
 /**
- * レイヤーオブジェクトをIndexedDBに保存（追加または更新）します。
- * ImageDataをDataURLに変換してから保存します。
- * @param {Layer} layerObject - 保存するレイヤーオブジェクト
- * @returns {Promise<number>} 保存されたアイテムのID
+ * 指定されたレイヤーデータをIndexedDBに保存または更新します。
+ * @param {number} id - レイヤーの一意のID
+ * @param {string} name - レイヤー名
+ * @param {string} imageData - レイヤーの描画内容を表すData URL
  */
-export async function saveLayerToDB(layerObject) {
-  // Layerオブジェクトから保存用のプレーンオブジェクトを作成
-  const { imageData, ...propsToSave } = layerObject;
-
-  // ImageDataをDataURLに変換
-  const canvas = document.createElement('canvas');
-  canvas.width = imageData.width;
-  canvas.height = imageData.height;
-  canvas.getContext('2d').putImageData(imageData, 0, 0);
-  const dataURL = canvas.toDataURL();
-  
-  // DBに保存するオブジェクト
-  const dbEntry = {
-      ...propsToSave,
-      modelMatrix: Array.from(propsToSave.modelMatrix), // Float32Arrayを通常の配列に変換
-      imageData: dataURL
-  };
-
-  // layerObjectにidがあれば更新、なければ追加として動作する
-  const id = await db.layers.put(dbEntry);
-  // console.log(`レイヤー "${layerObject.name}" (ID: ${id}) をDBに保存しました。`);
-  return id;
+export async function saveLayerToIndexedDB(id, name, imageData) {
+    // 保存データが不完全な場合は処理を中断
+    if (id === undefined || name === undefined || imageData === undefined) {
+        console.error("保存データが不完全なため、IndexedDBへの保存をスキップしました。", {id, name});
+        return;
+    }
+    try {
+        await db.layers.put({ id, name, imageData });
+    } catch (error) {
+        console.error(`IndexedDBへのレイヤー保存に失敗しました (ID: ${id}):`, error);
+    }
 }
 
 /**
  * IndexedDBからすべてのレイヤーデータを読み込みます。
- * @returns {Promise<Array<object>>} レイヤーオブジェクトの配列
+ * @returns {Promise<Array<{id: number, name: string, imageData: string}>>} レイヤーデータの配列
  */
-export async function loadLayersFromDB() {
-  const layersFromDB = await db.layers.toArray();
-  return layersFromDB;
+export async function loadLayersFromIndexedDB() {
+    try {
+        const layers = await db.layers.toArray();
+        // 念のためIDでソートして返す
+        return layers.sort((a, b) => a.id - b.id);
+    } catch (error) {
+        console.error("IndexedDBからのレイヤー読み込みに失敗しました:", error);
+        return [];
+    }
 }
 
 /**
- * IndexedDBのレイヤーテーブルを空にします。
- * @returns {Promise<void>}
+ * 指定されたIDのレイヤーをIndexedDBから削除します。
+ * @param {number} id - 削除するレイヤーのID
  */
-export async function clearDB() {
-    return await db.layers.clear();
+export async function deleteLayerFromIndexedDB(id) {
+    try {
+        await db.layers.delete(id);
+        console.log(`🗑️ レイヤー [ID: ${id}] をIndexedDBから削除しました。`);
+    } catch (error) {
+        console.error(`IndexedDBからのレイヤー削除に失敗しました (ID: ${id}):`, error);
+    }
 }
