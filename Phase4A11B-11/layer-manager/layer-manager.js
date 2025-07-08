@@ -13,73 +13,41 @@ export class LayerManager {
         this.mergeCanvas.height = this.height;
         this.mergeCtx = this.mergeCanvas.getContext('2d');
     } 
-
-    // [追加] DB復元用にIDと名前を指定してレイヤーを作成
-    createLayer(id, name) {
-        const newLayer = new Layer(name, this.width, this.height, id);
-        this.layers.push(newLayer);
-        // layers配列をソートしてID順に並べる
-        this.layers.sort((a, b) => a.id - b.id);
-        return newLayer;
-    }
-
-    // [追加] IDでレイヤーを検索
-    getLayerById(id) {
-        return this.layers.find(layer => layer.id === id);
-    }
-    
-    // [追加] IDでレイヤーをアクティブにする
-    switchLayerById(id) {
-        const index = this.layers.findIndex(layer => layer.id === id);
-        if (index !== -1) {
-            this.switchLayer(index);
-        }
-    }
     
     setupInitialLayers() {
-        // setupInitialLayersはDBに何もないときだけ呼ばれるので、
-        // IndexedDBに保存する処理は不要。代わりにonDrawEndで保存される。
-        this.addLayer(); // 背景レイヤー
-        this.layers[0].name = '背景';
-        this.layers[0].fill('#f0e0d6');
-        this.addLayer(); // 描画レイヤー
-        
-        // 初期状態をundo履歴に保存
+        const bgLayer = new Layer('背景', this.width, this.height);
+        bgLayer.fill('#f0e0d6');
+        this.layers.push(bgLayer);
+        const drawingLayer = new Layer('レイヤー 1', this.width, this.height);
+        this.layers.push(drawingLayer);
+        this.switchLayer(1);
+        this.app.canvasManager.renderAllLayers();
         this.app.canvasManager.saveState();
     } 
     
     addLayer() {
         if (this.layers.length >= 99) return;
         const insertIndex = this.activeLayerIndex + 1;
-        // LayerのIDは自動でインクリメントされる
-        const newLayer = new Layer(`レイヤー ${Layer.nextId}`, this.width, this.height);
+        const newLayer = new Layer(`レイヤー ${this.layers.length + 1}`, this.width, this.height);
         this.layers.splice(insertIndex, 0, newLayer);
         this.renameLayers();
         this.switchLayer(insertIndex);
         this.app.canvasManager.saveState();
-        // ★ onDrawEndを呼び出してIndexedDBに新規レイヤーを保存
-        this.app.canvasManager.onDrawEnd?.(newLayer);
     } 
     
     deleteActiveLayer() {
-        if (this.activeLayerIndex <= 0 || this.layers.length <= 1) return;
-        const deletedLayer = this.layers[this.activeLayerIndex];
+        if (this.activeLayerIndex === 0 || this.layers.length <= 1) return;
         this.layers.splice(this.activeLayerIndex, 1);
         const newActiveIndex = Math.min(this.layers.length - 1, this.activeLayerIndex);
         this.renameLayers();
         this.switchLayer(newActiveIndex);
         this.app.canvasManager.renderAllLayers();
         this.app.canvasManager.saveState();
-        // ★ IndexedDBからも削除
-        this.app.db?.deleteLayerFromIndexedDB(deletedLayer.id);
     } 
     
     renameLayers() {
-        let drawingLayerCount = 1;
-        this.layers.forEach((layer) => {
-            if (layer.name !== '背景') {
-                layer.name = `レイヤー ${drawingLayerCount++}`;
-            }
+        this.layers.forEach((layer, index) => {
+            if (index > 0) layer.name = `レイヤー ${index}`;
         });
     } 
     
@@ -109,8 +77,6 @@ export class LayerManager {
         this.renameLayers();
         this.switchLayer(insertIndex);
         this.app.canvasManager.saveState();
-        // ★ IndexedDBに保存
-        this.app.canvasManager.onDrawEnd?.(newLayer);
     } 
     
     mergeDownActiveLayer() {
@@ -140,9 +106,5 @@ export class LayerManager {
         this.switchLayer(this.activeLayerIndex - 1);
         this.app.canvasManager.renderAllLayers();
         this.app.canvasManager.saveState();
-
-        // ★ IndexedDBの状態を更新
-        this.app.canvasManager.onDrawEnd?.(bottomLayer);
-        this.app.db?.deleteLayerFromIndexedDB(topLayer.id);
     } 
 }
