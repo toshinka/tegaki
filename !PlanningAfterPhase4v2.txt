@@ -1,4 +1,4 @@
-# 統合ロードマップ 2025 - モダンブラウザお絵かき・アニメ制作ツール
+# 統合ロードマップ 2025 Enhanced - モダンブラウザお絵かき・アニメ制作ツール
 
 ## 🎯 基本方針
 - **モダンブラウザ前提**：古いブラウザは切り捨て、最新技術を活用
@@ -14,13 +14,14 @@
 **期間**: 2週間
 **優先度**: 🌟🌟🌟🌟🌟
 
-#### 必須実装
+#### 必須実装（強化版）
 - WebGL行列変換によるレイヤー移動
-- 筆圧・チルト対応 (Pointer Events API)
+- **Pointer Events API完全対応** (筆圧・チルト・回転・tangentialPressure)
 - HDR Canvas対応
 - ES6 Module完全移行
+- **予測描画システム**: PointerEvent instances that the browser predicts will followによるリアルタイム補正
 
-#### 推奨ライブラリ
+#### 推奨ライブラリ（2025年最新版）
 ```javascript
 // 必須採用
 import { mat4 } from 'gl-matrix';           // 行列計算
@@ -29,6 +30,22 @@ import { Pane } from 'tweakpane';           // モダンUI
 
 // 描画品質向上
 import { Path } from 'paper';               // 美しい線補間
+// Note: Pressure.jsは不要 - Pointer Events APIで十分
+```
+
+#### 最新技術統合
+```javascript
+// 高精度筆圧処理（Pressure.js代替）
+canvas.addEventListener('pointermove', (e) => {
+  const pressure = e.pressure || 0.5;
+  const tiltX = e.tiltX || 0;
+  const tiltY = e.tiltY || 0;
+  const twist = e.twist || 0;           // ペン回転
+  const tangentialPressure = e.tangentialPressure || 0; // サイドボタン圧力
+  
+  // Adobe風圧力カーブ
+  const responsivePressure = Math.pow(pressure, 1.5) * 2.0;
+});
 ```
 
 ### Phase 4A12: 回転・拡大縮小 + UI改善
@@ -39,6 +56,7 @@ import { Path } from 'paper';               // 美しい線補間
 - **twgl.js**: WebGL定型コードの95%削減
 - **Pointer Events API**: マウス/タッチ統合対応
 - **Popover API**: ペンサイズ調整UI（2024年標準化）
+- **予測イベント対応**: coalesced eventsで滑らかな描画
 
 ---
 
@@ -48,7 +66,7 @@ import { Path } from 'paper';               // 美しい線補間
 **期間**: 2週間
 **優先度**: 🌟🌟🌟🌟🌟
 
-#### 新技術導入
+#### 新技術導入（強化版）
 ```javascript
 // 必須採用
 import * as Konva from 'konva';             // レイヤー管理の王道
@@ -56,21 +74,39 @@ import { createOffscreenCanvas } from './canvas/offscreen-canvas.js';
 
 // UI最適化
 import { Pane } from 'tweakpane';           // dat.GUI完全置換
+
+// 新規追加：ML描画補助
+import * as tf from '@tensorflow/tfjs';     // 手ブレ補正AI
 ```
 
 #### 実装内容
 - **Konva.js Group機能**: レイヤーフォルダ実装
 - **Offscreen Canvas**: サムネイル生成最適化
 - **CSS Container Queries**: 動的レイアウト
+- **ML-based Stroke Stabilization**: 手ブレ自動補正
 
 ### Phase 5B: WebGL2移行 + パフォーマンス最適化
 **期間**: 1週間
 **優先度**: 🌟🌟🌟🌟
 
-#### WebGL2の恩恵
+#### WebGL2の恩恵（パフォーマンス面）
 - **Multiple Render Targets**: 複数レイヤー同時描画
 - **Vertex Array Objects**: 描画設定高速切り替え
 - **Texture Arrays**: レイヤーテクスチャ一括管理
+- **Transform Feedback**: GPU上での頂点変換
+
+#### 最適化技術
+```javascript
+// WebGL2 VAO最適化
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+// 設定...
+gl.bindVertexArray(null);
+
+// 描画時
+gl.bindVertexArray(vao);
+gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
+```
 
 ### Phase 5C: ドラッグ&ドロップ階層移動
 **期間**: 1週間
@@ -88,19 +124,23 @@ import { Pane } from 'tweakpane';           // dat.GUI完全置換
 **期間**: 2週間
 **優先度**: 🌟🌟🌟🌟
 
-#### 現代的アプローチ
+#### 現代的アプローチ（強化版）
 ```javascript
 // 軽量3D風表現
 import * as Zdog from 'zdog';               // 定規の立体感
 
 // 高速計算
 import * as gpu from 'gpu.js';              // GPU並列処理
+
+// 新規追加：ベクター描画強化
+import { Path2D } from 'path2d';            // 高精度パス描画
 ```
 
 #### 機能実装
 - **Fresco風半透明定規**: 直感的な操作感
 - **GPU.js**: 範囲選択の重い処理を高速化
 - **方眼紙ガイド**: 連続線描画サポート
+- **ベクター定規**: 完全な直線・曲線描画
 
 ### Phase 6B: 保存システム + ペン設定UI
 **期間**: 1週間
@@ -113,6 +153,31 @@ import Dexie from 'dexie';                  // IndexedDB簡素化
 
 // ファイル処理
 import JSZip from 'jszip';                  // プロジェクト保存
+
+// 新規追加：ペン設定管理
+import { Pane } from 'tweakpane';           // 高度なペン設定UI
+```
+
+#### ペン設定強化
+```javascript
+// 高度なペン設定システム
+const penSettings = {
+  pressure: {
+    enabled: true,
+    curve: 'adobe',                         // Adobe風カーブ
+    sensitivity: 1.2
+  },
+  tilt: {
+    enabled: true,
+    xSensitivity: 0.8,
+    ySensitivity: 0.8
+  },
+  stabilization: {
+    enabled: true,
+    level: 3,                               // 1-5段階
+    mlPredict: true                         // ML予測補正
+  }
+};
 ```
 
 ---
@@ -131,12 +196,16 @@ import { Timeline } from 'gsap/Timeline';   // 複雑なタイムライン
 
 // 現代的補間
 import { bezier } from 'bezier-easing';     // カスタムイージング
+
+// 新規追加：描画補間
+import { interpolate } from 'flubber';      // パス間の滑らかな補間
 ```
 
 #### 主要機能
 - **GSAP Timeline**: 業界標準の高性能アニメーション
 - **Bezier Easing**: 手書き風ストローク補間
 - **Web Animations API**: 60fps保証
+- **Path Interpolation**: 線画の滑らかな変形
 
 ### Phase 7B: テキスト + 物理演算
 **期間**: 2週間
@@ -149,6 +218,9 @@ import { measureText } from 'canvas-text-metrics';
 
 // 軽量物理
 import { World } from 'cannon-es';          // 髪の揺れ等
+
+// 新規追加：高度な物理
+import { Physics } from 'matter-js';        // 2D物理演算
 ```
 
 ### Phase 7C: エクスポート機能
@@ -160,6 +232,9 @@ import { World } from 'cannon-es';          // 髪の揺れ等
 // 高速エクスポート
 import { gif } from 'modern-gif';           // WebCodecs対応
 import { encode } from 'modern-screenshot'; // 高品質スクリーンショット
+
+// 新規追加：WebCodecs対応
+import { VideoEncoder } from 'webcodecs';   // 次世代動画エンコード
 ```
 
 ---
@@ -177,6 +252,9 @@ import { GPU } from 'gpu.js';               // 集中線をGPUで描画
 
 // 画像処理
 import { cv } from 'opencv.js';             // 輪郭抽出・自動フチ
+
+// 新規追加：ベクターエフェクト
+import { Path } from 'paper';               // 数学的に美しいエフェクト
 ```
 
 ### Phase 8B: 自動コマ割り
@@ -190,6 +268,9 @@ import { Solver } from 'constraint-solver'; // レイアウト最適化
 
 // 空間分割
 import { Quadtree } from 'quadtree-js';     // 効率的領域管理
+
+// 新規追加：ML レイアウト
+import * as tf from '@tensorflow/tfjs';     // 自動コマ割りAI
 ```
 
 ---
@@ -207,12 +288,16 @@ import * as THREE from 'three';            // 2Dテクスチャ→3D空間
 
 // 軽量代替
 import * as Zdog from 'zdog';              // カートゥーン風3D
+
+// 新規追加：WebGPU準備
+import { WebGPU } from 'webgpu';            // 次世代GPU API
 ```
 
 #### 機能
 - **演劇舞台風背景**: 2面構成で効率的
 - **視差スクロール**: 奥行き感演出
 - **HDR環境光**: リアルな陰影
+- **WebGPU対応**: 将来性を考慮
 
 ---
 
@@ -229,6 +314,9 @@ import { SharedArrayBuffer } from 'worker_threads';
 
 // 効率的データ処理
 import { Transform } from 'stream/web';
+
+// 新規追加：オニオンスキン最適化
+import { OffscreenCanvas } from 'offscreen-canvas';
 ```
 
 ### Phase 10B: 物理演算統合
@@ -242,6 +330,9 @@ import { Engine } from 'matter-js';         // 本格的2D物理
 
 // 軽量3D物理
 import { World } from 'cannon-es';          // 髪の揺れ等
+
+// 新規追加：流体シミュレーション
+import { LiquidFun } from 'liquidfun.js';   // 水・血液エフェクト
 ```
 
 ---
@@ -259,6 +350,9 @@ import { Delaunay } from 'd3-delaunay';     // 三角分割
 
 // ボーンシステム
 import { Skeleton } from 'three/examples/jsm/animation/Skeleton.js';
+
+// 新規追加：高度な変形
+import { Warp } from 'puppet-warp';         // Photoshop風変形
 ```
 
 ---
@@ -276,6 +370,9 @@ import { BroadcastChannel } from 'broadcast-channel';
 
 // 状態同期
 import { proxy } from 'valtio';
+
+// 新規追加：Window API活用
+import { Window } from 'window-api';        // 新しいウィンドウ制御
 ```
 
 ### Phase 12B: 動画処理
@@ -289,6 +386,9 @@ import { VideoEncoder } from 'webcodecs';
 
 // 高速処理
 import { WebGPU } from 'webgpu';
+
+// 新規追加：AI動画処理
+import { VideoAI } from 'video-ai';         // 自動補間・upscaling
 ```
 
 ---
@@ -306,117 +406,103 @@ import * as tf from '@tensorflow/tfjs';
 
 // 画像生成
 import { StableDiffusion } from 'stable-diffusion-js';
+
+// 新規追加：専用AI
+import { DrawingAI } from 'drawing-ai';     // 描画専用AI
 ```
 
 #### 革新的機能
 - **レイヤー構造維持**: コマ間で統一レイヤー
 - **パーツ分離AI**: 自動レイヤー分割
 - **コマ間補間**: FramePack風アニメ生成
+- **スタイル転送**: 画風統一AI
 
 ---
 
-## 📊 開発効率化のための推奨ライブラリ
+## 📊 開発効率化のための推奨ライブラリ（2025年強化版）
 
 ### 🚀 必須採用 (全フェーズ)
-| ライブラリ | 用途 | 効果 |
-|-----------|------|------|
-| **twgl.js** | WebGL簡素化 | 95%コード削減 |
-| **Tweakpane** | モダンUI | dat.GUI完全上位互換 |
-| **Dexie** | IndexedDB | 確実な保存機能 |
-| **GSAP** | アニメーション | 業界標準の性能 |
+| ライブラリ | 用途 | 効果 | 2025年ステータス |
+|-----------|------|------|----------------|
+| **twgl.js** | WebGL簡素化 | 95%コード削減 | 安定・推奨 |
+| **Tweakpane** | モダンUI | dat.GUI完全上位互換 | 最新・推奨 |
+| **Dexie** | IndexedDB | 確実な保存機能 | 安定・推奨 |
+| **GSAP** | アニメーション | 業界標準の性能 | 最新・必須 |
+| **Pointer Events API** | 入力処理 | 筆圧・チルト統合 | 標準・必須 |
 
-### 🎨 描画品質向上
-| ライブラリ | 用途 | 導入時期 |
-|-----------|------|----------|
-| **Paper.js** | 美しい線補間 | Phase 4A11C |
-| **GPU.js** | 高速演算 | Phase 6A |
-| **OpenCV.js** | 画像処理 | Phase 8A |
+### 🎨 描画品質向上（強化版）
+| ライブラリ | 用途 | 導入時期 | 2025年評価 |
+|-----------|------|----------|------------|
+| **Paper.js** | 美しい線補間 | Phase 4A11C | 最高品質 |
+| **GPU.js** | 高速演算 | Phase 6A | 必須 |
+| **OpenCV.js** | 画像処理 | Phase 8A | 業界標準 |
+| **TensorFlow.js** | ML補正 | Phase 5A | 未来技術 |
 
 ### 🔧 開発効率化
-| ライブラリ | 用途 | 効果 |
-|-----------|------|------|
-| **Konva.js** | レイヤー管理 | フォルダ機能簡単実装 |
-| **Three.js** | 3D背景 | 奥行き演出 |
-| **Zdog** | 軽量3D | カートゥーン風UI |
+| ライブラリ | 用途 | 効果 | 新規評価 |
+|-----------|------|------|----------|
+| **Konva.js** | レイヤー管理 | フォルダ機能簡単実装 | 信頼性高 |
+| **Three.js** | 3D背景 | 奥行き演出 | 定番 |
+| **Zdog** | 軽量3D | カートゥーン風UI | 軽量・美しい |
+| **WebCodecs** | 動画処理 | 高品質エンコード | 最新・高性能 |
 
 ---
 
-## 💡 最新技術トレンド活用
+## 💡 最新技術トレンド活用（2025年アップデート）
 
 ### 🌟 2025年注目技術
-- **WebGPU**: Phase 12で本格導入
-- **WebCodecs**: 高品質動画処理
-- **Popover API**: 現代的ポップアップ
-- **CSS Container Queries**: 動的レイアウト
+- **WebGPU**: Phase 12で本格導入 - 92% browser compatibility
+- **WebCodecs**: 高品質動画処理 - 次世代標準
+- **Popover API**: 現代的ポップアップ - 標準化完了
+- **CSS Container Queries**: 動的レイアウト - 全ブラウザ対応
+- **Pointer Events Level 3**: 高精度入力 - 最新仕様
 
 ### 🚀 実験的機能
 - **ML Stroke Prediction**: 手ブレ補正AI
 - **SharedArrayBuffer**: マルチスレッド処理
 - **BroadcastChannel**: リアルタイム同期
+- **WebAssembly SIMD**: 超高速演算
+
+### 🎯 Pressure.js vs Pointer Events API
+**結論**: Pointer Events APIが優勢
+- **標準化**: pointer events address that need
+- **統合性**: マウス・タッチ・ペン統一
+- **高機能**: tangentialPressure、twist対応
+- **メンテナンス**: ブラウザ標準なので長期安定
 
 ---
 
-## 🎯 開発期間短縮のポイント
+## 🎯 開発期間短縮のポイント（強化版）
 
 ### ✅ 積極活用
 1. **既存ライブラリ**: 車輪の再発明回避
 2. **ES6 Modules**: コード分割・最適化
 3. **TypeScript**: 型安全性でバグ削減
 4. **Modern DevTools**: Vite + Hot Reload
+5. **Pointer Events API**: Pressure.js不要
 
 ### ❌ 避けるべき
 1. **古いブラウザ対応**: 開発コスト増大
 2. **自作ライブラリ**: 実績ある選択肢を優先
 3. **過度な最適化**: 必要な時に実装
+4. **Pressure.js**: 標準APIで十分
 
 ---
 
-## 🏆 最終目標
+## 🏆 最終目標（2025年版）
 
-Adobe Fresco + Storyboard Pro + はっちゃんキャンバスの良いとこ取りで、**ブラウザ完結型の次世代アニメ制作ツール**を実現！
+Adobe Fresco + Storyboard Pro + Procreate + Clip Studio Paintの良いとこ取りで、**ブラウザ完結型の次世代アニメ制作ツール**を実現！
 
 - **直感的UI**: Fresco風の美しいインターフェース
 - **プロ機能**: Timeline + 物理演算 + AI補完
 - **Web最適化**: PWA対応 + マルチデバイス
-- **コミュニティ**: ふたばちゃんねる連携
+- **AI統合**: 手ブレ補正 + 自動補間
+- **標準技術**: Pointer Events API完全対応
+- **未来対応**: WebGPU + WebCodecs準備
 
-
-🎯 重要なポイント
-開発期間短縮のための推奨ライブラリ
-即座に導入すべき：
-
-twgl.js: WebGLの冗長なコードを95%削減 TWGL.js, a tiny WebGL helper library
-GSAP: 業界標準の高性能アニメーション Top 10 JavaScript Animation Libraries in 2025
-Tweakpane: dat.GUIの現代版、UI開発を大幅効率化
-
-Phase 5で導入：
-
-Konva.js: 2025年でも最有力のレイヤー管理ライブラリ Top WebGL Libraries for 2025 A Comprehensive Guide - Toxigon
-Dexie: IndexedDBを簡単に扱える
-
-Phase 7以降：
-
-Motion One: Web Animations APIベースで軽量高速 DEV CommunityDigitalogy Blog
-GPU.js: 重い計算をGPUで並列処理
-
-2025年のトレンド技術
-現在注目されている技術として：
-
-WebGPU: 次世代GPU API（Phase 12で本格導入）
-WebCodecs: 高品質動画処理（Phase 7C）
-Popover API: 標準化されたポップアップ（Phase 4A12）
-
-ES6 Module化の恩恵
-モダンブラウザ前提なら：
-
-Tree shaking: 使わない機能を自動除外
-Code splitting: 必要な時だけ読み込み
-Hot Module Replacement: 開発効率大幅向上
-
-🚀 次のステップ
-
-Phase 4A11C: まずtwgl.jsとTweakpaneを導入
-Phase 5: Konva.jsでレイヤー管理を劇的改善
-Phase 7: GSAPでプロレベルアニメーション実装
-
-このロードマップなら、AIの支援を受けながら段階的に現代的なツールを構築できます。特に既存の優良ライブラリを活用することで、開発期間を大幅短縮できるはずです！
+### 🎯 2025年の特徴
+1. **標準技術重視**: Pressure.js → Pointer Events API
+2. **AI統合**: 手ブレ補正、予測描画
+3. **WebGPU準備**: 次世代GPU活用
+4. **ML描画支援**: TensorFlow.js活用
+5. **高精度入力**: tangentialPressure対応
