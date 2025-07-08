@@ -1,102 +1,110 @@
-🎯 Phase 4A11B-11 指示書（再構築版）
-✅ 作業概要
-この指示書は、Phase 4A11B-10 の安定状態を起点として、以下の再構築を行うことを目的としています。
+🎯目的
+レイヤー情報や描画状態を、IndexedDB（Dexie.js使用）に保存・復元できるように改修してください。
+この対応により、ユーザーが描いたレイヤーの状態をブラウザにキャッシュし、ページリロード後でも復元できるようにします。
 
-gl-matrix-min.js の読み込みを webgl-engine.js に移植
+📁使用対象ファイル（Phase 4A11B-10 版）
+core-engine.js（改修対象）
 
-dat.gui.min.js の読み込みを core-engine.js に移植
+core/db/db-indexed.js（新規作成）
 
-IndexedDBベースの保存機構の土台を構築
-
-ライブラリ：dexie.min.js を使用
-
-モジュール：/core/db/db-indexed.js を新設し、保存機構のインターフェースを定義
-
-🧱 作業ファイル
-変更対象ファイル：
-/core/core-engine.js
-
-/core/rendering/webgl-engine.js
-
-/core/db/db-indexed.js（新規作成）
-
-追加ライブラリ（CDN or ローカル）：
-gl-matrix-min.js（WebGL数学演算用）
-
-dat.gui.min.js（デバッグUI）
-
-Dexie.js（IndexedDBラッパー）
-
-🔁 ロールバック元
-以下の状態にロールバックされている前提で作業を行ってください：
-
-Phase 4A11B-10 の core-engine.js / webgl-engine.js(これは私が添付したものになります。）
-
-🔧 作業内容詳細
-① gl-matrix の移植（webgl-engine.js）
+🧱ステップ構成
+✅ Step 1. Dexie.js を導入してください
 js
 コピーする
 編集する
-// 最上部に追加（CDN or ローカル）
-importScriptsIfNeeded('/libs/gl-matrix-min.js');
+// core/db/db-indexed.js の先頭に記述
+import Dexie from 'dexie';
+※ブラウザ環境で使う場合はESModuleを前提にします。Geminiで生成したコードが動かない場合は<script>版を検討します。
 
-// ※ glMatrix.mat4, .vec2, .vec4 など使用する構文がある前提で書き換えられている必要があります
-② dat.gui の移植（core-engine.js）
+✅ Step 2. データベースの定義と初期化
 js
 コピーする
 編集する
-// 最上部に追加
-importScriptsIfNeeded('/libs/dat.gui.min.js');
-
-// GUIデバッグコード用にGUI構築の初期化部分などが書かれているか、または未使用ならコメントアウト状態で設置しても良い
-③ dexie の導入（core-engine.js）
-js
-コピーする
-編集する
-// 最上部に追加
-importScriptsIfNeeded('/libs/dexie.min.js');
-importScriptsIfNeeded('/core/db/db-indexed.js');
-④ /core/db/db-indexed.js の新設内容（最低限）
-このファイルは IndexedDB の保存インターフェースを担います。以下のような構成が基本です。
-
-js
-コピーする
-編集する
-// db-indexed.js
-
-// Dexieの初期化
-const db = new Dexie('TegakiCanvasDB');
+// core/db/db-indexed.js
+const db = new Dexie('TegakiProjectDB');
 db.version(1).stores({
-  layers: '++id,name,data'
+  layers: '++id, name, imageData'
 });
-
-// 保存API
-export async function saveLayer(name, dataURL) {
-  return await db.layers.add({ name, data: dataURL });
+✅ Step 3. 保存関数の作成
+js
+コピーする
+編集する
+export async function saveLayerToIndexedDB(layerId, layerName, imageDataUrl) {
+  await db.layers.put({
+    id: layerId,
+    name: layerName,
+    imageData: imageDataUrl
+  });
 }
-
-// 読込API
-export async function loadLayerById(id) {
-  return await db.layers.get(id);
+✅ Step 4. 復元関数の作成
+js
+コピーする
+編集する
+export async function loadLayersFromIndexedDB() {
+  const layers = await db.layers.toArray();
+  return layers;
 }
+✅ Step 5. core-engine.js に関数を組み込んでください
+js
+コピーする
+編集する
+// 1. db-indexed.js をインポート
+import { saveLayerToIndexedDB, loadLayersFromIndexedDB } from './core/db/db-indexed.js';
+js
+コピーする
+編集する
+// 2. 保存処理を描画完了後にフック
+// 例：ペン描画・レイヤー移動などの後に呼び出す
+await saveLayerToIndexedDB(currentLayerId, currentLayerName, canvas.toDataURL());
+js
+コピーする
+編集する
+// 3. 起動時に復元処理を追加
+loadLayersFromIndexedDB().then(layers => {
+  for (const layer of layers) {
+    // レイヤーとして追加し、imageDataを描画
+    // createLayer(layer.id, layer.name, ...);
+    // drawImageFromDataURL(layer.imageData);
+  }
+});
+※復元関数は 描画エンジンが初期化された後 に呼ぶようにしてください。
 
-// 全件取得（オプション）
-export async function getAllLayers() {
-  return await db.layers.toArray();
-}
-※ dataURL は canvas.toDataURL() で得られるPNG文字列として設計
+🧪 エラー対策（Consoleエラー回避）
+❌ mat4 が undefined になる
+webgl-engine.js に直接以下を追加してください：
 
-🔒 注意事項
-**HTMLファイル（ToshinkaTegakiTool.html）は変更しません。**依存関係の記述やスクリプト読み込みは、JSファイル内で importScriptsIfNeeded() や script.appendChild() 的な実装で対応してください。
+js
+コピーする
+編集する
+import { mat4 } from 'gl-matrix';
+core-engine.js ではなく、WebGL内部で使用しているwebgl-engine.jsにインポートする方が妥当です。
 
-ファイルが存在しない場合にのみロードするようなチェック処理が望ましいですが、最初は script.src = ... でも問題ありません。
+❌ Dexie is not defined
+原因：Dexieライブラリが読み込まれていない
 
-/libs/ 配下にライブラリファイル（gl-matrix, dat.gui, Dexie）がある前提で記述してください。
+対応：
 
-🧪 テスト観点
-コンソールに glMatrix / dat.GUI / Dexie が正常に展開されているか
+モジュールで読み込んでいない → import Dexie from 'dexie' を確認
 
-レイヤー描画後に saveLayer() を使って保存が可能か（簡易テストUIでもよい）
+CDNの場合 → HTMLに以下を追加すること（今回は import を推奨）
 
-loadLayerById() で再描画できるか（転写的に canvas に戻せる）
+html
+コピーする
+編集する
+<script src="https://unpkg.com/dexie@3/dist/dexie.min.js"></script>
+📝注意
+Dexieの put() は id が同じなら上書きします。
 
+toDataURL() の保存は画像が重くなりがちなので、将来的には ImageBitmap や Blob ベースに変更検討余地あり。
+
+🎁成果物例（この指示で作られるべきファイル）
+core/db/db-indexed.js
+　→ Dexie定義、保存・復元関数
+
+core-engine.js
+　→ IndexedDB用関数のインポート・呼び出し処理の追加
+
+🧠補足：新人Gemini向けTips
+saveLayerToIndexedDB() の呼び出しタイミングは「レイヤー移動終了時」「描画完了時」など、変更が確定するタイミングに設置。
+
+loadLayersFromIndexedDB() は window.onload または initializeEngine() の完了後に呼び出すのが安全。
