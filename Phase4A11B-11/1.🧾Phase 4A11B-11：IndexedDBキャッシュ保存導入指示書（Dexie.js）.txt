@@ -1,94 +1,79 @@
-🎯目的
-WebGLベースのレイヤー描画状態をブラウザ内にキャッシュ保存し、ページをリロードしても復元できるようにする。保存には Dexie.js を使用し、IndexedDBを扱いやすくする。
+✅ 今回の目的
+描画レイヤーの状態を IndexedDB（Dexie.js経由）に保存し、ページリロード後に復元できるようにします。キャンバス（WebGL）が初期化されている前提で復元処理を行います。
 
-✅ 対象ファイル
-ファイル	用途
-/core/db/db-indexed.js	IndexedDB保存・復元ロジック（新規作成）
-core-engine.js	初期化と保存/復元呼び出し処理を追加（改修）
-ToshinkaTegakiTool.html	dexie.min.js を読み込むよう <script> タグ追加（済）
+✅ 作成・修正対象ファイル
+ファイル	内容
+core/db/db-indexed.js	Dexie を用いた IndexedDB 処理（新規作成）
+core-engine.js	IndexedDBの保存・復元ロジックと、WebGL初期化処理の両方を追加
 
-✅ やること（ステップ一覧）
-1. dexie.min.js を HTML から読み込む（済）
+✅ 作業ステップ（改訂版）
+1. dexie.min.js を HTML 側に読み込む（済）
 html
 コピーする
 編集する
 <script src="./libs/dexie.min.js"></script>
-2. core/db/db-indexed.js を新規作成
+2. core/db/db-indexed.js を作成
 js
 コピーする
 編集する
-// IndexedDB用のデータベースを初期化
 const db = new Dexie("TegakiProjectDB");
 db.version(1).stores({
   layers: "++id, name, imageData"
 });
 
-// レイヤーを保存する関数
 export async function saveLayerToIndexedDB(layerId, layerName, imageDataUrl) {
-  await db.layers.put({
-    id: layerId,
-    name: layerName,
-    imageData: imageDataUrl
-  });
+  await db.layers.put({ id: layerId, name: layerName, imageData: imageDataUrl });
 }
 
-// レイヤーを復元する関数
 export async function loadLayersFromIndexedDB() {
-  const layers = await db.layers.toArray();
-  return layers;
+  return await db.layers.toArray();
 }
-3. core-engine.js に保存・復元処理を追加
-🔹 インポート
+3. core-engine.js に保存・復元処理＋WebGL初期化を必ず追加
 js
 コピーする
 編集する
+// 必要なモジュールの読み込み
+import { RenderingBridge } from './core/rendering/rendering-bridge.js';
 import { saveLayerToIndexedDB, loadLayersFromIndexedDB } from './core/db/db-indexed.js';
-🔹 描画確定後の保存呼び出し例
-js
-コピーする
-編集する
-await saveLayerToIndexedDB(currentLayerId, currentLayerName, canvas.toDataURL());
-🔹 起動時のレイヤー復元
-js
-コピーする
-編集する
-loadLayersFromIndexedDB().then(layers => {
+
+window.addEventListener('load', async () => {
+  // ✅ WebGLキャンバスを生成・初期化（必須！！）
+  RenderingBridge.init();
+
+  // ✅ IndexedDBからのレイヤー復元は、WebGLキャンバスが生成された後に行うこと！！
+  const layers = await loadLayersFromIndexedDB();
   for (const layer of layers) {
-    createLayer(layer.id, layer.name);
-    drawImageFromDataURL(layer.imageData);
+    // 適宜 layerManager などに渡す
+    console.log("復元レイヤー:", layer.name);
+    // 例: createLayer(layer.id, layer.name); drawImageFromDataURL(layer.imageData);
   }
 });
-createLayer() や drawImageFromDataURL() はプロジェクト内の関数に置き換えてください
+🛑 注意：RenderingBridge.init() を絶対に忘れないこと！
+キャンバスが生成されないと、何も表示されず、復元も機能しません。
 
-🔧 注意点とエラー対策
-❗ Dexie is not defined
-原因：CDN未読み込み
-
-対応：dexie.min.js の <script> タグが正しく挿入されているか確認
-
-❗ mat4 undefined
-原因：gl-matrix がインポートされていない
-
-対応：WebGL使用ファイル（webgl-engine.js）の冒頭で明示的に
-
+✅ 保存処理の追加（描画完了・移動完了などのイベント時に）
 js
 コピーする
 編集する
-import { mat4 } from 'gl-matrix';
-✅ 呼び出しタイミングの目安
-処理	呼び出し場所の目安
-saveLayerToIndexedDB()	レイヤー移動後／描画完了後のイベントフックに追加
-loadLayersFromIndexedDB()	起動後の初期化処理内（描画エンジンが準備完了してから）
+await saveLayerToIndexedDB(layerId, layerName, canvas.toDataURL());
+🔧 よくあるエラーと対策
+エラー	原因	対策
+Dexie is not defined	dexie.min.js の読み込み忘れ	HTMLに <script src=...> を入れる
+mat4 is undefined	gl-matrixの import 忘れ	webgl-engine.js に import { mat4 } from 'gl-matrix'
+Canvasが出ない	RenderingBridge.init() を呼び忘れている	core-engine.js に必ず記述すること！
 
-🧠 補足
-toDataURL() は画像が重くなりやすいため、Phase 4D 以降で ImageBitmap や Blob 保存への移行を検討。
+✅ 完了チェックリスト
+ core/db/db-indexed.js が新規作成されている
 
-Undo/Redoや履歴保存との組み合わせは Phase 4B〜4C で調整予定。
+ saveLayerToIndexedDB() / loadLayersFromIndexedDB() が定義済み
 
-📎 添付・前提ファイル
-この指示書は Phase4A11B-10 をベースとした再実装を前提としています。ファイルの構成を維持してください。
+ core-engine.js に RenderingBridge.init() が 必ず書かれている
 
-🧩 次ステップ案
-実装完了後、キャンバスをリロードしても前回状態が復元されるかをテスト
+ IndexedDBからレイヤーを読み込み、初期化後に復元処理を行っている
 
-成功すれば Phase4A11C へ進行可能（もしくはA11B-12で保存形式の最適化へ）
+ 保存処理が描画または移動操作の後に呼ばれている
+
+🧩 参考補足
+将来的には ImageBitmap, Blob, Undo履歴保存なども導入予定。
+今は「WebGLキャンバスの初期化 → IndexedDB保存 → 復元確認」が完成ラインです。
+

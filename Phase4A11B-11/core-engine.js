@@ -1,23 +1,24 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.2.1 (Phase 4A11B-11 - Initialization Fix)
+ * Version: 3.2.0 (Phase 4A11B-11 - IndexedDB Integration)
  *
- * - 変更点 (v3.2.1):
- * - キャンバスが表示されない問題への対策として、初期化処理の構造を修正。
+ * - 変更点 (Phase 4A11B-11):
+ * - 「📜 Phase4A11B-11」指示書に基づき、IndexedDBへのレイヤーデータ保存・復元機能を追加。
  *
- * - 1. 初期化メソッドの導入:
- * - `ToshinkaTegakiTool`クラスに `async initialize()` メソッドを新設。
- * - DBからの復元や最初のレイヤー作成など、起動時の処理をこのメソッドに集約し、
- * 実行順序を明確化。
+ * - 1. IndexedDB連携:
+ * - `core/db/db-indexed.js` をインポートし、Dexie.js経由でDB操作を行うようにした。
+ * - 描画完了時(`onPointerUp`)や変形確定時(`commitLayerTransform`)に、
+ * アクティブレイヤーの画像データをIndexedDBに自動保存する処理を追加。
  *
- * - 2. DOMContentLoaded処理の簡素化:
- * - `DOMContentLoaded`リスナーでは、`ToshinkaTegakiTool`のインスタンス化と
- * `initialize()`の呼び出しのみを行い、処理の流れを安定化させた。
+ * - 2. 起動時のデータ復元:
+ * - アプリケーション起動時にIndexedDBから前回保存したレイヤーデータを読み込み、
+ * キャンバスの状態を復元する処理を実装。
+ * - データがない場合は、通常の初期レイヤーを作成する。
  *
- * - 3. デバッグログの追加:
- * - 初期化プロセスの各段階でコンソールにログを出力するようにし、
- * 問題が発生した場合にどの段階で停止しているかを特定しやすくした。
+ * - 3. 初期化処理の改善:
+ * - `DOMContentLoaded`イベント内で、指示書に従い`RenderingBridge.init()`を呼び出し、
+ * その後、非同期でアプリケーションの初期化(`initialize`メソッド)を行うようにフローを修正。
  * ===================================================================================
  */
 
@@ -35,7 +36,9 @@ import { PenSettingsManager } from './ui/pen-settings-manager.js';
 import { ColorManager } from './ui/color-manager.js';
 import { ToolManager } from './ui/tool-manager.js';
 import { isValidMatrix, transformWorldToLocal } from './core/utils/transform-utils.js';
-import { saveLayerToIndexedDB, loadLayersFromIndexedDB } from './core/db/db-indexed.js';
+// ★★★★★ 追加 (Phase 4A11B-11) ★★★★★
+// IndexedDBを操作するための関数をインポート
+import { saveLayerToIndexedDB, loadLayersFromIndexedDB, clearAllLayersFromIndexedDB } from './core/db/db-indexed.js';
 
 
 // --- Utility Functions ---
@@ -75,7 +78,6 @@ function getCanvasCoordinates(e, canvas, viewTransform) {
 // --- Core Logic Classes ---
 export class Layer {
     constructor(name, width, height) {
-        this.id = `layer_${Date.now()}_${Math.random()}`;
         this.name = name;
         this.visible = true;
         this.opacity = 100;
@@ -212,6 +214,8 @@ class CanvasManager {
         const superY = coords.y * SUPER_SAMPLING_FACTOR;
         const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix);
         
+        console.log("📍 描画座標変換:", { world: coords, super: {x: superX, y: superY}, local: local });
+
         this._resetDirtyRect();
         
         if (this.app.toolManager.currentTool === 'bucket') {
@@ -219,7 +223,8 @@ class CanvasManager {
             activeLayer.gpuDirty = true;
             this.renderAllLayers();
             this.saveState();
-            this._saveActiveLayerToDB();
+            // ★★★★★ 追加 (Phase 4A11B-11) ★★★★★
+            this.saveActiveLayerToDB(); // 塗りつぶし後、DBに保存
             return;
         }
 
@@ -312,7 +317,7 @@ class CanvasManager {
         this.updateCursor(coords);
     }
     
-    async onPointerUp(e) {
+    onPointerUp(e) {
         if (this.isDrawing) {
             this.isDrawing = false;
             
@@ -330,7 +335,8 @@ class CanvasManager {
             
             this.lastPoint = null;
             this.saveState();
-            await this._saveActiveLayerToDB();
+            // ★★★★★ 追加 (Phase 4A11B-11) ★★★★★
+            this.saveActiveLayerToDB(); // 描画完了後、DBに保存
         }
         
         if (this.isDraggingLayer) {
@@ -374,7 +380,7 @@ class CanvasManager {
         this.renderAllLayers();
     }
 
-    async commitLayerTransform() {
+    commitLayerTransform() {
         if (!this.isLayerTransforming) return;
         this.isLayerTransforming = false;
         
@@ -398,6 +404,8 @@ class CanvasManager {
             return;
         }
         
+        console.log("📋 転写開始:", { w: transformedImageData.width, h: transformedImageData.height });
+
         activeLayer.imageData.data.set(transformedImageData.data);
         console.info("✅ 転写成功");
 
@@ -410,7 +418,8 @@ class CanvasManager {
         
         this.renderAllLayers();
         this.saveState();
-        await this._saveActiveLayerToDB();
+        // ★★★★★ 追加 (Phase 4A11B-11) ★★★★★
+        this.saveActiveLayerToDB(); // 変形確定後、DBに保存
     }
 
     cancelLayerTransform() {
@@ -564,20 +573,6 @@ class CanvasManager {
         return Math.max(0.1 * SUPER_SAMPLING_FACTOR, finalSize);
     }
 
-    async _saveActiveLayerToDB() {
-        const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (!activeLayer) return;
-
-        const tempCanvas = document.createElement('canvas');
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCanvas.width = activeLayer.imageData.width;
-        tempCanvas.height = activeLayer.imageData.height;
-        tempCtx.putImageData(activeLayer.imageData, 0, 0);
-        const dataURL = tempCanvas.toDataURL();
-
-        await saveLayerToIndexedDB(activeLayer.id, activeLayer.name, dataURL);
-    }
-
     saveState() {
         const state = {
             layers: this.app.layerManager.layers.map(layer => {
@@ -587,7 +582,6 @@ class CanvasManager {
                 }
                 const savedModelMatrix = Array.from(layer.modelMatrix);
                 return {
-                    id: layer.id,
                     name: layer.name,
                     visible: layer.visible,
                     opacity: layer.opacity,
@@ -608,10 +602,43 @@ class CanvasManager {
         this.historyIndex++;
     }
 
+    // ★★★★★ 新設 (Phase 4A11B-11) ★★★★★
+    /**
+     * ImageDataオブジェクトをDataURL文字列に変換します。
+     * @param {ImageData} imageData - 変換するImageDataオブジェクト。
+     * @returns {string} DataURL形式の文字列。
+     */
+    _imageDataToDataURL(imageData) {
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCanvas.width = imageData.width;
+        tempCanvas.height = imageData.height;
+        tempCtx.putImageData(imageData, 0, 0);
+        return tempCanvas.toDataURL();
+    }
+
+    // ★★★★★ 新設 (Phase 4A11B-11) ★★★★★
+    /**
+     * 現在アクティブなレイヤーのデータをIndexedDBに保存します。
+     */
+    async saveActiveLayerToDB() {
+        const activeLayer = this.app.layerManager.getCurrentLayer();
+        const activeIndex = this.app.layerManager.activeLayerIndex;
+        if (activeLayer) {
+            try {
+                const imageDataUrl = this._imageDataToDataURL(activeLayer.imageData);
+                await saveLayerToIndexedDB(activeIndex, activeLayer.name, imageDataUrl);
+                console.log(`💾 レイヤー "${activeLayer.name}" (ID: ${activeIndex}) をIndexedDBに保存しました。`);
+            } catch (err) {
+                console.error("IndexedDBへのレイヤー保存に失敗しました。", err);
+            }
+        }
+    }
+
+
     restoreState(state) {
         this.app.layerManager.layers = state.layers.map(layerData => {
             const layer = new Layer(layerData.name, layerData.imageData.width, layerData.imageData.height);
-            layer.id = layerData.id;
             layer.visible = layerData.visible;
             layer.opacity = layerData.opacity ?? 100;
             layer.blendMode = layerData.blendMode ?? 'normal';
@@ -661,7 +688,7 @@ class CanvasManager {
         }
 
         const activeLayer = this.app.layerManager.getCurrentLayer();
-        if (activeLayer && this._isPointOnLayer(coords, activeLayer)) {
+        if (activeLayer && coords && this._isPointOnLayer(coords, activeLayer)) {
             switch(this.app.toolManager.currentTool) {
                 case 'pen':
                     this.canvasArea.style.cursor = 'crosshair';
@@ -722,9 +749,6 @@ class CanvasManager {
 
 class ToshinkaTegakiTool {
     constructor() {
-        // ★デバッグ用ログ
-        console.log("ToshinkaTegakiTool: constructor 開始");
-        
         this.layerManager = new LayerManager(this);
         this.canvasManager = new CanvasManager(this);
         this.penSettingsManager = new PenSettingsManager(this);
@@ -734,85 +758,99 @@ class ToshinkaTegakiTool {
         this.shortcutManager = new ShortcutManager(this);
         this.layerUIManager = new LayerUIManager(this);
         this.bucketTool = new BucketTool(this);
-        this.isInitialized = false;
 
         this.shortcutManager.initialize();
         this.toolManager.setTool('pen');
-        
-        // ★デバッグ用ログ
-        console.log("ToshinkaTegakiTool: constructor 完了");
+        // ★★★★★ 変更 (Phase 4A11B-11) ★★★★★
+        // 初期レイヤーの作成は、DB復元処理の後に行うため、ここでは呼び出さない。
+        // this.layerManager.setupInitialLayers(); 
     }
 
+    // ★★★★★ 新設 (Phase 4A11B-11) ★★★★★
     /**
-     * ★★★★★ 新設 (v3.2.1) ★★★★★
-     * アプリケーションの初期化処理。DBからのデータ復元や最初のレイヤー作成を行う。
+     * アプリケーションの非同期初期化処理を行います。
+     * IndexedDBからレイヤーを復元し、なければ新しいレイヤーを作成します。
      */
     async initialize() {
-        if (this.isInitialized) return;
-        console.log("ToshinkaTegakiTool: initialize 開始");
+        console.log("🛠️ アプリケーションの初期化を開始します...");
 
-        try {
-            const savedLayers = await loadLayersFromIndexedDB();
-            
-            if (savedLayers && savedLayers.length > 0) {
-                console.log("💾 IndexedDBからデータを復元します...");
-                this.layerManager.layers = [];
+        // DataURL形式の画像データをImageDataオブジェクトに変換するヘルパー関数
+        const dataURLToImageData = (dataURL, width, height) => {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = width;
+                    canvas.height = height;
+                    ctx.drawImage(img, 0, 0);
+                    resolve(ctx.getImageData(0, 0, width, height));
+                };
+                img.onerror = reject;
+                img.src = dataURL;
+            });
+        };
 
-                const layerPromises = savedLayers.map(async (layerData) => {
-                    const image = new Image();
-                    await new Promise(resolve => {
-                        image.onload = resolve;
-                        image.src = layerData.imageData;
-                    });
+        const savedLayers = await loadLayersFromIndexedDB();
 
-                    const tempCanvas = document.createElement('canvas');
-                    const tempCtx = tempCanvas.getContext('2d');
-                    tempCanvas.width = image.width;
-                    tempCanvas.height = image.height;
-                    tempCtx.drawImage(image, 0, 0);
-                    const imageData = tempCtx.getImageData(0, 0, image.width, image.height);
-                    
-                    const newLayer = new Layer(layerData.name, imageData.width, imageData.height);
-                    newLayer.id = layerData.id;
+        if (savedLayers && savedLayers.length > 0) {
+            console.log("💾 IndexedDBからレイヤーデータを復元します。", savedLayers);
+            const restoredLayers = [];
+            for (const savedLayer of savedLayers) {
+                const newLayer = new Layer(
+                    savedLayer.name,
+                    this.canvasManager.width,
+                    this.canvasManager.height
+                );
+                try {
+                    const imageData = await dataURLToImageData(
+                        savedLayer.imageData,
+                        newLayer.imageData.width,
+                        newLayer.imageData.height
+                    );
                     newLayer.imageData = imageData;
-                    newLayer.gpuDirty = true;
-                    return newLayer;
-                });
-                
-                const newLayers = await Promise.all(layerPromises);
-                this.layerManager.layers = newLayers;
-                this.layerManager.switchLayer(newLayers.length - 1);
-                
-            } else {
-                console.log(" IndexedDBに保存されたデータはありません。新規に開始します。");
-                this.layerManager.setupInitialLayers();
+                    restoredLayers.push(newLayer);
+                } catch (error) {
+                     console.error(`レイヤー "${savedLayer.name}" のImageData復元に失敗しました。`, error);
+                     restoredLayers.push(newLayer); // 失敗した場合は空のレイヤーとして追加
+                }
             }
-        } catch (error) {
-            console.error("🚨 初期化処理中にエラーが発生しました:", error);
-            console.log("エラーが発生したため、フォールバックとして新規レイヤーを作成します。");
+            this.layerManager.layers = restoredLayers;
+            this.layerManager.switchLayer(0);
+            this.layerUIManager.renderLayerList();
+            this.canvasManager.saveState(); // 復元状態を初期履歴として保存
+
+        } else {
+            console.log("💾 保存されたデータがないため、初期レイヤーを作成します。");
+            await clearAllLayersFromIndexedDB(); // 念のためDBをクリア
             this.layerManager.setupInitialLayers();
-        } finally {
-            this.canvasManager.renderAllLayers();
-            this.layerUIManager.updateLayerList();
-            this.isInitialized = true;
-            console.log("ToshinkaTegakiTool: initialize 完了 ✨");
+            // 初期レイヤーもDBに保存しておく
+            this.canvasManager.saveActiveLayerToDB();
         }
+
+        this.canvasManager.renderAllLayers();
+        console.log("✅ アプリケーションの初期化が完了しました。");
     }
 }
 
-// ★★★★★ 変更 (v3.2.1) ★★★★★
-// 初期化処理の呼び出し方を修正
-window.addEventListener('DOMContentLoaded', () => {
-    console.log("DOMContentLoaded イベント発火");
+// ★★★★★ 修正 (Phase 4A11B-11) ★★★★★
+// 起動時の処理をasync/awaitを使って非同期処理に対応
+window.addEventListener('DOMContentLoaded', async () => {
     if (!window.toshinkaTegakiInitialized) {
         window.toshinkaTegakiInitialized = true;
-        try {
-            const app = new ToshinkaTegakiTool();
-            window.toshinkaTegakiTool = app;
-            console.log("ToshinkaTegakiTool インスタンス化成功。非同期初期化を開始します。");
-            app.initialize(); // 新設した初期化メソッドを呼び出す
-        } catch (error) {
-            console.error("🚨 アプリケーションの起動に失敗しました:", error);
+        
+        // 指示書に基づき、WebGL/Canvasの静的初期化処理を呼び出す
+        // ※RenderingBridgeクラスにinit静的メソッドが実装されていることが前提
+        if (typeof RenderingBridge.init === 'function') {
+            RenderingBridge.init();
+            console.log("🚀 RenderingBridge.init() を呼び出しました。");
+        } else {
+            console.warn("⚠️ RenderingBridge.init() が見つかりませんでした。このメソッドは指示書で必須とされています。");
         }
+        
+        // アプリケーション本体のインスタンスを作成
+        window.toshinkaTegakiTool = new ToshinkaTegakiTool();
+        // DBからの復元などを含む非同期の初期化処理を実行
+        await window.toshinkaTegakiTool.initialize();
     }
 });
