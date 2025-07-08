@@ -1,0 +1,112 @@
+📘 Phase 4A11B-11 指示書：IndexedDBによるレイヤー一時保存機能の導入
+
+---
+
+## 🎯 目的
+
+* セルバッファ転写処理の失敗（getTransformedImageDataがnullなど）やクラッシュ時に備え、**ImageDataのバックアップをIndexedDBに保存**する仕組みを導入する。
+* **現在のレイヤー画像（ImageData）をIndexedDBに一時保存し、転写失敗時に復元できるようにする。**
+
+---
+
+## 🗂️ 対象ファイル
+
+* `core-engine.js`（修正）
+* `libs/db-indexed.js`（🆕新規追加）
+
+---
+
+## ✅ 仕様概要
+
+### 📦 IndexedDB 概要
+
+* データベース名: `TegakiToolDB`
+* ストア名: `layers`
+* 主キー: `layerId`（文字列）
+* 保存対象: `ImageData` オブジェクト（レイヤー描画内容）
+
+### 🆕 ファイル構成変更
+
+```
+/Phase4A11B-11
+├── core-engine.js               ← IndexedDB対応に修正
+├── libs/
+│   └── db-indexed.js           ← 新規追加
+```
+
+### 🔗 HTMLへの組み込み指針(HTML側は既に作業済）
+
+#### ✳️ 最終構成案（推奨）
+
+HTMLでは最低限のエントリーポイントのみを記述し、**他の依存ライブラリは core-engine.js 側でimport**する:
+
+```html
+<!-- ToshinkaTegakiTool.html -->
+<script type="module" src="core-engine.js"></script>
+```
+
+core-engine.js の冒頭で以下のように明記：
+
+```js
+// core-engine.js の冒頭
+import './libs/gl-matrix-min.js';  // glMatrixをグローバルに提供
+import './libs/dat.gui.min.js';    // GUI用
+import { initDB, saveLayerImage, loadLayerImage } from './libs/db-indexed.js';
+```
+
+---
+
+## 🛠 core-engine.js 修正ポイント
+
+### 🟢 1. IndexedDB 初期化
+
+* アプリ起動直後（canvasやengine初期化完了後）に以下を呼び出す：
+
+```js
+await initDB();
+```
+
+### 🟡 2. セルバッファにコピーする際、ImageDataをIndexedDBに保存
+
+```js
+saveLayerImage(activeLayer.id, ctx.getImageData(0, 0, width, height));
+```
+
+### 🔴 3. 転写失敗時にIndexedDBから復元
+
+```js
+const fallbackImage = await loadLayerImage(activeLayer.id);
+if (fallbackImage) {
+    ctx.putImageData(fallbackImage, 0, 0);
+    console.warn('✅ IndexedDBからレイヤー画像を復元しました');
+} else {
+    console.warn('❌ IndexedDBにも復元画像が見つかりませんでした');
+}
+```
+
+---
+
+## 📁 `libs/db-indexed.js` 初期コード（ver.1.0）
+
+内容は前回送付した内容と同一で、**IndexedDBの初期化・保存・読み込み・削除**が可能です。
+
+---
+
+## 🧪 テスト項目
+
+* [ ] Vキー移動後の転写が成功する（今まで通り）
+* [ ] 転写に失敗した場合、ImageDataがIndexedDBから復元される
+* [ ] IndexedDBの初期化時にエラーが出ない
+* [ ] core-engine.js を単体でAIに渡しても `import` のみで完結している
+
+---
+
+## ✅ 備考
+
+* IndexedDBは**レイヤー単位のバックアップ用**として導入されており、永続保存やエクスポート機能は今後のPhaseにて強化予定。
+* IndexedDBに保存されたデータはブラウザごとに保持されます。
+* gl-matrixやdat.guiは既にグローバル提供を行っているためimportではなくscriptタグでの読み込みも可能ですが、今回は統一的に`core-engine.js`で管理します。
+
+---
+
+以上

@@ -106,8 +106,9 @@
  * - merge-layer-btn: レイヤー結合ボタン
  *
  * [ libs他へのアクセス]
- * - <script src="./libs/gl-matrix-min.js"></script>
- * - <script src="./libs/dat.gui.min.js"></script>
- * - <script type="module" src="core-engine.js"></script>
+ * -<script src="./libs/gl-matrix-min.js"></script>
+ * -<script src="./libs/dat.gui.min.js"></script>
+ * -<script type="module" src="libs/db-indexed.js">
+ * -<script type="module" src="core-engine.js"></script>
  *
  * ===================================================================================
