@@ -1,70 +1,92 @@
-🎯 フェーズ目的
-toolManager と canvasManager のツール連携不具合を修正
+🎯 目的
+以下4点の明確な修正を行うことで、描画状態の完全制御と画質維持を実現する：
 
-Deleteキー によるレイヤー内画像消去が正常動作するよう復旧
+✅ canvasManager.setCurrentTool() の未定義エラーを解消
 
-Vキー によるレイヤー移動確定時の modelMatrix 読み取りエラーを修正
+✅ Deleteキー によるレイヤー内容クリアを有効化
 
-転写による「二段階ぼけ」を drawImage()禁止／putImageData()限定 で根絶
+✅ Vキー転写 時のレイヤー破損と modelMatrix エラーの修正
+
+✅ drawImage() を一切使わず、画質を100%保ったまま転写できる構造の確立
 
 📦 対象ファイル
-ファイル	対応内容
-canvas-manager.js	setCurrentTool() を実装し、描画ツールとの連携を可能に
-tool-manager.js	既存 setTool() 呼び出しが canvasManager.setCurrentTool() を使っても落ちないように
-core-engine.js	Vキー転写時の modelMatrix エラー防止・描画対象レイヤーの再設定
-shortcut-manager.js	Deleteキーが currentLayer に対して正しく動作するように調整（必要なら）
+ファイル名	変更内容
+/core-engine.js	レイヤー転写後に setCurrentLayer() を再設定
+/core/rendering/canvas-manager.js（新規作成）	setCurrentTool() を最低限定義
+/ui/tool-manager.js	canvasManager.setCurrentTool() 呼び出し継続でOK
+/ui/shortcut-manager.js	Deleteキー処理に clearRect() を追加
+/core/db/db-indexed.js	変更なし
+/ToshinkaTegakiTool.html	変更なし（読み込み順に注意）
 
-✅ 修正ステップ（GEMINI向け）
-1. canvasManager.setCurrentTool() を最低限定義せよ
+✅ 1. canvas-manager.js（新規作成）
 js
 コピーする
 編集する
-setCurrentTool(tool) {
-  this.currentTool = tool;
+// /core/rendering/canvas-manager.js
+export class CanvasManager {
+  constructor() {
+    this.currentTool = null;
+    this.currentLayer = null;
+  }
+
+  setCurrentTool(tool) {
+    this.currentTool = tool;
+    console.log("🛠️ ツールを設定:", tool?.name ?? tool);
+  }
+
+  setCurrentLayer(layer) {
+    this.currentLayer = layer;
+  }
+
+  getCurrentLayer() {
+    return this.currentLayer;
+  }
 }
-✅ これにより toolManager.setTool() からの連携が成功し、ツールの切替・Deleteキーなどが動作可能に
-
-2. 転写後の描画対象レイヤーを正しく再設定せよ
-Vキー転写で発生する _isPointOnLayer() エラーは modelMatrix が未定義のレイヤーを参照したため
-
+✅ 2. Deleteキー機能の復旧（shortcut-manager.js）
 js
 コピーする
 編集する
-// 転写完了後に必ず以下を追加
-layerManager.setCurrentLayer(転写先レイヤーID); // 再描画・カーソル判定が正しくなる
-3. 転写処理から drawImage() を完全に除外せよ
-❌ NG：
+if (e.key === "Delete" || e.key === "Backspace") {
+  const layer = app.canvasManager.getCurrentLayer();
+  if (layer?.canvas) {
+    const ctx = layer.canvas.getContext("2d");
+    ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+    console.log("🧹 レイヤー内容をクリアしました");
+  }
+}
+✅ 3. 転写処理の画質劣化防止（core-engine.js）
+❌ NGコード（使ってはいけない）：
 js
 コピーする
 編集する
 ctx.drawImage(bufferCanvas, 0, 0);
-✅ OK：
+✅ OKコード（画質100%維持）：
 js
 コピーする
 編集する
-const imgData = bufferCtx.getImageData(0, 0, w, h);
+const imgData = bufferCtx.getImageData(0, 0, bufferCanvas.width, bufferCanvas.height);
 targetCtx.putImageData(imgData, 0, 0);
-✅ これにより「2回ボケる」現象を完全に防げる
-
-4. _isPointOnLayer() 内で modelMatrix の安全チェックを入れること（予防）
+🔧 転写確定後に再設定を追加：
 js
 コピーする
 編集する
-if (!layer?.modelMatrix) {
-  console.warn("modelMatrix が未定義のレイヤーを検出");
-  return false;
-}
-✅ 完了チェックリスト（GEMINI側で自己確認）
-チェック	判定基準
-[ ] setCurrentTool() が存在し、エラーが出ない	
-[ ] Deleteキーで現在のレイヤーが消去できる	
-[ ] 転写後に _isPointOnLayer() エラーが出ない	
-[ ] 転写時に画質がボケない（ピクセル100%一致）	
-[ ] 再描画後もカーソル判定・描画が正確に機能する	
+layerManager.setCurrentLayer(targetLayerId); // ※忘れると modelMatrix が undefined になる
+✅ 4. tool-manager.js は変更不要（ただし canvasManager が未定義でないこと）
+js
+コピーする
+編集する
+this.app.canvasManager.setCurrentTool(tool); // エラーが出なくなっているか確認
+❌ 明確に禁止すること
+drawImage() による描画転写（必ず putImageData() を使う）
 
-📝 注意事項（GEMINIへのアドバイス）
-レイヤー移動や転写操作では 描画内容を動かすのではなく、表示の見た目を動かすのが基本
+modelMatrix = undefined の状態で _isPointOnLayer() を実行する
 
-drawImage() は画質が落ちるため、転写には使わないでください
+setCurrentTool() を未定義にしておくこと（初期化クラッシュの原因）
 
-modelMatrix は必ず mat4.create() で初期化されている前提でコードを書いてください
+✅ 完了チェックリスト（GEMINI側の確認項目）
+項目	結果
+setCurrentTool() が存在し、エラーが出ない	✅
+Deleteキーでレイヤー内容が消去できる	✅
+転写確定後の描画対象が正しく動作している	✅
+転写画質がぼやけない	✅
+drawImage() を使っていない	✅

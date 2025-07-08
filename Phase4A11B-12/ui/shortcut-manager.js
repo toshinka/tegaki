@@ -135,7 +135,20 @@ export class ShortcutManager {
                 case 'h': this.app.canvasManager.flipHorizontal(); handled = true; break;
                 case 'f': this.app.canvasManager.flipVertical(); handled = true; break; // Flip
                 case 'home': case '0': this.app.canvasManager.resetView(); handled = true; break;
-                case 'delete': case 'backspace': this.app.layerManager.clearActiveLayer(); handled = true; break;
+                
+                // ★★★★★ 修正 (Phase 4A11B-12) ★★★★★
+                // Deleteキー/Backspaceキーでレイヤー内容をクリアする
+                case 'delete':
+                case 'backspace':
+                    const layer = this.app.canvasManager.getCurrentLayer();
+                    if (layer) {
+                        layer.clear(); // Layer.clear()でImageDataをクリア
+                        this.app.canvasManager.renderAllLayers(); // 画面を再描画
+                        this.app.canvasManager.saveState(); // 操作をUndo履歴に保存
+                        console.log("🧹 レイヤー内容をクリアしました");
+                    }
+                    handled = true;
+                    break;
             }
         }
 

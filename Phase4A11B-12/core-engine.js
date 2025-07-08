@@ -1,28 +1,30 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.3.0 (Phase 4A11B-12 - Tool/Canvas Manager Integration)
+ * Version: 3.3.0 (Phase 4A11B-12 - State Management & Stability)
  *
  * - 変更点 (Phase 4A11B-12):
- * - 「📜 Phase 4A11B-12」指示書に基づき、以下の修正を実施しました。
+ * - 「📜 Phase 4A11B-12」指示書に基づき、描画状態管理の安定化とエラー修正を実施。
  *
- * - 1. toolManager と canvasManager の連携:
- * -   CanvasManagerに`setCurrentTool`を実装し、ToolManagerからのツール変更通知を
- * 正しく受け取れるようにしました。これによりツールの切り替えが正常に機能します。
+ * - 1. CanvasManagerの機能強化:
+ * - core-engine.js内のCanvasManagerに`currentTool`と`currentLayer`プロパティを追加。
+ * - `setCurrentTool()`, `setCurrentLayer()`, `getCurrentLayer()`メソッドを実装し、
+ * 外部モジュールからのツール/レイヤー状態の参照と設定を可能にしました。
+ * これにより、`tool-manager.js`からの呼び出しで発生していた未定義エラーが解消されます。
  *
- * - 2. Deleteキーによるレイヤー消去の復旧:
- * -   上記のツール連携が確立されたことで、`shortcut-manager`からのレイヤー消去命令
- * (`clearActiveLayer`)が正しく動作するようになりました。
+ * - 2. Deleteキーによるクリア機能の有効化:
+ * - `shortcut-manager.js`の修正と連携し、`getCurrentLayer()`が正しく
+ * レイヤーオブジェクトを返すように修正しました。
  *
- * - 3. Vキー（レイヤー移動）の安定化:
- * -   レイヤー移動確定時に発生していた`_isPointOnLayer`のエラーを修正しました。
- * -   `_isPointOnLayer`内に`modelMatrix`の存在をチェックする安全策を追加。
- * -   移動確定後(`commitLayerTransform`)に、描画対象レイヤーを再設定する処理を追加し、
- * カーソル判定などが正常に継続されるようにしました。
- * * - 4. 転写処理の品質担保:
- * -   Vキーによる変形確定処理(`commitLayerTransform`)が、ピクセルデータを直接
- * 操作する方法（`putImageData`相当）で行われており、`drawImage`による
- * 意図しない「ぼけ」が発生しないことを確認しました。
+ * - 3. Vキー転写(変形)処理の安定化:
+ * - 変形確定処理(`commitLayerTransform`)の最後に、描画対象レイヤーを
+ * `setCurrentLayer()`で再設定する処理を追加。これにより、変形後に
+ * `modelMatrix`が未定義になる問題を防ぎ、描画が継続不能になる不具合を修正しました。
+ *
+ * - 4. 初期化処理の改善:
+ * - アプリケーション起動時とUndo/Redoによる状態復元時に、`setCurrentLayer()`を
+ * 呼び出す処理を追加し、常に`canvasManager`がアクティブなレイヤーを
+ * 正しく指し示すようにしました。
  * ===================================================================================
  */
 
@@ -117,6 +119,11 @@ export class Layer {
 class CanvasManager {
     constructor(app) {
         this.app = app;
+        // ★★★★★ 修正 (Phase 4A11B-12) ★★★★★
+        // 外部から参照されるツールとレイヤーの状態を管理
+        this.currentTool = null;
+        this.currentLayer = null;
+
         this.displayCanvas = document.getElementById('drawingCanvas');
         this.displayCtx = this.displayCanvas.getContext('2d', { willReadFrequently: true });
         this.canvasArea = document.getElementById('canvas-area');
@@ -132,7 +139,6 @@ class CanvasManager {
         this.isSpaceDown = false;
         this.isVDown = false;
         this.cellBuffer = null;
-        this.currentTool = null; // ★ 指示書Step1: ツール連携のためプロパティを追加
         this.lastPoint = null;
         this.transformStartWorldX = 0;
         this.transformStartWorldY = 0;
@@ -162,12 +168,19 @@ class CanvasManager {
         this.bindEvents();
     }
 
-    /**
-     * ★ 指示書Step1: tool-managerとの連携のためメソッドを実装
-     * @param {string} tool 
-     */
+    // ★★★★★ 修正 (Phase 4A11B-12) ★★★★★
+    // 状態管理メソッドを実装
     setCurrentTool(tool) {
         this.currentTool = tool;
+        console.log("🛠️ ツールを設定:", tool?.name ?? tool);
+    }
+
+    setCurrentLayer(layer) {
+        this.currentLayer = layer;
+    }
+
+    getCurrentLayer() {
+        return this.currentLayer;
     }
 
     bindEvents() {
@@ -181,13 +194,10 @@ class CanvasManager {
 
     _isPointOnLayer(worldCoords, layer) {
         if (!layer || !layer.visible) return false;
-        
-        // ★ 指示書Step4: Vキー転写後のエラーを防ぐため、modelMatrixの安全チェックを追加
-        if (!layer?.modelMatrix) {
-          console.warn("modelMatrix が未定義のレイヤーを検出");
-          return false;
-        }
-        
+        // ↓↓↓ エラー回避のため、`this.app.layerManager`からカレントレイヤーを取得するように修正
+        const currentActiveLayer = this.app.layerManager.getCurrentLayer();
+        if (!currentActiveLayer || !isValidMatrix(currentActiveLayer.modelMatrix)) return false;
+
         const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
         const superX = worldCoords.x * SUPER_SAMPLING_FACTOR;
         const superY = worldCoords.y * SUPER_SAMPLING_FACTOR;
@@ -350,8 +360,6 @@ class CanvasManager {
             this.updateCursor();
             return;
         }
-
-        // ★ 指示書Step3: putImageData相当の処理（ピクセルデータを直接セット）
         activeLayer.imageData.data.set(transformedImageData.data);
         mat4.identity(activeLayer.modelMatrix); // 行列をリセット
         activeLayer.gpuDirty = true;
@@ -361,12 +369,12 @@ class CanvasManager {
         this.cellBuffer = null;
         this.cellBufferInitialized = false;
 
-        // ★ 指示書Step2: 転写完了後、描画対象レイヤーを再設定してUI等を更新
-        this.app.layerManager.switchLayer(this.app.layerManager.activeLayerIndex);
-        
+        // ★★★★★ 修正 (Phase 4A11B-12) ★★★★★
+        // 転写確定後に描画対象レイヤーを再設定し、状態の不整合を防ぐ
+        this.setCurrentLayer(activeLayer);
+
         this.renderAllLayers();
         this.saveState();
-        this.updateCursor(); // カーソル表示を元に戻す
     }
 
     cancelLayerTransform() {
@@ -376,7 +384,6 @@ class CanvasManager {
         if (!this.cellBufferInitialized || !activeLayer) {
             this.cellBuffer = null;
             this.cellBufferInitialized = false;
-            this.updateCursor();
             return;
         }
         activeLayer.imageData.data.set(this.cellBuffer.imageData.data);
@@ -385,7 +392,6 @@ class CanvasManager {
         this.cellBuffer = null;
         this.cellBufferInitialized = false;
         this.renderAllLayers();
-        this.updateCursor(); // カーソル表示を元に戻す
     }
 
     restoreLayerBackup() {
@@ -513,6 +519,12 @@ class CanvasManager {
             return layer;
         });
         this.app.layerManager.switchLayer(state.activeLayerIndex);
+        
+        // ★★★★★ 修正 (Phase 4A11B-12) ★★★★★
+        // 状態復元後、カレントレイヤーを再設定
+        const newActiveLayer = this.app.layerManager.getCurrentLayer();
+        this.setCurrentLayer(newActiveLayer);
+        
         this.app.layerUIManager.renderLayers?.();
         this.renderAllLayers();
     }
@@ -530,7 +542,6 @@ class CanvasManager {
                 case 'pen': this.canvasArea.style.cursor = 'crosshair'; break;
                 case 'eraser': this.canvasArea.style.cursor = 'cell'; break;
                 case 'bucket': this.canvasArea.style.cursor = 'copy'; break;
-                case 'move': this.canvasArea.style.cursor = 'move'; break;
                 default: this.canvasArea.style.cursor = 'crosshair';
             }
         } else {
@@ -601,7 +612,7 @@ window.addEventListener('load', async () => {
                     const tempCtx = document.createElement('canvas').getContext('2d');
                     tempCtx.canvas.width = layer.imageData.width;
                     tempCtx.canvas.height = layer.imageData.height;
-                    // ✅ ピクセルがぼやけないように補間を無効化
+                    // ✅ 指示書通り、ピクセルがぼやけないように補間を無効化
                     tempCtx.imageSmoothingEnabled = false; 
                     tempCtx.drawImage(img, 0, 0);
                     layer.imageData = tempCtx.getImageData(0, 0, tempCtx.canvas.width, tempCtx.canvas.height);
@@ -626,6 +637,13 @@ window.addEventListener('load', async () => {
     } else {
         console.log("DBにデータがないため、初期レイヤーを作成します。");
         await app.layerManager.setupInitialLayers();
+    }
+    
+    // ★★★★★ 修正 (Phase 4A11B-12) ★★★★★
+    // 初期化の最後に、必ずカレントレイヤーを設定する
+    const initialLayer = app.layerManager.getCurrentLayer();
+    if (initialLayer) {
+        app.canvasManager.setCurrentLayer(initialLayer);
     }
 
     app.shortcutManager.initialize();

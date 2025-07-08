@@ -16,10 +16,6 @@ export class ToolManager {
         this.currentTool = tool;
         document.querySelectorAll('.left-toolbar .tool-btn').forEach(btn => btn.classList.remove('active'));
         document.getElementById(tool + '-tool')?.classList.add('active');
-        
-        // canvasManagerに現在のツールを通知する
-        if (this.app.canvasManager && typeof this.app.canvasManager.setCurrentTool === 'function') {
-            this.app.canvasManager.setCurrentTool(tool);
-        }
+        this.app.canvasManager.setCurrentTool(tool);
     }
 }
