@@ -50,7 +50,8 @@
 │ │ 
 │ └ libs/                           // ライブラリ専用フォルダ（←★追加）
 │ 　 ├─ gl-matrix-min.js           // glMatrix 3.4.3（CDNから丸コピー）
-│ 　 └─ dat.gui.min.js             // dat.GUI（CDNから丸コピー）
+│ 　 ├─ dat.gui.min.js             // dat.GUI（CDNから丸コピー）
+│ 　 └─ db-indexed.js              <-- （Phase4A11C)🆕 新規追加！
 
 
 ※以下は改修で必要になったら組み込む
@@ -106,9 +107,8 @@
  * - merge-layer-btn: レイヤー結合ボタン
  *
  * [ libs他へのアクセス]
- * -<script src="./libs/gl-matrix-min.js"></script>
- * -<script src="./libs/dat.gui.min.js"></script>
- * -<script type="module" src="libs/db-indexed.js">
- * -<script type="module" src="core-engine.js"></script>
+ * - <script src="./libs/gl-matrix-min.js"></script>
+ * - <script src="./libs/dat.gui.min.js"></script>
+ * - <script type="module" src="core-engine.js"></script>
  *
  * ===================================================================================
