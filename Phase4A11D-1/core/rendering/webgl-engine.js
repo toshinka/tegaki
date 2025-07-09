@@ -1,9 +1,13 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.7.3 (Phase 4A11C-4 Hotfix)
+ * Version: 4.8.0 (Phase 4A11D-1)
  *
- * - 変更点 (Phase 4A11C-4 Hotfix):
+ * - 変更点 (Phase 4A11D-1):
+ * - 「📘 Phase 4A11D-1 指示書」に基づき、twgl.jsを導入。 
+ * - レイヤーFBOの管理基盤の第一歩として、twglによるFBOと描画のテスト実装を追加。 
+ * - WebGL Engine (v4.6.0 Phase4A11D-1 - twgl.js Migration Start) の指示を反映。 
+ * * - 変更点 (Phase 4A11C-4 Hotfix):
  * - 不要な末尾コメントを削除し、コードの可読性を向上。
  * * - 変更点 (Phase 4A11C-4):
  * - 「🎨Phase 4A11C-4 指示書」に基づき、getTransformedImageDataの安全性を向上。
@@ -14,6 +18,7 @@
 import { DrawingEngine } from './drawing-engine.js';
 
 const mat4 = window.glMatrix.mat4;
+const twgl = window.twgl; // [Phase 4A11D-1] twgl.js を追加
 
 export class WebGLEngine extends DrawingEngine {
     constructor(canvas) {
@@ -44,6 +49,10 @@ export class WebGLEngine extends DrawingEngine {
         this.transformOffscreenCtx = this.transformOffscreenCanvas.getContext('2d');
         
         this.identityMatrix = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+
+        // [Phase 4A11D-1] twgl.js テスト用プロパティ
+        this.twglTestResources = null;
+        this.twglTestLogged = false;
 
         try {
             this.gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: false }) || canvas.getContext('experimental-webgl', { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: false });
@@ -78,8 +87,87 @@ export class WebGLEngine extends DrawingEngine {
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
+        
+        // [Phase 4A11D-1] twgl.js テスト初期化
+        this._initTwglTest();
 
-        console.log(`WebGL Engine (v4.7.3 Phase4A11C-4 Hotfix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.8.0 Phase4A11D-1) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+    }
+
+    // [Phase 4A11D-1] twgl.js 初期化とテストFBO生成
+    _initTwglTest() {
+        if (!twgl || !this.gl) {
+            console.warn("twgl.js is not loaded or WebGL context is not available. Skipping twgl test initialization.");
+            return;
+        }
+        const gl = this.gl;
+
+        // FBO生成テスト 
+        const attachments = [{ 
+            min: gl.NEAREST, 
+            mag: gl.NEAREST, 
+            wrap: gl.CLAMP_TO_EDGE 
+        }];
+        const fboInfo = twgl.createFramebufferInfo(gl, attachments, 1, 1); 
+        if (fboInfo) {
+            console.log("✅ twgl.createFramebufferInfo() by FBO generated successfully.");
+            twgl.deleteFramebufferInfo(gl, fboInfo); // 確認後すぐに削除
+        } else {
+            console.error("❌ twgl.createFramebufferInfo() failed.");
+            return; // FBOが作れないならテストを続行しない
+        }
+
+        // テスト描画用のシェーダーとプログラム
+        const vs = `
+            attribute vec2 a_position;
+            uniform mat4 u_mvpMatrix;
+            void main() {
+                gl_Position = u_mvpMatrix * vec4(a_position, 0.0, 1.0);
+            }`;
+        const fs = `
+            precision highp float;
+            uniform vec4 u_color;
+            void main() {
+                gl_FragColor = u_color;
+            }`;
+
+        this.twglTestResources = {
+            programInfo: twgl.createProgramInfo(gl, [vs, fs]),
+            // 画面左上に赤い四角形を描画するためのバッファ
+            bufferInfo: twgl.createBufferInfoFromArrays(gl, {
+                a_position: {
+                    numComponents: 2,
+                    data: [10, 10, 400, 10, 10, 400, 400, 400],
+                },
+            }),
+        };
+    }
+
+    // [Phase 4A11D-1] twgl.js を使って指定されたFBOにテスト描画する
+    _twglDrawTestOnFBO(fbo) {
+        if (!this.twglTestResources) return;
+
+        const gl = this.gl;
+        const { programInfo, bufferInfo } = this.twglTestResources;
+
+        // 既存のFBOに描画するためにバインド
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        gl.viewport(0, 0, this.superWidth, this.superHeight);
+        
+        // twglで描画
+        gl.useProgram(programInfo.program);
+        twgl.setBuffersAndAttributes(gl, programInfo, bufferInfo);
+        const uniforms = {
+            u_mvpMatrix: this.projectionMatrix,
+            u_color: [1, 0, 0, 0.5], // 半透明の赤
+        };
+        twgl.setUniforms(programInfo, uniforms);
+        twgl.drawBufferInfo(gl, bufferInfo, gl.TRIANGLE_STRIP);
+
+        if (!this.twglTestLogged) {
+            console.log("✅ twgl.js FBO rendering test successful");
+            this.twglTestLogged = true; // ログが何度も出ないようにフラグを立てる
+        }
     }
 
     _initProjectionMatrix() {
@@ -250,15 +338,11 @@ export class WebGLEngine extends DrawingEngine {
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         }
         
-        // ▼▼▼▼▼ Phase 4A11C-1 修正 ▼▼▼▼▼
-        // 指示書に基づき、描画ソースを transformStage || imageData に変更
-        // これにより、変形中はtransformStageの内容がテクスチャとして使われる
         const sourceImageData = layer.transformStage || layer.imageData;
         
         if (layer.gpuDirty && sourceImageData) {
             const sourceData = sourceImageData.data;
             const sourceWidth = sourceImageData.width;
-            // ▲▲▲▲▲ Phase 4A11C-1 修正 ▲▲▲▲▲
             
             const destImageData = new ImageData(this.superWidth, this.superHeight);
             const destData = destImageData.data;
@@ -462,16 +546,11 @@ export class WebGLEngine extends DrawingEngine {
         
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
  
-        // ▼▼▼▼▼ Phase 4A11C-3 & 4A11C-4 修正 ▼▼▼▼▼
-        // 指示書に基づき、GPUコマンドの同期と完了を待つ（重要）
         gl.finish();
-        // ▲▲▲▲▲ Phase 4A11C-3 & 4A11C-4 修正 ▲▲▲▲▲
 
         const width = this.superWidth;
         const height = this.superHeight;
 
-        // ▼▼▼▼▼ Phase 4A11C-4 修正 ▼▼▼▼▼
-        // 指示書に基づき、不正な読み出しサイズをチェック
         if (width <= 0 || height <= 0 || isNaN(width) || isNaN(height)) {
             console.error(`❌ getTransformedImageData: 不正な読み出しサイズです。 width: ${width}, height: ${height}`);
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -479,7 +558,6 @@ export class WebGLEngine extends DrawingEngine {
             gl.deleteFramebuffer(tempFBO);
             return null;
         }
-        // ▲▲▲▲▲ Phase 4A11C-4 修正 ▲▲▲▲▲
 
         const pixelBuffer = new Uint8Array(width * height * 4);
         gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixelBuffer);
@@ -561,6 +639,9 @@ export class WebGLEngine extends DrawingEngine {
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         }
         
+        // [Phase 4A11D-1] twgl.jsによるテスト描画を既存の合成FBOに追加
+        this._twglDrawTestOnFBO(this.superCompositeFBO);
+
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
     
@@ -619,10 +700,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.readPixels(sx, readY, sWidth, sHeight, gl.RGBA, gl.UNSIGNED_BYTE, superBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-        // ▼▼▼▼▼ Phase 4A11C-1 修正 ▼▼▼▼▼
-        // 書き込み先は通常のimageDataでOK。transformStageは読み取り専用。
         const targetImageData = layer.imageData;
-        // ▲▲▲▲▲ Phase 4A11C-1 修正 ▲▲▲▲▲
         const targetData = targetImageData.data;
         const factor = this.SUPER_SAMPLING_FACTOR;
         
