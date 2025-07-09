@@ -31,7 +31,7 @@ tempCtx.drawImage(srcCanvas, 0, 0);
 js
 コードをコピーする
 const srcCtx = srcCanvas.getContext('2d');
-const imgData = srcCtx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
+const imgData = srcCtx.getImageData(s0, 0, srcCanvas.width, srcCanvas.height);
 tempCtx.putImageData(imgData, 0, 0);
 📌 drawImageによるスケーリング、透明度の劣化、色にじみが発生するため完全禁止とする
 

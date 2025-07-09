@@ -1,0 +1,87 @@
+🎯 フェーズ目的
+Vキーによるレイヤー移動モードにおいて、画像がボケる／右下に少しずつズレる現象を完全に修正します。
+これは画質処理の問題ではなく、座標変換・データ転写のタイミングや回数に根本原因があると推測されます。
+
+🔍 現象の再現
+操作	結果
+Vキーを押す → セルに転写	転写画像が若干劣化する（1回目のボケ）
+セルをドラッグ移動して離す → 台紙に再転写	再度ボケる、右下に数px移動（2回目のボケ）
+
+📦 調査対象ファイル
+ファイル	関連関数
+core-engine.js	commitLayerTransform()（転写確定）
+beginLayerTransform()（転写開始）
+canvas-manager.js	startDrawing(), updateCursor()
+transform-utils.js	transformWorldToLocal(), transformLocalToWorld()
+
+✅ 修正方針と検証ステップ
+✅ 1. 転写処理が二重に走っていないか確認する
+⛳ 確認内容：
+beginLayerTransform() → セルへコピー
+
+commitLayerTransform() → 台紙へ貼り戻し
+
+この間に、modelMatrixなどの変形情報を誤って描画内容に埋め込んでいないか？
+
+✅ 検証ログを仕込む：
+js
+コピーする
+編集する
+console.log("[転写デバッグ] modelMatrix:", layer.modelMatrix);
+console.log("[転写デバッグ] 転写元 ImageData サイズ:", imgData.width, imgData.height);
+✅ 2. getImageData() で取得している範囲が正しいか確認する
+❌ NG例（全Canvasから取得しすぎ）：
+js
+コピーする
+編集する
+ctx.getImageData(0, 0, canvas.width, canvas.height);
+✅ OK例（アクティブレイヤーの描画範囲のみ）：
+js
+コピーする
+編集する
+ctx.getImageData(x, y, width, height); // ← もし範囲がわかっていれば限定する
+📌 備考：
+getImageDataは透明なピクセルも含むため、不要な空白含む場合がある → 転写先でズレる可能性
+
+✅ 3. modelMatrixの累積ミスをチェックする
+🔍 確認点：
+js
+コピーする
+編集する
+// modelMatrixに平行移動を加算していないか？
+translate(modelMatrix, dx, dy); // ← 繰り返しでズレていないか？
+必ず初期化 or 差分で動かす
+
+buildMatrixFromGUI() を使って都度リビルドするほうが安全
+
+✅ 4. putImageData() の貼り付け位置を0,0に固定しているか？
+❌ NG：
+js
+コピーする
+編集する
+putImageData(imgData, someOffsetX, someOffsetY); // ← これだとズレる
+✅ OK：
+js
+コピーする
+編集する
+putImageData(imgData, 0, 0); // ← 描画先canvasと同じサイズなら0,0で良い
+✅ チェックリスト（GEMINI実装後の検証項目）
+チェック	検証方法
+[ ] Vキーで1回しか転写されていないか？	Consoleログで begin/commit の発火回数を確認
+[ ] 画面上の画像が右下にずれていかないか？	何度か連続移動した後に位置が正しいか検証
+[ ] セル→台紙の転写時に画像が劣化しないか？	ピクセル精度で比較、同じ色・形で残っているか
+[ ] modelMatrixがリセットされているか？	commit後に identity に戻されているか確認
+[ ] putImageDataの位置は (0, 0) になっているか？	実装とログで確認
+
+🧱 開発補助用ログ例（任意で仕込んでよい）
+js
+コピーする
+編集する
+console.log("[LayerTransform] 転写中 modelMatrix:", JSON.stringify(layer.modelMatrix));
+console.log("[LayerTransform] 転写元 ImageData:", imgData.width, imgData.height);
+console.log("[LayerTransform] putImageData 位置:", x, y);
+🚦進行戦略まとめ
+フェーズ判定	内容
+Phase4A11B-15	画質を劣化させる手段（drawImage）は排除済み
+Phase4A11B-16	ロジック上のミス（2重適用／ズレ）を解析・根絶する段階
+Phase4A11C〜	modelMatrix・transform-utilsの最適化フェーズへ（UI連動など）
