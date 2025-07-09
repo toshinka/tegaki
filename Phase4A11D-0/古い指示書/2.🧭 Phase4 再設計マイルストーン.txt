@@ -1,0 +1,101 @@
+🧭 Phase4 再設計マイルストーン案（v3.0草案）
+フェーズ	名称	目的	技術要点	完了条件
+4A11C	🧩 transform-stage導入	非破壊的なレイヤー移動構造の確立	transformStage追加、バッファ転写の責務分離	V移動時に絵が消えず、描画バグが起きない
+4A11D	🖌️ ペンとカラー復旧	色や太さの正しい描画、パレット連携の再構築	currentColor, currentSize制御、ColorManager接続	色・太さ・消しゴム切替が正常動作
+4A11E	🌀 回転と拡縮	V+Shiftや方向キーによる回転・拡縮導入（仮想レイヤー上）	modelMatrixのrotateZ, scale操作	回転は破壊なし、拡縮は破壊覚悟で導入可
+4A11F	🧯 再描画最適化 & safety処理	V移動中の補間バグ・描画ズレの徹底排除	gl.finish(), 描画フラグ、テクスチャdirty化整理	レイヤー移動に描画乱れが一切ない
+4A11Z	📦 Phase4最終統合安定版	Canvas2D完全脱却 & WebGL安定移行	非破壊転写、IndexedDB復元、UI各部連携復旧	ショートカット/UI全てと連携して動作可能
+
+🎯 Phase4 最終到達目標（定義）
+レイヤーごとに modelMatrix による平行移動・回転・拡縮を非破壊で適用できる
+
+Vキー単体：平行移動、V+Shift or 方向キー：回転・拡縮
+
+転写（ベイク）操作は任意（確定時）のみ発生し、操作途中ではピクセルの劣化が発生しない
+
+色・太さ・透明度の制御が可能で、UIとも同期する
+
+🧪 検討中技術（今は導入見送り）
+技術	採用時期	理由
+PixiJS, Skiaなどの描画エンジン	Phase6以降	描画系統を再設計する時にまとめて移行
+WebGPU移行	Phase7またはオプション分岐	canvas全再設計が必要になるため
+ESM + Vite構成	Phase5	ファイル分割と依存解消が揃ってからで十分
+undo/redo +履歴管理	Phase4完了後に本格導入	現在は転写単位で暫定対応で十分
+
+
+
+🧭 Phase 4A11C：レイヤー変形基盤「transformStage」導入・安定化フェーズ
+✅ 目的（Phase 4A11B-21までの知見を踏まえて）
+「レイヤー変形処理の画質劣化・不整合問題」を解消しつつ、
+今後のエフェクト・アニメ・WEBGPU対応を見据えた変形管理基盤の第一歩を確立。
+
+Canvas2DやdrawImage()系の一時凌ぎではなく、**構造的で拡張可能な変形レイヤーステージ(transformStage)**へ移行。
+
+中長期で「エフェクト合成・タイムライン制御」へと進むためのモダンな再設計の足場を固める。
+
+🏗️ Phase 4A11C フェーズ設計（予定）
+サブフェーズ	内容	実装AI対象	概要
+C-0	指示書適用準備	ChatGPT	指示書と構造設計を提供
+C-1	transformStage基盤クラス導入	GEMINI	Layer構造に中間変形レイヤー追加
+C-2	WebGL描画処理へのtransformStage統合	GEMINI	drawLayer()をtransformStage対応に改修
+C-3	書き込み/転写処理の構造化	GEMINI	beginLayerTransform()/commitLayerTransform()整理
+C-4	不透明度・ブレンドの中間合成検証	GEMINI	putImageDataの制限に対処、合成精度向上
+C-5	破棄/キャンセル/復帰動作の整理	GEMINI	レイヤーのUndoやキャンセルの反映処理強化
+C-6	UI連携検証 + debug補助	GEMINI	dat.GUI系統/デバッグログ/可視化整備
+C-F	検証と仕上げ（Fix）	ChatGPT + Gemini	最終調整と共通処理の部品化など
+
+
+🎯 目的
+Layer構造に「中間変形ステージ（transformStage）」を追加し、セルバッファ描画・変形・転写の流れを明確化する。
+
+画質劣化の根本原因である 中間転写の重複、drawImage補間、小数座標移動 を回避する。
+
+今後のアニメ/タイムライン対応（移動・拡大縮小・回転のKeyFrame管理）を見据えた設計。
+
+📦 実装対象ファイル（3点）
+core-engine.js
+
+rendering-bridge.js
+
+webgl-engine.js
+
+🧱 transformStageの構造案（Layerに追加）
+js
+コピーする
+編集する
+Layer = {
+  id: string,
+  name: string,
+  visible: boolean,
+  imageData: ImageData,         // 常時保持される元画像
+  modelMatrix: mat4,            // 表示用の変形行列
+  transformStage?: ImageData,   // 変形処理の中間結果を一時保持（任意）
+  gpuDirty: boolean,
+  ...
+
+✅ GEMINIに指示すべき要点（C-1～C-2の初期フェーズ）
+transformStage を Layer に追加（初期はnull）
+
+beginLayerTransform()でのクリア処理や転写はtransformStageに一時保存する形に移行
+
+imageData → transformStage への転写（セル）
+
+commitLayerTransform()時は transformStage を imageData に反映してから削除
+
+drawLayer()側も transformStage がある場合はそちらを優先的に描画
+
+例: const tex = layer.transformStage || layer.imageData
+
+🧠 補足知識（GEMINI向けに説明すること）
+transformStage は エフェクトパイプラインや ブレンディングで一般的に用いられるステージ分離の思想。
+
+一時的な効果・変形・合成の結果を本体に即反映せず、非破壊な段階的処理ができる。
+
+今後、動画編集機能やタイムラインが導入された場合も、transformStageが「編集結果の一時表示」「モーフィング中間体」として重要な役割を果たす。
+
+🔄 今後のステップへ向けた備考
+transformStageに画像がある間、ユーザー操作によってimageDataに上書きされることは避けるべき（同期フラグが必要になる可能性あり）
+
+Shader合成や透明度ブレンドをtransformStage上で行う構造に移行することで、アニメーション描画と整合性が取れるようになる
+
+いずれ、transformStageは Nodeベースの合成UI（AfterEffects風） の内部データ構造と一致させることも視野

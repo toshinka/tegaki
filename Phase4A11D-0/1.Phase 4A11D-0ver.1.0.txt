@@ -1,0 +1,63 @@
+📘 Phase 4A11D-0 指示書
+✨ GPU直描き描画エンジン 試作フェーズ
+目的： transformStage をはじめとする描画・変形系のImageDataベース処理を脱却し、GPUバッファ（FBO）ベースの一貫した描画方式を導入するための試作を行う。
+
+🎯 ゴール
+WebGL 上での GPU側テクスチャ描画・転写・操作 をベースとした描画ループを試作。
+
+レイヤー描画内容を 常にGPU上に保持し、移動・変形・確定までCPUに戻さずGPU完結。
+
+ペンツールや消しゴムなど、描画ツールの最小セットをFBO対応に置き換え。
+
+今後の アニメーション描画／WebGPU対応／シェーダー変形対応への足場とする。
+
+📦 対象ファイル群
+種別	ファイル
+🎯 メイン改修対象	webgl-engine.js
+🎯 付随改修	rendering-bridge.js / core-engine.js（描画経路変更）
+🧪 試験用	fbo-draw-test.html（簡易デモ）
+
+🔧 主な技術方針
+✅ 1. FBO（Framebuffer Object）描画への切り替え
+各レイヤーに紐づく WebGLTexture を Framebufferにバインドし、描画命令を実行。
+
+gl.bindFramebuffer → gl.framebufferTexture2D により描画先を切り替える。
+
+✅ 2. CPUからのImageData操作の段階的撤廃
+旧来の putImageData, drawImage, getImageData 系を全て廃止 or fallback化。
+
+アンドゥ用に GPU→CPUバックアップする場合は、 gl.readPixels() を使用。
+
+✅ 3. ペン描画のGPU化
+頂点/フラグメントシェーダーによるライン描画 or
+
+FBOをターゲットに setPixel 的な近似描画
+
+最小構成として：ペンツール単体＋キャンバス全体クリア
+
+🚧 実装手順（最小構成で試作）
+WebGL FBO描画用の小型モジュール化
+
+createFBO() / bindFBO() / unbindFBO() を webgl-engine.js に実装
+
+単一レイヤーに対するFBO描画試作
+
+drawLineToLayerFBO(layerID, x0, y0, x1, y1, color) の試作
+
+FBOに描画後、その結果を displayCanvas に composite 描画
+
+従来のImageData系APIと並行稼働可能に
+
+Phase 4Bで全面移行する前提で、今はGPU版とCPU版を切り替え可能に
+
+🧪 テスト想定
+テスト項目	内容
+✅ GPU描画でのジャギーなし描画	線がジャギらずに描かれるか
+✅ 移動→確定のフローで再劣化なし	Vキー移動で画質保持されるか
+✅ アンドゥ後に消えない	バックアップが機能するか
+✅ CPU-Fallbackとの互換	#legacy モードで旧方式と切り替え可能に
+
+🔮 今後に向けて
+対応フェーズ	概要
+4A11D-1以降	ブレンドモード対応、マルチレイヤー対応、変形描画時のGPUシェーダ実装
+Phase4B〜	描画→変形→アニメーション→書き出しまで GPUパイプライン統合

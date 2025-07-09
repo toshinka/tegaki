@@ -7,6 +7,7 @@ GPTくんが作った、指示書に従って改修してください。
     <script src="./libs/gl-matrix-min.js"></script>
     <script src="./libs/dat.gui.min.js"></script>
     <script src="./libs/dexie.min.js"></script>
+    <script src="./libs/twgl-full.min.js"></script>
     <script type="module" src="core-engine.js"></script>
 
 
@@ -15,3 +16,30 @@ GPTくんが作った、指示書に従って改修してください。
 出力の制限があると思うのでPhase4A11B 初期指示書.txtに従って早速作業を開始して欲しい。
 ファイル制限があるので最低限の添付のみです。ファイル制限があるので最低限の添付のみです。
 改修の必要のないものはそのままでいいです。念の為再コード記載も無しで大丈夫です。
+
+
+
+core-engine.js:406 [LayerTransform] Start Pending (startLayerTransform)
+core-engine.js:365 [LayerTransform] Drag detected. Using transformStage for rendering.
+core-engine.js:442 [転写デバッグ] Commit transform. Original position: (23, 1)
+core-engine.js:450 [LayerTransform] Commit (commitLayerTransform)
+core-engine.js:451 [転写デバッグ] modelMatrix (Rounded): [1,0,0,0,0,1,0,0,0,0,1,0,23,1,0,1]
+
+[LayerTransform] Start Pending (startLayerTransform)
+core-engine.js:365 [LayerTransform] Drag detected. Using transformStage for rendering.
+core-engine.js:442 [転写デバッグ] Commit transform. Original position: (13, 0)
+core-engine.js:450 [LayerTransform] Commit (commitLayerTransform)
+core-engine.js:451 [転写デバッグ] modelMatrix (Rounded): [1,0,0,0,0,1,0,0,0,0,1,0,13,0,0,1]
+
+core-engine.js:406 [LayerTransform] Start Pending (startLayerTransform)
+core-engine.js:365 [LayerTransform] Drag detected. Using transformStage for rendering.
+core-engine.js:442 [転写デバッグ] Commit transform. Original position: (-44, 0)
+core-engine.js:450 [LayerTransform] Commit (commitLayerTransform)
+core-engine.js:451 [転写デバッグ] modelMatrix (Rounded): [1,0,0,0,0,1,0,0,0,0,1,0,-44,0,0,1]
+
+
+core-engine.js:406 [LayerTransform] Start Pending (startLayerTransform)
+core-engine.js:365 [LayerTransform] Drag detected. Using transformStage for rendering.
+core-engine.js:442 [転写デバッグ] Commit transform. Original position: (12, 0)
+core-engine.js:450 [LayerTransform] Commit (commitLayerTransform)
+core-engine.js:451 [転写デバッグ] modelMatrix (Rounded): [1,0,0,0,0,1,0,0,0,0,1,0,12,0,0,1]
