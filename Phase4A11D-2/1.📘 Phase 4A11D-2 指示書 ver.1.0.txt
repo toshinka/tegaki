@@ -1,0 +1,57 @@
+📄 Phase 4A11D-2 指示書 ver.1.0
+目的
+twgl.js を用いて、GPU上の FBO に線を描く処理の最小構成を組み立てる。
+Phase 4A11D-1 で成功した twgl.js ベースの FBO に対し、最初のGPU描画パスとして「直線の描画」機能を追加する。
+
+✅ 達成条件
+赤のテスト描画ではなく、gl.LINE_STRIP等を使ってFBO上に直線を引くような処理に変更されていること
+
+少なくとも、座標 (x0, y0) → (x1, y1) の直線が1本描けること
+
+twgl.js のバッファ構造で 頂点配列やProgramInfo構築がされている
+
+表示確認のため、描いた線が displayCanvas にレンダリングされていること
+
+🛠 対象ファイル
+/core/rendering/webgl-engine.js
+（必要に応じて /libs/gl-matrix-min.js なども活用）
+
+🧱 実装構造（例）
+WebGLEngine クラスに以下を実装：
+js
+コピーする
+編集する
+drawTestLine(x0, y0, x1, y1, color = [1, 1, 1, 1])
+FBOに twgl.bindFramebufferInfo() で描画ターゲット指定
+
+twgl.createBufferInfoFromArrays() で頂点バッファ生成
+
+twgl.drawBufferInfo() で gl.LINES 描画
+
+twgl.setUniforms() で色や座標系設定
+
+シェーダーも用意
+頂点シェーダー: 画面座標からNDC変換付き
+
+フラグメントシェーダー: 固定色出力
+
+🧪 テスト用コード（描画確認）
+WebGLEngine.constructor() or init()の最後に：
+
+js
+コピーする
+編集する
+// 一時的なテスト（確認後削除）
+this.drawTestLine(50, 50, 200, 200, [1, 1, 1, 1]); // 白線
+this.renderToDisplay();
+📝 注意
+displayCanvasに描くのではなく、必ずFBO経由で描画し、最終的にそれを表示する
+
+今後の構造拡張に備え、glMatrixで変換行列が使えるように設計しておく
+
+drawTestLine() は後の drawLine() に発展予定。描画座標はピクセル基準でOK。
+
+🎯 次フェーズ予定（Phase 4A11D-3）
+クリック・ドラッグ操作に合わせて、ペン描画として動的に線が引ける仕組みへ
+
+onPointerDown → onPointerMove → onPointerUp の連携で実描画に移行予定
