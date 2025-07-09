@@ -1,0 +1,77 @@
+🎯 Phase 4A11C-4 指示書 ver.1.0
+（TransformStage初期同期・描画ブレ抑制対応）
+
+✅ 対応目的
+レイヤー移動の初回ドラッグ時に起こる「線のプルプル」や「一時的な変形」の解消
+
+transformStageが初めて使われるタイミングでのGPU⇄CPUの同期不全を改善
+
+🔧 改修対象ファイル
+/core-engine.js
+
+/core/rendering/webgl-engine.js
+
+/core/rendering/rendering-bridge.js
+
+🛠 改修内容一覧
+1. startLayerTransform() の描画同期強化（core-engine.js）
+🔄 処理の追加タイミング：
+this.isLayerTransforming = true; の直後
+
+✅ 追加内容：
+js
+コピーする
+編集する
+// transformStage作成前に、GPU側に最新状態を描画し、CPUに取得
+if (this.app.layerManager.getCurrentLayer()?.gpuDirty) {
+    this.renderAllLayers(); // GPUへの描画反映
+}
+
+const syncedImageData = this.renderingBridge.getTransformedImageData(
+    this.app.layerManager.getCurrentLayer()
+);
+
+if (syncedImageData) {
+    // ここでtransformStageを最新GPU出力で初期化
+    this.app.layerManager.getCurrentLayer().transformStage = syncedImageData;
+}
+2. getTransformedImageData() のGPU同期徹底（webgl-engine.js）
+✅ gl.finish() を必ず描画後に実行：
+js
+コピーする
+編集する
+// 描画完了を待つ（重要）
+gl.finish();
+✅ 座標・サイズが不正なときの検出：
+js
+コピーする
+編集する
+if (readWidth <= 0 || readHeight <= 0 || isNaN(readWidth) || isNaN(readHeight)) {
+    console.error("❌ getTransformedImageData: 不正な読み出しサイズ", readWidth, readHeight);
+    return null;
+}
+3. transformStage に描画結果を確実に反映
+🔄 該当箇所：
+startLayerTransform() 内で transformStage = new ImageData(...) としていた処理を削除し、上記の getTransformedImageData() で生成された内容で置換する
+
+🔍 デバッグ指針（#debug時）
+初回移動時の描画状態：プルプルが発生するか
+
+ImageDataサイズ：変なサイズ（0×0など）で出力されていないか
+
+matrix誤差：commit時にズレがないか
+
+二回目以降：安定して表示されるか
+
+🧪 テスト観点
+項目	確認内容
+初回Vキー押下直後の描画	線がブレない、プルプルしないか
+二回目以降の移動	すでに安定していればOK
+描画結果	ぼやけ・変形・にじみが無いこと
+Debugログ	getTransformedImageDataが正しいサイズで動作しているか
+
+📌 備考
+今回の変更により、「WebGLの即時同期処理」を一歩進めた形となる
+
+将来の WebGPU化 の際も、バッファ同期タイミングの基盤知見として継承可能
+
