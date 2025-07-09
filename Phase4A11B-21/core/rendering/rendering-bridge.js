@@ -1,15 +1,14 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Rendering Bridge (WebGL-Only)
- * Version: 3.0.1 (Phase 4A11B-20 - Jaggy-Free Capture)
+ * Version: 3.1.0 (Phase 4A11B-21 - Fix Transform Glitch)
  *
- * - 変更点 (Phase 4A11B-20):
- * - 「🎨Phase 4A11B-20 指示書」に基づき、getTransformedImageDataを改修。
- * - レイヤー移動開始時のジャギー劣化を防ぐため、gl.readPixelsを使用して
- * WebGLフレームバッファからピクセルデータを直接読み取る方式に変更。
- * - これにより、drawImageによる暗黙的な補間を完全に回避し、ピクセルパーフェクトな
- * データ転写を実現する。
- * - 指示書に基づき、取得したImageDataのサイズを検証するログを追加。
+ * - 変更点 (Phase 4A11B-21):
+ * - 「🎨Phase 4A11B-21 指示書」に基づき、getTransformedImageDataの実装を修正。
+ * - 従来は本ファイルに処理を記述していましたが、責務分離の観点から、
+ * WebGLに関する専門的な処理はすべてwebgl-engine.jsに委譲する方式に変更。
+ * - これにより、core-engine -> rendering-bridge -> webgl-engineという
+ * 一貫した呼び出しフローを確立し、メンテナンス性を向上させます。
  * ===================================================================================
  */
 import { WebGLEngine } from './webgl-engine.js';
@@ -96,49 +95,18 @@ export class RenderingBridge {
     syncDirtyRectToImageData(...args) { this.currentEngine.syncDirtyRectToImageData?.(...args); }
     
     /**
-     * 【Phase 4A11B-20 改修箇所】
-     * WebGLのフレームバッファから指定領域のピクセルデータをImageDataとして取得します。
-     * gl.readPixelsを使用することで、補間なしの正確なピクセルデータを取得し、ジャギーを防ぎます。
-     * @param {number} sourceX - 読み取り開始点のX座標
-     * @param {number} sourceY - 読み取り開始点のY座標
-     * @param {number} width - 読み取る領域の幅
-     * @param {number} height - 読み取る領域の高さ
+     * 【Phase 4A11B-21 改修箇所】
+     * WebGLエンジンに変形後の画像データ取得処理を委譲します。
+     * これにより、描画処理とデータ取得の責務がWebGLエンジンに集約され、
+     * 呼び出しフローが統一されます。
+     * @param {...any} args - WebGLEngineのgetTransformedImageDataに渡す引数
      * @returns {ImageData | null} 取得したImageDataオブジェクト、または失敗時にnull
      */
-    getTransformedImageData(sourceX, sourceY, width, height) {
-        const gl = this.currentEngine.gl;
-        if (!gl) {
-            console.error("WebGL context is not available for getTransformedImageData.");
-            return null;
+    getTransformedImageData(...args) {
+        if (this.currentEngine && typeof this.currentEngine.getTransformedImageData === 'function') {
+            return this.currentEngine.getTransformedImageData(...args);
         }
-
-        // ピクセルデータを格納するための配列を準備
-        const pixels = new Uint8Array(width * height * 4);
-
-        // WebGLのフレームバッファからピクセルデータを読み取ります。
-        // readPixelsのY座標は左下が原点のため、キャンバス座標（左上が原点）から変換する必要があります。
-        const glY = gl.drawingBufferHeight - (sourceY + height);
-
-        // フレームバッファをバインド（念のため）
-        // オフスクリーン描画をしている場合は、正しいフレームバッファをバインドする必要があります。
-        // ここではデフォルトのフレームバッファを想定しています。
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        gl.readPixels(
-            sourceX,      // X
-            glY,          // Y (変換済み)
-            width,        // 幅
-            height,       // 高さ
-            gl.RGBA,      // フォーマット
-            gl.UNSIGNED_BYTE, // 型
-            pixels        // 格納先
-        );
-        
-        // Uint8ClampedArrayを使ってImageDataオブジェクトを作成
-        const imageData = new ImageData(new Uint8ClampedArray(pixels.buffer), width, height);
-
-        // 指示書[3]に基づく検証ログ
-        console.log(`[🔍検証] 転写後ImageDataサイズ: ${imageData.width} x ${imageData.height}`);
-
-        return imageData;
+        console.error("getTransformedImageData is not available on the current rendering engine.");
+        return null;
     }
 }

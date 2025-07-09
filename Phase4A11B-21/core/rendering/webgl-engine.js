@@ -1,15 +1,17 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.5.2 (Phase 4A11B-19 - Anti-Blur Transform)
+ * Version: 4.6.0 (Phase 4A11B-21 - Fix Transform Glitch)
  *
- * - 変更点 (Phase 4A11B-19):
- * - 「📜 Phase4A11B-19 ver.1.1」指示書に基づき、画質劣化の原因となるWebGLの自動補間を無効化。
+ * - 変更点 (Phase 4A11B-21):
+ * - 「🎨Phase 4A11B-21 指示書」に基づき、レイヤー移動時の描画歪みとエラーを解消。
  *
- * - 1. `_createOrUpdateLayerTexture` の修正:
- * - テクスチャ生成時の拡大・縮小フィルターを gl.LINEAR から gl.NEAREST に変更。
- * - これにより、GPUによるピクセルの自動的な補間（ぼかし）を完全に防ぎ、
- * ドット絵のようなシャープな描画品質を維持します。
+ * - 1. `getTransformedImageData` の修正:
+ * - gl.readPixels() の呼び出し前に、GPU処理の完了を保証する `gl.finish()` を挿入。
+ * これにより、描画と読み取りのタイミングのズレによる歪み（「ニュッ」と伸びる現象）を防止。
+ * - 読み取りサイズ（width, height）が無効な値（0, NaNなど）でないかを検証する処理を追加。
+ * これにより "source width is zero" エラーの発生を防ぐ。
+ * - エラー発生時のデバッグ情報を強化するため、コンソールに詳細なログを出力するようにした。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -80,7 +82,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        console.log(`WebGL Engine (v4.5.2 Phase4A11B-19) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.6.0 Phase4A11B-21) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initProjectionMatrix() {
@@ -238,11 +240,8 @@ export class WebGLEngine extends DrawingEngine {
             gl.bindTexture(gl.TEXTURE_2D, texture);
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.superWidth, this.superHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
             
-            // ▼▼▼▼▼ Phase 4A11B-19 修正 ▼▼▼▼▼
-            // 指示書(ver.1.1)の最重要項目。テクスチャの補間を無効化し、ぼやけを防ぐ
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-            // ▲▲▲▲▲ Phase 4A11B-19 修正 ▲▲▲▲▲
 
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -297,11 +296,8 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindTexture(gl.TEXTURE_2D, this.superCompositeTexture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.superWidth, this.superHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
         
-        // ▼▼▼▼▼ Phase 4A11B-19 修正 ▼▼▼▼▼
-        // 最終画面表示用のテクスチャも補間を無効化
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-        // ▲▲▲▲▲ Phase 4A11B-19 修正 ▲▲▲▲▲
         
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -438,6 +434,7 @@ export class WebGLEngine extends DrawingEngine {
             return null;
         }
         
+        // 指示書[2]：ビューポート設定とクリアを徹底
         gl.viewport(0, 0, this.superWidth, this.superHeight);
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
@@ -464,10 +461,29 @@ export class WebGLEngine extends DrawingEngine {
         
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
  
+        // 指示書[3]：GPUコマンドの実行完了を待つ (歪み・不整合防止)
         gl.finish();
 
-        const pixelBuffer = new Uint8Array(this.superWidth * this.superHeight * 4);
-        gl.readPixels(0, 0, this.superWidth, this.superHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixelBuffer);
+        // 指示書[1] & [4]：読み取りサイズの検証とログ強化 (エラー防止)
+        const width = this.superWidth;
+        const height = this.superHeight;
+
+        if (!width || !height || width <= 0 || height <= 0 || isNaN(width) || isNaN(height)) {
+            console.warn(`[READPIXELS ABORTED] Invalid dimensions for readPixels. width: ${width}, height: ${height}`);
+            console.log("Rendering dimensions:", width, height);
+            console.log("Active texture and framebuffer state:", {
+                sourceTextureValid: gl.isTexture(sourceTexture),
+                tempFBOValid: gl.isFramebuffer(tempFBO),
+                contextLost: gl.isContextLost()
+            });
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.deleteTexture(tempTexture);
+            gl.deleteFramebuffer(tempFBO);
+            return null;
+        }
+
+        const pixelBuffer = new Uint8Array(width * height * 4);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixelBuffer);
         
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.deleteTexture(tempTexture);
@@ -484,8 +500,8 @@ export class WebGLEngine extends DrawingEngine {
                 const sx = Math.floor(x * factor);
                 const sy = Math.floor(y * factor);
 
-                const sourceY_flipped = this.superHeight - 1 - sy;
-                const sourceIndex = (sourceY_flipped * this.superWidth + sx) * 4;
+                const sourceY_flipped = height - 1 - sy;
+                const sourceIndex = (sourceY_flipped * width + sx) * 4;
                 const destIndex = (y * destWidth + x) * 4;
 
                 destData[destIndex]     = pixelBuffer[sourceIndex];
