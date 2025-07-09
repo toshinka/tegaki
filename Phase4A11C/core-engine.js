@@ -1,7 +1,10 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.4.0 (Phase 4A11C-1 - Transform Stage Implementation)
+ * Version: 3.4.1 (Phase 4A11C-1 - Hotfix)
+ *
+ * - 変更点 (Phase 4A11C-1.1):
+ * - 構文エラーの修正：_renderDirty関数内の`renderToDisplay`のタイプミスを修正しました。
  *
  * - 変更点 (Phase 4A11C-1):
  * - 「🎨Phase 4A11C-1 指示書」に基づき、レイヤー変形処理の安定化のため`transformStage`を導入。
@@ -537,7 +540,10 @@ class CanvasManager {
         const rect = this.dirtyRect;
         if (rect.minX > rect.maxX) return;
         this.renderingBridge.compositeLayers(this.app.layerManager.layers, null, rect);
-        this.renderingBridge.renderToD  isplay(null, rect);
+        // ▼▼▼▼▼ Phase 4A11C-1.1 Hotfix ▼▼▼▼▼
+        // タイプミスを修正
+        this.renderingBridge.renderToDisplay(null, rect);
+        // ▲▲▲▲▲ Phase 4A11C-1.1 Hotfix ▲▲▲▲▲
     }
 
     renderAllLayers() {
