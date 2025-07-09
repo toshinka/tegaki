@@ -1,0 +1,47 @@
+🎯 目的
+現在、レイヤー移動（Vキー）時の画質劣化はほぼ解消されたが、最初の転写（移動開始時）のみに発生するジャギー劣化が残っている。この原因は、rendering-bridge.js内の getTransformedImageData() 関数でのWebGL → Canvas 転写時に補間が発生している可能性がある。
+
+このフェーズでは rendering-bridge.js を徹底的に調査・改修し、WebGL描画のピクセル完全保持を達成する。
+
+✅ 修正対象ファイル
+rendering-bridge.js
+
+🔧 主な修正指示
+1. getTransformedImageData() 内で drawImage() を使用していないか確認
+drawImage() を使って WebGL → Canvas に転写している場合、自動補間が入るため NG
+
+代替方法として：
+
+gl.readPixels() を使って WebGLバッファから直接ピクセル取得
+
+もしくは putImageData() で補間なしの描画転写
+
+2. drawImage() を使用する場合は補間を明示的に無効化
+js
+コピーする
+編集する
+tempCtx.imageSmoothingEnabled = false;
+tempCtx.webkitImageSmoothingEnabled = false;
+tempCtx.mozImageSmoothingEnabled = false;
+tempCtx.msImageSmoothingEnabled = false;
+3. 転写後の ImageData サイズがレイヤーサイズと一致しているか検証ログを出力
+js
+コピーする
+編集する
+console.log("[🔍検証] 転写後ImageDataサイズ:", imageData.width, imageData.height);
+🧪 テスト観点
+テストケース	判定基準
+Vキーを押してレイヤーを1pxだけ移動する	元の線と太さ・アンチエイリアス状態が同一ならOK
+レイヤーを何度移動しても画質が劣化しない	テクスチャ→ImageDataの転写品質が常に一定か
+レイヤーの境界が滲まない・輪郭が明瞭	WebGL補間と再サンプリングの完全排除ができたか
+
+💡 ヒント（Claude案をもとに）
+WebGL描画からCanvasへ渡す際、texParameteri(GL_NEAREST)だけでなく、Canvas側も補間禁止にしないとジャギーになる
+
+getTransformedImageData() は 「描画結果のキャプチャ処理」。この処理の中身で補間が発生している可能性が最も高い
+
+🧩 次フェーズ予告（Phase 4A11B-21）
+canvas2d-engine.js またはペン描画処理のジャギー除去（筆圧ブラシに切り替える布石）
+
+レイヤー結合時のブレンドモード対応（putImageDataによる制約緩和）
+
