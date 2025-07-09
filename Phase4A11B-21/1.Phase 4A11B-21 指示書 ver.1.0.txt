@@ -1,0 +1,60 @@
+🎯 フェーズ目的
+Phase 4A11B-20 にて WebGL 描画から gl.readPixels() を使って補間なし転写を実現しましたが、以下の問題が残っています：
+
+✅ 描画のにじみ（アンチエイリアス）は解消済み
+
+⚠️ 移動開始直後に「ニュッ」と線が伸びるような描画歪み
+
+❌ getTransformedImageData() 実行時に ImageData: source width is zero エラー
+
+本フェーズでは、描画タイミングと読み取りサイズの不整合を修正し、歪み・エラーを完全解消することを目的とします。
+
+📂 修正対象ファイル
+rendering-bridge.js（中心）
+
+core-engine.js（確認用）
+
+webgl-engine.js（確認用）
+
+🔧 修正方針と具体対応
+1. getTransformedImageData() 内の gl.readPixels() 呼び出し前に サイズチェックを追加
+js
+コピーする
+編集する
+if (!width || !height || width <= 0 || height <= 0 || isNaN(width) || isNaN(height)) {
+    console.warn("Invalid width/height passed to gl.readPixels");
+    return null;
+}
+2. drawLayer() の呼び出し前に WebGL コンテキストを明示的に 初期化/クリア
+js
+コピーする
+編集する
+gl.viewport(0, 0, canvas.width, canvas.height);
+gl.clear(gl.COLOR_BUFFER_BIT); // 黒背景なら gl.clearColor(0,0,0,0) も事前に設定済みに
+3. gl.readPixels() 前に GPU同期のための flush() または finish() を挿入
+js
+コピーする
+編集する
+gl.flush(); // または gl.finish(); どちらか1つで十分
+4. エラー再発時のログ強化
+js
+コピーする
+編集する
+console.log("Rendering dimensions:", width, height);
+console.log("Active texture and framebuffer state:", ...); // 状況に応じて補足
+🧪 テスト観点（レイヤー移動品質）
+テストケース	期待される結果
+Vを押して移動しない → 絵は変わらない	✅ 絵が消えない、歪まない
+V押下 → ゆっくりドラッグ → 離す	✅ 線が「ニュッ」と伸びない、転写品質OK
+連続で何度もレイヤー移動する	✅ 劣化やズレなし、正確な位置で再転写
+
+💡 参考知見（Claudeの補足）
+drawLayer() の呼び出し前後で gl.finish() を使うことで GPU 処理完了を保証できる
+
+canvas サイズが未設定（0, NaN）になるのは、WebGL コンテキストが正しく初期化される前に readPixels しようとする典型パターン
+
+🧩 次フェーズ予告（Phase 4A11B-22）
+canvas2d-engine.js のペンジャギー問題への対策
+
+ブラシ系ライブラリの検証導入（例：Paper.js、PixiJSベースツール用処理）
+
