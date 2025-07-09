@@ -1,0 +1,85 @@
+📘 Phase 4A11D-1 指示書 ver.1.0
+目的：twgl.jsを使用して、WebGL描画処理のモダン化とFBO描画への段階的移行を開始する
+バージョン：v1.0
+フェーズ：Phase 4A11D-1
+対象：Gemini（実装AI）
+責任：ChatGPT（指示AI）
+
+🎯 主目的（D-1）
+WebGLエンジン（webgl-engine.js）を**twgl.jsベースに再構築・または段階的移行**
+
+レイヤーごとにFBO（Framebuffer Object）を割り当てて描画処理を一元管理
+
+これにより以下を達成：
+
+GPU処理への一貫化（描画も変形もすべてGPU）
+
+劣化・アンチエイリアス問題の解消
+
+将来的なWebGPU・エフェクト移行に備えたベースの確立
+
+🧱 作業範囲
+✅ 1. webgl-engine.js の再設計（or 差分改修）
+twgl.createFramebufferInfo() によるFBO生成
+
+twgl.bindFramebufferInfo() による描画先切替
+
+drawToFBO(layerID, ...) を追加（レイヤーIDごとにFBO管理）
+
+gl-matrix による座標変換（mat4）はそのまま利用
+
+テクスチャ補間は明示的に NEAREST を使用：
+
+js
+コピーする
+編集する
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+✅ 2. twgl.js の読み込み確認
+HTMLにて twgl-full.min.js を読み込み済（確認OK）
+
+✅ 3. webgl-engine.js のバージョン更新
+ファイル冒頭コメントに：
+
+js
+コピーする
+編集する
+// WebGL Engine (v4.6.0 Phase4A11D-1 - twgl.js Migration Start)
+📝 実装要件
+twgl.js を使って最小限のシーンを描画（例：レイヤーに1本の線を描画して表示）
+
+FBOは仮想レイヤーごとに1つ作成し、簡易的な drawToFBO() 関数で動作テストする
+
+最初は固定テストレイヤー（例：layer0）のみでも可
+
+既存機能は温存。WebGL機能と併存して構わない（非破壊導入）
+
+✅ 成功判定
+twgl.createFramebufferInfo() によりFBOが生成される
+
+GPU側FBOに描いた内容が renderToDisplay() により画面に表示される
+
+consoleに twgl.js FBO rendering test successful のログを出力できる
+
+⚠ 注意・留意点
+このフェーズでは「ペン描画」や「UI連携」は不要。
+あくまで「twgl.jsを使ってWebGL画面に描画」する技術的確認の段階
+
+既存コードとの競合が出ないよう、関数は _twgl プレフィックスでも可
+
+twglのバージョンは安定版でOK（4.18.0を推奨）
+
+🧭 次フェーズ展望（参考）
+フェーズ	内容
+D-1	✅ twgl.jsによる描画基盤導入
+D-2	FBOに対するブラシ・直線描画
+D-3	FBOベースでのレイヤー結合
+D-4	フィルター/ブレンドシェーダー適用
+D-5	WebGPU段階的移行（将来）
+
+📎 添付ファイル（配置確認）
+
+libs/
+├─ twgl-full.min.js         ✅ Phase4A11Dで使用
+├─ twgl-full.module.js      ✅ 将来的にESM対応時に使用
+
