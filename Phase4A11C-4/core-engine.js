@@ -1,7 +1,10 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.4.4 (Phase 4A11C-4)
+ * Version: 3.4.5 (Phase 4A11C-4 Hotfix)
+ *
+ * - 変更点 (Phase 4A11C-4 Hotfix):
+ * - startLayerTransform()内で発生していた致命的なシンタックスエラーを修正。
  *
  * - 変更点 (Phase 4A11C-4):
  * - 「🎨Phase 4A11C-4 指示書」に基づき、レイヤー移動開始時の同期処理を強化。
@@ -374,17 +377,17 @@ class CanvasManager {
         this.isLayerTransforming = true;
         
         // ▼▼▼▼▼ Phase 4A11C-4 修正 ▼▼▼▼▼
-        [cite_start]// transformStage作成前に、GPU側に最新状態を描画し、CPUに取得 [cite: 10]
+        // transformStage作成前に、GPU側に最新状態を描画し、CPUに取得
         if (this.app.layerManager.getCurrentLayer()?.gpuDirty) {
-            this.renderAllLayers(); [cite_start]// GPUへの描画反映 [cite: 10]
+            this.renderAllLayers(); // GPUへの描画反映
         }
 
         const syncedImageData = this.renderingBridge.getTransformedImageData(
             this.app.layerManager.getCurrentLayer()
-        ); [cite_start]// [cite: 10]
+        );
 
         if (syncedImageData) {
-            [cite_start]// ここでtransformStageを最新GPU出力で初期化 [cite: 11]
+            // ここでtransformStageを最新GPU出力で初期化
             this.app.layerManager.getCurrentLayer().transformStage = syncedImageData;
         } else {
              // 同期に失敗した場合は変形モードを開始しない

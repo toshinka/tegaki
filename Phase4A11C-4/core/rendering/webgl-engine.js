@@ -1,9 +1,11 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.7.2 (Phase 4A11C-4)
+ * Version: 4.7.3 (Phase 4A11C-4 Hotfix)
  *
- * - 変更点 (Phase 4A11C-4):
+ * - 変更点 (Phase 4A11C-4 Hotfix):
+ * - 不要な末尾コメントを削除し、コードの可読性を向上。
+ * * - 変更点 (Phase 4A11C-4):
  * - 「🎨Phase 4A11C-4 指示書」に基づき、getTransformedImageDataの安全性を向上。
  * - GPUからピクセルを読み出す(readPixels)前に、読み出し先のサイズ(width/height)が
  * 不正（0以下やNaN）でないかを厳密にチェックするよう修正。
@@ -77,7 +79,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        console.log(`WebGL Engine (v4.7.2 Phase4A11C-4) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.7.3 Phase4A11C-4 Hotfix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initProjectionMatrix() {
@@ -462,7 +464,7 @@ export class WebGLEngine extends DrawingEngine {
  
         // ▼▼▼▼▼ Phase 4A11C-3 & 4A11C-4 修正 ▼▼▼▼▼
         // 指示書に基づき、GPUコマンドの同期と完了を待つ（重要）
-        gl.finish(); [cite_start]// [cite: 12]
+        gl.finish();
         // ▲▲▲▲▲ Phase 4A11C-3 & 4A11C-4 修正 ▲▲▲▲▲
 
         const width = this.superWidth;
@@ -470,12 +472,12 @@ export class WebGLEngine extends DrawingEngine {
 
         // ▼▼▼▼▼ Phase 4A11C-4 修正 ▼▼▼▼▼
         // 指示書に基づき、不正な読み出しサイズをチェック
-        [cite_start]if (width <= 0 || height <= 0 || isNaN(width) || isNaN(height)) { // [cite: 13]
-            console.error(`❌ getTransformedImageData: 不正な読み出しサイズです。 width: ${width}, height: ${height}`); [cite_start]// [cite: 13]
+        if (width <= 0 || height <= 0 || isNaN(width) || isNaN(height)) {
+            console.error(`❌ getTransformedImageData: 不正な読み出しサイズです。 width: ${width}, height: ${height}`);
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
             gl.deleteTexture(tempTexture);
             gl.deleteFramebuffer(tempFBO);
-            return null; [cite_start]// [cite: 13]
+            return null;
         }
         // ▲▲▲▲▲ Phase 4A11C-4 修正 ▲▲▲▲▲
 
