@@ -1,18 +1,15 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.8.0 (Phase 4A11D-1)
+ * Version: 4.8.1 (Phase 4A11D-1 Hotfix)
+ *
+ * - 変更点 (Phase 4A11D-1 Hotfix):
+ * - _initTwglTest()内で存在しない関数 `twgl.deleteFramebufferInfo` を呼び出していた
+ * 致命的なエラーを修正しました。
  *
  * - 変更点 (Phase 4A11D-1):
- * - 「📘 Phase 4A11D-1 指示書」に基づき、twgl.jsを導入。 
- * - レイヤーFBOの管理基盤の第一歩として、twglによるFBOと描画のテスト実装を追加。 
- * - WebGL Engine (v4.6.0 Phase4A11D-1 - twgl.js Migration Start) の指示を反映。 
- * * - 変更点 (Phase 4A11C-4 Hotfix):
- * - 不要な末尾コメントを削除し、コードの可読性を向上。
- * * - 変更点 (Phase 4A11C-4):
- * - 「🎨Phase 4A11C-4 指示書」に基づき、getTransformedImageDataの安全性を向上。
- * - GPUからピクセルを読み出す(readPixels)前に、読み出し先のサイズ(width/height)が
- * 不正（0以下やNaN）でないかを厳密にチェックするよう修正。
+ * - 「📘 Phase 4A11D-1 指示書」に基づき、twgl.jsを導入。
+ * - レイヤーFBOの管理基盤の第一歩として、twglによるFBOと描画のテスト実装を追加。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -91,7 +88,7 @@ export class WebGLEngine extends DrawingEngine {
         // [Phase 4A11D-1] twgl.js テスト初期化
         this._initTwglTest();
 
-        console.log(`WebGL Engine (v4.8.0 Phase4A11D-1) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.8.1 Phase4A11D-1 Hotfix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     // [Phase 4A11D-1] twgl.js 初期化とテストFBO生成
@@ -102,7 +99,7 @@ export class WebGLEngine extends DrawingEngine {
         }
         const gl = this.gl;
 
-        // FBO生成テスト 
+        // FBO生成テスト
         const attachments = [{ 
             min: gl.NEAREST, 
             mag: gl.NEAREST, 
@@ -111,7 +108,8 @@ export class WebGLEngine extends DrawingEngine {
         const fboInfo = twgl.createFramebufferInfo(gl, attachments, 1, 1); 
         if (fboInfo) {
             console.log("✅ twgl.createFramebufferInfo() by FBO generated successfully.");
-            twgl.deleteFramebufferInfo(gl, fboInfo); // 確認後すぐに削除
+            // [FIX] twgl.deleteFramebufferInfo という関数は存在しないため削除しました。
+            // テスト用の1x1 FBOは微小なため、現時点では削除しなくても問題ありません。
         } else {
             console.error("❌ twgl.createFramebufferInfo() failed.");
             return; // FBOが作れないならテストを続行しない
