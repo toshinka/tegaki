@@ -238,5 +238,3 @@ Pressure.js → Pointer Events API
 dat.GUI → Tweakpane
 Canvas2D → WebGL完全移行
 ES6 Module完全対応
-
-このファイルツリーにより、2025年の最新技術トレンドに完全対応した、将来性の高いブラウザお絵描きツールの基盤が整います
