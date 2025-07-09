@@ -1,0 +1,92 @@
+🎯 目的
+以下4点の明確な修正を行うことで、描画状態の完全制御と画質維持を実現する：
+
+✅ canvasManager.setCurrentTool() の未定義エラーを解消
+
+✅ Deleteキー によるレイヤー内容クリアを有効化
+
+✅ Vキー転写 時のレイヤー破損と modelMatrix エラーの修正
+
+✅ drawImage() を一切使わず、画質を100%保ったまま転写できる構造の確立
+
+📦 対象ファイル
+ファイル名	変更内容
+/core-engine.js	レイヤー転写後に setCurrentLayer() を再設定
+/core/rendering/canvas-manager.js（新規作成）	setCurrentTool() を最低限定義
+/ui/tool-manager.js	canvasManager.setCurrentTool() 呼び出し継続でOK
+/ui/shortcut-manager.js	Deleteキー処理に clearRect() を追加
+/core/db/db-indexed.js	変更なし
+/ToshinkaTegakiTool.html	変更なし（読み込み順に注意）
+
+✅ 1. canvas-manager.js（新規作成）
+js
+コピーする
+編集する
+// /core/rendering/canvas-manager.js
+export class CanvasManager {
+  constructor() {
+    this.currentTool = null;
+    this.currentLayer = null;
+  }
+
+  setCurrentTool(tool) {
+    this.currentTool = tool;
+    console.log("🛠️ ツールを設定:", tool?.name ?? tool);
+  }
+
+  setCurrentLayer(layer) {
+    this.currentLayer = layer;
+  }
+
+  getCurrentLayer() {
+    return this.currentLayer;
+  }
+}
+✅ 2. Deleteキー機能の復旧（shortcut-manager.js）
+js
+コピーする
+編集する
+if (e.key === "Delete" || e.key === "Backspace") {
+  const layer = app.canvasManager.getCurrentLayer();
+  if (layer?.canvas) {
+    const ctx = layer.canvas.getContext("2d");
+    ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+    console.log("🧹 レイヤー内容をクリアしました");
+  }
+}
+✅ 3. 転写処理の画質劣化防止（core-engine.js）
+❌ NGコード（使ってはいけない）：
+js
+コピーする
+編集する
+ctx.drawImage(bufferCanvas, 0, 0);
+✅ OKコード（画質100%維持）：
+js
+コピーする
+編集する
+const imgData = bufferCtx.getImageData(0, 0, bufferCanvas.width, bufferCanvas.height);
+targetCtx.putImageData(imgData, 0, 0);
+🔧 転写確定後に再設定を追加：
+js
+コピーする
+編集する
+layerManager.setCurrentLayer(targetLayerId); // ※忘れると modelMatrix が undefined になる
+✅ 4. tool-manager.js は変更不要（ただし canvasManager が未定義でないこと）
+js
+コピーする
+編集する
+this.app.canvasManager.setCurrentTool(tool); // エラーが出なくなっているか確認
+❌ 明確に禁止すること
+drawImage() による描画転写（必ず putImageData() を使う）
+
+modelMatrix = undefined の状態で _isPointOnLayer() を実行する
+
+setCurrentTool() を未定義にしておくこと（初期化クラッシュの原因）
+
+✅ 完了チェックリスト（GEMINI側の確認項目）
+項目	結果
+setCurrentTool() が存在し、エラーが出ない	✅
+Deleteキーでレイヤー内容が消去できる	✅
+転写確定後の描画対象が正しく動作している	✅
+転写画質がぼやけない	✅
+drawImage() を使っていない	✅

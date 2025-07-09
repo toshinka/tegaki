@@ -1,115 +1,242 @@
-現在（Phase 4A実装中）のファイルツリー
+# 改修後ファイルツリー - 2025年強化版対応
 
-├ Phase4A11B/
+## 現在（Phase 4A11B実装中）のファイルツリー
+
+```
+├ Phase4A11C/
 │ │
-│ ├ ToshinkaTegakiTool.html（Phase4A'8）
+│ ├ ToshinkaTegakiTool.html（Phase4A'8 → Phase4A11C対応）《強化予定》
 │ │
-│ ├ core-engine.js（Phase4A11B-10）  
+│ ├ core-engine.js（Phase4A11C - ES6 Module完全移行）  《強化予定》
 │ │
 │ ├ core/ 
 │ │ ├ rendering/              
-│ │ │  ├─ drawing-engine.js      <-- （Phase4A'7）
-│ │ │  ├─ canvas2d-engine.js     <-- （Phase4A'7）
-│ │ │  ├─ webgl-engine.js        <-- （Phase4A11B-10）
-│ │ │  ├─ webgpu-engine.js       //  （仮空ファイル）
-│ │ │  ├─ rendering-bridge.js    <-- （Phase4A11Z）
-│ │ │  ├─ shader-programs/       // シェーダー管理（仮空ファイル）
-│ │ │  │  ├─ blend-shaders.js   // ブレンドモード（仮空ファイル）
-│ │ │  │  └─ filter-shaders.js  // フィルター効果（仮空ファイル） 
-│ │ │  └─ texture-manager.js     // テクスチャ管理（仮空ファイル）
+│ │ │  ├─ drawing-engine.js          <-- （Phase4A'7 → Phase4A11C強化）
+│ │ │  ├─ canvas2d-engine.js         <-- （Phase4A'7）※Phase4A11C以降廃止
+│ │ │  ├─ canvas-manager.js          <-- （Phase4A11C - HDR Canvas対応）《強化予定》
+│ │ │  ├─ webgl-engine.js            <-- （Phase4A11C - twgl.js統合）《強化予定》
+│ │ │  ├─ webgl2-engine.js           <-- （Phase5B - WebGL2移行）【※実装予定】
+│ │ │  ├─ webgpu-engine.js           <-- （Phase9A - WebGPU準備）【※実装予定】
+│ │ │  ├─ rendering-bridge.js        <-- （Phase4A11Z）
+│ │ │  ├─ pointer-events-handler.js  <-- （Phase4A11C - Pressure.js代替）【※実装予定】
+│ │ │  ├─ predictive-drawing.js      <-- （Phase4A11C - 予測描画システム）【※実装予定】
+│ │ │  ├─ stroke-stabilizer.js       <-- （Phase5A - ML手ブレ補正）【※実装予定】
+│ │ │  ├─ shader-programs/           
+│ │ │  │  ├─ blend-shaders.js        <-- （Phase5B - Multiple Render Targets）【※実装予定】
+│ │ │  │  ├─ filter-shaders.js       <-- （Phase5B - GPU加速フィルター）【※実装予定】
+│ │ │  │  └─ vao-manager.js          <-- （Phase5B - Vertex Array Objects）【※実装予定】
+│ │ │  └─ texture-manager.js         <-- （Phase5B - Texture Arrays）【※実装予定】
+│ │ │
+│ │ ├ input/
+│ │ │  ├─ pointer-events-api.js      <-- （Phase4A11C - 標準API活用）【※実装予定】
+│ │ │  ├─ pressure-processor.js      <-- （Phase4A11C - Adobe風圧力カーブ）【※実装予定】
+│ │ │  ├─ tilt-handler.js            <-- （Phase4A11C - チルト・回転対応）【※実装予定】
+│ │ │  └─ coalesced-events.js        <-- （Phase4A11C - 滑らかな描画）【※実装予定】
 │ │ │
 │ │ ├ db/
-│ │ │  └─ db-indexed.js          <-- （Phase4A11B-11）
+│ │ │  └─ db-indexed.js              <-- （Phase4A11B-X → Dexie統合）⇐統合していいのか要検討
 │ │ │
 │ │ ├ utils/
-│ │ │  └─ transform-utils.js     <-- （Phase4A11A-5）
+│ │ │  ├─ transform-utils.js         <-- （Phase4A11B-X → gl-matrix統合）⇐統合していいのか要検討
+│ │ │  ├─ canvas-text-metrics.js     <-- （Phase7B - 高精度テキスト）【※実装予定】
+│ │ │  └─ modern-screenshot.js       <-- （Phase7C - 高品質エクスポート）【※実装予定】
 │ │ │ 
 │ │ ├ animation/
-│ │ │  ├─ timeline-manager.js    // タイムライン制御（仮空ファイル）
-│ │ │  ├─ keyframe-manager.js    // キーフレーム管理（仮空ファイル）
-│ │ │  └─ interpolation.js       // 補間システム（仮空ファイル）
+│ │ │  ├─ timeline-manager.js        <-- （Phase7A - GSAP Timeline）【※実装予定】
+│ │ │  ├─ keyframe-manager.js        <-- （Phase7A - 複雑なアニメーション）【※実装予定】
+│ │ │  ├─ interpolation.js           <-- （Phase7A - bezier-easing）【※実装予定】
+│ │ │  ├─ path-interpolation.js      <-- （Phase7A - flubber統合）【※実装予定】
+│ │ │  └─ onion-skin-manager.js      <-- （Phase10A - 最適化実装）【※実装予定】
 │ │ │ 
-│ │ └ deformation/
-│ │     ├─ mesh-deformer.js       // メッシュ変形・ワープデフォーマ（仮空ファイル）
-│ │     ├─ bone-system.js         // ボーンシステム（仮空ファイル）
-│ │     └─ physics-engine.js      // 簡易物理演算（仮空ファイル）
+│ │ ├ deformation/
+│ │ │  ├─ mesh-deformer.js           <-- （Phase11A - Delaunay三角分割）【※実装予定】
+│ │ │  ├─ bone-system.js             <-- （Phase11A - Three.js Skeleton）【※実装予定】
+│ │ │  ├─ puppet-warp.js             <-- （Phase11A - Photoshop風変形）【※実装予定】
+│ │ │  └─ physics-engine.js          <-- （Phase10B - matter-js統合）【※実装予定】
+│ │ │ 
+│ │ ├ effects/
+│ │ │  ├─ gpu-effects.js             <-- （Phase8A - GPU.js集中線）【※実装予定】
+│ │ │  ├─ opencv-filters.js          <-- （Phase8A - 輪郭抽出・フチ）【※実装予定】
+│ │ │  ├─ vector-effects.js          <-- （Phase8A - Paper.js美しいエフェクト）【※実装予定】
+│ │ │  └─ liquid-simulation.js       <-- （Phase10B - LiquidFun流体）【※実装予定】
+│ │ │ 
+│ │ └ ai/
+│ │     ├─ ml-stabilization.js       <-- （Phase5A - TensorFlow.js手ブレ補正）【※実装予定】
+│ │     ├─ drawing-ai.js             <-- （PhaseX1 - 専用描画AI）【※実装予定】
+│ │     ├─ auto-completion.js        <-- （PhaseX1 - AI補完システム）【※実装予定】
+│ │     └─ style-transfer.js         <-- （PhaseX1 - 画風統一AI）【※実装予定】
 │ │ 
-│ ├ layer-manager/                  <-- （Phase4A11A-0）
-│ │ └─ layer-manager.js           <-- （Phase4A11A-0）
+│ ├ layer-manager/
+│ │ ├─ layer-manager.js              <-- （Phase4A11B-X → Konva.js統合）⇐統合していいのか要検討
+│ │ ├─ offscreen-canvas.js           <-- （Phase5A - サムネイル生成最適化）【※実装予定】
+│ │ ├─ layer-folders.js              <-- （Phase5A - Konva.js Group機能）【※実装予定】
+│ │ └─ drag-drop-hierarchy.js        <-- （Phase5C - 階層移動）【※実装予定】
 │ │
 │ ├ ui/ 
-│ │ ├─ ui-manager.js         　　 <-- （Phase2）
-│ │ ├─ shortcut-manager.js     　 <-- （Phase4A11B-9）
-│ │ ├─ pen-settings-manager.js    <-- （Phase4A11A-0）
-│ │ ├─ color-manager.js           <-- （Phase4A11A-0）
-│ │ ├─ tool-manager.js            <-- （Phase4A11A-0）
-│ │ └─ timeline-ui.js             // タイムラインUI（仮空ファイル）
+│ │ ├─ ui-manager.js                 <-- （Phase2 → Tweakpane移行）⇐移行していいのか要検討
+│ │ ├─ shortcut-manager.js           <-- （Phase4A11B-12）
+│ │ ├─ pen-settings-manager.js       <-- （Phase4A11B-12 → 高度なペン設定）
+│ │ ├─ color-manager.js              <-- （Phase4A11A-0）【※実装予定】
+│ │ ├─ tool-manager.js               <-- （Phase4A11A-0）【※実装予定】
+│ │ ├─ timeline-ui.js                <-- （Phase7A - GSAP Timeline UI）【※実装予定】
+│ │ ├─ popover-ui.js                 <-- （Phase4A12 - Popover API活用）【※実装予定】
+│ │ ├─ container-queries.js          <-- （Phase5A - 動的レイアウト）【※実装予定】
+│ │ └─ tweakpane-integration.js      <-- （Phase4A11C - dat.GUI完全置換）⇐置換していいのか要検討
 │ │　　
 │ ├ tools/ 
-│ │ ├─ toolset.js              　 <-- （Phase2）
-│ │ ├─ advanced-toolset.js   　   // エアブラシ、グラデーション（仮空ファイル）
-│ │ ├─ ruler-tool.js         　   // 定規ツール（仮空ファイル）
-│ │ └─ bucket-fill-improved.js    // アンチエイリアス対応（仮空ファイル）
+│ │ ├─ toolset.js                    <-- （Phase2）
+│ │ ├─ advanced-toolset.js           <-- （Phase6A - GPU.js高速化）【※実装予定】
+│ │ ├─ ruler-tool.js                 <-- （Phase6A - Zdog立体感 + Path2D）【※実装予定】
+│ │ ├─ selection-tool.js             <-- （Phase6A - GPU.js範囲選択）【※実装予定】
+│ │ ├─ bucket-fill-improved.js       <-- （Phase6A - アンチエイリアス対応）【※実装予定】
+│ │ ├─ manga-tools/                  
+│ │ │  ├─ concentration-lines.js     <-- （Phase8A - GPU加速集中線）【※実装予定】
+│ │ │  ├─ auto-panel-division.js     <-- （Phase8B - constraint-solver）【※実装予定】
+│ │ │  └─ comic-effects.js           <-- （Phase8A - ベクターエフェクト）【※実装予定】
+│ │ │
+│ │ └─ 3d-tools/
+│ │     ├─ pseudo-3d-background.js   <-- （Phase9A - Three.js背景）【※実装予定】
+│ │     ├─ parallax-scroll.js        <-- （Phase9A - 視差スクロール）【※実装予定】
+│ │     └─ zdog-cartoon-3d.js        <-- （Phase9A - 軽量3D表現）【※実装予定】
 │ │ 
+│ ├ export/
+│ │ ├─ modern-gif.js                 <-- （Phase7C - WebCodecs対応）【※実装予定】
+│ │ ├─ video-encoder.js              <-- （Phase7C - 次世代動画エンコード）【※実装予定】
+│ │ ├─ webcodecs-integration.js      <-- （Phase12B - プロレベル動画）【※実装予定】
+│ │ └─ multi-format-export.js        <-- （Phase7C - 複数フォーマット対応）【※実装予定】
+│ │
+│ ├ window-management/
+│ │ ├─ broadcast-channel.js          <-- （Phase12A - ウィンドウ間通信）【※実装予定】
+│ │ ├─ valtio-state-sync.js          <-- （Phase12A - 状態同期）【※実装予定】
+│ │ └─ multi-window-manager.js       <-- （Phase12A - 現代的マルチウィンドウ）【※実装予定】
+│ │
 │ └ libs/                           
-│ 　 ├─ gl-matrix-min.js           // glMatrix 3.4.3（CDNから丸コピー）
-│ 　 ├─ dat.gui.min.js             // dat.GUI（CDNから丸コピー）
-│ 　 └─ Dexie.js                   <-- （Phase4A11B-11)
+│ 　 ├─ twgl.min.js                   <-- （Phase4A11C - WebGL簡素化）【※実装予定】
+│ 　 ├─ gl-matrix-min.js              <-- （Phase4A11A-5 - 行列計算）【※実装予定】
+│ 　 ├─ tweakpane.min.js              <-- （Phase4A11C - dat.GUI置換）【※実装予定】
+│ 　 ├─ dexie.min.js                  <-- （Phase4A11B-11 - IndexedDB）
+│ 　 ├─ konva.min.js                  <-- （Phase5A - レイヤー管理）【※実装予定】
+│ 　 ├─ gsap.min.js                   <-- （Phase7A - アニメーション）【※実装予定】
+│ 　 ├─ paper.min.js                  <-- （Phase4A11C - 美しい線補間）【※実装予定】
+│ 　 ├─ gpu.min.js                    <-- （Phase6A - GPU並列処理）【※実装予定】
+│ 　 ├─ three.min.js                  <-- （Phase9A - 3D背景）【※実装予定】
+│ 　 ├─ zdog.min.js                   <-- （Phase9A - 軽量3D）【※実装予定】
+│ 　 ├─ matter.min.js                 <-- （Phase10B - 2D物理）【※実装予定】
+│ 　 ├─ tensorflow.min.js             <-- （Phase5A - ML補正）【※実装予定】
+│ 　 └─ opencv.min.js                 <-- （Phase8A - 画像処理）【※実装予定】
+```
 
+## 🔄 主要な変更点
 
-※以下は改修で必要になったら組み込む
+### ✅ 新規追加されたディレクトリ
+- **`core/input/`** - Pointer Events API専用処理
+- **`core/effects/`** - GPU加速エフェクト群
+- **`core/ai/`** - ML・AI統合機能
+- **`tools/manga-tools/`** - 漫画制作専用ツール
+- **`tools/3d-tools/`** - 3D背景生成ツール
+- **`export/`** - 現代的エクスポート機能
+- **`window-management/`** - マルチウィンドウ対応
 
+### 🔧 強化されたファイル
+- **`pointer-events-handler.js`** - Pressure.js完全代替
+- **`webgl2-engine.js`** - WebGL2最適化
+- **`stroke-stabilizer.js`** - ML手ブレ補正
+- **`tweakpane-integration.js`** - dat.GUI完全置換
 
-├─ data/
-│   ├─ constants.js           ← 色、サイズ、ショートカット定義など
-│   └─ user-settings.js       ← ユーザー保存設定（LocalStorage等）
-│
-├─ utils/
-│   └─ utils.js               ← 汎用関数（色処理、補間等）
+### 📚 ライブラリ更新
+- **削除**: `dat.gui.min.js` → `tweakpane.min.js`
+- **追加**: `twgl.min.js` (WebGL簡素化)
+- **追加**: `paper.min.js` (美しい線補間)
+- **追加**: `gpu.min.js` (GPU並列処理)
+- **追加**: `tensorflow.min.js` (ML機能)
 
+## 🎯 Phase別実装順序
 
- * --- ToshinkaTegakiTool.html依存リスト ---
- *
- * [Canvas/Area]
- * - drawingCanvas: メインの描画キャンバス
- * - canvas-area: キャンバスを内包する領域（ポインタイベント用）
- * - canvas-container: キャンバスの拡縮・回転用コンテナ
- * - center-crosshair: Vキー押下時に表示される十字線
- *
- * [Top Toolbar]
- * - saveMergedButton: PNG保存ボタン
- * - undo-btn: 元に戻すボタン
- * - redo-btn: やり直しボタン
- * - clear-btn: アクティブレイヤー消去ボタン
- * - clear-all-btn: (動的生成) 全レイヤー消去ボタン
- * - flip-h-btn: 左右反転ボタン
- * - flip-v-btn: 上下反転ボタン
- * - zoom-in-btn: 拡大ボタン
- * - zoom-out-btn: 縮小ボタン
- * - rotate-btn: 時計回り回転ボタン
- * - rotate-ccw-btn: 反時計回り回転ボタン
- * - reset-view-btn: 表示リセットボタン
- * - close-btn: 閉じるボタン
- *
- * [Left Toolbar]
- * - main-color-display: メインカラー表示部
- * - sub-color-display: サブカラー表示部
- * - pen-tool: ペンツールボタン
- * - eraser-tool: 消しゴムツールボタン
- * - bucket-tool: 塗りつぶしツールボタン
- * - move-tool: レイヤー移動ツールボタン
- * - (class) color-btn: 各カラーボタン
- * - (class) color-mode-display: カラー切り替え表示エリア
- * - (class) size-btn: 各サイズボタン
- *
- * [Right Sidebar (Layers)]
- * - layer-list: レイヤー一覧を表示するコンテナ
- * - add-layer-btn: 新規レイヤー追加ボタン
- * - delete-layer-btn: レイヤー削除ボタン
- * - duplicate-layer-btn: レイヤー複製ボタン
- * - merge-layer-btn: レイヤー結合ボタン
- *
- * [ 他へのアクセス]
- * - <script type="module" src="core-engine.js"></script>
- *
- * ===================================================================================
+### Phase 4A11C（現在）
+- `core/input/` 全体の実装
+- `pointer-events-handler.js` でPressure.js代替
+- `tweakpane-integration.js` でdat.GUI置換
+
+### Phase 5A-5C
+- `layer-manager/` 強化（Konva.js統合）
+- `webgl2-engine.js` 実装
+- `stroke-stabilizer.js` ML補正
+
+### Phase 6A-6B  
+- `tools/` 強化（GPU.js活用）
+- `export/` 現代的保存機能
+
+### Phase 7A-7C
+- `animation/` 完全実装（GSAP統合）
+- `export/` 動画対応
+
+### Phase 8A-8B
+- `tools/manga-tools/` 漫画制作機能
+- `core/effects/` GPU加速エフェクト
+
+### Phase 9A
+- `tools/3d-tools/` 3D背景生成
+
+### Phase 10A-10B
+- `animation/onion-skin-manager.js` 最適化
+- `core/deformation/physics-engine.js` 物理演算
+
+### Phase 11A
+- `core/deformation/` LIVE2D風変形完全実装
+
+### Phase 12A-12B
+- `window-management/` マルチウィンドウ
+- `export/webcodecs-integration.js` プロ動画処理
+
+### Phase X1
+- `core/ai/` AI描画生成システム
+
+## 💡 技術的な改善点
+
+1. **標準API重視**: Pressure.js → Pointer Events API
+2. **モダンライブラリ**: dat.GUI → Tweakpane
+3. **GPU活用**: GPU.js で重い処理を高速化
+4. **ML統合**: TensorFlow.js で手ブレ補正
+5. **WebGL2対応**: VAO・MRT等の最新機能活用
+6. **ES6完全移行**: 保守性とパフォーマンス両立
+
+🎯 主要な改修ポイント
+1. Pressure.js完全排除
+
+core/input/ ディレクトリ新設
+pointer-events-handler.js で標準API活用
+pressure-processor.js でAdobe風圧力カーブ実装
+
+2. 現代的ライブラリ統合
+
+tweakpane-integration.js でdat.GUI完全置換
+twgl.min.js 追加でWebGL簡素化
+paper.min.js で美しい線補間
+
+3. AI・ML機能強化
+
+core/ai/ ディレクトリ新設
+stroke-stabilizer.js でML手ブレ補正
+tensorflow.min.js 統合
+
+4. GPU加速機能
+
+core/effects/ ディレクトリ新設
+gpu.min.js で重い処理高速化
+WebGL2対応で最新機能活用
+
+5. 専門ツール分離
+
+tools/manga-tools/ で漫画制作専用機能
+tools/3d-tools/ で3D背景生成
+export/ で現代的エクスポート機能
+
+🔄 Phase別実装の流れ
+現在のPhase 4A11Cでは、特に以下の重要な移行作業が必要です：
+
+Pressure.js → Pointer Events API
+dat.GUI → Tweakpane
+Canvas2D → WebGL完全移行
+ES6 Module完全対応
+
+このファイルツリーにより、2025年の最新技術トレンドに完全対応した、将来性の高いブラウザお絵描きツールの基盤が整います
