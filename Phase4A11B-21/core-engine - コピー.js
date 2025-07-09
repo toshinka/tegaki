@@ -1,13 +1,12 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.3.7 (Phase 4A11B-21.1 - Real-time Transform Snapping)
+ * Version: 3.3.6 (Phase 4A11B-19 - Anti-Blur Transform)
  *
- * - 変更点 (Phase 4A11B-21.1):
- * - 「Vキー押下時の移動で線が変形する」問題への対応。
- * - レイヤー移動中（onPointerMove内）の座標計算において、移動量を常に整数に丸める処理を追加。
- * - これにより、変形中のmodelMatrixが持つtx, ty（移動量）がサブピクセル値になるのを防ぎ、
- * リアルタイムレンダリング時の歪みやにじみを解消する。
+ * - 変更点 (Phase 4A11B-19):
+ * - 「📜 Phase 4A11B-19 ver.1.1」指示書に基づき、レイヤー移動時の画質劣化（ぼやけ・にじみ）を解消。
+ * - commitLayerTransform内の座標補正を Math.round() から Math.floor(x + 0.5) に変更し、
+ * 浮動小数点数誤差によるピクセルズレを抑制。
  * ===================================================================================
  */
 
@@ -263,13 +262,8 @@ class CanvasManager {
             const dx = coords.x - this.transformStartWorldX;
             const dy = coords.y - this.transformStartWorldY;
             const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
-
-            // ▼▼▼▼▼ Phase 4A11B-21.1 修正 ▼▼▼▼▼
-            // 移動中の座標を常に整数に丸めることで、サブピクセルレンダリングによる歪みを防ぐ
-            const adjustedDx = Math.floor((dx * SUPER_SAMPLING_FACTOR) + 0.5);
-            const adjustedDy = Math.floor((dy * SUPER_SAMPLING_FACTOR) + 0.5);
-            // ▲▲▲▲▲ Phase 4A11B-21.1 修正 ▲▲▲▲▲
-
+            const adjustedDx = dx * SUPER_SAMPLING_FACTOR;
+            const adjustedDy = dy * SUPER_SAMPLING_FACTOR;
             const translationMatrix = mat4.create();
             mat4.fromTranslation(translationMatrix, [adjustedDx, adjustedDy, 0]);
             const newMatrix = mat4.create();
