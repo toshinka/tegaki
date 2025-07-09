@@ -1,92 +1,58 @@
-🎯 目的
-以下4点の明確な修正を行うことで、描画状態の完全制御と画質維持を実現する：
+🎯 フェーズ目的
+以下の未解決問題を修正し、Phase 4A11（レイヤー移動・IndexedDB保存・描画破壊回避）を完了状態に移行する：
 
-✅ canvasManager.setCurrentTool() の未定義エラーを解消
+問題	状態
+🎨 転写時の2段階ボケ	❌ 継続中（drawImage()の影響）
+🖌️ カラーパレット・ペンサイズ操作でエラー	❌ canvasManager.setCurrentColor()など未定義
+📌 転写後に描画対象がズレる	❌ setCurrentLayer()未再設定による描画・カーソルの不一致
 
-✅ Deleteキー によるレイヤー内容クリアを有効化
+📁 対象ファイル
+ファイル名	修正内容
+canvas-manager.js	描画設定メソッド（setCurrentColor()など）追加
+core-engine.js	転写時の drawImage() を完全排除し putImageData() に変更 + 転写後に setCurrentLayer() 実行
 
-✅ Vキー転写 時のレイヤー破損と modelMatrix エラーの修正
-
-✅ drawImage() を一切使わず、画質を100%保ったまま転写できる構造の確立
-
-📦 対象ファイル
-ファイル名	変更内容
-/core-engine.js	レイヤー転写後に setCurrentLayer() を再設定
-/core/rendering/canvas-manager.js（新規作成）	setCurrentTool() を最低限定義
-/ui/tool-manager.js	canvasManager.setCurrentTool() 呼び出し継続でOK
-/ui/shortcut-manager.js	Deleteキー処理に clearRect() を追加
-/core/db/db-indexed.js	変更なし
-/ToshinkaTegakiTool.html	変更なし（読み込み順に注意）
-
-✅ 1. canvas-manager.js（新規作成）
+🧱 1. canvas-manager.js に以下の関数を追加せよ
 js
 コピーする
 編集する
-// /core/rendering/canvas-manager.js
-export class CanvasManager {
-  constructor() {
-    this.currentTool = null;
-    this.currentLayer = null;
-  }
-
-  setCurrentTool(tool) {
-    this.currentTool = tool;
-    console.log("🛠️ ツールを設定:", tool?.name ?? tool);
-  }
-
-  setCurrentLayer(layer) {
-    this.currentLayer = layer;
-  }
-
-  getCurrentLayer() {
-    return this.currentLayer;
-  }
+setCurrentColor(color) {
+  this.currentColor = color;
 }
-✅ 2. Deleteキー機能の復旧（shortcut-manager.js）
-js
-コピーする
-編集する
-if (e.key === "Delete" || e.key === "Backspace") {
-  const layer = app.canvasManager.getCurrentLayer();
-  if (layer?.canvas) {
-    const ctx = layer.canvas.getContext("2d");
-    ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
-    console.log("🧹 レイヤー内容をクリアしました");
-  }
+
+setCurrentSize(size) {
+  this.brushSize = size;
 }
-✅ 3. 転写処理の画質劣化防止（core-engine.js）
-❌ NGコード（使ってはいけない）：
+✅ color-manager.js や pen-settings-manager.js で発生していたクラッシュを解消
+
+🎨 2. 転写処理を putImageData() に完全置換せよ
 js
 コピーする
 編集する
-ctx.drawImage(bufferCanvas, 0, 0);
-✅ OKコード（画質100%維持）：
-js
-コピーする
-編集する
+// 転写時（例：Vキーの離した後）
 const imgData = bufferCtx.getImageData(0, 0, bufferCanvas.width, bufferCanvas.height);
 targetCtx.putImageData(imgData, 0, 0);
-🔧 転写確定後に再設定を追加：
+❌ drawImage() は画質劣化の原因なので絶対に使わないこと！
+
+🧭 3. 転写確定後に setCurrentLayer() を再指定せよ
 js
 コピーする
 編集する
-layerManager.setCurrentLayer(targetLayerId); // ※忘れると modelMatrix が undefined になる
-✅ 4. tool-manager.js は変更不要（ただし canvasManager が未定義でないこと）
-js
-コピーする
-編集する
-this.app.canvasManager.setCurrentTool(tool); // エラーが出なくなっているか確認
-❌ 明確に禁止すること
-drawImage() による描画転写（必ず putImageData() を使う）
+// 転写処理の後
+layerManager.setCurrentLayer(targetLayerId);
+✅ これにより「カーソル判定がずれる」「描画が効かない」などの問題を回避可能
 
-modelMatrix = undefined の状態で _isPointOnLayer() を実行する
+✅ 完了確認チェックリスト（GEMINI用）
+チェック	達成条件
+[ ] カラーパレットを選択してもエラーが出ない	
+[ ] ペンサイズを変えても例外が出ない	
+[ ] Deleteキーでレイヤーがクリアされる	
+[ ] 転写後に絵がぼけない	
+[ ] 転写で絵が勝手に移動しない（modelMatrix以外で動かない）	
+[ ] カーソルが意図した場所に表示される	
+[ ] drawImage() を使っていない	
 
-setCurrentTool() を未定義にしておくこと（初期化クラッシュの原因）
-
-✅ 完了チェックリスト（GEMINI側の確認項目）
-項目	結果
-setCurrentTool() が存在し、エラーが出ない	✅
-Deleteキーでレイヤー内容が消去できる	✅
-転写確定後の描画対象が正しく動作している	✅
-転写画質がぼやけない	✅
-drawImage() を使っていない	✅
+🚫 禁止事項
+禁止内容	理由
+drawImage() を転写に使うこと	アンチエイリアスで画質が崩壊する
+canvasManager に設定メソッドが無いまま放置	カラーパレットなどGUIからクラッシュ
+setCurrentLayer() の再指定を忘れる	描画カーソルの挙動が狂う

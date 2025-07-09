@@ -1,30 +1,19 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.3.0 (Phase 4A11B-12 - State Management & Stability)
+ * Version: 3.3.1 (Phase 4A11B-13 - UI Error Fix)
  *
- * - 変更点 (Phase 4A11B-12):
- * - 「📜 Phase 4A11B-12」指示書に基づき、描画状態管理の安定化とエラー修正を実施。
+ * - 変更点 (Phase 4A11B-13):
+ * - 「📜 Phase 4A11B-13」指示書に基づき、UI操作時のエラーを修正。
  *
- * - 1. CanvasManagerの機能強化:
- * - core-engine.js内のCanvasManagerに`currentTool`と`currentLayer`プロパティを追加。
- * - `setCurrentTool()`, `setCurrentLayer()`, `getCurrentLayer()`メソッドを実装し、
- * 外部モジュールからのツール/レイヤー状態の参照と設定を可能にしました。
- * これにより、`tool-manager.js`からの呼び出しで発生していた未定義エラーが解消されます。
+ * - 1. CanvasManagerへのメソッド追加:
+ * - `setCurrentColor()` と `setCurrentSize()` メソッドを `CanvasManager` に実装。
+ * これにより、カラーパレットやペンサイズ変更時に発生していた
+ * 「is not a function」エラーが解消されます。
  *
- * - 2. Deleteキーによるクリア機能の有効化:
- * - `shortcut-manager.js`の修正と連携し、`getCurrentLayer()`が正しく
- * レイヤーオブジェクトを返すように修正しました。
- *
- * - 3. Vキー転写(変形)処理の安定化:
- * - 変形確定処理(`commitLayerTransform`)の最後に、描画対象レイヤーを
- * `setCurrentLayer()`で再設定する処理を追加。これにより、変形後に
- * `modelMatrix`が未定義になる問題を防ぎ、描画が継続不能になる不具合を修正しました。
- *
- * - 4. 初期化処理の改善:
- * - アプリケーション起動時とUndo/Redoによる状態復元時に、`setCurrentLayer()`を
- * 呼び出す処理を追加し、常に`canvasManager`がアクティブなレイヤーを
- * 正しく指し示すようにしました。
+ * - 2. 転写処理とレイヤー状態の確認:
+ * - 指示書にあった転写処理(drawImage→putImageData)と、転写後の
+ * `setCurrentLayer()`の再指定は、Phase 4A11B-12で対応済みであることを確認しました。
  * ===================================================================================
  */
 
@@ -123,6 +112,10 @@ class CanvasManager {
         // 外部から参照されるツールとレイヤーの状態を管理
         this.currentTool = null;
         this.currentLayer = null;
+        // ▼▼▼▼▼ Phase 4A11B-13 指示による追加 ▼▼▼▼▼
+        this.currentColor = null; // pen-settings-managerからのエラー回避用
+        this.brushSize = null;    // color-managerからのエラー回避用
+        // ▲▲▲▲▲ Phase 4A11B-13 指示による追加 ▲▲▲▲▲
 
         this.displayCanvas = document.getElementById('drawingCanvas');
         this.displayCtx = this.displayCanvas.getContext('2d', { willReadFrequently: true });
@@ -178,6 +171,24 @@ class CanvasManager {
     setCurrentLayer(layer) {
         this.currentLayer = layer;
     }
+    
+    // ▼▼▼▼▼ Phase 4A11B-13 指示による追加 ▼▼▼▼▼
+    /**
+     * 現在の描画色を設定します。(color-manager.jsからの呼び出し用)
+     * @param {string} color - 色 (例: '#RRGGBB')
+     */
+    setCurrentColor(color) {
+      this.currentColor = color;
+    }
+
+    /**
+     * 現在のブラシサイズを設定します。(pen-settings-manager.jsからの呼び出し用)
+     * @param {number} size - ブラシサイズ
+     */
+    setCurrentSize(size) {
+      this.brushSize = size;
+    }
+    // ▲▲▲▲▲ Phase 4A11B-13 指示による追加 ▲▲▲▲▲
 
     getCurrentLayer() {
         return this.currentLayer;
