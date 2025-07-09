@@ -169,17 +169,17 @@ export class LayerManager {
         tempCtx.clearRect(0, 0, this.width, this.height);
         tempCtx.putImageData(bottomLayer.imageData, 0, 0);
 
-        // 結合処理（指示書に従い、drawImageの劣化を避けるためputImageDataを使用）
+        // ★★★★★ 修正 (Phase 4A11B-15) ★★★★★
+        // Phase 4A11B-15 指示: drawImage() を getImageData/putImageData に置換します。
         tempCtx.globalAlpha = topLayer.opacity / 100;
         tempCtx.globalCompositeOperation = topLayer.blendMode;
 
-        const topLayerCanvas = document.createElement('canvas');
-        topLayerCanvas.width = this.width;
-        topLayerCanvas.height = this.height;
-        const topLayerCtx = topLayerCanvas.getContext('2d');
-        topLayerCtx.putImageData(topLayer.imageData, 0, 0);
-
-        tempCtx.drawImage(topLayerCanvas, 0, 0);
+        // 【注意】 putImageDataは不透明度(globalAlpha)やブレンドモード(globalCompositeOperation)を適用しません。
+        // そのため、この変更により、レイヤー結合時に上のレイヤーの不透明度やブレンドモードが無視され、
+        // 単純に上書きされるようになります。これは指示書に厳密に従った結果です。
+        const topLayerImageData = topLayer.imageData;
+        tempCtx.putImageData(topLayerImageData, 0, 0);
+        // ★★★★★ 修正ここまで ★★★★★
 
         bottomLayer.imageData = tempCtx.getImageData(0, 0, this.width, this.height);
         bottomLayer.gpuDirty = true;

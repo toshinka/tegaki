@@ -1,20 +1,18 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.5.0 (Phase 4A11B-10 - Transform Baking Stabilized)
+ * Version: 4.5.1 (Phase 4A11B-15 - drawImage Elimination)
  *
- * - 変更点 (Phase 4A11B-10):
- * - 「📜 Phase4A11B-10」指示書に基づき、レイヤー変形確定時の画像生成処理を実装・安定化。
+ * - 変更点 (Phase 4A11B-15):
+ * - 「📜 Phase4A11B-15」指示書に基づき、画質劣化の原因となるdrawImage()を排除。
  *
- * - 1. `getTransformedImageData`の実装:
- * - レイヤーの変形情報(`modelMatrix`)を適用した結果を、オフスクリーンの
- * フレームバッファに描画し、その結果を読み出して`ImageData`として返す機能を実装。
- * - これにより、変形後の見た目をレイヤーに「焼き付ける」ことが可能になった。
- *
- * - 2. 描画同期の強化:
- * - `getTransformedImageData`内で、ピクセルを読み出す直前に`gl.finish()`を呼び出し、 
- * GPUの描画処理が完了するのを待つようにした。これにより、不完全な状態の画像が
- * 読み出されるのを防ぎ、転写の信頼性を向上させた。 
+ * - 1. `_createOrUpdateLayerTexture` の修正:
+ * - レイヤーのImageDataをテクスチャにアップロードする際の、スケーリングを伴う
+ * `drawImage()`呼び出しを完全に削除しました。
+ * - 代わりに、低解像度のImageDataからスーパーサンプリング解像度のImageDataを
+ * 手動で生成する処理（ニアレストネイバー法）を実装しました。
+ * - これにより、ブラウザの補間による画質のボケやにじみを完全に防ぎ、
+ * ピクセル単位での正確なデータ転送を保証します。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -85,7 +83,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        console.log(`WebGL Engine (v4.5.0 Phase4A11B-10) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.5.1 Phase4A11B-15) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initProjectionMatrix() {
@@ -265,22 +263,39 @@ export class WebGLEngine extends DrawingEngine {
         }
 
         if (layer.gpuDirty && layer.imageData) {
-             const sourceCanvas = document.createElement('canvas');
-             sourceCanvas.width = layer.imageData.width;
-             sourceCanvas.height = layer.imageData.height;
-             sourceCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
+            // ★★★★★ 修正 (Phase 4A11B-15) ★★★★★
+            // Phase 4A11B-15 指示: drawImage() を使わず、手動でスーパーサンプリング解像度へピクセルを拡大転写します。
+            // これにより、ブラウザの描画エンジンによる意図しないアンチエイリアスを完全に排除します。
+            // 注意: この実装はニアレストネイバー法によるアップスケールとなり、元のコードの滑らかな拡縮とは見た目が変わります。
+            const sourceImageData = layer.imageData;
+            const sourceData = sourceImageData.data;
+            const sourceWidth = sourceImageData.width;
+            
+            const destImageData = new ImageData(this.superWidth, this.superHeight);
+            const destData = destImageData.data;
+            const factor = this.SUPER_SAMPLING_FACTOR;
 
-             const tempCanvas = document.createElement('canvas');
-             tempCanvas.width = this.superWidth;
-             tempCanvas.height = this.superHeight;
-             const tempCtx = tempCanvas.getContext('2d');
-             tempCtx.imageSmoothingEnabled = true;
-             tempCtx.imageSmoothingQuality = 'high';
-             tempCtx.drawImage(sourceCanvas, 0, 0, this.superWidth, this.superHeight);
+            for (let y = 0; y < this.superHeight; y++) {
+                for (let x = 0; x < this.superWidth; x++) {
+                    const sx = Math.floor(x / factor);
+                    const sy = Math.floor(y / factor);
 
+                    const sourceIndex = (sy * sourceWidth + sx) * 4;
+                    const destIndex = (y * this.superWidth + x) * 4;
+
+                    destData[destIndex]     = sourceData[sourceIndex];
+                    destData[destIndex + 1] = sourceData[sourceIndex + 1];
+                    destData[destIndex + 2] = sourceData[sourceIndex + 2];
+                    destData[destIndex + 3] = sourceData[sourceIndex + 3];
+                }
+            }
+            
+            // 手動で作成したImageDataをテクスチャに直接アップロードします。
             gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, tempCanvas);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); // WebGLはY座標が逆なので転置
+            // texSubImage2Dのシグネチャ (target, level, xoffset, yoffset, format, type, source) を使用
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, destImageData);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); // 他への影響を避けるため設定を元に戻す
             gl.bindTexture(gl.TEXTURE_2D, null);
 
             layer.gpuDirty = false;
