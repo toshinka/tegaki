@@ -1,0 +1,280 @@
+# WebGL化バグ防止ガイド
+
+## 🚨 最も重要な4つのルール
+
+### 1. **座標系の統一を徹底する**
+```javascript
+// ❌ 間違い：複数箇所でY軸反転
+// JavaScript側
+mat4.scale(matrix, [1, -1, 1]); // ここで反転して...
+
+// シェーダー側
+gl_Position = u_mvpMatrix * vec4(a_position.x, -a_position.y, ...); // またここでも反転
+
+// ✅ 正解：シェーダーでのみY軸反転
+// JavaScript側では一切Y軸反転しない
+// シェーダー側でのみ: gl_Position = u_mvpMatrix * vec4(a_position.x, -a_position.y, ...);
+```
+
+### 2. **modelMatrixの初期化を確実に行う**
+```javascript
+// ❌ 間違い：レイヤー作成時にmodelMatrixを忘れる
+const layer = { id: 1, name: "Layer1" }; // modelMatrix未定義
+
+// ✅ 正解：レイヤー作成時に必ず初期化
+const layer = { 
+    id: 1, 
+    name: "Layer1", 
+    modelMatrix: mat4.create() // 必須
+};
+
+// さらに安全な初期化（既存レイヤーの修正時）
+if (!layer.modelMatrix) {
+    layer.modelMatrix = mat4.create();
+}
+```
+
+### 3. **WebGLコンテキストの確実な取得**
+```javascript
+// ❌ 間違い：エラーハンドリングなし
+const gl = canvas.getContext('webgl');
+gl.viewport(0, 0, canvas.width, canvas.height); // glがnullならエラー
+
+// ✅ 正解：必ずエラーチェック
+const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+if (!gl) {
+    console.error('WebGL not supported');
+    alert('WebGLがサポートされていません。別のブラウザを試してください。');
+    return;
+}
+```
+
+### 4. **シェーダーエラーの必須チェック**
+```javascript
+// ❌ 間違い：コンパイルエラーを無視
+const shader = gl.createShader(gl.VERTEX_SHADER);
+gl.shaderSource(shader, vsSource);
+gl.compileShader(shader);
+// エラーチェックなし
+
+// ✅ 正解：必ずエラーチェック
+const shader = gl.createShader(gl.VERTEX_SHADER);
+gl.shaderSource(shader, vsSource);
+gl.compileShader(shader);
+if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    const error = gl.getShaderInfoLog(shader);
+    console.error('Shader compile error:', error);
+    gl.deleteShader(shader);
+    return null;
+}
+```
+
+## 🔧 具体的なバグ対策
+
+### マウス座標とレイヤー描画位置のズレ問題
+```javascript
+// 問題：レイヤーが移動すると、マウスクリック位置とペンの描画位置がズレる
+
+// ✅ 解決法：マウス座標をレイヤーのローカル座標に変換
+function getLocalCoordinates(mouseX, mouseY, layer) {
+    // transform-utils.jsの関数を使用
+    return transformWorldToLocal(mouseX, mouseY, layer.modelMatrix);
+}
+
+// ペン描画時の正しい座標計算
+function onMouseDown(event) {
+    const rect = canvas.getBoundingClientRect();
+    const worldX = event.clientX - rect.left;
+    const worldY = event.clientY - rect.top;
+    
+    // アクティブレイヤーのローカル座標に変換
+    const localCoords = getLocalCoordinates(worldX, worldY, activeLayer);
+    
+    // ローカル座標でペン描画開始
+    startDrawing(localCoords.x, localCoords.y);
+}
+```
+
+### レイヤー移動時のペン描画領域の同期問題
+```javascript
+// 問題：レイヤーを移動すると、そのレイヤーのペン描画可能領域も一緒に移動してしまう
+
+// ✅ 解決法：ペン描画はレイヤーのテクスチャ（ローカル座標）で行い、
+// 表示時にmodelMatrixで変換する
+
+// 描画処理の分離
+class LayerDrawingSystem {
+    // ペン描画：レイヤーのテクスチャ（ローカル座標）に対して実行
+    drawToLayerTexture(layer, localX, localY, brushSize, color) {
+        // このテクスチャはmodelMatrixの影響を受けない
+        const layerCanvas = layer.canvas; // レイヤー専用キャンバス
+        const ctx = layerCanvas.getContext('2d');
+        
+        // ローカル座標でペン描画
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(localX, localY, brushSize, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // テクスチャを更新
+        this.updateLayerTexture(layer);
+    }
+    
+    // 表示処理：WebGLでmodelMatrixを適用して描画
+    renderLayer(layer) {
+        // レイヤーのテクスチャを、modelMatrixで変換して描画
+        webglEngine.drawLayer(layer); // modelMatrixがここで適用される
+    }
+}
+```
+
+### dat.GUIの値と実際の描画の不一致問題
+```javascript
+// 問題：GUIで設定した値と実際の描画位置が合わない
+
+// ✅ 解決法：GUIの値変更時に必ず行列をリセットしてから再構築
+function onGUIChange() {
+    if (!activeLayer || !activeLayer.modelMatrix) return;
+    
+    // 1. 行列をリセット
+    reset(activeLayer.modelMatrix);
+    
+    // 2. GUIの値を順番に適用（順序重要）
+    translate(activeLayer.modelMatrix, guiValues.translationX, guiValues.translationY);
+    rotate(activeLayer.modelMatrix, guiValues.rotation * Math.PI / 180);
+    scale(activeLayer.modelMatrix, guiValues.scaleX, guiValues.scaleY);
+    
+    // 3. 再描画
+    redraw();
+}
+
+// アクティブレイヤー切り替え時のGUI同期
+function onActiveLayerChanged(newLayer) {
+    if (newLayer && newLayer.modelMatrix) {
+        // 現在の行列から値を取得してGUIに反映
+        const translation = getTranslation(newLayer.modelMatrix);
+        guiValues.translationX = translation.x;
+        guiValues.translationY = translation.y;
+        
+        // GUIの表示を更新
+        updateGUIDisplay();
+    }
+}
+```
+
+## 🐛 デバッグ手法
+
+### 1. **段階的な確認**
+```javascript
+// WebGL初期化の各段階でログ出力
+console.log('1. Canvas:', canvas);
+console.log('2. WebGL Context:', gl);
+console.log('3. Vertex Shader:', vertexShader);
+console.log('4. Fragment Shader:', fragmentShader);
+console.log('5. Program:', program);
+console.log('6. Uniform Location:', u_mvpMatrixLoc);
+```
+
+### 2. **行列の可視化**
+```javascript
+// modelMatrixの内容をログ出力
+function debugMatrix(matrix, name) {
+    console.log(`${name}:`, Array.from(matrix));
+    const translation = getTranslation(matrix);
+    console.log(`  Translation: x=${translation.x}, y=${translation.y}`);
+}
+
+// 使用例
+debugMatrix(activeLayer.modelMatrix, 'Active Layer Matrix');
+```
+
+### 3. **座標変換の確認**
+```javascript
+// マウス座標からローカル座標への変換を確認
+function debugCoordinateTransform(mouseX, mouseY, layer) {
+    console.log('Mouse coords:', mouseX, mouseY);
+    const local = transformWorldToLocal(mouseX, mouseY, layer.modelMatrix);
+    console.log('Local coords:', local.x, local.y);
+    
+    // 逆変換で確認
+    const worldAgain = transformLocalToWorld(local.x, local.y, layer.modelMatrix);
+    console.log('World again:', worldAgain.x, worldAgain.y);
+}
+```
+
+## ⚠️ よくある落とし穴
+
+### 1. **行列の累積**
+```javascript
+// ❌ 間違い：毎回変換を累積してしまう
+function moveLayer(dx, dy) {
+    translate(layer.modelMatrix, dx, dy); // 毎回追加される
+}
+
+// ✅ 正解：絶対位置で管理
+function moveLayer(newX, newY) {
+    reset(layer.modelMatrix);
+    translate(layer.modelMatrix, newX, newY);
+}
+```
+
+### 2. **描画順序の問題**
+```javascript
+// ❌ 間違い：WebGLステートが不整合
+gl.useProgram(program);
+gl.uniformMatrix4fv(u_mvpMatrixLoc, false, matrix); // program使用前に実行
+
+// ✅ 正解：正しい順序
+gl.useProgram(program);
+gl.uniformMatrix4fv(u_mvpMatrixLoc, false, matrix);
+gl.drawArrays(gl.TRIANGLES, 0, 6);
+```
+
+### 3. **メモリリークとリソース管理**
+```javascript
+// ✅ 適切なリソース管理
+class WebGLEngine {
+    cleanup() {
+        if (this.program) {
+            this.gl.deleteProgram(this.program);
+        }
+        if (this.vertexShader) {
+            this.gl.deleteShader(this.vertexShader);
+        }
+        if (this.fragmentShader) {
+            this.gl.deleteShader(this.fragmentShader);
+        }
+    }
+}
+```
+
+## 🎯 実装時のチェックリスト
+
+### 改修前
+- [ ] 既存のレイヤー構造を把握
+- [ ] 現在の座標系を確認
+- [ ] WebGLコンテキストの取得可否を確認
+
+### 改修中
+- [ ] 各レイヤーにmodelMatrixを追加
+- [ ] transform-utils.jsの関数のみ使用
+- [ ] シェーダーコンパイルエラーをチェック
+- [ ] Y軸反転をシェーダーでのみ実行
+
+### 改修後
+- [ ] dat.GUIの値と描画位置が一致するか
+- [ ] マウス座標とペン描画位置が一致するか
+- [ ] レイヤー移動時にペン描画領域が同期しないか
+- [ ] 複数レイヤーの表示が正常か
+
+## 🚀 推奨する改修順序
+
+1. **transform-utils.js を完成させる**
+2. **既存レイヤーにmodelMatrixを追加**
+3. **WebGLエンジンのエラーハンドリングを強化**
+4. **座標変換関数をテスト**
+5. **dat.GUI連携を実装**
+6. **マウス操作の座標変換を修正**
+
+この順序で進めることで、段階的に問題を解決し、バグの発生を最小限に抑えることができます。

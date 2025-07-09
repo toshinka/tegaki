@@ -1,0 +1,50 @@
+📘 Phase 4A11D – GPU直描き描画パイプライン移行計画（全体概要）
+フェーズ	目的	主な実装内容	推奨ライブラリ
+D-0	FBO描画の最小導入	GPU上に描画可能な1レイヤーFBO作成と描画確認	✅ twgl.js
+D-1	GPUレイヤー移動	transformStageをFBOに移行し、GPUで移動描画完結	✅ twgl.js
+✅ gl-matrix
+D-2	GPUペン描画対応	GPU上のFBOに対しライン描画 or 点描画実装	✅ twgl.js
+✅ Paper.js (補助)
+D-3	マルチレイヤー＆合成	各レイヤーがFBO化、ブレンド対応含むGPU合成処理	✅ twgl.js
+✅ gl-matrix
+D-4	ベジェ筆圧対応＋WebGL2高速化	VAO等の高速描画＋筆圧シェーダ対応	✅ WebGL2 API
+✅ Pointer Events API
+
+✅ 推奨ライブラリ導入計画
+ライブラリ	導入フェーズ	目的
+twgl.js	D-0 〜 D-4	WebGLのFBO作成・テクスチャ管理の簡略化
+gl-matrix（導入済）	D-1 〜 D-4	モデル・投影・回転・スケール行列の扱い強化
+Paper.js	D-2〜（任意）	ベジェ線の補間・スムージング補助
+Pointer Events API	D-4〜	筆圧や傾きの入力をシェーダーに渡す
+GPU.js	D-4〜（将来検討）	並列処理が必要になった時（例：フィルター処理）
+
+💡補足：Claude提案の技術的知見の反映
+初回レイヤー移動のプルプル問題 ⇒ D-1 で FBOに常時描画を維持することで回避。
+
+ジャギーや線のにじみ ⇒ テクスチャ補間設定を NEAREST、WebGL2での RGBA16F もD-3以降で。
+
+描画と変形の混在処理 ⇒ 全てGPU上で完結するため、ImageData操作が一掃される。
+
+📂 D-0とD-1の指示書反映案（概要のみ）
+📘 Phase 4A11D-0 指示書（更新版）
+twgl.jsを導入
+
+createFBOForLayer()：1レイヤーFBO生成
+
+drawTestToFBO()：赤線や点など描画試験
+
+renderToDisplay()：main canvasへ出力
+
+📘 Phase 4A11D-1 指示書（予定）
+transformStageを破棄し、レイヤー移動描画をFBOに移行
+
+drawLayerWithTransform()：行列変換後にFBOを別FBOへ転写
+
+gl.finish()と readPixels() はD-1段階では使用しない
+
+✅ 次のステップご提案
+この表と工程計画をFIX
+
+ご希望あれば twgl.js を [CDN or npm導入形式] で提案可
+
+D-0の新指示書に進む
