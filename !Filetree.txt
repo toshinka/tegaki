@@ -112,7 +112,7 @@
 │ │
 │ └ libs/                           
 │ 　 ├─ twgl.min.js                   <-- （Phase4A11C - WebGL簡素化）【※実装予定】
-│ 　 ├─ gl-matrix-min.js              <-- （Phase4A11A-5 - 行列計算）【※実装予定】
+│ 　 ├─ gl-matrix-min.js              <-- （Phase4A11A-5 - 行列計算）
 │ 　 ├─ tweakpane.min.js              <-- （Phase4A11C - dat.GUI置換）【※実装予定】
 │ 　 ├─ dexie.min.js                  <-- （Phase4A11B-11 - IndexedDB）
 │ 　 ├─ konva.min.js                  <-- （Phase5A - レイヤー管理）【※実装予定】
