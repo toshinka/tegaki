@@ -1,0 +1,48 @@
+🎯 このフェーズの目的
+問題	状況
+Vキーを押しただけで絵が消える	セル転写が起きないのにレイヤークリアが走る
+ドラッグしないと復元されない	無操作でのキャンセル時にバッファ未復元
+V押→離しで転写しないのに画が消える	表示・転写の責任が分離されていない
+
+🧠 解決アプローチ：遅延クリア方式（Delayed Clear Pattern）
+✅ 概要
+V 押下時にはレイヤーをすぐにクリアしない
+
+実際にドラッグ操作が始まった瞬間にだけクリア
+
+「操作なし→離す」はキャンセルとみなして元に戻す必要がない状態を維持
+
+🔁 状態フラグの導入（canvas-manager.js または CanvasManager クラス）
+js
+コピーする
+編集する
+this.layerTransformPending = false;  // V押下後だがドラッグ未開始
+this.transformDragStarted = false;  // ドラッグ開始済みかどうか
+✅ 各関数の仕様変更点
+関数名	修正内容
+startLayerTransform()	状態フラグを立てるのみ。クリア処理を削除
+performDelayedLayerClear()	初回ドラッグ時にのみクリア実行
+onPointerDown() / onPointerMove()	初回ドラッグ検出時に performDelayedLayerClear() を呼ぶ
+cancelLayerTransform()	layerTransformPending === true のときは何もせず終了
+commitLayerTransform()	layerTransformPending === true のときは転写せず終了
+
+✅ 成功条件とテストケース
+✅ 正常フロー
+操作	結果
+V押→ドラッグ→V離す	正常に転写される（画質保持）
+V押→ドラッグ→Esc	元の位置に戻る
+V押→離す（操作なし）	絵は元の位置のまま、何も起きない（正）
+
+📋 チェックリスト（GEMINI向け）
+チェック項目	検証方法
+[ ] startLayerTransform() 内でレイヤーは即座にクリアされない	
+[ ] performDelayedLayerClear() は1回だけ呼ばれる	
+[ ] キャンセル時、絵が元のまま残る（何も失われない）	
+[ ] commitLayerTransform() ではドラッグされた場合のみ転写される	
+[ ] drawImage() は使用されていない（画質維持）	
+
+🧱 必要構造（コード設計視点）
+名称	説明
+cellBuffer	移動対象のImageDataとmodelMatrixを保持
+layerTransformPending	遅延クリア状態であることを示す
+transformDragStarted	実際にドラッグが始まったかを示す
