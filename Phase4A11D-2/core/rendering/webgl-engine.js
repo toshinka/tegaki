@@ -1,14 +1,13 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.8.2 (Phase 4A11D-2)
+ * Version: 4.8.3 (Phase 4A11D-2 Hotfix)
  *
- * - 変更点 (Phase 4A11D-2):
- * - 「📘 Phase 4A11D-2 指示書」に基づき、twgl.js を用いた直線描画機能を実装。
- * - 既存のテスト用FBO描画処理 (_initTwglTest, _twglDrawTestOnFBO) を廃止。
- * - 直線描画用のシェーダーとリソースを初期化する `_initLineDrawingResources` を新設。
- * - 指定された座標間に直線を引く `drawTestLine` メソッドを新設。
- * - 初期化時に `drawTestLine` を呼び出し、FBOに白い線を描画して表示するテストコードを追加。
+ * - 変更点 (Phase 4A11D-2 Hotfix):
+ * - 白線が描画されない問題を修正。
+ * - 原因：constructorで描画したテスト線が、後続のcompositeLayers処理でクリアされていた。
+ * - 対策：テスト描画の呼び出しを、constructorからcompositeLayersの末尾に移動。
+ * これにより、レイヤー合成後にテスト線が描画され、消去されなくなった。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -46,7 +45,6 @@ export class WebGLEngine extends DrawingEngine {
         
         this.identityMatrix = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
 
-        // [Phase 4A11D-2] 直線描画用のリソース
         this.lineProgramInfo = null;
 
         try {
@@ -79,23 +77,19 @@ export class WebGLEngine extends DrawingEngine {
         this._initBuffers();
         this._setupSuperCompositingBuffer();
         
-        // [Phase 4A11D-2] 直線描画用のシェーダー等を準備
         this._initLineDrawingResources();
-
 
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
         
-        console.log(`WebGL Engine (v4.8.2 Phase4A11D-2) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.8.3 Phase4A11D-2 Hotfix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
 
-        // [Phase 4A11D-2] テスト用コード（描画確認）
-        // 一時的なテスト（確認後削除）
-        this.drawTestLine(50, 50, 200, 200, [1, 1, 1, 1]); // 白線
-        this.renderToDisplay();
+        // [Phase 4A11D-2 Hotfix] テスト描画の呼び出しを compositeLayers に移動したため、ここからは削除。
+        // this.drawTestLine(50, 50, 200, 200, [1, 1, 1, 1]);
+        // this.renderToDisplay();
     }
 
-    // [Phase 4A11D-2] 直線描画用のシェーダーとProgramInfoを初期化
     _initLineDrawingResources() {
         if (!twgl || !this.gl) {
             console.warn("twgl.js is not loaded or WebGL context is not available. Skipping line drawing resource initialization.");
@@ -124,7 +118,6 @@ export class WebGLEngine extends DrawingEngine {
         }
     }
     
-    // [Phase 4A11D-2] twgl.js を使ってFBOにテスト用の直線を描画
     drawTestLine(x0, y0, x1, y1, color = [1, 1, 1, 1]) {
         if (!this.lineProgramInfo) {
             console.error("Line drawing resources are not initialized.");
@@ -132,17 +125,14 @@ export class WebGLEngine extends DrawingEngine {
         }
         const gl = this.gl;
 
-        // スーパーサンプリング解像度に座標を変換
         const sx0 = x0 * this.SUPER_SAMPLING_FACTOR;
         const sy0 = y0 * this.SUPER_SAMPLING_FACTOR;
         const sx1 = x1 * this.SUPER_SAMPLING_FACTOR;
         const sy1 = y1 * this.SUPER_SAMPLING_FACTOR;
         
-        // 描画ターゲットをスーパーサンプリング用のFBOに設定
-        twgl.bindFramebufferInfo(gl, {framebuffer: this.superCompositeFBO});
-        gl.viewport(0, 0, this.superWidth, this.superHeight);
+        // ★注意：このメソッドは呼び出し元でFBOがバインドされていることを前提とします。
+        // compositeLayers内で呼び出されるため、superCompositeFBOに描画されます。
 
-        // 描画する直線の頂点データからバッファ情報を作成
         const arrays = {
             a_position: {
                 numComponents: 2,
@@ -151,7 +141,6 @@ export class WebGLEngine extends DrawingEngine {
         };
         const bufferInfo = twgl.createBufferInfoFromArrays(gl, arrays);
 
-        // プログラムとユニフォームを設定
         gl.useProgram(this.lineProgramInfo.program);
         const uniforms = {
             u_mvpMatrix: this.projectionMatrix,
@@ -159,12 +148,8 @@ export class WebGLEngine extends DrawingEngine {
         };
         twgl.setUniforms(this.lineProgramInfo, uniforms);
         
-        // バッファとアトリビュートを設定して描画
         twgl.setBuffersAndAttributes(gl, this.lineProgramInfo, bufferInfo);
         twgl.drawBufferInfo(gl, bufferInfo, gl.LINES);
-
-        // 描画ターゲットをデフォルト（キャンバス）に戻す
-        twgl.bindFramebufferInfo(gl, null);
     }
 
 
@@ -637,6 +622,9 @@ export class WebGLEngine extends DrawingEngine {
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         }
         
+        // [Phase 4A11D-2 Hotfix] テスト描画をここに移動
+        this.drawTestLine(50, 50, 200, 200, [1, 1, 1, 1]); // 白線
+
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
     
