@@ -1,0 +1,63 @@
+🎯 フェーズ目的（最終化）
+描画劣化やズレの根本原因となる drawImage() をプロジェクト全体から完全排除する。
+
+対象	内容
+🎨 画質のボケ／二重劣化	drawImage()のアンチエイリアスが原因
+🔁 右下ズレ	表示位置と描画領域の不一致による座標誤差
+📦 レイヤー統合／復元	内部的に drawImage() を使っており、画質が劣化
+
+📁 対象範囲
+プロジェクト全体で以下のディレクトリ・ファイルを横断的に確認・修正する。
+
+場所	内容
+/core-engine.js	IndexedDB復元時の drawImage()
+/core/rendering/webgl-engine.js	バッファ転送時の drawImage()
+/layer-manager/layer-manager.js	レイヤー統合時の drawImage()（例: tempCtx.drawImage(topLayerCanvas)）
+/tools/, /ui/など	将来的な描画転写処理を含む可能性あり。一括検索の習慣化が必要
+
+🔍 作業指示
+✅ 1. "drawImage" を全ファイルに対して検索せよ
+plaintext
+コードをコピーする
+検索対象: *.js（すべてのディレクトリ含む）
+検索語句: drawImage
+該当行があれば、その内容・意図を確認し、指示書に従って修正せよ
+✅ 2. すべての drawImage() 呼び出しを getImageData + putImageData に置換せよ
+❌ NGコード（全禁止）：
+js
+コードをコピーする
+tempCtx.drawImage(srcCanvas, 0, 0);
+✅ OKコード：
+js
+コードをコピーする
+const srcCtx = srcCanvas.getContext('2d');
+const imgData = srcCtx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
+tempCtx.putImageData(imgData, 0, 0);
+📌 drawImageによるスケーリング、透明度の劣化、色にじみが発生するため完全禁止とする
+
+✅ 3. 特に以下の箇所を確実に修正対象に含めよ
+🔸 /core-engine.js（IndexedDB復元処理）：
+img.onload 内で drawImage を使い、一時キャンバスに描画 → そこから getImageData() 取得、で完結させる
+
+🔸 /webgl-engine.js：
+drawImage(..., this.superWidth, this.superHeight) のようにスケーリングを伴う転写がある場合、glMatrixまたはWebGLシェーダー側でスケール処理を統一し、drawImageを使わない
+
+🔸 /layer-manager/layer-manager.js：
+tempCtx.drawImage(topLayerCanvas, 0, 0); は確実に getImageData + putImageData へ置換
+
+🧱 備考：drawImageの副作用
+アンチエイリアス不可避
+
+透明ピクセルの補間により境界がぼける
+
+誤差の蓄積により描画結果に違和感が出る
+
+GPUへの転送でも drawImage は推奨されない
+
+✅ 完了チェックリスト（最終版）
+項目	条件
+[ ] drawImage の使用箇所が完全にゼロである（全ファイル検索）	
+[ ] すべて getImageData → putImageData で構成されている	
+[ ] 転写後の画像にぼけ・にじみ・座標ズレがない	
+[ ] layer-manager などの統合処理も対象に含まれている	
+[ ] コメントの「対応済み」ではなくコード実体を根拠にしている
