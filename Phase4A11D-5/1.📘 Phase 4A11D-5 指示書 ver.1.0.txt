@@ -1,80 +1,83 @@
-📄 Phase 4A11D-5 指示書 ver.1.0
-目的：Paper.jsで生成した補間パスを、twgl.jsを用いてGPU描画へ反映する。滑らかなペン線を実現する。
+## Phase 4A11D-5 指示書 ver.2.0
 
-🎯 背景と目的
-前フェーズ（D-4）では、Paper.js を用いたペン描画用の補間パス生成が実装されましたが、それを 実際の描画（FBOレンダリング）に接続する処理が未実装でした。
+### 🎯 目的
 
-このフェーズでは、以下を実現します：
+Paper.jsによる補間試行（D-4）の結果、描画破線化や制御の難しさが判明したため、Perfect Freehand（PFH）に描画補間エンジンを全面切替。
 
-Paper.jsで補間した線をGPUに渡して描画
+本指示書では、PFHベースでのペン描画処理とGPU描画（twgl.js）との連携処理を設計します。
 
-ペン線が「破線」ではなく滑らかにつながるようにする
+---
 
-🧩 対象ファイル
-core/rendering/webgl-engine.js
+### ✅ 対象ファイル
 
-libs/paper-core.min.js または paper-full.min.js（すでに導入済）
+* `/core/rendering/webgl-engine.js`
+* `/libs/perfect-freehand.min.js`（別途導入済）
 
-🛠️ 実装タスク
-1. Paper.jsの補間パスから座標列を抽出
-js
-コピーする
-編集する
-const flattened = path.flatten(1.0); // 精度 1.0px 単位で補間
-const points = [];
-for (let i = 0; i < path.segments.length; i++) {
-    const pt = path.segments[i].point;
-    points.push([pt.x, pt.y]);
-}
-または以下のように path.curves 経由でも可：
+---
 
-js
-コピーする
-編集する
-const points = path.curves.map(c => [c.segment1.point.x, c.segment1.point.y]);
-2. twgl.jsによるLINE_STRIP描画処理を実装
-描画関数例：
+### 📦 事前準備
 
-js
-コピーする
-編集する
-drawInterpolatedPathToLayerFBO(layerID, pointArray, color, size)
-layerID: 描画対象FBOのID
+* [x] `perfect-freehand` ライブラリを `libs/` フォルダに配置（済）
+* [x] `index.html` に `<script src="./libs/perfect-freehand.min.js"></script>` を追記（済）
 
-pointArray: 上記で生成した座標列（[x, y]の配列）
+---
 
-color: RGBA（0〜1.0）
+### 🧠 実装方針
 
-size: 線幅（太さ）
+#### 🖌️ 1. 線描画処理をPFHに置換
 
-※ twgl.setBuffersAndAttributes および gl.drawArrays(gl.LINE_STRIP, ...) を使用。
+* PFHの `getStroke(points, options)` を使用して滑らかなストローク輪郭を生成
+* ストロークは `Array<[x, y]>` の配列として渡す
+* オプション：`size`, `thinning`, `streamline`, `smoothing` など調整可能
+* 出力された輪郭ポリゴン（stroke points）を `twgl.js` でGL\_TRIANGLE\_FANまたはSTRIPとして描画
 
-3. 描画確定時にGPUへ出力
-描画終了時：
+#### 🪄 2. マウス移動中の処理フロー
 
-Paper.Path を破棄
+```
+ onPointerDown:
+   -> points[] 初期化し、最初の点を追加
+   -> 現在のImageDataを transformStage にコピー
 
-transformStage への描画をFBOに転写（もしくは即描画）
+ onPointerMove:
+   -> points[] に座標を追加
+   -> transformStage に前状態を復元し、PFHで stroke を描画して再反映
 
-canvasManager.onDrawEnd() を呼び出し、IndexedDB保存の対象とする
+ onPointerUp:
+   -> 完了後 stroke をベイクし、transformStageをImageDataに戻す
+```
 
-🧪 動作確認
-✅ テスト条件
-操作	期待結果
-ペンで曲線を描く	滑らかな線がGPU上に描画される（破線ではない）
-描画中に拡大縮小	線の太さ・補間に違和感が出ない
-線の色変更	正しく反映される
-消しゴム切替	Paper.js を使用しない従来の消し方が維持される
+#### 🖍️ 3. ストローク描画オプション（調整推奨）
 
-🧹 その他
-Paper.js のメモリ解放（path.remove()）も適宜行う
+```js
+const options = {
+  size: brushSize,           // 現在のブラシサイズ
+  thinning: 0.6,             // 筆圧による太さ変動度合い
+  streamline: 0.3,           // ブレ補正係数（0.0〜1.0）
+  smoothing: 0.5,            // 曲線補間度合い（0.0〜1.0）
+  simulatePressure: true     // 筆圧未使用時に疑似圧力を適用
+};
+```
 
-flatten() の精度は端末依存で調整可能にしておくと今後に活かせます
+#### 🎨 4. WebGL描画での反映方法
 
-📘 備考
-twgl.js の drawArrays は LINE_STRIP に対応済
+* PFHから返されるストローク座標はPolygon
+* これを `twgl.createBufferInfoFromArrays()` で `a_position` に渡し、ポリゴン描画を実行
+* 単色で良ければ fragmentShader は定数色でOK（透過/筆圧は未対応でOK）
 
-WebGLの補間なし設定（NEAREST）も維持してください
+---
 
-今後 pressure（筆圧）にも対応する予定のため、pointArrayに size 情報を含める構造にも将来的に拡張できるように
+### 🚧 注意点
 
+* 消しゴムはPFHを使わず従来の丸ブラシ方式を維持（粒状感が必要なため）
+* `points[]` リストの管理・リセットに注意（描画終了時は必ず初期化）
+* transformStage への描き戻しは `putImageData()` を必ず使う
+* 補間描画中も GPU Dirty を維持（force update）
+
+---
+
+### ✅ 最終的な動作目標
+
+* ペンツール時に滑らかで繋がったストロークが描かれる
+* 描画開始時の「点出血」や、点線/破線化が発生しない
+* 消しゴムは従来通り円形ブラシで描画
+* twgl.js のFBOへの書き込みとして処理を統一
