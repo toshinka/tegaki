@@ -1,1 +1,78 @@
-Phase 4A11D-7 指示書 ver.1.0
+📘 Phase 4A11D-7 指示書 ver.1.0
+目的：UI制御を dat.GUI から Tweakpane に移行し、よりモダンで柔軟な設定UIを構築する
+
+✅ 背景と目的
+これまで使用していた dat.GUI は古く、柔軟性・拡張性に限界がある。
+
+今後導入する予定の Perfect Freehand, ESM, GPUパイプライン, アニメツール統合 などとも親和性が高いのは、より動的なUIライブラリである Tweakpane。
+
+Tweakpane を導入し、ツール設定（ペンサイズ、カラー、ツール切り替えなど）を今後段階的に移行・統合していく準備段階。
+
+🔧 作業概要
+1. ライブラリの追加
+以下を ToshinkaTegakiTool.html に追加済みであることを確認：（済）
+
+html
+コードをコピーする
+<script src="./libs/tweakpane.min.js"></script> （済）
+※ dat.GUI は将来的に削除予定（現在は併用可能）
+
+2. UI初期化コードの構築（暫定版）
+ui-manager.js または tool-manager.js に以下のような基本UI制御を追加：
+
+js
+コードをコピーする
+// ペンサイズ・色設定用のUIパネル（暫定）
+const pane = new Tweakpane.Pane();
+const params = {
+  size: 5,
+  color: '#800000',
+};
+
+// ペンサイズスライダー
+pane.addInput(params, 'size', {
+  min: 1,
+  max: 50,
+  step: 1,
+}).on('change', (ev) => {
+  app.canvasManager.setCurrentSize(ev.value); // サイズ適用
+});
+
+// カラーピッカー
+pane.addInput(params, 'color').on('change', (ev) => {
+  app.canvasManager.setCurrentColor(ev.value); // 色適用
+});
+3. CanvasManager 側の受け取り処理（すでに実装済）
+js
+コードをコピーする
+setCurrentSize(size) {
+  this.currentSize = size;
+}
+
+setCurrentColor(color) {
+  this.currentColor = color;
+}
+🧪 テスト項目
+ 起動時に Tweakpane が UIとして表示される
+
+ ペンサイズを変更すると描画サイズが変わる
+
+ カラーピッカーで色を選ぶと描画色が変わる
+
+ dat.GUI の残骸が動作に影響しない（必要なら削除）
+
+🗂️ 影響範囲
+ファイル名	内容
+ToshinkaTegakiTool.html	ライブラリ読込を変更（済）
+ui-manager.js 等	UI制御にTweakpaneを追加
+canvas-manager.js	setCurrentColor/Size 実装（済）
+
+🔄 今後の展開（次フェーズD-8以降）
+dat.GUI の完全削除
+
+UI項目のTweakpaneへの完全移行
+
+アニメツール統合に向けたUIの段階的整理
+
+ペン設定のプリセット対応（Tweakpane folders機能活用）
+
