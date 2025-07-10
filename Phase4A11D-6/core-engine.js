@@ -1,14 +1,16 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.5.0 (Phase 4A11D-6)
+ * Version: 3.5.1 (Phase 4A11D-6 Hotfix)
+ *
+ * - 変更点 (Phase 4A11D-6 Hotfix):
+ * - onPointerMove内で、strokePointsの数が2未満の時にdrawStrokeを呼び出していた
+ * 致命的なエラーを修正。これにより "numComponents 2 not correct for length 0"
+ * エラーが解消されます。
+ * - onPointerUpで、点が1つの場合（シングルクリック）でも点が描画されるように修正。
  *
  * - 変更点 (Phase 4A11D-6):
  * - 「📘 Phase 4A11D-6 指示書」に基づき、ペンツールをPerfect Freehandに対応。
- * - tool-manager.js に isPenDrawing, strokePoints 状態を追加。
- * - onPointerDown, onPointerMove, onPointerUp イベントをペンツール専用に分岐処理。
- * - ペンツール使用時、webglEngine.drawStroke を呼び出し、滑らかな描画を実現。
- * - 消しゴムツールは従来の drawLine での描画を維持し、挙動の互換性を確保。
  * ===================================================================================
  */
 
@@ -335,6 +337,13 @@ class CanvasManager {
             const pressure = e.pressure > 0 ? e.pressure : 0.5;
             this.app.toolManager.strokePoints.push([coords.x, coords.y, pressure]);
             
+            // ▼▼▼ HOTFIX ▼▼▼
+            // 点が2つ以上ないと線が描画できないため、チェックを追加してエラーを回避
+            if (this.app.toolManager.strokePoints.length < 2) {
+                return;
+            }
+            // ▲▲▲ HOTFIX ▲▲▲
+
             // WebGLエンジンにストローク描画を指示 (ストリーミングモード)
             this.renderingBridge.currentEngine?.drawStroke(
                 this.app.toolManager.strokePoints,
@@ -387,7 +396,10 @@ class CanvasManager {
             this.app.toolManager.isPenDrawing = false;
             const points = this.app.toolManager.strokePoints;
 
-            if (points.length > 1) {
+            // ▼▼▼ HOTFIX ▼▼▼
+            // 1点だけでも（クリック）描画できるように > 1 を > 0 に変更
+            if (points.length > 0) {
+            // ▲▲▲ HOTFIX ▲▲▲
                 const activeLayer = this.app.layerManager.getCurrentLayer();
                 if (activeLayer) {
                     // WebGLエンジンに最終描画を指示
