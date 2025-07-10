@@ -1,17 +1,17 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.9.0 (Phase 4A11D-5)
+ * Version: 4.9.0 (Phase 4A11D-3)
  *
- * - 変更点 (Phase 4A11D-5):
- * - 「📘 Phase 4A11D-5 指示書」に基づき、描画補間エンジンをPerfect Freehandに移行。
- * - ペン描画用に、Perfect Freehandで生成されたストロークポリゴンを描画する
- * `drawStroke` メソッドを新設。
- * - `drawStroke` は、与えられたポリゴン頂点を `gl.TRIANGLE_FAN` を用いて描画する。
- * - 既存の `drawLine` メソッドは、消しゴムツール専用に変更。ペンツール（isEraser=false）
- * での呼び出しは非推奨となり、古い線分描画ロジックは削除された。
- * - これにより、上位モジュールでPerfect Freehandを呼び出し、その結果を
- * `drawStroke` に渡すことで、滑らかな線描画を実現する。
+ * - 変更点 (Phase 4A11D-3):
+ * - 「📘 Phase 4A11D-3 指示書」に基づき、drawLineの実装を改修。
+ * - ペンツール使用時（isEraser=falseの場合）に、twgl.jsを利用したハードウェア
+ * アクセラレーションによる線分描画を行うように変更。
+ * - gl.LINESを使い、マウスの移動に合わせて(x0, y0)から(x1, y1)への線分を描画。
+ * - 描画対象は各レイヤーに紐づいたFBO。
+ * - 線幅はgl.lineWidth()で指定。
+ * - 消しゴムツール使用時（isEraser=trueの場合）は、従来通り円を連続描画する
+ * 方式を維持し、ツールの役割に応じた描画ロジックを両立。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -87,7 +87,11 @@ export class WebGLEngine extends DrawingEngine {
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
         
-        console.log(`WebGL Engine (v4.9.0 Phase4A11D-5) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.9.0 Phase4A11D-3) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+
+        // [Phase 4A11D-2 Hotfix] テスト描画の呼び出しを compositeLayers に移動したため、ここからは削除。
+        // this.drawTestLine(50, 50, 200, 200, [1, 1, 1, 1]);
+        // this.renderToDisplay();
     }
 
     _initLineDrawingResources() {
@@ -130,6 +134,9 @@ export class WebGLEngine extends DrawingEngine {
         const sx1 = x1 * this.SUPER_SAMPLING_FACTOR;
         const sy1 = y1 * this.SUPER_SAMPLING_FACTOR;
         
+        // ★注意：このメソッドは呼び出し元でFBOがバインドされていることを前提とします。
+        // compositeLayers内で呼び出されるため、superCompositeFBOに描画されます。
+
         const arrays = {
             a_position: {
                 numComponents: 2,
@@ -444,67 +451,9 @@ export class WebGLEngine extends DrawingEngine {
     }
     
     /**
-     * 【Phase 4A11D-5 新設】
-     * Perfect Freehandによって生成されたストロークポリゴンを描画します。
-     * @param {Array<Array<number>>} strokePoints - ポリゴンの頂点座標の配列 (例: [[x1, y1], [x2, y2], ...])
-     * @param {object} color - 描画色 (例: {r:255, g:0, b:0, a:255})
-     * @param {object} layer - 描画対象のレイヤーオブジェクト
-     */
-    drawStroke(strokePoints, color, layer) {
-        // ポリゴンは最低3つの頂点が必要です
-        if (!strokePoints || strokePoints.length < 3) return;
-
-        const gl = this.gl;
-        if (!this.lineProgramInfo || !gl) {
-            console.error("Line drawing resources are not initialized.");
-            return;
-        }
-
-        this._createOrUpdateLayerTexture(layer);
-        const targetFBO = this.layerFBOs.get(layer);
-        if (!targetFBO) {
-            console.error("Target FBO for layer not found for drawing stroke.");
-            return;
-        }
-
-        // 対象レイヤーのFBOに描画先を切り替え
-        gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO);
-        gl.viewport(0, 0, this.superWidth, this.superHeight);
-
-        // ペン用にブレンドモードを通常に設定
-        this._setBlendMode('normal');
-
-        // PFHの出力 [[x,y], [x,y], ...] をフラットな [x,y,x,y,...] の配列に変換
-        // 座標は呼び出し元でスーパーサンプリング済みであることを想定
-        const positions = strokePoints.flat();
-        
-        const arrays = {
-            a_position: { numComponents: 2, data: positions },
-        };
-        const bufferInfo = twgl.createBufferInfoFromArrays(gl, arrays);
-
-        gl.useProgram(this.lineProgramInfo.program);
-        
-        const uniforms = {
-            u_mvpMatrix: this.projectionMatrix,
-            u_color: [color.r / 255, color.g / 255, color.b / 255, color.a / 255],
-        };
-        twgl.setUniforms(this.lineProgramInfo, uniforms);
-        
-        twgl.setBuffersAndAttributes(gl, this.lineProgramInfo, bufferInfo);
-
-        // ポリゴンを TRIANGLE_FAN で描画
-        twgl.drawBufferInfo(gl, bufferInfo, gl.TRIANGLE_FAN);
-
-        // 描画先をデフォルト（画面）に戻す
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    }
-
-
-    /**
-     * 【Phase 4A11D-5 改修箇所】
-     * ペン描画処理が `drawStroke` に移行したため、このメソッドは消しゴム専用になりました。
-     * isEraser=false の場合の処理は削除されています。
+     * 【Phase 4A11D-3 改修箇所】
+     * ペンツール（isEraser=false）の場合、ハードウェアアクセラレーションによる高速な線分描画に切り替えます。
+     * 消しゴムの場合は、従来通り円の連続描画によるソフトな表現を維持します。
      */
     drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize, layer) {
         if (!isFinite(x0) || !isFinite(y0) || !isFinite(x1) || !isFinite(y1)) return;
@@ -528,12 +477,47 @@ export class WebGLEngine extends DrawingEngine {
             return; // 消しゴム処理はここで終了
         }
 
-        // --- ペンツール用の描画ロジックは drawStroke に移行しました ---
-        // このメソッドがペンツールで呼び出された場合、開発者に移行を促す警告を表示します。
-        console.warn(
-            "Deprecation Warning: `drawLine` is no longer used for pen tools (isEraser=false). " +
-            "Please use the new `drawStroke` method with points generated by Perfect Freehand."
-        );
+        // --- ペンツール用の新しい描画ロジック (WebGLによる線分描画) ---
+        if (!this.lineProgramInfo || !this.gl) {
+            console.error("Line drawing resources are not initialized.");
+            return;
+        }
+        const gl = this.gl;
+
+        this._createOrUpdateLayerTexture(layer);
+        const targetFBO = this.layerFBOs.get(layer);
+        if (!targetFBO) {
+            console.error("Target FBO for layer not found for drawing line.");
+            return;
+        }
+
+        // 対象レイヤーのFBOに描画先を切り替え
+        gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO);
+        gl.viewport(0, 0, this.superWidth, this.superHeight);
+
+        // ペン用にブレンドモードを通常に設定
+        this._setBlendMode('normal');
+
+        // WebGLではlineWidthの対応範囲が環境に依存するが、指示書に基づき設定
+        // UIからのサイズは通常解像度なので、スーパーサンプリング解像度に合わせて拡大
+        gl.lineWidth(size * this.SUPER_SAMPLING_FACTOR);
+
+        const arrays = { a_position: { numComponents: 2, data: [x0, y0, x1, y1] } };
+        const bufferInfo = twgl.createBufferInfoFromArrays(gl, arrays);
+
+        gl.useProgram(this.lineProgramInfo.program);
+        
+        const uniforms = {
+            u_mvpMatrix: this.projectionMatrix,
+            u_color: [color.r / 255, color.g / 255, color.b / 255, color.a / 255],
+        };
+        twgl.setUniforms(this.lineProgramInfo, uniforms);
+        
+        twgl.setBuffersAndAttributes(gl, this.lineProgramInfo, bufferInfo);
+        twgl.drawBufferInfo(gl, bufferInfo, gl.LINES);
+
+        // 描画先をデフォルト（画面）に戻す
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
     fill(imageData, color) { /* ... 変更なし ... */ }
@@ -694,6 +678,9 @@ export class WebGLEngine extends DrawingEngine {
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         }
         
+        // [Phase 4A11D-2 Hotfix] テスト描画をここに移動
+        // this.drawTestLine(50, 50, 200, 200, [1, 1, 1, 1]); // 白線
+
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
     

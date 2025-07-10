@@ -1,39 +1,35 @@
-## Phase 4A11D-5 指示書 ver.2.0
+Phase 4A11D-5 指示書 ver.2.0
 
-### 🎯 目的
+🎯 目的
 
 Paper.jsによる補間試行（D-4）の結果、描画破線化や制御の難しさが判明したため、Perfect Freehand（PFH）に描画補間エンジンを全面切替。
 
 本指示書では、PFHベースでのペン描画処理とGPU描画（twgl.js）との連携処理を設計します。
 
----
+✅ 対象ファイル
 
-### ✅ 対象ファイル
+/core/rendering/webgl-engine.js
 
-* `/core/rendering/webgl-engine.js`
-* `/libs/perfect-freehand.min.js`（別途導入済）
+/libs/perfect-freehand.min.js（別途導入済）
 
----
+📦 事前準備
 
-### 📦 事前準備
 
-* [x] `perfect-freehand` ライブラリを `libs/` フォルダに配置（済）
-* [x] `index.html` に `<script src="./libs/perfect-freehand.min.js"></script>` を追記（済）
 
----
+🧠 実装方針
 
-### 🧠 実装方針
+🖌️ 1. 線描画処理をPFHに置換
 
-#### 🖌️ 1. 線描画処理をPFHに置換
+PFHの getStroke(points, options) を使用して滑らかなストローク輪郭を生成
 
-* PFHの `getStroke(points, options)` を使用して滑らかなストローク輪郭を生成
-* ストロークは `Array<[x, y]>` の配列として渡す
-* オプション：`size`, `thinning`, `streamline`, `smoothing` など調整可能
-* 出力された輪郭ポリゴン（stroke points）を `twgl.js` でGL\_TRIANGLE\_FANまたはSTRIPとして描画
+ストロークは Array<[x, y]> の配列として渡す
 
-#### 🪄 2. マウス移動中の処理フロー
+オプション：size, thinning, streamline, smoothing など調整可能
 
-```
+出力された輪郭ポリゴン（stroke points）を twgl.js でGL_TRIANGLE_FANまたはSTRIPとして描画
+
+🪄 2. マウス移動中の処理フロー
+
  onPointerDown:
    -> points[] 初期化し、最初の点を追加
    -> 現在のImageDataを transformStage にコピー
@@ -44,11 +40,9 @@ Paper.jsによる補間試行（D-4）の結果、描画破線化や制御の難
 
  onPointerUp:
    -> 完了後 stroke をベイクし、transformStageをImageDataに戻す
-```
 
-#### 🖍️ 3. ストローク描画オプション（調整推奨）
+🖍️ 3. ストローク描画オプション（調整推奨）
 
-```js
 const options = {
   size: brushSize,           // 現在のブラシサイズ
   thinning: 0.6,             // 筆圧による太さ変動度合い
@@ -56,28 +50,32 @@ const options = {
   smoothing: 0.5,            // 曲線補間度合い（0.0〜1.0）
   simulatePressure: true     // 筆圧未使用時に疑似圧力を適用
 };
-```
 
-#### 🎨 4. WebGL描画での反映方法
+🎨 4. WebGL描画での反映方法
 
-* PFHから返されるストローク座標はPolygon
-* これを `twgl.createBufferInfoFromArrays()` で `a_position` に渡し、ポリゴン描画を実行
-* 単色で良ければ fragmentShader は定数色でOK（透過/筆圧は未対応でOK）
+PFHから返されるストローク座標はPolygon
 
----
+これを twgl.createBufferInfoFromArrays() で a_position に渡し、ポリゴン描画を実行
 
-### 🚧 注意点
+単色で良ければ fragmentShader は定数色でOK（透過/筆圧は未対応でOK）
 
-* 消しゴムはPFHを使わず従来の丸ブラシ方式を維持（粒状感が必要なため）
-* `points[]` リストの管理・リセットに注意（描画終了時は必ず初期化）
-* transformStage への描き戻しは `putImageData()` を必ず使う
-* 補間描画中も GPU Dirty を維持（force update）
+🚧 注意点
 
----
+消しゴムはPFHを使わず従来の丸ブラシ方式を維持（粒状感が必要なため）
 
-### ✅ 最終的な動作目標
+points[] リストの管理・リセットに注意（描画終了時は必ず初期化）
 
-* ペンツール時に滑らかで繋がったストロークが描かれる
-* 描画開始時の「点出血」や、点線/破線化が発生しない
-* 消しゴムは従来通り円形ブラシで描画
-* twgl.js のFBOへの書き込みとして処理を統一
+transformStage への描き戻しは putImageData() を必ず使う
+
+補間描画中も GPU Dirty を維持（force update）
+
+✅ 最終的な動作目標
+
+ペンツール時に滑らかで繋がったストロークが描かれる
+
+描画開始時の「点出血」や、点線/破線化が発生しない
+
+消しゴムは従来通り円形ブラシで描画
+
+twgl.js のFBOへの書き込みとして処理を統一
+
