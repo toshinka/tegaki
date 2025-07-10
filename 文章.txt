@@ -9,8 +9,7 @@ GPTくんが作った、指示書に従って改修してください。
     <script src="./libs/dat.gui.min.js"></script>
     <script src="./libs/dexie.min.js"></script>
     <script src="./libs/twgl-full.min.js"></script>
-    <script src="./libs/paper-core.min.js"></script>
-    <script src="./libs/perfect-freehand.js"></script>
+    <script src="./libs/tweakpane.min.js"></script>
 <!-- エントリポイント -->
     <script type="module" src="core-engine.js"></script>
 

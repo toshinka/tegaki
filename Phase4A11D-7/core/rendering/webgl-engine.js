@@ -1,17 +1,13 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - WebGL Engine
- * Version: 4.9.0 (Phase 4A11D-3)
+ * Version: 4.8.3 (Phase 4A11D-2 Hotfix)
  *
- * - 変更点 (Phase 4A11D-3):
- * - 「📘 Phase 4A11D-3 指示書」に基づき、drawLineの実装を改修。
- * - ペンツール使用時（isEraser=falseの場合）に、twgl.jsを利用したハードウェア
- * アクセラレーションによる線分描画を行うように変更。
- * - gl.LINESを使い、マウスの移動に合わせて(x0, y0)から(x1, y1)への線分を描画。
- * - 描画対象は各レイヤーに紐づいたFBO。
- * - 線幅はgl.lineWidth()で指定。
- * - 消しゴムツール使用時（isEraser=trueの場合）は、従来通り円を連続描画する
- * 方式を維持し、ツールの役割に応じた描画ロジックを両立。
+ * - 変更点 (Phase 4A11D-2 Hotfix):
+ * - 白線が描画されない問題を修正。
+ * - 原因：constructorで描画したテスト線が、後続のcompositeLayers処理でクリアされていた。
+ * - 対策：テスト描画の呼び出しを、constructorからcompositeLayersの末尾に移動。
+ * これにより、レイヤー合成後にテスト線が描画され、消去されなくなった。
  * ===================================================================================
  */
 import { DrawingEngine } from './drawing-engine.js';
@@ -87,7 +83,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
         
-        console.log(`WebGL Engine (v4.9.0 Phase4A11D-3) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`WebGL Engine (v4.8.3 Phase4A11D-2 Hotfix) initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
 
         // [Phase 4A11D-2 Hotfix] テスト描画の呼び出しを compositeLayers に移動したため、ここからは削除。
         // this.drawTestLine(50, 50, 200, 200, [1, 1, 1, 1]);
@@ -450,74 +446,22 @@ export class WebGLEngine extends DrawingEngine {
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
     
-    /**
-     * 【Phase 4A11D-3 改修箇所】
-     * ペンツール（isEraser=false）の場合、ハードウェアアクセラレーションによる高速な線分描画に切り替えます。
-     * 消しゴムの場合は、従来通り円の連続描画によるソフトな表現を維持します。
-     */
     drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize, layer) {
         if (!isFinite(x0) || !isFinite(y0) || !isFinite(x1) || !isFinite(y1)) return;
+        const distance = Math.hypot(x1 - x0, y1 - y0);
+        if (distance > this.superWidth * 2) return;
 
-        // 消しゴムの場合は、従来通り円を連続描画してソフトな消去を実現
-        if (isEraser) {
-            const distance = Math.hypot(x1 - x0, y1 - y0);
-            if (distance > this.superWidth * 2) return;
+        const stepSize = Math.max(0.5, size / 4);
+        const steps = Math.max(1, Math.ceil(distance / stepSize));
 
-            const stepSize = Math.max(0.5, size / 4);
-            const steps = Math.max(1, Math.ceil(distance / stepSize));
-
-            for (let i = 0; i <= steps; i++) {
-                const t = steps > 0 ? i / steps : 0;
-                const x = x0 + (x1 - x0) * t;
-                const y = y0 + (y1 - y0) * t;
-                const pressure = p0 + (p1 - p0) * t;
-                const adjustedSize = calculatePressureSize(size, pressure);
-                this.drawCircle(x, y, adjustedSize / 2, color, isEraser, layer);
-            }
-            return; // 消しゴム処理はここで終了
+        for (let i = 0; i <= steps; i++) {
+            const t = steps > 0 ? i / steps : 0;
+            const x = x0 + (x1 - x0) * t;
+            const y = y0 + (y1 - y0) * t;
+            const pressure = p0 + (p1 - p0) * t;
+            const adjustedSize = calculatePressureSize(size, pressure);
+            this.drawCircle(x, y, adjustedSize / 2, color, isEraser, layer);
         }
-
-        // --- ペンツール用の新しい描画ロジック (WebGLによる線分描画) ---
-        if (!this.lineProgramInfo || !this.gl) {
-            console.error("Line drawing resources are not initialized.");
-            return;
-        }
-        const gl = this.gl;
-
-        this._createOrUpdateLayerTexture(layer);
-        const targetFBO = this.layerFBOs.get(layer);
-        if (!targetFBO) {
-            console.error("Target FBO for layer not found for drawing line.");
-            return;
-        }
-
-        // 対象レイヤーのFBOに描画先を切り替え
-        gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO);
-        gl.viewport(0, 0, this.superWidth, this.superHeight);
-
-        // ペン用にブレンドモードを通常に設定
-        this._setBlendMode('normal');
-
-        // WebGLではlineWidthの対応範囲が環境に依存するが、指示書に基づき設定
-        // UIからのサイズは通常解像度なので、スーパーサンプリング解像度に合わせて拡大
-        gl.lineWidth(size * this.SUPER_SAMPLING_FACTOR);
-
-        const arrays = { a_position: { numComponents: 2, data: [x0, y0, x1, y1] } };
-        const bufferInfo = twgl.createBufferInfoFromArrays(gl, arrays);
-
-        gl.useProgram(this.lineProgramInfo.program);
-        
-        const uniforms = {
-            u_mvpMatrix: this.projectionMatrix,
-            u_color: [color.r / 255, color.g / 255, color.b / 255, color.a / 255],
-        };
-        twgl.setUniforms(this.lineProgramInfo, uniforms);
-        
-        twgl.setBuffersAndAttributes(gl, this.lineProgramInfo, bufferInfo);
-        twgl.drawBufferInfo(gl, bufferInfo, gl.LINES);
-
-        // 描画先をデフォルト（画面）に戻す
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
     fill(imageData, color) { /* ... 変更なし ... */ }
@@ -679,7 +623,7 @@ export class WebGLEngine extends DrawingEngine {
         }
         
         // [Phase 4A11D-2 Hotfix] テスト描画をここに移動
-        // this.drawTestLine(50, 50, 200, 200, [1, 1, 1, 1]); // 白線
+        this.drawTestLine(50, 50, 200, 200, [1, 1, 1, 1]); // 白線
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
