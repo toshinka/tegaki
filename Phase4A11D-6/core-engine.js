@@ -1,16 +1,18 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.5.1 (Phase 4A11D-6 Hotfix)
+ * Version: 3.5.2 (Phase 4A11D-6 Hotfix 2)
+ *
+ * - 変更点 (Phase 4A11D-6 Hotfix 2):
+ * - GPTの指示に基づき、エラーハンドリングを強化。
+ * - onPointerMove: strokePointsが2点未満の場合はdrawStrokeを呼び出さないガード処理を継続。
+ * - onPointerUp: 点が1つの場合（クリック時）は、暫定的にdrawCircleで点を描画する
+ * ロジックを追加。これによりシングルクリックで描画が可能になる。
+ * - onPointerUp: 点が2つ以上の場合は、従来通りdrawStrokeで線を確定させる。
  *
  * - 変更点 (Phase 4A11D-6 Hotfix):
  * - onPointerMove内で、strokePointsの数が2未満の時にdrawStrokeを呼び出していた
- * 致命的なエラーを修正。これにより "numComponents 2 not correct for length 0"
- * エラーが解消されます。
- * - onPointerUpで、点が1つの場合（シングルクリック）でも点が描画されるように修正。
- *
- * - 変更点 (Phase 4A11D-6):
- * - 「📘 Phase 4A11D-6 指示書」に基づき、ペンツールをPerfect Freehandに対応。
+ * 致命的なエラーを修正。
  * ===================================================================================
  */
 
@@ -249,6 +251,7 @@ class CanvasManager {
         
         // 🖌️ Pen Tool (Perfect Freehand)
         if (currentTool === 'pen') {
+            if (DEBUG_MODE) console.log(`[Pointer] Down at ${Math.round(coords.x)}, ${Math.round(coords.y)}`);
             this.app.toolManager.isPenDrawing = true;
             this.app.toolManager.strokePoints = [];
             const pressure = e.pressure > 0 ? e.pressure : 0.5;
@@ -331,6 +334,7 @@ class CanvasManager {
         
         // 🖌️ Pen Tool (Perfect Freehand)
         if (this.app.toolManager.isPenDrawing) {
+            if (DEBUG_MODE) console.log(`[Pointer] Move at ${Math.round(coords.x)}, ${Math.round(coords.y)}`);
             const activeLayer = this.app.layerManager.getCurrentLayer();
             if (!activeLayer) return;
 
@@ -343,6 +347,7 @@ class CanvasManager {
                 return;
             }
             // ▲▲▲ HOTFIX ▲▲▲
+            if (DEBUG_MODE) console.log(`[drawStroke] ${this.app.toolManager.strokePoints.length} points received`);
 
             // WebGLエンジンにストローク描画を指示 (ストリーミングモード)
             this.renderingBridge.currentEngine?.drawStroke(
@@ -395,28 +400,59 @@ class CanvasManager {
         if (this.app.toolManager.isPenDrawing) {
             this.app.toolManager.isPenDrawing = false;
             const points = this.app.toolManager.strokePoints;
-
-            // ▼▼▼ HOTFIX ▼▼▼
-            // 1点だけでも（クリック）描画できるように > 1 を > 0 に変更
-            if (points.length > 0) {
-            // ▲▲▲ HOTFIX ▲▲▲
-                const activeLayer = this.app.layerManager.getCurrentLayer();
-                if (activeLayer) {
-                    // WebGLエンジンに最終描画を指示
-                    this.renderingBridge.currentEngine?.drawStroke(
-                        points,
-                        hexToRgba(this.currentColor),
-                        this.brushSize,
-                        activeLayer,
-                        { finalize: true }
-                    );
-                    
-                    this.renderAllLayers(); // 最終結果を反映
-                    await this.onDrawEnd?.(activeLayer);
-                    this.saveState();
-                }
+            const activeLayer = this.app.layerManager.getCurrentLayer();
+            
+            if (!activeLayer) {
+                this.app.toolManager.strokePoints = [];
+                return;
             }
-            this.app.toolManager.strokePoints = []; // ポイントをクリア
+
+            // ▼▼▼ HOTFIX 2: Handle single dot (click) vs. line (drag) ▼▼▼
+            if (points.length === 1) {
+                // --- Single Dot Drawing Logic ---
+                if (DEBUG_MODE) console.log("[Pointer] Up - Drawing a single dot.");
+                const point = points[0]; // [x, y, pressure]
+                
+                // For drawCircle, we need layer-local coordinates.
+                const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
+                const superX = point[0] * SUPER_SAMPLING_FACTOR;
+                const superY = point[1] * SUPER_SAMPLING_FACTOR;
+                const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix);
+
+                // Use a simplified pressure calculation for the dot size.
+                const size = this.calculatePressureSize(this.brushSize, point[2]);
+                
+                // Use the old drawCircle as a fallback for now.
+                this.renderingBridge.drawCircle(local.x, local.y, size / 2, hexToRgba(this.currentColor), false, activeLayer);
+
+                // The drawn circle needs to be synced to the layer's main data.
+                this._resetDirtyRect();
+                this._updateDirtyRect(local.x, local.y, size);
+                this._renderDirty(); 
+                this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
+
+                await this.onDrawEnd?.(activeLayer);
+                this.saveState();
+
+            } else if (points.length > 1) {
+                // --- Line Drawing Logic ---
+                if (DEBUG_MODE) console.log("[Pointer] Up - Compositing stroke...");
+                
+                this.renderingBridge.currentEngine?.drawStroke(
+                    points,
+                    hexToRgba(this.currentColor),
+                    this.brushSize,
+                    activeLayer,
+                    { finalize: true }
+                );
+                
+                this.renderAllLayers(); // Render final result
+                await this.onDrawEnd?.(activeLayer);
+                this.saveState();
+            }
+            // ▲▲▲ HOTFIX 2 ▲▲▲
+
+            this.app.toolManager.strokePoints = []; // Clear points for the next stroke
         } 
         // 🧽 Eraser Tool (and other traditional drawing tools)
         else if (this.isDrawing) {
@@ -718,7 +754,7 @@ class CanvasManager {
         const smoothedPressure = tempHistory.reduce((sum, p) => sum + p, 0) / tempHistory.length;
         let finalPressure = smoothedPressure;
         const historyLength = this.pressureHistory.length;
-        if (this.isDrawing && historyLength <= this.maxPressureHistory) {
+        if ((this.isDrawing || this.app.toolManager.isPenDrawing) && historyLength <= this.maxPressureHistory) {
             const dampingFactor = historyLength / this.maxPressureHistory;
             finalPressure *= (0.2 + Math.pow(dampingFactor, 3) * 0.8);
         }
