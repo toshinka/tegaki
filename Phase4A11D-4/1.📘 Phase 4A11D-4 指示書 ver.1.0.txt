@@ -1,60 +1,47 @@
-📘 Phase 4A11D-3 指示書 ver.1.0
-目的：twgl.jsベースのFBO描画処理を、ペン描画に統合する（マウス操作で線が引けるようにする）
+🎯 目的
+破線状になっていたペン描画を、Paper.js のベジエ曲線補間機能を活用して滑らかに補完する。WebGL描画には twgl.js を引き続き使用し、Paper.jsは補完された軌跡データの生成専用とする。
 
-✅ 今回の目標
-WebGLEngine にある drawLine() を、ペン描画に使えるようにUIへ接続
+🛠 実装予定処理の流れ（概要）
+描画開始時（マウスダウン）
 
-ペンツールの動作を「マウス操作によってGPU上のFBOに描画」へ移行
+paperScope を生成（または使い回し）
 
-FBO上に描かれた内容を renderToDisplay() を使って画面に表示する
+new paper.Path() を用いて軌跡を記録
 
-🛠️ 実装タスク一覧
-1. CanvasManager にペン描画経路を構築
-onPointerDown() で描画開始 (this.isDrawing = true)
+描画中（マウスムーブ）
 
-onPointerMove() で連続線を描く
+.add(new Point(x, y)) で座標を記録
 
-this.renderingBridge.drawLine(x0, y0, x1, y1, color, width) 呼び出し
+.smooth() で補完処理を入れる
 
-onPointerUp() で描画終了
+.flatten(精度) または .segments.map() を使い、GPU用座標配列へ変換
 
-初期版では筆圧・補完なしでOK（ただし筆圧はe.pressureで取れる）
+描画確定時（マウスアップ）
 
-2. WebGLEngine.drawLine(...) を汎用化
-座標系を displayCanvas のピクセル単位から NDC に変換するヘルパーを作る
-例：twgl.m4.ortho() を使い、[0, width] → [-1,1] に射影
+twgl.jsを使って、FBOへ描画
 
-描画色・線幅の指定を受け取れるようにする（現在は固定色）
+終了後に paper.Path.remove() でパスを破棄し、次の描画に備える
 
-3. renderToDisplay() を描画後に呼び出す
-各 drawLine() のあとに FBO → 表示Canvasへの描画処理を行う
-
-最低限、線が見えるようにする（α合成、太さはD-4以降）
-
-📦 使用予定のAPIや概念
-twgl.createBufferInfoFromArrays()
-
-twgl.setBuffersAndAttributes()
-
-twgl.drawBufferInfo()
-
-gl.LINE_STRIP または gl.LINES
-
-mat4.ortho() で座標射影
-
-🔍 備考
-tool-manager.js → 現状のペンツール判定は維持
-
-ペンの色・太さなどのUI反映は後続の D-4 で行う
-
-今回はUIから描けて、描いた線が画面に見えることを第一目標とする
-
-📁 編集対象ファイル
+📁 影響するファイル（予定）
 core/rendering/webgl-engine.js
+→ Paper.jsの補完処理と、描画バッファへの反映処理を記述
 
-core/rendering/rendering-bridge.js
+libs/paper-core.min.js
+→ 現在 ToshinkaTegakiTool.html にて読み込み済（準備OK）
 
-core-engine.js
+✅ 完了基準
+ペン描画が破線にならず、補完された連続線で描かれる
 
-ui/tool-manager.js（必要に応じて）
+線の大きさ・色が PenSettingsManager や ColorManager から反映されている
+
+消しゴムやレイヤー機能との干渉がないこと
+
+twgl.jsとPaper.jsが同時に動作し、役割分担が明確になっている
+
+📌 補足
+消しゴムツールは現状の方式（円を描く）を継続使用
+
+Paper.jsは 軌跡の補完 に限定し、レンダリングはWebGLで行う
+
+必要であれば将来的に Path.toSVG() 等をアニメ用に転用可能（Phase 5構想向け）
 

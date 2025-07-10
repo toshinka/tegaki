@@ -37,8 +37,9 @@
 │ 　 ├─ gl-matrix-min.js           // glMatrix 3.4.3（CDNから丸コピー）
 │ 　 ├─ dat.gui.min.js             // dat.GUI（CDNから丸コピー）
 │ 　 ├─ dexie.min.js               <-- （Phase4A11B-11)
-│ 　 └─ twgl-full.min.js           <-- （Phase4A11D-0
-
+│ 　 ├─ twgl-full.min.js           <-- （Phase4A11D-0)
+│ 　 ├─ paper-core.min.js           <-- （Phase4A11D-4)
+│ 　 └─ paper-full.min.js           <-- （Phase4A11D-4)
 
 
  * --- ToshinkaTegakiTool.html依存リスト ---
