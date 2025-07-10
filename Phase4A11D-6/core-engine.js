@@ -1,24 +1,18 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.4.6 (Phase 4A11D-6)
+ * Version: 3.4.7 (Phase 4A11D-6)
  *
  * - 変更点 (Phase 4A11D-6):
  * - 「📘 Phase 4A11D-6 指示書 ver.1.0」に基づき、ペン描画処理を刷新。
- * - Perfect Freehand ライブラリを利用した滑らかなストローク描画に対応。
- * - onPointerDown, onPointerMove, onPointerUp にて、ペンツール使用時の
- * 描画フローを drawStroke ベースの処理に接続しました。
- * - 点が1つだけの場合に drawCircle で点を描画するフォールバック処理を実装。
- * - 点が2つ未満の時に drawStroke が呼ばれないよう安全対策を強化。
- * - 消しゴムツールは従来の drawLine を使用するようロジックを分岐しました。
- * * - 変更点 (Phase 4A11C-4 Hotfix):
- * - startLayerTransform()内で発生していた致命的なシンタックスエラーを修正。
- *
- * - 変更点 (Phase 4A11C-4):
- * - 「🎨Phase 4A11C-4 指示書」に基づき、レイヤー移動開始時の同期処理を強化。
- * - startLayerTransform()にて、変形対象(transformStage)を作成する前に、
- * 一度GPUから最新の描画結果を取得し、それを基に作成するよう修正。
- * これにより、初回移動時の描画ブレ（プルプル現象）を抑制します。
+ * - onPointerMoveで perfect-freehand ライブラリの getStroke() を呼び出し、
+ * 滑らかな線のポリゴンを生成するように修正。
+ * - 生成したポリゴンを renderingBridge.drawStroke に渡すことで、WebGLでの
+ * ストローク描画を実現。
+ * - onPointerUpで renderingBridge.compositeStrokeToLayer を呼び出し、
+ * 描画されたストロークをレイヤーのImageDataに焼き付けるように修正。
+ * - ツール分岐を明確化し、消しゴムは従来の円連打方式、ペンは新しいストローク方式で
+ * 動作するようにした。
  * ===================================================================================
  */
 
@@ -151,10 +145,7 @@ class CanvasManager {
         this.strokePoints = [];
         // ▲▲▲ Phase 4A11D-6 指示書による修正 ▲▲▲
 
-        // ▼▼▼▼▼ Phase 4A11C-1 修正 ▼▼▼▼▼
-        // 従来のcellBufferを廃止し、変形開始時のMatrixを保持するプロパティを追加
         this.transformOriginalModelMatrix = null;
-        // ▲▲▲▲▲ Phase 4A11C-1 修正 ▲▲▲▲▲
 
         this.pressureSettings = {
             sensitivity: 0.8, minPressure: 0.1, maxPressure: 1.0, curve: 0.7,
@@ -214,8 +205,6 @@ class CanvasManager {
 
     _isPointOnLayer(worldCoords, layer) {
         if (!layer || !layer.visible) return false;
-        // ▼▼▼▼▼ Phase 4A11C-1 修正 ▼▼▼▼▼
-        // 描画ソースをtransformStageも考慮するように変更
         const sourceImage = layer.transformStage || layer.imageData;
         const currentActiveLayer = this.app.layerManager.getCurrentLayer();
         if (!currentActiveLayer || !isValidMatrix(currentActiveLayer.modelMatrix)) return false;
@@ -226,7 +215,7 @@ class CanvasManager {
         const local = transformWorldToLocal(superX, superY, layer.modelMatrix);
         const layerWidth = sourceImage.width * SUPER_SAMPLING_FACTOR;
         const layerHeight = sourceImage.height * SUPER_SAMPLING_FACTOR;
-        // ▲▲▲▲▲ Phase 4A11C-1 修正 ▲▲▲▲▲
+
         return local.x >= 0 && local.x < layerWidth && local.y >= 0 && local.y < layerHeight;
     }
 
@@ -246,11 +235,8 @@ class CanvasManager {
         if (this.isLayerTransforming) {
             if (!activeLayer.visible) return;
             this.isDraggingLayer = true;
-            // ▼▼▼▼▼ Phase 4A11C-3 修正 ▼▼▼▼▼
-            // 指示書に基づき、座標ブレ防止のため整数に丸める
             this.transformStartWorldX = Math.round(coords.x);
             this.transformStartWorldY = Math.round(coords.y);
-            // ▲▲▲▲▲ Phase 4A11C-3 修正 ▲▲▲▲▲
             return;
         }
         if (!activeLayer.visible || !this._isPointOnLayer(coords, activeLayer)) return;
@@ -277,7 +263,7 @@ class CanvasManager {
         
         // ▼▼▼ Phase 4A11D-6 指示書による修正 ▼▼▼
         if (this.app.toolManager.currentTool === 'pen') {
-            // ペンツールの場合は、ここから描画が始まるので、
+            // ペンツールの場合、ここから描画が始まるので、
             // 座標と筆圧を strokePoints 配列に最初の点として記録します。
             this.strokePoints = [[local.x, local.y, this.lastPoint.pressure]];
         } else { // 消しゴムツールはこちらの処理（従来の円描画）を使います。
@@ -305,28 +291,20 @@ class CanvasManager {
             this.performDelayedLayerClear();
 
             const activeLayer = this.app.layerManager.getCurrentLayer();
-            // ▼▼▼▼▼ Phase 4A11C-1 修正 ▼▼▼▼▼
-            // チェック対象をtransformStageの有無に変更
             if (!activeLayer || !activeLayer.transformStage || !this.transformDragStarted) return;
             
             const dx = coords.x - this.transformStartWorldX;
             const dy = coords.y - this.transformStartWorldY;
             const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
 
-            // ▼▼▼▼▼ Phase 4A11C-2 修正 ▼▼▼▼▼
-            // 指示書に基づき、座標ブレ防止のため整数に丸める
             const adjustedDx = Math.round(dx * SUPER_SAMPLING_FACTOR);
             const adjustedDy = Math.round(dy * SUPER_SAMPLING_FACTOR);
-            // ▲▲▲▲▲ Phase 4A11C-2 修正 ▲▲▲▲▲
 
             const translationMatrix = mat4.create();
             mat4.fromTranslation(translationMatrix, [adjustedDx, adjustedDy, 0]);
             const newMatrix = mat4.create();
-            // 変形開始時のMatrixを基準に移動量を計算
             mat4.multiply(newMatrix, translationMatrix, this.transformOriginalModelMatrix);
             activeLayer.modelMatrix = newMatrix;
-            // imageDataの書き換えとgpuDirtyフラグの操作は不要になる
-            // ▲▲▲▲▲ Phase 4A11C-1 修正 ▲▲▲▲▲
             this.renderAllLayers();
             return;
         }
@@ -342,33 +320,53 @@ class CanvasManager {
 
             // ▼▼▼ Phase 4A11D-6 指示書による修正 ▼▼▼
             if (this.app.toolManager.currentTool === 'pen') {
-                 // ペンツールの場合、動かした先の座標と筆圧を strokePoints 配列に追加していきます。
                 this.strokePoints.push([local.x, local.y, currentPressure]);
 
-                // 点が2つ以上記録されていれば、線として描画できます。
-                // 1点だけだと線が描画できず、Perfect Freehand がエラーを出すため、このチェックは重要です。
+                // 点が2つ以上あれば、線として描画できます。
                 if (this.strokePoints.length >= 2) {
                     const currentColor = this.currentColor ?? '#000000';
+                    const penSize = this.app.penSettingsManager.currentSize;
+
+                    // Perfect Freehand のオプションを設定します。
+                    const options = {
+                        size: penSize * SUPER_SAMPLING_FACTOR,
+                        thinning: 0.6,
+                        smoothing: 0.5,
+                        streamline: 0.5,
+                        pressure: {
+                            min: 0.1,
+                            max: 1,
+                            factor: 0.7,
+                            ...this.pressureSettings
+                        }
+                    };
                     
-                    // RenderingBridge を介して、WebGLエンジンに実装されている drawStroke 関数を呼び出します。
-                    // これにより、滑らかな線がリアルタイムでプレビュー表示されます。
-                    this.renderingBridge.drawStroke(
-                        this.strokePoints,
-                        hexToRgba(currentColor),
-                        this.app.penSettingsManager.currentSize
-                    );
+                    // perfect-freehand ライブラリを呼び出して、滑らかな線のポリゴン（頂点群）を生成します。
+                    const stroke = window.getStroke(this.strokePoints, options);
+
+                    // WebGLエンジンにポリゴンを描画するよう依頼します。
+                    this.renderingBridge.drawStroke(stroke, hexToRgba(currentColor), activeLayer);
                     this._requestRender(); // 画面の更新をリクエストします。
                 }
             } else { // 消しゴムツールは、これまで通り2点間を直線で結ぶ drawLine を使います。
                 this.pressureHistory.push(currentPressure);
                 if (this.pressureHistory.length > this.maxPressureHistory) this.pressureHistory.shift();
+                
+                // drawLine は webgl-engine 側で点の補間を行うため、そのまま呼び出します
+                this.renderingBridge.drawLine(
+                    this.lastPoint.x, this.lastPoint.y, local.x, local.y, 
+                    this.app.penSettingsManager.currentSize, 
+                    hexToRgba(this.currentColor ?? '#000000'), 
+                    true, // isEraser = true
+                    this.lastPoint.pressure, currentPressure, 
+                    this.calculatePressureSize.bind(this), 
+                    activeLayer
+                );
+
                 const lastSize = this.calculatePressureSize(this.app.penSettingsManager.currentSize, this.lastPoint.pressure);
                 const currentSize = this.calculatePressureSize(this.app.penSettingsManager.currentSize, currentPressure);
                 this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, lastSize);
                 this._updateDirtyRect(local.x, local.y, currentSize);
-
-                const currentColor = this.currentColor ?? '#000000';
-                this.renderingBridge.drawLine(this.lastPoint.x, this.lastPoint.y, local.x, local.y, this.app.penSettingsManager.currentSize, hexToRgba(currentColor), this.app.toolManager.currentTool === 'eraser', this.lastPoint.pressure, currentPressure, this.calculatePressureSize.bind(this), activeLayer);
                 this._requestRender();
             }
             // ▲▲▲ Phase 4A11D-6 指示書による修正 ▲▲▲
@@ -388,10 +386,11 @@ class CanvasManager {
             }
             
             const activeLayer = this.app.layerManager.getCurrentLayer();
+            if (!activeLayer) return;
 
             // ▼▼▼ Phase 4A11D-6 指示書による修正 ▼▼▼
             if (this.app.toolManager.currentTool === 'pen') {
-                if (activeLayer && this.strokePoints.length > 0) {
+                if (this.strokePoints.length > 0) {
                      // 点が1つだけの場合（＝線を引かずにクリックだけした場合）の特別処理です。
                     if (this.strokePoints.length === 1) {
                         const point = this.strokePoints[0];
@@ -399,33 +398,21 @@ class CanvasManager {
                         const size = this.calculatePressureSize(this.app.penSettingsManager.currentSize, pressure);
                         const color = hexToRgba(this.currentColor ?? '#000000');
                         
-                        // ダーティ矩形（再描画が必要な範囲）を更新します。
                         this._updateDirtyRect(point[0], point[1], size);
-                        // 円を描画します。
                         this.renderingBridge.drawCircle(point[0], point[1], size / 2, color, false, activeLayer);
-                        
-                        // 描画結果を確定させ、レイヤーのデータに反映させます。
-                        this._renderDirty();
-                        this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
-
-                    } else if (this.strokePoints.length > 1) {
-                        // 線を描き終えたら、プレビュー表示されていた線をレイヤーに「焼き付け」ます。
-                        // これで描画が確定します。
-                        this.renderingBridge.compositeStrokeToLayer(activeLayer);
                     }
                     
-                    // 描画内容をIndexedDBに保存します。
+                    // プレビュー表示されていた線をレイヤーに「焼き付け」て描画を確定させます。
+                    this.renderingBridge.compositeStrokeToLayer(activeLayer);
                     await this.onDrawEnd?.(activeLayer);
                 }
                 // 次の描画のために、点の情報をリセットします。
                 this.strokePoints = [];
 
-            } else { // 消しゴムツールなど、ペン以外のツールの処理です。
+            } else { // 消しゴムや他のツールの処理です。
                 this._renderDirty();
-                if (activeLayer) {
-                    this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
-                    await this.onDrawEnd?.(activeLayer);
-                }
+                this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
+                await this.onDrawEnd?.(activeLayer);
             }
             // ▲▲▲ Phase 4A11D-6 指示書による修正 ▲▲▲
 
@@ -439,8 +426,6 @@ class CanvasManager {
         }
     }
 
-    // ▼▼▼▼▼ Phase 4A11C-1 修正 ▼▼▼▼▼
-    // レイヤーのクリア処理を削除。描画エンジン側でtransformStageを描画するため不要。
     performDelayedLayerClear() {
         if (!this.layerTransformPending || this.transformDragStarted) {
             return;
@@ -450,10 +435,7 @@ class CanvasManager {
         if (DEBUG_MODE) console.log("[LayerTransform] Drag detected. Using transformStage for rendering.");
         this.transformDragStarted = true;
     }
-    // ▲▲▲▲▲ Phase 4A11C-1 修正 ▲▲▲▲▲
-
-    // ▼▼▼▼▼ Phase 4A11C-4, C-1 修正 ▼▼▼▼▼
-    // 変形開始処理。transformStageをGPUから同期して準備する
+    
     startLayerTransform() {
         if (this.isLayerTransforming) return;
         const activeLayer = this.app.layerManager.getCurrentLayer();
@@ -461,8 +443,6 @@ class CanvasManager {
 
         this.isLayerTransforming = true;
         
-        // ▼▼▼▼▼ Phase 4A11C-4 修正 ▼▼▼▼▼
-        // transformStage作成前に、GPU側に最新状態を描画し、CPUに取得
         if (this.app.layerManager.getCurrentLayer()?.gpuDirty) {
             this.renderAllLayers(); // GPUへの描画反映
         }
@@ -472,35 +452,27 @@ class CanvasManager {
         );
 
         if (syncedImageData) {
-            // ここでtransformStageを最新GPU出力で初期化
             this.app.layerManager.getCurrentLayer().transformStage = syncedImageData;
         } else {
-             // 同期に失敗した場合は変形モードを開始しない
             console.error("Failed to sync ImageData from GPU for transformStage. Aborting transform.");
             this.isLayerTransforming = false;
             return;
         }
-        // ▲▲▲▲▲ Phase 4A11C-4 修正 ▲▲▲▲▲
 
         this.layerTransformPending = true;
         this.transformDragStarted = false;
         
-        // 変形前のmodelMatrixを保存
         this.transformOriginalModelMatrix = mat4.clone(activeLayer.modelMatrix);
         
         if (DEBUG_MODE) console.log("[LayerTransform] Start Pending (startLayerTransform)");
         this.updateCursor();
     }
-    // ▲▲▲▲▲ Phase 4A11C-4, C-1 修正 ▲▲▲▲▲
-
-    // ▼▼▼▼▼ Phase 4A11C-3, C-2, C-1 修正 ▼▼▼▼▼
-    // 変形確定処理。transformStageの内容を変形させてimageDataに焼き付ける
+    
     async commitLayerTransform() {
         if (!this.isLayerTransforming) return;
 
         const activeLayer = this.app.layerManager.getCurrentLayer();
 
-        // Vキーを押してすぐに離した（ドラッグしなかった）場合は、何もせず通常モードに戻る
         if (this.layerTransformPending && !this.transformDragStarted) {
             if (DEBUG_MODE) console.log("[LayerTransform] Commit aborted: No drag detected. Reverting to normal state.");
             this.isLayerTransforming = false;
@@ -521,13 +493,11 @@ class CanvasManager {
         
         const finalMatrix = activeLayer.modelMatrix;
 
-        // 指示書(Phase 4A11C-2)に基づき、デバッグログを追加
         if (DEBUG_MODE) {
             const pos = mat4.getTranslation(window.glMatrix.vec3.create(), finalMatrix);
             console.log(`[転写デバッグ] Commit transform. Original position: (${pos[0]}, ${pos[1]})`);
         }
         
-        // 指示書(Phase 4A11C-2)に基づき、最終座標を丸めてズレを防止
         finalMatrix[12] = Math.round(finalMatrix[12]); // tx
         finalMatrix[13] = Math.round(finalMatrix[13]); // ty
 
@@ -536,11 +506,8 @@ class CanvasManager {
             console.log("[転写デバッグ] modelMatrix (Rounded):", JSON.stringify(Array.from(finalMatrix)));
         }
         
-        // 描画エンジンに、transformStageの内容を変形後の姿でImageDataとして要求する
         const transformedImageData = this.renderingBridge.getTransformedImageData(activeLayer);
         
-        // ▼▼▼▼▼ Phase 4A11C-3 修正 ▼▼▼▼▼
-        // 指示書に基づき、空のImageDataが返ってきた場合の安全チェックを追加
         if (!transformedImageData || transformedImageData.width === 0 || transformedImageData.height === 0) {
             console.warn("転写失敗: ImageDataが空のため、操作をキャンセルしてバックアップから復元します。");
             this.restoreLayerBackup();
@@ -549,16 +516,13 @@ class CanvasManager {
             this.updateCursor();
             return;
         }
-        // ▲▲▲▲▲ Phase 4A11C-3 修正 ▲▲▲▲▲
         
-        // 成功したら、返ってきたImageDataを正式なデータとして設定
         activeLayer.imageData.data.set(transformedImageData.data);
-        mat4.identity(activeLayer.modelMatrix); // 位置や回転をリセット
+        mat4.identity(activeLayer.modelMatrix); 
         activeLayer.gpuDirty = true;
         
         await this.onDrawEnd?.(activeLayer);
         
-        // 後片付け
         activeLayer.transformStage = null;
         this.transformOriginalModelMatrix = null;
         this.layerTransformPending = false;
@@ -568,16 +532,12 @@ class CanvasManager {
         this.renderAllLayers();
         this.saveState();
     }
-    // ▲▲▲▲▲ Phase 4A11C-3, C-2, C-1 修正 ▲▲▲▲▲
-
-    // ▼▼▼▼▼ Phase 4A11C-1 & 4A11C-2 修正 ▼▼▼▼▼
-    // 変形キャンセル処理。transformStageを破棄し、Matrixを元に戻す
+    
     cancelLayerTransform() {
         if (!this.isLayerTransforming) return;
 
         const activeLayer = this.app.layerManager.getCurrentLayer();
 
-        // Vキーを押してすぐに離した（ドラッグしなかった）場合は、何もせず通常モードに戻る
         if (this.layerTransformPending && !this.transformDragStarted) {
             if (DEBUG_MODE) console.log("[LayerTransform] Cancel aborted: No drag detected. Reverting to normal state.");
             this.isLayerTransforming = false;
@@ -598,11 +558,9 @@ class CanvasManager {
             return;
         }
         
-        // 変形をキャンセルし、元のMatrixに戻す
         activeLayer.modelMatrix = mat4.clone(this.transformOriginalModelMatrix);
         activeLayer.gpuDirty = true;
-
-        // 後片付け
+        
         activeLayer.transformStage = null;
         this.transformOriginalModelMatrix = null;
         this.layerTransformPending = false;
@@ -611,35 +569,27 @@ class CanvasManager {
         this.renderAllLayers();
         this.updateCursor();
     }
-    // ▲▲▲▲▲ Phase 4A11C-1 & 4A11C-2 修正 ▲▲▲▲▲
     
-    // ▼▼▼▼▼ Phase 4A11C-1 修正 ▼▼▼▼▼
-    // バックアップ復元処理も新しい方式に合わせる
     restoreLayerBackup() {
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!this.transformOriginalModelMatrix || !activeLayer) return;
 
-        // 変形前の状態に戻す
         activeLayer.modelMatrix = mat4.clone(this.transformOriginalModelMatrix);
         activeLayer.gpuDirty = true;
 
-        // 後片付け
         activeLayer.transformStage = null;
         this.transformOriginalModelMatrix = null;
         
         this.renderAllLayers();
     }
-    // ▲▲▲▲▲ Phase 4A11C-1 修正 ▲▲▲▲▲
-
+    
     applyLayerTransform({ translation = [0, 0, 0], scale = 1.0, rotation = 0, flip = null }) {
-        // ▼▼▼▼▼ Phase 4A11C-1 修正 ▼▼▼▼▼
         if (!this.isLayerTransforming || !this.transformOriginalModelMatrix) return;
 
         this.performDelayedLayerClear();
         if (!this.transformDragStarted) {
              this.transformDragStarted = true;
         }
-        // ▲▲▲▲▲ Phase 4A11C-1 修正 ▲▲▲▲▲
 
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer) return;
@@ -658,9 +608,6 @@ class CanvasManager {
         mat4.translate(transformMatrix, transformMatrix, adjustedTranslation);
         mat4.multiply(activeLayer.modelMatrix, transformMatrix, activeLayer.modelMatrix);
         
-        // ▼▼▼▼▼ Phase 4A11C-1 修正 ▼▼▼▼▼
-        // imageDataの書き換えは不要
-        // ▲▲▲▲▲ Phase 4A11C-1 修正 ▲▲▲▲▲
         this.renderAllLayers();
     }
 
@@ -668,10 +615,7 @@ class CanvasManager {
         const rect = this.dirtyRect;
         if (rect.minX > rect.maxX) return;
         this.renderingBridge.compositeLayers(this.app.layerManager.layers, null, rect);
-        // ▼▼▼▼▼ Phase 4A11C-1.1 Hotfix ▼▼▼▼▼
-        // タイプミスを修正
         this.renderingBridge.renderToDisplay(null, rect);
-        // ▲▲▲▲▲ Phase 4A11C-1.1 Hotfix ▲▲▲▲▲
     }
 
     renderAllLayers() {
