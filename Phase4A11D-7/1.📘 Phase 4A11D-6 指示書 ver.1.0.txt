@@ -1,0 +1,58 @@
+🧩 フェーズの目的
+Perfect Freehandを使った滑らかなペン描画を実現する。
+
+前フェーズ（D-5）では webgl-engine.js に drawStroke() を実装済。ただし、描画呼び出しが core-engine.js 側で未接続だったため、描画不能状態。今回はそのフロー接続と安全化を行う。
+
+📌 修正対象ファイル
+core-engine.js
+
+tool-manager.js
+
+🔧 実装方針
+🎯 1. CanvasManager に Perfect Freehand の描画処理を正しく接続
+📍 追加: this.strokePoints = []
+onPointerDown() で this.strokePoints を初期化し、最初の点 [x, y] をpush。
+
+🧠 安全処理（twglのエラー防止）
+onPointerMove() の中で、this.strokePoints.length >= 2 のときのみ drawStroke() を呼び出す。
+
+1点だけでは破綻するため、skipする。
+
+🖊️ 点のみクリック（線にならないケース）
+onPointerUp() で this.strokePoints.length === 1 の場合は drawCircle() で1点描くようにフォールバック処理を実装。
+
+💾 レイヤーへの描き込み
+描画の最後に compositeStrokeToLayer() を呼び出して、GPU上のFBO内容を現在のImageDataに転写（D-5で実装済）。
+
+🔁 処理フロー図
+lua
+コピーする
+編集する
+onPointerDown:
+    └─ strokePoints = [[x, y]]
+
+onPointerMove:
+    └─ strokePoints.push([x, y])
+        └─ if length >= 2 → drawStroke(strokePoints, color, size)
+
+onPointerUp:
+    └─ if strokePoints.length == 1 → drawCircle()
+    └─ else → drawStroke() → compositeStrokeToLayer()
+    └─ strokePoints = []
+✅ 検証チェックリスト
+チェック項目	結果基準
+ペンで線が描ける	破線ではなく滑らかな実線が表示される
+点だけでも描ける	クリックだけでもドットが出る
+消しゴムが正常動作	消しゴムは円連打の旧仕様で動作継続
+エラーが出ない	twgl の numComponents エラーが消える
+レイヤーに転写される	ペンを離した後、線が保持される
+
+💡補足
+Perfect Freehand は points が2点未満だと破綻する → 必ず防御的に扱うこと。
+
+toolManager.getActiveTool() === 'pen' のチェックで、描画ロジックの分岐が必要。
+
+drawLine() は今後、消しゴム専用として残す（eraser専用ルート）。
+
+✅ 新人GEMINIへの伝え方
+今回はすでに webgl-engine.js に drawStroke() が実装されています。この関数を core-engine.js 側から正しく呼び出し、線や点が描けるようにしてください。1点だけのクリックや、点が2つ未満のときに twgl.js でエラーが出ないように安全に処理してください。
