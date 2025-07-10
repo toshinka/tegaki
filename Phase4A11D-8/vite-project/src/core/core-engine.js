@@ -15,16 +15,16 @@ import * as twgl from 'twgl.js';
 import Dexie from 'dexie';
 
 // --- Module Imports ---
-import { Layer } from './layer.js'; // Layerクラスも分離
-import { CanvasManager } from './canvas-manager.js';
-import { LayerManager } from '../layer-manager/layer-manager.js';
-import { ToolManager } from '../ui/tool-manager.js';
-import { LayerUIManager, TopBarManager } from '../ui/ui-manager.js';
-import { PenSettingsManager } from '../ui/pen-settings-manager.js';
-import { ColorManager } from '../ui/color-manager.js';
-import { ShortcutManager } from '../ui/shortcut-manager.js';
-import { BucketTool } from '../tools/toolset.js';
-import { saveLayerToIndexedDB, loadLayersFromIndexedDB } from '../db/db-indexed.js';
+import { Layer } from './src/core/layer.js'; // Layerクラスも分離
+import { CanvasManager } from './src/core/canvas-manager.js';
+import { LayerManager } from '../src/layer-manager/layer-manager.js';
+import { ToolManager } from '../src/ui/tool-manager.js';
+import { LayerUIManager, TopBarManager } from '../src/ui/ui-manager.js';
+import { PenSettingsManager } from '../src/ui/pen-settings-manager.js';
+import { ColorManager } from '../src/ui/color-manager.js';
+import { ShortcutManager } from '../src/ui/shortcut-manager.js';
+import { BucketTool } from '../src/tools/toolset.js';
+import { saveLayerToIndexedDB, loadLayersFromIndexedDB } from '../src/db/db-indexed.js';
 
 // --- Application Initialization ---
 (async () => {
