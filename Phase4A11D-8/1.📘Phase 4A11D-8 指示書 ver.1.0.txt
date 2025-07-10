@@ -1,0 +1,124 @@
+📘 Phase 4A11D-8 指示書 ver.1.1
+目的：ViteとESMによる構造刷新の土台を構築する
+補足：HTMLリネームや不要script削除は、司令塔が事前に対応済みです。Geminiくんはコード再構成に集中してください。
+
+0. 🎯 はじめに（このPhaseの目的）
+このフェーズでは、既存のブラウザお絵描きツールに対し、以下のような構造的な近代化を行います：
+
+Vite導入による開発効率とビルド最適化
+
+全JSファイルのESM（モジュール）化
+
+不要ライブラリ・旧描画方式の排除（削除済）
+
+「描画中枢」の分離と再構成の準備
+
+1. 🧰 Vite導入とプロジェクト初期化
+✅ 作業ステップ
+プロジェクト直下に移動し、Node.js 環境で以下を実行：
+
+bash
+コピーする
+編集する
+npm init vite@latest
+テンプレート：Vanilla
+
+プロジェクト名：tegaki または任意
+
+Vite依存をインストール
+
+bash
+コピーする
+編集する
+cd tegaki
+npm install
+HTMLファイルのリネーム（ToshinkaTegakiTool.html → index.html）と不要scriptの削除は司令塔がすでに対応済しています。
+GEMINIはHTMLに一切触れる必要はありません。
+
+ライブラリ（gl-matrix, twgl, dexie等）の読み込みも**core-engine.js内でimportする形で統一してください。**
+
+2. 📁 ファイル構成（新ルール）
+以下のように構造を整理します：
+
+bash
+コピーする
+編集する
+/src
+  /core
+    core-engine.js
+    drawing-engine.js
+    ...
+  /core/rendering
+    webgl-engine.js
+    rendering-bridge.js
+    ...
+  /tools
+    brush.js
+    eraser.js
+    ...
+  /ui
+    tool-manager.js
+    shortcut-manager.js
+    ...
+  /utils
+    transform-utils.js
+  /db
+    db-indexed.js
+index.html
+vite.config.js
+3. 🔀 ESM変換ガイドライン
+既存ファイルはすべて以下のように書き換えます：
+
+従来の記述	ESMでの記述
+グローバル関数宣言	export function draw() { ... }
+ファイル内変数	export const layerManager = ...
+他ファイル呼び出し	import { draw } from './core/drawing-engine.js'
+グローバル変数	可能な限りexport/import、window.*** は極力避ける
+
+また、以下のようにライブラリもJSモジュールで読み込みます（core-engine.jsにて）：
+
+js
+コピーする
+編集する
+import { mat4 } from 'gl-matrix';
+import * as twgl from 'twgl.js';
+import Dexie from 'dexie';
+4. 🧹 削除・統合対象（※すでに削除済）
+ファイル名	対応状況	理由
+canvas2d-engine.js	🔥 削除済み	GPU描画に完全移行するため
+gl-matrix-min.js	🔥 削除済み	npm版（ESM対応）を使うため
+dat.gui.min.js	🔥 削除済み	今後のUIはTweakpaneに統一するため
+HTML内のライブラリ<script>	🔥 削除済み	モジュール側でimport統一するため
+
+5. 📦 ライブラリ構成（npmで導入）
+以下のライブラリはnpm経由でESMとして使用：
+
+bash
+コピーする
+編集する
+npm install gl-matrix twgl.js dexie
+Tweakpaneは今後使用するが、今のフェーズでは未使用のため、必要に応じて事前インストールのみ。
+
+6. 🧪 デバッグ方法と確認項目
+以下のような簡易動作確認を行ってください：
+
+ブラウザで localhost:5173 を開く
+
+Console に 起動OK などのログが表示される
+
+画面にCanvasなどが表示される（描画動作は不要）
+
+Consoleエラーが出ていないことを最優先とする
+
+7. 🔮 次フェーズ展望（D-8B以降）
+このフェーズで整ったESM構造をベースに、以下のような作業を行っていきます：
+
+フェーズ	目的	内容
+D-8B	WebGLのtwgl.js移行	webgl-engine.jsを段階的に再設計
+D-8C	UI統合	TweakpaneによるUI再構築の基礎
+D-8D	補正系統の分離	drawing-engine.jsの整理と分割
+
+🔚 最後に
+GEMINIくんへ：
+このフェーズは目に見える成果ではなく、「今後の設計すべてを支える骨組み」を整えるためのものです。
+焦らず、一歩ずつ構造を整えていきましょう！
