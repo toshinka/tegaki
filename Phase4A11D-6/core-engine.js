@@ -1,18 +1,24 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 3.5.2 (Phase 4A11D-6 Hotfix 2)
+ * Version: 3.4.6 (Phase 4A11D-6)
  *
- * - 変更点 (Phase 4A11D-6 Hotfix 2):
- * - GPTの指示に基づき、エラーハンドリングを強化。
- * - onPointerMove: strokePointsが2点未満の場合はdrawStrokeを呼び出さないガード処理を継続。
- * - onPointerUp: 点が1つの場合（クリック時）は、暫定的にdrawCircleで点を描画する
- * ロジックを追加。これによりシングルクリックで描画が可能になる。
- * - onPointerUp: 点が2つ以上の場合は、従来通りdrawStrokeで線を確定させる。
+ * - 変更点 (Phase 4A11D-6):
+ * - 「📘 Phase 4A11D-6 指示書 ver.1.0」に基づき、ペン描画処理を刷新。
+ * - Perfect Freehand ライブラリを利用した滑らかなストローク描画に対応。
+ * - onPointerDown, onPointerMove, onPointerUp にて、ペンツール使用時の
+ * 描画フローを drawStroke ベースの処理に接続しました。
+ * - 点が1つだけの場合に drawCircle で点を描画するフォールバック処理を実装。
+ * - 点が2つ未満の時に drawStroke が呼ばれないよう安全対策を強化。
+ * - 消しゴムツールは従来の drawLine を使用するようロジックを分岐しました。
+ * * - 変更点 (Phase 4A11C-4 Hotfix):
+ * - startLayerTransform()内で発生していた致命的なシンタックスエラーを修正。
  *
- * - 変更点 (Phase 4A11D-6 Hotfix):
- * - onPointerMove内で、strokePointsの数が2未満の時にdrawStrokeを呼び出していた
- * 致命的なエラーを修正。
+ * - 変更点 (Phase 4A11C-4):
+ * - 「🎨Phase 4A11C-4 指示書」に基づき、レイヤー移動開始時の同期処理を強化。
+ * - startLayerTransform()にて、変形対象(transformStage)を作成する前に、
+ * 一度GPUから最新の描画結果を取得し、それを基に作成するよう修正。
+ * これにより、初回移動時の描画ブレ（プルプル現象）を抑制します。
  * ===================================================================================
  */
 
@@ -128,7 +134,7 @@ class CanvasManager {
         this.width = this.displayCanvas.width;
         this.height = this.displayCanvas.height;
         this.renderingBridge = new RenderingBridge(this.displayCanvas);
-        this.isDrawing = false; // 消しゴムなど、従来の描画方式のためのフラグ
+        this.isDrawing = false;
         this.isPanning = false;
         this.isDraggingLayer = false;
         this.isLayerTransforming = false;
@@ -139,6 +145,11 @@ class CanvasManager {
         this.lastPoint = null;
         this.transformStartWorldX = 0;
         this.transformStartWorldY = 0;
+        
+        // ▼▼▼ Phase 4A11D-6 指示書による修正 ▼▼▼
+        // Perfect Freehand で描画するための点（座標と筆圧）を保持する配列です。
+        this.strokePoints = [];
+        // ▲▲▲ Phase 4A11D-6 指示書による修正 ▲▲▲
 
         // ▼▼▼▼▼ Phase 4A11C-1 修正 ▼▼▼▼▼
         // 従来のcellBufferを廃止し、変形開始時のMatrixを保持するプロパティを追加
@@ -224,8 +235,6 @@ class CanvasManager {
         const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
         const activeLayer = this.app.layerManager.getCurrentLayer();
         if (!activeLayer) return;
-
-        // --- Pan and Transform checks (Priority) ---
         if (this.isSpaceDown) {
             this.isPanning = true;
             this.dragStartX = e.clientX;
@@ -237,39 +246,23 @@ class CanvasManager {
         if (this.isLayerTransforming) {
             if (!activeLayer.visible) return;
             this.isDraggingLayer = true;
+            // ▼▼▼▼▼ Phase 4A11C-3 修正 ▼▼▼▼▼
+            // 指示書に基づき、座標ブレ防止のため整数に丸める
             this.transformStartWorldX = Math.round(coords.x);
             this.transformStartWorldY = Math.round(coords.y);
+            // ▲▲▲▲▲ Phase 4A11C-3 修正 ▲▲▲▲▲
             return;
         }
+        if (!activeLayer.visible || !this._isPointOnLayer(coords, activeLayer)) return;
+        const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
+        const superX = coords.x * SUPER_SAMPLING_FACTOR;
+        const superY = coords.y * SUPER_SAMPLING_FACTOR;
+        const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix);
+        this._resetDirtyRect();
 
-        if (!activeLayer.visible) return;
+        const currentColor = this.currentColor ?? '#000000';
 
-        document.documentElement.setPointerCapture(e.pointerId);
-
-        // --- Tool-specific logic ---
-        const currentTool = this.app.toolManager.currentTool;
-        
-        // 🖌️ Pen Tool (Perfect Freehand)
-        if (currentTool === 'pen') {
-            if (DEBUG_MODE) console.log(`[Pointer] Down at ${Math.round(coords.x)}, ${Math.round(coords.y)}`);
-            this.app.toolManager.isPenDrawing = true;
-            this.app.toolManager.strokePoints = [];
-            const pressure = e.pressure > 0 ? e.pressure : 0.5;
-            // Perfect Freehand は [x, y, pressure] の形式で点を要求する
-            this.app.toolManager.strokePoints.push([coords.x, coords.y, pressure]);
-            // 最初の点は onPointerMove で描画が開始される
-            return;
-        }
-        
-        // 🎨 Bucket Tool
-        if (currentTool === 'bucket') {
-            if (!this._isPointOnLayer(coords, activeLayer)) return;
-            const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
-            const superX = coords.x * SUPER_SAMPLING_FACTOR;
-            const superY = coords.y * SUPER_SAMPLING_FACTOR;
-            const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix);
-            
-            const currentColor = this.currentColor ?? '#000000';
+        if (this.app.toolManager.currentTool === 'bucket') {
             this.app.bucketTool.fill(activeLayer.imageData, Math.round(local.x), Math.round(local.y), hexToRgba(currentColor));
             activeLayer.gpuDirty = true;
             this.renderAllLayers();
@@ -278,30 +271,28 @@ class CanvasManager {
             return;
         }
 
-        // 🧽 Eraser Tool (and other traditional drawing tools)
-        if (currentTool === 'eraser') {
-            if (!this._isPointOnLayer(coords, activeLayer)) return;
-            this.isDrawing = true;
-
-            const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
-            const superX = coords.x * SUPER_SAMPLING_FACTOR;
-            const superY = coords.y * SUPER_SAMPLING_FACTOR;
-            const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix);
-
-            this._resetDirtyRect();
-            this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
-            this.lastPoint = { ...local, pressure: this.pressureHistory[0] };
+        this.isDrawing = true;
+        this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
+        this.lastPoint = { ...local, pressure: this.pressureHistory[0] };
+        
+        // ▼▼▼ Phase 4A11D-6 指示書による修正 ▼▼▼
+        if (this.app.toolManager.currentTool === 'pen') {
+            // ペンツールの場合は、ここから描画が始まるので、
+            // 座標と筆圧を strokePoints 配列に最初の点として記録します。
+            this.strokePoints = [[local.x, local.y, this.lastPoint.pressure]];
+        } else { // 消しゴムツールはこちらの処理（従来の円描画）を使います。
             const size = this.calculatePressureSize(this.app.penSettingsManager.currentSize, this.lastPoint.pressure);
             this._updateDirtyRect(local.x, local.y, size);
-            this.renderingBridge.drawCircle(local.x, local.y, size / 2, hexToRgba('#000000'), true, activeLayer);
+            this.renderingBridge.drawCircle(local.x, local.y, size / 2, hexToRgba(currentColor), this.app.toolManager.currentTool === 'eraser', activeLayer);
             this._requestRender();
         }
+        // ▲▲▲ Phase 4A11D-6 指示書による修正 ▲▲▲
+        
+        document.documentElement.setPointerCapture(e.pointerId);
     }
 
     onPointerMove(e) {
         const coords = getCanvasCoordinates(e, this.displayCanvas, this.viewTransform);
-
-        // --- Pan and Transform checks (Priority) ---
         if (this.isPanning) {
             const dx = e.clientX - this.dragStartX;
             const dy = e.clientY - this.dragStartY;
@@ -312,166 +303,135 @@ class CanvasManager {
         }
         if (this.isDraggingLayer) {
             this.performDelayedLayerClear();
+
             const activeLayer = this.app.layerManager.getCurrentLayer();
+            // ▼▼▼▼▼ Phase 4A11C-1 修正 ▼▼▼▼▼
+            // チェック対象をtransformStageの有無に変更
             if (!activeLayer || !activeLayer.transformStage || !this.transformDragStarted) return;
             
             const dx = coords.x - this.transformStartWorldX;
             const dy = coords.y - this.transformStartWorldY;
             const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
+
+            // ▼▼▼▼▼ Phase 4A11C-2 修正 ▼▼▼▼▼
+            // 指示書に基づき、座標ブレ防止のため整数に丸める
             const adjustedDx = Math.round(dx * SUPER_SAMPLING_FACTOR);
             const adjustedDy = Math.round(dy * SUPER_SAMPLING_FACTOR);
-            
+            // ▲▲▲▲▲ Phase 4A11C-2 修正 ▲▲▲▲▲
+
             const translationMatrix = mat4.create();
             mat4.fromTranslation(translationMatrix, [adjustedDx, adjustedDy, 0]);
             const newMatrix = mat4.create();
+            // 変形開始時のMatrixを基準に移動量を計算
             mat4.multiply(newMatrix, translationMatrix, this.transformOriginalModelMatrix);
             activeLayer.modelMatrix = newMatrix;
+            // imageDataの書き換えとgpuDirtyフラグの操作は不要になる
+            // ▲▲▲▲▲ Phase 4A11C-1 修正 ▲▲▲▲▲
             this.renderAllLayers();
             return;
         }
 
-        // --- Tool-specific move logic ---
-        
-        // 🖌️ Pen Tool (Perfect Freehand)
-        if (this.app.toolManager.isPenDrawing) {
-            if (DEBUG_MODE) console.log(`[Pointer] Move at ${Math.round(coords.x)}, ${Math.round(coords.y)}`);
-            const activeLayer = this.app.layerManager.getCurrentLayer();
-            if (!activeLayer) return;
-
-            const pressure = e.pressure > 0 ? e.pressure : 0.5;
-            this.app.toolManager.strokePoints.push([coords.x, coords.y, pressure]);
-            
-            // ▼▼▼ HOTFIX ▼▼▼
-            // 点が2つ以上ないと線が描画できないため、チェックを追加してエラーを回避
-            if (this.app.toolManager.strokePoints.length < 2) {
-                return;
-            }
-            // ▲▲▲ HOTFIX ▲▲▲
-            if (DEBUG_MODE) console.log(`[drawStroke] ${this.app.toolManager.strokePoints.length} points received`);
-
-            // WebGLエンジンにストローク描画を指示 (ストリーミングモード)
-            this.renderingBridge.currentEngine?.drawStroke(
-                this.app.toolManager.strokePoints,
-                hexToRgba(this.currentColor),
-                this.brushSize,
-                activeLayer,
-                { streaming: true }
-            );
-
-            this._requestRender(); // リアルタイムで描画を更新
-            return;
-        }
-
-        // 🧽 Eraser Tool (and other traditional drawing tools)
         if (this.isDrawing) {
             const activeLayer = this.app.layerManager.getCurrentLayer();
             if (!activeLayer) return;
-
             const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
             const superX = coords.x * SUPER_SAMPLING_FACTOR;
             const superY = coords.y * SUPER_SAMPLING_FACTOR;
             const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix);
-
             const currentPressure = e.pressure > 0 ? e.pressure : 0.5;
-            this.pressureHistory.push(currentPressure);
-            if (this.pressureHistory.length > this.maxPressureHistory) this.pressureHistory.shift();
-            
-            const lastSize = this.calculatePressureSize(this.app.penSettingsManager.currentSize, this.lastPoint.pressure);
-            const currentSize = this.calculatePressureSize(this.app.penSettingsManager.currentSize, currentPressure);
-            this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, lastSize);
-            this._updateDirtyRect(local.x, local.y, currentSize);
 
-            this.renderingBridge.drawLine(
-                this.lastPoint.x, this.lastPoint.y, local.x, local.y, 
-                this.app.penSettingsManager.currentSize, hexToRgba('#000000'), true,
-                this.lastPoint.pressure, currentPressure, this.calculatePressureSize.bind(this), activeLayer
-            );
+            // ▼▼▼ Phase 4A11D-6 指示書による修正 ▼▼▼
+            if (this.app.toolManager.currentTool === 'pen') {
+                 // ペンツールの場合、動かした先の座標と筆圧を strokePoints 配列に追加していきます。
+                this.strokePoints.push([local.x, local.y, currentPressure]);
+
+                // 点が2つ以上記録されていれば、線として描画できます。
+                // 1点だけだと線が描画できず、Perfect Freehand がエラーを出すため、このチェックは重要です。
+                if (this.strokePoints.length >= 2) {
+                    const currentColor = this.currentColor ?? '#000000';
+                    
+                    // RenderingBridge を介して、WebGLエンジンに実装されている drawStroke 関数を呼び出します。
+                    // これにより、滑らかな線がリアルタイムでプレビュー表示されます。
+                    this.renderingBridge.drawStroke(
+                        this.strokePoints,
+                        hexToRgba(currentColor),
+                        this.app.penSettingsManager.currentSize
+                    );
+                    this._requestRender(); // 画面の更新をリクエストします。
+                }
+            } else { // 消しゴムツールは、これまで通り2点間を直線で結ぶ drawLine を使います。
+                this.pressureHistory.push(currentPressure);
+                if (this.pressureHistory.length > this.maxPressureHistory) this.pressureHistory.shift();
+                const lastSize = this.calculatePressureSize(this.app.penSettingsManager.currentSize, this.lastPoint.pressure);
+                const currentSize = this.calculatePressureSize(this.app.penSettingsManager.currentSize, currentPressure);
+                this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, lastSize);
+                this._updateDirtyRect(local.x, local.y, currentSize);
+
+                const currentColor = this.currentColor ?? '#000000';
+                this.renderingBridge.drawLine(this.lastPoint.x, this.lastPoint.y, local.x, local.y, this.app.penSettingsManager.currentSize, hexToRgba(currentColor), this.app.toolManager.currentTool === 'eraser', this.lastPoint.pressure, currentPressure, this.calculatePressureSize.bind(this), activeLayer);
+                this._requestRender();
+            }
+            // ▲▲▲ Phase 4A11D-6 指示書による修正 ▲▲▲
 
             this.lastPoint = { ...local, pressure: currentPressure };
-            this._requestRender();
             return;
         }
-
         this.updateCursor(coords);
     }
 
     async onPointerUp(e) {
-        // 🖌️ Pen Tool (Perfect Freehand)
-        if (this.app.toolManager.isPenDrawing) {
-            this.app.toolManager.isPenDrawing = false;
-            const points = this.app.toolManager.strokePoints;
-            const activeLayer = this.app.layerManager.getCurrentLayer();
-            
-            if (!activeLayer) {
-                this.app.toolManager.strokePoints = [];
-                return;
-            }
-
-            // ▼▼▼ HOTFIX 2: Handle single dot (click) vs. line (drag) ▼▼▼
-            if (points.length === 1) {
-                // --- Single Dot Drawing Logic ---
-                if (DEBUG_MODE) console.log("[Pointer] Up - Drawing a single dot.");
-                const point = points[0]; // [x, y, pressure]
-                
-                // For drawCircle, we need layer-local coordinates.
-                const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
-                const superX = point[0] * SUPER_SAMPLING_FACTOR;
-                const superY = point[1] * SUPER_SAMPLING_FACTOR;
-                const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix);
-
-                // Use a simplified pressure calculation for the dot size.
-                const size = this.calculatePressureSize(this.brushSize, point[2]);
-                
-                // Use the old drawCircle as a fallback for now.
-                this.renderingBridge.drawCircle(local.x, local.y, size / 2, hexToRgba(this.currentColor), false, activeLayer);
-
-                // The drawn circle needs to be synced to the layer's main data.
-                this._resetDirtyRect();
-                this._updateDirtyRect(local.x, local.y, size);
-                this._renderDirty(); 
-                this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
-
-                await this.onDrawEnd?.(activeLayer);
-                this.saveState();
-
-            } else if (points.length > 1) {
-                // --- Line Drawing Logic ---
-                if (DEBUG_MODE) console.log("[Pointer] Up - Compositing stroke...");
-                
-                this.renderingBridge.currentEngine?.drawStroke(
-                    points,
-                    hexToRgba(this.currentColor),
-                    this.brushSize,
-                    activeLayer,
-                    { finalize: true }
-                );
-                
-                this.renderAllLayers(); // Render final result
-                await this.onDrawEnd?.(activeLayer);
-                this.saveState();
-            }
-            // ▲▲▲ HOTFIX 2 ▲▲▲
-
-            this.app.toolManager.strokePoints = []; // Clear points for the next stroke
-        } 
-        // 🧽 Eraser Tool (and other traditional drawing tools)
-        else if (this.isDrawing) {
+        if (this.isDrawing) {
             this.isDrawing = false;
             if (this.animationFrameId) {
                 cancelAnimationFrame(this.animationFrameId);
                 this.animationFrameId = null;
             }
-            this._renderDirty();
+            
             const activeLayer = this.app.layerManager.getCurrentLayer();
-            if (activeLayer) {
-                this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
-                await this.onDrawEnd?.(activeLayer);
+
+            // ▼▼▼ Phase 4A11D-6 指示書による修正 ▼▼▼
+            if (this.app.toolManager.currentTool === 'pen') {
+                if (activeLayer && this.strokePoints.length > 0) {
+                     // 点が1つだけの場合（＝線を引かずにクリックだけした場合）の特別処理です。
+                    if (this.strokePoints.length === 1) {
+                        const point = this.strokePoints[0];
+                        const pressure = point[2] ?? 0.5;
+                        const size = this.calculatePressureSize(this.app.penSettingsManager.currentSize, pressure);
+                        const color = hexToRgba(this.currentColor ?? '#000000');
+                        
+                        // ダーティ矩形（再描画が必要な範囲）を更新します。
+                        this._updateDirtyRect(point[0], point[1], size);
+                        // 円を描画します。
+                        this.renderingBridge.drawCircle(point[0], point[1], size / 2, color, false, activeLayer);
+                        
+                        // 描画結果を確定させ、レイヤーのデータに反映させます。
+                        this._renderDirty();
+                        this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
+
+                    } else if (this.strokePoints.length > 1) {
+                        // 線を描き終えたら、プレビュー表示されていた線をレイヤーに「焼き付け」ます。
+                        // これで描画が確定します。
+                        this.renderingBridge.compositeStrokeToLayer(activeLayer);
+                    }
+                    
+                    // 描画内容をIndexedDBに保存します。
+                    await this.onDrawEnd?.(activeLayer);
+                }
+                // 次の描画のために、点の情報をリセットします。
+                this.strokePoints = [];
+
+            } else { // 消しゴムツールなど、ペン以外のツールの処理です。
+                this._renderDirty();
+                if (activeLayer) {
+                    this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
+                    await this.onDrawEnd?.(activeLayer);
+                }
             }
+            // ▲▲▲ Phase 4A11D-6 指示書による修正 ▲▲▲
+
             this.lastPoint = null;
             this.saveState();
         }
-
-        // --- Common cleanup ---
         if (this.isDraggingLayer) this.isDraggingLayer = false;
         this.isPanning = false;
         if (document.documentElement.hasPointerCapture(e.pointerId)) {
@@ -705,18 +665,13 @@ class CanvasManager {
     }
 
     _renderDirty() {
-        // ペンツールでのストリーミング描画中は、描画を requestAnimationFrame に任せる
-        if (this.app.toolManager.isPenDrawing) {
-            this.renderingBridge.compositeLayers(this.app.layerManager.layers);
-            this.renderingBridge.renderToDisplay();
-            return;
-        }
-        
         const rect = this.dirtyRect;
         if (rect.minX > rect.maxX) return;
-
         this.renderingBridge.compositeLayers(this.app.layerManager.layers, null, rect);
+        // ▼▼▼▼▼ Phase 4A11C-1.1 Hotfix ▼▼▼▼▼
+        // タイプミスを修正
         this.renderingBridge.renderToDisplay(null, rect);
+        // ▲▲▲▲▲ Phase 4A11C-1.1 Hotfix ▲▲▲▲▲
     }
 
     renderAllLayers() {
@@ -754,7 +709,7 @@ class CanvasManager {
         const smoothedPressure = tempHistory.reduce((sum, p) => sum + p, 0) / tempHistory.length;
         let finalPressure = smoothedPressure;
         const historyLength = this.pressureHistory.length;
-        if ((this.isDrawing || this.app.toolManager.isPenDrawing) && historyLength <= this.maxPressureHistory) {
+        if (this.isDrawing && historyLength <= this.maxPressureHistory) {
             const dampingFactor = historyLength / this.maxPressureHistory;
             finalPressure *= (0.2 + Math.pow(dampingFactor, 3) * 0.8);
         }
@@ -827,8 +782,6 @@ class CanvasManager {
                 case 'bucket': this.canvasArea.style.cursor = 'copy'; break;
                 default: this.canvasArea.style.cursor = 'crosshair';
             }
-        } else if (this.app.toolManager.currentTool === 'pen') { // ペンツールはキャンバス外でもカーソル表示
-            this.canvasArea.style.cursor = 'crosshair';
         } else {
             this.canvasArea.style.cursor = 'not-allowed';
         }
@@ -865,19 +818,10 @@ window.addEventListener('load', async () => {
 
     app.canvasManager.onDrawEnd = async (layer) => {
         if (!layer) return;
-        
-        // 描画エンジンから最新のImageDataを取得
-        const latestImageData = app.canvasManager.renderingBridge.getTransformedImageData(layer, true);
-        if (!latestImageData) {
-            console.error("レイヤーデータの保存に失敗しました: 最新のImageDataを取得できませんでした。");
-            return;
-        }
-
         const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = latestImageData.width;
-        tempCanvas.height = latestImageData.height;
-        tempCanvas.getContext('2d').putImageData(latestImageData, 0, 0);
-
+        tempCanvas.width = layer.imageData.width;
+        tempCanvas.height = layer.imageData.height;
+        tempCanvas.getContext('2d').putImageData(layer.imageData, 0, 0);
         const dataURL = tempCanvas.toDataURL();
         await saveLayerToIndexedDB(layer.id, layer.name, dataURL);
     };

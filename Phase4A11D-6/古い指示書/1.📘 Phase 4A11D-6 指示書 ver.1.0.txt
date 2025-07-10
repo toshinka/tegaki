@@ -1,0 +1,57 @@
+📘 Phase 4A11D-6 指示書 ver.1.1
+目的：Perfect Freehand を使用して滑らかなペン描画を可能にし、drawStroke() メソッドをペンツールに統合する。
+
+🎯 改修概要
+項目	内容
+🎯 改修目的	Perfect Freehand による線描画の実用化
+🛠️ 修正対象ファイル	core-engine.js, tool-manager.js（または必要に応じて canvas-manager.js）
+🧠 状態管理	isDrawing, strokePoints などの状態を新たに導入
+🖱️ 対応イベント	onPointerDown, onPointerMove, onPointerUp を再定義
+🧩 呼び出し対象	webglEngine.drawStroke(points, color, size)
+
+🧭 処理フローの詳細
+1️⃣ onPointerDown（ペンを押し始めたとき）
+isDrawing = true に設定
+
+strokePoints を初期化し、現在のカーソル位置を追加
+
+現在の色・サイズを記録（オプションで筆圧対応も）
+
+2️⃣ onPointerMove（ペンを動かしている間）
+isDrawing が true のときのみ処理する
+
+カーソル位置を strokePoints に追加
+
+毎フレーム drawStroke(strokePoints) を呼び、描画を更新（レイヤーバッファはまだ確定しない）
+
+3️⃣ onPointerUp（ペンを離したとき）
+drawStroke() で 最終描画確定
+
+strokePoints をクリアし、isDrawing = false
+
+🖌️ 描画スタイル設定（参考）
+パラメータ	意味	設定例
+color	現在のペン色	this.currentColor
+size	ペンサイズ	this.currentSize
+streaming	ライブ描画中か	true（onPointerMove）
+finalize	完成描画か	true（onPointerUp 時）
+
+🔁 備考・補足
+🧠 tool-manager.js に描画中の状態管理を持たせる方が、ペン以外のツールとの共存がしやすくなります。
+
+🔁 消しゴムや移動ツールの onPointerMove との競合に注意。currentTool 判定を必ず挟んでください。
+
+✅ Perfect Freehand の描画は CPU/GPU 両方に優しい構成ですが、点数の蓄積上限などは適宜制限してもよいでしょう（例: 1 stroke = 最大256点）
+
+✅ 完了判定
+チェック項目	OK条件
+✔️ ペンツールで滑らかな線が描画される	点線ではなく連続した1本の線がリアルタイムで描画されること
+✔️ onPointerMove 中に線が更新される	線が移動に応じてリアルタイムで伸びていく
+✔️ onPointerUp で線が確定する	完成した線がレイヤーに描画されて残る
+✔️ 消しゴムツールは以前と同様の挙動を維持	drawLine で問題なく動作していること
+
+💡 次フェーズ候補（D-7～）
+フェーズ	内容
+D-7	筆圧・傾き入力（Pointer Events API）対応
+D-8	Undo / Redo の Perfect Freehand 対応
+D-9	描画バッファのFBO統合

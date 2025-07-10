@@ -4,14 +4,14 @@
 │ │
 │ ├ ToshinkaTegakiTool.html（Phase4A'8）
 │ │
-│ ├ core-engine.js（Phase4A11D-6）  
+│ ├ core-engine.js（Phase4A11C-3）  
 │ │
 │ ├ core/ 
 │ │ ├ rendering/              
 │ │ │  ├─ drawing-engine.js      <-- （Phase4A'7）
 │ │ │  ├─ canvas2d-engine.js     <-- （Phase4A'7）※Phase4A11B以降廃止
 │ │ │  ├─ canvas-manager.js      <-- （Phase4A11B-12）
-│ │ │  ├─ webgl-engine.js        <-- （Phase4A11D-3）
+│ │ │  ├─ webgl-engine.js        <-- （Phase4A11D-5）
 │ │ │  └─ rendering-bridge.js    <-- （Phase4A11B-20）
 │ │ │
 │ │ ├ db/
@@ -21,14 +21,14 @@
 │ │     └─ transform-utils.js     <-- （Phase4A11C-2）
 │ │ 
 │ ├ layer-manager/
-│ │ └─ layer-manager.js           <-- （Phase4A11B-21））
+│ │ └─ layer-manager.js           <-- （Phase4A11B-21）
 │ │
 │ ├ ui/ 
 │ │ ├─ ui-manager.js         　　 <-- （Phase2）
 │ │ ├─ shortcut-manager.js     　 <-- （Phase4A11B-12
 │ │ ├─ pen-settings-manager.js    <-- （Phase4A11A-0）
 │ │ ├─ color-manager.js           <-- （Phase4A11A-0）
-│ │ └─ tool-manager.js            <-- （Phase4A11D-6）
+│ │ └─ tool-manager.js            <-- （Phase4A11A-0）
 │ │　　
 │ ├ tools/ 
 │ │ └─ toolset.js              　 <-- （Phase2）
