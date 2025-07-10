@@ -21,20 +21,22 @@ export class ToolManager {
         };
 
         // 「サイズ」を変更するためのスライダーを追加します [cite: 3]
+
         pane.addInput(params, 'size', {
-          label: 'サイズ',
           min: 1,
           max: 50,
-          step: 1,
+          step: 1
         }).on('change', (ev) => {
+          app.canvasManager.setCurrentSize(ev.value);
+        });
             // スライダーを動かしたら、その値をキャンバスに伝えます
             this.app.canvasManager.setCurrentSize(ev.value); [cite: 3]
         });
 
         // 「色」を変更するためのカラーピッカーを追加します [cite: 4]
-        pane.addInput(params, 'color', {
-            label: 'カラー'
-        }).on('change', (ev) => {
+        pane.addInput(params, 'color').on('change', (ev) => {
+          app.canvasManager.setCurrentColor(ev.value);
+        });
             // 色を選んだら、その値をキャンバスに伝えます
             this.app.canvasManager.setCurrentColor(ev.value.toString()); // ev.valueを文字列に変換
         });
