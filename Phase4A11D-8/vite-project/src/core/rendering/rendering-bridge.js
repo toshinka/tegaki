@@ -1,5 +1,5 @@
 // src/core/rendering/rendering-bridge.js
-import { WebGLEngine } from './src/core/rendering/webgl-engine.js';
+import { WebGLEngine } from './webgl-engine.js';
 
 export class RenderingBridge {
     constructor(canvas, preferredEngine = 'webgl') {
