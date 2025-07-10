@@ -658,50 +658,7 @@ class WebGLEngine {
         this.renderLayerWithTransform(fboInfo, mvMatrix);
     }
 }
-💡 画像変形問題の解決策
-1. テクスチャ補間設定
-javascript// 線形補間ではなく、最近傍補間を使用
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-2. 座標系の統一
-javascript// WebGL座標系をキャンバス座標系に合わせる
-const projectionMatrix = mat4.create();
-mat4.ortho(projectionMatrix, 0, canvas.width, canvas.height, 0, -1, 1);
-3. 高精度フォーマット使用
-javascript// WebGL2なら16bit精度が使える
-const attachments = [{
-    format: gl.RGBA,
-    type: gl.HALF_FLOAT,  // より高精度
-    internalFormat: gl.RGBA16F
-}];
-🔧 実装の段階的アプローチ
-Phase 1: 基本FBO描画
-javascript// 1. 単純なFBO描画から開始
-createFBO() → bindFBO() → drawPixels() → unbindFBO()
-Phase 2: レイヤー移動
-javascript// 2. 移動時はGPU行列変換のみ
-moveLayer() → updateTransformMatrix() → renderWithTransform()
-Phase 3: 描画ツール移行
-javascript// 3. ペン描画をGPU化
-drawLine() → generateVertices() → renderToFBO()
-🎨 最新技術の活用
-Pointer Events APIとの連携
-javascriptcanvas.addEventListener('pointermove', (e) => {
-    const pressure = e.pressure || 0.5;
-    const tiltX = e.tiltX || 0;
-    const tiltY = e.tiltY || 0;
-    
-    // 筆圧をGPUシェーダーに渡す
-    this.drawWithPressure(e.clientX, e.clientY, pressure, tiltX, tiltY);
-});
-WebGL2の活用
-javascript// VAO（Vertex Array Objects）で高速化
-const vao = gl.createVertexArray();
-gl.bindVertexArray(vao);
-// 頂点設定...
-gl.bindVertexArray(null);
 
-// 描画時
-gl.bindVertexArray(vao);
-gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
-このアプローチなら、CPU↔GPU間のデータ転送を最小限に抑えつつ、高品質な描画と変形処理を実現できます。特にtwgl.jsは学習コストが低く、すぐに結果が出るのでお勧めです。
+
+
+
