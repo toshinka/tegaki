@@ -1,7 +1,0 @@
-{
-  "dependencies": {
-    "dexie": "^4.0.11",
-    "gl-matrix": "^3.4.3",
-    "twgl.js": "^6.1.1"
-  }
-}
