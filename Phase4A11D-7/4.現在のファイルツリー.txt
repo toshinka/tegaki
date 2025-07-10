@@ -4,7 +4,7 @@
 │ │
 │ ├ ToshinkaTegakiTool.html（Phase4A'8）
 │ │
-│ ├ core-engine.js（Phase4A11D-6）  
+│ ├ core-engine.js（Phase4A11D-3）  
 │ │
 │ ├ core/ 
 │ │ ├ rendering/              
@@ -28,7 +28,7 @@
 │ │ ├─ shortcut-manager.js     　 <-- （Phase4A11B-12
 │ │ ├─ pen-settings-manager.js    <-- （Phase4A11A-0）
 │ │ ├─ color-manager.js           <-- （Phase4A11A-0）
-│ │ └─ tool-manager.js            <-- （Phase4A11D-6）
+│ │ └─ tool-manager.js            <-- （Phase4A11D-3）
 │ │　　
 │ ├ tools/ 
 │ │ └─ toolset.js              　 <-- （Phase2）
@@ -38,9 +38,9 @@
 │ 　 ├─ dat.gui.min.js             // dat.GUI（CDNから丸コピー）
 │ 　 ├─ dexie.min.js               <-- （Phase4A11B-11)
 │ 　 ├─ twgl-full.min.js           <-- （Phase4A11D-0)
-│ 　 ├─ paper-core.min.js          <-- （Phase4A11D-4)
-│ 　 ├─ paper-full.min.js          //  （Phase4A11D-4)
-│ 　 └─ perfect-freehand.js        <-- （Phase4A11D-5)
+│ 　 ├─ paper-core.min.js          //  （Phase4A11D-4→ロールバック)
+│ 　 ├─ paper-full.min.js          //  （Phase4A11D-4→ロールバック)
+│ 　 └─ perfect-freehand.js        //  （Phase4A11D-5→ロールバック)
 
  * --- ToshinkaTegakiTool.html依存リスト ---
  *
@@ -89,6 +89,7 @@
  * - <script src="./libs/dat.gui.min.js"></script>
  * - <script src="./libs/dexie.min.js"></script>
  * - <script src="./libs/twgl-full.min.js"></script>
- * - <script src="./libs/paper-core.min.js"></script>
- * - <script src="./libs/perfect-freehand.js"></script>
+
+ * - <script src="./libs/paper-core.min.js"></script> （ロールバック）
+ * - <script src="./libs/perfect-freehand.js"></script> （ロールバック）
  * ===================================================================================
