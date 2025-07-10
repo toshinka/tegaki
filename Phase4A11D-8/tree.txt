@@ -1,16 +1,33 @@
+
+
 vite-project/
-├── index.html              # Viteが管理
+│
+├ index.html
 ├── package.json  
-├── package-lock.json          
-├── vite.config.js          # Viteの設定ファイル（新規作成）
-├── node_modules/           # ライブラリ（既存）
-│   ├── vite/              # Viteもここに追加される
+├── package-lock.json  
+├── node_modules/           
+│   ├── vite/              
 │   ├── gl-matrix/
 │   ├── twgl.js/
 │   └── dexie/
-└── src/                    # 既存のコード
-    ├── core/
-    ├── db/
-    ├── layer-manager/
-    ├── tools/
-    └── ui/
+└ src/
+   ├ core/
+   │  ├ core-engine.js
+   │  ├ canvas-manager.js
+   │  ├ drawing-engine.js
+   │  ├ layer.js
+   │  └ rendering/
+   │     ├ rendering-bridge.js ✅ ←ココ
+   │     └ webgl-engine.js
+   ├ db/
+   │  └ db-indexed.js
+   ├ layer-manager/
+   │  └ layer-manager.js
+   ├ tools/
+   │  └ toolset.js
+   └ ui/
+      ├ ui-manager.js
+      ├ tool-manager.js
+      ├ shortcut-manager.js
+      ├ pen-settings-manager.js
+      └ color-manager.js
