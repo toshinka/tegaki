@@ -17,6 +17,7 @@ D-5	✅ Perfect Freehand導入	滑らかな線描画の本命	perfect-freehand, 
 D-6	Pointer Events API統合	筆圧・傾き対応・コード簡素化	ブラウザ標準	GSAPやWAAPIとの連携布石
 D-7	TweakpaneによるUI近代化	dat.GUI完全置換・カスタマイズ性↑	Tweakpane	UI刷新の要
 D-8	twgl.js構造の整理	VAO, createBufferInfoの活用	twgl.js, glslify	描画コアの簡素化
+D-8b	ESM構造化・Vite対応・依存分離
 D-9	レイヤー変形GPU一貫化	transformStage排除へ	twgl.js, FBO	テクスチャ管理の統合へ
 D-10	🧪 gpu.js導入検討	ペン処理の完全GPU化	gpu.js	高速処理実験的段階
 D-11	アニメーションシステム試験	タイムライン連動描画	GSAP, WAAPI, keyframe	Phase 4A12準備
