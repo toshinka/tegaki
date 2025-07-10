@@ -1,0 +1,16 @@
+vite-project/
+├── index.html              # Viteが管理
+├── package.json  
+├── package-lock.json          
+├── vite.config.js          # Viteの設定ファイル（新規作成）
+├── node_modules/           # ライブラリ（既存）
+│   ├── vite/              # Viteもここに追加される
+│   ├── gl-matrix/
+│   ├── twgl.js/
+│   └── dexie/
+└── src/                    # 既存のコード
+    ├── core/
+    ├── db/
+    ├── layer-manager/
+    ├── tools/
+    └── ui/
