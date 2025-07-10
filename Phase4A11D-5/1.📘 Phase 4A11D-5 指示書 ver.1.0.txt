@@ -1,0 +1,80 @@
+📄 Phase 4A11D-5 指示書 ver.1.0
+目的：Paper.jsで生成した補間パスを、twgl.jsを用いてGPU描画へ反映する。滑らかなペン線を実現する。
+
+🎯 背景と目的
+前フェーズ（D-4）では、Paper.js を用いたペン描画用の補間パス生成が実装されましたが、それを 実際の描画（FBOレンダリング）に接続する処理が未実装でした。
+
+このフェーズでは、以下を実現します：
+
+Paper.jsで補間した線をGPUに渡して描画
+
+ペン線が「破線」ではなく滑らかにつながるようにする
+
+🧩 対象ファイル
+core/rendering/webgl-engine.js
+
+libs/paper-core.min.js または paper-full.min.js（すでに導入済）
+
+🛠️ 実装タスク
+1. Paper.jsの補間パスから座標列を抽出
+js
+コピーする
+編集する
+const flattened = path.flatten(1.0); // 精度 1.0px 単位で補間
+const points = [];
+for (let i = 0; i < path.segments.length; i++) {
+    const pt = path.segments[i].point;
+    points.push([pt.x, pt.y]);
+}
+または以下のように path.curves 経由でも可：
+
+js
+コピーする
+編集する
+const points = path.curves.map(c => [c.segment1.point.x, c.segment1.point.y]);
+2. twgl.jsによるLINE_STRIP描画処理を実装
+描画関数例：
+
+js
+コピーする
+編集する
+drawInterpolatedPathToLayerFBO(layerID, pointArray, color, size)
+layerID: 描画対象FBOのID
+
+pointArray: 上記で生成した座標列（[x, y]の配列）
+
+color: RGBA（0〜1.0）
+
+size: 線幅（太さ）
+
+※ twgl.setBuffersAndAttributes および gl.drawArrays(gl.LINE_STRIP, ...) を使用。
+
+3. 描画確定時にGPUへ出力
+描画終了時：
+
+Paper.Path を破棄
+
+transformStage への描画をFBOに転写（もしくは即描画）
+
+canvasManager.onDrawEnd() を呼び出し、IndexedDB保存の対象とする
+
+🧪 動作確認
+✅ テスト条件
+操作	期待結果
+ペンで曲線を描く	滑らかな線がGPU上に描画される（破線ではない）
+描画中に拡大縮小	線の太さ・補間に違和感が出ない
+線の色変更	正しく反映される
+消しゴム切替	Paper.js を使用しない従来の消し方が維持される
+
+🧹 その他
+Paper.js のメモリ解放（path.remove()）も適宜行う
+
+flatten() の精度は端末依存で調整可能にしておくと今後に活かせます
+
+📘 備考
+twgl.js の drawArrays は LINE_STRIP に対応済
+
+WebGLの補間なし設定（NEAREST）も維持してください
+
+今後 pressure（筆圧）にも対応する予定のため、pointArrayに size 情報を含める構造にも将来的に拡張できるように
+

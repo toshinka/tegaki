@@ -4,11 +4,19 @@ GPTくんが作った、指示書に従って改修してください。
 
 
 補足：htmlには下記構文が含まれています。
+<!-- ライブラリ -->
     <script src="./libs/gl-matrix-min.js"></script>
     <script src="./libs/dat.gui.min.js"></script>
     <script src="./libs/dexie.min.js"></script>
     <script src="./libs/twgl-full.min.js"></script>
+    <script src="./libs/paper-core.min.js"></script>
+<!-- エントリポイント -->
     <script type="module" src="core-engine.js"></script>
+
+
+
+
+FIX or Rollback?
 
 
 
@@ -19,27 +27,3 @@ GPTくんが作った、指示書に従って改修してください。
 
 
 
-core-engine.js:406 [LayerTransform] Start Pending (startLayerTransform)
-core-engine.js:365 [LayerTransform] Drag detected. Using transformStage for rendering.
-core-engine.js:442 [転写デバッグ] Commit transform. Original position: (23, 1)
-core-engine.js:450 [LayerTransform] Commit (commitLayerTransform)
-core-engine.js:451 [転写デバッグ] modelMatrix (Rounded): [1,0,0,0,0,1,0,0,0,0,1,0,23,1,0,1]
-
-[LayerTransform] Start Pending (startLayerTransform)
-core-engine.js:365 [LayerTransform] Drag detected. Using transformStage for rendering.
-core-engine.js:442 [転写デバッグ] Commit transform. Original position: (13, 0)
-core-engine.js:450 [LayerTransform] Commit (commitLayerTransform)
-core-engine.js:451 [転写デバッグ] modelMatrix (Rounded): [1,0,0,0,0,1,0,0,0,0,1,0,13,0,0,1]
-
-core-engine.js:406 [LayerTransform] Start Pending (startLayerTransform)
-core-engine.js:365 [LayerTransform] Drag detected. Using transformStage for rendering.
-core-engine.js:442 [転写デバッグ] Commit transform. Original position: (-44, 0)
-core-engine.js:450 [LayerTransform] Commit (commitLayerTransform)
-core-engine.js:451 [転写デバッグ] modelMatrix (Rounded): [1,0,0,0,0,1,0,0,0,0,1,0,-44,0,0,1]
-
-
-core-engine.js:406 [LayerTransform] Start Pending (startLayerTransform)
-core-engine.js:365 [LayerTransform] Drag detected. Using transformStage for rendering.
-core-engine.js:442 [転写デバッグ] Commit transform. Original position: (12, 0)
-core-engine.js:450 [LayerTransform] Commit (commitLayerTransform)
-core-engine.js:451 [転写デバッグ] modelMatrix (Rounded): [1,0,0,0,0,1,0,0,0,0,1,0,12,0,0,1]
