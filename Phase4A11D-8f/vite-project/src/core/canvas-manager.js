@@ -38,20 +38,13 @@ export class CanvasManager {
     constructor(app, canvas) {
         this.app = app;
         this.canvas = canvas;
-        this.isInitialized = false; // 初期化成功フラグ
+        this.isInitialized = false;
 
         if (!this.canvas) {
             console.error("❌ CanvasManager: canvasが見つかりません");
             return;
         }
-        console.log("🖼️ CanvasManager: canvas取得", this.canvas);
-
-        // WebGLエンジンの初期化
-        this.renderingBridge = new RenderingBridge(this.canvas);
-        if (!this.renderingBridge.gl) {
-            console.error("❌ CanvasManager: WebGL初期化に失敗");
-            return;
-        }
+        console.log("🖼️ CanvasManager: canvas取得", this.canvas); [cite_start]// [cite: 3]
 
         this.currentTool = null;
         this.currentLayer = null;
@@ -62,6 +55,15 @@ export class CanvasManager {
         this.canvasContainer = document.getElementById('canvas-container');
         this.width = this.canvas.width;
         this.height = this.canvas.height;
+        
+        // WebGL用の描画エンジンを初期化
+        this.renderingBridge = new RenderingBridge(this.canvas, app.twgl, app.glMatrix);
+        
+        [cite_start]// WebGL初期化の成功を、renderingBridgeのフラグで確認 [cite: 1]
+        if (!this.renderingBridge?.isInitialized) {
+            console.error("❌ CanvasManager: WebGL初期化に失敗（isInitialized が false）"); [cite_start]// [cite: 1]
+            return; [cite_start]// [cite: 2]
+        }
         
         this.isDrawing = false;
         this.isPanning = false;
@@ -97,8 +99,8 @@ export class CanvasManager {
         
         this.bindEvents();
         
-        console.log("✅ CanvasManager: 初期化成功");
-        this.isInitialized = true; // 成功フラグを立てる
+        console.log("✅ CanvasManager: 初期化成功"); [cite_start]// [cite: 4]
+        this.isInitialized = true; [cite_start]// [cite: 5]
     }
 
     setCurrentTool(tool) {
@@ -133,7 +135,7 @@ export class CanvasManager {
     _isPointOnLayer(worldCoords, layer) {
         if (!layer || !layer.visible) return false;
         const sourceImage = layer.transformStage || layer.imageData;
-        const currentActiveLayer = this.app.layerManager?.getCurrentLayer?.();
+        const currentActiveLayer = this.app.layerManager?.getCurrentLayer?.(); // 
         if (!currentActiveLayer || !isValidMatrix(currentActiveLayer.modelMatrix)) return false;
 
         const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
@@ -148,7 +150,7 @@ export class CanvasManager {
     onPointerDown(e) {
         if (e.button !== 0) return;
         const coords = getCanvasCoordinates(e, this.canvas, this.viewTransform);
-        const activeLayer = this.app.layerManager?.getCurrentLayer?.();
+        const activeLayer = this.app.layerManager?.getCurrentLayer?.(); // 
         if (!activeLayer) return;
         if (this.isSpaceDown) {
             this.isPanning = true;
@@ -206,7 +208,7 @@ export class CanvasManager {
         if (this.isDraggingLayer) {
             this.performDelayedLayerClear();
 
-            const activeLayer = this.app.layerManager?.getCurrentLayer?.();
+            const activeLayer = this.app.layerManager?.getCurrentLayer?.(); // 
             if (!activeLayer || !activeLayer.transformStage || !this.transformDragStarted) return;
             
             const dx = coords.x - this.transformStartWorldX;
@@ -225,7 +227,7 @@ export class CanvasManager {
             return;
         }
         if (this.isDrawing) {
-            const activeLayer = this.app.layerManager?.getCurrentLayer?.();
+            const activeLayer = this.app.layerManager?.getCurrentLayer?.(); // 
             if (!activeLayer) return;
             
             const currentSize = this.app.penSettingsManager?.currentSize ?? 10;
@@ -260,7 +262,7 @@ export class CanvasManager {
                 this.animationFrameId = null;
             }
             this._renderDirty();
-            const activeLayer = this.app.layerManager?.getCurrentLayer?.();
+            const activeLayer = this.app.layerManager?.getCurrentLayer?.(); // 
             if (activeLayer) {
                 this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
                 await this.onDrawEnd?.(activeLayer);
@@ -277,14 +279,14 @@ export class CanvasManager {
 
     performDelayedLayerClear() {
         if (!this.layerTransformPending || this.transformDragStarted) return;
-        const activeLayer = this.app.layerManager?.getCurrentLayer?.();
+        const activeLayer = this.app.layerManager?.getCurrentLayer?.(); // 
         if (!activeLayer) return;
         this.transformDragStarted = true;
     }
 
     startLayerTransform() {
         if (this.isLayerTransforming) return;
-        const activeLayer = this.app.layerManager?.getCurrentLayer?.();
+        const activeLayer = this.app.layerManager?.getCurrentLayer?.(); // 
         if (!activeLayer || !activeLayer.visible) return;
 
         this.isLayerTransforming = true;
@@ -311,7 +313,7 @@ export class CanvasManager {
 
     async commitLayerTransform() {
         if (!this.isLayerTransforming) return;
-        const activeLayer = this.app.layerManager?.getCurrentLayer?.();
+        const activeLayer = this.app.layerManager?.getCurrentLayer?.(); // 
 
         if (this.layerTransformPending && !this.transformDragStarted) {
             this.isLayerTransforming = false;
@@ -359,7 +361,7 @@ export class CanvasManager {
 
     cancelLayerTransform() {
         if (!this.isLayerTransforming) return;
-        const activeLayer = this.app.layerManager?.getCurrentLayer?.();
+        const activeLayer = this.app.layerManager?.getCurrentLayer?.(); // 
 
         if (this.layerTransformPending && !this.transformDragStarted) {
             this.isLayerTransforming = false;
@@ -386,7 +388,7 @@ export class CanvasManager {
     }
     
     restoreLayerBackup() {
-        const activeLayer = this.app.layerManager?.getCurrentLayer?.();
+        const activeLayer = this.app.layerManager?.getCurrentLayer?.(); // 
         if (!this.transformOriginalModelMatrix || !activeLayer) return;
 
         activeLayer.modelMatrix = mat4.clone(this.transformOriginalModelMatrix);
@@ -404,7 +406,7 @@ export class CanvasManager {
              this.transformDragStarted = true;
         }
 
-        const activeLayer = this.app.layerManager?.getCurrentLayer?.();
+        const activeLayer = this.app.layerManager?.getCurrentLayer?.(); // 
         if (!activeLayer) return;
         const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
         const adjustedTranslation = [translation[0] * SUPER_SAMPLING_FACTOR, translation[1] * SUPER_SAMPLING_FACTOR, translation[2]];
@@ -516,7 +518,7 @@ export class CanvasManager {
             return layer;
         });
         this.app.layerManager.switchLayer(state.activeLayerIndex);
-        this.setCurrentLayer(this.app.layerManager?.getCurrentLayer?.());
+        this.setCurrentLayer(this.app.layerManager?.getCurrentLayer?.()); // 
         this.app.layerUIManager.renderLayers?.();
         this.renderAllLayers();
     }
@@ -528,7 +530,7 @@ export class CanvasManager {
         if (this.isLayerTransforming) { this.canvasArea.style.cursor = 'move'; return; }
         if (this.isPanning) { this.canvasArea.style.cursor = 'grabbing'; return; }
         if (this.isSpaceDown) { this.canvasArea.style.cursor = 'grab'; return; }
-        const activeLayer = this.app.layerManager?.getCurrentLayer?.();
+        const activeLayer = this.app.layerManager?.getCurrentLayer?.(); // 
         if (activeLayer && coords && this._isPointOnLayer(coords, activeLayer)) {
             switch (this.app.toolManager.currentTool) {
                 case 'pen': this.canvasArea.style.cursor = 'crosshair'; break;

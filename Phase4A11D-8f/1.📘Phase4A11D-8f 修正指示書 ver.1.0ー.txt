@@ -1,86 +1,80 @@
-✅ 指示内容（要件リスト）
-1. canvas-manager.js の修正
-this.canvas.getContext("2d") は削除（WebGLと競合するため）。
+🧾 Phase 4A11D-8g 指示書
+タイトル：WebGL初期化の正確な確認と、描画土台の再構成（ペン描画なし・色設定なし）
 
-RenderingBridge の呼び出しでWebGL初期化ができているかを必ずログに残す。
+🎯 目的（このフェーズでやること）
+canvas-manager.js 内で WebGL初期化の判定ミスが発生し、誤って処理が中断されていた 問題を修正します。
+同時に、WebGL描画土台が正しく初期化されている状態で、今後の描画機能復元に備えた安全な構成に整理します。
 
-this.app.layerManager.getCurrentLayer() 等の呼び出しには「存在確認の保険」を必ず入れる。
+✅ 修正対象ファイル
+src/core/canvas-manager.js
+
+※ 他ファイル（core-engine.js, rendering-bridge.js, index.html など）は D-8e時点のままで変更しない。
+
+🛠 修正指示内容（canvas-manager.js）
+1. ✅ WebGL初期化の判定は「glが存在する」ではなく、明示的な初期化フラグを確認すること
+js
+コピーする
+編集する
+if (!this.renderingBridge?.isInitialized) {
+  console.error("❌ CanvasManager: WebGL初期化に失敗（isInitialized が false）");
+  return;
+}
+2. 🚫 this.renderingBridge.gl などの内部状態を直接使って判定しない（未確定で不安定）
+💡 お手本コード（canvas-manager.js 該当部分）
+以下のように 構造を明示的に分かりやすく 書いてください：
 
 js
 コピーする
 編集する
-const currentLayer = this.app.layerManager?.getCurrentLayer?.();
-if (!currentLayer) return;
-this.canvas はconstructorで確実に受け取り、存在をログに残す。
+constructor(app, canvas) {
+  this.app = app;
+  this.canvas = canvas;
+  console.log("🖼️ CanvasManager: canvas取得", this.canvas);
 
-2. core-engine.js 側
-Canvas要素は document.getElementById("drawingCanvas") で取得し、CanvasManager に渡す。
+  this.renderingBridge = new RenderingBridge(this.canvas);
 
-CanvasManager 初期化直後にエラーチェックし、失敗時は他マネージャーをスキップする。
+  if (!this.renderingBridge?.isInitialized) {
+    console.error("❌ CanvasManager: WebGL初期化に失敗（isInitialized が false）");
+    return;
+  }
 
-💡 状況ログの目安
-初期化時に以下のようなログが出る状態が正常です：
+  console.log("✅ CanvasManager: 初期化成功");
 
-yaml
+  // 今後の復元に備えてプレースホルダを準備（仮）
+  this.isInitialized = true;
+}
+🔍 チェックポイント（期待されるConsoleログ）
+このフェーズで正しく初期化されれば、以下のようなログが出る想定です：
+
+php-template
 コピーする
 編集する
 🛠️ アプリケーションの初期化を開始します...
-🖼️ Canvas取得結果: <canvas id="drawingCanvas"...>
-🔍 RenderingBridge: canvas要素は ...
+🖼️ Canvas取得結果: <canvas id="drawingCanvas" width="344" height="135">
+🖼️ CanvasManager: canvas取得 <canvas ...>
+🔍 RenderingBridge: canvas要素は <canvas ...>
 🔍 RenderingBridge: getContext(webgl/webgl2) 結果 WebGLRenderingContext ...
 ✅ RenderingBridge: WebGL初期化成功
 ✅ CanvasManager: 初期化成功
-🧪 テスト確認ポイント
-テスト項目	成功条件
-Canvasが表示される	左上にグレーの枠（canvas）が出現
-WebGL初期化成功	RenderingBridge: WebGL初期化成功 のログ出力
-Consoleにエラーなし	TypeError や getCurrentLayer is not a function が出ないこと
+🚫 このフェーズで「やらない」こと（明記）
+レイヤー機能の復元
 
-🧩 お手本コード（canvas-manager.js の最低限構成）
-js
-コピーする
-編集する
-import { RenderingBridge } from './rendering/rendering-bridge.js';
+ペン描画・消しゴム・バケツなどの動作
 
-export class CanvasManager {
-  constructor(app, canvas) {
-    this.app = app;
-    this.canvas = canvas;
-    if (!this.canvas) {
-      console.error("❌ CanvasManager: canvasが見つかりません");
-      return;
-    }
+カラーパレット、ブラシサイズの復元
 
-    console.log("🖼️ CanvasManager: canvas取得", this.canvas);
+🔚 完了条件（D-8g FIX判定）
+描画キャンバスが画面左上に灰色背景で表示される
 
-    // WebGLエンジンの初期化
-    this.renderingBridge = new RenderingBridge(this.canvas);
-    if (!this.renderingBridge.gl) {
-      console.error("❌ CanvasManager: WebGL初期化に失敗");
-      return;
-    }
+エラーなしで CanvasManager が初期化される
 
-    console.log("✅ CanvasManager: 初期化成功");
+WebGL初期化ログが表示される
 
-    // 仮のイベント
-    this.canvas.addEventListener('pointermove', (e) => {
-      this.onPointerMove(e);
-    });
-  }
+レイヤーや色は未復元のままでよい
 
-  onPointerMove(event) {
-    const currentLayer = this.app.layerManager?.getCurrentLayer?.();
-    if (!currentLayer) return;
-    // 仮の描画処理
-  }
-}
-🧷 補足：失敗例の典型パターン
-this.canvas.getContext("2d") があると WebGLとバッティングして getContext("webgl") が null を返すことがある。
+📎補足メモ（GEMINIくん向け）
+renderingBridge.isInitialized は RenderingBridge 内部で
+this.gl !== null をもとに判定されており、より安全で安定した状態確認が可能です。
+glオブジェクト自体に依存せず、初期化の成否を抽象化して扱いましょう。
 
-layerManager の初期化前に .getCurrentLayer() を呼ぶと undefined エラーが出る。
-
-📦 納品物（修正対象）
-src/core/canvas-manager.js（上記のように修正）
-
-src/core/core-engine.js（必要があれば初期化順修正）
-
+ご希望があれば、次フェーズ（D-8h）では「ペン描画」や「レイヤーの復元」へ進めます。
