@@ -67,13 +67,13 @@
 │ │     └─ style-transfer.js         <-- （PhaseX1 - 画風統一AI）【※実装予定】
 │ │ 
 │ ├ layer-manager/
-│ │ ├─ layer-manager.js              <-- （Phase4A11B-X → Konva.js統合）⇐統合していいのか要検討
+│ │ ├─ layer-manager.js              <-- （Phase4A11B-X → Konva.js統合）
 │ │ ├─ offscreen-canvas.js           <-- （Phase5A - サムネイル生成最適化）【※実装予定】
 │ │ ├─ layer-folders.js              <-- （Phase5A - Konva.js Group機能）【※実装予定】
 │ │ └─ drag-drop-hierarchy.js        <-- （Phase5C - 階層移動）【※実装予定】
 │ │
 │ ├ ui/ 
-│ │ ├─ ui-manager.js                 <-- （Phase2 → Tweakpane移行）⇐移行していいのか要検討
+│ │ ├─ ui-manager.js                 <-- （Phase2 → Tweakpane移行）
 │ │ ├─ shortcut-manager.js           <-- （Phase4A11B-12）
 │ │ ├─ pen-settings-manager.js       <-- （Phase4A11B-12 → 高度なペン設定）
 │ │ ├─ color-manager.js              <-- （Phase4A11A-0）【※実装予定】
@@ -81,7 +81,7 @@
 │ │ ├─ timeline-ui.js                <-- （Phase7A - GSAP Timeline UI）【※実装予定】
 │ │ ├─ popover-ui.js                 <-- （Phase4A12 - Popover API活用）【※実装予定】
 │ │ ├─ container-queries.js          <-- （Phase5A - 動的レイアウト）【※実装予定】
-│ │ └─ tweakpane-integration.js      <-- （Phase4A11C - dat.GUI完全置換）⇐置換していいのか要検討
+│ │ └─ tweakpane-integration.js      <-- （Phase4A11C - dat.GUI完全置換）
 │ │　　
 │ ├ tools/ 
 │ │ ├─ toolset.js                    <-- （Phase2）
