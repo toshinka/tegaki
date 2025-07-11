@@ -4,10 +4,10 @@ import { DrawingEngine } from '../drawing-engine.js';
 import { mat4 } from 'gl-matrix';
 import * as twgl from 'twgl.js';
 
-export class WebGLEngine extends DrawingEngine {
-    constructor(canvas) {
+export default class WebGLEngine extends DrawingEngine {
+    constructor(gl, canvas) {
         super(canvas);
-        this.gl = null;
+        this.gl = gl;
         
         this.SUPER_SAMPLING_FACTOR = 2.0;
 
@@ -31,18 +31,6 @@ export class WebGLEngine extends DrawingEngine {
         this.identityMatrix = mat4.create();
         this.lineProgramInfo = null;
 
-        try {
-            this.gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: false });
-            if (!this.gl) {
-                throw new Error('WebGLコンテキストの取得に失敗しました。');
-            }
-        } catch (e) {
-            console.error("WebGL Engine initialization failed:", e);
-            alert('WebGLの初期化中にエラーが発生しました。');
-            return;
-        }
-
-        const gl = this.gl;
         gl.enable(gl.BLEND);
         gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
@@ -62,7 +50,7 @@ export class WebGLEngine extends DrawingEngine {
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
         
-        console.log(`WebGL Engine initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
+        console.log(`✅ WebGL Engine initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
 
     _initLineDrawingResources() {
@@ -161,14 +149,8 @@ export class WebGLEngine extends DrawingEngine {
             const texture = this.layerTextures.get(layer);
             gl.bindTexture(gl.TEXTURE_2D, texture);
             gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-            twgl.setTextureFromImageData(gl, texture, sourceImageData, {
-                width: this.superWidth,
-                height: this.superHeight,
-                target: gl.TEXTURE_2D,
-                level: 0,
-                x: 0,
-                y: 0
-            });
+            // 【修正】存在しない twgl.setTextureFromImageData を、正しい gl.texSubImage2D に変更
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, sourceImageData);
             gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
             gl.bindTexture(gl.TEXTURE_2D, null);
             layer.gpuDirty = false;

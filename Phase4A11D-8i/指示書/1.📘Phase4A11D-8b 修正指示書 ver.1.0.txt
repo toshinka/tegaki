@@ -1,0 +1,63 @@
+🧩 フェーズ概要
+前フェーズ（Phase4A11D-8）にて Vite + ESM化を進行し、初期化処理を実装。
+
+しかし CanvasManager 初期化で canvas is not defined エラーが発生し、WebGLの初期化とレイヤー表示が停止してしまった。
+
+🎯 今回の目標
+canvas-manager.js の修正により、WebGL初期化を成功させる
+
+アプリの起動ログが正常に完了し、レイヤーやUIが復元されることを確認する
+
+🛠 修正内容
+✅ 1. canvas-manager.js の constructor を修正
+js
+コピーする
+編集する
+export class CanvasManager {
+  constructor(app, canvas) {
+    this.app = app;
+    this.canvas = canvas;
+
+    if (!this.canvas) {
+      console.error("❌ CanvasManager: canvas が取得できませんでした");
+      return;
+    }
+
+    // 任意: 2Dコンテキストを取得しておく（現時点で描画には使っていないが保険）
+    this.context = this.canvas.getContext("2d");
+
+    // WebGL用の描画エンジン（RenderingBridge）を初期化
+    this.renderingBridge = new RenderingBridge(this.canvas);
+
+    console.log("✅ CanvasManager: 初期化成功");
+  }
+}
+💡 注意: canvas ではなく this.canvas に統一して使ってください。
+
+✅ 2. core-engine.js では既にcanvasを取得しているため、以下の記述はそのままでOK
+js
+コピーする
+編集する
+const canvas = document.getElementById("drawingCanvas");
+console.log("🖼️ Canvas取得結果:", canvas);
+app.canvasManager = new CanvasManager(app, canvas);
+🔎 修正後の確認ポイント
+以下のログがすべて表示されていれば成功：
+
+css
+コピーする
+編集する
+🖼️ Canvas取得結果: <canvas ...>
+✅ CanvasManager: 初期化成功
+🖊️ 初期ツール: pen
+✅ レイヤーをDBから復元しました
+✅ アプリケーションの初期化が完了しました。
+📎 対象ファイル一覧（Phase 4A11D-8 → 8b への移行）
+ファイル名	処理内容
+src/core/canvas-manager.js	🔧 修正必須（canvas の取り扱いの明確化）
+src/core/core-engine.js	✅ 修正済。読み取り＆渡し処理は正常。変更不要
+
+🧠 GEMINIくんへの補足メッセージ
+あなたは新しく着任した「新人GEMINIくん」です。
+これまでのコードを引き継ぎ、 Phase 4A11D-8b として開発を続けてください。
+今回は canvas-manager.js における canvas の取り扱いを明示的に修正し、WebGL初期化が正常に通る状態にすることが目標です。
