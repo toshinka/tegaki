@@ -1,36 +1,46 @@
-Phase4A11D実装状況
+現在（Phase 4A実装中）のファイルツリー
 
-vite-project/
-├ index.html
-├ node_modules/
-│ ├ vite/
-│ ├ dexie/
-│ ├ gl-matrix/
-│ ├ twgl.js/
-│ ├ …
-│ 
-└ src/
-   ├ core/
-   │  ├ core-engine.js
-   │  ├ canvas-manager.js
-   │  ├ drawing-engine.js
-   │  ├ layer.js
-   │  └ rendering/
-   │     ├ rendering-bridge.js 
-   │     └ webgl-engine.js
-   ├ db/
-   │  └ db-indexed.js
-   ├ layer-manager/
-   │  └ layer-manager.js
-   ├ tools/
-   │  └ toolset.js
-   └ ui/
-      ├ ui-manager.js
-      ├ tool-manager.js
-      ├ shortcut-manager.js
-      ├ pen-settings-manager.js
-      └ color-manager.js
-
+├ Phase4A11B/
+│ │
+│ ├ ToshinkaTegakiTool.html（Phase4A'8）
+│ │
+│ ├ core-engine.js（Phase4A11D-3）  
+│ │
+│ ├ core/ 
+│ │ ├ rendering/              
+│ │ │  ├─ drawing-engine.js      <-- （Phase4A'7）
+│ │ │  ├─ canvas2d-engine.js     <-- （Phase4A'7）※Phase4A11B以降廃止
+│ │ │  ├─ canvas-manager.js      <-- （Phase4A11B-12）
+│ │ │  ├─ webgl-engine.js        <-- （Phase4A11D-3）
+│ │ │  └─ rendering-bridge.js    <-- （Phase4A11B-20）
+│ │ │
+│ │ ├ db/
+│ │ │  └─ db-indexed.js          <-- （Phase4A11B-11）
+│ │ │
+│ │ └ utils/
+│ │     └─ transform-utils.js     <-- （Phase4A11C-2）
+│ │ 
+│ ├ layer-manager/
+│ │ └─ layer-manager.js           <-- （Phase4A11B-21））
+│ │
+│ ├ ui/ 
+│ │ ├─ ui-manager.js         　　 <-- （Phase2）
+│ │ ├─ shortcut-manager.js     　 <-- （Phase4A11B-12
+│ │ ├─ pen-settings-manager.js    <-- （Phase4A11A-0）
+│ │ ├─ color-manager.js           <-- （Phase4A11A-0）
+│ │ └─ tool-manager.js            <-- （Phase4A11D-3）
+│ │　　
+│ ├ tools/ 
+│ │ └─ toolset.js              　 <-- （Phase2）
+│ │ 
+│ └ libs/                           
+│ 　 ├─ gl-matrix-min.js           // glMatrix 3.4.3（CDNから丸コピー）
+│ 　 ├─ dat.gui.min.js             // dat.GUI（CDNから丸コピー）
+│ 　 ├─ dexie.min.js               <-- （Phase4A11B-11)
+│ 　 ├─ twgl-full.min.js           <-- （Phase4A11D-0)
+│ 　 ├─ paper-core.min.js          //  （Phase4A11D-4→ロールバック)
+│ 　 ├─ paper-full.min.js          //  （Phase4A11D-4→ロールバック)
+│ 　 └─ perfect-freehand.js        //  （Phase4A11D-5→ロールバック)
 
  * --- ToshinkaTegakiTool.html依存リスト ---
  *
@@ -75,4 +85,11 @@ vite-project/
  *
  * [ 他へのアクセス]
  * - <script type="module" src="core-engine.js"></script>
+ * - <script src="./libs/gl-matrix-min.js"></script>
+ * - <script src="./libs/dat.gui.min.js"></script>
+ * - <script src="./libs/dexie.min.js"></script>
+ * - <script src="./libs/twgl-full.min.js"></script>
+
+ * - <script src="./libs/paper-core.min.js"></script> （ロールバック）
+ * - <script src="./libs/perfect-freehand.js"></script> （ロールバック）
  * ===================================================================================
