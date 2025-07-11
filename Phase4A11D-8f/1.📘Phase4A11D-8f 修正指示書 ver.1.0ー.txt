@@ -1,80 +1,98 @@
-🧾 Phase 4A11D-8g 指示書
-タイトル：WebGL初期化の正確な確認と、描画土台の再構成（ペン描画なし・色設定なし）
+🎯目的
+前回修正により cite_start の誤記は解消されましたが、WebGL初期化の非同期処理が CanvasManager 側で正しく待てておらず、
+isInitialized が false のまま初期化失敗扱いになる という症状が再発しています。
 
-🎯 目的（このフェーズでやること）
-canvas-manager.js 内で WebGL初期化の判定ミスが発生し、誤って処理が中断されていた 問題を修正します。
-同時に、WebGL描画土台が正しく初期化されている状態で、今後の描画機能復元に備えた安全な構成に整理します。
+🧩 問題の本質（再確認）
+RenderingBridge の WebGL 初期化はコンストラクタで行われますが、その完了は 同期ではなく非同期的。
 
-✅ 修正対象ファイル
-src/core/canvas-manager.js
+そのため、CanvasManager の constructor 内で this.renderingBridge.isInitialized を即時チェックしても、初期化成功前の false が返る可能性があります。
 
-※ 他ファイル（core-engine.js, rendering-bridge.js, index.html など）は D-8e時点のままで変更しない。
+🛠 修正方針
+CanvasManager を次のような構造に変更し、非同期初期化を安全に扱えるようにします。
 
-🛠 修正指示内容（canvas-manager.js）
-1. ✅ WebGL初期化の判定は「glが存在する」ではなく、明示的な初期化フラグを確認すること
-js
-コピーする
-編集する
-if (!this.renderingBridge?.isInitialized) {
-  console.error("❌ CanvasManager: WebGL初期化に失敗（isInitialized が false）");
-  return;
-}
-2. 🚫 this.renderingBridge.gl などの内部状態を直接使って判定しない（未確定で不安定）
-💡 お手本コード（canvas-manager.js 該当部分）
-以下のように 構造を明示的に分かりやすく 書いてください：
+✅ 修正指示（コード構造の変更）
+以下の4点を反映してください。
 
+【1】constructor を非同期対応構造に変更：
 js
 コピーする
 編集する
 constructor(app, canvas) {
   this.app = app;
   this.canvas = canvas;
-  console.log("🖼️ CanvasManager: canvas取得", this.canvas);
+  this.isInitialized = false;
 
-  this.renderingBridge = new RenderingBridge(this.canvas);
-
-  if (!this.renderingBridge?.isInitialized) {
-    console.error("❌ CanvasManager: WebGL初期化に失敗（isInitialized が false）");
+  if (!this.canvas) {
+    console.error("❌ CanvasManager: canvasが見つかりません");
     return;
   }
+  console.log("🖼️ CanvasManager: canvas取得", this.canvas);
 
-  console.log("✅ CanvasManager: 初期化成功");
+  // RenderingBridge生成
+  this.renderingBridge = new RenderingBridge(this.canvas, app.twgl, app.glMatrix);
 
-  // 今後の復元に備えてプレースホルダを準備（仮）
-  this.isInitialized = true;
+  // 非同期初期化チェック開始
+  this.initializeWebGL().then(() => {
+    this.completeInitialization();
+  }).catch(error => {
+    console.error("❌ CanvasManager: WebGL初期化に失敗", error);
+  });
 }
-🔍 チェックポイント（期待されるConsoleログ）
-このフェーズで正しく初期化されれば、以下のようなログが出る想定です：
-
-php-template
+【2】initializeWebGL メソッドを追加（100ms x 最大50回までポーリング）：
+js
 コピーする
 編集する
-🛠️ アプリケーションの初期化を開始します...
-🖼️ Canvas取得結果: <canvas id="drawingCanvas" width="344" height="135">
-🖼️ CanvasManager: canvas取得 <canvas ...>
-🔍 RenderingBridge: canvas要素は <canvas ...>
-🔍 RenderingBridge: getContext(webgl/webgl2) 結果 WebGLRenderingContext ...
-✅ RenderingBridge: WebGL初期化成功
-✅ CanvasManager: 初期化成功
-🚫 このフェーズで「やらない」こと（明記）
-レイヤー機能の復元
+async initializeWebGL() {
+  let attempts = 0;
+  const maxAttempts = 50;
 
-ペン描画・消しゴム・バケツなどの動作
+  while (!this.renderingBridge?.isInitialized && attempts < maxAttempts) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    attempts++;
+  }
 
-カラーパレット、ブラシサイズの復元
+  if (!this.renderingBridge?.isInitialized) {
+    throw new Error("WebGL初期化がタイムアウトしました");
+  }
 
-🔚 完了条件（D-8g FIX判定）
-描画キャンバスが画面左上に灰色背景で表示される
+  console.log("✅ CanvasManager: WebGL初期化完了");
+}
+【3】completeInitialization() を追加：
+js
+コピーする
+編集する
+completeInitialization() {
+  // 残りのプロパティ初期化やイベントバインド
+  this.isDrawing = false;
+  this.currentTool = null;
+  // 他にも必要な初期化処理を追加
+  this.bindEvents();
 
-エラーなしで CanvasManager が初期化される
+  console.log("✅ CanvasManager: 初期化成功");
+  this.isInitialized = true;
+}
+【4】外部から waitForInitialization() で初期化完了を待てるように：
+js
+コピーする
+編集する
+async waitForInitialization() {
+  while (!this.isInitialized) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return true;
+}
+🧪 core-engine.js 側での使用例（将来的な参考）
+js
+コピーする
+編集する
+const canvasManager = new CanvasManager(app, canvas);
+await canvasManager.waitForInitialization();
+※ 現在はまだ core-engine.js 側での await 導入は保留でもOKです。内部で完結できるならそれでも構いません。
 
-WebGL初期化ログが表示される
+🎌 依頼まとめ
+項目	内容
+修正対象	src/core/canvas-manager.js
+修正目的	WebGL初期化の非同期化とそれに伴う安定動作
+期待されるログ	✅ CanvasManager: WebGL初期化完了 → ✅ CanvasManager: 初期化成功
+継続フェーズ	Phase 4A11D-8f 最終仕上げ
 
-レイヤーや色は未復元のままでよい
-
-📎補足メモ（GEMINIくん向け）
-renderingBridge.isInitialized は RenderingBridge 内部で
-this.gl !== null をもとに判定されており、より安全で安定した状態確認が可能です。
-glオブジェクト自体に依存せず、初期化の成否を抽象化して扱いましょう。
-
-ご希望があれば、次フェーズ（D-8h）では「ペン描画」や「レイヤーの復元」へ進めます。

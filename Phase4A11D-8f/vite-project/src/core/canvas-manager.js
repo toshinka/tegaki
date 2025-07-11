@@ -44,8 +44,35 @@ export class CanvasManager {
             console.error("❌ CanvasManager: canvasが見つかりません");
             return;
         }
-        console.log("🖼️ CanvasManager: canvas取得", this.canvas); [cite_start]// [cite: 3]
+        console.log("🖼️ CanvasManager: canvas取得", this.canvas);
 
+        // RenderingBridge生成
+        this.renderingBridge = new RenderingBridge(this.canvas, app.twgl, app.glMatrix);
+        
+        // 非同期初期化チェック開始
+        this.initializeWebGL().then(() => {
+            this.completeInitialization();
+        }).catch(error => {
+            console.error("❌ CanvasManager: WebGL初期化に失敗", error);
+        });
+    }
+
+    async initializeWebGL() {
+        let attempts = 0;
+        const maxAttempts = 50;
+        while (!this.renderingBridge?.isInitialized && attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            attempts++;
+        }
+
+        if (!this.renderingBridge?.isInitialized) {
+            throw new Error("WebGL初期化がタイムアウトしました");
+        }
+
+        console.log("✅ CanvasManager: WebGL初期化完了");
+    }
+
+    completeInitialization() {
         this.currentTool = null;
         this.currentLayer = null;
         this.currentColor = '#800000';
@@ -55,19 +82,9 @@ export class CanvasManager {
         this.canvasContainer = document.getElementById('canvas-container');
         this.width = this.canvas.width;
         this.height = this.canvas.height;
-        
-        // WebGL用の描画エンジンを初期化
-        this.renderingBridge = new RenderingBridge(this.canvas, app.twgl, app.glMatrix);
-        
-        [cite_start]// WebGL初期化の成功を、renderingBridgeのフラグで確認 [cite: 1]
-        if (!this.renderingBridge?.isInitialized) {
-            console.error("❌ CanvasManager: WebGL初期化に失敗（isInitialized が false）"); [cite_start]// [cite: 1]
-            return; [cite_start]// [cite: 2]
-        }
-        
+
         this.isDrawing = false;
         this.isPanning = false;
-
 
         this.isDraggingLayer = false;
         this.isLayerTransforming = false;
@@ -99,10 +116,17 @@ export class CanvasManager {
         
         this.bindEvents();
         
-        console.log("✅ CanvasManager: 初期化成功"); [cite_start]// [cite: 4]
-        this.isInitialized = true; [cite_start]// [cite: 5]
+        console.log("✅ CanvasManager: 初期化成功");
+        this.isInitialized = true;
     }
 
+    async waitForInitialization() {
+        while (!this.isInitialized) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        return true;
+    }
+    
     setCurrentTool(tool) {
         this.currentTool = tool;
         console.log("🛠️ ツールを設定:", tool?.name ?? tool);
