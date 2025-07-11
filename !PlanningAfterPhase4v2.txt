@@ -142,6 +142,7 @@ import { Path2D } from 'path2d';            // 高精度パス描画
 
 #### 機能実装
 - **Fresco風半透明定規**: 直感的な操作感
+※FireAlpacaのようなスナップツールを参考の方が良いか？要検討。
 - **GPU.js**: 範囲選択の重い処理を高速化
 - **方眼紙ガイド**: 連続線描画サポート
 - **ベクター定規**: 完全な直線・曲線描画
@@ -246,6 +247,7 @@ import { VideoEncoder } from 'webcodecs';   // 次世代動画エンコード
 ## 🎨 Phase 8: 漫画ツール装備
 
 ### Phase 8A: 集中線 + エフェクト
+
 **期間**: 2週間
 **優先度**: 🌟🌟🌟🌟
 
@@ -272,10 +274,12 @@ import { Solver } from 'constraint-solver'; // レイアウト最適化
 
 // 空間分割
 import { Quadtree } from 'quadtree-js';     // 効率的領域管理
+※FireAlpacaのようなコマ割ツールを参考
 
 // 新規追加：ML レイアウト
 import * as tf from '@tensorflow/tfjs';     // 自動コマ割りAI
 ```
+
 
 ---
 
