@@ -1,0 +1,94 @@
+
+フェーズ	目的	主な実装内容	推奨ライブラリ
+D-0	FBO描画の最小導入	GPU上に描画可能な1レイヤーFBO作成と描画確認	✅ twgl.js
+D-1	GPUレイヤー移動	transformStageをFBOに移行し、GPUで移動描画完結	✅ twgl.js
+✅ gl-matrix
+D-2	GPUペン描画対応	GPU上のFBOに対しライン描画 or 点描画実装	✅ twgl.js
+✅ Paper.js (補助)
+D-3	マルチレイヤー＆合成	各レイヤーがFBO化、ブレンド対応含むGPU合成処理	✅ twgl.js
+✅ gl-matrix
+D-4	ベジェ筆圧対応＋WebGL2高速化	VAO等の高速描画＋筆圧シェーダ対応	✅ WebGL2 API
+✅ Pointer Events API
+
+✅ 推奨ライブラリ導入計画フェーズ	概要	主な目的	使用ライブラリ / 技術	備考
+フェーズ	タイトル	内容	備考・導入ライブラリ
+4A11D-0	twgl導入準備	twglを読み込み、FBOテスト描画成功	✅ 完了
+4A11D-1	twgl描画確認	赤い矩形で描画成功を確認	✅ 完了
+4A11D-2	twgl描画の初期化整理	init描画ロジック・デバッグ出力整備	✅ 完了
+4A11D-3	線描画にtwgl導入（消しゴム除外）	破線方式の暫定実装（ペン描画刷新準備）	✅ FIX済み
+4A11D-4	Paper.js導入実験	滑らか線を試みたが破線問題発覚	🔁 保留・代替へ
+4A11D-5	Perfect Freehand導入（初期）	描画不安定・ESM未対応により中断	🔁 ロールバック済、D-9へ延期
+4A11D-6	ペン描画にgetStroke適用	描画不能エラー・外部JS不一致	🔁 ロールバック済
+▶️ 4A11D-7	Tweakpane UI導入		dat.GUI廃止。動的UIでパラメータ制御	tweakpane, twgl.js, gl-matrix
+▶️ 4A11D-8	構造刷新＋Vite導入 ESM移行・Vite開発環境整備・JSモジュール化 vite, twgl, perfect-freehand, gl-matrix
+🔜 4A11D-9	Perfect Freehand再導入（ESM）	ESM対応＋ストローク描画確定へ	perfect-freehand, tweakpane, GPU対応描画
+4A11D-10	GPU一貫パイプライン完成	描画系全てをGPUルートに統合	twgl.jsベースで構築完了
+4A11E	マルチレイヤー最適化	描画状態の一括合成、レンダリング最適化	
+4A11F	ブレンドモード拡張	スクリーン・乗算など WebGLで再実装	
+4A11G	アニメ・タイムライン前段階	フレーム制御の準備、レイヤー移動の記録化	gsap, dexie, pointer events
+4A11H	選択領域・変形対応	セレクション・自由変形の実装	gl-matrix, konva.js?
+
+✅ ライブラリの再整理（現採用ステータス）
+ライブラリ	採用状況	備考
+twgl.js	✅ 導入済	描画基盤
+gl-matrix	✅ 導入済	行列・座標計算
+Dexie	✅ 導入済	IndexedDB保存
+Paper.js	➖ 限定採用	ベクター/パス処理用途に
+Perfect Freehand	🆕 採用決定	ペン描画の滑らか化に使用
+Pointer Events API	🔜 D-6予定	筆圧・チルト対応に必須
+Tweakpane	🔜 D-7予定	モダンUI用に
+gpu.js	⚙️ 検討中	完全GPU描画処理に向けて
+GSAP	🔜 D-11予定	アニメーション全般制御に
+
+💡 Paper.js の今後の立ち位置
+役割: スプライン編集・3D背景のパス補助など限定用途に。
+
+今後: Phase 5（レイヤー操作 or エフェクトフェーズ）で利用再検討。
+
+✨ 今後の開発方針まとめ
+**滑らか線の描画（D-5）**は Perfect Freehand + twgl.js の併用でリトライ
+
+Paper.js は保留ではなく「適材適所で限定利用」のスタンス
+
+**描画エンジンのVAO整理（D-8）**でWebGL2に対応し、WEBGPU導入への布石を形成
+
+軽量化・簡素化・責務分離を段階的に進めることで、保守性と再利用性を高める
+
+
+ライブラリ	導入フェーズ	目的
+twgl.js	D-0 〜 D-4	WebGLのFBO作成・テクスチャ管理の簡略化
+gl-matrix（導入済）	D-1 〜 D-4	モデル・投影・回転・スケール行列の扱い強化
+Paper.js	D-2〜（任意）	ベジェ線の補間・スムージング補助
+Pointer Events API	D-4〜	筆圧や傾きの入力をシェーダーに渡す
+GPU.js	D-4〜（将来検討）	並列処理が必要になった時（例：フィルター処理）
+
+💡補足：Claude提案の技術的知見の反映
+初回レイヤー移動のプルプル問題 ⇒ D-1 で FBOに常時描画を維持することで回避。
+
+ジャギーや線のにじみ ⇒ テクスチャ補間設定を NEAREST、WebGL2での RGBA16F もD-3以降で。
+
+描画と変形の混在処理 ⇒ 全てGPU上で完結するため、ImageData操作が一掃される。
+
+📂 D-0とD-1の指示書反映案（概要のみ）
+📘 Phase 4A11D-0 指示書（更新版）
+twgl.jsを導入
+
+createFBOForLayer()：1レイヤーFBO生成
+
+drawTestToFBO()：赤線や点など描画試験
+
+renderToDisplay()：main canvasへ出力
+
+📘 Phase 4A11D-1 指示書（予定）
+transformStageを破棄し、レイヤー移動描画をFBOに移行
+
+drawLayerWithTransform()：行列変換後にFBOを別FBOへ転写
+
+gl.finish()と readPixels() はD-1段階では使用しない
+
+✅ 次のステップご提案
+この表と工程計画をFIX
+
+ご希望あれば twgl.js を [CDN or npm導入形式] で提案可
+
+D-0の新指示書に進む
