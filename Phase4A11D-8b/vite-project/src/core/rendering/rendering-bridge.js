@@ -6,14 +6,32 @@ export class RenderingBridge {
         this.canvas = canvas;
         this.currentEngine = null;
 
-        if (preferredEngine === 'webgl' && WebGLEngine.isSupported()) {
-            this.currentEngine = new WebGLEngine(this.canvas);
-            console.log("✅ RenderingBridge: WebGL Engine を使用します。");
+        // --- ⬇️ ここから修正 ⬇️ ---
+
+        // 指示書[cite: 10]に基づき、デバッグログを追加
+        console.log("🔍 RenderingBridge: canvas要素は", canvas);
+
+        // WebGLコンテキストをまず"webgl2"で試し、だめなら"webgl"で試すフォールバック処理 
+        const gl = canvas.getContext("webgl2", { premultipliedAlpha: false }) || canvas.getContext("webgl", { premultipliedAlpha: false });
+
+        // getContextの結果をログに出力 [cite: 10]
+        console.log("🔍 RenderingBridge: getContext(webgl/webgl2) 結果", gl);
+
+        if (preferredEngine === 'webgl' && gl) {
+            console.log("✅ RenderingBridge: WebGLコンテキストの取得に成功しました。");
+            try {
+                this.currentEngine = new WebGLEngine(this.canvas);
+                console.log("✅ RenderingBridge: WebGL Engine を使用します。");
+            } catch (e) {
+                console.error("❌ RenderingBridge: WebGLEngineのインスタンス化中にエラーが発生しました。", e);
+                alert("WebGLエンジンの初期化中にエラーが発生しました。");
+            }
         } else {
-            // WebGLが使えない場合のフォールバックは現在未サポート
-            console.error("❌ RenderingBridge: WebGLがサポートされていないため、初期化に失敗しました。");
-            alert("お使いのブラウザはWebGLをサポートしていません。");
+            // エラーメッセージをより具体的に変更
+            console.error("❌ RenderingBridge: WebGLがサポートされていない、またはコンテキストの取得に失敗したため、初期化に失敗しました。");
+            alert("お使いのブラウザはWebGLをサポートしていないか、有効になっていません。");
         }
+        // --- ⬆️ ここまで修正 ⬆️ ---
     }
 
     drawCircle(centerX, centerY, radius, color, isEraser, layer) {
