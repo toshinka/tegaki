@@ -1,11 +1,11 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 5.0.3 (Phase 4A11D-8e)
+ * Version: 5.0.2 (Phase 4A11D-8 DOM Timing Hotfix)
  *
- * - 変更点 (Phase 4A11D-8e):
- * - 指示書に基づき、canvas-manager.jsの初期化処理を修正。
- * - core-engine側でCanvasManagerの初期化成否をチェックし、失敗時は後続処理を中断するよう修正。
+ * - 変更点 (Phase 4A11D-8 Hotfix):
+ * - DOM構築前にCanvasManagerがcanvas要素を取得しようとして失敗する問題を修正。
+ * - core-engine側で要素を明示的に取得し、CanvasManagerのコンストラクタに渡すように変更。
  * ===================================================================================
  */
 
@@ -35,7 +35,7 @@ import { saveLayerToIndexedDB, loadLayersFromIndexedDB } from '../db/db-indexed.
 
     // --- DOM要素の取得 ---
     const canvas = document.getElementById('drawingCanvas');
-    console.log("🖼️ Canvas取得結果:", canvas);
+    console.log("🖼️ Canvas取得結果:", canvas); // 指示書に基づきログを追加
 
     if (!canvas) {
         alert("致命的なエラー: 描画対象のCanvas要素が見つかりません。");
@@ -50,14 +50,6 @@ import { saveLayerToIndexedDB, loadLayersFromIndexedDB } from '../db/db-indexed.
     // --- 各マネージャーのインスタンス化 ---
     // CanvasManagerに取得したcanvas要素を渡す
     app.canvasManager = new CanvasManager(app, canvas);
-    
-    // CanvasManagerの初期化失敗時は後続処理をスキップ 
-    if (!app.canvasManager.isInitialized) {
-        alert("致命的なエラー: CanvasManagerの初期化に失敗しました。アプリケーションを起動できません。");
-        console.error("致命的なエラー: CanvasManagerの初期化に失敗したため、アプリケーションの起動を中断します。");
-        return;
-    }
-
     app.layerManager = new LayerManager(app);
     app.toolManager = new ToolManager(app);
     app.layerUIManager = new LayerUIManager(app);
