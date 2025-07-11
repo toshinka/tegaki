@@ -37,7 +37,7 @@ function getCanvasCoordinates(e, canvas, viewTransform) {
 export class CanvasManager {
     constructor(app, canvas) {
         this.app = app;
-        this.canvas = canvas; [cite_start]// 指示書に基づき、引数で受け取ったcanvasをthis.canvasに設定 [cite: 2]
+        this.canvas = canvas; // 指示書に基づき、引数で受け取ったcanvasをthis.canvasに設定 [cite: 2]
 
         // canvasが正常に取得できたかチェック 
         if (!this.canvas) {
@@ -55,16 +55,11 @@ export class CanvasManager {
         this.width = this.canvas.width;
         this.height = this.canvas.height;
         
-        // --- ⬇️ ここから修正 ⬇️ ---
-
-        // WebGLを利用するため、2Dコンテキストの取得処理を削除しました。
-        // 同じキャンバスで2DとWebGLのコンテキストを同時に取得すると、エラーの根本原因となります。
-        // this.context = this.canvas.getContext("2d");
+        // 任意: 2Dコンテキストを取得（指示書準拠）[cite: 3]
+        this.context = this.canvas.getContext("2d");
         
-        // WebGL用の描画エンジンを初期化。引数を `this.canvas` のみに変更しました。
-        this.renderingBridge = new RenderingBridge(this.canvas);
-        
-        // --- ⬆️ ここまで修正 ⬆️ ---
+        // WebGL用の描画エンジンを初期化。引数をthis.canvasに変更 [cite: 4]
+        this.renderingBridge = new RenderingBridge(this.canvas, app.twgl, app.glMatrix);
         
         console.log("✅ CanvasManager: 初期化成功"); // 成功ログ 
 

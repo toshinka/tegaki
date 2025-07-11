@@ -1,0 +1,93 @@
+📘 Phase 4A11D-8c 指示書 ver.1.0
+目的：WebGLコンテキストの安定初期化（Canvas表示と描画成功）
+
+🎯 目標
+WebGLコンテキストの取得に失敗しない構成にする
+
+Canvasが画面上に表示され、グレーでも良いので描画されている状態を確認できる
+
+初期化順序とHTML構造の整理で、描画成功を安定化させる
+
+🛠️ 改修対象ファイル（全てESM構成）
+vite-project/index.html
+
+vite-project/src/core/core-engine.js
+
+📌 修正ポイント
+✅ 1. index.htmlのCanvas構造を最小構成にする
+HTML内のCanvas構造をシンプル化し、Vite + WebGLが正常動作しやすいようにします。
+
+html
+コピーする
+編集する
+<body>
+  <canvas id="drawingCanvas" width="800" height="600" style="display:block; border:1px solid #999;"></canvas>
+  <script type="module" src="/src/core/core-engine.js"></script>
+</body>
+<div> ラップは一時撤去
+
+style="display:block" を指定し、不可視状態の回避
+
+border は視認確認のため仮で入れています
+
+✅ 2. core-engine.jsの初期化を遅延実行にする
+WebGLの初期化失敗原因は「canvasがDOMに描画される前に getContext() されていた」可能性が高いです。
+そのため、初期化コードを requestAnimationFrame() で遅延実行します。
+
+js
+コピーする
+編集する
+requestAnimationFrame(() => {
+  const canvas = document.getElementById("drawingCanvas");
+  console.log("🖼️ Canvas取得結果:", canvas);
+
+  const app = {};
+  app.canvasManager = new CanvasManager(app, canvas);
+  ...
+});
+※ すでにこの形式になっている場合はこのままでOK。
+
+✅ 3. rendering-bridge.jsでのWebGL初期化ログを強化する（確認目的）
+js
+コピーする
+編集する
+console.log("🔍 RenderingBridge: canvas要素は", canvas);
+const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+console.log("🔍 RenderingBridge: getContext(webgl/webgl2) 結果", gl);
+
+if (!gl) {
+  console.error("❌ RenderingBridge: WebGLがサポートされていない、またはコンテキストの取得に失敗しました。");
+  return;
+}
+🧪 検証ポイント
+✅ Canvasが表示される（画面上に800x600の領域が見える）
+
+✅ getContext(...) が null でない
+
+✅ Consoleログに "GL Context: ...", "Canvas取得成功" 等が出る
+
+✅ 灰色画面など、描画される（何も描かなくてもOK）
+
+🚫 このフェーズでは行わないこと
+レイヤー処理の修正
+
+バケツ・カラーパレットの修正
+
+ペン機能や描画処理の本格的な復元
+
+これらは 次フェーズ以降（D-8dなど） で対応します。
+
+📂 添付すべきファイル
+新人GEMINIくんには、Phase4A11D-8b時点の以下ファイルを提供してください：
+
+ファイル名	メモ
+index.html	上記構成に差し替え推奨
+src/core/core-engine.js	初期化順序変更を適用する場合
+src/core/canvas-manager.js	canvas参照の修正済みバージョン（8bで対応済）
+src/core/rendering/rendering-bridge.js	WebGL初期化ログ強化用
+その他	layer.js、tool-manager.jsなどはそのままで可
+
+🧭 次フェーズへの布石
+D-8d: 描画処理（ペン・バケツ）やCanvasレイヤー描画の復旧
+
+D-8e: TweakpaneやUI再統合の整理（ESM準拠化）
