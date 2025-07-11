@@ -1,11 +1,11 @@
 /*
  * ===================================================================================
  * Toshinka Tegaki Tool - Core Engine
- * Version: 5.0.1 (Phase 4A11D-8 ESM/Vite)
+ * Version: 5.0.2 (Phase 4A11D-8 DOM Timing Hotfix)
  *
- * - 変更点 (Phase 4A11D-8 / Refactor):
- * - CanvasManagerクラスを `core/canvas-manager.js` に分離。
- * - 各Managerのインスタンス化とアプリケーション全体のセットアップに責務を集中。
+ * - 変更点 (Phase 4A11D-8 Hotfix):
+ * - DOM構築前にCanvasManagerがcanvas要素を取得しようとして失敗する問題を修正。
+ * - core-engine側で要素を明示的に取得し、CanvasManagerのコンストラクタに渡すように変更。
  * ===================================================================================
  */
 
@@ -15,7 +15,7 @@ import * as twgl from 'twgl.js';
 import Dexie from 'dexie';
 
 // --- Module Imports ---
-import { Layer } from './layer.js'; // Layerクラスも分離
+import { Layer } from './layer.js';
 import { CanvasManager } from './canvas-manager.js';
 import { LayerManager } from '../layer-manager/layer-manager.js';
 import { ToolManager } from '../ui/tool-manager.js';
@@ -33,14 +33,23 @@ import { saveLayerToIndexedDB, loadLayersFromIndexedDB } from '../db/db-indexed.
 
     console.log("🛠️ アプリケーションの初期化を開始します...");
 
+    // --- DOM要素の取得 ---
+    const canvas = document.getElementById('drawingCanvas');
+    console.log("🖼️ Canvas取得結果:", canvas); // 指示書に基づきログを追加
+
+    if (!canvas) {
+        alert("致命的なエラー: 描画対象のCanvas要素が見つかりません。");
+        return;
+    }
+
     const app = {};
-    // ライブラリをappインスタンスに格納し、各モジュールから参照できるようにする
     app.glMatrix = { mat4 };
     app.twgl = twgl;
-    app.Layer = Layer; // Layerクラスもapp経由で渡す
+    app.Layer = Layer;
 
-    // 各マネージャーのインスタンス化
-    app.canvasManager = new CanvasManager(app);
+    // --- 各マネージャーのインスタンス化 ---
+    // CanvasManagerに取得したcanvas要素を渡す
+    app.canvasManager = new CanvasManager(app, canvas);
     app.layerManager = new LayerManager(app);
     app.toolManager = new ToolManager(app);
     app.layerUIManager = new LayerUIManager(app);
@@ -49,9 +58,8 @@ import { saveLayerToIndexedDB, loadLayersFromIndexedDB } from '../db/db-indexed.
     app.topBarManager = new TopBarManager(app);
     app.shortcutManager = new ShortcutManager(app);
     app.bucketTool = new BucketTool(app);
-    window.toshinkaTegakiTool = app; // デバッグ用に残す
+    window.toshinkaTegakiTool = app;
 
-    // イベントコールバックの設定
     app.canvasManager.onDrawEnd = async (layer) => {
         if (!layer) return;
         const tempCanvas = document.createElement('canvas');

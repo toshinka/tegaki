@@ -42,14 +42,19 @@ export class CanvasManager {
         this.currentColor = '#800000';
         this.brushSize = 10;
 
-        this.displayCanvas = document.getElementById('drawingCanvas');
+        this.displayCanvas = canvas; 
+        
         this.canvasArea = document.getElementById('canvas-area');
         this.canvasContainer = document.getElementById('canvas-container');
         this.width = this.displayCanvas.width;
         this.height = this.displayCanvas.height;
+
         this.renderingBridge = new RenderingBridge(this.displayCanvas, app.twgl, app.glMatrix);
+
         this.isDrawing = false;
         this.isPanning = false;
+
+
         this.isDraggingLayer = false;
         this.isLayerTransforming = false;
         this.layerTransformPending = false;
