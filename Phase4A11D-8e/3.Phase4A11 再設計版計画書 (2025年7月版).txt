@@ -1,0 +1,83 @@
+# Phase4A11 再設計版計画書 (2025年7月版)
+
+## 🎯 目的
+
+「WebGL描画の完全一貫処理」と「滑らかな補間をともなう高速描画」を柱とし、最終的なアニメ制作機能やWebGPU移行を視野に入れた段階的な再設計計画。
+
+---
+
+## 📌 構成概要
+
+* **描画基盤**: twgl.js + gl-matrix によるWebGL描画の簡素化・統一
+* **入力・UI**: Pointer Events APIとTweakpane導入による自然入力と近代UI
+* **保存処理**: Dexie.jsベースのIndexedDBキャッシュ制御
+* **補間描画**: Perfect Freehandで滑らかに、かつGPU描画に接続
+* **レイヤー操作/結合/変形**: WebGL一貫処理 + transformStage経由で劣化防止
+* **時間制御**: GSAP/Konva.js導入でタイムライン・トゥイーン操作対応
+
+---
+
+## 📘 フェーズ構成
+
+### Phase 4A11D: WebGL移行とペン描画刷新
+
+* ✅ twgl.js導入と描画確認 (D-1, D-2)
+* ✅ ペン描画をGL\_LINE\_STRIP化 (D-3)
+* ✅ Paper.jsでの補間試行 → 破線問題で撤退 (D-4)
+* 🔁 Perfect Freehand での再設計 (D-5〜)
+
+### Phase 4A11E: レイヤーブレンド・フィルタ統合
+
+* ブレンドモードのGPU実装（乗算/加算/差分...）
+* フィルタ適用: ガウスぼかし、発光、影など
+* レイヤーの表示切替、透明度設定など
+
+### Phase 4B: UI刷新と自然入力
+
+* Tweakpane によるUIスライダー/チェック制御統合
+* Pointer Events API による筆圧/傾き/ジェスチャー反応
+* ショートカット表示、ホバー/状態同期、Undo/Redo強化
+
+### Phase 4C: タイムライン/アニメ対応
+
+* GSAP or Konva.jsによる時間補間＋keyframeシステム導入
+* レイヤー変形、回転、透明度アニメーション
+* トラック表示＋キーフレーム編集パネルの原型導入
+
+### Phase 4D: ペン・消しゴム・補間・ブラシ
+
+* Perfect Freehand + twgl によるペンの最終描画方式実装
+* ブラシプリセット、筆圧反映、ラグ無しの補完線描画
+* 消しゴム・ブラー・パターンブラシ等のツール群拡張
+
+---
+
+## 🧩 モジュール再構成 (要対応)
+
+* `webgl-engine.js`: 完全twgl化。Paper.js補間は撤退。
+* `rendering-bridge.js`: 描画エンジン橋渡し役に徹する
+* `canvas-manager.js`: transformStageを主軸にデータ転写統合
+* `layer-manager.js`: merge処理などにも補間・補正反映
+* `core-engine.js`: 状態制御・座標変換ロジックの最小化
+
+---
+
+## 📊 タスクと導入順序（実施中 + 予定）
+
+| ステップ  | 概要                          | 導入予定ライブラリ                 |
+| ----- | --------------------------- | ------------------------- |
+| D-1   | twgl.js描画初期導入               | twgl.js, gl-matrix        |
+| D-2   | FBO生成・線描画の準備                | twgl.js                   |
+| D-3   | WebGLでペン描画（GL\_LINE\_STRIP） | gl-matrix                 |
+| D-4   | Paper.jsでの補間 → 撤退           | Paper.js                  |
+| D-5   | Perfect Freehandで補間再構成      | perfect-freehand, twgl.js |
+| D-6以降 | UI: Tweakpane / GSAP導入      | Tweakpane, GSAP, Konva.js |
+| 4E    | 書き出し処理、画像最適化                | squoosh, zod              |
+
+---
+
+## 🔮 将来的考慮点
+
+* WebGPU対応時、twgl.jsの代替層またはthin-wrapperを導入検討
+* GSAP or Three.jsとシームレスな構造共有
+* 素材制御・動画書き出し・インポート連携拡張（AE・PSD・SVG）

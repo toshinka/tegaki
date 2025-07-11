@@ -1,0 +1,33 @@
+
+
+vite-project/
+│
+├ index.html
+├── package.json  
+├── package-lock.json  
+├── node_modules/           
+│   ├── vite/              
+│   ├── gl-matrix/
+│   ├── twgl.js/
+│   └── dexie/
+└ src/
+   ├ core/
+   │  ├ core-engine.js
+   │  ├ canvas-manager.js
+   │  ├ drawing-engine.js
+   │  ├ layer.js
+   │  └ rendering/
+   │     ├ rendering-bridge.js ✅ ←ココ
+   │     └ webgl-engine.js
+   ├ db/
+   │  └ db-indexed.js
+   ├ layer-manager/
+   │  └ layer-manager.js
+   ├ tools/
+   │  └ toolset.js
+   └ ui/
+      ├ ui-manager.js
+      ├ tool-manager.js
+      ├ shortcut-manager.js
+      ├ pen-settings-manager.js
+      └ color-manager.js
