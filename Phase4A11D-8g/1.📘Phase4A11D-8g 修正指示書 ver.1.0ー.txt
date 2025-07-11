@@ -1,0 +1,92 @@
+🧭 Phase 4A11D-8g 指示書（GEMINIくん向け）
+🎯 目的
+「描画できる状態（ペンツール + 色指定 + レイヤー構造）」を 段階的に復元 する。
+
+✅ 現状（Phase 4A11D-8f 終了時点）
+index.html：D-8b相当。構文とcanvas要素は安定。
+
+canvas-manager.js：WebGL初期化を非同期化済（isInitialized、initializationPromise対応）。
+
+core-engine.js：CanvasManagerの初期化完了を await waitForInitialization() で待機。
+
+描画処理（ペン／色／レイヤー）：未登録のため、何も描けない。
+
+🛠 指示内容：描画機能の復元と確認
+1. 🎨 ペンツール機能の復元（ToolManagerの登録）
+🔧 対象ファイル:
+core-engine.js
+
+tool-manager.js
+
+📌 実装内容：
+core-engine.js の初期化関数にて ToolManager をインスタンス化し、ペンツール（pen）を登録してください。
+
+CanvasManager と ToolManager がイベント経由でやり取りできるよう接続。
+
+ペンは「筆圧なしの単純ストローク」で構いません（PerfectFreehandや補完系は未使用）。
+
+💡 例：
+js
+コピーする
+編集する
+app.toolManager = new ToolManager(app);
+app.toolManager.setTool("pen");
+2. 🧱 レイヤー構造の復元
+🔧 対象ファイル:
+core-engine.js
+
+layer-manager.js
+
+📌 実装内容：
+core-engine.js にて LayerManager を生成。
+
+描画レイヤーは1枚で構いません（baseLayer と overlayLayer のような構造にしてもOK）。
+
+CanvasManager から layerManager.getCurrentLayer() で現在のレイヤーが取得できる構成にしてください。
+
+💡 メモ：
+CanvasManager がレイヤーの framebuffer などへ描画する形が理想ですが、まずは 1枚に直接描く構成 でも構いません。
+
+3. 🎨 色指定の復元（ColorManager）
+🔧 対象ファイル:
+core-engine.js
+
+color-manager.js
+
+📌 実装内容：
+初期色を設定して ColorManager を生成。
+
+CanvasManager.setCurrentColor(color) が呼ばれることで色が更新される仕組みを組んでください。
+
+HTML側の色UI連携は このフェーズでは不要。JavaScript内だけで "#800000" をセットできればOKです。
+
+🧪 テスト条件
+描画キャンバスに ペンで線が描けること
+
+LayerManager.getCurrentLayer() が null を返さないこと
+
+CanvasManager.currentColor に初期色が設定されていること
+
+📂 対象ファイル一覧（更新対象）
+ファイルパス	対応内容
+src/core/core-engine.js	ToolManager、LayerManager、ColorManagerの初期化
+src/core/canvas-manager.js	setCurrentColor() 等が機能するか再確認
+src/core/tool-manager.js	setTool("pen") の実装（復元）
+src/core/layer-manager.js	getCurrentLayer() の復元
+src/core/color-manager.js	初期色設定ロジック復元
+
+🧷 注意点・制約
+UI部品（色パレットやレイヤーボタン等）の導入は次フェーズ以降（Phase 4A11D-8h）とする。
+
+CanvasManagerやLayerManagerが null を返さないよう、安全なオプショナルチェインやエラーチェックを活用すること。
+
+WebGL描画が崩れないよう、必要に応じて RenderingBridge.drawLayer() のようなメソッドも活用。
+
+📌 フェーズ識別名
+この修正フェーズは：
+
+➤ Phase 4A11D-8g と呼称してください。
+🤝 GEMINIくんへのお願い
+これまでの修正成果を壊さないよう、慎重に段階的な復元を行ってください。
+
+最終的に 灰色背景のキャンバス上に、赤色の線（#800000）を描けること が目標です。
