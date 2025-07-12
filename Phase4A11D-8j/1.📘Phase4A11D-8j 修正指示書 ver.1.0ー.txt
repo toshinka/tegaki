@@ -82,3 +82,86 @@ Pointer Events API	Phase 4A11F	タッチ対応統合・筆圧
 twgl.js	Phase 4A11E〜	シェーダ・FBO・描画簡略化
 
 
+📘 Phase 4A11D-8j 指示書 ver.1.0【最終版】
+🎯 目的
+描画エンジンが正常に初期化された状態を前提とし、ユーザーの操作（ペン・マウス）に応じて drawLine() / drawCircle() を呼び出し、実際に描ける状態にする。
+
+📁 対象ファイル
+src/core/canvas-manager.js
+
+src/ui/tool-manager.js
+
+（参照済）rendering/rendering-bridge.js
+
+（参照済）rendering/webgl-engine.js
+
+🛠️ 修正タスク
+✅ 1. CanvasManager.drawLine() / drawCircle() の実装または復元
+js
+コピーする
+編集する
+drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, pressureFunc, layer) {
+  this.renderingBridge.drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, pressureFunc, layer);
+}
+✅ 2. tool-manager.js 側でマウスイベントを取得し、canvasManager.drawLine() を呼ぶ
+mousedown で開始座標記録
+
+mousemove で描画呼び出し（線分で）
+
+mouseup で確定・リセット
+
+※イベント登録は drawingCanvas への addEventListener で行う。
+
+✅ 3. 色・サイズ・レイヤーなどの取得
+pen-settings-manager.js からサイズを取得
+
+color-manager.js から RGBA 色を取得
+
+layer-manager.js からアクティブレイヤーを取得
+
+tool-manager.js から isEraser 判定
+
+✅ 成功判定
+実際に線や円が引ける（目視＋ログ確認）
+
+WebGL Engine initialized の後に drawLine() 呼び出しログが確認できる
+
+各ツール設定が描画結果に反映される（色・サイズ）
+
+🧪 テスト項目
+テスト内容	成功条件
+ペンでドラッグして描く	キャンバス上に線が描かれる
+消しゴムを選んで描く	線が透明になるまたは消える
+サイズ変更後に描く	線幅が変化する
+色変更後に描く	線の色が反映される
+複数レイヤーで描画＆切替	各レイヤーで個別に描画される
+
+🧠 補足：描画命令の流れ図（簡易版）
+plaintext
+コピーする
+編集する
+[ ユーザー操作（ペン/マウス） ]
+        ↓
+[ tool-manager.js ]
+        ↓
+canvasManager.drawLine(...)
+        ↓
+[ canvas-manager.js ]
+        ↓
+renderingBridge.drawLine(...)
+        ↓
+[ rendering-bridge.js ]
+        ↓
+currentEngine.drawLine(...) ← WebGLEngine
+        ↓
+[ webgl-engine.js ]
+        ↓
+superCompositeFBO更新 → renderToDisplay()
+        ↓
+[ GPU上で描画された内容が画面に反映 ]
+🗂️ 次フェーズで検討予定の技術（先読み）
+技術名	対応フェーズ	備考
+perfect-freehand.js	Phase 4A11F	手ぶれ補正／補間ブラシ
+Pointer Events API	Phase 4A11F	タッチ対応統合・筆圧
+twgl.js	Phase 4A11E〜	シェーダ・FBO・描画簡略化
+tweakpane	Phase 4A12	UI制御の再導入
