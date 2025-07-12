@@ -1,0 +1,358 @@
+🎨 お絵かきツール - プロジェクトシンボルテーブル (テキスト形式 v.2024.07.13)
+ご指定のファイル群を解析し、クラス、メソッド、関数、主要な変数を一覧化しました。
+
+#----------------------------------------------------------------------
+
+File: index.html
+役割: アプリケーションのエントリーポイント。UI要素とスクリプトを定義。
+#----------------------------------------------------------------------
+
+Element: <script type="module" src="/src/core/core-engine.js">
+
+概要: メインのJavaScriptエンジンを読み込み、アプリケーションを起動します。
+関連: core-engine.js
+Element: <canvas id="drawingCanvas">
+
+概要: メインの描画領域となるキャンバス要素です。
+関連: canvas-manager.js
+Element: <div id="canvas-container">
+
+概要: キャンバスの拡縮・回転操作の基準となるコンテナです。
+関連: canvas-manager.js
+Element: <div id="canvas-area">
+
+概要: ポインタイベント（マウス、ペン）を検知するための領域です。
+関連: drawing-engine.js
+UI Elements:
+
+概要: 各種ボタンやUI要素。IDで識別されます。
+関連: ui-manager.js および各UI管理クラス
+例: pen-tool, saveMergedButton, layer-list など
+#----------------------------------------------------------------------
+
+File: src/core/core-engine.js
+役割: アプリケーション全体の初期化と、各モジュールの統括管理。
+#----------------------------------------------------------------------
+
+Global Variable: window.toshinkaTegakiTool
+
+型: Object
+概要: アプリケーションのグローバルな名前空間。各マネージャーのインスタンスを保持。
+Global Variable: window.toshinkaTegakiInitialized
+
+型: Boolean
+概要: アプリケーションの初期化が完了したかを示すフラグ。
+Event Listener: DOMContentLoaded
+
+概要: HTMLの読み込み完了後、main関数を実行してアプリケーションを初期化。
+Function: main()
+
+概要: アプリケーションの初期化処理の起点となる非同期関数。
+#----------------------------------------------------------------------
+
+File: src/core/canvas-manager.js
+役割: キャンバスの表示、リサイズ、変換（拡大縮小・回転）を管理。
+#----------------------------------------------------------------------
+
+Class: CanvasManager
+
+Method: constructor(app)
+
+概要: canvas-containerとdrawingCanvasを取得し、初期状態を設定。
+Method: initialize()
+
+概要: イベントリスナー（リサイズ、ホイール、ポインターイベント）を登録。
+Method: updateCanvasSize()
+
+概要: ブラウザウィンドウのサイズに合わせてキャンバスの解像度を更新。
+Method: updateTransform()
+
+概要: 拡大縮小率、回転角度、平行移動をCSS transformに適用。
+Property: scale
+
+型: Number
+概要: 現在の拡大率。
+Property: translation
+
+型: Object
+概要: 現在の表示位置（X, Y）。
+#----------------------------------------------------------------------
+
+File: src/core/drawing-engine.js
+役割: ユーザーの描画入力（ストローク）を処理し、描画命令を渡す。
+#----------------------------------------------------------------------
+
+Class: DrawingEngine
+
+Method: constructor(app, renderingBridge)
+
+概要: canvas-areaにポインターイベントリスナーを設定。
+Method: handlePointerDown(event)
+
+概要: 描画開始処理。ストローク情報を初期化。
+Method: handlePointerMove(event)
+
+概要: 描画中の処理。ポインターの座標を収集。
+Method: handlePointerUp(event)
+
+概要: 描画終了処理。収集した座標を元に線を描画。
+Property: isDrawing
+
+型: Boolean
+概要: 現在描画中かどうかを示すフラグ。
+Property: points
+
+型: Array
+概要: 描画中のストロークの座標点を保持する配列。
+#----------------------------------------------------------------------
+
+File: src/core/layer.js
+役割: レイヤーのデータ構造を定義。
+#----------------------------------------------------------------------
+
+Class: Layer
+
+Method: constructor(name, width, height, id)
+
+概要: 新しいレイヤーを生成。
+Method: get2dContext()
+
+概要: このレイヤーが持つオフスクリーンキャンバスの2Dコンテキストを返す。
+戻り値: CanvasRenderingContext2D
+Method: clear()
+
+概要: レイヤーの内容を消去。
+Property: id
+
+型: String
+概要: レイヤーの一意なID。
+Property: name
+
+型: String
+概要: レイヤー名。
+Property: canvas
+
+型: HTMLCanvasElement
+概要: レイヤーの描画内容を保持するオフスクリーンキャンバス。
+Property: isVisible
+
+型: Boolean
+概要: レイヤーが表示状態かどうかのフラグ。
+Property: opacity
+
+型: Number
+概要: レイヤーの不透明度 (0-1)。
+#----------------------------------------------------------------------
+
+File: src/core/rendering/webgl-engine.js
+役割: WebGLを用いたレイヤーの合成と表示。
+#----------------------------------------------------------------------
+
+Class: WebGLEngine
+
+Method: constructor(canvas)
+
+概要: WebGLコンテキストを初期化し、シェーダーとプログラムを準備。
+Method: render(layers)
+
+概要: 指定されたレイヤー群をテクスチャとして受け取り、キャンバスに合成して描画。
+Method: updateLayerTexture(layer)
+
+概要: 特定のレイヤーのキャンバス内容をWebGLテクスチャに更新。
+#----------------------------------------------------------------------
+
+File: src/core/rendering/rendering-bridge.js
+役割: 描画方法（2D/WebGL）を抽象化し、描画要求を適切なエンジンに振り分ける。
+#----------------------------------------------------------------------
+
+Class: RenderingBridge
+
+Method: constructor(app)
+
+概要: WebGLEngineを初期化。
+Method: drawStroke(layer, points, penSettings)
+
+概要: DrawingEngineからストローク情報を受け取り、アクティブなレイヤーに線を描画。
+Method: renderAllLayers()
+
+概要: 全ての可視レイヤーを合成して最終的な表示を更新。
+Method: clearLayer(layer)
+
+概要: 指定されたレイヤーの内容を消去。
+#----------------------------------------------------------------------
+
+File: src/core/utils/transform-utils.js
+役割: 座標変換や幾何学的な計算を行うユーティリティ。
+#----------------------------------------------------------------------
+
+Exported Object: TransformUtils
+
+Function: screenToCanvas(x, y, transform)
+
+概要: スクリーン座標（イベント座標）をキャンバス内の座標に変換。
+戻り値: Object {x, y}
+Function: canvasToScreen(x, y, transform)
+
+概要: キャンバス内の座標をスクリーン座標に変換。
+戻り値: Object {x, y}
+#----------------------------------------------------------------------
+
+File: src/db/db-indexed.js
+役割: IndexedDBとのやり取りを担当し、レイヤーデータを永続化。
+#----------------------------------------------------------------------
+
+Class: TegakiDB
+
+概要: Dexie.jsを継承したデータベース定義クラス。
+Exported Const: db
+
+型: TegakiDB
+概要: TegakiDBのインスタンス。
+Exported Function: saveLayer(layer)
+
+概要: 指定されたレイヤーの画像データをIndexedDBに保存。
+戻り値: Promise<void>
+Exported Function: loadAllLayers()
+
+概要: IndexedDBから全てのレイヤーデータを読み込む。
+戻り値: Promise<Array>
+Exported Function: deleteLayer(layerId)
+
+概要: 指定されたIDのレイヤーをDBから削除。
+戻り値: Promise<void>
+#----------------------------------------------------------------------
+
+File: src/layer-manager/layer-manager.js
+役割: レイヤーの作成、削除、複製、結合、順序変更などライフサイクルを管理。
+#----------------------------------------------------------------------
+
+Class: LayerManager
+
+Method: constructor(app)
+
+概要: appを保持。
+Method: initialize()
+
+概要: DBからレイヤーを読み込み、初期レイヤー構造をセットアップ。
+戻り値: Promise<void>
+Method: addNewLayer()
+
+概要: 新しいレイヤーを作成し、レイヤーリストに追加。
+戻り値: Layer
+Method: deleteLayer(layerId)
+
+概要: 指定されたレイヤーを削除。
+Method: setActiveLayer(layerId)
+
+概要: アクティブなレイヤーを切り替える。
+Property: layers
+
+型: Array<Layer>
+概要: 現在の全レイヤーを保持する配列。
+Property: activeLayer
+
+型: Layer
+概要: 現在編集対象となっているレイヤー。
+#----------------------------------------------------------------------
+
+File: src/ui/ui-manager.js
+役割: 全てのUIコンポーネントを初期化し、イベントハンドラを登録。
+#----------------------------------------------------------------------
+
+Class: UIManager
+
+Method: constructor(app)
+
+概要: 各UIマネージャーのインスタンスを作成。
+Method: initialize()
+
+概要: 全てのUIマネージャーを初期化し、UIイベントを設定。
+#----------------------------------------------------------------------
+
+File: src/ui/shortcut-manager.js
+役割: キーボードショートカットを管理。
+#----------------------------------------------------------------------
+
+Class: ShortcutManager
+
+Method: constructor(app)
+
+概要: appを保持。
+Method: initialize()
+
+概要: keydownイベントリスナーを登録し、ショートカットをマッピング。
+#----------------------------------------------------------------------
+
+File: src/ui/tool-manager.js
+役割: ペン、消しゴム、塗りつぶしなどのツール切り替えを管理。
+#----------------------------------------------------------------------
+
+Class: ToolManager
+
+Method: constructor(app)
+
+概要: ツールボタンにクリックイベントを設定。
+Method: setTool(toolName)
+
+概要: 現在のツールを切り替える。
+Property: currentTool
+
+型: String
+概要: 現在選択されているツールの名前 ('pen', 'eraser'など)。
+#----------------------------------------------------------------------
+
+File: src/ui/pen-settings-manager.js
+役割: ペンやブラシのサイズ、不透明度などの設定を管理。
+#----------------------------------------------------------------------
+
+Class: PenSettingsManager
+
+Method: constructor(app)
+
+概要: UI要素（スライダーなど）にイベントリスナーを設定。
+Method: getSettings()
+
+概要: 現在のペン設定（サイズ、不透明度、色など）をオブジェクトとして返す。
+戻り値: Object
+Property: size
+
+型: Number
+概要: 現在のペンサイズ。
+Property: opacity
+
+型: Number
+概要: 現在の不透明度。
+#----------------------------------------------------------------------
+
+File: src/ui/color-manager.js
+役割: 描画色の選択と管理。
+#----------------------------------------------------------------------
+
+Class: ColorManager
+
+Method: constructor(app)
+
+概要: カラーピッカーやパレットのUIにイベントリスナーを設定。
+Property: primaryColor
+
+型: String
+概要: 現在のメインカラー (例: '#800000')。
+Property: secondaryColor
+
+型: String
+概要: 現在のサブカラー (例: '#f0e0d6')。
+#----------------------------------------------------------------------
+
+File: src/tools/toolset.js
+役割: 各描画ツールの具体的な実装。（※将来の設計）
+#----------------------------------------------------------------------
+
+Class: PenTool
+
+概要: ペンツールの描画ロジックを実装。
+Class: EraserTool
+
+概要: 消しゴムツールのロジックを実装。
+Class: BucketTool
+
+概要: 塗りつぶしツールのロジックを実装。
