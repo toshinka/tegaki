@@ -83,6 +83,7 @@ export class CanvasManager {
         this.width = this.canvas.width;
         this.height = this.canvas.height;
 
+        this.isDrawing = false;
         this.isPanning = false;
 
         this.isDraggingLayer = false;
@@ -92,6 +93,7 @@ export class CanvasManager {
         this.isShiftDown = false;
         this.isSpaceDown = false;
         this.isVDown = false;
+        this.lastPoint = null;
         this.transformStartWorldX = 0;
         this.transformStartWorldY = 0;
         this.transformOriginalModelMatrix = null;
@@ -142,6 +144,8 @@ export class CanvasManager {
      * @param {object} layer - 対象レイヤー
      */
     drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, pressureFunc, layer) {
+      // ✅ 指示書 2: ログを挿入して動作確認可能に
+      console.log(`➡️ CanvasManager.drawLine: 呼び出されました。 isEraser=${isEraser}`);
       this.renderingBridge.drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, pressureFunc, layer);
     }
 
@@ -155,6 +159,8 @@ export class CanvasManager {
      * @param {object} layer - 対象レイヤー
      */
     drawCircle(centerX, centerY, radius, color, isEraser, layer) {
+      // ✅ 指示書 2: ログを挿入して動作確認可能に
+      console.log(`➡️ CanvasManager.drawCircle: 呼び出されました。 isEraser=${isEraser}`);
       this.renderingBridge.drawCircle(centerX, centerY, radius, color, isEraser, layer);
     }
 
@@ -182,8 +188,9 @@ export class CanvasManager {
     }
 
     bindEvents() {
-        // pointerdown, move, upのイベントはToolManagerが処理するため、ここでは登録しない
-        // ただし、他のイベントはここで管理
+        this.canvasArea.addEventListener('pointerdown', this.onPointerDown.bind(this));
+        document.addEventListener('pointermove', this.onPointerMove.bind(this));
+        document.addEventListener('pointerup', this.onPointerUp.bind(this));
         document.addEventListener('contextmenu', e => e.preventDefault());
         document.getElementById('saveMergedButton')?.addEventListener('click', () => this.exportMergedImage());
     }
@@ -204,10 +211,16 @@ export class CanvasManager {
     }
 
     onPointerDown(e) {
-        // ★★★ 描画処理はToolManagerに移管 ★★★
-        // パン操作とレイヤー変形操作の開始判定のみ残す
         if (e.button !== 0) return;
-        
+
+        // ✅ 指示書 3: レイヤーは必ず layerManager.getActiveLayer() などで取得
+        const activeLayer = this.app.layerManager?.getCurrentLayer?.();
+        // 描画開始前に activeLayer の存在を厳密にチェック
+        if (!activeLayer || !activeLayer.visible) {
+            console.warn("🎨 CanvasManager.onPointerDown: 描画対象のアクティブレイヤーが見つからないか、非表示です。");
+            return;
+        }
+
         const coords = getCanvasCoordinates(e, this.canvas, this.viewTransform);
         
         if (this.isSpaceDown) {
@@ -218,10 +231,6 @@ export class CanvasManager {
             this.canvasStartY = this.viewTransform.top;
             return;
         }
-
-        const activeLayer = this.app.layerManager?.getCurrentLayer?.();
-        if (!activeLayer) return;
-
         if (this.isLayerTransforming) {
             if (!activeLayer.visible) return;
             this.isDraggingLayer = true;
@@ -229,16 +238,21 @@ export class CanvasManager {
             this.transformStartWorldY = Math.round(coords.y);
             return;
         }
+
+        const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
+        const superX = coords.x * SUPER_SAMPLING_FACTOR;
+        const superY = coords.y * SUPER_SAMPLING_FACTOR;
         
-        // バケツツールの処理のみここに残す（描画とは異なるため）
-        if (this.app.toolManager.currentTool === 'bucket') {
-            if (!activeLayer.visible || !this._isPointOnLayer(coords, activeLayer)) return;
-            const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
-            const superX = coords.x * SUPER_SAMPLING_FACTOR;
-            const superY = coords.y * SUPER_SAMPLING_FACTOR;
-            const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix, mat4);
-            
-            const currentColor = this.app.colorManager?.currentColor ?? '#000000';
+        // ✅ 指示書 3: レイヤーのモデル行列を使ってローカル座標に変換
+        const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix, mat4);
+        this._resetDirtyRect();
+
+        // ✅ 指示書 3: サイズ・色は penSettingsManager/colorManager で取得
+        const currentColor = this.app.colorManager?.currentColor ?? '#000000';
+        const currentSize = this.app.penSettingsManager?.currentSize ?? 10;
+        const currentTool = this.app.toolManager.getTool(); // ✅ 指示書 1: getCurrentTool() を通じた描画情報の取得
+
+        if (currentTool === 'bucket') {
             this.app.bucketTool.fill(activeLayer.imageData, Math.round(local.x), Math.round(local.y), hexToRgba(currentColor));
             activeLayer.gpuDirty = true;
             this.renderAllLayers();
@@ -246,13 +260,22 @@ export class CanvasManager {
             this.onDrawEnd?.(activeLayer);
             return;
         }
+        this.isDrawing = true;
+        this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
+        this.lastPoint = { ...local, pressure: this.pressureHistory[0] };
+        const size = this.calculatePressureSize(currentSize, this.lastPoint.pressure);
+        this._updateDirtyRect(local.x, local.y, size);
+        
+        const isEraser = currentTool === 'eraser';
+        // Use the new drawCircle method
+        this.drawCircle(local.x, local.y, size / 2, hexToRgba(currentColor), isEraser, activeLayer);
+        
+        this._requestRender();
+        document.documentElement.setPointerCapture(e.pointerId);
     }
 
     onPointerMove(e) {
-        // ★★★ 描画処理はToolManagerに移管 ★★★
-        // パン操作とレイヤー変形操作のロジックのみ残す
         const coords = getCanvasCoordinates(e, this.canvas, this.viewTransform);
-
         if (this.isPanning) {
             const dx = e.clientX - this.dragStartX;
             const dy = e.clientY - this.dragStartY;
@@ -261,7 +284,6 @@ export class CanvasManager {
             this.applyViewTransform();
             return;
         }
-
         if (this.isDraggingLayer) {
             this.performDelayedLayerClear();
 
@@ -283,17 +305,71 @@ export class CanvasManager {
             this.renderAllLayers();
             return;
         }
+        if (this.isDrawing) {
+            // ✅ 指示書 3: レイヤーは必ず layerManager.getActiveLayer() などで取得
+            const activeLayer = this.app.layerManager?.getCurrentLayer?.();
+            if (!activeLayer) return;
+            
+            // ✅ 指示書 3: サイズ・色は penSettingsManager/colorManager で取得
+            const currentSize = this.app.penSettingsManager?.currentSize ?? 10;
+            const currentColor = this.app.colorManager?.currentColor ?? '#000000';
+            const currentTool = this.app.toolManager.getTool(); // ✅ 指示書 1: getCurrentTool() を通じた描画情報の取得
 
+            const SUPER_SAMPLING_FACTOR = this.renderingBridge.currentEngine?.SUPER_SAMPLING_FACTOR || 1.0;
+            const superX = coords.x * SUPER_SAMPLING_FACTOR;
+            const superY = coords.y * SUPER_SAMPLING_FACTOR;
+
+            // ✅ 指示書 3: レイヤーのモデル行列を使ってローカル座標に変換
+            const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix, mat4);
+            const currentPressure = e.pressure > 0 ? e.pressure : 0.5;
+            this.pressureHistory.push(currentPressure);
+            if (this.pressureHistory.length > this.maxPressureHistory) this.pressureHistory.shift();
+            
+            const lastSize = this.calculatePressureSize(currentSize, this.lastPoint.pressure);
+            const size = this.calculatePressureSize(currentSize, currentPressure);
+            this._updateDirtyRect(this.lastPoint.x, this.lastPoint.y, lastSize);
+            this._updateDirtyRect(local.x, local.y, size);
+
+            const isEraser = currentTool === 'eraser';
+            // Use the new drawLine method
+            // ✅ 指示書 1: canvasManager.drawLine(...) を呼ぶ
+            this.drawLine(
+                this.lastPoint.x, this.lastPoint.y, 
+                local.x, local.y, 
+                currentSize, hexToRgba(currentColor), isEraser, 
+                this.lastPoint.pressure, currentPressure, 
+                this.calculatePressureSize.bind(this), activeLayer
+            );
+
+            this.lastPoint = { ...local, pressure: currentPressure };
+            this._requestRender();
+            return;
+        }
         this.updateCursor(coords);
     }
 
+
     async onPointerUp(e) {
-        // ★★★ 描画処理はToolManagerに移管 ★★★
-        // パン操作とレイヤー変形操作の終了処理のみ残す
+        if (this.isDrawing) {
+            this.isDrawing = false;
+            if (this.animationFrameId) {
+                cancelAnimationFrame(this.animationFrameId);
+                this.animationFrameId = null;
+            }
+            this._renderDirty();
+            const activeLayer = this.app.layerManager?.getCurrentLayer?.();
+            if (activeLayer) {
+                this.renderingBridge.syncDirtyRectToImageData(activeLayer, this.dirtyRect);
+                await this.onDrawEnd?.(activeLayer);
+            }
+            this.lastPoint = null;
+            this.saveState();
+        }
         if (this.isDraggingLayer) this.isDraggingLayer = false;
         this.isPanning = false;
-
-        // ポインタキャプチャの解放はToolManager側で行うため、ここでは不要
+        if (document.documentElement.hasPointerCapture(e.pointerId)) {
+            document.documentElement.releasePointerCapture(e.pointerId);
+        }
     }
 
     performDelayedLayerClear() {
@@ -487,7 +563,7 @@ export class CanvasManager {
         const smoothedPressure = tempHistory.reduce((sum, p) => sum + p, 0) / tempHistory.length;
         let finalPressure = smoothedPressure;
         const historyLength = this.pressureHistory.length;
-        if (this.app.toolManager.isDrawing && historyLength <= this.maxPressureHistory) {
+        if (this.isDrawing && historyLength <= this.maxPressureHistory) {
             const dampingFactor = historyLength / this.maxPressureHistory;
             finalPressure *= (0.2 + Math.pow(dampingFactor, 3) * 0.8);
         }
@@ -551,7 +627,7 @@ export class CanvasManager {
         if (this.isSpaceDown) { this.canvasArea.style.cursor = 'grab'; return; }
         const activeLayer = this.app.layerManager?.getCurrentLayer?.();
         if (activeLayer && coords && this._isPointOnLayer(coords, activeLayer)) {
-            switch (this.app.toolManager.currentTool) {
+            switch (this.app.toolManager.getTool()) {
                 case 'pen': this.canvasArea.style.cursor = 'crosshair'; break;
                 case 'eraser': this.canvasArea.style.cursor = 'cell'; break;
                 case 'bucket': this.canvasArea.style.cursor = 'copy'; break;

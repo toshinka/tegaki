@@ -1,0 +1,374 @@
+# 🎨 Toshinka Tegaki Tool - シンボルテーブル v5.0.4 (テキスト版)
+
+## 📱 アプリケーション全体
+
+### グローバル変数・オブジェクト
+- window.toshinkaTegakiTool (Object)
+  用途: アプリケーション全体の管理オブジェクト
+  定義場所: core-engine.js
+
+- window.toshinkaTegakiInitialized (Boolean)
+  用途: 初期化済みフラグ
+  定義場所: core-engine.js
+
+### メインアプリケーションオブジェクト (app)
+- app.glMatrix (Object)
+  用途: 行列計算ライブラリ
+  初期化場所: core-engine.js
+
+- app.twgl (Object)
+  用途: WebGL簡素化ライブラリ
+  初期化場所: core-engine.js
+
+- app.Layer (Class)
+  用途: レイヤークラス
+  初期化場所: core-engine.js
+
+- app.canvasManager (CanvasManager)
+  用途: 描画管理
+  初期化場所: core-engine.js
+
+- app.layerManager (LayerManager)
+  用途: レイヤー管理
+  初期化場所: core-engine.js
+
+- app.toolManager (ToolManager)
+  用途: ツール管理
+  初期化場所: core-engine.js
+
+- app.layerUIManager (LayerUIManager)
+  用途: レイヤーUI管理
+  初期化場所: core-engine.js
+
+- app.penSettingsManager (PenSettingsManager)
+  用途: ペン設定管理
+  初期化場所: core-engine.js
+
+- app.colorManager (ColorManager)
+  用途: 色管理
+  初期化場所: core-engine.js
+
+- app.topBarManager (TopBarManager)
+  用途: トップバー管理
+  初期化場所: core-engine.js
+
+- app.shortcutManager (ShortcutManager)
+  用途: ショートカット管理
+  初期化場所: core-engine.js
+
+- app.bucketTool (BucketTool)
+  用途: 塗りつぶしツール
+  初期化場所: core-engine.js
+
+---
+
+## 🎨 描画・キャンバス関連
+
+### CanvasManager クラス
+- constructor()
+  型: -
+  用途: 初期化
+  パラメータ: app, canvas
+
+- waitForInitialization()
+  型: Promise
+  用途: 初期化完了を待機
+  パラメータ: -
+
+- getCurrentLayer()
+  型: Layer
+  用途: 現在のレイヤー取得
+  パラメータ: -
+
+- setCurrentLayer()
+  型: void
+  用途: 現在のレイヤー設定
+  パラメータ: layer
+
+- renderAllLayers()
+  型: void
+  用途: 全レイヤー描画
+  パラメータ: -
+
+- saveState()
+  型: void
+  用途: 状態保存
+  パラメータ: -
+
+- onDrawEnd
+  型: Function
+  用途: 描画終了時コールバック
+  パラメータ: layer
+
+- width
+  型: Number
+  用途: キャンバス幅
+  パラメータ: -
+
+- height
+  型: Number
+  用途: キャンバス高さ
+  パラメータ: -
+
+### Layer クラス
+- constructor()
+  型: -
+  用途: 初期化
+  パラメータ: name, width, height, id
+
+- id
+  型: String
+  用途: レイヤーID
+  パラメータ: -
+
+- name
+  型: String
+  用途: レイヤー名
+  パラメータ: -
+
+- imageData
+  型: ImageData
+  用途: ピクセルデータ
+  パラメータ: -
+
+- gpuDirty
+  型: Boolean
+  用途: GPU更新フラグ
+  パラメータ: -
+
+---
+
+## 🔧 ツール関連
+
+### ToolManager クラス
+- constructor()
+  型: -
+  用途: 初期化
+  パラメータ: app
+
+- setTool()
+  型: void
+  用途: ツール切り替え
+  パラメータ: toolName
+
+- getCurrentTool()
+  型: String
+  用途: 現在のツール取得
+  パラメータ: -
+
+### 利用可能ツール
+- ペン
+  文字列ID: 'pen'
+  用途: 自由描画
+  実装クラス: PenTool
+
+- 塗りつぶし
+  文字列ID: 'bucket'
+  用途: 領域塗りつぶし
+  実装クラス: BucketTool
+
+---
+
+## 🎨 レイヤー管理
+
+### LayerManager クラス
+- constructor()
+  型: -
+  用途: 初期化
+  パラメータ: app
+
+- layers
+  型: Array<Layer>
+  用途: レイヤー配列
+  パラメータ: -
+
+- getCurrentLayer()
+  型: Layer
+  用途: 現在のレイヤー取得
+  パラメータ: -
+
+- switchLayer()
+  型: void
+  用途: レイヤー切り替え
+  パラメータ: layerIndex
+
+- setupInitialLayers()
+  型: Promise
+  用途: 初期レイヤー作成
+  パラメータ: -
+
+### LayerUIManager クラス
+- constructor()
+  型: -
+  用途: 初期化
+  パラメータ: app
+
+- renderLayers()
+  型: void
+  用途: レイヤーUI描画
+  パラメータ: -
+
+---
+
+## 🎨 UI管理
+
+### ColorManager クラス
+- constructor()
+  型: -
+  用途: 初期化
+  パラメータ: app
+
+- getCurrentColor()
+  型: String
+  用途: 現在の色取得
+  パラメータ: -
+
+- setCurrentColor()
+  型: void
+  用途: 現在の色設定
+  パラメータ: color
+
+### PenSettingsManager クラス
+- constructor()
+  型: -
+  用途: 初期化
+  パラメータ: app
+
+- getSize()
+  型: Number
+  用途: ペンサイズ取得
+  パラメータ: -
+
+- setSize()
+  型: void
+  用途: ペンサイズ設定
+  パラメータ: size
+
+- getOpacity()
+  型: Number
+  用途: 不透明度取得
+  パラメータ: -
+
+- setOpacity()
+  型: void
+  用途: 不透明度設定
+  パラメータ: opacity
+
+### ShortcutManager クラス
+- constructor()
+  型: -
+  用途: 初期化
+  パラメータ: app
+
+- initialize()
+  型: void
+  用途: ショートカット登録
+  パラメータ: -
+
+### TopBarManager クラス
+- constructor()
+  型: -
+  用途: 初期化
+  パラメータ: app
+
+---
+
+## 💾 データ管理
+
+### データベース関数
+- saveLayerToIndexedDB()
+  戻り値: Promise
+  用途: レイヤー保存
+  パラメータ: id, name, dataURL, Dexie
+
+- loadLayersFromIndexedDB()
+  戻り値: Promise<Array>
+  用途: レイヤー読み込み
+  パラメータ: Dexie
+
+### データ形式
+- LayerData
+  型: Object
+  用途: DB保存用レイヤー
+  プロパティ: id, name, imageData
+
+- Canvas要素
+  型: HTMLCanvasElement
+  用途: 描画対象
+  プロパティ: id="drawingCanvas"
+
+---
+
+## 📦 外部ライブラリ
+
+### インポート済みライブラリ
+- gl-matrix
+  インポート名: mat4
+  用途: 行列計算
+  バージョン: 最新
+
+- twgl.js
+  インポート名: twgl
+  用途: WebGL簡素化
+  バージョン: 最新
+
+- dexie
+  インポート名: Dexie
+  用途: IndexedDB
+  バージョン: 最新
+
+---
+
+## 🚫 避けるべき命名パターン
+
+### 混同しやすい名前
+- canvasmanager → canvasManager
+  理由: キャメルケース統一
+
+- canvas_manager → canvasManager
+  理由: JavaScript慣習
+
+- manager → canvasManager
+  理由: 役割が不明確
+
+- ctx → context
+  理由: 省略形は避ける
+
+- img → image
+  理由: 明確な命名
+
+### 予約語・競合回避
+- layer → currentLayer
+  理由: Layerクラスと混同
+
+- canvas → drawingCanvas
+  理由: HTMLCanvasElementと混同
+
+- tool → currentTool
+  理由: 汎用的すぎる
+
+---
+
+## 🔄 更新履歴
+
+### Phase 4A11D-8g
+- 描画機能復元に伴う変数・関数追加
+- CanvasManagerの非同期初期化対応
+- ToolManagerとの連携強化
+
+### 今後の拡張予定
+- WebGL2対応時の新規シンボル
+- アニメーション機能追加時の命名規則
+- AI機能統合時のインターフェース定義
+
+---
+
+## 💡 使用方法
+
+### AIに指示する際の例
+「CanvasManagerクラスのrenderAllLayers()メソッドを修正してください。
+シンボルテーブルの定義通りに、戻り値はvoidで、パラメータはありません。」
+
+### モジュール間連携確認
+「LayerManagerのgetCurrentLayer()が返すLayer型オブジェクトを、
+CanvasManagerのsetCurrentLayer()に渡す処理を追加してください。」

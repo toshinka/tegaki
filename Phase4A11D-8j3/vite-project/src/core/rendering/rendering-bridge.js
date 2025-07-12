@@ -1,22 +1,17 @@
 // src/core/rendering/rendering-bridge.js
-import { WebGLEngine } from './webgl-engine.js';
+import WebGLEngine from './webgl-engine.js';
 
 export class RenderingBridge {
-    // --- ⬇️ ここから修正 ⬇️ ---
-
     constructor(canvas) {
         this.canvas = canvas;
-        this.gl = null; // glをクラスプロパティとして初期化
-        // this.currentEngine は一旦使わないのでコメントアウト or 削除
-        // this.currentEngine = null; 
+        this.gl = null;
+        this.currentEngine = null;
+        this.isInitialized = false;
 
         console.log("🔍 RenderingBridge: canvas要素は", canvas);
 
-        // requestAnimationFrame を使い、DOM描画後にWebGL初期化を試みる 
         requestAnimationFrame(() => {
-            // "webgl2" を優先し、だめなら "webgl" にフォールバック
             this.gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
-
             console.log("🔍 RenderingBridge: getContext(webgl/webgl2) 結果", this.gl);
 
             if (!this.gl) {
@@ -27,29 +22,60 @@ export class RenderingBridge {
 
             console.log("✅ RenderingBridge: WebGL初期化成功");
 
-            // WebGLの初期化処理（背景色のクリアなど）を呼び出す 
             this.initializeGL();
 
-            // TODO: ここで本来の WebGLEngine を new する処理に戻す必要がある
-            // this.currentEngine = new WebGLEngine(this.canvas);
+            // 【修正】WebGLEngine に取得済みの gl と canvas を渡す
+            this.currentEngine = new WebGLEngine(this.gl, this.canvas);
+            
+            // エンジン初期化に失敗した場合のガード処理を追加
+            if (!this.currentEngine.gl) {
+                console.error("❌ RenderingBridge: WebGLEngine のインスタンス化に失敗しました。");
+                return;
+            }
+            console.log("✅ RenderingBridge: WebGLEngine のインスタンス化成功");
+
+
+            this.isInitialized = true;
+            console.log("✅ RenderingBridge: 初期化完了フラグを true に設定しました。");
         });
     }
 
-    // 新しく追加するメソッド [cite: 3]
     initializeGL() {
-        // 背景色をグレーに設定してクリアする 
+        if (!this.gl) return;
         this.gl.clearColor(0.9, 0.9, 0.9, 1.0);
         this.gl.clear(this.gl.COLOR_BUFFER_BIT);
+        console.log("✅ RenderingBridge: WebGLの背景をクリアしました。");
     }
 
-    // --- ⬆️ ここまで修正 ⬆️ ---
+    async waitForInitialization() {
+        if (this.isInitialized) return;
 
-    // 以降のメソッドは、今後 WebGLEngine を再接続するまで動作しません
+        return new Promise((resolve, reject) => {
+            const startTime = Date.now();
+            const timeout = 5000;
+            const check = () => {
+                if (this.isInitialized && this.currentEngine) {
+                    console.log("✅ RenderingBridge: 初期化完了を検出しました。(waitForInitialization)");
+                    resolve();
+                } else if (Date.now() - startTime > timeout) {
+                    reject(new Error("RenderingBridge初期化タイムアウト"));
+                } else {
+                    setTimeout(check, 50);
+                }
+            };
+            check();
+        });
+    }
+
     drawCircle(centerX, centerY, radius, color, isEraser, layer) {
+        // ✅ 描画経路の可視化
+        console.log("➡️ RenderingBridge.drawCircle: 呼び出されました。");
         this.currentEngine?.drawCircle(centerX, centerY, radius, color, isEraser, layer);
     }
 
     drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize, layer) {
+        // ✅ 描画経路の可視化
+        console.log("➡️ RenderingBridge.drawLine: 呼び出されました。");
         this.currentEngine?.drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize, layer);
     }
 
@@ -57,10 +83,12 @@ export class RenderingBridge {
         this.currentEngine?.fill(layer, color);
     }
 
+
+
     clear(layer) {
         this.currentEngine?.clear(layer);
     }
-    
+
     getTransformedImageData(layer) {
         return this.currentEngine?.getTransformedImageData(layer);
     }
@@ -68,10 +96,12 @@ export class RenderingBridge {
     compositeLayers(layers, compositionData, dirtyRect) {
         this.currentEngine?.compositeLayers(layers, compositionData, dirtyRect);
     }
-    
+
     renderToDisplay(compositionData, dirtyRect) {
         this.currentEngine?.renderToDisplay(compositionData, dirtyRect);
     }
+
+
 
     syncDirtyRectToImageData(layer, dirtyRect) {
         this.currentEngine?.syncDirtyRectToImageData(layer, dirtyRect);

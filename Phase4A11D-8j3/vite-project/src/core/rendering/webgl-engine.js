@@ -187,7 +187,13 @@ export default class WebGLEngine extends DrawingEngine {
         
         this._createOrUpdateLayerTexture(layer);
         const targetFBO = this.layerFBOs.get(layer);
-        if (!targetFBO) return;
+        if (!targetFBO) {
+            console.error("❌ WebGLEngine.drawCircle: 描画対象のFBOが見つかりません。", layer);
+            return;
+        }
+
+        // ✅ 描画経路の可視化
+        console.log(`➡️ WebGLEngine.drawCircle: 実行中 (x:${centerX.toFixed(1)}, y:${centerY.toFixed(1)}, r:${radius.toFixed(1)}, isEraser:${isEraser})`);
 
         twgl.bindFramebufferInfo(gl, targetFBO);
         gl.useProgram(this.programs.brush.program);
@@ -215,6 +221,9 @@ export default class WebGLEngine extends DrawingEngine {
         if (!isFinite(x0) || !isFinite(y0) || !isFinite(x1) || !isFinite(y1)) return;
         const distance = Math.hypot(x1 - x0, y1 - y0);
         if (distance > this.superWidth * 2) return;
+
+        // ✅ 描画経路の可視化
+        console.log(`➡️ WebGLEngine.drawLine: 実行中 (x0:${x0.toFixed(1)}, y0:${y0.toFixed(1)} -> x1:${x1.toFixed(1)}, y1:${y1.toFixed(1)})`);
 
         const stepSize = Math.max(0.5, size / 4);
         const steps = Math.max(1, Math.ceil(distance / stepSize));
@@ -308,6 +317,7 @@ export default class WebGLEngine extends DrawingEngine {
             twgl.drawBufferInfo(gl, this.positionBuffer, gl.TRIANGLE_STRIP);
         }
         
+        // 指示書にある仮描画命令は、経路可視化の目的で残す
         this.drawTestLine(50, 50, 200, 200, [1, 1, 1, 1]); // 白線
         twgl.bindFramebufferInfo(gl, null);
     }
