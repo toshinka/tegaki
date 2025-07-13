@@ -21,15 +21,9 @@ GPTくんが作った、指示書に従って改修してください。
 API定義の真偽チェック 
 リファクタリング
 
-SOLIDの原則
-DRYの原則
-KISSの原則
-YAGNIの原則
-オープン・クローズドの原則
-リスコフの置換原則
-インターフェース分離の原則
-依存性逆転の原則
-車輪の再発明
+
+※現在の構造分析や進行には影響を与えたくない雑談／補足です。
+
 
 変数・関数・クラス名などを記載した表
 （シンボルテーブル・API仕様書・インターフェース定義・データ辞書とか言うもの？）
@@ -43,7 +37,7 @@ FIX or Rollback?
 npm run dev
 
 
-
+ブラウザお絵描きツールをコーディング初心者が無料AI達にコーディングを全委任して、どれだけ作れるかの実験プロジェクトです
 
 
 
@@ -53,7 +47,41 @@ npm run dev
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/!PlanningAfterPhase4v2.txt
 今、Phase4A11D-7だったんだけどTweakpaneもESM化した後じゃないと不効率だからライブラリだけを用意して一時凍結、Dｰ8に進めようと言った形です。
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11D-7/2.%F0%9F%93%98%20Phase%204%20%E5%86%8D%E8%A8%AD%E8%A8%88%E3%83%9E%E3%82%A4%E3%83%AB%E3%82%B9%E3%83%88%E3%83%BC%E3%83%B3%E8%A1%A8%20v2.2.txt
-ちなみにここは司令塔として活用し、コーディングはGEMINIを常に新チャットを立てながらで行っています。継続させないのは失敗した時とかに変なクセがつかないようにです。指示書を書いてもらうことになるけれど、常に新人GEMINIくんに指導する感じの扱いでよろしく。
+ちなみにここは司令塔として活用し、コーディングは他AIを常に新チャットを立てながらで行っています。継続させないのは失敗した時とかに変なクセがつかないようにです。初期整備が終わり次第、指示書を発行してもらうことになるけれど、常に新人AIくんに指導する感じの扱いでよろしくおねがいします。
 
 
+
+
+
+
+
+ブラウザお絵描きツールをコーディング初心者が無料AI達にコーディングを全委任して、どれだけ作れるかの実験プロジェクトです。
+
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/!PlanningAfterPhase4v2.txt
+やや古いまとめですが全体的にはこんな感じの予定です。
+
+Tweakpane UIを導入しようとしたところやはりESM導入を先にしたほうが良いと判断し、ESM移行を先行し更にViteを導入したところです。エラーはでなくなったものの、ペン描画がキャンバスにできないという問題を孕んでる状態なのが現在の、Phase4A11D-8j3です。これを直そうとしたところ変数・関数・ファイル名が曖昧だったり役割も分散してるため、なかなか追い込めない状況でした。そこで、ファイル名を分かりやすくしたりシンボルテーブルを作ったりして、よりAIが分かりやすく必要最小限のファイルを受け取るだけで改修できるようにしたいと考えています。その辺りをまとめてるのが下記になります。
+【統合版】プロジェクト改善計画：現状の課題と新アーキテクチャ提案 改訂版.txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E3%80%90%E7%B5%B1%E5%90%88%E7%89%88%E3%80%91%E3%83%97%E3%83%AD%E3%82%B8%E3%82%A7%E3%82%AF%E3%83%88%E6%94%B9%E5%96%84%E8%A8%88%E7%94%BB%EF%BC%9A%E7%8F%BE%E7%8A%B6%E3%81%AE%E8%AA%B2%E9%A1%8C%E3%81%A8%E6%96%B0%E3%82%A2%E3%83%BC%E3%82%AD%E3%83%86%E3%82%AF%E3%83%81%E3%83%A3%E6%8F%90%E6%A1%88%20%E6%94%B9%E8%A8%82%E7%89%88.txt
+
+こんな工程で作業を進めていく予定です。新しくPhase 4A11Eとなりました。
+1.プロジェクト再構成 指示書一式 (Phase 4A11Eシリーズ).txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-1/1.%20%F0%9F%93%A6%20Phase%204A11E-1%20%E6%8C%87%E7%A4%BA%E6%9B%B8.txt
+2-1.プロジェクト再構成計画書 (Phase 4A11Eシリーズ).txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-1/2-1.%E3%83%97%E3%83%AD%E3%82%B8%E3%82%A7%E3%82%AF%E3%83%88%E5%86%8D%E6%A7%8B%E6%88%90%E8%A8%88%E7%94%BB%E6%9B%B8%20(Phase%204A11E%E3%82%B7%E3%83%AA%E3%83%BC%E3%82%BA).txt
+2-2.プロジェクト再構成 指示書一式 (Phase 4A11Eシリーズ).txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-1/2-2.%E3%83%97%E3%83%AD%E3%82%B8%E3%82%A7%E3%82%AF%E3%83%88%E5%86%8D%E6%A7%8B%E6%88%90%20%E6%8C%87%E7%A4%BA%E6%9B%B8%E4%B8%80%E5%BC%8F%20(Phase%204A11E%E3%82%B7%E3%83%AA%E3%83%BC%E3%82%BA).txt
+3.新旧ファイルツリーの比較.txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-1/3.%E6%96%B0%E6%97%A7%E3%83%95%E3%82%A1%E3%82%A4%E3%83%AB%E3%83%84%E3%83%AA%E3%83%BC%E3%81%AE%E6%AF%94%E8%BC%83.txt
+
+注意事項としての参考資料は下記になります。
+⚠️ AIが“自分からはあまり言わない”けど超重要な懸念リスト.txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E2%9A%A0%EF%B8%8F%20AI%E3%81%8C%E2%80%9C%E8%87%AA%E5%88%86%E3%81%8B%E3%82%89%E3%81%AF%E3%81%82%E3%81%BE%E3%82%8A%E8%A8%80%E3%82%8F%E3%81%AA%E3%81%84%E2%80%9D%E3%81%91%E3%81%A9%E8%B6%85%E9%87%8D%E8%A6%81%E3%81%AA%E6%87%B8%E5%BF%B5%E3%83%AA%E3%82%B9%E3%83%88.txt
+⚠️ AI実装ガイドライン強化版 - SOLID原則統合.txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E2%9A%A0%EF%B8%8F%20AI%E5%AE%9F%E8%A3%85%E3%82%AC%E3%82%A4%E3%83%89%E3%83%A9%E3%82%A4%E3%83%B3%E5%BC%B7%E5%8C%96%E7%89%88%20-%20SOLID%E5%8E%9F%E5%89%87%E7%B5%B1%E5%90%88.txt
+⚠️司令AI向け活用指示書 v1.0.txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E2%9A%A0%EF%B8%8F%E5%8F%B8%E4%BB%A4AI%E5%90%91%E3%81%91%E6%B4%BB%E7%94%A8%E6%8C%87%E7%A4%BA%E6%9B%B8%20v1.0.txt
+
+最初のE-1とE-2は全体を把握できるここで作業し、残りについてはここは司令塔として指示書を発行し、他AIにコーディングを任せる形にしたいと思います。
+この次のターンで、改修する元のファイルを提示します。
 

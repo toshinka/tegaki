@@ -1,0 +1,99 @@
+📄 1.【正式資料】統合版アーキテクチャ対応ファイル対照表（Phase 4A11E用）
+目的： 現在のファイル名と、Phase 4A11Eを経て統合版アーキテクチャに移行した際の正式な移行先ファイル名を明示することで、リネーム・再配置の漏れを防止。
+
+（Phase 4A11D-8j3）
+現在のファイル名	統合版アーキテクチャでの最終名	     移行タイミング	備考
+core-engine.js	         main.js	                        E-3	起動・初期化処理のエントリーポイント
+canvas-manager.js	 CanvasInteraction.js	                E-3	描画以外も含むインタラクション管理
+rendering-bridge.js	（統合後に廃止またはCanvasViewport.js）	E-3	中継のみの責務になるため分離・廃止可能性あり
+webgl-engine.js	         WebGLRenderer.js	                E-3	twgl.jsによる描画処理を集約
+drawing-engine.js	 DrawingEngine.js                  	E-1     時点でそのまま	親クラスとして保持される
+pen-settings-manager.js	 PenSettingsPanel.js	                E-4	UI側のパネルコンポーネントとして独立化
+tool-manager.js	         ToolStore.js + ToolActions.js	        E-4	状態管理と命令送信を分離
+color-manager.js	 ColorController.js                   	E-3	統合アーキテクチャに従って責務を整理
+layer-manager.js	 LayerStore.js + LayerActions.js    	E-4	レイヤー状態管理と操作APIの分離
+db-indexed.js    	 StorageService.js	                E-3	IndexedDB系ラッパーとして整理
+
+🗂 2. 統合案リネームマップ v1.0.txt（実作業向け）
+
+# 統合版アーキテクチャ対応リネームマップ v1.0
+
+[目的]
+Phase 4A11Eにおける再構成後、ファイル名と構成ディレクトリを正規化するためのリネーム・移動マップです。
+
+[対象ディレクトリ]
+現状: src/core, src/ui, src/layer-manager, src/db
+再構成後: src/app, src/engine, src/features/layers, src/features/tools, src/data など
+
+[ファイルマッピング例]
+src/core/core-engine.js              → src/main.js
+src/core/canvas-manager.js           → src/features/canvas/CanvasInteraction.js
+src/core/rendering/webgl-engine.js   → src/engine/WebGLRenderer.js
+src/ui/pen-settings-manager.js       → src/ui/components/PenSettingsPanel.js
+src/db/db-indexed.js                 → src/data/StorageService.js
+src/ui/color-manager.js              → src/app/ColorController.js
+src/layer-manager/layer-manager.js   → src/features/layers/LayerStore.js + LayerActions.js
+
+[補足]
+- UIと状態は分離されるため、manager → Store / Controller / Actions へリネームされます。
+- `rendering-bridge.js` は構造が明確化され次第、CanvasViewport または消滅予定。
+🔚 補足と今後の流れ
+このドキュメント類は .txt/.md でファイルとしてもお渡しできます。
+
+Phase 4A11E-3 にてファイル構成リネームが実施されるタイミングでこれを使ってチェックリスト化します。
+
+現行指示書（E-1/E-2）についてはこのマップに基づく仮称を用いつつ、命名切り替えタイミングをコメントに記載します。
+
+
+
+### 提案する新しいディレクトリ構造（【統合版】プロジェクト改善計画：現状の課題と新アーキテクチャ提案 改訂版から抜粋）
+
+```
+src/
+│
+├─ app/
+│   ├─ App.js              # アプリケーションの起動と全体の統括
+│   └─ AppState.js         # アプリケーション全体の状態を一元管理
+│
+├─ engine/
+│   ├─ WebGLRenderer.js    # WebGL描画エンジン（レイヤー合成と最終描画）
+│   ├─ CanvasViewport.js   # 表示領域の管理（ズーム、パン、回転）
+│   └─ DrawingEngine.js    # 描画処理の統括（筆圧、線の補間など）
+│
+├─ features/
+│   ├─ layers/
+│   │   ├─ Layer.js          # Layerクラスの定義
+│   │   ├─ LayerStore.js     # レイヤーリストの状態管理
+│   │   └─ LayerActions.js   # レイヤー操作（add/remove/move/transform）
+│   │
+│   ├─ tools/
+│   │   ├─ PenTool.js        # ペンツールの実装
+│   │   ├─ EraserTool.js     # 消しゴムツールの実装
+│   │   ├─ ToolStore.js      # 現在のツールや設定の状態管理
+│   │   └─ ToolActions.js    # ツール切り替えと設定変更
+│   │
+│   ├─ history/
+│   │   ├─ HistoryStore.js   # Undo/Redoのための状態管理
+│   │   └─ HistoryActions.js # 履歴操作（undo/redo/saveState）
+│   │
+│   └─ canvas/
+│       ├─ CanvasInteraction.js # マウス/タッチ/ペンの入力処理
+│       └─ CoordinateSystem.js  # 座標変換とスケール管理
+│
+├─ ui/
+│   ├─ components/
+│   │   ├─ LayerPanel.js     # レイヤーパネルのUIコンポーネント
+│   │   ├─ Toolbar.js        # ツールバーのUIコンポーネント
+│   │   ├─ ColorPicker.js    # カラーピッカーコンポーネント
+│   │   └─ PenSettingsPanel.js # ペン設定パネル
+│   │
+│   └─ UIController.js       # UI全体のイベントと状態の同期
+│
+├─ data/
+│   └─ StorageService.js     # IndexedDBとのやり取り
+│
+└─ utils/
+    ├─ Transform.js          # 汎用的な変換ユーティリティ
+    ├─ EventUtils.js         # イベント処理ヘルパー
+    └─ MathUtils.js          # 数学計算ユーティリティ
+

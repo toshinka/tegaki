@@ -1,0 +1,236 @@
+旧ファイル構成から新ファイル構成へのマッピング
+旧ファイル (Phase4A11D-8j3)
+
+→
+
+新ファイル (Phase4A11E)
+
+責務・役割
+
+index.html
+
+→
+
+index.html
+
+エントリポイント（読み込み先をmain.jsに変更）
+
+(新規作成)
+
+→
+
+src/main.js
+
+アプリケーションの起動と初期化
+
+src/core/core-engine.js
+
+→
+
+src/core/App.js
+
+アプリケーション全体の統括
+
+src/core/canvas-manager.js
+
+→
+
+src/canvas/CanvasManager.js
+
+Canvas要素とコンテキストの管理
+
+src/layer-manager/layer-manager.js
+
+→
+
+src/canvas/LayerManager.js
+
+レイヤーの管理
+
+src/core/drawing-engine.js
+
+→
+
+src/canvas/DrawingEngine.js
+
+描画処理の中核エンジン
+
+src/core/rendering/webgl-engine.js
+
+→
+
+src/canvas/rendering/WebGLEngine.js
+
+WebGLによる高速描画処理
+
+src/core/rendering/rendering-bridge.js
+
+→
+
+(廃止・統合)
+
+責務をDrawingEngine等に統合
+
+(新規作成)
+
+→
+
+src/state/ApplicationState.js
+
+アプリケーション全体の状態管理
+
+src/ui/pen-settings-manager.js
+
+→
+
+src/state/PenState.js
+
+ペンの状態（太さ、色など）管理
+
+src/ui/color-manager.js
+
+→
+
+src/state/ColorState.js
+
+色の状態管理
+
+src/ui/tool-manager.js
+
+→
+
+src/state/ToolState.js
+
+現在選択中のツールの状態管理
+
+src/ui/ui-manager.js
+
+→
+
+src/ui/UIManager.js
+
+UI全体の統括、各パネルの初期化
+
+(新規作成)
+
+→
+
+src/ui/ToolPanel.js
+
+ツール選択パネルのUI
+
+(新規作成)
+
+→
+
+src/ui/PenSettingsPanel.js
+
+ペン設定パネルのUI
+
+(新規作成)
+
+→
+
+src/ui/ColorPalettePanel.js
+
+カラーパレットのUI
+
+(新規作成)
+
+→
+
+src/ui/LayerPanel.js
+
+レイヤーパネルのUI
+
+src/tools/toolset.js
+
+→
+
+src/tools/ToolManager.js
+
+各描画ツールの管理・切り替え
+
+(新規作成)
+
+→
+
+src/tools/PenTool.js
+
+ペンツールの具体的な処理
+
+(新規作成)
+
+→
+
+src/tools/EraserTool.js
+
+消しゴムツールの具体的な処理
+
+(新規作成)
+
+→
+
+src/events/InputHandler.js
+
+マウスやタッチ等の入力処理
+
+src/ui/shortcut-manager.js
+
+→
+
+src/events/ShortcutManager.js
+
+ショートカットキーの管理
+
+src/core/utils/transform-utils.js
+
+→
+
+src/utils/TransformUtils.js
+
+座標変換などのユーティリティ
+
+src/db/db-indexed.js
+
+→
+
+src/database/IndexedDBManager.js
+
+IndexedDBとの連携
+
+新しいディレクトリ構造
+vite-project/
+├── index.html
+└── src/
+    ├── main.js                   # 🏁 アプリケーション起動
+    ├── core/
+    │   └── App.js                # 🏗️ アプリケーション中心
+    ├── canvas/
+    │   ├── CanvasManager.js      # 🖼️ Canvas自体の管理
+    │   ├── LayerManager.js       #  LAYERS レイヤー管理
+    │   ├── DrawingEngine.js      # ✍️ 描画処理エンジン
+    │   └── rendering/
+    │         └── WebGLEngine.js   # ✨ WebGL描画
+    ├── state/
+    │   ├── ApplicationState.js   # 📊 アプリ全体の状態
+    │   ├── PenState.js           # 🖊️ ペンの状態
+    │   ├── ColorState.js         # 🎨 色の状態
+    │   └── ToolState.js          # 🛠️ ツールの状態
+    ├── ui/
+    │   ├── UIManager.js          # 🎨 UI全体の管理
+    │   ├── ToolPanel.js          # ツールパネル
+    │   ├── PenSettingsPanel.js   # ペン設定パネル
+    │   ├── ColorPalettePanel.js  # カラーパレット
+    │   └── LayerPanel.js         # レイヤーパネル
+    ├── tools/
+    │   ├── ToolManager.js        # 🛠️ ツール群の管理
+    │   ├── PenTool.js            # 🖊️ ペンツール
+    │   └── EraserTool.js         # 消しゴムツール
+    ├── events/
+    │   ├── InputHandler.js       # 🖱️ 入力処理
+    │   └── ShortcutManager.js    # ⌨️ ショートカット
+    ├── utils/
+    │   └── TransformUtils.js     # 📐 補助的な計算など
+    └── database/
+        └── IndexedDBManager.js   # 💾 データベース連携

@@ -1,0 +1,313 @@
+このフェーズでは、E-1で設計した新しいファイル構造に基づき、各ファイルにリファクタリング（再構築）したコードを実装していきます。第一弾として、まずはペンによる描画機能を復活させることを最優先の目標とします。
+
+以前のコードを新しいモジュール構造に分割・整理し、ESM (import/export) 形式で正しく連携するように修正しました。これにより、Vite環境での動作と、今後の機能拡張のしやすさを両立させます。
+
+以下のコードを、指定された新しいファイルパスにそれぞれ作成・保存してください。
+
+1. index.html
+アプリケーションのエントリポイントです。JavaScriptの読み込み方を type="module" に変更しているのがポイントです。
+
+HTML
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tegaki App (Phase 4A11E)</title>
+    <style>
+      /* 基本的なスタイル */
+      body {
+        margin: 0;
+        overflow: hidden; /* スクロールバーを消す */
+      }
+      #app-container {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+      }
+      canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+      }
+    </style>
+</head>
+<body>
+    <div id="app-container">
+        </div>
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
+2. src/main.js
+すべての処理はここから始まります。App クラスを呼び出してアプリケーションを起動させる、シンプルな起動ファイルです。
+
+JavaScript
+
+import App from './core/App.js';
+
+// DOMが読み込まれたらアプリケーションを初期化
+document.addEventListener('DOMContentLoaded', () => {
+  const container = document.getElementById('app-container');
+  if (container) {
+    new App(container);
+    console.log("🎨 Application Initialized (Phase 4A11E)");
+  } else {
+    console.error("Application container #app-container not found.");
+  }
+});
+3. src/core/App.js
+アプリケーション全体の司令塔です。各マネージャー（Canvas、Tool、Inputなど）を初期化し、それらを連携させます。
+
+JavaScript
+
+import CanvasManager from '../canvas/CanvasManager.js';
+import DrawingEngine from '../canvas/DrawingEngine.js';
+import InputHandler from '../events/InputHandler.js';
+import ToolManager from '../tools/ToolManager.js';
+import PenTool from '../tools/PenTool.js';
+import PenState from '../state/PenState.js';
+
+class App {
+    constructor(container) {
+        // 状態管理クラスを初期化
+        this.penState = new PenState();
+
+        // 主要なモジュールを初期化
+        this.canvasManager = new CanvasManager(container);
+        this.drawingEngine = new DrawingEngine(this.canvasManager.getContext());
+        this.toolManager = new ToolManager();
+        this.inputHandler = new InputHandler(this.canvasManager.getCanvas());
+
+        // ツールを登録
+        const penTool = new PenTool(this.drawingEngine, this.penState);
+        this.toolManager.addTool('pen', penTool);
+        this.toolManager.setActiveTool('pen');
+
+        // 入力イベントをツールマネージャーに接続
+        this.inputHandler.on('drawStart', (pos) => this.toolManager.onDrawStart(pos));
+        this.inputHandler.on('drawMove', (pos) => this.toolManager.onDrawMove(pos));
+        this.inputHandler.on('drawEnd', (pos) => this.toolManager.onDrawEnd(pos));
+    }
+}
+
+export default App;
+4. src/canvas/CanvasManager.js
+Canvas要素の作成と管理に専念します。
+
+JavaScript
+
+class CanvasManager {
+    constructor(container) {
+        this.container = container;
+        this.canvas = document.createElement('canvas');
+        this.context = this.canvas.getContext('2d');
+        this.container.appendChild(this.canvas);
+        
+        this.resizeCanvas();
+        window.addEventListener('resize', () => this.resizeCanvas());
+    }
+
+    resizeCanvas() {
+        this.canvas.width = this.container.clientWidth;
+        this.canvas.height = this.container.clientHeight;
+    }
+
+    getCanvas() {
+        return this.canvas;
+    }
+
+    getContext() {
+        return this.context;
+    }
+}
+
+export default CanvasManager;
+5. src/events/InputHandler.js
+マウスやタッチなどの入力イベントをすべてここで受け付け、正規化された情報（座標など）をアプリケーションの他の部分に通知します。
+
+JavaScript
+
+class InputHandler {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.isDrawing = false;
+        this.listeners = {}; // イベントリスナーを格納するオブジェクト
+
+        // イベントを登録
+        this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+        this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+        this.canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
+        this.canvas.addEventListener('mouseleave', (e) => this.handleMouseUp(e)); // キャンバスから出たら描画終了
+    }
+
+    // イベントリスナーを登録するメソッド
+    on(eventName, callback) {
+        if (!this.listeners[eventName]) {
+            this.listeners[eventName] = [];
+        }
+        this.listeners[eventName].push(callback);
+    }
+
+    // イベントを発火させるメソッド
+    emit(eventName, data) {
+        if (this.listeners[eventName]) {
+            this.listeners[eventName].forEach(callback => callback(data));
+        }
+    }
+
+    getMousePos(event) {
+        const rect = this.canvas.getBoundingClientRect();
+        return {
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top
+        };
+    }
+
+    handleMouseDown(event) {
+        this.isDrawing = true;
+        const pos = this.getMousePos(event);
+        this.emit('drawStart', pos);
+    }
+
+    handleMouseMove(event) {
+        if (!this.isDrawing) return;
+        const pos = this.getMousePos(event);
+        this.emit('drawMove', pos);
+    }
+
+    handleMouseUp(event) {
+        if (!this.isDrawing) return;
+        this.isDrawing = false;
+        const pos = this.getMousePos(event);
+        this.emit('drawEnd', pos);
+    }
+}
+
+export default InputHandler;
+6. src/tools/ToolManager.js
+使用するツール（ペン、消しゴムなど）を管理し、InputHandler からのイベントを現在アクティブなツールに渡します。
+
+JavaScript
+
+class ToolManager {
+    constructor() {
+        this.tools = new Map();
+        this.activeTool = null;
+    }
+
+    addTool(name, tool) {
+        this.tools.set(name, tool);
+    }
+
+    setActiveTool(name) {
+        if (this.tools.has(name)) {
+            this.activeTool = this.tools.get(name);
+        }
+    }
+
+    onDrawStart(pos) {
+        if (this.activeTool) {
+            this.activeTool.onDrawStart(pos);
+        }
+    }
+
+    onDrawMove(pos) {
+        if (this.activeTool) {
+            this.activeTool.onDrawMove(pos);
+        }
+    }
+
+    onDrawEnd(pos) {
+        if (this.activeTool) {
+            this.activeTool.onDrawEnd(pos);
+        }
+    }
+}
+
+export default ToolManager;
+7. src/tools/PenTool.js
+ペンツールの具体的な描画ロジックです。DrawingEngine を使って実際に線を引きます。
+
+JavaScript
+
+class PenTool {
+    constructor(drawingEngine, penState) {
+        this.drawingEngine = drawingEngine;
+        this.penState = penState;
+        this.lastPos = null;
+    }
+
+    onDrawStart(pos) {
+        // 描画設定をPenStateから取得して適用
+        this.drawingEngine.setStrokeStyle(this.penState.color);
+        this.drawingEngine.setLineWidth(this.penState.size);
+        this.drawingEngine.setLineCap('round');
+        this.drawingEngine.setLineJoin('round');
+
+        this.drawingEngine.beginPath();
+        this.drawingEngine.moveTo(pos.x, pos.y);
+        this.lastPos = pos;
+    }
+
+    onDrawMove(pos) {
+        this.drawingEngine.lineTo(pos.x, pos.y);
+        this.drawingEngine.stroke();
+        this.drawingEngine.beginPath(); // パスをリセットして次のlineToに備える
+        this.drawingEngine.moveTo(this.lastPos.x, this.lastPos.y);
+        this.drawingEngine.lineTo(pos.x, pos.y);
+        this.lastPos = pos;
+    }
+
+    onDrawEnd(pos) {
+        this.drawingEngine.closePath();
+        this.lastPos = null;
+    }
+}
+
+export default PenTool;
+8. src/canvas/DrawingEngine.js
+CanvasRenderingContext2D をラップし、低レベルな描画APIを提供します。これにより、将来的にWebGLへの置換などが容易になります。
+
+JavaScript
+
+// このクラスはCanvas 2D APIのメソッドをラップします。
+// これにより、将来的に描画方法（例：WebGL）を変更する際に、
+// このファイルだけを修正すればよくなるという利点があります。
+class DrawingEngine {
+    constructor(context) {
+        this.ctx = context;
+    }
+
+    // --- 設定系メソッド ---
+    setStrokeStyle(style) { this.ctx.strokeStyle = style; }
+    setLineWidth(width) { this.ctx.lineWidth = width; }
+    setLineCap(cap) { this.ctx.lineCap = cap; }
+    setLineJoin(join) { this.ctx.lineJoin = join; }
+
+    // --- 描画系メソッド ---
+    beginPath() { this.ctx.beginPath(); }
+    moveTo(x, y) { this.ctx.moveTo(x, y); }
+    lineTo(x, y) { this.ctx.lineTo(x, y); }
+    stroke() { this.ctx.stroke(); }
+    closePath() { this.ctx.closePath(); }
+}
+
+export default DrawingEngine;
+9. src/state/PenState.js
+ペンの状態（色や太さ）を一元管理します。ひとまず固定値を入れていますが、今後UIと連携させる際の基礎となります。
+
+JavaScript
+
+class PenState {
+    constructor() {
+        this.size = 5;
+        this.color = '#000000'; // 黒色
+        // 他にも透明度(alpha)などの状態を追加できる
+    }
+}
+
+export default PenState;
+以上のファイル群を配置することで、基本的な描画機能が復活するはずです。まずはここまでを実装・テストしてみてください。
+
+これが正常に動作することを確認できたら、次にUIパネル、レイヤー管理、IndexedDB連携などの機能を、同じようにモジュールとして追加していく流れになります。
