@@ -1,6 +1,6 @@
 import { mat4 } from 'gl-matrix';
-import { getCanvasCoordinates, hexToRgba } from '../../utils/Transform.js';
-import { transformWorldToLocal, isValidMatrix } from '../../utils/Transform.js';
+import { getCanvasCoordinates, hexToRgba } from '../../utils/TransformUtils.js';
+import { transformWorldToLocal, isValidMatrix } from '../../utils/TransformUtils.js';
 
 /**
  * [クラス責務] CanvasInteraction.js
