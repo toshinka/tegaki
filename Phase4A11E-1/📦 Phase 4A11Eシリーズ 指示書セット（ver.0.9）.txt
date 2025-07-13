@@ -1,0 +1,28 @@
+📦 Phase 4A11Eシリーズ 指示書セット（ver.0.9）
+📘 Phase 4A11E-2：twgl.js描画構造の明確化と描画出力テスト
+項目	内容
+目的	WebGLEngineをベースとした twgl.js 描画処理の確認とテスト用描画の実装（renderToDisplayとcompositeLayersの再整理）
+対象	webgl-engine.js, rendering-bridge.js, canvas-manager.js
+作業内容	描画命令の流れにテスト描画（白線・円など）を挿入し、出力結果を確認。責務が明確に繋がるよう調整。
+成果物	描画が1本でも出ればOK（描画ルート通過の可視化）
+
+📘 Phase 4A11E-3：ファイル構成と命名の正式統一（統合版準拠）
+項目	内容
+目的	統合版アーキテクチャに従い、全ファイル・ディレクトリ・モジュールの命名と構造を整理
+対象	src/ 以下全体（各種 manager.js や core/ 配下など）
+作業内容	統合案リネームマップ v1.0 に従い、ファイルの移動・リネーム・再配置を行う。
+成果物	Git上での完全一致（旧名を全て排除）
+
+📘 Phase 4A11E-4：UI層と状態管理の責務分離（Controller / Store方式）
+項目	内容
+目的	UIイベント処理（Controller）と状態保持（Store）を分離し、テストしやすい設計に
+対象	tool-manager.js, pen-settings-manager.js, color-manager.js, layer-manager.js
+作業内容	ファイルを Store / Actions / Panel / Controller に分離。責務記載＋テストコードを用意。
+成果物	ToolStore, PenSettingsPanel, ColorController 等が責任を持つ構造の実装
+
+📘 Phase 4A11E-5：描画周辺の責務統合とUI連携（再描画とブラシ設定など）
+項目	内容
+目的	ペンの描画、ツール切り替え、ブラシ設定など、UI→描画命令ルートを確立
+対象	CanvasInteraction.js, DrawingEngine.js, WebGLRenderer.js, 各Store
+作業内容	UIイベント → 状態読み取り → 描画命令発行 までが連結される構造を設計・実装
+成果物	マウス/ペン操作で、ブラシ・色・サイズが反映された描画ができる状態にする
