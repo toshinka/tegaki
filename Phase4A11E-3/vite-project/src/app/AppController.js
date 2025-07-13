@@ -1,0 +1,91 @@
+import { Layer } from '../features/layers/Layer.js';
+import { LayerStore } from '../features/layers/LayerStore.js';
+import { ToolStore } from '../features/tools/ToolStore.js';
+import { HistoryStore } from '../features/history/HistoryStore.js';
+import { StorageService } from '../data/StorageService.js';
+import { WebGLRenderer } from '../engine/WebGLRenderer.js';
+import { CanvasViewport } from '../engine/CanvasViewport.js';
+import { CanvasInteraction } from '../features/canvas/CanvasInteraction.js';
+import { UIController } from '../ui/UIController.js';
+import { LayerActions } from '../features/layers/LayerActions.js';
+import { ToolActions } from '../features/tools/ToolActions.js';
+import { ShortcutHandler } from '../events/ShortcutHandler.js';
+
+/**
+ * [クラス責務] AppController.js
+ * 目的：アプリケーション全体を統括し、各モジュール（Store, Engine, Service, UI）の初期化と連携を行う。
+ */
+export class AppController {
+    constructor() {
+        this.init();
+    }
+
+    async init() {
+        console.log("🛠️ AppController: 初期化を開始します...");
+        const canvas = document.getElementById('drawingCanvas');
+        if (!canvas) {
+            alert("致命的なエラー: 描画対象のCanvas要素が見つかりません。");
+            return;
+        }
+
+        // --- 状態管理 (Stores) ---
+        const layerStore = new LayerStore(Layer, canvas.width, canvas.height);
+        const toolStore = new ToolStore();
+        const historyStore = new HistoryStore({ layerStore });
+
+        // --- 外部連携 (Services) ---
+        const storageService = new StorageService();
+
+        // --- 描画エンジン (Engine) ---
+        const renderer = new WebGLRenderer(canvas);
+        if (!renderer.isInitialized()) {
+             alert("お使いのブラウザはWebGLをサポートしていないか、有効になっていません。");
+             return;
+        }
+        const viewport = new CanvasViewport(canvas, renderer);
+
+        // --- ユーザー操作のロジック (Actions) ---
+        const layerActions = new LayerActions(layerStore, viewport, historyStore);
+        const toolActions = new ToolActions(toolStore);
+
+        // --- 入力処理 (Handlers) ---
+        const interaction = new CanvasInteraction(canvas, {
+            layerStore, toolStore, historyStore, viewport, layerActions, toolActions
+        });
+        
+        // --- UIの統括 (UI Controller) ---
+        new UIController({
+            toolStore, layerStore, historyStore, viewport, layerActions, toolActions
+        });
+        
+        // --- ショートカット処理 (Handler) ---
+        new ShortcutHandler({
+            historyStore, viewport, toolActions, layerActions, interaction
+        });
+
+        // --- 描画完了時のデータ保存 ---
+        interaction.onDrawEnd = async (layer) => {
+            if (!layer) return;
+            await storageService.saveLayer(layer);
+        };
+        
+        // --- 起動時のデータ読み込み ---
+        console.log("💾 IndexedDBからレイヤーデータの復元を試みます...");
+        const storedLayers = await storageService.loadLayers(canvas.width, canvas.height, Layer);
+
+        if (storedLayers && storedLayers.length > 0) {
+            layerStore.setLayers(storedLayers);
+            console.log(`✅ ${storedLayers.length}件のレイヤーをDBから復元しました。`);
+        } else {
+            console.log("DBにデータがないため、初期レイヤーを作成します。");
+            await layerActions.setupInitialLayers();
+        }
+
+        // --- 初期状態の設定と描画 ---
+        layerStore.notify();
+        viewport.renderAllLayers(layerStore.getLayers());
+        historyStore.saveState();
+
+        console.log("✅ AppController: アプリケーションの初期化が完了しました。");
+    }
+}

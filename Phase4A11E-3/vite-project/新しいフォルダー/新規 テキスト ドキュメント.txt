@@ -1,0 +1,7 @@
+📌 提案する対応内容の例（抜粋）
+旧ファイル名	          新ファイル名                               / 移設先	理由
+shortcut-manager.js	events/ShortcutHandler.js	        入力イベント処理責任を明確化
+toolset.js	        features/tools/ToolActions.js に統合	単機能を責務別に整理しやすくなる
+layer-manager.js	features/layers/LayerStore.js 他	状態管理と処理分離により今後の拡張が容易に
+db-indexed.js    	data/StorageService.js       	        データ保存系を1本化
+transform-utils.js	utils/Transform.js	                他のMathUtilsとの整合性を取るため

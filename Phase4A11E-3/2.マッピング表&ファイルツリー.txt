@@ -33,8 +33,20 @@ UI部品 → components/XXXPanel.js
 
 
 ✅ 新ファイルツリー（命名規則 v2.0準拠・A案ベース）
-bash
-コードをコピーする
+
+
+vite-project/
+│
+├ index.html
+├── package.json  
+├── package-lock.json  
+├── node_modules/           
+│ 　  ├ vite/              
+│ 　  ├ gl-matrix/
+│ 　  ├ twgl.js/
+│  　 ├ dexie/
+│   　├　……
+│ 
 src/
 │
 ├─ main.js                         # 🏁 アプリケーションの起点
