@@ -51,6 +51,7 @@ vite-project/
 │ 　  ├ gl-matrix/
 │ 　  ├ twgl.js/
 │  　 ├ dexie/
+│  　 ├ tweakpane/
 │   　├　……
 │
 └ src/
