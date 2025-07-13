@@ -1,87 +1,48 @@
-📘 Phase 4A11D-8j3 指示書 ver.1.1（8jベース）
-🎯 目的
-Phase 4A11D-8j で描画処理が到達していない／描画されない問題を解消
+📘【指示書】Phase 4A11E-1：描画命令構造と責務の明確化
 
-ログ出力および仮描画命令により、描画経路の可視化と動作確認を行う
+🧭 フェーズの目的：
+本フェーズでは、描画処理の構造を明文化・視覚化します。
+コードの修正は行わず、「各モジュールが何を担当しているか」をコメントとして明示してください。
 
-tool-manager.js はシンプルな状態（現行）を維持し、canvas-manager.js 中心に修正
+🎯 対象ファイル：
+- src/core/canvas-manager.js
+- src/core/rendering/rendering-bridge.js
+- src/core/rendering/webgl-engine.js
+- src/core/drawing-engine.js
 
-📁 対象ファイル
-src/core/canvas-manager.js
+📝 作業内容：
+1. ファイル冒頭に「そのモジュールの責務」をコメントで明記
+2. 各主要関数の直上に、以下の情報をコメントで追加してください：
 
-src/core/rendering/rendering-bridge.js
+【記載例】
+```js
+// [関数責務] drawCircle: 座標・サイズ・色からGPU描画指示を出す
+// @param centerX {number} 描画中心X座標
+// @param centerY {number} 描画中心Y座標
+// @param radius {number} 半径
+// @param color {object} RGBA構造
+// @param isEraser {boolean} 消しゴム動作
+// @param layer {Layer} 対象レイヤー
+⚠️注意事項：
 
-src/core/rendering/webgl-engine.js
+コードのロジックは一切変更しないでください（関数追加・削除・引数変更NG）
 
-🛠️ 作業内容
-✅ 1. tool-manager.js の責務を「イベント検知と情報取得」に限定
-実施内容：
-ポインタイベント（pointerdown, pointermove, pointerup）の登録
+コメントだけで構造を可視化することが目的です
 
-getCurrentTool()、getCurrentColor()、getCurrentSize() を通じた描画情報の取得
+ファイル単位で「責務が明瞭である」ことが次フェーズ（E-2）でのGPU描画統合に直結します
 
-描画ロジック（例：圧力補正、描画ループ）は持たず canvasManager.drawLine(...) を呼ぶのみ
+✅ 期待成果物：
 
-js
+コメントにより描画命令の流れが把握可能なコード4本
+
+各関数が「誰に呼ばれ、何をして、何を返すか」が分かる状態
+
+以上です。差し替え不要で上書き対応可能です。
+
+yaml
 コピーする
 編集する
-canvasManager.drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, pressureFunc, activeLayer);
-✅ 2. canvas-manager.js に drawLine() / drawCircle() を定義し中継ロジックを実装
-内容：
-this.renderingBridge.drawLine(...) を中で呼び出し
 
-ログを挿入して動作確認可能に
+このまま貼り付けて渡せる形式にしてあります。必要に応じて`.txt`化も可能です。
 
-layerManager.getActiveLayer() により描画レイヤーを取得
-
-✅ 3. エラー修正：active 等の未定義変数は使用禁止
-レイヤーは必ず layerManager.getActiveLayer() などで取得
-
-サイズ・色は penSettingsManager.getCurrentX() で取得
-
-変数の明示化・未定義チェックを徹底
-
-✅ 成功判定
-マウス／ペン操作で線が描けるようになる
-
-ペンサイズ・色の設定が反映される
-
-Consoleに「CanvasManager.drawLine」などのログが出力される
-
-エラー active is not defined が解消される
-
-🧠 補足
-項目	処理対象	備考
-筆圧補正	calculatePressureSize(size, pressure)	関数渡しで対応、tool-manager 側で保持
-ツール判定	toolManager.getCurrentTool()	"pen" or "eraser" など
-UI制御	Tweakpane等	Phase 4A12で復活予定
-
-🔄 Phase接続構成
-plaintext
-コピーする
-編集する
-[ユーザー操作]
-↓
-tool-manager.js
-（操作検知＋描画情報取得）
-↓
-canvas-manager.js
-（描画中継／レイヤー処理／ログ）
-↓
-rendering-bridge.js → WebGLEngine
-（GPU描画実行）
-↓
-renderToDisplay()
-✅ 今後の流れ
-4A11D-8j3 FIX → 「描けること」を確認
-
-次：Phase 4A11E で合成最適化・twgl構造整理
-
-
-
-✅ 特記事項（更新分）
-tool-manager.js は簡素構成（ツール変更のみ）として維持
-
-canvas-manager.js が pointerdown/move/up を担当し、描画ロジックも保持
-
-Phase 4A11E での整理まではこの構造で問題なし
+---
