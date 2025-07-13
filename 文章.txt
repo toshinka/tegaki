@@ -18,12 +18,16 @@ GPTくんが作った、指示書に従って改修してください。
     <script type="module" src="/src/core/core-engine.js"></script>
 
 
+ブラウザお絵描きツールをコーディング初心者が無料AI達にコーディングを全委任して、どれだけ作れるかの実験プロジェクトです。
+今やってるのはファイル名や関数・変数名等が曖昧だったり役割が分散してたりで、こういったAIに依頼して作業する際にお互いわかりにくくなってるため、名称とかを変える作業をしてる途中のものになります。twgl.js化しながらの役割分担作業がクロスしてる途中感じです。
+GPTくんが作った、指示書に従って改修してください
+尚、私はコーディング赤ちゃんなので、一括コピペで差し替えができる提出物を望みます(´・ω・`)
+
+
+
+
 API定義の真偽チェック 
 リファクタリング
-
-
-※現在の構造分析や進行には影響を与えたくない雑談／補足です。
-
 
 変数・関数・クラス名などを記載した表
 （シンボルテーブル・API仕様書・インターフェース定義・データ辞書とか言うもの？）
@@ -73,6 +77,8 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-1/2
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-1/2-2.%E3%83%97%E3%83%AD%E3%82%B8%E3%82%A7%E3%82%AF%E3%83%88%E5%86%8D%E6%A7%8B%E6%88%90%20%E6%8C%87%E7%A4%BA%E6%9B%B8%E4%B8%80%E5%BC%8F%20(Phase%204A11E%E3%82%B7%E3%83%AA%E3%83%BC%E3%82%BA).txt
 3.新旧ファイルツリーの比較.txt
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-1/3.%E6%96%B0%E6%97%A7%E3%83%95%E3%82%A1%E3%82%A4%E3%83%AB%E3%83%84%E3%83%AA%E3%83%BC%E3%81%AE%E6%AF%94%E8%BC%83.txt
+！Phase 4A11E-1（旧ファイル構成から新ファイル構成へのマッピング） .txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-2/%EF%BC%81Phase%204A11E-1%EF%BC%88%E6%97%A7%E3%83%95%E3%82%A1%E3%82%A4%E3%83%AB%E6%A7%8B%E6%88%90%E3%81%8B%E3%82%89%E6%96%B0%E3%83%95%E3%82%A1%E3%82%A4%E3%83%AB%E6%A7%8B%E6%88%90%E3%81%B8%E3%81%AE%E3%83%9E%E3%83%83%E3%83%94%E3%83%B3%E3%82%B0%EF%BC%89%20.txt
 
 注意事項としての参考資料は下記になります。
 ⚠️ AIが“自分からはあまり言わない”けど超重要な懸念リスト.txt
@@ -82,6 +88,8 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E2%9A%A0%EF%B
 ⚠️司令AI向け活用指示書 v1.0.txt
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E2%9A%A0%EF%B8%8F%E5%8F%B8%E4%BB%A4AI%E5%90%91%E3%81%91%E6%B4%BB%E7%94%A8%E6%8C%87%E7%A4%BA%E6%9B%B8%20v1.0.txt
 
-最初のE-1とE-2は全体を把握できるここで作業し、残りについてはここは司令塔として指示書を発行し、他AIにコーディングを任せる形にしたいと思います。
-この次のターンで、改修する元のファイルを提示します。
+ファイル構造と命名規則の改善提案.txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E3%83%95%E3%82%A1%E3%82%A4%E3%83%AB%E6%A7%8B%E9%80%A0%E3%81%A8%E5%91%BD%E5%90%8D%E8%A6%8F%E5%89%87%E3%81%AE%E6%94%B9%E5%96%84%E6%8F%90%E6%A1%88.txt
+プロジェクトの懸念点レビュー.txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E3%83%97%E3%83%AD%E3%82%B8%E3%82%A7%E3%82%AF%E3%83%88%E3%81%AE%E6%87%B8%E5%BF%B5%E7%82%B9%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC.txt
 
