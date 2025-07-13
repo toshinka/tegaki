@@ -1,0 +1,106 @@
+ファイルツリーの比較 (Before -> After)
+
+
+Before: 現在のファイル構造
+
+
+vite-project/
+│
+├ index.html
+├── package.json  
+├── package-lock.json  
+├── node_modules/           
+│ 　  ├ vite/              
+│ 　  ├ gl-matrix/
+│ 　  ├ twgl.js/
+│  　 ├ dexie/
+│   　├　……
+│ 
+└ src/
+   ├ core/
+   │  ├ core-engine.js
+   │  ├ canvas-manager.js
+   │  ├ drawing-engine.js
+   │  ├ layer.js
+   │  └ rendering/
+   │     ├ rendering-bridge.js 
+   │     └ webgl-engine.js
+   ├ db/
+   │  └ db-indexed.js
+   ├ layer-manager/
+   │  └ layer-manager.js
+   ├ tools/
+   │  └ toolset.js
+   └ ui/
+      ├ ui-manager.js
+      ├ tool-manager.js
+      ├ shortcut-manager.js
+      ├ pen-settings-manager.js
+      └ color-manager.js
+
+
+After: 新しいファイル構造
+
+vite-project/
+│
+├ index.html
+├── package.json  
+├── package-lock.json  
+├── node_modules/           
+│ 　  ├ vite/              
+│ 　  ├ gl-matrix/
+│ 　  ├ twgl.js/
+│  　 ├ dexie/
+│  　 ├ tweakpane/
+│   　├　……
+│
+└ src/
+   │
+   ├─ app/
+   │   ├─ App.js              # アプリケーションの起動と全体の統括
+   │   └─ AppState.js         # アプリケーション全体の状態を一元管理
+   │
+   ├─ engine/
+   │   ├─ WebGLRenderer.js    # WebGL描画エンジン（レイヤー合成と最終描画）
+   │   ├─ CanvasViewport.js   # 表示領域の管理（ズーム、パン、回転）
+   │   └─ DrawingEngine.js    # 描画処理の統括（筆圧、線の補間など）
+   │
+   ├─ features/
+   │   ├─ layers/
+   │   │   ├─ Layer.js          # Layerクラスの定義
+   │   │   ├─ LayerStore.js     # レイヤーリストの状態管理
+   │   │   └─ LayerActions.js   # レイヤー操作（add/remove/move/transform）
+   │   │
+   │   ├─ tools/
+   │   │   ├─ PenTool.js        # ペンツールの実装
+   │   │   ├─ EraserTool.js     # 消しゴムツールの実装
+   │   │   ├─ ToolStore.js      # 現在のツールや設定の状態管理
+   │   │   └─ ToolActions.js    # ツール切り替えと設定変更
+   │   │
+   │   ├─ history/
+   │   │   ├─ HistoryStore.js   # Undo/Redoのための状態管理
+   │   │   └─ HistoryActions.js # 履歴操作（undo/redo/saveState）
+   │   │
+   │   └─ canvas/
+   │       ├─ CanvasInteraction.js # マウス/タッチ/ペンの入力処理
+   │       └─ CoordinateSystem.js  # 座標変換とスケール管理
+   │
+   ├─ ui/
+   │   ├─ components/
+   │   │   ├─ LayerPanel.js     # レイヤーパネルのUIコンポーネント
+   │   │   ├─ Toolbar.js        # ツールバーのUIコンポーネント
+   │   │   ├─ ColorPicker.js    # カラーピッカーコンポーネント
+   │   │   └─ PenSettingsPanel.js # ペン設定パネル
+   │   │
+   │   └─ UIController.js       # UI全体のイベントと状態の同期
+   │
+   ├─ data/
+   │   └─ StorageService.js     # IndexedDBとのやり取り
+   │
+   └─ utils/
+       ├─ Transform.js          # 汎用的な変換ユーティリティ
+       ├─ EventUtils.js         # イベント処理ヘルパー
+       └─ MathUtils.js          # 数学計算ユーティリティ
+
+
+---
