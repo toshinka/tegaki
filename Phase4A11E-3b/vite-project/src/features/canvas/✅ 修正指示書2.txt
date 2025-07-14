@@ -1,0 +1,40 @@
+🎯 目的
+document.hasPointerCapture() を使用していたため、TypeError が発生している。
+これは document が hasPointerCapture を持たないためであり、代わりに e.target などの Element に対して使う必要がある。
+
+🛠️ 対象ファイル
+css
+コピーする
+編集する
+src/features/canvas/PointerInteractionHandler.js
+🔍 問題のある箇所
+js
+コピーする
+編集する
+if (e.pointerId && document.hasPointerCapture(e.pointerId)) {
+    document.documentElement.releasePointerCapture(e.pointerId);
+}
+✅ 修正内容
+方法1（基本対応）：
+js
+コピーする
+編集する
+if (e.pointerId && document.documentElement.hasPointerCapture(e.pointerId)) {
+    document.documentElement.releasePointerCapture(e.pointerId);
+}
+方法2（推奨・安全対応）：
+js
+コピーする
+編集する
+const target = e.target;
+if (e.pointerId && target.hasPointerCapture?.(e.pointerId)) {
+    target.releasePointerCapture(e.pointerId);
+}
+?. を使うことで target が Element でない場合にもクラッシュしないようにする。
+
+📌 補足
+hasPointerCapture() / releasePointerCapture() は HTMLElement 専用のメソッド。
+
+document はそれを持たないため、document.hasPointerCapture() は常にエラーとなる。
+
+安全性と移植性を考慮し、e.target を使う書き方が推奨される。

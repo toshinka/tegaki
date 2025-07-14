@@ -176,8 +176,9 @@ export class PointerInteractionHandler {
             }
         }
 
-        if (e.pointerId && document.hasPointerCapture(e.pointerId)) {
-            document.documentElement.releasePointerCapture(e.pointerId);
+        const target = e.target;
+        if (e.pointerId && target.hasPointerCapture?.(e.pointerId)) {
+            target.releasePointerCapture(e.pointerId);
         }
 
         this.isDrawing = false;
