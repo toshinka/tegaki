@@ -1,9 +1,10 @@
 /**
  * [クラス責務] ShortcutHandler.js
  * 目的：キーボードショートカットに関するイベント処理を専門に担当する。
- * 旧shortcut-manager.jsの責務を引き継ぐ。
+ * (変更後クラス名: KeyBindingController)
  */
-export class ShortcutHandler {
+// 変更: ShortcutHandler -> KeyBindingController
+export class KeyBindingController {
     constructor({ historyStore, viewport, toolActions, layerActions, interaction }) {
         this.historyStore = historyStore;
         this.viewport = viewport;
@@ -82,10 +83,11 @@ export class ShortcutHandler {
 
     handleNormalKeys(e) {
         let handled = true;
+        // 変更: setTool -> selectTool (パート3の修正を反映)
         switch (e.key.toLowerCase()) {
-            case 'p': this.toolActions.setTool('pen'); break;
-            case 'e': this.toolActions.setTool('eraser'); break;
-            case 'g': this.toolActions.setTool('bucket'); break;
+            case 'p': this.toolActions.selectTool('pen'); break;
+            case 'e': this.toolActions.selectTool('eraser'); break;
+            case 'g': this.toolActions.selectTool('bucket'); break;
             case 'x': this.toolActions.swapColors(); break;
             case 'd': this.toolActions.resetColors(); break;
             case 'h': this.viewport.flipHorizontal(); break;

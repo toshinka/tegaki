@@ -2,15 +2,17 @@ import Dexie from 'dexie';
 
 /**
  * [クラス責務] StorageService.js
- * [cite_start]目的：IndexedDBとのデータの保存・取得処理を専門に担当する。 [cite: 16]
+ * 目的：IndexedDBとのデータの保存・取得処理を専門に担当する。
+ * (変更後クラス名: PersistentStorage)
  */
-export class StorageService {
+// 変更: StorageService -> PersistentStorage
+export class PersistentStorage {
     constructor() {
         this.db = new Dexie('TegakiToolDatabase');
         this.db.version(1).stores({
             layers: 'id, name, imageData'
         });
-        console.log("✅ StorageService: IndexedDB connection is set up.");
+        console.log("✅ PersistentStorage: IndexedDB connection is set up."); // 変更: StorageService -> PersistentStorage
     }
 
     async saveLayer(layer) {

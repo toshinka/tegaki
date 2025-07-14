@@ -2,14 +2,14 @@ import { Layer } from '../features/layers/LayerFactory.js';
 import { LayerStore } from '../features/layers/LayerStore.js';
 import { ToolStore } from '../features/tools/ToolStore.js';
 import { HistoryStore } from '../features/history/HistoryStore.js';
-import { StorageService } from '../data/StorageService.js';
+import { PersistentStorage } from '../data/StorageService.js';
 import { LayerRendererGL } from '../engine/WebGLRenderer.js'; // 変更: WebGLRenderer -> LayerRendererGL
 import { CanvasViewport } from '../engine/CanvasViewport.js';
 import { CanvasInteraction } from '../features/canvas/CanvasInteraction.js';
 import { UIController } from '../ui/UIController.js';
 import { LayerActions } from '../features/layers/LayerActions.js';
 import { ToolActions } from '../features/tools/ToolActions.js';
-import { ShortcutHandler } from '../events/ShortcutHandler.js';
+import { KeyBindingController } from '../events/ShortcutHandler.js';
 
 /**
  * [クラス責務] AppController.js
@@ -36,7 +36,7 @@ export class AppBootstrap {
         const historyStore = new HistoryStore({ layerStore });
 
         // --- 外部連携 (Services) ---
-        const storageService = new StorageService();
+        const storageService = new PersistentStorage();
 
         // --- 描画エンジン (Engine) ---
         const renderer = new LayerRendererGL(canvas); // 変更: WebGLRenderer -> LayerRendererGL
@@ -61,7 +61,7 @@ export class AppBootstrap {
         });
         
         // --- ショートカット処理 (Handler) ---
-        new ShortcutHandler({
+        new KeyBindingController({
             historyStore, viewport, toolActions, layerActions, interaction
         });
 
