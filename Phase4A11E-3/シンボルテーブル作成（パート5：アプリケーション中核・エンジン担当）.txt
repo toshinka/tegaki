@@ -1,0 +1,13 @@
+▼ パート5：データ永続化・イベント・ユーティリティ担当
+
+src/data/StorageService.js
+
+src/events/InputHandler.js
+
+src/events/ShortcutHandler.js
+
+src/utils/TransformUtils.js
+
+src/utils/EventUtils.js
+
+src/utils/MathUtils.js
