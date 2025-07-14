@@ -1,0 +1,114 @@
+🎯 統合版シンボルテーブル（Phase 4A11E-3 対応・命名整理済）
+🧩 Part 1：アプリケーション中核・エンジン担当
+/main.js
+種別	名称	引数	戻り値	説明
+function	main()	-	void	アプリのエントリーポイント。AppControllerを起動。
+
+/app/AppController.js
+種別	名称	引数	戻り値	説明
+class	AppController	-	-	アプリの全体統括と初期化を行う中心クラス
+method	initialize()	-	void	アプリの初期化、状態ロード、描画開始
+
+/engine/WebGLRenderer.js
+種別	名称	引数	戻り値	説明
+class	WebGLRenderer	canvas	-	WebGL2を使用した低レベルの描画
+method	initialize()	-	void	シェーダ・バッファなど初期化
+method	clear()	-	void	画面のクリア処理
+method	drawCircle()	x, y, r, color	void	円の描画
+method	drawLine()	x0, y0, x1, y1, color	void	線の描画
+method	compositeLayers()	-	void	レイヤーを合成し出力する
+
+/engine/DrawingEngine.js
+種別	名称	引数	戻り値	説明
+class	DrawingEngine	renderer	-	ペン描画や補間の制御
+method	startStroke()	x, y, settings	void	線の描き始め
+method	continueStroke()	x, y	void	線を描き続ける
+method	endStroke()	-	void	線の描画終了処理
+
+🖌️ Part 2：レイヤー機能・履歴機能担当
+/features/layers/LayerStore.js
+種別	名称	引数	戻り値	説明
+class	LayerStore	-	-	レイヤーリストと選択状態を管理
+method	addLayer()	Layer	void	新規レイヤーを追加
+method	removeLayer(id)	id	void	指定レイヤーを削除
+method	getActiveLayer()	-	Layer	現在アクティブなレイヤー取得
+
+/features/layers/LayerActions.js
+種別	名称	引数	戻り値	説明
+function	toggleVisibility(id)	id	void	表示・非表示切替
+function	moveLayer(from, to)	index	void	順番変更
+function	mergeLayers(id1, id2)	id	Layer	レイヤー合成処理
+
+/features/history/HistoryStore.js
+種別	名称	引数	戻り値	説明
+class	HistoryStore	-	-	undo/redo履歴管理
+method	saveState()	state	void	状態を履歴に保存
+method	undo()	-	void	一手戻す
+method	redo()	-	void	一手進める
+
+🧰 Part 3：ツール機能・キャンバス操作担当
+/features/tools/ToolStore.js
+種別	名称	引数	戻り値	説明
+class	ToolStore	-	-	現在のツールと設定を保持
+method	setTool(name)	toolName	void	ツール変更
+method	getTool()	-	string	現在のツール取得
+
+/features/tools/ToolActions.js
+種別	名称	引数	戻り値	説明
+function	changeBrushSize(size)	size	void	ペンの太さ変更
+function	changeColor(color)	color	void	色変更
+function	toggleEraser()	-	void	消しゴム切り替え
+
+/features/canvas/CanvasInteraction.js
+種別	名称	引数	戻り値	説明
+class	CanvasInteraction	-	-	PointerEventを処理し、描画と連携
+method	onPointerDown()	event	void	押下開始処理
+method	onPointerMove()	event	void	移動中処理
+method	onPointerUp()	event	void	離した時の処理
+
+🎨 Part 4：UI関連担当
+/ui/UIController.js
+種別	名称	引数	戻り値	説明
+class	UIController	-	-	UI全体を制御
+method	bindEvents()	-	void	UIのイベント登録
+method	update()	state	void	状態に応じてUI更新
+
+/ui/components/*.js
+ファイル	主な内容	説明
+Toolbar.js	コンポーネント	ツール切替ボタン
+PenSettingsPanel.js	コンポーネント	ペンの太さ・透明度などのUI
+ColorPicker.js	コンポーネント	色の選択 UI
+LayerPanel.js	コンポーネント	レイヤーの一覧と操作 UI
+
+🧩 Part 5：データ保存・ユーティリティ担当
+/data/StorageService.js
+種別	名称	引数	戻り値	説明
+class	StorageService	-	-	IndexedDBのラッパー
+method	initializeDB()	-	Promise<void>	データベース初期化
+method	saveLayer(layer)	Object	Promise<void>	レイヤー保存
+method	loadLayers()	-	Promise<Layer[]>	レイヤー取得
+method	deleteLayer(id)	string	Promise<void>	レイヤー削除
+
+/utils/TransformUtils.js
+種別	名称	引数	戻り値	説明
+function	getCanvasCoordinates	event, canvas	{ x, y }	ポインタ位置 → canvas座標
+function	hexToRgba	hex	[r, g, b, a]	HEX → RGBA
+function	transformWorldToLocal	mat4, vec2	vec2	座標変換
+function	isValidMatrix	matrix	boolean	行列の正当性チェック
+
+/events/ShortcutHandler.js
+種別	名称	引数	戻り値	説明
+class	ShortcutHandler	-	-	キーボードイベント処理
+method	bindShortcuts()	-	void	登録
+method	handleKeyDown(event)	event	void	処理
+method	unbindShortcuts()	-	void	解除
+
+🏁 命名原則の明文化（抜粋）
+パターン	用途例	説明
+xxxController.js	UIやアプリ全体の統括	状態制御の中心
+xxxStore.js	状態保持	現在の状態や設定保持
+xxxActions.js	操作・切替処理	UIや機能呼び出し
+xxxEngine.js	ロジック実行	描画・補間など
+xxxRenderer.js	描画	WebGLやCanvas
+xxxHandler.js	イベント処理	キー・ポインタ対応
+❌ xxxManager.js	❌禁止	曖昧な責務命名のため排除

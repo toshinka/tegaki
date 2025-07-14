@@ -1,0 +1,41 @@
+【AI作業指示書】旧構成から新構成へのコード修正作業
+🎯 目的
+既存のJavaScriptプロジェクトを、Phase4A11E-3 構成および命名ルールに準拠させるためのリファクタリングを行います。
+
+🔍 参考資料
+新構成に準拠したシンボル一覧
+シンボルテーブル作成（パート1：アプリケーション中核・エンジン担当）.txt
+
+
+
+🛠️ 作業内容
+✅ ステップ 1：インポートパスの修正
+すべての import ... from './layer.js' のような記述を、以下のように最新ファイル名に合わせて修正します：
+
+diff
+コピーする
+編集する
+- import { createLayer } from './layer.js';
++ import { createLayer } from './LayerFactory.js';
+✅ ステップ 2：クラス名・関数名の修正
+以下の旧シンボルを、新しい推奨名に差し替えます。部分一致による一括置換は避け、意味が通るか確認の上で修正してください。
+
+旧シンボル名	新シンボル名
+AppController	AppRoot
+DrawingEngine	StrokeRenderer
+WebGLRenderer	LayerRendererGL
+CanvasInteraction	PointerInteractionHandler
+UIController	UILayoutManager
+
+✅ ステップ 3：コメントと役割記述の見直し
+// xxxクラスの役割は... のような説明コメントが古い構成のままの場合は、新しい命名に合った説明に修正してください。
+
+✅ ステップ 4：動作確認
+変更後、コンソール上でエラーが出ないか確認し、修正が完了していることを検証します。特に AppRoot の起動と LayerFactory 経由のレイヤー生成が通るかに注意してください。
+
+⚠️ 注意点
+layer.js → LayerFactory.js はファイル名も大小文字含めて完全一致に変更
+
+変更後は旧ファイルの残骸（layer.jsなど）を削除すること
+
+未使用の旧インポートが残っていないかを確認してください

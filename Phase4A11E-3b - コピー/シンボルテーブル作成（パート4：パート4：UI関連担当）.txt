@@ -1,0 +1,128 @@
+▼ パート4：UI関連担当
+
+src/ui/UIController.js
+
+src/ui/components/LayerPanel.js
+
+src/ui/components/Toolbar.js
+
+src/ui/components/ColorPicker.js
+
+src/ui/components/PenSettingsPanel.js
+
+
+はい、承知いたしました。
+それでは指示書に基づき、**「パート4：UI関連担当」**のシンボルテーブルを作成します。
+
+シンボルテーブル（パート4：UI関連担当）
+◆
+ファイル名　　　　src/ui/UIController.js
+シンボル名　　　　UIController
+種別　　　　　　　Class
+役割・処理の概要　すべてのUIコンポーネント（ツールバー、レイヤーパネル等）を初期化し、統括する。各コンポーネントに必要なStoreやActionsを渡す。
+変更案　　　　　　UIRoot
+備考　　　　　　　UI層の司令塔。UIの起点や統括の位置づけに焦点。Controllerより軽量で、今後のUI分割にも耐えうる柔軟性あり。
+
+◆
+ファイル名　　　　src/ui/UIController.js
+シンボル名　　　　constructor
+種別　　　　　　　Method
+役割・処理の概要　各種UIコンポーネントをインスタンス化する。各コンポーネントには、操作に必要なActionsと、状態の購読に必要なStoreを渡す。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/ui/components/LayerPanel.js
+シンボル名　　　　LayerPanel
+種別　　　　　　　Class
+役割・処理の概要　レイヤーの一覧表示と操作（追加、削除、選択など）を行うUIコンポーネント。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/ui/components/LayerPanel.js
+シンボル名　　　　constructor
+種別　　　　　　　Method
+役割・処理の概要　LayerStoreを購読し、状態が変更されたらrenderメソッドを呼び出すように設定する。また、UIイベント（クリック等）とLayerActionsを結びつける。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/ui/components/LayerPanel.js
+シンボル名　　　　render
+種別　　　　　　　Method
+役割・処理の概要　LayerStoreから最新のレイヤーリストを取得し、HTMLを再構築して画面に表示する。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/ui/components/LayerPanel.js
+シンボル名　　　　_bindEvents
+種別　　　　　　　Method
+役割・処理の概要　「新規レイヤー」ボタンのクリックなどのDOMイベントに対する処理を定義する。
+変更案　　　　　　bindEventListeners
+備考　　　　　　　_bindEventsでも通じるが、より明確な命名。
+
+◆
+ファイル名　　　　src/ui/components/Toolbar.js
+シンボル名　　　　Toolbar
+種別　　　　　　　Class
+役割・処理の概要　ツール選択ボタン（ペン、消しゴムなど）を表示するUIコンポーネント。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/ui/components/Toolbar.js
+シンボル名　　　　constructor
+種別　　　　　　　Method
+役割・処理の概要　ToolStoreを購読してアクティブなツールをUIに反映させ、各ツールボタンのクリックイベントとToolActionsを結びつける。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/ui/components/ColorPicker.js
+シンボル名　　　　ColorPicker
+種別　　　　　　　Class
+役割・処理の概要　ペン色を選択するためのUIコンポーネント。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/ui/components/ColorPicker.js
+シンボル名　　　　this.colorInput
+種別　　　　　　　Property
+役割・処理の概要　色の選択に使われる<input type="color">のDOM要素。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/ui/components/ColorPicker.js
+シンボル名　　　　constructor
+種別　　　　　　　Method
+役割・処理の概要　ToolStoreを購読して現在のペン色をUIに反映させ、色の変更イベントとToolActions.changePenColorを結びつける。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/ui/components/PenSettingsPanel.js
+シンボル名　　　　PenSettingsPanel
+種別　　　　　　　Class
+役割・処理の概要　ペンツールの設定（ブラシサイズなど）を変更するためのUIコンポーネント。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/ui/components/PenSettingsPanel.js
+シンボル名　　　　this.sizeSlider
+種別　　　　　　　Property
+役割・処理の概要　ブラシサイズの変更に使われる<input type="range">のDOM要素。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/ui/components/PenSettingsPanel.js
+シンボル名　　　　constructor
+種別　　　　　　　Method
+役割・処理の概要　ToolStoreを購読して現在のブラシサイズをUIに反映させ、スライダーの変更イベントとToolActions.changePenSizeを結びつける。
+変更案　　　　　　(変更なし)
+備考
