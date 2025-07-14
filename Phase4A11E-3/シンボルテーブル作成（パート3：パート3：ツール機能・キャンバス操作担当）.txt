@@ -1,0 +1,137 @@
+▼ パート3：ツール機能・キャンバス操作担当
+
+src/features/tools/PenTool.js
+
+src/features/tools/EraserTool.js
+
+src/features/tools/ToolStore.js
+
+src/features/tools/ToolActions.js
+
+src/features/canvas/CanvasInteraction.js
+
+src/features/canvas/CoordinateSystem.js
+
+
+◆
+ファイル名　　　　src/features/tools/ToolStore.js
+シンボル名　　　　ToolStore
+種別　　　　　　　Class
+役割・処理の概要　ペンや消しゴムなどのツール状態を一元管理する。現在選択中のツール、色、ブラシサイズなどを保持する。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/features/tools/ToolStore.js
+シンボル名　　　　this.activeTool
+種別　　　　　　　Property
+役割・処理の概要　現在選択されているツールの種類（例: 'pen', 'eraser'）を文字列で保持する。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/features/tools/ToolStore.js
+シンボル名　　　　this.penColor
+種別　　　　　　　Property
+役割・処理の概要　ペンツールの色を16進数カラーコード（例: '#000000'）で保持する。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/features/tools/ToolStore.js
+シンボル名　　　　this.penSize
+種別　　　　　　　Property
+役割・処理の概要　ペンツールのブラシサイズ（太さ）をピクセル単位で保持する。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/features/tools/ToolStore.js
+シンボル名　　　　getBrush
+種別　　　　　　　Method
+役割・処理の概要　現在のツール設定（色、サイズなど）に基づいて、描画に使用するブラシ情報をオブジェクトとして返す。
+変更案　　　　　　getCurrentBrush
+備考　　　　　　　DrawingEngineが描画を行う際にこの情報を参照する。getよりもgetCurrentの方が状態の取得であることが明確。
+
+◆
+ファイル名　　　　src/features/tools/ToolActions.js
+シンボル名　　　　ToolActions
+種別　　　　　　　Class
+役割・処理の概要　ユーザーのツール操作（ユースケース）をまとめたクラス。UIからのイベントを受け取り、ToolStoreの状態を変更する。
+変更案　　　　　　(変更なし)
+備考　　　　　　　UIとToolStoreを繋ぐ役割。
+
+◆
+ファイル名　　　　src/features/tools/ToolActions.js
+シンボル名　　　　selectTool
+種別　　　　　　　Method
+役割・処理の概要　指定されたツールを選択状態にする。ToolStoreのsetActiveToolを呼び出す。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/features/tools/ToolActions.js
+シンボル名　　　　changePenColor
+種別　　　　　　　Method
+役割・処理の概要　ペンツールの色を変更する。ToolStoreのsetPenColorを呼び出す。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/features/canvas/CanvasInteraction.js
+シンボル名　　　　CanvasInteraction
+種別　　　　　　　Class
+役割・処理の概要　キャンバスへのすべてのユーザー入力（マウス、ペン）を検知し、解釈する責務を持つ。
+変更案　　　　　　InputHandler
+備考　　　　　　　責務が「入力処理」に特化しているため、命名規則上Handlerがより適切。ただしCanvasInteractionでも意図は通じる。
+
+◆
+ファイル名　　　　src/features/canvas/CanvasInteraction.js
+シンボル名　　　　this.isDrawing
+種別　　　　　　　Property
+役割・処理の概要　現在、描画中（例：マウスボタンが押されている状態）であるかを示す真偽値。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/features/canvas/CanvasInteraction.js
+シンボル名　　　　this.currentToolInstance
+種別　　　　　　　Property
+役割・処理の概要　現在アクティブなツールのインスタンス（PenToolやEraserToolなど）を保持する。
+変更案　　　　　　(変更なし)
+備考
+
+◆
+ファイル名　　　　src/features/canvas/CanvasInteraction.js
+シンボル名　　　　_onPointerDown
+種別　　　　　　　Method
+役割・処理の概要　ポインター（マウス等）が押された時のイベントハンドラ。描画を開始し、DrawingEngineのstartLineなどを呼び出す。
+変更案　　　　　　handlePointerDown
+備考　　　　　　　on始まりよりもhandle始まりの方がイベント処理の意図が明確になる。
+
+◆
+ファイル名　　　　src/features/canvas/CanvasInteraction.js
+シンボル名　　　　_onPointerMove
+種別　　　　　　　Method
+役割・処理の概要　ポインターが移動した時のイベントハンドラ。isDrawingがtrueの場合、DrawingEngineのupdateLineなどを呼び出す。
+変更案　　　　　　handlePointerMove
+備考
+
+◆
+ファイル名　　　　src/features/canvas/CanvasInteraction.js
+シンボル名　　　　_onPointerUp
+種別　　　　　　　Method
+役割・処理の概要　ポインターが離された時のイベントハンドラ。描画を終了し、DrawingEngineのendLineを呼び出し、履歴に状態を保存する。
+変更案　　　　　　handlePointerUp
+備考
+
+【注記】
+
+今回の担当範囲に含まれていた以下のファイルは、ご共有いただいたGitHubのリンク一覧にソースコードがなかったため、解析対象から除外しています。
+
+src/features/tools/PenTool.js
+
+src/features/tools/EraserTool.js
+
+src/features/canvas/CoordinateSystem.js
+
