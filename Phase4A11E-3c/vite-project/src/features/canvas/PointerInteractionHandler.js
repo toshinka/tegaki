@@ -95,7 +95,7 @@ export class PointerInteractionHandler {
         if (tool === 'bucket') {
             this.toolActions.fill(activeLayer, local.x, local.y);
             this.viewport.renderAllLayers(this.layerStore.getLayers());
-            this.historyStore.pushHistory(); // パート2の修正を反映
+            this.historyStore.saveState(); // pushHistory -> saveState に統一
             this.onDrawEnd?.(activeLayer);
             return;
         }
@@ -171,13 +171,14 @@ export class PointerInteractionHandler {
             const activeLayer = this.layerStore.getCurrentLayer();
             if (activeLayer) {
                 this.viewport.syncDirtyRectToImageData(activeLayer, this.viewport.dirtyRect);
-                this.historyStore.pushHistory(); // パート2の修正を反映
+                this.historyStore.saveState(); // pushHistory -> saveState に統一
                 this.onDrawEnd?.(activeLayer);
             }
         }
 
-        if (e.pointerId && document.hasPointerCapture(e.pointerId)) {
-            document.documentElement.releasePointerCapture(e.pointerId);
+        const target = e.target;
+        if (e.pointerId && target.hasPointerCapture?.(e.pointerId)) {
+            target.releasePointerCapture(e.pointerId);
         }
 
         this.isDrawing = false;

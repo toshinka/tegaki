@@ -22,7 +22,7 @@ export class LayerActions {
     // 変更: addLayer -> addNewLayer
     addNewLayer(name) {
         this.layerStore._addLayer(name || `レイヤー ${this.layerStore.getLayers().length + 1}`);
-        this.historyStore.pushHistory(); // 変更: saveState -> pushHistory
+        this.historyStore.saveState();
     }
     
     deleteActiveLayer() {
@@ -30,7 +30,7 @@ export class LayerActions {
         if (confirm('レイヤーを削除しますか？')) {
             this.layerStore._deleteLayer(this.layerStore.activeLayerIndex);
             this.viewport.renderAllLayers(this.layerStore.getLayers());
-            this.historyStore.pushHistory(); // 変更: saveState -> pushHistory
+            this.historyStore.saveState();
         }
     }
     
@@ -44,7 +44,7 @@ export class LayerActions {
             visible: activeLayer.visible,
         });
         this.viewport.renderAllLayers(this.layerStore.getLayers());
-        this.historyStore.pushHistory(); // 変更: saveState -> pushHistory
+        this.historyStore.saveState();
     }
 
     mergeDownActiveLayer() {
@@ -52,7 +52,7 @@ export class LayerActions {
         if (activeIndex > 0) {
             this.layerStore._mergeLayers(activeIndex, activeIndex - 1);
             this.viewport.renderAllLayers(this.layerStore.getLayers());
-            this.historyStore.pushHistory(); // 変更: saveState -> pushHistory
+            this.historyStore.saveState();
         }
     }
 
@@ -73,7 +73,7 @@ export class LayerActions {
             for(let i=0; i < data.length; i++) { data[i] = 0; }
             layer.gpuDirty = true;
             this.viewport.renderAllLayers(this.layerStore.getLayers());
-            this.historyStore.pushHistory(); // 変更: saveState -> pushHistory
+            this.historyStore.saveState();
         }
     }
 }

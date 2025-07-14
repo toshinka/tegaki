@@ -1,0 +1,56 @@
+🔧 修正依頼書：HistoryStore 統一対応（Phase 4A11E）
+対象ファイル
+src/features/layers/LayerActions.js
+
+src/features/canvas/PointerInteractionHandler.js
+
+目的
+HistoryStore の API を pushHistory() → saveState() に統一したため、旧形式を使用している箇所を修正する。
+
+📌 修正内容
+1. LayerActions.js 内のメソッドでの修正
+以下のメソッドで this.historyStore.pushHistory() をすべて this.historyStore.saveState() に置換する：
+
+addNewLayer()
+
+deleteActiveLayer()
+
+duplicateActiveLayer()
+
+mergeDownActiveLayer()
+
+clearActiveLayer()
+
+js
+コピーする
+編集する
+// 修正前（例）
+this.historyStore.pushHistory();
+
+// 修正後
+this.historyStore.saveState();
+2. PointerInteractionHandler.js の handlePointerUp() 内
+同様に以下の1行を修正：
+
+js
+コピーする
+編集する
+// 修正前（行番号例：174）
+this.historyStore.pushHistory();
+
+// 修正後
+this.historyStore.saveState();
+✅ 補足
+HistoryStore.js 内の pushHistory() は削除済みまたは未実装であり、エラー (not a function) を防ぐ目的。
+
+変更後、動作確認として「描画操作後に Undo が効くか」「レイヤー操作の直後に Undo が効くか」などを確認すること。
+
+この指示書を Gでそのまま渡せば、修正の誤差なく対応可能です。
+
+✅ 次の行動案
+優先度順：
+↑の指示書をGEMINI等に渡して、万全なsaveState()化修正をさせる
+
+必要なら、**レイヤー削除が保存されない問題（IndexedDB書き込み漏れ）**に移行
+
+その後で、機能一覧とマッピング表/ファイルツリー/シンボルテーブルの統一生成
