@@ -82,8 +82,8 @@ src/features/canvas/CoordinateSystem.js
 シンボル名　　　　CanvasInteraction
 種別　　　　　　　Class
 役割・処理の概要　キャンバスへのすべてのユーザー入力（マウス、ペン）を検知し、解釈する責務を持つ。
-変更案　　　　　　InputHandler
-備考　　　　　　　責務が「入力処理」に特化しているため、命名規則上Handlerがより適切。ただしCanvasInteractionでも意図は通じる。
+変更案　　　　　　PointerInteractionHandler
+備考　　　　　　　Pointer API対応を主眼に置いた処理なので、正確な役割を反映。イベント名との整合性も◎
 
 ◆
 ファイル名　　　　src/features/canvas/CanvasInteraction.js

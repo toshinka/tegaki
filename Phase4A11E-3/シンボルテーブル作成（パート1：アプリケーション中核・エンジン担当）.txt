@@ -34,8 +34,8 @@ src/engine/CanvasViewport.js
 シンボル名　　　　AppController
 種別　　　　　　　Class
 役割・処理の概要　アプリケーション全体のモジュールを統括するクラス。各コンポーネントの初期化と依存性の注入（DI）を行う。
-変更案　　　　　　(変更なし)
-備考　　　　　　　事実上のアプリケーションの司令塔。
+変更案　　　　　　AppBootstrap
+備考　　　　　　　事実上のアプリケーションの司令塔。アプリの起動・初期化に責任を限定して明示的。UI管理との混同を避ける。
 
 ◆
 ファイル名　　　　src/app/AppController.js
@@ -122,8 +122,9 @@ src/engine/CanvasViewport.js
 シンボル名　　　　WebGLRenderer
 種別　　　　　　　Class
 役割・処理の概要　WebGLを利用したレンダリング処理全般を担当。シェーダー管理、テクスチャの描画など。
-変更案　　　　　　(変更なし)
-備考
+変更案　　　　　　LayerRendererGL
+備考              レイヤー描画専任である点を明確化。GL環境に特化する名称で今後のCanvas対応とも区別可。
+
 
 ◆
 ファイル名　　　　src/engine/WebGLRenderer.js
@@ -154,8 +155,9 @@ src/engine/CanvasViewport.js
 シンボル名　　　　DrawingEngine
 種別　　　　　　　Class
 役割・処理の概要　アクティブなレイヤーの2Dコンテキストに対して、ブラシ（ペンや消しゴム）による線の描画処理を行う。
-変更案　　　　　　(変更なし)
-備考　　　　　　　WebGLではなく、Canvas 2D APIを直接操作する。
+変更案　　　　　　StrokeRenderer
+備考　　　　　　　WebGLではなく、Canvas 2D APIを直接操作する。実質的な線画・筆圧レンダリングを行うため、描画目的にフォーカスした命名。
+
 
 ◆
 ファイル名　　　　src/engine/DrawingEngine.js

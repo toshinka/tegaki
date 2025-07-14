@@ -20,8 +20,8 @@ src/ui/components/PenSettingsPanel.js
 シンボル名　　　　UIController
 種別　　　　　　　Class
 役割・処理の概要　すべてのUIコンポーネント（ツールバー、レイヤーパネル等）を初期化し、統括する。各コンポーネントに必要なStoreやActionsを渡す。
-変更案　　　　　　(変更なし)
-備考　　　　　　　UI層の司令塔。
+変更案　　　　　　UIRoot
+備考　　　　　　　UI層の司令塔。UIの起点や統括の位置づけに焦点。Controllerより軽量で、今後のUI分割にも耐えうる柔軟性あり。
 
 ◆
 ファイル名　　　　src/ui/UIController.js
