@@ -3,7 +3,7 @@ import { LayerStore } from '../features/layers/LayerStore.js';
 import { ToolStore } from '../features/tools/ToolStore.js';
 import { HistoryStore } from '../features/history/HistoryStore.js';
 import { StorageService } from '../data/StorageService.js';
-import { WebGLRenderer } from '../engine/WebGLRenderer.js';
+import { LayerRendererGL } from '../engine/WebGLRenderer.js'; // 変更: WebGLRenderer -> LayerRendererGL
 import { CanvasViewport } from '../engine/CanvasViewport.js';
 import { CanvasInteraction } from '../features/canvas/CanvasInteraction.js';
 import { UIController } from '../ui/UIController.js';
@@ -14,14 +14,16 @@ import { ShortcutHandler } from '../events/ShortcutHandler.js';
 /**
  * [クラス責務] AppController.js
  * 目的：アプリケーション全体を統括し、各モジュール（Store, Engine, Service, UI）の初期化と連携を行う。
+ * (変更後クラス名: AppBootstrap)
  */
-export class AppController {
+// 変更: AppController -> AppBootstrap
+export class AppBootstrap {
     constructor() {
         this.init();
     }
 
     async init() {
-        console.log("🛠️ AppController: 初期化を開始します...");
+        console.log("🛠️ AppBootstrap: 初期化を開始します..."); // 変更: AppController -> AppBootstrap
         const canvas = document.getElementById('drawingCanvas');
         if (!canvas) {
             alert("致命的なエラー: 描画対象のCanvas要素が見つかりません。");
@@ -37,7 +39,7 @@ export class AppController {
         const storageService = new StorageService();
 
         // --- 描画エンジン (Engine) ---
-        const renderer = new WebGLRenderer(canvas);
+        const renderer = new LayerRendererGL(canvas); // 変更: WebGLRenderer -> LayerRendererGL
         if (!renderer.isInitialized()) {
              alert("お使いのブラウザはWebGLをサポートしていないか、有効になっていません。");
              return;
@@ -86,6 +88,6 @@ export class AppController {
         viewport.renderAllLayers(layerStore.getLayers());
         historyStore.saveState();
 
-        console.log("✅ AppController: アプリケーションの初期化が完了しました。");
+        console.log("✅ AppBootstrap: アプリケーションの初期化が完了しました。"); // 変更: AppController -> AppBootstrap
     }
 }

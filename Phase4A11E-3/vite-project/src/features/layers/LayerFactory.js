@@ -3,7 +3,7 @@ import { mat4 } from 'gl-matrix';
 let layerIdCounter = 0;
 
 /**
- * [クラス責務] Layer.js
+ * [クラス責務] LayerFactory.js
  * 目的：単一のレイヤーを表現するデータ構造。
  * 責務：
  * - レイヤー固有のプロパティ（名前, 可視性, 不透明度, ImageData, etc.）を保持する。
