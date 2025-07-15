@@ -74,44 +74,28 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11D-7/2
 
 
 ブラウザお絵描きツールをコーディング初心者が無料AI達にコーディングを全委任して、どれだけ作れるかの実験プロジェクトです。
+私自身はコーディングが出来ずパッチも自身がないため、基本的にはここで他AIへの指示書を作成しコーディングもそっち任せにします。
+ここは司令官的な事と簡単な改修をする場所として、実作業は常に新規に立ち上げたチャットを用いてのClaudeや別GEMINIで行う予定です。
 
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/!PlanningAfterPhase4v2.txt
-やや古いまとめですが全体的にはこんな感じの予定です。
+やや古いまとめですが全体的にはこんな感じの計画です。
 
-Tweakpane UIを導入しようとしたところやはりESM導入を先にしたほうが良いと判断し、ESM移行を先行し更にViteを導入したところです。エラーはでなくなったものの、ペン描画がキャンバスにできないという問題を孕んでる状態なのがPhase4A11D-8j3で、これを直そうとしたところ変数・関数・ファイル名が曖昧だったり役割も分散してるため、なかなか追い込めない状況でした。そこで、ファイル名を分かりやすくしたりシンボルテーブルを作ったりして、よりAIが分かりやすく必要最小限のファイルを受け取るだけで改修できるようにしたいと考えています。その辺りをまとめてるのが下記になります。
-【統合版】プロジェクト改善計画：現状の課題と新アーキテクチャ提案 改訂版.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E3%80%90%E7%B5%B1%E5%90%88%E7%89%88%E3%80%91%E3%83%97%E3%83%AD%E3%82%B8%E3%82%A7%E3%82%AF%E3%83%88%E6%94%B9%E5%96%84%E8%A8%88%E7%94%BB%EF%BC%9A%E7%8F%BE%E7%8A%B6%E3%81%AE%E8%AA%B2%E9%A1%8C%E3%81%A8%E6%96%B0%E3%82%A2%E3%83%BC%E3%82%AD%E3%83%86%E3%82%AF%E3%83%81%E3%83%A3%E6%8F%90%E6%A1%88%20%E6%94%B9%E8%A8%82%E7%89%88.txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-3c/1.%F0%9F%93%98%20Phase%204A11E%20%E5%85%A8%E4%BD%93%E6%8C%87%E7%A4%BA%E6%9B%B8%EF%BC%88ver.2.1%EF%BC%89.txt
+この通りに作業が出来たわけじゃないですが、大凡これに従って作業を行いました。経緯としては、Tweakpane UIを導入しようとしたところやはりESM導入を先にしたほうが良いと判断し、ESM移行を先行し更にViteを導入したところ、エラーはでなくなったもののペン描画がキャンバスにできないという問題を孕んでる状態なので、これを直そうとしたところ変数・関数・ファイル名が曖昧だったり役割も分散してるため、なかなか追い込めない状況でした。そこで、ファイル名を分かりやすくするためのリファイリングを行ったというのが現時点です。
+その際に欠損したファイルや内容もあるかもですが、立ち上げて前とほぼ同じ状態にはなりました。ほぼというのは、ペン描画ができないのに合わせてキャンバスが中央ではなく上の位置に出現する事。トップバーでの回転アイコンを使うとキャンバス２～３くらい下の方を中心として回転をし始める。反転も軸がキャンバスの中央ではなくキャンバスの右側の方を中心軸として反転する事。があります。まだ他に隠れてるかも知れません。
+増やしたレイヤーをその場では削除できるのですが、次に起動したときには削除したことにならずレイヤーが増えたままで出現する事。
+まず状況を把握し、何から手を付けるべきか。また読み込んだ時にファイルを点検し、臭そうな部分をピックアップしてください。
+既知の技術やライブラリを使えば簡単に解決できるよとか、大胆に内部構造を変えたほうが良いとかもあれば提案願います。
 
-こんな工程で作業を進めていく予定です。新しくPhase 4A11Eとなりました。
-1.プロジェクト再構成 指示書一式 (Phase 4A11Eシリーズ).txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-1/1.%20%F0%9F%93%A6%20Phase%204A11E-1%20%E6%8C%87%E7%A4%BA%E6%9B%B8.txt
-2-1.プロジェクト再構成計画書 (Phase 4A11Eシリーズ).txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-1/2-1.%E3%83%97%E3%83%AD%E3%82%B8%E3%82%A7%E3%82%AF%E3%83%88%E5%86%8D%E6%A7%8B%E6%88%90%E8%A8%88%E7%94%BB%E6%9B%B8%20(Phase%204A11E%E3%82%B7%E3%83%AA%E3%83%BC%E3%82%BA).txt
-2-2.プロジェクト再構成 指示書一式 (Phase 4A11Eシリーズ).txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-1/2-2.%E3%83%97%E3%83%AD%E3%82%B8%E3%82%A7%E3%82%AF%E3%83%88%E5%86%8D%E6%A7%8B%E6%88%90%20%E6%8C%87%E7%A4%BA%E6%9B%B8%E4%B8%80%E5%BC%8F%20(Phase%204A11E%E3%82%B7%E3%83%AA%E3%83%BC%E3%82%BA).txt
-3.新旧ファイルツリーの比較.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-1/3.%E6%96%B0%E6%97%A7%E3%83%95%E3%82%A1%E3%82%A4%E3%83%AB%E3%83%84%E3%83%AA%E3%83%BC%E3%81%AE%E6%AF%94%E8%BC%83.txt
-！Phase 4A11E-1（旧ファイル構成から新ファイル構成へのマッピング） .txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-2/%EF%BC%81Phase%204A11E-1%EF%BC%88%E6%97%A7%E3%83%95%E3%82%A1%E3%82%A4%E3%83%AB%E6%A7%8B%E6%88%90%E3%81%8B%E3%82%89%E6%96%B0%E3%83%95%E3%82%A1%E3%82%A4%E3%83%AB%E6%A7%8B%E6%88%90%E3%81%B8%E3%81%AE%E3%83%9E%E3%83%83%E3%83%94%E3%83%B3%E3%82%B0%EF%BC%89%20.txt
 
-注意事項としての参考資料は下記になります。
-⚠️ AIが“自分からはあまり言わない”けど超重要な懸念リスト.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E2%9A%A0%EF%B8%8F%20AI%E3%81%8C%E2%80%9C%E8%87%AA%E5%88%86%E3%81%8B%E3%82%89%E3%81%AF%E3%81%82%E3%81%BE%E3%82%8A%E8%A8%80%E3%82%8F%E3%81%AA%E3%81%84%E2%80%9D%E3%81%91%E3%81%A9%E8%B6%85%E9%87%8D%E8%A6%81%E3%81%AA%E6%87%B8%E5%BF%B5%E3%83%AA%E3%82%B9%E3%83%88.txt
-⚠️ AI実装ガイドライン強化版 - SOLID原則統合.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E2%9A%A0%EF%B8%8F%20AI%E5%AE%9F%E8%A3%85%E3%82%AC%E3%82%A4%E3%83%89%E3%83%A9%E3%82%A4%E3%83%B3%E5%BC%B7%E5%8C%96%E7%89%88%20-%20SOLID%E5%8E%9F%E5%89%87%E7%B5%B1%E5%90%88.txt
+⚠️ 総合AIコーディング規約v2.0.txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E2%9A%A0%EF%B8%8F%20%E7%B7%8F%E5%90%88AI%E3%82%B3%E3%83%BC%E3%83%87%E3%82%A3%E3%83%B3%E3%82%B0%E8%A6%8F%E7%B4%84v2.0.txt
+
 ⚠️司令AI向け活用指示書 v1.0.txt
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E2%9A%A0%EF%B8%8F%E5%8F%B8%E4%BB%A4AI%E5%90%91%E3%81%91%E6%B4%BB%E7%94%A8%E6%8C%87%E7%A4%BA%E6%9B%B8%20v1.0.txt
 
-ファイル構造と命名規則の改善提案.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E3%83%95%E3%82%A1%E3%82%A4%E3%83%AB%E6%A7%8B%E9%80%A0%E3%81%A8%E5%91%BD%E5%90%8D%E8%A6%8F%E5%89%87%E3%81%AE%E6%94%B9%E5%96%84%E6%8F%90%E6%A1%88.txt
-プロジェクトの懸念点レビュー.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E3%83%97%E3%83%AD%E3%82%B8%E3%82%A7%E3%82%AF%E3%83%88%E3%81%AE%E6%87%B8%E5%BF%B5%E7%82%B9%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC.txt
 
-【統合版】プロジェクト改善計画：現状の課題と新アーキテクチャ提案 改訂版
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E3%80%90%E7%B5%B1%E5%90%88%E7%89%88%E3%80%91%E3%83%97%E3%83%AD%E3%82%B8%E3%82%A7%E3%82%AF%E3%83%88%E6%94%B9%E5%96%84%E8%A8%88%E7%94%BB%EF%BC%9A%E7%8F%BE%E7%8A%B6%E3%81%AE%E8%AA%B2%E9%A1%8C%E3%81%A8%E6%96%B0%E3%82%A2%E3%83%BC%E3%82%AD%E3%83%86%E3%82%AF%E3%83%81%E3%83%A3%E6%8F%90%E6%A1%88%20%E6%94%B9%E8%A8%82%E7%89%88.txt
-
-
-それを行ってファイル名を改定しPhase4A11E-3となったのが以下です。まずここまで読み込んでください。
+以下が実装されてるものです。viteを導入した後です。
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-3b/vite-project/index.html
 
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-3b/vite-project/src/main.js
@@ -135,45 +119,33 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-3b/
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-3b/vite-project/src/ui/UIRoot.js
 https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-3b/vite-project/src/utils/TransformUtils.js
 
+ちなみにnode_modulesの中には
+dexie
+gl-matrix
+tweakpane
+twgl.js
+vite
+等があります。
+
+
+https://toshinka.github.io/tegaki/Phase4A11E-3c/vite-project/src/features/canvas/PointerInteractionHandler.js
+https://toshinka.github.io/tegaki/Phase4A11E-3c/vite-project/src/features/layers/LayerActions.js
 
 
 
-
-2.マッピング表&ファイルツリー.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-3/2.%E3%83%9E%E3%83%83%E3%83%94%E3%83%B3%E3%82%B0%E8%A1%A8%26%E3%83%95%E3%82%A1%E3%82%A4%E3%83%AB%E3%83%84%E3%83%AA%E3%83%BC.txt
-
-【AI向け指示書】JavaScriptプロジェクトのシンボルテーブル作成
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-3b/%E3%80%90AI%E5%90%91%E3%81%91%E6%8C%87%E7%A4%BA%E6%9B%B8%E3%80%91JavaScript%E3%83%97%E3%83%AD%E3%82%B8%E3%82%A7%E3%82%AF%E3%83%88%E3%81%AE%E3%82%B7%E3%83%B3%E3%83%9C%E3%83%AB%E3%83%86%E3%83%BC%E3%83%96%E3%83%AB%E4%BD%9C%E6%88%90.txt
-シンボルテーブル作成（パート1：アプリケーション中核・エンジン担当）.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-3b/%E3%82%B7%E3%83%B3%E3%83%9C%E3%83%AB%E3%83%86%E3%83%BC%E3%83%96%E3%83%AB%E4%BD%9C%E6%88%90%EF%BC%88%E3%83%91%E3%83%BC%E3%83%881%EF%BC%9A%E3%82%A2%E3%83%97%E3%83%AA%E3%82%B1%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3%E4%B8%AD%E6%A0%B8%E3%83%BB%E3%82%A8%E3%83%B3%E3%82%B8%E3%83%B3%E6%8B%85%E5%BD%93%EF%BC%89.txt
-シンボルテーブル作成（パート2：レイヤー機能・履歴機能担当）.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-3b/%E3%82%B7%E3%83%B3%E3%83%9C%E3%83%AB%E3%83%86%E3%83%BC%E3%83%96%E3%83%AB%E4%BD%9C%E6%88%90%EF%BC%88%E3%83%91%E3%83%BC%E3%83%882%EF%BC%9A%E3%83%AC%E3%82%A4%E3%83%A4%E3%83%BC%E6%A9%9F%E8%83%BD%E3%83%BB%E5%B1%A5%E6%AD%B4%E6%A9%9F%E8%83%BD%E6%8B%85%E5%BD%93%EF%BC%89.txt
-シンボルテーブル作成（パート3：パート3：ツール機能・キャンバス操作担当）.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-3b/%E3%82%B7%E3%83%B3%E3%83%9C%E3%83%AB%E3%83%86%E3%83%BC%E3%83%96%E3%83%AB%E4%BD%9C%E6%88%90%EF%BC%88%E3%83%91%E3%83%BC%E3%83%883%EF%BC%9A%E3%83%91%E3%83%BC%E3%83%883%EF%BC%9A%E3%83%84%E3%83%BC%E3%83%AB%E6%A9%9F%E8%83%BD%E3%83%BB%E3%82%AD%E3%83%A3%E3%83%B3%E3%83%90%E3%82%B9%E6%93%8D%E4%BD%9C%E6%8B%85%E5%BD%93%EF%BC%89.txt
-シンボルテーブル作成（パート4：パート4：UI関連担当）.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-3b/%E3%82%B7%E3%83%B3%E3%83%9C%E3%83%AB%E3%83%86%E3%83%BC%E3%83%96%E3%83%AB%E4%BD%9C%E6%88%90%EF%BC%88%E3%83%91%E3%83%BC%E3%83%884%EF%BC%9A%E3%83%91%E3%83%BC%E3%83%884%EF%BC%9AUI%E9%96%A2%E9%80%A3%E6%8B%85%E5%BD%93%EF%BC%89.txt
-シンボルテーブル作成（パート5：アプリケーション中核・エンジン担当）.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-3b/%E3%82%B7%E3%83%B3%E3%83%9C%E3%83%AB%E3%83%86%E3%83%BC%E3%83%96%E3%83%AB%E4%BD%9C%E6%88%90%EF%BC%88%E3%83%91%E3%83%BC%E3%83%885%EF%BC%9A%E3%82%A2%E3%83%97%E3%83%AA%E3%82%B1%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3%E4%B8%AD%E6%A0%B8%E3%83%BB%E3%82%A8%E3%83%B3%E3%82%B8%E3%83%B3%E6%8B%85%E5%BD%93%EF%BC%89.txt
 
 
 
 src/app/ApplicationStore.js
 
-
 src/features/history/HistoryActions.js
 
-
 src/features/tools/PenTool.js
-
 src/features/tools/EraserTool.js
-
 src/features/canvas/CoordinateSystem.js
 
-
 src/events/InputHandler.js
-
 src/utils/EventUtils.js
-
 src/utils/MathUtils.js
 
 
