@@ -1,0 +1,31 @@
+{
+  "hash": "371ea8fb",
+  "configHash": "95d02e5f",
+  "lockfileHash": "1e1d80b3",
+  "browserHash": "5acb886c",
+  "optimized": {
+    "gl-matrix": {
+      "src": "../../gl-matrix/esm/index.js",
+      "file": "gl-matrix.js",
+      "fileHash": "b9985086",
+      "needsInterop": false
+    },
+    "twgl.js": {
+      "src": "../../twgl.js/dist/6.x/twgl-full.module.js",
+      "file": "twgl__js.js",
+      "fileHash": "27ca7af0",
+      "needsInterop": false
+    },
+    "dexie": {
+      "src": "../../dexie/import-wrapper.mjs",
+      "file": "dexie.js",
+      "fileHash": "621018ea",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-G3PMV62Z": {
+      "file": "chunk-G3PMV62Z.js"
+    }
+  }
+}

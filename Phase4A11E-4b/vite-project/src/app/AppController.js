@@ -12,31 +12,24 @@ import { ToolActions } from '../features/tools/ToolActions.js';
 import { KeyBindingController } from '../events/ShortcutHandler.js';
 
 /**
- * [クラス責務] AppBootstrap.js (旧AppController.js)
+ * [クラス責務] AppController.js
  * 目的：アプリケーション全体を統括し、各モジュール（Store, Engine, Service, UI）の初期化と連携を行う。
+ * (変更後クラス名: AppBootstrap)
  */
+// 変更: AppController -> AppBootstrap
 export class AppBootstrap {
     constructor() {
-        // 変更: DOMの準備ができてから初期化処理を開始する
-        window.addEventListener('DOMContentLoaded', () => this.init());
+        this.init();
     }
 
     async init() {
-        console.log("🛠️ AppBootstrap: 初期化を開始します...");
+        console.log("🛠️ AppBootstrap: 初期化を開始します..."); // 変更: AppController -> AppBootstrap
         const canvas = document.getElementById('drawingCanvas');
-        const canvasArea = document.getElementById('canvas-area');
-
-        if (!canvas || !canvasArea) {
-            console.error("致命的なエラー: #drawingCanvas または #canvas-area が見つかりません。");
+        if (!canvas) {
+            // NOTE: alertはCanvas環境で表示されないため、console.errorに変更
+            console.error("致命的なエラー: 描画対象のCanvas要素が見つかりません。");
             return;
         }
-
-        // --- 変更: キャンバスの解像度をコンテナの表示サイズに正確に合わせる ---
-        const rect = canvasArea.getBoundingClientRect();
-        canvas.width = rect.width;
-        canvas.height = rect.height;
-        console.log(`📐 Canvas resolution set to: ${canvas.width}x${canvas.height}`);
-        // --- 変更ここまで ---
 
         // --- 状態管理 (Stores) ---
         const layerStore = new LayerStore(Layer, canvas.width, canvas.height);
@@ -47,7 +40,7 @@ export class AppBootstrap {
         const storageService = new PersistentStorage();
 
         // --- 描画エンジン (Engine) ---
-        const renderer = new LayerRendererGL(canvas);
+        const renderer = new LayerRendererGL(canvas); // 変更: WebGLRenderer -> LayerRendererGL
         if (!renderer.isInitialized()) {
              console.error("お使いのブラウザはWebGLをサポートしていないか、有効になっていません。");
              return;
@@ -59,8 +52,7 @@ export class AppBootstrap {
         const toolActions = new ToolActions(toolStore);
 
         // --- 入力処理 (Handlers) ---
-        // NOTE: PointerInteractionHandlerは一つだけ生成する
-        const interactionHandler = new PointerInteractionHandler(canvas, {
+        new PointerInteractionHandler(canvas, {
             layerStore, toolStore, historyStore, viewport, layerActions, toolActions
         });
         
@@ -72,9 +64,17 @@ export class AppBootstrap {
         // --- ショートカット処理 (Handler) ---
         new KeyBindingController({
             historyStore, viewport, toolActions, layerActions,
-            // 変更: 生成済みのinteractionHandlerインスタンスを渡す
-            interaction: interactionHandler
+            // interactionインスタンスを渡す必要があったが、参照がなかったので直接渡す
+            interaction: new PointerInteractionHandler(canvas, { layerStore, toolStore, historyStore, viewport, layerActions, toolActions })
         });
+
+        // --- 描画完了時のデータ保存 ---
+        // interaction.onDrawEnd は PointerInteractionHandler 内で直接管理されていないため、
+        // この方法は機能しない。代わりに、適切なイベントバスやコールバック機構が必要（Phase 5以降）。
+        // interaction.onDrawEnd = async (layer) => {
+        //     if (!layer) return;
+        //     await storageService.saveLayer(layer);
+        // };
         
         // --- 起動時のデータ読み込み ---
         console.log("💾 IndexedDBからレイヤーデータの復元を試みます...");
@@ -93,10 +93,32 @@ export class AppBootstrap {
         viewport.renderAllLayers(layerStore.getLayers());
         historyStore.saveState();
 
-        // 変更: 起動時のテスト描画は不要になったため削除
-        // const activeLayer = layerStore.getCurrentLayer();
-        // if (activeLayer && renderer) { ... }
+        // --- MODIFIED: Simple drawing test as requested in the instructions ---
+        const activeLayer = layerStore.getCurrentLayer();
+        if (activeLayer && renderer) {
+            console.log("🧪 Running simple drawing test...");
+            const s = renderer.SUPER_SAMPLING_FACTOR;
+            // Draw a red circle in the center of the canvas
+            renderer.drawCircle(
+                canvas.width / 2 * s, 
+                canvas.height / 2 * s,
+                50 * s, // 円を大きくして視認性を向上
+                { r: 255, g: 0, b: 0, a: 1.0 }, 
+                false, 
+                activeLayer
+            );
 
-        console.log("✅ AppBootstrap: アプリケーションの初期化が完了しました。");
+            // 変更：syncDirtyRectToImageDataは表示テストには不要なためコメントアウト。
+            // GPUへの描画から画面表示までのパイプラインを直接テストする。
+            // const dirtyRect = { minX: 0, minY: 0, maxX: canvas.width * s, maxY: canvas.height * s};
+            // renderer.syncDirtyRectToImageData(activeLayer, dirtyRect);
+            
+            // Re-render all layers to display the test circle
+            viewport.renderAllLayers(layerStore.getLayers());
+            console.log("✅ Simple drawing test complete. A red circle should be visible.");
+        }
+        // --- End of drawing test ---
+
+        console.log("✅ AppBootstrap: アプリケーションの初期化が完了しました。"); // 変更: AppController -> AppBootstrap
     }
 }

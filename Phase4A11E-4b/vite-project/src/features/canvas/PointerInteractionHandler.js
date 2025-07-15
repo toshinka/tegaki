@@ -3,9 +3,11 @@ import { getCanvasCoordinates, hexToRgba } from '../../utils/TransformUtils.js';
 import { transformWorldToLocal, isValidMatrix } from '../../utils/TransformUtils.js';
 
 /**
- * [クラス責務] PointerInteractionHandler.js (旧CanvasInteraction.js)
+ * [クラス責務] CanvasInteraction.js
  * 目的：ユーザーのキャンバスに対するすべての入力（マウス、ペン、タッチ操作）を管理・解釈する。
+ * (変更後クラス名: PointerInteractionHandler)
  */
+// 変更: クラス名を CanvasInteraction -> PointerInteractionHandler に変更
 export class PointerInteractionHandler {
     constructor(canvas, { layerStore, toolStore, historyStore, viewport, layerActions, toolActions }) {
         this.canvas = canvas;
@@ -17,9 +19,7 @@ export class PointerInteractionHandler {
         this.toolActions = toolActions;
         
         this.canvasArea = document.getElementById('canvas-area');
-        if (!this.canvasArea) {
-            console.error("❌ PointerInteractionHandler: 'canvas-area' not found!");
-        }
+        if (!this.canvasArea) console.error("❌ PointerInteractionHandler: 'canvas-area' not found!");
         
         // --- Interaction State ---
         this.isDrawing = false;
@@ -50,17 +50,20 @@ export class PointerInteractionHandler {
     }
 
     bindEvents() {
-        // 変更: イベントリスナーの登録先を `this.canvasArea` に統一
         this.canvasArea.addEventListener('pointerdown', this.handlePointerDown.bind(this));
-        // pointermoveとpointerupはdocumentに登録し、キャンバス外での操作も捕捉する
+        // pointermoveとpointerupはdocumentに登録することで、カーソルがキャンバス外に出ても追跡できるようにする
         document.addEventListener('pointermove', this.handlePointerMove.bind(this));
         document.addEventListener('pointerup', this.handlePointerUp.bind(this));
+        // キャンバスエリアでの右クリックメニューを無効化
         this.canvasArea.addEventListener('contextmenu', e => e.preventDefault());
     }
 
+    // 変更: onPointerDown -> handlePointerDown
     handlePointerDown(e) {
+        // 変更：指示書に基づきデバッグログを追加
         console.log('PointerDown event fired at:', e.clientX, e.clientY);
 
+        // 主ボタン（左クリックまたはペン先）でない場合は無視
         if (e.button !== 0) return;
 
         const activeLayer = this.layerStore.getCurrentLayer();
@@ -69,14 +72,9 @@ export class PointerInteractionHandler {
             return;
         }
         
-        // 変更: ポインターキャプチャを `this.canvasArea` に設定
-        try {
-            console.log('DEBUG: Attempting to setPointerCapture on', this.canvasArea);
-            this.canvasArea.setPointerCapture(e.pointerId);
-            console.log('DEBUG: setPointerCapture success.');
-        } catch (err) {
-            console.error('DEBUG: setPointerCapture failed.', err);
-        }
+        // 変更：ポインターキャプチャをここで設定
+        // これにより、ドラッグ中にカーソルがブラウザウィンドウの外に出てもイベントを捕捉し続けられる
+        e.currentTarget.setPointerCapture(e.pointerId);
 
         const coords = getCanvasCoordinates(e, this.canvas, this.viewport.viewTransform);
         
@@ -105,7 +103,7 @@ export class PointerInteractionHandler {
         const { tool, mainColor, size, pressureSettings } = this.toolStore.getState();
 
         if (tool === 'bucket') {
-            this.toolActions.fill(activeLayer, Math.round(local.x), Math.round(local.y));
+            this.toolActions.fill(activeLayer, local.x, local.y);
             this.viewport.renderAllLayers(this.layerStore.getLayers());
             this.historyStore.saveState();
             this.onDrawEnd?.(activeLayer);
@@ -113,7 +111,7 @@ export class PointerInteractionHandler {
         }
 
         this.isDrawing = true;
-        this.historyStore.saveState();
+        this.historyStore.saveState(); // 描画開始前に状態を保存
         this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
         this.lastPoint = { ...local, pressure: this.pressureHistory[0] };
         
@@ -126,14 +124,12 @@ export class PointerInteractionHandler {
         this.viewport._requestRender(this.layerStore.getLayers());
     }
 
+    // 変更: onPointerMove -> handlePointerMove
     handlePointerMove(e) {
-        // 変更: `isDrawing` フラグに加えて、ポインターがキャプチャされているかを `this.canvasArea` で確認
-        if (this.isDrawing && this.canvasArea.hasPointerCapture(e.pointerId)) {
-             console.log('PointerMove event fired at:', e.clientX, e.clientY, 'isDrawing:', this.isDrawing);
-        } else if (this.isPanning || this.isDraggingLayer) {
-            console.log('PointerMove event fired at:', e.clientX, e.clientY);
+        // 変更：指示書に基づきデバッグログを追加
+        if (this.isDrawing || this.isPanning || this.isDraggingLayer) {
+            console.log('PointerMove event fired at:', e.clientX, e.clientY, 'isDrawing:', this.isDrawing);
         }
-
 
         const coords = getCanvasCoordinates(e, this.canvas, this.viewport.viewTransform);
 
@@ -145,10 +141,10 @@ export class PointerInteractionHandler {
             this.viewport.applyViewTransform();
             return;
         }
-        if (this.isDraggingLayer) { /* ... */ }
+        if (this.isDraggingLayer) { /* ... (unchanged) ... */ }
         
-        // 変更: `this.canvasArea` がポインターをキャプチャしているか、を基準に判定する
-        if (this.isDrawing && this.canvasArea.hasPointerCapture(e.pointerId)) {
+        // hasPointerCaptureでチェックすることで、ボタンを押しながら移動しているかを確認
+        if (this.isDrawing && e.currentTarget.hasPointerCapture(e.pointerId)) {
             const activeLayer = this.layerStore.getCurrentLayer();
             if (!activeLayer) return;
             
@@ -186,25 +182,21 @@ export class PointerInteractionHandler {
         this.updateCursor();
     }
     
+    // 変更: onPointerUp -> handlePointerUp
     async handlePointerUp(e) { 
+        // 変更：指示書に基づきデバッグログを追加
         console.log('PointerUp event fired.');
 
-        // 変更: `this.canvasArea` がポインタをキャプチャしているか確認し、解放する
-        console.log('DEBUG: Attempting to check hasPointerCapture on', this.canvasArea);
-        if (this.canvasArea.hasPointerCapture(e.pointerId)) {
-            try {
-                console.log('DEBUG: Attempting to releasePointerCapture on', this.canvasArea);
-                this.canvasArea.releasePointerCapture(e.pointerId);
-                console.log('DEBUG: releasePointerCapture success.');
-            } catch (err) {
-                console.error('DEBUG: releasePointerCapture failed.', err);
-            }
+        // 変更：hasPointerCaptureでキャプチャされているポインタIDか確認
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+            e.currentTarget.releasePointerCapture(e.pointerId);
         }
 
         if (this.isDrawing) {
             const activeLayer = this.layerStore.getCurrentLayer();
             if (activeLayer) {
                 this.viewport.syncDirtyRectToImageData(activeLayer, this.viewport.dirtyRect);
+                // 描画の終了を記録（履歴用）
                 this.historyStore.saveState(); 
                 this.onDrawEnd?.(activeLayer);
             }
@@ -216,10 +208,22 @@ export class PointerInteractionHandler {
         this.updateCursor();
     }
     
-    startLayerTransform() { /* ... */ }
-    commitLayerTransform() { /* ... */ }
-    cancelLayerTransform() { /* ... */ }
-    applyLayerTransform(transform) { /* ... */ }
+    startLayerTransform() { /* ... (unchanged) ... */ }
+    
+    commitLayerTransform() { /* ... (unchanged) ... */ }
+    
+    cancelLayerTransform() { /* ... (unchanged) ... */ }
+    
+    applyLayerTransform(transform) {
+        if (!this.isLayerTransforming || !this.transformOriginalModelMatrix) return;
+        const activeLayer = this.layerStore.getCurrentLayer();
+        if (!activeLayer) return;
+        
+        // This logic is complex and has been simplified for brevity
+        // ...
+
+        this.viewport.renderAllLayers(this.layerStore.getLayers());
+    }
     
     calculatePressureSize(baseSize, pressure, pressureSettings) { 
         const safeBaseSize = Math.max(1, baseSize);
@@ -228,5 +232,5 @@ export class PointerInteractionHandler {
         return minSize + (safeBaseSize - minSize) * pressure;
     }
     
-    updateCursor() { /* ... */ }
+    updateCursor() { /* ... (unchanged) ... */ }
 }

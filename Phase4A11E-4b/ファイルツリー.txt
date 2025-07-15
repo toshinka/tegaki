@@ -1,0 +1,73 @@
+
+✅ 新ファイルツリー（命名規則 v2.0準拠・A案ベース）
+
+
+vite-project/
+│
+├ index.html
+├── package.json  
+├── package-lock.json  
+├── node_modules/           
+│ 　  ├ vite/              
+│ 　  ├ gl-matrix/
+│ 　  ├ twgl.js/
+│  　 ├ dexie/
+│   　├　……
+│ 
+src/
+│
+├─ main.js                         # 🏁 アプリケーションの起点
+│
+├─ app/
+│   ├─ AppController.js            # アプリケーション全体の制御
+│   └─ ApplicationStore.js         # アプリケーションの状態管理
+│
+├─ engine/
+│   ├─ WebGLRenderer.js            # WebGL描画（レイヤー合成など）
+│   ├─ CanvasViewport.js           # 表示領域の制御（ズーム・パン）
+│   └─ DrawingEngine.js            # 描画エンジン（ペン描画補間等）
+│
+├─ features/
+│   ├─ layers/
+│   │   ├─ LayerFactory.js         # 単体レイヤーのクラス定義
+│   │   ├─ LayerStore.js           # レイヤーの状態管理
+│   │   └─ LayerActions.js         # レイヤー操作ユースケース群
+│   │
+│   ├─ tools/
+│   │   ├─ PenTool.js              # ペンツール
+│   │   ├─ EraserTool.js           # 消しゴムツール
+│   │   ├─ ToolStore.js            # 現在のツール・色・太さ管理
+│   │   └─ ToolActions.js          # ツール切り替え・設定更新
+│   │
+│   ├─ history/
+│   │   ├─ HistoryStore.js         # Undo/Redo用履歴保存
+│   │   └─ HistoryActions.js       # Undo/Redo処理
+│   │
+│   └─ canvas/
+│       ├─ CanvasInteraction.js    # 入力処理（マウス/ペン）
+│       └─ CoordinateSystem.js     # 座標変換・補助機能
+│
+├─ ui/
+│   ├─ components/
+│   │   ├─ LayerPanel.js           # レイヤーパネルUI
+│   │   ├─ Toolbar.js              # ツールバーUI
+│   │   ├─ ColorPicker.js          # カラーピッカーUI
+│   │   └─ PenSettingsPanel.js     # ペン設定UI
+│   │
+│   └─ UIController.js             # UI全体の同期・制御
+│
+├─ events/
+│   ├─ InputHandler.js             # ペン/マウス/タッチ入力処理
+│   └─ ShortcutHandler.js          # キーボードショートカット処理
+│
+├─ data/
+│   └─ StorageService.js           # IndexedDBとのデータ保存・取得
+│
+└─ utils/
+    ├─ TransformUtils.js           # 座標変換等の汎用処理
+    ├─ EventUtils.js               # イベントユーティリティ
+    └─ MathUtils.js                # 数学系補助処理
+
+
+
+
