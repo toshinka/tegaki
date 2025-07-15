@@ -1,0 +1,11 @@
+🔧 置換方針（主な差し替え対象）
+元の記述（旧）	                 現在の使用（新）
+init()	                     AppBootstrap.init()
+app.init()             	     new AppBootstrap().init()
+app.store.dispatch(...)	     layerStore.addLayer() など直接呼び出し
+undoManager.undo()	     historyStore.undo()
+saveHistory()	             historyStore.saveState()
+getActiveLayer()	     layerStore.getCurrentLayer()
+drawToCanvas()	             viewport.syncDirtyRectToImageData()
+PointerHandler	             PointerInteractionHandler
+viewport.applyTransform()    viewport.setTransformFromModelMatrix()（or applyPanZoom()）
