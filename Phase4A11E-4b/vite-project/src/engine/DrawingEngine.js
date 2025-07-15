@@ -38,6 +38,14 @@ export class StrokeRenderer {
     drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize, layer) {
         throw new Error("Method 'drawLine()' must be implemented.");
     }
+    
+    /**
+     * [関数責務] drawStroke: 指定されたレイヤーに複数の頂点からなる線（ストローク）を描画する機能の仕様を定義する。
+     * @abstract
+     */
+    drawStroke(points, size, color, isEraser, layer) {
+        throw new Error("Method 'drawStroke()' must be implemented.");
+    }
 
     /**
      * [関数責務] getTransformedImageData: 変形後のレイヤー画像データを取得する機能の仕様を定義する。

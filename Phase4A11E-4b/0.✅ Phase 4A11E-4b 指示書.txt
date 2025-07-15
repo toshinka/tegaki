@@ -1,0 +1,56 @@
+🧭 背景
+現在、描画時に「点」しか出ず、「ドラッグで線が引けない」不具合が残っています。以前の修正では gl.drawArrays() のモードを gl.POINTS → gl.LINE_STRIP に切り替える処理が導入されましたが、前後の頂点バッファ構築が不完全または未実装の可能性が高く、期待した描画が得られていません。
+
+🛠 修正方針（再実装）
+🎯 目的
+マウスやペンでドラッグしたとき、連続した線が描けるようにする。
+
+クリック時には 単点のみ描画（点）、ドラッグ時には 折れ線（線） になること。
+
+🔧 実装タスク
+1. PointerInteractionHandler.js
+pointermove イベント中に、直前の座標（prevX/Y）を保持し、それと現在の座標（currX/Y）をセットで DrawingEngine などに渡すこと。
+
+毎フレーム points.push([prevX, prevY, currX, currY]) のような形式で、描画用データを蓄積。
+
+pointerup 時にバッファをクリア。
+
+lineMode = (numPoints > 1) を条件に描画モードを選べるようにする。
+
+2. DrawingEngine.js（または呼び出し層）
+drawLineSegment(x1, y1, x2, y2) のようなAPIを用意し、ポイントを線として解釈する。
+
+複数の線分を処理できる構造（例：頂点バッファに逐次push）にする。
+
+WebGLRenderer に渡す描画命令として、mode = LINE_STRIP と vertices = [x1,y1, x2,y2, ...] を渡す。
+
+3. WebGLRenderer.js
+drawArrays() に渡す mode を、渡されたデータ長に応じて動的に切り替える（これは以前の修正を流用可）。
+
+ただし**LINE_STRIPを描くには、複数頂点の配列構築が前提**。バッファが1点しかないなら何も描かれないため注意。
+
+gl.bufferData() の入力確認を強化し、頂点数・位置のログ出力（console.log(vertices)）も一時的に仕込んで可視化する。
+
+✅ 成功条件
+クリックでは点（1点）だけ描かれ、ドラッグでは線（連続した2点以上）が描かれる。
+
+複数点を結ぶ滑らかな折れ線が描画できる。
+
+無操作時にCPU/GPU負荷が不要に増えない。
+
+📤 出力要件
+修正済みファイルは 全コードを完全なコードブロック形式で出力すること（途中省略不可）。
+
+差分ではなく各ファイルの完成版として出力すること。
+
+📁 対象ファイル
+src/features/canvas/PointerInteractionHandler.js
+
+src/engine/DrawingEngine.js
+
+src/engine/WebGLRenderer.js
+
+💬 備考
+GitHubへのアップロードは不要。修正済みコードはコードブロックで返すのみで良い。
+
+ファイルの命名・構造・命令に省略やあいまいな表現があると、司令AI（ChatGPT）での再検証ができません。明確であること。
