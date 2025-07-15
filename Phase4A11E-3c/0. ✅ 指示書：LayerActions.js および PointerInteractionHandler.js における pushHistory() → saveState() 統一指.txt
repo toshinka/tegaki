@@ -1,56 +1,75 @@
-🔧 修正依頼書：HistoryStore 統一対応（Phase 4A11E）
-対象ファイル
-src/features/layers/LayerActions.js
+✅ 現在の主な問題
+Undo（アンドゥ）が一切効かない
 
-src/features/canvas/PointerInteractionHandler.js
+バケツツールがUIボタンから反応しないが、ショートカットGでは動作する
 
-目的
-HistoryStore の API を pushHistory() → saveState() に統一したため、旧形式を使用している箇所を修正する。
+🔍【1】Undo が効かない原因候補
+Undo（Ctrl+Zなど）に関わるのは以下の構成です：
 
-📌 修正内容
-1. LayerActions.js 内のメソッドでの修正
-以下のメソッドで this.historyStore.pushHistory() をすべて this.historyStore.saveState() に置換する：
+モジュール	役割
+HistoryStore.js	状態履歴の保存・復元本体
+ShortcutHandler.js	キー入力の捕捉（Ctrl+Z等）
+PointerInteractionHandler.js	描画後に saveState() 呼び出し
+LayerActions.js	レイヤー操作後の saveState() 呼び出し
+AppController.js	初期化時に ShortcutHandler に依存関係を注入
 
-addNewLayer()
+✅ チェックポイント（可能性の高い原因順）
+ ShortcutHandler.js に Ctrl+Z（または Command+Z）を検出するコードがあるか
 
-deleteActiveLayer()
+ ShortcutHandler が AppBootstrap 経由で HistoryStore にアクセスできているか
 
-duplicateActiveLayer()
+ HistoryStore.saveState() が何も実際には記録していない可能性（履歴配列が機能していない）
 
-mergeDownActiveLayer()
+ saveState() の中身に push 処理（履歴追加）が無い
 
-clearActiveLayer()
+🛠 修正指示書サンプル：Undo機能が動作しない場合の確認・修正
+📄 対象ファイル
+src/features/history/HistoryStore.js
 
+src/events/ShortcutHandler.js
+
+src/app/AppController.js
+
+✅ 確認・修正内容
+【A】HistoryStore.js の saveState() 実装確認
 js
 コピーする
 編集する
-// 修正前（例）
-this.historyStore.pushHistory();
+// 以下のような履歴配列が必要
+this.historyStack = [];
 
-// 修正後
-this.historyStore.saveState();
-2. PointerInteractionHandler.js の handlePointerUp() 内
-同様に以下の1行を修正：
+saveState() {
+  const snapshot = this._createSnapshot(); // レイヤーなどの状態をコピー
+  this.historyStack.push(snapshot);        // pushして履歴として保存
+}
+_createSnapshot() や push 処理が未実装、または中身が空だと記録されません。
 
+undo() で this.historyStack.pop() のような巻き戻し処理が必要です。
+
+【B】ShortcutHandler.js に Ctrl+Z 処理があるか
 js
 コピーする
 編集する
-// 修正前（行番号例：174）
-this.historyStore.pushHistory();
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+    this.historyStore.undo(); // ← 実行されているか？
+  }
+});
+存在しない or this.historyStore が null の場合、反応しません。
 
-// 修正後
-this.historyStore.saveState();
-✅ 補足
-HistoryStore.js 内の pushHistory() は削除済みまたは未実装であり、エラー (not a function) を防ぐ目的。
+【C】AppController.js（または AppBootstrap）の初期化処理で ShortcutHandler に historyStore を渡しているか？
+js
+コピーする
+編集する
+this.shortcutHandler = new ShortcutHandler({
+  historyStore: this.historyStore,
+});
+もし渡していなければ、this.historyStore.undo() が発火しても undefined になります。
 
-変更後、動作確認として「描画操作後に Undo が効くか」「レイヤー操作の直後に Undo が効くか」などを確認すること。
+🔧【2】バケツツールがUIから反応しない
+UI（Toolbar.jsなど）でバケツツールのボタンが "fill" などのIDで ToolStore.setTool("fill") を呼んでいない可能性
 
-この指示書を Gでそのまま渡せば、修正の誤差なく対応可能です。
+または、**ボタン押下時にイベントが止まっている（preventDefaultされている）**可能性もあります
 
-✅ 次の行動案
-優先度順：
-↑の指示書をGEMINI等に渡して、万全なsaveState()化修正をさせる
+G では動く → ToolStore の中では "fill" 自体は正しく動作しているということ
 
-必要なら、**レイヤー削除が保存されない問題（IndexedDB書き込み漏れ）**に移行
-
-その後で、機能一覧とマッピング表/ファイルツリー/シンボルテーブルの統一生成
