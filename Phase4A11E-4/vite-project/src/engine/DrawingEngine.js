@@ -52,7 +52,7 @@ export class StrokeRenderer {
      * @abstract
      */
     compositeLayers(layers, dirtyRect) {
-        throw new `Error`("Method 'compositeLayers()' must be implemented.");
+        throw new Error("Method 'compositeLayers()' must be implemented.");
     }
 
     /**

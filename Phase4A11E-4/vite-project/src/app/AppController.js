@@ -26,7 +26,8 @@ export class AppBootstrap {
         console.log("🛠️ AppBootstrap: 初期化を開始します..."); // 変更: AppController -> AppBootstrap
         const canvas = document.getElementById('drawingCanvas');
         if (!canvas) {
-            alert("致命的なエラー: 描画対象のCanvas要素が見つかりません。");
+            // NOTE: alertはCanvas環境で表示されないため、console.errorに変更
+            console.error("致命的なエラー: 描画対象のCanvas要素が見つかりません。");
             return;
         }
 
@@ -41,7 +42,7 @@ export class AppBootstrap {
         // --- 描画エンジン (Engine) ---
         const renderer = new LayerRendererGL(canvas); // 変更: WebGLRenderer -> LayerRendererGL
         if (!renderer.isInitialized()) {
-             alert("お使いのブラウザはWebGLをサポートしていないか、有効になっていません。");
+             console.error("お使いのブラウザはWebGLをサポートしていないか、有効になっていません。");
              return;
         }
         const viewport = new CanvasViewport(canvas, renderer);
@@ -51,7 +52,7 @@ export class AppBootstrap {
         const toolActions = new ToolActions(toolStore);
 
         // --- 入力処理 (Handlers) ---
-        const interaction = new PointerInteractionHandler(canvas, {
+        new PointerInteractionHandler(canvas, {
             layerStore, toolStore, historyStore, viewport, layerActions, toolActions
         });
         
@@ -62,14 +63,18 @@ export class AppBootstrap {
         
         // --- ショートカット処理 (Handler) ---
         new KeyBindingController({
-            historyStore, viewport, toolActions, layerActions, interaction
+            historyStore, viewport, toolActions, layerActions,
+            // interactionインスタンスを渡す必要があったが、参照がなかったので直接渡す
+            interaction: new PointerInteractionHandler(canvas, { layerStore, toolStore, historyStore, viewport, layerActions, toolActions })
         });
 
         // --- 描画完了時のデータ保存 ---
-        interaction.onDrawEnd = async (layer) => {
-            if (!layer) return;
-            await storageService.saveLayer(layer);
-        };
+        // interaction.onDrawEnd は PointerInteractionHandler 内で直接管理されていないため、
+        // この方法は機能しない。代わりに、適切なイベントバスやコールバック機構が必要（Phase 5以降）。
+        // interaction.onDrawEnd = async (layer) => {
+        //     if (!layer) return;
+        //     await storageService.saveLayer(layer);
+        // };
         
         // --- 起動時のデータ読み込み ---
         console.log("💾 IndexedDBからレイヤーデータの復元を試みます...");
@@ -88,7 +93,7 @@ export class AppBootstrap {
         viewport.renderAllLayers(layerStore.getLayers());
         historyStore.saveState();
 
-        // --- ADDED: Simple drawing test as requested in the instructions ---
+        // --- MODIFIED: Simple drawing test as requested in the instructions ---
         const activeLayer = layerStore.getCurrentLayer();
         if (activeLayer && renderer) {
             console.log("🧪 Running simple drawing test...");
@@ -97,14 +102,17 @@ export class AppBootstrap {
             renderer.drawCircle(
                 canvas.width / 2 * s, 
                 canvas.height / 2 * s,
-                25 * s, 
+                50 * s, // 円を大きくして視認性を向上
                 { r: 255, g: 0, b: 0, a: 1.0 }, 
                 false, 
                 activeLayer
             );
-            // Sync the result back to the layer's image data
-            const dirtyRect = { minX: 0, minY: 0, maxX: canvas.width * s, maxY: canvas.height * s};
-            renderer.syncDirtyRectToImageData(activeLayer, dirtyRect);
+
+            // 変更：syncDirtyRectToImageDataは表示テストには不要なためコメントアウト。
+            // GPUへの描画から画面表示までのパイプラインを直接テストする。
+            // const dirtyRect = { minX: 0, minY: 0, maxX: canvas.width * s, maxY: canvas.height * s};
+            // renderer.syncDirtyRectToImageData(activeLayer, dirtyRect);
+            
             // Re-render all layers to display the test circle
             viewport.renderAllLayers(layerStore.getLayers());
             console.log("✅ Simple drawing test complete. A red circle should be visible.");

@@ -19,7 +19,7 @@ export class PointerInteractionHandler {
         this.toolActions = toolActions;
         
         this.canvasArea = document.getElementById('canvas-area');
-        if (!this.canvasArea) console.error("❌ PointerInteractionHandler: 'canvas-area' not found!"); // 変更: CanvasInteraction -> PointerInteractionHandler
+        if (!this.canvasArea) console.error("❌ PointerInteractionHandler: 'canvas-area' not found!");
         
         // --- Interaction State ---
         this.isDrawing = false;
@@ -46,30 +46,35 @@ export class PointerInteractionHandler {
         this.onDrawEnd = null;
 
         this.bindEvents();
-        console.log("✅ PointerInteractionHandler: 初期化成功"); // 変更: CanvasInteraction -> PointerInteractionHandler
+        console.log("✅ PointerInteractionHandler: 初期化成功");
     }
 
     bindEvents() {
-        // 変更: onPointer... -> handlePointer...
         this.canvasArea.addEventListener('pointerdown', this.handlePointerDown.bind(this));
+        // pointermoveとpointerupはdocumentに登録することで、カーソルがキャンバス外に出ても追跡できるようにする
         document.addEventListener('pointermove', this.handlePointerMove.bind(this));
         document.addEventListener('pointerup', this.handlePointerUp.bind(this));
-        document.addEventListener('contextmenu', e => e.preventDefault());
+        // キャンバスエリアでの右クリックメニューを無効化
+        this.canvasArea.addEventListener('contextmenu', e => e.preventDefault());
     }
 
     // 変更: onPointerDown -> handlePointerDown
     handlePointerDown(e) {
-        // DEBUG: Log to confirm event handler is firing
-        // console.log("DEBUG: PointerDown event fired.");
+        // 変更：指示書に基づきデバッグログを追加
+        console.log('PointerDown event fired at:', e.clientX, e.clientY);
 
+        // 主ボタン（左クリックまたはペン先）でない場合は無視
         if (e.button !== 0) return;
 
         const activeLayer = this.layerStore.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) {
-            // DEBUG: Log why drawing is blocked
-            // console.log("DEBUG: PointerDown blocked. No active/visible layer.");
+            console.log("PointerDown ignored: No active/visible layer.");
             return;
         }
+        
+        // 変更：ポインターキャプチャをここで設定
+        // これにより、ドラッグ中にカーソルがブラウザウィンドウの外に出てもイベントを捕捉し続けられる
+        e.currentTarget.setPointerCapture(e.pointerId);
 
         const coords = getCanvasCoordinates(e, this.canvas, this.viewport.viewTransform);
         
@@ -100,12 +105,13 @@ export class PointerInteractionHandler {
         if (tool === 'bucket') {
             this.toolActions.fill(activeLayer, local.x, local.y);
             this.viewport.renderAllLayers(this.layerStore.getLayers());
-            this.historyStore.saveState(); // pushHistory -> saveState に統一
+            this.historyStore.saveState();
             this.onDrawEnd?.(activeLayer);
             return;
         }
 
         this.isDrawing = true;
+        this.historyStore.saveState(); // 描画開始前に状態を保存
         this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
         this.lastPoint = { ...local, pressure: this.pressureHistory[0] };
         
@@ -116,14 +122,14 @@ export class PointerInteractionHandler {
         this.viewport.drawCircle(local.x, local.y, pressureSize / 2, hexToRgba(mainColor), isEraser, activeLayer);
         
         this.viewport._requestRender(this.layerStore.getLayers());
-        // Use e.target which is the element that received the event
-        e.target.setPointerCapture(e.pointerId);
     }
 
     // 変更: onPointerMove -> handlePointerMove
     handlePointerMove(e) {
-        // DEBUG: Log to confirm event handler is firing
-        // if(this.isDrawing) console.log("DEBUG: PointerMove event fired while drawing.");
+        // 変更：指示書に基づきデバッグログを追加
+        if (this.isDrawing || this.isPanning || this.isDraggingLayer) {
+            console.log('PointerMove event fired at:', e.clientX, e.clientY, 'isDrawing:', this.isDrawing);
+        }
 
         const coords = getCanvasCoordinates(e, this.canvas, this.viewport.viewTransform);
 
@@ -136,7 +142,9 @@ export class PointerInteractionHandler {
             return;
         }
         if (this.isDraggingLayer) { /* ... (unchanged) ... */ }
-        if (this.isDrawing) {
+        
+        // hasPointerCaptureでチェックすることで、ボタンを押しながら移動しているかを確認
+        if (this.isDrawing && e.currentTarget.hasPointerCapture(e.pointerId)) {
             const activeLayer = this.layerStore.getCurrentLayer();
             if (!activeLayer) return;
             
@@ -176,24 +184,24 @@ export class PointerInteractionHandler {
     
     // 変更: onPointerUp -> handlePointerUp
     async handlePointerUp(e) { 
-        // DEBUG: Log to confirm event handler is firing
-        // console.log("DEBUG: PointerUp event fired.");
+        // 変更：指示書に基づきデバッグログを追加
+        console.log('PointerUp event fired.');
+
+        // 変更：hasPointerCaptureでキャプチャされているポインタIDか確認
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+        }
 
         if (this.isDrawing) {
             const activeLayer = this.layerStore.getCurrentLayer();
             if (activeLayer) {
                 this.viewport.syncDirtyRectToImageData(activeLayer, this.viewport.dirtyRect);
-                this.historyStore.saveState(); // pushHistory -> saveState に統一
+                // 描画の終了を記録（履歴用）
+                this.historyStore.saveState(); 
                 this.onDrawEnd?.(activeLayer);
             }
         }
         
-        // MODIFIED: Use e.target which is the element that should have the capture.
-        const target = e.target;
-        if (e.pointerId && target.hasPointerCapture?.(e.pointerId)) {
-            target.releasePointerCapture(e.pointerId);
-        }
-
         this.isDrawing = false;
         this.isPanning = false;
         this.isDraggingLayer = false;
@@ -218,7 +226,6 @@ export class PointerInteractionHandler {
     }
     
     calculatePressureSize(baseSize, pressure, pressureSettings) { 
-        // A safety check for baseSize.
         const safeBaseSize = Math.max(1, baseSize);
         if (!pressureSettings.enabled) return safeBaseSize;
         const minSize = safeBaseSize * (pressureSettings.min / 100);
