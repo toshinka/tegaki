@@ -3,7 +3,7 @@ import { LayerStore } from '../features/layers/LayerStore.js';
 import { ToolStore } from '../features/tools/ToolStore.js';
 import { HistoryStore } from '../features/history/HistoryStore.js';
 import { PersistentStorage } from '../data/StorageService.js';
-import { LayerRendererGL } from '../engine/WebGLRenderer.js'; // 変更: WebGLRenderer -> LayerRendererGL
+import { LayerRendererGL } from '../engine/WebGLRenderer.js'; 
 import { CanvasViewport } from '../engine/CanvasViewport.js';
 import { PointerInteractionHandler } from '../features/canvas/PointerInteractionHandler.js';
 import { UIRoot } from '../ui/UIRoot.js';
@@ -87,6 +87,29 @@ export class AppBootstrap {
         layerStore.notify();
         viewport.renderAllLayers(layerStore.getLayers());
         historyStore.saveState();
+
+        // --- ADDED: Simple drawing test as requested in the instructions ---
+        const activeLayer = layerStore.getCurrentLayer();
+        if (activeLayer && renderer) {
+            console.log("🧪 Running simple drawing test...");
+            const s = renderer.SUPER_SAMPLING_FACTOR;
+            // Draw a red circle in the center of the canvas
+            renderer.drawCircle(
+                canvas.width / 2 * s, 
+                canvas.height / 2 * s,
+                25 * s, 
+                { r: 255, g: 0, b: 0, a: 1.0 }, 
+                false, 
+                activeLayer
+            );
+            // Sync the result back to the layer's image data
+            const dirtyRect = { minX: 0, minY: 0, maxX: canvas.width * s, maxY: canvas.height * s};
+            renderer.syncDirtyRectToImageData(activeLayer, dirtyRect);
+            // Re-render all layers to display the test circle
+            viewport.renderAllLayers(layerStore.getLayers());
+            console.log("✅ Simple drawing test complete. A red circle should be visible.");
+        }
+        // --- End of drawing test ---
 
         console.log("✅ AppBootstrap: アプリケーションの初期化が完了しました。"); // 変更: AppController -> AppBootstrap
     }

@@ -1,4 +1,4 @@
-import { StrokeRenderer } from './DrawingEngine.js'; // 変更: DrawingEngine -> StrokeRenderer
+import { StrokeRenderer } from './DrawingEngine.js';
 import { mat4 } from 'gl-matrix';
 import * as twgl from 'twgl.js';
 
@@ -19,6 +19,9 @@ export class LayerRendererGL extends StrokeRenderer {
             return;
         }
         
+        // DEBUG: Add a helper to check for GL errors.
+        this._checkGLError('constructor start');
+
         this.SUPER_SAMPLING_FACTOR = 2.0;
 
         this.width = canvas.width;
@@ -42,10 +45,13 @@ export class LayerRendererGL extends StrokeRenderer {
 
         const gl = this.gl;
         gl.enable(gl.BLEND);
+        // Default blend func set at the start
         gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        this._checkGLError('gl setup');
 
         this._initProjectionMatrix();
         this._initShaderPrograms();
+        this._checkGLError('shaders init');
 
         if (!this.programs.compositor || !this.programs.brush) {
             console.error("Shader program initialization failed. Aborting LayerRendererGL setup."); // 変更: WebGLRenderer -> LayerRendererGL
@@ -54,13 +60,33 @@ export class LayerRendererGL extends StrokeRenderer {
         }
 
         this._initBuffers();
+        this._checkGLError('buffers init');
         this._setupSuperCompositingBuffer();
+        this._checkGLError('FBO setup');
 
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
         gl.clearColor(0.0, 0.0, 0.0, 0.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
         
         console.log(`✅ LayerRendererGL initialized with ${this.superWidth}x${this.superHeight} internal resolution.`); // 変更: WebGLRenderer -> LayerRendererGL
+    }
+    
+    // DEBUG: Method to check for WebGL errors, as requested in the instructions.
+    _checkGLError(operation) {
+        if(!this.gl) return;
+        let error = this.gl.getError();
+        if (error !== this.gl.NO_ERROR) {
+            let errorMsg = "WebGL Error";
+            switch(error) {
+                case this.gl.INVALID_ENUM: errorMsg = "INVALID_ENUM"; break;
+                case this.gl.INVALID_VALUE: errorMsg = "INVALID_VALUE"; break;
+                case this.gl.INVALID_OPERATION: errorMsg = "INVALID_OPERATION"; break;
+                case this.gl.INVALID_FRAMEBUFFER_OPERATION: errorMsg = "INVALID_FRAMEBUFFER_OPERATION"; break;
+                case this.gl.OUT_OF_MEMORY: errorMsg = "OUT_OF_MEMORY"; break;
+                case this.gl.CONTEXT_LOST_WEBGL: errorMsg = "CONTEXT_LOST_WEBGL"; break;
+            }
+            console.error(`❌ WebGL Error after [${operation}]: ${errorMsg}`);
+        }
     }
 
     isInitialized() {
@@ -85,6 +111,8 @@ export class LayerRendererGL extends StrokeRenderer {
             precision highp float; attribute vec2 a_position;
             uniform mat4 u_mvpMatrix; varying vec2 v_texCoord;
             void main() { gl_Position = u_mvpMatrix * vec4(a_position, 0.0, 1.0); v_texCoord = a_position + 0.5; }`;
+        
+        // MODIFIED: Switched to a standard "straight alpha" output. This is more reliable.
         const fsBrush = `
             precision highp float; varying vec2 v_texCoord;
             uniform float u_radius; uniform vec4 u_color; uniform bool u_is_eraser;
@@ -93,8 +121,11 @@ export class LayerRendererGL extends StrokeRenderer {
                 float pixel_in_uv = 1.0 / (max(u_radius, 0.5) * 2.0);
                 float alpha = 1.0 - smoothstep(0.5 - pixel_in_uv, 0.5, dist);
                 if (alpha < 0.01) discard;
-                if (u_is_eraser) gl_FragColor = vec4(0.0, 0.0, 0.0, alpha); 
-                else gl_FragColor = vec4(u_color.rgb * u_color.a * alpha, u_color.a * alpha);
+                if (u_is_eraser) {
+                    gl_FragColor = vec4(0.0, 0.0, 0.0, alpha); 
+                } else {
+                    gl_FragColor = vec4(u_color.rgb, u_color.a * alpha);
+                }
             }`;
         
         this.programs.compositor = twgl.createProgramInfo(this.gl, [vsCompositor, fsCompositor]);
@@ -149,9 +180,13 @@ export class LayerRendererGL extends StrokeRenderer {
         } else {
             gl.blendEquation(gl.FUNC_ADD);
             switch (blendMode) {
-                case 'multiply': gl.blendFuncSeparate(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); break;
-                // Add other blend modes here if needed
-                default: gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); break; // Normal
+                case 'multiply': 
+                    gl.blendFuncSeparate(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
+                    break;
+                // MODIFIED: Switched to a standard "straight alpha" blend function. This is more reliable.
+                default: // 'normal'
+                    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); 
+                    break;
             }
         }
     }
@@ -163,7 +198,7 @@ export class LayerRendererGL extends StrokeRenderer {
         this._createOrUpdateLayerTexture(layer);
         const targetFBO = this.layerFBOs.get(layer);
         if (!targetFBO) {
-            console.error("❌ LayerRendererGL.drawCircle: Target FBO not found for layer.", layer); // 変更: WebGLRenderer -> LayerRendererGL
+            console.error("❌ LayerRendererGL.drawCircle: Target FBO not found for layer.", layer);
             return;
         }
 
@@ -182,11 +217,13 @@ export class LayerRendererGL extends StrokeRenderer {
         twgl.setUniforms(this.programs.brush, {
             u_mvpMatrix: mvpMatrix,
             u_radius: radius,
-            u_color: [color.r / 255, color.g / 255, color.b / 255, color.a / 255],
+            u_color: [color.r / 255, color.g / 255, color.b / 255, color.a], // alpha is already 0-1
             u_is_eraser: isEraser,
         });
         twgl.drawBufferInfo(gl, this.brushPositionBuffer, gl.TRIANGLE_STRIP);
         twgl.bindFramebufferInfo(gl, null);
+        
+        this._checkGLError('drawCircle');
     }
     
     drawLine(x0, y0, x1, y1, size, color, isEraser, p0, p1, calculatePressureSize, layer) {
@@ -209,10 +246,6 @@ export class LayerRendererGL extends StrokeRenderer {
 
     getTransformedImageData(layer) {
         if (!this.gl || !layer) return null;
-        // This implementation remains complex and is kept as is.
-        // In summary: it draws the layer's texture to a temporary framebuffer
-        // with the layer's modelMatrix applied, then reads the pixels back.
-        // This is a heavy operation.
         const gl = this.gl;
         this._createOrUpdateLayerTexture(layer);
         const sourceTexture = this.layerTextures.get(layer);
@@ -245,7 +278,6 @@ export class LayerRendererGL extends StrokeRenderer {
         gl.deleteTexture(tempFBO.attachments[0]);
         gl.deleteFramebuffer(tempFBO.framebuffer);
         
-        // Down-sampling from super-resolution buffer to normal resolution ImageData
         const destImageData = new ImageData(this.width, this.height);
         const destData = destImageData.data;
         for (let y = 0; y < this.height; y++) {
@@ -272,7 +304,7 @@ export class LayerRendererGL extends StrokeRenderer {
         twgl.bindFramebufferInfo(gl, this.superCompositeFBO);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        gl.useProgram(this.programs.compositor.program);
+        gl.useProgram(this.programs. compositor.program);
         twgl.setBuffersAndAttributes(gl, this.programs.compositor, this.positionBuffer);
         
         for (const layer of layers) {
@@ -291,13 +323,14 @@ export class LayerRendererGL extends StrokeRenderer {
         }
         
         twgl.bindFramebufferInfo(gl, null);
+        this._checkGLError('compositeLayers');
     }
     
     renderToDisplay(dirtyRect) {
         if (!this.gl) return;
         const gl = this.gl;
         twgl.bindFramebufferInfo(gl, null);
-        gl.clear(gl.COLOR_BUFFER_BIT); // Clear canvas with transparent
+        gl.clear(gl.COLOR_BUFFER_BIT); 
         
         this._setBlendMode('normal');
         gl.useProgram(this.programs.compositor.program);
@@ -311,18 +344,12 @@ export class LayerRendererGL extends StrokeRenderer {
             u_image: this.superCompositeTexture,
             u_opacity: 1.0,
         });
-
-        // Draw a checkerboard pattern background
-        // For simplicity, this is omitted in the refactoring, but would be added here.
-        // A simple white background is implicitly used.
         
         twgl.drawBufferInfo(gl, this.positionBuffer, gl.TRIANGLE_STRIP);
+        this._checkGLError('renderToDisplay');
     }
 
     syncDirtyRectToImageData(layer, dirtyRect) {
-        // This implementation remains complex and is kept as is.
-        // In summary: it reads a specific (dirty) rectangle of pixels from a
-        // layer's FBO on the GPU and writes it back to the layer's ImageData on the CPU.
         const gl = this.gl;
         const fboInfo = this.layerFBOs.get(layer);
         if (!fboInfo || dirtyRect.minX > dirtyRect.maxX) return;

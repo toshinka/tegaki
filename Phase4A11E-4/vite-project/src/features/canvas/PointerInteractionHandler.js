@@ -59,10 +59,15 @@ export class PointerInteractionHandler {
 
     // 変更: onPointerDown -> handlePointerDown
     handlePointerDown(e) {
+        // DEBUG: Log to confirm event handler is firing
+        // console.log("DEBUG: PointerDown event fired.");
+
         if (e.button !== 0) return;
 
         const activeLayer = this.layerStore.getCurrentLayer();
         if (!activeLayer || !activeLayer.visible) {
+            // DEBUG: Log why drawing is blocked
+            // console.log("DEBUG: PointerDown blocked. No active/visible layer.");
             return;
         }
 
@@ -111,11 +116,15 @@ export class PointerInteractionHandler {
         this.viewport.drawCircle(local.x, local.y, pressureSize / 2, hexToRgba(mainColor), isEraser, activeLayer);
         
         this.viewport._requestRender(this.layerStore.getLayers());
-        document.documentElement.setPointerCapture(e.pointerId);
+        // Use e.target which is the element that received the event
+        e.target.setPointerCapture(e.pointerId);
     }
 
     // 変更: onPointerMove -> handlePointerMove
     handlePointerMove(e) {
+        // DEBUG: Log to confirm event handler is firing
+        // if(this.isDrawing) console.log("DEBUG: PointerMove event fired while drawing.");
+
         const coords = getCanvasCoordinates(e, this.canvas, this.viewport.viewTransform);
 
         if (this.isPanning) {
@@ -167,6 +176,9 @@ export class PointerInteractionHandler {
     
     // 変更: onPointerUp -> handlePointerUp
     async handlePointerUp(e) { 
+        // DEBUG: Log to confirm event handler is firing
+        // console.log("DEBUG: PointerUp event fired.");
+
         if (this.isDrawing) {
             const activeLayer = this.layerStore.getCurrentLayer();
             if (activeLayer) {
@@ -175,7 +187,8 @@ export class PointerInteractionHandler {
                 this.onDrawEnd?.(activeLayer);
             }
         }
-
+        
+        // MODIFIED: Use e.target which is the element that should have the capture.
         const target = e.target;
         if (e.pointerId && target.hasPointerCapture?.(e.pointerId)) {
             target.releasePointerCapture(e.pointerId);
@@ -204,7 +217,13 @@ export class PointerInteractionHandler {
         this.viewport.renderAllLayers(this.layerStore.getLayers());
     }
     
-    calculatePressureSize(baseSize, pressure, pressureSettings) { /* ... (unchanged) ... */ }
+    calculatePressureSize(baseSize, pressure, pressureSettings) { 
+        // A safety check for baseSize.
+        const safeBaseSize = Math.max(1, baseSize);
+        if (!pressureSettings.enabled) return safeBaseSize;
+        const minSize = safeBaseSize * (pressureSettings.min / 100);
+        return minSize + (safeBaseSize - minSize) * pressure;
+    }
     
     updateCursor() { /* ... (unchanged) ... */ }
 }
