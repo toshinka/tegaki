@@ -1,18 +1,18 @@
 /**
- * [クラス責務] CanvasViewport.js
+ * [クラス責務] ViewportTransform.js
  * 目的：キャンバスの表示領域（ビューポート）の制御と、描画命令の仲介を行う。
  * 責務：
  * 1. ビューポート操作：ユーザー入力に基づいたズーム、パン、回転、反転などの視点操作を管理・適用する。
  * 2. 描画の仲介役（ブリッジ）：高レベルな描画要求（e.g., "線を描く"）を受け取り、それを低レベルなWebGLRendererに伝達する。
  */
-export class CanvasViewport {
+export class ViewportTransform {
     constructor(canvas, renderer) {
         this.canvas = canvas;
         this.renderer = renderer;
 
         this.canvasContainer = document.getElementById('canvas-container');
         if (!this.canvasContainer) {
-            console.error("❌ CanvasViewport: 'canvas-container' element not found!");
+            console.error("❌ ViewportTransform: 'canvas-container' element not found!");
         }
         
         this.viewTransform = { scale: 1, rotation: 0, flipX: 1, flipY: 1, left: 0, top: 0 };

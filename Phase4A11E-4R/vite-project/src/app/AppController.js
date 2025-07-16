@@ -5,7 +5,7 @@ import { HistoryStore } from '../features/history/HistoryStore.js';
 import { PersistentStorage } from '../services/StorageService.js';
 import { LayerRendererGL } from '../engine/WebGLRenderer.js'; 
 import { ViewportTransform } from '../engine/ViewportTransform.js';
-import { CanvasInteraction } from '../features/canvas/CanvasInteraction.js';
+import { CanvasInteraction } from '../ui/CanvasInteraction.js';
 import { UIRoot } from '../ui/UIRoot.js';
 import { LayerActions } from '../features/layers/LayerActions.js';
 import { ToolActions } from '../features/tools/ToolActions.js';
