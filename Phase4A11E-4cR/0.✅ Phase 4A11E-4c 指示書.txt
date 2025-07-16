@@ -1,0 +1,99 @@
+🎨 ToshinkaTegakiTool：Phase 4A11E 緊急指令書 v1.0
+📌「ドラッグで線を描けないバグ」の修正と、構造明確化パッチ
+✅ 背景と目的
+現在のツールは 「点は描けるがドラッグしても線が描けない」 状態にあります。
+この修正では以下を実現してください：
+
+ポインターのドラッグ動作で「連続線（stroke）」を描画できるようにする。
+
+点（クリック）と線（ドラッグ）のどちらも機能するようにする。
+
+初期化や表示が壊れないよう注意する。
+
+⚠️ 前回までの失敗からの知見
+this.viewport.drawLineSegment() は存在しない関数です。使用禁止。
+　→ 正しくは this.engine.drawLineSegment(...) を使うべきです。
+
+WebGLRenderer に StrokeRenderer をimportしようとして壊れました。
+　→ WebGLRenderer は DrawingEngine に注入されるので、それ単体で StrokeRenderer を import する必要はありません。
+
+ファイルの内容が痩せすぎるとキャンバスそのものが表示されなくなります。
+　→ 必要な初期化処理・コンテキスト取得・バッファ設定などは削除せず保持すること。
+
+🧩 修正対象ファイルと責務
+ファイルパス	役割	修正内容
+PointerInteractionHandler.js	UI層のポインター操作受け取り	連続するポインター座標をエンジンに渡す。this.engine.drawLineSegment(...) で呼び出すこと。
+DrawingEngine.js	描画APIの中継層	drawLineSegment(x1, y1, x2, y2) メソッドを実装し、rendererに転送する。
+WebGLRenderer.js	WebGL描画の最下層	drawLineSegment(x1, y1, x2, y2) メソッドを新設。gl.LINESを用いて直線描画を行う。Shaderの初期化なども壊さないこと。
+
+🧪 テスト要件
+ペンツールでキャンバス上をドラッグすると、連続した赤い線が描画されること。
+
+クリック（点）でも描画できること。
+
+エラーが出ないこと（特に「hasPointerCapture」「未定義関数」など）。
+
+Canvasが表示されること（WebGLコンテキストが正しく初期化されること）。
+
+📁 実装補足：呼び出し関係図（修正後）
+plaintext
+コピーする
+編集する
+PointerInteractionHandler.js
+└─ engine.drawLineSegment(x1, y1, x2, y2) ─┐
+                                           ↓
+DrawingEngine.js                         WebGLRenderer.js
+└─ this.renderer.drawLineSegment(...) ─→ drawLineSegment(x1, y1, x2, y2)
+✍️ 実装時の注意点（よくあるミス）
+🔴 viewport.drawLineSegment() のような未定義関数を使わないこと。
+
+🔴 WebGLRenderer の中で export されていない StrokeRenderer を import しようとしないこと。
+
+🔴 gl描画前に bufferData を使ってバッファを更新しないと何も描かれません。
+
+🔴 シェーダーや初期化処理を削除しないでください。何も描かれなくなります。
+
+✅ 修正後のコード構成（要約）
+js
+コピーする
+編集する
+// PointerInteractionHandler.js（抜粋）
+handlePointerMove(e) {
+  if (!this.isDrawing) return;
+  const pos = getLocalPosition(this.canvas, e);
+  if (this.prevPos) {
+    this.engine.drawLineSegment(this.prevPos.x, this.prevPos.y, pos.x, pos.y);
+  }
+  this.prevPos = pos;
+}
+js
+コピーする
+編集する
+// DrawingEngine.js（抜粋）
+drawLineSegment(x1, y1, x2, y2) {
+  this.renderer.drawLineSegment(x1, y1, x2, y2);
+}
+js
+コピーする
+編集する
+// WebGLRenderer.js（抜粋）
+drawLineSegment(x1, y1, x2, y2) {
+  const positions = new Float32Array([x1, y1, x2, y2]);
+  this.gl.bufferData(this.gl.ARRAY_BUFFER, positions, this.gl.STATIC_DRAW);
+  this.gl.drawArrays(this.gl.LINES, 0, 2);
+}
+🧠 重要ポリシー
+修正は必ず 既存構造を壊さない形で 差し込むこと。
+
+GITHUBなど外部へのアップロードや勝手な構成変更は不要。司令官が別途対応します。
+
+初期レイヤー、コンソール出力、動作テストは保持して構いません。
+
+📩 提出形式
+修正対象ファイル（上記3点）をそのまま丸ごと差し替え可能な形で提出してください。
+
+コンソールログは開発用に残してOKですが、無限ループログなどはコメントアウト推奨です。
+
+🔚 備考
+この指示書は司令AI（ChatGPT）によって構造と知見を統合した確定版です。
+今後の類似修正の際も、本指示書の構造をベースにしてください。
