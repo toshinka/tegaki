@@ -1,0 +1,57 @@
+**シンボルテーブル（パート3：ツール機能・キャンバス操作担当）v2.0準拠**
+
+---
+
+### ✅ 推奨構成：シンボル主体ブロック形式
+
+#### Symbol: `ToolStore`
+
+* 📁 File: `src/store/ToolStore.js`
+* 🏷️ Type: Store
+* 🧩 Role: 現在選択中のツール、ツール固有の設定（サイズ、色など）を保持。
+
+---
+
+#### Symbol: `ToolActions`
+
+* 📁 File: `src/actions/ToolActions.js`
+* 🏷️ Type: Actions
+* 🧩 Role: ツールの選択・設定変更・筆圧などのイベント処理を司るロジックを提供。
+* 🔗 Depends on: `ToolStore`, `DrawingEngine`, `PointerTracker`
+
+---
+
+#### Symbol: `CanvasInteraction`
+
+* 📁 File: `src/ui/CanvasInteraction.js`
+* 🏷️ Type: Controller
+* 🧩 Role: キャンバス上でのポインター操作（ドラッグ、ズーム、パン）などを抽象化し、ToolActionsに中継。
+
+---
+
+#### Symbol: `PointerTracker`
+
+* 📁 File: `src/utils/PointerTracker.js`
+* 🏷️ Type: Utility
+* 🧩 Role: マウスやタッチなどのポインタイベントを抽象化して統一的に提供。
+
+---
+
+### 🔁 逆引き辞書（目的 → 使用シンボル）
+
+* ツールの選択・設定変更をしたい → `ToolActions`, `ToolStore`
+* 描画ツールの筆圧処理を制御したい → `ToolActions`, `PointerTracker`
+* キャンバス操作（ドラッグ、ズーム）を検出したい → `CanvasInteraction`
+
+---
+
+### ✅ 実装・改修チェックリスト
+
+| チェック項目                                     | 該当シンボル                | 確認状況 |
+| ------------------------------------------ | --------------------- | ---- |
+| 現在のツール設定が `ToolStore` に保持されているか            | ✅ `ToolStore`         | 🔲   |
+| ツール操作が `ToolActions` に集中しているか              | ✅ `ToolActions`       | 🔲   |
+| 描画入力処理で `PointerTracker` を活用しているか          | ✅ `PointerTracker`    | 🔲   |
+| キャンバス上の操作処理が `CanvasInteraction` に委譲されているか | ✅ `CanvasInteraction` | 🔲   |
+
+---

@@ -1,0 +1,61 @@
+**シンボルテーブル（パート4：UI関連担当）v2.0準拠**
+
+---
+
+### ✅ 推奨構成：シンボル主体ブロック形式
+
+#### Symbol: `UIController`
+
+* 📁 File: `src/ui/UIController.js`
+* 🏷️ Type: Controller
+* 🧩 Role: UI全体の構成制御を統括し、各UIモジュールやイベントとの仲介を行う。
+* 🔗 Depends on: `ToolStore`, `LayerStore`, `AppController`
+
+---
+
+#### Symbol: `LayerListUI`
+
+* 📁 File: `src/ui/LayerListUI.js`
+* 🏷️ Type: UIComponent
+* 🧩 Role: レイヤー一覧の表示、選択、並び替えなどを担当するUIコンポーネント。
+* 🔗 Depends on: `LayerStore`, `LayerActions`
+
+---
+
+#### Symbol: `ToolSelectorUI`
+
+* 📁 File: `src/ui/ToolSelectorUI.js`
+* 🏷️ Type: UIComponent
+* 🧩 Role: 現在選択中のツールを表示し、切り替え可能にするUI。
+* 🔗 Depends on: `ToolStore`, `ToolActions`
+
+---
+
+#### Symbol: `ShortcutKeyUI`
+
+* 📁 File: `src/ui/ShortcutKeyUI.js`
+* 🏷️ Type: UIComponent
+* 🧩 Role: キーボードショートカットによるツール切り替え・レイヤー操作などの仲介処理。
+
+---
+
+### 🔁 逆引き辞書（目的 → 使用シンボル）
+
+* UI構成の初期化や全体制御をしたい → `UIController`
+* レイヤー一覧のUIを制御したい → `LayerListUI`, `LayerStore`, `LayerActions`
+* ツールのUI切り替えをしたい → `ToolSelectorUI`, `ToolStore`
+* キー操作でUIを制御したい → `ShortcutKeyUI`
+
+---
+
+### ✅ 実装・改修チェックリスト
+
+| チェック項目                                            | 該当シンボル             | 確認状況 |
+| ------------------------------------------------- | ------------------ | ---- |
+| UI全体の初期化や再構成処理が `UIController` に集約されているか          | ✅ `UIController`   | 🔲   |
+| レイヤーUIが `LayerListUI` + `LayerStore` によって構成されているか | ✅ 両方               | 🔲   |
+| ツールUIが `ToolSelectorUI` により分離されているか               | ✅ `ToolSelectorUI` | 🔲   |
+| ショートカット処理が `ShortcutKeyUI` に一元化されているか             | ✅ `ShortcutKeyUI`  | 🔲   |
+
+---
+

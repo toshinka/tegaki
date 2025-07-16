@@ -1,0 +1,58 @@
+**シンボルテーブル（パート5：ユーティリティ・定数・ローダ）v2.0準拠**
+
+---
+
+### ✅ 推奨構成：シンボル主体ブロック形式
+
+#### Symbol: `PointerUtils`
+
+* 📁 File: `src/utils/PointerUtils.js`
+* 🏷️ Type: Utility
+* 🧩 Role: ポインター関連座標の正規化、ピクセルスナップ、DPI補正などの共通計算処理を提供。
+
+---
+
+#### Symbol: `MathUtils`
+
+* 📁 File: `src/utils/MathUtils.js`
+* 🏷️ Type: Utility
+* 🧩 Role: 線形補間、角度計算、スムージングなど、幾何演算処理を提供。
+
+---
+
+#### Symbol: `AppConstants`
+
+* 📁 File: `src/constants/AppConstants.js`
+* 🏷️ Type: Const
+* 🧩 Role: アプリ全体で使用される定数（最大レイヤー数、キャンバス初期サイズなど）を定義。
+
+---
+
+#### Symbol: `AssetLoader`
+
+* 📁 File: `src/utils/AssetLoader.js`
+* 🏷️ Type: Loader
+* 🧩 Role: アイコンやフォントなどの静的アセット読み込み処理を提供。
+
+---
+
+### 🔁 逆引き辞書（目的 → 使用シンボル）
+
+* ポインター座標の補正やスナップを行いたい → `PointerUtils`
+* 角度・補間などの数学演算を使いたい → `MathUtils`
+* グローバルな設定値を使いたい → `AppConstants`
+* UI素材や外部アセットを読み込みたい → `AssetLoader`
+
+---
+
+### ✅ 実装・改修チェックリスト
+
+| チェック項目                                | 該当シンボル           | 確認状況 |
+| ------------------------------------- | ---------------- | ---- |
+| ポインター座標補正処理が `PointerUtils` に統一されているか | ✅ `PointerUtils` | 🔲   |
+| 計算系ユーティリティが `MathUtils` に集約されているか     | ✅ `MathUtils`    | 🔲   |
+| 定数定義が `AppConstants` にまとまっているか        | ✅ `AppConstants` | 🔲   |
+| アセット読み込み処理が `AssetLoader` に整理されているか   | ✅ `AssetLoader`  | 🔲   |
+
+---
+
