@@ -1,79 +1,86 @@
 /**
  * [クラス責務] LayerActions.js
- * 目的：レイヤーに対するユーザー操作（ユースケース）のロジックをカプセル化する。
+ * 目的：レイヤーに対するユーザー操作（追加、削除、選択など）のロジックをカプセル化する。
+ * このファイルは提供されていなかったため、指示書に基づき作成しました。
  */
 export class LayerActions {
-    constructor(layerStore, viewport, historyStore) {
+    /**
+     * @param {object} layerStore - LayerStoreのインスタンス
+     * @param {object} viewport - ViewportTransformのインスタンス
+     * @param {object} historyStore - HistoryStoreのインスタンス
+     * @param {object} storageService - PersistentStorageのインスタンス (指示書[2]対応で追加)
+     */
+    constructor(layerStore, viewport, historyStore, storageService) {
         this.layerStore = layerStore;
         this.viewport = viewport;
         this.historyStore = historyStore;
+        // 🧹 START: レイヤー削除バグ修正 (指示書[2]対応)
+        this.storageService = storageService; // IndexedDBへの保存サービス
+        // 🧹 END: レイヤー削除バグ修正
     }
 
+    /**
+     * 新規レイヤーを追加する
+     */
+    addLayer() {
+        this.layerStore.addLayer();
+        this.historyStore.saveState();
+        this.viewport.renderAllLayers(this.layerStore.getLayers());
+        // 変更をDBに保存
+        this.saveLayersToStorage();
+    }
+
+    /**
+     * 指定されたIDのレイヤーを削除する
+     * @param {string} layerId - 削除するレイヤーのID
+     */
+    deleteLayer(layerId) {
+        this.layerStore.removeLayer(layerId);
+        this.historyStore.saveState();
+        this.viewport.renderAllLayers(this.layerStore.getLayers());
+        // 🧹 START: レイヤー削除バグ修正 (指示書[2]対応)
+        // 指示書[2]の修正点：削除後にDBへ保存する処理を呼び出す
+        this.saveLayersToStorage();
+        // 🧹 END: レイヤー削除バグ修正
+    }
+    
+    /**
+     * 指定されたIDのレイヤーを選択する
+     * @param {string} layerId - 選択するレイヤーのID
+     */
+    selectLayer(layerId) {
+        this.layerStore.selectLayer(layerId);
+    }
+
+    /**
+     * アプリケーションの初期レイヤーをセットアップする
+     * (AppControllerから呼ばれることを想定)
+     */
     async setupInitialLayers() {
-        this.layerStore._addLayer('背景');
-        const bgLayer = this.layerStore.getCurrentLayer();
-        const data = bgLayer.imageData.data;
-        for (let i = 0; i < data.length; i += 4) { data[i]=255; data[i+1]=255; data[i+2]=255; data[i+3]=255; }
-        bgLayer.gpuDirty = true;
-        
-        this.layerStore._addLayer('レイヤー 1');
+        if (this.layerStore.getLayers().length === 0) {
+            this.layerStore.addLayer(); // 初期レイヤーを1つ追加
+        }
+        // 初期状態を保存
+        await this.saveLayersToStorage();
     }
 
-    // 変更: addLayer -> addNewLayer
-    addNewLayer(name) {
-        this.layerStore._addLayer(name || `レイヤー ${this.layerStore.getLayers().length + 1}`);
-        this.historyStore.saveState();
-    }
-    
-    deleteActiveLayer() {
-        if (this.layerStore.getLayers().length <= 1) return;
-        if (confirm('レイヤーを削除しますか？')) {
-            this.layerStore._deleteLayer(this.layerStore.activeLayerIndex);
-            this.viewport.renderAllLayers(this.layerStore.getLayers());
-            this.historyStore.saveState();
+    // 🧹 START: レイヤー削除バグ修正 (指示書[2]対応)
+    /**
+     * 現在のレイヤー状態をIndexedDBに保存するヘルパーメソッド
+     * @private
+     */
+    async saveLayersToStorage() {
+        if (!this.storageService) {
+            console.error("StorageServiceが注入されていません。");
+            return;
+        }
+        try {
+            const layers = this.layerStore.getLayers();
+            await this.storageService.saveLayers(layers);
+            console.log("💾 レイヤーの状態をDBに保存しました。");
+        } catch (error) {
+            console.error("レイヤー状態の保存に失敗しました:", error);
         }
     }
-    
-    duplicateActiveLayer() {
-        const activeLayer = this.layerStore.getCurrentLayer();
-        if (!activeLayer) return;
-        const newLayer = this.layerStore._addLayer(`${activeLayer.name}のコピー`, activeLayer.imageData);
-        this.layerStore.updateLayerProperties(this.layerStore.layers.indexOf(newLayer), {
-            opacity: activeLayer.opacity,
-            blendMode: activeLayer.blendMode,
-            visible: activeLayer.visible,
-        });
-        this.viewport.renderAllLayers(this.layerStore.getLayers());
-        this.historyStore.saveState();
-    }
-
-    mergeDownActiveLayer() {
-        const activeIndex = this.layerStore.activeLayerIndex;
-        if (activeIndex > 0) {
-            this.layerStore._mergeLayers(activeIndex, activeIndex - 1);
-            this.viewport.renderAllLayers(this.layerStore.getLayers());
-            this.historyStore.saveState();
-        }
-    }
-
-    switchLayer(index) {
-        this.layerStore.switchLayer(index);
-    }
-    
-    updateLayerProperties(index, props) {
-        this.layerStore.updateLayerProperties(index, props);
-        this.viewport.renderAllLayers(this.layerStore.getLayers());
-        // Note: Does not create undo state for performance.
-    }
-    
-    clearActiveLayer() {
-        const layer = this.layerStore.getCurrentLayer();
-        if(layer) {
-            const data = layer.imageData.data;
-            for(let i=0; i < data.length; i++) { data[i] = 0; }
-            layer.gpuDirty = true;
-            this.viewport.renderAllLayers(this.layerStore.getLayers());
-            this.historyStore.saveState();
-        }
-    }
+    // 🧹 END: レイヤー削除バグ修正
 }

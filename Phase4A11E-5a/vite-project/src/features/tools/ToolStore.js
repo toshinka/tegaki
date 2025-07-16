@@ -15,21 +15,36 @@ export class ToolStore {
                 minSizeRatio: 0.3,
             }
         };
-        this.subscribers = []; // List of functions to call when state changes
+        this.subscribers = [];
     }
 
-    // --- State Access ---
     getState() {
         return this.state;
     }
 
-    // --- State Modification ---
+    // 🎨 START: カラーピッカーバグ修正 (指示書[1]対応)
+    /**
+     * 描画エンジンが利用するための現在のツール設定を返す。
+     * DrawingEngineが 'color' プロパティを期待しているため、
+     * 内部的な 'mainColor' を 'color' としてマッピングする。
+     * @returns {{tool: string, color: string, size: number, pressureSettings: object}}
+     */
+    getCurrentToolSettings() {
+        const state = this.getState();
+        return {
+            tool: state.tool,
+            color: state.mainColor,
+            size: state.size,
+            pressureSettings: state.pressureSettings
+        };
+    }
+    // 🎨 END: カラーピッカーバグ修正
+
     setState(newState) {
         this.state = { ...this.state, ...newState };
         this.notify();
     }
 
-    // --- Subscription ---
     subscribe(callback) {
         this.subscribers.push(callback);
     }
