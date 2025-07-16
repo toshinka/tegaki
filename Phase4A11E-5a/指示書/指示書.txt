@@ -1,0 +1,52 @@
+# Phase4A11E-4R 修正指示書：シンボル名 v2.0準拠 置換対応
+
+## 🔧 作業内容概要
+次の2ファイルにおいて、旧いシンボル名（クラス名）を **v2.0規約に準拠した新しい名前に変更**してください。ロジックは一切変更せず、「名前の置換」だけを行ってください。
+
+---
+
+## ✅ 修正対象一覧
+
+### 1. `src/app/AppController.js`
+#### 修正内容：
+- `PointerInteractionHandler` → `CanvasInteraction`
+- import元ファイルはすでに `CanvasInteraction.js` に変更済みなので、**クラス名だけ置換**してください。
+
+```diff
+-import PointerInteractionHandler from '../ui/CanvasInteraction.js';
++import CanvasInteraction from '../ui/CanvasInteraction.js';
+
+- this.pointerInteractionHandler = new PointerInteractionHandler(...);
+- this.ui.setInteractionHandler(this.pointerInteractionHandler);
++ this.canvasInteraction = new CanvasInteraction(...);
++ this.ui.setInteractionHandler(this.canvasInteraction);
+
+
+2. src/engine/DrawingEngine.js
+修正内容：
+CanvasViewport → ViewportTransform
+
+import元はすでに ViewportTransform.js に変更済。クラス名を合わせてください。
+
+```diff
+-import CanvasViewport from './ViewportTransform.js';
++import ViewportTransform from './ViewportTransform.js';
+
+- this.viewport = new CanvasViewport(canvas);
++ this.viewport = new ViewportTransform(canvas);
+
+🚫 注意事項
+ロジックや構造は絶対に変更しないでください。
+
+import先のファイル名は変更不要です。
+
+この作業はあくまで名前の統一のためのリネーム作業です。
+
+🗂️ 参考：対応済ファイル構成
+src/ui/CanvasInteraction.js
+src/engine/ViewportTransform.js
+
+✅ 完了条件
+該当2ファイルで、旧クラス名が完全に置換されていること
+
+ロジックに影響が出ていないこと（ビルドや実行が問題なく行える）

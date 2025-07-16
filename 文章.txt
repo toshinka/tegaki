@@ -91,60 +91,6 @@ https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4c/
 
 
 
-⚠️ 総合AIコーディング規約v2.0.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E2%9A%A0%EF%B8%8F%20%E7%B7%8F%E5%90%88AI%E3%82%B3%E3%83%BC%E3%83%87%E3%82%A3%E3%83%B3%E3%82%B0%E8%A6%8F%E7%B4%84v2.0.txt
-
-⚠️司令AI向け活用指示書 v1.0.txt
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/%E2%9A%A0%EF%B8%8F%E5%8F%B8%E4%BB%A4AI%E5%90%91%E3%81%91%E6%B4%BB%E7%94%A8%E6%8C%87%E7%A4%BA%E6%9B%B8%20v1.0.txt
-
-
-以下が実装されてるものです。viteを導入しリファイリング後のものです。
-
-
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/index.html
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/app/AppController.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/engine/DrawingEngine.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/engine/ViewportTransform.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/engine/WebGLRenderer.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/features/history/HistoryStore.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/features/layers/LayerActions.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/features/layers/LayerFactory.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/features/layers/LayerStore.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/features/tools/ToolActions.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/features/tools/ToolStore.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/input/ShortcutHandler.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/services/StorageService.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/ui/CanvasInteraction.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/ui/UIRoot.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/ui/components/ColorPicker.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/ui/components/LayerPanel.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/ui/components/PenSettingsPanel.js
-https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-4R/vite-project/src/ui/components/Toolbar.js
-
-
-
-
-
-
-
-
-
-ブラウザお絵描きツールをコーディング初心者が無料AI達にコーディングを全委任して、どれだけ作れるかの実験プロジェクトです。
-GPTくんが作った、指示書に従って改修してください。
-尚、私はコーディング赤ちゃんなので、一括コピペで差し替えができる提出物を望みます(´・ω・`)
-
-
-src/app/ApplicationStore.js
-
-src/features/history/HistoryActions.js
-
-src/features/tools/PenTool.js
-src/features/tools/EraserTool.js
-src/features/canvas/CoordinateSystem.js
-
-src/events/InputHandler.js
-src/utils/EventUtils.js
-src/utils/MathUtils.js
 
 
 
