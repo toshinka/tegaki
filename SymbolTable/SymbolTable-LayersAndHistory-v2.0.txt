@@ -1,0 +1,111 @@
+📘 SymbolTable-LayersAndHistory-v2.0.txt
+■ 目次
+1.📂 LayerStore（レイヤーデータの管理）
+
+2.🛠 LayerActions（レイヤー操作）
+
+3.🧩 LayerFactory（レイヤー生成）
+
+4.🎨 LayerRendererGL（WebGL描画）
+
+5.📜 HistoryStore（履歴の保存と復元）
+
+6.🧠 UndoRedoManager（Undo/Redo機構）
+
+7.🔍 逆引き索引（関数・クラス → 担当ファイル）
+
+🗂 1. LayerStore（レイヤーデータの管理）
+役割：全レイヤーの状態（位置・不透明度・表示/非表示等）を一元管理し、UI・エンジンと双方向通信
+
+主な責務：
+
+各レイヤーの状態保持と更新
+
+レイヤーの選択・並び順管理
+
+外部イベント（履歴やUI）との同期
+
+シンボル名	種別	機能概要	定義ファイル
+LayerStore	クラス	レイヤー状態の集中管理	LayerStore.js
+getState()	メソッド	現在のレイヤー情報を返す	LayerStore 内
+subscribe()	メソッド	状態変化を監視する	LayerStore 内
+
+⚙ 2. LayerActions（レイヤー操作）
+役割：LayerStore のデータに対する操作API。UIやUndoから呼び出されることで状態が変化
+
+主な責務：
+
+レイヤーの追加・削除・複製・並び順操作
+
+属性変更（不透明度・表示状態）
+
+Undo対象イベントの発火
+
+シンボル名	種別	機能概要	定義ファイル
+LayerActions	クラス	レイヤー操作APIの実装	LayerActions.js
+addLayer()	メソッド	レイヤーの追加	LayerActions 内
+deleteLayer()	メソッド	レイヤーの削除	LayerActions 内
+
+🧩 3. LayerFactory（レイヤー生成）
+役割：レイヤーの初期ImageDataとtransformを含む構造を生成
+
+主な責務：
+
+WebGLテクスチャと2D描画バッファの同時生成
+
+サイズや座標系の初期化
+
+シンボル名	種別	機能概要	定義ファイル
+LayerFactory	クラス	新しいレイヤー構造の生成	LayerFactory.js
+createLayer()	メソッド	空レイヤーの作成	LayerFactory 内
+
+🎨 4. LayerRendererGL（WebGL描画）
+役割：各レイヤーのテクスチャをWebGLでキャンバス上に合成
+
+主な責務：
+
+複数レイヤーのブレンド描画
+
+座標系のスケーリング・回転・透明度適用
+
+シンボル名	種別	機能概要	定義ファイル
+LayerRendererGL	クラス	WebGLベースのレイヤー描画機構	WebGLRenderer.js
+renderAllLayers()	メソッド	レイヤーを順序通りに合成描画	LayerRendererGL 内
+
+🧠 5. HistoryStore（履歴の保存と復元）
+役割：アプリの状態変化（操作履歴）を保存し、Undo/Redoを提供
+
+主な責務：
+
+履歴のスタック管理
+
+履歴の登録・巻き戻し・巻き進み
+
+各機能（レイヤー/ツール）との連携
+
+シンボル名	種別	機能概要	定義ファイル
+HistoryStore	クラス	操作履歴全体の保持	HistoryStore.js
+undo()	メソッド	Undo操作	HistoryStore 内
+redo()	メソッド	Redo操作	HistoryStore 内
+
+🧠 6. UndoRedoManager（Undo/Redo機構の核）
+役割：実際の状態変更を行う関数をスタックに保存し、復元や再実行を制御
+
+主な責務：
+
+push/undo/redoの統括
+
+リスナーへの状態通知
+
+シンボル名	種別	機能概要	定義ファイル
+UndoRedoManager	クラス	Undo/Redoの実行管理	UndoRedoManager.js
+push()	メソッド	履歴の登録	UndoRedoManager 内
+
+🔍 7. 逆引き索引（関数・クラス → 担当ファイル）
+名前	担当ファイル	用途分類
+LayerStore	LayerStore.js	Store
+LayerActions	LayerActions.js	Actions
+LayerFactory	LayerFactory.js	Utility/Factory
+LayerRendererGL	WebGLRenderer.js	Renderer
+HistoryStore	HistoryStore.js	Store
+UndoRedoManager	UndoRedoManager.js	Logic

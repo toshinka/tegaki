@@ -1,0 +1,64 @@
+📘 SymbolTable-Utils-v2.0.txt
+■ 目次
+1.🔧 ユーティリティ関数（色変換・行列演算補助など）
+
+2.🧮 定数定義群
+
+3.📥 ローダ・初期化処理
+
+4.🔍 逆引き索引（関数・クラス → 担当ファイル）
+
+🔧 1. ユーティリティ関数（色変換・行列演算補助など）
+役割：描画処理や座標計算などに利用される共通処理を集約
+
+主な責務：
+
+色の16進→RGBA変換、正規化
+
+行列やベクトル処理の補助
+
+座標系の変換（旧TransformUtils系）
+
+シンボル名	種別	機能概要	定義ファイル
+hexToRgba()	関数	HEX文字列からRGBA形式に変換	ColorUtils.js
+isValidMatrix()	関数	行列が有効かを検証	MathUtils.js
+clamp()	関数	値をmin-max間に制限	MathUtils.js
+lerp()	関数	線形補間	MathUtils.js
+
+🧮 2. 定数定義群
+役割：アプリ全体で共通利用される定数の集中管理
+
+主な責務：
+
+スーパーサンプリング倍率や描画モード
+
+カラーパレットのデフォルト定義
+
+シンボル名	種別	機能概要	定義ファイル
+SUPER_SAMPLING_FACTOR	定数	高精細描画の倍率係数	Constants.js
+DEFAULT_COLOR_PALETTE	定数	初期カラーパレット配列	Constants.js
+DEFAULT_CANVAS_WIDTH / HEIGHT	定数	キャンバス初期サイズ	Constants.js
+
+📥 3. ローダ・初期化処理
+役割：画像素材のロード・IndexedDB初期化などアプリ起動前処理
+
+主な責務：
+
+ローカルDB初期化・確認
+
+画像読込用の非同期ユーティリティ
+
+ロード成功/失敗時のハンドリング
+
+シンボル名	種別	機能概要	定義ファイル
+loadImageAsync()	関数	非同期で画像を読み込む	Loader.js
+initializeDB()	関数	IndexedDBの初期設定処理	StorageService.js
+getLayerData()	関数	DBからのレイヤーデータ取得	StorageService.js
+
+🔍 4. 逆引き索引（関数・定数 → 担当ファイル）
+名前	担当ファイル	用途分類
+hexToRgba	ColorUtils.js	色変換
+isValidMatrix	MathUtils.js	数学補助
+SUPER_SAMPLING_FACTOR	Constants.js	定数
+loadImageAsync	Loader.js	画像ロード
+initializeDB	StorageService.js	永続化初期化

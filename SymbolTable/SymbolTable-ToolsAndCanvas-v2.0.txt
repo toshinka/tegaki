@@ -1,0 +1,82 @@
+📘 SymbolTable-ToolsAndCanvas-v2.0.txt
+■ 目次
+1.🖌 ToolStore（ツール状態の管理）
+
+2.🧰 ToolController（ツール機能の制御と処理）
+
+3.✏️ BrushTool / 🪣 FillTool（描画系ツールの実装）
+
+4.🎮 CanvasInteraction（ユーザー操作との接続点）
+
+5.🔍 逆引き索引（関数・クラス → 担当ファイル）
+
+🗂 1. ToolStore（ツール状態の管理）
+役割：現在のツール・色・サイズなどを保持し、他モジュールへ状態を提供
+
+主な責務：
+
+ツール種別や描画色の保存・取得
+
+UIからの変更を受け取り反映
+
+各ツール処理に必要な設定を供給
+
+シンボル名	種別	機能概要	定義ファイル
+ToolStore	クラス	ツール設定の一元管理	ToolStore.js
+getState()	メソッド	現在のツール設定を返す	ToolStore 内
+setTool()	メソッド	使用ツールの切り替え	ToolStore 内
+
+🧰 2. ToolController（ツール機能の制御と処理）
+役割：ユーザー操作に基づき、対応するツール処理（描画・塗りつぶし等）を起動
+
+主な責務：
+
+ツール種別ごとの適切な動作呼び出し
+
+キャンバスからの入力とTool内部処理の仲介
+
+描画結果のレイヤーへの適用
+
+シンボル名	種別	機能概要	定義ファイル
+ToolController	クラス	ツール操作の橋渡し役	ToolController.js
+handlePointerDown()	メソッド	ユーザーが描き始めた時の処理	ToolController 内
+
+✏️ 3. BrushTool / 🪣 FillTool（描画系ツールの実装）
+役割：実際の描画アルゴリズム（線・塗りつぶし）を提供
+
+主な責務：
+
+筆圧やスムージングによる筆運び処理
+
+レイヤーへのImageDataの反映
+
+塗り潰し範囲の検出と転写
+
+シンボル名	種別	機能概要	定義ファイル
+BrushTool	クラス	ブラシによる手描き処理	BrushTool.js
+FillTool	クラス	バケツツール（範囲塗り潰し）	FillTool.js
+applyStroke()	メソッド	描画ストロークの適用	BrushTool 内
+
+🎮 4. CanvasInteraction（ユーザー操作との接続点）
+役割：マウスやタッチなどの入力を受け取り、座標変換やツール起動へ橋渡し
+
+主な責務：
+
+スクリーン座標 → ワールド座標 → レイヤーローカル座標の変換
+
+ドラッグ・回転・拡大縮小処理の検出
+
+ツールコントローラーの起動
+
+シンボル名	種別	機能概要	定義ファイル
+CanvasInteraction	クラス	ユーザー操作処理	CanvasInteraction.js
+handlePointerDown()	メソッド	ユーザー入力の初期処理	CanvasInteraction 内
+viewportTransform	プロパティ	スクリーン座標変換の補助	同上（インスタンス）
+
+🔍 5. 逆引き索引（関数・クラス → 担当ファイル）
+名前	担当ファイル	用途分類
+ToolStore	ToolStore.js	Store
+ToolController	ToolController.js	Controller
+BrushTool	BrushTool.js	Tool
+FillTool	FillTool.js	Tool
+CanvasInteraction	CanvasInteraction.js	UI/Interaction
