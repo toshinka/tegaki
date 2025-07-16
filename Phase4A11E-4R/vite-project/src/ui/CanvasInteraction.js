@@ -1,6 +1,5 @@
 import { mat4 } from 'gl-matrix';
-import { getCanvasCoordinates, hexToRgba } from '../../utils/TransformUtils.js';
-import { transformWorldToLocal, isValidMatrix } from '../../utils/TransformUtils.js';
+import { hexToRgba } from '../utils/ColorUtils.js';
 
 /**
  * [クラス責務] CanvasInteraction.js
@@ -71,7 +70,7 @@ export class CanvasInteraction {
         // これにより、ドラッグ中にカーソルがブラウザウィンドウの外に出てもイベントを捕捉し続けられる
         this.canvasArea.setPointerCapture(e.pointerId);
 
-        const coords = getCanvasCoordinates(e, this.canvas, this.viewport.viewTransform);
+        const coords = this.viewportTransform.screenToWorld(e.clientX, e.clientY);
         
         if (this.isSpaceDown) {
             this.isPanning = true;
@@ -136,7 +135,7 @@ export class CanvasInteraction {
             if (!activeLayer) return;
             
             const { tool, mainColor, size, pressureSettings } = this.toolStore.getState();
-            const coords = getCanvasCoordinates(e, this.canvas, this.viewport.viewTransform);
+            const coords = this.viewportTransform.screenToWorld(e.clientX, e.clientY);
 
             const SUPER_SAMPLING_FACTOR = this.viewport.renderer?.SUPER_SAMPLING_FACTOR || 1.0;
             const superX = coords.x * SUPER_SAMPLING_FACTOR;
