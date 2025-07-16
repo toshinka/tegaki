@@ -22,6 +22,64 @@ export class ViewportTransform {
         this.clearDirtyRect();
     }
 
+    // --- 座標変換メソッド（追加） ---
+    
+    /**
+     * スクリーン座標をワールド座標に変換
+     * @param {number} clientX - マウスのクライアントX座標
+     * @param {number} clientY - マウスのクライアントY座標
+     * @returns {Object} ワールド座標 {x, y}
+     */
+    screenToWorld(clientX, clientY) {
+        const rect = this.canvas.getBoundingClientRect();
+        const canvasX = clientX - rect.left;
+        const canvasY = clientY - rect.top;
+        
+        const t = this.viewTransform;
+        
+        // ビュー変換の逆変換を適用
+        const worldX = (canvasX - t.left) / (t.scale * t.flipX) - this.canvas.width / 2;
+        const worldY = (canvasY - t.top) / (t.scale * t.flipY) - this.canvas.height / 2;
+        
+        // 回転の逆変換（簡略化）
+        const angle = -t.rotation * Math.PI / 180;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        
+        return {
+            x: worldX * cos - worldY * sin + this.canvas.width / 2,
+            y: worldX * sin + worldY * cos + this.canvas.height / 2
+        };
+    }
+
+    /**
+     * ワールド座標からローカル座標への変換
+     * @param {number} worldX - ワールドX座標
+     * @param {number} worldY - ワールドY座標
+     * @param {Float32Array} modelMatrix - モデル行列
+     * @returns {Object} ローカル座標 {x, y}
+     */
+    transformWorldToLocal(worldX, worldY, modelMatrix) {
+        // gl-matrixを使用してモデル行列の逆行列を計算
+        const invMatrix = mat4.create();
+        mat4.invert(invMatrix, modelMatrix);
+        
+        // 同次座標で変換
+        const worldVec = [worldX, worldY, 0, 1];
+        const localVec = [0, 0, 0, 0];
+        
+        // 逆行列を適用してローカル座標を取得
+        for (let i = 0; i < 4; i++) {
+            localVec[i] = 
+                invMatrix[i] * worldVec[0] +
+                invMatrix[i + 4] * worldVec[1] +
+                invMatrix[i + 8] * worldVec[2] +
+                invMatrix[i + 12] * worldVec[3];
+        }
+        
+        return { x: localVec[0], y: localVec[1] };
+    }
+
     // --- Drawing Bridge Methods ---
 
     drawCircle(centerX, centerY, radius, color, isEraser, layer) {

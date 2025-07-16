@@ -2,12 +2,35 @@ import { ViewportTransform } from '../engine/ViewportTransform.js';
 import { mat4 } from 'gl-matrix';
 import { hexToRgba } from '../utils/ColorUtils.js';
 
+/**
+ * ワールド座標からローカル座標への変換を行う補助関数
+ */
+function transformWorldToLocal(worldX, worldY, modelMatrix) {
+    // モデル行列の逆行列を計算
+    const invMatrix = mat4.create();
+    mat4.invert(invMatrix, modelMatrix);
+    
+    // 同次座標で変換
+    const worldVec = [worldX, worldY, 0, 1];
+    const localVec = [0, 0, 0, 0];
+    
+    // 逆行列を適用してローカル座標を取得
+    for (let i = 0; i < 4; i++) {
+        localVec[i] = 
+            invMatrix[i] * worldVec[0] +
+            invMatrix[i + 4] * worldVec[1] +
+    
+        invMatrix[i + 8] * worldVec[2] +
+            invMatrix[i + 12] * worldVec[3];
+    }
+    
+    return { x: localVec[0], y: localVec[1] };
+}
 
 /**
  * [クラス責務] CanvasInteraction.js
  * 目的：ユーザーのキャンバスに対するすべての入力（マウス、ペン、タッチ操作）を管理・解釈する。
  */
-// 変更: クラス名を指示書に合わせて 'CanvasInteraction' に統一
 export class CanvasInteraction {
     constructor(canvas, { layerStore, toolStore, historyStore, viewport, layerActions, toolActions }) {
         this.canvas = canvas;
@@ -17,6 +40,9 @@ export class CanvasInteraction {
         this.viewport = viewport;
         this.layerActions = layerActions;
         this.toolActions = toolActions;
+        
+        // 修正: viewportTransformを正しく初期化
+        this.viewportTransform = viewport;
         
         this.canvasArea = document.getElementById('canvas-area');
         if (!this.canvasArea) console.error("❌ CanvasInteraction: 'canvas-area' not found!");
@@ -69,10 +95,10 @@ export class CanvasInteraction {
         }
         
         // ポインターキャプチャを設定
-        // これにより、ドラッグ中にカーソルがブラウザウィンドウの外に出てもイベントを捕捉し続けられる
         this.canvasArea.setPointerCapture(e.pointerId);
 
-        const coords = new ViewportTransform(e, this.canvas, this.viewport.viewTransform);
+        // 修正: ViewportTransformコンストラクタの使用を修正
+        const coords = this.viewportTransform.screenToWorld(e.clientX, e.clientY);
         
         if (this.isSpaceDown) {
             this.isPanning = true;
@@ -92,14 +118,16 @@ export class CanvasInteraction {
         const SUPER_SAMPLING_FACTOR = this.viewport.renderer?.SUPER_SAMPLING_FACTOR || 1.0;
         const superX = coords.x * SUPER_SAMPLING_FACTOR;
         const superY = coords.y * SUPER_SAMPLING_FACTOR;
-        const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix);
+        
+        // 修正: transformWorldToLocal関数を使用
+        const localPoint = transformWorldToLocal(superX, superY, activeLayer.modelMatrix);
         
         this.viewport.clearDirtyRect();
 
         const { tool, mainColor, size, pressureSettings } = this.toolStore.getState();
 
         if (tool === 'bucket') {
-            this.toolActions.fill(activeLayer, local.x, local.y);
+            this.toolActions.fill(activeLayer, localPoint.x, localPoint.y);
             this.viewport.renderAllLayers(this.layerStore.getLayers());
             this.historyStore.saveState();
             this.onDrawEnd?.(activeLayer);
@@ -107,16 +135,16 @@ export class CanvasInteraction {
         }
 
         this.isDrawing = true;
-        this.historyStore.saveState(); // 描画開始前に状態を保存
+        this.historyStore.saveState();
         this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
-        this.lastPoint = { ...local, pressure: this.pressureHistory[0] };
+        this.lastPoint = { ...localPoint, pressure: this.pressureHistory[0] };
         
         const pressureSize = this.calculatePressureSize(size, this.lastPoint.pressure, pressureSettings);
-        this.viewport.updateDirtyRect(local.x, local.y, pressureSize);
+        this.viewport.updateDirtyRect(localPoint.x, localPoint.y, pressureSize);
         
         const isEraser = tool === 'eraser';
         // クリック時に点を描画
-        this.viewport.drawCircle(local.x, local.y, pressureSize / 2, hexToRgba(mainColor), isEraser, activeLayer);
+        this.viewport.drawCircle(localPoint.x, localPoint.y, pressureSize / 2, hexToRgba(mainColor), isEraser, activeLayer);
         
         this.viewport._requestRender(this.layerStore.getLayers());
     }
@@ -142,6 +170,8 @@ export class CanvasInteraction {
             const SUPER_SAMPLING_FACTOR = this.viewport.renderer?.SUPER_SAMPLING_FACTOR || 1.0;
             const superX = coords.x * SUPER_SAMPLING_FACTOR;
             const superY = coords.y * SUPER_SAMPLING_FACTOR;
+            
+            // 修正: transformWorldToLocal関数を使用
             const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix);
             
             const currentPressure = e.pressure > 0 ? e.pressure : 0.5;
@@ -162,12 +192,12 @@ export class CanvasInteraction {
             this.viewport.drawLine(
                 this.lastPoint.x, this.lastPoint.y, 
                 local.x, local.y, 
-                size, // ブラシの基本サイズ
+                size,
                 hexToRgba(mainColor), 
                 isEraser,
-                this.lastPoint.pressure, // 開始点の筆圧
-                currentPressure,         // 終了点の筆圧
-                boundCalculatePressureSize, // 筆圧をサイズに変換する関数
+                this.lastPoint.pressure,
+                currentPressure,
+                boundCalculatePressureSize,
                 activeLayer
             );
 
@@ -181,13 +211,11 @@ export class CanvasInteraction {
     
     async handlePointerUp(e) { 
         if (this.isDrawing) {
-            // isDrawingがtrueの場合のみポインタキャプチャを解放する
             this.canvasArea.releasePointerCapture(e.pointerId);
 
             const activeLayer = this.layerStore.getCurrentLayer();
             if (activeLayer) {
                 this.viewport.syncDirtyRectToImageData(activeLayer, this.viewport.dirtyRect);
-                // 描画の終了を記録（履歴用）
                 this.historyStore.saveState(); 
                 this.onDrawEnd?.(activeLayer);
             }

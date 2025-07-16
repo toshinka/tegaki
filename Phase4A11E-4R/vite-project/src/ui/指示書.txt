@@ -1,0 +1,39 @@
+🔧 【目的】
+CanvasInteraction.js で発生する以下のエラーを修正する。
+
+
+Uncaught TypeError: Cannot read properties of undefined (reading 'transformWorldToLocal')
+このエラーは this.viewportTransform の初期化不足、もしくは ViewportTransform クラスが想定どおりのAPIを提供していないためと推定される。
+
+📘【対象シンボル構造と依存関係】
+CanvasInteraction
+
+所在: src/ui/CanvasInteraction.js
+
+役割: ユーザーのポインターイベントを処理し、ツールに応じて描画を行う。
+
+依存:
+
+ViewportTransform（位置変換）
+
+ToolStore（ペン種別）
+
+DrawingEngine（描画命令）
+
+ViewportTransform
+
+所在: src/engine/ViewportTransform.js
+
+役割: WebGL座標系とローカル座標系の変換（screenToWorld, transformWorldToLocal などを持つ）
+
+懸念点: メソッドの定義と実装が CanvasInteraction.js 側の期待と一致していない可能性
+
+📎 添付予定ファイル（Claude用）
+CanvasInteraction.js
+
+ViewportTransform.js
+
+必要に応じて：AppController.js（CanvasInteraction の初期化を確認するため）
+
+
+
