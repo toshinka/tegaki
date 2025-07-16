@@ -6,7 +6,7 @@
  *
  * @abstract
  */
-// 変更: DrawingEngine -> StrokeRenderer
+// v2.0規約準拠: DrawingEngine -> StrokeRenderer (描画のストロークに特化した責務を明確化)
 export class StrokeRenderer {
     constructor(canvas) {
         if (this.constructor === StrokeRenderer) { // 変更: DrawingEngine -> StrokeRenderer

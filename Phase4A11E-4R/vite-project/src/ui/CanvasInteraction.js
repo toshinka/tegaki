@@ -5,10 +5,9 @@ import { transformWorldToLocal, isValidMatrix } from '../../utils/TransformUtils
 /**
  * [クラス責務] CanvasInteraction.js
  * 目的：ユーザーのキャンバスに対するすべての入力（マウス、ペン、タッチ操作）を管理・解釈する。
- * (変更後クラス名: PointerInteractionHandler)
  */
-// 変更: クラス名を CanvasInteraction -> PointerInteractionHandler に変更
-export class PointerInteractionHandler {
+// 変更: クラス名を指示書に合わせて 'CanvasInteraction' に統一
+export class CanvasInteraction {
     constructor(canvas, { layerStore, toolStore, historyStore, viewport, layerActions, toolActions }) {
         this.canvas = canvas;
         this.layerStore = layerStore;
@@ -19,7 +18,7 @@ export class PointerInteractionHandler {
         this.toolActions = toolActions;
         
         this.canvasArea = document.getElementById('canvas-area');
-        if (!this.canvasArea) console.error("❌ PointerInteractionHandler: 'canvas-area' not found!");
+        if (!this.canvasArea) console.error("❌ CanvasInteraction: 'canvas-area' not found!");
         
         // --- Interaction State ---
         this.isDrawing = false;
@@ -46,7 +45,7 @@ export class PointerInteractionHandler {
         this.onDrawEnd = null;
 
         this.bindEvents();
-        console.log("✅ PointerInteractionHandler: 初期化成功");
+        console.log("✅ CanvasInteraction: 初期化成功");
     }
 
     bindEvents() {
@@ -58,7 +57,6 @@ export class PointerInteractionHandler {
         this.canvasArea.addEventListener('contextmenu', e => e.preventDefault());
     }
 
-    // 変更: onPointerDown -> handlePointerDown
     handlePointerDown(e) {
         // 主ボタン（左クリックまたはペン先）でない場合は無視
         if (e.button !== 0) return;
@@ -122,7 +120,6 @@ export class PointerInteractionHandler {
         this.viewport._requestRender(this.layerStore.getLayers());
     }
 
-    // 変更: onPointerMove -> handlePointerMove
     handlePointerMove(e) {
         if (this.isPanning) {
             const dx = e.clientX - this.dragStartX;
@@ -157,12 +154,6 @@ export class PointerInteractionHandler {
 
             const isEraser = tool === 'eraser';
             
-            // ▼▼▼【ここを修正しました！】▼▼▼
-            // 変更: 動作しない `drawLineSegment` から、筆圧に対応した `drawLine` (円描画がベース) に処理を戻すことで、描画機能を回復させます。
-            //       新しい `drawLineSegment` は、WebGLの `lineWidth` という機能の制約で、1pxより太い線が描画できない問題がありました。
-            //       こちらの `drawLine` は、短い区間を多数の円で描画することで、安定した太線と筆圧表現を実現します。
-            
-            // 描画エンジンに渡す筆圧計算関数が、正しい設定(`pressureSettings`)を使えるように、ここで新しい関数を作って渡します。
             const boundCalculatePressureSize = (baseSize, pressure) => {
                 return this.calculatePressureSize(baseSize, pressure, pressureSettings);
             };
@@ -178,7 +169,6 @@ export class PointerInteractionHandler {
                 boundCalculatePressureSize, // 筆圧をサイズに変換する関数
                 activeLayer
             );
-            // ▲▲▲【修正はここまで！】▲▲▲
 
             this.lastPoint = { ...local, pressure: currentPressure };
             this.viewport._requestRender(this.layerStore.getLayers());
@@ -188,7 +178,6 @@ export class PointerInteractionHandler {
         this.updateCursor();
     }
     
-    // 変更: onPointerUp -> handlePointerUp
     async handlePointerUp(e) { 
         if (this.isDrawing) {
             // isDrawingがtrueの場合のみポインタキャプチャを解放する

@@ -3,7 +3,7 @@ import { LayerStore } from '../features/layers/LayerStore.js';
 import { ToolStore } from '../features/tools/ToolStore.js';
 import { HistoryStore } from '../features/history/HistoryStore.js';
 import { PersistentStorage } from '../services/StorageService.js';
-import { LayerRendererGL } from '../engine/WebGLRenderer.js'; 
+import { LayerRendererGL } from '../engine/WebGLRenderer.js';
 import { ViewportTransform } from '../engine/ViewportTransform.js';
 import { CanvasInteraction } from '../ui/CanvasInteraction.js';
 import { UIRoot } from '../ui/UIRoot.js';
@@ -45,6 +45,8 @@ export class AppBootstrap {
              console.error("お使いのブラウザはWebGLをサポートしていないか、有効になっていません。");
              return;
         }
+        
+        // 指示書[2]の修正を適用: new CanvasViewport(canvas) -> new ViewportTransform(canvas, renderer)
         const viewport = new ViewportTransform(canvas, renderer);
 
         // --- ユーザー操作のロジック (Actions) ---
@@ -52,6 +54,7 @@ export class AppBootstrap {
         const toolActions = new ToolActions(toolStore);
 
         // --- 入力処理 (Handlers) ---
+        // 指示書[1]の修正を適用: new PointerInteractionHandler(...) -> new CanvasInteraction(...)
         new CanvasInteraction(canvas, {
             layerStore, toolStore, historyStore, viewport, layerActions, toolActions
         });
@@ -100,11 +103,11 @@ export class AppBootstrap {
             const s = renderer.SUPER_SAMPLING_FACTOR;
             // Draw a red circle in the center of the canvas
             renderer.drawCircle(
-                canvas.width / 2 * s, 
+                canvas.width / 2 * s,
                 canvas.height / 2 * s,
                 50 * s, // 円を大きくして視認性を向上
-                { r: 255, g: 0, b: 0, a: 1.0 }, 
-                false, 
+                { r: 255, g: 0, b: 0, a: 1.0 },
+                false,
                 activeLayer
             );
 
