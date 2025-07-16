@@ -1,0 +1,189 @@
+🎨 描画・入力関連の未掲載機能
+1. CSS Paint API (Houdini)
+javascript// カスタムペイントワークレット
+class BrushPaint {
+  paint(ctx, size, properties) {
+    // CSS内で直接描画処理を定義
+    ctx.strokeStyle = properties.get('--brush-color');
+    ctx.lineWidth = properties.get('--brush-width');
+    // 描画処理...
+  }
+}
+
+registerPaint('brush', BrushPaint);
+
+Chrome: 65+で対応
+効果: CSS側で直接描画ロジックを定義
+用途: カスタムブラシパターン、テクスチャ生成
+
+2. ResizeObserver
+javascript// キャンバスサイズ変更の即座検知
+const observer = new ResizeObserver(entries => {
+  for (let entry of entries) {
+    if (entry.target === canvas) {
+      // 解像度に応じて描画品質を調整
+      adjustCanvasResolution(entry.contentRect);
+    }
+  }
+});
+observer.observe(canvas);
+
+Chrome: 64+で対応
+効果: リサイズ時の高品質対応
+用途: レスポンシブキャンバス、HiDPI対応
+
+3. Intersection Observer v2
+javascript// レイヤーの可視性を効率的に判定
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      // 見えているレイヤーのみ描画更新
+      updateLayerRendering(entry.target);
+    }
+  });
+}, {
+  rootMargin: '50px', // 事前読み込み
+  threshold: 0.1
+});
+
+Chrome: 58+で対応
+効果: 大量レイヤーの効率的管理
+用途: パフォーマンス最適化
+
+🎬 アニメーション・タイミング関連
+4. Performance Observer
+javascript// 描画パフォーマンスのリアルタイム監視
+const observer = new PerformanceObserver(list => {
+  const entries = list.getEntries();
+  entries.forEach(entry => {
+    if (entry.entryType === 'paint') {
+      // 描画の重いフレームを検知
+      if (entry.duration > 16.67) { // 60fps基準
+        optimizeDrawing();
+      }
+    }
+  });
+});
+observer.observe({entryTypes: ['paint', 'measure']});
+
+Chrome: 52+で対応
+効果: 描画パフォーマンス最適化
+用途: 60fps維持、ボトルネック発見
+
+5. Visual Viewport API
+javascript// 画面の実際の表示領域を取得
+const viewport = window.visualViewport;
+viewport.addEventListener('resize', () => {
+  // モバイルキーボード表示時の対応
+  adjustCanvasLayout(viewport.width, viewport.height);
+});
+
+Chrome: 61+で対応
+効果: モバイル対応強化
+用途: モバイルお絵かき最適化
+
+🔧 ファイル・データ処理関連
+6. File System Access API
+javascript// ローカルファイルへの直接保存
+const fileHandle = await window.showSaveFilePicker({
+  types: [{
+    description: 'お絵かきプロジェクト',
+    accept: {'application/json': ['.drawproj']}
+  }]
+});
+
+const writable = await fileHandle.createWritable();
+await writable.write(projectData);
+await writable.close();
+
+Chrome: 86+で対応（実験的）
+効果: ネイティブアプリ級の保存体験
+用途: プロジェクト保存、エクスポート
+
+7. Background Fetch API
+javascript// 大容量動画エクスポート中でもページを閉じられる
+await registration.backgroundFetch.fetch('video-export', '/api/export', {
+  downloadTotal: estimatedSize,
+  icons: [{ src: '/export-icon.png', sizes: '256x256', type: 'image/png' }]
+});
+
+Chrome: 74+で対応
+効果: 長時間処理の継続実行
+用途: 大容量動画エクスポート
+
+🌐 通信・同期関連
+8. WebRTC Data Channel
+javascript// リアルタイム共同編集
+const dataChannel = peerConnection.createDataChannel('drawing');
+dataChannel.addEventListener('message', event => {
+  const strokeData = JSON.parse(event.data);
+  drawCollaborativeStroke(strokeData);
+});
+
+Chrome: 26+で対応
+効果: リアルタイム共同編集
+用途: 複数人での同時描画
+
+9. Web Locks API
+javascript// 複数タブでの同期制御
+await navigator.locks.request('canvas-edit', async () => {
+  // 一つのタブだけが編集可能
+  enableCanvasEditing();
+});
+
+Chrome: 69+で対応
+効果: マルチタブ対応
+用途: 複数ウィンドウでの競合回避
+
+🚀 実験的・未来技術
+10. WebAssembly SIMD
+javascript// 画像処理の超高速化
+const wasmModule = await WebAssembly.instantiateStreaming(
+  fetch('image-filter.wasm')
+);
+
+// SIMDで並列フィルタ処理
+const filteredData = wasmModule.instance.exports.applyBlurSIMD(
+  imageData, kernelSize
+);
+
+Chrome: 91+で対応
+効果: 画像処理が数倍高速化
+用途: リアルタイムフィルタ、ブラー効果
+
+11. WebXR Device API
+javascript// VR/AR空間での3D描画
+const session = await navigator.xr.requestSession('immersive-vr');
+session.addEventListener('inputsourceschange', event => {
+  // VRコントローラーでの描画
+  handleVRDrawing(event.inputSources);
+});
+
+Chrome: 79+で対応
+効果: 3D空間での描画
+用途: VR/AR アート制作
+
+🎯 計画への追加提案
+あなたの計画に以下を追加すると良さそうです：
+Phase 4A11C に追加
+
+ResizeObserver: レスポンシブキャンバス
+Performance Observer: 描画最適化
+
+Phase 6B に追加
+
+File System Access API: ネイティブ級保存
+CSS Paint API: カスタムブラシ
+
+Phase 7A に追加
+
+Visual Viewport API: モバイル対応
+Intersection Observer v2: パフォーマンス最適化
+
+Phase 12+ に追加
+
+WebRTC Data Channel: リアルタイム共同編集
+Web Locks API: マルチタブ対応
+WebAssembly SIMD: 超高速画像処理
+
+これらの機能は、あなたの「モダンブラウザ前提」の方針にぴったりで、既存のライブラリでは実現できないブラウザネイティブな体験を提供できます！
