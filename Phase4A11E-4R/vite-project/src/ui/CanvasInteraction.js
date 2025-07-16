@@ -1,5 +1,7 @@
+import { ViewportTransform } from '../engine/ViewportTransform.js';
 import { mat4 } from 'gl-matrix';
 import { hexToRgba } from '../utils/ColorUtils.js';
+
 
 /**
  * [クラス責務] CanvasInteraction.js
@@ -70,7 +72,7 @@ export class CanvasInteraction {
         // これにより、ドラッグ中にカーソルがブラウザウィンドウの外に出てもイベントを捕捉し続けられる
         this.canvasArea.setPointerCapture(e.pointerId);
 
-        const coords = this.viewportTransform.screenToWorld(e.clientX, e.clientY);
+        const coords = new ViewportTransform(e, this.canvas, this.viewport.viewTransform);
         
         if (this.isSpaceDown) {
             this.isPanning = true;
