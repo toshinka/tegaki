@@ -54,13 +54,10 @@ export class AppBootstrap {
         const toolActions = new ToolActions(toolStore);
 
         // --- 入力処理 (Handlers) ---
-        // 🎨 START: BUG FIX
-        // CanvasInteractionのインスタンスを一度だけ生成し、変数に保持して再利用する。
-        // これにより、イベントリスナーの重複登録を防ぎ、パフォーマンスを改善する。
-        const canvasInteraction = new CanvasInteraction(canvas, {
+        // 指示書[1]の修正を適用: new PointerInteractionHandler(...) -> new CanvasInteraction(...)
+        new CanvasInteraction(canvas, {
             layerStore, toolStore, historyStore, viewport, layerActions, toolActions
         });
-        // 🎨 END: BUG FIX
         
         // --- UIの統括 (UI Controller) ---
         new UIRoot({
@@ -70,10 +67,8 @@ export class AppBootstrap {
         // --- ショートカット処理 (Handler) ---
         new KeyBindingController({
             historyStore, viewport, toolActions, layerActions,
-            // 🎨 START: BUG FIX
-            // 先ほど生成したインスタンスをショートカットハンドラに渡す。
-            interaction: canvasInteraction
-            // 🎨 END: BUG FIX
+            // interactionインスタンスを渡す必要があったが、参照がなかったので直接渡す
+            interaction: new CanvasInteraction(canvas, { layerStore, toolStore, historyStore, viewport, layerActions, toolActions })
         });
 
         // --- 描画完了時のデータ保存 ---

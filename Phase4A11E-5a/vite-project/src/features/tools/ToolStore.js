@@ -7,10 +7,7 @@ export class ToolStore {
     constructor() {
         this.state = {
             tool: 'pen',
-            // 🎨 START: カラーピッカーバグ修正
-            // 描画エンジンが期待する 'color' プロパティ名に統一
-            color: '#800000', 
-            // 🎨 END: カラーピッカーバグ修正
+            mainColor: '#800000',
             subColor: '#f0e0d6',
             size: 10,
             pressureSettings: {
@@ -18,38 +15,21 @@ export class ToolStore {
                 minSizeRatio: 0.3,
             }
         };
-        this.subscribers = [];
+        this.subscribers = []; // List of functions to call when state changes
     }
 
+    // --- State Access ---
     getState() {
         return this.state;
     }
 
-    /**
-     * 描画エンジンが利用するための現在のツール設定を返す。
-     * DrawingEngineが 'color' プロパティを期待しているため、
-     * 内部的な 'mainColor' を 'color' としてマッピングする。
-     * @returns {{tool: string, color: string, size: number, pressureSettings: object}}
-     */
-    getCurrentToolSettings() {
-        // 🎨 START: カラーピッカーバグ修正
-        // プロパティ名を 'color' に統一したため、マッピングは不要になったが、
-        // 念のためこのメソッドは残しておく。
-        const state = this.getState();
-        return {
-            tool: state.tool,
-            color: state.color, // 'state.mainColor' から 'state.color' に変更
-            size: state.size,
-            pressureSettings: state.pressureSettings
-        };
-        // 🎨 END: カラーピッカーバグ修正
-    }
-
+    // --- State Modification ---
     setState(newState) {
         this.state = { ...this.state, ...newState };
         this.notify();
     }
 
+    // --- Subscription ---
     subscribe(callback) {
         this.subscribers.push(callback);
     }
