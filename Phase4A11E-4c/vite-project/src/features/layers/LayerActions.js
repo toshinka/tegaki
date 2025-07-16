@@ -1,79 +1,115 @@
-/**
- * [クラス責務] LayerActions.js
- * 目的：レイヤーに対するユーザー操作（ユースケース）のロジックをカプセル化する。
- */
-export class LayerActions {
-    constructor(layerStore, viewport, historyStore) {
+import Layer from './layer.js';
+
+class LayerActions {
+    constructor(layerStore, storageService, historyStore) {
         this.layerStore = layerStore;
-        this.viewport = viewport;
+        this.storageService = storageService;
         this.historyStore = historyStore;
     }
 
-    async setupInitialLayers() {
-        this.layerStore._addLayer('背景');
-        const bgLayer = this.layerStore.getCurrentLayer();
-        const data = bgLayer.imageData.data;
-        for (let i = 0; i < data.length; i += 4) { data[i]=255; data[i+1]=255; data[i+2]=255; data[i+3]=255; }
-        bgLayer.gpuDirty = true;
+    addLayer() {
+        // 現在のレイヤー構成と選択状態を保存
+        const oldLayers = [...this.layerStore.getLayers()];
+        const oldSelectedId = this.layerStore.getSelectedLayerId();
         
-        this.layerStore._addLayer('レイヤー 1');
+        // 新しいレイヤーを作成して追加
+        const newLayer = this.layerStore.addLayer();
+        
+        // アクションを履歴に記録
+        this.historyStore.addState(
+            () => { // undo
+                this.layerStore.setLayers(oldLayers);
+                this.layerStore.selectLayer(oldSelectedId);
+            },
+            () => { // redo
+                this.layerStore.addLayer(newLayer, false); // redo時は履歴に追加しない
+                this.layerStore.selectLayer(newLayer.id);
+            }
+        );
     }
 
-    // 変更: addLayer -> addNewLayer
-    addNewLayer(name) {
-        this.layerStore._addLayer(name || `レイヤー ${this.layerStore.getLayers().length + 1}`);
-        this.historyStore.saveState();
-    }
-    
-    deleteActiveLayer() {
-        if (this.layerStore.getLayers().length <= 1) return;
-        if (confirm('レイヤーを削除しますか？')) {
-            this.layerStore._deleteLayer(this.layerStore.activeLayerIndex);
-            this.viewport.renderAllLayers(this.layerStore.getLayers());
-            this.historyStore.saveState();
-        }
-    }
-    
-    duplicateActiveLayer() {
-        const activeLayer = this.layerStore.getCurrentLayer();
-        if (!activeLayer) return;
-        const newLayer = this.layerStore._addLayer(`${activeLayer.name}のコピー`, activeLayer.imageData);
-        this.layerStore.updateLayerProperties(this.layerStore.layers.indexOf(newLayer), {
-            opacity: activeLayer.opacity,
-            blendMode: activeLayer.blendMode,
-            visible: activeLayer.visible,
-        });
-        this.viewport.renderAllLayers(this.layerStore.getLayers());
-        this.historyStore.saveState();
+    removeLayer(layerId) {
+        const layerToRemove = this.layerStore.getLayerById(layerId);
+        if (!layerToRemove) return;
+
+        const oldLayers = [...this.layerStore.getLayers()];
+        const oldSelectedId = this.layerStore.getSelectedLayerId();
+        
+        this.layerStore.removeLayer(layerId);
+
+        const newSelectedId = this.layerStore.getSelectedLayerId();
+        
+        this.historyStore.addState(
+             () => { // undo
+                this.layerStore.setLayers(oldLayers);
+                this.layerStore.selectLayer(oldSelectedId);
+             },
+             () => { // redo
+                this.layerStore.removeLayer(layerId, false);
+                this.layerStore.selectLayer(newSelectedId);
+             }
+        );
     }
 
-    mergeDownActiveLayer() {
-        const activeIndex = this.layerStore.activeLayerIndex;
-        if (activeIndex > 0) {
-            this.layerStore._mergeLayers(activeIndex, activeIndex - 1);
-            this.viewport.renderAllLayers(this.layerStore.getLayers());
-            this.historyStore.saveState();
+    selectLayer(layerId) {
+        this.layerStore.selectLayer(layerId);
+    }
+    
+    moveLayer(layerId, direction) {
+        const oldLayers = [...this.layerStore.getLayers()];
+        const success = this.layerStore.moveLayer(layerId, direction);
+        if(success) {
+            const newLayers = [...this.layerStore.getLayers()];
+             this.historyStore.addState(
+                 () => this.layerStore.setLayers(oldLayers),
+                 () => this.layerStore.setLayers(newLayers)
+            );
         }
     }
 
-    switchLayer(index) {
-        this.layerStore.switchLayer(index);
+    setLayerVisibility(layerId, visible) {
+        const layer = this.layerStore.getLayerById(layerId);
+        if(!layer) return;
+
+        const oldVisibility = layer.visible;
+        this.layerStore.setLayerVisibility(layerId, visible);
+        
+        this.historyStore.addState(
+             () => this.layerStore.setLayerVisibility(layerId, oldVisibility, false),
+             () => this.layerStore.setLayerVisibility(layerId, visible, false)
+        );
     }
     
-    updateLayerProperties(index, props) {
-        this.layerStore.updateLayerProperties(index, props);
-        this.viewport.renderAllLayers(this.layerStore.getLayers());
-        // Note: Does not create undo state for performance.
+    setLayerOpacity(layerId, opacity) {
+        const layer = this.layerStore.getLayerById(layerId);
+        if (!layer) return;
+        
+        const oldOpacity = layer.opacity;
+        this.layerStore.setLayerOpacity(layerId, opacity);
+
+        // 履歴に状態を記録
+        this.historyStore.addState(
+            () => this.layerStore.setLayerOpacity(layerId, oldOpacity, false),
+            () => this.layerStore.setLayerOpacity(layerId, opacity, false)
+        );
+    }
+
+    renameLayer(layerId, newName) {
+        const layer = this.layerStore.getLayerById(layerId);
+        if (!layer) return;
+
+        const oldName = layer.name;
+        this.layerStore.renameLayer(layerId, newName);
+
+        this.historyStore.addState(
+             () => this.layerStore.renameLayer(layerId, oldName, false),
+             () => this.layerStore.renameLayer(layerId, newName, false)
+        );
     }
     
-    clearActiveLayer() {
-        const layer = this.layerStore.getCurrentLayer();
-        if(layer) {
-            const data = layer.imageData.data;
-            for(let i=0; i < data.length; i++) { data[i] = 0; }
-            layer.gpuDirty = true;
-            this.viewport.renderAllLayers(this.layerStore.getLayers());
-            this.historyStore.saveState();
-        }
+    saveLayers() {
+        this.storageService.saveToIndexedDB();
     }
 }
+
+export default LayerActions;
