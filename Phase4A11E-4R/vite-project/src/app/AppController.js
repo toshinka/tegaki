@@ -2,14 +2,14 @@ import { Layer } from '../features/layers/LayerFactory.js';
 import { LayerStore } from '../features/layers/LayerStore.js';
 import { ToolStore } from '../features/tools/ToolStore.js';
 import { HistoryStore } from '../features/history/HistoryStore.js';
-import { PersistentStorage } from '../data/StorageService.js';
+import { PersistentStorage } from '../services/StorageService.js';
 import { LayerRendererGL } from '../engine/WebGLRenderer.js'; 
-import { CanvasViewport } from '../engine/CanvasViewport.js';
-import { PointerInteractionHandler } from '../features/canvas/PointerInteractionHandler.js';
+import { ViewportTransform } from '../engine/ViewportTransform.js';
+import { CanvasInteraction } from '../features/canvas/CanvasInteraction.js';
 import { UIRoot } from '../ui/UIRoot.js';
 import { LayerActions } from '../features/layers/LayerActions.js';
 import { ToolActions } from '../features/tools/ToolActions.js';
-import { KeyBindingController } from '../events/ShortcutHandler.js';
+import { KeyBindingController } from '../input/ShortcutHandler.js';
 
 /**
  * [クラス責務] AppController.js
@@ -45,14 +45,14 @@ export class AppBootstrap {
              console.error("お使いのブラウザはWebGLをサポートしていないか、有効になっていません。");
              return;
         }
-        const viewport = new CanvasViewport(canvas, renderer);
+        const viewport = new ViewportTransform(canvas, renderer);
 
         // --- ユーザー操作のロジック (Actions) ---
         const layerActions = new LayerActions(layerStore, viewport, historyStore);
         const toolActions = new ToolActions(toolStore);
 
         // --- 入力処理 (Handlers) ---
-        new PointerInteractionHandler(canvas, {
+        new CanvasInteraction(canvas, {
             layerStore, toolStore, historyStore, viewport, layerActions, toolActions
         });
         
@@ -65,11 +65,11 @@ export class AppBootstrap {
         new KeyBindingController({
             historyStore, viewport, toolActions, layerActions,
             // interactionインスタンスを渡す必要があったが、参照がなかったので直接渡す
-            interaction: new PointerInteractionHandler(canvas, { layerStore, toolStore, historyStore, viewport, layerActions, toolActions })
+            interaction: new CanvasInteraction(canvas, { layerStore, toolStore, historyStore, viewport, layerActions, toolActions })
         });
 
         // --- 描画完了時のデータ保存 ---
-        // interaction.onDrawEnd は PointerInteractionHandler 内で直接管理されていないため、
+        // interaction.onDrawEnd は CanvasInteraction 内で直接管理されていないため、
         // この方法は機能しない。代わりに、適切なイベントバスやコールバック機構が必要（Phase 5以降）。
         // interaction.onDrawEnd = async (layer) => {
         //     if (!layer) return;
