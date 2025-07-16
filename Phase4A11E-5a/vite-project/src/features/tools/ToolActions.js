@@ -13,11 +13,14 @@ export class ToolActions {
     }
 
     setColor(color, target = 'main') {
+        // 🎨 START: カラーピッカーバグ修正
+        // 'mainColor' を 'color' に変更
         if (target === 'main') {
-            this.toolStore.setState({ mainColor: color });
+            this.toolStore.setState({ color: color });
         } else {
             this.toolStore.setState({ subColor: color });
         }
+        // 🎨 END: カラーピッカーバグ修正
     }
 
     setSize(size) {
@@ -33,22 +36,31 @@ export class ToolActions {
     }
 
     swapColors() {
-        const { mainColor, subColor } = this.toolStore.getState();
-        this.toolStore.setState({ mainColor: subColor, subColor: mainColor });
+        // 🎨 START: カラーピッカーバグ修正
+        // 'mainColor' を 'color' に変更
+        const { color, subColor } = this.toolStore.getState();
+        this.toolStore.setState({ color: subColor, subColor: color });
+        // 🎨 END: カラーピッカーバグ修正
     }
     
     resetColors() {
-        this.toolStore.setState({ mainColor: '#800000', subColor: '#f0e0d6' });
+        // 🎨 START: カラーピッカーバグ修正
+        // 'mainColor' を 'color' に変更
+        this.toolStore.setState({ color: '#800000', subColor: '#f0e0d6' });
+        // 🎨 END: カラーピッカーバグ修正
     }
 
     // Flood fill logic from toolset.js
     fill(layer, startX, startY) {
-        const { mainColor } = this.toolStore.getState();
+        // 🎨 START: カラーピッカーバグ修正
+        // 'mainColor' を 'color' に変更
+        const { color } = this.toolStore.getState();
+        // 🎨 END: カラーピッカーバグ修正
         const hexToRgba = (hex) => {
             const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
             return result ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16), a: 255 } : null;
         };
-        const fillColor = hexToRgba(mainColor);
+        const fillColor = hexToRgba(color);
         if (!layer || !fillColor) return;
 
         const { width, height, data } = layer.imageData;

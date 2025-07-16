@@ -79,6 +79,25 @@ export class LayerRendererGL extends StrokeRenderer {
         
         console.log(`✅ LayerRendererGL initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
+
+    // 🎨 START: BUG FIX
+    /**
+     * HEX形式のカラーコード（例: "#ff0000"）をRGBAオブジェクト（例: {r:255, g:0, b:0, a:1.0}）に変換します。
+     * @param {string} hex - HEXカラーコード。
+     * @param {number} [alpha=1.0] - アルファ値（透明度）。
+     * @returns {{r: number, g: number, b: number, a: number}|null} RGBAオブジェクト、または変換失敗時にnull。
+     */
+    _hexToRgba(hex, alpha = 1.0) {
+        if (!hex || typeof hex !== 'string') return { r: 0, g: 0, b: 0, a: 1.0 }; // 不正な入力は黒として扱う
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? {
+            r: parseInt(result[1], 16),
+            g: parseInt(result[2], 16),
+            b: parseInt(result[3], 16),
+            a: alpha
+        } : { r: 0, g: 0, b: 0, a: 1.0 }; // パース失敗時も黒として扱う
+    }
+    // 🎨 END: BUG FIX
     
     // 変更：指示書に基づき、WebGLエラーチェック用のヘルパー関数を定義
     _checkGLError(operation) {
@@ -236,6 +255,15 @@ export class LayerRendererGL extends StrokeRenderer {
         if (!this.gl) return;
         const gl = this.gl;
         
+        // 🎨 START: BUG FIX
+        // 色が文字列（HEX）で渡された場合、RGBAオブジェクトに変換する
+        const rgbaColor = (typeof color === 'string') ? this._hexToRgba(color) : color;
+        if (!rgbaColor) {
+            console.error("❌ drawCircle: Invalid color provided.", color);
+            return; // 色が無効な場合は描画を中断
+        }
+        // 🎨 END: BUG FIX
+
         this._createOrUpdateLayerTexture(layer);
         const targetFBO = this.layerFBOs.get(layer);
         if (!targetFBO) {
@@ -301,7 +329,9 @@ export class LayerRendererGL extends StrokeRenderer {
         this._checkGLError('drawCircle setBuffersAndAttributes');
         twgl.setUniforms(this.programs.brush, {
             u_mvpMatrix: mvpMatrix,
-            u_color: [color.r / 255, color.g / 255, color.b / 255, color.a],
+            // 🎨 START: BUG FIX - 変換後のRGBAオブジェクトを使用
+            u_color: [rgbaColor.r / 255, rgbaColor.g / 255, rgbaColor.b / 255, rgbaColor.a],
+            // 🎨 END: BUG FIX
             u_is_eraser: isEraser,
         });
         this._checkGLError('drawCircle setUniforms (simple)');
@@ -337,6 +367,15 @@ export class LayerRendererGL extends StrokeRenderer {
     drawLineSegment(x0, y0, x1, y1, size, color, isEraser, layer) {
         if (!this.gl) return;
         const gl = this.gl;
+        
+        // 🎨 START: BUG FIX
+        // こちらの描画関数でも同様に色を変換する
+        const rgbaColor = (typeof color === 'string') ? this._hexToRgba(color) : color;
+        if (!rgbaColor) {
+            console.error("❌ drawLineSegment: Invalid color provided.", color);
+            return;
+        }
+        // 🎨 END: BUG FIX
 
         this._createOrUpdateLayerTexture(layer);
         const targetFBO = this.layerFBOs.get(layer);
@@ -370,7 +409,9 @@ export class LayerRendererGL extends StrokeRenderer {
 
         twgl.setUniforms(this.programs.line, {
             u_mvpMatrix: mvpMatrix,
-            u_color: [color.r / 255, color.g / 255, color.b / 255, color.a],
+            // 🎨 START: BUG FIX - 変換後のRGBAオブジェクトを使用
+            u_color: [rgbaColor.r / 255, rgbaColor.g / 255, rgbaColor.b / 255, rgbaColor.a],
+            // 🎨 END: BUG FIX
             u_is_eraser: isEraser,
         });
         this._checkGLError('drawLineSegment setUniforms');

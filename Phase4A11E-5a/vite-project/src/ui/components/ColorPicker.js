@@ -34,8 +34,11 @@ export class ColorPicker {
     }
 
     render(toolState) {
+        // 🎨 START: カラーピッカーバグ修正
         // Update the UI when the color changes in the store
-        this.mainColorDisplay.style.backgroundColor = toolState.mainColor;
+        // 'mainColor' を 'color' に変更
+        this.mainColorDisplay.style.backgroundColor = toolState.color;
+        // 🎨 END: カラーピッカーバグ修正
         this.subColorDisplay.style.backgroundColor = toolState.subColor;
     }
 }
