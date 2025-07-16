@@ -1,77 +1,52 @@
-📄 Phase 4A11E-5a 指示書（Claude/Gemini向け）
-🧩 対象機能と目的
-ColorPicker の色選択が反映されず黒になるバグを修正
+🎯 改修目的
+ユーザーがHTML上のカラーパレットをクリックした際に、ToolStore.mainColor を更新する処理を追加する
 
-レイヤー削除が IndexedDB に保存されず、リロード後に復活するバグを修正
+WebGLRenderer 内で mainColor が null になっている現象を解消する
 
-🗂️ 対象ファイル構成（vite-project/src/ 以下）
-plaintext
+📁 対象ファイル
+vite-project/index.html
+
+vite-project/src/features/tools/ToolStore.js
+
+vite-project/src/engine/WebGLRenderer.js
+※ToolActions.js に機能がない場合は、ToolStoreへの直接アクセスで可とする
+
+🔨 作業内容
+① index.html の末尾（</body>直前）に以下のスクリプトを追加：
+js
 コピーする
 編集する
-app/
-├── AppController.js            // アプリ全体の初期化・復元制御
-engine/
-├── DrawingEngine.js            // ペン描画処理（色取得あり）
-features/
-├── layers/
-│   ├── LayerActions.js         // レイヤー追加・削除などの操作
-│   ├── LayerStore.js           // レイヤー状態の保存・操作対象取得
-│   └── layer.js                // レイヤーの構造定義
-├── tools/
-│   ├── ToolActions.js          // ツール切り替え、色・太さ変更操作
-│   └── ToolStore.js            // 選択中のツール・色・太さ等を保持
-services/
-├── StorageService.js           // IndexedDBラッパー（Dexie使用）
-ui/
-├── CanvasInteraction.js        // ペン描画入力時の色適用
-└── components/
-    ├── ColorPicker.js          // UIのカラーピッカー（色選択UI）
-    ├── LayerPanel.js           // UI上のレイヤー削除ボタン
-🎯 修正方針
-1. 🎨 カラーピッカーが黒になる問題
-現象: 色選択はUI上では変化するが、実際の描画には常に黒が使われる。
+import { toolStore } from './src/features/tools/ToolStore.js';
 
-想定原因:
+document.querySelectorAll('.color-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const color = btn.dataset.color;
+    toolStore.setState({ mainColor: color }); // 🎯 ToolActionsがあればそちらを使用可
+    document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+});
+② WebGLRenderer.js の該当描画関数にフォールバック処理を追加（例）：
+js
+コピーする
+編集する
+import { toolStore } from '../features/tools/ToolStore.js'; // 必要に応じて
 
-ColorPicker → ToolActions → ToolStore → DrawingEngine の反映経路に断絶がある
+const state = toolStore.getState();
+const color = state.mainColor || '#800000'; // fallback
+drawCircle(x, y, size, color);
+③ ToolStore.js に変更不要（現状問題なし）
+🚫 注意事項
+❌ 勝手な最適化・削除禁止
+Popover未使用状態でも .color-btn は現在使用中。未使用と判断して削除しないこと。
 
-または ToolStore の色状態が getCurrentToolSettings() に正しく伝播していない
+ToolStoreへの直接アクセスは指示通り行ってください（後でToolActionsを追加予定のため）。
 
-修正対象:
+❌ シンボル追加禁止
+本パッチでは新しいファイル・クラス・関数の追加は不要。既存の構成を尊重し、新シンボル（クラス・関数・Store等）を生やさないでください。
 
-ColorPicker.js：色選択イベント時に ToolActions.setColor(color) を呼び出す
+🧩 備考
+この修正は暫定的なもので、将来的にはPopover APIを用いたColorPickerへ置換される予定
 
-ToolActions.js：setColor(color) で ToolStore.updateColor(color) を更新
+UI再編（🎨アイコンへの切替やレイヤーパネルのPopover化）などはPhase 5で実施予定
 
-ToolStore.js：currentColor を保持し、getCurrentToolSettings() で color を返す
-
-DrawingEngine.js：toolSettings.color を描画時に取得し使用
-
-2. 🧹 レイヤー削除が保存されない問題
-現象: レイヤーを削除しても、再読み込み時に復活する。
-
-想定原因:
-
-削除後に StorageService.saveLayers() が呼ばれていない
-
-または LayerStore.getAllLayers() の更新が StorageService に反映されていない
-
-修正対象:
-
-LayerActions.js：deleteLayer(layerId) の末尾で StorageService.saveLayers() を呼び出す
-
-StorageService.js：saveLayers(layers) に Dexie.put() 実装済みであることを確認
-
-AppController.js：起動時に StorageService.loadLayers() を実行し、LayerStore.initialize() を呼んでいることを確認
-
-✅ テスト観点
-カラーピッカーで任意の色を選び、実際の描画でその色になるかを確認
-
-レイヤーを削除して再読み込みしても削除が維持されるかを確認
-
-📎 参考
-シンボルテーブル最新版：SymbolTable-CoreAndUtils-v2.0.txt 他
-GitHubシンボルテーブル
-
-ファイル構成・命名指針：⚠️総合AIコーディング規約v2.1
-規約リンク

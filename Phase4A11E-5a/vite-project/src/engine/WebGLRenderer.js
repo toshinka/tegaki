@@ -1,6 +1,9 @@
 import { StrokeRenderer } from './DrawingEngine.js';
 import { mat4 } from 'gl-matrix';
 import * as twgl from 'twgl.js';
+// ---⬇️ ここから変更 ⬇️ ---
+[cite_start]import { toolStore } from '../features/tools/ToolStore.js'; [cite: 3]
+// --- ⬆️ ここまで変更 ⬆️ ---
 
 /**
  * [クラス責務] WebGLRenderer.js
@@ -232,7 +235,19 @@ export class LayerRendererGL extends StrokeRenderer {
     }
 
     drawCircle(centerX, centerY, radius, color, isEraser, layer) {
-        // ... (this complex method remains unchanged for now) ...
+        // ---⬇️ ここから変更 ⬇️ ---
+        let finalColor = color;
+        if (!finalColor) {
+            // 指示書に基づき、mainColorがnullの場合のフォールバック処理を追加
+            [cite_start]const state = toolStore.getState(); [cite: 3]
+            const hex = state.mainColor || '#800000'; [cite_start]// fallback [cite: 3]
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            finalColor = { r, g, b, a: 1.0 };
+        }
+        // --- ⬆️ ここまで変更 ⬆️ ---
+
         if (!this.gl) return;
         const gl = this.gl;
         
@@ -301,7 +316,9 @@ export class LayerRendererGL extends StrokeRenderer {
         this._checkGLError('drawCircle setBuffersAndAttributes');
         twgl.setUniforms(this.programs.brush, {
             u_mvpMatrix: mvpMatrix,
-            u_color: [color.r / 255, color.g / 255, color.b / 255, color.a],
+            // ---⬇️ ここから変更 ⬇️ ---
+            u_color: [finalColor.r / 255, finalColor.g / 255, finalColor.b / 255, finalColor.a],
+            // --- ⬆️ ここまで変更 ⬆️ ---
             u_is_eraser: isEraser,
         });
         this._checkGLError('drawCircle setUniforms (simple)');
@@ -335,6 +352,19 @@ export class LayerRendererGL extends StrokeRenderer {
      * [関数責務] 指示書に基づき、単一の線分を gl.LINE_STRIP を使って描画する。
      */
     drawLineSegment(x0, y0, x1, y1, size, color, isEraser, layer) {
+        // ---⬇️ ここから変更 ⬇️ ---
+        let finalColor = color;
+        if (!finalColor) {
+            // 指示書に基づき、mainColorがnullの場合のフォールバック処理を追加
+            [cite_start]const state = toolStore.getState(); [cite: 3]
+            const hex = state.mainColor || '#800000'; [cite_start]// fallback [cite: 3]
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            finalColor = { r, g, b, a: 1.0 };
+        }
+        // --- ⬆️ ここまで変更 ⬆️ ---
+
         if (!this.gl) return;
         const gl = this.gl;
 
@@ -370,7 +400,9 @@ export class LayerRendererGL extends StrokeRenderer {
 
         twgl.setUniforms(this.programs.line, {
             u_mvpMatrix: mvpMatrix,
-            u_color: [color.r / 255, color.g / 255, color.b / 255, color.a],
+            // ---⬇️ ここから変更 ⬇️ ---
+            u_color: [finalColor.r / 255, finalColor.g / 255, finalColor.b / 255, finalColor.a],
+            // --- ⬆️ ここまで変更 ⬆️ ---
             u_is_eraser: isEraser,
         });
         this._checkGLError('drawLineSegment setUniforms');
