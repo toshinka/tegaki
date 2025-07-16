@@ -1,0 +1,19 @@
+### 🎯 指示内容：Phase4A11E-4R → v2.0準拠 シンボル名置換
+
+1. 以下の旧シンボル名を、コード中で全検索し、該当箇所を別表でまとめてください。
+  - CanvasViewport
+  - PointerInteractionHandler
+  - ShortcutHandler (パスは変更済のため、import含めて正しいか確認)
+  - LayerManager, ToolManager, PointerTracker (もし見つかれば)
+
+2. 上記がコード中で使用されていた場合、**新シンボル命名に置換**してください：
+  - CanvasViewport → ViewportTransform
+  - PointerInteractionHandler → CanvasInteraction
+  - ShortcutHandler → ShortcutHandler（パス更新済）
+  - LayerManager → LayerStore+LayerActions を意図するなら削除もしくはLog注記
+  - 同様にToolManager, PointerTracker は未使用なら削除、使用なら移行検討
+
+3. 置換後、**差分(diff/patch)** を提示してください。  
+   - 「置換前コード」「置換後コード」をREADMEなどに簡易記載でOK。
+
+🚫 注意：ロジックや関数名以外の処理変更は一切不要です。あくまで「命名統一のための置換」が目的です。
