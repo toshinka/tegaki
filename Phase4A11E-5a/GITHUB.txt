@@ -1,0 +1,11 @@
+以下対象ファイル群（修正のないものの内容の表示は割愛してください）
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-5a/vite-project/src/app/AppController.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-5a/vite-project/src/engine/DrawingEngine.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-5a/vite-project/src/features/layers/LayerActions.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-5a/vite-project/src/features/layers/LayerFactory.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-5a/vite-project/src/features/layers/LayerStore.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-5a/vite-project/src/features/tools/ToolActions.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-5a/vite-project/src/features/tools/ToolStore.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-5a/vite-project/src/services/StorageService.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-5a/vite-project/src/ui/components/ColorPicker.js
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/Phase4A11E-5a/vite-project/src/ui/components/LayerPanel.js

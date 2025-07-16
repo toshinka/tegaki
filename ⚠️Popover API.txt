@@ -1,0 +1,73 @@
+Popover APIはお絵かきツールにとって本当に便利な機能です！上の実装例を見てもらえば分かると思いますが、以下のような用途に最適です：
+🎨 お絵かきツールでの主な活用場面
+1. カラーパレット
+
+ボタンをクリックすると色選択パネルが開く
+色を選んだら自動で閉じる
+他の場所をクリックしても自動で閉じる
+
+2. レイヤーパネル
+
+レイヤーの表示/非表示切り替え
+レイヤーの順序変更
+新規レイヤー追加
+
+3. ブラシ設定パネル
+
+ブラシサイズ、不透明度、流量の調整
+リアルタイムプレビュー表示
+設定値の即座反映
+
+4. 定規・ツール選択
+
+直線定規、円定規、曲線定規
+グリッドやガイド機能
+透視図法ツール
+
+🚀 Popover APIの主なメリット
+従来のモーダルやdropdownより優秀な点：
+
+自動的な位置調整: 画面端で自動的に位置が調整される
+フォーカス管理: 適切にフォーカスが管理される
+キーボードナビゲーション: ESCキーで閉じる、Tab移動対応
+アクセシビリティ: スクリーンリーダー対応が標準
+軽量: JavaScriptライブラリ不要
+
+実装が簡単：
+html<!-- トリガーボタン -->
+<button popovertarget="color-palette">色選択</button>
+
+<!-- ポップオーバー -->
+<div id="color-palette" popover="auto">
+    <!-- カラーパレットの内容 -->
+</div>
+🎯 あなたのプロジェクトでの具体的な活用例
+Phase 4A11C での活用：
+javascript// ペン設定UI
+<div id="pen-settings" popover="auto">
+    <label>筆圧感度: <input type="range" id="pressure-sensitivity"></label>
+    <label>チルト感度: <input type="range" id="tilt-sensitivity"></label>
+    <label>手ブレ補正: <input type="range" id="stabilization"></label>
+</div>
+Phase 6A での定規ツール：
+javascript// 定規設定パネル
+<div id="ruler-settings" popover="auto">
+    <button onclick="setRuler('line')">直線定規</button>
+    <button onclick="setRuler('circle')">円定規</button>
+    <button onclick="setRuler('perspective')">透視図法</button>
+</div>
+Phase 5A でのレイヤー管理：
+javascript// レイヤー操作パネル
+<div id="layer-operations" popover="auto">
+    <button onclick="duplicateLayer()">複製</button>
+    <button onclick="mergeLayer()">統合</button>
+    <button onclick="deleteLayer()">削除</button>
+</div>
+💡 実装のコツ
+
+popover="auto": 他の場所をクリックすると自動で閉じる
+popovertarget: トリガーボタンに設定
+CSS transitions: 開閉アニメーションを簡単に追加
+JavaScript: showPopover() / hidePopover() で制御可能
+
+Popover APIは2024年に全主要ブラウザで対応完了したので、モダンなお絵かきツールには必須の技術です！JavaScriptライブラリを使わずに、プロレベルのUI体験を実現できます。

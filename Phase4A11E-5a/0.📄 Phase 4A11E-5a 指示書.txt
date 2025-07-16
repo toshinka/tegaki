@@ -1,0 +1,77 @@
+📄 Phase 4A11E-5a 指示書（Claude/Gemini向け）
+🧩 対象機能と目的
+ColorPicker の色選択が反映されず黒になるバグを修正
+
+レイヤー削除が IndexedDB に保存されず、リロード後に復活するバグを修正
+
+🗂️ 対象ファイル構成（vite-project/src/ 以下）
+plaintext
+コピーする
+編集する
+app/
+├── AppController.js            // アプリ全体の初期化・復元制御
+engine/
+├── DrawingEngine.js            // ペン描画処理（色取得あり）
+features/
+├── layers/
+│   ├── LayerActions.js         // レイヤー追加・削除などの操作
+│   ├── LayerStore.js           // レイヤー状態の保存・操作対象取得
+│   └── layer.js                // レイヤーの構造定義
+├── tools/
+│   ├── ToolActions.js          // ツール切り替え、色・太さ変更操作
+│   └── ToolStore.js            // 選択中のツール・色・太さ等を保持
+services/
+├── StorageService.js           // IndexedDBラッパー（Dexie使用）
+ui/
+├── CanvasInteraction.js        // ペン描画入力時の色適用
+└── components/
+    ├── ColorPicker.js          // UIのカラーピッカー（色選択UI）
+    ├── LayerPanel.js           // UI上のレイヤー削除ボタン
+🎯 修正方針
+1. 🎨 カラーピッカーが黒になる問題
+現象: 色選択はUI上では変化するが、実際の描画には常に黒が使われる。
+
+想定原因:
+
+ColorPicker → ToolActions → ToolStore → DrawingEngine の反映経路に断絶がある
+
+または ToolStore の色状態が getCurrentToolSettings() に正しく伝播していない
+
+修正対象:
+
+ColorPicker.js：色選択イベント時に ToolActions.setColor(color) を呼び出す
+
+ToolActions.js：setColor(color) で ToolStore.updateColor(color) を更新
+
+ToolStore.js：currentColor を保持し、getCurrentToolSettings() で color を返す
+
+DrawingEngine.js：toolSettings.color を描画時に取得し使用
+
+2. 🧹 レイヤー削除が保存されない問題
+現象: レイヤーを削除しても、再読み込み時に復活する。
+
+想定原因:
+
+削除後に StorageService.saveLayers() が呼ばれていない
+
+または LayerStore.getAllLayers() の更新が StorageService に反映されていない
+
+修正対象:
+
+LayerActions.js：deleteLayer(layerId) の末尾で StorageService.saveLayers() を呼び出す
+
+StorageService.js：saveLayers(layers) に Dexie.put() 実装済みであることを確認
+
+AppController.js：起動時に StorageService.loadLayers() を実行し、LayerStore.initialize() を呼んでいることを確認
+
+✅ テスト観点
+カラーピッカーで任意の色を選び、実際の描画でその色になるかを確認
+
+レイヤーを削除して再読み込みしても削除が維持されるかを確認
+
+📎 参考
+シンボルテーブル最新版：SymbolTable-CoreAndUtils-v2.0.txt 他
+GitHubシンボルテーブル
+
+ファイル構成・命名指針：⚠️総合AIコーディング規約v2.1
+規約リンク
