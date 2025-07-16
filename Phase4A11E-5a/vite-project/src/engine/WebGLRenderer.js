@@ -2,7 +2,7 @@ import { StrokeRenderer } from './DrawingEngine.js';
 import { mat4 } from 'gl-matrix';
 import * as twgl from 'twgl.js';
 // ---⬇️ ここから変更 ⬇️ ---
-[cite_start]import { toolStore } from '../features/tools/ToolStore.js'; [cite: 3]
+import { toolStore } from '../features/tools/ToolStore.js';
 // --- ⬆️ ここまで変更 ⬆️ ---
 
 /**
@@ -239,8 +239,8 @@ export class LayerRendererGL extends StrokeRenderer {
         let finalColor = color;
         if (!finalColor) {
             // 指示書に基づき、mainColorがnullの場合のフォールバック処理を追加
-            [cite_start]const state = toolStore.getState(); [cite: 3]
-            const hex = state.mainColor || '#800000'; [cite_start]// fallback [cite: 3]
+            const state = toolStore.getState();
+            const hex = state.mainColor || '#800000'; // fallback
             const r = parseInt(hex.slice(1, 3), 16);
             const g = parseInt(hex.slice(3, 5), 16);
             const b = parseInt(hex.slice(5, 7), 16);
@@ -356,8 +356,8 @@ export class LayerRendererGL extends StrokeRenderer {
         let finalColor = color;
         if (!finalColor) {
             // 指示書に基づき、mainColorがnullの場合のフォールバック処理を追加
-            [cite_start]const state = toolStore.getState(); [cite: 3]
-            const hex = state.mainColor || '#800000'; [cite_start]// fallback [cite: 3]
+            const state = toolStore.getState();
+            const hex = state.mainColor || '#800000'; // fallback
             const r = parseInt(hex.slice(1, 3), 16);
             const g = parseInt(hex.slice(3, 5), 16);
             const b = parseInt(hex.slice(5, 7), 16);

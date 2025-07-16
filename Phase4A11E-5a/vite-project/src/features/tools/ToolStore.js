@@ -38,3 +38,5 @@ export class ToolStore {
         this.subscribers.forEach(callback => callback(this.state));
     }
 }
+
+export const toolStore = new ToolStore();

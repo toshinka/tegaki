@@ -478,17 +478,18 @@
     
     <script type="module" src="/src/main.js"></script>
 
-    <script type="module">
-        [cite_start]import { toolStore } from './src/features/tools/ToolStore.js'; [cite: 1]
+<script type="module">
+  import { toolStore } from './src/features/tools/ToolStore.js';
 
-        [cite_start]document.querySelectorAll('.color-btn').forEach(btn => { [cite: 2]
-            [cite_start]btn.addEventListener('click', () => { [cite: 2]
-                [cite_start]const color = btn.dataset.color; [cite: 2]
-                [cite_start]toolStore.setState({ mainColor: color }); [cite: 2]
-                [cite_start]document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active')); [cite: 2]
-                [cite_start]btn.classList.add('active'); [cite: 2]
-            });
-        });
-    </script>
+  document.querySelectorAll('.color-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const color = btn.dataset.color;
+      toolStore.setState({ mainColor: color });
+      document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+</script>
+
     </body>
 </html>
