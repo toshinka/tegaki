@@ -3,9 +3,11 @@ import { getCanvasCoordinates, hexToRgba } from '../../utils/TransformUtils.js';
 import { transformWorldToLocal, isValidMatrix } from '../../utils/TransformUtils.js';
 
 /**
- * [クラス責務] PointerInteractionHandler.js
+ * [クラス責務] CanvasInteraction.js
  * 目的：ユーザーのキャンバスに対するすべての入力（マウス、ペン、タッチ操作）を管理・解釈する。
+ * (変更後クラス名: PointerInteractionHandler)
  */
+// 変更: クラス名を CanvasInteraction -> PointerInteractionHandler に変更
 export class PointerInteractionHandler {
     constructor(canvas, { layerStore, toolStore, historyStore, viewport, layerActions, toolActions }) {
         this.canvas = canvas;
@@ -31,7 +33,6 @@ export class PointerInteractionHandler {
         this.isVDown = false;
 
         // --- Drawing-related State ---
-        this.strokePoints = []; // 変更：線描画のための頂点リスト
         this.lastPoint = null;
         this.pressureHistory = [];
         this.maxPressureHistory = 5;
@@ -50,12 +51,16 @@ export class PointerInteractionHandler {
 
     bindEvents() {
         this.canvasArea.addEventListener('pointerdown', this.handlePointerDown.bind(this));
+        // pointermoveとpointerupはdocumentに登録することで、カーソルがキャンバス外に出ても追跡できるようにする
         document.addEventListener('pointermove', this.handlePointerMove.bind(this));
         document.addEventListener('pointerup', this.handlePointerUp.bind(this));
+        // キャンバスエリアでの右クリックメニューを無効化
         this.canvasArea.addEventListener('contextmenu', e => e.preventDefault());
     }
 
+    // 変更: onPointerDown -> handlePointerDown
     handlePointerDown(e) {
+        // 主ボタン（左クリックまたはペン先）でない場合は無視
         if (e.button !== 0) return;
 
         const activeLayer = this.layerStore.getCurrentLayer();
@@ -64,7 +69,9 @@ export class PointerInteractionHandler {
             return;
         }
         
-        e.currentTarget.setPointerCapture(e.pointerId);
+        // ポインターキャプチャを設定
+        // これにより、ドラッグ中にカーソルがブラウザウィンドウの外に出てもイベントを捕捉し続けられる
+        this.canvasArea.setPointerCapture(e.pointerId);
 
         const coords = getCanvasCoordinates(e, this.canvas, this.viewport.viewTransform);
         
@@ -83,9 +90,6 @@ export class PointerInteractionHandler {
             return;
         }
         
-        this.isDrawing = true;
-        this.historyStore.saveState(); // 描画開始前に状態を保存
-
         const SUPER_SAMPLING_FACTOR = this.viewport.renderer?.SUPER_SAMPLING_FACTOR || 1.0;
         const superX = coords.x * SUPER_SAMPLING_FACTOR;
         const superY = coords.y * SUPER_SAMPLING_FACTOR;
@@ -102,34 +106,24 @@ export class PointerInteractionHandler {
             this.onDrawEnd?.(activeLayer);
             return;
         }
-        
-        // 変更：描画用の頂点リストを初期化
-        this.strokePoints = [local.x, local.y];
-        
-        const currentPressure = e.pressure > 0 ? e.pressure : 0.5;
-        this.pressureHistory = [currentPressure];
+
+        this.isDrawing = true;
+        this.historyStore.saveState(); // 描画開始前に状態を保存
+        this.pressureHistory = [e.pressure > 0 ? e.pressure : 0.5];
         this.lastPoint = { ...local, pressure: this.pressureHistory[0] };
         
         const pressureSize = this.calculatePressureSize(size, this.lastPoint.pressure, pressureSettings);
         this.viewport.updateDirtyRect(local.x, local.y, pressureSize);
         
         const isEraser = tool === 'eraser';
-        
-        // 変更：単点を描画するためにdrawStrokeを呼び出す
-        // viewportにこのメソッドが追加されていることを想定
-        if (typeof this.viewport.drawStroke === 'function') {
-            this.viewport.drawStroke(this.strokePoints, pressureSize, hexToRgba(mainColor), isEraser, activeLayer);
-        } else {
-            // フォールバックとして従来のCircle描画を呼ぶ
-            this.viewport.drawCircle(local.x, local.y, pressureSize / 2, hexToRgba(mainColor), isEraser, activeLayer);
-        }
+        // クリック時に点を描画
+        this.viewport.drawCircle(local.x, local.y, pressureSize / 2, hexToRgba(mainColor), isEraser, activeLayer);
         
         this.viewport._requestRender(this.layerStore.getLayers());
     }
 
+    // 変更: onPointerMove -> handlePointerMove
     handlePointerMove(e) {
-        const coords = getCanvasCoordinates(e, this.canvas, this.viewport.viewTransform);
-
         if (this.isPanning) {
             const dx = e.clientX - this.dragStartX;
             const dy = e.clientY - this.dragStartY;
@@ -138,51 +132,41 @@ export class PointerInteractionHandler {
             this.viewport.applyViewTransform();
             return;
         }
-        if (this.isDraggingLayer) { /* ... (unchanged) ... */ return; }
+        if (this.isDraggingLayer) { /* ... (unchanged) ... */ }
         
-        if (this.isDrawing && e.currentTarget.hasPointerCapture(e.pointerId)) {
+        // 変更: 指示書に基づき、hasPointerCaptureを使用しないように修正
+        if (this.isDrawing) {
             const activeLayer = this.layerStore.getCurrentLayer();
             if (!activeLayer) return;
             
             const { tool, mainColor, size, pressureSettings } = this.toolStore.getState();
+            const coords = getCanvasCoordinates(e, this.canvas, this.viewport.viewTransform);
 
             const SUPER_SAMPLING_FACTOR = this.viewport.renderer?.SUPER_SAMPLING_FACTOR || 1.0;
             const superX = coords.x * SUPER_SAMPLING_FACTOR;
             const superY = coords.y * SUPER_SAMPLING_FACTOR;
             const local = transformWorldToLocal(superX, superY, activeLayer.modelMatrix);
             
-            // 変更：頂点リストに現在の座標を追加
-            this.strokePoints.push(local.x, local.y);
-
             const currentPressure = e.pressure > 0 ? e.pressure : 0.5;
             this.pressureHistory.push(currentPressure);
             if (this.pressureHistory.length > this.maxPressureHistory) this.pressureHistory.shift();
             
-            //  dirtyRectの更新（簡略化のためストローク全体の矩形を更新）
+            const lastSize = this.calculatePressureSize(size, this.lastPoint.pressure, pressureSettings);
             const pressureSize = this.calculatePressureSize(size, currentPressure, pressureSettings);
-            // TODO: より正確なdirtyRect計算
-            this.viewport.updateDirtyRect(this.lastPoint.x, this.lastPoint.y, pressureSize);
+            this.viewport.updateDirtyRect(this.lastPoint.x, this.lastPoint.y, lastSize);
             this.viewport.updateDirtyRect(local.x, local.y, pressureSize);
 
             const isEraser = tool === 'eraser';
-
-            // 変更：線（複数の頂点）を描画するためにdrawStrokeを呼び出す
-            if (typeof this.viewport.drawStroke === 'function') {
-                // NOTE: 筆圧対応はひとまず平均サイズを利用
-                const avgPressure = this.pressureHistory.reduce((a, b) => a + b) / this.pressureHistory.length;
-                const avgSize = this.calculatePressureSize(size, avgPressure, pressureSettings);
-                this.viewport.drawStroke(this.strokePoints, avgSize, hexToRgba(mainColor), isEraser, activeLayer);
-            } else {
-                // フォールバック
-                this.viewport.drawLine(
-                    this.lastPoint.x, this.lastPoint.y, 
-                    local.x, local.y, 
-                    size, hexToRgba(mainColor), isEraser, 
-                    this.lastPoint.pressure, currentPressure, 
-                    (s, p) => this.calculatePressureSize(s, p, pressureSettings), 
-                    activeLayer
-                );
-            }
+            
+            // 変更: 指示書に基づき、単一の線分を描画する`drawLineSegment`を呼び出す
+            this.viewport.drawLineSegment(
+                this.lastPoint.x, this.lastPoint.y, 
+                local.x, local.y, 
+                pressureSize, // Use current pressure for the line width
+                hexToRgba(mainColor), 
+                isEraser,
+                activeLayer
+            );
 
             this.lastPoint = { ...local, pressure: currentPressure };
             this.viewport._requestRender(this.layerStore.getLayers());
@@ -192,23 +176,26 @@ export class PointerInteractionHandler {
         this.updateCursor();
     }
     
+    // 変更: onPointerUp -> handlePointerUp
     async handlePointerUp(e) { 
-        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-            e.currentTarget.releasePointerCapture(e.pointerId);
-        }
-
+        // 変更: 指示書に基づき、hasPointerCaptureを使用しないように修正
         if (this.isDrawing) {
+            // isDrawingがtrueの場合のみポインタキャプチャを解放する
+            this.canvasArea.releasePointerCapture(e.pointerId);
+
             const activeLayer = this.layerStore.getCurrentLayer();
             if (activeLayer) {
-                // GPU上の描画結果をImageDataに同期
                 this.viewport.syncDirtyRectToImageData(activeLayer, this.viewport.dirtyRect);
+                // 描画の終了を記録（履歴用）
                 this.historyStore.saveState(); 
                 this.onDrawEnd?.(activeLayer);
             }
         }
         
-        // 変更：頂点リストをクリア
-        this.strokePoints = [];
+        if (this.isPanning) {
+             this.canvasArea.releasePointerCapture(e.pointerId);
+        }
+        
         this.isDrawing = false;
         this.isPanning = false;
         this.isDraggingLayer = false;

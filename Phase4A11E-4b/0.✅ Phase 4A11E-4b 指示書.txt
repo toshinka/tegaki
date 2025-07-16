@@ -1,56 +1,93 @@
-🧭 背景
-現在、描画時に「点」しか出ず、「ドラッグで線が引けない」不具合が残っています。以前の修正では gl.drawArrays() のモードを gl.POINTS → gl.LINE_STRIP に切り替える処理が導入されましたが、前後の頂点バッファ構築が不完全または未実装の可能性が高く、期待した描画が得られていません。
+🎯 AI向け指示書：線が描けない不具合の修正（Phase 4A11E-4b）
+プロジェクト名：ToshinkaTegakiTool
+修正対象フェーズ：Phase 4A11E-4b
+開発方針：司令AIによる外部委任形式・GitHubアップロード不可・完全コード返却制
+対応対象AI：GEMINI（新人想定・背景知識ゼロ）
 
-🛠 修正方針（再実装）
-🎯 目的
-マウスやペンでドラッグしたとき、連続した線が描けるようにする。
+📌 概要
+このツールはブラウザベースのお絵かきアプリであり、現在は キャンバス上に「点」でのみ描画可能な初期実装状態です。
+本タスクではこれを拡張し、ドラッグによって「線」が描ける状態に修正してください。
+過去の実装では描画不能やログ氾濫、API誤使用などが発生したため、それらを踏まえて再実装を行います。
 
-クリック時には 単点のみ描画（点）、ドラッグ時には 折れ線（線） になること。
+✅ 改修の目的
+マウス（またはペン）によるドラッグで**連続した線（ストローク）**を描けるようにする。
 
-🔧 実装タスク
+クリック時には単一の点を描画、ドラッグ時には**連続線（折れ線）**を描画する。
+
+高負荷やクラッシュを起こさず、ログは必要最小限に。
+
+🧠 過去の失敗から得た知見
+問題	回避すべきポイント
+キャンバス非表示化	drawArrays() 実行条件が不備（バッファ未初期化 or 0頂点）だった
+hasPointerCapture エラー	e.currentTarget.hasPointerCapture は使用不可（未対応ブラウザや不正ターゲット）
+ログ氾濫	pointermove 中に毎回 console.log() → 瞬間的に大量出力される
+POINTS固定	gl.drawArrays() を常に gl.POINTS にしていたため、線が引けなかった
+バッファ構築不備	LINE_STRIP に必要な複数頂点が正しく構築・渡されていなかった
+
+📂 修正対象ファイル一覧（3つ）
+ファイルパス	主な責任範囲
+src/features/canvas/PointerInteractionHandler.js	マウス操作の受付・座標収集
+src/engine/DrawingEngine.js	描画指示の統括
+src/engine/WebGLRenderer.js	WebGLを使った実描画処理
+
+🔧 実装指示
 1. PointerInteractionHandler.js
-pointermove イベント中に、直前の座標（prevX/Y）を保持し、それと現在の座標（currX/Y）をセットで DrawingEngine などに渡すこと。
+pointerdown で isDrawing = true にし、開始点を記録。
 
-毎フレーム points.push([prevX, prevY, currX, currY]) のような形式で、描画用データを蓄積。
+pointermove 中に現在座標を記録し、前回の点との線分データを描画エンジンに送信。
 
-pointerup 時にバッファをクリア。
+ex: this.engine.drawLineSegment(prevX, prevY, currX, currY);
 
-lineMode = (numPoints > 1) を条件に描画モードを選べるようにする。
+pointerup または pointerleave で isDrawing = false、状態クリア。
 
-2. DrawingEngine.js（または呼び出し層）
-drawLineSegment(x1, y1, x2, y2) のようなAPIを用意し、ポイントを線として解釈する。
+hasPointerCapture は使用しないでください。
 
-複数の線分を処理できる構造（例：頂点バッファに逐次push）にする。
+2. DrawingEngine.js
+drawLineSegment(x1, y1, x2, y2) メソッドを新規定義。
 
-WebGLRenderer に渡す描画命令として、mode = LINE_STRIP と vertices = [x1,y1, x2,y2, ...] を渡す。
+this.renderer.drawLineSegment(...) のようにWebGLRendererへ渡す。
+
+将来的にヒストリ記録へ発展できる構造で設計。
 
 3. WebGLRenderer.js
-drawArrays() に渡す mode を、渡されたデータ長に応じて動的に切り替える（これは以前の修正を流用可）。
+drawLineSegment(x1, y1, x2, y2) を新設。
 
-ただし**LINE_STRIPを描くには、複数頂点の配列構築が前提**。バッファが1点しかないなら何も描かれないため注意。
+gl.LINE_STRIP を使い、2点間に滑らかな線を描く。
 
-gl.bufferData() の入力確認を強化し、頂点数・位置のログ出力（console.log(vertices)）も一時的に仕込んで可視化する。
+頂点バッファを [x1, y1, x2, y2] で構築。
+
+描画前に gl.useProgram() → gl.bufferData() → gl.drawArrays() を実行。
+
+描画失敗時に console.warn() で軽く通知、console.log()氾濫は避ける。
+
+📤 提出形式（厳守）
+各ファイルの全体コードを省略なしで返却してください。
+
+差分出力・省略出力は禁止。
+
+ファイルごとに「ファイル名」「コードブロック（```js）」の構造で返してください。
+
+📌 付記：本プロジェクトの制約
+AIがGitHub等にアップロードする機能はありません。
+
+保存はコード形式で人間が行うため、ファイル全体を完全出力することが必須です。
+
+不完全なコードでは再検証ができないため、途中出力や一部省略をしないようにしてください。
 
 ✅ 成功条件
-クリックでは点（1点）だけ描かれ、ドラッグでは線（連続した2点以上）が描かれる。
+クリックで点、ドラッグで線が描ける。
 
-複数点を結ぶ滑らかな折れ線が描画できる。
+ペンが動かない、描画されないという事態が解消されている。
 
-無操作時にCPU/GPU負荷が不要に増えない。
+Consoleにエラーが出ない。
 
-📤 出力要件
-修正済みファイルは 全コードを完全なコードブロック形式で出力すること（途中省略不可）。
+ログ出力は適切な範囲に制御されている。
 
-差分ではなく各ファイルの完成版として出力すること。
+🚫 禁止事項まとめ
+hasPointerCapture() の使用
 
-📁 対象ファイル
-src/features/canvas/PointerInteractionHandler.js
+console.log() を pointermove 内などループで連続実行
 
-src/engine/DrawingEngine.js
+省略出力・「差分だけ出力します」といった形式
 
-src/engine/WebGLRenderer.js
-
-💬 備考
-GitHubへのアップロードは不要。修正済みコードはコードブロックで返すのみで良い。
-
-ファイルの命名・構造・命令に省略やあいまいな表現があると、司令AI（ChatGPT）での再検証ができません。明確であること。
+gl.drawArrays(gl.POINTS) の固定（線になりません）
