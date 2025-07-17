@@ -39,4 +39,5 @@ export class ToolStore {
     }
 }
 
+// グローバル共有用のインスタンスを export
 export const toolStore = new ToolStore();

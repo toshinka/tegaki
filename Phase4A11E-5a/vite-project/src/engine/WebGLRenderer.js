@@ -80,6 +80,13 @@ export class LayerRendererGL extends StrokeRenderer {
         gl.clear(gl.COLOR_BUFFER_BIT);
         this._checkGLError('gl.clear');
         
+        // ---⬇️ ここから変更 ⬇️ ---
+        // カラーストアの状態変化を監視し、描画色を更新
+        toolStore.subscribe((state) => {
+            this.currentColor = state.mainColor || '#800000'; // fallback color
+        });
+        // --- ⬆️ ここまで変更 ⬆️ ---
+
         console.log(`✅ LayerRendererGL initialized with ${this.superWidth}x${this.superHeight} internal resolution.`);
     }
     
@@ -238,9 +245,8 @@ export class LayerRendererGL extends StrokeRenderer {
         // ---⬇️ ここから変更 ⬇️ ---
         let finalColor = color;
         if (!finalColor) {
-            // 指示書に基づき、mainColorがnullの場合のフォールバック処理を追加
-            const state = toolStore.getState();
-            const hex = state.mainColor || '#800000'; // fallback
+            // subscribeで更新されるthis.currentColorを使用
+            const hex = this.currentColor || '#800000'; // fallback
             const r = parseInt(hex.slice(1, 3), 16);
             const g = parseInt(hex.slice(3, 5), 16);
             const b = parseInt(hex.slice(5, 7), 16);
@@ -355,9 +361,8 @@ export class LayerRendererGL extends StrokeRenderer {
         // ---⬇️ ここから変更 ⬇️ ---
         let finalColor = color;
         if (!finalColor) {
-            // 指示書に基づき、mainColorがnullの場合のフォールバック処理を追加
-            const state = toolStore.getState();
-            const hex = state.mainColor || '#800000'; // fallback
+            // subscribeで更新されるthis.currentColorを使用
+            const hex = this.currentColor || '#800000'; // fallback
             const r = parseInt(hex.slice(1, 3), 16);
             const g = parseInt(hex.slice(3, 5), 16);
             const b = parseInt(hex.slice(5, 7), 16);
