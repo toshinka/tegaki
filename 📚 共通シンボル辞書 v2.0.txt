@@ -1,0 +1,66 @@
+# 📚 共通シンボル辞書 v2.0
+
+## 🎯 1. アプリケーション中核 (Core)
+アプリケーションの起動、全体制御、描画エンジンのコア部分。
+
+
+| シンボル名 | 種別 | 機能概要 | 定義ファイル |
+| :--- | :--- | :--- | :--- |
+| `AppController` | クラス | 全体制御と各モジュール統括 | `AppController.js` |
+| `DrawingEngine` | クラス | 描画処理のコアエンジン | `DrawingEngine.js` |
+| `ViewportTransform` | クラス | 座標変換ロジック | `ViewportTransform.js` |
+| `screenToWorld()` | 関数 | スクリーン→ワールド座標変換 | `ViewportTransform.js` |
+
+---
+
+## 🎨 2. UI関連 (UI)
+パネル、ボタン、カラーパレットなど、ユーザーが直接操作する部分。
+
+
+| シンボル名 | 種別 | 機能概要 | 定義ファイル |
+| :--- | :--- | :--- | :--- |
+| `UIComponent` | クラス | ベースUIクラス（継承用） | `UIComponent.js` |
+| `ColorPalette` | クラス | 色選択UI | `ColorPalette.js` |
+| `ToolSelector` | クラス | ツール切り替えUI | `ToolSelector.js` |
+| `ZoomSlider` | クラス | 拡大縮小用スライダー | `ViewportControl.js` |
+
+---
+
+## 🖌️ 3. 描画ツールとキャンバス操作 (Tools & Canvas)
+ブラシ、塗りつぶし等のツールと、マウスポインタ等のユーザー入力処理。
+
+
+| シンボル名 | 種別 | 機能概要 | 定義ファイル |
+| :--- | :--- | :--- | :--- |
+| `ToolStore` | クラス | ツール設定の一元管理 | `ToolStore.js` |
+| `ToolController` | クラス | ツール操作の橋渡し役 | `ToolController.js` |
+| `BrushTool` | クラス | ブラシによる手描き処理 | `BrushTool.js` |
+| `CanvasInteraction` | クラス | ユーザー入力処理 | `CanvasInteraction.js` |
+
+---
+
+## 📂 4. レイヤーと履歴 (Layers & History)
+レイヤーの状態管理、操作、描画、およびUndo/Redo機能。
+
+
+| シンボル名 | 種別 | 機能概要 | 定義ファイル |
+| :--- | :--- | :--- | :--- |
+| `LayerStore` | クラス | レイヤー状態の集中管理 | `LayerStore.js` |
+| `LayerActions` | クラス | レイヤー操作APIの実装 | `LayerActions.js` |
+| `LayerRendererGL` | クラス | WebGLベースのレイヤー描画 | `WebGLRenderer.js` |
+| `HistoryStore` | クラス | 操作履歴全体の保持 | `HistoryStore.js` |
+| `UndoRedoManager` | クラス | Undo/Redoの実行管理 | `UndoRedoManager.js` |
+
+---
+
+## 🔧 5. 共通処理と定数 (Utils & Constants)
+色変換、数学、画像読み込みなどの補助機能や、アプリ全体で使う定数。
+
+
+| シンボル名 | 種別 | 機能概要 | 定義ファイル |
+| :--- | :--- | :--- | :--- |
+| `hexToRgba()` | 関数 | HEX文字列からRGBA形式に変換 | `ColorUtils.js` |
+| `clamp()` | 関数 | 値をmin-max間に制限 | `MathUtils.js` |
+| `loadImageAsync()` | 関数 | 非同期で画像を読み込む | `Loader.js` |
+| `SUPER_SAMPLING_FACTOR` | 定数 | 高精細描画の倍率係数 | `Constants.js` |
+| `initializeDB()` | 関数 | IndexedDBの初期設定処理 | `StorageService.js` |
