@@ -1,0 +1,283 @@
+# 🎨 モダンお絵かきツール 圧縮版計画書
+
+## 🎯 基本方針
+**完全刷新**: Canvas2D→WebGL移行複雑さ回避 | **AI協働最適化**: 複数AI委任前提設計 | **モダンAPI**: 最新ブラウザ機能フル活用
+
+### 技術スタック
+```js
+// コア: Vite5+ | ES6完全ESM | WebGL2→WebGPU | TypeScript
+// API: PointerEvents(筆圧統合) | PopoverAPI | ResizeObserver | VisualViewport | FileSystemAccess
+```
+
+## 🏗️ アーキテクチャ
+
+### フォルダ構成
+```
+src/
+├── core/                    // 描画エンジン・入力・数学
+│   ├── engine/             // WebGL/WebGPU Renderer
+│   ├── input/              // PointerInput・Touch・Pressure
+│   └── math/               // Transform・Bezier・Collision
+├── features/               // 機能別実装
+│   ├── layers/            // LayerStore・Actions・Renderer・Hierarchy
+│   ├── tools/             // ToolStore・Actions・Pen・Brush・Eraser・Selection
+│   ├── canvas/            // CanvasStore・Actions・Viewport・Coordinate
+│   └── history/           // HistoryStore・Actions・CommandPattern
+├── ui/                     // UIコンポーネント・モーダル・テーマ
+├── data/                   // ストレージ・シリアライゼーション・エクスポート
+├── utils/                  // EventEmitter・Logger・ErrorHandler・Performance
+└── app/                    // AppController・ServiceContainer・main.js
+```
+
+### データフロー
+**UI → Actions → Store → Renderer → WebGL/WebGPU**
+**Store → UI** (状態購読) | **Actions → Storage** (永続化)
+
+## 🎨 段階的実装
+
+### Phase1: 基盤構築(2週)
+```js
+// 1A: WebGL2エンジン
+class WebGLRenderer {
+    constructor(canvas) {
+        this.gl = canvas.getContext('webgl2');
+        this.shaderManager = new ShaderManager(this.gl);
+        this.textureManager = new TextureManager(this.gl);
+        this.bufferManager = new BufferManager(this.gl);
+    }
+    createLayer(config) {} // 非破壊レイヤー作成
+    renderStroke(strokeData, layerID) {} // 高品質描画
+}
+
+// 1B: 入力システム
+class PointerInputManager {
+    constructor() {
+        this.pressureDetector = new PressureDetector();
+        this.gestureRecognizer = new GestureRecognizer();
+    }
+    handlePointerMove(e) {
+        const data = { x: e.clientX, y: e.clientY, pressure: e.pressure||0.5, 
+                      tiltX: e.tiltX||0, tiltY: e.tiltY||0, twist: e.twist||0,
+                      tangentialPressure: e.tangentialPressure||0 };
+        this.emit('stroke-data', data);
+    }
+}
+
+// 1C: Store実装
+class LayerStore extends EventEmitter {
+    constructor(storageService) {
+        super();
+        this.storageService = storageService;
+        this.layers = new Map();
+        this.activeLayerID = null;
+    }
+    createLayer(config) {
+        const layer = new Layer(config);
+        this.layers.set(layer.id, layer);
+        this.emit('layer-created', layer);
+        return layer;
+    }
+}
+```
+
+### Phase2: UI統合(1週)
+```js
+// 2A: PopoverAPI活用
+class ToolPanel {
+    setupPopoverUI() {
+        const popover = document.createElement('div');
+        popover.setAttribute('popover', 'auto');
+        popover.id = 'tool-settings';
+        // ブラシサイズ・色選択等
+    }
+}
+
+// 2B: レスポンシブキャンバス
+class CanvasContainer {
+    setupResizeObserver() {
+        const observer = new ResizeObserver(entries => {
+            entries.forEach(entry => {
+                const { width, height } = entry.contentRect;
+                this.canvasActions.resizeCanvas(width, height);
+            });
+        });
+        observer.observe(this.canvas);
+    }
+    setupVisualViewport() {
+        if ('visualViewport' in window) {
+            window.visualViewport.addEventListener('resize', () => {
+                this.adjustForMobile();
+            });
+        }
+    }
+}
+```
+
+### Phase3: 高度機能(2週)
+```js
+// 3A: 非破壊レイヤー変形
+class LayerRenderer {
+    renderLayerWithTransform(layer, transform) {
+        const matrix = this.transformMatrix.createMatrix(transform);
+        this.webglRenderer.setTransform(matrix);
+        this.webglRenderer.renderLayer(layer);
+    }
+    blendLayers(layers, blendMode) {
+        this.webglRenderer.enableBlending(blendMode);
+        layers.forEach(layer => this.renderLayer(layer));
+    }
+}
+
+// 3B: Command Pattern履歴
+class DrawCommand {
+    constructor(layerID, strokeData) { this.layerID = layerID; this.strokeData = strokeData; }
+    execute(renderer) { renderer.drawStroke(this.layerID, this.strokeData); }
+    undo(renderer) { renderer.removeStroke(this.layerID, this.strokeData.id); }
+}
+class HistoryStore {
+    constructor() { this.undoStack = []; this.redoStack = []; }
+    executeCommand(command) {
+        command.execute(this.renderer);
+        this.undoStack.push(command);
+        this.redoStack = [];
+    }
+}
+```
+
+### Phase4: データ管理(1週)
+```js
+// 4A: FileSystemAccess API
+class FileSystemStorage {
+    async saveProject(projectData) {
+        const fileHandle = await window.showSaveFilePicker({
+            types: [{ description: 'Drawing Project', accept: {'application/json': ['.draw']} }]
+        });
+        const writable = await fileHandle.createWritable();
+        await writable.write(JSON.stringify(projectData));
+        await writable.close();
+        return { success: true, handle: fileHandle };
+    }
+    async loadProject() {
+        const [fileHandle] = await window.showOpenFilePicker({
+            types: [{ description: 'Drawing Project', accept: {'application/json': ['.draw']} }]
+        });
+        const file = await fileHandle.getFile();
+        return JSON.parse(await file.text());
+    }
+}
+
+// 4B: IndexedDB永続化
+class IndexedDBStorage {
+    async initialize() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open('DrawingToolDB', 1);
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => { this.db = request.result; resolve(); };
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                const projectStore = db.createObjectStore('projects', { keyPath: 'id' });
+                const layerStore = db.createObjectStore('layers', { keyPath: 'id' });
+                layerStore.createIndex('projectId', 'projectId');
+            };
+        });
+    }
+}
+```
+
+### Phase5: WebGPU移行(3週)
+```js
+// 5A: WebGPU基盤
+class WebGPURenderer {
+    async initialize() {
+        const adapter = await navigator.gpu.requestAdapter();
+        this.device = await adapter.requestDevice();
+        this.context = this.canvas.getContext('webgpu');
+        this.context.configure({ device: this.device, format: 'bgra8unorm' });
+    }
+    createComputeShader(shaderCode) {
+        const shaderModule = this.device.createShaderModule({ code: shaderCode });
+        return this.device.createComputePipeline({
+            compute: { module: shaderModule, entryPoint: 'main' }
+        });
+    }
+    renderFrame() {
+        const commandEncoder = this.device.createCommandEncoder();
+        const renderPass = commandEncoder.beginRenderPass({
+            colorAttachments: [{
+                view: this.context.getCurrentTexture().createView(),
+                loadOp: 'clear', storeOp: 'store'
+            }]
+        });
+        renderPass.end();
+        this.device.queue.submit([commandEncoder.finish()]);
+    }
+}
+```
+
+## 🤖 AI協働最適化
+
+### 命名規則
+```js
+// ✅ 良い命名
+class LayerStore          // レイヤー状態管理
+class LayerActions        // レイヤー操作
+class LayerRenderer       // レイヤー描画
+class PointerInputManager // 入力管理
+class WebGLRenderer       // WebGL描画
+
+// 関数: 動詞+名詞
+createLayer() | moveLayer() | deleteLayer() | renderStroke() | handlePointerMove()
+```
+
+### AI指示テンプレート
+```markdown
+## 実装依頼: [機能名]
+### 対象ファイル
+- Store: `features/[機能名]/[機能名]Store.js`
+- Actions: `features/[機能名]/[機能名]Actions.js`
+- UI: `ui/components/[コンポーネント名].js`
+
+### 実装要件
+1. SOLID原則準拠: 単一責任 | 依存性注入
+2. データフロー遵守: UI → Actions → Store
+3. エラーハンドリング: try-catch必須
+
+### 完了チェック
+- [ ] console.log削除 | [ ] 非同期適切処理 | [ ] 型チェック
+```
+
+## 🎯 差別化ポイント
+
+### 技術的優位性
+- **WebGPU**: 次世代GPU API | **Pointer Events**: 高精度入力(twist・tangentialPressure)
+- **FileSystemAccess**: ネイティブ保存 | **PopoverAPI**: モダンUI
+
+### AI協働最適化
+- **明確責務分離**: Store/Actions/UI | **統一命名規則**: 誤解防止
+- **段階的実装**: Phase1-5 | **詳細型定義**: 意図明確化
+
+### プロ級機能
+- **非破壊レイヤー**: GPU高速変形 | **高精度筆圧**: 全入力対応
+- **リアルタイム予測**: 手ブレ補正 | **プロファイル保存**: 設定永続化
+
+## 🚀 実装ロードマップ
+
+### Week1-2: 基盤構築
+1. Vite環境+基本構成 | 2. WebGL2Renderer+基本シェーダー
+3. PointerInputManager+基本描画 | 4. LayerStore+基本レイヤー操作
+
+### Week3: UI統合
+1. PopoverAPI+ツールパネル | 2. ResizeObserver+レスポンシブキャンバス
+3. 基本描画ツール(ペン・ブラシ・消しゴム)
+
+### Week4-5: 高度機能
+1. 非破壊レイヤー変形+履歴機能 | 2. FileSystemAccess+保存機能
+3. IndexedDB+自動保存
+
+### Week6-8: WebGPU移行
+1. WebGPU基盤構築 | 2. ComputeShader+高速描画 | 3. 最適化+テスト
+
+## 🎨 最終目標
+**AIと協働で作る、次世代ブラウザお絵かきツール**
+- モダンブラウザ完全対応 | AI協働開発最適化 | プロ級描画機能
+- 保守性高い設計 | WebGPU対応

@@ -1,0 +1,33 @@
+{
+  "name": "modern-drawing-tool",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0",
+    "@vitejs/plugin-legacy": "^5.0.0",
+    "@webgpu/types": "^0.1.0"
+  },
+  "dependencies": {
+    "gl-matrix": "^3.4.3",
+    "twgl.js": "^5.5.4",
+    "dexie": "^3.2.4",
+    "lodash-es": "^4.17.21",
+    "bezier-easing": "^2.1.0",
+    "mitt": "^3.0.1",
+    "canvas-toBlob": "^1.0.0",
+    "stats.js": "^0.17.0",
+    "chroma-js": "^2.4.2",
+    "file-saver": "^2.0.5",
+    "localforage": "^1.10.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
