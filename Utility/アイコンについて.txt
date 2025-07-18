@@ -1,0 +1,35 @@
+フリーアイコンの入手先
+1. Unicode文字（数値文字参照）
+
+絵筆: &#128396; (🖌️)
+パレット: &#127912; (🎨)
+鉛筆: &#9998; (✏️)
+ペン: &#128393; (🖉)
+消しゴム: &#128397; (🖍️)
+
+2. 無料アイコンサイト
+
+Lucide: シンプルで美しいアイコン（SVG）
+Heroicons: Tailwind CSSチームが作成
+Feather: 軽量なSVGアイコン
+Tabler Icons: 4000+のフリーアイコン
+
+数値文字参照の参考サイト
+
+Unicode表: https://unicode-table.com/
+HTML Entity: https://html-entity-codes.com/
+Emojipedia: https://emojipedia.org/
+
+色の変更について
+Unicode文字の色変更:
+css.icon {
+  color: #8B4513; /* 茶色 */
+  font-size: 24px;
+}
+SVGアイコンの色変更:
+css.svg-icon {
+  fill: #8B4513; /* 茶色 */
+  stroke: #8B4513;
+}
+Unicode文字もSVGアイコンも、CSSで簡単に色を変更できます。特にSVGは fill や stroke プロパティで細かく制御できるので、お絵かきツールには最適です。
+最初はUnicode文字で始めて、後からSVGアイコンに置き換える方法がコスト効率的だと思います。
