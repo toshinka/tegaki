@@ -15,7 +15,9 @@
     "vite": "^5.0.0"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
     "@phosphor-icons/react": "^2.1.10",
+    "@svgdotjs/svg.js": "^3.2.4",
     "bezier-easing": "^2.1.0",
     "canvas-toBlob": "^1.0.0",
     "chroma-js": "^2.4.2",
@@ -25,7 +27,9 @@
     "localforage": "^1.10.0",
     "lodash-es": "^4.17.21",
     "mitt": "^3.0.1",
+    "perfect-freehand": "^1.2.2",
     "stats.js": "^0.17.0",
+    "tweakpane": "^4.0.5",
     "twgl.js": "^5.5.4"
   },
   "engines": {
