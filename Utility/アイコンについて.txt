@@ -9,10 +9,10 @@
 
 2. 無料アイコンサイト
 
-Lucide: シンプルで美しいアイコン（SVG）
-Heroicons: Tailwind CSSチームが作成
-Feather: 軽量なSVGアイコン
-Tabler Icons: 4000+のフリーアイコン
+Lucide: シンプルで美しいアイコン（SVG）　◎
+Heroicons: Tailwind CSSチームが作成　※パレット・消しゴムがない
+Feather: 軽量なSVGアイコン  ※パレット・消しゴムがない
+Tabler Icons: 4000+のフリーアイコン　◎
 
 数値文字参照の参考サイト
 
@@ -33,3 +33,79 @@ css.svg-icon {
 }
 Unicode文字もSVGアイコンも、CSSで簡単に色を変更できます。特にSVGは fill や stroke プロパティで細かく制御できるので、お絵かきツールには最適です。
 最初はUnicode文字で始めて、後からSVGアイコンに置き換える方法がコスト効率的だと思います。
+
+
+
+
+SVGアイコンのフリーサイトで、特にオススメをいくつか追加で紹介します：
+人気の無料SVGアイコンサイト
+1. SVG Repo　◎
+
+50万以上のフリーSVGアイコン SVG Repo - Free SVG Vectors and Icons
+商用利用可能
+モノクロ・マルチカラー両対応
+
+2. Flaticon
+
+PNG、SVG、EPS、PSD、CSS形式で提供 Free Icons and Stickers - Millions of resources to download
+豊富なカテゴリ
+無料プランあり（要クレジット表記）
+
+3. Icons8
+
+143万以上のアイコン（静的・アニメーション） Download 1,439,800 free icons (SVG, PNG)
+一貫した品質
+無料プランあり
+
+4. UXWing　◎
+
+商用利用可能、クレジット表記不要 Free icons for website with commercial use no attribution PNG and SVG Vector Free Download
+SVGコードを簡単にコピー&ペースト
+WebサイトやPowerPointに最適
+
+5. FreeIcons.io
+
+SVG、PNG、EPS、AI、PSD形式 Free Icon | SVG Icon | Free Vector Icons Download | Icon Free | Free Svg Icons
+完全無料（商用・個人利用）
+IconShockライセンス
+
+特に開発者向け
+6. Phosphor Icons
+
+軽量でカスタマイズ可能
+React、Vue、Svelte対応
+
+7. Remix Icon
+
+中性的なデザイン
+豊富なカテゴリ
+
+お絵かきツールなら、SVG RepoやUXWingがオススメです。どちらもクレジット表記不要で商用利用可能なので、開発初期段階には最適です。
+
+
+🥇 1位: SVG Repo
+選出理由:
+
+豊富な選択肢: 50万以上のアイコンで、お絵かきツールに必要な筆・パレット・図形等が充実
+完全無料: 商用利用可能でクレジット表記不要
+開発者フレンドリー: SVGコードを直接コピー&ペーストできる
+品質の一貫性: 統一感のあるデザインでツール全体の見た目が整う
+
+🥈 2位: UXWing
+選出理由:
+
+ライセンスが明確: 商用利用可能、クレジット表記不要で法的リスクなし
+使いやすさ: SVGコードの取得が簡単で、開発効率が良い
+お絵かきツール向け: UI/UXに特化したアイコンが豊富
+軽量: ファイルサイズが最適化されている
+
+🥉 3位: Lucide
+選出理由:
+
+デザイン品質: 現代的でシンプル、茶色系の要望にも合うミニマルデザイン
+開発者コミュニティ: React、Vue等のフレームワーク対応が充実
+一貫性: 全アイコンが統一されたデザインシステム
+メンテナンス: 活発に更新されており、長期利用に安心
+
+総合判断
+SVG Repoが1位の理由は、個人開発者にとって最も重要な「選択肢の豊富さ」と「法的安全性」を兼ね備えているからです。初期開発では多様なアイコンが必要になるため、一箇所で全て揃う利便性は大きなメリットです。
