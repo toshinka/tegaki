@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>お絵かきツール</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #ffffee;
+            color: #800000;
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .tool-panel {
+            width: 48px;
+            background-color: #f0e0d6;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 12px 8px;
+            gap: 12px;
+            box-shadow: 1px 0 3px rgba(128, 0, 0, 0.1);
+            border-right: 1px solid rgba(128, 0, 0, 0.2);
+        }
+
+        .tool-button {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background-color: transparent;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            color: #800000;
+            border: 1px solid transparent;
+        }
+
+        .tool-button:hover {
+            background-color: rgba(128, 0, 0, 0.1);
+            border-color: rgba(128, 0, 0, 0.3);
+        }
+
+        .tool-button.active {
+            background-color: #800000;
+            color: #f0e0d6;
+            border-color: #600000;
+        }
+
+        .pen-size-popup {
+            position: absolute;
+            left: 56px;
+            top: 60px;
+            background: #f0e0d6;
+            border-radius: 8px;
+            padding: 12px;
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+            border: 1px solid rgba(128, 0, 0, 0.3);
+            display: none;
+            min-width: 120px;
+            z-index: 1000;
+        }
+
+        .pen-size-popup.show {
+            display: block;
+        }
+
+        .size-label {
+            font-size: 11px;
+            color: #800000;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .size-slider {
+            width: 100%;
+            margin-bottom: 8px;
+            accent-color: #800000;
+        }
+
+        .size-value {
+            font-size: 12px;
+            text-align: center;
+            background: rgba(128, 0, 0, 0.1);
+            color: #800000;
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(128, 0, 0, 0.2);
+        }
+
+        .canvas-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #ffffee;
+            overflow: hidden;
+            padding: 20px;
+        }
+
+        #drawing-canvas {
+            background-color: #f0e0d6;
+            cursor: crosshair;
+            touch-action: none;
+            display: block;
+            border: 2px solid #800000;
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.15);
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        .status-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 28px;
+            background-color: rgba(240, 224, 214, 0.95);
+            border-top: 1px solid rgba(128, 0, 0, 0.3);
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            font-size: 11px;
+            color: #800000;
+            gap: 16px;
+            backdrop-filter: blur(8px);
+        }
+
+        .pressure-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .pressure-bar {
+            width: 50px;
+            height: 4px;
+            background-color: rgba(128, 0, 0, 0.2);
+            border-radius: 2px;
+            overflow: hidden;
+            border: 1px solid rgba(128, 0, 0, 0.3);
+        }
+
+        .pressure-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #800000, #a00000);
+            transition: width 0.05s ease-out;
+            width: 0%;
+            border-radius: 1px;
+        }
+
+        .ph-icon {
+            width: 18px;
+            height: 18px;
+            display: inline-block;
+        }
+
+        .performance-indicator {
+            font-size: 10px;
+            color: rgba(128, 0, 0, 0.7);
+        }
+
+        /* 追加のスタイル */
+        .color-preview {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: #800000;
+            border: 2px solid rgba(128, 0, 0, 0.3);
+            margin-left: auto;
+        }
+
+        .smoothness-indicator {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 10px;
+        }
+
+        .smoothness-dot {
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background-color: #800000;
+            opacity: 0.3;
+            transition: opacity 0.1s ease;
+        }
+
+        .smoothness-dot.active {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <!-- ツールパネル -->
+    <div class="tool-panel">
+        <button id="pen-tool" class="tool-button active" title="ペン">
+            <svg class="ph-icon" fill="currentColor" viewBox="0 0 256 256">
+                <path d="m227.31,73.37L182.63,28.68a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96a16,16,0,0,0,0-22.63ZM92.69,208H48V163.31l88-88L180.69,120ZM192,108.68,147.31,64l24-24L216,84.68Z"></path>
+            </svg>
+        </button>
+        
+        <!-- ペンサイズポップアップ -->
+        <div id="pen-size-popup" class="pen-size-popup">
+            <div class="size-label">ペンサイズ</div>
+            <input 
+                type="range" 
+                id="size-slider" 
+                class="size-slider" 
+                min="1" 
+                max="50" 
+                value="5"
+            />
+            <div id="size-value" class="size-value">5px</div>
+        </div>
+
+        <div class="color-preview"></div>
+    </div>
+
+    <!-- キャンバスエリア -->
+    <div class="canvas-container">
+        <canvas id="drawing-canvas"></canvas>
+    </div>
+
+    <!-- ステータスバー -->
+    <div class="status-bar">
+        <span>ペン: 5px</span>
+        <div class="pressure-indicator">
+            <span>筆圧:</span>
+            <div class="pressure-bar">
+                <div class="pressure-fill"></div>
+            </div>
+        </div>
+        <div class="smoothness-indicator">
+            <span>滑らかさ:</span>
+            <div class="smoothness-dot"></div>
+            <div class="smoothness-dot"></div>
+            <div class="smoothness-dot"></div>
+        </div>
+        <span id="canvas-info">512×512</span>
+        <span class="performance-indicator" id="fps-counter">60fps</span>
+    </div>
+
+    <script type="module">
+        import { getStroke } from 'https://cdn.skypack.dev/perfect-freehand@1.2.2';
+        
+        // ============ Store層：状態管理 ============
+        class CanvasStore {
+            constructor() {
+                this.width = 512;  // より管理しやすいサイズに変更
+                this.height = 512;
+                this.dpr = Math.min(window.devicePixelRatio || 1, 2); // DPR上限設定
+                this.backgroundColor = '#f0e0d6';
+                this.subscribers = new Set();
+            }
+
+            subscribe(callback) {
+                this.subscribers.add(callback);
+                return () => this.subscribers.delete(callback);
+            }
+
+            notify() {
+                this.subscribers.forEach(callback => callback(this));
+            }
+        }
+
+        class ToolStore {
+            constructor() {
+                this.activeTool = 'pen';
+                this.penSize = 5;  // デフォルトサイズを5に変更
+                this.penColor = '#800000';  // ふたばカラーに変更
+                this.subscribers = new Set();
+            }
+
+            subscribe(callback) {
+                this.subscribers.add(callback);
+                return () => this.subscribers.delete(callback);
+            }
+
+            notify() {
+                this.subscribers.forEach(callback => callback(this));
+            }
+
+            setPenSize(size) {
+                this.penSize = Math.max(1, Math.min(50, size));
+                this.notify();
+            }
+        }
+
+        class DrawingStore {
+            constructor() {
+                this.isDrawing = false;
+                this.currentStroke = [];
+                this.strokes = [];
+                this.currentPressure = 0;
+                this.subscribers = new Set();
+                this.lastDrawTime = 0;
+                this.smoothnessLevel = 0;
+            }
+
+            subscribe(callback) {
+                this.subscribers.add(callback);
+                return () => this.subscribers.delete(callback);
+            }
+
+            notify() {
+                this.subscribers.forEach(callback => callback(this));
+            }
+
+            startStroke(point, penSize, penColor) {
+                this.isDrawing = true;
+                this.currentStroke = {
+                    points: [point],
+                    size: penSize,
+                    color: penColor
+                };
+                this.lastDrawTime = performance.now();
+                this.notify();
+            }
+
+            addPointToStroke(point) {
+                if (this.isDrawing) {
+                    this.currentStroke.points.push(point);
+                    
+                    // 滑らかさレベルの更新
+                    const currentTime = performance.now();
+                    const timeDiff = currentTime - this.lastDrawTime;
+                    if (timeDiff < 16) this.smoothnessLevel = Math.min(3, this.smoothnessLevel + 1);
+                    else if (timeDiff > 50) this.smoothnessLevel = Math.max(0, this.smoothnessLevel - 1);
+                    this.lastDrawTime = currentTime;
+                    
+                    this.notify();
+                }
+            }
+
+            endStroke() {
+                if (this.isDrawing && this.currentStroke.points.length > 0) {
+                    this.strokes.push(this.currentStroke);
+                    this.currentStroke = { points: [], size: 0, color: '' };
+                    this.isDrawing = false;
+                    this.smoothnessLevel = 0;
+                    this.notify();
+                }
+            }
+
+            updatePressure(pressure) {
+                this.currentPressure = pressure;
+                this.notify();
+            }
+        }
+
+        // ============ Actions層：操作実行 ============
+        class CanvasActions {
+            constructor(canvasStore) {
+                this.canvasStore = canvasStore;
+            }
+
+            initializeCanvas(canvas) {
+                const { width, height, dpr } = this.canvasStore;
+                
+                // 物理サイズを512x512に設定
+                canvas.style.width = width + 'px';
+                canvas.style.height = height + 'px';
+                
+                // 内部解像度を高密度対応（ただし上限制御）
+                canvas.width = width * dpr;
+                canvas.height = height * dpr;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.scale(dpr, dpr);
+                
+                // アンチエイリアスの最適化
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                
+                this.clearCanvas(canvas);
+            }
+
+            clearCanvas(canvas) {
+                const ctx = canvas.getContext('2d');
+                const { width, height, backgroundColor } = this.canvasStore;
+                
+                ctx.fillStyle = backgroundColor;
+                ctx.fillRect(0, 0, width, height);
+            }
+
+            renderStroke(ctx, strokeData) {
+                if (!strokeData.points || strokeData.points.length < 2) return;
+
+                // より自然な描画オプション
+                const strokeOptions = {
+                    size: strokeData.size,
+                    thinning: 0.6,    // より自然な線の細り
+                    smoothing: 0.7,   // 滑らかさを向上
+                    streamline: 0.3,  // ストリームライン調整
+                    easing: (t) => Math.sin((t * Math.PI) / 2), // より自然なイージング
+                    start: {
+                        taper: 20,    // 開始時のテーパーを調整
+                        easing: (t) => t * t,
+                        cap: true
+                    },
+                    end: {
+                        taper: 80,    // 終了時のテーパーを調整
+                        easing: (t) => --t * t * t + 1,
+                        cap: true
+                    }
+                };
+
+                try {
+                    const stroke = getStroke(strokeData.points, strokeOptions);
+                    
+                    if (stroke.length === 0) return;
+                    
+                    ctx.fillStyle = strokeData.color;
+                    ctx.beginPath();
+                    
+                    // より滑らかなパス生成
+                    if (stroke.length > 0) {
+                        ctx.moveTo(stroke[0][0], stroke[0][1]);
+                        
+                        for (let i = 1; i < stroke.length - 1; i++) {
+                            const current = stroke[i];
+                            const next = stroke[i + 1];
+                            const midX = (current[0] + next[0]) / 2;
+                            const midY = (current[1] + next[1]) / 2;
+                            ctx.quadraticCurveTo(current[0], current[1], midX, midY);
+                        }
+                        
+                        if (stroke.length > 1) {
+                            const last = stroke[stroke.length - 1];
+                            ctx.lineTo(last[0], last[1]);
+                        }
+                    }
+                    
+                    ctx.closePath();
+                    ctx.fill();
+                } catch (error) {
+                    console.warn('Stroke rendering failed:', error);
+                    // フォールバック描画
+                    this.renderFallbackStroke(ctx, strokeData);
+                }
+            }
+
+            renderFallbackStroke(ctx, strokeData) {
+                if (strokeData.points.length < 2) return;
+                
+                ctx.strokeStyle = strokeData.color;
+                ctx.lineWidth = strokeData.size;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                
+                ctx.beginPath();
+                const [firstX, firstY] = strokeData.points[0];
+                ctx.moveTo(firstX, firstY);
+                
+                for (let i = 1; i < strokeData.points.length; i++) {
+                    const [x, y] = strokeData.points[i];
+                    ctx.lineTo(x, y);
+                }
+                
+                ctx.stroke();
+            }
+
+            redrawCanvas(canvas, strokes, currentStroke) {
+                this.clearCanvas(canvas);
+                const ctx = canvas.getContext('2d');
+                
+                // 完了したストロークを描画
+                strokes.forEach(stroke => {
+                    this.renderStroke(ctx, stroke);
+                });
+
+                // 現在のストロークを描画（即座に）
+                if (currentStroke && currentStroke.points && currentStroke.points.length > 0) {
+                    this.renderStroke(ctx, currentStroke);
+                }
+            }
+        }
+
+        class DrawingActions {
+            constructor(drawingStore, toolStore, canvasActions) {
+                this.drawingStore = drawingStore;
+                this.toolStore = toolStore;
+                this.canvasActions = canvasActions;
+                this.animationId = null;
+                this.fpsCounter = 0;
+                this.lastFpsTime = 0;
+            }
+
+            startDrawing(canvas, x, y, pressure = 0.5) {
+                // より正確な筆圧処理
+                const adjustedPressure = Math.max(0.1, Math.min(1.0, pressure));
+                const point = [x, y, adjustedPressure];
+                
+                this.drawingStore.startStroke(
+                    point, 
+                    this.toolStore.penSize, 
+                    this.toolStore.penColor
+                );
+                this.drawingStore.updatePressure(adjustedPressure);
+                this.requestRedraw(canvas);
+            }
+
+            continueDrawing(canvas, x, y, pressure = 0.5) {
+                // より正確な筆圧処理
+                const adjustedPressure = Math.max(0.1, Math.min(1.0, pressure));
+                const point = [x, y, adjustedPressure];
+                
+                this.drawingStore.addPointToStroke(point);
+                this.drawingStore.updatePressure(adjustedPressure);
+                this.requestRedraw(canvas);
+            }
+
+            endDrawing(canvas) {
+                this.drawingStore.endStroke();
+                this.drawingStore.updatePressure(0);
+                this.requestRedraw(canvas);
+            }
+
+            requestRedraw(canvas) {
+                if (this.animationId) return; // 既に予約済み
+                
+                this.animationId = requestAnimationFrame(() => {
+                    this.redraw(canvas);
+                    this.updateFPS();
+                    this.animationId = null;
+                });
+            }
+
+            redraw(canvas) {
+                this.canvasActions.redrawCanvas(
+                    canvas, 
+                    this.drawingStore.strokes, 
+                    this.drawingStore.currentStroke
+                );
+            }
+
+            updateFPS() {
+                const now = performance.now();
+                if (now - this.lastFpsTime >= 1000) {
+                    const fpsElement = document.getElementById('fps-counter');
+                    if (fpsElement) {
+                        fpsElement.textContent = `${Math.round(this.fpsCounter)}fps`;
+                    }
+                    this.fpsCounter = 0;
+                    this.lastFpsTime = now;
+                } else {
+                    this.fpsCounter++;
+                }
+            }
+        }
+
+        // ============ UI層：表示制御 ============
+        class DrawingUI {
+            constructor(canvasActions, drawingActions, stores) {
+                this.canvasActions = canvasActions;
+                this.drawingActions = drawingActions;
+                this.stores = stores;
+                this.canvas = null;
+                this.isPointerDown = false;
+                this.lastPoint = null;
+            }
+
+            initialize() {
+                this.canvas = document.getElementById('drawing-canvas');
+                this.setupCanvas();
+                this.setupEventListeners();
+                this.setupStoreSubscriptions();
+                this.updateUI();
+                this.updateCanvasInfo();
+            }
+
+            setupCanvas() {
+                this.canvasActions.initializeCanvas(this.canvas);
+            }
+
+            setupEventListeners() {
+                // より精密なPointer Events設定
+                this.canvas.addEventListener('pointerdown', (e) => this.handlePointerDown(e));
+                this.canvas.addEventListener('pointermove', (e) => this.handlePointerMove(e));
+                this.canvas.addEventListener('pointerup', (e) => this.handlePointerUp(e));
+                this.canvas.addEventListener('pointerleave', (e) => this.handlePointerUp(e));
+                this.canvas.addEventListener('pointercancel', (e) => this.handlePointerUp(e));
+
+                // コンテキストメニュー無効化
+                this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+                // ペンツールクリック時のサイズポップアップ
+                document.getElementById('pen-tool').addEventListener('click', () => {
+                    this.toggleSizePopup();
+                });
+
+                // サイズスライダー
+                const sizeSlider = document.getElementById('size-slider');
+                sizeSlider.addEventListener('input', (e) => {
+                    this.stores.toolStore.setPenSize(parseInt(e.target.value));
+                });
+
+                // ポップアップ外クリックで閉じる
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.tool-panel')) {
+                        this.hideSizePopup();
+                    }
+                });
+
+                // キーボードショートカット
+                document.addEventListener('keydown', (e) => {
+                    this.handleKeydown(e);
+                });
+            }
+
+            setupStoreSubscriptions() {
+                this.stores.toolStore.subscribe(() => this.updateUI());
+                this.stores.drawingStore.subscribe(() => {
+                    this.updatePressureDisplay();
+                    this.updateSmoothnessDisplay();
+                });
+            }
+
+            handlePointerDown(e) {
+                e.preventDefault();
+                this.isPointerDown = true;
+                this.canvas.setPointerCapture(e.pointerId);
+                
+                const rect = this.canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const pressure = this.getPressure(e);
+                
+                this.lastPoint = { x, y, pressure };
+                this.drawingActions.startDrawing(this.canvas, x, y, pressure);
+            }
+
+            handlePointerMove(e) {
+                if (!this.isPointerDown) return;
+                
+                e.preventDefault();
+                
+                const rect = this.canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const pressure = this.getPressure(e);
+                
+                // 距離による間引き（パフォーマンス改善）
+                if (this.lastPoint) {
+                    const distance = Math.sqrt(
+                        Math.pow(x - this.lastPoint.x, 2) + 
+                        Math.pow(y - this.lastPoint.y, 2)
+                    );
+                    if (distance < 1) return; // 1px未満は無視
+                }
+                
+                this.lastPoint = { x, y, pressure };
+                this.drawingActions.continueDrawing(this.canvas, x, y, pressure);
+            }
+
+            handlePointerUp(e) {
+                if (!this.isPointerDown) return;
+                
+                e.preventDefault();
+                this.isPointerDown = false;
+                
+                if (this.canvas.hasPointerCapture && this.canvas.hasPointerCapture(e.pointerId)) {
+                    this.canvas.releasePointerCapture(e.pointerId);
+                }
+                
+                this.lastPoint = null;
+                this.drawingActions.endDrawing(this.canvas);
+            }
+
+            handleKeydown(e) {
+                // ブラケットキーでペンサイズ調整
+                if (e.key === '[') {
+                    e.preventDefault();
+                    const newSize = Math.max(1, this.stores.toolStore.penSize - 1);
+                    this.stores.toolStore.setPenSize(newSize);
+                } else if (e.key === ']') {
+                    e.preventDefault();
+                    const newSize = Math.min(50, this.stores.toolStore.penSize + 1);
+                    this.stores.toolStore.setPenSize(newSize);
+                }
+            }
+
+            getPressure(e) {
+                // より自然な筆圧処理
+                if (e.pressure !== undefined && e.pressure > 0) {
+                    return Math.pow(e.pressure, 0.7); // ガンマ補正で自然な感覚に
+                }
+                
+                // タッチデバイスでは速度に応じた筆圧シミュレーション
+                if (e.pointerType === 'touch' && this.lastPoint) {
+                    const distance = Math.sqrt(
+                        Math.pow(e.clientX - this.lastPoint.x, 2) + 
+                        Math.pow(e.clientY - this.lastPoint.y, 2)
+                    );
+                    const speed = distance / 16; // 16msあたりの移動距離
+                    return Math.max(0.2, Math.min(1.0, 1.0 - speed * 0.1));
+                }
+                
+                return 0.7; // デフォルト値
+            }
+
+            toggleSizePopup() {
+                const popup = document.getElementById('pen-size-popup');
+                popup.classList.toggle('show');
+            }
+
+            hideSizePopup() {
+                const popup = document.getElementById('pen-size-popup');
+                popup.classList.remove('show');
+            }
+
+            updateUI() {
+                const sizeSlider = document.getElementById('size-slider');
+                const sizeValue = document.getElementById('size-value');
+                const statusBar = document.querySelector('.status-bar span');
+                
+                sizeSlider.value = this.stores.toolStore.penSize;
+                sizeValue.textContent = `${this.stores.toolStore.penSize}px`;
+                statusBar.textContent = `ペン: ${this.stores.toolStore.penSize}px`;
+            }
+
+            updatePressureDisplay() {
+                const pressureFill = document.querySelector('.pressure-fill');
+                const pressure = this.stores.drawingStore.currentPressure;
+                pressureFill.style.width = `${pressure * 100}%`;
+            }
+
+            updateSmoothnessDisplay() {
+                const dots = document.querySelectorAll('.smoothness-dot');
+                const level = this.stores.drawingStore.smoothnessLevel;
+                
+                dots.forEach((dot, index) => {
+                    dot.classList.toggle('active', index < level);
+                });
+            }
+
+            updateCanvasInfo() {
+                const canvasInfo = document.getElementById('canvas-info');
+                const { width, height } = this.stores.canvasStore;
+                canvasInfo.textContent = `${width}×${height}`;
+            }
+        }
+
+        // ============ 初期化 ============
+        const canvasStore = new CanvasStore();
+        const toolStore = new ToolStore();
+        const drawingStore = new DrawingStore();
+
+        const canvasActions = new CanvasActions(canvasStore);
+        const drawingActions = new DrawingActions(drawingStore, toolStore, canvasActions);
+
+        const drawingUI = new DrawingUI(canvasActions, drawingActions, {
+            canvasStore, toolStore, drawingStore
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            drawingUI.initialize();
+            
+            // 初期描画のパフォーマンス確認
+            console.log('🎨 ふたば☆ちゃんねる風お絵かきツール 初期化完了');
+            console.log('📊 Canvas:', `${canvasStore.width}×${canvasStore.height}, DPR: ${canvasStore.dpr}`);
+            console.log('✏️ 初期設定:', `ペンサイズ: ${toolStore.penSize}px, 色: ${toolStore.penColor}`);
+        });
+
+        // デバッグ用グローバル参照
+        window.stores = { canvasStore, toolStore, drawingStore };
+        window.actions = { canvasActions, drawingActions };
+    </script>
+</body>
+</html>
