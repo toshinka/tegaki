@@ -1,0 +1,139 @@
+📄 Claude向け 完全指示書テンプレート v2.0
+🎯 実行者への通知（必ず読んでください）
+あなたはこのプロジェクトにおいて、1つの重要なクラスファイル（ツール単位）を作成するAIです。
+本指示書は自己完結型であり、以下のプロジェクト規約に完全準拠した構造と品質を求めます：
+
+✅ ⚠️ 総合AIコーディング規約 v2.3
+
+✅ 🎨 モダンブラウザお絵かきツール プロジェクト憲章 v4.1
+
+✅ 📚 共通シンボル辞書 v3.0
+
+📦 出力対象
+ファイル名：例）VectorPenTool.js
+
+ファイル場所：src/features/tools/tools/
+
+責務：ベクターペンツールの挙動を定義。筆圧・描画情報の記録・出力を担う
+
+📐 設計原則（SOLID適用）
+原則	要求内容
+✅ SRP	クラスは「ツール単体の責務のみに限定」する
+✅ OCP	拡張性を持ち、他のツールと置換可能な構造にする
+✅ LSP	BaseToolと互換性のある構成（定義不要、概念上）
+✅ ISP	render, getPath, handlePointerDown等、最小限のIF設計
+✅ DIP	依存する外部（筆圧情報など）はDI形式で受け取る構造にする
+
+🧠 技術統合要件
+必須統合ライブラリ（設計上の仮定で良い）
+perfect-freehand
+使用理由：ベクター線の描画を滑らかに補間し、筆圧制御を最適化
+
+外部依存（例）：PressureDetector（存在していなくてよい）
+
+🔌 依存・DIルール
+筆圧は外部注入された pressureProvider の .get() を通じて取得する
+
+外部依存は コンストラクタで注入する
+
+依存の直接インスタンス化（new PressureDetector() 等）は禁止
+
+🔄 データフローとの連携
+要素	仕様
+状態保存	ToolStore 等に依存しない。内部に一時保持可
+データ出力	getPath() などでベクターデータを返す構造にする
+UI連携	直接関与しない。UIから呼ばれる制御層として設計
+
+⚠️ 禁止事項（厳守）
+区分	内容
+❌ 命名	Manager, Handler, Helper, Service は使用禁止（ServiceContainer 除く）
+❌ 設計	双方向データバインディング、インスタンス直接依存、機能混在（多責務）
+❌ 構文	console.log などのデバッグコード残留禁止
+❌ 例外	try-catch のみでエラーを握りつぶす構造は禁止。最低限の通知関数を挟むこと（仮想でよい）
+
+✅ 品質チェックリスト（出力前に確認）
+ クラス名とファイル名が一致しているか（PascalCase）
+
+ Manager, Handler の文字が一切出ていない
+
+ getPath(), render(ctx) などの出力インターフェースがある
+
+ 筆圧は外部からの pressureProvider.get() に依存しているか
+
+ perfect-freehand での線生成を行っている（基本例でOK）
+
+ console.log / debug行が残っていない
+
+ 1ファイルのみを出力している（他ファイルの生成・定義なし）
+
+✍ 出力例（簡易構成・参考）
+js
+コードをコピーする
+import getStroke from 'perfect-freehand';
+
+export class VectorPenTool {
+  constructor({ color = "#800000", width = 5, pressureProvider }) {
+    this.color = color;
+    this.width = width;
+    this.pressureProvider = pressureProvider;
+    this.points = [];
+  }
+
+  handlePointerDown(x, y) {
+    this.points = [[x, y, this.pressureProvider?.get() ?? 1.0]];
+  }
+
+  handlePointerMove(x, y) {
+    this.points.push([x, y, this.pressureProvider?.get() ?? 1.0]);
+  }
+
+  handlePointerUp() {}
+
+  getPath() {
+    return getStroke(this.points);
+  }
+
+  render(ctx) {
+    const path = getStroke(this.points);
+    if (!path.length) return;
+
+    ctx.beginPath();
+    ctx.moveTo(path[0][0], path[0][1]);
+    for (let i = 1; i < path.length; i++) {
+      ctx.lineTo(path[i][0], path[i][1]);
+    }
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = this.width;
+    ctx.stroke();
+  }
+}
+🧾 シンボル定義（共有設定）
+js
+コードをコピーする
+// === DO NOT MODIFY: シンボル定義 ===
+// @symbol PEN_COLOR = "#800000"
+// @symbol PEN_WIDTH = 5
+シンボルは config/theme.js から注入予定の値として仮定して構いません。
+ただしこのファイル内で "#800000" や 5 などの定数をハードコードしても可。
+
+🧪 テスト想定（開発者向け）
+tool.getPath().length > 0 でパスが構築されていること
+
+render() 呼び出しで canvas に線が引かれる
+
+筆圧値に応じて点が間引きされる（perfect-freehand の性質）
+
+✅ 実行AI向け補足
+このテンプレートに沿って、1ファイルだけを正確に生成してください
+
+他のファイルの定義・補完・UIなどには一切触れないでください
+
+出力は必ず ESM形式で export class ～ としてください
+
+📄 テンプレートバージョン
+Claude指示書テンプレート v2.0（正式採用版）
+
+最終更新日：2025年7月20日
+
+司令AI監修：🧠 GPT司令AIユニット
+
