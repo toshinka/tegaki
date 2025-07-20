@@ -1,0 +1,175 @@
+# Phase拡張時の追加設計要素（規約準拠版）
+
+## 🎬 アニメーション機能への拡張準備
+
+### 現在の憲章で不足している要素
+
+#### 1. フレーム管理システム（Store/Actions/UI三層構造）
+```javascript
+// Store/Actions分離による責務明確化
+src/features/frames/
+├── FrameStore.js           # フレーム状態管理（単一責任：フレーム状態のみ）
+├── FrameActions.js         # フレーム操作実行（単一責任：フレーム操作のみ）
+├── FrameController.js      # フレーム統括制御（DI注入による統制）
+└── OnionSkinRenderer.js    # オニオンスキン描画（単一責任：透過表示のみ）
+
+src/features/timeline/
+├── TimelineStore.js        # タイムライン状態管理（単一責任：時間軸状態のみ）
+├── TimelineActions.js      # 再生・停止制御（単一責任：再生操作のみ）
+└── PlaybackController.js   # フレームレート制御（単一責任：再生制御のみ）
+```
+
+#### 2. アニメーション用レンダリング拡張（既存VectorRenderer.js拡張）
+```javascript
+// 既存構造を拡張（OCP原則：修正でなく拡張）
+src/engine/animation/
+├── FrameRenderer.js        # フレーム単位描画（VectorRenderer継承）
+├── InterpolationEngine.js  # フレーム間補間（数学的計算に特化）
+└── AnimationCache.js       # 再生用キャッシュ（メモリ効率化）
+```
+
+## 🎨 高度描画機能への拡張
+
+### Phase 6以降で必要になる要素
+
+#### 3. 選択・変形システム（Store/Actions/UI三層構造）
+```javascript
+src/features/selection/
+├── SelectionStore.js       # 選択状態管理（単一責任：選択範囲状態のみ）
+├── SelectionActions.js     # 選択範囲操作（単一責任：選択操作のみ）
+├── TransformController.js  # 回転・拡大縮小制御（単一責任：変形処理のみ）
+└── SelectionRenderer.js    # 選択枠描画（単一責任：UI描画のみ）
+```
+
+#### 4. 高度なツール群（既存ツール構造継承）
+```javascript
+src/features/tools/tools/
+├── TextTool.js            # テキスト入力（IToolインターフェース準拠）
+├── ShapeTool.js           # 図形描画（IToolインターフェース準拠）
+├── GradientTool.js        # グラデーション（IToolインターフェース準拠）
+├── PatternTool.js         # パターン塗り（IToolインターフェース準拠）
+└── SymmetryTool.js        # 対称描画（IToolインターフェース準拠）
+```
+
+## 🎯 AI知見が薄い領域の特定
+
+### Phase 7以降で注意が必要な技術
+
+#### 1. 高度なアニメーション補間
+- **Flubber.js**: パス間の滑らかな補間（外部ライブラリ統合）
+- **Lottie**: After Effects連携（外部データ形式対応）
+- **複雑なイージング関数**: 手書き風アニメーション（数学的計算）
+
+#### 2. 物理演算統合
+- **Matter.js**: 2D物理演算の描画への統合（外部エンジン連携）
+- **髪の毛・服の揺れ**: 物理的リアリティ（複雑な数値計算）
+- **液体シミュレーション**: 絵の具の混色（GPU並列計算）
+
+#### 3. 3D背景システム
+- **2.5D合成**: レイヤーの奥行き配置（WebGL深度バッファ活用）
+- **パースガイド**: 透視図法支援（幾何学計算）
+- **3D参照モデル**: ポーズ参考用（Three.js統合）
+
+#### 4. AI描画支援
+- **TensorFlow.js**: ブラウザ内機械学習（GPU計算活用）
+- **手ブレ補正**: リアルタイム線補正（入力フィルタリング）
+- **自動彩色**: ラフから完成画への変換（画像処理AI）
+
+## 📋 推奨する情報開示タイミング
+
+### 🟢 Phase 5開始時（レイヤー強化段階）
+**開示内容**: アニメーション基本機能
+- Store/Actions/UI三層によるタイムライン設計
+- FrameStoreによる状態管理
+- OnionSkinRendererによる透過表示機能
+
+**理由**: レイヤーシステムが安定し、アニメーション基盤の設計が必要になるため
+
+### 🟡 Phase 7開始時（アニメーション基盤）
+**開示内容**: 高度なアニメーション機能
+- 物理演算統合のアーキテクチャ設計
+- 高度な補間システムのインターフェース設計
+- エクスポート機能詳細（WebCodecs活用）
+
+**理由**: AIの知見が薄くなり始める領域に入るため
+
+### 🔴 Phase 9以降（3D・AI機能）
+**開示内容**: 最先端機能
+- 3D背景生成システム
+- AI描画支援統合
+- LIVE2D風変形システム
+
+**理由**: AI支援が特に重要になる複雑な領域
+
+## 💡 現在の憲章強化案
+
+### すぐに追加すべき要素（規約準拠）
+
+#### 1. フレーム管理の基盤準備（Store/Actions分離）
+```javascript
+// features/canvas/CanvasStore.js に追加
+// 単一責任原則：キャンバス状態管理のみ
+frameMode: false,           # アニメーションモード
+currentFrame: 0,           # 現在のフレーム
+totalFrames: 1,            # 総フレーム数
+onionSkinEnabled: false,   # オニオンスキン表示
+
+// features/canvas/CanvasActions.js に追加
+// 単一責任原則：キャンバス操作実行のみ
+toggleFrameMode(),         # フレームモード切り替え
+setCurrentFrame(index),    # フレーム選択
+addFrame(),                # フレーム追加
+removeFrame(index),        # フレーム削除
+```
+
+#### 2. 時系列データの考慮（既存history拡張）
+```javascript
+// features/history/ を拡張（OCP原則：拡張で対応）
+src/features/history/
+├── HistoryStore.js        # 既存（基本履歴状態管理）
+├── FrameHistory.js        # フレーム別履歴（新規・単一責任）
+└── TimelineHistory.js     # タイムライン履歴（新規・単一責任）
+```
+
+#### 3. Worker拡張の準備（既存Worker構造継承）
+```javascript
+// workers/ に追加（ISP原則：必要機能のみ実装）
+src/workers/
+├── RenderWorker.js        # 既存（基本描画処理）
+├── AnimationWorker.js     # アニメーション専用（新規・単一責任）
+└── FrameComposer.js       # フレーム合成（新規・単一責任）
+```
+
+#### 4. ServiceContainer拡張（DIP原則準拠）
+```javascript
+// app/ServiceContainer.js に追加
+// 依存性逆転原則：抽象への依存
+registerAnimationServices() {
+    this.register('frameStore', () => new FrameStore());
+    this.register('timelineStore', () => new TimelineStore());
+    this.register('animationRenderer', (container) => 
+        new AnimationRenderer(
+            container.get('vectorRenderer'),
+            container.get('frameStore')
+        )
+    );
+}
+```
+
+## 🎯 結論
+
+現在の憲章v4.1は**Phase 1-4には十分**ですが、**Phase 5以降の拡張性**を考慮した以下の修正を推奨します：
+
+### 必須修正項目（規約違反解決）
+1. **Store/Actions/UI三層構造の徹底**: すべての新機能でこの構造を強制
+2. **単一責任原則の厳格化**: 1ファイル1責務の徹底
+3. **依存性注入の統一**: ServiceContainer経由での依存管理
+4. **インターフェース準拠の徹底**: IToolインターフェース等の統一
+
+### 推奨強化項目（将来対応）
+1. **データ構造の柔軟性**: 時系列データ対応
+2. **Worker活用の拡張**: 並列処理能力向上
+3. **GPU計算基盤の準備**: WebGPU活用準備
+4. **外部ライブラリ統合準備**: AI・物理演算対応
+
+特に**アーキテクチャの一貫性**と**SOLID原則の厳守**部分で、将来のアニメーション機能を見越した設計にしておくことが重要です。

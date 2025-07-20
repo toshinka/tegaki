@@ -1,0 +1,87 @@
+# 🔄 リレー指示書分類システム v3.1 (軽量版)
+
+## 🎯 基本思想 (規約v2.2準拠)
+- **分離原則**: Store/Actions/UIの三層構造で関心を分離。責務は単一に。
+- **依存最小化**: データフローは下層から上層への一方向を厳守。
+- **実用性重視**: 「1指示書 = 1責務 = 1AI担当」の原則。Chrome最新API、Perfect Freehand、WebCodecsを前提とする。
+- **モード対応**: Standalone / Embedded 両モードを考慮。
+
+---
+
+## 📂 4層分類体系
+
+### 🧠 Tier 1: Engine Infrastructure (技術基盤)
+**特徴**: アプリケーションの最下層。他層から依存され、変更頻度は最低。
+- **1A. [cite_start]GPU Rendering Engine**: GPU描画、Perfect Freehand統合、OffscreenCanvas制御。 [cite: 2]
+- **1B. [cite_start]Input Processing System**: Pointer Events処理、筆圧・チルト検出、座標変換。 [cite: 3]
+- **1C. Worker Infrastructure**: 並列処理基盤、WebCodecs統合、GPU計算分離。
+- **1D. [cite_start]Integration API**: PostMessage API、安全な外部通信、モード制御基盤。 [cite: 4]
+
+### 🎨 Tier 2: Feature Logic (機能ロジック)
+**特徴**: ビジネスロジック層。Tier 1に依存し、Store/Actionsに分離。
+- **2A. [cite_start]Feature Stores**: 各機能の状態管理 (tools, layers, history等) [cite: 5]。データ整合性とイベント通知を担う。
+- **2B. [cite_start]Feature Actions**: 各機能の操作実行。Store更新と副作用を管理。 [cite: 6]
+- **2C. [cite_start]Drawing Tools**: 個別描画ツール (VectorPen, Eraser等) [cite: 7] の実装。IToolインターフェースを実装。
+- **2D. [cite_start]Feature Controllers**: 機能の統括、DI管理、機能間協調。 [cite: 8]
+
+### 🖼️ Tier 3: UI Components (UIコンポーネント)
+**特徴**: 表示責務専門。Storeを購読し、Actionsを呼び出す。状態は保持しない。
+- **3A. [cite_start]Core UI Components**: 個別のUI部品 (LayerPanel, ToolPanel等)。 [cite: 9]
+- **3B. [cite_start]Layout Systems**: アプリ全体のレイアウト。モードに応じた切り替え (Standalone/Embedded) を担当。 [cite: 10]
+
+### 🔧 Tier 4: Integration & Bootstrap (統合・起動)
+**特徴**: 全体の統合、外部連携、アプリケーションライフサイクル管理。
+- **4A. [cite_start]Application Bootstrap**: DI統括、アプリ起動、全体初期化。 [cite: 11]
+- **4B. External Adapters**: 外部サイト (Futaba等) との連携、制約適用。
+- **4C. [cite_start]Data Services**: 外部サービス (IndexedDB, WebCodecs等) の抽象化。 [cite: 12]
+
+---
+
+## 📋 指示書テンプレート (規約v2.2準拠)
+
+### 🧠 Engine層テンプレート
+# 🧠 Engine実装指示書: [ファイル名]
+- **Tier**: 1 - Engine Infrastructure
+- **責務**: [単一責務を1文で記述]
+- **依存**: なし (最下層)
+- **必須技術**: Chrome最新API、Perfect Freehand、WebGL/WebGPU、60fps維持
+- **SOLIDチェック**: [ ] S [ ] O [ ] L [ ] I [ ] D
+- **完成基準**: GPU負荷監視、エラーハンドリング、デバッグコード削除、async/await統一
+- **禁止事項**: `Manager`系命名、`localStorage`使用、責務混在
+
+### 🎨 Feature層テンプレート
+# 🎨 Feature実装指示書: [機能名] (Store/Actions/Controller)
+- **Tier**: 2 - Feature Logic
+- [cite_start]**責務**: [機能名]の状態管理・操作・統括 [cite: 13]
+- **データフロー**: `UI → Actions → Store → UI` (一方向データフロー厳守)
+- **モード対応**: Standalone / Embedded 両対応必須
+- **SOLIDチェック**: [ ] S [ ] O [ ] L [ ] I [ ] D
+- **完成基準**: 三層分離、一方向フロー、エラーハンドリング、デバッグコード削除、`IndexedDB`使用
+- **禁止事項**: `Manager`系命名、Store直接変更、UI内状態保持、パススルー関数
+
+### 🖼️ UI層テンプレート
+# 🎨 UI実装指示書: [コンポーネント名]
+- **Tier**: 3 - UI Components
+- **責務**: UI表示、Store購読、Actions呼び出しのみ
+- **利用**: Store([利用Store名]), Actions([利用Actions名])
+- **UI制約**: レスポンシブ、モード別表示、アクセシビリティ、状態保持禁止
+- [cite_start]**SOLIDチェック**: [ ] S [ ] O [ ] L [ ] I [ ] D [cite: 14]
+- **完成基準**: Store購読/Actions呼出実装、状態保持なし、デバッグコード削除、両モード動作確認
+- **禁止事項**: 状態の直接保持、Store直接変更、ビジネスロジック実装、`Manager`系命名
+
+### 🔧 Integration層テンプレート
+# 🔧 Integration実装指示書: [統合機能名]
+- **Tier**: 4 - Integration & Bootstrap
+- **責務**: [統合・起動・外部連携の具体的責務]
+- [cite_start]**統合要件**: DI原則準拠、エラー波及防止、セキュリティ、中間層肥大化回避 [cite: 15]
+- **SOLIDチェック**: [ ] S [ ] O [ ] L [ ] I [ ] D
+- **完成基準**: 全層統合、エラーハンドリング、デバッグコード削除、パススルー関数最小化
+- **禁止事項**: 責務外の実装、セキュリティ軽視、`Manager`系命名、巨大な中間層クラス
+
+---
+
+## ✅ 品質チェックリスト (規約v2.2準拠)
+- [cite_start]**最重要**: `Manager`命名撲滅 [cite: 16]、三層分離、単一責務、一方向データフロー
+- **高重要**: `async/await`統一、エラーハンドリング統一、拡張性(OCP)・置換可能性(LSP)
+- **中重要**: デバッグコード削除、`IndexedDB`使用、セキュリティ考慮
+- **低重要**: DRY/KISS原則、適切な抽象化

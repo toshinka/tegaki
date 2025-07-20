@@ -1,0 +1,185 @@
+# 🔄 実用的リレー型指示書システム v3.0 (軽量版)
+
+## 🎯 基本設計思想
+- **無料AI最適化**: `1チャット = 1タスク完結`を前提とし、指示書は外部参照なしで自己完結させる。
+- **実用性重視**: 実行者の負担を最小化し、失敗からの回復を容易にする。
+
+---
+
+## 📋 システム構成
+- [cite_start]**マスタードキュメント (4種)**: あなたが管理する基盤資料。 [cite: 21]
+    1. [cite_start]**🏛️ プロジェクト憲法**: 不変のルール (技術スタック、フォルダ構成、命名規則)。 [cite: 21]
+    2. [cite_start]**📊 進捗トラッカー**: 完了機能、現在位置、既知問題の記録。 [cite: 22]
+    3. [cite_start]**📚 シンボル辞書**: 共通のクラス名、関数名、定数の定義。 [cite: 21]
+    4. [cite_start]**📝 指示書テンプレート**: タスク種別ごとの雛形。 [cite: 21]
+- [cite_start]**作業指示書 (都度作成)**: 上記を元に作成する、AIへの具体的な指示。 [cite: 23]
+
+---
+
+## 🏛️ 1. プロジェクト憲法 (v4.1)
+
+### 技術スタック
+- **描画**: `Perfect Freehand` (コア), `WebCodecs` (動画), `OffscreenCanvas` (分離)
+- **GPU**: `twgl.js` → `OGL` → `regl` → `@webgpu/utils` (段階的導入)
+- **環境**: Vite, ES6 Modules, TypeScript, Pointer Events, PostMessage API
+
+### フォルダ構成 (SOLID準拠)
+`src/`
+[cite_start]├── `app/`           # アプリ全体制御 [cite: 24]
+[cite_start]├── `engine/`        # 描画エンジン (gpu [cite: 25][cite_start], vector, input [cite: 26])
+[cite_start]├── `features/`      # 機能別ロジック (tools [cite: 27][cite_start], layers [cite: 28][cite_start], canvas [cite: 29][cite_start], history, modes [cite: 30][cite_start], export [cite: 31])
+[cite_start]├── `ui/`            # UIコンポーネント (layouts, components [cite: 32, 33])
+├── `workers/`       # 並列処理 (Render, Codec, Vector)
+[cite_start]├── `integration/`   # 外部連携 (core[cite: 34], adapters)
+[cite_start]├── `services/`      # 外部サービス (Storage[cite: 35], Codec)
+[cite_start]└── `utils/`         # 共通処理 (Math[cite: 36], Color, etc.)
+
+### 命名規則
+- **クラス**: `VectorRenderer`, `ToolStore` (具体的役割 + 種別)
+- **関数**: `createVectorStroke` (動詞 + 名詞)
+- **定数**: `TOOL_VECTOR_PEN` (UPPER_SNAKE_CASE)
+- [cite_start]**イベント**: `vector-stroke-created` (kebab-case) [cite: 37]
+
+### データフロー原則
+`UI` → `Actions` → `Store` → `UI` (購読して再描画)
+
+---
+
+## 📊 2. 進捗トラッカー (テンプレート例)
+# 📊 進捗トラッカー v3.0 (更新日: 2025/XX/XX)
+- [cite_start]✅ **完了済**: Phase 1A: GPU基盤 (WebGLRenderer [cite: 38][cite_start], OffscreenController [cite: 38][cite_start]), Phase 1B: モード対応 (ModeStore [cite: 38])
+- 🔄 **実装中**: Phase 1C: ベクター描画コア (VectorRenderer)
+- 🗂️ **ファイル**: `src/engine/WebGLRenderer.js` (250行), `src/engine/OffscreenController.js` (120行), ...
+- ⚠️ **既知問題**: WebGLRendererのブレンドモード未実装, ...
+- [cite_start]🚀 **ロードマップ**: [x] Phase 1A/1B [ ] Phase 2 [ ] Phase 3 [ ] Phase 4 [cite: 39]
+
+---
+
+## 📚 3. シンボル辞書 (抜粋)
+# 📚 共通シンボル辞書 v3.0
+- [cite_start]**クラス**: `WebGPURenderer`, `VectorRenderer`, `PointerInputProcessor`, `ToolStore`, `LayerActions`, `PostMessageAPI`[cite: 40], `StorageService`
+- **関数**: `switchToEmbeddedMode()`, `createVectorStroke()`, `sendToParent()`, `startVideoEncoding()`
+- [cite_start]**定数**: `MODE_EMBEDDED` [cite: 41][cite_start], `TOOL_VECTOR_PEN` [cite: 41][cite_start], `GPU_WEBGPU` [cite: 41][cite_start], `RENDER_WORKER_CMD_DRAW` [cite: 41]
+- **イベント**: `mode-switched`, `vector-stroke-created`, `export-completed`
+
+---
+
+## 📝 4. 指示書テンプレート (v4.1)
+
+### A. 機能実装テンプレート (Store/Actions/UI)
+# 🛠️ 機能実装指示書: [機能名]三層実装
+- [cite_start]**対象**: `[機能名]Store`, `[機能名]Actions` [cite: 48][cite_start], `[コンポーネント名]` [cite: 49]
+- [cite_start]**前提**: 憲章v4.1準拠 (Perfect Freehand [cite: 43][cite_start], WebCodecs[cite: 45], モード対応, SOLID原則)
+- **データフロー**: `UI` → `Actions` → `Store` → `UI`
+
+#### 要件
+- [cite_start]**Store**: 状態保持と整合性維持。イベント発火。 [cite: 47]
+- **Actions**: 操作実行とStore更新依頼。
+- **UI**: Store購読、表示、Actions呼び出し。
+
+#### SOLIDチェックリスト
+- [ ] **S**: 単一責任 [ ] **O**: 開放閉鎖 [ ] **L**: 置換可能 [ ] **I**: I/F分離 [ ] **D**: 依存性逆転
+
+#### 出力形式
+- [cite_start]**Store**: `class [機能名]Store extends EventEmitter` [cite: 46]
+- **Actions**: `class [機能名]Actions`
+- **UI**: `class [コンポーネント名]`
+
+### B. 外部連携テンプレート
+# 🔗 外部連携実装指示書: [連携先名]Adapter
+- **責務**: [連携先名]との安全な通信・データ転送
+- **フロー**: ①検出 → ②組み込みモード起動 → ③編集 → ④データ転送 → ⑤終了
+- **基盤**: `PostMessageAPI`, `ParentCommunicator`, `ConstrainedExporter`
+- **要件**: 対象要素の検出、結果の転写、リソース解放、セキュリティ(XSS,CORS)、制約対応# 🔄 実用的リレー型指示書システム v3.0 (軽量版)
+
+## 🎯 基本設計思想
+- **無料AI最適化**: `1チャット = 1タスク完結`を前提とし、指示書は外部参照なしで自己完結させる。
+- **実用性重視**: 実行者の負担を最小化し、失敗からの回復を容易にする。
+
+---
+
+## 📋 システム構成
+- [cite_start]**マスタードキュメント (4種)**: あなたが管理する基盤資料。 [cite: 21]
+    1. [cite_start]**🏛️ プロジェクト憲法**: 不変のルール (技術スタック、フォルダ構成、命名規則)。 [cite: 21]
+    2. [cite_start]**📊 進捗トラッカー**: 完了機能、現在位置、既知問題の記録。 [cite: 22]
+    3. [cite_start]**📚 シンボル辞書**: 共通のクラス名、関数名、定数の定義。 [cite: 21]
+    4. [cite_start]**📝 指示書テンプレート**: タスク種別ごとの雛形。 [cite: 21]
+- [cite_start]**作業指示書 (都度作成)**: 上記を元に作成する、AIへの具体的な指示。 [cite: 23]
+
+---
+
+## 🏛️ 1. プロジェクト憲法 (v4.1)
+
+### 技術スタック
+- **描画**: `Perfect Freehand` (コア), `WebCodecs` (動画), `OffscreenCanvas` (分離)
+- **GPU**: `twgl.js` → `OGL` → `regl` → `@webgpu/utils` (段階的導入)
+- **環境**: Vite, ES6 Modules, TypeScript, Pointer Events, PostMessage API
+
+### フォルダ構成 (SOLID準拠)
+`src/`
+[cite_start]├── `app/`           # アプリ全体制御 [cite: 24]
+[cite_start]├── `engine/`        # 描画エンジン (gpu [cite: 25][cite_start], vector, input [cite: 26])
+[cite_start]├── `features/`      # 機能別ロジック (tools [cite: 27][cite_start], layers [cite: 28][cite_start], canvas [cite: 29][cite_start], history, modes [cite: 30][cite_start], export [cite: 31])
+[cite_start]├── `ui/`            # UIコンポーネント (layouts, components [cite: 32, 33])
+├── `workers/`       # 並列処理 (Render, Codec, Vector)
+[cite_start]├── `integration/`   # 外部連携 (core[cite: 34], adapters)
+[cite_start]├── `services/`      # 外部サービス (Storage[cite: 35], Codec)
+[cite_start]└── `utils/`         # 共通処理 (Math[cite: 36], Color, etc.)
+
+### 命名規則
+- **クラス**: `VectorRenderer`, `ToolStore` (具体的役割 + 種別)
+- **関数**: `createVectorStroke` (動詞 + 名詞)
+- **定数**: `TOOL_VECTOR_PEN` (UPPER_SNAKE_CASE)
+- [cite_start]**イベント**: `vector-stroke-created` (kebab-case) [cite: 37]
+
+### データフロー原則
+`UI` → `Actions` → `Store` → `UI` (購読して再描画)
+
+---
+
+## 📊 2. 進捗トラッカー (テンプレート例)
+# 📊 進捗トラッカー v3.0 (更新日: 2025/XX/XX)
+- [cite_start]✅ **完了済**: Phase 1A: GPU基盤 (WebGLRenderer [cite: 38][cite_start], OffscreenController [cite: 38][cite_start]), Phase 1B: モード対応 (ModeStore [cite: 38])
+- 🔄 **実装中**: Phase 1C: ベクター描画コア (VectorRenderer)
+- 🗂️ **ファイル**: `src/engine/WebGLRenderer.js` (250行), `src/engine/OffscreenController.js` (120行), ...
+- ⚠️ **既知問題**: WebGLRendererのブレンドモード未実装, ...
+- [cite_start]🚀 **ロードマップ**: [x] Phase 1A/1B [ ] Phase 2 [ ] Phase 3 [ ] Phase 4 [cite: 39]
+
+---
+
+## 📚 3. シンボル辞書 (抜粋)
+# 📚 共通シンボル辞書 v3.0
+- [cite_start]**クラス**: `WebGPURenderer`, `VectorRenderer`, `PointerInputProcessor`, `ToolStore`, `LayerActions`, `PostMessageAPI`[cite: 40], `StorageService`
+- **関数**: `switchToEmbeddedMode()`, `createVectorStroke()`, `sendToParent()`, `startVideoEncoding()`
+- [cite_start]**定数**: `MODE_EMBEDDED` [cite: 41][cite_start], `TOOL_VECTOR_PEN` [cite: 41][cite_start], `GPU_WEBGPU` [cite: 41][cite_start], `RENDER_WORKER_CMD_DRAW` [cite: 41]
+- **イベント**: `mode-switched`, `vector-stroke-created`, `export-completed`
+
+---
+
+## 📝 4. 指示書テンプレート (v4.1)
+
+### A. 機能実装テンプレート (Store/Actions/UI)
+# 🛠️ 機能実装指示書: [機能名]三層実装
+- [cite_start]**対象**: `[機能名]Store`, `[機能名]Actions` [cite: 48][cite_start], `[コンポーネント名]` [cite: 49]
+- [cite_start]**前提**: 憲章v4.1準拠 (Perfect Freehand [cite: 43][cite_start], WebCodecs[cite: 45], モード対応, SOLID原則)
+- **データフロー**: `UI` → `Actions` → `Store` → `UI`
+
+#### 要件
+- [cite_start]**Store**: 状態保持と整合性維持。イベント発火。 [cite: 47]
+- **Actions**: 操作実行とStore更新依頼。
+- **UI**: Store購読、表示、Actions呼び出し。
+
+#### SOLIDチェックリスト
+- [ ] **S**: 単一責任 [ ] **O**: 開放閉鎖 [ ] **L**: 置換可能 [ ] **I**: I/F分離 [ ] **D**: 依存性逆転
+
+#### 出力形式
+- [cite_start]**Store**: `class [機能名]Store extends EventEmitter` [cite: 46]
+- **Actions**: `class [機能名]Actions`
+- **UI**: `class [コンポーネント名]`
+
+### B. 外部連携テンプレート
+# 🔗 外部連携実装指示書: [連携先名]Adapter
+- **責務**: [連携先名]との安全な通信・データ転送
+- **フロー**: ①検出 → ②組み込みモード起動 → ③編集 → ④データ転送 → ⑤終了
+- **基盤**: `PostMessageAPI`, `ParentCommunicator`, `ConstrainedExporter`
+- **要件**: 対象要素の検出、結果の転写、リソース解放、セキュリティ(XSS,CORS)、制約対応

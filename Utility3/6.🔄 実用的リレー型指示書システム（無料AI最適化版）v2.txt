@@ -1,0 +1,596 @@
+# 🔄 実用的リレー型指示書システム v3.0（憲章v4.1対応版）
+
+## 🎯 基本設計思想
+
+### 無料AI制約への対応
+- **1チャット = 1タスク完結** を前提とした設計
+- **指示書は自立完結型** - 外部参照なしで実行可能
+- **段階的継承** - 前段階の成果を確実に次段階に受け渡し
+- **軽量化** - 必要最小限の情報のみ含有
+
+### 実用性重視のアプローチ
+- **実行者の負担最小化**
+- **失敗回復の容易さ**
+- **品質の予測可能性**
+- **段階的複雑化による安全性**
+
+---
+
+## 📋 システム構成
+
+### 1. マスタードキュメント（4つ）
+
+あなたの手元で管理し、指示書作成時に参照する基盤資料。
+
+| ドキュメント | 役割 | 更新頻度 |
+|------------|------|----------|
+| 🏛️ プロジェクト憲法 | 不変のルール（技術スタック、命名規則、フォルダ構成） | 初回のみ |
+| 📊 進捗トラッカー | 完了機能、現在位置、既知問題の記録 | タスク完了毎 |
+| 📚 シンボル辞書 | 共通のクラス名、関数名、定数の定義 | 新規シンボル追加時 |
+| 📝 指示書テンプレート | タスク種別ごとの指示書雛形 | 必要時追加 |
+
+### 2. 作業指示書（毎回作成）
+
+各AIに渡す完結型の指示書。
+
+---
+
+## 🏛️ 1. プロジェクト憲法（v4.1対応）
+
+### 技術スタック（確定）
+
+```javascript
+// GPU描画ライブラリ（段階導入）
+twgl.js → OGL → regl → @webgpu/utils
+
+// 次世代描画技術（主軸）
+Perfect Freehand 1.2+     // ベクター描画コア
+WebCodecs API             // 高速エンコード/デコード  
+OffscreenCanvas          // メインスレッド分離
+
+// 開発環境
+Vite 5.0+ + ES6 Modules + TypeScript
+Pointer Events API        // 高精度入力（筆圧・チルト統合）
+PostMessage API          // 安全な外部連携
+```
+
+### フォルダ構成（SOLID準拠・厳守）
+
+```
+src/
+├── app/                           # アプリケーション全体制御
+│   ├── AppController.js           # DI統括・起動制御
+│   ├── ApplicationStore.js        # 全体状態管理
+│   ├── ServiceContainer.js        # DIコンテナ
+│   └── ConfigStore.js             # 設定状態管理
+
+├── engine/                        # 描画エンジン層
+│   ├── gpu/
+│   │   ├── WebGPURenderer.js      # 次世代GPU描画
+│   │   ├── WebGLRenderer.js       # 互換GPU描画
+│   │   └── GPUController.js       # GPU切り替え制御
+│   ├── vector/
+│   │   ├── VectorRenderer.js      # Perfect Freehand統合
+│   │   ├── StrokeEngine.js        # ベクターストローク処理
+│   │   └── VectorOptimizer.js     # ベクター最適化
+│   ├── input/
+│   │   ├── PointerInputProcessor.js  # 高精度入力処理
+│   │   ├── TouchInputHandler.js     # タッチデバイス対応
+│   │   └── PressureDetector.js      # 筆圧・チルト対応
+│   └── OffscreenController.js     # OffscreenCanvas制御
+
+├── features/                      # Store/Actions/UI三層構造
+│   ├── tools/
+│   │   ├── ToolStore.js           # ツール状態管理
+│   │   ├── ToolActions.js         # ツール操作実行
+│   │   ├── ToolController.js      # ツール統括制御
+│   │   └── tools/
+│   │       ├── VectorPenTool.js    # ベクターペン
+│   │       ├── BrushTool.js        # ラスターブラシ
+│   │       ├── EraserTool.js       # 消しゴム
+│   │       └── SelectionTool.js    # 選択ツール
+│   ├── layers/
+│   │   ├── LayerStore.js          # レイヤー状態管理
+│   │   ├── LayerActions.js        # レイヤー操作実行
+│   │   ├── LayerHierarchy.js      # レイヤー階層制御
+│   │   └── BackgroundImageLoader.js # 背景画像処理
+│   ├── canvas/
+│   │   ├── CanvasStore.js         # キャンバス状態管理
+│   │   ├── CanvasActions.js       # キャンバス操作実行
+│   │   ├── Viewport.js            # 表示領域制御
+│   │   ├── CoordinateSystem.js    # 座標系統括
+│   │   └── CanvasInitializer.js   # 初期化処理
+│   ├── history/
+│   │   ├── HistoryStore.js        # 履歴状態管理
+│   │   ├── HistoryActions.js      # 履歴操作実行
+│   │   └── CommandPattern.js      # Undo/Redo実装
+│   ├── modes/
+│   │   ├── ModeStore.js           # モード状態管理
+│   │   ├── ModeActions.js         # モード操作実行
+│   │   ├── StandaloneMode.js      # スタンドアロン動作
+│   │   └── EmbeddedMode.js        # 組み込み動作
+│   └── export/
+│       ├── ExportStore.js         # エクスポート状態管理
+│       ├── ExportActions.js       # エクスポート操作実行
+│       ├── CodecProcessor.js      # WebCodecs統合
+│       └── ConstrainedExporter.js # 制約付きエクスポート
+
+├── ui/                            # UI層（Store購読・Actions呼び出し）
+│   ├── layouts/
+│   │   ├── StandaloneLayout.js         # フル機能UI
+│   │   └── EmbeddedLayout.js           # 組み込み専用UI
+│   └── components/
+│       ├── LayerPanel.js               # レイヤー操作UI
+│       ├── ToolPanel.js                # ツール操作UI
+│       ├── ColorPicker.js              # 色選択UI
+│       ├── VectorModeToggle.js         # ベクター/ラスター切り替えUI
+│       ├── EmbeddedControls.js         # 完了・キャンセルボタンUI
+│       └── CompletionModal.js          # 完了確認モーダルUI
+
+├── workers/                       # 並列処理
+│   ├── RenderWorker.js            # 描画専用Worker
+│   ├── CodecWorker.js             # エンコード専用Worker
+│   └── VectorWorker.js            # ベクター計算Worker
+
+├── integration/                   # 外部連携
+│   ├── core/
+│   │   ├── PostMessageAPI.js      # メッセージAPI
+│   │   └── ParentCommunicator.js  # 親子通信
+│   └── adapters/
+│       ├── FutabaAdapter.js            # ふたば専用アダプター
+│       └── GenericAdapter.js           # 汎用連携
+
+├── services/                      # 外部サービス（DI注入）
+│   ├── StorageService.js          # IndexedDB
+│   ├── CodecService.js            # WebCodecs抽象化
+│   └── ImageProcessor.js          # 画像処理ユーティリティ
+
+└── utils/                         # 共通処理
+    ├── MathUtils.js               # 数学計算
+    ├── ColorUtils.js              # 色処理
+    ├── ValidationUtils.js         # 入力検証
+    └── AsyncUtils.js              # 非同期処理ヘルパー
+```
+
+### 命名規則（AI指示必須）
+
+```javascript
+// クラス名: 具体的役割 + 種別
+✅ VectorRenderer, ToolStore, ModeActions, PostMessageAPI
+❌ StrokeManager, Renderer, Tool, API
+
+// 関数名: 動詞 + 名詞
+✅ createVectorStroke, renderToOffscreen, switchToEmbeddedMode
+❌ init, update, process, handle
+
+// 定数: UPPER_SNAKE_CASE
+✅ TOOL_VECTOR_PEN, MODE_EMBEDDED, EXPORT_FORMAT_PNG
+❌ vectorPen, embedded, png
+
+// イベント名: kebab-case
+✅ vector-stroke-created, mode-switched, export-completed
+❌ vectorStrokeCreated, modeSwitch, exportComplete
+```
+
+### データフロー原則（必須遵守）
+
+```
+UI → Actions → Store → UI（状態購読による再描画）
+                ↓
+    Renderer/Service → Worker → GPU/Encoder
+                ↓
+    ParentCommunicator（組み込みモード時）
+```
+
+### 動作モード設計
+
+- **スタンドアロン**: フル機能独立動作
+- **組み込み**: 外部サイト連携（ふたばちゃんねる等）
+- **制約対応**: サイズ・UI・機能制限への自動適応
+
+---
+
+## 📊 2. 進捗トラッカー（テンプレート）
+
+```markdown
+# 📊 進捗トラッカー v3.0
+更新日: 2025/XX/XX
+
+## ✅ 完了済み機能
+
+### Phase 1A: GPU基盤構築
+- **WebGLRenderer.js** - 基本GPU描画パイプライン
+  - 機能: WebGL2コンテキスト初期化、シェーダー管理、レイヤー合成
+  - 行数: 約250行
+  - 依存: twgl.js統合
+
+- **OffscreenController.js** - オフスクリーンキャンバス管理
+  - 機能: WorkerへのCanvas転送、メインスレッド分離
+  - 行数: 約120行
+  - 依存: RenderWorker.js
+
+### Phase 1B: モード対応基盤
+- **ModeStore.js** - 動作モード状態管理
+  - 機能: スタンドアロン/組み込み/制約モードの状態保持
+  - 行数: 約80行
+  - 依存: なし
+
+## 🔄 現在実装中
+
+### Phase 1C: ベクター描画コア
+- **VectorRenderer.js** ← 次のタスク
+  - 要件: Perfect Freehand統合によるベクター描画
+  - 予想行数: 約300行
+  - 依存: Perfect Freehand 1.2+, WebGLRenderer.js
+
+## 🗂️ 現在のファイル構成
+- src/engine/WebGLRenderer.js (250行)
+- src/engine/OffscreenController.js (120行)
+- src/features/modes/ModeStore.js (80行)
+- src/app/AppController.js (100行)
+
+## ⚠️ 既知の問題
+- WebGLRenderer: レイヤーブレンドモード未実装
+- OffscreenController: エラー時の復旧処理が不完全
+
+## 📋 次回優先タスク
+1. **VectorRenderer.js** - Perfect Freehand統合
+2. **ModeActions.js** - モード切り替え操作
+3. **PostMessageAPI.js** - 外部連携基盤
+
+## 🚀 実装ロードマップ進捗
+- [x] Phase 1A: GPU基盤構築 (2/3完了)
+- [ ] Phase 1B: モード対応 (1/4完了)
+- [ ] Phase 2: 高度描画機能+UI統合
+- [ ] Phase 3: 外部連携+エクスポート
+- [ ] Phase 4: 次世代技術移行+最適化
+```
+
+---
+
+## 📚 3. シンボル辞書（v4.1対応）
+
+```markdown
+# 📚 共通シンボル辞書 v3.0
+
+## 🎯 クラス名（PascalCase）
+
+### GPU描画エンジン層
+- `WebGPURenderer` - 次世代GPU描画（WebGPU使用）
+- `WebGLRenderer` - 互換GPU描画（WebGL2使用）
+- `GPUController` - GPU描画方式の切り替え制御
+- `VectorRenderer` - Perfect Freehand統合ベクター描画
+- `StrokeEngine` - ベクターストローク処理エンジン
+- `VectorOptimizer` - ベクターパス最適化
+- `OffscreenController` - OffscreenCanvas制御
+
+### 入力処理層
+- `PointerInputProcessor` - Pointer Events API統合高精度入力
+- `TouchInputHandler` - タッチデバイス専用入力処理
+- `PressureDetector` - 筆圧・チルト検出
+
+### Feature Stores（状態管理）
+- `ToolStore` - ツール選択・設定状態管理
+- `LayerStore` - レイヤー階層・状態管理
+- `CanvasStore` - キャンバスサイズ・表示状態管理
+- `HistoryStore` - Undo/Redo履歴状態管理
+- `ModeStore` - 動作モード状態管理（スタンドアロン/組み込み/制約）
+- `ExportStore` - エクスポート設定・進捗状態管理
+
+### Feature Actions（操作実行）
+- `ToolActions` - ツール切り替え・設定変更操作
+- `LayerActions` - レイヤー作成・削除・並び替え操作
+- `CanvasActions` - キャンバス操作（リサイズ・クリア等）
+- `HistoryActions` - 履歴記録・Undo/Redo実行
+- `ModeActions` - モード切り替え・設定変更操作
+- `ExportActions` - エクスポート実行・進捗管理
+
+### 外部連携
+- `PostMessageAPI` - 安全な親子間通信
+- `ParentCommunicator` - 親サイトとの高度通信
+- `FutabaAdapter` - ふたばちゃんねる専用連携
+- `GenericAdapter` - 汎用外部サイト連携
+
+### Services & Utils
+- `CodecService` - WebCodecs API抽象化
+- `StorageService` - IndexedDB永続化
+- `ImageProcessor` - 画像処理ユーティリティ
+- `ConstrainedExporter` - 制約付きエクスポート
+
+### Workers
+- `RenderWorker` - 描画専用Worker
+- `CodecWorker` - WebCodecs専用Worker
+- `VectorWorker` - ベクター計算専用Worker
+
+## 🔧 関数名（camelCase）
+
+### モード操作
+- `switchToStandaloneMode()` - スタンドアロンモードに切り替え
+- `switchToEmbeddedMode(config)` - 組み込みモードに切り替え
+- `applyConstraints(constraints)` - サイズ・機能制約を適用
+- `exitEmbeddedMode()` - 組み込みモードを終了
+
+### ベクター描画操作
+- `createVectorStroke(points, style)` - ベクターストローク作成
+- `addPointToStroke(strokeId, point)` - ストロークに点を追加
+- `optimizeVectorPath(path)` - ベクターパス最適化
+- `renderVectorStroke(stroke, context)` - ベクターストローク描画
+
+### GPU描画操作
+- `initializeWebGPUContext(canvas)` - WebGPUコンテキスト初期化
+- `switchGPURenderer(type)` - GPU描画方式切り替え
+- `transferToOffscreen(canvas)` - オフスクリーンに転送
+- `syncOffscreenState()` - オフスクリーン状態同期
+
+### 外部連携操作
+- `sendToParent(message, data)` - 親サイトにメッセージ送信
+- `receiveFromParent(handler)` - 親サイトからメッセージ受信
+- `transferToCanvas(imageData)` - 外部キャンバスに転写
+- `notifyCompletion(result)` - 作業完了通知
+
+### エクスポート操作
+- `startVideoEncoding(settings)` - WebCodecs動画エンコード開始
+- `encodeFrame(canvas, timestamp)` - フレームエンコード
+- `finishVideoEncoding()` - 動画エンコード完了
+- `exportWithConstraints(format, constraints)` - 制約付きエクスポート
+
+## 📏 定数（UPPER_SNAKE_CASE）
+
+### モード定数
+- `MODE_STANDALONE` - スタンドアロンモード
+- `MODE_EMBEDDED` - 組み込みモード
+- `MODE_CONSTRAINED` - 制約モード
+
+### ツール定数
+- `TOOL_VECTOR_PEN` - ベクターペンツール
+- `TOOL_RASTER_BRUSH` - ラスターブラシツール
+- `TOOL_ERASER` - 消しゴムツール
+- `TOOL_SELECTION` - 選択ツール
+
+### GPU定数
+- `GPU_WEBGL2` - WebGL2描画
+- `GPU_WEBGPU` - WebGPU描画
+- `GPU_AUTO` - 自動選択
+
+### エクスポート定数
+- `EXPORT_FORMAT_PNG` - PNG形式
+- `EXPORT_FORMAT_WEBP` - WebP形式
+- `EXPORT_FORMAT_MP4` - MP4動画形式
+
+### Worker コマンド
+- `RENDER_WORKER_CMD_DRAW` - 描画命令
+- `RENDER_WORKER_CMD_CLEAR` - クリア命令
+- `CODEC_WORKER_CMD_ENCODE` - エンコード命令
+- `VECTOR_WORKER_CMD_OPTIMIZE` - 最適化命令
+
+## 🎨 イベント名（kebab-case）
+
+### モード関連
+- `mode-switched` - モード切り替え完了時
+- `embedded-mode-initialized` - 組み込みモード初期化完了時
+- `constraints-applied` - 制約適用完了時
+
+### 描画関連
+- `vector-stroke-created` - ベクターストローク作成時
+- `vector-stroke-optimized` - ストローク最適化完了時
+- `gpu-renderer-switched` - GPU描画方式切り替え時
+- `offscreen-sync-completed` - オフスクリーン同期完了時
+
+### エクスポート関連
+- `export-started` - エクスポート開始時
+- `export-progress` - エクスポート進捗更新時
+- `export-completed` - エクスポート完了時
+- `codec-encoding-finished` - WebCodecsエンコード完了時
+```
+
+---
+
+## 📝 4. 指示書テンプレート（v4.1対応）
+
+### A. 機能実装テンプレート (Store/Actions/UI三層セット)
+
+```markdown
+# 🛠️ 機能実装指示書: [機能名]三層実装
+
+## 📋 タスク概要
+**対象機能**: [機能名]
+**実装ファイル**: 
+- Store: `src/features/[機能名]/[機能名]Store.js` - 状態管理専門
+- Actions: `src/features/[機能名]/[機能名]Actions.js` - 操作実行専門
+- UI: `src/ui/components/[コンポーネント名].js` - 表示・イベント専門
+**予想行数**: Store約100行, Actions約80行, UI約120行
+
+## 🏗️ 前提条件
+
+### 憲章v4.1技術制約
+- **Perfect Freehand統合**: ベクター描画はPerfect Freehandを使用
+- **GPU段階移行**: 現在はWebGL2、将来WebGPU対応
+- **WebCodecs活用**: エンコード処理はWebCodecs API使用
+- **動作モード対応**: スタンドアロン/組み込み/制約モードに対応
+- **SOLID原則厳守**: 単一責任・開放閉鎖・置換可能・分離・逆転
+
+### 利用可能なシンボル（シンボル辞書より）
+- クラス名: `[関連クラス名をリスト]`
+- 関数名: `[関連関数名をリスト]`
+- 定数: `[関連定数をリスト]`
+- イベント名: `[関連イベント名をリスト]`
+
+### データフロー厳守
+```
+UI → Actions → Store → UIが状態購読して再描画
+```
+
+## 🎯 実装要件
+
+### Store実装要件
+**責務**: [機能名]の状態データ保持・整合性維持のみ
+- 必須プロパティ: `[プロパティリスト]`
+- 必須メソッド: `[メソッドリスト]`
+- 状態更新時イベント発火: `emit('[イベント名]', payload)`
+
+### Actions実装要件  
+**責務**: [機能名]の操作実行・Store更新依頼のみ
+- 必須メソッド: `[操作メソッドリスト]`
+- Store・Service・Engine連携
+- 履歴記録（必要に応じて）
+
+### UI実装要件
+**責務**: Store状態購読・表示・ユーザーイベントActions呼び出しのみ
+- Store状態購読による自動更新
+- ユーザー操作時Actions呼び出し
+- 動作モード別表示切り替え
+
+## 🔧 技術仕様
+
+### Perfect Freehand統合（該当する場合）
+```javascript
+import { getStroke } from 'perfect-freehand';
+
+// ベクターストローク生成
+const stroke = getStroke(points, {
+  size: brushSize,
+  thinning: 0.5,
+  smoothing: 0.5,
+  streamline: 0.5
+});
+```
+
+### WebCodecs統合（該当する場合）
+```javascript
+// エンコーダー初期化
+const encoder = new VideoEncoder({
+  output: (chunk, metadata) => { /* 処理 */ },
+  error: (error) => { /* エラー処理 */ }
+});
+```
+
+### 動作モード対応
+```javascript
+// モード別動作制御
+const mode = this.modeStore.getCurrentMode();
+if (mode === MODE_EMBEDDED) {
+  // 組み込みモード専用処理
+} else if (mode === MODE_CONSTRAINED) {
+  // 制約モード専用処理
+}
+```
+
+## ✅ SOLID原則チェックリスト
+実装完了時に必ず確認：
+
+- [ ] **単一責任**: 各クラスが1つの責務のみを持っているか？
+- [ ] **開放閉鎖**: 新機能追加が既存コード修正なしで可能か？
+- [ ] **置換可能**: 同インターフェース実装クラスが完全置換可能か？
+- [ ] **インターフェース分離**: 不要メソッド実装を強制していないか？
+- [ ] **依存性逆転**: 抽象に依存し、具体実装に依存していないか？
+
+## 📤 出力形式
+
+### Store構造テンプレート
+```javascript
+import { EventEmitter } from '../../utils/EventEmitter.js';
+
+export class [機能名]Store extends EventEmitter {
+    constructor() {
+        super();
+        // 状態プロパティ初期化
+    }
+    
+    // 状態取得メソッド
+    // 状態更新メソッド（イベント発火付き）
+}
+```
+
+### Actions構造テンプレート  
+```javascript
+export class [機能名]Actions {
+    constructor([機能名]Store, ...dependencies) {
+        this.store = [機能名]Store;
+        // 依存性保存
+    }
+    
+    // 操作メソッド（Store更新 + 関連処理）
+}
+```
+
+### UI構造テンプレート
+```javascript
+export class [コンポーネント名] {
+    constructor([機能名]Store, [機能名]Actions, modeStore) {
+        this.store = [機能名]Store;
+        this.actions = [機能名]Actions;
+        this.modeStore = modeStore;
+        
+        this.setupEventListeners();
+    }
+    
+    setupEventListeners() {
+        // Store状態変更購読
+        // ユーザーイベント処理
+    }
+    
+    render() {
+        // モード別UI描画
+    }
+}
+```
+
+## ✅ 完成チェック
+
+- [ ] Store/Actions/UI三層すべて実装されている
+- [ ] データフロー（UI→Actions→Store→UI）が守られている  
+- [ ] SOLID原則5項目すべて遵守されている
+- [ ] 動作モード対応が実装されている
+- [ ] デバッグコードが完全に削除されている
+- [ ] 非同期処理がasync/awaitで適切に処理されている
+- [ ] エラーハンドリングが実装されている
+```
+
+### B. 外部連携実装テンプレート
+
+```markdown
+# 🔗 外部連携実装指示書: [連携先名]Adapter
+
+## 📋 タスク概要
+**ファイル名**: `src/integration/adapters/[連携先名]Adapter.js`
+**責務**: [連携先名]との安全な通信・データ転送
+**予想行数**: 約150行
+
+## 🏗️ 前提条件
+
+### 外部連携フロー（憲章v4.1準拠）
+1. **初期化**: 外部サイトからブックマークレット実行
+2. **検出**: 既存キャンバス・入力欄検出
+3. **起動**: ModeActions.switchToEmbeddedMode()呼び出し
+4. **作業**: 組み込みUI表示・編集作業
+5. **完了**: ExportActions.exportForEmbedded()でデータ転送
+6. **転写**: 外部キャンバスに結果反映
+7. **終了**: ModeActions.exitEmbeddedMode()
+
+### 利用可能な基盤クラス
+- `PostMessageAPI` - 安全な通信基盤
+- `ParentCommunicator` - 親サイト通信
+- `ConstrainedExporter` - 制約付きエクスポート
+
+## 🎯 実装要件
+
+### 必須メソッド
+- `detectCanvas()` - 対象キャンバス検出
+- `initializeEmbedded(canvasElement)` - 組み込みモード初期化
+- `transferToCanvas(imageData)` - 結果転写
+- `cleanup()` - リソース解放
+
+### セキュリティ要件
+- PostMessage APIによる安全な通信
+- XSS対策（サニタイズ処理）
+- CORS制約の考慮
+- エラー時の安全な復旧
+
+### 制約対応
+- サイズ制限の検出・適用
+- アスペクト比維持
+- フォーマット制限対応
+
+## 📤 出力形式
+
+```javascript
