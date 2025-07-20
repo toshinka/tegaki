@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebGL お絵かきツール v2</title>
+    <title>線のみ描画版お絵描きツール</title>
     <style>
         * {
             margin: 0;
@@ -51,42 +51,6 @@
             background-color: #800000;
             color: #f0e0d6;
             border-color: #600000;
-        }
-        .pen-size-popup {
-            position: absolute;
-            left: 56px;
-            top: 60px;
-            background: #f0e0d6;
-            border-radius: 8px;
-            padding: 12px;
-            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
-            border: 1px solid rgba(128, 0, 0, 0.3);
-            display: none;
-            min-width: 120px;
-            z-index: 1000;
-        }
-        .pen-size-popup.show {
-            display: block;
-        }
-        .size-label {
-            font-size: 11px;
-            color: #800000;
-            margin-bottom: 8px;
-            font-weight: 500;
-        }
-        .size-slider {
-            width: 100%;
-            margin-bottom: 8px;
-            accent-color: #800000;
-        }
-        .size-value {
-            font-size: 12px;
-            text-align: center;
-            background: rgba(128, 0, 0, 0.1);
-            color: #800000;
-            padding: 4px 8px;
-            border-radius: 4px;
-            border: 1px solid rgba(128, 0, 0, 0.2);
         }
         .canvas-container {
             flex: 1;
@@ -144,336 +108,409 @@
             width: 0%;
             border-radius: 1px;
         }
-        .color-preview {
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background-color: #800000;
-            border: 2px solid rgba(128, 0, 0, 0.3);
-            margin-left: auto;
+        .render-mode-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .render-toggle {
+            padding: 4px 8px;
+            font-size: 10px;
+            border: 1px solid #800000;
+            background: transparent;
+            color: #800000;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+        .render-toggle.active {
+            background: #800000;
+            color: #f0e0d6;
         }
     </style>
 </head>
 <body>
     <div class="tool-panel">
         <button id="pen-tool" class="tool-button active" title="ペン">
-            <svg width="18" height="18" fill="currentColor" viewBox="0 0 256 256"><path d="m227.31,73.37L182.63,28.68a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96a16,16,0,0,0,0-22.63ZM92.69,208H48V163.31l88-88L180.69,120ZM192,108.68,147.31,64l24-24L216,84.68Z"></path></svg>
+            <svg width="18" height="18" fill="currentColor" viewBox="0 0 256 256">
+                <path d="m227.31,73.37L182.63,28.68a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96a16,16,0,0,0,0-22.63ZM92.69,208H48V163.31l88-88L180.69,120ZM192,108.68,147.31,64l24-24L216,84.68Z"></path>
+            </svg>
         </button>
-        <div id="pen-size-popup" class="pen-size-popup">
-            <div class="size-label">ペンサイズ</div>
-            <input type="range" id="size-slider" class="size-slider" min="1" max="50" value="5"/>
-            <div id="size-value" class="size-value">5px</div>
-        </div>
-        <div class="color-preview"></div>
     </div>
     <div class="canvas-container">
         <canvas id="drawing-canvas"></canvas>
     </div>
     <div class="status-bar">
-        <span id="pen-status">ペン: 5px</span>
+        <span id="tool-status">ペン: 5px</span>
         <div class="pressure-indicator">
             <span>筆圧:</span>
             <div class="pressure-bar"><div class="pressure-fill"></div></div>
         </div>
-        <span id="canvas-info">512×512</span>
-        <span id="render-tech">WebGL + Perfect Freehand</span>
-        <span id="fps-counter">60fps</span>
+        <span>512×512</span>
+        <div class="render-mode-controls">
+            <button id="line-mode" class="render-toggle active">線のみ</button>
+            <button id="stroke-mode" class="render-toggle">筆圧ストローク</button>
+        </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/twgl.js/5.5.4/twgl-full.min.js"></script>
     <script type="module">
-        // Perfect Freehandをインポート
         const { getStroke } = await import('https://esm.sh/perfect-freehand@1.2.2');
 
-        // WebGLシェーダー定義
-        const vertexShaderSource = `
-            attribute vec2 a_position;
-            attribute vec4 a_color;
-            
-            uniform vec2 u_resolution;
-            
-            varying vec4 v_color;
-            
-            void main() {
-                vec2 zeroToOne = a_position / u_resolution;
-                vec2 zeroToTwo = zeroToOne * 2.0;
-                vec2 clipSpace = zeroToTwo - 1.0;
-                gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
-                v_color = a_color;
-            }
-        `;
+        // ======= 設定一元管理 =======
+        const APP_CONFIG = {
+            canvas: { width: 512, height: 512 },
+            pen: { size: 5, color: [0.502, 0, 0, 1.0] },
+            rendering: { clearColor: [0.941, 0.878, 0.839, 1.0] },
+            perfectFreehand: { thinning: 0.5, smoothing: 0.5, streamline: 0.5 },
+            renderMode: 'line' // 'line' or 'stroke'
+        };
 
-        const fragmentShaderSource = `
-            precision mediump float;
-            varying vec4 v_color;
-            
-            void main() {
-                gl_FragColor = v_color;
+        // ======= 座標系統括 =======
+        class CoordinateSystem {
+            constructor(canvasWidth, canvasHeight) {
+                this.canvasWidth = canvasWidth;
+                this.canvasHeight = canvasHeight;
             }
-        `;
 
-        // 状態管理
-        class DrawingState {
-            constructor() {
-                this.penSize = 5;
-                this.penColor = [0.502, 0, 0, 1.0];
-                this.strokes = [];
-                this.currentStroke = null;
-                this.isDrawing = false;
-                this.currentPressure = 0;
+            screenToCanvas(clientX, clientY, canvasRect) {
+                const x = ((clientX - canvasRect.left) / canvasRect.width) * this.canvasWidth;
+                const y = ((clientY - canvasRect.top) / canvasRect.height) * this.canvasHeight;
+                return [x, y];
+            }
+
+            canvasToWebGL(x, y) {
+                return [
+                    (x / this.canvasWidth) * 2.0 - 1.0,
+                    -((y / this.canvasHeight) * 2.0 - 1.0)
+                ];
             }
         }
 
-        // WebGL描画エンジン
-        class WebGLRenderer {
-            constructor(canvas) {
-                this.canvas = canvas;
-                this.gl = twgl.getContext(canvas);
-                if (!this.gl) throw new Error('WebGLはサポートされていません');
-                
-                this.programInfo = twgl.createProgramInfo(this.gl, [vertexShaderSource, fragmentShaderSource]);
-                this.init();
+        // ======= ストローク状態管理 =======
+        class StrokeStore {
+            constructor() {
+                this.state = {
+                    strokes: [],
+                    currentPoints: [],
+                    isDrawing: false,
+                    currentPressure: 0
+                };
+                this.subscribers = [];
             }
 
-            init() {
-                const { gl, canvas } = this;
-                canvas.width = 512;
-                canvas.height = 512;
-                canvas.style.width = '512px';
-                canvas.style.height = '512px';
+            subscribe(callback) {
+                this.subscribers.push(callback);
+                return () => this.subscribers = this.subscribers.filter(s => s !== callback);
+            }
+
+            getState() { 
+                return this.state; 
+            }
+
+            _notify() {
+                this.subscribers.forEach(callback => callback(this.state));
+            }
+
+            startStroke(point) {
+                this.state = {
+                    ...this.state,
+                    currentPoints: [point],
+                    isDrawing: true,
+                    currentPressure: point[2] || 0.5
+                };
+                this._notify();
+            }
+
+            addPoint(point) {
+                if (!this.state.isDrawing) return;
+                this.state = {
+                    ...this.state,
+                    currentPoints: [...this.state.currentPoints, point],
+                    currentPressure: point[2] || 0.5
+                };
+                this._notify();
+            }
+
+            endStroke() {
+                if (!this.state.isDrawing || this.state.currentPoints.length < 2) {
+                    this.state = {
+                        ...this.state,
+                        currentPoints: [],
+                        isDrawing: false,
+                        currentPressure: 0
+                    };
+                    this._notify();
+                    return;
+                }
+
+                this.state = {
+                    ...this.state,
+                    strokes: [...this.state.strokes, [...this.state.currentPoints]],
+                    currentPoints: [],
+                    isDrawing: false,
+                    currentPressure: 0
+                };
+                this._notify();
+            }
+        }
+
+        // ======= マルチレンダラー（線・ストローク両対応） =======
+        class FlexibleRenderer {
+            constructor() {
+                this.vertexShader = `
+                    attribute vec2 a_position;
+                    void main() {
+                        gl_Position = vec4(a_position, 0, 1);
+                    }
+                `;
+                this.fragmentShader = `
+                    precision mediump float;
+                    uniform vec4 u_color;
+                    void main() {
+                        gl_FragColor = u_color;
+                    }
+                `;
+            }
+
+            init(canvas, coordinateSystem) {
+                this.canvas = canvas;
+                this.coordinates = coordinateSystem;
+                this.gl = twgl.getContext(canvas);
+                if (!this.gl) throw new Error('WebGL非対応');
                 
-                gl.viewport(0, 0, 512, 512);
-                gl.clearColor(0.941, 0.878, 0.839, 1.0); // #f0e0d6
+                this.programInfo = twgl.createProgramInfo(this.gl, [this.vertexShader, this.fragmentShader]);
+                this._setupCanvas();
+            }
+
+            _setupCanvas() {
+                const { gl } = this;
+                this.canvas.width = APP_CONFIG.canvas.width;
+                this.canvas.height = APP_CONFIG.canvas.height;
+                gl.viewport(0, 0, APP_CONFIG.canvas.width, APP_CONFIG.canvas.height);
+                gl.clearColor(...APP_CONFIG.rendering.clearColor);
                 gl.enable(gl.BLEND);
                 gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-                this.clear();
             }
 
-            clear() {
-                this.gl.clear(this.gl.COLOR_BUFFER_BIT);
+            // シンプルな線描画（Perfect Freehandを使わない）
+            _renderLine(points) {
+                if (points.length < 2) return;
+
+                const { gl, programInfo } = this;
+                const webglVertices = [];
+                
+                for (let i = 0; i < points.length; i++) {
+                    const [webglX, webglY] = this.coordinates.canvasToWebGL(points[i][0], points[i][1]);
+                    webglVertices.push(webglX, webglY);
+                }
+
+                const bufferInfo = twgl.createBufferInfoFromArrays(gl, {
+                    a_position: { numComponents: 2, data: new Float32Array(webglVertices) }
+                });
+
+                gl.useProgram(programInfo.program);
+                twgl.setBuffersAndAttributes(gl, programInfo, bufferInfo);
+                twgl.setUniforms(programInfo, { u_color: APP_CONFIG.pen.color });
+                gl.lineWidth(APP_CONFIG.pen.size);
+                gl.drawArrays(gl.LINE_STRIP, 0, points.length);
             }
 
-            strokeToWebGLArrays(points, size, color) {
-                if (points.length < 2) return null;
+            // Perfect Freehandストローク描画
+            _renderStroke(points) {
+                if (points.length < 2) return;
 
                 try {
-                    const strokePoints = getStroke(points, {
-                        size: size,
-                        thinning: 0.6,
-                        smoothing: 0.4,
-                        streamline: 0.1,
-                        easing: (t) => Math.sin((t * Math.PI) / 2),
-                        start: { taper: 20, cap: true },
-                        end: { taper: 80, cap: true },
+                    const outline = getStroke(points, {
+                        size: APP_CONFIG.pen.size,
+                        ...APP_CONFIG.perfectFreehand
                     });
 
-                    if (strokePoints.length < 3) return null;
+                    if (outline.length < 3) return;
 
-                    const positions = [];
-                    const colors = [];
-                    
-                    // 三角形を生成
-                    for (let i = 1; i < strokePoints.length - 1; i++) {
-                        positions.push(
-                            strokePoints[0][0], strokePoints[0][1],
-                            strokePoints[i][0], strokePoints[i][1],
-                            strokePoints[i + 1][0], strokePoints[i + 1][1]
-                        );
-                        for (let j = 0; j < 3; j++) {
-                            colors.push(...color);
-                        }
+                    const webglVertices = [];
+                    for (let i = 0; i < outline.length; i++) {
+                        const [webglX, webglY] = this.coordinates.canvasToWebGL(outline[i][0], outline[i][1]);
+                        webglVertices.push(webglX, webglY);
                     }
 
-                    return {
-                        a_position: { numComponents: 2, data: new Float32Array(positions) },
-                        a_color: { numComponents: 4, data: new Float32Array(colors) },
-                    };
-                } catch (error) {
-                    console.warn('Perfect Freehand処理エラー:', error);
-                    return null;
-                }
-            }
+                    const { gl, programInfo } = this;
+                    const bufferInfo = twgl.createBufferInfoFromArrays(gl, {
+                        a_position: { numComponents: 2, data: new Float32Array(webglVertices) }
+                    });
 
-            renderStroke(points, size, color) {
-                const { gl, programInfo } = this;
-                const arrays = this.strokeToWebGLArrays(points, size, color);
-                
-                if (arrays) {
-                    const bufferInfo = twgl.createBufferInfoFromArrays(gl, arrays);
                     gl.useProgram(programInfo.program);
                     twgl.setBuffersAndAttributes(gl, programInfo, bufferInfo);
-                    twgl.setUniforms(programInfo, { u_resolution: [512, 512] });
-                    twgl.drawBufferInfo(gl, bufferInfo);
+                    twgl.setUniforms(programInfo, { u_color: APP_CONFIG.pen.color });
+                    gl.drawArrays(gl.TRIANGLE_FAN, 0, outline.length);
+
+                } catch (error) {
+                    console.warn('Perfect Freehand処理エラー:', error);
                 }
             }
 
-            redraw(state) {
-                this.clear();
-                
-                // 完成済みストローク
-                state.strokes.forEach(stroke => {
-                    this.renderStroke(stroke.points, stroke.size, stroke.color);
+            render(strokeState) {
+                this.gl.clear(this.gl.COLOR_BUFFER_BIT);
+
+                const renderMethod = APP_CONFIG.renderMode === 'line' ? 
+                    this._renderLine.bind(this) : this._renderStroke.bind(this);
+
+                // 完成したストロークを描画
+                strokeState.strokes.forEach(points => {
+                    renderMethod(points);
                 });
-                
-                // 現在描画中のストローク
-                if (state.currentStroke && state.currentStroke.points.length > 1) {
-                    this.renderStroke(
-                        state.currentStroke.points,
-                        state.currentStroke.size,
-                        state.currentStroke.color
-                    );
+
+                // 現在描画中のストロークを描画
+                if (strokeState.isDrawing && strokeState.currentPoints.length >= 2) {
+                    renderMethod(strokeState.currentPoints);
                 }
             }
         }
 
-        // UI制御
-        class DrawingUI {
-            constructor() {
-                this.state = new DrawingState();
-                this.canvas = document.getElementById('drawing-canvas');
-                this.renderer = new WebGLRenderer(this.canvas);
+        // ======= 入力処理 =======
+        class PointerInputProcessor {
+            constructor(canvas, coordinateSystem, strokeStore) {
+                this.canvas = canvas;
+                this.coordinates = coordinateSystem;
+                this.strokeStore = strokeStore;
                 this.isPointerDown = false;
-                this.animationId = null;
-                this.fpsCounter = 0;
-                this.lastFpsTime = 0;
-                
-                this.setupEventListeners();
-                this.updateUI();
+                this._setupEventListeners();
             }
 
-            setupEventListeners() {
-                // キャンバスイベント
-                this.canvas.addEventListener('pointerdown', e => this.handlePointerDown(e));
-                this.canvas.addEventListener('pointermove', e => this.handlePointerMove(e));
-                this.canvas.addEventListener('pointerup', e => this.handlePointerUp(e));
-                this.canvas.addEventListener('pointerleave', e => this.handlePointerUp(e));
-                
-                // UI イベント
-                document.getElementById('pen-tool').addEventListener('click', () => this.toggleSizePopup());
-                document.getElementById('size-slider').addEventListener('input', e => {
-                    this.state.penSize = parseInt(e.target.value, 10);
-                    this.updateUI();
-                });
-                
-                // 外部クリックでポップアップを閉じる
-                document.addEventListener('click', e => {
-                    if (!e.target.closest('.tool-panel')) {
-                        this.hideSizePopup();
-                    }
-                });
-                
-                // キーボードショートカット
-                document.addEventListener('keydown', e => {
-                    if (e.key === '[') {
-                        e.preventDefault();
-                        this.state.penSize = Math.max(1, this.state.penSize - 1);
-                        this.updateUI();
-                    } else if (e.key === ']') {
-                        e.preventDefault();
-                        this.state.penSize = Math.min(50, this.state.penSize + 1);
-                        this.updateUI();
-                    }
-                });
+            _setupEventListeners() {
+                this.canvas.addEventListener('pointerdown', e => this._handlePointerDown(e));
+                this.canvas.addEventListener('pointermove', e => this._handlePointerMove(e));
+                this.canvas.addEventListener('pointerup', e => this._handlePointerUp(e));
+                this.canvas.addEventListener('pointerleave', e => this._handlePointerUp(e));
             }
 
-            getPoint(e) {
+            _getPoint(e) {
                 const rect = this.canvas.getBoundingClientRect();
-                return {
-                    x: e.clientX - rect.left,
-                    y: e.clientY - rect.top,
-                    pressure: e.pointerType === 'pen' ? e.pressure : 0.5,
-                };
+                const [x, y] = this.coordinates.screenToCanvas(e.clientX, e.clientY, rect);
+                const pressure = e.pointerType === 'pen' ? e.pressure : 0.5;
+                return [x, y, pressure];
             }
 
-            handlePointerDown(e) {
+            _handlePointerDown(e) {
                 e.preventDefault();
                 this.isPointerDown = true;
                 this.canvas.setPointerCapture(e.pointerId);
                 
-                const { x, y, pressure } = this.getPoint(e);
-                this.state.currentStroke = {
-                    points: [[x, y, pressure]],
-                    size: this.state.penSize,
-                    color: this.state.penColor
-                };
-                this.state.isDrawing = true;
-                this.state.currentPressure = pressure;
-                this.requestRedraw();
-                this.updatePressureDisplay();
+                const point = this._getPoint(e);
+                this.strokeStore.startStroke(point);
             }
 
-            handlePointerMove(e) {
+            _handlePointerMove(e) {
                 if (!this.isPointerDown) return;
                 e.preventDefault();
                 
-                const { x, y, pressure } = this.getPoint(e);
-                this.state.currentStroke.points.push([x, y, pressure]);
-                this.state.currentPressure = pressure;
-                this.requestRedraw();
-                this.updatePressureDisplay();
+                const point = this._getPoint(e);
+                this.strokeStore.addPoint(point);
             }
 
-            handlePointerUp(e) {
+            _handlePointerUp(e) {
                 if (!this.isPointerDown) return;
                 e.preventDefault();
                 
                 this.isPointerDown = false;
-                this.canvas.releasePointerCapture(e.pointerId);
-                
-                if (this.state.currentStroke && this.state.currentStroke.points.length > 1) {
-                    this.state.strokes.push(this.state.currentStroke);
+                if (e.pointerId !== undefined) {
+                    this.canvas.releasePointerCapture(e.pointerId);
                 }
-                
-                this.state.currentStroke = null;
-                this.state.isDrawing = false;
-                this.state.currentPressure = 0;
-                this.updatePressureDisplay();
+                this.strokeStore.endStroke();
+            }
+        }
+
+        // ======= UI制御 =======
+        class StatusBarUI {
+            constructor(strokeStore) {
+                this.strokeStore = strokeStore;
+                this._setupModeToggle();
+                this._subscribeToStore();
             }
 
-            requestRedraw() {
-                if (this.animationId) return;
-                this.animationId = requestAnimationFrame(() => {
-                    this.renderer.redraw(this.state);
-                    this.updateFPS();
-                    this.animationId = null;
+            _setupModeToggle() {
+                const lineModeBtn = document.getElementById('line-mode');
+                const strokeModeBtn = document.getElementById('stroke-mode');
+
+                lineModeBtn.addEventListener('click', () => {
+                    APP_CONFIG.renderMode = 'line';
+                    lineModeBtn.classList.add('active');
+                    strokeModeBtn.classList.remove('active');
+                    this.strokeStore._notify(); // 再描画を促す
+                });
+
+                strokeModeBtn.addEventListener('click', () => {
+                    APP_CONFIG.renderMode = 'stroke';
+                    strokeModeBtn.classList.add('active');
+                    lineModeBtn.classList.remove('active');
+                    this.strokeStore._notify(); // 再描画を促す
                 });
             }
 
-            updateFPS() {
-                const now = performance.now();
-                this.fpsCounter++;
-                if (now - this.lastFpsTime >= 1000) {
-                    document.getElementById('fps-counter').textContent = `${this.fpsCounter}fps`;
-                    this.fpsCounter = 0;
-                    this.lastFpsTime = now;
+            _subscribeToStore() {
+                this.strokeStore.subscribe(state => {
+                    this._updatePressureDisplay(state.currentPressure);
+                });
+            }
+
+            _updatePressureDisplay(pressure) {
+                const pressureFill = document.querySelector('.pressure-fill');
+                if (pressureFill) {
+                    pressureFill.style.width = `${pressure * 100}%`;
                 }
             }
+        }
 
-            updateUI() {
-                document.getElementById('pen-status').textContent = `ペン: ${this.state.penSize}px`;
-                document.getElementById('size-slider').value = this.state.penSize;
-                document.getElementById('size-value').textContent = `${this.state.penSize}px`;
+        // ======= メインループ制御 =======
+        class RenderController {
+            constructor(renderer, strokeStore) {
+                this.renderer = renderer;
+                this.strokeStore = strokeStore;
+                this.animationId = null;
+                this._subscribeToStore();
+            }
+
+            _subscribeToStore() {
+                this.strokeStore.subscribe(state => {
+                    this._requestRender(state);
+                });
+            }
+
+            _requestRender(state) {
+                if (this.animationId) return;
+                this.animationId = requestAnimationFrame(() => {
+                    this.renderer.render(state);
+                    this.animationId = null;
+                });
+            }
+        }
+
+        // ======= アプリケーション統括 =======
+        class AppController {
+            constructor() {
+                this._initializeComponents();
+                this._startApplication();
+            }
+
+            _initializeComponents() {
+                this.coordinates = new CoordinateSystem(APP_CONFIG.canvas.width, APP_CONFIG.canvas.height);
+                this.strokeStore = new StrokeStore();
                 
-                const colorStr = `rgb(${this.state.penColor.slice(0, 3).map(c => Math.round(c * 255)).join(',')})`;
-                document.querySelector('.color-preview').style.backgroundColor = colorStr;
-            }
-            
-            updatePressureDisplay() {
-                document.querySelector('.pressure-fill').style.width = `${this.state.currentPressure * 100}%`;
-            }
-
-            toggleSizePopup() {
-                document.getElementById('pen-size-popup').classList.toggle('show');
+                const canvas = document.getElementById('drawing-canvas');
+                this.renderer = new FlexibleRenderer();
+                this.renderer.init(canvas, this.coordinates);
+                
+                this.inputProcessor = new PointerInputProcessor(canvas, this.coordinates, this.strokeStore);
+                this.statusBarUI = new StatusBarUI(this.strokeStore);
+                this.renderController = new RenderController(this.renderer, this.strokeStore);
             }
 
-            hideSizePopup() {
-                document.getElementById('pen-size-popup').classList.remove('show');
+            _startApplication() {
+                this.renderer.render(this.strokeStore.getState());
             }
         }
 
         // アプリケーション起動
-        const app = new DrawingUI();
-        console.log('✅ WebGL描画エンジン初期化完了 (twgl.js + Perfect Freehand)');
+        new AppController();
     </script>
 </body>
 </html>
