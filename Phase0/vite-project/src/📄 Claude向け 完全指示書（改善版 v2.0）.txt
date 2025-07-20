@@ -1,0 +1,282 @@
+# 📄 Claude向け 完全指示書（改善版 v2.0）
+
+## 🎯 実行者への重要通知
+あなたは**1つの重要なツールクラス**を実装するAIです。この指示書は：
+- ✅ **自己完結型**: 外部参照なしで実装可能
+- ✅ **SOLID原則完全準拠**: v2.3規約の厳格適用
+- ✅ **プロジェクト憲章準拠**: v4.1技術スタック統合
+- ⚠️ **1ファイル限定**: VectorPenTool.js のみ生成せよ
+
+---
+
+## 📂 プロジェクト構造（最小限）
+```
+src/
+├── features/
+│   └── tools/
+│       └── tools/
+│           └── **VectorPenTool.js** ← 🎯 あなたの実装対象
+├── engine/
+│   └── vector/
+│       └── VectorRenderer.js     ← 存在前提（使用可能）
+└── utils/
+    └── MathUtils.js              ← 存在前提（使用可能）
+```
+
+---
+
+## 🎯 対象ファイル詳細仕様
+
+### 基本情報
+| 項目 | 値 |
+|------|-----|
+| **ファイルパス** | `src/features/tools/tools/VectorPenTool.js` |
+| **クラス名** | `VectorPenTool` |
+| **責務** | Perfect Freehand統合ベクターペン描画（単一責任原則） |
+| **継承** | なし（他クラスへの直接依存禁止 - 依存性逆転原則） |
+| **モジュール形式** | ES6 Module (`export class VectorPenTool`) |
+
+---
+
+## 🏗️ SOLID原則 完全準拠要件
+
+### S: 単一責任原則（Single Responsibility）
+- **責務**: Perfect Freehandを使用したベクターペンの描画処理のみ
+- **禁止**: レイヤー管理、履歴管理、ファイル保存等の他責務混入
+
+### O: 開放閉鎖原則（Open-Closed）
+- **拡張**: 新しいベクターツールはこのクラスを参考に独立実装
+- **修正**: 既存コードの修正なしで新機能追加可能な設計
+
+### L: 置換可能性（Liskov Substitution）
+- **インターフェース**: 同種ツールと完全置換可能なメソッド群
+- **戻り値**: 一貫した型（getStroke() → Perfect Freehand形式）
+
+### I: インターフェース分離（Interface Segregation）
+- **必要機能のみ**: ブラシやテキスト等、無関係機能の実装強制なし
+- **メソッド**: ペン描画に必要な最小限のメソッドのみ
+
+### D: 依存性逆転（Dependency Inversion）
+- **抽象依存**: Perfect Freehandライブラリ（抽象）に依存
+- **具体依存禁止**: 他の具体クラスへの直接new禁止
+
+---
+
+## 🔧 技術要件（プロジェクト憲章v4.1準拠）
+
+### Perfect Freehand統合（必須）
+```javascript
+import { getStroke } from 'perfect-freehand'
+
+// 期待される使用例
+const stroke = getStroke(this.points, {
+  size: this.width,
+  thinning: 0.5,
+  smoothing: 0.5,
+  streamline: 0.5
+})
+```
+
+### 高精度入力対応
+- **Pointer Events API**: x, y, pressure, tiltX, tiltY対応
+- **筆圧**: pressure値（0.0-1.0）を線幅に反映
+- **チルト**: tiltX, tiltY値を線の表現に活用
+
+### GPU描画準備
+```javascript
+// WebGLRenderer連携の準備
+getVertexData() {
+  // Perfect FreehandのstrokeをWebGL頂点データに変換
+  return this.stroke; // 配列形式
+}
+```
+
+---
+
+## 📊 シンボル定義（プロジェクト共通）
+```javascript
+// === 共通定数 ===
+const TOOL_VECTOR_PEN = 'vector-pen'
+const PEN_DEFAULT_COLOR = '#2d3748'
+const PEN_DEFAULT_WIDTH = 8
+const PEN_MIN_WIDTH = 1
+const PEN_MAX_WIDTH = 100
+const PEN_PRESSURE_SENSITIVITY = 0.8
+
+// === Perfect Freehandオプション ===
+const PERFECT_FREEHAND_OPTIONS = {
+  size: 16,
+  thinning: 0.5,
+  smoothing: 0.5,
+  streamline: 0.5,
+  easing: (t) => t,
+  start: { taper: 0, cap: true },
+  end: { taper: 100, cap: true }
+}
+```
+
+---
+
+## 🧱 必須実装メソッド
+
+### コンストラクタ
+```javascript
+constructor({
+  color = PEN_DEFAULT_COLOR,
+  width = PEN_DEFAULT_WIDTH,
+  pressureSensitivity = PEN_PRESSURE_SENSITIVITY,
+  options = PERFECT_FREEHAND_OPTIONS
+})
+```
+
+### 描画フロー
+```javascript
+// 描画開始
+startStroke(x, y, pressure = 1.0, tiltX = 0, tiltY = 0)
+
+// 描画継続
+continueStroke(x, y, pressure = 1.0, tiltX = 0, tiltY = 0)
+
+// 描画完了
+endStroke()
+
+// ストローク取得
+getStroke() // Perfect Freehand形式の配列を返す
+
+// 頂点データ取得（WebGL用）
+getVertexData()
+```
+
+### 状態管理
+```javascript
+// 現在の描画状態
+isDrawing()
+
+// ツール設定更新
+updateOptions(newOptions)
+
+// リセット
+reset()
+```
+
+---
+
+## 🔄 データフロー連携
+
+### UI → Tool
+```javascript
+// UIからの入力受け取り（PointerEvent経由）
+const tool = new VectorPenTool({ color: '#ff0000', width: 10 })
+tool.startStroke(event.clientX, event.clientY, event.pressure)
+```
+
+### Tool → Store
+```javascript
+// 完成したストロークをStoreへ通知（EventEmitter不使用）
+// ※ToolはStoreを直接操作せず、戻り値で連携
+const completedStroke = tool.getStroke()
+// → ToolActionsがこれを受け取ってToolStoreに保存
+```
+
+---
+
+## 🧪 テストケース想定
+```javascript
+// 基本動作テスト
+const tool = new VectorPenTool()
+tool.startStroke(10, 10, 0.5)
+tool.continueStroke(20, 20, 0.8)
+tool.continueStroke(30, 15, 0.6)
+tool.endStroke()
+
+const stroke = tool.getStroke()
+// 期待値: Perfect Freehand形式の配列
+console.assert(Array.isArray(stroke))
+console.assert(stroke.length > 0)
+```
+
+---
+
+## ✅ 品質チェックリスト
+
+### SOLID準拠確認
+- [ ] **S**: VectorPenTool は筆圧対応ベクター描画のみを責務とする
+- [ ] **O**: 新しいベクターツールの追加に既存コード修正不要
+- [ ] **L**: 同種ツールと完全置換可能なインターフェース
+- [ ] **I**: ペン描画に不要なメソッドを実装していない
+- [ ] **D**: Perfect Freehandライブラリへの抽象依存のみ
+
+### 技術要件確認
+- [ ] Perfect Freehand統合実装
+- [ ] 高精度入力（筆圧・チルト）対応
+- [ ] WebGL頂点データ出力メソッド
+- [ ] ES6 Module形式でexport
+
+### 品質確認
+- [ ] console.log等のデバッグコード完全除去
+- [ ] エラーハンドリング実装（無効な座標等）
+- [ ] async/await不要（同期処理のため）
+- [ ] 共通定数の使用
+
+---
+
+## 🚨 実装時の禁止事項
+
+### 命名禁止
+- ❌ `VectorPenManager.js`
+- ❌ `VectorPenHandler.js`  
+- ❌ `VectorPenHelper.js`
+- ❌ `VectorPenService.js`
+
+### 責務禁止
+- ❌ レイヤー操作の実装
+- ❌ 履歴管理の実装
+- ❌ ファイル保存の実装
+- ❌ UI描画の実装
+
+### 依存関係禁止
+- ❌ 他の具体クラスへの直接new
+- ❌ グローバル変数への依存
+- ❌ DOM操作の直接実装
+
+---
+
+## 🎯 最終確認事項
+
+1. **ファイル**: `VectorPenTool.js` 1つのみ生成
+2. **クラス**: `VectorPenTool` のみ定義
+3. **依存**: Perfect Freehandのみ
+4. **責務**: ベクターペン描画のみ
+5. **品質**: デバッグコード完全除去
+
+---
+
+## 💡 実装ヒント
+
+### Perfect Freehand基本パターン
+```javascript
+import { getStroke } from 'perfect-freehand'
+
+// 点の収集
+this.points.push([x, y, pressure])
+
+// ストローク生成
+const stroke = getStroke(this.points, this.options)
+
+// WebGL用頂点データ変換
+const vertices = stroke.flatMap(point => [point[0], point[1]])
+```
+
+### 筆圧対応パターン
+```javascript
+// 筆圧を線幅に反映
+const effectiveWidth = this.width * (0.5 + pressure * 0.5)
+
+// Perfect Freehandオプションに反映
+const options = {
+  ...this.options,
+  size: effectiveWidth
+}
+```
+
+**🚀 実装開始**: この指示書に完全準拠したVectorPenTool.jsを生成してください。
