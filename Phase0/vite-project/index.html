@@ -3,514 +3,751 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>線のみ描画版お絵描きツール</title>
+    <title>モダンブラウザお絵かきツール v4.2</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/twgl.js/5.5.4/twgl-full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bezier-js/6.1.4/bezier.min.js"></script>
+    <script src="https://unpkg.com/phosphor-icons@1.4.2"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background-color: #ffffee;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #ffffee;
             color: #800000;
-            height: 100vh;
-            display: flex;
             overflow: hidden;
+            height: 100vh;
         }
-        .tool-panel {
-            width: 48px;
-            background-color: #f0e0d6;
+
+        .app-container {
+            display: flex;
+            height: 100vh;
+            background: linear-gradient(135deg, #f0e0d6 0%, #e9c2ba 100%);
+        }
+
+        .sidebar {
+            width: 60px;
+            background: rgba(128, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            border-right: 2px solid rgba(128, 0, 0, 0.2);
             display: flex;
             flex-direction: column;
-            align-items: center;
-            padding: 12px 8px;
-            gap: 12px;
-            box-shadow: 1px 0 3px rgba(128, 0, 0, 0.1);
-            border-right: 1px solid rgba(128, 0, 0, 0.2);
+            padding: 20px 10px;
+            gap: 20px;
         }
-        .tool-button {
-            width: 32px;
-            height: 32px;
-            border: none;
-            background-color: transparent;
-            border-radius: 6px;
+
+        .tool-btn {
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 2px solid #800000;
+            border-radius: 8px;
+            cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            cursor: pointer;
-            transition: all 0.15s ease;
-            color: #800000;
-            border: 1px solid transparent;
+            transition: all 0.3s ease;
+            position: relative;
         }
-        .tool-button:hover {
-            background-color: rgba(128, 0, 0, 0.1);
-            border-color: rgba(128, 0, 0, 0.3);
+
+        .tool-btn:hover {
+            background: rgba(128, 0, 0, 0.1);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.3);
         }
-        .tool-button.active {
-            background-color: #800000;
-            color: #f0e0d6;
-            border-color: #600000;
+
+        .tool-btn.active {
+            background: #800000;
+            color: white;
         }
+
+        .tool-btn i {
+            font-size: 18px;
+            color: inherit;
+        }
+
         .canvas-container {
             flex: 1;
             display: flex;
             align-items: center;
             justify-content: center;
-            background-color: #ffffee;
+            position: relative;
             overflow: hidden;
-            padding: 20px;
         }
-        #drawing-canvas {
+
+        .canvas-wrapper {
+            position: relative;
             cursor: crosshair;
-            touch-action: none;
-            display: block;
             border: 2px solid #800000;
-            border-radius: 8px;
-            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.15);
-            max-width: 100%;
-            max-height: 100%;
-            background-color: #f0e0d6;
+            border-radius: 4px;
+            background: #f0e0d6;
+            box-shadow: 0 8px 32px rgba(128, 0, 0, 0.2);
         }
+
+        .canvas-wrapper.panning {
+            cursor: grabbing;
+        }
+
+        .canvas-wrapper.resizing {
+            cursor: nw-resize;
+        }
+
+        #drawingCanvas {
+            display: block;
+            image-rendering: pixelated;
+        }
+
         .status-bar {
-            position: fixed;
+            position: absolute;
             bottom: 0;
             left: 0;
             right: 0;
-            height: 28px;
-            background-color: rgba(240, 224, 214, 0.95);
-            border-top: 1px solid rgba(128, 0, 0, 0.3);
+            height: 40px;
+            background: rgba(128, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            border-top: 2px solid rgba(128, 0, 0, 0.2);
             display: flex;
             align-items: center;
-            padding: 0 12px;
-            font-size: 11px;
+            padding: 0 20px;
+            gap: 30px;
+            font-size: 12px;
             color: #800000;
-            gap: 16px;
-            backdrop-filter: blur(8px);
         }
-        .pressure-indicator {
+
+        .status-item {
             display: flex;
             align-items: center;
-            gap: 6px;
-        }
-        .pressure-bar {
-            width: 50px;
-            height: 4px;
-            background-color: rgba(128, 0, 0, 0.2);
-            border-radius: 2px;
-            overflow: hidden;
-            border: 1px solid rgba(128, 0, 0, 0.3);
-        }
-        .pressure-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #800000, #a00000);
-            transition: width 0.05s ease-out;
-            width: 0%;
-            border-radius: 1px;
-        }
-        .render-mode-controls {
-            display: flex;
             gap: 8px;
-            align-items: center;
         }
-        .render-toggle {
-            padding: 4px 8px;
-            font-size: 10px;
-            border: 1px solid #800000;
-            background: transparent;
+
+        .status-value {
+            font-weight: 600;
+            color: #aa5a56;
+        }
+
+        .control-panel {
+            position: absolute;
+            top: 20px;
+            left: 80px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(128, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 16px;
+            min-width: 280px;
+            box-shadow: 0 8px 32px rgba(128, 0, 0, 0.2);
+            display: none;
+            z-index: 1000;
+        }
+
+        .control-panel.show {
+            display: block;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .control-group {
+            margin-bottom: 16px;
+        }
+
+        .control-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .control-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
             color: #800000;
-            cursor: pointer;
-            border-radius: 3px;
+            margin-bottom: 8px;
         }
-        .render-toggle.active {
+
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .control-input {
+            width: 60px;
+            padding: 4px 8px;
+            border: 1px solid #aa5a56;
+            border-radius: 4px;
+            font-size: 12px;
+            text-align: center;
+        }
+
+        .control-slider {
+            flex: 1;
+            height: 4px;
+            background: #e9c2ba;
+            border-radius: 2px;
+            outline: none;
+            appearance: none;
+        }
+
+        .control-slider::-webkit-slider-thumb {
+            appearance: none;
+            width: 16px;
+            height: 16px;
             background: #800000;
-            color: #f0e0d6;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .canvas-size-display {
+            position: absolute;
+            top: -30px;
+            left: 0;
+            font-size: 11px;
+            color: #aa5a56;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 2px 6px;
+            border-radius: 4px;
         }
     </style>
 </head>
 <body>
-    <div class="tool-panel">
-        <button id="pen-tool" class="tool-button active" title="ペン">
-            <svg width="18" height="18" fill="currentColor" viewBox="0 0 256 256">
-                <path d="m227.31,73.37L182.63,28.68a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96a16,16,0,0,0,0-22.63ZM92.69,208H48V163.31l88-88L180.69,120ZM192,108.68,147.31,64l24-24L216,84.68Z"></path>
-            </svg>
-        </button>
-    </div>
-    <div class="canvas-container">
-        <canvas id="drawing-canvas"></canvas>
-    </div>
-    <div class="status-bar">
-        <span id="tool-status">ペン: 5px</span>
-        <div class="pressure-indicator">
-            <span>筆圧:</span>
-            <div class="pressure-bar"><div class="pressure-fill"></div></div>
+    <div class="app-container">
+        <div class="sidebar">
+            <div class="tool-btn active" id="penTool" title="ペンツール">
+                <i class="ph ph-pen"></i>
+            </div>
+            <div class="tool-btn" id="resizeTool" title="リサイズツール">
+                <i class="ph ph-resize"></i>
+            </div>
         </div>
-        <span>512×512</span>
-        <div class="render-mode-controls">
-            <button id="line-mode" class="render-toggle active">線のみ</button>
-            <button id="stroke-mode" class="render-toggle">筆圧ストローク</button>
+
+        <div class="canvas-container" id="canvasContainer">
+            <div class="canvas-wrapper" id="canvasWrapper">
+                <canvas id="drawingCanvas" width="344" height="135"></canvas>
+                <div class="canvas-size-display" id="canvasSize">344×135</div>
+            </div>
+        </div>
+
+        <div class="control-panel" id="penPanel">
+            <div class="control-group">
+                <label class="control-label">ペンサイズ</label>
+                <div class="control-row">
+                    <input type="number" class="control-input" id="penSizeInput" value="3" min="1" max="50">
+                    <input type="range" class="control-slider" id="penSizeSlider" min="1" max="50" value="3">
+                </div>
+            </div>
+            <div class="control-group">
+                <label class="control-label">透明度</label>
+                <div class="control-row">
+                    <input type="number" class="control-input" id="opacityInput" value="100" min="1" max="100">
+                    <input type="range" class="control-slider" id="opacitySlider" min="1" max="100" value="100">
+                </div>
+            </div>
+        </div>
+
+        <div class="control-panel" id="resizePanel">
+            <div class="control-group">
+                <label class="control-label">幅</label>
+                <div class="control-row">
+                    <input type="number" class="control-input" id="canvasWidthInput" value="344" min="50" max="2000">
+                    <input type="range" class="control-slider" id="canvasWidthSlider" min="50" max="2000" value="344">
+                </div>
+            </div>
+            <div class="control-group">
+                <label class="control-label">高さ</label>
+                <div class="control-row">
+                    <input type="number" class="control-input" id="canvasHeightInput" value="135" min="50" max="2000">
+                    <input type="range" class="control-slider" id="canvasHeightSlider" min="50" max="2000" value="135">
+                </div>
+            </div>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-item">
+                <span>補正:</span>
+                <span class="status-value" id="correctionStatus">Bezier.js</span>
+            </div>
+            <div class="status-item">
+                <span>傾き感度:</span>
+                <span class="status-value" id="tiltStatus">0°</span>
+            </div>
+            <div class="status-item">
+                <span>FPS:</span>
+                <span class="status-value" id="fpsStatus">60</span>
+            </div>
+            <div class="status-item">
+                <span>解像度:</span>
+                <span class="status-value" id="resolutionStatus">344×135</span>
+            </div>
         </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/twgl.js/5.5.4/twgl-full.min.js"></script>
-    <script type="module">
-        const { getStroke } = await import('https://esm.sh/perfect-freehand@1.2.2');
-
-        // ======= 設定一元管理 =======
-        const APP_CONFIG = {
-            canvas: { width: 512, height: 512 },
-            pen: { size: 5, color: [0.502, 0, 0, 1.0] },
-            rendering: { clearColor: [0.941, 0.878, 0.839, 1.0] },
-            perfectFreehand: { thinning: 0.5, smoothing: 0.5, streamline: 0.5 },
-            renderMode: 'line' // 'line' or 'stroke'
-        };
-
-        // ======= 座標系統括 =======
-        class CoordinateSystem {
-            constructor(canvasWidth, canvasHeight) {
-                this.canvasWidth = canvasWidth;
-                this.canvasHeight = canvasHeight;
-            }
-
-            screenToCanvas(clientX, clientY, canvasRect) {
-                const x = ((clientX - canvasRect.left) / canvasRect.width) * this.canvasWidth;
-                const y = ((clientY - canvasRect.top) / canvasRect.height) * this.canvasHeight;
-                return [x, y];
-            }
-
-            canvasToWebGL(x, y) {
-                return [
-                    (x / this.canvasWidth) * 2.0 - 1.0,
-                    -((y / this.canvasHeight) * 2.0 - 1.0)
-                ];
-            }
-        }
-
-        // ======= ストローク状態管理 =======
-        class StrokeStore {
+    <script>
+        // SOLID準拠 - 単一責任原則に基づくクラス設計
+        class CanvasStore {
             constructor() {
-                this.state = {
-                    strokes: [],
-                    currentPoints: [],
-                    isDrawing: false,
-                    currentPressure: 0
-                };
-                this.subscribers = [];
+                this.width = 344;
+                this.height = 135;
+                this.offsetX = 0;
+                this.offsetY = 0;
+                this.subscribers = new Set();
             }
 
             subscribe(callback) {
-                this.subscribers.push(callback);
-                return () => this.subscribers = this.subscribers.filter(s => s !== callback);
+                this.subscribers.add(callback);
+                return () => this.subscribers.delete(callback);
             }
 
-            getState() { 
-                return this.state; 
+            notify() {
+                this.subscribers.forEach(callback => callback(this.getState()));
             }
 
-            _notify() {
-                this.subscribers.forEach(callback => callback(this.state));
-            }
-
-            startStroke(point) {
-                this.state = {
-                    ...this.state,
-                    currentPoints: [point],
-                    isDrawing: true,
-                    currentPressure: point[2] || 0.5
+            getState() {
+                return {
+                    width: this.width,
+                    height: this.height,
+                    offsetX: this.offsetX,
+                    offsetY: this.offsetY
                 };
-                this._notify();
             }
 
-            addPoint(point) {
-                if (!this.state.isDrawing) return;
-                this.state = {
-                    ...this.state,
-                    currentPoints: [...this.state.currentPoints, point],
-                    currentPressure: point[2] || 0.5
+            updateSize(width, height) {
+                this.width = width;
+                this.height = height;
+                this.notify();
+            }
+
+            updateOffset(x, y) {
+                this.offsetX = x;
+                this.offsetY = y;
+                this.notify();
+            }
+        }
+
+        class ToolStore {
+            constructor() {
+                this.currentTool = 'pen';
+                this.penSize = 3;
+                this.opacity = 100;
+                this.subscribers = new Set();
+            }
+
+            subscribe(callback) {
+                this.subscribers.add(callback);
+                return () => this.subscribers.delete(callback);
+            }
+
+            notify() {
+                this.subscribers.forEach(callback => callback(this.getState()));
+            }
+
+            getState() {
+                return {
+                    currentTool: this.currentTool,
+                    penSize: this.penSize,
+                    opacity: this.opacity
                 };
-                this._notify();
+            }
+
+            setTool(tool) {
+                this.currentTool = tool;
+                this.notify();
+            }
+
+            setPenSize(size) {
+                this.penSize = size;
+                this.notify();
+            }
+
+            setOpacity(opacity) {
+                this.opacity = opacity;
+                this.notify();
+            }
+        }
+
+        class BezierStrokeRenderer {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d', { alpha: true });
+                this.currentPath = [];
+                this.isDrawing = false;
+                this.setupWebGL();
+            }
+
+            setupWebGL() {
+                // twgl.jsを使用したWebGL2基盤セットアップ
+                this.gl = this.canvas.getContext('webgl2');
+                if (this.gl) {
+                    const programInfo = twgl.createProgramInfo(this.gl, [
+                        `#version 300 es
+                        in vec4 position;
+                        void main() {
+                            gl_Position = position;
+                        }`,
+                        `#version 300 es
+                        precision mediump float;
+                        out vec4 fragColor;
+                        void main() {
+                            fragColor = vec4(0.5, 0.0, 0.0, 1.0);
+                        }`
+                    ]);
+                    this.programInfo = programInfo;
+                }
+            }
+
+            startStroke(x, y, pressure = 0.5) {
+                this.isDrawing = true;
+                this.currentPath = [{ x, y, pressure }];
+            }
+
+            addPoint(x, y, pressure = 0.5) {
+                if (!this.isDrawing) return;
+                
+                this.currentPath.push({ x, y, pressure });
+                
+                if (this.currentPath.length >= 3) {
+                    this.renderBezierSegment();
+                }
+            }
+
+            renderBezierSegment() {
+                const len = this.currentPath.length;
+                if (len < 3) return;
+
+                const p1 = this.currentPath[len - 3];
+                const p2 = this.currentPath[len - 2];
+                const p3 = this.currentPath[len - 1];
+
+                // Bezier.js統合による正確軌跡描画
+                try {
+                    const curve = new Bezier(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+                    this.drawBezierCurve(curve, p1.pressure, p3.pressure);
+                } catch (e) {
+                    // フォールバック: 直線描画
+                    this.drawLine(p2, p3);
+                }
+            }
+
+            drawBezierCurve(curve, startPressure, endPressure) {
+                const points = curve.getLUT(20);
+                this.ctx.beginPath();
+                
+                for (let i = 0; i < points.length - 1; i++) {
+                    const t = i / (points.length - 1);
+                    const pressure = startPressure + (endPressure - startPressure) * t;
+                    const lineWidth = this.calculateLineWidth(pressure);
+                    
+                    this.ctx.lineWidth = lineWidth;
+                    this.ctx.strokeStyle = `rgba(128, 0, 0, ${toolStore.opacity / 100})`;
+                    this.ctx.lineCap = 'round';
+                    this.ctx.lineJoin = 'round';
+                    
+                    this.ctx.moveTo(points[i].x, points[i].y);
+                    this.ctx.lineTo(points[i + 1].x, points[i + 1].y);
+                    this.ctx.stroke();
+                }
+            }
+
+            drawLine(p1, p2) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(p1.x, p1.y);
+                this.ctx.lineTo(p2.x, p2.y);
+                this.ctx.lineWidth = this.calculateLineWidth(p1.pressure);
+                this.ctx.strokeStyle = `rgba(128, 0, 0, ${toolStore.opacity / 100})`;
+                this.ctx.lineCap = 'round';
+                this.ctx.stroke();
+            }
+
+            calculateLineWidth(pressure) {
+                const baseSize = toolStore.penSize;
+                return Math.max(1, baseSize * (0.5 + pressure * 0.5));
             }
 
             endStroke() {
-                if (!this.state.isDrawing || this.state.currentPoints.length < 2) {
-                    this.state = {
-                        ...this.state,
-                        currentPoints: [],
-                        isDrawing: false,
-                        currentPressure: 0
-                    };
-                    this._notify();
-                    return;
-                }
+                this.isDrawing = false;
+                this.currentPath = [];
+            }
 
-                this.state = {
-                    ...this.state,
-                    strokes: [...this.state.strokes, [...this.state.currentPoints]],
-                    currentPoints: [],
-                    isDrawing: false,
-                    currentPressure: 0
-                };
-                this._notify();
+            clear() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
             }
         }
 
-        // ======= マルチレンダラー（線・ストローク両対応） =======
-        class FlexibleRenderer {
-            constructor() {
-                this.vertexShader = `
-                    attribute vec2 a_position;
-                    void main() {
-                        gl_Position = vec4(a_position, 0, 1);
-                    }
-                `;
-                this.fragmentShader = `
-                    precision mediump float;
-                    uniform vec4 u_color;
-                    void main() {
-                        gl_FragColor = u_color;
-                    }
-                `;
-            }
-
-            init(canvas, coordinateSystem) {
-                this.canvas = canvas;
-                this.coordinates = coordinateSystem;
-                this.gl = twgl.getContext(canvas);
-                if (!this.gl) throw new Error('WebGL非対応');
-                
-                this.programInfo = twgl.createProgramInfo(this.gl, [this.vertexShader, this.fragmentShader]);
-                this._setupCanvas();
-            }
-
-            _setupCanvas() {
-                const { gl } = this;
-                this.canvas.width = APP_CONFIG.canvas.width;
-                this.canvas.height = APP_CONFIG.canvas.height;
-                gl.viewport(0, 0, APP_CONFIG.canvas.width, APP_CONFIG.canvas.height);
-                gl.clearColor(...APP_CONFIG.rendering.clearColor);
-                gl.enable(gl.BLEND);
-                gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-            }
-
-            // シンプルな線描画（Perfect Freehandを使わない）
-            _renderLine(points) {
-                if (points.length < 2) return;
-
-                const { gl, programInfo } = this;
-                const webglVertices = [];
-                
-                for (let i = 0; i < points.length; i++) {
-                    const [webglX, webglY] = this.coordinates.canvasToWebGL(points[i][0], points[i][1]);
-                    webglVertices.push(webglX, webglY);
-                }
-
-                const bufferInfo = twgl.createBufferInfoFromArrays(gl, {
-                    a_position: { numComponents: 2, data: new Float32Array(webglVertices) }
-                });
-
-                gl.useProgram(programInfo.program);
-                twgl.setBuffersAndAttributes(gl, programInfo, bufferInfo);
-                twgl.setUniforms(programInfo, { u_color: APP_CONFIG.pen.color });
-                gl.lineWidth(APP_CONFIG.pen.size);
-                gl.drawArrays(gl.LINE_STRIP, 0, points.length);
-            }
-
-            // Perfect Freehandストローク描画
-            _renderStroke(points) {
-                if (points.length < 2) return;
-
-                try {
-                    const outline = getStroke(points, {
-                        size: APP_CONFIG.pen.size,
-                        ...APP_CONFIG.perfectFreehand
-                    });
-
-                    if (outline.length < 3) return;
-
-                    const webglVertices = [];
-                    for (let i = 0; i < outline.length; i++) {
-                        const [webglX, webglY] = this.coordinates.canvasToWebGL(outline[i][0], outline[i][1]);
-                        webglVertices.push(webglX, webglY);
-                    }
-
-                    const { gl, programInfo } = this;
-                    const bufferInfo = twgl.createBufferInfoFromArrays(gl, {
-                        a_position: { numComponents: 2, data: new Float32Array(webglVertices) }
-                    });
-
-                    gl.useProgram(programInfo.program);
-                    twgl.setBuffersAndAttributes(gl, programInfo, bufferInfo);
-                    twgl.setUniforms(programInfo, { u_color: APP_CONFIG.pen.color });
-                    gl.drawArrays(gl.TRIANGLE_FAN, 0, outline.length);
-
-                } catch (error) {
-                    console.warn('Perfect Freehand処理エラー:', error);
-                }
-            }
-
-            render(strokeState) {
-                this.gl.clear(this.gl.COLOR_BUFFER_BIT);
-
-                const renderMethod = APP_CONFIG.renderMode === 'line' ? 
-                    this._renderLine.bind(this) : this._renderStroke.bind(this);
-
-                // 完成したストロークを描画
-                strokeState.strokes.forEach(points => {
-                    renderMethod(points);
-                });
-
-                // 現在描画中のストロークを描画
-                if (strokeState.isDrawing && strokeState.currentPoints.length >= 2) {
-                    renderMethod(strokeState.currentPoints);
-                }
-            }
-        }
-
-        // ======= 入力処理 =======
         class PointerInputProcessor {
-            constructor(canvas, coordinateSystem, strokeStore) {
-                this.canvas = canvas;
-                this.coordinates = coordinateSystem;
-                this.strokeStore = strokeStore;
-                this.isPointerDown = false;
-                this._setupEventListeners();
-            }
-
-            _setupEventListeners() {
-                this.canvas.addEventListener('pointerdown', e => this._handlePointerDown(e));
-                this.canvas.addEventListener('pointermove', e => this._handlePointerMove(e));
-                this.canvas.addEventListener('pointerup', e => this._handlePointerUp(e));
-                this.canvas.addEventListener('pointerleave', e => this._handlePointerUp(e));
-            }
-
-            _getPoint(e) {
-                const rect = this.canvas.getBoundingClientRect();
-                const [x, y] = this.coordinates.screenToCanvas(e.clientX, e.clientY, rect);
-                const pressure = e.pointerType === 'pen' ? e.pressure : 0.5;
-                return [x, y, pressure];
-            }
-
-            _handlePointerDown(e) {
-                e.preventDefault();
-                this.isPointerDown = true;
-                this.canvas.setPointerCapture(e.pointerId);
-                
-                const point = this._getPoint(e);
-                this.strokeStore.startStroke(point);
-            }
-
-            _handlePointerMove(e) {
-                if (!this.isPointerDown) return;
-                e.preventDefault();
-                
-                const point = this._getPoint(e);
-                this.strokeStore.addPoint(point);
-            }
-
-            _handlePointerUp(e) {
-                if (!this.isPointerDown) return;
-                e.preventDefault();
-                
-                this.isPointerDown = false;
-                if (e.pointerId !== undefined) {
-                    this.canvas.releasePointerCapture(e.pointerId);
-                }
-                this.strokeStore.endStroke();
-            }
-        }
-
-        // ======= UI制御 =======
-        class StatusBarUI {
-            constructor(strokeStore) {
-                this.strokeStore = strokeStore;
-                this._setupModeToggle();
-                this._subscribeToStore();
-            }
-
-            _setupModeToggle() {
-                const lineModeBtn = document.getElementById('line-mode');
-                const strokeModeBtn = document.getElementById('stroke-mode');
-
-                lineModeBtn.addEventListener('click', () => {
-                    APP_CONFIG.renderMode = 'line';
-                    lineModeBtn.classList.add('active');
-                    strokeModeBtn.classList.remove('active');
-                    this.strokeStore._notify(); // 再描画を促す
-                });
-
-                strokeModeBtn.addEventListener('click', () => {
-                    APP_CONFIG.renderMode = 'stroke';
-                    strokeModeBtn.classList.add('active');
-                    lineModeBtn.classList.remove('active');
-                    this.strokeStore._notify(); // 再描画を促す
-                });
-            }
-
-            _subscribeToStore() {
-                this.strokeStore.subscribe(state => {
-                    this._updatePressureDisplay(state.currentPressure);
-                });
-            }
-
-            _updatePressureDisplay(pressure) {
-                const pressureFill = document.querySelector('.pressure-fill');
-                if (pressureFill) {
-                    pressureFill.style.width = `${pressure * 100}%`;
-                }
-            }
-        }
-
-        // ======= メインループ制御 =======
-        class RenderController {
-            constructor(renderer, strokeStore) {
+            constructor(canvasWrapper, renderer) {
+                this.canvasWrapper = canvasWrapper;
                 this.renderer = renderer;
-                this.strokeStore = strokeStore;
-                this.animationId = null;
-                this._subscribeToStore();
+                this.isDrawing = false;
+                this.isPanning = false;
+                this.isResizing = false;
+                this.lastPanPoint = null;
+                this.spacePressed = false;
+                this.setupEventListeners();
             }
 
-            _subscribeToStore() {
-                this.strokeStore.subscribe(state => {
-                    this._requestRender(state);
-                });
+            setupEventListeners() {
+                // Pointer Events API使用
+                this.canvasWrapper.addEventListener('pointerdown', this.handlePointerDown.bind(this));
+                this.canvasWrapper.addEventListener('pointermove', this.handlePointerMove.bind(this));
+                this.canvasWrapper.addEventListener('pointerup', this.handlePointerEnd.bind(this));
+                document.addEventListener('keydown', this.handleKeyDown.bind(this));
+                document.addEventListener('keyup', this.handleKeyUp.bind(this));
             }
 
-            _requestRender(state) {
-                if (this.animationId) return;
-                this.animationId = requestAnimationFrame(() => {
-                    this.renderer.render(state);
-                    this.animationId = null;
-                });
+            handleKeyDown(e) {
+                if (e.code === 'Space') {
+                    e.preventDefault();
+                    this.spacePressed = true;
+                    this.canvasWrapper.classList.add('panning');
+                }
+            }
+
+            handleKeyUp(e) {
+                if (e.code === 'Space') {
+                    this.spacePressed = false;
+                    this.canvasWrapper.classList.remove('panning');
+                }
+            }
+
+            handlePointerDown(e) {
+                e.preventDefault();
+                const rect = this.canvasWrapper.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+
+                if (this.spacePressed) {
+                    this.isPanning = true;
+                    this.lastPanPoint = { x: e.clientX, y: e.clientY };
+                } else if (toolStore.currentTool === 'resize') {
+                    this.isResizing = true;
+                    this.canvasWrapper.classList.add('resizing');
+                } else if (toolStore.currentTool === 'pen') {
+                    this.isDrawing = true;
+                    const pressure = e.pressure || 0.5;
+                    this.renderer.startStroke(x, y, pressure);
+                }
+            }
+
+            handlePointerMove(e) {
+                e.preventDefault();
+                
+                // チルト角度更新
+                const tilt = Math.sqrt((e.tiltX || 0) ** 2 + (e.tiltY || 0) ** 2);
+                document.getElementById('tiltStatus').textContent = Math.round(tilt) + '°';
+
+                if (this.isPanning && this.lastPanPoint) {
+                    const deltaX = e.clientX - this.lastPanPoint.x;
+                    const deltaY = e.clientY - this.lastPanPoint.y;
+                    
+                    const currentState = canvasStore.getState();
+                    canvasStore.updateOffset(
+                        currentState.offsetX + deltaX,
+                        currentState.offsetY + deltaY
+                    );
+                    
+                    this.lastPanPoint = { x: e.clientX, y: e.clientY };
+                } else if (this.isResizing) {
+                    const rect = this.canvasWrapper.getBoundingClientRect();
+                    const newWidth = Math.max(50, Math.min(2000, e.clientX - rect.left + 50));
+                    const newHeight = Math.max(50, Math.min(2000, e.clientY - rect.top + 50));
+                    canvasStore.updateSize(Math.round(newWidth), Math.round(newHeight));
+                } else if (this.isDrawing) {
+                    const rect = this.canvasWrapper.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    const pressure = e.pressure || 0.5;
+                    this.renderer.addPoint(x, y, pressure);
+                }
+            }
+
+            handlePointerEnd(e) {
+                this.isDrawing = false;
+                this.isPanning = false;
+                this.isResizing = false;
+                this.lastPanPoint = null;
+                this.canvasWrapper.classList.remove('resizing');
+                this.renderer.endStroke();
             }
         }
 
-        // ======= アプリケーション統括 =======
+        class UIController {
+            constructor(canvasStore, toolStore) {
+                this.canvasStore = canvasStore;
+                this.toolStore = toolStore;
+                this.setupUI();
+                this.setupSubscriptions();
+                this.startFPSMonitor();
+            }
+
+            setupUI() {
+                // ツールボタン
+                document.getElementById('penTool').addEventListener('click', () => {
+                    this.setActiveTool('pen');
+                    this.showPanel('penPanel');
+                });
+
+                document.getElementById('resizeTool').addEventListener('click', () => {
+                    this.setActiveTool('resize');
+                    this.showPanel('resizePanel');
+                });
+
+                // ペン設定
+                this.bindSliderInput('penSize', 'penSizeInput', 'penSizeSlider');
+                this.bindSliderInput('opacity', 'opacityInput', 'opacitySlider');
+
+                // キャンバス設定
+                this.bindSliderInput('canvasWidth', 'canvasWidthInput', 'canvasWidthSlider');
+                this.bindSliderInput('canvasHeight', 'canvasHeightInput', 'canvasHeightSlider');
+
+                // パネル外クリックで閉じる
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.control-panel') && !e.target.closest('.tool-btn')) {
+                        this.hideAllPanels();
+                    }
+                });
+            }
+
+            bindSliderInput(type, inputId, sliderId) {
+                const input = document.getElementById(inputId);
+                const slider = document.getElementById(sliderId);
+
+                input.addEventListener('input', (e) => {
+                    const value = parseInt(e.target.value);
+                    slider.value = value;
+                    this.updateValue(type, value);
+                });
+
+                slider.addEventListener('input', (e) => {
+                    const value = parseInt(e.target.value);
+                    input.value = value;
+                    this.updateValue(type, value);
+                });
+            }
+
+            updateValue(type, value) {
+                switch (type) {
+                    case 'penSize':
+                        this.toolStore.setPenSize(value);
+                        break;
+                    case 'opacity':
+                        this.toolStore.setOpacity(value);
+                        break;
+                    case 'canvasWidth':
+                        const currentHeight = this.canvasStore.getState().height;
+                        this.canvasStore.updateSize(value, currentHeight);
+                        break;
+                    case 'canvasHeight':
+                        const currentWidth = this.canvasStore.getState().width;
+                        this.canvasStore.updateSize(currentWidth, value);
+                        break;
+                }
+            }
+
+            setActiveTool(tool) {
+                document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+                document.getElementById(tool + 'Tool').classList.add('active');
+                this.toolStore.setTool(tool);
+            }
+
+            showPanel(panelId) {
+                this.hideAllPanels();
+                document.getElementById(panelId).classList.add('show');
+            }
+
+            hideAllPanels() {
+                document.querySelectorAll('.control-panel').forEach(panel => {
+                    panel.classList.remove('show');
+                });
+            }
+
+            setupSubscriptions() {
+                this.canvasStore.subscribe((state) => {
+                    this.updateCanvas(state);
+                });
+
+                this.toolStore.subscribe((state) => {
+                    this.updateToolUI(state);
+                });
+            }
+
+            updateCanvas(state) {
+                const canvas = document.getElementById('drawingCanvas');
+                const wrapper = document.getElementById('canvasWrapper');
+                const sizeDisplay = document.getElementById('canvasSize');
+
+                canvas.width = state.width;
+                canvas.height = state.height;
+                wrapper.style.transform = `translate(${state.offsetX}px, ${state.offsetY}px)`;
+                
+                sizeDisplay.textContent = `${state.width}×${state.height}`;
+                document.getElementById('resolutionStatus').textContent = `${state.width}×${state.height}`;
+
+                // スライダー値更新
+                document.getElementById('canvasWidthInput').value = state.width;
+                document.getElementById('canvasWidthSlider').value = state.width;
+                document.getElementById('canvasHeightInput').value = state.height;
+                document.getElementById('canvasHeightSlider').value = state.height;
+            }
+
+            updateToolUI(state) {
+                // ツール状態に応じたUI更新
+            }
+
+            startFPSMonitor() {
+                let lastTime = performance.now();
+                let frameCount = 0;
+                let fps = 60;
+
+                const updateFPS = () => {
+                    frameCount++;
+                    const currentTime = performance.now();
+                    
+                    if (currentTime - lastTime >= 1000) {
+                        fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+                        document.getElementById('fpsStatus').textContent = fps;
+                        frameCount = 0;
+                        lastTime = currentTime;
+                    }
+                    
+                    requestAnimationFrame(updateFPS);
+                };
+                
+                updateFPS();
+            }
+        }
+
+        // 依存性注入によるアプリケーション初期化
         class AppController {
             constructor() {
-                this._initializeComponents();
-                this._startApplication();
+                this.init();
             }
 
-            _initializeComponents() {
-                this.coordinates = new CoordinateSystem(APP_CONFIG.canvas.width, APP_CONFIG.canvas.height);
-                this.strokeStore = new StrokeStore();
-                
-                const canvas = document.getElementById('drawing-canvas');
-                this.renderer = new FlexibleRenderer();
-                this.renderer.init(canvas, this.coordinates);
-                
-                this.inputProcessor = new PointerInputProcessor(canvas, this.coordinates, this.strokeStore);
-                this.statusBarUI = new StatusBarUI(this.strokeStore);
-                this.renderController = new RenderController(this.renderer, this.strokeStore);
-            }
+            async init() {
+                // Store初期化
+                window.canvasStore = new CanvasStore();
+                window.toolStore = new ToolStore();
 
-            _startApplication() {
-                this.renderer.render(this.strokeStore.getState());
+                // Canvas初期化
+                const canvas = document.getElementById('drawingCanvas');
+                this.renderer = new BezierStrokeRenderer(canvas);
+
+                // 入力処理初期化
+                const canvasWrapper = document.getElementById('canvasWrapper');
+                this.inputProcessor = new PointerInputProcessor(canvasWrapper, this.renderer);
+
+                // UI制御初期化
+                this.uiController = new UIController(canvasStore, toolStore);
+
+                // 初期状態設定
+                canvasStore.notify();
+                toolStore.notify();
             }
         }
 
         // アプリケーション起動
-        new AppController();
+        document.addEventListener('DOMContentLoaded', () => {
+            new AppController();
+        });
     </script>
 </body>
 </html>

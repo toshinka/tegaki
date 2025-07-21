@@ -3,122 +3,753 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Modern Drawing Tool</title>
-    
-    <!-- WebGPU対応チェック -->
-    <script>
-        // WebGPU対応チェック
-        if (!navigator.gpu) {
-            console.warn('WebGPU not supported, falling back to WebGL2');
-        }
-        
-        // WebGL2対応チェック
-        const canvas = document.createElement('canvas');
-        const gl = canvas.getContext('webgl2');
-        if (!gl) {
-            console.error('WebGL2 not supported');
-        }
-    </script>
-    
-    <!-- 基本スタイル -->
+    <title>モダンブラウザお絵かきツール v5.0</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bezier-js/6.1.4/bezier.min.js"></script>
+    <script src="https://unpkg.com/phosphor-icons@1.4.2"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --main-color: #800000;
+            --sub-color: #aa5a56;
+            --light-bg: #e9c2ba;
+            --canvas-bg: #f0e0d6;
+            --app-bg: #ffffee;
+            --text-color: #800000;
         }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #1a1a1a;
-            color: #ffffff;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--app-bg);
+            color: var(--text-color);
             overflow: hidden;
-        }
-        
-        #app {
-            width: 100vw;
             height: 100vh;
+        }
+
+        .app-container { display: flex; height: 100vh; background: var(--app-bg); }
+
+        .sidebar {
+            width: 60px;
+            background: rgba(128, 0, 0, 0.05);
+            border-right: 1px solid rgba(128, 0, 0, 0.1);
             display: flex;
             flex-direction: column;
+            padding: 10px;
+            gap: 10px;
+            z-index: 20;
         }
-        
-        /* ローディング画面 */
-        #loading {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: #1a1a1a;
+
+        .tool-btn {
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid var(--main-color);
+            border-radius: 8px;
+            cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            z-index: 9999;
+            transition: all 0.2s ease;
+            color: var(--main-color);
         }
-        
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid #333;
-            border-top: 4px solid #4a9eff;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
+
+        .tool-btn:hover { background: rgba(128, 0, 0, 0.1); transform: translateY(-1px); }
+
+        .tool-btn.active {
+            background: var(--main-color);
+            color: white;
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
         }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        /* エラー表示 */
-        .error {
-            color: #ff4444;
-            text-align: center;
-            padding: 20px;
-        }
-        
-        /* Canvas領域 */
-        #canvas-container {
+
+        .tool-btn i { font-size: 20px; }
+
+        .canvas-container {
             flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             position: relative;
             overflow: hidden;
+            background: var(--app-bg);
         }
-        
-        canvas {
+
+        .canvas-wrapper {
+            position: relative;
+            background: var(--canvas-bg);
+            border: 1px solid var(--main-color);
+            border-radius: 4px;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.15);
+            cursor: crosshair;
+        }
+
+        .canvas-wrapper.panning { cursor: grabbing; }
+
+        #mainCanvas, #drawingCanvas {
+            display: block;
+            image-rendering: pixelated;
             position: absolute;
             top: 0;
             left: 0;
-            cursor: crosshair;
-            touch-action: none;
         }
-        
-        /* 開発用：フレームレート表示 */
-        #stats {
+
+        .status-bar {
             position: absolute;
-            top: 10px;
-            left: 10px;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 30px;
+            background: rgba(128, 0, 0, 0.05);
+            border-top: 1px solid rgba(128, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 24px;
+            font-size: 11px;
+            color: var(--text-color);
+        }
+
+        .status-item { display: flex; align-items: center; gap: 6px; }
+        .status-value { font-weight: 600; color: var(--sub-color); min-width: 30px; }
+
+        .control-panel {
+            position: absolute;
+            top: 15px;
+            left: 75px;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(128, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 16px;
+            min-width: 320px;
+            box-shadow: 0 8px 24px rgba(128, 0, 0, 0.15);
+            display: none;
             z-index: 1000;
         }
+
+        .control-panel.show { display: block; animation: fadeIn 0.2s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+
+        .control-group { margin-bottom: 16px; }
+        .control-group:last-child { margin-bottom: 0; }
+        .control-label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+        
+        .control-row { 
+            display: flex; 
+            align-items: center; 
+            gap: 8px; 
+        }
+        
+        .control-input { 
+            width: 60px; 
+            padding: 4px 8px; 
+            border: 1px solid var(--sub-color); 
+            border-radius: 4px; 
+            font-size: 12px; 
+            text-align: center; 
+        }
+        
+        .control-slider { 
+            flex: 1; 
+            -webkit-appearance: none; 
+            background: transparent; 
+        }
+        
+        .control-slider:focus { outline: none; }
+        .control-slider::-webkit-slider-runnable-track { height: 4px; background: var(--light-bg); border-radius: 2px; }
+        .control-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; background: var(--main-color); border-radius: 50%; cursor: pointer; margin-top: -6px; }
+
+        .control-buttons {
+            display: flex;
+            gap: 4px;
+        }
+
+        .control-btn {
+            width: 24px;
+            height: 24px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid var(--sub-color);
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s ease;
+            color: var(--main-color);
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .control-btn:hover {
+            background: var(--light-bg);
+            transform: translateY(-1px);
+        }
+
+        .control-btn:active {
+            transform: translateY(0);
+            background: var(--sub-color);
+            color: white;
+        }
+
+        .control-btn.decrease { order: -1; }
+        .control-btn.increase { order: 1; }
     </style>
 </head>
 <body>
-    <div id="app">
-        <!-- ローディング画面 -->
-        <div id="loading">
-            <div class="spinner"></div>
+    <div class="app-container">
+        <div class="sidebar">
+            <div class="tool-btn active" id="penTool" title="ペンツール"><i class="ph ph-paint-brush"></i></div>
+            <div class="tool-btn" id="resizeTool" title="リサイズツール"><i class="ph ph-frame-corners"></i></div>
         </div>
-        
-        <!-- メインコンテンツ（後で実装） -->
-        <div id="main-content" style="display: none;">
-            <div id="canvas-container">
-                <canvas id="main-canvas"></canvas>
-                <!-- 開発用：フレームレート表示 -->
-                <div id="stats"></div>
+
+        <div class="canvas-container" id="canvasContainer">
+            <div class="canvas-wrapper" id="canvasWrapper">
+                <canvas id="mainCanvas" width="500" height="300"></canvas>
+                <canvas id="drawingCanvas" width="500" height="300"></canvas>
             </div>
         </div>
+
+        <div class="control-panel" id="penPanel">
+            <div class="control-group">
+                <label class="control-label">ペンサイズ</label>
+                <div class="control-row">
+                    <div class="control-buttons">
+                        <button class="control-btn decrease" data-target="penSize" data-step="10">◀◀</button>
+                        <button class="control-btn decrease" data-target="penSize" data-step="1">◀</button>
+                    </div>
+                    <input type="number" class="control-input" id="penSizeInput" value="3" min="1" max="50">
+                    <input type="range" class="control-slider" id="penSizeSlider" min="1" max="50" value="3">
+                    <div class="control-buttons">
+                        <button class="control-btn increase" data-target="penSize" data-step="1">▶</button>
+                        <button class="control-btn increase" data-target="penSize" data-step="10">▶▶</button>
+                    </div>
+                </div>
+            </div>
+            <div class="control-group">
+                <label class="control-label">透明度</label>
+                <div class="control-row">
+                    <div class="control-buttons">
+                        <button class="control-btn decrease" data-target="opacity" data-step="10">◀◀</button>
+                        <button class="control-btn decrease" data-target="opacity" data-step="1">◀</button>
+                    </div>
+                    <input type="number" class="control-input" id="opacityInput" value="100" min="1" max="100">
+                    <input type="range" class="control-slider" id="opacitySlider" min="1" max="100" value="100">
+                    <div class="control-buttons">
+                        <button class="control-btn increase" data-target="opacity" data-step="1">▶</button>
+                        <button class="control-btn increase" data-target="opacity" data-step="10">▶▶</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="control-panel" id="resizePanel">
+            <div class="control-group">
+                <label class="control-label">幅</label>
+                <div class="control-row">
+                    <div class="control-buttons">
+                        <button class="control-btn decrease" data-target="canvasWidth" data-step="100">◀◀</button>
+                        <button class="control-btn decrease" data-target="canvasWidth" data-step="10">◀</button>
+                    </div>
+                    <input type="number" class="control-input" id="canvasWidthInput" value="500" min="50" max="2000">
+                    <input type="range" class="control-slider" id="canvasWidthSlider" min="50" max="2000" value="500">
+                    <div class="control-buttons">
+                        <button class="control-btn increase" data-target="canvasWidth" data-step="10">▶</button>
+                        <button class="control-btn increase" data-target="canvasWidth" data-step="100">▶▶</button>
+                    </div>
+                </div>
+            </div>
+            <div class="control-group">
+                <label class="control-label">高さ</label>
+                <div class="control-row">
+                    <div class="control-buttons">
+                        <button class="control-btn decrease" data-target="canvasHeight" data-step="100">◀◀</button>
+                        <button class="control-btn decrease" data-target="canvasHeight" data-step="10">◀</button>
+                    </div>
+                    <input type="number" class="control-input" id="canvasHeightInput" value="300" min="50" max="2000">
+                    <input type="range" class="control-slider" id="canvasHeightSlider" min="50" max="2000" value="300">
+                    <div class="control-buttons">
+                        <button class="control-btn increase" data-target="canvasHeight" data-step="10">▶</button>
+                        <button class="control-btn increase" data-target="canvasHeight" data-step="100">▶▶</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-item"><span>補正:</span><span class="status-value">Bezier.js</span></div>
+            <div class="status-item"><span>筆圧:</span><span class="status-value" id="pressureStatus">---</span></div>
+            <div class="status-item"><span>傾き:</span><span class="status-value" id="tiltStatus">0°</span></div>
+            <div class="status-item"><span>FPS:</span><span class="status-value" id="fpsStatus">--</span></div>
+            <div class="status-item"><span>解像度:</span><span class="status-value" id="resolutionStatus">500×300</span></div>
+        </div>
     </div>
-    
-    <!-- メインスクリプト -->
-    <script type="module" src="/src/main.js"></script>
-</body>
-</html>
+
+    <script>
+        // --- SERVICE CONTAINER (DI統括) ---
+        class ServiceContainer {
+            constructor() {
+                this.services = new Map();
+                this.singletons = new Map();
+            }
+
+            register(name, factory, singleton = false) {
+                this.services.set(name, { factory, singleton });
+                return this;
+            }
+
+            get(name) {
+                const service = this.services.get(name);
+                if (!service) throw new Error(`Service ${name} not found`);
+
+                if (service.singleton) {
+                    if (!this.singletons.has(name)) {
+                        this.singletons.set(name, service.factory());
+                    }
+                    return this.singletons.get(name);
+                }
+
+                return service.factory();
+            }
+
+            inject(target, dependencies) {
+                const injected = {};
+                for (const [key, serviceName] of Object.entries(dependencies)) {
+                    injected[key] = this.get(serviceName);
+                }
+                return Object.assign(target, injected);
+            }
+        }
+
+        // --- BASE STORE (基底状態管理) ---
+        class BaseStore {
+            constructor() {
+                this.subscribers = new Set();
+                this.state = this.getInitialState();
+            }
+
+            getInitialState() { return {}; }
+            getState() { return { ...this.state }; }
+
+            subscribe(callback) {
+                this.subscribers.add(callback);
+                return () => this.subscribers.delete(callback);
+            }
+
+            setState(newState) {
+                const prevState = { ...this.state };
+                this.state = { ...this.state, ...newState };
+                this.notify(this.state, prevState);
+            }
+
+            notify(currentState, prevState) {
+                this.subscribers.forEach(callback => {
+                    try {
+                        callback(currentState, prevState);
+                    } catch (error) {
+                        console.error('Store subscriber error:', error);
+                    }
+                });
+            }
+        }
+
+        // --- STORES (状態管理層) ---
+        class CanvasStore extends BaseStore {
+            getInitialState() {
+                return {
+                    width: 500,
+                    height: 300,
+                    offsetX: 0,
+                    offsetY: 0
+                };
+            }
+        }
+
+        class ToolStore extends BaseStore {
+            getInitialState() {
+                return {
+                    currentTool: 'pen',
+                    penSize: 3,
+                    opacity: 100
+                };
+            }
+        }
+
+        class StrokeStore extends BaseStore {
+            getInitialState() {
+                return {
+                    currentPath: [],
+                    isDrawing: false,
+                    completedStrokes: []
+                };
+            }
+        }
+
+        // --- ACTIONS (操作実行層) ---
+        class CanvasActions {
+            constructor(canvasStore) {
+                this.canvasStore = canvasStore;
+            }
+
+            updateSize(width, height) {
+                this.canvasStore.setState({ width, height });
+            }
+
+            updateOffset(offsetX, offsetY) {
+                this.canvasStore.setState({ offsetX, offsetY });
+            }
+        }
+
+        class ToolActions {
+            constructor(toolStore) {
+                this.toolStore = toolStore;
+            }
+
+            setCurrentTool(tool) {
+                this.toolStore.setState({ currentTool: tool });
+            }
+
+            setPenSize(size) {
+                this.toolStore.setState({ penSize: Math.max(1, Math.min(50, size)) });
+            }
+
+            setOpacity(opacity) {
+                this.toolStore.setState({ opacity: Math.max(1, Math.min(100, opacity)) });
+            }
+        }
+
+        class StrokeActions {
+            constructor(strokeStore) {
+                this.strokeStore = strokeStore;
+            }
+
+            startStroke(point) {
+                this.strokeStore.setState({
+                    currentPath: [point],
+                    isDrawing: true
+                });
+            }
+
+            addPoint(point) {
+                const state = this.strokeStore.getState();
+                if (!state.isDrawing) return;
+
+                this.strokeStore.setState({
+                    currentPath: [...state.currentPath, point]
+                });
+            }
+
+            completeStroke() {
+                const state = this.strokeStore.getState();
+                if (!state.isDrawing) return;
+
+                this.strokeStore.setState({
+                    completedStrokes: [...state.completedStrokes, state.currentPath],
+                    currentPath: [],
+                    isDrawing: false
+                });
+            }
+
+            cancelStroke() {
+                this.strokeStore.setState({
+                    currentPath: [],
+                    isDrawing: false
+                });
+            }
+        }
+
+        // --- RENDERERS (描画処理層) ---
+        class BezierStrokeRenderer {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.ctx.lineCap = 'round';
+                this.ctx.lineJoin = 'round';
+            }
+
+            clear() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+
+            render(path, toolState) {
+                if (!path || path.length === 0) return;
+
+                this.ctx.globalAlpha = toolState.opacity / 100;
+                this.ctx.strokeStyle = 'rgba(128, 0, 0, 1)';
+
+                if (path.length === 1) {
+                    this.renderDot(path[0], toolState);
+                    return;
+                }
+
+                if (path.length === 2) {
+                    this.renderLine(path[0], path[1], toolState);
+                    return;
+                }
+
+                this.renderBezierCurve(path, toolState);
+            }
+
+            renderDot(point, toolState) {
+                this.ctx.fillStyle = 'rgba(128, 0, 0, 1)';
+                this.ctx.beginPath();
+                this.ctx.arc(point.x, point.y, this.getLineWidth(point.pressure, toolState) / 2, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+
+            renderLine(p1, p2, toolState) {
+                this.ctx.lineWidth = this.getLineWidth(p1.pressure, toolState);
+                this.ctx.beginPath();
+                this.ctx.moveTo(p1.x, p1.y);
+                this.ctx.lineTo(p2.x, p2.y);
+                this.ctx.stroke();
+            }
+
+            renderBezierCurve(path, toolState) {
+                for (let i = 0; i < path.length - 2; i++) {
+                    const p0 = path[i];
+                    const p1 = path[i + 1];
+                    const p2 = path[i + 2];
+
+                    const p0Mid = { 
+                        x: (p0.x + p1.x) / 2, 
+                        y: (p0.y + p1.y) / 2, 
+                        pressure: (p0.pressure + p1.pressure) / 2 
+                    };
+                    const p1Mid = { 
+                        x: (p1.x + p2.x) / 2, 
+                        y: (p1.y + p2.y) / 2, 
+                        pressure: (p1.pressure + p2.pressure) / 2 
+                    };
+
+                    try {
+                        const curve = new Bezier(p0Mid, p1, p1Mid);
+                        this.renderCurveSegment(curve, p0Mid.pressure, p1Mid.pressure, toolState);
+                    } catch (error) {
+                        this.renderLine(p0Mid, p1Mid, toolState);
+                    }
+                }
+            }
+
+            renderCurveSegment(curve, startPressure, endPressure, toolState) {
+                const lut = curve.getLUT(16);
+                
+                for (let i = 0; i < lut.length - 1; i++) {
+                    const t = i / (lut.length - 1);
+                    const pressure = startPressure + (endPressure - startPressure) * t;
+                    
+                    this.ctx.lineWidth = this.getLineWidth(pressure, toolState);
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(lut[i].x, lut[i].y);
+                    this.ctx.lineTo(lut[i + 1].x, lut[i + 1].y);
+                    this.ctx.stroke();
+                }
+            }
+
+            getLineWidth(pressure, toolState) {
+                return Math.max(0.5, toolState.penSize * pressure);
+            }
+        }
+
+        // --- INPUT HANDLERS (入力処理層) ---
+        class PointerInputHandler {
+            constructor(element, strokeActions, canvasActions) {
+                this.element = element;
+                this.strokeActions = strokeActions;
+                this.canvasActions = canvasActions;
+                this.isDrawing = false;
+                this.isPanning = false;
+                this.spacePressed = false;
+                this.lastPanPoint = null;
+
+                this.bindEvents();
+            }
+
+            bindEvents() {
+                document.addEventListener('keydown', this.handleKeyDown.bind(this));
+                document.addEventListener('keyup', this.handleKeyUp.bind(this));
+                this.element.addEventListener('pointerdown', this.handlePointerDown.bind(this));
+                document.addEventListener('pointermove', this.handlePointerMove.bind(this));
+                document.addEventListener('pointerup', this.handlePointerUp.bind(this));
+            }
+
+            handleKeyDown(e) {
+                if (e.code === 'Space' && !this.spacePressed) {
+                    this.spacePressed = true;
+                    if (!this.isDrawing) {
+                        this.element.classList.add('panning');
+                    }
+                }
+            }
+
+            handleKeyUp(e) {
+                if (e.code === 'Space') {
+                    this.spacePressed = false;
+                    this.element.classList.remove('panning');
+                }
+            }
+
+            getCanvasCoordinates(e) {
+                const rect = this.element.getBoundingClientRect();
+                return {
+                    x: e.clientX - rect.left,
+                    y: e.clientY - rect.top,
+                    pressure: e.pressure || 0.5
+                };
+            }
+
+            handlePointerDown(e) {
+                e.preventDefault();
+
+                if (this.spacePressed) {
+                    this.isPanning = true;
+                    this.lastPanPoint = { x: e.clientX, y: e.clientY };
+                    return;
+                }
+
+                this.isDrawing = true;
+                this.element.setPointerCapture(e.pointerId);
+                this.strokeActions.startStroke(this.getCanvasCoordinates(e));
+            }
+
+            handlePointerMove(e) {
+                if (this.isPanning && this.lastPanPoint) {
+                    const dx = e.clientX - this.lastPanPoint.x;
+                    const dy = e.clientY - this.lastPanPoint.y;
+                    
+                    const currentState = serviceContainer.get('canvasStore').getState();
+                    this.canvasActions.updateOffset(
+                        currentState.offsetX + dx, 
+                        currentState.offsetY + dy
+                    );
+                    
+                    this.lastPanPoint = { x: e.clientX, y: e.clientY };
+                } else if (this.isDrawing) {
+                    this.strokeActions.addPoint(this.getCanvasCoordinates(e));
+                }
+
+                // ステータス更新
+                const tilt = Math.sqrt((e.tiltX || 0) ** 2 + (e.tiltY || 0) ** 2);
+                serviceContainer.get('statusController').updateStatus({
+                    pressure: e.pressure,
+                    tilt: tilt
+                });
+            }
+
+            handlePointerUp(e) {
+                if (this.isDrawing) {
+                    this.element.releasePointerCapture(e.pointerId);
+                    this.strokeActions.completeStroke();
+                    this.isDrawing = false;
+                }
+
+                if (this.isPanning) {
+                    this.isPanning = false;
+                    this.lastPanPoint = null;
+                }
+            }
+        }
+
+        // --- UI CONTROLLERS (UI制御層) ---
+        class ToolPanelController {
+            constructor(toolActions) {
+                this.toolActions = toolActions;
+                this.bindEvents();
+            }
+
+            bindEvents() {
+                // ツールボタン
+                document.querySelectorAll('.tool-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const toolId = e.currentTarget.id.replace('Tool', '');
+                        this.setActiveTool(toolId);
+                    });
+                });
+
+                // コントロールボタン
+                document.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('control-btn')) {
+                        this.handleControlButton(e);
+                    }
+                });
+
+                // 入力・スライダー
+                this.bindSliderInput('penSize', 'penSizeInput', 'penSizeSlider');
+                this.bindSliderInput('opacity', 'opacityInput', 'opacitySlider');
+                this.bindSliderInput('canvasWidth', 'canvasWidthInput', 'canvasWidthSlider');
+                this.bindSliderInput('canvasHeight', 'canvasHeightInput', 'canvasHeightSlider');
+
+                // パネル外クリックで閉じる
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.control-panel') && !e.target.closest('.tool-btn')) {
+                        this.hideAllPanels();
+                    }
+                });
+            }
+
+            handleControlButton(e) {
+                const target = e.target.dataset.target;
+                const step = parseInt(e.target.dataset.step);
+                const isIncrease = e.target.classList.contains('increase');
+                
+                const inputElement = document.getElementById(target + 'Input');
+                const currentValue = parseInt(inputElement.value);
+                const newValue = isIncrease ? currentValue + step : currentValue - step;
+                
+                this.updateValue(target, newValue);
+            }
+
+            bindSliderInput(type, inputId, sliderId) {
+                const input = document.getElementById(inputId);
+                const slider = document.getElementById(sliderId);
+                
+                const updateValue = (value) => {
+                    this.updateValue(type, parseInt(value));
+                };
+
+                input.addEventListener('change', (e) => updateValue(e.target.value));
+                slider.addEventListener('input', (e) => updateValue(e.target.value));
+            }
+
+            updateValue(type, value) {
+                const input = document.getElementById(type + 'Input');
+                const slider = document.getElementById(type + 'Slider');
+                
+                const min = parseInt(slider.min);
+                const max = parseInt(slider.max);
+                const clampedValue = Math.max(min, Math.min(max, value));
+                
+                input.value = clampedValue;
+                slider.value = clampedValue;
+
+                switch (type) {
+                    case 'penSize':
+                        this.toolActions.setPenSize(clampedValue);
+                        break;
+                    case 'opacity':
+                        this.toolActions.setOpacity(clampedValue);
+                        break;
+                    case 'canvasWidth':
+                        const currentCanvasState = serviceContainer.get('canvasStore').getState();
+                        serviceContainer.get('canvasActions').updateSize(clampedValue, currentCanvasState.height);
+                        break;
+                    case 'canvasHeight':
+                        const currentCanvasState2 = serviceContainer.get('canvasStore').getState();
+                        serviceContainer.get('canvasActions').updateSize(currentCanvasState2.width, clampedValue);
+                        break;
+                }
+            }
+
+            setActiveTool(tool) {
+                this.toolActions.setCurrentTool(tool);
+                
+                document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+                document.getElementById(tool + 'Tool').classList.add('active');
+                
+                this.hideAllPanels();
+                const panel = document.getElementById(tool + 'Panel');
+                if (panel) {
+                    panel.classList.add('show');
+                }
+            }
+
+            hideAllPanels() {
+                document.querySelectorAll('.control-panel').forEach(panel => {

@@ -1,4 +1,4 @@
-# 🎨 モダンブラウザお絵かきツール プロジェクト憲章 v4.2 改訂版
+# 🎨 モダンブラウザお絵かきツール プロジェクト憲章 v4.3 改訂版
 
 ### 🎯 基本方針（必須遵守）
 - **再発明回避**: 既存の優良ライブラリを最大限信頼・活用
@@ -14,6 +14,8 @@
 - 「自分で制御したい」という理由での独自実装
 - ユーザー期待値を無視した技術優先実装
 
+※※ 本プロジェクトでは、Retina（高DPI）対応をあえて無効化（DPR=1固定）とする。理由は、Windows環境ではマルチモニタ構成や液タブ使用時にDPRが動的に変化し、描画ズレや座標不一致が発生しやすいためである。論理解像度ベースで1px=1dotの精密制御を維持する方針とし、ユーザー期待値の安定性を優先する。
+
 ### 実装前チェック
 - [ ] この処理は既存ライブラリで解決可能か？
 - [ ] 独自実装する合理的理由はあるか？  
@@ -21,32 +23,57 @@
 - [ ] 過度な制御・カスタマイズをしていないか？
 - [ ] ユーザー期待値と一致しているか？
 
-## 🎯 技術戦略
+## 🎯 技術戦略（更新）
 
 ### コア技術スタック（Chrome特化）
 ```javascript
 // GPU描画ライブラリ（段階導入）
-twgl.js → OGL → regl → @webgpu/utils
+twgl.js → OGL → regl → @webgpu/utils + WebGPU Direct API
 
 // 正確軌跡描画技術（主軸）
 Bezier.js + 筆圧処理      // 正確軌跡ベクター描画コア
 WebCodecs API             // 高速エンコード/デコード  
 OffscreenCanvas          // メインスレッド分離
 
+// ラスター描画効率化（NEW）
+Konva.js                 // Canvas抽象化・インタラクティブ描画
+
+// モダンUI構築（NEW）
+Tailwind CSS + tailwind-animate  // レスポンシブUI・アニメーション
+
+// アイコンシステム（NEW）
+Phosphor Icons           // 一貫性のある高品質アイコンセット
+// CDN版: https://unpkg.com/phosphor-icons@1.4.2
+// Vite版: npm install phosphor-icons
+
 // 開発環境
 Vite 5.0+ + ES6 Modules + TypeScript
 Pointer Events API        // 高精度入力（筆圧・チルト統合）
 PostMessage API          // 安全な外部連携
+
+// HTML単一ファイル運用（Phase1）
+単一HTMLファイル + CDNライブラリ  // 開発効率最優先
+→ Vite化移行（Phase2）          // モジュール分割・最適化
 ```
 
-### 動作モード設計
-- **スタンドアロン**: フル機能独立動作
-- **組み込み**: 外部サイト連携（ふたばちゃんねる等）
-- **制約対応**: サイズ・UI・機能制限への自動適応
+### 開発環境戦略
+```javascript
+// Phase1: HTML単一ファイル運用（開発効率最優先）
+- 単一HTMLファイル（index.html）
+- CDNからライブラリ直接読み込み
+- ES6 Modules（import/export）なし
+- クラスベース設計維持
+- ServiceContainer DI パターン維持
 
----
+// Phase2以降: Vite化移行
+- ファイル分割 + ES6 Modules
+- npm パッケージ管理
+- TypeScript型定義
+- Hot Module Replacement
+- 最適化・バンドル
+```
 
-## 🏗️ SOLID準拠アーキテクチャ
+## 🏗️ SOLID準拠アーキテクチャ（更新）
 
 ### フォルダ構成（責務分離・規約準拠）
 ```
@@ -59,14 +86,19 @@ src/
 
 ├── engine/                    # 描画エンジン層
 │   ├── gpu/
-│   │   ├── WebGPURenderer.js  # 次世代GPU描画
-│   │   ├── WebGLRenderer.js   # 互換GPU描画
-│   │   └── GPUController.js   # GPU切り替え制御
+│   │   ├── WebGPURenderer.js     # 次世代GPU描画
+│   │   ├── WebGLRenderer.js      # 互換GPU描画
+│   │   ├── GPUController.js      # GPU切り替え制御
+│   │   └── ComputeShaderProcessor.js # GPU並列計算（NEW）
 │   ├── vector/
 │   │   ├── BezierStrokeRenderer.js  # Bezier.js統合正確軌跡描画
 │   │   ├── PressureProcessor.js     # 筆圧→線幅変換処理
 │   │   ├── StrokeEngine.js          # ベクターストローク統合
 │   │   └── VectorOptimizer.js       # ベクター最適化
+│   ├── raster/                      # ラスター描画層（NEW）
+│   │   ├── KonvaRenderer.js         # Konva.js統合ラスター描画
+│   │   ├── RasterBrushEngine.js     # ラスターブラシ処理
+│   │   └── InteractiveCanvas.js     # インタラクティブキャンバス制御
 │   ├── input/
 │   │   ├── PointerInputProcessor.js  # 高精度入力処理
 │   │   ├── TouchInputHandler.js     # タッチデバイス対応
@@ -79,14 +111,14 @@ src/
 │   │   ├── ToolActions.js     # ツール操作実行
 │   │   ├── ToolController.js  # ツール統括制御
 │   │   └── tools/
-│   │       ├── BezierPenTool.js    # 正確軌跡ペン
-│   │       ├── BrushTool.js        # ラスターブラシ
-│   │       ├── EraserTool.js       # 消しゴム
-│   │       └── SelectionTool.js    # 選択ツール
+│   │       ├── BezierPenTool.js       # 正確軌跡ペン
+│   │       ├── KonvaBrushTool.js      # Konva.js統合ブラシ（NEW）
+│   │       ├── KonvaEraserTool.js     # Konva.js統合消しゴム（NEW）
+│   │       └── InteractiveSelectionTool.js # Konva.js統合選択ツール（NEW）
 │   ├── layers/
 │   │   ├── LayerStore.js      # レイヤー状態管理
 │   │   ├── LayerActions.js    # レイヤー操作実行
-│   │   ├── LayerHierarchy.js  # レイヤー階層制御
+│   │   ├── KonvaLayerHierarchy.js # Konva.js統合階層制御（NEW）
 │   │   └── BackgroundImageLoader.js # 背景画像処理
 │   ├── canvas/
 │   │   ├── CanvasStore.js     # キャンバス状態管理
@@ -111,20 +143,25 @@ src/
 
 ├── ui/                        # UI層（Store購読・Actions呼び出し）
 │   ├── layouts/
-│   │   ├── StandaloneLayout.js     # フル機能UI
-│   │   └── EmbeddedLayout.js       # 組み込み専用UI
-│   └── components/
-│       ├── LayerPanel.js           # レイヤー操作UI
-│       ├── ToolPanel.js            # ツール操作UI
-│       ├── ColorPicker.js          # 色選択UI
-│       ├── DrawingModeToggle.js    # 描画モード切り替えUI
-│       ├── EmbeddedControls.js     # 完了・キャンセルボタンUI
-│       └── CompletionModal.js      # 完了確認モーダルUI
+│   │   ├── TailwindStandaloneLayout.js     # Tailwind CSS フル機能UI（NEW）
+│   │   └── TailwindEmbeddedLayout.js       # Tailwind CSS 組み込み専用UI（NEW）
+│   ├── components/
+│   │   ├── TailwindLayerPanel.js           # Tailwind CSS レイヤー操作UI（NEW）
+│   │   ├── TailwindToolPanel.js            # Tailwind CSS ツール操作UI（NEW）
+│   │   ├── TailwindColorPicker.js          # Tailwind CSS 色選択UI（NEW）
+│   │   ├── AnimatedDrawingModeToggle.js    # tailwind-animate 描画モード切り替えUI（NEW）
+│   │   ├── TailwindEmbeddedControls.js     # Tailwind CSS 完了・キャンセルボタンUI（NEW）
+│   │   ├── AnimatedCompletionModal.js      # tailwind-animate 完了確認モーダルUI（NEW）
+│   │   └── PhosphorIconButton.js           # Phosphor Icons統合ボタン（NEW）
+│   └── icons/
+│       ├── PhosphorIconManager.js          # Phosphor Icons管理（NEW）
+│       └── IconThemeAdapter.js             # アイコンテーマ統合（NEW）
 
 ├── workers/                   # 並列処理
 │   ├── RenderWorker.js        # 描画専用Worker
 │   ├── CodecWorker.js         # エンコード専用Worker
-│   └── BezierWorker.js        # ベジエ計算Worker
+│   ├── BezierWorker.js        # ベジエ計算Worker
+│   └── GPUComputeWorker.js    # WebGPU Compute Shader Worker（NEW）
 
 ├── integration/               # 外部連携
 │   ├── core/
@@ -137,6 +174,8 @@ src/
 ├── services/                  # 外部サービス（DI注入）
 │   ├── StorageService.js      # IndexedDB
 │   ├── CodecService.js        # WebCodecs抽象化
+│   ├── KonvaService.js        # Konva.js抽象化レイヤー（NEW）
+│   ├── PhosphorIconService.js # Phosphor Icons抽象化レイヤー（NEW）
 │   └── ImageProcessor.js      # 画像処理ユーティリティ
 
 └── utils/                     # 共通処理
@@ -144,7 +183,9 @@ src/
     ├── ColorUtils.js          # 色処理
     ├── ValidationUtils.js     # 入力検証
     ├── BezierUtils.js         # ベジエ曲線ユーティリティ
-    └── AsyncUtils.js          # 非同期処理ヘルパー
+    ├── AsyncUtils.js          # 非同期処理ヘルパー
+    ├── TailwindUtils.js       # Tailwind CSS ユーティリティ（NEW）
+    └── IconUtils.js           # アイコン操作ユーティリティ（NEW）
 ```
 
 ### データフロー（単方向・SOLID準拠）
@@ -153,45 +194,58 @@ UI → Actions → Store → UIが状態購読して再描画
 ServiceContainer → 各クラスにDI注入
 ModeController → UI/Store（動作モード制御）
 ParentCommunicator ↔ ModeController（外部連携）
+PhosphorIconManager → UI（アイコン統一管理）
 ```
 
----
+## 🚀 実装ロードマップ（更新）
 
-## 🚀 実装ロードマップ
+### Phase 1: Bezier基盤構築＋Konva統合＋モード対応（4週間）
 
-### Phase 1: Bezier基盤構築＋モード対応（3週間）
-- **twgl.js基盤 + Bezier.js統合**
-- **BezierStrokeRenderer + PressureProcessor**
-- **正確軌跡描画エンジン実装**
-- **ModeStore/ModeActions/ModeController**: モード切り替え三層実装
-- **PostMessageAPI**: 親子間通信基盤
-- **基本Store/Actions**（ToolStore, CanvasStore, BezierStrokeStore）
-- **ServiceContainer → AppController統括**
+**HTML単一ファイル運用（開発効率最優先）**
+- twgl.js基盤 + Bezier.js統合
+- BezierStrokeRenderer + PressureProcessor
+- 正確軌跡描画エンジン実装
+- 🆕 Konva.js統合: KonvaRenderer.js、RasterBrushEngine.js実装
+- 🆕 Tailwind CSS基盤: TailwindUtils.js、基本コンポーネント実装
+- 🆕 Phosphor Icons統合: PhosphorIconManager.js、PhosphorIconButton.js実装
+- ModeStore/ModeActions/ModeController: モード切り替え三層実装
+- PostMessageAPI: 親子間通信基盤
+- 基本Store/Actions（ToolStore, CanvasStore, BezierStrokeStore）
+- ServiceContainer → AppController統括
 
-### Phase 2: 高度描画機能＋UI統合（3週間）
-- **OGL移行 + レイヤー機能**（LayerStore/LayerActions分離）
-- **WebCodecs統合 + CodecProcessor**
-- **Worker並列処理 + 履歴機能**（HistoryStore/HistoryActions分離）
-- **StandaloneLayout + EmbeddedLayout**
-- **Popover API + ツールパネル**
-- **EmbeddedControls + 完了・キャンセル**
+### Phase 2: 高度描画機能＋UI統合＋アニメーション＋Vite化移行（4週間）← +1週間
+
+**Vite化移行 + 機能拡張**
+- Vite 5.0+ セットアップ + ファイル分割
+- ES6 Modules + TypeScript型定義導入
+- OGL移行 + レイヤー機能（LayerStore/LayerActions分離）
+- 🆕 KonvaLayerHierarchy.js: Konva.js統合階層制御
+- WebCodecs統合 + CodecProcessor
+- Worker並列処理 + 履歴機能（HistoryStore/HistoryActions分離）
+- 🆕 TailwindStandaloneLayout + TailwindEmbeddedLayout
+- 🆕 tailwind-animate統合: AnimatedDrawingModeToggle.js、AnimatedCompletionModal.js
+- 🆕 Phosphor Icons npm パッケージ移行
+- Popover API + ツールパネル
+- EmbeddedControls + 完了・キャンセル
 
 ### Phase 3: 外部連携＋エクスポート（2週間）
-- **ParentCommunicator**: 高度な親子通信
-- **EmbeddedMode**: 組み込み動作制御
-- **FutabaAdapter**: ふたば連携実装
-- **ExportStore/ExportActions**: エクスポート状態・操作分離
-- **ConstrainedExporter**: 制約付きエクスポート
-- **File System Access API**: ネイティブ保存
 
-### Phase 4: 次世代技術移行＋最適化（3週間）
-- **regl移行 + パフォーマンス最適化**
-- **@webgpu/utils + WebGPU完全移行**
-- **Compute Shader**: GPU計算活用
-- **品質保証 + 統合テスト**
-- **SOLID原則最終確認**
+- ParentCommunicator: 高度な親子通信
+- EmbeddedMode: 組み込み動作制御
+- FutabaAdapter: ふたば連携実装
+- ExportStore/ExportActions: エクスポート状態・操作分離
+- ConstrainedExporter: 制約付きエクスポート
+- File System Access API: ネイティブ保存
 
----
+### Phase 4: 次世代技術移行＋GPU最適化（4週間）
+
+- regl移行 + パフォーマンス最適化
+- 🆕 WebGPU直接API: ComputeShaderProcessor.js実装
+- 🆕 GPUComputeWorker.js: 筆圧処理・ベジエ計算GPU並列化
+- @webgpu/utils + WebGPU完全移行
+- Compute Shader: GPU計算活用（筆圧処理・軌跡最適化）
+- 品質保証 + 統合テスト
+- SOLID原則最終確認
 
 ## 🔗 外部連携設計
 
@@ -228,6 +282,7 @@ interface DrawingToolConfig {
         theme: 'light' | 'dark' | 'embedded';
         layout: 'full' | 'compact' | 'minimal';
         hiddenFeatures?: string[];
+        iconTheme: 'phosphor-regular' | 'phosphor-bold' | 'phosphor-light';
     };
     callbacks?: {
         onComplete: (imageData: string) => void;
@@ -237,36 +292,42 @@ interface DrawingToolConfig {
 }
 ```
 
----
-
 ## 🎯 差別化ポイント
 
 ### 技術的優位性
 1. **Chrome特化**: 最新API完全活用
 2. **GPU段階移行**: twgl→OGL→regl→WebGPU
 3. **正確軌跡描画**: Bezier.js中心の期待値一致設計
-4. **並列処理**: Worker完全活用
-5. **WebCodecs統合**: ハードウェア加速エンコード
+4. 🆕 ハイブリッド描画: ベクター（Bezier.js）+ ラスター（Konva.js）最適統合
+5. 🆕 モダンUI: Tailwind CSS + tailwind-animate による2025年標準UI
+6. 🆕 統一アイコン: Phosphor Icons による一貫性のあるUI
+7. **並列処理**: Worker完全活用
+8. **WebCodecs統合**: ハードウェア加速エンコード
 
 ### 設計的優位性
 1. **完全SOLID準拠**: 業界初の完全SOLID準拠描画ツール
 2. **Store/Actions/UI三層**: 予測可能な状態管理
 3. **依存性注入統一**: ServiceContainer中心設計
 4. **責務完全分離**: Manager撲滅・具体的命名
-5. **AI協働最適化**: 明確責務による指示精度向上
+5. 🆕 技術統合責務: エンジンは統合役、個別ライブラリは完成品として信頼
+6. **AI協働最適化**: 明確責務による指示精度向上
+7. 🆕 段階的移行: HTML単一→Vite化の効率的開発フロー
 
 ### UX優位性
 1. **期待値完全一致**: 描いた通りの軌跡を正確に再現
 2. **筆圧完全対応**: 圧力値を直接線幅にマッピング
 3. **軌跡保持**: L字はL字のまま、補間による変形なし
-4. **リアルタイム**: 遅延なしの即座反映
-
----
+4. 🆕 インタラクティブ性: Konva.js による直感的操作
+5. 🆕 モダンアニメーション: tailwind-animate による滑らかなUI遷移
+6. 🆕 統一アイコン体験: Phosphor Icons による直感的UI
+7. **リアルタイム**: 遅延なしの即座反映
 
 ## 🤖 AI協働開発戦略
 
 ### 実装委任方針
 - **Store/Actions/UIセット**: 三層セットで委任
+- **🆕 ライブラリ統合セット**: Service層でラップして責務分離
+- **🆕 HTML単一ファイル前提**: Phase1では全てひとつのHTMLファイル内で実装
 - **単一責任明確化**: 1ファイル1責務で混乱回避
 - **段階的統合**: インターフェース準拠で品質確保
 - **依存性注入統一**: DIパターン完全準拠
@@ -275,13 +336,26 @@ interface DrawingToolConfig {
 ```
 ## 実装依頼: [機能名]
 
-### 対象ファイル（Store/Actions/UI三層）
-- **Store**: `features/[機能名]/[機能名]Store.js` - 責務：[機能名]の状態管理のみ
-- **Actions**: `features/[機能名]/[機能名]Actions.js` - 責務：[機能名]の操作実行のみ
-- **UI**: `ui/components/[コンポーネント名].js` - 責務：UIの表示・Storeの購読・Actionsの呼び出しのみ
+### Phase1制約（HTML単一ファイル運用）
+- **単一HTMLファイル**: 全ての処理を1つのHTMLファイル内に実装
+- **CDN読み込み**: 外部ライブラリは全てCDNから読み込み
+- **ES6 Modules禁止**: import/export構文は使用不可
+- **クラス定義**: JavaScript class構文でオブジェクト指向実装
+- **ServiceContainer**: 依存性注入パターンは維持
+
+### 対象クラス（Store/Actions/UI三層）
+- **Store**: `[機能名]Store` クラス - 責務：[機能名]の状態管理のみ
+- **Actions**: `[機能名]Actions` クラス - 責務：[機能名]の操作実行のみ
+- **UI**: `[コンポーネント名]` クラス - 責務：UIの表示・Storeの購読・Actionsの呼び出しのみ
+
+### アイコン使用（Phosphor Icons）
+- **CDN読み込み**: `https://unpkg.com/phosphor-icons@1.4.2`
+- **アイコン使用**: `<i class="ph-[icon-name]"></i>` 形式
+- **統一性**: 同一機能には同一アイコンを使用
+- **テーマ**: ph-（regular）、ph-bold-、ph-light- から選択
 
 ### SOLID原則厳守
-- **単一責任**: [このファイルが持つべき唯一の責務を1文で明記]
+- **単一責任**: [このクラスが持つべき唯一の責務を1文で明記]
 - **開放閉鎖**: 新機能追加は拡張で、既存コード修正禁止
 - **置換可能**: 同一インターフェース実装クラスは完全置換可能
 - **インターフェース分離**: 不要メソッドの実装強制禁止
@@ -296,7 +370,7 @@ interface DrawingToolConfig {
 - デバッグコード（console.log等）完全除去
 - 非同期処理はasync/await統一
 - エラーハンドリング必須実装
-- DRY原則遵守（utils/へ共通化）
+- DRY原則遵守（共通処理の関数化）
 
 ### 動作モード考慮
 - **スタンドアロン**: 通常の単体動作
@@ -323,13 +397,13 @@ interface DrawingToolConfig {
 - ✅ デバッグコード完全除去
 - ✅ データフロー一方向厳守
 - ✅ 依存性注入パターン統一
+- ✅ Phosphor Icons統一使用
+- ✅ HTML単一ファイル動作確認（Phase1）
 - ✅ Chrome最新版完動
 - ✅ 組み込みモード動作確認
 - ✅ WebCodecs統合確認
 - ✅ **ユーザー期待値一致確認**（重要）
 - ✅ **正確軌跡描画確認**（L字問題解決）
-
----
 
 ## 📋 統合チェックリスト
 
@@ -341,7 +415,9 @@ interface DrawingToolConfig {
 - [ ] 高精度入力処理
 
 ### UI・UX
-- [ ] モード別レイアウト（Standalone/Embedded）
+- [ ] 🆕 Tailwind CSS モード別レイアウト（Standalone/Embedded）
+- [ ] 🆕 tailwind-animate アニメーション統合
+- [ ] 🆕 Phosphor Icons 統一アイコンシステム
 - [ ] 正確軌跡/滑らか描画切り替え
 - [ ] レスポンシブ対応
 - [ ] 組み込みモード制御UI
@@ -349,28 +425,28 @@ interface DrawingToolConfig {
 
 ### 描画機能
 - [ ] 正確軌跡描画ツール（Bezier.js）
+- [ ] 🆕 インタラクティブラスター描画ツール（Konva.js）
 - [ ] 筆圧→線幅リアルタイム変換
-- [ ] レイヤー管理・階層
+- [ ] 🆕 Konva.js統合レイヤー管理・階層
 - [ ] 履歴機能（Undo/Redo）
 - [ ] 非破壊編集
 - [ ] 背景画像読み込み
 
-### 外部連携
-- [ ] ふたば連携（FutabaAdapter）
-- [ ] 汎用API実装（GenericAdapter）
-- [ ] 制約対応（ConstrainedExporter）
-- [ ] 安全な通信（PostMessageAPI）
-- [ ] エラーハンドリング
-
 ### 次世代技術
 - [ ] WebGPU対応
+- [ ] 🆕 Compute Shader統合（筆圧処理・ベジエ計算）
 - [ ] GPU段階移行（twgl→OGL→regl→WebGPU）
 - [ ] パフォーマンス最適化
 - [ ] メモリ管理
 - [ ] 品質保証
 
-### ユーザー期待値達成
-- [ ] **L字軌跡問題完全解決**
-- [ ] **筆圧変化即座反映**
-- [ ] **描画遅延ゼロ**
-- [ ] **軌跡完全一致**
+## 🎨 ふたばチャンネルカラーパレット
+
+※色の実装の基本は下記となる
+ふたばチャンネルカラー
+- `#800000` "暗赤"（メインカラー/デフォルトペン色）
+- `#aa5a56` "赤茶"
+- `#cf9c97` "中間色"
+- `#e9c2ba` "薄茶"
+- `#f0e0d6` "薄ベージュ"（サブカラー/レイヤー背景色）
+- `#ffffee` background-color

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>モダンブラウザお絵かきツール v7.0</title>
+    <title>モダンブラウザお絵かきツール v7.1 - 修正版</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bezier-js/6.1.4/bezier.min.js"></script>
     <script src="https://unpkg.com/phosphor-icons@1.4.2/src/index.js"></script>
     <style>
@@ -85,6 +85,7 @@
             border-radius: 4px;
             box-shadow: 0 4px 16px rgba(128, 0, 0, 0.15);
             cursor: crosshair;
+            touch-action: none;
         }
 
         #drawingCanvas {
@@ -213,6 +214,20 @@
             background: var(--main-color);
             color: white;
         }
+
+        .debug-info {
+            position: absolute;
+            top: 50px;
+            right: 15px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid var(--main-color);
+            border-radius: 4px;
+            padding: 8px;
+            font-size: 10px;
+            font-family: monospace;
+            color: var(--text-color);
+            max-width: 200px;
+        }
     </style>
 </head>
 <body>
@@ -240,6 +255,14 @@
                     <i class="ph-arrow-counter-clockwise"></i>
                     取り消し
                 </div>
+            </div>
+
+            <div class="debug-info" id="debugInfo">
+                <div>入力方式: <span id="inputType">-</span></div>
+                <div>描画中: <span id="drawingStatus">No</span></div>
+                <div>ポインタID: <span id="pointerId">-</span></div>
+                <div>イベント: <span id="lastEvent">-</span></div>
+                <div>座標: <span id="coordinates">-</span></div>
             </div>
         </div>
 
@@ -589,20 +612,29 @@
             }
         }
 
-        // --- INPUT HANDLER ---
+        // --- IMPROVED INPUT HANDLER ---
         class InputHandler {
             constructor(element, strokeActions) {
                 this.element = element;
                 this.strokeActions = strokeActions;
                 this.isDrawing = false;
+                this.activePointerId = null;
+                this.capturedPointers = new Set();
                 this.setupEvents();
             }
 
             setupEvents() {
+                // ポインターイベントのリスナー設定
                 this.element.addEventListener('pointerdown', (e) => this.handlePointerDown(e));
                 this.element.addEventListener('pointermove', (e) => this.handlePointerMove(e));
                 this.element.addEventListener('pointerup', (e) => this.handlePointerUp(e));
-                this.element.addEventListener('pointerleave', (e) => this.handlePointerUp(e));
+                this.element.addEventListener('pointercancel', (e) => this.handlePointerCancel(e));
+                
+                // pointerleaveは除外（ペンの浮き上がりで意図しない終了を防ぐ）
+                // this.element.addEventListener('pointerleave', (e) => this.handlePointerLeave(e));
+                
+                // タッチアクション無効化
+                this.element.style.touchAction = 'none';
             }
 
             getCanvasPoint(e) {
@@ -619,34 +651,97 @@
             handlePointerDown(e) {
                 e.preventDefault();
                 
+                // デバッグ情報更新
+                this.updateDebugInfo('pointerdown', e);
+                
                 const toolState = serviceContainer.get('toolStore').getState();
                 if (toolState.currentTool !== 'pen') return;
                 
+                // 既に描画中の場合は終了
+                if (this.isDrawing && this.activePointerId !== null) {
+                    this.endCurrentStroke();
+                }
+                
                 this.isDrawing = true;
-                this.element.setPointerCapture(e.pointerId);
+                this.activePointerId = e.pointerId;
+                
+                // ポインターキャプチャ設定
+                try {
+                    this.element.setPointerCapture(e.pointerId);
+                    this.capturedPointers.add(e.pointerId);
+                } catch (error) {
+                    // キャプチャに失敗しても描画は継続
+                }
+                
                 this.strokeActions.startStroke(this.getCanvasPoint(e));
             }
 
             handlePointerMove(e) {
                 const point = this.getCanvasPoint(e);
                 this.updateStatusDisplay(point);
+                this.updateDebugInfo('pointermove', e);
                 
-                if (!this.isDrawing) return;
+                // 描画中かつ正しいポインターIDの場合のみ処理
+                if (!this.isDrawing || this.activePointerId !== e.pointerId) return;
+                
                 this.strokeActions.addPoint(point);
             }
 
             handlePointerUp(e) {
-                if (!this.isDrawing) return;
+                this.updateDebugInfo('pointerup', e);
                 
-                this.element.releasePointerCapture && this.element.releasePointerCapture(e.pointerId);
-                this.strokeActions.endStroke();
-                this.isDrawing = false;
+                // 描画中かつ正しいポインターIDの場合のみ処理
+                if (!this.isDrawing || this.activePointerId !== e.pointerId) return;
+                
+                this.endCurrentStroke();
+                this.releasePointerCapture(e.pointerId);
             }
-            
+
+            handlePointerCancel(e) {
+                this.updateDebugInfo('pointercancel', e);
+                
+                // キャンセルされた場合も描画終了
+                if (this.isDrawing && this.activePointerId === e.pointerId) {
+                    this.endCurrentStroke();
+                }
+                this.releasePointerCapture(e.pointerId);
+            }
+
+            endCurrentStroke() {
+                if (this.isDrawing) {
+                    this.strokeActions.endStroke();
+                    this.isDrawing = false;
+                    this.activePointerId = null;
+                    
+                    // デバッグ情報更新
+                    document.getElementById('drawingStatus').textContent = 'No';
+                    document.getElementById('pointerId').textContent = '-';
+                }
+            }
+
+            releasePointerCapture(pointerId) {
+                if (this.capturedPointers.has(pointerId)) {
+                    try {
+                        this.element.releasePointerCapture(pointerId);
+                    } catch (error) {
+                        // エラーを無視（既に解放済みの場合）
+                    }
+                    this.capturedPointers.delete(pointerId);
+                }
+            }
+
             updateStatusDisplay(point) {
                 document.getElementById('pressureDisplay').textContent = point.pressure.toFixed(2);
                 document.getElementById('tiltXDisplay').textContent = point.tiltX + '°';
                 document.getElementById('tiltYDisplay').textContent = point.tiltY + '°';
+            }
+
+            updateDebugInfo(eventType, e) {
+                document.getElementById('inputType').textContent = e.pointerType || 'unknown';
+                document.getElementById('drawingStatus').textContent = this.isDrawing ? 'Yes' : 'No';
+                document.getElementById('pointerId').textContent = e.pointerId || '-';
+                document.getElementById('lastEvent').textContent = eventType;
+                document.getElementById('coordinates').textContent = `${Math.round(e.clientX)},${Math.round(e.clientY)}`;
             }
         }
 
@@ -761,86 +856,4 @@
             }
 
             setupServices() {
-                const canvasStore = new CanvasStore();
-                const toolStore = new ToolStore();
-                const strokeStore = new StrokeStore();
-
-                serviceContainer
-                    .register('canvasStore', canvasStore)
-                    .register('toolStore', toolStore)
-                    .register('strokeStore', strokeStore)
-                    .register('canvasActions', new CanvasActions(canvasStore))
-                    .register('toolActions', new ToolActions(toolStore))
-                    .register('strokeActions', new StrokeActions(strokeStore));
-            }
-
-            initialize() {
-                const canvas = document.getElementById('drawingCanvas');
-                const renderer = new BezierRenderer(canvas);
-                const fpsCounter = new FPSCounter();
-                
-                new InputHandler(
-                    document.getElementById('canvasWrapper'),
-                    serviceContainer.get('strokeActions')
-                );
-                
-                new UIController(
-                    serviceContainer.get('toolActions'),
-                    serviceContainer.get('canvasActions'),
-                    serviceContainer.get('strokeActions')
-                );
-
-                this.setupRendering(renderer);
-                this.setupCanvasUpdates(canvas);
-                this.setupStrokeCountDisplay();
-                fpsCounter.start();
-            }
-
-            setupRendering(renderer) {
-                const strokeStore = serviceContainer.get('strokeStore');
-                const toolStore = serviceContainer.get('toolStore');
-
-                strokeStore.subscribe(() => {
-                    renderer.renderAll(strokeStore, toolStore.getState());
-                });
-                
-                renderer.renderAll(strokeStore, toolStore.getState());
-            }
-
-            setupCanvasUpdates(canvas) {
-                const canvasStore = serviceContainer.get('canvasStore');
-                
-                canvasStore.subscribe((state) => {
-                    canvas.width = state.width;
-                    canvas.height = state.height;
-                    canvas.style.width = `${state.width}px`;
-                    canvas.style.height = `${state.height}px`;
-                    
-                    document.getElementById('resolutionDisplay').textContent = `${state.width}×${state.height}`;
-                    
-                    const renderer = new BezierRenderer(canvas);
-                    renderer.renderAll(
-                        serviceContainer.get('strokeStore'), 
-                        serviceContainer.get('toolStore').getState()
-                    );
-                });
-            }
-            
-            setupStrokeCountDisplay() {
-                const strokeStore = serviceContainer.get('strokeStore');
-                strokeStore.subscribe(() => {
-                    document.getElementById('strokeCountDisplay').textContent = 
-                        strokeStore.getStrokeCount();
-                });
-            }
-        }
-
-        // --- INITIALIZATION ---
-        const serviceContainer = new ServiceContainer();
-        
-        document.addEventListener('DOMContentLoaded', () => {
-            new AppController();
-        });
-    </script>
-</body>
-</html>
+                const
