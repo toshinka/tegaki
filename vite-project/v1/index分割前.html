@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ベクターペン特化お絵かきツール</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bezier-js/6.1.4/bezier.min.js"></script>
+    <style>
+        /* --- デザイン維持（既存スタイル） --- */
+        :root {
+            --main-color: #800000;
+            --sub-color: #aa5a56;
+            --light-bg: #e9c2ba;
+            --canvas-bg: #f0e0d6;
+            --app-bg: #ffffee;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--app-bg);
+            color: var(--main-color);
+            overflow: hidden;
+            height: 100vh;
+            user-select: none;
+        }
+        .app-container { display: flex; height: 100vh; background: var(--app-bg); }
+        .toolbar {
+            width: 60px;
+            background: rgba(128, 0, 0, 0.05);
+            border-right: 1px solid var(--sub-color);
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            gap: 10px;
+            align-items: center;
+        }
+        .tool-button {
+            width: 40px; height: 40px; background: rgba(255, 255, 255, 0.8);
+            border: 1px solid var(--main-color); border-radius: 6px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s ease; color: var(--main-color); font-size: 16px; font-weight: bold;
+        }
+        .tool-button:hover { background: var(--light-bg); transform: translateY(-1px); }
+        .tool-button.active { background: var(--main-color); color: white; box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3); }
+        .canvas-area { flex: 1; display: flex; align-items: center; justify-content: center; background: var(--app-bg); position: relative; }
+        .canvas-container { position: relative; background: var(--canvas-bg); border: 2px solid var(--main-color); border-radius: 4px; box-shadow: 0 4px 16px rgba(128, 0, 0, 0.15); }
+        #vector-canvas { display: block; cursor: crosshair; }
+        .control-panel {
+            position: absolute; top: 15px; left: 75px; width: 280px;
+            background: rgba(255, 255, 255, 0.95); border: 1px solid rgba(128, 0, 0, 0.2);
+            border-radius: 8px; padding: 16px; box-shadow: 0 8px 24px rgba(128, 0, 0, 0.15);
+        }
+        .control-group { margin-bottom: 12px; }
+        .control-group:last-child { margin-bottom: 0; }
+        .control-label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 12px; font-weight: 600; }
+        .control-input { width: 60px; padding: 3px 6px; border: 1px solid var(--sub-color); border-radius: 3px; font-size: 11px; text-align: center; background: white; color: var(--main-color); }
+        .control-slider { width: 100%; margin: 4px 0; -webkit-appearance: none; background: transparent; }
+        .control-slider::-webkit-slider-runnable-track { height: 4px; background: var(--light-bg); border-radius: 2px; }
+        .control-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; background: var(--main-color); border-radius: 50%; cursor: pointer; margin-top: -5px; border: none; }
+        .status-bar {
+            position: absolute; bottom: 0; left: 0; right: 0; height: 28px; background: rgba(128, 0, 0, 0.05);
+            border-top: 1px solid rgba(128, 0, 0, 0.1); display: flex; align-items: center;
+            padding: 0 15px; gap: 15px; font-size: 10px;
+        }
+        .status-item { display: flex; align-items: center; gap: 3px; }
+        .status-value { font-weight: 600; color: var(--sub-color); min-width: 20px; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="toolbar">
+            <div class="tool-button active" data-tool="pen" title="ベクターペンツール">✏️</div>
+        </div>
+        <div class="canvas-area">
+            <div class="canvas-container" id="canvasContainer">
+                <canvas id="vector-canvas" width="800" height="600"></canvas>
+            </div>
+        </div>
+        <div class="control-panel" id="penControls">
+            <div class="control-group">
+                <label class="control-label"><span>ペンサイズ</span><input type="number" class="control-input" id="penSizeValue" value="3" min="1" max="50"></label>
+                <input type="range" class="control-slider" id="penSizeSlider" value="3" min="1" max="50">
+            </div>
+            <div class="control-group">
+                <label class="control-label"><span>透明度</span><input type="number" class="control-input" id="penOpacityValue" value="100" min="1" max="100"></label>
+                <input type="range" class="control-slider" id="penOpacitySlider" value="100" min="1" max="100">
+            </div>
+        </div>
+        <div class="status-bar">
+            <div class="status-item"><span>エンジン:</span><span class="status-value">Bezier.js Vector</span></div>
+            <div class="status-item"><span>サイズ:</span><span class="status-value" id="statusSize">3</span></div>
+            <div class="status-item"><span>透明度:</span><span class="status-value" id="statusOpacity">100%</span></div>
+            <div class="status-item"><span>解像度:</span><span class="status-value">800x600</span></div>
+        </div>
+    </div>
+
+    <script>
+        // ================================================================
+        // 憲章・規約準拠 ベクターペンシステム
+        // 責務: ユーザーの入力を高品質なベクター線として管理・描画する
+        // ================================================================
+
+        /**
+         * 筆圧・線幅処理クラス
+         */
+        class PressureToWidthProcessor {
+            constructor() {
+                this.pressureSensitivity = 1.5;
+                this.minWidthRatio = 0.2;
+            }
+            calculateDynamicWidth(pressure, baseSize, velocity = 0) {
+                const pressureEffect = Math.pow(pressure, 1 / this.pressureSensitivity);
+                const velocityEffect = Math.max(0.3, 1 - velocity * 0.001);
+                const dynamicRatio = Math.max(this.minWidthRatio, pressureEffect * velocityEffect);
+                return baseSize * dynamicRatio;
+            }
+            calculateVelocity(points) {
+                if (points.length < 2) return 0;
+                const last = points[points.length - 1];
+                const prev = points[points.length - 2];
+                const distance = Math.hypot(last.x - prev.x, last.y - prev.y);
+                const timeSpan = Math.max(1, last.timestamp - prev.timestamp);
+                return distance / timeSpan;
+            }
+        }
+
+        /**
+         * ベジェ軌跡最適化クラス
+         */
+        class BezierStrokeOptimizer {
+            constructor() {
+                this.simplificationTolerance = 2.0;
+            }
+            optimizeStroke(strokePoints) {
+                if (strokePoints.length < 2) return null;
+                const simplified = this.simplifyPoints(strokePoints);
+                return this.generateBezierPath(simplified);
+            }
+            simplifyPoints(points) {
+                if (points.length <= 2) return points;
+                const simplified = [points[0]];
+                let lastPoint = points[0];
+                for (let i = 1; i < points.length; i++) {
+                    const distance = Math.hypot(points[i].x - lastPoint.x, points[i].y - lastPoint.y);
+                    if (distance > this.simplificationTolerance) {
+                        simplified.push(points[i]);
+                        lastPoint = points[i];
+                    }
+                }
+                if (simplified[simplified.length - 1].timestamp !== points[points.length - 1].timestamp) {
+                     simplified.push(points[points.length - 1]);
+                }
+                return simplified;
+            }
+            generateBezierPath(points) {
+                if (points.length < 2) return null;
+                if (points.length === 2) {
+                    return { type: 'line', start: points[0], end: points[1], points: points };
+                }
+                return { type: 'spline', points: points, controlPoints: this.calculateControlPoints(points) };
+            }
+            calculateControlPoints(points) {
+                const controls = [];
+                for (let i = 0; i < points.length - 1; i++) {
+                    const p0 = points[Math.max(0, i - 1)];
+                    const p1 = points[i];
+                    const p2 = points[i + 1];
+                    const p3 = points[Math.min(points.length - 1, i + 2)];
+                    const cp1 = { x: p1.x + (p2.x - p0.x) * 0.16, y: p1.y + (p2.y - p0.y) * 0.16 };
+                    const cp2 = { x: p2.x - (p3.x - p1.x) * 0.16, y: p2.y - (p3.y - p1.y) * 0.16 };
+                    controls.push({ cp1, cp2 });
+                }
+                return controls;
+            }
+        }
+
+        /**
+         * ベジェ軌跡レンダラー
+         */
+        class BezierTrajectoryRenderer {
+            constructor(ctx) {
+                this.ctx = ctx;
+                this.pressureProcessor = new PressureToWidthProcessor();
+            }
+            render(path, settings) {
+                if (!path) return;
+                this.ctx.save();
+                this.ctx.lineCap = 'round';
+                this.ctx.lineJoin = 'round';
+                this.ctx.globalAlpha = settings.opacity;
+                this.ctx.strokeStyle = settings.color;
+                if (path.type === 'line') {
+                    this.renderLine(path, settings);
+                } else if (path.type === 'spline') {
+                    this.renderSpline(path, settings);
+                }
+                this.ctx.restore();
+            }
+            renderLine(path, settings) {
+                const { start, end } = path;
+                const avgPressure = (start.pressure + end.pressure) / 2;
+                const width = this.pressureProcessor.calculateDynamicWidth(avgPressure, settings.size);
+                this.ctx.lineWidth = width;
+                this.ctx.beginPath();
+                this.ctx.moveTo(start.x, start.y);
+                this.ctx.lineTo(end.x, end.y);
+                this.ctx.stroke();
+            }
+            renderSpline(path, settings) {
+                const { points, controlPoints } = path;
+                for (let i = 0; i < points.length - 1; i++) {
+                    const p1 = points[i];
+                    const p2 = points[i + 1];
+                    const control = controlPoints[i];
+                    const avgPressure = (p1.pressure + p2.pressure) / 2;
+                    const width = this.pressureProcessor.calculateDynamicWidth(avgPressure, settings.size);
+                    this.ctx.lineWidth = width;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(p1.x, p1.y);
+                    this.ctx.bezierCurveTo(control.cp1.x, control.cp1.y, control.cp2.x, control.cp2.y, p2.x, p2.y);
+                    this.ctx.stroke();
+                }
+            }
+        }
+
+        /**
+         * 🆕 軽量バッチレンダリング処理
+         */
+        class BatchRenderingProcessor {
+            constructor(renderer) {
+                this.renderer = renderer;
+                this.batchQueue = [];
+                this.renderScheduled = false;
+                this.maxBatchSize = 50; // 軽量化：50ストローク/バッチ
+            }
+
+            addStroke(stroke) {
+                this.batchQueue.push(stroke);
+                if (this.batchQueue.length >= this.maxBatchSize) {
+                    this.flushBatch();
+                } else {
+                    this.scheduleRender();
+                }
+            }
+
+            scheduleRender() {
+                if (!this.renderScheduled) {
+                    this.renderScheduled = true;
+                    requestAnimationFrame(() => {
+                        this.flushBatch();
+                        this.renderScheduled = false;
+                    });
+                }
+            }
+
+            flushBatch() {
+                if (this.batchQueue.length === 0) return;
+                const canvas = this.renderer.ctx.canvas;
+                this.renderer.ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // バッチ描画実行
+                for (const stroke of this.batchQueue) {
+                    stroke.render(this.renderer);
+                }
+
+                this.batchQueue.length = 0;
+            }
+
+            renderBatch(strokes) {
+                // 既存ストローク一括描画
+                for (const stroke of strokes) {
+                    stroke.render(this.renderer);
+                }
+            }
+
+            hasQueuedStrokes() {
+                return this.batchQueue.length > 0 || this.renderScheduled;
+            }
+        }
+
+        /**
+         * 🆕 ベクターストローク オブジェクト
+         */
+        class VectorStroke {
+            constructor(bezierPath, strokeSettings) {
+                this.id = 'stroke_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                this.bezierPath = bezierPath;
+                this.settings = { ...strokeSettings };
+                this.bounds = this.calculateBounds(bezierPath, strokeSettings.size);
+                this.timestamp = Date.now();
+                this.visible = true;
+            }
+
+            calculateBounds(path, strokeSize) {
+                if (!path || !path.points || path.points.length === 0) {
+                    return { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0 };
+                }
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                path.points.forEach(point => {
+                    minX = Math.min(minX, point.x);
+                    minY = Math.min(minY, point.y);
+                    maxX = Math.max(maxX, point.x);
+                    maxY = Math.max(maxY, point.y);
+                });
+                const strokeRadius = strokeSize * 0.5;
+                minX -= strokeRadius;
+                minY -= strokeRadius;
+                maxX += strokeRadius;
+                maxY += strokeRadius;
+                return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+            }
+
+            render(renderer) {
+                if (!this.visible) return;
+                renderer.render(this.bezierPath, this.settings);
+            }
+        }
+
+        /**
+         * 🆕 ベクターストローク状態管理 (規約準拠: VectorStrokeStore)
+         */
+        class VectorStrokeStore {
+            constructor() {
+                this.strokes = new Map();
+                this.spatialIndex = new Map();
+                this.gridSize = 100;
+            }
+
+            addStroke(stroke) {
+                this.strokes.set(stroke.id, stroke);
+                this.addToSpatialIndex(stroke);
+                return stroke.id;
+            }
+
+            getAllStrokes() {
+                return Array.from(this.strokes.values());
+            }
+
+            addToSpatialIndex(stroke) {
+                const gridCells = this.getGridCellsInBounds(stroke.bounds);
+                gridCells.forEach(gridKey => {
+                    if (!this.spatialIndex.has(gridKey)) {
+                        this.spatialIndex.set(gridKey, []);
+                    }
+                    this.spatialIndex.get(gridKey).push(stroke.id);
+                });
+            }
+
+            getGridCellsInBounds(bounds) {
+                const cells = [];
+                const startX = Math.floor(bounds.minX / this.gridSize);
+                const endX = Math.floor(bounds.maxX / this.gridSize);
+                const startY = Math.floor(bounds.minY / this.gridSize);
+                const endY = Math.floor(bounds.maxY / this.gridSize);
+                for (let x = startX; x <= endX; x++) {
+                    for (let y = startY; y <= endY; y++) {
+                        cells.push(`${x},${y}`);
+                    }
+                }
+                return cells;
+            }
+        }
+
+        /**
+         * 🆕 表示領域最適化カリング
+         */
+        class ViewportCuller {
+            constructor() {
+                this.cullingEnabled = true;
+                this.cullingMargin = 50;
+            }
+
+            cullStrokes(allStrokes, viewport) {
+                if (!this.cullingEnabled) return allStrokes;
+                const cullingBounds = {
+                    minX: viewport.x - this.cullingMargin,
+                    minY: viewport.y - this.cullingMargin,
+                    maxX: viewport.x + viewport.width + this.cullingMargin,
+                    maxY: viewport.y + viewport.height + this.cullingMargin
+                };
+                return allStrokes.filter(stroke => this.isStrokeVisible(stroke, cullingBounds));
+            }
+
+            isStrokeVisible(stroke, viewport) {
+                return !(stroke.bounds.maxX < viewport.minX ||
+                         stroke.bounds.minX > viewport.maxX ||
+                         stroke.bounds.maxY < viewport.minY ||
+                         stroke.bounds.minY > viewport.maxY);
+            }
+        }
+
+        /**
+         * 🎨 Bezier.js統合ベクターペンエンジン (v4 - バッチレンダリング統合版)
+         */
+        class BezierPenEngine {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.isActive = false;
+                this.settings = { size: 3, opacity: 1.0, color: '#800000' };
+                this.strokePoints = [];
+
+                // 規約準拠コンポーネント統合
+                this.strokeStore = new VectorStrokeStore();
+                this.viewportCuller = new ViewportCuller();
+                this.strokeOptimizer = new BezierStrokeOptimizer();
+                this.trajectoryRenderer = new BezierTrajectoryRenderer(this.ctx);
+                this.pressureProcessor = new PressureToWidthProcessor();
+                // 🆕 バッチレンダリング統合
+                this.batchRenderer = new BatchRenderingProcessor(this.trajectoryRenderer);
+            }
+
+            updateSettings(settings) {
+                this.settings = { ...this.settings, ...settings };
+            }
+
+            startStroke(x, y, pressure) {
+                this.isActive = true;
+                this.strokePoints = [{ x, y, pressure, timestamp: Date.now() }];
+            }
+
+            continueStroke(x, y, pressure) {
+                if (!this.isActive) return;
+                this.strokePoints.push({ x, y, pressure, timestamp: Date.now() });
+                this.scheduleRedraw();
+            }
+
+            endStroke() {
+                if (!this.isActive) return;
+                this.isActive = false;
+
+                const optimizedPath = this.strokeOptimizer.optimizeStroke(this.strokePoints);
+                if (optimizedPath) {
+                    const newStroke = new VectorStroke(optimizedPath, { ...this.settings });
+                    this.strokeStore.addStroke(newStroke);
+                }
+
+                this.strokePoints = [];
+                this.scheduleRedraw();
+            }
+            
+            scheduleRedraw() {
+                // 既存の描画キューをクリア
+                this.batchRenderer.batchQueue.length = 0;
+
+                const viewport = { x: 0, y: 0, width: this.canvas.width, height: this.canvas.height };
+                const allStrokes = this.strokeStore.getAllStrokes();
+                const visibleStrokes = this.viewportCuller.cullStrokes(allStrokes, viewport);
+                
+                // 確定済みストロークを直接キューに追加
+                visibleStrokes.forEach(stroke => this.batchRenderer.batchQueue.push(stroke));
+
+                // プレビュー中のストロークは、renderメソッドを持つダミーオブジェクトとしてキューに追加
+                if (this.isActive && this.strokePoints.length > 1) {
+                    const previewStroke = {
+                        render: () => this.renderPreviewStroke(this.strokePoints)
+                    };
+                    this.batchRenderer.batchQueue.push(previewStroke);
+                }
+
+                this.batchRenderer.scheduleRender();
+            }
+
+            renderPreviewStroke(points) {
+                 this.ctx.save();
+                 this.ctx.lineCap = 'round';
+                 this.ctx.lineJoin = 'round';
+                 this.ctx.strokeStyle = this.settings.color;
+                 this.ctx.globalAlpha = this.settings.opacity;
+
+                 this.ctx.beginPath();
+                 this.ctx.moveTo(points[0].x, points[0].y);
+                 for (let i = 1; i < points.length; i++) {
+                     const p1 = points[i-1];
+                     const p2 = points[i];
+                     const velocity = this.pressureProcessor.calculateVelocity([p1, p2]);
+                     const avgPressure = (p1.pressure + p2.pressure) / 2;
+                     const width = this.pressureProcessor.calculateDynamicWidth(avgPressure, this.settings.size, velocity);
+                     this.ctx.lineWidth = width;
+                     this.ctx.lineTo(p2.x, p2.y);
+                 }
+                 this.ctx.stroke();
+                 this.ctx.restore();
+            }
+
+            initCanvas() {
+                const dpr = 1; // DPR=1固定（憲章準拠）
+                this.canvas.width = 800 * dpr;
+                this.canvas.height = 600 * dpr;
+                this.ctx.scale(dpr, dpr);
+            }
+
+            getPointerData(event) {
+                const rect = this.canvas.getBoundingClientRect();
+                let pressure = event.pressure !== undefined ? event.pressure : 0.5;
+                return {
+                    x: event.clientX - rect.left,
+                    y: event.clientY - rect.top,
+                    pressure: Math.max(0.1, Math.min(1.0, pressure))
+                };
+            }
+        }
+
+        // ================================================================
+        // アプリケーション初期化・制御
+        // ================================================================
+        const appState = { penSize: 3, penOpacity: 100 };
+        let bezierPenEngine = null;
+        let isDrawing = false;
+
+        function initializeApp() {
+            const canvas = document.getElementById('vector-canvas');
+            bezierPenEngine = new BezierPenEngine(canvas);
+            bezierPenEngine.initCanvas();
+            setupEventListeners();
+            updatePenSettings();
+            console.log('✅ Bezier Pen Tool v4 initialized successfully.');
+        }
+
+        function updatePenSettings() {
+            const settings = {
+                size: appState.penSize,
+                opacity: appState.penOpacity / 100,
+                color: '#800000'
+            };
+            bezierPenEngine.updateSettings(settings);
+            document.getElementById('statusSize').textContent = appState.penSize;
+            document.getElementById('statusOpacity').textContent = appState.penOpacity + '%';
+        }
+
+        function setupEventListeners() {
+            document.getElementById('penSizeSlider').addEventListener('input', (e) => {
+                appState.penSize = parseInt(e.target.value);
+                document.getElementById('penSizeValue').value = appState.penSize;
+                updatePenSettings();
+            });
+            document.getElementById('penSizeValue').addEventListener('change', (e) => {
+                appState.penSize = parseInt(e.target.value);
+                document.getElementById('penSizeSlider').value = appState.penSize;
+                updatePenSettings();
+            });
+            document.getElementById('penOpacitySlider').addEventListener('input', (e) => {
+                appState.penOpacity = parseInt(e.target.value);
+                document.getElementById('penOpacityValue').value = appState.penOpacity;
+                updatePenSettings();
+            });
+            document.getElementById('penOpacityValue').addEventListener('change', (e) => {
+                appState.penOpacity = parseInt(e.target.value);
+                document.getElementById('penOpacitySlider').value = appState.penOpacity;
+                updatePenSettings();
+            });
+
+            const canvas = document.getElementById('vector-canvas');
+            canvas.style.touchAction = 'none';
+            canvas.addEventListener('pointerdown', (e) => {
+                if (e.button !== 0) return;
+                canvas.setPointerCapture(e.pointerId);
+                const data = bezierPenEngine.getPointerData(e);
+                bezierPenEngine.startStroke(data.x, data.y, data.pressure);
+                isDrawing = true;
+                e.preventDefault();
+            });
+            canvas.addEventListener('pointermove', (e) => {
+                if (!isDrawing) return;
+                const data = bezierPenEngine.getPointerData(e);
+                bezierPenEngine.continueStroke(data.x, data.y, data.pressure);
+                e.preventDefault();
+            });
+            const onPointerUp = (e) => {
+                if (isDrawing) {
+                    bezierPenEngine.endStroke();
+                    isDrawing = false;
+                    if (canvas.hasPointerCapture(e.pointerId)) {
+                        canvas.releasePointerCapture(e.pointerId);
+                    }
+                }
+                e.preventDefault();
+            };
+            canvas.addEventListener('pointerup', onPointerUp);
+            canvas.addEventListener('pointerleave', onPointerUp);
+            canvas.addEventListener('pointercancel', onPointerUp);
+            canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        }
+
+        document.addEventListener('DOMContentLoaded', initializeApp);
+    </script>
+</body>
+</html>

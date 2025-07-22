@@ -101,7 +101,7 @@ Phase１的にはこのように実装して、Phase２でレイヤー実装。p
 
 憲章に沿ってPhase1を満たすhtmlファイルを作成してください
 ・デザインはイラスト.pngのようなサイドバーとPENとResizeアイコン、キャンバス、下段のモニターのシンプルなものとしてください。
-・アイコンはphosphorを導入済みなので、そこからアイコン画像を添付画像のようなpenとresizeで取得してください。
+・アイコンはphosphorからアイコン画像をpenとresizeから取得してください。無理なら代替のアイコンでも良いです。
 ・補正、傾き感度、FPSのリアルタイムモニター表示もさせてください。
 ・キャンバスは画面中心を基準としてください。また、スペース+ドラッグで移動を可能としてください。最初は344*135サイズです。
 ・ペンアイコンを押すと、ペンサイズや透明度等を変更できる、数字入力ボックスとスライダーが出てきます。
@@ -111,4 +111,105 @@ Phase１的にはこのように実装して、Phase２でレイヤー実装。p
 ・コードが冗長とならないように、ファイルがコンパクトになるよう心がけてください。
 
 
+今、憲章に則りPhase1を実装中なのがindex.htmlなのだけど、少し方向修正したい。 どういった方向かと言うと、まずペンのサイズ・透明度、キャンバス表示以外の者は一度外す。具体的にはクリアとキャンバスサイズ変更の部分。それからペンの機能をsrc/engine/vector/BezierPenEngine.jsに分離する。発火点がhtmlで簡単に起動しやすくしてる間にペンの実装を進める。それからvite化し、npm版だからこそできる導入をする。なんでかと言うと、これだけ憲章で縛ってもペンをCANVAS2D化するという呪いを解くのが困難だからと身を持って知ったからです。ベクターペンだけで10日もやって実装しきれない状態なら、先鋭化するしか無いでしょう。
+特に問題なければ、デザインだけ維持するがキャンバスは固定でライブラリとBezierPenEngine.jsの橋渡しと発火するだけのhtmlとペン機能なBezierPenEngine.jsに分割してください。いやそのやり方はできなくてvite化しないとダメであると言うのであれば、そういう仕組で進めても構いません。ターミナル起動からなのが少しだけど積もればなかなかの手間になるので、なるべくは避けたいですが。
+
+
+
+今、ベクターペンの実装に注力し、他の機能は最低限にし干渉の余地を無くすために触らないよう注意しながらお絵かきツールを実装中です。
+ペンはvite化以降に独立しやすい構造を維持します。
+次に実装する機能は、下記の通りです。Aから進めていきますが、まとめての実装が効率であるなら、例えばAとBを同時実装するみたいにしても構いません。勿論Aだけの実装でも構いません。
+
+
+🚀 次に実装すべきベクターペン機能
+規約に従い、Bezier.js統合によるベクター描画の本格実装を段階的に進めましょう：
+Phase 1A: Bezier.js軌跡最適化 (1-2週間)
+
+// 1. 軌跡点の蓄積と最適化
+class BezierStrokeOptimizer {
+    optimizeStroke(strokePoints) {
+        // Bezier.js による軌跡の滑らかな曲線近似
+        // 不要な点を削減しつつ、軌跡の正確性を保持
+    }
+}
+
+// 2. リアルタイム軌跡レンダリング
+class BezierTrajectoryRenderer {
+    renderTrajectory(bezierCurve, strokeSettings) {
+        // Bezier.jsの結果をWebGL2で高速描画
+        // 筆圧による線幅変化をGPUで処理
+    }
+}
+
+Phase 1B: 筆圧・線幅システム (1週間)
+
+// 3. 高度な筆圧処理
+class PressureToWidthProcessor {
+    calculateDynamicWidth(pressure, baseSize, velocity) {
+        // 筆圧 + 描画速度を考慮した動的線幅計算
+        // ペンの入り抜きの自然な表現
+    }
+}
+
+// 4. 線端処理（キャップ・ジョイン）
+class StrokeCapProcessor {
+    applyStrokeCaps(strokeData) {
+        // 線の始点・終点の丸み処理
+        // 線の接続部分の滑らかな処理
+    }
+}
+
+Phase 1C: ベクターストローク管理 (1週間)
+
+// 5. ストローク オブジェクト システム
+class VectorStroke {
+    constructor(bezierPath, strokeSettings) {
+        this.id = generateId();
+        this.bezierPath = bezierPath;  // Bezier.jsのPath
+        this.settings = strokeSettings;
+        this.bounds = calculateBounds(bezierPath);
+    }
+    
+    render(renderer) {
+        // ベクターストロークの描画
+    }
+    
+    hitTest(point) {
+        // クリック判定（選択ツール用）
+    }
+}
+
+// 6. ストローク集合管理
+class VectorStrokeManager {
+    addStroke(stroke) { /* ストローク追加 */ }
+    removeStroke(strokeId) { /* ストローク削除 */ }
+    getStrokesInBounds(bounds) { /* 範囲内ストローク取得 */ }
+}
+
+
+Phase 1D: レンダリング最適化 (1週間)
+
+// 7. WebGL2バッチレンダリング
+class WebGLVectorRenderer {
+    batchRender(strokes) {
+        // 複数ストロークの効率的な一括描画
+        // インスタンスレンダリングによる高速化
+    }
+}
+
+// 8. 表示領域最適化（カリング）
+class ViewportCuller {
+    cullStrokes(allStrokes, viewport) {
+        // 表示範囲外のストロークを描画から除外
+        // 大量のストロークでもスムーズな描画
+    }
+}
+
+
+技術方針
+
+Bezier.js信頼: ライブラリの結果を完全に信頼し、独自実装は最小限に
+GPU活用: WebGL2でのリアルタイム描画に集中
+筆圧最優先: ペンタブレット使用時の自然な描画感を重視
+軌跡正確性: 憲章の核心である「描いた通りの軌跡」を絶対に維持
 

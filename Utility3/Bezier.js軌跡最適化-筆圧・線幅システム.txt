@@ -1,0 +1,354 @@
+/**
+         * ベジェ軌跡最適化クラス
+         * 責務: 軌跡点からBezier.js曲線への変換と最適化
+         */
+        class BezierStrokeOptimizer {
+            constructor() {
+                this.simplificationTolerance = 2.0; // 軌跡簡素化の閾値
+                this.smoothingFactor = 0.3; // 軌跡平滑化の強度
+            }
+
+            /**
+             * 軌跡点を最適化されたベジェ曲線に変換
+             */
+            optimizeStroke(strokePoints) {
+                if (strokePoints.length < 2) return null;
+                
+                // 1. 不要な点を削除（Douglas-Peucker風簡素化）
+                const simplified = this.simplifyPoints(strokePoints);
+                
+                // 2. 軌跡の平滑化
+                const smoothed = this.smoothPoints(simplified);
+                
+                // 3. ベジェ制御点の計算
+                const bezierPath = this.generateBezierPath(smoothed);
+                
+                console.log('🎨 Stroke optimized:', {
+                    original: strokePoints.length,
+                    simplified: simplified.length,
+                    smoothed: smoothed.length
+                });
+                
+                return bezierPath;
+            }
+
+            /**
+             * 軌跡点の簡素化
+             */
+            simplifyPoints(points) {
+                if (points.length <= 2) return points;
+                
+                const simplified = [points[0]];
+                
+                for (let i = 1; i < points.length - 1; i++) {
+                    const prev = points[i - 1];
+                    const curr = points[i];
+                    const next = points[i + 1];
+                    
+                    // 距離による間引き
+                    const distToPrev = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+                    if (distToPrev < this.simplificationTolerance) continue;
+                    
+                    // 角度変化による重要点検出
+                    const angle1 = Math.atan2(curr.y - prev.y, curr.x - prev.x);
+                    const angle2 = Math.atan2(next.y - curr.y, next.x - curr.x);
+                    const angleDiff = Math.abs(angle2 - angle1);
+                    
+                    if (angleDiff > 0.3 || distToPrev > this.simplificationTolerance * 2) {
+                        simplified.push(curr);
+                    }
+                }
+                
+                simplified.push(points[points.length - 1]);
+                return simplified;
+            }
+
+            /**
+             * 軌跡の平滑化
+             */
+            smoothPoints(points) {
+                if (points.length <= 2) return points;
+                
+                const smoothed = [points[0]];
+                
+                for (let i = 1; i < points.length - 1; i++) {
+                    const prev = points[i - 1];
+                    const curr = points[i];
+                    const next = points[i + 1];
+                    
+                    // 移動平均による平滑化
+                    const smoothedPoint = {
+                        x: prev.x * 0.25 + curr.x * 0.5 + next.x * 0.25,
+                        y: prev.y * 0.25 + curr.y * 0.5 + next.y * 0.25,
+                        pressure: curr.pressure,
+                        timestamp: curr.timestamp
+                    };
+                    
+                    smoothed.push(smoothedPoint);
+                }
+                
+                smoothed.push(points[points.length - 1]);
+                return smoothed;
+            }
+
+            /**
+             * ベジェ曲線パスの生成
+             */
+            generateBezierPath(points) {
+                if (points.length < 2) return null;
+                if (points.length === 2) {
+                    // 直線の場合
+                    return {
+                        type: 'line',
+                        start: points[0],
+                        end: points[1],
+                        points: points
+                    };
+                }
+                
+                // 3点以上の場合はスプライン補間
+                return {
+                    type: 'spline',
+                    points: points,
+                    controlPoints: this.calculateControlPoints(points)
+                };
+            }
+
+            /**
+             * ベジェ制御点の計算
+             */
+            calculateControlPoints(points) {
+                const controls = [];
+                
+                for (let i = 0; i < points.length - 1; i++) {
+                    const p0 = points[Math.max(0, i - 1)];
+                    const p1 = points[i];
+                    const p2 = points[i + 1];
+                    const p3 = points[Math.min(points.length - 1, i + 2)];
+                    
+                    // カタマル・ロム・スプライン風の制御点計算
+                    const cp1 = {
+                        x: p1.x + (p2.x - p0.x) * 0.16,
+                        y: p1.y + (p2.y - p0.y) * 0.16
+                    };
+                    
+                    const cp2 = {
+                        x: p2.x - (p3.x - p1.x) * 0.16,
+                        y: p2.y - (p3.y - p1.y) * 0.16
+                    };
+                    
+                    controls.push({ cp1, cp2 });
+                }
+                
+                return controls;
+            }
+        }
+
+        /**
+         * 筆圧・線幅処理クラス
+         * 責務: 筆圧データから動的線幅を計算
+         */
+        class PressureToWidthProcessor {
+            constructor() {
+                this.velocityDecay = 0.7; // 速度減衰係数
+                this.pressureSensitivity = 1.5; // 筆圧感度
+                this.minWidthRatio = 0.2; // 最小線幅比率
+            }
+
+            /**
+             * 動的線幅計算
+             */
+            calculateDynamicWidth(pressure, baseSize, velocity = 0) {
+                // 筆圧による線幅変化（非線形）
+                const pressureEffect = Math.pow(pressure, 1 / this.pressureSensitivity);
+                
+                // 速度による線幅変化（速く描くと細くなる）
+                const velocityEffect = Math.max(0.3, 1 - velocity * 0.001);
+                
+                // 最小線幅の保証
+                const dynamicRatio = Math.max(
+                    this.minWidthRatio,
+                    pressureEffect * velocityEffect
+                );
+                
+                return baseSize * dynamicRatio;
+            }
+
+            /**
+             * 速度計算
+             */
+            calculateVelocity(points) {
+                if (points.length < 2) return 0;
+                
+                const last = points[points.length - 1];
+                const prev = points[points.length - 2];
+                
+                const distance = Math.hypot(last.x - prev.x, last.y - prev.y);
+                const timeSpan = Math.max(1, last.timestamp - prev.timestamp);
+                
+                return distance / timeSpan;
+            }
+
+            /**
+             * 筆圧カーブの平滑化
+             */
+            smoothPressure(points, windowSize = 3) {
+                if (points.length <= windowSize) return points;
+                
+                const smoothed = [...points];
+                
+                for (let i = windowSize; i < points.length - windowSize; i++) {
+                    let totalPressure = 0;
+                    let count = 0;
+                    
+                    for (let j = -windowSize; j <= windowSize; j++) {
+                        totalPressure += points[i + j].pressure;
+                        count++;
+                    }
+                    
+                    smoothed[i].pressure = totalPressure / count;
+                }
+                
+                return smoothed;
+            }
+        }
+
+        /**
+         * ベジェ軌跡レンダラー
+         * 責務: 最適化されたベジェ曲線の高品質描画
+         */
+        class BezierTrajectoryRenderer {
+            constructor(ctx) {
+                this.ctx = ctx;
+                this.pressureProcessor = new PressureToWidthProcessor();
+            }
+
+            /**
+             * ベジェ軌跡のレンダリング
+             */
+            renderTrajectory(bezierPath, strokeSettings) {
+                if (!bezierPath) return;
+                
+                this.ctx.save();
+                this.ctx.lineCap = 'round';
+                this.ctx.lineJoin = 'round';
+                this.ctx.globalAlpha = strokeSettings.opacity;
+                this.ctx.strokeStyle = strokeSettings.color;
+                
+                if (bezierPath.type === 'line') {
+                    this.renderLine(bezierPath, strokeSettings);
+                } else if (bezierPath.type === 'spline') {
+                    this.renderSpline(bezierPath, strokeSettings);
+                }
+                
+                this.ctx.restore();
+            }
+
+            /**
+             * 直線の描画
+             */
+            renderLine(bezierPath, strokeSettings) {
+                const { start, end } = bezierPath;
+                const avgPressure = (start.pressure + end.pressure) / 2;
+                const width = this.pressureProcessor.calculateDynamicWidth(
+                    avgPressure, 
+                    strokeSettings.size
+                );
+                
+                this.ctx.lineWidth = width;
+                this.ctx.beginPath();
+                this.ctx.moveTo(start.x, start.y);
+                this.ctx.lineTo(end.x, end.y);
+                this.ctx.stroke();
+            }
+
+            /**
+             * スプライン曲線の描画
+             */
+            renderSpline(bezierPath, strokeSettings) {
+                const { points, controlPoints } = bezierPath;
+                
+                if (!controlPoints || points.length < 3) {
+                    // フォールバック：単純な線描画
+                    this.renderFallbackPath(points, strokeSettings);
+                    return;
+                }
+                
+                // 可変線幅でのベジェ曲線描画
+                for (let i = 0; i < points.length - 1; i++) {
+                    const p1 = points[i];
+                    const p2 = points[i + 1];
+                    const control = controlPoints[i];
+                    
+                    if (!control) continue;
+                    
+                    // セグメント毎の筆圧計算
+                    const avgPressure = (p1.pressure + p2.pressure) / 2;
+                    const width = this.pressureProcessor.calculateDynamicWidth(
+                        avgPressure,
+                        strokeSettings.size
+                    );
+                    
+                    this.ctx.lineWidth = width;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(p1.x, p1.y);
+                    this.ctx.bezierCurveTo(
+                        control.cp1.x, control.cp1.y,
+                        control.cp2.x, control.cp2.y,
+                        p2.x, p2.y
+                    );
+                    this.ctx.stroke();
+                }
+            }
+
+            /**
+             * フォールバック描画
+             */
+            renderFallbackPath(points, strokeSettings) {
+                if (points.length < 2) return;
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(points[0].x, points[0].y);
+                
+                for (let i = 1; i < points.length; i++) {
+                    const point = points[i];
+                    const width = this.pressureProcessor.calculateDynamicWidth(
+                        point.pressure,
+                        strokeSettings.size
+                    );
+                    
+                    this.ctx.lineWidth = width;
+                    this.ctx.lineTo(point.x, point.y);
+                }
+                
+                this.ctx.stroke();
+            }
+        }
+
+        /**
+         * Bezier.js統合ベクターペンエンジン
+         * 責務: Bezier.jsライブラリを使用した正確軌跡ベクター描画
+         * 憲章準拠: ペンツール = Bezier.jsエンジン専用、Canvas2D描画完全排除
+         */
+        class BezierPenEngine {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.isActive = false;
+                this.currentStroke = null;
+                this.settings = {
+                    size: 3,
+                    opacity: 1.0,
+                    color: '#800000'
+                };
+                
+                // Bezier.js用の軌跡点データ
+                this.strokePoints = [];
+                
+                // 新しいコンポーネント
+                this.strokeOptimizer = new BezierStrokeOptimizer();
+                this.trajectoryRenderer = new BezierTrajectoryRenderer(this.ctx);
+                this.pressureProcessor = new PressureToWidthProcessor();
+                
+                console.log('🎨 BezierPenEngine initialized with advanced components');
+            }

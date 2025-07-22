@@ -1,0 +1,295 @@
+/**
+         * ベクターストローク オブジェクト システム (Phase 1C)
+         * 責務: 個別ストロークのメタデータ・境界・描画・判定を管理
+         */
+        class VectorStroke {
+            constructor(bezierPath, strokeSettings) {
+                this.id = this.generateId();
+                this.bezierPath = bezierPath;
+                this.settings = { ...strokeSettings };
+                this.bounds = this.calculateBounds(bezierPath);
+                this.timestamp = Date.now();
+                this.visible = true;
+            }
+
+            generateId() {
+                return 'stroke_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            }
+
+            calculateBounds(path) {
+                if (!path || !path.points || path.points.length === 0) {
+                    return { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0 };
+                }
+                
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                
+                path.points.forEach(point => {
+                    minX = Math.min(minX, point.x);
+                    minY = Math.min(minY, point.y);
+                    maxX = Math.max(maxX, point.x);
+                    maxY = Math.max(maxY, point.y);
+                });
+
+                // ストローク幅を考慮した境界拡張
+                const strokeRadius = this.settings.size * 0.5;
+                minX -= strokeRadius;
+                minY -= strokeRadius;
+                maxX += strokeRadius;
+                maxY += strokeRadius;
+
+                return {
+                    minX, minY, maxX, maxY,
+                    width: maxX - minX,
+                    height: maxY - minY
+                };
+            }
+
+            render(renderer) {
+                if (!this.visible) return;
+                renderer.render(this.bezierPath, this.settings);
+            }
+
+            hitTest(point, tolerance = 5) {
+                // 境界チェック（高速事前判定）
+                if (!this.isPointInBounds(point, tolerance)) return false;
+                
+                // 詳細判定（軌跡との距離計算）
+                return this.isPointNearPath(point, tolerance);
+            }
+
+            isPointInBounds(point, tolerance) {
+                return point.x >= this.bounds.minX - tolerance &&
+                       point.x <= this.bounds.maxX + tolerance &&
+                       point.y >= this.bounds.minY - tolerance &&
+                       point.y <= this.bounds.maxY + tolerance;
+            }
+
+            isPointNearPath(point, tolerance) {
+                if (!this.bezierPath || !this.bezierPath.points) return false;
+                
+                // 軌跡上の各セグメントとの最短距離を計算
+                const points = this.bezierPath.points;
+                for (let i = 0; i < points.length - 1; i++) {
+                    const dist = this.pointToSegmentDistance(point, points[i], points[i + 1]);
+                    if (dist <= tolerance) return true;
+                }
+                return false;
+            }
+
+            pointToSegmentDistance(point, segStart, segEnd) {
+                const A = point.x - segStart.x;
+                const B = point.y - segStart.y;
+                const C = segEnd.x - segStart.x;
+                const D = segEnd.y - segStart.y;
+
+                const dot = A * C + B * D;
+                const lenSq = C * C + D * D;
+                
+                if (lenSq === 0) return Math.hypot(A, B);
+                
+                let param = dot / lenSq;
+                param = Math.max(0, Math.min(1, param));
+                
+                const xx = segStart.x + param * C;
+                const yy = segStart.y + param * D;
+                
+                return Math.hypot(point.x - xx, point.y - yy);
+            }
+        }
+
+        /**
+         * ベクターストローク集合管理 (Phase 1C)
+         * 責務: 全ストロークの追加・削除・検索・範囲取得を効率的に管理
+         */
+        class VectorStrokeManager {
+            constructor() {
+                this.strokes = new Map(); // ID -> VectorStroke
+                this.spatialIndex = new Map(); // 簡易空間インデックス（グリッド）
+                this.gridSize = 100; // グリッドセルサイズ
+                
+                console.log('📦 VectorStrokeManager initialized with spatial indexing');
+            }
+
+            addStroke(stroke) {
+                this.strokes.set(stroke.id, stroke);
+                this.addToSpatialIndex(stroke);
+                console.log(`➕ Stroke added: ${stroke.id}, Total: ${this.strokes.size}`);
+                return stroke.id;
+            }
+
+            removeStroke(strokeId) {
+                const stroke = this.strokes.get(strokeId);
+                if (stroke) {
+                    this.removeFromSpatialIndex(stroke);
+                    this.strokes.delete(strokeId);
+                    console.log(`➖ Stroke removed: ${strokeId}, Remaining: ${this.strokes.size}`);
+                    return true;
+                }
+                return false;
+            }
+
+            getStroke(strokeId) {
+                return this.strokes.get(strokeId);
+            }
+
+            getAllStrokes() {
+                return Array.from(this.strokes.values());
+            }
+
+            getStrokesInBounds(bounds) {
+                const result = [];
+                const gridCells = this.getGridCellsInBounds(bounds);
+                
+                const checkedStrokes = new Set();
+                
+                gridCells.forEach(gridKey => {
+                    const cellStrokes = this.spatialIndex.get(gridKey) || [];
+                    cellStrokes.forEach(strokeId => {
+                        if (checkedStrokes.has(strokeId)) return;
+                        checkedStrokes.add(strokeId);
+                        
+                        const stroke = this.strokes.get(strokeId);
+                        if (stroke && this.boundsIntersect(stroke.bounds, bounds)) {
+                            result.push(stroke);
+                        }
+                    });
+                });
+                
+                return result;
+            }
+
+            findStrokesAt(point, tolerance = 5) {
+                const searchBounds = {
+                    minX: point.x - tolerance,
+                    minY: point.y - tolerance,
+                    maxX: point.x + tolerance,
+                    maxY: point.y + tolerance
+                };
+                
+                const candidates = this.getStrokesInBounds(searchBounds);
+                return candidates.filter(stroke => stroke.hitTest(point, tolerance));
+            }
+
+            addToSpatialIndex(stroke) {
+                const gridCells = this.getGridCellsInBounds(stroke.bounds);
+                gridCells.forEach(gridKey => {
+                    if (!this.spatialIndex.has(gridKey)) {
+                        this.spatialIndex.set(gridKey, []);
+                    }
+                    this.spatialIndex.get(gridKey).push(stroke.id);
+                });
+            }
+
+            removeFromSpatialIndex(stroke) {
+                const gridCells = this.getGridCellsInBounds(stroke.bounds);
+                gridCells.forEach(gridKey => {
+                    const cellStrokes = this.spatialIndex.get(gridKey);
+                    if (cellStrokes) {
+                        const index = cellStrokes.indexOf(stroke.id);
+                        if (index !== -1) {
+                            cellStrokes.splice(index, 1);
+                        }
+                        if (cellStrokes.length === 0) {
+                            this.spatialIndex.delete(gridKey);
+                        }
+                    }
+                });
+            }
+
+            getGridCellsInBounds(bounds) {
+                const cells = [];
+                const startX = Math.floor(bounds.minX / this.gridSize);
+                const endX = Math.floor(bounds.maxX / this.gridSize);
+                const startY = Math.floor(bounds.minY / this.gridSize);
+                const endY = Math.floor(bounds.maxY / this.gridSize);
+                
+                for (let x = startX; x <= endX; x++) {
+                    for (let y = startY; y <= endY; y++) {
+                        cells.push(`${x},${y}`);
+                    }
+                }
+                return cells;
+            }
+
+            boundsIntersect(bounds1, bounds2) {
+                return !(bounds1.maxX < bounds2.minX || 
+                        bounds2.maxX < bounds1.minX || 
+                        bounds1.maxY < bounds2.minY || 
+                        bounds2.maxY < bounds1.minY);
+            }
+
+            clear() {
+                this.strokes.clear();
+                this.spatialIndex.clear();
+                console.log('🗑️ All strokes cleared');
+            }
+        }
+
+        /**
+         * 表示領域最適化カリング (Phase 1D)
+         * 責務: 表示範囲外のストロークを描画から除外し、パフォーマンスを最適化
+         */
+        class ViewportCuller {
+            constructor() {
+                this.cullingEnabled = true;
+                this.cullingMargin = 50; // カリング境界のマージン
+            }
+
+            cullStrokes(allStrokes, viewport) {
+                if (!this.cullingEnabled) return allStrokes;
+                
+                const cullingBounds = {
+                    minX: viewport.x - this.cullingMargin,
+                    minY: viewport.y - this.cullingMargin,
+                    maxX: viewport.x + viewport.width + this.cullingMargin,
+                    maxY: viewport.y + viewport.height + this.cullingMargin
+                };
+
+                const visibleStrokes = allStrokes.filter(stroke => 
+                    this.isStrokeVisible(stroke, cullingBounds)
+                );
+
+                return visibleStrokes;
+            }
+
+            isStrokeVisible(stroke, viewport) {
+                return !(stroke.bounds.maxX < viewport.minX ||
+                        stroke.bounds.minX > viewport.maxX ||
+                        stroke.bounds.maxY < viewport.minY ||
+                        stroke.bounds.minY > viewport.maxY);
+            }
+
+            setCullingEnabled(enabled) {
+                this.cullingEnabled = enabled;
+            }
+
+            setCullingMargin(margin) {
+                this.cullingMargin = Math.max(0, margin);
+            }
+        }
+
+        /**
+         * Bezier.js統合ベクターペンエンジン (v3 - Phase 1C/1D統合)
+         * 責務: 軌跡最適化、ストローク管理、描画最適化を統合し、描画ライフサイクルを管理
+         */
+        class BezierPenEngine {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.isActive = false;
+                this.settings = { size: 3, opacity: 1.0, color: '#800000' };
+
+                // 描画データ
+                this.strokePoints = []; // 現在描画中の点の配列
+
+                // Phase 1C/1D: 拡張コンポーネント統合
+                this.strokeManager = new VectorStrokeManager(); // ストローク集合管理
+                this.viewportCuller = new ViewportCuller();     // 表示最適化
+
+                // 憲章準拠コンポーネント（既存）
+                this.strokeOptimizer = new BezierStrokeOptimizer();
+                this.trajectoryRenderer = new BezierTrajectoryRenderer(this.ctx);
+                this.pressureProcessor = new PressureToWidthProcessor();
+
+                console.log('🎨 BezierPenEngine v3 initialized with stroke management & viewport optimization.');
+            }
