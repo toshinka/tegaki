@@ -1,0 +1,605 @@
+# 🎨 モダンブラウザお絵かきツール Phase1実装憲章 v5.2（拡張性強化版）
+
+## 🎯 Phase1実装目標（5週間完成）+ Phase2準備
+**単一HTMLファイルでの完全動作するモダンお絵かきツール + 将来拡張基盤**
+- Chrome最新版特化・組み込みモード対応
+- AI誘惑完全回避・ツール→エンジン厳格連動（v5.1継承）
+- SOLID原則完全遵守・座標ズレ根本解決（v5.1継承）
+- **🆕 Phase2拡張性確保（Undo統合・ツール拡張・Vite移行準備）**
+
+---
+
+## 🚨 【最重要】AI誘惑回避原則（v5.1完全継承）
+
+### ツール選択とエンジン起動の厳格連動（v5.1準拠）
+```javascript
+// v5.1の原則を完全継承・変更なし
+const TOOL_ENGINE_BINDING = {
+    'pen': {
+        engine: 'BezierStrokeRenderer',
+        canvas: '#vector-canvas',
+        description: 'Bezier.js専用・正確軌跡描画',
+        // 🆕 Phase2拡張準備
+        engineConfig: { smoothing: 0.8, pressure: true }
+    },
+    'eraser': {
+        engine: 'Canvas2DRenderer',
+        canvas: '#raster-canvas', 
+        description: 'Canvas2D専用・消しゴム特化',
+        // 🆕 Phase2拡張準備
+        engineConfig: { blendMode: 'destination-out', size: 20 }
+    },
+    'select': {
+        engine: 'KonvaSelectionEngine',
+        target: '#konva-stage',
+        description: 'Konva.js専用・選択移動特化',
+        // 🆕 Phase2拡張準備
+        engineConfig: { multiSelect: true, snapToGrid: false }
+    }
+};
+```
+
+### Canvas要素の絶対的責務分離（v5.1準拠・レイヤー準備追加）
+```html
+<!-- v5.1構造を完全継承 + Phase2レイヤー準備 -->
+<div class="canvas-container">
+    <!-- Bezier.js専用：ペンツールのみ使用可能 -->
+    <canvas id="vector-canvas" class="drawing-layer" style="z-index: 3;" 
+            data-layer-type="vector" data-engine="BezierStrokeRenderer"></canvas>
+    
+    <!-- Canvas2D専用：消しゴム・塗りつぶしのみ使用可能 -->
+    <canvas id="raster-canvas" class="drawing-layer" style="z-index: 2;" 
+            data-layer-type="raster" data-engine="Canvas2DRenderer"></canvas>
+    
+    <!-- Konva.js専用：選択・移動・変形のみ使用可能 -->
+    <div id="konva-stage" class="interaction-layer" style="z-index: 4;" 
+         data-layer-type="interaction" data-engine="KonvaSelectionEngine"></div>
+    
+    <!-- 🆕 Phase2準備：Undo履歴可視化レイヤー（非表示） -->
+    <canvas id="history-preview" class="history-layer" style="z-index: 1; display: none;" 
+            data-layer-type="history"></canvas>
+</div>
+```
+
+---
+
+## 🏛️ アーキテクチャ（v5.1継承 + 拡張性強化）
+
+### ToolEngineController（v5.1ベース + 設定注入対応）
+```javascript
+class ToolEngineController {
+    constructor(serviceContainer) {
+        this.serviceContainer = serviceContainer;
+        this.activeEngine = null;
+        this.activeTool = null;
+        
+        // v5.1のバインディングを完全継承 + 設定拡張
+        this.toolBindings = {
+            pen: {
+                engineClass: 'BezierStrokeRenderer',
+                canvasId: 'vector-canvas',
+                exclusive: true,
+                // 🆕 エンジン設定注入（Phase2拡張ツール対応）
+                defaultConfig: { smoothing: 0.8, pressure: true }
+            },
+            eraser: {
+                engineClass: 'Canvas2DRenderer', 
+                canvasId: 'raster-canvas',
+                exclusive: true,
+                // 🆕 エンジン設定注入
+                defaultConfig: { blendMode: 'destination-out', size: 20 }
+            },
+            select: {
+                engineClass: 'KonvaSelectionEngine',
+                targetId: 'konva-stage', 
+                exclusive: true,
+                // 🆕 エンジン設定注入
+                defaultConfig: { multiSelect: true, snapToGrid: false }
+            }
+        };
+        
+        // 🆕 Phase2準備：ツール拡張用レジストリ
+        this.extensionRegistry = new Map();
+    }
+    
+    // v5.1の厳格連動を完全継承
+    selectTool(toolName, customConfig = null) {
+        const binding = this.toolBindings[toolName];
+        if (!binding) {
+            throw new Error(`Unknown tool: ${toolName}`);
+        }
+        
+        // 他エンジン完全停止（座標ズレ防止・v5.1準拠）
+        this.destroyActiveEngine();
+        
+        // 指定エンジン起動 + 設定注入
+        const engineInstance = this.serviceContainer.get(binding.engineClass);
+        const targetElement = document.getElementById(binding.canvasId || binding.targetId);
+        
+        // 🆕 設定マージ（カスタム設定 > デフォルト設定）
+        const finalConfig = { ...binding.defaultConfig, ...customConfig };
+        
+        engineInstance.initialize(targetElement, finalConfig);
+        
+        this.activeEngine = engineInstance;
+        this.activeTool = toolName;
+        
+        // 🆕 Phase2準備：Undo履歴通知
+        this.notifyToolChange(toolName, binding.engineClass);
+        
+        // ステータス更新
+        this.updateStatus(toolName, binding.engineClass);
+    }
+    
+    // 🆕 Phase2拡張ツール登録（同一エンジン・異なる設定対応）
+    registerToolExtension(newToolName, baseToolName, customConfig) {
+        const baseBinding = this.toolBindings[baseToolName];
+        if (!baseBinding) {
+            throw new Error(`Base tool not found: ${baseToolName}`);
+        }
+        
+        // 拡張ツールをレジストリに追加
+        this.extensionRegistry.set(newToolName, {
+            ...baseBinding,
+            toolName: newToolName,
+            customConfig: customConfig,
+            isExtension: true
+        });
+        
+        // Phase1では使用しないが、Phase2でのツール追加に備える
+        console.log(`🔧 Extension registered: ${newToolName} -> ${baseBinding.engineClass}`);
+    }
+    
+    // 🆕 Phase2準備：Undo履歴システムとの連携
+    notifyToolChange(toolName, engineClass) {
+        // Phase2でHistoryStoreに通知予定
+        // 現在は準備のみ
+        if (window.HistoryStore) {
+            window.HistoryStore.recordToolChange(toolName, engineClass);
+        }
+    }
+    
+    destroyActiveEngine() {
+        if (this.activeEngine && this.activeEngine.destroy) {
+            this.activeEngine.destroy();
+            this.activeEngine = null;
+            this.activeTool = null;
+        }
+    }
+    
+    updateStatus(toolName, engineClass) {
+        const toolDisplay = document.getElementById('status-tool');
+        const engineDisplay = document.getElementById('status-engine');
+        
+        if (toolDisplay) toolDisplay.textContent = toolName;
+        if (engineDisplay) engineDisplay.textContent = engineClass.replace('Renderer', '').replace('Engine', '');
+    }
+}
+```
+
+### 🆕 UnifiedHistoryManager（Phase2準備・3エンジン統合Undo対応）
+```javascript
+class UnifiedHistoryManager {
+    constructor() {
+        this.historyStacks = {
+            vector: [],    // Bezier.js操作履歴
+            raster: [],    // Canvas2D操作履歴  
+            interaction: [] // Konva.js操作履歴
+        };
+        this.globalHistory = []; // 全エンジン統合履歴
+        this.currentIndex = -1;
+        this.maxHistorySize = 50;
+    }
+    
+    // 🎯 Phase1実装範囲：基本構造のみ
+    recordAction(engineType, action) {
+        const timestamp = Date.now();
+        const historyItem = {
+            id: `${engineType}_${timestamp}`,
+            engineType,
+            action,
+            timestamp,
+            canvasState: this.captureCanvasState(engineType)
+        };
+        
+        // エンジン別履歴に追加
+        this.historyStacks[engineType].push(historyItem);
+        
+        // グローバル履歴に追加
+        this.globalHistory.push(historyItem);
+        this.currentIndex = this.globalHistory.length - 1;
+        
+        // 履歴サイズ制限
+        this.trimHistory();
+        
+        // 🆕 Phase2準備：UI更新通知
+        this.notifyHistoryChange();
+    }
+    
+    // Phase1では基本実装のみ・Phase2で完全実装
+    undo() {
+        if (this.currentIndex < 0) return false;
+        
+        const item = this.globalHistory[this.currentIndex];
+        
+        // 対応エンジンでのUndoを実行
+        const success = this.executeUndo(item);
+        
+        if (success) {
+            this.currentIndex--;
+            this.notifyHistoryChange();
+        }
+        
+        return success;
+    }
+    
+    // Phase1実装範囲：簡易版（Phase2で高度化）
+    executeUndo(historyItem) {
+        const { engineType, canvasState } = historyItem;
+        
+        switch(engineType) {
+            case 'vector':
+                // Bezier.js用Undo（Phase2で実装）
+                return this.undoVectorAction(canvasState);
+            case 'raster':
+                // Canvas2D用Undo（Phase2で実装）
+                return this.undoRasterAction(canvasState);
+            case 'interaction':
+                // Konva.js用Undo（Phase2で実装） 
+                return this.undoInteractionAction(canvasState);
+            default:
+                return false;
+        }
+    }
+    
+    // Phase1準備：各エンジンのCanvas状態キャプチャ
+    captureCanvasState(engineType) {
+        // 基本実装：ImageDataキャプチャ
+        const canvas = this.getCanvasByEngineType(engineType);
+        if (canvas && canvas.getContext) {
+            const ctx = canvas.getContext('2d');
+            return ctx.getImageData(0, 0, canvas.width, canvas.height);
+        }
+        return null;
+    }
+    
+    getCanvasByEngineType(engineType) {
+        const canvasMap = {
+            vector: document.getElementById('vector-canvas'),
+            raster: document.getElementById('raster-canvas'),
+            interaction: document.querySelector('#konva-stage canvas') // Konva内部Canvas
+        };
+        return canvasMap[engineType];
+    }
+    
+    trimHistory() {
+        if (this.globalHistory.length > this.maxHistorySize) {
+            this.globalHistory.shift();
+            this.currentIndex--;
+        }
+    }
+    
+    // 🆕 Phase2準備：履歴変更通知
+    notifyHistoryChange() {
+        // Phase2でUI更新・履歴可視化で使用
+        const event = new CustomEvent('historyChanged', {
+            detail: {
+                canUndo: this.currentIndex >= 0,
+                canRedo: this.currentIndex < this.globalHistory.length - 1,
+                historySize: this.globalHistory.length
+            }
+        });
+        document.dispatchEvent(event);
+    }
+    
+    // Phase1準備実装（Phase2で完全実装）
+    undoVectorAction(canvasState) {
+        console.log('🔄 Vector undo - Phase2で実装予定');
+        return false; // Phase1では未実装
+    }
+    
+    undoRasterAction(canvasState) {
+        console.log('🔄 Raster undo - Phase2で実装予定');
+        return false; // Phase1では未実装
+    }
+    
+    undoInteractionAction(canvasState) {
+        console.log('🔄 Interaction undo - Phase2で実装予定');
+        return false; // Phase1では未実装
+    }
+}
+```
+
+### DrawingActions（v5.1継承 + Phase2準備）
+```javascript
+class DrawingActions {
+    constructor(store, toolController) {
+        this.store = store;
+        this.toolController = toolController;
+        // 🆕 Phase2準備：履歴管理
+        this.historyManager = new UnifiedHistoryManager();
+    }
+    
+    // v5.1の厳格ツール選択を完全継承
+    selectTool(toolName, customConfig = null) {
+        // AI実装違反チェック（v5.1準拠）
+        this.validateToolImplementation(toolName);
+        
+        // ツール選択 = 自動的にエンジン切替実行
+        this.toolController.selectTool(toolName, customConfig);
+        
+        // Store状態更新（activeMode概念削除継続）
+        this.store.setState({ 
+            activeTool: toolName,
+            // 🆕 Phase2準備：ツール設定状態
+            toolConfig: customConfig || {}
+        });
+        
+        // 🆕 履歴記録
+        this.historyManager.recordAction('system', {
+            type: 'TOOL_CHANGE',
+            toolName,
+            config: customConfig
+        });
+    }
+    
+    // 🆕 Phase2拡張ツール追加（同一エンジン・異なる設定）
+    addToolExtension(newToolName, baseToolName, customConfig) {
+        // Phase1では準備のみ・Phase2で完全実装
+        this.toolController.registerToolExtension(newToolName, baseToolName, customConfig);
+        
+        // Store拡張ツール登録
+        const currentExtensions = this.store.getState().toolExtensions || {};
+        this.store.setState({
+            toolExtensions: {
+                ...currentExtensions,
+                [newToolName]: { baseToolName, customConfig }
+            }
+        });
+    }
+    
+    // v5.1のAI実装チェックを完全継承
+    validateToolImplementation(toolName, implementation) {
+        if (toolName === 'pen' && implementation && implementation.includes('canvas2d')) {
+            throw new Error('🚫 AI実装違反: Canvas2Dでペン描画を実装しようとしました。ペンはBezier.js専用です。');
+        }
+        
+        if (toolName === 'eraser' && implementation && implementation.includes('bezier')) {
+            throw new Error('🚫 AI実装違反: Bezier.jsで消しゴムを実装しようとしました。消しゴムはCanvas2D専用です。');
+        }
+    }
+    
+    // 🆕 Phase2準備：統合Undo/Redo
+    undo() {
+        const success = this.historyManager.undo();
+        if (success) {
+            this.store.setState({ 
+                lastAction: 'UNDO',
+                timestamp: Date.now()
+            });
+        }
+        return success;
+    }
+    
+    redo() {
+        const success = this.historyManager.redo();
+        if (success) {
+            this.store.setState({ 
+                lastAction: 'REDO', 
+                timestamp: Date.now()
+            });
+        }
+        return success;
+    }
+    
+    // 🆕 Phase2準備：全Canvas統合クリア
+    clearAll() {
+        // 全エンジンのCanvasをクリア
+        const vectorCanvas = document.getElementById('vector-canvas');
+        const rasterCanvas = document.getElementById('raster-canvas');
+        const konvaStage = document.getElementById('konva-stage');
+        
+        // Vector Canvas クリア
+        if (vectorCanvas) {
+            const ctx = vectorCanvas.getContext('2d');
+            ctx.clearRect(0, 0, vectorCanvas.width, vectorCanvas.height);
+        }
+        
+        // Raster Canvas クリア
+        if (rasterCanvas) {
+            const ctx = rasterCanvas.getContext('2d');
+            ctx.clearRect(0, 0, rasterCanvas.width, rasterCanvas.height);
+        }
+        
+        // Konva Stage クリア（Phase2で実装）
+        if (konvaStage && window.Konva) {
+            // Konva固有のクリア処理
+        }
+        
+        // 履歴記録
+        this.historyManager.recordAction('system', {
+            type: 'CLEAR_ALL'
+        });
+        
+        // Store更新
+        this.store.setState({ 
+            lastAction: 'CLEAR_ALL',
+            timestamp: Date.now()
+        });
+    }
+}
+```
+
+### 🆕 Phase2移行準備インターフェース
+```javascript
+// Phase2でのVite化・TypeScript移行準備
+class Phase2MigrationInterface {
+    constructor() {
+        this.migrationPlan = {
+            // Vite設定準備
+            viteConfig: {
+                build: {
+                    rollupOptions: {
+                        external: ['bezier-js', 'konva'] // Phase2で外部ライブラリ化
+                    }
+                }
+            },
+            
+            // ファイル分割計画
+            fileSplitPlan: {
+                'src/core/': ['ToolEngineController', 'UnifiedHistoryManager'],
+                'src/renderers/': ['BezierStrokeRenderer', 'Canvas2DRenderer', 'KonvaSelectionEngine'],
+                'src/ui/': ['DrawingUI', 'ControlPanel'],
+                'src/stores/': ['DrawingStore', 'HistoryStore', 'LayerStore']
+            },
+            
+            // TypeScript型定義計画
+            typeDefinitions: {
+                'ToolBinding': 'interface ToolBinding { engineClass: string; canvasId: string; }',
+                'HistoryItem': 'interface HistoryItem { id: string; engineType: string; action: any; }',
+                'DrawingState': 'interface DrawingState { activeTool: string; toolConfig: object; }'
+            }
+        };
+    }
+    
+    // Phase1→Phase2移行チェックリスト生成
+    generateMigrationChecklist() {
+        return {
+            phase1Completion: [
+                '✅ AI誘惑回避原則完全実装',
+                '✅ ツール→エンジン厳格連動実装',
+                '✅ 座標系統一実装（DPR=1固定）',
+                '✅ 3エンジン責務分離実装'
+            ],
+            phase2Preparation: [
+                '🔄 UnifiedHistoryManager基本構造実装済み',
+                '🔄 ToolEngineController拡張性実装済み', 
+                '🔄 Phase2移行インターフェース準備済み',
+                '🔄 data属性によるレイヤー識別準備済み'
+            ],
+            viteTransition: [
+                '📋 単一HTMLファイル→モジュール分割計画完成',
+                '📋 外部ライブラリ依存性整理完了',
+                '📋 TypeScript型定義骨格準備完了'
+            ]
+        };
+    }
+}
+```
+
+---
+
+## 🚀 Phase1実装スケジュール（v5.1継承 + 拡張準備）
+
+### 1週目：AI誘惑回避基盤（v5.1完全準拠）
+**目標**: v5.1のAI実装違反の物理的回避を完全実装
+```javascript
+1. ToolEngineController（v5.1準拠 + 設定注入拡張）
+2. EnforceImplementationRules（v5.1完全継承）
+3. 階層化Canvas HTML構造（v5.1準拠 + data属性追加）
+4. UnifiedCoordinateSystem（v5.1完全継承・DPR=1固定）
+```
+
+### 2週目：専用エンジン実装（v5.1責務固定 + Phase2準備）
+**目標**: 各エンジンの責務完全固定 + 設定注入対応
+```javascript
+1. BezierStrokeRenderer（ペン専用 + 設定注入インターフェース）
+2. Canvas2DRenderer（消しゴム専用 + 設定注入インターフェース）
+3. KonvaSelectionEngine（選択専用 + 設定注入インターフェース）
+4. 🆕 UnifiedHistoryManager基本構造実装
+```
+
+### 3週目：UI実装（v5.1モード切替撤廃 + 履歴UI準備）
+**目標**: ツール選択UI・描画モード概念完全廃止 + Undo UI
+```javascript
+1. ツール選択UI実装（v5.1完全準拠）
+2. コントロールパネル実装（v5.1準拠 + 設定表示）
+3. 🆕 UndoボタンUI実装（履歴統合準備）
+4. ステータスバー実装（v5.1準拠 + 履歴状態表示）
+```
+
+### 4週目：Store/Actions統合（v5.1誘惑回避 + Phase2準備）
+**目標**: AI実装チェック組み込み・SOLID準拠 + 拡張性確保
+```javascript
+1. ServiceContainer実装（v5.1完全準拠）
+2. Store/Actions/UI統合（v5.1準拠 + 履歴状態追加）
+3. 🆕 Phase2MigrationInterface実装
+4. AI実装チェック統合（v5.1完全継承）
+```
+
+### 5週目：品質確保・Phase2準備完成
+**目標**: Phase1完成 + Phase2移行基盤確立
+```javascript
+1. 座標系統一確認（v5.1完全準拠）
+2. AI実装違反回避確認（v5.1完全継承）
+3. 🆕 Phase2移行チェックリスト完成
+4. 🆕 Vite化準備・外部依存整理完了
+```
+
+---
+
+## 🚫 Phase1絶対禁止事項（v5.1完全継承）
+
+v5.1の禁止事項を100%継承・追加禁止事項なし
+
+```javascript
+// 🚫 絶対禁止：Canvas2Dでペン描画実装（v5.1継承）
+// 🚫 絶対禁止：描画モード切替UI実装（v5.1継承）
+// 🚫 絶対禁止：手動エンジン切替実装（v5.1継承）
+
+// ✅ 唯一許可：ツール選択 = エンジン自動起動（v5.1継承）
+// 🆕 Phase2準備として許可：設定注入・履歴管理・拡張レジストリ
+```
+
+---
+
+## ✅ Phase1完成判定チェックリスト（v5.1継承 + Phase2準備）
+
+### v5.1準拠チェック（完全継承）
+- [ ] Canvas2D + ペンツールの組み合わせが存在しないか？
+- [ ] 描画モード切替UI（Vec/Ras/Int）が完全撤廃されているか？
+- [ ] 手動switchMode()関数が実装されていないか？
+- [ ] ツール選択 = エンジン自動切替が実装されているか？
+- [ ] DPR=1固定が全エンジンで統一されているか？
+- [ ] 各エンジンが責務を越境していないか？
+
+### 🆕 Phase2準備確認
+- [ ] UnifiedHistoryManager基本構造が実装されているか？
+- [ ] ToolEngineController設定注入対応が実装されているか？
+- [ ] Phase2MigrationInterface準備が完了しているか？
+- [ ] data属性によるレイヤー識別が準備されているか？
+- [ ] Vite化移行計画が文書化されているか？
+
+### 🆕 統合Undo準備確認
+- [ ] 3エンジン履歴キャプチャ基盤が実装されているか？
+- [ ] グローバル履歴管理構造が準備されているか？
+- [ ] UndoボタンUI基本実装が完了しているか？
+- [ ] 履歴状態通知システムが準備されているか？
+
+---
+
+## 💡 v5.2の重要改善点
+
+### 1. v5.1の価値完全継承
+- **AI誘惑回避原則**: 100%維持・変更なし
+- **座標ズレ根本解決**: DPR=1固定・完全継承
+- **ツール厳格連動**: モード概念廃止・完全継承
+
+### 2. Phase2拡張性確保
+- **設定注入システム**: 同一エンジン・異なる設定ツール対応
+- **統合履歴管理**: 3エンジン横断Undo/Redo基盤
+- **Vite移行準備**: 単一HTML→モジュール分割計画
+
+### 3. 段階的進化戦略
+- **Phase1**: v5.1の成果を100%活用
+- **Phase2移行**: 破綻的変更なし・段階的拡張のみ
+- **開発継続性**: 既存コードの価値を最大限保持
+
+### 4. 具体的Phase2対応
+- **GEMINIの指摘1**: engineConfig設定注入で同一エンジン・異なるツール対応
+- **GEMINIの指摘2**: UnifiedHistoryManagerで3エンジン統合Undo対応
+
+---
+
+**Phase1実装憲章 v5.2 - AI誘惑回避継承・Phase2拡張基盤確立版**
+*v5.1価値100%継承・段階的進化・5週間完成+Phase2準備・Chrome特化*

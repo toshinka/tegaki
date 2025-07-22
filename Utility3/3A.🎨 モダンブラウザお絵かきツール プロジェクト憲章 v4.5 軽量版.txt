@@ -1,0 +1,154 @@
+# 🎨 モダンブラウザお絵かきツール プロジェクト憲章 v4.5 軽量版
+
+## 🎯 基本方針（必須遵守）
+
+### ライブラリ信頼原則
+既存の完成品ライブラリ（Bezier.js、twgl.js、OGL等）の結果を完全信頼し、独自実装・再発明を一切禁止。エンジンの役割は統合のみ。
+
+### 描画モード完全分離原則
+- **Vector Mode**: Bezier.js専用（正確軌跡ペン描画）
+- **Raster Mode**: Canvas2D専用（ブラシ・消しゴム）  
+- **Interactive Mode**: Konva.js専用（選択・移動・変形）
+- **同時実行完全禁止**: 座標系・イベント競合の完全回避
+
+### DPR固定原則
+Retina対応を意図的に無効化（DPR=1固定）。Windows環境での液タブ・マルチモニタ対応とユーザー期待値安定性を優先。
+
+## 🚫 禁止事項（憲章違反）
+- 複数描画エンジンの同一Canvas要素への同時バインド
+- 複数描画モードの同時実行（座標系・イベント競合の原因）
+- Konva.jsをペン描画ツールとして使用（必ず選択・移動専用）
+- 既存ライブラリで解決可能な処理の独自実装・再発明
+
+## 🏗️ 技術スタック（Chrome特化・段階導入）
+
+### Phase1: HTML単一ファイル基盤
+```javascript
+// 描画エンジン（完全分離）
+Bezier.js + 筆圧処理     // Vector: 正確軌跡描画
+Canvas2D API             // Raster: ブラシ・消しゴム
+Konva.js                 // Interactive: 選択・移動・変形
+
+// GPU描画（段階移行）
+twgl.js → OGL → regl → WebGPU
+
+// モダンUI
+Tailwind CSS + tailwind-animate
+Phosphor Icons（統一アイコン）
+
+// 入力処理
+Pointer Events API       // 筆圧・チルト統合
+```
+
+### 開発環境戦略
+```
+Phase1: HTML単一ファイル運用 → Phase2: Vite化移行
+単一HTMLファイル + CDNライブラリ → ES6 Modules + npm管理
+```
+
+## 🎯 アーキテクチャ（SOLID準拠）
+
+### 核心データフロー
+```
+UI → Actions → Store → UIが状態購読
+DrawingModeController → 描画エンジン切り替え（競合完全回避）
+ServiceContainer → DI統一管理
+```
+
+### 描画モード分離戦略（競合回避）
+```javascript
+class DrawingModeController {
+    constructor() {
+        this.modes = { VECTOR: 'vector', RASTER: 'raster', INTERACT: 'interact' };
+        this.activeMode = this.modes.VECTOR;
+    }
+    
+    switchMode(newMode) {
+        this.stopAllEngines();    // 他エンジン完全停止
+        this.startEngine(newMode); // 新エンジン単独起動
+    }
+}
+
+// Canvas要素完全分離（同一要素共有禁止）
+const canvasStructure = {
+    vectorCanvas: '#vector-layer',    // Bezier.js専用
+    rasterCanvas: '#raster-layer',    // Canvas2D専用
+    interactiveStage: '#konva-stage'  // Konva.js専用
+};
+```
+
+## 🚀 Phase1実装計画（5週間）
+
+### 最優先：競合回避基盤（1-2週目）
+1. **DrawingModeController**: エンジン切り替え・競合回避
+2. **UnifiedCoordinateSystem**: DPR=1固定・座標統一
+3. **階層化Canvas構造**: 描画エンジン完全分離
+4. **UnifiedInputProcessor**: イベント一元管理
+
+### 核心機能実装（3-4週目）
+1. **BezierStrokeRenderer**: Bezier.js統合・正確軌跡描画
+2. **Canvas2DRenderer**: ラスター描画専用エンジン
+3. **KonvaSelectionEngine**: 選択・移動専用エンジン
+4. **Tailwind CSS UI**: モダンレスポンシブUI
+5. **Phosphor Icons**: 統一アイコンシステム
+
+### 統合・品質確保（5週目）
+1. **ServiceContainer**: DI統合
+2. **Store/Actions/UI**: 三層アーキテクチャ
+3. **エラーハンドリング**: 統一例外処理
+4. **競合エラー回避確認**: 品質保証
+
+## 🔗 外部連携（ふたば特化）
+
+### 汎用連携API
+```typescript
+interface DrawingToolConfig {
+    mode: 'standalone' | 'embedded';
+    constraints?: { maxSize: number; maintainAspectRatio: boolean; };
+    ui?: { theme: 'light' | 'dark' | 'embedded'; layout: 'full' | 'compact'; };
+    callbacks?: { onComplete: (imageData: string) => void; onCancel: () => void; };
+}
+```
+
+### ふたばカラーパレット
+```javascript
+const FUTABA_COLORS = {
+    main: '#800000',      // 暗赤（デフォルトペン色）
+    accent: '#f0e0d6',    // 薄ベージュ（レイヤー背景）
+    background: '#ffffee' // 背景色
+};
+```
+
+## 🎯 差別化ポイント
+
+### 技術的優位性
+1. **Chrome特化**: 最新API完全活用
+2. **正確軌跡描画**: Bezier.js中心・期待値一致設計
+3. **GPU段階移行**: twgl→OGL→regl→WebGPU
+4. **ハイブリッド描画**: ベクター+ラスター+インタラクティブ最適統合
+
+### 設計的優位性
+1. **完全SOLID準拠**: 業界初の完全SOLID準拠描画ツール
+2. **競合完全回避**: DrawingModeController中心設計
+3. **責務完全分離**: Store/Actions/UI三層構造
+4. **AI協働最適化**: 明確責務による指示精度向上
+
+## 📋 実装成功チェックポイント
+
+### Phase1実装前（競合回避確認）
+- [ ] Canvas要素が描画エンジンごとに完全分離されているか？
+- [ ] DrawingModeControllerで他エンジンの完全停止を実装したか？
+- [ ] DPR=1固定が全エンジンで統一されているか？
+- [ ] ServiceContainer循環依存チェック完了したか？
+
+### Phase1完成判定
+- [ ] ペンが最後まで正確に描けるか？（競合エラーなし）
+- [ ] モード切り替え時にエラーが発生しないか？
+- [ ] 座標ズレが発生しないか？
+- [ ] SOLID原則5項目完全遵守
+- [ ] Chrome最新版完動・組み込みモード動作確認
+- [ ] **ユーザー期待値一致確認**（正確軌跡描画・L字問題解決）
+
+---
+
+*v4.5軽量版 - 行数を約70%削減、核心機能に特化*

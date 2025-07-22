@@ -1,0 +1,491 @@
+# 🎨 モダンブラウザお絵かきツール Phase1実装憲章 v5.1
+
+## 🎯 Phase1実装目標（5週間完成）
+**単一HTMLファイルでの完全動作するモダンお絵かきツール**
+- Chrome最新版特化・組み込みモード対応
+- AI誘惑完全回避・ツール→エンジン厳格連動
+- SOLID原則完全遵守・座標ズレ根本解決
+
+---
+
+## 🚨 【最重要】AI誘惑回避原則（Phase1成功の絶対要件）
+
+### ツール選択とエンジン起動の厳格連動（新原則）
+```javascript
+// 🚫 旧方式（禁止）：描画モード切替UI
+// <button data-mode="vector">Vec</button>  ← 完全撤廃
+// <button data-mode="raster">Ras</button>  ← 完全撤廃
+// <button data-mode="interact">Int</button>  ← 完全撤廃
+
+// ✅ 新方式（唯一許可）：ツール選択 = エンジン自動起動
+const TOOL_ENGINE_BINDING = {
+    'pen': {
+        engine: 'BezierStrokeRenderer',
+        canvas: '#vector-canvas',
+        description: 'Bezier.js専用・正確軌跡描画'
+    },
+    'eraser': {
+        engine: 'Canvas2DRenderer',
+        canvas: '#raster-canvas', 
+        description: 'Canvas2D専用・消しゴム特化'
+    },
+    'select': {
+        engine: 'KonvaSelectionEngine',
+        target: '#konva-stage',
+        description: 'Konva.js専用・選択移動特化'
+    }
+};
+```
+
+### Canvas要素の絶対的責務分離
+```html
+<!-- 必須HTML構造（責務完全固定） -->
+<div class="canvas-container">
+    <!-- Bezier.js専用：ペンツールのみ使用可能 -->
+    <canvas id="vector-canvas" class="drawing-layer" style="z-index: 3;"></canvas>
+    
+    <!-- Canvas2D専用：消しゴム・塗りつぶしのみ使用可能 -->
+    <canvas id="raster-canvas" class="drawing-layer" style="z-index: 2;"></canvas>
+    
+    <!-- Konva.js専用：選択・移動・変形のみ使用可能 -->
+    <div id="konva-stage" class="interaction-layer" style="z-index: 4;"></div>
+</div>
+```
+
+### AI指示強制遵守システム
+```javascript
+class EnforceImplementationRules {
+    constructor() {
+        // AIが違反しやすい実装パターンを検出・阻止
+        this.violations = {
+            CANVAS2D_PEN_USAGE: 'Canvas2Dでペン描画を実装した',
+            MULTI_ENGINE_CANVAS: '同一Canvas要素に複数エンジンをバインドした',
+            MANUAL_MODE_SWITCH: '手動モード切替UIを実装した'
+        };
+    }
+    
+    // AI実装チェック：違反検出時は強制停止
+    validateImplementation(code) {
+        if (code.includes('canvas2d') && code.includes('pen')) {
+            throw new Error(this.violations.CANVAS2D_PEN_USAGE + ' - 絶対禁止');
+        }
+        
+        if (code.includes('switchMode') && code.includes('UI')) {
+            throw new Error(this.violations.MANUAL_MODE_SWITCH + ' - 絶対禁止');
+        }
+    }
+}
+```
+
+---
+
+## 🎨 外観仕様（ふたば準拠・モード切替UI撤廃版）
+
+### カラーテーマ（変更不可）
+```css
+:root {
+    --main-color: #800000;        /* メインカラー（マルーン） */
+    --sub-color: #aa5a56;         /* サブカラー（薄いマルーン） */
+    --light-bg: #e9c2ba;         /* 薄いピンクベージュ */
+    --canvas-bg: #f0e0d6;        /* キャンバス背景（クリーム） */
+    --app-bg: #ffffee;           /* アプリ背景（薄黄） */
+    --text-color: #800000;       /* テキストカラー */
+}
+```
+
+### レイアウト構成（モード切替UI完全撤廃）
+```html
+<div class="app-container h-screen flex bg-[#ffffee] overflow-hidden">
+    <!-- 左サイドツールバー（60px固定・ツール選択のみ） -->
+    <div class="sidebar w-[60px] bg-[rgba(128,0,0,0.05)] border-r border-[#aa5a56] p-2.5 flex flex-col gap-2.5">
+        <!-- ペンツール（自動でBezier.js起動） -->
+        <button class="tool-btn active w-10 h-10 rounded-md bg-[rgba(255,255,255,0.8)] border border-[#800000] flex items-center justify-center hover:bg-[#aa5a56] hover:-translate-y-px transition-all duration-200" data-tool="pen">
+            <i class="ph-pen text-[16px] text-[#800000]"></i>
+        </button>
+        
+        <!-- 消しゴムツール（自動でCanvas2D起動） -->
+        <button class="tool-btn w-10 h-10 rounded-md bg-[rgba(255,255,255,0.8)] border border-[#800000] flex items-center justify-center hover:bg-[#aa5a56] hover:-translate-y-px transition-all duration-200" data-tool="eraser">
+            <i class="ph-eraser text-[16px] text-[#800000]"></i>
+        </button>
+        
+        <!-- 選択ツール（自動でKonva.js起動） -->
+        <button class="tool-btn w-10 h-10 rounded-md bg-[rgba(255,255,255,0.8)] border border-[#800000] flex items-center justify-center hover:bg-[#aa5a56] hover:-translate-y-px transition-all duration-200" data-tool="select">
+            <i class="ph-arrows-out-simple text-[16px] text-[#800000]"></i>
+        </button>
+    </div>
+    
+    <!-- メインキャンバスエリア（座標系統一・DPR=1固定） -->
+    <div class="canvas-area flex-1 flex items-center justify-center bg-[#ffffee]">
+        <div class="canvas-wrapper bg-[#f0e0d6] border border-[#800000] rounded shadow-[0_4px_16px_rgba(128,0,0,0.15)] cursor-crosshair">
+            <!-- 責務固定・座標統一Canvas構造 -->
+            <div class="canvas-container relative" style="width: 500px; height: 300px;">
+                <canvas id="vector-canvas" class="absolute inset-0" style="z-index: 3;"></canvas>
+                <canvas id="raster-canvas" class="absolute inset-0" style="z-index: 2;"></canvas>
+                <div id="konva-stage" class="absolute inset-0" style="z-index: 4;"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- フローティングコントロールパネル -->
+    <div id="control-panel" class="fixed top-4 left-[75px] w-[280px] bg-[rgba(255,255,255,0.95)] border border-[rgba(128,0,0,0.2)] rounded-lg p-4 shadow-[0_8px_24px_rgba(128,0,0,0.15)] hidden">
+        <!-- 動的コンテンツ：選択されたツール専用設定のみ表示 -->
+    </div>
+    
+    <!-- アクションボタンエリア -->
+    <div class="action-buttons fixed top-2.5 right-4 flex gap-2">
+        <button class="px-3 py-1.5 bg-[rgba(255,255,255,0.9)] border border-[#800000] rounded text-[11px] flex items-center gap-1 hover:bg-[#800000] hover:text-white transition-colors duration-200">
+            <i class="ph-trash"></i>クリア
+        </button>
+        <button class="px-3 py-1.5 bg-[rgba(255,255,255,0.9)] border border-[#800000] rounded text-[11px] flex items-center gap-1 hover:bg-[#800000] hover:text-white transition-colors duration-200">
+            <i class="ph-arrow-counter-clockwise"></i>取り消し
+        </button>
+    </div>
+    
+    <!-- ステータスバー（エンジン表示→ツール表示に変更） -->
+    <div class="status-bar fixed bottom-0 left-0 right-0 h-7 bg-[rgba(128,0,0,0.05)] border-t border-[rgba(128,0,0,0.1)] px-4 flex items-center gap-4 text-[10px]">
+        <div class="flex items-center gap-1">
+            <span>アクティブ:</span>
+            <span class="font-semibold text-[#aa5a56] min-w-[20px]" id="status-tool">ペン</span>
+        </div>
+        <div class="flex items-center gap-1">
+            <span>エンジン:</span>
+            <span class="font-semibold text-[#aa5a56] min-w-[20px]" id="status-engine">Bezier.js</span>
+        </div>
+        <div class="flex items-center gap-1">
+            <span>筆圧:</span>
+            <span class="font-semibold text-[#aa5a56] min-w-[20px]" id="status-pressure">0.00</span>
+        </div>
+        <div class="flex items-center gap-1">
+            <span>FPS:</span>
+            <span class="font-semibold text-[#aa5a56] min-w-[20px]" id="status-fps">60</span>
+        </div>
+        <div class="flex items-center gap-1">
+            <span>解像度:</span>
+            <span class="font-semibold text-[#aa5a56] min-w-[20px]" id="status-resolution">500×300</span>
+        </div>
+    </div>
+</div>
+```
+
+---
+
+## 🏛️ アーキテクチャ（誘惑回避・厳格連動版）
+
+### ToolEngineController（旧ModeController完全刷新）
+```javascript
+class ToolEngineController {
+    constructor(serviceContainer) {
+        this.serviceContainer = serviceContainer;
+        this.activeEngine = null;
+        this.activeTool = null;
+        
+        // ツール→エンジン厳格バインディング（変更不可）
+        this.toolBindings = {
+            pen: {
+                engineClass: 'BezierStrokeRenderer',
+                canvasId: 'vector-canvas',
+                exclusive: true // 他エンジン完全停止必須
+            },
+            eraser: {
+                engineClass: 'Canvas2DRenderer', 
+                canvasId: 'raster-canvas',
+                exclusive: true
+            },
+            select: {
+                engineClass: 'KonvaSelectionEngine',
+                targetId: 'konva-stage', 
+                exclusive: true
+            }
+        };
+    }
+    
+    // ツール選択 = 自動エンジン切替（唯一の切替方法）
+    selectTool(toolName) {
+        const binding = this.toolBindings[toolName];
+        if (!binding) {
+            throw new Error(`Unknown tool: ${toolName}`);
+        }
+        
+        // 他エンジン完全停止（座標ズレ防止）
+        this.destroyActiveEngine();
+        
+        // 指定エンジン起動
+        const engineInstance = this.serviceContainer.get(binding.engineClass);
+        const targetElement = document.getElementById(binding.canvasId || binding.targetId);
+        
+        engineInstance.initialize(targetElement);
+        
+        this.activeEngine = engineInstance;
+        this.activeTool = toolName;
+        
+        // ステータス更新
+        this.updateStatus(toolName, binding.engineClass);
+    }
+    
+    destroyActiveEngine() {
+        if (this.activeEngine && this.activeEngine.destroy) {
+            this.activeEngine.destroy();
+            this.activeEngine = null;
+            this.activeTool = null;
+        }
+    }
+    
+    updateStatus(toolName, engineClass) {
+        const toolDisplay = document.getElementById('status-tool');
+        const engineDisplay = document.getElementById('status-engine');
+        
+        if (toolDisplay) toolDisplay.textContent = toolName;
+        if (engineDisplay) engineDisplay.textContent = engineClass.replace('Renderer', '').replace('Engine', '');
+    }
+}
+```
+
+### DrawingActions（AI誘惑回避版）
+```javascript
+class DrawingActions {
+    constructor(store, toolController) {
+        this.store = store;
+        this.toolController = toolController;
+    }
+    
+    // ツール選択（モード概念完全廃止）
+    selectTool(toolName) {
+        // ツール選択 = 自動的にエンジン切替実行
+        this.toolController.selectTool(toolName);
+        
+        // Store状態更新
+        this.store.setState({ 
+            activeTool: toolName,
+            // activeMode削除：概念自体を廃止
+        });
+    }
+    
+    // AI実装チェック：Canvas2D + ペンの組み合わせを検出・阻止
+    validateToolImplementation(toolName, implementation) {
+        if (toolName === 'pen' && implementation.includes('canvas2d')) {
+            throw new Error('🚫 AI実装違反: Canvas2Dでペン描画を実装しようとしました。ペンはBezier.js専用です。');
+        }
+        
+        if (toolName === 'eraser' && implementation.includes('bezier')) {
+            throw new Error('🚫 AI実装違反: Bezier.jsで消しゴムを実装しようとしました。消しゴムはCanvas2D専用です。');
+        }
+    }
+}
+```
+
+### DrawingUI（モード切替UI完全撤廃版）
+```javascript
+class DrawingUI {
+    constructor(store, actions) {
+        this.store = store;
+        this.actions = actions;
+        this.elements = this.initializeElements();
+        this.bindEvents();
+        this.subscribeToStore();
+    }
+    
+    initializeElements() {
+        return {
+            // モードボタン削除：modeButtons: document.querySelectorAll('.mode-btn'),
+            toolButtons: document.querySelectorAll('.tool-btn'),
+            controlPanel: document.getElementById('control-panel')
+        };
+    }
+    
+    bindEvents() {
+        // ツールボタンのみ：クリック = ツール選択 = エンジン自動切替
+        this.elements.toolButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const toolName = e.target.closest('.tool-btn').dataset.tool;
+                this.actions.selectTool(toolName);
+            });
+        });
+    }
+    
+    subscribeToStore() {
+        this.store.subscribe((state) => this.render(state));
+    }
+    
+    render(state) {
+        // UI状態をStore状態に同期
+        this.updateActiveToolButton(state.activeTool);
+        this.updateControlPanel(state.activeTool);
+        // updateModeButtons削除：概念廃止
+    }
+    
+    updateActiveToolButton(activeTool) {
+        this.elements.toolButtons.forEach(btn => {
+            const isActive = btn.dataset.tool === activeTool;
+            btn.classList.toggle('active', isActive);
+        });
+    }
+    
+    updateControlPanel(activeTool) {
+        // アクティブツール専用の設定パネルを表示
+        const panel = this.elements.controlPanel;
+        
+        switch(activeTool) {
+            case 'pen':
+                panel.innerHTML = this.generatePenControls();
+                break;
+            case 'eraser':
+                panel.innerHTML = this.generateEraserControls();
+                break;
+            case 'select':
+                panel.innerHTML = this.generateSelectControls();
+                break;
+        }
+    }
+}
+```
+
+---
+
+## 🚀 Phase1実装スケジュール（座標ズレ根本解決版）
+
+### 1週目：AI誘惑回避基盤（最重要）
+**目標**: AI実装違反の物理的回避
+```javascript
+// 実装優先順位
+1. ToolEngineController      // モード概念廃止・ツール→エンジン厳格連動
+2. EnforceImplementationRules // AI実装チェック・違反検出システム  
+3. 階層化Canvas HTML構造     // 責務完全固定・絶対的分離
+4. UnifiedCoordinateSystem   // DPR=1固定・座標統一（全エンジン強制適用）
+```
+
+### 2週目：専用エンジン実装（責務固定版）
+**目標**: 各エンジンの責務完全固定・越境禁止
+```javascript
+1. BezierStrokeRenderer     // ペン描画専用（他ツール実装絶対禁止）
+2. Canvas2DRenderer         // 消しゴム専用（ペン描画実装絶対禁止）
+3. KonvaSelectionEngine     // 選択・移動専用（描画機能実装絶対禁止）
+```
+
+### 3週目：UI実装（モード切替撤廃版）
+**目標**: ツール選択UI・描画モード概念完全廃止
+```javascript
+1. ツール選択UI実装         // ペン・消しゴム・選択のみ
+2. コントロールパネル実装   // アクティブツール専用設定
+3. ステータスバー実装      // ツール名・エンジン名表示
+4. Tailwind CSS + Phosphor Icons統合
+```
+
+### 4週目：Store/Actions統合（誘惑回避版）
+**目標**: AI実装チェック組み込み・SOLID準拠
+```javascript
+1. ServiceContainer実装     // DI統一管理
+2. Store/Actions/UI統合     // activeMode概念完全削除
+3. AI実装チェック統合       // 違反検出・強制停止
+4. パフォーマンス最適化     // 60FPS維持
+```
+
+### 5週目：品質確保・完成
+**目標**: Phase1完成・座標ズレ根本解決確認
+```javascript
+1. 座標系統一確認          // DPR=1固定・全エンジン統一確認
+2. AI実装違反回避確認      // Canvas2D+ペンの組み合わせチェック
+3. Chrome組み込みモード    // 外部連携テスト
+4. 最終UI/UX調整          // 外観仕様準拠確認
+```
+
+---
+
+## 🚫 Phase1絶対禁止事項（AI誘惑回避版）
+
+### 実装パターン絶対禁止
+```javascript
+// 🚫 絶対禁止：Canvas2Dでペン描画実装
+// AIが最も誘惑されやすいパターン
+const canvas = document.getElementById('any-canvas');
+const ctx = canvas.getContext('2d');
+ctx.beginPath();  // ← ペンツールでこれを実装したらAI違反
+
+// 🚫 絶対禁止：描画モード切替UI実装
+<button data-mode="vector">Vec</button>  // ← 存在自体が禁止
+
+// 🚫 絶対禁止：手動エンジン切替実装
+function switchMode(mode) {  // ← この関数自体が禁止
+    // ...
+}
+
+// ✅ 唯一許可：ツール選択 = エンジン自動起動
+function selectTool(toolName) {  // ← これのみ実装許可
+    toolController.selectTool(toolName);
+}
+```
+
+### AI指示時の強制遵守事項
+```markdown
+AI実装指示テンプレート（必須使用）:
+「〇〇ツールを実装してください。
+- ツールは『pen/eraser/select』の3つのみ存在
+- pen = BezierStrokeRenderer + #vector-canvas（厳格固定）
+- eraser = Canvas2DRenderer + #raster-canvas（厳格固定）  
+- select = KonvaSelectionEngine + #konva-stage（厳格固定）
+- 描画モード切替UI実装絶対禁止
+- Canvas2Dでペン描画実装絶対禁止
+- DPR=1固定で座標変換統一実装」
+```
+
+---
+
+## ✅ Phase1完成判定チェックリスト（誘惑回避版）
+
+### AI誘惑回避確認（最重要）
+- [ ] Canvas2D + ペンツールの組み合わせが存在しないか？（AI最大誘惑）
+- [ ] 描画モード切替UI（Vec/Ras/Int）が完全撤廃されているか？
+- [ ] 手動switchMode()関数が実装されていないか？
+- [ ] ツール選択 = エンジン自動切替が実装されているか？
+- [ ] EnforceImplementationRulesが動作しているか？
+
+### 座標系統一確認（根本解決）
+- [ ] DPR=1固定が全エンジンで統一されているか？
+- [ ] UnifiedCoordinateSystemが全エンジンに適用されているか？
+- [ ] Canvas要素のwidth/height = style.width/heightが一致しているか？
+- [ ] Y軸座標のズレが発生しないか？（切替時含む）
+- [ ] 描画軌跡が最後まで正確に追従するか？
+
+### 責務分離確認（競合回避）
+- [ ] ペン描画がBezier.js + #vector-canvasでのみ実装されているか？
+- [ ] 消しゴムがCanvas2D + #raster-canvasでのみ実装されているか？
+- [ ] 選択機能がKonva.js + #konva-stageでのみ実装されているか？
+- [ ] 各エンジンが他の責務を実装していないか？
+
+### SOLID原則遵守確認
+- [ ] **S**：各クラス（ツール）が単一責務を持っているか？
+- [ ] **O**：新ツール追加時に既存コードを変更せずに済むか？
+- [ ] **L**：各エンジンが抽象インターフェースに準拠しているか？
+- [ ] **I**：インターフェースがツールごとに適切分離されているか？
+- [ ] **D**：具象エンジンではなく抽象に依存しているか？
+
+### 外観仕様準拠確認
+- [ ] ふたばカラーパレット完全準拠？
+- [ ] ツール選択UI（ペン・消しゴム・選択）のみ存在？
+- [ ] モード切替UI（Vec/Ras/Int）が完全撤廃されているか？
+- [ ] Phosphor Icons正しく表示？
+- [ ] ステータスバーがツール名・エンジン名を正確表示？
+
+---
+
+## 💡 v5.1の重要改善点
+
+### 1. 座標ズレ根本解決
+- **問題**: エンジン切替時のY軸座標ズレ
+- **解決**: モード切替UI完全撤廃 → ツール選択のみ → 座標系統一維持
+
+### 2. AI誘惑完全回避
+- **問題**: AIがCanvas2Dでペン描画を実装してしまう
+- **解決**: 物理的に選択肢を排除 → ツール→エンジン厳格バインディング
+
+### 3. 実装の単純化
+- **問題**: 複雑なモード管理による競合エラー
+- **解決**: モード概念完全廃止 → ツール選択 = エンジン自動起動
+
+### 4. UI/UX改善  
+- **問題**: ユーザーの混乱（モードとツールの違い）
+- **解決**: 直感的ツール選択のみ → 描画体験向上
+
+---
+
+**Phase1実装憲章 v5.1 - AI誘惑回避・座標ズレ根本解決・ツール厳格連動版**
+*モード切替完全撤廃・責務固定・5週間完成目標・Chrome特化*
