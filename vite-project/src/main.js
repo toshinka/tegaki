@@ -35,8 +35,9 @@ async function initializeApp() {
     const toolEngineController = new ToolEngineController(container);
     container.register('toolEngineController', toolEngineController);
 
-    // ToolPanel初期化（UI制御）
+    // ToolPanel初期化（UI制御）- containerを渡すように修正
     const toolPanel = new ToolPanel(container);
+    container.register('toolPanel', toolPanel);
     
     // レンダラー初期化
     bezierRenderer.initCanvas();

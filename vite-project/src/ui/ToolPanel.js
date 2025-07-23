@@ -11,10 +11,11 @@
  * - 既存デザイン継承
  * - Store/Actions連動確認
  */
-class ToolPanel {
-    constructor(toolStore) {
-        this.toolStore = toolStore;
-        this.toolActions = toolStore.actions;
+export class ToolPanel {
+    constructor(container) {
+        this.container = container;
+        this.toolStore = container.resolve('toolStore');
+        this.toolActions = this.toolStore.actions;
         
         // UI要素参照
         this.toolbarElement = null;
@@ -334,4 +335,35 @@ class ToolPanel {
         const statusSize = document.getElementById('statusSize');
         const statusOpacity = document.getElementById('statusOpacity');
         
-        if (statusSize && settings.size !== undefined)
+        if (statusSize && settings.size !== undefined) {
+            statusSize.textContent = settings.size;
+        }
+        if (statusOpacity && settings.opacity !== undefined) {
+            statusOpacity.textContent = Math.round(settings.opacity * 100) + '%';
+        }
+    }
+
+    /**
+     * Store状態からUI全体更新
+     */
+    updateUIFromStore() {
+        const currentTool = this.toolStore.getCurrentTool();
+        const settings = this.toolStore.getToolSettings(currentTool);
+        
+        this.updateActiveToolButton(currentTool);
+        this.updateControlPanelVisibility(currentTool);
+        this.updateControlValues(currentTool, settings);
+        this.updateStatusBar(currentTool, settings);
+    }
+
+    /**
+     * クリーンアップ
+     */
+    destroy() {
+        if (this.unsubscribe) {
+            this.unsubscribe();
+        }
+        this.toolButtons.clear();
+        this.controlPanels.clear();
+    }
+}
