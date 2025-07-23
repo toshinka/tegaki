@@ -1,10 +1,12 @@
 /**
- * Canvas2DRenderer.js - Canvas2D専用ラスター描画エンジン
- * * 憲章準拠：
+ * Canvas2DRenderer.js - Canvas2D専用ラスター描画エンジン (ES6モジュール版)
+ * 
+ * 憲章準拠：
  * - ブラシ・消しゴムツール専用（ペンツール絶対禁止）
  * - ラスター描画に特化した設計
  * - BezierStrokeRenderer.jsとの役割分離厳守
- * * Phase2-A制約：
+ * 
+ * Phase2-A制約：
  * - 最小限の実装（後回し可能）
  * - ToolEngineController経由でのみアクセス
  */

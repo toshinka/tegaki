@@ -1,0 +1,678 @@
+修正版実装指示書:
+
+BezierStrokeRenderer WebGL2完全移行 - 改善版実装指示書
+
+依頼概要
+既存のBezierStrokeRenderer.jsを、Canvas2Dへの依存を完全に排除し、twgl.jsを利用した高性能なWebGL2専用エンジンとして完全に書き直してください。
+
+修正対象ファイル
+
+src/main.js
+
+src/engine/BezierStrokeRenderer.js
+
+index.html (エラー表示用CSS/HTML追加)
+
+最重要原則（厳格遵守）
+
+WebGL2専用: Canvas2DおよびWebGL1へのフォールバックや条件分岐は一切実装しない。WebGL2が利用できない場合は、完全に処理を中断しエラーを表示する。
+
+ファイル構成維持: 既存のBezierStrokeRenderer.jsを直接書き換え（新ファイル作成禁止）。
+
+twgl.js活用: WebGLの定型処理は必ずtwgl.jsのヘルパー関数を使用。
+
+既存クラス保持: VectorStroke、BezierStrokeOptimizer等のデータ処理クラスはロジック維持。
+
+DPR固定: CanvasのDPR（Device Pixel Ratio）は1に固定する。動的にwindow.devicePixelRatioを使用しない。
+
+軌跡正確性優先: シェーダーでの描画は、シンプルさと軌跡の正確性を最優先とする。過度な描画効果（アンチエイリアシングなど）は、別途明確な指示があるまで実装しない。
+
+ステップ1: index.html - エラー表示UI追加
+1.1 CSS追加
+<style>タグ内に以下を追加：
+
+CSS
+
+.error-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.8); color: white;
+    display: none; align-items: center; justify-content: center;
+    text-align: center; font-family: sans-serif; z-index: 1000;
+}
+.error-content {
+    max-width: 500px; padding: 2em;
+    background: rgba(40, 40, 40, 0.9); border-radius: 8px;
+}
+.error-title { font-size: 1.5em; margin-bottom: 1em; color: #ff6b6b; }
+.error-message { font-size: 1em; line-height: 1.4; }
+.error-details { font-size: 0.9em; margin-top: 1em; opacity: 0.8; }
+1.2 HTML追加
+<body>タグの直下に以下を追加：
+
+HTML
+
+<div id="error-overlay" class="error-overlay">
+    <div class="error-content">
+        <div class="error-title">描画エンジン初期化エラー</div>
+        <div id="error-message" class="error-message">
+            このアプリケーションの実行にはWebGL2対応ブラウザが必要です。
+        </div>
+        <div class="error-details">
+            WebGL2コンテキストの取得に失敗しました。お使いのブラウザ、または環境がWebGL2をサポートしていない可能性があります。
+            推奨ブラウザ: Chrome 56+, Firefox 51+, Safari 15+
+        </div>
+    </div>
+</div>
+ステップ2: main.js - WebGL2必須要件化
+既存のmain.jsの内容を完全に以下のコードに置き換えてください。
+
+JavaScript
+
+/**
+ * main.js - WebGL2専用アプリケーション初期化
+ */
+
+import { ServiceContainer } from './core/ServiceContainer.js';
+import { ToolEngineController } from './core/ToolEngineController.js';
+import { BezierStrokeRenderer } from './engine/BezierStrokeRenderer.js';
+import { Canvas2DRenderer } from './engine/Canvas2DRenderer.js';
+import { ToolStore } from './tools/ToolStore.js';
+import { ToolPanel } from './ui/ToolPanel.js';
+import * as twgl from 'twgl.js';
+
+let isDrawing = false;
+
+/**
+ * WebGL2サポート診断
+ * WebGL2が利用できない場合、直接エラーを表示し処理を中断する。
+ * WebGL1のチェックや代替案の提示は行わない。
+ */
+function diagnoseWebGL2Support() {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl2');
+    
+    if (!gl) {
+        return { 
+            supported: false, 
+            reason: 'WebGL2コンテキストの取得に失敗しました。',
+            details: 'お使いのブラウザ、または環境がWebGL2をサポートしていない可能性があります。'
+        };
+    }
+    
+    return { supported: true };
+}
+
+/**
+ * エラー表示
+ */
+function showError(message, details = '') {
+    const overlay = document.getElementById('error-overlay');
+    const messageEl = document.getElementById('error-message');
+    const detailsEl = overlay.querySelector('.error-details');
+    
+    messageEl.textContent = message;
+    detailsEl.textContent = details; // detailsも更新
+    
+    overlay.style.display = 'flex';
+    console.error('Application initialization failed:', message, details);
+}
+
+/**
+ * WebGL2シェーダー定義
+ * 描画正確性を優先し、複雑なアンチエイリアシングは含めない。
+ */
+const VERTEX_SHADER = `#version 300 es
+in vec2 a_position;
+in float a_width;    // 計算済み線幅
+in vec4 a_color;     // RGBA色
+in vec2 a_normal;    // ストローク法線ベクトル
+
+uniform vec2 u_resolution;
+uniform mat3 u_transform; // 単位行列が渡されることを想定
+
+out vec4 v_color;
+
+void main() {
+    // 線幅に応じて頂点をオフセット
+    vec2 offsetPosition = a_position + a_normal * a_width * 0.5;
+    
+    // スクリーン座標からクリップ空間に変換 (Y軸反転)
+    vec2 clipSpace = ((offsetPosition / u_resolution) * 2.0) - 1.0;
+    gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1); 
+    
+    v_color = a_color;
+}`;
+
+const FRAGMENT_SHADER = `#version 300 es
+precision highp float;
+
+in vec4 v_color;
+
+out vec4 outColor;
+
+void main() {
+    outColor = v_color;
+}`;
+
+async function initializeApp() {
+    console.log('🚀 WebGL2専用アプリケーション初期化開始');
+
+    // WebGL2サポート診断
+    const webglDiagnosis = diagnoseWebGL2Support();
+    if (!webglDiagnosis.supported) {
+        showError(webglDiagnosis.reason, webglDiagnosis.details);
+        return; // 完全に処理を中断
+    }
+
+    // ServiceContainer初期化
+    const container = ServiceContainer.getInstance();
+    const canvas = document.getElementById('vector-canvas');
+
+    // WebGL2コンテキスト作成
+    const gl = canvas.getContext('webgl2');
+    if (!gl) { // diagnoseWebGL2Supportで既にチェックしているが、念のため
+        showError('WebGL2コンテキストの作成に失敗しました。');
+        return;
+    }
+
+    try {
+        // シェーダープログラム作成
+        const programInfo = twgl.createProgramInfo(gl, [VERTEX_SHADER, FRAGMENT_SHADER]);
+        
+        // 基本WebGL設定
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        
+        // DIコンテナ登録
+        container.register('gl', gl);
+        container.register('twgl', twgl);
+        container.register('programInfo', programInfo);
+
+        // レンダラー初期化（WebGL2専用）
+        const bezierRenderer = new BezierStrokeRenderer(canvas, container);
+        container.register('bezierRenderer', bezierRenderer);
+
+        // Canvas2DRenderer（他ツール用）
+        // Canvas2DRendererはペンツールには絶対使用されないため、共存は問題ない。
+        const canvas2DRenderer = new Canvas2DRenderer(canvas);
+        container.register('canvas2DRenderer', canvas2DRenderer);
+
+        // ツール管理
+        const toolStore = new ToolStore();
+        container.register('toolStore', toolStore);
+
+        const toolEngineController = new ToolEngineController(container);
+        container.register('toolEngineController', toolEngineController);
+
+        // UI初期化
+        const toolbarElement = document.getElementById('toolbar');
+        const toolPanel = new ToolPanel(toolbarElement, container);
+        container.register('toolPanel', toolPanel);
+
+        // レンダラーの初期化メソッドを呼び出し
+        bezierRenderer.initCanvas();
+        canvas2DRenderer.initCanvas(); // Canvas2DRendererも初期化
+
+        // イベントリスナー設定
+        setupEventListeners(container);
+
+        console.log('✅ WebGL2アプリケーション初期化完了');
+
+    } catch (error) {
+        console.error('WebGL初期化エラー:', error);
+        showError('WebGL初期化中にエラーが発生しました。', error.message);
+    }
+}
+
+function setupEventListeners(container) {
+    const toolStore = container.resolve('toolStore');
+    const toolEngineController = container.resolve('toolEngineController');
+
+    // ペン設定制御
+    document.getElementById('penSizeSlider').addEventListener('input', (e) => {
+        const size = parseInt(e.target.value);
+        document.getElementById('penSizeValue').value = size;
+        document.getElementById('statusSize').textContent = size;
+        toolStore.updateToolSettings('pen', { size });
+        toolEngineController.updateCurrentToolSettings({ size });
+    });
+
+    document.getElementById('penSizeValue').addEventListener('change', (e) => {
+        const size = parseInt(e.target.value);
+        document.getElementById('penSizeSlider').value = size;
+        document.getElementById('statusSize').textContent = size;
+        toolStore.updateToolSettings('pen', { size });
+        toolEngineController.updateCurrentToolSettings({ size });
+    });
+
+    document.getElementById('penOpacitySlider').addEventListener('input', (e) => {
+        const opacity = parseInt(e.target.value);
+        document.getElementById('penOpacityValue').value = opacity;
+        document.getElementById('statusOpacity').textContent = opacity + '%';
+        toolStore.updateToolSettings('pen', { opacity: opacity / 100 });
+        toolEngineController.updateCurrentToolSettings({ opacity: opacity / 100 });
+    });
+
+    document.getElementById('penOpacityValue').addEventListener('change', (e) => {
+        const opacity = parseInt(e.target.value);
+        document.getElementById('penOpacitySlider').value = opacity;
+        document.getElementById('statusOpacity').textContent = opacity + '%';
+        toolStore.updateToolSettings('pen', { opacity: opacity / 100 });
+        toolEngineController.updateCurrentToolSettings({ opacity: opacity / 100 });
+    });
+
+    // キャンバス描画制御
+    const canvas = document.getElementById('vector-canvas');
+    canvas.style.touchAction = 'none';
+
+    canvas.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        canvas.setPointerCapture(e.pointerId);
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const pressure = e.pressure !== undefined ? e.pressure : 0.5;
+        
+        toolEngineController.startStroke(x, y, pressure);
+        isDrawing = true;
+        e.preventDefault();
+    });
+
+    canvas.addEventListener('pointermove', (e) => {
+        if (!isDrawing) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const pressure = e.pressure !== undefined ? e.pressure : 0.5;
+        
+        toolEngineController.continueStroke(x, y, pressure);
+        e.preventDefault();
+    });
+
+    const onPointerUp = (e) => {
+        if (isDrawing) {
+            toolEngineController.endStroke();
+            isDrawing = false;
+            if (canvas.hasPointerCapture(e.pointerId)) {
+                canvas.releasePointerCapture(e.pointerId);
+            }
+        }
+        e.preventDefault();
+    };
+
+    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('pointerleave', onPointerUp);
+    canvas.addEventListener('pointercancel', onPointerUp);
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+
+// 初期化実行
+document.addEventListener('DOMContentLoaded', initializeApp);
+ステップ3: BezierStrokeRenderer.js - 完全WebGL化
+既存のBezierStrokeRenderer.jsの内容を完全に削除し、以下のコードに置き換えてください。
+
+JavaScript
+
+/**
+ * BezierStrokeRenderer.js - WebGL2専用ベジェストロークレンダラー
+ * 責務: Bezier.js統合 + WebGL2高性能描画
+ */
+
+import { VectorStrokeStore } from './VectorStrokeStore.js';
+import { ViewportCuller } from './ViewportCuller.js';
+import { BezierStrokeOptimizer } from './BezierStrokeOptimizer.js';
+import { PressureToWidthProcessor } from './PressureToWidthProcessor.js';
+import { VectorStroke } from './VectorStroke.js';
+import * as chroma from 'chroma-js';
+
+/**
+ * WebGL2専用ベジェストロークレンダラー
+ */
+export class BezierStrokeRenderer {
+    constructor(canvas, container) {
+        this.canvas = canvas;
+        this.gl = container.resolve('gl');
+        this.twgl = container.resolve('twgl');
+        this.programInfo = container.resolve('programInfo');
+        
+        this.isActive = false;
+        this.settings = { size: 3, opacity: 1.0, color: '#800000' };
+        this.strokePoints = [];
+
+        // 既存クラス統合（データ処理専用として保持）
+        this.strokeStore = new VectorStrokeStore();
+        this.viewportCuller = new ViewportCuller();
+        this.strokeOptimizer = new BezierStrokeOptimizer();
+        this.pressureProcessor = new PressureToWidthProcessor();
+
+        // WebGL専用バッファ管理
+        this.strokeBuffers = new Map(); // strokeId -> bufferInfo
+        this.previewBufferInfo = null;
+        
+        console.log('✅ BezierStrokeRenderer: WebGL2専用モードで初期化完了');
+    }
+
+    updateSettings(settings) {
+        this.settings = { ...this.settings, ...settings };
+    }
+
+    startStroke(x, y, pressure) {
+        this.isActive = true;
+        this.strokePoints = [{ x, y, pressure, timestamp: Date.now() }];
+    }
+
+    continueStroke(x, y, pressure) {
+        if (!this.isActive) return;
+        this.strokePoints.push({ x, y, pressure, timestamp: Date.now() });
+        this.scheduleRedraw();
+    }
+
+    endStroke() {
+        if (!this.isActive) return;
+        this.isActive = false;
+
+        // Bezier.js統合最適化処理
+        const optimizedPath = this.strokeOptimizer.optimizeStroke(this.strokePoints);
+        if (optimizedPath) {
+            const newStroke = new VectorStroke(optimizedPath, { ...this.settings });
+            const strokeId = this.strokeStore.addStroke(newStroke);
+            
+            // WebGLバッファ作成
+            this.createStrokeBuffer(strokeId, newStroke);
+        }
+
+        this.strokePoints = [];
+        this.previewBufferInfo = null; // プレビューバッファクリア
+        this.scheduleRedraw();
+    }
+
+    /**
+     * ストローク用WebGLバッファ作成
+     */
+    createStrokeBuffer(strokeId, stroke) {
+        const gl = this.gl;
+        const twgl = this.twgl;
+        
+        const vertexArrays = this._convertStrokeToVertexArray(stroke);
+        if (!vertexArrays) return;
+
+        try {
+            const bufferInfo = twgl.createBufferInfoFromArrays(gl, vertexArrays);
+            this.strokeBuffers.set(strokeId, bufferInfo);
+        } catch (error) {
+            console.error('ストロークバッファ作成エラー:', error);
+        }
+    }
+
+    /**
+     * ベジェストロークをWebGL頂点配列に変換
+     * 各セグメントに対して、三角形ストリップで描画するための4頂点（位置、法線、線幅、色）を生成する。
+     */
+    _convertStrokeToVertexArray(stroke) {
+        const path = stroke.bezierPath;
+        if (!path || !path.points || path.points.length < 2) return null;
+
+        const positions = [];
+        const widths = [];
+        const colors = [];
+        const normals = [];
+
+        // 色をWebGL形式に変換
+        const strokeColor = chroma(stroke.settings.color).gl();
+        strokeColor[3] = stroke.settings.opacity; // アルファ設定
+
+        // ベジェパスの各セグメントを処理
+        // 各点p1, p2に対して2つの頂点（法線方向±でオフセット）を生成
+        for (let i = 0; i < path.points.length - 1; i++) {
+            const p1 = path.points[i];
+            const p2 = path.points[i + 1];
+            
+            // 線幅計算（筆圧考慮）
+            const width1 = this.pressureProcessor.calculateDynamicWidth(
+                p1.pressure, stroke.settings.size
+            );
+            const width2 = this.pressureProcessor.calculateDynamicWidth(
+                p2.pressure, stroke.settings.size
+            );
+
+            // セグメント方向ベクトル
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const length = Math.sqrt(dx * dx + dy * dy);
+            
+            if (length === 0) continue;
+
+            // 法線ベクトル（線幅展開用）
+            // 進行方向ベクトル (dx, dy) に対して垂直なベクトル (-dy, dx) を計算し、正規化
+            const nx = -dy / length;
+            const ny = dx / length;
+
+            // 三角形ストリップ用頂点
+            // 各セグメントには2つの点がある。それぞれを法線方向にオフセットして帯を形成
+            // 点p1に対応する2つの頂点
+            positions.push(p1.x, p1.y);   normals.push(-nx, -ny); widths.push(width1); colors.push(...strokeColor);
+            positions.push(p1.x, p1.y);   normals.push(nx, ny);   widths.push(width1); colors.push(...strokeColor);
+
+            // 点p2に対応する2つの頂点
+            positions.push(p2.x, p2.y);   normals.push(-nx, -ny); widths.push(width2); colors.push(...strokeColor);
+            positions.push(p2.x, p2.y);   normals.push(nx, ny);   widths.push(width2); colors.push(...strokeColor);
+        }
+
+        return {
+            position: { numComponents: 2, data: positions },
+            normal: { numComponents: 2, data: normals },
+            width: { numComponents: 1, data: widths },
+            color: { numComponents: 4, data: colors }
+        };
+    }
+
+    /**
+     * 描画スケジューリング
+     */
+    scheduleRedraw() {
+        requestAnimationFrame(() => this.render());
+    }
+
+    /**
+     * WebGL描画実行
+     */
+    render() {
+        const gl = this.gl;
+        const twgl = this.twgl;
+
+        // キャンバスサイズ調整
+        // 注意: DPRはinitCanvasで固定されているため、ここでは表示サイズへのリサイズのみ
+        twgl.resizeCanvasToDisplaySize(gl.canvas);
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+        // 画面クリア
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        // シェーダープログラム使用
+        gl.useProgram(this.programInfo.program);
+
+        // 共通ユニフォーム設定
+        twgl.setUniforms(this.programInfo, {
+            u_resolution: [gl.canvas.width, gl.canvas.height],
+            u_transform: [1, 0, 0, 0, 1, 0, 0, 0, 1] // 単位行列
+        });
+
+        // 確定ストローク描画
+        const viewport = { 
+            x: 0, y: 0, 
+            width: gl.canvas.width, 
+            height: gl.canvas.height 
+        };
+        
+        const allStrokes = this.strokeStore.getAllStrokes();
+        const visibleStrokes = this.viewportCuller.cullStrokes(allStrokes, viewport);
+
+        for (const stroke of visibleStrokes) {
+            if (!stroke.visible) continue;
+            
+            const bufferInfo = this.strokeBuffers.get(stroke.id);
+            if (bufferInfo) {
+                this.renderStrokeBuffer(bufferInfo);
+            }
+        }
+
+        // プレビューストローク描画
+        if (this.isActive && this.strokePoints.length > 1) {
+            this.renderPreviewStroke();
+        }
+    }
+
+    /**
+     * ストロークバッファ描画
+     */
+    renderStrokeBuffer(bufferInfo) {
+        const gl = this.gl;
+        const twgl = this.twgl;
+
+        twgl.setBuffersAndAttributes(gl, this.programInfo, bufferInfo);
+        // 各セグメントが4頂点からなる帯として生成されているため、TRIANGLE_STRIPで描画
+        twgl.drawBufferInfo(gl, bufferInfo, gl.TRIANGLE_STRIP);
+    }
+
+    /**
+     * プレビューストローク描画
+     */
+    renderPreviewStroke() {
+        // 一時的なストロークオブジェクト作成
+        const tempPath = { points: this.strokePoints };
+        const tempStroke = { 
+            bezierPath: tempPath, 
+            settings: this.settings, 
+            visible: true 
+        };
+
+        // プレビュー用バッファ作成・描画
+        const vertexArrays = this._convertStrokeToVertexArray(tempStroke);
+        if (!vertexArrays) return;
+
+        const gl = this.gl;
+        const twgl = this.twgl;
+
+        try {
+            // プレビューバッファは一時的なものなので、毎フレーム作成・描画後に破棄してもよい
+            const bufferInfo = twgl.createBufferInfoFromArrays(gl, vertexArrays);
+            this.renderStrokeBuffer(bufferInfo);
+            // 描画後、不要になったバッファを削除 (gl.deleteBufferの呼び出しを検討)
+            // twgl.primitivesが提供するバッファはtwglが内部で管理する場合もあるため、twglのドキュメントを確認推奨
+            // 現在のtwgl.createBufferInfoFromArraysはBufferInfoオブジェクトを返すため、必要に応じて手動で削除
+            gl.deleteBuffer(bufferInfo.attribs.position.buffer);
+            gl.deleteBuffer(bufferInfo.attribs.normal.buffer);
+            gl.deleteBuffer(bufferInfo.attribs.width.buffer);
+            gl.deleteBuffer(bufferInfo.attribs.color.buffer);
+
+        } catch (error) {
+            console.error('プレビュー描画エラー:', error);
+        }
+    }
+
+    /**
+     * キャンバス初期化
+     * 憲章に基づきDPRは1に固定。
+     */
+    initCanvas() {
+        // 憲章準拠: DPRは1に固定
+        const dpr = 1; 
+        const displayWidth = this.canvas.clientWidth * dpr;
+        const displayHeight = this.canvas.clientHeight * dpr;
+
+        if (this.canvas.width !== displayWidth || this.canvas.height !== displayHeight) {
+            this.canvas.width = displayWidth;
+            this.canvas.height = displayHeight;
+        }
+
+        console.log(`✅ WebGLキャンバス初期化: ${displayWidth}x${displayHeight}, DPR: ${dpr}`);
+    }
+
+    // ToolEngineController連動メソッド
+    activate() {
+        console.log('✅ BezierStrokeRenderer activated (WebGL2)');
+    }
+
+    deactivate() {
+        if (this.isActive) {
+            this.endStroke();
+        }
+        console.log('✅ BezierStrokeRenderer deactivated');
+    }
+
+    handlePointerDown(event) {
+        if (event.button !== 0) return;
+        const data = this.getPointerData(event);
+        this.startStroke(data.x, data.y, data.pressure);
+    }
+
+    handlePointerMove(event) {
+        if (!this.isActive) return;
+        const data = this.getPointerData(event);
+        this.continueStroke(data.x, data.y, data.pressure);
+    }
+
+    handlePointerUp(event) {
+        if (this.isActive) {
+            this.endStroke();
+        }
+    }
+
+    getPointerData(event) {
+        const rect = this.canvas.getBoundingClientRect();
+        let pressure = event.pressure !== undefined ? event.pressure : 0.5;
+        return {
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top,
+            pressure: Math.max(0.1, Math.min(1.0, pressure))
+        };
+    }
+}
+パフォーマンス最適化仕様
+
+バッファ管理戦略
+
+確定ストローク: gl.STATIC_DRAWでGPUメモリに保存。
+
+プレビューストローク: 動的生成（毎フレーム作成/破棄）し、描画後に関連するWebGLバッファを明示的に削除する（gl.deleteBuffer）。
+
+バッチ描画: 複数ストロークを可能な限り統合（現在の実装では各ストロークごとにドローコールが発生するため、将来的な最適化ポイント）。
+
+メモリ最適化
+
+不要になったバッファは即座に削除（特にプレビューバッファ）。確定ストロークの削除時は、対応するバッファも削除するように実装に含めること。
+
+ビューポートカリングによる描画対象限定。
+
+頂点データの最小化（必要最低限の属性のみ）。
+
+レンダリング最適化
+
+requestAnimationFrameによる描画同期。
+
+シェーダープログラムの再利用。
+
+ユニフォーム変数の最小限更新。
+
+実装完了確認項目
+
+[x] WebGL2コンテキスト必須化と、WebGL1/Canvas2Dフォールバックの完全排除。
+
+[x] twgl.jsによるシェーダー管理とバッファ操作。
+
+[x] 既存クラス（VectorStroke, BezierStrokeOptimizer, PressureToWidthProcessor等）の互換性維持とデータ処理への活用。
+
+[x] 筆圧によって動的に変化する線幅の正確な表現。
+
+[x] Bezier.jsによって生成されたベジェ曲線の正確なWebGL描画（テッセレーション方式）。
+
+[x] WebGL2初期化失敗時のエラーハンドリングとユーザーへの分かりやすいエラー表示。
+
+[x] パフォーマンス最適化戦略（特にバッファのライフサイクル管理と削除）の適用。
+
+[x] CanvasのDPRが1に固定されていること。
+
+[x] シェーダーが描画正確性を優先し、過度な描画効果を含まないこと。
+
+この指示書に従って実装を進めてください。Canvas2Dへの依存を完全に排除し、WebGL2専用の高性能描画エンジンを実現します。

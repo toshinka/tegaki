@@ -1,5 +1,5 @@
 /**
- * ToolStore.js - ツール状態管理 + Actions統合
+ * ToolStore.js - ツール状態管理 + Actions統合 (ES6モジュール版)
  * 
  * 憲章準拠：
  * - Store/Actions/UI三層構造の厳格実装
@@ -10,6 +10,132 @@
  * - ペンツール中心実装
  * - Actions統合（状態変更の一元管理）
  */
+
+/**
+ * ToolActions - ツール操作Actions（Store統合）
+ * 
+ * 憲章準拠：Actions パターン実装
+ * - 全ての状態変更はActionsを経由
+ * - ServiceContainer経由でのToolEngineController連動
+ */
+class ToolActions {
+    constructor(store) {
+        this.store = store;
+    }
+
+    /**
+     * ツール選択Action
+     */
+    selectTool(toolName) {
+        try {
+            // 憲章準拠：ToolEngineController厳格連動
+            const toolEngineController = window.serviceContainer?.get('toolEngineController');
+            if (toolEngineController) {
+                // エンジン切り替え前検証
+                toolEngineController.validateToolSwitch(toolName);
+            }
+            
+            // Store状態更新
+            this.store._updateCurrentTool(toolName);
+            
+            // ToolEngineController連動（エンジン起動）
+            if (toolEngineController) {
+                toolEngineController.switchToTool(toolName);
+            }
+            
+            return { success: true, tool: toolName };
+            
+        } catch (error) {
+            console.error('Tool selection failed:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * ツール設定更新Action
+     */
+    updateToolSettings(toolName, settings) {
+        try {
+            // 設定値検証
+            this._validateSettings(toolName, settings);
+            
+            // Store状態更新
+            this.store._updateToolSettings(toolName, settings);
+            
+            // 現在選択中ツールの場合、エンジンに即座反映
+            if (toolName === this.store.getCurrentTool()) {
+                const toolEngineController = window.serviceContainer?.get('toolEngineController');
+                if (toolEngineController) {
+                    toolEngineController.updateCurrentToolSettings(settings);
+                }
+            }
+            
+            return { success: true, toolName, settings };
+            
+        } catch (error) {
+            console.error('Tool settings update failed:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * 現在ツール設定更新Action（ショートカット）
+     */
+    updateCurrentToolSettings(settings) {
+        const currentTool = this.store.getCurrentTool();
+        return this.updateToolSettings(currentTool, settings);
+    }
+
+    /**
+     * ペンサイズ更新Action（UI連動用）
+     */
+    updatePenSize(size) {
+        const numSize = parseInt(size);
+        if (isNaN(numSize) || numSize < 1 || numSize > 50) {
+            throw new Error('ペンサイズは1-50の範囲で指定してください');
+        }
+        
+        return this.updateToolSettings('pen', { size: numSize });
+    }
+
+    /**
+     * ペン透明度更新Action（UI連動用）
+     */
+    updatePenOpacity(opacity) {
+        const numOpacity = parseInt(opacity);
+        if (isNaN(numOpacity) || numOpacity < 1 || numOpacity > 100) {
+            throw new Error('透明度は1-100の範囲で指定してください');
+        }
+        
+        return this.updateToolSettings('pen', { opacity: numOpacity });
+    }
+
+    /**
+     * 設定値検証（内部メソッド）
+     */
+    _validateSettings(toolName, settings) {
+        const validators = {
+            pen: (s) => {
+                if (s.size && (s.size < 1 || s.size > 50)) throw new Error('ペンサイズ範囲外');
+                if (s.opacity && (s.opacity < 1 || s.opacity > 100)) throw new Error('透明度範囲外');
+            },
+            brush: (s) => {
+                if (s.size && (s.size < 5 || s.size > 100)) throw new Error('ブラシサイズ範囲外');
+                if (s.opacity && (s.opacity < 1 || s.opacity > 100)) throw new Error('透明度範囲外');
+                if (s.hardness && (s.hardness < 0 || s.hardness > 1)) throw new Error('硬さ範囲外');
+            },
+            eraser: (s) => {
+                if (s.size && (s.size < 5 || s.size > 100)) throw new Error('消しゴムサイズ範囲外');
+            }
+        };
+
+        const validator = validators[toolName];
+        if (validator) {
+            validator(settings);
+        }
+    }
+}
+
 class ToolStore {
     constructor() {
         // 状態管理
@@ -162,133 +288,30 @@ class ToolStore {
         
         this.notify('STORE_RESET', { state: this.state });
     }
-}
-
-/**
- * ToolActions - ツール操作Actions（Store統合）
- * 
- * 憲章準拠：Actions パターン実装
- * - 全ての状態変更はActionsを経由
- * - ServiceContainer経由でのToolEngineController連動
- */
-class ToolActions {
-    constructor(store) {
-        this.store = store;
-    }
 
     /**
-     * ツール選択Action
-     */
-    selectTool(toolName) {
-        try {
-            // 憲章準拠：ToolEngineController厳格連動
-            const toolEngineController = window.serviceContainer?.get('ToolEngineController');
-            if (toolEngineController) {
-                // エンジン切り替え前検証
-                toolEngineController.validateToolSwitch(toolName);
-            }
-            
-            // Store状態更新
-            this.store._updateCurrentTool(toolName);
-            
-            // ToolEngineController連動（エンジン起動）
-            if (toolEngineController) {
-                toolEngineController.switchToTool(toolName);
-            }
-            
-            return { success: true, tool: toolName };
-            
-        } catch (error) {
-            console.error('Tool selection failed:', error);
-            return { success: false, error: error.message };
-        }
-    }
-
-    /**
-     * ツール設定更新Action
+     * Actions統合アクセサ（Actionsメソッドへの直接アクセス）
      */
     updateToolSettings(toolName, settings) {
-        try {
-            // 設定値検証
-            this._validateSettings(toolName, settings);
-            
-            // Store状態更新
-            this.store._updateToolSettings(toolName, settings);
-            
-            // 現在選択中ツールの場合、エンジンに即座反映
-            if (toolName === this.store.getCurrentTool()) {
-                const toolEngineController = window.serviceContainer?.get('ToolEngineController');
-                if (toolEngineController) {
-                    toolEngineController.updateCurrentToolSettings(settings);
-                }
-            }
-            
-            return { success: true, toolName, settings };
-            
-        } catch (error) {
-            console.error('Tool settings update failed:', error);
-            return { success: false, error: error.message };
-        }
+        return this.actions.updateToolSettings(toolName, settings);
     }
 
-    /**
-     * 現在ツール設定更新Action（ショートカット）
-     */
+    selectTool(toolName) {
+        return this.actions.selectTool(toolName);
+    }
+
     updateCurrentToolSettings(settings) {
-        const currentTool = this.store.getCurrentTool();
-        return this.updateToolSettings(currentTool, settings);
+        return this.actions.updateCurrentToolSettings(settings);
     }
 
-    /**
-     * ペンサイズ更新Action（UI連動用）
-     */
     updatePenSize(size) {
-        const numSize = parseInt(size);
-        if (isNaN(numSize) || numSize < 1 || numSize > 50) {
-            throw new Error('ペンサイズは1-50の範囲で指定してください');
-        }
-        
-        return this.updateToolSettings('pen', { size: numSize });
+        return this.actions.updatePenSize(size);
     }
 
-    /**
-     * ペン透明度更新Action（UI連動用）
-     */
     updatePenOpacity(opacity) {
-        const numOpacity = parseInt(opacity);
-        if (isNaN(numOpacity) || numOpacity < 1 || numOpacity > 100) {
-            throw new Error('透明度は1-100の範囲で指定してください');
-        }
-        
-        return this.updateToolSettings('pen', { opacity: numOpacity });
-    }
-
-    /**
-     * 設定値検証（内部メソッド）
-     */
-    _validateSettings(toolName, settings) {
-        const validators = {
-            pen: (s) => {
-                if (s.size && (s.size < 1 || s.size > 50)) throw new Error('ペンサイズ範囲外');
-                if (s.opacity && (s.opacity < 1 || s.opacity > 100)) throw new Error('透明度範囲外');
-            },
-            brush: (s) => {
-                if (s.size && (s.size < 5 || s.size > 100)) throw new Error('ブラシサイズ範囲外');
-                if (s.opacity && (s.opacity < 1 || s.opacity > 100)) throw new Error('透明度範囲外');
-                if (s.hardness && (s.hardness < 0 || s.hardness > 1)) throw new Error('硬さ範囲外');
-            },
-            eraser: (s) => {
-                if (s.size && (s.size < 5 || s.size > 100)) throw new Error('消しゴムサイズ範囲外');
-            }
-        };
-
-        const validator = validators[toolName];
-        if (validator) {
-            validator(settings);
-        }
+        return this.actions.updatePenOpacity(opacity);
     }
 }
 
-// Phase2-A制約：グローバルエクスポート（後でモジュール化）
-window.ToolStore = ToolStore;
-window.ToolActions = ToolActions;
+// ES6モジュールエクスポート
+export { ToolStore, ToolActions };

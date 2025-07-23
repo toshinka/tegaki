@@ -1,5 +1,5 @@
 /**
- * Canvas2DRenderer.js - Canvas2D専用ラスター描画エンジン
+ * Canvas2DRenderer.js - Canvas2D専用ラスター描画エンジン (ES6モジュール版)
  * 
  * 憲章準拠：
  * - ブラシ・消しゴムツール専用（ペンツール絶対禁止）
@@ -10,7 +10,7 @@
  * - 最小限の実装（後回し可能）
  * - ToolEngineController経由でのみアクセス
  */
-class Canvas2DRenderer {
+export class Canvas2DRenderer {
     constructor(canvas) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
@@ -224,6 +224,3 @@ class Canvas2DRenderer {
         };
     }
 }
-
-// Phase2-A制約：グローバルエクスポート（後でモジュール化）
-window.Canvas2DRenderer = Canvas2DRenderer;

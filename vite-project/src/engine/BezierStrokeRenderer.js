@@ -341,7 +341,7 @@ class ViewportCuller {
  * 🎨 Bezier.js統合ベクターペンエンジン (v4 - バッチレンダリング統合版)
  * Phase2-A: ToolEngineController厳格連動対応
  */
-class BezierStrokeRenderer {
+export class BezierStrokeRenderer {
     constructor(canvas) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
@@ -478,11 +478,4 @@ class BezierStrokeRenderer {
             this.endStroke();
         }
     }
-}
-
-// Phase2-A: エクスポート（ServiceContainer.js登録用）
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { BezierStrokeRenderer };
-} else if (typeof window !== 'undefined') {
-    window.BezierStrokeRenderer = BezierStrokeRenderer;
 }

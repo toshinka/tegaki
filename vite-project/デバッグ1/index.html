@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BezierStrokeRenderer デバッグ</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #f0f0f0;
+        }
+        
+        #canvas-container {
+            position: relative;
+            border: 2px solid #333;
+            background: white;
+            margin: 20px 0;
+        }
+        
+        #vector-canvas {
+            display: block;
+            cursor: crosshair;
+            width: 800px;
+            height: 600px;
+        }
+        
+        #debug-info {
+            background: #000;
+            color: #0f0;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 10px 0;
+        }
+        
+        .controls {
+            margin: 10px 0;
+        }
+        
+        button {
+            margin: 5px;
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>🐛 BezierStrokeRenderer デバッグ版</h1>
+    
+    <div class="controls">
+        <button onclick="clearCanvas()">キャンバスクリア</button>
+        <button onclick="testDraw()">テスト描画</button>
+        <button onclick="debugWebGL()">WebGL状態確認</button>
+        <button onclick="toggleDebugMode()">デバッグモード切替</button>
+    </div>
+    
+    <div id="canvas-container">
+        <canvas id="vector-canvas" width="800" height="600"></canvas>
+    </div>
+    
+    <div id="debug-info"></div>
+    
+    <!-- 外部ライブラリ読み込み -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/twgl.js/5.5.4/twgl-full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bezier-js@6.1.4/dist/bezier.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chroma-js/2.4.2/chroma.min.js"></script>
+
+    <script>
+        // グローバルデバッグ状態
+        let debugMode = true;
+        let debugRenderer = null;
+
+        // デバッグログ関数
+        function debugLog(message, data = null) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logMessage = `[${timestamp}] ${message}`;
+            console.log(logMessage, data || '');
+            
+            if (debugMode) {
+                const debugInfo = document.getElementById('debug-info');
+                debugInfo.textContent += logMessage + (data ? ' ' + JSON.stringify(data, null, 2) : '') + '\n';
+                debugInfo.scrollTop = debugInfo.scrollHeight;
+            }
+        }
+
+        // WebGL2シェーダー定義
+        const VERTEX_SHADER = `#version 300 es
+in vec2 a_position;
+in float a_width;
+in vec4 a_color;
+
+uniform vec2 u_resolution;
+
+out vec4 v_color;
+out float v_width;
+
+void main() {
+    vec2 clipSpace = ((a_position / u_resolution) * 2.0) - 1.0;
+    gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+    
+    v_color = a_color;
+    v_width = a_width;
+}`;
+
+        const FRAGMENT_SHADER = `#version 300 es
+precision highp float;
+
+in vec4 v_color;
+in float v_width;
+
+out vec4 outColor;
+
+void main() {
+    outColor = v_color;
+}`;
+
+        // デバッグ版BezierStrokeRenderer
+        class DebugBezierStrokeRenderer {
+            constructor(canvas) {
+                debugLog('🚀 DebugBezierStrokeRenderer 初期化開始');
+                
+                this.canvas = canvas;
+                this.gl = canvas.getContext('webgl2');
+                
+                if (!this.gl) {
+                    debugLog('❌ WebGL2コンテキスト取得失敗');
+                    throw new Error('WebGL2 not supported');
+                }
+                
+                debugLog('✅ WebGL2コンテキスト取得成功');
+                
+                // シェーダープログラム作成
+                try {
+                    this.programInfo = twgl.createProgramInfo(this.gl, [VERTEX_SHADER, FRAGMENT_SHADER]);
+                    if (!this.programInfo.program) {
+                        throw new Error('Program creation failed');
+                    }
+                    debugLog('✅ シェーダープログラム作成成功');
+                } catch (error) {
+                    debugLog('❌ シェーダープログラム作成失敗', error.message);
+                    throw error;
+                }
+                
+                // WebGL基本設定
+                this.gl.enable(this.gl.BLEND);
+                this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+                debugLog('✅ WebGL基本設定完了');
+                
+                // 描画状態
+                this.isActive = false;
+                this.settings = { size: 5, opacity: 1.0, color: '#ff0000' };
+                this.currentStroke = [];
+                this.completedStrokes = [];
+                this.strokeBuffers = new Map();
+                
+                this.initCanvas();
+                this.setupEventListeners();
+                
+                debugLog('✅ DebugBezierStrokeRenderer 初期化完了');
+            }
+
+            initCanvas() {
+                const gl = this.gl;
+                twgl.resizeCanvasToDisplaySize(gl.canvas);
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+                
+                debugLog('📐 キャンバス初期化', {
+                    width: gl.canvas.width,
+                    height: gl.canvas.height,
+                    clientWidth: gl.canvas.clientWidth,
+                    clientHeight: gl.canvas.clientHeight
+                });
+            }
+
+            setupEventListeners() {
+                this.canvas.style.touchAction = 'none';
+                
+                this.canvas.addEventListener('pointerdown', (e) => {
+                    if (e.button !== 0) return;
+                    
+                    const rect = this.canvas.getBoundingClientRect();
+                    const pointerData = {
+                        x: e.clientX - rect.left,
+                        y: e.clientY - rect.top,
+                        pressure: e.pressure || 0.5
+                    };
+                    
+                    debugLog('👆 PointerDown', pointerData);
+                    this.handlePointerDown(pointerData);
+                    e.preventDefault();
+                });
+
+                this.canvas.addEventListener('pointermove', (e) => {
+                    if (!this.isActive) return;
+                    
+                    const rect = this.canvas.getBoundingClientRect();
+                    const pointerData = {
+                        x: e.clientX - rect.left,
+                        y: e.clientY - rect.top,
+                        pressure: e.pressure || 0.5
+                    };
+                    
+                    debugLog('👉 PointerMove', pointerData);
+                    this.handlePointerMove(pointerData);
+                    e.preventDefault();
+                });
+
+                this.canvas.addEventListener('pointerup', (e) => {
+                    if (!this.isActive) return;
+                    
+                    debugLog('👆 PointerUp');
+                    this.handlePointerUp();
+                    e.preventDefault();
+                });
+            }
+
+            handlePointerDown(pointerData) {
+                debugLog('🎨 描画開始', pointerData);
+                this.isActive = true;
+                this.currentStroke = [pointerData];
+                this.scheduleRender();
+            }
+
+            handlePointerMove(pointerData) {
+                if (!this.isActive) return;
+                
+                this.currentStroke.push(pointerData);
+                debugLog('🖌️ 描画継続', { 
+                    pointCount: this.currentStroke.length,
+                    lastPoint: pointerData 
+                });
+                this.scheduleRender();
+            }
+
+            handlePointerUp() {
+                if (!this.isActive) return;
+                
+                debugLog('🏁 描画終了', { 
+                    totalPoints: this.currentStroke.length 
+                });
+                this.endStroke();
+                this.isActive = false;
+            }
+
+            endStroke() {
+                if (this.currentStroke.length < 2) {
+                    debugLog('⚠️ ストローク点数不足', this.currentStroke.length);
+                    this.currentStroke = [];
+                    return;
+                }
+
+                debugLog('🔄 ベジェ曲線生成開始', { 
+                    pointCount: this.currentStroke.length 
+                });
+
+                const bezierCurve = this.createBezierFromPoints(this.currentStroke);
+                if (bezierCurve && bezierCurve.length > 0) {
+                    const strokeData = {
+                        id: Date.now(),
+                        bezier: bezierCurve,
+                        settings: { ...this.settings }
+                    };
+                    
+                    debugLog('✅ ベジェ曲線生成成功', { 
+                        segmentCount: bezierCurve.length,
+                        strokeId: strokeData.id 
+                    });
+                    
+                    this.completedStrokes.push(strokeData);
+                    this.createStrokeBuffer(strokeData);
+                } else {
+                    debugLog('❌ ベジェ曲線生成失敗');
+                }
+
+                this.currentStroke = [];
+                this.scheduleRender();
+            }
+
+            createBezierFromPoints(points) {
+                if (points.length < 2) return null;
+                
+                debugLog('📏 点群からベジェ曲線変換', { inputPoints: points.length });
+                
+                const segments = [];
+                for (let i = 0; i < points.length - 1; i++) {
+                    const p1 = points[i];
+                    const p2 = points[i + 1];
+                    
+                    try {
+                        const bezier = new Bezier(
+                            p1.x, p1.y,
+                            p1.x + (p2.x - p1.x) * 0.33, p1.y + (p2.y - p1.y) * 0.33,
+                            p1.x + (p2.x - p1.x) * 0.67, p1.y + (p2.y - p1.y) * 0.67,
+                            p2.x, p2.y
+                        );
+                        
+                        segments.push({ 
+                            bezier, 
+                            pressure1: p1.pressure, 
+                            pressure2: p2.pressure 
+                        });
+                    } catch (error) {
+                        debugLog('❌ ベジェセグメント作成エラー', { i, error: error.message });
+                    }
+                }
+                
+                debugLog('📈 ベジェセグメント生成完了', { outputSegments: segments.length });
+                return segments;
+            }
+
+            createStrokeBuffer(strokeData) {
+                debugLog('🔧 ストロークバッファ作成開始', { strokeId: strokeData.id });
+                
+                const vertices = this.bezierToVertices(strokeData);
+                
+                debugLog('📊 頂点データ生成結果', {
+                    positions: vertices.positions.length,
+                    widths: vertices.widths.length,
+                    colors: vertices.colors.length
+                });
+                
+                if (!vertices.positions.length) {
+                    debugLog('❌ 頂点データが空');
+                    return;
+                }
+
+                const arrays = {
+                    position: { numComponents: 2, data: vertices.positions },
+                    width: { numComponents: 1, data: vertices.widths },
+                    color: { numComponents: 4, data: vertices.colors }
+                };
+
+                try {
+                    const bufferInfo = twgl.createBufferInfoFromArrays(this.gl, arrays);
+                    this.strokeBuffers.set(strokeData.id, bufferInfo);
+                    debugLog('✅ ストロークバッファ作成成功', { strokeId: strokeData.id });
+                } catch (error) {
+                    debugLog('❌ ストロークバッファ作成失敗', error.message);
+                }
+            }
+
+            bezierToVertices(strokeData) {
+                const positions = [];
+                const widths = [];
+                const colors = [];
+                
+                debugLog('🎨 頂点変換開始', { 
+                    segmentCount: strokeData.bezier.length,
+                    color: strokeData.settings.color 
+                });
+                
+                let strokeColor;
+                try {
+                    strokeColor = chroma(strokeData.settings.color).gl();
+                    strokeColor[3] = strokeData.settings.opacity;
+                    debugLog('🌈 色変換成功', { 
+                        input: strokeData.settings.color,
+                        output: strokeColor 
+                    });
+                } catch (error) {
+                    debugLog('❌ 色変換失敗', error.message);
+                    strokeColor = [1, 0, 0, 1]; // フォールバック: 赤
+                }
+
+                for (let segIndex = 0; segIndex < strokeData.bezier.length; segIndex++) {
+                    const segment = strokeData.bezier[segIndex];
+                    const steps = 20;
+                    
+                    for (let i = 0; i <= steps; i++) {
+                        const t = i / steps;
+                        let point;
+                        
+                        try {
+                            point = segment.bezier.get(t);
+                        } catch (error) {
+                            debugLog('❌ ベジェ点取得エラー', { segIndex, t, error: error.message });
+                            continue;
+                        }
+                        
+                        const pressure = segment.pressure1 + (segment.pressure2 - segment.pressure1) * t;
+                        const width = strokeData.settings.size * (0.5 + pressure * 0.5);
+                        
+                        positions.push(point.x, point.y);
+                        widths.push(width);
+                        colors.push(...strokeColor);
+                    }
+                }
+
+                debugLog('📈 頂点変換完了', {
+                    totalVertices: positions.length / 2,
+                    samplePosition: positions.slice(0, 4),
+                    sampleWidth: widths.slice(0, 2),
+                    sampleColor: colors.slice(0, 4)
+                });
+
+                return { positions, widths, colors };
+            }
+
+            scheduleRender() {
+                requestAnimationFrame(() => this.render());
+            }
+
+            render() {
+                debugLog('🖼️ レンダリング開始');
+                
+                const gl = this.gl;
+                
+                // キャンバスサイズ調整
+                twgl.resizeCanvasToDisplaySize(gl.canvas);
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+                // 画面クリア
+                gl.clearColor(1, 1, 1, 1); // 白背景に変更（デバッグ用）
+                gl.clear(gl.COLOR_BUFFER_BIT);
+                
+                debugLog('🧹 画面クリア完了', {
+                    viewportWidth: gl.canvas.width,
+                    viewportHeight: gl.canvas.height
+                });
+
+                // シェーダー使用
+                gl.useProgram(this.programInfo.program);
+                
+                // ユニフォーム設定
+                const uniforms = {
+                    u_resolution: [gl.canvas.width, gl.canvas.height]
+                };
+                twgl.setUniforms(this.programInfo, uniforms);
+                
+                debugLog('⚙️ ユニフォーム設定完了', uniforms);
+
+                // 確定ストローク描画
+                let drawnStrokes = 0;
+                for (const [strokeId, bufferInfo] of this.strokeBuffers) {
+                    try {
+                        twgl.setBuffersAndAttributes(gl, this.programInfo, bufferInfo);
+                        twgl.drawBufferInfo(gl, bufferInfo, gl.POINTS);
+                        drawnStrokes++;
+                        debugLog('✏️ ストローク描画', { strokeId, vertexCount: bufferInfo.numElements });
+                    } catch (error) {
+                        debugLog('❌ ストローク描画エラー', { strokeId, error: error.message });
+                    }
+                }
+
+                // プレビュー描画
+                if (this.isActive && this.currentStroke.length > 1) {
+                    debugLog('👁️ プレビュー描画開始');
+                    this.renderPreview();
+                }
+                
+                debugLog('🏁 レンダリング完了', { 
+                    completedStrokes: this.completedStrokes.length,
+                    drawnStrokes,
+                    isActive: this.isActive,
+                    currentStrokePoints: this.currentStroke.length
+                });
+            }
+
+            renderPreview() {
+                const tempStroke = {
+                    id: 'preview',
+                    bezier: this.createBezierFromPoints(this.currentStroke),
+                    settings: this.settings
+                };
+
+                if (!tempStroke.bezier || tempStroke.bezier.length === 0) {
+                    debugLog('⚠️ プレビュー用ベジェ曲線が空');
+                    return;
+                }
+
+                const vertices = this.bezierToVertices(tempStroke);
+                if (!vertices.positions.length) {
+                    debugLog('⚠️ プレビュー用頂点データが空');
+                    return;
+                }
+
+                const arrays = {
+                    position: { numComponents: 2, data: vertices.positions },
+                    width: { numComponents: 1, data: vertices.widths },
+                    color: { numComponents: 4, data: vertices.colors }
+                };
+
+                try {
+                    const bufferInfo = twgl.createBufferInfoFromArrays(this.gl, arrays);
+                    twgl.setBuffersAndAttributes(this.gl, this.programInfo, bufferInfo);
+                    twgl.drawBufferInfo(this.gl, bufferInfo, this.gl.POINTS);
+                    debugLog('👁️ プレビュー描画成功', { vertexCount: bufferInfo.numElements });
+                } catch (error) {
+                    debugLog('❌ プレビュー描画エラー', error.message);
+                }
+            }
+
+            // テスト描画メソッド
+            testDraw() {
+                debugLog('🧪 テスト描画開始');
+                
+                const testPoints = [
+                    { x: 100, y: 100, pressure: 0.5 },
+                    { x: 200, y: 150, pressure: 0.8 },
+                    { x: 300, y: 120, pressure: 0.6 },
+                    { x: 400, y: 180, pressure: 0.9 }
+                ];
+                
+                this.currentStroke = testPoints;
+                this.endStroke();
+                
+                debugLog('🧪 テスト描画完了');
+            }
+
+            // WebGL状態確認
+            debugWebGLState() {
+                const gl = this.gl;
+                const info = {
+                    version: gl.getParameter(gl.VERSION),
+                    vendor: gl.getParameter(gl.VENDOR),
+                    renderer: gl.getParameter(gl.RENDERER),
+                    shadingLanguageVersion: gl.getParameter(gl.SHADING_LANGUAGE_VERSION),
+                    maxVertexAttribs: gl.getParameter(gl.MAX_VERTEX_ATTRIBS),
+                    maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE),
+                    maxViewportDims: gl.getParameter(gl.MAX_VIEWPORT_DIMS),
+                    blendEnabled: gl.isEnabled(gl.BLEND),
+                    blendSrcAlpha: gl.getParameter(gl.BLEND_SRC_ALPHA),
+                    blendDstAlpha: gl.getParameter(gl.BLEND_DST_ALPHA),
+                    viewport: gl.getParameter(gl.VIEWPORT),
+                    clearColor: gl.getParameter(gl.COLOR_CLEAR_VALUE)
+                };
+                
+                debugLog('🔍 WebGL状態', info);
+                return info;
+            }
+
+            clear() {
+                debugLog('🧹 キャンバスクリア');
+                this.completedStrokes = [];
+                this.strokeBuffers.clear();
+                this.currentStroke = [];
+                this.isActive = false;
+                this.scheduleRender();
+            }
+        }
+
+        // グローバル関数
+        function clearCanvas() {
+            if (debugRenderer) {
+                debugRenderer.clear();
+            }
+        }
+
+        function testDraw() {
+            if (debugRenderer) {
+                debugRenderer.testDraw();
+            }
+        }
+
+        function debugWebGL() {
+            if (debugRenderer) {
+                debugRenderer.debugWebGLState();
+            }
+        }
+
+        function toggleDebugMode() {
+            debugMode = !debugMode;
+            const debugInfo = document.getElementById('debug-info');
+            debugInfo.style.display = debugMode ? 'block' : 'none';
+            debugLog(`🔧 デバッグモード: ${debugMode ? 'ON' : 'OFF'}`);
+        }
+
+        // 初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            try {
+                const canvas = document.getElementById('vector-canvas');
+                debugRenderer = new DebugBezierStrokeRenderer(canvas);
+                debugLog('🚀 アプリケーション初期化完了');
+            } catch (error) {
+                debugLog('❌ 初期化エラー', error.message);
+                alert('初期化エラー: ' + error.message);
+            }
+        });
+    </script>
+</body>
+</html>

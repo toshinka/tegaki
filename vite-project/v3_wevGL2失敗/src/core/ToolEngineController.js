@@ -16,10 +16,11 @@ export class ToolEngineController {
         this.engineStates = new Map();
         
         // エンジン固定マッピング（Phase2-A: ペン=Bezier.js強制）
+        // 🔧 修正: main.jsの登録名と一致させる
         this.toolEngineMapping = {
-            'pen': 'bezierRenderer',      // 🎯 ペン = Bezier.js（強制・変更不可）
-            'brush': 'canvas2DRenderer',  // ブラシ = Canvas2D
-            'eraser': 'canvas2DRenderer'  // 消しゴム = Canvas2D
+            'pen': 'BezierStrokeRenderer',      // 🎯 ペン = Bezier.js（強制・変更不可）
+            'brush': 'Canvas2DRenderer',        // ブラシ = Canvas2D
+            'eraser': 'Canvas2DRenderer'        // 消しゴム = Canvas2D
         };
 
         this.initializeController();
@@ -46,7 +47,10 @@ export class ToolEngineController {
 
         // 現在のエンジンを無効化
         if (this.currentEngine) {
-            this.currentEngine.deactivate();
+            // 🔧 修正: deactivateメソッドの存在確認
+            if (typeof this.currentEngine.deactivate === 'function') {
+                this.currentEngine.deactivate();
+            }
             console.log(`🔄 ToolEngineController: ${this.currentTool} エンジン無効化`);
         }
 
@@ -57,7 +61,11 @@ export class ToolEngineController {
         
         try {
             this.currentEngine = this.container.resolve(engineKey);
-            this.currentEngine.activate();
+            
+            // 🔧 修正: activateメソッドの存在確認
+            if (typeof this.currentEngine.activate === 'function') {
+                this.currentEngine.activate();
+            }
             
             // ツール設定復元
             this.restoreToolSettings(toolName);
@@ -100,7 +108,9 @@ export class ToolEngineController {
         }
 
         // エンジンに設定反映
-        this.currentEngine.updateSettings(settings);
+        if (typeof this.currentEngine.updateSettings === 'function') {
+            this.currentEngine.updateSettings(settings);
+        }
         
         // ツール状態保存
         this.saveToolSettings(this.currentTool, settings);
@@ -117,7 +127,9 @@ export class ToolEngineController {
             return;
         }
 
-        this.currentEngine.startStroke(x, y, pressure);
+        if (typeof this.currentEngine.startStroke === 'function') {
+            this.currentEngine.startStroke(x, y, pressure);
+        }
         console.log(`🎨 ToolEngineController: ${this.currentTool} 描画開始 (${x}, ${y})`);
     }
 
@@ -126,7 +138,9 @@ export class ToolEngineController {
      */
     continueStroke(x, y, pressure) {
         if (!this.currentEngine) return;
-        this.currentEngine.continueStroke(x, y, pressure);
+        if (typeof this.currentEngine.continueStroke === 'function') {
+            this.currentEngine.continueStroke(x, y, pressure);
+        }
     }
 
     /**
@@ -134,8 +148,25 @@ export class ToolEngineController {
      */
     endStroke() {
         if (!this.currentEngine) return;
-        this.currentEngine.endStroke();
+        if (typeof this.currentEngine.endStroke === 'function') {
+            this.currentEngine.endStroke();
+        }
         console.log(`🏁 ToolEngineController: ${this.currentTool} 描画終了`);
+    }
+
+    /**
+     * 🆕 ポインターイベント統一処理
+     */
+    handlePointerDown(pointerData) {
+        this.startStroke(pointerData.x, pointerData.y, pointerData.pressure);
+    }
+
+    handlePointerMove(pointerData) {
+        this.continueStroke(pointerData.x, pointerData.y, pointerData.pressure);
+    }
+
+    handlePointerUp() {
+        this.endStroke();
     }
 
     /**
@@ -157,11 +188,15 @@ export class ToolEngineController {
         if (!this.engineStates.has(toolName)) {
             // デフォルト設定を適用
             const defaultSettings = this.getDefaultSettings(toolName);
-            this.currentEngine.updateSettings(defaultSettings);
+            if (typeof this.currentEngine.updateSettings === 'function') {
+                this.currentEngine.updateSettings(defaultSettings);
+            }
             this.engineStates.set(toolName, defaultSettings);
         } else {
             const savedSettings = this.engineStates.get(toolName);
-            this.currentEngine.updateSettings(savedSettings);
+            if (typeof this.currentEngine.updateSettings === 'function') {
+                this.currentEngine.updateSettings(savedSettings);
+            }
         }
     }
 

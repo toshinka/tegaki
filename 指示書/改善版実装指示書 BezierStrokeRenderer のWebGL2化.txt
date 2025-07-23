@@ -1,0 +1,184 @@
+実装指示書（改訂版）
+以下に、他AIに作業させるための指示書を提示します。
+
+依頼概要
+既存のBezierStrokeRenderer.jsを、Canvas2Dへの依存を完全に排除し、twgl.jsを利用した高性能なWebGL2専用エンジンとして作り直してください。
+
+修正対象ファイル
+src/main.js
+
+src/engine/BezierStrokeRenderer.js
+
+遵守すべき最重要原則
+WebGL専用: このエンジンはWebGL2が利用可能な環境でのみ動作します。Canvas2Dへのフォールバックや条件分岐は一切実装しないでください。
+
+ファイル構成の維持: WebGLStrokeRenderer.jsのような新しいファイルは作成せず、既存のBezierStrokeRenderer.jsを直接書き換えてください。
+
+再発明の禁止: WebGLの定型処理は必ずtwgl.jsのヘルパー関数を使用してください。
+
+実装手順
+ステップ1: main.js - WebGLの必須要件化
+initializeApp関数を修正し、WebGLの初期化に失敗した場合、描画機能の初期化を中止してエラーメッセージを表示するように変更します。
+
+エラー表示用CSSの追加
+index.htmlの<style>タグ内に、以下のCSSを追加してください。
+
+CSS
+
+.error-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.75); color: white;
+    display: none; align-items: center; justify-content: center;
+    text-align: center; font-size: 1.2em; z-index: 1000;
+}
+エラー表示用HTMLの追加
+index.htmlの<body>タグの直下に、以下のHTMLを追加してください。
+
+HTML
+
+<div id="error-overlay" class="error-overlay">
+    <div>
+        <p>描画エラー</p>
+        <p style="font-size: 0.8em; margin-top: 1em;">このアプリケーションの実行にはWebGL2対応ブラウザが必要です。</p>
+    </div>
+</div>
+main.jsの初期化ロジック修正
+initializeApp関数を、WebGL初期化が失敗した場合に処理を中断するように書き換えます。
+
+JavaScript
+
+// main.js
+import * as twgl from 'twgl.js';
+// (他のインポート)
+
+async function initializeApp() {
+    console.log('🚀 Application initialization started.');
+    const container = ServiceContainer.getInstance();
+    const canvas = document.getElementById('vector-canvas');
+
+    // WebGL初期化
+    const gl = canvas.getContext('webgl2');
+    if (!gl) {
+        document.getElementById('error-overlay').style.display = 'flex';
+        console.error("WebGL2 is not available. Application halted.");
+        return; // 処理を完全に中断
+    }
+
+    // シェーダー定義とプログラム作成
+    const vs = `#version 300 es ... (前回の指示書通り)`;
+    const fs = `#version 300 es ... (前回の指示書通り)`;
+    const programInfo = twgl.createProgramInfo(gl, [vs, fs]);
+
+    // DIコンテナへの登録
+    container.register('gl', gl);
+    container.register('programInfo', programInfo);
+    container.register('twgl', twgl);
+
+    // --- 正常系の処理 ---
+    // BezierStrokeRendererの引数にcontainerを追加
+    const bezierRenderer = new BezierStrokeRenderer(canvas, container);
+    container.register('bezierRenderer', bezierRenderer);
+
+    const canvas2DRenderer = new Canvas2DRenderer(canvas);
+    container.register('canvas2DRenderer', canvas2DRenderer);
+
+    const toolStore = new ToolStore();
+    container.register('toolStore', toolStore);
+
+    // ToolEngineControllerのtoolEngineMappingは静的に戻す
+    const toolEngineController = new ToolEngineController(container);
+    container.register('toolEngineController', toolEngineController);
+
+    // (以降のUI初期化やイベントリスナー設定は同様)
+}
+ステップ2: BezierStrokeRenderer.js の完全なWebGL化
+このファイルの内容を全て削除し、以下のWebGL専用コードに完全に置き換えてください。
+
+JavaScript
+
+// src/engine/BezierStrokeRenderer.js
+import { VectorStrokeStore } from './VectorStrokeStore.js';
+import { ViewportCuller } from './ViewportCuller.js';
+import { BezierStrokeOptimizer } from './BezierStrokeOptimizer.js';
+import { PressureToWidthProcessor } from './PressureToWidthProcessor.js';
+import { VectorStroke } from './VectorStroke.js';
+import * as chroma from 'chroma-js'; // package.jsonに存在
+
+export class BezierStrokeRenderer {
+    constructor(canvas, container) {
+        this.canvas = canvas;
+        this.gl = container.resolve('gl');
+        this.programInfo = container.resolve('programInfo');
+        this.twgl = container.resolve('twgl');
+        this.isActive = false;
+        this.settings = { size: 3, opacity: 1.0, color: '#800000' };
+        this.strokePoints = [];
+
+        this.strokeStore = new VectorStrokeStore();
+        this.viewportCuller = new ViewportCuller();
+        this.strokeOptimizer = new BezierStrokeOptimizer();
+        this.pressureProcessor = new PressureToWidthProcessor();
+        
+        console.log('✅ BezierStrokeRenderer: Initialized in pure WebGL mode.');
+    }
+
+    // --- startStroke, continueStroke, endStroke の実装（ロジックは既存のものを流用） ---
+    // (内部で scheduleRedraw を呼び出す)
+
+    scheduleRedraw() {
+        const gl = this.gl;
+        const twgl = this.twgl;
+
+        twgl.resizeCanvasToDisplaySize(gl.canvas);
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+        gl.useProgram(this.programInfo.program);
+
+        const allStrokes = this.strokeStore.getAllStrokes();
+        for (const stroke of allStrokes) {
+            if (stroke.visible) this.renderStroke(stroke);
+        }
+
+        if (this.isActive && this.strokePoints.length > 1) {
+            this.renderPreviewStroke();
+        }
+    }
+
+    renderStroke(stroke) {
+        const gl = this.gl;
+        const twgl = this.twgl;
+
+        const arrays = this._convertStrokeToVertexArray(stroke);
+        if (!arrays) return;
+
+        const bufferInfo = twgl.createBufferInfoFromArrays(gl, arrays);
+        twgl.setBuffersAndAttributes(gl, this.programInfo, bufferInfo);
+
+        const color = chroma(stroke.settings.color).gl();
+        color[3] = stroke.settings.opacity;
+
+        twgl.setUniforms(this.programInfo, {
+            u_resolution: [gl.canvas.width, gl.canvas.height],
+            u_color: color,
+        });
+        twgl.drawBufferInfo(gl, bufferInfo, gl.TRIANGLE_STRIP);
+    }
+    
+    renderPreviewStroke() {
+        const tempPath = { points: this.strokePoints };
+        const tempStroke = { bezierPath: tempPath, settings: this.settings, visible: true };
+        this.renderStroke(tempStroke);
+    }
+    
+    _convertStrokeToVertexArray(stroke) {
+        // (前回の指示書のロジックをここに実装)
+    }
+
+    // updateSettings, activate, deactivate, initCanvas 等のヘルパーメソッドを実装
+}
+これが、プロジェクトの長期的健全性を保ち、技術的負債を抱えずに「ペンを先鋭化させる」ための、最も確実かつ憲章に準拠した道です。

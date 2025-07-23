@@ -1,0 +1,226 @@
+実装指示書: BezierStrokeRenderer のGPUアクセラレーション化 (twgl.js)
+依頼概要
+現在Canvas2Dコンテキストで描画しているBezierStrokeRenderer.jsを、twgl.jsを利用してWebGLによるGPUアクセラレーション描画に置き換えてください。
+
+遵守すべき最重要原則（憲章違反防止）
+責務の厳守: Bezier.jsは軌跡計算、twgl.jsは描画にのみ使用します。BezierStrokeRenderer.jsの軌跡計算ロジック（strokeOptimizerなど）は変更せず、描画部分のみを置換してください。
+
+
+再発明の禁止: WebGLの定型的な処理（シェーダーコンパイル、バッファ管理等）を直接記述せず、必ずtwgl.jsのヘルパー関数を使用してください。  Raw WebGL API (
+
+gl.createBuffer, gl.vertexAttribPointer等) の直接使用は憲章違反です。
+
+依存関係の理解: この改修はmain.jsでWebGLの初期設定を行い、その結果をServiceContainer経由でBezierStrokeRendererに引き渡すことで実現します。2つのファイルは密接に関連します。
+
+修正対象ファイル
+src/main.js
+
+src/engine/BezierStrokeRenderer.js
+
+具体的な実装手順
+ステップ1: main.js でのWebGL初期設定
+initializeApp 関数内に、ToolEngineControllerを登録する前の適切な箇所で、以下の処理を追加してください。
+
+WebGL2コンテキストの取得とtwgl.jsのインポート:
+
+JavaScript
+
+import * as twgl from 'twgl.js'; // ファイル先頭に追加
+
+// initializeApp 内
+const gl = canvas.getContext('webgl2');
+if (!gl) {
+    console.error("WebGL2 is not available.");
+    return;
+}
+シェーダーの定義とプログラムの作成:
+
+以下のGLSLシェーダーコードを文字列として定義し、twgl.createProgramInfoを使用してシェーダープログラムを作成します。
+
+JavaScript
+
+// 頂点シェーダー
+const vs = `
+    #version 300 es
+    in vec2 a_position;
+    uniform vec2 u_resolution;
+
+    void main() {
+        vec2 zeroToOne = a_position / u_resolution;
+        vec2 zeroToTwo = zeroToOne * 2.0;
+        vec2 clipSpace = zeroToTwo - 1.0;
+        gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+    }
+`;
+
+// フラグメントシェーダー
+const fs = `
+    #version 300 es
+    precision mediump float;
+    uniform vec4 u_color;
+    out vec4 outColor;
+
+    void main() {
+        outColor = u_color;
+    }
+`;
+
+const programInfo = twgl.createProgramInfo(gl, [vs, fs]);
+ServiceContainerへの登録:
+
+作成したglコンテキストとprogramInfoを、後でBezierStrokeRendererが利用できるようDIコンテナに登録します。
+
+JavaScript
+
+container.register('gl', gl);
+container.register('programInfo', programInfo);
+ステップ2: BezierStrokeRenderer.js のWebGL対応化
+コンストラクタの修正:
+
+ServiceContainerからglとprogramInfoを受け取るように変更します。canvas.getContext('2d')は不要になるため削除してください。
+
+JavaScript
+
+// 変更前
+// constructor(canvas) {
+//     this.canvas = canvas;
+//     this.ctx = canvas.getContext('2d');
+//     ...
+// }
+
+// 変更後
+constructor(canvas, container) {
+    this.canvas = canvas;
+    this.gl = container.resolve('gl');
+    this.programInfo = container.resolve('programInfo');
+    this.twgl = twgl; // twgl.jsをインポートしておくこと
+    this.isActive = false;
+    // ...
+}
+main.jsのBezierStrokeRendererインスタンス生成部分も、引数をcontainerに変更してください。
+const bezierRenderer = new BezierStrokeRenderer(canvas, container);
+
+頂点データ生成ヘルパーの追加:
+
+VectorStrokeオブジェクトから、WebGLで描画可能な三角形の頂点配列（トライアングルストリップ）を生成するメソッドを追加します。これは今回の修正で最も重要なロジックです。
+
+仕様:
+
+ストロークを構成する点列（path.points）をループ処理します。
+
+各点において、進行方向に対して垂直なベクトル（法線ベクトル）を計算します。
+
+各点の位置から、法線ベクトルの方向に「線幅の半分」だけずらした2つの頂点を生成します。
+
+これにより、線が帯状のメッシュになります。
+
+このメソッドはscheduleRedrawから呼び出します。
+
+JavaScript
+
+// BezierStrokeRendererクラス内に以下のメソッドを追加
+_convertStrokeToVertexArray(stroke) {
+    const points = stroke.bezierPath.points;
+    if (points.length < 2) return null;
+
+    const positions = [];
+    const baseSize = stroke.settings.size;
+
+    for (let i = 0; i < points.length; i++) {
+        const p1 = points[i];
+        const p2 = (i < points.length - 1) ? points[i+1] : p1;
+
+        let dir = { x: p2.x - p1.x, y: p2.y - p1.y };
+        let len = Math.hypot(dir.x, dir.y);
+        if (len > 0) {
+            dir.x /= len;
+            dir.y /= len;
+        } else {
+            // 最後の点など、方向がない場合
+            const prev_p = (i > 0) ? points[i-1] : p1;
+            dir = {x: p1.x - prev_p.x, y: p1.y - prev_p.y};
+            len = Math.hypot(dir.x, dir.y);
+            if(len > 0) {
+                dir.x /= len;
+                dir.y /= len;
+            } else { // 点が1つしかない場合
+                dir = {x: 1, y: 0};
+            }
+        }
+
+        // 法線ベクトル
+        const normal = { x: -dir.y, y: dir.x };
+        const width = this.pressureProcessor.calculateDynamicWidth(p1.pressure, baseSize) / 2;
+
+        positions.push(p1.x + normal.x * width, p1.y + normal.y * width);
+        positions.push(p1.x - normal.x * width, p1.y - normal.y * width);
+    }
+
+    return {
+        position: { numComponents: 2, data: positions },
+    };
+}
+scheduleRedrawメソッドの全面書き換え:
+
+既存のclearRectやrenderPreviewStrokeなどのCanvas2D関連処理を全て削除します。
+
+以下の手順でWebGL描画ループを実装してください。
+
+JavaScript
+
+scheduleRedraw() {
+    const gl = this.gl;
+    const twgl = this.twgl;
+
+    twgl.resizeCanvasToDisplaySize(gl.canvas);
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+    gl.clearColor(0, 0, 0, 0); // 背景を透明に
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    gl.useProgram(this.programInfo.program);
+
+    const allStrokes = this.strokeStore.getAllStrokes();
+
+    for (const stroke of allStrokes) {
+        if (!stroke.visible) continue;
+
+        const arrays = this._convertStrokeToVertexArray(stroke);
+        if (!arrays) continue;
+
+        const bufferInfo = twgl.createBufferInfoFromArrays(gl, arrays);
+        twgl.setBuffersAndAttributes(gl, this.programInfo, bufferInfo);
+
+        const color = chroma(stroke.settings.color).gl(); // chroma.js等で色を[R,G,B,A]配列に
+        color[3] = stroke.settings.opacity / 100.0; // 透明度を設定
+
+        twgl.setUniforms(this.programInfo, {
+            u_resolution: [gl.canvas.width, gl.canvas.height],
+            u_color: color,
+        });
+
+        twgl.drawBufferInfo(gl, bufferInfo, gl.TRIANGLE_STRIP);
+    }
+}
+不要なコードの削除:
+
+以下のCanvas2Dに依存したメソッドは完全に削除してください。
+
+renderPreviewStroke
+
+renderLine (BezierTrajectoryRenderer内)
+
+renderSpline (BezierTrajectoryRenderer内)
+
+BatchRenderingProcessorとBezierTrajectoryRendererクラス全体も、今回の実装では不要になるため削除します。
+
+完了チェックリスト
+[ ] main.jsでtwgl.jsを使い、WebGLコンテキストとシェーダープログラムがServiceContainerに登録されているか。
+
+[ ] BezierStrokeRenderer.jsがCanvas2Dコンテキスト(ctx)に一切依存しなくなっているか。
+
+[ ] scheduleRedrawがWebGLの描画命令（twgl.drawBufferInfo等）に置き換えられているか。
+
+[ ] ストロークの描画が、指定された色・透明度・筆圧に応じた太さで正しく行われるか。
+
+[ ] 憲章原則（再発明禁止、責務分離）が遵守されているか。

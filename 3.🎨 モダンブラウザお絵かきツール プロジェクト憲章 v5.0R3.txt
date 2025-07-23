@@ -1,0 +1,336 @@
+## 🚨 緊急改訂の背景
+Phase1実装において「Canvas2Dの誘惑」による憲章違反が多発。根本原因は**「描画モード」という曖昧な概念**がAIの解釈の揺れを引き起こすことと判明。v5.0では**「ツール選択とエンジン起動の厳格な連動」**により、物理的に曖昧さを排除する。
+
+### 🎯 新基本方針（v5.0核心思想）
+- **曖昧さの物理的排除**: アーキテクチャレベルで解釈の余地を完全に断つ
+- **ツール・エンジン厳格連動**: ツール選択が唯一のエンジン起動トリガー
+- **Canvas2D誘惑の根絶**: ペンツールはBezier.jsエンジン以外起動不可能
+- **再発明回避**: 既存の優良ライブラリを最大限信頼・活用
+- **ライブラリ統合責務**: エンジンの役割は統合であり、アルゴリズム再実装ではない
+- **信頼できるライブラリ**: Bezier.js, twgl.js, OGL等は完成品として扱う
+- **独自実装禁止**: 既存ライブラリで解決可能な処理の独自実装は原則禁止
+- **ユーザー期待値最優先**: 技術的完璧性よりもユーザー体験を重視
+
+## 🚫 禁止事項（憲章違反・v5.0強化版）
+- **🆕 「描画モード」概念の使用**: モード抽象化は曖昧さの温床
+- **🆕 「DrawingModeController」類の実装**: ツール選択外のエンジン制御禁止
+- **🆕 Canvas2Dによるペン描画実装**: ペン=Bezier.jsエンジンのみ
+- 既存ライブラリで解決可能な処理の独自実装
+- Bezier.js等の完成品ライブラリの結果を信頼しない実装
+- アルゴリズムの再発明（三角分割、座標変換、色変換等）
+- 「自分で制御したい」という理由での独自実装
+- ユーザー期待値を無視した技術優先実装
+- **🆕 複数エンジンの同時起動**（ToolEngineControllerが単一エンジンのみ制御）
+- **🆕 Konva.jsをペン描画ツールとして使用**（必ず選択・移動専用）
+
+※※ 本プロジェクトでは、Retina（高DPI）対応をあえて無効化（DPR=1固定）とする。理由は、Windows環境ではマルチモニタ構成や液タブ使用時にDPRが動的に変化し、描画ズレや座標不一致が発生しやすいためである。論理解像度ベースで1px=1dotの精密制御を維持する方針とし、ユーザー期待値の安定性を優先する。
+
+
+### 🆕 ツール・エンジン厳格連動戦略（v5.0核心設計）
+```javascript
+// ツール選択 = エンジン起動の唯一トリガー
+const TOOL_ENGINE_BINDING = {
+    'pen': {
+        engineClass: 'BezierStrokeRenderer',
+        canvasTarget: 'vector-layer',
+        // ペンツール = Bezier.jsエンジンのみ起動可能
+    },
+    'brush': {
+        engineClass: 'Canvas2DRenderer',
+        canvasTarget: 'raster-layer',
+        initialConfig: { brushType: 'normal', blendingMode: 'source-over' }
+    },
+    'airbrush': {
+        engineClass: 'Canvas2DRenderer', 
+        canvasTarget: 'raster-layer',
+        initialConfig: { brushType: 'airbrush', blendingMode: 'source-over' }
+    },
+    'eraser': {
+        engineClass: 'Canvas2DRenderer',
+        canvasTarget: 'raster-layer', 
+        initialConfig: { brushType: 'eraser', blendingMode: 'destination-out' }
+    },
+    'selection': {
+        engineClass: 'KonvaSelectionEngine',
+        canvasTarget: 'interactive-layer'
+    },
+    'move': {
+        engineClass: 'KonvaMoveEngine', 
+        canvasTarget: 'interactive-layer'
+    },
+    'transform': {
+        engineClass: 'KonvaTransformEngine',
+        canvasTarget: 'interactive-layer'
+    }
+};
+
+// 物理的に曖昧さを排除する制御クラス
+class ToolEngineController {
+    constructor(serviceContainer) {
+        this.serviceContainer = serviceContainer;
+        this.currentEngine = null;
+        this.currentTool = null;
+    }
+    
+    // ツール選択 = 唯一のエンジン起動トリガー
+    selectTool(toolName) {
+        const binding = TOOL_ENGINE_BINDING[toolName];
+        if (!binding) {
+            throw new Error(`Unknown tool: ${toolName}`);
+        }
+        
+        // 現在のエンジンを完全停止
+        if (this.currentEngine) {
+            this.currentEngine.dispose();
+            this.currentEngine = null;
+        }
+        
+        // 指定されたエンジンのみ起動
+        const engineClass = this.serviceContainer.resolve(binding.engineClass);
+        this.currentEngine = new engineClass(binding.canvasTarget);
+        
+        // 初期設定がある場合は適用
+        if (binding.initialConfig) {
+            this.currentEngine.initialize(binding.initialConfig);
+        }
+        
+        this.currentTool = toolName;
+    }
+    
+    // 現在のエンジンへの操作委譲
+    handlePointerDown(event) {
+        if (this.currentEngine) {
+            this.currentEngine.onPointerDown(event);
+        }
+    }
+    
+    handlePointerMove(event) {
+        if (this.currentEngine) {
+            this.currentEngine.onPointerMove(event);
+        }
+    }
+    
+    handlePointerUp(event) {
+        if (this.currentEngine) {
+            this.currentEngine.onPointerUp(event);
+        }
+    }
+}
+```
+##ファイル構成
+src/
+├── package.json          # Vite設定
+├── index.html                 # メインHTML + 基本CSS/JS統合
+├── src/
+│   ├── main.js          # アプリケーションエントリーポイント
+│   ├── core/
+│   │   ├── ServiceContainer.js    # DIコンテナ（最重要・最初に分離）
+│   │   └── ToolEngineController.js # ツール・エンジン厳格連動制御
+│   ├─ engine/
+│   │   ├── BezierStrokeRenderer.js # Bezier.js統合正確軌跡描画
+│   │   └── Canvas2DRenderer.js     # Canvas2D専用ラスター描画
+│   ├─ tools/
+│   │   └──ToolStore.js           # ツール状態管理 + Actions統合
+│   └─ ui/
+│        └──ToolPanel.js           # ツール選択UI（Phosphor Icons統合）
+└── node_modules/
+
+
+
+## 🏗️ SOLID準拠アーキテクチャ（v5.0更新）
+
+
+### データフロー（単方向・SOLID準拠）
+```
+UI → ToolActions.selectTool() → ToolEngineController.selectTool() → エンジン起動
+UI → Actions → Store → UIが状態購読して再描画
+ServiceContainer → 各クラスにDI注入
+ToolEngineController → 単一エンジン制御（曖昧さ完全排除）
+AppModeController → UI/Store（アプリ動作モード制御）
+ParentCommunicator ↔ AppModeController（外部連携）
+PhosphorIconManager → UI（アイコン統一管理）
+CommandExecutor → HistoryActions → 統一Undo/Redo
+```
+
+## 🚀 実装ロードマップ（v5.0更新）
+
+### Phase 1: ツール・エンジン厳格連動基盤構築（6週間）← +1週間
+
+**HTML単一ファイル運用（開発効率最優先）**
+- **🆕 ToolEngineController**: ツール選択=エンジン起動の厳格連動
+- **🆕 TOOL_ENGINE_BINDING**: ツール・エンジン・Canvas対応表
+- **🆕 統一コマンドパターン**: エンジン横断Undo/Redo基盤
+- **🆕 Canvas2D誘惑完全排除**: ペンツール=Bezier.jsエンジン固定
+- twgl.js基盤 + Bezier.js統合
+- BezierStrokeRenderer + PressureProcessor（ベクター専用）
+- Canvas2DRenderer: ラスター描画専用エンジン（ブラシ・消しゴム限定）
+- KonvaSelectionEngine: 選択・移動専用エンジン
+- Tailwind CSS基盤 + Phosphor Icons統合
+- ToolStore/ToolActions実装（エンジン制御統合）
+- AppModeStore/AppModeActions/AppModeController実装
+- PostMessageAPI: 親子間通信基盤
+- ServiceContainer → AppController統括
+
+### Phase 2: 高度描画機能＋UI統合＋アニメーション＋Vite化移行（4週間）
+
+**Vite化移行 + 機能拡張**
+- Vite 5.0+ セットアップ + ファイル分割
+- ES6 Modules + TypeScript型定義導入
+- OGL移行 + レイヤー機能（LayerStore/LayerActions分離）
+- LayerHierarchy: 統合階層制御
+- WebCodecs統合 + CodecProcessor
+- Worker並列処理 + 履歴機能（HistoryStore/HistoryActions分離）
+- CommandFactory + 全エンジン用コマンドクラス実装
+- TailwindStandaloneLayout + TailwindEmbeddedLayout
+- tailwind-animate統合: AnimatedCompletionModal.js
+- Phosphor Icons npm パッケージ移行
+- Popover API + ツールパネル
+- EmbeddedControls + 完了・キャンセル
+
+### Phase 3: 外部連携＋エクスポート（2週間）
+
+- ParentCommunicator: 高度な親子通信
+- EmbeddedMode: 組み込み動作制御
+- FutabaAdapter: ふたば連携実装
+- ExportStore/ExportActions: エクスポート状態・操作分離
+- ConstrainedExporter: 制約付きエクスポート
+- File System Access API: ネイティブ保存
+
+### Phase 4: 次世代技術移行＋GPU最適化（4週間）
+
+- regl移行 + パフォーマンス最適化
+- WebGPU直接API: ComputeShaderProcessor.js実装
+- GPUComputeWorker.js: 筆圧処理・ベジエ計算GPU並列化
+- @webgpu/utils + WebGPU完全移行
+- Compute Shader: GPU計算活用（筆圧処理・軌跡最適化）
+- 品質保証 + 統合テスト
+- SOLID原則最終確認
+
+
+### 汎用連携API設計（v5.0継承）
+```typescript
+interface DrawingToolConfig {
+    mode: 'standalone' | 'embedded';
+    initialData?: {
+        imageData: string;
+        width: number;
+        height: number;
+    };
+    constraints?: {
+        maxSize: number;
+        maintainAspectRatio: boolean;
+        allowResize: boolean;
+    };
+    ui?: {
+        theme: 'light' | 'dark' | 'embedded';
+        layout: 'full' | 'compact' | 'minimal';
+        hiddenFeatures?: string[];
+        iconTheme: 'phosphor-regular' | 'phosphor-bold' | 'phosphor-light';
+    };
+    callbacks?: {
+        onComplete: (imageData: string) => void;
+        onCancel: () => void;
+        onError: (error: Error) => void;
+    };
+}
+```
+
+## 🎯 差別化ポイント（v5.0強化）
+
+### 技術的優位性
+1. **Chrome特化**: 最新API完全活用
+2. **GPU段階移行**: twgl→OGL→regl→WebGPU
+3. **正確軌跡描画**: Bezier.js中心の期待値一致設計
+4. **🆕 曖昧さ完全排除**: ツール・エンジン厳格連動アーキテクチャ
+5. **🆕 Canvas2D誘惑根絶**: 物理的にペン=Bezier.jsエンジン固定
+6. **モダンUI**: Tailwind CSS + tailwind-animate による2025年標準UI
+7. **統一アイコン**: Phosphor Icons による一貫性のあるUI
+8. **並列処理**: Worker完全活用
+9. **WebCodecs統合**: ハードウェア加速エンコード
+
+### 設計的優位性
+1. **完全SOLID準拠**: 業界初の完全SOLID準拠描画ツール
+2. **Store/Actions/UI三層**: 予測可能な状態管理
+3. **依存性注入統一**: ServiceContainer中心設計
+4. **責務完全分離**: Manager撲滅・具体的命名
+5. **🆕 アーキテクチャレベル制約**: AIの解釈の揺れを物理的に防止
+6. **🆕 技術統合責務**: エンジンは統合役、個別ライブラリは完成品として信頼
+7. **AI協働最適化**: 明確責務による指示精度向上
+8. **段階的移行**: HTML単一→Vite化の効率的開発フロー
+
+### UX優位性
+1. **期待値完全一致**: 描いた通りの軌跡を正確に再現
+2. **筆圧完全対応**: 圧力値を直接線幅にマッピング
+3. **軌跡保持**: L字はL字のまま、補間による変形なし
+4. 🆕 インタラクティブ性: Konva.js による直感的操作
+5. 🆕 モダンアニメーション: tailwind-animate による滑らかなUI遷移
+6. 🆕 統一アイコン体験: Phosphor Icons による直感的UI
+7. **リアルタイム**: 遅延なしの即座反映
+
+## 🤖 AI協働開発戦略
+
+### 実装委任方針
+- **Store/Actions/UIセット**: 三層セットで委任
+- **🆕 ライブラリ統合セット**: Service層でラップして責務分離
+- **🆕 HTML単一ファイル前提**: Phase1では全てひとつのHTMLファイル内で実装
+- **単一責任明確化**: 1ファイル1責務で混乱回避
+- **段階的統合**: インターフェース準拠で品質確保
+- **依存性注入統一**: DIパターン完全準拠
+
+### AI指示テンプレート
+```
+## 実装依頼: [機能名]
+
+### Phase1制約（HTML単一ファイル運用）
+- **単一HTMLファイル**: 全ての処理を1つのHTMLファイル内に実装
+- **CDN読み込み**: 外部ライブラリは全てCDNから読み込み
+- **ES6 Modules禁止**: import/export構文は使用不可
+- **クラス定義**: JavaScript class構文でオブジェクト指向実装
+- **ServiceContainer**: 依存性注入パターンは維持
+
+### 対象クラス（Store/Actions/UI三層）
+- **Store**: `[機能名]Store` クラス - 責務：[機能名]の状態管理のみ
+- **Actions**: `[機能名]Actions` クラス - 責務：[機能名]の操作実行のみ
+- **UI**: `[コンポーネント名]` クラス - 責務：UIの表示・Storeの購読・Actionsの呼び出しのみ
+
+### アイコン使用（Phosphor Icons）
+- **CDN読み込み**: `https://unpkg.com/phosphor-icons@1.4.2`
+- **アイコン使用**: `<i class="ph-[icon-name]"></i>` 形式
+- **統一性**: 同一機能には同一アイコンを使用
+- **テーマ**: ph-（regular）、ph-bold-、ph-light- から選択
+
+### SOLID原則厳守
+- **単一責任**: [このクラスが持つべき唯一の責務を1文で明記]
+- **開放閉鎖**: 新機能追加は拡張で、既存コード修正禁止
+- **置換可能**: 同一インターフェース実装クラスは完全置換可能
+- **インターフェース分離**: 不要メソッドの実装強制禁止
+- **依存性逆転**: 具体実装でなく抽象インターフェースに依存
+
+### データフロー厳守
+- **UI → Actions → Store → UIが状態購読** の一方向フロー厳守
+- Store状態の直接変更禁止（必ずActions経由）
+- UI内での状態保持禁止（必ずStoreを購読）
+
+### 品質要件
+- デバッグコード（console.log等）完全除去
+- 非同期処理はasync/await統一
+- エラーハンドリング必須実装
+- DRY原則遵守（共通処理の関数化）
+
+### 動作モード考慮
+- **スタンドアロン**: 通常の単体動作
+- **組み込み**: 外部サイトとの連携動作
+- **制約**: サイズ・UI・機能制限への対応
+
+### 技術要件
+- **Bezier.js統合**: 正確軌跡描画対応
+- **筆圧処理**: 圧力値→線幅変換
+- **WebCodecs対応**: 高速エンコード活用
+- **GPU描画**: WebGL/WebGPU最適化
+- **Worker並列**: 重処理分離
+
+### ユーザー期待値厳守
+- **軌跡正確性**: 描いた軌跡を正確に再現
+- **筆圧反映**: 圧力変化を即座に線幅に反映
+- **補間制御**: 不要な補間による軌跡変形禁止
+```
