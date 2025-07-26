@@ -45,7 +45,7 @@ Phase1実装において「Canvas2Dの誘惑」による憲章違反が多発。
 // GPU描画ライブラリ（段階導入）
 twgl.js → OGL → regl → @webgpu/utils + WebGPU Direct API
 
-// 正確軌跡描画技術（主軸・ベクター専用）
+// 正確軌跡描画技術（主軸・全ツール統一）
 Bezier.js + 筆圧処理      // 正確軌跡ベクター描画コア（ペン描画専用）
 WebCodecs API             // 高速エンコード/デコード  
 OffscreenCanvas          // メインスレッド分離
@@ -78,23 +78,18 @@ const TOOL_ENGINE_BINDING = {
     'pen': {
         engineClass: 'BezierStrokeRenderer',
         canvasTarget: 'vector-layer',
-        // ペンツール = Bezier.jsエンジンのみ起動可能
+         initialConfig: { brushType: 'normal', opacity: 1.0, blendingMode: 'source-over' }
     },
-    'brush': {
-        engineClass: 'Canvas2DRenderer',
-        canvasTarget: 'raster-layer',
-        initialConfig: { brushType: 'normal', blendingMode: 'source-over' }
-    },
-    'airbrush': {
-        engineClass: 'Canvas2DRenderer', 
-        canvasTarget: 'raster-layer',
-        initialConfig: { brushType: 'airbrush', blendingMode: 'source-over' }
+     'brush': {
+        engineClass: 'BezierStrokeRenderer',
+        canvasTarget: 'vector-layer',
+        initialConfig: { brushType: 'brush', opacity: 0.7, blendingMode: 'source-over' }
     },
     'eraser': {
-        engineClass: 'Canvas2DRenderer',
-        canvasTarget: 'raster-layer', 
-        initialConfig: { brushType: 'eraser', blendingMode: 'destination-out' }
-    },
+        engineClass: 'BezierStrokeRenderer',
+        canvasTarget: 'vector-layer',
+        initialConfig: { brushType: 'eraser', opacity: 0.0, blendingMode: 'destination-out' }
+     },
     'selection': {
         engineClass: 'KonvaSelectionEngine',
         canvasTarget: 'interactive-layer'
@@ -252,25 +247,22 @@ src/
 │   └── ConfigStore.js         # 設定状態管理
 
 ├── engine/                    # 描画エンジン層（ツール連動）
-│   ├── core/                  # 🆕 エンジン統制コア
-│   │   ├── ToolEngineController.js   # 🆕 ツール・エンジン厳格連動制御
+│   ├── core/                  #  エンジン統制コア
+│   │   ├── ToolEngineController.js   #  ツール・エンジン厳格連動制御
 │   │   ├── UnifiedInputProcessor.js  # 統一入力処理
 │   │   ├── UnifiedCoordinateSystem.js # 統一座標系（DPR=1固定）
-│   │   └── CommandExecutor.js        # 🆕 コマンドパターン実行エンジン
+│   │   └── CommandExecutor.js        #  コマンドパターン実行エンジン
 │   ├── gpu/
 │   │   ├── WebGPURenderer.js     # 次世代GPU描画
 │   │   ├── WebGLRenderer.js      # 互換GPU描画
 │   │   ├── GPUController.js      # GPU切り替え制御
 │   │   └── ComputeShaderProcessor.js # GPU並列計算
-│   ├── vector/                # ベクター描画専用（Bezier.js統合）
+│   ├── vector/                # 統一描画エンジン（Bezier.js統合・全ツール対応）
 │   │   ├── BezierStrokeRenderer.js  # Bezier.js統合正確軌跡描画
-│   │   ├── PressureProcessor.js     # 筆圧→線幅変換処理
-│   │   ├── StrokeEngine.js          # ベクターストローク統合
+│   │   ├── PressureProcessor.js     # 筆圧→線幅・透明度変換処理
+│   │   ├── UnifiedStrokeEngine.js   # 統一ストローク処理（ペン・ブラシ・消しゴム）
+│   │   ├── TransparencyProcessor.js # 透明度・ブレンドモード処理
 │   │   └── VectorOptimizer.js       # ベクター最適化
-│   ├── raster/                # ラスター描画専用（Canvas2D）
-│   │   ├── Canvas2DRenderer.js      # Canvas2D専用ラスター描画
-│   │   ├── RasterBrushEngine.js     # ラスターブラシ処理
-│   │   └── RasterCanvasController.js # ラスターキャンバス制御
 │   ├── interactive/           # インタラクティブ操作専用（Konva.js）
 │   │   ├── KonvaSelectionEngine.js   # Konva.js選択ツール専用
 │   │   ├── KonvaMoveEngine.js        # Konva.js移動ツール専用
@@ -288,8 +280,8 @@ src/
 │   │   ├── ToolActions.js     # ツール操作実行
 │   │   └── tools/
 │   │       ├── BezierPenTool.js           # Bezier.js正確軌跡ペン専用
-│   │       ├── Canvas2DBrushTool.js       # Canvas2D専用ブラシ
-│   │       ├── Canvas2DEraserTool.js      # Canvas2D専用消しゴム
+│   │       ├── BezierBrushTool.js         # Bezier.js統合ブラシ
+│   │       ├── BezierEraserTool.js        # Bezier.js透明ブラシ消しゴム
 │   │       ├── KonvaSelectionTool.js      # Konva.js選択専用
 │   │       ├── KonvaMoveTool.js           # Konva.js移動専用
 │   │       └── KonvaTransformTool.js      # Konva.js変形専用
@@ -306,9 +298,8 @@ src/
 │   ├── history/
 │   │   ├── HistoryStore.js    # 履歴状態管理
 │   │   ├── HistoryActions.js  # 履歴操作実行
-│   │   ├── commands/          # 🆕 コマンドオブジェクト群
-│   │   │   ├── BezierStrokeCommand.js    # Bezier.js用コマンド
-│   │   │   ├── Canvas2DBrushCommand.js   # Canvas2D用コマンド
+│   │   ├── commands/          #  コマンドオブジェクト群
+│   │   │   ├── BezierStrokeCommand.js    # Bezier.js統一コマンド（全ツール対応）
 │   │   │   ├── KonvaSelectionCommand.js  # Konva.js用コマンド
 │   │   │   └── CommandFactory.js         # コマンド生成ファクトリ
 │   │   └── CommandPattern.js  # Undo/Redo実装
@@ -375,7 +366,7 @@ src/
 UI → ToolActions.selectTool() → ToolEngineController.selectTool() → エンジン起動
 UI → Actions → Store → UIが状態購読して再描画
 ServiceContainer → 各クラスにDI注入
-ToolEngineController → 単一エンジン制御（曖昧さ完全排除）
+ToolEngineController → 単一エンジン制御（Bezier.jsエンジン統一・曖昧さ完全排除）
 AppModeController → UI/Store（アプリ動作モード制御）
 ParentCommunicator ↔ AppModeController（外部連携）
 PhosphorIconManager → UI（アイコン統一管理）
@@ -387,13 +378,12 @@ CommandExecutor → HistoryActions → 統一Undo/Redo
 ### Phase 1: ツール・エンジン厳格連動基盤構築（6週間）← +1週間
 
 **HTML単一ファイル運用（開発効率最優先）**
-- **🆕 ToolEngineController**: ツール選択=エンジン起動の厳格連動
-- **🆕 TOOL_ENGINE_BINDING**: ツール・エンジン・Canvas対応表
-- **🆕 統一コマンドパターン**: エンジン横断Undo/Redo基盤
-- **🆕 Canvas2D誘惑完全排除**: ペンツール=Bezier.jsエンジン固定
+- ** ToolEngineController**: ツール選択=エンジン起動の厳格連動
+- ** TOOL_ENGINE_BINDING**: ツール・エンジン・Canvas対応表
+- ** 全ツールBezier.js統一**: ペン・ブラシ・消しゴム全てBezier.jsエンジン
+- ** 透明ブラシ消しゴム**: Canvas2D完全排除・座標系統一
 - twgl.js基盤 + Bezier.js統合
-- BezierStrokeRenderer + PressureProcessor（ベクター専用）
-- Canvas2DRenderer: ラスター描画専用エンジン（ブラシ・消しゴム限定）
+- BezierStrokeRenderer + PressureProcessor（全ツール統一）
 - KonvaSelectionEngine: 選択・移動専用エンジン
 - Tailwind CSS基盤 + Phosphor Icons統合
 - ToolStore/ToolActions実装（エンジン制御統合）
@@ -410,7 +400,7 @@ CommandExecutor → HistoryActions → 統一Undo/Redo
 - LayerHierarchy: 統合階層制御
 - WebCodecs統合 + CodecProcessor
 - Worker並列処理 + 履歴機能（HistoryStore/HistoryActions分離）
-- CommandFactory + 全エンジン用コマンドクラス実装
+- CommandFactory + Bezier.js統一コマンドクラス実装
 - TailwindStandaloneLayout + TailwindEmbeddedLayout
 - tailwind-animate統合: AnimatedCompletionModal.js
 - Phosphor Icons npm パッケージ移行
@@ -486,9 +476,9 @@ interface DrawingToolConfig {
 ### 技術的優位性
 1. **Chrome特化**: 最新API完全活用
 2. **GPU段階移行**: twgl→OGL→regl→WebGPU
-3. **正確軌跡描画**: Bezier.js中心の期待値一致設計
-4. **🆕 曖昧さ完全排除**: ツール・エンジン厳格連動アーキテクチャ
-5. **🆕 Canvas2D誘惑根絶**: 物理的にペン=Bezier.jsエンジン固定
+3. **正確軌跡描画**: Bezier.js統一の期待値一致設計
+4. ** 曖昧さ完全排除**: ツール・エンジン厳格連動アーキテクチャ
+5. ** Canvas2D誘惑根絶**: 物理的にCanvas2D存在しない統一アーキテクチャ
 6. **モダンUI**: Tailwind CSS + tailwind-animate による2025年標準UI
 7. **統一アイコン**: Phosphor Icons による一貫性のあるUI
 8. **並列処理**: Worker完全活用
@@ -499,8 +489,8 @@ interface DrawingToolConfig {
 2. **Store/Actions/UI三層**: 予測可能な状態管理
 3. **依存性注入統一**: ServiceContainer中心設計
 4. **責務完全分離**: Manager撲滅・具体的命名
-5. **🆕 アーキテクチャレベル制約**: AIの解釈の揺れを物理的に防止
-6. **🆕 技術統合責務**: エンジンは統合役、個別ライブラリは完成品として信頼
+5. **アーキテクチャレベル制約**: AIの解釈の揺れを物理的に防止
+6. **単一エンジン統合**: Bezier.jsエンジン1本化による完全統一
 7. **AI協働最適化**: 明確責務による指示精度向上
 8. **段階的移行**: HTML単一→Vite化の効率的開発フロー
 
@@ -508,10 +498,11 @@ interface DrawingToolConfig {
 1. **期待値完全一致**: 描いた通りの軌跡を正確に再現
 2. **筆圧完全対応**: 圧力値を直接線幅にマッピング
 3. **軌跡保持**: L字はL字のまま、補間による変形なし
-4. 🆕 インタラクティブ性: Konva.js による直感的操作
-5. 🆕 モダンアニメーション: tailwind-animate による滑らかなUI遷移
-6. 🆕 統一アイコン体験: Phosphor Icons による直感的UI
-7. **リアルタイム**: 遅延なしの即座反映
++4. ** 座標系統一**: 全ツール同一座標系・移動レイヤー問題完全解決
++5.  インタラクティブ性: Konva.js による直感的操作
++6.  モダンアニメーション: tailwind-animate による滑らかなUI遷移
++7.  統一アイコン体験: Phosphor Icons による直感的UI
++8. **リアルタイム**: 遅延なしの即座反映
 
 ## 🤖 AI協働開発戦略
 
@@ -569,8 +560,9 @@ interface DrawingToolConfig {
 - **制約**: サイズ・UI・機能制限への対応
 
 ### 技術要件
-- **Bezier.js統合**: 正確軌跡描画対応
-- **筆圧処理**: 圧力値→線幅変換
+- **Bezier.js統一**: 全ツール正確軌跡描画対応
+- **筆圧処理**: 圧力値→線幅・透明度変換
+- **透明ブラシ**: 消しゴム機能の透明度実装
 - **WebCodecs対応**: 高速エンコード活用
 - **GPU描画**: WebGL/WebGPU最適化
 - **Worker並列**: 重処理分離
@@ -615,10 +607,10 @@ interface DrawingToolConfig {
 - [ ] Popover API活用UI
 
 ### 描画機能
-- [ ] 正確軌跡描画ツール（Bezier.js）
-- [ ] 🆕 インタラクティブラスター描画ツール（Konva.js）
+- [ ] 正確軌跡描画ツール（Bezier.js統一・全ツール対応））
 - [ ] 筆圧→線幅リアルタイム変換
-- [ ] 🆕 Konva.js統合レイヤー管理・階層
+- [ ] 透明ブラシ消しゴム（Bezier.js統合）
+- [ ] Konva.js統合レイヤー管理・階層
 - [ ] 履歴機能（Undo/Redo）
 - [ ] 非破壊編集
 - [ ] 背景画像読み込み
