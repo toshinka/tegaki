@@ -1,0 +1,110 @@
+# Phase2-Aα 指示書: OGLRenderer.jsの新規作成と関連改修
+
+---
+
+## 🛠️ 概要
+### **目的**:
+- WebGL2の描画性能を向上させるため、OGLを使用した描画エンジンを新規作成する。
+- `ToolEngineController.js`を改修し、新しい描画エンジン（OGLRenderer.js）との連動を実現する。
+
+### **対象ファイル**:
+- `src/engine/OGLRenderer.js`（新規作成）
+- `src/core/ToolEngineController.js`（改修）
+
+### **関連性**:
+- `BezierStrokeRenderer.js`: ベジェ曲線描画ロジックと連携するため、必要に応じて参照する。
+- `ToolStore.js`: ツール状態との連動を考慮。
+
+---
+
+## ✍️ 必要な改修内容
+### **ステップ1: OGLRenderer.jsの新規作成**
+- **目的**: OGLを使用した描画エンジンを構築し、基本的な描画機能を提供する。
+- **内容**:
+  1. OGLをインポートし、WebGL2コンテキストを初期化する。
+  2. ベジェ曲線を描画する基本ロジックを実装する。
+  3. 描画パイプラインの管理（シェーダー、頂点バッファのセットアップ）。
+
+**コード例**:
+```javascript name=OGLRenderer.js
+import { Renderer, Geometry, Program, Mesh } from 'ogl';
+
+export class OGLRenderer {
+    constructor(canvas) {
+        this.renderer = new Renderer({ canvas });
+        this.gl = this.renderer.gl;
+    }
+
+    initializeShaders(vertexShader, fragmentShader) {
+        this.program = new Program(this.gl, {
+            vertex: vertexShader,
+            fragment: fragmentShader,
+        });
+    }
+
+    drawBezierCurve(points) {
+        const geometry = new Geometry(this.gl, {
+            position: { size: 3, data: new Float32Array(points) },
+        });
+        const mesh = new Mesh(this.gl, { geometry, program: this.program });
+        this.renderer.render({ scene: mesh });
+    }
+}
+```
+
+---
+
+### **ステップ2: ToolEngineController.jsの改修**
+- **目的**: 新しい描画エンジン（OGLRenderer.js）を統合し、ツールとエンジンの連動を実現する。
+- **内容**:
+  1. OGLRendererインスタンスを初期化する。
+  2. ツール状態に応じた描画エンジンの切り替えを実装する。
+  3. 必要に応じてツールの動作をOGLRendererに渡す。
+
+**コード例**:
+```javascript name=ToolEngineController.js
+import { OGLRenderer } from '../engine/OGLRenderer';
+
+export class ToolEngineController {
+    constructor(canvas) {
+        this.engine = new OGLRenderer(canvas);
+    }
+
+    activateTool(tool) {
+        if (tool.requiresOGL) {
+            this.engine.initializeShaders(tool.vertexShader, tool.fragmentShader);
+        }
+    }
+
+    draw(points) {
+        this.engine.drawBezierCurve(points);
+    }
+}
+```
+
+---
+
+## ✅ 最低限必要な命名法則
+### **関数命名規則**:
+- 動詞 + 名詞の形式で記載（例: `initializeRenderer`）。
+- キャメルケースを使用。
+
+### **変数命名規則**:
+- 意味が明確な名称を使用（例: `vertexShader`）。
+- 配列の場合は複数形で命名。
+
+---
+
+## 📋 検証内容
+### **テストケース**
+1. **OGLRenderer.jsの基本動作**:
+   - OGLの初期化が正しく行われることを確認。
+   - ベジェ曲線が正しく描画されることを確認。
+2. **ToolEngineController.jsとの連動**:
+   - ツール選択に応じて描画エンジンが正しく動作することを確認。
+
+---
+
+## 🔗 参考資料
+- [OGL公式ドキュメント](https://github.com/oframe/ogl)
+- [WebGLガイドライン](https://webgl.com/)
