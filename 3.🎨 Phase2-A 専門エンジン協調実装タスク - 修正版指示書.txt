@@ -42,18 +42,17 @@
 
 ```
 src/
-├── main.js                      # 修正: 協調エンジンDI登録
+├── main.js                             # エントリーポイント
 ├── core/
-│   ├── ServiceContainer.js      # (変更なし)
-│   └── ToolEngineController.js  # 🚨全面改修: 専門エンジン協調制御
-├── engine/
-│   ├── calculation/
-│   │   └── BezierCalculationEngine.js # 🆕新規: Bezier.js統合計算専門
-│   └── rendering/
-│       └── OGLRenderingEngine.js      # 🆕新規: OGL統合描画専門
-└── tools/
-    ├── ToolStore.js             # (軽微な修正の可能性)
-    └── ToolPanel.js             # (軽微な修正の可能性)
+│   └── ServiceContainer.js             # DIコンテナ
+├── engine/                             # 協調エンジン統合配置
+│   ├── ToolEngineController.js         # 協調エンジン制御
+│   ├── BezierCalculationEngine.js      # 計算専門
+│   └── OGLRenderingEngine.js           # 描画専門
+└── features/                           # 三層構造
+    └── tools/
+        ├── ToolStore.js                # ツール状態管理
+        └── ToolPanel.js                # ツール選択UI
 ```
 
 ---
@@ -143,7 +142,7 @@ export class BezierCalculationEngine {
 
 ### Step 2: OGLRenderingEngine.js の新規作成
 
-**ファイル**: `src/engine/rendering/OGLRenderingEngine.js`
+**ファイル**: `src/engine/OGLRenderingEngine.js`
 
 **責務**: 描画専門エンジン。BezierCalculationEngineから受け取った軌跡データをもとに、OGLライブラリを使用してWebGLキャンバスに線を描画する。
 
@@ -455,8 +454,8 @@ export class ToolEngineController {
 // 修正イメージ
 import { ServiceContainer } from './core/ServiceContainer.js';
 import { ToolEngineController } from './core/ToolEngineController.js';
-import { BezierCalculationEngine } from './engine/calculation/BezierCalculationEngine.js';
-import { OGLRenderingEngine } from './engine/rendering/OGLRenderingEngine.js';
+import { BezierCalculationEngine } from './engine/BezierCalculationEngine.js';
+import { OGLRenderingEngine } from './engine/OGLRenderingEngine.js';
 import { ToolStore } from './tools/ToolStore.js';
 import { ToolPanel } from './tools/ToolPanel.js';
 
