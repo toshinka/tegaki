@@ -1,0 +1,269 @@
+# 🎨 モダンブラウザお絵かきツール プロジェクト憲章 v5.1
+
+## 🚨 v5.1改訂の背景
+Phase2-A実装において「専門エンジン協調」の技術的必然性が明確化。OGL等の専門GPU描画ライブラリは、Canvas2Dのような「曖昧な選択肢」ではなく、明確な技術的専門性を持つため、責務分離エンジンの協調を許容する。
+
+### 🎯 基本方針（v5.1更新）
+- **曖昧さの物理的排除**: アーキテクチャレベルで解釈の余地を完全に断つ
+- **ツール・エンジン厳格連動**: ツール選択が唯一のエンジン起動トリガー
+- **🆕 専門エンジン協調許容**: 責務分離された専門ライブラリの協働を技術的合理性に基づき許可
+- **Canvas2D誘惑の根絶**: ペンツールはBezier.jsエンジン以外起動不可能
+- **ライブラリ統合責務**: エンジンの役割は統合であり、アルゴリズム再実装ではない
+- **ユーザー期待値最優先**: 技術的完璧性よりもユーザー体験を重視
+
+## 🚫 禁止事項（v5.1修正版）
+
+### 絶対禁止
+- **Canvas2Dによるペン描画実装**: ペン=Bezier.jsエンジンのみ
+- **「描画モード」概念の使用**: モード抽象化は曖昧さの温床
+- **曖昧な描画手法切り替え**: 技術的根拠のない任意切り替え禁止
+- **競合するライブラリの同時使用**: 同一責務の重複実装禁止
+- **🆕 技術的根拠のない複数エンジン**: 明確な責務分離がない場合の複数エンジン禁止
+
+### 条件付き許容
+- **🆕 専門エンジンの協調**: 異なる責務を持つエンジンの協働（例: Bezier.js + OGL）
+- **🆕 責務分離エンジン**: 計算エンジン + 描画エンジンの明確分離
+- **🆕 段階的技術移行**: twgl → OGL → WebGPU等の技術進化対応
+
+### エンジン協調の条件
+1. **責務が明確に分離**されている
+2. **技術的な必然性**がある  
+3. **データフローが単方向**である
+4. **協調制御が一箇所**に集約されている
+
+## 🎯 技術戦略（v5.1更新）
+
+### コア技術スタック
+```javascript
+// GPU描画ライブラリ（専門エンジン協調）
+BezierCalculationEngine + OGLRenderingEngine → WebGPU Direct API
+
+// 正確軌跡描画技術（計算・描画分離）
+Bezier.js（計算専門） + OGL（描画専門） + 筆圧処理
+WebCodecs API + OffscreenCanvas
+
+// インタラクティブ操作（選択・移動専用）
+Konva.js（選択・移動・変形ツール専用・ペン描画禁止）
+
+// モダンUI構築
+Tailwind CSS + tailwind-animate + Phosphor Icons
+
+// 開発環境
+Vite 5.0+ + ES6 Modules + Pointer Events API
+```
+
+### 🆕 専門エンジン協調設計
+```javascript
+// エンジン協調パターン
+class ToolEngineController {
+    constructor(serviceContainer, canvas) {
+        this.serviceContainer = serviceContainer;
+        // 専門エンジンの責務分離
+        this.calculator = new BezierCalculationEngine(); // 計算専門
+        this.renderer = new OGLRenderingEngine(canvas);  // 描画専門
+        this.currentTool = null;
+    }
+    
+    // ツール選択 = 協調エンジン起動
+    selectTool(toolName) {
+        const binding = TOOL_ENGINE_BINDING[toolName];
+        if (!binding) throw new Error(`Unknown tool: ${toolName}`);
+        
+        // 協調エンジン初期化
+        this.calculator.setToolConfig(binding.calculationConfig);
+        this.renderer.setToolConfig(binding.renderingConfig);
+        this.currentTool = toolName;
+    }
+    
+    // 協調処理フロー（単方向）
+    processStroke(points, pressure) {
+        // 1. 計算エンジンで軌跡算出
+        const accuratePath = this.calculator.calculateBezierPath(points);
+        
+        // 2. 描画エンジンで可視化
+        this.renderer.renderPath(this.currentTool, accuratePath, pressure);
+    }
+}
+
+// 禁止される協調パターン例
+class BadController {
+    // ❌ 曖昧な選択肢による複数エンジン
+    switchRenderingMode(mode) {
+        if (mode === 'canvas2d') this.useCanvas2D();
+        if (mode === 'webgl') this.useWebGL();
+    }
+    
+    // ❌ 同一責務の重複エンジン
+    constructor() {
+        this.canvas2DRenderer = new Canvas2DRenderer();
+        this.webglRenderer = new WebGLRenderer(); // 同じ描画責務
+    }
+}
+```
+
+## 🏗️ SOLID準拠アーキテクチャ（v5.1更新）
+
+### フォルダ構成（専門エンジン協調対応）
+```
+src/
+├── engine/
+│   ├── core/
+│   │   ├── ToolEngineController.js      # 🆕 協調エンジン制御
+│   │   ├── UnifiedInputProcessor.js     # 統一入力処理
+│   │   └── CommandExecutor.js           # コマンドパターン実行
+│   ├── calculation/                     # 🆕 計算専門エンジン層
+│   │   ├── BezierCalculationEngine.js   # Bezier.js統合計算エンジン
+│   │   ├── PressureProcessor.js         # 筆圧→線幅・透明度変換
+│   │   └── VectorOptimizer.js           # ベクター最適化
+│   ├── rendering/                       # 🆕 描画専門エンジン層
+│   │   ├── OGLRenderingEngine.js        # OGL統合描画エンジン
+│   │   ├── WebGLRenderer.js             # 互換GPU描画
+│   │   └── WebGPURenderer.js            # 次世代GPU描画
+│   ├── interactive/
+│   │   ├── KonvaSelectionEngine.js      # Konva.js選択専用
+│   │   └── KonvaMoveEngine.js           # Konva.js移動専用
+│   └── OffscreenController.js           # OffscreenCanvas制御
+
+├── features/                            # Store/Actions/UI三層構造
+│   ├── tools/
+│   │   ├── ToolStore.js                 # ツール状態管理
+│   │   ├── ToolActions.js               # ツール操作実行
+│   │   └── tools/
+│   │       ├── BezierPenTool.js         # Bezier計算+OGL描画ペン
+│   │       ├── BezierBrushTool.js       # Bezier計算+OGL描画ブラシ
+│   │       └── BezierEraserTool.js      # Bezier計算+OGL描画消しゴム
+│   ├── layers/
+│   │   ├── LayerStore.js                # レイヤー状態管理
+│   │   └── LayerActions.js              # レイヤー操作実行
+│   ├── history/
+│   │   ├── HistoryStore.js              # 履歴状態管理
+│   │   ├── HistoryActions.js            # 履歴操作実行
+│   │   └── commands/
+│   │       └── CoordinatedCommand.js    # 🆕 協調エンジン用コマンド
+│   └── export/
+│       ├── ExportStore.js               # エクスポート状態管理
+│       └── ExportActions.js             # エクスポート操作実行
+
+├── ui/                                  # UI層
+│   ├── components/
+│   │   ├── TailwindToolPanel.js         # ツールパネル
+│   │   ├── TailwindLayerPanel.js        # レイヤーパネル
+│   │   └── PhosphorIconButton.js        # アイコンボタン
+│   └── layouts/
+│       ├── TailwindStandaloneLayout.js  # スタンドアロンUI
+│       └── TailwindEmbeddedLayout.js    # 組み込みUI
+
+└── integration/                         # 外部連携
+    ├── PostMessageAPI.js                # 外部通信
+    └── FutabaAdapter.js                 # ふたば連携
+```
+
+### データフロー（協調版）
+```
+入力 → BezierCalculationEngine → 軌跡データ → OGLRenderingEngine → 描画
+     ↑                                                             ↓
+ToolEngineController ←─── 協調制御 ←─── 筆圧・設定データ ←─────────┘
+
+UI → ToolActions → ToolStore → ToolEngineController → 協調エンジン起動
+```
+
+## 🚀 実装ロードマップ（v5.1更新）
+
+### Phase 2-A: 専門エンジン協調基盤（2週間）
+**目標**: Bezier.js計算 + OGL描画の協調システム構築
+
+#### Phase2-Aα: 協調エンジン基盤
+- **ToolEngineController.js**: 協調エンジン制御核心
+- **BezierCalculationEngine.js**: Bezier.js統合計算専門
+- **OGLRenderingEngine.js**: OGL統合描画専門
+- **協調制御ロジック**: 単方向データフロー確立
+
+#### Phase2-Aβ: ペン補正ツール統合
+- **PressureProcessor.js**: 筆圧補正処理（計算エンジン統合）
+- **CoordinatedCommand.js**: 協調エンジン対応コマンドパターン
+- **ツール統合**: ペン・ブラシ・消しゴム協調動作
+
+### Phase 2-B: レイヤー + 選択ツール（2週間）
+- **LayerStore/LayerActions**: レイヤー管理（協調エンジン対応）
+- **KonvaSelectionEngine**: 選択専用エンジン（描画禁止）
+- **HistoryStore**: 協調コマンド履歴管理
+
+### Phase 2-C: 統合完成（2週間）
+- **ExportStore/ExportActions**: 協調エンジン統合エクスポート
+- **外部連携**: PostMessage API + FutabaAdapter
+- **最終統合**: 全機能協調動作確認
+
+## 🔗 外部連携設計（v5.1継承）
+
+### ふたばちゃんねる連携仕様
+- **初期化**: FutabaAdapter.js → AppModeActions.initEmbeddedMode()
+- **描画**: 協調エンジンによる正確軌跡描画
+- **完了**: 協調エンジン統合エクスポート → ConstrainedExporter.js
+- **転写**: FutabaAdapter.transferToCanvas()
+
+## 🎯 差別化ポイント（v5.1強化）
+
+### 技術的優位性
+1. **専門エンジン協調**: 計算・描画責務分離による最適化
+2. **曖昧さ完全排除**: 協調制御一元化による解釈の余地断絶  
+3. **GPU段階移行**: Bezier.js + OGL → WebGPU協調パス
+4. **正確軌跡描画**: 協調による期待値完全一致
+5. **モダンUI**: Tailwind CSS + Phosphor Icons統一
+
+### 設計的優位性
+1. **責務完全分離**: 計算・描画・制御の明確分離
+2. **技術的合理性**: 各ライブラリの専門性最大活用
+3. **協調アーキテクチャ**: 単方向データフロー厳守
+4. **拡張性**: WebGPU等への技術移行容易性
+
+## 🤖 AI協働開発戦略（v5.1更新）
+
+### 協調エンジン実装指針
+```
+## 協調エンジン実装依頼
+
+### 対象エンジン
+- **計算エンジン**: [ライブラリ名]統合計算専門
+- **描画エンジン**: [ライブラリ名]統合描画専門  
+- **制御エンジン**: ToolEngineController協調制御
+
+### 責務分離制約
+- **計算エンジン**: ベクター計算・軌跡生成のみ
+- **描画エンジン**: GPU描画・可視化のみ
+- **制御エンジン**: 協調フロー制御のみ
+
+### 協調制約
+- **データフロー**: 計算 → 描画の単方向のみ
+- **協調制御**: ToolEngineController一元化
+- **依存関係**: 循環依存完全禁止
+
+### 技術制約
+- **Canvas2D禁止**: 全ツール=協調エンジン統一
+- **曖昧選択禁止**: 技術的根拠のない複数エンジン禁止
+- **ライブラリ信頼**: 結果を信頼し独自実装回避
+```
+
+## 📋 Phase2完了チェックリスト（v5.1更新）
+
+### Phase2-A完了条件
+- [ ] **ToolEngineController.js**: 協調エンジン制御動作
+- [ ] **BezierCalculationEngine.js**: 計算専門エンジン完全動作
+- [ ] **OGLRenderingEngine.js**: 描画専門エンジン完全動作
+- [ ] **協調データフロー**: 計算→描画単方向確認
+- [ ] **全ツール協調**: ペン・ブラシ・消しゴム統一動作
+- [ ] **Canvas2D完全排除**: 協調エンジン統一確認
+
+### Phase2-B完了条件  
+- [ ] **LayerStore協調対応**: レイヤー管理協調動作
+- [ ] **KonvaSelectionEngine**: 選択専用エンジン動作
+- [ ] **CoordinatedCommand**: 協調コマンドパターン動作
+- [ ] **HistoryStore協調**: 履歴管理協調対応
+
+### Phase2-C完了条件
+- [ ] **ExportStore協調**: エクスポート協調統合
+- [ ] **外部連携**: PostMessage API + 協調エンジン
+- [ ] **全機能統合**: 協調システム完全動作確認
+- [ ] **Phase3移行準備**: WebGPU協調移行基盤完了
+
+---
+**重要**: v5.1は技術的合理性に基づく専門エンジン協調を許容しつつ、憲章v5.0の核心思想（曖昧さの排除、ユーザー期待値優先）を完全に維持する。

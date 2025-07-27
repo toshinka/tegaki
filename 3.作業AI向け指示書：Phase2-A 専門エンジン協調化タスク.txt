@@ -1,0 +1,249 @@
+🗂️ 1. 現状コードベースの分析
+提供されたファイル群を分析した結果、現在のアーキテクチャは以下の特徴を持っています。
+
+エンジン切り替えモデル: ToolEngineController が、ツールに応じて bezierRenderer と canvas2DRenderer という単一のエンジンを丸ごと切り替える設計になっている。
+
+責務混合エンジン: BezierStrokeRenderer.js は、Bezier計算ロジックとCanvas2Dによる描画ロジックが同一ファイル内に混在している。
+
+Canvas2Dへの依存: ペン描画を含め、最終的な描画は全てCanvas2D APIに依存している。
+
+これは憲章補足が目指す**「計算と描画の専門エンジン協調モデル」とは根本的に異なり**、Phase2-Aで規定されたOGLによるGPU描画への移行が必要です。
+
+📝 2. 作業AI向け指示書：Phase2-A 専門エンジン協調化タスク
+以下に、貴社のAI開発パートナー（作業AI）に渡すための指示書を記述します。この指示書と修正対象ファイルを渡すことで、Phase2-Aへの移行作業を依頼できます。
+
+【作業指示書】モダンブラウザお絵かきツール：Phase2-A 専門エンジン協調アーキテクチャへの移行
+To: 作業担当AI殿
+
+From: [貴社名/ご担当者名]
+
+件名: 既存描画アプリケーションのPhase2-A仕様（専門エンジン協調）への移行依頼
+
+1. プロジェクト概要と目標
+本プロジェクトの目的は、既存のJavaScript描画アプリケーションを、プロジェクト憲章で定められた Phase2-A仕様 へと移行することです。
+
+現在のアーキテクチャは、単一の描画エンジンを切り替える方式ですが、これを**「計算専門エンジン」と「描画専門エンジン」**が協調して動作する、より高度で責務分離された設計に刷新します。
+
+
+最終目標: **BezierCalculationEngine（計算専門）とOGLRenderingEngine（描画専門）**が協調して、高品質なベクターペン描画を実現する。 
+
+2. 遵守すべき最重要方針（プロジェクト憲章より抜粋）
+作業にあたり、以下の原則を絶対に遵守してください。これは本プロジェクトの根幹をなす思想です。
+
+
+🚫 Canvas2D誘惑の根絶: ペン、ブラシ、消しゴムを含む全てのツール描画において、CanvasRenderingContext2D APIの直接使用を完全に禁止します。ペン描画はOGLによるGPU描画に統一してください。 
+
+
+
+
+
+
+✨ 専門エンジン協調: 「計算」と「描画」の責務を完全に分離します。ToolEngineControllerは、これら2つの専門エンジンを協調させる役割のみを担います。 
+
+
+
+
+
+
+➡️ 単方向データフロー: データの流れは、入力 → 計算エンジン → 描画エンジン → 画面 という単一方向を厳守してください。循環依存は絶対に禁止です。 
+
+
+
+
+🔧 制御の一元化: ツールの選択が、協調する専門エンジン群を起動する唯一のトリガーです。ToolEngineControllerがその責務を完全に担います。 
+
+
+
+✅ ライブラリの信頼: Bezier.js や OGL のような専門ライブラリの計算・描画結果を信頼し、その結果を検証したり、同等の処理を独自に再実装したりすることは禁止です。 
+
+
+3. Phase2-A完了後の目標ファイル構成
+作業完了後、
+
+srcディレクトリが以下の構成になるようにファイルを新規作成・修正・移動してください。 
+
+src/
+├── main.js                      # 修正: アプリケーションエントリーポイント
+├── core/
+│   ├── ServiceContainer.js      # (変更なし)
+│   └── ToolEngineController.js  # 🚨全面改修: 専門エンジン協調制御
+├── engine/
+│   ├── calculation/             # 🆕新規作成: 計算専門エンジン層
+│   │   ├── BezierCalculationEngine.js # 🆕新規作成: Bezier.js統合計算専門
+│   │   └── PressureProcessor.js       # 🆕新規作成: 筆圧処理専門
+│   └── rendering/               # 🆕新規作成: 描画専門エンジン層
+│       └── OGLRenderingEngine.js      # 🆕新規作成: OGL統合描画専門
+└── tools/
+    ├── ToolStore.js             # (軽微な修正の可能性)
+    └── ToolPanel.js             # (軽微な修正の可能性)
+4. 具体的な作業指示（ファイル単位）
+以下の優先順位に従って、作業を進めてください。
+
+Step 1: engine ディレクトリの再構築
+src/engine ディレクトリ内に、calculation と rendering の2つのサブディレクトリを新規作成してください。
+
+Step 2: PressureProcessor.js の新規作成
+ファイル: src/engine/calculation/PressureProcessor.js を新規作成します。
+
+責務: 筆圧や速度を入力とし、線の太さを計算するロジックに特化させます。
+
+実装: 既存の BezierStrokeRenderer.js 内にある PressureToWidthProcessor クラスのロジックを、この新しいファイルにそのまま移植・独立させてください。
+
+Step 3: BezierCalculationEngine.js の新規作成
+
+ファイル: src/engine/calculation/BezierCalculationEngine.js を新規作成します。 
+
+責務: 計算専門エンジンです。ユーザーの入力点群を受け取り、Bezier.jsのロジックを用いて、滑らかな軌跡データ（点、制御点など）を生成します。描画に関するコードは一切含めないでください。
+
+実装:
+
+既存の BezierStrokeRenderer.js から BezierStrokeOptimizer クラスのロジック（点の単純化、制御点計算など）を移植します。
+
+内部で PressureProcessor を利用して、各点に対応する太さ情報も計算に含めます。
+
+calculatePath(points) のような公開メソッドを実装し、描画エンジンに渡すための純粋なデータオブジェクトを返すようにしてください。
+
+JavaScript
+
+// src/engine/calculation/BezierCalculationEngine.js の実装イメージ
+import { PressureProcessor } from './PressureProcessor.js';
+
+export class BezierCalculationEngine {
+    constructor() {
+        this.pressureProcessor = new PressureProcessor();
+        // ...その他初期化
+    }
+
+    setToolConfig(config) { /* ... */ }
+
+    // 軌跡データを計算し、描画用の純粋なデータを返す
+    calculateBezierPath(points, pressure) {
+        // ... Bezier.jsや独自最適化ロジックによる計算 ...
+        const pathData = { /* ... 計算結果の点群、太さ、色など ... */ };
+        return pathData;
+    }
+
+    // ... その他の計算関連メソッド ...
+}
+Step 4: OGLRenderingEngine.js の新規作成
+
+ファイル: src/engine/rendering/OGLRenderingEngine.js を新規作成します。 
+
+責務: 描画専門エンジンです。BezierCalculationEngine から受け取った軌跡データをもとに、OGLライブラリを使用してWebGLキャンバスに線を描画します。
+
+実装:
+
+OGLライブラリをセットアップし、基本的なVertex ShaderとFragment Shaderを定義します。
+
+initialize(canvas, config): WebGLコンテキストを取得し、シェーダープログラムを準備します。
+
+renderPath(pathData): 軌跡データから頂点バッファ（VBO）を作成し、gl.drawArrays を呼び出して描画を実行します。
+
+dispose(): WebGLリソースを解放します。
+
+JavaScript
+
+// src/engine/rendering/OGLRenderingEngine.js の実装イメージ
+import { Renderer, Program, Mesh } from 'ogl';
+
+export class OGLRenderingEngine {
+    constructor() {
+        this.renderer = null;
+        this.gl = null;
+        // ...
+    }
+
+    initialize(canvas, config) {
+        this.renderer = new Renderer({ canvas });
+        this.gl = this.renderer.gl;
+        // ... シェーダープログラムの作成など ...
+    }
+
+    // 軌跡データを受け取り、GPUで描画する
+    renderPath(pathData) {
+        // 1. pathDataから頂点配列を作成
+        // 2. ジオメトリとメッシュを作成
+        // 3. this.renderer.render({ scene: mesh }) で描画
+    }
+
+    dispose() { /* ... */ }
+}
+Step 5: ToolEngineController.js の全面改修 (最重要)
+ファイル: src/core/ToolEngineController.js を全面的に書き直します。
+
+
+責務: 既存の「エンジン切り替え」方式を完全に破棄し、憲章v5.1で規定された「専門エンジン協調」モデルに準拠させます。 
+
+実装:
+
+
+currentEngine プロパティを削除し、calculationEngine と renderingEngine プロパティを追加します。 
+
+
+selectTool(toolName) メソッドを改修し、DIコンテナ(this.serviceContainer)から BezierCalculationEngine と OGLRenderingEngine のインスタンスを resolve して、各プロパティにセットするロジックに変更します。 
+
+描画イベント (
+
+startStroke, continueStroke, endStroke) の処理フローを、憲章v5.1の単方向データフローに厳格に従うように変更します。 
+
+JavaScript
+
+// src/core/ToolEngineController.js の改修後イメージ 
+export class ToolEngineController {
+    constructor(serviceContainer) {
+        this.serviceContainer = serviceContainer;
+        this.calculationEngine = null; // 計算専門
+        this.renderingEngine = null;   // 描画専門
+        this.currentTool = null;
+    }
+
+    selectTool(toolName) {
+        // ... 既存エンジンを停止する処理 ...
+
+        // DIコンテナから専門エンジンを取得
+        this.calculationEngine = this.serviceContainer.resolve('BezierCalculationEngine');
+        this.renderingEngine = this.serviceContainer.resolve('OGLRenderingEngine');
+
+        // エンジンを初期化
+        const canvas = document.getElementById('vector-canvas');
+        this.calculationEngine.setToolConfig(/* ... */);
+        this.renderingEngine.initialize(canvas, { /* ... */ });
+        this.currentTool = toolName;
+    }
+
+    startStroke(x, y, pressure) {
+        // この時点ではまだ計算も描画もしない、あるいは入力点の収集開始のみ
+    }
+
+    continueStroke(x, y, pressure) {
+         // 点を収集し、計算エンジンと描画エンジンに逐次渡してプレビュー描画
+        const pathSegment = this.calculationEngine.calculatePathSegment(...);
+        this.renderingEngine.renderPath(pathSegment);
+    }
+
+    endStroke() {
+        // 最終的な軌跡を計算・描画
+        const finalPath = this.calculationEngine.finalizePath(...);
+        this.renderingEngine.renderPath(finalPath);
+    }
+}
+Step 6: main.js の修正
+ファイル: src/main.js を修正します。
+
+実装:
+
+古い BezierStrokeRenderer と Canvas2DRenderer のimportとDIコンテナへの登録処理を削除します。
+
+新しく作成した BezierCalculationEngine と OGLRenderingEngine をimportし、DIコンテナに登録してください。
+
+ToolEngineController の初期化と selectTool の呼び出し部分を、新しい仕様に合わせて更新します。
+
+Step 7: 不要になったファイルの削除
+BezierStrokeRenderer.js と Canvas2DRenderer.js は、それぞれ BezierCalculationEngine.js と OGLRenderingEngine.js に責務が移管されるため、最終的にプロジェクトから削除してください。（移行作業中はロジック参照のために残しておいて構いません）
+
+5. 品質要件
+本番コードにデバッグ用のconsole.logを含めないでください。
+
+エラーハンドリングを適切に実装してください。特にToolEngineControllerでのエンジン解決失敗時など。
+
+憲章で禁止されている項目（Canvas2D APIの使用、独自アルゴリズムの再発明など）がコード内に残存していないことを確認してください。
