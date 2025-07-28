@@ -1,175 +1,233 @@
-# Phase拡張時の追加設計要素（規約準拠版）
+# Phase拡張時の追加設計要素（OGL中心実装版対応）v5.2準拠
 
-## 🎬 アニメーション機能への拡張準備
+## 🚨 v5.2対応による根本的変更点
+
+### 憲章v5.2の影響分析
+- **OGL単一エンジン統一**: 全描画処理がOGL WebGL統一
+- **Bezier.js依存排除**: 外部描画ライブラリ完全排除
+- **Canvas2D完全禁止**: WebGL統一による技術的一貫性
+- **ファイル最小構成**: AI実装効率優先
+
+### 旧版からの主要変更
+1. **VectorRenderer.js → OGLUnifiedEngine.js**: 描画エンジン統一
+2. **Konva.js依存排除**: OGL Transform + Raycastで代替
+3. **Canvas2D描画排除**: 全てOGL WebGL統一
+4. **複数描画ライブラリ排除**: OGL単一エンジン特化
+
+---
+
+## 🎬 アニメーション機能への拡張準備（OGL中心版）
 
 ### 現在の憲章で不足している要素
 
-#### 1. フレーム管理システム（Store/Actions/UI三層構造）
+#### 1. フレーム管理システム（OGL統一・Store/Actions/UI三層構造）
 ```javascript
-// Store/Actions分離による責務明確化
+// OGL統一対応・最小構成
 src/features/frames/
-├── FrameStore.js           # フレーム状態管理（単一責任：フレーム状態のみ）
-├── FrameActions.js         # フレーム操作実行（単一責任：フレーム操作のみ）
-├── FrameController.js      # フレーム統括制御（DI注入による統制）
-└── OnionSkinRenderer.js    # オニオンスキン描画（単一責任：透過表示のみ）
+├── FrameStore.js              # フレーム状態管理（OGL統一対応）
+├── FrameActions.js            # フレーム操作実行（OGL統一制御）
+├── OGLFrameController.js      # OGLフレーム統括制御（OGL統一エンジン連携）
+└── OGLOnionSkinRenderer.js    # OGLオニオンスキン描画（WebGL統一）
 
 src/features/timeline/
-├── TimelineStore.js        # タイムライン状態管理（単一責任：時間軸状態のみ）
-├── TimelineActions.js      # 再生・停止制御（単一責任：再生操作のみ）
-└── PlaybackController.js   # フレームレート制御（単一責任：再生制御のみ）
+├── TimelineStore.js           # タイムライン状態管理（OGL統一対応）
+├── TimelineActions.js         # 再生・停止制御（OGL統一制御）
+└── OGLPlaybackController.js   # OGLフレームレート制御（WebGL統一再生）
 ```
 
-#### 2. アニメーション用レンダリング拡張（既存VectorRenderer.js拡張）
+#### 2. アニメーション用レンダリング拡張（OGLUnifiedEngine.js拡張）
 ```javascript
-// 既存構造を拡張（OCP原則：修正でなく拡張）
+// 既存OGLUnifiedEngine.js拡張（OCP原則：修正でなく拡張）
 src/engine/animation/
-├── FrameRenderer.js        # フレーム単位描画（VectorRenderer継承）
-├── InterpolationEngine.js  # フレーム間補間（数学的計算に特化）
-└── AnimationCache.js       # 再生用キャッシュ（メモリ効率化）
+├── OGLFrameRenderer.js        # OGLフレーム単位描画（OGLUnifiedEngine継承）
+├── OGLInterpolationEngine.js  # OGL内蔵補間エンジン（Bezier.js代替）
+└── OGLAnimationCache.js       # OGL統一キャッシュ（WebGL最適化）
 ```
 
-## 🎨 高度描画機能への拡張
+**🔄 重要変更点**:
+- ~~VectorRenderer.js拡張~~ → **OGLUnifiedEngine.js拡張**
+- ~~InterpolationEngine.js~~ → **OGLInterpolationEngine.js**（OGL内蔵機能活用）
+- 全てWebGL統一、Canvas2D完全排除
 
-### Phase 6以降で必要になる要素
+## 🎨 高度描画機能への拡張（OGL中心版）
 
-#### 3. 選択・変形システム（Store/Actions/UI三層構造）
+### Phase 6以降で必要になる要素 
+
+#### 3. 選択・変形システム（OGL統一・Store/Actions/UI三層構造）
 ```javascript
 src/features/selection/
-├── SelectionStore.js       # 選択状態管理（単一責任：選択範囲状態のみ）
-├── SelectionActions.js     # 選択範囲操作（単一責任：選択操作のみ）
-├── TransformController.js  # 回転・拡大縮小制御（単一責任：変形処理のみ）
-└── SelectionRenderer.js    # 選択枠描画（単一責任：UI描画のみ）
+├── SelectionStore.js          # 選択状態管理（OGL統一対応）
+├── SelectionActions.js        # 選択範囲操作（OGL統一制御）
+├── OGLTransformController.js  # OGL回転・拡大縮小制御（OGL Transform専用）
+└── OGLSelectionRenderer.js    # OGL選択枠描画（WebGL統一UI）
 ```
 
-#### 4. 高度なツール群（既存ツール構造継承）
+#### 4. 高度なツール群（OGL統一・IToolインターフェース準拠）
 ```javascript
 src/features/tools/tools/
-├── TextTool.js            # テキスト入力（IToolインターフェース準拠）
-├── ShapeTool.js           # 図形描画（IToolインターフェース準拠）
-├── GradientTool.js        # グラデーション（IToolインターフェース準拠）
-├── PatternTool.js         # パターン塗り（IToolインターフェース準拠）
-└── SymmetryTool.js        # 対称描画（IToolインターフェース準拠）
+├── OGLTextTool.js            # OGLテキスト入力（WebGL統一テキスト）
+├── OGLShapeTool.js           # OGL図形描画（OGL Mesh専用）
+├── OGLGradientTool.js        # OGLグラデーション（OGL Shader専用）
+├── OGLPatternTool.js         # OGLパターン塗り（OGL Texture専用）
+└── OGLSymmetryTool.js        # OGL対称描画（OGL統一制御）
 ```
 
-## 🎯 AI知見が薄い領域の特定
+**🔄 重要変更点**:
+- ~~Konva.js依存~~ → **OGL Transform + Raycast**（選択・変形）
+- 全ツールにOGLプレフィックス追加
+- OGL内蔵機能最大限活用
+
+## 🎯 AI知見が薄い領域の特定（OGL中心版）
 
 ### Phase 7以降で注意が必要な技術
 
-#### 1. 高度なアニメーション補間
-- **Flubber.js**: パス間の滑らかな補間（外部ライブラリ統合）
-- **Lottie**: After Effects連携（外部データ形式対応）
-- **複雑なイージング関数**: 手書き風アニメーション（数学的計算）
+#### 1. 高度なアニメーション補間（OGL統一対応）
+- ~~**Flubber.js**: パス間の滑らかな補間~~ → **OGL内蔵補間機能**（外部依存排除）
+- ~~**Lottie**: After Effects連携~~ → **OGL統一エクスポート**（WebGL統一）
+- **複雑なイージング関数**: OGL内蔵数学関数活用（外部依存排除）
 
-#### 2. 物理演算統合
-- **Matter.js**: 2D物理演算の描画への統合（外部エンジン連携）
-- **髪の毛・服の揺れ**: 物理的リアリティ（複雑な数値計算）
-- **液体シミュレーション**: 絵の具の混色（GPU並列計算）
+#### 2. 物理演算統合（OGL中心実装）
+- ~~**Matter.js**: 2D物理演算の描画への統合~~ → **OGL Physics Extension**（統一エンジン拡張）
+- **髪の毛・服の揺れ**: OGL Transform + カスタムシェーダー（WebGL統一）
+- **液体シミュレーション**: OGL GPU並列計算（WebGL Compute）
 
-#### 3. 3D背景システム
-- **2.5D合成**: レイヤーの奥行き配置（WebGL深度バッファ活用）
-- **パースガイド**: 透視図法支援（幾何学計算）
-- **3D参照モデル**: ポーズ参考用（Three.js統合）
+#### 3. 3D背景システム（OGL統一）
+- **2.5D合成**: OGL深度バッファ活用（WebGL統一）
+- **パースガイド**: OGL内蔵幾何学計算（数学関数統一）
+- ~~**3D参照モデル**: Three.js統合~~ → **OGL 3D Extension**（単一エンジン拡張）
 
-#### 4. AI描画支援
-- **TensorFlow.js**: ブラウザ内機械学習（GPU計算活用）
-- **手ブレ補正**: リアルタイム線補正（入力フィルタリング）
-- **自動彩色**: ラフから完成画への変換（画像処理AI）
+#### 4. AI描画支援（OGL統合対応）
+- **TensorFlow.js**: OGL WebGL統合（GPU計算活用）
+- **手ブレ補正**: OGLInputProcessor統合（リアルタイム補正）
+- **自動彩色**: OGL Shader統合（WebGL画像処理）
 
-## 📋 推奨する情報開示タイミング
+**🔄 重要変更点**:
+- 外部ライブラリ → OGL統一エンジン拡張
+- Canvas2D処理 → WebGL統一処理
+- 複数エンジン協調 → OGL単一エンジン拡張
+
+## 📋 推奨する情報開示タイミング（OGL中心版）
 
 ### 🟢 Phase 5開始時（レイヤー強化段階）
-**開示内容**: アニメーション基本機能
-- Store/Actions/UI三層によるタイムライン設計
-- FrameStoreによる状態管理
-- OnionSkinRendererによる透過表示機能
+**開示内容**: OGL統一アニメーション基本機能
+- OGL統一Store/Actions/UI三層によるタイムライン設計
+- OGLFrameStoreによる状態管理
+- OGLOnionSkinRendererによるWebGL透過表示機能
 
-**理由**: レイヤーシステムが安定し、アニメーション基盤の設計が必要になるため
+**理由**: OGLレイヤーシステムが安定し、OGL統一アニメーション基盤の設計が必要になるため
 
-### 🟡 Phase 7開始時（アニメーション基盤）
-**開示内容**: 高度なアニメーション機能
-- 物理演算統合のアーキテクチャ設計
-- 高度な補間システムのインターフェース設計
-- エクスポート機能詳細（WebCodecs活用）
+### 🟡 Phase 7開始時（OGL統一アニメーション基盤）
+**開示内容**: OGL統一高度なアニメーション機能
+- OGL統一物理演算統合のアーキテクチャ設計
+- OGL内蔵補間システムのインターフェース設計
+- OGL統一エクスポート機能詳細（WebGL統一出力）
 
-**理由**: AIの知見が薄くなり始める領域に入るため
+**理由**: OGL統一の知見が薄くなり始める領域に入るため
 
-### 🔴 Phase 9以降（3D・AI機能）
-**開示内容**: 最先端機能
-- 3D背景生成システム
-- AI描画支援統合
-- LIVE2D風変形システム
+### 🔴 Phase 9以降（OGL統一3D・AI機能）
+**開示内容**: OGL統一最先端機能
+- OGL統一3D背景生成システム
+- OGL統合AI描画支援
+- OGL統一LIVE2D風変形システム
 
-**理由**: AI支援が特に重要になる複雑な領域
+**理由**: OGL統一AI支援が特に重要になる複雑な領域
 
-## 💡 現在の憲章強化案
+## 💡 現在の憲章強化案（OGL中心版）
 
-### すぐに追加すべき要素（規約準拠）
+### すぐに追加すべき要素（OGL統一準拠）
 
-#### 1. フレーム管理の基盤準備（Store/Actions分離）
+#### 1. フレーム管理の基盤準備（OGL統一・Store/Actions分離）
 ```javascript
 // features/canvas/CanvasStore.js に追加
-// 単一責任原則：キャンバス状態管理のみ
-frameMode: false,           # アニメーションモード
-currentFrame: 0,           # 現在のフレーム
-totalFrames: 1,            # 総フレーム数
-onionSkinEnabled: false,   # オニオンスキン表示
+// 単一責任原則：OGL統一キャンバス状態管理のみ
+frameMode: false,           # OGL統一アニメーションモード
+currentFrame: 0,           # OGL統一現在のフレーム
+totalFrames: 1,            # OGL統一総フレーム数
+onionSkinEnabled: false,   # OGLオニオンスキン表示
 
 // features/canvas/CanvasActions.js に追加
-// 単一責任原則：キャンバス操作実行のみ
-toggleFrameMode(),         # フレームモード切り替え
-setCurrentFrame(index),    # フレーム選択
-addFrame(),                # フレーム追加
-removeFrame(index),        # フレーム削除
+// 単一責任原則：OGL統一キャンバス操作実行のみ
+toggleFrameMode(),         # OGL統一フレームモード切り替え
+setCurrentFrame(index),    # OGL統一フレーム選択
+addFrame(),                # OGL統一フレーム追加
+removeFrame(index),        # OGL統一フレーム削除
 ```
 
-#### 2. 時系列データの考慮（既存history拡張）
+#### 2. 時系列データの考慮（OGL統一history拡張）
 ```javascript
 // features/history/ を拡張（OCP原則：拡張で対応）
 src/features/history/
-├── HistoryStore.js        # 既存（基本履歴状態管理）
-├── FrameHistory.js        # フレーム別履歴（新規・単一責任）
-└── TimelineHistory.js     # タイムライン履歴（新規・単一責任）
+├── HistoryStore.js        # 既存（OGL統一基本履歴状態管理）
+├── OGLFrameHistory.js     # OGLフレーム別履歴（新規・OGL統一）
+└── OGLTimelineHistory.js  # OGLタイムライン履歴（新規・OGL統一）
 ```
 
-#### 3. Worker拡張の準備（既存Worker構造継承）
+#### 3. Worker拡張の準備（OGL統一Worker構造継承）
 ```javascript
 // workers/ に追加（ISP原則：必要機能のみ実装）
 src/workers/
-├── RenderWorker.js        # 既存（基本描画処理）
-├── AnimationWorker.js     # アニメーション専用（新規・単一責任）
-└── FrameComposer.js       # フレーム合成（新規・単一責任）
+├── OGLRenderWorker.js     # OGL統一基本描画処理（既存拡張）
+├── OGLAnimationWorker.js  # OGL統一アニメーション専用（新規）
+└── OGLFrameComposer.js    # OGL統一フレーム合成（新規）
 ```
 
-#### 4. ServiceContainer拡張（DIP原則準拠）
+#### 4. ServiceContainer拡張（OGL統一・DIP原則準拠）
 ```javascript
 // app/ServiceContainer.js に追加
-// 依存性逆転原則：抽象への依存
-registerAnimationServices() {
-    this.register('frameStore', () => new FrameStore());
-    this.register('timelineStore', () => new TimelineStore());
-    this.register('animationRenderer', (container) => 
-        new AnimationRenderer(
-            container.get('vectorRenderer'),
-            container.get('frameStore')
+// 依存性逆転原則：OGL統一抽象への依存
+registerOGLAnimationServices() {
+    this.register('oglFrameStore', () => new FrameStore());
+    this.register('oglTimelineStore', () => new TimelineStore());
+    this.register('oglAnimationRenderer', (container) => 
+        new OGLAnimationRenderer(
+            container.get('oglUnifiedEngine'),  // OGL統一エンジン
+            container.get('oglFrameStore')
         )
     );
 }
 ```
 
-## 🎯 結論
+**🔄 重要変更点**:
+- 全てにOGLプレフィックス追加
+- OGL統一エンジン依存に変更
+- WebGL統一処理に変更
 
-現在の憲章v4.1は**Phase 1-4には十分**ですが、**Phase 5以降の拡張性**を考慮した以下の修正を推奨します：
+## 🚫 OGL中心版で排除される要素
 
-### 必須修正項目（規約違反解決）
-1. **Store/Actions/UI三層構造の徹底**: すべての新機能でこの構造を強制
-2. **単一責任原則の厳格化**: 1ファイル1責務の徹底
-3. **依存性注入の統一**: ServiceContainer経由での依存管理
-4. **インターフェース準拠の徹底**: IToolインターフェース等の統一
+### 完全排除対象
+1. **VectorRenderer.js参照**: → **OGLUnifiedEngine.js**に統一
+2. **Konva.js依存機能**: → **OGL Transform + Raycast**で代替
+3. **Canvas2D処理**: → **WebGL統一処理**で代替
+4. **Bezier.js依存**: → **OGL内蔵機能**で代替
+5. **複数描画ライブラリ**: → **OGL単一エンジン**に統一
 
-### 推奨強化項目（将来対応）
-1. **データ構造の柔軟性**: 時系列データ対応
-2. **Worker活用の拡張**: 並列処理能力向上
-3. **GPU計算基盤の準備**: WebGPU活用準備
-4. **外部ライブラリ統合準備**: AI・物理演算対応
+### 新規制約事項
+1. **全描画処理**: OGL WebGL統一必須
+2. **線描画**: OGL Polyline機能専用
+3. **計算処理**: OGL内蔵数学関数活用
+4. **入力処理**: OGLInputProcessor統一
+5. **ファイル命名**: OGLプレフィックス必須
 
-特に**アーキテクチャの一貫性**と**SOLID原則の厳守**部分で、将来のアニメーション機能を見越した設計にしておくことが重要です。
+## 🎯 結論（OGL中心版）
+
+憲章v5.2の**OGL中心実装版**への方針転換により、以下の**根本的変更**が必要です：
+
+### 必須修正項目（OGL統一対応）
+1. **OGL統一エンジン中心設計**: 全機能をOGLUnifiedEngine.js中心に再設計
+2. **外部描画ライブラリ完全排除**: Konva.js、Bezier.js等の完全代替
+3. **WebGL統一処理**: Canvas2D処理の完全排除
+4. **OGLプレフィックス統一**: 全ファイルにOGL統一命名
+
+### 推奨強化項目（OGL統一将来対応）
+1. **OGL統一データ構造**: 時系列データのWebGL最適化
+2. **OGL統一Worker活用**: WebGL並列処理能力向上
+3. **OGL統一GPU計算基盤**: WebGL Compute活用準備
+4. **OGL統合外部ライブラリ**: AI・物理演算のWebGL統合
+
+### アーキテクチャ影響（重要）
+- **単一エンジン統一**: 複数エンジン協調 → OGL単一エンジン拡張
+- **WebGL統一**: Canvas2D + WebGL → WebGL統一
+- **依存関係最小化**: 外部ライブラリ → OGL内蔵機能活用
+- **ファイル最小構成**: AI実装効率最優先
+
+特に**OGL統一エンジンの一貫性**と**外部依存完全排除**部分で、将来のアニメーション機能を見越したOGL中心設計にしておくことが**絶対必要**です。

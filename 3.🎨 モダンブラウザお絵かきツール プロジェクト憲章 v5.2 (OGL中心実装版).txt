@@ -1,0 +1,254 @@
+# 🎨 モダンブラウザお絵かきツール プロジェクト憲章 v5.2 (OGL中心実装版)
+
+## 🚨 v5.2革命的転換の背景
+技術調査により「OGL単一エンジン特化」の圧倒的優位性を確認。Bezier.js依存による複雑性を完全排除し、OGL内蔵Polyline機能による統一実装へ根本転換。
+
+### 🎯 核心思想（v5.2革命版）
+- **OGL単一エンジン支配**: 計算・描画・制御をOGL統一エコシステムで完結
+- **Bezier.js依存完全排除**: ES6/TypeScript問題、重複機能を物理的に根絶
+- **曖昧さの物理的排除**: アーキテクチャレベルで解釈の余地を完全に断つ
+- **ツール・エンジン厳格連動**: ツール選択がOGLエンジン専用機能起動のトリガー
+- **Canvas2D誘惑の根絶**: 全描画処理=OGL WebGL統一（Canvas2D完全禁止）
+- **ユーザー期待値最優先**: 技術的完璧性よりもユーザー体験を重視
+
+## 🚫 禁止事項（v5.2絶対版）
+
+### 絶対禁止
+- **Canvas2Dによる全描画**: WebGL=OGL統一、Canvas2D完全排除
+- **Bezier.js依存**: OGL内蔵機能で完全代替、外部依存排除
+- **「描画モード」概念**: モード抽象化は曖昧さの温床
+- **複数描画ライブラリ**: OGL単一エンジン以外の描画ライブラリ禁止
+- **WebGL直接操作**: OGLラッパー経由以外のWebGL操作禁止
+
+### OGL統一原則
+- **線描画**: OGL Polyline機能専用
+- **図形描画**: OGL Mesh + カスタムシェーダー
+- **テクスチャ**: OGL Texture システム
+- **アニメーション**: OGL Transform + フレームループ
+- **入力処理**: OGL統合入力 + Pointer Events API
+
+## 🎯 技術戦略（v5.2 OGL中心版）
+
+### コア技術スタック
+```javascript
+// 描画エンジン（OGL統一）
+OGL WebGL Engine → カスタムシェーダー → Polyline描画
+
+// 線描画技術（OGL内蔵活用）
+OGL Polyline + 筆圧シェーダー + OffscreenCanvas
+
+// インタラクティブ操作（最小構成）
+OGL Transform + Raycast（選択・移動専用）
+
+// モダンUI構築
+Tailwind CSS + Phosphor Icons
+
+// 開発環境
+Vite 5.0+ + ES6 Modules + Pointer Events API
+```
+
+### 🆕 OGL統一エンジン設計
+```javascript
+// OGL統一制御
+class OGLUnifiedEngine {
+    constructor(canvas) {
+        this.renderer = new Renderer({ canvas, alpha: true });
+        this.scene = new Transform();
+        this.camera = new Camera();
+        
+        // OGL統一機能初期化
+        this.polylineSystem = new PolylineSystem(this.renderer);
+        this.transformSystem = new TransformSystem();
+        this.inputProcessor = new OGLInputProcessor();
+        
+        this.currentTool = null;
+    }
+    
+    // ツール選択 = OGL専用機能起動
+    selectTool(toolName) {
+        const config = OGL_TOOL_CONFIG[toolName];
+        if (!config) throw new Error(`Unknown tool: ${toolName}`);
+        
+        // OGL統一機能設定
+        this.polylineSystem.setToolConfig(config.polyline);
+        this.transformSystem.setToolConfig(config.transform);
+        this.currentTool = toolName;
+    }
+    
+    // OGL統一描画フロー
+    processStroke(points, pressure) {
+        // OGL Polyline で直接描画
+        const polyline = this.polylineSystem.createPolyline(points, {
+            tool: this.currentTool,
+            pressure: pressure,
+            shader: this.getToolShader(this.currentTool)
+        });
+        
+        this.scene.addChild(polyline);
+        this.render();
+    }
+    
+    render() {
+        this.renderer.render({ scene: this.scene, camera: this.camera });
+    }
+}
+
+// 禁止される実装例
+class BadImplementation {
+    // ❌ Bezier.js依存
+    constructor() {
+        this.bezier = new Bezier(); // 複雑性増大
+    }
+    
+    // ❌ Canvas2D併用
+    drawWithCanvas2D() {
+        this.ctx.beginPath(); // OGL統一違反
+    }
+    
+    // ❌ 複数描画エンジン
+    switchEngine(type) {
+        if (type === 'webgl') this.useOGL();
+        if (type === 'canvas') this.useCanvas2D(); // 禁止
+    }
+}
+```
+
+## 🏗️ 超簡潔アーキテクチャ（v5.2 OGL統一・ファイル最小化）
+
+### フォルダ構成（最小構成・AI実装最適化）
+```
+src/
+├── engine/
+│   ├── OGLUnifiedEngine.js              # OGL統一エンジン（核心）
+│   ├── OGLPolylineSystem.js             # OGL線描画システム
+│   ├── OGLInputProcessor.js             # OGL統合入力処理
+│   └── ToolController.js                # ツール制御（簡素化）
+
+├── tools/                               # ツール実装（最小構成）
+│   ├── ToolStore.js                     # ツール状態管理
+│   ├── PenTool.js                       # OGLペンツール
+│   ├── BrushTool.js                     # OGLブラシツール
+│   └── EraserTool.js                    # OGL消しゴムツール
+
+├── ui/                                  # UI層（最小構成）
+│   ├── ToolPanel.js                     # ツールパネル
+│   ├── LayerPanel.js                    # レイヤーパネル
+│   └── MainLayout.js                    # メインレイアウト
+
+└── core/                                # コア機能（最小構成）
+    ├── LayerSystem.js                   # レイヤー管理
+    ├── HistorySystem.js                 # 履歴管理
+    └── ExportSystem.js                  # エクスポート機能
+```
+
+### データフロー（OGL統一・超簡潔版）
+```
+入力 → OGLInputProcessor → OGLPolylineSystem → OGL WebGL描画
+     ↑                                        ↓
+ToolController ←── OGL統一制御 ←── ツール設定 ←┘
+
+UI → ToolStore → ToolController → OGLUnifiedEngine起動
+```
+
+## 🚀 実装ロードマップ（v5.2 OGL統一・最短実装）
+
+### Phase 2-A: OGL統一基盤（1週間）
+**目標**: OGL単一エンジンによる描画システム構築
+
+#### 核心実装
+- **OGLUnifiedEngine.js**: OGL統一エンジン（全機能統合）
+- **OGLPolylineSystem.js**: OGL Polyline線描画専門
+- **ToolController.js**: ツール制御（OGL統一）
+- **基本ツール**: PenTool・BrushTool・EraserTool（OGL統一）
+
+### Phase 2-B: 統合機能（1週間）
+- **LayerSystem.js**: OGL統合レイヤー管理
+- **HistorySystem.js**: OGL統合履歴管理
+- **UI統合**: ToolPanel + LayerPanel + MainLayout
+
+### Phase 2-C: 完成・連携（1週間）
+- **ExportSystem.js**: OGL統合エクスポート
+- **外部連携**: ふたばちゃんねる等
+- **最終統合**: 全機能OGL統一動作確認
+
+## 🔗 外部連携設計（v5.2 OGL統一）
+
+### ふたばちゃんねる連携仕様
+- **初期化**: OGLUnifiedEngine起動
+- **描画**: OGL Polyline統一描画
+- **完了**: OGL統合エクスポート
+- **転写**: WebGL → Canvas変換
+
+## 🎯 差別化ポイント（v5.2 OGL統一強化）
+
+### 技術的優位性
+1. **OGL統一エコシステム**: 計算・描画・制御の完全統合
+2. **依存関係最小化**: 外部ライブラリ依存の物理的排除
+3. **WebGL最適化**: OGL専用最適化による高性能
+4. **実装簡素化**: 単一エンジンによる複雑性排除
+5. **モダンUI**: Tailwind CSS + Phosphor Icons統一
+
+### 設計的優位性
+1. **単一責任原則**: OGL統一による責務明確化
+2. **技術的一貫性**: WebGL統一による技術的整合性
+3. **実装効率**: ファイル数最小化による開発効率
+4. **拡張性**: OGL基盤によるWebGPU移行容易性
+
+## 🤖 AI協働開発戦略（v5.2 OGL統一・AI最適化）
+
+### OGL統一実装指針
+```
+## OGL統一エンジン実装依頼
+
+### 対象エンジン
+- **統一エンジン**: OGLUnifiedEngine.js（全機能統合）
+- **線描画システム**: OGLPolylineSystem.js（OGL Polyline専用）
+- **入力処理**: OGLInputProcessor.js（OGL統合入力）
+
+### OGL統一制約
+- **描画**: OGL Polyline/Mesh/Shader統一のみ
+- **計算**: OGL内蔵数学関数活用
+- **制御**: ToolController OGL統合制御
+
+### 禁止事項
+- **Canvas2D**: 全面禁止
+- **Bezier.js**: 依存禁止（OGL内蔵で代替）
+- **複数描画エンジン**: OGL統一違反
+
+### 技術制約
+- **WebGL**: OGLラッパー経由のみ
+- **線描画**: OGL Polyline機能専用
+- **ファイル数**: 最小構成厳守（AI実装効率優先）
+```
+
+## 📋 Phase2完了チェックリスト（v5.2 OGL統一）
+
+### Phase2-A完了条件
+- [ ] **OGLUnifiedEngine.js**: OGL統一エンジン完全動作
+- [ ] **OGLPolylineSystem.js**: OGL線描画システム動作
+- [ ] **全ツールOGL統一**: PenTool・BrushTool・EraserTool統一動作
+- [ ] **Canvas2D完全排除**: OGL WebGL統一確認
+- [ ] **Bezier.js依存排除**: OGL内蔵機能活用確認
+
+### Phase2-B完了条件
+- [ ] **LayerSystem OGL統合**: レイヤー管理OGL統一
+- [ ] **HistorySystem OGL統合**: 履歴管理OGL統一
+- [ ] **UI統合**: Tailwind CSS + OGL統一
+
+### Phase2-C完了条件
+- [ ] **ExportSystem OGL統合**: エクスポートOGL統一
+- [ ] **外部連携**: ふたばちゃんねる + OGL統一
+- [ ] **全機能統合**: OGLシステム完全動作確認
+- [ ] **Phase3移行準備**: WebGPU移行基盤完了
+
+## 🎯 v5.2の革命的優位性
+
+**「複雑性の物理的排除による実装効率の飛躍的向上」**
+
+v5.2では、OGL単一エンジン統一により：
+- **依存関係の根絶**: Bezier.js等外部依存完全排除
+- **ファイル数の最小化**: AI実装効率を最大化
+- **技術的一貫性**: WebGL統一による複雑性排除
+- **実装速度の向上**: 単一エコシステムによる開発効率化
+
+憲章v5.1の核心思想（曖昧さの排除、ユーザー期待値優先）を完全維持しつつ、技術的複雑性を根本から排除。OGL統一により、最高品質のお絵かきツールを最短期間で実現する。

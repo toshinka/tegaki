@@ -41,6 +41,10 @@
 ## 3. Phase2-A完了後の目標ファイル構成
 
 ```
+プロジェクトルート/
+├── package.json                        # 依存関係定義
+├── vite.config.js                      # ビルド設定
+├── index.html                          # エントリーポイント
 src/
 ├── main.js                             # エントリーポイント
 ├── core/
@@ -54,6 +58,22 @@ src/
         ├── ToolStore.js                # ツール状態管理
         └── ToolPanel.js                # ツール選択UI
 ```
+
+1. 依存関係の明確化
+javascript// package.jsonから読み取れる重要情報
+"ogl": "^1.0.11",           // OGLRenderingEngine.jsで使用
+"bezier-js": "^6.1.4",      // BezierCalculationEngine.jsで使用
+"gl-matrix": "^3.4.3",      // WebGL計算で使用
+2. HTMLの制約理解
+html<!-- 既存のcanvas要素 -->
+<canvas id="vector-canvas" width="800" height="600"></canvas>
+
+<!-- 既存のUI構造 -->
+<div class="toolbar" id="toolbar"></div>
+<div class="control-panel" id="penControls"></div>
+3. モジュール設定の把握
+json"type": "module",  // ES6 modules使用
+
 
 ---
 

@@ -1,0 +1,279 @@
+# ⚠️ 総合AIコーディング規約 v3.3 憲章v5.2 OGL統一版
+
+## 🚨 v3.3革命的改訂の背景
+憲章v5.2の**OGL単一エンジン統一**に完全対応。Bezier.js依存排除、専門エンジン協調思想から「OGL統一支配」への根本転換。
+
+## 🎯 基本方針（憲章v5.2 OGL統一完全統合）
+
+- **OGL単一エンジン支配**: 計算・描画・制御をOGL統一エコシステムで完結
+- **Bezier.js依存完全排除**: ES6/TypeScript問題、重複機能を物理的に根絶
+- **曖昧さの物理的排除**: アーキテクチャレベルで解釈の余地を完全に断つ
+- **ツール・エンジン厳格連動**: ツール選択がOGLエンジン専用機能起動のトリガー
+- **Canvas2D誘惑の根絶**: 全描画処理=OGL WebGL統一（Canvas2D完全禁止）
+- **ユーザー期待値最優先**: 技術的完璧性よりもユーザー体験を重視
+
+## 🚫 憲章違反項目（実装前必須チェック・v3.3 OGL統一版）
+
+### 🔥 最重要: OGL統一違反（v3.3新設最優先）
+- ❌ Canvas2Dによる全描画（WebGL=OGL統一、Canvas2D完全排除）
+- ❌ Bezier.js依存（OGL内蔵機能で完全代替、外部依存排除）
+- ❌ 「描画モード」概念（モード抽象化は曖昧さの温床）
+- ❌ 複数描画ライブラリ（OGL単一エンジン以外の描画ライブラリ禁止）
+- ❌ WebGL直接操作（OGLラッパー経由以外のWebGL操作禁止）
+
+### 🆕 OGL統一原則（v3.3核心制約）
+- **線描画**: OGL Polyline機能専用
+- **図形描画**: OGL Mesh + カスタムシェーダー
+- **テクスチャ**: OGL Texture システム
+- **アニメーション**: OGL Transform + フレームループ
+- **入力処理**: OGL統合入力 + Pointer Events API
+
+### ❌ 完全禁止（v3.3 OGL統一強化）
+- Bezier.js を使った曲線計算（OGL内蔵で代替）
+- Konva.js による選択・移動機能（OGL Transform + Raycastで代替）
+- 複数描画エンジンの協調（OGL統一原則違反）
+- Canvas2D との併用（WebGL統一違反）
+
+## 📂 命名・構造規則（v3.3 OGL統一・ファイル最小化対応）
+
+### ❌ 全面禁止命名（v3.3 OGL統一拡張）
+| 禁止 | 禁止理由 | 代替 |
+|------|----------|------|
+| *Manager.js | 責務曖昧 | *Store.js, *Controller.js |
+| *Handler.js | 処理不明 | *Processor.js |
+| *Helper.js | 目的不明 | *Utils.js |
+| *Service.js | DI以外禁止 | 具体的な役割名 |
+| *Engine.js（OGL以外） | OGL統一原則違反 | OGL*Engine.js |
+| Bezier*.js | Bezier.js依存禁止 | OGL*.js |
+| Konva*.js | Konva.js依存禁止 | OGL*.js |
+| *ModeController.js | モード概念禁止 | OGLToolController.js |
+
+### 🧭 強制配置・憲章v5.2 OGL統一・ファイル最小化準拠（v3.3）
+```
+src/
+├── engine/
+│   ├── OGLUnifiedEngine.js              # OGL統一エンジン（核心）
+│   ├── OGLPolylineSystem.js             # OGL線描画システム
+│   ├── OGLInputProcessor.js             # OGL統合入力処理
+│   └── ToolController.js                # ツール制御（簡素化）
+
+├── tools/                               # ツール実装（最小構成）
+│   ├── ToolStore.js                     # ツール状態管理
+│   ├── PenTool.js                       # OGLペンツール
+│   ├── BrushTool.js                     # OGLブラシツール
+│   └── EraserTool.js                    # OGL消しゴムツール
+
+├── ui/                                  # UI層（最小構成）
+│   ├── ToolPanel.js                     # ツールパネル
+│   ├── LayerPanel.js                    # レイヤーパネル
+│   └── MainLayout.js                    # メインレイアウト
+
+└── core/                                # コア機能（最小構成）
+    ├── LayerSystem.js                   # レイヤー管理
+    ├── HistorySystem.js                 # 履歴管理
+    └── ExportSystem.js                  # エクスポート機能
+```
+
+## 🎨 OGL統一エンジン設計（憲章v5.2核心・v3.3統合）
+
+### OGL_UNIFIED_BINDING（OGL統一制約）
+```javascript
+const OGL_UNIFIED_BINDING = {
+    'drawing': {
+        engine: 'OGLUnifiedEngine',           // 統一エンジン
+        lineSystem: 'OGLPolylineSystem',      // 線描画専用
+        calculation: 'OGL内蔵数学関数',        // 外部依存排除
+        rendering: 'OGL WebGL統一'            // Canvas2D禁止
+    },
+    'interaction': {
+        input: 'OGLInputProcessor',           # OGL統合入力
+        transform: 'OGL Transform',          // OGL内蔵変換
+        selection: 'OGL Raycast'             // OGL内蔵選択
+    }
+};
+```
+
+### OGL統一の必須条件（憲章v5.2準拠）
+1. **全描画処理がOGL WebGL統一**である
+2. **外部描画ライブラリ依存がない**（Bezier.js、Konva.js禁止）
+3. **OGL内蔵機能を最大限活用**する
+4. **Canvas2Dを一切使用しない**
+5. **単一エンジンによる統一制御**である
+
+## 🚫 禁止されるOGL統一違反パターン（違反例）
+```javascript
+// ❌ Bezier.js依存（憲章v5.2最重要違反）
+import Bezier from 'bezier-js';
+const curve = new Bezier(points);
+
+// ❌ Canvas2D併用（OGL統一違反）
+const ctx = canvas.getContext('2d');
+ctx.beginPath();
+
+// ❌ 複数描画エンジン（OGL統一違反）
+constructor() {
+    this.oglRenderer = new OGLRenderer();
+    this.konvaRenderer = new KonvaRenderer(); // 禁止
+}
+
+// ❌ WebGL直接操作（OGLラッパー違反）
+const gl = canvas.getContext('webgl');
+gl.drawArrays(); // OGL経由以外禁止
+```
+
+## ✅ 正しいOGL統一実装パターン（正解例）
+```javascript
+// ✅ OGL統一エンジン（憲章v5.2準拠）
+class OGLUnifiedEngine {
+    constructor(canvas) {
+        this.renderer = new Renderer({ canvas, alpha: true });
+        this.scene = new Transform();
+        this.camera = new Camera();
+        
+        // OGL統一機能初期化
+        this.polylineSystem = new PolylineSystem(this.renderer);
+        this.transformSystem = new TransformSystem();
+        this.inputProcessor = new OGLInputProcessor();
+    }
+    
+    // ツール選択 = OGL専用機能起動
+    selectTool(toolName) {
+        const config = OGL_TOOL_CONFIG[toolName];
+        this.polylineSystem.setToolConfig(config.polyline);
+        this.transformSystem.setToolConfig(config.transform);
+        this.currentTool = toolName;
+    }
+    
+    // OGL統一描画フロー
+    processStroke(points, pressure) {
+        // OGL Polyline で直接描画（Bezier.js禁止）
+        const polyline = this.polylineSystem.createPolyline(points, {
+            tool: this.currentTool,
+            pressure: pressure,
+            shader: this.getToolShader(this.currentTool)
+        });
+        
+        this.scene.addChild(polyline);
+        this.render();
+    }
+}
+
+// ✅ OGLツール実装（正しい例）
+class PenTool {
+    constructor(oglEngine) {
+        this.engine = oglEngine;
+        this.toolConfig = {
+            polyline: { width: 2, smooth: true },
+            shader: 'pen-shader'
+        };
+    }
+    
+    activate() {
+        this.engine.selectTool('pen');
+    }
+    
+    onStroke(points, pressure) {
+        // OGL統一描画のみ
+        this.engine.processStroke(points, pressure);
+    }
+}
+```
+
+## 🤖 AI実装・監査テンプレート（v3.3・OGL統一版）
+
+### 実装AI向け指示（OGL統一対応版）
+```
+[機能名]を実装してください
+
+【v3.3規則（OGL統一対応）】
+- 🚫 Canvas2D全面禁止（全描画処理=OGL WebGL統一）
+- 🚫 Bezier.js依存禁止（OGL内蔵機能で代替）
+- 🚫 複数描画ライブラリ禁止（OGL単一エンジン統一）
+- ✅ OGL統一エンジンのみ使用
+- ✅ OGL Polyline機能で線描画
+- ✅ OGL内蔵数学関数活用
+
+【OGL統一制約】
+- 全描画: OGL WebGL統一のみ
+- 線描画: OGL Polyline機能専用
+- 計算: OGL内蔵数学関数活用
+- 入力: OGLInputProcessor統一
+
+【実装】
+1. エンジン: OGLUnifiedEngine統一制御
+2. ツール: tools/[ツール名]Tool.js（OGL統一）
+3. UI: Tailwind CSS + Phosphor Icons統一
+4. 状態: ToolStore等最小構成
+```
+
+### 監査AI向け指示（OGL統一対応版）
+```
+v3.3規約+憲章v5.2準拠監査実施（OGL統一対応）
+
+【OGL統一違反チェック（最優先）】
+1. 🚫 Canvas2D API使用有無（全面禁止）
+2. 🚫 Bezier.js依存有無（完全排除）
+3. 🚫 複数描画ライブラリ使用有無（OGL統一違反）
+4. 🚫 WebGL直接操作有無（OGLラッパー違反）
+
+【OGL統一準拠チェック（新設）】
+1. ✅ OGL WebGL統一確認
+2. ✅ OGL Polyline線描画確認
+3. ✅ OGL内蔵機能活用確認
+4. ✅ OGL_UNIFIED_BINDING準拠確認
+
+【期待結果】
+- ✅合格項目列挙（OGL統一準拠含む）
+- ❌OGL統一違反・憲章違反・規約違反具体指摘
+- 🔧修正提案（OGL統一・依存排除等）
+- 📊総合判定(合格/要修正/再設計)
+```
+
+## 📋 必須チェックリスト（v3.3・OGL統一統合）
+
+### 🔥 最重要: OGL統一違反根絶
+- [ ] Canvas2D APIを一切使用していない
+- [ ] Bezier.js依存を完全に排除している
+- [ ] 複数描画ライブラリを使用していない
+- [ ] WebGL直接操作をしていない（OGL経由のみ）
+
+### 🆕 最重要: OGL統一準拠
+- [ ] 全描画処理がOGL WebGL統一である
+- [ ] 線描画がOGL Polyline機能専用である
+- [ ] OGL内蔵数学関数を活用している
+- [ ] OGLUnifiedEngineに統一制御されている
+
+### 🔍 憲章遵守（v5.2対応）
+- [ ] OGL内蔵機能最大限活用（外部依存排除）
+- [ ] ツール・エンジン厳格連動実装
+- [ ] ファイル数最小構成準拠
+
+### 🏗️ 規約準拠
+- [ ] 禁止命名なし (Manager/Handler/Helper/Service/*Engine(OGL以外))
+- [ ] 最小構成準拠（AI実装効率優先）
+- [ ] 一方向データフロー（UI→Store→UI購読）
+
+## 🔥 AI実装懸念（v3.3・OGL統一対策最優先）
+
+### 🔥 最重要: OGL統一違反（v3.3新設最優先）
+- **A**: Canvas2D描画実装 (憲章v5.2最重要違反)
+- **B**: Bezier.js依存実装 (憲章v5.2重要違反)
+- **C**: 複数描画ライブラリ使用 (憲章v5.2違反)
+
+### 🔧 中重要: 憲章違反
+- **D**: WebGL直接操作 (OGLラッパー違反)
+- **E**: ファイル数増大 (最小構成違反)
+- **F**: 外部依存増加 (依存排除違反)
+
+## 🎯 v3.3の革命的優位性
+
+**「OGL単一エンジン統一による複雑性の物理的排除とAI実装効率の飛躍的向上」**
+
+v3.3では、憲章v5.2の**OGL単一エンジン統一**に完全対応し：
+
+- **Bezier.js依存完全排除**: ES6/TypeScript問題の根絶
+- **Canvas2D誘惑根絶**: OGL WebGL統一による技術的一貫性
+- **複雑性の物理的排除**: 単一エコシステムによる開発効率化
+- **AI実装効率最大化**: ファイル数最小構成による開発速度向上
+
+従来のCanvas2D誘惑根絶を完全に維持しつつ、専門エンジン協調思想から「OGL統一支配」への根本転換により、曖昧さを完全排除し最高品質のお絵かきツールを最短期間で実現する。

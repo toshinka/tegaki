@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ベクターペン特化お絵かきツール</title>
+    <title>🎨 OGL統一お絵かきツール</title>
     <style>
-        /* --- デザイン維持（既存スタイル） --- */
+        /* --- カラーパレット --- */
         :root {
             --main-color: #800000;
             --sub-color: #aa5a56;
@@ -13,7 +13,13 @@
             --canvas-bg: #f0e0d6;
             --app-bg: #ffffee;
         }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        * { 
+            margin: 0; 
+            padding: 0; 
+            box-sizing: border-box; 
+        }
+        
         body {
             font-family: 'Segoe UI', system-ui, sans-serif;
             background: var(--app-bg);
@@ -22,7 +28,15 @@
             height: 100vh;
             user-select: none;
         }
-        .app-container { display: flex; height: 100vh; background: var(--app-bg); }
+        
+        /* --- 全体レイアウト --- */
+        .app-container { 
+            display: flex; 
+            height: 100vh; 
+            background: var(--app-bg); 
+        }
+        
+        /* --- 左サイドツールバー --- */
         .toolbar {
             width: 60px;
             background: rgba(128, 0, 0, 0.05);
@@ -32,68 +46,282 @@
             padding: 10px;
             gap: 10px;
             align-items: center;
+            justify-content: center; /* 中央配置 */
         }
+        
         .tool-button {
-            width: 40px; height: 40px; background: rgba(255, 255, 255, 0.8);
-            border: 1px solid var(--main-color); border-radius: 6px; cursor: pointer;
-            display: flex; align-items: center; justify-content: center;
-            transition: all 0.2s ease; color: var(--main-color); font-size: 16px; font-weight: bold;
+            width: 40px; 
+            height: 40px; 
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid var(--main-color); 
+            border-radius: 6px; 
+            cursor: pointer;
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            transition: all 0.2s ease; 
+            color: var(--main-color); 
+            font-size: 16px; 
+            position: relative;
         }
-        .tool-button:hover { background: var(--light-bg); transform: translateY(-1px); }
-        .tool-button.active { background: var(--main-color); color: white; box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3); }
-        .canvas-area { flex: 1; display: flex; align-items: center; justify-content: center; background: var(--app-bg); position: relative; }
-        .canvas-container { position: relative; background: var(--canvas-bg); border: 2px solid var(--main-color); border-radius: 4px; box-shadow: 0 4px 16px rgba(128, 0, 0, 0.15); }
-        #vector-canvas { display: block; cursor: crosshair; }
+        
+        .tool-button:hover { 
+            background: var(--light-bg); 
+            transform: translateY(-1px); 
+        }
+        
+        .tool-button.active { 
+            background: var(--main-color); 
+            color: white; 
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3); 
+        }
+        
+        /* --- メインキャンバスエリア --- */
+        .canvas-area { 
+            flex: 1; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            background: var(--app-bg); 
+            position: relative; 
+        }
+        
+        .canvas-container { 
+            position: relative; 
+            background: var(--canvas-bg); 
+            border: 2px solid var(--main-color); 
+            border-radius: 4px; 
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.15); 
+        }
+        
+        #ogl-canvas { 
+            display: block; 
+            cursor: crosshair; 
+        }
+        
+        /* --- フローティングコントロールパネル --- */
         .control-panel {
-            position: absolute; top: 15px; left: 75px; width: 280px;
-            background: rgba(255, 255, 255, 0.95); border: 1px solid rgba(128, 0, 0, 0.2);
-            border-radius: 8px; padding: 16px; box-shadow: 0 8px 24px rgba(128, 0, 0, 0.15);
+            position: absolute; 
+            top: 15px; 
+            left: 75px; 
+            width: 280px;
+            background: rgba(255, 255, 255, 0.95); 
+            border: 1px solid rgba(128, 0, 0, 0.2);
+            border-radius: 8px; 
+            padding: 16px; 
+            box-shadow: 0 8px 24px rgba(128, 0, 0, 0.15);
+            display: none; /* 初期は非表示 */
         }
-        .control-group { margin-bottom: 12px; }
-        .control-group:last-child { margin-bottom: 0; }
-        .control-label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 12px; font-weight: 600; }
-        .control-input { width: 60px; padding: 3px 6px; border: 1px solid var(--sub-color); border-radius: 3px; font-size: 11px; text-align: center; background: white; color: var(--main-color); }
-        .control-slider { width: 100%; margin: 4px 0; -webkit-appearance: none; background: transparent; }
-        .control-slider::-webkit-slider-runnable-track { height: 4px; background: var(--light-bg); border-radius: 2px; }
-        .control-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; background: var(--main-color); border-radius: 50%; cursor: pointer; margin-top: -5px; border: none; }
+        
+        .control-panel.visible {
+            display: block;
+        }
+        
+        .control-group { 
+            margin-bottom: 12px; 
+        }
+        
+        .control-group:last-child { 
+            margin-bottom: 0; 
+        }
+        
+        .control-label { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            margin-bottom: 6px; 
+            font-size: 12px; 
+            font-weight: 600; 
+        }
+        
+        .control-input { 
+            width: 60px; 
+            padding: 3px 6px; 
+            border: 1px solid var(--sub-color); 
+            border-radius: 3px; 
+            font-size: 11px; 
+            text-align: center; 
+            background: white; 
+            color: var(--main-color); 
+        }
+        
+        .control-slider { 
+            width: 100%; 
+            margin: 4px 0; 
+            -webkit-appearance: none; 
+            background: transparent; 
+        }
+        
+        .control-slider::-webkit-slider-runnable-track { 
+            height: 4px; 
+            background: var(--light-bg); 
+            border-radius: 2px; 
+        }
+        
+        .control-slider::-webkit-slider-thumb { 
+            -webkit-appearance: none; 
+            width: 14px; 
+            height: 14px; 
+            background: var(--main-color); 
+            border-radius: 50%; 
+            cursor: pointer; 
+            margin-top: -5px; 
+            border: none; 
+        }
+        
+        /* --- アクションボタンエリア --- */
+        .action-buttons {
+            position: absolute; 
+            top: 10px; 
+            right: 15px;
+            display: flex;
+            gap: 8px;
+        }
+        
+        .action-button {
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid var(--main-color);
+            border-radius: 4px;
+            font-size: 11px;
+            color: var(--main-color);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.2s ease;
+        }
+        
+        .action-button:hover {
+            background: var(--main-color);
+            color: white;
+        }
+        
+        /* --- ステータスバー --- */
         .status-bar {
-            position: absolute; bottom: 0; left: 0; right: 0; height: 28px; background: rgba(128, 0, 0, 0.05);
-            border-top: 1px solid rgba(128, 0, 0, 0.1); display: flex; align-items: center;
-            padding: 0 15px; gap: 15px; font-size: 10px;
+            position: absolute; 
+            bottom: 0; 
+            left: 0; 
+            right: 0; 
+            height: 28px; 
+            background: rgba(128, 0, 0, 0.05);
+            border-top: 1px solid rgba(128, 0, 0, 0.1); 
+            display: flex; 
+            align-items: center;
+            padding: 0 15px; 
+            gap: 15px; 
+            font-size: 10px;
         }
-        .status-item { display: flex; align-items: center; gap: 3px; }
-        .status-value { font-weight: 600; color: var(--sub-color); min-width: 20px; }
+        
+        .status-item { 
+            display: flex; 
+            align-items: center; 
+            gap: 3px; 
+        }
+        
+        .status-value { 
+            font-weight: 600; 
+            color: var(--sub-color); 
+            min-width: 20px; 
+        }
+        
+        /* --- Phosphor Icons --- */
+        .ph-pen::before { content: "✒️"; }
+        .ph-eraser::before { content: "🧽"; }
+        .ph-trash::before { content: "🗑️"; }
+        .ph-arrow-counter-clockwise::before { content: "↶"; }
     </style>
 </head>
 <body>
     <div class="app-container">
+        <!-- 左サイドツールバー -->
         <div class="toolbar" id="toolbar">
-            <!-- ToolPanel.js によって制御される -->
+            <div class="tool-button active" data-tool="pen" title="ペンツール (P)">
+                <i class="ph-pen"></i>
+            </div>
+            <div class="tool-button" data-tool="eraser" title="消しゴムツール (E)">
+                <i class="ph-eraser"></i>
+            </div>
         </div>
+        
+        <!-- メインキャンバスエリア -->
         <div class="canvas-area">
             <div class="canvas-container" id="canvasContainer">
-                <canvas id="vector-canvas" width="800" height="600"></canvas>
+                <canvas id="ogl-canvas" width="800" height="600"></canvas>
+            </div>
+            
+            <!-- フローティングコントロールパネル（ペン用） -->
+            <div class="control-panel" id="penControls">
+                <div class="control-group">
+                    <label class="control-label">
+                        <span>ペンサイズ</span>
+                        <input type="number" class="control-input" id="penSizeValue" value="3" min="1" max="50">
+                    </label>
+                    <input type="range" class="control-slider" id="penSizeSlider" value="3" min="1" max="50">
+                </div>
+                <div class="control-group">
+                    <label class="control-label">
+                        <span>不透明度</span>
+                        <input type="number" class="control-input" id="penOpacityValue" value="100" min="1" max="100">
+                    </label>
+                    <input type="range" class="control-slider" id="penOpacitySlider" value="100" min="1" max="100">
+                </div>
+            </div>
+            
+            <!-- フローティングコントロールパネル（消しゴム用） -->
+            <div class="control-panel" id="eraserControls">
+                <div class="control-group">
+                    <label class="control-label">
+                        <span>消しゴムサイズ</span>
+                        <input type="number" class="control-input" id="eraserSizeValue" value="10" min="1" max="100">
+                    </label>
+                    <input type="range" class="control-slider" id="eraserSizeSlider" value="10" min="1" max="100">
+                </div>
+            </div>
+            
+            <!-- アクションボタン -->
+            <div class="action-buttons">
+                <button class="action-button" id="clearButton" title="キャンバスをクリア">
+                    <i class="ph-trash"></i>
+                    <span>クリア</span>
+                </button>
+                <button class="action-button" id="undoButton" title="取り消し">
+                    <i class="ph-arrow-counter-clockwise"></i>
+                    <span>取り消し</span>
+                </button>
             </div>
         </div>
-        <div class="control-panel" id="penControls">
-            <div class="control-group">
-                <label class="control-label"><span>ペンサイズ</span><input type="number" class="control-input" id="penSizeValue" value="3" min="1" max="50"></label>
-                <input type="range" class="control-slider" id="penSizeSlider" value="3" min="1" max="50">
-            </div>
-            <div class="control-group">
-                <label class="control-label"><span>透明度</span><input type="number" class="control-input" id="penOpacityValue" value="100" min="1" max="100"></label>
-                <input type="range" class="control-slider" id="penOpacitySlider" value="100" min="1" max="100">
-            </div>
-        </div>
+        
+        <!-- ステータスバー -->
         <div class="status-bar">
-            <div class="status-item"><span>エンジン:</span><span class="status-value">Bezier.js Vector</span></div>
-            <div class="status-item"><span>サイズ:</span><span class="status-value" id="statusSize">3</span></div>
-            <div class="status-item"><span>透明度:</span><span class="status-value" id="statusOpacity">100%</span></div>
-            <div class="status-item"><span>解像度:</span><span class="status-value">800x600</span></div>
+            <div class="status-item">
+                <span>エンジン:</span>
+                <span class="status-value">OGL WebGL</span>
+            </div>
+            <div class="status-item">
+                <span>ツール:</span>
+                <span class="status-value" id="statusTool">ペン</span>
+            </div>
+            <div class="status-item">
+                <span>サイズ:</span>
+                <span class="status-value" id="statusSize">3</span>
+            </div>
+            <div class="status-item">
+                <span>不透明度:</span>
+                <span class="status-value" id="statusOpacity">100%</span>
+            </div>
+            <div class="status-item">
+                <span>解像度:</span>
+                <span class="status-value" id="statusResolution">800x600</span>
+            </div>
+            <div class="status-item">
+                <span>FPS:</span>
+                <span class="status-value" id="statusFPS">60</span>
+            </div>
         </div>
     </div>
 
-    <!-- Viteエントリーポイント -->
+    <!-- OGL統一エンジン用main.js -->
     <script type="module" src="/src/main.js"></script>
 </body>
 </html>
