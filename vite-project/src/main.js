@@ -47,10 +47,13 @@ class App {
 
             console.log('Services resolved successfully');
 
-            // UIを初期化
-            this.toolPanel = new ToolPanel(this.serviceContainer);
-
-            console.log('UI initialized');
+            // UIを初期化（ToolStoreやToolPanelは任意のため、存在する場合のみ）
+            try {
+                this.toolPanel = new ToolPanel(this.serviceContainer);
+                console.log('UI initialized');
+            } catch (error) {
+                console.warn('UI initialization failed, continuing without UI:', error);
+            }
 
             // イベントリスナーを設定（エンジン初期化前に設定）
             this.setupEventListeners();
@@ -59,7 +62,9 @@ class App {
 
             // デフォルトツールを選択（これによりエンジンが初期化される）
             console.log('Selecting default tool...');
-            this.toolStore.selectTool('pen');
+            
+            // ToolStoreを通さずに直接ToolEngineControllerでツール選択
+            await this.toolEngineController.selectTool('pen');
 
             // 初期化完了フラグを設定
             this.isInitialized = true;
@@ -152,7 +157,7 @@ class App {
         });
 
         // キーボードショートカット
-        document.addEventListener('keydown', (e) => {
+        document.addEventListener('keydown', async (e) => {
             if (!this.isInitialized) return;
             
             try {
@@ -160,17 +165,17 @@ class App {
                     case 'p':
                     case 'P':
                         if (e.ctrlKey || e.metaKey) return; // Ctrl+P は印刷なので除外
-                        this.toolStore.selectTool('pen');
+                        await this.toolEngineController.selectTool('pen');
                         e.preventDefault();
                         break;
                     case 'b':
                     case 'B':
-                        this.toolStore.selectTool('brush');
+                        await this.toolEngineController.selectTool('brush');
                         e.preventDefault();
                         break;
                     case 'e':
                     case 'E':
-                        this.toolStore.selectTool('eraser');
+                        await this.toolEngineController.selectTool('eraser');
                         e.preventDefault();
                         break;
                     case 'Delete':
@@ -256,7 +261,7 @@ class App {
                 this.toolEngineController.disposeCurrentEngines();
             }
             
-            if (this.toolStore) {
+            if (this.toolStore && this.toolStore.clearListeners) {
                 this.toolStore.clearListeners();
             }
             
@@ -272,7 +277,7 @@ class App {
     getStatus() {
         return {
             initialized: this.isInitialized,
-            currentTool: this.toolStore ? this.toolStore.getCurrentTool() : null,
+            currentTool: this.toolEngineController ? this.toolEngineController.getCurrentTool() : null,
             engineReady: this.toolEngineController ? this.toolEngineController.isReady() : false,
             renderingEngineStats: this.toolEngineController && this.toolEngineController.renderingEngine
                 ? this.toolEngineController.renderingEngine.getStats()

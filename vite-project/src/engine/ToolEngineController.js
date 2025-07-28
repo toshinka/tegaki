@@ -12,6 +12,7 @@ export class ToolEngineController {
         this.isDrawing = false;
         this.canvas = null;
         this.initializationPromise = null;
+        this.isInitializing = false;
     }
 
     // ツール選択 = 協調エンジン起動（唯一のトリガー）
@@ -24,18 +25,35 @@ export class ToolEngineController {
                 throw new Error(`Invalid tool name: ${toolName}`);
             }
 
+            // 既に初期化中の場合は待機
+            if (this.isInitializing && this.initializationPromise) {
+                console.log('Already initializing, waiting...');
+                await this.initializationPromise;
+            }
+
+            // 同じツールが既に選択されている場合はスキップ
+            if (this.currentTool === toolName && this.isReady()) {
+                console.log(`Tool ${toolName} already selected and ready`);
+                return;
+            }
+
             // 既存エンジンを停止
             this.disposeCurrentEngines();
+
+            // 初期化フラグを設定
+            this.isInitializing = true;
 
             // 初期化を開始
             this.initializationPromise = this.initializeEngines(toolName);
             await this.initializationPromise;
             
             this.currentTool = toolName;
+            this.isInitializing = false;
             
             console.log(`Tool selected successfully: ${toolName}`);
         } catch (error) {
             console.error('Failed to select tool:', error);
+            this.isInitializing = false;
             this.disposeCurrentEngines();
             throw error;
         }
@@ -55,13 +73,27 @@ export class ToolEngineController {
             console.log('Canvas element found');
 
             // DIコンテナから専門エンジンを新規取得
-            console.log('Resolving calculation engine...');
-            this.calculationEngine = this.serviceContainer.resolve('BezierCalculationEngine');
+            console.log('Creating calculation engine...');
+            const BezierCalculationEngine = this.serviceContainer.services.get('BezierCalculationEngine');
+            if (!BezierCalculationEngine) {
+                throw new Error('BezierCalculationEngine factory not found');
+            }
+            this.calculationEngine = BezierCalculationEngine();
             
-            console.log('Resolving rendering engine...');
-            this.renderingEngine = this.serviceContainer.resolve('OGLRenderingEngine');
+            console.log('Creating rendering engine...');
+            const OGLRenderingEngine = this.serviceContainer.services.get('OGLRenderingEngine');
+            if (!OGLRenderingEngine) {
+                throw new Error('OGLRenderingEngine factory not found');
+            }
+            this.renderingEngine = OGLRenderingEngine();
 
-            // エンジンを初期化
+            if (!this.calculationEngine || !this.renderingEngine) {
+                throw new Error('Failed to create engines');
+            }
+
+            console.log('Engines created successfully');
+
+            // エンジン設定を取得
             const toolConfig = this.getToolConfig(toolName);
             
             console.log('Setting calculation engine config...');
@@ -70,12 +102,16 @@ export class ToolEngineController {
             console.log('Initializing rendering engine...');
             this.renderingEngine.initialize(this.canvas, toolConfig.rendering);
             
-            // 初期化完了を待つ
+            // 初期化完了を確認
             if (!this.renderingEngine.isInitialized()) {
-                throw new Error('Failed to initialize rendering engine');
+                throw new Error('Rendering engine failed to initialize');
             }
             
             console.log('Engines initialized successfully');
+            
+            // 初期化完了後に少し待機（WebGLコンテキスト安定化のため）
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
         } catch (error) {
             console.error('Failed to initialize engines:', error);
             throw error;
@@ -101,8 +137,19 @@ export class ToolEngineController {
 
     // 描画開始（協調フロー）
     startStroke(x, y, pressure = 1.0) {
+        // 準備状態を確認（初期化中は待機）
+        if (this.isInitializing) {
+            console.warn('Still initializing, cannot start stroke');
+            return;
+        }
+        
         if (!this.isReady()) {
-            console.warn('Engines not ready for drawing');
+            console.warn('Engines not ready for drawing:', {
+                calculationEngine: !!this.calculationEngine,
+                renderingEngine: !!this.renderingEngine,
+                renderingInitialized: this.renderingEngine ? this.renderingEngine.isInitialized() : false,
+                currentTool: this.currentTool
+            });
             return;
         }
         
@@ -118,9 +165,21 @@ export class ToolEngineController {
             // 計算エンジンに最初の点を追加
             const pathData = this.calculationEngine.addPoint(x, y, pressure);
             
-            // まだ描画データがない場合は待機
+            // まだ描画データがない場合でも初期点を描画
             if (!pathData) {
-                console.log('No path data yet, waiting for more points');
+                // 初期点用の小さなセグメントを作成
+                const initialSegment = {
+                    points: [
+                        { x, y, pressure },
+                        { x: x + 0.1, y: y + 0.1, pressure }
+                    ],
+                    controlPoints: [],
+                    widths: [this.calculateWidth(pressure), this.calculateWidth(pressure)],
+                    timestamp: Date.now(),
+                    toolType: 'initial'
+                };
+                this.renderingEngine.renderPath(initialSegment);
+                console.log('Initial point rendered');
                 return;
             }
             
@@ -133,9 +192,17 @@ export class ToolEngineController {
         }
     }
 
+    // 筆圧から線幅を計算するヘルパーメソッド
+    calculateWidth(pressure) {
+        const toolConfig = this.getToolConfig(this.currentTool);
+        const basePressure = pressure || 1.0;
+        const pressureEffect = Math.pow(basePressure, toolConfig.calculation.pressureSensitivity);
+        return Math.max(0.5, pressureEffect * toolConfig.calculation.baseWidth);
+    }
+
     // 描画継続（協調フロー）
     continueStroke(x, y, pressure = 1.0) {
-        if (!this.isDrawing || !this.isReady()) {
+        if (!this.isDrawing || !this.isReady() || this.isInitializing) {
             return;
         }
         
@@ -155,7 +222,7 @@ export class ToolEngineController {
 
     // 描画終了（協調フロー）
     endStroke() {
-        if (!this.isDrawing || !this.isReady()) {
+        if (!this.isDrawing || !this.isReady() || this.isInitializing) {
             this.isDrawing = false;
             return;
         }
@@ -178,7 +245,7 @@ export class ToolEngineController {
 
     // キャンバスをクリア
     clearCanvas() {
-        if (!this.renderingEngine) {
+        if (!this.renderingEngine || this.isInitializing) {
             console.warn('Rendering engine not available for clearing');
             return;
         }
@@ -191,20 +258,20 @@ export class ToolEngineController {
         }
     }
 
-    // ツール設定の取得
+    // ツール設定の取得（修正版）
     getToolConfig(toolName) {
         const configs = {
             'pen': {
                 calculation: { 
                     smoothing: 0.5, 
-                    minDistance: 2,
+                    minDistance: 1, // より小さい値に変更
                     baseWidth: 2,
-                    pressureSensitivity: 1.0
+                    pressureSensitivity: 1.2 // 筆圧感度を上げる
                 },
                 rendering: { 
                     lineWidth: 2, 
                     alpha: 1.0, 
-                    color: [0, 0, 0],
+                    color: [128/255, 0, 0], // #800000 に修正
                     blendMode: 'normal'
                 }
             },
@@ -218,14 +285,14 @@ export class ToolEngineController {
                 rendering: { 
                     lineWidth: 8, 
                     alpha: 0.8, 
-                    color: [0, 0, 0],
+                    color: [128/255, 0, 0],
                     blendMode: 'normal'
                 }
             },
             'eraser': {
                 calculation: { 
                     smoothing: 0.3, 
-                    minDistance: 3,
+                    minDistance: 2,
                     baseWidth: 10,
                     pressureSensitivity: 0.8
                 },
@@ -305,10 +372,23 @@ export class ToolEngineController {
 
     // エンジンの準備状態を確認
     isReady() {
-        return this.calculationEngine && 
-               this.renderingEngine && 
-               this.renderingEngine.isInitialized() && 
-               this.currentTool;
+        const ready = !this.isInitializing &&
+                     this.calculationEngine && 
+                     this.renderingEngine && 
+                     this.renderingEngine.isInitialized() && 
+                     this.currentTool;
+        
+        if (!ready) {
+            console.log('Engine readiness check failed:', {
+                isInitializing: this.isInitializing,
+                hasCalculationEngine: !!this.calculationEngine,
+                hasRenderingEngine: !!this.renderingEngine,
+                renderingEngineInitialized: this.renderingEngine ? this.renderingEngine.isInitialized() : false,
+                hasCurrentTool: !!this.currentTool
+            });
+        }
+        
+        return ready;
     }
 
     // 有効なツール名かチェック
@@ -327,6 +407,7 @@ export class ToolEngineController {
         return {
             currentTool: this.currentTool,
             isDrawing: this.isDrawing,
+            isInitializing: this.isInitializing,
             isReady: this.isReady(),
             calculationEngine: this.calculationEngine ? this.calculationEngine.getCurrentStrokeInfo() : null,
             renderingEngine: this.renderingEngine ? this.renderingEngine.getStats() : null

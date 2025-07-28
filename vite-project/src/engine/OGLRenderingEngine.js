@@ -1,83 +1,101 @@
 // src/engine/OGLRenderingEngine.js
 
-import { Renderer, Program, Mesh, Geometry } from 'ogl';
-
 export class OGLRenderingEngine {
     constructor() {
-        this.renderer = null;
+        this.canvas = null;
         this.gl = null;
         this.program = null;
         this.meshes = [];
         this.config = {
             lineWidth: 2,
             alpha: 1.0,
-            color: [0, 0, 0],
+            color: [0.5, 0, 0], // #800000 に対応 (128/255, 0, 0)
             blendMode: 'normal'
         };
         this.initialized = false;
+        this.vertices = [];
+        this.vertexBuffer = null;
+        
+        // 累積描画用のバッファ
+        this.allVertices = [];
+        this.maxVertices = 100000; // 最大頂点数
     }
 
     initialize(canvas, config = {}) {
         try {
+            console.log('Initializing OGL Rendering Engine...');
+            
             this.config = { ...this.config, ...config };
+            this.canvas = canvas;
             
+            // WebGLコンテキストの取得
+            this.gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+            if (!this.gl) {
+                throw new Error('WebGL not supported');
+            }
+
+            console.log('WebGL context acquired');
+
             // キャンバスサイズを設定
-            const dpr = window.devicePixelRatio || 1;
-            const rect = canvas.getBoundingClientRect();
-            canvas.width = rect.width * dpr;
-            canvas.height = rect.height * dpr;
-            
-            // OGLレンダラーの初期化
-            this.renderer = new Renderer({ 
-                canvas,
-                width: canvas.width,
-                height: canvas.height,
-                alpha: true,
-                antialias: true,
-                powerPreference: 'high-performance'
-            });
-            
-            this.gl = this.renderer.gl;
+            this.setupCanvas();
             
             // WebGLコンテキストの設定
-            this.gl.enable(this.gl.BLEND);
-            this.setupBlendMode(this.config.blendMode);
+            this.setupWebGL();
             
             // シェーダープログラムの作成
-            this.program = new Program(this.gl, {
-                vertex: this.getVertexShader(),
-                fragment: this.getFragmentShader(),
-                uniforms: {
-                    uProjectionMatrix: { value: this.getProjectionMatrix(canvas) },
-                    uColor: { value: this.config.color },
-                    uAlpha: { value: this.config.alpha }
-                }
-            });
+            this.createShaderProgram();
+            
+            // バッファの初期化
+            this.initializeBuffers();
 
             this.initialized = true;
-            console.log('OGL Rendering Engine initialized');
+            console.log('OGL Rendering Engine initialized successfully');
         } catch (error) {
             console.error('Failed to initialize OGL Rendering Engine:', error);
             this.initialized = false;
+            throw error;
         }
     }
 
-    // 設定を更新
-    updateConfig(config) {
-        this.config = { ...this.config, ...config };
+    setupCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        const rect = this.canvas.getBoundingClientRect();
         
-        if (this.program && this.program.uniforms) {
-            this.program.uniforms.uColor.value = this.config.color;
-            this.program.uniforms.uAlpha.value = this.config.alpha;
-        }
+        this.canvas.width = rect.width * dpr;
+        this.canvas.height = rect.height * dpr;
         
-        if (this.gl && this.config.blendMode) {
-            this.setupBlendMode(this.config.blendMode);
-        }
+        // CSS サイズは元のまま
+        this.canvas.style.width = rect.width + 'px';
+        this.canvas.style.height = rect.height + 'px';
+        
+        // ビューポートを設定
+        this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        
+        console.log(`Canvas size set to ${this.canvas.width}x${this.canvas.height}`);
     }
 
-    // ブレンドモードの設定
+    setupWebGL() {
+        // ブレンディングを有効化
+        this.gl.enable(this.gl.BLEND);
+        this.setupBlendMode(this.config.blendMode);
+        
+        // 背景色を設定
+        this.gl.clearColor(1.0, 1.0, 1.0, 1.0);
+        
+        // デプステストを無効化（2D描画のため）
+        this.gl.disable(this.gl.DEPTH_TEST);
+        
+        // 線のスムージングを有効化（利用可能な場合）
+        if (this.gl.getExtension('OES_standard_derivatives')) {
+            console.log('Standard derivatives extension available');
+        }
+        
+        console.log('WebGL context configured');
+    }
+
     setupBlendMode(blendMode) {
+        if (!this.gl) return;
+        
         switch (blendMode) {
             case 'destination-out': // 消しゴム用
                 this.gl.blendFunc(this.gl.ZERO, this.gl.ONE_MINUS_SRC_ALPHA);
@@ -95,7 +113,75 @@ export class OGLRenderingEngine {
         }
     }
 
-    // 軌跡データを描画
+    createShaderProgram() {
+        // 頂点シェーダーをコンパイル
+        const vertexShader = this.compileShader(this.gl.VERTEX_SHADER, this.getVertexShader());
+        if (!vertexShader) {
+            throw new Error('Failed to compile vertex shader');
+        }
+
+        // フラグメントシェーダーをコンパイル
+        const fragmentShader = this.compileShader(this.gl.FRAGMENT_SHADER, this.getFragmentShader());
+        if (!fragmentShader) {
+            throw new Error('Failed to compile fragment shader');
+        }
+
+        // プログラムを作成してリンク
+        this.program = this.gl.createProgram();
+        this.gl.attachShader(this.program, vertexShader);
+        this.gl.attachShader(this.program, fragmentShader);
+        this.gl.linkProgram(this.program);
+
+        // リンク結果を確認
+        if (!this.gl.getProgramParameter(this.program, this.gl.LINK_STATUS)) {
+            const error = this.gl.getProgramInfoLog(this.program);
+            this.gl.deleteProgram(this.program);
+            throw new Error('Failed to link shader program: ' + error);
+        }
+
+        // attribute と uniform の位置を取得
+        this.positionLocation = this.gl.getAttribLocation(this.program, 'a_position');
+        this.projectionMatrixLocation = this.gl.getUniformLocation(this.program, 'u_projectionMatrix');
+        this.colorLocation = this.gl.getUniformLocation(this.program, 'u_color');
+        this.alphaLocation = this.gl.getUniformLocation(this.program, 'u_alpha');
+
+        console.log('Shader program created successfully');
+    }
+
+    compileShader(type, source) {
+        const shader = this.gl.createShader(type);
+        this.gl.shaderSource(shader, source);
+        this.gl.compileShader(shader);
+
+        if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
+            const error = this.gl.getShaderInfoLog(shader);
+            this.gl.deleteShader(shader);
+            console.error('Shader compilation error:', error);
+            return null;
+        }
+
+        return shader;
+    }
+
+    initializeBuffers() {
+        // 頂点バッファを作成
+        this.vertexBuffer = this.gl.createBuffer();
+        
+        console.log('Buffers initialized');
+    }
+
+    // 設定を更新
+    updateConfig(config) {
+        this.config = { ...this.config, ...config };
+        
+        if (this.gl && this.config.blendMode) {
+            this.setupBlendMode(this.config.blendMode);
+        }
+        
+        console.log('Config updated:', this.config);
+    }
+
+    // 軌跡データを描画（累積描画方式に変更）
     renderPath(pathData) {
         if (!this.initialized || !pathData || !pathData.points || pathData.points.length < 2) {
             return;
@@ -103,44 +189,66 @@ export class OGLRenderingEngine {
 
         try {
             // 軌跡データから頂点配列を作成
-            const vertices = this.createVerticesFromPath(pathData);
+            const newVertices = this.createVerticesFromPath(pathData);
             
-            if (vertices.length === 0) return;
+            if (newVertices.length === 0) return;
             
-            // ジオメトリとメッシュを作成
-            const geometry = new Geometry(this.gl, {
-                position: { size: 2, data: new Float32Array(vertices) }
-            });
+            // 新しい頂点を累積バッファに追加
+            this.allVertices.push(...newVertices);
             
-            const mesh = new Mesh(this.gl, { 
-                geometry, 
-                program: this.program,
-                mode: this.gl.TRIANGLES
-            });
+            // バッファサイズ制限
+            if (this.allVertices.length > this.maxVertices) {
+                const excess = this.allVertices.length - this.maxVertices;
+                this.allVertices.splice(0, excess);
+            }
             
-            // シーンに追加
-            this.meshes.push(mesh);
-            
-            // 描画
-            this.render();
+            // 全体を再描画
+            this.redrawAll();
             
         } catch (error) {
             console.error('Failed to render path:', error);
         }
     }
 
-    // 描画実行
-    render() {
-        if (!this.initialized || !this.renderer) return;
+    // 累積されたすべての頂点を描画
+    redrawAll() {
+        if (!this.initialized || !this.program || this.allVertices.length === 0) return;
         
-        try {
-            this.renderer.render({ scene: this.meshes });
-        } catch (error) {
-            console.error('Failed to render:', error);
-        }
+        // キャンバスをクリア
+        this.gl.clear(this.gl.COLOR_BUFFER_BIT);
+        
+        // 頂点データをバッファに送信
+        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
+        this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(this.allVertices), this.gl.DYNAMIC_DRAW);
+        
+        // 描画を実行
+        this.draw(this.allVertices.length / 2); // 2D座標なので2で割る
     }
 
-    // 軌跡データから頂点配列を生成
+    draw(vertexCount) {
+        if (!this.initialized || !this.program) return;
+        
+        // プログラムを使用
+        this.gl.useProgram(this.program);
+        
+        // 射影行列を設定
+        const projectionMatrix = this.getProjectionMatrix();
+        this.gl.uniformMatrix3fv(this.projectionMatrixLocation, false, projectionMatrix);
+        
+        // 色と透明度を設定
+        this.gl.uniform3fv(this.colorLocation, this.config.color);
+        this.gl.uniform1f(this.alphaLocation, this.config.alpha);
+        
+        // 頂点属性を設定
+        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
+        this.gl.enableVertexAttribArray(this.positionLocation);
+        this.gl.vertexAttribPointer(this.positionLocation, 2, this.gl.FLOAT, false, 0, 0);
+        
+        // 描画実行
+        this.gl.drawArrays(this.gl.TRIANGLES, 0, vertexCount);
+    }
+
+    // 軌跡データから頂点配列を生成（改善版）
     createVerticesFromPath(pathData) {
         const vertices = [];
         const points = pathData.points;
@@ -148,11 +256,21 @@ export class OGLRenderingEngine {
         
         if (points.length < 2) return vertices;
         
+        // デバイスピクセル比を考慮した座標変換
+        const dpr = window.devicePixelRatio || 1;
+        
         for (let i = 0; i < points.length - 1; i++) {
-            const p1 = points[i];
-            const p2 = points[i + 1];
-            const width1 = (widths[i] || this.config.lineWidth) / 2;
-            const width2 = (widths[i + 1] || this.config.lineWidth) / 2;
+            const p1 = {
+                x: points[i].x * dpr,
+                y: points[i].y * dpr
+            };
+            const p2 = {
+                x: points[i + 1].x * dpr,
+                y: points[i + 1].y * dpr
+            };
+            
+            const width1 = ((widths[i] || this.config.lineWidth) * dpr) / 2;
+            const width2 = ((widths[i + 1] || this.config.lineWidth) * dpr) / 2;
             
             // 線セグメントを四角形として描画するための頂点を計算
             const segment = this.createLineSegment(p1, p2, width1, width2);
@@ -162,7 +280,7 @@ export class OGLRenderingEngine {
         return vertices;
     }
 
-    // 線セグメントを四角形として表現する頂点を生成
+    // 線セグメントを四角形として表現する頂点を生成（改善版）
     createLineSegment(p1, p2, width1, width2) {
         const dx = p2.x - p1.x;
         const dy = p2.y - p1.y;
@@ -170,7 +288,7 @@ export class OGLRenderingEngine {
         
         if (length === 0) return [];
         
-        // 法線ベクトル
+        // 法線ベクトル（正規化済み）
         const nx = -dy / length;
         const ny = dx / length;
         
@@ -197,38 +315,39 @@ export class OGLRenderingEngine {
         ];
     }
 
-    // 頂点シェーダー
+    // 頂点シェーダー（改善版）
     getVertexShader() {
         return `
-            attribute vec2 position;
-            uniform mat3 uProjectionMatrix;
+            attribute vec2 a_position;
+            uniform mat3 u_projectionMatrix;
             
             void main() {
-                vec3 pos = uProjectionMatrix * vec3(position, 1.0);
+                vec3 pos = u_projectionMatrix * vec3(a_position, 1.0);
                 gl_Position = vec4(pos.xy, 0.0, 1.0);
             }
         `;
     }
 
-    // フラグメントシェーダー
+    // フラグメントシェーダー（改善版）
     getFragmentShader() {
         return `
             precision mediump float;
-            uniform vec3 uColor;
-            uniform float uAlpha;
+            uniform vec3 u_color;
+            uniform float u_alpha;
             
             void main() {
-                gl_FragColor = vec4(uColor, uAlpha);
+                gl_FragColor = vec4(u_color, u_alpha);
             }
         `;
     }
 
-    // 2D描画用の射影行列を生成
-    getProjectionMatrix(canvas) {
-        const width = canvas.width;
-        const height = canvas.height;
+    // 2D描画用の射影行列を生成（座標系修正）
+    getProjectionMatrix() {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
         
-        // 正規化座標系への変換行列
+        // 正規化デバイス座標系への変換行列
+        // Y軸は反転させない（WebGLの座標系に合わせる）
         return [
             2 / width, 0, 0,
             0, -2 / height, 0,
@@ -241,15 +360,13 @@ export class OGLRenderingEngine {
         if (!this.initialized) return;
         
         try {
-            // 既存のメッシュを削除
-            this.meshes.forEach(mesh => {
-                if (mesh.geometry) mesh.geometry.dispose();
-            });
-            this.meshes = [];
+            // 累積バッファもクリア
+            this.allVertices = [];
             
             // キャンバスをクリア
             this.gl.clear(this.gl.COLOR_BUFFER_BIT);
             
+            console.log('Canvas cleared');
         } catch (error) {
             console.error('Failed to clear canvas:', error);
         }
@@ -258,28 +375,28 @@ export class OGLRenderingEngine {
     // リソースを解放
     dispose() {
         try {
-            // メッシュとジオメトリを削除
-            this.meshes.forEach(mesh => {
-                if (mesh.geometry) mesh.geometry.dispose();
-            });
-            this.meshes = [];
+            console.log('Disposing OGL Rendering Engine...');
+            
+            // 累積バッファをクリア
+            this.allVertices = [];
+            
+            // バッファを削除
+            if (this.vertexBuffer) {
+                this.gl.deleteBuffer(this.vertexBuffer);
+                this.vertexBuffer = null;
+            }
             
             // プログラムを削除
             if (this.program) {
-                this.program.dispose();
+                this.gl.deleteProgram(this.program);
                 this.program = null;
             }
             
-            // レンダラーを削除
-            if (this.renderer) {
-                this.renderer.dispose();
-                this.renderer = null;
-            }
-            
             this.gl = null;
+            this.canvas = null;
             this.initialized = false;
             
-            console.log('OGL Rendering Engine disposed');
+            console.log('OGL Rendering Engine disposed successfully');
         } catch (error) {
             console.error('Failed to dispose OGL Rendering Engine:', error);
         }
@@ -287,24 +404,27 @@ export class OGLRenderingEngine {
 
     // キャンバスサイズを更新
     resize(width, height) {
-        if (!this.initialized || !this.renderer) return;
+        if (!this.initialized || !this.canvas) return;
         
         try {
             const dpr = window.devicePixelRatio || 1;
             const pixelWidth = width * dpr;
             const pixelHeight = height * dpr;
             
-            this.renderer.setSize(pixelWidth, pixelHeight);
+            this.canvas.width = pixelWidth;
+            this.canvas.height = pixelHeight;
             
-            // 射影行列を更新
-            if (this.program && this.program.uniforms.uProjectionMatrix) {
-                this.program.uniforms.uProjectionMatrix.value = [
-                    2 / pixelWidth, 0, 0,
-                    0, -2 / pixelHeight, 0,
-                    -1, 1, 1
-                ];
+            this.canvas.style.width = width + 'px';
+            this.canvas.style.height = height + 'px';
+            
+            this.gl.viewport(0, 0, pixelWidth, pixelHeight);
+            
+            // リサイズ後に再描画
+            if (this.allVertices.length > 0) {
+                this.redrawAll();
             }
             
+            console.log(`Canvas resized to ${pixelWidth}x${pixelHeight}`);
         } catch (error) {
             console.error('Failed to resize:', error);
         }
@@ -312,14 +432,20 @@ export class OGLRenderingEngine {
 
     // 初期化状態を取得
     isInitialized() {
-        return this.initialized;
+        return this.initialized && this.gl && this.program;
     }
 
     // 統計情報を取得
     getStats() {
         return {
-            meshCount: this.meshes.length,
             initialized: this.initialized,
+            hasGL: !!this.gl,
+            hasProgram: !!this.program,
+            vertexCount: this.allVertices.length / 2,
+            canvasSize: this.canvas ? {
+                width: this.canvas.width,
+                height: this.canvas.height
+            } : null,
             config: { ...this.config }
         };
     }
