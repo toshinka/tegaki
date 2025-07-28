@@ -2,75 +2,202 @@
 
 export class ToolPanel {
     constructor(serviceContainer) {
-        this.toolStore = serviceContainer.resolve('ToolStore');
-        this.container = document.getElementById('app-container');
-        this.render();
+        this.serviceContainer = serviceContainer;
+        this.toolStore = this.serviceContainer.resolve('ToolStore');
+        this.toolEngineController = this.serviceContainer.resolve('ToolEngineController');
+        
+        this.initializeUI();
         this.setupEventListeners();
-        this.toolStore.subscribe(() => this.updateActiveButton());
     }
 
-    render() {
-        const panel = document.createElement('div');
-        panel.id = 'tool-panel';
-        panel.style.cssText = `
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-            background: #fff;
-            padding: 5px;
-            border-radius: 4px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-        `;
-
-        panel.innerHTML = `
-            <button class="tool-button" data-tool="pen">Pen</button>
-            <button class="tool-button" data-tool="brush">Brush</button>
-            <button class="tool-button" data-tool="eraser">Eraser</button>
-        `;
-
-        this.container.appendChild(panel);
+    initializeUI() {
+        // ツールパネルのHTML要素を取得または作成
+        this.toolPanel = document.getElementById('tool-panel');
+        if (!this.toolPanel) {
+            this.createToolPanel();
+        }
         
-        // スタイルを追加
-        const style = document.createElement('style');
-        style.textContent = `
-            .tool-button {
-                padding: 8px;
-                border: 1px solid #ccc;
-                background: #f9f9f9;
-                cursor: pointer;
-                border-radius: 2px;
-            }
-            .tool-button.active {
-                background: #007bff;
-                color: white;
-                border-color: #007bff;
-            }
+        // 初期状態の設定
+        this.updateActiveToolUI(this.toolStore.getCurrentTool());
+    }
+
+    createToolPanel() {
+        // ツールパネルが存在しない場合は動的に作成
+        this.toolPanel = document.createElement('div');
+        this.toolPanel.id = 'tool-panel';
+        this.toolPanel.className = 'tool-panel';
+        
+        this.toolPanel.innerHTML = `
+            <div class="tool-buttons">
+                <button id="pen-tool" class="tool-button active" data-tool="pen">
+                    ペン
+                </button>
+                <button id="brush-tool" class="tool-button" data-tool="brush">
+                    ブラシ
+                </button>
+                <button id="eraser-tool" class="tool-button" data-tool="eraser">
+                    消しゴム
+                </button>
+            </div>
+            <div class="tool-settings">
+                <div class="setting-group">
+                    <label for="penSizeSlider">サイズ:</label>
+                    <input type="range" id="penSizeSlider" min="1" max="50" value="2" />
+                    <span id="penSizeValue">2</span>
+                </div>
+                <div class="setting-group">
+                    <label for="penOpacitySlider">透明度:</label>
+                    <input type="range" id="penOpacitySlider" min="1" max="100" value="100" />
+                    <span id="penOpacityValue">100%</span>
+                </div>
+            </div>
+            <div class="canvas-controls">
+                <button id="clear-canvas" class="control-button">
+                    クリア
+                </button>
+            </div>
         `;
-        document.head.appendChild(style);
-        this.updateActiveButton();
+        
+        // bodyに追加
+        document.body.appendChild(this.toolPanel);
     }
 
     setupEventListeners() {
-        const panel = document.getElementById('tool-panel');
-        panel.addEventListener('click', (e) => {
-            if (e.target.matches('.tool-button')) {
+        // ツールボタンのイベントリスナー
+        const toolButtons = this.toolPanel.querySelectorAll('.tool-button');
+        toolButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
                 const toolName = e.target.dataset.tool;
-                this.toolStore.selectTool(toolName);
-            }
+                this.selectTool(toolName);
+            });
+        });
+
+        // 設定スライダーのイベントリスナー
+        const penSizeSlider = document.getElementById('penSizeSlider');
+        const penSizeValue = document.getElementById('penSizeValue');
+        
+        if (penSizeSlider && penSizeValue) {
+            penSizeSlider.addEventListener('input', (e) => {
+                penSizeValue.textContent = e.target.value;
+                this.updateToolSettings();
+            });
+        }
+
+        const penOpacitySlider = document.getElementById('penOpacitySlider');
+        const penOpacityValue = document.getElementById('penOpacityValue');
+        
+        if (penOpacitySlider && penOpacityValue) {
+            penOpacitySlider.addEventListener('input', (e) => {
+                penOpacityValue.textContent = e.target.value + '%';
+                this.updateToolSettings();
+            });
+        }
+
+        // クリアボタンのイベントリスナー
+        const clearButton = document.getElementById('clear-canvas');
+        if (clearButton) {
+            clearButton.addEventListener('click', () => {
+                this.clearCanvas();
+            });
+        }
+
+        // ToolStoreの状態変更を監視
+        this.toolStore.subscribe((toolName) => {
+            this.updateActiveToolUI(toolName);
         });
     }
 
-    updateActiveButton() {
-        const currentTool = this.toolStore.getCurrentTool();
-        document.querySelectorAll('.tool-button').forEach(btn => {
-            if (btn.dataset.tool === currentTool) {
-                btn.classList.add('active');
-            } else {
-                btn.classList.remove('active');
-            }
+    selectTool(toolName) {
+        try {
+            this.toolStore.selectTool(toolName);
+            console.log(`Tool selected: ${toolName}`);
+        } catch (error) {
+            console.error('Failed to select tool:', error);
+        }
+    }
+
+    updateToolSettings() {
+        if (this.toolEngineController) {
+            this.toolEngineController.updateToolSettings();
+        }
+    }
+
+    clearCanvas() {
+        if (this.toolEngineController) {
+            this.toolEngineController.clearCanvas();
+        }
+    }
+
+    updateActiveToolUI(activeTool) {
+        // すべてのツールボタンからactiveクラスを削除
+        const toolButtons = this.toolPanel.querySelectorAll('.tool-button');
+        toolButtons.forEach(button => {
+            button.classList.remove('active');
         });
+
+        // アクティブなツールボタンにactiveクラスを追加
+        const activeButton = this.toolPanel.querySelector(`[data-tool="${activeTool}"]`);
+        if (activeButton) {
+            activeButton.classList.add('active');
+        }
+    }
+
+    // パネルの表示/非表示切り替え
+    toggle() {
+        if (this.toolPanel) {
+            this.toolPanel.style.display = 
+                this.toolPanel.style.display === 'none' ? 'block' : 'none';
+        }
+    }
+
+    // パネルを表示
+    show() {
+        if (this.toolPanel) {
+            this.toolPanel.style.display = 'block';
+        }
+    }
+
+    // パネルを非表示
+    hide() {
+        if (this.toolPanel) {
+            this.toolPanel.style.display = 'none';
+        }
+    }
+
+    // 現在の設定値を取得
+    getCurrentSettings() {
+        const penSizeSlider = document.getElementById('penSizeSlider');
+        const penOpacitySlider = document.getElementById('penOpacitySlider');
+        
+        return {
+            size: penSizeSlider ? parseInt(penSizeSlider.value) : 2,
+            opacity: penOpacitySlider ? parseInt(penOpacitySlider.value) : 100
+        };
+    }
+
+    // 設定値を更新
+    updateSettings(settings) {
+        if (settings.size !== undefined) {
+            const penSizeSlider = document.getElementById('penSizeSlider');
+            const penSizeValue = document.getElementById('penSizeValue');
+            
+            if (penSizeSlider && penSizeValue) {
+                penSizeSlider.value = settings.size;
+                penSizeValue.textContent = settings.size;
+            }
+        }
+
+        if (settings.opacity !== undefined) {
+            const penOpacitySlider = document.getElementById('penOpacitySlider');
+            const penOpacityValue = document.getElementById('penOpacityValue');
+            
+            if (penOpacitySlider && penOpacityValue) {
+                penOpacitySlider.value = settings.opacity;
+                penOpacityValue.textContent = settings.opacity + '%';
+            }
+        }
+
+        // 設定変更を反映
+        this.updateToolSettings();
     }
 }

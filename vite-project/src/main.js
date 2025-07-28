@@ -9,65 +9,307 @@ import { ToolPanel } from './features/tools/ToolPanel.js';
 
 class App {
     constructor() {
-        this.serviceContainer = new ServiceContainer(); [cite: 96]
+        this.serviceContainer = new ServiceContainer();
+        this.toolEngineController = null;
+        this.toolStore = null;
+        this.toolPanel = null;
+        this.isInitialized = false;
+        
         this.setupDependencies();
         this.initialize();
     }
 
     setupDependencies() {
-        // 専門エンジンをDIコンテナに登録 [cite: 97]
-        this.serviceContainer.register('BezierCalculationEngine', () => new BezierCalculationEngine()); [cite: 97]
-        this.serviceContainer.register('OGLRenderingEngine', () => new OGLRenderingEngine()); [cite: 97]
+        // 専門エンジンをDIコンテナに登録
+        this.serviceContainer.register('BezierCalculationEngine', () => new BezierCalculationEngine());
+        this.serviceContainer.register('OGLRenderingEngine', () => new OGLRenderingEngine());
         
-        // 制御エンジンと状態ストアを登録
-        this.serviceContainer.register('ToolEngineController', () => new ToolEngineController(this.serviceContainer)); [cite: 98]
-        this.serviceContainer.register('ToolStore', () => new ToolStore(this.serviceContainer));
+        // 制御エンジンを登録（専門エンジンに依存）
+        this.serviceContainer.register('ToolEngineController', () => new ToolEngineController(this.serviceContainer));
+        
+        // ToolStoreを登録
+        this.serviceContainer.register('ToolStore', (container) => new ToolStore(container));
     }
 
-    initialize() {
-        // UIを初期化
-        this.toolPanel = new ToolPanel(this.serviceContainer); [cite: 100]
+    async initialize() {
+        try {
+            // キャンバス要素の存在確認
+            const canvas = document.getElementById('vector-canvas');
+            if (!canvas) {
+                throw new Error('Canvas element with id "vector-canvas" not found');
+            }
 
-        // デフォルトツールを選択して協調エンジンを起動
-        const toolStore = this.serviceContainer.resolve('ToolStore');
-        toolStore.selectTool('pen');
-        
-        // イベントリスナーを設定
-        this.setupEventListeners(); [cite: 101]
+            console.log('Initializing engines...');
+
+            // サービスを順序立てて解決
+            this.toolEngineController = this.serviceContainer.resolve('ToolEngineController');
+            this.toolStore = this.serviceContainer.resolve('ToolStore');
+
+            console.log('Services resolved successfully');
+
+            // UIを初期化
+            this.toolPanel = new ToolPanel(this.serviceContainer);
+
+            console.log('UI initialized');
+
+            // イベントリスナーを設定（エンジン初期化前に設定）
+            this.setupEventListeners();
+
+            console.log('Event listeners set up');
+
+            // デフォルトツールを選択（これによりエンジンが初期化される）
+            console.log('Selecting default tool...');
+            this.toolStore.selectTool('pen');
+
+            // 初期化完了フラグを設定
+            this.isInitialized = true;
+            
+            console.log('Application initialized successfully');
+        } catch (error) {
+            console.error('Failed to initialize application:', error);
+            this.showError('アプリケーションの初期化に失敗しました: ' + error.message);
+        }
     }
 
     setupEventListeners() {
-        const canvas = document.getElementById('vector-canvas'); [cite: 102]
-        const toolEngineController = this.serviceContainer.resolve('ToolEngineController');
+        const canvas = document.getElementById('vector-canvas');
+        if (!canvas) {
+            throw new Error('Canvas element not found');
+        }
 
+        console.log('Setting up canvas event listeners...');
+
+        // ポインターイベントの設定
         canvas.addEventListener('pointerdown', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            const pressure = e.pressure || 1.0;
-            toolEngineController.startStroke(x, y, pressure); [cite: 103]
+            if (!this.isInitialized) {
+                console.warn('Application not fully initialized yet');
+                return;
+            }
+
+            try {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const pressure = e.pressure || 1.0;
+                
+                console.log(`Starting stroke at (${x}, ${y}) with pressure ${pressure}`);
+                
+                // エンジンの準備状態を確認
+                if (!this.toolEngineController.isReady()) {
+                    console.warn('Tool engine controller not ready');
+                    return;
+                }
+                
+                this.toolEngineController.startStroke(x, y, pressure);
+                e.preventDefault();
+            } catch (error) {
+                console.error('Error in pointerdown event:', error);
+            }
         });
 
         canvas.addEventListener('pointermove', (e) => {
-            if (e.buttons === 0) return;
-            const rect = canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            const pressure = e.pressure || 1.0; [cite: 104]
-            toolEngineController.continueStroke(x, y, pressure); [cite: 105]
+            if (!this.isInitialized || e.buttons === 0) return;
+            
+            try {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const pressure = e.pressure || 1.0;
+                
+                if (!this.toolEngineController.isReady()) return;
+                
+                this.toolEngineController.continueStroke(x, y, pressure);
+                e.preventDefault();
+            } catch (error) {
+                console.error('Error in pointermove event:', error);
+            }
         });
 
-        canvas.addEventListener('pointerup', () => {
-            toolEngineController.endStroke(); [cite: 106]
+        canvas.addEventListener('pointerup', (e) => {
+            if (!this.isInitialized) return;
+            
+            try {
+                if (!this.toolEngineController.isReady()) return;
+                
+                console.log('Ending stroke');
+                this.toolEngineController.endStroke();
+                e.preventDefault();
+            } catch (error) {
+                console.error('Error in pointerup event:', error);
+            }
         });
         
-        canvas.addEventListener('pointerleave', () => {
-            toolEngineController.endStroke();
+        canvas.addEventListener('pointerleave', (e) => {
+            if (!this.isInitialized) return;
+            
+            try {
+                if (!this.toolEngineController.isReady()) return;
+                
+                this.toolEngineController.endStroke();
+            } catch (error) {
+                console.error('Error in pointerleave event:', error);
+            }
         });
+
+        // キーボードショートカット
+        document.addEventListener('keydown', (e) => {
+            if (!this.isInitialized) return;
+            
+            try {
+                switch (e.key) {
+                    case 'p':
+                    case 'P':
+                        if (e.ctrlKey || e.metaKey) return; // Ctrl+P は印刷なので除外
+                        this.toolStore.selectTool('pen');
+                        e.preventDefault();
+                        break;
+                    case 'b':
+                    case 'B':
+                        this.toolStore.selectTool('brush');
+                        e.preventDefault();
+                        break;
+                    case 'e':
+                    case 'E':
+                        this.toolStore.selectTool('eraser');
+                        e.preventDefault();
+                        break;
+                    case 'Delete':
+                    case 'Backspace':
+                        if (e.ctrlKey || e.metaKey) {
+                            this.toolEngineController.clearCanvas();
+                            e.preventDefault();
+                        }
+                        break;
+                }
+            } catch (error) {
+                console.error('Error in keydown event:', error);
+            }
+        });
+
+        // ウィンドウリサイズ対応
+        window.addEventListener('resize', () => {
+            if (!this.isInitialized) return;
+            
+            try {
+                this.handleResize();
+            } catch (error) {
+                console.error('Error in resize event:', error);
+            }
+        });
+
+        // 右クリックメニューを無効化（キャンバス上でのみ）
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+
+        console.log('Canvas event listeners set up successfully');
+    }
+
+    handleResize() {
+        const canvas = document.getElementById('vector-canvas');
+        if (!canvas || !this.toolEngineController) return;
+
+        try {
+            if (this.toolEngineController.renderingEngine && 
+                this.toolEngineController.renderingEngine.isInitialized()) {
+                const rect = canvas.getBoundingClientRect();
+                this.toolEngineController.renderingEngine.resize(rect.width, rect.height);
+                console.log(`Canvas resized to ${rect.width}x${rect.height}`);
+            }
+        } catch (error) {
+            console.error('Error handling resize:', error);
+        }
+    }
+
+    // エラー表示用のヘルパーメソッド
+    showError(message) {
+        // 簡単なエラー表示
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = `
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: #ff4444;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 10000;
+            max-width: 300px;
+        `;
+        errorDiv.textContent = message;
+        document.body.appendChild(errorDiv);
+        
+        // 5秒後に自動で削除
+        setTimeout(() => {
+            if (errorDiv.parentNode) {
+                errorDiv.parentNode.removeChild(errorDiv);
+            }
+        }, 5000);
+    }
+
+    // アプリケーション終了時のクリーンアップ
+    dispose() {
+        try {
+            this.isInitialized = false;
+            
+            if (this.toolEngineController) {
+                this.toolEngineController.disposeCurrentEngines();
+            }
+            
+            if (this.toolStore) {
+                this.toolStore.clearListeners();
+            }
+            
+            this.serviceContainer.clear();
+            
+            console.log('Application disposed');
+        } catch (error) {
+            console.error('Error disposing application:', error);
+        }
+    }
+
+    // デバッグ用メソッド
+    getStatus() {
+        return {
+            initialized: this.isInitialized,
+            currentTool: this.toolStore ? this.toolStore.getCurrentTool() : null,
+            engineReady: this.toolEngineController ? this.toolEngineController.isReady() : false,
+            renderingEngineStats: this.toolEngineController && this.toolEngineController.renderingEngine
+                ? this.toolEngineController.renderingEngine.getStats()
+                : null
+        };
     }
 }
 
 // アプリケーション開始
 document.addEventListener('DOMContentLoaded', () => {
-    new App(); [cite: 107]
+    try {
+        console.log('Starting application...');
+        window.app = new App();
+        
+        // ページ離脱時のクリーンアップ
+        window.addEventListener('beforeunload', () => {
+            if (window.app) {
+                window.app.dispose();
+            }
+        });
+
+        // デバッグ用：アプリケーション状態をコンソールで確認可能にする
+        window.getAppStatus = () => {
+            return window.app ? window.app.getStatus() : null;
+        };
+        
+    } catch (error) {
+        console.error('Failed to start application:', error);
+    }
+});
+
+// グローバルエラーハンドリング
+window.addEventListener('error', (e) => {
+    console.error('Global error:', e.error);
+});
+
+window.addEventListener('unhandledrejection', (e) => {
+    console.error('Unhandled promise rejection:', e.reason);
+    e.preventDefault();
 });
