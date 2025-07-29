@@ -1,450 +1,283 @@
-import { Renderer, Camera, Transform, Polyline, Vec3 } from 'https://cdn.skypack.dev/ogl';
+import { Renderer, Camera, Transform, Polyline, Vec3 } from 'https://cdn.jsdelivr.net/npm/ogl@1.0.11/dist/ogl.mjs';
 
 /**
- * OGL統一エンジン - Canvas2D完全排除、OGL WebGL統一
- * 憲章v5.2準拠: Bezier.js依存排除、OGL内蔵機能活用
+ * 🎨 OGL Unified Engine (Phase 1)
+ * OGLによる統一描画エンジン。Canvas2Dの機能を完全に代替する。
+ * 憲章v5.2に基づき、単一エンジンによる支配を確立する。
  */
 class OGLUnifiedEngine {
     constructor(canvas) {
+        // WebGL統一基盤 [cite: 4]
         this.canvas = canvas;
-        this.renderer = new Renderer({ 
-            canvas: canvas, 
-            alpha: true,
-            premultipliedAlpha: false,
-            antialias: true
+        this.renderer = new Renderer({ canvas, alpha: true, antialias: true }); [cite: 4]
+        this.gl = this.renderer.gl;
+
+        // 2D描画用の正射影カメラ [cite: 5]
+        this.camera = new Camera({
+            left: -this.canvas.width / 2,
+            right: this.canvas.width / 2,
+            top: this.canvas.height / 2,
+            bottom: -this.canvas.height / 2,
         });
-        
-        this.scene = new Transform();
-        this.camera = new Camera();
-        this.camera.position.z = 5;
-        
-        // OGL統一システム
+
+        // 描画要素の配列管理（OGL Polylineの正しい扱い方） [cite: 6]
+        // scene.addChild(polyline)はエラーの原因となるため、配列で管理し個別にレンダリングする [cite: 2, 3]
         this.polylines = [];
-        this.currentTool = 'pen';
-        this.isDrawing = false;
-        this.currentStroke = null;
-        this.currentPoints = [];
-        
-        // ツール設定
-        this.toolSettings = {
-            pen: { size: 3, opacity: 100 },
-            eraser: { size: 10, opacity: 100 }
-        };
-        
-        // 履歴システム（OGL統一）
-        this.history = [];
-        this.historyIndex = -1;
-        
-        this.setupEventListeners();
-        this.render();
     }
-    
+
     /**
-     * ツール選択 - OGL専用機能起動
+     * WebGLのビューポートとカメラをキャンバスサイズに合わせて更新する
+     * @param {number} width - 新しい幅
+     * @param {number} height - 新しい高さ
      */
-    selectTool(toolName) {
-        this.currentTool = toolName;
-        console.log(`Tool selected: ${toolName}`);
+    resize(width, height) {
+        this.renderer.setSize(width, height);
+        this.camera.left = -width / 2;
+        this.camera.right = width / 2;
+        this.camera.top = height / 2;
+        this.camera.bottom = -height / 2;
+        this.camera.updateMatrixWorld();
     }
-    
+
     /**
-     * ツール設定更新
+     * 新しいポリラインを描画要素配列に追加する
+     * @param {object} polyline - OGLのPolylineインスタンス
      */
-    updateToolSettings(tool, property, value) {
-        if (this.toolSettings[tool]) {
-            this.toolSettings[tool][property] = value;
-        }
+    addPolyline(polyline) {
+        this.polylines.push(polyline); [cite: 17]
     }
-    
+
     /**
-     * OGL Polyline描画処理 - Bezier.js完全排除
-     */
-    createPolyline(points, tool = 'pen') {
-        if (points.length < 2) return null;
-        
-        const settings = this.toolSettings[tool];
-        const isEraser = tool === 'eraser';
-        
-        // OGL Polylineでの線描画（OGL内蔵機能活用）
-        const positions = [];
-        for (let i = 0; i < points.length; i++) {
-            const point = points[i];
-            // キャンバス座標をWebGL座標に変換
-            const x = (point.x / this.canvas.width) * 2 - 1;
-            const y = -((point.y / this.canvas.height) * 2 - 1);
-            positions.push(x, y, 0);
-        }
-        
-        const polyline = new Polyline(this.renderer.gl, {
-            points: positions,
-            vertex: `
-                attribute vec3 position;
-                attribute vec3 next;
-                attribute vec3 prev;
-                attribute vec2 uv;
-                attribute float side;
-                
-                uniform mat4 modelViewMatrix;
-                uniform mat4 projectionMatrix;
-                uniform float uLineWidth;
-                uniform vec2 uResolution;
-                
-                void main() {
-                    vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
-                    vec2 nextScreen = (projectionMatrix * modelViewMatrix * vec4(next, 1.0)).xy * aspect;
-                    vec2 prevScreen = (projectionMatrix * modelViewMatrix * vec4(prev, 1.0)).xy * aspect;
-                    vec2 currentScreen = (projectionMatrix * modelViewMatrix * vec4(position, 1.0)).xy * aspect;
-                    
-                    vec2 dir = normalize(nextScreen - prevScreen);
-                    vec2 normal = vec2(-dir.y, dir.x) * side * uLineWidth / uResolution.y;
-                    
-                    gl_Position = vec4(currentScreen + normal / aspect, 0.0, 1.0);
-                }
-            `,
-            fragment: `
-                precision highp float;
-                uniform vec3 uColor;
-                uniform float uOpacity;
-                uniform float uIsEraser;
-                
-                void main() {
-                    if (uIsEraser > 0.5) {
-                        gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
-                    } else {
-                        gl_FragColor = vec4(uColor, uOpacity);
-                    }
-                }
-            `,
-            uniforms: {
-                uLineWidth: { value: settings.size },
-                uResolution: { value: [this.canvas.width, this.canvas.height] },
-                uColor: { value: isEraser ? [0, 0, 0] : [0.5, 0, 0] },
-                uOpacity: { value: settings.opacity / 100 },
-                uIsEraser: { value: isEraser ? 1.0 : 0.0 }
-            }
-        });
-        
-        polyline.setParent(this.scene);
-        return polyline;
-    }
-    
-    /**
-     * 描画開始
-     */
-    startStroke(x, y) {
-        this.isDrawing = true;
-        this.currentPoints = [{ x, y }];
-        
-        // 履歴保存
-        this.saveToHistory();
-    }
-    
-    /**
-     * 描画中
-     */
-    continueStroke(x, y) {
-        if (!this.isDrawing) return;
-        
-        this.currentPoints.push({ x, y });
-        
-        // 既存のストロークを削除
-        if (this.currentStroke) {
-            this.scene.removeChild(this.currentStroke);
-        }
-        
-        // 新しいPolylineを作成
-        this.currentStroke = this.createPolyline(this.currentPoints, this.currentTool);
-        if (this.currentStroke) {
-            this.polylines.push(this.currentStroke);
-        }
-        
-        this.render();
-    }
-    
-    /**
-     * 描画終了
-     */
-    endStroke() {
-        if (!this.isDrawing) return;
-        
-        this.isDrawing = false;
-        this.currentStroke = null;
-        this.currentPoints = [];
-    }
-    
-    /**
-     * キャンバスクリア
-     */
-    clear() {
-        // 全てのPolylineを削除
-        this.polylines.forEach(polyline => {
-            if (polyline.parent) {
-                polyline.parent.removeChild(polyline);
-            }
-        });
-        this.polylines = [];
-        
-        this.render();
-        this.saveToHistory();
-    }
-    
-    /**
-     * 取り消し機能
+     * 最後の描画操作を取り消す（配列操作）
      */
     undo() {
-        if (this.historyIndex > 0) {
-            this.historyIndex--;
-            this.restoreFromHistory();
+        this.polylines.pop();
+    }
+    
+    /**
+     * キャンバスをクリアする（配列を空にする）
+     */
+    clear() {
+        this.polylines = [];
+    }
+
+    /**
+     * キャンバス座標をWebGL座標に変換する
+     * @param {number} canvasX 
+     * @param {number} canvasY 
+     * @returns {Vec3} WebGL座標
+     */
+    canvasToWebGLCoords(canvasX, canvasY) {
+        return new Vec3(
+            canvasX - this.canvas.width / 2,
+            -canvasY + this.canvas.height / 2,
+            0
+        ); [cite: 29]
+    }
+
+    /**
+     * 全ての描画要素をレンダリングする
+     * Canvas2DのclearRectと描画順序維持を代替する [cite: 9, 10]
+     * @param {Polyline} [tempPolyline=null] - 描画中のリアルタイムプレビュー用ポリライン
+     */
+    render(tempPolyline = null) {
+        // 背景クリア（空のシーンをレンダリングすることで実現） [cite: 11]
+        this.renderer.render({ scene: new Transform(), camera: this.camera });
+
+        // 確定したポリラインを順次レンダリング [cite: 10, 18]
+        this.polylines.forEach(p => this.renderer.render({ scene: p, camera: this.camera }));
+
+        // 描画中のポリラインがあれば、それもレンダリングする
+        if (tempPolyline) {
+            this.renderer.render({ scene: tempPolyline, camera: this.camera });
         }
-    }
-    
-    /**
-     * 履歴保存
-     */
-    saveToHistory() {
-        // 現在の状態を保存（簡易版）
-        const state = this.polylines.length;
-        this.history = this.history.slice(0, this.historyIndex + 1);
-        this.history.push(state);
-        this.historyIndex = this.history.length - 1;
-    }
-    
-    /**
-     * 履歴復元
-     */
-    restoreFromHistory() {
-        // 簡易的な履歴復元
-        if (this.polylines.length > 0) {
-            const lastPolyline = this.polylines.pop();
-            if (lastPolyline.parent) {
-                lastPolyline.parent.removeChild(lastPolyline);
-            }
-            this.render();
-        }
-    }
-    
-    /**
-     * キャンバスリサイズ
-     */
-    resizeCanvas(width, height) {
-        this.canvas.width = width;
-        this.canvas.height = height;
-        this.renderer.setSize(width, height);
-        this.render();
-    }
-    
-    /**
-     * イベントリスナー設定
-     */
-    setupEventListeners() {
-        let isPointerDown = false;
-        
-        // Pointer Events API使用（モダンブラウザ対応）
-        this.canvas.addEventListener('pointerdown', (e) => {
-            isPointerDown = true;
-            const rect = this.canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            this.startStroke(x, y);
-        });
-        
-        this.canvas.addEventListener('pointermove', (e) => {
-            if (!isPointerDown) return;
-            const rect = this.canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            this.continueStroke(x, y);
-        });
-        
-        this.canvas.addEventListener('pointerup', () => {
-            if (isPointerDown) {
-                isPointerDown = false;
-                this.endStroke();
-            }
-        });
-        
-        this.canvas.addEventListener('pointerleave', () => {
-            if (isPointerDown) {
-                isPointerDown = false;
-                this.endStroke();
-            }
-        });
-    }
-    
-    /**
-     * OGL統一描画フロー
-     */
-    render() {
-        this.renderer.render({ scene: this.scene, camera: this.camera });
     }
 }
 
+
 /**
- * UIコントローラー - ツール・パネル制御
+ * 🎨 App Controller (Phase 1)
+ * UI制御、入力処理、状態管理を統合したアプリケーションコントローラー
  */
-class UIController {
-    constructor(engine) {
-        this.engine = engine;
-        this.currentTool = 'pen';
-        
-        this.setupToolButtons();
-        this.setupControlPanels();
-        this.setupActionButtons();
-        
-        // 初期パネル表示
-        this.showToolPanel('pen');
-    }
-    
-    /**
-     * ツールボタン設定
-     */
-    setupToolButtons() {
-        const toolButtons = document.querySelectorAll('.tool-button');
-        
-        toolButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                const tool = button.getAttribute('data-tool');
-                this.selectTool(tool);
-            });
-        });
-    }
-    
-    /**
-     * ツール選択
-     */
-    selectTool(tool) {
-        // ボタン状態更新
-        document.querySelectorAll('.tool-button').forEach(btn => {
-            btn.classList.remove('active');
-        });
-        document.querySelector(`[data-tool="${tool}"]`).classList.add('active');
-        
-        // エンジンツール変更
-        this.engine.selectTool(tool);
-        this.currentTool = tool;
-        
-        // パネル表示切替
-        this.showToolPanel(tool);
-    }
-    
-    /**
-     * ツールパネル表示
-     */
-    showToolPanel(tool) {
-        const controlPanel = document.getElementById('controlPanel');
-        const toolControls = document.querySelectorAll('.tool-controls');
-        
-        // 全パネル非表示
-        toolControls.forEach(panel => {
-            panel.style.display = 'none';
-        });
-        
-        // 対象パネル表示
-        const targetPanel = document.getElementById(`${tool}Controls`);
-        if (targetPanel) {
-            targetPanel.style.display = 'block';
-            controlPanel.classList.add('show');
-        } else {
-            controlPanel.classList.remove('show');
-        }
-    }
-    
-    /**
-     * コントロールパネル設定
-     */
-    setupControlPanels() {
-        // ペンコントロール
-        this.setupSliderControl('penSize', 'penSizeSlider', (value) => {
-            this.engine.updateToolSettings('pen', 'size', value);
-        });
-        
-        this.setupSliderControl('penOpacity', 'penOpacitySlider', (value) => {
-            this.engine.updateToolSettings('pen', 'opacity', value);
-        });
-        
-        // 消しゴムコントロール
-        this.setupSliderControl('eraserSize', 'eraserSizeSlider', (value) => {
-            this.engine.updateToolSettings('eraser', 'size', value);
-        });
-        
-        this.setupSliderControl('eraserOpacity', 'eraserOpacitySlider', (value) => {
-            this.engine.updateToolSettings('eraser', 'opacity', value);
-        });
-        
-        // リサイズコントロール
-        this.setupSliderControl('canvasWidth', 'canvasWidthSlider', (value) => {
-            const height = parseInt(document.getElementById('canvasHeight').value);
-            this.engine.resizeCanvas(value, height);
-        });
-        
-        this.setupSliderControl('canvasHeight', 'canvasHeightSlider', (value) => {
-            const width = parseInt(document.getElementById('canvasWidth').value);
-            this.engine.resizeCanvas(width, value);
-        });
-    }
-    
-    /**
-     * スライダーコントロール設定
-     */
-    setupSliderControl(inputId, sliderId, callback) {
-        const input = document.getElementById(inputId);
-        const slider = document.getElementById(sliderId);
-        
-        if (!input || !slider) return;
-        
-        // 同期処理
-        const syncValues = (value) => {
-            input.value = value;
-            slider.value = value;
-            callback(parseInt(value));
+class AppController {
+    constructor() {
+        this.dom = {
+            canvas: document.getElementById('ogl-canvas'),
+            penToolBtn: document.getElementById('pen-tool'),
+            resizeToolBtn: document.getElementById('resize-tool'),
+            penControls: document.getElementById('pen-controls'),
+            resizeControls: document.getElementById('resize-controls'),
+            penSizeSlider: document.getElementById('pen-size-slider'),
+            penSizeNumber: document.getElementById('pen-size-number'),
+            penOpacitySlider: document.getElementById('pen-opacity-slider'),
+            penOpacityNumber: document.getElementById('pen-opacity-number'),
+            canvasWidthSlider: document.getElementById('canvas-width-slider'),
+            canvasWidthNumber: document.getElementById('canvas-width-number'),
+            canvasHeightSlider: document.getElementById('canvas-height-slider'),
+            canvasHeightNumber: document.getElementById('canvas-height-number'),
+            clearBtn: document.getElementById('clear-button'),
+            undoBtn: document.getElementById('undo-button'),
         };
-        
-        input.addEventListener('input', () => syncValues(input.value));
-        slider.addEventListener('input', () => syncValues(slider.value));
+
+        // 初期化
+        this.initState();
+        this.engine = new OGLUnifiedEngine(this.dom.canvas);
+        this.initCanvas();
+        this.bindEventListeners();
+        this.updateTool('pen');
+        this.engine.render();
+
+        console.log("🎨 モダンお絵かきツール Phase 1 起動");
+        console.log("🚫 Canvas2D完全排除・OGL統一エンジンで動作中");
     }
     
     /**
-     * アクションボタン設定
+     * アプリケーションの状態を初期化
      */
-    setupActionButtons() {
-        const clearButton = document.getElementById('clearButton');
-        const undoButton = document.getElementById('undoButton');
+    initState() {
+        this.state = {
+            tool: 'pen',
+            pen: { size: 3, opacity: 1 },
+            canvas: { width: 500, height: 300 },
+            isDrawing: false,
+            currentPoints: [],
+        };
+    }
+    
+    /**
+     * キャンバスの初期サイズ設定
+     */
+    initCanvas() {
+        this.dom.canvas.width = this.state.canvas.width;
+        this.dom.canvas.height = this.state.canvas.height;
+        this.engine.resize(this.state.canvas.width, this.state.canvas.height);
+    }
+
+    /**
+     * 全てのイベントリスナーを設定
+     */
+    bindEventListeners() {
+        // ツール切替
+        this.dom.penToolBtn.addEventListener('click', () => this.updateTool('pen'));
+        this.dom.resizeToolBtn.addEventListener('click', () => this.updateTool('resize'));
+
+        // アクションボタン
+        this.dom.clearBtn.addEventListener('click', () => this.handleClear());
+        this.dom.undoBtn.addEventListener('click', () => this.handleUndo());
+
+        // ペン設定
+        this.dom.penSizeSlider.addEventListener('input', (e) => this.handlePenSettings(e, 'size', this.dom.penSizeNumber));
+        this.dom.penSizeNumber.addEventListener('input', (e) => this.handlePenSettings(e, 'size', this.dom.penSizeSlider));
+        this.dom.penOpacitySlider.addEventListener('input', (e) => this.handlePenSettings(e, 'opacity', this.dom.penOpacityNumber));
+        this.dom.penOpacityNumber.addEventListener('input', (e) => this.handlePenSettings(e, 'opacity', this.dom.penOpacitySlider));
         
-        clearButton.addEventListener('click', () => {
-            this.engine.clear();
-        });
+        // キャンバスリサイズ設定
+        this.dom.canvasWidthSlider.addEventListener('input', (e) => this.handleResizeSettings(e, 'width', this.dom.canvasWidthNumber));
+        this.dom.canvasWidthNumber.addEventListener('input', (e) => this.handleResizeSettings(e, 'width', this.dom.canvasWidthSlider));
+        this.dom.canvasHeightSlider.addEventListener('input', (e) => this.handleResizeSettings(e, 'height', this.dom.canvasHeightNumber));
+        this.dom.canvasHeightNumber.addEventListener('input', (e) => this.handleResizeSettings(e, 'height', this.dom.canvasHeightSlider));
         
-        undoButton.addEventListener('click', () => {
-            this.engine.undo();
+        // 描画イベント（Pointer Eventsでマウスとタッチを統合）
+        this.dom.canvas.addEventListener('pointerdown', (e) => this.handlePointerDown(e));
+        this.dom.canvas.addEventListener('pointermove', (e) => this.handlePointerMove(e));
+        this.dom.canvas.addEventListener('pointerup', () => this.handlePointerUp());
+        this.dom.canvas.addEventListener('pointerleave', () => this.handlePointerUp());
+    }
+
+    /**
+     * ツールの切り替え処理
+     * @param {string} toolName - 'pen' または 'resize'
+     */
+    updateTool(toolName) {
+        this.state.tool = toolName;
+        
+        this.dom.penToolBtn.classList.toggle('active', toolName === 'pen');
+        this.dom.resizeToolBtn.classList.toggle('active', toolName === 'resize');
+        
+        this.dom.penControls.classList.toggle('active', toolName === 'pen');
+        this.dom.resizeControls.classList.toggle('active', toolName === 'resize');
+    }
+
+    handlePenSettings(event, property, targetElement) {
+        const value = event.target.value;
+        targetElement.value = value;
+        this.state.pen[property] = property === 'opacity' ? value / 100 : Number(value);
+    }
+    
+    handleResizeSettings(event, dimension, targetElement) {
+        const value = Number(event.target.value);
+        targetElement.value = value;
+        this.state.canvas[dimension] = value;
+        
+        this.dom.canvas.width = this.state.canvas.width;
+        this.dom.canvas.height = this.state.canvas.height;
+        this.engine.resize(this.state.canvas.width, this.state.canvas.height);
+        this.engine.render();
+    }
+    
+    handleClear() {
+        this.engine.clear();
+        this.engine.render();
+    }
+
+    handleUndo() {
+        this.engine.undo();
+        this.engine.render();
+    }
+    
+    // --- OGL描画イベントハンドラ ---
+
+    handlePointerDown(event) {
+        if (this.state.tool !== 'pen') return;
+        this.state.isDrawing = true;
+        this.state.currentPoints = [this.engine.canvasToWebGLCoords(event.offsetX, event.offsetY)];
+    }
+
+    handlePointerMove(event) {
+        if (!this.state.isDrawing || this.state.tool !== 'pen') return;
+        
+        this.state.currentPoints.push(this.engine.canvasToWebGLCoords(event.offsetX, event.offsetY));
+        
+        // リアルタイム描画のためのプレビュー
+        if (this.state.currentPoints.length < 2) return;
+        const tempPolyline = new Polyline(this.gl, {
+            points: this.state.currentPoints,
+            uniforms: {
+                uColor: [0, 0, 0], // Note: OGL color is 0-1 range. This is black.
+                uThickness: this.state.pen.size,
+                uAlpha: this.state.pen.opacity,
+            },
         });
+        this.engine.render(tempPolyline);
+    }
+
+    handlePointerUp() {
+        if (!this.state.isDrawing || this.state.tool !== 'pen') return;
+        this.state.isDrawing = false;
+        
+        if (this.state.currentPoints.length < 2) {
+            this.state.currentPoints = [];
+            this.engine.render(); // Clear any preview
+            return;
+        }
+
+        // 描画を確定して配列に追加
+        const finalPolyline = new Polyline(this.gl, {
+            points: this.state.currentPoints,
+            uniforms: {
+                uColor: [0, 0, 0],
+                uThickness: this.state.pen.size,
+                uAlpha: this.state.pen.opacity,
+            },
+        });
+        this.engine.addPolyline(finalPolyline);
+        
+        this.state.currentPoints = [];
+        this.engine.render();
     }
 }
 
-/**
- * アプリケーション初期化 - OGL統一エンジン起動
- */
+// アプリケーションの起動
 document.addEventListener('DOMContentLoaded', () => {
-    const canvas = document.getElementById('drawingCanvas');
-    
-    try {
-        // OGL統一エンジン初期化
-        const engine = new OGLUnifiedEngine(canvas);
-        
-        // UIコントローラー初期化
-        const uiController = new UIController(engine);
-        
-        console.log('OGL Unified Engine initialized successfully');
-        
-    } catch (error) {
-        console.error('Failed to initialize OGL Unified Engine:', error);
-        
-        // フォールバック表示
-        const canvasWrapper = document.querySelector('.canvas-wrapper');
-        canvasWrapper.innerHTML = `
-            <div style="padding: 20px; text-align: center; color: var(--text-color);">
-                <p>WebGL初期化に失敗しました</p>
-                <p>ブラウザがWebGLに対応していない可能性があります</p>
-            </div>
-        `;
-    }
+    new AppController();
 });

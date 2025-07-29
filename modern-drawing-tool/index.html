@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phase1: モダンお絵かきツール (OGL統一版)</title>
+    <style>
+        :root {
+            --main-color: #800000;
+            --sub-color: #aa5a56;
+            --light-bg: #e9c2ba;
+            --canvas-bg: #f0e0d6;
+            --app-bg: #ffffee;
+            --text-color: #800000;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--app-bg);
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .app-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        .sidebar {
+            width: 60px;
+            background: rgba(128, 0, 0, 0.05);
+            border-right: 1px solid var(--sub-color);
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            gap: 10px;
+        }
+
+        .tool-button {
+            width: 40px;
+            height: 40px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid var(--main-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 16px;
+            color: var(--main-color);
+        }
+
+        .tool-button:hover {
+            background: var(--light-bg);
+            transform: translateY(-1px);
+        }
+
+        .tool-button.active {
+            background: var(--main-color);
+            color: white;
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+
+        .canvas-area {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--app-bg);
+        }
+
+        .canvas-wrapper {
+            background: var(--canvas-bg);
+            border: 1px solid var(--main-color);
+            border-radius: 4px;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.15);
+            cursor: crosshair;
+        }
+
+        #drawingCanvas {
+            display: block;
+            background: var(--canvas-bg);
+        }
+
+        .control-panel {
+            position: absolute;
+            top: 15px;
+            left: 75px;
+            width: 320px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(128, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 16px;
+            box-shadow: 0 8px 24px rgba(128, 0, 0, 0.15);
+        }
+
+        .control-group {
+            margin-bottom: 12px;
+        }
+
+        .control-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .control-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-color);
+            margin-bottom: 6px;
+        }
+
+        .control-input {
+            width: 60px;
+            padding: 3px 6px;
+            border: 1px solid var(--sub-color);
+            border-radius: 3px;
+            font-size: 11px;
+            text-align: center;
+        }
+
+        .control-slider {
+            width: 100%;
+            margin: 4px 0;
+            -webkit-appearance: none;
+            height: 4px;
+            background: var(--light-bg);
+            border-radius: 2px;
+            outline: none;
+        }
+
+        .control-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: var(--main-color);
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .control-checkbox {
+            margin-right: 6px;
+        }
+
+        .action-buttons {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .action-button {
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid var(--main-color);
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.2s ease;
+            color: var(--main-color);
+        }
+
+        .action-button:hover {
+            background: var(--main-color);
+            color: white;
+        }
+
+        .status-info {
+            position: absolute;
+            bottom: 15px;
+            left: 75px;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(128, 0, 0, 0.2);
+            border-radius: 4px;
+            font-size: 11px;
+            color: var(--text-color);
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 左サイドツールバー -->
+        <div class="sidebar">
+            <div class="tool-button active" id="penTool">
+                ✏️
+            </div>
+        </div>
+
+        <!-- メインキャンバスエリア -->
+        <div class="canvas-area">
+            <div class="canvas-wrapper">
+                <canvas id="drawingCanvas" width="800" height="600"></canvas>
+            </div>
+        </div>
+
+        <!-- フローティングコントロールパネル -->
+        <div class="control-panel">
+            <div class="control-group">
+                <div class="control-label">
+                    <span>ペンサイズ</span>
+                    <input type="number" class="control-input" id="penSizeInput" value="3" min="1" max="50">
+                </div>
+                <input type="range" class="control-slider" id="penSizeSlider" min="1" max="50" value="3">
+            </div>
+            <div class="control-group">
+                <div class="control-label">
+                    <span>不透明度</span>
+                    <input type="number" class="control-input" id="opacityInput" value="100" min="1" max="100">
+                </div>
+                <input type="range" class="control-slider" id="opacitySlider" min="1" max="100" value="100">
+            </div>
+            <div class="control-group">
+                <div class="control-label">
+                    <span>筆圧感度</span>
+                    <input type="number" class="control-input" id="pressureInput" value="50" min="0" max="100">
+                </div>
+                <input type="range" class="control-slider" id="pressureSlider" min="0" max="100" value="50">
+            </div>
+            <div class="control-group">
+                <div class="control-label">
+                    <span>線間補間</span>
+                    <input type="checkbox" class="control-checkbox" id="smoothingCheck" checked>
+                </div>
+            </div>
+        </div>
+
+        <!-- アクションボタンエリア -->
+        <div class="action-buttons">
+            <button class="action-button" id="clearButton">
+                🗑️ クリア
+            </button>
+            <button class="action-button" id="undoButton">
+                ↶ 取り消し
+            </button>
+        </div>
+
+        <!-- ステータス情報 -->
+        <div class="status-info" id="statusInfo">
+            ストローク: 0 | 点数: 0 | FPS: 60
+        </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
