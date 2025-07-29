@@ -1,475 +1,450 @@
-// src/main.js - OGL統一エンジン版
-// v5.2 OGL統一アーキテクチャに基づく実装
+import { Renderer, Camera, Transform, Polyline, Vec3 } from 'https://cdn.skypack.dev/ogl';
 
-import { OGLUnifiedEngine } from './engine/OGLUnifiedEngine.js';
-import { ToolStore } from './tools/ToolStore.js';
-import { ToolPanel } from './ui/ToolPanel.js';
-
-class OGLDrawingApp {
-    constructor() {
-        this.oglEngine = null;
-        this.toolStore = null;
-        this.toolPanel = null;
-        this.isInitialized = false;
+/**
+ * OGL統一エンジン - Canvas2D完全排除、OGL WebGL統一
+ * 憲章v5.2準拠: Bezier.js依存排除、OGL内蔵機能活用
+ */
+class OGLUnifiedEngine {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.renderer = new Renderer({ 
+            canvas: canvas, 
+            alpha: true,
+            premultipliedAlpha: false,
+            antialias: true
+        });
+        
+        this.scene = new Transform();
+        this.camera = new Camera();
+        this.camera.position.z = 5;
+        
+        // OGL統一システム
+        this.polylines = [];
+        this.currentTool = 'pen';
+        this.isDrawing = false;
         this.currentStroke = null;
+        this.currentPoints = [];
         
-        // 初期化
-        this.initialize();
-    }
-
-    async initialize() {
-        try {
-            console.log('🚀 OGL統一エンジン初期化開始...');
-
-            // キャンバス要素の取得
-            const canvas = document.getElementById('ogl-canvas');
-            if (!canvas) {
-                throw new Error('Canvas element with id "ogl-canvas" not found');
-            }
-
-            // OGL統一エンジンの初期化
-            this.oglEngine = new OGLUnifiedEngine(canvas);
-            await this.oglEngine.initialize();
-            console.log('✅ OGL統一エンジン初期化完了');
-
-            // ツールストアの初期化
-            this.toolStore = new ToolStore();
-            this.toolStore.addEventListener('toolChanged', (event) => {
-                this.handleToolChange(event.detail);
-            });
-            console.log('✅ ToolStore初期化完了');
-
-            // UI初期化
-            this.toolPanel = new ToolPanel(this.toolStore);
-            console.log('✅ UI初期化完了');
-
-            // イベントリスナー設定
-            this.setupEventListeners();
-            console.log('✅ イベントリスナー設定完了');
-
-            // デフォルトツール選択（ペン）
-            await this.selectTool('pen');
-            console.log('✅ デフォルトツール選択完了');
-
-            // 初期化完了
-            this.isInitialized = true;
-            console.log('🎉 OGLDrawingApp初期化成功');
-
-        } catch (error) {
-            console.error('❌ OGLDrawingApp初期化失敗:', error);
-            this.showError('アプリケーションの初期化に失敗しました: ' + error.message);
-        }
-    }
-
-    setupEventListeners() {
-        const canvas = document.getElementById('ogl-canvas');
-        if (!canvas) throw new Error('Canvas not found');
-
-        // === ポインターイベント（OGL統一描画） ===
-        canvas.addEventListener('pointerdown', (e) => this.handlePointerDown(e));
-        canvas.addEventListener('pointermove', (e) => this.handlePointerMove(e));
-        canvas.addEventListener('pointerup', (e) => this.handlePointerUp(e));
-        canvas.addEventListener('pointerleave', (e) => this.handlePointerUp(e));
-
-        // === キーボードショートカット ===
-        document.addEventListener('keydown', (e) => this.handleKeyDown(e));
-
-        // === ツールボタンイベント ===
-        document.querySelectorAll('.tool-button').forEach(button => {
-            button.addEventListener('click', (e) => {
-                const tool = e.currentTarget.dataset.tool;
-                if (tool) {
-                    this.selectTool(tool);
-                }
-            });
-        });
-
-        // === アクションボタンイベント ===
-        const clearButton = document.getElementById('clearButton');
-        const undoButton = document.getElementById('undoButton');
-        
-        if (clearButton) {
-            clearButton.addEventListener('click', () => this.clearCanvas());
-        }
-        
-        if (undoButton) {
-            undoButton.addEventListener('click', () => this.undo());
-        }
-
-        // === コントロールパネルイベント ===
-        this.setupControlPanelEvents();
-
-        // === 右クリックメニュー無効化 ===
-        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-
-        console.log('📡 イベントリスナー設定完了');
-    }
-
-    setupControlPanelEvents() {
-        // ペンコントロール
-        const penSizeSlider = document.getElementById('penSizeSlider');
-        const penSizeValue = document.getElementById('penSizeValue');
-        const penOpacitySlider = document.getElementById('penOpacitySlider');
-        const penOpacityValue = document.getElementById('penOpacityValue');
-
-        if (penSizeSlider && penSizeValue) {
-            // スライダー → 数値入力の同期
-            penSizeSlider.addEventListener('input', (e) => {
-                const value = e.target.value;
-                penSizeValue.value = value;
-                this.updateToolProperty('size', parseInt(value));
-                this.updateStatusBar();
-            });
-
-            // 数値入力 → スライダーの同期
-            penSizeValue.addEventListener('input', (e) => {
-                const value = Math.max(1, Math.min(50, parseInt(e.target.value) || 1));
-                penSizeSlider.value = value;
-                e.target.value = value;
-                this.updateToolProperty('size', value);
-                this.updateStatusBar();
-            });
-        }
-
-        if (penOpacitySlider && penOpacityValue) {
-            penOpacitySlider.addEventListener('input', (e) => {
-                const value = e.target.value;
-                penOpacityValue.value = value;
-                this.updateToolProperty('opacity', parseInt(value));
-                this.updateStatusBar();
-            });
-
-            penOpacityValue.addEventListener('input', (e) => {
-                const value = Math.max(1, Math.min(100, parseInt(e.target.value) || 100));
-                penOpacitySlider.value = value;
-                e.target.value = value;
-                this.updateToolProperty('opacity', value);
-                this.updateStatusBar();
-            });
-        }
-
-        // 消しゴムコントロール
-        const eraserSizeSlider = document.getElementById('eraserSizeSlider');
-        const eraserSizeValue = document.getElementById('eraserSizeValue');
-
-        if (eraserSizeSlider && eraserSizeValue) {
-            eraserSizeSlider.addEventListener('input', (e) => {
-                const value = e.target.value;
-                eraserSizeValue.value = value;
-                this.updateToolProperty('size', parseInt(value));
-                this.updateStatusBar();
-            });
-
-            eraserSizeValue.addEventListener('input', (e) => {
-                const value = Math.max(1, Math.min(100, parseInt(e.target.value) || 10));
-                eraserSizeSlider.value = value;
-                e.target.value = value;
-                this.updateToolProperty('size', value);
-                this.updateStatusBar();
-            });
-        }
-    }
-
-    // === ポインターイベントハンドラー（OGL統一描画） ===
-    handlePointerDown(e) {
-        if (!this.isInitialized || !this.oglEngine) return;
-
-        try {
-            const rect = e.target.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            const pressure = e.pressure || 1.0;
-
-            console.log(`🖊️ ストローク開始: (${x.toFixed(1)}, ${y.toFixed(1)}) 筆圧: ${pressure.toFixed(2)}`);
-
-            // OGL統一エンジンでストローク開始
-            this.currentStroke = this.oglEngine.startStroke(x, y, pressure);
-            
-            e.preventDefault();
-        } catch (error) {
-            console.error('❌ PointerDown エラー:', error);
-        }
-    }
-
-    handlePointerMove(e) {
-        if (!this.isInitialized || !this.oglEngine || !this.currentStroke || e.buttons === 0) return;
-
-        try {
-            const rect = e.target.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            const pressure = e.pressure || 1.0;
-
-            // OGL統一エンジンでストローク継続
-            this.oglEngine.continueStroke(this.currentStroke, x, y, pressure);
-            
-            e.preventDefault();
-        } catch (error) {
-            console.error('❌ PointerMove エラー:', error);
-        }
-    }
-
-    handlePointerUp(e) {
-        if (!this.isInitialized || !this.oglEngine || !this.currentStroke) return;
-
-        try {
-            console.log('🖊️ ストローク終了');
-
-            // OGL統一エンジンでストローク終了
-            this.oglEngine.endStroke(this.currentStroke);
-            this.currentStroke = null;
-            
-            e.preventDefault();
-        } catch (error) {
-            console.error('❌ PointerUp エラー:', error);
-        }
-    }
-
-    // === キーボードショートカット ===
-    async handleKeyDown(e) {
-        if (!this.isInitialized) return;
-
-        try {
-            switch (e.key.toLowerCase()) {
-                case 'p':
-                    if (!e.ctrlKey && !e.metaKey) {
-                        await this.selectTool('pen');
-                        e.preventDefault();
-                    }
-                    break;
-                case 'e':
-                    await this.selectTool('eraser');
-                    e.preventDefault();
-                    break;
-                case 'delete':
-                case 'backspace':
-                    if (e.ctrlKey || e.metaKey) {
-                        this.clearCanvas();
-                        e.preventDefault();
-                    }
-                    break;
-                case 'z':
-                    if (e.ctrlKey || e.metaKey) {
-                        this.undo();
-                        e.preventDefault();
-                    }
-                    break;
-            }
-        } catch (error) {
-            console.error('❌ KeyDown エラー:', error);
-        }
-    }
-
-    // === ツール選択（OGL統一エンジン制御） ===
-    async selectTool(toolName) {
-        if (!this.oglEngine) return;
-
-        try {
-            console.log(`🔧 ツール選択: ${toolName}`);
-
-            // OGL統一エンジンでツール選択
-            await this.oglEngine.selectTool(toolName);
-
-            // ToolStore更新
-            if (this.toolStore) {
-                this.toolStore.setCurrentTool(toolName);
-            }
-
-            // UI更新
-            this.updateToolUI(toolName);
-            this.updateStatusBar();
-
-            console.log(`✅ ツール選択完了: ${toolName}`);
-        } catch (error) {
-            console.error(`❌ ツール選択エラー (${toolName}):`, error);
-        }
-    }
-
-    // === ツール変更ハンドラー ===
-    handleToolChange(toolData) {
-        try {
-            this.updateToolUI(toolData.tool);
-            this.updateStatusBar();
-        } catch (error) {
-            console.error('❌ ツール変更ハンドラーエラー:', error);
-        }
-    }
-
-    // === ツールプロパティ更新 ===
-    updateToolProperty(property, value) {
-        if (!this.oglEngine) return;
-
-        try {
-            this.oglEngine.updateToolProperty(property, value);
-        } catch (error) {
-            console.error(`❌ ツールプロパティ更新エラー (${property}: ${value}):`, error);
-        }
-    }
-
-    // === UI更新 ===
-    updateToolUI(toolName) {
-        // ツールボタンのアクティブ状態更新
-        document.querySelectorAll('.tool-button').forEach(button => {
-            if (button.dataset.tool === toolName) {
-                button.classList.add('active');
-            } else {
-                button.classList.remove('active');
-            }
-        });
-
-        // コントロールパネルの表示切替
-        document.querySelectorAll('.control-panel').forEach(panel => {
-            panel.classList.remove('visible');
-        });
-
-        const controlPanel = document.getElementById(`${toolName}Controls`);
-        if (controlPanel) {
-            controlPanel.classList.add('visible');
-        }
-    }
-
-    updateStatusBar() {
-        try {
-            const currentTool = this.oglEngine ? this.oglEngine.getCurrentTool() : null;
-            const toolSettings = this.oglEngine ? this.oglEngine.getCurrentToolSettings() : {};
-
-            // ツール名
-            const statusTool = document.getElementById('statusTool');
-            if (statusTool) {
-                statusTool.textContent = currentTool === 'pen' ? 'ペン' : 
-                                        currentTool === 'eraser' ? '消しゴム' : currentTool || 'なし';
-            }
-
-            // サイズ
-            const statusSize = document.getElementById('statusSize');
-            if (statusSize) {
-                statusSize.textContent = toolSettings.size || '3';
-            }
-
-            // 不透明度
-            const statusOpacity = document.getElementById('statusOpacity');
-            if (statusOpacity) {
-                const opacity = toolSettings.opacity || 100;
-                statusOpacity.textContent = `${opacity}%`;
-            }
-
-            // FPS（簡易実装）
-            const statusFPS = document.getElementById('statusFPS');
-            if (statusFPS) {
-                statusFPS.textContent = '60';
-            }
-        } catch (error) {
-            console.error('❌ ステータスバー更新エラー:', error);
-        }
-    }
-
-    // === アクション ===
-    clearCanvas() {
-        if (!this.oglEngine) return;
-
-        try {
-            console.log('🗑️ キャンバスクリア');
-            this.oglEngine.clearCanvas();
-        } catch (error) {
-            console.error('❌ キャンバスクリアエラー:', error);
-        }
-    }
-
-    undo() {
-        if (!this.oglEngine) return;
-
-        try {
-            console.log('↶ 取り消し');
-            this.oglEngine.undo();
-        } catch (error) {
-            console.error('❌ 取り消しエラー:', error);
-        }
-    }
-
-    // === エラー表示 ===
-    showError(message) {
-        const errorDiv = document.createElement('div');
-        errorDiv.style.cssText = `
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            background: #ff4444;
-            color: white;
-            padding: 10px;
-            border-radius: 5px;
-            z-index: 10000;
-            max-width: 300px;
-            font-size: 12px;
-        `;
-        errorDiv.textContent = message;
-        document.body.appendChild(errorDiv);
-        
-        setTimeout(() => {
-            if (errorDiv.parentNode) {
-                errorDiv.parentNode.removeChild(errorDiv);
-            }
-        }, 5000);
-    }
-
-    // === 廃棄処理 ===
-    dispose() {
-        try {
-            this.isInitialized = false;
-            
-            if (this.oglEngine) {
-                this.oglEngine.dispose();
-            }
-            
-            if (this.toolStore) {
-                this.toolStore.dispose();
-            }
-            
-            console.log('🧹 OGLDrawingApp廃棄完了');
-        } catch (error) {
-            console.error('❌ 廃棄処理エラー:', error);
-        }
-    }
-
-    // === デバッグ用 ===
-    getStatus() {
-        return {
-            initialized: this.isInitialized,
-            currentTool: this.oglEngine ? this.oglEngine.getCurrentTool() : null,
-            engineReady: this.oglEngine ? this.oglEngine.isReady() : false,
-            strokeCount: this.oglEngine ? this.oglEngine.getStrokeCount() : 0
+        // ツール設定
+        this.toolSettings = {
+            pen: { size: 3, opacity: 100 },
+            eraser: { size: 10, opacity: 100 }
         };
+        
+        // 履歴システム（OGL統一）
+        this.history = [];
+        this.historyIndex = -1;
+        
+        this.setupEventListeners();
+        this.render();
+    }
+    
+    /**
+     * ツール選択 - OGL専用機能起動
+     */
+    selectTool(toolName) {
+        this.currentTool = toolName;
+        console.log(`Tool selected: ${toolName}`);
+    }
+    
+    /**
+     * ツール設定更新
+     */
+    updateToolSettings(tool, property, value) {
+        if (this.toolSettings[tool]) {
+            this.toolSettings[tool][property] = value;
+        }
+    }
+    
+    /**
+     * OGL Polyline描画処理 - Bezier.js完全排除
+     */
+    createPolyline(points, tool = 'pen') {
+        if (points.length < 2) return null;
+        
+        const settings = this.toolSettings[tool];
+        const isEraser = tool === 'eraser';
+        
+        // OGL Polylineでの線描画（OGL内蔵機能活用）
+        const positions = [];
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            // キャンバス座標をWebGL座標に変換
+            const x = (point.x / this.canvas.width) * 2 - 1;
+            const y = -((point.y / this.canvas.height) * 2 - 1);
+            positions.push(x, y, 0);
+        }
+        
+        const polyline = new Polyline(this.renderer.gl, {
+            points: positions,
+            vertex: `
+                attribute vec3 position;
+                attribute vec3 next;
+                attribute vec3 prev;
+                attribute vec2 uv;
+                attribute float side;
+                
+                uniform mat4 modelViewMatrix;
+                uniform mat4 projectionMatrix;
+                uniform float uLineWidth;
+                uniform vec2 uResolution;
+                
+                void main() {
+                    vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
+                    vec2 nextScreen = (projectionMatrix * modelViewMatrix * vec4(next, 1.0)).xy * aspect;
+                    vec2 prevScreen = (projectionMatrix * modelViewMatrix * vec4(prev, 1.0)).xy * aspect;
+                    vec2 currentScreen = (projectionMatrix * modelViewMatrix * vec4(position, 1.0)).xy * aspect;
+                    
+                    vec2 dir = normalize(nextScreen - prevScreen);
+                    vec2 normal = vec2(-dir.y, dir.x) * side * uLineWidth / uResolution.y;
+                    
+                    gl_Position = vec4(currentScreen + normal / aspect, 0.0, 1.0);
+                }
+            `,
+            fragment: `
+                precision highp float;
+                uniform vec3 uColor;
+                uniform float uOpacity;
+                uniform float uIsEraser;
+                
+                void main() {
+                    if (uIsEraser > 0.5) {
+                        gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+                    } else {
+                        gl_FragColor = vec4(uColor, uOpacity);
+                    }
+                }
+            `,
+            uniforms: {
+                uLineWidth: { value: settings.size },
+                uResolution: { value: [this.canvas.width, this.canvas.height] },
+                uColor: { value: isEraser ? [0, 0, 0] : [0.5, 0, 0] },
+                uOpacity: { value: settings.opacity / 100 },
+                uIsEraser: { value: isEraser ? 1.0 : 0.0 }
+            }
+        });
+        
+        polyline.setParent(this.scene);
+        return polyline;
+    }
+    
+    /**
+     * 描画開始
+     */
+    startStroke(x, y) {
+        this.isDrawing = true;
+        this.currentPoints = [{ x, y }];
+        
+        // 履歴保存
+        this.saveToHistory();
+    }
+    
+    /**
+     * 描画中
+     */
+    continueStroke(x, y) {
+        if (!this.isDrawing) return;
+        
+        this.currentPoints.push({ x, y });
+        
+        // 既存のストロークを削除
+        if (this.currentStroke) {
+            this.scene.removeChild(this.currentStroke);
+        }
+        
+        // 新しいPolylineを作成
+        this.currentStroke = this.createPolyline(this.currentPoints, this.currentTool);
+        if (this.currentStroke) {
+            this.polylines.push(this.currentStroke);
+        }
+        
+        this.render();
+    }
+    
+    /**
+     * 描画終了
+     */
+    endStroke() {
+        if (!this.isDrawing) return;
+        
+        this.isDrawing = false;
+        this.currentStroke = null;
+        this.currentPoints = [];
+    }
+    
+    /**
+     * キャンバスクリア
+     */
+    clear() {
+        // 全てのPolylineを削除
+        this.polylines.forEach(polyline => {
+            if (polyline.parent) {
+                polyline.parent.removeChild(polyline);
+            }
+        });
+        this.polylines = [];
+        
+        this.render();
+        this.saveToHistory();
+    }
+    
+    /**
+     * 取り消し機能
+     */
+    undo() {
+        if (this.historyIndex > 0) {
+            this.historyIndex--;
+            this.restoreFromHistory();
+        }
+    }
+    
+    /**
+     * 履歴保存
+     */
+    saveToHistory() {
+        // 現在の状態を保存（簡易版）
+        const state = this.polylines.length;
+        this.history = this.history.slice(0, this.historyIndex + 1);
+        this.history.push(state);
+        this.historyIndex = this.history.length - 1;
+    }
+    
+    /**
+     * 履歴復元
+     */
+    restoreFromHistory() {
+        // 簡易的な履歴復元
+        if (this.polylines.length > 0) {
+            const lastPolyline = this.polylines.pop();
+            if (lastPolyline.parent) {
+                lastPolyline.parent.removeChild(lastPolyline);
+            }
+            this.render();
+        }
+    }
+    
+    /**
+     * キャンバスリサイズ
+     */
+    resizeCanvas(width, height) {
+        this.canvas.width = width;
+        this.canvas.height = height;
+        this.renderer.setSize(width, height);
+        this.render();
+    }
+    
+    /**
+     * イベントリスナー設定
+     */
+    setupEventListeners() {
+        let isPointerDown = false;
+        
+        // Pointer Events API使用（モダンブラウザ対応）
+        this.canvas.addEventListener('pointerdown', (e) => {
+            isPointerDown = true;
+            const rect = this.canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            this.startStroke(x, y);
+        });
+        
+        this.canvas.addEventListener('pointermove', (e) => {
+            if (!isPointerDown) return;
+            const rect = this.canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            this.continueStroke(x, y);
+        });
+        
+        this.canvas.addEventListener('pointerup', () => {
+            if (isPointerDown) {
+                isPointerDown = false;
+                this.endStroke();
+            }
+        });
+        
+        this.canvas.addEventListener('pointerleave', () => {
+            if (isPointerDown) {
+                isPointerDown = false;
+                this.endStroke();
+            }
+        });
+    }
+    
+    /**
+     * OGL統一描画フロー
+     */
+    render() {
+        this.renderer.render({ scene: this.scene, camera: this.camera });
     }
 }
 
-// === アプリケーション起動 ===
-document.addEventListener('DOMContentLoaded', () => {
-    try {
-        console.log('🚀 OGL統一お絵かきツール起動...');
-        window.oglApp = new OGLDrawingApp();
+/**
+ * UIコントローラー - ツール・パネル制御
+ */
+class UIController {
+    constructor(engine) {
+        this.engine = engine;
+        this.currentTool = 'pen';
         
-        // ページ離脱時のクリーンアップ
-        window.addEventListener('beforeunload', () => {
-            if (window.oglApp) {
-                window.oglApp.dispose();
-            }
+        this.setupToolButtons();
+        this.setupControlPanels();
+        this.setupActionButtons();
+        
+        // 初期パネル表示
+        this.showToolPanel('pen');
+    }
+    
+    /**
+     * ツールボタン設定
+     */
+    setupToolButtons() {
+        const toolButtons = document.querySelectorAll('.tool-button');
+        
+        toolButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const tool = button.getAttribute('data-tool');
+                this.selectTool(tool);
+            });
         });
-
-        // デバッグ用グローバル関数
-        window.getOGLAppStatus = () => {
-            return window.oglApp ? window.oglApp.getStatus() : null;
+    }
+    
+    /**
+     * ツール選択
+     */
+    selectTool(tool) {
+        // ボタン状態更新
+        document.querySelectorAll('.tool-button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        document.querySelector(`[data-tool="${tool}"]`).classList.add('active');
+        
+        // エンジンツール変更
+        this.engine.selectTool(tool);
+        this.currentTool = tool;
+        
+        // パネル表示切替
+        this.showToolPanel(tool);
+    }
+    
+    /**
+     * ツールパネル表示
+     */
+    showToolPanel(tool) {
+        const controlPanel = document.getElementById('controlPanel');
+        const toolControls = document.querySelectorAll('.tool-controls');
+        
+        // 全パネル非表示
+        toolControls.forEach(panel => {
+            panel.style.display = 'none';
+        });
+        
+        // 対象パネル表示
+        const targetPanel = document.getElementById(`${tool}Controls`);
+        if (targetPanel) {
+            targetPanel.style.display = 'block';
+            controlPanel.classList.add('show');
+        } else {
+            controlPanel.classList.remove('show');
+        }
+    }
+    
+    /**
+     * コントロールパネル設定
+     */
+    setupControlPanels() {
+        // ペンコントロール
+        this.setupSliderControl('penSize', 'penSizeSlider', (value) => {
+            this.engine.updateToolSettings('pen', 'size', value);
+        });
+        
+        this.setupSliderControl('penOpacity', 'penOpacitySlider', (value) => {
+            this.engine.updateToolSettings('pen', 'opacity', value);
+        });
+        
+        // 消しゴムコントロール
+        this.setupSliderControl('eraserSize', 'eraserSizeSlider', (value) => {
+            this.engine.updateToolSettings('eraser', 'size', value);
+        });
+        
+        this.setupSliderControl('eraserOpacity', 'eraserOpacitySlider', (value) => {
+            this.engine.updateToolSettings('eraser', 'opacity', value);
+        });
+        
+        // リサイズコントロール
+        this.setupSliderControl('canvasWidth', 'canvasWidthSlider', (value) => {
+            const height = parseInt(document.getElementById('canvasHeight').value);
+            this.engine.resizeCanvas(value, height);
+        });
+        
+        this.setupSliderControl('canvasHeight', 'canvasHeightSlider', (value) => {
+            const width = parseInt(document.getElementById('canvasWidth').value);
+            this.engine.resizeCanvas(width, value);
+        });
+    }
+    
+    /**
+     * スライダーコントロール設定
+     */
+    setupSliderControl(inputId, sliderId, callback) {
+        const input = document.getElementById(inputId);
+        const slider = document.getElementById(sliderId);
+        
+        if (!input || !slider) return;
+        
+        // 同期処理
+        const syncValues = (value) => {
+            input.value = value;
+            slider.value = value;
+            callback(parseInt(value));
         };
         
-    } catch (error) {
-        console.error('❌ アプリケーション起動失敗:', error);
+        input.addEventListener('input', () => syncValues(input.value));
+        slider.addEventListener('input', () => syncValues(slider.value));
     }
-});
+    
+    /**
+     * アクションボタン設定
+     */
+    setupActionButtons() {
+        const clearButton = document.getElementById('clearButton');
+        const undoButton = document.getElementById('undoButton');
+        
+        clearButton.addEventListener('click', () => {
+            this.engine.clear();
+        });
+        
+        undoButton.addEventListener('click', () => {
+            this.engine.undo();
+        });
+    }
+}
 
-// === グローバルエラーハンドリング ===
-window.addEventListener('error', (e) => {
-    console.error('🌐 グローバルエラー:', e.error);
-});
-
-window.addEventListener('unhandledrejection', (e) => {
-    console.error('🌐 未処理Promise拒否:', e.reason);
-    e.preventDefault();
+/**
+ * アプリケーション初期化 - OGL統一エンジン起動
+ */
+document.addEventListener('DOMContentLoaded', () => {
+    const canvas = document.getElementById('drawingCanvas');
+    
+    try {
+        // OGL統一エンジン初期化
+        const engine = new OGLUnifiedEngine(canvas);
+        
+        // UIコントローラー初期化
+        const uiController = new UIController(engine);
+        
+        console.log('OGL Unified Engine initialized successfully');
+        
+    } catch (error) {
+        console.error('Failed to initialize OGL Unified Engine:', error);
+        
+        // フォールバック表示
+        const canvasWrapper = document.querySelector('.canvas-wrapper');
+        canvasWrapper.innerHTML = `
+            <div style="padding: 20px; text-align: center; color: var(--text-color);">
+                <p>WebGL初期化に失敗しました</p>
+                <p>ブラウザがWebGLに対応していない可能性があります</p>
+            </div>
+        `;
+    }
 });
