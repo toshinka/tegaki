@@ -48,30 +48,6 @@
 | Konva*.js | Konva.js依存禁止 | OGL*.js |
 | *ModeController.js | モード概念禁止 | OGLToolController.js |
 
-### 🧭 強制配置・憲章v5.2 OGL統一・ファイル最小化準拠（v3.3）
-```
-src/
-├── engine/
-│   ├── OGLUnifiedEngine.js              # OGL統一エンジン（核心）
-│   ├── OGLPolylineSystem.js             # OGL線描画システム
-│   ├── OGLInputProcessor.js             # OGL統合入力処理
-│   └── ToolController.js                # ツール制御（簡素化）
-
-├── tools/                               # ツール実装（最小構成）
-│   ├── ToolStore.js                     # ツール状態管理
-│   ├── PenTool.js                       # OGLペンツール
-│   ├── BrushTool.js                     # OGLブラシツール
-│   └── EraserTool.js                    # OGL消しゴムツール
-
-├── ui/                                  # UI層（最小構成）
-│   ├── ToolPanel.js                     # ツールパネル
-│   ├── LayerPanel.js                    # レイヤーパネル
-│   └── MainLayout.js                    # メインレイアウト
-
-└── core/                                # コア機能（最小構成）
-    ├── LayerSystem.js                   # レイヤー管理
-    ├── HistorySystem.js                 # 履歴管理
-    └── ExportSystem.js                  # エクスポート機能
 ```
 
 ## 🎨 OGL統一エンジン設計（憲章v5.2核心・v3.3統合）
