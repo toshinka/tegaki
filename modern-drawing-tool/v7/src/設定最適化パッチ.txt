@@ -1,0 +1,182 @@
+// 設定最適化パッチ - 線品質改善設定の追加
+// 既存のOGLSettingsManager.jsに以下の設定を追加
+
+// デフォルト設定に追加する項目
+const ENHANCED_DRAWING_SETTINGS = {
+    // 🔧 修正: 線品質向上設定
+    lineQuality: {
+        adaptiveDistance: true,        // 適応的距離制御
+        velocitySmoothing: 0.7,        // 速度スムージング
+        interpolationMethod: 'auto',   // auto, linear, bezier, catmull
+        simplificationTolerance: 1.0,  // 線分簡素化許容値
+        qualityThreshold: 0.7          // 品質閾値
+    },
+    
+    // 🆕 液タブ専用設定
+    tablet: {
+        pressureCurve: 1.2,           // 筆圧カーブ
+        distanceScaling: 1.2,         // 距離スケーリング
+        tiltSensitivity: 0.3,         // チルト感度
+        pointerContinuity: true,      // ポインタ連続性
+        deadZone: 0.05                // 筆圧デッドゾーン
+    },
+    
+    // 🔧 修正: 高度な描画設定
+    advanced: {
+        antiMoireFilter: true,        // モアレ防止フィルタ
+        segmentationPrevention: true, // セグメント化防止
+        velocityBasedThickness: true, // 速度ベース太さ変更
+        dynamicSmoothing: true,       // 動的スムージング
+        performanceMode: 'balanced'   // quality, balanced, performance
+    }
+};
+
+// 設定適用関数
+export function applyLineQualitySettings(oglCore, settings) {
+    if (!oglCore || !settings) return;
+    
+    // 基本描画設定適用
+    if (settings.lineQuality) {
+        oglCore.strokeConfig.adaptiveDistance = settings.lineQuality.adaptiveDistance;
+        oglCore.strokeConfig.smoothingFactor = settings.lineQuality.velocitySmoothing * 0.2;
+    }
+    
+    // タブレット設定適用
+    if (settings.tablet) {
+        Object.assign(oglCore.penConfig, {
+            distanceScaling: settings.tablet.distanceScaling,
+            pressureDeadZone: settings.tablet.deadZone,
+            pointerContinuity: settings.tablet.pointerContinuity
+        });
+    }
+    
+    // 高度設定適用
+    if (settings.advanced) {
+        switch (settings.advanced.performanceMode) {
+            case 'quality':
+                oglCore.strokeConfig.minDistance = 0.5;
+                oglCore.strokeConfig.segmentDensity = 2.0;
+                break;
+            case 'performance':
+                oglCore.strokeConfig.minDistance = 1.2;
+                oglCore.strokeConfig.segmentDensity = 1.0;
+                break;
+            default: // balanced
+                oglCore.strokeConfig.minDistance = 0.8;
+                oglCore.strokeConfig.segmentDensity = 1.5;
+        }
+    }
+}
+
+// UIコントローラー拡張設定
+export const ENHANCED_UI_CONTROLS = [
+    {
+        label: '線品質モード',
+        id: 'lineQualityMode',
+        type: 'select',
+        options: [
+            { value: 'quality', label: '高品質' },
+            { value: 'balanced', label: 'バランス' },
+            { value: 'performance', label: 'パフォーマンス' }
+        ],
+        setting: 'advanced.performanceMode',
+        default: 'balanced'
+    },
+    {
+        label: '液タブ最適化',
+        id: 'tabletOptimization',
+        type: 'checkbox',
+        setting: 'tablet.pointerContinuity',
+        default: true
+    },
+    {
+        label: '適応的描画',
+        id: 'adaptiveDrawing',
+        type: 'checkbox',
+        setting: 'lineQuality.adaptiveDistance',
+        default: true
+    },
+    {
+        label: '速度スムージング',
+        id: 'velocitySmoothing',
+        type: 'range',
+        min: 0,
+        max: 100,
+        setting: 'lineQuality.velocitySmoothing',
+        transform: (value) => value / 100,
+        default: 70
+    }
+];
+
+// 問題検出・自動修正システム
+export class LineQualityDiagnostics {
+    constructor(oglCore, mathEnhancer) {
+        this.core = oglCore;
+        this.math = mathEnhancer;
+        this.issueHistory = [];
+    }
+    
+    // 🔧 修正: リアルタイム品質監視
+    analyzeStrokeQuality(stroke) {
+        if (!stroke?.points || stroke.points.length < 3) return null;
+        
+        const quality = this.math.evaluateStrokeQuality(stroke.points);
+        const issues = this.detectIssues(stroke, quality);
+        
+        if (issues.length > 0) {
+            this.issueHistory.push({
+                timestamp: Date.now(),
+                strokeId: stroke.id || Date.now(),
+                issues: issues,
+                quality: quality.score
+            });
+            
+            // 自動修正提案
+            const recommendations = this.generateRecommendations(issues);
+            return { quality, issues, recommendations };
+        }
+        
+        return { quality, issues: [], recommendations: [] };
+    }
+    
+    // 問題検出
+    detectIssues(stroke, quality) {
+        const issues = [];
+        
+        // モール・毛虫化検出
+        if (quality.densityVariation > 2.0) {
+            issues.push({
+                type: 'segmentation',
+                severity: 'high',
+                description: 'モール・毛虫状の線が検出されました'
+            });
+        }
+        
+        // 描画距離問題検出
+        const avgDistance = this.calculateAverageDistance(stroke.points);
+        if (avgDistance < 0.5 && stroke.pointerType === 'pen') {
+            issues.push({
+                type: 'short_distance',
+                severity: 'medium',
+                description: '液タブペンでの描画距離が短すぎます'
+            });
+        }
+        
+        // 過度な曲率検出
+        if (quality.avgCurvature > 0.4) {
+            issues.push({
+                type: 'excessive_curvature',
+                severity: 'medium',
+                description: '過度な曲率が検出されました'
+            });
+        }
+        
+        return issues;
+    }
+    
+    // 平均距離計算
+    calculateAverageDistance(points) {
+        if (points.length < 2) return 0;
+        
+        let totalDistance = 0;
+        for (let i = 1; i
