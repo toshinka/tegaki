@@ -1,1116 +1,847 @@
-/**
- * HistoryController.js - アンドゥ・リドゥ制御 (Phase1 履歴ファイル)
- * 履歴管理・スタック制御・アクション記録・状態復元・複合操作統合
- * v2.0 OGL統一制約準拠・スナップショット最適化・メモリ効率化
- */
-
-import { throttle, debounce, cloneDeep } from 'lodash-es';
-import mitt from 'mitt';
-
-// === 履歴管理・スタック制御（200-250行） ===
+// HistoryController.js - アンドゥ・リドゥ制御（650-750行）
 
 /**
- * OGL統一履歴管理システム
- * スナップショット + 差分記録による効率的履歴制御
- */
-class OGLHistoryManager {
-    constructor(oglEngine, eventBus) {
-        this.engine = oglEngine;
-        this.eventBus = eventBus;
-        
-        // 履歴スタック
-        this.undoStack = [];
-        this.redoStack = [];
-        this.maxHistorySize = 50; // メモリ効率化
-        
-        // 現在状態
-        this.currentState = null;
-        this.isRestoring = false;
-        this.autoSaveEnabled = true;
-        
-        // スナップショット制御
-        this.snapshotInterval = 10; // アクション数間隔
-        this.actionsSinceSnapshot = 0;
-        this.lastSnapshotTime = 0;
-        
-        // 複合操作制御
-        this.batchMode = false;
-        this.batchActions = [];
-        this.batchStartTime = 0;
-        
-        // パフォーマンス制御
-        this.snapshotThrottle = throttle(this.createSnapshot.bind(this), 1000);
-        this.saveDebounce = debounce(this.saveState.bind(this), 500);
-        
-        this.initializeHistorySystem();
-    }
-    
-    /**
-     * 履歴システム初期化
-     */
-    initializeHistorySystem() {
-        // 初期状態スナップショット
-        this.createSnapshot('initial');
-        
-        // エンジン状態監視
-        this.setupStateMonitoring();
-        
-        // メモリ管理
-        this.setupMemoryManagement();
-        
-        console.log('📚 OGL履歴管理システム初期化完了');
-    }
-    
-    /**
-     * エンジン状態監視設定
-     */
-    setupStateMonitoring() {
-        // 描画イベント監視
-        this.eventBus.on('drawing:end', (event) => {
-            if (!this.isRestoring) {
-                this.recordAction('stroke', {
-                    type: 'stroke',
-                    strokeId: event.strokeId,
-                    tool: event.tool,
-                    timestamp: performance.now()
-                });
-            }
-        });
-        
-        // レイヤー操作監視
-        this.eventBus.on('layer:changed', (event) => {
-            if (!this.isRestoring) {
-                this.recordAction('layer', {
-                    type: 'layer',
-                    operation: event.operation,
-                    layerId: event.layerId,
-                    timestamp: performance.now()
-                });
-            }
-        });
-        
-        // 変形操作監視
-        this.eventBus.on('transform:applied', (event) => {
-            if (!this.isRestoring) {
-                this.recordAction('transform', {
-                    type: 'transform',
-                    operation: event.operation,
-                    target: event.target,
-                    timestamp: performance.now()
-                });
-            }
-        });
-    }
-    
-    /**
-     * メモリ管理設定
-     */
-    setupMemoryManagement() {
-        // 定期的なメモリクリーンアップ
-        setInterval(() => {
-            this.cleanupOldHistory();
-        }, 30000); // 30秒間隔
-        
-        // メモリ使用量監視
-        if ('memory' in performance) {
-            setInterval(() => {
-                const memInfo = performance.memory;
-                if (memInfo.usedJSHeapSize > memInfo.jsHeapSizeLimit * 0.8) {
-                    console.warn('⚠️ メモリ使用量高 - 履歴クリーンアップ実行');
-                    this.forceCleanup();
-                }
-            }, 10000);
-        }
-    }
-    
-    /**
-     * スナップショット作成
-     */
-    createSnapshot(label = 'snapshot') {
-        try {
-            const snapshot = {
-                id: `snapshot_${Date.now()}_${Math.random()}`,
-                label: label,
-                timestamp: performance.now(),
-                
-                // OGLエンジン状態
-                engineState: this.captureEngineState(),
-                
-                // レイヤー状態
-                layerState: this.captureLayerState(),
-                
-                // キャンバス状態
-                canvasState: this.captureCanvasState(),
-                
-                // メタデータ
-                metadata: {
-                    version: '2.0',
-                    actionCount: this.actionsSinceSnapshot,
-                    memoryUsage: this.getMemoryUsage()
-                }
-            };
-            
-            this.currentState = snapshot;
-            this.lastSnapshotTime = performance.now();
-            this.actionsSinceSnapshot = 0;
-            
-            return snapshot;
-        } catch (error) {
-            console.error('❌ スナップショット作成失敗:', error);
-            return null;
-        }
-    }
-    
-    /**
-     * OGLエンジン状態キャプチャ
-     */
-    captureEngineState() {
-        return {
-            scene: this.serializeOGLScene(),
-            camera: {
-                position: this.engine.camera.position.clone(),
-                rotation: this.engine.camera.rotation.clone(),
-                scale: this.engine.camera.scale.clone()
-            },
-            viewport: {
-                width: this.engine.canvas.width,
-                height: this.engine.canvas.height
-            },
-            quality: this.engine.qualitySettings || {}
-        };
-    }
-    
-    /**
-     * OGLシーン状態シリアライズ
-     */
-    serializeOGLScene() {
-        const sceneData = {
-            strokes: [],
-            meshes: [],
-            transforms: []
-        };
-        
-        // ストローク情報収集
-        if (this.engine.strokeRenderer) {
-            this.engine.strokeRenderer.activeStrokes.forEach((stroke, id) => {
-                sceneData.strokes.push({
-                    id: id,
-                    points: stroke.points,
-                    color: stroke.color,
-                    width: stroke.width,
-                    opacity: stroke.opacity,
-                    completed: stroke.completed
-                });
-            });
-        }
-        
-        return sceneData;
-    }
-    
-    /**
-     * レイヤー状態キャプチャ
-     */
-    captureLayerState() {
-        if (!this.engine.layers) return null;
-        
-        const layerData = [];
-        this.engine.layers.forEach((layer, id) => {
-            layerData.push({
-                id: id,
-                visible: layer.visible,
-                opacity: layer.opacity,
-                blendMode: layer.blendMode,
-                transform: layer.transform ? {
-                    position: layer.transform.position.clone(),
-                    rotation: layer.transform.rotation.clone(),
-                    scale: layer.transform.scale.clone()
-                } : null
-            });
-        });
-        
-        return {
-            layers: layerData,
-            activeLayerId: this.engine.activeLayerId
-        };
-    }
-    
-    /**
-     * キャンバス状態キャプチャ
-     */
-    captureCanvasState() {
-        return {
-            transform: this.engine.canvasTransform ? {
-                elements: Array.from(this.engine.canvasTransform.elements)
-            } : null,
-            background: this.engine.backgroundColor || '#f0e0d6',
-            grid: this.engine.gridVisible || false
-        };
-    }
-    
-    /**
-     * メモリ使用量取得
-     */
-    getMemoryUsage() {
-        if ('memory' in performance) {
-            return {
-                used: performance.memory.usedJSHeapSize,
-                total: performance.memory.totalJSHeapSize,
-                limit: performance.memory.jsHeapSizeLimit
-            };
-        }
-        return null;
-    }
-}
-
-// === アクション記録・種別管理（200-250行） ===
-
-/**
- * アクション記録システム
- * 操作種別管理・差分記録・効率的復元
- */
-class ActionRecorder {
-    constructor(historyManager) {
-        this.historyManager = historyManager;
-        
-        // アクション種別定義
-        this.actionTypes = {
-            'stroke': {
-                canMerge: false,
-                needsSnapshot: true,
-                description: 'ストローク描画'
-            },
-            'layer': {
-                canMerge: true,
-                needsSnapshot: false,
-                description: 'レイヤー操作'
-            },
-            'transform': {
-                canMerge: true,
-                needsSnapshot: false,
-                description: '変形操作'
-            },
-            'property': {
-                canMerge: true,
-                needsSnapshot: false,
-                description: 'プロパティ変更'
-            },
-            'tool': {
-                canMerge: false,
-                needsSnapshot: false,
-                description: 'ツール切り替え'
-            }
-        };
-        
-        // アクション記録設定
-        this.recordingEnabled = true;
-        this.maxActionSize = 1000; // 大きなアクションの制限
-        this.mergeWindow = 1000; // マージ可能時間窓（ms）
-        
-        // 記録統計
-        this.stats = {
-            totalActions: 0,
-            mergedActions: 0,
-            snapshotCount: 0,
-            lastActionTime: 0
-        };
-    }
-    
-    /**
-     * アクション記録
-     */
-    recordAction(actionType, actionData) {
-        if (!this.recordingEnabled || this.historyManager.isRestoring) {
-            return;
-        }
-        
-        const action = this.createAction(actionType, actionData);
-        if (!action) return;
-        
-        // マージ可能性チェック
-        const lastAction = this.getLastAction();
-        if (this.canMergeWithLastAction(action, lastAction)) {
-            this.mergeWithLastAction(action, lastAction);
-            this.stats.mergedActions++;
-            return;
-        }
-        
-        // 新規アクション追加
-        this.addNewAction(action);
-        
-        // スナップショット判定
-        if (this.shouldCreateSnapshot(action)) {
-            this.historyManager.snapshotThrottle();
-        }
-        
-        // 統計更新
-        this.updateStats(action);
-    }
-    
-    /**
-     * アクション作成
-     */
-    createAction(actionType, actionData) {
-        const actionDef = this.actionTypes[actionType];
-        if (!actionDef) {
-            console.warn(`⚠️ 未知のアクション種別: ${actionType}`);
-            return null;
-        }
-        
-        const action = {
-            id: `action_${Date.now()}_${Math.random()}`,
-            type: actionType,
-            timestamp: performance.now(),
-            data: cloneDeep(actionData),
-            size: this.calculateActionSize(actionData),
-            description: actionDef.description,
-            canMerge: actionDef.canMerge,
-            needsSnapshot: actionDef.needsSnapshot
-        };
-        
-        // サイズ制限チェック
-        if (action.size > this.maxActionSize) {
-            console.warn(`⚠️ アクションサイズ制限超過: ${action.size}bytes`);
-            return null;
-        }
-        
-        return action;
-    }
-    
-    /**
-     * 最後のアクション取得
-     */
-    getLastAction() {
-        const undoStack = this.historyManager.undoStack;
-        return undoStack.length > 0 ? undoStack[undoStack.length - 1] : null;
-    }
-    
-    /**
-     * マージ可能性判定
-     */
-    canMergeWithLastAction(newAction, lastAction) {
-        if (!lastAction || !newAction.canMerge || !lastAction.canMerge) {
-            return false;
-        }
-        
-        // 同じタイプかチェック
-        if (newAction.type !== lastAction.type) {
-            return false;
-        }
-        
-        // 時間窓チェック
-        const timeDiff = newAction.timestamp - lastAction.timestamp;
-        if (timeDiff > this.mergeWindow) {
-            return false;
-        }
-        
-        // タイプ固有のマージ判定
-        switch (newAction.type) {
-            case 'property':
-                return this.canMergePropertyActions(newAction, lastAction);
-            case 'transform':
-                return this.canMergeTransformActions(newAction, lastAction);
-            case 'layer':
-                return this.canMergeLayerActions(newAction, lastAction);
-            default:
-                return false;
-        }
-    }
-    
-    /**
-     * プロパティアクションマージ判定
-     */
-    canMergePropertyActions(newAction, lastAction) {
-        return newAction.data.target === lastAction.data.target &&
-               newAction.data.property === lastAction.data.property;
-    }
-    
-    /**
-     * 変形アクションマージ判定
-     */
-    canMergeTransformActions(newAction, lastAction) {
-        return newAction.data.target === lastAction.data.target &&
-               newAction.data.operation === lastAction.data.operation;
-    }
-    
-    /**
-     * レイヤーアクションマージ判定
-     */
-    canMergeLayerActions(newAction, lastAction) {
-        return newAction.data.layerId === lastAction.data.layerId &&
-               newAction.data.operation === lastAction.data.operation;
-    }
-    
-    /**
-     * 最後のアクションとマージ
-     */
-    mergeWithLastAction(newAction, lastAction) {
-        // 最終値で更新
-        lastAction.data.finalValue = newAction.data.value || newAction.data.finalValue;
-        lastAction.timestamp = newAction.timestamp;
-        lastAction.description = `${lastAction.description} (連続操作)`;
-        
-        console.log(`🔄 アクションマージ: ${newAction.type}`);
-    }
-    
-    /**
-     * 新規アクション追加
-     */
-    addNewAction(action) {
-        this.historyManager.undoStack.push(action);
-        
-        // スタックサイズ制限
-        if (this.historyManager.undoStack.length > this.historyManager.maxHistorySize) {
-            this.historyManager.undoStack.shift();
-        }
-        
-        // リドゥスタッククリア（新しいアクション後は無効）
-        this.historyManager.redoStack.length = 0;
-        
-        console.log(`📝 新規アクション記録: ${action.type} (${action.description})`);
-    }
-    
-    /**
-     * スナップショット作成判定
-     */
-    shouldCreateSnapshot(action) {
-        if (!action.needsSnapshot) return false;
-        
-        this.historyManager.actionsSinceSnapshot++;
-        
-        // 間隔チェック
-        if (this.historyManager.actionsSinceSnapshot >= this.historyManager.snapshotInterval) {
-            return true;
-        }
-        
-        // 重要アクションチェック
-        if (action.type === 'stroke' || action.type === 'layer') {
-            return true;
-        }
-        
-        return false;
-    }
-    
-    /**
-     * アクションサイズ計算
-     */
-    calculateActionSize(data) {
-        return JSON.stringify(data).length;
-    }
-    
-    /**
-     * 統計更新
-     */
-    updateStats(action) {
-        this.stats.totalActions++;
-        this.stats.lastActionTime = action.timestamp;
-        
-        if (action.needsSnapshot) {
-            this.stats.snapshotCount++;
-        }
-    }
-}
-
-// === 状態復元・スナップショット（150-200行） ===
-
-/**
- * 状態復元システム
- * スナップショット復元・差分適用・OGL統一復元
- */
-class StateRestorer {
-    constructor(historyManager, oglEngine) {
-        this.historyManager = historyManager;
-        this.engine = oglEngine;
-        
-        // 復元制御
-        this.restoreInProgress = false;
-        this.restoreQueue = [];
-        this.maxRestoreAttempts = 3;
-        
-        // 復元統計
-        this.restoreStats = {
-            successCount: 0,
-            failureCount: 0,
-            averageTime: 0
-        };
-    }
-    
-    /**
-     * アンドゥ実行
-     */
-    async undo() {
-        if (this.restoreInProgress || this.historyManager.undoStack.length === 0) {
-            return false;
-        }
-        
-        const startTime = performance.now();
-        this.restoreInProgress = true;
-        this.historyManager.isRestoring = true;
-        
-        try {
-            const action = this.historyManager.undoStack.pop();
-            const success = await this.restoreActionState(action, 'undo');
-            
-            if (success) {
-                this.historyManager.redoStack.push(action);
-                this.historyManager.eventBus.emit('history:undo', { action });
-                console.log(`↶ アンドゥ実行: ${action.description}`);
-            } else {
-                // 失敗時は元に戻す
-                this.historyManager.undoStack.push(action);
-            }
-            
-            this.updateRestoreStats(success, performance.now() - startTime);
-            return success;
-            
-        } catch (error) {
-            console.error('❌ アンドゥ実行エラー:', error);
-            return false;
-        } finally {
-            this.restoreInProgress = false;
-            this.historyManager.isRestoring = false;
-        }
-    }
-    
-    /**
-     * リドゥ実行
-     */
-    async redo() {
-        if (this.restoreInProgress || this.historyManager.redoStack.length === 0) {
-            return false;
-        }
-        
-        const startTime = performance.now();
-        this.restoreInProgress = true;
-        this.historyManager.isRestoring = true;
-        
-        try {
-            const action = this.historyManager.redoStack.pop();
-            const success = await this.restoreActionState(action, 'redo');
-            
-            if (success) {
-                this.historyManager.undoStack.push(action);
-                this.historyManager.eventBus.emit('history:redo', { action });
-                console.log(`↷ リドゥ実行: ${action.description}`);
-            } else {
-                // 失敗時は元に戻す
-                this.historyManager.redoStack.push(action);
-            }
-            
-            this.updateRestoreStats(success, performance.now() - startTime);
-            return success;
-            
-        } catch (error) {
-            console.error('❌ リドゥ実行エラー:', error);
-            return false;
-        } finally {
-            this.restoreInProgress = false;
-            this.historyManager.isRestoring = false;
-        }
-    }
-    
-    /**
-     * アクション状態復元
-     */
-    async restoreActionState(action, direction) {
-        try {
-            switch (action.type) {
-                case 'stroke':
-                    return await this.restoreStrokeAction(action, direction);
-                case 'layer':
-                    return await this.restoreLayerAction(action, direction);
-                case 'transform':
-                    return await this.restoreTransformAction(action, direction);
-                case 'property':
-                    return await this.restorePropertyAction(action, direction);
-                default:
-                    console.warn(`⚠️ 未対応アクション復元: ${action.type}`);
-                    return false;
-            }
-        } catch (error) {
-            console.error(`❌ アクション復元失敗: ${action.type}`, error);
-            return false;
-        }
-    }
-    
-    /**
-     * ストロークアクション復元
-     */
-    async restoreStrokeAction(action, direction) {
-        const strokeId = action.data.strokeId;
-        
-        if (direction === 'undo') {
-            // ストローク削除
-            if (this.engine.strokeRenderer && this.engine.strokeRenderer.strokeMeshes.has(strokeId)) {
-                const mesh = this.engine.strokeRenderer.strokeMeshes.get(strokeId);
-                this.engine.scene.removeChild(mesh);
-                this.engine.strokeRenderer.strokeMeshes.delete(strokeId);
-                this.engine.strokeRenderer.strokeGeometry.delete(strokeId);
-                this.engine.strokeRenderer.activeStrokes.delete(strokeId);
-            }
-        } else {
-            // ストローク復元
-            const strokeData = action.data;
-            if (strokeData.points && strokeData.points.length > 0) {
-                // ストロークを再生成
-                this.engine.strokeRenderer.activeStrokes.set(strokeId, {
-                    id: strokeId,
-                    points: strokeData.points,
-                    color: strokeData.color,
-                    width: strokeData.width,
-                    opacity: strokeData.opacity,
-                    completed: true
-                });
-                
-                this.engine.strokeRenderer.createStrokeGeometry(strokeId);
-                this.engine.strokeRenderer.updateStrokeGeometry(strokeId);
-            }
-        }
-        
-        this.engine.requestRender();
-        return true;
-    }
-    
-    /**
-     * レイヤーアクション復元
-     */
-    async restoreLayerAction(action, direction) {
-        const { layerId, operation, oldValue, newValue } = action.data;
-        const layer = this.engine.layers.get(layerId);
-        
-        if (!layer) {
-            console.warn(`⚠️ レイヤー復元失敗: ${layerId} not found`);
-            return false;
-        }
-        
-        const targetValue = direction === 'undo' ? oldValue : newValue;
-        
-        switch (operation) {
-            case 'visibility':
-                layer.visible = targetValue;
-                break;
-            case 'opacity':
-                layer.opacity = targetValue;
-                break;
-            case 'blendMode':
-                layer.blendMode = targetValue;
-                break;
-            default:
-                console.warn(`⚠️ 未対応レイヤー操作: ${operation}`);
-                return false;
-        }
-        
-        this.engine.requestRender();
-        return true;
-    }
-    
-    /**
-     * 変形アクション復元
-     */
-    async restoreTransformAction(action, direction) {
-        const { target, operation, oldTransform, newTransform } = action.data;
-        const targetTransform = direction === 'undo' ? oldTransform : newTransform;
-        
-        // 変形適用ロジック（OGL Transform使用）
-        if (target === 'canvas') {
-            this.engine.canvasTransform.copy(targetTransform);
-        } else {
-            // レイヤー変形
-            const layer = this.engine.layers.get(target);
-            if (layer && layer.transform) {
-                layer.transform.position.copy(targetTransform.position);
-                layer.transform.rotation.copy(targetTransform.rotation);
-                layer.transform.scale.copy(targetTransform.scale);
-            }
-        }
-        
-        this.engine.requestRender();
-        return true;
-    }
-    
-    /**
-     * プロパティアクション復元
-     */
-    async restorePropertyAction(action, direction) {
-        const { target, property, oldValue, newValue } = action.data;
-        const targetValue = direction === 'undo' ? oldValue : newValue;
-        
-        // プロパティ適用
-        if (target && property) {
-            this.setObjectProperty(target, property, targetValue);
-            this.engine.requestRender();
-            return true;
-        }
-        
-        return false;
-    }
-    
-    /**
-     * オブジェクトプロパティ設定
-     */
-    setObjectProperty(target, property, value) {
-        const keys = property.split('.');
-        let obj = target;
-        
-        for (let i = 0; i < keys.length - 1; i++) {
-            obj = obj[keys[i]];
-            if (!obj) return;
-        }
-        
-        obj[keys[keys.length - 1]] = value;
-    }
-    
-    /**
-     * 復元統計更新
-     */
-    updateRestoreStats(success, duration) {
-        if (success) {
-            this.restoreStats.successCount++;
-        } else {
-            this.restoreStats.failureCount++;
-        }
-        
-        // 平均時間更新
-        const totalCount = this.restoreStats.successCount + this.restoreStats.failureCount;
-        this.restoreStats.averageTime = (this.restoreStats.averageTime * (totalCount - 1) + duration) / totalCount;
-    }
-}
-
-// === 複合操作・グループ化（100行） ===
-
-/**
- * 複合操作管理システム
- * バッチ操作・グループ化・複合アンドゥ
- */
-class BatchOperationManager {
-    constructor(historyManager) {
-        this.historyManager = historyManager;
-        
-        // バッチ操作状態
-        this.activeBatches = new Map();
-        this.batchIdCounter = 0;
-        
-        // 自動バッチ設定
-        this.autoBatchWindow = 2000; // 2秒以内の連続操作をバッチ化
-        this.autoBatchTypes = ['property', 'transform']; // 自動バッチ対象
-    }
-    
-    /**
-     * バッチ操作開始
-     */
-    startBatch(label = '複合操作') {
-        const batchId = `batch_${++this.batchIdCounter}`;
-        
-        const batch = {
-            id: batchId,
-            label: label,
-            startTime: performance.now(),
-            actions: [],
-            completed: false
-        };
-        
-        this.activeBatches.set(batchId, batch);
-        this.historyManager.batchMode = true;
-        
-        console.log(`📦 バッチ操作開始: ${label} (${batchId})`);
-        return batchId;
-    }
-    
-    /**
-     * バッチ操作終了
-     */
-    endBatch(batchId) {
-        const batch = this.activeBatches.get(batchId);
-        if (!batch || batch.completed) {
-            return false;
-        }
-        
-        batch.completed = true;
-        batch.endTime = performance.now();
-        batch.duration = batch.endTime - batch.startTime;
-        
-        // バッチアクション作成
-        if (batch.actions.length > 0) {
-            const batchAction = {
-                id: `batch_action_${batchId}`,
-                type: 'batch',
-                timestamp: batch.endTime,
-                data: {
-                    batchId: batchId,
-                    label: batch.label,
-                    actions: batch.actions,
-                    duration: batch.duration
-                },
-                description: `${batch.label} (${batch.actions.length}操作)`,
-                canMerge: false,
-                needsSnapshot: true
-            };
-            
-            this.historyManager.undoStack.push(batchAction);
-            this.historyManager.redoStack.length = 0; // リドゥスタッククリア
-        }
-        
-        this.activeBatches.delete(batchId);
-        
-        // 全バッチが終了したらバッチモード解除
-        if (this.activeBatches.size === 0) {
-            this.historyManager.batchMode = false;
-        }
-        
-        console.log(`📦 バッチ操作終了: ${batch.label} (${batch.actions.length}操作, ${batch.duration.toFixed(1)}ms)`);
-        return true;
-    }
-    
-    /**
-     * バッチにアクション追加
-     */
-    addActionToBatch(batchId, action) {
-        const batch = this.activeBatches.get(batchId);
-        if (batch && !batch.completed) {
-            batch.actions.push(action);
-            return true;
-        }
-        return false;
-    }
-    
-    /**
-     * 自動バッチ判定
-     */
-    shouldAutoBatch(action, lastAction) {
-        if (!lastAction || !this.autoBatchTypes.includes(action.type)) {
-            return false;
-        }
-        
-        const timeDiff = action.timestamp - lastAction.timestamp;
-        return timeDiff <= this.autoBatchWindow && action.type === lastAction.type;
-    }
-}
-
-// === OGL履歴コントローラー統合エクスポート ===
-
-/**
- * OGL履歴コントローラー統合クラス
+ * 📚 OGL統一エンジン用履歴管理コントローラー
+ * アクション記録・状態復元・スナップショット管理・複合操作対応
  */
 export class HistoryController {
-    constructor(oglEngine, eventBus) {
+    constructor(oglEngine) {
         this.engine = oglEngine;
-        this.eventBus = eventBus;
         
-        // コンポーネント初期化
-        this.historyManager = new OGLHistoryManager(oglEngine, eventBus);
-        this.actionRecorder = new ActionRecorder(this.historyManager);
-        this.stateRestorer = new StateRestorer(this.historyManager, oglEngine);
-        this.batchManager = new BatchOperationManager(this.historyManager);
+        // 履歴管理・スタック制御
+        this.undoStack = [];
+        this.redoStack = [];
+        this.maxHistorySize = 50; // デフォルト50操作まで
+        this.currentHistoryIndex = -1;
         
-        // ショートカット統合
-        this.setupShortcutIntegration();
+        // アクション記録・種別管理
+        this.actionTypes = {
+            STROKE: 'stroke',
+            TOOL_CHANGE: 'tool_change',
+            LAYER_OPERATION: 'layer_operation',
+            CANVAS_OPERATION: 'canvas_operation',
+            SELECTION_OPERATION: 'selection_operation',
+            TRANSFORM_OPERATION: 'transform_operation',
+            COLOR_CHANGE: 'color_change',
+            CLEAR_CANVAS: 'clear_canvas',
+            // Phase2以降で追加予定
+            AIRBRUSH_STROKE: 'airbrush_stroke',        // Phase2
+            BLUR_OPERATION: 'blur_operation',          // Phase2
+            SHAPE_CREATION: 'shape_creation',          // Phase3
+            MESH_DEFORM: 'mesh_deform',               // Phase4
+            ANIMATION_KEYFRAME: 'animation_keyframe'   // Phase4
+        };
         
-        // パフォーマンス監視
-        this.setupPerformanceMonitoring();
+        // 状態復元・スナップショット管理
+        this.snapshotCache = new Map();
+        this.compressionEnabled = true;
+        this.snapshotInterval = 5; // 5操作ごとに完全スナップショット
         
-        console.log('📚 OGL履歴コントローラー初期化完了');
+        // 複合操作・グループ化
+        this.groupedActions = [];
+        this.isGrouping = false;
+        this.currentGroupId = null;
+        this.groupTimeout = null;
+        
+        // パフォーマンス最適化
+        this.isRecording = true;
+        this.batchActions = [];
+        this.batchTimeout = null;
+        this.debounceTime = 100; // 100ms以内の連続操作は統合
+        
+        // Phase2以降拡張予定
+        // this.advancedHistory = null;             // Phase2で高度履歴機能
+        // this.historyAnalytics = null;            // Phase2で履歴分析
+        // this.historyUI = null;                   // Phase2で履歴UI表示
+        // this.historyCompression = null;          // Phase3で履歴圧縮
+        // this.historyPersistence = null;          // Phase4で永続化
+        // this.collaborativeHistory = null;        // Phase4で協調履歴
+        
+        console.log('📚 履歴管理コントローラー初期化');
     }
     
     /**
-     * ショートカット統合設定
+     * 🔧 履歴管理初期化
      */
-    setupShortcutIntegration() {
-        // アンドゥ・リドゥショートカット
-        this.eventBus.on('shortcut:undo', () => {
-            this.undo();
-        });
+    initialize() {
+        // 履歴サイズ設定（デバイス性能に応じて調整）
+        this.adjustHistorySizeByDevice();
         
-        this.eventBus.on('shortcut:redo', () => {
-            this.redo();
-        });
+        // エンジンからの履歴イベント購読
+        this.subscribeToEngineEvents();
         
-        // バッチ操作ショートカット
-        this.eventBus.on('shortcut:batch-start', (event) => {
-            this.startBatch(event.label || '複合操作');
-        });
+        // メモリ管理設定
+        this.setupMemoryManagement();
         
-        this.eventBus.on('shortcut:batch-end', (event) => {
-            if (event.batchId) {
-                this.endBatch(event.batchId);
-            }
-        });
+        console.log(`📚 履歴管理初期化完了 - 最大履歴数: ${this.maxHistorySize}`);
     }
     
     /**
-     * パフォーマンス監視設定
+     * 📱 デバイス性能に応じた履歴サイズ調整
      */
-    setupPerformanceMonitoring() {
-        // 履歴サイズ監視
-        setInterval(() => {
-            const undoCount = this.historyManager.undoStack.length;
-            const redoCount = this.historyManager.redoStack.length;
-            const memoryUsage = this.historyManager.getMemoryUsage();
-            
-            if (undoCount > this.historyManager.maxHistorySize * 0.9) {
-                console.warn(`⚠️ 履歴スタック容量警告: ${undoCount}/${this.historyManager.maxHistorySize}`);
-            }
-            
-            if (memoryUsage && memoryUsage.used > memoryUsage.limit * 0.8) {
-                console.warn('⚠️ メモリ使用量警告 - 履歴クリーンアップ推奨');
-                this.historyManager.forceCleanup();
-            }
-        }, 15000); // 15秒間隔
-    }
-    
-    /**
-     * アンドゥ実行
-     */
-    async undo() {
-        const success = await this.stateRestorer.undo();
-        if (success) {
-            this.eventBus.emit('history:changed', {
-                type: 'undo',
-                canUndo: this.canUndo(),
-                canRedo: this.canRedo()
-            });
+    adjustHistorySizeByDevice() {
+        const memory = navigator.deviceMemory || 4; // GB
+        const hardwareConcurrency = navigator.hardwareConcurrency || 4;
+        
+        if (memory >= 8 && hardwareConcurrency >= 8) {
+            this.maxHistorySize = 100; // 高性能デバイス
+        } else if (memory >= 4 && hardwareConcurrency >= 4) {
+            this.maxHistorySize = 50;  // 標準デバイス
+        } else {
+            this.maxHistorySize = 25;  // 低性能デバイス
+            this.compressionEnabled = true;
         }
-        return success;
+        
+        console.log(`📱 デバイス性能調整: RAM ${memory}GB, CPU ${hardwareConcurrency}コア -> 履歴${this.maxHistorySize}操作`);
     }
     
     /**
-     * リドゥ実行
+     * 🎧 エンジンイベント購読
      */
-    async redo() {
-        const success = await this.stateRestorer.redo();
-        if (success) {
-            this.eventBus.emit('history:changed', {
-                type: 'redo',
-                canUndo: this.canUndo(),
-                canRedo: this.canRedo()
+    subscribeToEngineEvents() {
+        // ストローク描画完了
+        this.engine.onStrokeComplete = (strokeData) => {
+            this.recordAction(this.actionTypes.STROKE, {
+                strokeData: this.compressStrokeData(strokeData),
+                timestamp: Date.now(),
+                tool: this.engine.currentTool
             });
-        }
-        return success;
+        };
+        
+        // ツール変更
+        this.engine.onToolChange = (oldTool, newTool) => {
+            this.recordAction(this.actionTypes.TOOL_CHANGE, {
+                oldTool,
+                newTool,
+                timestamp: Date.now()
+            });
+        };
+        
+        // キャンバスクリア
+        this.engine.onCanvasClear = () => {
+            this.recordAction(this.actionTypes.CLEAR_CANVAS, {
+                previousSnapshot: this.createCanvasSnapshot(),
+                timestamp: Date.now()
+            });
+        };
+        
+        // Phase2以降で追加イベント購読
+        /*
+        this.engine.onAirbrushComplete = (airbrushData) => {
+            this.recordAction(this.actionTypes.AIRBRUSH_STROKE, airbrushData);
+        };
+        
+        this.engine.onBlurOperation = (blurData) => {
+            this.recordAction(this.actionTypes.BLUR_OPERATION, blurData);
+        };
+        */
     }
     
     /**
-     * アクション記録
+     * 📝 アクション記録
      */
     recordAction(actionType, actionData) {
-        this.actionRecorder.recordAction(actionType, actionData);
+        if (!this.isRecording) return;
         
-        // 履歴状態変更通知
-        this.eventBus.emit('history:changed', {
-            type: 'record',
-            actionType: actionType,
-            canUndo: this.canUndo(),
-            canRedo: this.canRedo()
-        });
-    }
-    
-    /**
-     * バッチ操作開始
-     */
-    startBatch(label) {
-        return this.batchManager.startBatch(label);
-    }
-    
-    /**
-     * バッチ操作終了
-     */
-    endBatch(batchId) {
-        const success = this.batchManager.endBatch(batchId);
-        if (success) {
-            this.eventBus.emit('history:changed', {
-                type: 'batch',
-                canUndo: this.canUndo(),
-                canRedo: this.canRedo()
-            });
+        const action = {
+            id: this.generateActionId(),
+            type: actionType,
+            data: actionData,
+            timestamp: Date.now(),
+            groupId: this.currentGroupId,
+            beforeState: this.shouldCreateSnapshot(actionType) ? this.createCanvasSnapshot() : null,
+            afterState: null // 遅延作成
+        };
+        
+        // デバウンス処理（連続操作の統合）
+        if (this.shouldDebounceAction(actionType)) {
+            this.addToBatch(action);
+        } else {
+            this.commitAction(action);
         }
-        return success;
     }
     
     /**
-     * スナップショット作成
+     * ⏱️ デバウンス判定
      */
-    createSnapshot(label) {
-        return this.historyManager.createSnapshot(label);
+    shouldDebounceAction(actionType) {
+        const debounceTypes = [
+            this.actionTypes.STROKE,
+            this.actionTypes.AIRBRUSH_STROKE,
+            this.actionTypes.BLUR_OPERATION
+        ];
+        
+        return debounceTypes.includes(actionType);
     }
     
     /**
-     * アンドゥ可能性判定
+     * 📦 バッチアクション追加
      */
-    canUndo() {
-        return this.historyManager.undoStack.length > 0 && !this.stateRestorer.restoreInProgress;
+    addToBatch(action) {
+        this.batchActions.push(action);
+        
+        // バッチタイムアウトリセット
+        if (this.batchTimeout) {
+            clearTimeout(this.batchTimeout);
+        }
+        
+        this.batchTimeout = setTimeout(() => {
+            this.commitBatchActions();
+        }, this.debounceTime);
     }
     
     /**
-     * リドゥ可能性判定
+     * 🚀 バッチアクションコミット
      */
-    canRedo() {
-        return this.historyManager.redoStack.length > 0 && !this.stateRestorer.restoreInProgress;
+    commitBatchActions() {
+        if (this.batchActions.length === 0) return;
+        
+        if (this.batchActions.length === 1) {
+            // 単一アクション
+            this.commitAction(this.batchActions[0]);
+        } else {
+            // 複数アクションを統合
+            const mergedAction = this.mergeBatchActions(this.batchActions);
+            this.commitAction(mergedAction);
+        }
+        
+        this.batchActions = [];
+        this.batchTimeout = null;
     }
     
     /**
-     * 履歴統計取得
+     * 🔄 バッチアクション統合
+     */
+    mergeBatchActions(actions) {
+        const firstAction = actions[0];
+        const lastAction = actions[actions.length - 1];
+        
+        return {
+            id: this.generateActionId(),
+            type: firstAction.type,
+            data: {
+                mergedActions: actions.map(a => a.data),
+                startTimestamp: firstAction.timestamp,
+                endTimestamp: lastAction.timestamp,
+                actionCount: actions.length
+            },
+            timestamp: lastAction.timestamp,
+            groupId: firstAction.groupId,
+            beforeState: firstAction.beforeState,
+            afterState: null,
+            isMerged: true
+        };
+    }
+    
+    /**
+     * ✅ アクションコミット
+     */
+    commitAction(action) {
+        // Redo スタッククリア（新しいアクションでブランチ作成）
+        this.redoStack = [];
+        
+        // After State 作成（必要に応じて）
+        if (this.shouldCreateSnapshot(action.type)) {
+            action.afterState = this.createCanvasSnapshot();
+        }
+        
+        // Undo スタックに追加
+        this.undoStack.push(action);
+        this.currentHistoryIndex++;
+        
+        // 履歴サイズ制限
+        this.enforceHistoryLimit();
+        
+        // スナップショット管理
+        this.manageSnapshots();
+        
+        this.logAction('record', action);
+    }
+    
+    /**
+     * 📸 スナップショット作成判定
+     */
+    shouldCreateSnapshot(actionType) {
+        const snapshotTypes = [
+            this.actionTypes.STROKE,
+            this.actionTypes.CLEAR_CANVAS,
+            this.actionTypes.LAYER_OPERATION,
+            this.actionTypes.CANVAS_OPERATION,
+            this.actionTypes.TRANSFORM_OPERATION
+        ];
+        
+        return snapshotTypes.includes(actionType);
+    }
+    
+    /**
+     * 📸 キャンバススナップショット作成
+     */
+    createCanvasSnapshot() {
+        try {
+            // OGL統一エンジンからスナップショット取得
+            const snapshot = this.engine.createSnapshot();
+            
+            if (this.compressionEnabled) {
+                return this.compressSnapshot(snapshot);
+            }
+            
+            return snapshot;
+            
+        } catch (error) {
+            console.error('🚨 スナップショット作成エラー:', error);
+            return null;
+        }
+    }
+    
+    /**
+     * 🗜️ スナップショット圧縮
+     */
+    compressSnapshot(snapshot) {
+        // Phase3で詳細圧縮実装予定
+        try {
+            return {
+                compressed: true,
+                data: snapshot, // 実際の圧縮はPhase3で実装
+                originalSize: JSON.stringify(snapshot).length,
+                compressedSize: JSON.stringify(snapshot).length // Phase3で実装
+            };
+        } catch (error) {
+            console.error('🚨 スナップショット圧縮エラー:', error);
+            return snapshot;
+        }
+    }
+    
+    /**
+     * 🗜️ ストロークデータ圧縮
+     */
+    compressStrokeData(strokeData) {
+        // 不要な精度削減・重複除去
+        if (!strokeData || !strokeData.points) return strokeData;
+        
+        const compressed = {
+            ...strokeData,
+            points: strokeData.points.filter((point, index) => {
+                // 最初と最後の点は必ず保持
+                if (index === 0 || index === strokeData.points.length - 1) return true;
+                
+                // 距離が近すぎる点は除去
+                const prevPoint = strokeData.points[index - 1];
+                const distance = Math.sqrt(
+                    Math.pow(point.x - prevPoint.x, 2) + 
+                    Math.pow(point.y - prevPoint.y, 2)
+                );
+                
+                return distance > 2.0; // 2px以上の距離がある点のみ保持
+            })
+        };
+        
+        return compressed;
+    }
+    
+    /**
+     * 📏 履歴サイズ制限実行
+     */
+    enforceHistoryLimit() {
+        while (this.undoStack.length > this.maxHistorySize) {
+            const removedAction = this.undoStack.shift();
+            this.currentHistoryIndex--;
+            
+            // 削除されたアクションのスナップショットをキャッシュから削除
+            if (removedAction.beforeState) {
+                this.snapshotCache.delete(removedAction.id);
+            }
+        }
+    }
+    
+    /**
+     * 📸 スナップショット管理
+     */
+    manageSnapshots() {
+        // 定期的な完全スナップショット作成
+        if (this.undoStack.length % this.snapshotInterval === 0) {
+            const fullSnapshot = this.createFullSnapshot();
+            this.snapshotCache.set(`full_${Date.now()}`, fullSnapshot);
+        }
+        
+        // 古いスナップショット削除
+        this.cleanupOldSnapshots();
+    }
+    
+    /**
+     * 📸 完全スナップショット作成
+     */
+    createFullSnapshot() {
+        return {
+            canvas: this.engine.createSnapshot(),
+            settings: this.engine.getEngineState(),
+            timestamp: Date.now(),
+            historyIndex: this.currentHistoryIndex
+        };
+    }
+    
+    /**
+     * 🧹 古いスナップショットクリーンアップ
+     */
+    cleanupOldSnapshots() {
+        const maxCacheSize = 10;
+        const cacheKeys = Array.from(this.snapshotCache.keys());
+        
+        if (cacheKeys.length > maxCacheSize) {
+            const oldestKeys = cacheKeys
+                .filter(key => key.startsWith('full_'))
+                .sort()
+                .slice(0, cacheKeys.length - maxCacheSize);
+            
+            oldestKeys.forEach(key => this.snapshotCache.delete(key));
+        }
+    }
+    
+    /**
+     * ↩️ アンドゥ実行
+     */
+    undo() {
+        if (this.undoStack.length === 0) {
+            console.log('📚 アンドゥ履歴が空です');
+            return false;
+        }
+        
+        // バッチアクション強制コミット
+        this.commitBatchActions();
+        
+        const action = this.undoStack.pop();
+        this.redoStack.push(action);
+        this.currentHistoryIndex--;
+        
+        try {
+            this.revertAction(action);
+            this.logAction('undo', action);
+            return true;
+            
+        } catch (error) {
+            console.error('🚨 アンドゥ実行エラー:', error);
+            // エラー時は履歴を元に戻す
+            this.undoStack.push(action);
+            this.redoStack.pop();
+            this.currentHistoryIndex++;
+            return false;
+        }
+    }
+    
+    /**
+     * ↪️ リドゥ実行
+     */
+    redo() {
+        if (this.redoStack.length === 0) {
+            console.log('📚 リドゥ履歴が空です');
+            return false;
+        }
+        
+        const action = this.redoStack.pop();
+        this.undoStack.push(action);
+        this.currentHistoryIndex++;
+        
+        try {
+            this.reapplyAction(action);
+            this.logAction('redo', action);
+            return true;
+            
+        } catch (error) {
+            console.error('🚨 リドゥ実行エラー:', error);
+            // エラー時は履歴を元に戻す
+            this.redoStack.push(action);
+            this.undoStack.pop();
+            this.currentHistoryIndex--;
+            return false;
+        }
+    }
+    
+    /**
+     * 🔄 アクション復元
+     */
+    revertAction(action) {
+        switch (action.type) {
+            case this.actionTypes.STROKE:
+                this.revertStroke(action);
+                break;
+            case this.actionTypes.TOOL_CHANGE:
+                this.revertToolChange(action);
+                break;
+            case this.actionTypes.CLEAR_CANVAS:
+                this.revertCanvasClear(action);
+                break;
+            case this.actionTypes.COLOR_CHANGE:
+                this.revertColorChange(action);
+                break;
+            // Phase2以降で追加操作対応
+            /*
+            case this.actionTypes.AIRBRUSH_STROKE:
+                this.revertAirbrushStroke(action);
+                break;
+            case this.actionTypes.BLUR_OPERATION:
+                this.revertBlurOperation(action);
+                break;
+            case this.actionTypes.LAYER_OPERATION:
+                this.revertLayerOperation(action);
+                break;
+            case this.actionTypes.MESH_DEFORM:
+                this.revertMeshDeform(action);
+                break;
+            */
+            default:
+                console.warn(`⚠️ 未対応アクション復元: ${action.type}`);
+        }
+    }
+    
+    /**
+     * 🔄 アクション再適用
+     */
+    reapplyAction(action) {
+        switch (action.type) {
+            case this.actionTypes.STROKE:
+                this.reapplyStroke(action);
+                break;
+            case this.actionTypes.TOOL_CHANGE:
+                this.reapplyToolChange(action);
+                break;
+            case this.actionTypes.CLEAR_CANVAS:
+                this.reapplyCanvasClear(action);
+                break;
+            case this.actionTypes.COLOR_CHANGE:
+                this.reapplyColorChange(action);
+                break;
+            // Phase2以降で追加操作対応
+            /*
+            case this.actionTypes.AIRBRUSH_STROKE:
+                this.reapplyAirbrushStroke(action);
+                break;
+            case this.actionTypes.BLUR_OPERATION:
+                this.reapplyBlurOperation(action);
+                break;
+            */
+            default:
+                console.warn(`⚠️ 未対応アクション再適用: ${action.type}`);
+        }
+    }
+    
+    /**
+     * 🎨 ストローク復元
+     */
+    revertStroke(action) {
+        if (action.beforeState) {
+            this.engine.restoreSnapshot(action.beforeState);
+        } else {
+            // スナップショットがない場合は履歴から復元
+            this.restoreFromHistory(this.currentHistoryIndex);
+        }
+    }
+    
+    /**
+     * 🎨 ストローク再適用
+     */
+    reapplyStroke(action) {
+        if (action.afterState) {
+            this.engine.restoreSnapshot(action.afterState);
+        } else if (action.data.strokeData) {
+            // ストロークデータから再描画
+            this.engine.replayStroke(action.data.strokeData);
+        }
+    }
+    
+    /**
+     * 🔧 ツール変更復元
+     */
+    revertToolChange(action) {
+        this.engine.selectTool(action.data.oldTool);
+    }
+    
+    /**
+     * 🔧 ツール変更再適用
+     */
+    reapplyToolChange(action) {
+        this.engine.selectTool(action.data.newTool);
+    }
+    
+    /**
+     * 🖼️ キャンバスクリア復元
+     */
+    revertCanvasClear(action) {
+        if (action.data.previousSnapshot) {
+            this.engine.restoreSnapshot(action.data.previousSnapshot);
+        }
+    }
+    
+    /**
+     * 🖼️ キャンバスクリア再適用
+     */
+    reapplyCanvasClear(action) {
+        this.engine.clearCanvas();
+    }
+    
+    /**
+     * 🎨 色変更復元・再適用
+     */
+    revertColorChange(action) {
+        if (action.data.oldColor) {
+            this.engine.setCurrentColor(action.data.oldColor);
+        }
+    }
+    
+    reapplyColorChange(action) {
+        if (action.data.newColor) {
+            this.engine.setCurrentColor(action.data.newColor);
+        }
+    }
+    
+    /**
+     * 📋 履歴から復元
+     */
+    restoreFromHistory(targetIndex) {
+        // 最新の完全スナップショットから開始
+        const baseSnapshot = this.findNearestSnapshot(targetIndex);
+        if (baseSnapshot) {
+            this.engine.restoreSnapshot(baseSnapshot.canvas);
+            
+            // スナップショット以降のアクションを再適用
+            const actionsToReplay = this.undoStack.slice(baseSnapshot.historyIndex + 1, targetIndex + 1);
+            actionsToReplay.forEach(action => this.reapplyAction(action));
+        }
+    }
+    
+    /**
+     * 🔍 最寄りスナップショット検索
+     */
+    findNearestSnapshot(targetIndex) {
+        const snapshots = Array.from(this.snapshotCache.values())
+            .filter(snapshot => snapshot.historyIndex <= targetIndex)
+            .sort((a, b) => b.historyIndex - a.historyIndex);
+        
+        return snapshots[0] || null;
+    }
+    
+    /**
+     * 🏷️ 複合操作グループ開始
+     */
+    startGroup(groupName = null) {
+        this.isGrouping = true;
+        this.currentGroupId = this.generateGroupId(groupName);
+        this.groupedActions = [];
+        
+        console.log(`🏷️ 複合操作開始: ${this.currentGroupId}`);
+    }
+    
+    /**
+     * 🏷️ 複合操作グループ終了
+     */
+    endGroup() {
+        if (!this.isGrouping) return;
+        
+        this.isGrouping = false;
+        const groupId = this.currentGroupId;
+        this.currentGroupId = null;
+        
+        console.log(`🏷️ 複合操作終了: ${groupId} (${this.groupedActions.length}個のアクション)`);
+        this.groupedActions = [];
+    }
+    
+    /**
+     * 🆔 アクションID生成
+     */
+    generateActionId() {
+        return `action_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+    
+    /**
+     * 🆔 グループID生成
+     */
+    generateGroupId(groupName) {
+        const name = groupName || 'group';
+        return `${name}_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    }
+    
+    /**
+     * 📊 履歴統計取得
      */
     getHistoryStats() {
         return {
-            undoCount: this.historyManager.undoStack.length,
-            redoCount: this.historyManager.redoStack.length,
-            actionStats: this.actionRecorder.stats,
-            restoreStats: this.stateRestorer.restoreStats,
-            memoryUsage: this.historyManager.getMemoryUsage(),
-            activeBatches: this.batchManager.activeBatches.size
+            undoCount: this.undoStack.length,
+            redoCount: this.redoStack.length,
+            maxHistorySize: this.maxHistorySize,
+            currentIndex: this.currentHistoryIndex,
+            snapshotCacheSize: this.snapshotCache.size,
+            isRecording: this.isRecording,
+            isGrouping: this.isGrouping,
+            batchActionsCount: this.batchActions.length,
+            memoryUsage: this.estimateMemoryUsage()
         };
     }
     
     /**
-     * 履歴クリーンアップ
+     * 💾 メモリ使用量推定
      */
-    cleanupHistory() {
-        this.historyManager.cleanupOldHistory();
-        this.eventBus.emit('history:cleaned');
+    estimateMemoryUsage() {
+        try {
+            const undoSize = JSON.stringify(this.undoStack).length;
+            const redoSize = JSON.stringify(this.redoStack).length;
+            const cacheSize = JSON.stringify(Array.from(this.snapshotCache.values())).length;
+            
+            return {
+                undoStackMB: (undoSize / 1024 / 1024).toFixed(2),
+                redoStackMB: (redoSize / 1024 / 1024).toFixed(2),
+                snapshotCacheMB: (cacheSize / 1024 / 1024).toFixed(2),
+                totalMB: ((undoSize + redoSize + cacheSize) / 1024 / 1024).toFixed(2)
+            };
+        } catch (error) {
+            return { error: 'メモリ使用量計算エラー' };
+        }
     }
     
     /**
-     * リソース解放
+     * 🧹 メモリ管理設定
      */
-    destroy() {
-        // 履歴データクリア
-        this.historyManager.undoStack.length = 0;
-        this.historyManager.redoStack.length = 0;
-        this.batchManager.activeBatches.clear();
+    setupMemoryManagement() {
+        // メモリ不足検出
+        if ('memory' in performance) {
+            const memoryInfo = performance.memory;
+            const usageRatio = memoryInfo.usedJSHeapSize / memoryInfo.jsHeapSizeLimit;
+            
+            if (usageRatio > 0.8) {
+                console.warn('⚠️ メモリ使用量が高いため履歴サイズを削減');
+                this.maxHistorySize = Math.max(10, Math.floor(this.maxHistorySize * 0.7));
+            }
+        }
         
-        console.log('🗑️ OGL履歴コントローラー解放完了');
-    }
-}
-
-// 追加のヘルパー関数
-OGLHistoryManager.prototype.cleanupOldHistory = function() {
-    const cutoffTime = performance.now() - (5 * 60 * 1000); // 5分前より古い履歴
-    
-    // 古いアンドゥ履歴削除
-    this.undoStack = this.undoStack.filter(action => action.timestamp > cutoffTime);
-    
-    // 古いリドゥ履歴削除
-    this.redoStack = this.redoStack.filter(action => action.timestamp > cutoffTime);
-    
-    console.log(`🧹 履歴クリーンアップ実行 - Undo:${this.undoStack.length}, Redo:${this.redoStack.length}`);
-};
-
-OGLHistoryManager.prototype.forceCleanup = function() {
-    // 強制的に履歴サイズを半分に削減
-    const targetSize = Math.floor(this.maxHistorySize / 2);
-    
-    if (this.undoStack.length > targetSize) {
-        this.undoStack.splice(0, this.undoStack.length - targetSize);
+        // 定期的なメモリクリーンアップ
+        setInterval(() => {
+            this.performMemoryCleanup();
+        }, 30000); // 30秒ごと
     }
     
-    if (this.redoStack.length > targetSize) {
-        this.redoStack.splice(0, this.redoStack.length - targetSize);
+    /**
+     * 🧹 メモリクリーンアップ実行
+     */
+    performMemoryCleanup() {
+        const stats = this.getHistoryStats();
+        const totalMB = parseFloat(stats.memoryUsage.totalMB);
+        
+        if (totalMB > 50) { // 50MB以上で積極的クリーンアップ
+            console.log(`🧹 メモリクリーンアップ実行: ${totalMB}MB使用中`);
+            
+            // 古いスナップショット削除
+            this.cleanupOldSnapshots();
+            
+            // 履歴サイズ削減
+            const targetSize = Math.floor(this.maxHistorySize * 0.8);
+            while (this.undoStack.length > targetSize) {
+                this.undoStack.shift();
+                this.currentHistoryIndex--;
+            }
+        }
     }
     
-    console.log('🚨 強制履歴クリーンアップ実行');
-};
-
-// モジュールエクスポート
-export { 
-    OGLHistoryManager, 
-    ActionRecorder, 
-    StateRestorer, 
-    BatchOperationManager 
-};
+    /**
+     * 📝 アクションログ出力
+     */
+    logAction(operation, action) {
+        if (import.meta.env?.DEV) {
+            console.log(`📚 History ${operation}:`, {
+                type: action.type,
+                id: action.id,
+                timestamp: new Date(action.timestamp).toLocaleTimeString(),
+                groupId: action.groupId,
+                undoCount: this.undoStack.length,
+                redoCount: this.redoStack.length
+            });
+        }
+    }
+    
+    /**
+     * ⚙️ 履歴記録制御
+     */
+    setRecording(enabled) {
+        this.isRecording = enabled;
+        if (!enabled) {
+            // 記録停止時はバッチをクリア
+            this.batchActions = [];
+            if (this.batchTimeout) {
+                clearTimeout(this.batchTimeout);
+                this.batchTimeout = null;
+            }
+        }
+        console.log(`📚 履歴記録 ${enabled ? '開始' : '停止'}`);
+    }
+    
+    /**
+     * 🗑️ 履歴クリア
+     */
+    clearHistory() {
+        // バッチアクション強制コミット
+        this.commitBatchActions();
+        
+        this.undoStack = [];
+        this.redoStack = [];
+        this.currentHistoryIndex = -1;
+        this.snapshotCache.clear();
+        
+        console.log('🗑️ 履歴クリア完了');
+    }
+    
+    /**
+     * 🧹 リソース解放
+     */
+    dispose() {
+        // タイムアウトクリア
+        if (this.batchTimeout) {
+            clearTimeout(this.batchTimeout);
+        }
+        if (this.groupTimeout) {
+            clearTimeout(this.groupTimeout);
+        }
+        
+        // 履歴クリア
+        this.clearHistory();
+        
+        // エンジンイベント購読解除
+        if (this.engine) {
+            this.engine.onStrokeComplete = null;
+            this.engine.onToolChange = null;
+            this.engine.onCanvasClear = null;
+        }
+        
+        console.log('🧹 履歴コントローラー 解放完了');
+    }
+    
+    // Phase2以降拡張予定機能スタブ
+    
+    /**
+     * Phase2: 高度履歴機能
+     */
+    /*
+    initializeAdvancedHistory() {
+        // Phase2で実装: 履歴ブランチ・タグ・検索機能
+        // this.advancedHistory = new AdvancedHistoryManager();
+    }
+    
+    createHistoryBranch(branchName) {
+        // Phase2で実装: 履歴ブランチ作成
+    }
+    
+    searchHistory(query) {
+        // Phase2で実装: 履歴検索
+    }
+    
+    tagHistoryPoint(tagName) {
+        // Phase2で実装: 履歴ポイントタグ付け
+    }
+    */
+    
+    /**
+     * Phase2: 履歴分析
+     */
+    /*
+    initializeHistoryAnalytics() {
+        // Phase2で実装: 履歴使用パターン分析
+        // this.historyAnalytics = new HistoryAnalytics();
+    }
+    
+    getUsagePatterns() {
+        // Phase2で実装: 使用パターン分析結果取得

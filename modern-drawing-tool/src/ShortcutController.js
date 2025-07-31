@@ -1,1356 +1,612 @@
-/**
- * ShortcutController.js - ショートカット専門 (Phase1 ショートカットファイル)
- * 標準ショートカット定義・キャンバス操作・カスタマイズUI・設定画面統合
- * v2.0 モダンキーボードAPI活用・プロ向け最適化・Adobe Fresco準拠
- */
-
-import { throttle, debounce } from 'lodash-es';
-import mitt from 'mitt';
-
-// === 標準ショートカット定義（Ctrl+C/V/M/T等）（250-300行） ===
+// ShortcutController.js - ショートカット専門制御（450-550行）
 
 /**
- * 標準ショートカット定義システム - Adobe Creative Suite準拠
- * プロ向けショートカット体系・国際標準・カスタマイズ対応
+ * ⌨️ OGL統一エンジン用ショートカットコントローラー
+ * 標準ショートカット・キャンバス操作・カスタマイズ対応
  */
-class StandardShortcutDefinitions {
-    constructor() {
-        // 標準ショートカットマップ（Adobe Fresco/Photoshop準拠）
-        this.standardShortcuts = {
-            // === ファイル操作 ===
-            'ctrl+n': {
-                action: 'file:new',
-                description: '新規作成',
-                category: 'file',
-                priority: 1
-            },
-            'ctrl+o': {
-                action: 'file:open',
-                description: 'ファイルを開く',
-                category: 'file',
-                priority: 1
-            },
-            'ctrl+s': {
-                action: 'file:save',
-                description: '保存',
-                category: 'file',
-                priority: 1
-            },
-            'ctrl+shift+s': {
-                action: 'file:save-as',
-                description: '名前を付けて保存',
-                category: 'file',
-                priority: 1
-            },
-            'ctrl+shift+alt+s': {
-                action: 'file:export',
-                description: 'エクスポート',
-                category: 'file',
-                priority: 2
-            },
-            
-            // === 編集操作 ===
-            'ctrl+z': {
-                action: 'edit:undo',
-                description: '元に戻す',
-                category: 'edit',
-                priority: 1
-            },
-            'ctrl+y': {
-                action: 'edit:redo',
-                description: 'やり直し',
-                category: 'edit',
-                priority: 1
-            },
-            'ctrl+shift+z': {
-                action: 'edit:redo',
-                description: 'やり直し（代替）',
-                category: 'edit',
-                priority: 1
-            },
-            'ctrl+c': {
-                action: 'edit:copy',
-                description: 'コピー',
-                category: 'edit',
-                priority: 1
-            },
-            'ctrl+v': {
-                action: 'edit:paste',
-                description: '貼り付け',
-                category: 'edit',
-                priority: 1
-            },
-            'ctrl+x': {
-                action: 'edit:cut',
-                description: '切り取り',
-                category: 'edit',
-                priority: 1
-            },
-            'ctrl+a': {
-                action: 'edit:select-all',
-                description: '全選択',
-                category: 'edit',
-                priority: 1
-            },
-            'ctrl+d': {
-                action: 'edit:deselect',
-                description: '選択解除',
-                category: 'edit',
-                priority: 2
-            },
-            'delete': {
-                action: 'edit:delete',
-                description: '削除',
-                category: 'edit',
-                priority: 1
-            },
-            
-            // === ツール選択 ===
-            'b': {
-                action: 'tool:brush',
-                description: 'ブラシツール',
-                category: 'tool',
-                priority: 1
-            },
-            'p': {
-                action: 'tool:pen',
-                description: 'ペンツール',
-                category: 'tool',
-                priority: 1
-            },
-            'e': {
-                action: 'tool:eraser',
-                description: '消しゴムツール',
-                category: 'tool',
-                priority: 1
-            },
-            'i': {
-                action: 'tool:eyedropper',
-                description: 'スポイトツール',
-                category: 'tool',
-                priority: 1
-            },
-            'm': {
-                action: 'tool:move',
-                description: '移動ツール',
-                category: 'tool',
-                priority: 1
-            },
-            'v': {
-                action: 'tool:select',
-                description: '選択ツール',
-                category: 'tool',
-                priority: 1
-            },
-            't': {
-                action: 'tool:text',
-                description: 'テキストツール',
-                category: 'tool',
-                priority: 1
-            },
-            'u': {
-                action: 'tool:shape',
-                description: '図形ツール',
-                category: 'tool',
-                priority: 2
-            },
-            'g': {
-                action: 'tool:gradient',
-                description: 'グラデーションツール',
-                category: 'tool',
-                priority: 2
-            },
-            'k': {
-                action: 'tool:bucket',
-                description: '塗りつぶしツール',
-                category: 'tool',
-                priority: 2
-            },
-            
-            // === レイヤー操作 ===
-            'ctrl+shift+n': {
-                action: 'layer:new',
-                description: '新規レイヤー',
-                category: 'layer',
-                priority: 1
-            },
-            'ctrl+j': {
-                action: 'layer:duplicate',
-                description: 'レイヤー複製',
-                category: 'layer',
-                priority: 1
-            },
-            'ctrl+e': {
-                action: 'layer:merge-down',
-                description: '下のレイヤーと結合',
-                category: 'layer',
-                priority: 2
-            },
-            'ctrl+shift+e': {
-                action: 'layer:flatten',
-                description: '画像を統合',
-                category: 'layer',
-                priority: 2
-            },
-            'ctrl+g': {
-                action: 'layer:group',
-                description: 'レイヤーをグループ化',
-                category: 'layer',
-                priority: 2
-            },
-            'ctrl+shift+g': {
-                action: 'layer:ungroup',
-                description: 'グループ解除',
-                category: 'layer',
-                priority: 2
-            },
-            
-            // === 表示操作 ===
-            'ctrl+0': {
-                action: 'view:fit-screen',
-                description: '画面にフィット',
-                category: 'view',
-                priority: 1
-            },
-            'ctrl+1': {
-                action: 'view:actual-size',
-                description: '実際のサイズ',
-                category: 'view',
-                priority: 1
-            },
-            'ctrl++': {
-                action: 'view:zoom-in',
-                description: 'ズームイン',
-                category: 'view',
-                priority: 1
-            },
-            'ctrl+-': {
-                action: 'view:zoom-out',
-                description: 'ズームアウト',
-                category: 'view',
-                priority: 1
-            },
-            'ctrl+alt+0': {
-                action: 'view:fit-width',
-                description: '幅にフィット',
-                category: 'view',
-                priority: 2
-            },
-            
-            // === キャンバス操作 ===
-            'ctrl+t': {
-                action: 'transform:free',
-                description: '自由変形',
-                category: 'transform',
-                priority: 1
-            },
-            'ctrl+shift+t': {
-                action: 'transform:repeat',
-                description: '変形の再実行',
-                category: 'transform',
-                priority: 2
-            },
-            'ctrl+alt+t': {
-                action: 'transform:copy',
-                description: '変形の複製',
-                category: 'transform',
-                priority: 2
-            },
-            'ctrl+r': {
-                action: 'canvas:rotate',
-                description: 'カンバス回転',
-                category: 'canvas',
-                priority: 2
-            },
-            'ctrl+alt+r': {
-                action: 'canvas:reset-rotation',
-                description: 'カンバス回転をリセット',
-                category: 'canvas',
-                priority: 2
-            },
-            'ctrl+alt+c': {
-                action: 'canvas:crop',
-                description: 'カンバスサイズ調整',
-                category: 'canvas',
-                priority: 2
+export class ShortcutController {
+    constructor(oglEngine) {
+        this.engine = oglEngine;
+        
+        // ショートカット定義
+        this.shortcuts = new Map();
+        this.activeModifiers = {
+            ctrl: false,
+            alt: false,
+            shift: false,
+            meta: false
+        };
+        
+        // キーボード状態
+        this.pressedKeys = new Set();
+        this.isEnabled = true;
+        
+        // イベントリスナー参照
+        this.boundEvents = {};
+        
+        // Phase2以降拡張予定
+        // this.customShortcuts = new Map();    // Phase2でカスタムショートカット
+        // this.gestureShortcuts = new Map();   // Phase2でジェスチャーショートカット
+        // this.contextShortcuts = new Map();   // Phase2でコンテキスト依存ショートカット
+        // this.shortcutHistory = [];           // Phase2でショートカット履歴
+        // this.shortcutUI = null;              // Phase2でショートカット設定UI
+        
+        console.log('⌨️ ショートカットコントローラー初期化');
+    }
+    
+    /**
+     * 🔧 標準ショートカット登録
+     */
+    registerDefaultShortcuts() {
+        // === 基本操作 ===
+        this.registerShortcut('KeyZ', { ctrl: true }, () => {
+            this.engine.history?.undo();
+            this.showShortcutFeedback('元に戻す');
+        }, 'アンドゥ');
+        
+        this.registerShortcut('KeyY', { ctrl: true }, () => {
+            this.engine.history?.redo();
+            this.showShortcutFeedback('やり直し');
+        }, 'リドゥ');
+        
+        this.registerShortcut('KeyZ', { ctrl: true, shift: true }, () => {
+            this.engine.history?.redo();
+            this.showShortcutFeedback('やり直し');
+        }, 'リドゥ（代替）');
+        
+        // === ツール切り替え ===
+        this.registerShortcut('KeyP', {}, () => {
+            this.engine.selectTool('pen');
+            this.showShortcutFeedback('ペンツール');
+        }, 'ペンツール');
+        
+        this.registerShortcut('KeyE', {}, () => {
+            this.engine.selectTool('eraser');
+            this.showShortcutFeedback('消しゴム');
+        }, '消しゴム');
+        
+        // Phase2でエアスプレー・ボカシ等追加予定
+        /*
+        this.registerShortcut('KeyA', {}, () => {
+            this.engine.selectTool('airbrush');
+            this.showShortcutFeedback('エアスプレー');
+        }, 'エアスプレー');
+        
+        this.registerShortcut('KeyB', {}, () => {
+            this.engine.selectTool('blur');
+            this.showShortcutFeedback('ボカシ');
+        }, 'ボカシ');
+        */
+        
+        // === キャンバス操作 ===
+        this.registerShortcut('Delete', {}, () => {
+            if (confirm('キャンバスをクリアしますか？')) {
+                this.engine.clearCanvas();
+                this.showShortcutFeedback('キャンバスクリア');
             }
-        };
+        }, 'キャンバスクリア');
         
-        // ショートカットカテゴリ設定
-        this.categories = {
-            'file': { name: 'ファイル', color: '#4CAF50', priority: 1 },
-            'edit': { name: '編集', color: '#2196F3', priority: 2 },
-            'tool': { name: 'ツール', color: '#FF9800', priority: 3 },
-            'layer': { name: 'レイヤー', color: '#9C27B0', priority: 4 },
-            'view': { name: '表示', color: '#607D8B', priority: 5 },
-            'transform': { name: '変形', color: '#E91E63', priority: 6 },
-            'canvas': { name: 'キャンバス', color: '#795548', priority: 7 }
-        };
+        // === 表示制御 ===
+        this.registerShortcut('Space', {}, () => {
+            // Phase2でキャンバス移動モード実装予定
+            this.showShortcutFeedback('キャンバス移動（Phase2実装予定）');
+        }, 'キャンバス移動');
         
-        // 修飾キー組み合わせ定義
-        this.modifierKeys = {
-            'ctrl': 'Control',
-            'shift': 'Shift',
-            'alt': 'Alt',
-            'meta': 'Meta' // Mac: Cmd, Win: Win
-        };
+        this.registerShortcut('KeyH', {}, () => {
+            // Phase2でUI表示切り替え実装予定
+            this.showShortcutFeedback('UI表示切り替え（Phase2実装予定）');
+        }, 'UI表示切り替え');
         
-        // プラットフォーム別調整
-        this.adjustForPlatform();
-    }
-    
-    /**
-     * プラットフォーム別ショートカット調整
-     */
-    adjustForPlatform() {
-        const isMac = navigator.platform.toLowerCase().indexOf('mac') !== -1;
+        // === ファイル操作 ===
+        this.registerShortcut('KeyS', { ctrl: true }, (e) => {
+            e.preventDefault();
+            // Phase4でファイル保存実装予定
+            this.showShortcutFeedback('保存（Phase4実装予定）');
+        }, '保存');
         
-        if (isMac) {
-            // Mac用調整: Ctrl → Cmd
-            const macShortcuts = {};
-            Object.entries(this.standardShortcuts).forEach(([key, value]) => {
-                const macKey = key.replace(/ctrl\+/g, 'meta+');
-                macShortcuts[macKey] = value;
-            });
-            this.standardShortcuts = macShortcuts;
+        this.registerShortcut('KeyO', { ctrl: true }, (e) => {
+            e.preventDefault();
+            // Phase4でファイル読み込み実装予定
+            this.showShortcutFeedback('開く（Phase4実装予定）');
+        }, '開く');
+        
+        // === 選択・編集 ===
+        this.registerShortcut('KeyA', { ctrl: true }, (e) => {
+            e.preventDefault();
+            // Phase3で全選択実装予定
+            this.showShortcutFeedback('全選択（Phase3実装予定）');
+        }, '全選択');
+        
+        this.registerShortcut('KeyC', { ctrl: true }, (e) => {
+            e.preventDefault();
+            // Phase3でコピー実装予定
+            this.showShortcutFeedback('コピー（Phase3実装予定）');
+        }, 'コピー');
+        
+        this.registerShortcut('KeyV', { ctrl: true }, (e) => {
+            e.preventDefault();
+            // Phase3で貼り付け実装予定
+            this.showShortcutFeedback('貼り付け（Phase3実装予定）');
+        }, '貼り付け');
+        
+        // === デバッグ・開発用 ===
+        if (import.meta.env?.DEV) {
+            this.registerShortcut('F12', {}, (e) => {
+                e.preventDefault();
+                console.log('🔍 エンジン状態:', this.engine.getEngineState());
+                this.showShortcutFeedback('エンジン状態出力');
+            }, 'エンジン状態出力');
             
-            // Mac専用ショートカット追加
-            this.standardShortcuts['cmd+q'] = {
-                action: 'app:quit',
-                description: 'アプリケーション終了',
-                category: 'file',
-                priority: 1
-            };
+            this.registerShortcut('KeyD', { ctrl: true, shift: true }, (e) => {
+                e.preventDefault();
+                this.engine.forceRender();
+                this.showShortcutFeedback('強制レンダリング');
+            }, '強制レンダリング');
         }
+        
+        // イベントリスナー設定
+        this.setupKeyboardListeners();
+        
+        console.log(`✅ 標準ショートカット登録完了: ${this.shortcuts.size}個`);
     }
     
     /**
-     * ショートカットキー正規化
+     * 📝 ショートカット登録
      */
-    normalizeShortcutKey(event) {
+    registerShortcut(keyCode, modifiers, action, description) {
+        const shortcutKey = this.createShortcutKey(keyCode, modifiers);
+        
+        this.shortcuts.set(shortcutKey, {
+            keyCode,
+            modifiers,
+            action,
+            description,
+            timestamp: Date.now()
+        });
+        
+        console.log(`📝 ショートカット登録: ${shortcutKey} - ${description}`);
+    }
+    
+    /**
+     * 🔑 ショートカットキー生成
+     */
+    createShortcutKey(keyCode, modifiers) {
         const parts = [];
         
-        // 修飾キー順序統一
-        if (event.ctrlKey || event.metaKey) parts.push(navigator.platform.toLowerCase().indexOf('mac') !== -1 ? 'meta' : 'ctrl');
-        if (event.altKey) parts.push('alt');
-        if (event.shiftKey) parts.push('shift');
+        if (modifiers.ctrl) parts.push('Ctrl');
+        if (modifiers.alt) parts.push('Alt');
+        if (modifiers.shift) parts.push('Shift');
+        if (modifiers.meta) parts.push('Meta');
         
-        // メインキー追加
-        const key = event.key.toLowerCase();
-        if (key !== 'control' && key !== 'alt' && key !== 'shift' && key !== 'meta') {
-            parts.push(key);
-        }
+        parts.push(keyCode);
         
-        return parts.length > 0 ? parts.join('+') : '';
-    }
-    
-    /**
-     * ショートカット検索
-     */
-    findShortcut(keyString) {
-        return this.standardShortcuts[keyString] || null;
-    }
-    
-    /**
-     * カテゴリ別ショートカット取得
-     */
-    getShortcutsByCategory(category) {
-        return Object.entries(this.standardShortcuts)
-            .filter(([key, shortcut]) => shortcut.category === category)
-            .sort((a, b) => a[1].priority - b[1].priority);
-    }
-    
-    /**
-     * 全ショートカット取得（カテゴリ順）
-     */
-    getAllShortcuts() {
-        const categorized = {};
-        
-        Object.entries(this.categories).forEach(([categoryId, category]) => {
-            categorized[categoryId] = {
-                ...category,
-                shortcuts: this.getShortcutsByCategory(categoryId)
-            };
-        });
-        
-        return categorized;
-    }
-}
-
-// === キャンバス操作ショートカット（Space/H等）（150-200行） ===
-
-/**
- * キャンバス操作ショートカットシステム
- * Space+ドラッグ・H（Hand）・R（Rotate）等の専門操作
- */
-class CanvasOperationShortcuts {
-    constructor(eventBus, inputController) {
-        this.eventBus = eventBus;
-        this.inputController = inputController;
-        
-        // キャンバス操作状態
-        this.isSpacePressed = false;
-        this.isHandMode = false;
-        this.isRotateMode = false;
-        this.temporaryTool = null;
-        this.originalTool = null;
-        
-        // 操作感度設定
-        this.panSensitivity = 1.0;
-        this.rotateSensitivity = 0.5;
-        this.zoomSensitivity = 0.1;
-        
-        // 特殊ショートカット定義
-        this.canvasShortcuts = {
-            ' ': { // Space key
-                action: 'canvas:pan-mode',
-                description: 'パンモード（押している間）',
-                type: 'hold',
-                modifiers: []
-            },
-            'h': {
-                action: 'canvas:hand-toggle',
-                description: 'ハンドツール切り替え',
-                type: 'toggle',
-                modifiers: []
-            },
-            'r': {
-                action: 'canvas:rotate-mode',
-                description: 'カンバス回転モード',
-                type: 'toggle',
-                modifiers: []
-            },
-            'ctrl+space': {
-                action: 'canvas:zoom-in-mode',
-                description: 'ズームインモード',
-                type: 'hold',
-                modifiers: ['ctrl']
-            },
-            'alt+space': {
-                action: 'canvas:zoom-out-mode',
-                description: 'ズームアウトモード',
-                type: 'hold',
-                modifiers: ['alt']
-            },
-            'home': {
-                action: 'canvas:reset-view',
-                description: 'ビューリセット',
-                type: 'press',
-                modifiers: []
-            },
-            'f': {
-                action: 'canvas:fullscreen',
-                description: 'フルスクリーン切り替え',
-                type: 'press',
-                modifiers: []
-            },
-            'tab': {
-                action: 'ui:toggle-panels',
-                description: 'パネル表示切り替え',
-                type: 'press',
-                modifiers: []
-            }
-        };
-        
-        // 操作制御
-        this.operationThrottle = throttle(this.handleCanvasOperation.bind(this), 16); // 60fps
-        this.currentOperation = null;
-        
-        this.initializeCanvasShortcuts();
-    }
-    
-    /**
-     * キャンバスショートカット初期化
-     */
-    initializeCanvasShortcuts() {
-        // キーイベント監視
-        document.addEventListener('keydown', this.handleKeyDown.bind(this), true);
-        document.addEventListener('keyup', this.handleKeyUp.bind(this), true);
-        
-        // マウス・ポインターイベント監視
-        if (this.inputController) {
-            const eventBus = this.inputController.getEventBus();
-            
-            eventBus.on('input:drawing-start', this.handlePointerStart.bind(this));
-            eventBus.on('input:drawing-continue', this.handlePointerMove.bind(this));
-            eventBus.on('input:drawing-end', this.handlePointerEnd.bind(this));
-            eventBus.on('input:hover', this.handlePointerHover.bind(this));
-        }
-        
-        console.log('🎮 キャンバス操作ショートカット初期化完了');
-    }
-    
-    /**
-     * キー押下処理
-     */
-    handleKeyDown(event) {
-        const key = event.key.toLowerCase();
-        const shortcut = this.canvasShortcuts[key] || this.canvasShortcuts[this.getModifiedKey(event)];
-        
-        if (!shortcut) return;
-        
-        // 修飾キーチェック
-        if (!this.checkModifiers(event, shortcut.modifiers)) return;
-        
-        switch (shortcut.type) {
-            case 'hold':
-                this.startHoldOperation(shortcut, event);
-                break;
-            case 'toggle':
-                this.toggleOperation(shortcut, event);
-                break;
-            case 'press':
-                this.executeOperation(shortcut, event);
-                break;
-        }
-    }
-    
-    /**
-     * キー離脱処理
-     */
-    handleKeyUp(event) {
-        const key = event.key.toLowerCase();
-        const shortcut = this.canvasShortcuts[key] || this.canvasShortcuts[this.getModifiedKey(event)];
-        
-        if (shortcut && shortcut.type === 'hold') {
-            this.endHoldOperation(shortcut, event);
-        }
-    }
-    
-    /**
-     * ホールド操作開始
-     */
-    startHoldOperation(shortcut, event) {
-        switch (shortcut.action) {
-            case 'canvas:pan-mode':
-                this.startPanMode(event);
-                break;
-            case 'canvas:zoom-in-mode':
-                this.startZoomMode('in', event);
-                break;
-            case 'canvas:zoom-out-mode':
-                this.startZoomMode('out', event);
-                break;
-        }
-        
-        event.preventDefault();
-    }
-    
-    /**
-     * ホールド操作終了
-     */
-    endHoldOperation(shortcut, event) {
-        switch (shortcut.action) {
-            case 'canvas:pan-mode':
-                this.endPanMode(event);
-                break;
-            case 'canvas:zoom-in-mode':
-            case 'canvas:zoom-out-mode':
-                this.endZoomMode(event);
-                break;
-        }
-    }
-    
-    /**
-     * パンモード開始
-     */
-    startPanMode(event) {
-        if (this.isSpacePressed) return;
-        
-        this.isSpacePressed = true;
-        this.originalTool = this.getCurrentTool();
-        
-        // カーソル変更
-        document.body.style.cursor = 'grab';
-        
-        // ツール一時切り替え
-        this.eventBus.emit('tool:temporary-switch', {
-            from: this.originalTool,
-            to: 'pan',
-            reason: 'space-key'
-        });
-        
-        console.log('🖐️ パンモード開始');
-    }
-    
-    /**
-     * パンモード終了
-     */
-    endPanMode(event) {
-        if (!this.isSpacePressed) return;
-        
-        this.isSpacePressed = false;
-        
-        // カーソル復元
-        document.body.style.cursor = '';
-        
-        // ツール復元
-        if (this.originalTool) {
-            this.eventBus.emit('tool:restore', {
-                tool: this.originalTool,
-                reason: 'space-key-release'
-            });
-            this.originalTool = null;
-        }
-        
-        console.log('🖐️ パンモード終了');
-    }
-    
-    /**
-     * ズームモード開始
-     */
-    startZoomMode(direction, event) {
-        this.currentOperation = `zoom-${direction}`;
-        document.body.style.cursor = direction === 'in' ? 'zoom-in' : 'zoom-out';
-        
-        this.eventBus.emit('canvas:zoom-mode-start', {
-            direction: direction,
-            sensitivity: this.zoomSensitivity
-        });
-    }
-    
-    /**
-     * ズームモード終了
-     */
-    endZoomMode(event) {
-        this.currentOperation = null;
-        document.body.style.cursor = '';
-        
-        this.eventBus.emit('canvas:zoom-mode-end');
-    }
-    
-    /**
-     * ポインター開始処理
-     */
-    handlePointerStart(event) {
-        if (this.isSpacePressed) {
-            // パン操作開始
-            this.eventBus.emit('canvas:pan-start', {
-                point: event.point,
-                pointerId: event.pointerId
-            });
-            event.handled = true;
-        } else if (this.currentOperation && this.currentOperation.startsWith('zoom-')) {
-            // ズーム操作開始
-            this.eventBus.emit('canvas:zoom-start', {
-                point: event.point,
-                direction: this.currentOperation.split('-')[1]
-            });
-            event.handled = true;
-        }
-    }
-    
-    /**
-     * ポインター移動処理
-     */
-    handlePointerMove(event) {
-        if (this.isSpacePressed) {
-            // パン操作継続
-            this.eventBus.emit('canvas:pan-continue', {
-                point: event.point,
-                velocity: event.velocity,
-                distance: event.distance
-            });
-            event.handled = true;
-        } else if (this.currentOperation && this.currentOperation.startsWith('zoom-')) {
-            // ズーム操作継続
-            this.operationThrottle(event);
-            event.handled = true;
-        }
-    }
-    
-    /**
-     * ポインター終了処理
-     */
-    handlePointerEnd(event) {
-        if (this.isSpacePressed) {
-            // パン操作終了
-            this.eventBus.emit('canvas:pan-end', {
-                point: event.point,
-                totalDistance: event.totalDistance,
-                duration: event.duration
-            });
-            event.handled = true;
-        } else if (this.currentOperation && this.currentOperation.startsWith('zoom-')) {
-            // ズーム操作終了
-            this.eventBus.emit('canvas:zoom-end', {
-                point: event.point
-            });
-            event.handled = true;
-        }
-    }
-    
-    /**
-     * キャンバス操作処理（スロットル制御）
-     */
-    handleCanvasOperation(event) {
-        if (this.currentOperation === 'zoom-in') {
-            this.eventBus.emit('canvas:zoom-continue', {
-                point: event.point,
-                direction: 'in',
-                factor: 1 + this.zoomSensitivity
-            });
-        } else if (this.currentOperation === 'zoom-out') {
-            this.eventBus.emit('canvas:zoom-continue', {
-                point: event.point,
-                direction: 'out',
-                factor: 1 - this.zoomSensitivity
-            });
-        }
-    }
-    
-    /**
-     * 修飾キー付きキー取得
-     */
-    getModifiedKey(event) {
-        const parts = [];
-        if (event.ctrlKey) parts.push('ctrl');
-        if (event.altKey) parts.push('alt');
-        if (event.shiftKey) parts.push('shift');
-        parts.push(event.key.toLowerCase());
         return parts.join('+');
     }
     
     /**
-     * 修飾キーチェック
+     * ⌨️ キーボードリスナー設定
      */
-    checkModifiers(event, requiredModifiers) {
-        const activeModifiers = [];
-        if (event.ctrlKey) activeModifiers.push('ctrl');
-        if (event.altKey) activeModifiers.push('alt');
-        if (event.shiftKey) activeModifiers.push('shift');
+    setupKeyboardListeners() {
+        // キーダウン
+        this.boundEvents.keydown = (e) => this.handleKeyDown(e);
+        document.addEventListener('keydown', this.boundEvents.keydown);
         
-        return requiredModifiers.length === activeModifiers.length &&
-               requiredModifiers.every(mod => activeModifiers.includes(mod));
+        // キーアップ
+        this.boundEvents.keyup = (e) => this.handleKeyUp(e);
+        document.addEventListener('keyup', this.boundEvents.keyup);
+        
+        // フォーカス喪失時のリセット
+        this.boundEvents.blur = () => this.resetKeyboardState();
+        window.addEventListener('blur', this.boundEvents.blur);
+        
+        // ページ離脱時のクリーンアップ
+        this.boundEvents.beforeunload = () => this.cleanup();
+        window.addEventListener('beforeunload', this.boundEvents.beforeunload);
+        
+        console.log('⌨️ キーボードリスナー設定完了');
     }
     
     /**
-     * 現在のツール取得
+     * ⬇️ キーダウン処理
      */
-    getCurrentTool() {
-        // window.drawingAppから現在のツールを取得
-        if (window.drawingApp && window.drawingApp.currentTool) {
-            return window.drawingApp.currentTool;
+    handleKeyDown(e) {
+        if (!this.isEnabled) return;
+        
+        // 修飾キー状態更新
+        this.updateModifiers(e);
+        
+        // 押下キー記録
+        this.pressedKeys.add(e.code);
+        
+        // 入力フィールドにフォーカスがある場合はスキップ
+        if (this.isInputFieldFocused()) {
+            return;
         }
-        return 'pen'; // デフォルト
-    }
-    
-    /**
-     * トグル操作実行
-     */
-    toggleOperation(shortcut, event) {
-        switch (shortcut.action) {
-            case 'canvas:hand-toggle':
-                this.toggleHandMode(event);
-                break;
-            case 'canvas:rotate-mode':
-                this.toggleRotateMode(event);
-                break;
-        }
-        event.preventDefault();
-    }
-    
-    /**
-     * ハンドモード切り替え
-     */
-    toggleHandMode(event) {
-        this.isHandMode = !this.isHandMode;
-        
-        if (this.isHandMode) {
-            this.temporaryTool = this.getCurrentTool();
-            document.body.style.cursor = 'grab';
-            this.eventBus.emit('tool:switch', { tool: 'hand', temporary: true });
-        } else {
-            document.body.style.cursor = '';
-            if (this.temporaryTool) {
-                this.eventBus.emit('tool:switch', { tool: this.temporaryTool });
-                this.temporaryTool = null;
-            }
-        }
-        
-        console.log(`🖐️ ハンドモード: ${this.isHandMode ? 'ON' : 'OFF'}`);
-    }
-    
-    /**
-     * 回転モード切り替え
-     */
-    toggleRotateMode(event) {
-        this.isRotateMode = !this.isRotateMode;
-        
-        if (this.isRotateMode) {
-            document.body.style.cursor = 'grab';
-            this.eventBus.emit('canvas:rotate-mode-start', {
-                sensitivity: this.rotateSensitivity
-            });
-        } else {
-            document.body.style.cursor = '';
-            this.eventBus.emit('canvas:rotate-mode-end');
-        }
-        
-        console.log(`🔄 回転モード: ${this.isRotateMode ? 'ON' : 'OFF'}`);
-    }
-    
-    /**
-     * 実行操作
-     */
-    executeOperation(shortcut, event) {
-        switch (shortcut.action) {
-            case 'canvas:reset-view':
-                this.resetCanvasView(event);
-                break;
-            case 'canvas:fullscreen':
-                this.toggleFullscreen(event);
-                break;
-            case 'ui:toggle-panels':
-                this.toggleUIPanels(event);
-                break;
-        }
-        event.preventDefault();
-    }
-    
-    /**
-     * キャンバスビューリセット
-     */
-    resetCanvasView(event) {
-        this.eventBus.emit('canvas:reset-view', {
-            animated: true,
-            duration: 300
-        });
-        console.log('🎯 キャンバスビューリセット');
-    }
-    
-    /**
-     * フルスクリーン切り替え
-     */
-    toggleFullscreen(event) {
-        this.eventBus.emit('app:fullscreen-toggle');
-        console.log('📺 フルスクリーン切り替え');
-    }
-    
-    /**
-     * UIパネル表示切り替え
-     */
-    toggleUIPanels(event) {
-        this.eventBus.emit('ui:panels-toggle');
-        console.log('🎛️ UIパネル表示切り替え');
-    }
-}
-
-// === カスタマイズUI・設定画面（50行） ===
-
-/**
- * ショートカットカスタマイズシステム
- * ユーザー設定・プリセット・エクスポート/インポート
- */
-class ShortcutCustomizationSystem {
-    constructor(standardDefinitions) {
-        this.standardDefinitions = standardDefinitions;
-        
-        // カスタマイズ設定
-        this.customShortcuts = {};
-        this.disabledShortcuts = new Set();
-        this.userPresets = {};
-        
-        // 設定保存キー
-        this.storageKey = 'drawing-app-shortcuts';
-        
-        // 競合検出
-        this.conflicts = new Map();
-        
-        this.loadCustomSettings();
-    }
-    
-    /**
-     * カスタム設定読み込み
-     */
-    loadCustomSettings() {
-        try {
-            const saved = localStorage.getItem(this.storageKey);
-            if (saved) {
-                const settings = JSON.parse(saved);
-                this.customShortcuts = settings.custom || {};
-                this.disabledShortcuts = new Set(settings.disabled || []);
-                this.userPresets = settings.presets || {};
-                
-                console.log('⚙️ カスタムショートカット設定読み込み完了');
-            }
-        } catch (error) {
-            console.warn('⚠️ ショートカット設定読み込み失敗:', error);
-        }
-    }
-    
-    /**
-     * カスタム設定保存
-     */
-    saveCustomSettings() {
-        try {
-            const settings = {
-                custom: this.customShortcuts,
-                disabled: Array.from(this.disabledShortcuts),
-                presets: this.userPresets,
-                version: '2.0',
-                timestamp: Date.now()
-            };
-            
-            localStorage.setItem(this.storageKey, JSON.stringify(settings));
-            console.log('💾 カスタムショートカット設定保存完了');
-        } catch (error) {
-            console.error('❌ ショートカット設定保存失敗:', error);
-        }
-    }
-    
-    /**
-     * ショートカット変更
-     */
-    changeShortcut(action, newKeyString) {
-        // 競合チェック
-        const conflict = this.findConflictingShortcut(newKeyString, action);
-        if (conflict) {
-            console.warn(`⚠️ ショートカット競合: ${newKeyString} は既に ${conflict.action} に割り当てられています`);
-            return false;
-        }
-        
-        // カスタムショートカット設定
-        this.customShortcuts[newKeyString] = {
-            action: action,
-            description: this.getActionDescription(action),
-            custom: true,
-            timestamp: Date.now()
-        };
-        
-        // 古いキーがあれば削除
-        const oldKey = this.findKeyByAction(action);
-        if (oldKey && oldKey !== newKeyString) {
-            delete this.customShortcuts[oldKey];
-        }
-        
-        this.saveCustomSettings();
-        return true;
-    }
-    
-    /**
-     * ショートカット無効化
-     */
-    disableShortcut(keyString) {
-        this.disabledShortcuts.add(keyString);
-        this.saveCustomSettings();
-    }
-    
-    /**
-     * ショートカット有効化
-     */
-    enableShortcut(keyString) {
-        this.disabledShortcuts.delete(keyString);
-        this.saveCustomSettings();
-    }
-    
-    /**
-     * デフォルトに戻す
-     */
-    resetToDefault() {
-        this.customShortcuts = {};
-        this.disabledShortcuts.clear();
-        this.saveCustomSettings();
-        console.log('🔄 ショートカット設定をデフォルトにリセット');
-    }
-    
-    /**
-     * 競合するショートカット検索
-     */
-    findConflictingShortcut(keyString, excludeAction) {
-        // 標準ショートカットとの競合
-        const standardConflict = this.standardDefinitions.findShortcut(keyString);
-        if (standardConflict && standardConflict.action !== excludeAction) {
-            return standardConflict;
-        }
-        
-        // カスタムショートカットとの競合
-        const customConflict = this.customShortcuts[keyString];
-        if (customConflict && customConflict.action !== excludeAction) {
-            return customConflict;
-        }
-        
-        return null;
-    }
-    
-    /**
-     * アクションによるキー検索
-     */
-    findKeyByAction(action) {
-        // カスタムショートカットから検索
-        for (const [key, shortcut] of Object.entries(this.customShortcuts)) {
-            if (shortcut.action === action) return key;
-        }
-        
-        // 標準ショートカットから検索
-        for (const [key, shortcut] of Object.entries(this.standardDefinitions.standardShortcuts)) {
-            if (shortcut.action === action) return key;
-        }
-        
-        return null;
-    }
-    
-    /**
-     * アクション説明取得
-     */
-    getActionDescription(action) {
-        // カスタムショートカットから検索
-        for (const shortcut of Object.values(this.customShortcuts)) {
-            if (shortcut.action === action) return shortcut.description;
-        }
-        
-        // 標準ショートカットから検索
-        for (const shortcut of Object.values(this.standardDefinitions.standardShortcuts)) {
-            if (shortcut.action === action) return shortcut.description;
-        }
-        
-        return action; // フォールバック
-    }
-}
-
-// === OGLショートカットコントローラー統合エクスポート ===
-
-/**
- * OGLショートカットコントローラー統合クラス
- */
-export class ShortcutController {
-    constructor(eventBus, inputController = null) {
-        this.eventBus = eventBus;
-        this.inputController = inputController;
-        
-        // コンポーネント初期化
-        this.standardDefinitions = new StandardShortcutDefinitions();
-        this.canvasOperations = new CanvasOperationShortcuts(eventBus, inputController);
-        this.customizationSystem = new ShortcutCustomizationSystem(this.standardDefinitions);
-        
-        // ショートカット実行制御
-        this.executionEnabled = true;
-        this.executionStats = {
-            totalExecutions: 0,
-            byCategory: {},
-            lastExecution: null
-        };
-        
-        // ショートカット実行スロットル（連打防止）
-        this.executeThrottle = throttle(this.executeShortcutAction.bind(this), 100);
-        
-        this.initializeShortcutController();
-    }
-    
-    /**
-     * ショートカットコントローラー初期化
-     */
-    initializeShortcutController() {
-        // グローバルキーボードイベント監視
-        document.addEventListener('keydown', this.handleGlobalKeyDown.bind(this), true);
-        document.addEventListener('keyup', this.handleGlobalKeyUp.bind(this), true);
-        
-        // アプリケーションイベント統合
-        this.setupAppEventIntegration();
-        
-        // ショートカットヘルプシステム
-        this.setupShortcutHelp();
-        
-        console.log('⌨️ OGLショートカットコントローラー初期化完了');
-    }
-    
-    /**
-     * アプリケーションイベント統合
-     */
-    setupAppEventIntegration() {
-        // ヒストリー統合
-        this.eventBus.on('shortcut:undo', () => {
-            this.eventBus.emit('history:undo');
-        });
-        
-        this.eventBus.on('shortcut:redo', () => {
-            this.eventBus.emit('history:redo');
-        });
-        
-        // ツール切り替え統合
-        this.eventBus.on('shortcut:tool-switch', (event) => {
-            this.eventBus.emit('tool:switch', { tool: event.tool });
-        });
-        
-        // ファイル操作統合
-        this.eventBus.on('shortcut:file-operation', (event) => {
-            this.eventBus.emit(`file:${event.operation}`, event.data);
-        });
-    }
-    
-    /**
-     * ショートカットヘルプシステム設定
-     */
-    setupShortcutHelp() {
-        // ヘルプ表示制御
-        this.eventBus.on('shortcut:show-help', () => {
-            this.showShortcutHelp();
-        });
-        
-        // ヘルプ非表示制御
-        this.eventBus.on('shortcut:hide-help', () => {
-            this.hideShortcutHelp();
-        });
-        
-        // F1キーでヘルプ表示
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'F1') {
-                event.preventDefault();
-                this.showShortcutHelp();
-            }
-        });
-    }
-    
-    /**
-     * グローバルキー押下処理
-     */
-    handleGlobalKeyDown(event) {
-        if (!this.executionEnabled) return;
-        
-        // 入力フィールド内での実行を防ぐ
-        if (this.isInputField(event.target)) return;
-        
-        // ショートカットキー正規化
-        const keyString = this.standardDefinitions.normalizeShortcutKey(event);
-        if (!keyString) return;
-        
-        // 無効化されたショートカットをスキップ
-        if (this.customizationSystem.disabledShortcuts.has(keyString)) return;
         
         // ショートカット検索・実行
-        const shortcut = this.findActiveShortcut(keyString);
+        const shortcutKey = this.createShortcutKey(e.code, this.activeModifiers);
+        const shortcut = this.shortcuts.get(shortcutKey);
+        
         if (shortcut) {
-            event.preventDefault();
-            event.stopPropagation();
-            
-            this.executeThrottle(shortcut, event);
-        }
-    }
-    
-    /**
-     * グローバルキー離脱処理
-     */
-    handleGlobalKeyUp(event) {
-        // キャンバス操作システムに委譲
-        // （Space key等のhold操作はCanvasOperationShortcutsで処理）
-    }
-    
-    /**
-     * アクティブショートカット検索
-     */
-    findActiveShortcut(keyString) {
-        // カスタムショートカット優先
-        const customShortcut = this.customizationSystem.customShortcuts[keyString];
-        if (customShortcut) return customShortcut;
-        
-        // 標準ショートカット
-        const standardShortcut = this.standardDefinitions.findShortcut(keyString);
-        if (standardShortcut) return standardShortcut;
-        
-        return null;
-    }
-    
-    /**
-     * ショートカットアクション実行
-     */
-    executeShortcutAction(shortcut, event) {
-        const actionParts = shortcut.action.split(':');
-        const category = actionParts[0];
-        const operation = actionParts[1];
-        
-        // 統計更新
-        this.updateExecutionStats(shortcut);
-        
-        try {
-            switch (category) {
-                case 'edit':
-                    this.executeEditAction(operation, event);
-                    break;
-                case 'tool':
-                    this.executeToolAction(operation, event);
-                    break;
-                case 'file':
-                    this.executeFileAction(operation, event);
-                    break;
-                case 'layer':
-                    this.executeLayerAction(operation, event);
-                    break;
-                case 'view':
-                    this.executeViewAction(operation, event);
-                    break;
-                case 'transform':
-                    this.executeTransformAction(operation, event);
-                    break;
-                case 'canvas':
-                    this.executeCanvasAction(operation, event);
-                    break;
-                default:
-                    console.warn(`⚠️ 未対応ショートカットカテゴリ: ${category}`);
+            try {
+                shortcut.action(e);
+                this.logShortcutExecution(shortcutKey, shortcut.description);
+            } catch (error) {
+                console.error(`🚨 ショートカット実行エラー: ${shortcutKey}`, error);
+                this.showShortcutFeedback(`エラー: ${shortcut.description}`, 'error');
             }
-            
-            console.log(`⌨️ ショートカット実行: ${shortcut.description}`);
-            
-        } catch (error) {
-            console.error(`❌ ショートカット実行エラー: ${shortcut.action}`, error);
         }
     }
     
     /**
-     * 編集アクション実行
+     * ⬆️ キーアップ処理
      */
-    executeEditAction(operation, event) {
-        switch (operation) {
-            case 'undo':
-                this.eventBus.emit('shortcut:undo');
-                break;
-            case 'redo':
-                this.eventBus.emit('shortcut:redo');
-                break;
-            case 'copy':
-                this.eventBus.emit('edit:copy');
-                break;
-            case 'paste':
-                this.eventBus.emit('edit:paste');
-                break;
-            case 'cut':
-                this.eventBus.emit('edit:cut');
-                break;
-            case 'select-all':
-                this.eventBus.emit('edit:select-all');
-                break;
-            case 'deselect':
-                this.eventBus.emit('edit:deselect');
-                break;
-            case 'delete':
-                this.eventBus.emit('edit:delete');
-                break;
-        }
-    }
-    
-    /**
-     * ツールアクション実行
-     */
-    executeToolAction(operation, event) {
-        this.eventBus.emit('shortcut:tool-switch', { tool: operation });
-    }
-    
-    /**
-     * ファイルアクション実行
-     */
-    executeFileAction(operation, event) {
-        this.eventBus.emit('shortcut:file-operation', { operation: operation });
-    }
-    
-    /**
-     * レイヤーアクション実行
-     */
-    executeLayerAction(operation, event) {
-        this.eventBus.emit(`layer:${operation}`);
-    }
-    
-    /**
-     * ビューアクション実行
-     */
-    executeViewAction(operation, event) {
-        this.eventBus.emit(`view:${operation}`);
-    }
-    
-    /**
-     * 変形アクション実行
-     */
-    executeTransformAction(operation, event) {
-        this.eventBus.emit(`transform:${operation}`);
-    }
-    
-    /**
-     * キャンバスアクション実行
-     */
-    executeCanvasAction(operation, event) {
-        this.eventBus.emit(`canvas:${operation}`);
-    }
-    
-    /**
-     * 入力フィールド判定
-     */
-    isInputField(element) {
-        const inputTypes = ['input', 'textarea', 'select'];
-        return inputTypes.includes(element.tagName.toLowerCase()) ||
-               element.contentEditable === 'true';
-    }
-    
-    /**
-     * 実行統計更新
-     */
-    updateExecutionStats(shortcut) {
-        this.executionStats.totalExecutions++;
-        this.executionStats.lastExecution = {
-            action: shortcut.action,
-            timestamp: performance.now()
-        };
+    handleKeyUp(e) {
+        if (!this.isEnabled) return;
         
-        const category = shortcut.action.split(':')[0];
-        this.executionStats.byCategory[category] = (this.executionStats.byCategory[category] || 0) + 1;
+        // 修飾キー状態更新
+        this.updateModifiers(e);
+        
+        // 押下キー削除
+        this.pressedKeys.delete(e.code);
     }
     
     /**
-     * ショートカットヘルプ表示
+     * 🔄 修飾キー状態更新
+     */
+    updateModifiers(e) {
+        this.activeModifiers.ctrl = e.ctrlKey;
+        this.activeModifiers.alt = e.altKey;
+        this.activeModifiers.shift = e.shiftKey;
+        this.activeModifiers.meta = e.metaKey;
+    }
+    
+    /**
+     * 📝 入力フィールドフォーカス判定
+     */
+    isInputFieldFocused() {
+        const activeElement = document.activeElement;
+        if (!activeElement) return false;
+        
+        const inputTags = ['INPUT', 'TEXTAREA', 'SELECT'];
+        const isContentEditable = activeElement.contentEditable === 'true';
+        
+        return inputTags.includes(activeElement.tagName) || isContentEditable;
+    }
+    
+    /**
+     * 📊 ショートカット実行ログ
+     */
+    logShortcutExecution(shortcutKey, description) {
+        if (import.meta.env?.DEV) {
+            console.log(`⌨️ ショートカット実行: ${shortcutKey} - ${description}`);
+        }
+        
+        // Phase2以降でショートカット使用統計追加予定
+    }
+    
+    /**
+     * 💡 ショートカットフィードバック表示
+     */
+    showShortcutFeedback(message, type = 'info') {
+        // 通知要素作成
+        const feedback = document.createElement('div');
+        feedback.className = 'shortcut-feedback';
+        feedback.style.cssText = `
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 8px 16px;
+            background: ${type === 'error' ? 'rgba(220,20,60,0.9)' : 'rgba(42,42,42,0.9)'};
+            color: white;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            backdrop-filter: blur(10px);
+            z-index: 10000;
+            opacity: 0;
+            transform: translateX(-50%) translateY(-20px);
+            transition: all 200ms ease-out;
+            pointer-events: none;
+            border: 1px solid rgba(255,255,255,0.2);
+        `;
+        feedback.textContent = message;
+        
+        document.body.appendChild(feedback);
+        
+        // アニメーション表示
+        setTimeout(() => {
+            feedback.style.opacity = '1';
+            feedback.style.transform = 'translateX(-50%) translateY(0)';
+        }, 50);
+        
+        // 2秒後に削除
+        setTimeout(() => {
+            feedback.style.opacity = '0';
+            feedback.style.transform = 'translateX(-50%) translateY(-20px)';
+            setTimeout(() => feedback.remove(), 200);
+        }, 2000);
+    }
+    
+    /**
+     * 📋 ショートカット一覧取得
+     */
+    getShortcutList() {
+        const shortcutList = [];
+        
+        this.shortcuts.forEach((shortcut, key) => {
+            shortcutList.push({
+                key,
+                description: shortcut.description,
+                modifiers: shortcut.modifiers,
+                keyCode: shortcut.keyCode
+            });
+        });
+        
+        return shortcutList.sort((a, b) => a.description.localeCompare(b.description));
+    }
+    
+    /**
+     * 📖 ショートカットヘルプ表示
      */
     showShortcutHelp() {
-        const helpData = this.standardDefinitions.getAllShortcuts();
-        this.eventBus.emit('ui:show-shortcut-help', { shortcuts: helpData });
-    }
-    
-    /**
-     * ショートカットヘルプ非表示
-     */
-    hideShortcutHelp() {
-        this.eventBus.emit('ui:hide-shortcut-help');
-    }
-    
-    /**
-     * ショートカット実行状態制御
-     */
-    setExecutionEnabled(enabled) {
-        this.executionEnabled = enabled;
-        console.log(`⌨️ ショートカット実行: ${enabled ? '有効' : '無効'}`);
-    }
-    
-    /**
-     * ショートカット統計取得
-     */
-    getExecutionStats() {
-        return { ...this.executionStats };
-    }
-    
-    /**
-     * カスタマイズシステム取得
-     */
-    getCustomizationSystem() {
-        return this.customizationSystem;
-    }
-    
-    /**
-     * リソース解放
-     */
-    destroy() {
-        // イベントリスナー削除
-        document.removeEventListener('keydown', this.handleGlobalKeyDown);
-        document.removeEventListener('keyup', this.handleGlobalKeyUp);
+        const shortcuts = this.getShortcutList();
         
-        // 統計リセット
-        this.executionStats = {
-            totalExecutions: 0,
-            byCategory: {},
-            lastExecution: null
+        // ヘルプモーダル作成
+        const modal = document.createElement('div');
+        modal.className = 'shortcut-help-modal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(5px);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 300ms ease-out;
+        `;
+        
+        // ヘルプ内容
+        const helpContent = document.createElement('div');
+        helpContent.style.cssText = `
+            background: #2a2a2a;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        `;
+        
+        // タイトル
+        const title = document.createElement('h2');
+        title.textContent = 'ショートカット一覧';
+        title.style.cssText = `
+            color: #ffffff;
+            font-size: 20px;
+            margin: 0 0 20px 0;
+            text-align: center;
+        `;
+        helpContent.appendChild(title);
+        
+        // ショートカットリスト
+        const shortcutGrid = document.createElement('div');
+        shortcutGrid.style.cssText = `
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 12px 20px;
+            color: #cccccc;
+            font-size: 14px;
+        `;
+        
+        shortcuts.forEach(shortcut => {
+            // キー表示
+            const keyDisplay = document.createElement('div');
+            keyDisplay.textContent = shortcut.key.replace(/Key|Arrow/g, '').replace(/\+/g, ' + ');
+            keyDisplay.style.cssText = `
+                font-family: monospace;
+                background: rgba(255,255,255,0.1);
+                padding: 4px 8px;
+                border-radius: 6px;
+                text-align: center;
+                font-weight: 600;
+            `;
+            
+            // 説明
+            const description = document.createElement('div');
+            description.textContent = shortcut.description;
+            
+            shortcutGrid.appendChild(keyDisplay);
+            shortcutGrid.appendChild(description);
+        });
+        
+        helpContent.appendChild(shortcutGrid);
+        
+        // 閉じるボタン
+        const closeButton = document.createElement('button');
+        closeButton.textContent = '閉じる (ESC)';
+        closeButton.style.cssText = `
+            display: block;
+            margin: 20px auto 0;
+            padding: 8px 16px;
+            background: #007acc;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        `;
+        
+        closeButton.addEventListener('click', () => {
+            this.hideShortcutHelp(modal);
+        });
+        
+        helpContent.appendChild(closeButton);
+        modal.appendChild(helpContent);
+        document.body.appendChild(modal);
+        
+        // ESCキーで閉じる
+        const escHandler = (e) => {
+            if (e.code === 'Escape') {
+                this.hideShortcutHelp(modal);
+                document.removeEventListener('keydown', escHandler);
+            }
+        };
+        document.addEventListener('keydown', escHandler);
+        
+        // 背景クリックで閉じる
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                this.hideShortcutHelp(modal);
+                document.removeEventListener('keydown', escHandler);
+            }
+        });
+        
+        // アニメーション表示
+        setTimeout(() => {
+            modal.style.opacity = '1';
+        }, 50);
+    }
+    
+    /**
+     * 🚫 ショートカットヘルプ非表示
+     */
+    hideShortcutHelp(modal) {
+        modal.style.opacity = '0';
+        setTimeout(() => modal.remove(), 300);
+    }
+    
+    /**
+     * ⚙️ ショートカット有効/無効切り替え
+     */
+    setEnabled(enabled) {
+        this.isEnabled = enabled;
+        console.log(`⚙️ ショートカット ${enabled ? '有効' : '無効'}`);
+    }
+    
+    /**
+     * 🔄 キーボード状態リセット
+     */
+    resetKeyboardState() {
+        this.pressedKeys.clear();
+        this.activeModifiers = {
+            ctrl: false,
+            alt: false,
+            shift: false,
+            meta: false
         };
         
-        console.log('🗑️ OGLショートカットコントローラー解放完了');
+        console.log('🔄 キーボード状態リセット');
     }
+    
+    /**
+     * 📊 ショートカット統計取得
+     */
+    getShortcutStats() {
+        return {
+            totalShortcuts: this.shortcuts.size,
+            isEnabled: this.isEnabled,
+            pressedKeys: Array.from(this.pressedKeys),
+            activeModifiers: { ...this.activeModifiers }
+        };
+    }
+    
+    /**
+     * 🧹 クリーンアップ
+     */
+    cleanup() {
+        try {
+            // イベントリスナー削除
+            Object.entries(this.boundEvents).forEach(([event, handler]) => {
+                if (event === 'beforeunload' || event === 'blur') {
+                    window.removeEventListener(event, handler);
+                } else {
+                    document.removeEventListener(event, handler);
+                }
+            });
+            
+            // 状態リセット
+            this.resetKeyboardState();
+            this.shortcuts.clear();
+            this.boundEvents = {};
+            
+            console.log('🧹 ショートカットコントローラー クリーンアップ完了');
+            
+        } catch (error) {
+            console.error('🚨 ショートカットコントローラー クリーンアップエラー:', error);
+        }
+    }
+    
+    // Phase2以降拡張予定機能スタブ
+    
+    /**
+     * Phase2: カスタムショートカット管理
+     */
+    /*
+    initializeCustomShortcuts() {
+        // Phase2で実装: ユーザーカスタマイズ可能ショートカット
+        // this.customShortcuts = new CustomShortcutManager();
+    }
+    
+    registerCustomShortcut(keyCode, modifiers, action, description) {
+        // Phase2で実装: カスタムショートカット登録
+    }
+    
+    exportShortcutSettings() {
+        // Phase2で実装: ショートカット設定エクスポート
+    }
+    
+    importShortcutSettings(settings) {
+        // Phase2で実装: ショートカット設定インポート
+    }
+    */
+    
+    /**
+     * Phase2: ジェスチャーショートカット統合
+     */
+    /*
+    initializeGestureShortcuts() {
+        // Phase2で実装: マウス・タッチジェスチャーとショートカット統合
+        // this.gestureShortcuts = new GestureShortcutManager();
+    }
+    
+    registerGestureShortcut(gesture, action, description) {
+        // Phase2で実装: ジェスチャーショートカット登録
+    }
+    */
+    
+    /**
+     * Phase2: コンテキスト依存ショートカット
+     */
+    /*
+    initializeContextShortcuts() {
+        // Phase2で実装: ツール・モード依存ショートカット
+        // this.contextShortcuts = new ContextShortcutManager();
+    }
+    
+    setShortcutContext(context) {
+        // Phase2で実装: ショートカットコンテキスト切り替え
+    }
+    */
+    
+    /**
+     * Phase2: ショートカット設定UI
+     */
+    /*
+    initializeShortcutUI() {
+        // Phase2で実装: ショートカット設定・カスタマイズUI
+        // this.shortcutUI = new ShortcutSettingsUI();
+    }
+    
+    showShortcutSettings() {
+        // Phase2で実装: ショートカット設定画面表示
+    }
+    */
 }
-
-// モジュールエクスポート
-export { 
-    StandardShortcutDefinitions, 
-    CanvasOperationShortcuts, 
-    ShortcutCustomizationSystem 
-};
