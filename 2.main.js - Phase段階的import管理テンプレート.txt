@@ -1,0 +1,207 @@
+// main.js - Phase段階的import管理テンプレート（OGL統一エンジン版）
+
+// 🔥 Phase1: OGL統一基盤（実装済み・封印済み）
+import { OGLUnifiedEngine } from './OGLDrawingCore.js';
+import { OGLInputController } from './OGLInputController.js';
+import { ShortcutController } from './ShortcutController.js';
+import { HistoryController } from './HistoryController.js';
+
+// 🎨 Phase1.5: 最小UI統合（仮UI・Phase1完成後追加）
+// import { OGLInteractionEnhancer } from './OGLInteractionEnhancer.js';
+
+// 🔧 Phase2: ツール・UI拡張（Phase1.5完成後封印解除）
+// import { ToolProcessor } from './ToolProcessor.js';
+// import { UIController } from './UIController.js';
+// import { EventStore } from './EventStore.js';
+
+// 🌈 Phase3: レイヤー・キャンバス・カラー統合（Phase2完成後封印解除）  
+// import { LayerProcessor } from './LayerProcessor.js';
+// import { CanvasController } from './CanvasController.js';
+// import { ColorProcessor } from './ColorProcessor.js';
+
+// ⚡ Phase4: 高度ツール・メッシュ変形・アニメーション（Phase3完成後封印解除）
+// import { AdvancedToolProcessor } from './AdvancedToolProcessor.js';
+// import { AnimationController } from './AnimationController.js';
+// import { FileController } from './FileController.js';
+
+// 🏪 Stores段階的追加
+// import { LayerStore } from './stores/LayerStore.js';
+// import { CanvasStore } from './stores/CanvasStore.js';
+// import { AnimationStore } from './stores/AnimationStore.js';
+// import { MeshDeformStore } from './stores/MeshDeformStore.js';
+// import { ProjectStore } from './stores/ProjectStore.js';
+
+/**
+ * 🎯 モダンお絵かきツール統合アプリケーション
+ * Phase段階的実装対応・OGL統一エンジン版
+ */
+class DrawingApp {
+    constructor(canvasElement) {
+        // 🔥 Phase1: OGL統一基盤初期化
+        this.canvas = canvasElement;
+        this.engine = new OGLUnifiedEngine(this.canvas);
+        this.inputController = new OGLInputController(this.engine);
+        this.shortcuts = new ShortcutController(this.engine);
+        this.history = new HistoryController(this.engine);
+        
+        // Phase1基盤連携
+        this.initializePhase1();
+        
+        // 🎨 Phase1.5: 最小UI統合（Phase1完成後追加）
+        // this.uiEnhancer = new OGLInteractionEnhancer(this.engine);
+        // this.initializePhase1_5();
+        
+        // 🔧 Phase2: ツール・UI拡張（封印解除時追加）
+        // this.eventStore = new EventStore();
+        // this.toolProcessor = new ToolProcessor(this.engine, this.eventStore);
+        // this.uiController = new UIController(this.eventStore);
+        // this.initializePhase2();
+        
+        // 🌈 Phase3: レイヤー・キャンバス・カラー統合（封印解除時追加）
+        // this.layerStore = new LayerStore();
+        // this.canvasStore = new CanvasStore();  
+        // this.layerProcessor = new LayerProcessor(this.engine, this.layerStore);
+        // this.canvasController = new CanvasController(this.engine, this.canvasStore);
+        // this.colorProcessor = new ColorProcessor(this.engine);
+        // this.initializePhase3();
+        
+        // ⚡ Phase4: 高度ツール・メッシュ変形・アニメーション（封印解除時追加）
+        // this.animationStore = new AnimationStore();
+        // this.meshDeformStore = new MeshDeformStore();
+        // this.projectStore = new ProjectStore();
+        // this.advancedToolProcessor = new AdvancedToolProcessor(this.engine, this.meshDeformStore);
+        // this.animationController = new AnimationController(this.engine, this.animationStore);
+        // this.fileController = new FileController(this.projectStore);
+        // this.initializePhase4();
+    }
+    
+    // 🔥 Phase1: OGL統一基盤初期化
+    initializePhase1() {
+        // エラーハンドリング・ログ初期化
+        this.setupErrorHandling();
+        
+        // OGL統一エンジン起動
+        this.engine.initialize();
+        
+        // 入力処理開始
+        this.inputController.startListening();
+        
+        // 標準ショートカット登録
+        this.shortcuts.registerDefaultShortcuts();
+        
+        // 履歴管理開始
+        this.history.initialize();
+        
+        console.log('✅ Phase1: OGL統一基盤初期化完了');
+    }
+    
+    // 🎨 Phase1.5: 最小UI統合初期化（封印解除時実装）
+    /*
+    initializePhase1_5() {
+        // 基本ツールアイコン生成
+        this.uiEnhancer.createBasicToolIcons();
+        
+        // 最小ポップアップ初期化
+        this.uiEnhancer.setupMinimalPopups();
+        
+        // 簡易色選択初期化
+        this.uiEnhancer.initializeColorPicker();
+        
+        console.log('✅ Phase1.5: 最小UI統合初期化完了');
+    }
+    */
+    
+    // 🔧 Phase2: ツール・UI拡張初期化（封印解除時実装）
+    /*
+    initializePhase2() {
+        // イベントバス初期化
+        this.eventStore.initialize();
+        
+        // ツール処理初期化
+        this.toolProcessor.initializeTools();
+        
+        // Fresco風UI初期化
+        this.uiController.initializeFrescoUI();
+        
+        // イベント購読開始
+        this.setupPhase2Events();
+        
+        console.log('✅ Phase2: ツール・UI拡張初期化完了');
+    }
+    */
+    
+    // エラーハンドリング設定
+    setupErrorHandling() {
+        window.addEventListener('error', (error) => {
+            console.error('🚨 DrawingApp Error:', error);
+            // エラー処理・ユーザー通知
+        });
+        
+        // OGL統一エンジンエラー処理
+        this.engine.onError = (error) => {
+            console.error('🚨 OGL Engine Error:', error);
+        };
+    }
+    
+    // 🔄 アプリケーション開始
+    start() {
+        console.log('🚀 モダンお絵かきツール起動');
+        console.log(`📋 現在のPhase: Phase1（OGL統一基盤）`);
+        
+        // Phase1レンダリング開始
+        this.engine.startRenderLoop();
+        
+        // 初期状態表示
+        this.showInitialState();
+    }
+    
+    // 初期状態表示
+    showInitialState() {
+        // Phase1: 基本的なペンツール表示
+        // Phase1.5以降で段階的にUI追加
+    }
+    
+    // 🔧 Phase段階的機能追加メソッド（封印解除時に実装）
+    /*
+    enablePhase2() {
+        // Phase2 import のコメントアウト解除
+        // Phase2 初期化コードのコメントアウト解除  
+        // this.initializePhase2();
+    }
+    
+    enablePhase3() {
+        // Phase3 import のコメントアウト解除
+        // Phase3 初期化コードのコメントアウト解除
+        // this.initializePhase3();  
+    }
+    
+    enablePhase4() {
+        // Phase4 import のコメントアウト解除
+        // Phase4 初期化コードのコメントアウト解除
+        // this.initializePhase4();
+    }
+    */
+}
+
+// 🎯 アプリケーション起動
+document.addEventListener('DOMContentLoaded', () => {
+    const canvas = document.getElementById('drawingCanvas');
+    if (!canvas) {
+        console.error('🚨 Drawing canvas not found');
+        return;
+    }
+    
+    const app = new DrawingApp(canvas);
+    app.start();
+    
+    // 開発者用グローバル参照
+    window.drawingApp = app;
+});
+
+// 🔧 開発者用Phase制御（開発時のみ）
+if (process.env.NODE_ENV === 'development') {
+    window.enablePhase2 = () => {
+        console.log('🔧 Phase2封印解除は手動import編集が必要です');
+        // 実際の封印解除は手動import編集で実行
+    };
+}

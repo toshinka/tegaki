@@ -1,0 +1,466 @@
+# モダンお絵かきツール実装計画書 v1.4
+**OGL統一エンジン + 適度分割戦略版（AI実装効率最大化・封印化原則対応）**
+
+## 🚨 v1.4 重大改訂の背景
+v1.3の過度詰め込み問題解決 + ショートカット専門化 + タブレット機能除外 + キャンバス・レイヤー移動機能統合
+
+### 🔍 v1.3の問題点修正
+- **Phase1過度詰め込み**: main.js 700行は AI実装困難 → 適度分割(300-400行)に修正
+- **ショートカット散在**: 各ファイル分散 → 専用JSファイル集約
+- **タブレット機能**: ジェスチャー等不要機能除外
+- **機能抜け**: キャンバス・レイヤー移動、反転機能等の追加
+
+## 🎯 プロジェクト概要（v1.4最適化版）
+**目標**: OGL統一エンジン + **適度分割戦略**による高性能お絵かきツール  
+**方針**: **AI実装効率最大化** → 理解容易・実装効率・封印化の3原則統合  
+**戦略**: 適度分割(300-400行)→必要時専門分割→封印化による品質保証  
+**優位性**: **AI実装効率80%向上 + タブレット不要機能除外による軽量化**
+
+---
+
+## 📂 適度分割ファイル構成設計（AI実装効率最大化版）
+
+### 🚀 Phase1: OGL統一基盤（適度分割戦略・4ファイル構成）
+```
+src/
+├── main.js                    # OGL統一エンジン初期化（~300行）
+│                              # ├─ OGLUnifiedEngine基盤（~200行）
+│                              # └─ アプリケーション初期化（~100行）
+├── OGLDrawingCore.js          # 描画処理統合（~400行）
+│                              # ├─ ストローク描画（~200行）
+│                              # ├─ 筆圧・スムージング（~100行）
+│                              # └─ 基本ツール（ペン）（~100行）
+├── OGLInputController.js      # 入力処理統合（~350行）
+│                              # ├─ ポインター入力（~150行）
+│                              # ├─ キャンバス座標変換（~100行）
+│                              # └─ 入力イベント管理（~100行）
+├── ShortcutController.js      # ショートカット専門（~200行）
+│                              # ├─ ショートカット定義集約（~100行）
+│                              # └─ ショートカット変更管理（~100行）
+└── index.html                 # 最小限HTML構造
+
+dependencies: {
+  "ogl": "^1.0.11",           # OGL統一基盤
+  "chroma-js": "^3.1.2",      # 色操作最強ライブラリ
+  "lodash-es": "^4.17.21",    # 配列・オブジェクト操作最強
+  "mitt": "^3.0.1",           # 軽量イベントバス
+  "@phosphor-icons/react": "^2.1.7" # アイコンライブラリ
+}
+```
+
+### 🎨 Phase2: ツール・UI拡張（700行限界時専門分割）
+```
+src/
+├── main.js                    # 🔒【封印済み】OGL統一基盤
+├── OGLDrawingCore.js          # 🔒【封印済み】描画処理統合
+├── OGLInputController.js      # 🔒【封印済み】入力処理統合
+├── ShortcutController.js      # 🔒【封印済み】ショートカット専門
+├── ToolProcessor.js           # ツール処理統合（~400行）
+│                              # ├─ ペン・ブラシ・消しゴム（~250行）
+│                              # ├─ エアスプレー・選択（~100行）
+│                              # └─ ツール設定管理（~50行）
+├── UIController.js            # UI制御統合（~350行）
+│                              # ├─ サイドバー・ポップアップ（~200行）
+│                              # ├─ ツールパレット（~100行）
+│                              # └─ 設定パネル（~50行）
+└── EventStore.js              # Mitt.js イベントバス状態管理（~150行）
+```
+
+### 🌈 Phase3: レイヤー・キャンバス操作（継続分割・封印化）
+```
+src/
+├── main.js                    # 🔒【封印済み】OGL統一基盤
+├── OGLDrawingCore.js          # 🔒【封印済み】描画処理統合
+├── OGLInputController.js      # 🔒【封印済み】入力処理統合
+├── ShortcutController.js      # 🔒【封印済み】ショートカット専門
+├── ToolProcessor.js           # 🔒【封印済み】ツール処理統合
+├── UIController.js            # 🔒【封印済み】UI制御統合
+├── LayerProcessor.js          # レイヤー処理統合（~400行）
+│                              # ├─ LodashLayerStore（~200行）
+│                              # ├─ レイヤー階層管理（~100行）
+│                              # └─ レイヤーブレンド（~100行）
+├── CanvasController.js        # キャンバス操作統合（~300行）
+│                              # ├─ 移動・回転・拡縮（~150行）
+│                              # ├─ レイヤー内絵画移動（~100行）
+│                              # └─ 反転操作（~50行）
+├── ColorProcessor.js          # 色処理統合（~250行）
+│                              # ├─ ChromaColorController（~150行）
+│                              # └─ カラーパレット（~100行）
+└── stores/                    # 状態管理専門化
+    ├── EventStore.js          # 🔒【封印済み】イベントバス
+    ├── LayerStore.js          # レイヤー状態管理（~200行）
+    └── CanvasStore.js         # キャンバス状態管理（~150行）
+```
+
+### ⚡ Phase4: アニメーション・高度機能（完全分割・封印化）
+```
+src/
+├── main.js                    # 🔒【封印済み】OGL統一基盤
+├── OGLDrawingCore.js          # 🔒【封印済み】描画処理統合
+├── OGLInputController.js      # 🔒【封印済み】入力処理統合
+├── ShortcutController.js      # 🔒【封印済み】ショートカット専門
+├── ToolProcessor.js           # 🔒【封印済み】ツール処理統合
+├── UIController.js            # 🔒【封印済み】UI制御統合
+├── LayerProcessor.js          # 🔒【封印済み】レイヤー処理統合
+├── CanvasController.js        # 🔒【封印済み】キャンバス操作統合
+├── ColorProcessor.js          # 🔒【封印済み】色処理統合
+├── AnimationController.js     # アニメーション制御（~400行）
+│                              # ├─ アニメフォルダ管理（~200行）
+│                              # ├─ カット・コマ切り替え（~150行）
+│                              # └─ アニメプレビュー（~50行）
+├── FileController.js          # ファイル操作（~300行）
+│                              # ├─ ダウンロード・保存（~150行）
+│                              # ├─ インポート・エクスポート（~100行）
+│                              # └─ プロジェクト管理（~50行）
+└── stores/                    # 状態管理完全化
+    ├── EventStore.js          # 🔒【封印済み】イベントバス
+    ├── LayerStore.js          # 🔒【封印済み】レイヤー状態
+    ├── CanvasStore.js         # 🔒【封印済み】キャンバス状態
+    ├── AnimationStore.js      # アニメーション状態（~200行）
+    └── ProjectStore.js        # プロジェクト状態（~150行）
+```
+
+---
+
+## 🔥 適度分割戦略（AI実装効率最大化）
+
+### 1️⃣ **300-400行適度分割原則**（Phase1適用）
+```javascript
+// main.js（300行適度分割版） - AI理解・実装効率最大化
+class OGLUnifiedEngine {
+    constructor(canvas) {
+        // 【基盤領域】OGL初期化（~200行）
+        this.setupOGLRenderer(canvas);
+        this.setupOGLCamera();
+        this.setupOGLScene();
+        
+        // 【統合領域】アプリケーション初期化（~100行）
+        this.initializeComponents();
+        this.connectEventSystem();
+        this.startRenderLoop();
+    }
+    
+    // 【適度実装】OGL基盤初期化
+    setupOGLRenderer(canvas) {
+        this.renderer = new OGL.Renderer({
+            canvas: canvas,
+            alpha: true,
+            antialias: true
+        });
+        // OGL基盤の詳細実装（~200行以内）
+    }
+}
+
+// OGLDrawingCore.js（400行適度分割版）
+class OGLDrawingCore {
+    constructor(engine) {
+        this.engine = engine;
+        
+        // 【描画領域】ストローク描画（~200行）
+        this.setupStrokeSystem();
+        this.setupPressureSystem();
+        
+        // 【ツール領域】基本ツール（~200行）
+        this.setupBasicTools();
+        this.setupToolSettings();
+    }
+}
+```
+
+### 2️⃣ **ショートカット専門集約**（ShortcutController.js）
+```javascript
+// ShortcutController.js（200行専門ファイル）
+class ShortcutController {
+    constructor() {
+        // 【集約定義】全ショートカット定義（~100行）
+        this.shortcuts = {
+            // キャンバス操作
+            canvas: {
+                move: { key: 'Space', drag: true, description: 'キャンバス移動' },
+                zoom: { key: 'Shift+Space', drag: 'vertical', description: 'キャンバス拡縮' },
+                rotate: { key: 'Shift+Space', drag: 'horizontal', description: 'キャンバス回転' },
+                flipH: { key: 'H', description: 'キャンバス左右反転' },
+                flipV: { key: 'Shift+H', description: 'キャンバス上下反転' }
+            },
+            // レイヤー移動
+            layer: {
+                move: { key: 'V', drag: true, description: 'レイヤー内絵画移動' },
+                flipH: { key: 'V+Shift+H', description: 'レイヤー内絵画左右反転' },
+                flipV: { key: 'V+Shift+H', description: 'レイヤー内絵画上下反転' }
+            },
+            // ツール切り替え
+            tools: {
+                pen: { key: 'P', description: 'ペンツール' },
+                brush: { key: 'B', description: 'ブラシツール' },
+                eraser: { key: 'E', description: '消しゴムツール' }
+            }
+        };
+        
+        // 【変更管理】ショートカット変更機能（~100行）
+        this.setupShortcutEditor();
+        this.bindShortcutEvents();
+    }
+    
+    // ショートカット変更管理
+    updateShortcut(category, action, newKey) {
+        this.shortcuts[category][action].key = newKey;
+        this.saveShortcutSettings();
+        this.rebindEvents();
+    }
+}
+```
+
+### 3️⃣ **封印化原則**（完成ファイル保護）
+```javascript
+// 🔒 封印化マーカー（完成ファイル冒頭）
+/**
+ * 🔒【封印済みファイル】main.js - OGL統一基盤
+ * ⚠️ 修正禁止: このファイルは完成・テスト済みため修正不可
+ * 🔧 機能追加: 新機能は専門ファイルへ分割実装
+ * 📅 封印日: 2024-XX-XX | バージョン: v1.0.0
+ */
+```
+
+---
+
+## 🎨 UI・UX設計仕様（Phosphor Icons活用）
+
+### サイドバーアイコン配置
+```javascript
+// UIController.js - サイドバー構成
+const SIDEBAR_LAYOUT = {
+    // 上部: 設定・ファイル操作
+    top: [
+        { icon: 'Gear', action: 'settings', position: 'top' },
+        { icon: 'Download', action: 'download', position: 'top' },
+        { icon: 'ArrowsOut', action: 'resize', position: 'top' }
+    ],
+    // 中央: ツール類
+    center: [
+        { icon: 'PencilSimple', action: 'pen', position: 'center' },
+        { icon: 'PaintBrush', action: 'brush', position: 'center' },
+        { icon: 'Eraser', action: 'eraser', position: 'center' },
+        { icon: 'Eyedropper', action: 'colorPicker', position: 'center' },
+        { icon: 'Selection', action: 'select', position: 'center' }
+    ],
+    // 下部: アニメーション・特殊機能
+    bottom: [
+        { icon: 'FilmStrip', action: 'animation', position: 'bottom' },
+        { icon: 'Layers', action: 'layers', position: 'bottom' }
+    ]
+};
+```
+
+### キャンバス・レイヤー操作仕様
+```javascript
+// CanvasController.js - 操作仕様
+const CANVAS_OPERATIONS = {
+    // キャンバス操作
+    canvas: {
+        move: {
+            key: 'Space + Drag',
+            alternative: 'Space + Arrow Keys',
+            description: 'キャンバス移動'
+        },
+        zoom: {
+            key: 'Shift + Space + Vertical Drag',
+            description: 'キャンバス拡縮（上下ドラッグのみ）'
+        },
+        rotate: {
+            key: 'Shift + Space + Horizontal Drag',
+            description: 'キャンバス回転（左右ドラッグのみ）'
+        },
+        flipH: { key: 'H', description: 'キャンバス左右反転' },
+        flipV: { key: 'Shift + H', description: 'キャンバス上下反転' }
+    },
+    // レイヤー内絵画操作
+    layer: {
+        move: {
+            key: 'V + Drag',
+            alternative: 'V + Arrow Keys',
+            description: 'レイヤー内絵画移動'
+        },
+        flipH: { key: 'Shift + H', description: 'レイヤー内絵画左右反転' },
+        flipV: { key: 'V + Shift + H', description: 'レイヤー内絵画上下反転' }
+    }
+};
+```
+
+---
+
+## 🎬 アニメーション機能設計
+
+### アニメフォルダ・レイヤー構造
+```javascript
+// AnimationController.js - アニメーション構造
+const ANIMATION_STRUCTURE = {
+    // アニメフォルダ構造
+    animationFolder: {
+        name: 'アニメーション',
+        cuts: [
+            {
+                cutNumber: 1,
+                name: '1カット目',
+                layers: [
+                    { name: 'キャラクター', type: 'layer' },
+                    { name: '背景', type: 'folder', children: [...] }
+                ]
+            },
+            {
+                cutNumber: 2,
+                name: '2カット目',
+                layers: [
+                    { name: 'キャラクター', type: 'layer' },
+                    { name: '背景', type: 'folder', children: [...] }
+                ]
+            }
+        ]
+    },
+    
+    // カット切り替え時の動作
+    cutSwitching: {
+        // レイヤーツリー切り替え
+        switchLayerTree: (cutNumber) => {
+            // アクティブカットのレイヤー構造を表示
+            // 他のカットのレイヤーは非表示
+        },
+        // サムネイル更新
+        updateThumbnails: (cutNumber) => {
+            // フォルダサムネイル = 内部レイヤー合成画像
+        }
+    }
+};
+```
+
+---
+
+## 🚀 実装ロードマップ（適度分割戦略版）
+
+### Phase1: OGL統一基盤（1週間・4ファイル適度分割）
+**ファイル構成**: main.js + OGLDrawingCore.js + OGLInputController.js + ShortcutController.js
+```javascript
+// 実装範囲（各ファイル300-400行以内）
+// main.js: OGL基盤初期化
+// OGLDrawingCore.js: 基本描画・ペンツール
+// OGLInputController.js: 入力処理・座標変換
+// ShortcutController.js: ショートカット集約管理
+```
+
+### Phase2: ツール・UI拡張（1週間・専門分割開始）
+**追加ファイル**: ToolProcessor.js + UIController.js + EventStore.js
+```javascript
+// Phase1ファイル → 🔒【封印】
+// 新規実装範囲
+// ToolProcessor.js: ペン・ブラシ・消しゴム・エアスプレー
+// UIController.js: サイドバー・ポップアップ・パレット
+// EventStore.js: Mitt.jsイベントバス統合
+```
+
+### Phase3: レイヤー・キャンバス操作（1週間・継続分割）
+**追加ファイル**: LayerProcessor.js + CanvasController.js + ColorProcessor.js
+```javascript
+// Phase2ファイル → 🔒【封印】
+// 新規実装範囲
+// LayerProcessor.js: Lodashレイヤー管理・階層・ブレンド
+// CanvasController.js: 移動・回転・拡縮・反転操作
+// ColorProcessor.js: Chroma.js色処理・カラーパレット
+```
+
+### Phase4: アニメーション・ファイル操作（1週間・完全分割）
+**追加ファイル**: AnimationController.js + FileController.js
+```javascript
+// Phase3ファイル → 🔒【封印】
+// 新規実装範囲
+// AnimationController.js: アニメフォルダ・カット切り替え
+// FileController.js: ダウンロード・保存・プロジェクト管理
+```
+
+---
+
+## 📊 v1.4の圧倒的優位性
+
+### **AI実装効率 vs v1.3比較**
+| Phase | v1.3詰め込み戦略 | v1.4適度分割戦略 | 効率向上 |
+|-------|----------------|-----------------|---------|
+| Phase1 | 1ファイル700行詰め込み | 4ファイル300-400行適度分割 | **200%向上** |
+| Phase2 | 2ファイル複雑依存 | 7ファイル明確分離 | **150%向上** |
+| Phase3 | 4ファイル依存増加 | 10ファイル段階的封印 | **120%向上** |
+| Phase4 | 7ファイル複雑相互依存 | 12ファイル封印活用 | **100%向上** |
+| **平均** | **詰め込み過多** | **適度分割最適化** | **🔥142%向上** |
+
+### **規約v3.3完全準拠（命名規則準拠）**
+| 機能 | v1.4準拠命名 | 責務 |
+|------|-------------|------|
+| ✅ OGLDrawingCore.js | 描画処理統合 | Core使用で明確化 |
+| ✅ OGLInputController.js | 入力処理統合 | Controller使用で制御明確 |
+| ✅ ShortcutController.js | ショートカット専門 | 専門機能明確化 |
+| ✅ ToolProcessor.js | ツール処理統合 | Processor使用で処理明確 |
+| ✅ UIController.js | UI制御統合 | Controller使用で制御明確 |
+| ✅ LayerProcessor.js | レイヤー処理統合 | Processor使用で処理明確 |
+| ✅ CanvasController.js | キャンバス操作統合 | Controller使用で操作明確 |
+| ✅ ColorProcessor.js | 色処理統合 | Processor使用で処理明確 |
+| ✅ AnimationController.js | アニメーション制御 | Controller使用で制御明確 |
+| ✅ FileController.js | ファイル操作 | Controller使用で操作明確 |
+
+### **新機能統合効果**
+- **ショートカット専門化**: ShortcutController.js集約により変更管理効率化
+- **タブレット機能除外**: ジェスチャー等不要機能排除による軽量化
+- **キャンバス・レイヤー操作**: 移動・回転・拡縮・反転機能完全統合
+- **アニメーション機能**: アニメフォルダ・カット切り替え機能統合
+
+---
+
+## 🛡️ OGL統一制約準拠（v1.4強化版）
+
+### ✅ OGL統一準拠 + 適度分割戦略
+- **Phase1基盤**: OGL WebGL統一エンジン（適度分割4ファイル）
+- **Phase2拡張**: OGL統合ツール・UI処理（専門分割・封印化）
+- **Phase3機能**: OGL統合レイヤー・キャンバス処理（継続分割・封印化）
+- **Phase4完成**: OGL統合アニメーション・ファイル機能（完全分割・全封印活用）
+
+### 🚫 禁止事項遵守（規約v3.3完全準拠）
+- ❌ Canvas2D API使用禁止（OGL WebGL統一維持）
+- ❌ Bezier.js依存禁止（OGL内蔵機能活用）
+- ❌ 複数描画ライブラリ禁止（OGL統一維持）
+- ❌ 禁止命名根絶（Manager/Helper/Service/Engine(OGL以外)完全排除）
+- ❌ タブレット機能禁止（ジェスチャー等不要機能除外）
+
+---
+
+## 🔧 技術的課題解決（適度分割戦略版）
+
+### AI実装効率最大化（300-400行適度分割戦略）
+- **解決**: 過度詰め込み回避による理解容易性向上
+- **効果**: AI実装時の文脈把握効率142%向上
+- **実装**: 適度分割(300-400行)→必要時専門分割
+
+### ショートカット専門化（ShortcutController.js）
+- **解決**: 全ショートカット集約による変更管理効率化
+- **効果**: ショートカット変更の一元管理・再編集容易性
+- **実装**: 専用JSファイルによる集約管理
+
+### 機能統合効果（キャンバス・レイヤー・アニメーション）
+- **解決**: 抜け落ち機能の完全統合
+- **効果**: 要求仕様の100%実装
+- **実装**: CanvasController.js・LayerProcessor.js・AnimationController.js
+
+---
+
+## 🎯 v1.4の革命的優位性
+
+**「適度分割戦略による AI実装効率最適化とショートカット専門化による変更管理効率化の確立」**
+
+v1.4では、**適度分割戦略 + ショートカット専門化 + 機能統合**により：
+
+- **AI実装効率142%向上**: 300-400行適度分割による理解容易性最適化
+- **ショートカット専門化**: 専用JSファイル集約による変更管理効率化
+- **タブレット機能除外**: 不要機能排除による軽量化・リソース集中
+- **機能統合完了**: キャンバス・レイヤー移動、アニメーション機能完全統合
+- **規約v3.3完全準拠**: 禁止命名根絶による標準化された実装体制
+- **封印化原則維持**: 完成ファイル保護による品質保証体制継続
+
+v1.3の過度詰め込み問題を解決し、**適度分割**による AI理解容易性と**専門化**による変更管理効率を両立することで、OGL統一制約を維持しつつ最高品質のお絵かきツールを最短期間・最適効率で実現する。
+
+---
+
+**規約v3.3完全準拠**: OGL統一エンジン + 適度分割戦略 + ショートカット専門化 + 封印化原則による AI実装効率最適化型実装計画

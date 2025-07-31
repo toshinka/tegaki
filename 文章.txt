@@ -16,14 +16,14 @@ https://github.com/toshinka/tegaki/blob/main/Utility/%E3%81%AF%E3%81%A3%E3%81%A1
 アニメモードの参考としてはstoryboarder
 https://wonderunit.com/storyboarder/
 
-色はこうだった
+
 #800000;"暗赤"(メインカラー）
 #aa5a56;"赤茶"
 #cf9c97;"中間色"
 #e9c2ba;"薄茶"
 #f0e0d6;" 薄ベージュ"（サブカラー）
 #ffffee;background-color
-パレットは上5色で。background-colorは特に選べなくて良い。
+最初のパレットは上5色で。background-colorは特に選べなくて良い。
 キャンバスの背景は#f0e0d6で
 
 
@@ -31,6 +31,7 @@ https://wonderunit.com/storyboarder/
 「Adobe FrescoライクなUIのデザイン」
 
 「アニメーションモードはStoryboarder的な構造を予定」
+https://wonderunit.com/storyboarder/
 
 「非React／非Vueベースで、自前でUIマネージャーを持つ」
 
