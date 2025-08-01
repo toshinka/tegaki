@@ -1,503 +1,414 @@
-// OGLInputController.js - OGL統一入力処理（Phase1基盤・450-550行）
+import PointerTracker from 'pointer-tracker';
 
 /**
- * 🎯 OGL統一入力処理コントローラー
- * ポインター入力・デバイス対応・キャンバス座標変換精密化
+ * OGLInputController - マウス・ペンタブレット専用入力処理（Phase1基盤）
+ * タッチデバイス非対応・デスクトップ環境特化
  */
 export class OGLInputController {
-    constructor(oglEngine) {
-        this.engine = oglEngine;
-        this.canvas = oglEngine.canvas;
+    constructor(oglCore, eventStore) {
+        this.oglCore = oglCore;
+        this.eventStore = eventStore;
+        this.canvas = oglCore.canvas;
         
         // 入力状態
         this.isPointerDown = false;
-        this.isRightClick = false;
-        this.lastPointerPos = { x: 0, y: 0 };
+        this.currentPointer = null;
         this.pointerHistory = [];
+        this.maxHistorySize = 10;
         
-        // デバイス情報
-        this.deviceType = this.detectDeviceType();
-        this.supportsPressure = false;
-        this.supportsHover = false;
-        
-        // 座標変換キャッシュ
-        this.canvasRect = null;
-        this.canvasScale = 1.0;
-        this.canvasOffset = { x: 0, y: 0 };
-        
-        // タッチ・ペン対応
-        this.activeTouches = new Map();
-        this.isPenInput = false;
-        
-        // イベントリスナー参照（削除用）
-        this.boundEvents = {};
-        
-        // Phase2以降拡張予定
-        // this.gestureProcessor = null;        // Phase2でジェスチャー追加
-        // this.multiTouchHandler = null;       // Phase2でマルチタッチ追加
-        // this.keyboardModifiers = {};         // Phase2でキー修飾追加
-        
-        console.log(`🎯 OGL入力コントローラー初期化 - デバイス: ${this.deviceType}`);
-    }
-    
-    /**
-     * 📱 デバイス種別検出
-     */
-    detectDeviceType() {
-        const userAgent = navigator.userAgent.toLowerCase();
-        const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-        const hasPointer = 'onpointerdown' in window;
-        
-        if (hasPointer) {
-            this.supportsPressure = true;
-            this.supportsHover = true;
-        }
-        
-        if (userAgent.includes('mobile') || userAgent.includes('tablet')) {
-            return hasTouch ? 'touch' : 'mobile';
-        } else if (hasTouch) {
-            return 'hybrid'; // タッチ対応PC
-        } else {
-            return 'desktop';
-        }
-    }
-    
-    /**
-     * 🎧 イベントリスナー開始
-     */
-    startListening() {
-        try {
-            // キャンバス座標キャッシュ更新
-            this.updateCanvasRect();
-            
-            // Modern Pointer Events API優先
-            if ('onpointerdown' in window) {
-                this.setupPointerEvents();
-            } else {
-                // フォールバック: Mouse + Touch
-                this.setupMouseEvents();
-                this.setupTouchEvents();
-            }
-            
-            // 共通イベント
-            this.setupCommonEvents();
-            
-            console.log('🎧 OGL入力リスナー開始 - Modern API使用');
-            
-        } catch (error) {
-            console.error('🚨 入力リスナー開始エラー:', error);
-        }
-    }
-    
-    /**
-     * 🖱️ Pointer Events API設定（最新標準）
-     */
-    setupPointerEvents() {
-        // Pointer Down
-        this.boundEvents.pointerdown = (e) => this.handlePointerDown(e);
-        this.canvas.addEventListener('pointerdown', this.boundEvents.pointerdown);
-        
-        // Pointer Move
-        this.boundEvents.pointermove = (e) => this.handlePointerMove(e);
-        this.canvas.addEventListener('pointermove', this.boundEvents.pointermove);
-        
-        // Pointer Up
-        this.boundEvents.pointerup = (e) => this.handlePointerUp(e);
-        this.canvas.addEventListener('pointerup', this.boundEvents.pointerup);
-        this.canvas.addEventListener('pointercancel', this.boundEvents.pointerup);
-        
-        // Pointer Leave（キャンバス外でのリリース対応）
-        this.boundEvents.pointerleave = (e) => this.handlePointerLeave(e);
-        this.canvas.addEventListener('pointerleave', this.boundEvents.pointerleave);
-        
-        // ホバー（Phase2でツールプレビュー等に活用）
-        if (this.supportsHover) {
-            this.boundEvents.pointerenter = (e) => this.handlePointerHover(e, true);
-            this.boundEvents.pointerout = (e) => this.handlePointerHover(e, false);
-            this.canvas.addEventListener('pointerenter', this.boundEvents.pointerenter);
-            this.canvas.addEventListener('pointerout', this.boundEvents.pointerout);
-        }
-        
-        // Touch Action無効化（ブラウザのデフォルト動作防止）
-        this.canvas.style.touchAction = 'none';
-    }
-    
-    /**
-     * 🖱️ マウスイベント設定（フォールバック）
-     */
-    setupMouseEvents() {
-        this.boundEvents.mousedown = (e) => this.handleMouseDown(e);
-        this.boundEvents.mousemove = (e) => this.handleMouseMove(e);
-        this.boundEvents.mouseup = (e) => this.handleMouseUp(e);
-        this.boundEvents.mouseleave = (e) => this.handleMouseLeave(e);
-        
-        this.canvas.addEventListener('mousedown', this.boundEvents.mousedown);
-        this.canvas.addEventListener('mousemove', this.boundEvents.mousemove);
-        this.canvas.addEventListener('mouseup', this.boundEvents.mouseup);
-        this.canvas.addEventListener('mouseleave', this.boundEvents.mouseleave);
-        
-        // 右クリックコンテキストメニュー無効化
-        this.boundEvents.contextmenu = (e) => e.preventDefault();
-        this.canvas.addEventListener('contextmenu', this.boundEvents.contextmenu);
-    }
-    
-    /**
-     * 👆 タッチイベント設定（フォールバック）
-     */
-    setupTouchEvents() {
-        this.boundEvents.touchstart = (e) => this.handleTouchStart(e);
-        this.boundEvents.touchmove = (e) => this.handleTouchMove(e);
-        this.boundEvents.touchend = (e) => this.handleTouchEnd(e);
-        this.boundEvents.touchcancel = (e) => this.handleTouchEnd(e);
-        
-        this.canvas.addEventListener('touchstart', this.boundEvents.touchstart, { passive: false });
-        this.canvas.addEventListener('touchmove', this.boundEvents.touchmove, { passive: false });
-        this.canvas.addEventListener('touchend', this.boundEvents.touchend, { passive: false });
-        this.canvas.addEventListener('touchcancel', this.boundEvents.touchcancel, { passive: false });
-    }
-    
-    /**
-     * 🔧 共通イベント設定
-     */
-    setupCommonEvents() {
-        // リサイズ対応
-        this.boundEvents.resize = () => this.updateCanvasRect();
-        window.addEventListener('resize', this.boundEvents.resize);
-        
-        // ページ離脱時のクリーンアップ
-        this.boundEvents.beforeunload = () => this.cleanup();
-        window.addEventListener('beforeunload', this.boundEvents.beforeunload);
-    }
-    
-    /**
-     * 📐 キャンバス座標変換精密化
-     */
-    updateCanvasRect() {
-        this.canvasRect = this.canvas.getBoundingClientRect();
-        this.canvasScale = this.canvas.width / this.canvasRect.width;
-        this.canvasOffset = {
-            x: this.canvas.width / 2,
-            y: this.canvas.height / 2
+        // キャンバス座標変換
+        this.canvasTransform = {
+            scale: 1.0,
+            offsetX: 0,
+            offsetY: 0,
+            rotation: 0
         };
+        
+        // PointerTracker設定（マウス・ペンタブレット専用）
+        this.pointerTracker = null;
+        
+        // 入力フィルタリング
+        this.inputFilter = {
+            minDistance: 1.0,
+            pressureSmoothing: 0.3,
+            velocitySmoothing: 0.5
+        };
+        
+        // 筆圧検出
+        this.pressureSupported = false;
+        this.lastPressure = 1.0;
+        
+        this.initializePointerTracking();
+        this.setupEventListeners();
     }
     
-    /**
-     * 🎯 座標変換（ブラウザ→OGL）
-     */
-    transformCoordinates(clientX, clientY) {
-        if (!this.canvasRect) this.updateCanvasRect();
+    // PointerTracker初期化（マウス・ペンタブレット専用）
+    initializePointerTracking() {
+        this.pointerTracker = new PointerTracker(this.canvas, {
+            // タッチデバイス完全無効化
+            start: (pointer, event) => {
+                // タッチイベント排除
+                if (event.pointerType === 'touch') {
+                    console.warn('🚫 Touch input not supported - mouse/pen only');
+                    return false;
+                }
+                
+                return this.handlePointerStart(pointer, event);
+            },
+            move: (previousPointers, changedPointers, event) => {
+                // タッチイベント排除
+                if (event.pointerType === 'touch') {
+                    return;
+                }
+                
+                this.handlePointerMove(previousPointers, changedPointers, event);
+            },
+            end: (pointer, event) => {
+                // タッチイベント排除
+                if (event.pointerType === 'touch') {
+                    return;
+                }
+                
+                this.handlePointerEnd(pointer, event);
+            }
+        });
         
-        // ブラウザ座標 → キャンバス座標
-        const canvasX = (clientX - this.canvasRect.left) * this.canvasScale;
-        const canvasY = (clientY - this.canvasRect.top) * this.canvasScale;
-        
-        // キャンバス座標 → OGL座標（中央原点・Y軸反転）
-        const oglX = canvasX - this.canvasOffset.x;
-        const oglY = -(canvasY - this.canvasOffset.y);
-        
-        return { x: oglX, y: oglY };
+        console.log('✅ Pointer tracking initialized (mouse/pen only)');
     }
     
-    /**
-     * 🖱️ Pointer Down処理
-     */
-    handlePointerDown(e) {
-        e.preventDefault();
+    // ポインター開始
+    handlePointerStart(pointer, event) {
+        if (this.isPointerDown) return false;
         
         this.isPointerDown = true;
-        this.isRightClick = e.button === 2;
-        this.isPenInput = e.pointerType === 'pen';
+        this.currentPointer = pointer;
         
-        const coords = this.transformCoordinates(e.clientX, e.clientY);
-        const pressure = this.extractPressure(e);
+        // 筆圧検出・サポート確認
+        this.detectPressureSupport(event);
+        const pressure = this.extractPressure(event);
         
-        this.lastPointerPos = coords;
-        this.pointerHistory = [{ ...coords, pressure, timestamp: Date.now() }];
+        // キャンバス座標変換
+        const canvasPoint = this.screenToCanvas(pointer.clientX, pointer.clientY);
         
-        // 右クリック以外で描画開始
-        if (!this.isRightClick) {
-            this.engine.startStroke(coords.x, coords.y, pressure);
-        }
+        // 入力履歴記録
+        this.addToHistory({
+            point: canvasPoint,
+            pressure,
+            timestamp: Date.now(),
+            type: 'start'
+        });
         
-        // Phase2以降でツール別処理追加
-        this.logInputEvent('pointer_down', { coords, pressure, pointerType: e.pointerType });
+        // OGL描画エンジンにストローク開始通知
+        this.oglCore.startStroke(canvasPoint, pressure);
+        
+        event.preventDefault();
+        return true;
     }
     
-    /**
-     * 🖱️ Pointer Move処理
-     */
-    handlePointerMove(e) {
-        e.preventDefault();
+    // ポインター移動
+    handlePointerMove(previousPointers, changedPointers, event) {
+        if (!this.isPointerDown || !this.currentPointer) return;
         
-        const coords = this.transformCoordinates(e.clientX, e.clientY);
-        const pressure = this.extractPressure(e);
+        const pointer = changedPointers[0];
+        if (!pointer) return;
         
-        // 履歴更新
-        this.pointerHistory.push({ ...coords, pressure, timestamp: Date.now() });
-        if (this.pointerHistory.length > 10) {
-            this.pointerHistory.shift(); // 履歴サイズ制限
+        const pressure = this.extractPressure(event);
+        const canvasPoint = this.screenToCanvas(pointer.clientX, pointer.clientY);
+        
+        // 入力フィルタリング適用
+        if (this.shouldFilterInput(canvasPoint)) {
+            return;
         }
         
-        // 描画中の場合
-        if (this.isPointerDown && !this.isRightClick) {
-            this.engine.updateStroke(coords.x, coords.y, pressure);
-        }
+        // 速度計算
+        const velocity = this.calculateVelocity(canvasPoint);
         
-        // ホバー処理（Phase2で活用）
-        else if (this.supportsHover) {
-            // Phase2でツールプレビュー等実装予定
-        }
+        // 入力履歴記録
+        this.addToHistory({
+            point: canvasPoint,
+            pressure,
+            velocity,
+            timestamp: Date.now(),
+            type: 'move'
+        });
         
-        this.lastPointerPos = coords;
+        // OGL描画エンジンにストローク更新通知
+        this.oglCore.updateStroke(canvasPoint, pressure);
+        
+        event.preventDefault();
     }
     
-    /**
-     * 🖱️ Pointer Up処理
-     */
-    handlePointerUp(e) {
-        e.preventDefault();
-        
-        if (this.isPointerDown && !this.isRightClick) {
-            this.engine.endStroke();
-        }
+    // ポインター終了
+    handlePointerEnd(pointer, event) {
+        if (!this.isPointerDown) return;
         
         this.isPointerDown = false;
-        this.isRightClick = false;
-        this.isPenInput = false;
         
-        this.logInputEvent('pointer_up', { 
-            coords: this.lastPointerPos,
-            historyLength: this.pointerHistory.length 
-        });
-    }
-    
-    /**
-     * 🚪 Pointer Leave処理
-     */
-    handlePointerLeave(e) {
-        if (this.isPointerDown) {
-            this.handlePointerUp(e);
-        }
-    }
-    
-    /**
-     * 🏠 Pointer Hover処理（Phase2で活用）
-     */
-    handlePointerHover(e, isEnter) {
-        // Phase2でツールプレビュー、カーソル変更等実装予定
-        if (isEnter) {
-            this.canvas.style.cursor = 'crosshair';
-        } else {
-            this.canvas.style.cursor = 'default';
-        }
-    }
-    
-    /**
-     * 🖱️ マウスイベント処理（フォールバック）
-     */
-    handleMouseDown(e) {
-        this.handlePointerDown({
-            ...e,
-            pointerId: 1,
-            pointerType: 'mouse',
-            pressure: 1.0
-        });
-    }
-    
-    handleMouseMove(e) {
-        this.handlePointerMove({
-            ...e,
-            pointerId: 1,
-            pointerType: 'mouse',
-            pressure: 1.0
-        });
-    }
-    
-    handleMouseUp(e) {
-        this.handlePointerUp({
-            ...e,
-            pointerId: 1,
-            pointerType: 'mouse'
-        });
-    }
-    
-    handleMouseLeave(e) {
-        this.handlePointerLeave({
-            ...e,
-            pointerId: 1,
-            pointerType: 'mouse'
-        });
-    }
-    
-    /**
-     * 👆 タッチイベント処理（フォールバック）
-     */
-    handleTouchStart(e) {
-        e.preventDefault();
+        const pressure = this.extractPressure(event);
+        const canvasPoint = this.screenToCanvas(pointer.clientX, pointer.clientY);
         
-        for (const touch of e.changedTouches) {
-            this.activeTouches.set(touch.identifier, touch);
-            
-            // プライマリタッチのみ描画
-            if (this.activeTouches.size === 1) {
-                this.handlePointerDown({
-                    ...touch,
-                    pointerId: touch.identifier,
-                    pointerType: 'touch',
-                    pressure: 1.0,
-                    button: 0
+        // 入力履歴記録
+        this.addToHistory({
+            point: canvasPoint,
+            pressure,
+            timestamp: Date.now(),
+            type: 'end'
+        });
+        
+        // OGL描画エンジンにストローク終了通知
+        this.oglCore.endStroke();
+        
+        this.currentPointer = null;
+        event.preventDefault();
+    }
+    
+    // 筆圧検出・サポート確認
+    detectPressureSupport(event) {
+        if (event.pressure !== undefined && event.pressure > 0) {
+            if (!this.pressureSupported) {
+                this.pressureSupported = true;
+                console.log('✅ Pressure sensitivity detected');
+                this.eventStore.emit(this.eventStore.eventTypes.ENGINE_READY, {
+                    pressureSupported: true
                 });
             }
         }
     }
     
-    handleTouchMove(e) {
-        e.preventDefault();
+    // 筆圧抽出・スムージング
+    extractPressure(event) {
+        let pressure = 1.0;
         
-        for (const touch of e.changedTouches) {
-            if (this.activeTouches.has(touch.identifier)) {
-                this.activeTouches.set(touch.identifier, touch);
-                
-                // プライマリタッチのみ描画
-                if (this.activeTouches.size === 1) {
-                    this.handlePointerMove({
-                        ...touch,
-                        pointerId: touch.identifier,
-                        pointerType: 'touch',
-                        pressure: 1.0
-                    });
-                }
-            }
+        if (this.pressureSupported && event.pressure !== undefined) {
+            pressure = Math.max(0.1, Math.min(1.0, event.pressure));
+            
+            // 筆圧スムージング適用
+            const smoothing = this.inputFilter.pressureSmoothing;
+            pressure = this.lastPressure + (pressure - this.lastPressure) * (1 - smoothing);
         }
+        
+        this.lastPressure = pressure;
+        return pressure;
     }
     
-    handleTouchEnd(e) {
-        e.preventDefault();
+    // スクリーン座標からキャンバス座標変換
+    screenToCanvas(screenX, screenY) {
+        const rect = this.canvas.getBoundingClientRect();
+        const x = (screenX - rect.left) - this.canvas.width / 2;
+        const y = -((screenY - rect.top) - this.canvas.height / 2); // Y軸反転
         
-        for (const touch of e.changedTouches) {
-            if (this.activeTouches.has(touch.identifier)) {
-                // プライマリタッチのみ描画終了
-                if (this.activeTouches.size === 1) {
-                    this.handlePointerUp({
-                        ...touch,
-                        pointerId: touch.identifier,
-                        pointerType: 'touch'
-                    });
-                }
-                
-                this.activeTouches.delete(touch.identifier);
-            }
-        }
-    }
-    
-    /**
-     * 💪 筆圧抽出
-     */
-    extractPressure(e) {
-        // Pointer Events APIの筆圧
-        if (e.pressure !== undefined && e.pressure > 0) {
-            return Math.max(0.1, Math.min(1.0, e.pressure));
-        }
+        // キャンバス変換適用
+        const cos = Math.cos(-this.canvasTransform.rotation);
+        const sin = Math.sin(-this.canvasTransform.rotation);
         
-        // ペン入力の場合のデフォルト
-        if (this.isPenInput || e.pointerType === 'pen') {
-            return 0.8;
-        }
+        const scaledX = (x - this.canvasTransform.offsetX) / this.canvasTransform.scale;
+        const scaledY = (y - this.canvasTransform.offsetY) / this.canvasTransform.scale;
         
-        // その他のデフォルト
-        return 1.0;
-    }
-    
-    /**
-     * 📊 入力統計取得
-     */
-    getInputStats() {
         return {
-            deviceType: this.deviceType,
-            supportsPressure: this.supportsPressure,
-            supportsHover: this.supportsHover,
-            isPointerDown: this.isPointerDown,
-            isPenInput: this.isPenInput,
-            activeTouches: this.activeTouches.size,
-            historyLength: this.pointerHistory.length
+            x: scaledX * cos - scaledY * sin,
+            y: scaledX * sin + scaledY * cos
         };
     }
     
-    /**
-     * 📝 入力イベントログ（開発用）
-     */
-    logInputEvent(eventType, data) {
-        if (import.meta.env?.DEV) {
-            console.log(`🎯 Input Event: ${eventType}`, {
-                timestamp: Date.now(),
-                ...data
-            });
+    // キャンバス座標からスクリーン座標変換
+    canvasToScreen(canvasX, canvasY) {
+        const cos = Math.cos(this.canvasTransform.rotation);
+        const sin = Math.sin(this.canvasTransform.rotation);
+        
+        const rotatedX = canvasX * cos - canvasY * sin;
+        const rotatedY = canvasX * sin + canvasY * cos;
+        
+        const scaledX = rotatedX * this.canvasTransform.scale + this.canvasTransform.offsetX;
+        const scaledY = rotatedY * this.canvasTransform.scale + this.canvasTransform.offsetY;
+        
+        const rect = this.canvas.getBoundingClientRect();
+        return {
+            x: scaledX + this.canvas.width / 2 + rect.left,
+            y: -scaledY + this.canvas.height / 2 + rect.top
+        };
+    }
+    
+    // 入力フィルタリング判定
+    shouldFilterInput(point) {
+        if (this.pointerHistory.length === 0) return false;
+        
+        const lastPoint = this.pointerHistory[this.pointerHistory.length - 1].point;
+        const distance = Math.sqrt(
+            Math.pow(point.x - lastPoint.x, 2) +
+            Math.pow(point.y - lastPoint.y, 2)
+        );
+        
+        return distance < this.inputFilter.minDistance;
+    }
+    
+    // 速度計算
+    calculateVelocity(currentPoint) {
+        if (this.pointerHistory.length < 2) return { x: 0, y: 0, magnitude: 0 };
+        
+        const prevEntry = this.pointerHistory[this.pointerHistory.length - 1];
+        const timeDelta = Date.now() - prevEntry.timestamp;
+        
+        if (timeDelta === 0) return { x: 0, y: 0, magnitude: 0 };
+        
+        const deltaX = currentPoint.x - prevEntry.point.x;
+        const deltaY = currentPoint.y - prevEntry.point.y;
+        
+        const velocity = {
+            x: deltaX / timeDelta,
+            y: deltaY / timeDelta,
+            magnitude: Math.sqrt(deltaX * deltaX + deltaY * deltaY) / timeDelta
+        };
+        
+        // 速度スムージング
+        if (prevEntry.velocity) {
+            const smoothing = this.inputFilter.velocitySmoothing;
+            velocity.x = prevEntry.velocity.x + (velocity.x - prevEntry.velocity.x) * (1 - smoothing);
+            velocity.y = prevEntry.velocity.y + (velocity.y - prevEntry.velocity.y) * (1 - smoothing);
+            velocity.magnitude = prevEntry.velocity.magnitude + (velocity.magnitude - prevEntry.velocity.magnitude) * (1 - smoothing);
+        }
+        
+        return velocity;
+    }
+    
+    // キャンバス変換設定
+    setCanvasTransform(transform) {
+        this.canvasTransform = { ...this.canvasTransform, ...transform };
+        
+        this.eventStore.emit(this.eventStore.eventTypes.CANVAS_TRANSFORM, {
+            transform: this.canvasTransform
+        });
+    }
+    
+    // キャンバス移動
+    moveCanvas(deltaX, deltaY) {
+        this.canvasTransform.offsetX += deltaX;
+        this.canvasTransform.offsetY += deltaY;
+        
+        this.eventStore.emit(this.eventStore.eventTypes.CANVAS_TRANSFORM, {
+            transform: this.canvasTransform,
+            type: 'move'
+        });
+    }
+    
+    // キャンバス拡縮
+    scaleCanvas(scaleFactor, centerX = 0, centerY = 0) {
+        const newScale = Math.max(0.1, Math.min(10.0, this.canvasTransform.scale * scaleFactor));
+        const scaleChange = newScale / this.canvasTransform.scale;
+        
+        // 中心点を基準とした拡縮
+        this.canvasTransform.offsetX = centerX + (this.canvasTransform.offsetX - centerX) * scaleChange;
+        this.canvasTransform.offsetY = centerY + (this.canvasTransform.offsetY - centerY) * scaleChange;
+        this.canvasTransform.scale = newScale;
+        
+        this.eventStore.emit(this.eventStore.eventTypes.CANVAS_TRANSFORM, {
+            transform: this.canvasTransform,
+            type: 'scale'
+        });
+    }
+    
+    // キャンバス回転
+    rotateCanvas(deltaRotation) {
+        this.canvasTransform.rotation += deltaRotation;
+        
+        // 0-2π範囲正規化
+        while (this.canvasTransform.rotation < 0) {
+            this.canvasTransform.rotation += Math.PI * 2;
+        }
+        while (this.canvasTransform.rotation >= Math.PI * 2) {
+            this.canvasTransform.rotation -= Math.PI * 2;
+        }
+        
+        this.eventStore.emit(this.eventStore.eventTypes.CANVAS_TRANSFORM, {
+            transform: this.canvasTransform,
+            type: 'rotate'
+        });
+    }
+    
+    // キャンバスリセット
+    resetCanvas() {
+        this.canvasTransform = {
+            scale: 1.0,
+            offsetX: 0,
+            offsetY: 0,
+            rotation: 0
+        };
+        
+        this.eventStore.emit(this.eventStore.eventTypes.CANVAS_RESET, {
+            transform: this.canvasTransform
+        });
+    }
+    
+    // 入力履歴記録
+    addToHistory(entry) {
+        this.pointerHistory.push(entry);
+        if (this.pointerHistory.length > this.maxHistorySize) {
+            this.pointerHistory.shift();
         }
     }
     
-    /**
-     * 🧹 イベントリスナー削除・クリーンアップ
-     */
-    cleanup() {
-        try {
-            // 全イベントリスナー削除
-            Object.entries(this.boundEvents).forEach(([event, handler]) => {
-                if (event === 'resize' || event === 'beforeunload') {
-                    window.removeEventListener(event, handler);
-                } else {
-                    this.canvas.removeEventListener(event, handler);
-                }
-            });
+    // 入力履歴取得
+    getInputHistory(count = 5) {
+        return this.pointerHistory.slice(-count);
+    }
+    
+    // 追加イベントリスナー設定
+    setupEventListeners() {
+        // コンテキストメニュー無効化
+        this.canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+        
+        // ドラッグ無効化
+        this.canvas.addEventListener('dragstart', (e) => {
+            e.preventDefault();
+        });
+        
+        // 選択無効化
+        this.canvas.addEventListener('selectstart', (e) => {
+            e.preventDefault();
+        });
+        
+        // ホイールイベント（拡縮）
+        this.canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
             
-            // 参照クリア
-            this.boundEvents = {};
-            this.activeTouches.clear();
-            this.pointerHistory = [];
-            
-            console.log('🧹 OGL入力コントローラー クリーンアップ完了');
-            
-        } catch (error) {
-            console.error('🚨 入力コントローラー クリーンアップエラー:', error);
+            const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
+            const canvasPoint = this.screenToCanvas(e.clientX, e.clientY);
+            this.scaleCanvas(scaleFactor, canvasPoint.x, canvasPoint.y);
+        }, { passive: false });
+    }
+    
+    // 入力フィルター設定更新
+    updateInputFilter(filterConfig) {
+        this.inputFilter = { ...this.inputFilter, ...filterConfig };
+        console.log('✅ Input filter updated:', this.inputFilter);
+    }
+    
+    // デバッグ情報
+    getDebugInfo() {
+        return {
+            isPointerDown: this.isPointerDown,
+            pressureSupported: this.pressureSupported,
+            canvasTransform: this.canvasTransform,
+            historySize: this.pointerHistory.length,
+            inputFilter: this.inputFilter,
+            currentPointer: this.currentPointer ? {
+                x: this.currentPointer.clientX,
+                y: this.currentPointer.clientY
+            } : null
+        };
+    }
+    
+    // クリーンアップ
+    destroy() {
+        if (this.pointerTracker) {
+            this.pointerTracker.stop();
         }
+        
+        this.pointerHistory = [];
+        this.currentPointer = null;
+        this.isPointerDown = false;
+        
+        console.log('✅ Input controller destroyed');
     }
-    
-    // Phase2以降拡張予定機能
-    
-    /**
-     * Phase2: ジェスチャー処理追加予定
-     */
-    /*
-    initializeGestureProcessor() {
-        // Phase2で実装: ピンチ・ズーム・回転等
-        // this.gestureProcessor = new GestureProcessor();
-    }
-    
-    handleGesture(gestureType, gestureData) {
-        // Phase2で実装: ジェスチャー別処理
-    }
-    */
-    
-    /**
-     * Phase2: マルチタッチ処理追加予定
-     */
-    /*
-    initializeMultiTouchHandler() {
-        // Phase2で実装: マルチタッチサポート
-        // this.multiTouchHandler = new MultiTouchHandler();
-    }
-    
-    handleMultiTouch(touches) {
-        // Phase2で実装: 複数指による操作
-    }
-    */
-    
-    /**
-     * Phase2: キーボード修飾キー統合予定
-     */
-    /*
-    setupKeyboardModifiers() {
-        // Phase2で実装: Shift/Ctrl/Alt等の修飾キー
-        // this.keyboardModifiers = new KeyboardModifierHandler();
-    }
-    */
 }

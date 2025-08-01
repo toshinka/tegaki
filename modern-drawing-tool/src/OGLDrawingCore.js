@@ -1,631 +1,487 @@
-// OGLDrawingCore.js - OGL統一描画エンジン（Phase1基盤・500-600行）
-
-import { Renderer, Camera, Transform, Mesh, Program, Geometry, Texture, Vec2, Vec3 } from 'ogl';
+import { Renderer, Camera, Transform, Geometry, Program, Mesh, Vec2, Vec3 } from 'ogl';
 
 /**
- * 🔥 OGL統一描画エンジン
- * Canvas2D完全排除・OGL WebGL統一・ベクター至上主義
+ * OGLDrawingCore - OGL統一描画エンジン（Phase1基盤）
+ * Canvas2D完全禁止・OGL WebGL統一による高品質描画
  */
-export class OGLUnifiedEngine {
-    constructor(canvasElement) {
-        this.canvas = canvasElement;
+export class OGLDrawingCore {
+    constructor(canvas, eventStore) {
+        this.canvas = canvas;
+        this.eventStore = eventStore;
+        
+        // OGL基盤初期化
         this.renderer = null;
         this.scene = null;
         this.camera = null;
         
         // 描画システム
-        this.polylineSystem = null;
-        this.currentStrokes = [];
-        this.activeStroke = null;
-        
-        // ツール設定（Phase1.5で拡張）
         this.currentTool = 'pen';
-        this.toolSettings = {
-            pen: { width: 2, opacity: 1.0, color: [0.5, 0.0, 0.0] }, // ふたば色系
-            eraser: { width: 10, opacity: 1.0 }
-            // Phase2でエアスプレー・ボカシ等追加予定
+        this.isDrawing = false;
+        this.currentStroke = null;
+        this.strokes = [];
+        this.currentLayer = null;
+        
+        // 描画設定
+        this.drawingConfig = {
+            pen: {
+                size: 3,
+                opacity: 1.0,
+                color: [0.5, 0.0, 0.0], // ふたば色マルーン
+                pressure: true,
+                smoothing: 0.5
+            },
+            eraser: {
+                size: 10,
+                opacity: 1.0,
+                hardness: 0.8
+            },
+            airspray: {
+                size: 20,
+                opacity: 0.3,
+                density: 0.6,
+                scatter: 1.0
+            }
         };
         
-        // 入力状態
-        this.isDrawing = false;
-        this.currentPoints = [];
-        this.pressure = 1.0;
+        // パフォーマンス最適化
+        this.renderQueue = [];
+        this.needsRedraw = true;
+        this.frameCount = 0;
         
-        // レンダリング制御
-        this.needsRender = true;
-        this.animationId = null;
-        
-        // エラーハンドリング
-        this.onError = null;
-        
-        // Phase2以降拡張予定
-        // this.layerSystem = null;        // Phase3で追加
-        // this.transformSystem = null;    // Phase3で追加
-        // this.animationSystem = null;    // Phase4で追加
-        // this.meshDeformSystem = null;   // Phase4でLIVE2D風変形追加
+        this.setupEventListeners();
     }
     
-    /**
-     * 🚀 OGL統一エンジン初期化
-     */
-    initialize() {
+    // OGL WebGL初期化
+    async initialize() {
         try {
-            // OGLRenderer初期化（WebGL統一）
+            // OGL Renderer初期化（Canvas2D完全禁止）
             this.renderer = new Renderer({
                 canvas: this.canvas,
-                width: this.canvas.width,
-                height: this.canvas.height,
-                dpr: Math.min(window.devicePixelRatio, 2),
                 alpha: true,
                 antialias: true,
-                preserveDrawingBuffer: true // Phase3以降でスナップショット用
+                powerPreference: 'high-performance'
             });
             
-            // カメラ設定（2D描画用正投影）
-            this.camera = new Camera({
-                left: -this.canvas.width / 2,
-                right: this.canvas.width / 2,
-                bottom: -this.canvas.height / 2,
-                top: this.canvas.height / 2,
-                near: 0.1,
-                far: 100
-            });
-            this.camera.position.set(0, 0, 1);
-            
-            // シーン初期化
+            // シーン・カメラ設定
             this.scene = new Transform();
+            this.camera = new Camera({
+                fov: 45,
+                aspect: this.canvas.width / this.canvas.height,
+                near: 0.1,
+                far: 1000
+            });
             
-            // ポリラインシステム初期化
-            this.initializePolylineSystem();
+            // カメラ位置調整
+            this.camera.position.set(0, 0, 10);
             
-            // キャンバス背景設定（ふたば☆ちゃんねる色）
-            this.renderer.gl.clearColor(0.941, 0.878, 0.839, 1.0); // #f0e0d6
+            // シェーダー初期化
+            await this.initializeShaders();
             
-            console.log('✅ OGL統一エンジン初期化完了');
+            // レンダーループ開始
+            this.startRenderLoop();
+            
+            // 初期レイヤー作成
+            this.createInitialLayer();
+            
+            console.log('✅ OGL Drawing Engine initialized');
+            this.eventStore.emit(this.eventStore.eventTypes.ENGINE_READY);
             
         } catch (error) {
-            this.handleError('OGL Engine Initialization Failed', error);
+            console.error('🚨 OGL Engine initialization failed:', error);
+            this.eventStore.emit(this.eventStore.eventTypes.ENGINE_ERROR, { error });
+            throw error;
         }
     }
     
-    /**
-     * 🎨 ポリラインシステム初期化（OGL統一線描画）
-     */
-    initializePolylineSystem() {
-        // カスタムライン描画シェーダー
-        const vertexShader = `
-            attribute vec2 position;
-            attribute vec2 uv;
-            attribute float pressure;
-            
-            uniform mat4 modelViewMatrix;
-            uniform mat4 projectionMatrix;
-            uniform float lineWidth;
-            uniform float globalOpacity;
-            
-            varying vec2 vUv;
-            varying float vPressure;
-            varying float vOpacity;
-            
-            void main() {
-                vUv = uv;
-                vPressure = pressure;
-                vOpacity = globalOpacity;
-                
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 0.0, 1.0);
-            }
-        `;
-        
-        const fragmentShader = `
-            precision mediump float;
-            
-            uniform vec3 color;
-            uniform float opacity;
-            
-            varying vec2 vUv;
-            varying float vPressure;
-            varying float vOpacity;
-            
-            void main() {
-                // 筆圧による線幅調整
-                float alpha = 1.0 - length(vUv - 0.5) * 2.0;
-                alpha *= vPressure * vOpacity * opacity;
-                
-                gl_FragColor = vec4(color, alpha);
-            }
-        `;
-        
-        this.lineProgram = new Program(this.renderer.gl, {
-            vertex: vertexShader,
-            fragment: fragmentShader,
+    // シェーダー初期化
+    async initializeShaders() {
+        // ペンシェーダー
+        this.penProgram = new Program(this.renderer.gl, {
+            vertex: this.getVertexShader(),
+            fragment: this.getPenFragmentShader(),
             uniforms: {
-                color: { value: [0.5, 0.0, 0.0] }, // ふたば色デフォルト
-                opacity: { value: 1.0 },
-                lineWidth: { value: 2.0 },
-                globalOpacity: { value: 1.0 }
-            },
-            transparent: true,
-            cullFace: null
+                uTime: { value: 0 },
+                uColor: { value: [0.5, 0.0, 0.0] },
+                uOpacity: { value: 1.0 },
+                uSize: { value: 3.0 }
+            }
         });
         
-        this.polylineSystem = {
-            program: this.lineProgram,
-            strokes: []
+        // エアスプレーシェーダー
+        this.airsprayProgram = new Program(this.renderer.gl, {
+            vertex: this.getVertexShader(),
+            fragment: this.getAirsprayFragmentShader(),
+            uniforms: {
+                uTime: { value: 0 },
+                uColor: { value: [0.5, 0.0, 0.0] },
+                uOpacity: { value: 0.3 },
+                uSize: { value: 20.0 },
+                uDensity: { value: 0.6 }
+            }
+        });
+        
+        // 消しゴムシェーダー
+        this.eraserProgram = new Program(this.renderer.gl, {
+            vertex: this.getVertexShader(),
+            fragment: this.getEraserFragmentShader(),
+            uniforms: {
+                uSize: { value: 10.0 },
+                uHardness: { value: 0.8 }
+            }
+        });
+    }
+    
+    // ストローク開始
+    startStroke(point, pressure = 1.0) {
+        if (this.isDrawing) return;
+        
+        this.isDrawing = true;
+        this.currentStroke = {
+            id: this.generateStrokeId(),
+            tool: this.currentTool,
+            points: [{ ...point, pressure }],
+            config: { ...this.drawingConfig[this.currentTool] },
+            geometry: null,
+            mesh: null,
+            timestamp: Date.now()
+        };
+        
+        this.eventStore.emit(this.eventStore.eventTypes.STROKE_START, {
+            strokeId: this.currentStroke.id,
+            tool: this.currentTool,
+            point
+        });
+        
+        this.createStrokeGeometry();
+    }
+    
+    // ストローク更新
+    updateStroke(point, pressure = 1.0) {
+        if (!this.isDrawing || !this.currentStroke) return;
+        
+        // スムージング適用
+        const smoothedPoint = this.applySmoothingFilter(point);
+        this.currentStroke.points.push({ ...smoothedPoint, pressure });
+        
+        // ジオメトリ更新
+        this.updateStrokeGeometry();
+        
+        this.eventStore.emit(this.eventStore.eventTypes.STROKE_UPDATE, {
+            strokeId: this.currentStroke.id,
+            point: smoothedPoint,
+            pointCount: this.currentStroke.points.length
+        });
+        
+        this.needsRedraw = true;
+    }
+    
+    // ストローク終了
+    endStroke() {
+        if (!this.isDrawing || !this.currentStroke) return;
+        
+        this.isDrawing = false;
+        
+        // ストローク確定
+        this.finalizeStroke();
+        this.strokes.push(this.currentStroke);
+        
+        this.eventStore.emit(this.eventStore.eventTypes.STROKE_COMPLETE, {
+            strokeId: this.currentStroke.id,
+            pointCount: this.currentStroke.points.length,
+            tool: this.currentTool
+        });
+        
+        this.currentStroke = null;
+        this.needsRedraw = true;
+    }
+    
+    // ストロークジオメトリ作成
+    createStrokeGeometry() {
+        if (!this.currentStroke) return;
+        
+        const points = this.currentStroke.points;
+        if (points.length < 1) return;
+        
+        // OGL Geometry作成（Canvas2D禁止・WebGL統一）
+        const vertices = [];
+        const indices = [];
+        
+        points.forEach((point, index) => {
+            vertices.push(point.x, point.y, 0);
+            if (index > 0) {
+                indices.push(index - 1, index);
+            }
+        });
+        
+        this.currentStroke.geometry = new Geometry(this.renderer.gl, {
+            position: { size: 3, data: new Float32Array(vertices) },
+            index: { data: new Uint16Array(indices) }
+        });
+        
+        // メッシュ作成
+        const program = this.getToolProgram(this.currentTool);
+        this.currentStroke.mesh = new Mesh(this.renderer.gl, {
+            geometry: this.currentStroke.geometry,
+            program: program
+        });
+        
+        if (this.currentLayer) {
+            this.currentStroke.mesh.setParent(this.currentLayer);
+        }
+    }
+    
+    // ストロークジオメトリ更新
+    updateStrokeGeometry() {
+        if (!this.currentStroke || !this.currentStroke.geometry) return;
+        
+        const points = this.currentStroke.points;
+        const vertices = [];
+        const indices = [];
+        
+        points.forEach((point, index) => {
+            vertices.push(point.x, point.y, 0);
+            if (index > 0) {
+                indices.push(index - 1, index);
+            }
+        });
+        
+        // OGL Geometry更新
+        this.currentStroke.geometry.attributes.position.data = new Float32Array(vertices);
+        this.currentStroke.geometry.attributes.index.data = new Uint16Array(indices);
+        this.currentStroke.geometry.attributes.position.needsUpdate = true;
+        this.currentStroke.geometry.attributes.index.needsUpdate = true;
+    }
+    
+    // スムージングフィルター
+    applySmoothingFilter(point) {
+        if (!this.currentStroke || this.currentStroke.points.length < 2) {
+            return point;
+        }
+        
+        const smoothing = this.currentStroke.config.smoothing || 0.5;
+        const lastPoint = this.currentStroke.points[this.currentStroke.points.length - 1];
+        
+        return {
+            x: lastPoint.x + (point.x - lastPoint.x) * (1 - smoothing),
+            y: lastPoint.y + (point.y - lastPoint.y) * (1 - smoothing)
         };
     }
     
-    /**
-     * 🖌️ ツール選択（OGL専用機能起動トリガー）
-     */
-    selectTool(toolName) {
-        if (!this.toolSettings[toolName]) {
-            console.warn(`🚨 未知のツール: ${toolName}`);
-            return;
+    // ツール変更
+    setTool(toolName) {
+        if (this.isDrawing) {
+            this.endStroke();
         }
         
         this.currentTool = toolName;
-        const settings = this.toolSettings[toolName];
-        
-        // OGL統一設定更新
-        if (this.lineProgram) {
-            this.lineProgram.uniforms.color.value = settings.color || [0.5, 0.0, 0.0];
-            this.lineProgram.uniforms.opacity.value = settings.opacity || 1.0;
-            this.lineProgram.uniforms.lineWidth.value = settings.width || 2.0;
-        }
-        
-        console.log(`🎨 ツール切り替え: ${toolName}`, settings);
-        this.needsRender = true;
+        this.eventStore.emit(this.eventStore.eventTypes.TOOL_CHANGE, { tool: toolName });
     }
     
-    /**
-     * 🎯 ストローク開始
-     */
-    startStroke(x, y, pressure = 1.0) {
-        this.isDrawing = true;
-        this.pressure = pressure;
-        this.currentPoints = [{ x, y, pressure }];
-        this.activeStroke = {
-            tool: this.currentTool,
-            points: this.currentPoints,
-            settings: { ...this.toolSettings[this.currentTool] }
-        };
+    // ツール設定更新
+    updateToolConfig(toolName, config) {
+        this.drawingConfig[toolName] = { ...this.drawingConfig[toolName], ...config };
         
-        console.log(`🎯 ストローク開始: (${x}, ${y}) 筆圧: ${pressure}`);
-    }
-    
-    /**
-     * ✏️ ストローク更新
-     */
-    updateStroke(x, y, pressure = 1.0) {
-        if (!this.isDrawing || !this.activeStroke) return;
-        
-        this.pressure = pressure;
-        this.currentPoints.push({ x, y, pressure });
-        
-        // スムージング処理（簡易版・Phase2で高度化）
-        this.smoothCurrentStroke();
-        
-        // OGL統一描画更新
-        this.updateActiveStrokeMesh();
-        this.needsRender = true;
-    }
-    
-    /**
-     * ✅ ストローク終了
-     */
-    endStroke() {
-        if (!this.isDrawing || !this.activeStroke) return;
-        
-        this.isDrawing = false;
-        
-        // 最終スムージング
-        this.smoothCurrentStroke();
-        
-        // ストローク確定・履歴追加
-        this.finalizeStroke();
-        
-        // リセット
-        this.activeStroke = null;
-        this.currentPoints = [];
-        
-        console.log('✅ ストローク終了・確定');
-    }
-    
-    /**
-     * 🌊 スムージング処理（Phase2で高度化予定）
-     */
-    smoothCurrentStroke() {
-        if (this.currentPoints.length < 3) return;
-        
-        // 簡易スムージング（Phase2でベジエ曲線等に拡張）
-        const smoothed = [];
-        smoothed.push(this.currentPoints[0]);
-        
-        for (let i = 1; i < this.currentPoints.length - 1; i++) {
-            const prev = this.currentPoints[i - 1];
-            const curr = this.currentPoints[i];
-            const next = this.currentPoints[i + 1];
-            
-            const smoothedPoint = {
-                x: (prev.x + curr.x + next.x) / 3,
-                y: (prev.y + curr.y + next.y) / 3,
-                pressure: (prev.pressure + curr.pressure + next.pressure) / 3
-            };
-            smoothed.push(smoothedPoint);
-        }
-        
-        smoothed.push(this.currentPoints[this.currentPoints.length - 1]);
-        this.currentPoints = smoothed;
-    }
-    
-    /**
-     * 🎨 アクティブストロークメッシュ更新
-     */
-    updateActiveStrokeMesh() {
-        if (!this.activeStroke || this.currentPoints.length < 2) return;
-        
-        try {
-            // ポリライン用ジオメトリ生成
-            const geometry = this.createPolylineGeometry(this.currentPoints);
-            
-            // 既存のアクティブメッシュ削除
-            if (this.activeStroke.mesh) {
-                this.scene.removeChild(this.activeStroke.mesh);
-            }
-            
-            // 新規メッシュ作成
-            this.activeStroke.mesh = new Mesh(this.renderer.gl, {
-                geometry,
-                program: this.lineProgram
-            });
-            
-            this.scene.addChild(this.activeStroke.mesh);
-            
-        } catch (error) {
-            this.handleError('Active Stroke Mesh Update Failed', error);
-        }
-    }
-    
-    /**
-     * 📐 ポリラインジオメトリ生成（OGL統一）
-     */
-    createPolylineGeometry(points) {
-        if (points.length < 2) return null;
-        
-        const positions = [];
-        const uvs = [];
-        const pressures = [];
-        const indices = [];
-        
-        // ライン幅算出
-        const width = this.toolSettings[this.currentTool]?.width || 2.0;
-        
-        for (let i = 0; i < points.length - 1; i++) {
-            const curr = points[i];
-            const next = points[i + 1];
-            
-            // 方向ベクトル
-            const dx = next.x - curr.x;
-            const dy = next.y - curr.y;
-            const length = Math.sqrt(dx * dx + dy * dy);
-            
-            if (length === 0) continue;
-            
-            // 法線ベクトル
-            const nx = -dy / length;
-            const ny = dx / length;
-            
-            // 筆圧考慮幅
-            const currWidth = width * curr.pressure * 0.5;
-            const nextWidth = width * next.pressure * 0.5;
-            
-            // 頂点生成
-            const baseIndex = positions.length / 2;
-            
-            // 現在点の両端
-            positions.push(curr.x + nx * currWidth, curr.y + ny * currWidth);
-            positions.push(curr.x - nx * currWidth, curr.y - ny * currWidth);
-            
-            // 次点の両端
-            positions.push(next.x + nx * nextWidth, next.y + ny * nextWidth);
-            positions.push(next.x - nx * nextWidth, next.y - ny * nextWidth);
-            
-            // UV座標
-            uvs.push(0, 0, 0, 1, 1, 0, 1, 1);
-            
-            // 筆圧
-            pressures.push(curr.pressure, curr.pressure, next.pressure, next.pressure);
-            
-            // インデックス（三角形2つ）
-            indices.push(
-                baseIndex, baseIndex + 1, baseIndex + 2,
-                baseIndex + 1, baseIndex + 3, baseIndex + 2
-            );
-        }
-        
-        return new Geometry(this.renderer.gl, {
-            position: { size: 2, data: new Float32Array(positions) },
-            uv: { size: 2, data: new Float32Array(uvs) },
-            pressure: { size: 1, data: new Float32Array(pressures) },
-            index: { data: new Uint16Array(indices) }
+        this.eventStore.emit(this.eventStore.eventTypes.TOOL_CONFIG_CHANGE, {
+            tool: toolName,
+            config: this.drawingConfig[toolName]
         });
     }
     
-    /**
-     * ✅ ストローク確定
-     */
-    finalizeStroke() {
-        if (!this.activeStroke) return;
-        
-        try {
-            // 最終ジオメトリ生成
-            const geometry = this.createPolylineGeometry(this.currentPoints);
-            
-            // 確定ストローク作成
-            const finalStroke = {
-                id: Date.now() + Math.random(),
-                tool: this.activeStroke.tool,
-                points: [...this.currentPoints],
-                settings: { ...this.activeStroke.settings },
-                mesh: new Mesh(this.renderer.gl, {
-                    geometry,
-                    program: this.lineProgram
-                })
-            };
-            
-            // シーンに追加
-            this.scene.addChild(finalStroke.mesh);
-            this.currentStrokes.push(finalStroke);
-            
-            // アクティブストローク削除
-            if (this.activeStroke.mesh) {
-                this.scene.removeChild(this.activeStroke.mesh);
-            }
-            
-            console.log(`✅ ストローク確定 ID: ${finalStroke.id}`);
-            
-        } catch (error) {
-            this.handleError('Stroke Finalization Failed', error);
-        }
-    }
-    
-    /**
-     * 🔄 レンダリングループ開始
-     */
+    // レンダーループ
     startRenderLoop() {
-        const render = () => {
-            if (this.needsRender) {
-                this.renderer.render({
-                    scene: this.scene,
-                    camera: this.camera
-                });
-                this.needsRender = false;
+        const render = (time) => {
+            if (this.needsRedraw) {
+                // シェーダー時間更新
+                if (this.penProgram) {
+                    this.penProgram.uniforms.uTime.value = time * 0.001;
+                }
+                if (this.airsprayProgram) {
+                    this.airsprayProgram.uniforms.uTime.value = time * 0.001;
+                }
+                
+                // レンダー実行
+                this.renderer.render({ scene: this.scene, camera: this.camera });
+                this.needsRedraw = false;
             }
             
-            this.animationId = requestAnimationFrame(render);
+            this.frameCount++;
+            requestAnimationFrame(render);
         };
         
-        render();
-        console.log('🔄 OGL統一レンダリングループ開始');
+        requestAnimationFrame(render);
     }
     
-    /**
-     * ⏹️ レンダリングループ停止
-     */
-    stopRenderLoop() {
-        if (this.animationId) {
-            cancelAnimationFrame(this.animationId);
-            this.animationId = null;
+    // 初期レイヤー作成
+    createInitialLayer() {
+        this.currentLayer = new Transform();
+        this.currentLayer.setParent(this.scene);
+        console.log('✅ Initial layer created');
+    }
+    
+    // シェーダー取得
+    getToolProgram(toolName) {
+        switch (toolName) {
+            case 'pen': return this.penProgram;
+            case 'airspray': return this.airsprayProgram;
+            case 'eraser': return this.eraserProgram;
+            default: return this.penProgram;
         }
-        console.log('⏹️ レンダリングループ停止');
     }
     
-    /**
-     * 🖼️ キャンバスクリア
-     */
-    clearCanvas() {
-        try {
-            // 全ストローク削除
-            this.currentStrokes.forEach(stroke => {
-                if (stroke.mesh) {
-                    this.scene.removeChild(stroke.mesh);
-                }
-            });
-            this.currentStrokes = [];
+    // 頂点シェーダー
+    getVertexShader() {
+        return `
+            attribute vec3 position;
+            uniform mat4 modelViewMatrix;
+            uniform mat4 projectionMatrix;
             
-            // アクティブストローク削除
-            if (this.activeStroke?.mesh) {
-                this.scene.removeChild(this.activeStroke.mesh);
+            void main() {
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                gl_PointSize = 10.0;
             }
-            this.activeStroke = null;
-            this.currentPoints = [];
-            this.isDrawing = false;
-            
-            this.needsRender = true;
-            console.log('🖼️ キャンバスクリア完了');
-            
-        } catch (error) {
-            this.handleError('Canvas Clear Failed', error);
-        }
+        `;
     }
     
-    /**
-     * 📏 キャンバスリサイズ
-     */
-    resizeCanvas(width, height) {
-        try {
-            this.canvas.width = width;
-            this.canvas.height = height;
+    // ペンフラグメントシェーダー
+    getPenFragmentShader() {
+        return `
+            precision mediump float;
+            uniform vec3 uColor;
+            uniform float uOpacity;
+            uniform float uTime;
             
-            this.renderer.setSize(width, height);
+            void main() {
+                vec2 center = gl_PointCoord - 0.5;
+                float dist = length(center);
+                float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
+                gl_FragColor = vec4(uColor, alpha * uOpacity);
+            }
+        `;
+    }
+    
+    // エアスプレーフラグメントシェーダー
+    getAirsprayFragmentShader() {
+        return `
+            precision mediump float;
+            uniform vec3 uColor;
+            uniform float uOpacity;
+            uniform float uDensity;
+            uniform float uTime;
             
-            // カメラ更新
-            this.camera.left = -width / 2;
-            this.camera.right = width / 2;
-            this.camera.bottom = -height / 2;
-            this.camera.top = height / 2;
+            void main() {
+                vec2 center = gl_PointCoord - 0.5;
+                float dist = length(center);
+                float noise = sin(uTime + gl_FragCoord.x * 0.1) * sin(uTime + gl_FragCoord.y * 0.1);
+                float alpha = (1.0 - smoothstep(0.0, 0.5, dist)) * uDensity * (0.5 + noise * 0.3);
+                gl_FragColor = vec4(uColor, alpha * uOpacity);
+            }
+        `;
+    }
+    
+    // 消しゴムフラグメントシェーダー
+    getEraserFragmentShader() {
+        return `
+            precision mediump float;
+            uniform float uHardness;
+            
+            void main() {
+                vec2 center = gl_PointCoord - 0.5;
+                float dist = length(center);
+                float alpha = 1.0 - smoothstep(0.0, 0.5 * uHardness, dist);
+                gl_FragColor = vec4(0.0, 0.0, 0.0, alpha);
+            }
+        `;
+    }
+    
+    // ストロークID生成
+    generateStrokeId() {
+        return `stroke_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+    
+    // ストローク確定
+    finalizeStroke() {
+        if (!this.currentStroke) return;
+        
+        // 最適化処理
+        this.optimizeStrokeGeometry();
+    }
+    
+    // ジオメトリ最適化
+    optimizeStrokeGeometry() {
+        // 点の間引き・最適化処理
+        if (!this.currentStroke || this.currentStroke.points.length < 3) return;
+        
+        const threshold = 2.0; // 最小距離閾値
+        const optimizedPoints = [this.currentStroke.points[0]];
+        
+        for (let i = 1; i < this.currentStroke.points.length - 1; i++) {
+            const prevPoint = optimizedPoints[optimizedPoints.length - 1];
+            const currentPoint = this.currentStroke.points[i];
+            const distance = Math.sqrt(
+                Math.pow(currentPoint.x - prevPoint.x, 2) +
+                Math.pow(currentPoint.y - prevPoint.y, 2)
+            );
+            
+            if (distance >= threshold) {
+                optimizedPoints.push(currentPoint);
+            }
+        }
+        
+        // 最後の点は必ず追加
+        optimizedPoints.push(this.currentStroke.points[this.currentStroke.points.length - 1]);
+        
+        this.currentStroke.points = optimizedPoints;
+        this.updateStrokeGeometry();
+    }
+    
+    // イベントリスナー設定
+    setupEventListeners() {
+        // ウィンドウリサイズ対応
+        window.addEventListener('resize', () => {
+            this.handleResize();
+        });
+    }
+    
+    // リサイズ処理
+    handleResize() {
+        const { clientWidth, clientHeight } = this.canvas.parentElement;
+        this.canvas.width = clientWidth;
+        this.canvas.height = clientHeight;
+        
+        if (this.renderer) {
+            this.renderer.setSize(clientWidth, clientHeight);
+        }
+        
+        if (this.camera) {
+            this.camera.aspect = clientWidth / clientHeight;
             this.camera.updateProjectionMatrix();
-            
-            this.needsRender = true;
-            console.log(`📏 キャンバスリサイズ: ${width}x${height}`);
-            
-        } catch (error) {
-            this.handleError('Canvas Resize Failed', error);
         }
+        
+        this.needsRedraw = true;
     }
     
-    /**
-     * 🎨 ツール設定更新
-     */
-    updateToolSettings(toolName, settings) {
-        if (!this.toolSettings[toolName]) {
-            this.toolSettings[toolName] = {};
-        }
-        
-        Object.assign(this.toolSettings[toolName], settings);
-        
-        // 現在のツールの場合は即座に反映
-        if (this.currentTool === toolName) {
-            this.selectTool(toolName);
-        }
-        
-        console.log(`🎨 ツール設定更新: ${toolName}`, settings);
-    }
-    
-    /**
-     * 📊 エンジン状態取得
-     */
-    getEngineState() {
-        return {
-            currentTool: this.currentTool,
-            isDrawing: this.isDrawing,
-            strokeCount: this.currentStrokes.length,
-            canvasSize: {
-                width: this.canvas.width,
-                height: this.canvas.height
-            },
-            // Phase2以降で詳細状態追加
-            toolSettings: { ...this.toolSettings }
+    // Canvas2D使用禁止チェック
+    preventCanvas2D() {
+        const originalGetContext = this.canvas.getContext;
+        this.canvas.getContext = (contextType, ...args) => {
+            if (contextType === '2d') {
+                throw new Error('🚨 Canvas2D is prohibited! Use OGL WebGL only.');
+            }
+            return originalGetContext.call(this.canvas, contextType, ...args);
         };
     }
     
-    /**
-     * 🔄 強制レンダリング
-     */
-    forceRender() {
-        this.needsRender = true;
+    // デバッグ情報
+    getDebugInfo() {
+        return {
+            strokeCount: this.strokes.length,
+            isDrawing: this.isDrawing,
+            currentTool: this.currentTool,
+            frameCount: this.frameCount,
+            rendererInfo: this.renderer ? {
+                drawingBufferWidth: this.renderer.gl.drawingBufferWidth,
+                drawingBufferHeight: this.renderer.gl.drawingBufferHeight
+            } : null
+        };
     }
-    
-    /**
-     * 🚨 エラーハンドリング
-     */
-    handleError(message, error) {
-        console.error(`🚨 OGL Engine Error: ${message}`, error);
-        
-        if (this.onError) {
-            this.onError({ message, error, timestamp: Date.now() });
-        }
-        
-        // Phase2以降でエラーリカバリー機能追加
-    }
-    
-    /**
-     * 🧹 リソース解放
-     */
-    dispose() {
-        try {
-            this.stopRenderLoop();
-            
-            // 全ストローク解放
-            this.currentStrokes.forEach(stroke => {
-                if (stroke.mesh) {
-                    stroke.mesh.geometry?.dispose();
-                    this.scene.removeChild(stroke.mesh);
-                }
-            });
-            
-            // アクティブストローク解放
-            if (this.activeStroke?.mesh) {
-                this.activeStroke.mesh.geometry?.dispose();
-                this.scene.removeChild(this.activeStroke.mesh);
-            }
-            
-            // プログラム解放
-            this.lineProgram?.dispose();
-            
-            console.log('🧹 OGL Engine リソース解放完了');
-            
-        } catch (error) {
-            this.handleError('Resource Disposal Failed', error);
-        }
-    }
-    
-    // Phase2以降で拡張予定の機能スタブ
-    
-    /**
-     * Phase2: エアスプレー・ボカシツール追加予定
-     */
-    /*
-    initializeAirbrushTool() {
-        // Phase2で実装: パーティクルシステム + カスタムシェーダー
-    }
-    
-    initializeBlurTool() {
-        // Phase2で実装: ガウシアンブラー + ポストプロセシング
-    }
-    */
-    
-    /**
-     * Phase3: レイヤーシステム統合予定
-     */
-    /*
-    initializeLayerSystem() {
-        // Phase3で実装: マルチレイヤー + ブレンドモード
-        // this.layerSystem = new OGLLayerSystem(this.renderer);
-    }
-    
-    addLayer(name, opacity = 1.0) {
-        // Phase3で実装: 新規レイヤー追加
-    }
-    
-    setActiveLayer(layerId) {
-        // Phase3で実装: アクティブレイヤー切り替え
-    }
-    */
-    
-    /**
-     * Phase4: LIVE2D風メッシュ変形予定
-     */
-    /*
-    initializeMeshDeformation() {
-        // Phase4で実装: LIVE2D風メッシュ変形システム
-        // this.meshDeformSystem = new OGLMeshDeformSystem(this.renderer);
-    }
-    
-    startMeshDeform(controlPoints) {
-        // Phase4で実装: メッシュ変形開始
-    }
-    
-    updateMeshDeform(controlPoints) {
-        // Phase4で実装: リアルタイム変形更新
-    }
-    */
-    
-    /**
-     * Phase4: アニメーションシステム予定
-     */
-    /*
-    initializeAnimationSystem() {
-        // Phase4で実装: Storyboarder風アニメーション
-        // this.animationSystem = new OGLAnimationSystem(this.renderer);
-    }
-    
-    createAnimationCut(name) {
-        // Phase4で実装: アニメカット作成
-    }
-    
-    switchAnimationCut(cutId) {
-        // Phase4で実装: カット切り替え
-    }
-    */
 }
