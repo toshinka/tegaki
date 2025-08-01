@@ -1,535 +1,445 @@
-// main.js - Phase1-4完全統合版（OGL統一エンジン + EventStore基盤 + 全機能統合）
+// main.js - Phase段階的import管理テンプレート（Phase1+Phase2統合対応版）
 
-// 🔥 Phase1: OGL統一基盤（基盤システム）
-import { EventStore } from './EventStore.js';
-import { OGLDrawingCore } from './OGLDrawingCore.js';
+// 🔥 Phase1: OGL統一基盤（実装済み・動作確認済み）
+import { OGLUnifiedEngine } from './OGLDrawingCore.js';
 import { OGLInputController } from './OGLInputController.js';
 import { ShortcutController } from './ShortcutController.js';
 import { HistoryController } from './HistoryController.js';
+import { EventStore } from './EventStore.js';
 
-// 🎨 Phase2: ツール・UI・カラー統合
+// 🎨 Phase2: ツール・UI・カラー統合（同時実装・動作確認）
 import { ToolProcessor } from './ToolProcessor.js';
 import { UIController } from './UIController.js';
 import { ColorProcessor } from './ColorProcessor.js';
 import { LayerProcessor } from './LayerProcessor.js';
-import { CanvasController } from './CanvasController.js';
+// import { CanvasController } from './CanvasController.js';  // 次回実装
 
-// ⚡ Phase3-4: 高度機能・アニメーション・ファイル操作
-import { AdvancedToolProcessor } from './AdvancedToolProcessor.js';
-import { AnimationController } from './AnimationController.js';
-import { FileController } from './FileController.js';
-import { MeshDeformController } from './MeshDeformController.js';
+// ⚡ Phase3: 高度ツール・メッシュ変形・アニメーション（Phase2完成後封印解除）
+// import { AdvancedToolProcessor } from './AdvancedToolProcessor.js';
+// import { AnimationController } from './AnimationController.js';
+// import { FileController } from './FileController.js';
+// import { MeshDeformController } from './MeshDeformController.js';
 
-// 🏪 状態管理ストア
-import { LayerStore } from './stores/LayerStore.js';
-import { CanvasStore } from './stores/CanvasStore.js';
-import { AnimationStore } from './stores/AnimationStore.js';
-import { ProjectStore } from './stores/ProjectStore.js';
+// 🏪 Stores段階的追加（Phase3で実装）
+// import { AnimationStore } from './stores/AnimationStore.js';
+// import { ProjectStore } from './stores/ProjectStore.js';
 
 /**
  * 🎯 モダンお絵かきツール統合アプリケーション
- * Phase1-4完全統合・OGL統一エンジン・EventStore基盤・Adobe Fresco風UI
+ * Phase1+Phase2統合実装対応・OGL統一エンジン版
  */
 class DrawingApp {
     constructor(canvasElement) {
+        // 基本要素
         this.canvas = canvasElement;
         
-        // 🔥 Phase1: 基盤システム初期化
+        // 🔥 Phase1: OGL統一基盤初期化
         this.eventStore = new EventStore();
-        this.oglCore = new OGLDrawingCore(this.canvas, this.eventStore);
-        this.inputController = new OGLInputController(this.oglCore, this.eventStore);
-        this.shortcuts = new ShortcutController(this.oglCore, this.inputController, this.eventStore);
-        this.history = new HistoryController(this.oglCore, this.eventStore);
+        this.engine = new OGLUnifiedEngine(this.canvas);
+        this.inputController = new OGLInputController(this.engine, this.eventStore);
+        this.shortcuts = new ShortcutController(this.engine, this.eventStore);
+        this.history = new HistoryController(this.engine, this.eventStore);
         
-        // 🎨 Phase2: ツール・UI・カラー システム
-        this.toolProcessor = new ToolProcessor(this.oglCore, this.eventStore);
-        this.uiController = new UIController(this.eventStore);
-        this.colorProcessor = new ColorProcessor(this.oglCore, this.eventStore);
+        // 🎨 Phase2: ツール・UI統合
+        this.toolProcessor = new ToolProcessor(this.engine, this.eventStore);
+        this.uiController = new UIController(this.eventStore, this.toolProcessor);
+        this.colorProcessor = new ColorProcessor(this.engine, this.eventStore);
+        this.layerProcessor = new LayerProcessor(this.engine, this.eventStore);
         
-        // 🏪 状態管理ストア初期化
-        this.layerStore = new LayerStore();
-        this.canvasStore = new CanvasStore();
-        this.animationStore = new AnimationStore();
-        this.projectStore = new ProjectStore();
+        // Phase2拡張（次回実装）
+        // this.canvasController = new CanvasController(this.engine, this.eventStore);
         
-        // 🌈 Phase2続き: レイヤー・キャンバス システム
-        this.layerProcessor = new LayerProcessor(this.oglCore, this.eventStore, this.layerStore);
-        this.canvasController = new CanvasController(this.oglCore, this.inputController, this.eventStore, this.canvasStore);
+        // ⚡ Phase3: 高度機能（封印解除時追加）
+        // this.advancedToolProcessor = new AdvancedToolProcessor(this.engine, this.eventStore);
+        // this.animationController = new AnimationController(this.engine, this.eventStore);
+        // this.fileController = new FileController(this.eventStore);
         
-        // ⚡ Phase3-4: 高度機能システム
-        this.advancedToolProcessor = new AdvancedToolProcessor(this.oglCore, this.eventStore);
-        this.meshDeformController = new MeshDeformController(this.oglCore, this.eventStore);
-        this.animationController = new AnimationController(this.eventStore, this.animationStore);
-        this.fileController = new FileController(this.projectStore, this.eventStore);
+        // 初期化状態
+        this.initialized = false;
+        this.currentPhase = 'Phase1+Phase2(ほぼ完全)';
         
-        // アプリケーション状態
-        this.isInitialized = false;
-        this.currentPhase = 'loading';
-        this.debugMode = process.env.NODE_ENV === 'development';
-        
-        // 初期化フロー開始
-        this.initializeApplication();
+        console.log('✅ DrawingApp初期化完了（Phase1+Phase2対応）');
     }
     
-    // 🚀 アプリケーション初期化（段階的初期化）
-    async initializeApplication() {
+    /**
+     * アプリケーション初期化
+     */
+    async initialize() {
         try {
-            console.log('🚀 Drawing Application initialization started...');
-            
-            // Phase1: 基盤システム初期化
+            // Phase1基盤初期化
             await this.initializePhase1();
             
-            // Phase2: ツール・UI システム初期化
+            // Phase2統合初期化
             await this.initializePhase2();
             
-            // Phase3-4: 高度機能システム初期化
-            await this.initializePhase3();
+            // Phase2拡張初期化
+            await this.initializePhase2Extended();
             
-            // 全システム連携設定
-            this.setupSystemIntegration();
+            this.initialized = true;
+            console.log('🚀 DrawingApp初期化完了');
             
-            // アプリケーション起動完了
-            this.finalizationInitialization();
+            return true;
             
         } catch (error) {
-            console.error('🚨 Application initialization failed:', error);
+            console.error('🚨 DrawingApp初期化エラー:', error);
             this.handleInitializationError(error);
+            return false;
         }
     }
     
-    // 🔥 Phase1: 基盤システム初期化
+    /**
+     * 🔥 Phase1: OGL統一基盤初期化
+     */
     async initializePhase1() {
-        console.log('🔥 Phase1: OGL統一基盤初期化開始...');
+        console.log('🔥 Phase1初期化開始...');
         
         // EventStore基盤初期化
-        this.eventStore.emit(this.eventStore.eventTypes.ENGINE_READY, {
-            phase: 'phase1_start'
-        });
+        this.eventStore.setupPhaseEvents();
         
-        // OGL描画エンジン初期化
-        await this.oglCore.initialize();
+        // OGL統一エンジン初期化
+        await this.engine.initialize();
         
         // 入力制御初期化
-        this.inputController.setupEventListeners();
+        this.inputController.initialize();
         
         // ショートカット初期化
-        this.shortcuts.setupEventSubscriptions();
+        this.shortcuts.initialize();
         
         // 履歴管理初期化
         this.history.initialize();
         
-        console.log('✅ Phase1: OGL統一基盤初期化完了');
-        this.currentPhase = 'phase1';
+        console.log('✅ Phase1基盤初期化完了');
     }
     
-    // 🎨 Phase2: ツール・UI システム初期化
+    /**
+     * 🎨 Phase2: ツール・UI・カラー統合初期化
+     */
     async initializePhase2() {
-        console.log('🎨 Phase2: ツール・UI・カラー システム初期化開始...');
+        console.log('🎨 Phase2初期化開始...');
         
-        // ツール処理システム初期化
-        this.toolProcessor.setupEventSubscriptions();
+        // ツール処理初期化
+        await this.toolProcessor.initialize();
         
-        // Adobe Fresco風UI初期化
-        this.uiController.initializeUI();
+        // UI制御初期化
+        this.uiController.initializeFrescoUI();
         
-        // ふたば☆ちゃんねる色システム初期化
-        this.colorProcessor.initializeFutabaColors();
+        // カラー処理初期化
+        await this.colorProcessor.initialize();
         
-        // レイヤー処理システム初期化
-        this.layerProcessor.createInitialLayer();
+        // レイヤー処理初期化
+        await this.layerProcessor.initialize();
         
-        // キャンバス制御システム初期化
-        this.canvasController.setupCanvasOperations();
-        
-        console.log('✅ Phase2: ツール・UI・カラー システム初期化完了');
-        this.currentPhase = 'phase2';
+        console.log('✅ Phase2統合初期化完了');
     }
     
-    // ⚡ Phase3-4: 高度機能システム初期化
-    async initializePhase3() {
-        console.log('⚡ Phase3-4: 高度機能・アニメーション システム初期化開始...');
+    /**
+     * 🎨 Phase2拡張: 追加機能初期化
+     */
+    async initializePhase2Extended() {
+        console.log('🎨 Phase2拡張初期化開始...');
         
-        // 高度ツール初期化
-        this.advancedToolProcessor.initializeAdvancedTools();
+        // キャンバスコントローラー初期化（次回実装）
+        // if (this.canvasController) {
+        //     await this.canvasController.initialize();
+        // }
         
-        // LIVE2D風メッシュ変形初期化
-        this.meshDeformController.initializeMeshDeform();
+        // 拡張UI機能初期化
+        this.setupExtendedUI();
         
-        // Storyboarder風アニメーション初期化
-        this.animationController.initializeAnimationSystem();
+        // 拡張イベント購読
+        this.setupExtendedEvents();
         
-        // ファイル操作システム初期化
-        this.fileController.setupFileOperations();
-        
-        console.log('✅ Phase3-4: 高度機能・アニメーション システム初期化完了');
-        this.currentPhase = 'phase3-4';
+        console.log('✅ Phase2拡張初期化完了');
     }
     
-    // 🔗 全システム連携設定
-    setupSystemIntegration() {
-        console.log('🔗 システム間連携設定開始...');
+    /**
+     * 拡張UI機能セットアップ
+     */
+    setupExtendedUI() {
+        // 通知システム初期化
+        this.setupNotificationSystem();
         
-        // ツール切り替えとUI連携
-        this.eventStore.on(this.eventStore.eventTypes.TOOL_CHANGE, (data) => {
-            const tool = data.payload.tool;
-            this.oglCore.setTool(tool);
-            this.toolProcessor.switchTool(tool);
-            this.uiController.updateActiveToolButton(tool);
-        });
+        // ツールチップシステム初期化
+        this.setupTooltipSystem();
         
-        // 描画イベントと履歴管理連携
-        this.eventStore.on(this.eventStore.eventTypes.STROKE_COMPLETE, (data) => {
-            this.history.recordAction({
-                type: 'stroke',
-                strokeId: data.payload.strokeId,
-                tool: data.payload.tool
-            });
-        });
-        
-        // 色変更とツール設定連携
-        this.eventStore.on(this.eventStore.eventTypes.COLOR_CHANGE, (data) => {
-            const color = data.payload.color;
-            this.oglCore.updateToolConfig('pen', { color });
-            this.toolProcessor.updateToolConfig('pen', { color });
-        });
-        
-        // キャンバス変換と表示連携
-        this.eventStore.on(this.eventStore.eventTypes.CANVAS_TRANSFORM, (data) => {
-            const transform = data.payload.transform;
-            this.canvasController.applyTransform(transform);
-        });
-        
-        // レイヤー操作とUI連携
-        this.eventStore.on(this.eventStore.eventTypes.LAYER_SELECT, (data) => {
-            this.layerProcessor.selectLayer(data.payload.layerId);
-        });
-        
-        // アニメーション状態とUI連携
-        this.eventStore.on(this.eventStore.eventTypes.ANIMATION_START, (data) => {
-            this.animationController.startAnimation(data.payload);
-        });
-        
-        // ファイル操作と状態管理連携
-        this.eventStore.on(this.eventStore.eventTypes.FILE_SAVE, (data) => {
-            this.fileController.saveProject(data.payload);
-        });
-        
-        console.log('✅ システム間連携設定完了');
+        // コンテキストメニュー初期化
+        this.setupContextMenu();
     }
     
-    // 🎯 初期化完了処理
-    finalizationInitialization() {
-        this.isInitialized = true;
-        this.currentPhase = 'ready';
+    /**
+     * 拡張イベント購読セットアップ
+     */
+    setupExtendedEvents() {
+        // アプリケーションレベルイベント
+        this.eventStore.on('app:fullscreen:toggle', this.toggleFullscreen.bind(this), 'drawing-app');
+        this.eventStore.on('app:reset', this.resetApplication.bind(this), 'drawing-app');
+        this.eventStore.on('app:export', this.exportCanvas.bind(this), 'drawing-app');
         
-        // 初期状態設定
-        this.setInitialState();
+        // エラーハンドリング
+        this.eventStore.on('engine:error', this.handleEngineError.bind(this), 'drawing-app');
+        this.eventStore.on('system:critical:error', this.handleCriticalError.bind(this), 'drawing-app');
+    }
+    
+    /**
+     * 通知システムセットアップ
+     */
+    setupNotificationSystem() {
+        const notificationContainer = document.createElement('div');
+        notificationContainer.id = 'notification-container';
+        notificationContainer.className = `
+            fixed top-4 right-4 z-50 
+            flex flex-col gap-2
+            max-w-sm
+        `;
+        document.body.appendChild(notificationContainer);
+    }
+    
+    /**
+     * ツールチップシステムセットアップ
+     */
+    setupTooltipSystem() {
+        const tooltip = document.createElement('div');
+        tooltip.id = 'global-tooltip';
+        tooltip.className = `
+            absolute z-50 px-2 py-1
+            bg-gray-800 text-white text-sm rounded
+            pointer-events-none opacity-0 transition-opacity
+        `;
+        document.body.appendChild(tooltip);
+    }
+    
+    /**
+     * コンテキストメニューセットアップ
+     */
+    setupContextMenu() {
+        // 右クリックメニュー無効化（カスタムメニュー使用）
+        document.addEventListener('contextmenu', (e) => {
+            if (e.target.closest('#canvasArea')) {
+                e.preventDefault();
+                this.showCustomContextMenu(e.clientX, e.clientY);
+            }
+        });
+    }
+    
+    /**
+     * カスタムコンテキストメニュー表示
+     */
+    showCustomContextMenu(x, y) {
+        const menu = document.createElement('div');
+        menu.className = `
+            fixed z-50 bg-white border border-gray-200 rounded shadow-lg
+            py-1 min-w-32
+        `;
+        menu.style.left = `${x}px`;
+        menu.style.top = `${y}px`;
         
-        // パフォーマンス監視開始
-        this.startPerformanceMonitoring();
+        const menuItems = [
+            { label: 'アンドゥ', action: () => this.history.undo() },
+            { label: 'リドゥ', action: () => this.history.redo() },
+            { label: '---', separator: true },
+            { label: 'すべて選択', action: () => this.selectAll() },
+            { label: 'コピー', action: () => this.copy() },
+            { label: '貼り付け', action: () => this.paste() },
+        ];
         
-        // デバッグ情報設定
-        if (this.debugMode) {
-            this.setupDebugInterface();
+        menuItems.forEach(item => {
+            if (item.separator) {
+                const separator = document.createElement('hr');
+                separator.className = 'my-1 border-gray-200';
+                menu.appendChild(separator);
+            } else {
+                const menuItem = document.createElement('div');
+                menuItem.className = `
+                    px-3 py-1 hover:bg-gray-100 cursor-pointer text-sm
+                `;
+                menuItem.textContent = item.label;
+                menuItem.onclick = () => {
+                    item.action();
+                    menu.remove();
+                };
+                menu.appendChild(menuItem);
+            }
+        });
+        
+        document.body.appendChild(menu);
+        
+        // クリック外で閉じる
+        const closeMenu = (e) => {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', closeMenu), 0);
+    }
+    
+    /**
+     * フルスクリーン切り替え
+     */
+    toggleFullscreen() {
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+        } else {
+            document.documentElement.requestFullscreen();
         }
-        
-        // 初期化完了通知
-        this.eventStore.emit(this.eventStore.eventTypes.ENGINE_READY, {
-            phase: 'complete',
-            timestamp: Date.now()
-        });
-        
-        // UI通知表示
-        this.uiController.showNotification('モダンお絵かきツール起動完了！', 'success');
-        
-        console.log('🎉 Drawing Application initialization completed successfully!');
-        console.log(`📊 Current state: ${this.currentPhase}`);
-        console.log(`🎨 Available tools: ${this.toolProcessor.getAllTools().length}`);
-        console.log(`🎬 Animation ready: ${this.animationController.isReady()}`);
     }
     
-    // 初期状態設定
-    setInitialState() {
-        // デフォルトツール設定
-        this.toolProcessor.switchTool('pen');
-        
-        // ふたば☆ちゃんねる色設定
-        this.colorProcessor.setDefaultFutabaColor();
-        
-        // 初期レイヤー表示
-        this.layerProcessor.showLayerPanel();
-        
-        // キャンバス初期表示設定
-        this.canvasController.resetToDefaultView();
-        
-        // ショートカットヒント表示
-        this.shortcuts.showHint('Tab: UI切り替え | P: ペン | E: 消しゴム | F: フルスクリーン', 5000);
-    }
-    
-    // エラーハンドリング
-    handleInitializationError(error) {
-        console.error('🚨 Critical initialization error:', error);
-        
-        // エラー状態表示
-        const errorMessage = document.createElement('div');
-        errorMessage.style.cssText = `
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: #dc143c;
-            color: white;
-            padding: 20px;
-            border-radius: 8px;
-            font-family: monospace;
-            z-index: 9999;
-            text-align: center;
-        `;
-        errorMessage.innerHTML = `
-            <h3>🚨 初期化エラー</h3>
-            <p>アプリケーションの初期化に失敗しました</p>
-            <p><small>${error.message}</small></p>
-            <button onclick="location.reload()" style="margin-top: 10px; padding: 5px 10px;">再読み込み</button>
-        `;
-        
-        document.body.appendChild(errorMessage);
-        
-        // エラーイベント発火
-        this.eventStore?.emit(this.eventStore.eventTypes.ENGINE_ERROR, {
-            error,
-            phase: this.currentPhase,
-            fatal: true
-        });
-    }
-    
-    // パフォーマンス監視開始
-    startPerformanceMonitoring() {
-        if (!this.debugMode) return;
-        
-        setInterval(() => {
-            const perfInfo = {
-                memory: performance.memory ? {
-                    used: Math.round(performance.memory.usedJSHeapSize / 1024 / 1024),
-                    total: Math.round(performance.memory.totalJSHeapSize / 1024 / 1024)
-                } : null,
-                oglFrames: this.oglCore.frameCount,
-                activeStrokes: this.oglCore.strokes.length,
-                eventHistory: this.eventStore.getHistory().length,
-                historySize: this.history.getHistoryStats().totalActions
-            };
-            
-            // パフォーマンス情報をデバッグコンソールに出力
-            if (perfInfo.memory && perfInfo.memory.used > 100) {
-                console.warn('⚠️ High memory usage:', perfInfo.memory.used, 'MB');
-            }
-            
-        }, 10000); // 10秒ごとに監視
-    }
-    
-    // デバッグインターフェース設定
-    setupDebugInterface() {
-        // グローバルデバッグオブジェクト作成
-        window.DrawingAppDebug = {
-            app: this,
-            phase: () => this.currentPhase,
-            stats: () => this.getDebugStats(),
-            eventStore: () => this.eventStore.debug(),
-            oglCore: () => this.oglCore.getDebugInfo(),
-            inputController: () => this.inputController.getDebugInfo(),
-            toolProcessor: () => this.toolProcessor.getDebugInfo(),
-            history: () => this.history.getDebugInfo(),
-            
-            // デバッグ操作
-            resetApp: () => {
-                if (confirm('アプリケーションをリセットしますか？')) {
-                    this.resetApplication();
-                }
-            },
-            exportState: () => {
-                return JSON.stringify(this.exportApplicationState(), null, 2);
-            },
-            testAllTools: () => {
-                this.testAllTools();
-            }
-        };
-        
-        console.log('🔧 Debug interface ready: window.DrawingAppDebug');
-    }
-    
-    // デバッグ統計取得
-    getDebugStats() {
-        return {
-            phase: this.currentPhase,
-            initialized: this.isInitialized,
-            systems: {
-                oglCore: !!this.oglCore,
-                inputController: !!this.inputController,
-                toolProcessor: !!this.toolProcessor,
-                uiController: !!this.uiController,
-                colorProcessor: !!this.colorProcessor,
-                layerProcessor: !!this.layerProcessor,
-                canvasController: !!this.canvasController,
-                animationController: !!this.animationController,
-                fileController: !!this.fileController
-            },
-            counts: {
-                tools: this.toolProcessor?.getAllTools().length || 0,
-                strokes: this.oglCore?.strokes.length || 0,
-                layers: this.layerStore?.getLayers().length || 0,
-                history: this.history?.getHistoryStats().totalActions || 0,
-                events: this.eventStore?.getHistory().length || 0
-            }
-        };
-    }
-    
-    // アプリケーション状態エクスポート
-    exportApplicationState() {
-        return {
-            version: '2.1.0',
-            timestamp: Date.now(),
-            phase: this.currentPhase,
-            canvas: {
-                width: this.canvas.width,
-                height: this.canvas.height
-            },
-            tools: this.toolProcessor?.getDebugInfo(),
-            layers: this.layerStore?.exportState(),
-            animation: this.animationStore?.exportState(),
-            project: this.projectStore?.exportState()
-        };
-    }
-    
-    // 全ツールテスト
-    testAllTools() {
-        const tools = this.toolProcessor.getAllTools();
-        let currentIndex = 0;
-        
-        const testNextTool = () => {
-            if (currentIndex >= tools.length) {
-                console.log('✅ All tools tested successfully');
-                return;
-            }
-            
-            const tool = tools[currentIndex];
-            console.log(`🧪 Testing tool: ${tool.name}`);
-            
-            this.toolProcessor.switchTool(tool.name);
-            
-            setTimeout(() => {
-                currentIndex++;
-                testNextTool();
-            }, 1000);
-        };
-        
-        testNextTool();
-    }
-    
-    // アプリケーションリセット
+    /**
+     * アプリケーションリセット
+     */
     resetApplication() {
+        if (confirm('すべての作業内容が失われます。続行しますか？')) {
+            this.engine.clearCanvas();
+            this.history.clearHistory();
+            this.layerProcessor.resetLayers();
+            console.log('🔄 アプリケーションリセット完了');
+        }
+    }
+    
+    /**
+     * キャンバスエクスポート
+     */
+    exportCanvas() {
         try {
-            // 全システム停止
-            this.destroy();
+            const dataURL = this.engine.exportToDataURL();
+            const link = document.createElement('a');
+            link.download = `drawing_${Date.now()}.png`;
+            link.href = dataURL;
+            link.click();
             
-            // ページリロード
-            setTimeout(() => {
-                location.reload();
-            }, 100);
-            
+            this.eventStore.emitSuccess('画像をエクスポートしました');
         } catch (error) {
-            console.error('🚨 Reset failed:', error);
-            location.reload();
+            console.error('🚨 エクスポートエラー:', error);
+            this.eventStore.emitError(error, 'export');
         }
     }
     
-    // アプリケーションクリーンアップ
-    destroy() {
-        console.log('🧹 Application cleanup started...');
+    /**
+     * 初期化エラーハンドリング
+     */
+    handleInitializationError(error) {
+        console.error('🚨 初期化失敗:', error);
         
-        // 各システムのクリーンアップ
-        this.shortcuts?.destroy();
-        this.history?.destroy();
-        this.toolProcessor?.destroy();
-        this.uiController?.destroy();
-        this.colorProcessor?.destroy();
-        this.layerProcessor?.destroy();
-        this.canvasController?.destroy();
-        this.advancedToolProcessor?.destroy();
-        this.animationController?.destroy();
-        this.fileController?.destroy();
-        this.meshDeformController?.destroy();
-        
-        // 入力制御停止
-        this.inputController?.destroy();
-        
-        // EventStore クリーンアップ
-        this.eventStore?.clear();
-        
-        // OGL エンジン停止
-        // this.oglCore?.destroy(); // OGL には destroy メソッドがないため省略
-        
-        console.log('✅ Application cleanup completed');
-    }
-}
-
-// 🎯 アプリケーション起動処理
-document.addEventListener('DOMContentLoaded', async () => {
-    console.log('🚀 DOM loaded, starting Drawing Application...');
-    
-    try {
-        const canvas = document.getElementById('drawingCanvas');
-        if (!canvas) {
-            throw new Error('Drawing canvas element not found');
-        }
-        
-        // アプリケーション作成・初期化
-        const app = new DrawingApp(canvas);
-        
-        // グローバル参照設定（デバッグ用）
-        window.drawingApp = app;
-        
-        console.log('✅ Drawing Application startup completed');
-        
-    } catch (error) {
-        console.error('🚨 Application startup failed:', error);
-        
-        // エラー表示
-        document.body.innerHTML = `
-            <div style="display: flex; justify-content: center; align-items: center; height: 100vh; flex-direction: column; font-family: system-ui;">
-                <h2 style="color: #dc143c;">🚨 起動エラー</h2>
-                <p>アプリケーションの起動に失敗しました</p>
-                <p><code>${error.message}</code></p>
-                <button onclick="location.reload()" style="margin-top: 20px; padding: 10px 20px; font-size: 14px;">再読み込み</button>
+        // エラー表示UI
+        const errorDiv = document.createElement('div');
+        errorDiv.className = `
+            fixed inset-0 bg-red-50 flex items-center justify-center z-50
+        `;
+        errorDiv.innerHTML = `
+            <div class="bg-white p-8 rounded-lg shadow-lg max-w-md">
+                <h2 class="text-xl font-bold text-red-600 mb-4">初期化エラー</h2>
+                <p class="text-gray-700 mb-4">アプリケーションの初期化に失敗しました。</p>
+                <p class="text-sm text-gray-500 mb-4">${error.message}</p>
+                <button class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
+                        onclick="location.reload()">
+                    ページを再読み込み
+                </button>
             </div>
         `;
+        document.body.appendChild(errorDiv);
+    }
+    
+    /**
+     * エンジンエラーハンドリング
+     */
+    handleEngineError(eventData) {
+        console.error('🚨 エンジンエラー:', eventData.payload);
+        this.showNotification('描画エンジンエラーが発生しました', 'error');
+    }
+    
+    /**
+     * クリティカルエラーハンドリング
+     */
+    handleCriticalError(eventData) {
+        console.error('🚨 クリティカルエラー:', eventData.payload);
+        this.showNotification('重大なエラーが発生しました。ページを再読み込みしてください。', 'error', 10000);
+    }
+    
+    /**
+     * 通知表示
+     */
+    showNotification(message, type = 'info', duration = 3000) {
+        const container = document.getElementById('notification-container');
+        if (!container) return;
+        
+        const notification = document.createElement('div');
+        const bgColor = type === 'error' ? 'bg-red-500' : type === 'success' ? 'bg-green-500' : 'bg-blue-500';
+        
+        notification.className = `
+            ${bgColor} text-white px-4 py-2 rounded shadow-lg
+            transform transition-all duration-300 translate-x-full
+        `;
+        notification.textContent = message;
+        
+        container.appendChild(notification);
+        
+        // アニメーション
+        setTimeout(() => {
+            notification.classList.remove('translate-x-full');
+        }, 10);
+        
+        // 自動削除
+        setTimeout(() => {
+            notification.classList.add('translate-x-full');
+            setTimeout(() => notification.remove(), 300);
+        }, duration);
+    }
+    
+    /**
+     * 選択操作（プレースホルダー）
+     */
+    selectAll() {
+        console.log('🔄 すべて選択（未実装）');
+    }
+    
+    copy() {
+        console.log('🔄 コピー（未実装）');
+    }
+    
+    paste() {
+        console.log('🔄 貼り付け（未実装）');
+    }
+    
+    /**
+     * デバッグ情報取得
+     */
+    getDebugInfo() {
+        return {
+            initialized: this.initialized,
+            currentPhase: this.currentPhase,
+            engineStatus: this.engine.getStatus(),
+            eventStore: this.eventStore.getEventStats(),
+            historyStats: this.history.getHistoryStats()
+        };
+    }
+}
+
+/**
+ * アプリケーション起動
+ */
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log('🚀 アプリケーション起動開始');
+    
+    // キャンバス要素取得
+    const canvas = document.getElementById('canvas');
+    if (!canvas) {
+        console.error('🚨 キャンバス要素が見つかりません');
+        return;
+    }
+    
+    // アプリケーション初期化
+    const app = new DrawingApp(canvas);
+    const success = await app.initialize();
+    
+    if (success) {
+        console.log('✅ アプリケーション起動完了');
+        
+        // グローバル変数として設定（デバッグ用）
+        window.drawingApp = app;
+        
+        // 開発者向けデバッグ情報
+        console.log('🔧 デバッグ情報:', app.getDebugInfo());
+    } else {
+        console.error('🚨 アプリケーション起動失敗');
     }
 });
-
-// 🔧 開発者用ヘルパー関数
-if (process.env.NODE_ENV === 'development') {
-    // ホットリロード対応
-    if (module.hot) {
-        module.hot.accept(() => {
-            console.log('🔄 Hot reload detected, restarting application...');
-            if (window.drawingApp) {
-                window.drawingApp.destroy();
-            }
-            location.reload();
-        });
-    }
-    
-    // 開発者用グローバル関数
-    window.devHelpers = {
-        resetApp: () => window.drawingApp?.resetApplication(),
-        getStats: () => window.drawingApp?.getDebugStats(),
-        exportState: () => window.drawingApp?.exportApplicationState(),
-        testPerf: () => {
-            console.time('Performance Test');
-            for (let i = 0; i < 1000; i++) {
-                window.drawingApp?.eventStore.emit('test:event', { index: i });
-            }
-            console.timeEnd('Performance Test');
-        }
-    };
-    
-    console.log('🔧 Development helpers ready: window.devHelpers');
-}

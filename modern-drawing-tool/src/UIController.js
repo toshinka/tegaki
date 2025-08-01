@@ -1,945 +1,835 @@
+// UIController.js - Fresco風UI制御統合（Phase2・封印解除時実装）
+
 /**
- * UIController - Adobe Fresco風UI制御統合（Phase2拡張）
- * 左側サイドバー・ポップアップパレット・スライダー・通知システム統合
+ * 🎨 Fresco風UI制御統合（Phase2・封印解除時実装）
+ * 責務: 左側サイドバー詳細実装、ポップアップパレット・スライダー、TAB切り替え・自由移動システム、通知システム・ツールチップ
  */
 export class UIController {
-    constructor(eventStore) {
+    constructor(eventStore, toolProcessor) {
         this.eventStore = eventStore;
+        this.toolProcessor = toolProcessor;
         
         // UI要素参照
         this.sidebar = null;
+        this.canvasArea = null;
         this.popupContainer = null;
-        this.activePopups = new Map();
         
         // UI状態
-        this.sidebarCollapsed = false;
+        this.activePopups = new Map();
+        this.uiVisible = true;
         this.fullscreenMode = false;
-        this.activeToolPopup = null;
+        this.activeTool = 'pen';
         
-        // ツールアイコン定義（Phosphor Icons互換）
-        this.toolIcons = {
-            pen: '✏️',
-            eraser: '🗑️',
-            airspray: '🖌️',
-            blur: '🌫️',
-            eyedropper: '💧',
-            fill: '🪣',
-            selection: '⬚',
-            text: '📝',
-            shape: '⭕',
-            transform: '✂️',
-            settings: '⚙️',
-            download: '📥',
-            resize: '⤢',
-            animation: '🎬',
-            layers: '📚'
-        };
+        // アニメーション設定
+        this.animationDuration = 300;
         
-        // 通知システム
-        this.notifications = [];
-        this.maxNotifications = 5;
+        // 初期化
+        this.initializeElements();
+        this.subscribeToEvents();
         
-        this.initializeUI();
-        this.setupEventSubscriptions();
+        console.log('✅ UIController初期化完了');
     }
     
-    // UI初期化
-    initializeUI() {
-        this.createSidebar();
-        this.createPopupContainer();
+    /**
+     * Fresco風UI初期化
+     */
+    initializeFrescoUI() {
+        this.createLeftSidebar();
+        this.setupEventListeners();
         this.createNotificationSystem();
-        this.setupResponsiveDesign();
         
-        console.log('✅ Adobe Fresco-style UI initialized');
+        console.log('🎨 Fresco風UI初期化完了');
     }
     
-    // 左側サイドバー作成
-    createSidebar() {
+    /**
+     * DOM要素初期化
+     */
+    initializeElements() {
         this.sidebar = document.getElementById('sidebar');
+        this.canvasArea = document.getElementById('canvasArea');
+        this.popupContainer = document.getElementById('popupContainer');
+        
+        if (!this.sidebar || !this.canvasArea || !this.popupContainer) {
+            console.warn('🚨 一部のDOM要素が見つかりません - 動的作成を試行');
+            this.createMissingElements();
+        }
+    }
+    
+    /**
+     * 不足DOM要素を動的作成
+     */
+    createMissingElements() {
         if (!this.sidebar) {
-            console.error('🚨 Sidebar element not found');
-            return;
+            this.sidebar = document.createElement('div');
+            this.sidebar.id = 'sidebar';
+            this.sidebar.className = `
+                fixed left-0 top-0 h-full w-16 
+                bg-gray-800 flex flex-col items-center py-4 gap-2
+                z-40 transition-all duration-300
+            `;
+            document.body.appendChild(this.sidebar);
         }
         
-        // サイドバーツールアイコン生成
-        this.createToolIcons();
+        if (!this.canvasArea) {
+            this.canvasArea = document.createElement('div');
+            this.canvasArea.id = 'canvasArea';
+            this.canvasArea.className = `
+                ml-16 h-screen flex-1 relative
+                bg-gray-100 overflow-hidden
+            `;
+            document.body.appendChild(this.canvasArea);
+        }
         
-        // サイドバー操作設定
-        this.setupSidebarInteractions();
+        if (!this.popupContainer) {
+            this.popupContainer = document.createElement('div');
+            this.popupContainer.id = 'popupContainer';
+            this.popupContainer.className = 'fixed inset-0 pointer-events-none z-30';
+            document.body.appendChild(this.popupContainer);
+        }
     }
     
-    // ツールアイコン生成
-    createToolIcons() {
-        const toolGroups = [
-            // 上部グループ
-            {
-                name: 'settings',
-                tools: ['settings', 'download', 'resize'],
-                className: 'tool-group-top'
-            },
-            // メインツールグループ
-            {
-                name: 'main',
-                tools: ['pen', 'airspray', 'blur', 'eraser', 'eyedropper', 'selection', 'fill', 'text', 'shape', 'transform'],
-                className: 'tool-group-main'
-            },
-            // 下部グループ
-            {
-                name: 'panels',
-                tools: ['animation', 'layers'],
-                className: 'tool-group-bottom'
-            }
-        ];
+    /**
+     * イベント購読
+     */
+    subscribeToEvents() {
+        // ツール変更イベント
+        this.eventStore.on('tool:change', this.handleToolChange.bind(this), 'ui-controller');
         
+        // UI制御イベント
+        this.eventStore.on('ui:toggle:all', this.toggleUI.bind(this), 'ui-controller');
+        this.eventStore.on('ui:popup:show', this.showPopup.bind(this), 'ui-controller');
+        this.eventStore.on('ui:popup:hide', this.hidePopup.bind(this), 'ui-controller');
+        
+        // 通知イベント
+        this.eventStore.on('system:success', this.showSuccessNotification.bind(this), 'ui-controller');
+        this.eventStore.on('engine:error', this.showErrorNotification.bind(this), 'ui-controller');
+        
+        console.log('📝 UIイベント購読開始');
+    }
+    
+    /**
+     * 左側サイドバー作成（Fresco風詳細実装）
+     */
+    createLeftSidebar() {
+        // サイドバークリア
         this.sidebar.innerHTML = '';
         
-        toolGroups.forEach(group => {
-            const groupElement = document.createElement('div');
-            groupElement.className = `tool-group ${group.className}`;
-            
-            group.tools.forEach(toolName => {
-                const toolButton = this.createToolButton(toolName);
-                groupElement.appendChild(toolButton);
-            });
-            
-            this.sidebar.appendChild(groupElement);
-        });
+        // ツールカテゴリ別にグループ化
+        const toolsByCategory = this.getToolsByCategory();
+        
+        // 上部グループ（設定・ファイル操作）
+        const topGroup = this.createToolGroup('top', [
+            { id: 'settings', name: '設定', icon: '⚙️', action: () => this.showSettingsPanel() },
+            { id: 'download', name: 'ダウンロード', icon: '📥', action: () => this.showDownloadDialog() },
+            { id: 'resize', name: 'リサイズ', icon: '⤢', action: () => this.showResizeDialog() }
+        ]);
+        
+        // ツールグループ（描画・効果・ユーティリティ）
+        const drawingTools = toolsByCategory.drawing || [];
+        const effectTools = toolsByCategory.effect || [];
+        const utilityTools = toolsByCategory.utility || [];
+        const selectionTools = toolsByCategory.selection || [];
+        
+        const toolGroup = this.createToolGroup('tools', [
+            ...drawingTools,
+            ...effectTools,
+            ...utilityTools,
+            ...selectionTools
+        ]);
+        
+        // 下部グループ（アニメ・レイヤー）
+        const bottomGroup = this.createToolGroup('bottom', [
+            { id: 'animation', name: 'アニメ', icon: '🎬', action: () => this.toggleAnimationMode() },
+            { id: 'layers', name: 'レイヤー', icon: '📚', action: () => this.toggleLayerPanel() }
+        ]);
+        
+        // サイドバーに追加
+        this.sidebar.appendChild(topGroup);
+        
+        // 区切り線
+        const separator1 = document.createElement('div');
+        separator1.className = 'sidebar-separator';
+        separator1.style.cssText = `
+            height: 1px;
+            background: rgba(170, 90, 86, 0.3);
+            margin: 12px 0;
+            width: 80%;
+        `;
+        this.sidebar.appendChild(separator1);
+        
+        this.sidebar.appendChild(toolGroup);
+        
+        const separator2 = document.createElement('div');
+        separator2.className = 'sidebar-separator';
+        separator2.style.cssText = separator1.style.cssText;
+        this.sidebar.appendChild(separator2);
+        
+        this.sidebar.appendChild(bottomGroup);
+        
+        console.log('🎨 左側サイドバー作成完了');
     }
     
-    // ツールボタン作成
-    createToolButton(toolName) {
-        const button = document.createElement('button');
-        button.className = 'tool-button';
-        button.setAttribute('data-tool', toolName);
-        button.setAttribute('title', this.getToolTitle(toolName));
+    /**
+     * ツールカテゴリ取得（デフォルト実装）
+     */
+    getToolsByCategory() {
+        return {
+            drawing: [
+                { id: 'pen', name: 'ペン', icon: '✏️', action: () => this.selectTool('pen') },
+                { id: 'airspray', name: 'エアスプレー', icon: '🖌️', action: () => this.selectTool('airspray') }
+            ],
+            effect: [
+                { id: 'blur', name: 'ボカシ', icon: '🌫️', action: () => this.selectTool('blur') },
+                { id: 'eraser', name: '消しゴム', icon: '🗑️', action: () => this.selectTool('eraser') }
+            ],
+            utility: [
+                { id: 'eyedropper', name: 'スポイト', icon: '💧', action: () => this.selectTool('eyedropper') },
+                { id: 'fill', name: '塗りつぶし', icon: '🪣', action: () => this.selectTool('fill') }
+            ],
+            selection: [
+                { id: 'select', name: '範囲選択', icon: '⬚', action: () => this.selectTool('select') },
+                { id: 'transform', name: '変形', icon: '✂️', action: () => this.selectTool('transform') }
+            ]
+        };
+    }
+    
+    /**
+     * ツールグループ作成
+     */
+    createToolGroup(groupName, tools) {
+        const group = document.createElement('div');
+        group.className = `tool-group tool-group-${groupName}`;
+        group.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            width: 100%;
+            align-items: center;
+        `;
         
-        // アイコン設定
-        const icon = document.createElement('span');
-        icon.className = 'tool-icon';
-        icon.textContent = this.toolIcons[toolName] || '❓';
-        button.appendChild(icon);
-        
-        // クリックイベント
-        button.addEventListener('click', (e) => {
-            this.handleToolClick(toolName, e);
+        tools.forEach(tool => {
+            const button = this.createToolButton(tool);
+            group.appendChild(button);
         });
         
+        return group;
+    }
+    
+    /**
+     * ツールボタン作成（Fresco風詳細デザイン）
+     */
+    createToolButton(tool) {
+        const button = document.createElement('button');
+        button.className = 'tool-button';
+        button.setAttribute('data-tool-id', tool.id);
+        button.innerHTML = tool.icon;
+        button.title = tool.name;
+        
+        // Fresco風スタイル適用
+        button.style.cssText = `
+            width: 44px;
+            height: 44px;
+            border: none;
+            background: transparent;
+            color: #888888;
+            font-size: 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 250ms ease-out;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        `;
+        
         // ホバーエフェクト
-        this.setupToolButtonHover(button, toolName);
+        button.addEventListener('mouseenter', () => {
+            if (!button.classList.contains('active')) {
+                button.style.background = 'rgba(255,255,255,0.15)';
+                button.style.color = '#cccccc';
+                button.style.transform = 'scale(1.05)';
+            }
+            this.showTooltip(button, tool.name);
+        });
+        
+        button.addEventListener('mouseleave', () => {
+            if (!button.classList.contains('active')) {
+                button.style.background = 'transparent';
+                button.style.color = '#888888';
+                button.style.transform = 'scale(1)';
+            }
+            this.hideTooltip();
+        });
+        
+        // クリックイベント
+        button.addEventListener('click', () => {
+            if (tool.action) {
+                tool.action();
+            }
+        });
         
         return button;
     }
     
-    // ツールクリック処理
-    handleToolClick(toolName, event) {
-        // 特殊機能ハンドリング
-        switch (toolName) {
-            case 'settings':
-                this.openSettingsPanel();
-                break;
-            case 'download':
-                this.openDownloadPanel();
-                break;
-            case 'resize':
-                this.openResizePanel();
-                break;
-            case 'animation':
-                this.toggleAnimationMode();
-                break;
-            case 'layers':
-                this.toggleLayerPanel();
-                break;
-            default:
-                // 通常のツール切り替え
-                this.switchTool(toolName);
-    // ツールクリック処理
-    handleToolClick(toolName, event) {
-        // 特殊機能ハンドリング
-        switch (toolName) {
-            case 'settings':
-                this.openSettingsPanel();
-                break;
-            case 'download':
-                this.openDownloadPanel();
-                break;
-            case 'resize':
-                this.openResizePanel();
-                break;
-            case 'animation':
-                this.toggleAnimationMode();
-                break;
-            case 'layers':
-                this.toggleLayerPanel();
-                break;
-            default:
-                // 通常のツール切り替え
-                this.switchTool(toolName);
-                this.toggleToolPopup(toolName, event.currentTarget);
-                break;
+    /**
+     * ツール選択
+     */
+    selectTool(toolId) {
+        // 前のツールの選択解除
+        const prevButton = this.sidebar.querySelector('.tool-button.active');
+        if (prevButton) {
+            prevButton.classList.remove('active');
+            prevButton.style.background = 'transparent';
+            prevButton.style.color = '#888888';
+            prevButton.style.borderLeft = 'none';
         }
         
-        // アクティブ状態更新
-        this.updateActiveToolButton(toolName);
-    }
-    
-    // ツール切り替え
-    switchTool(toolName) {
-        this.eventStore.emit(this.eventStore.eventTypes.TOOL_CHANGE, {
-            tool: toolName
-        });
-    }
-    
-    // ツールポップアップ切り替え
-    toggleToolPopup(toolName, buttonElement) {
-        // 既存のポップアップを閉じる
-        if (this.activeToolPopup && this.activeToolPopup !== toolName) {
-            this.closePopup(this.activeToolPopup);
+        // 新しいツールの選択
+        const newButton = this.sidebar.querySelector(`[data-tool-id="${toolId}"]`);
+        if (newButton) {
+            newButton.classList.add('active');
+            newButton.style.background = 'rgba(170, 90, 86, 0.15)';
+            newButton.style.color = '#ffffff';
+            newButton.style.borderLeft = '3px solid #aa5a56';
         }
         
-        // 同じツールのポップアップの場合は切り替え
-        if (this.activeToolPopup === toolName) {
-            this.closePopup(toolName);
-            this.activeToolPopup = null;
-        } else {
-            this.openToolPopup(toolName, buttonElement);
-            this.activeToolPopup = toolName;
+        this.activeTool = toolId;
+        
+        // ツール変更イベント発火
+        this.eventStore.emit('tool:change', { tool: toolId });
+        
+        console.log(`🎨 ツール選択: ${toolId}`);
+    }
+    
+    /**
+     * ツールチップ表示
+     */
+    showTooltip(element, text) {
+        let tooltip = document.getElementById('tool-tooltip');
+        if (!tooltip) {
+            tooltip = document.createElement('div');
+            tooltip.id = 'tool-tooltip';
+            tooltip.className = `
+                absolute z-50 px-2 py-1
+                bg-gray-800 text-white text-sm rounded
+                pointer-events-none opacity-0 transition-opacity
+                whitespace-nowrap
+            `;
+            document.body.appendChild(tooltip);
         }
-    }
-    
-    // ツールポップアップ開く
-    openToolPopup(toolName, buttonElement) {
-        const popupConfig = this.getToolPopupConfig(toolName);
-        if (!popupConfig) return;
         
-        const popup = this.createPopup(toolName, popupConfig, buttonElement);
-        this.activePopups.set(toolName, popup);
+        tooltip.textContent = text;
         
-        this.eventStore.emit(this.eventStore.eventTypes.UI_POPUP_OPEN, {
-            tool: toolName,
-            popup: popup
-        });
-    }
-    
-    // ツールポップアップ設定取得
-    getToolPopupConfig(toolName) {
-        const configs = {
-            pen: {
-                title: 'ペン設定',
-                controls: [
-                    { type: 'slider', name: 'size', label: 'サイズ', min: 1, max: 100, value: 3 },
-                    { type: 'slider', name: 'opacity', label: '不透明度', min: 0, max: 1, step: 0.1, value: 1 },
-                    { type: 'checkbox', name: 'pressure', label: '筆圧感度', checked: true },
-                    { type: 'slider', name: 'smoothing', label: 'スムージング', min: 0, max: 1, step: 0.1, value: 0.5 }
-                ]
-            },
-            airspray: {
-                title: 'エアスプレー設定',
-                controls: [
-                    { type: 'slider', name: 'size', label: 'サイズ', min: 5, max: 200, value: 20 },
-                    { type: 'slider', name: 'opacity', label: '不透明度', min: 0, max: 1, step: 0.1, value: 0.3 },
-                    { type: 'slider', name: 'density', label: '密度', min: 0, max: 1, step: 0.1, value: 0.6 },
-                    { type: 'slider', name: 'scatter', label: '拡散', min: 0.1, max: 3, step: 0.1, value: 1 }
-                ]
-            },
-            blur: {
-                title: 'ボカシ設定',
-                controls: [
-                    { type: 'slider', name: 'size', label: 'サイズ', min: 1, max: 50, value: 15 },
-                    { type: 'slider', name: 'strength', label: '強度', min: 0, max: 1, step: 0.1, value: 0.7 },
-                    { type: 'select', name: 'type', label: '種類', options: ['gaussian', 'motion', 'radial'], value: 'gaussian' },
-                    { type: 'checkbox', name: 'edgeProtection', label: 'エッジ保護', checked: true }
-                ]
-            },
-            eraser: {
-                title: '消しゴム設定',
-                controls: [
-                    { type: 'slider', name: 'size', label: 'サイズ', min: 1, max: 200, value: 10 },
-                    { type: 'slider', name: 'hardness', label: '硬さ', min: 0, max: 1, step: 0.1, value: 0.8 },
-                    { type: 'select', name: 'mode', label: 'モード', options: ['pixel', 'layer'], value: 'pixel' }
-                ]
-            },
-            eyedropper: {
-                title: 'スポイト設定',
-                controls: [
-                    { type: 'slider', name: 'size', label: 'サンプル範囲', min: 1, max: 10, value: 1 },
-                    { type: 'select', name: 'mode', label: 'モード', options: ['average', 'center'], value: 'average' },
-                    { type: 'checkbox', name: 'showPreview', label: 'プレビュー表示', checked: true }
-                ]
-            },
-            fill: {
-                title: '塗りつぶし設定',
-                controls: [
-                    { type: 'slider', name: 'tolerance', label: '許容値', min: 0, max: 255, value: 32 },
-                    { type: 'checkbox', name: 'antiAlias', label: 'アンチエイリアス', checked: true },
-                    { type: 'checkbox', name: 'contiguous', label: '隣接領域のみ', checked: true }
-                ]
-            },
-            selection: {
-                title: '選択設定',
-                controls: [
-                    { type: 'select', name: 'type', label: '選択種類', options: ['rectangle', 'ellipse', 'lasso', 'magic'], value: 'rectangle' },
-                    { type: 'checkbox', name: 'antiAlias', label: 'アンチエイリアス', checked: true },
-                    { type: 'slider', name: 'feather', label: 'ぼかし', min: 0, max: 20, value: 0 }
-                ]
-            }
-        };
-        
-        return configs[toolName];
-    }
-    
-    // ポップアップ作成
-    createPopup(toolName, config, buttonElement) {
-        const popup = document.createElement('div');
-        popup.className = 'popup-panel tool-popup';
-        popup.setAttribute('data-tool', toolName);
-        
-        // ヘッダー作成
-        const header = document.createElement('div');
-        header.className = 'popup-header';
-        header.innerHTML = `
-            <span class="popup-title">${config.title}</span>
-            <button class="popup-close" data-action="close">×</button>
-        `;
-        popup.appendChild(header);
-        
-        // コントロール作成
-        const content = document.createElement('div');
-        content.className = 'popup-content';
-        
-        config.controls.forEach(control => {
-            const controlElement = this.createControl(control, toolName);
-            content.appendChild(controlElement);
-        });
-        
-        popup.appendChild(content);
-        
-        // 位置計算・設定
-        this.positionPopup(popup, buttonElement);
-        
-        // イベントリスナー設定
-        this.setupPopupInteractions(popup, toolName);
-        
-        // ポップアップコンテナに追加
-        this.popupContainer.appendChild(popup);
+        // 位置計算
+        const rect = element.getBoundingClientRect();
+        tooltip.style.left = `${rect.right + 8}px`;
+        tooltip.style.top = `${rect.top + (rect.height / 2) - (tooltip.offsetHeight / 2)}px`;
         
         // 表示アニメーション
-        requestAnimationFrame(() => {
-            popup.classList.add('visible');
+        setTimeout(() => {
+            tooltip.style.opacity = '1';
+        }, 300);
+    }
+    
+    /**
+     * ツールチップ非表示
+     */
+    hideTooltip() {
+        const tooltip = document.getElementById('tool-tooltip');
+        if (tooltip) {
+            tooltip.style.opacity = '0';
+        }
+    }
+    
+    /**
+     * イベントリスナー設定
+     */
+    setupEventListeners() {
+        // キーボードショートカット
+        document.addEventListener('keydown', this.handleKeyboardShortcut.bind(this));
+        
+        // ウィンドウリサイズ
+        window.addEventListener('resize', this.handleWindowResize.bind(this));
+        
+        // フルスクリーン変更
+        document.addEventListener('fullscreenchange', this.handleFullscreenChange.bind(this));
+    }
+    
+    /**
+     * キーボードショートカット処理
+     */
+    handleKeyboardShortcut(event) {
+        // Tab: UI表示切り替え
+        if (event.key === 'Tab' && !event.ctrlKey && !event.shiftKey) {
+            event.preventDefault();
+            this.toggleUI();
+            return;
+        }
+        
+        // F11: フルスクリーン切り替え
+        if (event.key === 'F11') {
+            event.preventDefault();
+            this.toggleFullscreen();
+            return;
+        }
+        
+        // ツール選択ショートカット
+        const toolShortcuts = {
+            'b': 'pen',
+            'e': 'eraser',
+            'i': 'eyedropper',
+            'g': 'fill',
+            'm': 'select',
+            't': 'transform'
+        };
+        
+        if (toolShortcuts[event.key] && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+            event.preventDefault();
+            this.selectTool(toolShortcuts[event.key]);
+        }
+    }
+    
+    /**
+     * ウィンドウリサイズ処理
+     */
+    handleWindowResize() {
+        // ポップアップの位置調整
+        this.activePopups.forEach((popup, toolId) => {
+            this.repositionPopup(popup, toolId);
         });
+    }
+    
+    /**
+     * フルスクリーン変更処理
+     */
+    handleFullscreenChange() {
+        this.fullscreenMode = !!document.fullscreenElement;
+        
+        if (this.fullscreenMode) {
+            this.sidebar.style.background = 'rgba(42, 42, 42, 0.9)';
+        } else {
+            this.sidebar.style.background = 'rgb(42, 42, 42)';
+        }
+    }
+    
+    /**
+     * UI表示切り替え
+     */
+    toggleUI() {
+        this.uiVisible = !this.uiVisible;
+        
+        if (this.uiVisible) {
+            this.sidebar.style.transform = 'translateX(0)';
+            this.sidebar.style.opacity = '1';
+        } else {
+            this.sidebar.style.transform = 'translateX(-100%)';
+            this.sidebar.style.opacity = '0';
+        }
+        
+        // 他のUIパネルも同様に制御
+        this.eventStore.emit('ui:visibility:change', { visible: this.uiVisible });
+        
+        console.log(`🎨 UI表示切り替え: ${this.uiVisible ? '表示' : '非表示'}`);
+    }
+    
+    /**
+     * フルスクリーン切り替え
+     */
+    toggleFullscreen() {
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+        } else {
+            document.documentElement.requestFullscreen();
+        }
+    }
+    
+    /**
+     * 通知システム作成
+     */
+    createNotificationSystem() {
+        let container = document.getElementById('notification-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'notification-container';
+            container.className = `
+                fixed top-4 right-4 z-50 
+                flex flex-col gap-2
+                max-w-sm
+            `;
+            document.body.appendChild(container);
+        }
+    }
+    
+    /**
+     * ツール変更処理
+     */
+    handleToolChange(eventData) {
+        const { tool } = eventData.payload;
+        
+        // ポップアップ表示
+        if (this.shouldShowPopup(tool)) {
+            this.showToolPopup(tool);
+        } else {
+            this.hideAllPopups();
+        }
+        
+        console.log(`🎨 ツール変更処理: ${tool}`);
+    }
+    
+    /**
+     * ポップアップ表示判定
+     */
+    shouldShowPopup(tool) {
+        const popupTools = ['pen', 'airspray', 'blur', 'eraser'];
+        return popupTools.includes(tool);
+    }
+    
+    /**
+     * ツールポップアップ表示
+     */
+    showToolPopup(toolId) {
+        // 既存ポップアップを非表示
+        this.hideAllPopups();
+        
+        const button = this.sidebar.querySelector(`[data-tool-id="${toolId}"]`);
+        if (!button) return;
+        
+        const popup = this.createToolPopup(toolId);
+        this.activePopups.set(toolId, popup);
+        
+        // 位置設定
+        const rect = button.getBoundingClientRect();
+        popup.style.left = `${rect.right + 24}px`;
+        popup.style.top = `${rect.top + (rect.height / 2) - (popup.offsetHeight / 2)}px`;
+        
+        this.popupContainer.appendChild(popup);
+        
+        // アニメーション
+        setTimeout(() => {
+            popup.style.transform = 'translateX(0) scale(1)';
+            popup.style.opacity = '1';
+        }, 10);
+        
+        console.log(`🎨 ポップアップ表示: ${toolId}`);
+    }
+    
+    /**
+     * ツールポップアップ作成
+     */
+    createToolPopup(toolId) {
+        const popup = document.createElement('div');
+        popup.className = 'tool-popup';
+        popup.style.cssText = `
+            position: absolute;
+            background: rgba(42, 42, 42, 0.96);
+            border-radius: 16px;
+            padding: 16px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            transform: translateX(-20px) scale(0.9);
+            opacity: 0;
+            transition: all 300ms ease-out;
+            pointer-events: auto;
+            min-width: 200px;
+            color: white;
+        `;
+        
+        const content = this.getPopupContent(toolId);
+        popup.innerHTML = content;
+        
+        // スライダーイベント設定
+        this.setupPopupEvents(popup, toolId);
         
         return popup;
     }
     
-    // コントロール作成
-    createControl(config, toolName) {
-        const controlGroup = document.createElement('div');
-        controlGroup.className = 'control-group';
-        
-        const label = document.createElement('div');
-        label.className = 'control-label';
-        
-        let controlElement;
-        
-        switch (config.type) {
-            case 'slider':
-                controlElement = this.createSliderControl(config, toolName);
-                label.innerHTML = `
-                    <span>${config.label}</span>
-                    <input type="number" class="control-input" value="${config.value}" 
-                           min="${config.min}" max="${config.max}" step="${config.step || 1}"
-                           data-control="${config.name}">
-                `;
-                break;
-                
-            case 'checkbox':
-                controlElement = this.createCheckboxControl(config, toolName);
-                label.innerHTML = `<span>${config.label}</span>`;
-                break;
-                
-            case 'select':
-                controlElement = this.createSelectControl(config, toolName);
-                label.innerHTML = `<span>${config.label}</span>`;
-                break;
-        }
-        
-        controlGroup.appendChild(label);
-        if (controlElement) {
-            controlGroup.appendChild(controlElement);
-        }
-        
-        return controlGroup;
-    }
-    
-    // スライダーコントロール作成
-    createSliderControl(config, toolName) {
-        const slider = document.createElement('input');
-        slider.type = 'range';
-        slider.className = 'control-slider';
-        slider.min = config.min;
-        slider.max = config.max;
-        slider.step = config.step || 1;
-        slider.value = config.value;
-        slider.setAttribute('data-control', config.name);
-        
-        // スライダー変更イベント
-        slider.addEventListener('input', (e) => {
-            this.handleControlChange(toolName, config.name, parseFloat(e.target.value));
-            // 連動する数値入力を更新
-            const numberInput = slider.parentElement.querySelector('.control-input');
-            if (numberInput) {
-                numberInput.value = e.target.value;
+    /**
+     * ポップアップコンテンツ取得
+     */
+    getPopupContent(toolId) {
+        const configs = {
+            pen: {
+                title: 'ペンツール',
+                controls: [
+                    { type: 'slider', label: 'サイズ', id: 'size', min: 1, max: 100, value: 5 },
+                    { type: 'slider', label: '不透明度', id: 'opacity', min: 0, max: 100, value: 100 },
+                    { type: 'checkbox', label: '筆圧感度', id: 'pressure', checked: true }
+                ]
+            },
+            airspray: {
+                title: 'エアスプレー',
+                controls: [
+                    { type: 'slider', label: '噴射強度', id: 'intensity', min: 0, max: 100, value: 50 },
+                    { type: 'slider', label: '粒子密度', id: 'density', min: 10, max: 100, value: 30 },
+                    { type: 'slider', label: '拡散範囲', id: 'spread', min: 5, max: 50, value: 15 }
+                ]
+            },
+            blur: {
+                title: 'ボカシツール',
+                controls: [
+                    { type: 'slider', label: 'ボカシ強度', id: 'strength', min: 0, max: 12, value: 3 },
+                    { type: 'select', label: 'ボカシ種類', id: 'type', options: ['ガウシアン', 'モーション', '放射状'], value: 'ガウシアン' },
+                    { type: 'checkbox', label: 'エッジ保護', id: 'edgeProtect', checked: false }
+                ]
+            },
+            eraser: {
+                title: '消しゴム',
+                controls: [
+                    { type: 'slider', label: 'サイズ', id: 'size', min: 1, max: 100, value: 10 },
+                    { type: 'slider', label: '強度', id: 'strength', min: 1, max: 100, value: 100 },
+                    { type: 'checkbox', label: 'ソフト消し', id: 'soft', checked: false }
+                ]
             }
-        });
-        
-        return slider;
-    }
-    
-    // チェックボックスコントロール作成
-    createCheckboxControl(config, toolName) {
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.className = 'control-checkbox';
-        checkbox.checked = config.checked;
-        checkbox.setAttribute('data-control', config.name);
-        
-        checkbox.addEventListener('change', (e) => {
-            this.handleControlChange(toolName, config.name, e.target.checked);
-        });
-        
-        return checkbox;
-    }
-    
-    // セレクトコントロール作成
-    createSelectControl(config, toolName) {
-        const select = document.createElement('select');
-        select.className = 'control-select';
-        select.setAttribute('data-control', config.name);
-        
-        config.options.forEach(option => {
-            const optionElement = document.createElement('option');
-            optionElement.value = option;
-            optionElement.textContent = option;
-            if (option === config.value) {
-                optionElement.selected = true;
-            }
-            select.appendChild(optionElement);
-        });
-        
-        select.addEventListener('change', (e) => {
-            this.handleControlChange(toolName, config.name, e.target.value);
-        });
-        
-        return select;
-    }
-    
-    // コントロール変更処理
-    handleControlChange(toolName, controlName, value) {
-        console.log(`⚙️ Control changed: ${toolName}.${controlName} = ${value}`);
-        
-        // ツール設定更新イベント発火
-        this.eventStore.emit(this.eventStore.eventTypes.TOOL_CONFIG_CHANGE, {
-            tool: toolName,
-            property: controlName,
-            value: value
-        });
-    }
-    
-    // ポップアップ位置設定
-    positionPopup(popup, buttonElement) {
-        const buttonRect = buttonElement.getBoundingClientRect();
-        const sidebarRect = this.sidebar.getBoundingClientRect();
-        
-        // 右側に24px離して配置
-        popup.style.position = 'fixed';
-        popup.style.left = `${sidebarRect.right + 24}px`;
-        popup.style.top = `${buttonRect.top}px`;
-        popup.style.zIndex = '1000';
-    }
-    
-    // ポップアップインタラクション設定
-    setupPopupInteractions(popup, toolName) {
-        // 閉じるボタン
-        const closeButton = popup.querySelector('.popup-close');
-        if (closeButton) {
-            closeButton.addEventListener('click', () => {
-                this.closePopup(toolName);
-            });
-        }
-        
-        // 数値入力との連動
-        const numberInputs = popup.querySelectorAll('.control-input');
-        numberInputs.forEach(input => {
-            input.addEventListener('input', (e) => {
-                const controlName = e.target.getAttribute('data-control');
-                const value = parseFloat(e.target.value);
-                
-                // 対応するスライダーを更新
-                const slider = popup.querySelector(`input[type="range"][data-control="${controlName}"]`);
-                if (slider) {
-                    slider.value = value;
-                }
-                
-                this.handleControlChange(toolName, controlName, value);
-            });
-        });
-        
-        // ドラッグ移動対応
-        this.makePopupDraggable(popup);
-    }
-    
-    // ポップアップドラッグ移動
-    makePopupDraggable(popup) {
-        const header = popup.querySelector('.popup-header');
-        if (!header) return;
-        
-        let isDragging = false;
-        let startX, startY, startLeft, startTop;
-        
-        header.addEventListener('mousedown', (e) => {
-            isDragging = true;
-            startX = e.clientX;
-            startY = e.clientY;
-            startLeft = parseInt(popup.style.left);
-            startTop = parseInt(popup.style.top);
-            
-            header.style.cursor = 'grabbing';
-            e.preventDefault();
-        });
-        
-        document.addEventListener('mousemove', (e) => {
-            if (!isDragging) return;
-            
-            const deltaX = e.clientX - startX;
-            const deltaY = e.clientY - startY;
-            
-            popup.style.left = `${startLeft + deltaX}px`;
-            popup.style.top = `${startTop + deltaY}px`;
-        });
-        
-        document.addEventListener('mouseup', () => {
-            if (isDragging) {
-                isDragging = false;
-                header.style.cursor = 'grab';
-            }
-        });
-        
-        header.style.cursor = 'grab';
-    }
-    
-    // ポップアップ閉じる
-    closePopup(toolName) {
-        const popup = this.activePopups.get(toolName);
-        if (!popup) return;
-        
-        popup.classList.remove('visible');
-        
-        setTimeout(() => {
-            if (popup.parentElement) {
-                popup.parentElement.removeChild(popup);
-            }
-            this.activePopups.delete(toolName);
-            
-            if (this.activeToolPopup === toolName) {
-                this.activeToolPopup = null;
-            }
-        }, 300);
-        
-        this.eventStore.emit(this.eventStore.eventTypes.UI_POPUP_CLOSE, {
-            tool: toolName
-        });
-    }
-    
-    // 全ポップアップ閉じる
-    closeAllPopups() {
-        this.activePopups.forEach((popup, toolName) => {
-            this.closePopup(toolName);
-        });
-    }
-    
-    // アクティブツールボタン更新
-    updateActiveToolButton(toolName) {
-        // 全ボタンの活性状態リセット
-        const allButtons = this.sidebar.querySelectorAll('.tool-button');
-        allButtons.forEach(button => {
-            button.classList.remove('active');
-        });
-        
-        // 指定ツールを活性化
-        const activeButton = this.sidebar.querySelector(`[data-tool="${toolName}"]`);
-        if (activeButton) {
-            activeButton.classList.add('active');
-        }
-    }
-    
-    // ツールボタンホバー設定
-    setupToolButtonHover(button, toolName) {
-        const tooltip = this.createTooltip(toolName);
-        
-        button.addEventListener('mouseenter', (e) => {
-            this.showTooltip(tooltip, e.currentTarget);
-        });
-        
-        button.addEventListener('mouseleave', () => {
-            this.hideTooltip(tooltip);
-        });
-    }
-    
-    // ツールチップ作成
-    createTooltip(toolName) {
-        const tooltip = document.createElement('div');
-        tooltip.className = 'tool-tooltip';
-        tooltip.textContent = this.getToolTitle(toolName);
-        document.body.appendChild(tooltip);
-        return tooltip;
-    }
-    
-    // ツールチップ表示
-    showTooltip(tooltip, buttonElement) {
-        const rect = buttonElement.getBoundingClientRect();
-        tooltip.style.position = 'fixed';
-        tooltip.style.left = `${rect.right + 10}px`;
-        tooltip.style.top = `${rect.top + rect.height / 2 - tooltip.offsetHeight / 2}px`;
-        tooltip.style.opacity = '1';
-        tooltip.style.visibility = 'visible';
-    }
-    
-    // ツールチップ非表示
-    hideTooltip(tooltip) {
-        tooltip.style.opacity = '0';
-        tooltip.style.visibility = 'hidden';
-    }
-    
-    // ツールタイトル取得
-    getToolTitle(toolName) {
-        const titles = {
-            pen: 'ペンツール (P)',
-            eraser: '消しゴムツール (E)',
-            airspray: 'エアスプレーツール (A)',
-            blur: 'ボカシツール',
-            eyedropper: 'スポイトツール (I)',
-            fill: '塗りつぶしツール (G)',
-            selection: '選択ツール (S)',
-            text: 'テキストツール (T)',
-            shape: '図形ツール',
-            transform: '変形ツール',
-            settings: '設定',
-            download: 'ダウンロード',
-            resize: 'リサイズ',
-            animation: 'アニメーション',
-            layers: 'レイヤー'
         };
         
-        return titles[toolName] || toolName;
+        const config = configs[toolId];
+        if (!config) return '<div>設定なし</div>';
+        
+        let html = `<h3 style="margin: 0 0 12px 0; color: #fff; font-size: 14px;">${config.title}</h3>`;
+        
+        config.controls.forEach(control => {
+            html += this.createControlHTML(control);
+        });
+        
+        return html;
     }
     
-    // ポップアップコンテナ作成
-    createPopupContainer() {
-        this.popupContainer = document.getElementById('popupContainer');
-        if (!this.popupContainer) {
-            this.popupContainer = document.createElement('div');
-            this.popupContainer.id = 'popupContainer';
-            this.popupContainer.style.cssText = `
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                pointer-events: none;
-                z-index: 1000;
-            `;
-            document.body.appendChild(this.popupContainer);
+    /**
+     * コントロールHTML作成
+     */
+    createControlHTML(control) {
+        switch (control.type) {
+            case 'slider':
+                return `
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 4px;">
+                            ${control.label}
+                        </label>
+                        <input type="range" 
+                               id="${control.id}" 
+                               min="${control.min}" 
+                               max="${control.max}" 
+                               value="${control.value}"
+                               style="width: 100%; height: 6px; background: #555; outline: none; border-radius: 3px;">
+                    </div>
+                `;
+            case 'checkbox':
+                return `
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: flex; align-items: center; font-size: 12px; color: #ccc; cursor: pointer;">
+                            <input type="checkbox" 
+                                   id="${control.id}" 
+                                   ${control.checked ? 'checked' : ''}
+                                   style="margin-right: 8px;">
+                            ${control.label}
+                        </label>
+                    </div>
+                `;
+            case 'select':
+                const options = control.options.map(opt => 
+                    `<option value="${opt}" ${opt === control.value ? 'selected' : ''}>${opt}</option>`
+                ).join('');
+                return `
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 4px;">
+                            ${control.label}
+                        </label>
+                        <select id="${control.id}" 
+                                style="width: 100%; padding: 4px; background: #555; color: #fff; border: none; border-radius: 4px;">
+                            ${options}
+                        </select>
+                    </div>
+                `;
+            default:
+                return '';
         }
+    }
+    
+    /**
+     * ポップアップイベント設定
+     */
+    setupPopupEvents(popup, toolId) {
+        const sliders = popup.querySelectorAll('input[type="range"]');
+        const checkboxes = popup.querySelectorAll('input[type="checkbox"]');
+        const selects = popup.querySelectorAll('select');
         
-        // ポップアップ用CSS追加
-        this.addPopupStyles();
-    }
-    
-    // ポップアップ用CSS追加
-    addPopupStyles() {
-        const style = document.createElement('style');
-        style.textContent = `
-            .tool-popup {
-                pointer-events: auto;
-                opacity: 0;
-                transform: translateX(-10px);
-                transition: all 0.3s ease-out;
-            }
-            
-            .tool-popup.visible {
-                opacity: 1;
-                transform: translateX(0);
-            }
-            
-            .popup-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                padding: 8px 12px;
-                background: rgba(128, 0, 0, 0.1);
-                border-bottom: 1px solid rgba(128, 0, 0, 0.2);
-                user-select: none;
-            }
-            
-            .popup-title {
-                font-weight: 600;
-                color: var(--text-color);
-                font-size: 12px;
-            }
-            
-            .popup-close {
-                background: none;
-                border: none;
-                font-size: 14px;
-                cursor: pointer;
-                color: var(--text-color);
-                opacity: 0.7;
-                padding: 2px 6px;
-                border-radius: 2px;
-            }
-            
-            .popup-close:hover {
-                opacity: 1;
-                background: rgba(128, 0, 0, 0.1);
-            }
-            
-            .popup-content {
-                padding: 12px;
-                max-width: 250px;
-            }
-            
-            .control-checkbox {
-                margin-right: 8px;
-            }
-            
-            .control-select {
-                width: 100%;
-                padding: 4px 8px;
-                border: 1px solid var(--sub-color);
-                border-radius: 3px;
-                font-size: 11px;
-                background: white;
-            }
-            
-            .tool-tooltip {
-                background: rgba(0, 0, 0, 0.8);
-                color: white;
-                padding: 4px 8px;
-                border-radius: 4px;
-                font-size: 11px;
-                opacity: 0;
-                visibility: hidden;
-                transition: all 0.2s ease;
-                pointer-events: none;
-                z-index: 2000;
-                white-space: nowrap;
-            }
-        `;
-        document.head.appendChild(style);
-    }
-    
-    // 通知システム作成
-    createNotificationSystem() {
-        this.notificationContainer = document.createElement('div');
-        this.notificationContainer.className = 'notification-container';
-        this.notificationContainer.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 2000;
-            pointer-events: none;
-        `;
-        document.body.appendChild(this.notificationContainer);
+        // スライダーイベント
+        sliders.forEach(slider => {
+            slider.addEventListener('input', (e) => {
+                this.eventStore.emit('tool:config:update', {
+                    tool: toolId,
+                    property: slider.id,
+                    value: parseFloat(e.target.value)
+                });
+            });
+        });
         
-        this.addNotificationStyles();
+        // チェックボックスイベント
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', (e) => {
+                this.eventStore.emit('tool:config:update', {
+                    tool: toolId,
+                    property: checkbox.id,
+                    value: e.target.checked
+                });
+            });
+        });
+        
+        // セレクトイベント
+        selects.forEach(select => {
+            select.addEventListener('change', (e) => {
+                this.eventStore.emit('tool:config:update', {
+                    tool: toolId,
+                    property: select.id,
+                    value: e.target.value
+                });
+            });
+        });
     }
     
-    // 通知表示
+    /**
+     * ポップアップ再配置
+     */
+    repositionPopup(popup, toolId) {
+        const button = this.sidebar.querySelector(`[data-tool-id="${toolId}"]`);
+        if (!button) return;
+        
+        const rect = button.getBoundingClientRect();
+        popup.style.left = `${rect.right + 24}px`;
+        popup.style.top = `${rect.top + (rect.height / 2) - (popup.offsetHeight / 2)}px`;
+    }
+    
+    /**
+     * 全ポップアップ非表示
+     */
+    hideAllPopups() {
+        this.activePopups.forEach((popup, toolId) => {
+            popup.style.transform = 'translateX(-20px) scale(0.9)';
+            popup.style.opacity = '0';
+            setTimeout(() => {
+                if (popup.parentNode) {
+                    popup.parentNode.removeChild(popup);
+                }
+            }, 300);
+        });
+        this.activePopups.clear();
+    }
+    
+    /**
+     * ポップアップ表示
+     */
+    showPopup(eventData) {
+        const { type, target, content } = eventData.payload;
+        // 実装予定
+    }
+    
+    /**
+     * ポップアップ非表示
+     */
+    hidePopup(eventData) {
+        const { target } = eventData.payload;
+        // 実装予定
+    }
+    
+    /**
+     * 成功通知表示
+     */
+    showSuccessNotification(eventData) {
+        this.showNotification(eventData.payload.message, 'success');
+    }
+    
+    /**
+     * エラー通知表示
+     */
+    showErrorNotification(eventData) {
+        this.showNotification(eventData.payload.error, 'error');
+    }
+    
+    /**
+     * 通知表示
+     */
     showNotification(message, type = 'info', duration = 3000) {
+        const container = document.getElementById('notification-container');
+        if (!container) return;
+        
         const notification = document.createElement('div');
-        notification.className = `notification notification-${type}`;
+        const bgColor = type === 'error' ? 'bg-red-500' : type === 'success' ? 'bg-green-500' : 'bg-blue-500';
+        
+        notification.className = `
+            ${bgColor} text-white px-4 py-2 rounded shadow-lg
+            transform transition-all duration-300 translate-x-full
+            text-sm max-w-xs
+        `;
         notification.textContent = message;
         
-        this.notificationContainer.appendChild(notification);
-        this.notifications.push(notification);
+        container.appendChild(notification);
         
-        // 表示アニメーション
-        requestAnimationFrame(() => {
-            notification.classList.add('visible');
-        });
+        // アニメーション
+        setTimeout(() => {
+            notification.classList.remove('translate-x-full');
+        }, 10);
         
         // 自動削除
         setTimeout(() => {
-            this.removeNotification(notification);
+            notification.classList.add('translate-x-full');
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
         }, duration);
-        
-        // 最大通知数制限
-        if (this.notifications.length > this.maxNotifications) {
-            this.removeNotification(this.notifications[0]);
-        }
     }
     
-    // 通知削除
-    removeNotification(notification) {
-        notification.classList.remove('visible');
-        
-        setTimeout(() => {
-            if (notification.parentElement) {
-                notification.parentElement.removeChild(notification);
-            }
-            const index = this.notifications.indexOf(notification);
-            if (index > -1) {
-                this.notifications.splice(index, 1);
-            }
-        }, 300);
+    /**
+     * 設定パネル表示
+     */
+    showSettingsPanel() {
+        console.log('⚙️ 設定パネル表示（未実装）');
+        this.showNotification('設定パネルは開発中です', 'info');
     }
     
-    // 通知用CSS追加
-    addNotificationStyles() {
-        const style = document.createElement('style');
-        style.textContent = `
-            .notification {
-                background: rgba(128, 0, 0, 0.9);
-                color: white;
-                padding: 12px 16px;
-                border-radius: 6px;
-                margin-bottom: 8px;
-                font-size: 12px;
-                transform: translateX(100%);
-                opacity: 0;
-                transition: all 0.3s ease-out;
-                pointer-events: auto;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            }
-            
-            .notification.visible {
-                transform: translateX(0);
-                opacity: 1;
-            }
-            
-            .notification-success {
-                background: rgba(34, 139, 34, 0.9);
-            }
-            
-            .notification-warning {
-                background: rgba(255, 140, 0, 0.9);
-            }
-            
-            .notification-error {
-                background: rgba(220, 20, 60, 0.9);
-            }
-        `;
-        document.head.appendChild(style);
+    /**
+     * ダウンロードダイアログ表示
+     */
+    showDownloadDialog() {
+        console.log('📥 ダウンロードダイアログ表示（未実装）');
+        this.showNotification('ダウンロード機能は開発中です', 'info');
     }
     
-    // レスポンシブデザイン設定
-    setupResponsiveDesign() {
-        const mediaQuery = window.matchMedia('(max-width: 768px)');
-        
-        const handleScreenChange = (e) => {
-            if (e.matches) {
-                // モバイル表示（タッチデバイス非対応だが画面サイズ対応）
-                this.sidebar.classList.add('mobile-layout');
-            } else {
-                // デスクトップ表示
-                this.sidebar.classList.remove('mobile-layout');
-            }
-        };
-        
-        mediaQuery.addEventListener('change', handleScreenChange);
-        handleScreenChange(mediaQuery);
+    /**
+     * リサイズダイアログ表示
+     */
+    showResizeDialog() {
+        console.log('⤢ リサイズダイアログ表示（未実装）');
+        this.showNotification('リサイズ機能は開発中です', 'info');
     }
     
-    // サイドバーインタラクション設定
-    setupSidebarInteractions() {
-        // サイドバー切り替え（Tab キーは ShortcutController で処理）
-        this.eventStore.on(this.eventStore.eventTypes.UI_SIDEBAR_TOGGLE, () => {
-            this.toggleSidebar();
-        });
-    }
-    
-    // サイドバー切り替え
-    toggleSidebar() {
-        this.sidebarCollapsed = !this.sidebarCollapsed;
-        this.sidebar.classList.toggle('collapsed', this.sidebarCollapsed);
-        
-        // アクティブポップアップがある場合は閉じる
-        if (this.sidebarCollapsed) {
-            this.closeAllPopups();
-        }
-        
-        console.log(`📐 Sidebar ${this.sidebarCollapsed ? 'collapsed' : 'expanded'}`);
-    }
-    
-    // 特殊パネル開く系メソッド（Phase3-4で実装拡張）
-    openSettingsPanel() {
-        console.log('⚙️ Settings panel opened');
-        this.showNotification('設定パネルを開きました');
-    }
-    
-    openDownloadPanel() {
-        console.log('📥 Download panel opened');
-        this.showNotification('ダウンロードパネルを開きました');
-    }
-    
-    openResizePanel() {
-        console.log('⤢ Resize panel opened');
-        this.showNotification('リサイズパネルを開きました');
-    }
-    
+    /**
+     * アニメーションモード切り替え
+     */
     toggleAnimationMode() {
-        console.log('🎬 Animation mode toggled');
-        this.eventStore.emit(this.eventStore.eventTypes.ANIMATION_START, {
-            mode: 'toggle'
-        });
+        console.log('🎬 アニメーションモード切り替え（未実装）');
+        this.showNotification('アニメーション機能は開発中です', 'info');
     }
     
+    /**
+     * レイヤーパネル切り替え
+     */
     toggleLayerPanel() {
-        console.log('📚 Layer panel toggled');
-        this.showNotification('レイヤーパネルを切り替えました');
+        console.log('📚 レイヤーパネル切り替え（未実装）');
+        this.showNotification('レイヤーパネルは開発中です', 'info');
     }
     
-    // イベント購読設定
-    setupEventSubscriptions() {
-        // ツール変更時のUI更新
-        this.eventStore.on(this.eventStore.eventTypes.TOOL_CHANGE, (data) => {
-            this.updateActiveToolButton(data.payload.tool);
-        });
-        
-        // フルスクリーンモード切り替え
-        document.addEventListener('fullscreenchange', () => {
-            this.fullscreenMode = !!document.fullscreenElement;
-            document.body.classList.toggle('fullscreen-drawing', this.fullscreenMode);
-        });
-        
-        // ESCキーでポップアップ閉じる（ShortcutControllerと連携）
-        this.eventStore.on(self.eventStore.eventTypes.UI_POPUP_CLOSE, (data) => {
-            if (data.payload.all) {
-                this.closeAllPopups();
-            }
-        });
-    }
-    
-    // デバッグ情報
+    /**
+     * デバッグ情報取得
+     */
     getDebugInfo() {
         return {
-            sidebarCollapsed: this.sidebarCollapsed,
+            uiVisible: this.uiVisible,
             fullscreenMode: this.fullscreenMode,
-            activePopups: Array.from(this.activePopups.keys()),
-            activeToolPopup: this.activeToolPopup,
-            notificationCount: this.notifications.length
+            activeTool: this.activeTool,
+            activePopupsCount: this.activePopups.size,
+            sidebarElements: this.sidebar ? this.sidebar.children.length : 0
         };
-    }
-    
-    // クリーンアップ
-    destroy() {
-        this.closeAllPopups();
-        
-        if (this.notificationContainer) {
-            this.notificationContainer.remove();
-        }
-        
-        this.notifications = [];
-        
-        console.log('✅ UI controller destroyed');
     }
 }

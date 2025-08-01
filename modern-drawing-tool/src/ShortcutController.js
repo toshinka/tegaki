@@ -1,571 +1,582 @@
+// ShortcutController.js - ショートカット専門（Phase1基盤・封印対象）
+
 /**
- * ShortcutController - ショートカット専門（Phase1基盤）
- * 標準ショートカット・キャンバス操作ショートカット統合管理
+ * 🔥 ショートカット専門制御（Phase1基盤・封印対象）
+ * 責務: 標準ショートカット定義、キャンバス操作ショートカット、カスタマイズUI・設定画面
  */
 export class ShortcutController {
-    constructor(oglCore, inputController, eventStore) {
-        this.oglCore = oglCore;
-        this.inputController = inputController;
+    constructor(oglEngine, eventStore) {
+        this.engine = oglEngine;
         this.eventStore = eventStore;
         
         // ショートカット定義
         this.shortcuts = new Map();
         this.keyState = new Map();
-        this.modifierState = {
-            ctrl: false,
-            shift: false,
-            alt: false,
-            meta: false
-        };
+        this.isEnabled = true;
         
-        // 操作モード
-        this.currentMode = 'draw'; // draw, canvas, layer
-        this.isSpacePressed = false;
-        this.isVPressed = false;
+        // カスタマイズ設定
+        this.customShortcuts = new Map();
+        this.disabledShortcuts = new Set();
         
-        // ヒント表示
-        this.hintElement = null;
-        this.hintTimer = null;
+        // イベントリスナー参照
+        this.boundEventHandlers = {};
         
-        this.initializeShortcuts();
-        this.setupEventListeners();
-        this.createHintUI();
+        console.log('✅ ShortcutController初期化完了');
     }
     
-    // 標準ショートカット初期化
-    initializeShortcuts() {
-        // 🔧 基本操作（Phase1）
-        this.registerShortcut('ctrl+z', () => this.executeUndo(), 'アンドゥ');
-        this.registerShortcut('ctrl+y', () => this.executeRedo(), 'リドゥ');
-        this.registerShortcut('ctrl+shift+z', () => this.executeRedo(), 'リドゥ（代替）');
-        this.registerShortcut('delete', () => this.clearLayer(), 'レイヤー内消去');
-        this.registerShortcut('ctrl+0', () => this.resetView(), 'ビューリセット');
+    /**
+     * フルスクリーン切替
+     */
+    toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.warn('🚨 フルスクリーン開始失敗:', err);
+            });
+        } else {
+            document.exitFullscreen().catch(err => {
+                console.warn('🚨 フルスクリーン終了失敗:', err);
+            });
+        }
+    }
+    
+    /**
+     * 入力フィールドフォーカス判定
+     */
+    isInputFieldFocused() {
+        const activeElement = document.activeElement;
+        if (!activeElement) return false;
         
-        // 🎨 ツール切り替え（Phase1基盤）
-        this.registerShortcut('p', () => this.switchTool('pen'), 'ペンツール');
-        this.registerShortcut('e', () => this.switchTool('eraser'), '消しゴムツール');
-        this.registerShortcut('a', () => this.switchTool('airspray'), 'エアスプレーツール');
-        this.registerShortcut('s', () => this.switchTool('selection'), '選択ツール');
-        this.registerShortcut('g', () => this.switchTool('fill'), '塗りつぶしツール');
-        this.registerShortcut('i', () => this.switchTool('eyedropper'), 'スポイトツール');
-        this.registerShortcut('t', () => this.switchTool('text'), 'テキストツール');
+        const inputTypes = ['input', 'textarea', 'select'];
+        const tagName = activeElement.tagName.toLowerCase();
+        const isEditable = activeElement.contentEditable === 'true';
         
-        // 🔄 キャンバス操作（Phase1基盤）
-        this.registerShortcut('h', () => this.flipCanvas('horizontal'), 'キャンバス左右反転');
-        this.registerShortcut('shift+h', () => this.flipCanvas('vertical'), 'キャンバス上下反転');
+        return inputTypes.includes(tagName) || isEditable;
+    }
+    
+    /**
+     * ショートカット有効/無効切替
+     */
+    setEnabled(enabled) {
+        this.isEnabled = enabled;
+        console.log(`🎮 ショートカット${enabled ? '有効' : '無効'}`);
+    }
+    
+    /**
+     * 特定ショートカット無効化
+     */
+    disableShortcut(keyCombo) {
+        const normalizedCombo = this.normalizeKeyCombo(keyCombo);
+        this.disabledShortcuts.add(normalizedCombo);
+        console.log(`🎮 ショートカット無効化: ${keyCombo}`);
+    }
+    
+    /**
+     * 特定ショートカット有効化
+     */
+    enableShortcut(keyCombo) {
+        const normalizedCombo = this.normalizeKeyCombo(keyCombo);
+        this.disabledShortcuts.delete(normalizedCombo);
+        console.log(`🎮 ショートカット有効化: ${keyCombo}`);
+    }
+    
+    /**
+     * カスタムショートカット設定
+     */
+    setCustomShortcut(keyCombo, action, description = '') {
+        const normalizedCombo = this.normalizeKeyCombo(keyCombo);
         
-        // 📐 レイヤー内絵画操作（Phase1基盤）
-        this.registerShortcut('v+h', () => this.flipLayer('horizontal'), 'レイヤー内絵画左右反転');
-        this.registerShortcut('v+shift+h', () => this.flipLayer('vertical'), 'レイヤー内絵画上下反転');
-        
-        // 🎬 アニメーション（Phase4で拡張）
-        this.registerShortcut('f', () => this.toggleFullscreen(), 'フルスクリーン切り替え');
-        this.registerShortcut('tab', () => this.toggleUI(), 'UI表示切り替え');
-        this.registerShortcut('escape', () => this.cancelOperation(), 'キャンセル');
-        
-        // 🚀 開発者用（Phase1デバッグ）
-        if (process.env.NODE_ENV === 'development') {
-            this.registerShortcut('ctrl+shift+d', () => this.showDebugInfo(), 'デバッグ情報表示');
-            this.registerShortcut('ctrl+shift+r', () => this.resetAll(), '完全リセット');
+        // 既存ショートカットとの競合チェック
+        if (this.shortcuts.has(normalizedCombo)) {
+            console.warn(`🚨 ショートカット競合: ${keyCombo} は既に使用中`);
+            return false;
         }
         
-        console.log('✅ Shortcuts initialized:', this.shortcuts.size, 'shortcuts registered');
-    }
-    
-    // ショートカット登録
-    registerShortcut(combination, action, description = '') {
-        const normalized = this.normalizeShortcut(combination);
-        this.shortcuts.set(normalized, {
+        this.customShortcuts.set(normalizedCombo, {
             action,
             description,
-            combination: normalized
+            originalCombo: keyCombo,
+            enabled: true,
+            custom: true
         });
+        
+        this.shortcuts.set(normalizedCombo, this.customShortcuts.get(normalizedCombo));
+        
+        console.log(`🎮 カスタムショートカット設定: ${keyCombo} → ${action}`);
+        return true;
     }
     
-    // ショートカット正規化
-    normalizeShortcut(combination) {
-        return combination.toLowerCase()
-            .replace(/\s+/g, '')
-            .split('+')
-            .sort((a, b) => {
-                const order = ['ctrl', 'shift', 'alt', 'meta'];
-                const aIndex = order.indexOf(a);
-                const bIndex = order.indexOf(b);
-                if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
-                if (aIndex !== -1) return -1;
-                if (bIndex !== -1) return 1;
-                return a.localeCompare(b);
-            })
-            .join('+');
-    }
-    
-    // イベントリスナー設定
-    setupEventListeners() {
-        document.addEventListener('keydown', (e) => this.handleKeyDown(e));
-        document.addEventListener('keyup', (e) => this.handleKeyUp(e));
+    /**
+     * カスタムショートカット削除
+     */
+    removeCustomShortcut(keyCombo) {
+        const normalizedCombo = this.normalizeKeyCombo(keyCombo);
         
-        // フォーカス管理
-        document.addEventListener('blur', () => this.resetKeyState());
-        window.addEventListener('blur', () => this.resetKeyState());
-    }
-    
-    // キー押下処理
-    handleKeyDown(e) {
-        // 入力要素での無効化
-        if (this.isInputElement(e.target)) return;
-        
-        const key = e.key.toLowerCase();
-        this.keyState.set(key, true);
-        
-        // モディファイアキー更新
-        this.updateModifierState(e);
-        
-        // 特殊操作モード処理
-        this.handleSpecialModes(key, e);
-        
-        // ショートカット実行
-        const shortcut = this.buildCurrentShortcut(key);
-        if (this.executeShortcut(shortcut, e)) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-    }
-    
-    // キー離し処理
-    handleKeyUp(e) {
-        const key = e.key.toLowerCase();
-        this.keyState.set(key, false);
-        
-        // モディファイアキー更新
-        this.updateModifierState(e);
-        
-        // 特殊モード解除
-        this.handleSpecialModeRelease(key);
-    }
-    
-    // モディファイアキー状態更新
-    updateModifierState(e) {
-        this.modifierState.ctrl = e.ctrlKey;
-        this.modifierState.shift = e.shiftKey;
-        this.modifierState.alt = e.altKey;
-        this.modifierState.meta = e.metaKey;
-    }
-    
-    // 特殊操作モード処理
-    handleSpecialModes(key, e) {
-        // Spaceキー: キャンバス移動モード
-        if (key === ' ' && !this.isSpacePressed) {
-            this.isSpacePressed = true;
-            this.currentMode = 'canvas';
-            this.setCursor('grab');
-            this.showHint('キャンバス移動モード: ドラッグで移動');
-            e.preventDefault();
+        if (this.customShortcuts.has(normalizedCombo)) {
+            this.customShortcuts.delete(normalizedCombo);
+            this.shortcuts.delete(normalizedCombo);
+            
+            console.log(`🎮 カスタムショートカット削除: ${keyCombo}`);
+            return true;
         }
         
-        // Vキー: レイヤー内絵画操作モード
-        if (key === 'v' && !this.isVPressed) {
-            this.isVPressed = true;
-            this.currentMode = 'layer';
-            this.setCursor('move');
-            this.showHint('レイヤー内絵画移動モード');
-            e.preventDefault();
-        }
+        return false;
     }
     
-    // 特殊モード解除
-    handleSpecialModeRelease(key) {
-        if (key === ' ' && this.isSpacePressed) {
-            this.isSpacePressed = false;
-            this.currentMode = 'draw';
-            this.setCursor('crosshair');
-            this.hideHint();
-        }
+    /**
+     * ショートカット一覧取得
+     */
+    getShortcuts() {
+        const shortcuts = [];
         
-        if (key === 'v' && this.isVPressed) {
-            this.isVPressed = false;
-            this.currentMode = 'draw';
-            this.setCursor('crosshair');
-            this.hideHint();
-        }
+        this.shortcuts.forEach((shortcut, combo) => {
+            shortcuts.push({
+                keyCombo: combo,
+                action: shortcut.action,
+                description: shortcut.description,
+                enabled: shortcut.enabled,
+                custom: shortcut.custom || false
+            });
+        });
+        
+        return shortcuts.sort((a, b) => a.keyCombo.localeCompare(b.keyCombo));
     }
     
-    // 現在のショートカット構築
-    buildCurrentShortcut(key) {
-        const parts = [];
-        
-        if (this.modifierState.ctrl) parts.push('ctrl');
-        if (this.modifierState.shift) parts.push('shift');
-        if (this.modifierState.alt) parts.push('alt');
-        if (this.modifierState.meta) parts.push('meta');
-        
-        // 特殊キー処理
-        if (this.isVPressed && key !== 'v') {
-            parts.push('v');
+    /**
+     * アクション別ショートカット検索
+     */
+    getShortcutByAction(action) {
+        for (const [combo, shortcut] of this.shortcuts) {
+            if (shortcut.action === action && shortcut.enabled) {
+                return {
+                    keyCombo: combo,
+                    description: shortcut.description
+                };
+            }
         }
-        
-        parts.push(key);
-        return parts.join('+');
+        return null;
     }
     
-    // ショートカット実行
-    executeShortcut(shortcut, event) {
-        const shortcutData = this.shortcuts.get(shortcut);
-        if (!shortcutData) return false;
+    /**
+     * ショートカット設定保存
+     */
+    saveSettings() {
+        const settings = {
+            customShortcuts: Array.from(this.customShortcuts.entries()),
+            disabledShortcuts: Array.from(this.disabledShortcuts)
+        };
         
         try {
-            shortcutData.action(event);
-            console.log(`🔥 Shortcut executed: ${shortcut} - ${shortcutData.description}`);
-            this.showHint(`${shortcutData.description}`, 1000);
+            localStorage.setItem('shortcut-settings', JSON.stringify(settings));
+            console.log('🎮 ショートカット設定保存完了');
             return true;
         } catch (error) {
-            console.error(`🚨 Shortcut execution failed: ${shortcut}`, error);
-            this.eventStore.emit(this.eventStore.eventTypes.ENGINE_ERROR, { error, shortcut });
+            console.warn('🚨 ショートカット設定保存失敗:', error);
             return false;
         }
     }
     
-    // ショートカット実行メソッド群
-    executeUndo() {
-        // Phase1: 基本アンドゥ（HistoryControllerで拡張）
-        console.log('🔄 Undo executed');
-        this.eventStore.emit(this.eventStore.eventTypes.HISTORY_CHANGE, { action: 'undo' });
-    }
-    
-    executeRedo() {
-        // Phase1: 基本リドゥ（HistoryControllerで拡張）
-        console.log('🔄 Redo executed');
-        this.eventStore.emit(this.eventStore.eventTypes.HISTORY_CHANGE, { action: 'redo' });
-    }
-    
-    clearLayer() {
-        // Phase1: 基本レイヤークリア（LayerProcessorで拡張）
-        console.log('🗑️ Layer cleared');
-        this.eventStore.emit(this.eventStore.eventTypes.LAYER_DELETE, { type: 'clear' });
-    }
-    
-    resetView() {
-        if (this.inputController) {
-            this.inputController.resetCanvas();
-            this.showHint('ビューをリセットしました');
+    /**
+     * ショートカット設定読み込み
+     */
+    loadSettings() {
+        try {
+            const saved = localStorage.getItem('shortcut-settings');
+            if (!saved) return false;
+            
+            const settings = JSON.parse(saved);
+            
+            // カスタムショートカット復元
+            if (settings.customShortcuts) {
+                settings.customShortcuts.forEach(([combo, shortcut]) => {
+                    this.customShortcuts.set(combo, shortcut);
+                    this.shortcuts.set(combo, shortcut);
+                });
+            }
+            
+            // 無効化ショートカット復元
+            if (settings.disabledShortcuts) {
+                this.disabledShortcuts = new Set(settings.disabledShortcuts);
+            }
+            
+            console.log('🎮 ショートカット設定読み込み完了');
+            return true;
+        } catch (error) {
+            console.warn('🚨 ショートカット設定読み込み失敗:', error);
+            return false;
         }
     }
     
-    switchTool(toolName) {
-        if (this.oglCore) {
-            this.oglCore.setTool(toolName);
-            this.showHint(`${toolName.toUpperCase()}ツールに切り替え`);
-        }
-    }
-    
-    flipCanvas(direction) {
-        console.log(`🔄 Canvas flip: ${direction}`);
-        this.eventStore.emit(this.eventStore.eventTypes.CANVAS_TRANSFORM, {
-            type: 'flip',
-            direction
-        });
-        this.showHint(`キャンバス${direction === 'horizontal' ? '左右' : '上下'}反転`);
-    }
-    
-    flipLayer(direction) {
-        console.log(`🔄 Layer flip: ${direction}`);
-        this.eventStore.emit(this.eventStore.eventTypes.LAYER_SELECT, {
-            type: 'flip',
-            direction
-        });
-        this.showHint(`レイヤー内絵画${direction === 'horizontal' ? '左右' : '上下'}反転`);
-    }
-    
-    toggleFullscreen() {
-        if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen();
-            document.body.classList.add('fullscreen-drawing');
-            this.showHint('フルスクリーンモード');
-        } else {
-            document.exitFullscreen();
-            document.body.classList.remove('fullscreen-drawing');
-            this.showHint('フルスクリーン解除');
-        }
-    }
-    
-    toggleUI() {
-        const sidebar = document.getElementById('sidebar');
-        if (sidebar) {
-            sidebar.classList.toggle('collapsed');
-            this.showHint(sidebar.classList.contains('collapsed') ? 'UI非表示' : 'UI表示');
-        }
-    }
-    
-    cancelOperation() {
-        // 現在の操作をキャンセル
-        if (this.oglCore.isDrawing) {
-            this.oglCore.endStroke();
-        }
+    /**
+     * ショートカット設定リセット
+     */
+    resetSettings() {
+        this.customShortcuts.clear();
+        this.disabledShortcuts.clear();
         
-        // ポップアップを閉じる
-        this.eventStore.emit(this.eventStore.eventTypes.UI_POPUP_CLOSE, { all: true });
-        this.showHint('操作をキャンセル');
-    }
-    
-    // 開発者用メソッド
-    showDebugInfo() {
-        const debugInfo = {
-            shortcuts: this.shortcuts.size,
-            keyState: Object.fromEntries(
-                Array.from(this.keyState.entries()).filter(([k, v]) => v)
-            ),
-            modifierState: this.modifierState,
-            currentMode: this.currentMode,
-            oglCore: this.oglCore?.getDebugInfo(),
-            inputController: this.inputController?.getDebugInfo()
-        };
-        
-        console.log('🔧 Debug Info:', debugInfo);
-        alert(JSON.stringify(debugInfo, null, 2));
-    }
-    
-    resetAll() {
-        if (confirm('全てをリセットしますか？')) {
-            location.reload();
-        }
-    }
-    
-    // ヒントUI作成
-    createHintUI() {
-        this.hintElement = document.getElementById('shortcutHint');
-        if (!this.hintElement) {
-            this.hintElement = document.createElement('div');
-            this.hintElement.id = 'shortcutHint';
-            this.hintElement.className = 'shortcut-hint';
-            this.hintElement.textContent = 'Tab: レイヤー | P: ツール | F: フルスクリーン | Esc: 閉じる';
-            document.body.appendChild(this.hintElement);
-        }
-    }
-    
-    // ヒント表示
-    showHint(message, duration = 2000) {
-        if (!this.hintElement) return;
-        
-        clearTimeout(this.hintTimer);
-        this.hintElement.textContent = message;
-        this.hintElement.classList.add('visible');
-        
-        this.hintTimer = setTimeout(() => {
-            this.hideHint();
-        }, duration);
-    }
-    
-    // ヒント非表示
-    hideHint() {
-        if (this.hintElement) {
-            this.hintElement.classList.remove('visible');
-        }
-        clearTimeout(this.hintTimer);
-    }
-    
-    // カーソル設定
-    setCursor(cursorType) {
-        const canvas = this.oglCore?.canvas;
-        if (canvas) {
-            canvas.style.cursor = cursorType;
-        }
-    }
-    
-    // 入力要素判定
-    isInputElement(element) {
-        const inputTypes = ['input', 'textarea', 'select', 'option'];
-        return inputTypes.includes(element.tagName.toLowerCase()) ||
-               element.contentEditable === 'true';
-    }
-    
-    // キー状態リセット
-    resetKeyState() {
-        this.keyState.clear();
-        this.modifierState = {
-            ctrl: false,
-            shift: false,
-            alt: false,
-            meta: false
-        };
-        this.isSpacePressed = false;
-        this.isVPressed = false;
-        this.currentMode = 'draw';
-        this.setCursor('crosshair');
-    }
-    
-    // ショートカット一覧取得
-    getShortcutList() {
-        return Array.from(this.shortcuts.entries()).map(([combination, data]) => ({
-            combination,
-            description: data.description
-        }));
-    }
-    
-    // ショートカット削除
-    removeShortcut(combination) {
-        const normalized = this.normalizeShortcut(combination);
-        return this.shortcuts.delete(normalized);
-    }
-    
-    // 全ショートカット無効化
-    disableAllShortcuts() {
-        const originalSize = this.shortcuts.size;
-        this.shortcuts.clear();
-        console.log(`🚫 All shortcuts disabled (${originalSize} shortcuts)`);
-    }
-    
-    // ショートカット有効/無効切り替え
-    setShortcutEnabled(combination, enabled = true) {
-        const normalized = this.normalizeShortcut(combination);
-        const shortcut = this.shortcuts.get(normalized);
-        
-        if (shortcut) {
-            shortcut.enabled = enabled;
-            console.log(`${enabled ? '✅' : '🚫'} Shortcut ${combination}: ${enabled ? 'enabled' : 'disabled'}`);
-        }
-    }
-    
-    // カスタムショートカット追加（Phase2で拡張）
-    addCustomShortcut(combination, action, description = 'Custom shortcut') {
-        this.registerShortcut(combination, action, description);
-        console.log(`➕ Custom shortcut added: ${combination}`);
-    }
-    
-    // コンテキスト別ショートカット（Phase2で拡張）
-    setContext(context) {
-        this.currentContext = context;
-        console.log(`🎯 Context changed: ${context}`);
-        
-        // コンテキスト別ヒント表示
-        this.updateContextHints(context);
-    }
-    
-    // コンテキスト別ヒント更新
-    updateContextHints(context) {
-        let hintText = '';
-        
-        switch (context) {
-            case 'drawing':
-                hintText = 'P: ペン | E: 消しゴム | Space: 移動 | H: 反転';
-                break;
-            case 'selection':
-                hintText = 'Ctrl+C: コピー | Ctrl+V: 貼り付け | Del: 削除';
-                break;
-            case 'animation':
-                hintText = 'Space: 再生/停止 | ←→: フレーム移動 | F: フルスクリーン';
-                break;
-            default:
-                hintText = 'Tab: UI切り替え | F: フルスクリーン | Esc: キャンセル';
-        }
-        
-        if (this.hintElement) {
-            this.hintElement.textContent = hintText;
-        }
-    }
-    
-    // イベント購読（Phase1基盤連携）
-    setupEventSubscriptions() {
-        // ツール変更時のヒント更新
-        this.eventStore.on(this.eventStore.eventTypes.TOOL_CHANGE, (data) => {
-            this.updateToolHints(data.payload.tool);
-        });
-        
-        // UI状態変更時のショートカット有効性更新
-        this.eventStore.on(this.eventStore.eventTypes.UI_POPUP_OPEN, (data) => {
-            this.setShortcutContext('popup');
-        });
-        
-        this.eventStore.on(this.eventStore.eventTypes.UI_POPUP_CLOSE, (data) => {
-            this.setShortcutContext('drawing');
-        });
-    }
-    
-    // ツール別ヒント更新
-    updateToolHints(tool) {
-        const toolHints = {
-            pen: '筆圧: サポート | サイズ: [ ] | 不透明度: Shift+[ ]',
-            eraser: 'サイズ: [ ] | 硬さ: Shift+[ ] | 完全消去: Shift+E',
-            airspray: '密度: [ ] | 拡散: Shift+[ ] | 強度: Ctrl+[ ]',
-            selection: '追加: Shift | 減算: Alt | 移動: ドラッグ',
-            fill: '許容値: [ ] | 隣接: Shift+クリック | 全域: Ctrl+クリック'
-        };
-        
-        const hint = toolHints[tool] || '';
-        if (hint) {
-            this.showHint(`${tool.toUpperCase()}: ${hint}`, 3000);
-        }
-    }
-    
-    // ショートカットコンテキスト設定
-    setShortcutContext(context) {
-        this.currentContext = context;
-        
-        // コンテキスト別ショートカット有効性制御
-        switch (context) {
-            case 'popup':
-                // ポップアップ表示中は一部ショートカット無効化
-                this.setShortcutEnabled('p', false);
-                this.setShortcutEnabled('e', false);
-                this.setShortcutEnabled('a', false);
-                break;
-            case 'drawing':
-            default:
-                // 描画モードでは全ショートカット有効
-                this.setShortcutEnabled('p', true);
-                this.setShortcutEnabled('e', true);
-                this.setShortcutEnabled('a', true);
-                break;
-        }
-    }
-    
-    // パフォーマンス最適化
-    optimizeShortcutHandling() {
-        // 使用頻度の低いショートカットを遅延評価
-        const infrequentShortcuts = ['ctrl+shift+d', 'ctrl+shift+r'];
-        
-        infrequentShortcuts.forEach(shortcut => {
-            const shortcutData = this.shortcuts.get(shortcut);
-            if (shortcutData) {
-                shortcutData.lazy = true;
+        // 標準ショートカットのみ残す
+        const defaultShortcuts = new Map();
+        this.shortcuts.forEach((shortcut, combo) => {
+            if (!shortcut.custom) {
+                defaultShortcuts.set(combo, shortcut);
             }
         });
+        
+        this.shortcuts = defaultShortcuts;
+        
+        try {
+            localStorage.removeItem('shortcut-settings');
+        } catch (error) {
+            console.warn('🚨 ショートカット設定削除失敗:', error);
+        }
+        
+        console.log('🎮 ショートカット設定リセット完了');
     }
     
-    // デバッグ用ショートカット統計
-    getShortcutStats() {
-        const stats = {
-            total: this.shortcuts.size,
-            enabled: 0,
-            disabled: 0,
-            contexts: {},
-            mostUsed: null // Phase2で使用統計追加
+    /**
+     * ヘルプ表示用ショートカット情報
+     */
+    getHelpInfo() {
+        const categories = {
+            '基本操作': [],
+            'ツール': [],
+            'キャンバス': [],
+            'UI': [],
+            '編集': [],
+            'ファイル': [],
+            'アニメーション': []
         };
         
-        this.shortcuts.forEach((shortcut, combination) => {
-            if (shortcut.enabled !== false) {
-                stats.enabled++;
+        this.shortcuts.forEach((shortcut, combo) => {
+            if (!shortcut.enabled) return;
+            
+            const info = {
+                keyCombo: this.formatKeyCombo(combo),
+                description: shortcut.description
+            };
+            
+            // カテゴリ分類
+            if (shortcut.action.includes('undo') || shortcut.action.includes('redo')) {
+                categories['基本操作'].push(info);
+            } else if (shortcut.action.includes('Tool')) {
+                categories['ツール'].push(info);
+            } else if (shortcut.action.includes('canvas') || shortcut.action.includes('View') || shortcut.action.includes('flip')) {
+                categories['キャンバス'].push(info);
+            } else if (shortcut.action.includes('ui') || shortcut.action.includes('toggle') || shortcut.action.includes('Fullscreen')) {
+                categories['UI'].push(info);
+            } else if (shortcut.action.includes('copy') || shortcut.action.includes('paste') || shortcut.action.includes('select')) {
+                categories['編集'].push(info);
+            } else if (shortcut.action.includes('save') || shortcut.action.includes('open') || shortcut.action.includes('export')) {
+                categories['ファイル'].push(info);
+            } else if (shortcut.action.includes('animation') || shortcut.action.includes('frame') || shortcut.action.includes('play')) {
+                categories['アニメーション'].push(info);
             } else {
-                stats.disabled++;
+                categories['基本操作'].push(info);
             }
         });
         
-        return stats;
+        return categories;
     }
     
-    // クリーンアップ
-    destroy() {
-        document.removeEventListener('keydown', this.handleKeyDown);
-        document.removeEventListener('keyup', this.handleKeyUp);
-        document.removeEventListener('blur', this.resetKeyState);
-        window.removeEventListener('blur', this.resetKeyState);
-        
-        if (this.hintElement) {
-            this.hintElement.remove();
-        }
-        
-        clearTimeout(this.hintTimer);
-        this.shortcuts.clear();
-        this.keyState.clear();
-        
-        console.log('✅ Shortcut controller destroyed');
+    /**
+     * キーコンビネーション表示用フォーマット
+     */
+    formatKeyCombo(combo) {
+        return combo
+            .replace('Ctrl+', 'Ctrl + ')
+            .replace('Shift+', 'Shift + ')
+            .replace('Alt+', 'Alt + ')
+            .replace('Meta+', 'Cmd + ')
+            .replace('Key', '')
+            .replace('Digit', '')
+            .replace('Bracket', 'Bracket');
+    }
+    
+    /**
+     * デバッグ情報取得
+     */
+    getDebugInfo() {
+        return {
+            totalShortcuts: this.shortcuts.size,
+            customShortcuts: this.customShortcuts.size,
+            disabledShortcuts: this.disabledShortcuts.size,
+            isEnabled: this.isEnabled,
+            currentKeyState: Array.from(this.keyState.entries()).filter(([key, pressed]) => pressed)
+        };
     }
 }
+     * 標準ショートカット登録
+     */
+    registerDefaultShortcuts() {
+        // 🔥 Phase1: 基本ショートカット
+        this.registerShortcut('Ctrl+KeyZ', 'undo', 'アンドゥ');
+        this.registerShortcut('Ctrl+KeyY', 'redo', 'リドゥ');
+        this.registerShortcut('Ctrl+Shift+KeyZ', 'redo', 'リドゥ（代替）');
+        
+        // キャンバス操作
+        this.registerShortcut('Ctrl+Digit0', 'resetView', 'ビューリセット');
+        this.registerShortcut('KeyH', 'flipHorizontal', 'キャンバス左右反転');
+        this.registerShortcut('Shift+KeyH', 'flipVertical', 'キャンバス上下反転');
+        this.registerShortcut('Delete', 'clearLayer', 'レイヤー内消去');
+        
+        // ツール切り替え（Phase1基本ツール）
+        this.registerShortcut('KeyP', 'selectPenTool', 'ペンツール');
+        this.registerShortcut('KeyE', 'selectEraserTool', '消しゴムツール');
+        this.registerShortcut('KeyA', 'selectAirsprayTool', 'エアスプレーツール');
+        this.registerShortcut('KeyB', 'selectBlurTool', 'ボカシツール');
+        
+        // UI制御
+        this.registerShortcut('Tab', 'toggleUI', 'UI表示切替');
+        this.registerShortcut('KeyF', 'toggleFullscreen', 'フルスクリーン切替');
+        this.registerShortcut('Escape', 'cancelAction', 'アクションキャンセル');
+        
+        // 🎨 Phase2: 拡張ショートカット（封印解除時追加）
+        /*
+        this.registerShortcut('Ctrl+KeyC', 'copy', 'コピー');
+        this.registerShortcut('Ctrl+KeyV', 'paste', '貼り付け');
+        this.registerShortcut('Ctrl+KeyA', 'selectAll', '全選択');
+        this.registerShortcut('Ctrl+KeyD', 'deselect', '選択解除');
+        this.registerShortcut('KeyI', 'eyedropper', 'スポイトツール');
+        this.registerShortcut('KeyG', 'bucketFill', '塗りつぶしツール');
+        this.registerShortcut('KeyM', 'selectTool', '選択ツール');
+        this.registerShortcut('KeyT', 'textTool', 'テキストツール');
+        this.registerShortcut('KeyS', 'shapeTool', '図形ツール');
+        this.registerShortcut('KeyV', 'moveLayer', 'レイヤー内絵画移動');
+        this.registerShortcut('BracketLeft', 'decreaseBrushSize', 'ブラシサイズ縮小');
+        this.registerShortcut('BracketRight', 'increaseBrushSize', 'ブラシサイズ拡大');
+        */
+        
+        // ⚡ Phase3: 高度ショートカット（封印解除時追加）
+        /*
+        this.registerShortcut('Ctrl+KeyS', 'save', '保存');
+        this.registerShortcut('Ctrl+Shift+KeyS', 'saveAs', '名前を付けて保存');
+        this.registerShortcut('Ctrl+KeyO', 'open', '開く');
+        this.registerShortcut('Ctrl+KeyN', 'new', '新規');
+        this.registerShortcut('Ctrl+Shift+KeyE', 'export', 'エクスポート');
+        this.registerShortcut('Space', 'playAnimation', 'アニメーション再生');
+        this.registerShortcut('Comma', 'prevFrame', '前のフレーム');
+        this.registerShortcut('Period', 'nextFrame', '次のフレーム');
+        */
+        
+        console.log('🎮 標準ショートカット登録完了:', this.shortcuts.size + '個');
+    }
+    
+    /**
+     * ショートカット登録
+     */
+    registerShortcut(keyCombo, action, description = '') {
+        const normalizedCombo = this.normalizeKeyCombo(keyCombo);
+        
+        this.shortcuts.set(normalizedCombo, {
+            action,
+            description,
+            originalCombo: keyCombo,
+            enabled: true
+        });
+        
+        console.log(`🎮 ショートカット登録: ${keyCombo} → ${action}`);
+    }
+    
+    /**
+     * キーリスニング開始
+     */
+    startListening() {
+        this.boundEventHandlers = {
+            keydown: this.handleKeyDown.bind(this),
+            keyup: this.handleKeyUp.bind(this)
+        };
+        
+        // グローバルキーイベント
+        document.addEventListener('keydown', this.boundEventHandlers.keydown);
+        document.addEventListener('keyup', this.boundEventHandlers.keyup);
+        
+        console.log('🎮 ショートカットリスニング開始');
+    }
+    
+    /**
+     * キーリスニング停止
+     */
+    stopListening() {
+        document.removeEventListener('keydown', this.boundEventHandlers.keydown);
+        document.removeEventListener('keyup', this.boundEventHandlers.keyup);
+        
+        this.boundEventHandlers = {};
+        this.keyState.clear();
+        
+        console.log('🎮 ショートカットリスニング停止');
+    }
+    
+    /**
+     * KeyDown処理
+     */
+    handleKeyDown(event) {
+        if (!this.isEnabled) return;
+        
+        // 入力フィールドフォーカス時は無効
+        if (this.isInputFieldFocused()) return;
+        
+        // キー状態更新
+        this.keyState.set(event.code, true);
+        
+        // 修飾キー状態取得
+        const combo = this.getCurrentKeyCombo(event);
+        
+        if (combo && this.shortcuts.has(combo)) {
+            const shortcut = this.shortcuts.get(combo);
+            
+            if (shortcut.enabled && !this.disabledShortcuts.has(combo)) {
+                event.preventDefault();
+                this.executeAction(shortcut.action, event);
+                
+                console.log(`🎮 ショートカット実行: ${combo} → ${shortcut.action}`);
+            }
+        }
+    }
+    
+    /**
+     * KeyUp処理
+     */
+    handleKeyUp(event) {
+        this.keyState.set(event.code, false);
+    }
+    
+    /**
+     * 現在のキーコンビネーション取得
+     */
+    getCurrentKeyCombo(event) {
+        const modifiers = [];
+        
+        if (event.ctrlKey) modifiers.push('Ctrl');
+        if (event.shiftKey) modifiers.push('Shift');
+        if (event.altKey) modifiers.push('Alt');
+        if (event.metaKey) modifiers.push('Meta');
+        
+        return modifiers.length > 0 
+            ? `${modifiers.join('+')}+${event.code}`
+            : event.code;
+    }
+    
+    /**
+     * キーコンビネーション正規化
+     */
+    normalizeKeyCombo(combo) {
+        const parts = combo.split('+');
+        const modifiers = parts.slice(0, -1).sort();
+        const key = parts[parts.length - 1];
+        
+        return modifiers.length > 0 
+            ? `${modifiers.join('+')}+${key}`
+            : key;
+    }
+    
+    /**
+     * アクション実行
+     */
+    executeAction(action, event) {
+        switch (action) {
+            // Phase1: 基本アクション
+            case 'undo':
+                this.eventStore.emit(this.eventStore.eventTypes.HISTORY_UNDO);
+                break;
+                
+            case 'redo':
+                this.eventStore.emit(this.eventStore.eventTypes.HISTORY_REDO);
+                break;
+                
+            case 'resetView':
+                this.eventStore.emit('canvas:reset:view');
+                break;
+                
+            case 'flipHorizontal':
+                this.eventStore.emit('canvas:flip:horizontal');
+                break;
+                
+            case 'flipVertical':
+                this.eventStore.emit('canvas:flip:vertical');
+                break;
+                
+            case 'clearLayer':
+                this.eventStore.emit('layer:clear:active');
+                break;
+                
+            // ツール切り替え
+            case 'selectPenTool':
+                this.engine.setTool('pen');
+                this.eventStore.emit(this.eventStore.eventTypes.TOOL_CHANGE, { tool: 'pen' });
+                break;
+                
+            case 'selectEraserTool':
+                this.engine.setTool('eraser');
+                this.eventStore.emit(this.eventStore.eventTypes.TOOL_CHANGE, { tool: 'eraser' });
+                break;
+                
+            case 'selectAirsprayTool':
+                this.engine.setTool('airspray');
+                this.eventStore.emit(this.eventStore.eventTypes.TOOL_CHANGE, { tool: 'airspray' });
+                break;
+                
+            case 'selectBlurTool':
+                this.engine.setTool('blur');
+                this.eventStore.emit(this.eventStore.eventTypes.TOOL_CHANGE, { tool: 'blur' });
+                break;
+                
+            // UI制御
+            case 'toggleUI':
+                this.eventStore.emit('ui:toggle:all');
+                break;
+                
+            case 'toggleFullscreen':
+                this.toggleFullscreen();
+                break;
+                
+            case 'cancelAction':
+                this.eventStore.emit('action:cancel');
+                break;
+                
+            // Phase2: 拡張アクション（封印解除時実装）
+            /*
+            case 'copy':
+                this.eventStore.emit('edit:copy');
+                break;
+                
+            case 'paste':
+                this.eventStore.emit('edit:paste');
+                break;
+                
+            case 'selectAll':
+                this.eventStore.emit('selection:all');
+                break;
+                
+            case 'deselect':
+                this.eventStore.emit('selection:clear');
+                break;
+                
+            case 'eyedropper':
+                this.engine.setTool('eyedropper');
+                this.eventStore.emit(this.eventStore.eventTypes.TOOL_CHANGE, { tool: 'eyedropper' });
+                break;
+                
+            case 'bucketFill':
+                this.engine.setTool('bucketFill');
+                this.eventStore.emit(this.eventStore.eventTypes.TOOL_CHANGE, { tool: 'bucketFill' });
+                break;
+                
+            case 'selectTool':
+                this.engine.setTool('select');
+                this.eventStore.emit(this.eventStore.eventTypes.TOOL_CHANGE, { tool: 'select' });
+                break;
+                
+            case 'decreaseBrushSize':
+                this.eventStore.emit('tool:size:decrease');
+                break;
+                
+            case 'increaseBrushSize':
+                this.eventStore.emit('tool:size:increase');
+                break;
+            */
+            
+            default:
+                console.warn(`🚨 未実装アクション: ${action}`);
+        }
+    }
+    
+    /**

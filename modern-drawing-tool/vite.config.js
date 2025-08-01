@@ -1,32 +1,50 @@
-import { defineConfig } from 'vite'
+// vite.config.js - モダンお絵かきツール用Vite設定
+
+import { defineConfig } from 'vite';
+import { resolve } from 'path';
 
 export default defineConfig({
-  root: './',
-  base: './',
+  // 開発サーバー設定
+  server: {
+    port: 3000,
+    open: true,
+    host: true
+  },
+  
+  // ビルド設定
   build: {
     outDir: 'dist',
-    assetsDir: 'assets',
     sourcemap: true,
     rollupOptions: {
-      external: [],
-      output: {
-        manualChunks: undefined
+      input: {
+        main: resolve(__dirname, 'index.html')
       }
     }
   },
-  server: {
-    port: 3000,
-    open: true
-  },
-  define: {
-    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development')
-  },
+  
+  // 解決設定
   resolve: {
     alias: {
-      '@': new URL('./src', import.meta.url).pathname
+      '@': resolve(__dirname, 'src')
     }
   },
+  
+  // プラグイン設定
+  plugins: [],
+  
+  // 最適化設定
   optimizeDeps: {
-    include: ['mitt', 'chroma-js', 'ogl', 'mathjs', 'lodash-es', 'hammerjs', 'pointer-tracker']
+    include: [
+      'ogl',
+      'mitt', 
+      'chroma-js',
+      'lodash-es',
+      'phosphor-icons'
+    ]
+  },
+  
+  // 開発時設定
+  define: {
+    __DEV__: JSON.stringify(true)
   }
-})
+});

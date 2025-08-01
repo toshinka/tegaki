@@ -1,593 +1,735 @@
+// ColorProcessor.js - ふたば色・色処理統合（Phase2・封印解除時実装）
+
 import chroma from 'chroma-js';
 
 /**
- * ColorProcessor - ふたば☆ちゃんねる色・色処理統合（Phase2拡張）
- * Chroma.js活用・色変換・最適化・履歴管理
+ * 🌈 ふたば色・色処理統合（Phase2・封印解除時実装）
+ * 責務: ChromaColorController詳細、ふたば☆ちゃんねるカラーパレット実装、色変換・最適化・履歴管理
  */
 export class ColorProcessor {
-    constructor(oglCore, eventStore) {
-        this.oglCore = oglCore;
+    constructor(oglEngine, eventStore) {
+        this.engine = oglEngine;
         this.eventStore = eventStore;
         
+        // 色状態管理
+        this.currentColor = [0.5, 0.0, 0.0, 1.0]; // デフォルト: ふたばマルーン
+        this.previousColor = null;
+        this.colorHistory = [];
+        this.maxHistorySize = 20;
+        
         // ふたば☆ちゃんねるカラーパレット
-        this.futabaColors = {
-            main: '#800000',      // マルーン（メインカラー）
-            sub: '#aa5a56',       // 薄いマルーン
-            light: '#cf9c97',     // 中間色
-            pale: '#e9c2ba',      // 薄いピンクベージュ
-            cream: '#f0e0d6',     // クリーム（サブカラー）
-            bg: '#ffffee',        // 背景色
+        this.futabaColorPalette = this.initializeFutabaColors();
+        this.customColors = [];
+        
+        // カラーピッカー状態
+        this.colorPickerActive = false;
+        this.colorPickerElement = null;
+        
+        // Chroma.js設定
+        this.chromaScale = null;
+        this.harmonicColors = [];
+        
+        console.log('✅ ColorProcessor初期化完了');
+    }
+    
+    /**
+     * ふたば☆ちゃんねる色初期化
+     */
+    initializeFutabaColors() {
+        const futabaColors = {
+            // メイン系統
+            main: [
+                { name: 'マルーン', hex: '#800000', rgb: [0.5, 0.0, 0.0, 1.0], primary: true },
+                { name: '薄いマルーン', hex: '#aa5a56', rgb: [0.667, 0.353, 0.337, 1.0] },
+                { name: '中間色', hex: '#cf9c97', rgb: [0.812, 0.612, 0.592, 1.0] },
+                { name: '薄いピンクベージュ', hex: '#e9c2ba', rgb: [0.914, 0.761, 0.729, 1.0] },
+                { name: 'クリーム', hex: '#f0e0d6', rgb: [0.941, 0.878, 0.839, 1.0] },
+                { name: '背景色', hex: '#ffffee', rgb: [1.0, 1.0, 0.933, 1.0] }
+            ],
             
             // 基本拡張色
-            black: '#000000',
-            white: '#ffffff',
-            red: '#ff0000',
-            green: '#00ff00',
-            blue: '#0000ff',
-            yellow: '#ffff00',
-            magenta: '#ff00ff',
-            cyan: '#00ffff',
-            gray: '#808080',
-            darkgray: '#404040'
+            basic: [
+                { name: '黒', hex: '#000000', rgb: [0.0, 0.0, 0.0, 1.0] },
+                { name: '白', hex: '#ffffff', rgb: [1.0, 1.0, 1.0, 1.0] },
+                { name: '赤', hex: '#ff0000', rgb: [1.0, 0.0, 0.0, 1.0] },
+                { name: '緑', hex: '#00ff00', rgb: [0.0, 1.0, 0.0, 1.0] },
+                { name: '青', hex: '#0000ff', rgb: [0.0, 0.0, 1.0, 1.0] },
+                { name: '黄', hex: '#ffff00', rgb: [1.0, 1.0, 0.0, 1.0] },
+                { name: 'マゼンタ', hex: '#ff00ff', rgb: [1.0, 0.0, 1.0, 1.0] },
+                { name: 'シアン', hex: '#00ffff', rgb: [0.0, 1.0, 1.0, 1.0] },
+                { name: 'グレー', hex: '#808080', rgb: [0.5, 0.5, 0.5, 1.0] },
+                { name: 'ダークグレー', hex: '#404040', rgb: [0.25, 0.25, 0.25, 1.0] }
+            ],
+            
+            // ふたば特色
+            special: [
+                { name: 'としあき色', hex: '#117743', rgb: [0.067, 0.467, 0.263, 1.0] },
+                { name: 'レス番色', hex: '#cc1105', rgb: [0.8, 0.067, 0.02, 1.0] },
+                { name: 'リンク色', hex: '#0000ee', rgb: [0.0, 0.0, 0.933, 1.0] },
+                { name: '訪問済み', hex: '#551a8b', rgb: [0.333, 0.102, 0.545, 1.0] }
+            ]
         };
         
-        // 現在の色設定
-        this.currentColor = chroma(this.futabaColors.main);
-        this.currentColorHistory = [];
-        this.maxColorHistory = 20;
-        
-        // カラーパレット状態
-        this.customColors = [];
-        this.activeColorPicker = null;
-        
-        this.initializeFutabaColors();
-        this.setupEventSubscriptions();
+        console.log('🌈 ふたば☆ちゃんねる色パレット初期化完了');
+        return futabaColors;
     }
     
-    // ふたば☆ちゃんねる色初期化
-    initializeFutabaColors() {
-        // デフォルト色設定
-        this.setColor(this.futabaColors.main);
+    /**
+     * イベント購読開始
+     */
+    subscribeToEvents() {
+        // 色変更イベント
+        this.eventStore.on('color:change', this.handleColorChange.bind(this), 'color-processor');
+        this.eventStore.on('color:sampled', this.handleColorSampled.bind(this), 'color-processor');
         
-        // ふたば色パレットUI作成
-        this.createFutabaColorPalette();
+        // カラーピッカーイベント
+        this.eventStore.on('color:picker:show', this.showColorPicker.bind(this), 'color-processor');
+        this.eventStore.on('color:picker:hide', this.hideColorPicker.bind(this), 'color-processor');
         
-        console.log('✅ Futaba colors initialized with main color:', this.futabaColors.main);
+        console.log('📝 色処理イベント購読開始');
     }
     
-    // デフォルトふたば色設定
-    setDefaultFutabaColor() {
-        this.setColor(this.futabaColors.main);
+    /**
+     * 現在の色設定
+     */
+    setCurrentColor(color, format = 'rgb') {
+        // 色形式変換
+        const rgbColor = this.convertColorToRGB(color, format);
+        if (!rgbColor) return false;
+        
+        // 前の色を保存
+        this.previousColor = [...this.currentColor];
+        this.currentColor = rgbColor;
+        
+        // 履歴に追加
+        this.addToColorHistory(rgbColor);
+        
+        // エンジンに色設定を反映
+        this.updateEngineColor(rgbColor);
+        
+        // イベント発火
+        this.eventStore.emit('color:changed', {
+            color: rgbColor,
+            hex: this.rgbToHex(rgbColor),
+            previousColor: this.previousColor
+        });
+        
+        console.log('🎨 色設定変更:', this.rgbToHex(rgbColor));
+        return true;
     }
     
-    // 色設定
-    setColor(colorValue) {
-        try {
-            const newColor = chroma(colorValue);
-            this.currentColor = newColor;
-            
-            // 色履歴追加
-            this.addToColorHistory(newColor);
-            
-            // OGLエンジンに色反映
-            const rgbArray = newColor.rgb().map(c => c / 255);
-            this.oglCore.updateToolConfig('pen', { color: rgbArray });
-            
-            // イベント発火
-            this.eventStore.emit(this.eventStore.eventTypes.COLOR_CHANGE, {
-                color: rgbArray,
-                hex: newColor.hex(),
-                hsl: newColor.hsl(),
-                source: 'color_processor'
-            });
-            
-            console.log('🎨 Color set:', newColor.hex());
-            return true;
-            
-        } catch (error) {
-            console.error('🚨 Invalid color value:', colorValue, error);
-            return false;
-        }
-    }
-    
-    // 色履歴追加
-    addToColorHistory(color) {
-        const hexColor = color.hex();
-        
-        // 重複削除
-        this.currentColorHistory = this.currentColorHistory.filter(c => c !== hexColor);
-        
-        // 先頭に追加
-        this.currentColorHistory.unshift(hexColor);
-        
-        // 履歴サイズ制限
-        if (this.currentColorHistory.length > this.maxColorHistory) {
-            this.currentColorHistory = this.currentColorHistory.slice(0, this.maxColorHistory);
-        }
-    }
-    
-    // ふたば色パレットUI作成
-    createFutabaColorPalette() {
-        // パレットボタンは既存のUIに統合される想定
-        console.log('🎨 Futaba color palette UI ready');
-    }
-    
-    // HSV色空間での色調整
-    adjustHue(delta) {
-        const hsl = this.currentColor.hsl();
-        const newHue = (hsl[0] + delta) % 360;
-        const newColor = chroma.hsl(newHue, hsl[1], hsl[2]);
-        this.setColor(newColor);
-    }
-    
-    adjustSaturation(delta) {
-        const hsl = this.currentColor.hsl();
-        const newSat = Math.max(0, Math.min(1, hsl[1] + delta));
-        const newColor = chroma.hsl(hsl[0], newSat, hsl[2]);
-        this.setColor(newColor);
-    }
-    
-    adjustLightness(delta) {
-        const hsl = this.currentColor.hsl();
-        const newLight = Math.max(0, Math.min(1, hsl[2] + delta));
-        const newColor = chroma.hsl(hsl[0], hsl[1], newLight);
-        this.setColor(newColor);
-    }
-    
-    // 色の調和色生成
-    generateHarmoniousColors(type = 'complementary') {
-        const baseHue = this.currentColor.hsl()[0];
-        const sat = this.currentColor.hsl()[1];
-        const light = this.currentColor.hsl()[2];
-        
-        let harmonies = [];
-        
-        switch (type) {
-            case 'complementary':
-                harmonies = [
-                    chroma.hsl(baseHue, sat, light),
-                    chroma.hsl((baseHue + 180) % 360, sat, light)
-                ];
-                break;
-                
-            case 'triadic':
-                harmonies = [
-                    chroma.hsl(baseHue, sat, light),
-                    chroma.hsl((baseHue + 120) % 360, sat, light),
-                    chroma.hsl((baseHue + 240) % 360, sat, light)
-                ];
-                break;
-                
-            case 'analogous':
-                harmonies = [
-                    chroma.hsl((baseHue - 30 + 360) % 360, sat, light),
-                    chroma.hsl(baseHue, sat, light),
-                    chroma.hsl((baseHue + 30) % 360, sat, light)
-                ];
-                break;
-                
-            case 'futaba_variations':
-                // ふたば色バリエーション
-                harmonies = [
-                    chroma(this.futabaColors.main),
-                    chroma(this.futabaColors.sub),
-                    chroma(this.futabaColors.light),
-                    chroma(this.futabaColors.pale),
-                    chroma(this.futabaColors.cream)
-                ];
-                break;
-        }
-        
-        return harmonies.map(color => ({
-            hex: color.hex(),
-            rgb: color.rgb(),
-            hsl: color.hsl()
-        }));
-    }
-    
-    // グラデーション生成
-    generateGradient(endColor, steps = 10) {
-        try {
-            const endChroma = chroma(endColor);
-            const scale = chroma.scale([this.currentColor, endChroma]).mode('lab');
-            
-            const gradient = [];
-            for (let i = 0; i < steps; i++) {
-                const t = i / (steps - 1);
-                const color = scale(t);
-                gradient.push({
-                    hex: color.hex(),
-                    rgb: color.rgb(),
-                    hsl: color.hsl(),
-                    position: t
-                });
-            }
-            
-            return gradient;
-            
-        } catch (error) {
-            console.error('🚨 Gradient generation failed:', error);
-            return [];
-        }
-    }
-    
-    // 色の明度・彩度分析
-    analyzeColor(color = null) {
-        const targetColor = color ? chroma(color) : this.currentColor;
-        
-        return {
-            hex: targetColor.hex(),
-            rgb: targetColor.rgb(),
-            hsl: targetColor.hsl(),
-            hsv: targetColor.hsv(),
-            lab: targetColor.lab(),
-            luminance: targetColor.luminance(),
-            temperature: targetColor.temperature(),
-            contrast: {
-                white: chroma.contrast(targetColor, 'white'),
-                black: chroma.contrast(targetColor, 'black'),
-                futabaMain: chroma.contrast(targetColor, this.futabaColors.main)
-            }
-        };
-    }
-    
-    // 色の可読性チェック
-    checkReadability(backgroundColor = '#ffffff') {
-        const bgColor = chroma(backgroundColor);
-        const contrast = chroma.contrast(this.currentColor, bgColor);
-        
-        return {
-            contrast: contrast,
-            aa: contrast >= 4.5,      // WCAG AA準拠
-            aaa: contrast >= 7,       // WCAG AAA準拠
-            readability: contrast >= 4.5 ? 'good' : contrast >= 3 ? 'fair' : 'poor'
-        };
-    }
-    
-    // ふたば色との親和性チェック
-    checkFutabaCompatibility(color = null) {
-        const targetColor = color ? chroma(color) : this.currentColor;
-        const futabaMain = chroma(this.futabaColors.main);
-        
-        const hslTarget = targetColor.hsl();
-        const hslFutaba = futabaMain.hsl();
-        
-        // 色相差計算
-        const hueDiff = Math.abs(hslTarget[0] - hslFutaba[0]);
-        const normalizedHueDiff = Math.min(hueDiff, 360 - hueDiff);
-        
-        // 彩度・明度差計算
-        const satDiff = Math.abs(hslTarget[1] - hslFutaba[1]);
-        const lightDiff = Math.abs(hslTarget[2] - hslFutaba[2]);
-        
-        // 総合親和性スコア（0-100）
-        const compatibilityScore = Math.max(0, 100 - (
-            normalizedHueDiff * 0.5 + 
-            satDiff * 30 + 
-            lightDiff * 20
-        ));
-        
-        return {
-            score: compatibilityScore,
-            level: compatibilityScore >= 80 ? 'high' : 
-                   compatibilityScore >= 60 ? 'medium' : 'low',
-            hueDifference: normalizedHueDiff,
-            saturationDifference: satDiff,
-            lightnessDifference: lightDiff
-        };
-    }
-    
-    // カスタムカラー保存
-    saveCustomColor(name = null) {
-        const colorData = {
-            name: name || `Custom ${this.customColors.length + 1}`,
-            hex: this.currentColor.hex(),
-            rgb: this.currentColor.rgb(),
-            hsl: this.currentColor.hsl(),
-            timestamp: Date.now()
-        };
-        
-        this.customColors.push(colorData);
-        console.log('💾 Custom color saved:', colorData.name, colorData.hex);
-        
-        return colorData;
-    }
-    
-    // カスタムカラー削除
-    deleteCustomColor(index) {
-        if (index >= 0 && index < this.customColors.length) {
-            const deleted = this.customColors.splice(index, 1)[0];
-            console.log('🗑️ Custom color deleted:', deleted.name);
-            return deleted;
-        }
-        return null;
-    }
-    
-    // 色からスポイト実行
-    sampleColorFromPoint(point) {
-        // OGLエンジンから指定座標の色を取得
-        // 実際の実装はOGLのreadPixels相当機能が必要
-        
-        // 仮実装（ランダム色）
-        const sampledColor = chroma.random();
-        this.setColor(sampledColor);
-        
-        console.log('💧 Color sampled from point:', point, sampledColor.hex());
-        
-        return {
-            color: sampledColor.hex(),
-            point: point,
-            timestamp: Date.now()
-        };
-    }
-    
-    // 色空間変換ユーティリティ
-    convertColor(color, fromSpace, toSpace) {
+    /**
+     * 色形式変換（RGB統一）
+     */
+    convertColorToRGB(color, format) {
         try {
             let chromaColor;
             
-            switch (fromSpace.toLowerCase()) {
+            switch (format) {
                 case 'hex':
                     chromaColor = chroma(color);
                     break;
-                case 'rgb':
-                    chromaColor = chroma.rgb(...color);
-                    break;
                 case 'hsl':
-                    chromaColor = chroma.hsl(...color);
+                    chromaColor = chroma(color, 'hsl');
                     break;
                 case 'hsv':
-                    chromaColor = chroma.hsv(...color);
+                    chromaColor = chroma(color, 'hsv');
                     break;
-                case 'lab':
-                    chromaColor = chroma.lab(...color);
-                    break;
+                case 'rgb':
                 default:
-                    throw new Error(`Unsupported color space: ${fromSpace}`);
+                    if (Array.isArray(color)) {
+                        // [r, g, b, a] または [r, g, b] 形式
+                        const [r, g, b, a = 1.0] = color;
+                        return [r, g, b, a];
+                    } else if (typeof color === 'string') {
+                        chromaColor = chroma(color);
+                    } else {
+                        return null;
+                    }
             }
             
-            switch (toSpace.toLowerCase()) {
-                case 'hex':
-                    return chromaColor.hex();
-                case 'rgb':
-                    return chromaColor.rgb();
-                case 'hsl':
-                    return chromaColor.hsl();
-                case 'hsv':
-                    return chromaColor.hsv();
-                case 'lab':
-                    return chromaColor.lab();
-                default:
-                    throw new Error(`Unsupported color space: ${toSpace}`);
+            if (chromaColor) {
+                const [r, g, b] = chromaColor.rgb();
+                return [r / 255, g / 255, b / 255, 1.0];
             }
+            
+            return null;
             
         } catch (error) {
-            console.error('🚨 Color conversion failed:', error);
+            console.warn('🚨 色変換エラー:', error);
             return null;
         }
     }
     
-    // 色温度調整
-    adjustTemperature(kelvin) {
-        try {
-            const tempColor = chroma.temperature(kelvin);
-            const mixed = chroma.mix(this.currentColor, tempColor, 0.5, 'lab');
-            this.setColor(mixed);
-            
-            console.log(`🌡️ Color temperature adjusted: ${kelvin}K`);
-        } catch (error) {
-            console.error('🚨 Temperature adjustment failed:', error);
+    /**
+     * RGB → HEX変換
+     */
+    rgbToHex(rgbColor) {
+        const [r, g, b] = rgbColor;
+        const red = Math.round(r * 255);
+        const green = Math.round(g * 255);
+        const blue = Math.round(b * 255);
+        
+        return chroma.rgb(red, green, blue).hex();
+    }
+    
+    /**
+     * エンジン色設定更新
+     */
+    updateEngineColor(rgbColor) {
+        // 現在のツールに色を反映
+        const currentTool = this.engine.currentTool;
+        if (currentTool && this.engine.toolConfig[currentTool]) {
+            this.engine.toolConfig[currentTool].color = [...rgbColor];
         }
     }
     
-    // ふたば色プリセット適用
-    applyFutabaPreset(presetName) {
-        const presets = {
-            'classic': [this.futabaColors.main, this.futabaColors.sub, this.futabaColors.cream],
-            'warm': [this.futabaColors.light, this.futabaColors.pale, this.futabaColors.cream],
-            'monochrome': [this.futabaColors.main, this.futabaColors.gray, this.futabaColors.white],
-            'vintage': [
-                chroma(this.futabaColors.main).darken(0.5).hex(),
-                this.futabaColors.sub,
-                chroma(this.futabaColors.cream).darken(0.2).hex()
-            ]
-        };
+    /**
+     * 色履歴追加
+     */
+    addToColorHistory(color) {
+        // 重複除去
+        const hexColor = this.rgbToHex(color);
+        this.colorHistory = this.colorHistory.filter(
+            historyColor => this.rgbToHex(historyColor) !== hexColor
+        );
         
-        const preset = presets[presetName];
-        if (preset) {
-            this.setColor(preset[0]);
-            console.log(`🎨 Futaba preset applied: ${presetName}`);
-            return preset;
+        // 最新色を先頭に追加
+        this.colorHistory.unshift([...color]);
+        
+        // 履歴サイズ制限
+        if (this.colorHistory.length > this.maxHistorySize) {
+            this.colorHistory = this.colorHistory.slice(0, this.maxHistorySize);
         }
-        
-        console.warn(`⚠️ Unknown preset: ${presetName}`);
-        return null;
     }
     
-    // 色の統計情報取得
-    getColorStats() {
-        return {
-            currentColor: this.analyzeColor(),
-            historySize: this.currentColorHistory.length,
-            customColorCount: this.customColors.length,
-            futabaCompatibility: this.checkFutabaCompatibility(),
-            readability: this.checkReadability()
-        };
-    }
-    
-    // イベント購読設定
-    setupEventSubscriptions() {
-        // スポイトツールからの色サンプリング
-        this.eventStore.on(this.eventStore.eventTypes.COLOR_CHANGE, (data) => {
-            if (data.payload.source === 'eyedropper') {
-                const color = data.payload.color;
-                this.setColor(chroma.rgb(...color.map(c => c * 255)));
-            }
-        });
-        
-        // ツール設定変更時の色同期
-        this.eventStore.on(this.eventStore.eventTypes.TOOL_CONFIG_CHANGE, (data) => {
-            if (data.payload.property === 'color') {
-                const color = data.payload.value;
-                if (Array.isArray(color)) {
-                    this.setColor(chroma.rgb(...color.map(c => c * 255)));
-                }
-            }
-        });
-    }
-    
-    // 色履歴取得
-    getColorHistory(limit = 10) {
-        return this.currentColorHistory.slice(0, limit).map(hex => ({
-            hex,
-            rgb: chroma(hex).rgb(),
-            hsl: chroma(hex).hsl()
-        }));
-    }
-    
-    // カスタム色一覧取得
-    getCustomColors() {
-        return [...this.customColors];
-    }
-    
-    // ふたば色パレット取得
+    /**
+     * ふたば色パレット取得
+     */
     getFutabaColorPalette() {
-        return Object.entries(this.futabaColors).map(([name, hex]) => ({
-            name,
-            hex,
-            rgb: chroma(hex).rgb(),
-            hsl: chroma(hex).hsl()
-        }));
+        return this.futabaColorPalette;
     }
     
-    // 現在の色情報取得
+    /**
+     * 調和色生成
+     */
+    generateHarmonicColors(baseColor, scheme = 'complementary') {
+        try {
+            const chromaColor = chroma.rgb(
+                baseColor[0] * 255,
+                baseColor[1] * 255,
+                baseColor[2] * 255
+            );
+            
+            let harmonicColors = [];
+            
+            switch (scheme) {
+                case 'complementary':
+                    // 補色
+                    harmonicColors = [
+                        chromaColor,
+                        chromaColor.set('hsl.h', '+180')
+                    ];
+                    break;
+                    
+                case 'triadic':
+                    // 三角配色
+                    harmonicColors = [
+                        chromaColor,
+                        chromaColor.set('hsl.h', '+120'),
+                        chromaColor.set('hsl.h', '+240')
+                    ];
+                    break;
+                    
+                case 'analogous':
+                    // 類似色
+                    harmonicColors = [
+                        chromaColor.set('hsl.h', '-30'),
+                        chromaColor,
+                        chromaColor.set('hsl.h', '+30')
+                    ];
+                    break;
+                    
+                case 'monochromatic':
+                    // 単色の明度違い
+                    harmonicColors = [
+                        chromaColor.brighten(1),
+                        chromaColor,
+                        chromaColor.darken(1),
+                        chromaColor.darken(2)
+                    ];
+                    break;
+                    
+                case 'tetradic':
+                    // 四角配色
+                    harmonicColors = [
+                        chromaColor,
+                        chromaColor.set('hsl.h', '+90'),
+                        chromaColor.set('hsl.h', '+180'),
+                        chromaColor.set('hsl.h', '+270')
+                    ];
+                    break;
+                    
+                default:
+                    harmonicColors = [chromaColor];
+            }
+            
+            // RGB形式に変換
+            this.harmonicColors = harmonicColors.map(color => {
+                const [r, g, b] = color.rgb();
+                return [r / 255, g / 255, b / 255, 1.0];
+            });
+            
+            console.log(`🌈 調和色生成完了: ${scheme}`, this.harmonicColors.length + '色');
+            return this.harmonicColors;
+            
+        } catch (error) {
+            console.warn('🚨 調和色生成エラー:', error);
+            return [baseColor];
+        }
+    }
+    
+    /**
+     * グラデーション生成
+     */
+    generateGradient(startColor, endColor, steps = 10) {
+        try {
+            const startChroma = chroma.rgb(
+                startColor[0] * 255,
+                startColor[1] * 255,
+                startColor[2] * 255
+            );
+            
+            const endChroma = chroma.rgb(
+                endColor[0] * 255,
+                endColor[1] * 255,
+                endColor[2] * 255
+            );
+            
+            const scale = chroma.scale([startChroma, endChroma]).mode('rgb');
+            const gradient = [];
+            
+            for (let i = 0; i < steps; i++) {
+                const t = i / (steps - 1);
+                const color = scale(t);
+                const [r, g, b] = color.rgb();
+                gradient.push([r / 255, g / 255, b / 255, 1.0]);
+            }
+            
+            console.log(`🌈 グラデーション生成完了: ${steps}段階`);
+            return gradient;
+            
+        } catch (error) {
+            console.warn('🚨 グラデーション生成エラー:', error);
+            return [startColor, endColor];
+        }
+    }
+    
+    /**
+     * 色変更イベント処理
+     */
+    handleColorChange(eventData) {
+        const { color, format = 'rgb' } = eventData.payload;
+        this.setCurrentColor(color, format);
+    }
+    
+    /**
+     * 色サンプリングイベント処理
+     */
+    handleColorSampled(eventData) {
+        const { color } = eventData.payload;
+        this.setCurrentColor(color, 'rgb');
+        
+        console.log('💧 色サンプリング受信:', this.rgbToHex(color));
+    }
+    
+    /**
+     * カラーピッカー表示
+     */
+    showColorPicker(eventData) {
+        if (this.colorPickerActive) return;
+        
+        const { position } = eventData.payload;
+        this.colorPickerElement = this.createColorPickerUI(position);
+        this.colorPickerActive = true;
+        
+        console.log('🎨 カラーピッカー表示');
+    }
+    
+    /**
+     * カラーピッカーUI作成
+     */
+    createColorPickerUI(position = { x: 100, y: 100 }) {
+        const picker = document.createElement('div');
+        picker.className = 'color-picker';
+        picker.style.cssText = `
+            position: fixed;
+            left: ${position.x}px;
+            top: ${position.y}px;
+            width: 320px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(170, 90, 86, 0.3);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 8px 24px rgba(128, 0, 0, 0.15);
+            backdrop-filter: blur(10px);
+            z-index: 2000;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        `;
+        
+        // ヘッダー
+        const header = document.createElement('div');
+        header.innerHTML = '🎨 カラーピッカー';
+        header.style.cssText = `
+            font-size: 14px;
+            font-weight: 600;
+            color: #800000;
+            margin-bottom: 16px;
+            text-align: center;
+        `;
+        picker.appendChild(header);
+        
+        // ふたばカラーパレット
+        const futabaSection = this.createFutabaColorSection();
+        picker.appendChild(futabaSection);
+        
+        // HSVカラーホイール（簡易版）
+        const hsvSection = this.createHSVColorSection();
+        picker.appendChild(hsvSection);
+        
+        // 色履歴
+        const historySection = this.createColorHistorySection();
+        picker.appendChild(historySection);
+        
+        // 閉じるボタン
+        const closeButton = document.createElement('button');
+        closeButton.textContent = '×';
+        closeButton.style.cssText = `
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 24px;
+            height: 24px;
+            border: none;
+            background: none;
+            color: #aa5a56;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+        `;
+        closeButton.addEventListener('click', () => this.hideColorPicker());
+        picker.appendChild(closeButton);
+        
+        // ドキュメントに追加
+        document.body.appendChild(picker);
+        
+        return picker;
+    }
+    
+    /**
+     * ふたばカラーセクション作成
+     */
+    createFutabaColorSection() {
+        const section = document.createElement('div');
+        section.style.cssText = `
+            margin-bottom: 16px;
+        `;
+        
+        const title = document.createElement('div');
+        title.textContent = 'ふたば☆ちゃんねる色';
+        title.style.cssText = `
+            font-size: 12px;
+            font-weight: 600;
+            color: #800000;
+            margin-bottom: 8px;
+        `;
+        section.appendChild(title);
+        
+        // メイン色グループ
+        const mainGroup = this.createColorGroup(this.futabaColorPalette.main, 'メイン');
+        section.appendChild(mainGroup);
+        
+        // 基本色グループ
+        const basicGroup = this.createColorGroup(this.futabaColorPalette.basic, '基本');
+        section.appendChild(basicGroup);
+        
+        // 特色グループ
+        const specialGroup = this.createColorGroup(this.futabaColorPalette.special, '特色');
+        section.appendChild(specialGroup);
+        
+        return section;
+    }
+    
+    /**
+     * 色グループ作成
+     */
+    createColorGroup(colors, groupName) {
+        const group = document.createElement('div');
+        group.style.cssText = `
+            margin-bottom: 8px;
+        `;
+        
+        const label = document.createElement('div');
+        label.textContent = groupName;
+        label.style.cssText = `
+            font-size: 10px;
+            color: #aa5a56;
+            margin-bottom: 4px;
+        `;
+        group.appendChild(label);
+        
+        const colorRow = document.createElement('div');
+        colorRow.style.cssText = `
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        `;
+        
+        colors.forEach(colorInfo => {
+            const colorSwatch = document.createElement('div');
+            colorSwatch.style.cssText = `
+                width: 24px;
+                height: 24px;
+                background: ${colorInfo.hex};
+                border: 1px solid rgba(128, 0, 0, 0.3);
+                border-radius: 4px;
+                cursor: pointer;
+                transition: transform 0.2s ease;
+                position: relative;
+            `;
+            
+            // プライマリ色のマーク
+            if (colorInfo.primary) {
+                colorSwatch.style.border = '2px solid #800000';
+                colorSwatch.style.boxShadow = '0 0 4px rgba(128, 0, 0, 0.5)';
+            }
+            
+            // ホバー効果
+            colorSwatch.addEventListener('mouseenter', () => {
+                colorSwatch.style.transform = 'scale(1.1)';
+                colorSwatch.title = `${colorInfo.name} (${colorInfo.hex})`;
+            });
+            
+            colorSwatch.addEventListener('mouseleave', () => {
+                colorSwatch.style.transform = 'scale(1)';
+            });
+            
+            // クリックで色選択
+            colorSwatch.addEventListener('click', () => {
+                this.setCurrentColor(colorInfo.rgb, 'rgb');
+                this.hideColorPicker();
+            });
+            
+            colorRow.appendChild(colorSwatch);
+        });
+        
+        group.appendChild(colorRow);
+        return group;
+    }
+    
+    /**
+     * HSVカラーセクション作成（簡易版）
+     */
+    createHSVColorSection() {
+        const section = document.createElement('div');
+        section.style.cssText = `
+            margin-bottom: 16px;
+        `;
+        
+        const title = document.createElement('div');
+        title.textContent = 'カスタム色';
+        title.style.cssText = `
+            font-size: 12px;
+            font-weight: 600;
+            color: #800000;
+            margin-bottom: 8px;
+        `;
+        section.appendChild(title);
+        
+        // 色相スライダー
+        const hueSlider = this.createColorSlider('色相', 0, 360, 0, (value) => {
+            this.updateHSVColor('h', value);
+        });
+        section.appendChild(hueSlider);
+        
+        // 彩度スライダー
+        const satSlider = this.createColorSlider('彩度', 0, 100, 50, (value) => {
+            this.updateHSVColor('s', value / 100);
+        });
+        section.appendChild(satSlider);
+        
+        // 明度スライダー
+        const valSlider = this.createColorSlider('明度', 0, 100, 50, (value) => {
+            this.updateHSVColor('v', value / 100);
+        });
+        section.appendChild(valSlider);
+        
+        return section;
+    }
+    
+    /**
+     * カラースライダー作成
+     */
+    createColorSlider(label, min, max, defaultValue, onChange) {
+        const container = document.createElement('div');
+        container.style.cssText = `
+            margin-bottom: 8px;
+        `;
+        
+        const labelEl = document.createElement('div');
+        labelEl.textContent = label;
+        labelEl.style.cssText = `
+            font-size: 10px;
+            color: #aa5a56;
+            margin-bottom: 4px;
+        `;
+        container.appendChild(labelEl);
+        
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.min = min;
+        slider.max = max;
+        slider.value = defaultValue;
+        slider.style.cssText = `
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(to right, #f0f0f0, #aa5a56);
+            border-radius: 2px;
+            outline: none;
+            -webkit-appearance: none;
+        `;
+        
+        slider.addEventListener('input', (e) => {
+            onChange(parseFloat(e.target.value));
+        });
+        
+        container.appendChild(slider);
+        return container;
+    }
+    
+    /**
+     * HSV色更新
+     */
+    updateHSVColor(component, value) {
+        // 簡易HSV実装（実際の製品では完全なHSVピッカーを実装）
+        const currentHex = this.rgbToHex(this.currentColor);
+        const chromaColor = chroma(currentHex);
+        
+        try {
+            let newColor;
+            switch (component) {
+                case 'h':
+                    newColor = chromaColor.set('hsl.h', value);
+                    break;
+                case 's':
+                    newColor = chromaColor.set('hsl.s', value);
+                    break;
+                case 'v':
+                    newColor = chromaColor.set('hsl.l', value);
+                    break;
+            }
+            
+            if (newColor) {
+                const [r, g, b] = newColor.rgb();
+                this.setCurrentColor([r / 255, g / 255, b / 255, 1.0], 'rgb');
+            }
+        } catch (error) {
+            console.warn('🚨 HSV色更新エラー:', error);
+        }
+    }
+    
+    /**
+     * 色履歴セクション作成
+     */
+    createColorHistorySection() {
+        const section = document.createElement('div');
+        
+        const title = document.createElement('div');
+        title.textContent = '最近使った色';
+        title.style.cssText = `
+            font-size: 12px;
+            font-weight: 600;
+            color: #800000;
+            margin-bottom: 8px;
+        `;
+        section.appendChild(title);
+        
+        const historyRow = document.createElement('div');
+        historyRow.style.cssText = `
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        `;
+        
+        this.colorHistory.slice(0, 10).forEach(color => {
+            const swatch = document.createElement('div');
+            swatch.style.cssText = `
+                width: 20px;
+                height: 20px;
+                background: ${this.rgbToHex(color)};
+                border: 1px solid rgba(128, 0, 0, 0.3);
+                border-radius: 3px;
+                cursor: pointer;
+                transition: transform 0.2s ease;
+            `;
+            
+            swatch.addEventListener('mouseenter', () => {
+                swatch.style.transform = 'scale(1.1)';
+            });
+            
+            swatch.addEventListener('mouseleave', () => {
+                swatch.style.transform = 'scale(1)';
+            });
+            
+            swatch.addEventListener('click', () => {
+                this.setCurrentColor(color, 'rgb');
+                this.hideColorPicker();
+            });
+            
+            historyRow.appendChild(swatch);
+        });
+        
+        section.appendChild(historyRow);
+        return section;
+    }
+    
+    /**
+     * カラーピッカー非表示
+     */
+    hideColorPicker() {
+        if (this.colorPickerElement) {
+            this.colorPickerElement.remove();
+            this.colorPickerElement = null;
+            this.colorPickerActive = false;
+            
+            console.log('🎨 カラーピッカー非表示');
+        }
+    }
+    
+    /**
+     * 現在の色情報取得
+     */
     getCurrentColorInfo() {
         return {
-            ...this.analyzeColor(),
-            futabaCompatibility: this.checkFutabaCompatibility(),
-            readability: this.checkReadability()
+            rgb: this.currentColor,
+            hex: this.rgbToHex(this.currentColor),
+            previousColor: this.previousColor,
+            harmonicColors: this.harmonicColors,
+            historyCount: this.colorHistory.length
         };
     }
     
-    // 色設定をJSON形式でエクスポート
-    exportColorSettings() {
+    /**
+     * 色処理状態取得
+     */
+    getColorProcessorState() {
         return {
-            currentColor: this.currentColor.hex(),
-            colorHistory: this.currentColorHistory,
-            customColors: this.customColors,
-            futabaColors: this.futabaColors,
-            timestamp: Date.now()
+            currentColor: this.getCurrentColorInfo(),
+            futabaColorsLoaded: !!this.futabaColorPalette,
+            colorHistorySize: this.colorHistory.length,
+            customColorsCount: this.customColors.length,
+            colorPickerActive: this.colorPickerActive,
+            harmonicColorsCount: this.harmonicColors.length
         };
-    }
-    
-    // 色設定をJSON形式からインポート
-    importColorSettings(settingsData) {
-        try {
-            if (settingsData.currentColor) {
-                this.setColor(settingsData.currentColor);
-            }
-            
-            if (settingsData.colorHistory) {
-                this.currentColorHistory = settingsData.colorHistory;
-            }
-            
-            if (settingsData.customColors) {
-                this.customColors = settingsData.customColors;
-            }
-            
-            console.log('✅ Color settings imported successfully');
-            return true;
-            
-        } catch (error) {
-            console.error('🚨 Color settings import failed:', error);
-            return false;
-        }
-    }
-    
-    // 色の自動調整（AIアシスト的機能）
-    autoAdjustColor(targetMood = 'balanced') {
-        const currentHsl = this.currentColor.hsl();
-        let adjustedColor;
-        
-        switch (targetMood) {
-            case 'warmer':
-                // 暖色調整
-                adjustedColor = chroma.hsl(
-                    (currentHsl[0] + 15) % 360,
-                    Math.min(1, currentHsl[1] + 0.1),
-                    currentHsl[2]
-                );
-                break;
-                
-            case 'cooler':
-                // 寒色調整
-                adjustedColor = chroma.hsl(
-                    (currentHsl[0] - 15 + 360) % 360,
-                    Math.min(1, currentHsl[1] + 0.1),
-                    currentHsl[2]
-                );
-                break;
-                
-            case 'vivid':
-                // 鮮やか調整
-                adjustedColor = chroma.hsl(
-                    currentHsl[0],
-                    Math.min(1, currentHsl[1] + 0.2),
-                    currentHsl[2]
-                );
-                break;
-                
-            case 'muted':
-                // 落ち着いた調整
-                adjustedColor = chroma.hsl(
-                    currentHsl[0],
-                    Math.max(0, currentHsl[1] - 0.2),
-                    currentHsl[2]
-                );
-                break;
-                
-            case 'futaba_optimized':
-                // ふたば色最適化
-                const compatibility = this.checkFutabaCompatibility();
-                if (compatibility.score < 70) {
-                    const futabaHsl = chroma(this.futabaColors.main).hsl();
-                    adjustedColor = chroma.hsl(
-                        futabaHsl[0],
-                        (currentHsl[1] + futabaHsl[1]) / 2,
-                        currentHsl[2]
-                    );
-                } else {
-                    adjustedColor = this.currentColor;
-                }
-                break;
-                
-            default:
-                adjustedColor = this.currentColor;
-        }
-        
-        this.setColor(adjustedColor);
-        console.log(`🤖 Auto-adjusted color for mood: ${targetMood}`);
-        
-        return adjustedColor.hex();
-    }
-    
-    // デバッグ情報
-    getDebugInfo() {
-        return {
-            currentColor: this.currentColor.hex(),
-            colorHistory: this.currentColorHistory.length,
-            customColors: this.customColors.length,
-            futabaColors: Object.keys(this.futabaColors).length,
-            stats: this.getColorStats()
-        };
-    }
-    
-    // クリーンアップ
-    destroy() {
-        this.currentColorHistory = [];
-        this.customColors = [];
-        this.activeColorPicker = null;
-        
-        console.log('✅ Color processor destroyed');
     }
 }

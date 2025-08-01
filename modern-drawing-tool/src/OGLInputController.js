@@ -1,414 +1,394 @@
-import PointerTracker from 'pointer-tracker';
+// OGLInputController.js - 入力処理統合（Phase1基盤・封印対象）
 
 /**
- * OGLInputController - マウス・ペンタブレット専用入力処理（Phase1基盤）
- * タッチデバイス非対応・デスクトップ環境特化
+ * 🔥 OGL統一入力処理（Phase1基盤・封印対象）
+ * 責務: マウス・ペンタブレット専用、キャンバス座標変換精密化、入力イベント管理・競合回避
  */
 export class OGLInputController {
-    constructor(oglCore, eventStore) {
-        this.oglCore = oglCore;
+    constructor(oglEngine, eventStore) {
+        this.engine = oglEngine;
         this.eventStore = eventStore;
-        this.canvas = oglCore.canvas;
+        this.canvas = oglEngine.canvas;
         
-        // 入力状態
+        // 入力状態管理
         this.isPointerDown = false;
-        this.currentPointer = null;
-        this.pointerHistory = [];
-        this.maxHistorySize = 10;
+        this.isDrawing = false;
+        this.currentStrokeId = null;
+        this.lastPointerPosition = null;
+        this.pointerStartTime = null;
         
-        // キャンバス座標変換
+        // 座標変換設定
         this.canvasTransform = {
             scale: 1.0,
-            offsetX: 0,
-            offsetY: 0,
-            rotation: 0
+            rotation: 0,
+            translateX: 0,
+            translateY: 0
         };
         
-        // PointerTracker設定（マウス・ペンタブレット専用）
-        this.pointerTracker = null;
+        // 筆圧・速度計算
+        this.pressureHistory = [];
+        this.velocityHistory = [];
+        this.maxHistoryLength = 5;
         
-        // 入力フィルタリング
-        this.inputFilter = {
-            minDistance: 1.0,
-            pressureSmoothing: 0.3,
-            velocitySmoothing: 0.5
-        };
+        // デバイス判定
+        this.inputDevice = 'mouse';
+        this.supportsPressure = false;
         
-        // 筆圧検出
-        this.pressureSupported = false;
-        this.lastPressure = 1.0;
+        // イベントリスナー参照保持（削除用）
+        this.boundEventHandlers = {};
         
-        this.initializePointerTracking();
-        this.setupEventListeners();
+        console.log('✅ OGLInputController初期化完了');
     }
     
-    // PointerTracker初期化（マウス・ペンタブレット専用）
-    initializePointerTracking() {
-        this.pointerTracker = new PointerTracker(this.canvas, {
-            // タッチデバイス完全無効化
-            start: (pointer, event) => {
-                // タッチイベント排除
-                if (event.pointerType === 'touch') {
-                    console.warn('🚫 Touch input not supported - mouse/pen only');
-                    return false;
-                }
-                
-                return this.handlePointerStart(pointer, event);
-            },
-            move: (previousPointers, changedPointers, event) => {
-                // タッチイベント排除
-                if (event.pointerType === 'touch') {
-                    return;
-                }
-                
-                this.handlePointerMove(previousPointers, changedPointers, event);
-            },
-            end: (pointer, event) => {
-                // タッチイベント排除
-                if (event.pointerType === 'touch') {
-                    return;
-                }
-                
-                this.handlePointerEnd(pointer, event);
-            }
+    /**
+     * 入力リスニング開始
+     */
+    startListening() {
+        // Pointer Events API使用（マウス・ペンタブレット統一）
+        this.boundEventHandlers = {
+            pointerdown: this.handlePointerDown.bind(this),
+            pointermove: this.handlePointerMove.bind(this),
+            pointerup: this.handlePointerUp.bind(this),
+            pointercancel: this.handlePointerCancel.bind(this),
+            pointerleave: this.handlePointerLeave.bind(this),
+            wheel: this.handleWheel.bind(this),
+            contextmenu: this.handleContextMenu.bind(this)
+        };
+        
+        // イベントリスナー登録
+        Object.entries(this.boundEventHandlers).forEach(([eventType, handler]) => {
+            this.canvas.addEventListener(eventType, handler, { passive: false });
         });
         
-        console.log('✅ Pointer tracking initialized (mouse/pen only)');
+        // キャンバスフォーカス設定
+        this.canvas.tabIndex = 0;
+        this.canvas.style.outline = 'none';
+        
+        console.log('🎮 OGL入力リスニング開始');
     }
     
-    // ポインター開始
-    handlePointerStart(pointer, event) {
-        if (this.isPointerDown) return false;
+    /**
+     * 入力リスニング停止
+     */
+    stopListening() {
+        Object.entries(this.boundEventHandlers).forEach(([eventType, handler]) => {
+            this.canvas.removeEventListener(eventType, handler);
+        });
+        
+        this.boundEventHandlers = {};
+        console.log('🎮 OGL入力リスニング停止');
+    }
+    
+    /**
+     * PointerDown処理
+     */
+    handlePointerDown(event) {
+        event.preventDefault();
+        
+        // デバイス判定
+        this.detectInputDevice(event);
+        
+        // 座標変換
+        const canvasPoint = this.screenToCanvas(event.clientX, event.clientY);
+        const pressure = this.getPressure(event);
         
         this.isPointerDown = true;
-        this.currentPointer = pointer;
+        this.isDrawing = true;
+        this.lastPointerPosition = canvasPoint;
+        this.pointerStartTime = Date.now();
         
-        // 筆圧検出・サポート確認
-        this.detectPressureSupport(event);
-        const pressure = this.extractPressure(event);
+        // 筆圧・速度履歴リセット
+        this.pressureHistory = [pressure];
+        this.velocityHistory = [0];
         
-        // キャンバス座標変換
-        const canvasPoint = this.screenToCanvas(pointer.clientX, pointer.clientY);
+        // ストローク開始
+        this.currentStrokeId = this.engine.startStroke(canvasPoint, pressure);
         
-        // 入力履歴記録
-        this.addToHistory({
+        // イベント発火
+        this.eventStore.emit(this.eventStore.eventTypes.INPUT_START, {
             point: canvasPoint,
             pressure,
-            timestamp: Date.now(),
-            type: 'start'
+            device: this.inputDevice,
+            strokeId: this.currentStrokeId
         });
         
-        // OGL描画エンジンにストローク開始通知
-        this.oglCore.startStroke(canvasPoint, pressure);
+        this.eventStore.emit(this.eventStore.eventTypes.STROKE_START, {
+            strokeId: this.currentStrokeId,
+            point: canvasPoint,
+            pressure,
+            tool: this.engine.currentTool
+        });
         
-        event.preventDefault();
-        return true;
+        console.log(`🖱️ PointerDown: ${this.inputDevice}`, canvasPoint);
     }
     
-    // ポインター移動
-    handlePointerMove(previousPointers, changedPointers, event) {
-        if (!this.isPointerDown || !this.currentPointer) return;
+    /**
+     * PointerMove処理
+     */
+    handlePointerMove(event) {
+        event.preventDefault();
         
-        const pointer = changedPointers[0];
-        if (!pointer) return;
-        
-        const pressure = this.extractPressure(event);
-        const canvasPoint = this.screenToCanvas(pointer.clientX, pointer.clientY);
-        
-        // 入力フィルタリング適用
-        if (this.shouldFilterInput(canvasPoint)) {
-            return;
-        }
+        const canvasPoint = this.screenToCanvas(event.clientX, event.clientY);
+        const pressure = this.getPressure(event);
         
         // 速度計算
         const velocity = this.calculateVelocity(canvasPoint);
         
-        // 入力履歴記録
-        this.addToHistory({
-            point: canvasPoint,
-            pressure,
-            velocity,
-            timestamp: Date.now(),
-            type: 'move'
-        });
+        // 筆圧・速度履歴更新
+        this.updateHistory(pressure, velocity);
         
-        // OGL描画エンジンにストローク更新通知
-        this.oglCore.updateStroke(canvasPoint, pressure);
-        
-        event.preventDefault();
-    }
-    
-    // ポインター終了
-    handlePointerEnd(pointer, event) {
-        if (!this.isPointerDown) return;
-        
-        this.isPointerDown = false;
-        
-        const pressure = this.extractPressure(event);
-        const canvasPoint = this.screenToCanvas(pointer.clientX, pointer.clientY);
-        
-        // 入力履歴記録
-        this.addToHistory({
-            point: canvasPoint,
-            pressure,
-            timestamp: Date.now(),
-            type: 'end'
-        });
-        
-        // OGL描画エンジンにストローク終了通知
-        this.oglCore.endStroke();
-        
-        this.currentPointer = null;
-        event.preventDefault();
-    }
-    
-    // 筆圧検出・サポート確認
-    detectPressureSupport(event) {
-        if (event.pressure !== undefined && event.pressure > 0) {
-            if (!this.pressureSupported) {
-                this.pressureSupported = true;
-                console.log('✅ Pressure sensitivity detected');
-                this.eventStore.emit(this.eventStore.eventTypes.ENGINE_READY, {
-                    pressureSupported: true
-                });
-            }
-        }
-    }
-    
-    // 筆圧抽出・スムージング
-    extractPressure(event) {
-        let pressure = 1.0;
-        
-        if (this.pressureSupported && event.pressure !== undefined) {
-            pressure = Math.max(0.1, Math.min(1.0, event.pressure));
+        if (this.isDrawing && this.currentStrokeId) {
+            // ストローク追加
+            this.engine.addStrokePoint(canvasPoint, pressure);
             
-            // 筆圧スムージング適用
-            const smoothing = this.inputFilter.pressureSmoothing;
-            pressure = this.lastPressure + (pressure - this.lastPressure) * (1 - smoothing);
+            // イベント発火
+            this.eventStore.emit(this.eventStore.eventTypes.INPUT_MOVE, {
+                point: canvasPoint,
+                pressure,
+                velocity,
+                device: this.inputDevice,
+                strokeId: this.currentStrokeId
+            });
+            
+            this.eventStore.emit(this.eventStore.eventTypes.STROKE_UPDATE, {
+                strokeId: this.currentStrokeId,
+                point: canvasPoint,
+                pressure,
+                velocity
+            });
         }
         
-        this.lastPressure = pressure;
-        return pressure;
+        this.lastPointerPosition = canvasPoint;
     }
     
-    // スクリーン座標からキャンバス座標変換
+    /**
+     * PointerUp処理
+     */
+    handlePointerUp(event) {
+        event.preventDefault();
+        
+        if (this.isDrawing && this.currentStrokeId) {
+            const canvasPoint = this.screenToCanvas(event.clientX, event.clientY);
+            const pressure = this.getPressure(event);
+            
+            // ストローク終了
+            const strokeId = this.engine.endStroke();
+            
+            // イベント発火
+            this.eventStore.emit(this.eventStore.eventTypes.INPUT_END, {
+                point: canvasPoint,
+                pressure,
+                device: this.inputDevice,
+                strokeId: strokeId,
+                duration: Date.now() - this.pointerStartTime
+            });
+            
+            this.eventStore.emit(this.eventStore.eventTypes.STROKE_COMPLETE, {
+                strokeId: strokeId,
+                point: canvasPoint,
+                pressure,
+                tool: this.engine.currentTool
+            });
+            
+            console.log(`🖱️ PointerUp: ストローク完了 ${strokeId}`);
+        }
+        
+        this.resetInputState();
+    }
+    
+    /**
+     * PointerCancel処理
+     */
+    handlePointerCancel(event) {
+        event.preventDefault();
+        
+        if (this.isDrawing && this.currentStrokeId) {
+            // ストロークキャンセル
+            this.engine.removeStroke(this.currentStrokeId);
+            
+            this.eventStore.emit(this.eventStore.eventTypes.INPUT_CANCEL, {
+                strokeId: this.currentStrokeId,
+                device: this.inputDevice
+            });
+            
+            console.log(`🖱️ PointerCancel: ストロークキャンセル ${this.currentStrokeId}`);
+        }
+        
+        this.resetInputState();
+    }
+    
+    /**
+     * PointerLeave処理
+     */
+    handlePointerLeave(event) {
+        // キャンバス外に出た場合の処理
+        if (this.isDrawing) {
+            this.handlePointerUp(event);
+        }
+    }
+    
+    /**
+     * Wheel処理（将来のズーム機能用）
+     */
+    handleWheel(event) {
+        event.preventDefault();
+        
+        // Phase2でキャンバス変形機能実装時に使用
+        console.log('🖱️ Wheel:', event.deltaY);
+    }
+    
+    /**
+     * ContextMenu無効化
+     */
+    handleContextMenu(event) {
+        event.preventDefault();
+    }
+    
+    /**
+     * 入力デバイス判定
+     */
+    detectInputDevice(event) {
+        switch (event.pointerType) {
+            case 'pen':
+                this.inputDevice = 'pen';
+                this.supportsPressure = true;
+                break;
+            case 'mouse':
+                this.inputDevice = 'mouse';
+                this.supportsPressure = false;
+                break;
+            case 'touch':
+                // タッチデバイス非対応（規約準拠）
+                console.warn('🚨 タッチデバイス非対応');
+                return;
+            default:
+                this.inputDevice = 'mouse';
+                this.supportsPressure = false;
+        }
+        
+        console.log(`🎮 入力デバイス: ${this.inputDevice}`, { 
+            supportsPressure: this.supportsPressure 
+        });
+    }
+    
+    /**
+     * スクリーン座標→キャンバス座標変換
+     */
     screenToCanvas(screenX, screenY) {
         const rect = this.canvas.getBoundingClientRect();
-        const x = (screenX - rect.left) - this.canvas.width / 2;
-        const y = -((screenY - rect.top) - this.canvas.height / 2); // Y軸反転
+        const scaleX = this.canvas.width / rect.width;
+        const scaleY = this.canvas.height / rect.height;
         
-        // キャンバス変換適用
-        const cos = Math.cos(-this.canvasTransform.rotation);
-        const sin = Math.sin(-this.canvasTransform.rotation);
+        let canvasX = (screenX - rect.left) * scaleX;
+        let canvasY = (screenY - rect.top) * scaleY;
         
-        const scaledX = (x - this.canvasTransform.offsetX) / this.canvasTransform.scale;
-        const scaledY = (y - this.canvasTransform.offsetY) / this.canvasTransform.scale;
+        // キャンバス変形適用（Phase2でキャンバス操作実装時に使用）
+        // const transform = this.canvasTransform;
+        // 現在は恒等変換
         
         return {
-            x: scaledX * cos - scaledY * sin,
-            y: scaledX * sin + scaledY * cos
+            x: canvasX,
+            y: canvasY
         };
     }
     
-    // キャンバス座標からスクリーン座標変換
-    canvasToScreen(canvasX, canvasY) {
-        const cos = Math.cos(this.canvasTransform.rotation);
-        const sin = Math.sin(this.canvasTransform.rotation);
-        
-        const rotatedX = canvasX * cos - canvasY * sin;
-        const rotatedY = canvasX * sin + canvasY * cos;
-        
-        const scaledX = rotatedX * this.canvasTransform.scale + this.canvasTransform.offsetX;
-        const scaledY = rotatedY * this.canvasTransform.scale + this.canvasTransform.offsetY;
-        
-        const rect = this.canvas.getBoundingClientRect();
-        return {
-            x: scaledX + this.canvas.width / 2 + rect.left,
-            y: -scaledY + this.canvas.height / 2 + rect.top
-        };
-    }
-    
-    // 入力フィルタリング判定
-    shouldFilterInput(point) {
-        if (this.pointerHistory.length === 0) return false;
-        
-        const lastPoint = this.pointerHistory[this.pointerHistory.length - 1].point;
-        const distance = Math.sqrt(
-            Math.pow(point.x - lastPoint.x, 2) +
-            Math.pow(point.y - lastPoint.y, 2)
-        );
-        
-        return distance < this.inputFilter.minDistance;
-    }
-    
-    // 速度計算
-    calculateVelocity(currentPoint) {
-        if (this.pointerHistory.length < 2) return { x: 0, y: 0, magnitude: 0 };
-        
-        const prevEntry = this.pointerHistory[this.pointerHistory.length - 1];
-        const timeDelta = Date.now() - prevEntry.timestamp;
-        
-        if (timeDelta === 0) return { x: 0, y: 0, magnitude: 0 };
-        
-        const deltaX = currentPoint.x - prevEntry.point.x;
-        const deltaY = currentPoint.y - prevEntry.point.y;
-        
-        const velocity = {
-            x: deltaX / timeDelta,
-            y: deltaY / timeDelta,
-            magnitude: Math.sqrt(deltaX * deltaX + deltaY * deltaY) / timeDelta
-        };
-        
-        // 速度スムージング
-        if (prevEntry.velocity) {
-            const smoothing = this.inputFilter.velocitySmoothing;
-            velocity.x = prevEntry.velocity.x + (velocity.x - prevEntry.velocity.x) * (1 - smoothing);
-            velocity.y = prevEntry.velocity.y + (velocity.y - prevEntry.velocity.y) * (1 - smoothing);
-            velocity.magnitude = prevEntry.velocity.magnitude + (velocity.magnitude - prevEntry.velocity.magnitude) * (1 - smoothing);
+    /**
+     * 筆圧取得
+     */
+    getPressure(event) {
+        if (this.supportsPressure && typeof event.pressure === 'number') {
+            // ペンタブレット筆圧（0.0-1.0）
+            return Math.max(0.1, Math.min(1.0, event.pressure));
+        } else {
+            // マウスの場合は固定値
+            return 1.0;
         }
-        
-        return velocity;
     }
     
-    // キャンバス変換設定
+    /**
+     * 速度計算
+     */
+    calculateVelocity(currentPoint) {
+        if (!this.lastPointerPosition) return 0;
+        
+        const dx = currentPoint.x - this.lastPointerPosition.x;
+        const dy = currentPoint.y - this.lastPointerPosition.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const timeNow = Date.now();
+        const timeDelta = timeNow - (this.lastMoveTime || timeNow);
+        
+        this.lastMoveTime = timeNow;
+        
+        return timeDelta > 0 ? distance / timeDelta : 0;
+    }
+    
+    /**
+     * 筆圧・速度履歴更新
+     */
+    updateHistory(pressure, velocity) {
+        this.pressureHistory.push(pressure);
+        this.velocityHistory.push(velocity);
+        
+        if (this.pressureHistory.length > this.maxHistoryLength) {
+            this.pressureHistory.shift();
+        }
+        if (this.velocityHistory.length > this.maxHistoryLength) {
+            this.velocityHistory.shift();
+        }
+    }
+    
+    /**
+     * 平均筆圧取得
+     */
+    getAveragePressure() {
+        if (this.pressureHistory.length === 0) return 1.0;
+        
+        const sum = this.pressureHistory.reduce((a, b) => a + b, 0);
+        return sum / this.pressureHistory.length;
+    }
+    
+    /**
+     * 平均速度取得
+     */
+    getAverageVelocity() {
+        if (this.velocityHistory.length === 0) return 0;
+        
+        const sum = this.velocityHistory.reduce((a, b) => a + b, 0);
+        return sum / this.velocityHistory.length;
+    }
+    
+    /**
+     * 入力状態リセット
+     */
+    resetInputState() {
+        this.isPointerDown = false;
+        this.isDrawing = false;
+        this.currentStrokeId = null;
+        this.lastPointerPosition = null;
+        this.pointerStartTime = null;
+        this.lastMoveTime = null;
+    }
+    
+    /**
+     * キャンバス変形設定（Phase2で使用）
+     */
     setCanvasTransform(transform) {
         this.canvasTransform = { ...this.canvasTransform, ...transform };
-        
-        this.eventStore.emit(this.eventStore.eventTypes.CANVAS_TRANSFORM, {
-            transform: this.canvasTransform
-        });
+        console.log('📐 キャンバス変形設定:', this.canvasTransform);
     }
     
-    // キャンバス移動
-    moveCanvas(deltaX, deltaY) {
-        this.canvasTransform.offsetX += deltaX;
-        this.canvasTransform.offsetY += deltaY;
-        
-        this.eventStore.emit(this.eventStore.eventTypes.CANVAS_TRANSFORM, {
-            transform: this.canvasTransform,
-            type: 'move'
-        });
-    }
-    
-    // キャンバス拡縮
-    scaleCanvas(scaleFactor, centerX = 0, centerY = 0) {
-        const newScale = Math.max(0.1, Math.min(10.0, this.canvasTransform.scale * scaleFactor));
-        const scaleChange = newScale / this.canvasTransform.scale;
-        
-        // 中心点を基準とした拡縮
-        this.canvasTransform.offsetX = centerX + (this.canvasTransform.offsetX - centerX) * scaleChange;
-        this.canvasTransform.offsetY = centerY + (this.canvasTransform.offsetY - centerY) * scaleChange;
-        this.canvasTransform.scale = newScale;
-        
-        this.eventStore.emit(this.eventStore.eventTypes.CANVAS_TRANSFORM, {
-            transform: this.canvasTransform,
-            type: 'scale'
-        });
-    }
-    
-    // キャンバス回転
-    rotateCanvas(deltaRotation) {
-        this.canvasTransform.rotation += deltaRotation;
-        
-        // 0-2π範囲正規化
-        while (this.canvasTransform.rotation < 0) {
-            this.canvasTransform.rotation += Math.PI * 2;
-        }
-        while (this.canvasTransform.rotation >= Math.PI * 2) {
-            this.canvasTransform.rotation -= Math.PI * 2;
-        }
-        
-        this.eventStore.emit(this.eventStore.eventTypes.CANVAS_TRANSFORM, {
-            transform: this.canvasTransform,
-            type: 'rotate'
-        });
-    }
-    
-    // キャンバスリセット
-    resetCanvas() {
-        this.canvasTransform = {
-            scale: 1.0,
-            offsetX: 0,
-            offsetY: 0,
-            rotation: 0
-        };
-        
-        this.eventStore.emit(this.eventStore.eventTypes.CANVAS_RESET, {
-            transform: this.canvasTransform
-        });
-    }
-    
-    // 入力履歴記録
-    addToHistory(entry) {
-        this.pointerHistory.push(entry);
-        if (this.pointerHistory.length > this.maxHistorySize) {
-            this.pointerHistory.shift();
-        }
-    }
-    
-    // 入力履歴取得
-    getInputHistory(count = 5) {
-        return this.pointerHistory.slice(-count);
-    }
-    
-    // 追加イベントリスナー設定
-    setupEventListeners() {
-        // コンテキストメニュー無効化
-        this.canvas.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-        });
-        
-        // ドラッグ無効化
-        this.canvas.addEventListener('dragstart', (e) => {
-            e.preventDefault();
-        });
-        
-        // 選択無効化
-        this.canvas.addEventListener('selectstart', (e) => {
-            e.preventDefault();
-        });
-        
-        // ホイールイベント（拡縮）
-        this.canvas.addEventListener('wheel', (e) => {
-            e.preventDefault();
-            
-            const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
-            const canvasPoint = this.screenToCanvas(e.clientX, e.clientY);
-            this.scaleCanvas(scaleFactor, canvasPoint.x, canvasPoint.y);
-        }, { passive: false });
-    }
-    
-    // 入力フィルター設定更新
-    updateInputFilter(filterConfig) {
-        this.inputFilter = { ...this.inputFilter, ...filterConfig };
-        console.log('✅ Input filter updated:', this.inputFilter);
-    }
-    
-    // デバッグ情報
-    getDebugInfo() {
+    /**
+     * 入力状態取得
+     */
+    getInputState() {
         return {
             isPointerDown: this.isPointerDown,
-            pressureSupported: this.pressureSupported,
-            canvasTransform: this.canvasTransform,
-            historySize: this.pointerHistory.length,
-            inputFilter: this.inputFilter,
-            currentPointer: this.currentPointer ? {
-                x: this.currentPointer.clientX,
-                y: this.currentPointer.clientY
-            } : null
+            isDrawing: this.isDrawing,
+            currentStrokeId: this.currentStrokeId,
+            inputDevice: this.inputDevice,
+            supportsPressure: this.supportsPressure,
+            averagePressure: this.getAveragePressure(),
+            averageVelocity: this.getAverageVelocity()
         };
-    }
-    
-    // クリーンアップ
-    destroy() {
-        if (this.pointerTracker) {
-            this.pointerTracker.stop();
-        }
-        
-        this.pointerHistory = [];
-        this.currentPointer = null;
-        this.isPointerDown = false;
-        
-        console.log('✅ Input controller destroyed');
     }
 }

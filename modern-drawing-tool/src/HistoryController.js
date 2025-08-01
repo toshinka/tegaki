@@ -1,567 +1,479 @@
+// HistoryController.js - アンドゥ・リドゥ制御（Phase1基盤・封印対象）
+
 /**
- * HistoryController - アンドゥ・リドゥ制御（Phase1基盤）
- * EventStore連携履歴管理・状態復元・スナップショット
+ * 🔥 アンドゥ・リドゥ制御（Phase1基盤・封印対象）
+ * 責務: EventStore連携履歴管理、アクション記録・種別管理、状態復元・スナップショット
  */
 export class HistoryController {
-    constructor(oglCore, eventStore) {
-        this.oglCore = oglCore;
+    constructor(oglEngine, eventStore) {
+        this.engine = oglEngine;
         this.eventStore = eventStore;
         
-        // 履歴管理
-        this.history = [];
-        this.currentIndex = -1;
+        // 履歴スタック
+        this.undoStack = [];
+        this.redoStack = [];
         this.maxHistorySize = 50;
+        
+        // 現在の状態
+        this.currentState = null;
+        this.lastSavedState = null;
+        
+        // アクション記録設定
+        this.isRecording = true;
+        this.batchingEnabled = false;
+        this.currentBatch = null;
         
         // アクション種別定義
         this.actionTypes = {
             STROKE: 'stroke',
             TOOL_CHANGE: 'tool_change',
-            LAYER_CHANGE: 'layer_change',
-            CANVAS_TRANSFORM: 'canvas_transform',
-            COLOR_CHANGE: 'color_change',
-            LAYER_ADD: 'layer_add',
+            LAYER_CREATE: 'layer_create',
             LAYER_DELETE: 'layer_delete',
-            LAYER_MOVE: 'layer_move',
-            MESH_DEFORM: 'mesh_deform'
+            LAYER_MODIFY: 'layer_modify',
+            CANVAS_TRANSFORM: 'canvas_transform',
+            BATCH: 'batch'
         };
         
-        // スナップショット設定
-        this.snapshotInterval = 10; // 10アクションごとにスナップショット
-        this.lastSnapshotIndex = -1;
-        
-        // パフォーマンス最適化
-        this.isRecording = true;
-        this.batchActions = [];
-        this.batchTimer = null;
-        this.batchTimeout = 100; // 100ms以内のアクションをバッチ化
-        
-        this.setupEventSubscriptions();
+        console.log('✅ HistoryController初期化完了');
     }
     
-    // 初期化
+    /**
+     * 履歴管理初期化
+     */
     initialize() {
-        // 初期状態をスナップショット
-        this.createInitialSnapshot();
+        // EventStore購読
+        this.subscribeToEvents();
         
-        console.log('✅ History controller initialized');
-        this.eventStore.emit(this.eventStore.eventTypes.HISTORY_CHANGE, {
-            action: 'initialize',
-            canUndo: this.canUndo(),
-            canRedo: this.canRedo()
-        });
+        // 初期状態保存
+        this.saveInitialState();
+        
+        console.log('🗂️ 履歴管理開始');
     }
     
-    // イベント購読設定
-    setupEventSubscriptions() {
-        // ストローク完了時の履歴記録
-        this.eventStore.on(this.eventStore.eventTypes.STROKE_COMPLETE, (data) => {
-            this.recordAction({
-                type: this.actionTypes.STROKE,
-                strokeId: data.payload.strokeId,
-                tool: data.payload.tool,
-                timestamp: Date.now()
-            });
-        });
+    /**
+     * イベント購読開始
+     */
+    subscribeToEvents() {
+        // Phase1: 基本アクション監視
+        this.eventStore.on(this.eventStore.eventTypes.STROKE_COMPLETE, 
+            this.handleStrokeComplete.bind(this), 'history-controller');
         
-        // ツール変更履歴
-        this.eventStore.on(this.eventStore.eventTypes.TOOL_CHANGE, (data) => {
-            this.recordAction({
-                type: this.actionTypes.TOOL_CHANGE,
-                previousTool: this.oglCore?.currentTool,
-                newTool: data.payload.tool,
-                timestamp: Date.now()
-            });
-        });
+        this.eventStore.on(this.eventStore.eventTypes.TOOL_CHANGE, 
+            this.handleToolChange.bind(this), 'history-controller');
         
-        // キャンバス変換履歴
-        this.eventStore.on(this.eventStore.eventTypes.CANVAS_TRANSFORM, (data) => {
-            this.recordAction({
-                type: this.actionTypes.CANVAS_TRANSFORM,
-                transform: data.payload.transform,
-                transformType: data.payload.type,
-                timestamp: Date.now()
-            });
-        });
+        this.eventStore.on(this.eventStore.eventTypes.HISTORY_UNDO, 
+            this.handleUndoRequest.bind(this), 'history-controller');
         
-        // 履歴操作リクエスト
-        this.eventStore.on(this.eventStore.eventTypes.HISTORY_CHANGE, (data) => {
-            const action = data.payload.action;
-            if (action === 'undo') {
-                this.undo();
-            } else if (action === 'redo') {
-                this.redo();
-            }
-        });
+        this.eventStore.on(this.eventStore.eventTypes.HISTORY_REDO, 
+            this.handleRedoRequest.bind(this), 'history-controller');
+        
+        // Phase2: 拡張アクション監視（封印解除時追加）
+        /*
+        this.eventStore.on('layer:create', this.handleLayerCreate.bind(this), 'history-controller');
+        this.eventStore.on('layer:delete', this.handleLayerDelete.bind(this), 'history-controller');
+        this.eventStore.on('layer:modify', this.handleLayerModify.bind(this), 'history-controller');
+        this.eventStore.on('canvas:transform', this.handleCanvasTransform.bind(this), 'history-controller');
+        */
+        
+        console.log('📝 履歴イベント購読開始');
     }
     
-    // アクション記録
-    recordAction(actionData) {
+    /**
+     * ストローク完了処理
+     */
+    handleStrokeComplete(eventData) {
         if (!this.isRecording) return;
         
-        // バッチ処理検討
-        if (this.shouldBatchAction(actionData)) {
-            this.addToBatch(actionData);
+        const action = {
+            type: this.actionTypes.STROKE,
+            timestamp: Date.now(),
+            data: {
+                strokeId: eventData.payload.strokeId,
+                tool: eventData.payload.tool,
+                engineState: this.captureEngineState()
+            },
+            undo: () => this.undoStroke(eventData.payload.strokeId),
+            redo: () => this.redoStroke(eventData.payload.strokeId)
+        };
+        
+        this.addAction(action);
+        console.log(`🗂️ ストローク履歴記録: ${eventData.payload.strokeId}`);
+    }
+    
+    /**
+     * ツール変更処理
+     */
+    handleToolChange(eventData) {
+        if (!this.isRecording) return;
+        
+        const previousTool = this.engine.currentTool;
+        const newTool = eventData.payload.tool;
+        
+        if (previousTool === newTool) return;
+        
+        const action = {
+            type: this.actionTypes.TOOL_CHANGE,
+            timestamp: Date.now(),
+            data: {
+                previousTool,
+                newTool
+            },
+            undo: () => this.undoToolChange(previousTool),
+            redo: () => this.redoToolChange(newTool)
+        };
+        
+        this.addAction(action);
+        console.log(`🗂️ ツール変更履歴記録: ${previousTool} → ${newTool}`);
+    }
+    
+    /**
+     * アンドゥ要求処理
+     */
+    handleUndoRequest(eventData) {
+        this.undo();
+    }
+    
+    /**
+     * リドゥ要求処理
+     */
+    handleRedoRequest(eventData) {
+        this.redo();
+    }
+    
+    /**
+     * アクション追加
+     */
+    addAction(action) {
+        if (!this.isRecording) return;
+        
+        if (this.batchingEnabled && this.currentBatch) {
+            // バッチ処理中
+            this.currentBatch.actions.push(action);
             return;
         }
         
-        // 現在位置以降の履歴を削除（新しいブランチ作成）
-        if (this.currentIndex < this.history.length - 1) {
-            this.history.splice(this.currentIndex + 1);
-        }
+        // 通常のアクション追加
+        this.undoStack.push(action);
+        this.redoStack = []; // リドゥスタッククリア
         
         // 履歴サイズ制限
-        if (this.history.length >= this.maxHistorySize) {
-            this.history.shift();
-            this.currentIndex--;
-            this.lastSnapshotIndex--;
+        if (this.undoStack.length > this.maxHistorySize) {
+            this.undoStack.shift();
         }
         
-        // スナップショット作成判定
-        const needsSnapshot = this.shouldCreateSnapshot();
-        if (needsSnapshot) {
-            actionData.snapshot = this.createStateSnapshot();
-            this.lastSnapshotIndex = this.history.length;
-        }
-        
-        // アクション追加
-        this.history.push({
-            ...actionData,
-            id: this.generateActionId(),
-            index: this.history.length
-        });
-        
-        this.currentIndex = this.history.length - 1;
-        
-        // 履歴変更通知
-        this.notifyHistoryChange('record', actionData.type);
-        
-        console.log(`📝 Action recorded: ${actionData.type} (${this.currentIndex + 1}/${this.history.length})`);
+        // 状態変更通知
+        this.notifyStateChange();
     }
     
-    // アンドゥ実行
+    /**
+     * アンドゥ実行
+     */
     undo() {
-        if (!this.canUndo()) {
-            console.warn('⚠️ Cannot undo: no previous actions');
+        if (this.undoStack.length === 0) {
+            console.log('🗂️ アンドゥできません（履歴なし）');
             return false;
         }
         
-        const currentAction = this.history[this.currentIndex];
+        const action = this.undoStack.pop();
         
         try {
-            // アクション種別に応じた復元処理
-            this.revertAction(currentAction);
-            
-            this.currentIndex--;
-            this.notifyHistoryChange('undo', currentAction.type);
-            
-            console.log(`↶ Undo: ${currentAction.type} (${this.currentIndex + 1}/${this.history.length})`);
-            return true;
-            
-        } catch (error) {
-            console.error('🚨 Undo failed:', error);
-            this.eventStore.emit(this.eventStore.eventTypes.ENGINE_ERROR, { error, action: 'undo' });
-            return false;
-        }
-    }
-    
-    // リドゥ実行
-    redo() {
-        if (!this.canRedo()) {
-            console.warn('⚠️ Cannot redo: no next actions');
-            return false;
-        }
-        
-        const nextAction = this.history[this.currentIndex + 1];
-        
-        try {
-            // アクション種別に応じた再実行処理
-            this.executeAction(nextAction);
-            
-            this.currentIndex++;
-            this.notifyHistoryChange('redo', nextAction.type);
-            
-            console.log(`↷ Redo: ${nextAction.type} (${this.currentIndex + 1}/${this.history.length})`);
-            return true;
-            
-        } catch (error) {
-            console.error('🚨 Redo failed:', error);
-            this.eventStore.emit(this.eventStore.eventTypes.ENGINE_ERROR, { error, action: 'redo' });
-            return false;
-        }
-    }
-    
-    // アンドゥ可能判定
-    canUndo() {
-        return this.currentIndex >= 0;
-    }
-    
-    // リドゥ可能判定
-    canRedo() {
-        return this.currentIndex < this.history.length - 1;
-    }
-    
-    // アクション復元
-    revertAction(action) {
-        switch (action.type) {
-            case this.actionTypes.STROKE:
-                this.revertStroke(action);
-                break;
-                
-            case this.actionTypes.TOOL_CHANGE:
-                if (action.previousTool) {
-                    this.oglCore.setTool(action.previousTool);
-                }
-                break;
-                
-            case this.actionTypes.CANVAS_TRANSFORM:
-                this.revertCanvasTransform(action);
-                break;
-                
-            // Phase2以降で拡張
-            case this.actionTypes.LAYER_CHANGE:
-                this.revertLayerChange(action);
-                break;
-                
-            default:
-                console.warn(`⚠️ Unknown action type for revert: ${action.type}`);
-        }
-    }
-    
-    // アクション再実行
-    executeAction(action) {
-        switch (action.type) {
-            case this.actionTypes.STROKE:
-                this.redoStroke(action);
-                break;
-                
-            case this.actionTypes.TOOL_CHANGE:
-                this.oglCore.setTool(action.newTool);
-                break;
-                
-            case this.actionTypes.CANVAS_TRANSFORM:
-                this.redoCanvasTransform(action);
-                break;
-                
-            // Phase2以降で拡張
-            case this.actionTypes.LAYER_CHANGE:
-                this.redoLayerChange(action);
-                break;
-                
-            default:
-                console.warn(`⚠️ Unknown action type for execute: ${action.type}`);
-        }
-    }
-    
-    // ストローク復元
-    revertStroke(action) {
-        // Phase1: 基本的なストローク削除
-        const strokeIndex = this.oglCore.strokes.findIndex(
-            stroke => stroke.id === action.strokeId
-        );
-        
-        if (strokeIndex !== -1) {
-            const stroke = this.oglCore.strokes[strokeIndex];
-            
-            // OGLシーンから削除
-            if (stroke.mesh && stroke.mesh.parent) {
-                stroke.mesh.setParent(null);
-            }
-            
-            // ストローク配列から削除
-            this.oglCore.strokes.splice(strokeIndex, 1);
-            this.oglCore.needsRedraw = true;
-        }
-    }
-    
-    // ストローク再実行
-    redoStroke(action) {
-        // Phase1: 基本的なストローク復元
-        // 実際の実装ではスナップショットからの復元が必要
-        console.log(`🔄 Redo stroke: ${action.strokeId}`);
-        
-        // スナップショットが利用可能な場合は復元
-        if (action.snapshot) {
-            this.restoreFromSnapshot(action.snapshot);
-        }
-    }
-    
-    // キャンバス変換復元
-    revertCanvasTransform(action) {
-        // 前の変換状態を復元（Phase1基盤）
-        if (this.currentIndex > 0) {
-            const prevAction = this.findPreviousTransformAction();
-            if (prevAction && prevAction.transform) {
-                this.applyCanvasTransform(prevAction.transform);
-            } else {
-                // 初期状態に復元
-                this.resetCanvasTransform();
-            }
-        } else {
-            this.resetCanvasTransform();
-        }
-    }
-    
-    // キャンバス変換再実行
-    redoCanvasTransform(action) {
-        if (action.transform) {
-            this.applyCanvasTransform(action.transform);
-        }
-    }
-    
-    // レイヤー変更復元（Phase2で実装）
-    revertLayerChange(action) {
-        console.log(`🔄 Revert layer change: ${action.type}`);
-        // Phase2で詳細実装
-    }
-    
-    // レイヤー変更再実行（Phase2で実装）
-    redoLayerChange(action) {
-        console.log(`🔄 Redo layer change: ${action.type}`);
-        // Phase2で詳細実装
-    }
-    
-    // スナップショット作成判定
-    shouldCreateSnapshot() {
-        const actionsSinceSnapshot = this.history.length - this.lastSnapshotIndex;
-        return actionsSinceSnapshot >= this.snapshotInterval;
-    }
-    
-    // 状態スナップショット作成
-    createStateSnapshot() {
-        const snapshot = {
-            timestamp: Date.now(),
-            strokes: this.oglCore.strokes.map(stroke => ({
-                id: stroke.id,
-                tool: stroke.tool,
-                points: [...stroke.points],
-                config: { ...stroke.config }
-            })),
-            currentTool: this.oglCore.currentTool,
-            // Phase2以降で拡張
-            // layers: this.layerProcessor?.getLayerSnapshot(),
-            // canvasTransform: this.inputController?.canvasTransform
-        };
-        
-        return snapshot;
-    }
-    
-    // 初期スナップショット作成
-    createInitialSnapshot() {
-        const snapshot = this.createStateSnapshot();
-        this.recordAction({
-            type: 'initial_state',
-            snapshot,
-            timestamp: Date.now()
-        });
-    }
-    
-    // スナップショットから復元
-    restoreFromSnapshot(snapshot) {
-        if (!snapshot) return;
-        
-        try {
-            // 描画記録を停止
+            // 記録停止してアンドゥ実行
             this.isRecording = false;
             
-            // ストローク復元
-            this.oglCore.strokes = [];
-            if (snapshot.strokes) {
-                snapshot.strokes.forEach(strokeData => {
-                    // ストロークを再構築
-                    this.reconstructStroke(strokeData);
+            if (action.type === this.actionTypes.BATCH) {
+                // バッチアンドゥ
+                action.actions.reverse().forEach(batchAction => {
+                    if (batchAction.undo) batchAction.undo();
                 });
+            } else {
+                // 単一アクションアンドゥ
+                if (action.undo) action.undo();
             }
             
-            // ツール復元
-            if (snapshot.currentTool) {
-                this.oglCore.setTool(snapshot.currentTool);
-            }
+            this.redoStack.push(action);
             
-            // 再描画
-            this.oglCore.needsRedraw = true;
+            console.log(`🔙 アンドゥ実行: ${action.type}`, action.data);
             
-            // 描画記録を再開
-            this.isRecording = true;
-            
-            console.log('✅ State restored from snapshot');
+            this.notifyStateChange();
+            return true;
             
         } catch (error) {
-            console.error('🚨 Snapshot restoration failed:', error);
+            console.error('🚨 アンドゥ実行エラー:', error);
+            return false;
+        } finally {
             this.isRecording = true;
-            throw error;
         }
     }
     
-    // ストローク再構築
-    reconstructStroke(strokeData) {
-        // Phase1: 基本的なストローク再構築
-        const reconstructedStroke = {
-            id: strokeData.id,
-            tool: strokeData.tool,
-            points: [...strokeData.points],
-            config: { ...strokeData.config },
-            timestamp: strokeData.timestamp || Date.now()
-        };
+    /**
+     * リドゥ実行
+     */
+    redo() {
+        if (this.redoStack.length === 0) {
+            console.log('🗂️ リドゥできません（履歴なし）');
+            return false;
+        }
         
-        // OGLジオメトリ再構築
-        this.oglCore.currentStroke = reconstructedStroke;
-        this.oglCore.createStrokeGeometry();
-        this.oglCore.finalizeStroke();
+        const action = this.redoStack.pop();
         
-        this.oglCore.strokes.push(reconstructedStroke);
-        this.oglCore.currentStroke = null;
-    }
-    
-    // バッチ処理判定
-    shouldBatchAction(actionData) {
-        // 連続する同種のアクションをバッチ化
-        const batchableTypes = [
-            this.actionTypes.CANVAS_TRANSFORM,
-            this.actionTypes.TOOL_CONFIG_CHANGE
-        ];
-        
-        return batchableTypes.includes(actionData.type);
-    }
-    
-    // バッチ追加
-    addToBatch(actionData) {
-        this.batchActions.push(actionData);
-        
-        // バッチタイマー設定
-        clearTimeout(this.batchTimer);
-        this.batchTimer = setTimeout(() => {
-            this.processBatch();
-        }, this.batchTimeout);
-    }
-    
-    // バッチ処理
-    processBatch() {
-        if (this.batchActions.length === 0) return;
-        
-        // バッチアクションを統合
-        const batchedAction = {
-            type: 'batch',
-            actions: [...this.batchActions],
-            timestamp: Date.now(),
-            summary: `Batch of ${this.batchActions.length} actions`
-        };
-        
-        // 通常の記録処理
-        this.recordAction(batchedAction);
-        
-        // バッチクリア
-        this.batchActions = [];
-        console.log(`📦 Batch processed: ${batchedAction.actions.length} actions`);
-    }
-    
-    // 前のキャンバス変換アクション検索
-    findPreviousTransformAction() {
-        for (let i = this.currentIndex - 1; i >= 0; i--) {
-            const action = this.history[i];
-            if (action.type === this.actionTypes.CANVAS_TRANSFORM) {
-                return action;
+        try {
+            // 記録停止してリドゥ実行
+            this.isRecording = false;
+            
+            if (action.type === this.actionTypes.BATCH) {
+                // バッチリドゥ
+                action.actions.forEach(batchAction => {
+                    if (batchAction.redo) batchAction.redo();
+                });
+            } else {
+                // 単一アクションリドゥ
+                if (action.redo) action.redo();
             }
-        }
-        return null;
-    }
-    
-    // キャンバス変換適用
-    applyCanvasTransform(transform) {
-        if (this.inputController) {
-            this.inputController.setCanvasTransform(transform);
-        }
-    }
-    
-    // キャンバス変換リセット
-    resetCanvasTransform() {
-        if (this.inputController) {
-            this.inputController.resetCanvas();
+            
+            this.undoStack.push(action);
+            
+            console.log(`🔜 リドゥ実行: ${action.type}`, action.data);
+            
+            this.notifyStateChange();
+            return true;
+            
+        } catch (error) {
+            console.error('🚨 リドゥ実行エラー:', error);
+            return false;
+        } finally {
+            this.isRecording = true;
         }
     }
     
-    // 履歴変更通知
-    notifyHistoryChange(action, actionType) {
-        this.eventStore.emit(this.eventStore.eventTypes.HISTORY_CHANGE, {
-            action,
-            actionType,
+    /**
+     * ストロークアンドゥ
+     */
+    undoStroke(strokeId) {
+        this.engine.removeStroke(strokeId);
+        this.eventStore.emit(this.eventStore.eventTypes.STROKE_DELETE, { strokeId });
+    }
+    
+    /**
+     * ストロークリドゥ
+     */
+    redoStroke(strokeId) {
+        // 注意: 実際の実装では、ストロークデータを保存して復元する必要がある
+        console.log(`🔜 ストロークリドゥ: ${strokeId} (未完全実装)`);
+    }
+    
+    /**
+     * ツール変更アンドゥ
+     */
+    undoToolChange(previousTool) {
+        this.engine.setTool(previousTool);
+        this.eventStore.emit(this.eventStore.eventTypes.TOOL_CHANGE, { tool: previousTool });
+    }
+    
+    /**
+     * ツール変更リドゥ
+     */
+    redoToolChange(newTool) {
+        this.engine.setTool(newTool);
+        this.eventStore.emit(this.eventStore.eventTypes.TOOL_CHANGE, { tool: newTool });
+    }
+    
+    /**
+     * バッチ処理開始
+     */
+    startBatch(description = 'バッチ操作') {
+        if (this.batchingEnabled) return false;
+        
+        this.batchingEnabled = true;
+        this.currentBatch = {
+            type: this.actionTypes.BATCH,
+            description,
+            timestamp: Date.now(),
+            actions: []
+        };
+        
+        console.log(`🗂️ バッチ処理開始: ${description}`);
+        return true;
+    }
+    
+    /**
+     * バッチ処理終了
+     */
+    endBatch() {
+        if (!this.batchingEnabled || !this.currentBatch) return false;
+        
+        if (this.currentBatch.actions.length > 0) {
+            const batchAction = {
+                type: this.actionTypes.BATCH,
+                timestamp: this.currentBatch.timestamp,
+                data: {
+                    description: this.currentBatch.description,
+                    actionCount: this.currentBatch.actions.length
+                },
+                actions: this.currentBatch.actions,
+                undo: () => {
+                    // バッチアンドゥは addAction で処理
+                },
+                redo: () => {
+                    // バッチリドゥは addAction で処理
+                }
+            };
+            
+            this.undoStack.push(batchAction);
+            this.redoStack = [];
+            
+            console.log(`🗂️ バッチ処理終了: ${this.currentBatch.description} (${this.currentBatch.actions.length}件)`);
+        }
+        
+        this.batchingEnabled = false;
+        this.currentBatch = null;
+        this.notifyStateChange();
+        
+        return true;
+    }
+    
+    /**
+     * エンジン状態キャプチャ
+     */
+    captureEngineState() {
+        return {
+            activeStrokeCount: this.engine.activeStrokes.size,
+            currentTool: this.engine.currentTool,
+            canvasSize: {
+                width: this.engine.canvas.width,
+                height: this.engine.canvas.height
+            }
+        };
+    }
+    
+    /**
+     * 初期状態保存
+     */
+    saveInitialState() {
+        this.currentState = this.captureEngineState();
+        this.lastSavedState = { ...this.currentState };
+        
+        console.log('🗂️ 初期状態保存:', this.currentState);
+    }
+    
+    /**
+     * 状態変更通知
+     */
+    notifyStateChange() {
+        this.currentState = this.captureEngineState();
+        
+        this.eventStore.emit(this.eventStore.eventTypes.HISTORY_STATE_CHANGE, {
             canUndo: this.canUndo(),
             canRedo: this.canRedo(),
-            historyLength: this.history.length,
-            currentIndex: this.currentIndex
+            undoCount: this.undoStack.length,
+            redoCount: this.redoStack.length,
+            hasUnsavedChanges: this.hasUnsavedChanges()
         });
     }
     
-    // アクションID生成
-    generateActionId() {
-        return `action_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    /**
+     * アンドゥ可能判定
+     */
+    canUndo() {
+        return this.undoStack.length > 0;
     }
     
-    // 履歴クリア
-    clearHistory() {
-        this.history = [];
-        this.currentIndex = -1;
-        this.lastSnapshotIndex = -1;
+    /**
+     * リドゥ可能判定
+     */
+    canRedo() {
+        return this.redoStack.length > 0;
+    }
+    
+    /**
+     * 未保存変更判定
+     */
+    hasUnsavedChanges() {
+        return JSON.stringify(this.currentState) !== JSON.stringify(this.lastSavedState);
+    }
+    
+    /**
+     * 保存状態マーク
+     */
+    markAsSaved() {
+        this.lastSavedState = { ...this.currentState };
+        this.notifyStateChange();
         
-        this.notifyHistoryChange('clear');
-        console.log('🗑️ History cleared');
+        console.log('🗂️ 保存状態マーク');
     }
     
-    // 履歴統計取得
+    /**
+     * 履歴クリア
+     */
+    clearHistory() {
+        this.undoStack = [];
+        this.redoStack = [];
+        this.currentBatch = null;
+        this.batchingEnabled = false;
+        
+        this.notifyStateChange();
+        
+        console.log('🗂️ 履歴クリア');
+    }
+    
+    /**
+     * 履歴サイズ制限設定
+     */
+    setMaxHistorySize(size) {
+        this.maxHistorySize = Math.max(1, size);
+        
+        // 既存履歴のトリム
+        while (this.undoStack.length > this.maxHistorySize) {
+            this.undoStack.shift();
+        }
+        
+        console.log(`🗂️ 履歴サイズ制限: ${this.maxHistorySize}`);
+    }
+    
+    /**
+     * 記録有効/無効切替
+     */
+    setRecording(enabled) {
+        this.isRecording = enabled;
+        console.log(`🗂️ 履歴記録${enabled ? '有効' : '無効'}`);
+    }
+    
+    /**
+     * 履歴統計取得
+     */
     getHistoryStats() {
         const stats = {
-            totalActions: this.history.length,
-            currentIndex: this.currentIndex,
-            canUndo: this.canUndo(),
-            canRedo: this.canRedo(),
-            snapshotCount: this.history.filter(action => action.snapshot).length,
+            undoCount: this.undoStack.length,
+            redoCount: this.redoStack.length,
+            maxHistorySize: this.maxHistorySize,
+            isRecording: this.isRecording,
+            batchingEnabled: this.batchingEnabled,
+            hasUnsavedChanges: this.hasUnsavedChanges(),
             actionTypes: {}
         };
         
-        this.history.forEach(action => {
+        // アクション種別別統計
+        this.undoStack.forEach(action => {
             stats.actionTypes[action.type] = (stats.actionTypes[action.type] || 0) + 1;
         });
         
         return stats;
     }
     
-    // メモリ最適化
-    optimizeMemory() {
-        // 古いスナップショットの削除
-        const keepSnapshots = 5;
-        let snapshotCount = 0;
-        
-        for (let i = this.history.length - 1; i >= 0; i--) {
-            const action = this.history[i];
-            if (action.snapshot) {
-                snapshotCount++;
-                if (snapshotCount > keepSnapshots) {
-                    delete action.snapshot;
-                }
-            }
-        }
-        
-        console.log('🧹 Memory optimized: old snapshots removed');
-    }
-    
-    // デバッグ情報
-    getDebugInfo() {
+    /**
+     * デバッグ用履歴一覧
+     */
+    getHistoryList() {
         return {
-            historyLength: this.history.length,
-            currentIndex: this.currentIndex,
-            canUndo: this.canUndo(),
-            canRedo: this.canRedo(),
-            isRecording: this.isRecording,
-            batchSize: this.batchActions.length,
-            stats: this.getHistoryStats()
+            undoStack: this.undoStack.map(action => ({
+                type: action.type,
+                timestamp: action.timestamp,
+                data: action.data
+            })),
+            redoStack: this.redoStack.map(action => ({
+                type: action.type,
+                timestamp: action.timestamp,
+                data: action.data
+            }))
         };
-    }
-    
-    // クリーンアップ
-    destroy() {
-        clearTimeout(this.batchTimer);
-        this.clearHistory();
-        this.batchActions = [];
-        
-        console.log('✅ History controller destroyed');
     }
 }
