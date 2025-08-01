@@ -1,0 +1,177 @@
+{
+  "name": "modern-drawing-tool",
+  "version": "1.0.0-phase1",
+  "description": "モダンお絵かきツール Phase1: 統一座標基盤 + Chrome API活用",
+  "type": "module",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve": "vite --host",
+    "test": "echo 'Phase1: テスト機能はPhase2で実装予定' && exit 0",
+    "lint": "echo 'Phase1: リント機能はPhase2で実装予定' && exit 0",
+    "validate-phase1": "node scripts/validate-phase1.js"
+  },
+  "keywords": [
+    "drawing",
+    "webgl",
+    "canvas",
+    "coordinate-unified",
+    "chrome-api",
+    "digital-art",
+    "phase-development"
+  ],
+  "author": "Modern Drawing Tool Project",
+  "license": "MIT",
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "chroma-js": "^3.1.2",
+    "gl-matrix": "^3.4.3",
+    "hammerjs": "^2.0.8",
+    "lodash-es": "^4.17.21",
+    "mathjs": "^14.6.0",
+    "mitt": "^3.0.1",
+    "ogl": "^1.0.11",
+    "phosphor-icons": "^1.4.2",
+    "pointer-tracker": "^2.5.3",
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "@types/hammerjs": "^2.0.46",
+    "@types/node": "^20.0.0",  
+    "@types/three": "^0.178.1",
+    "@types/webgl2": "^0.0.6",
+    "vite": "^5.0.0"
+  },
+  "browserslist": [
+    "Chrome >= 90",
+    "Firefox >= 88", 
+    "Safari >= 14",
+    "Edge >= 90"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/example/modern-drawing-tool"
+  },
+  "bugs": {
+    "url": "https://github.com/example/modern-drawing-tool/issues"
+  },
+  "homepage": "https://github.com/example/modern-drawing-tool#readme",
+  "config": {
+    "phase": "1",
+    "nextPhase": "2",
+    "features": {
+      "coordinateUnifier": true,
+      "hybridRenderer": true,
+      "eventStore": true,
+      "basicTools": true,
+      "shortcutSystem": true,
+      "historySystem": true,
+      "phase2Ready": false,
+      "phase3Ready": false
+    }
+  },
+  "phase1": {
+    "description": "統一座標基盤 + 基本描画機能",
+    "completedFeatures": [
+      "CoordinateUnifier - Y軸問題完全解決",
+      "HybridRenderer - WebGL優先・Canvas2D併用",
+      "OGLInteractionEnhancer - 統一入力処理・UI生成",
+      "EventStore - mitt.js互換イベントバス",
+      "ShortcutController - キーボードショートカット管理", 
+      "HistoryController - アンドゥ・リドゥ・状態管理"
+    ],
+    "fileStructure": {
+      "core": [
+        "CoordinateUnifier.js",
+        "EventStore.js"
+      ],
+      "renderers": [
+        "HybridRenderer.js"
+      ],
+      "controllers": [
+        "OGLInteractionEnhancer.js",
+        "ShortcutController.js",
+        "HistoryController.js"
+      ]
+    },
+    "totalLines": "約6500-7500行",
+    "memoryFootprint": "軽量（基本機能のみ）",
+    "performance": "60fps保証・座標統一による最適化"
+  },
+  "phase2": {
+    "description": "Phase2実装予定: ツール・UI・カラー統合",
+    "plannedFeatures": [
+      "ToolProcessor - 全描画ツール実装",
+      "UIController - Adobe Fresco風UI",
+      "ColorProcessor - ふたば色・Chroma.js活用",
+      "VectorLayerProcessor - 非破壊レイヤー管理",
+      "CanvasController - キャンバス操作制御"
+    ],
+    "unlockConditions": [
+      "Phase1品質検証完了",
+      "座標統一システム安定動作確認",
+      "基本描画機能動作確認"
+    ]
+  },
+  "phase3": {
+    "description": "Phase3実装予定: Chrome API活用・高度機能",
+    "plannedFeatures": [
+      "OffscreenLayerProcessor - Chrome API活用並列処理",
+      "AnimationController - Storyboarder風アニメーション",
+      "ModernFileExporter - WebCodecs高速出力",
+      "MeshDeformController - LIVE2D風メッシュ変形"
+    ],
+    "unlockConditions": [
+      "Phase2品質検証完了",
+      "UIシステム安定動作確認",
+      "レイヤー管理システム動作確認"
+    ]
+  },
+  "technicalSpecs": {
+    "coordinateSystem": {
+      "unified": true,
+      "origin": "top-left",
+      "yDirection": "down",
+      "webglIntegration": "完全統一",
+      "canvas2dFallback": "座標統一保証"
+    },
+    "renderingEngine": {
+      "primary": "WebGL",
+      "fallback": "Canvas2D",
+      "coordination": "HybridRenderer統一制御",
+      "performance": "GPU加速・60fps保証"
+    },
+    "eventSystem": {
+      "architecture": "mitt.js互換EventStore",
+      "coupling": "完全疎結合",
+      "debugging": "イベントログ・統計機能",
+      "performance": "軽量・高速"
+    },
+    "inputHandling": {
+      "devices": ["マウス", "ペンタブレット", "トラックパッド"],
+      "coordination": "統一座標変換",
+      "precision": "ピクセルパーフェクト",
+      "nonTouch": "タッチデバイス非対応（効率化）"
+    }
+  },
+  "qualityAssurance": {
+    "coordinateAccuracy": "誤差0.1px以下保証",
+    "memoryManagement": "効率的スナップショット管理",
+    "performanceTarget": "60fps安定動作",
+    "browserSupport": "モダンブラウザ限定最適化",
+    "debuggingTools": "座標グリッド・性能監視・イベントログ"
+  },
+  "developmentNotes": {
+    "aiImplementation": "Claude AI実装効率最大化",
+    "phaseManagement": "段階的解封システム",
+    "codeQuality": "統一座標対応コーディング規約v4.0準拠",
+    "documentation": "実装計画書v3.1完全準拠",
+    "errorHandling": "緊急フォールバック・エラー復旧機能"
+  }
+}
