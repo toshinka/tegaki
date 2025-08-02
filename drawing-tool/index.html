@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>モダンお絵かきツール - Phase1.5対応版</title>
+    <style>
+        :root {
+            --main-color: #800000;
+            --sub-color: #aa5a56;
+            --light-bg: #e9c2ba;
+            --canvas-bg: #f0e0d6;
+            --app-bg: #ffffee;
+            --text-color: #800000;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--app-bg);
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* 最小限の静的レイアウト */
+        .app-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* サイドバー（JS制御対象） */
+        .sidebar {
+            width: 60px;
+            background: rgba(128, 0, 0, 0.05);
+            border-right: 1px solid var(--sub-color);
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            gap: 10px;
+            transition: width 0.3s ease, overflow 0.3s ease;
+        }
+
+        .sidebar.collapsed {
+            width: 0px;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        /* キャンバス領域（可変） */
+        .canvas-area {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--app-bg);
+            transition: all 0.3s ease;
+        }
+
+        .canvas-wrapper {
+            background: var(--canvas-bg);
+            border: 1px solid var(--main-color);
+            border-radius: 4px;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.15);
+            cursor: crosshair;
+            transition: all 0.3s ease;
+        }
+
+        #drawingCanvas {
+            display: block;
+            background: var(--canvas-bg);
+        }
+
+        /* ポップアップコンテナ（JS制御） */
+        #popupContainer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        /* フルスクリーンモード */
+        body.fullscreen-drawing .sidebar {
+            width: 0px;
+            overflow: hidden;
+        }
+
+        body.fullscreen-drawing .canvas-wrapper {
+            border: none;
+            border-radius: 0;
+            box-shadow: none;
+        }
+
+        /* 動的ツールボタン（JS生成） */
+        .tool-button {
+            width: 40px;
+            height: 40px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid var(--main-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 16px;
+            color: var(--main-color);
+        }
+
+        .tool-button:hover {
+            background: var(--light-bg);
+            transform: translateY(-1px);
+        }
+
+        .tool-button.active {
+            background: var(--main-color);
+            color: white;
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+
+        /* ポップアップパネル共通スタイル */
+        .popup-panel {
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(128, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 16px;
+            box-shadow: 0 8px 24px rgba(128, 0, 0, 0.15);
+            backdrop-filter: blur(10px);
+        }
+
+        .control-group {
+            margin-bottom: 12px;
+        }
+
+        .control-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-color);
+            margin-bottom: 6px;
+        }
+
+        .control-input {
+            width: 60px;
+            padding: 3px 6px;
+            border: 1px solid var(--sub-color);
+            border-radius: 3px;
+            font-size: 11px;
+            text-align: center;
+        }
+
+        .control-slider {
+            width: 100%;
+            margin: 4px 0;
+            -webkit-appearance: none;
+            height: 4px;
+            background: var(--light-bg);
+            border-radius: 2px;
+            outline: none;
+        }
+
+        .control-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: var(--main-color);
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        /* キーボードショートカット表示 */
+        .shortcut-hint {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(128, 0, 0, 0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .shortcut-hint.visible {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 最小限サイドバー（アイコンはJS生成） -->
+        <div class="sidebar" id="sidebar">
+            <!-- ツールアイコンはOGLInteractionEnhancer.jsで動的生成 -->
+        </div>
+
+        <!-- キャンバス領域（サイズはJS制御） -->
+        <div class="canvas-area" id="canvasArea">
+            <div class="canvas-wrapper" id="canvasWrapper">
+                <canvas id="drawingCanvas" width="800" height="600"></canvas>
+            </div>
+        </div>
+
+        <!-- ポップアップ用空コンテナ -->
+        <div id="popupContainer"></div>
+
+        <!-- ショートカットヒント -->
+        <div class="shortcut-hint" id="shortcutHint">
+            Tab: レイヤー | P: ツール | F: フルスクリーン | Esc: 閉じる
+        </div>
+    </div>
+
+    <!-- Phase1.5 メインスクリプト読み込み -->
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>

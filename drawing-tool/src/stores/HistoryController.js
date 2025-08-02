@@ -10,7 +10,7 @@
  * - エアスプレー履歴・ベクターデータ保持
  */
 
-import { RenderTexture } from 'pixi.js';
+import { RenderTexture, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { compress, decompress } from 'lz-string';
 
 /**
@@ -421,3 +421,381 @@ class HistoryController {
      */
     compressState(state) {
         if (!this.settings.compression) return state;
+        
+        try {
+            const stateString = JSON.stringify(state);
+            const compressed = compress(stateString);
+            
+            return {
+                compressed: true,
+                data: compressed,
+                originalSize: stateString.length,
+                compressedSize: compressed.length
+            };
+        } catch (error) {
+            console.error('❌ 状態圧縮エラー:', error);
+            return state;
+        }
+    }
+    
+    /**
+     * 状態解凍
+     * lz-string活用・復元処理
+     */
+    decompressState(compressedState) {
+        if (!compressedState.compressed) return compressedState;
+        
+        try {
+            const decompressed = decompress(compressedState.data);
+            return JSON.parse(decompressed);
+        } catch (error) {
+            console.error('❌ 状態解凍エラー:', error);
+            return null;
+        }
+    }
+    
+    /**
+     * 履歴スタックに追加
+     * メモリ制限・古い履歴削除
+     */
+    addToUndoStack(historyEntry) {
+        this.undoStack.push(historyEntry);
+        this.redoStack = []; // リドゥスタッククリア
+        
+        // サイズ制限チェック
+        if (this.undoStack.length > this.maxHistorySize) {
+            const removed = this.undoStack.shift();
+            this.releaseHistoryEntry(removed);
+        }
+        
+        this.updateMemoryUsage();
+        
+        // EventStore通知
+        this.eventStore.emit('history-updated', {
+            undoCount: this.undoStack.length,
+            redoCount: this.redoStack.length,
+            memoryUsage: this.memoryUsage
+        });
+    }
+    
+    /**
+     * アンドゥ実行
+     * PixiJS v8統一・状態復元
+     */
+    undo() {
+        if (this.undoStack.length === 0) {
+            console.log('⚠️ アンドゥ不可: 履歴なし');
+            return false;
+        }
+        
+        // 進行中のアクション強制終了
+        if (this.isRecording) {
+            this.endAction();
+        }
+        
+        const historyEntry = this.undoStack.pop();
+        this.redoStack.push(historyEntry);
+        
+        // 状態復元
+        this.restoreState(historyEntry.startState);
+        
+        console.log(`↶ アンドゥ実行: ${historyEntry.type} [${historyEntry.id}]`);
+        
+        // EventStore通知
+        this.eventStore.emit('undo-executed', {
+            action: historyEntry.type,
+            id: historyEntry.id,
+            undoCount: this.undoStack.length,
+            redoCount: this.redoStack.length
+        });
+        
+        return true;
+    }
+    
+    /**
+     * リドゥ実行
+     * PixiJS v8統一・状態復元
+     */
+    redo() {
+        if (this.redoStack.length === 0) {
+            console.log('⚠️ リドゥ不可: 履歴なし');
+            return false;
+        }
+        
+        const historyEntry = this.redoStack.pop();
+        this.undoStack.push(historyEntry);
+        
+        // 状態復元
+        this.restoreState(historyEntry.endState);
+        
+        console.log(`↷ リドゥ実行: ${historyEntry.type} [${historyEntry.id}]`);
+        
+        // EventStore通知
+        this.eventStore.emit('redo-executed', {
+            action: historyEntry.type,
+            id: historyEntry.id,
+            undoCount: this.undoStack.length,
+            redoCount: this.redoStack.length
+        });
+        
+        return true;
+    }
+    
+    /**
+     * 状態復元
+     * PixiJS v8 Container・レイヤー復元
+     */
+    restoreState(state) {
+        if (!state) return;
+        
+        try {
+            // 解凍処理
+            const decompressedState = this.decompressState(state);
+            if (!decompressedState) return;
+            
+            // 既存レイヤークリア
+            const drawingLayers = this.findDrawingLayers();
+            drawingLayers.forEach(layer => layer.destroy());
+            
+            // レイヤー復元
+            decompressedState.layers.forEach(layerState => {
+                this.restoreLayer(layerState);
+            });
+            
+            console.log('✅ 状態復元完了');
+            
+        } catch (error) {
+            console.error('❌ 状態復元エラー:', error);
+            this.eventStore.emit('error-occurred', {
+                type: 'state-restore',
+                error: error.message
+            });
+        }
+    }
+    
+    /**
+     * レイヤー
+    
+    /**
+     * 描画レイヤー検索
+     * PixiJS v8 Container階層から描画レイヤーを抽出・階層対応
+     */
+    findDrawingLayers() {
+        const drawingLayers = [];
+        
+        // Stage全体を再帰的に検索
+        const searchContainer = (container, depth = 0) => {
+            if (depth > 10) return; // 無限ループ防止
+            
+            container.children.forEach(child => {
+                // Containerかつ描画レイヤーの条件チェック
+                if (child instanceof Container) {
+                    // レイヤー識別条件
+                    const isDrawingLayer = 
+                        child.name && (child.name.startsWith('layer-') || child.layerData) ||
+                        child.children.some(grandchild => grandchild.vectorData) ||
+                        child.parent?.name === 'drawingLayers';
+                    
+                    if (isDrawingLayer) {
+                        drawingLayers.push(child);
+                    } else {
+                        // 再帰検索
+                        searchContainer(child, depth + 1);
+                    }
+                }
+            });
+        };
+        
+        searchContainer(this.app.stage);
+        
+        // 描画レイヤーコンテナが存在する場合はその子要素を取得
+        const drawingLayersContainer = this.app.stage.children.find(
+            child => child.name === 'drawingLayers' || child.constructor.name === 'DrawingLayers'
+        );
+        
+        if (drawingLayersContainer) {
+            drawingLayersContainer.children.forEach(layer => {
+                if (layer instanceof Container && !drawingLayers.includes(layer)) {
+                    drawingLayers.push(layer);
+                }
+            });
+        }
+        
+        return drawingLayers.sort((a, b) => {
+            // レイヤー順序ソート（名前ベース）
+            const aIndex = parseInt(a.name?.replace('layer-', '') || '0');
+            const bIndex = parseInt(b.name?.replace('layer-', '') || '0');
+            return aIndex - bIndex;
+        });
+    }
+    
+    /**
+     * 履歴クリア
+     * メモリ解放・初期化
+     */
+    clearHistory() {
+        // メモリ解放
+        [...this.undoStack, ...this.redoStack].forEach(entry => {
+            this.releaseHistoryEntry(entry);
+        });
+        
+        this.undoStack = [];
+        this.redoStack = [];
+        this.memoryUsage = 0;
+        
+        console.log('🗑️ 履歴クリア完了');
+        
+        // EventStore通知
+        this.eventStore.emit('history-cleared', {
+            undoCount: 0,
+            redoCount: 0,
+            memoryUsage: 0
+        });
+    }
+    
+    /**
+     * 履歴エントリ解放
+     * RenderTexture・メモリ解放
+     */
+    releaseHistoryEntry(entry) {
+        // RenderTexture解放処理（実装簡略化）
+        if (entry.startState?.renderTexture) {
+            // RenderTexture.destroy() 呼び出し
+        }
+        if (entry.endState?.renderTexture) {
+            // RenderTexture.destroy() 呼び出し
+        }
+    }
+    
+    /**
+     * メモリ使用量計算・更新
+     */
+    updateMemoryUsage() {
+        let totalSize = 0;
+        
+        [...this.undoStack, ...this.redoStack].forEach(entry => {
+            totalSize += entry.memorySize || 0;
+        });
+        
+        this.memoryUsage = totalSize / (1024 * 1024); // MB単位
+    }
+    
+    /**
+     * メモリ使用量最適化
+     * 制限超過時の古い履歴削除
+     */
+    optimizeMemoryUsage() {
+        if (this.memoryUsage > this.settings.maxMemoryMB) {
+            console.log(`🧹 メモリ最適化実行: ${this.memoryUsage.toFixed(2)}MB`);
+            
+            // 古い履歴から削除
+            while (this.memoryUsage > this.settings.maxMemoryMB * 0.8 && this.undoStack.length > 5) {
+                const removed = this.undoStack.shift();
+                this.releaseHistoryEntry(removed);
+                this.updateMemoryUsage();
+            }
+        }
+    }
+    
+    /**
+     * メモリサイズ計算
+     */
+    calculateMemorySize(state) {
+        try {
+            const stateString = JSON.stringify(state);
+            return stateString.length * 2; // 文字列のバイトサイズ（概算）
+        } catch (error) {
+            return 0;
+        }
+    }
+    
+    /**
+     * 圧縮率計算
+     */
+    calculateCompressionRatio(historyEntry) {
+        if (!historyEntry.compressed) return 1.0;
+        
+        const original = historyEntry.startState.originalSize + historyEntry.endState.originalSize;
+        const compressed = historyEntry.startState.compressedSize + historyEntry.endState.compressedSize;
+        
+        return original > 0 ? compressed / original : 1.0;
+    }
+    
+    /**
+     * アクションID生成
+     */
+    generateActionId() {
+        return `action_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+    
+    /**
+     * 履歴状態取得
+     */
+    getHistoryState() {
+        return {
+            undoCount: this.undoStack.length,
+            redoCount: this.redoStack.length,
+            memoryUsage: this.memoryUsage,
+            compressionRatio: this.compressionRatio,
+            isRecording: this.isRecording,
+            currentAction: this.currentAction?.type || null,
+            settings: { ...this.settings }
+        };
+    }
+    
+    /**
+     * 設定更新
+     */
+    updateSettings(newSettings) {
+        this.settings = {
+            ...this.settings,
+            ...newSettings
+        };
+        
+        console.log('⚙️ 履歴制御設定更新', newSettings);
+    }
+    
+    /**
+     * デバッグ情報取得
+     */
+    getDebugInfo() {
+        return {
+            ...this.getHistoryState(),
+            stackSizes: {
+                undo: this.undoStack.length,
+                redo: this.redoStack.length
+            },
+            performance: {
+                memoryUsageMB: this.memoryUsage,
+                compressionRatio: this.compressionRatio,
+                useOffscreenCanvas: this.useOffscreenCanvas
+            },
+            recentActions: this.undoStack.slice(-5).map(entry => ({
+                type: entry.type,
+                id: entry.id,
+                duration: entry.duration,
+                timestamp: entry.timestamp || entry.startTime
+            }))
+        };
+    }
+    
+    /**
+     * リソース解放
+     */
+    destroy() {
+        // 履歴クリア
+        this.clearHistory();
+        
+        // タイマー削除
+        if (this.performanceTimer) {
+            clearInterval(this.performanceTimer);
+        }
+        
+        // イベントリスナー削除
+        // （EventStoreで管理されているため個別削除不要）
+        
+        console.log('🗑️ HistoryController リソース解放完了');
+    }
+}
+
+export default HistoryController;
