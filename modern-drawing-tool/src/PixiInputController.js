@@ -85,6 +85,279 @@ export class PixiInputController {
     }
     
     /**
+     * PixiJS InteractionManager統合設定
+     */
+    setupPixiInteraction() {
+        const stage = this.app.stage;
+        
+        // PixiJS統一ポインターイベント設定
+        stage.interactive = true;
+        stage.eventMode = 'static';
+        stage.hitArea = new PIXI.Rectangle(0, 0, this.app.view.width, this.app.view.height);
+        
+        // ポインターダウン（描画開始）
+        stage.on('pointerdown', (event) => {
+            this.handlePointerDown(event);
+        });
+        
+        // ポインタームーブ（描画継続）
+        stage.on('pointermove', (event) => {
+            this.handlePointerMove(event);
+        });
+        
+        // ポインターアップ（描画終了）
+        stage.on('pointerup', (event) => {
+            this.handlePointerUp(event);
+        });
+        
+        // ポインターアウト（描画中断）
+        stage.on('pointerout', (event) => {
+            this.handlePointerOut(event);
+        });
+        
+        // コンテキストメニュー無効化
+        this.app.view.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+        
+        console.log('🎯 PixiJS InteractionManager統合完了');
+    }
+    
+    /**
+     * ペンタブレット・圧力感知設定
+     */
+    setupPressureSensitivity() {
+        // Pointer Events API活用
+        this.app.view.addEventListener('pointerdown', (event) => {
+            this.updateInputDevice(event);
+        });
+        
+        this.app.view.addEventListener('pointermove', (event) => {
+            this.updateInputDevice(event);
+        });
+        
+        console.log('🖊️ ペンタブレット・圧力感知設定完了');
+    }
+    
+    /**
+     * 入力デバイス情報更新
+     */
+    updateInputDevice(event) {
+        try {
+            // PointerEvent詳細情報取得
+            this.inputDevice.type = event.pointerType || 'mouse';
+            this.inputDevice.pressure = event.pressure || 1.0;
+            this.inputDevice.tiltX = event.tiltX || 0;
+            this.inputDevice.tiltY = event.tiltY || 0;
+            this.inputDevice.twist = event.twist || 0;
+            
+            // 消しゴム検出（Wacom等対応）
+            this.inputDevice.isEraser = event.pointerType === 'pen' && 
+                                       (event.buttons === 32 || event.button === 5);
+            
+            // 圧力感度統計更新
+            if (event.pressure && event.pressure !== 1.0) {
+                this.stats.pressureEvents++;
+            }
+            
+        } catch (error) {
+            console.error('❌ 入力デバイス情報更新エラー:', error);
+            this.stats.errors++;
+        }
+    }
+    
+    /**
+     * キーボード入力統合
+     */
+    setupKeyboardIntegration() {
+        document.addEventListener('keydown', (event) => {
+            this.handleKeyDown(event);
+        });
+        
+        document.addEventListener('keyup', (event) => {
+            this.handleKeyUp(event);
+        });
+        
+        console.log('⌨️ キーボード入力統合完了');
+    }
+    
+    /**
+     * 入力デバイス検出
+     */
+    detectInputDevices() {
+        // タッチデバイス検出（非対応警告）
+        if ('ontouchstart' in window) {
+            console.warn('⚠️ タッチデバイス検出: 本アプリはマウス・ペンタブレット専用です');
+        }
+        
+        // ペンタブレット検出
+        if (navigator.maxTouchPoints > 1) {
+            console.log('🖊️ ペンタブレット対応デバイス検出');
+        }
+        
+        console.log('🔍 入力デバイス検出完了');
+    }
+    
+    /**
+     * EventStore連携設定
+     */
+    setupEventStoreIntegration() {
+        // 描画制御イベント購読
+        this.eventStore.on('draw:tool:change', (data) => {
+            // this.handleToolChange(data);   // 🔒Phase2解封
+        });
+        
+        this.eventStore.on('input:force:stop', () => {
+            this.forceStopDrawing();
+        });
+        
+        console.log('📡 EventStore入力連携設定完了');
+    }
+    
+    /**
+     * ポインターダウン処理
+     */
+    handlePointerDown(event) {
+        try {
+            this.stats.totalEvents++;
+            this.stats.lastInputTime = Date.now();
+            
+            // PixiJS統一座標取得
+            const pixiPos = event.data.getLocalPosition(this.app.stage);
+            
+            // 描画開始
+            this.startDrawing({
+                position: pixiPos,
+                pressure: this.inputDevice.pressure,
+                device: this.inputDevice,
+                timestamp: Date.now()
+            });
+            
+            // EventStore通知
+            this.eventStore.emit('input:pointer:down', {
+                pixi: pixiPos,
+                global: event.data.global,
+                device: this.inputDevice,
+                drawing: this.isDrawing
+            });
+            
+        } catch (error) {
+            console.error('❌ ポインターダウン処理エラー:', error);
+            this.stats.errors++;
+        }
+    }
+    
+    /**
+     * ポインタームーブ処理
+     */
+    handlePointerMove(event) {
+        try {
+            this.stats.totalEvents++;
+            
+            // PixiJS統一座標取得
+            const pixiPos = event.data.getLocalPosition(this.app.stage);
+            
+            if (this.isDrawing) {
+                this.stats.drawingEvents++;
+                
+                // 描画継続
+                this.continueDrawing({
+                    position: pixiPos,
+                    pressure: this.inputDevice.pressure,
+                    device: this.inputDevice,
+                    timestamp: Date.now()
+                });
+            }
+            
+            // EventStore通知
+            this.eventStore.emit('input:pointer:move', {
+                pixi: pixiPos,
+                global: event.data.global,
+                device: this.inputDevice,
+                drawing: this.isDrawing
+            });
+            
+        } catch (error) {
+            console.error('❌ ポインタームーブ処理エラー:', error);
+            this.stats.errors++;
+        }
+    }
+    
+    /**
+     * ポインターアップ処理
+     */
+    handlePointerUp(event) {
+        try {
+            this.stats.totalEvents++;
+            
+            // PixiJS統一座標取得
+            const pixiPos = event.data.getLocalPosition(this.app.stage);
+            
+            if (this.isDrawing) {
+                // 描画終了
+                this.endDrawing({
+                    position: pixiPos,
+                    pressure: this.inputDevice.pressure,
+                    device: this.inputDevice,
+                    timestamp: Date.now()
+                });
+            }
+            
+            // EventStore通知
+            this.eventStore.emit('input:pointer:up', {
+                pixi: pixiPos,
+                global: event.data.global,
+                device: this.inputDevice,
+                drawing: false
+            });
+            
+        } catch (error) {
+            console.error('❌ ポインターアップ処理エラー:', error);
+            this.stats.errors++;
+        }
+    }
+    
+    /**
+     * ポインターアウト処理（描画中断）
+     */
+    handlePointerOut(event) {
+        try {
+            if (this.isDrawing) {
+                console.log('🎯 ポインターアウト: 描画中断');
+                this.endDrawing({
+                    interrupted: true,
+                    timestamp: Date.now()
+                });
+            }
+            
+        } catch (error) {
+            console.error('❌ ポインターアウト処理エラー:', error);
+            this.stats.errors++;
+        }
+    }
+    
+    /**
+     * キーボードイベント処理
+     */
+    handleKeyDown(event) {
+        try {
+            // EventStore経由でキーイベント通知
+            this.eventStore.emit('input:key:down', {
+                key: event.key,
+                code: event.code,
+                ctrl: event.ctrlKey,
+                shift: event.shiftKey,
+                alt: event.altKey,
+                meta: event.metaKey
+            });
+            
+        } catch (error) {
+            console.error('❌ キーダウン処理エラー:', error);
+            this.stats.errors++;
+        }
+    }
+    
+    /**
      * キーアップ処理
      */
     handleKeyUp(event) {
@@ -456,276 +729,4 @@ export class PixiInputController {
             console.error('❌ 入力制御破棄エラー:', error);
         }
     }
-}errors++;
-        }
-    }
-    
-    /**
-     * PixiJS InteractionManager統合設定
-     */
-    setupPixiInteraction() {
-        const stage = this.app.stage;
-        
-        // PixiJS統一ポインターイベント設定
-        stage.interactive = true;
-        stage.hitArea = new PIXI.Rectangle(0, 0, this.app.view.width, this.app.view.height);
-        
-        // ポインターダウン（描画開始）
-        stage.on('pointerdown', (event) => {
-            this.handlePointerDown(event);
-        });
-        
-        // ポインタームーブ（描画継続）
-        stage.on('pointermove', (event) => {
-            this.handlePointerMove(event);
-        });
-        
-        // ポインターアップ（描画終了）
-        stage.on('pointerup', (event) => {
-            this.handlePointerUp(event);
-        });
-        
-        // ポインターアウト（描画中断）
-        stage.on('pointerout', (event) => {
-            this.handlePointerOut(event);
-        });
-        
-        // コンテキストメニュー無効化
-        this.app.view.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-        });
-        
-        console.log('🎯 PixiJS InteractionManager統合完了');
-    }
-    
-    /**
-     * ペンタブレット・圧力感知設定
-     */
-    setupPressureSensitivity() {
-        // Pointer Events API活用
-        this.app.view.addEventListener('pointerdown', (event) => {
-            this.updateInputDevice(event);
-        });
-        
-        this.app.view.addEventListener('pointermove', (event) => {
-            this.updateInputDevice(event);
-        });
-        
-        console.log('🖊️ ペンタブレット・圧力感知設定完了');
-    }
-    
-    /**
-     * 入力デバイス情報更新
-     */
-    updateInputDevice(event) {
-        try {
-            // PointerEvent詳細情報取得
-            this.inputDevice.type = event.pointerType || 'mouse';
-            this.inputDevice.pressure = event.pressure || 1.0;
-            this.inputDevice.tiltX = event.tiltX || 0;
-            this.inputDevice.tiltY = event.tiltY || 0;
-            this.inputDevice.twist = event.twist || 0;
-            
-            // 消しゴム検出（Wacom等対応）
-            this.inputDevice.isEraser = event.pointerType === 'pen' && 
-                                       (event.buttons === 32 || event.button === 5);
-            
-            // 圧力感度統計更新
-            if (event.pressure && event.pressure !== 1.0) {
-                this.stats.pressureEvents++;
-            }
-            
-        } catch (error) {
-            console.error('❌ 入力デバイス情報更新エラー:', error);
-            this.stats.errors++;
-        }
-    }
-    
-    /**
-     * キーボード入力統合
-     */
-    setupKeyboardIntegration() {
-        document.addEventListener('keydown', (event) => {
-            this.handleKeyDown(event);
-        });
-        
-        document.addEventListener('keyup', (event) => {
-            this.handleKeyUp(event);
-        });
-        
-        console.log('⌨️ キーボード入力統合完了');
-    }
-    
-    /**
-     * 入力デバイス検出
-     */
-    detectInputDevices() {
-        // タッチデバイス検出（非対応警告）
-        if ('ontouchstart' in window) {
-            console.warn('⚠️ タッチデバイス検出: 本アプリはマウス・ペンタブレット専用です');
-        }
-        
-        // ペンタブレット検出
-        if (navigator.maxTouchPoints > 1) {
-            console.log('🖊️ ペンタブレット対応デバイス検出');
-        }
-        
-        console.log('🔍 入力デバイス検出完了');
-    }
-    
-    /**
-     * EventStore連携設定
-     */
-    setupEventStoreIntegration() {
-        // 描画制御イベント購読
-        this.eventStore.on('draw:tool:change', (data) => {
-            // this.handleToolChange(data);   // 🔒Phase2解封
-        });
-        
-        this.eventStore.on('input:force:stop', () => {
-            this.forceStopDrawing();
-        });
-        
-        console.log('📡 EventStore入力連携設定完了');
-    }
-    
-    /**
-     * ポインターダウン処理
-     */
-    handlePointerDown(event) {
-        try {
-            this.stats.totalEvents++;
-            this.stats.lastInputTime = Date.now();
-            
-            // PixiJS統一座標取得
-            const pixiPos = event.data.getLocalPosition(this.app.stage);
-            
-            // 描画開始
-            this.startDrawing({
-                position: pixiPos,
-                pressure: this.inputDevice.pressure,
-                device: this.inputDevice,
-                timestamp: Date.now()
-            });
-            
-            // EventStore通知
-            this.eventStore.emit('input:pointer:down', {
-                pixi: pixiPos,
-                global: event.data.global,
-                device: this.inputDevice,
-                drawing: this.isDrawing
-            });
-            
-        } catch (error) {
-            console.error('❌ ポインターダウン処理エラー:', error);
-            this.stats.errors++;
-        }
-    }
-    
-    /**
-     * ポインタームーブ処理
-     */
-    handlePointerMove(event) {
-        try {
-            this.stats.totalEvents++;
-            
-            // PixiJS統一座標取得
-            const pixiPos = event.data.getLocalPosition(this.app.stage);
-            
-            if (this.isDrawing) {
-                this.stats.drawingEvents++;
-                
-                // 描画継続
-                this.continueDrawing({
-                    position: pixiPos,
-                    pressure: this.inputDevice.pressure,
-                    device: this.inputDevice,
-                    timestamp: Date.now()
-                });
-            }
-            
-            // EventStore通知
-            this.eventStore.emit('input:pointer:move', {
-                pixi: pixiPos,
-                global: event.data.global,
-                device: this.inputDevice,
-                drawing: this.isDrawing
-            });
-            
-        } catch (error) {
-            console.error('❌ ポインタームーブ処理エラー:', error);
-            this.stats.errors++;
-        }
-    }
-    
-    /**
-     * ポインターアップ処理
-     */
-    handlePointerUp(event) {
-        try {
-            this.stats.totalEvents++;
-            
-            // PixiJS統一座標取得
-            const pixiPos = event.data.getLocalPosition(this.app.stage);
-            
-            if (this.isDrawing) {
-                // 描画終了
-                this.endDrawing({
-                    position: pixiPos,
-                    pressure: this.inputDevice.pressure,
-                    device: this.inputDevice,
-                    timestamp: Date.now()
-                });
-            }
-            
-            // EventStore通知
-            this.eventStore.emit('input:pointer:up', {
-                pixi: pixiPos,
-                global: event.data.global,
-                device: this.inputDevice,
-                drawing: false
-            });
-            
-        } catch (error) {
-            console.error('❌ ポインターアップ処理エラー:', error);
-            this.stats.errors++;
-        }
-    }
-    
-    /**
-     * ポインターアウト処理（描画中断）
-     */
-    handlePointerOut(event) {
-        try {
-            if (this.isDrawing) {
-                console.log('🎯 ポインターアウト: 描画中断');
-                this.endDrawing({
-                    interrupted: true,
-                    timestamp: Date.now()
-                });
-            }
-            
-        } catch (error) {
-            console.error('❌ ポインターアウト処理エラー:', error);
-            this.stats.errors++;
-        }
-    }
-    
-    /**
-     * キーボードイベント処理
-     */
-    handleKeyDown(event) {
-        try {
-            // EventStore経由でキーイベント通知
-            this.eventStore.emit('input:key:down', {
-                key: event.key,
-                code: event.code,
-                ctrl: event.ctrlKey,
-                shift: event.shiftKey,
-                alt: event.altKey,
-                meta: event.metaKey
-            });
-            
-        } catch (error) {
-            console.error('❌ キーダウン処理エラー:', error);
-            this.stats.
+}
