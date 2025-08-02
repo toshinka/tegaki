@@ -3,7 +3,7 @@
  * モダンお絵かきツール v3.3 - Phase1統一入力システム
  * 
  * 機能:
- * - PixiJS v8統一入力処理・EventSystem活用
+ * - PixiJS v8統一入力処理・EventSystem活용
  * - マウス・タッチ・ペン統合制御
  * - 筆圧感知・座標精度・Chrome API統合
  * - ツール切り替え・設定管理
@@ -65,195 +65,6 @@ class PixiV8InputController {
     }
     
     /**
-     * 塗りつぶし処理（プレースホルダー）
-     */
-    fillArea(toolEvent) {
-        console.log(`🪣 塗りつぶし - 座標: (${toolEvent.x}, ${toolEvent.y})`);
-    }
-    
-    /**
-     * 選択開始処理（プレースホルダー）
-     */
-    startSelection(toolEvent) {
-        console.log('⬚ 選択開始');
-    }
-    
-    updateSelection(toolEvent) {
-        console.log('⬚ 選択更新');
-    }
-    
-    endSelection(toolEvent) {
-        console.log('⬚ 選択終了');
-    }
-    
-    /**
-     * ズーム処理
-     * PixiJS v8統一座標・中心点ズーム
-     */
-    handleZoom(zoomFactor, centerPoint) {
-        const stage = this.stage;
-        const oldScale = stage.scale.x;
-        const newScale = Math.max(0.1, Math.min(10, oldScale * zoomFactor));
-        
-        if (newScale !== oldScale) {
-            // 中心点を基準にズーム
-            const worldPos = stage.toLocal(centerPoint);
-            
-            stage.scale.set(newScale);
-            
-            const newScreenPos = stage.toGlobal(worldPos);
-            stage.x -= (newScreenPos.x - centerPoint.x);
-            stage.y -= (newScreenPos.y - centerPoint.y);
-            
-            console.log(`🔍 ズーム: ${newScale.toFixed(2)}x`);
-        }
-    }
-    
-    /**
-     * ツール設定
-     * ツール切り替え・設定適用
-     */
-    setTool(toolName) {
-        if (this.toolConfig[toolName]) {
-            const previousTool = this.currentTool;
-            this.currentTool = toolName;
-            
-            if (this.onToolChange) {
-                this.onToolChange({
-                    previousTool: previousTool,
-                    currentTool: toolName,
-                    toolConfig: { ...this.toolConfig[toolName] }
-                });
-            }
-            
-            console.log(`🔧 ツール切り替え: ${previousTool} → ${toolName}`);
-        }
-    }
-    
-    /**
-     * ツールサイズ調整
-     * 現在ツールのサイズ変更
-     */
-    adjustToolSize(delta) {
-        const config = this.toolConfig[this.currentTool];
-        if (config && config.size !== undefined) {
-            config.size = Math.max(1, Math.min(100, config.size + delta));
-            console.log(`📏 ツールサイズ調整: ${config.size}px`);
-        }
-    }
-    
-    /**
-     * 一時ツール設定
-     * スペースキー等での一時切り替え
-     */
-    setTemporaryTool(toolName) {
-        if (!this.previousTool) {
-            this.previousTool = this.currentTool;
-            this.setTool(toolName);
-        }
-    }
-    
-    /**
-     * 一時ツール復元
-     * 元のツールに戻す
-     */
-    restoreFromTemporaryTool() {
-        if (this.previousTool) {
-            this.setTool(this.previousTool);
-            this.previousTool = null;
-        }
-    }
-    
-    /**
-     * ツール設定更新
-     * 外部からの設定変更
-     */
-    updateToolConfig(toolName, newConfig) {
-        if (this.toolConfig[toolName]) {
-            this.toolConfig[toolName] = {
-                ...this.toolConfig[toolName],
-                ...newConfig
-            };
-            console.log(`⚙️ ツール設定更新: ${toolName}`, newConfig);
-        }
-    }
-    
-    /**
-     * 筆圧設定更新
-     */
-    updatePressureSettings(newSettings) {
-        this.pressureSettings = {
-            ...this.pressureSettings,
-            ...newSettings
-        };
-        console.log('⚙️ 筆圧設定更新', this.pressureSettings);
-    }
-    
-    /**
-     * 入力状態リセット
-     * 緊急時・状態クリア
-     */
-    resetInputState() {
-        this.isPointerDown = false;
-        this.pointerHistory = [];
-        
-        if (this.pointerCapture.capturedPointerId !== null) {
-            this.app.view.releasePointerCapture?.(this.pointerCapture.capturedPointerId);
-            this.pointerCapture.capturedPointerId = null;
-        }
-        
-        console.log('🔄 入力状態リセット完了');
-    }
-    
-    /**
-     * デバッグ情報取得
-     */
-    getDebugInfo() {
-        return {
-            currentTool: this.currentTool,
-            isPointerDown: this.isPointerDown,
-            lastPosition: {
-                x: this.lastPointerPosition.x,
-                y: this.lastPointerPosition.y
-            },
-            pointerHistoryLength: this.pointerHistory.length,
-            pressureSettings: { ...this.pressureSettings },
-            toolConfig: { ...this.toolConfig[this.currentTool] },
-            pointerCapture: {
-                enabled: this.pointerCapture.enabled,
-                captured: this.pointerCapture.capturedPointerId !== null
-            }
-        };
-    }
-    
-    /**
-     * リソース解放
-     */
-    destroy() {
-        // イベントリスナー削除
-        this.stage.off('pointerdown');
-        this.stage.off('pointermove');
-        this.stage.off('pointerup');
-        this.stage.off('pointerupoutside');
-        this.stage.off('wheel');
-        
-        document.removeEventListener('keydown', this.handleKeyDown.bind(this));
-        document.removeEventListener('keyup', this.handleKeyUp.bind(this));
-        
-        // ポインターキャプチャ解除
-        this.resetInputState();
-        
-        // コールバック削除
-        this.onDrawingStart = null;
-        this.onDrawingUpdate = null;
-        this.onDrawingEnd = null;
-        this.onToolChange = null;
-        
-        console.log('🗑️ PixiV8InputController リソース解放完了');
-    }
-}
-
-export default PixiV8InputController;
      * PixiJS v8統一イベントリスナー設定
      * EventSystem活用・DOM競合根絶
      */
@@ -643,3 +454,192 @@ export default PixiV8InputController;
     }
     
     /**
+     * 塗りつぶし処理（プレースホルダー）
+     */
+    fillArea(toolEvent) {
+        console.log(`🪣 塗りつぶし - 座標: (${toolEvent.x}, ${toolEvent.y})`);
+    }
+    
+    /**
+     * 選択開始処理（プレースホルダー）
+     */
+    startSelection(toolEvent) {
+        console.log('⬚ 選択開始');
+    }
+    
+    updateSelection(toolEvent) {
+        console.log('⬚ 選択更新');
+    }
+    
+    endSelection(toolEvent) {
+        console.log('⬚ 選択終了');
+    }
+    
+    /**
+     * ズーム処理
+     * PixiJS v8統一座標・中心点ズーム
+     */
+    handleZoom(zoomFactor, centerPoint) {
+        const stage = this.stage;
+        const oldScale = stage.scale.x;
+        const newScale = Math.max(0.1, Math.min(10, oldScale * zoomFactor));
+        
+        if (newScale !== oldScale) {
+            // 中心点を基準にズーム
+            const worldPos = stage.toLocal(centerPoint);
+            
+            stage.scale.set(newScale);
+            
+            const newScreenPos = stage.toGlobal(worldPos);
+            stage.x -= (newScreenPos.x - centerPoint.x);
+            stage.y -= (newScreenPos.y - centerPoint.y);
+            
+            console.log(`🔍 ズーム: ${newScale.toFixed(2)}x`);
+        }
+    }
+    
+    /**
+     * ツール設定
+     * ツール切り替え・設定適用
+     */
+    setTool(toolName) {
+        if (this.toolConfig[toolName]) {
+            const previousTool = this.currentTool;
+            this.currentTool = toolName;
+            
+            if (this.onToolChange) {
+                this.onToolChange({
+                    previousTool: previousTool,
+                    currentTool: toolName,
+                    toolConfig: { ...this.toolConfig[toolName] }
+                });
+            }
+            
+            console.log(`🔧 ツール切り替え: ${previousTool} → ${toolName}`);
+        }
+    }
+    
+    /**
+     * ツールサイズ調整
+     * 現在ツールのサイズ変更
+     */
+    adjustToolSize(delta) {
+        const config = this.toolConfig[this.currentTool];
+        if (config && config.size !== undefined) {
+            config.size = Math.max(1, Math.min(100, config.size + delta));
+            console.log(`📏 ツールサイズ調整: ${config.size}px`);
+        }
+    }
+    
+    /**
+     * 一時ツール設定
+     * スペースキー等での一時切り替え
+     */
+    setTemporaryTool(toolName) {
+        if (!this.previousTool) {
+            this.previousTool = this.currentTool;
+            this.setTool(toolName);
+        }
+    }
+    
+    /**
+     * 一時ツール復元
+     * 元のツールに戻す
+     */
+    restoreFromTemporaryTool() {
+        if (this.previousTool) {
+            this.setTool(this.previousTool);
+            this.previousTool = null;
+        }
+    }
+    
+    /**
+     * ツール設定更新
+     * 外部からの設定変更
+     */
+    updateToolConfig(toolName, newConfig) {
+        if (this.toolConfig[toolName]) {
+            this.toolConfig[toolName] = {
+                ...this.toolConfig[toolName],
+                ...newConfig
+            };
+            console.log(`⚙️ ツール設定更新: ${toolName}`, newConfig);
+        }
+    }
+    
+    /**
+     * 筆圧設定更新
+     */
+    updatePressureSettings(newSettings) {
+        this.pressureSettings = {
+            ...this.pressureSettings,
+            ...newSettings
+        };
+        console.log('⚙️ 筆圧設定更新', this.pressureSettings);
+    }
+    
+    /**
+     * 入力状態リセット
+     * 緊急時・状態クリア
+     */
+    resetInputState() {
+        this.isPointerDown = false;
+        this.pointerHistory = [];
+        
+        if (this.pointerCapture.capturedPointerId !== null) {
+            this.app.view.releasePointerCapture?.(this.pointerCapture.capturedPointerId);
+            this.pointerCapture.capturedPointerId = null;
+        }
+        
+        console.log('🔄 入力状態リセット完了');
+    }
+    
+    /**
+     * デバッグ情報取得
+     */
+    getDebugInfo() {
+        return {
+            currentTool: this.currentTool,
+            isPointerDown: this.isPointerDown,
+            lastPosition: {
+                x: this.lastPointerPosition.x,
+                y: this.lastPointerPosition.y
+            },
+            pointerHistoryLength: this.pointerHistory.length,
+            pressureSettings: { ...this.pressureSettings },
+            toolConfig: { ...this.toolConfig[this.currentTool] },
+            pointerCapture: {
+                enabled: this.pointerCapture.enabled,
+                captured: this.pointerCapture.capturedPointerId !== null
+            }
+        };
+    }
+    
+    /**
+     * リソース解放
+     */
+    destroy() {
+        // イベントリスナー削除
+        this.stage.off('pointerdown');
+        this.stage.off('pointermove');
+        this.stage.off('pointerup');
+        this.stage.off('pointerupoutside');
+        this.stage.off('wheel');
+        
+        document.removeEventListener('keydown', this.handleKeyDown.bind(this));
+        document.removeEventListener('keyup', this.handleKeyUp.bind(this));
+        
+        // ポインターキャプチャ解除
+        this.resetInputState();
+        
+        // コールバック削除
+        this.onDrawingStart = null;
+        this.onDrawingUpdate = null;
+        this.onDrawingEnd = null;
+        this.onToolChange = null;
+        
+        console.log('🗑️ PixiV8InputController リソース解放完了');
+    }
+}
+
+export default PixiV8InputController;
