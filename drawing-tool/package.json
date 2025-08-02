@@ -1,0 +1,30 @@
+{
+  "name": "drawing-tool",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@phosphor-icons/core": "^2.1.1",
+    "@pixi/particle-emitter": "^5.0.8",
+    "chroma-js": "^3.1.2",
+    "lodash-es": "^4.17.21",
+    "lz-string": "^1.5.0",
+    "mitt": "^3.0.1",
+    "pixi-spine": "^4.0.6",
+    "pixi.js": "^8.11.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.9",
+    "@vitejs/plugin-legacy": "^5.4.3",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "typescript": "^5.9.2",
+    "vite": "^5.4.19"
+  }
+}
