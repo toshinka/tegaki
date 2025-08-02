@@ -27,11 +27,11 @@
   "author": "Modern Drawing Tool Project",
   "license": "MIT",
   "dependencies": {
-    "pixi.js": "^7.3.0",
-    "mitt": "^3.0.1",
     "chroma-js": "^3.1.2",
     "lodash-es": "^4.17.21",
-    "phosphor-icons": "^1.4.2"
+    "mitt": "^3.0.1",
+    "phosphor-icons": "^1.4.2",
+    "pixi.js": "^8.11.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
@@ -137,7 +137,7 @@
     "renderingEngine": {
       "primary": "PixiJS v7.3+ WebGL",
       "fallback": "PixiJS Canvas",
-      "coordination": "PixiJS単一エンジン統一制御",  
+      "coordination": "PixiJS単一エンジン統一制御",
       "performance": "PixiJS GPU加速・60fps保証"
     },
     "eventSystem": {
@@ -147,7 +147,11 @@
       "performance": "軽量・高速"
     },
     "inputHandling": {
-      "devices": ["マウス", "ペンタブレット", "トラックパッド"],
+      "devices": [
+        "マウス",
+        "ペンタブレット",
+        "トラックパッド"
+      ],
       "coordination": "PixiJS統一座標変換",
       "precision": "ピクセルパーフェクト",
       "nonTouch": "タッチデバイス非対応（効率化）"
