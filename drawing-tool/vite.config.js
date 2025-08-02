@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import legacy from '@vitejs/plugin-legacy';
+import { resolve } from 'path';
 
 export default defineConfig({
   // PixiJS v8 ESM最適化設定
@@ -19,17 +20,6 @@ export default defineConfig({
         // PixiJS v8チャンク最適化
         manualChunks: {
           'pixi-core': ['pixi.js'],
-          'pixi-extensions': [
-            '@pixi/filters',
-            '@pixi/mesh',
-            '@pixi/particle-emitter'
-          ],
-          'pixi-advanced': [
-            'pixi-spine',
-            'pixi-sound',
-            'pixi-projection',
-            '@pixi/tilemap'
-          ],
           'utilities': [
             'mitt',
             'lodash-es',
@@ -56,37 +46,35 @@ export default defineConfig({
     }
   },
   
-  // PixiJS v8 ESM最適化
+  // PixiJS v8 ESM最適化（エラー修正版）
   optimizeDeps: {
     include: [
       'pixi.js',
-      '@pixi/filters',
-      '@pixi/mesh',
       'mitt',
       'lodash-es',
-      'chroma-js'
+      'chroma-js',
+      'lz-string'
     ],
-    exclude: [
-      // WebWorker用ファイルは最適化から除外
-      '**/worker.js',
-      '**/*.worker.js'
-    ]
+    // 問題のあるexclude設定を削除
+    esbuildOptions: {
+      target: 'esnext'
+    }
   },
   
   // エイリアス設定（開発効率化）
   resolve: {
     alias: {
-      '@': new URL('./src', import.meta.url).pathname,
-      '@pixiv8': new URL('./src/pixi-v8', import.meta.url).pathname,
-      '@stores': new URL('./src/stores', import.meta.url).pathname,
-      '@utils': new URL('./src/utils', import.meta.url).pathname,
-      '@assets': new URL('./src/assets', import.meta.url).pathname
+      '@': resolve(__dirname, './src'),
+      '@pixiv8': resolve(__dirname, './src/pixi-v8'),
+      '@stores': resolve(__dirname, './src/stores'),
+      '@utils': resolve(__dirname, './src/utils'),
+      '@assets': resolve(__dirname, './src/assets')
     }
   },
   
   // WebGPU・モダンブラウザ対応
   define: {
-    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
     '__PIXIJS_VERSION__': JSON.stringify('8.0.0'),
     '__WEBGPU_ENABLED__': true,
     '__CHROME_API_ENABLED__': true
