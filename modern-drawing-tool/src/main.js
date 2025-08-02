@@ -83,6 +83,19 @@ class ModernDrawingApp {
             
             // PixiJS統一座標システム
             this.coordinateUnifier = new PixiCoordinateUnifier(this.pixiApp, this.eventStore);
+            // 座標システムの初期化完了を待機
+            await new Promise(resolve => {
+                const checkReady = () => {
+                    if (this.coordinateUnifier && 
+                        ((typeof this.coordinateUnifier.isReady === 'function' && this.coordinateUnifier.isReady()) ||
+                         (typeof this.coordinateUnifier.isReady === 'boolean' && this.coordinateUnifier.isReady))) {
+                        resolve();
+                    } else {
+                        setTimeout(checkReady, 10);
+                    }
+                };
+                checkReady();
+            });
             
             // PixiJS統一入力制御
             this.inputController = new PixiInputController(
@@ -122,6 +135,9 @@ class ModernDrawingApp {
     async initPhase2() {
         try {
             console.log('🎨 Phase2初期化開始: ツール・UI・カラー統合');
+            
+            // Phase1基盤の安定確認（短時間待機）
+            await new Promise(resolve => setTimeout(resolve, 100));
             
             // Phase1準備確認（修正版）
             if (!this.checkPhase1ReadyConditions()) {
@@ -354,30 +370,42 @@ class ModernDrawingApp {
      * Phase1準備確認（修正版）
      */
     checkPhase1ReadyConditions() {
-        // Phase1基盤動作確認（修正: メソッド呼び出し統一）
-        const checks = [
-            this.isInitialized,
-            this.renderer && this.renderer.isReady(),
-            this.coordinateUnifier && this.coordinateUnifier.isReady(), // メソッド呼び出し
-            this.inputController && this.inputController.isReady(),
-            this.eventStore && this.eventStore.isHealthy()
-        ];
-        
-        const allReady = checks.every(check => check === true);
-        
-        if (allReady) {
-            console.log('🎨 Phase2解封準備完了条件満足');
-        } else {
-            console.warn('⚠️ Phase1基盤準備未完了:', {
-                initialized: this.isInitialized,
-                renderer: this.renderer && this.renderer.isReady(),
-                coordinateUnifier: this.coordinateUnifier && this.coordinateUnifier.isReady(),
-                inputController: this.inputController && this.inputController.isReady(),
-                eventStore: this.eventStore && this.eventStore.isHealthy()
-            });
+        try {
+            // Phase1基盤動作確認（安全なチェック）
+            const checks = [
+                this.isInitialized,
+                this.renderer && typeof this.renderer.isReady === 'function' && this.renderer.isReady(),
+                this.coordinateUnifier && (
+                    (typeof this.coordinateUnifier.isReady === 'function' && this.coordinateUnifier.isReady()) ||
+                    (typeof this.coordinateUnifier.isReady === 'boolean' && this.coordinateUnifier.isReady)
+                ),
+                this.inputController && typeof this.inputController.isReady === 'function' && this.inputController.isReady(),
+                this.eventStore && typeof this.eventStore.isHealthy === 'function' && this.eventStore.isHealthy()
+            ];
+            
+            const allReady = checks.every(check => check === true);
+            
+            if (allReady) {
+                console.log('🎨 Phase2解封準備完了条件満足');
+            } else {
+                console.warn('⚠️ Phase1基盤準備未完了:', {
+                    initialized: this.isInitialized,
+                    renderer: this.renderer && typeof this.renderer.isReady === 'function' ? this.renderer.isReady() : false,
+                    coordinateUnifier: this.coordinateUnifier ? (
+                        typeof this.coordinateUnifier.isReady === 'function' ? this.coordinateUnifier.isReady() :
+                        typeof this.coordinateUnifier.isReady === 'boolean' ? this.coordinateUnifier.isReady : false
+                    ) : false,
+                    inputController: this.inputController && typeof this.inputController.isReady === 'function' ? this.inputController.isReady() : false,
+                    eventStore: this.eventStore && typeof this.eventStore.isHealthy === 'function' ? this.eventStore.isHealthy() : false
+                });
+            }
+            
+            return allReady;
+            
+        } catch (error) {
+            console.error('❌ Phase1準備確認エラー:', error);
+            return false;
         }
-        
-        return allReady;
     }
     
     /**
