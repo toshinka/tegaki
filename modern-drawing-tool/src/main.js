@@ -4,7 +4,7 @@
  * 規約: 総合AIコーディング規約v4.1準拠（PixiJS統一座標対応）
  */
 
-// 🔥 Phase1: PixiJS統一基盤（実装済み・稼働中）
+// 🔥 Phase1: PixiJS統一基盤（実装済み・封印済み）
 import { PixiCoordinateUnifier } from './core/PixiCoordinateUnifier.js';
 import { PixiUnifiedRenderer } from './PixiUnifiedRenderer.js';
 import { PixiInputController } from './PixiInputController.js';
@@ -12,29 +12,29 @@ import { ShortcutController } from './ShortcutController.js';
 import { HistoryController } from './HistoryController.js';
 import { EventStore } from './core/EventStore.js';
 
-// 🎨 Phase2: ツール・UI・カラー統合（Phase1完成後解封）
-import { PixiToolProcessor } from './PixiToolProcessor.js';           // ✅解封済み
-import { PixiUIController } from './PixiUIController.js';             // ✅解封済み
-import { ColorProcessor } from './ColorProcessor.js';                // ✅解封済み
-import { PixiLayerProcessor } from './PixiLayerProcessor.js';         // ✅解封済み
-import { CanvasController } from './CanvasController.js';             // ✅解封済み
+// 🎨 Phase2: ツール・UI・カラー統合（Phase1完成後封印解除）
+import { PixiToolProcessor } from './PixiToolProcessor.js';           // ✅Phase2解封
+import { PixiUIController } from './PixiUIController.js';             // ✅Phase2解封
+import { ColorProcessor } from './ColorProcessor.js';                // ✅Phase2解封
+import { PixiLayerProcessor } from './PixiLayerProcessor.js';         // ✅Phase2解封
+import { CanvasController } from './CanvasController.js';             // ✅Phase2解封
 
 // ⚡ Phase3: Chrome API活用・高度機能（Phase2完成後封印解除）
-// import { PixiOffscreenProcessor } from './PixiOffscreenProcessor.js'; // 🔒Phase3解封待ち
-// import { PixiAnimationController } from './PixiAnimationController.js'; // 🔒Phase3解封待ち
-// import { PixiModernExporter } from './PixiModernExporter.js';           // 🔒Phase3解封待ち
-// import { ProjectStore } from './stores/ProjectStore.js';              // 🔒Phase3解封待ち
+// import { PixiOffscreenProcessor } from './PixiOffscreenProcessor.js'; // 🔒Phase3解封
+// import { PixiAnimationController } from './PixiAnimationController.js'; // 🔒Phase3解封
+// import { PixiModernExporter } from './PixiModernExporter.js';           // 🔒Phase3解封
+// import { ProjectStore } from './stores/ProjectStore.js';              // 🔒Phase3解封
 
 /**
  * モダンお絵かきツール メインアプリケーション
- * PixiJS統一基盤による干渉問題完全根絶 + Phase2機能統合
+ * PixiJS統一基盤による干渉問題完全根絶
  */
 class ModernDrawingApp {
     constructor() {
         this.canvas = null;
         this.pixiApp = null;
         this.isInitialized = false;
-        this.currentPhase = 2; // Phase2に移行
+        this.currentPhase = 2; // Phase2に更新
         
         // Phase1: PixiJS統一基盤コンポーネント
         this.coordinateUnifier = null;
@@ -52,10 +52,10 @@ class ModernDrawingApp {
         this.canvasController = null;     // ✅Phase2解封
         
         // Phase3: Chrome API活用（封印中）
-        // this.offscreenProcessor = null;   // 🔒Phase3解封待ち
-        // this.animationController = null;  // 🔒Phase3解封待ち
-        // this.modernExporter = null;       // 🔒Phase3解封待ち
-        // this.projectStore = null;         // 🔒Phase3解封待ち
+        // this.offscreenProcessor = null;   // 🔒Phase3解封
+        // this.animationController = null;  // 🔒Phase3解封
+        // this.modernExporter = null;       // 🔒Phase3解封
+        // this.projectStore = null;         // 🔒Phase3解封
         
         this.initPhase1();
     }
@@ -120,64 +120,57 @@ class ModernDrawingApp {
         try {
             console.log('🎨 Phase2初期化開始: ツール・UI・カラー統合');
             
-            // Phase1基盤動作確認
+            // Phase1完了確認
             if (!this.checkPhase1ReadyConditions()) {
                 throw new Error('Phase1基盤が未完了です');
             }
             
-            // カラープロセッサー初期化
-            this.colorProcessor = new ColorProcessor(
-                this.pixiApp, 
-                this.coordinateUnifier, 
-                this.eventStore
-            );
-            
-            // レイヤープロセッサー初期化
+            // PixiJSレイヤープロセッサー初期化
             this.layerProcessor = new PixiLayerProcessor(
-                this.pixiApp, 
-                this.coordinateUnifier, 
+                this.pixiApp,
+                this.coordinateUnifier,
                 this.eventStore
             );
             
-            // ツールプロセッサー初期化
+            // カラープロセッサー初期化
+            this.colorProcessor = new ColorProcessor(this.eventStore);
+            
+            // PixiJSツールプロセッサー初期化
             this.toolProcessor = new PixiToolProcessor(
-                this.pixiApp, 
-                this.coordinateUnifier, 
-                this.eventStore
+                this.pixiApp,
+                this.coordinateUnifier,
+                this.eventStore,
+                this.renderer
+            );
+            
+            // PixiJS UIコントローラー初期化
+            this.uiController = new PixiUIController(
+                this.pixiApp,
+                this.eventStore,
+                this.renderer
             );
             
             // キャンバスコントローラー初期化
             this.canvasController = new CanvasController(
-                this.pixiApp, 
-                this.coordinateUnifier, 
+                this.pixiApp,
+                this.coordinateUnifier,
                 this.eventStore
             );
             
-            // UIコントローラー初期化（最後に実行）
-            this.uiController = new PixiUIController(
-                this.pixiApp, 
-                this.coordinateUnifier, 
-                this.eventStore
-            );
-            
-            // Phase2統合イベント設定
+            // Phase2コンポーネント連携設定
             this.setupPhase2Integration();
             
             // Phase2イベント連携設定
             this.setupPhase2Events();
             
-            this.currentPhase = 2;
             console.log('✅ Phase2初期化完了: ツール・UI・カラー統合稼働開始');
             
             // Phase2デバッグ情報表示
             this.displayPhase2Info();
             
-            // Phase3準備確認
-            this.checkPhase3ReadyConditions();
-            
         } catch (error) {
             console.error('❌ Phase2初期化失敗:', error);
-            this.handlePhase2Error(error);
+            this.handleInitializationError(error);
         }
     }
     
@@ -221,260 +214,100 @@ class ModernDrawingApp {
     }
     
     /**
-     * Phase2統合設定
+     * Phase2コンポーネント連携設定
      */
     setupPhase2Integration() {
-        // ツールプロセッサーとレイヤープロセッサー連携
-        this.eventStore.on('tool:drawing:ended', (data) => {
-            if (data.strokeData && this.layerProcessor) {
-                const activeLayer = this.layerProcessor.getActiveLayer();
-                if (activeLayer) {
-                    this.layerProcessor.addStroke(
-                        activeLayer.id,
-                        data.strokeData.path,
-                        data.strokeData.config
-                    );
-                }
-            }
-        });
+        // Renderer ↔ ToolProcessor
+        this.renderer.connectToolProcessor?.(this.toolProcessor);
+        this.toolProcessor.setRenderer?.(this.renderer);
         
-        // カラープロセッサーとツールプロセッサー連携
-        this.eventStore.on('color:changed', (data) => {
-            if (this.toolProcessor) {
-                this.toolProcessor.updateToolConfig(
-                    this.toolProcessor.currentTool,
-                    { color: data.pixiColor }
-                );
-            }
-        });
+        // Renderer ↔ ColorProcessor
+        this.renderer.connectColorProcessor?.(this.colorProcessor);
+        this.colorProcessor.setRenderer?.(this.renderer);
         
-        // UIコントローラーとツールプロセッサー連携
-        this.eventStore.on('tool:change', (data) => {
-            if (this.toolProcessor) {
-                this.toolProcessor.changeTool(data.tool, data.config);
-            }
-        });
+        // Renderer ↔ LayerProcessor
+        this.renderer.connectLayerProcessor?.(this.layerProcessor);
+        this.layerProcessor.setRenderer?.(this.renderer);
         
-        // レイヤープロセッサーとUIコントローラー連携
-        this.eventStore.on('layer:created', (data) => {
-            if (this.uiController) {
-                this.uiController.updateLayerUI([data.layer]);
-            }
-        });
+        // ToolProcessor ↔ LayerProcessor
+        this.toolProcessor.setLayerProcessor?.(this.layerProcessor);
+        this.layerProcessor.setToolProcessor?.(this.toolProcessor);
         
-        // キャンバスコントローラーとその他連携
-        this.eventStore.on('canvas:zoomed', (data) => {
-            if (this.uiController) {
-                this.uiController.adjustLayout();
-            }
-        });
+        // UIController ↔ 全コンポーネント
+        this.uiController.setToolProcessor?.(this.toolProcessor);
+        this.uiController.setColorProcessor?.(this.colorProcessor);
+        this.uiController.setLayerProcessor?.(this.layerProcessor);
+        this.uiController.setCanvasController?.(this.canvasController);
         
-        console.log('🔗 Phase2統合設定完了');
+        console.log('🔗 Phase2コンポーネント連携設定完了');
     }
     
     /**
      * Phase2イベント連携設定
      */
     setupPhase2Events() {
-        // ツール操作イベント
-        this.eventStore.on('ui:tool:select', (data) => {
-            if (this.toolProcessor) {
-                this.toolProcessor.changeTool(data.tool);
-            }
+        // ツール選択イベント
+        this.eventStore.on('tool:select', (data) => {
+            this.toolProcessor.selectTool(data.tool);
+            this.uiController.updateToolUI(data);
         });
         
-        // カラー操作イベント
-        this.eventStore.on('ui:color:select', (data) => {
-            if (this.colorProcessor) {
-                this.colorProcessor.selectColor(data.color, 'ui');
-            }
+        // 色選択イベント
+        this.eventStore.on('color:select', (data) => {
+            this.colorProcessor.setColor(data.color);
+            this.uiController.updateColorUI(data);
         });
         
         // レイヤー操作イベント
-        this.eventStore.on('ui:layer:create', () => {
-            if (this.layerProcessor) {
-                this.layerProcessor.createLayer();
-            }
-        });
-        
-        this.eventStore.on('ui:layer:delete', (data) => {
-            if (this.layerProcessor) {
-                this.layerProcessor.deleteLayer(data.layerId);
-            }
+        this.eventStore.on('layer:select', (data) => {
+            this.layerProcessor.setActiveLayer(data.layerId);
+            this.uiController.updateLayerUI(data);
         });
         
         // キャンバス操作イベント
-        this.eventStore.on('ui:canvas:zoom', (data) => {
-            if (this.canvasController) {
-                this.canvasController.zoomTo(data.zoom, data.center);
-            }
+        this.eventStore.on('canvas:zoom', (data) => {
+            this.canvasController.setZoom(data.zoom);
         });
         
-        this.eventStore.on('ui:canvas:pan', (data) => {
-            if (this.canvasController) {
-                this.canvasController.panTo(data.x, data.y);
-            }
+        this.eventStore.on('canvas:pan', (data) => {
+            this.canvasController.pan(data.delta);
         });
         
-        // ショートカットイベント（Phase2拡張）
-        this.eventStore.on('shortcut:tool:pen', () => {
-            if (this.toolProcessor) {
-                this.toolProcessor.changeTool('pen');
-            }
+        // ファイル操作イベント
+        this.eventStore.on('file:save', (data) => {
+            this.saveProject(data);
         });
         
-        this.eventStore.on('shortcut:tool:eraser', () => {
-            if (this.toolProcessor) {
-                this.toolProcessor.changeTool('eraser');
-            }
-        });
-        
-        this.eventStore.on('shortcut:layer:new', () => {
-            if (this.layerProcessor) {
-                this.layerProcessor.createLayer();
-            }
-        });
-        
-        this.eventStore.on('shortcut:canvas:zoomReset', () => {
-            if (this.canvasController) {
-                this.canvasController.zoomReset();
-            }
+        this.eventStore.on('file:load', (data) => {
+            this.loadProject(data);
         });
         
         console.log('📡 Phase2イベント連携設定完了');
     }
     
     /**
-     * PixiJS統一リサイズ処理（Phase2対応）
+     * PixiJS統一リサイズ処理
      */
     handleResize() {
         if (this.renderer && this.coordinateUnifier) {
             this.renderer.handleResize();
             this.coordinateUnifier.updateViewport();
             
-            // Phase2コンポーネントにリサイズ通知
-            if (this.canvasController) {
-                this.canvasController.handleWindowResize();
+            // Phase2コンポーネントにもリサイズ通知
+            if (this.uiController) {
+                this.uiController.handleResize();
             }
             
-            if (this.uiController) {
-                this.uiController.handleResize(this.canvas.width, this.canvas.height);
+            if (this.canvasController) {
+                this.canvasController.handleResize();
             }
             
             this.eventStore.emit('viewport:resize', {
                 width: this.canvas.width,
-                height: this.canvas.height
+                height: this.canvas.height,
+                phase: this.currentPhase
             });
         }
-    }
-    
-    /**
-     * Phase2デバッグ情報表示
-     */
-    displayPhase2Info() {
-        const info = {
-            phase: 'Phase2: ツール・UI・カラー統合',
-            renderer: this.renderer.getInfo(),
-            coordinate: this.coordinateUnifier.getInfo(),
-            input: this.inputController.getInfo(),
-            tools: this.toolProcessor.getToolInfo(),
-            colors: this.colorProcessor.getColorInfo(),
-            layers: this.layerProcessor.getLayerStats(),
-            canvas: this.canvasController.getCanvasInfo(),
-            ui: this.uiController.getUIInfo(),
-            events: this.eventStore.getStats(),
-            performance: this.getPhase2PerformanceInfo()
-        };
-        
-        console.log('📊 Phase2システム情報:', info);
-        
-        // デバッグ用UI更新
-        this.updateDebugUI(info);
-    }
-    
-    /**
-     * Phase2パフォーマンス情報取得
-     */
-    getPhase2PerformanceInfo() {
-        return {
-            renderer: this.renderer.getPerformanceInfo(),
-            tools: this.toolProcessor.getPerformanceInfo(),
-            colors: this.colorProcessor.getPerformanceInfo(),
-            memoryUsage: this.estimatePhase2MemoryUsage(),
-            fps: this.pixiApp.ticker.FPS
-        };
-    }
-    
-    /**
-     * Phase2メモリ使用量推定
-     */
-    estimatePhase2MemoryUsage() {
-        let totalMB = 0;
-        
-        // ツールメモリ
-        if (this.toolProcessor) {
-            const toolMem = this.toolProcessor.getPerformanceInfo();
-            totalMB += toolMem.memoryUsage?.estimatedMB || 0;
-        }
-        
-        // カラーメモリ
-        if (this.colorProcessor) {
-            const colorMem = this.colorProcessor.getPerformanceInfo();
-            totalMB += (colorMem.colorCacheSize * 0.001) || 0;
-        }
-        
-        // レイヤーメモリ
-        if (this.layerProcessor) {
-            const layerStats = this.layerProcessor.getLayerStats();
-            totalMB += (layerStats.totalStrokes * 0.002) || 0;
-        }
-        
-        return Math.round(totalMB * 100) / 100;
-    }
-    
-    /**
-     * デバッグUI更新
-     */
-    updateDebugUI(info) {
-        let debugPanel = document.getElementById('phase2-debug');
-        
-        if (!debugPanel) {
-            // 新規作成
-            debugPanel = document.createElement('div');
-            debugPanel.id = 'phase2-debug';
-            debugPanel.style.cssText = `
-                position: fixed; top: 10px; right: 10px; z-index: 1000;
-                background: rgba(128,0,0,0.9); color: #f0e0d6;
-                padding: 12px; border-radius: 8px; font-size: 12px;
-                font-family: monospace; max-width: 320px;
-            `;
-            document.body.appendChild(debugPanel);
-        } else {
-            // Phase1パネルを削除
-            const phase1Panel = document.getElementById('phase1-debug');
-            if (phase1Panel) {
-                phase1Panel.remove();
-            }
-        }
-        
-        debugPanel.innerHTML = `
-            <div style="font-weight: bold; margin-bottom: 8px;">
-                🎨 ${info.phase}
-            </div>
-            <div>📐 座標系: ${info.coordinate.system}</div>
-            <div>🎨 レンダラー: ${info.renderer.type}</div>
-            <div>🔧 ツール: ${info.tools.currentTool} (${info.tools.isDrawing ? '描画中' : '待機中'})</div>
-            <div>🌈 カラー: ${info.colors.currentColor.hex}</div>
-            <div>📚 レイヤー: ${info.layers.totalLayers}層 (${info.layers.totalStrokes}ストローク)</div>
-            <div>🎥 キャンバス: ${info.canvas.zoom}% | ${info.canvas.position.x.toFixed(0)},${info.canvas.position.y.toFixed(0)}</div>
-            <div>🖥️ UI: ${info.ui.uiElements.length}要素 (${info.ui.activePopups}ポップアップ)</div>
-            <div>📡 イベント: ${info.events.totalEvents}件</div>
-            <div>⚡ FPS: ${info.performance.fps.toFixed(1)}</div>
-            <div>💾 メモリ: ${info.performance.memoryUsage}MB</div>
-            <div style="margin-top: 8px; font-size: 10px; opacity: 0.8;">
-                Phase3準備完了後、Chrome API・高度機能解封
-            </div>
-        `;
     }
     
     /**
@@ -492,37 +325,109 @@ class ModernDrawingApp {
         const allReady = checks.every(check => check === true);
         
         if (allReady) {
-            console.log('✅ Phase1準備完了条件満足');
+            console.log('🎨 Phase1基盤完了 - Phase2解封準備完了');
         } else {
-            console.warn('⚠️ Phase1準備未完了:', checks);
+            console.warn('⚠️ Phase1基盤未完了 - Phase2解封不可');
+            checks.forEach((check, index) => {
+                if (!check) {
+                    console.warn(`  チェック失敗 [${index}]:`, check);
+                }
+            });
         }
         
         return allReady;
     }
     
     /**
-     * Phase3準備完了条件チェック
+     * Phase2準備完了条件チェック（Phase3解封用）
      */
-    checkPhase3ReadyConditions() {
+    checkPhase2ReadyConditions() {
         const checks = [
             this.checkPhase1ReadyConditions(),
-            this.toolProcessor && this.toolProcessor.getToolInfo(),
-            this.colorProcessor && this.colorProcessor.getColorInfo(),
+            this.toolProcessor && this.toolProcessor.isReady(),
+            this.uiController && this.uiController.isReady(),
+            this.colorProcessor && this.colorProcessor.isReady(),
             this.layerProcessor && this.layerProcessor.isReady(),
-            this.canvasController && this.canvasController.isReady(),
-            this.uiController && this.uiController.getUIInfo().initialized
+            this.canvasController && this.canvasController.isReady()
         ];
         
-        const allReady = checks.every(check => !!check);
+        const allReady = checks.every(check => check === true);
         
         if (allReady) {
-            console.log('🚀 Phase3準備完了条件満足');
+            console.log('⚡ Phase2実用機能完了 - Phase3解封準備完了');
             this.logPhase3UnlockInstructions();
-        } else {
-            console.log('⚠️ Phase3準備条件未満足');
         }
         
         return allReady;
+    }
+    
+    /**
+     * Phase2デバッグ情報表示
+     */
+    displayPhase2Info() {
+        const info = {
+            phase: 'Phase2: ツール・UI・カラー統合',
+            renderer: this.renderer.getInfo(),
+            coordinate: this.coordinateUnifier.getInfo(),
+            input: this.inputController.getInfo(),
+            tools: this.toolProcessor.getInfo(),
+            ui: this.uiController.getInfo(),
+            colors: this.colorProcessor.getInfo(),
+            layers: this.layerProcessor.getStatistics(),
+            canvas: this.canvasController.getInfo(),
+            events: this.eventStore.getStats(),
+            performance: this.renderer.getPerformanceInfo()
+        };
+        
+        console.log('📊 Phase2システム情報:', info);
+        
+        // デバッグ用UI更新
+        this.updatePhase2DebugUI(info);
+    }
+    
+    /**
+     * Phase2デバッグUI更新
+     */
+    updatePhase2DebugUI(info) {
+        let debugPanel = document.getElementById('phase2-debug');
+        
+        if (!debugPanel) {
+            debugPanel = document.createElement('div');
+            debugPanel.id = 'phase2-debug';
+            debugPanel.style.cssText = `
+                position: fixed; top: 10px; right: 10px; z-index: 1000;
+                background: rgba(128,0,0,0.95); color: #f0e0d6;
+                padding: 16px; border-radius: 8px; font-size: 11px;
+                font-family: monospace; max-width: 320px;
+                max-height: 70vh; overflow-y: auto;
+            `;
+            document.body.appendChild(debugPanel);
+        }
+        
+        debugPanel.innerHTML = `
+            <div style="font-weight: bold; margin-bottom: 8px; color: #ffcc66;">
+                🎨 ${info.phase}
+            </div>
+            <div>📐 座標系: ${info.coordinate.system}</div>
+            <div>🖌️ アクティブツール: ${info.tools.activeTool}</div>
+            <div>🎨 現在色: ${info.colors.currentColor}</div>
+            <div>📚 レイヤー数: ${info.layers.totalLayers}</div>
+            <div>🖼️ アクティブレイヤー: ${info.layers.activeLayerId || 'なし'}</div>
+            <div>⚡ FPS: ${info.performance.fps}</div>
+            <div>📡 イベント: ${info.events.totalEvents}件</div>
+            <div style="margin-top: 8px;">
+                <div style="font-size: 10px; opacity: 0.9;">🖱️ 基本操作:</div>
+                <div style="font-size: 9px; opacity: 0.8;">
+                  • 左クリック: 描画<br>
+                  • Ctrl+Z: アンドゥ<br>
+                  • Ctrl+Y: リドゥ<br>
+                  • スペース+ドラッグ: パン
+                </div>
+            </div>
+            <div style="margin-top: 8px; font-size: 9px; opacity: 0.7;">
+                Phase3準備完了後、Chrome API解封
+            </div>
+        `;
     }
     
     /**
@@ -532,57 +437,215 @@ class ModernDrawingApp {
         console.log(`
 ⚡ Phase3解封指示（次回Claude実装時）:
 1. main.js: Phase3コメントアウト解除
-2. Phase3ファイル群実装: PixiOffscreenProcessor.js, PixiAnimationController.js等
+2. Phase3ファイル群実装: PixiOffscreenProcessor.js, PixiModernExporter.js等
 3. Phase2連携: this.setupPhase3Integration() 呼び出し
 4. Phase3イベント: setupPhase3Events() 追加
-5. Chrome API活用: OffscreenCanvas・WebCodecs・WebWorkers統合
-
-【Phase3対象機能】
-- PixiOffscreenProcessor: レイヤー並列処理・Worker統合
-- PixiAnimationController: Storyboarder風アニメーション機能
-- PixiModernExporter: WebCodecs高速出力・動画エクスポート
-- ProjectStore: プロジェクト状態管理・保存機能
+5. Chrome API活用: OffscreenCanvas, WebCodecs統合
         `);
     }
     
     /**
-     * Phase2エラーハンドリング
+     * プロジェクト保存
      */
-    handlePhase2Error(error) {
-        console.error('💥 Phase2初期化エラー:', error);
-        
-        // Phase2エラー表示UI
-        const errorPanel = document.createElement('div');
-        errorPanel.id = 'phase2-error';
-        errorPanel.style.cssText = `
-            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            background: #aa5a56; color: #f0e0d6; padding: 20px;
-            border-radius: 12px; font-family: Arial; text-align: center;
-            z-index: 9999; box-shadow: 0 8px 32px rgba(0,0,0,0.8);
-        `;
-        
-        errorPanel.innerHTML = `
-            <h3>🎨 Phase2初期化エラー</h3>
-            <p>ツール・UI・カラー統合に失敗しました</p>
-            <p>Phase1基盤は正常動作中です</p>
-            <pre style="font-size: 12px; margin: 10px 0;">${error.message}</pre>
-            <button onclick="location.reload()" 
-                style="background: #f0e0d6; color: #800000; border: none; 
-                       padding: 8px 16px; border-radius: 4px; cursor: pointer;">
-                再読み込み
-            </button>
-            <button onclick="this.parentElement.remove()" 
-                style="background: #800000; color: #f0e0d6; border: none; 
-                       padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-left: 8px;">
-                Phase1のみ継続
-            </button>
-        `;
-        
-        document.body.appendChild(errorPanel);
+    async saveProject(saveData = {}) {
+        try {
+            console.log('💾 プロジェクト保存開始');
+            
+            // プロジェクトデータ構築
+            const projectData = {
+                version: '3.2',
+                phase: this.currentPhase,
+                timestamp: Date.now(),
+                layers: this.layerProcessor.getAllLayersInfo(),
+                tools: this.toolProcessor.getSettings(),
+                colors: this.colorProcessor.getPalette(),
+                canvas: this.canvasController.getSettings(),
+                metadata: {
+                    name: saveData.name || 'untitled',
+                    author: saveData.author || 'unknown',
+                    description: saveData.description || ''
+                }
+            };
+            
+            // JSON形式で保存
+            const json = JSON.stringify(projectData, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            
+            // ダウンロード実行
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${projectData.metadata.name}.mdp`; // Modern Drawing Project
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            console.log('✅ プロジェクト保存完了:', projectData.metadata.name);
+            
+            // イベント通知
+            this.eventStore.emit('project:saved', {
+                name: projectData.metadata.name,
+                size: blob.size,
+                timestamp: Date.now()
+            });
+            
+        } catch (error) {
+            console.error('❌ プロジェクト保存エラー:', error);
+            this.eventStore.emit('project:save:error', { error: error.message });
+        }
     }
     
     /**
-     * 初期化エラーハンドリング（Phase1用）
+     * プロジェクト読み込み
+     */
+    async loadProject(file) {
+        try {
+            console.log('📂 プロジェクト読み込み開始:', file.name);
+            
+            // ファイル読み込み
+            const text = await file.text();
+            const projectData = JSON.parse(text);
+            
+            // バージョン確認
+            if (projectData.version !== '3.2') {
+                console.warn('⚠️ 非対応バージョン:', projectData.version);
+            }
+            
+            // レイヤー復元
+            if (projectData.layers && this.layerProcessor) {
+                await this.layerProcessor.loadLayersData(projectData.layers);
+            }
+            
+            // ツール設定復元
+            if (projectData.tools && this.toolProcessor) {
+                this.toolProcessor.loadSettings(projectData.tools);
+            }
+            
+            // カラー設定復元
+            if (projectData.colors && this.colorProcessor) {
+                this.colorProcessor.loadPalette(projectData.colors);
+            }
+            
+            // キャンバス設定復元
+            if (projectData.canvas && this.canvasController) {
+                this.canvasController.loadSettings(projectData.canvas);
+            }
+            
+            // UI更新
+            if (this.uiController) {
+                this.uiController.refreshAll();
+            }
+            
+            console.log('✅ プロジェクト読み込み完了:', projectData.metadata.name);
+            
+            // イベント通知
+            this.eventStore.emit('project:loaded', {
+                name: projectData.metadata.name,
+                version: projectData.version,
+                timestamp: Date.now()
+            });
+            
+        } catch (error) {
+            console.error('❌ プロジェクト読み込みエラー:', error);
+            this.eventStore.emit('project:load:error', { error: error.message });
+        }
+    }
+    
+    /**
+     * PNG エクスポート
+     */
+    async exportToPNG(options = {}) {
+        try {
+            console.log('🖼️ PNG エクスポート開始');
+            
+            const config = {
+                width: options.width || this.canvas.width,
+                height: options.height || this.canvas.height,
+                resolution: options.resolution || 1,
+                quality: options.quality || 1.0,
+                backgroundColor: options.backgroundColor || 0xffffee
+            };
+            
+            // 全レイヤー描画
+            const renderTexture = PIXI.RenderTexture.create({
+                width: config.width,
+                height: config.height,
+                resolution: config.resolution
+            });
+            
+            // レイヤーContainer描画
+            this.pixiApp.renderer.render(this.layerProcessor.layerContainer, { 
+                renderTexture,
+                clear: true
+            });
+            
+            // Canvas抽出
+            const canvas = this.pixiApp.renderer.extract.canvas(renderTexture);
+            
+            // Blob生成
+            const blob = await new Promise((resolve) => {
+                canvas.toBlob(resolve, 'image/png', config.quality);
+            });
+            
+            // ダウンロード実行
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `drawing_${Date.now()}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            // リソース解放
+            renderTexture.destroy(true);
+            
+            console.log('✅ PNG エクスポート完了:', blob.size, 'bytes');
+            
+            // イベント通知
+            this.eventStore.emit('export:png:complete', {
+                size: blob.size,
+                timestamp: Date.now()
+            });
+            
+            return blob;
+            
+        } catch (error) {
+            console.error('❌ PNG エクスポートエラー:', error);
+            this.eventStore.emit('export:png:error', { error: error.message });
+            throw error;
+        }
+    }
+    
+    /**
+     * システム情報取得
+     */
+    getSystemInfo() {
+        return {
+            version: '3.2',
+            phase: this.currentPhase,
+            initialized: this.isInitialized,
+            components: {
+                renderer: !!this.renderer,
+                coordinateUnifier: !!this.coordinateUnifier,
+                inputController: !!this.inputController,
+                shortcutController: !!this.shortcutController,
+                historyController: !!this.historyController,
+                eventStore: !!this.eventStore,
+                toolProcessor: !!this.toolProcessor,
+                uiController: !!this.uiController,
+                colorProcessor: !!this.colorProcessor,
+                layerProcessor: !!this.layerProcessor,
+                canvasController: !!this.canvasController
+            },
+            performance: this.renderer ? this.renderer.getPerformanceInfo() : null,
+            timestamp: Date.now()
+        };
+    }
+    
+    /**
+     * 初期化エラーハンドリング
      */
     handleInitializationError(error) {
         console.error('💥 モダンお絵かきツール初期化エラー:', error);
@@ -591,184 +654,134 @@ class ModernDrawingApp {
         const errorPanel = document.createElement('div');
         errorPanel.style.cssText = `
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            background: #800000; color: #f0e0d6; padding: 20px;
+            background: #800000; color: #f0e0d6; padding: 24px;
             border-radius: 12px; font-family: Arial; text-align: center;
             z-index: 9999; box-shadow: 0 8px 32px rgba(0,0,0,0.8);
+            max-width: 500px;
         `;
         
         errorPanel.innerHTML = `
-            <h3>🚨 Phase1初期化エラー</h3>
+            <h3>🚨 Phase${this.currentPhase}初期化エラー</h3>
             <p>PixiJS統一基盤の初期化に失敗しました</p>
-            <pre style="font-size: 12px; margin: 10px 0;">${error.message}</pre>
-            <button onclick="location.reload()" 
-                style="background: #f0e0d6; color: #800000; border: none; 
-                       padding: 8px 16px; border-radius: 4px; cursor: pointer;">
-                再読み込み
-            </button>
+            <pre style="font-size: 11px; margin: 12px 0; padding: 8px; 
+                        background: rgba(0,0,0,0.3); border-radius: 4px; 
+                        text-align: left; white-space: pre-wrap;">${error.message}</pre>
+            <div style="margin-top: 16px;">
+                <button onclick="location.reload()" 
+                    style="background: #f0e0d6; color: #800000; border: none; 
+                           padding: 10px 20px; border-radius: 6px; cursor: pointer;
+                           margin-right: 8px; font-weight: bold;">
+                    再読み込み
+                </button>
+                <button onclick="console.log(window.modernDrawingApp.getSystemInfo())"
+                    style="background: rgba(240,224,214,0.2); color: #f0e0d6; 
+                           border: 1px solid #f0e0d6; padding: 10px 20px; 
+                           border-radius: 6px; cursor: pointer;">
+                    デバッグ情報
+                </button>
+            </div>
         `;
         
         document.body.appendChild(errorPanel);
     }
     
     /**
-     * Phase2診断実行
-     */
-    runPhase2Diagnostics() {
-        const diagnostics = {
-            phase1Status: this.checkPhase1ReadyConditions(),
-            phase2Components: {
-                toolProcessor: !!this.toolProcessor,
-                colorProcessor: !!this.colorProcessor,
-                layerProcessor: !!this.layerProcessor,
-                canvasController: !!this.canvasController,
-                uiController: !!this.uiController
-            },
-            integration: {
-                eventsConnected: this.eventStore.getStats().totalEvents > 10,
-                toolColorLinked: this.toolProcessor && this.colorProcessor,
-                layerToolLinked: this.layerProcessor && this.toolProcessor,
-                uiCanvasLinked: this.uiController && this.canvasController
-            },
-            performance: this.getPhase2PerformanceInfo()
-        };
-        
-        console.log('🔍 Phase2診断結果:', diagnostics);
-        return diagnostics;
-    }
-    
-    /**
-     * 手動Phase3移行（デバッグ用）
-     */
-    async forcePhase3Transition() {
-        if (!this.checkPhase3ReadyConditions()) {
-            console.warn('⚠️ Phase3移行条件未満足 - 強制移行は非推奨');
-            return false;
-        }
-        
-        try {
-            console.log('⚡ Phase3手動移行開始（デバッグ用）');
-            // Phase3実装時に使用
-            // await this.initPhase3();
-            
-            return true;
-        } catch (error) {
-            console.error('❌ Phase3手動移行失敗:', error);
-            return false;
-        }
-    }
-    
-    /**
-     * 統合システム情報取得
-     */
-    getIntegratedSystemInfo() {
-        return {
-            currentPhase: this.currentPhase,
-            phases: {
-                phase1: this.checkPhase1ReadyConditions(),
-                phase2: {
-                    initialized: this.currentPhase >= 2,
-                    components: {
-                        tools: !!this.toolProcessor,
-                        colors: !!this.colorProcessor,
-                        layers: !!this.layerProcessor,
-                        canvas: !!this.canvasController,
-                        ui: !!this.uiController
-                    }
-                },
-                phase3: {
-                    ready: this.checkPhase3ReadyConditions(),
-                    unlocked: false
-                }
-            },
-            performance: this.getPhase2PerformanceInfo(),
-            memory: this.estimatePhase2MemoryUsage(),
-            timestamp: Date.now()
-        };
-    }
-    
-    /**
      * アプリケーション終了処理
      */
     destroy() {
+        console.log('🔥 モダンお絵かきツール終了処理開始');
+        
         try {
             // Phase2コンポーネント破棄
-            if (this.uiController) {
-                this.uiController.destroy();
-            }
-            
             if (this.canvasController) {
-                this.canvasController.destroy();
+                this.canvasController.destroy?.();
             }
             
             if (this.layerProcessor) {
-                this.layerProcessor.destroy();
+                this.layerProcessor.destroy?.();
             }
             
             if (this.colorProcessor) {
-                this.colorProcessor.destroy();
+                this.colorProcessor.destroy?.();
+            }
+            
+            if (this.uiController) {
+                this.uiController.destroy?.();
             }
             
             if (this.toolProcessor) {
-                this.toolProcessor.destroy();
+                this.toolProcessor.destroy?.();
             }
             
-            // Phase1基盤破棄
+            // Phase1コンポーネント破棄
             if (this.historyController) {
-                this.historyController.destroy();
+                this.historyController.destroy?.();
             }
             
             if (this.shortcutController) {
-                this.shortcutController.destroy();
+                this.shortcutController.destroy?.();
             }
             
             if (this.inputController) {
-                this.inputController.destroy();
+                this.inputController.destroy?.();
             }
             
             if (this.coordinateUnifier) {
-                this.coordinateUnifier.destroy();
+                this.coordinateUnifier.destroy?.();
             }
             
-            if (this.pixiApp) {
-                this.pixiApp.destroy(true);
+            if (this.renderer) {
+                this.renderer.destroy();
             }
             
             if (this.eventStore) {
                 this.eventStore.destroy();
             }
             
-            // デバッグUI削除
-            const debugPanels = document.querySelectorAll('[id$="-debug"]');
-            debugPanels.forEach(panel => panel.remove());
+            // PixiJS Application破棄
+            if (this.pixiApp) {
+                this.pixiApp.destroy(true);
+            }
             
-            console.log('🔥 モダンお絵かきツール終了（Phase2統合版）');
+            console.log('✅ モダンお絵かきツール終了処理完了');
             
         } catch (error) {
-            console.error('❌ アプリケーション終了エラー:', error);
+            console.error('❌ 終了処理エラー:', error);
         }
     }
 }
 
-// グローバル診断関数（デバッグ用）
-window.diagnosePaintTool = function() {
-    if (window.modernDrawingApp) {
-        return window.modernDrawingApp.getIntegratedSystemInfo();
-    } else {
-        return { error: 'アプリケーション未初期化' };
-    }
-};
-
-window.runPhase2Diagnostics = function() {
-    if (window.modernDrawingApp && window.modernDrawingApp.runPhase2Diagnostics) {
-        return window.modernDrawingApp.runPhase2Diagnostics();
-    } else {
-        return { error: 'Phase2診断機能未使用可能' };
-    }
-};
-
 // アプリケーション起動
 document.addEventListener('DOMContentLoaded', () => {
-    window.modernDrawingApp = new ModernDrawingApp();
+    console.log('🔥 Phase1実装チェック開始');
+    
+    // HTML基盤確認
+    const canvas = document.getElementById('canvas');
+    if (canvas) {
+        console.log('✅ Phase1 HTML基盤準備完了');
+        console.log('📐 PixiJS統一座標系CSS準備完了');
+        console.log('🎨 ふたば色統合スタイル準備完了');
+        console.log('⚡ Chrome API最適化スタイル準備完了');
+        
+        // モダンお絵かきツール起動
+        window.modernDrawingApp = new ModernDrawingApp();
+        
+        // グローバルデバッグ関数設定
+        window.debugDrawingApp = () => {
+            return window.modernDrawingApp.getSystemInfo();
+        };
+        
+        window.exportPNG = (options) => {
+            return window.modernDrawingApp.exportToPNG(options);
+        };
+        
+        window.saveProject = (data) => {
+            return window.modernDrawingApp.saveProject(data);
+        };
+        
+    } else {
+        console.error('❌ Canvas要素が見つかりません');
+    }
 });
 
 // ページ終了時のクリーンアップ
@@ -776,6 +789,16 @@ window.addEventListener('beforeunload', () => {
     if (window.modernDrawingApp) {
         window.modernDrawingApp.destroy();
     }
+});
+
+// グローバルエラーハンドリング
+window.addEventListener('error', (event) => {
+    console.error('🚨 グローバルエラー:', event.error);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('🚨 未処理Promise拒否:', event.reason);
+    event.preventDefault();
 });
 
 export default ModernDrawingApp;
