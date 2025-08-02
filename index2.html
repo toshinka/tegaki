@@ -1,0 +1,1357 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PixiJS v8 モダンお絵かきツール</title>
+    
+    <!-- PixiJS v8 ESM対応 -->
+    <script type="importmap">
+    {
+        "imports": {
+            "pixi.js": "https://cdn.jsdelivr.net/npm/pixi.js@8.4.1/dist/pixi.min.mjs",
+            "mitt": "https://cdn.jsdelivr.net/npm/mitt@3.0.1/dist/mitt.umd.js",
+            "chroma-js": "https://cdn.jsdelivr.net/npm/chroma-js@3.1.2/chroma.min.js",
+            "lodash-es": "https://cdn.jsdelivr.net/npm/lodash-es@4.17.21/lodash.js",
+            "lz-string": "https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"
+        }
+    }
+    </script>
+    
+    <style>
+        :root {
+            /* ふたば色系統（実装イメージ.png準拠） */
+            --futaba-maroon: #800000;
+            --futaba-light-maroon: #aa5a56;
+            --futaba-medium: #cf9c97;
+            --futaba-light-medium: #e9c2ba;
+            --futaba-cream: #f0e0d6;
+            --futaba-background: #ffffee;
+            
+            /* UI基本色 */
+            --ui-bg-primary: rgba(128,0,0,0.96);
+            --ui-bg-secondary: rgba(170,90,86,0.92);
+            --ui-bg-light-medium: rgba(233,194,186,0.85);
+            --ui-text-primary: #f0e0d6;
+            --ui-text-secondary: #ffffff;
+            --ui-border: rgba(240,224,214,0.3);
+            --ui-accent: #ffffee;
+            
+            /* サイズ系統（PixiJS v8統一座標対応） */
+            --sidebar-width: 72px;
+            --layer-panel-width: 300px;
+            --icon-size-normal: 44px;
+            --icon-size-active: 48px;
+            --border-radius: 16px;
+            
+            /* Chrome最適化アニメーション */
+            --transition-fast: 200ms ease-out;
+            --transition-normal: 300ms ease-out;
+            --transition-slow: 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Arial', 'Hiragino Sans', 'Yu Gothic UI', sans-serif;
+            background: var(--futaba-background);
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        
+        /* メインレイアウト */
+        .app-layout {
+            display: grid;
+            grid-template-columns: var(--sidebar-width) 1fr var(--layer-panel-width);
+            grid-template-rows: 1fr auto;
+            grid-template-areas: 
+                "sidebar canvas layer-panel"
+                "sidebar timeline layer-panel";
+            height: 100vh;
+            position: relative;
+            overflow: hidden;
+            will-change: transform;
+            contain: layout style paint;
+        }
+        
+        /* 左側サイドバー */
+        .sidebar {
+            grid-area: sidebar;
+            background: linear-gradient(135deg, var(--futaba-maroon) 0%, var(--futaba-light-maroon) 100%);
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.2);
+            z-index: 100;
+            transform: translateZ(0);
+        }
+        
+        .tool-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 4px 0;
+        }
+        
+        .tool-group + .tool-group {
+            border-top: 1px solid var(--ui-border);
+            margin-top: 8px;
+            padding-top: 12px;
+        }
+        
+        .tool-button {
+            width: var(--icon-size-normal);
+            height: var(--icon-size-normal);
+            border: none;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--ui-text-primary);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            position: relative;
+            margin: 2px auto;
+        }
+        
+        .tool-button:hover {
+            background: rgba(255,255,255,0.1);
+            color: var(--ui-text-secondary);
+            transform: scale(1.05);
+        }
+        
+        .tool-button.active {
+            background: var(--ui-accent);
+            color: var(--futaba-maroon);
+            width: var(--icon-size-active);
+            height: var(--icon-size-active);
+            box-shadow: 0 0 0 3px var(--futaba-maroon);
+        }
+        
+        .tool-button.active::before {
+            content: '';
+            position: absolute;
+            left: -8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 3px;
+            height: 80%;
+            background: var(--ui-accent);
+            border-radius: 2px;
+        }
+        
+        /* キャンバス領域 */
+        .canvas {
+            grid-area: canvas;
+            position: relative;
+            overflow: hidden;
+            background: var(--futaba-background);
+            transform: translateZ(0);
+        }
+        
+        #pixiCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+        
+        /* 右側レイヤーパネル */
+        .layer-panel {
+            grid-area: layer-panel;
+            background: linear-gradient(135deg, var(--ui-bg-primary) 0%, var(--ui-bg-secondary) 100%);
+            box-shadow: -2px 0 8px rgba(0,0,0,0.2);
+            transform: translateX(0);
+            transition: transform var(--transition-normal);
+            will-change: transform;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .layer-panel.hidden {
+            transform: translateX(100%);
+        }
+        
+        .layer-panel-header {
+            padding: 16px;
+            background: rgba(0,0,0,0.1);
+            border-bottom: 1px solid var(--ui-border);
+        }
+        
+        .layer-panel-title {
+            color: var(--ui-text-primary);
+            font-size: 14px;
+            font-weight: bold;
+            margin: 0;
+        }
+        
+        .layer-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        
+        .layer-item {
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            padding: 12px;
+            border: 1px solid transparent;
+            transition: all var(--transition-fast);
+            cursor: pointer;
+        }
+        
+        .layer-item:hover {
+            background: rgba(255,255,255,0.1);
+            border-color: var(--ui-border);
+        }
+        
+        .layer-item.active {
+            background: rgba(255,255,255,0.15);
+            border-color: var(--ui-accent);
+        }
+        
+        .layer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        
+        .layer-name {
+            color: var(--ui-text-primary);
+            font-size: 12px;
+            flex: 1;
+        }
+        
+        .layer-thumbnail {
+            width: 32px;
+            height: 32px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            border: 1px solid var(--ui-border);
+        }
+        
+        .layer-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        
+        .opacity-slider {
+            flex: 1;
+            height: 4px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+            outline: none;
+            cursor: pointer;
+        }
+        
+        .opacity-value {
+            color: var(--ui-text-primary);
+            font-size: 10px;
+            width: 30px;
+            text-align: right;
+        }
+        
+        /* タイムライン（アニメーションモード） */
+        .timeline {
+            grid-area: timeline;
+            background: linear-gradient(135deg, var(--ui-bg-secondary) 0%, var(--ui-bg-light-medium) 100%);
+            border-top: 1px solid var(--ui-border);
+            padding: 12px;
+            transform: translateZ(0);
+            display: none; /* 初期状態では非表示 */
+        }
+        
+        .timeline.active {
+            display: block;
+        }
+        
+        .timeline-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        
+        .timeline-button {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 6px;
+            background: var(--futaba-maroon);
+            color: var(--ui-text-primary);
+            cursor: pointer;
+            font-size: 12px;
+            transition: all var(--transition-fast);
+        }
+        
+        .timeline-button:hover {
+            background: var(--futaba-light-maroon);
+        }
+        
+        .timeline-button.active {
+            background: var(--ui-accent);
+            color: var(--futaba-maroon);
+        }
+        
+        .frame-strip {
+            display: flex;
+            gap: 4px;
+            overflow-x: auto;
+            padding: 8px 0;
+        }
+        
+        .frame-item {
+            min-width: 64px;
+            height: 48px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 4px;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--ui-text-primary);
+            font-size: 10px;
+        }
+        
+        .frame-item:hover {
+            border-color: var(--ui-border);
+        }
+        
+        .frame-item.active {
+            border-color: var(--ui-accent);
+            background: rgba(255,255,255,0.1);
+        }
+        
+        /* ポップアップ共通スタイル */
+        .popup {
+            position: absolute;
+            background: var(--futaba-maroon);
+            border-radius: var(--border-radius);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            border: 1px solid var(--ui-border);
+            z-index: 1000;
+            min-width: 280px;
+            opacity: 0;
+            transform: scale(0.9);
+            transition: all var(--transition-normal);
+            pointer-events: none;
+        }
+        
+        .popup.show {
+            opacity: 1;
+            transform: scale(1);
+            pointer-events: auto;
+        }
+        
+        .popup-header {
+            padding: 12px 16px;
+            background: rgba(0,0,0,0.2);
+            border-radius: var(--border-radius) var(--border-radius) 0 0;
+            cursor: move;
+            user-select: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .popup-title {
+            color: var(--ui-text-primary);
+            font-size: 14px;
+            font-weight: bold;
+            margin: 0;
+        }
+        
+        .popup-close {
+            background: none;
+            border: none;
+            color: var(--ui-text-primary);
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px;
+            border-radius: 4px;
+            transition: all var(--transition-fast);
+        }
+        
+        .popup-close:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        
+        .popup-content {
+            padding: 16px;
+        }
+        
+        /* ツール設定ポップアップ */
+        .tool-settings {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .setting-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .setting-label {
+            color: var(--ui-text-primary);
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+        
+        .preset-buttons {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+        
+        .preset-button {
+            padding: 4px 8px;
+            border: 1px solid var(--ui-border);
+            border-radius: 4px;
+            background: rgba(255,255,255,0.1);
+            color: var(--ui-text-primary);
+            cursor: pointer;
+            font-size: 11px;
+            transition: all var(--transition-fast);
+        }
+        
+        .preset-button:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        
+        .preset-button.active {
+            background: var(--ui-accent);
+            color: var(--futaba-maroon);
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .slider {
+            flex: 1;
+            height: 4px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+            outline: none;
+            cursor: pointer;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--ui-accent);
+            cursor: pointer;
+            border: 2px solid var(--futaba-maroon);
+        }
+        
+        .slider::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--ui-accent);
+            cursor: pointer;
+            border: 2px solid var(--futaba-maroon);
+        }
+        
+        .slider-value {
+            color: var(--ui-text-primary);
+            font-size: 11px;
+            min-width: 40px;
+            text-align: right;
+        }
+        
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .checkbox {
+            width: 16px;
+            height: 16px;
+            border: 1px solid var(--ui-border);
+            border-radius: 3px;
+            background: rgba(255,255,255,0.1);
+            cursor: pointer;
+            position: relative;
+        }
+        
+        .checkbox.checked::after {
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: var(--ui-accent);
+            font-size: 12px;
+        }
+        
+        .checkbox-label {
+            color: var(--ui-text-primary);
+            font-size: 12px;
+            cursor: pointer;
+        }
+        
+        /* HSV色選択ポップアップ */
+        .color-picker {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        
+        .hsv-wheel {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: conic-gradient(
+                hsl(0deg, 100%, 50%),
+                hsl(60deg, 100%, 50%),
+                hsl(120deg, 100%, 50%),
+                hsl(180deg, 100%, 50%),
+                hsl(240deg, 100%, 50%),
+                hsl(300deg, 100%, 50%),
+                hsl(360deg, 100%, 50%)
+            );
+            cursor: crosshair;
+            position: relative;
+            margin: 0 auto;
+        }
+        
+        .color-presets {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 4px;
+        }
+        
+        .color-swatch {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            border: 1px solid var(--ui-border);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+        
+        .color-swatch:hover {
+            transform: scale(1.1);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        
+        .color-swatch.active {
+            box-shadow: 0 0 0 2px var(--ui-accent);
+        }
+        
+        /* ローディング・スプラッシュ */
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--futaba-maroon);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            transition: opacity var(--transition-slow);
+        }
+        
+        .loading-screen.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .loading-content {
+            text-align: center;
+            color: var(--ui-text-primary);
+        }
+        
+        .loading-title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 16px;
+        }
+        
+        .loading-subtitle {
+            font-size: 14px;
+            opacity: 0.8;
+            margin-bottom: 24px;
+        }
+        
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(240,224,214,0.3);
+            border-top: 3px solid var(--ui-text-primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* レスポンシブ対応 */
+        @media (max-width: 1024px) {
+            .layer-panel {
+                transform: translateX(100%);
+            }
+            
+            .layer-panel.show {
+                transform: translateX(0);
+            }
+            
+            .app-layout {
+                grid-template-columns: var(--sidebar-width) 1fr;
+            }
+        }
+        
+        /* 高DPI対応 */
+        @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+            .layer-thumbnail,
+            .frame-item {
+                image-rendering: -webkit-optimize-contrast;
+                image-rendering: pixelated;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- ローディング画面 -->
+    <div class="loading-screen" id="loadingScreen">
+        <div class="loading-content">
+            <h1 class="loading-title">PixiJS v8 お絵かきツール</h1>
+            <p class="loading-subtitle">Phase1実装 - 統一基盤読み込み中...</p>
+            <div class="loading-spinner"></div>
+        </div>
+    </div>
+
+    <!-- メインアプリケーション -->
+    <div class="app-layout">
+        <!-- 左側サイドバー -->
+        <div class="sidebar">
+            <!-- ファイル操作 -->
+            <div class="tool-group">
+                <button class="tool-button" id="downloadBtn" title="ダウンロード (Ctrl+S)">📥</button>
+                <button class="tool-button" id="resizeBtn" title="リサイズ">⤢</button>
+                <button class="tool-button" id="colorBtn" title="カラーパレット">🎨</button>
+            </div>
+            
+            <!-- 描画ツール -->
+            <div class="tool-group">
+                <button class="tool-button active" id="penBtn" data-tool="pen" title="ペン (P)">✏️</button>
+                <button class="tool-button" id="airbrushBtn" data-tool="airbrush" title="エアスプレー (A)">🖌️</button>
+                <button class="tool-button" id="blurBtn" data-tool="blur" title="ボカシ (B)">🌫️</button>
+            </div>
+            
+            <!-- 編集ツール -->
+            <div class="tool-group">
+                <button class="tool-button" id="eraserBtn" data-tool="eraser" title="消しゴム (E)">🗑️</button>
+                <button class="tool-button" id="eyedropperBtn" data-tool="eyedropper" title="スポイト (I)">💧</button>
+                <button class="tool-button" id="selectBtn" data-tool="select" title="範囲選択 (M)">⬚</button>
+            </div>
+            
+            <!-- 特殊ツール -->
+            <div class="tool-group">
+                <button class="tool-button" id="fillBtn" data-tool="fill" title="塗りつぶし (G)">🪣</button>
+                <button class="tool-button" id="textBtn" data-tool="text" title="テキスト (T)">📝</button>
+                <button class="tool-button" id="shapeBtn" data-tool="shape" title="図形">⭕</button>
+                <button class="tool-button" id="transformBtn" data-tool="transform" title="変形">✂️</button>
+            </div>
+            
+            <!-- 表示・設定 -->
+            <div class="tool-group">
+                <button class="tool-button" id="animationBtn" title="アニメーション (F5)">🎬</button>
+                <button class="tool-button" id="layerBtn" title="レイヤー (TAB)">📚</button>
+                <button class="tool-button" id="settingsBtn" title="設定">⚙️</button>
+            </div>
+        </div>
+        
+        <!-- キャンバス領域 -->
+        <div class="canvas">
+            <canvas id="pixiCanvas"></canvas>
+        </div>
+        
+        <!-- 右側レイヤーパネル -->
+        <div class="layer-panel" id="layerPanel">
+            <div class="layer-panel-header">
+                <h3 class="layer-panel-title">レイヤー</h3>
+            </div>
+            <div class="layer-list" id="layerList">
+                <!-- 初期レイヤー -->
+                <div class="layer-item active" data-layer="layer1">
+                    <div class="layer-header">
+                        <span class="layer-name">👁️ レイヤー1</span>
+                        <div class="layer-thumbnail"></div>
+                    </div>
+                    <div class="layer-controls">
+                        <input type="range" class="opacity-slider" min="0" max="100" value="100">
+                        <span class="opacity-value">100%</span>
+                    </div>
+                </div>
+                
+                <div class="layer-item" data-layer="background">
+                    <div class="layer-header">
+                        <span class="layer-name">🔒 背景</span>
+                        <div class="layer-thumbnail"></div>
+                    </div>
+                    <div class="layer-controls">
+                        <input type="range" class="opacity-slider" min="0" max="100" value="100" disabled>
+                        <span class="opacity-value">100%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- タイムライン（アニメーションモード） -->
+        <div class="timeline" id="timeline">
+            <div class="timeline-controls">
+                <button class="timeline-button active" data-cut="1">カット1</button>
+                <button class="timeline-button" data-cut="2">カット2</button>
+                <button class="timeline-button" data-cut="3">カット3</button>
+                <button class="timeline-button" id="newCutBtn">+新規</button>
+                <button class="timeline-button" id="playBtn">▶️</button>
+                <button class="timeline-button" id="stopBtn">⏸️</button>
+            </div>
+            
+            <div class="frame-strip" id="frameStrip">
+                <div class="frame-item active" data-frame="1">1</div>
+                <div class="frame-item" data-frame="2">2</div>
+                <div class="frame-item" data-frame="3">3</div>
+                <div class="frame-item" data-frame="4">4</div>
+                <div class="frame-item" data-frame="5">5</div>
+                <div class="frame-item" id="addFrameBtn">+</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ポップアップ群 -->
+    <!-- カラーピッカーポップアップ -->
+    <div class="popup" id="colorPopup">
+        <div class="popup-header">
+            <h4 class="popup-title">カラーパレット</h4>
+            <button class="popup-close" type="button">×</button>
+        </div>
+        <div class="popup-content">
+            <div class="color-picker">
+                <div class="hsv-wheel" id="hsvWheel"></div>
+                <div class="color-presets" id="colorPresets">
+                    <!-- ふたばカラープリセット -->
+                    <div class="color-swatch" style="background-color: #800000" data-color="#800000"></div>
+                    <div class="color-swatch" style="background-color: #aa5a56" data-color="#aa5a56"></div>
+                    <div class="color-swatch" style="background-color: #cf9c97" data-color="#cf9c97"></div>
+                    <div class="color-swatch" style="background-color: #e9c2ba" data-color="#e9c2ba"></div>
+                    <div class="color-swatch" style="background-color: #f0e0d6" data-color="#f0e0d6"></div>
+                    <div class="color-swatch" style="background-color: #000000" data-color="#000000"></div>
+                    <div class="color-swatch" style="background-color: #ffffff" data-color="#ffffff"></div>
+                    <div class="color-swatch" style="background-color: #808080" data-color="#808080"></div>
+                    <div class="color-swatch" style="background-color: #ff0000" data-color="#ff0000"></div>
+                    <div class="color-swatch" style="background-color: #00ff00" data-color="#00ff00"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ペンツール設定ポップアップ -->
+    <div class="popup" id="penPopup">
+        <div class="popup-header">
+            <h4 class="popup-title">ペンツール設定</h4>
+            <button class="popup-close" type="button">×</button>
+        </div>
+        <div class="popup-content">
+            <div class="tool-settings">
+                <div class="setting-group">
+                    <label class="setting-label">サイズプリセット</label>
+                    <div class="preset-buttons">
+                        <button class="preset-button" data-size="2">2</button>
+                        <button class="preset-button active" data-size="4">4</button>
+                        <button class="preset-button" data-size="8">8</button>
+                        <button class="preset-button" data-size="16">16</button>
+                        <button class="preset-button" data-size="32">32</button>
+                        <button class="preset-button" data-size="64">64</button>
+                    </div>
+                </div>
+                
+                <div class="setting-group">
+                    <label class="setting-label">サイズ</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="penSizeSlider" min="1" max="100" value="4">
+                        <span class="slider-value" id="penSizeValue">4px</span>
+                    </div>
+                </div>
+                
+                <div class="setting-group">
+                    <label class="setting-label">不透明度</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="penOpacitySlider" min="0" max="100" value="100">
+                        <span class="slider-value" id="penOpacityValue">100%</span>
+                    </div>
+                </div>
+                
+                <div class="setting-group">
+                    <div class="checkbox-container">
+                        <div class="checkbox checked" id="penPressureCheckbox"></div>
+                        <label class="checkbox-label">筆圧感度</label>
+                    </div>
+                </div>
+                
+                <div class="setting-group">
+                    <div class="checkbox-container">
+                        <div class="checkbox checked" id="penSmoothingCheckbox"></div>
+                        <label class="checkbox-label">エッジスムージング</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- エアスプレー設定ポップアップ -->
+    <div class="popup" id="airbrushPopup">
+        <div class="popup-header">
+            <h4 class="popup-title">エアスプレー設定</h4>
+            <button class="popup-close" type="button">×</button>
+        </div>
+        <div class="popup-content">
+            <div class="tool-settings">
+                <div class="setting-group">
+                    <label class="setting-label">噴射強度</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="airbrushIntensitySlider" min="0" max="100" value="65">
+                        <span class="slider-value" id="airbrushIntensityValue">65%</span>
+                    </div>
+                </div>
+                
+                <div class="setting-group">
+                    <label class="setting-label">粒子密度</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="airbrushDensitySlider" min="0" max="100" value="50">
+                        <span class="slider-value" id="airbrushDensityValue">粗⇔細</span>
+                    </div>
+                </div>
+                
+                <div class="setting-group">
+                    <label class="setting-label">拡散範囲</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="airbrushRadiusSlider" min="5" max="100" value="20">
+                        <span class="slider-value" id="airbrushRadiusValue">20px</span>
+                    </div>
+                </div>
+                
+                <div class="setting-group">
+                    <div class="checkbox-container">
+                        <div class="checkbox" id="airbrushEraseModeCheckbox"></div>
+                        <label class="checkbox-label">消しエアスプレーモード</label>
+                    </div>
+                </div>
+                
+                <div class="setting-group">
+                    <div class="checkbox-container">
+                        <div class="checkbox checked" id="airbrushPreviewCheckbox"></div>
+                        <label class="checkbox-label">リアルタイムプレビュー</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 消しゴム設定ポップアップ -->
+    <div class="popup" id="eraserPopup">
+        <div class="popup-header">
+            <h4 class="popup-title">消しゴムツール設定</h4>
+            <button class="popup-close" type="button">×</button>
+        </div>
+        <div class="popup-content">
+            <div class="tool-settings">
+                <div class="setting-group">
+                    <label class="setting-label">サイズプリセット</label>
+                    <div class="preset-buttons">
+                        <button class="preset-button" data-size="5">5</button>
+                        <button class="preset-button" data-size="10">10</button>
+                        <button class="preset-button active" data-size="20">20</button>
+                        <button class="preset-button" data-size="40">40</button>
+                        <button class="preset-button" data-size="80">80</button>
+                    </div>
+                </div>
+                
+                <div class="setting-group">
+                    <label class="setting-label">サイズ</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="eraserSizeSlider" min="1" max="100" value="20">
+                        <span class="slider-value" id="eraserSizeValue">20px</span>
+                    </div>
+                </div>
+                
+                <div class="setting-group">
+                    <label class="setting-label">不透明度</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="eraserOpacitySlider" min="0" max="100" value="100">
+                        <span class="slider-value" id="eraserOpacityValue">100%</span>
+                    </div>
+                </div>
+                
+                <div class="setting-group">
+                    <div class="checkbox-container">
+                        <div class="checkbox checked" id="eraserSmoothingCheckbox"></div>
+                        <label class="checkbox-label">エッジスムージング</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScriptメイン処理 -->
+    <script type="module">
+        import * as PIXI from 'pixi.js';
+        
+        console.log('🚀 PixiJS v8 モダンお絵かきツール Phase1 初期化開始');
+        
+        // グローバル状態管理
+        const AppState = {
+            pixiApp: null,
+            currentTool: 'pen',
+            currentColor: '#800000',
+            isDrawing: false,
+            animationMode: false,
+            layerPanelVisible: true,
+            activePopup: null,
+            
+            // ツール設定
+            toolSettings: {
+                pen: { size: 4, opacity: 1.0, pressure: true, smoothing: true },
+                airbrush: { size: 20, opacity: 0.65, intensity: 0.65, density: 0.5, eraseMode: false, preview: true },
+                eraser: { size: 20, opacity: 1.0, smoothing: true },
+                eyedropper: {},
+                fill: { tolerance: 32 },
+                select: { type: 'rectangle' },
+                text: { fontSize: 16, fontFamily: 'Arial' }
+            }
+        };
+        
+        // PixiJS v8アプリケーション初期化
+        async function initializePixiApp() {
+            const canvas = document.getElementById('pixiCanvas');
+            
+            try {
+                // PixiJS v8設定（WebGPU優先）
+                const app = new PIXI.Application();
+                await app.init({
+                    canvas: canvas,
+                    width: canvas.parentElement.clientWidth,
+                    height: canvas.parentElement.clientHeight,
+                    backgroundColor: 0xffffee, // ふたば背景色
+                    antialias: true,
+                    autoDensity: true,
+                    resolution: window.devicePixelRatio || 1,
+                    preference: 'webgpu' // WebGPU優先
+                });
+                
+                AppState.pixiApp = app;
+                
+                // レイヤー構造初期化
+                const backgroundLayer = new PIXI.Container();
+                const drawingLayers = new PIXI.Container();
+                const uiLayer = new PIXI.Container();
+                
+                backgroundLayer.name = 'background';
+                drawingLayers.name = 'drawing';
+                uiLayer.name = 'ui';
+                
+                app.stage.addChild(backgroundLayer, drawingLayers, uiLayer);
+                
+                // 背景描画
+                const background = new PIXI.Graphics();
+                background
+                    .rect(0, 0, app.screen.width, app.screen.height)
+                    .fill({ color: 0xffffee, alpha: 1.0 });
+                
+                backgroundLayer.addChild(background);
+                
+                // 初期レイヤー作成
+                const initialLayer = new PIXI.Container();
+                initialLayer.name = 'layer1';
+                drawingLayers.addChild(initialLayer);
+                
+                // リサイズ対応
+                window.addEventListener('resize', () => {
+                    const newWidth = canvas.parentElement.clientWidth;
+                    const newHeight = canvas.parentElement.clientHeight;
+                    app.renderer.resize(newWidth, newHeight);
+                    
+                    // 背景リサイズ
+                    background.clear()
+                        .rect(0, 0, newWidth, newHeight)
+                        .fill({ color: 0xffffee, alpha: 1.0 });
+                });
+                
+                console.log('✅ PixiJS v8アプリケーション初期化完了');
+                console.log(`🎮 レンダラー: ${app.renderer.type}`, app.renderer);
+                
+                return app;
+                
+            } catch (error) {
+                console.error('❌ PixiJS v8初期化エラー:', error);
+                throw error;
+            }
+        }
+        
+        // 基本描画機能（Phase1プレースホルダー）
+        function initializeBasicDrawing() {
+            const app = AppState.pixiApp;
+            if (!app) return;
+            
+            let isDrawing = false;
+            let currentStroke = null;
+            let lastPoint = null;
+            
+            // PointerEvents統合
+            app.stage.eventMode = 'static';
+            app.stage.interactiveChildren = true;
+            
+            app.stage.on('pointerdown', (event) => {
+                if (AppState.currentTool !== 'pen') return;
+                
+                isDrawing = true;
+                const position = event.global;
+                lastPoint = { x: position.x, y: position.y };
+                
+                // 新しいストローク開始
+                currentStroke = new PIXI.Graphics();
+                currentStroke.lineStyle({
+                    width: AppState.toolSettings.pen.size,
+                    color: AppState.currentColor,
+                    alpha: AppState.toolSettings.pen.opacity,
+                    cap: PIXI.LINE_CAP.ROUND,
+                    join: PIXI.LINE_JOIN.ROUND
+                });
+                
+                currentStroke.moveTo(position.x, position.y);
+                
+                const drawingLayers = app.stage.getChildByName('drawing');
+                const activeLayer = drawingLayers.children[0];
+                activeLayer.addChild(currentStroke);
+                
+                console.log(`🖌️ 描画開始 - 座標: (${position.x.toFixed(1)}, ${position.y.toFixed(1)})`);
+            });
+            
+            app.stage.on('pointermove', (event) => {
+                if (!isDrawing || !currentStroke || AppState.currentTool !== 'pen') return;
+                
+                const position = event.global;
+                
+                if (lastPoint) {
+                    // スムーズな曲線（2次ベジェ曲線）
+                    const midX = (lastPoint.x + position.x) / 2;
+                    const midY = (lastPoint.y + position.y) / 2;
+                    currentStroke.quadraticCurveTo(lastPoint.x, lastPoint.y, midX, midY);
+                }
+                
+                lastPoint = { x: position.x, y: position.y };
+            });
+            
+            app.stage.on('pointerup', () => {
+                if (!isDrawing) return;
+                
+                isDrawing = false;
+                currentStroke = null;
+                lastPoint = null;
+                
+                console.log('🖌️ 描画終了');
+            });
+            
+            app.stage.on('pointerupoutside', () => {
+                if (isDrawing) {
+                    isDrawing = false;
+                    currentStroke = null;
+                    lastPoint = null;
+                    console.log('🖌️ 描画終了（範囲外）');
+                }
+            });
+            
+            console.log('✅ 基本描画機能初期化完了');
+        }
+        
+        // UI イベントハンドラー初期化
+        function initializeUI() {
+            // ツール切り替え
+            document.querySelectorAll('[data-tool]').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const tool = e.target.dataset.tool;
+                    setActiveTool(tool);
+                });
+            });
+            
+            // レイヤーパネル切り替え
+            document.getElementById('layerBtn').addEventListener('click', () => {
+                const panel = document.getElementById('layerPanel');
+                AppState.layerPanelVisible = !AppState.layerPanelVisible;
+                panel.classList.toggle('hidden', !AppState.layerPanelVisible);
+            });
+            
+            // アニメーションモード切り替え
+            document.getElementById('animationBtn').addEventListener('click', () => {
+                const timeline = document.getElementById('timeline');
+                AppState.animationMode = !AppState.animationMode;
+                timeline.classList.toggle('active', AppState.animationMode);
+                console.log(`🎬 アニメーションモード: ${AppState.animationMode ? 'ON' : 'OFF'}`);
+            });
+            
+            // カラーピッカー
+            document.getElementById('colorBtn').addEventListener('click', () => {
+                showPopup('colorPopup');
+            });
+            
+            // ツール設定ポップアップ
+            document.getElementById('penBtn').addEventListener('dblclick', () => {
+                showPopup('penPopup');
+            });
+            
+            document.getElementById('airbrushBtn').addEventListener('dblclick', () => {
+                showPopup('airbrushPopup');
+            });
+            
+            document.getElementById('eraserBtn').addEventListener('dblclick', () => {
+                showPopup('eraserPopup');
+            });
+            
+            // ポップアップ閉じるボタン
+            document.querySelectorAll('.popup-close').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const popup = e.target.closest('.popup');
+                    hidePopup(popup.id);
+                });
+            });
+            
+            // カラー選択
+            document.querySelectorAll('.color-swatch').forEach(swatch => {
+                swatch.addEventListener('click', (e) => {
+                    const color = e.target.dataset.color;
+                    setActiveColor(color);
+                });
+            });
+            
+            // ツール設定スライダー
+            initializeToolSettingSliders();
+            
+            // キーボードショートカット
+            initializeKeyboardShortcuts();
+            
+            console.log('✅ UI イベントハンドラー初期化完了');
+        }
+        
+        // ツール切り替え
+        function setActiveTool(toolName) {
+            const previousTool = AppState.currentTool;
+            AppState.currentTool = toolName;
+            
+            // UI更新
+            document.querySelectorAll('[data-tool]').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            document.querySelector(`[data-tool="${toolName}"]`).classList.add('active');
+            
+            console.log(`🔧 ツール切り替え: ${previousTool} → ${toolName}`);
+        }
+        
+        // 色設定
+        function setActiveColor(color) {
+            AppState.currentColor = color;
+            
+            // UI更新
+            document.querySelectorAll('.color-swatch').forEach(swatch => {
+                swatch.classList.remove('active');
+            });
+            
+            document.querySelector(`[data-color="${color}"]`).classList.add('active');
+            
+            console.log(`🎨 色変更: ${color}`);
+        }
+        
+        // ポップアップ表示
+        function showPopup(popupId) {
+            // 他のポップアップを閉じる
+            if (AppState.activePopup && AppState.activePopup !== popupId) {
+                hidePopup(AppState.activePopup);
+            }
+            
+            const popup = document.getElementById(popupId);
+            popup.classList.add('show');
+            
+            // 位置を中央に設定（初期表示時）
+            if (!popup.style.left) {
+                const rect = popup.getBoundingClientRect();
+                popup.style.left = `${(window.innerWidth - rect.width) / 2}px`;
+                popup.style.top = `${(window.innerHeight - rect.height) / 2}px`;
+            }
+            
+            AppState.activePopup = popupId;
+            
+            // ドラッグ可能にする
+            makePopupDraggable(popup);
+        }
+        
+        // ポップアップ非表示
+        function hidePopup(popupId) {
+            const popup = document.getElementById(popupId);
+            popup.classList.remove('show');
+            
+            if (AppState.activePopup === popupId) {
+                AppState.activePopup = null;
+            }
+        }
+        
+        // ポップアップドラッグ機能
+        function makePopupDraggable(popup) {
+            const header = popup.querySelector('.popup-header');
+            let isDragging = false;
+            let dragOffset = { x: 0, y: 0 };
+            
+            header.addEventListener('pointerdown', (e) => {
+                isDragging = true;
+                const rect = popup.getBoundingClientRect();
+                dragOffset.x = e.clientX - rect.left;
+                dragOffset.y = e.clientY - rect.top;
+                header.setPointerCapture(e.pointerId);
+            });
+            
+            header.addEventListener('pointermove', (e) => {
+                if (!isDragging) return;
+                
+                let newX = e.clientX - dragOffset.x;
+                let newY = e.clientY - dragOffset.y;
+                
+                // 画面範囲制限
+                const rect = popup.getBoundingClientRect();
+                newX = Math.max(0, Math.min(window.innerWidth - rect.width, newX));
+                newY = Math.max(0, Math.min(window.innerHeight - rect.height, newY));
+                
+                popup.style.left = `${newX}px`;
+                popup.style.top = `${newY}px`;
+            });
+            
+            header.addEventListener('pointerup', (e) => {
+                isDragging = false;
+                header.releasePointerCapture(e.pointerId);
+            });
+        }
+        
+        // ツール設定スライダー初期化
+        function initializeToolSettingSliders() {
+            // ペンサイズ
+            const penSizeSlider = document.getElementById('penSizeSlider');
+            const penSizeValue = document.getElementById('penSizeValue');
+            
+            penSizeSlider.addEventListener('input', (e) => {
+                const size = parseInt(e.target.value);
+                AppState.toolSettings.pen.size = size;
+                penSizeValue.textContent = `${size}px`;
+            });
+            
+            // エアスプレー設定
+            const airbrushIntensitySlider = document.getElementById('airbrushIntensitySlider');
+            const airbrushIntensityValue = document.getElementById('airbrushIntensityValue');
+            
+            airbrushIntensitySlider.addEventListener('input', (e) => {
+                const intensity = parseInt(e.target.value);
+                AppState.toolSettings.airbrush.intensity = intensity / 100;
+                airbrushIntensityValue.textContent = `${intensity}%`;
+            });
+            
+            // その他のスライダーも同様に設定...
+            console.log('✅ ツール設定スライダー初期化完了');
+        }
+        
+        // キーボードショートカット
+        function initializeKeyboardShortcuts() {
+            document.addEventListener('keydown', (e) => {
+                if (e.target.tagName === 'INPUT') return; // 入力フィールドでは無効
+                
+                const key = e.key.toLowerCase();
+                
+                // ツール切り替えショートカット
+                const toolShortcuts = {
+                    'p': 'pen',
+                    'a': 'airbrush', 
+                    'e': 'eraser',
+                    'i': 'eyedropper',
+                    'g': 'fill',
+                    'm': 'select',
+                    't': 'text'
+                };
+                
+                if (toolShortcuts[key]) {
+                    setActiveTool(toolShortcuts[key]);
+                    e.preventDefault();
+                }
+                
+                // その他のショートカット
+                if (key === 'tab') {
+                    document.getElementById('layerBtn').click();
+                    e.preventDefault();
+                } else if (key === 'f5') {
+                    document.getElementById('animationBtn').click();
+                    e.preventDefault();
+                }
+            });
+            
+            console.log('✅ キーボードショートカット初期化完了');
+        }
+        
+        // メイン初期化処理
+        async function initialize() {
+            try {
+                console.log('🚀 Phase1初期化開始...');
+                
+                // PixiJS v8アプリケーション初期化
+                await initializePixiApp();
+                
+                // 基本描画機能初期化
+                initializeBasicDrawing();
+                
+                // UI初期化
+                initializeUI();
+                
+                // ローディング画面非表示
+                setTimeout(() => {
+                    document.getElementById('loadingScreen').classList.add('hidden');
+                }, 1000);
+                
+                console.log('✅ Phase1初期化完了 - PixiJS v8統一基盤準備完了');
+                
+            } catch (error) {
+                console.error('❌ 初期化エラー:', error);
+                alert('アプリケーションの初期化に失敗しました。ページを再読み込みしてください。');
+            }
+        }
+        
+        // アプリケーション開始
+        initialize();
+        
+    </script>
+</body>
+</html>
