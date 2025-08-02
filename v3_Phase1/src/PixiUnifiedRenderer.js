@@ -1,5 +1,5 @@
 /**
- * PixiJS統一レンダラー v3.2
+ * PixiJS統一レンダラー v3.2 - PixiJS v8対応版
  * PixiJS単一エンジン統一による干渉問題完全根絶
  * 規約: 総合AIコーディング規約v4.1準拠（PixiJS統一座標対応）
  */
@@ -24,9 +24,12 @@ export class PixiUnifiedRenderer {
             debug: null
         };
         
-        // レンダリング設定
+        // レンダリング設定（PixiJS v8対応）
         this.config = {
-            backgroundColor: 0xffffee, // ふたば背景色
+            canvas: canvas,
+            width: canvas.width || 800,
+            height: canvas.height || 600,
+            backgroundColor: '#ffffee', // ふたば背景色
             antialias: true,
             autoDensity: true,
             resolution: window.devicePixelRatio || 1,
@@ -55,26 +58,29 @@ export class PixiUnifiedRenderer {
         // this.offscreenProcessor = null;   // 🔒Phase3解封
         // this.modernExporter = null;       // 🔒Phase3解封
         
-        this.isReady = false;
+        this.isInitialized = false;
     }
     
     /**
-     * PixiJS統一アプリケーション初期化
+     * PixiJS統一アプリケーション初期化（v8対応）
      */
     async initialize() {
         try {
             console.log('🎨 PixiJS統一レンダラー初期化開始');
             
-            // PixiJS Application作成（単一インスタンス）
-            this.app = new PIXI.Application({
-                view: this.canvas,
-                width: this.canvas.width,
-                height: this.canvas.height,
-                ...this.config
-            });
+            // PixiJS v8 Application作成（新しい初期化方法）
+            this.app = new PIXI.Application();
+            
+            // PixiJS v8では初期化が非同期になった
+            await this.app.init(this.config);
+            
+            // 初期化完了確認
+            if (!this.app.renderer) {
+                throw new Error('PixiJS レンダラー初期化失敗');
+            }
             
             // グローバル参照設定（デバッグ用）
-            if (process.env.NODE_ENV === 'development') {
+            if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
                 window.__PIXI_APP__ = this.app;
             }
             
@@ -91,7 +97,7 @@ export class PixiUnifiedRenderer {
             this.setupResizeHandling();
             
             this.phase1Ready = true;
-            this.isReady = true;
+            this.isInitialized = true;
             
             console.log('✅ PixiJS統一レンダラー初期化完了');
             this.logRendererInfo();
@@ -122,7 +128,7 @@ export class PixiUnifiedRenderer {
         this.layers.ui.zIndex = 20;
         
         // デバッグレイヤー（開発時のみ）
-        if (process.env.NODE_ENV === 'development') {
+        if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
             this.layers.debug = new PIXI.Container();
             this.layers.debug.name = 'debug';
             this.layers.debug.zIndex = 30;
@@ -192,8 +198,8 @@ export class PixiUnifiedRenderer {
      */
     setupEventIntegration() {
         // ポインターイベント統一処理
-        this.app.stage.interactive = true;
-        this.app.stage.hitArea = new PIXI.Rectangle(0, 0, this.canvas.width, this.canvas.height);
+        this.app.stage.eventMode = 'static';
+        this.app.stage.hitArea = new PIXI.Rectangle(0, 0, this.config.width, this.config.height);
         
         // PixiJS → EventStore 連携
         this.app.stage.on('pointerdown', (event) => {
@@ -267,20 +273,20 @@ export class PixiUnifiedRenderer {
             // PixiJS Graphics統一描画
             const graphics = new PIXI.Graphics();
             
-            // 高品質線描画設定
-            graphics.lineStyle({
+            // PixiJS v8の新しいAPI使用
+            graphics.setStrokeStyle({
                 width: size || 2,
-                color: color || 0x800000,
+                color: color || '#800000',
                 alpha: opacity || 1.0,
-                cap: PIXI.LINE_CAP.ROUND,
-                join: PIXI.LINE_JOIN.ROUND,
-                native: true // GPU最適化
+                cap: 'round',
+                join: 'round'
             });
             
             // PixiJS自然座標系描画（変換不要）
             if (points.length === 1) {
                 // 単点描画
-                graphics.drawCircle(points[0].x, points[0].y, (size || 2) / 2);
+                graphics.circle(points[0].x, points[0].y, (size || 2) / 2);
+                graphics.fill({ color: color || '#800000', alpha: opacity || 1.0 });
             } else {
                 // スムーズ曲線描画
                 graphics.moveTo(points[0].x, points[0].y);
@@ -295,6 +301,8 @@ export class PixiUnifiedRenderer {
                     const last = points[points.length - 1];
                     graphics.lineTo(last.x, last.y);
                 }
+                
+                graphics.stroke();
             }
             
             // 描画レイヤーに追加
@@ -351,8 +359,8 @@ export class PixiUnifiedRenderer {
                 uiElement = new PIXI.Text(element.text, {
                     fontFamily: element.fontFamily || 'Arial, sans-serif',
                     fontSize: element.fontSize || 12,
-                    fill: element.color || 0x800000,
-                    stroke: element.strokeColor || 0xffffff,
+                    fill: element.color || '#800000',
+                    stroke: element.strokeColor || '#ffffff',
                     strokeThickness: element.strokeWidth || 0
                 });
             } else if (element.type === 'sprite') {
@@ -498,7 +506,7 @@ export class PixiUnifiedRenderer {
      * パフォーマンス統計ログ出力
      */
     logPerformanceStats() {
-        if (process.env.NODE_ENV === 'development') {
+        if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
             console.log('⚡ PixiJS パフォーマンス統計:', {
                 fps: Math.round(this.performance.fps),
                 averageFPS: Math.round(this.performance.averageFPS),
@@ -509,11 +517,16 @@ export class PixiUnifiedRenderer {
     }
     
     /**
-     * レンダラー情報ログ出力
+     * レンダラー情報ログ出力（安全な実行）
      */
     logRendererInfo() {
-        const info = this.getInfo();
-        console.log('🎨 PixiJS統一レンダラー情報:', info);
+        try {
+            const info = this.getInfo();
+            console.log('🎨 PixiJS統一レンダラー情報:', info);
+        } catch (error) {
+            console.warn('⚠️ レンダラー情報取得エラー:', error);
+            console.log('🎨 PixiJS統一レンダラー: 基本初期化完了');
+        }
     }
     
     /**
@@ -521,13 +534,13 @@ export class PixiUnifiedRenderer {
      */
     getInfo() {
         return {
-            type: this.app.renderer.type === PIXI.RENDERER_TYPE.WEBGL ? 'WebGL' : 'Canvas',
-            version: PIXI.VERSION,
-            resolution: this.app.renderer.resolution,
+            type: this.getRendererType(),
+            version: PIXI.VERSION || 'Unknown',
+            resolution: this.app?.renderer?.resolution || 1,
             backgroundColor: this.config.backgroundColor,
             size: {
-                width: this.app.view.width,
-                height: this.app.view.height
+                width: this.app?.canvas?.width || this.config.width,
+                height: this.app?.canvas?.height || this.config.height
             },
             layers: Object.keys(this.layers).length,
             phase1Ready: this.phase1Ready,
@@ -567,7 +580,47 @@ export class PixiUnifiedRenderer {
      * 準備状態確認
      */
     isReady() {
-        return this.isReady && this.app && this.app.renderer;
+        return this.isInitialized && this.app && this.app.renderer;
+    }
+    
+    /**
+     * レンダラータイプ取得（安全な方法）
+     */
+    getRendererType() {
+        try {
+            if (!this.app?.renderer) {
+                return 'Unknown';
+            }
+            
+            // PixiJS v8対応 - 複数の方法でレンダラータイプを判定
+            const renderer = this.app.renderer;
+            
+            // 方法1: コンストラクタ名から判定
+            if (renderer.constructor.name.includes('WebGL')) {
+                return 'WebGL';
+            }
+            if (renderer.constructor.name.includes('Canvas')) {
+                return 'Canvas';
+            }
+            
+            // 方法2: WebGLコンテキストの存在確認
+            if (renderer.gl) {
+                return 'WebGL';
+            }
+            
+            // 方法3: レンダラープロパティから判定
+            if (renderer.type !== undefined) {
+                // PixiJS v8での新しい type 値に対応
+                return renderer.type === 1 ? 'WebGL' : 'Canvas';
+            }
+            
+            // デフォルト
+            return 'WebGL';
+            
+        } catch (error) {
+            console.warn('⚠️ レンダラータイプ判定エラー:', error);
+            return 'WebGL';
+        }
     }
     
     /**
