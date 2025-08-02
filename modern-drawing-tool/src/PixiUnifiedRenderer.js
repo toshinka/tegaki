@@ -1,5 +1,5 @@
 /**
- * PixiJS統一レンダラー v3.2
+ * PixiJS統一レンダラー v3.2 (PixiJS v8.0対応)
  * PixiJS単一エンジン統一による干渉問題完全根絶
  * 規約: 総合AIコーディング規約v4.1準拠（PixiJS統一座標対応）
  */
@@ -24,9 +24,9 @@ export class PixiUnifiedRenderer {
             debug: null
         };
         
-        // レンダリング設定
+        // レンダリング設定（v8.0対応）
         this.config = {
-            backgroundColor: 0xffffee, // ふたば背景色
+            background: '#ffffee', // ふたば背景色（v8.0では文字列形式推奨）
             antialias: true,
             autoDensity: true,
             resolution: window.devicePixelRatio || 1,
@@ -59,15 +59,15 @@ export class PixiUnifiedRenderer {
     }
     
     /**
-     * PixiJS統一アプリケーション初期化
+     * PixiJS統一アプリケーション初期化（v8.0対応）
      */
     async initialize() {
         try {
             console.log('🎨 PixiJS統一レンダラー初期化開始');
             
-            // PixiJS Application作成（単一インスタンス）
-            this.app = new PIXI.Application({
-                view: this.canvas,
+            // PixiJS v8.0 Application.init()活用
+            this.app = await PIXI.Application.init({
+                canvas: this.canvas,
                 width: this.canvas.width,
                 height: this.canvas.height,
                 ...this.config
@@ -103,28 +103,28 @@ export class PixiUnifiedRenderer {
     }
     
     /**
-     * PixiJS統一レイヤー構築
+     * PixiJS統一レイヤー構築（v8.0対応）
      */
     setupUnifiedLayers() {
         // 背景レイヤー（PixiJS Container）
         this.layers.background = new PIXI.Container();
-        this.layers.background.name = 'background';
+        this.layers.background.label = 'background'; // v8.0: name → label
         this.layers.background.zIndex = 0;
         
         // 描画レイヤー（PixiJS Container）
         this.layers.drawing = new PIXI.Container();
-        this.layers.drawing.name = 'drawing';
+        this.layers.drawing.label = 'drawing'; // v8.0: name → label
         this.layers.drawing.zIndex = 10;
         
         // UIレイヤー（PixiJS Container）
         this.layers.ui = new PIXI.Container();
-        this.layers.ui.name = 'ui';
+        this.layers.ui.label = 'ui'; // v8.0: name → label
         this.layers.ui.zIndex = 20;
         
         // デバッグレイヤー（開発時のみ）
         if (process.env.NODE_ENV === 'development') {
             this.layers.debug = new PIXI.Container();
-            this.layers.debug.name = 'debug';
+            this.layers.debug.label = 'debug'; // v8.0: name → label
             this.layers.debug.zIndex = 30;
         }
         
@@ -146,20 +146,30 @@ export class PixiUnifiedRenderer {
     }
     
     /**
-     * パフォーマンス監視設定
+     * パフォーマンス監視設定（v8.0対応）
      */
     setupPerformanceMonitoring() {
-        // PixiJS Ticker活用FPS監視
-        this.app.ticker.add(() => {
-            this.updatePerformanceStats();
-        });
+        // PixiJS v8.0 Ticker活用FPS監視
+        if (this.app.ticker) {
+            this.app.ticker.add(() => {
+                this.updatePerformanceStats();
+            });
+            
+            console.log('⚡ PixiJS パフォーマンス監視開始');
+        } else {
+            console.warn('⚠️ PixiJS Ticker未対応 - 代替監視実装');
+            // 代替監視機能
+            this.performanceRAF = () => {
+                this.updatePerformanceStats();
+                requestAnimationFrame(this.performanceRAF);
+            };
+            requestAnimationFrame(this.performanceRAF);
+        }
         
         // 定期パフォーマンスレポート
         this.performanceInterval = setInterval(() => {
             this.logPerformanceStats();
         }, 10000); // 10秒間隔
-        
-        console.log('⚡ PixiJS パフォーマンス監視開始');
     }
     
     /**
@@ -188,38 +198,38 @@ export class PixiUnifiedRenderer {
     }
     
     /**
-     * イベント連携設定
+     * イベント連携設定（v8.0対応）
      */
     setupEventIntegration() {
-        // ポインターイベント統一処理
-        this.app.stage.interactive = true;
+        // ポインターイベント統一処理（v8.0対応）
+        this.app.stage.eventMode = 'static'; // v8.0: interactive → eventMode
         this.app.stage.hitArea = new PIXI.Rectangle(0, 0, this.canvas.width, this.canvas.height);
         
         // PixiJS → EventStore 連携
         this.app.stage.on('pointerdown', (event) => {
             this.eventStore.emit('input:pointer:down', {
-                pixi: event.data.getLocalPosition(this.app.stage),
-                global: event.data.global,
-                pressure: event.data.pressure || 1.0,
-                pointerType: event.data.pointerType || 'mouse'
+                pixi: event.global, // v8.0: getLocalPosition廃止
+                global: event.global,
+                pressure: event.pressure || 1.0,
+                pointerType: event.pointerType || 'mouse'
             });
         });
         
         this.app.stage.on('pointermove', (event) => {
             this.eventStore.emit('input:pointer:move', {
-                pixi: event.data.getLocalPosition(this.app.stage),
-                global: event.data.global,
-                pressure: event.data.pressure || 1.0,
-                pointerType: event.data.pointerType || 'mouse'
+                pixi: event.global, // v8.0: getLocalPosition廃止
+                global: event.global,  
+                pressure: event.pressure || 1.0,
+                pointerType: event.pointerType || 'mouse'
             });
         });
         
         this.app.stage.on('pointerup', (event) => {
             this.eventStore.emit('input:pointer:up', {
-                pixi: event.data.getLocalPosition(this.app.stage),
-                global: event.data.global,
-                pressure: event.data.pressure || 1.0,
-                pointerType: event.data.pointerType || 'mouse'
+                pixi: event.global, // v8.0: getLocalPosition廃止
+                global: event.global,
+                pressure: event.pressure || 1.0,
+                pointerType: event.pointerType || 'mouse'
             });
         });
         
@@ -254,7 +264,7 @@ export class PixiUnifiedRenderer {
     }
     
     /**
-     * PixiJS統一描画処理
+     * PixiJS統一描画処理（v8.0対応）
      */
     drawStroke(strokeData) {
         try {
@@ -267,20 +277,20 @@ export class PixiUnifiedRenderer {
             // PixiJS Graphics統一描画
             const graphics = new PIXI.Graphics();
             
-            // 高品質線描画設定
+            // 高品質線描画設定（v8.0対応）
             graphics.lineStyle({
                 width: size || 2,
                 color: color || 0x800000,
                 alpha: opacity || 1.0,
-                cap: PIXI.LINE_CAP.ROUND,
-                join: PIXI.LINE_JOIN.ROUND,
-                native: true // GPU最適化
+                cap: 'round', // v8.0: PIXI.LINE_CAP.ROUND → 'round'
+                join: 'round' // v8.0: PIXI.LINE_JOIN.ROUND → 'round'
             });
             
             // PixiJS自然座標系描画（変換不要）
             if (points.length === 1) {
                 // 単点描画
-                graphics.drawCircle(points[0].x, points[0].y, (size || 2) / 2);
+                graphics.circle(points[0].x, points[0].y, (size || 2) / 2);
+                graphics.fill(color || 0x800000);
             } else {
                 // スムーズ曲線描画
                 graphics.moveTo(points[0].x, points[0].y);
@@ -295,6 +305,8 @@ export class PixiUnifiedRenderer {
                     const last = points[points.length - 1];
                     graphics.lineTo(last.x, last.y);
                 }
+                
+                graphics.stroke();
             }
             
             // 描画レイヤーに追加
@@ -348,12 +360,14 @@ export class PixiUnifiedRenderer {
             let uiElement = null;
             
             if (element.type === 'text') {
-                uiElement = new PIXI.Text(element.text, {
-                    fontFamily: element.fontFamily || 'Arial, sans-serif',
-                    fontSize: element.fontSize || 12,
-                    fill: element.color || 0x800000,
-                    stroke: element.strokeColor || 0xffffff,
-                    strokeThickness: element.strokeWidth || 0
+                uiElement = new PIXI.Text({
+                    text: element.text,
+                    style: {
+                        fontFamily: element.fontFamily || 'Arial, sans-serif',
+                        fontSize: element.fontSize || 12,
+                        fill: element.color || 0x800000,
+                        stroke: { color: element.strokeColor || 0xffffff, width: element.strokeWidth || 0 }
+                    }
                 });
             } else if (element.type === 'sprite') {
                 uiElement = PIXI.Sprite.from(element.texture);
@@ -420,7 +434,7 @@ export class PixiUnifiedRenderer {
     createLayer(layerId, parentLayerId = 'drawing') {
         try {
             const layer = new PIXI.Container();
-            layer.name = layerId;
+            layer.label = layerId; // v8.0: name → label
             
             const parentLayer = this.layers[parentLayerId] || this.layers.drawing;
             parentLayer.addChild(layer);
@@ -435,11 +449,11 @@ export class PixiUnifiedRenderer {
     }
     
     /**
-     * レイヤー検索
+     * レイヤー検索（v8.0対応）
      */
     findLayer(layerId) {
         const searchInContainer = (container) => {
-            if (container.name === layerId) {
+            if (container.label === layerId) { // v8.0: name → label
                 return container;
             }
             
@@ -517,17 +531,17 @@ export class PixiUnifiedRenderer {
     }
     
     /**
-     * システム情報取得
+     * システム情報取得（v8.0対応）
      */
     getInfo() {
         return {
-            type: this.app.renderer.type === PIXI.RENDERER_TYPE.WEBGL ? 'WebGL' : 'Canvas',
+            type: this.app.renderer.type === 1 ? 'WebGL' : 'Canvas', // v8.0: RENDERER_TYPE定数変更
             version: PIXI.VERSION,
             resolution: this.app.renderer.resolution,
-            backgroundColor: this.config.backgroundColor,
+            backgroundColor: this.config.background,
             size: {
-                width: this.app.view.width,
-                height: this.app.view.height
+                width: this.app.canvas.width,
+                height: this.app.canvas.height
             },
             layers: Object.keys(this.layers).length,
             phase1Ready: this.phase1Ready,

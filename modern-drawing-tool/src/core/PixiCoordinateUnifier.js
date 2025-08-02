@@ -1,5 +1,5 @@
 /**
- * PixiJS統一座標システム v3.2
+ * PixiJS統一座標システム v3.2 (PixiJS v8.0対応)
  * PixiJS自然座標系活用による座標問題完全根絶
  * 規約: 総合AIコーディング規約v4.1準拠（PixiJS統一座標対応）
  */
@@ -18,8 +18,8 @@ export class PixiCoordinateUnifier {
         
         // PixiJS自然座標系情報（変換不要）
         this.viewport = {
-            width: pixiApp.view.width,
-            height: pixiApp.view.height,
+            width: pixiApp.canvas.width,  // v8.0: view → canvas
+            height: pixiApp.canvas.height, // v8.0: view → canvas
             scale: 1.0,
             offsetX: 0,
             offsetY: 0
@@ -69,11 +69,11 @@ export class PixiCoordinateUnifier {
     }
     
     /**
-     * PixiJS InteractionManager設定
+     * PixiJS InteractionManager設定（v8.0対応）
      */
     setupPixiInteraction() {
-        // PixiJS統一インタラクション有効化
-        this.stage.interactive = true;
+        // PixiJS v8.0統一インタラクション有効化
+        this.stage.eventMode = 'static'; // v8.0: interactive → eventMode
         this.stage.hitArea = new PIXI.Rectangle(0, 0, this.viewport.width, this.viewport.height);
         
         // デバッグ用座標表示
@@ -85,7 +85,7 @@ export class PixiCoordinateUnifier {
     }
     
     /**
-     * 座標デバッグ表示設定
+     * 座標デバッグ表示設定（v8.0対応）
      */
     setupCoordinateDebug() {
         if (process.env.NODE_ENV === 'development') {
@@ -94,13 +94,15 @@ export class PixiCoordinateUnifier {
             this.drawCoordinateGrid();
             this.stage.addChild(this.debugGrid);
             
-            // 座標情報表示テキスト
-            this.debugText = new PIXI.Text('座標: (0, 0)', {
-                fontFamily: 'Arial',
-                fontSize: 12,
-                fill: 0x800000,
-                stroke: 0xffffff,
-                strokeThickness: 1
+            // 座標情報表示テキスト（v8.0対応）
+            this.debugText = new PIXI.Text({
+                text: '座標: (0, 0)',
+                style: {
+                    fontFamily: 'Arial',
+                    fontSize: 12,
+                    fill: 0x800000,
+                    stroke: { color: 0xffffff, width: 1 }
+                }
             });
             this.debugText.x = 10;
             this.debugText.y = 10;
@@ -109,15 +111,17 @@ export class PixiCoordinateUnifier {
     }
     
     /**
-     * PixiJS座標デバッググリッド描画
+     * PixiJS座標デバッググリッド描画（v8.0対応）
      */
     drawCoordinateGrid() {
         this.debugGrid.clear();
-        this.debugGrid.lineStyle(1, 0xaa5a56, 0.3);
         
         const gridSize = 50;
         const width = this.viewport.width;
         const height = this.viewport.height;
+        
+        // グリッド線描画（v8.0新API）
+        this.debugGrid.lineStyle({ width: 1, color: 0xaa5a56, alpha: 0.3 });
         
         // 垂直グリッド線
         for (let x = 0; x <= width; x += gridSize) {
@@ -131,13 +135,15 @@ export class PixiCoordinateUnifier {
             this.debugGrid.lineTo(width, y);
         }
         
+        this.debugGrid.stroke();
+        
         // 原点マーカー（左上）
-        this.debugGrid.lineStyle(3, 0x800000, 0.8);
-        this.debugGrid.drawCircle(0, 0, 5);
+        this.debugGrid.circle(0, 0, 5);
+        this.debugGrid.fill(0x800000);
         
         // 中心マーカー
-        this.debugGrid.lineStyle(2, 0xf0e0d6, 0.6);
-        this.debugGrid.drawCircle(width / 2, height / 2, 3);
+        this.debugGrid.circle(width / 2, height / 2, 3);
+        this.debugGrid.fill(0xf0e0d6);
     }
     
     /**
@@ -280,31 +286,32 @@ export class PixiCoordinateUnifier {
     }
     
     /**
-     * ポインターイベント処理（座標デバッグ）
+     * ポインターイベント処理（座標デバッグ）（v8.0対応）
      */
     handlePointerMove(event) {
         if (this.debugText) {
-            const localPos = event.data.getLocalPosition(this.stage);
+            // v8.0: event.globalを直接使用
+            const localPos = this.stage.toLocal(event.global);
             this.debugText.text = `座標: (${Math.round(localPos.x)}, ${Math.round(localPos.y)})`;
             
             // EventStore経由で座標情報発信
             this.eventStore.emit('coordinate:update', {
                 pixi: { x: localPos.x, y: localPos.y },
-                screen: { x: event.data.global.x, y: event.data.global.y },
+                screen: { x: event.global.x, y: event.global.y },
                 unified: true
             });
         }
     }
     
     /**
-     * ビューポート更新
+     * ビューポート更新（v8.0対応）
      */
     updateViewport() {
         try {
             const oldViewport = { ...this.viewport };
             
-            this.viewport.width = this.app.view.width;
-            this.viewport.height = this.app.view.height;
+            this.viewport.width = this.app.canvas.width;   // v8.0: view → canvas
+            this.viewport.height = this.app.canvas.height; // v8.0: view → canvas
             
             // PixiJS側も更新
             this.app.renderer.resize(this.viewport.width, this.viewport.height);
