@@ -1,51 +1,60 @@
 import { defineConfig } from 'vite'
+import { resolve } from 'path'
 
 export default defineConfig({
   base: './',
   server: {
     port: 3000,
-    host: true
+    host: true,
+    open: false
   },
   build: {
     target: 'es2015',
+    outDir: 'dist',
     rollupOptions: {
-      external: [
-        // Worker関連のファイルを正しいパターンで指定
-        /.*\.worker\.js$/,
-        /.*\/worker\.js$/,
-        /.*\/design-config\.js$/
-      ],
+      input: resolve(process.cwd(), 'index.html'),
       output: {
         manualChunks: {
+          // メインレンダリングエンジン
           pixi: ['pixi.js'],
-          vendor: ['lodash-es']
+          
+          // ユーティリティライブラリ
+          utils: ['lodash-es', 'eventemitter3'],
+          
+          // 数学・ジオメトリ
+          math: ['gl-matrix', 'earcut'],
+          
+          // カラー・SVG処理
+          graphics: ['chroma-js', 'svg-pathdata', 'svg-path-parser'],
+          
+          // ファイル処理
+          files: ['file-saver', 'canvas-to-blob', 'lz-string']
         }
       }
     },
-    // より詳細なチャンク分割設定
     chunkSizeWarningLimit: 1000
   },
   resolve: {
     alias: {
-      '@': new URL('./src', import.meta.url).pathname
+      '@': resolve(process.cwd(), 'src')
     }
   },
   optimizeDeps: {
     include: [
       'pixi.js',
-      'lodash-es'
-    ],
-    // Workerファイルを最適化から除外
-    exclude: [
-      '**/*.worker.js',
-      '**/worker.js',
-      '**/design-config.js'
+      'lodash-es',
+      '@tabler/icons',
+      'svg-pathdata',
+      'svg-path-parser',
+      'gl-matrix',
+      'chroma-js',
+      'file-saver',
+      'canvas-to-blob',
+      'lz-string',
+      'eventemitter3',
+      'earcut'
     ]
   },
-  // Workerとデザインファイルの処理を改善
-  assetsInclude: ['**/*.worker.js'],
-  
-  // より安全なesbuild設定
   esbuild: {
     target: 'es2015',
     keepNames: true

@@ -1,468 +1,239 @@
-// モダンお絵かきツール v3.3 - Phase1基本版
-// PixiJS v8統一基盤 + アイコン責務集約対応
+/**
+ * モダンお絵かきツール - メインエントリーポイント
+ * Phase2: 高性能描画エンジン
+ */
 
-import { Application, Graphics, Container, Text } from 'pixi.js';
-import mitt from 'mitt';
+// Core PIXI.js v8 Engine
+import { PixiV8UnifiedRenderer } from './pixi-v8/PixiV8UnifiedRenderer.js';
+import { PixiV8UIController } from './pixi-v8/PixiV8UIController.js';
+import { PixiV8InputController } from './pixi-v8/PixiV8InputController.js';
+import { PixiV8LayerProcessor } from './pixi-v8/PixiV8LayerProcessor.js';
+import { PixiV8ToolProcessor } from './pixi-v8/PixiV8ToolProcessor.js';
+
+// Stores and Controllers
+import { EventStore } from './stores/EventStore.js';
+import { HistoryController } from './stores/HistoryController.js';
+
+// Utilities
+import { CanvasController } from './utils/CanvasController.js';
+import { ColorProcessor } from './utils/ColorProcessor.js';
+import { ShortcutController } from './utils/ShortcutController.js';
+import { TablerIconHelper } from './utils/TablerIconHelper.js'; // 新規追加
+
+// Third-party Dependencies
+import * as PIXI from 'pixi.js';
+import _ from 'lodash-es';
 
 /**
- * アプリケーションメインクラス（Phase1基本版）
- * デザイン設定はindex.htmlから読み込み
+ * アプリケーション初期化
  */
-class ModernDrawingApp {
-    constructor() {
-        // デザイン設定読み込み（index.htmlから）
-        this.config = window.DESIGN_CONFIG || this.getDefaultConfig();
-        this.pixiConfig = window.PIXI_CONFIG || this.getDefaultPixiConfig();
-        
-        // イベントバス初期化
-        this.eventBus = mitt();
-        
-        // 状態管理
-        this.state = {
-            currentTool: 'pen',
-            brushSize: 10,
-            color: this.config.colors.maroon,
-            isDrawing: false
-        };
-        
-        // 初期化実行
-        this.init();
-    }
+class TegakiDrawingTool {
+  constructor() {
+    this.renderer = null;
+    this.uiController = null;
+    this.inputController = null;
+    this.layerProcessor = null;
+    this.toolProcessor = null;
+    this.eventStore = null;
+    this.historyController = null;
+    this.canvasController = null;
+    this.colorProcessor = null;
+    this.shortcutController = null;
     
-    /**
-     * アプリケーション初期化
-     */
-    async init() {
-        try {
-            console.log('🎨 モダンお絵かきツール v3.3 Phase1 起動中...');
-            
-            // PixiJS v8アプリ初期化
-            await this.initPixiApp();
-            
-            // UI初期化（デザイン設定から）
-            this.initUI();
-            
-            // イベント初期化
-            this.initEvents();
-            
-            console.log('✅ Phase1初期化完了');
-            
-        } catch (error) {
-            console.error('❌ 初期化エラー:', error);
-            this.showError('アプリケーションの初期化に失敗しました');
-        }
+    this.isInitialized = false;
+  }
+
+  /**
+   * アプリケーション初期化
+   */
+  async init() {
+    try {
+      console.log('🎨 Tegaki Drawing Tool Phase2 初期化開始...');
+      
+      // 1. イベントストア初期化
+      this.eventStore = new EventStore();
+      
+      // 2. Canvas Controller初期化
+      this.canvasController = new CanvasController();
+      
+      // 3. Color Processor初期化
+      this.colorProcessor = new ColorProcessor();
+      
+      // 4. PIXI.js v8 統合レンダラー初期化
+      this.renderer = new PixiV8UnifiedRenderer({
+        width: window.innerWidth,
+        height: window.innerHeight,
+        antialias: true,
+        resolution: window.devicePixelRatio,
+        autoDensity: true
+      });
+      
+      // 5. レイヤープロセッサー初期化
+      this.layerProcessor = new PixiV8LayerProcessor(this.renderer, this.eventStore);
+      
+      // 6. ツールプロセッサー初期化
+      this.toolProcessor = new PixiV8ToolProcessor(this.renderer, this.eventStore);
+      
+      // 7. UI Controller初期化（アイコンヘルパー含む）
+      this.uiController = new PixiV8UIController(this.eventStore, {
+        iconHelper: TablerIconHelper
+      });
+      
+      // 8. Input Controller初期化
+      this.inputController = new PixiV8InputController(this.renderer, this.eventStore);
+      
+      // 9. History Controller初期化
+      this.historyController = new HistoryController(this.eventStore);
+      
+      // 10. Shortcut Controller初期化
+      this.shortcutController = new ShortcutController(this.eventStore);
+      
+      // 11. UIアイコンの初期化
+      this.initializeUIIcons();
+      
+      // 12. イベントリスナー設定
+      this.setupEventListeners();
+      
+      // 13. 初期レイヤー作成
+      this.layerProcessor.createLayer('背景レイヤー');
+      
+      this.isInitialized = true;
+      console.log('✅ Tegaki Drawing Tool Phase2 初期化完了');
+      
+      // 14. 開発モード情報表示
+      if (import.meta.env.DEV) {
+        this.displayDevInfo();
+      }
+      
+    } catch (error) {
+      console.error('❌ アプリケーション初期化エラー:', error);
+      throw error;
     }
+  }
+
+  /**
+   * UIアイコンの初期化
+   */
+  initializeUIIcons() {
+    console.log('🎯 UIアイコン初期化...');
     
-    /**
-     * PixiJS v8アプリ初期化
-     */
-    async initPixiApp() {
-        const canvas = document.getElementById('drawingCanvas');
-        if (!canvas) {
-            throw new Error('drawingCanvas要素が見つかりません');
-        }
-        
-        // PixiJS v8アプリ作成
-        this.app = new Application();
-        
-        // 初期化設定
-        await this.app.init({
-            canvas: canvas,
-            width: 800,
-            height: 600,
-            preference: this.pixiConfig.preference || 'webgl',
-            antialias: this.pixiConfig.antialias !== false,
-            autoDensity: this.pixiConfig.autoDensity !== false,
-            resolution: this.pixiConfig.resolution || window.devicePixelRatio || 1,
-            backgroundColor: this.pixiConfig.backgroundColor || this.config.colors.cream
-        });
-        
-        console.log('🖼️ PixiJS v8アプリ初期化完了');
-        
-        // 基本レイヤー作成
-        this.setupBasicLayers();
+    // ツールバーアイコン
+    const toolIcons = {
+      'brush-tool': 'brush',
+      'pen-tool': 'pen',
+      'eraser-tool': 'eraser',
+      'bucket-tool': 'bucket',
+      'eyedropper-tool': 'eyedropper',
+      'selection-tool': 'selection',
+      'zoom-tool': 'zoom',
+      'hand-tool': 'hand'
+    };
+
+    // レイヤーパネルアイコン
+    const layerIcons = {
+      'layer-add': 'layer-add',
+      'layer-delete': 'layer-delete',
+      'layer-visible': 'layer-visible',
+      'layer-lock': 'layer-lock'
+    };
+
+    // ファイルメニューアイコン
+    const fileIcons = {
+      'file-new': 'new',
+      'file-open': 'open',
+      'file-save': 'save',
+      'file-export': 'export'
+    };
+
+    // アイコンを設定
+    Object.entries({...toolIcons, ...layerIcons, ...fileIcons}).forEach(([elementId, iconType]) => {
+      const element = document.getElementById(elementId);
+      if (element) {
+        TablerIconHelper.setElementIcon(element, iconType, { size: 20 });
+      }
+    });
+  }
+
+  /**
+   * イベントリスナー設定
+   */
+  setupEventListeners() {
+    // ウィンドウリサイズ
+    window.addEventListener('resize', _.throttle(() => {
+      this.renderer.resize(window.innerWidth, window.innerHeight);
+    }, 100));
+
+    // アプリケーション終了時
+    window.addEventListener('beforeunload', () => {
+      this.cleanup();
+    });
+  }
+
+  /**
+   * 開発モード情報表示
+   */
+  displayDevInfo() {
+    console.log('🔧 開発モード情報:');
+    console.log('- PIXI.js Version:', PIXI.VERSION);
+    console.log('- Renderer Type:', this.renderer.type);
+    console.log('- Resolution:', this.renderer.resolution);
+    console.log('- Canvas Size:', this.renderer.width, 'x', this.renderer.height);
+    console.log('- Device Pixel Ratio:', window.devicePixelRatio);
+  }
+
+  /**
+   * クリーンアップ
+   */
+  cleanup() {
+    if (this.renderer) {
+      this.renderer.destroy();
     }
-    
-    /**
-     * 基本レイヤーセットアップ
-     */
-    setupBasicLayers() {
-        // 背景レイヤー
-        this.backgroundLayer = new Container();
-        this.backgroundLayer.name = 'background';
-        this.app.stage.addChild(this.backgroundLayer);
-        
-        // 描画レイヤー
-        this.drawingLayer = new Container();
-        this.drawingLayer.name = 'drawing';
-        this.app.stage.addChild(this.drawingLayer);
-        
-        // UI レイヤー
-        this.uiLayer = new Container();
-        this.uiLayer.name = 'ui';
-        this.app.stage.addChild(this.uiLayer);
-        
-        // 背景色設定
-        const bg = new Graphics();
-        bg.rect(0, 0, this.app.screen.width, this.app.screen.height);
-        bg.fill(this.config.colors.cream);
-        this.backgroundLayer.addChild(bg);
-        
-        console.log('📚 基本レイヤー作成完了');
+    if (this.eventStore) {
+      this.eventStore.removeAllListeners();
     }
-    
-    /**
-     * UI初期化（デザイン設定から動的生成）
-     */
-    initUI() {
-        const sidebar = document.getElementById('sidebar');
-        if (!sidebar) {
-            console.warn('sidebar要素が見つかりません');
-            return;
-        }
-        
-        // サイドバーアイコン生成
-        this.generateSidebarIcons(sidebar);
-        
-        // ショートカットヒント表示
-        this.showShortcutHint();
-        
-        console.log('🎛️ UI初期化完了');
-    }
-    
-    /**
-     * サイドバーアイコン生成（デザイン設定から）
-     */
-    generateSidebarIcons(sidebar) {
-        // 既存のアイコンをクリア
-        sidebar.innerHTML = '';
-        
-        // ツールグループ毎にアイコン生成
-        this.config.toolGroups.forEach((group, groupIndex) => {
-            group.tools.forEach((tool, toolIndex) => {
-                const iconElement = this.createToolIcon(tool);
-                sidebar.appendChild(iconElement);
-            });
-            
-            // グループ区切り線（最後のグループ以外）
-            if (groupIndex < this.config.toolGroups.length - 1) {
-                const separator = document.createElement('div');
-                separator.className = 'tool-separator';
-                sidebar.appendChild(separator);
-            }
-        });
-    }
-    
-    /**
-     * ツールアイコン作成
-     */
-    createToolIcon(tool) {
-        const icon = document.createElement('div');
-        icon.className = 'tool-icon';
-        icon.id = `tool-${tool.id}`;
-        icon.title = `${tool.title} (${tool.shortcut})`;
-        
-        // アイコン表示（Phase1では文字で代用）
-        icon.innerHTML = this.getIconText(tool.icon);
-        
-        // アクティブ状態設定
-        if (tool.id === this.state.currentTool) {
-            icon.classList.add('active');
-        }
-        
-        // クリックイベント
-        icon.addEventListener('click', () => {
-            this.selectTool(tool.id);
-        });
-        
-        return icon;
-    }
-    
-    /**
-     * アイコン文字取得（Phase1暫定実装）
-     */
-    getIconText(iconId) {
-        const iconMap = {
-            download: '💾',
-            resize: '📐',
-            pen: '✏️',
-            airbrush: '🖌️',
-            blur: '🌫️',
-            eraser: '🗑️',
-            eyedropper: '💧',
-            select: '⬚',
-            fill: '🪣',
-            text: '📝',
-            shape: '⭕',
-            transform: '✂️',
-            animation: '🎬',
-            layers: '📚',
-            settings: '⚙️'
-        };
-        
-        return iconMap[iconId] || '❓';
-    }
-    
-    /**
-     * ツール選択
-     */
-    selectTool(toolId) {
-        // 前のツールの非アクティブ化
-        const prevIcon = document.getElementById(`tool-${this.state.currentTool}`);
-        if (prevIcon) {
-            prevIcon.classList.remove('active');
-        }
-        
-        // 新しいツールのアクティブ化
-        const newIcon = document.getElementById(`tool-${toolId}`);
-        if (newIcon) {
-            newIcon.classList.add('active');
-        }
-        
-        // 状態更新
-        this.state.currentTool = toolId;
-        
-        // イベント発行
-        this.eventBus.emit('toolChanged', { toolId, tool: toolId });
-        
-        console.log(`🔧 ツール切り替え: ${toolId}`);
-    }
-    
-    /**
-     * イベント初期化
-     */
-    initEvents() {
-        // キーボードショートカット
-        document.addEventListener('keydown', (e) => {
-            this.handleKeydown(e);
-        });
-        
-        // キャンバスマウスイベント
-        const canvas = this.app.canvas;
-        canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
-        canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
-        canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
-        
-        // リサイズイベント
-        window.addEventListener('resize', () => this.handleResize());
-        
-        console.log('🎮 イベント初期化完了');
-    }
-    
-    /**
-     * キーボードショートカット処理
-     */
-    handleKeydown(e) {
-        // ツールショートカット
-        const toolShortcuts = {
-            'KeyP': 'pen',
-            'KeyA': 'airbrush',
-            'KeyB': 'blur',
-            'KeyE': 'eraser',
-            'KeyI': 'eyedropper',
-            'KeyM': 'select',
-            'KeyG': 'fill',
-            'KeyT': 'text',
-            'KeyU': 'shape',
-            'KeyV': 'transform'
-        };
-        
-        if (toolShortcuts[e.code]) {
-            e.preventDefault();
-            this.selectTool(toolShortcuts[e.code]);
-            return;
-        }
-        
-        // その他のショートカット
-        if (e.code === 'Tab') {
-            e.preventDefault();
-            this.togglePanel();
-        } else if (e.code === 'KeyF') {
-            e.preventDefault();
-            this.toggleFullscreen();
-        } else if (e.code === 'Escape') {
-            e.preventDefault();
-            this.closePopups();
-        }
-    }
-    
-    /**
-     * マウスダウン処理
-     */
-    handleMouseDown(e) {
-        if (this.state.currentTool === 'pen') {
-            this.state.isDrawing = true;
-            this.startDrawing(e);
-        }
-    }
-    
-    /**
-     * マウス移動処理
-     */
-    handleMouseMove(e) {
-        if (this.state.isDrawing && this.state.currentTool === 'pen') {
-            this.continueDrawing(e);
-        }
-    }
-    
-    /**
-     * マウスアップ処理
-     */
-    handleMouseUp(e) {
-        if (this.state.isDrawing) {
-            this.state.isDrawing = false;
-            this.endDrawing(e);
-        }
-    }
-    
-    /**
-     * 描画開始
-     */
-    startDrawing(e) {
-        const rect = this.app.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        this.currentStroke = new Graphics();
-        this.currentStroke.circle(x, y, this.state.brushSize / 2);
-        this.currentStroke.fill(this.state.color);
-        
-        this.drawingLayer.addChild(this.currentStroke);
-        
-        this.lastPoint = { x, y };
-    }
-    
-    /**
-     * 描画継続
-     */
-    continueDrawing(e) {
-        const rect = this.app.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        if (this.currentStroke && this.lastPoint) {
-            // 線を描画
-            this.currentStroke.moveTo(this.lastPoint.x, this.lastPoint.y);
-            this.currentStroke.lineTo(x, y);
-            this.currentStroke.stroke({
-                width: this.state.brushSize,
-                color: this.state.color,
-                cap: 'round',
-                join: 'round'
-            });
-            
-            this.lastPoint = { x, y };
-        }
-    }
-    
-    /**
-     * 描画終了
-     */
-    endDrawing(e) {
-        this.currentStroke = null;
-        this.lastPoint = null;
-    }
-    
-    /**
-     * パネル表示切り替え
-     */
-    togglePanel() {
-        const layerPanel = document.getElementById('layerPanel');
-        if (layerPanel) {
-            layerPanel.classList.toggle('hidden');
-        }
-    }
-    
-    /**
-     * フルスクリーン切り替え
-     */
-    toggleFullscreen() {
-        document.body.classList.toggle('fullscreen-drawing');
-    }
-    
-    /**
-     * ポップアップ閉じる
-     */
-    closePopups() {
-        const popups = document.querySelectorAll('.popup-panel');
-        popups.forEach(popup => {
-            popup.style.display = 'none';
-        });
-    }
-    
-    /**
-     * リサイズ処理
-     */
-    handleResize() {
-        if (this.app) {
-            this.app.renderer.resize(
-                this.app.canvas.clientWidth,
-                this.app.canvas.clientHeight
-            );
-        }
-    }
-    
-    /**
-     * ショートカットヒント表示
-     */
-    showShortcutHint() {
-        const hint = document.getElementById('shortcutHint');
-        if (hint) {
-            hint.classList.add('visible');
-            setTimeout(() => {
-                hint.classList.remove('visible');
-            }, 3000);
-        }
-    }
-    
-    /**
-     * エラー表示
-     */
-    showError(message) {
-        console.error(message);
-        alert(`エラー: ${message}`);
-    }
-    
-    /**
-     * デフォルト設定取得
-     */
-    getDefaultConfig() {
-        return {
-            colors: {
-                maroon: '#800000',
-                lightMaroon: '#aa5a56',
-                medium: '#cf9c97',
-                lightMedium: '#e9c2ba',
-                cream: '#f0e0d6',
-                background: '#ffffee'
-            },
-            toolGroups: [
-                {
-                    name: 'drawing',
-                    tools: [
-                        { id: 'pen', icon: 'pen', title: 'ペン', shortcut: 'P' },
-                        { id: 'eraser', icon: 'eraser', title: '消しゴム', shortcut: 'E' }
-                    ]
-                }
-            ]
-        };
-    }
-    
-    /**
-     * デフォルトPixiJS設定取得
-     */
-    getDefaultPixiConfig() {
-        return {
-            preference: 'webgl',
-            antialias: true,
-            autoDensity: true,
-            resolution: window.devicePixelRatio || 1,
-            backgroundColor: '#f0e0d6'
-        };
-    }
+  }
 }
 
-// アプリケーション起動
-document.addEventListener('DOMContentLoaded', () => {
-    window.drawingApp = new ModernDrawingApp();
-});
+/**
+ * アプリケーション起動
+ */
+async function startApp() {
+  try {
+    const app = new TegakiDrawingTool();
+    await app.init();
+    
+    // グローバルに公開（デバッグ用）
+    if (import.meta.env.DEV) {
+      window.tegakiApp = app;
+    }
+    
+  } catch (error) {
+    console.error('アプリケーション起動エラー:', error);
+    
+    // エラー表示UI
+    const errorDiv = document.createElement('div');
+    errorDiv.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #ff6b6b;
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+      font-family: sans-serif;
+      z-index: 10000;
+    `;
+    errorDiv.textContent = `初期化エラー: ${error.message}`;
+    document.body.appendChild(errorDiv);
+  }
+}
+
+// DOM読み込み完了後に起動
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', startApp);
+} else {
+  startApp();
+}
+
+export { TegakiDrawingTool };

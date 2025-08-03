@@ -1,89 +1,42 @@
 {
-  "name": "modern-drawing-tool-v33",
-  "version": "3.3.0",
-  "description": "PixiJS v8統一基盤モダンお絵かきツール - WebGPU・ESM・Chrome API統合・Phosphor Icons・アイコン責務集約・ふたば色UI",
+  "name": "tegaki-drawing-tool",
+  "version": "1.0.0",
+  "description": "モダンお絵かきツール Phase2 - 高性能描画エンジン",
+  "main": "index.html",
   "type": "module",
-  "main": "src/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "serve": "vite preview --port 3000",
-    "clean": "rm -rf dist node_modules",
-    "reinstall": "npm run clean && npm install",
-    "type-check": "tsc --noEmit",
-    "lint": "echo 'Linting with PixiJS v8 ESM standards'",
-    "icon-check": "echo 'Checking Phosphor Icons integration'",
-    "design-sync": "echo 'Syncing design config from index.html'",
-    "phase1": "echo 'Phase1: PixiJS v8統一基盤・エアスプレー対応'",
-    "phase2": "echo 'Phase2: 実用機能・移動UI対応'",
-    "phase3": "echo 'Phase3: アニメーション・オニオンスキン復活'",
-    "phase4": "echo 'Phase4: 高度機能・Live2D拡張'"
+    "clean": "rm -rf dist .vite",
+    "audit-fix": "npm audit fix"
   },
+  "keywords": [
+    "drawing",
+    "pixi",
+    "canvas",
+    "tegaki",
+    "svg",
+    "vector"
+  ],
+  "author": "",
+  "license": "MIT",
   "dependencies": {
-    "pixi.js": "^8.0.0",
-    "@pixi/filters": "^8.0.0",
-    "@pixi/mesh": "^8.0.0",
-    "@pixi/particle-emitter": "^5.0.8",
-    "@pixi/gif": "^2.1.3",
-    "pixi-spine": "^4.0.4",
-    "pixi-sound": "^6.0.1",
-    "pixi-projection": "^1.0.8",
-    "@pixi/tilemap": "^4.2.0",
-    "mitt": "^3.0.1",
+    "@tabler/icons": "^3.34.1",
+    "canvas-to-blob": "^1.0.0",
+    "chroma-js": "^2.6.0",
+    "earcut": "^2.2.4",
+    "eventemitter3": "^5.0.1",
+    "file-saver": "^2.0.5",
+    "gl-matrix": "^3.4.3",
     "lodash-es": "^4.17.21",
-    "chroma-js": "^3.1.2",
-    "@phosphor-icons/core": "^2.1.1",
-    "lz-string": "^1.5.0"
+    "lz-string": "^1.5.0",
+    "pixi.js": "^8.4.1",
+    "svg-path-parser": "^1.1.0",
+    "svg-pathdata": "^6.0.3"
   },
   "devDependencies": {
-    "vite": "^5.0.0",
-    "@vitejs/plugin-legacy": "^5.0.0",
-    "typescript": "^5.0.0",
-    "@types/node": "^20.0.0",
-    "concurrently": "^8.0.0",
-    "cross-env": "^7.0.3"
-  },
-  "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=8.0.0"
-  },
-  "browserslist": [
-    "> 1%",
-    "last 2 versions",
-    "not dead",
-    "not ie 11"
-  ],
-  "keywords": [
-    "pixijs",
-    "pixijs-v8",
-    "webgpu",
-    "canvas",
-    "drawing-tool",
-    "graphics",
-    "esm",
-    "chrome-api",
-    "futaba",
-    "airbrush",
-    "animation",
-    "onion-skin",
-    "phosphor-icons",
-    "design-centralized",
-    "responsibility-separation",
-    "adobe-fresco-style",
-    "storyboarder-style"
-  ],
-  "author": "PixiJS v8 Drawing Tool Project v3.3 - アイコン責務集約版",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/toshinka/tegaki.git"
-  },
-  "config": {
-    "pixijs_version": "8.0.0",
-    "phosphor_icons": "2.1.1",
-    "design_centralized": true,
-    "futaba_colors": true,
-    "webgpu_enabled": true
+    "@types/file-saver": "^2.0.7",
+    "vite": "^5.4.19"
   }
 }
