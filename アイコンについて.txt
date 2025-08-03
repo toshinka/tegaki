@@ -1,0 +1,19 @@
+機能・用途	推定アイコン名（Phosphor）	Phosphorに存在するか	推奨ウェイト	代替候補ライブラリ
+📥 ダウンロード	download	✅ 有り	Regular / Bold	—
+⤢ リサイズ	resize または selection 系	✅ resize 有り	Regular	—
+🎨 カラーパレット	palette	✅ 有り	Regular / Duotone	—
+✏️ ペン	paint-brush	✅ 有り	Regular / Bold	—
+🗑️ 消しゴム	eraser	✅ 有り	Regular	—
+🪣 塗りつぶし	fill または bucket	✅ bucket 有り	Regular / Bold	—
+🌫️ ボカシ	blur または dots-three-outline	❌ 無し	—	Remix Icons などで blur
+💧 スポイト	eyedropper	✅ 有り	Regular	—
+⬚ 範囲選択	selection, selection-plus 等	✅ 有り	Regular	—
+📝 テキスト	text, text-a, text-h-one など	✅ 有り	Regular / Light	—
+⭕ 図形	circle, square, polygon 等	✅ 有り	Regular / Light	—
+✂️ 変形	transform または selection 系	✅ selection 有り	Regular	—
+📚 レイヤー	layers, layers-plus	✅ 有り	Regular / Fill	—
+🎬 アニメ	film-strip, play, play-circle	✅ 有り	Regular / Bold	—
+⚙️ 設定	gear または gear-fine	✅ 有り	Regular / Light	—
+▶️ 再生 / ⏯️ 再生/停止/➡️	play, pause, caret-right	✅ 有り	Regular / Bold	—
+🔄 ループ・リロード	arrow-clockwise, repeat	✅ arrow-clockwise 有	Regular	—
+FPS 表示	全体 UI 構成の一部でアイコン無し	—	—	テキスト表示と組み合わせ推奨
