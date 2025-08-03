@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <!-- SEO・メタ情報 -->
+  <title>モダンお絵かきツール v4.1</title>
+  <meta name="description" content="2560×1440液タブレット特化・ふたば色デザイン・PixiJS v8高性能お絵かきツール" />
+  <meta name="keywords" content="drawing,digital art,pixi.js,webgpu,canvas,liquid tablet" />
+  <meta name="author" content="Modern Drawing Tool Project" />
+  
+  <!-- 2.5K環境最適化・高解像度対応 -->
+  <meta name="theme-color" content="#800000" />
+  <meta name="msapplication-TileColor" content="#800000" />
+  
+  <!-- Favicon・アイコン -->
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  
+  <!-- フォント読み込み・日本語最適化 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  
+  <!-- 性能最適化・リソースヒント -->
+  <link rel="dns-prefetch" href="//fonts.googleapis.com">
+  <link rel="preload" href="/src/main.ts" as="script" type="module">
+  
+  <!-- 基本スタイリング・FOUC防止 -->
+  <style>
+    /* 初期化・FOUC防止・2.5K対応 */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+      background: #ffffee; /* ふたば背景色 */
+      color: #2c1810;
+      overflow: hidden; /* スクロールバー無効・全画面 */
+      user-select: none; /* テキスト選択無効・操作性向上 */
+    }
+    
+    #app {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+    }
+    
+    /* 読み込み中表示・UX向上 */
+    .loading {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #800000;
+      font-size: 18px;
+      font-weight: 500;
+    }
+    
+    /* 2.5K環境警告・対象外解像度 */
+    @media (max-width: 2559px) {
+      .resolution-warning {
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #ff9800;
+        color: white;
+        padding: 8px 16px;
+        border-radius: 4px;
+        font-size: 14px;
+        z-index: 9999;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- アプリケーションマウント点・最小限DOM -->
+  <div id="app">
+    <!-- 初期読み込み表示 -->
+    <div class="loading">
+      モダンお絵かきツール v4.1 起動中...
+    </div>
+    
+    <!-- 2.5K環境チェック・警告表示 -->
+    <div class="resolution-warning" style="display: none;">
+      ⚠ このツールは2560×1440以上の環境に最適化されています
+    </div>
+  </div>
+  
+  <!-- TypeScriptエントリーポイント -->
+  <script type="module" src="/src/main.ts"></script>
+  
+  <!-- 解像度チェック・警告表示 -->
+  <script>
+    // 2.5K環境チェック・即座実行
+    if (window.innerWidth < 2560 || window.innerHeight < 1440) {
+      const warning = document.querySelector('.resolution-warning');
+      if (warning) {
+        warning.style.display = 'block';
+        
+        // 5秒後自動非表示
+        setTimeout(() => {
+          warning.style.display = 'none';
+        }, 5000);
+      }
+    }
+  </script>
+</body>
+</html>
