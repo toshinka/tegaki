@@ -1,0 +1,26 @@
+| 機能             | Tabler Icons           | 
+|------------------|------------------------|
+| ダウンロード     | `download`             | 
+| リサイズ         | `aspect-ratio`         | 
+| カラーパレット   | `palette`              | 
+| ペン             | `brush`                | 
+| 消しゴム         | `eraser`               | 
+| 塗りつぶし       | `paint`                | 
+| エアスプレー     | `spray-paint`          | 
+| ボカシ           | `blur`                 | 
+| スポイト         | `color-picker`         | 
+| 範囲選択         | `crop`                 | 
+| テキスト         | `text`                 | 
+| 図形             | `shapes`               | 
+| 変形             | `drag-move`            | 
+| レイヤー         | `stack`                | 
+| アニメ           | `film`                 | 
+| 設定             | `settings`             | 
+| 再生             | `player-play`          | 
+| 一時停止         | `player-pause`         | 
+| 戻る             | `arrow-left`           | 
+| 進む             | `arrow-right`          | 
+| 再読み込み       | `refresh`              | 
+| ループ           | `loop-left`            | 
+| ゴースト表示     | `ghost`                | 
+| コマ割り         | `layout-grid`          | 
