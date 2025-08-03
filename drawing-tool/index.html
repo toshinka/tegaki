@@ -3,11 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>モダンお絵かきツール v3.3 - PixiJS v8統一基盤</title>
+    <title>モダンお絵かきツール - v3.3 PixiJS v8統一版</title>
+    
+    <!-- Phosphor Icons CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/phosphor-icons/2.1.1/index.min.js"></script>
+    
     <style>
-        /* PixiJS v8統一基盤CSS - v3.3完全版 */
+        /* ふたば色・デザイン定義（v3.3統一） */
         :root {
-            /* ふたば色系統（v3.3拡張版） */
+            /* ふたば☆ちゃんねる色統一（実装イメージ準拠） */
             --futaba-maroon: #800000;
             --futaba-light-maroon: #aa5a56;
             --futaba-medium: #cf9c97;
@@ -15,41 +19,25 @@
             --futaba-cream: #f0e0d6;
             --futaba-background: #ffffee;
             
-            /* PixiJS v8統一座標系設定 */
-            --pixi-v8-coordinate-origin: 0 0;
-            --pixi-v8-coordinate-y-direction: 1;
-            --pixi-v8-webgpu-enabled: true;
-            --pixi-v8-esm-enabled: true;
-            
-            /* Chrome API最適化 */
-            --gpu-acceleration: translateZ(0);
-            --will-change-transform: transform;
-            --will-change-opacity: opacity;
-            --contain-layout: layout style paint;
-            
-            /* UI基本色 */
-            --ui-bg-primary: rgba(128,0,0,0.96);
-            --ui-bg-secondary: rgba(170,90,86,0.92);
-            --ui-bg-light-medium: rgba(233,194,186,0.85);
-            --ui-text-primary: #f0e0d6;
-            --ui-text-secondary: #ffffff;
-            --ui-border: rgba(240,224,214,0.3);
-            --ui-accent: #ffffee;
-            
-            /* サイズ系統 */
+            /* サイズ統一（PixiJS v8座標対応） */
             --sidebar-width: 72px;
             --layer-panel-width: 300px;
             --icon-size-normal: 44px;
             --icon-size-active: 48px;
             --border-radius: 16px;
             
-            /* Chrome最適化アニメーション */
+            /* Chrome最適化 */
+            --gpu-acceleration: translateZ(0);
+            --will-change-transform: transform;
+            --will-change-opacity: opacity;
+            --contain-layout: layout style paint;
+            
+            /* アニメーション */
             --transition-fast: 200ms ease-out;
             --transition-normal: 300ms ease-out;
             --transition-slow: 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
         }
 
-        /* グローバルリセット・PixiJS v8最適化 */
         * {
             margin: 0;
             padding: 0;
@@ -57,70 +45,74 @@
             user-select: none;
         }
 
-        html, body {
-            width: 100%;
-            height: 100%;
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--futaba-background);
             overflow: hidden;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--futaba-background);
-            color: var(--ui-text-primary);
-        }
-
-        /* PixiJS v8キャンバス統一設定 */
-        #pixi-canvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-            background: var(--futaba-background);
-            cursor: crosshair;
-            touch-action: none;
-        }
-
-        /* アプリ全体レイアウト（PixiJS v8統一） */
-        .app-layout {
-            display: grid;
-            grid-template-columns: var(--sidebar-width) 1fr var(--layer-panel-width);
-            grid-template-rows: 1fr auto;
-            grid-template-areas: 
-                "sidebar canvas layer-panel"
-                "sidebar timeline layer-panel";
             height: 100vh;
-            position: relative;
-            overflow: hidden;
-            will-change: var(--will-change-transform);
             contain: var(--contain-layout);
         }
 
-        /* サイドバー（ふたば色統合） */
-        .sidebar { 
-            grid-area: sidebar;
-            background: linear-gradient(135deg, var(--futaba-maroon) 0%, var(--futaba-light-maroon) 100%);
-            border-right: 1px solid var(--ui-border);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 8px 4px;
-            gap: 6px;
-            transform: var(--gpu-acceleration);
-            will-change: var(--will-change-transform);
+        /* メインレイアウト（PixiJS v8統一座標） */
+        .tool-icon:hover {
+            background: var(--futaba-medium);
+            transform: scale(1.05) translateZ(0);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.3);
         }
 
-        /* キャンバス領域 */
-        .canvas { 
+        .tool-icon.active {
+            background: var(--futaba-background);
+            color: var(--futaba-maroon);
+            border-left: 3px solid var(--futaba-maroon);
+            width: var(--icon-size-active);
+            height: var(--icon-size-active);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.4);
+        }
+
+        /* ツールグループ区切り線 */
+        .tool-separator {
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, var(--futaba-cream) 50%, transparent 100%);
+            margin: 4px 0;
+            opacity: 0.3;
+        }
+
+        /* キャンバス領域（中央） */
+        .canvas-area {
             grid-area: canvas;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--futaba-background);
             position: relative;
             overflow: hidden;
             transform: var(--gpu-acceleration);
         }
 
-        /* レイヤーパネル */
-        .layer-panel { 
+        .canvas-wrapper {
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(128, 0, 0, 0.15);
+            cursor: crosshair;
+            transition: all var(--transition-normal);
+            position: relative;
+        }
+
+        #drawingCanvas {
+            display: block;
+            background: var(--futaba-cream);
+            border-radius: 6px;
+        }
+
+        /* 右レイヤーパネル（Fresco風） */
+        .layer-panel {
             grid-area: layer-panel;
-            background: linear-gradient(135deg, var(--ui-bg-primary) 0%, var(--ui-bg-secondary) 100%);
-            border-left: 1px solid var(--ui-border);
+            background: linear-gradient(135deg, var(--futaba-maroon) 0%, var(--futaba-light-maroon) 100%);
+            border-left: 1px solid rgba(240, 224, 214, 0.3);
             display: flex;
             flex-direction: column;
-            transform: translateX(0);
+            transform: var(--gpu-acceleration);
             transition: transform var(--transition-normal);
             will-change: var(--will-change-transform);
         }
@@ -129,163 +121,40 @@
             transform: translateX(100%);
         }
 
-        /* タイムライン */
-        .timeline {
-            grid-area: timeline;
-            height: 0;
-            background: linear-gradient(135deg, var(--ui-bg-primary) 0%, var(--ui-bg-light-medium) 100%);
-            border-top: 1px solid var(--ui-border);
-            transform: translateY(100%);
-            transition: height var(--transition-slow), transform var(--transition-slow);
-            will-change: height, var(--will-change-transform);
+        .panel-header {
+            padding: 16px;
+            background: rgba(0, 0, 0, 0.2);
+            border-bottom: 1px solid rgba(240, 224, 214, 0.2);
         }
 
-        .timeline.active {
-            height: 30vh;
-            transform: translateY(0);
-        }
-
-        /* ツールボタン */
-        .tool-button {
-            width: var(--icon-size-normal);
-            height: var(--icon-size-normal);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid var(--ui-border);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: all var(--transition-fast);
-            font-size: 18px;
-            color: var(--ui-text-primary);
-            backdrop-filter: blur(4px);
-        }
-
-        .tool-button:hover {
-            background: var(--ui-bg-light-medium);
-            transform: translateY(-1px) scale(1.05);
-            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.3);
-        }
-
-        .tool-button.active {
-            background: var(--ui-accent);
-            color: var(--futaba-maroon);
-            box-shadow: 0 0 0 3px var(--futaba-maroon);
-        }
-
-        /* 特殊ボタン（上部） */
-        .special-button {
-            width: var(--icon-size-normal);
-            height: var(--icon-size-normal);
-            border-radius: 6px;
-            font-size: 16px;
-        }
-
-        /* 下部ボタン */
-        .bottom-button {
-            margin-top: auto;
-        }
-
-        /* 区切り線 */
-        .toolbar-separator {
-            width: 80%;
-            height: 1px;
-            background: var(--ui-border);
-            margin: 4px 0;
-        }
-
-        /* レイヤーパネル内容 */
-        .layer-panel-header {
-            padding: 12px;
-            border-bottom: 1px solid var(--ui-border);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .layer-panel-title {
+        .panel-title {
+            color: var(--futaba-cream);
             font-size: 14px;
             font-weight: 600;
-            color: var(--ui-text-primary);
+            margin: 0;
         }
 
-        .layer-controls {
-            display: flex;
-            gap: 4px;
-        }
-
-        .layer-add-btn {
-            width: 24px;
-            height: 24px;
-            border-radius: 4px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid var(--ui-border);
-            color: var(--ui-text-primary);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            transition: all var(--transition-fast);
-        }
-
-        .layer-add-btn:hover {
-            background: var(--ui-bg-light-medium);
-        }
-
-        .layer-content {
+        .panel-content {
             flex: 1;
             overflow-y: auto;
-            padding: 8px;
+            padding: 12px;
         }
 
-        .layer-item {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 8px;
-            margin-bottom: 4px;
-            padding: 8px;
-            border: 1px solid transparent;
-            transition: all var(--transition-fast);
-            cursor: pointer;
+        /* タイムライン（アニメモード時表示） */
+        .timeline {
+            grid-area: timeline;
+            background: linear-gradient(135deg, var(--futaba-light-maroon) 0%, var(--futaba-medium) 100%);
+            border-top: 1px solid rgba(240, 224, 214, 0.3);
+            padding: 12px;
+            transform: var(--gpu-acceleration);
+            display: none; /* 初期非表示 */
         }
 
-        .layer-item:hover {
-            background: var(--ui-bg-light-medium);
-            border-color: var(--ui-border);
+        .timeline.visible {
+            display: block;
         }
 
-        .layer-item.active {
-            background: var(--ui-bg-light-medium);
-            border-color: var(--ui-accent);
-        }
-
-        .layer-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .layer-visibility {
-            cursor: pointer;
-            font-size: 16px;
-        }
-
-        .layer-name {
-            flex: 1;
-            font-size: 12px;
-            color: var(--ui-text-primary);
-        }
-
-        .layer-thumbnail {
-            width: 32px;
-            height: 32px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 4px;
-            border: 1px solid var(--ui-border);
-        }
-
-        /* ポップアップパネル */
+        /* ポップアップコンテナ（移動可能パネル用） */
         #popupContainer {
             position: fixed;
             top: 0;
@@ -296,96 +165,209 @@
             z-index: 2000;
         }
 
+        /* ポップアップパネル共通スタイル */
         .popup-panel {
-            position: absolute;
-            background: linear-gradient(135deg, var(--ui-bg-primary) 0%, var(--ui-bg-secondary) 100%);
+            background: rgba(255, 255, 255, 0.96);
+            border: 1px solid rgba(128, 0, 0, 0.2);
             border-radius: var(--border-radius);
+            padding: 16px;
+            box-shadow: 0 12px 36px rgba(128, 0, 0, 0.25);
             backdrop-filter: blur(12px);
-            box-shadow: 0 8px 32px rgba(128,0,0,0.6);
-            border: 1px solid var(--ui-border);
             pointer-events: auto;
-            will-change: var(--will-change-transform), var(--will-change-opacity);
+            position: absolute;
+            min-width: 240px;
             transform: var(--gpu-acceleration);
-            contain: var(--contain-layout);
+            will-change: var(--will-change-transform);
         }
 
-        .popup-header {
-            padding: 12px 16px;
-            border-bottom: 1px solid var(--ui-border);
+        .popup-title-bar {
+            background: var(--futaba-light-maroon);
+            color: var(--futaba-cream);
+            padding: 8px 12px;
+            margin: -16px -16px 12px -16px;
+            border-radius: var(--border-radius) var(--border-radius) 0 0;
+            cursor: move;
+            font-size: 12px;
+            font-weight: 600;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            cursor: move;
-            background: rgba(170, 90, 86, 0.3);
-        }
-
-        .popup-title {
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--ui-text-primary);
         }
 
         .popup-close {
-            width: 24px;
-            height: 24px;
+            background: none;
             border: none;
-            background: rgba(255, 255, 255, 0.1);
-            color: var(--ui-text-primary);
+            color: var(--futaba-cream);
             cursor: pointer;
-            border-radius: 4px;
+            font-size: 16px;
+            padding: 0;
+            width: 20px;
+            height: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all var(--transition-fast);
+            border-radius: 4px;
+            transition: background var(--transition-fast);
         }
 
         .popup-close:hover {
-            background: rgba(255, 0, 0, 0.3);
+            background: rgba(255, 255, 255, 0.2);
         }
 
-        .popup-content {
-            padding: 16px;
-        }
-
-        /* HSV色相環 */
-        .hsv-picker {
-            width: 120px;
-            height: 120px;
+        /* HSV円形ピッカー */
+        .hsv-color-picker {
+            width: 140px;
+            height: 140px;
             border-radius: 50%;
-            background: conic-gradient(
-                from 0deg,
-                #ff0000 0deg,
-                #ffff00 60deg,
-                #00ff00 120deg,
-                #00ffff 180deg,
-                #0000ff 240deg,
-                #ff00ff 300deg,
-                #ff0000 360deg
-            );
-            position: relative;
-            margin: 0 auto 16px;
             cursor: crosshair;
+            position: relative;
+            margin: 12px auto;
         }
 
         .color-presets {
             display: grid;
             grid-template-columns: repeat(5, 1fr);
-            gap: 4px;
-            margin-top: 16px;
+            gap: 6px;
+            margin-top: 12px;
         }
 
-        .color-swatch {
+        .color-preset {
             width: 24px;
             height: 24px;
-            border-radius: 4px;
-            border: 1px solid var(--ui-border);
+            border-radius: 6px;
             cursor: pointer;
+            border: 2px solid rgba(128, 0, 0, 0.2);
             transition: all var(--transition-fast);
         }
 
-        .color-swatch:hover {
+        .color-preset:hover {
             transform: scale(1.1);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            border-color: var(--futaba-maroon);
+        }
+
+        /* コントロール要素 */
+        .control-group {
+            margin-bottom: 16px;
+        }
+
+        .control-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--futaba-maroon);
+            margin-bottom: 8px;
+        }
+
+        .control-value {
+            background: var(--futaba-light-medium);
+            border: 1px solid var(--futaba-maroon);
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 11px;
+            min-width: 40px;
+            text-align: center;
+        }
+
+        .control-slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--futaba-light-medium);
+            outline: none;
+            appearance: none;
+            cursor: pointer;
+        }
+
+        .control-slider::-webkit-slider-thumb {
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            background: var(--futaba-maroon);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(128, 0, 0, 0.3);
+        }
+
+        .control-slider::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            background: var(--futaba-maroon);
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 6px rgba(128, 0, 0, 0.3);
+        }
+
+        /* プリセットボタン */
+        .preset-buttons {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        .preset-button {
+            background: var(--futaba-light-medium);
+            border: 1px solid var(--futaba-maroon);
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 11px;
+            color: var(--futaba-maroon);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            min-width: 32px;
+            text-align: center;
+        }
+
+        .preset-button:hover {
+            background: var(--futaba-maroon);
+            color: var(--futaba-cream);
+        }
+
+        .preset-button.active {
+            background: var(--futaba-maroon);
+            color: var(--futaba-cream);
+        }
+
+        /* チェックボックス */
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 8px 0;
+        }
+
+        .checkbox {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 4px;
+            background: var(--futaba-background);
+            cursor: pointer;
+            position: relative;
+            transition: all var(--transition-fast);
+        }
+
+        .checkbox:checked {
+            background: var(--futaba-maroon);
+        }
+
+        .checkbox:checked::after {
+            content: '✓';
+            color: var(--futaba-cream);
+            font-size: 12px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .checkbox-label {
+            font-size: 12px;
+            color: var(--futaba-maroon);
+            cursor: pointer;
         }
 
         /* ショートカットヒント */
@@ -394,73 +376,18 @@
             bottom: 16px;
             right: 16px;
             background: rgba(128, 0, 0, 0.9);
-            color: var(--ui-text-primary);
-            padding: 8px 12px;
+            color: var(--futaba-cream);
+            padding: 12px 16px;
             border-radius: 8px;
             font-size: 11px;
             opacity: 0;
             transition: opacity var(--transition-normal);
+            transform: var(--gpu-acceleration);
             z-index: 3000;
-            backdrop-filter: blur(8px);
         }
 
         .shortcut-hint.visible {
             opacity: 1;
-        }
-
-        /* 制御要素 */
-        .control-group {
-            margin-bottom: 12px;
-        }
-
-        .control-label {
-            display: flex;
-            justify-content: space-between;
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--ui-text-primary);
-            margin-bottom: 6px;
-        }
-
-        .control-input {
-            width: 60px;
-            padding: 4px 6px;
-            border: 1px solid var(--ui-border);
-            border-radius: 4px;
-            font-size: 11px;
-            text-align: center;
-            background: rgba(255, 255, 255, 0.1);
-            color: var(--ui-text-primary);
-        }
-
-        .control-slider {
-            width: 100%;
-            margin: 4px 0;
-            -webkit-appearance: none;
-            height: 4px;
-            background: var(--ui-bg-light-medium);
-            border-radius: 2px;
-            outline: none;
-        }
-
-        .control-slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 16px;
-            height: 16px;
-            background: var(--futaba-maroon);
-            border-radius: 50%;
-            cursor: pointer;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-        }
-
-        /* アニメーションモード時の調整 */
-        body.animation-mode .timeline {
-            height: 30vh;
-            transform: translateY(0);
-        }
-
-        body.animation-mode .app-layout {
-            grid-template-rows: 1fr 30vh;
         }
 
         /* フルスクリーンモード */
@@ -472,103 +399,252 @@
             transform: translateX(100%);
         }
 
-        body.fullscreen-drawing .app-layout {
-            grid-template-columns: 0 1fr 0;
+        body.fullscreen-drawing .canvas-wrapper {
+            border: none;
+            border-radius: 0;
+            box-shadow: none;
+        }
+
+        /* アニメモード時のレイアウト調整 */
+        body.animation-mode .app-layout {
+            grid-template-rows: 1fr 120px;
+        }
+
+        body.animation-mode .timeline {
+            display: block;
         }
 
         /* レスポンシブ対応 */
-        @media (max-width: 768px) {
+        @media (max-width: 1200px) {
+            :root {
+                --layer-panel-width: 250px;
+            }
+        }
+
+        @media (max-width: 900px) {
+            .app-layout {
+                grid-template-columns: var(--sidebar-width) 1fr;
+                grid-template-areas: 
+                    "sidebar canvas"
+                    "sidebar timeline";
+            }
+            
             .layer-panel {
+                position: fixed;
+                top: 0;
+                right: 0;
+                height: 100vh;
+                z-index: 1500;
                 transform: translateX(100%);
             }
             
-            .app-layout {
-                grid-template-columns: var(--sidebar-width) 1fr 0;
-            }
-            
-            .tool-button {
-                width: 36px;
-                height: 36px;
-                font-size: 14px;
-            }
-        }
-
-        /* 動作軽減対応 */
-        @media (prefers-reduced-motion: reduce) {
-            * {
-                animation-duration: 0.01ms !important;
-                transition-duration: 0.01ms !important;
-                will-change: auto !important;
-            }
-        }
-
-        /* 高解像度対応 */
-        @media (min-resolution: 2dppx) {
-            .layer-thumbnail {
-                image-rendering: -webkit-optimize-contrast;
-            }
-            
-            .color-swatch {
-                border-width: 0.5px;
+            .layer-panel.visible {
+                transform: translateX(0);
             }
         }
     </style>
 </head>
 <body>
-    <div class="app-layout" id="appLayout">
-        <!-- サイドバー（ツールアイコン）-->
+    <!-- デザイン・アイコン・色定義（一元管理） -->
+    <script>
+        window.DESIGN_CONFIG = {
+            // Phosphor Icons定義（実際のアイコン名）
+            icons: {
+                // ファイル操作
+                download: 'ph-download',
+                resize: 'ph-resize',
+                
+                // 描画ツール  
+                pen: 'ph-pencil',
+                airbrush: 'ph-paint-brush',
+                blur: 'ph-circle-wavy',
+                eraser: 'ph-eraser',
+                eyedropper: 'ph-eyedropper',
+                select: 'ph-selection',
+                fill: 'ph-paint-bucket',
+                text: 'ph-text-aa',
+                shape: 'ph-circle',
+                transform: 'ph-resize',
+                
+                // パネル
+                animation: 'ph-film-strip',
+                layers: 'ph-stack',
+                settings: 'ph-gear',
+                
+                // UI制御
+                close: 'ph-x',
+                eye: 'ph-eye',
+                eyeSlash: 'ph-eye-slash',
+                plus: 'ph-plus',
+                folder: 'ph-folder',
+                play: 'ph-play',
+                pause: 'ph-pause',
+                stop: 'ph-stop'
+            },
+            
+            // ふたば色定義（v3.3統一）
+            colors: {
+                maroon: '#800000',
+                lightMaroon: '#aa5a56', 
+                medium: '#cf9c97',
+                lightMedium: '#e9c2ba',
+                cream: '#f0e0d6',
+                background: '#ffffee'
+            },
+            
+            // サイズ・レイアウト定義
+            sizes: {
+                sidebarWidth: 72,
+                layerPanelWidth: 300,
+                iconNormal: 44,
+                iconActive: 48,
+                borderRadius: 16
+            },
+            
+            // ツール定義（表示順・グループ化）
+            toolGroups: [
+                {
+                    name: 'file',
+                    tools: [
+                        { id: 'download', icon: 'download', title: 'ダウンロード', shortcut: 'Ctrl+S' },
+                        { id: 'resize', icon: 'resize', title: 'リサイズ', shortcut: 'Ctrl+R' }
+                    ]
+                },
+                {
+                    name: 'drawing', 
+                    tools: [
+                        { id: 'pen', icon: 'pen', title: 'ペン', shortcut: 'P' },
+                        { id: 'airbrush', icon: 'airbrush', title: 'エアスプレー', shortcut: 'A' },
+                        { id: 'blur', icon: 'blur', title: 'ボカシ', shortcut: 'B' },
+                        { id: 'eraser', icon: 'eraser', title: '消しゴム', shortcut: 'E' },
+                        { id: 'eyedropper', icon: 'eyedropper', title: 'スポイト', shortcut: 'I' },
+                        { id: 'select', icon: 'select', title: '範囲選択', shortcut: 'M' },
+                        { id: 'fill', icon: 'fill', title: '塗りつぶし', shortcut: 'G' },
+                        { id: 'text', icon: 'text', title: 'テキスト', shortcut: 'T' },
+                        { id: 'shape', icon: 'shape', title: '図形', shortcut: 'U' },
+                        { id: 'transform', icon: 'transform', title: '変形', shortcut: 'V' }
+                    ]
+                },
+                {
+                    name: 'panels',
+                    tools: [
+                        { id: 'animation', icon: 'animation', title: 'アニメ', shortcut: 'Alt+A' },
+                        { id: 'layers', icon: 'layers', title: 'レイヤー', shortcut: 'Alt+L' },
+                        { id: 'settings', icon: 'settings', title: '設定', shortcut: 'Alt+S' }
+                    ]
+                }
+            ],
+            
+            // ふたばカラープリセット
+            colorPresets: [
+                '#800000', // futaba-maroon
+                '#aa5a56', // futaba-light-maroon
+                '#cf9c97', // futaba-medium
+                '#e9c2ba', // futaba-light-medium
+                '#f0e0d6', // futaba-cream
+                '#000000', // 黒
+                '#ffffff', // 白
+                '#808080', // グレー
+                '#ff0000', // 赤
+                '#00ff00'  // 緑
+            ]
+        };
+        
+        // PixiJS v8統一座標設定
+        window.PIXI_CONFIG = {
+            preference: 'webgpu',
+            antialias: true,
+            autoDensity: true,
+            resolution: window.devicePixelRatio || 1,
+            backgroundColor: window.DESIGN_CONFIG.colors.cream
+        };
+    </script>
+
+    <div class="app-layout">
+        <!-- 左サイドバー（ツールアイコン・JS生成） -->
         <div class="sidebar" id="sidebar">
-            <!-- ツールアイコンはPixiV8UIController.jsで動的生成 -->
+            <!-- ツールアイコンはmain.jsで動的生成 -->
         </div>
 
-        <!-- キャンバス領域 -->
-        <div class="canvas" id="canvas">
-            <canvas id="pixi-canvas"></canvas>
+        <!-- 中央キャンバス領域 -->
+        <div class="canvas-area" id="canvasArea">
+            <div class="canvas-wrapper" id="canvasWrapper">
+                <canvas id="drawingCanvas" width="800" height="600"></canvas>
+            </div>
         </div>
 
-        <!-- レイヤーパネル -->
+        <!-- 右レイヤーパネル -->
         <div class="layer-panel" id="layerPanel">
-            <div class="layer-panel-header">
-                <span class="layer-panel-title">レイヤー</span>
-                <div class="layer-controls">
-                    <button class="layer-add-btn" id="addLayerBtn" title="レイヤー追加">➕</button>
-                    <button class="layer-add-btn" id="addFolderBtn" title="フォルダ追加">📁</button>
-                </div>
+            <div class="panel-header">
+                <h3 class="panel-title">レイヤー</h3>
             </div>
-            <div class="layer-content" id="layerContent">
-                <!-- レイヤー項目はPixiV8UIController.jsで動的生成 -->
-                <div class="layer-item active">
-                    <div class="layer-row">
-                        <span class="layer-visibility">👁️</span>
-                        <span class="layer-name">レイヤー1</span>
-                        <div class="layer-thumbnail"></div>
-                    </div>
-                </div>
-                <div class="layer-item">
-                    <div class="layer-row">
-                        <span class="layer-visibility">👁️</span>
-                        <span class="layer-name">背景</span>
-                        <div class="layer-thumbnail"></div>
-                    </div>
-                </div>
+            <div class="panel-content" id="layerContent">
+                <!-- レイヤー一覧はPixiV8LayerProcessor.jsで動的生成 -->
             </div>
         </div>
 
-        <!-- タイムライン（アニメーションモード時表示） -->
+        <!-- タイムライン（アニメモード時表示） -->
         <div class="timeline" id="timeline">
-            <!-- タイムライン内容はPhase3で実装 -->
+            <!-- タイムラインUIはPixiV8AnimationController.jsで動的生成 -->
         </div>
     </div>
 
-    <!-- ポップアップコンテナ -->
+    <!-- ポップアップコンテナ（移動可能パネル用） -->
     <div id="popupContainer"></div>
 
     <!-- ショートカットヒント -->
     <div class="shortcut-hint" id="shortcutHint">
-        P: ペン | A: エアスプレー | E: 消しゴム | B: ボカシ | I: スポイト | G: 塗りつぶし | M: 選択 | T: テキスト | Tab: パネル | Esc: 閉じる
+        Tab: パネル切替 | P: ペン | A: エアスプレー | F: フルスクリーン | Esc: 閉じる
     </div>
 
-    <!-- Phase1+2 メインスクリプト読み込み -->
+    <!-- Phase2 メインスクリプト読み込み -->
     <script type="module" src="/src/main.js"></script>
 </body>
-</html>
+</html>app-layout {
+            display: grid;
+            grid-template-columns: var(--sidebar-width) 1fr var(--layer-panel-width);
+            grid-template-rows: 1fr auto;
+            grid-template-areas: 
+                "sidebar canvas layer-panel"
+                "sidebar timeline layer-panel";
+            height: 100vh;
+            position: relative;
+            overflow: hidden;
+            will-change: var(--will-change-transform);
+        }
+
+        /* 左サイドバー（Adobe Fresco風・ふたば色） */
+        .sidebar {
+            grid-area: sidebar;
+            background: linear-gradient(135deg, var(--futaba-maroon) 0%, var(--futaba-light-maroon) 100%);
+            border-right: 1px solid rgba(240, 224, 214, 0.3);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 8px;
+            gap: 8px;
+            transform: var(--gpu-acceleration);
+            transition: transform var(--transition-normal);
+        }
+
+        .sidebar.hidden {
+            transform: translateX(-100%);
+        }
+
+        /* ツールアイコン（Phosphor Icons統一） */
+        .tool-icon {
+            width: var(--icon-size-normal);
+            height: var(--icon-size-normal);
+            border-radius: 12px;
+            background: rgba(240, 224, 214, 0.1);
+            border: 1px solid rgba(240, 224, 214, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            color: var(--futaba-cream);
+            font-size: 18px;
+            will-change: var(--will-change-transform), var(--will-change-opacity);
+        }
+
+        .

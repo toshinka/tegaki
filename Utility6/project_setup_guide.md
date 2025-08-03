@@ -1,5 +1,5 @@
-# PixiJS v8プロジェクト完全セットアップガイド v3.3
-**モダンお絵かきツール v3.3対応 - Phosphor Icons統一・アイコン責務集約・ふたば色完全統合**
+# PixiJS v8プロジェクト完全セットアップガイド
+**モダンお絵かきツール v3.2対応 - ESM・WebGPU・最新技術統合**
 
 ## 🚀 プロジェクト初期化手順
 
@@ -48,14 +48,14 @@ npm install pixi-projection@^1.0.8
 npm install @pixi/tilemap@^4.2.0
 ```
 
-### 4. モダン支援ライブラリ（v3.3 Phosphor Icons統一）
+### 4. モダン支援ライブラリ
 ```bash
 # イベント・データ処理
 npm install mitt@^3.0.1
 npm install lodash-es@^4.17.21
 npm install chroma-js@^3.1.2
 
-# UI・アイコン（Phosphor Icons統一）
+# UI・アイコン
 npm install @phosphor-icons/core@^2.1.1
 
 # データ管理・圧縮
@@ -77,13 +77,13 @@ npm install -D concurrently@^8.0.0
 npm install -D cross-env@^7.0.3
 ```
 
-## 📦 package.json v3.3最適化版
+## 📦 package.json 最適化版
 
 ```json
 {
-  "name": "modern-drawing-tool-v33",
-  "version": "3.3.0",
-  "description": "PixiJS v8統一基盤モダンお絵かきツール - WebGPU・ESM・Chrome API統合・Phosphor Icons・アイコン責務集約",
+  "name": "modern-drawing-tool-v32",
+  "version": "3.2.0",
+  "description": "PixiJS v8統一基盤モダンお絵かきツール - WebGPU・ESM・Chrome API統合",
   "type": "module",
   "main": "src/main.js",
   "scripts": {
@@ -94,9 +94,7 @@ npm install -D cross-env@^7.0.3
     "clean": "rm -rf dist node_modules",
     "reinstall": "npm run clean && npm install",
     "type-check": "tsc --noEmit",
-    "lint": "echo 'Linting with PixiJS v8 ESM standards'",
-    "icon-check": "echo 'Checking Phosphor Icons integration'",
-    "design-sync": "echo 'Syncing design config from index.html'"
+    "lint": "echo 'Linting with PixiJS v8 ESM standards'"
   },
   "dependencies": {
     "pixi.js": "^8.0.0",
@@ -141,19 +139,14 @@ npm install -D cross-env@^7.0.3
     "graphics",
     "esm",
     "chrome-api",
-    "futaba",
-    "airbrush",
-    "animation",
-    "onion-skin",
-    "phosphor-icons",
-    "design-centralized"
+    "futaba"
   ],
-  "author": "PixiJS v8 Drawing Tool Project v3.3",
+  "author": "PixiJS v8 Drawing Tool Project",
   "license": "MIT"
 }
 ```
 
-## ⚙️ vite.config.js v3.3版（Phosphor Icons最適化）
+## ⚙️ vite.config.js PixiJS v8最適化版
 
 ```javascript
 import { defineConfig } from 'vite';
@@ -174,7 +167,7 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       output: {
-        // PixiJS v8チャンク最適化（v3.3アイコン責務集約対応）
+        // PixiJS v8チャンク最適化
         manualChunks: {
           'pixi-core': ['pixi.js'],
           'pixi-extensions': [
@@ -188,9 +181,6 @@ export default defineConfig({
             'pixi-projection',
             '@pixi/tilemap'
           ],
-          'ui-icons': [
-            '@phosphor-icons/core'
-          ],
           'utilities': [
             'mitt',
             'lodash-es',
@@ -200,11 +190,11 @@ export default defineConfig({
         }
       }
     },
-    // WebGPU・Chrome API対応・Phosphor Icons SVG
-    assetsInclude: ['**/*.wgsl', '**/*.glsl', '**/*.svg']
+    // WebGPU・Chrome API対応
+    assetsInclude: ['**/*.wgsl', '**/*.glsl']
   },
   
-  // 開発サーバー設定（v3.3 デザイン責務集約対応）
+  // 開発サーバー設定
   server: {
     host: true,
     port: 3000,
@@ -217,13 +207,12 @@ export default defineConfig({
     }
   },
   
-  // PixiJS v8 ESM最適化（Phosphor Icons追加）
+  // PixiJS v8 ESM最適化
   optimizeDeps: {
     include: [
       'pixi.js',
       '@pixi/filters',
       '@pixi/mesh',
-      '@phosphor-icons/core',
       'mitt',
       'lodash-es',
       'chroma-js'
@@ -235,29 +224,26 @@ export default defineConfig({
     ]
   },
   
-  // エイリアス設定（開発効率化・v3.3対応）
+  // エイリアス設定（開発効率化）
   resolve: {
     alias: {
       '@': new URL('./src', import.meta.url).pathname,
       '@pixiv8': new URL('./src/pixi-v8', import.meta.url).pathname,
       '@stores': new URL('./src/stores', import.meta.url).pathname,
       '@utils': new URL('./src/utils', import.meta.url).pathname,
-      '@assets': new URL('./src/assets', import.meta.url).pathname,
-      '@icons': new URL('./public/icons', import.meta.url).pathname
+      '@assets': new URL('./src/assets', import.meta.url).pathname
     }
   },
   
-  // WebGPU・モダンブラウザ対応（v3.3拡張）
+  // WebGPU・モダンブラウザ対応
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
     '__PIXIJS_VERSION__': JSON.stringify('8.0.0'),
     '__WEBGPU_ENABLED__': true,
-    '__CHROME_API_ENABLED__': true,
-    '__PHOSPHOR_ICONS_ENABLED__': true,
-    '__DESIGN_CENTRALIZED__': true
+    '__CHROME_API_ENABLED__': true
   },
   
-  // CSS設定（ふたば色統合・v3.3完全版）
+  // CSS設定（ふたば色統合）
   css: {
     preprocessorOptions: {
       scss: {
@@ -268,13 +254,6 @@ export default defineConfig({
           $futaba-light-medium: #e9c2ba;
           $futaba-cream: #f0e0d6;
           $futaba-background: #ffffee;
-          
-          // v3.3 アイコン・UI統一変数
-          $sidebar-width: 72px;
-          $layer-panel-width: 300px;
-          $icon-size-normal: 44px;
-          $icon-size-active: 48px;
-          $border-radius: 16px;
         `
       }
     }
@@ -282,41 +261,33 @@ export default defineConfig({
 });
 ```
 
-## 📁 推奨ディレクトリ構造（v3.3 アイコン責務集約対応）
+## 📁 推奨ディレクトリ構造
 
 ```
 drawing-tool/
 ├── public/
-│   ├── icons/              # Phosphor Icons SVG（v3.3統一）
-│   │   ├── pencil.svg      # ph-pencil
-│   │   ├── paint-brush.svg # ph-paint-brush（エアスプレー）
-│   │   ├── circle-wavy.svg # ph-circle-wavy（ボカシ）
-│   │   ├── eraser.svg      # ph-eraser
-│   │   ├── eyedropper.svg  # ph-eyedropper
+│   ├── icons/              # Phosphor Icons SVG
+│   │   ├── pencil.svg
+│   │   ├── paintbrush.svg
 │   │   └── ...
-│   └── index.html          # デザイン・アイコン責務集約
+│   └── index.html
 ├── src/
 │   ├── main.js            # PixiJS v8統合エントリーポイント
-│   ├── pixi-v8/           # PixiJS v8統一システム（機能系責務）
+│   ├── pixi-v8/           # PixiJS v8統一システム
 │   │   ├── PixiV8UnifiedRenderer.js
 │   │   ├── PixiV8InputController.js
-│   │   ├── PixiV8AirbrushTool.js     # エアスプレー（新規）
-│   │   ├── PixiV8UIController.js     # UI表示制御（機能のみ）
-│   │   ├── PixiV8MovablePopup.js     # 移動機能（新規）
+│   │   ├── PixiV8CoordinateUnifier.js
 │   │   ├── PixiV8ToolProcessor.js
-│   │   ├── PixiV8LayerProcessor.js   # レイヤー機能（機能のみ）
-│   │   ├── PixiV8AnimationController.js # アニメ機能（機能のみ）
-│   │   ├── PixiV8OnionSkinController.js # オニオンスキン（復活）
+│   │   ├── PixiV8LayerProcessor.js
 │   │   ├── PixiV8OffscreenProcessor.js
 │   │   └── PixiV8ModernExporter.js
 │   ├── stores/            # 状態管理
 │   │   ├── EventStore.js
 │   │   ├── ProjectStore.js
-│   │   └── HistoryController.js
+│   │   └── HistoryStore.js
 │   ├── utils/             # ユーティリティ
-│   │   ├── ColorProcessor.js    # 色処理（機能のみ）
+│   │   ├── ColorProcessor.js
 │   │   ├── ShortcutController.js
-│   │   ├── CanvasController.js
 │   │   └── DataProcessor.js
 │   ├── workers/           # WebWorker（PixiJS v8連携）
 │   │   ├── pixiV8LayerProcessor.worker.js
@@ -325,93 +296,226 @@ drawing-tool/
 │   │   ├── fonts/
 │   │   ├── textures/
 │   │   └── shaders/
-│   └── styles/            # CSS（ふたば色統合・オプション）
-│       ├── main.css       # 追加CSS（index.htmlで基本定義済み）
-│       └── responsive.css # レスポンシブ拡張
-├── package.json           # v3.3対応版
-├── vite.config.js         # v3.3最適化版
+│   └── styles/            # CSS（ふたば色統合）
+│       ├── main.css
+│       ├── futaba-colors.css
+│       └── pixijs-ui.css
+├── package.json
+├── vite.config.js
 ├── tsconfig.json          # TypeScript設定（オプション）
 └── README.md
 ```
 
-## 🎨 アイコン責務分界（v3.3新機能）
+## 🎨 main.css（ふたば色統合・PixiJS v8対応）
 
-### index.html（デザイン系責務）
-```javascript
-// デザイン・アイコン・色定義（一元管理）
-window.DESIGN_CONFIG = {
-    // Phosphor Icons定義（実際のアイコン名）
-    icons: {
-        pen: 'ph-pencil',
-        airbrush: 'ph-paint-brush',    // エアスプレー
-        blur: 'ph-circle-wavy',        // ボカシ
-        eraser: 'ph-eraser',
-        eyedropper: 'ph-eyedropper',
-        // ... 全ツール統一
-    },
-    
-    // ふたば色統一
-    colors: {
-        maroon: '#800000',
-        lightMaroon: '#aa5a56',
-        // ...
-    },
-    
-    // ツール定義（表示順・グループ化）
-    toolGroups: [/* ... */]
-};
-```
+```css
+/* PixiJS v8統一基盤CSS */
+:root {
+  /* ふたば色系統（v3.2拡張版） */
+  --futaba-maroon: #800000;
+  --futaba-light-maroon: #aa5a56;
+  --futaba-medium: #cf9c97;
+  --futaba-light-medium: #e9c2ba; /* v3.2新規追加 */
+  --futaba-cream: #f0e0d6;
+  --futaba-background: #ffffee;
+  
+  /* PixiJS v8統一座標系設定 */
+  --pixi-v8-coordinate-origin: 0 0;
+  --pixi-v8-coordinate-y-direction: 1; /* 下向き正 */
+  --pixi-v8-coordinate-scale: 1;
+  --pixi-v8-webgpu-enabled: true;
+  --pixi-v8-esm-enabled: true; /* ESMモジュール対応 */
+  
+  /* Chrome API最適化 */
+  --gpu-acceleration: translateZ(0);
+  --will-change-transform: transform;
+  --will-change-opacity: opacity;
+  --contain-layout: layout style paint;
+  
+  /* UI基本色（ふたば light medium 追加） */
+  --ui-bg-primary: rgba(128,0,0,0.96);
+  --ui-bg-secondary: rgba(170,90,86,0.92);
+  --ui-bg-light-medium: rgba(233,194,186,0.85); /* 新規追加 */
+  --ui-text-primary: #f0e0d6;
+  --ui-text-secondary: #ffffff;
+  --ui-border: rgba(240,224,214,0.3);
+  --ui-accent: #ffffee;
+  
+  /* サイズ系統（PixiJS v8統一座標対応） */
+  --sidebar-width: 72px;
+  --layer-panel-width: 300px;
+  --icon-size-normal: 44px;
+  --icon-size-active: 48px;
+  --border-radius: 16px;
+  
+  /* Chrome最適化アニメーション */
+  --transition-fast: 200ms ease-out;
+  --transition-normal: 300ms ease-out;
+  --transition-slow: 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
 
-### 各JSファイル（機能系責務）
-```javascript
-// PixiV8UIController.js例
-class PixiV8UIController {
-    constructor() {
-        // デザイン設定を読み込み
-        this.config = window.DESIGN_CONFIG;
-        this.generateToolIcons();
-    }
-    
-    generateToolIcons() {
-        // 設定からアイコン動的生成
-        this.config.toolGroups.forEach(group => {
-            group.tools.forEach(tool => {
-                const icon = this.createIcon(
-                    this.config.icons[tool.icon],
-                    tool.title,
-                    tool.shortcut
-                );
-                // ... 機能実装
-            });
-        });
-    }
+/* グローバルリセット・PixiJS v8最適化 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--futaba-background);
+  color: var(--ui-text-primary);
+}
+
+/* PixiJS v8キャンバス統一設定 */
+#pixi-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--futaba-background);
+  cursor: crosshair;
+  touch-action: none; /* タッチイベント最適化 */
+}
+
+/* アプリ全体レイアウト（PixiJS v8統一） */
+.app-layout {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr var(--layer-panel-width);
+  grid-template-rows: 1fr auto;
+  grid-template-areas: 
+    "sidebar canvas layer-panel"
+    "sidebar timeline layer-panel";
+  height: 100vh;
+  
+  /* PixiJS v8統一座標基盤 */
+  position: relative;
+  overflow: hidden;
+  
+  /* Chrome最適化 */
+  will-change: var(--will-change-transform);
+  contain: var(--contain-layout);
+}
+
+/* サイドバー（ふたば色統合） */
+.sidebar { 
+  grid-area: sidebar;
+  background: linear-gradient(135deg, var(--futaba-maroon) 0%, var(--futaba-light-maroon) 100%);
+  border-right: 1px solid var(--ui-border);
+  
+  /* GPU加速 */
+  transform: var(--gpu-acceleration);
+  will-change: var(--will-change-transform);
+}
+
+/* キャンバス領域 */
+.canvas { 
+  grid-area: canvas;
+  /* PixiJS v8統一座標系キャンバス領域 */
+  position: relative;
+  overflow: hidden;
+  transform: var(--gpu-acceleration);
+}
+
+/* レイヤーパネル（ふたば light medium 活用） */
+.layer-panel { 
+  grid-area: layer-panel;
+  background: linear-gradient(135deg, var(--ui-bg-primary) 0%, var(--ui-bg-secondary) 100%);
+  border-left: 1px solid var(--ui-border);
+  
+  transform: translateX(0);
+  transition: transform var(--transition-normal);
+  will-change: var(--will-change-transform);
+}
+
+.layer-panel.hidden {
+  transform: translateX(100%);
+}
+
+/* レイヤー項目（ふたば light medium 追加） */
+.layer-item {
+  padding: 8px 12px;
+  margin: 2px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: all var(--transition-fast);
+  
+  /* GPU加速 */
+  will-change: var(--will-change-transform), background-color;
+  transform: var(--gpu-acceleration);
+}
+
+.layer-item:hover {
+  background: var(--ui-bg-light-medium); /* 新色活用 */
+  border-color: var(--futaba-light-medium);
+  transform: var(--gpu-acceleration) translateX(2px);
+}
+
+.layer-item.active {
+  background: var(--ui-bg-light-medium);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
+}
+
+/* ポップアップパネル（ふたば light medium 活用） */
+.popup-panel {
+  background: linear-gradient(135deg, var(--ui-bg-primary) 0%, var(--ui-bg-secondary) 100%);
+  border-radius: var(--border-radius);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px rgba(128,0,0,0.6);
+  border: 1px solid var(--ui-border);
+  
+  /* Chrome API最適化 */
+  will-change: var(--will-change-transform), var(--will-change-opacity);
+  transform: var(--gpu-acceleration);
+  contain: var(--contain-layout);
+}
+
+.popup-panel.secondary {
+  background: linear-gradient(135deg, var(--ui-bg-light-medium) 0%, var(--ui-bg-secondary) 100%);
+}
+
+/* タイムライン */
+.timeline { 
+  grid-area: timeline;
+  height: 0; /* 通常時非表示 */
+  background: linear-gradient(135deg, var(--ui-bg-primary) 0%, var(--ui-bg-light-medium) 100%);
+  border-top: 1px solid var(--ui-border);
+  
+  transform: translateY(100%);
+  transition: height var(--transition-slow), transform var(--transition-slow);
+  will-change: height, var(--will-change-transform);
+}
+
+.timeline.active {
+  height: 30vh; /* アニメモード時表示 */
+  transform: translateY(0);
+}
+
+/* Chrome最適化動作軽減対応 */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    will-change: auto !important;
+  }
+}
+
+/* 高解像度対応 */
+@media (min-resolution: 2dppx) {
+  .layer-thumbnail {
+    image-rendering: -webkit-optimize-contrast;
+  }
+  
+  .color-swatch {
+    border-width: 1px; /* 高解像度で調整 */
+  }
 }
 ```
 
-## 🎯 v3.3の完全統合優位性
-
-### 🔧 デザイン・機能責務分界の明確化
-- **index.html**: アイコン・色・サイズ一元管理・デザイン変更容易
-- **JSファイル**: 機能実装・動的処理・拡張性確保
-- **保守性向上**: デザイン変更時の影響範囲最小化
-- **開発効率**: デザイナー・エンジニア分業最適化
-
-### 🎨 Phosphor Icons統一による一貫性
-- **アイコン品質**: 統一デザイン・高品質SVG・レスポンシブ対応
-- **拡張容易性**: 新ツール追加時のアイコン選択・統一感維持
-- **カスタマイズ性**: アイコンセット変更時の一括対応
-
-### 🎬 ふたば色完全統合
-- **ブランド統一**: ふたば☆ちゃんねる色での親しみやすさ
-- **視覚的一貫性**: 全UI要素での色調統一・グラデーション活用
-- **アクセシビリティ**: 十分なコントラスト・視認性確保
-
-### 🚀 実装効率最大化
-- **段階的解封**: Phase管理・確実実装保証
-- **責務分散**: デザイン・機能・状態管理の適切な分離
-- **拡張性確保**: Live2D・3D・VTuber制作への発展余地
-
-## 🚀 開発開始手順（v3.3対応）
+## 🚀 開発開始手順
 
 ### 1. プロジェクトセットアップ実行
 ```bash
@@ -421,17 +525,17 @@ rm -rf node_modules package.json package-lock.json vite.config.js
 # 2. 新規初期化
 npm init -y
 
-# 3. package.jsonを上記v3.3内容で更新
+# 3. package.jsonを上記内容で更新
 
 # 4. 依存関係一括インストール
 npm install
 
-# 5. vite.config.jsを上記v3.3内容で作成
+# 5. vite.config.jsを上記内容で作成
 
-# 6. ディレクトリ構造作成（v3.3対応）
+# 6. ディレクトリ構造作成
 mkdir -p src/pixi-v8 src/stores src/utils src/workers src/assets src/styles public/icons
 
-# 7. index.htmlをv3.3版で作成（デザイン責務集約）
+# 7. main.cssを上記内容で作成
 ```
 
 ### 2. 開発サーバー起動
@@ -440,7 +544,7 @@ mkdir -p src/pixi-v8 src/stores src/utils src/workers src/assets src/styles publ
 npm run dev
 
 # ブラウザでhttp://localhost:3000が開く
-# PixiJS v8統一基盤・Phosphor Icons・ふたば色での開発開始
+# PixiJS v8統一基盤での開発開始
 ```
 
 ### 3. ビルド・デプロイ
@@ -454,7 +558,7 @@ npm run preview
 # 配布用ファイルはdist/フォルダに生成
 ```
 
-## ⚠️ 重要注意事項（v3.3版）
+## ⚠️ 重要注意事項
 
 ### PixiJS v8統一基盤準拠
 - **ESMモジュール必須**: `import`文のみ使用・`require`禁止
@@ -462,12 +566,6 @@ npm run preview
 - **単一エンジン**: PixiJS v8以外の描画ライブラリ完全禁止
 - **Container活用**: 全レイヤー管理をPixiJS v8 Container経由
 - **非破壊性保証**: 元データをPixiJS v8 Container内で保持
-
-### アイコン責務集約準拠（v3.3新規）
-- **デザイン変更**: index.htmlの`DESIGN_CONFIG`のみ修正
-- **機能追加**: 各JSファイルで`window.DESIGN_CONFIG`参照
-- **Phosphor Icons**: `ph-`プレフィックス付きアイコン名使用
-- **一元管理**: 色・サイズ・レイアウトの統一定義
 
 ### ふたば色統合活用
 - **新色活用**: `--futaba-light-medium: #e9c2ba`を積極活用
@@ -479,4 +577,5 @@ npm run preview
 - **OffscreenCanvas**: Worker統合での並列処理活用
 - **WebCodecs**: 高速出力・動画生成機能活用
 
-この完全セットアップにより、PixiJS v8統一基盤・Phosphor Icons統一・アイコン責務集約・ふたば色統合・Chrome API活用を完全統合した最高品質開発環境を構築できます。
+この完全セットアップにより、PixiJS v8統一基盤・モダンエコシステム・ふたば色統合・Chrome API活用を完全統合した最高品質開発環境を構築できます。
+  

@@ -24,3 +24,5 @@
 | ループ           | `loop-left`            | 
 | ゴースト表示     | `ghost`                | 
 | コマ割り         | `layout-grid`          | 
+
+
