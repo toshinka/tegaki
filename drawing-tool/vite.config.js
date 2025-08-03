@@ -43,7 +43,6 @@ export default defineConfig({
     include: [
       'pixi.js',
       'lodash-es',
-      '@tabler/icons',
       'svg-pathdata',
       'svg-path-parser',
       'gl-matrix',
