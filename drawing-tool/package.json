@@ -1,23 +1,26 @@
 {
-  "name": "tegaki-drawing-tool",
+  "name": "drawing-tool",
   "version": "1.0.0",
-  "description": "モダンお絵かきツール Phase2",
-  "main": "index.html",
-  "type": "module",
+  "main": "index.js",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "clean": "rm -rf dist .vite"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["drawing", "pixi", "canvas", "tegaki"],
+  "keywords": [],
   "author": "",
-  "license": "MIT",
+  "license": "ISC",
+  "description": "",
   "dependencies": {
-    "pixi.js": "^8.4.1",
-    "lodash-es": "^4.17.21"
+    "@tabler/icons-webfont": "^3.34.1",
+    "chroma-js": "^3.1.2",
+    "lodash-es": "^4.17.21",
+    "lz-string": "^1.5.0",
+    "mitt": "^3.0.1",
+    "pixi.js": "^8.11.0"
   },
   "devDependencies": {
+    "@types/node": "^22.17.0",
+    "@vitejs/plugin-legacy": "^5.4.3",
+    "typescript": "^5.9.2",
     "vite": "^5.4.19"
   }
 }
