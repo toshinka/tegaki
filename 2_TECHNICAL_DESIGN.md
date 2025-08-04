@@ -132,7 +132,8 @@ src/
 └── types/                          # 型定義・TypeScript
     ├── drawing.types.ts            # 描画関連・ツール・レイヤー型
     ├── ui.types.ts                # UI関連・イベント・状態型
-    └── performance.types.ts        # 性能関連・監視・メトリクス型
+    ├── performance.types.ts        # 性能関連・監視・メトリクス型
+    └── index.ts                    # 型定義統合・再エクスポート
 ```
 
 ## 🎨 モジュール設計・責任分界
