@@ -1,8 +1,8 @@
-// DrawingEngine.ts - 描画エンジン・Graphics統合・ツール制御
+// DrawingEngine.ts - 描画エンジン・Graphics統合・ツール制御 (簡略版)
 // PixiJS Graphics最適化・スムージング・手ブレ軽減
 
 import * as PIXI from 'pixi.js';
-import type { EventBus, IEventData } from './EventBus.js';
+import type { EventBus } from './EventBus.js';
 
 /**
  * ストロークデータ・描画情報
@@ -11,11 +11,9 @@ interface IStrokeData {
   id: string;
   points: PIXI.Point[];
   pressures: number[];
-  timestamps: number[];
   color: number;
   size: number;
   tool: string;
-  smoothed: boolean;
 }
 
 /**
@@ -27,40 +25,11 @@ interface IDrawingSettings {
     factor: number; // 0-1, 1=最大スムージング
     minDistance: number; // 最小描画距離
   };
-  performance: {
-    maxPointsPerStroke: number;
-    batchDrawing: boolean;
-    useQuadraticCurves: boolean;
-  };
   quality: {
     antialias: boolean;
     lineJoin: 'round' | 'bevel' | 'miter';
     lineCap: 'round' | 'square' | 'butt';
   };
-}
-
-/**
- * 描画統計・パフォーマンス監視
- */
-interface IDrawingStats {
-  totalStrokes: number;
-  totalPoints: number;
-  averageStrokeLength: number;
-  drawingTime: number;
-  lastDrawTime: number;
-}
-
-/**
- * 描画ツールタイプ
- */
-export type DrawingTool = 'pen' | 'brush' | 'eraser' | 'pencil';
-
-/**
- * 描画イベントデータ
- */
-interface IDrawingEventData extends IEventData {
-  type: 'drawing:start' | 'drawing:move' | 'drawing:end' | 'drawing:clear' | 'drawing:settings';
-  data: any;
 }
 
 /**
@@ -80,19 +49,13 @@ export class DrawingEngine {
   private currentStroke: IStrokeData | null = null;
   private strokeId = 0;
   
-  // 描画設定
-  private currentTool: DrawingTool = 'pen';
-  private currentColor = 0x800000; // ふたば色マルーン
+  // 現在の描画設定
+  private currentColor = 0x800000; // ふたばマルーン
   private currentSize = 5;
-  private currentOpacity = 1.0;
+  private currentTool = 'pen';
   
-  // 設定・統計
+  // 設定
   private settings: IDrawingSettings;
-  private stats: IDrawingStats;
-  
-  // スムージング用バッファ
-  private pointBuffer: { point: PIXI.Point; pressure: number; timestamp: number }[] = [];
-  private readonly bufferSize = 5;
 
   constructor(app: PIXI.Application, eventBus: EventBus) {
     this.app = app;
@@ -100,7 +63,6 @@ export class DrawingEngine {
     
     // 初期設定
     this.settings = this.createDefaultSettings();
-    this.stats = this.createEmptyStats();
     
     // コンテナ階層初期化
     this.initializeContainers();
@@ -142,343 +104,234 @@ export class DrawingEngine {
    * イベントリスナー設定・描画制御
    */
   private setupEventListeners(): void {
-    // 描画開始
-    this.eventBus.on('input:drawStart', (data) => {
-      this.startDrawing(data.x, data.y, data.pressure || 1.0);
-    });
-
-    // 描画継続
-    this.eventBus.on('input:drawMove', (data) => {
-      if (this.isDrawing) {
-        this.continueDrawing(data.x, data.y, data.pressure || 1.0);
-      }
-    });
-
-    // 描画終了
-    this.eventBus.on('input:drawEnd', (data) => {
-      if (this.isDrawing) {
-        this.endDrawing(data.x, data.y, data.pressure || 1.0);
-      }
-    });
-
     // ツール変更
-    this.eventBus.on('tool:change', (data) => {
-      this.setTool(data.tool);
+    this.eventBus.on('tool:activated', (data) => {
+      this.currentTool = data.tool;
+      console.log(`🖌️ ツール変更: ${this.currentTool}`);
     });
 
     // 色変更
-    this.eventBus.on('color:change', (data) => {
-      this.setColor(data.color);
+    this.eventBus.on('ui:color-select', (data) => {
+      this.currentColor = data.color;
+      console.log(`🖌️ 色変更: ${this.currentColor.toString(16)}`);
     });
 
-    // サイズ変更
+    // ブラシサイズ変更
     this.eventBus.on('brush:sizeChange', (data) => {
-      this.setSize(data.size);
+      this.currentSize = data.data.size;
+      console.log(`🖌️ サイズ変更: ${this.currentSize}`);
     });
 
-    // 透明度変更
-    this.eventBus.on('brush:opacityChange', (data) => {
-      this.setOpacity(data.opacity);
+    // 描画イベント
+    this.eventBus.on('drawing:stroke-start', (data) => {
+      this.startStroke(data.x, data.y, data.pressure || 1.0);
     });
 
-    // キャンバスクリア
-    this.eventBus.on('canvas:clear', () => {
-      this.clearCanvas();
+    this.eventBus.on('drawing:stroke-move', (data) => {
+      this.continueStroke(data.x, data.y, data.pressure || 1.0);
+    });
+
+    this.eventBus.on('drawing:stroke-end', (data) => {
+      this.endStroke();
+    });
+
+    // 消しゴムイベント
+    this.eventBus.on('drawing:erase-start', (data) => {
+      this.startErase(data.x, data.y, data.pressure || 1.0);
+    });
+
+    this.eventBus.on('drawing:erase-move', (data) => {
+      this.continueErase(data.x, data.y, data.pressure || 1.0);
+    });
+
+    this.eventBus.on('drawing:erase-end', (data) => {
+      this.endErase();
     });
   }
 
   /**
-   * 描画開始処理
+   * ストローク開始・ペン描画
    */
-  private startDrawing(x: number, y: number, pressure: number): void {
+  private startStroke(x: number, y: number, pressure: number): void {
     if (this.isDrawing) return;
 
     this.isDrawing = true;
-    const timestamp = performance.now();
-    const strokeId = `stroke_${++this.strokeId}_${timestamp}`;
+    this.strokeId++;
 
-    // 新しいストローク作成
+    // 新しいストロークデータ作成
     this.currentStroke = {
-      id: strokeId,
+      id: `stroke_${this.strokeId}`,
       points: [new PIXI.Point(x, y)],
       pressures: [pressure],
-      timestamps: [timestamp],
       color: this.currentColor,
       size: this.currentSize,
-      tool: this.currentTool,
-      smoothed: this.settings.smoothing.enabled
+      tool: this.currentTool
     };
 
-    // バッファクリア・初期点追加
-    this.pointBuffer = [];
-    this.addPointToBuffer(x, y, pressure, timestamp);
-
-    // 描画開始通知
-    this.eventBus.emit('drawing:start', {
-      type: 'drawing:start',
-      timestamp,
-      data: { strokeId, tool: this.currentTool, x, y }
+    // 一時Graphics設定
+    this.tempGraphics.clear();
+    this.tempGraphics.lineStyle({
+      width: this.currentSize * pressure,
+      color: this.currentColor,
+      cap: this.settings.quality.lineCap,
+      join: this.settings.quality.lineJoin
     });
 
-    // 統計更新
-    this.stats.totalStrokes++;
-    this.stats.lastDrawTime = timestamp;
+    this.tempGraphics.moveTo(x, y);
 
-    console.log(`🖌️ 描画開始: ${strokeId} at (${x}, ${y})`);
+    console.log(`🖌️ ストローク開始: (${x}, ${y}) pressure=${pressure.toFixed(3)}`);
   }
 
   /**
-   * 描画継続処理・スムージング適用
+   * ストローク継続・ペン描画
    */
-  private continueDrawing(x: number, y: number, pressure: number): void {
+  private continueStroke(x: number, y: number, pressure: number): void {
     if (!this.isDrawing || !this.currentStroke) return;
-
-    const timestamp = performance.now();
-    
-    // 距離チェック・最小描画距離
-    const lastPoint = this.currentStroke.points[this.currentStroke.points.length - 1];
-    const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
-    
-    if (distance < this.settings.smoothing.minDistance) {
-      return; // 距離が小さすぎる場合スキップ
-    }
 
     // ポイント追加
     this.currentStroke.points.push(new PIXI.Point(x, y));
     this.currentStroke.pressures.push(pressure);
-    this.currentStroke.timestamps.push(timestamp);
 
-    // バッファに追加・スムージング処理
-    this.addPointToBuffer(x, y, pressure, timestamp);
-    
-    if (this.settings.smoothing.enabled && this.pointBuffer.length >= 3) {
-      this.drawSmoothedSegment();
-    } else {
-      this.drawDirectLine(lastPoint, new PIXI.Point(x, y), pressure);
-    }
+    // 線を描画
+    this.tempGraphics.lineStyle({
+      width: this.currentSize * pressure,
+      color: this.currentColor,
+      cap: this.settings.quality.lineCap,
+      join: this.settings.quality.lineJoin
+    });
 
-    // 統計更新
-    this.stats.totalPoints++;
+    this.tempGraphics.lineTo(x, y);
   }
 
   /**
-   * 描画終了処理・ストローク確定
+   * ストローク終了・ペン描画
    */
-  private endDrawing(x: number, y: number, pressure: number): void {
+  private endStroke(): void {
     if (!this.isDrawing || !this.currentStroke) return;
 
-    const timestamp = performance.now();
-
-    // 最終点追加
-    this.currentStroke.points.push(new PIXI.Point(x, y));
-    this.currentStroke.pressures.push(pressure);
-    this.currentStroke.timestamps.push(timestamp);
-
-    // 残りのバッファポイント処理
-    this.flushPointBuffer();
-
-    // 一時Graphicsから本レイヤーに転送
-    this.commitStroke();
-
-    // 描画時間計算
-    const drawingTime = timestamp - this.stats.lastDrawTime;
-    this.stats.drawingTime += drawingTime;
-    this.stats.averageStrokeLength = this.stats.totalPoints / this.stats.totalStrokes;
-
-    // 描画終了通知
-    this.eventBus.emit('drawing:end', {
-      type: 'drawing:end',
-      timestamp,
-      data: { 
-        strokeId: this.currentStroke.id, 
-        points: this.currentStroke.points.length,
-        duration: drawingTime
-      }
-    });
+    // 一時Graphicsを本レイヤーに転写
+    this.transferTempToLayer();
 
     // 状態リセット
     this.isDrawing = false;
     this.currentStroke = null;
-    this.pointBuffer = [];
+    this.tempGraphics.clear();
 
-    console.log(`🖌️ 描画終了: ${drawingTime.toFixed(2)}ms, ${this.stats.totalPoints}点`);
+    console.log('🖌️ ストローク終了');
   }
 
   /**
-   * バッファポイント追加・サイズ管理
+   * 消しゴム開始
    */
-  private addPointToBuffer(x: number, y: number, pressure: number, timestamp: number): void {
-    this.pointBuffer.push({
-      point: new PIXI.Point(x, y),
-      pressure,
-      timestamp
-    });
+  private startErase(x: number, y: number, pressure: number): void {
+    if (this.isDrawing) return;
 
-    // バッファサイズ制限
-    if (this.pointBuffer.length > this.bufferSize) {
-      this.pointBuffer.shift();
-    }
-  }
-
-  /**
-   * スムージング描画・ベジエ曲線
-   */
-  private drawSmoothedSegment(): void {
-    if (this.pointBuffer.length < 3) return;
-
-    const p0 = this.pointBuffer[this.pointBuffer.length - 3];
-    const p1 = this.pointBuffer[this.pointBuffer.length - 2];
-    const p2 = this.pointBuffer[this.pointBuffer.length - 1];
-
-    // ベジエ曲線制御点計算
-    const smoothing = this.settings.smoothing.factor;
-    const cp1x = p1.point.x + (p2.point.x - p0.point.x) * smoothing * 0.2;
-    const cp1y = p1.point.y + (p2.point.y - p0.point.y) * smoothing * 0.2;
-
-    // 筆圧による線幅計算
-    const size = this.calculateLineWidth(p1.pressure);
+    this.isDrawing = true;
     
-    // Graphics描画
-    this.tempGraphics.lineStyle({
-      width: size,
-      color: this.currentColor,
-      alpha: this.currentOpacity,
-      cap: this.settings.quality.lineCap,
-      join: this.settings.quality.lineJoin
-    });
+    // 消しゴム設定（穴を開ける）
+    this.tempGraphics.clear();
+    this.tempGraphics.beginFill(0x000000); // 黒で塗りつぶし
+    this.tempGraphics.drawCircle(x, y, this.currentSize * pressure);
+    this.tempGraphics.endFill();
 
-    if (this.settings.performance.useQuadraticCurves) {
-      this.tempGraphics.moveTo(p0.point.x, p0.point.y);
-      this.tempGraphics.quadraticCurveTo(cp1x, cp1y, p1.point.x, p1.point.y);
-    } else {
-      this.tempGraphics.moveTo(p0.point.x, p0.point.y);
-      this.tempGraphics.lineTo(p1.point.x, p1.point.y);
+    // ブレンドモードを減算に設定
+    this.tempGraphics.blendMode = PIXI.BLEND_MODES.ERASE;
+
+    console.log(`🖌️ 消しゴム開始: (${x}, ${y})`);
+  }
+
+  /**
+   * 消しゴム継続
+   */
+  private continueErase(x: number, y: number, pressure: number): void {
+    if (!this.isDrawing) return;
+
+    // 消しゴムの軌跡を描画
+    this.tempGraphics.drawCircle(x, y, this.currentSize * pressure);
+  }
+
+  /**
+   * 消しゴム終了
+   */
+  private endErase(): void {
+    if (!this.isDrawing) return;
+
+    // 一時Graphicsを本レイヤーに転写
+    this.transferTempToLayer();
+
+    // 状態リセット
+    this.isDrawing = false;
+    this.tempGraphics.clear();
+    this.tempGraphics.blendMode = PIXI.BLEND_MODES.NORMAL;
+
+    console.log('🖌️ 消しゴム終了');
+  }
+
+  /**
+   * 一時Graphicsを本レイヤーに転写
+   */
+  private transferTempToLayer(): void {
+    if (!this.tempGraphics || this.tempGraphics.geometry.graphicsData.length === 0) {
+      return;
     }
-  }
 
-  /**
-   * 直線描画・スムージングなし
-   */
-  private drawDirectLine(from: PIXI.Point, to: PIXI.Point, pressure: number): void {
-    const size = this.calculateLineWidth(pressure);
+    // 現在のレイヤーに描画内容をコピー
+    const tempTexture = this.app.renderer.generateTexture(this.tempGraphics);
+    const sprite = new PIXI.Sprite(tempTexture);
     
-    this.tempGraphics.lineStyle({
-      width: size,
-      color: this.currentColor,
-      alpha: this.currentOpacity,
-      cap: this.settings.quality.lineCap,
-      join: this.settings.quality.lineJoin
-    });
-
-    this.tempGraphics.moveTo(from.x, from.y);
-    this.tempGraphics.lineTo(to.x, to.y);
-  }
-
-  /**
-   * バッファ残り処理・描画完了
-   */
-  private flushPointBuffer(): void {
-    while (this.pointBuffer.length >= 2) {
-      const p1 = this.pointBuffer[0];
-      const p2 = this.pointBuffer[1];
-      
-      this.drawDirectLine(p1.point, p2.point, p1.pressure);
-      this.pointBuffer.shift();
-    }
-  }
-
-  /**
-   * ストローク確定・レイヤーに転送
-   */
-  private commitStroke(): void {
-    if (!this.currentStroke) return;
-
-    // tempGraphicsの内容をcurrentLayerに転送
-    const texture = this.app.renderer.generateTexture(this.tempGraphics);
-    const sprite = new PIXI.Sprite(texture);
-    
+    // スプライトとして追加（パフォーマンス向上）
     this.currentLayer.addChild(sprite);
     
     // 一時Graphics クリア
     this.tempGraphics.clear();
-    
-    console.log(`🖌️ ストローク確定: ${this.currentStroke.id}`);
   }
 
   /**
-   * 筆圧による線幅計算
+   * レイヤークリア
    */
-  private calculateLineWidth(pressure: number): number {
-    const baseSizeMultiplier = this.currentTool === 'pen' ? 1.0 : 
-                              this.currentTool === 'brush' ? 1.5 :
-                              this.currentTool === 'pencil' ? 0.8 : 1.0;
-    
-    return Math.max(1, this.currentSize * pressure * baseSizeMultiplier);
-  }
-
-  /**
-   * キャンバスクリア
-   */
-  public clearCanvas(): void {
+  public clearLayer(): void {
     this.currentLayer.clear();
+    this.currentLayer.removeChildren();
     this.tempGraphics.clear();
-    
-    // 統計リセット
-    this.stats = this.createEmptyStats();
-    
-    this.eventBus.emit('drawing:clear', {
-      type: 'drawing:clear',
-      timestamp: performance.now(),
-      data: {}
-    });
-    
-    console.log('🖌️ キャンバスクリア完了');
+    console.log('🖌️ レイヤークリア');
   }
 
   /**
-   * ツール設定
+   * 全体クリア
    */
-  public setTool(tool: DrawingTool): void {
-    this.currentTool = tool;
-    console.log(`🖌️ ツール変更: ${tool}`);
+  public clearAll(): void {
+    this.clearLayer();
+    this.isDrawing = false;
+    this.currentStroke = null;
+    console.log('🖌️ 全体クリア');
   }
 
   /**
-   * 色設定
+   * 描画状態取得
    */
-  public setColor(color: number): void {
-    this.currentColor = color;
-    console.log(`🖌️ 色変更: #${color.toString(16).padStart(6, '0')}`);
+  public isCurrentlyDrawing(): boolean {
+    return this.isDrawing;
   }
 
   /**
-   * サイズ設定
+   * 現在の設定取得
    */
-  public setSize(size: number): void {
-    this.currentSize = Math.max(1, Math.min(100, size));
-    console.log(`🖌️ サイズ変更: ${this.currentSize}px`);
+  public getCurrentSettings() {
+    return {
+      color: this.currentColor,
+      size: this.currentSize,
+      tool: this.currentTool,
+      isDrawing: this.isDrawing
+    };
   }
 
   /**
-   * 透明度設定
+   * キャンバス画像エクスポート・Phase2準備
    */
-  public setOpacity(opacity: number): void {
-    this.currentOpacity = Math.max(0, Math.min(1, opacity));
-    console.log(`🖌️ 透明度変更: ${this.currentOpacity}`);
-  }
-
-  /**
-   * 設定取得
-   */
-  public getSettings(): IDrawingSettings {
-    return { ...this.settings };
-  }
-
-  /**
-   * 統計取得
-   */
-  public getStats(): IDrawingStats {
-    return { ...this.stats };
+  public exportImage(): string {
+    const texture = this.app.renderer.generateTexture(this.drawingContainer);
+    const canvas = this.app.renderer.extract.canvas(texture);
+    return canvas.toDataURL('image/png');
   }
 
   /**
@@ -491,11 +344,6 @@ export class DrawingEngine {
         factor: 0.5,
         minDistance: 2
       },
-      performance: {
-        maxPointsPerStroke: 1000,
-        batchDrawing: true,
-        useQuadraticCurves: true
-      },
       quality: {
         antialias: true,
         lineJoin: 'round',
@@ -505,15 +353,26 @@ export class DrawingEngine {
   }
 
   /**
-   * 空統計作成
+   * 設定更新
    */
-  private createEmptyStats(): IDrawingStats {
+  public updateSettings(newSettings: Partial<IDrawingSettings>): void {
+    this.settings = { ...this.settings, ...newSettings };
+    console.log('🖌️ 描画設定更新:', newSettings);
+  }
+
+  /**
+   * デバッグ情報取得
+   */
+  public getDebugInfo() {
     return {
-      totalStrokes: 0,
-      totalPoints: 0,
-      averageStrokeLength: 0,
-      drawingTime: 0,
-      lastDrawTime: 0
+      isDrawing: this.isDrawing,
+      currentTool: this.currentTool,
+      currentColor: this.currentColor,
+      currentSize: this.currentSize,
+      strokeId: this.strokeId,
+      settings: this.settings,
+      containerChildren: this.drawingContainer.children.length,
+      layerChildren: this.currentLayer.children.length
     };
   }
 
@@ -521,10 +380,29 @@ export class DrawingEngine {
    * 破棄処理
    */
   public destroy(): void {
-    this.currentLayer?.destroy();
-    this.tempGraphics?.destroy();
-    this.drawingContainer?.destroy();
-    
-    console.log('🖌️ DrawingEngine破棄完了');
+    try {
+      // イベントリスナー削除
+      this.eventBus.off('tool:activated');
+      this.eventBus.off('ui:color-select');
+      this.eventBus.off('brush:sizeChange');
+      this.eventBus.off('drawing:stroke-start');
+      this.eventBus.off('drawing:stroke-move');
+      this.eventBus.off('drawing:stroke-end');
+      this.eventBus.off('drawing:erase-start');
+      this.eventBus.off('drawing:erase-move');
+      this.eventBus.off('drawing:erase-end');
+
+      // Graphics削除
+      this.currentLayer?.destroy({ children: true });
+      this.tempGraphics?.destroy();
+      this.drawingContainer?.destroy({ children: true });
+
+      // 参照クリア
+      this.currentStroke = null;
+
+      console.log('✅ DrawingEngine破棄完了');
+    } catch (error) {
+      console.error('⚠️ DrawingEngine破棄エラー:', error);
+    }
   }
 }

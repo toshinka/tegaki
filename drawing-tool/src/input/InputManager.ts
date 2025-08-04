@@ -1,32 +1,12 @@
-// InputManager.ts - 入力システム統合制御
+// InputManager.ts - 入力システム統合制御 (修正版)
 // マウス・ペンタブレット・キーボード・ショートカット統合
 
-import type { EventBus, IEventData } from '../core/EventBus.js';
+import type { EventBus } from '../core/EventBus.js';
 
 /**
  * 入力デバイスタイプ
  */
 export type InputDevice = 'mouse' | 'pen' | 'touch' | 'unknown';
-
-/**
- * 入力イベントデータ
- */
-interface IInputEventData extends IEventData {
-  type: 'input:drawStart' | 'input:drawMove' | 'input:drawEnd' | 'input:hover';
-  x: number;
-  y: number;
-  pressure?: number;
-  tiltX?: number;
-  tiltY?: number;
-  twist?: number;
-  device: InputDevice;
-  button?: number;
-  modifiers: {
-    shift: boolean;
-    ctrl: boolean;
-    alt: boolean;
-  };
-}
 
 /**
  * 入力設定
@@ -196,22 +176,11 @@ export class InputManager {
     this.isDrawing = true;
     
     // イベント発火
-    const inputData: IInputEventData = {
-      type: 'input:drawStart',
-      timestamp: performance.now(),
+    this.eventBus.emit('input:draw-start', {
       x: coords.x,
       y: coords.y,
-      pressure,
-      tiltX: event.tiltX,
-      tiltY: event.tiltY,
-      twist: event.twist,
-      device: this.currentDevice,
-      button: event.button,
-      modifiers: this.getModifierKeys(event),
-      data: { pointerId: event.pointerId }
-    };
-    
-    this.eventBus.emit('input:drawStart', inputData);
+      pressure
+    });
     
     // 統計更新
     this.updateStats(pressure);
@@ -238,33 +207,13 @@ export class InputManager {
     
     if (this.isDrawing) {
       // 描画継続
-      const inputData: IInputEventData = {
-        type: 'input:drawMove',
-        timestamp: performance.now(),
+      this.eventBus.emit('input:draw-move', {
         x: smoothedCoords.x,
         y: smoothedCoords.y,
-        pressure,
-        tiltX: event.tiltX,
-        tiltY: event.tiltY,
-        twist: event.twist,
-        device: this.currentDevice,
-        modifiers: this.getModifierKeys(event),
-        data: { pointerId: event.pointerId }
-      };
-      
-      this.eventBus.emit('input:drawMove', inputData);
-      this.updateStats(pressure);
-    } else {
-      // ホバー
-      this.eventBus.emit('input:hover', {
-        type: 'input:hover',
-        timestamp: performance.now(),
-        x: coords.x,
-        y: coords.y,
-        device: this.currentDevice,
-        modifiers: this.getModifierKeys(event),
-        data: {}
+        pressure
       });
+      
+      this.updateStats(pressure);
     }
   }
 
@@ -283,31 +232,14 @@ export class InputManager {
     this.addPointToHistory(coords.x, coords.y, pressure, performance.now());
     
     // 描画終了イベント
-    const inputData: IInputEventData = {
-      type: 'input:drawEnd',
-      timestamp: performance.now(),
-      x: coords.x,
-      y: coords.y,
-      pressure,
-      tiltX: event.tiltX,
-      tiltY: event.tiltY,
-      twist: event.twist,
-      device: this.currentDevice,
-      button: event.button,
-      modifiers: this.getModifierKeys(event),
-      data: { pointerId: event.pointerId }
-    };
-    
-    this.eventBus.emit('input:drawEnd', inputData);
+    this.eventBus.emit('input:draw-end', {});
     
     // 状態リセット
     this.isDrawing = false;
     this.isActive = false;
     
     // ポインター解放
-    if (this.canvas.hasPointerCapture && this.canvas.hasPointerCapture(event.pointerId)) {
-      this.canvas.releasePointerCapture(event.pointerId);
-    }
+    this.canvas.releasePointerCapture(event.pointerId);
     
     console.log(`🎮 描画終了: ${this.currentDevice} at (${coords.x}, ${coords.y})`);
   }
@@ -359,37 +291,29 @@ export class InputManager {
       switch (event.code) {
         case 'KeyZ':
           event.preventDefault();
-          this.eventBus.emit('action:undo', { type: 'action:undo', timestamp: performance.now(), data: {} });
+          console.log('🎮 Undo shortcut');
           break;
         case 'KeyY':
           event.preventDefault();
-          this.eventBus.emit('action:redo', { type: 'action:redo', timestamp: performance.now(), data: {} });
+          console.log('🎮 Redo shortcut');
           break;
         case 'KeyS':
           event.preventDefault();
-          this.eventBus.emit('action:save', { type: 'action:save', timestamp: performance.now(), data: {} });
-          break;
-        case 'KeyN':
-          event.preventDefault();
-          this.eventBus.emit('action:new', { type: 'action:new', timestamp: performance.now(), data: {} });
+          console.log('🎮 Save shortcut');
           break;
       }
     }
     
     // ツールショートカット
     switch (event.code) {
-      case 'KeyB':
-        this.eventBus.emit('tool:change', { type: 'tool:change', timestamp: performance.now(), data: { tool: 'brush' } });
-        break;
       case 'KeyP':
-        this.eventBus.emit('tool:change', { type: 'tool:change', timestamp: performance.now(), data: { tool: 'pen' } });
+        this.eventBus.emit('ui:tool-select', { tool: 'pen' });
         break;
       case 'KeyE':
-        this.eventBus.emit('tool:change', { type: 'tool:change', timestamp: performance.now(), data: { tool: 'eraser' } });
+        this.eventBus.emit('ui:tool-select', { tool: 'eraser' });
         break;
-      case 'Space':
-        event.preventDefault();
-        this.eventBus.emit('canvas:pan', { type: 'canvas:pan', timestamp: performance.now(), data: { active: true } });
+      case 'KeyB':
+        this.eventBus.emit('ui:tool-select', { tool: 'brush' });
         break;
     }
   }
@@ -398,12 +322,7 @@ export class InputManager {
    * キーボード解放処理
    */
   private handleKeyUp(event: KeyboardEvent): void {
-    switch (event.code) {
-      case 'Space':
-        event.preventDefault();
-        this.eventBus.emit('canvas:pan', { type: 'canvas:pan', timestamp: performance.now(), data: { active: false } });
-        break;
-    }
+    // 将来の機能拡張用
   }
 
   /**
@@ -623,6 +542,13 @@ export class InputManager {
   }
 
   /**
+   * 現在のデバイス取得
+   */
+  public getCurrentDevice(): InputDevice {
+    return this.currentDevice;
+  }
+
+  /**
    * デフォルト設定作成
    */
   private createDefaultSettings(): IInputSettings {
@@ -663,19 +589,43 @@ export class InputManager {
   }
 
   /**
+   * デバッグ情報取得
+   */
+  public getDebugInfo() {
+    return {
+      isActive: this.isActive,
+      isDrawing: this.isDrawing,
+      currentDevice: this.currentDevice,
+      stats: this.stats,
+      settings: this.settings,
+      pointHistoryLength: this.pointHistory.length,
+      canvasRect: {
+        width: this.canvasRect?.width || 0,
+        height: this.canvasRect?.height || 0
+      },
+      scale: this.scale,
+      devicePixelRatio: this.devicePixelRatio
+    };
+  }
+
+  /**
    * 破棄処理
    */
   public destroy(): void {
-    // イベントリスナー削除
-    this.boundEventListeners.forEach((handler, key) => {
-      const [event, target] = key.split('_');
-      const element = target === 'window' ? window : this.canvas;
-      element.removeEventListener(event, handler);
-    });
-    
-    this.boundEventListeners.clear();
-    this.pointHistory = [];
-    
-    console.log('🎮 InputManager破棄完了');
+    try {
+      // イベントリスナー削除
+      this.boundEventListeners.forEach((handler, key) => {
+        const [event, target] = key.split('_');
+        const element = target === 'window' ? window : this.canvas;
+        element.removeEventListener(event, handler);
+      });
+      
+      this.boundEventListeners.clear();
+      this.pointHistory = [];
+      
+      console.log('✅ InputManager破棄完了');
+    } catch (error) {
+      console.error('⚠️ InputManager破棄エラー:', error);
+    }
   }
 }
