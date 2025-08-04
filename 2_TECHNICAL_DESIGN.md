@@ -110,7 +110,7 @@ src/
 ├── tools/                          # ツールシステム・段階実装
 │   ├── ToolManager.ts               # ツール統合・状態管理・設定永続化
 │   ├── PenTool.ts                  # ペン・基本線描画・Phase1
-│   ├── BrushTool.ts                # 筆・テクスチャ・Phase2
+│   ├── AirbrushTool.ts           # エアスプレー・パーティクル・Phase2
 │   ├── EraserTool.ts               # 消しゴム・削除・Phase1
 │   ├── FillTool.ts                 # 塗りつぶし・フラッドフィル・Phase2
 │   └── ShapeTool.ts                # 図形・直線・矩形・円・Phase2
