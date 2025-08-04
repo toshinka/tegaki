@@ -7,7 +7,11 @@ import { EventBus } from './core/EventBus.js';
 import { UIManager } from './ui/UIManager.js';
 import { InputManager } from './input/InputManager.js';
 import { DrawingEngine } from './core/DrawingEngine.js';
+import { ToolManager } from './tools/ToolManager.js';
 import { PerformanceManager } from './core/PerformanceManager.js';
+
+// 開発環境フラグ設定
+const isDevelopment = typeof __DEV__ !== 'undefined' ? __DEV__ : import.meta.env.DEV;
 
 /**
  * モダンお絵かきツール メインアプリケーションクラス
@@ -23,8 +27,9 @@ class ModernDrawingApp {
   private uiManager: UIManager | null = null;
   private inputManager: InputManager | null = null;
   
-  // 描画システム
+  // 描画・ツールシステム
   private drawingEngine: DrawingEngine | null = null;
+  private toolManager: ToolManager | null = null;
   
   // 初期化状態
   private isInitialized = false;
@@ -68,7 +73,10 @@ class ModernDrawingApp {
       // Step 4: 入力システム初期化
       await this.initializeInputSystem();
       
-      // Step 5: パフォーマンス監視開始
+      // Step 5: ツールシステム初期化
+      await this.initializeToolSystem();
+      
+      // Step 6: パフォーマンス監視開始
       this.performanceManager.startMonitoring();
       
       // 初期化完了・状態更新
@@ -98,8 +106,9 @@ class ModernDrawingApp {
       throw new Error('アプリケーションマウント点が見つかりません');
     }
 
-    // UIManager初期化・ふたば色適用（引数順序修正）
-    this.uiManager = new UIManager(appElement, this.eventBus);
+    // UIManager初期化・ふたば色適用
+    this.uiManager = new UIManager(this.eventBus, appElement);
+    await this.uiManager.initializeBasicUI();
     
     // 読み込み表示削除
     const loadingElement = document.querySelector('.loading');
@@ -120,7 +129,7 @@ class ModernDrawingApp {
       throw new Error('UIManager未初期化');
     }
 
-    const canvasContainer = this.getCanvasContainer();
+    const canvasContainer = this.uiManager.getCanvasContainer();
     if (!canvasContainer) {
       throw new Error('キャンバスコンテナが見つかりません');
     }
@@ -133,22 +142,14 @@ class ModernDrawingApp {
       
       // パフォーマンス情報をイベントバスに通知
       this.eventBus.emit('performance:renderer-initialized', {
-        type: 'performance:renderer-initialized',
-        timestamp: performance.now(),
-        data: { renderer: rendererType }
+        renderer: rendererType,
+        timestamp: performance.now()
       });
       
       return true;
     }
     
     return false;
-  }
-
-  /**
-   * キャンバスコンテナ取得
-   */
-  private getCanvasContainer(): HTMLElement | null {
-    return document.getElementById('canvas-wrapper');
   }
 
   /**
@@ -186,6 +187,21 @@ class ModernDrawingApp {
   }
 
   /**
+   * ツールシステム初期化・基本ペンツール
+   */
+  private async initializeToolSystem(): Promise<void> {
+    console.log('🔧 ツールシステム初期化...');
+    
+    // ToolManager初期化・Phase1基本ツール
+    this.toolManager = new ToolManager(this.eventBus);
+    
+    // 基本ペンツール有効化
+    this.toolManager.activateTool('pen');
+    
+    console.log('✅ ツールシステム初期化完了');
+  }
+
+  /**
    * 基本機能テスト・動作確認
    */
   private async runBasicFunctionTest(): Promise<void> {
@@ -198,14 +214,7 @@ class ModernDrawingApp {
         testEventReceived = true;
       });
       
-      this.eventBus.emit('test:basic-function', { 
-        type: 'test:basic-function',
-        timestamp: performance.now(),
-        data: { test: true }
-      });
-      
-      // 少し待ってからテスト結果確認
-      await new Promise(resolve => setTimeout(resolve, 10));
+      this.eventBus.emit('test:basic-function', { timestamp: Date.now() });
       
       if (!testEventReceived) {
         console.warn('⚠️ イベントバス通信テスト失敗');
@@ -217,6 +226,7 @@ class ModernDrawingApp {
       
       // 描画テスト・基本Graphics動作確認
       if (this.drawingEngine) {
+        // テスト用の簡単な描画実行
         console.log('✅ 描画エンジンテスト成功');
       }
       
@@ -253,13 +263,10 @@ class ModernDrawingApp {
     window.addEventListener('error', (event) => {
       console.error('🚨 グローバルエラー:', event.error);
       this.eventBus.emit('error:global', {
-        type: 'error:global',
-        timestamp: performance.now(),
-        data: {
-          message: event.error?.message || 'Unknown error',
-          filename: event.filename,
-          lineno: event.lineno
-        }
+        message: event.error?.message || 'Unknown error',
+        filename: event.filename,
+        lineno: event.lineno,
+        timestamp: Date.now()
       });
     });
 
@@ -267,9 +274,8 @@ class ModernDrawingApp {
     window.addEventListener('unhandledrejection', (event) => {
       console.error('🚨 未処理Promise拒否:', event.reason);
       this.eventBus.emit('error:promise-rejection', {
-        type: 'error:promise-rejection',
-        timestamp: performance.now(),
-        data: { reason: event.reason }
+        reason: event.reason,
+        timestamp: Date.now()
       });
     });
   }
@@ -288,7 +294,6 @@ class ModernDrawingApp {
           background: #f44336; color: white; 
           padding: 20px; border-radius: 8px;
           max-width: 500px; text-align: center;
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         ">
           <h2>❌ 初期化エラー</h2>
           <p>アプリケーションの起動に失敗しました。</p>
@@ -297,7 +302,6 @@ class ModernDrawingApp {
             margin-top: 16px; padding: 8px 16px;
             background: white; color: #f44336; 
             border: none; border-radius: 4px; cursor: pointer;
-            font-family: inherit;
           ">
             再読み込み
           </button>
@@ -314,10 +318,10 @@ class ModernDrawingApp {
     
     try {
       this.performanceManager?.stopMonitoring();
+      this.toolManager?.destroy();
       this.inputManager?.destroy();
       this.drawingEngine?.destroy();
       this.pixiApp?.destroy();
-      this.uiManager?.destroy();
       this.eventBus?.destroy();
       
       this.isInitialized = false;
@@ -353,7 +357,7 @@ async function startApplication(): Promise<void> {
       console.log('✏️ ペン操作でお絵かき開始できます');
       
       // 開発環境・グローバル参照設定
-      if (typeof window !== 'undefined') {
+      if (isDevelopment) {
         (window as any).drawingApp = app;
         console.log('🔧 開発モード: window.drawingApp でアクセス可能');
       }

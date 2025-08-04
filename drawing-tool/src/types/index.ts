@@ -2,6 +2,14 @@
 // Phase1基盤システム・共通インターフェース定義
 
 /**
+ * グローバル定数定義・開発環境対応
+ */
+declare global {
+  const __DEV__: boolean;
+  const __VERSION__: string;
+}
+
+/**
  * 座標系・位置情報
  */
 export interface IPoint {
@@ -409,4 +417,85 @@ export function isAppPhase(value: any): value is AppPhase {
  * 定数・制限値
  */
 export const CONSTANTS = {
-  //
+  // キャンバス制限
+  MAX_CANVAS_SIZE: 8192,
+  MIN_CANVAS_SIZE: 32,
+  DEFAULT_CANVAS_SIZE: { width: 1024, height: 768 },
+  
+  // ツール制限
+  MAX_BRUSH_SIZE: 1000,
+  MIN_BRUSH_SIZE: 1,
+  DEFAULT_BRUSH_SIZE: 5,
+  
+  // パフォーマンス制限
+  TARGET_FPS: 60,
+  MIN_FPS: 10,
+  MAX_MEMORY_MB: 1024,
+  
+  // UI制限
+  MIN_UI_SCALE: 0.5,
+  MAX_UI_SCALE: 2.0,
+  DEFAULT_UI_SCALE: 1.0,
+  
+  // ファイル制限
+  MAX_FILE_SIZE_MB: 100,
+  MAX_LAYER_COUNT: 50,
+  
+  // 色・描画制限
+  MIN_OPACITY: 0,
+  MAX_OPACITY: 1,
+  DEFAULT_OPACITY: 1,
+  
+  // ふたば色パレット
+  FUTABA_COLORS: {
+    BACKGROUND: 0xffffee,     // クリーム背景
+    MAROON: 0x800000,         // マルーン（主要色）
+    BROWN: 0xd6ae7b,          // 茶色（アクセント）
+    DARK_GREEN: 0x789922,     // 深緑（補助色）
+    BLACK: 0x000000,          // 黒（テキスト）
+    WHITE: 0xffffff,          // 白（ハイライト）
+    GRAY: 0x666666,           // グレー（無効状態）
+    LIGHT_GRAY: 0xcccccc      // ライトグレー（境界線）
+  },
+  
+  // ショートカットキー
+  SHORTCUTS: {
+    TOOLS: {
+      PEN: 'p',
+      ERASER: 'e',
+      BUCKET: 'b',
+      EYEDROPPER: 'i'
+    },
+    SYSTEM: {
+      UNDO: 'ctrl+z',
+      REDO: 'ctrl+y',
+      SAVE: 'ctrl+s',
+      EXPORT: 'ctrl+e'
+    }
+  },
+  
+  // イベント名
+  EVENTS: {
+    // システム
+    SYSTEM_READY: 'system:ready',
+    SYSTEM_ERROR: 'system:error',
+    
+    // ツール
+    TOOL_CHANGED: 'tool:changed',
+    TOOL_CONFIG_UPDATED: 'tool:config-updated',
+    
+    // 描画
+    DRAWING_START: 'drawing:start',
+    DRAWING_MOVE: 'drawing:move',
+    DRAWING_END: 'drawing:end',
+    
+    // 入力
+    INPUT_START: 'input:start',
+    INPUT_MOVE: 'input:move',
+    INPUT_END: 'input:end',
+    
+    // パフォーマンス
+    PERFORMANCE_WARNING: 'performance:warning',
+    PERFORMANCE_CRITICAL: 'performance:critical'
+  }
+} as const;

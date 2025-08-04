@@ -24,20 +24,12 @@ export default defineConfig({
           
           // UI関連・中容量
           ui: [
-            './src/ui/UIManager.ts',
-            './src/ui/PopupManager.ts',
-            './src/ui/DraggableManager.ts'
+            './src/ui/UIManager.ts'
           ],
           
           // ツール関連・小容量
           tools: [
-            './src/tools/ToolManager.ts',
-            './src/tools/PenTool.ts'
-          ],
-          
-          // エクスポート・Phase2準備
-          export: [
-            'file-saver'
+            './src/tools/ToolManager.ts'
           ]
         }
       }
@@ -51,26 +43,19 @@ export default defineConfig({
   // 依存関係最適化・PixiJS特化
   optimizeDeps: {
     include: [
-      'pixi.js',
-      'file-saver'
-    ],
-    exclude: [
-      // Phase2以降で追加予定
+      'pixi.js'
     ]
   },
 
   // 開発用定数定義
   define: {
-    __DEV__: process.env.NODE_ENV === 'development',
+    __DEV__: JSON.stringify(process.env.NODE_ENV === 'development'),
     __VERSION__: JSON.stringify(process.env.npm_package_version || '4.1.0')
   },
 
   // CSS処理・ふたば色最適化
   css: {
-    devSourcemap: true,
-    preprocessorOptions: {
-      // 必要に応じてSass等追加
-    }
+    devSourcemap: true
   },
 
   // アセット処理

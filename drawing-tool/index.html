@@ -1,113 +1,234 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  
-  <!-- SEO・メタ情報 -->
-  <title>モダンお絵かきツール v4.1</title>
-  <meta name="description" content="2560×1440液タブレット特化・ふたば色デザイン・PixiJS v8高性能お絵かきツール" />
-  <meta name="keywords" content="drawing,digital art,pixi.js,webgpu,canvas,liquid tablet" />
-  <meta name="author" content="Modern Drawing Tool Project" />
-  
-  <!-- 2.5K環境最適化・高解像度対応 -->
-  <meta name="theme-color" content="#800000" />
-  <meta name="msapplication-TileColor" content="#800000" />
-  
-  <!-- Favicon・アイコン -->
-  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-  
-  <!-- フォント読み込み・日本語最適化 -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  
-  <!-- 性能最適化・リソースヒント -->
-  <link rel="dns-prefetch" href="//fonts.googleapis.com">
-  <link rel="preload" href="/src/main.ts" as="script" type="module">
-  
-  <!-- 基本スタイリング・FOUC防止 -->
-  <style>
-    /* 初期化・FOUC防止・2.5K対応 */
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
-      background: #ffffee; /* ふたば背景色 */
-      color: #2c1810;
-      overflow: hidden; /* スクロールバー無効・全画面 */
-      user-select: none; /* テキスト選択無効・操作性向上 */
-    }
-    
-    #app {
-      width: 100vw;
-      height: 100vh;
-      position: relative;
-    }
-    
-    /* 読み込み中表示・UX向上 */
-    .loading {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      color: #800000;
-      font-size: 18px;
-      font-weight: 500;
-    }
-    
-    /* 2.5K環境警告・対象外解像度 */
-    @media (max-width: 2559px) {
-      .resolution-warning {
-        position: fixed;
-        top: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: #ff9800;
-        color: white;
-        padding: 8px 16px;
-        border-radius: 4px;
-        font-size: 14px;
-        z-index: 9999;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-      }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>モダンお絵かきツール v4.1 - PixiJS v8</title>
+    <style>
+        /* 基本リセット */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #ffffee;
+        }
+
+        #app {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        /* 読み込み画面 */
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #ffffee;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            z-index: 10000;
+        }
+
+        .loading h1 {
+            color: #800000;
+            font-size: 24px;
+            margin-bottom: 16px;
+        }
+
+        .loading p {
+            color: #666666;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .loading .progress {
+            width: 200px;
+            height: 4px;
+            background-color: #d6ae7b;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 16px;
+        }
+
+        .loading .progress-bar {
+            height: 100%;
+            background-color: #800000;
+            width: 0%;
+            transition: width 0.3s ease;
+            animation: loading-pulse 2s infinite;
+        }
+
+        @keyframes loading-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        /* エラー表示 */
+        .error-display {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #dc3545;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 500px;
+            text-align: center;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 10001;
+        }
+
+        .error-display h2 {
+            margin-bottom: 12px;
+            font-size: 18px;
+        }
+
+        .error-display p {
+            margin-bottom: 8px;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .error-display button {
+            margin-top: 16px;
+            padding: 8px 16px;
+            background: white;
+            color: #dc3545;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 14px;
+        }
+
+        .error-display button:hover {
+            background: #f8f9fa;
+        }
+
+        /* カーソルスタイル */
+        .drawing-canvas {
+            cursor: crosshair !important;
+        }
+
+        /* 2.5K未満環境警告 */
+        @media (max-width: 2559px) {
+            body::before {
+                content: "⚠️ このアプリは2560×1440以上の環境に最適化されています";
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                background-color: #ffc107;
+                color: #000;
+                padding: 8px;
+                text-align: center;
+                z-index: 10002;
+                font-size: 12px;
+                font-weight: bold;
+            }
+        }
+    </style>
 </head>
 <body>
-  <!-- アプリケーションマウント点・最小限DOM -->
-  <div id="app">
-    <!-- 初期読み込み表示 -->
-    <div class="loading">
-      モダンお絵かきツール v4.1 起動中...
+    <!-- アプリケーションマウント点 -->
+    <div id="app">
+        <!-- 初期読み込み画面 -->
+        <div class="loading" id="loading">
+            <h1>🎨 モダンお絵かきツール</h1>
+            <p>PixiJS v8 + WebGPU/WebGL2</p>
+            <p>Phase1基盤システム初期化中...</p>
+            <div class="progress">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+        </div>
     </div>
+
+    <!-- メインアプリケーション読み込み -->
+    <script type="module" src="./src/main.ts"></script>
     
-    <!-- 2.5K環境チェック・警告表示 -->
-    <div class="resolution-warning" style="display: none;">
-      ⚠ このツールは2560×1440以上の環境に最適化されています
-    </div>
-  </div>
-  
-  <!-- TypeScriptエントリーポイント -->
-  <script type="module" src="/src/main.ts"></script>
-  
-  <!-- 解像度チェック・警告表示 -->
-  <script>
-    // 2.5K環境チェック・即座実行
-    if (window.innerWidth < 2560 || window.innerHeight < 1440) {
-      const warning = document.querySelector('.resolution-warning');
-      if (warning) {
-        warning.style.display = 'block';
+    <!-- 読み込み進捗更新 -->
+    <script>
+        // 簡易読み込み進捗表示
+        const progressBar = document.getElementById('progressBar');
+        const steps = [
+            'システム初期化...',
+            'UI構築中...',
+            'PixiJS初期化...',
+            '描画エンジン準備...',
+            '入力システム設定...',
+            '完了'
+        ];
         
-        // 5秒後自動非表示
-        setTimeout(() => {
-          warning.style.display = 'none';
-        }, 5000);
-      }
-    }
-  </script>
+        let currentStep = 0;
+        const progressInterval = setInterval(() => {
+            currentStep++;
+            const progress = (currentStep / steps.length) * 100;
+            progressBar.style.width = `${progress}%`;
+            
+            if (currentStep < steps.length) {
+                const loadingText = document.querySelector('.loading p:nth-child(3)');
+                if (loadingText) {
+                    loadingText.textContent = steps[currentStep - 1];
+                }
+            }
+            
+            if (currentStep >= steps.length) {
+                clearInterval(progressInterval);
+                // アプリケーション初期化完了まで待機
+                setTimeout(() => {
+                    const loading = document.getElementById('loading');
+                    if (loading && document.body.contains(loading)) {
+                        loading.style.opacity = '0';
+                        loading.style.transition = 'opacity 0.5s ease';
+                        setTimeout(() => {
+                            if (document.body.contains(loading)) {
+                                loading.remove();
+                            }
+                        }, 500);
+                    }
+                }, 1000);
+            }
+        }, 300);
+        
+        // エラーハンドリング
+        window.addEventListener('error', (e) => {
+            console.error('Global error:', e.error);
+            clearInterval(progressInterval);
+            
+            const loading = document.getElementById('loading');
+            if (loading) {
+                loading.innerHTML = `
+                    <div class="error-display">
+                        <h2>❌ 初期化エラー</h2>
+                        <p>アプリケーションの起動に失敗しました。</p>
+                        <p><strong>エラー:</strong> ${e.error?.message || 'Unknown error'}</p>
+                        <p>ブラウザの対応状況を確認してください：</p>
+                        <p>• WebGL2対応ブラウザ (Chrome/Firefox/Edge推奨)</p>
+                        <p>• JavaScript有効</p>
+                        <button onclick="location.reload()">再読み込み</button>
+                    </div>
+                `;
+            }
+        });
+        
+        // Promise未処理拒否
+        window.addEventListener('unhandledrejection', (e) => {
+            console.error('Unhandled promise rejection:', e.reason);
+        });
+    </script>
 </body>
 </html>
