@@ -106,9 +106,9 @@ export class InputManager {
   // イベントリスナー保持
   private boundEventListeners: Map<string, EventListener> = new Map();
 
-  constructor(canvas: HTMLCanvasElement, eventBus: EventBus) {
-    this.canvas = canvas;
+  constructor(eventBus: EventBus, canvas: HTMLCanvasElement) {
     this.eventBus = eventBus;
+    this.canvas = canvas;
     this.devicePixelRatio = window.devicePixelRatio || 1;
     
     // 初期設定
@@ -305,7 +305,9 @@ export class InputManager {
     this.isActive = false;
     
     // ポインター解放
-    this.canvas.releasePointerCapture(event.pointerId);
+    if (this.canvas.hasPointerCapture && this.canvas.hasPointerCapture(event.pointerId)) {
+      this.canvas.releasePointerCapture(event.pointerId);
+    }
     
     console.log(`🎮 描画終了: ${this.currentDevice} at (${coords.x}, ${coords.y})`);
   }
@@ -540,11 +542,13 @@ export class InputManager {
    * リサイズ監視設定
    */
   private setupResizeObserver(): void {
-    const resizeObserver = new ResizeObserver(() => {
-      this.updateCanvasInfo();
-    });
-    
-    resizeObserver.observe(this.canvas);
+    if (typeof ResizeObserver !== 'undefined') {
+      const resizeObserver = new ResizeObserver(() => {
+        this.updateCanvasInfo();
+      });
+      
+      resizeObserver.observe(this.canvas);
+    }
     
     // ウィンドウリサイズも監視
     window.addEventListener('resize', () => {
