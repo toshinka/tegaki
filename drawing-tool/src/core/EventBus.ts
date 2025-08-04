@@ -1,43 +1,44 @@
 // EventBus.ts - 型安全イベント通信・疎結合アーキテクチャ
 // 全システム間通信・履歴・デバッグ支援
 
-import * as PIXI from 'pixi.js';
+// PixiJS型定義インポート
+import type * as PIXI from 'pixi.js';
+
+/**
+ * 基本Point型定義（PixiJS非依存）
+ */
+export interface IPoint {
+  x: number;
+  y: number;
+}
 
 /**
  * イベントデータ型定義・型安全通信保証
  */
 export interface IEventData {
-  type: string;
-  timestamp: number;
-  data: any;
-  source?: string;
-  target?: string;
-}
-
-/**
- * 具体的なイベントデータ型定義
- */
-export interface ISpecificEventData {
   // 描画イベント
-  'drawing:start': { point: PIXI.Point; pressure: number; pointerType: string; timestamp: number };
-  'drawing:move': { point: PIXI.Point; pressure: number; velocity: number; timestamp: number };
-  'drawing:end': { point: PIXI.Point; timestamp: number };
+  'drawing:start': { point: IPoint; pressure: number; pointerType: string; timestamp: number };
+  'drawing:move': { point: IPoint; pressure: number; velocity: number; timestamp: number };
+  'drawing:end': { point: IPoint; timestamp: number };
   
   // ツールイベント
-  'tool:change': { tool: string; previousTool?: string; settings?: any };
-  'tool:setting-change': { toolName: string; setting: string; value: any };
+  'tool:change': { toolName: string; previousTool?: string; settings?: any; timestamp: number };
+  'tool:setting-change': { toolName: string; setting: string; value: any; timestamp: number };
   
   // UIイベント
-  'ui:toolbar-click': { toolName: string; buttonElement?: HTMLElement };
-  'color:change': { color: number; hsv?: { h: number; s: number; v: number } };
+  'ui:toolbar-click': { tool: string };
+  'ui:color-change': { color: number; previousColor: number };
+  'ui:size-change': { size: number; tool: string };
+  
+  // ブラシイベント（UIManagerから発火）
   'brush:sizeChange': { size: number };
   'brush:opacityChange': { opacity: number };
   
   // パフォーマンスイベント
   'performance:warning': { used: number; limit: number; type: 'memory' | 'fps' | 'gpu'; message: string };
   'performance:critical': { metric: string; value: number; threshold: number; action: string };
-  'performance:renderer-initialized': { renderer: string };
-  'performance:update': { fps?: number; memory?: number; gpu?: number };
+  'performance:renderer-initialized': { renderer: string; timestamp: number };
+  'performance:update': { fps?: number; memory?: number; timestamp: number };
   
   // レイヤーイベント
   'layer:create': { id: string; name: string; index: number };
@@ -46,19 +47,22 @@ export interface ISpecificEventData {
   'layer:visibility-change': { id: string; visible: boolean };
   
   // エラーイベント
-  'error:global': { message: string; filename?: string; lineno?: number };
-  'error:promise-rejection': { reason: any };
-  'error:pixi': { message: string; component: string };
+  'error:global': { message: string; filename?: string; lineno?: number; timestamp: number };
+  'error:promise-rejection': { reason: any; timestamp: number };
+  'error:pixi': { message: string; component: string; timestamp: number };
   
   // テストイベント
-  'test:basic-function': { test: boolean };
+  'test:basic-function': { timestamp: number };
+  
+  // 汎用イベント（追加イベント用）
+  [key: string]: any;
 }
 
 /**
  * イベントリスナー管理・自動解除対応
  */
-interface IEventListener {
-  callback: (data: IEventData) => void;
+interface IEventListener<K extends keyof IEventData> {
+  callback: (data: IEventData[K]) => void;
   once: boolean;
   id: number;
 }
@@ -77,17 +81,14 @@ interface IEventHistoryItem {
  * 型安全イベントバス・システム間通信中心
  */
 export class EventBus {
-  private listeners = new Map<string, IEventListener[]>();
+  private listeners = new Map<keyof IEventData, IEventListener<any>[]>();
   private nextListenerId = 1;
   private eventHistory: IEventHistoryItem[] = [];
   private readonly maxHistorySize = 1000;
   private debugMode = false;
 
   constructor(enableDebug = false) {
-    // 開発環境判定 - __DEV__が未定義の場合の対応
-    const isDev = typeof process !== 'undefined' && process.env.NODE_ENV === 'development' ||
-                  typeof location !== 'undefined' && location.hostname === 'localhost';
-    this.debugMode = enableDebug || isDev;
+    this.debugMode = enableDebug || (typeof __DEV__ !== 'undefined' && __DEV__);
     
     if (this.debugMode) {
       console.log('📡 EventBus初期化完了 - デバッグモード有効');
@@ -101,16 +102,16 @@ export class EventBus {
    * @param once 一回実行フラグ
    * @returns クリーンアップ関数
    */
-  public on(
-    event: string,
-    callback: (data: IEventData) => void,
+  public on<K extends keyof IEventData>(
+    event: K,
+    callback: (data: IEventData[K]) => void,
     once = false
   ): () => void {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
     }
 
-    const listener: IEventListener = {
+    const listener: IEventListener<K> = {
       callback,
       once,
       id: this.nextListenerId++
@@ -119,7 +120,7 @@ export class EventBus {
     this.listeners.get(event)!.push(listener);
 
     if (this.debugMode) {
-      console.log(`📡 リスナー登録: ${event} [ID:${listener.id}]`);
+      console.log(`📡 リスナー登録: ${String(event)} [ID:${listener.id}]`);
     }
 
     // クリーンアップ関数返却
@@ -129,9 +130,9 @@ export class EventBus {
   /**
    * 一回実行イベントリスナー登録
    */
-  public once(
-    event: string,
-    callback: (data: IEventData) => void
+  public once<K extends keyof IEventData>(
+    event: K,
+    callback: (data: IEventData[K]) => void
   ): () => void {
     return this.on(event, callback, true);
   }
@@ -139,7 +140,7 @@ export class EventBus {
   /**
    * イベントリスナー削除
    */
-  public off(event: string, listenerId: number): void {
+  public off<K extends keyof IEventData>(event: K, listenerId: number): void {
     const eventListeners = this.listeners.get(event);
     if (!eventListeners) return;
 
@@ -148,7 +149,7 @@ export class EventBus {
       eventListeners.splice(index, 1);
       
       if (this.debugMode) {
-        console.log(`📡 リスナー削除: ${event} [ID:${listenerId}]`);
+        console.log(`📡 リスナー削除: ${String(event)} [ID:${listenerId}]`);
       }
     }
 
@@ -161,17 +162,17 @@ export class EventBus {
   /**
    * 型安全イベント発火・データ検証
    */
-  public emit(event: string, data: IEventData): void {
+  public emit<K extends keyof IEventData>(event: K, data: IEventData[K]): void {
     const eventListeners = this.listeners.get(event);
     if (!eventListeners || eventListeners.length === 0) {
-      if (this.debugMode && !event.startsWith('test:')) {
-        console.warn(`📡 リスナーなし: ${event}`);
+      if (this.debugMode && !event.toString().startsWith('test:')) {
+        console.warn(`📡 リスナーなし: ${String(event)}`);
       }
       return;
     }
 
     // イベント履歴記録
-    this.recordEvent(event, data, eventListeners.length);
+    this.recordEvent(event as string, data, eventListeners.length);
 
     // リスナー実行・エラーハンドリング
     const listenersToRemove: number[] = [];
@@ -186,7 +187,7 @@ export class EventBus {
         }
         
       } catch (error) {
-        console.error(`📡 リスナーエラー: ${event} [ID:${listener.id}]`, error);
+        console.error(`📡 リスナーエラー: ${String(event)} [ID:${listener.id}]`, error);
         
         // エラー発生リスナー削除（自動回復）
         listenersToRemove.push(listener.id);
@@ -198,8 +199,8 @@ export class EventBus {
       this.off(event, id);
     }
 
-    if (this.debugMode && !event.startsWith('performance:') && !event.startsWith('test:')) {
-      console.log(`📡 イベント発火: ${event} → ${eventListeners.length}リスナー`);
+    if (this.debugMode && !event.toString().startsWith('performance:') && !event.toString().startsWith('test:')) {
+      console.log(`📡 イベント発火: ${String(event)} → ${eventListeners.length}リスナー`);
     }
   }
 
@@ -225,11 +226,11 @@ export class EventBus {
   /**
    * 全イベントリスナー削除
    */
-  public removeAllListeners(event?: string): void {
+  public removeAllListeners<K extends keyof IEventData>(event?: K): void {
     if (event) {
       this.listeners.delete(event);
       if (this.debugMode) {
-        console.log(`📡 全リスナー削除: ${event}`);
+        console.log(`📡 全リスナー削除: ${String(event)}`);
       }
     } else {
       const eventCount = this.listeners.size;
@@ -243,7 +244,7 @@ export class EventBus {
   /**
    * リスナー存在確認
    */
-  public hasListeners(event: string): boolean {
+  public hasListeners<K extends keyof IEventData>(event: K): boolean {
     const eventListeners = this.listeners.get(event);
     return eventListeners ? eventListeners.length > 0 : false;
   }
@@ -251,7 +252,7 @@ export class EventBus {
   /**
    * リスナー数取得
    */
-  public getListenerCount(event?: string): number {
+  public getListenerCount<K extends keyof IEventData>(event?: K): number {
     if (event) {
       const eventListeners = this.listeners.get(event);
       return eventListeners ? eventListeners.length : 0;
@@ -270,7 +271,7 @@ export class EventBus {
    */
   public getDebugInfo() {
     const events = Array.from(this.listeners.keys()).map(event => ({
-      event: event,
+      event: String(event),
       listenerCount: this.getListenerCount(event)
     }));
 
@@ -286,7 +287,7 @@ export class EventBus {
   /**
    * イベント履歴取得・デバッグ用
    */
-  public getEventHistory(eventFilter?: string, limit = 50): IEventHistoryItem[] {
+  public getEventHistory(eventFilter?: keyof IEventData, limit = 50): IEventHistoryItem[] {
     let history = this.eventHistory;
     
     if (eventFilter) {
