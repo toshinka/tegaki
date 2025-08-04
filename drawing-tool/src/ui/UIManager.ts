@@ -431,8 +431,8 @@ export class UIManager {
    * UI構築・メインレイアウト作成
    */
   private buildUI(): void {
-    // メインコンテナ設定
-    this.container.className = 'drawing-app');
+    // メインコンテナ設定 - 構文エラー修正
+    this.container.className = 'drawing-app';
     this.container.setAttribute('role', 'application');
     this.container.setAttribute('aria-label', 'モダンお絵かきツール');
     
@@ -513,7 +513,7 @@ export class UIManager {
     canvasContainer.setAttribute('aria-label', '描画領域');
     
     const canvasWrapper = document.createElement('div');
-    canvasWrapper.className = 'canvas-wrapper');
+    canvasWrapper.className = 'canvas-wrapper';  // 構文エラー修正
     canvasWrapper.id = 'canvas-wrapper';
     
     canvasContainer.appendChild(canvasWrapper);
