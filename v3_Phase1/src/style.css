@@ -1,0 +1,84 @@
+// EventBus.ts - 型安全イベント通信・疎結合アーキテクチャ
+// 全システム間通信・履歴・デバッグ支援
+
+import * as PIXI from 'pixi.js';
+
+/**
+ * イベントデータ型定義・型安全通信保証
+ */
+export interface IEventData {
+  type: string;
+  timestamp: number;
+  data: any;
+  source?: string;
+  target?: string;
+}
+
+/**
+ * 具体的なイベントデータ型定義
+ */
+export interface ISpecificEventData {
+  // 描画イベント
+  'drawing:start': { point: PIXI.Point; pressure: number; pointerType: string; timestamp: number };
+  'drawing:move': { point: PIXI.Point; pressure: number; velocity: number; timestamp: number };
+  'drawing:end': { point: PIXI.Point; timestamp: number };
+  
+  // ツールイベント
+  'tool:change': { tool: string; previousTool?: string; settings?: any };
+  'tool:setting-change': { toolName: string; setting: string; value: any };
+  
+  // UIイベント
+  'ui:toolbar-click': { toolName: string; buttonElement?: HTMLElement };
+  'color:change': { color: number; hsv?: { h: number; s: number; v: number } };
+  'brush:sizeChange': { size: number };
+  'brush:opacityChange': { opacity: number };
+  
+  // パフォーマンスイベント
+  'performance:warning': { used: number; limit: number; type: 'memory' | 'fps' | 'gpu'; message: string };
+  'performance:critical': { metric: string; value: number; threshold: number; action: string };
+  'performance:renderer-initialized': { renderer: string };
+  'performance:update': { fps?: number; memory?: number; gpu?: number };
+  
+  // レイヤーイベント
+  'layer:create': { id: string; name: string; index: number };
+  'layer:delete': { id: string; name: string };
+  'layer:reorder': { id: string; newIndex: number; oldIndex: number };
+  'layer:visibility-change': { id: string; visible: boolean };
+  
+  // エラーイベント
+  'error:global': { message: string; filename?: string; lineno?: number };
+  'error:promise-rejection': { reason: any };
+  'error:pixi': { message: string; component: string };
+  
+  // テストイベント
+  'test:basic-function': { test: boolean };
+}
+
+/**
+ * イベントリスナー管理・自動解除対応
+ */
+interface IEventListener {
+  callback: (data: IEventData) => void;
+  once: boolean;
+  id: number;
+}
+
+/**
+ * イベント履歴・デバッグ用
+ */
+interface IEventHistoryItem {
+  event: string;
+  data: any;
+  timestamp: number;
+  listenersCount: number;
+}
+
+/**
+ * 型安全イベントバス・システム間通信中心
+ */
+export class EventBus {
+  private listeners = new Map<string, IEventListener[]>();
+  private nextListenerId = 1;
+  private eventHistory: IEventHistoryItem[] = [];
+  private readonly maxHistorySize = 1000;
+  private debugMode = false;
