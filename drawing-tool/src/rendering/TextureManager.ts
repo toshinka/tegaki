@@ -388,4 +388,250 @@ export class TextureManager {
       this.eventBus.emit('texture:memory-warning', {
         used: usedMB,
         limit: this.MAX_MEMORY_MB,
-        free
+        freed: freedMemory / (1024 * 1024)
+      });
+
+      console.warn(`⚠️ テクスチャメモリ制限超過: ${usedMB.toFixed(1)}MB (${(freedMemory / 1024).toFixed(1)}KB解放)`);
+      
+    } else if (usedMB > this.WARNING_MEMORY_MB) {
+      // 警告レベル・予防的クリーンアップ
+      this.scheduleCleanup();
+      
+      this.eventBus.emit('texture:memory-warning', {
+        used: usedMB,
+        limit: this.MAX_MEMORY_MB,
+        freed: 0
+      });
+
+      console.warn(`⚠️ テクスチャメモリ警告: ${usedMB.toFixed(1)}MB`);
+    }
+  }
+
+  /**
+   * 強制クリーンアップ・メモリ制限超過対応
+   * @returns 解放されたメモリ量（バイト）
+   */
+  private forceCleanup(): number {
+    const beforeMemory = this.memoryUsage;
+    let freedMemory = 0;
+    const now = Date.now();
+
+    console.log('🧹 強制クリーンアップ開始');
+
+    // 未使用テクスチャ削除・使用時間順
+    const sortedTextures = Array.from(this.textures.entries())
+      .filter(([_, info]) => !info.persistent)
+      .sort(([_, a], [__, b]) => a.lastUsed - b.lastUsed);
+
+    let removedCount = 0;
+    for (const [textureId, textureInfo] of sortedTextures) {
+      // 古いテクスチャ優先削除
+      if (now - textureInfo.lastUsed > this.TEXTURE_LIFETIME || this.memoryUsage > this.MAX_MEMORY_MB * 1024 * 1024) {
+        this.destroyTexture(textureId, false);
+        removedCount++;
+        
+        // メモリ制限以下になったら停止
+        if (this.memoryUsage <= this.WARNING_MEMORY_MB * 1024 * 1024) {
+          break;
+        }
+      }
+    }
+
+    // 未使用Atlas削除
+    for (const [atlasId, atlas] of this.atlases.entries()) {
+      if (atlas.regions.size === 0) {
+        atlas.texture.destroy(true);
+        this.atlases.delete(atlasId);
+        console.log(`🗑️ 空のAtlas削除: ${atlasId}`);
+      }
+    }
+
+    // PIXIキャッシュクリア
+    PIXI.Texture.removeFromCache();
+
+    freedMemory = beforeMemory - this.memoryUsage;
+    
+    this.eventBus.emit('texture:cleanup', {
+      texturesRemoved: removedCount,
+      memoryFreed: freedMemory
+    });
+
+    console.log(`🧹 強制クリーンアップ完了: ${removedCount}個削除, ${(freedMemory / 1024).toFixed(1)}KB解放`);
+    return freedMemory;
+  }
+
+  /**
+   * 定期クリーンアップのスケジュール
+   */
+  private scheduleCleanup(): void {
+    if (this.cleanupScheduled) return;
+
+    this.cleanupScheduled = true;
+    setTimeout(() => {
+      this.performCleanup();
+      this.cleanupScheduled = false;
+    }, 5000); // 5秒後実行
+  }
+
+  /**
+   * 通常クリーンアップ・未使用リソース削除
+   */
+  private performCleanup(): void {
+    const now = Date.now();
+    const beforeMemory = this.memoryUsage;
+    let removedCount = 0;
+
+    // 5分間未使用テクスチャ削除
+    for (const [textureId, textureInfo] of this.textures.entries()) {
+      if (!textureInfo.persistent && now - textureInfo.lastUsed > this.TEXTURE_LIFETIME) {
+        this.destroyTexture(textureId, false);
+        removedCount++;
+      }
+    }
+
+    const freedMemory = beforeMemory - this.memoryUsage;
+    
+    if (removedCount > 0) {
+      this.eventBus.emit('texture:cleanup', {
+        texturesRemoved: removedCount,
+        memoryFreed: freedMemory
+      });
+
+      console.log(`🧹 定期クリーンアップ: ${removedCount}個削除, ${(freedMemory / 1024).toFixed(1)}KB解放`);
+    }
+  }
+
+  /**
+   * 定期クリーンアップセットアップ
+   */
+  private setupPeriodicCleanup(): void {
+    setInterval(() => {
+      const now = Date.now();
+      if (now - this.lastCleanupTime > this.CLEANUP_INTERVAL) {
+        this.performCleanup();
+        this.lastCleanupTime = now;
+      }
+    }, this.CLEANUP_INTERVAL);
+  }
+
+  /**
+   * テクスチャメモリ使用量計算
+   * @param width 幅
+   * @param height 高さ
+   * @returns メモリ使用量（バイト）
+   */
+  private calculateTextureMemory(width: number, height: number): number {
+    // RGBA 4バイト × ピクセル数
+    return width * height * 4;
+  }
+
+  /**
+   * ImageDataをCanvasに変換
+   * @param imageData ImageData
+   * @returns HTMLCanvasElement
+   */
+  private imageDataToCanvas(imageData: ImageData): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    canvas.width = imageData.width;
+    canvas.height = imageData.height;
+    
+    const context = canvas.getContext('2d')!;
+    context.putImageData(imageData, 0, 0);
+    
+    return canvas;
+  }
+
+  /**
+   * テクスチャをCanvasに変換
+   * @param texture PIXI.Texture
+   * @returns HTMLCanvasElement
+   */
+  private textureToCanvas(texture: PIXI.Texture): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    canvas.width = texture.width;
+    canvas.height = texture.height;
+    
+    // WebGLレンダラーでテクスチャ読み取り
+    const renderer = this.pixiApp.renderer;
+    if (renderer.type === PIXI.RendererType.WEBGL) {
+      const gl = (renderer as any).gl;
+      const pixels = new Uint8Array(texture.width * texture.height * 4);
+      
+      // フレームバッファーからピクセル読み取り
+      gl.readPixels(0, 0, texture.width, texture.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      
+      // ImageData作成・Canvas描画
+      const imageData = new ImageData(new Uint8ClampedArray(pixels), texture.width, texture.height);
+      const context = canvas.getContext('2d')!;
+      context.putImageData(imageData, 0, 0);
+    }
+    
+    return canvas;
+  }
+
+  /**
+   * テクスチャ圧縮・品質最適化
+   * @param texture 元テクスチャ
+   * @returns 圧縮テクスチャ
+   */
+  private compressTexture(texture: PIXI.Texture): PIXI.Texture {
+    // 品質調整・50%スケール
+    const canvas = this.textureToCanvas(texture);
+    const compressedCanvas = document.createElement('canvas');
+    compressedCanvas.width = Math.floor(canvas.width * 0.5);
+    compressedCanvas.height = Math.floor(canvas.height * 0.5);
+    
+    const context = compressedCanvas.getContext('2d')!;
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(canvas, 0, 0, compressedCanvas.width, compressedCanvas.height);
+    
+    return PIXI.Texture.from(compressedCanvas);
+  }
+
+  /**
+   * メモリ使用量取得
+   * @returns メモリ使用量情報
+   */
+  public getMemoryInfo(): {
+    used: number;
+    usedMB: number;
+    limit: number;
+    limitMB: number;
+    textureCount: number;
+    atlasCount: number;
+  } {
+    return {
+      used: this.memoryUsage,
+      usedMB: this.memoryUsage / (1024 * 1024),
+      limit: this.MAX_MEMORY_MB * 1024 * 1024,
+      limitMB: this.MAX_MEMORY_MB,
+      textureCount: this.textures.size,
+      atlasCount: this.atlases.size
+    };
+  }
+
+  /**
+   * 全テクスチャクリア・終了処理
+   */
+  public destroy(): void {
+    console.log('🎨 TextureManager終了処理開始');
+
+    // 全テクスチャ削除
+    for (const textureId of this.textures.keys()) {
+      this.destroyTexture(textureId, true);
+    }
+
+    // 全Atlas削除
+    for (const [atlasId, atlas] of this.atlases.entries()) {
+      atlas.texture.destroy(true);
+      this.atlases.delete(atlasId);
+    }
+
+    // キャッシュクリア
+    this.textureCache.clear();
+    PIXI.Texture.removeFromCache();
+
+    console.log('🎨 TextureManager終了処理完了');
+  }
+}
