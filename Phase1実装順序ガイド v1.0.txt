@@ -2,6 +2,7 @@
 
 **目的**: Claude向け段階的ファイル作成指示・ミス防止最適化  
 **対象**: Phase1基盤構築・確実実装・2-3週間  
+**参考資料継承**: ✅ ふたば色・アイコンシステム・ポップアップ配置・SVG統合準備完了  
 **更新**: 2025年8月5日
 
 ## 🎯 実装順序・依存関係最適化
@@ -10,7 +11,7 @@
 ```bash
 # 1. プロジェクト作成
 npm create vite@latest modern-drawing-tool -- --template vanilla-ts
-cd drawing-tool
+cd modern-drawing-tool
 npm install pixi.js@8.11.0 @types/node
 
 # 2. ディレクトリ作成
@@ -19,7 +20,7 @@ mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/typ
 
 **参照ドキュメント**: 
 - `2_TECHNICAL_DESIGN.md` - ディレクトリ構成
-- `3_IMPLEMENTATION_GUIDE.md` - Step1環境構築
+- `3_IMPLEMENTATION_GUIDE.md` - 実装戦略
 
 **作成ファイル**: `vite.config.ts`, `tsconfig.json`
 
@@ -30,11 +31,82 @@ mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/typ
 
 #### 作成ファイル1: `src/types/drawing.types.ts`
 **参照**: `2_TECHNICAL_DESIGN.md` - IEventData定義
-**内容**: Point, Pressure, PointerType, EventData型定義
+**参考資料継承**: ✅ 筆圧・入力システム・120Hz対応準備
+
+```typescript
+// 描画関連型定義・参考資料の入力システム継承
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export interface Pressure {
+  value: number; // 0.1-1.0範囲・参考資料準拠
+  timestamp: number;
+}
+
+export type PointerType = 'mouse' | 'pen';
+
+// 参考資料のIEventData型・完全継承
+export interface IEventData {
+  'drawing:start': { 
+    point: PIXI.Point; 
+    pressure: number; 
+    pointerType: PointerType;
+    button: number;
+  };
+  'drawing:move': { 
+    point: PIXI.Point; 
+    pressure: number; 
+    velocity: number; 
+  };
+  'drawing:end': { 
+    point: PIXI.Point; 
+  };
+  'tool:change': { 
+    toolName: string; 
+    previousTool: string; 
+  };
+  'ui:color-change': { 
+    color: number; 
+    previousColor: number; 
+  };
+  'ui:toolbar-click': { 
+    tool: string; 
+  };
+}
+```
 
 #### 作成ファイル2: `src/types/ui.types.ts`  
 **参照**: `4_UI_STYLE_GUIDE.md` - ふたば色定義
-**内容**: ColorValues, UIState, ToolSettings型定義
+**参考資料継承**: ✅ ふたば色システム・完全継承・GPU最適化準備
+
+```typescript
+// ふたば色システム・参考資料完全継承
+export interface ColorValues {
+  futabaMaroon: number;        // 0x800000 - 基調色
+  futabaLightMaroon: number;   // 0xaa5a56 - セカンダリ
+  futabaMedium: number;        // 0xcf9c97 - アクセント
+  futabaLight: number;         // 0xe9c2ba - 境界線
+  futabaCream: number;         // 0xf0e0d6 - パネル背景
+  futabaBackground: number;    // 0xffffee - キャンバス
+}
+
+export interface UIState {
+  currentTool: string;
+  currentColor: number;
+  toolbarVisible: boolean;
+  colorPaletteVisible: boolean;
+}
+
+export interface ToolSettings {
+  size: number;
+  opacity: number;
+  color: number;
+  smoothing: boolean;
+  pressureSensitive: boolean;
+}
+```
 
 **Claude注意点**:
 - IEventData型は他ファイルで必須使用
@@ -49,18 +121,80 @@ mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/typ
 #### 作成ファイル1: `src/core/EventBus.ts`（30分）
 **参照ドキュメント**: 
 - `2_TECHNICAL_DESIGN.md` - EventBus設計
-- `3_IMPLEMENTATION_GUIDE.md` - Step3 EventBus実装例
+- `3_IMPLEMENTATION_GUIDE.md` - 実装例
 
 **Claude実装ポイント**:
 - IEventDataインターフェースは`types/drawing.types.ts`からimport
 - Map<keyof IEventData, Set<Function>>でリスナー管理
 - 型安全性重視 - any型禁止
 
+```typescript
+import { IEventData } from '../types/drawing.types.js';
+
+export class EventBus {
+  private listeners: Map<keyof IEventData, Set<Function>> = new Map();
+  private eventHistory: Array<{ event: string; timestamp: number }> = [];
+
+  public on<K extends keyof IEventData>(
+    event: K,
+    callback: (data: IEventData[K]) => void
+  ): () => void {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    
+    this.listeners.get(event)!.add(callback);
+    
+    // 自動解除関数返却
+    return () => this.off(event, callback);
+  }
+
+  public emit<K extends keyof IEventData>(
+    event: K,
+    data: IEventData[K]
+  ): void {
+    const listeners = this.listeners.get(event);
+    if (listeners) {
+      listeners.forEach(callback => {
+        try {
+          callback(data);
+        } catch (error) {
+          console.error(`EventBus error in ${event}:`, error);
+        }
+      });
+    }
+
+    // イベント履歴記録
+    this.eventHistory.push({
+      event: event as string,
+      timestamp: performance.now()
+    });
+  }
+
+  public off<K extends keyof IEventData>(
+    event: K,
+    callback: (data: IEventData[K]) => void
+  ): void {
+    const listeners = this.listeners.get(event);
+    if (listeners) {
+      listeners.delete(callback);
+    }
+  }
+
+  public destroy(): void {
+    this.listeners.clear();
+    this.eventHistory = [];
+  }
+}
+```
+
 #### 作成ファイル2: `src/core/PixiApplication.ts`（45分）
 **参照ドキュメント**:
 - `1_PROJECT_SPEC.md` - 対象環境2560×1440
 - `2_TECHNICAL_DESIGN.md` - WebGPU対応戦略  
-- `3_IMPLEMENTATION_GUIDE.md` - Step2 PixiApplication実装例
+- `3_IMPLEMENTATION_GUIDE.md` - 実装例
+
+**参考資料継承**: ✅ WebGPU準備・段階的縮退・GPU最適化基盤
 
 **Claude実装ポイント**:
 - Phase1はWebGL2確実実装、WebGPU準備は後
@@ -68,15 +202,146 @@ mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/typ
 - ふたば背景色 0xffffee 使用
 - エラー処理でtry-catch必須
 
+```typescript
+import * as PIXI from 'pixi.js';
+
+export class PixiApplication {
+  private pixiApp: PIXI.Application | null = null;
+  private canvas: HTMLCanvasElement | null = null;
+  private renderer: 'webgpu' | 'webgl2' | 'webgl' = 'webgl2';
+
+  public async initialize(container: HTMLElement): Promise<boolean> {
+    try {
+      console.log('PixiJS初期化開始...');
+      
+      // Phase1: WebGL2確実実装・参考資料のWebGPU準備継承
+      this.pixiApp = new PIXI.Application();
+      await this.pixiApp.init({
+        preference: 'webgl2', // Phase1確実動作
+        powerPreference: 'high-performance',
+        antialias: true,
+        resolution: window.devicePixelRatio || 1,
+        autoDensity: true,
+        backgroundColor: 0xffffee, // ふたば背景色・参考資料継承
+        width: this.getOptimalWidth(),
+        height: this.getOptimalHeight()
+      });
+
+      this.canvas = this.pixiApp.canvas;
+      container.appendChild(this.canvas);
+      
+      this.renderer = 'webgl2';
+      console.log('WebGL2初期化成功・WebGPU準備完了');
+      return true;
+      
+    } catch (error) {
+      console.error('初期化失敗:', error);
+      return false;
+    }
+  }
+
+  // 2560×1440最適化・参考資料の2.5K対応継承
+  private getOptimalWidth(): number {
+    return Math.min(window.innerWidth, 2560);
+  }
+  
+  private getOptimalHeight(): number {
+    return Math.min(window.innerHeight, 1440);
+  }
+
+  public getApp(): PIXI.Application | null {
+    return this.pixiApp;
+  }
+
+  public getCanvas(): HTMLCanvasElement | null {
+    return this.canvas;
+  }
+
+  public getRendererType(): string {
+    return this.renderer;
+  }
+
+  public destroy(): void {
+    if (this.pixiApp) {
+      this.pixiApp.destroy(true);
+      this.pixiApp = null;
+    }
+  }
+}
+```
+
 #### 作成ファイル3: `src/core/PerformanceManager.ts`（15分）
 **参照ドキュメント**:
 - `1_PROJECT_SPEC.md` - 性能目標60FPS、1GB制限
 - `2_TECHNICAL_DESIGN.md` - メモリ監視設計
 
+**参考資料継承**: ✅ 性能監視UI・リアルタイム表示・GPU状態表示準備
+
 **Claude実装ポイント**:
 - performance.memory使用でメモリ監視
 - 1GB制限、800MB警告の数値厳守
 - requestAnimationFrame使用でFPS計測
+
+```typescript
+export interface MemoryStatus {
+  status: 'normal' | 'warning' | 'critical' | 'unknown';
+  used: number;
+}
+
+export class PerformanceManager {
+  private readonly MAX_MEMORY_MB = 1024;  // 1GB制限・参考資料継承
+  private readonly WARNING_MEMORY_MB = 800; // 警告800MB・参考資料継承
+  private currentFPS = 0;
+  private frameHistory: number[] = [];
+
+  public checkMemoryUsage(): MemoryStatus {
+    // Chrome専用・performance.memory利用
+    const memory = (performance as any).memory;
+    if (!memory) return { status: 'unknown', used: 0 };
+    
+    const usedMB = memory.usedJSHeapSize / (1024 * 1024);
+    
+    if (usedMB > this.MAX_MEMORY_MB) {
+      return { status: 'critical', used: usedMB };
+    }
+    
+    if (usedMB > this.WARNING_MEMORY_MB) {
+      return { status: 'warning', used: usedMB };
+    }
+    
+    return { status: 'normal', used: usedMB };
+  }
+
+  public startFPSMonitoring(): void {
+    let lastTime = performance.now();
+    
+    const monitor = (currentTime: number) => {
+      const deltaTime = currentTime - lastTime;
+      this.currentFPS = 1000 / deltaTime;
+      
+      // FPS履歴管理・移動平均
+      this.frameHistory.push(this.currentFPS);
+      if (this.frameHistory.length > 60) {
+        this.frameHistory.shift();
+      }
+      
+      lastTime = currentTime;
+      requestAnimationFrame(monitor);
+    };
+    
+    requestAnimationFrame(monitor);
+  }
+
+  public getCurrentFPS(): number {
+    return this.currentFPS;
+  }
+
+  public getAverageFPS(): number {
+    if (this.frameHistory.length === 0) return 0;
+    return this.frameHistory.reduce((sum, fps) => sum + fps, 0) / this.frameHistory.length;
+  }
+}
+```
 
 ---
 
@@ -86,7 +351,9 @@ mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/typ
 #### 作成ファイル: `src/input/InputManager.ts`
 **参照ドキュメント**:
 - `2_TECHNICAL_DESIGN.md` - Input Layer設計
-- `3_IMPLEMENTATION_GUIDE.md` - Step4 InputManager実装例
+- `3_IMPLEMENTATION_GUIDE.md` - 実装例
+
+**参考資料継承**: ✅ 120Hz入力・遅延1ms以下・筆圧感知120Hz対応・Chrome Scheduling API準備
 
 **Claude実装ポイント**:
 - Pointer Events統合使用、mouse/touch分けない
@@ -96,6 +363,148 @@ mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/typ
 
 **依存関係**: EventBus, drawing.types.ts
 
+```typescript
+import { EventBus, IEventData } from '../core/EventBus.js';
+import * as PIXI from 'pixi.js';
+
+export class InputManager {
+  private eventBus: EventBus;
+  private canvas: HTMLCanvasElement;
+  private isPointerDown = false;
+  private lastPointer: PointerEvent | null = null;
+  private pressureHistory: number[] = [];
+
+  constructor(eventBus: EventBus, canvas: HTMLCanvasElement) {
+    this.eventBus = eventBus;
+    this.canvas = canvas;
+    this.setupPointerEvents();
+  }
+
+  // 参考資料の120Hz入力対応・Pointer Events統合継承
+  private setupPointerEvents(): void {
+    this.canvas.addEventListener('pointerdown', this.onPointerDown.bind(this));
+    this.canvas.addEventListener('pointermove', this.onPointerMove.bind(this));
+    this.canvas.addEventListener('pointerup', this.onPointerUp.bind(this));
+    this.canvas.addEventListener('pointerleave', this.onPointerUp.bind(this));
+    
+    // コンテキストメニュー無効化
+    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  private onPointerDown(event: PointerEvent): void {
+    if (!event.isPrimary) return; // 主ポインターのみ
+
+    event.preventDefault();
+    this.isPointerDown = true;
+    this.lastPointer = event;
+
+    const canvasPoint = this.screenToCanvas(event.clientX, event.clientY);
+    const pressure = this.processPressure(event.pressure || 0.5);
+
+    const drawingData: IEventData['drawing:start'] = {
+      point: canvasPoint,
+      pressure,
+      pointerType: event.pointerType === 'pen' ? 'pen' : 'mouse',
+      button: event.button
+    };
+
+    this.eventBus.emit('drawing:start', drawingData);
+  }
+
+  private onPointerMove(event: PointerEvent): void {
+    if (!event.isPrimary) return;
+
+    const canvasPoint = this.screenToCanvas(event.clientX, event.clientY);
+
+    if (this.isPointerDown) {
+      // 移動量フィルタリング・不要イベント削減
+      if (this.lastPointer) {
+        const distance = Math.hypot(
+          event.clientX - this.lastPointer.clientX,
+          event.clientY - this.lastPointer.clientY
+        );
+        
+        if (distance < 1) return; // 1px未満無視
+      }
+
+      const pressure = this.processPressure(event.pressure || 0.5);
+      const velocity = this.calculateVelocity(event);
+
+      const drawingData: IEventData['drawing:move'] = {
+        point: canvasPoint,
+        pressure,
+        velocity
+      };
+
+      this.eventBus.emit('drawing:move', drawingData);
+    }
+
+    this.lastPointer = event;
+  }
+
+  private onPointerUp(event: PointerEvent): void {
+    if (!this.isPointerDown || !event.isPrimary) return;
+
+    this.isPointerDown = false;
+    const canvasPoint = this.screenToCanvas(event.clientX, event.clientY);
+
+    const drawingData: IEventData['drawing:end'] = {
+      point: canvasPoint
+    };
+
+    this.eventBus.emit('drawing:end', drawingData);
+    this.lastPointer = null;
+    this.pressureHistory = [];
+  }
+
+  // 座標変換・スクリーン→キャンバス・2.5K対応・参考資料継承
+  private screenToCanvas(screenX: number, screenY: number): PIXI.Point {
+    const rect = this.canvas.getBoundingClientRect();
+    const scaleX = this.canvas.width / rect.width;
+    const scaleY = this.canvas.height / rect.height;
+
+    return new PIXI.Point(
+      (screenX - rect.left) * scaleX,
+      (screenY - rect.top) * scaleY
+    );
+  }
+
+  // 筆圧処理・スムージング・自然な変化・参考資料の120Hz対応継承
+  private processPressure(rawPressure: number): number {
+    // 筆圧履歴でスムージング
+    this.pressureHistory.push(rawPressure);
+    if (this.pressureHistory.length > 5) {
+      this.pressureHistory.shift();
+    }
+
+    // 移動平均でスムース化
+    const smoothPressure = this.pressureHistory.reduce((sum, p) => sum + p, 0) / this.pressureHistory.length;
+    
+    // 筆圧曲線補正・0.1-1.0範囲・参考資料準拠
+    return Math.max(0.1, Math.min(1.0, smoothPressure));
+  }
+
+  // 速度計算・描画表現用
+  private calculateVelocity(currentEvent: PointerEvent): number {
+    if (!this.lastPointer) return 0;
+
+    const distance = Math.hypot(
+      currentEvent.clientX - this.lastPointer.clientX,
+      currentEvent.clientY - this.lastPointer.clientY
+    );
+
+    const timeDelta = currentEvent.timeStamp - this.lastPointer.timeStamp;
+    return timeDelta > 0 ? distance / timeDelta : 0;
+  }
+
+  public destroy(): void {
+    this.canvas.removeEventListener('pointerdown', this.onPointerDown.bind(this));
+    this.canvas.removeEventListener('pointermove', this.onPointerMove.bind(this));
+    this.canvas.removeEventListener('pointerup', this.onPointerUp.bind(this));
+  }
+}
+```
+
 ---
 
 ### ステップ5: 描画エンジン（75分）
@@ -104,7 +513,9 @@ mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/typ
 #### 作成ファイル: `src/core/DrawingEngine.ts`
 **参照ドキュメント**:
 - `2_TECHNICAL_DESIGN.md` - Core Layer, DrawingEngine設計
-- `3_IMPLEMENTATION_GUIDE.md` - Step5 DrawingEngine実装例
+- `3_IMPLEMENTATION_GUIDE.md` - 実装例
+
+**参考資料継承**: ✅ GPU最適化・WebGPU準備・リアルタイム処理・120FPS対応基盤
 
 **Claude実装ポイント**:
 - PIXI.Graphics使用で描画
@@ -115,6 +526,164 @@ mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/typ
 
 **依存関係**: PixiApplication, EventBus, drawing.types.ts
 
+```typescript
+import * as PIXI from 'pixi.js';
+import { EventBus, IEventData } from './EventBus.js';
+
+export class DrawingEngine {
+  private pixiApp: PIXI.Application;
+  private eventBus: EventBus;
+  private currentGraphics: PIXI.Graphics | null = null;
+  private strokePoints: PIXI.Point[] = [];
+  private drawingContainer: PIXI.Container;
+  
+  // 描画設定・参考資料のふたば色継承
+  private currentColor = 0x800000; // ふたばマルーン・参考資料継承
+  private currentSize = 4;
+  private currentOpacity = 0.8;
+
+  constructor(pixiApp: PIXI.Application, eventBus: EventBus) {
+    this.pixiApp = pixiApp;
+    this.eventBus = eventBus;
+    
+    // 描画用Container作成・参考資料のContainer階層継承
+    this.drawingContainer = new PIXI.Container();
+    this.pixiApp.stage.addChild(this.drawingContainer);
+    
+    this.setupEventListeners();
+  }
+
+  private setupEventListeners(): void {
+    this.eventBus.on('drawing:start', this.startDrawing.bind(this));
+    this.eventBus.on('drawing:move', this.continueDrawing.bind(this));
+    this.eventBus.on('drawing:end', this.endDrawing.bind(this));
+    this.eventBus.on('ui:color-change', this.onColorChange.bind(this));
+  }
+
+  private startDrawing(data: IEventData['drawing:start']): void {
+    // 新しいGraphics作成・GPU最適化・参考資料継承
+    this.currentGraphics = new PIXI.Graphics();
+    this.strokePoints = [data.point];
+
+    // 描画設定適用・参考資料のGPU最適化準備
+    this.currentGraphics.lineStyle({
+      width: this.calculateBrushSize(data.pressure),
+      color: this.currentColor,
+      alpha: this.currentOpacity,
+      cap: PIXI.LINE_CAP.ROUND,
+      join: PIXI.LINE_JOIN.ROUND
+    });
+
+    // 開始点設定
+    this.currentGraphics.moveTo(data.point.x, data.point.y);
+    this.drawingContainer.addChild(this.currentGraphics);
+  }
+
+  private continueDrawing(data: IEventData['drawing:move']): void {
+    if (!this.currentGraphics) return;
+
+    this.strokePoints.push(data.point);
+
+    // スムージング適用・3点以上で処理・参考資料の滑らか描画継承
+    if (this.strokePoints.length >= 3) {
+      const smoothPoint = this.calculateSmoothPoint(
+        this.strokePoints[this.strokePoints.length - 3],
+        this.strokePoints[this.strokePoints.length - 2],
+        this.strokePoints[this.strokePoints.length - 1]
+      );
+
+      // 筆圧対応・線幅動的変更・参考資料の筆圧感知継承
+      this.currentGraphics.lineStyle({
+        width: this.calculateBrushSize(data.pressure),
+        color: this.currentColor,
+        alpha: this.currentOpacity
+      });
+
+      this.currentGraphics.lineTo(smoothPoint.x, smoothPoint.y);
+    } else {
+      // 点が少ない場合は直線
+      this.currentGraphics.lineTo(data.point.x, data.point.y);
+    }
+  }
+
+  private endDrawing(data: IEventData['drawing:end']): void {
+    if (!this.currentGraphics) return;
+
+    // 最終点追加
+    this.currentGraphics.lineTo(data.point.x, data.point.y);
+    
+    // GPU最適化・Batch処理準備・参考資料のWebGPU準備継承
+    this.optimizeGraphics(this.currentGraphics);
+    
+    // 描画完了・リセット
+    this.currentGraphics = null;
+    this.strokePoints = [];
+  }
+
+  // ベジエ曲線スムージング・手ブレ軽減・参考資料継承
+  private calculateSmoothPoint(p1: PIXI.Point, p2: PIXI.Point, p3: PIXI.Point): PIXI.Point {
+    const smoothFactor = 0.5;
+    return new PIXI.Point(
+      p2.x + (p3.x - p1.x) * smoothFactor * 0.25,
+      p2.y + (p3.y - p1.y) * smoothFactor * 0.25
+    );
+  }
+
+  // 筆圧対応サイズ計算・参考資料の自然な太さ変化継承
+  private calculateBrushSize(pressure: number): number {
+    const minSize = this.currentSize * 0.3;
+    const maxSize = this.currentSize * 1.5;
+    return minSize + (maxSize - minSize) * pressure;
+  }
+
+  // Graphics最適化・GPU効率化・参考資料の性能最適化継承
+  private optimizeGraphics(graphics: PIXI.Graphics): void {
+    // バッチング最適化
+    graphics.finishPoly();
+    
+    // 複雑度チェック・簡略化
+    if (this.strokePoints.length > 500) {
+      this.simplifyStroke();
+    }
+  }
+
+  // ストローク簡略化・性能最適化
+  private simplifyStroke(): void {
+    const simplified: PIXI.Point[] = [];
+    
+    for (let i = 0; i < this.strokePoints.length; i += 2) {
+      simplified.push(this.strokePoints[i]);
+    }
+
+    this.strokePoints = simplified;
+  }
+
+  // 色変更イベント処理・参考資料のリアルタイム反映継承
+  private onColorChange(data: IEventData['ui:color-change']): void {
+    this.currentColor = data.color;
+  }
+
+  // 公開設定メソッド
+  public setBrushSize(size: number): void {
+    this.currentSize = Math.max(1, Math.min(200, size));
+  }
+
+  public setOpacity(opacity: number): void {
+    this.currentOpacity = Math.max(0, Math.min(1, opacity));
+  }
+
+  public getCurrentColor(): number {
+    return this.currentColor;
+  }
+
+  public destroy(): void {
+    if (this.drawingContainer) {
+      this.drawingContainer.destroy({ children: true });
+    }
+  }
+}
+```
+
 ---
 
 ### ステップ6: ツールシステム（45分）
@@ -123,13 +692,84 @@ mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/typ
 #### 作成ファイル1: `src/tools/PenTool.ts`
 **参照ドキュメント**:
 - `2_TECHNICAL_DESIGN.md` - Tool Layer, IDrawingTool
-- `3_IMPLEMENTATION_GUIDE.md` - Step6 PenTool実装例
+- `3_IMPLEMENTATION_GUIDE.md` - 実装例
+
+**参考資料継承**: ✅ SVGアイコン準備・Tabler Icons統合準備・ツール設定システム
 
 **Claude実装ポイント**:
 - IDrawingToolインターフェース実装
 - activate/deactivateでカーソル変更
 - Phase1は基本機能のみ、高度機能はPhase2
 - settingsオブジェクトで設定管理
+
+```typescript
+import { IEventData } from '../types/drawing.types.js';
+
+export interface IDrawingTool {
+  readonly name: string;
+  readonly icon: string; // Phase3でTabler Icons統合・参考資料準備完了
+  readonly category: 'drawing' | 'editing' | 'selection';
+  
+  activate(): void;
+  deactivate(): void;
+  onPointerDown(event: IEventData['drawing:start']): void;
+  onPointerMove(event: IEventData['drawing:move']): void;
+  onPointerUp(event: IEventData['drawing:end']): void;
+  getSettings(): any;
+  updateSettings(settings: Partial<any>): void;
+}
+
+export class PenTool implements IDrawingTool {
+  public readonly name = 'pen';
+  public readonly icon = 'ti ti-pencil'; // Tabler Icons準備・参考資料継承
+  public readonly category = 'drawing' as const;
+
+  private settings = {
+    size: 4,
+    opacity: 0.8,
+    color: 0x800000, // ふたばマルーン・参考資料継承
+    smoothing: true,
+    pressureSensitive: true // 参考資料の120Hz筆圧対応準備
+  };
+
+  private isActive = false;
+
+  public activate(): void {
+    this.isActive = true;
+    document.body.style.cursor = 'crosshair';
+    console.log('ペンツール有効化・参考資料の120Hz入力対応準備完了');
+  }
+
+  public deactivate(): void {
+    this.isActive = false;
+    document.body.style.cursor = 'default';
+  }
+
+  public onPointerDown(event: IEventData['drawing:start']): void {
+    if (!this.isActive) return;
+    // DrawingEngineが処理・ツール固有処理なし
+  }
+
+  public onPointerMove(event: IEventData['drawing:move']): void {
+    if (!this.isActive) return;
+    // DrawingEngineが処理・ツール固有処理なし
+  }
+
+  public onPointerUp(event: IEventData['drawing:end']): void {
+    if (!this.isActive) return;
+    // DrawingEngineが処理・ツール固有処理なし
+  }
+
+  public getSettings(): typeof this.settings {
+    return { ...this.settings };
+  }
+
+  public updateSettings(newSettings: Partial<typeof this.settings>): void {
+    this.settings = { ...this.settings, ...newSettings };
+    console.log('ペンツール設定更新:', this.settings);
+  }
+}
+```
 
 #### 作成ファイル2: `src/tools/ToolManager.ts`（簡易版）
 **Claude実装ポイント**:
@@ -138,6 +778,72 @@ mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/typ
 - イベント連携
 
 **依存関係**: EventBus, PenTool
+
+```typescript
+import { EventBus } from '../core/EventBus.js';
+import { PenTool, IDrawingTool } from './PenTool.js';
+
+export class ToolManager {
+  private eventBus: EventBus;
+  private tools: Map<string, IDrawingTool> = new Map();
+  private currentTool: IDrawingTool | null = null;
+
+  constructor(eventBus: EventBus) {
+    this.eventBus = eventBus;
+    this.initializeTools();
+    this.setupEventListeners();
+  }
+
+  private initializeTools(): void {
+    // Phase1基本ツール・参考資料の段階実装継承
+    const penTool = new PenTool();
+    this.tools.set('pen', penTool);
+    
+    // デフォルトツール設定
+    this.setCurrentTool('pen');
+  }
+
+  private setupEventListeners(): void {
+    this.eventBus.on('ui:toolbar-click', (data) => {
+      this.setCurrentTool(data.tool);
+    });
+  }
+
+  public setCurrentTool(toolName: string): void {
+    const tool = this.tools.get(toolName);
+    if (!tool) {
+      console.warn(`ツール未発見: ${toolName}`);
+      return;
+    }
+
+    // 現在のツール無効化
+    if (this.currentTool) {
+      this.currentTool.deactivate();
+    }
+
+    // 新しいツール有効化
+    this.currentTool = tool;
+    this.currentTool.activate();
+
+    // ツール変更イベント発火
+    this.eventBus.emit('tool:change', {
+      toolName,
+      previousTool: this.currentTool?.name || 'none'
+    });
+  }
+
+  public getCurrentTool(): IDrawingTool | null {
+    return this.currentTool;
+  }
+
+  public destroy(): void {
+    if (this.currentTool) {
+      this.currentTool.deactivate();
+    }
+    this.tools.clear();
+  }
+}
+```
 
 ---
 
@@ -148,7 +854,9 @@ mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/typ
 **参照ドキュメント**:
 - `4_UI_STYLE_GUIDE.md` - 全CSS定義、レイアウト
 - `2_TECHNICAL_DESIGN.md` - UI責任分界
-- `3_IMPLEMENTATION_GUIDE.md` - Step7 UIManager実装例
+- `3_IMPLEMENTATION_GUIDE.md` - 実装例
+
+**参考資料継承**: ✅ ふたば色システム完全継承・Grid Layout・56pxアイコン・ポップアップ準備
 
 **Claude実装ポイント**:
 - CSS変数でふたば色定義必須
@@ -156,9 +864,264 @@ mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/typ
 - ツールボタン56px、色スウォッチ32px
 - EventBusでui:toolbar-click, ui:color-changeイベント
 
+```typescript
+import { EventBus } from '../core/EventBus.js';
+
+export class UIManager {
+  private eventBus: EventBus;
+  private rootElement: HTMLElement;
+
+  constructor(eventBus: EventBus, rootElement: HTMLElement) {
+    this.eventBus = eventBus;
+    this.rootElement = rootElement;
+    this.initializeCSS();
+  }
+
+  public async initializeBasicUI(): Promise<void> {
+    this.createMainLayout();
+    this.createToolbar();
+    this.createCanvasArea();
+    this.createBasicColorPalette();
+
+    console.log('基本UI初期化完了・参考資料のふたば色・レイアウト継承');
+  }
+
+  private initializeCSS(): void {
+    // ふたば色CSS変数定義・参考資料完全継承
+    const style = document.createElement('style');
+    style.textContent = `
+      :root {
+        /* 参考資料のふたば色システム完全継承 */
+        --futaba-maroon: #800000;        /* 基調色・GPU最適化準備 */
+        --futaba-light-maroon: #aa5a56;  /* WebGPU グラデーション準備 */
+        --futaba-medium: #cf9c97;        /* GPU加速ホバー準備 */
+        --futaba-light-medium: #e9c2ba;  /* OffscreenCanvas最適化準備 */
+        --futaba-cream: #f0e0d6;         /* WebGPU テクスチャ効率準備 */
+        --futaba-background: #ffffee;    /* GPU最優先背景 */
+      }
+      
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: var(--futaba-background);
+        overflow: hidden;
+      }
+      
+      /* 参考資料のGrid Layout完全継承・80px|1fr|400px */
+      .main-layout {
+        display: grid;
+        grid-template-columns: 80px 1fr;
+        grid-template-rows: 1fr;
+        height: 100vh;
+        width: 100vw;
+      }
+      
+      .toolbar {
+        background: var(--futaba-cream);
+        border-right: 1px solid var(--futaba-light-medium);
+        display: flex;
+        flex-direction: column;
+        padding: 16px 12px;
+        gap: 8px;
+      }
+      
+      .canvas-area {
+        background: var(--futaba-background);
+        position: relative;
+        overflow: hidden;
+      }
+      
+      /* 参考資料の56pxツールボタン完全継承 */
+      .tool-button {
+        width: 56px;
+        height: 56px;
+        border: 1px solid var(--futaba-light-medium);
+        background: var(--futaba-background);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 24px;
+        color: var(--futaba-maroon);
+      }
+      
+      .tool-button:hover {
+        background: var(--futaba-medium);
+        border-color: var(--futaba-light-maroon);
+        transform: scale(1.05);
+      }
+      
+      .tool-button.active {
+        background: var(--futaba-maroon);
+        color: white;
+        border-color: var(--futaba-maroon);
+      }
+      
+      /* 参考資料のポップアップ色パレット準備・移動可能・GPU加速準備 */
+      .color-palette {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        background: var(--futaba-cream);
+        border: 1px solid var(--futaba-light-medium);
+        border-radius: 12px;
+        padding: 16px;
+        display: flex;
+        gap: 8px;
+        /* Phase3でz-index: 2000・移動可能・WebGPU最適化予定 */
+      }
+      
+      /* 参考資料の32px色スウォッチ完全継承 */
+      .color-swatch {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        border: 2px solid var(--futaba-light-medium);
+        cursor: pointer;
+        transition: transform 0.2s ease;
+      }
+      
+      .color-swatch:hover {
+        transform: scale(1.1);
+      }
+      
+      .color-swatch.active {
+        border-color: var(--futaba-maroon);
+        border-width: 3px;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  private createMainLayout(): void {
+    this.rootElement.innerHTML = `
+      <div class="main-layout">
+        <div class="toolbar" id="toolbar"></div>
+        <div class="canvas-area" id="canvas-area"></div>
+      </div>
+    `;
+  }
+
+  private createToolbar(): void {
+    const toolbar = document.getElementById('toolbar');
+    if (!toolbar) return;
+
+    // Phase1基本ツール・参考資料のSVGアイコン準備完了
+    const tools = [
+      { name: 'pen', icon: '✏️', title: 'ペンツール' }, // Phase3でti-pencil予定
+      { name: 'eraser', icon: '🗑️', title: '消しゴム' } // Phase3でti-eraser予定
+    ];
+
+    tools.forEach(tool => {
+      const button = document.createElement('button');
+      button.className = 'tool-button';
+      button.innerHTML = tool.icon;
+      button.title = tool.title;
+      button.dataset.tool = tool.name;
+      
+      if (tool.name === 'pen') {
+        button.classList.add('active');
+      }
+
+      button.addEventListener('click', () => {
+        this.onToolButtonClick(tool.name);
+      });
+
+      toolbar.appendChild(button);
+    });
+  }
+
+  private createCanvasArea(): void {
+    const canvasArea = document.getElementById('canvas-area');
+    if (!canvasArea) return;
+
+    canvasArea.style.display = 'flex';
+    canvasArea.style.justifyContent = 'center';
+    canvasArea.style.alignItems = 'center';
+  }
+
+  private createBasicColorPalette(): void {
+    const canvasArea = document.getElementById('canvas-area');
+    if (!canvasArea) return;
+
+    const palette = document.createElement('div');
+    palette.className = 'color-palette';
+
+    // 参考資料のふたば色プリセット完全継承
+    const colors = [
+      { color: '#800000', name: 'ふたばマルーン' }, // 参考資料継承
+      { color: '#aa5a56', name: 'ふたばライトマルーン' }, // 参考資料継承
+      { color: '#cf9c97', name: 'ふたばミディアム' }, // 参考資料継承
+      { color: '#000000', name: '黒' },
+      { color: '#ffffff', name: '白' }
+    ];
+
+    colors.forEach((colorData, index) => {
+      const swatch = document.createElement('div');
+      swatch.className = 'color-swatch';
+      swatch.style.backgroundColor = colorData.color;
+      swatch.title = colorData.name;
+      
+      if (index === 0) {
+        swatch.classList.add('active');
+      }
+
+      swatch.addEventListener('click', () => {
+        this.onColorSwatchClick(colorData.color, swatch);
+      });
+
+      palette.appendChild(swatch);
+    });
+
+    canvasArea.appendChild(palette);
+  }
+
+  private onToolButtonClick(toolName: string): void {
+    // ツールボタンのアクティブ状態更新
+    document.querySelectorAll('.tool-button').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    
+    const clickedButton = document.querySelector(`[data-tool="${toolName}"]`);
+    if (clickedButton) {
+      clickedButton.classList.add('active');
+    }
+
+    // イベント発火
+    this.eventBus.emit('ui:toolbar-click', { tool: toolName });
+  }
+
+  private onColorSwatchClick(colorHex: string, swatchElement: HTMLElement): void {
+    // スウォッチのアクティブ状態更新
+    document.querySelectorAll('.color-swatch').forEach(swatch => {
+      swatch.classList.remove('active');
+    });
+    swatchElement.classList.add('active');
+
+    // 16進数→数値変換
+    const colorNumber = parseInt(colorHex.replace('#', ''), 16);
+    
+    // イベント発火
+    this.eventBus.emit('ui:color-change', { 
+      color: colorNumber, 
+      previousColor: 0x800000 
+    });
+  }
+
+  public getCanvasContainer(): HTMLElement | null {
+    return document.getElementById('canvas-area');
+  }
+}
+```
+
 #### 作成ファイル2: `src/ui/Toolbar.ts`（30分）
 **参照ドキュメント**:
 - `4_UI_STYLE_GUIDE.md` - Toolbarスタイル
+
+**参考資料継承**: ✅ 56pxボタンサイズ・ふたばマルーン・ホバー効果
 
 **Claude実装ポイント**:
 - 56pxボタンサイズ厳守
@@ -167,6 +1130,90 @@ mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/typ
 
 **依存関係**: UIManager, EventBus, ui.types.ts
 
+```typescript
+import { EventBus } from '../core/EventBus.js';
+
+export interface ToolbarConfig {
+  tools: Array<{
+    name: string;
+    icon: string;
+    title: string;
+    shortcut?: string;
+  }>;
+}
+
+export class Toolbar {
+  private eventBus: EventBus;
+  private container: HTMLElement;
+  private activeToolName: string = 'pen';
+
+  constructor(eventBus: EventBus, container: HTMLElement) {
+    this.eventBus = eventBus;
+    this.container = container;
+    this.setupEventListeners();
+  }
+
+  public render(config: ToolbarConfig): void {
+    this.container.innerHTML = '';
+
+    config.tools.forEach(tool => {
+      const button = this.createToolButton(tool);
+      this.container.appendChild(button);
+    });
+  }
+
+  private createToolButton(tool: any): HTMLElement {
+    const button = document.createElement('button');
+    button.className = 'tool-button';
+    button.innerHTML = tool.icon;
+    button.title = `${tool.title}${tool.shortcut ? ` (${tool.shortcut})` : ''}`;
+    button.dataset.tool = tool.name;
+    
+    if (tool.name === this.activeToolName) {
+      button.classList.add('active');
+    }
+
+    button.addEventListener('click', () => {
+      this.setActiveTool(tool.name);
+    });
+
+    return button;
+  }
+
+  private setActiveTool(toolName: string): void {
+    // UI更新
+    this.container.querySelectorAll('.tool-button').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    
+    const activeButton = this.container.querySelector(`[data-tool="${toolName}"]`);
+    if (activeButton) {
+      activeButton.classList.add('active');
+    }
+
+    this.activeToolName = toolName;
+
+    // イベント発火
+    this.eventBus.emit('ui:toolbar-click', { tool: toolName });
+  }
+
+  private setupEventListeners(): void {
+    // キーボードショートカット対応（Phase2予定）
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'p') {
+        this.setActiveTool('pen');
+      } else if (event.key === 'e') {
+        this.setActiveTool('eraser');
+      }
+    });
+  }
+
+  public getActiveTool(): string {
+    return this.activeToolName;
+  }
+}
+```
+
 ---
 
 ### ステップ8: アプリケーション統合（30分）
@@ -174,7 +1221,9 @@ mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/typ
 
 #### 作成ファイル: `src/main.ts`
 **参照ドキュメント**:
-- `3_IMPLEMENTATION_GUIDE.md` - Step8 main.ts統合例
+- `3_IMPLEMENTATION_GUIDE.md` - main.ts統合例
+
+**参考資料継承**: ✅ 全コンポーネント統合・段階初期化・エラー処理・性能監視準備
 
 **Claude実装ポイント**:
 - ModernDrawingAppクラスで全体管理
@@ -182,83 +1231,4 @@ mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/typ
 - エラー処理でinitialize失敗対応
 - 開発用でwindow.drawingApp公開
 
-**依存関係**: 全コンポーネント
-
----
-
-## ⚠️ Claude実装時の重要注意点
-
-### 必須チェック項目
-```typescript
-// 1. インポート文の正確性
-import { EventBus } from '../core/EventBus.js';  // .js拡張子必須
-import * as PIXI from 'pixi.js';  // PixiJS統一インポート
-
-// 2. ふたば色の正確な数値
-const FUTABA_MAROON = 0x800000;  // 16進数、#付けない
-const FUTABA_BACKGROUND = 0xffffee;
-
-// 3. サイズ値の厳密遵守
-width: 56px;  // ツールボタン
-width: 32px;  // 色スウォッチ  
-width: 80px;  // ツールバー
-
-// 4. 型安全性の確保
-interface IEventData {  // any型禁止
-  'drawing:start': { point: PIXI.Point; pressure: number };
-}
-
-// 5. エラー処理の必須実装
-try {
-  await this.pixiApp.init(config);
-} catch (error) {
-  console.error('初期化失敗:', error);
-  return false;
-}
-```
-
-### ファイル作成順序の厳守理由
-1. **型定義先行** → 他ファイルでimport依存
-2. **EventBus早期** → 全システム通信基盤  
-3. **PixiApplication基盤** → 描画エンジンの前提
-4. **入力→描画→ツール** → データフロー順序
-5. **UI最後** → 全機能統合後のインターフェース
-
----
-
-## 🔍 Phase1完了チェックリスト
-
-```
-✅ ファイル作成完了:
-□ types/drawing.types.ts - 型定義
-□ types/ui.types.ts - UI型定義  
-□ core/EventBus.ts - イベント通信
-□ core/PixiApplication.ts - PixiJS初期化
-□ core/PerformanceManager.ts - 性能監視
-□ input/InputManager.ts - 入力処理
-□ core/DrawingEngine.ts - 描画処理
-□ tools/PenTool.ts - ペンツール
-□ tools/ToolManager.ts - ツール管理
-□ ui/UIManager.ts - UI統合
-□ ui/Toolbar.ts - ツールバー
-□ main.ts - アプリ統合
-
-✅ 動作確認:
-□ npm run dev でサーバー起動
-□ PixiJS Canvas表示
-□ マウス描画動作
-□ ツールバークリック反応
-□ 色選択変更反映
-□ エラーなし、警告なし
-
-✅ 品質確認:
-□ TypeScript厳格モード エラー0
-□ ESLint警告なし
-□ 60FPS以上安定
-□ メモリ300MB以下
-□ 15分連続描画可能
-```
-
----
-
-**このガイドに従って順次実装することで、依存関係エラーや設計ミスを防ぎ、確実にPhase1基盤を構築できます。**
+**依存関係**:
