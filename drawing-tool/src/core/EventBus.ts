@@ -1,7 +1,8 @@
 import { IEventData } from '../types/drawing.types.js';
 
-export { IEventData } from '../types/drawing.types.js';
-
+/**
+ * 型安全イベントバス・システム間通信中心
+ */
 export class EventBus {
   private listeners: Map<keyof IEventData, Set<Function>> = new Map();
   private eventHistory: Array<{ event: string; timestamp: number }> = [];

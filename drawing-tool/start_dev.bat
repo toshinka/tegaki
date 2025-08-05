@@ -1,33 +1,32 @@
 @echo off
-echo Starting Vite development server...
+echo ===========================================
+echo   Drawing Tool Development Server
+echo ===========================================
 echo.
 
-:: npmがインストールされているかチェック
-where npm >nul 2>nul
-if %errorlevel% neq 0 (
-    echo Error: npm is not installed or not in your PATH.
-    echo Please install Node.js and npm from https://nodejs.org/
-    pause
-    exit /b 1
-)
+cd /d "%~dp0drawing-tool"
 
-:: プロジェクトの依存関係がインストールされているかチェック
+echo プロジェクトディレクトリに移動しました: %CD%
+echo.
+
+echo 依存関係をチェック中...
 if not exist "node_modules" (
-    echo "node_modules" directory not found. Installing dependencies...
+    echo node_modules が見つかりません。npm install を実行します...
     call npm install
-    if %errorlevel% neq 0 (
-        echo Error: npm install failed.
+    if errorlevel 1 (
+        echo npm install に失敗しました。
         pause
         exit /b 1
     )
-    echo Dependencies installed successfully.
     echo.
 )
 
-:: Vite開発サーバーを起動
-echo Running npm run dev...
+echo 開発サーバーを起動中...
+echo ブラウザで http://localhost:5173 を開いてください
+echo.
+echo サーバーを停止するには Ctrl+C を押してください
+echo.
+
 call npm run dev
 
-echo.
-echo Development server stopped.
 pause

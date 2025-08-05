@@ -14,17 +14,15 @@ export interface IDrawingTool {
   updateSettings(settings: Partial<any>): void;
 }
 
-export class PenTool implements IDrawingTool {
-  public readonly name = 'pen';
-  public readonly icon = 'ti ti-pencil';
-  public readonly category = 'drawing' as const;
+export class EraserTool implements IDrawingTool {
+  public readonly name = 'eraser';
+  public readonly icon = 'ti ti-eraser';
+  public readonly category = 'editing' as const;
 
   private settings = {
-    size: 4,
-    opacity: 0.8,
-    color: 0x800000, // ふたばマルーン
-    smoothing: true,
-    pressureSensitive: true
+    size: 12,
+    opacity: 1.0,
+    hardness: 1.0 // 消しゴムの硬さ
   };
 
   private isActive = false;
@@ -32,7 +30,7 @@ export class PenTool implements IDrawingTool {
   public activate(): void {
     this.isActive = true;
     document.body.style.cursor = 'crosshair';
-    console.log('ペンツール有効化・120Hz入力対応準備完了');
+    console.log('消しゴムツール有効化');
   }
 
   public deactivate(): void {
@@ -42,17 +40,17 @@ export class PenTool implements IDrawingTool {
 
   public onPointerDown(event: IEventData['drawing:start']): void {
     if (!this.isActive) return;
-    // DrawingEngineが処理・ツール固有処理なし
+    // Phase1では描画エンジンが処理、消しゴム特有の処理はPhase2で実装予定
   }
 
   public onPointerMove(event: IEventData['drawing:move']): void {
     if (!this.isActive) return;
-    // DrawingEngineが処理・ツール固有処理なし
+    // Phase1では描画エンジンが処理
   }
 
   public onPointerUp(event: IEventData['drawing:end']): void {
     if (!this.isActive) return;
-    // DrawingEngineが処理・ツール固有処理なし
+    // Phase1では描画エンジンが処理
   }
 
   public getSettings(): typeof this.settings {
@@ -61,6 +59,6 @@ export class PenTool implements IDrawingTool {
 
   public updateSettings(newSettings: Partial<typeof this.settings>): void {
     this.settings = { ...this.settings, ...newSettings };
-    console.log('ペンツール設定更新:', this.settings);
+    console.log('消しゴムツール設定更新:', this.settings);
   }
 }

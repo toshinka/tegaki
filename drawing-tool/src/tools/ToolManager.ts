@@ -1,5 +1,6 @@
 import { EventBus } from '../core/EventBus.js';
 import { PenTool, IDrawingTool } from './PenTool.js';
+import { EraserTool } from './EraserTool.js';
 
 export class ToolManager {
   private eventBus: EventBus;
@@ -15,7 +16,10 @@ export class ToolManager {
   private initializeTools(): void {
     // Phase1基本ツール・参考資料の段階実装継承
     const penTool = new PenTool();
+    const eraserTool = new EraserTool();
+    
     this.tools.set('pen', penTool);
+    this.tools.set('eraser', eraserTool);
     
     // デフォルトツール設定
     this.setCurrentTool('pen');
@@ -50,10 +54,16 @@ export class ToolManager {
       toolName,
       previousTool: previousToolName
     });
+    
+    console.log(`ツール切り替え: ${previousToolName} → ${toolName}`);
   }
 
   public getCurrentTool(): IDrawingTool | null {
     return this.currentTool;
+  }
+
+  public getAvailableTools(): string[] {
+    return Array.from(this.tools.keys());
   }
 
   public destroy(): void {

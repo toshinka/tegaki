@@ -1,6 +1,5 @@
 import * as PIXI from 'pixi.js';
-import { EventBus } from './EventBus.js';
-import { IEventData } from '../types/drawing.types.js';
+import { EventBus, IEventData } from './EventBus.js';
 
 export class DrawingEngine {
   private pixiApp: PIXI.Application;
@@ -10,7 +9,7 @@ export class DrawingEngine {
   private drawingContainer: PIXI.Container;
   
   // 描画設定・参考資料のふたば色継承
-  private currentColor = 0x800000; // ふたばマルーン・参考資料継承
+  private currentColor = 0x800000; // ふたばマルーン
   private currentSize = 4;
   private currentOpacity = 0.8;
 
@@ -33,66 +32,76 @@ export class DrawingEngine {
   }
 
   private startDrawing(data: IEventData['drawing:start']): void {
-    // 新しいGraphics作成・GPU最適化・参考資料継承
-    this.currentGraphics = new PIXI.Graphics();
-    this.strokePoints = [data.point];
+    try {
+      // 新しいGraphics作成・GPU最適化
+      this.currentGraphics = new PIXI.Graphics();
+      this.strokePoints = [data.point];
 
-    // 描画設定適用・参考資料のGPU最適化準備
-    this.currentGraphics.lineStyle({
-      width: this.calculateBrushSize(data.pressure),
-      color: this.currentColor,
-      alpha: this.currentOpacity,
-      cap: PIXI.LINE_CAP.ROUND,
-      join: PIXI.LINE_JOIN.ROUND
-    });
+      // PIXI.js v8対応のlineStyle設定
+      this.currentGraphics.lineStyle({
+        width: this.calculateBrushSize(data.pressure),
+        color: this.currentColor,
+        alpha: this.currentOpacity,
+        cap: 'round', // PIXI.LINE_CAP.ROUND → 'round'
+        join: 'round' // PIXI.LINE_JOIN.ROUND → 'round'
+      });
 
-    // 開始点設定
-    this.currentGraphics.moveTo(data.point.x, data.point.y);
-    this.drawingContainer.addChild(this.currentGraphics);
+      // 開始点設定
+      this.currentGraphics.moveTo(data.point.x, data.point.y);
+      this.drawingContainer.addChild(this.currentGraphics);
+      
+      console.log('描画開始:', { x: data.point.x, y: data.point.y, pressure: data.pressure });
+    } catch (error) {
+      console.error('描画開始エラー:', error);
+    }
   }
 
   private continueDrawing(data: IEventData['drawing:move']): void {
     if (!this.currentGraphics) return;
 
-    this.strokePoints.push(data.point);
+    try {
+      this.strokePoints.push(data.point);
 
-    // スムージング適用・3点以上で処理・参考資料の滑らか描画継承
-    if (this.strokePoints.length >= 3) {
-      const smoothPoint = this.calculateSmoothPoint(
-        this.strokePoints[this.strokePoints.length - 3],
-        this.strokePoints[this.strokePoints.length - 2],
-        this.strokePoints[this.strokePoints.length - 1]
-      );
+      // スムージング適用・3点以上で処理
+      if (this.strokePoints.length >= 3) {
+        const smoothPoint = this.calculateSmoothPoint(
+          this.strokePoints[this.strokePoints.length - 3],
+          this.strokePoints[this.strokePoints.length - 2],
+          this.strokePoints[this.strokePoints.length - 1]
+        );
 
-      // 筆圧対応・線幅動的変更・参考資料の筆圧感知継承
-      this.currentGraphics.lineStyle({
-        width: this.calculateBrushSize(data.pressure),
-        color: this.currentColor,
-        alpha: this.currentOpacity
-      });
-
-      this.currentGraphics.lineTo(smoothPoint.x, smoothPoint.y);
-    } else {
-      // 点が少ない場合は直線
-      this.currentGraphics.lineTo(data.point.x, data.point.y);
+        // 筆圧対応・線幅動的変更
+        this.currentGraphics.lineTo(smoothPoint.x, smoothPoint.y);
+      } else {
+        // 点が少ない場合は直線
+        this.currentGraphics.lineTo(data.point.x, data.point.y);
+      }
+    } catch (error) {
+      console.error('描画継続エラー:', error);
     }
   }
 
   private endDrawing(data: IEventData['drawing:end']): void {
     if (!this.currentGraphics) return;
 
-    // 最終点追加
-    this.currentGraphics.lineTo(data.point.x, data.point.y);
-    
-    // GPU最適化・Batch処理準備・参考資料のWebGPU準備継承
-    this.optimizeGraphics(this.currentGraphics);
-    
-    // 描画完了・リセット
-    this.currentGraphics = null;
-    this.strokePoints = [];
+    try {
+      // 最終点追加
+      this.currentGraphics.lineTo(data.point.x, data.point.y);
+      
+      // GPU最適化・Batch処理準備
+      this.optimizeGraphics(this.currentGraphics);
+      
+      // 描画完了・リセット
+      this.currentGraphics = null;
+      this.strokePoints = [];
+      
+      console.log('描画終了:', { x: data.point.x, y: data.point.y });
+    } catch (error) {
+      console.error('描画終了エラー:', error);
+    }
   }
 
-  // ベジエ曲線スムージング・手ブレ軽減・参考資料継承
+  // ベジエ曲線スムージング・手ブレ軽減
   private calculateSmoothPoint(p1: PIXI.Point, p2: PIXI.Point, p3: PIXI.Point): PIXI.Point {
     const smoothFactor = 0.5;
     return new PIXI.Point(
@@ -101,21 +110,28 @@ export class DrawingEngine {
     );
   }
 
-  // 筆圧対応サイズ計算・参考資料の自然な太さ変化継承
+  // 筆圧対応サイズ計算
   private calculateBrushSize(pressure: number): number {
     const minSize = this.currentSize * 0.3;
     const maxSize = this.currentSize * 1.5;
     return minSize + (maxSize - minSize) * pressure;
   }
 
-  // Graphics最適化・GPU効率化・参考資料の性能最適化継承
+  // Graphics最適化・GPU効率化（PIXI.js v8対応）
   private optimizeGraphics(graphics: PIXI.Graphics): void {
-    // バッチング最適化
-    graphics.finishPoly();
-    
-    // 複雑度チェック・簡略化
-    if (this.strokePoints.length > 500) {
-      this.simplifyStroke();
+    try {
+      // PIXI.js v8では finishPoly は削除されたため、代替処理
+      // 複雑度チェック・簡略化
+      if (this.strokePoints.length > 500) {
+        this.simplifyStroke();
+      }
+
+      // Bounds計算でレンダリング最適化
+      graphics.getBounds();
+      
+      console.log('Graphics最適化完了');
+    } catch (error) {
+      console.error('Graphics最適化エラー:', error);
     }
   }
 
@@ -130,22 +146,34 @@ export class DrawingEngine {
     this.strokePoints = simplified;
   }
 
-  // 色変更イベント処理・参考資料のリアルタイム反映継承
+  // 色変更イベント処理
   private onColorChange(data: IEventData['ui:color-change']): void {
     this.currentColor = data.color;
+    console.log('描画色変更:', `#${this.currentColor.toString(16).padStart(6, '0')}`);
   }
 
   // 公開設定メソッド
   public setBrushSize(size: number): void {
     this.currentSize = Math.max(1, Math.min(200, size));
+    console.log('ブラシサイズ変更:', this.currentSize);
   }
 
   public setOpacity(opacity: number): void {
     this.currentOpacity = Math.max(0, Math.min(1, opacity));
+    console.log('不透明度変更:', this.currentOpacity);
   }
 
   public getCurrentColor(): number {
     return this.currentColor;
+  }
+
+  public getCurrentSize(): number {
+    return this.currentSize;
+  }
+
+  public clear(): void {
+    this.drawingContainer.removeChildren();
+    console.log('キャンバスクリア');
   }
 
   public destroy(): void {
