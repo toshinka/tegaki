@@ -95,6 +95,7 @@ src/
     ├── ui.types.ts                # UI関連・イベント・状態型
     ├── performance.types.ts        # v4.1: 性能関連・監視・メトリクス型
     └── webgpu.types.ts            # v4.1: WebGPU・Shader・GPU型定義
+
 ```
 
 ## 🎨 モジュール設計・責任分界・v4.1拡張
