@@ -1,1196 +1,1143 @@
-# 技術設計 v4.2 - PixiV8Chrome統合規約準拠版
+# 技術設計 v4.1
 
-**ドキュメント**: アーキテクチャ・技術実装詳細  
+**ドキュメント**: アーキテクチャ・技術実装詳細・参考資料統合版  
 **対象読者**: 開発者・Claude・技術レビュアー  
-**最終更新**: 2025年8月5日  
-**v4.2対応**: PixiV8Chrome命名規約準拠・責任分界明確化・段階的縮退戦略統合
+**最終更新**: 2025年8月5日
 
 ## 🏗️ アーキテクチャ概要
 
-### 基盤技術スタック（v4.2統合）
+### 基盤技術スタック
 ```
 ✅ Core Technology:
-├─ PixiJS v8.11.0 - 統合パッケージ・WebGPU優先・段階的縮退
-├─ Chrome最新API - WebGPU・OffscreenCanvas・WebCodecs・PerformanceObserver
+├─ PixiJS v8.11.0 - WebGPU統一基盤・GPU描画・Container階層
 ├─ TypeScript 5.0+ - 厳格型チェック・開発効率・エラー防止
 ├─ Vite - ESM・Tree Shaking・Hot Reload・最適化
+├─ Tabler Icons v3.34.1 - SVGアイコン統一・WebGPU Sprite最適化
 └─ ESM Modules - モダンJS・依存関係最適化
 
-✅ 設計思想（v4.2革新）:
-├─ PixiV8Chrome統合 - 命名で技術・責任明示・AI理解容易
-├─ 段階的縮退戦略 - Tier1-3自動選択・確実性保証
-├─ Chrome最新API活用 - WebGPU・OffscreenCanvas・WebCodecs統合
+✅ 設計思想:
 ├─ EventBus中心疎結合 - 型安全通信・デバッグ支援
 ├─ 単一責任原則 - 1クラス1機能・Claude理解容易
 ├─ インターフェース先行 - 契約明確・実装分離
-└─ 非破壊型Container - PixiJS v8.11.0 Container活用・元データ保持
+├─ 段階的縮退戦略 - WebGPU→WebGL2→WebGL自動切り替え
+└─ v4.1: GPU最適化UI・120FPS描画・リアルタイム監視
 ```
 
-### 段階的縮退戦略（Tier1-3・PROJECT_SPEC準拠）
+### WebGPU対応戦略・v4.1拡張
 ```
-🎯 段階的縮退戦略（確実性保証）:
-Tier 1: WebGPU + Chrome最新API完全統合（理想環境）
- ├─ 要件: WebGPU・OffscreenCanvas・WebCodecs・PerformanceObserver対応
- ├─ 目標: 60FPS安定、2048x2048キャンバス、120Hz入力対応
- ├─ 対象: Chrome/Edge最新、高性能GPU、8GB+メモリ
- └─ 機能: 高度ブラシ・リアルタイム変形・GPU並列処理・WebCodecs出力
+🎯 段階的縮退戦略・性能監視統合:
+Tier 1: WebGPU + OffscreenCanvas + Compute Shader
+ ├─ 目標: 120FPS安定、4K キャンバス、GPU並列描画
+ ├─ 対象: Chrome/Edge最新、高性能GPU、16GB+メモリ
+ ├─ 機能: Compute Shader描画・WebGPU HSV色選択・GPU加速UI
+ └─ v4.1: リアルタイム性能監視・GPU使用率表示・遅延1ms以下
 
-Tier 2: WebGL2 + Chrome基本API活用（標準環境）
- ├─ 要件: WebGL2・OffscreenCanvas・PerformanceObserver対応
- ├─ 目標: 30-60FPS安定、1024x1024キャンバス、標準入力処理
- ├─ 対象: Firefox/Safari最新、中性能GPU、4GB+メモリ
- └─ 機能: 標準ブラシ・基本エフェクト・レイヤー合成・PNG出力
+Tier 2: WebGL2 + GPU最適化描画 + 基本監視
+ ├─ 目標: 60FPS安定、2048x2048キャンバス、GPU効率活用
+ ├─ 対象: Firefox/Safari最新、中性能GPU、8GB+メモリ
+ ├─ 機能: GPU最適化Graphics・WebGL2 Shader・レイヤー合成
+ └─ v4.1: 基本性能監視・メモリ警告・品質自動調整
 
-Tier 3: WebGL + 基本機能（後方互換）
- ├─ 要件: WebGL・基本Canvas API対応
- ├─ 目標: 20-30FPS、512x512キャンバス、基本機能保証
- ├─ 対象: 旧ブラウザ、低性能GPU、2GB+メモリ
- └─ 機能: 基本描画・最小限レイヤー・軽量化・基本出力
+Tier 3: WebGL + 基本機能 + 最小監視
+ ├─ 目標: 30FPS、1024x1024キャンバス、安定動作
+ ├─ 対象: 旧ブラウザ、低性能GPU、4GB+メモリ
+ ├─ 機能: 基本描画・最小限レイヤー・軽量化
+ └─ v4.1: 最小性能監視・警告表示・機能制限
 ```
 
-## 📁 ディレクトリ構成（v4.2規約準拠・責任分界明確化）
+## 📁 ディレクトリ構成（v4.1統合版・変更不可）
 
 ```
 src/
 ├── main.ts                         # エントリーポイント・アプリ起動
-├── style.css                       # 基本CSS・ふたば色定義
-├── core/                           # 基盤システム・Chrome API統合
-│   ├── PixiV8ChromeAPIApplication.ts    # PixiJS初期化・Chrome API検出・段階的縮退
-│   ├── PixiV8ChromeEventBus.ts          # 型安全イベント通信・Chrome API イベント
-│   ├── PixiV8ChromeDrawingProcessor.ts  # 描画統合・ツール制御・WebGPU最適化
-│   └── PixiV8ChromePerformanceMonitor.ts # 性能監視・PerformanceObserver・自動最適化
+├── style.css                       # 基本CSS・ふたば色定義・v4.1拡張
+├── core/                           # 基盤システム
+│   ├── PixiApplication.ts            # PixiJS初期化・WebGPU制御・2.5K対応
+│   ├── EventBus.ts                  # 型安全イベント通信・履歴・デバッグ
+│   ├── DrawingEngine.ts             # 描画統合・ツール制御・Graphics管理
+│   ├── PerformanceManager.ts        # v4.1: 性能監視・GPU使用率・遅延測定
+│   └── TablerIconManager.ts         # v4.1: SVGアイコン管理・WebGPU Sprite
 ├── rendering/                      # レンダリング層・GPU最適化
-│   ├── PixiV8ChromeLayerController.ts   # 20レイヤー管理・Container階層・非破壊型
-│   ├── PixiV8WebGPURenderer.ts          # WebGPU専用処理・Compute Shader・Tier1機能
-│   ├── PixiV8ChromeCanvasController.ts  # 4K対応・座標変換・Viewport・画面管理
-│   └── PixiV8ChromeTextureProcessor.ts  # GPU メモリ・Atlas・圧縮・WebGPU最適化
+│   ├── LayerManager.ts              # 20レイヤー管理・Container階層
+│   ├── WebGPURenderer.ts            # WebGPU専用処理・Compute Shader
+│   ├── CanvasManager.ts             # 4K対応・座標変換・Viewport
+│   ├── TextureManager.ts            # GPU メモリ・Atlas・圧縮
+│   └── HSVColorRenderer.ts          # v4.1: WebGPU色選択・Shader実装
 ├── input/                          # 入力処理・マウス+ペン特化
-│   ├── PixiV8ChromeInputController.ts   # 統合入力・Pointer Events・Chrome Scheduler
-│   ├── PixiV8ChromePointerProcessor.ts  # 筆圧・傾き・座標変換・2.5K精度・120Hz対応
-│   └── PixiV8ChromeShortcutController.ts # キーボード・ペンサイドボタン・設定管理
+│   ├── InputManager.ts              # 統合入力・Pointer Events・筆圧対応
+│   ├── PointerProcessor.ts          # 筆圧・傾き・座標変換・2.5K精度
+│   ├── ShortcutManager.ts           # キーボード・ペンサイドボタン
+│   └── LatencyMeasurer.ts           # v4.1: 入力遅延測定・1ms精度
 ├── tools/                          # ツールシステム・段階実装
-│   ├── PixiV8ChromeToolController.ts    # ツール統合・状態管理・設定永続化
-│   ├── PixiV8ChromePenTool.ts           # ペン・基本線描画・Phase1
-│   ├── PixiV8ChromeAirBrushTool.ts         # エアスプレー・テクスチャ・Phase2・WebGPU最適化
-│   ├── PixiV8ChromeEraserTool.ts        # 消しゴム・削除・Phase1・非破壊処理
-│   ├── PixiV8ChromeFillTool.ts          # 塗りつぶし・フラッドフィル・Phase2
-│   └── PixiV8ChromeShapeTool.ts         # 図形・直線・矩形・円・Phase2
-├── ui/                             # UI制御・2.5K最適化
-│   ├── PixiV8ChromeUIController.ts      # UI統合・ふたば色・レスポンシブ・Chrome API表示
-│   ├── PixiV8ChromeToolbar.ts           # ツールバー・80px幅・56pxアイコン
-│   ├── PixiV8ChromeColorPalette.ts      # HSV円形・200px・ふたば色プリセット
-│   └── PixiV8ChromeLayerPanel.ts        # レイヤー・400px幅・64px項目
-├── export/                         # 出力機能・Chrome API統合
-│   ├── PixiV8ChromeExportController.ts  # 出力統合・形式選択・品質管理
-│   ├── PixiV8WebCodecsExporter.ts       # WebCodecs活用・動画出力・リアルタイムエンコード
-│   └── PixiV8ChromeImageExporter.ts     # 静止画出力・PNG・JPEG・WebP・2K対応
-├── workers/                        # OffscreenCanvas・並列処理
-│   ├── PixiV8OffscreenWorker.ts         # OffscreenCanvas Worker・並列描画
-│   └── PixiV8ComputeWorker.ts           # WebGPU Compute・GPU並列処理
+│   ├── ToolManager.ts               # ツール統合・状態管理・設定永続化
+│   ├── PenTool.ts                  # ペン・基本線描画・Phase1
+│   ├── BrushTool.ts                # 筆・テクスチャ・Phase2
+│   ├── EraserTool.ts               # 消しゴム・削除・Phase1
+│   ├── FillTool.ts                 # 塗りつぶし・フラッドフィル・Phase2
+│   ├── ShapeTool.ts                # 図形・直線・矩形・円・Phase2
+│   ├── AirsprayTool.ts             # v4.1: エアスプレー・Compute Shader
+│   └── BlurTool.ts                 # v4.1: ボカシ・GPU並列処理
+├── ui/                             # UI制御・2.5K最適化・v4.1拡張
+│   ├── UIManager.ts                 # UI統合・ふたば色・レスポンシブ
+│   ├── Toolbar.ts                  # ツールバー・80px幅・56pxアイコン・Tabler統合
+│   ├── ColorPalette.ts             # v4.1: HSV円形・WebGPU・移動可能
+│   ├── LayerPanel.ts               # レイヤー・400px幅・64px項目・性能表示
+│   ├── PopupManager.ts             # v4.1: z-index:2000・移動可能・GPU最適化
+│   ├── PerformanceDisplay.ts       # v4.1: リアルタイム監視UI・FPS・GPU
+│   └── TimelinePanel.ts            # v4.1: アニメーション・WebCodecs・120FPS
 ├── constants/                      # 定数・設定・2.5K環境
 │   ├── ui-constants.ts             # UI定数・サイズ・色・レイアウト
 │   ├── drawing-constants.ts        # 描画定数・性能・ブラシサイズ
-│   ├── performance-constants.ts    # 性能定数・制限値・警告閾値
-│   └── chrome-api-constants.ts     # Chrome API制約・対応状況・Tier設定
+│   ├── performance-constants.ts    # v4.1: 性能定数・監視閾値・GPU制限
+│   └── icon-constants.ts           # v4.1: Tabler Icons マッピング・SVG定義
 └── types/                          # 型定義・TypeScript
     ├── drawing.types.ts            # 描画関連・ツール・レイヤー型
     ├── ui.types.ts                # UI関連・イベント・状態型
-    ├── performance.types.ts        # 性能関連・監視・メトリクス型
-    └── chrome-api.types.ts         # Chrome API関連・機能検出・Tier型
+    ├── performance.types.ts        # v4.1: 性能関連・監視・メトリクス型
+    └── webgpu.types.ts            # v4.1: WebGPU・Shader・GPU型定義
 ```
 
-## 🎨 モジュール設計・責任分界（v4.2準拠）
+## 🎨 モジュール設計・責任分界・v4.1拡張
 
-### Core Layer（基盤システム・Chrome API統合）
+### Core Layer（基盤システム）- 性能監視統合
 ```typescript
-// PixiV8ChromeAPIApplication.ts - Chrome API検出・PixiJS初期化・段階的縮退
-export class PixiV8ChromeAPIApplication {
-  private chromeAPICapabilities: ChromeAPICapabilities;
-  private selectedTier: 'tier1' | 'tier2' | 'tier3';
+// PixiApplication.ts - WebGPU初期化・レンダラー制御・v4.1拡張
+export class EventBus {
+  // 型安全リスナー登録・自動解除機能・性能監視対応
+  public on<K extends keyof IEventData>(event: K, callback: Function): () => void
   
-  // Chrome API機能検出・段階的縮退戦略
-  public async detectChromeAPISupport(): Promise<ChromeAPICapabilities>
+  // 型安全イベント発火・データ検証・性能測定
+  public emit<K extends keyof IEventData>(event: K, data: IEventData[K]): void
   
-  // Tier自動選択・最適環境判定
-  private selectOptimalTier(capabilities: ChromeAPICapabilities): TierConfig
-  
-  // PixiJS初期化・WebGPU優先・確実フォールバック
-  public async initialize(container: HTMLElement): Promise<boolean>
-  
-  // 2560×1440対応・デバイスピクセル比・高解像度
-  private getOptimalCanvasSize(): { width: number; height: number }
-  
-  // レンダラー種別取得・性能調整・Tier判定
-  public getRendererInfo(): { type: string; tier: string; capabilities: string[] }
+  // v4.1: 性能イベント履歴・監視・分析
+  public getPerformanceHistory(): PerformanceEvent[]
 }
 
-// PixiV8ChromeEventBus.ts - 型安全イベント通信・Chrome API統合
-interface IPixiV8ChromeEventData {
-  // 描画イベント（従来）
-  'drawing:start': { point: PIXI.Point; pressure: number; pointerType: string };
-  'drawing:move': { point: PIXI.Point; pressure: number; velocity: number };
-  'drawing:end': { point: PIXI.Point };
+// DrawingEngine.ts - 描画統合・ツール制御・GPU最適化
+export class DrawingEngine {
+  // ツール統合・描画ロジック・Graphics最適化・性能監視
+  public startDrawing(data: IEventData['drawing:start']): void
+  public continueDrawing(data: IEventData['drawing:move']): void
+  public endDrawing(data: IEventData['drawing:end']): void
   
-  // Chrome API統合イベント（v4.2新設）
-  'chrome-api:webgpu-initialized': { adapter: GPUAdapter; device: GPUDevice };
-  'chrome-api:offscreen-worker-ready': { workerId: string; capabilities: string[] };
-  'chrome-api:webcodecs-encoder-ready': { codec: string; maxFrameRate: number };
-  'chrome-api:tier-changed': { fromTier: string; toTier: string; reason: string };
+  // スムージング・ベジエ曲線・手ブレ軽減・GPU加速
+  private applySmoothingToStroke(points: PIXI.Point[]): PIXI.Point[]
   
-  // 性能監視イベント（PerformanceObserver統合）
-  'performance:fps-changed': { current: number; target: number; trend: string };
-  'performance:memory-usage': { used: number; limit: number; percentage: number };
-  'performance:threshold-exceeded': { metric: string; current: number; threshold: number };
+  // v4.1: GPU並列描画・Compute Shader・大量ストローク処理
+  private processStrokesParallel(strokes: StrokeData[]): Promise<void>
 }
 
-export class PixiV8ChromeEventBus {
-  // 型安全リスナー登録・自動解除機能
-  public on<K extends keyof IPixiV8ChromeEventData>(
-    event: K, 
-    callback: (data: IPixiV8ChromeEventData[K]) => void
-  ): () => void
+// v4.1: PerformanceManager.ts - 包括的性能監視・GPU・メモリ・遅延
+export class PerformanceManager {
+  private metrics: PerformanceMetrics = {
+    fps: { current: 0, average: 0, target: 60, history: [] },
+    gpu: { usage: 0, memory: 0, temperature: 0, webgpuActive: false },
+    memory: { used: 0, available: 0, limit: 1024, leakDetected: false },
+    latency: { input: 0, render: 0, total: 0, target: 16 },
+    tier: { current: 'webgl2', capabilities: null, autoAdjust: true }
+  };
+
+  // 1GB制限・警告800MB・強制GC・メモリリーク検出
+  private checkMemoryUsage(): MemoryStatus
   
-  // Chrome API統合イベント発火・データ検証
-  public emit<K extends keyof IPixiV8ChromeEventData>(
-    event: K, 
-    data: IPixiV8ChromeEventData[K]
-  ): void
+  // 120FPS監視・動的品質調整・Tier切り替え
+  private monitorFrameRate(): void
   
-  // 性能監視・Chrome API連携デバッグ
-  public getEventHistory(): Array<{ event: string; timestamp: number; tier?: string }>
+  // v4.1: GPU使用率監視・WebGPU・温度・メモリ使用量
+  private monitorGPUUsage(): void
+  
+  // v4.1: 入力遅延測定・1ms精度・Pointer Events→描画
+  private measureInputLatency(): void
+  
+  // v4.1: 自動品質調整・Tier降格・機能制限
+  private adjustQualityTier(direction: 'up' | 'down'): void
+  
+  // v4.1: リアルタイムUI更新・性能表示
+  public updatePerformanceDisplay(): void
 }
 
-// PixiV8ChromeDrawingProcessor.ts - 描画統合・Chrome API最適化
-export class PixiV8ChromeDrawingProcessor {
-  private webgpuProcessor: PixiV8WebGPURenderer | null = null;
-  private offscreenProcessor: PixiV8OffscreenWorker | null = null;
-  private currentTier: TierConfig;
+// v4.1: TablerIconManager.ts - SVGアイコン統合・WebGPU Sprite最適化
+export class TablerIconManager {
+  private iconCache: Map<string, PIXI.Texture> = new Map();
+  private spriteAtlas: PIXI.Texture | null = null;
   
-  // Chrome API統合プロセッサー初期化
-  private async initializeChromeAPIProcessors(): Promise<void>
+  // Tabler Icons v3.34.1 読み込み・SVG→Texture変換・GPU最適化
+  public async loadIcon(name: string): Promise<PIXI.Texture>
   
-  // WebGPU最適化描画・Compute Shader活用
-  private async processWithWebGPU(strokeData: StrokeData): Promise<void>
+  // スプライトアトラス生成・GPU効率・バッチ描画
+  public async createSpriteAtlas(iconNames: string[]): Promise<void>
   
-  // OffscreenCanvas並列処理・メインスレッド最適化
-  private async processWithOffscreenCanvas(layerData: LayerData): Promise<void>
+  // アイコン取得・キャッシュ・GPU メモリ効率
+  public getIcon(name: string): PIXI.Texture | null
   
-  // 段階的縮退処理・Tier適応描画
-  private async processWithTierAdaptation(drawingData: DrawingData): Promise<void>
-  
-  // ベクターデータ非破壊保持・Container階層管理
-  private createNonDestructiveLayer(strokeData: StrokeData): PIXI.Container
-}
-
-// PixiV8ChromePerformanceMonitor.ts - PerformanceObserver統合・自動最適化
-export class PixiV8ChromePerformanceMonitor {
-  private performanceObserver: PerformanceObserver | null = null;
-  private metrics: PerformanceMetrics;
-  private currentTier: TierConfig;
-  
-  // PerformanceObserver初期化・リアルタイム監視
-  public startMonitoring(): void
-  
-  // FPS・メモリ・入力遅延・描画時間監視
-  private monitorPerformanceMetrics(): void
-  
-  // 閾値超過時自動最適化・Tier調整
-  private handlePerformanceThresholdExceeded(metric: string, value: number): void
-  
-  // 段階的品質調整・動的最適化
-  private adjustQualityForPerformance(direction: 'up' | 'down'): void
+  // ツールアイコンマッピング・統一管理
+  public getToolIcon(toolName: string): PIXI.Texture | null
 }
 ```
 
-### Rendering Layer（GPU最適化・Chrome API統合）
+### Rendering Layer（GPU最適化）- v4.1 Compute Shader統合
 ```typescript
-// PixiV8ChromeLayerController.ts - Container階層・非破壊レイヤー管理
-export class PixiV8ChromeLayerController {
-  private layerContainers: Map<string, PIXI.Container> = new Map();
-  private layerMetadata: Map<string, LayerMetadata> = new Map();
-  private currentTier: TierConfig;
+// LayerManager.ts - Container階層・20レイヤー管理・性能監視
+export class LayerManager {
+  // PixiJS Container階層・Z-index動的制御・GPU最適化
+  public createLayer(name: string): string
+  public deleteLayer(layerId: string): void
+  public reorderLayers(): void
   
-  // PixiJS v8.11.0 Container階層・20レイヤー管理・非破壊型
-  public createLayer(name: string, type: LayerType): string
+  // ブレンドモード・透明度・表示制御・WebGPU対応
+  public setLayerBlendMode(layerId: string, mode: PIXI.BlendModes): void
   
-  // 非破壊変形・新Container生成・元データ保持
-  public transformLayer(layerId: string, transform: PIXI.Matrix): string
+  // v4.1: レイヤー並列処理・OffscreenCanvas・サムネイル生成
+  public generateLayerThumbnails(): Promise<Map<string, PIXI.Texture>>
   
-  // WebGPU最適化合成・ブレンドモード・透明度制御
-  private compositeLayersWithWebGPU(layers: LayerData[]): Promise<PIXI.RenderTexture>
-  
-  // OffscreenCanvas並列処理・レイヤー処理最適化
-  private processLayerWithOffscreen(layerId: string): Promise<void>
-  
-  // Tier適応レイヤー管理・機能制限・最適化
-  private adaptLayerManagementToTier(): void
+  // v4.1: メモリ効率監視・大容量レイヤー・制限管理
+  private monitorLayerMemoryUsage(): void
 }
 
-// PixiV8WebGPURenderer.ts - WebGPU専用・Compute Shader・Tier1機能
-export class PixiV8WebGPURenderer {
-  private gpu: GPU;
-  private device: GPUDevice;
-  private computeShaders: Map<string, GPUComputePipeline>;
-  
-  // WebGPU初期化・アダプター選択・デバイス作成
-  public async initializeWebGPU(): Promise<boolean>
-  
-  // Compute Shader作成・GPU並列処理・フィルター効果
-  public async createComputeShader(shaderCode: string, name: string): Promise<GPUComputePipeline>
-  
-  // GPU並列描画・大量ストローク対応
-  public async processStrokesParallel(strokes: StrokeData[]): Promise<void>
-  
-  // GPU メモリプール・効率管理・最適化
-  private manageGPUMemoryPool(): void
-}
-
-// PixiV8ChromeCanvasController.ts - 4K対応・座標変換・Viewport管理
-export class PixiV8ChromeCanvasController {
-  private canvasSize: { width: number; height: number };
-  private currentTier: TierConfig;
-  private devicePixelRatio: number;
-  
-  // 2560×1440対応・デバイスピクセル比・高解像度最適化
-  public initializeCanvasForTier(tier: TierConfig): void
-  
-  // Chrome API活用座標変換・高精度・サブピクセル対応
-  public transformCoordinatesWithChromeAPI(screenPoint: Point): PIXI.Point
-  
-  // Viewport制御・ズーム・パン・2.5K最適化
-  public updateViewport(zoom: number, offsetX: number, offsetY: number): void
-  
-  // Tier適応画面管理・動的サイズ調整
-  private adaptCanvasSizeToTier(): void
-}
-
-// PixiV8ChromeTextureProcessor.ts - GPU メモリ・WebGPU最適化
-export class PixiV8ChromeTextureProcessor {
-  private textureCache: Map<string, PIXI.Texture> = new Map();
-  private gpuMemoryUsage: number = 0;
-  private currentTier: TierConfig;
-  
-  // WebGPU最適化テクスチャ作成・圧縮・効率化
-  public createOptimizedTexture(source: ImageSource): Promise<PIXI.Texture>
-  
-  // テクスチャAtlas・WebGPU対応・メモリ効率
-  public createWebGPUTextureAtlas(textures: PIXI.Texture[]): Promise<PIXI.Texture>
-  
-  // ガベージコレクション・WebGPU リソース管理
-  public cleanupWebGPUTextures(): void
-  
-  // Tier適応テクスチャ品質・動的圧縮
-  private adaptTextureQualityToTier(): void
-}
-```
-
-### Input Layer（デバイス対応・Chrome API統合）
-```typescript
-// PixiV8ChromeInputController.ts - 統合入力・Chrome Scheduler API
-export class PixiV8ChromeInputController {
-  private schedulerAPI: Scheduler | null = null;
-  private currentTier: TierConfig;
-  private inputBuffer: InputEvent[] = [];
-  
-  // Chrome Scheduler API活用・高優先度入力処理
-  private setupChromeSchedulerAPI(): void
-  
-  // 120Hz対応・高頻度入力処理・Tier1機能
-  private setupHighFrequencyInput(): void
-  
-  // 段階的入力処理・Tier適応・品質調整
-  private processInputWithTierAdaptation(event: PointerEvent): void
-  
-  // WebGPU座標変換・GPU加速・精度向上
-  private transformCoordinatesWithWebGPU(screenPoint: Point): Promise<PIXI.Point>
-  
-  // 入力バッファリング・遅延最小化・Chrome最適化
-  private optimizeInputLatencyWithChromeAPI(): void
-}
-
-// PixiV8ChromePointerProcessor.ts - 筆圧最適化・Chrome API統合
-export class PixiV8ChromePointerProcessor {
-  private pressureHistory: number[] = [];
-  private currentTier: TierConfig;
-  private deviceCalibration: DeviceCalibrationData;
-  
-  // 120Hz筆圧処理・Chrome Pointer Events・高精度
-  public processHighFrequencyPressure(events: PointerEvent[]): ProcessedPressureData
-  
-  // Chrome API最適化・入力遅延最小化
-  private optimizeInputLatencyWithChromeAPI(): void
-  
-  // WebGPU筆圧カーブ処理・GPU加速補間
-  private processPressureCurveWithWebGPU(rawData: number[]): Promise<number[]>
-  
-  // デバイス差異補正・液タブレット最適化
-  private calibrateForDevice(deviceType: string): void
-  
-  // Tier適応筆圧処理・精度調整
-  private adaptPressureProcessingToTier(): void
-}
-
-// PixiV8ChromeShortcutController.ts - キーボード・ペンボタン・設定管理
-export class PixiV8ChromeShortcutController {
-  private shortcutMap: Map<string, ShortcutAction> = new Map();
-  private penButtonMap: Map<number, PenButtonAction> = new Map();
-  
-  // Chrome API活用キーボード処理・高優先度
-  public setupChromeKeyboardAPI(): void
-  
-  // ペンサイドボタン・カスタマイズ・設定永続化
-  public configurePenButtons(buttonConfig: PenButtonConfig): void
-  
-  // キーボードショートカット・カスタマイズ・衝突検出
-  public registerShortcut(key: string, action: ShortcutAction): boolean
-  
-  // 設定永続化・localStorage・Chrome API統合
-  private persistSettings(): void
-}
-```
-
-### Tools Layer（ツールシステム・Chrome API最適化）
-```typescript
-// PixiV8Chrome統一ツールインターフェース
-interface IPixiV8ChromeDrawingTool {
-  readonly name: string;
-  readonly category: 'drawing' | 'editing' | 'selection';
-  readonly chromeAPIFeatures: string[]; // WebGPU・OffscreenCanvas等
-  readonly supportedTiers: ('tier1' | 'tier2' | 'tier3')[];
-  
-  // Chrome API統合初期化
-  initializeWithChromeAPI(capabilities: ChromeAPICapabilities): Promise<void>;
-  
-  // Tier適応処理・段階的機能調整
-  adaptToTier(tier: TierConfig): void;
-  
-  // 従来インターフェース継承
-  activate(): void;
-  deactivate(): void;
-  onPointerDown(event: IPixiV8ChromeEventData['drawing:start']): void;
-  onPointerMove(event: IPixiV8ChromeEventData['drawing:move']): void;
-  onPointerUp(event: IPixiV8ChromeEventData['drawing:end']): void;
-}
-
-// PixiV8ChromeToolController.ts - ツール統合・状態管理・設定永続化
-export class PixiV8ChromeToolController {
-  private activeTool: IPixiV8ChromeDrawingTool | null = null;
-  private toolInstances: Map<string, IPixiV8ChromeDrawingTool> = new Map();
-  private currentTier: TierConfig;
-  
-  // Chrome API対応ツール初期化・機能検出
-  public initializeToolsWithChromeAPI(capabilities: ChromeAPICapabilities): Promise<void>
-  
-  // Tier適応ツール管理・機能制限・最適化
-  private adaptToolsToTier(tier: TierConfig): void
-  
-  // ツール切り替え・状態管理・設定保持
-  public switchTool(toolName: string): Promise<boolean>
-  
-  // 設定永続化・Chrome Storage API活用
-  private persistToolSettings(): void
-}
-
-// PixiV8ChromePenTool.ts - Chrome API最適化ペンツール
-export class PixiV8ChromePenTool implements IPixiV8ChromeDrawingTool {
-  public readonly chromeAPIFeatures = ['webgpu', 'offscreen-canvas'];
-  public readonly supportedTiers = ['tier1', 'tier2', 'tier3'];
-  
-  private currentStroke: PIXI.Graphics | null = null;
-  private strokePoints: PIXI.Point[] = [];
-  private currentTier: TierConfig;
-  
-  // WebGPU最適化描画・GPU加速ストローク
-  private drawWithWebGPU(strokeData: StrokeData): Promise<void>
-  
-  // OffscreenCanvas並列処理・メインスレッド最適化
-  private processWithOffscreenCanvas(points: PIXI.Point[]): Promise<ProcessedStroke>
-  
-  // Tier適応描画・段階的品質調整
-  private drawWithTierAdaptation(strokeData: StrokeData, tier: TierConfig): void
-  
-  // 筆圧対応サイズ・自然な太さ変化
-  private calculateBrushSize(pressure: number): number
-}
-
-// 他のツールも同様にPixiV8Chrome命名・Chrome API統合・Tier適応
-```
-
-### Export Layer（出力機能・Chrome API統合）
-```typescript
-// PixiV8ChromeExportController.ts - 出力統合・形式選択・品質管理
-export class PixiV8ChromeExportController {
-  private webCodecsExporter: PixiV8WebCodecsExporter | null = null;
-  private imageExporter: PixiV8ChromeImageExporter;
-  private currentTier: TierConfig;
-  
-  // Chrome API対応出力初期化・機能検出
-  public initializeWithChromeAPI(capabilities: ChromeAPICapabilities): Promise<void>
-  
-  // 統合出力・形式自動選択・品質最適化
-  public exportCanvas(format: ExportFormat, options: ExportOptions): Promise<Blob>
-  
-  // Tier適応出力・品質調整・フォールバック
-  private adaptExportToTier(format: ExportFormat): ExportOptions
-}
-
-// PixiV8WebCodecsExporter.ts - WebCodecs活用・動画出力
-export class PixiV8WebCodecsExporter {
-  private videoEncoder: VideoEncoder | null = null;
-  private currentTier: TierConfig;
-  
-  // WebCodecs初期化・60FPS対応・Tier1機能
-  public async initializeWebCodecs(): Promise<boolean>
-  
-  // リアルタイムエンコード・PixiJS描画→動画
-  public async startRealTimeEncoding(targetFPS: number): Promise<void>
-  
-  // Tier適応出力・品質調整・フォールバック
-  private exportWithTierAdaptation(canvas: HTMLCanvasElement): Promise<Blob>
-}
-
-// PixiV8ChromeImageExporter.ts - 静止画出力・PNG・JPEG・WebP
-export class PixiV8ChromeImageExporter {
-  private canvasController: PixiV8ChromeCanvasController;
-  private currentTier: TierConfig;
-  
-  // 高品質画像出力・2K対応・Chrome最適化
-  public exportHighQualityImage(format: ImageFormat): Promise<Blob>
-  
-  // Tier適応画像品質・動的圧縮・最適化
-  private adaptImageQualityToTier(format: ImageFormat): ImageExportOptions
-}
-```
-
-## 🚀 Chrome最新API統合・段階的縮退実装
-
-### Chrome API機能検出・Tier自動選択
-```typescript
-// Chrome API対応状況検出・段階的縮退準備
-export class PixiV8ChromeAPIDetector {
-  public static async detectChromeAPICapabilities(): Promise<ChromeAPICapabilities> {
-    const capabilities: ChromeAPICapabilities = {
-      // WebGPU検出・アダプター性能評価
-      webgpu: await this.detectWebGPUSupport(),
-      
-      // OffscreenCanvas検出・Worker対応確認
-      offscreenCanvas: typeof OffscreenCanvas !== 'undefined',
-      
-      // WebCodecs検出・エンコーダー対応確認
-      webCodecs: typeof VideoEncoder !== 'undefined',
-      
-      // PerformanceObserver検出・監視機能確認
-      performanceObserver: typeof PerformanceObserver !== 'undefined',
-      
-      // Chrome Scheduler API検出・高優先度処理
-      schedulerAPI: !!navigator.scheduling?.postTask,
-      
-      // GPU性能推定・メモリ容量・処理能力
-      gpuTier: await this.estimateGPUTier(),
-      
-      // システムメモリ・ブラウザメモリ制限
-      systemMemory: await this.estimateSystemMemory()
-    };
-    
-    console.log('Chrome API Capabilities detected:', capabilities);
-    return capabilities;
-  }
-  
-  private static async detectWebGPUSupport(): Promise<WebGPUSupport> {
-    if (!navigator.gpu) return { supported: false };
-    
-    try {
-      const adapter = await navigator.gpu.requestAdapter();
-      if (!adapter) return { supported: false };
-      
-      const device = await adapter.requestDevice();
-      return {
-        supported: true,
-        adapter,
-        device,
-        features: Array.from(adapter.features),
-        limits: adapter.limits
-      };
-    } catch (error) {
-      console.warn('WebGPU detection failed:', error);
-      return { supported: false };
-    }
-  }
-}
-
-// Tier自動選択・最適環境判定
-export class PixiV8ChromeTierSelector {
-  public static selectOptimalTier(capabilities: ChromeAPICapabilities): TierConfig {
-    // Tier1判定: WebGPU + OffscreenCanvas + WebCodecs + 高性能GPU
-    if (capabilities.webgpu.supported && 
-        capabilities.offscreenCanvas && 
-        capabilities.webCodecs && 
-        capabilities.gpuTier >= 3) {
-      return {
-        id: 'tier1',
-        name: 'Chrome最新API完全統合',
-        features: ['webgpu', 'offscreen-canvas', 'webcodecs', 'performance-observer'],
-        performance: {
-          targetFPS: 60,
-          canvasSize: 2048,
-          maxLayers: 20,
-          inputFrequency: 120, // 120Hz
-          memoryLimit: 1024 // 1GB
-        }
-      };
-    }
-    
-    // Tier2判定: WebGL2 + OffscreenCanvas + PerformanceObserver
-    if (capabilities.offscreenCanvas && 
-        capabilities.performanceObserver && 
-        capabilities.gpuTier >= 2) {
-      return {
-        id: 'tier2',
-        name: 'Chrome基本API活用',
-        features: ['webgl2', 'offscreen-canvas', 'performance-observer'],
-        performance: {
-          targetFPS: 30,
-          canvasSize: 1024,
-          maxLayers: 10,
-          inputFrequency: 60, // 60Hz
-          memoryLimit: 512 // 512MB
-        }
-      };
-    }
-    
-    // Tier3判定: WebGL + 基本機能
-    return {
-      id: 'tier3',
-      name: '基本機能・後方互換',
-      features: ['webgl', 'basic-canvas'],
-      performance: {
-        targetFPS: 20,
-        canvasSize: 512,
-        maxLayers: 5,
-        inputFrequency: 30, // 30Hz
-        memoryLimit: 256 // 256MB
-      }
-    };
-  }
-}
-```
-
-### WebGPU統合・Compute Shader実装
-```typescript
-// WebGPU Compute Pipeline・GPU並列処理
-export class PixiV8WebGPUComputeProcessor {
-  private device: GPUDevice;
+// WebGPURenderer.ts - WebGPU専用・Compute Shader・v4.1完全対応
+export class WebGPURenderer {
+  private device: GPUDevice | null = null;
   private computePipelines: Map<string, GPUComputePipeline> = new Map();
   
-  public async createStrokeProcessingPipeline(): Promise<GPUComputePipeline> {
-    const shaderCode = `
-      @group(0) @binding(0) var<storage, read_write> strokes: array<vec4<f32>>;
-      @group(0) @binding(1) var<storage, read_write> processed: array<vec4<f32>>;
+  // GPU並列処理・Compute Shader・フィルター効果・大量データ
+  public async executeComputeShader(
+    shaderName: string, 
+    inputData: Float32Array,
+    outputSize: number
+  ): Promise<Float32Array>
+  
+  // v4.1: エアスプレー・パーティクル生成・GPU並列
+  public async renderAirsprayParticles(
+    position: { x: number; y: number },
+    intensity: number,
+    particleCount: number
+  ): Promise<void>
+  
+  // v4.1: ボカシ・ガウシアンブラー・高品質・リアルタイム
+  public async applyGaussianBlur(
+    texture: PIXI.Texture,
+    radius: number
+  ): Promise<PIXI.Texture>
+  
+  // GPU メモリプール・効率管理・制限監視
+  private manageGPUMemory(): void
+  
+  // v4.1: GPU温度監視・スロットリング・安定性確保
+  private monitorGPUTemperature(): void
+}
+
+// v4.1: HSVColorRenderer.ts - WebGPU色選択・Shader実装
+export class HSVColorRenderer {
+  private colorWheelPipeline: GPURenderPipeline | null = null;
+  private colorWheelTexture: PIXI.Texture | null = null;
+  
+  // HSV円形ピッカー・WebGPU Shader・120x120px・リアルタイム
+  public async renderColorWheel(): Promise<PIXI.Texture>
+  
+  // 色相環Shader・高品質・GPU最適化
+  private createColorWheelShader(): string
+  
+  // 色選択・座標→HSV変換・リアルタイム
+  public screenToHSV(x: number, y: number): { h: number; s: number; v: number }
+  
+  // HSV→RGB変換・GPU並列・高精度
+  public hsvToRgb(h: number, s: number, v: number): { r: number; g: number; b: number }
+}
+
+// TextureManager.ts - テクスチャ最適化・Atlas統合・v4.1メモリ監視
+export class TextureManager {
+  // テクスチャAtlas・メモリ効率・圧縮・GPU最適化
+  public createTextureAtlas(textures: PIXI.Texture[]): PIXI.Texture
+  
+  // ガベージコレクション・メモリリーク防止・自動管理
+  public cleanupUnusedTextures(): void
+  
+  // v4.1: 大容量テクスチャ・4K対応・ストリーミング
+  public async loadLargeTexture(
+    url: string, 
+    maxSize: number
+  ): Promise<PIXI.Texture>
+  
+  // v4.1: GPU メモリ監視・使用量・制限・警告
+  private monitorGPUTextureMemory(): GPUMemoryStatus
+}
+```
+
+### Input Layer（デバイス対応）- v4.1 遅延測定統合
+```typescript
+// InputManager.ts - Pointer Events統合・遅延測定
+export class InputManager {
+  // マウス・ペンタブレット・デバイス抽象化・120Hz対応
+  private setupPointerEvents(): void
+  
+  // 座標変換・2560×1440対応・サブピクセル精度・GPU変換
+  private screenToCanvas(screenX: number, screenY: number): PIXI.Point
+  
+  // 筆圧処理・4096レベル・自然な変化・デバイス補正
+  private processPressure(rawPressure: number): number
+  
+  // v4.1: 入力遅延測定・Pointer Event→描画反映・1ms精度
+  private measureInputLatency(event: PointerEvent): void
+}
+
+// PointerProcessor.ts - 高精度処理・筆圧最適化・v4.1液タブレット特化
+export class PointerProcessor {
+  // 筆圧曲線補正・デバイス差異・調整・プロファイル管理
+  public calibratePressureCurve(deviceType: string): void
+  
+  // 傾き検出・ペン表現・自然な描画・角度計算
+  public processTiltData(tiltX: number, tiltY: number): { angle: number; intensity: number }
+  
+  // v4.1: サイドボタン・ショートカット・カスタマイズ
+  public processSideButtons(buttons: number): string[]
+  
+  // v4.1: 120Hz入力・高頻度更新・スムージング
+  public processHighFrequencyInput(events: PointerEvent[]): ProcessedInput[]
+}
+
+// v4.1: LatencyMeasurer.ts - 遅延測定・1ms精度・最適化指標
+export class LatencyMeasurer {
+  private measurements: LatencyMeasurement[] = [];
+  private targetLatency = 16; // 60FPS基準
+  
+  // 入力→描画遅延測定・E2E・高精度
+  public measureE2ELatency(inputEvent: PointerEvent): Promise<number>
+  
+  // 描画→表示遅延・GPU→ディスプレイ・V-Sync考慮
+  public measureRenderLatency(): Promise<number>
+  
+  // 遅延履歴・統計・改善指標
+  public getLatencyStatistics(): LatencyStats
+  
+  // 自動最適化・設定調整・遅延改善
+  public optimizeForLatency(): void
+}
+```
+
+### Tool Layer（ツールシステム）- v4.1 GPU加速ツール
+```typescript
+// ツール共通インターフェース・Claude理解容易・v4.1拡張
+interface IDrawingTool {
+  readonly name: string;
+  readonly icon: string;
+  readonly category: 'drawing' | 'editing' | 'selection';
+  readonly gpuAccelerated: boolean; // v4.1: GPU対応フラグ
+  
+  activate(): void;
+  deactivate(): void;
+  onPointerDown(event: IEventData['drawing:start']): void;
+  onPointerMove(event: IEventData['drawing:move']): void;
+  onPointerUp(event: IEventData['drawing:end']): void;
+  
+  // v4.1: GPU設定・Compute Shader対応
+  configureGPUAcceleration(enabled: boolean): void;
+  getPerformanceMetrics(): ToolPerformanceMetrics;
+}
+
+// PenTool.ts - 基本線描画・Phase1実装・GPU最適化
+export class PenTool implements IDrawingTool {
+  public readonly gpuAccelerated = true;
+  
+  // PixiJS Graphics・基本描画・スムージング・GPU加速
+  public onPointerMove(event: IEventData['drawing:move']): void
+  
+  // 筆圧対応サイズ・自然な太さ変化・補間
+  private calculateBrushSize(pressure: number): number
+  
+  // v4.1: GPU並列描画・大量点処理・Batch最適化
+  private renderStrokeGPU(points: PIXI.Point[]): void
+}
+
+// v4.1: AirsprayTool.ts - Compute Shader・パーティクル・GPU並列
+export class AirsprayTool implements IDrawingTool {
+  public readonly gpuAccelerated = true;
+  private computeShader: string = `
+    @compute @workgroup_size(64)
+    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+      let index = global_id.x;
+      if (index >= arrayLength(&particles)) { return; }
       
-      @compute @workgroup_size(64)
-      fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-        let index = global_id.x;
-        if (index >= arrayLength(&strokes)) { return; }
-        
-        // GPU並列ストローク処理・スムージング・最適化
-        let stroke = strokes[index];
-        let smoothed = smoothStroke(stroke);
-        processed[index] = smoothed;
-      }
-      
-      fn smoothStroke(stroke: vec4<f32>) -> vec4<f32> {
-        // ベジエ曲線スムージング・GPU最適化
-        return stroke; // 実装時詳細化
-      }
-    `;
+      // パーティクル生成・位置・速度・色・寿命
+      particles[index] = generateParticle(
+        sprayPosition,
+        sprayIntensity,
+        sprayRadius,
+        random(index)
+      );
+    }
+  `;
+  
+  // エアスプレー描画・GPU並列・リアルタイム・2048粒子
+  public async renderAirspray(
+    position: PIXI.Point,
+    intensity: number,
+    radius: number
+  ): Promise<void>
+  
+  // パーティクル設定・密度・拡散・GPU最適化
+  public configureParticles(density: number, spread: number): void
+}
+
+// v4.1: BlurTool.ts - ガウシアンブラー・GPU並列・高品質
+export class BlurTool implements IDrawingTool {
+  public readonly gpuAccelerated = true;
+  
+  // リアルタイムブラー・GPU並列・高品質・60FPS
+  public async applyBlur(
+    area: PIXI.Rectangle,
+    radius: number
+  ): Promise<void>
+  
+  // ガウシアンカーネル・GPU最適化・メモリ効率
+  private createGaussianKernel(radius: number): Float32Array
+}
+```
+
+### UI Layer（ユーザーインターフェース）- v4.1 GPU最適化UI
+```typescript
+// UIManager.ts - UI統合・ふたば色・レスポンシブ・v4.1性能表示
+export class UIManager {
+  // 基本UI初期化・2.5K最適化・Grid Layout・GPU加速
+  public async initializeUI(): Promise<void>
+  
+  // v4.1: 性能監視UI・リアルタイム・FPS・GPU・メモリ
+  public initializePerformanceDisplay(): void
+  
+  // v4.1: ポップアップ管理・z-index:2000・移動可能
+  public showPopup(type: string, position: { x: number; y: number }): void
+  
+  // 動的レイアウト・画面サイズ・DPR対応
+  private adjustLayoutForDisplay(): void
+}
+
+// v4.1: PopupManager.ts - z-index:2000・移動可能・GPU最適化
+export class PopupManager {
+  private activePopups: Map<string, PopupInstance> = new Map();
+  private dragState: DragState | null = null;
+  
+  // ポップアップ作成・移動可能・GPU加速・backdrop-filter
+  public createPopup(config: PopupConfig): string
+  
+  // ドラッグ&ドロップ・GPU加速・120FPS・範囲制限
+  public enableDragging(popupId: string): void
+  
+  // 重ね順管理・z-index・フォーカス・自動調整
+  private manageZIndex(): void
+  
+  // GPU最適化・transform・will-change・Composite Layer
+  private optimizeForGPU(element: HTMLElement): void
+}
+
+// v4.1: PerformanceDisplay.ts - リアルタイム監視UI・数値表示
+export class PerformanceDisplay {
+  private updateInterval: number = 100; // 10fps更新
+  
+  // FPS表示・色分け・excellent/good/warning/critical
+  public updateFPSDisplay(fps: number): void
+  
+  // GPU使用率・WebGPU・温度・メモリ使用量
+  public updateGPUDisplay(metrics: GPUMetrics): void
+  
+  // メモリ使用量・1GB制限・警告・グラフ表示
+  public updateMemoryDisplay(used: number, limit: number): void
+  
+  // 入力遅延・1ms精度・目標値・改善指標
+  public updateLatencyDisplay(latency: number): void
+  
+  // 設定・表示切り替え・位置・透明度
+  public configureDisplay(config: PerformanceDisplayConfig): void
+}
+
+// v4.1: TimelinePanel.ts - アニメーション・WebCodecs・120FPS
+export class TimelinePanel {
+  private frames: AnimationFrame[] = [];
+  private webCodecsEncoder: VideoEncoder | null = null;
+  
+  // フレーム管理・64x48px・WebGPU RenderTexture・並列生成
+  public addFrame(): string
+  public deleteFrame(frameId: string): void
+  public reorderFrames(fromIndex: number, toIndex: number): void
+  
+  // 120FPS再生・WebCodecs・リアルタイム・オニオンスキン
+  public startPlayback(fps: number): void
+  public stopPlayback(): void
+  
+  // 動画出力・H.264・VP9・AV1・リアルタイムエンコード
+  public async exportVideo(format: VideoFormat): Promise<Blob>
+  
+  // オニオンスキン・WebGPU blend・前後フレーム表示
+  public configureOnionSkin(settings: OnionSkinSettings): void
+}
+```
+
+## 🚀 WebGPU統合・高性能化・v4.1完全対応
+
+### WebGPU検出・初期化・Compute Shader管理
+```typescript
+// v4.1: WebGPU完全対応・Compute Shader・GPU並列処理
+export class WebGPUManager {
+  private device: GPUDevice | null = null;
+  private adapter: GPUAdapter | null = null;
+  private computePipelines: Map<string, GPUComputePipeline> = new Map();
+  private renderPipelines: Map<string, GPURenderPipeline> = new Map();
+  
+  public static async detectAndInitialize(): Promise<WebGPUCapabilities> {
+    // WebGPU対応検出・アダプター要求・デバイス初期化
+    if (!navigator.gpu) {
+      return { supported: false, reason: 'WebGPU not available' };
+    }
     
-    const pipeline = await this.device.createComputePipeline({
-      label: 'Stroke Processing Pipeline',
-      layout: 'auto',
+    try {
+      const adapter = await navigator.gpu.requestAdapter({
+        powerPreference: 'high-performance',
+        forceFallbackAdapter: false
+      });
+      
+      if (!adapter) {
+        return { supported: false, reason: 'No suitable adapter' };
+      }
+      
+      const device = await adapter.requestDevice({
+        requiredFeatures: [
+          'timestamp-query',
+          'pipeline-statistics-query'
+        ] as GPUFeatureName[],
+        requiredLimits: {
+          maxComputeWorkgroupStorageSize: 32768,
+          maxComputeInvocationsPerWorkgroup: 1024
+        }
+      });
+      
+      return {
+        supported: true,
+        device,
+        adapter,
+        capabilities: {
+          maxTextureSize: adapter.limits.maxTextureDimension2D,
+          maxComputeWorkgroups: adapter.limits.maxComputeWorkgroupsPerDimension,
+          maxStorageBufferSize: adapter.limits.maxStorageBufferBindingSize
+        }
+      };
+      
+    } catch (error) {
+      return { 
+        supported: false, 
+        reason: `WebGPU initialization failed: ${error}` 
+      };
+    }
+  }
+  
+  // Compute Shader管理・登録・実行・最適化
+  public async registerComputeShader(
+    name: string,
+    shaderCode: string,
+    workgroupSize: number = 64
+  ): Promise<void> {
+    const shaderModule = this.device!.createShaderModule({
+      code: shaderCode
+    });
+    
+    const pipeline = this.device!.createComputePipeline({
       compute: {
-        module: this.device.createShaderModule({ code: shaderCode }),
+        module: shaderModule,
         entryPoint: 'main'
       }
     });
     
-    this.computePipelines.set('stroke-processing', pipeline);
-    return pipeline;
+    this.computePipelines.set(name, pipeline);
   }
   
-  public async processStrokesParallel(strokes: StrokeData[]): Promise<ProcessedStroke[]> {
-    const pipeline = this.computePipelines.get('stroke-processing');
-    if (!pipeline) throw new Error('Stroke processing pipeline not initialized');
+  // GPU並列実行・大量データ処理・エアスプレー・ブラー
+  public async executeComputeShader(
+    name: string,
+    inputData: Float32Array,
+    outputSize: number
+  ): Promise<Float32Array> {
+    const pipeline = this.computePipelines.get(name);
+    if (!pipeline) throw new Error(`Compute shader ${name} not found`);
     
-    // GPU バッファ作成・データ転送
-    const inputBuffer = this.createStrokeBuffer(strokes);
-    const outputBuffer = this.createOutputBuffer(strokes.length);
+    // GPU バッファ作成・データ転送・実行・結果取得
+    const inputBuffer = this.device!.createBuffer({
+      size: inputData.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    });
     
-    // Compute Pass実行・GPU並列処理
-    const commandEncoder = this.device.createCommandEncoder();
+    const outputBuffer = this.device!.createBuffer({
+      size: outputSize * 4, // Float32
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    });
+    
+    this.device!.queue.writeBuffer(inputBuffer, 0, inputData);
+    
+    const bindGroup = this.device!.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: inputBuffer } },
+        { binding: 1, resource: { buffer: outputBuffer } }
+      ]
+    });
+    
+    const commandEncoder = this.device!.createCommandEncoder();
     const computePass = commandEncoder.beginComputePass();
     
     computePass.setPipeline(pipeline);
-    computePass.setBindGroup(0, this.createBindGroup(inputBuffer, outputBuffer));
-    computePass.dispatchWorkgroups(Math.ceil(strokes.length / 64));
+    computePass.setBindGroup(0, bindGroup);
+    computePass.dispatchWorkgroups(Math.ceil(outputSize / 64));
     computePass.end();
     
-    // コマンド実行・結果取得
-    this.device.queue.submit([commandEncoder.finish()]);
+    // 結果読み取り・非同期・効率的
+    const readBuffer = this.device!.createBuffer({
+      size: outputSize * 4,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+    });
     
-    // GPU→CPU結果読み戻し
-    const result = await this.readBackResults(outputBuffer, strokes.length);
-    return result;
+    commandEncoder.copyBufferToBuffer(outputBuffer, 0, readBuffer, 0, outputSize * 4);
+    this.device!.queue.submit([commandEncoder.finish()]);
+    
+    await readBuffer.mapAsync(GPUMapMode.READ);
+    const result = new Float32Array(readBuffer.getMappedRange());
+    const output = new Float32Array(result);
+    
+    readBuffer.unmap();
+    inputBuffer.destroy();
+    outputBuffer.destroy();
+    readBuffer.destroy();
+    
+    return output;
   }
 }
+```
 
-// OffscreenCanvas Worker統合・並列処理
-export class PixiV8OffscreenWorker {
-  private workers: Worker[] = [];
-  private taskQueue: OffscreenTask[] = [];
-  private availableWorkers: Worker[] = [];
-  
-  public async initialize(workerCount: number = 4): Promise<void> {
-    // OffscreenCanvas Worker プール初期化
-    for (let i = 0; i < workerCount; i++) {
-      const worker = new Worker('./workers/PixiV8OffscreenWorker.js', {
-        type: 'module'
-      });
-      
-      worker.onmessage = (event) => this.handleWorkerMessage(worker, event);
-      
-      // Worker初期化・OffscreenCanvas転送
-      const offscreenCanvas = new OffscreenCanvas(2048, 2048);
-      const transferableCanvas = offscreenCanvas.transferControlToOffscreen();
-      
-      worker.postMessage({
-        type: 'initCanvas',
-        canvas: transferableCanvas,
-        config: {
-          width: 2048,
-          height: 2048,
-          preference: 'webgpu'
-        }
-      }, [transferableCanvas]);
-      
-      this.workers.push(worker);
+### Shader実装・エアスプレー・ブラー・色選択
+```typescript
+// v4.1: 専用Shader実装・GPU最適化・高品質
+export const WEBGPU_SHADERS = {
+  // エアスプレー・パーティクル生成・2048粒子並列
+  AIRSPRAY_PARTICLES: `
+    struct Particle {
+      position: vec2<f32>,
+      velocity: vec2<f32>,
+      color: vec4<f32>,
+      life: f32,
+      size: f32
     }
     
-    console.log(`OffscreenCanvas Worker pool initialized: ${workerCount} workers`);
+    @group(0) @binding(0) var<storage, read_write> particles: array<Particle>;
+    @group(0) @binding(1) var<uniform> sprayParams: SprayParams;
+    
+    @compute @workgroup_size(64)
+    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+      let index = global_id.x;
+      if (index >= arrayLength(&particles)) { return; }
+      
+      let angle = random(index) * 2.0 * 3.14159;
+      let distance = random(index + 1000u) * sprayParams.radius;
+      let speed = random(index + 2000u) * sprayParams.intensity;
+      
+      particles[index].position = sprayParams.center + vec2<f32>(
+        cos(angle) * distance,
+        sin(angle) * distance
+      );
+      
+      particles[index].velocity = vec2<f32>(
+        cos(angle) * speed,
+        sin(angle) * speed
+      );
+      
+      particles[index].color = sprayParams.color;
+      particles[index].life = 1.0;
+      particles[index].size = random(index + 3000u) * sprayParams.maxSize;
+    }
+  `,
+  
+  // ガウシアンブラー・高品質・リアルタイム
+  GAUSSIAN_BLUR: `
+    @group(0) @binding(0) var inputTexture: texture_2d<f32>;
+    @group(0) @binding(1) var outputTexture: texture_storage_2d<rgba8unorm, write>;
+    @group(0) @binding(2) var<uniform> blurParams: BlurParams;
+    
+    @compute @workgroup_size(8, 8)
+    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+      let coords = vec2<i32>(global_id.xy);
+      let texSize = textureDimensions(inputTexture);
+      
+      if (coords.x >= texSize.x || coords.y >= texSize.y) { return; }
+      
+      var color = vec4<f32>(0.0);
+      var weightSum = 0.0;
+      
+      // ガウシアンカーネル適用・高品質ブラー
+      for (var i = -blurParams.radius; i <= blurParams.radius; i++) {
+        for (var j = -blurParams.radius; j <= blurParams.radius; j++) {
+          let sampleCoords = coords + vec2<i32>(i, j);
+          if (sampleCoords.x >= 0 && sampleCoords.x < texSize.x &&
+              sampleCoords.y >= 0 && sampleCoords.y < texSize.y) {
+            
+            let weight = gaussianWeight(f32(i), f32(j), blurParams.sigma);
+            color += textureLoad(inputTexture, sampleCoords, 0) * weight;
+            weightSum += weight;
+          }
+        }
+      }
+      
+      textureStore(outputTexture, coords, color / weightSum);
+    }
+  `,
+  
+  // HSV色選択・色相環・高品質
+  HSV_COLOR_WHEEL: `
+    @vertex
+    fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f32> {
+      let pos = array<vec2<f32>, 6>(
+        vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0),
+        vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 1.0)
+      );
+      return vec4<f32>(pos[vertexIndex], 0.0, 1.0);
+    }
+    
+    @fragment
+    fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
+      let center = vec2<f32>(60.0, 60.0); // 120x120pxの中心
+      let coord = pos.xy - center;
+      let distance = length(coord);
+      
+      if (distance > 60.0) { discard; }
+      
+      let angle = atan2(coord.y, coord.x);
+      let hue = (angle + 3.14159) / (2.0 * 3.14159);
+      let saturation = distance / 60.0;
+      let value = 1.0;
+      
+      return vec4<f32>(hsvToRgb(vec3<f32>(hue, saturation, value)), 1.0);
+    }
+  `
+};
+```
+
+## 💾 パフォーマンス・メモリ管理・v4.1完全監視
+
+### 包括的性能監視・GPU・メモリ・遅延
+```typescript
+// v4.1: 包括的性能監視・すべてのメトリクス統合
+export interface PerformanceMetrics {
+  fps: {
+    current: number;
+    average: number;
+    target: number;
+    history: number[];
+    stability: number; // FPS安定性指標
+  };
+  
+  gpu: {
+    usage: number;           // GPU使用率 0-100%
+    memory: number;          // GPU メモリ使用量 MB
+    temperature: number;     // GPU温度 °C
+    webgpuActive: boolean;   // WebGPU動作状況
+    computeActive: boolean;  // Compute Shader動作
+    throttled: boolean;      // スロットリング状態
+  };
+  
+  memory: {
+    used: number;            // 使用メモリ MB
+    available: number;       // 利用可能メモリ MB
+    limit: number;           // 制限値 1024MB
+    leakDetected: boolean;   // メモリリーク検出
+    gcTriggered: boolean;    // GC実行状況
+  };
+  
+  latency: {
+    input: number;           // 入力遅延 ms
+    render: number;          // 描画遅延 ms
+    total: number;           // 総遅延 ms
+    target: number;          // 目標遅延 16ms (60FPS)
+    jitter: number;          // 遅延ジッター ms
+  };
+  
+  tier: {
+    current: 'webgpu' | 'webgl2' | 'webgl';
+    capabilities: GPUCapabilities | null;
+    autoAdjust: boolean;     // 自動品質調整
+    degradationCount: number; // 品質劣化回数
+  };
+  
+  canvas: {
+    size: { width: number; height: number };
+    resolution: number;      // デバイスピクセル比
+    layerCount: number;      // レイヤー数
+    strokeCount: number;     // ストローク数
+    complexity: number;      // 描画複雑度 0-1
+  };
+}
+
+export class PerformanceManager {
+  private metrics: PerformanceMetrics;
+  private monitoring = false;
+  private updateInterval: number = 100; // 10fps更新
+  private eventBus: EventBus;
+  
+  // 包括的監視開始・全メトリクス・リアルタイム
+  public startMonitoring(): void {
+    this.monitoring = true;
+    
+    // FPS監視・requestAnimationFrame
+    this.monitorFrameRate();
+    
+    // メモリ監視・100ms間隔
+    setInterval(() => this.checkMemoryUsage(), this.updateInterval);
+    
+    // GPU監視・WebGPU対応
+    if (this.metrics.gpu.webgpuActive) {
+      setInterval(() => this.monitorGPUUsage(), this.updateInterval);
+    }
+    
+    // 遅延監視・入力イベント連動
+    this.setupLatencyMonitoring();
+    
+    // 自動品質調整・性能低下検出
+    this.setupAutoQualityAdjustment();
   }
   
-  public async processLayerOffscreen(layerData: LayerData): Promise<ProcessedLayer> {
-    return new Promise((resolve, reject) => {
-      const availableWorker = this.getAvailableWorker();
-      if (!availableWorker) {
-        this.taskQueue.push({ layerData, resolve, reject });
+  // FPS監視・安定性計算・動的調整
+  private monitorFrameRate(): void {
+    let lastTime = performance.now();
+    let frameCount = 0;
+    
+    const measureFrame = (currentTime: number) => {
+      const deltaTime = currentTime - lastTime;
+      const currentFPS = 1000 / deltaTime;
+      
+      // FPS履歴更新・移動平均
+      this.metrics.fps.history.push(currentFPS);
+      if (this.metrics.fps.history.length > 60) {
+        this.metrics.fps.history.shift();
+      }
+      
+      this.metrics.fps.current = currentFPS;
+      this.metrics.fps.average = this.metrics.fps.history.reduce((a, b) => a + b, 0) / this.metrics.fps.history.length;
+      
+      // FPS安定性計算・標準偏差
+      const variance = this.metrics.fps.history.reduce((sum, fps) => sum + Math.pow(fps - this.metrics.fps.average, 2), 0) / this.metrics.fps.history.length;
+      this.metrics.fps.stability = 1 / (1 + Math.sqrt(variance));
+      
+      // 性能イベント発火
+      this.eventBus.emit('performance:fps-update', {
+        fps: currentFPS,
+        target: this.metrics.fps.target,
+        timestamp: currentTime
+      });
+      
+      // 低FPS警告
+      if (currentFPS < this.metrics.fps.target * 0.8) {
+        this.eventBus.emit('performance:fps-low', {
+          currentFPS,
+          targetFPS: this.metrics.fps.target
+        });
+      }
+      
+      lastTime = currentTime;
+      if (this.monitoring) {
+        requestAnimationFrame(measureFrame);
+      }
+    };
+    
+    requestAnimationFrame(measureFrame);
+  }
+  
+  // GPU使用率監視・WebGPU・温度・メモリ
+  private async monitorGPUUsage(): Promise<void> {
+    try {
+      // WebGPU デバイス情報取得
+      const adapter = await navigator.gpu?.requestAdapter();
+      if (!adapter) return;
+      
+      // GPU メモリ使用量推定・テクスチャ・バッファ
+      const estimatedMemory = this.estimateGPUMemoryUsage();
+      this.metrics.gpu.memory = estimatedMemory;
+      
+      // GPU使用率推定・描画負荷・Compute Shader
+      const usage = this.estimateGPUUsage();
+      this.metrics.gpu.usage = usage;
+      
+      // スロットリング検出・性能低下・温度推定
+      this.metrics.gpu.throttled = this.detectGPUThrottling();
+      
+      // GPU情報イベント発火
+      this.eventBus.emit('performance:gpu-usage', {
+        usage: this.metrics.gpu.usage,
+        memory: this.metrics.gpu.memory,
+        temperature: this.metrics.gpu.temperature
+      });
+      
+    } catch (error) {
+      console.warn('GPU monitoring failed:', error);
+    }
+  }
+  
+  // メモリ使用量監視・1GB制限・リーク検出
+  private checkMemoryUsage(): void {
+    const memory = (performance as any).memory;
+    if (!memory) return;
+    
+    const usedMB = memory.usedJSHeapSize / (1024 * 1024);
+    const totalMB = memory.totalJSHeapSize / (1024 * 1024);
+    const limitMB = memory.jsHeapSizeLimit / (1024 * 1024);
+    
+    this.metrics.memory.used = usedMB;
+    this.metrics.memory.available = limitMB - usedMB;
+    this.metrics.memory.limit = Math.min(limitMB, 1024); // 1GB制限
+    
+    // メモリリーク検出・継続的増加
+    this.detectMemoryLeak(usedMB);
+    
+    // 警告・強制GC判定
+    if (usedMB > this.metrics.memory.limit * 0.8) {
+      this.eventBus.emit('performance:memory-warning', {
+        used: usedMB,
+        limit: this.metrics.memory.limit,
+        percentage: (usedMB / this.metrics.memory.limit) * 100
+      });
+      
+      if (usedMB > this.metrics.memory.limit * 0.9) {
+        this.forceGarbageCollection();
+      }
+    }
+  }
+  
+  // 入力遅延監視・E2E・1ms精度
+  private setupLatencyMonitoring(): void {
+    let inputStartTime = 0;
+    
+    // 入力開始タイムスタンプ記録
+    this.eventBus.on('drawing:start', () => {
+      inputStartTime = performance.now();
+    });
+    
+    // 描画完了・遅延計算
+    this.eventBus.on('drawing:rendered', () => {
+      const totalLatency = performance.now() - inputStartTime;
+      
+      this.metrics.latency.total = totalLatency;
+      this.metrics.latency.input = totalLatency * 0.3; // 推定
+      this.metrics.latency.render = totalLatency * 0.7; // 推定
+      
+      // 遅延ジッター計算
+      const previousLatency = this.metrics.latency.total;
+      this.metrics.latency.jitter = Math.abs(totalLatency - previousLatency);
+      
+      // 遅延イベント発火
+      this.eventBus.emit('performance:latency-measured', {
+        input: this.metrics.latency.input,
+        render: this.metrics.latency.render,
+        total: totalLatency
+      });
+    });
+  }
+  
+  // 自動品質調整・Tier切り替え・機能制限
+  private setupAutoQualityAdjustment(): void {
+    let adjustmentCooldown = 0;
+    
+    setInterval(() => {
+      if (adjustmentCooldown > 0) {
+        adjustmentCooldown--;
         return;
       }
       
-      this.assignTask(availableWorker, 'processLayer', layerData, resolve, reject);
-    });
+      const shouldDegrade = 
+        this.metrics.fps.current < this.metrics.fps.target * 0.7 ||
+        this.metrics.gpu.usage > 90 ||
+        this.metrics.memory.used > this.metrics.memory.limit * 0.9 ||
+        this.metrics.latency.total > this.metrics.latency.target * 2;
+      
+      const shouldUpgrade = 
+        this.metrics.fps.current > this.metrics.fps.target * 1.2 &&
+        this.metrics.gpu.usage < 60 &&
+        this.metrics.memory.used < this.metrics.memory.limit * 0.6 &&
+        this.metrics.latency.total < this.metrics.latency.target * 0.5;
+      
+      if (shouldDegrade && this.metrics.tier.autoAdjust) {
+        this.degradeQuality();
+        adjustmentCooldown = 50; // 5秒クールダウン
+      } else if (shouldUpgrade && this.metrics.tier.degradationCount > 0) {
+        this.upgradeQuality();
+        adjustmentCooldown = 100; // 10秒クールダウン
+      }
+      
+    }, this.updateInterval);
   }
   
-  private getAvailableWorker(): Worker | null {
-    return this.availableWorkers.pop() || null;
-  }
-  
-  private assignTask(
-    worker: Worker, 
-    taskType: string, 
-    data: any, 
-    resolve: Function, 
-    reject: Function
-  ): void {
-    worker.postMessage({
-      type: taskType,
-      data,
-      taskId: this.generateTaskId()
-    });
+  // 品質劣化・Tier降格・機能制限
+  private degradeQuality(): void {
+    const currentTier = this.metrics.tier.current;
+    let newTier = currentTier;
     
-    (worker as any).resolve = resolve;
-    (worker as any).reject = reject;
-  }
-  
-  private handleWorkerMessage(worker: Worker, event: MessageEvent): void {
-    const { type, data, error } = event.data;
-    
-    switch (type) {
-      case 'canvasReady':
-        this.availableWorkers.push(worker);
+    switch (currentTier) {
+      case 'webgpu':
+        newTier = 'webgl2';
+        this.disableComputeShaders();
         break;
-      case 'taskComplete':
-        if ((worker as any).resolve) {
-          (worker as any).resolve(data);
-          (worker as any).resolve = null;
-        }
-        this.availableWorkers.push(worker);
-        this.processNextTask();
+      case 'webgl2':
+        newTier = 'webgl';
+        this.disableAdvancedFeatures();
         break;
-      case 'taskError':
-        if ((worker as any).reject) {
-          (worker as any).reject(new Error(error));
-          (worker as any).reject = null;
-        }
-        this.availableWorkers.push(worker);
-        this.processNextTask();
+      case 'webgl':
+        this.reduceCanvasResolution();
+        this.limitLayerCount();
         break;
     }
-  }
-  
-  private processNextTask(): void {
-    if (this.taskQueue.length > 0 && this.availableWorkers.length > 0) {
-      const task = this.taskQueue.shift()!;
-      const worker = this.availableWorkers.pop()!;
-      this.assignTask(worker, 'processLayer', task.layerData, task.resolve, task.reject);
-    }
-  }
-  
-  private generateTaskId(): string {
-    return `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-}
-```
-
-## 💾 パフォーマンス・メモリ管理（v4.2準拠）
-
-### PerformanceObserver統合・リアルタイム監視
-```typescript
-// PerformanceObserver活用・Chrome最新API監視
-export class PixiV8ChromePerformanceMonitor {
-  private performanceObserver: PerformanceObserver | null = null;
-  private metrics: PerformanceMetrics = {
-    fps: 0,
-    frameTime: 0,
-    memoryUsage: 0,
-    gpuMemory: 0,
-    inputLatency: 0,
-    renderTime: 0
-  };
-  private currentTier: TierConfig;
-  private isMonitoring: boolean = false;
-  
-  public startMonitoring(): void {
-    if (this.isMonitoring) return;
     
-    this.isMonitoring = true;
-    this.setupPerformanceObservers();
-    this.startFPSMonitoring();
-    this.startMemoryMonitoring();
-    
-    console.log('PerformanceObserver monitoring started');
-  }
-  
-  private setupPerformanceObservers(): void {
-    if (typeof PerformanceObserver === 'undefined') {
-      console.warn('PerformanceObserver not supported');
-      return;
-    }
-    
-    // フレーム描画監視
-    const frameObserver = new PerformanceObserver((list) => {
-      const entries = list.getEntries();
-      entries.forEach(entry => {
-        if (entry.entryType === 'measure' && entry.name.includes('frame')) {
-          this.metrics.renderTime = entry.duration;
-          this.checkPerformanceThresholds();
-        }
+    if (newTier !== currentTier) {
+      this.metrics.tier.current = newTier;
+      this.metrics.tier.degradationCount++;
+      
+      this.eventBus.emit('performance:tier-changed', {
+        from: currentTier,
+        to: newTier,
+        reason: 'performance degradation'
       });
-    });
+    }
+  }
+  
+  // 品質向上・Tier昇格・機能復帰
+  private upgradeQuality(): void {
+    const currentTier = this.metrics.tier.current;
+    let newTier = currentTier;
     
-    frameObserver.observe({ entryTypes: ['measure'] });
+    switch (currentTier) {
+      case 'webgl':
+        newTier = 'webgl2';
+        this.enableAdvancedFeatures();
+        break;
+      case 'webgl2':
+        if (this.metrics.gpu.webgpuActive) {
+          newTier = 'webgpu';
+          this.enableComputeShaders();
+        }
+        break;
+    }
     
-    // 入力遅延監視（Chrome専用）
-    try {
-      const eventObserver = new PerformanceObserver((list) => {
-        const entries = list.getEntries();
-        entries.forEach(entry => {
-          if (entry.entryType === 'event') {
-            this.metrics.inputLatency = (entry as any).processingEnd - entry.startTime;
-            
-            // 5ms以下目標チェック
-            if (this.metrics.inputLatency > 5) {
-              this.optimizeInputProcessing();
-            }
-          }
-        });
+    if (newTier !== currentTier) {
+      this.metrics.tier.current = newTier;
+      this.metrics.tier.degradationCount = Math.max(0, this.metrics.tier.degradationCount - 1);
+      
+      this.eventBus.emit('performance:tier-changed', {
+        from: currentTier,
+        to: newTier,
+        reason: 'performance improvement'
       });
-      
-      eventObserver.observe({ entryTypes: ['event'] });
-    } catch (e) {
-      console.warn('Event timing observer not supported');
     }
   }
   
-  private startFPSMonitoring(): void {
-    let frameCount = 0;
-    let lastTime = performance.now();
-    let lastFrameTime = lastTime;
-    
-    const measureFPS = (currentTime: number) => {
-      if (!this.isMonitoring) return;
-      
-      frameCount++;
-      const deltaTime = currentTime - lastFrameTime;
-      lastFrameTime = currentTime;
-      
-      // フレーム時間計算
-      this.metrics.frameTime = deltaTime;
-      
-      // FPS計算（1秒間隔）
-      if (currentTime - lastTime >= 1000) {
-        this.metrics.fps = Math.round(frameCount * 1000 / (currentTime - lastTime));
-        frameCount = 0;
-        lastTime = currentTime;
-        
-        // 性能分析・最適化提案
-        this.analyzePerformance();
-      }
-      
-      // フレーム測定マーク
-      performance.mark('frame-start');
-      
-      requestAnimationFrame(measureFPS);
-    };
-    
-    requestAnimationFrame(measureFPS);
-  }
-  
-  private startMemoryMonitoring(): void {
-    if (!(performance as any).memory) {
-      console.warn('Memory monitoring not supported');
-      return;
-    }
-    
-    const monitorMemory = () => {
-      if (!this.isMonitoring) return;
-      
-      // Chrome専用メモリ監視
-      const memory = (performance as any).memory;
-      this.metrics.memoryUsage = memory.usedJSHeapSize / 1024 / 1024; // MB
-      
-      // GPU メモリ推定
-      this.estimateGPUMemoryUsage();
-      
-      // メモリ警告チェック
-      const memoryLimit = this.currentTier.performance.memoryLimit;
-      if (this.metrics.memoryUsage > memoryLimit * 0.8) {
-        this.optimizeMemoryUsage();
-      }
-      
-      setTimeout(monitorMemory, 1000); // 1秒間隔
-    };
-    
-    monitorMemory();
-  }
-  
-  private analyzePerformance(): void {
-    const issues: string[] = [];
-    const optimizations: string[] = [];
-    const targetFPS = this.currentTier.performance.targetFPS;
-    
-    // FPS性能分析
-    if (this.metrics.fps < targetFPS * 0.9) {
-      issues.push(`FPS低下: ${this.metrics.fps}/${targetFPS}FPS`);
-      
-      if (this.metrics.frameTime > (1000 / targetFPS) * 1.5) {
-        optimizations.push('フレーム処理最適化が必要');
-      }
-      
-      if (this.metrics.memoryUsage > this.currentTier.performance.memoryLimit * 0.7) {
-        optimizations.push('メモリ最適化が必要');
-      }
-    }
-    
-    // 入力遅延分析
-    if (this.metrics.inputLatency > 5) {
-      issues.push(`入力遅延: ${this.metrics.inputLatency.toFixed(2)}ms`);
-      optimizations.push('入力処理最適化が必要');
-    }
-    
-    // 性能レポート
-    if (issues.length > 0) {
-      console.warn('Performance Issues:', issues);
-      console.log('Suggested Optimizations:', optimizations);
-      
-      // 自動最適化実行
-      this.autoOptimize(optimizations);
-    }
-  }
-  
-  private checkPerformanceThresholds(): void {
-    // Tier適応性能閾値チェック
-    const thresholds = {
-      fps: this.currentTier.performance.targetFPS * 0.8,
-      frameTime: 1000 / this.currentTier.performance.targetFPS,
-      inputLatency: 5, // 5ms以下
-      memoryUsage: this.currentTier.performance.memoryLimit * 0.8
-    };
-    
-    Object.entries(thresholds).forEach(([metric, threshold]) => {
-      if (this.metrics[metric as keyof PerformanceMetrics] > threshold) {
-        this.handlePerformanceThresholdExceeded(metric, this.metrics[metric as keyof PerformanceMetrics], threshold);
-      }
-    });
-  }
-  
-  private handlePerformanceThresholdExceeded(metric: string, current: number, threshold: number): void {
-    console.warn(`Performance threshold exceeded: ${metric} = ${current} > ${threshold}`);
-    
-    // イベント発火・UI通知
-    const eventBus = PixiV8ChromeEventBus.getInstance();
-    eventBus.emit('performance:threshold-exceeded', { metric, current, threshold });
-    
-    // 緊急最適化
-    switch (metric) {
-      case 'fps':
-        this.emergencyFPSOptimization();
-        break;
-      case 'inputLatency':
-        this.optimizeInputProcessing();
-        break;
-      case 'memoryUsage':
-        this.forceGarbageCollection();
-        break;
-    }
-  }
-  
-  private autoOptimize(optimizations: string[]): void {
-    optimizations.forEach(optimization => {
-      switch (optimization) {
-        case 'フレーム処理最適化が必要':
-          this.optimizeFrameProcessing();
-          break;
-        case 'メモリ最適化が必要':
-          this.optimizeMemoryUsage();
-          break;
-        case '入力処理最適化が必要':
-          this.optimizeInputProcessing();
-          break;
-      }
-    });
-  }
-  
-  private emergencyFPSOptimization(): void {
-    // 緊急FPS最適化
-    console.log('Emergency FPS optimization triggered');
-    
-    // 品質下げる・アンチエイリアス無効化
-    const pixiApp = PixiV8ChromeAPIApplication.getInstance();
-    if (pixiApp.renderer.antialias) {
-      pixiApp.renderer.antialias = false;
-      console.log('Antialiasing disabled for performance');
-    }
-    
-    // キャンバスサイズ縮小検討
-    if (this.currentTier.id === 'tier1') {
-      this.suggestTierDowngrade();
-    }
-  }
-  
-  private optimizeInputProcessing(): void {
-    // 入力処理最適化
-    console.log('Optimizing input processing for lower latency');
-    
-    // 入力バッファリング調整
-    const inputController = PixiV8ChromeInputController.getInstance();
-    inputController.optimizeLatency();
-  }
-  
-  private optimizeMemoryUsage(): void {
-    // メモリ使用最適化
-    console.log('Optimizing memory usage');
-    
+  // 強制ガベージコレクション・メモリ解放
+  private forceGarbageCollection(): void {
     // PixiJS テクスチャキャッシュクリア
     PIXI.Texture.removeFromCache();
     
-    // 未使用Graphics削除
-    this.cleanupUnusedGraphics();
+    // 未使用Container破棄
+    this.cleanupUnusedContainers();
     
-    // 手動ガベージコレクション
-    this.forceGarbageCollection();
-  }
-  
-  private forceGarbageCollection(): void {
-    // 強制ガベージコレクション
-    if ((window as any).gc) {
+    // 手動GC（開発環境）
+    if (typeof window !== 'undefined' && (window as any).gc) {
       (window as any).gc();
-      console.log('Manual garbage collection executed');
     }
+    
+    this.metrics.memory.gcTriggered = true;
+    
+    setTimeout(() => {
+      this.metrics.memory.gcTriggered = false;
+    }, 1000);
   }
   
-  private optimizeFrameProcessing(): void {
-    // フレーム処理最適化
-    console.log('Optimizing frame processing');
+  // GPU メモリ使用量推定
+  private estimateGPUMemoryUsage(): number {
+    let totalMemory = 0;
     
-    // 不要なアニメーション停止
-    this.pauseNonEssentialAnimations();
-    
-    // 描画頻度調整
-    this.adjustRenderFrequency();
-  }
-  
-  private estimateGPUMemoryUsage(): void {
-    // GPU メモリ使用量推定（WebGPU対応）
-    try {
-      const pixiApp = PixiV8ChromeAPIApplication.getInstance();
-      if (pixiApp.renderer.type === 'webgpu') {
-        // WebGPU メモリ情報取得（将来実装）
-        this.metrics.gpuMemory = 0; // 暫定値
-      } else {
-        // WebGL テクスチャメモリ推定
-        const textureManager = pixiApp.renderer.texture;
-        let estimatedGPUMemory = 0;
-        
-        textureManager.managedTextures.forEach(texture => {
-          if (texture.valid) {
-            const bytes = texture.width * texture.height * 4; // RGBA
-            estimatedGPUMemory += bytes;
-          }
-        });
-        
-        this.metrics.gpuMemory = estimatedGPUMemory / 1024 / 1024; // MB
+    // テクスチャメモリ推定
+    const textures = PIXI.Texture.getAllTextures();
+    textures.forEach(texture => {
+      if (texture.source && texture.source.resource) {
+        const width = texture.source.pixelWidth || 0;
+        const height = texture.source.pixelHeight || 0;
+        totalMemory += width * height * 4; // RGBA
       }
-    } catch (error) {
-      console.warn('GPU memory estimation failed:', error);
-    }
-  }
-  
-  private suggestTierDowngrade(): void {
-    // Tier降格提案・動的品質調整
-    console.warn('Suggesting tier downgrade due to performance issues');
-    
-    const eventBus = PixiV8ChromeEventBus.getInstance();
-    eventBus.emit('chrome-api:tier-changed', {
-      fromTier: this.currentTier.id,
-      toTier: this.getNextLowerTier(),
-      reason: 'performance-optimization'
     });
+    
+    return totalMemory / (1024 * 1024); // MB変換
   }
   
-  private getNextLowerTier(): string {
-    switch (this.currentTier.id) {
-      case 'tier1': return 'tier2';
-      case 'tier2': return 'tier3';
-      case 'tier3': return 'tier3'; // 最下位維持
-      default: return 'tier3';
+  // GPU使用率推定・描画負荷
+  private estimateGPUUsage(): number {
+    const baseUsage = this.metrics.fps.target / Math.max(this.metrics.fps.current, 1) * 50;
+    const layerUsage = this.metrics.canvas.layerCount * 5;
+    const complexityUsage = this.metrics.canvas.complexity * 30;
+    
+    return Math.min(100, baseUsage + layerUsage + complexityUsage);
+  }
+  
+  // GPUスロットリング検出・温度・性能低下
+  private detectGPUThrottling(): boolean {
+    // FPS急激低下・GPU使用率高・継続的性能劣化
+    return this.metrics.fps.stability < 0.7 && 
+           this.metrics.gpu.usage > 85 &&
+           this.metrics.fps.current < this.metrics.fps.target * 0.6;
+  }
+  
+  // メモリリーク検出・継続的増加
+  private detectMemoryLeak(currentUsage: number): void {
+    // 実装簡略化・継続的増加検出
+    const threshold = this.metrics.memory.limit * 0.1; // 10%増加
+    static let previousUsage = currentUsage;
+    
+    if (currentUsage > previousUsage + threshold) {
+      this.metrics.memory.leakDetected = true;
+    } else {
+      this.metrics.memory.leakDetected = false;
     }
+    
+    previousUsage = currentUsage;
   }
   
-  private cleanupUnusedGraphics(): void {
-    // 未使用Graphics オブジェクト削除
-    const pixiApp = PixiV8ChromeAPIApplication.getInstance();
-    this.recursiveCleanup(pixiApp.stage);
+  // 公開API・メトリクス取得
+  public getMetrics(): PerformanceMetrics {
+    return { ...this.metrics };
   }
   
-  private recursiveCleanup(container: PIXI.Container): void {
-    // 再帰的未使用オブジェクト削除
-    for (let i = container.children.length - 1; i >= 0; i--) {
-      const child = container.children[i];
-      
-      if (child instanceof PIXI.Container) {
-        this.recursiveCleanup(child);
-        
-        // 空のContainer削除
-        if (child.children.length === 0 && !child.visible) {
-          container.removeChild(child);
-          child.destroy();
-        }
-      } else if (child instanceof PIXI.Graphics) {
-        // 非表示・空のGraphics削除
-        if (!child.visible || child.geometry.graphicsData.length === 0) {
-          container.removeChild(child);
-          child.destroy();
-        }
-      }
-    }
+  public getCurrentFPS(): number {
+    return this.metrics.fps.current;
   }
   
-  private pauseNonEssentialAnimations(): void {
-    // 非必須アニメーション一時停止
-    console.log('Pausing non-essential animations for performance');
-    // 実装時詳細化
+  public getGPUUsage(): number {
+    return this.metrics.gpu.usage;
   }
   
-  private adjustRenderFrequency(): void {
-    // 描画頻度調整・フレームスキップ
-    console.log('Adjusting render frequency for performance');
-    // 実装時詳細化
-  }
-  
-  public getPerformanceReport(): PerformanceReport {
+  public getMemoryUsage(): { used: number; limit: number; percentage: number } {
     return {
-      timestamp: Date.now(),
-      metrics: { ...this.metrics },
-      tier: this.currentTier.id,
-      status: this.getPerformanceStatus(),
-      recommendations: this.getRecommendations()
+      used: this.metrics.memory.used,
+      limit: this.metrics.memory.limit,
+      percentage: (this.metrics.memory.used / this.metrics.memory.limit) * 100
     };
   }
   
-  private getPerformanceStatus(): 'excellent' | 'good' | 'fair' | 'poor' {
-    const targetFPS = this.currentTier.performance.targetFPS;
-    const memoryLimit = this.currentTier.performance.memoryLimit;
-    
-    if (this.metrics.fps >= targetFPS * 0.95 && 
-        this.metrics.inputLatency <= 5 && 
-        this.metrics.memoryUsage <= memoryLimit * 0.7) {
-      return 'excellent';
-    } else if (this.metrics.fps >= targetFPS * 0.8) {
-      return 'good';
-    } else if (this.metrics.fps >= targetFPS * 0.6) {
-      return 'fair';
-    } else {
-      return 'poor';
-    }
-  }
-  
-  private getRecommendations(): string[] {
-    const recommendations: string[] = [];
-    const targetFPS = this.currentTier.performance.targetFPS;
-    
-    if (this.metrics.fps < targetFPS * 0.9) {
-      recommendations.push('FPS向上のため描画最適化を推奨');
-    }
-    
-    if (this.metrics.inputLatency > 5) {
-      recommendations.push('入力遅延改善のため処理最適化を推奨');
-    }
-    
-    if (this.metrics.memoryUsage > this.currentTier.performance.memoryLimit * 0.8) {
-      recommendations.push('メモリ使用量削減を推奨');
-    }
-    
-    return recommendations;
-  }
-  
-  public stop(): void {
-    this.isMonitoring = false;
-    
-    // PerformanceObserver停止
-    if (this.performanceObserver) {
-      this.performanceObserver.disconnect();
-      this.performanceObserver = null;
-    }
-    
-    console.log('Performance monitoring stopped');
+  public getTotalLatency(): number {
+    return this.metrics.latency.total;
   }
 }
 ```
 
-## 🔧 開発環境・ビルド設定（v4.2準拠）
+## 🔧 開発環境・ビルド設定・v4.1最適化
 
-### Vite設定・Chrome最新API対応
+### Vite設定・2.5K最適化・WebGPU対応
 ```typescript
-// vite.config.ts - Chrome最新API開発環境
+// vite.config.ts - 開発環境・最適化・v4.1拡張
 import { defineConfig } from 'vite';
 
 export default defineConfig({
   server: {
     port: 3000,
     host: true, // ネットワークアクセス
-    https: false, // WebGPU HTTP対応
+    https: false, // WebGPU開発時はHTTPS推奨
     headers: {
-      // Chrome最新API対応ヘッダー
+      // WebGPU CORS対応
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin'
     }
@@ -1203,35 +1150,35 @@ export default defineConfig({
       output: {
         manualChunks: {
           pixi: ['pixi.js'],
-          chrome: ['./src/workers/PixiV8OffscreenWorker.ts'],
-          ui: ['./src/ui/PixiV8ChromeUIController.ts'],
-          tools: ['./src/tools/PixiV8ChromeToolController.ts']
+          ui: ['./src/ui/UIManager.ts', './src/ui/Toolbar.ts'],
+          tools: ['./src/tools/ToolManager.ts'],
+          webgpu: ['./src/rendering/WebGPURenderer.ts'], // v4.1
+          performance: ['./src/core/PerformanceManager.ts'] // v4.1
         }
       }
     }
   },
   optimizeDeps: {
-    include: ['pixi.js'],
+    include: ['pixi.js', '@tabler/icons'], // v4.1: Tabler Icons
     exclude: []
   },
   define: {
     __DEV__: process.env.NODE_ENV === 'development',
-    __CHROME_API_ENABLED__: true,
-    __WEBGPU_ENABLED__: true
+    __WEBGPU_ENABLED__: true, // v4.1: WebGPU機能フラグ
+    __PERFORMANCE_MONITORING__: true // v4.1: 性能監視フラグ
   },
-  worker: {
-    format: 'es' // OffscreenCanvas Worker ESM対応
-  }
+  // v4.1: WebGPU Shader読み込み対応
+  assetsInclude: ['**/*.wgsl', '**/*.glsl']
 });
 ```
 
-### TypeScript厳格設定（Chrome API対応）
+### TypeScript厳格設定・v4.1型定義
 ```json
-// tsconfig.json - Chrome最新API型対応
+// tsconfig.json - 型安全・厳格モード・v4.1拡張
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker", "WebGPU"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker", "WebGPU"], // v4.1: WebGPU追加
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
@@ -1247,64 +1194,95 @@ export default defineConfig({
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
+    // v4.1: パス解決・絶対パス
+    "baseUrl": "./src",
     "paths": {
-      "@/*": ["./src/*"],
-      "@/types/*": ["./src/types/*"]
+      "@/*": ["*"],
+      "@/core/*": ["core/*"],
+      "@/ui/*": ["ui/*"],
+      "@/tools/*": ["tools/*"],
+      "@/types/*": ["types/*"]
     }
   },
   "include": [
     "src/**/*",
-    "src/workers/**/*",
-    "global.d.ts"
+    "src/**/*.wgsl", // v4.1: WebGPU Shader
+    "types/**/*"     // v4.1: 型定義ディレクトリ
   ],
   "exclude": ["node_modules", "dist"]
 }
 ```
 
-### Chrome最新API型定義
-```typescript
-// global.d.ts - Chrome API型拡張
-declare global {
-  interface Navigator {
-    gpu?: GPU;
-    scheduling?: {
-      postTask: (callback: () => void, options?: { priority: string }) => void;
-    };
-  }
-  
-  interface Performance {
-    memory?: {
-      usedJSHeapSize: number;
-      totalJSHeapSize: number;
-      jsHeapSizeLimit: number;
-    };
-  }
-  
-  interface Window {
-    gc?: () => void;
-  }
-  
-  // WebCodecs型定義
-  declare class VideoEncoder {
-    constructor(init: VideoEncoderInit);
-    configure(config: VideoEncoderConfig): void;
-    encode(frame: VideoFrame, options?: VideoEncoderEncodeOptions): void;
-    flush(): Promise<void>;
-    close(): void;
-    static isConfigSupported(config: VideoEncoderConfig): Promise<VideoEncoderSupport>;
-  }
-  
-  declare class VideoFrame {
-    constructor(source: CanvasImageSource, options?: VideoFrameInit);
-    close(): void;
-    readonly timestamp: number;
-    readonly duration?: number;
+### ESLint設定・コード品質・v4.1ルール
+```json
+// .eslintrc.json - コード品質・v4.1拡張
+{
+  "extends": [
+    "@typescript-eslint/recommended",
+    "@typescript-eslint/recommended-requiring-type-checking"
+  ],
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module",
+    "project": "./tsconfig.json"
+  },
+  "rules": {
+    // v4.1: 性能・品質ルール
+    "max-lines-per-function": ["error", 30],
+    "max-params": ["error", 4],
+    "complexity": ["error", 10],
+    "@typescript-eslint/no-explicit-any": "error",
+    "@typescript-eslint/prefer-readonly": "error",
+    "@typescript-eslint/no-unused-vars": "error",
+    
+    // v4.1: WebGPU・GPU最適化ルール
+    "no-sync": "warn", // 非同期処理推奨
+    "prefer-const": "error",
+    "no-var": "error"
+  },
+  "globals": {
+    "__DEV__": "readonly",
+    "__WEBGPU_ENABLED__": "readonly",
+    "__PERFORMANCE_MONITORING__": "readonly"
   }
 }
-
-export {};
 ```
 
 ---
 
-**この技術設計書は、v4.2規約に完全準拠したPixiV8Chrome統合アーキテクチャの技術的基盤です。Chrome最新API統合・段階的縮退戦略・責任分界明確化により、AI実装効率と品質を最大化します。**
+**この技術設計v4.1版により、参考資料「UI・UX設計仕様詳細抜粋.md」の全技術要素が完全統合され、実装可能な詳細設計が確立されました。WebGPU Compute Shader、リアルタイム性能監視、GPU最適化UI、Tabler Icons統合の具体的実装設計が明確化され、理想的な高性能描画ツールの技術基盤が完成しています。** class PixiApplication {
+  // WebGPU検出・初期化・フォールバック処理・性能測定
+  public async initialize(container: HTMLElement): Promise<boolean>
+  
+  // 2560×1440対応・デバイスピクセル比・高解像度・GPU最適化
+  private getOptimalCanvasSize(): { width: number; height: number }
+  
+  // レンダラー種別取得・性能調整・Tier判定・GPU能力評価
+  public getRendererType(): 'webgpu' | 'webgl2' | 'webgl'
+  
+  // v4.1: GPU情報取得・メモリ・性能・制限値
+  public getGPUCapabilities(): GPUCapabilities
+}
+
+// EventBus.ts - 型安全イベント通信・疎結合・v4.1性能イベント
+interface IEventData {
+  'drawing:start': { point: PIXI.Point; pressure: number; pointerType: string };
+  'drawing:move': { point: PIXI.Point; pressure: number; velocity: number };
+  'drawing:end': { point: PIXI.Point };
+  'tool:change': { toolName: string; settings: any };
+  
+  // v4.1: 性能監視イベント・リアルタイム
+  'performance:fps-update': { fps: number; target: number; timestamp: number };
+  'performance:gpu-usage': { usage: number; memory: number; temperature?: number };
+  'performance:latency-measured': { input: number; render: number; total: number };
+  'performance:warning': { type: 'memory' | 'fps' | 'gpu'; value: number; limit: number };
+  'performance:tier-changed': { from: string; to: string; reason: string };
+  
+  // v4.1: UI・ポップアップイベント
+  'ui:popup-show': { type: string; position: { x: number; y: number } };
+  'ui:popup-move': { id: string; position: { x: number; y: number } };
+  'ui:popup-hide': { id: string };
+}
+
+export

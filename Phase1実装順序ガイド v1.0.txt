@@ -1,0 +1,264 @@
+# Phase1実装順序ガイド v1.0
+
+**目的**: Claude向け段階的ファイル作成指示・ミス防止最適化  
+**対象**: Phase1基盤構築・確実実装・2-3週間  
+**更新**: 2025年8月5日
+
+## 🎯 実装順序・依存関係最適化
+
+### ステップ1: 環境構築（30分）
+```bash
+# 1. プロジェクト作成
+npm create vite@latest modern-drawing-tool -- --template vanilla-ts
+cd drawing-tool
+npm install pixi.js@8.11.0 @types/node
+
+# 2. ディレクトリ作成
+mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/types
+```
+
+**参照ドキュメント**: 
+- `2_TECHNICAL_DESIGN.md` - ディレクトリ構成
+- `3_IMPLEMENTATION_GUIDE.md` - Step1環境構築
+
+**作成ファイル**: `vite.config.ts`, `tsconfig.json`
+
+---
+
+### ステップ2: 型定義ファイル作成（15分）
+**優先度**: 🔴 最重要 - 他ファイルで使用される基盤
+
+#### 作成ファイル1: `src/types/drawing.types.ts`
+**参照**: `2_TECHNICAL_DESIGN.md` - IEventData定義
+**内容**: Point, Pressure, PointerType, EventData型定義
+
+#### 作成ファイル2: `src/types/ui.types.ts`  
+**参照**: `4_UI_STYLE_GUIDE.md` - ふたば色定義
+**内容**: ColorValues, UIState, ToolSettings型定義
+
+**Claude注意点**:
+- IEventData型は他ファイルで必須使用
+- ふたば色の16進数値は`4_UI_STYLE_GUIDE.md`から正確にコピー
+- すべて`export`キーワード必須
+
+---
+
+### ステップ3: 基盤システム（90分）
+**優先度**: 🔴 最重要 - アプリケーション起動基盤
+
+#### 作成ファイル1: `src/core/EventBus.ts`（30分）
+**参照ドキュメント**: 
+- `2_TECHNICAL_DESIGN.md` - EventBus設計
+- `3_IMPLEMENTATION_GUIDE.md` - Step3 EventBus実装例
+
+**Claude実装ポイント**:
+- IEventDataインターフェースは`types/drawing.types.ts`からimport
+- Map<keyof IEventData, Set<Function>>でリスナー管理
+- 型安全性重視 - any型禁止
+
+#### 作成ファイル2: `src/core/PixiApplication.ts`（45分）
+**参照ドキュメント**:
+- `1_PROJECT_SPEC.md` - 対象環境2560×1440
+- `2_TECHNICAL_DESIGN.md` - WebGPU対応戦略  
+- `3_IMPLEMENTATION_GUIDE.md` - Step2 PixiApplication実装例
+
+**Claude実装ポイント**:
+- Phase1はWebGL2確実実装、WebGPU準備は後
+- 2560×1440サイズ対応必須
+- ふたば背景色 0xffffee 使用
+- エラー処理でtry-catch必須
+
+#### 作成ファイル3: `src/core/PerformanceManager.ts`（15分）
+**参照ドキュメント**:
+- `1_PROJECT_SPEC.md` - 性能目標60FPS、1GB制限
+- `2_TECHNICAL_DESIGN.md` - メモリ監視設計
+
+**Claude実装ポイント**:
+- performance.memory使用でメモリ監視
+- 1GB制限、800MB警告の数値厳守
+- requestAnimationFrame使用でFPS計測
+
+---
+
+### ステップ4: 入力システム（60分）
+**優先度**: 🟡 重要 - 描画機能の前提
+
+#### 作成ファイル: `src/input/InputManager.ts`
+**参照ドキュメント**:
+- `2_TECHNICAL_DESIGN.md` - Input Layer設計
+- `3_IMPLEMENTATION_GUIDE.md` - Step4 InputManager実装例
+
+**Claude実装ポイント**:
+- Pointer Events統合使用、mouse/touch分けない
+- 座標変換でcanvas.getBoundingClientRect()使用
+- 筆圧処理で0.1-1.0範囲にclamp
+- EventBusでdrawing:start/move/endイベント発火
+
+**依存関係**: EventBus, drawing.types.ts
+
+---
+
+### ステップ5: 描画エンジン（75分）
+**優先度**: 🔴 最重要 - 核心機能
+
+#### 作成ファイル: `src/core/DrawingEngine.ts`
+**参照ドキュメント**:
+- `2_TECHNICAL_DESIGN.md` - Core Layer, DrawingEngine設計
+- `3_IMPLEMENTATION_GUIDE.md` - Step5 DrawingEngine実装例
+
+**Claude実装ポイント**:
+- PIXI.Graphics使用で描画
+- Container階層でレイヤー管理準備
+- スムージング処理でベジエ曲線
+- ふたばマルーン 0x800000 デフォルト色
+- 筆圧でlineStyleのwidth動的変更
+
+**依存関係**: PixiApplication, EventBus, drawing.types.ts
+
+---
+
+### ステップ6: ツールシステム（45分）
+**優先度**: 🟡 重要 - 描画操作
+
+#### 作成ファイル1: `src/tools/PenTool.ts`
+**参照ドキュメント**:
+- `2_TECHNICAL_DESIGN.md` - Tool Layer, IDrawingTool
+- `3_IMPLEMENTATION_GUIDE.md` - Step6 PenTool実装例
+
+**Claude実装ポイント**:
+- IDrawingToolインターフェース実装
+- activate/deactivateでカーソル変更
+- Phase1は基本機能のみ、高度機能はPhase2
+- settingsオブジェクトで設定管理
+
+#### 作成ファイル2: `src/tools/ToolManager.ts`（簡易版）
+**Claude実装ポイント**:
+- 現在のツール状態管理
+- ツール切り替え処理
+- イベント連携
+
+**依存関係**: EventBus, PenTool
+
+---
+
+### ステップ7: UIシステム（90分）
+**優先度**: 🔴 最重要 - ユーザー操作
+
+#### 作成ファイル1: `src/ui/UIManager.ts`（60分）
+**参照ドキュメント**:
+- `4_UI_STYLE_GUIDE.md` - 全CSS定義、レイアウト
+- `2_TECHNICAL_DESIGN.md` - UI責任分界
+- `3_IMPLEMENTATION_GUIDE.md` - Step7 UIManager実装例
+
+**Claude実装ポイント**:
+- CSS変数でふたば色定義必須
+- Grid Layout: 80px|1fr|400px
+- ツールボタン56px、色スウォッチ32px
+- EventBusでui:toolbar-click, ui:color-changeイベント
+
+#### 作成ファイル2: `src/ui/Toolbar.ts`（30分）
+**参照ドキュメント**:
+- `4_UI_STYLE_GUIDE.md` - Toolbarスタイル
+
+**Claude実装ポイント**:
+- 56pxボタンサイズ厳守
+- アクティブ状態でふたばマルーン背景
+- ホバー効果でscale(1.05)
+
+**依存関係**: UIManager, EventBus, ui.types.ts
+
+---
+
+### ステップ8: アプリケーション統合（30分）
+**優先度**: 🔴 最重要 - 全体起動
+
+#### 作成ファイル: `src/main.ts`
+**参照ドキュメント**:
+- `3_IMPLEMENTATION_GUIDE.md` - Step8 main.ts統合例
+
+**Claude実装ポイント**:
+- ModernDrawingAppクラスで全体管理
+- async initialize()で段階初期化
+- エラー処理でinitialize失敗対応
+- 開発用でwindow.drawingApp公開
+
+**依存関係**: 全コンポーネント
+
+---
+
+## ⚠️ Claude実装時の重要注意点
+
+### 必須チェック項目
+```typescript
+// 1. インポート文の正確性
+import { EventBus } from '../core/EventBus.js';  // .js拡張子必須
+import * as PIXI from 'pixi.js';  // PixiJS統一インポート
+
+// 2. ふたば色の正確な数値
+const FUTABA_MAROON = 0x800000;  // 16進数、#付けない
+const FUTABA_BACKGROUND = 0xffffee;
+
+// 3. サイズ値の厳密遵守
+width: 56px;  // ツールボタン
+width: 32px;  // 色スウォッチ  
+width: 80px;  // ツールバー
+
+// 4. 型安全性の確保
+interface IEventData {  // any型禁止
+  'drawing:start': { point: PIXI.Point; pressure: number };
+}
+
+// 5. エラー処理の必須実装
+try {
+  await this.pixiApp.init(config);
+} catch (error) {
+  console.error('初期化失敗:', error);
+  return false;
+}
+```
+
+### ファイル作成順序の厳守理由
+1. **型定義先行** → 他ファイルでimport依存
+2. **EventBus早期** → 全システム通信基盤  
+3. **PixiApplication基盤** → 描画エンジンの前提
+4. **入力→描画→ツール** → データフロー順序
+5. **UI最後** → 全機能統合後のインターフェース
+
+---
+
+## 🔍 Phase1完了チェックリスト
+
+```
+✅ ファイル作成完了:
+□ types/drawing.types.ts - 型定義
+□ types/ui.types.ts - UI型定義  
+□ core/EventBus.ts - イベント通信
+□ core/PixiApplication.ts - PixiJS初期化
+□ core/PerformanceManager.ts - 性能監視
+□ input/InputManager.ts - 入力処理
+□ core/DrawingEngine.ts - 描画処理
+□ tools/PenTool.ts - ペンツール
+□ tools/ToolManager.ts - ツール管理
+□ ui/UIManager.ts - UI統合
+□ ui/Toolbar.ts - ツールバー
+□ main.ts - アプリ統合
+
+✅ 動作確認:
+□ npm run dev でサーバー起動
+□ PixiJS Canvas表示
+□ マウス描画動作
+□ ツールバークリック反応
+□ 色選択変更反映
+□ エラーなし、警告なし
+
+✅ 品質確認:
+□ TypeScript厳格モード エラー0
+□ ESLint警告なし
+□ 60FPS以上安定
+□ メモリ300MB以下
+□ 15分連続描画可能
+```
+
+---
+
+**このガイドに従って順次実装することで、依存関係エラーや設計ミスを防ぎ、確実にPhase1基盤を構築できます。**
