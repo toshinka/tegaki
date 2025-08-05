@@ -1,7 +1,5 @@
 // drawing-constants.ts - 描画関連定数・設計書準拠・Phase2実装
-// ブラシ・ツール・キャンバス・エンジン設定
-
-import * as PIXI from 'pixi.js';
+// ブラシ・ツール・キャンバス・エンジン設定・Pixi.js v8対応
 
 /**
  * キャンバス・描画領域定数・2.5K対応
@@ -43,30 +41,6 @@ export const CANVAS = {
   DEFAULT_ZOOM: 1.0,
   ZOOM_STEP: 0.1,
   FIT_PADDING: 40  // フィット時の余白px
-} as const;
-
-/**
- * ブレンドモード定数・PixiJS v8対応
- */
-export const BLEND_MODES = {
-  NORMAL: PIXI.BLEND_MODES.NORMAL,
-  MULTIPLY: PIXI.BLEND_MODES.MULTIPLY,
-  SCREEN: PIXI.BLEND_MODES.SCREEN,
-  OVERLAY: PIXI.BLEND_MODES.OVERLAY,
-  SOFT_LIGHT: PIXI.BLEND_MODES.SOFT_LIGHT,
-  HARD_LIGHT: PIXI.BLEND_MODES.HARD_LIGHT,
-  COLOR_DODGE: PIXI.BLEND_MODES.COLOR_DODGE,
-  COLOR_BURN: PIXI.BLEND_MODES.COLOR_BURN,
-  DARKEN: PIXI.BLEND_MODES.DARKEN,
-  LIGHTEN: PIXI.BLEND_MODES.LIGHTEN,
-  DIFFERENCE: PIXI.BLEND_MODES.DIFFERENCE,
-  EXCLUSION: PIXI.BLEND_MODES.EXCLUSION,
-  HUE: PIXI.BLEND_MODES.HUE,
-  SATURATION: PIXI.BLEND_MODES.SATURATION,
-  COLOR: PIXI.BLEND_MODES.COLOR,
-  LUMINOSITY: PIXI.BLEND_MODES.LUMINOSITY,
-  ADD: PIXI.BLEND_MODES.ADD,
-  SUBTRACT: PIXI.BLEND_MODES.SUBTRACT
 } as const;
 
 /**
@@ -150,7 +124,7 @@ export const BRUSH_TOOL = {
   SMOOTHING_FACTOR: 0.9,
   MIN_DISTANCE: 1,
   
-  // 色混合・ブレンド
+  // 色混合・ブレンド - 文字列ベースでPixi.js v8対応
   DEFAULT_BLEND_MODE: 'normal' as const,
   SUPPORTED_BLEND_MODES: [
     'normal',
@@ -161,7 +135,7 @@ export const BRUSH_TOOL = {
     'hard-light',
     'color-dodge',
     'color-burn'
-  ]
+  ] as const
 } as const;
 
 /**
@@ -304,7 +278,7 @@ export const SHAPE_TOOL = {
 } as const;
 
 /**
- * レイヤー定数・Phase2実装・Container管理
+ * レイヤー定数・Phase2実装・Container管理・Pixi.js v8対応
  */
 export const LAYER = {
   // 数量制限
@@ -318,179 +292,151 @@ export const LAYER = {
   DEFAULT_OPACITY: 1.0,
   OPACITY_STEP: 0.01, // 1%刻み
   
-  // ブレンドモード・PixiJS対応・修正版
-  BLEND_MODES: {
-    NORMAL: PIXI.BLEND_MODES.NORMAL,
-    MULTIPLY: PIXI.BLEND_MODES.MULTIPLY,
-    SCREEN: PIXI.BLEND_MODES.SCREEN,
-    OVERLAY: PIXI.BLEND_MODES.OVERLAY,
-    SOFT_LIGHT: PIXI.BLEND_MODES.SOFT_LIGHT,
-    HARD_LIGHT: PIXI.BLEND_MODES.HARD_LIGHT,
-    COLOR_DODGE: PIXI.BLEND_MODES.COLOR_DODGE,
-    COLOR_BURN: PIXI.BLEND_MODES.COLOR_BURN,
-    DARKEN: PIXI.BLEND_MODES.DARKEN,
-    LIGHTEN: PIXI.BLEND_MODES.LIGHTEN,
-    DIFFERENCE: PIXI.BLEND_MODES.DIFFERENCE,
-    EXCLUSION: PIXI.BLEND_MODES.EXCLUSION,
-    ADD: PIXI.BLEND_MODES.ADD,
-    SUBTRACT: PIXI.BLEND_MODES.SUBTRACT
-  },
+  // ブレンドモード・Pixi.js v8対応・文字列ベース
+  BLEND_MODES: [
+    'normal',
+    'add',
+    'multiply',
+    'screen',
+    'overlay',
+    'darken',
+    'lighten',
+    'color-dodge',
+    'color-burn',
+    'hard-light',
+    'soft-light',
+    'difference',
+    'exclusion',
+    'hue',
+    'saturation',
+    'color',
+    'luminosity'
+  ] as const,
   
-  DEFAULT_BLEND_MODE: PIXI.BLEND_MODES.NORMAL,
+  DEFAULT_BLEND_MODE: 'normal' as const,
+  
+  // サムネイル・Phase2後半実装
+  THUMBNAIL: {
+    WIDTH: 48,
+    HEIGHT: 48,
+    SCALE: 0.2,
+    UPDATE_INTERVAL: 100, // 100ms間隔で更新
+    CACHE_SIZE: 10 // 最新10枚をキャッシュ
+  },
   
   // 表示制御
   DEFAULT_VISIBLE: true,
-  THUMBNAIL_SIZE: 48, // px
-  THUMBNAIL_QUALITY: 0.5,
+  FADE_DURATION: 200, // フェードアニメーション200ms
   
-  // レイヤー命名
-  AUTO_NAMING: true,
-  NAME_PREFIX: 'レイヤー ',
+  // Z-index管理・Container階層
+  Z_INDEX_STEP: 1,
+  BASE_Z_INDEX: 0,
+  MAX_Z_INDEX: 19, // MAX_LAYERS - 1
+  
+  // 名前管理
   MAX_NAME_LENGTH: 32,
-  
-  // レイヤー種類・Phase3拡張
-  TYPES: [
-    'normal',      // 通常レイヤー
-    'group',       // グループレイヤー・Phase3
-    'adjustment',  // 調整レイヤー・Phase3
-    'mask'         // マスクレイヤー・Phase3
-  ],
-  
-  DEFAULT_TYPE: 'normal' as const
+  DUPLICATE_SUFFIX: '_copy'
 } as const;
 
 /**
- * 描画エンジン定数・システム制御
+ * 描画エンジン定数・WebGL・Canvas制御
  */
 export const DRAWING_ENGINE = {
-  // 描画設定
-  DEFAULT_LINE_WIDTH: 2,
-  DEFAULT_LINE_COLOR: 0x000000,
-  DEFAULT_LINE_ALPHA: 1.0,
-  
-  // スムージング設定
-  SMOOTHING: {
-    ENABLED: true,
-    FACTOR: 0.8,        // スムージング強度
-    MIN_DISTANCE: 2,    // 最小描画距離
-    BUFFER_SIZE: 5,     // ポイントバッファサイズ
-    OPTIMIZATION_THRESHOLD: 100 // 最適化閾値
-  },
-  
-  // パフォーマンス設定
-  PERFORMANCE: {
-    MAX_POINTS_PER_STROKE: 1000,
-    BATCH_DRAWING: true,
-    USE_QUADRATIC_CURVES: true,
-    TEXTURE_CACHE_SIZE: 50,
-    MAX_UNDO_STEPS: 50
-  },
-  
-  // 品質設定
-  QUALITY: {
-    ANTIALIAS: true,
-    LINE_JOIN: 'round' as const,
-    LINE_CAP: 'round' as const,
-    MITER_LIMIT: 10
-  },
-  
   // レンダリング設定
-  RENDERING: {
-    CLEAR_BEFORE_RENDER: false,
-    PRESERVE_DRAWING_BUFFER: true,
-    PREMULTIPLIED_ALPHA: true,
-    TRANSPARENT_BACKGROUND: true
-  },
+  ANTI_ALIAS: true,
+  TRANSPARENT: true,
+  RESOLUTION: 1, // デバイスピクセル比で動的調整
   
-  // ブレンドモード使用
-  BLEND_MODES: BLEND_MODES
+  // WebGL設定・Pixi.js v8対応
+  PREFER_WEBGL2: true,
+  POWER_PREFERENCE: 'high-performance' as const,
+  FAIL_IF_MAJOR_PERFORMANCE_CAVEAT: false,
+  
+  // バッファ・テクスチャ
+  MAX_TEXTURES: 16,
+  TEXTURE_GC_MODE: 'auto' as const,
+  TEXTURE_UPLOAD_BATCH_SIZE: 4,
+  
+  // 描画最適化
+  BATCH_SIZE: 2000,
+  ROUND_PIXELS: true,
+  LEGACY: false,
+  
+  // パフォーマンス監視
+  STATS_UPDATE_INTERVAL: 1000, // 1秒間隔
+  MAX_DRAW_CALLS_PER_FRAME: 100,
+  WARNING_DRAW_CALLS: 50,
+  
+  // メモリ管理
+  AUTO_CLEANUP: true,
+  CLEANUP_INTERVAL: 30000, // 30秒間隔
+  FORCE_GC_THRESHOLD: 0.8 // メモリ使用率80%でGC
 } as const;
 
 /**
- * 入力定数・マウス・タッチ・ペン
+ * 入力・操作定数・マウス・タッチ・ペン
  */
 export const INPUT = {
-  // ポインター設定
-  POINTER: {
-    PRESSURE_SUPPORT: true,
-    TILT_SUPPORT: false, // Phase3で実装
-    HOVER_SUPPORT: true,
-    TOUCH_SUPPORT: true,
-    MULTI_TOUCH: false   // Phase3で実装
-  },
+  // ポインタ種別
+  POINTER_TYPES: ['mouse', 'pen', 'touch'] as const,
   
-  // サンプリング設定
-  SAMPLING: {
-    MIN_INTERVAL: 8,     // 8ms間隔 = 120Hz対応
-    MAX_INTERVAL: 33,    // 33ms間隔 = 30Hz最低保証
-    PRESSURE_SMOOTHING: 0.7,
-    VELOCITY_SMOOTHING: 0.8
-  },
+  // クリック・タップ判定
+  CLICK_THRESHOLD_MS: 200,    // 200ms以内でクリック
+  DOUBLE_CLICK_MS: 400,       // 400ms以内でダブルクリック
+  LONG_PRESS_MS: 500,         // 500ms長押し
   
-  // 判定設定
-  DETECTION: {
-    CLICK_THRESHOLD: 5,  // 5px以内はクリック
-    DRAG_THRESHOLD: 10,  // 10px以上はドラッグ
-    DOUBLE_CLICK_TIME: 300, // 300ms以内はダブルクリック
-    HOLD_TIME: 500       // 500ms以上は長押し
-  },
+  // ドラッグ判定
+  DRAG_THRESHOLD_PX: 3,       // 3px移動でドラッグ開始
+  MIN_DRAG_DISTANCE: 1,       // 最小ドラッグ距離
   
-  // ペン・スタイラス設定
-  STYLUS: {
-    PRESSURE_CURVE: 'linear', // linear/quadratic/custom
-    PRESSURE_MIN: 0.01,
-    PRESSURE_MAX: 1.0,
-    TILT_SENSITIVITY: 0.5,    // Phase3
-    BARREL_BUTTON_SUPPORT: false // Phase3
+  // ジェスチャー・タッチ
+  PINCH_THRESHOLD: 0.1,       // ピンチ感度
+  ROTATION_THRESHOLD: 5,      // 回転角度閾値（度）
+  
+  // 筆圧・傾き・Wacom対応
+  MIN_PRESSURE: 0.0,
+  MAX_PRESSURE: 1.0,
+  DEFAULT_PRESSURE: 0.5,      // 筆圧未対応時のデフォルト
+  
+  TILT_X_RANGE: [-90, 90],    // X軸傾き範囲（度）
+  TILT_Y_RANGE: [-90, 90],    // Y軸傾き範囲（度）
+  
+  // スムージング・入力処理
+  INPUT_SMOOTHING: 0.3,       // 入力スムージング係数
+  VELOCITY_SMOOTHING: 0.5,    // 速度スムージング
+  
+  // サンプリング・FPS
+  MAX_INPUT_FPS: 120,         // 最大入力FPS
+  INPUT_BUFFER_SIZE: 10,      // 入力バッファサイズ
+  
+  // キーボードショートカット
+  SHORTCUTS: {
+    UNDO: ['ctrl+z', 'cmd+z'],
+    REDO: ['ctrl+y', 'cmd+shift+z'],
+    SAVE: ['ctrl+s', 'cmd+s'],
+    NEW_LAYER: ['ctrl+shift+n', 'cmd+shift+n'],
+    ZOOM_IN: ['ctrl+=', 'cmd+='],
+    ZOOM_OUT: ['ctrl+-', 'cmd+-'],
+    ZOOM_FIT: ['ctrl+0', 'cmd+0'],
+    BRUSH_SIZE_UP: ['['],
+    BRUSH_SIZE_DOWN: [']'],
+    EYEDROPPER: ['alt', 'option']
   }
 } as const;
 
-/**
- * パフォーマンス定数・最適化制御
- */
-export const PERFORMANCE = {
-  // フレームレート制御
-  TARGET_FPS: 60,
-  MIN_FPS: 30,
-  MAX_DELTA_TIME: 33, // 33ms
-  
-  // メモリ制限
-  MAX_MEMORY_MB: 1024,     // 1GB
-  WARNING_MEMORY_MB: 800,  // 800MB警告
-  GC_THRESHOLD_MB: 600,    // 600MB GC実行
-  
-  // テクスチャ最適化
-  MAX_TEXTURE_SIZE: 2048,
-  TEXTURE_COMPRESSION: true,
-  TEXTURE_MIPMAPS: true,
-  
-  // 描画最適化
-  BATCH_SIZE: 1000,
-  MAX_DRAW_CALLS: 500,
-  CULL_OFFSCREEN: true,
-  
-  // キャッシュ設定
-  TEXTURE_CACHE_SIZE: 100,
-  GEOMETRY_CACHE_SIZE: 50,
-  SHADER_CACHE_SIZE: 20
-} as const;
+// 型定義・TypeScript型安全性
+export type CanvasConstants = typeof CANVAS;
+export type PenToolConstants = typeof PEN_TOOL;
+export type BrushToolConstants = typeof BRUSH_TOOL;
+export type EraserToolConstants = typeof ERASER_TOOL;
+export type FillToolConstants = typeof FILL_TOOL;
+export type ShapeToolConstants = typeof SHAPE_TOOL;
+export type LayerConstants = typeof LAYER;
+export type DrawingEngineConstants = typeof DRAWING_ENGINE;
+export type InputConstants = typeof INPUT;
 
-/**
- * すべての描画定数をまとめたオブジェクト
- */
-export const DRAWING_CONSTANTS = {
-  CANVAS,
-  BLEND_MODES,
-  PEN_TOOL,
-  BRUSH_TOOL,
-  ERASER_TOOL,
-  FILL_TOOL,
-  SHAPE_TOOL,
-  LAYER,
-  DRAWING_ENGINE,
-  INPUT,
-  PERFORMANCE
-} as const;
-
-// 型定義・TypeScript厳格対応
-export type DrawingConstants = typeof DRAWING_CONSTANTS;
+// ブレンドモード型・Pixi.js v8対応
+export type BlendMode = typeof LAYER.BLEND_MODES[number];
+export type BrushType = typeof BRUSH_TOOL.TYPES[number];
+export type ShapeType = typeof SHAPE_TOOL.TYPES[number];
+export type PointerType = typeof INPUT.POINTER_TYPES[number];
