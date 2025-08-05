@@ -1,0 +1,50 @@
+## 📁 ディレクトリ構成（v4.1統合版・変更不可）
+
+```
+src/
+├── main.ts                         # エントリーポイント・アプリ起動
+├── style.css                       # 基本CSS・ふたば色定義・v4.1拡張
+├── core/                           # 基盤システム
+│   ├── PixiApplication.ts            # PixiJS初期化・WebGPU制御・2.5K対応
+│   ├── EventBus.ts                  # 型安全イベント通信・履歴・デバッグ
+│   ├── DrawingEngine.ts             # 描画統合・ツール制御・Graphics管理
+│   ├── PerformanceManager.ts        # v4.1: 性能監視・GPU使用率・遅延測定
+│   └── TablerIconManager.ts         # v4.1: SVGアイコン管理・WebGPU Sprite
+├── rendering/                      # レンダリング層・GPU最適化
+│   ├── LayerManager.ts              # 20レイヤー管理・Container階層
+│   ├── WebGPURenderer.ts            # WebGPU専用処理・Compute Shader
+│   ├── CanvasManager.ts             # 4K対応・座標変換・Viewport
+│   ├── TextureManager.ts            # GPU メモリ・Atlas・圧縮
+│   └── HSVColorRenderer.ts          # v4.1: WebGPU色選択・Shader実装
+├── input/                          # 入力処理・マウス+ペン特化
+│   ├── InputManager.ts              # 統合入力・Pointer Events・筆圧対応
+│   ├── PointerProcessor.ts          # 筆圧・傾き・座標変換・2.5K精度
+│   ├── ShortcutManager.ts           # キーボード・ペンサイドボタン
+│   └── LatencyMeasurer.ts           # v4.1: 入力遅延測定・1ms精度
+├── tools/                          # ツールシステム・段階実装
+│   ├── ToolManager.ts               # ツール統合・状態管理・設定永続化
+│   ├── PenTool.ts                  # ペン・基本線描画・Phase1
+│   ├── BrushTool.ts                # 筆・テクスチャ・Phase2
+│   ├── EraserTool.ts               # 消しゴム・削除・Phase1
+│   ├── FillTool.ts                 # 塗りつぶし・フラッドフィル・Phase2
+│   ├── ShapeTool.ts                # 図形・直線・矩形・円・Phase2
+│   ├── AirsprayTool.ts             # v4.1: エアスプレー・Compute Shader
+│   └── BlurTool.ts                 # v4.1: ボカシ・GPU並列処理
+├── ui/                             # UI制御・2.5K最適化・v4.1拡張
+│   ├── UIManager.ts                 # UI統合・ふたば色・レスポンシブ
+│   ├── Toolbar.ts                  # ツールバー・64px幅・48pxアイコン・Tabler統合
+│   ├── ColorPalette.ts             # v4.1: HSV円形・WebGPU・移動可能
+│   ├── LayerPanel.ts               # レイヤー・400px幅・64px項目・性能表示
+│   ├── PopupManager.ts             # v4.1: z-index:2000・移動可能・GPU最適化
+│   ├── PerformanceDisplay.ts       # v4.1: リアルタイム監視UI・FPS・GPU
+│   └── TimelinePanel.ts            # v4.1: アニメーション・WebCodecs・120FPS
+├── constants/                      # 定数・設定・2.5K環境
+│   ├── ui-constants.ts             # UI定数・サイズ・色・レイアウト
+│   ├── drawing-constants.ts        # 描画定数・性能・ブラシサイズ
+│   ├── performance-constants.ts    # v4.1: 性能定数・監視閾値・GPU制限
+│   └── icon-constants.ts           # v4.1: Tabler Icons マッピング・SVG定義
+└── types/                          # 型定義・TypeScript
+    ├── drawing.types.ts            # 描画関連・ツール・レイヤー型
+    ├── ui.types.ts                # UI関連・イベント・状態型
+    ├── performance.types.ts        # v4.1: 性能関連・監視・メトリクス型
+    └── webgpu.types.ts            # v4.1: WebGPU・Shader・GPU型定義

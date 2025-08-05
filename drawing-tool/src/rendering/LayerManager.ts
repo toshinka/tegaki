@@ -1,557 +1,623 @@
-// LayerManager.ts - レイヤーシステム・Container階層管理・20レイヤー制限
-// Phase1 EventBus・DrawingEngine継承・責任分界設計
+// LayerManager.ts - Phase2 レイヤー管理システム
+// 20レイヤー対応・PixiJS Container階層・ブレンドモード・Z-index制御
+// Pixi.js v8対応・文字列ベースブレンドモード
 
 import * as PIXI from 'pixi.js';
-import type { EventBus, IEventData } from '../core/EventBus.js';
+import { EventBus, IEventData } from '../core/EventBus.js';
+import { LAYER, type BlendMode } from '../constants/drawing-constants.js';
 
-/**
- * レイヤーデータ・状態管理
- */
 export interface ILayerData {
   id: string;
   name: string;
+  container: PIXI.Container;
   visible: boolean;
   opacity: number;
-  blendMode: PIXI.BlendModes;
-  container: PIXI.Graphics;
-  zIndex: number;
-  thumbnail?: string; // Phase2後半実装予定
+  blendMode: BlendMode; // 文字列ベース・Pixi.js v8対応
   locked: boolean;
-  created: number;
-  modified: number;
+  index: number;
+  thumbnail?: string; // Base64 thumbnail for UI
+}
+
+export interface ILayerEventData extends IEventData {
+  'layer:created': { layerId: string; name: string; index: number };
+  'layer:deleted': { layerId: string; name: string };
+  'layer:reordered': { layerId: string; oldIndex: number; newIndex: number };
+  'layer:visibility-changed': { layerId: string; visible: boolean };
+  'layer:opacity-changed': { layerId: string; opacity: number };
+  'layer:blend-mode-changed': { layerId: string; blendMode: BlendMode };
+  'layer:active-changed': { activeLayerId: string; previousLayerId: string };
 }
 
 /**
- * レイヤー操作結果
- */
-interface ILayerOperationResult {
-  success: boolean;
-  layerId?: string;
-  error?: string;
-  data?: ILayerData;
-}
-
-/**
- * レイヤー統計情報
- */
-interface ILayerStats {
-  totalLayers: number;
-  visibleLayers: number;
-  activeLayers: number;
-  memoryUsageMB: number;
-}
-
-/**
- * レイヤー管理システム・Container階層制御
- * Phase1基盤継承・EventBus連携・型安全設計
+ * レイヤー管理システム・Phase2実装・Pixi.js v8対応
+ * - 20レイヤー管理・Container階層制御
+ * - ブレンドモード・透明度・表示制御
+ * - Z-index動的制御・レイヤー順序管理
+ * - メモリ効率最適化・GPU最適化
  */
 export class LayerManager {
   private eventBus: EventBus;
   private pixiApp: PIXI.Application;
+  private layersContainer: PIXI.Container;
   
   // レイヤー管理
-  private layers = new Map<string, ILayerData>();
+  private layers: Map<string, ILayerData> = new Map();
   private layerOrder: string[] = [];
   private activeLayerId: string | null = null;
+  private nextLayerId = 1;
   
-  // 制限・設定
-  private readonly maxLayers = 20;
-  private layerIdCounter = 0;
+  // 制限・設定 - drawing-constants.ts活用
+  private readonly MAX_LAYERS = LAYER.MAX_LAYERS;
+  private readonly DEFAULT_LAYER_NAME = LAYER.DEFAULT_LAYER_NAME;
   
-  // Container階層・Phase1 DrawingEngine連携
-  private layersContainer: PIXI.Container;
-  private drawingContainer: PIXI.Container | null = null;
+  // パフォーマンス最適化
+  private updateScheduled = false;
+  private thumbnailCache: Map<string, string> = new Map();
 
-  constructor(eventBus: EventBus, pixiApp: PIXI.Application) {
-    this.eventBus = eventBus;
+  constructor(pixiApp: PIXI.Application, eventBus: EventBus) {
     this.pixiApp = pixiApp;
+    this.eventBus = eventBus;
     
-    this.initializeLayerSystem();
-    this.setupEventListeners();
-    this.createDefaultLayer();
-    
-    console.log('📑 LayerManager初期化完了');
-  }
-
-  /**
-   * レイヤーシステム初期化・Container階層構築
-   */
-  private initializeLayerSystem(): void {
-    // レイヤー専用コンテナ作成
+    // レイヤー用Container作成・PixiJS Stage直下
     this.layersContainer = new PIXI.Container();
-    this.layersContainer.name = 'LayersContainer';
-    this.layersContainer.sortableChildren = true;
+    this.layersContainer.sortableChildren = true; // Z-index有効化
+    this.pixiApp.stage.addChild(this.layersContainer);
     
-    // DrawingContainer参照取得・Phase1連携
-    const existingDrawingContainer = this.pixiApp.stage.getChildByName('DrawingContainer') as PIXI.Container;
-    if (existingDrawingContainer) {
-      this.drawingContainer = existingDrawingContainer;
-      // レイヤーコンテナを描画コンテナ内に配置
-      this.drawingContainer.addChild(this.layersContainer);
-    } else {
-      // フォールバック・直接stage追加
-      this.pixiApp.stage.addChild(this.layersContainer);
-      console.warn('📑 DrawingContainer未発見・stage直接追加');
-    }
+    console.log('🎨 LayerManager初期化完了');
+    
+    // 初期レイヤー作成
+    this.createDefaultLayer();
   }
 
   /**
-   * イベントリスナー設定・UI連携
+   * 新しいレイヤー作成
+   * @param name レイヤー名
+   * @param insertIndex 挿入位置（未指定で最上位）
+   * @returns レイヤーID
    */
-  private setupEventListeners(): void {
-    // UIイベント処理
-    this.eventBus.on('ui:layer-create', () => {
-      this.createLayer();
-    });
-
-    this.eventBus.on('ui:layer-delete', (data) => {
-      this.deleteLayer(data.layerId);
-    });
-
-    this.eventBus.on('ui:layer-reorder', (data) => {
-      this.reorderLayer(data.layerId, data.newIndex);
-    });
-
-    this.eventBus.on('ui:layer-select', (data) => {
-      this.setActiveLayer(data.layerId);
-    });
-
-    this.eventBus.on('ui:layer-visibility-toggle', (data) => {
-      this.toggleLayerVisibility(data.layerId);
-    });
-
-    this.eventBus.on('ui:layer-opacity-change', (data) => {
-      this.setLayerOpacity(data.layerId, data.opacity);
-    });
-
-    this.eventBus.on('ui:layer-blend-mode-change', (data) => {
-      this.setLayerBlendMode(data.layerId, data.blendMode);
-    });
-  }
-
-  /**
-   * デフォルトレイヤー作成・初期設定
-   */
-  private createDefaultLayer(): void {
-    const result = this.createLayer('背景', 0);
-    if (result.success && result.layerId) {
-      this.setActiveLayer(result.layerId);
-    }
-  }
-
-  /**
-   * 新規レイヤー作成・Container生成
-   */
-  public createLayer(name?: string, insertIndex?: number): ILayerOperationResult {
-    // 最大数制限チェック
-    if (this.layers.size >= this.maxLayers) {
-      return {
-        success: false,
-        error: `レイヤー上限 ${this.maxLayers}枚 に達しています`
-      };
+  public createLayer(name?: string, insertIndex?: number): string {
+    if (this.layers.size >= this.MAX_LAYERS) {
+      console.warn(`⚠️ レイヤー数上限（${this.MAX_LAYERS}枚）に達しています`);
+      throw new Error(`レイヤー数は最大${this.MAX_LAYERS}枚まで`);
     }
 
-    // レイヤーID・名前生成
-    const layerId = `layer_${++this.layerIdCounter}`;
-    const layerName = name || `レイヤー ${this.layerIdCounter}`;
+    const layerId = `layer_${this.nextLayerId++}`;
+    const layerName = name || `${this.DEFAULT_LAYER_NAME} ${this.nextLayerId - 1}`;
     
-    // Graphics Container作成
-    const graphics = new PIXI.Graphics();
-    graphics.name = layerName;
-    graphics.eventMode = 'none'; // 入力無効・パフォーマンス優先
+    // PixiJS Container作成・初期設定
+    const container = new PIXI.Container();
+    container.name = layerName;
     
-    // レイヤーデータ構築
+    // レイヤーデータ作成・定数活用
     const layerData: ILayerData = {
       id: layerId,
       name: layerName,
-      visible: true,
-      opacity: 1.0,
-      blendMode: PIXI.BlendModes.NORMAL,
-      container: graphics,
-      zIndex: this.layers.size,
+      container,
+      visible: LAYER.DEFAULT_VISIBLE,
+      opacity: LAYER.DEFAULT_OPACITY,
+      blendMode: LAYER.DEFAULT_BLEND_MODE, // 文字列ベース
       locked: false,
-      created: Date.now(),
-      modified: Date.now()
+      index: insertIndex ?? this.layerOrder.length
     };
 
-    // レイヤー登録・順序管理
+    // 管理データ追加
     this.layers.set(layerId, layerData);
     
-    if (insertIndex !== undefined && insertIndex >= 0 && insertIndex <= this.layerOrder.length) {
+    // 順序管理・挿入位置調整
+    if (insertIndex !== undefined && insertIndex < this.layerOrder.length) {
       this.layerOrder.splice(insertIndex, 0, layerId);
+      this.reindexLayers();
     } else {
       this.layerOrder.push(layerId);
+      layerData.index = this.layerOrder.length - 1;
     }
 
-    // Container階層追加・zIndex設定
-    this.layersContainer.addChild(graphics);
-    this.updateLayerZIndices();
+    // Container階層追加・Z-index設定
+    this.layersContainer.addChild(container);
+    this.updateContainerZIndex();
+    
+    // アクティブレイヤー設定（初回 or 指定がない場合）
+    if (!this.activeLayerId) {
+      this.setActiveLayer(layerId);
+    }
 
-    // イベント通知
-    this.eventBus.emit('layer:create', {
-      id: layerId,
+    // イベント発火
+    this.eventBus.emit('layer:created', {
+      layerId,
       name: layerName,
-      index: this.layerOrder.indexOf(layerId)
+      index: layerData.index
     });
 
-    console.log(`📑 レイヤー作成: ${layerName} [${layerId}]`);
-    
-    return {
-      success: true,
-      layerId,
-      data: layerData
-    };
+    console.log(`✅ レイヤー作成: ${layerName} (${layerId})`);
+    return layerId;
   }
 
   /**
-   * レイヤー削除・Container破棄
+   * レイヤー削除・メモリ解放
+   * @param layerId 削除対象レイヤーID
    */
-  public deleteLayer(layerId: string): ILayerOperationResult {
+  public deleteLayer(layerId: string): void {
     const layer = this.layers.get(layerId);
     if (!layer) {
-      return {
-        success: false,
-        error: 'レイヤーが存在しません'
-      };
+      console.warn(`⚠️ 削除対象レイヤーが見つかりません: ${layerId}`);
+      return;
     }
 
     // 最後のレイヤー削除防止
-    if (this.layers.size <= 1) {
-      return {
-        success: false,
-        error: '最後のレイヤーは削除できません'
-      };
-    }
-
-    // アクティブレイヤー変更処理
-    const layerIndex = this.layerOrder.indexOf(layerId);
-    if (this.activeLayerId === layerId) {
-      // 次のレイヤーをアクティブに
-      const nextIndex = layerIndex > 0 ? layerIndex - 1 : layerIndex + 1;
-      const nextLayerId = this.layerOrder[nextIndex];
-      if (nextLayerId) {
-        this.setActiveLayer(nextLayerId);
-      }
+    if (this.layers.size <= LAYER.MIN_LAYERS) {
+      console.warn('⚠️ 最後のレイヤーは削除できません');
+      throw new Error('最後のレイヤーは削除できません');
     }
 
     // Container削除・メモリ解放
     this.layersContainer.removeChild(layer.container);
-    layer.container.destroy({
-      children: true,
-      texture: false, // テクスチャは保持
-      baseTexture: false
-    });
-
-    // データ削除・順序更新
+    layer.container.destroy({ children: true, texture: false });
+    
+    // 管理データ削除
     this.layers.delete(layerId);
-    this.layerOrder.splice(layerIndex, 1);
-    this.updateLayerZIndices();
+    const orderIndex = this.layerOrder.indexOf(layerId);
+    if (orderIndex !== -1) {
+      this.layerOrder.splice(orderIndex, 1);
+    }
 
-    // イベント通知
-    this.eventBus.emit('layer:delete', {
-      id: layerId,
+    // サムネイルキャッシュ削除
+    this.thumbnailCache.delete(layerId);
+
+    // アクティブレイヤー調整
+    if (this.activeLayerId === layerId) {
+      const newActiveIndex = Math.max(0, orderIndex - 1);
+      const newActiveLayerId = this.layerOrder[newActiveIndex];
+      this.setActiveLayer(newActiveLayerId);
+    }
+
+    // インデックス再計算
+    this.reindexLayers();
+    this.updateContainerZIndex();
+
+    // イベント発火
+    this.eventBus.emit('layer:deleted', {
+      layerId,
       name: layer.name
     });
 
-    console.log(`📑 レイヤー削除: ${layer.name} [${layerId}]`);
-    
-    return {
-      success: true,
-      data: layer
-    };
+    console.log(`🗑️ レイヤー削除: ${layer.name} (${layerId})`);
   }
 
   /**
-   * レイヤー順序変更・Z-index更新
+   * レイヤー順序変更・Z-index制御
+   * @param layerId 移動対象レイヤーID
+   * @param newIndex 新しいインデックス位置
    */
-  public reorderLayer(layerId: string, newIndex: number): ILayerOperationResult {
-    if (!this.layers.has(layerId)) {
-      return {
-        success: false,
-        error: 'レイヤーが存在しません'
-      };
-    }
-
-    if (newIndex < 0 || newIndex >= this.layerOrder.length) {
-      return {
-        success: false,
-        error: 'インデックスが範囲外です'
-      };
+  public reorderLayer(layerId: string, newIndex: number): void {
+    const layer = this.layers.get(layerId);
+    if (!layer) {
+      console.warn(`⚠️ 移動対象レイヤーが見つかりません: ${layerId}`);
+      return;
     }
 
     const oldIndex = this.layerOrder.indexOf(layerId);
-    if (oldIndex === newIndex) {
-      return { success: true }; // 変更なし
+    if (oldIndex === -1 || oldIndex === newIndex) {
+      return; // 無効・変更なし
     }
 
-    // 配列操作・順序変更
-    this.layerOrder.splice(oldIndex, 1);
-    this.layerOrder.splice(newIndex, 0, layerId);
+    // 範囲チェック
+    const clampedNewIndex = Math.max(0, Math.min(newIndex, this.layerOrder.length - 1));
     
-    // Z-index更新
-    this.updateLayerZIndices();
+    // 配列内移動
+    this.layerOrder.splice(oldIndex, 1);
+    this.layerOrder.splice(clampedNewIndex, 0, layerId);
 
-    // イベント通知
-    this.eventBus.emit('layer:reorder', {
-      id: layerId,
-      newIndex,
-      oldIndex
+    // インデックス再計算・Container Z-index更新
+    this.reindexLayers();
+    this.updateContainerZIndex();
+
+    // イベント発火
+    this.eventBus.emit('layer:reordered', {
+      layerId,
+      oldIndex,
+      newIndex: clampedNewIndex
     });
 
-    console.log(`📑 レイヤー移動: ${layerId} ${oldIndex} → ${newIndex}`);
-    
-    return { success: true };
+    console.log(`🔄 レイヤー順序変更: ${layer.name} ${oldIndex} → ${clampedNewIndex}`);
   }
 
   /**
-   * アクティブレイヤー設定・描画対象切り替え
+   * レイヤー表示・非表示切り替え
+   * @param layerId 対象レイヤーID
+   * @param visible 表示状態
    */
-  public setActiveLayer(layerId: string): ILayerOperationResult {
-    if (!this.layers.has(layerId)) {
-      return {
-        success: false,
-        error: 'レイヤーが存在しません'
-      };
+  public setLayerVisibility(layerId: string, visible: boolean): void {
+    const layer = this.layers.get(layerId);
+    if (!layer) return;
+
+    layer.visible = visible;
+    layer.container.visible = visible;
+
+    this.eventBus.emit('layer:visibility-changed', {
+      layerId,
+      visible
+    });
+
+    console.log(`👁️ レイヤー表示切り替え: ${layer.name} → ${visible ? '表示' : '非表示'}`);
+  }
+
+  /**
+   * レイヤー透明度設定・0.0-1.0
+   * @param layerId 対象レイヤーID
+   * @param opacity 透明度
+   */
+  public setLayerOpacity(layerId: string, opacity: number): void {
+    const layer = this.layers.get(layerId);
+    if (!layer) return;
+
+    const clampedOpacity = Math.max(LAYER.MIN_OPACITY, Math.min(LAYER.MAX_OPACITY, opacity));
+    layer.opacity = clampedOpacity;
+    layer.container.alpha = clampedOpacity;
+
+    this.eventBus.emit('layer:opacity-changed', {
+      layerId,
+      opacity: clampedOpacity
+    });
+
+    console.log(`🌫️ レイヤー透明度変更: ${layer.name} → ${(clampedOpacity * 100).toFixed(0)}%`);
+  }
+
+  /**
+   * レイヤーブレンドモード設定・Pixi.js v8対応
+   * @param layerId 対象レイヤーID
+   * @param blendMode 文字列ベースブレンドモード
+   */
+  public setLayerBlendMode(layerId: string, blendMode: BlendMode): void {
+    const layer = this.layers.get(layerId);
+    if (!layer) return;
+
+    // Pixi.js v8では文字列ベースでブレンドモード設定
+    layer.blendMode = blendMode;
+    layer.container.blendMode = blendMode as any; // 型変換・v8互換性
+
+    this.eventBus.emit('layer:blend-mode-changed', {
+      layerId,
+      blendMode
+    });
+
+    console.log(`🎨 ブレンドモード変更: ${layer.name} → ${blendMode}`);
+  }
+
+  /**
+   * アクティブレイヤー設定・描画対象
+   * @param layerId 対象レイヤーID
+   */
+  public setActiveLayer(layerId: string): void {
+    const layer = this.layers.get(layerId);
+    if (!layer) {
+      console.warn(`⚠️ アクティブ設定対象レイヤーが見つかりません: ${layerId}`);
+      return;
     }
 
-    const previousActive = this.activeLayerId;
+    const previousLayerId = this.activeLayerId;
     this.activeLayerId = layerId;
 
-    // DrawingEngine連携・描画対象変更
-    const activeLayer = this.layers.get(layerId);
-    if (activeLayer) {
-      this.eventBus.emit('drawing:layer-changed', {
-        layerId,
-        graphics: activeLayer.container,
-        previousLayerId: previousActive
-      });
-    }
-
-    console.log(`📑 アクティブレイヤー: ${layerId}`);
-    
-    return { success: true };
-  }
-
-  /**
-   * レイヤー表示切り替え
-   */
-  public toggleLayerVisibility(layerId: string): ILayerOperationResult {
-    const layer = this.layers.get(layerId);
-    if (!layer) {
-      return {
-        success: false,
-        error: 'レイヤーが存在しません'
-      };
-    }
-
-    layer.visible = !layer.visible;
-    layer.container.visible = layer.visible;
-    layer.modified = Date.now();
-
-    // イベント通知
-    this.eventBus.emit('layer:visibility-change', {
-      id: layerId,
-      visible: layer.visible
+    this.eventBus.emit('layer:active-changed', {
+      activeLayerId: layerId,
+      previousLayerId: previousLayerId || ''
     });
 
-    return { success: true };
+    console.log(`🎯 アクティブレイヤー変更: ${layer.name}`);
   }
 
   /**
-   * レイヤー不透明度設定
+   * アクティブレイヤーContainer取得・描画用
+   * @returns アクティブレイヤーのPixiJS Container
    */
-  public setLayerOpacity(layerId: string, opacity: number): ILayerOperationResult {
-    const layer = this.layers.get(layerId);
-    if (!layer) {
-      return {
-        success: false,
-        error: 'レイヤーが存在しません'
-      };
-    }
-
-    // 0-1範囲クランプ
-    layer.opacity = Math.max(0, Math.min(1, opacity));
-    layer.container.alpha = layer.opacity;
-    layer.modified = Date.now();
-
-    return { success: true };
+  public getActiveLayerContainer(): PIXI.Container | null {
+    if (!this.activeLayerId) return null;
+    
+    const layer = this.layers.get(this.activeLayerId);
+    return layer?.container || null;
   }
 
   /**
-   * レイヤーブレンドモード設定
+   * レイヤー情報取得・UI表示用
+   * @param layerId 対象レイヤーID
+   * @returns レイヤーデータ（読み取り専用）
    */
-  public setLayerBlendMode(layerId: string, blendMode: PIXI.BlendModes): ILayerOperationResult {
+  public getLayerData(layerId: string): Readonly<ILayerData> | null {
     const layer = this.layers.get(layerId);
-    if (!layer) {
-      return {
-        success: false,
-        error: 'レイヤーが存在しません'
-      };
-    }
+    return layer ? { ...layer } : null;
+  }
 
-    layer.blendMode = blendMode;
-    layer.container.blendMode = blendMode;
-    layer.modified = Date.now();
+  /**
+   * 全レイヤー情報取得・順序付き
+   * @returns レイヤーデータ配列（表示順）
+   */
+  public getAllLayers(): ReadonlyArray<Readonly<ILayerData>> {
+    return this.layerOrder
+      .map(id => this.layers.get(id))
+      .filter((layer): layer is ILayerData => !!layer)
+      .map(layer => ({ ...layer }));
+  }
 
-    return { success: true };
+  /**
+   * アクティブレイヤーID取得
+   * @returns アクティブレイヤーID
+   */
+  public getActiveLayerId(): string | null {
+    return this.activeLayerId;
+  }
+
+  /**
+   * レイヤー数取得
+   * @returns 現在のレイヤー数
+   */
+  public getLayerCount(): number {
+    return this.layers.size;
+  }
+
+  /**
+   * レイヤー作成可能判定
+   * @returns 作成可能かどうか
+   */
+  public canCreateLayer(): boolean {
+    return this.layers.size < this.MAX_LAYERS;
   }
 
   /**
    * レイヤー名変更
+   * @param layerId 対象レイヤーID
+   * @param newName 新しい名前
    */
-  public renameLayer(layerId: string, newName: string): ILayerOperationResult {
+  public renameLayer(layerId: string, newName: string): void {
     const layer = this.layers.get(layerId);
-    if (!layer) {
-      return {
-        success: false,
-        error: 'レイヤーが存在しません'
-      };
-    }
+    if (!layer) return;
 
-    layer.name = newName.trim() || `レイヤー ${layerId}`;
-    layer.container.name = layer.name;
-    layer.modified = Date.now();
+    const trimmedName = newName.trim();
+    if (!trimmedName || trimmedName === layer.name) return;
 
-    return { success: true };
+    // 名前長制限チェック
+    const finalName = trimmedName.length > LAYER.MAX_NAME_LENGTH 
+      ? trimmedName.substring(0, LAYER.MAX_NAME_LENGTH) 
+      : trimmedName;
+
+    layer.name = finalName;
+    layer.container.name = finalName;
+
+    console.log(`📝 レイヤー名変更: ${layerId} → "${finalName}"`);
   }
 
   /**
-   * Z-index更新・描画順序制御
+   * レイヤーロック状態変更
+   * @param layerId 対象レイヤーID
+   * @param locked ロック状態
    */
-  private updateLayerZIndices(): void {
-    for (let i = 0; i < this.layerOrder.length; i++) {
-      const layerId = this.layerOrder[i];
+  public setLayerLocked(layerId: string, locked: boolean): void {
+    const layer = this.layers.get(layerId);
+    if (!layer) return;
+
+    layer.locked = locked;
+    
+    // ロック時は描画禁止（EventBusで通知）
+    this.eventBus.emit('layer:lock-changed', {
+      layerId,
+      locked
+    });
+
+    console.log(`🔒 レイヤーロック変更: ${layer.name} → ${locked ? 'ロック' : 'アンロック'}`);
+  }
+
+  /**
+   * レイヤー複製・新規作成
+   * @param layerId 複製元レイヤーID
+   * @returns 新しいレイヤーID
+   */
+  public duplicateLayer(layerId: string): string {
+    const sourceLayer = this.layers.get(layerId);
+    if (!sourceLayer) {
+      throw new Error(`複製対象レイヤーが見つかりません: ${layerId}`);
+    }
+
+    // 新しい名前生成
+    const newName = `${sourceLayer.name}${LAYER.DUPLICATE_SUFFIX}`;
+    const newLayerId = this.createLayer(newName, sourceLayer.index + 1);
+    
+    // 設定コピー
+    this.setLayerOpacity(newLayerId, sourceLayer.opacity);
+    this.setLayerBlendMode(newLayerId, sourceLayer.blendMode);
+    this.setLayerVisibility(newLayerId, sourceLayer.visible);
+    this.setLayerLocked(newLayerId, sourceLayer.locked);
+
+    // Container内容コピー（簡易版・Phase3で詳細実装）
+    const newLayer = this.layers.get(newLayerId);
+    if (newLayer) {
+      // TODO: Container内容の実際のコピー処理
+      console.log(`📋 レイヤー複製: ${sourceLayer.name} → ${newName}`);
+    }
+
+    return newLayerId;
+  }
+
+  /**
+   * 初期レイヤー作成・起動時
+   */
+  private createDefaultLayer(): void {
+    this.createLayer('背景');
+    console.log('📄 初期レイヤー作成完了');
+  }
+
+  /**
+   * レイヤーインデックス再計算・内部管理
+   */
+  private reindexLayers(): void {
+    this.layerOrder.forEach((layerId, index) => {
       const layer = this.layers.get(layerId);
       if (layer) {
-        layer.zIndex = i;
-        layer.container.zIndex = i;
+        layer.index = index;
       }
-    }
-    
-    // Container階層ソート
-    this.layersContainer.sortChildren();
-  }
-
-  /**
-   * アクティブレイヤーGraphics取得・描画用
-   */
-  public getActiveLayerGraphics(): PIXI.Graphics | null {
-    if (!this.activeLayerId) return null;
-    
-    const activeLayer = this.layers.get(this.activeLayerId);
-    return activeLayer ? activeLayer.container : null;
-  }
-
-  /**
-   * レイヤーデータ取得
-   */
-  public getLayer(layerId: string): ILayerData | null {
-    return this.layers.get(layerId) || null;
-  }
-
-  /**
-   * 全レイヤーデータ取得・順序保持
-   */
-  public getAllLayers(): ILayerData[] {
-    return this.layerOrder.map(id => this.layers.get(id)!).filter(Boolean);
-  }
-
-  /**
-   * レイヤーリスト取得・UI用
-   */
-  public getLayerList(): Array<{ id: string; name: string; visible: boolean; active: boolean }> {
-    return this.layerOrder.map(id => {
-      const layer = this.layers.get(id)!;
-      return {
-        id,
-        name: layer.name,
-        visible: layer.visible,
-        active: id === this.activeLayerId
-      };
     });
   }
 
   /**
-   * レイヤー統計取得・デバッグ・UI用
+   * Container Z-index更新・表示順序制御
    */
-  public getLayerStats(): ILayerStats {
-    const visibleLayers = Array.from(this.layers.values()).filter(l => l.visible).length;
+  private updateContainerZIndex(): void {
+    if (this.updateScheduled) return;
     
-    // メモリ使用量概算・Graphics+Container
-    const memoryUsageMB = this.layers.size * 2; // 概算2MB/レイヤー
+    this.updateScheduled = true;
     
+    // 次フレームで更新・パフォーマンス最適化
+    requestAnimationFrame(() => {
+      this.layerOrder.forEach((layerId, index) => {
+        const layer = this.layers.get(layerId);
+        if (layer) {
+          layer.container.zIndex = LAYER.BASE_Z_INDEX + (index * LAYER.Z_INDEX_STEP);
+        }
+      });
+      
+      this.updateScheduled = false;
+    });
+  }
+
+  /**
+   * レイヤーサムネイル生成・UI用
+   * @param layerId 対象レイヤーID
+   * @returns Base64エンコードされたサムネイル
+   */
+  public generateThumbnail(layerId: string): string | null {
+    const layer = this.layers.get(layerId);
+    if (!layer) return null;
+
+    // キャッシュチェック
+    const cached = this.thumbnailCache.get(layerId);
+    if (cached) return cached;
+
+    try {
+      // Container からサムネイル生成
+      const bounds = layer.container.getBounds();
+      if (bounds.width === 0 || bounds.height === 0) {
+        return null; // 空のレイヤー
+      }
+
+      // レンダーテクスチャ作成・サムネイルサイズ
+      const renderTexture = PIXI.RenderTexture.create({
+        width: LAYER.THUMBNAIL.WIDTH,
+        height: LAYER.THUMBNAIL.HEIGHT
+      });
+
+      // 一時的な変換行列でスケール調整
+      const tempMatrix = new PIXI.Matrix();
+      const scale = Math.min(
+        LAYER.THUMBNAIL.WIDTH / bounds.width,
+        LAYER.THUMBNAIL.HEIGHT / bounds.height
+      );
+      
+      tempMatrix.scale(scale, scale);
+      tempMatrix.translate(-bounds.x * scale, -bounds.y * scale);
+
+      // レンダリング実行
+      this.pixiApp.renderer.render(layer.container, {
+        renderTexture,
+        transform: tempMatrix
+      });
+
+      // Base64変換
+      const canvas = this.pixiApp.renderer.extract.canvas(renderTexture);
+      const thumbnail = canvas.toDataURL('image/png');
+
+      // キャッシュ保存・サイズ制限
+      if (this.thumbnailCache.size >= LAYER.THUMBNAIL.CACHE_SIZE) {
+        const firstKey = this.thumbnailCache.keys().next().value;
+        this.thumbnailCache.delete(firstKey);
+      }
+      this.thumbnailCache.set(layerId, thumbnail);
+
+      // テクスチャクリーンアップ
+      renderTexture.destroy(true);
+
+      return thumbnail;
+    } catch (error) {
+      console.error(`❌ サムネイル生成エラー: ${layerId}`, error);
+      return null;
+    }
+  }
+
+  /**
+   * メモリ使用量取得・デバッグ用
+   */
+  public getMemoryUsage(): { layers: number; containers: number; textures: number } {
+    let containers = 0;
+    let textures = 0;
+
+    this.layers.forEach(layer => {
+      containers++;
+      // Container内のテクスチャ数計算（概算）
+      layer.container.children.forEach(child => {
+        if (child instanceof PIXI.Graphics) {
+          textures += child.geometry.graphicsData?.length || 0;
+        } else if (child instanceof PIXI.Sprite && child.texture) {
+          textures++;
+        }
+      });
+    });
+
     return {
-      totalLayers: this.layers.size,
-      visibleLayers,
-      activeLayers: this.activeLayerId ? 1 : 0,
-      memoryUsageMB
+      layers: this.layers.size,
+      containers,
+      textures
     };
   }
 
   /**
-   * レイヤー複製・Phase2後半実装予定
+   * レイヤー統計情報取得・Phase2後半実装
    */
-  public duplicateLayer(layerId: string): ILayerOperationResult {
-    const sourceLayer = this.layers.get(layerId);
-    if (!sourceLayer) {
-      return {
-        success: false,
-        error: 'レイヤーが存在しません'
-      };
-    }
+  public getLayerStats(): {
+    totalLayers: number;
+    visibleLayers: number;
+    lockedLayers: number;
+    activeLayerId: string | null;
+    memoryUsage: ReturnType<typeof this.getMemoryUsage>;
+  } {
+    let visibleLayers = 0;
+    let lockedLayers = 0;
 
-    // TODO: Phase2後半でGraphics内容コピー実装
-    return this.createLayer(`${sourceLayer.name} コピー`);
+    this.layers.forEach(layer => {
+      if (layer.visible) visibleLayers++;
+      if (layer.locked) lockedLayers++;
+    });
+
+    return {
+      totalLayers: this.layers.size,
+      visibleLayers,
+      lockedLayers,
+      activeLayerId: this.activeLayerId,
+      memoryUsage: this.getMemoryUsage()
+    };
   }
 
   /**
-   * 全レイヤー統合・エクスポート用
-   */
-  public mergeVisibleLayers(): PIXI.Graphics {
-    const mergedGraphics = new PIXI.Graphics();
-    
-    // 表示レイヤーを下から順に描画
-    for (const layerId of this.layerOrder) {
-      const layer = this.layers.get(layerId);
-      if (layer && layer.visible) {
-        // TODO: Phase2後半でGraphics合成実装
-        mergedGraphics.addChild(layer.container.clone());
-      }
-    }
-    
-    return mergedGraphics;
-  }
-
-  /**
-   * リソース解放・メモリクリーンアップ
+   * リソース解放・アプリケーション終了時
    */
   public destroy(): void {
-    console.log('📑 LayerManager終了処理開始...');
-    
-    // 全レイヤーContainer破棄
-    for (const layer of this.layers.values()) {
-      this.layersContainer.removeChild(layer.container);
-      layer.container.destroy({
-        children: true,
-        texture: false,
-        baseTexture: false
-      });
+    console.log('🔄 LayerManager終了処理開始...');
+
+    // 全レイヤーContainer削除・メモリ解放
+    this.layers.forEach(layer => {
+      if (layer.container.parent) {
+        layer.container.parent.removeChild(layer.container);
+      }
+      layer.container.destroy({ children: true, texture: false });
+    });
+
+    // メインContainerも削除
+    if (this.layersContainer.parent) {
+      this.layersContainer.parent.removeChild(this.layersContainer);
     }
-    
-    // レイヤーコンテナ削除
-    if (this.drawingContainer) {
-      this.drawingContainer.removeChild(this.layersContainer);
-    } else {
-      this.pixiApp.stage.removeChild(this.layersContainer);
-    }
-    
-    this.layersContainer.destroy();
-    
-    // データクリア
+    this.layersContainer.destroy({ children: true, texture: false });
+
+    // 管理データクリア
     this.layers.clear();
     this.layerOrder = [];
+    this.thumbnailCache.clear();
     this.activeLayerId = null;
-    
-    console.log('📑 LayerManager終了処理完了');
+
+    console.log('✅ LayerManager終了処理完了');
   }
 }

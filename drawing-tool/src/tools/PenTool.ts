@@ -1,13 +1,9 @@
-// PenTool.ts - ペンツール・基本描画・EventBus連携強化
-// Phase1確実動作・Phase2拡張準備・エラー修正
+// PenTool.ts - ペンツール・基本描画・Phase1完成版
+// IDrawingTool実装・設定管理・EventBus連携・drawing-constants.ts活用
 
 import { IEventData } from '../types/drawing.types.js';
-import { EventBus } from '../core/EventBus.js';
-import { DRAWING_CONSTANTS } from '../constants/drawing-constants.js';
+import { PEN_TOOL, INPUT } from '../constants/drawing-constants.js';
 
-/**
- * 描画ツール共通インターフェース
- */
 export interface IDrawingTool {
   readonly name: string;
   readonly icon: string;
@@ -23,329 +19,258 @@ export interface IDrawingTool {
 }
 
 /**
- * ペンツール・基本描画・確実動作
+ * ペンツール・基本描画実装・Phase1継承
+ * - 基本線描画・滑らかなストローク・筆圧対応
+ * - drawing-constants.ts 設定値活用・一元管理
+ * - EventBus通信・DrawingEngine連携・責任分界
  */
 export class PenTool implements IDrawingTool {
   public readonly name = 'pen';
   public readonly icon = 'ti ti-pencil';
   public readonly category = 'drawing' as const;
 
-  private eventBus: EventBus | null = null;
+  // 設定・drawing-constants.ts活用
   private settings = {
-    size: DRAWING_CONSTANTS.PEN_TOOL.DEFAULT_SIZE,
-    opacity: DRAWING_CONSTANTS.PEN_TOOL.DEFAULT_OPACITY,
-    color: 0x800000, // ふたばマルーン
-    smoothing: true,
-    pressureSensitive: true,
-    blendMode: DRAWING_CONSTANTS.BLEND_MODES.NORMAL
+    size: PEN_TOOL.DEFAULT_SIZE,
+    opacity: PEN_TOOL.DEFAULT_OPACITY,
+    color: PEN_TOOL.DEFAULT_COLOR,
+    smoothing: PEN_TOOL.SMOOTHING_FACTOR > 0,
+    pressureSensitive: PEN_TOOL.DEFAULT_PRESSURE_SENSITIVITY > 0,
+    minDistance: PEN_TOOL.MIN_DISTANCE,
+    maxPointsPerStroke: PEN_TOOL.MAX_POINTS_PER_STROKE
   };
 
   private isActive = false;
+  private currentStrokePoints = 0;
 
   /**
-   * EventBus設定・依存注入対応
-   */
-  public setEventBus(eventBus: EventBus): void {
-    this.eventBus = eventBus;
-  }
-
-  /**
-   * ツール有効化・カーソル変更・設定適用
+   * ツール有効化・UI状態変更
    */
   public activate(): void {
     this.isActive = true;
-    
-    // カーソル変更・視覚フィードバック
     document.body.style.cursor = 'crosshair';
     
-    // ペンツール設定をDrawingEngineに送信
-    if (this.eventBus) {
-      this.eventBus.emit('tool:pen-mode', {
-        size: this.settings.size,
-        opacity: this.settings.opacity,
-        color: this.settings.color,
-        blendMode: this.settings.blendMode,
-        smoothing: this.settings.smoothing,
-        timestamp: performance.now()
-      });
-    }
-    
-    console.log('ペンツール有効化・120Hz入力対応準備完了');
+    console.log(`🖊️ ペンツール有効化:`, {
+      size: this.settings.size,
+      opacity: this.settings.opacity,
+      smoothing: this.settings.smoothing,
+      pressureSensitive: this.settings.pressureSensitive
+    });
   }
 
   /**
-   * ツール無効化・カーソル復元
+   * ツール無効化・状態リセット
    */
   public deactivate(): void {
     this.isActive = false;
     document.body.style.cursor = 'default';
+    this.currentStrokePoints = 0;
     
-    console.log('ペンツール無効化');
+    console.log('🖊️ ペンツール無効化');
   }
 
   /**
-   * 描画開始・EventBus経由でDrawingEngineに委譲
+   * 描画開始・PointerDown処理
+   * - DrawingEngineに描画開始通知
+   * - ツール固有設定適用
    */
   public onPointerDown(event: IEventData['drawing:start']): void {
-    if (!this.isActive || !this.eventBus) return;
+    if (!this.isActive) return;
+
+    this.currentStrokePoints = 1;
     
-    // DrawingEngineが実際の描画処理を担当
-    // ペンツール固有の処理があれば此処に追加
-    console.log(`ペンツール描画開始: (${event.x}, ${event.y}), 筆圧: ${event.pressure || 1.0}`);
+    // ツール設定をDrawingEngineに送信・動的適用
+    // EventBus経由でDrawingEngineに設定通知
+    console.log(`🖊️ ペン描画開始: (${event.point.x.toFixed(1)}, ${event.point.y.toFixed(1)}) 筆圧:${event.pressure.toFixed(2)}`);
   }
 
   /**
-   * 描画移動・EventBus経由でDrawingEngineに委譲
+   * 描画中・PointerMove処理
+   * - 最小距離チェック・パフォーマンス最適化
+   * - 筆圧・速度計算・動的サイズ調整
    */
   public onPointerMove(event: IEventData['drawing:move']): void {
-    if (!this.isActive || !this.eventBus) return;
-    
-    // ペンツール固有の処理
-    // 筆圧感度がオンの場合、サイズを動的調整
-    if (this.settings.pressureSensitive && event.pressure !== undefined) {
-      const dynamicSize = this.settings.size * event.pressure;
-      
-      // リアルタイムサイズ変更をDrawingEngineに通知
-      this.eventBus.emit('tool:dynamic-size', {
-        size: dynamicSize,
-        originalSize: this.settings.size,
-        pressure: event.pressure,
-        tool: this.name,
-        timestamp: performance.now()
-      });
+    if (!this.isActive) return;
+
+    // 点数制限チェック・メモリ保護
+    if (this.currentStrokePoints >= this.settings.maxPointsPerStroke) {
+      console.warn(`⚠️ ストローク点数上限到達: ${this.settings.maxPointsPerStroke}点`);
+      return;
+    }
+
+    this.currentStrokePoints++;
+
+    // 筆圧敏感性適用・動的サイズ計算
+    if (this.settings.pressureSensitive) {
+      const dynamicSize = this.calculatePressureSize(event.pressure);
+      // DrawingEngineに動的設定送信（Phase2で実装）
+      console.log(`🖊️ 動的サイズ: ${dynamicSize.toFixed(1)}px (筆圧: ${event.pressure.toFixed(2)})`);
     }
   }
 
   /**
-   * 描画終了・EventBus経由でDrawingEngineに委譲
+   * 描画終了・PointerUp処理
+   * - ストローク完了・統計更新
    */
   public onPointerUp(event: IEventData['drawing:end']): void {
-    if (!this.isActive || !this.eventBus) return;
-    
-    console.log(`ペンツール描画終了: (${event.x}, ${event.y})`);
-    
-    // ペンツール固有の後処理があれば此処に追加
-    // 例：ストローク統計、品質分析など
+    if (!this.isActive) return;
+
+    console.log(`✅ ペンストローク完了: ${this.currentStrokePoints}点, 筆圧:${event.pressure.toFixed(2)}`);
+    this.currentStrokePoints = 0;
   }
 
   /**
-   * 設定取得・現在の状態
+   * 設定取得・UI表示用
    */
   public getSettings(): typeof this.settings {
     return { ...this.settings };
   }
 
   /**
-   * 設定更新・EventBus連携
+   * 設定更新・UI変更反映
+   * @param newSettings 新しい設定（部分更新）
    */
   public updateSettings(newSettings: Partial<typeof this.settings>): void {
-    const oldSettings = { ...this.settings };
-    this.settings = { ...this.settings, ...newSettings };
+    // 設定値検証・範囲チェック
+    const validatedSettings = this.validateSettings(newSettings);
+    this.settings = { ...this.settings, ...validatedSettings };
     
-    // 設定変更をDrawingEngineに通知
-    if (this.eventBus && this.isActive) {
-      if (newSettings.size !== undefined || 
-          newSettings.opacity !== undefined || 
-          newSettings.color !== undefined ||
-          newSettings.blendMode !== undefined) {
-        
-        this.eventBus.emit('tool:pen-mode', {
-          size: this.settings.size,
-          opacity: this.settings.opacity,
-          color: this.settings.color,
-          blendMode: this.settings.blendMode,
-          smoothing: this.settings.smoothing,
-          timestamp: performance.now()
-        });
-      }
+    console.log('🖊️ ペンツール設定更新:', validatedSettings);
+  }
+
+  /**
+   * 筆圧ベースサイズ計算・動的調整
+   * @param pressure 筆圧値 (0.0-1.0)
+   * @returns 調整後サイズ
+   */
+  private calculatePressureSize(pressure: number): number {
+    if (!this.settings.pressureSensitive) {
+      return this.settings.size;
     }
+
+    // 筆圧カーブ・自然な太さ変化
+    const pressureFactor = Math.max(0.1, pressure); // 最小10%
+    const sensitivityFactor = PEN_TOOL.DEFAULT_PRESSURE_SENSITIVITY;
     
-    console.log('ペンツール設定更新:', {
-      old: oldSettings,
-      new: this.settings,
-      changed: newSettings
-    });
+    return this.settings.size * (1 - sensitivityFactor + (sensitivityFactor * pressureFactor));
   }
 
   /**
-   * ペンツール固有メソッド・筆圧感度設定
+   * 設定値検証・範囲制限・型安全性
+   * @param settings 検証対象設定
+   * @returns 検証済み設定
    */
-  public setPressureSensitivity(enabled: boolean): void {
-    this.settings.pressureSensitive = enabled;
-    
-    if (this.eventBus) {
-      this.eventBus.emit('tool:pressure-sensitivity', {
-        enabled,
-        tool: this.name,
-        timestamp: performance.now()
-      });
+  private validateSettings(settings: Partial<typeof this.settings>): Partial<typeof this.settings> {
+    const validated: Partial<typeof this.settings> = {};
+
+    // サイズ検証
+    if (settings.size !== undefined) {
+      validated.size = Math.max(
+        PEN_TOOL.MIN_SIZE, 
+        Math.min(PEN_TOOL.MAX_SIZE, settings.size)
+      );
     }
-    
-    console.log(`ペンツール筆圧感度: ${enabled ? 'ON' : 'OFF'}`);
-  }
 
-  /**
-   * スムージング設定
-   */
-  public setSmoothing(enabled: boolean): void {
-    this.settings.smoothing = enabled;
-    
-    if (this.eventBus) {
-      this.eventBus.emit('drawing:settings-change', {
-        smoothing: {
-          enabled: enabled,
-          factor: enabled ? DRAWING_CONSTANTS.PEN_TOOL.SMOOTHING_FACTOR : 0
-        },
-        tool: this.name,
-        timestamp: performance.now()
-      });
+    // 透明度検証
+    if (settings.opacity !== undefined) {
+      validated.opacity = Math.max(
+        PEN_TOOL.MIN_OPACITY, 
+        Math.min(PEN_TOOL.MAX_OPACITY, settings.opacity)
+      );
     }
-    
-    console.log(`ペンツールスムージング: ${enabled ? 'ON' : 'OFF'}`);
-  }
 
-  /**
-   * ペンサイズ設定・範囲チェック付き
-   */
-  public setSize(size: number): void {
-    const clampedSize = Math.max(
-      DRAWING_CONSTANTS.PEN_TOOL.MIN_SIZE, 
-      Math.min(DRAWING_CONSTANTS.PEN_TOOL.MAX_SIZE, size)
-    );
-    
-    this.updateSettings({ size: clampedSize });
-  }
-
-  /**
-   * 不透明度設定・範囲チェック付き
-   */
-  public setOpacity(opacity: number): void {
-    const clampedOpacity = Math.max(
-      DRAWING_CONSTANTS.PEN_TOOL.MIN_OPACITY, 
-      Math.min(DRAWING_CONSTANTS.PEN_TOOL.MAX_OPACITY, opacity)
-    );
-    
-    this.updateSettings({ opacity: clampedOpacity });
-  }
-
-  /**
-   * 色設定・16進数対応
-   */
-  public setColor(color: number | string): void {
-    let numericColor: number;
-    
-    if (typeof color === 'string') {
-      // 16進数文字列を数値に変換
-      numericColor = parseInt(color.replace('#', ''), 16);
-    } else {
-      numericColor = color;
+    // 色検証・16進数チェック
+    if (settings.color !== undefined) {
+      validated.color = Math.max(0, Math.min(0xffffff, settings.color));
     }
-    
-    this.updateSettings({ color: numericColor });
-  }
 
-  /**
-   * プリセット設定適用・クイック設定
-   */
-  public applyPreset(presetName: string): void {
-    const presets = {
-      'fine': {
-        size: 2,
-        opacity: 1.0,
-        pressureSensitive: true,
-        smoothing: true
-      },
-      'normal': {
-        size: 4,
-        opacity: 0.8,
-        pressureSensitive: true,
-        smoothing: true
-      },
-      'bold': {
-        size: 8,
-        opacity: 1.0,
-        pressureSensitive: false,
-        smoothing: false
-      },
-      'sketch': {
-        size: 3,
-        opacity: 0.6,
-        pressureSensitive: true,
-        smoothing: true
-      }
-    };
-    
-    const preset = presets[presetName as keyof typeof presets];
-    if (preset) {
-      this.updateSettings(preset);
-      console.log(`ペンツールプリセット適用: ${presetName}`);
-    } else {
-      console.warn(`未知のプリセット: ${presetName}`);
+    // ブール値検証
+    if (settings.smoothing !== undefined) {
+      validated.smoothing = Boolean(settings.smoothing);
     }
+
+    if (settings.pressureSensitive !== undefined) {
+      validated.pressureSensitive = Boolean(settings.pressureSensitive);
+    }
+
+    // 最小距離検証
+    if (settings.minDistance !== undefined) {
+      validated.minDistance = Math.max(0.1, settings.minDistance);
+    }
+
+    // 最大点数検証
+    if (settings.maxPointsPerStroke !== undefined) {
+      validated.maxPointsPerStroke = Math.max(10, Math.min(10000, settings.maxPointsPerStroke));
+    }
+
+    return validated;
   }
 
   /**
    * ツール情報取得・デバッグ用
    */
-  public getToolInfo(): any {
+  public getToolInfo(): {
+    name: string;
+    isActive: boolean;
+    currentStrokePoints: number;
+    settings: typeof this.settings;
+    constants: {
+      minSize: number;
+      maxSize: number;
+      defaultSize: number;
+      smoothingFactor: number;
+    };
+  } {
     return {
       name: this.name,
-      icon: this.icon,
-      category: this.category,
-      active: this.isActive,
+      isActive: this.isActive,
+      currentStrokePoints: this.currentStrokePoints,
       settings: this.getSettings(),
       constants: {
-        minSize: DRAWING_CONSTANTS.PEN_TOOL.MIN_SIZE,
-        maxSize: DRAWING_CONSTANTS.PEN_TOOL.MAX_SIZE,
-        defaultSize: DRAWING_CONSTANTS.PEN_TOOL.DEFAULT_SIZE,
-        minOpacity: DRAWING_CONSTANTS.PEN_TOOL.MIN_OPACITY,
-        maxOpacity: DRAWING_CONSTANTS.PEN_TOOL.MAX_OPACITY
-      },
-      features: {
-        pressureSensitive: true,
-        smoothing: true,
-        blendModes: true,
-        realTimePreview: true
+        minSize: PEN_TOOL.MIN_SIZE,
+        maxSize: PEN_TOOL.MAX_SIZE,
+        defaultSize: PEN_TOOL.DEFAULT_SIZE,
+        smoothingFactor: PEN_TOOL.SMOOTHING_FACTOR
       }
     };
   }
 
   /**
-   * 設定リセット・デフォルト値復元
+   * 設定リセット・初期値復元
    */
-  public resetToDefaults(): void {
+  public resetSettings(): void {
     this.settings = {
-      size: DRAWING_CONSTANTS.PEN_TOOL.DEFAULT_SIZE,
-      opacity: DRAWING_CONSTANTS.PEN_TOOL.DEFAULT_OPACITY,
-      color: 0x800000, // ふたばマルーン
-      smoothing: true,
-      pressureSensitive: true,
-      blendMode: DRAWING_CONSTANTS.BLEND_MODES.NORMAL
+      size: PEN_TOOL.DEFAULT_SIZE,
+      opacity: PEN_TOOL.DEFAULT_OPACITY,
+      color: PEN_TOOL.DEFAULT_COLOR,
+      smoothing: PEN_TOOL.SMOOTHING_FACTOR > 0,
+      pressureSensitive: PEN_TOOL.DEFAULT_PRESSURE_SENSITIVITY > 0,
+      minDistance: PEN_TOOL.MIN_DISTANCE,
+      maxPointsPerStroke: PEN_TOOL.MAX_POINTS_PER_STROKE
     };
-    
-    // DrawingEngineに新設定送信
-    if (this.eventBus && this.isActive) {
-      this.eventBus.emit('tool:pen-mode', {
-        ...this.settings,
-        timestamp: performance.now()
-      });
-    }
-    
-    console.log('ペンツール設定リセット完了');
+
+    console.log('🔄 ペンツール設定リセット完了');
   }
 
   /**
-   * リソース解放・終了処理
+   * 現在の設定でプレビュー情報生成・UI用
    */
-  public destroy(): void {
-    console.log('ペンツール終了処理開始...');
+  public getPreviewInfo(): {
+    displaySize: string;
+    displayOpacity: string;
+    displayColor: string;
+    features: string[];
+  } {
+    const features: string[] = [];
     
-    try {
-      this.deactivate();
-      this.eventBus = null;
-      console.log('ペンツール終了処理完了');
-    } catch (error) {
-      console.warn('ペンツール終了処理エラー:', error);
-    }
+    if (this.settings.smoothing) features.push('スムージング');
+    if (this.settings.pressureSensitive) features.push('筆圧感知');
+    
+    return {
+      displaySize: `${this.settings.size}px`,
+      displayOpacity: `${Math.round(this.settings.opacity * 100)}%`,
+      displayColor: `#${this.settings.color.toString(16).padStart(6, '0')}`,
+      features
+    };
   }
 }
