@@ -1,5 +1,7 @@
 import { IEventData } from '../types/drawing.types.js';
 
+export { IEventData } from '../types/drawing.types.js';
+
 export class EventBus {
   private listeners: Map<keyof IEventData, Set<Function>> = new Map();
   private eventHistory: Array<{ event: string; timestamp: number }> = [];

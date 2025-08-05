@@ -1,3 +1,5 @@
+import * as PIXI from 'pixi.js';
+
 // 描画関連型定義・参考資料の入力システム継承
 export interface Point {
   x: number;

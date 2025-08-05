@@ -130,7 +130,7 @@ async function main() {
   }
 
   // 開発用・グローバル参照
-  (window as any).drawingApp = app;
+  (globalThis as any).drawingApp = app;
 }
 
 main().catch(console.error);
