@@ -1,0 +1,394 @@
+# Phase2実装順序ガイド v1.0
+
+**目的**: 実用的お絵かきツール完成・機能拡充・Phase1基盤活用  
+**対象**: Phase2機能実装・レイヤーシステム・高度ツール・エクスポート機能  
+**前提**: Phase1完了・基盤動作確認済み・描画テスト成功  
+**期間**: 3-4週間・段階的機能追加・品質優先実装
+
+## 🎯 Phase2目標・実現内容
+
+### 機能実装目標
+```
+✅ Phase1継承・基盤安定活用:
+├─ EventBus・PixiApplication・DrawingEngine・InputManager活用
+├─ ふたば色UI・2.5K対応・基本描画システム継承
+├─ WebGL2安定動作・性能監視・メモリ管理継続
+└─ TypeScript厳格・ESM・責任分界・保守性維持
+
+🔵 Phase2新機能・実用化:
+├─ レイヤーシステム・20枚管理・ブレンドモード・不透明度
+├─ 高度ツール・筆・図形・塗りつぶし・消しゴム強化
+├─ エクスポート機能・PNG/JPEG・2K対応・設定保存
+└─ WebGPU準備・検出システム・Phase3移行基盤
+
+🎯 品質目標・実用性確保:
+├─ 30FPS安定・512MB以下・実用的応答性・長時間使用
+├─ 実際の作品制作可能・レイヤー活用・多様な表現
+├─ ファイル保存・作業継続・実用ワークフロー対応
+└─ Phase3準備・WebGPU基盤・高性能化移行準備
+```
+
+## 📋 実装優先順序・依存関係最適化
+
+### Week 1: レイヤーシステム基盤（7日間・基盤拡張）
+```
+Day 1-2: LayerManager.ts実装（重要度🔴・他機能依存）
+Day 3-4: LayerPanel.ts UI実装（重要度🔴・ユーザー操作）
+Day 5-6: レイヤー統合・DrawingEngine連携（重要度🔴・描画基盤）
+Day 7: 動作確認・テスト・調整（品質保証・次週準備）
+```
+
+### Week 2: 高度ツールシステム（7日間・機能拡張）
+```
+Day 8-9: BrushTool.ts・テクスチャ描画（重要度🟡・表現力）
+Day 10-11: EraserTool.ts強化・ShapeTool.ts基本図形（重要度🟡）
+Day 12-13: FillTool.ts・フラッドフィル・色域選択（重要度🟠）
+Day 14: ツール統合・UI連携・設定管理（統合テスト）
+```
+
+### Week 3: エクスポート・設定システム（7日間・実用化）
+```
+Day 15-16: ExportManager.ts・PNG/JPEG出力（重要度🟡・実用性）
+Day 17-18: SettingsManager.ts・設定永続化（重要度🟠・利便性）
+Day 19-20: ColorPalette強化・HSV・カスタム色（重要度🟠・UX）
+Day 21: 実用テスト・作品制作テスト・品質確認
+```
+
+### Week 4: WebGPU準備・統合最適化（7日間・Phase3準備）
+```
+Day 22-23: WebGPUDetector.ts・対応環境検出（重要度🟠・準備）
+Day 24-25: 性能最適化・メモリ効率・レンダリング調整（品質）
+Day 26-27: 統合テスト・長時間動作・安定性確認（信頼性）
+Day 28: Phase2完了判定・Phase3移行準備・ドキュメント更新
+```
+
+## 🚀 Step 1: LayerManager.ts実装（Day 1-2・60分×2）
+
+### 実装方針・Phase1継承
+**参照ドキュメント**: 
+- `2_TECHNICAL_DESIGN.md` - LayerManager設計・Container階層
+- `Phase1: DrawingEngine.ts` - Container管理・描画統合参考
+- `Phase1: EventBus.ts` - イベント通信・型安全継承
+
+**実装ポイント・責任分界**:
+- PIXI.Container階層管理・20レイヤー制限・Z-index制御
+- レイヤー作成・削除・並び替え・表示切り替え・不透明度
+- EventBus連携・layer:create/delete/reorder・UI同期
+- Phase1のdrawingContainer活用・既存描画システム継承
+
+```typescript
+// src/rendering/LayerManager.ts作成
+// 依存関係: Phase1 EventBus.ts, PixiApplication.ts
+// 参考実装: Phase1 DrawingEngine.ts のContainer管理
+
+export interface LayerData {
+  id: string;
+  name: string;
+  visible: boolean;
+  opacity: number;
+  blendMode: PIXI.BlendModes;
+  container: PIXI.Container;
+  thumbnail?: string; // Phase2後半で実装
+}
+
+export class LayerManager {
+  private eventBus: EventBus;
+  private pixiApp: PIXI.Application;
+  private layers: Map<string, LayerData> = new Map();
+  private layerOrder: string[] = [];
+  private activeLayerId: string | null = null;
+  private maxLayers = 20; // 参考資料の制限値継承
+
+  // Phase1 Container階層継承・描画システム活用
+  constructor(eventBus: EventBus, pixiApp: PIXI.Application) {
+    this.eventBus = eventBus;
+    this.pixiApp = pixiApp;
+    this.createDefaultLayer();
+    this.setupEventListeners();
+  }
+}
+```
+
+### Claude実装指示・具体例
+```
+Layer管理の核心機能:
+1. createLayer() - 新規レイヤー・Container作成・stage追加
+2. deleteLayer() - レイヤー削除・Container破棄・メモリ管理
+3. reorderLayers() - Z-index更新・視覚順序制御
+4. setActiveLayer() - 描画対象切り替え・DrawingEngine連携
+5. updateLayerProperty() - 不透明度・ブレンドモード・リアルタイム
+```
+
+## 🎨 Step 2: LayerPanel.ts UI実装（Day 3-4・90分×2）
+
+### UI実装方針・ふたば色継承
+**参照ドキュメント**:
+- `4_UI_STYLE_GUIDE.md` - LayerPanel設計・400px幅・64px項目
+- `Phase1: UIManager.ts` - ふたば色システム・Grid Layout継承
+- `Phase1: EventBus.ts` - ui:layer-click・ui:layer-reorder イベント
+
+**実装ポイント・視覚設計**:
+- 400px固定幅・64px項目高・スクロール対応・階層表示
+- レイヤーサムネイル48x48px・名前編集・不透明度スライダー
+- ドラッグ&ドロップ並び替え・視覚フィードバック・アニメーション
+- Phase1 UIManager.ts CSS拡張・ふたば色統一・アクセシビリティ
+
+```typescript
+// src/ui/LayerPanel.ts作成
+// 依存関係: Phase1 EventBus.ts, UIManager.ts CSS継承
+// 参考UI: Phase1 UIManager.ts のcolor-palette実装
+
+export class LayerPanel {
+  private eventBus: EventBus;
+  private container: HTMLElement;
+  private layerItems: Map<string, HTMLElement> = new Map();
+
+  // ふたば色・400px幅・ドラッグ対応
+  constructor(eventBus: EventBus, container: HTMLElement) {
+    this.eventBus = eventBus;
+    this.container = container;
+    this.initializeLayerPanelCSS(); // Phase1 UIManager継承
+    this.createLayerPanelHTML();
+    this.setupDragAndDrop(); // 並び替え機能
+  }
+}
+```
+
+### Claude実装指示・UX重視
+```
+Layer Panel核心UI:
+1. レイヤー項目HTML生成・64px高・サムネイル・名前・不透明度
+2. ドラッグ&ドロップ・sortable.js不使用・ネイティブ実装
+3. 不透明度スライダー・リアルタイム更新・120px幅
+4. 右クリックメニュー・削除・複製・名前変更・将来拡張
+5. レイヤー追加ボタン・48px・ふたばマルーン・ホバー効果
+```
+
+## 🔧 Step 3: BrushTool.ts実装（Day 8-9・75分×2）
+
+### 高度描画ツール・Phase1継承
+**参照ドキュメント**:
+- `Phase1: PenTool.ts` - IDrawingTool実装参考・設定管理
+- `Phase1: DrawingEngine.ts` - Graphics描画・筆圧対応継承
+- `3_IMPLEMENTATION_GUIDE.md` - Phase2ツール実装戦略
+
+**実装ポイント・表現力拡張**:
+- PenToolとの差別化・テクスチャ対応・サイズ変動拡大
+- 筆圧→透明度変化・速度→サイズ変化・自然な筆表現
+- ブラシプリセット・丸筆・平筆・テクスチャ筆・Phase3拡張準備
+- Phase1 DrawingEngine連携・Graphics活用・GPU最適化継承
+
+```typescript
+// src/tools/BrushTool.ts作成
+// 依存関係: Phase1 PenTool.ts IDrawingTool, DrawingEngine.ts
+// 参考実装: Phase1 PenTool.ts の設定管理・activate/deactivate
+
+export class BrushTool implements IDrawingTool {
+  public readonly name = 'brush';
+  public readonly icon = 'ti ti-brush'; // Phase3 Tabler Icons
+  public readonly category = 'drawing' as const;
+
+  private settings = {
+    size: 12, // PenToolより大きな初期値
+    opacity: 0.6, // 重ね塗り表現
+    texture: 'round', // round/flat/texture Phase3拡張
+    pressureOpacity: true, // 筆圧→透明度
+    velocitySize: true, // 速度→サイズ変化
+    color: 0x800000
+  };
+
+  // Phase1 PenTool参考・差別化実装
+  public onPointerMove(event: IEventData['drawing:move']): void {
+    if (!this.isActive) return;
+    
+    // 筆独自処理・速度計算・サイズ動的変更
+    const dynamicSize = this.calculateDynamicSize(
+      event.pressure, 
+      event.velocity
+    );
+    
+    // DrawingEngineに動的設定送信・リアルタイム変更
+    this.eventBus.emit('brush:dynamic-update', {
+      size: dynamicSize,
+      opacity: this.calculateDynamicOpacity(event.pressure)
+    });
+  }
+}
+```
+
+## 📁 Step 4: ExportManager.ts実装（Day 15-16・90分×2）
+
+### ファイル出力・実用化機能
+**参照ドキュメント**:
+- `1_PROJECT_SPEC.md` - エクスポート要件・PNG/JPEG・2K対応
+- `Phase1: PixiApplication.ts` - Canvas取得・レンダリング参考
+- `Phase2: LayerManager.ts` - レイヤー合成・Container階層活用
+
+**実装ポイント・実用性重視**:
+- PNG透明対応・JPEG圧縮品質・2048x2048最大解像度
+- レイヤー合成・表示状態反映・ブレンドモード適用
+- プログレス表示・大容量対応・メモリ効率・非同期処理
+- ファイル名生成・タイムスタンプ・ユーザー設定・保存場所
+
+```typescript
+// src/core/ExportManager.ts作成
+// 依存関係: Phase1 PixiApplication.ts, Phase2 LayerManager.ts
+// 参考実装: PixiJS Application.renderer.extract API活用
+
+export interface ExportSettings {
+  format: 'png' | 'jpeg';
+  quality: number; // JPEG品質・0.1-1.0
+  resolution: number; // 解像度倍率・1.0-4.0
+  includeBackground: boolean;
+  fileName?: string;
+}
+
+export class ExportManager {
+  private pixiApp: PIXI.Application;
+  private layerManager: LayerManager;
+  private eventBus: EventBus;
+
+  // Phase1 PixiApplication継承・Phase2 LayerManager活用
+  public async exportImage(settings: ExportSettings): Promise<Blob> {
+    // レイヤー合成・一時Container作成
+    const exportContainer = this.createExportContainer();
+    
+    // Phase1 PixiJS extract API活用・非同期処理
+    const canvas = this.pixiApp.renderer.extract.canvas(exportContainer);
+    
+    // 形式変換・品質設定・Blob生成
+    return this.canvasToBlob(canvas, settings);
+  }
+}
+```
+
+## ⚙️ Step 5: WebGPUDetector.ts実装（Day 22-23・45分×2）
+
+### Phase3準備・環境検出
+**参照ドキュメント**:
+- `2_TECHNICAL_DESIGN.md` - WebGPU対応戦略・段階的縮退
+- `Phase1: PixiApplication.ts` - レンダラー初期化・フェイルセーフ参考
+- `1_PROJECT_SPEC.md` - 対応環境・Chrome/Edge・Firefox/Safari
+
+**実装ポイント・Phase3基盤**:
+- WebGPU対応検出・GPU性能評価・メモリ容量確認
+- Phase3移行判定・自動切り替え・ユーザー通知・設定保存
+- 段階的縮退継承・WebGL2フォールバック・安定性維持
+- Phase1 PixiApplication連携・レンダラー切り替え基盤
+
+```typescript
+// src/core/WebGPUDetector.ts作成
+// 依存関係: Phase1 PixiApplication.ts レンダラー管理参考
+// Phase3準備: WebGPU初期化・GPU性能評価・自動選択
+
+export interface GPUCapabilities {
+  supported: boolean;
+  tier: 'webgpu' | 'webgl2' | 'webgl';
+  features: string[];
+  memoryMB: number;
+  performance: 'high' | 'medium' | 'low';
+}
+
+export class WebGPUDetector {
+  // Phase3準備・段階的実装・Phase1安定性継承
+  public static async detectCapabilities(): Promise<GPUCapabilities> {
+    // WebGPU対応検出・navigator.gpu
+    if (!navigator.gpu) {
+      return this.fallbackToWebGL();
+    }
+
+    // GPU Adapter要求・性能評価
+    const adapter = await navigator.gpu.requestAdapter({
+      powerPreference: 'high-performance'
+    });
+
+    if (!adapter) {
+      return this.fallbackToWebGL();
+    }
+
+    // GPU情報取得・メモリ・機能・Phase3判定
+    return this.evaluateGPUPerformance(adapter);
+  }
+}
+```
+
+## ✅ Phase2完了判定・品質基準
+
+### 必須クリア条件・Phase3移行判定
+```
+🔴 核心機能・動作必須:
+├─ レイヤーシステム・作成/削除/並び替え・20枚制限・正常動作
+├─ 高度ツール・筆・図形・塗りつぶし・差別化表現・設定保存
+├─ エクスポート機能・PNG/JPEG・2048x2048・実際のファイル出力
+└─ WebGPU検出・Phase3準備・環境判定・自動切り替え基盤
+
+🟡 品質要件・実用性確保:
+├─ 30FPS安定・512MB以下・5分間連続作業・エラーなし
+├─ 実作品制作・複数レイヤー・多様ツール・実用ワークフロー
+├─ UI応答性・操作遅延200ms以下・視覚フィードバック・満足度
+└─ 設定永続・作業継続・次回起動時復元・利便性確保
+
+🟠 準備要件・Phase3移行:
+├─ WebGPU基盤・検出システム・GPU性能評価・移行判定
+├─ メモリ最適化・テクスチャ管理・ガベージコレクション・安定性
+├─ コード品質・TypeScript厳格・責任分界・保守性・拡張性
+└─ ドキュメント更新・実装記録・Claude引き継ぎ・継続性
+```
+
+### Phase2→Phase3移行・判断基準
+```
+✅ 移行可能・高性能化準備完了:
+├─ 上記必須条件クリア・品質基準達成・実用性確認
+├─ WebGPU環境50%以上・対応率確認・Phase3価値確保
+├─ 基盤安定性・長時間動作・メモリリークなし・信頼性
+└─ ユーザーフィードバック・実際使用・改善点把握・満足度
+
+⚠️ 移行延期・品質優先・Phase2継続:
+├─ 基本機能不安定・レイヤー不具合・エクスポート失敗・致命的
+├─ 性能不足・20FPS未満・1GB超過・実用困難・体験悪化
+├─ WebGPU対応率30%未満・Phase3価値不足・投資対効果低
+└─ コード品質不足・保守困難・バグ多発・開発効率悪化
+```
+
+## 🔄 Claude引き継ぎ・継続性確保
+
+### 次回実装・開始時確認
+```
+📋 Phase2状況確認・必須チェック:
+1. Phase1動作状況:
+   ├─ 基本描画・ペンツール・色選択・正常動作確認
+   ├─ EventBus通信・InputManager・DrawingEngine・安定性
+   ├─ UI表示・ふたば色・レイアウト・視覚確認・操作性
+   └─ 性能監視・FPS・メモリ・ログ確認・問題有無
+
+2. Phase2実装方針:
+   ├─ LayerManager実装優先・Container階層・EventBus連携
+   ├─ 段階的実装・週単位評価・品質優先・無理なし
+   ├─ Phase1継承・既存コード活用・責任分界維持・効率化
+   └─ Phase3準備・WebGPU基盤・検出システム・移行判定
+
+3. 品質基準・継続要件:
+   ├─ TypeScript厳格・エラー0・警告0・保守性確保
+   ├─ 責任分界・1クラス1機能・Claude理解容易・効率化
+   ├─ テスト実施・動作確認・実用性検証・ユーザー目線
+   └─ ドキュメント更新・実装記録・引き継ぎ情報・継続性
+```
+
+### Phase2成功要因・重要ポイント
+```
+🎯 技術的成功要因:
+├─ Phase1基盤活用・EventBus・DrawingEngine・PixiApplication継承
+├─ レイヤーシステム・Container階層・PIXI.js最適活用・GPU効率
+├─ 段階的実装・週単位評価・無理なし・品質優先・安定性
+└─ Phase3準備・WebGPU基盤・検出システム・移行判定・先見性
+
+🎯 プロジェクト成功要因:
+├─ 実用性重視・実作品制作可能・ワークフロー対応・満足度
+├─ UI/UX継続・ふたば色・アクセシビリティ・親しみやすさ
+├─ Claude協業・責任分界・理解容易・効率開発・品質向上
+└─ ユーザー目線・フィードバック・改善・継続使用・価値提供
+```
+
+---
+
+**このPhase2実装ガイドにより、Phase1基盤を最大活用し、実用的なお絵かきツールを段階的に完成させます。各Stepの依存関係と参照ドキュメントを明確にし、Claude間での継続的開発と品質保証を確保します。**
