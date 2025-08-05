@@ -106,10 +106,10 @@
 
 ### メイン画面構成・2560×1440最適化
 ```css
-/* === Grid Layout・80px|1fr|400px === */
+/* === Grid Layout・64px|1fr|400px === */
 .main-layout {
   display: grid;
-  grid-template-columns: 80px 1fr 400px;
+  grid-template-columns: 64px 1fr 400px;
   grid-template-rows: 1fr auto;
   grid-template-areas: 
     "sidebar canvas layer-panel"
@@ -197,12 +197,13 @@
 
 ## 🔧 コンポーネント仕様・詳細設計
 
-### Toolbar・ツールバー（80px幅）- Tabler Icons統合
+### Toolbar・ツールバー（64px幅）- Tabler Icons統合
 ```css
-/* === ツールボタン・56px基準・SVGアイコン対応 === */
+/* === ツールボタン・48px基準・SVGアイコン対応 === */
 .tool-button {
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
+  gap: 6px;
   border: 1px solid var(--futaba-light);
   background: var(--futaba-background);
   border-radius: 8px;
@@ -536,8 +537,8 @@
 }
 
 .particle-preview {
-  width: 80px;
-  height: 80px;
+  width: 64px;
+  height: 64px;
   border: 1px solid var(--futaba-light);
   border-radius: 50%;
   background: var(--futaba-background);
@@ -959,7 +960,7 @@
 }
 
 .export-progress {
-  width: 80px;
+  width: 64px;
   height: 4px;
   background: var(--futaba-light);
   border-radius: 2px;

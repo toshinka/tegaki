@@ -10,13 +10,19 @@
 ### ステップ1: 環境構築（30分）
 ```bash
 # 1. プロジェクト作成
-npm create vite@latest modern-drawing-tool -- --template vanilla-ts
-cd modern-drawing-tool
+npm create vite@latest drawing-tool -- --template vanilla-ts
+cd drawing-tool
 npm install pixi.js@8.11.0 @types/node
 
 # 2. ディレクトリ作成
 mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/types
 ```
+# Tabler Icons追加（Phase2以降で使用予定）
+npm install @tabler/icons@3.34.1
+
+# または CDN使用（Phase1はこちら推奨）
+# https://cdn.jsdelivr.net/npm/@tabler/icons@3.34.1/icons-sprite.svg
+
 
 **参照ドキュメント**: 
 - `2_TECHNICAL_DESIGN.md` - ディレクトリ構成
@@ -856,12 +862,12 @@ export class ToolManager {
 - `2_TECHNICAL_DESIGN.md` - UI責任分界
 - `3_IMPLEMENTATION_GUIDE.md` - 実装例
 
-**参考資料継承**: ✅ ふたば色システム完全継承・Grid Layout・56pxアイコン・ポップアップ準備
+**参考資料継承**: ✅ ふたば色システム完全継承・Grid Layout・48pxアイコン・ポップアップ準備
 
 **Claude実装ポイント**:
 - CSS変数でふたば色定義必須
-- Grid Layout: 80px|1fr|400px
-- ツールボタン56px、色スウォッチ32px
+- Grid Layout: 64px|1fr|400px
+- ツールボタン48px、色スウォッチ32px
 - EventBusでui:toolbar-click, ui:color-changeイベント
 
 ```typescript
@@ -908,10 +914,10 @@ export class UIManager {
         overflow: hidden;
       }
       
-      /* 参考資料のGrid Layout完全継承・80px|1fr|400px */
+      /* 参考資料のGrid Layout完全継承・64px|1fr|400px */
       .main-layout {
         display: grid;
-        grid-template-columns: 80px 1fr;
+        grid-template-columns: 64px 1fr;
         grid-template-rows: 1fr;
         height: 100vh;
         width: 100vw;
@@ -932,10 +938,10 @@ export class UIManager {
         overflow: hidden;
       }
       
-      /* 参考資料の56pxツールボタン完全継承 */
+      /* 参考資料の48pxツールボタン完全継承 */
       .tool-button {
-        width: 56px;
-        height: 56px;
+        width: 48px;
+        height: 48px;
         border: 1px solid var(--futaba-light-medium);
         background: var(--futaba-background);
         border-radius: 8px;
@@ -1121,10 +1127,10 @@ export class UIManager {
 **参照ドキュメント**:
 - `4_UI_STYLE_GUIDE.md` - Toolbarスタイル
 
-**参考資料継承**: ✅ 56pxボタンサイズ・ふたばマルーン・ホバー効果
+**参考資料継承**: ✅ 48pxボタンサイズ・ふたばマルーン・ホバー効果
 
 **Claude実装ポイント**:
-- 56pxボタンサイズ厳守
+- 48pxボタンサイズ厳守
 - アクティブ状態でふたばマルーン背景
 - ホバー効果でscale(1.05)
 

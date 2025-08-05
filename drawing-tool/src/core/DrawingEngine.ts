@@ -1,408 +1,156 @@
-// DrawingEngine.ts - 描画エンジン・Graphics統合・ツール制御 (簡略版)
-// PixiJS Graphics最適化・スムージング・手ブレ軽減
-
 import * as PIXI from 'pixi.js';
-import type { EventBus } from './EventBus.js';
+import { EventBus } from './EventBus.js';
+import { IEventData } from '../types/drawing.types.js';
 
-/**
- * ストロークデータ・描画情報
- */
-interface IStrokeData {
-  id: string;
-  points: PIXI.Point[];
-  pressures: number[];
-  color: number;
-  size: number;
-  tool: string;
-}
-
-/**
- * 描画設定・品質制御
- */
-interface IDrawingSettings {
-  smoothing: {
-    enabled: boolean;
-    factor: number; // 0-1, 1=最大スムージング
-    minDistance: number; // 最小描画距離
-  };
-  quality: {
-    antialias: boolean;
-    lineJoin: 'round' | 'bevel' | 'miter';
-    lineCap: 'round' | 'square' | 'butt';
-  };
-}
-
-/**
- * 描画エンジン・ツール統合制御
- */
 export class DrawingEngine {
-  private app: PIXI.Application;
+  private pixiApp: PIXI.Application;
   private eventBus: EventBus;
-  
-  // 描画コンテナ階層
+  private currentGraphics: PIXI.Graphics | null = null;
+  private strokePoints: PIXI.Point[] = [];
   private drawingContainer: PIXI.Container;
-  private currentLayer: PIXI.Graphics;
-  private tempGraphics: PIXI.Graphics; // 描画中の一時Graphics
   
-  // 描画状態
-  private isDrawing = false;
-  private currentStroke: IStrokeData | null = null;
-  private strokeId = 0;
-  
-  // 現在の描画設定
-  private currentColor = 0x800000; // ふたばマルーン
-  private currentSize = 5;
-  private currentTool = 'pen';
-  
-  // 設定
-  private settings: IDrawingSettings;
+  // 描画設定・参考資料のふたば色継承
+  private currentColor = 0x800000; // ふたばマルーン・参考資料継承
+  private currentSize = 4;
+  private currentOpacity = 0.8;
 
-  constructor(app: PIXI.Application, eventBus: EventBus) {
-    this.app = app;
+  constructor(pixiApp: PIXI.Application, eventBus: EventBus) {
+    this.pixiApp = pixiApp;
     this.eventBus = eventBus;
     
-    // 初期設定
-    this.settings = this.createDefaultSettings();
-    
-    // コンテナ階層初期化
-    this.initializeContainers();
-    
-    // イベントリスナー設定
-    this.setupEventListeners();
-    
-    console.log('🖌️ DrawingEngine初期化完了');
-  }
-
-  /**
-   * コンテナ階層初期化・描画構造構築
-   */
-  private initializeContainers(): void {
-    // メイン描画コンテナ作成
+    // 描画用Container作成・参考資料のContainer階層継承
     this.drawingContainer = new PIXI.Container();
-    this.drawingContainer.name = 'DrawingContainer';
-    this.drawingContainer.sortableChildren = true;
+    this.pixiApp.stage.addChild(this.drawingContainer);
     
-    // 基本レイヤー作成
-    this.currentLayer = new PIXI.Graphics();
-    this.currentLayer.name = 'Layer_0';
-    this.currentLayer.zIndex = 0;
-    
-    // 一時描画Graphics
-    this.tempGraphics = new PIXI.Graphics();
-    this.tempGraphics.name = 'TempDrawing';
-    this.tempGraphics.zIndex = 1000; // 最前面
-    
-    // 階層構造構築
-    this.drawingContainer.addChild(this.currentLayer);
-    this.drawingContainer.addChild(this.tempGraphics);
-    this.app.stage.addChild(this.drawingContainer);
-    
-    console.log('🖌️ 描画コンテナ階層構築完了');
+    this.setupEventListeners();
   }
 
-  /**
-   * イベントリスナー設定・描画制御
-   */
   private setupEventListeners(): void {
-    // ツール変更
-    this.eventBus.on('tool:activated', (data) => {
-      this.currentTool = data.tool;
-      console.log(`🖌️ ツール変更: ${this.currentTool}`);
-    });
-
-    // 色変更
-    this.eventBus.on('ui:color-select', (data) => {
-      this.currentColor = data.color;
-      console.log(`🖌️ 色変更: ${this.currentColor.toString(16)}`);
-    });
-
-    // ブラシサイズ変更
-    this.eventBus.on('brush:sizeChange', (data) => {
-      this.currentSize = data.data.size;
-      console.log(`🖌️ サイズ変更: ${this.currentSize}`);
-    });
-
-    // 描画イベント
-    this.eventBus.on('drawing:stroke-start', (data) => {
-      this.startStroke(data.x, data.y, data.pressure || 1.0);
-    });
-
-    this.eventBus.on('drawing:stroke-move', (data) => {
-      this.continueStroke(data.x, data.y, data.pressure || 1.0);
-    });
-
-    this.eventBus.on('drawing:stroke-end', (data) => {
-      this.endStroke();
-    });
-
-    // 消しゴムイベント
-    this.eventBus.on('drawing:erase-start', (data) => {
-      this.startErase(data.x, data.y, data.pressure || 1.0);
-    });
-
-    this.eventBus.on('drawing:erase-move', (data) => {
-      this.continueErase(data.x, data.y, data.pressure || 1.0);
-    });
-
-    this.eventBus.on('drawing:erase-end', (data) => {
-      this.endErase();
-    });
+    this.eventBus.on('drawing:start', this.startDrawing.bind(this));
+    this.eventBus.on('drawing:move', this.continueDrawing.bind(this));
+    this.eventBus.on('drawing:end', this.endDrawing.bind(this));
+    this.eventBus.on('ui:color-change', this.onColorChange.bind(this));
   }
 
-  /**
-   * ストローク開始・ペン描画
-   */
-  private startStroke(x: number, y: number, pressure: number): void {
-    if (this.isDrawing) return;
+  private startDrawing(data: IEventData['drawing:start']): void {
+    // 新しいGraphics作成・GPU最適化・参考資料継承
+    this.currentGraphics = new PIXI.Graphics();
+    this.strokePoints = [data.point];
 
-    this.isDrawing = true;
-    this.strokeId++;
-
-    // 新しいストロークデータ作成
-    this.currentStroke = {
-      id: `stroke_${this.strokeId}`,
-      points: [new PIXI.Point(x, y)],
-      pressures: [pressure],
+    // 描画設定適用・参考資料のGPU最適化準備
+    this.currentGraphics.lineStyle({
+      width: this.calculateBrushSize(data.pressure),
       color: this.currentColor,
-      size: this.currentSize,
-      tool: this.currentTool
-    };
-
-    // 一時Graphics設定
-    this.tempGraphics.clear();
-    this.tempGraphics.lineStyle({
-      width: this.currentSize * pressure,
-      color: this.currentColor,
-      cap: this.settings.quality.lineCap,
-      join: this.settings.quality.lineJoin
+      alpha: this.currentOpacity,
+      cap: PIXI.LINE_CAP.ROUND,
+      join: PIXI.LINE_JOIN.ROUND
     });
 
-    this.tempGraphics.moveTo(x, y);
-
-    console.log(`🖌️ ストローク開始: (${x}, ${y}) pressure=${pressure.toFixed(3)}`);
+    // 開始点設定
+    this.currentGraphics.moveTo(data.point.x, data.point.y);
+    this.drawingContainer.addChild(this.currentGraphics);
   }
 
-  /**
-   * ストローク継続・ペン描画
-   */
-  private continueStroke(x: number, y: number, pressure: number): void {
-    if (!this.isDrawing || !this.currentStroke) return;
+  private continueDrawing(data: IEventData['drawing:move']): void {
+    if (!this.currentGraphics) return;
 
-    // ポイント追加
-    this.currentStroke.points.push(new PIXI.Point(x, y));
-    this.currentStroke.pressures.push(pressure);
+    this.strokePoints.push(data.point);
 
-    // 線を描画
-    this.tempGraphics.lineStyle({
-      width: this.currentSize * pressure,
-      color: this.currentColor,
-      cap: this.settings.quality.lineCap,
-      join: this.settings.quality.lineJoin
-    });
+    // スムージング適用・3点以上で処理・参考資料の滑らか描画継承
+    if (this.strokePoints.length >= 3) {
+      const smoothPoint = this.calculateSmoothPoint(
+        this.strokePoints[this.strokePoints.length - 3],
+        this.strokePoints[this.strokePoints.length - 2],
+        this.strokePoints[this.strokePoints.length - 1]
+      );
 
-    this.tempGraphics.lineTo(x, y);
+      // 筆圧対応・線幅動的変更・参考資料の筆圧感知継承
+      this.currentGraphics.lineStyle({
+        width: this.calculateBrushSize(data.pressure),
+        color: this.currentColor,
+        alpha: this.currentOpacity
+      });
+
+      this.currentGraphics.lineTo(smoothPoint.x, smoothPoint.y);
+    } else {
+      // 点が少ない場合は直線
+      this.currentGraphics.lineTo(data.point.x, data.point.y);
+    }
   }
 
-  /**
-   * ストローク終了・ペン描画
-   */
-  private endStroke(): void {
-    if (!this.isDrawing || !this.currentStroke) return;
+  private endDrawing(data: IEventData['drawing:end']): void {
+    if (!this.currentGraphics) return;
 
-    // 一時Graphicsを本レイヤーに転写
-    this.transferTempToLayer();
-
-    // 状態リセット
-    this.isDrawing = false;
-    this.currentStroke = null;
-    this.tempGraphics.clear();
-
-    console.log('🖌️ ストローク終了');
-  }
-
-  /**
-   * 消しゴム開始
-   */
-  private startErase(x: number, y: number, pressure: number): void {
-    if (this.isDrawing) return;
-
-    this.isDrawing = true;
+    // 最終点追加
+    this.currentGraphics.lineTo(data.point.x, data.point.y);
     
-    // 消しゴム設定（穴を開ける）
-    this.tempGraphics.clear();
-    this.tempGraphics.beginFill(0x000000); // 黒で塗りつぶし
-    this.tempGraphics.drawCircle(x, y, this.currentSize * pressure);
-    this.tempGraphics.endFill();
-
-    // ブレンドモードを減算に設定
-    this.tempGraphics.blendMode = PIXI.BLEND_MODES.ERASE;
-
-    console.log(`🖌️ 消しゴム開始: (${x}, ${y})`);
+    // GPU最適化・Batch処理準備・参考資料のWebGPU準備継承
+    this.optimizeGraphics(this.currentGraphics);
+    
+    // 描画完了・リセット
+    this.currentGraphics = null;
+    this.strokePoints = [];
   }
 
-  /**
-   * 消しゴム継続
-   */
-  private continueErase(x: number, y: number, pressure: number): void {
-    if (!this.isDrawing) return;
-
-    // 消しゴムの軌跡を描画
-    this.tempGraphics.drawCircle(x, y, this.currentSize * pressure);
+  // ベジエ曲線スムージング・手ブレ軽減・参考資料継承
+  private calculateSmoothPoint(p1: PIXI.Point, p2: PIXI.Point, p3: PIXI.Point): PIXI.Point {
+    const smoothFactor = 0.5;
+    return new PIXI.Point(
+      p2.x + (p3.x - p1.x) * smoothFactor * 0.25,
+      p2.y + (p3.y - p1.y) * smoothFactor * 0.25
+    );
   }
 
-  /**
-   * 消しゴム終了
-   */
-  private endErase(): void {
-    if (!this.isDrawing) return;
-
-    // 一時Graphicsを本レイヤーに転写
-    this.transferTempToLayer();
-
-    // 状態リセット
-    this.isDrawing = false;
-    this.tempGraphics.clear();
-    this.tempGraphics.blendMode = PIXI.BLEND_MODES.NORMAL;
-
-    console.log('🖌️ 消しゴム終了');
+  // 筆圧対応サイズ計算・参考資料の自然な太さ変化継承
+  private calculateBrushSize(pressure: number): number {
+    const minSize = this.currentSize * 0.3;
+    const maxSize = this.currentSize * 1.5;
+    return minSize + (maxSize - minSize) * pressure;
   }
 
-  /**
-   * 一時Graphicsを本レイヤーに転写
-   */
-  private transferTempToLayer(): void {
-    if (!this.tempGraphics || this.tempGraphics.geometry.graphicsData.length === 0) {
-      return;
+  // Graphics最適化・GPU効率化・参考資料の性能最適化継承
+  private optimizeGraphics(graphics: PIXI.Graphics): void {
+    // バッチング最適化
+    graphics.finishPoly();
+    
+    // 複雑度チェック・簡略化
+    if (this.strokePoints.length > 500) {
+      this.simplifyStroke();
+    }
+  }
+
+  // ストローク簡略化・性能最適化
+  private simplifyStroke(): void {
+    const simplified: PIXI.Point[] = [];
+    
+    for (let i = 0; i < this.strokePoints.length; i += 2) {
+      simplified.push(this.strokePoints[i]);
     }
 
-    // 現在のレイヤーに描画内容をコピー
-    const tempTexture = this.app.renderer.generateTexture(this.tempGraphics);
-    const sprite = new PIXI.Sprite(tempTexture);
-    
-    // スプライトとして追加（パフォーマンス向上）
-    this.currentLayer.addChild(sprite);
-    
-    // 一時Graphics クリア
-    this.tempGraphics.clear();
+    this.strokePoints = simplified;
   }
 
-  /**
-   * レイヤークリア
-   */
-  public clearLayer(): void {
-    this.currentLayer.clear();
-    this.currentLayer.removeChildren();
-    this.tempGraphics.clear();
-    console.log('🖌️ レイヤークリア');
+  // 色変更イベント処理・参考資料のリアルタイム反映継承
+  private onColorChange(data: IEventData['ui:color-change']): void {
+    this.currentColor = data.color;
   }
 
-  /**
-   * 全体クリア
-   */
-  public clearAll(): void {
-    this.clearLayer();
-    this.isDrawing = false;
-    this.currentStroke = null;
-    console.log('🖌️ 全体クリア');
+  // 公開設定メソッド
+  public setBrushSize(size: number): void {
+    this.currentSize = Math.max(1, Math.min(200, size));
   }
 
-  /**
-   * 描画状態取得
-   */
-  public isCurrentlyDrawing(): boolean {
-    return this.isDrawing;
+  public setOpacity(opacity: number): void {
+    this.currentOpacity = Math.max(0, Math.min(1, opacity));
   }
 
-  /**
-   * 現在の設定取得
-   */
-  public getCurrentSettings() {
-    return {
-      color: this.currentColor,
-      size: this.currentSize,
-      tool: this.currentTool,
-      isDrawing: this.isDrawing
-    };
+  public getCurrentColor(): number {
+    return this.currentColor;
   }
 
-  /**
-   * キャンバス画像エクスポート・Phase2準備
-   */
-  public exportImage(): string {
-    const texture = this.app.renderer.generateTexture(this.drawingContainer);
-    const canvas = this.app.renderer.extract.canvas(texture);
-    return canvas.toDataURL('image/png');
-  }
-
-  /**
-   * デフォルト設定作成
-   */
-  private createDefaultSettings(): IDrawingSettings {
-    return {
-      smoothing: {
-        enabled: true,
-        factor: 0.5,
-        minDistance: 2
-      },
-      quality: {
-        antialias: true,
-        lineJoin: 'round',
-        lineCap: 'round'
-      }
-    };
-  }
-
-  /**
-   * 設定更新
-   */
-  public updateSettings(newSettings: Partial<IDrawingSettings>): void {
-    this.settings = { ...this.settings, ...newSettings };
-    console.log('🖌️ 描画設定更新:', newSettings);
-  }
-
-  /**
-   * デバッグ情報取得
-   */
-  public getDebugInfo() {
-    return {
-      isDrawing: this.isDrawing,
-      currentTool: this.currentTool,
-      currentColor: this.currentColor,
-      currentSize: this.currentSize,
-      strokeId: this.strokeId,
-      settings: this.settings,
-      containerChildren: this.drawingContainer.children.length,
-      layerChildren: this.currentLayer.children.length
-    };
-  }
-
-  /**
-   * 破棄処理
-   */
   public destroy(): void {
-    try {
-      // イベントリスナー削除
-      this.eventBus.off('tool:activated');
-      this.eventBus.off('ui:color-select');
-      this.eventBus.off('brush:sizeChange');
-      this.eventBus.off('drawing:stroke-start');
-      this.eventBus.off('drawing:stroke-move');
-      this.eventBus.off('drawing:stroke-end');
-      this.eventBus.off('drawing:erase-start');
-      this.eventBus.off('drawing:erase-move');
-      this.eventBus.off('drawing:erase-end');
-
-      // Graphics削除
-      this.currentLayer?.destroy({ children: true });
-      this.tempGraphics?.destroy();
-      this.drawingContainer?.destroy({ children: true });
-
-      // 参照クリア
-      this.currentStroke = null;
-
-      console.log('✅ DrawingEngine破棄完了');
-    } catch (error) {
-      console.error('⚠️ DrawingEngine破棄エラー:', error);
+    if (this.drawingContainer) {
+      this.drawingContainer.destroy({ children: true });
     }
   }
 }
