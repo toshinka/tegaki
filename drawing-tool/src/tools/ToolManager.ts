@@ -1,6 +1,9 @@
 import { EventBus } from '../core/EventBus.js';
 import { PenTool, IDrawingTool } from './PenTool.js';
 import { EraserTool } from './EraserTool.js';
+import { BrushTool } from './BrushTool.js';
+import { FillTool } from './FillTool.js';
+import { ShapeTool } from './ShapeTool.js';
 
 export class ToolManager {
   private eventBus: EventBus;
@@ -14,12 +17,18 @@ export class ToolManager {
   }
 
   private initializeTools(): void {
-    // Phase1基本ツール・参考資料の段階実装継承
-    const penTool = new PenTool();
-    const eraserTool = new EraserTool();
+    // Phase2完全実装・EventBus注入・責任分界
+    const penTool = new PenTool(this.eventBus);
+    const brushTool = new BrushTool(this.eventBus);
+    const eraserTool = new EraserTool(this.eventBus);
+    const fillTool = new FillTool(this.eventBus);
+    const shapeTool = new ShapeTool(this.eventBus);
     
     this.tools.set('pen', penTool);
+    this.tools.set('brush', brushTool);
     this.tools.set('eraser', eraserTool);
+    this.tools.set('fill', fillTool);
+    this.tools.set('shape', shapeTool);
     
     // デフォルトツール設定
     this.setCurrentTool('pen');
@@ -28,6 +37,13 @@ export class ToolManager {
   private setupEventListeners(): void {
     this.eventBus.on('ui:toolbar-click', (data) => {
       this.setCurrentTool(data.tool);
+    });
+
+    // ツール設定変更イベント
+    this.eventBus.on('ui:tool-setting-change', (data) => {
+      if (this.currentTool && this.currentTool.name === data.toolName) {
+        this.currentTool.updateSettings(data.settings);
+      }
     });
   }
 
@@ -52,7 +68,8 @@ export class ToolManager {
     // ツール変更イベント発火
     this.eventBus.emit('tool:change', {
       toolName,
-      previousTool: previousToolName
+      previousTool: previousToolName,
+      settings: tool.getSettings()
     });
     
     console.log(`ツール切り替え: ${previousToolName} → ${toolName}`);
@@ -64,6 +81,18 @@ export class ToolManager {
 
   public getAvailableTools(): string[] {
     return Array.from(this.tools.keys());
+  }
+
+  public getToolSettings(toolName: string): any {
+    const tool = this.tools.get(toolName);
+    return tool ? tool.getSettings() : null;
+  }
+
+  public updateToolSettings(toolName: string, settings: any): void {
+    const tool = this.tools.get(toolName);
+    if (tool) {
+      tool.updateSettings(settings);
+    }
   }
 
   public destroy(): void {
