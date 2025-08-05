@@ -1,0 +1,185 @@
+# ディレクトリ構成比較・統一案
+
+## 🔍 現状 vs 設計書・相違点
+
+### ✅ 一致している部分
+```
+src/
+├── main.ts                    ✅ 完全一致
+├── style.css                  ✅ 完全一致
+├── core/                      ✅ ディレクトリ存在
+│   ├── EventBus.ts             ✅ 完全一致
+│   ├── DrawingEngine.ts        ✅ 完全一致
+│   ├── PerformanceManager.ts   ✅ 完全一致
+│   └── PixiApplication.ts      ✅ 完全一致
+├── input/                     ✅ ディレクトリ存在
+│   └── InputManager.ts         ✅ 完全一致
+├── rendering/                 ✅ ディレクトリ存在
+│   └── LayerManager.ts         ✅ 完全一致
+├── tools/                     ✅ ディレクトリ存在
+│   ├── ToolManager.ts          ✅ 完全一致
+│   ├── PenTool.ts             ✅ 完全一致
+│   ├── BrushTool.ts           ✅ 完全一致
+│   └── EraserTool.ts          ✅ 完全一致
+├── types/                     ✅ ディレクトリ存在
+│   ├── drawing.types.ts        ✅ 完全一致
+│   └── ui.types.ts            ✅ 完全一致
+└── ui/                        ✅ ディレクトリ存在
+    ├── UIManager.ts            ✅ 完全一致
+    └── LayerPanel.ts           ✅ 完全一致
+```
+
+### ❌ 不一致・不足している部分
+
+#### 設計書にあるが現状にない（Phase2-3で実装予定）
+```
+├── rendering/
+│   ├── WebGPURenderer.ts      ❌ Phase3実装予定
+│   ├── CanvasManager.ts       ❌ Phase3実装予定
+│   └── TextureManager.ts      ❌ Phase3実装予定
+├── input/
+│   ├── PointerProcessor.ts    ❌ Phase3実装予定
+│   └── ShortcutManager.ts     ❌ Phase2後半実装予定
+├── tools/
+│   ├── FillTool.ts           ❌ Phase2実装予定
+│   └── ShapeTool.ts          ❌ Phase2実装予定
+├── ui/
+│   ├── Toolbar.ts            ❌ Phase2実装予定
+│   └── ColorPalette.ts       ❌ Phase2実装予定
+├── constants/                ❌ Phase2で作成予定
+│   ├── ui-constants.ts       ❌ Phase2実装予定
+│   ├── drawing-constants.ts  ❌ Phase2実装予定
+│   └── performance-constants.ts ❌ Phase2実装予定
+└── types/
+    └── performance.types.ts   ❌ Phase2実装予定
+```
+
+#### Phase2実装ガイドで言及されているが設計書にない
+```
+└── core/
+    ├── ExportManager.ts       ⚠️ Phase2ガイドで言及
+    └── WebGPUDetector.ts      ⚠️ Phase2ガイドで言及
+```
+
+## 🎯 推奨統一方針・段階的対応
+
+### 方針1: 設計書準拠・段階実装（推奨）
+**メリット**: 一貫性・将来性・文書整合性  
+**デメリット**: 一部ファイル移動必要
+
+```
+✅ 採用理由:
+├─ 2_TECHNICAL_DESIGN.mdは「確定版・変更不可」と明記
+├─ 全体アーキテクチャとの整合性・将来拡張性確保
+├─ Claude引き継ぎ・他開発者理解・保守性向上
+└─ Phase実装での自然な段階追加・混乱回避
+
+🔧 必要な対応:
+├─ Phase2ガイド一部修正・設計書準拠パス使用
+├─ 段階的ファイル追加・Phase2-3で自然に実装
+├─ ExportManager・WebGPUDetector配置調整
+└─ constants/ディレクトリ・Phase2で新規作成
+```
+
+### 方針2: Phase2ガイド準拠・現状維持
+**メリット**: 実装継続性・変更最小  
+**デメリット**: 設計書との乖離・将来混乱
+
+## 🚀 具体的統一案・Phase2対応
+
+### Step 1: ExportManager.ts・WebGPUDetector.ts配置調整
+```diff
+Phase2実装ガイド修正案:
+
+- src/core/ExportManager.ts作成
++ src/rendering/ExportManager.ts作成
+  理由: レンダリング出力機能・LayerManager連携・rendering層適切
+
+- src/core/WebGPUDetector.ts作成  
++ src/rendering/WebGPUDetector.ts作成
+  理由: GPU環境検出・レンダリング最適化・rendering層適切
+```
+
+### Step 2: constants/ディレクトリ新規作成・Phase2実装
+```
+src/constants/新規作成・Phase2実装:
+├── ui-constants.ts          # レイヤーパネル・ツールバーサイズ定数
+├── drawing-constants.ts     # ブラシサイズ・圧力感度・描画制限
+└── performance-constants.ts # メモリ制限・FPS目標・警告閾値
+
+使用例:
+// constants/ui-constants.ts
+export const UI_CONSTANTS = {
+  LAYER_PANEL_WIDTH: 400,
+  LAYER_ITEM_HEIGHT: 64,
+  TOOLBAR_WIDTH: 80,
+  COLOR_PALETTE_SIZE: 200
+} as const;
+```
+
+### Step 3: Phase2実装ガイド・パス修正版
+```typescript
+// 修正版: LayerManager.ts実装
+// src/rendering/LayerManager.ts作成（設計書準拠）
+// 依存関係: Phase1 EventBus.ts, PixiApplication.ts
+// 参考実装: Phase1 DrawingEngine.ts のContainer管理
+
+export class LayerManager {
+  // Phase1継承・設計書準拠実装
+}
+
+// 修正版: ExportManager.ts実装  
+// src/rendering/ExportManager.ts作成（配置調整）
+// 依存関係: Phase1 PixiApplication.ts, Phase2 LayerManager.ts
+// 理由: レンダリング出力・LayerManager連携・適切な配置
+
+export class ExportManager {
+  // レンダリング層・出力機能実装
+}
+```
+
+## 📋 Phase2実装・統一後の優先順序
+
+### Week 1: レイヤーシステム基盤（設計書準拠）
+```
+Day 1-2: src/rendering/LayerManager.ts実装
+Day 3-4: src/ui/LayerPanel.ts UI実装  
+Day 5-6: constants/ui-constants.ts作成・統合
+Day 7: 動作確認・テスト・調整
+```
+
+### Week 2: 高度ツールシステム
+```
+Day 8-9: src/tools/BrushTool.ts実装（既存）
+Day 10-11: src/tools/EraserTool.ts強化・ShapeTool.ts作成
+Day 12-13: src/tools/FillTool.ts作成・constants/drawing-constants.ts
+Day 14: ツール統合・設定管理
+```
+
+### Week 3: エクスポート・設定システム
+```
+Day 15-16: src/rendering/ExportManager.ts実装（配置調整）
+Day 17-18: 設定永続化・constants活用
+Day 19-20: src/ui/ColorPalette.ts・HSV実装
+Day 21: 実用テスト・作品制作テスト
+```
+
+### Week 4: WebGPU準備・統合最適化
+```
+Day 22-23: src/rendering/WebGPUDetector.ts実装（配置調整）
+Day 24-25: constants/performance-constants.ts・最適化
+Day 26-27: 統合テスト・長時間動作確認
+Day 28: Phase2完了判定・Phase3移行準備
+```
+
+## ✅ 推奨決定・実装継続
+
+**決定**: 設計書準拠・段階実装採用  
+**理由**: 一貫性・将来性・保守性・Claude協業効率  
+**対応**: Phase2ガイド一部修正・constants/新規作成・配置調整
+
+**次回Claude指示**:
+1. 設計書準拠パス使用・rendering/ExportManager.ts等
+2. constants/ディレクトリ作成・UI/描画/性能定数分離  
+3. Phase2実装継続・品質優先・段階的追加
+4. 文書整合性維持・引き継ぎ情報更新
