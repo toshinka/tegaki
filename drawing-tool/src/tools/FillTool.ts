@@ -33,10 +33,6 @@ interface IFillSettings {
   contiguous: boolean;        // 連続領域のみ
   sampleMerged: boolean;      // 全レイヤー参照
   preserveTransparency: boolean; // 透明度保持
-  
-  // グラデーション・Phase3実装予定
-  gradientType: 'linear' | 'radial' | 'angular';
-  gradientStops: Array<{ color: number; position: number }>;
 }
 
 /**
@@ -58,17 +54,6 @@ interface IColorInfo {
   g: number;
   b: number;
   a: number;
-}
-
-/**
- * 塗りつぶし統計・性能監視
- */
-interface IFillStats {
-  fillCount: number;
-  totalPixelsFilled: number;
-  averageProcessTime: number;
-  maxProcessTime: number;
-  toleranceDistribution: number[];
 }
 
 /**
@@ -104,13 +89,6 @@ export class FillTool implements IDrawingTool {
     contiguous: true,         // 連続領域のみ・標準動作
     sampleMerged: false,      // 現在レイヤーのみ
     preserveTransparency: false, // 透明度上書き
-    
-    // グラデーション・Phase3実装予定
-    gradientType: 'linear',
-    gradientStops: [
-      { color: 0x800000, position: 0.0 },
-      { color: 0xffffff, position: 1.0 }
-    ]
   };
   
   // 処理状態管理
@@ -125,18 +103,6 @@ export class FillTool implements IDrawingTool {
   // 画像データキャッシュ・性能最適化
   private imageDataCache: Map<string, ImageData> = new Map();
   private lastCanvasSize = { width: 0, height: 0 };
-  
-  // ワーカー・非同期処理・Phase3実装予定
-  private fillWorker: Worker | null = null;
-  
-  // 統計
-  private stats: IFillStats = {
-    fillCount: 0,
-    totalPixelsFilled: 0,
-    averageProcessTime: 0,
-    maxProcessTime: 0,
-    toleranceDistribution: new Array(101).fill(0) // 0-100%分布
-  };
 
   constructor(eventBus: EventBus) {
     this.eventBus = eventBus;
@@ -150,7 +116,7 @@ export class FillTool implements IDrawingTool {
     this.isActive = true;
     
     // 塗りつぶし専用カーソル・バケツアイコン
-    document.body.style.cursor = 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Cpath d=\'M9 3 5 6.99h3V14h2V6.99h3L9 3zM16 17.01V10h-2v7.01h-3L15 21l4-3.99h-3z\' fill=\'%23800000\'/%3E%3C/svg%3E") 12 12, crosshair';
+    document.body.style.cursor = 'crosshair';
     
     // 塗りつぶし設定UI表示
     this.eventBus.emit('ui:tool-activated', {
@@ -225,11 +191,6 @@ export class FillTool implements IDrawingTool {
     const oldSettings = { ...this.settings };
     this.settings = { ...this.settings, ...newSettings };
     
-    // 許容値分布統計更新
-    if (newSettings.tolerance !== undefined) {
-      this.stats.toleranceDistribution[Math.round(newSettings.tolerance)]++;
-    }
-    
     // 設定変更通知・UI同期
     this.eventBus.emit('fill:settings-changed', {
       oldSettings,
@@ -237,4 +198,161 @@ export class FillTool implements IDrawingTool {
       timestamp: Date.now()
     });
     
-    console.log('🪣 塗りつぶ
+    console.log('🪣 塗りつぶし設定更新:', newSettings);
+  }
+
+  /**
+   * 非同期塗りつぶし実行・UIブロック回避
+   */
+  private async executeFillAsync(point: { x: number; y: number }, startTime: number): Promise<void> {
+    if (this.processState.isProcessing) {
+      console.warn('🪣 塗りつぶし処理中・重複実行回避');
+      return;
+    }
+
+    this.processState.isProcessing = true;
+    this.processState.startTime = startTime;
+    this.processState.cancelled = false;
+
+    try {
+      // フラッドフィル実行・現在のモードに応じて分岐
+      switch (this.settings.fillMode) {
+        case 'flood':
+          await this.executeFloodFill(point);
+          break;
+        case 'color-range':
+          await this.executeColorRangeFill(point);
+          break;
+        case 'selection':
+          await this.executeSelectionFill(point);
+          break;
+        default:
+          console.warn('🪣 未対応塗りつぶしモード:', this.settings.fillMode);
+      }
+
+      const processTime = performance.now() - startTime;
+      console.log(`🪣 塗りつぶし完了: ${processTime.toFixed(2)}ms`);
+
+      // 完了通知
+      this.eventBus.emit('fill:completed', {
+        point,
+        processTime,
+        pixelsFilled: this.processState.processedPixels,
+        timestamp: Date.now()
+      });
+
+    } catch (error) {
+      console.error('🪣 塗りつぶしエラー:', error);
+      this.eventBus.emit('fill:error', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        point,
+        timestamp: Date.now()
+      });
+    } finally {
+      this.processState.isProcessing = false;
+      this.processState.processedPixels = 0;
+    }
+  }
+
+  /**
+   * フラッドフィル実行・基本塗りつぶし
+   */
+  private async executeFloodFill(point: { x: number; y: number }): Promise<void> {
+    // DrawingEngineから現在のレンダーテクスチャ取得
+    this.eventBus.emit('drawing:request-fill', {
+      point,
+      fillColor: this.settings.fillColor,
+      tolerance: this.settings.tolerance,
+      opacity: this.settings.opacity,
+      blendMode: this.settings.blendMode,
+      contiguous: this.settings.contiguous,
+      timestamp: Date.now()
+    });
+
+    console.log(`🪣 フラッドフィル実行: 色=${this.settings.fillColor.toString(16)}, 許容値=${this.settings.tolerance}%`);
+  }
+
+  /**
+   * 色域選択塗りつぶし・HSV範囲指定
+   */
+  private async executeColorRangeFill(point: { x: number; y: number }): Promise<void> {
+    // Phase2後半実装・HSV色域選択による塗りつぶし
+    console.log('🪣 色域選択塗りつぶし（Phase2後半実装予定）');
+  }
+
+  /**
+   * 選択範囲塗りつぶし・既存選択領域
+   */
+  private async executeSelectionFill(point: { x: number; y: number }): Promise<void> {
+    // Phase3実装予定・選択範囲システム連携
+    console.log('🪣 選択範囲塗りつぶし（Phase3実装予定）');
+  }
+
+  /**
+   * 色差計算・RGB距離・許容値判定
+   */
+  private calculateColorDistance(color1: IColorInfo, color2: IColorInfo): number {
+    const dr = color1.r - color2.r;
+    const dg = color1.g - color2.g;
+    const db = color1.b - color2.b;
+    const da = color1.a - color2.a;
+    
+    // ユークリッド距離・重み付き
+    return Math.sqrt(dr * dr * 0.3 + dg * dg * 0.59 + db * db * 0.11 + da * da * 0.1);
+  }
+
+  /**
+   * RGB→HSV変換・色域選択用
+   */
+  private rgbToHsv(r: number, g: number, b: number): { h: number; s: number; v: number } {
+    r /= 255;
+    g /= 255;
+    b /= 255;
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const diff = max - min;
+
+    let h = 0;
+    const s = max === 0 ? 0 : diff / max;
+    const v = max;
+
+    if (diff !== 0) {
+      switch (max) {
+        case r: h = ((g - b) / diff + (g < b ? 6 : 0)) / 6; break;
+        case g: h = ((b - r) / diff + 2) / 6; break;
+        case b: h = ((r - g) / diff + 4) / 6; break;
+      }
+    }
+
+    return { h: h * 360, s: s * 100, v: v * 100 };
+  }
+
+  /**
+   * 処理中断・メモリ解放
+   */
+  private cancelFillProcess(): void {
+    if (this.processState.isProcessing) {
+      this.processState.cancelled = true;
+      console.log('🪣 塗りつぶし処理中断');
+    }
+  }
+
+  /**
+   * 画像データキャッシュクリア・メモリ最適化
+   */
+  private clearImageDataCache(): void {
+    this.imageDataCache.clear();
+    console.log('🪣 画像データキャッシュクリア');
+  }
+
+  /**
+   * 塗りつぶし統計取得・性能監視
+   */
+  public getStats(): { processState: IFillProcessState; cacheSize: number } {
+    return {
+      processState: { ...this.processState },
+      cacheSize: this.imageDataCache.size
+    };
+  }
+}
