@@ -17,13 +17,10 @@ export class PixiApplication {
   private canvas: HTMLCanvasElement | null = null;
   private rendererType: RendererType = 'webgl2';
 
-  // WebGL2確実初期化・2560×1440対応・エラー処理完全
-  public async initialize(
-    container: HTMLElement, 
-    options: PixiInitOptions = {}
-  ): Promise<boolean> {
+  // WebGL2確実初期化・2560×1440対応・エラー処理完全・引数なしオーバーロード
+  public async initialize(options: PixiInitOptions = {}): Promise<boolean> {
     try {
-      console.log('PixiJS v8初期化開始...');
+      console.log('🚀 PixiJS v8初期化開始...');
       
       // Phase1: WebGL2確実実装・WebGPU準備のみ
       this.pixiApp = new Application();
@@ -41,7 +38,7 @@ export class PixiApplication {
 
       await this.pixiApp.init(initOptions);
 
-      // キャンバス要素取得・DOM追加
+      // キャンバス要素取得・DOM追加準備
       this.canvas = this.pixiApp.canvas as HTMLCanvasElement;
       if (!this.canvas) {
         throw new Error('Canvas element not created');
@@ -51,8 +48,6 @@ export class PixiApplication {
       this.canvas.style.maxWidth = '100%';
       this.canvas.style.maxHeight = '100%';
       this.canvas.style.display = 'block';
-      
-      container.appendChild(this.canvas);
       
       // レンダラー情報確認・WebGL2検証
       const renderer = this.pixiApp.renderer;
@@ -65,7 +60,7 @@ export class PixiApplication {
       
     } catch (error) {
       console.error('❌ WebGL2初期化失敗, WebGL基本モードで再試行:', error);
-      return this.fallbackToWebGL(container, options);
+      return this.fallbackToWebGL(options);
     }
   }
 
@@ -79,10 +74,7 @@ export class PixiApplication {
   }
 
   // WebGL基本フォールバック・安全性確保
-  private async fallbackToWebGL(
-    container: HTMLElement, 
-    options: PixiInitOptions
-  ): Promise<boolean> {
+  private async fallbackToWebGL(options: PixiInitOptions): Promise<boolean> {
     try {
       console.log('🔄 WebGL基本モードで初期化...');
       
@@ -117,7 +109,6 @@ export class PixiApplication {
       this.canvas.style.maxHeight = '100%';
       this.canvas.style.display = 'block';
       
-      container.appendChild(this.canvas);
       this.rendererType = 'webgl';
       
       console.log(`⚠️ WebGL基本モード動作: ${fallbackOptions.width}x${fallbackOptions.height}`);
@@ -167,7 +158,10 @@ export class PixiApplication {
   }
 
   // アプリケーション取得・null安全
-  public getApp(): Application | null {
+  public getApplication(): Application {
+    if (!this.pixiApp) {
+      throw new Error('PixiJS Application not initialized');
+    }
     return this.pixiApp;
   }
 

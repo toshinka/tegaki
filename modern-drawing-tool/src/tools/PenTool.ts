@@ -1,30 +1,11 @@
 // src/tools/PenTool.ts - ペンツール基本実装・IDrawingTool準拠
 
-import { IEventData } from '../core/EventBus.js';
+import { IDrawingTool, type ToolSettings, type ToolState } from './IDrawingTool.js';
+import { type IEventData } from '../core/EventBus.js';
 
-// ツール共通インターフェース・Phase2拡張対応
-export interface IDrawingTool {
-  readonly name: string;
-  readonly icon: string; // SVG/Unicode・4_UI_STYLE_GUIDE準拠
-  readonly category: 'drawing' | 'editing' | 'selection';
-  
-  activate(): void;
-  deactivate(): void;
-  onPointerDown(event: IEventData['drawing:start']): void;
-  onPointerMove(event: IEventData['drawing:move']): void;
-  onPointerUp(event: IEventData['drawing:end']): void;
-  getSettings(): any;
-  updateSettings(settings: Partial<any>): void;
-}
-
-export interface PenToolSettings {
-  size: number;
-  opacity: number;
-  color: number;
-  smoothing: boolean;
-  pressureSensitive: boolean;
-  minSize: number;
-  maxSize: number;
+export interface PenToolSettings extends ToolSettings {
+  // ペン固有設定・ToolSettings 拡張
+  smoothingFactor: number;  // スムージング強度・0.0-1.0
 }
 
 export class PenTool implements IDrawingTool {
@@ -39,7 +20,8 @@ export class PenTool implements IDrawingTool {
     smoothing: true,
     pressureSensitive: true,
     minSize: 1,
-    maxSize: 20
+    maxSize: 20,
+    smoothingFactor: 0.5  // ペン固有設定
   };
 
   private isActive = false;
@@ -142,15 +124,12 @@ export class PenTool implements IDrawingTool {
   }
 
   // ツール状態取得・デバッグ・UI同期
-  public getToolState(): {
-    isActive: boolean;
-    isDrawing: boolean;
-    settings: PenToolSettings;
-  } {
+  public getToolState(): ToolState {
     return {
       isActive: this.isActive,
       isDrawing: this.isDrawing,
-      settings: this.getSettings()
+      lastAction: this.isDrawing ? 'drawing' : this.isActive ? 'active' : 'inactive',
+      timestamp: performance.now()
     };
   }
 

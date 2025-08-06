@@ -1,15 +1,11 @@
 // src/tools/EraserTool.ts - 消しゴムツール基本実装・Phase1簡易版
 
-import { IDrawingTool } from './PenTool.js';
-import { IEventData } from '../core/EventBus.js';
+import { IDrawingTool, type ToolSettings, type ToolState } from './IDrawingTool.js';
+import { type IEventData } from '../core/EventBus.js';
 
-export interface EraserToolSettings {
-  size: number;
-  opacity: number;
+export interface EraserToolSettings extends ToolSettings {
   hardness: number; // Phase2実装予定・0.0-1.0
   eraseMode: 'normal' | 'soft' | 'hard'; // Phase2実装予定
-  minSize: number;
-  maxSize: number;
 }
 
 export class EraserTool implements IDrawingTool {
@@ -21,10 +17,12 @@ export class EraserTool implements IDrawingTool {
   private settings: EraserToolSettings = {
     size: 8, // ペンより大きめ・消しやすさ
     opacity: 1.0, // 完全消去・Phase1シンプル
+    pressureSensitive: true,
+    smoothing: false, // 消しゴムはクリアな消去
+    minSize: 2,
+    maxSize: 50,
     hardness: 1.0, // Phase2実装予定・完全硬度
     eraseMode: 'normal', // Phase2: normal/soft/hard
-    minSize: 2,
-    maxSize: 50
   };
 
   private isActive = false;
@@ -117,15 +115,12 @@ export class EraserTool implements IDrawingTool {
   }
 
   // ツール状態取得・デバッグ・UI同期
-  public getToolState(): {
-    isActive: boolean;
-    isDrawing: boolean;
-    settings: EraserToolSettings;
-  } {
+  public getToolState(): ToolState {
     return {
       isActive: this.isActive,
       isDrawing: this.isDrawing,
-      settings: this.getSettings()
+      lastAction: this.isDrawing ? 'erasing' : this.isActive ? 'active' : 'inactive',
+      timestamp: performance.now()
     };
   }
 

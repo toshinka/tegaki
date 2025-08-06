@@ -834,6 +834,61 @@ export interface MemoryStatus {
 }
 ```
 
+# 6_Claude_Master_Rulebook.md 追記案
+
+## 3. アーキテクチャ規約（新規追加）
+
+### 3-1. インターフェース契約の強制
+**原則**: クラス群に共通の役割を与える場合、必ず共有インターフェースを定義し実装させる
+- すべての描画ツールは `IDrawingTool` インターフェースを実装必須
+- これは「曖昧さの物理的排除」原則の具体的実践である
+- クラスが遵守すべき「契約」をコードレベルで明示し、解釈の余地を完全に断つ
+
+### 3-2. 責務分離の徹底
+**PixiApplication**: Canvas・Stage・Renderer の器としての責務のみ
+**DrawingEngine**: 描画データの最終確定・レイヤー管理のみ  
+**各ツール**: 入力解釈・プレビュー表示・DrawingEngine委譲のみ
+**ToolManager**: ツールライフサイクル管理・状態遷移制御のみ
+**UIManager**: UI表示・更新・イベント発火のみ（アプリケーション状態管理は禁止）
+
+### 3-3. EventBus使用制限
+**許可**: コンポーネント階層横断の全体状態変更通知のみ
+- 例: `tool:change`, `ui:color-change`, `performance:fps-low`
+**禁止**: 親子関係・直接参照関係での通信
+- 直接メソッド呼び出し・コールバック関数を使用すること
+- スパゲッティコード防止・依存関係明確化
+
+### 3-4. ファイル構成規約
+**共通インターフェース**: 独立ファイル化必須（例: `IDrawingTool.ts`）
+**循環インポート**: 物理的に不可能な構成にする
+**型定義**: 実装から分離・純粋性保持
+
+## 4. 実装パターン（新規追加）
+
+### 4-1. ツール実装パターン
+```typescript
+// ✅ 正しい実装
+import { IDrawingTool } from './IDrawingTool.js';
+
+export class NewTool implements IDrawingTool {
+  // 必須プロパティ・メソッドすべて実装
+}
+
+// ❌ 誤った実装
+export class NewTool {
+  // インターフェース無し = 契約違反
+}
+```
+
+### 4-2. 状態管理パターン  
+```typescript
+// ✅ 正しいフロー
+UIManager → EventBus → ToolManager → 各ツール
+
+// ❌ 誤ったフロー  
+UIManager → 各ツール直接操作（責務越境）
+```
+
 
 ## 📋 改修チェックリスト・品質保証
 

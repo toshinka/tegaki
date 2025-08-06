@@ -1,7 +1,7 @@
 // src/core/DrawingEngine.ts - 描画統合・Graphics管理・スムージング・GPU最適化
 
 import { Application, Graphics, Container, Point } from 'pixi.js';
-import { EventBus, IEventData } from './EventBus.js';
+import { EventBus, type IEventData } from './EventBus.js';
 
 export class DrawingEngine {
   private pixiApp: Application;
