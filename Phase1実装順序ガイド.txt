@@ -706,7 +706,7 @@ export class UIManager {
       }
       
       .tool-button {
-        width: 56px; height: 56px;
+        width: 36px; height: 36px;
         border: 1px solid var(--futaba-light);
         background: var(--futaba-background);
         border-radius: 8px;
