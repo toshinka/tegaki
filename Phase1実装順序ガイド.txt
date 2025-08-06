@@ -1,0 +1,1355 @@
+# Phase1実装順序ガイド v4.0
+
+**目的**: 基盤構築・確実実装・動作するMVP完成  
+**対象**: Phase1機能実装・WebGL2基盤・基本描画システム・UI構築  
+**前提**: ドキュメント理解・環境準備・2.5K液タブレット・Claude協業  
+**期間**: 2-3週間・段階的実装・品質優先・成功率95%
+
+## 🎯 Phase1目標・確実基盤
+
+### 基盤実装目標
+```
+✅ 確実動作・基盤完成:
+├─ WebGL2安定初期化・60FPS基盤・フォールバック機能
+├─ 基本描画システム・ペン・消しゴム・色選択・操作性確保
+├─ 2.5K UI最適化・ふたば色・80px|1fr|400px・視認性
+└─ マウス・ペンタブレット対応・筆圧・座標変換・自然な描画
+
+🔵 技術基盤・Claude協業最適化:
+├─ EventBus型安全通信・疎結合・デバッグ支援・保守容易
+├─ PixiJS v8統合・Container管理・Graphics最適化・GPU効率
+├─ TypeScript厳格・責任分界・単一機能・理解容易
+└─ 性能監視基盤・FPS・メモリ・警告システム・品質保証
+
+🎯 完成判定・Phase2移行:
+├─ 15分連続描画・500ストローク・エラーなし・実用可能
+├─ 60FPS以上・300MB以下・応答8ms以下・満足度確保
+├─ UI操作性・ツール切り替え・色変更・直感的操作
+└─ コード品質・TypeScript厳格・保守性・拡張準備完了
+```
+
+## 📋 実装優先順序・依存関係最適化
+
+### Week 1: 基盤システム構築（7日間・確実実装）
+```
+Day 1: 環境構築・プロジェクト初期化（30分・必須基盤）
+Day 2: PixiApplication.ts実装（60分・WebGL2確実・2.5K対応）
+Day 3: EventBus.ts実装（45分・型安全通信・疎結合基盤）
+Day 4: PerformanceManager.ts実装（45分・監視基盤・警告準備）
+Day 5-6: 基盤テスト・動作確認・エラー対応・安定化（品質保証）
+Day 7: Week1完了判定・問題解決・Week2準備（継続性確保）
+```
+
+### Week 2: 描画・入力システム（7日間・機能実装）
+```
+Day 8-9: InputManager.ts実装（90分・PointerEvents・筆圧・座標変換）
+Day 10-11: DrawingEngine.ts実装（75分・Graphics・スムージング・GPU最適化）
+Day 12-13: PenTool.ts・EraserTool.ts実装（60分・基本ツール・設定管理）
+Day 14: 描画テスト・動作確認・調整・最適化（品質確認）
+```
+
+### Week 3: UI・統合システム（7日間・完成度）
+```
+Day 15-17: UIManager.ts実装（90分・2.5Kレイアウト・ふたば色・Grid）
+Day 18-19: 基本UI・Toolbar・ColorPalette実装（75分・操作性・視認性）
+Day 20: main.ts統合・アプリ起動・全機能連携（30分・完成度）
+Day 21: Phase1最終テスト・品質確認・Phase2移行判定（品質保証）
+```
+
+## 🚀 Step 1: 環境構築・プロジェクト初期化（Day 1・30分）
+
+### 必須チェック・開始前確認
+**参照ドキュメント必読**:
+- `1_PROJECT_SPEC.md` - 全体目標・制約・性能基準・成功要因
+- `2_TECHNICAL_DESIGN.md` - ディレクトリ構成・アーキテクチャ・責任分界
+- `4_UI_STYLE_GUIDE.md` - ふたば色システム・2.5K最適化・アクセシビリティ
+
+### 実装指示・環境構築
+```bash
+# 1. Vite + TypeScript プロジェクト作成（5分）
+npm create vite@latest modern-drawing-tool -- --template vanilla-ts
+cd modern-drawing-tool
+
+# 2. 必須依存関係インストール（5分）
+npm install pixi.js@8.11.0
+npm install @types/node
+
+# 3. 開発ツールインストール（5分）
+npm install --save-dev eslint @typescript-eslint/parser @typescript-eslint/eslint-plugin
+npm install --save-dev prettier
+
+# 4. ディレクトリ構成作成（5分・2_TECHNICAL_DESIGN準拠）
+mkdir -p src/core src/rendering src/input src/tools src/ui src/constants src/types
+
+# 5. 開発サーバー起動確認（5分）
+npm run dev
+# -> http://localhost:3000 で「Hello Vite + TS!」表示確認
+
+# 6. Git初期化・初期コミット（5分）
+git init
+git add .
+git commit -m "Phase1: プロジェクト初期化完了"
+```
+
+### 重要ファイル作成・基本設定
+```typescript
+// tsconfig.json更新（2_TECHNICAL_DESIGN準拠）
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
+
+// vite.config.ts更新（最適化設定）
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  server: { port: 3000, host: true },
+  build: { target: 'esnext', sourcemap: true },
+  optimizeDeps: { include: ['pixi.js'] }
+});
+```
+
+## 🏗️ Step 2: PixiApplication.ts実装（Day 2・60分）
+
+### 実装方針・WebGL2確実・段階的縮退準備
+**参照実装**: `2_TECHNICAL_DESIGN.md` - PixiApplication設計・WebGPU対応戦略・段階縮退
+**重要ポイント**: Phase1はWebGL2確実動作・WebGPU準備のみ・フォールバック完全
+
+```typescript
+// src/core/PixiApplication.ts作成（2_TECHNICAL_DESIGN準拠）
+
+export class PixiApplication {
+  private pixiApp: PIXI.Application | null = null;
+  private canvas: HTMLCanvasElement | null = null;
+  private rendererType: 'webgl2' | 'webgl' = 'webgl2';
+
+  // WebGL2確実初期化・2560×1440対応・エラー処理完全
+  public async initialize(container: HTMLElement): Promise<boolean> {
+    try {
+      console.log('PixiJS v8初期化開始...');
+      
+      // Phase1: WebGL2確実実装・WebGPU準備のみ
+      this.pixiApp = new PIXI.Application();
+      await this.pixiApp.init({
+        preference: 'webgl2', // Phase1確実動作
+        powerPreference: 'high-performance',
+        antialias: true,
+        resolution: window.devicePixelRatio || 1,
+        autoDensity: true,
+        backgroundColor: 0xffffee, // ふたば背景色・4_UI_STYLE_GUIDE準拠
+        width: this.getOptimalWidth(),
+        height: this.getOptimalHeight()
+      });
+
+      this.canvas = this.pixiApp.canvas;
+      container.appendChild(this.canvas);
+      
+      console.log(`WebGL2初期化成功: ${this.getOptimalWidth()}x${this.getOptimalHeight()}`);
+      return true;
+      
+    } catch (error) {
+      console.error('WebGL2初期化失敗, WebGL基本モードで再試行:', error);
+      return this.fallbackToWebGL(container);
+    }
+  }
+
+  // 2560×1440最適化・デバイス適応・1_PROJECT_SPEC準拠
+  private getOptimalWidth(): number {
+    return Math.min(window.innerWidth, 2560);
+  }
+  
+  private getOptimalHeight(): number {
+    return Math.min(window.innerHeight, 1440);
+  }
+
+  // WebGL基本フォールバック・安全性確保
+  private async fallbackToWebGL(container: HTMLElement): Promise<boolean> {
+    // WebGL基本モード・最低限動作保証
+    // 実装詳細省略・確実動作重視
+  }
+
+  public getApp(): PIXI.Application | null { return this.pixiApp; }
+  public getCanvas(): HTMLCanvasElement | null { return this.canvas; }
+  public getRendererType(): string { return this.rendererType; }
+}
+```
+
+## ⚡ Step 3: EventBus.ts実装（Day 3・45分）
+
+### 型安全通信・疎結合基盤・Claude理解容易
+**参照実装**: `2_TECHNICAL_DESIGN.md` - EventBus設計・IEventData定義・型安全通信
+**重要ポイント**: Phase1イベント定義・Phase2拡張準備・デバッグ支援・メモリ管理
+
+```typescript
+// src/core/EventBus.ts作成（2_TECHNICAL_DESIGN準拠）
+
+// Phase1基本イベント・Phase2拡張準備
+export interface IEventData {
+  // 描画イベント・Phase1基盤
+  'drawing:start': { 
+    point: PIXI.Point; 
+    pressure: number; 
+    pointerType: 'mouse' | 'pen';
+  };
+  'drawing:move': { 
+    point: PIXI.Point; 
+    pressure: number; 
+    velocity: number; 
+  };
+  'drawing:end': { point: PIXI.Point; };
+  
+  // ツールイベント・Phase1基盤
+  'tool:change': { toolName: string; previousTool: string; };
+  
+  // UIイベント・Phase1基盤
+  'ui:color-change': { color: number; previousColor: number; };
+  'ui:toolbar-click': { tool: string; };
+  
+  // 性能イベント・Phase1監視基盤
+  'performance:fps-low': { currentFPS: number; targetFPS: number; };
+  'performance:memory-warning': { used: number; limit: number; };
+}
+
+export class EventBus {
+  private listeners: Map<keyof IEventData, Set<Function>> = new Map();
+  private eventHistory: Array<{ event: string; timestamp: number }> = [];
+
+  // 型安全リスナー登録・自動解除・メモリリーク防止
+  public on<K extends keyof IEventData>(
+    event: K,
+    callback: (data: IEventData[K]) => void
+  ): () => void {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    
+    this.listeners.get(event)!.add(callback);
+    
+    // 自動解除関数返却・Claude理解容易・保守性
+    return () => this.off(event, callback);
+  }
+
+  // 型安全イベント発火・エラー処理・ログ出力
+  public emit<K extends keyof IEventData>(event: K, data: IEventData[K]): void {
+    const listeners = this.listeners.get(event);
+    if (listeners) {
+      listeners.forEach(callback => {
+        try {
+          callback(data);
+        } catch (error) {
+          console.error(`EventBus error in ${event}:`, error);
+        }
+      });
+    }
+
+    // デバッグ支援・Phase1開発効率化
+    this.eventHistory.push({ event: event as string, timestamp: performance.now() });
+    if (this.eventHistory.length > 1000) {
+      this.eventHistory = this.eventHistory.slice(-1000);
+    }
+  }
+}
+```
+
+## 📊 Step 4: PerformanceManager.ts実装（Day 4・45分）
+
+### 性能監視基盤・メモリ管理・警告システム
+**参照実装**: `1_PROJECT_SPEC.md` - 性能目標・60FPS・1GB制限・Core Web Vitals
+**重要ポイント**: Phase1監視基盤・Phase2本格活用・Chrome API対応・警告通知
+
+```typescript
+// src/core/PerformanceManager.ts作成（1_PROJECT_SPEC準拠）
+
+export interface PerformanceMetrics {
+  fps: number;
+  memoryUsage: number;
+  renderTime: number;
+  timestamp: number;
+}
+
+export class PerformanceManager {
+  private eventBus: EventBus;
+  private isMonitoring = false;
+  private fpsHistory: number[] = [];
+  private targetFPS = 60; // 1_PROJECT_SPEC目標値
+  private memoryLimitMB = 1024; // 1GB制限
+  private warningMemoryMB = 800; // 警告800MB
+
+  constructor(eventBus: EventBus) {
+    this.eventBus = eventBus;
+  }
+
+  // 性能監視開始・FPS・メモリ・継続測定
+  public startMonitoring(): void {
+    if (this.isMonitoring) return;
+    
+    this.isMonitoring = true;
+    console.log('性能監視開始: 60FPS目標・1GB制限');
+    
+    this.monitorFrameRate();
+    this.monitorMemoryUsage();
+  }
+
+  // フレームレート監視・60FPS目標・動的調整準備
+  private monitorFrameRate(): void {
+    let lastTime = performance.now();
+    let frameCount = 0;
+
+    const measureFPS = (currentTime: number) => {
+      frameCount++;
+      
+      if (currentTime - lastTime >= 1000) { // 1秒間隔
+        const currentFPS = (frameCount * 1000) / (currentTime - lastTime);
+        
+        this.fpsHistory.push(currentFPS);
+        if (this.fpsHistory.length > 60) this.fpsHistory.shift();
+
+        // 低FPS警告・Phase1基盤・Phase2調整
+        if (currentFPS < 30) {
+          this.eventBus.emit('performance:fps-low', {
+            currentFPS,
+            targetFPS: this.targetFPS
+          });
+        }
+
+        lastTime = currentTime;
+        frameCount = 0;
+      }
+
+      if (this.isMonitoring) {
+        requestAnimationFrame(measureFPS);
+      }
+    };
+
+    requestAnimationFrame(measureFPS);
+  }
+
+  // メモリ監視・Chrome専用・1GB制限・警告通知
+  private monitorMemoryUsage(): void {
+    const checkMemory = () => {
+      try {
+        const memory = (performance as any).memory;
+        if (memory) {
+          const usedMB = memory.usedJSHeapSize / (1024 * 1024);
+          
+          if (usedMB > this.warningMemoryMB) {
+            this.eventBus.emit('performance:memory-warning', {
+              used: usedMB,
+              limit: this.memoryLimitMB
+            });
+          }
+        }
+      } catch (error) {
+        console.warn('メモリ情報取得不可:', error);
+      }
+      
+      if (this.isMonitoring) {
+        setTimeout(checkMemory, 5000); // 5秒間隔
+      }
+    };
+
+    setTimeout(checkMemory, 5000);
+  }
+
+  // 現在パフォーマンス取得・デバッグ・調整用
+  public getCurrentMetrics(): PerformanceMetrics {
+    return {
+      fps: this.fpsHistory.length > 0 ? this.fpsHistory[this.fpsHistory.length - 1] : 0,
+      memoryUsage: this.getMemoryUsage(),
+      renderTime: 0, // Phase2実装予定
+      timestamp: performance.now()
+    };
+  }
+}
+```
+
+## 🎮 Step 5: InputManager.ts実装（Day 8-9・90分）
+
+### マウス・ペンタブレット統合・筆圧・座標変換
+**参照実装**: `2_TECHNICAL_DESIGN.md` - InputManager設計・PointerEvents・筆圧対応・2.5K精度
+**重要ポイント**: Pointer Events統一・デバイス抽象化・座標変換・筆圧スムージング
+
+```typescript
+// src/input/InputManager.ts実装（2_TECHNICAL_DESIGN準拠）
+
+export class InputManager {
+  private eventBus: EventBus;
+  private canvas: HTMLCanvasElement;
+  private isPointerDown = false;
+  private lastPointer: PointerEvent | null = null;
+  private pressureHistory: number[] = [];
+
+  constructor(eventBus: EventBus, canvas: HTMLCanvasElement) {
+    this.eventBus = eventBus;
+    this.canvas = canvas;
+    this.setupPointerEvents();
+  }
+
+  // Pointer Events統一・マウス・ペン・デバイス抽象化
+  private setupPointerEvents(): void {
+    this.canvas.addEventListener('pointerdown', this.onPointerDown.bind(this));
+    this.canvas.addEventListener('pointermove', this.onPointerMove.bind(this));
+    this.canvas.addEventListener('pointerup', this.onPointerUp.bind(this));
+    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  private onPointerDown(event: PointerEvent): void {
+    if (!event.isPrimary) return;
+
+    event.preventDefault();
+    this.isPointerDown = true;
+    this.lastPointer = event;
+
+    const canvasPoint = this.screenToCanvas(event.clientX, event.clientY);
+    const pressure = this.processPressure(event.pressure || 0.5);
+
+    this.eventBus.emit('drawing:start', {
+      point: canvasPoint,
+      pressure,
+      pointerType: event.pointerType === 'pen' ? 'pen' : 'mouse'
+    });
+  }
+
+  // 座標変換・スクリーン→キャンバス・2560×1440対応・高精度
+  private screenToCanvas(screenX: number, screenY: number): PIXI.Point {
+    const rect = this.canvas.getBoundingClientRect();
+    const scaleX = this.canvas.width / rect.width;
+    const scaleY = this.canvas.height / rect.height;
+
+    return new PIXI.Point(
+      (screenX - rect.left) * scaleX,
+      (screenY - rect.top) * scaleY
+    );
+  }
+
+  // 筆圧処理・スムージング・0.1-1.0範囲・自然な変化
+  private processPressure(rawPressure: number): number {
+    this.pressureHistory.push(rawPressure);
+    if (this.pressureHistory.length > 5) this.pressureHistory.shift();
+
+    const smoothPressure = this.pressureHistory.reduce((sum, p) => sum + p, 0) / this.pressureHistory.length;
+    return Math.max(0.1, Math.min(1.0, smoothPressure));
+  }
+}
+```
+
+## 🖊️ Step 6: DrawingEngine.ts実装（Day 10-11・75分）
+
+### 描画統合・Graphics管理・スムージング・GPU最適化
+**参照実装**: `2_TECHNICAL_DESIGN.md` - DrawingEngine設計・Graphics最適化・スムージング・Container管理
+**重要ポイント**: PixiJS Graphics活用・ベジエ曲線・手ブレ軽減・バッチ最適化
+
+```typescript
+// src/core/DrawingEngine.ts実装（2_TECHNICAL_DESIGN準拠）
+
+export class DrawingEngine {
+  private pixiApp: PIXI.Application;
+  private eventBus: EventBus;
+  private currentGraphics: PIXI.Graphics | null = null;
+  private strokePoints: PIXI.Point[] = [];
+  private drawingContainer: PIXI.Container;
+  
+  // 描画設定・ふたば色・基本値
+  private currentColor = 0x800000; // ふたばmaroon
+  private currentSize = 4;
+  private currentOpacity = 0.8;
+
+  constructor(pixiApp: PIXI.Application, eventBus: EventBus) {
+    this.pixiApp = pixiApp;
+    this.eventBus = eventBus;
+    
+    // 描画用Container・階層管理・Phase2レイヤー準備
+    this.drawingContainer = new PIXI.Container();
+    this.pixiApp.stage.addChild(this.drawingContainer);
+    
+    this.setupEventListeners();
+  }
+
+  private setupEventListeners(): void {
+    this.eventBus.on('drawing:start', this.startDrawing.bind(this));
+    this.eventBus.on('drawing:move', this.continueDrawing.bind(this));
+    this.eventBus.on('drawing:end', this.endDrawing.bind(this));
+    this.eventBus.on('ui:color-change', this.onColorChange.bind(this));
+  }
+
+  // 描画開始・新Graphics作成・設定適用
+  private startDrawing(data: IEventData['drawing:start']): void {
+    this.currentGraphics = new PIXI.Graphics();
+    this.strokePoints = [data.point];
+
+    // PixiJS Graphics設定・筆圧対応・GPU最適化
+    this.currentGraphics.lineStyle({
+      width: this.calculateBrushSize(data.pressure),
+      color: this.currentColor,
+      alpha: this.currentOpacity,
+      cap: PIXI.LINE_CAP.ROUND,
+      join: PIXI.LINE_JOIN.ROUND
+    });
+
+    this.currentGraphics.moveTo(data.point.x, data.point.y);
+    this.drawingContainer.addChild(this.currentGraphics);
+  }
+
+  // 描画継続・スムージング・ベジエ曲線・手ブレ軽減
+  private continueDrawing(data: IEventData['drawing:move']): void {
+    if (!this.currentGraphics) return;
+
+    this.strokePoints.push(data.point);
+
+    if (this.strokePoints.length >= 3) {
+      // スムージング・3点ベジエ曲線・自然な線
+      const smoothPoint = this.calculateSmoothPoint(
+        this.strokePoints[this.strokePoints.length - 3],
+        this.strokePoints[this.strokePoints.length - 2],
+        this.strokePoints[this.strokePoints.length - 1]
+      );
+
+      // 筆圧対応・動的線幅・自然な太さ変化
+      this.currentGraphics.lineStyle({
+        width: this.calculateBrushSize(data.pressure),
+        color: this.currentColor,
+        alpha: this.currentOpacity
+      });
+
+      this.currentGraphics.lineTo(smoothPoint.x, smoothPoint.y);
+    } else {
+      this.currentGraphics.lineTo(data.point.x, data.point.y);
+    }
+  }
+
+  // ベジエ曲線スムージング・3点補間・手ブレ軽減
+  private calculateSmoothPoint(p1: PIXI.Point, p2: PIXI.Point, p3: PIXI.Point): PIXI.Point {
+    const smoothFactor = 0.5;
+    return new PIXI.Point(
+      p2.x + (p3.x - p1.x) * smoothFactor * 0.25,
+      p2.y + (p3.y - p1.y) * smoothFactor * 0.25
+    );
+  }
+
+  // 筆圧対応サイズ・自然な太さ変化・0.3-1.5倍
+  private calculateBrushSize(pressure: number): number {
+    const minSize = this.currentSize * 0.3;
+    const maxSize = this.currentSize * 1.5;
+    return minSize + (maxSize - minSize) * pressure;
+  }
+}
+```
+
+## 🖌️ Step 7: 基本ツール実装（Day 12-13・60分）
+
+### PenTool・EraserTool・IDrawingTool準拠
+**参照実装**: `2_TECHNICAL_DESIGN.md` - ToolLayer設計・IDrawingTool・設定管理・ツール統合
+**重要ポイント**: インターフェース準拠・設定管理・Phase2拡張準備・Claude理解容易
+
+```typescript
+// src/tools/PenTool.ts実装（2_TECHNICAL_DESIGN準拠）
+
+// ツール共通インターフェース・Phase2拡張対応
+export interface IDrawingTool {
+  readonly name: string;
+  readonly icon: string; // SVG/Unicode・4_UI_STYLE_GUIDE準拠
+  readonly category: 'drawing' | 'editing' | 'selection';
+  
+  activate(): void;
+  deactivate(): void;
+  onPointerDown(event: IEventData['drawing:start']): void;
+  onPointerMove(event: IEventData['drawing:move']): void;
+  onPointerUp(event: IEventData['drawing:end']): void;
+  getSettings(): any;
+  updateSettings(settings: Partial<any>): void;
+}
+
+export class PenTool implements IDrawingTool {
+  public readonly name = 'pen';
+  public readonly icon = '✏️'; // Phase1簡易・Phase2 SVG化
+  public readonly category = 'drawing' as const;
+
+  private settings = {
+    size: 4,
+    opacity: 0.8,
+    color: 0x800000, // ふたばmaroon・4_UI_STYLE_GUIDE準拠
+    smoothing: true,
+    pressureSensitive: true
+  };
+
+  private isActive = false;
+
+  public activate(): void {
+    this.isActive = true;
+    document.body.style.cursor = 'crosshair';
+    console.log('ペンツール有効化');
+  }
+
+  public deactivate(): void {
+    this.isActive = false;
+    document.body.style.cursor = 'default';
+  }
+
+  // DrawingEngineが実際の描画処理・ツールは設定管理のみ
+  public onPointerDown(event: IEventData['drawing:start']): void {
+    if (!this.isActive) return;
+    // DrawingEngineが処理・ツールは状態管理
+  }
+
+  public getSettings(): typeof this.settings {
+    return { ...this.settings };
+  }
+
+  public updateSettings(newSettings: Partial<typeof this.settings>): void {
+    this.settings = { ...this.settings, ...newSettings };
+  }
+}
+
+// src/tools/EraserTool.ts - 基本消しゴム・Phase1簡易実装
+export class EraserTool implements IDrawingTool {
+  public readonly name = 'eraser';
+  public readonly icon = '🗑️';
+  public readonly category = 'editing' as const;
+
+  // 消しゴム設定・Phase2拡張準備
+  private settings = {
+    size: 8,
+    opacity: 1.0,
+    hardness: 1.0, // Phase2実装予定
+    eraseMode: 'normal' // Phase2: normal/soft/hard
+  };
+
+  // IDrawingTool準拠・基本実装
+  public activate(): void {
+    this.isActive = true;
+    document.body.style.cursor = 'grab';
+    console.log('消しゴムツール有効化');
+  }
+
+  public deactivate(): void {
+    this.isActive = false;
+    document.body.style.cursor = 'default';
+  }
+
+  // Phase1基本消しゴム・DrawingEngine連携
+  public onPointerDown(event: IEventData['drawing:start']): void {
+    if (!this.isActive) return;
+    // Phase1: 白色描画で消去表現・Phase2: 真の消去実装
+  }
+
+  public getSettings(): typeof this.settings {
+    return { ...this.settings };
+  }
+}
+```
+
+## 🎨 Step 8: UIManager・基本UI実装（Day 15-17・90分）
+
+### 2.5Kレイアウト・ふたば色・Grid構成・操作性
+**参照実装**: `4_UI_STYLE_GUIDE.md` - レイアウト・ふたば色システム・2.5K最適化・アクセシビリティ
+**重要ポイント**: Grid Layout・80px|1fr|400px・ふたば色CSS変数・36pxアイコン・視認性
+
+```typescript
+// src/ui/UIManager.ts実装（4_UI_STYLE_GUIDE準拠）
+
+export class UIManager {
+  private eventBus: EventBus;
+  private rootElement: HTMLElement;
+
+  constructor(eventBus: EventBus, rootElement: HTMLElement) {
+    this.eventBus = eventBus;
+    this.rootElement = rootElement;
+    this.initializeCSS();
+  }
+
+  // ふたば色CSS・2.5K最適化・4_UI_STYLE_GUIDE完全準拠
+  private initializeCSS(): void {
+    const style = document.createElement('style');
+    style.textContent = `
+      :root {
+        /* ふたば色システム・変更禁止・4_UI_STYLE_GUIDE準拠 */
+        --futaba-maroon: #800000;
+        --futaba-light-maroon: #aa5a56;
+        --futaba-medium: #cf9c97;
+        --futaba-light: #e9c2ba;
+        --futaba-cream: #f0e0d6;
+        --futaba-background: #ffffee;
+      }
+      
+      body {
+        margin: 0; padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: var(--futaba-background);
+        overflow: hidden;
+      }
+      
+      /* メインレイアウト・Grid・80px|1fr|400px・2.5K最適化 */
+      .main-layout {
+        display: grid;
+        grid-template-columns: 80px 1fr 400px;
+        grid-template-rows: 1fr;
+        height: 100vh; width: 100vw; gap: 0;
+      }
+      
+      /* ツールバー・80px幅・縦配置・36pxアイコン */
+      .toolbar {
+        background: var(--futaba-cream);
+        border-right: 1px solid var(--futaba-light);
+        display: flex; flex-direction: column;
+        padding: 16px 12px; gap: 8px;
+      }
+      
+      .tool-button {
+        width: 56px; height: 56px;
+        border: 1px solid var(--futaba-light);
+        background: var(--futaba-background);
+        border-radius: 8px;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 24px; color: var(--futaba-maroon);
+      }
+      
+      .tool-button:hover {
+        background: var(--futaba-medium);
+        border-color: var(--futaba-light-maroon);
+        transform: scale(1.05);
+      }
+      
+      .tool-button.active {
+        background: var(--futaba-maroon);
+        color: white; border-color: var(--futaba-maroon);
+      }
+      
+      /* キャンバス領域・中央配置・背景色 */
+      .canvas-area {
+        background: var(--futaba-background);
+        position: relative; overflow: hidden;
+        display: flex; justify-content: center; align-items: center;
+      }
+      
+      /* 基本色パレット・右上配置・ふたば色プリセット */
+      .color-palette {
+        position: absolute; top: 20px; right: 20px;
+        background: var(--futaba-cream);
+        border: 1px solid var(--futaba-light);
+        border-radius: 12px; padding: 16px;
+        display: flex; gap: 8px;
+      }
+      
+      .color-swatch {
+        width: 32px; height: 32px; border-radius: 6px;
+        border: 2px solid var(--futaba-light);
+        cursor: pointer; transition: transform 0.2s ease;
+      }
+      
+      .color-swatch:hover { transform: scale(1.1); }
+      .color-swatch.active {
+        border-color: var(--futaba-maroon); border-width: 3px;
+      }
+      
+      /* レイヤーパネル・400px幅・Phase2準備 */
+      .layer-panel {
+        background: var(--futaba-cream);
+        border-left: 1px solid var(--futaba-light);
+        padding: 16px;
+      }
+      
+      /* 2.5K環境専用警告・小画面対応 */
+      @media (max-width: 2559px) {
+        .main-layout::before {
+          content: "⚠ このツールは2560×1440以上の環境に最適化されています";
+          position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+          background: #ff9800; color: white; padding: 8px 16px;
+          border-radius: 4px; z-index: 9999;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // 基本UIレイアウト作成・Phase1最小限・Phase2拡張準備
+  public async initializeBasicUI(): Promise<void> {
+    this.createMainLayout();
+    this.createToolbar();
+    this.createCanvasArea();
+    this.createBasicColorPalette();
+    console.log('Phase1基本UI初期化完了');
+  }
+
+  private createMainLayout(): void {
+    this.rootElement.innerHTML = `
+      <div class="main-layout">
+        <div class="toolbar" id="toolbar"></div>
+        <div class="canvas-area" id="canvas-area"></div>
+        <div class="layer-panel" id="layer-panel">
+          <h3>レイヤー (Phase2実装予定)</h3>
+        </div>
+      </div>
+    `;
+  }
+
+  // ツールバー・Phase1基本ツール・Phase2拡張
+  private createToolbar(): void {
+    const toolbar = document.getElementById('toolbar');
+    if (!toolbar) return;
+
+    const tools = [
+      { name: 'pen', icon: '✏️', title: 'ペンツール (P)' },
+      { name: 'eraser', icon: '🗑️', title: '消しゴム (E)' }
+    ];
+
+    tools.forEach((tool, index) => {
+      const button = document.createElement('button');
+      button.className = 'tool-button';
+      button.innerHTML = tool.icon;
+      button.title = tool.title;
+      button.dataset.tool = tool.name;
+      
+      if (index === 0) button.classList.add('active'); // ペン初期選択
+
+      button.addEventListener('click', () => {
+        this.onToolButtonClick(tool.name);
+      });
+
+      toolbar.appendChild(button);
+    });
+  }
+
+  // 基本色パレット・ふたば色プリセット・Phase2 HSV円形予定
+  private createBasicColorPalette(): void {
+    const canvasArea = document.getElementById('canvas-area');
+    if (!canvasArea) return;
+
+    const palette = document.createElement('div');
+    palette.className = 'color-palette';
+
+    // ふたば色プリセット・4_UI_STYLE_GUIDE準拠
+    const colors = [
+      { color: '#800000', name: 'ふたばマルーン' },
+      { color: '#000000', name: '黒' },
+      { color: '#FF0000', name: '赤' },
+      { color: '#00FF00', name: '緑' },
+      { color: '#0000FF', name: '青' },
+      { color: '#FFFFFF', name: '白' }
+    ];
+
+    colors.forEach((colorData, index) => {
+      const swatch = document.createElement('div');
+      swatch.className = 'color-swatch';
+      swatch.style.backgroundColor = colorData.color;
+      swatch.title = colorData.name;
+      
+      if (index === 0) swatch.classList.add('active'); // マルーン初期選択
+
+      swatch.addEventListener('click', () => {
+        this.onColorSwatchClick(colorData.color, swatch);
+      });
+
+      palette.appendChild(swatch);
+    });
+
+    canvasArea.appendChild(palette);
+  }
+
+  // ツールボタンクリック・状態更新・イベント発火
+  private onToolButtonClick(toolName: string): void {
+    document.querySelectorAll('.tool-button').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    
+    const clickedButton = document.querySelector(`[data-tool="${toolName}"]`);
+    if (clickedButton) clickedButton.classList.add('active');
+
+    this.eventBus.emit('ui:toolbar-click', { tool: toolName });
+  }
+
+  // 色選択・16進数→数値変換・イベント発火
+  private onColorSwatchClick(colorHex: string, swatchElement: HTMLElement): void {
+    document.querySelectorAll('.color-swatch').forEach(swatch => {
+      swatch.classList.remove('active');
+    });
+    swatchElement.classList.add('active');
+
+    const colorNumber = parseInt(colorHex.replace('#', ''), 16);
+    this.eventBus.emit('ui:color-change', { 
+      color: colorNumber, 
+      previousColor: 0x800000 
+    });
+  }
+
+  public getCanvasContainer(): HTMLElement | null {
+    return document.getElementById('canvas-area');
+  }
+}
+```
+
+## 🚀 Step 9: main.ts統合・アプリ起動（Day 20・30分）
+
+### 全システム統合・Phase1完成・動作確認
+**参照実装**: `3_IMPLEMENTATION_GUIDE.md` - アプリケーション統合・起動手順・エラー処理
+**重要ポイント**: 段階的初期化・エラー処理・ログ出力・デバッグ支援・動作確認
+
+```typescript
+// src/main.ts - アプリケーション統合・Phase1完成（3_IMPLEMENTATION_GUIDE準拠）
+
+import { PixiApplication } from './core/PixiApplication.js';
+import { EventBus } from './core/EventBus.js';
+import { DrawingEngine } from './core/DrawingEngine.js';
+import { InputManager } from './input/InputManager.js';
+import { PerformanceManager } from './core/PerformanceManager.js';
+import { UIManager } from './ui/UIManager.js';
+import { PenTool } from './tools/PenTool.js';
+import { EraserTool } from './tools/EraserTool.js';
+
+class ModernDrawingApp {
+  // Phase1基盤システム・Claude理解容易・責任分界
+  private pixiApp: PixiApplication;
+  private eventBus: EventBus;
+  private drawingEngine: DrawingEngine | null = null;
+  private inputManager: InputManager | null = null;
+  private performanceManager: PerformanceManager;
+  private uiManager: UIManager;
+  
+  // Phase1基本ツール・Phase2拡張準備
+  private penTool: PenTool;
+  private eraserTool: EraserTool;
+  private currentTool: PenTool | EraserTool;
+
+  constructor() {
+    console.log('🎨 モダンお絵かきツール v4.0 Phase1 起動準備...');
+    
+    // 基盤システム初期化・順序重要・依存関係
+    this.eventBus = new EventBus();
+    this.pixiApp = new PixiApplication();
+    this.performanceManager = new PerformanceManager(this.eventBus);
+    this.uiManager = new UIManager(this.eventBus, document.getElementById('app')!);
+    
+    // ツール初期化・Phase1基本・Phase2拡張
+    this.penTool = new PenTool();
+    this.eraserTool = new EraserTool();
+    this.currentTool = this.penTool; // ペン初期選択
+  }
+
+  // 段階的初期化・エラー処理・復旧機能・品質保証
+  public async initialize(): Promise<boolean> {
+    try {
+      console.log('📋 Phase1初期化シーケンス開始...');
+
+      // Step 1: UI初期化・レイアウト構築
+      console.log('🎨 UI初期化中...');
+      await this.uiManager.initializeBasicUI();
+
+      // Step 2: PixiJS初期化・WebGL2確実・2.5K対応
+      console.log('🏗️ PixiJS初期化中...');
+      const canvasContainer = this.uiManager.getCanvasContainer();
+      if (!canvasContainer) throw new Error('Canvas container not found');
+
+      const success = await this.pixiApp.initialize(canvasContainer);
+      if (!success) throw new Error('PixiJS initialization failed');
+
+      // Step 3: 描画エンジン初期化・Graphics管理
+      console.log('🖊️ 描画エンジン初期化中...');
+      const app = this.pixiApp.getApp();
+      if (!app) throw new Error('PixiJS app not available');
+      this.drawingEngine = new DrawingEngine(app, this.eventBus);
+
+      // Step 4: 入力管理初期化・筆圧・座標変換
+      console.log('🎮 入力システム初期化中...');
+      const canvas = this.pixiApp.getCanvas();
+      if (!canvas) throw new Error('Canvas not available');
+      this.inputManager = new InputManager(this.eventBus, canvas);
+
+      // Step 5: イベント統合・UI連携・ツール制御
+      console.log('⚡ イベントシステム統合中...');
+      this.setupEventListeners();
+
+      // Step 6: ツール初期化・ペン有効化
+      console.log('🔧 ツールシステム初期化中...');
+      this.currentTool.activate();
+
+      // Step 7: 性能監視開始・60FPS・1GB監視
+      console.log('📊 性能監視開始中...');
+      this.performanceManager.startMonitoring();
+
+      // 初期化完了・成功ログ・デバッグ情報
+      console.log('✅ Phase1初期化完了！');
+      console.log(`📱 レンダラー: ${this.pixiApp.getRendererType()}`);
+      console.log(`🎯 キャンバス: ${canvas.width}x${canvas.height}`);
+      console.log('🎨 描画テスト開始可能 - マウス・ペンで描画してください');
+      
+      return true;
+
+    } catch (error) {
+      console.error('❌ Phase1初期化失敗:', error);
+      this.showErrorMessage(error as Error);
+      return false;
+    }
+  }
+
+  // イベントリスナー統合・UI←→Core連携・ツール制御
+  private setupEventListeners(): void {
+    // UI→ツール連携・切り替え制御
+    this.eventBus.on('ui:toolbar-click', (data) => {
+      console.log(`🔧 ツール切り替え: ${data.tool}`);
+      
+      // 現在ツール無効化
+      this.currentTool.deactivate();
+      
+      // 新ツール有効化
+      switch (data.tool) {
+        case 'pen':
+          this.currentTool = this.penTool;
+          break;
+        case 'eraser':
+          this.currentTool = this.eraserTool;
+          break;
+        default:
+          console.warn(`未知のツール: ${data.tool}`);
+          this.currentTool = this.penTool; // フォールバック
+      }
+      
+      this.currentTool.activate();
+    });
+
+    // UI→描画連携・色変更・リアルタイム反映
+    this.eventBus.on('ui:color-change', (data) => {
+      console.log(`🎨 色変更: #${data.color.toString(16).padStart(6, '0')}`);
+      if (this.drawingEngine) {
+        // DrawingEngineに色設定反映・Phase2設定管理強化
+        console.log('DrawingEngine色設定更新予定'); // Phase2実装
+      }
+    });
+
+    // 性能監視・警告・調整・ユーザー通知
+    this.eventBus.on('performance:fps-low', (data) => {
+      console.warn(`⚠️ FPS低下警告: ${data.currentFPS.toFixed(1)}fps`);
+      this.showPerformanceWarning('フレームレート低下', `現在: ${data.currentFPS.toFixed(1)}fps`);
+    });
+
+    this.eventBus.on('performance:memory-warning', (data) => {
+      console.warn(`⚠️ メモリ使用量警告: ${data.used.toFixed(0)}MB`);
+      this.showPerformanceWarning('メモリ使用量増加', `現在: ${data.used.toFixed(0)}MB`);
+    });
+  }
+
+  // エラー表示・ユーザー通知・復旧案内
+  private showErrorMessage(error: Error): void {
+    const errorDiv = document.createElement('div');
+    errorDiv.style.cssText = `
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: #f44336; color: white; padding: 20px; border-radius: 8px;
+      max-width: 400px; text-align: center; z-index: 10000;
+    `;
+    errorDiv.innerHTML = `
+      <h3>初期化エラー</h3>
+      <p>${error.message}</p>
+      <button onclick="location.reload()" style="
+        background: white; color: #f44336; border: none; padding: 8px 16px;
+        border-radius: 4px; cursor: pointer; margin-top: 10px;
+      ">ページを再読み込み</button>
+    `;
+    document.body.appendChild(errorDiv);
+  }
+
+  // 性能警告・ユーザー通知・一時表示
+  private showPerformanceWarning(title: string, message: string): void {
+    const warningDiv = document.createElement('div');
+    warningDiv.style.cssText = `
+      position: fixed; top: 20px; right: 20px;
+      background: #ff9800; color: white; padding: 12px 16px;
+      border-radius: 4px; z-index: 9999; max-width: 300px;
+    `;
+    warningDiv.innerHTML = `<strong>${title}</strong><br>${message}`;
+    document.body.appendChild(warningDiv);
+    
+    // 5秒後自動削除
+    setTimeout(() => {
+      if (document.body.contains(warningDiv)) {
+        document.body.removeChild(warningDiv);
+      }
+    }, 5000);
+  }
+
+  // アプリケーション終了・リソース解放・メモリリーク防止
+  public destroy(): void {
+    console.log('🔄 アプリケーション終了・リソース解放中...');
+    
+    this.currentTool.deactivate();
+    this.inputManager?.destroy();
+    this.drawingEngine?.destroy();
+    this.pixiApp.destroy();
+    this.eventBus.destroy();
+    
+    console.log('✅ リソース解放完了');
+  }
+}
+
+// アプリケーション起動・Phase1完成・動作確認
+async function main() {
+  const app = new ModernDrawingApp();
+  
+  const success = await app.initialize();
+  if (success) {
+    console.log('🎉 Phase1基盤構築完了！');
+    console.log('📝 描画テスト手順:');
+    console.log('  1. マウス・ペンでキャンバス上を描画');
+    console.log('  2. ツールバーでペン・消しゴム切り替え');
+    console.log('  3. 色パレットで色変更');
+    console.log('  4. 15分連続描画で安定性確認');
+    console.log('🚀 Phase2機能拡張準備完了！');
+  } else {
+    console.error('💥 Phase1実装失敗 - エラー確認・修正が必要');
+  }
+
+  // 開発用グローバル参照・デバッグ支援
+  if (import.meta.env.DEV) {
+    (window as any).drawingApp = app;
+    (window as any).eventBus = app['eventBus'];
+    console.log('🔍 デバッグ: window.drawingApp, window.eventBus 利用可能');
+  }
+}
+
+// アプリケーション開始
+main().catch(error => {
+  console.error('💥 アプリケーション起動失敗:', error);
+});
+```
+
+## ✅ Phase1完了判定・品質基準
+
+### 必須クリア条件・Phase2移行判定
+```
+🔴 核心機能・動作必須:
+基盤システム:
+├─ [ ] WebGL2初期化成功・Canvas表示・2560×1440対応・エラーなし
+├─ [ ] EventBus型安全通信・イベント発火/受信・リスナー解除確認
+├─ [ ] PerformanceManager基盤・FPS計測・メモリ監視・警告機能
+└─ [ ] エラー処理・例外捕捉・ログ出力・復旧機能・安定動作
+
+描画・入力システム:
+├─ [ ] マウス・ペン入力・座標正確・描画開始/継続/終了・自然な線
+├─ [ ] 筆圧取得・0.1-1.0範囲・線幅変化・スムージング・手ブレ軽減
+├─ [ ] 色変更反映・ツール切り替え・UI連携・リアルタイム更新
+└─ [ ] DrawingEngine描画・Graphics最適化・Container管理・GPU効率
+
+UI システム:
+├─ [ ] 2.5Kレイアウト・Grid 80px|1fr|400px・ふたば色適用・視認性
+├─ [ ] ツールバー・36pxアイコン・クリック反応・アクティブ状態管理
+├─ [ ] 基本色パレット・ふたば色・選択反映・変更イベント発火
+└─ [ ] レスポンシブ警告・2.5K専用・小画面対応・使用案内
+
+🟡 品質要件・実用性確保:
+性能基準:
+├─ [ ] 60FPS以上・WebGL2環境・描画遅延8ms以下・応答性良好
+├─ [ ] メモリ300MB以下・警告システム・リーク防止・安定動作
+├─ [ ] 15分連続描画・500ストローク・エラーなし・品質維持
+└─ [ ] CPU 30%以下・GPU効率・熱問題なし・長時間使用可能
+
+操作性・UX:
+├─ [ ] 直感的操作・学習コスト低・一発理解・ストレスなし
+├─ [ ] ツール切り替え瞬時・色変更即座・操作遅延100ms以下
+├─ [ ] エラー時回復・操作継続・データ保護・安心感
+└─ [ ] アクセシビリティ・キーボード対応・視認性・疲労軽減
+
+🟠 技術要件・保守性:
+├─ [ ] TypeScript厳格・エラー0・警告0・ESLint準拠・可読性
+├─ [ ] 責任分界明確・1クラス1機能・Claude理解容易・保守性
+├─ [ ] 命名規則準拠・コメント適切・設計意図明確・拡張容易
+└─ [ ] Phase2拡張準備・WebGPU基盤・レイヤー準備・設計整合性
+```
+
+### Phase1→Phase2移行・判断基準
+```
+✅ 移行可能・次段階準備完了:
+├─ 上記必須条件全クリア・品質基準達成・実用可能レベル
+├─ 実際の描画作品制作可能・満足度確保・継続使用意欲
+├─ コード品質・保守性・Claude継続開発・効率性確保
+└─ ユーザーフィードバック・改善点把握・Phase2方針確定
+
+⚠️ 移行延期・品質優先・Phase1継続:
+├─ 重大バグ・描画不能・クラッシュ・データ損失・致命的問題
+├─ 性能不足・30FPS未満・500ms遅延・実用困難・ストレス
+├─ メモリ問題・500MB超過・継続増加・不安定・強制終了
+└─ 基本機能欠如・ペン不可・色変更不可・UI操作不可・破綻
+
+📋 Phase2実装準備・移行時確認:
+技術準備:
+├─ WebGPU検出・初期化準備・対応環境確認・Tier2移行基盤
+├─ constants分離・ui/drawing/performance・中央管理・保守性
+├─ レイヤーシステム設計・Container階層・20枚管理・ブレンドモード
+└─ 高度ツール準備・筆・図形・塗りつぶし・設定管理・Phase2機能
+
+実装方針:
+├─ Phase1基盤完全活用・EventBus・DrawingEngine・InputManager継承
+├─ 段階的機能追加・既存破綻なし・後方互換・品質維持
+├─ UI拡張・Toolbar強化・ColorPalette HSV・LayerPanel実装
+└─ 性能最適化継続・GPU活用・メモリ効率・60FPS維持目標
+```
+
+## 🔄 Claude引き継ぎ・継続性確保
+
+### 次回実装・開始時必須確認
+```
+📋 Phase1状況確認・5分で把握:
+1. 基盤動作確認:
+   ├─ npm run dev → http://localhost:3000 正常表示
+   ├─ マウス・ペンで描画動作・線が描ける・色変更反映
+   ├─ ツール切り替え・ペン/消しゴム・アクティブ状態変化
+   └─ F12コンソール・エラーなし・警告最小限・ログ正常
+
+2. 性能状況確認:
+   ├─ FPS監視・60FPS以上・安定動作・フレーム落ちなし
+   ├─ メモリ使用量・300MB以下・増加傾向なし・リークなし
+   ├─ 描画応答性・遅延感なし・筆圧反映・スムーズな線
+   └─ 長時間テスト・5-10分連続描画・エラー・性能劣化なし
+
+3. コード品質確認:
+   ├─ TypeScript厳格・npx tsc エラー0・型安全・警告対応
+   ├─ ESLint準拠・npx eslint src/ 通過・規約遵守・一貫性
+   ├─ 責任分界・各クラス単一機能・理解容易・保守性確保
+   └─ Phase2準備・拡張可能性・設計整合性・継続性
+
+4. 課題・改善点確認:
+   ├─ 発見問題・バグ・動作不良・回避方法・修正必要箇所
+   ├─ 性能問題・ボトルネック・最適化余地・改善方針
+   ├─ UI/UX改善・操作性・視認性・ユーザビリティ向上点
+   └─ 技術的課題・設計見直し・リファクタリング・品質向上
+```
+
+### Phase1成功要因・継続重要ポイント
+```
+🎯 技術的成功要因・継続必須:
+├─ 段階的実装厳守・Phase完了→次Phase・品質優先・リスク回避
+├─ 責任分界明確・1クラス1機能・Claude理解容易・効率開発
+├─ EventBus疎結合・型安全通信・デバッグ支援・保守性確保
+├─ 性能基準遵守・60FPS・300MB・測定・監視・品質保証
+└─ エラー処理重視・try-catch・ログ・回復・安定性・信頼性
+
+🎯 プロジェクト成功要因・継続価値:
+├─ 2.5K環境特化・液タブレット最適化・ターゲット明確・差別化
+├─ ふたば色システム・親しみやすさ・独自性・ブランド価値
+├─ Claude協業最適化・理解容易・効率開発・品質向上・革新性
+├─ ユーザー体験重視・操作性・直感性・満足度・継続使用
+└─ 確実戦略・戦略B+理想・段階向上・リスク最小・成功確率
+
+⚠️ 失敗回避・注意継続:
+├─ Phase飛ばし禁止・基盤未完成でPhase2着手・品質破綻回避
+├─ 複数機能混在・1クラス多責任・理解困難・保守悪化回避
+├─ 性能軽視・測定なし・最適化後回し・ユーザビリティ悪化回避
+├─ 制約変更・タッチ対応・モバイル・Canvas2D・集中力分散回避
+└─ 色システム変更・独自色・ふたば色以外・ブランド破綻回避
+```
+
+## 📚 Phase2移行・準備資料
+
+### Phase2実装予定・機能拡張（3-4週間）
+```
+🔵 Phase2目標・実用化完成:
+Week 1: レイヤーシステム基盤
+├─ LayerManager.ts・Container階層・20枚制限・Z-index制御
+├─ LayerPanel UI・400px幅・64px項目・ドラッグ&ドロップ
+├─ ブレンドモード・透明度・表示切り替え・階層管理
+└─ constants分離・ui-constants.ts・中央管理・保守性
+
+Week 2: 高度ツールシステム
+├─ BrushTool.ts強化・テクスチャ・筆圧変動・自然表現
+├─ FillTool.ts・フラッドフィル・色域選択・境界検出
+├─ ShapeTool.ts・直線・矩形・円・ベジエ曲線・図形描画
+└─ ツール設定・永続化・カスタマイズ・ユーザー適応
+
+Week 3: UI拡張・設定システム
+├─ Toolbar.ts拡張・ツール追加・設定パネル・操作性向上
+├─ ColorPalette.ts・HSV円形・200px・直感操作・色履歴
+├─ 設定永続化・localStorage・ユーザー設定・作業継続
+└─ キーボードショートカット・効率化・プロ対応
+
+Week 4: エクスポート・統合最適化
+├─ エクスポート機能・PNG/JPEG・2K対応・品質設定
+├─ ファイル保存・読み込み・作業継続・プロジェクト管理
+├─ 統合テスト・長時間動作・実用性確認・品質保証
+└─ Phase3移行準備・WebGPU基盤・GPU最適化・高性能化
+
+📋 Phase2成功基準:
+├─ 実用的作品制作・複数レイヤー・高度ツール・満足度
+├─ エクスポート可能・PNG 2K・印刷品質・作品完成
+├─ 設定保存・次回継続・ユーザー適応・利便性
+└─ 30FPS安定・512MB以下・実用性能・長時間使用
+```
+
+### Phase2技術方針・Phase1継承
+```
+✅ Phase1基盤完全活用・破綻回避:
+基盤システム継承:
+├─ EventBus拡張・IEventData追加・layer:*/export:*・型安全
+├─ DrawingEngine活用・描画統合・レイヤー対応・GPU最適化
+├─ InputManager継承・筆圧・座標・デバイス・精度維持
+└─ PerformanceManager強化・メモリ監視・品質調整・安定性
+
+アーキテクチャ保持:
+├─ 責任分界継続・単一責任・Claude理解・保守性・拡張性
+├─ インターフェース拡張・IDrawingTool・後方互換・機能追加
+├─ 段階的縮退準備・WebGPU検出・Tier2移行・性能適応
+└─ エラー処理強化・復旧機能・データ保護・信頼性向上
+
+UI/UX継承強化:
+├─ ふたば色システム継続・色定数活用・ブランド一貫性
+├─ 2.5K最適化継続・Grid拡張・400px LayerPanel・視認性
+├─ アクセシビリティ強化・WCAG準拠・キーボード・包摂性
+└─ 操作性向上・学習コスト・直感性・ユーザビリティ・満足度
+```
+
+## 🎓 学習リソース・継続開発
+
+### 重要ドキュメント・必読資料
+```
+📖 プロジェクト基盤ドキュメント:
+├─ 1_PROJECT_SPEC.md - 全体目標・制約・性能基準・戦略理解必須
+├─ 2_TECHNICAL_DESIGN.md - アーキテクチャ・設計思想・責任分界
+├─ 4_UI_STYLE_GUIDE.md - ふたば色・2.5K最適化・アクセシビリティ
+└─ 5_CLAUDE_HANDOVER.md - 引き継ぎ・継続性・品質保証・成功要因
+
+📚 技術リファレンス:
+├─ PixiJS v8 Documentation - Graphics・Container・WebGPU対応
+├─ TypeScript Handbook - 厳格モード・型安全・エラー防止
+├─ Vite Guide - ESM・最適化・開発環境・ビルド設定
+└─ Web APIs - PointerEvents・Performance・WebGPU・ブラウザ対応
+
+🔧 開発ツール・品質保証:
+├─ Chrome DevTools - FPS監視・メモリプロファイル・GPU使用率
+├─ TypeScript Compiler - 厳格チェック・エラー検出・品質確保
+├─ ESLint/Prettier - コード規約・一貫性・可読性・保守性
+└─ Browser Testing - Chrome/Firefox・WebGL2・筆圧・動作確認
+```
+
+### Claude協業・効率開発ポイント
+```
+🤝 Claude理解・効率化要因:
+コード構造理解:
+├─ 単一責任原則・1クラス1機能・目的明確・理解容易
+├─ インターフェース先行・契約明確・実装分離・変更安全
+├─ 型安全・TypeScript厳格・エラー防止・意図明確・保守性
+└─ 命名規則・意味明確・省略禁止・文脈理解・効率開発
+
+設計思想共有:
+├─ EventBus疎結合・責任分離・デバッグ容易・拡張安全
+├─ 段階的実装・Phase明確・依存関係・品質優先・リスク回避
+├─ エラー処理・復旧機能・ログ出力・問題解決・信頼性確保
+└─ 性能重視・測定・監視・最適化・ユーザビリティ・満足度
+
+継続性確保:
+├─ ドキュメント整備・設計記録・実装意図・引き継ぎ・理解支援
+├─ 品質基準明確・チェックリスト・判定基準・継続評価・改善
+├─ 問題記録・解決方法・回避策・知識蓄積・効率向上・学習
+└─ 成功要因・失敗回避・経験活用・継続改善・品質向上・価値創造
+```
+
+---
+
+**このPhase1実装順序ガイドv4.0により、確実な基盤構築と品質保証されたMVP完成、そしてPhase2への円滑な移行基盤を確立します。段階的実装と品質優先により、Claude協業での高効率開発と継続的な価値創造を実現します。**
