@@ -199,10 +199,10 @@
 
 ### Toolbar・ツールバー（64px幅）- Tabler Icons統合
 ```css
-/* === ツールボタン・48px基準・SVGアイコン対応 === */
+/* === ツールボタン・36px基準・SVGアイコン対応 === */
 .tool-button {
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
   gap: 6px;
   border: 1px solid var(--futaba-light);
   background: var(--futaba-background);

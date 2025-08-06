@@ -79,7 +79,7 @@ src/
 │   └── BlurTool.ts                 # v4.1: ボカシ・GPU並列処理
 ├── ui/                             # UI制御・2.5K最適化・v4.1拡張
 │   ├── UIManager.ts                 # UI統合・ふたば色・レスポンシブ
-│   ├── Toolbar.ts                  # ツールバー・64px幅・48pxアイコン・Tabler統合
+│   ├── Toolbar.ts                  # ツールバー・64px幅・36pxアイコン・Tabler統合
 │   ├── ColorPalette.ts             # v4.1: HSV円形・WebGPU・移動可能
 │   ├── LayerPanel.ts               # レイヤー・400px幅・64px項目・性能表示
 │   ├── PopupManager.ts             # v4.1: z-index:2000・移動可能・GPU最適化

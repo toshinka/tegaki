@@ -154,7 +154,7 @@ Tier 3: 旧ブラウザ WebGL版（5%ユーザー・最小限）
 Phase 1: 基盤構築・確実実装（2-3週間）
 ✅ PixiV8Chrome*基盤・WebGL2確実・Chrome API検出準備
 ✅ PixiV8ChromeDrawingProcessor・基本描画・ペン・消しゴム
-✅ PixiV8ChromeUIController・2.5K UI・ふたば色・48pxアイコン
+✅ PixiV8ChromeUIController・2.5K UI・ふたば色・36pxアイコン
 ✅ PixiV8ChromeInputController・マウス・ペンタブレット・基本入力
 目標: 動作する基本お絵かきツール・成功率95%
 

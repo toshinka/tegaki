@@ -103,8 +103,8 @@ private calculateSmoothPoint(p1: PIXI.Point, p2: PIXI.Point, p3: PIXI.Point): PI
 }
 
 .tool-button {
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
   background: var(--futaba-background);
 }
 ```
@@ -172,7 +172,7 @@ WebGPU本格導入:
 ├─ [ ] WebGL2初期化・Canvas表示・2560×1440対応
 ├─ [ ] EventBus通信・型安全・イベント確認
 ├─ [ ] 基本描画・ペン・スムージング・色変更
-├─ [ ] UI表示・48pxボタン・ふたば色適用
+├─ [ ] UI表示・36pxボタン・ふたば色適用
 └─ [ ] 15分連続描画・エラーなし・性能維持
 
 ✅ 性能要件:
@@ -213,7 +213,7 @@ WebGPU本格導入:
 🚫 変更禁止:
 ├─ ふたば色システム・#800000/#ffffee等
 ├─ 2.5K液タブレット特化・タッチ非対応
-├─ 48pxアイコン・64px幅ツールバー・400px幅レイヤー
+├─ 36pxアイコン・64px幅ツールバー・400px幅レイヤー
 └─ EventBus疎結合・TypeScript厳格・単一責任
 
 ✅ 品質基準:

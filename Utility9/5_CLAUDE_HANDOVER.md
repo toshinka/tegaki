@@ -55,7 +55,7 @@ Tier1-3戦略（1_PROJECT_SPEC.md準拠）:
 
 ふたば色・UI設計（4_UI_STYLE_GUIDE.md参照）:
 ├─ --futaba-maroon: #800000（メイン・変更禁止）
-├─ 2.5K環境特化・Grid 64px|1fr・48pxアイコン
+├─ 2.5K環境特化・Grid 64px|1fr・36pxアイコン
 ├─ pixiv8-chrome-*CSS命名・統一プレフィックス必須
 └─ WCAG 2.1 AAA準拠・アクセシビリティ・高コントラスト
 ```
@@ -99,7 +99,7 @@ Step 5: PixiV8ChromeDrawingProcessor.ts（75分）
 Step 6: PixiV8ChromeUIController.ts（60分）
 ├─ 2.5K最適化レイアウト・Grid 64px|1fr・ふたば色適用
 ├─ Tier表示・Chrome API状況・視覚的フィードバック
-├─ ツールバー・48pxボタン・色パレット・統合UI制御
+├─ ツールバー・36pxボタン・色パレット・統合UI制御
 └─ CSS統一・pixiv8-chrome-*命名・アクセシビリティ対応
 
 Step 7: main.ts統合（30分）
@@ -156,7 +156,7 @@ WebGPU不安定性対応:
 └─ 実装: try-catch充実・ログ詳細・復旧機能・ユーザー通知
 
 2.5K環境UI最適化:
-├─ 問題: 48pxアイコン視認性・DPR対応・マウス精度・疲労軽減
+├─ 問題: 36pxアイコン視認性・DPR対応・マウス精度・疲労軽減
 ├─ 対策: 実機テスト必須・調整・サブピクセル精度・20%拡大対応
 ├─ 確認: 2560×1440表示品質・操作性・長時間使用快適性
 └─ フォールバック: 1920×1080警告表示・基本動作保証
