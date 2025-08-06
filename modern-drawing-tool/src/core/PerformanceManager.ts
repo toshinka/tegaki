@@ -179,6 +179,16 @@ export class PerformanceManager {
     return 0;
   }
 
+  // 現在統計情報取得・main.tsから呼び出される
+  public getCurrentStats(): PerformanceMetrics {
+    return {
+      fps: this.getCurrentFPS(),
+      memoryUsage: this.getMemoryUsage(),
+      renderTime: 0, // Phase2実装予定
+      timestamp: performance.now()
+    };
+  }
+
   // 現在パフォーマンス取得・デバッグ・調整用
   public getCurrentMetrics(): PerformanceMetrics {
     return {

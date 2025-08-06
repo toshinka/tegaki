@@ -17,12 +17,17 @@ export class InputManager {
   private scaleX = 1;
   private scaleY = 1;
   
-  constructor(eventBus: EventBus, canvas: HTMLCanvasElement) {
-    this.eventBus = eventBus;
+  constructor(canvas: HTMLCanvasElement, eventBus: EventBus) {
     this.canvas = canvas;
+    this.eventBus = eventBus;
+  }
+
+  // InputManager初期化・main.tsから呼び出される
+  public initialize(): void {
     this.updateCanvasMetrics();
     this.setupPointerEvents();
     this.setupResizeObserver();
+    console.log('🖱️ InputManager初期化完了');
   }
 
   // キャンバス座標変換情報更新・高精度・2.5K対応

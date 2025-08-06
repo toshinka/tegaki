@@ -1,8 +1,8 @@
-// src/core/PixiApplication.ts - WebGL2確実初期化・2.5K対応
+// src/core/PixiApplication.ts - PixiJS v8.11.0対応・WebGL2確実初期化・2.5K対応
 
 import { Application } from 'pixi.js';
 
-export type RendererType = 'webgl2' | 'webgl';
+export type RendererType = 'webgl2' | 'webgl' | 'webgpu';
 
 export interface PixiInitOptions {
   width?: number;
@@ -17,16 +17,19 @@ export class PixiApplication {
   private canvas: HTMLCanvasElement | null = null;
   private rendererType: RendererType = 'webgl2';
 
-  // WebGL2確実初期化・2560×1440対応・エラー処理完全・引数なしオーバーロード
-  public async initialize(options: PixiInitOptions = {}): Promise<boolean> {
+  // PixiJS v8.11.0初期化・WebGL2確実実装・2560×1440対応・エラー処理完全
+  public async initialize(
+    container: HTMLElement, 
+    options: PixiInitOptions = {}
+  ): Promise<boolean> {
     try {
-      console.log('🚀 PixiJS v8初期化開始...');
+      console.log('PixiJS v8.11.0初期化開始...');
       
-      // Phase1: WebGL2確実実装・WebGPU準備のみ
+      // PixiJS v8の新しい初期化方式
       this.pixiApp = new Application();
       
       const initOptions = {
-        preference: 'webgl2' as const, // Phase1確実動作
+        preference: 'webgl2' as const, // PixiJS v8でWebGL2優先
         powerPreference: options.powerPreference || 'high-performance' as const,
         antialias: options.antialias !== undefined ? options.antialias : true,
         resolution: window.devicePixelRatio || 1,
@@ -36,9 +39,10 @@ export class PixiApplication {
         height: options.height || this.getOptimalHeight()
       };
 
+      // PixiJS v8の非同期初期化
       await this.pixiApp.init(initOptions);
 
-      // キャンバス要素取得・DOM追加準備
+      // キャンバス要素取得・DOM追加
       this.canvas = this.pixiApp.canvas as HTMLCanvasElement;
       if (!this.canvas) {
         throw new Error('Canvas element not created');
@@ -49,18 +53,20 @@ export class PixiApplication {
       this.canvas.style.maxHeight = '100%';
       this.canvas.style.display = 'block';
       
+      container.appendChild(this.canvas);
+      
       // レンダラー情報確認・WebGL2検証
       const renderer = this.pixiApp.renderer;
-      this.rendererType = 'webgl2'; // Phase1はWebGL2固定
+      this.rendererType = 'webgl2'; // PixiJS v8はWebGL2がデフォルト
       
-      console.log(`✅ WebGL2初期化成功: ${initOptions.width}x${initOptions.height}`);
+      console.log(`✅ PixiJS v8.11.0初期化成功: ${initOptions.width}x${initOptions.height}`);
       console.log(`📱 レンダラー: ${renderer.type}, GPU: ${renderer.gl?.getParameter(renderer.gl.RENDERER)}`);
       
       return true;
       
     } catch (error) {
-      console.error('❌ WebGL2初期化失敗, WebGL基本モードで再試行:', error);
-      return this.fallbackToWebGL(options);
+      console.error('❌ PixiJS v8初期化失敗, WebGL基本モードで再試行:', error);
+      return this.fallbackToWebGL(container, options);
     }
   }
 
@@ -74,7 +80,10 @@ export class PixiApplication {
   }
 
   // WebGL基本フォールバック・安全性確保
-  private async fallbackToWebGL(options: PixiInitOptions): Promise<boolean> {
+  private async fallbackToWebGL(
+    container: HTMLElement, 
+    options: PixiInitOptions
+  ): Promise<boolean> {
     try {
       console.log('🔄 WebGL基本モードで初期化...');
       
@@ -109,6 +118,7 @@ export class PixiApplication {
       this.canvas.style.maxHeight = '100%';
       this.canvas.style.display = 'block';
       
+      container.appendChild(this.canvas);
       this.rendererType = 'webgl';
       
       console.log(`⚠️ WebGL基本モード動作: ${fallbackOptions.width}x${fallbackOptions.height}`);
@@ -158,10 +168,7 @@ export class PixiApplication {
   }
 
   // アプリケーション取得・null安全
-  public getApplication(): Application {
-    if (!this.pixiApp) {
-      throw new Error('PixiJS Application not initialized');
-    }
+  public getApp(): Application | null {
     return this.pixiApp;
   }
 
@@ -189,7 +196,7 @@ export class PixiApplication {
     const renderer = this.pixiApp.renderer;
     return {
       fps: this.pixiApp.ticker.FPS,
-      drawCalls: renderer.gl ? 0 : 0, // Phase2で実装予定
+      drawCalls: 0, // PixiJS v8で実装予定
       textureCount: renderer.texture?.managedTextures?.length || 0,
       memoryUsage: 0 // Phase2で実装予定
     };
@@ -216,4 +223,3 @@ export class PixiApplication {
     
     console.log('✅ PixiApplication破棄完了');
   }
-}
