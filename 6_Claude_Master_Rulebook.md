@@ -121,7 +121,8 @@ src/
 │   ├── BrushTool.ts                # 筆・テクスチャ・Phase2拡張
 │   ├── EraserTool.ts               # 消しゴム・削除・Phase1基盤
 │   ├── FillTool.ts                 # 塗りつぶし・フラッドフィル・Phase2
-│   └── ShapeTool.ts                # 図形・直線・矩形・円・Phase2
+│   ├── ShapeTool.ts                # 図形・直線・矩形・円・Phase2
+│   └──IDrawingTool.ts              # ツール統一インターフェース・契約定義・曖昧さ完全排除
 ├── ui/                             # UI制御・2.5K最適化・ふたば色統合
 │   ├── UIManager.ts                 # UI統合・レスポンシブ・レイアウト管理
 │   ├── Toolbar.ts                  # ツールバー・80px幅・56pxアイコン
