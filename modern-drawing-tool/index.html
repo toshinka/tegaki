@@ -1,13 +1,95 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + TS</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>モダンお絵かきツール v4.0 - Phase1</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #ffffee;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+    
+    #app {
+      width: 100%;
+      height: 100%;
+    }
+    
+    .loading {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #800000;
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+      font-size: 16px;
+      z-index: 9999;
+    }
+    
+    .error {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #f44336;
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+      max-width: 400px;
+      text-align: center;
+      z-index: 10000;
+    }
+    
+    .error button {
+      background: white;
+      color: #f44336;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  
+  <div id="loading" class="loading">
+    🎨 Phase1初期化中...
+  </div>
+  
+  <script>
+    // グローバルエラーハンドリング
+    window.addEventListener('error', (event) => {
+      console.error('エラー:', event.error);
+      document.getElementById('loading').style.display = 'none';
+      
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'error';
+      errorDiv.innerHTML = `
+        <h3>初期化エラー</h3>
+        <p>${event.error?.message || '不明なエラー'}</p>
+        <button onclick="location.reload()">再読み込み</button>
+      `;
+      document.body.appendChild(errorDiv);
+    });
+    
+    window.addEventListener('unhandledrejection', (event) => {
+      console.error('Promise拒否:', event.reason);
+    });
+  </script>
+  
+  <script type="module" src="/src/main.ts"></script>
+</body>
 </html>
