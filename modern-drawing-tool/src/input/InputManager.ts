@@ -23,7 +23,6 @@ export class InputManager {
     this.updateCanvasMetrics();
     this.setupPointerEvents();
     this.setupResizeObserver();
-    console.log('🖱️ InputManager初期化完了');
   }
 
   // キャンバス座標変換情報更新・高精度・2.5K対応

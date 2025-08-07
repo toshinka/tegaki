@@ -1,6 +1,5 @@
 // src/core/PerformanceManager.ts - 性能監視基盤・メモリ管理・警告システム
 
-import { Application } from 'pixi.js';
 import { EventBus } from './EventBus';
 
 export interface PerformanceMetrics {
@@ -17,7 +16,6 @@ export interface MemoryInfo {
 }
 
 export class PerformanceManager {
-  private pixiApp: Application;
   private eventBus: EventBus;
   private isMonitoring = false;
   private fpsHistory: number[] = [];
@@ -31,13 +29,8 @@ export class PerformanceManager {
   private fpsInterval: number | null = null;
   private memoryInterval: number | null = null;
 
-  constructor(pixiApp: Application, eventBus: EventBus) {
-    this.pixiApp = pixiApp;
+  constructor(eventBus: EventBus) {
     this.eventBus = eventBus;
-    
-    // 自動監視開始
-    this.startMonitoring();
-    console.log('📊 PerformanceManager初期化完了');
   }
 
   // 性能監視開始・FPS・メモリ・継続測定
@@ -168,12 +161,12 @@ export class PerformanceManager {
 
   // 現在FPS取得・UI表示・デバッグ用
   public getCurrentFPS(): number {
-    return this.fpsHistory.length > 0 ? this.fpsHistory[this.fpsHistory.length - 1] : 60;
+    return this.fpsHistory.length > 0 ? this.fpsHistory[this.fpsHistory.length - 1] : 0;
   }
 
   // 平均FPS取得・性能評価・品質判定
   public getAverageFPS(): number {
-    if (this.fpsHistory.length === 0) return 60;
+    if (this.fpsHistory.length === 0) return 0;
     return this.fpsHistory.reduce((sum, fps) => sum + fps, 0) / this.fpsHistory.length;
   }
 
@@ -202,8 +195,8 @@ export class PerformanceManager {
     memory: { used: number; limit: number; percentage: number };
     monitoring: { duration: number; samples: number };
   } {
-    const fpsMin = this.fpsHistory.length > 0 ? Math.min(...this.fpsHistory) : 60;
-    const fpsMax = this.fpsHistory.length > 0 ? Math.max(...this.fpsHistory) : 60;
+    const fpsMin = this.fpsHistory.length > 0 ? Math.min(...this.fpsHistory) : 0;
+    const fpsMax = this.fpsHistory.length > 0 ? Math.max(...this.fpsHistory) : 0;
     const memoryUsed = this.getMemoryUsage();
     
     return {
