@@ -1,0 +1,53 @@
+import "./style.css";
+import { PixiApplication } from "./core/PixiApplication";
+import { EventBus } from "./core/EventBus";
+import { InputManager } from "./input/InputManager";
+import { UIManager } from "./ui/UIManager";
+import { DrawingEngine } from "./core/DrawingEngine";
+import { PerformanceManager } from "./core/PerformanceManager";
+
+class ModernDrawingTool {
+  private app: PixiApplication;
+  private eventBus: EventBus;
+  private inputManager: InputManager;
+  private uiManager: UIManager;
+  private drawingEngine: DrawingEngine;
+  private performanceManager: PerformanceManager;
+
+  constructor() {
+    this.eventBus = new EventBus();
+    this.performanceManager = new PerformanceManager(this.eventBus);
+    this.app = new PixiApplication(this.eventBus);
+    this.drawingEngine = new DrawingEngine(this.app.getApp(), this.eventBus);
+    this.inputManager = new InputManager(this.eventBus);
+    this.uiManager = new UIManager(this.eventBus);
+  }
+
+  async init(): Promise<void> {
+    try {
+      // Initialize PIXI application
+      await this.app.init();
+      
+      // Setup canvas container
+      const canvasContainer = document.querySelector('.canvas-container');
+      if (!canvasContainer) {
+        throw new Error('Canvas container not found');
+      }
+      
+      canvasContainer.appendChild(this.app.getCanvas());
+      
+      // Initialize managers
+      this.inputManager.init(this.app.getCanvas());
+      this.uiManager.init();
+      this.performanceManager.start();
+      
+      console.log('Modern Drawing Tool initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize drawing tool:', error);
+    }
+  }
+}
+
+// Initialize the application
+const drawingTool = new ModernDrawingTool();
+drawingTool.init();
