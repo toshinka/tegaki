@@ -1,282 +1,235 @@
-// src/main.ts - アプリケーションエントリーポイント・PixiJS v8統合・モジュール統合
+// src/main.ts - モダンお絵かきツール・エントリーポイント
 
+import './style.css';
 import { PixiApplication } from './core/PixiApplication';
 import { EventBus } from './core/EventBus';
 import { DrawingEngine } from './core/DrawingEngine';
-import { PerformanceManager } from './core/PerformanceManager';
 import { InputManager } from './input/InputManager';
-import { PenTool } from './tools/PenTool';
-import { EraserTool } from './tools/EraserTool';
 import { UIManager } from './ui/UIManager';
+import { PerformanceManager } from './core/PerformanceManager';
 
-class ModernDrawingApp {
+/**
+ * アプリケーションメインクラス - 全体統合・Phase1基盤
+ */
+class ModernDrawingTool {
   private pixiApp: PixiApplication;
   private eventBus: EventBus;
-  private drawingEngine: DrawingEngine | null = null;
+  private drawingEngine: DrawingEngine;
+  private inputManager: InputManager;
+  private uiManager: UIManager;
   private performanceManager: PerformanceManager;
-  private inputManager: InputManager | null = null;
-  private uiManager: UIManager | null = null;
-  private currentTool: any = null; // Phase1: ツール管理簡易版
-  private penTool: PenTool;
-  private eraserTool: EraserTool;
-  
-  public isInitialized = false;
+  private isInitialized = false;
 
   constructor() {
-    console.log('🚀 モダンお絵かきツール v3.2 初期化開始');
-    
-    // 基本システム初期化・依存関係順序重要
     this.eventBus = new EventBus();
     this.pixiApp = new PixiApplication();
+    this.drawingEngine = new DrawingEngine(this.eventBus);
+    this.inputManager = new InputManager(this.eventBus);
+    this.uiManager = new UIManager(this.eventBus);
     this.performanceManager = new PerformanceManager(this.eventBus);
-    this.penTool = new PenTool();
-    this.eraserTool = new EraserTool();
   }
 
-  // アプリケーション初期化・Phase1基盤構築・エラー処理完全
+  /**
+   * アプリケーション初期化・段階的セットアップ
+   */
   public async initialize(): Promise<boolean> {
     try {
-      console.log('🔧 システム基盤初期化...');
-      
-      // Phase1: UI初期化・キャンバス準備
-      const appElement = document.getElementById('app');
-      if (!appElement) {
-        throw new Error('アプリケーションルート要素が見つかりません');
+      console.log('🎨 モダンお絵かきツール初期化開始...');
+
+      // HTML要素確認・DOM準備完了待機
+      const appContainer = document.getElementById('drawing-container');
+      if (!appContainer) {
+        throw new Error('描画コンテナ要素 #drawing-container が見つかりません');
       }
-      
-      this.uiManager = new UIManager(this.eventBus, appElement);
-      await this.uiManager.initializeBasicUI();
-      this.uiManager.setupKeyboardShortcuts();
-      
-      // キャンバスコンテナ取得・PixiJS初期化
-      const canvasContainer = this.uiManager.getCanvasContainer();
-      if (!canvasContainer) {
-        throw new Error('キャンバスコンテナが見つかりません');
-      }
-      
-      // PixiJS初期化・WebGL2優先・2.5K対応
-      const pixiInitSuccess = await this.pixiApp.initialize(canvasContainer, {
-        width: Math.min(window.innerWidth - 480, 2560), // サイドバー考慮
-        height: Math.min(window.innerHeight, 1440),
+
+      // Phase1: WebGL2/PixiJS初期化
+      const pixiInitialized = await this.pixiApp.initialize(appContainer, {
+        width: 2560,
+        height: 1440,
         backgroundColor: 0xffffee, // ふたば背景色
         antialias: true,
         powerPreference: 'high-performance'
       });
 
-      if (!pixiInitSuccess) {
-        throw new Error('PixiJS初期化に失敗しました');
+      if (!pixiInitialized) {
+        throw new Error('PixiJS初期化失敗');
       }
 
-      // 描画エンジン初期化・Graphics管理
-      const app = this.pixiApp.getApp();
-      if (!app) {
-        throw new Error('PixiJSアプリケーション取得に失敗');
+      // Phase2: 描画エンジン初期化
+      const pixiAppInstance = this.pixiApp.getApp();
+      if (!pixiAppInstance) {
+        throw new Error('PixiJS Application取得失敗');
       }
-      
-      this.drawingEngine = new DrawingEngine(app, this.eventBus);
-      
-      // 入力管理初期化・マウス・ペンタブレット対応
+
+      await this.drawingEngine.initialize(pixiAppInstance);
+      console.log('✅ 描画エンジン初期化完了');
+
+      // Phase3: 入力システム初期化
       const canvas = this.pixiApp.getCanvas();
       if (!canvas) {
-        throw new Error('キャンバス要素取得に失敗');
+        throw new Error('Canvas要素取得失敗');
       }
-      
-      this.inputManager = new InputManager(this.eventBus, canvas);
-      
-      // イベントリスナー設定・ツール制御
-      this.setupEventListeners();
-      
-      // デフォルトツール設定・ペンツール
-      this.currentTool = this.penTool;
-      this.currentTool.activate();
-      
-      // パフォーマンス監視開始
-      this.performanceManager.startMonitoring();
-      
-      // リサイズ対応設定
-      this.setupWindowResizeHandler();
-      
+
+      this.inputManager.initialize(canvas);
+      console.log('✅ 入力システム初期化完了');
+
+      // Phase4: UI初期化
+      this.uiManager.initialize();
+      console.log('✅ UI初期化完了');
+
+      // Phase5: 性能監視開始
+      this.performanceManager.initialize();
+      console.log('✅ 性能監視開始');
+
+      // リサイズ対応・レスポンシブ
+      this.setupResizeHandling();
+
+      // エラー処理・グローバル例外捕捉
+      this.setupErrorHandling();
+
       this.isInitialized = true;
-      console.log('✅ アプリケーション初期化完了');
-      console.log('🎨 描画準備完了・2560×1440対応・WebGL2有効');
-      
+      console.log('🎉 モダンお絵かきツール初期化完了！');
+
       return true;
-      
+
     } catch (error) {
-      console.error('💥 初期化エラー:', error);
+      console.error('💥 初期化失敗:', error);
       this.showInitializationError(error as Error);
       return false;
     }
   }
 
-  // イベントリスナー設定・UI連携・ツール制御
-  private setupEventListeners(): void {
-    // ツール切り替えイベント
-    this.eventBus.on('ui:toolbar-click', (data) => {
-      this.switchTool(data.tool);
-    });
-
-    // 色変更イベント
-    this.eventBus.on('ui:color-change', (data) => {
-      if (this.currentTool && typeof this.currentTool.setColor === 'function') {
-        this.currentTool.setColor(data.color);
-      }
-    });
-
-    // パフォーマンス警告イベント
-    this.eventBus.on('performance:fps-low', (data) => {
-      console.warn(`⚠️ FPS低下警告: ${data.currentFPS.toFixed(1)}fps`);
-    });
-
-    this.eventBus.on('performance:memory-warning', (data) => {
-      console.warn(`⚠️ メモリ警告: ${data.used.toFixed(1)}MB`);
-    });
-  }
-
-  // ツール切り替え・状態管理・Phase1簡易版
-  private switchTool(toolName: string): void {
-    console.log(`🔧 ツール切り替え: ${toolName}`);
-    
-    // 現在のツール無効化
-    if (this.currentTool) {
-      this.currentTool.deactivate();
-    }
-    
-    // 新しいツール有効化
-    switch (toolName) {
-      case 'pen':
-        this.currentTool = this.penTool;
-        break;
-      case 'eraser':
-        this.currentTool = this.eraserTool;
-        break;
-      default:
-        console.warn(`未知のツール: ${toolName}`);
-        this.currentTool = this.penTool; // デフォルト
-        break;
-    }
-    
-    if (this.currentTool) {
-      this.currentTool.activate();
-    }
-  }
-
-  // ウィンドウリサイズ対応・2.5K対応・レスポンシブ
-  private setupWindowResizeHandler(): void {
+  /**
+   * ウィンドウリサイズ対応・2.5K適応
+   */
+  private setupResizeHandling(): void {
     let resizeTimeout: number;
-    
+
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimeout);
       resizeTimeout = window.setTimeout(() => {
-        if (this.pixiApp) {
-          const newWidth = Math.min(window.innerWidth - 480, 2560);
-          const newHeight = Math.min(window.innerHeight, 1440);
-          this.pixiApp.resizeCanvas(newWidth, newHeight);
-          console.log(`📐 キャンバスリサイズ: ${newWidth}x${newHeight}`);
-        }
-      }, 250); // デバウンス処理
+        const newWidth = Math.min(window.innerWidth, 2560);
+        const newHeight = Math.min(window.innerHeight, 1440);
+        
+        this.pixiApp.resizeCanvas(newWidth, newHeight);
+        this.eventBus.emit('ui:resize', { width: newWidth, height: newHeight });
+        
+        console.log(`📐 リサイズ対応: ${newWidth}x${newHeight}`);
+      }, 250);
     });
   }
 
-  // 初期化エラー表示・ユーザー向け・詳細情報
+  /**
+   * グローバルエラー処理・安定性確保
+   */
+  private setupErrorHandling(): void {
+    window.addEventListener('error', (event) => {
+      console.error('グローバルエラー:', event.error);
+      this.eventBus.emit('performance:error', {
+        message: event.error?.message || 'Unknown error',
+        source: event.filename || 'Unknown',
+        lineno: event.lineno || 0
+      });
+    });
+
+    window.addEventListener('unhandledrejection', (event) => {
+      console.error('未処理Promise拒否:', event.reason);
+      this.eventBus.emit('performance:error', {
+        message: event.reason?.message || 'Unhandled Promise rejection',
+        source: 'Promise',
+        lineno: 0
+      });
+      event.preventDefault();
+    });
+  }
+
+  /**
+   * 初期化エラー表示・ユーザー通知
+   */
   private showInitializationError(error: Error): void {
     const errorDiv = document.createElement('div');
     errorDiv.style.cssText = `
       position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      background: #800000; color: #f0e0d6; padding: 30px; border-radius: 12px;
+      background: #f44336; color: white; padding: 20px; border-radius: 8px;
       max-width: 500px; text-align: center; z-index: 10000;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
     `;
-    
     errorDiv.innerHTML = `
-      <h2 style="margin-bottom: 15px;">🚨 初期化エラー</h2>
-      <p style="margin-bottom: 15px;">アプリケーションの初期化に失敗しました</p>
-      <details style="text-align: left; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px; margin: 15px 0;">
-        <summary style="cursor: pointer; font-weight: bold;">詳細情報</summary>
-        <pre style="white-space: pre-wrap; font-size: 12px; margin-top: 10px;">${error.message}\n\n${error.stack || ''}</pre>
-      </details>
-      <button onclick="location.reload()" style="
-        background: #f0e0d6; color: #800000; border: none; padding: 10px 20px;
-        border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px;
-      ">ページを再読み込み</button>
+      <h3>🎨 お絵かきツール初期化エラー</h3>
+      <p>アプリケーションの初期化に失敗しました。</p>
+      <p><small style="color: #ffcdd2;">${error.message}</small></p>
+      <div style="margin-top: 15px;">
+        <button onclick="location.reload()" style="
+          background: white; color: #f44336; border: none; padding: 10px 20px;
+          border-radius: 4px; cursor: pointer; margin: 5px; font-weight: bold;
+        ">再読み込み</button>
+        <button onclick="this.parentElement.parentElement.style.display='none'" style="
+          background: transparent; color: white; border: 1px solid white; 
+          padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px;
+        ">閉じる</button>
+      </div>
     `;
-    
     document.body.appendChild(errorDiv);
   }
 
-  // デバッグ情報取得・Phase1開発支援
-  public getDebugInfo(): {
-    system: any;
-    performance: any;
-    tools: any;
-    ui: any;
-  } {
-    return {
-      system: {
-        pixiInitialized: !!this.pixiApp.getApp(),
-        rendererType: this.pixiApp.getRendererType(),
-        canvasSize: this.pixiApp.getCanvas() ? {
-          width: this.pixiApp.getCanvas()!.width,
-          height: this.pixiApp.getCanvas()!.height
-        } : null,
-        eventBusStats: this.eventBus.getStats()
-      },
-      performance: this.performanceManager.getDetailedStats(),
-      tools: {
-        current: this.currentTool?.name || 'none',
-        pen: this.penTool.getToolState(),
-        eraser: this.eraserTool.getToolState()
-      },
-      ui: this.uiManager?.getUIState() || null
-    };
-  }
-
-  // アプリケーション終了・リソース解放・メモリリーク防止
+  /**
+   * アプリケーション終了・リソース解放
+   */
   public destroy(): void {
+    if (!this.isInitialized) return;
+
     console.log('🔄 アプリケーション終了・リソース解放中...');
-    
-    // ツール無効化
-    if (this.currentTool) {
-      this.currentTool.deactivate();
-    }
-    
-    // 各コンポーネント破棄・順序重要
-    this.performanceManager?.stopMonitoring();
-    this.inputManager?.destroy();
-    this.drawingEngine?.destroy();
-    this.uiManager?.destroy();
-    this.pixiApp?.destroy();
-    this.eventBus?.destroy();
-    
+
+    this.performanceManager.destroy();
+    this.uiManager.destroy();
+    this.inputManager.destroy();
+    this.drawingEngine.destroy();
+    this.pixiApp.destroy();
+    this.eventBus.destroy();
+
+    this.isInitialized = false;
     console.log('✅ アプリケーション終了完了');
   }
 }
 
-// アプリケーション起動・エラーハンドリング・グローバル化
-async function startApplication(): Promise<void> {
-  try {
-    const app = new ModernDrawingApp();
-    
-    // グローバル化・デバッグ用
-    (window as any).modernDrawingApp = app;
-    
-    const success = await app.initialize();
-    if (!success) {
-      throw new Error('アプリケーション初期化に失敗しました');
+/**
+ * DOM読み込み完了後の初期化
+ */
+async function initializeApp(): Promise<void> {
+  // HTMLの初期化確認
+  console.log('✅ HTML初期化完了・main.ts読み込み準備完了');
+
+  // DOM完全読み込み待機
+  if (document.readyState === 'loading') {
+    await new Promise(resolve => {
+      document.addEventListener('DOMContentLoaded', resolve);
+    });
+  }
+
+  // アプリケーション開始
+  const app = new ModernDrawingTool();
+  const initSuccess = await app.initialize();
+
+  if (initSuccess) {
+    console.log('🎨 モダンお絵かきツール開始');
+
+    // ページ離脱時のクリーンアップ
+    window.addEventListener('beforeunload', () => {
+      app.destroy();
+    });
+
+    // デバッグ用グローバル参照（開発時のみ）
+    if (import.meta.env.DEV) {
+      (window as any).__drawingApp = app;
+      console.log('🔧 デバッグモード: window.__drawingApp でアクセス可能');
     }
-    
-    console.log('🎉 モダンお絵かきツール起動完了');
-    console.log('📋 デバッグ情報: window.modernDrawingApp.getDebugInfo()');
-    
-  } catch (error) {
-    console.error('💥 アプリケーション起動エラー:', error);
+  } else {
+    console.error('💥 アプリケーション開始失敗');
   }
 }
 
-// DOM準備完了後に起動
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', startApplication);
-} else {
-  startApplication();
-}
+// エントリーポイント実行
+initializeApp().catch(error => {
+  console.error('💥 main.ts実行エラー:', error);
+});

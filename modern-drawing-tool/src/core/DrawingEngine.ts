@@ -1,14 +1,15 @@
 // src/core/DrawingEngine.ts - 描画統合・Graphics管理・スムージング・GPU最適化
 
 import { Application, Graphics, Container, Point } from 'pixi.js';
-import { EventBus, IEventData } from './EventBus';
+import type { EventBus, IEventData } from './EventBus';
 
 export class DrawingEngine {
-  private pixiApp: Application;
+  private pixiApp: Application | null = null;
   private eventBus: EventBus;
   private currentGraphics: Graphics | null = null;
   private strokePoints: Point[] = [];
-  private drawingContainer: Container;
+  private drawingContainer: Container | null = null;
+  private cleanupFunctions: Array<() => void> = [];
   
   // 描画設定・ふたば色・基本値
   private currentColor = 0x800000; // ふたばmaroon
@@ -21,29 +22,37 @@ export class DrawingEngine {
   private minDistance = 2; // 最小描画間隔・手ブレ軽減
   private smoothingFactor = 0.5; // スムージング強度
 
-  constructor(pixiApp: Application, eventBus: EventBus) {
-    this.pixiApp = pixiApp;
+  constructor(eventBus: EventBus) {
     this.eventBus = eventBus;
+    this.setupEventListeners();
+  }
+
+  // 初期化・PixiJS Application設定
+  public async initialize(pixiApp: Application): Promise<void> {
+    this.pixiApp = pixiApp;
     
     // 描画用Container・階層管理・Phase2レイヤー準備
     this.drawingContainer = new Container();
     this.drawingContainer.name = 'DrawingContainer';
     this.pixiApp.stage.addChild(this.drawingContainer);
     
-    this.setupEventListeners();
     console.log('🎨 DrawingEngine初期化完了');
   }
 
   // イベントリスナー設定・描画制御・UI連携
   private setupEventListeners(): void {
-    this.eventBus.on('drawing:start', this.startDrawing.bind(this));
-    this.eventBus.on('drawing:move', this.continueDrawing.bind(this));
-    this.eventBus.on('drawing:end', this.endDrawing.bind(this));
-    this.eventBus.on('ui:color-change', this.onColorChange.bind(this));
+    this.cleanupFunctions.push(
+      this.eventBus.on('drawing:start', this.startDrawing.bind(this)),
+      this.eventBus.on('drawing:move', this.continueDrawing.bind(this)),
+      this.eventBus.on('drawing:end', this.endDrawing.bind(this)),
+      this.eventBus.on('ui:color-change', this.onColorChange.bind(this))
+    );
   }
 
   // 描画開始・新Graphics作成・設定適用
   private startDrawing(data: IEventData['drawing:start']): void {
+    if (!this.drawingContainer) return;
+
     console.log(`🖊️ 描画開始: ${data.pointerType}, 筆圧: ${data.pressure.toFixed(2)}`);
     
     this.currentGraphics = new Graphics();
@@ -52,20 +61,11 @@ export class DrawingEngine {
 
     // PixiJS Graphics設定・筆圧対応・GPU最適化
     const brushSize = this.calculateBrushSize(data.pressure);
-    this.currentGraphics.lineStyle({
-      width: brushSize,
-      color: this.currentColor,
-      alpha: this.currentOpacity,
-      cap: 'round',
-      join: 'round',
-      alignment: 0.5 // 中心線
-    });
+    this.currentGraphics.circle(data.point.x, data.point.y, brushSize / 2);
+    this.currentGraphics.fill({ color: this.currentColor, alpha: this.currentOpacity });
 
-    // 最初の点・描画開始
+    // 線の設定
     this.currentGraphics.moveTo(data.point.x, data.point.y);
-    
-    // 点描画・極小ストローク対応
-    this.currentGraphics.lineTo(data.point.x + 0.1, data.point.y + 0.1);
     
     this.drawingContainer.addChild(this.currentGraphics);
   }
@@ -105,12 +105,11 @@ export class DrawingEngine {
       const finalDistance = this.calculateDistance(lastPoint, data.point);
       
       if (finalDistance > 1) {
-        this.currentGraphics.lineTo(data.point.x, data.point.y);
+        this.drawDirectLine(data.point, 1.0);
       }
     }
 
     // ストローク完成・リソース解放準備
-    this.currentGraphics.finishPoly();
     this.isDrawing = false;
     this.currentGraphics = null;
     this.strokePoints = [];
@@ -139,15 +138,15 @@ export class DrawingEngine {
     // 筆圧対応サイズ・動的変更
     const brushSize = this.calculateBrushSize(pressure);
     
-    this.currentGraphics.lineStyle({
-      width: brushSize,
-      color: this.currentColor,
+    // PixiJS v8 スタイルで線を描画
+    this.currentGraphics.lineTo(point.x, point.y);
+    this.currentGraphics.stroke({ 
+      color: this.currentColor, 
+      width: brushSize, 
       alpha: this.currentOpacity,
       cap: 'round',
       join: 'round'
     });
-
-    this.currentGraphics.lineTo(point.x, point.y);
   }
 
   // 直線描画・スムージング無効・高速描画
@@ -155,13 +154,15 @@ export class DrawingEngine {
     if (!this.currentGraphics) return;
 
     const brushSize = this.calculateBrushSize(pressure);
-    this.currentGraphics.lineStyle({
-      width: brushSize,
-      color: this.currentColor,
-      alpha: this.currentOpacity
-    });
-
+    
     this.currentGraphics.lineTo(point.x, point.y);
+    this.currentGraphics.stroke({
+      color: this.currentColor,
+      width: brushSize,
+      alpha: this.currentOpacity,
+      cap: 'round',
+      join: 'round'
+    });
   }
 
   // 筆圧対応サイズ・自然な太さ変化・0.3-1.5倍
@@ -214,6 +215,8 @@ export class DrawingEngine {
 
   // 全描画削除・キャンバスクリア
   public clearCanvas(): void {
+    if (!this.drawingContainer) return;
+
     console.log('🧹 キャンバスクリア実行');
     this.drawingContainer.removeChildren();
     
@@ -232,6 +235,15 @@ export class DrawingEngine {
     currentStrokeLength: number;
     totalDrawingArea: { width: number; height: number };
   } {
+    if (!this.drawingContainer) {
+      return {
+        objectCount: 0,
+        isDrawing: false,
+        currentStrokeLength: 0,
+        totalDrawingArea: { width: 0, height: 0 }
+      };
+    }
+
     const bounds = this.drawingContainer.getBounds();
     
     return {
@@ -266,6 +278,10 @@ export class DrawingEngine {
   public destroy(): void {
     console.log('🔄 DrawingEngine破棄・リソース解放中...');
     
+    // イベントリスナー解除
+    this.cleanupFunctions.forEach(cleanup => cleanup());
+    this.cleanupFunctions = [];
+    
     // 描画中断
     if (this.isDrawing) {
       this.isDrawing = false;
@@ -273,13 +289,17 @@ export class DrawingEngine {
     }
     
     // Container削除・GPU リソース解放
-    if (this.drawingContainer.parent) {
-      this.drawingContainer.parent.removeChild(this.drawingContainer);
+    if (this.drawingContainer) {
+      if (this.drawingContainer.parent) {
+        this.drawingContainer.parent.removeChild(this.drawingContainer);
+      }
+      this.drawingContainer.destroy({ children: true });
+      this.drawingContainer = null;
     }
-    this.drawingContainer.destroy({ children: true, texture: true });
     
     // 配列クリア
     this.strokePoints = [];
+    this.pixiApp = null;
     
     console.log('✅ DrawingEngine破棄完了');
   }
