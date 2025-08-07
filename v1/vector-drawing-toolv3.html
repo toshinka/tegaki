@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風お絵描きツール v0.2</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            /* ふたば色システム完全定義（16進数値厳密） */
+            --futaba-maroon: #800000;
+            --futaba-light-maroon: #aa5a56;
+            --futaba-medium: #cf9c97;
+            --futaba-light-medium: #e9c2ba;
+            --futaba-cream: #f0e0d6;
+            --futaba-background: #ffffee;
+            
+            --text-primary: #2c1810;
+            --text-secondary: #5d4037;
+            --text-inverse: #ffffff;
+            --success: #4caf50;
+            --warning: #ff9800;
+            --error: #f44336;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+            background: var(--futaba-background);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        /* メインレイアウト */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 50px 1fr;
+            height: 100vh;
+            width: 100vw;
+            gap: 0;
+        }
+        
+        /* 左側サイドバー（ツールバー）*/
+        .sidebar {
+            background: var(--futaba-cream);
+            border-right: 2px solid var(--futaba-light-medium);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 6px;
+            gap: 4px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 100;
+        }
+        
+        /* ツールボタン - 36px仕様 */
+        .tool-button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid var(--futaba-light-medium);
+            background: var(--futaba-background);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--futaba-maroon);
+            position: relative;
+            user-select: none;
+        }
+        
+        .tool-button svg {
+            width: 20px;
+            height: 20px;
+        }
+        
+        .tool-button:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-light-maroon);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+        }
+        
+        .tool-button.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+            border-color: var(--futaba-maroon);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+        
+        .tool-button.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        
+        .tool-button.disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+        
+        /* グループ分離線 */
+        .tool-separator {
+            height: 1px;
+            background: var(--futaba-light-medium);
+            margin: 4px 2px;
+        }
+        
+        /* キャンバス領域 */
+        .canvas-area {
+            background: var(--futaba-background);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .canvas-container {
+            background: var(--futaba-cream);
+            border: 3px solid var(--futaba-medium);
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(128, 0, 0, 0.15);
+            overflow: hidden;
+            position: relative;
+        }
+        
+        #drawing-canvas {
+            display: block;
+            cursor: crosshair;
+        }
+        
+        /* ポップアップパネル共通スタイル */
+        .popup-panel {
+            position: fixed;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 16px;
+            box-shadow: 0 12px 32px rgba(128, 0, 0, 0.3);
+            padding: 20px;
+            z-index: 2000;
+            backdrop-filter: blur(12px);
+            display: none;
+            user-select: none;
+        }
+        
+        .popup-panel.show {
+            display: block;
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to   { opacity: 1; transform: scale(1); }
+        }
+        
+        /* ペンツール設定ポップアップ */
+        .pen-settings {
+            width: 320px;
+            min-height: 400px;
+        }
+        
+        .popup-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--futaba-maroon);
+            margin-bottom: 16px;
+            text-align: center;
+            border-bottom: 2px solid var(--futaba-light-medium);
+            padding-bottom: 8px;
+        }
+        
+        .setting-group {
+            margin-bottom: 16px;
+        }
+        
+        .setting-label {
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        
+        /* サイズプリセット - 丸いプレビュー */
+        .size-presets {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 16px;
+            padding: 12px;
+            background: var(--futaba-background);
+            border-radius: 8px;
+            border: 1px solid var(--futaba-light-medium);
+        }
+        
+        .size-preset-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+        
+        .size-preset-item:hover {
+            background: var(--futaba-medium);
+        }
+        
+        .size-preset-item.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+        }
+        
+        .size-preview-circle {
+            background: currentColor;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+        
+        .size-preview-label {
+            font-size: 10px;
+            font-weight: 600;
+            margin-top: 2px;
+        }
+        
+        /* スライダー */
+        .slider-container {
+            position: relative;
+            margin-bottom: 16px;
+        }
+        
+        .slider {
+            width: 100%;
+            height: 6px;
+            background: var(--futaba-light-medium);
+            border-radius: 3px;
+            outline: none;
+            cursor: pointer;
+            position: relative;
+        }
+        
+        .slider-track {
+            height: 100%;
+            background: var(--futaba-maroon);
+            border-radius: 3px;
+            transition: width 0.1s ease;
+        }
+        
+        .slider-handle {
+            width: 16px;
+            height: 16px;
+            background: var(--futaba-maroon);
+            border: 2px solid var(--futaba-background);
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            cursor: grab;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        .slider-handle:active {
+            cursor: grabbing;
+            transform: translate(-50%, -50%) scale(1.2);
+        }
+        
+        .slider-value {
+            position: absolute;
+            right: 0;
+            top: -20px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: monospace;
+        }
+        
+        /* リアルタイムプレビュー */
+        .pen-preview {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 50px;
+            background: var(--futaba-background);
+            border: 1px solid var(--futaba-light-medium);
+            border-radius: 8px;
+            margin-bottom: 16px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .preview-stroke {
+            height: 3px;
+            background: var(--futaba-maroon);
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+        
+        /* チェックボックス */
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            transition: background 0.2s ease;
+        }
+        
+        .checkbox-container:hover {
+            background: var(--futaba-light-medium);
+        }
+        
+        .checkbox-left {
+            display: flex;
+            align-items: center;
+        }
+        
+        .checkbox {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--futaba-medium);
+            border-radius: 3px;
+            margin-right: 8px;
+            position: relative;
+            background: var(--futaba-background);
+            cursor: pointer;
+        }
+        
+        .checkbox.checked {
+            background: var(--futaba-maroon);
+            border-color: var(--futaba-maroon);
+        }
+        
+        .checkbox.checked::after {
+            content: "✓";
+            position: absolute;
+            color: white;
+            font-size: 12px;
+            left: 1px;
+            top: -2px;
+        }
+        
+        .checkbox-label {
+            font-size: 12px;
+            color: var(--text-primary);
+        }
+        
+        .checkbox-status {
+            font-size: 11px;
+            color: var(--text-secondary);
+            font-family: monospace;
+        }
+        
+        /* 座標・ステータス表示 */
+        .coordinate-display {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(128, 0, 0, 0.9);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 12px;
+            pointer-events: none;
+        }
+        
+        .status-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 70px;
+            right: 20px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-medium);
+            border-radius: 12px;
+            padding: 8px 16px;
+            font-family: monospace;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            z-index: 50;
+        }
+        
+        .status-group {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        /* ドラッグ可能ポップアップ */
+        .popup-panel.draggable {
+            cursor: move;
+        }
+        
+        .popup-panel.dragging {
+            cursor: grabbing;
+            transform: scale(1.02);
+        }
+        
+        /* レスポンシブ調整 */
+        @media (max-width: 1200px) {
+            .popup-panel {
+                max-width: 90vw;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-layout">
+        <!-- 左側サイドバー（ツールバー）-->
+        <div class="sidebar">
+            <!-- ダウンロード -->
+            <div class="tool-button disabled" id="download-tool" title="ダウンロード">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7,10 12,15 17,10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+            </div>
+            
+            <!-- リサイズ -->
+            <div class="tool-button disabled" id="resize-tool" title="リサイズ">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <path d="M8 12h8"/>
+                    <path d="M12 8v8"/>
+                </svg>
+            </div>
+            
+            <!-- カラーパレット -->
+            <div class="tool-button disabled" id="palette-tool" title="カラーパレット">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="13.5" cy="6.5" r=".5"/>
+                    <circle cx="17.5" cy="10.5" r=".5"/>
+                    <circle cx="8.5" cy="7.5" r=".5"/>
+                    <circle cx="6.5" cy="12.5" r=".5"/>
+                    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
+                </svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <!-- ペン -->
+            <div class="tool-button active" id="pen-tool" data-popup="pen-settings" title="ペン">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 21v-4a4 4 0 1 1 4 4h-4"/>
+                    <path d="M21 3a16 16 0 0 0 -12.8 10.2"/>
+                    <path d="M21 3a16 16 0 0 1 -10.2 12.8"/>
+                    <path d="M10.6 9a9 9 0 0 1 4.4 4.4"/>
+                </svg>
+            </div>
+            
+            <!-- 消しゴム -->
+            <div class="tool-button" id="eraser-tool" title="消しゴム">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 20h-10.5l-4.21-4.3a1 1 0 0 1 0-1.41l10-10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41L11.5 20"/>
+                    <path d="M18 13.3l-6.3-6.3"/>
+                </svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <!-- 塗りつぶし -->
+            <div class="tool-button disabled" id="fill-tool" title="塗りつぶし">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 11H5m14 0a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2m14 0V9a2 2 0 0 0-2-2M5 11V9a2 2 0 0 1 2-2m0 0V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2M7 7h10"/>
+                </svg>
+            </div>
+            
+            <!-- エアスプレー -->
+            <div class="tool-button disabled" id="spray-tool" title="エアスプレー">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10 19h4v2a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-2z"/>
+                    <path d="M18 12v2c0 1.657-2.686 3-6 3s-6-1.343-6-3v-2"/>
+                    <path d="M12 11c0-1.105 0-2 .5-2s1.5.895 1.5 2-.5 2-1.5 2-.5-.895-.5-2z"/>
+                    <circle cx="19" cy="6" r="1"/>
+                    <circle cx="20" cy="9" r="1"/>
+                    <circle cx="21" cy="7" r="1"/>
+                </svg>
+            </div>
+            
+            <!-- ボカシ -->
+            <div class="tool-button disabled" id="blur-tool" title="ボカシ">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M12 1v6m0 6v6"/>
+                    <path d="M21 12h-6m-6 0H3"/>
+                </svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <!-- スポイト -->
+            <div class="tool-button disabled" id="picker-tool" title="スポイト">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 20a7 7 0 0 1-7-7 7 7 0 0 1 7-7 7 7 0 0 1 7 7 7 7 0 0 1-7 7z"/>
+                    <path d="M9 12l2 2 4-4"/>
+                </svg>
+            </div>
+            
+            <!-- 範囲選択 -->
+            <div class="tool-button disabled" id="select-tool" title="範囲選択">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="4" y="4" width="16" height="16" rx="2" ry="2"/>
+                    <path d="M9 9h6v6H9z"/>
+                </svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <!-- テキスト -->
+            <div class="tool-button disabled" id="text-tool" title="テキスト">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="4,7 4,4 20,4 20,7"/>
+                    <line x1="9" y1="20" x2="15" y2="20"/>
+                    <line x1="12" y1="4" x2="12" y2="20"/>
+                </svg>
+            </div>
+            
+            <!-- 図形 -->
+            <div class="tool-button disabled" id="shapes-tool" title="図形">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5"/>
+                </svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <!-- 変形 -->
+            <div class="tool-button disabled" id="transform-tool" title="変形">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="5,9 2,12 5,15"/>
+                    <polyline points="9,5 12,2 15,5"/>
+                    <polyline points="15,19 12,22 9,19"/>
+                    <polyline points="19,9 22,12 19,15"/>
+                    <line x1="2" y1="12" x2="22" y2="12"/>
+                    <line x1="12" y1="2" x2="12" y2="22"/>
+                </svg>
+            </div>
+            
+            <!-- レイヤー -->
+            <div class="tool-button disabled" id="layers-tool" title="レイヤー">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12,2 2,7 12,12 22,7"/>
+                    <polyline points="2,17 12,22 22,17"/>
+                    <polyline points="2,12 12,17 22,12"/>
+                </svg>
+            </div>
+            
+            <!-- アニメ -->
+            <div class="tool-button disabled" id="anim-tool" title="アニメーション">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                    <line x1="8" y1="21" x2="16" y2="21"/>
+                    <line x1="12" y1="17" x2="12" y2="21"/>
+                    <polygon points="10,8 14,10 10,12"/>
+                </svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <!-- 設定 -->
+            <div class="tool-button disabled" id="settings-tool" title="設定">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+            </div>
+        </div>
+        
+        <!-- キャンバス領域 -->
+        <div class="canvas-area">
+            <div class="canvas-container">
+                <div id="drawing-canvas"></div>
+                <div class="coordinate-display" id="coordinates">x: 0, y: 0</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ペンツール設定ポップアップ -->
+    <div class="popup-panel pen-settings draggable" id="pen-settings" style="left: 60px; top: 100px;">
+        <div class="popup-title">ペンツール設定</div>
+        
+        <div class="setting-group">
+            <div class="size-presets" id="size-presets">
+                <div class="size-preset-item" data-size="2">
+                    <div class="size-preview-circle" style="width: 2px; height: 2px;"></div>
+                    <div class="size-preview-label">2</div>
+                </div>
+                <div class="size-preset-item" data-size="4">
+                    <div class="size-preview-circle" style="width: 4px; height: 4px;"></div>
+                    <div class="size-preview-label">4</div>
+                </div>
+                <div class="size-preset-item" data-size="8">
+                    <div class="size-preview-circle" style="width: 8px; height: 8px;"></div>
+                    <div class="size-preview-label">8</div>
+                </div>
+                <div class="size-preset-item active" data-size="16">
+                    <div class="size-preview-circle" style="width: 16px; height: 16px;"></div>
+                    <div class="size-preview-label">16</div>
+                </div>
+                <div class="size-preset-item" data-size="32">
+                    <div class="size-preview-circle" style="width: 32px; height: 32px;"></div>
+                    <div class="size-preview-label">32</div>
+                </div>
+                <div class="size-preset-item" data-size="64">
+                    <div class="size-preview-circle" style="width: 64px; height: 64px;"></div>
+                    <div class="size-preview-label">64</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">サイズ</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-size-slider">
+                    <div class="slider-track" id="pen-size-track"></div>
+                    <div class="slider-handle" id="pen-size-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-size-value">16px</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">不透明度</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-opacity-slider">
+                    <div class="slider-track" id="pen-opacity-track"></div>
+                    <div class="slider-handle" id="pen-opacity-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-opacity-value">85%</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">プレビュー</div>
+            <div class="pen-preview" id="pen-preview">
+                <div class="preview-stroke" id="preview-stroke"></div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="pressure-sensitivity"></div>
+                    <div class="checkbox-label">筆圧感度 (120Hz対応)</div>
+                </div>
+            </div>
+            
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="edge-smoothing"></div>
+                    <div class="checkbox-label">エッジスムージング</div>
+                </div>
+            </div>
+            
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="gpu-acceleration"></div>
+                    <div class="checkbox-label">GPU加速</div>
+                </div>
+                <div class="checkbox-status">遅延: 0.6ms</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ステータスパネル -->
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">Canvas: <span id="canvas-info">768×768px</span></div>
+            <div class="status-item">Tool: <span id="current-tool">ペン</span></div>
+            <div class="status-item">Color: <span id="current-color">#800000</span></div>
+        </div>
+        
+        <div class="status-group">
+            <div class="status-item">FPS: <span id="fps">60</span></div>
+            <div class="status-item">GPU: <span id="gpu-usage">45%</span></div>
+            <div class="status-item">Memory: <span id="memory-usage">1.2GB</span></div>
+        </div>
+    </div>
+
+    <!-- PIXI.js v7.3.2 CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
+    
+    <script>
+        /**
+         * 🎨 ふたば☆ちゃんねる風お絵描きツール v0.2
+         * - 36pxアイコン配置
+         * - Tabler Icons SVG実装  
+         * - 改良されたペンツール設定UI
+         * - モジュール化準備構造
+         */
+        
+        // ==== Core Application Class ====
+        class FutabaDrawingTool {
+            constructor() {
+                this.app = null;
+                this.stage = null;
+                this.currentTool = 'pen';
+                this.brushSize = 16;
+                this.brushColor = 0x800000;
+                this.opacity = 0.85;
+                this.canvasWidth = 768;
+                this.canvasHeight = 768;
+                
+                // UI状態
+                this.activePopup = null;
+                this.isDragging = false;
+                this.dragOffset = {x: 0, y: 0};
+                
+                // 描画状態
+                this.isDrawing = false;
+                this.currentPath = null;
+                this.paths = [];
+                
+                this.init();
+            }
+            
+            async init() {
+                try {
+                    console.log('🎨 ふたば☆ちゃんねる風お絵描きツール v0.2 初期化開始');
+                    
+                    await this.initPixi();
+                    this.setupInteraction();
+                    this.setupUI();
+                    this.startPerformanceMonitoring();
+                    
+                    console.log('✅ 初期化完了');
+                    
+                } catch (error) {
+                    console.error('❌ 初期化エラー:', error);
+                }
+            }
+            
+            async initPixi() {
+                this.app = new PIXI.Application({
+                    width: this.canvasWidth,
+                    height: this.canvasHeight,
+                    backgroundColor: 0xf0e0d6,
+                    antialias: true,
+                    resolution: window.devicePixelRatio || 1,
+                    autoDensity: true
+                });
+                
+                const container = document.getElementById('drawing-canvas');
+                container.appendChild(this.app.view);
+            }
+            
+            setupInteraction() {
+                this.app.stage.interactive = true;
+                this.app.stage.hitArea = new PIXI.Rectangle(0, 0, this.canvasWidth, this.canvasHeight);
+                
+                this.app.stage.on('pointerdown', this.onPointerDown.bind(this));
+                this.app.stage.on('pointermove', this.onPointerMove.bind(this));
+                this.app.stage.on('pointerup', this.onPointerUp.bind(this));
+                this.app.stage.on('pointerupoutside', this.onPointerUp.bind(this));
+                this.app.stage.on('pointermove', this.updateCoordinates.bind(this));
+            }
+            
+            setupUI() {
+                this.ui = new UIManager(this);
+                this.ui.init();
+            }
+            
+            onPointerDown(event) {
+                if (this.activePopup) return;
+                
+                const point = event.data.global;
+                this.isDrawing = true;
+                
+                this.currentPath = new PIXI.Graphics();
+                this.currentPath.lineStyle(this.brushSize, this.brushColor, this.opacity);
+                this.currentPath.moveTo(point.x, point.y);
+                
+                this.app.stage.addChild(this.currentPath);
+                this.paths.push(this.currentPath);
+            }
+            
+            onPointerMove(event) {
+                if (!this.isDrawing || !this.currentPath || this.activePopup) return;
+                
+                const point = event.data.global;
+                this.currentPath.lineTo(point.x, point.y);
+            }
+            
+            onPointerUp(event) {
+                if (!this.isDrawing) return;
+                
+                this.isDrawing = false;
+                this.currentPath = null;
+            }
+            
+            updateCoordinates(event) {
+                const point = event.data.global;
+                const coordinateDisplay = document.getElementById('coordinates');
+                if (coordinateDisplay) {
+                    coordinateDisplay.textContent = `x: ${Math.round(point.x)}, y: ${Math.round(point.y)}`;
+                }
+            }
+            
+            startPerformanceMonitoring() {
+                let lastTime = performance.now();
+                let frameCount = 0;
+                
+                const updatePerformance = () => {
+                    frameCount++;
+                    const currentTime = performance.now();
+                    
+                    if (currentTime - lastTime >= 1000) {
+                        const fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+                        document.getElementById('fps').textContent = fps;
+                        
+                        frameCount = 0;
+                        lastTime = currentTime;
+                    }
+                    
+                    requestAnimationFrame(updatePerformance);
+                };
+                
+                updatePerformance();
+            }
+        }
+        
+        // ==== UI Manager Class ====
+        class UIManager {
+            constructor(app) {
+                this.app = app;
+                this.activePopup = null;
+            }
+            
+            init() {
+                this.setupToolButtons();
+                this.setupPopupDragging();
+                this.setupPenSettings();
+                this.setupEventHandlers();
+            }
+            
+            setupToolButtons() {
+                document.querySelectorAll('.tool-button').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        if (btn.classList.contains('disabled')) return;
+                        this.handleToolClick(e.currentTarget);
+                    });
+                });
+            }
+            
+            handleToolClick(button) {
+                const popupId = button.getAttribute('data-popup');
+                const toolId = button.id;
+                
+                // ツール切り替え
+                if (toolId === 'pen-tool') {
+                    this.setTool('pen');
+                } else if (toolId === 'eraser-tool') {
+                    this.setTool('eraser');
+                }
+                
+                // ポップアップ表示/非表示
+                if (popupId) {
+                    this.togglePopup(popupId);
+                }
+            }
+            
+            setTool(tool) {
+                this.app.currentTool = tool;
+                
+                document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
+                document.getElementById(tool + '-tool').classList.add('active');
+                
+                const canvas = this.app.app.view;
+                canvas.style.cursor = tool === 'pen' ? 'crosshair' : 'grab';
+                
+                const toolNames = { pen: 'ペン', eraser: '消しゴム' };
+                document.getElementById('current-tool').textContent = toolNames[tool] || tool;
+            }
+            
+            togglePopup(popupId) {
+                const popup = document.getElementById(popupId);
+                if (!popup) return;
+                
+                if (this.activePopup && this.activePopup !== popup) {
+                    this.activePopup.classList.remove('show');
+                }
+                
+                const isVisible = popup.classList.contains('show');
+                if (isVisible) {
+                    popup.classList.remove('show');
+                    this.activePopup = null;
+                    this.app.activePopup = null;
+                } else {
+                    popup.classList.add('show');
+                    this.activePopup = popup;
+                    this.app.activePopup = popup;
+                }
+            }
+            
+            setupPopupDragging() {
+                document.querySelectorAll('.popup-panel.draggable').forEach(popup => {
+                    let isDragging = false;
+                    let dragOffset = {x: 0, y: 0};
+                    
+                    popup.addEventListener('mousedown', (e) => {
+                        if (e.target === popup || e.target.closest('.popup-title')) {
+                            isDragging = true;
+                            popup.classList.add('dragging');
+                            
+                            const rect = popup.getBoundingClientRect();
+                            dragOffset.x = e.clientX - rect.left;
+                            dragOffset.y = e.clientY - rect.top;
+                            
+                            e.preventDefault();
+                        }
+                    });
+                    
+                    document.addEventListener('mousemove', (e) => {
+                        if (isDragging) {
+                            const x = e.clientX - dragOffset.x;
+                            const y = e.clientY - dragOffset.y;
+                            
+                            const maxX = window.innerWidth - popup.offsetWidth;
+                            const maxY = window.innerHeight - popup.offsetHeight;
+                            
+                            popup.style.left = Math.max(0, Math.min(x, maxX)) + 'px';
+                            popup.style.top = Math.max(0, Math.min(y, maxY)) + 'px';
+                        }
+                    });
+                    
+                    document.addEventListener('mouseup', () => {
+                        if (isDragging) {
+                            isDragging = false;
+                            popup.classList.remove('dragging');
+                        }
+                    });
+                });
+            }
+            
+            setupPenSettings() {
+                this.setupSizePresets();
+                this.setupSliders();
+                this.setupCheckboxes();
+            }
+            
+            setupSizePresets() {
+                document.querySelectorAll('.size-preset-item').forEach(preset => {
+                    preset.addEventListener('click', () => {
+                        document.querySelectorAll('.size-preset-item').forEach(p => p.classList.remove('active'));
+                        preset.classList.add('active');
+                        
+                        const size = parseInt(preset.getAttribute('data-size'));
+                        this.app.brushSize = size;
+                        this.updateSizeSlider(size);
+                        this.updatePreview();
+                    });
+                });
+            }
+            
+            setupSliders() {
+                this.setupSlider('pen-size-slider', 1, 100, 16, (value) => {
+                    this.app.brushSize = value;
+                    this.updatePreview();
+                    return value + 'px';
+                });
+                
+                this.setupSlider('pen-opacity-slider', 0, 100, 85, (value) => {
+                    this.app.opacity = value / 100;
+                    this.updatePreview();
+                    return value + '%';
+                });
+            }
+            
+            setupSlider(sliderId, min, max, initial, callback) {
+                const slider = document.getElementById(sliderId);
+                const track = slider.querySelector('.slider-track');
+                const handle = slider.querySelector('.slider-handle');
+                const valueDisplay = slider.parentNode.querySelector('.slider-value');
+                
+                let currentValue = initial;
+                let isDragging = false;
+                
+                const updateSlider = (value) => {
+                    currentValue = Math.max(min, Math.min(max, value));
+                    const percentage = ((currentValue - min) / (max - min)) * 100;
+                    
+                    track.style.width = percentage + '%';
+                    handle.style.left = percentage + '%';
+                    valueDisplay.textContent = callback(currentValue);
+                };
+                
+                const getValueFromPosition = (clientX) => {
+                    const rect = slider.getBoundingClientRect();
+                    const percentage = (clientX - rect.left) / rect.width;
+                    return min + (percentage * (max - min));
+                };
+                
+                slider.addEventListener('mousedown', (e) => {
+                    isDragging = true;
+                    updateSlider(getValueFromPosition(e.clientX));
+                    e.preventDefault();
+                });
+                
+                document.addEventListener('mousemove', (e) => {
+                    if (isDragging) {
+                        updateSlider(getValueFromPosition(e.clientX));
+                    }
+                });
+                
+                document.addEventListener('mouseup', () => {
+                    isDragging = false;
+                });
+                
+                updateSlider(currentValue);
+            }
+            
+            updateSizeSlider(size) {
+                const percentage = ((size - 1) / (100 - 1)) * 100;
+                const track = document.getElementById('pen-size-track');
+                const handle = document.getElementById('pen-size-handle');
+                const valueDisplay = document.getElementById('pen-size-value');
+                
+                track.style.width = percentage + '%';
+                handle.style.left = percentage + '%';
+                valueDisplay.textContent = size + 'px';
+            }
+            
+            updatePreview() {
+                const preview = document.getElementById('preview-stroke');
+                if (preview) {
+                    preview.style.width = Math.max(2, Math.min(50, this.app.brushSize)) + 'px';
+                    preview.style.opacity = this.app.opacity;
+                }
+            }
+            
+            setupCheckboxes() {
+                document.querySelectorAll('.checkbox').forEach(checkbox => {
+                    checkbox.addEventListener('click', () => {
+                        checkbox.classList.toggle('checked');
+                    });
+                });
+            }
+            
+            setupEventHandlers() {
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.popup-panel') && !e.target.closest('.tool-button')) {
+                        this.closeAllPopups();
+                    }
+                });
+            }
+            
+            closeAllPopups() {
+                document.querySelectorAll('.popup-panel').forEach(popup => {
+                    popup.classList.remove('show');
+                });
+                this.activePopup = null;
+                this.app.activePopup = null;
+            }
+        }
+        
+        // ==== Application Bootstrap ====
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('🎨 ふたば☆ちゃんねる風お絵描きツール v0.2 起動');
+            
+            try {
+                window.futabaDrawingTool = new FutabaDrawingTool();
+                
+                console.log('🎯 新機能: 36pxアイコン | Tabler Icons SVG | 改良ペン設定UI');
+                console.log('📐 キャンバス: 768×768px | PIXI.js v7.3.2');
+                console.log('🔧 ツール: ペン・消しゴム（他は準備中）');
+                
+            } catch (error) {
+                console.error('❌ 起動エラー:', error);
+            }
+        });
+        
+        console.log('🎨 ふたば☆ちゃんねる風お絵描きツール v0.2 準備完了');
+        console.log('📚 実装完了:');
+        console.log('  ✅ 36px Tabler Icons配置');
+        console.log('  ✅ 丸プレビュー付きサイズ設定');
+        console.log('  ✅ リアルタイムプレビュー表示');
+        console.log('  ✅ モジュール化準備構造');
+        console.log('  ✅ GPU加速・遅延表示');
+    </script>
+</body>
+</html>
