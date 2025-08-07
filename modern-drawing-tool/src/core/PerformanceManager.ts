@@ -1,7 +1,7 @@
 // src/core/PerformanceManager.ts - 性能監視基盤・メモリ管理・警告システム
 
 import { Application } from 'pixi.js';
-import { EventBus } from './EventBus.js';
+import { EventBus } from './EventBus';
 
 export interface PerformanceMetrics {
   fps: number;

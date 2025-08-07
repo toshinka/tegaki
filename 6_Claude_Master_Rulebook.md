@@ -1,9 +1,10 @@
-# Claude Master Rulebook v4.2
+# Claude Master Rulebook v4.3
 
 **ドキュメント**: 改修・追加実装用マスタールール集  
 **対象読者**: 別チャットClaude・保守開発者・機能拡張者  
 **適用フェーズ**: 実装完了後の改修・機能追加・バグ修正・最適化  
-**最終更新**: 2025年8月6日
+**最終更新**: 2025年8月7日  
+**改修**: .js拡張子問題解決・TypeScript+Vite環境ルール明確化
 
 ## 🎯 このルールブックの目的
 
@@ -68,6 +69,12 @@
 ├─ 単一責任原則厳守（1クラス1機能・Claude理解容易）
 ├─ インターフェース先行設計（契約明確・実装分離）
 └─ 段階的実装戦略（Phase1-4・確実→理想）
+
+⚠️ TypeScript + Vite環境インポート規則（厳格遵守）:
+✅ 拡張子なし: import { Module } from './file'
+❌ .js拡張子: import { Module } from './file.js' // 完全禁止
+⚠️ .ts拡張子: import { Module } from './file.ts' // 型定義のみ許可
+💡 技術的根拠: moduleResolution: "bundler"によりViteが自動解決
 ```
 
 ### 色彩システム・UI設計（不変）
@@ -121,8 +128,7 @@ src/
 │   ├── BrushTool.ts                # 筆・テクスチャ・Phase2拡張
 │   ├── EraserTool.ts               # 消しゴム・削除・Phase1基盤
 │   ├── FillTool.ts                 # 塗りつぶし・フラッドフィル・Phase2
-│   ├── ShapeTool.ts                # 図形・直線・矩形・円・Phase2
-│   └──IDrawingTool.ts              # ツール統一インターフェース・契約定義・曖昧さ完全排除
+│   └── ShapeTool.ts                # 図形・直線・矩形・円・Phase2
 ├── ui/                             # UI制御・2.5K最適化・ふたば色統合
 │   ├── UIManager.ts                 # UI統合・レスポンシブ・レイアウト管理
 │   ├── Toolbar.ts                  # ツールバー・80px幅・56pxアイコン
@@ -223,7 +229,7 @@ UI Components → Tool Manager → Layer Manager → Canvas Display
 └─ デバッグ支援・イベント履歴・状態追跡
 */
 
-// 典型的なイベントフロー例
+// 典型的なイベントフロー例（改修版・.js拡張子なし）
 class ExampleImplementation {
   constructor(eventBus: EventBus) {
     // リスナー登録・自動解除対応
@@ -299,18 +305,19 @@ class ExampleImplementation {
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
     "module": "ESNext",
-    "moduleResolution": "bundler",
+    "moduleResolution": "bundler",     // Vite環境・拡張子自動解決
 
-    // インポート・エクスポート設定
+    // インポート・エクスポート設定（.js拡張子禁止根拠）
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true  // .ts拡張子のみ許可・.js禁止
   }
 }
 
-// ESLint設定 - コード品質・一貫性確保
+// ESLint設定 - コード品質・一貫性確保・インポート規則強制
 {
   "extends": [
     "@typescript-eslint/recommended",
@@ -322,7 +329,19 @@ class ExampleImplementation {
     "@typescript-eslint/no-explicit-any": "error",
     "max-lines-per-function": ["warn", 50],
     "max-params": ["warn", 4],
-    "complexity": ["warn", 10]
+    "complexity": ["warn", 10],
+    
+    // インポート拡張子規則（.js完全禁止）
+    "import/extensions": [
+      "error",
+      "ignorePackages",
+      {
+        "ts": "never",
+        "tsx": "never", 
+        "js": "never",    // 完全禁止
+        "jsx": "never"
+      }
+    ]
   }
 }
 ```
@@ -538,12 +557,18 @@ export class AdvancedBrushTool implements IDrawingTool {
     console.log(`Brush shape adjusted for pressure: ${pressure}`);
   }
 }
+```
 
 ## 📚 シンボル辞書・重要クラス一覧
 
 ### Core Layer（基盤システム）
 ```typescript
-// ===== アプリケーション基盤 =====
+// ===== アプリケーション基盤（改修版・拡張子なし） =====
+import { PixiApplication } from './PixiApplication';
+import { EventBus } from './EventBus';
+import { DrawingEngine } from './DrawingEngine';
+import { PerformanceManager } from './PerformanceManager';
+
 class PixiApplication {
   // WebGPU初期化・デバイス検出・フォールバック制御
   initialize(container: HTMLElement): Promise<boolean>
@@ -578,7 +603,12 @@ class PerformanceManager {
 
 ### Rendering Layer（描画・GPU最適化）
 ```typescript
-// ===== レンダリング・GPU処理 =====
+// ===== レンダリング・GPU処理（改修版・拡張子なし） =====
+import { LayerManager } from './LayerManager';
+import { WebGPURenderer } from './WebGPURenderer';
+import { CanvasManager } from './CanvasManager';
+import { TextureManager } from './TextureManager';
+
 class LayerManager {
   // 20レイヤー管理・Container階層・Z-index制御
   createLayer(name: string, type: 'raster'|'vector'): string
@@ -617,7 +647,11 @@ class TextureManager {
 
 ### Input Layer（入力処理・デバイス対応）
 ```typescript
-// ===== 入力・デバイス統合 =====
+// ===== 入力・デバイス統合（改修版・拡張子なし） =====
+import { InputManager } from './InputManager';
+import { PointerProcessor } from './PointerProcessor';
+import { ShortcutManager } from './ShortcutManager';
+
 class InputManager {
   // 統合入力・Pointer Events・筆圧対応
   setupPointerEvents(): void
@@ -645,7 +679,14 @@ class ShortcutManager {
 
 ### Tools Layer（ツールシステム・段階実装）
 ```typescript
-// ===== ツール・機能拡張 =====
+// ===== ツール・機能拡張（改修版・拡張子なし） =====
+import { ToolManager } from './ToolManager';
+import { PenTool } from './PenTool';
+import { BrushTool } from './BrushTool';
+import { EraserTool } from './EraserTool';
+import { FillTool } from './FillTool';
+import { ShapeTool } from './ShapeTool';
+
 interface IDrawingTool {
   readonly name: string;
   readonly icon: string;
@@ -683,7 +724,12 @@ class TransformTool implements IDrawingTool {     // Phase3・高度
 
 ### UI Layer（インターフェース・2.5K最適化）
 ```typescript
-// ===== UI・インターフェース =====
+// ===== UI・インターフェース（改修版・拡張子なし） =====
+import { UIManager } from './UIManager';
+import { Toolbar } from './Toolbar';
+import { ColorPalette } from './ColorPalette';
+import { LayerPanel } from './LayerPanel';
+
 class UIManager {
   // UI統合・レスポンシブ・レイアウト管理・ふたば色
   initializeLayout(): void
@@ -694,7 +740,7 @@ class UIManager {
 }
 
 class Toolbar {
-  // ツールバー・64px幅・36pxアイコン・ふたば色
+  // ツールバー・80px幅・56pxアイコン・ふたば色
   addTool(tool: IDrawingTool): void
   setActiveTool(toolName: string): void
   updateToolIcon(toolName: string, icon: string): void
@@ -711,7 +757,7 @@ class ColorPalette {
 }
 
 class LayerPanel {
-  // レイヤー・300px幅・64px項目・階層表示・ドラッグ&ドロップ
+  // レイヤー・400px幅・64px項目・階層表示・ドラッグ&ドロップ
   addLayerItem(layer: LayerData): void
   removeLayerItem(layerId: string): void
   updateLayerThumbnail(layerId: string, thumbnail: ImageData): void
@@ -722,12 +768,19 @@ class LayerPanel {
 
 ### Constants & Types（定数・型定義）
 ```typescript
-// ===== 重要定数・設定値 =====
+// ===== 重要定数・設定値（改修版・拡張子なし） =====
+import { UI_CONSTANTS } from '../constants/ui-constants';
+import { DRAWING_CONSTANTS } from '../constants/drawing-constants';
+import { PERFORMANCE_CONSTANTS } from '../constants/performance-constants';
+import type { LayerData, ToolSettings, StrokeData } from '../types/drawing.types';
+import type { UIState } from '../types/ui.types';
+import type { PerformanceMetrics, MemoryStatus } from '../types/performance.types';
+
 // ui-constants.ts
 export const UI_CONSTANTS = {
-  TOOLBAR_WIDTH: 64,           // ツールバー幅・固定
-  TOOL_BUTTON_SIZE: 36,        // ツールボタンサイズ・2.5K最適化
-  LAYER_PANEL_WIDTH: 300,      // レイヤーパネル幅・固定
+  TOOLBAR_WIDTH: 80,           // ツールバー幅・固定（修正：64→80px）
+  TOOL_BUTTON_SIZE: 56,        // ツールボタンサイズ・2.5K最適化（修正：36→56px）
+  LAYER_PANEL_WIDTH: 400,      // レイヤーパネル幅・固定（修正：300→400px）
   LAYER_ITEM_HEIGHT: 64,       // レイヤー項目高・操作性
   COLOR_PALETTE_SIZE: 200,     // カラーピッカー円直径
   COLOR_SWATCH_SIZE: 32,       // 色見本サイズ
@@ -835,67 +888,42 @@ export interface MemoryStatus {
 }
 ```
 
-# 6_Claude_Master_Rulebook.md 追記案
+## 🎯 Claude向け標準指示文（必須使用）
 
-## 3. アーキテクチャ規約（新規追加）
-
-### 3-1. インターフェース契約の強制
-**原則**: クラス群に共通の役割を与える場合、必ず共有インターフェースを定義し実装させる
-- すべての描画ツールは `IDrawingTool` インターフェースを実装必須
-- これは「曖昧さの物理的排除」原則の具体的実践である
-- クラスが遵守すべき「契約」をコードレベルで明示し、解釈の余地を完全に断つ
-
-### 3-2. 責務分離の徹底
-**PixiApplication**: Canvas・Stage・Renderer の器としての責務のみ
-**DrawingEngine**: 描画データの最終確定・レイヤー管理のみ  
-**各ツール**: 入力解釈・プレビュー表示・DrawingEngine委譲のみ
-**ToolManager**: ツールライフサイクル管理・状態遷移制御のみ
-**UIManager**: UI表示・更新・イベント発火のみ（アプリケーション状態管理は禁止）
-
-### 3-3. EventBus使用制限
-**許可**: コンポーネント階層横断の全体状態変更通知のみ
-- 例: `tool:change`, `ui:color-change`, `performance:fps-low`
-**禁止**: 親子関係・直接参照関係での通信
-- 直接メソッド呼び出し・コールバック関数を使用すること
-- スパゲッティコード防止・依存関係明確化
-
-### 3-4. ファイル構成規約
-**共通インターフェース**: 独立ファイル化必須（例: `IDrawingTool.ts`）
-**循環インポート**: 物理的に不可能な構成にする
-**型定義**: 実装から分離・純粋性保持
-
-## 4. 実装パターン（新規追加）
-
-### 4-1. ツール実装パターン
-```typescript
-// ✅ 正しい実装
-import { IDrawingTool } from './IDrawingTool.js';
-
-export class NewTool implements IDrawingTool {
-  // 必須プロパティ・メソッドすべて実装
-}
-
-// ❌ 誤った実装
-export class NewTool {
-  // インターフェース無し = 契約違反
-}
+### 全コード生成時の必須プレフィックス
+```markdown
+**TypeScript + Vite環境での厳格ルール（必須遵守）:**
+- インポート: 拡張子なしで記述必須（例: `import { X } from './file'`）
+- .js拡張子は使用完全禁止・コンパイルエラー原因
+- tsconfig.jsonの"moduleResolution": "bundler"により拡張子自動解決
+- ESLintルール: import/extensions設定により.js拡張子はエラー
 ```
 
-### 4-2. 状態管理パターン  
+### 実装パターン・テンプレート例
 ```typescript
-// ✅ 正しいフロー
-UIManager → EventBus → ToolManager → 各ツール
+// ===== 正しいインポートパターン（改修版） =====
+// ✅ Core Layerインポート
+import { PixiApplication } from '../core/PixiApplication';
+import { EventBus } from '../core/EventBus';
+import { DrawingEngine } from '../core/DrawingEngine';
 
-// ❌ 誤ったフロー  
-UIManager → 各ツール直接操作（責務越境）
+// ✅ 型定義インポート
+import type { IEventData } from '../types/ui.types';
+import type { LayerData } from '../types/drawing.types';
+
+// ✅ 定数インポート
+import { UI_CONSTANTS, DRAWING_CONSTANTS } from '../constants/ui-constants';
+
+// ❌ 完全禁止パターン
+import { EventBus } from '../core/EventBus.js';        // コンパイルエラー
+import { LayerData } from '../types/drawing.types.js'; // コンパイルエラー
 ```
-
 
 ## 📋 改修チェックリスト・品質保証
 
 ### 必須確認項目（改修完了前）
 ```typescript
-// ===== 改修完了チェックリスト =====
+// ===== 改修完了チェックリスト（更新版） =====
 export const MODIFICATION_CHECKLIST = {
   // 📋 機能要件確認
   functional: [
@@ -910,7 +938,7 @@ export const MODIFICATION_CHECKLIST = {
   // 🎨 UI/UX要件確認
   userInterface: [
     '✅ ふたば色システム準拠（色定数使用・独自色禁止）',
-    '✅ 2.5K環境最適化（64px Toolbar・300px LayerPanel・36px Button）',
+    '✅ 2.5K環境最適化（80px Toolbar・400px LayerPanel・56px Button）',
     '✅ アクセシビリティ準拠（WCAG 2.1 AAA・色覚対応・キーボード操作）',
     '✅ 操作性維持・向上（学習コスト・一貫性・直感性）',
     '✅ レスポンシブ非対応確認（2.5K専用・警告表示）',
@@ -919,7 +947,7 @@ export const MODIFICATION_CHECKLIST = {
   
   // ⚡ 性能要件確認
   performance: [
-    '✅ 60FPS目標維持（WebGL2環境・測定確認）',
+    '✅ 60FPS目標維持（WebGPU/WebGL2環境・測定確認）',
     '✅ メモリ使用量1GB以下（監視・警告・強制GC）',
     '✅ 入力遅延5ms以下（筆圧・座標・応答性）',
     '✅ 起動時間・操作応答性（LCP 2.5秒・FID 100ms）',
@@ -930,6 +958,7 @@ export const MODIFICATION_CHECKLIST = {
   // 🔧 技術要件確認
   technical: [
     '✅ TypeScript厳格準拠（エラー0・警告0・ESLint通過）',
+    '✅ インポート規則準拠（.js拡張子完全なし・ESLintエラー0）',
     '✅ 命名規則準拠（禁止パターン無し・一貫性・理解容易）',
     '✅ アーキテクチャ整合（単一責任・インターフェース・疎結合）',
     '✅ 段階的縮退対応（WebGPU→WebGL2→WebGL・Tier戦略）',
@@ -946,5 +975,9 @@ export const MODIFICATION_CHECKLIST = {
     '✅ パフォーマンス影響（測定結果・改善点・注意事項）',
     '✅ 使用方法・操作手順（新機能・変更点・移行方法）'
   ]
+} as const;
+```
 
-**このClaude Master Rulebook v4.2は、実装完了後の改修・追加実装作業において、別チャットのClaudeが一貫した品質とアーキテクチャを維持しながら開発を継続できるよう設計された包括的なガイドラインです。プロジェクトの成功を確実にするため、すべての改修作業前にこのルールブックを必ず参照し、チェックリストに従って品質を保証してください。**
+---
+
+**この改修版Claude Master Rulebook v4.3は、.js拡張子問題を完全解決し、TypeScript + Vite環境に最適化された包括的なガイドラインです。すべての実装・改修作業において、このルールブックを必ず参照し、インポート規則を厳格に遵守してください。プロジェクトの技術的整合性と品質保証のため、記載された標準指示文を全Claude連携時に使用することを強く推奨します。**

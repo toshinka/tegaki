@@ -1,7 +1,7 @@
 // src/input/InputManager.ts - マウス・ペンタブレット統合・筆圧・座標変換
 
 import { Point } from 'pixi.js';
-import { EventBus } from '../core/EventBus.js';
+import { EventBus } from '../core/EventBus';
 
 export class InputManager {
   private eventBus: EventBus;
@@ -17,13 +17,9 @@ export class InputManager {
   private scaleX = 1;
   private scaleY = 1;
   
-  constructor(canvas: HTMLCanvasElement, eventBus: EventBus) {
-    this.canvas = canvas;
+  constructor(eventBus: EventBus, canvas: HTMLCanvasElement) {
     this.eventBus = eventBus;
-  }
-
-  // InputManager初期化・main.tsから呼び出される
-  public initialize(): void {
+    this.canvas = canvas;
     this.updateCanvasMetrics();
     this.setupPointerEvents();
     this.setupResizeObserver();

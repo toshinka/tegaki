@@ -1,6 +1,6 @@
 // src/ui/UIManager.ts - Phase1基本UI・イベント連携・2.5K最適化
 
-import { EventBus } from '../core/EventBus.js';
+import { EventBus } from '../core/EventBus';
 
 export class UIManager {
   private eventBus: EventBus;
