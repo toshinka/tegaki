@@ -1,120 +1,150 @@
-// src/ui/UIManager.ts - Phase1基本UI・イベント連携・2.5K最適化
-
 import { EventBus } from '../core/EventBus';
 
 export class UIManager {
   private eventBus: EventBus;
-  private currentTool = 'pen';
-  private currentColor = 0x800000;
+  private currentTool: string = 'pen';
+  private brushSize: number = 3;
+  private brushColor: string = '#000000';
+  private brushOpacity: number = 1.0;
 
   constructor(eventBus: EventBus) {
     this.eventBus = eventBus;
+  }
+
+  init(): void {
+    this.createUI();
     this.setupEventListeners();
-    console.log('🎨 UIManager初期化完了');
   }
 
-  // イベントリスナー設定・ツール連携
+  private createUI(): void {
+    const app = document.getElementById('app');
+    if (!app) return;
+
+    app.innerHTML = `
+      <div class="toolbar">
+        <div class="tool-group">
+          <button class="tool-button active" data-tool="pen">Pen</button>
+          <button class="tool-button" data-tool="eraser">Eraser</button>
+        </div>
+        
+        <div class="tool-group">
+          <button class="tool-button" id="clear-canvas">Clear</button>
+        </div>
+        
+        <div class="slider-container">
+          <label>Size:</label>
+          <input type="range" class="slider" id="brush-size" min="1" max="50" value="3">
+          <span id="size-value">3</span>
+        </div>
+        
+        <div class="slider-container">
+          <label>Color:</label>
+          <input type="color" class="color-input" id="brush-color" value="#000000">
+        </div>
+        
+        <div class="slider-container">
+          <label>Opacity:</label>
+          <input type="range" class="slider" id="brush-opacity" min="0" max="1" step="0.1" value="1">
+          <span id="opacity-value">100%</span>
+        </div>
+      </div>
+      
+      <div class="canvas-container"></div>
+      
+      <div class="status-bar">
+        <div class="performance-info">
+          <span id="fps">FPS: --</span>
+          <span id="draw-calls">Draws: 0</span>
+        </div>
+        <div>
+          <span id="tool-info">Tool: Pen</span>
+        </div>
+      </div>
+    `;
+  }
+
   private setupEventListeners(): void {
-    // Phase1では基本的なイベント処理のみ
-    // メインのUI操作は main.ts で直接処理
-  }
+    // Tool buttons
+    document.querySelectorAll('[data-tool]').forEach(button => {
+      button.addEventListener('click', (e) => {
+        const target = e.target as HTMLButtonElement;
+        const tool = target.dataset.tool;
+        if (tool) {
+          this.selectTool(tool);
+        }
+      });
+    });
 
-  // ツール変更・状態管理
-  public setActiveTool(toolName: string): void {
-    const previousTool = this.currentTool;
-    this.currentTool = toolName;
-    
-    console.log(`🔧 UI: ツール変更 ${previousTool} → ${toolName}`);
-    
-    // UI要素の更新
-    this.updateToolButtons(toolName);
-  }
+    // Clear canvas
+    const clearButton = document.getElementById('clear-canvas');
+    clearButton?.addEventListener('click', () => {
+      this.eventBus.emit('canvas:clear');
+    });
 
-  // 色変更・状態管理
-  public setActiveColor(color: number): void {
-    const previousColor = this.currentColor;
-    this.currentColor = color;
-    
-    console.log(`🎨 UI: 色変更 #${previousColor.toString(16)} → #${color.toString(16)}`);
-    
-    // UI要素の更新
-    this.updateColorDisplay(color);
-  }
+    // Brush size slider
+    const brushSizeSlider = document.getElementById('brush-size') as HTMLInputElement;
+    const sizeValue = document.getElementById('size-value');
+    brushSizeSlider?.addEventListener('input', (e) => {
+      const target = e.target as HTMLInputElement;
+      this.brushSize = parseInt(target.value);
+      this.eventBus.emit('brush:size', { size: this.brushSize });
+      if (sizeValue) sizeValue.textContent = this.brushSize.toString();
+    });
 
-  // ツールボタン状態更新
-  private updateToolButtons(activeTool: string): void {
-    document.querySelectorAll('.tool-btn').forEach(btn => {
-      const tool = btn.getAttribute('data-tool');
-      if (tool === activeTool) {
-        btn.classList.add('active');
-      } else {
-        btn.classList.remove('active');
-      }
+    // Color picker
+    const colorPicker = document.getElementById('brush-color') as HTMLInputElement;
+    colorPicker?.addEventListener('change', (e) => {
+      const target = e.target as HTMLInputElement;
+      this.brushColor = target.value;
+      this.eventBus.emit('brush:color', { color: this.brushColor });
+    });
+
+    // Opacity slider
+    const opacitySlider = document.getElementById('brush-opacity') as HTMLInputElement;
+    const opacityValue = document.getElementById('opacity-value');
+    opacitySlider?.addEventListener('input', (e) => {
+      const target = e.target as HTMLInputElement;
+      this.brushOpacity = parseFloat(target.value);
+      this.eventBus.emit('brush:opacity', { opacity: this.brushOpacity });
+      if (opacityValue) opacityValue.textContent = `${Math.round(this.brushOpacity * 100)}%`;
+    });
+
+    // Performance updates
+    this.eventBus.on('performance:update', (data) => {
+      this.updatePerformanceDisplay(data);
     });
   }
 
-  // 色表示更新
-  private updateColorDisplay(color: number): void {
-    const colorPicker = document.getElementById('color-picker') as HTMLInputElement;
-    if (colorPicker) {
-      const hexColor = `#${color.toString(16).padStart(6, '0')}`;
-      colorPicker.value = hexColor;
+  private selectTool(toolName: string): void {
+    // Update UI
+    document.querySelectorAll('.tool-button').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    
+    const selectedButton = document.querySelector(`[data-tool="${toolName}"]`);
+    selectedButton?.classList.add('active');
+
+    // Update tool info
+    const toolInfo = document.getElementById('tool-info');
+    if (toolInfo) {
+      toolInfo.textContent = `Tool: ${toolName.charAt(0).toUpperCase() + toolName.slice(1)}`;
     }
+
+    // Emit tool change event
+    this.currentTool = toolName;
+    this.eventBus.emit('tool:change', { tool: toolName });
   }
 
-  // パフォーマンス表示更新・外部から呼び出し
-  public updatePerformanceDisplay(fps: number, objectCount: number): void {
-    const fpsCounter = document.getElementById('fps-counter');
-    const objectCounter = document.getElementById('object-counter');
+  private updatePerformanceDisplay(data: any): void {
+    const fpsElement = document.getElementById('fps');
+    const drawCallsElement = document.getElementById('draw-calls');
     
-    if (fpsCounter) fpsCounter.textContent = Math.round(fps).toString();
-    if (objectCounter) objectCounter.textContent = objectCount.toString();
-  }
-
-  // ステータス更新・外部から呼び出し
-  public updateStatus(message: string, duration = 3000): void {
-    const statusText = document.getElementById('status-text');
-    if (statusText) {
-      statusText.textContent = message;
-      
-      if (duration > 0) {
-        setTimeout(() => {
-          if (statusText.textContent === message) {
-            statusText.textContent = '描画ツール準備完了 - マウスまたはペンタブレットで描画開始';
-          }
-        }, duration);
-      }
+    if (fpsElement && data.fps !== undefined) {
+      fpsElement.textContent = `FPS: ${data.fps}`;
     }
-  }
-
-  // UI状態取得・デバッグ用
-  public getUIState(): {
-    currentTool: string;
-    currentColor: number;
-    resolution: { width: number; height: number };
-  } {
-    return {
-      currentTool: this.currentTool,
-      currentColor: this.currentColor,
-      resolution: {
-        width: window.innerWidth,
-        height: window.innerHeight
-      }
-    };
-  }
-
-  // 初期化確認・Phase1最小限
-  public isInitialized(): boolean {
-    return document.getElementById('toolbar') !== null;
-  }
-
-  // リソース解放・メモリリーク防止
-  public destroy(): void {
-    console.log('🔄 UIManager破棄・リソース解放中...');
     
-    // Phase1では特別なクリーンアップ不要
-    // main.ts で作成されたDOM要素は自動的にクリーンアップされる
-    
-    console.log('✅ UIManager破棄完了');
+    if (drawCallsElement && data.drawCalls !== undefined) {
+      drawCallsElement.textContent = `Draws: ${data.drawCalls}`;
+    }
   }
 }
