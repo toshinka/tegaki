@@ -3,289 +3,66 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>モダンお絵かきツール - Phase1基本機能</title>
-    
-    <style>
-        /* ふたば色基調・Phase1シンプル */
-        :root {
-            --futaba-maroon: #800000;
-            --futaba-light-maroon: #aa5a56;
-            --futaba-medium: #cf9c97;
-            --futaba-light: #e9c2ba;
-            --futaba-cream: #f0e0d6;
-            --futaba-background: #ffffee;
-            --text-primary: #2c1810;
-        }
-        
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
-            background: var(--futaba-background);
-            color: var(--text-primary);
-            overflow: hidden;
-            height: 100vh;
-            width: 100vw;
-        }
-        
-        /* Phase1基本レイアウト・UIManagerが上書きする */
-        #app {
-            width: 100%;
-            height: 100%;
-            position: relative;
-        }
-        
-        /* ローディング表示・初期化中 */
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(255, 255, 238, 0.95);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-            backdrop-filter: blur(4px);
-        }
-        
-        .loading-content {
-            text-align: center;
-            background: var(--futaba-cream);
-            padding: 32px;
-            border-radius: 16px;
-            border: 2px solid var(--futaba-light);
-            box-shadow: 0 8px 32px rgba(128, 0, 0, 0.1);
-            max-width: 400px;
-        }
-        
-        .loading-icon {
-            font-size: 48px;
-            margin-bottom: 16px;
-            animation: spin 2s linear infinite;
-        }
-        
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-        
-        .loading-title {
-            font-size: 24px;
-            color: var(--futaba-maroon);
-            margin-bottom: 8px;
-            font-weight: 600;
-        }
-        
-        .loading-message {
-            font-size: 14px;
-            color: var(--text-primary);
-            margin-bottom: 16px;
-        }
-        
-        .loading-progress {
-            width: 100%;
-            height: 6px;
-            background: var(--futaba-light);
-            border-radius: 3px;
-            overflow: hidden;
-        }
-        
-        .loading-bar {
-            height: 100%;
-            background: linear-gradient(90deg, var(--futaba-maroon), var(--futaba-light-maroon));
-            border-radius: 3px;
-            width: 0%;
-            transition: width 0.3s ease;
-        }
-        
-        /* エラー表示 */
-        .error-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(244, 67, 54, 0.9);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-        }
-        
-        .error-content {
-            background: white;
-            padding: 32px;
-            border-radius: 16px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            max-width: 500px;
-            text-align: center;
-        }
-        
-        .error-title {
-            color: #d32f2f;
-            font-size: 24px;
-            margin-bottom: 16px;
-            font-weight: 600;
-        }
-        
-        .error-message {
-            color: #333;
-            margin-bottom: 20px;
-            line-height: 1.5;
-        }
-        
-        .error-details {
-            background: #f5f5f5;
-            padding: 16px;
-            border-radius: 8px;
-            font-family: monospace;
-            font-size: 12px;
-            color: #666;
-            text-align: left;
-            margin-bottom: 20px;
-            white-space: pre-wrap;
-            word-break: break-word;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        
-        .error-button {
-            background: #d32f2f;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 6px;
-            font-size: 16px;
-            cursor: pointer;
-            font-weight: 500;
-        }
-        
-        .error-button:hover {
-            background: #b71c1c;
-        }
-        
-        /* 小画面警告・デスクトップ専用 */
-        @media (max-width: 1279px) or (max-height: 719px) {
-            body::before {
-                content: "⚠ このツールはデスクトップ環境（1280×720以上）に最適化されています";
-                position: fixed;
-                top: 0;
-                left: 0;
-                right: 0;
-                background: #ff9800;
-                color: white;
-                padding: 8px 16px;
-                text-align: center;
-                z-index: 10001;
-                font-size: 14px;
-                font-weight: 500;
-            }
-        }
-        
-        /* 動きを減らす設定対応 */
-        @media (prefers-reduced-motion: reduce) {
-            * {
-                animation-duration: 0.01ms !important;
-                transition-duration: 0.01ms !important;
-            }
-        }
-    </style>
+    <title>Modern Drawing Tool - Phase 0</title>
+    <link rel="stylesheet" href="./src/style.css">
 </head>
 <body>
-    <!-- メインアプリケーション・UIManagerが構築 -->
-    <div id="app"></div>
-    
-    <!-- 初期ローディング表示 -->
-    <div id="loading-overlay" class="loading-overlay">
-        <div class="loading-content">
-            <div class="loading-icon">🎨</div>
-            <div class="loading-title">お絵かきツール</div>
-            <div id="loading-message" class="loading-message">システム初期化中...</div>
-            <div class="loading-progress">
-                <div id="loading-bar" class="loading-bar"></div>
+    <div class="app-container">
+        <div class="toolbar">
+            <h1>Drawing Tool</h1>
+            
+            <div class="tool-section">
+                <h3>Tools</h3>
+                <div class="tool-buttons">
+                    <button class="tool-btn active" data-tool="pen" title="Pen Tool">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                        </svg>
+                    </button>
+                    <button class="tool-btn" data-tool="eraser" title="Eraser Tool">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 20H8l-4-4 9.5-9.5a2.828 2.828 0 1 1 4 4L8 20"/>
+                            <path d="M15 5l4 4"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="tool-section color-section">
+                <h3>Color</h3>
+                <input type="color" class="color-picker" id="colorPicker" value="#000000">
+            </div>
+
+            <div class="tool-section size-section">
+                <h3>Size</h3>
+                <div class="slider-container">
+                    <input type="range" class="size-slider" id="sizeSlider" min="1" max="50" value="3">
+                    <span class="size-value" id="sizeValue">3px</span>
+                </div>
+                <div class="brush-preview">
+                    <div class="preview-circle" id="brushPreview"></div>
+                </div>
+            </div>
+
+            <div class="tool-section">
+                <button class="clear-btn" id="clearBtn">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px;">
+                        <polyline points="3,6 5,6 21,6"/>
+                        <path d="M19,6V20a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2V6"/>
+                        <line x1="10" y1="11" x2="10" y2="17"/>
+                        <line x1="14" y1="11" x2="14" y2="17"/>
+                    </svg>
+                    Clear Canvas
+                </button>
             </div>
         </div>
-    </div>
-    
-    <!-- エラー表示（非表示） -->
-    <div id="error-overlay" class="error-overlay" style="display: none;">
-        <div class="error-content">
-            <div class="error-title">🚨 エラーが発生しました</div>
-            <div id="error-message" class="error-message"></div>
-            <div id="error-details" class="error-details" style="display: none;"></div>
-            <button class="error-button" onclick="location.reload()">
-                ページを再読み込み
-            </button>
+
+        <div class="canvas-container">
+            <div class="fps-counter" id="fpsCounter">60 FPS</div>
+            <div id="canvasContainer"></div>
         </div>
     </div>
-    
-    <!-- JavaScript初期化 -->
-    <script>
-        // グローバルエラーハンドラー
-        window.addEventListener('error', (event) => {
-            console.error('💥 JavaScript実行エラー:', event.error);
-            showError('JavaScriptの実行でエラーが発生しました。', event.error?.stack);
-        });
-        
-        window.addEventListener('unhandledrejection', (event) => {
-            console.error('💥 Promise未処理エラー:', event.reason);
-            showError('非同期処理でエラーが発生しました。', event.reason?.stack);
-            event.preventDefault();
-        });
-        
-        // エラー表示関数
-        function showError(message, details) {
-            const loadingOverlay = document.getElementById('loading-overlay');
-            const errorOverlay = document.getElementById('error-overlay');
-            const errorMessage = document.getElementById('error-message');
-            const errorDetails = document.getElementById('error-details');
-            
-            if (loadingOverlay) loadingOverlay.style.display = 'none';
-            if (errorOverlay) errorOverlay.style.display = 'flex';
-            if (errorMessage) errorMessage.textContent = message;
-            
-            if (details && errorDetails) {
-                errorDetails.textContent = details;
-                errorDetails.style.display = 'block';
-            }
-        }
-        
-        // ローディング進捗更新関数・main.tsから呼び出し可能
-        window.updateLoadingProgress = function(progress, message) {
-            const loadingBar = document.getElementById('loading-bar');
-            const loadingMessage = document.getElementById('loading-message');
-            
-            if (loadingBar) {
-                loadingBar.style.width = Math.min(100, Math.max(0, progress)) + '%';
-            }
-            
-            if (loadingMessage && message) {
-                loadingMessage.textContent = message;
-            }
-        };
-        
-        // ローディング完了・表示削除
-        window.hideLoading = function() {
-            const loadingOverlay = document.getElementById('loading-overlay');
-            if (loadingOverlay) {
-                loadingOverlay.style.opacity = '0';
-                loadingOverlay.style.transition = 'opacity 0.5s ease';
-                setTimeout(() => {
-                    loadingOverlay.style.display = 'none';
-                }, 500);
-            }
-        };
-        
-        console.log('✅ HTML初期化完了・main.ts読み込み準備完了');
-    </script>
-    
-    <!-- メインアプリケーション読み込み -->
-    <script type="module" src="./src/main.ts"></script>
+
+    <script src="./src/main.js" type="module"></script>
 </body>
 </html>
