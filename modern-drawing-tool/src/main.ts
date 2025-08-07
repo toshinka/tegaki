@@ -38,8 +38,8 @@ class ModernDrawingTool {
         this.graphics = new PIXI.Graphics();
         this.app.stage.addChild(this.graphics);
 
-        // Setup interactive
-        this.app.stage.interactive = true;
+        // Setup interactive (v7.2.0+ compatible)
+        this.app.stage.eventMode = 'static';
         this.app.stage.hitArea = new PIXI.Rectangle(0, 0, this.app.screen.width, this.app.screen.height);
 
         // Start FPS counter
@@ -88,35 +88,42 @@ class ModernDrawingTool {
 
     onPointerDown(event) {
         this.isDrawing = true;
-        const point = event.data.getLocalPosition(this.app.stage);
-        this.lastPoint = { x: point.x, y: point.y };
+        // 正しい座標を取得（キャンバス相対）
+        const rect = this.app.view.getBoundingClientRect();
+        const x = (event.data.global.x - rect.left) * this.app.renderer.resolution;
+        const y = (event.data.global.y - rect.top) * this.app.renderer.resolution;
+        
+        this.lastPoint = { x, y };
 
         if (this.currentTool === 'pen') {
             this.graphics.lineStyle(this.brushSize, this.brushColor, 1);
-            this.graphics.moveTo(point.x, point.y);
+            this.graphics.moveTo(x, y);
         } else if (this.currentTool === 'eraser') {
             // Set blend mode to erase
             this.graphics.lineStyle(this.brushSize, 0xffffff, 1);
             this.graphics.blendMode = PIXI.BLEND_MODES.MULTIPLY;
-            this.graphics.moveTo(point.x, point.y);
+            this.graphics.moveTo(x, y);
         }
     }
 
     onPointerMove(event) {
         if (!this.isDrawing) return;
 
-        const point = event.data.getLocalPosition(this.app.stage);
+        // 正しい座標を取得（キャンバス相対）
+        const rect = this.app.view.getBoundingClientRect();
+        const x = (event.data.global.x - rect.left) * this.app.renderer.resolution;
+        const y = (event.data.global.y - rect.top) * this.app.renderer.resolution;
         
         if (this.currentTool === 'pen') {
-            this.graphics.lineTo(point.x, point.y);
+            this.graphics.lineTo(x, y);
         } else if (this.currentTool === 'eraser') {
             // Create circular eraser effect
             this.graphics.beginFill(0xffffff);
-            this.graphics.drawCircle(point.x, point.y, this.brushSize / 2);
+            this.graphics.drawCircle(x, y, this.brushSize / 2);
             this.graphics.endFill();
         }
 
-        this.lastPoint = { x: point.x, y: point.y };
+        this.lastPoint = { x, y };
     }
 
     onPointerUp() {
@@ -135,7 +142,9 @@ class ModernDrawingTool {
 
     updateBrushPreview() {
         const preview = document.getElementById('brushPreview');
-        const colorHex = PIXI.utils.hex2string(this.brushColor);
+        // v7.2.0+ compatible color conversion
+        const color = new PIXI.Color(this.brushColor);
+        const colorHex = color.toHex();
         const size = Math.min(Math.max(this.brushSize, 4), 40);
         
         preview.style.width = size + 'px';
