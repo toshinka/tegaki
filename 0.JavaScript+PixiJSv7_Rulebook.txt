@@ -1,0 +1,184 @@
+# JavaScript + PixiJS v7 Rulebook（fetch API分割版）
+
+## 1. 基本理念
+- 安定動作・可読性・拡張性を優先し、将来的なTypeScript + Vite + ES6移行を意識する。
+- ファイル間の依存は明確化し、循環参照を作らない。
+- PixiJS v7の公式API仕様に沿い、非推奨機能は使用しない。
+- PixiJS v7の範囲で可能な限りモダンな実装を行い、ブラウザ互換は考慮せず最新Chrome APIを優先的に活用する。
+　　・ES2023構文使用OK（可読性のためなら）
+　　・OffscreenCanvasや最新Canvas APIも使用OK
+- 初期開発段階ではPC＋液タブ操作を優先し、タッチ操作は未実装とする。将来的に追加予定の箇所はコメントアウトで残し、後の拡張を容易にする
+
+---
+
+## 2. ファイル構成ルール
+現行の3ファイル構成（fetch API分割前提）：
+1. **app-core.js**（旧 core-engine.js）  
+   - PixiJSアプリ生成・描画ループ管理・リソースロード。
+   - Application / Stage / Renderer 初期化はここに集約。
+2. **drawing-tools.js**（旧 tools-features.js）  
+   - 各描画ツールや機能（ペン、消しゴム、ベクターペンなど）をクラス化。
+   - PixiJS Graphics / Mesh / Container の使用はツール内に閉じる。
+3. **ui-manager.js**（旧 ui-system.js）  
+   - UIコンテナ管理・UIイベント処理。
+   - UIロジックと描画ロジックは分離する。
+
+---
+
+## 3. コードスタイル規約
+### 命名規則
+- **変数 / 関数**: `camelCase`（例：`drawLine`, `pointerPosition`）
+- **定数**: `SCREAMING_SNAKE_CASE`（例：`CANVAS_WIDTH`, `BG_COLOR`）
+- **クラス / コンストラクタ関数**: `PascalCase`（例：`VectorPenTool`, `UIManager`）
+- **イベント名**: 定数化（例：`EVENTS.POINTER_DOWN`）
+- **PixiJSオブジェクト変数**: 役割接尾辞（`backgroundLayer`, `drawingContainer`）
+
+### 関数名の原則
+- 動詞＋目的語（例：`updateLayer`, `loadTexture`）
+- 1関数1責務
+
+---
+
+## 4. シンボル辞書（推奨用語）
+| 用語 | 命名例 | 補足 |
+|------|--------|------|
+| アプリ全体 | `app` | PIXI.Application |
+| ステージ | `stage` | app.stage |
+| レイヤー | `{name}Layer` | backgroundLayer, drawingLayer |
+| コンテナ | `{name}Container` | UI部品など |
+| ツール | `{ToolName}Tool` | VectorPenTool, EraserTool |
+| 設定 | `CONFIG` | 全定数まとめ |
+| 状態 | `state` | 現在の描画設定 |
+| イベント一覧 | `EVENTS` | pointerdown等を定数化 |
+
+---
+
+## 5. PixiJS v7 実装ルール
+- **描画負荷軽減**: 無駄なイベント発火を抑制（例：`interaction.moveWhenInside = true`）
+- **ステージ構造**:
+
+stage
+├─ backgroundLayer
+├─ drawingLayer
+└─ uiLayer
+
+- **リサイズ管理**: `app.renderer.resize()`はUI側で一元管理
+- **テクスチャ再利用**: `Texture.from()`のキャッシュ活用
+- **ベクターペン最適化**: GraphicsよりMesh/Geometryを検討
+
+---
+
+## 6. イベント・入力ルール
+- ツールは常にPixi座標系を使用（`event.data.getLocalPosition(layer)`）
+- UIイベントは`stopPropagation()`で描画層と分離
+- イベント種別は`pointerdown / pointermove / pointerup`で統一
+
+---
+
+## 7. 状態管理
+- 描画状態（色、太さ、ツール種別）は`app-core`の`state`に集約
+- Undo/RedoはRenderTexture差分管理
+- アニメ・自動描画は`Ticker`で更新
+
+---
+
+## 8. 禁止事項
+- DOM直接操作（Pixi外の`querySelector`等）  
+- Pixi内部プロパティへの直接アクセス  
+- 複数責務を1関数にまとめる
+
+---
+
+## 9. 全面禁止命名（PixiV7許容版）
+| 禁止 | 禁止理由 | 代替 |
+|------|----------|------|
+| *Handler.js | 処理不明 | *Processor.js |
+| *Helper.js | 目的不明 | *Utils.js |
+| *Service.js | DI以外禁止 | 具体的な役割名 |
+| Canvas2D*.js | Canvas2D主体禁止 | PixiV7Chrome*.js |
+| WebGL*.js | 古いAPI示唆禁止 | PixiV7WebGPU*.js |
+| Legacy*.js | 古い技術示唆禁止 | PixiV7Modern*.js |
+| Basic*.js | 低性能示唆禁止 | PixiV7Procreate*.js |
+| Simple*.js | 機能制限示唆禁止 | PixiV7Advanced*.js |
+| NonGPU*.js | GPU未活用示唆禁止 | PixiV7GPU*.js |
+
+※ PixiV7は現行テストモデルのため許容。将来PixiV8移行時は`PixiV8Chrome*.js`へ。
+
+---
+
+## 10. 最小構造サンプル
+```javascript
+// app-core.js
+const CONFIG = {
+CANVAS_WIDTH: 344,
+CANVAS_HEIGHT: 135,
+BG_COLOR: 0xffffff
+};
+
+const app = new PIXI.Application({
+width: CONFIG.CANVAS_WIDTH,
+height: CONFIG.CANVAS_HEIGHT,
+backgroundColor: CONFIG.BG_COLOR
+});
+document.body.appendChild(app.view);
+
+const layers = {
+backgroundLayer: new PIXI.Container(),
+drawingLayer: new PIXI.Container(),
+uiLayer: new PIXI.Container()
+};
+app.stage.addChild(layers.backgroundLayer, layers.drawingLayer, layers.uiLayer);
+
+export { app, layers, CONFIG };
+
+11. 将来移行のための配慮
+・export/importを利用して依存を明示
+
+・型情報をコメントで残す（TS変換容易化）
+
+・ファイル名・変数名を一貫させ、辞書で管理
+
+## 12. 拡張計画
+- タッチ操作機能は初期実装では含めず、PC＋液タブに最適化。
+- 将来的に導入予定の処理は、イベント登録や関数の雛形をコメントアウトで残す。
+- コメント部分には「未実装」注記と将来の動作意図を明記。
+
+13.ライブラリ拡張についてのメモ
+
+. 他ライブラリ併用の是非
+PixiJSは描画・イベント・リソース管理を内包しているため、
+追加ライブラリは「描画以外の補助」に限る方が安全です。
+
+・併用しても安全なケース
+入力補助系: hammer.js（ジェスチャー検出）
+
+状態管理: zustandや軽量Redux（ただし単純なstateなら不要）
+
+アニメ補助: GSAP（Pixiと相性良）
+
+物理演算: matter.js（Pixi表示オブジェクトと座標同期）
+
+避けたいケース
+React/VueなどのUIフレームワーク直接統合
+
+Pixiと別のWebGLレンダラー（Three.jsなど）
+
+PixiのTexture/Geometryを直接書き換える外部描画ライブラリ
+
+理由：
+PixiJSのイベント・レンダリングループと別のライブラリのループが二重化し、
+AIによるコード補完やバグ診断が難しくなるからです。
+
+・ Spine導入の考え方
+PixiJS v7対応版: pixi-spine
+
+v8でもサポート予定だが、内部APIの変更で一部改修が必要になる可能性あり
+
+メリット:
+
+高品質2Dアニメーションを実装可能
+
+骨格アニメ＋パーツ差し替えでLive2D風表現も可能
+
+
+

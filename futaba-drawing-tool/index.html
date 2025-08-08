@@ -134,3 +134,151 @@
                         <div class="slider-track" id="pen-size-track"></div>
                         <div class="slider-handle" id="pen-size-handle"></div>
                     </div>
+                    <div class="slider-value" id="pen-size-value">16.0px</div>
+                </div>
+                <div class="slider-button small" id="pen-size-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-size-increase">+1</div>
+                <div class="slider-button small" id="pen-size-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">不透明度</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-opacity-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-opacity-decrease">-1</div>
+                <div class="slider-button small" id="pen-opacity-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-opacity-slider">
+                        <div class="slider-track" id="pen-opacity-track"></div>
+                        <div class="slider-handle" id="pen-opacity-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-opacity-value">85.0%</div>
+                </div>
+                <div class="slider-button small" id="pen-opacity-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-opacity-increase">+1</div>
+                <div class="slider-button small" id="pen-opacity-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">筆圧</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-pressure-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-pressure-decrease">-1</div>
+                <div class="slider-button small" id="pen-pressure-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-pressure-slider">
+                        <div class="slider-track" id="pen-pressure-track"></div>
+                        <div class="slider-handle" id="pen-pressure-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-pressure-value">50.0%</div>
+                </div>
+                <div class="slider-button small" id="pen-pressure-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-pressure-increase">+1</div>
+                <div class="slider-button small" id="pen-pressure-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">線補正</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-smoothing-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-smoothing-decrease">-1</div>
+                <div class="slider-button small" id="pen-smoothing-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-smoothing-slider">
+                        <div class="slider-track" id="pen-smoothing-track"></div>
+                        <div class="slider-handle" id="pen-smoothing-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-smoothing-value">30.0%</div>
+                </div>
+                <div class="slider-button small" id="pen-smoothing-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-smoothing-increase">+1</div>
+                <div class="slider-button small" id="pen-smoothing-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="pressure-sensitivity"></div>
+                    <div class="checkbox-label">筆圧感度 (120Hz対応)</div>
+                </div>
+            </div>
+            
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="edge-smoothing"></div>
+                    <div class="checkbox-label">エッジスムージング</div>
+                </div>
+            </div>
+            
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="gpu-acceleration"></div>
+                    <div class="checkbox-label">GPU加速</div>
+                </div>
+                <div class="checkbox-status">遅延: 0.6ms</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="popup-panel resize-settings draggable" id="resize-settings" style="left: 60px; top: 150px;">
+        <div class="popup-title">キャンバスリサイズ</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">キャンバスサイズ</div>
+            <div class="size-input-group">
+                <div class="size-input-field">
+                    <input type="number" class="size-input" id="canvas-width" min="100" max="4096" value="400">
+                </div>
+                <div class="size-multiply">×</div>
+                <div class="size-input-field">
+                    <input type="number" class="size-input" id="canvas-height" min="100" max="4096" value="400">
+                </div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">プリセット</div>
+            <div class="resize-buttons">
+                <div class="resize-button" data-size="400,400">400×400</div>
+                <div class="resize-button" data-size="600,600">600×600</div>
+                <div class="resize-button" data-size="800,600">800×600</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="resize-buttons">
+                <div class="resize-button" id="apply-resize">適用</div>
+                <div class="resize-button primary" id="apply-resize-center">適用して中央寄せ</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
+            <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
+            <div class="status-item">Color: <span id="current-color">#800000</span></div>
+            <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
+            <div class="status-item">筆圧: <span id="pressure-monitor">0.0%</span></div>
+        </div>
+        
+        <div class="status-group">
+            <div class="status-item">FPS: <span id="fps">60</span></div>
+            <div class="status-item">GPU: <span id="gpu-usage">45%</span></div>
+            <div class="status-item">Memory: <span id="memory-usage">1.2GB</span></div>
+        </div>
+    </div>
+
+    <!-- PIXI.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
+    
+    <!-- JavaScriptファイルの読み込み（正しい順序で） -->
+    <script src="core-engine.js"></script>
+    <script src="ui-system.js"></script>
+    <script src="tools-features.js"></script>
+</body>
+</html>

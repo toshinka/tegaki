@@ -1,243 +1,165 @@
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v0.7
- * UI管理システム - ui-system.js
+ * 描画エンジン基盤 - core-engine.js
  */
 
-class UIController {
-    constructor(toolSystem) {
-        this.toolSystem = toolSystem;
-        this.activePopup = null;
-        this.sliders = new Map();
+class DrawingEngine {
+    constructor(width, height) {
+        this.width = width;
+        this.height = height;
+        this.app = null;
+        this.drawingContainer = null;
+        this.paths = [];
+        this.backgroundColor = 0xf0e0d6;
     }
     
-    init() {
-        this.setupToolButtons();
-        this.setupPopups();
-        this.setupSliders();
-        this.setupPresets();
-        this.setupResize();
-        this.setupCheckboxes();
-        this.updateSizePresets();
-    }
-    
-    setupToolButtons() {
-        document.querySelectorAll('.tool-button').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                if (btn.classList.contains('disabled')) return;
-                this.handleToolClick(e.currentTarget);
-            });
-        });
-    }
-    
-    handleToolClick(button) {
-        const toolId = button.id;
-        const popupId = button.getAttribute('data-popup');
-        
-        if (toolId === 'pen-tool') {
-            this.setTool('pen');
-        } else if (toolId === 'eraser-tool') {
-            this.setTool('eraser');
-        }
-        
-        if (popupId) {
-            this.togglePopup(popupId);
-        }
-    }
-    
-    setTool(tool) {
-        this.toolSystem.setTool(tool);
-        
-        document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
-        document.getElementById(tool + '-tool').classList.add('active');
-        
-        const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
-        document.getElementById('current-tool').textContent = toolNames[tool] || tool;
-    }
-    
-    togglePopup(popupId) {
-        const popup = document.getElementById(popupId);
-        if (!popup) return;
-        
-        if (this.activePopup && this.activePopup !== popup) {
-            this.activePopup.classList.remove('show');
-        }
-        
-        const isVisible = popup.classList.contains('show');
-        popup.classList.toggle('show', !isVisible);
-        this.activePopup = isVisible ? null : popup;
-    }
-    
-    setupSliders() {
-        this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value) => {
-            this.toolSystem.setBrushSize(value);
-            this.updateSizePresets();
-            return value.toFixed(1) + 'px';
-        });
-        
-        this.createSlider('pen-opacity-slider', 0, 100, 85.0, (value) => {
-            this.toolSystem.setOpacity(value / 100);
-            this.updateSizePresets(); // 不透明度変更時も更新
-            return value.toFixed(1) + '%';
-        });
-        
-        this.createSlider('pen-pressure-slider', 0, 100, 50.0, (value) => {
-            this.toolSystem.setPressure(value / 100);
-            return value.toFixed(1) + '%';
-        });
-        
-        this.createSlider('pen-smoothing-slider', 0, 100, 30.0, (value) => {
-            this.toolSystem.setSmoothing(value / 100);
-            return value.toFixed(1) + '%';
-        });
-        
-        this.setupSliderButtons();
-    }
-    
-    createSlider(sliderId, min, max, initial, callback) {
-        const container = document.getElementById(sliderId);
-        const track = container.querySelector('.slider-track');
-        const handle = container.querySelector('.slider-handle');
-        const valueDisplay = container.parentNode.querySelector('.slider-value');
-        
-        const sliderData = {
-            value: initial,
-            min, max, callback,
-            track, handle, valueDisplay,
-            isDragging: false
-        };
-        
-        this.sliders.set(sliderId, sliderData);
-        
-        const updateSlider = (value) => {
-            sliderData.value = Math.max(min, Math.min(max, value));
-            const percentage = ((sliderData.value - min) / (max - min)) * 100;
+    async init() {
+        try {
+            console.log('🎯 DrawingEngine初期化開始...');
             
-            track.style.width = percentage + '%';
-            handle.style.left = percentage + '%';
-            valueDisplay.textContent = callback(sliderData.value);
-        };
-        
-        const getValueFromPosition = (clientX) => {
-            const rect = container.getBoundingClientRect();
-            const percentage = (clientX - rect.left) / rect.width;
-            return min + (percentage * (max - min));
-        };
-        
-        container.addEventListener('mousedown', (e) => {
-            sliderData.isDragging = true;
-            updateSlider(getValueFromPosition(e.clientX));
-            e.preventDefault();
-        });
-        
-        document.addEventListener('mousemove', (e) => {
-            if (sliderData.isDragging) updateSlider(getValueFromPosition(e.clientX));
-        });
-        
-        document.addEventListener('mouseup', () => {
-            sliderData.isDragging = false;
-        });
-        
-        updateSlider(initial);
+            // PIXI.js v7の正しい初期化方法
+            this.app = new PIXI.Application({
+                width: this.width,
+                height: this.height,
+                backgroundColor: this.backgroundColor,
+                antialias: true,
+                resolution: 1,
+                autoDensity: false
+            });
+            
+            // キャンバス要素をDOMに追加
+            const canvasContainer = document.getElementById('drawing-canvas');
+            if (!canvasContainer) {
+                throw new Error('drawing-canvas要素が見つかりません');
+            }
+            
+            canvasContainer.appendChild(this.app.view);
+            
+            // 描画用コンテナ
+            this.drawingContainer = new PIXI.Container();
+            this.app.stage.addChild(this.drawingContainer);
+            
+            this.setupInteraction();
+            
+            console.log('✅ DrawingEngine初期化完了');
+            return this.app;
+            
+        } catch (error) {
+            console.error('❌ DrawingEngine初期化エラー:', error);
+            throw error;
+        }
     }
     
-    setupSliderButtons() {
-        const adjustValue = (sliderId, delta) => {
-            const slider = this.sliders.get(sliderId);
-            if (slider) {
-                const newValue = slider.value + delta;
-                const clampedValue = Math.max(slider.min, Math.min(slider.max, newValue));
-                slider.value = clampedValue;
-                
-                const percentage = ((clampedValue - slider.min) / (slider.max - slider.min)) * 100;
-                slider.track.style.width = percentage + '%';
-                slider.handle.style.left = percentage + '%';
-                slider.valueDisplay.textContent = slider.callback(clampedValue);
-            }
+    setupInteraction() {
+        // PIXI.js v7のイベント設定
+        this.app.stage.eventMode = 'static';
+        this.app.stage.hitArea = new PIXI.Rectangle(0, 0, this.width, this.height);
+    }
+    
+    getLocalPointerPosition(event) {
+        try {
+            const rect = this.app.view.getBoundingClientRect();
+            const originalEvent = event.data.originalEvent;
+            const x = (originalEvent.clientX - rect.left) * (this.width / rect.width);
+            const y = (originalEvent.clientY - rect.top) * (this.height / rect.height);
+            return { x, y };
+        } catch (error) {
+            console.warn('座標取得エラー:', error);
+            return { x: 0, y: 0 };
+        }
+    }
+    
+    createPath(x, y, size, color, opacity, tool = 'pen') {
+        const path = {
+            id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            graphics: new PIXI.Graphics(),
+            points: [],
+            color: tool === 'eraser' ? this.backgroundColor : color,
+            size: size,
+            opacity: tool === 'eraser' ? 1.0 : opacity,
+            tool: tool,
+            isComplete: false
         };
         
-        // ペンサイズ調整ボタン
-        document.getElementById('pen-size-decrease-small')?.addEventListener('click', () => {
-            adjustValue('pen-size-slider', -0.1);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-size-decrease')?.addEventListener('click', () => {
-            adjustValue('pen-size-slider', -1);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-size-decrease-large')?.addEventListener('click', () => {
-            adjustValue('pen-size-slider', -10);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-size-increase-small')?.addEventListener('click', () => {
-            adjustValue('pen-size-slider', 0.1);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-size-increase')?.addEventListener('click', () => {
-            adjustValue('pen-size-slider', 1);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-size-increase-large')?.addEventListener('click', () => {
-            adjustValue('pen-size-slider', 10);
-            this.updateSizePresets();
-        });
+        // 初回描画: 円形ブラシで点を描画
+        path.graphics.beginFill(path.color, path.opacity);
+        path.graphics.drawCircle(x, y, size / 2);
+        path.graphics.endFill();
         
-        // 不透明度調整ボタン
-        document.getElementById('pen-opacity-decrease-small')?.addEventListener('click', () => {
-            adjustValue('pen-opacity-slider', -0.1);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-opacity-decrease')?.addEventListener('click', () => {
-            adjustValue('pen-opacity-slider', -1);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-opacity-decrease-large')?.addEventListener('click', () => {
-            adjustValue('pen-opacity-slider', -10);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-opacity-increase-small')?.addEventListener('click', () => {
-            adjustValue('pen-opacity-slider', 0.1);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-opacity-increase')?.addEventListener('click', () => {
-            adjustValue('pen-opacity-slider', 1);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-opacity-increase-large')?.addEventListener('click', () => {
-            adjustValue('pen-opacity-slider', 10);
-            this.updateSizePresets();
-        });
+        path.points.push({ x, y, size });
         
-        // 筆圧調整ボタン
-        document.getElementById('pen-pressure-decrease-small')?.addEventListener('click', () => {
-            adjustValue('pen-pressure-slider', -0.1);
-        });
-        document.getElementById('pen-pressure-decrease')?.addEventListener('click', () => {
-            adjustValue('pen-pressure-slider', -1);
-        });
-        document.getElementById('pen-pressure-decrease-large')?.addEventListener('click', () => {
-            adjustValue('pen-pressure-slider', -10);
-        });
-        document.getElementById('pen-pressure-increase-small')?.addEventListener('click', () => {
-            adjustValue('pen-pressure-slider', 0.1);
-        });
-        document.getElementById('pen-pressure-increase')?.addEventListener('click', () => {
-            adjustValue('pen-pressure-slider', 1);
-        });
-        document.getElementById('pen-pressure-increase-large')?.addEventListener('click', () => {
-            adjustValue('pen-pressure-slider', 10);
-        });
+        this.drawingContainer.addChild(path.graphics);
+        this.paths.push(path);
+        return path;
+    }
+    
+    drawLine(path, x, y) {
+        if (!path || path.points.length === 0) return;
         
-        // 線補正調整ボタン
-        document.getElementById('pen-smoothing-decrease-small')?.addEventListener('click', () => {
-            adjustValue('pen-smoothing-slider', -0.1);
+        const lastPoint = path.points[path.points.length - 1];
+        const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
+        
+        // 最小距離フィルタ
+        if (distance < 1.5) return;
+        
+        // 連続する円形で線を描画
+        const steps = Math.max(1, Math.ceil(distance / 1.5));
+        for (let i = 1; i <= steps; i++) {
+            const t = i / steps;
+            const px = lastPoint.x + (x - lastPoint.x) * t;
+            const py = lastPoint.y + (y - lastPoint.y) * t;
+            
+            path.graphics.beginFill(path.color, path.opacity);
+            path.graphics.drawCircle(px, py, path.size / 2);
+            path.graphics.endFill();
+        }
+        
+        path.points.push({ x, y, size: path.size });
+    }
+    
+    resize(newWidth, newHeight, centerContent = false) {
+        const oldWidth = this.width;
+        const oldHeight = this.height;
+        
+        this.width = newWidth;
+        this.height = newHeight;
+        
+        this.app.renderer.resize(newWidth, newHeight);
+        this.app.stage.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
+        
+        if (centerContent && this.paths.length > 0) {
+            const offsetX = (newWidth - oldWidth) / 2;
+            const offsetY = (newHeight - oldHeight) / 2;
+            
+            this.paths.forEach(path => {
+                path.graphics.x += offsetX;
+                path.graphics.y += offsetY;
+            });
+        }
+    }
+    
+    clear() {
+        this.paths.forEach(path => {
+            if (path.graphics && path.graphics.parent) {
+                this.drawingContainer.removeChild(path.graphics);
+                path.graphics.destroy();
+            }
         });
-        document.getElementById('pen-smoothing-decrease')?.addEventListener('click', () => {
-            adjustValue('pen-smoothing-slider', -1);
-        });
-        document.getElementById('pen-smoothing-decrease-large')?.addEventListener('click', () => {
-            adjustValue('pen-smoothing-slider', -10);
-        });
-        document.getElementById('pen-smoothing-increase-small')?.addEventListener('click', () => {
-            adjustValue('pen-smoothing-slider', 0.1);
-        });
-        document.getElementById('pen-smoothing-increase')?.addEventListener('click
+        this.paths = [];
+    }
+    
+    // デバッグ用メソッド
+    getStats() {
+        return {
+            width: this.width,
+            height: this.height,
+            pathCount: this.paths.length,
+            isInitialized: this.app !== null
+        };
+    }
+}
+
+// グローバル公開
+if (typeof window !== 'undefined') {
+    window.DrawingEngine = DrawingEngine;
+}

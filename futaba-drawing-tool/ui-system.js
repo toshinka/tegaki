@@ -11,6 +11,7 @@ class UIController {
     }
     
     init() {
+        console.log('🎯 UIController初期化開始...');
         this.setupToolButtons();
         this.setupPopups();
         this.setupSliders();
@@ -18,6 +19,7 @@ class UIController {
         this.setupResize();
         this.setupCheckboxes();
         this.updateSizePresets();
+        console.log('✅ UIController初期化完了');
     }
     
     setupToolButtons() {
@@ -48,10 +50,16 @@ class UIController {
         this.toolSystem.setTool(tool);
         
         document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
-        document.getElementById(tool + '-tool').classList.add('active');
+        const toolButton = document.getElementById(tool + '-tool');
+        if (toolButton) {
+            toolButton.classList.add('active');
+        }
         
         const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
-        document.getElementById('current-tool').textContent = toolNames[tool] || tool;
+        const toolDisplay = document.getElementById('current-tool');
+        if (toolDisplay) {
+            toolDisplay.textContent = toolNames[tool] || tool;
+        }
     }
     
     togglePopup(popupId) {
@@ -95,9 +103,19 @@ class UIController {
     
     createSlider(sliderId, min, max, initial, callback) {
         const container = document.getElementById(sliderId);
+        if (!container) {
+            console.warn(`スライダー ${sliderId} が見つかりません`);
+            return;
+        }
+        
         const track = container.querySelector('.slider-track');
         const handle = container.querySelector('.slider-handle');
         const valueDisplay = container.parentNode.querySelector('.slider-value');
+        
+        if (!track || !handle || !valueDisplay) {
+            console.warn(`スライダー ${sliderId} の要素が不完全です`);
+            return;
+        }
         
         const sliderData = {
             value: initial,
@@ -156,95 +174,81 @@ class UIController {
         };
         
         // ペンサイズ調整ボタン
-        document.getElementById('pen-size-decrease-small')?.addEventListener('click', () => {
-            adjustValue('pen-size-slider', -0.1);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-size-decrease')?.addEventListener('click', () => {
-            adjustValue('pen-size-slider', -1);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-size-decrease-large')?.addEventListener('click', () => {
-            adjustValue('pen-size-slider', -10);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-size-increase-small')?.addEventListener('click', () => {
-            adjustValue('pen-size-slider', 0.1);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-size-increase')?.addEventListener('click', () => {
-            adjustValue('pen-size-slider', 1);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-size-increase-large')?.addEventListener('click', () => {
-            adjustValue('pen-size-slider', 10);
-            this.updateSizePresets();
+        const sizeButtons = [
+            ['pen-size-decrease-small', -0.1],
+            ['pen-size-decrease', -1],
+            ['pen-size-decrease-large', -10],
+            ['pen-size-increase-small', 0.1],
+            ['pen-size-increase', 1],
+            ['pen-size-increase-large', 10]
+        ];
+        
+        sizeButtons.forEach(([id, delta]) => {
+            const btn = document.getElementById(id);
+            if (btn) {
+                btn.addEventListener('click', () => {
+                    adjustValue('pen-size-slider', delta);
+                    this.updateSizePresets();
+                });
+            }
         });
         
         // 不透明度調整ボタン
-        document.getElementById('pen-opacity-decrease-small')?.addEventListener('click', () => {
-            adjustValue('pen-opacity-slider', -0.1);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-opacity-decrease')?.addEventListener('click', () => {
-            adjustValue('pen-opacity-slider', -1);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-opacity-decrease-large')?.addEventListener('click', () => {
-            adjustValue('pen-opacity-slider', -10);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-opacity-increase-small')?.addEventListener('click', () => {
-            adjustValue('pen-opacity-slider', 0.1);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-opacity-increase')?.addEventListener('click', () => {
-            adjustValue('pen-opacity-slider', 1);
-            this.updateSizePresets();
-        });
-        document.getElementById('pen-opacity-increase-large')?.addEventListener('click', () => {
-            adjustValue('pen-opacity-slider', 10);
-            this.updateSizePresets();
+        const opacityButtons = [
+            ['pen-opacity-decrease-small', -0.1],
+            ['pen-opacity-decrease', -1],
+            ['pen-opacity-decrease-large', -10],
+            ['pen-opacity-increase-small', 0.1],
+            ['pen-opacity-increase', 1],
+            ['pen-opacity-increase-large', 10]
+        ];
+        
+        opacityButtons.forEach(([id, delta]) => {
+            const btn = document.getElementById(id);
+            if (btn) {
+                btn.addEventListener('click', () => {
+                    adjustValue('pen-opacity-slider', delta);
+                    this.updateSizePresets();
+                });
+            }
         });
         
         // 筆圧調整ボタン
-        document.getElementById('pen-pressure-decrease-small')?.addEventListener('click', () => {
-            adjustValue('pen-pressure-slider', -0.1);
-        });
-        document.getElementById('pen-pressure-decrease')?.addEventListener('click', () => {
-            adjustValue('pen-pressure-slider', -1);
-        });
-        document.getElementById('pen-pressure-decrease-large')?.addEventListener('click', () => {
-            adjustValue('pen-pressure-slider', -10);
-        });
-        document.getElementById('pen-pressure-increase-small')?.addEventListener('click', () => {
-            adjustValue('pen-pressure-slider', 0.1);
-        });
-        document.getElementById('pen-pressure-increase')?.addEventListener('click', () => {
-            adjustValue('pen-pressure-slider', 1);
-        });
-        document.getElementById('pen-pressure-increase-large')?.addEventListener('click', () => {
-            adjustValue('pen-pressure-slider', 10);
+        const pressureButtons = [
+            ['pen-pressure-decrease-small', -0.1],
+            ['pen-pressure-decrease', -1],
+            ['pen-pressure-decrease-large', -10],
+            ['pen-pressure-increase-small', 0.1],
+            ['pen-pressure-increase', 1],
+            ['pen-pressure-increase-large', 10]
+        ];
+        
+        pressureButtons.forEach(([id, delta]) => {
+            const btn = document.getElementById(id);
+            if (btn) {
+                btn.addEventListener('click', () => {
+                    adjustValue('pen-pressure-slider', delta);
+                });
+            }
         });
         
         // 線補正調整ボタン
-        document.getElementById('pen-smoothing-decrease-small')?.addEventListener('click', () => {
-            adjustValue('pen-smoothing-slider', -0.1);
-        });
-        document.getElementById('pen-smoothing-decrease')?.addEventListener('click', () => {
-            adjustValue('pen-smoothing-slider', -1);
-        });
-        document.getElementById('pen-smoothing-decrease-large')?.addEventListener('click', () => {
-            adjustValue('pen-smoothing-slider', -10);
-        });
-        document.getElementById('pen-smoothing-increase-small')?.addEventListener('click', () => {
-            adjustValue('pen-smoothing-slider', 0.1);
-        });
-        document.getElementById('pen-smoothing-increase')?.addEventListener('click', () => {
-            adjustValue('pen-smoothing-slider', 1);
-        });
-        document.getElementById('pen-smoothing-increase-large')?.addEventListener('click', () => {
-            adjustValue('pen-smoothing-slider', 10);
+        const smoothingButtons = [
+            ['pen-smoothing-decrease-small', -0.1],
+            ['pen-smoothing-decrease', -1],
+            ['pen-smoothing-decrease-large', -10],
+            ['pen-smoothing-increase-small', 0.1],
+            ['pen-smoothing-increase', 1],
+            ['pen-smoothing-increase-large', 10]
+        ];
+        
+        smoothingButtons.forEach(([id, delta]) => {
+            const btn = document.getElementById(id);
+            if (btn) {
+                btn.addEventListener('click', () => {
+                    adjustValue('pen-smoothing-slider', delta);
+                });
+            }
         });
     }
     
@@ -263,8 +267,10 @@ class UIController {
         document.querySelectorAll('.resize-button[data-size]').forEach(btn => {
             btn.addEventListener('click', () => {
                 const [width, height] = btn.getAttribute('data-size').split(',').map(Number);
-                document.getElementById('canvas-width').value = width;
-                document.getElementById('canvas-height').value = height;
+                const widthInput = document.getElementById('canvas-width');
+                const heightInput = document.getElementById('canvas-height');
+                if (widthInput) widthInput.value = width;
+                if (heightInput) heightInput.value = height;
             });
         });
     }
@@ -344,6 +350,8 @@ class UIController {
             const label = preset.querySelector('.size-preview-label');
             const percent = preset.querySelector('.size-preview-percent');
             
+            if (!circle || !label || !percent) return;
+            
             // アクティブ状態の更新
             const isActive = Math.abs(presetSize - currentSize) < 0.1;
             preset.classList.toggle('active', isActive);
@@ -385,21 +393,35 @@ class UIController {
     
     // ステータス表示更新
     updateCanvasInfo(width, height) {
-        document.getElementById('canvas-info').textContent = `${width}×${height}px`;
+        const element = document.getElementById('canvas-info');
+        if (element) {
+            element.textContent = `${width}×${height}px`;
+        }
     }
     
     updateCoordinates(x, y) {
-        document.getElementById('coordinates').textContent = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
+        const element = document.getElementById('coordinates');
+        if (element) {
+            element.textContent = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
+        }
     }
     
     updatePressureMonitor(pressure) {
-        document.getElementById('pressure-monitor').textContent = pressure.toFixed(1) + '%';
+        const element = document.getElementById('pressure-monitor');
+        if (element) {
+            element.textContent = pressure.toFixed(1) + '%';
+        }
     }
     
     resetPressureMonitor() {
-        document.getElementById('pressure-monitor').textContent = '0.0%';
+        const element = document.getElementById('pressure-monitor');
+        if (element) {
+            element.textContent = '0.0%';
+        }
     }
 }
 
 // グローバル公開
-window.UIController = UIController;
+if (typeof window !== 'undefined') {
+    window.UIController = UIController;
+}
