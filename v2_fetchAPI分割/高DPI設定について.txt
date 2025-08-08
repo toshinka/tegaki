@@ -1,0 +1,68 @@
+原因と原理
+高DPIディスプレイ（Retinaディスプレイなど）は、通常のディスプレイの数倍のピクセルを搭載しています。そのため、ブラウザは「デバイスピクセル比（devicePixelRatio）」という値を使って、画像をよりきめ細かく表示しようとします。
+
+400x400というサイズは、CSSピクセル（論理ピクセル）で指定されています。
+
+しかし、お使いの環境が高DPIの場合、ブラウザは内部で400x400の数倍の大きさ（例えば800x800や1200x1200）のネイティブピクセルでレンダリングしようとします。
+
+これにより、CSS上は400x400のままなのに、実際にはより多くのピクセルを使って描画されるため、見た目が大きく感じられたり、描画の座標がずれたりすることがあります。
+
+PixiJSでの対処法
+PixiJSは、この問題を解決するための設定が用意されています。
+
+app-core.jsの以下の部分で、autoDensity: trueを設定することで、PixiJSが自動的に高DPIに対応してくれます。
+
+JavaScript
+
+this.app = new PIXI.Application({
+  width: canvasWidth,
+  height: canvasHeight,
+  backgroundColor: 0xffffff,
+  antialias: true,
+  resolution: window.devicePixelRatio || 1, // ★この行を追加または修正
+  autoDensity: true,                      // ★この行を追加
+});
+resolutionをwindow.devicePixelRatioに設定することで、ブラウザが持つネイティブなピクセル比率をPixiJSに伝えます。これにより、描画されるキャンバスの内部サイズが適切に調整され、表示のズレが解消されます。
+
+この修正を行うことで、「キャンバスが400x400と言いながら少し大きめに見える」という違和感が解消されるはずです。
+
+
+
+■ふたば☆ちゃんねるの手書き欄投稿（400ｘ400サイズ）への投稿モードについて
+
+高DPI環境で描画して、最終的に400x400にリサイズされるという状況では、おっしゃる通り、高DPIモードは必要ないかもしれません。 むしろ、描画時に高DPIモードを無効にしておく方が、最終的な投稿画像と見た目の乖離を減らし、意図した通りの絵を描きやすくなります。
+
+高DPIモードを無効化するメリット
+投稿時の品質予測: 描画中のキャンバスサイズと、最終的に投稿される画像のサイズが一致するため、リサイズによる線の太さの変化やディテールの潰れを予測しやすくなります。
+
+描画感覚の一貫性: 描いているときの筆のストロークや線の太さが、投稿後の絵とほぼ同じになります。
+
+PixiJSでの設定変更
+app-core.jsで高DPIモードを無効にするには、先ほどの修正を以下のように戻します。
+
+JavaScript
+
+this.app = new PIXI.Application({
+  width: canvasWidth,
+  height: canvasHeight,
+  backgroundColor: 0xffffff,
+  antialias: true,
+  // resolution: window.devicePixelRatio || 1, // この行を削除
+  // autoDensity: true,                      // この行も削除
+});
+または、resolution: 1と明示的に設定することもできます。
+
+JavaScript
+
+this.app = new PIXI.Application({
+  width: canvasWidth,
+  height: canvasHeight,
+  backgroundColor: 0xffffff,
+  antialias: true,
+  resolution: 1, // 解像度を1に固定
+});
+この設定にすることで、キャンバスは論理ピクセル通りの400x400でレンダリングされるため、ふたば☆ちゃんねるの手書き欄の仕様に最適化されたツールになります。
+
+ただし、将来的には「アニメ制作ツール」への発展を目指しているとのことなので、DPI設定をユーザーが切り替えられるようにするという選択肢も検討すると良いでしょう。
+
+例えば、設定画面に「高解像度モード」のようなチェックボックスを用意し、チェックが入っているときだけresolution: window.devicePixelRatioを適用するようにすれば、様々な用途に対応できる柔軟なツールになります。この機能も、あなたが提唱したui-manager.jsやconfig-manager.jsのようなファイルで管理すると良いでしょう。
