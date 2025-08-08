@@ -85,6 +85,7 @@
         </div>
     </div>
     
+    <!-- ペンツール設定ポップアップ -->
     <div class="popup-panel pen-settings draggable" id="pen-settings" style="left: 60px; top: 100px;">
         <div class="popup-title">ベクターペンツール設定</div>
         
@@ -116,4 +117,201 @@
                     <div class="size-preview-frame">
                         <div class="size-preview-circle" style="width: 8px; height: 8px;"></div>
                     </div>
-                    <div class="
+                    <div class="size-preview-label">8</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item active" data-size="16">
+                    <div class="size-preview-frame">
+                        <div class="size-preview-circle" style="width: 16px; height: 16px;"></div>
+                    </div>
+                    <div class="size-preview-label">16</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="32">
+                    <div class="size-preview-frame">
+                        <div class="size-preview-circle" style="width: 20px; height: 20px;"></div>
+                    </div>
+                    <div class="size-preview-label">32</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- サイズスライダー -->
+        <div class="slider-container">
+            <div class="setting-label">サイズ<span class="slider-value">16.0px</span></div>
+            <div class="slider-controls">
+                <button class="slider-button small" id="pen-size-decrease-large" title="-10">--</button>
+                <button class="slider-button" id="pen-size-decrease" title="-1">-</button>
+                <button class="slider-button small" id="pen-size-decrease-small" title="-0.1">−</button>
+                <div class="slider" id="pen-size-slider">
+                    <div class="slider-track"></div>
+                    <div class="slider-handle"></div>
+                </div>
+                <button class="slider-button small" id="pen-size-increase-small" title="+0.1">＋</button>
+                <button class="slider-button" id="pen-size-increase" title="+1">+</button>
+                <button class="slider-button small" id="pen-size-increase-large" title="+10">++</button>
+            </div>
+        </div>
+        
+        <!-- 不透明度スライダー -->
+        <div class="slider-container">
+            <div class="setting-label">不透明度<span class="slider-value">85.0%</span></div>
+            <div class="slider-controls">
+                <button class="slider-button small" id="pen-opacity-decrease-large" title="-10">--</button>
+                <button class="slider-button" id="pen-opacity-decrease" title="-1">-</button>
+                <button class="slider-button small" id="pen-opacity-decrease-small" title="-0.1">−</button>
+                <div class="slider" id="pen-opacity-slider">
+                    <div class="slider-track"></div>
+                    <div class="slider-handle"></div>
+                </div>
+                <button class="slider-button small" id="pen-opacity-increase-small" title="+0.1">＋</button>
+                <button class="slider-button" id="pen-opacity-increase" title="+1">+</button>
+                <button class="slider-button small" id="pen-opacity-increase-large" title="+10">++</button>
+            </div>
+        </div>
+        
+        <!-- 筆圧スライダー -->
+        <div class="slider-container">
+            <div class="setting-label">筆圧感度<span class="slider-value">50.0%</span></div>
+            <div class="slider-controls">
+                <button class="slider-button small" id="pen-pressure-decrease-large" title="-10">--</button>
+                <button class="slider-button" id="pen-pressure-decrease" title="-1">-</button>
+                <button class="slider-button small" id="pen-pressure-decrease-small" title="-0.1">−</button>
+                <div class="slider" id="pen-pressure-slider">
+                    <div class="slider-track"></div>
+                    <div class="slider-handle"></div>
+                </div>
+                <button class="slider-button small" id="pen-pressure-increase-small" title="+0.1">＋</button>
+                <button class="slider-button" id="pen-pressure-increase" title="+1">+</button>
+                <button class="slider-button small" id="pen-pressure-increase-large" title="+10">++</button>
+            </div>
+        </div>
+        
+        <!-- 線補正スライダー -->
+        <div class="slider-container">
+            <div class="setting-label">線補正<span class="slider-value">30.0%</span></div>
+            <div class="slider-controls">
+                <button class="slider-button small" id="pen-smoothing-decrease-large" title="-10">--</button>
+                <button class="slider-button" id="pen-smoothing-decrease" title="-1">-</button>
+                <button class="slider-button small" id="pen-smoothing-decrease-small" title="-0.1">−</button>
+                <div class="slider" id="pen-smoothing-slider">
+                    <div class="slider-track"></div>
+                    <div class="slider-handle"></div>
+                </div>
+                <button class="slider-button small" id="pen-smoothing-increase-small" title="+0.1">＋</button>
+                <button class="slider-button" id="pen-smoothing-increase" title="+1">+</button>
+                <button class="slider-button small" id="pen-smoothing-increase-large" title="+10">++</button>
+            </div>
+        </div>
+        
+        <!-- チェックボックス設定 -->
+        <div class="setting-group">
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="pressure-sensitivity"></div>
+                    <span class="checkbox-label">筆圧感度</span>
+                </div>
+                <span class="checkbox-status">有効</span>
+            </div>
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox" id="edge-smoothing"></div>
+                    <span class="checkbox-label">エッジスムージング</span>
+                </div>
+                <span class="checkbox-status">無効</span>
+            </div>
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="gpu-acceleration"></div>
+                    <span class="checkbox-label">GPU加速</span>
+                </div>
+                <span class="checkbox-status">有効</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- リサイズ設定ポップアップ -->
+    <div class="popup-panel resize-settings draggable" id="resize-settings" style="left: 400px; top: 100px;">
+        <div class="popup-title">キャンバスサイズ変更</div>
+        
+        <div class="size-input-group">
+            <div class="size-input-field">
+                <div class="setting-label">幅 (px)</div>
+                <input type="number" class="size-input" id="canvas-width" value="400" min="100" max="4000">
+            </div>
+            <div class="size-multiply">×</div>
+            <div class="size-input-field">
+                <div class="setting-label">高さ (px)</div>
+                <input type="number" class="size-input" id="canvas-height" value="400" min="100" max="4000">
+            </div>
+        </div>
+        
+        <!-- プリセットボタン -->
+        <div class="setting-group">
+            <div class="setting-label">プリセットサイズ</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px;">
+                <button class="resize-button" data-size="400,400">400×400</button>
+                <button class="resize-button" data-size="600,600">600×600</button>
+                <button class="resize-button" data-size="800,600">800×600</button>
+                <button class="resize-button" data-size="1024,768">1024×768</button>
+                <button class="resize-button" data-size="1200,800">1200×800</button>
+                <button class="resize-button" data-size="1920,1080">1920×1080</button>
+            </div>
+        </div>
+        
+        <!-- 適用ボタン -->
+        <div class="resize-buttons">
+            <button class="resize-button" id="apply-resize">適用</button>
+            <button class="resize-button primary" id="apply-resize-center">適用（中央）</button>
+        </div>
+    </div>
+    
+    <!-- ステータスバー -->
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">
+                <span>Tool:</span>
+                <span id="current-tool">ベクターペン</span>
+            </div>
+            <div class="status-item">
+                <span>Canvas:</span>
+                <span id="canvas-info">400×400px</span>
+            </div>
+            <div class="status-item">
+                <span>color:</span>
+                <span id="current-color">#800000</span>
+            </div>
+            <div class="status-item">
+                <span>座標:</span>
+                <span id="coordinates">x: 0, y: 0</span>
+            </div>
+        </div>
+        <div class="status-group">
+            <div class="status-item">
+                <span>筆圧:</span>
+                <span id="pressure-monitor">0.0%</span>
+            </div>
+            <div class="status-item">
+                <span>FPS:</span>
+                <span id="fps">60</span>
+            </div>
+            <div class="status-item">
+                <span>GPU:</span>
+                <span id="gpu-usage">45%</span>
+            </div>
+            <div class="status-item">
+                <span>Memory:</span>
+                <span id="memory-usage">12.3MB</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- スクリプト読み込み（正しい順序で） -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
+    <script src="app-core.js"></script>
+    <script src="drawing-tools.js"></script>
+    <script src="ui-manager.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
