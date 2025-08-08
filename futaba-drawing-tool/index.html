@@ -123,12 +123,73 @@
             </div>
         </div>
         
+        <!-- サイズスライダー（修正版） -->
         <div class="setting-group">
             <div class="setting-label">サイズ</div>
             <div class="slider-controls">
                 <div class="slider-button small" id="pen-size-decrease-small">-0.1</div>
                 <div class="slider-button small" id="pen-size-decrease">-1</div>
                 <div class="slider-button small" id="pen-size-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-size-slider">
+                        <div class="slider-track" id="pen-size-track"></div>
+                        <div class="slider-handle" id="pen-size-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-size-value">16.0px</div>
+                </div>
+                <div class="slider-button small" id="pen-size-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-size-increase">+1</div>
+                <div class="slider-button small" id="pen-size-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <!-- 不透明度スライダー（復活） -->
+        <div class="setting-group">
+            <div class="setting-label">不透明度</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-opacity-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-opacity-decrease">-1</div>
+                <div class="slider-button small" id="pen-opacity-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-opacity-slider">
+                        <div class="slider-track" id="pen-opacity-track"></div>
+                        <div class="slider-handle" id="pen-opacity-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-opacity-value">85.0%</div>
+                </div>
+                <div class="slider-button small" id="pen-opacity-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-opacity-increase">+1</div>
+                <div class="slider-button small" id="pen-opacity-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <!-- 筆圧スライダー -->
+        <div class="setting-group">
+            <div class="setting-label">筆圧</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-pressure-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-pressure-decrease">-1</div>
+                <div class="slider-button small" id="pen-pressure-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-pressure-slider">
+                        <div class="slider-track" id="pen-pressure-track"></div>
+                        <div class="slider-handle" id="pen-pressure-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-pressure-value">50.0%</div>
+                </div>
+                <div class="slider-button small" id="pen-pressure-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-pressure-increase">+1</div>
+                <div class="slider-button small" id="pen-pressure-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <!-- 線補正スライダー -->
+        <div class="setting-group">
+            <div class="setting-label">線補正</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-smoothing-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-smoothing-decrease">-1</div>
+                <div class="slider-button small" id="pen-smoothing-decrease-large">-10</div>
                 <div class="slider-container" style="flex: 1; margin-bottom: 0;">
                     <div class="slider" id="pen-smoothing-slider">
                         <div class="slider-track" id="pen-smoothing-track"></div>
@@ -142,6 +203,7 @@
             </div>
         </div>
         
+        <!-- チェックボックス群 -->
         <div class="setting-group">
             <div class="checkbox-container">
                 <div class="checkbox-left">
@@ -166,6 +228,7 @@
             </div>
         </div>
     </div>
+
     
     <div class="popup-panel resize-settings draggable" id="resize-settings" style="left: 60px; top: 150px;">
         <div class="popup-title">キャンバスリサイズ</div>
