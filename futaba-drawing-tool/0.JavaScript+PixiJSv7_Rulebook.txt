@@ -12,7 +12,7 @@
 ---
 
 ## 2. ファイル構成ルール
-現行の3ファイル構成（fetch API分割前提）：
+現行の4ファイル構成（fetch API分割前提）：
 1. **app-core.js**（旧 core-engine.js）  
    - PixiJSアプリ生成・描画ループ管理・リソースロード。
    - Application / Stage / Renderer 初期化はここに集約。
@@ -22,8 +22,10 @@
 3. **ui-manager.js**（旧 ui-system.js）  
    - UIコンテナ管理・UIイベント処理。
    - UIロジックと描画ロジックは分離する。
-
----
+ 4. **history-manager.js**（新規）
+   - アンドゥ・リドゥ・履歴管理システム。
+   - 操作履歴の記録と復元機能を提供。
+```
 
 ## 3. コードスタイル規約
 ### 命名規則
@@ -50,7 +52,8 @@
 | 設定 | `CONFIG` | 全定数まとめ |
 | 状態 | `state` | 現在の描画設定 |
 | イベント一覧 | `EVENTS` | pointerdown等を定数化 |
-
+| 履歴管理 | `historyManager` | アンドゥ・リドゥ管理 |
+| 履歴エントリ | `historyEntry` | 個別の操作記録 |
 ---
 
 ## 5. PixiJS v7 実装ルール
@@ -78,6 +81,8 @@ stage
 ## 7. 状態管理
 - 描画状態（色、太さ、ツール種別）は`app-core`の`state`に集約
 - Undo/RedoはRenderTexture差分管理
+- 履歴管理は`history-manager.js`の`HistoryManager`で一元管理
+- プリセット変更履歴も含めて記録・復元
 - アニメ・自動描画は`Ticker`で更新
 
 ---
