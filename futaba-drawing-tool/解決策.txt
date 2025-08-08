@@ -1,0 +1,46 @@
+解決策
+以下の手順でindex.htmlを修正することで、JavaScriptファイルを読み込めるようになります。
+
+index.htmlの<body>タグを終了する直前に、以下の3行の<script>タグを追加してください。これにより、HTML要素の読み込みが完了した後にスクリプトが実行されるようになります。
+
+HTML
+
+<script src="core-engine.js"></script>
+<script src="ui-system.js"></script>
+<script src="tools-features.js"></script>
+core-engine.js、ui-system.js、tools-features.jsの順で記述するのが重要です。ui-system.jsはcore-engine.jsで定義されたDrawingEngineクラスを、tools-features.jsはui-system.jsのUIControllerクラスとcore-engine.jsのDrawingEngineクラスを使用しているため、この順番で読み込む必要があります。
+
+次に、アプリケーションを初期化するためのコードをもう一行追加します。これにより、全てのスクリプトが読み込まれた後に、メインの処理が開始されます。
+
+HTML
+
+<script>
+    const app = new FutabaDrawingTool();
+    app.init();
+</script>
+修正後のindex.htmlの全体像
+以下のコードは、修正後のindex.htmlです。これを保存して再度ダブルクリックで開いてみてください。
+
+HTML
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v0.7 - 分割版</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="main-layout">
+        </div>
+
+    <script src="core-engine.js"></script>
+    <script src="ui-system.js"></script>
+    <script src="tools-features.js"></script>
+    <script>
+        const app = new FutabaDrawingTool();
+        app.init();
+    </script>
+</body>
+</html>
