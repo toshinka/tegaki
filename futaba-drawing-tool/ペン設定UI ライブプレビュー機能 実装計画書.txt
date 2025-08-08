@@ -1,0 +1,290 @@
+# 修正版：ペン設定UI ライブプレビュー機能 実装計画書
+
+## 1. 元計画書の問題点と修正
+
+### 🚨 主要な問題点
+1. **PenPresetManager クラスが存在しない** - 実際のコードでは`PresetManager`という名前
+2. **ライブプレビュー機能が部分実装済み** - 一部機能は既に存在
+3. **プリセットデータ構造の誤認** - 静的HTMLベースの実装
+4. **PresetDisplayManager クラスが存在しない** - `PresetManager`内で完結
+
+### 💡 修正された実装方針
+1. 既存の`PresetManager`クラスを拡張してライブプレビュー機能を追加
+2. HTMLの`size-presets`要素を動的に更新する仕組みを実装
+3. `UIManager`のスライダーコールバックから`PresetManager`を更新
+
+## 2. 修正後の実装計画
+
+### A. drawing-tools.js の修正（新規クラス追加）
+既存コードには描画ツール管理のみが含まれているため、**新しく`PenPresetManager`クラスを追加**します。
+
+```javascript
+// 新規追加するクラス
+class PenPresetManager {
+    constructor(app) {
+        this.app = app;
+        this.presets = new Map();
+        this.activePresetId = null;
+        this.currentLiveValues = null; // ライブプレビュー用
+        
+        this.initializeDefaultPresets();
+    }
+    
+    initializeDefaultPresets() {
+        // デフォルトプリセットの定義
+        const defaultPresets = [
+            { id: 'preset-1', size: 1, opacity: 0.85, color: 0x800000, label: '1' },
+            { id: 'preset-2', size: 2, opacity: 0.85, color: 0x800000, label: '2' },
+            { id: 'preset-4', size: 4, opacity: 0.85, color: 0x800000, label: '4' },
+            { id: 'preset-8', size: 8, opacity: 0.85, color: 0x800000, label: '8' },
+            { id: 'preset-16', size: 16, opacity: 0.85, color: 0x800000, label: '16' },
+            { id: 'preset-32', size: 32, opacity: 0.85, color: 0x800000, label: '32' }
+        ];
+        
+        defaultPresets.forEach(preset => {
+            this.presets.set(preset.id, preset);
+        });
+        
+        this.activePresetId = 'preset-16'; // デフォルトをプリセット16に
+    }
+    
+    // ライブプレビュー値を更新
+    updateActivePresetLive(size, opacity, color = null) {
+        if (!this.activePresetId) return;
+        
+        const activePreset = this.presets.get(this.activePresetId);
+        if (!activePreset) return;
+        
+        this.currentLiveValues = {
+            size: size,
+            opacity: opacity,
+            color: color || activePreset.color
+        };
+    }
+    
+    // プレビュー表示用データ生成
+    generatePreviewData() {
+        const previewData = [];
+        
+        this.presets.forEach((preset, presetId) => {
+            const isActive = presetId === this.activePresetId;
+            
+            // アクティブプリセットの場合はライブ値を使用
+            let displayValues = preset;
+            if (isActive && this.currentLiveValues) {
+                displayValues = {
+                    ...preset,
+                    size: this.currentLiveValues.size,
+                    opacity: this.currentLiveValues.opacity,
+                    color: this.currentLiveValues.color
+                };
+            }
+            
+            // プレビュー円のサイズ計算（最大20px制限）
+            const displaySize = Math.min(20, Math.max(0.5, displayValues.size));
+            
+            previewData.push({
+                id: presetId,
+                size: displaySize,
+                opacity: displayValues.opacity,
+                color: this.colorToHex(displayValues.color),
+                label: displayValues.size.toFixed(1),
+                opacityLabel: Math.round(displayValues.opacity * 100) + '%',
+                isActive: isActive
+            });
+        });
+        
+        return previewData;
+    }
+    
+    // プリセット選択
+    selectPreset(presetId) {
+        if (!this.presets.has(presetId)) return false;
+        
+        this.activePresetId = presetId;
+        this.currentLiveValues = null; // ライブ値をクリア
+        
+        return this.presets.get(presetId);
+    }
+    
+    // カラー値を16進数に変換
+    colorToHex(color) {
+        if (typeof color === 'string') return color;
+        return '#' + color.toString(16).padStart(6, '0');
+    }
+    
+    getActivePreset() {
+        return this.presets.get(this.activePresetId);
+    }
+}
+```
+
+### B. ui-manager.js の修正
+既存の`PresetManager`クラスを拡張し、新しい`PenPresetManager`と連携するように修正します。
+
+#### 1. UIManager コンストラクターの修正
+```javascript
+constructor(app, toolsSystem) {
+    this.app = app;
+    this.toolsSystem = toolsSystem;
+    
+    // 新しいプリセット管理を追加
+    this.penPresetManager = new PenPresetManager(app);
+    
+    // 既存のPresetManagerは統合
+    this.popupManager = new PopupManager();
+    this.statusBar = new StatusBarManager();
+    
+    // スライダー管理
+    this.sliders = new Map();
+    
+    // 状態
+    this.isInitialized = false;
+    this.coordinateUpdateThrottle = null;
+}
+```
+
+#### 2. スライダーコールバックの修正
+```javascript
+setupSliders() {
+    // ペンサイズスライダー
+    this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value, displayOnly = false) => {
+        if (!displayOnly) {
+            this.toolsSystem.updateBrushSettings({ size: value });
+            // ライブプレビュー更新
+            const currentOpacity = this.getCurrentOpacity();
+            this.penPresetManager.updateActivePresetLive(value, currentOpacity);
+            this.updatePresetDisplay();
+        }
+        return value.toFixed(1) + 'px';
+    });
+    
+    // 不透明度スライダー
+    this.createSlider('pen-opacity-slider', 0, 100, 85.0, (value, displayOnly = false) => {
+        if (!displayOnly) {
+            this.toolsSystem.updateBrushSettings({ opacity: value / 100 });
+            // ライブプレビュー更新
+            const currentSize = this.getCurrentSize();
+            this.penPresetManager.updateActivePresetLive(currentSize, value / 100);
+            this.updatePresetDisplay();
+        }
+        return value.toFixed(1) + '%';
+    });
+    
+    // その他のスライダーは既存のまま...
+}
+```
+
+#### 3. プリセット表示更新メソッド追加
+```javascript
+// プリセット表示を更新
+updatePresetDisplay() {
+    const previewData = this.penPresetManager.generatePreviewData();
+    const presetsContainer = document.getElementById('size-presets');
+    
+    if (!presetsContainer) return;
+    
+    // 既存の要素を更新
+    const presetItems = presetsContainer.querySelectorAll('.size-preset-item');
+    
+    previewData.forEach((data, index) => {
+        if (index < presetItems.length) {
+            const item = presetItems[index];
+            const circle = item.querySelector('.size-preview-circle');
+            const label = item.querySelector('.size-preview-label');
+            const percent = item.querySelector('.size-preview-percent');
+            
+            if (circle) {
+                circle.style.width = data.size + 'px';
+                circle.style.height = data.size + 'px';
+                circle.style.background = data.color;
+                circle.style.opacity = data.opacity;
+            }
+            
+            if (label) {
+                label.textContent = data.label;
+            }
+            
+            if (percent) {
+                percent.textContent = data.opacityLabel;
+            }
+            
+            // アクティブ状態の更新
+            item.classList.toggle('active', data.isActive);
+        }
+    });
+}
+
+// 現在のサイズを取得
+getCurrentSize() {
+    const sizeSlider = this.sliders.get('pen-size-slider');
+    return sizeSlider ? sizeSlider.value : 16.0;
+}
+
+// 現在の不透明度を取得
+getCurrentOpacity() {
+    const opacitySlider = this.sliders.get('pen-opacity-slider');
+    return opacitySlider ? opacitySlider.value / 100 : 0.85;
+}
+```
+
+#### 4. プリセット選択イベントの追加
+```javascript
+setupPresetListeners() {
+    const presetsContainer = document.getElementById('size-presets');
+    if (!presetsContainer) return;
+    
+    presetsContainer.addEventListener('click', (event) => {
+        const presetItem = event.target.closest('.size-preset-item');
+        if (!presetItem) return;
+        
+        const size = parseFloat(presetItem.getAttribute('data-size'));
+        if (!isNaN(size)) {
+            // プリセット選択
+            const presetId = `preset-${size}`;
+            const preset = this.penPresetManager.selectPreset(presetId);
+            
+            if (preset) {
+                // UIとツールシステムを更新
+                this.updateSliderValue('pen-size-slider', preset.size);
+                this.updateSliderValue('pen-opacity-slider', preset.opacity * 100);
+                
+                this.toolsSystem.updateBrushSettings({
+                    size: preset.size,
+                    opacity: preset.opacity
+                });
+                
+                this.updatePresetDisplay();
+            }
+        }
+    });
+}
+```
+
+## 3. 実装後の動作フロー
+
+1. **スライダー操作時**：
+   - SliderController → UIManager のコールバック
+   - → PenPresetManager.updateActivePresetLive()
+   - → UIManager.updatePresetDisplay()
+   - → HTML要素の更新
+
+2. **プリセット選択時**：
+   - クリックイベント → PenPresetManager.selectPreset()
+   - → スライダー値の更新
+   - → ツールシステムの更新
+   - → プリセット表示の更新
+
+## 4. 動作確認項目
+
+- [ ] ペンサイズスライダー操作時のリアルタイムプレビュー
+- [ ] 不透明度スライダー操作時のリアルタイムプレビュー
+- [ ] プレビュー円の最大サイズ制限（20px）
+- [ ] プリセット選択時のスライダー同期
+- [ ] アクティブプリセットの視覚的ハイライト
+
+## 5. 注意点
+
+- 既存の`PresetManager`クラスは段階的に`PenPresetManager`に統合予定
+- HTML構造は既存のものを活用（大幅な変更なし）
+- ライブプレビュー値は一時的な保持のみ（元データは変更しない）

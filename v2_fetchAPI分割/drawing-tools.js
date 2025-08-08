@@ -1,6 +1,6 @@
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v0.8
- * 描画ツール群 - drawing-tools.js（修正版）
+ * 描画ツール群 - drawing-tools.js
  * 
  * 責務: 各描画ツールや機能をクラス化
  * 依存: app-core.js (PixiDrawingApp, CONFIG, EVENTS)
@@ -220,71 +220,51 @@ class PenPresetManager {
         this.app = app;
         this.presets = new Map();
         this.activePresetId = null;
-        this.currentLiveValues = null;
+        this.currentLiveValues = null; // ライブプレビュー用
         
         this.initializeDefaultPresets();
     }
     
     initializeDefaultPresets() {
-        // デフォルトプリセット（HTMLから移植）
+        // デフォルトプリセットの定義
         const defaultPresets = [
-            { id: 'preset-1', size: 1.0, opacity: 85, color: 0x800000, label: '1' },
-            { id: 'preset-2', size: 2.0, opacity: 85, color: 0x800000, label: '2' },
-            { id: 'preset-4', size: 4.0, opacity: 85, color: 0x800000, label: '4' },
-            { id: 'preset-8', size: 8.0, opacity: 85, color: 0x800000, label: '8' },
-            { id: 'preset-16', size: 16.0, opacity: 85, color: 0x800000, label: '16' },
-            { id: 'preset-32', size: 32.0, opacity: 85, color: 0x800000, label: '32' }
+            { id: 'preset-1', size: 1, opacity: 0.85, color: 0x800000, label: '1' },
+            { id: 'preset-2', size: 2, opacity: 0.85, color: 0x800000, label: '2' },
+            { id: 'preset-4', size: 4, opacity: 0.85, color: 0x800000, label: '4' },
+            { id: 'preset-8', size: 8, opacity: 0.85, color: 0x800000, label: '8' },
+            { id: 'preset-16', size: 16, opacity: 0.85, color: 0x800000, label: '16' },
+            { id: 'preset-32', size: 32, opacity: 0.85, color: 0x800000, label: '32' }
         ];
         
         defaultPresets.forEach(preset => {
-            this.presets.set(preset.id, {
-                ...preset,
-                originalSize: preset.size,
-                timestamp: Date.now()
-            });
+            this.presets.set(preset.id, preset);
         });
         
-        // デフォルトアクティブプリセット（16px）
-        this.activePresetId = 'preset-16';
-        
-        console.log(`✅ ${this.presets.size}個のペンプリセットを初期化`);
+        this.activePresetId = 'preset-16'; // デフォルトをプリセット16に
+        console.log('✅ ペンプリセット初期化完了');
     }
     
-    setActivePreset(presetId) {
-        if (!this.presets.has(presetId)) {
-            console.warn(`未知のプリセット: ${presetId}`);
-            return false;
-        }
-        
-        const preset = this.presets.get(presetId);
-        this.activePresetId = presetId;
-        
-        // アプリケーション状態を更新
-        this.app.updateState({
-            brushSize: preset.size,
-            brushColor: preset.color,
-            opacity: preset.opacity / 100
-        });
-        
-        console.log(`プリセット選択: ${preset.label} (size: ${preset.size}, opacity: ${preset.opacity}%)`);
-        return true;
-    }
-    
-    getActivePreset() {
-        return this.activePresetId ? this.presets.get(this.activePresetId) : null;
-    }
-    
+    // ライブプレビュー値を更新
     updateActivePresetLive(size, opacity, color = null) {
         if (!this.activePresetId) return;
         
-        // ライブ値として保持（プリセット本体は変更しない）
+        const activePreset = this.presets.get(this.activePresetId);
+        if (!activePreset) return;
+        
         this.currentLiveValues = {
             size: size,
             opacity: opacity,
-            color: color || this.getActivePreset().color
+            color: color || activePreset.color
         };
+        
+        console.log('🎨 ライブプレビュー更新:', {
+            preset: this.activePresetId,
+            size: size,
+            opacity: opacity
+        });
     }
     
+    // プレビュー表示用データ生成
     generatePreviewData() {
         const previewData = [];
         
@@ -302,16 +282,17 @@ class PenPresetManager {
                 };
             }
             
-            // プレビュー円のサイズ計算（表示サイズは最大20pxに制限）
+            // プレビュー円のサイズ計算（最大20px制限）
             const displaySize = Math.min(20, Math.max(0.5, displayValues.size));
             
             previewData.push({
                 id: presetId,
-                originalSize: preset.originalSize,
-                size: displaySize,
+                dataSize: preset.size, // data-size属性用の元サイズ
+                size: displaySize, // 表示用のサイズ（20px制限）
                 opacity: displayValues.opacity,
                 color: this.colorToHex(displayValues.color),
-                label: preset.label,
+                label: displayValues.size.toFixed(1),
+                opacityLabel: Math.round(displayValues.opacity * 100) + '%',
                 isActive: isActive
             });
         });
@@ -319,56 +300,54 @@ class PenPresetManager {
         return previewData;
     }
     
-    colorToHex(color) {
-        if (typeof color === 'number') {
-            return '#' + color.toString(16).padStart(6, '0');
-        }
-        return color;
-    }
-    
-    // ==== 公開API ====
-    getAllPresets() {
-        return Array.from(this.presets.entries()).map(([id, preset]) => ({
-            id,
-            ...preset
-        }));
-    }
-    
-    addPreset(id, size, opacity, color, label) {
-        this.presets.set(id, {
-            id,
-            size,
-            opacity,
-            color,
-            label,
-            originalSize: size,
-            timestamp: Date.now()
-        });
+    // プリセット選択
+    selectPreset(presetId) {
+        if (!this.presets.has(presetId)) return false;
         
-        console.log(`プリセット追加: ${label} (${id})`);
-        return true;
+        this.activePresetId = presetId;
+        this.currentLiveValues = null; // ライブ値をクリア
+        
+        const preset = this.presets.get(presetId);
+        console.log('🎯 プリセット選択:', presetId, preset);
+        
+        return preset;
     }
     
-    removePreset(presetId) {
-        if (this.presets.has(presetId)) {
-            this.presets.delete(presetId);
-            
-            // アクティブプリセットが削除された場合、最初のプリセットに切り替え
-            if (this.activePresetId === presetId) {
-                const firstPresetId = this.presets.keys().next().value;
-                if (firstPresetId) {
-                    this.setActivePreset(firstPresetId);
-                }
+    // サイズからプリセットIDを取得
+    getPresetIdBySize(size) {
+        for (const [presetId, preset] of this.presets) {
+            if (Math.abs(preset.size - size) < 0.1) {
+                return presetId;
             }
-            
-            console.log(`プリセット削除: ${presetId}`);
-            return true;
         }
-        return false;
+        return null;
     }
     
-    getPresetCount() {
-        return this.presets.size;
+    // カラー値を16進数に変換
+    colorToHex(color) {
+        if (typeof color === 'string') return color;
+        return '#' + color.toString(16).padStart(6, '0');
+    }
+    
+    getActivePreset() {
+        return this.presets.get(this.activePresetId);
+    }
+    
+    getActivePresetId() {
+        return this.activePresetId;
+    }
+    
+    // プリセット設定を保存
+    savePreset(presetId, size, opacity, color) {
+        if (!this.presets.has(presetId)) return false;
+        
+        const preset = this.presets.get(presetId);
+        preset.size = size;
+        preset.opacity = opacity;
+        preset.color = color;
+        
+        console.log('💾 プリセット保存:', presetId, preset);
+        return true;
     }
 }
 
@@ -623,10 +602,10 @@ class DrawingToolsSystem {
     constructor(app) {
         this.app = app;
         this.toolManager = new ToolManager(app);
-        this.penPresetManager = new PenPresetManager(app); // 追加
         this.performanceMonitor = new PerformanceMonitor();
         this.shortcutManager = new ShortcutManager(this.toolManager, app);
         this.layerSystem = new LayerSystem(app);
+        this.penPresetManager = new PenPresetManager(app); // 追加
         
         this.isInitialized = false;
     }
@@ -641,9 +620,6 @@ class DrawingToolsSystem {
             
             // デフォルトツールをアクティブ化
             this.toolManager.setActiveTool('pen');
-            
-            // デフォルトプリセットを適用
-            this.penPresetManager.setActivePreset('preset-16');
             
             // パフォーマンス監視開始
             this.performanceMonitor.start();
@@ -705,7 +681,7 @@ class DrawingToolsSystem {
         };
     }
     
-    // ==== プリセット管理API（UIManager連携用） ====
+    // ==== ペンプリセット関連 ====
     getPenPresetManager() {
         return this.penPresetManager;
     }
@@ -754,8 +730,7 @@ class DrawingToolsSystem {
             performance: this.getPerformanceStats(),
             layerCount: this.layerSystem.layers.length,
             activeLayer: this.getActiveLayer()?.name,
-            presetCount: this.penPresetManager.getPresetCount(),
-            activePreset: this.penPresetManager.getActivePreset()?.label
+            activePreset: this.penPresetManager.getActivePresetId()
         };
     }
     
@@ -776,9 +751,9 @@ class DrawingToolsSystem {
 if (typeof window !== 'undefined') {
     window.DrawingToolsSystem = DrawingToolsSystem;
     window.ToolManager = ToolManager;
-    window.PenPresetManager = PenPresetManager; // 追加
     window.VectorPenTool = VectorPenTool;
     window.EraserTool = EraserTool;
+    window.PenPresetManager = PenPresetManager; // 追加
     window.PerformanceMonitor = PerformanceMonitor;
     window.ShortcutManager = ShortcutManager;
     window.LayerSystem = LayerSystem;
@@ -788,9 +763,9 @@ if (typeof window !== 'undefined') {
 // export { 
 //     DrawingToolsSystem, 
 //     ToolManager, 
-//     PenPresetManager, // 追加
 //     VectorPenTool, 
 //     EraserTool, 
+//     PenPresetManager, // 追加
 //     PerformanceMonitor, 
 //     ShortcutManager, 
 //     LayerSystem 

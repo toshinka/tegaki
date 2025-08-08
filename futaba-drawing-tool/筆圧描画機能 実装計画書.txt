@@ -1,0 +1,179 @@
+筆圧描画機能 実装計画書
+1. はじめに
+この計画書は、現在のお絵描きツールに筆圧に応じた描画機能を実装するための修正手順を定義するものです。
+
+現状では、UI（ステータスバー）で筆圧がモニターされていますが、これはダミーの表示であり、実際の描画には反映されていません。この修正により、液晶タブレット等で筆圧を変えながら描画した際に、線の太さがリアルタイムに変化するようになります。
+
+2. 修正の基本方針
+修正は以下の3つのステップで進めます。各ファイルが担当する役割を明確にし、連携させて機能を実装します。
+
+【入力の取得】 drawing-tools.js
+
+ペンや消しゴムツールが、ユーザーの操作（pointermove イベント）から実際の筆圧情報 (event.pressure) を取得できるようにします。
+
+【描画の実行】 app-core.js
+
+ツールから渡された筆圧情報を使って、線の太さを動的に計算し、PIXI.Graphics で描画するロジックを実装します。
+
+【UIとの連携】 ui-manager.js
+
+「筆圧感度」のON/OFFを切り替えるチェックボックスを機能させます。
+
+ステータスバーの筆圧モニターが、ダミーの数値ではなくリアルタイムの筆圧を表示するように修正します。
+
+3. ファイル別 修正計画
+各ファイルの具体的な修正内容を以下に示します。
+
+A. app-core.js の修正
+担当: 描画コアの改修。筆圧を基に線を実際に描く心臓部です。
+
+修正内容:
+
+state に pressureSensitivity を追加
+
+筆圧感度のON/OFFを管理するフラグを追加します。
+
+JavaScript
+
+// PixiDrawingApp クラスのコンストラクタ内
+this.state = {
+    // ...既存のstate...
+    pressureSensitivity: true, // 追加：筆圧感度ON/OFF
+    isDrawing: false,
+    currentPath: null
+};
+描画関数 (createPath, extendPath) に pressure 引数を追加
+
+ツールから筆圧の値を受け取れるようにします。
+
+JavaScript
+
+// 変更前
+// createPath(x, y, tool = null)
+// extendPath(path, x, y)
+
+// 変更後
+createPath(x, y, tool = null, pressure = 1.0) { /* ... */ }
+extendPath(path, x, y, pressure = 1.0) { /* ... */ }
+描画ロジックを筆圧対応に変更
+
+extendPath と drawCircle で、筆圧に応じて円の半径を計算するように変更します。
+
+JavaScript
+
+// drawCircle メソッド内
+drawCircle(graphics, x, y, radius, color, opacity) {
+    // ...
+    graphics.drawCircle(x, y, radius); // この radius を筆圧で変える
+    // ...
+}
+
+// extendPath メソッド内
+extendPath(path, x, y, pressure = 1.0) {
+    // ...（距離の計算など）
+
+    // 筆圧を考慮したブラシサイズを計算
+    const currentSize = this.state.pressureSensitivity ? path.size * pressure : path.size;
+
+    // 連続する円で線を描画
+    // ...（forループの中）
+        // このループ内で drawCircle を呼び出す際に、半径を currentSize / 2 にする
+        this.drawCircle(path.graphics, px, py, currentSize / 2, path.color, path.opacity);
+
+    // 筆圧情報も点のデータとして保存する（将来のため）
+    path.points.push({ x, y, size: path.size, pressure: pressure }); 
+}
+※createPath内の初回描画部分も同様に修正します。
+
+B. drawing-tools.js の修正
+担当: ツールからの筆圧情報伝達。ユーザーの入力を検知し、描画コアに「この強さで描いて」と伝えます。
+
+修正内容:
+
+イベントハンドラで筆圧を取得
+
+VectorPenTool と EraserTool の onPointerDown と onPointerMove で、イベントオブジェクトから筆圧を取得します。マウス操作など筆圧がない場合は、デフォルト値 (1.0) を使います。
+
+JavaScript
+
+// VectorPenTool の onPointerDown/onPointerMove メソッド内
+onPointerDown(x, y, event) {
+    // 筆圧を取得 (マウス操作の場合は 1.0 になる)
+    const pressure = event.data.originalEvent.pressure || 1.0;
+
+    // createPath に pressure を渡す
+    this.currentPath = this.app.createPath(x, y, 'pen', pressure); 
+    this.lastPoint = { x, y };
+    // ...
+}
+
+onPointerMove(x, y, event) {
+    if (!this.currentPath || !this.app.state.isDrawing) return;
+
+    // 筆圧を取得
+    const pressure = event.data.originalEvent.pressure || 1.0;
+
+    // 線補正処理
+    const smoothedPoint = this.applySmoothingFilter(x, y);
+
+    // extendPath に pressure を渡す
+    this.app.extendPath(this.currentPath, smoothedPoint.x, smoothedPoint.y, pressure);
+    this.lastPoint = smoothedPoint;
+}
+※EraserToolも同様に修正します。
+
+C. ui-manager.js の修正
+担当: UIとの連携。ユーザーが操作するUIと内部のロジックを繋ぎます。
+
+修正内容:
+
+「筆圧感度」チェックボックスのイベントを実装
+
+チェックボックスが変更されたときに、app.state.pressureSensitivity の値を更新するようにします。
+
+JavaScript
+
+// UIManager クラスの handleCheckboxChange メソッド内
+handleCheckboxChange(checkboxId, isChecked) {
+    switch (checkboxId) {
+        case 'pressure-sensitivity':
+            // app-core の状態を更新する
+            this.app.updateState({ pressureSensitivity: isChecked });
+            console.log('筆圧感度:', isChecked);
+            break;
+        // ... 他のチェックボックス
+    }
+}
+ステータスバーの筆圧モニターをリアルタイム化
+
+setupAppEventListeners 内の pointermove イベントで、実際の筆圧をステータスバーに表示するように変更します。
+
+JavaScript
+
+// UIManager クラスの setupAppEventListeners メソッド内
+this.app.layers.drawingLayer.on(EVENTS.POINTER_MOVE, (event) => {
+    const point = this.app.getLocalPointerPosition(event);
+    this.updateCoordinatesThrottled(point.x, point.y);
+
+    // 実際の筆圧を取得して表示する (0-100%に変換)
+    const pressure = (event.data.originalEvent.pressure || 0) * 100;
+    this.statusBar.updatePressureMonitor(pressure);
+});
+
+this.app.layers.drawingLayer.on(EVENTS.POINTER_UP, () => {
+    // 描画終了時に筆圧モニターを0に戻す
+    this.statusBar.updatePressureMonitor(0);
+});
+4. 動作確認項目
+上記修正後、以下の項目を確認してください。
+
+[ ] 筆圧描画: 液タブなどを使い、筆圧を変化させながら描いたときに、線の太さが滑らかに変わるか。
+
+[ ] マウス描画: マウスで描画したときに、一定の太さ（最大筆圧）で線が描けるか。
+
+[ ] 筆圧感度OFF: ペン設定の「筆圧感度」チェックボックスをOFFにしたとき、筆圧をかけても一定の太さで描画されるか。
+
+[ ] ステータスバー: 描画中にステータスバーの「筆圧」の数値がリアルタイムに変化するか。
+
+5. まとめ
+この計画に沿って修正を行うことで、より本格的なお絵描きツールに不可欠な筆圧描画機能が実装されます。各ファイルの役割分担を意識しながら、一つずつ着実に進めていきましょう。
