@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.2 - 履歴管理統合版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.8 - 修正版</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -229,18 +229,6 @@
                 <span class="checkbox-status">有効</span>
             </div>
         </div>
-        
-        <!-- 履歴管理情報表示（デバッグ用・将来機能） -->
-        <!-- 
-        <div class="setting-group">
-            <div class="setting-label">履歴管理</div>
-            <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                <div>アンドゥ: Ctrl+Z</div>
-                <div>リドゥ: Ctrl+Y</div>
-                <div id="history-status">履歴: 1/1</div>
-            </div>
-        </div>
-        -->
     </div>
     
     <!-- リサイズ設定ポップアップ -->
@@ -324,54 +312,71 @@
         </div>
     </div>
 
-    <!-- 🏛️ 履歴管理対応版のスクリプト読み込み（正しい順序で） -->
+    <!-- 🔧 v1.7修正版 - 正しい初期化順序とファイル構成（Rulebook準拠）-->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
     
-    <!-- 1. コアエンジン -->
+    <!-- 【ステップ1】 コアアプリケーション基盤 -->
     <script src="app-core.js"></script>
     
-    <!-- 2. 履歴管理システム（drawing-toolsより先に読み込み） -->
+    <!-- 【ステップ2】 設定管理システム（高DPI等の基本設定） -->
+    <script src="settings-manager.js"></script>
+    
+    <!-- 【ステップ3】 履歴管理システム（描画前に必要） -->
     <script src="history-manager.js"></script>
     
-    <!-- 3. 描画ツール群（履歴管理統合版） -->
+    <!-- 【ステップ4】 描画ツール群（履歴管理統合版） -->
     <script src="drawing-tools.js"></script>
     
-    <!-- 4. UI管理システム -->
+    <!-- 【ステップ5】 UIコンポーネント群（UI統合管理の前に必要）-->
+    <script src="ui/components.js"></script>
+    
+    <!-- 【ステップ6】 UI統合管理システム -->
     <script src="ui-manager.js"></script>
     
-    <!-- 5. メインエントリーポイント（履歴管理統合版） -->
+    <!-- 【ステップ7】 メイン初期化スクリプト（全システム統合・循環参照解決）-->
     <script src="main.js"></script>
     
-    <!-- 履歴管理機能の説明（開発用コメント） -->
+    <!-- 🏛️ 修正完了内容説明 -->
     <!--
-    🏛️ 履歴管理機能について:
+    🔧 v1.7修正内容（改修計画書対応完了）:
     
-    【自動記録される操作】
+    【解決された問題】
+    1. ✅ history-manager.js 読み込み順序修正（描画ツール前に配置）
+    2. ✅ ui/components.js を ui-manager.js より先に読み込み（依存関係解決）
+    3. ✅ settings-manager.js を早期に読み込み（高DPI設定適用のため）
+    4. ✅ Rulebook準拠の7ファイル構成初期化順序に変更
+    5. ✅ 循環参照問題解決（main.jsで統合初期化）
+    
+    【初期化順序（Rulebook第9章準拠）】
+    1. app-core.js（PixiJSアプリケーション基盤）
+    2. settings-manager.js（設定適用・高DPI等）
+    3. history-manager.js（履歴システム初期化）
+    4. drawing-tools.js（描画ツール初期化）
+    5. ui/components.js（UIコンポーネント初期化）
+    6. ui-manager.js（UI統合・最終調整）
+    7. main.js（システム統合・循環参照解決）
+    
+    【責務分界の明確化】
+    - UI_CONFIG, UI_EVENTS → ui/components.js に集約
+    - SliderController, PopupManager 等 → ui/components.js で定義
+    - PenPresetManager → ui-manager.js 内で定義（重複削除）
+    - 履歴管理 → history-manager.js で完全分離
+    - 設定管理 → settings-manager.js で完全分離
+    
+    【自動記録される操作（履歴機能）】
     - 描画操作（ペン・消しゴム）
-    - プリセット変更
-    - ツール変更
+    - プリセット変更・ツール変更  
     - ブラシ設定変更（サイズ・透明度・筆圧・線補正）
-    - キャンバスリサイズ
-    - キャンバスクリア
+    - キャンバスリサイズ・キャンバスクリア
     
     【ショートカット】
-    - Ctrl+Z: アンドゥ
-    - Ctrl+Y: リドゥ
-    - Ctrl+Shift+Z: リドゥ（代替）
+    - Ctrl+Z: アンドゥ / Ctrl+Y: リドゥ / Ctrl+Shift+Z: リドゥ（代替）
     
-    【メモリ管理】
-    - 最大50履歴まで保存
-    - 古い履歴は自動削除
-    - RenderTexture の適切なクリーンアップ
-    
-    【デバッグ関数】（ブラウザコンソールで使用可能）
-    - undo(): アンドゥ実行
-    - redo(): リドゥ実行 
-    - debugHistory(): 履歴詳細表示
-    - testHistory(): 履歴機能テスト
-    - getHistoryStats(): 履歴統計取得
-    - clearHistory(): 履歴クリア
-    - showSystemStats(): システム統計表示
+    【デバッグ関数（ブラウザコンソール使用可能）】
+    - debugApp(): 全システム状態表示
+    - debugHistory(): 履歴詳細表示  
+    - testSystem(): システムテスト実行
+    - showErrorInfo(): エラー情報表示
     -->
 </body>
 </html>

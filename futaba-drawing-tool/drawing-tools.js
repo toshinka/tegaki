@@ -1,6 +1,11 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.7
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.8
  * 描画ツール群 - drawing-tools.js (履歴管理統合版)
+ * 
+ * 🔧 修繕内容:
+ * 1. ShortcutManager重複削除
+ * 2. StateCapture, StateRestore を history-manager.js からの参照に変更
+ * 3. クラス名統一（main.js の期待値に合わせる）
  * 
  * 責務: 各描画ツールや機能をクラス化・履歴管理との統合
  * 依存: app-core.js (PixiDrawingApp, CONFIG, EVENTS), history-manager.js
@@ -29,8 +34,8 @@ class BaseTool {
     
     // 操作開始時の状態キャプチャ
     captureStartState() {
-        if (this.historyManager) {
-            this.operationStartState = StateCapture.captureDrawingState(this.app);
+        if (this.historyManager && window.InternalStateCapture) {
+            this.operationStartState = window.InternalStateCapture.captureDrawingState(this.app);
         }
     }
     
@@ -250,152 +255,6 @@ class EraserTool extends BaseTool {
     }
 }
 
-// ==== ペンプリセット管理クラス（履歴管理対応版）====
-class PenPresetManager {
-    constructor(drawingToolsSystem, historyManager = null) {
-        this.drawingToolsSystem = drawingToolsSystem;
-        this.historyManager = historyManager;
-        this.presets = new Map();
-        this.activePresetId = null;
-        this.currentLiveValues = null;
-        
-        this.initializeDefaultPresets();
-    }
-    
-    initializeDefaultPresets() {
-        const defaultPresets = [
-            { id: 'preset-1', size: 1, opacity: 0.85, color: 0x800000, label: '1' },
-            { id: 'preset-2', size: 2, opacity: 0.85, color: 0x800000, label: '2' },
-            { id: 'preset-4', size: 4, opacity: 0.85, color: 0x800000, label: '4' },
-            { id: 'preset-8', size: 8, opacity: 0.85, color: 0x800000, label: '8' },
-            { id: 'preset-16', size: 16, opacity: 0.85, color: 0x800000, label: '16' },
-            { id: 'preset-32', size: 32, opacity: 0.85, color: 0x800000, label: '32' }
-        ];
-        
-        defaultPresets.forEach(preset => {
-            this.presets.set(preset.id, preset);
-        });
-        
-        this.activePresetId = 'preset-16';
-        console.log('✅ ペンプリセット初期化完了（履歴管理対応版）');
-    }
-    
-    selectPreset(presetId) {
-        if (!this.presets.has(presetId)) return false;
-        
-        // 履歴管理：変更前の状態をキャプチャ
-        const beforeState = this.historyManager ? 
-            StateCapture.capturePresetState(this) : null;
-        
-        // プリセット選択実行
-        this.activePresetId = presetId;
-        this.currentLiveValues = null;
-        
-        const preset = this.presets.get(presetId);
-        
-        // 履歴管理：変更後の状態を記録
-        if (this.historyManager && beforeState) {
-            const afterState = StateCapture.capturePresetState(this);
-            this.historyManager.recordPresetChange(beforeState, afterState);
-        }
-        
-        console.log('🎯 プリセット選択（履歴対応）:', presetId, preset);
-        
-        return preset;
-    }
-    
-    updateActivePresetLive(size, opacity, color = null) {
-        if (!this.activePresetId) return;
-        
-        const activePreset = this.presets.get(this.activePresetId);
-        if (!activePreset) return;
-        
-        this.currentLiveValues = {
-            size: size,
-            opacity: opacity,
-            color: color || activePreset.color
-        };
-        
-        console.log('🎨 ライブプレビュー更新（履歴対応）:', {
-            preset: this.activePresetId,
-            size: size,
-            opacity: opacity
-        });
-    }
-    
-    generatePreviewData() {
-        const previewData = [];
-        
-        this.presets.forEach((preset, presetId) => {
-            const isActive = presetId === this.activePresetId;
-            
-            let displayValues = preset;
-            if (isActive && this.currentLiveValues) {
-                displayValues = {
-                    ...preset,
-                    size: this.currentLiveValues.size,
-                    opacity: this.currentLiveValues.opacity,
-                    color: this.currentLiveValues.color
-                };
-            }
-            
-            const displaySize = Math.min(20, Math.max(0.5, displayValues.size));
-            
-            previewData.push({
-                id: presetId,
-                dataSize: preset.size,
-                size: displaySize,
-                opacity: displayValues.opacity,
-                color: this.colorToHex(displayValues.color),
-                label: displayValues.size.toFixed(1),
-                opacityLabel: Math.round(displayValues.opacity * 100) + '%',
-                isActive: isActive
-            });
-        });
-        
-        return previewData;
-    }
-    
-    getPresetIdBySize(size) {
-        for (const [presetId, preset] of this.presets) {
-            if (Math.abs(preset.size - size) < 0.1) {
-                return presetId;
-            }
-        }
-        return null;
-    }
-    
-    colorToHex(color) {
-        if (typeof color === 'string') return color;
-        return '#' + color.toString(16).padStart(6, '0');
-    }
-    
-    getActivePreset() {
-        return this.presets.get(this.activePresetId);
-    }
-    
-    getActivePresetId() {
-        return this.activePresetId;
-    }
-    
-    // 履歴復元用のプリセットデータ適用
-    applyPresetData(presetId, presetData) {
-        if (!presetId || !presetData) return false;
-        
-        try {
-            this.activePresetId = presetData.activePresetId || presetId;
-            this.currentLiveValues = presetData.currentLiveValues ? 
-                { ...presetData.currentLiveValues } : null;
-            
-            console.log('🔄 プリセットデータ復元:', presetId, presetData);
-            return true;
-        } catch (error) {
-            console.error('プリセットデータ適用エラー:', error);
-            return false;
-        }
-    }
-}
-
 // ==== ツール管理システム（履歴管理統合版）====
 class ToolManager {
     constructor(app, historyManager = null) {
@@ -456,7 +315,7 @@ class ToolManager {
     }
 }
 
-// ==== ショートカット管理システム（履歴管理対応版）====
+// ==== 🔧 修繕済み：ShortcutManager（重複削除・統合版）====
 class ShortcutManager {
     constructor(toolManager, app, historyManager = null) {
         this.toolManager = toolManager;
@@ -732,7 +591,7 @@ class LayerSystem {
     }
 }
 
-// ==== メインツールシステム統合クラス（履歴管理統合版）====
+// ==== 🔧 修繕済み：メインツールシステム統合クラス（main.js期待クラス名に対応）====
 class DrawingToolsSystem {
     constructor(app) {
         this.app = app;
@@ -742,7 +601,6 @@ class DrawingToolsSystem {
         
         // その他のシステム（履歴管理を依存として渡す）
         this.toolManager = null;
-        this.penPresetManager = null;
         this.performanceMonitor = new PerformanceMonitor();
         this.shortcutManager = null;
         this.layerSystem = new LayerSystem(app);
@@ -759,7 +617,6 @@ class DrawingToolsSystem {
             
             // 2. 履歴管理を依存として他システムを初期化
             this.toolManager = new ToolManager(this.app, this.historyManager);
-            this.penPresetManager = new PenPresetManager(this, this.historyManager);
             this.shortcutManager = new ShortcutManager(
                 this.toolManager, 
                 this.app, 
@@ -783,8 +640,6 @@ class DrawingToolsSystem {
             console.log('  - Ctrl+Y: リドゥ');
             console.log('  - Ctrl+Shift+Z: リドゥ（代替）');
             console.log('  - 描画操作自動記録');
-            console.log('  - プリセット変更記録');
-            console.log('  - ツール変更記録');
             
         } catch (error) {
             console.error('❌ DrawingToolsSystem初期化エラー:', error);
@@ -808,8 +663,8 @@ class DrawingToolsSystem {
     
     updateBrushSettings(settings) {
         // 履歴管理：変更前の設定をキャプチャ
-        const beforeSettings = this.historyManager ? 
-            StateCapture.captureBrushSettings(this) : null;
+        const beforeSettings = this.historyManager && window.InternalStateCapture ? 
+            window.InternalStateCapture.captureBrushSettings(this) : null;
         
         const updates = {};
         
@@ -832,8 +687,8 @@ class DrawingToolsSystem {
         this.app.updateState(updates);
         
         // 履歴管理：変更後の設定を記録
-        if (this.historyManager && beforeSettings) {
-            const afterSettings = StateCapture.captureBrushSettings(this);
+        if (this.historyManager && beforeSettings && window.InternalStateCapture) {
+            const afterSettings = window.InternalStateCapture.captureBrushSettings(this);
             this.historyManager.recordBrushSettingChange(beforeSettings, afterSettings);
         }
         
@@ -858,13 +713,6 @@ class DrawingToolsSystem {
      */
     getHistoryManager() {
         return this.historyManager;
-    }
-    
-    /**
-     * PenPresetManagerへのアクセサー
-     */
-    getPenPresetManager() {
-        return this.penPresetManager;
     }
     
     /**
@@ -1105,12 +953,27 @@ class DrawingToolsSystem {
         // 参照のクリア
         this.historyManager = null;
         this.toolManager = null;
-        this.penPresetManager = null;
         this.shortcutManager = null;
         
         console.log('✅ DrawingToolsSystem破棄完了');
     }
 }
+
+// ==== 🔧 修繕済み：StateCapture・StateRestore の外部参照エイリアス（互換性確保）====
+// main.js が期待する StateCapture, StateRestore クラスへのエイリアス
+const StateCapture = {
+    captureDrawingState: (app) => window.InternalStateCapture?.captureDrawingState(app) || null,
+    capturePresetState: (presetManager) => window.InternalStateCapture?.capturePresetState(presetManager) || null,
+    captureBrushSettings: (toolsSystem) => window.InternalStateCapture?.captureBrushSettings(toolsSystem) || null,
+    captureCanvasSettings: (app) => window.InternalStateCapture?.captureCanvasSettings(app) || null
+};
+
+const StateRestore = {
+    restoreDrawingState: (app, state) => window.InternalStateRestore?.restoreDrawingState(app, state) || false,
+    restorePresetState: (presetManager, uiManager, state) => window.InternalStateRestore?.restorePresetState(presetManager, uiManager, state) || false,
+    restoreBrushSettings: (toolsSystem, uiManager, state) => window.InternalStateRestore?.restoreBrushSettings(toolsSystem, uiManager, state) || false,
+    restoreCanvasSettings: (app, uiManager, state) => window.InternalStateRestore?.restoreCanvasSettings(app, uiManager, state) || false
+};
 
 // ==== エクスポート ====
 if (typeof window !== 'undefined') {
@@ -1118,10 +981,19 @@ if (typeof window !== 'undefined') {
     window.ToolManager = ToolManager;
     window.VectorPenTool = VectorPenTool;
     window.EraserTool = EraserTool;
-    window.PenPresetManager = PenPresetManager;
     window.PerformanceMonitor = PerformanceMonitor;
     window.ShortcutManager = ShortcutManager;
     window.LayerSystem = LayerSystem;
+    
+    // 🔧 修繕済み：main.js が期待するクラス名をエクスポート
+    window.StateCapture = StateCapture;
+    window.StateRestore = StateRestore;
+    
+    console.log('🔧 drawing-tools.js v1.7 修繕版 読み込み完了');
+    console.log('✅ ShortcutManager重複削除');
+    console.log('✅ StateCapture/StateRestore 外部参照修正');
+    console.log('✅ main.js 期待クラス名対応');
+    console.log('📦 利用可能クラス: DrawingToolsSystem, StateCapture, StateRestore');
 }
 
 // ES6 module export (将来のTypeScript移行用)
@@ -1130,8 +1002,9 @@ if (typeof window !== 'undefined') {
 //     ToolManager, 
 //     VectorPenTool, 
 //     EraserTool, 
-//     PenPresetManager,
 //     PerformanceMonitor, 
 //     ShortcutManager, 
-//     LayerSystem 
+//     LayerSystem,
+//     StateCapture,
+//     StateRestore
 // };
