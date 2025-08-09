@@ -1,823 +1,620 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.5
- * メインエントリーポイント - main.js（履歴管理統合版）
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.6
+ * メイン初期化スクリプト - main.js
  * 
- * 依存関係:
- * 1. PIXI.js v7 (CDN)
- * 2. app-core.js -> PixiDrawingApp, CONFIG, EVENTS
- * 3. history-manager.js -> HistoryManager, StateCapture, StateRestore
- * 4. drawing-tools.js -> DrawingToolsSystem (履歴管理統合版)
- * 5. ui-manager.js -> UIManager
+ * 責務: アプリケーション統合初期化・エラーハンドリング・循環参照解決
+ * 依存: 全システムファイル
  * 
- * 新機能:
- * 1. 履歴管理システム統合
- * 2. アンドゥ・リドゥ機能（Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z）
- * 3. 描画操作・プリセット変更・ツール変更の自動履歴記録
- * 4. メモリ効率的な履歴管理
+ * v1.6修正内容:
+ * 1. 循環参照問題の根本解決
+ * 2. 初期化順序の最適化
+ * 3. エラー回復機能の追加
+ * 4. デバッグ機能の強化
  */
 
-// ==== グローバル変数 ====
-let futabaApp = null;          // PixiDrawingApp インスタンス
-let drawingToolsSystem = null; // DrawingToolsSystem インスタンス（履歴管理統合版）
-let uiManager = null;          // UIManager インスタンス
-let historyManager = null;     // HistoryManager インスタンス（drawingToolsSystem経由でアクセス）
+// ==== グローバル状態管理 ====
+const APP_STATE = {
+    initialized: false,
+    initializationStep: 'waiting',
+    error: null,
+    startTime: null,
+    components: {
+        app: null,
+        toolsSystem: null,
+        uiManager: null,
+        historyManager: null,
+        settingsManager: null
+    },
+    stats: {
+        initTime: 0,
+        errorCount: 0,
+        lastError: null
+    }
+};
 
-// ==== 統合UIManager（履歴管理対応版）====
-class IntegratedUIManager extends UIManager {
-    constructor(app, drawingToolsSystem) {
-        // 元のUIManagerをベースクラスとして使用
-        super(app, drawingToolsSystem);
-        
-        // 履歴管理対応版のPenPresetManagerを取得
-        this.penPresetManager = drawingToolsSystem.getPenPresetManager();
-        this.historyManager = drawingToolsSystem.getHistoryManager();
-        this.coordinateUpdateThrottle = null;
-    }
-    
-    async init() {
-        try {
-            console.log('🎯 IntegratedUIManager初期化開始（履歴管理対応版）...');
-            
-            this.setupToolButtons();
-            this.setupPopups();
-            this.setupSliders();
-            this.setupPresetListeners();
-            this.setupResize();
-            this.setupCheckboxes();
-            this.setupEventListeners();
-            this.setupHistoryUI();
-            
-            this.updateAllDisplays();
-            this.startPerformanceMonitoring();
-            
-            console.log('✅ IntegratedUIManager初期化完了（履歴管理対応版）');
-            
-        } catch (error) {
-            console.error('❌ IntegratedUIManager初期化エラー:', error);
-            throw error;
-        }
-    }
-    
-    // ==== 履歴管理UI関連（新機能）====
-    
-    /**
-     * 履歴管理関連UIの設定
-     */
-    setupHistoryUI() {
-        // 履歴情報の定期更新（デバッグ用）
-        if (this.historyManager && HISTORY_CONFIG?.DEBUG_MODE) {
-            setInterval(() => {
-                this.updateHistoryDebugInfo();
-            }, 1000);
-        }
-        
-        // 履歴統計をコンソールに表示（開発用）
-        console.log('🏛️ 履歴管理UI設定完了');
-    }
-    
-    /**
-     * 履歴デバッグ情報の更新
-     */
-    updateHistoryDebugInfo() {
-        if (!this.historyManager) return;
-        
-        const stats = this.historyManager.getStats();
-        const positionInfo = this.historyManager.getPositionInfo();
-        
-        // ステータスバーに履歴情報を表示する場合（将来実装）
-        /*
-        const historyElement = document.getElementById('history-status');
-        if (historyElement) {
-            historyElement.textContent = 
-                `履歴: ${positionInfo.current + 1}/${positionInfo.total} ` +
-                `(${stats.memoryUsageMB}MB)`;
-        }
-        */
-    }
-    
-    // ==== ツールボタン関連（履歴対応版）====
-    
-    setupToolButtons() {
-        document.querySelectorAll('.tool-button').forEach(button => {
-            button.addEventListener('click', (event) => {
-                if (button.classList.contains('disabled')) return;
-                
-                const toolId = button.id;
-                const popupId = button.getAttribute('data-popup');
-                
-                this.handleToolButtonClick(toolId, popupId, button);
-            });
-        });
-        
-        console.log('✅ ツールボタン設定完了（履歴対応版）');
-    }
-    
-    handleToolButtonClick(toolId, popupId, button) {
-        // ツール切り替え（履歴自動記録）
-        if (toolId === 'pen-tool') {
-            this.setActiveTool('pen', button);
-        } else if (toolId === 'eraser-tool') {
-            this.setActiveTool('eraser', button);
-        }
-        
-        // ポップアップ表示/非表示
-        if (popupId) {
-            this.popupManager.togglePopup(popupId);
-        }
-    }
-    
-    setActiveTool(toolName, button) {
-        // DrawingToolsSystemのsetToolを使用（自動的に履歴記録される）
-        if (this.toolsSystem.setTool(toolName)) {
-            document.querySelectorAll('.tool-button').forEach(btn => 
-                btn.classList.remove('active'));
-            if (button) {
-                button.classList.add('active');
-            }
-            
-            this.statusBar.updateCurrentTool(toolName);
-        }
-    }
-    
-    // ==== スライダー関連（履歴対応版）====
-    
-    setupSliders() {
-        // ペンサイズスライダー（履歴自動記録）
-        this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value, displayOnly = false) => {
-            if (!displayOnly) {
-                // DrawingToolsSystemのupdateBrushSettingsを使用（自動履歴記録）
-                this.toolsSystem.updateBrushSettings({ size: value });
-                const currentOpacity = this.getCurrentOpacity();
-                this.penPresetManager.updateActivePresetLive(value, currentOpacity);
-                this.updatePresetsDisplay();
-                this.forceUpdateSliderDisplay('pen-size-slider', value.toFixed(1) + 'px');
-            }
-            return value.toFixed(1) + 'px';
-        });
-        
-        // 不透明度スライダー（履歴自動記録）
-        this.createSlider('pen-opacity-slider', 0, 100, 85.0, (value, displayOnly = false) => {
-            if (!displayOnly) {
-                // DrawingToolsSystemのupdateBrushSettingsを使用（自動履歴記録）
-                this.toolsSystem.updateBrushSettings({ opacity: value / 100 });
-                const currentSize = this.getCurrentSize();
-                this.penPresetManager.updateActivePresetLive(currentSize, value / 100);
-                this.updatePresetsDisplay();
-                this.forceUpdateSliderDisplay('pen-opacity-slider', value.toFixed(1) + '%');
-            }
-            return value.toFixed(1) + '%';
-        });
-        
-        // 筆圧スライダー（履歴自動記録）
-        this.createSlider('pen-pressure-slider', 0, 100, 50.0, (value, displayOnly = false) => {
-            if (!displayOnly) {
-                this.toolsSystem.updateBrushSettings({ pressure: value / 100 });
-                this.forceUpdateSliderDisplay('pen-pressure-slider', value.toFixed(1) + '%');
-            }
-            return value.toFixed(1) + '%';
-        });
-        
-        // 線補正スライダー（履歴自動記録）
-        this.createSlider('pen-smoothing-slider', 0, 100, 30.0, (value, displayOnly = false) => {
-            if (!displayOnly) {
-                this.toolsSystem.updateBrushSettings({ smoothing: value / 100 });
-                this.forceUpdateSliderDisplay('pen-smoothing-slider', value.toFixed(1) + '%');
-            }
-            return value.toFixed(1) + '%';
-        });
-        
-        this.setupSliderButtons();
-        console.log('✅ スライダー設定完了（履歴対応版）');
-    }
-    
-    // 数値表示強制更新メソッド
-    forceUpdateSliderDisplay(sliderId, displayValue) {
-        const slider = this.sliders.get(sliderId);
-        if (slider && slider.elements.valueDisplay) {
-            slider.elements.valueDisplay.textContent = displayValue;
-            slider.elements.valueDisplay.style.opacity = '1';
-        }
-    }
-    
-    // ==== プリセット関連（履歴対応版）====
-    
-    setupPresetListeners() {
-        const presetsContainer = document.getElementById('size-presets');
-        if (!presetsContainer) {
-            console.warn('プリセットコンテナが見つかりません');
-            return;
-        }
-        
-        presetsContainer.addEventListener('click', (event) => {
-            const presetItem = event.target.closest('.size-preset-item');
-            if (!presetItem) return;
-            
-            const size = parseFloat(presetItem.getAttribute('data-size'));
-            if (!isNaN(size)) {
-                const presetId = this.penPresetManager.getPresetIdBySize(size);
-                if (!presetId) return;
-                
-                // プリセット選択（自動的に履歴記録される）
-                const preset = this.penPresetManager.selectPreset(presetId);
-                
-                if (preset) {
-                    this.updateSliderValue('pen-size-slider', preset.size);
-                    this.updateSliderValue('pen-opacity-slider', preset.opacity * 100);
-                    
-                    this.toolsSystem.updateBrushSettings({
-                        size: preset.size,
-                        opacity: preset.opacity
-                    });
-                    
-                    this.updatePresetsDisplay();
-                    
-                    // 数値表示の確実な同期
-                    this.forceUpdateSliderDisplay('pen-size-slider', preset.size.toFixed(1) + 'px');
-                    this.forceUpdateSliderDisplay('pen-opacity-slider', (preset.opacity * 100).toFixed(1) + '%');
-                    
-                    console.log(`プリセット選択（履歴対応）: サイズ${preset.size}, 不透明度${Math.round(preset.opacity * 100)}%`);
-                }
-            }
-        });
-        
-        console.log('✅ プリセットリスナー設定完了（履歴対応版）');
-    }
-    
-    updatePresetsDisplay() {
-        const previewData = this.penPresetManager.generatePreviewData();
-        const presetsContainer = document.getElementById('size-presets');
-        
-        if (!presetsContainer) return;
-        
-        const presetItems = presetsContainer.querySelectorAll('.size-preset-item');
-        
-        previewData.forEach((data, index) => {
-            if (index < presetItems.length) {
-                const item = presetItems[index];
-                const circle = item.querySelector('.size-preview-circle');
-                const label = item.querySelector('.size-preview-label');
-                const percent = item.querySelector('.size-preview-percent');
-                
-                item.setAttribute('data-size', data.dataSize);
-                
-                if (circle) {
-                    circle.style.width = data.size + 'px';
-                    circle.style.height = data.size + 'px';
-                    circle.style.background = data.color;
-                    circle.style.opacity = data.opacity;
-                }
-                
-                if (label) {
-                    label.textContent = data.label;
-                }
-                
-                if (percent) {
-                    percent.textContent = data.opacityLabel;
-                }
-                
-                item.classList.toggle('active', data.isActive);
-            }
-        });
-    }
-    
-    getCurrentSize() {
-        const sizeSlider = this.sliders.get('pen-size-slider');
-        return sizeSlider ? sizeSlider.value : 16.0;
-    }
-    
-    getCurrentOpacity() {
-        const opacitySlider = this.sliders.get('pen-opacity-slider');
-        return opacitySlider ? opacitySlider.value / 100 : 0.85;
-    }
-    
-    // ==== リサイズ関連（履歴対応版）====
-    
-    setupResize() {
-        // プリセットボタン
-        document.querySelectorAll('.resize-button[data-size]').forEach(button => {
-            button.addEventListener('click', () => {
-                const [width, height] = button.getAttribute('data-size').split(',').map(Number);
-                this.setCanvasSize(width, height);
-            });
-        });
-        
-        // 適用ボタン
-        const applyButton = document.getElementById('apply-resize');
-        const applyCenterButton = document.getElementById('apply-resize-center');
-        
-        if (applyButton) {
-            applyButton.addEventListener('click', () => this.applyResize(false));
-        }
-        
-        if (applyCenterButton) {
-            applyCenterButton.addEventListener('click', () => this.applyResize(true));
-        }
-        
-        console.log('✅ リサイズ機能設定完了（履歴対応版）');
-    }
-    
-    setCanvasSize(width, height) {
-        const widthInput = document.getElementById('canvas-width');
-        const heightInput = document.getElementById('canvas-height');
-        
-        if (widthInput) widthInput.value = width;
-        if (heightInput) heightInput.value = height;
-    }
-    
-    applyResize(centerContent) {
-        try {
-            const widthInput = document.getElementById('canvas-width');
-            const heightInput = document.getElementById('canvas-height');
-            
-            if (!widthInput || !heightInput) {
-                console.warn('リサイズ入力要素が見つかりません');
-                return;
-            }
-            
-            const width = parseInt(widthInput.value);
-            const height = parseInt(heightInput.value);
-            
-            if (isNaN(width) || isNaN(height) || width < 100 || height < 100) {
-                console.warn('無効なサイズが指定されました');
-                return;
-            }
-            
-            // 履歴管理：リサイズ前の状態をキャプチャ
-            if (this.historyManager) {
-                const beforeSize = StateCapture.captureCanvasSettings(this.app);
-                
-                // リサイズ実行
-                this.app.resize(width, height, centerContent);
-                
-                // 履歴管理：リサイズ後の状態を記録
-                const afterSize = StateCapture.captureCanvasSettings(this.app);
-                this.historyManager.recordCanvasResize(beforeSize, afterSize);
-            } else {
-                // 履歴管理なしでリサイズ
-                this.app.resize(width, height, centerContent);
-            }
-            
-            this.statusBar.updateCanvasInfo(width, height);
-            this.popupManager.hideAllPopups();
-            
-            console.log(`Canvas resized to ${width}x${height}px (center: ${centerContent}, 履歴記録済み)`);
-            
-        } catch (error) {
-            console.error('リサイズエラー:', error);
-        }
-    }
-    
-    // ==== イベントリスナー関連 ====
-    
-    setupEventListeners() {
-        // ESCキーでのキャンバスクリア（履歴対応）
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && !this.popupManager.activePopup) {
-                // 履歴管理付きクリア
-                if (this.historyManager) {
-                    this.historyManager.recordCanvasClear();
-                }
-                this.app.clear();
-            }
-        });
-        
-        // 描画レイヤーのマウス移動イベント
-        if (this.app.layers && this.app.layers.drawingLayer) {
-            this.app.layers.drawingLayer.on(EVENTS.POINTER_MOVE, (event) => {
-                const point = this.app.getLocalPointerPosition(event);
-                this.updateCoordinatesThrottled(point.x, point.y);
-                
-                if (this.app.state.isDrawing) {
-                    const pressure = Math.min(100, this.app.state.pressure * 100 + Math.random() * 20);
-                    this.updatePressureMonitor(pressure);
-                }
-            });
-            
-            this.app.layers.drawingLayer.on(EVENTS.POINTER_UP, () => {
-                this.updatePressureMonitor(0);
-            });
-        }
-        
-        console.log('✅ イベントリスナー設定完了（履歴対応版）');
-    }
-    
-    updateCoordinatesThrottled(x, y) {
-        if (this.coordinateUpdateThrottle) {
-            clearTimeout(this.coordinateUpdateThrottle);
-        }
-        
-        this.coordinateUpdateThrottle = setTimeout(() => {
-            const coordElement = document.getElementById('coordinates');
-            if (coordElement) {
-                coordElement.textContent = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
-            }
-        }, 16);
-    }
-    
-    updatePressureMonitor(pressure) {
-        const pressureElement = document.getElementById('pressure-monitor');
-        if (pressureElement) {
-            pressureElement.textContent = pressure.toFixed(1) + '%';
-        }
-    }
-    
-    updateAllDisplays() {
-        const stats = this.app.getStats();
-        
-        // キャンバス情報
-        const canvasInfo = document.getElementById('canvas-info');
-        if (canvasInfo) {
-            canvasInfo.textContent = `${stats.width}×${stats.height}px`;
-        }
-        
-        // 現在のツール
-        const currentTool = document.getElementById('current-tool');
-        if (currentTool) {
-            const toolNames = {
-                pen: 'ベクターペン',
-                eraser: '消しゴム'
-            };
-            const activeTool = this.toolsSystem.getCurrentTool();
-            currentTool.textContent = toolNames[activeTool] || activeTool;
-        }
-        
-        // 現在の色
-        const currentColor = document.getElementById('current-color');
-        if (currentColor) {
-            const brushSettings = this.toolsSystem.getBrushSettings();
-            const colorStr = '#' + brushSettings.color.toString(16).padStart(6, '0');
-            currentColor.textContent = colorStr;
-        }
-        
-        // プリセット表示の更新
-        this.updatePresetsDisplay();
-        
-        console.log('✅ 全ディスプレイ更新完了（履歴対応版）');
-    }
-    
-    startPerformanceMonitoring() {
-        let frameCount = 0;
-        let lastTime = performance.now();
-        
-        const updatePerformance = (currentTime) => {
-            frameCount++;
-            const deltaTime = currentTime - lastTime;
-            
-            if (deltaTime >= 1000) {
-                const fps = Math.round((frameCount * 1000) / deltaTime);
-                
-                const fpsElement = document.getElementById('fps');
-                if (fpsElement) {
-                    fpsElement.textContent = fps;
-                }
-                
-                const memoryElement = document.getElementById('memory-usage');
-                if (memoryElement && performance.memory) {
-                    const usedMB = Math.round(performance.memory.usedJSHeapSize / 1024 / 1024 * 10) / 10;
-                    memoryElement.textContent = usedMB + 'MB';
-                }
-                
-                const gpuElement = document.getElementById('gpu-usage');
-                if (gpuElement) {
-                    const gpuUsage = Math.round(40 + Math.random() * 20);
-                    gpuElement.textContent = gpuUsage + '%';
-                }
-                
-                frameCount = 0;
-                lastTime = currentTime;
-            }
-            
-            requestAnimationFrame(updatePerformance);
-        };
-        
-        requestAnimationFrame(updatePerformance);
-        console.log('📊 パフォーマンス監視開始（履歴対応版）');
-    }
-    
-    // ==== 履歴管理公開API ====
-    
-    /**
-     * アンドゥ実行（UI用）
-     */
-    executeUndo() {
-        return this.toolsSystem.undo();
-    }
-    
-    /**
-     * リドゥ実行（UI用）
-     */
-    executeRedo() {
-        return this.toolsSystem.redo();
-    }
-    
-    /**
-     * 履歴統計取得（UI用）
-     */
-    getHistoryStats() {
-        return this.toolsSystem.getHistoryStats();
-    }
-    
-    /**
-     * 履歴デバッグ情報表示
-     */
-    debugHistory() {
-        this.toolsSystem.debugHistory();
+// ==== 初期化ステップ定義 ====
+const INIT_STEPS = {
+    CHECKING_DEPENDENCIES: 'checking_dependencies',
+    CREATING_APP: 'creating_app',
+    CREATING_TOOLS_SYSTEM: 'creating_tools_system',
+    CREATING_UI_MANAGER: 'creating_ui_manager',
+    CREATING_SETTINGS_MANAGER: 'creating_settings_manager',
+    CONNECTING_SYSTEMS: 'connecting_systems',
+    FINAL_SETUP: 'final_setup',
+    COMPLETED: 'completed',
+    ERROR: 'error'
+};
+
+// ==== エラーハンドリングシステム ====
+class InitializationError extends Error {
+    constructor(message, step, originalError = null) {
+        super(message);
+        this.name = 'InitializationError';
+        this.step = step;
+        this.originalError = originalError;
+        this.timestamp = Date.now();
     }
 }
 
-// ==== アプリケーション初期化 ====
-window.addEventListener('DOMContentLoaded', async () => {
+// ==== 依存関係チェック ====
+function checkDependencies() {
+    console.log('🔍 依存関係チェック開始...');
+    
+    const requiredClasses = {
+        // PIXI.js
+        'PIXI': typeof PIXI !== 'undefined',
+        
+        // Core classes
+        'PixiDrawingApp': typeof PixiDrawingApp !== 'undefined',
+        'DrawingToolsSystem': typeof DrawingToolsSystem !== 'undefined',
+        'HistoryManager': typeof HistoryManager !== 'undefined',
+        'SettingsManager': typeof SettingsManager !== 'undefined',
+        'UIManager': typeof UIManager !== 'undefined',
+        
+        // UI Component classes
+        'SliderController': typeof SliderController !== 'undefined',
+        'PopupManager': typeof PopupManager !== 'undefined',
+        'StatusBarManager': typeof StatusBarManager !== 'undefined',
+        
+        // History classes
+        'StateCapture': typeof StateCapture !== 'undefined',
+        'StateRestore': typeof StateRestore !== 'undefined'
+    };
+    
+    const missing = [];
+    const available = [];
+    
+    for (const [className, isAvailable] of Object.entries(requiredClasses)) {
+        if (isAvailable) {
+            available.push(className);
+        } else {
+            missing.push(className);
+        }
+    }
+    
+    console.log(`✅ 利用可能: ${available.length}個`, available);
+    
+    if (missing.length > 0) {
+        console.error(`❌ 不足: ${missing.length}個`, missing);
+        throw new InitializationError(
+            `必要なクラスが見つかりません: ${missing.join(', ')}`,
+            INIT_STEPS.CHECKING_DEPENDENCIES
+        );
+    }
+    
+    console.log('✅ 依存関係チェック完了');
+    return true;
+}
+
+// ==== アプリケーション作成 ====
+async function createApplication() {
+    console.log('🎯 PixiDrawingApp作成中...');
+    
     try {
-        console.log('🚀 ふたば☆ちゃんねる風ベクターお絵描きツール v1.2 起動開始');
-        console.log('✨ 履歴管理統合版 - アンドゥ・リドゥ対応版');
+        const app = new PixiDrawingApp(400, 400);
+        await app.init(); // settings-managerはnullで初期化（後で設定）
         
-        // 依存関係チェック
-        if (typeof PIXI === 'undefined') {
-            throw new Error('PIXI.js が読み込まれていません。CDNの読み込みを確認してください。');
-        }
+        APP_STATE.components.app = app;
+        console.log('✅ PixiDrawingApp作成完了');
         
-        if (typeof PixiDrawingApp === 'undefined') {
-            throw new Error('app-core.js が読み込まれていません。');
-        }
+        return app;
+    } catch (error) {
+        throw new InitializationError(
+            'PixiDrawingApp作成に失敗',
+            INIT_STEPS.CREATING_APP,
+            error
+        );
+    }
+}
+
+// ==== ツールシステム作成 ====
+async function createToolsSystem(app) {
+    console.log('🔧 DrawingToolsSystem作成中...');
+    
+    try {
+        const toolsSystem = new DrawingToolsSystem(app);
+        await toolsSystem.init();
         
-        if (typeof HistoryManager === 'undefined') {
-            throw new Error('history-manager.js が読み込まれていません。');
-        }
+        APP_STATE.components.toolsSystem = toolsSystem;
+        console.log('✅ DrawingToolsSystem作成完了');
         
-        if (typeof DrawingToolsSystem === 'undefined') {
-            throw new Error('drawing-tools.js が読み込まれていません。');
-        }
-        
-        if (typeof UIManager === 'undefined') {
-            throw new Error('ui-manager.js が読み込まれていません。');
-        }
-        
-        // 1. コアアプリケーション初期化
-        console.log('🎯 Step 1: コアアプリケーション初期化');
-        futabaApp = new PixiDrawingApp(400, 400);
-        await futabaApp.init();
-        
-        // 2. 描画ツールシステム初期化（履歴管理統合版）
-        console.log('🎯 Step 2: 描画ツールシステム初期化（履歴管理統合版）');
-        drawingToolsSystem = new DrawingToolsSystem(futabaApp);
-        await drawingToolsSystem.init();
-        
-        // 3. 履歴管理システムの参照取得
-        historyManager = drawingToolsSystem.getHistoryManager();
-        
-        // 4. UI管理システム初期化（履歴管理統合版）
-        console.log('🎯 Step 3: UI管理システム初期化（履歴管理統合版）');
-        uiManager = new IntegratedUIManager(futabaApp, drawingToolsSystem);
+        return toolsSystem;
+    } catch (error) {
+        throw new InitializationError(
+            'DrawingToolsSystem作成に失敗',
+            INIT_STEPS.CREATING_TOOLS_SYSTEM,
+            error
+        );
+    }
+}
+
+// ==== UI管理システム作成 ====
+async function createUIManager(app, toolsSystem) {
+    console.log('🎭 UIManager作成中...');
+    
+    try {
+        const uiManager = new UIManager(app, toolsSystem);
         await uiManager.init();
         
-        console.log('🎉 アプリケーション起動完了！');
-        console.log('💡 新機能（履歴管理）:');
-        console.log('  🏛️ アンドゥ・リドゥ機能');
-        console.log('    - Ctrl+Z: アンドゥ');
-        console.log('    - Ctrl+Y: リドゥ');
-        console.log('    - Ctrl+Shift+Z: リドゥ（代替）');
-        console.log('  📝 自動履歴記録:');
-        console.log('    - 描画操作（ペン・消しゴム）');
-        console.log('    - プリセット変更');
-        console.log('    - ツール変更');
-        console.log('    - ブラシ設定変更');
-        console.log('    - キャンバスリサイズ');
-        console.log('    - キャンバスクリア');
-        console.log('  🧠 メモリ効率管理:');
-        console.log('    - 最大50履歴保存');
-        console.log('    - RenderTexture自動クリーンアップ');
-        console.log('    - メモリ使用量監視');
+        APP_STATE.components.uiManager = uiManager;
+        console.log('✅ UIManager作成完了');
         
-        console.log('💡 改善ポイント:');
-        console.log('  ✅ 分割アーキテクチャ対応');
-        console.log('  ✅ プリセット配置改善');
-        console.log('  ✅ スライダー数値表示修正');
-        console.log('  ✅ ショートカット体系整備');
-        console.log('  ✅ 履歴管理システム統合');
+        return uiManager;
+    } catch (error) {
+        throw new InitializationError(
+            'UIManager作成に失敗',
+            INIT_STEPS.CREATING_UI_MANAGER,
+            error
+        );
+    }
+}
+
+// ==== 設定管理システム作成 ====
+async function createSettingsManager(app, toolsSystem, uiManager) {
+    console.log('⚙️ SettingsManager作成中...');
+    
+    try {
+        // 履歴管理システムは toolsSystem から取得
+        const historyManager = toolsSystem.getHistoryManager();
         
-        console.log('💡 利用可能機能:');
-        console.log('  ✅ ベクターペン描画 (線補正付き)');
-        console.log('  ✅ 消しゴムツール');
-        console.log('  ✅ プリセット選択');
-        console.log('  ✅ キャンバスリサイズ');
-        console.log('  ✅ ライブプレビュー更新');
-        console.log('  ✅ ショートカット (B: ペン, E: 消しゴム, ESC: クリア)');
-        console.log('  ✅ 履歴管理 (Ctrl+Z: アンドゥ, Ctrl+Y: リドゥ)');
+        const settingsManager = new SettingsManager(
+            app, 
+            toolsSystem, 
+            uiManager, 
+            historyManager
+        );
         
-        // 成功通知
-        if (uiManager && uiManager.showNotification) {
-            uiManager.showNotification('履歴管理統合版起動完了！アンドゥ・リドゥ利用可能', 'success', 4000);
+        await settingsManager.init();
+        
+        APP_STATE.components.settingsManager = settingsManager;
+        console.log('✅ SettingsManager作成完了');
+        
+        return settingsManager;
+    } catch (error) {
+        throw new InitializationError(
+            'SettingsManager作成に失敗',
+            INIT_STEPS.CREATING_SETTINGS_MANAGER,
+            error
+        );
+    }
+}
+
+// ==== システム間連携設定 ====
+async function connectSystems() {
+    console.log('🔗 システム間連携設定中...');
+    
+    try {
+        const { app, toolsSystem, uiManager, settingsManager } = APP_STATE.components;
+        const historyManager = toolsSystem.getHistoryManager();
+        
+        // 1. AppCore に SettingsManager を設定
+        if (app.setSettingsManager) {
+            app.setSettingsManager(settingsManager);
         }
         
-        // ==== デバッグ用グローバル関数 ====
+        // 2. UIManager に履歴管理と設定管理を設定
+        if (uiManager.setHistoryManager) {
+            uiManager.setHistoryManager(historyManager);
+        }
+        if (uiManager.setSettingsManager) {
+            uiManager.setSettingsManager(settingsManager);
+        }
         
-        window.getAppStatus = () => {
-            if (!futabaApp || !drawingToolsSystem || !uiManager) {
-                return { error: 'アプリケーションが初期化されていません' };
-            }
-            
-            return {
-                app: futabaApp.getStats(),
-                drawingTools: drawingToolsSystem.getSystemStats(),
-                ui: uiManager.getUIStats ? uiManager.getUIStats() : 'N/A',
-                history: drawingToolsSystem.getHistoryStats(),
-                timestamp: new Date().toISOString()
-            };
-        };
-        
-        window.clearCanvas = () => {
-            if (futabaApp && historyManager) {
-                historyManager.recordCanvasClear();
-                futabaApp.clear();
-                console.log('Canvas cleared (履歴記録済み)');
-            }
-        };
-        
-        window.testPreview = () => {
-            if (uiManager && uiManager.penPresetManager) {
-                console.log('🎨 プレビューデータテスト（履歴対応版）:');
-                const previewData = uiManager.penPresetManager.generatePreviewData();
-                previewData.forEach((data, index) => {
-                    console.log(`  プリセット${index + 1}: サイズ${data.label}, 表示${data.size}px, アクティブ:${data.isActive}`);
-                });
-            }
-        };
-        
-        window.switchTool = (toolName) => {
-            if (drawingToolsSystem) {
-                const result = drawingToolsSystem.setTool(toolName);
-                console.log(`ツール切り替え（履歴記録済み）: ${toolName} -> ${result ? '成功' : '失敗'}`);
-                return result;
-            }
-            return false;
-        };
-        
-        // ==== 履歴管理デバッグ関数 ====
-        
-        window.undo = () => {
-            if (drawingToolsSystem) {
-                const result = drawingToolsSystem.undo();
-                console.log(`アンドゥ実行: ${result ? '成功' : '失敗'}`);
-                return result;
-            }
-            return false;
-        };
-        
-        window.redo = () => {
-            if (drawingToolsSystem) {
-                const result = drawingToolsSystem.redo();
-                console.log(`リドゥ実行: ${result ? '成功' : '失敗'}`);
-                return result;
-            }
-            return false;
-        };
-        
-        window.getHistoryStats = () => {
-            if (drawingToolsSystem) {
-                return drawingToolsSystem.getHistoryStats();
-            }
-            return null;
-        };
-        
-        window.getHistoryList = () => {
-            if (drawingToolsSystem) {
-                return drawingToolsSystem.getHistoryList();
-            }
-            return [];
-        };
-        
-        window.debugHistory = () => {
-            if (drawingToolsSystem) {
-                drawingToolsSystem.debugHistory();
-            } else {
-                console.warn('履歴管理システムが利用できません');
-            }
-        };
-        
-        window.testHistory = () => {
-            if (drawingToolsSystem) {
-                drawingToolsSystem.testHistoryFunction();
-            } else {
-                console.warn('履歴管理システムが利用できません');
-            }
-        };
-        
-        window.clearHistory = () => {
-            if (drawingToolsSystem) {
-                drawingToolsSystem.clearHistory();
-                console.log('履歴をクリアしました');
-            }
-        };
-        
-        window.toggleHistoryDebug = () => {
-            if (drawingToolsSystem) {
-                drawingToolsSystem.toggleHistoryDebug();
-            }
-        };
-        
-        // ==== 既存のデバッグ関数（修正版）====
-        
-        window.testSliderUpdate = () => {
-            if (uiManager) {
-                console.log('🔧 スライダー数値表示テスト（履歴対応版）:');
-                uiManager.forceUpdateSliderDisplay('pen-size-slider', '16.0px');
-                uiManager.forceUpdateSliderDisplay('pen-opacity-slider', '85.0%');
-                console.log('  数値表示を強制更新しました');
-            }
-        };
-        
-        window.testPresetSync = () => {
-            if (uiManager && uiManager.penPresetManager) {
-                console.log('🎯 プリセット同期テスト（履歴対応版）:');
-                const preset = uiManager.penPresetManager.selectPreset('preset-8');
-                if (preset) {
-                    uiManager.updateSliderValue('pen-size-slider', preset.size);
-                    uiManager.updateSliderValue('pen-opacity-slider', preset.opacity * 100);
-                    uiManager.forceUpdateSliderDisplay('pen-size-slider', preset.size.toFixed(1) + 'px');
-                    uiManager.forceUpdateSliderDisplay('pen-opacity-slider', (preset.opacity * 100).toFixed(1) + '%');
-                    console.log('  プリセット8に切り替え、数値同期完了（履歴記録済み）');
+        // 3. 設定変更イベントの接続
+        if (settingsManager && uiManager) {
+            settingsManager.on('settings:changed', (event) => {
+                if (uiManager.handleSettingChange) {
+                    uiManager.handleSettingChange(event.key, event.newValue);
                 }
-            }
-        };
+            });
+            
+            settingsManager.on('settings:loaded', (event) => {
+                if (uiManager.handleSettingsLoaded) {
+                    uiManager.handleSettingsLoaded(event.settings);
+                }
+            });
+        }
         
-        // ==== システム統計表示関数 ====
+        // 4. グローバル参照設定（デバッグ用）
+        window.app = app;
+        window.toolsSystem = toolsSystem;
+        window.uiManager = uiManager;
+        window.historyManager = historyManager;
+        window.settingsManager = settingsManager;
         
-        window.showSystemStats = () => {
-            console.group('📊 システム統計情報');
-            
-            if (futabaApp) {
-                console.log('🎯 コアアプリ:', futabaApp.getStats());
-            }
-            
-            if (drawingToolsSystem) {
-                console.log('🛠️ 描画ツール:', drawingToolsSystem.getSystemStats());
-            }
-            
-            if (historyManager) {
-                console.log('🏛️ 履歴管理:', historyManager.getStats());
-                console.log('📚 履歴リスト:', historyManager.getHistoryList());
-            }
-            
-            console.groupEnd();
-        };
-        
-        // 初回システム統計表示（開発用）
-        setTimeout(() => {
-            console.log('');
-            console.log('🎯 起動後システム状態:');
-            window.showSystemStats();
-            console.log('');
-            console.log('💡 利用可能なデバッグ関数:');
-            console.log('  - getAppStatus(): アプリ全体の状態取得');
-            console.log('  - clearCanvas(): 履歴付きキャンバスクリア');
-            console.log('  - undo(): アンドゥ実行');
-            console.log('  - redo(): リドゥ実行');
-            console.log('  - debugHistory(): 履歴デバッグ情報表示');
-            console.log('  - testHistory(): 履歴機能テスト実行');
-            console.log('  - clearHistory(): 履歴クリア');
-            console.log('  - showSystemStats(): システム統計表示');
-            console.log('  - toggleHistoryDebug(): 履歴デバッグモード切り替え');
-        }, 1000);
+        console.log('✅ システム間連携設定完了');
         
     } catch (error) {
-        console.error('❌ アプリケーション起動エラー:', error);
-        showStartupError(error);
+        throw new InitializationError(
+            'システム間連携設定に失敗',
+            INIT_STEPS.CONNECTING_SYSTEMS,
+            error
+        );
     }
-});
+}
 
-// ==== エラー表示 ====
-function showStartupError(error) {
-    const errorDiv = document.createElement('div');
-    errorDiv.innerHTML = `
-        <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-                    background: #ffebee; border: 2px solid #f44336; border-radius: 8px; 
-                    padding: 20px; max-width: 500px; z-index: 10000; 
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                    box-shadow: 0 8px 24px rgba(244, 67, 54, 0.3);">
-            <h3 style="color: #f44336; margin: 0 0 12px 0; font-size: 18px;">
-                🚨 アプリケーション起動エラー（履歴管理統合版）
-            </h3>
-            <p style="margin: 0 0 12px 0; color: #333; line-height: 1.5;">
-                ${error.message}
-            </p>
-            <details style="margin: 12px 0; color: #666;">
-                <summary style="cursor: pointer; font-weight: 500;">
-                    詳細情報を表示
-                </summary>
-                <pre style="margin: 8px 0 0 0; font-size: 12px; overflow: auto; max-height: 200px;">
-${error.stack || 'スタック情報なし'}
-                </pre>
-            </details>
-            <p style="margin: 12px 0 0 0; font-size: 12px; color: #666;">
-                💡 ブラウザのコンソール（F12）で詳細を確認できます<br>
-                🏛️ 履歴管理機能が正常に動作するか確認してください
-            </p>
-            <button onclick="this.parentElement.parentElement.remove()" 
-                    style="margin: 12px 0 0 0; padding: 8px 16px; background: #f44336; 
-                           color: white; border: none; border-radius: 4px; cursor: pointer;">
-                閉じる
-            </button>
+// ==== 最終セットアップ ====
+async function finalSetup() {
+    console.log('🎨 最終セットアップ中...');
+    
+    try {
+        const { app, toolsSystem, uiManager, settingsManager } = APP_STATE.components;
+        
+        // 1. 初期表示更新
+        if (uiManager.updateAllDisplays) {
+            uiManager.updateAllDisplays();
+        }
+        
+        // 2. アプリケーションエラーハンドラー設定
+        setupGlobalErrorHandlers();
+        
+        // 3. デバッグ機能設定
+        setupDebugFunctions();
+        
+        // 4. パフォーマンス監視開始の確認
+        const performanceStats = toolsSystem.getPerformanceStats();
+        console.log('📊 パフォーマンス監視状態:', {
+            fps: performanceStats.fps || 'N/A',
+            memoryUsage: performanceStats.memoryUsage || 'N/A'
+        });
+        
+        // 5. アプリケーション状態の最終確認
+        const appStats = app.getStats();
+        const systemStats = toolsSystem.getSystemStats();
+        const uiStats = uiManager.getUIStats();
+        
+        console.log('📈 システム状態確認:');
+        console.log('  - App:', appStats);
+        console.log('  - Tools:', systemStats);
+        console.log('  - UI:', uiStats);
+        
+        console.log('✅ 最終セットアップ完了');
+        
+    } catch (error) {
+        throw new InitializationError(
+            '最終セットアップに失敗',
+            INIT_STEPS.FINAL_SETUP,
+            error
+        );
+    }
+}
+
+// ==== グローバルエラーハンドラー設定 ====
+function setupGlobalErrorHandlers() {
+    // JavaScript エラー
+    window.addEventListener('error', (event) => {
+        console.error('🚨 アプリケーションエラー:', {
+            message: event.message,
+            filename: event.filename,
+            line: event.lineno,
+            column: event.colno,
+            error: event.error
+        });
+        
+        APP_STATE.stats.errorCount++;
+        APP_STATE.stats.lastError = {
+            type: 'javascript',
+            message: event.message,
+            timestamp: Date.now()
+        };
+        
+        // UI通知（利用可能な場合）
+        if (APP_STATE.components.uiManager && APP_STATE.components.uiManager.showError) {
+            APP_STATE.components.uiManager.showError(
+                `アプリケーションエラー: ${event.message}`,
+                8000
+            );
+        }
+    });
+    
+    // Promise エラー
+    window.addEventListener('unhandledrejection', (event) => {
+        console.error('🚨 未処理のPromiseエラー:', event.reason);
+        
+        APP_STATE.stats.errorCount++;
+        APP_STATE.stats.lastError = {
+            type: 'promise',
+            message: event.reason?.message || String(event.reason),
+            timestamp: Date.now()
+        };
+    });
+    
+    console.log('🛡️ グローバルエラーハンドラー設定完了');
+}
+
+// ==== デバッグ機能設定 ====
+function setupDebugFunctions() {
+    // グローバルデバッグ関数
+    window.debugApp = function() {
+        console.group('🔍 アプリケーションデバッグ情報');
+        console.log('状態:', APP_STATE);
+        
+        if (APP_STATE.components.app) {
+            console.log('App統計:', APP_STATE.components.app.getStats());
+        }
+        
+        if (APP_STATE.components.toolsSystem) {
+            console.log('Tools統計:', APP_STATE.components.toolsSystem.getSystemStats());
+        }
+        
+        if (APP_STATE.components.uiManager) {
+            console.log('UI統計:', APP_STATE.components.uiManager.getUIStats());
+        }
+        
+        if (APP_STATE.components.settingsManager) {
+            console.log('Settings統計:', APP_STATE.components.settingsManager.getSettingsInfo());
+        }
+        
+        console.groupEnd();
+    };
+    
+    // 履歴デバッグ関数
+    window.debugHistory = function() {
+        if (APP_STATE.components.toolsSystem) {
+            APP_STATE.components.toolsSystem.debugHistory();
+        } else {
+            console.warn('ToolsSystemが利用できません');
+        }
+    };
+    
+    // システムテスト関数
+    window.testSystem = function() {
+        if (APP_STATE.components.toolsSystem) {
+            APP_STATE.components.toolsSystem.testHistoryFunction();
+        } else {
+            console.warn('ToolsSystemが利用できません');
+        }
+    };
+    
+    // エラー情報表示関数
+    window.showErrorInfo = function() {
+        console.group('🚨 エラー情報');
+        console.log('エラー統計:', APP_STATE.stats);
+        console.log('最後のエラー:', APP_STATE.stats.lastError);
+        console.groupEnd();
+    };
+    
+    console.log('🐛 デバッグ機能設定完了');
+    console.log('📝 利用可能なデバッグ関数:');
+    console.log('  - window.debugApp() - アプリ全体の状態表示');
+    console.log('  - window.debugHistory() - 履歴システムの詳細');
+    console.log('  - window.testSystem() - システムテスト実行');
+    console.log('  - window.showErrorInfo() - エラー情報表示');
+}
+
+// ==== 初期化ステップ更新関数 ====
+function updateInitStep(step, details = null) {
+    APP_STATE.initializationStep = step;
+    
+    const stepMessages = {
+        [INIT_STEPS.CHECKING_DEPENDENCIES]: '依存関係チェック中...',
+        [INIT_STEPS.CREATING_APP]: 'アプリケーション作成中...',
+        [INIT_STEPS.CREATING_TOOLS_SYSTEM]: 'ツールシステム作成中...',
+        [INIT_STEPS.CREATING_UI_MANAGER]: 'UI管理システム作成中...',
+        [INIT_STEPS.CREATING_SETTINGS_MANAGER]: '設定管理システム作成中...',
+        [INIT_STEPS.CONNECTING_SYSTEMS]: 'システム連携設定中...',
+        [INIT_STEPS.FINAL_SETUP]: '最終セットアップ中...',
+        [INIT_STEPS.COMPLETED]: '初期化完了！',
+        [INIT_STEPS.ERROR]: '初期化エラー'
+    };
+    
+    console.log(`📋 ${stepMessages[step] || step}`, details || '');
+}
+
+// ==== メイン初期化関数 ====
+async function initializeApplication() {
+    try {
+        APP_STATE.startTime = performance.now();
+        console.log('🚀 ふたば☆ちゃんねる風ベクターお絵描きツール v1.6 初期化開始');
+        
+        // 1. 依存関係チェック
+        updateInitStep(INIT_STEPS.CHECKING_DEPENDENCIES);
+        checkDependencies();
+        
+        // 2. アプリケーション作成
+        updateInitStep(INIT_STEPS.CREATING_APP);
+        const app = await createApplication();
+        
+        // 3. ツールシステム作成
+        updateInitStep(INIT_STEPS.CREATING_TOOLS_SYSTEM);
+        const toolsSystem = await createToolsSystem(app);
+        
+        // 4. UI管理システム作成
+        updateInitStep(INIT_STEPS.CREATING_UI_MANAGER);
+        const uiManager = await createUIManager(app, toolsSystem);
+        
+        // 5. 設定管理システム作成
+        updateInitStep(INIT_STEPS.CREATING_SETTINGS_MANAGER);
+        const settingsManager = await createSettingsManager(app, toolsSystem, uiManager);
+        
+        // 6. システム間連携設定
+        updateInitStep(INIT_STEPS.CONNECTING_SYSTEMS);
+        await connectSystems();
+        
+        // 7. 最終セットアップ
+        updateInitStep(INIT_STEPS.FINAL_SETUP);
+        await finalSetup();
+        
+        // 8. 初期化完了
+        updateInitStep(INIT_STEPS.COMPLETED);
+        APP_STATE.initialized = true;
+        APP_STATE.stats.initTime = performance.now() - APP_STATE.startTime;
+        
+        // 初期化完了ログ
+        console.log('🎉 アプリケーション初期化完了！');
+        console.log(`⏱️ 初期化時間: ${APP_STATE.stats.initTime.toFixed(2)}ms`);
+        console.log('🎨 描画の準備ができました！');
+        
+        // システム概要表示
+        console.group('📋 システム概要');
+        console.log('🖼️  キャンバス: 400×400px');
+        console.log('🖊️  ペンツール: 線補正・筆圧対応');
+        console.log('🧽 消しゴム: 背景色描画方式');
+        console.log('🏛️  履歴管理: Ctrl+Z/Ctrl+Y 対応');
+        console.log('⚙️  設定管理: 高DPI・ショートカット対応');
+        console.log('🎯 プリセット: 6段階サイズ・ライブプレビュー');
+        console.groupEnd();
+        
+        // UI通知
+        if (uiManager && uiManager.showNotification) {
+            uiManager.showNotification(
+                'アプリケーション初期化完了！',
+                'success',
+                3000
+            );
+        }
+        
+        return true;
+        
+    } catch (error) {
+        // エラーハンドリング
+        updateInitStep(INIT_STEPS.ERROR, error);
+        APP_STATE.error = error;
+        APP_STATE.stats.errorCount++;
+        APP_STATE.stats.lastError = {
+            type: 'initialization',
+            message: error.message,
+            step: error.step || 'unknown',
+            timestamp: Date.now()
+        };
+        
+        console.error('💥 アプリケーション初期化失敗:', {
+            step: error.step,
+            message: error.message,
+            originalError: error.originalError,
+            stack: error.stack
+        });
+        
+        // エラー表示（可能であれば）
+        showInitializationError(error);
+        
+        return false;
+    }
+}
+
+// ==== 初期化エラー表示 ====
+function showInitializationError(error) {
+    const errorContainer = document.createElement('div');
+    errorContainer.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: linear-gradient(135deg, #ff4444, #cc0000);
+        color: white;
+        padding: 30px;
+        border-radius: 15px;
+        z-index: 10000;
+        max-width: 500px;
+        text-align: center;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    `;
+    
+    errorContainer.innerHTML = `
+        <div style="font-size: 48px; margin-bottom: 20px;">⚠️</div>
+        <h2 style="margin: 0 0 15px 0; font-size: 24px;">アプリケーション起動エラー</h2>
+        <p style="margin: 0 0 15px 0; font-size: 16px; opacity: 0.9;">
+            ${error.message}
+        </p>
+        <p style="margin: 0 0 20px 0; font-size: 14px; opacity: 0.7;">
+            エラーステップ: ${error.step}
+        </p>
+        <button onclick="location.reload()" style="
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        ">ページを再読み込み</button>
+        <div style="margin-top: 15px; font-size: 12px; opacity: 0.6;">
+            詳細なエラー情報はブラウザのコンソール（F12）をご確認ください。
         </div>
     `;
-    document.body.appendChild(errorDiv);
+    
+    // ホバー効果
+    const button = errorContainer.querySelector('button');
+    button.addEventListener('mouseenter', () => {
+        button.style.background = 'rgba(255, 255, 255, 0.3)';
+    });
+    button.addEventListener('mouseleave', () => {
+        button.style.background = 'rgba(255, 255, 255, 0.2)';
+    });
+    
+    document.body.appendChild(errorContainer);
+}
+
+// ==== 初期化状況監視 ====
+function watchInitialization() {
+    const maxWaitTime = 15000; // 15秒
+    const startTime = Date.now();
+    
+    const checkInterval = setInterval(() => {
+        const elapsedTime = Date.now() - startTime;
+        
+        if (APP_STATE.initialized) {
+            clearInterval(checkInterval);
+            return;
+        }
+        
+        if (elapsedTime > maxWaitTime) {
+            clearInterval(checkInterval);
+            console.warn('⏰ 初期化タイムアウト - 初期化が完了しませんでした');
+            
+            const timeoutError = new InitializationError(
+                '初期化がタイムアウトしました。ページを再読み込みしてください。',
+                APP_STATE.initializationStep || 'timeout'
+            );
+            
+            showInitializationError(timeoutError);
+        }
+        
+        // 進行状況をログ出力（デバッグ用）
+        if (elapsedTime % 5000 === 0) { // 5秒ごと
+            console.log(`⏳ 初期化進行中... ステップ: ${APP_STATE.initializationStep}, 経過時間: ${elapsedTime}ms`);
+        }
+    }, 1000);
+}
+
+// ==== DOM読み込み完了後の初期化実行 ====
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log('📄 DOM読み込み完了');
+        watchInitialization();
+        initializeApplication();
+    });
+} else {
+    console.log('📄 DOM既に読み込み済み');
+    watchInitialization();
+    initializeApplication();
+}
+
+// ==== グローバル状態エクスポート（デバッグ用）====
+if (typeof window !== 'undefined') {
+    window.APP_STATE = APP_STATE;
+    window.INIT_STEPS = INIT_STEPS;
+    window.initializeApplication = initializeApplication; // 手動再初期化用
 }
