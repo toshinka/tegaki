@@ -483,6 +483,55 @@ class DrawingToolsSystem {
     // ==== 履歴管理関連API ====
     
     /**
+     * 履歴管理システムへのアクセサー
+     */
+    getHistoryManager() {
+        return this.historyManager;
+    }
+    
+    /**
+     * アンドゥ実行
+     */
+    undo() {
+        return this.historyManager ? this.historyManager.undo() : false;
+    }
+    
+    /**
+     * リドゥ実行
+     */
+    redo() {
+        return this.historyManager ? this.historyManager.redo() : false;
+    }
+    
+    /**
+     * アンドゥ可能状態
+     */
+    canUndo() {
+        return this.historyManager ? this.historyManager.canUndo() : false;
+    }
+    
+    /**
+     * リドゥ可能状態
+     */
+    canRedo() {
+        return this.historyManager ? this.historyManager.canRedo() : false;
+    }
+    
+    /**
+     * 履歴統計取得
+     */
+    getHistoryStats() {
+        return this.historyManager ? this.historyManager.getStats() : null;
+    }
+    
+    /**
+     * 履歴リスト取得（デバッグ用）
+     */
+    getHistoryList() {
+        return this.historyManager ? this.historyManager.getHistoryList() : [];
+    }
+    
+    /**
      * 履歴記録の有効/無効切り替え
      */
     setHistoryRecording(enabled) {
@@ -520,8 +569,6 @@ class DrawingToolsSystem {
         };
     }
     
-    // ==== デバッグメソッド ====
-    
     /**
      * 履歴の詳細表示（デバッグ用）
      */
@@ -556,8 +603,6 @@ class DrawingToolsSystem {
         
         console.groupEnd();
     }
-    
-    // ==== テスト用メソッド ====
     
     /**
      * 履歴機能のテスト実行
@@ -733,53 +778,3 @@ if (typeof window !== 'undefined') {
 //     StateCapture,
 //     StateRestore
 // };
-     * 履歴管理システムへのアクセサー
-     */
-    getHistoryManager() {
-        return this.historyManager;
-    }
-    
-    /**
-     * アンドゥ実行
-     */
-    undo() {
-        return this.historyManager ? this.historyManager.undo() : false;
-    }
-    
-    /**
-     * リドゥ実行
-     */
-    redo() {
-        return this.historyManager ? this.historyManager.redo() : false;
-    }
-    
-    /**
-     * アンドゥ可能状態
-     */
-    canUndo() {
-        return this.historyManager ? this.historyManager.canUndo() : false;
-    }
-    
-    /**
-     * リドゥ可能状態
-     */
-    canRedo() {
-        return this.historyManager ? this.historyManager.canRedo() : false;
-    }
-    
-    /**
-     * 履歴統計取得
-     */
-    getHistoryStats() {
-        return this.historyManager ? this.historyManager.getStats() : null;
-    }
-    
-    /**
-     * 履歴リスト取得（デバッグ用）
-     */
-    getHistoryList() {
-        return this.historyManager ? this.historyManager.getHistoryList() : [];
-    }
-    
-    /**
-     *
