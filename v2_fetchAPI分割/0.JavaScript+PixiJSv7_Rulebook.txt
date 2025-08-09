@@ -1,4 +1,4 @@
-# JavaScript + PixiJS v7 Rulebook（拡張版）
+# JavaScript + PixiJS v7 Rulebook（UI分割対応版）
 
 ## 1. 基本理念
 - 安定動作・可読性・拡張性を優先し、将来的なTypeScript + Vite + ES6移行を意識する。
@@ -11,8 +11,8 @@
 
 ---
 
-## 2. ファイル構成ルール
-拡張された7ファイル構成（機能拡張版）：
+## 2. ファイル構成ルール（UI分割対応版）
+**責務レベルでの2段階分割**を採用した8ファイル構成：
 
 ### 2.1 コア（必須）ファイル群
 1. **app-core.js**（旧 core-engine.js）  
@@ -23,39 +23,52 @@
    - 各描画ツールや機能（ペン、消しゴム、ベクターペンなど）をクラス化。
    - PixiJS Graphics / Mesh / Container の使用はツール内に閉じる。
 
-3. **ui-manager.js**（旧 ui-system.js）  
-   - UIコンテナ管理・UIイベント処理。
-   - UIロジックと描画ロジックは分離する。
+3. **ui-manager.js**（統括管理専用に縮小）  
+   - UIの統括管理・メイン制御に集約
+   - `UIManager`クラス（メイン統括管理）
+   - `SettingsPanelManager`クラス（UIManagerと密結合のため残存）
 
-4. **history-manager.js**
+4. **ui/components.js**（新規作成）
+   - 独立性の高いUIコンポーネント群を分離
+   - `SliderController`クラス（スライダー操作）
+   - `PopupManager`クラス（ポップアップ管理）
+   - `StatusBarManager`クラス（ステータス表示）
+   - `PresetDisplayManager`クラス（プリセット表示）
+
+5. **history-manager.js**
    - アンドゥ・リドゥ・履歴管理システム。
    - 操作履歴の記録と復元機能を提供。
 
 ### 2.2 拡張機能ファイル群
-5. **settings-manager.js**（新規）
+6. **settings-manager.js**
    - アプリ全体の動作設定を一元管理。
    - 高DPI設定、ショートカット機能、ユーザー設定保存。
-   - 初期段階では複数の責務を担うが、将来的にはリファクタリング予定。
 
-6. **transform-manager.js**（新規）
+7. **transform-manager.js**
    - キャンバス操作とオブジェクト変形の一元管理。
    - キャンバス全体の移動・回転・反転機能。
    - アクティブレイヤー内コンテンツの移動機能。
 
-7. **layer-manager.js**（新規）
+8. **layer-manager.js**
    - レイヤー機能の管理（追加、削除、並び替え）。
    - レイヤー表示・非表示、透明度制御。
    - アクティブレイヤーの管理。
 
-### 2.3 ファイル間依存関係
+### 2.3 ファイル間依存関係（UI分割対応）
 ```
 app-core.js
 ├─ drawing-tools.js
 ├─ ui-manager.js
+│  └─ ui/components.js ★依存追加
 ├─ history-manager.js
 ├─ settings-manager.js
 ├─ transform-manager.js
 └─ layer-manager.js
+
+ui/components.js
+├─ UI_CONFIG（UI設定定数）
+├─ UI_EVENTS（UIイベント定数）
+└─ 4つの独立UIクラス
 
 settings-manager.js
 └─ app-core.js (設定適用)
@@ -69,23 +82,70 @@ layer-manager.js
 └─ history-manager.js (レイヤー操作履歴)
 ```
 
+### 2.4 UI分割の具体的効果
+**分割前（ui-manager.js）**: 約1800行
+- UIManager + 5つのクラス混在
+- 複数の責務が同一ファイルに混在
+
+**分割後（ui-manager.js + ui/components.js）**: 
+- **ui-manager.js**: 約700行（メイン統括管理のみ）
+- **ui/components.js**: 約600行（独立UIコンポーネント群）
+- **ファイルサイズ約60%削減効果**
+
 ---
 
-## 3. コードスタイル規約
+## 3. UIコンポーネント分離ルール
+### 3.1 独立性の高いコンポーネント（ui/components.js移行対象）
+```javascript
+// 移行対象クラスの特徴
+class SliderController {
+    // スライダー操作のみに特化・他システムとの依存最小
+}
+
+class PopupManager {
+    // ポップアップ表示管理のみ・独立性が高い
+}
+
+class StatusBarManager {
+    // ステータス表示のみ・他システムへの影響なし
+}
+
+class PresetDisplayManager {
+    // プリセット表示管理・ツールシステム依存だが分離可能
+}
+```
+
+### 3.2 統括管理残存クラス（ui-manager.js残存）
+```javascript
+// 残存対象クラスの特徴
+class UIManager {
+    // メイン統括管理・全体調整・中央集権的処理
+}
+
+class SettingsPanelManager {
+    // UIManagerと密結合・分離困難・設定パネル専用管理
+}
+```
+
+---
+
+## 4. コードスタイル規約（UI分割対応）
 ### 命名規則
 - **変数 / 関数**: `camelCase`（例：`drawLine`, `pointerPosition`）
 - **定数**: `SCREAMING_SNAKE_CASE`（例：`CANVAS_WIDTH`, `BG_COLOR`）
 - **クラス / コンストラクタ関数**: `PascalCase`（例：`VectorPenTool`, `UIManager`）
-- **イベント名**: 定数化（例：`EVENTS.POINTER_DOWN`）
+- **UIイベント名**: 定数化（例：`UI_EVENTS.SLIDER_CHANGE`）
+- **UI設定定数**: `UI_CONFIG`に集約（例：`UI_CONFIG.POPUP_FADE_TIME`）
 - **PixiJSオブジェクト変数**: 役割接尾辞（`backgroundLayer`, `drawingContainer`）
 
-### 関数名の原則
-- 動詞＋目的語（例：`updateLayer`, `loadTexture`）
-- 1関数1責務
+### UI関連関数名の原則
+- **コンポーネント操作**: `update{Component}`, `show{Component}`, `hide{Component}`
+- **イベント処理**: `handle{Event}`, `on{Event}`
+- **状態管理**: `get{State}`, `set{State}`, `toggle{State}`
 
 ---
 
-## 4. シンボル辞書（推奨用語）
+## 5. シンボル辞書（UI分割対応版）
 | 用途 | 命名例 | 補足 |
 |------|--------|------|
 | アプリ全体 | `app` | PIXI.Application |
@@ -94,100 +154,110 @@ layer-manager.js
 | コンテナ | `{name}Container` | UI部品など |
 | ツール | `{ToolName}Tool` | VectorPenTool, EraserTool |
 | 設定 | `CONFIG` | 全定数まとめ |
+| UI設定 | `UI_CONFIG` | UI専用定数 |
+| UIイベント | `UI_EVENTS` | UI専用イベント定数 |
 | 状態 | `state` | 現在の描画設定 |
-| イベント一覧 | `EVENTS` | pointerdown等を定数化 |
 | 履歴管理 | `historyManager` | アンドゥ・リドゥ管理 |
 | 履歴エントリ | `historyEntry` | 個別の操作記録 |
 | 設定管理 | `settingsManager` | アプリケーション設定管理 |
 | 変形管理 | `transformManager` | キャンバス・オブジェクト変形 |
 | レイヤー管理 | `layerManager` | レイヤー操作管理 |
-| キャンバス変形 | `canvasTransform` | キャンバス全体変形状態 |
-| オブジェクト変形 | `objectTransform` | 個別オブジェクト変形状態 |
-| アクティブレイヤー | `activeLayer` | 現在編集中のレイヤー |
+| UI統括管理 | `uiManager` | UI全体の統括制御 |
+| スライダー制御 | `sliderController` | スライダー操作管理 |
+| ポップアップ管理 | `popupManager` | ポップアップ表示管理 |
+| ステータス管理 | `statusBarManager` | ステータス表示管理 |
+| プリセット表示 | `presetDisplayManager` | プリセット表示管理 |
+| 設定パネル管理 | `settingsPanelManager` | 設定パネル専用管理 |
 
 ---
 
-## 5. PixiJS v7 実装ルール
-- **描画負荷軽減**: 無駄なイベント発火を抑制（例：`interaction.moveWhenInside = true`）
+## 6. PixiJS v7 実装ルール（UI最適化対応）
+- **描画負荷軽減**: 無駄なUIイベント発火を抑制
+- **UI/描画分離**: UIイベントと描画イベントの明確な分離
 - **ステージ構造**:
 
 ```
 stage
-├─ canvasRootContainer（新規：変形管理用）
+├─ canvasRootContainer（変形管理用）
 │  ├─ backgroundLayer
 │  ├─ drawingLayer
 │  │  ├─ layer1Container
 │  │  ├─ layer2Container
 │  │  └─ ...
 │  └─ effectsLayer（将来実装用）
-└─ uiLayer
+└─ uiLayer（UI専用・変形対象外）
 ```
 
-- **リサイズ管理**: `app.renderer.resize()`はUI側で一元管理
-- **テクスチャ再利用**: `Texture.from()`のキャッシュ活用
-- **ベクターペン最適化**: GraphicsよりMesh/Geometryを検討
-- **変形最適化**: マトリックス変換を活用し、個別オブジェクトの座標計算を最小化
+- **UI専用最適化**:
+  - UIコンポーネントは再利用可能に設計
+  - DOM-PixiJS間の座標変換を最小化
+  - UI状態変更時のみ再描画実行
 
 ---
 
-## 6. イベント・入力ルール
-- ツールは常にPixi座標系を使用（`event.data.getLocalPosition(layer)`）
-- UIイベントは`stopPropagation()`で描画層と分離
-- イベント種別は`pointerdown / pointermove / pointerup`で統一
-- 変形操作時は座標変換を考慮した位置計算を実行
+## 7. イベント・入力ルール（UI分割対応）
+- **描画系**: 常にPixi座標系を使用（`event.data.getLocalPosition(layer)`）
+- **UI系**: DOM座標系とPixi座標系の適切な変換
+- **イベント分離**: UIイベントは`stopPropagation()`で描画層と分離
+- **イベント種別**: `pointerdown / pointermove / pointerup`で統一
+- **UI専用イベント**: `UI_EVENTS`定数で一元管理
 
 ---
 
-## 7. 状態管理
-- 描画状態（色、太さ、ツール種別）は`app-core`の`state`に集約
-- アプリケーション設定は`settings-manager`で一元管理
-- キャンバス変形状態は`transform-manager`で管理
-- レイヤー状態は`layer-manager`で管理
-- Undo/RedoはRenderTexture差分管理（`history-manager`）
-- 履歴管理は全操作種別（描画、設定、変形、レイヤー）を統合記録
-- アニメ・自動描画は`Ticker`で更新
+## 8. 状態管理（UI分割対応）
+- **描画状態**: `app-core`の`state`に集約
+- **UI状態**: 各UIコンポーネント内で自己管理
+- **設定状態**: `settings-manager`で一元管理
+- **変形状態**: `transform-manager`で管理
+- **レイヤー状態**: `layer-manager`で管理
+- **履歴管理**: 全操作種別を統合記録（UI操作も含む）
 
 ---
 
-## 8. 各ファイルの詳細責務
+## 9. 各ファイルの詳細責務（UI分割対応版）
 
-### 8.1 settings-manager.js
+### 9.1 ui-manager.js（縮小・統括専用）
+**主責務**: UI全体の統括管理
+- **全体調整**: 各UIコンポーネント間の連携制御
+- **メイン制御**: アプリケーション全体のUI制御
+- **設定パネル**: SettingsPanelManagerクラス（密結合のため残存）
+- **イベント統括**: UI全体のイベントフロー管理
+
+### 9.2 ui/components.js（新規作成）
+**主責務**: 独立UIコンポーネント群
+- **SliderController**: スライダー操作とイベント処理
+- **PopupManager**: ポップアップの表示・非表示・アニメーション
+- **StatusBarManager**: ステータス情報の表示更新
+- **PresetDisplayManager**: プリセットの表示・選択管理
+- **UI_CONFIG**: UI専用設定定数の定義
+- **UI_EVENTS**: UI専用イベント定数の定義
+
+### 9.3 settings-manager.js
 **主責務**: アプリケーション設定の一元管理
 - **高DPI設定**: resolution値の動的切り替え
 - **ショートカットキー**: キーボード入力監視とアクション実行
 - **ユーザー設定**: LocalStorage連携（将来実装）
-- **設定UI**: 設定変更用のダイアログ管理
+- **設定UI**: 設定変更用のダイアログ管理（ui/components.js連携）
 - **設定履歴**: 設定変更も履歴管理対象とする
 
-### 8.2 transform-manager.js
+### 9.4 transform-manager.js
 **主責務**: 変形操作の一元管理
-- **キャンバス変形**: 
-  - 全体移動（パン）
-  - 回転・反転
-  - ズーム（将来実装）
-- **レイヤーコンテンツ変形**:
-  - アクティブレイヤー内オブジェクトの移動
-  - 選択範囲の変形（将来実装）
+- **キャンバス変形**: 全体移動・回転・反転・ズーム
+- **レイヤーコンテンツ変形**: アクティブレイヤー内オブジェクトの移動
 - **座標変換**: 変形状態を考慮した座標計算ユーティリティ
 - **変形履歴**: transform操作も履歴管理対象
 
-### 8.3 layer-manager.js
+### 9.5 layer-manager.js
 **主責務**: レイヤー機能の完全実装
-- **レイヤー管理**:
-  - 作成・削除・複製
-  - 並び替え（Z-order）
-  - 名前変更
-- **レイヤー状態**:
-  - 表示・非表示切り替え
-  - 透明度制御
-  - ロック状態管理
+- **レイヤー管理**: 作成・削除・複製・並び替え・名前変更
+- **レイヤー状態**: 表示・非表示・透明度・ロック状態管理
 - **アクティブレイヤー**: 描画対象レイヤーの管理
 - **レイヤー履歴**: レイヤー操作も履歴管理対象
 
 ---
 
-## 9. 初期化順序（重要）
-機能の依存関係を考慮した推奨初期化順序：
+## 10. 初期化順序（UI分割対応版）
+UI分割を考慮した推奨初期化順序：
 
 1. **app-core.js**: PixiJSアプリケーション基盤
 2. **settings-manager.js**: 設定適用（高DPI等）
@@ -195,163 +265,189 @@ stage
 4. **transform-manager.js**: 変形システム初期化
 5. **drawing-tools.js**: 描画ツール初期化
 6. **history-manager.js**: 履歴システム初期化
-7. **ui-manager.js**: UI統合・最終調整
+7. **ui/components.js**: UIコンポーネント初期化 ★追加
+8. **ui-manager.js**: UI統合・最終調整
 
----
-
-## 10. 禁止事項
-- DOM直接操作（Pixi外の`querySelector`等）  
-- Pixi内部プロパティへの直接アクセス  
-- 複数責務を1関数にまとめる
-- **循環参照の作成**（特にlayer-manager ↔ transform-manager間）
-- **設定値の直接変更**（必ずsettings-manager経由）
-- **レイヤー構造の直接操作**（必ずlayer-manager経由）
-
----
-
-## 11. 全面禁止命名（PixiV7許容版）
-| 禁止 | 禁止理由 | 代替 |
-|------|----------|------|
-| *Handler.js | 処理不明 | *Manager.js or *Processor.js |
-| *Helper.js | 目的不明 | *Utils.js |
-| *Service.js | DI以外禁止 | 具体的な役割名 |
-| Canvas2D*.js | Canvas2D主体禁止 | PixiV7Chrome*.js |
-| WebGL*.js | 古いAPI示唆禁止 | PixiV7WebGPU*.js |
-| Legacy*.js | 古い技術示唆禁止 | PixiV7Modern*.js |
-| Basic*.js | 低性能示唆禁止 | PixiV7Procreate*.js |
-| Simple*.js | 機能制限示唆禁止 | PixiV7Advanced*.js |
-| NonGPU*.js | GPU未活用示唆禁止 | PixiV7GPU*.js |
-
-※ PixiV7は現行テストモデルのため許容。将来PixiV8移行時は`PixiV8Chrome*.js`へ。
-
----
-
-## 12. 最小構造サンプル（拡張版）
-```javascript
-// app-core.js - 基本構造
-const CONFIG = {
-    CANVAS_WIDTH: 400,
-    CANVAS_HEIGHT: 400,
-    BG_COLOR: 0xf0e0d6,
-    DEFAULT_RESOLUTION: 1
-};
-
-const app = new PIXI.Application({
-    width: CONFIG.CANVAS_WIDTH,
-    height: CONFIG.CANVAS_HEIGHT,
-    backgroundColor: CONFIG.BG_COLOR,
-    resolution: CONFIG.DEFAULT_RESOLUTION
-});
-
-// 変形管理用ルートコンテナ
-const canvasRootContainer = new PIXI.Container();
-app.stage.addChild(canvasRootContainer);
-
-// レイヤー構造
-const layers = {
-    backgroundLayer: new PIXI.Container(),
-    drawingLayer: new PIXI.Container(),
-    uiLayer: new PIXI.Container()
-};
-
-canvasRootContainer.addChild(layers.backgroundLayer, layers.drawingLayer);
-app.stage.addChild(layers.uiLayer); // UIは変形対象外
-
-export { app, layers, canvasRootContainer, CONFIG };
+### HTML読み込み順序
+```html
+<!-- UIコンポーネント群を先に読み込み -->
+<script src="ui/components.js"></script>
+<!-- その後UI統括管理を読み込み -->
+<script src="ui-manager.js"></script>
 ```
 
 ---
 
-## 13. 将来移行のための配慮
-- export/importを利用して依存を明示
-- 型情報をコメントで残す（TS変換容易化）
-- ファイル名・変数名を一貫させ、辞書で管理
-- 各Managerクラスは独立性を保ち、相互依存を最小化
+## 11. 禁止事項（UI分割対応）
+- DOM直接操作（Pixi外の`querySelector`等）  
+- Pixi内部プロパティへの直接アクセス  
+- 複数責務を1関数にまとめる
+- **循環参照の作成**（特にUI関連ファイル間）
+- **設定値の直接変更**（必ずsettings-manager経由）
+- **レイヤー構造の直接操作**（必ずlayer-manager経由）
+- **UIコンポーネントの直接操作**（必ずui-manager経由）
 
 ---
 
-## 14. 拡張計画
-### 14.1 即座に実装する機能
-- **アンドゥ・リドゥ**: 開発効率向上のため最優先
-- **高DPI設定**: 開発初期段階での対応が必要
-- **基本ショートカット**: Ctrl+Z, ツール切り替え等
+## 12. UI分割実装ガイドライン
 
-### 14.2 段階的に実装する機能
-- **キャンバス移動・回転**: レイヤー機能の前に実装
-- **レイヤー機能**: 本格実装は最後のフェーズ
-- **タッチ操作**: PC版安定後に実装
+### 12.1 ui/components.js作成時の注意点
+```javascript
+// ✅ 正しい実装例
+const UI_CONFIG = {
+    POPUP_FADE_TIME: 300,
+    SLIDER_UPDATE_THROTTLE: 16,
+    STATUS_UPDATE_INTERVAL: 100
+};
 
-### 14.3 将来拡張予定機能
-- 物理演算システム
-- AIアニメーション機能
-- プラグインシステム
-- クラウド同期機能
+const UI_EVENTS = {
+    SLIDER_CHANGE: 'sliderChange',
+    POPUP_SHOW: 'popupShow',
+    STATUS_UPDATE: 'statusUpdate'
+};
 
----
+class SliderController {
+    constructor() {
+        this.throttleTime = UI_CONFIG.SLIDER_UPDATE_THROTTLE;
+        // 独立性を保つ実装
+    }
+}
 
-## 15. ライブラリ拡張についてのメモ
+// ❌ 避けるべき実装
+class BadSliderController {
+    constructor() {
+        // 他システムへの直接依存は避ける
+        this.drawingTools = window.drawingTools; // NG
+    }
+}
+```
 
-### 15.1 他ライブラリ併用の是非
-PixiJSは描画・イベント・リソース管理を内包しているため、
-追加ライブラリは「描画以外の補助」に限る方が安全です。
+### 12.2 ui-manager.jsリファクタリング方針
+```javascript
+// ✅ 統括管理に集中
+class UIManager {
+    constructor() {
+        // 各コンポーネントの参照のみ保持
+        this.sliderController = new SliderController();
+        this.popupManager = new PopupManager();
+        // 統括的なイベント処理のみ実装
+    }
+    
+    // 全体調整メソッドのみ
+    initializeUI() {
+        // コンポーネント間の連携制御
+    }
+}
 
-**併用しても安全なケース**
-- 入力補助系: hammer.js（ジェスチャー検出）
-- 状態管理: zustandや軽量Redux（ただし単純なstateなら不要）
-- アニメ補助: GSAP（Pixiと相性良）
-- 物理演算: matter.js（Pixi表示オブジェクトと座標同期）
-
-**避けたいケース**
-- React/VueなどのUIフレームワーク直接統合
-- Pixiと別のWebGLレンダラー（Three.jsなど）
-- PixiのTexture/Geometryを直接書き換える外部描画ライブラリ
-
-**理由**:
-PixiJSのイベント・レンダリングループと別のライブラリのループが二重化し、
-AIによるコード補完やバグ診断が難しくなるからです。
-
-### 15.2 Spine導入の考え方
-- **PixiJS v7対応版**: pixi-spine
-- **v8でもサポート予定**だが、内部APIの変更で一部改修が必要になる可能性あり
-
-**メリット**:
-- 高品質2Dアニメーションを実装可能
-- 骨格アニメ＋パーツ差し替えでLive2D風表現も可能
-
----
-
-## 16. パフォーマンス最適化指針
-
-### 16.1 描画最適化
-- **バッチング**: 同一テクスチャのオブジェクトをまとめて描画
-- **オブジェクトプール**: Graphics オブジェクトの再利用
-- **カリング**: 画面外オブジェクトの描画スキップ
-
-### 16.2 メモリ最適化
-- **テクスチャ管理**: 不要になったテクスチャの適切な破棄
-- **履歴制限**: RenderTexture履歴の上限設定
-- **ガベージコレクション**: 定期的な不要オブジェクトのクリーンアップ
-
-### 16.3 インタラクション最適化
-- **イベント最適化**: 不要なイベントリスナーの削除
-- **座標変換キャッシュ**: 頻繁な座標計算のキャッシュ化
-- **描画更新の最適化**: 差分更新による無駄な再描画の抑制
+// ❌ 避けるべき肥大化
+class BadUIManager {
+    // 個別コンポーネントの詳細実装は避ける
+    handleSliderDragDetailed() { /* 詳細実装 */ } // NG
+}
+```
 
 ---
 
-## 17. テスト・デバッグ方針
+## 13. 最小構造サンプル（UI分割対応版）
+```javascript
+// ui/components.js - UIコンポーネント群
+const UI_CONFIG = {
+    POPUP_FADE_TIME: 300,
+    SLIDER_SENSITIVITY: 1.0
+};
 
-### 17.1 開発時デバッグ機能
-- **統計情報表示**: FPS、メモリ使用量、GPU使用率
-- **履歴デバッグ**: 操作履歴の視覚的確認
-- **レイヤー可視化**: レイヤー構造のツリー表示
-- **座標変換デバッグ**: 変形行列の状態表示
+const UI_EVENTS = {
+    SLIDER_CHANGE: 'sliderChange',
+    POPUP_TOGGLE: 'popupToggle'
+};
 
-### 17.2 エラーハンドリング
-- **グレースフル・デグラデーション**: 機能が失敗しても描画は継続
-- **エラー通知**: ユーザーフレンドリーなエラーメッセージ
-- **リカバリ機能**: 致命的エラーからの自動復旧
+class SliderController {
+    constructor() {
+        this.sensitivity = UI_CONFIG.SLIDER_SENSITIVITY;
+    }
+    
+    updateValue(newValue) {
+        // スライダー専用処理
+    }
+}
+
+class PopupManager {
+    show(popupId) {
+        // ポップアップ表示処理
+    }
+}
+
+// ui-manager.js - 統括管理
+class UIManager {
+    constructor() {
+        this.sliderController = new SliderController();
+        this.popupManager = new PopupManager();
+    }
+    
+    initialize() {
+        // 全体調整・連携制御のみ
+    }
+}
+```
 
 ---
 
-この拡張版Rulebookは、現行の4ファイル構成から7ファイル構成への段階的移行を支援し、プロクリエイト級の高機能お絵描きツール開発を目指しています。各ファイルの責務を明確に分離することで、保守性と拡張性を両立させることが可能になります。
+## 14. パフォーマンス最適化指針（UI分割対応）
+
+### 14.1 UI描画最適化
+- **コンポーネント単位でのバッチング**: 同一コンポーネント内の要素をまとめて更新
+- **UI更新の間引き**: 高頻度UIイベントのスロットル処理
+- **DOM-Pixi同期最適化**: 座標変換の最小化
+
+### 14.2 UIメモリ最適化
+- **コンポーネント再利用**: 使い回し可能なUIコンポーネントの設計
+- **イベントリスナー管理**: 不要になったUIイベントリスナーの適切な削除
+- **UI状態キャッシュ**: 頻繁に参照されるUI状態のキャッシュ化
+
+---
+
+## 15. UI分割移行手順
+
+### Phase 1: コンポーネント分離（即実行可能）
+1. **ui/ディレクトリ作成**
+2. **components.js作成**と4クラス移動
+3. **ui-manager.js簡素化**
+4. **index.html更新**（script追加）
+5. **動作確認**
+
+### Phase 2: コードクリーンアップ（Phase 1完了後）
+1. **重複コード削除**
+2. **UI専用ユーティリティ関数抽出**
+3. **イベントハンドリング統一**
+4. **最終テスト**
+
+---
+
+## 16. ふたば☆ちゃんねるカラー（UI分割対応）
+UI分割後も一貫したカラーリングを維持：
+
+```css
+/* Adobe Fresco風ふたば色定義（UI分割対応） */
+:root {
+  --futaba-maroon: #800000;        /* 主線・基調色 */
+  --futaba-light-maroon: #aa5a56;  /* セカンダリ・ボタン */
+  --futaba-medium: #cf9c97;        /* アクセント・ホバー */
+  --futaba-light-medium: #e9c2ba;  /* 境界線・分離線 */
+  --futaba-cream: #f0e0d6;         /* キャンバス背景 */
+  --futaba-background: #ffffee;    /* アプリ背景 */
+}
+
+/* UIコンポーネント専用カラー */
+.ui-component {
+  background: var(--futaba-background);
+  border: 1px solid var(--futaba-light-medium);
+}
+
+.ui-component:hover {
+  background: var(--futaba-medium);
+}
+```
+
+---
+
+この改修版Rulebookは、UIManagerのリファクタリングを反映し、責務レベルでの2段階分割によるファイル構成を採用しています。8ファイル構成により、保守性と開発効率の向上を実現し、プロクリエイト級の高機能お絵描きツール開発を支援します。
