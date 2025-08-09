@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.6 - 統合版</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles2.css">
 </head>
 <body>
     <div class="main-layout">
@@ -311,22 +311,22 @@
     <!-- 2. UIコンポーネント（基盤UIシステム） -->
     <script src="ui/components.js"></script>
     
-    <!-- 3. 描画ツール（描画エンジン） -->
-    <script src="drawing-tools.js"></script>
-    
-    <!-- 4. 履歴管理（状態管理） -->
+    <!-- 3. 履歴管理（状態管理）- StateCapture クラスを含むため先に読み込み -->
     <script src="history-manager.js"></script>
+    
+    <!-- 4. 描画ツール（描画エンジン） -->
+    <script src="drawing-tools.js"></script>
     
     <!-- 5. 設定管理（システム設定） -->
     <script src="settings-manager.js"></script>
     
-    <!-- 6. UI管理（統合UI制御） -->
+    <!-- 6. UI管理（統合UI制御） - 正しいファイル名に修正 -->
     <script src="ui-manager.js"></script>
     
     <!-- 7. アプリケーション統合・起動 -->
     <script>
         /**
-         * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.5
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.6
          * アプリケーション統合起動スクリプト
          * 
          * このスクリプトは、全システムを正しい順序で初期化し、統合します。
@@ -345,7 +345,7 @@
         // 初期化関数
         async function initializeApplication() {
             try {
-                console.log('🚀 ふたば☆ちゃんねる風ベクターお絵描きツール v1.5 起動開始');
+                console.log('🚀 ふたば☆ちゃんねる風ベクターお絵描きツール v1.6 起動開始');
                 console.time('アプリケーション起動時間');
                 
                 // 1. PixiJSアプリケーションコア初期化
@@ -360,9 +360,9 @@
                 await toolsSystem.init();
                 window.FutabaApp.toolsSystem = toolsSystem;
                 
-                // 3. 履歴管理システム初期化
-                console.log('📚 3. 履歴管理システム初期化中...');
-                const historyManager = new HistoryManager(app, toolsSystem);
+                // 3. 履歴管理システム初期化（toolsSystem内で既に初期化済み）
+                console.log('📚 3. 履歴管理システム取得中...');
+                const historyManager = toolsSystem.getHistoryManager();
                 window.FutabaApp.historyManager = historyManager;
                 
                 // 4. UI管理システム初期化
@@ -431,7 +431,7 @@
         // ウェルカムメッセージ表示
         function showWelcomeMessage() {
             const message = `
-🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.5 へようこそ！
+🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.6 へようこそ！
 
 📋 使い方:
 • P: ペンツール切り替え
@@ -549,12 +549,65 @@ ${error.message}
             });
         };
         
+        // 依存関係チェック関数
+        function validateDependencies() {
+            const required = [
+                { name: 'PIXI', desc: 'PIXI.js v7ライブラリ' },
+                { name: 'PixiDrawingApp', desc: 'アプリケーションコア (app-core.js)' },
+                { name: 'StateCapture', desc: '状態キャプチャクラス (history-manager.js)' },
+                { name: 'HistoryManager', desc: '履歴管理システム (history-manager.js)' },
+                { name: 'DrawingToolsSystem', desc: 'ツールシステム (drawing-tools.js)' },
+                { name: 'UIManager', desc: 'UI管理システム (ui-manager.js)' },
+                { name: 'SettingsManager', desc: '設定管理システム (settings-manager.js)' }
+            ];
+            
+            const missing = [];
+            const loaded = [];
+            
+            for (const dep of required) {
+                if (typeof window[dep.name] === 'undefined') {
+                    missing.push(dep);
+                } else {
+                    loaded.push(dep);
+                }
+            }
+            
+            console.group('🔍 依存関係チェック結果');
+            console.log(`✅ 読み込み済み: ${loaded.length}個`);
+            loaded.forEach(dep => console.log(`  - ${dep.name}: ${dep.desc}`));
+            
+            if (missing.length > 0) {
+                console.error(`❌ 不足している依存関係: ${missing.length}個`);
+                missing.forEach(dep => console.error(`  - ${dep.name}: ${dep.desc}`));
+                console.groupEnd();
+                throw new Error(`必要な依存関係が不足しています: ${missing.map(d => d.name).join(', ')}`);
+            } else {
+                console.log('🎉 すべての依存関係が正常に読み込まれました');
+            }
+            
+            console.groupEnd();
+        }
+        
         // DOM読み込み完了後に初期化実行
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initializeApplication);
+            document.addEventListener('DOMContentLoaded', () => {
+                try {
+                    validateDependencies();
+                    initializeApplication();
+                } catch (error) {
+                    console.error('❌ 依存関係チェックエラー:', error);
+                    showErrorMessage(error);
+                }
+            });
         } else {
             // すでに読み込み完了している場合は即実行
-            initializeApplication();
+            try {
+                validateDependencies();
+                initializeApplication();
+            } catch (error) {
+                console.error('❌ 依存関係チェックエラー:', error);
+                showErrorMessage(error);
+            }
         }
         
         // ページ離脱時のクリーンアップ
