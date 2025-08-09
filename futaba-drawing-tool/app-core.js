@@ -1,30 +1,35 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev4
- * アプリケーションコア - app-core.js（設定動的化版）
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev5
+ * アプリケーションコア - app-core.js（Phase2: デフォルト値変更版）
+ * 
+ * 🔧 v1rev5b修正内容（Phase2: デフォルト値変更）:
+ * 1. ✅ DEFAULT_BRUSH_SIZE: 16 → 4 に変更
+ * 2. ✅ DEFAULT_OPACITY: 0.85 → 1.0 (100%) に変更
+ * 3. ✅ ペンサイズ最大値: 100 → 500 に変更（updateBrushSettings対応）
  * 
  * 責務: PixiJSアプリ生成・描画ループ管理・リソースロード・設定連携
  * 依存: PIXI.js v7, settings-manager.js
  * 
- * 修正内容:
- * 1. CONFIG の動的化（高DPI設定対応）
- * 2. SettingsManager 連携
- * 3. アプリケーション再初期化メソッド追加
- * 4. 設定変更イベント対応
+ * Phase2目標: デフォルト値の仕様変更に対応
  */
 
-// ==== 動的設定定数（settings-manager連携） ====
+// ==== 動的設定定数（Phase2: デフォルト値変更版）====
 const CONFIG = {
     // キャンバス設定
     CANVAS_WIDTH: 400,
     CANVAS_HEIGHT: 400,
     BG_COLOR: 0xf0e0d6,
     
-    // 描画設定
-    DEFAULT_BRUSH_SIZE: 16.0,
+    // 🆕 Phase2: 描画設定のデフォルト値変更
+    DEFAULT_BRUSH_SIZE: 4.0,         // 16.0 → 4.0 に変更
     DEFAULT_BRUSH_COLOR: 0x800000,
-    DEFAULT_OPACITY: 0.85,
+    DEFAULT_OPACITY: 1.0,            // 0.85 → 1.0 (100%) に変更
     DEFAULT_PRESSURE: 0.5,
     DEFAULT_SMOOTHING: 0.3,
+    
+    // 🆕 Phase2: ペンサイズ範囲拡張
+    MIN_BRUSH_SIZE: 0.1,
+    MAX_BRUSH_SIZE: 500,             // 100 → 500 に変更
     
     // パフォーマンス設定（動的取得）
     ANTIALIAS: true,
@@ -65,10 +70,14 @@ const EVENTS = {
     // 設定関連イベント（新規追加）
     SETTINGS_APPLIED: 'settings:applied',
     HIGH_DPI_CHANGED: 'highDpi:changed',
-    APP_REINITIALIZED: 'app:reinitialized'
+    APP_REINITIALIZED: 'app:reinitialized',
+    
+    // 🆕 Phase2: ブラシ設定変更イベント
+    BRUSH_SIZE_CHANGED: 'brush:sizeChanged',
+    BRUSH_OPACITY_CHANGED: 'brush:opacityChanged'
 };
 
-// ==== メインアプリケーションクラス（設定連携版） ====
+// ==== メインアプリケーションクラス（Phase2デフォルト値変更版） ====
 class PixiDrawingApp {
     constructor(width = CONFIG.CANVAS_WIDTH, height = CONFIG.CANVAS_HEIGHT) {
         this.width = width;
@@ -82,12 +91,12 @@ class PixiDrawingApp {
             uiLayer: null
         };
         
-        // 描画状態
+        // 🆕 Phase2: 描画状態のデフォルト値変更
         this.state = {
             currentTool: 'pen',
-            brushSize: CONFIG.DEFAULT_BRUSH_SIZE,
+            brushSize: CONFIG.DEFAULT_BRUSH_SIZE,        // 4.0
             brushColor: CONFIG.DEFAULT_BRUSH_COLOR,
-            opacity: CONFIG.DEFAULT_OPACITY,
+            opacity: CONFIG.DEFAULT_OPACITY,            // 1.0 (100%)
             pressure: CONFIG.DEFAULT_PRESSURE,
             smoothing: CONFIG.DEFAULT_SMOOTHING,
             isDrawing: false,
@@ -109,7 +118,7 @@ class PixiDrawingApp {
     // ==== 初期化（設定連携版） ====
     async init(settingsManager = null) {
         try {
-            console.log('🎯 PixiDrawingApp初期化開始...');
+            console.log('🎯 PixiDrawingApp初期化開始（v1rev5b Phase2デフォルト値変更版）...');
             
             // SettingsManager の登録
             if (settingsManager) {
@@ -122,7 +131,12 @@ class PixiDrawingApp {
             this.setupInteraction();
             this.setupResizeHandler();
             
-            console.log('✅ PixiDrawingApp初期化完了');
+            console.log('✅ PixiDrawingApp初期化完了（v1rev5b Phase2）');
+            console.log('🔧 Phase2修正項目:');
+            console.log(`  - デフォルトブラシサイズ: 16 → ${CONFIG.DEFAULT_BRUSH_SIZE}`);
+            console.log(`  - デフォルト透明度: 85% → ${CONFIG.DEFAULT_OPACITY * 100}%`);
+            console.log(`  - 最大ブラシサイズ: 100 → ${CONFIG.MAX_BRUSH_SIZE}`);
+            
             this.emit(EVENTS.CANVAS_READY, { app: this.app, layers: this.layers });
             
             return this.app;
@@ -488,10 +502,27 @@ class PixiDrawingApp {
         }
     }
     
-    // ==== 状態管理（変更なし） ====
+    // ==== 🆕 Phase2: 状態管理の拡張版 ====
     updateState(updates) {
+        const oldState = { ...this.state };
         Object.assign(this.state, updates);
-        this.emit(EVENTS.TOOL_CHANGED, { state: this.state });
+        
+        // 🆕 Phase2: 個別の変更イベント発火
+        if ('brushSize' in updates && updates.brushSize !== oldState.brushSize) {
+            this.emit(EVENTS.BRUSH_SIZE_CHANGED, { 
+                oldSize: oldState.brushSize, 
+                newSize: updates.brushSize 
+            });
+        }
+        
+        if ('opacity' in updates && updates.opacity !== oldState.opacity) {
+            this.emit(EVENTS.BRUSH_OPACITY_CHANGED, { 
+                oldOpacity: oldState.opacity, 
+                newOpacity: updates.opacity 
+            });
+        }
+        
+        this.emit(EVENTS.TOOL_CHANGED, { state: this.state, oldState });
     }
     
     getState() {
@@ -575,7 +606,7 @@ class PixiDrawingApp {
         }
     }
     
-    // ==== デバッグ・統計情報（拡張版） ====
+    // ==== デバッグ・統計情報（Phase2拡張版） ====
     getStats() {
         return {
             width: this.width,
@@ -587,7 +618,25 @@ class PixiDrawingApp {
             resolution: this.getCurrentResolution(),
             isHighDpi: this.isHighDpiActive(),
             hasSettingsManager: !!this.settingsManager,
-            memoryUsage: this.getMemoryUsage()
+            memoryUsage: this.getMemoryUsage(),
+            // 🆕 Phase2: ブラシ設定の詳細統計
+            brushSettings: {
+                size: this.state.brushSize,
+                opacity: this.state.opacity,
+                color: this.state.brushColor,
+                pressure: this.state.pressure,
+                smoothing: this.state.smoothing,
+                sizeRange: {
+                    min: CONFIG.MIN_BRUSH_SIZE,
+                    max: CONFIG.MAX_BRUSH_SIZE,
+                    default: CONFIG.DEFAULT_BRUSH_SIZE
+                },
+                opacityRange: {
+                    min: 0,
+                    max: 1,
+                    default: CONFIG.DEFAULT_OPACITY
+                }
+            }
         };
     }
     
@@ -625,9 +674,15 @@ if (typeof window !== 'undefined') {
     window.CONFIG = CONFIG;
     window.EVENTS = EVENTS;
     
-    console.log('🎯 app-core.js (設定動的化版) 読み込み完了');
-    console.log('🖥️ 高DPI設定対応済み');
-    console.log('⚙️ SettingsManager連携対応済み');
+    console.log('🎯 app-core.js v1rev5b 読み込み完了（Phase2: デフォルト値変更版）');
+    console.log('🔧 Phase2修正項目:');
+    console.log(`  ✅ デフォルトブラシサイズ: 16 → ${CONFIG.DEFAULT_BRUSH_SIZE}`);
+    console.log(`  ✅ デフォルト透明度: 85% → ${CONFIG.DEFAULT_OPACITY * 100}%`);
+    console.log(`  ✅ ペンサイズ最大値: 100 → ${CONFIG.MAX_BRUSH_SIZE}`);
+    console.log(`  ✅ ブラシ設定変更イベント追加（BRUSH_SIZE_CHANGED, BRUSH_OPACITY_CHANGED）`);
+    console.log('🎨 新仕様:');
+    console.log(`  - ペンサイズ範囲: ${CONFIG.MIN_BRUSH_SIZE} ～ ${CONFIG.MAX_BRUSH_SIZE}px`);
+    console.log(`  - デフォルト透明度: ${CONFIG.DEFAULT_OPACITY * 100}%（不透明）`);
 }
 
 // ES6 module export (将来のTypeScript移行用)

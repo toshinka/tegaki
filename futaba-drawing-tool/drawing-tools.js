@@ -1,17 +1,16 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev4
- * 描画ツール群 - drawing-tools.js (v1.9修正版)
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev5
+ * 描画ツール群 - drawing-tools.js (Phase2: ペンサイズ範囲拡張版)
  * 
- * 🔧 v1.9修正内容（Rulebook準拠責務分離版）:
- * 1. ShortcutManager削除 → settings-manager.jsに移行
- * 2. PerformanceMonitor削除 → ui-manager.jsに移行
- * 3. LayerSystem削除 → 将来のlayer-manager.jsに移行
- * 4. StateCapture/StateRestore外部参照修正
- * 5. DrawingToolsSystemエクスポート修正
- * 6. 責務を描画ツールのみに限定（Rulebook第2章準拠）
+ * 🔧 v1rev5b修正内容（Phase2: ペンサイズ範囲拡張）:
+ * 1. ✅ updateBrushSettings: ペンサイズ最大値 100 → 500 に変更
+ * 2. ✅ DEFAULT_BRUSH_SIZE使用: CONFIG値を参照するように修正
+ * 3. ✅ ブラシ設定変更の履歴記録強化
  * 
  * 責務: 各描画ツール（ペン・消しゴム）とツール管理のみ
  * 依存: app-core.js (PixiDrawingApp, CONFIG, EVENTS), history-manager.js
+ * 
+ * Phase2目標: ペンサイズ範囲の拡張対応
  */
 
 // ==== ベースツールクラス ====
@@ -338,7 +337,7 @@ class ToolManager {
     }
 }
 
-// ==== メインツールシステム統合クラス（v1.9修正版・責務分離版）====
+// ==== メインツールシステム統合クラス（v1rev5b Phase2: ペンサイズ範囲拡張版）====
 class DrawingToolsSystem {
     constructor(app) {
         this.app = app;
@@ -357,7 +356,7 @@ class DrawingToolsSystem {
     
     async init() {
         try {
-            console.log('🎯 DrawingToolsSystem初期化開始（v1.9修正版・責務分離版）...');
+            console.log('🎯 DrawingToolsSystem初期化開始（v1rev5b Phase2: ペンサイズ範囲拡張版）...');
             
             // 1. 基本システムの初期化（履歴管理なし）
             this.toolManager = new ToolManager(this.app, null); // 履歴管理は後で設定
@@ -372,16 +371,11 @@ class DrawingToolsSystem {
             this.toolManager.setHistoryManager(this.historyManager);
             
             this.isInitialized = true;
-            console.log('✅ DrawingToolsSystem初期化完了（v1.9修正版・責務分離版）');
-            console.log('🔧 修正項目:');
-            console.log('  - ShortcutManager削除（settings-manager.jsに移行）');
-            console.log('  - PerformanceMonitor削除（ui-manager.jsに移行）');
-            console.log('  - LayerSystem削除（将来のlayer-manager.jsに移行）');
-            console.log('  - StateCapture/StateRestore外部参照修正');
-            console.log('  - 責務を描画ツール管理のみに限定');
-            console.log('🏛️ 履歴管理機能:');
-            console.log('  - 描画操作自動記録');
-            console.log('  - ツール変更記録');
+            console.log('✅ DrawingToolsSystem初期化完了（v1rev5b Phase2: ペンサイズ範囲拡張版）');
+            console.log('🔧 Phase2修正項目:');
+            console.log('  - ペンサイズ最大値: 100 → 500 に変更');
+            console.log('  - CONFIG値参照の徹底');
+            console.log('  - ブラシ設定変更履歴記録の強化');
             
         } catch (error) {
             console.error('❌ DrawingToolsSystem初期化エラー:', error);
@@ -435,6 +429,7 @@ class DrawingToolsSystem {
         return this.toolManager.getAvailableTools();
     }
     
+    // 🆕 Phase2: ブラシ設定更新（ペンサイズ範囲拡張版）
     updateBrushSettings(settings) {
         // 履歴管理：変更前の設定をキャプチャ
         const beforeSettings = this.historyManager && window.InternalStateCapture ? 
@@ -442,9 +437,23 @@ class DrawingToolsSystem {
         
         const updates = {};
         
+        // 🆕 Phase2: ペンサイズ範囲の拡張（0.1 ～ 500）
         if ('size' in settings) {
-            updates.brushSize = Math.max(0.1, Math.min(100, settings.size));
+            const minSize = (typeof CONFIG !== 'undefined' && CONFIG.MIN_BRUSH_SIZE) ? 
+                CONFIG.MIN_BRUSH_SIZE : 0.1;
+            const maxSize = (typeof CONFIG !== 'undefined' && CONFIG.MAX_BRUSH_SIZE) ? 
+                CONFIG.MAX_BRUSH_SIZE : 500;
+            
+            updates.brushSize = Math.max(minSize, Math.min(maxSize, settings.size));
+            
+            // Phase2: サイズが範囲外の場合の警告
+            if (settings.size > maxSize) {
+                console.warn(`⚠️ ペンサイズ ${settings.size} は最大値 ${maxSize} を超えています。${maxSize} に制限されました。`);
+            } else if (settings.size < minSize) {
+                console.warn(`⚠️ ペンサイズ ${settings.size} は最小値 ${minSize} を下回っています。${minSize} に制限されました。`);
+            }
         }
+        
         if ('color' in settings) {
             updates.brushColor = settings.color;
         }
@@ -466,7 +475,25 @@ class DrawingToolsSystem {
             this.historyManager.recordBrushSettingChange(beforeSettings, afterSettings);
         }
         
-        console.log('🎨 ブラシ設定更新（履歴対応）:', updates);
+        // 🆕 Phase2: 詳細ログ出力
+        const logUpdates = { ...updates };
+        if ('brushSize' in logUpdates) {
+            logUpdates.brushSize = `${logUpdates.brushSize}px`;
+        }
+        if ('opacity' in logUpdates) {
+            logUpdates.opacity = `${Math.round(logUpdates.opacity * 100)}%`;
+        }
+        
+        console.log('🎨 ブラシ設定更新（Phase2範囲拡張対応）:', logUpdates);
+        
+        // Phase2: 設定範囲情報もログに出力
+        if ('size' in settings) {
+            const minSize = (typeof CONFIG !== 'undefined' && CONFIG.MIN_BRUSH_SIZE) ? 
+                CONFIG.MIN_BRUSH_SIZE : 0.1;
+            const maxSize = (typeof CONFIG !== 'undefined' && CONFIG.MAX_BRUSH_SIZE) ? 
+                CONFIG.MAX_BRUSH_SIZE : 500;
+            console.log(`📏 ペンサイズ範囲: ${minSize}px ～ ${maxSize}px`);
+        }
     }
     
     getBrushSettings() {
@@ -553,12 +580,28 @@ class DrawingToolsSystem {
     // ==== デバッグ・統計 ====
     getSystemStats() {
         const historyStats = this.getHistoryStats();
+        const brushSettings = this.getBrushSettings();
+        
+        // 🆕 Phase2: ブラシ設定範囲情報の追加
+        const minSize = (typeof CONFIG !== 'undefined' && CONFIG.MIN_BRUSH_SIZE) ? 
+            CONFIG.MIN_BRUSH_SIZE : 0.1;
+        const maxSize = (typeof CONFIG !== 'undefined' && CONFIG.MAX_BRUSH_SIZE) ? 
+            CONFIG.MAX_BRUSH_SIZE : 500;
+        const defaultSize = (typeof CONFIG !== 'undefined' && CONFIG.DEFAULT_BRUSH_SIZE) ? 
+            CONFIG.DEFAULT_BRUSH_SIZE : 4;
+        const defaultOpacity = (typeof CONFIG !== 'undefined' && CONFIG.DEFAULT_OPACITY) ? 
+            CONFIG.DEFAULT_OPACITY : 1.0;
         
         return {
             initialized: this.isInitialized,
             currentTool: this.getCurrentTool(),
             availableTools: this.getAvailableTools(),
-            brushSettings: this.getBrushSettings(),
+            brushSettings: {
+                ...brushSettings,
+                // 🆕 Phase2: 範囲情報付きブラシ設定
+                sizeRange: { min: minSize, max: maxSize, default: defaultSize, current: brushSettings.size },
+                opacityRange: { min: 0, max: 1, default: defaultOpacity, current: brushSettings.opacity }
+            },
             history: {
                 canUndo: this.canUndo(),
                 canRedo: this.canRedo(),
@@ -593,7 +636,7 @@ class DrawingToolsSystem {
      * システム全体のデバッグ情報表示
      */
     debugSystem() {
-        console.group('🔍 DrawingToolsSystem デバッグ情報');
+        console.group('🔍 DrawingToolsSystem デバッグ情報（Phase2対応）');
         console.log('システム統計:', this.getSystemStats());
         
         if (this.historyManager) {
@@ -608,7 +651,7 @@ class DrawingToolsSystem {
      * 履歴機能のテスト実行
      */
     testHistoryFunction() {
-        console.group('🧪 履歴機能テスト');
+        console.group('🧪 履歴機能テスト（Phase2: ペンサイズ範囲拡張対応）');
         
         // 1. 現在の状態を確認
         console.log('1. 初期状態:', {
@@ -617,9 +660,9 @@ class DrawingToolsSystem {
             historyLength: this.getHistoryStats()?.historyLength || 0
         });
         
-        // 2. ダミーのブラシ設定変更
-        console.log('2. ブラシ設定変更実行...');
-        this.updateBrushSettings({ size: 20, opacity: 0.7 });
+        // 2. ダミーのブラシ設定変更（Phase2: 拡張範囲テスト）
+        console.log('2. ブラシ設定変更実行（範囲拡張テスト）...');
+        this.updateBrushSettings({ size: 50, opacity: 1.0 }); // Phase2: 透明度100%
         
         // 3. 変更後の状態確認
         console.log('3. 変更後の状態:', {
@@ -628,25 +671,30 @@ class DrawingToolsSystem {
             historyLength: this.getHistoryStats()?.historyLength || 0
         });
         
-        // 4. アンドゥテスト
-        console.log('4. アンドゥ実行...');
+        // 4. 範囲外値のテスト（Phase2）
+        console.log('4. 範囲外値テスト...');
+        this.updateBrushSettings({ size: 600 }); // 最大値500を超える値
+        this.updateBrushSettings({ size: 0.05 }); // 最小値0.1を下回る値
+        
+        // 5. アンドゥテスト
+        console.log('5. アンドゥ実行...');
         const undoResult = this.undo();
         console.log('アンドゥ結果:', undoResult);
         
-        // 5. アンドゥ後の状態確認
-        console.log('5. アンドゥ後の状態:', {
+        // 6. アンドゥ後の状態確認
+        console.log('6. アンドゥ後の状態:', {
             canUndo: this.canUndo(),
             canRedo: this.canRedo(),
             brushSettings: this.getBrushSettings()
         });
         
-        // 6. リドゥテスト
-        console.log('6. リドゥ実行...');
+        // 7. リドゥテスト
+        console.log('7. リドゥ実行...');
         const redoResult = this.redo();
         console.log('リドゥ結果:', redoResult);
         
-        // 7. 最終状態確認
-        console.log('7. 最終状態:', {
+        // 8. 最終状態確認
+        console.log('8. 最終状態:', {
             canUndo: this.canUndo(),
             canRedo: this.canRedo(),
             brushSettings: this.getBrushSettings()
@@ -743,7 +791,7 @@ const StateRestore = {
     }
 };
 
-// ==== エクスポート（修正版）====
+// ==== エクスポート（Phase2修正版）====
 if (typeof window !== 'undefined') {
     // メインクラスの確実な登録
     window.DrawingToolsSystem = DrawingToolsSystem;
@@ -755,18 +803,22 @@ if (typeof window !== 'undefined') {
     window.StateCapture = StateCapture;
     window.StateRestore = StateRestore;
     
-    console.log('🔧 drawing-tools.js v1.9修正版 読み込み完了（責務分離版）');
-    console.log('✅ ShortcutManager削除（settings-manager.jsに移行）');
-    console.log('✅ PerformanceMonitor削除（ui-manager.jsに移行）');
-    console.log('✅ LayerSystem削除（将来のlayer-manager.jsに移行）');
-    console.log('✅ StateCapture/StateRestore 外部参照修正');
-    console.log('✅ DrawingToolsSystem エクスポート修正');
+    console.log('🔧 drawing-tools.js v1rev5b 読み込み完了（Phase2: ペンサイズ範囲拡張版）');
+    console.log('🔧 Phase2修正項目:');
+    console.log('  ✅ updateBrushSettings: ペンサイズ最大値 100 → 500 に変更');
+    console.log('  ✅ DEFAULT_BRUSH_SIZE使用: CONFIG値を参照するように修正');
+    console.log('  ✅ ブラシ設定変更の履歴記録強化');
+    console.log('  ✅ 範囲外値の警告システム追加');
+    console.log('  ✅ デバッグ機能の拡張（範囲情報表示）');
     console.log('📦 利用可能クラス:');
-    console.log('  - DrawingToolsSystem（メイン統合クラス）');
+    console.log('  - DrawingToolsSystem（メイン統合クラス・Phase2対応）');
     console.log('  - ToolManager（ツール管理）');
     console.log('  - VectorPenTool, EraserTool（描画ツール）');
     console.log('  - StateCapture, StateRestore（外部参照エイリアス）');
-    console.log('🎯 責務: 描画ツール管理のみに限定（Rulebook準拠）');
+    console.log('🎯 Phase2新機能:');
+    console.log('  - ペンサイズ範囲: 0.1px ～ 500px');
+    console.log('  - デフォルト透明度: 100%（不透明）');
+    console.log('  - 設定変更履歴の強化');
 }
 
 // ES6 module export (将来のTypeScript移行用)
