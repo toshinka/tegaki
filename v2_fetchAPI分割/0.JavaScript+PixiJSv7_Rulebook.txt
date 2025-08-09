@@ -1,4 +1,4 @@
-# JavaScript + PixiJS v7 Rulebook（fetch API分割版）
+# JavaScript + PixiJS v7 Rulebook（拡張版）
 
 ## 1. 基本理念
 - 安定動作・可読性・拡張性を優先し、将来的なTypeScript + Vite + ES6移行を意識する。
@@ -12,20 +12,64 @@
 ---
 
 ## 2. ファイル構成ルール
-現行の4ファイル構成（fetch API分割前提）：
+拡張された7ファイル構成（機能拡張版）：
+
+### 2.1 コア（必須）ファイル群
 1. **app-core.js**（旧 core-engine.js）  
    - PixiJSアプリ生成・描画ループ管理・リソースロード。
    - Application / Stage / Renderer 初期化はここに集約。
+
 2. **drawing-tools.js**（旧 tools-features.js）  
    - 各描画ツールや機能（ペン、消しゴム、ベクターペンなど）をクラス化。
    - PixiJS Graphics / Mesh / Container の使用はツール内に閉じる。
+
 3. **ui-manager.js**（旧 ui-system.js）  
    - UIコンテナ管理・UIイベント処理。
    - UIロジックと描画ロジックは分離する。
- 4. **history-manager.js**（新規）
+
+4. **history-manager.js**
    - アンドゥ・リドゥ・履歴管理システム。
    - 操作履歴の記録と復元機能を提供。
+
+### 2.2 拡張機能ファイル群
+5. **settings-manager.js**（新規）
+   - アプリ全体の動作設定を一元管理。
+   - 高DPI設定、ショートカット機能、ユーザー設定保存。
+   - 初期段階では複数の責務を担うが、将来的にはリファクタリング予定。
+
+6. **transform-manager.js**（新規）
+   - キャンバス操作とオブジェクト変形の一元管理。
+   - キャンバス全体の移動・回転・反転機能。
+   - アクティブレイヤー内コンテンツの移動機能。
+
+7. **layer-manager.js**（新規）
+   - レイヤー機能の管理（追加、削除、並び替え）。
+   - レイヤー表示・非表示、透明度制御。
+   - アクティブレイヤーの管理。
+
+### 2.3 ファイル間依存関係
 ```
+app-core.js
+├─ drawing-tools.js
+├─ ui-manager.js
+├─ history-manager.js
+├─ settings-manager.js
+├─ transform-manager.js
+└─ layer-manager.js
+
+settings-manager.js
+└─ app-core.js (設定適用)
+
+transform-manager.js
+├─ app-core.js (キャンバスアクセス)
+└─ layer-manager.js (アクティブレイヤー取得)
+
+layer-manager.js
+├─ app-core.js (レイヤーコンテナアクセス)
+└─ history-manager.js (レイヤー操作履歴)
+```
+
+---
 
 ## 3. コードスタイル規約
 ### 命名規則
@@ -42,7 +86,7 @@
 ---
 
 ## 4. シンボル辞書（推奨用語）
-| 用語 | 命名例 | 補足 |
+| 用途 | 命名例 | 補足 |
 |------|--------|------|
 | アプリ全体 | `app` | PIXI.Application |
 | ステージ | `stage` | app.stage |
@@ -54,20 +98,35 @@
 | イベント一覧 | `EVENTS` | pointerdown等を定数化 |
 | 履歴管理 | `historyManager` | アンドゥ・リドゥ管理 |
 | 履歴エントリ | `historyEntry` | 個別の操作記録 |
+| 設定管理 | `settingsManager` | アプリケーション設定管理 |
+| 変形管理 | `transformManager` | キャンバス・オブジェクト変形 |
+| レイヤー管理 | `layerManager` | レイヤー操作管理 |
+| キャンバス変形 | `canvasTransform` | キャンバス全体変形状態 |
+| オブジェクト変形 | `objectTransform` | 個別オブジェクト変形状態 |
+| アクティブレイヤー | `activeLayer` | 現在編集中のレイヤー |
+
 ---
 
 ## 5. PixiJS v7 実装ルール
 - **描画負荷軽減**: 無駄なイベント発火を抑制（例：`interaction.moveWhenInside = true`）
 - **ステージ構造**:
 
+```
 stage
-├─ backgroundLayer
-├─ drawingLayer
+├─ canvasRootContainer（新規：変形管理用）
+│  ├─ backgroundLayer
+│  ├─ drawingLayer
+│  │  ├─ layer1Container
+│  │  ├─ layer2Container
+│  │  └─ ...
+│  └─ effectsLayer（将来実装用）
 └─ uiLayer
+```
 
 - **リサイズ管理**: `app.renderer.resize()`はUI側で一元管理
 - **テクスチャ再利用**: `Texture.from()`のキャッシュ活用
 - **ベクターペン最適化**: GraphicsよりMesh/Geometryを検討
+- **変形最適化**: マトリックス変換を活用し、個別オブジェクトの座標計算を最小化
 
 ---
 
@@ -75,29 +134,85 @@ stage
 - ツールは常にPixi座標系を使用（`event.data.getLocalPosition(layer)`）
 - UIイベントは`stopPropagation()`で描画層と分離
 - イベント種別は`pointerdown / pointermove / pointerup`で統一
+- 変形操作時は座標変換を考慮した位置計算を実行
 
 ---
 
 ## 7. 状態管理
 - 描画状態（色、太さ、ツール種別）は`app-core`の`state`に集約
-- Undo/RedoはRenderTexture差分管理
-- 履歴管理は`history-manager.js`の`HistoryManager`で一元管理
-- プリセット変更履歴も含めて記録・復元
+- アプリケーション設定は`settings-manager`で一元管理
+- キャンバス変形状態は`transform-manager`で管理
+- レイヤー状態は`layer-manager`で管理
+- Undo/RedoはRenderTexture差分管理（`history-manager`）
+- 履歴管理は全操作種別（描画、設定、変形、レイヤー）を統合記録
 - アニメ・自動描画は`Ticker`で更新
 
 ---
 
-## 8. 禁止事項
-- DOM直接操作（Pixi外の`querySelector`等）  
-- Pixi内部プロパティへの直接アクセス  
-- 複数責務を1関数にまとめる
+## 8. 各ファイルの詳細責務
+
+### 8.1 settings-manager.js
+**主責務**: アプリケーション設定の一元管理
+- **高DPI設定**: resolution値の動的切り替え
+- **ショートカットキー**: キーボード入力監視とアクション実行
+- **ユーザー設定**: LocalStorage連携（将来実装）
+- **設定UI**: 設定変更用のダイアログ管理
+- **設定履歴**: 設定変更も履歴管理対象とする
+
+### 8.2 transform-manager.js
+**主責務**: 変形操作の一元管理
+- **キャンバス変形**: 
+  - 全体移動（パン）
+  - 回転・反転
+  - ズーム（将来実装）
+- **レイヤーコンテンツ変形**:
+  - アクティブレイヤー内オブジェクトの移動
+  - 選択範囲の変形（将来実装）
+- **座標変換**: 変形状態を考慮した座標計算ユーティリティ
+- **変形履歴**: transform操作も履歴管理対象
+
+### 8.3 layer-manager.js
+**主責務**: レイヤー機能の完全実装
+- **レイヤー管理**:
+  - 作成・削除・複製
+  - 並び替え（Z-order）
+  - 名前変更
+- **レイヤー状態**:
+  - 表示・非表示切り替え
+  - 透明度制御
+  - ロック状態管理
+- **アクティブレイヤー**: 描画対象レイヤーの管理
+- **レイヤー履歴**: レイヤー操作も履歴管理対象
 
 ---
 
-## 9. 全面禁止命名（PixiV7許容版）
+## 9. 初期化順序（重要）
+機能の依存関係を考慮した推奨初期化順序：
+
+1. **app-core.js**: PixiJSアプリケーション基盤
+2. **settings-manager.js**: 設定適用（高DPI等）
+3. **layer-manager.js**: レイヤー構造構築
+4. **transform-manager.js**: 変形システム初期化
+5. **drawing-tools.js**: 描画ツール初期化
+6. **history-manager.js**: 履歴システム初期化
+7. **ui-manager.js**: UI統合・最終調整
+
+---
+
+## 10. 禁止事項
+- DOM直接操作（Pixi外の`querySelector`等）  
+- Pixi内部プロパティへの直接アクセス  
+- 複数責務を1関数にまとめる
+- **循環参照の作成**（特にlayer-manager ↔ transform-manager間）
+- **設定値の直接変更**（必ずsettings-manager経由）
+- **レイヤー構造の直接操作**（必ずlayer-manager経由）
+
+---
+
+## 11. 全面禁止命名（PixiV7許容版）
 | 禁止 | 禁止理由 | 代替 |
 |------|----------|------|
-| *Handler.js | 処理不明 | *Processor.js |
+| *Handler.js | 処理不明 | *Manager.js or *Processor.js |
 | *Helper.js | 目的不明 | *Utils.js |
 | *Service.js | DI以外禁止 | 具体的な役割名 |
 | Canvas2D*.js | Canvas2D主体禁止 | PixiV7Chrome*.js |
@@ -111,79 +226,132 @@ stage
 
 ---
 
-## 10. 最小構造サンプル
+## 12. 最小構造サンプル（拡張版）
 ```javascript
-// app-core.js
+// app-core.js - 基本構造
 const CONFIG = {
-CANVAS_WIDTH: 344,
-CANVAS_HEIGHT: 135,
-BG_COLOR: 0xffffff
+    CANVAS_WIDTH: 400,
+    CANVAS_HEIGHT: 400,
+    BG_COLOR: 0xf0e0d6,
+    DEFAULT_RESOLUTION: 1
 };
 
 const app = new PIXI.Application({
-width: CONFIG.CANVAS_WIDTH,
-height: CONFIG.CANVAS_HEIGHT,
-backgroundColor: CONFIG.BG_COLOR
+    width: CONFIG.CANVAS_WIDTH,
+    height: CONFIG.CANVAS_HEIGHT,
+    backgroundColor: CONFIG.BG_COLOR,
+    resolution: CONFIG.DEFAULT_RESOLUTION
 });
-document.body.appendChild(app.view);
 
+// 変形管理用ルートコンテナ
+const canvasRootContainer = new PIXI.Container();
+app.stage.addChild(canvasRootContainer);
+
+// レイヤー構造
 const layers = {
-backgroundLayer: new PIXI.Container(),
-drawingLayer: new PIXI.Container(),
-uiLayer: new PIXI.Container()
+    backgroundLayer: new PIXI.Container(),
+    drawingLayer: new PIXI.Container(),
+    uiLayer: new PIXI.Container()
 };
-app.stage.addChild(layers.backgroundLayer, layers.drawingLayer, layers.uiLayer);
 
-export { app, layers, CONFIG };
+canvasRootContainer.addChild(layers.backgroundLayer, layers.drawingLayer);
+app.stage.addChild(layers.uiLayer); // UIは変形対象外
 
-11. 将来移行のための配慮
-・export/importを利用して依存を明示
+export { app, layers, canvasRootContainer, CONFIG };
+```
 
-・型情報をコメントで残す（TS変換容易化）
+---
 
-・ファイル名・変数名を一貫させ、辞書で管理
+## 13. 将来移行のための配慮
+- export/importを利用して依存を明示
+- 型情報をコメントで残す（TS変換容易化）
+- ファイル名・変数名を一貫させ、辞書で管理
+- 各Managerクラスは独立性を保ち、相互依存を最小化
 
-## 12. 拡張計画
-- タッチ操作機能は初期実装では含めず、PC＋液タブに最適化。
-- 将来的に導入予定の処理は、イベント登録や関数の雛形をコメントアウトで残す。
-- コメント部分には「未実装」注記と将来の動作意図を明記。
+---
 
-13.ライブラリ拡張についてのメモ
+## 14. 拡張計画
+### 14.1 即座に実装する機能
+- **アンドゥ・リドゥ**: 開発効率向上のため最優先
+- **高DPI設定**: 開発初期段階での対応が必要
+- **基本ショートカット**: Ctrl+Z, ツール切り替え等
 
-. 他ライブラリ併用の是非
+### 14.2 段階的に実装する機能
+- **キャンバス移動・回転**: レイヤー機能の前に実装
+- **レイヤー機能**: 本格実装は最後のフェーズ
+- **タッチ操作**: PC版安定後に実装
+
+### 14.3 将来拡張予定機能
+- 物理演算システム
+- AIアニメーション機能
+- プラグインシステム
+- クラウド同期機能
+
+---
+
+## 15. ライブラリ拡張についてのメモ
+
+### 15.1 他ライブラリ併用の是非
 PixiJSは描画・イベント・リソース管理を内包しているため、
 追加ライブラリは「描画以外の補助」に限る方が安全です。
 
-・併用しても安全なケース
-入力補助系: hammer.js（ジェスチャー検出）
+**併用しても安全なケース**
+- 入力補助系: hammer.js（ジェスチャー検出）
+- 状態管理: zustandや軽量Redux（ただし単純なstateなら不要）
+- アニメ補助: GSAP（Pixiと相性良）
+- 物理演算: matter.js（Pixi表示オブジェクトと座標同期）
 
-状態管理: zustandや軽量Redux（ただし単純なstateなら不要）
+**避けたいケース**
+- React/VueなどのUIフレームワーク直接統合
+- Pixiと別のWebGLレンダラー（Three.jsなど）
+- PixiのTexture/Geometryを直接書き換える外部描画ライブラリ
 
-アニメ補助: GSAP（Pixiと相性良）
-
-物理演算: matter.js（Pixi表示オブジェクトと座標同期）
-
-避けたいケース
-React/VueなどのUIフレームワーク直接統合
-
-Pixiと別のWebGLレンダラー（Three.jsなど）
-
-PixiのTexture/Geometryを直接書き換える外部描画ライブラリ
-
-理由：
+**理由**:
 PixiJSのイベント・レンダリングループと別のライブラリのループが二重化し、
 AIによるコード補完やバグ診断が難しくなるからです。
 
-・ Spine導入の考え方
-PixiJS v7対応版: pixi-spine
+### 15.2 Spine導入の考え方
+- **PixiJS v7対応版**: pixi-spine
+- **v8でもサポート予定**だが、内部APIの変更で一部改修が必要になる可能性あり
 
-v8でもサポート予定だが、内部APIの変更で一部改修が必要になる可能性あり
+**メリット**:
+- 高品質2Dアニメーションを実装可能
+- 骨格アニメ＋パーツ差し替えでLive2D風表現も可能
 
-メリット:
+---
 
-高品質2Dアニメーションを実装可能
+## 16. パフォーマンス最適化指針
 
-骨格アニメ＋パーツ差し替えでLive2D風表現も可能
+### 16.1 描画最適化
+- **バッチング**: 同一テクスチャのオブジェクトをまとめて描画
+- **オブジェクトプール**: Graphics オブジェクトの再利用
+- **カリング**: 画面外オブジェクトの描画スキップ
 
+### 16.2 メモリ最適化
+- **テクスチャ管理**: 不要になったテクスチャの適切な破棄
+- **履歴制限**: RenderTexture履歴の上限設定
+- **ガベージコレクション**: 定期的な不要オブジェクトのクリーンアップ
 
+### 16.3 インタラクション最適化
+- **イベント最適化**: 不要なイベントリスナーの削除
+- **座標変換キャッシュ**: 頻繁な座標計算のキャッシュ化
+- **描画更新の最適化**: 差分更新による無駄な再描画の抑制
 
+---
+
+## 17. テスト・デバッグ方針
+
+### 17.1 開発時デバッグ機能
+- **統計情報表示**: FPS、メモリ使用量、GPU使用率
+- **履歴デバッグ**: 操作履歴の視覚的確認
+- **レイヤー可視化**: レイヤー構造のツリー表示
+- **座標変換デバッグ**: 変形行列の状態表示
+
+### 17.2 エラーハンドリング
+- **グレースフル・デグラデーション**: 機能が失敗しても描画は継続
+- **エラー通知**: ユーザーフレンドリーなエラーメッセージ
+- **リカバリ機能**: 致命的エラーからの自動復旧
+
+---
+
+この拡張版Rulebookは、現行の4ファイル構成から7ファイル構成への段階的移行を支援し、プロクリエイト級の高機能お絵描きツール開発を目指しています。各ファイルの責務を明確に分離することで、保守性と拡張性を両立させることが可能になります。
