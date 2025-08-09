@@ -1,6 +1,12 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.6
- * 履歴管理システム - history-manager.js
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev4
+ * 履歴管理システム - history-manager.js 
+ * 
+ * 🔧 v1.8修正内容:
+ * 1. recordInitialState() エラーハンドリング強化
+ * 2. ツールシステム準備確認の追加
+ * 3. 初期状態記録の遅延実行
+ * 4. 安全性チェックの強化
  * 
  * 責務: アンドゥ・リドゥ・履歴管理
  * 依存: app-core.js, drawing-tools.js
@@ -15,7 +21,8 @@ const HISTORY_CONFIG = {
     MAX_HISTORY_SIZE: 50,              // 最大履歴保存数
     THUMBNAIL_SIZE: 64,                // サムネイルサイズ（将来実装）
     AUTO_SAVE_INTERVAL: 1000,          // 自動保存間隔（ms）
-    DEBUG_MODE: false                  // デバッグモード
+    DEBUG_MODE: false,                 // デバッグモード
+    INITIAL_STATE_DELAY: 100           // 初期状態記録の遅延（ms）
 };
 
 const HISTORY_TYPES = {
@@ -115,12 +122,31 @@ class InternalStateCapture {
      * ブラシ設定をキャプチャ
      */
     static captureBrushSettings(toolsSystem) {
-        if (!toolsSystem) return null;
+        if (!toolsSystem) {
+            console.warn('captureBrushSettings: toolsSystemがnullです');
+            return null;
+        }
         
-        return {
-            ...toolsSystem.getBrushSettings(),
-            currentTool: toolsSystem.getCurrentTool()
-        };
+        try {
+            // 🔧 修正：getCurrentTool()の安全な呼び出し
+            let currentTool = null;
+            if (toolsSystem.getCurrentTool) {
+                currentTool = toolsSystem.getCurrentTool();
+            }
+            
+            let brushSettings = {};
+            if (toolsSystem.getBrushSettings) {
+                brushSettings = toolsSystem.getBrushSettings();
+            }
+            
+            return {
+                ...brushSettings,
+                currentTool: currentTool
+            };
+        } catch (error) {
+            console.warn('ブラシ設定キャプチャに失敗:', error);
+            return null;
+        }
     }
     
     /**
@@ -277,7 +303,7 @@ class InternalStateRestore {
     }
 }
 
-// ==== メイン履歴管理クラス ====
+// ==== メイン履歴管理クラス（v1.8修正版）====
 class HistoryManager {
     constructor(app, toolsSystem, uiManager = null, maxHistorySize = HISTORY_CONFIG.MAX_HISTORY_SIZE) {
         this.app = app;
@@ -285,13 +311,13 @@ class HistoryManager {
         this.uiManager = uiManager;
         this.maxHistorySize = maxHistorySize;
         
-        // 履歴管理
+        // 履歴管理の基本初期化
         this.history = [];
         this.currentIndex = -1;
         this.isRecording = true;
         this.isRestoring = false;
         
-        // 統計情報
+        // 統計情報初期化
         this.stats = {
             totalRecorded: 0,
             undoCount: 0,
@@ -299,10 +325,12 @@ class HistoryManager {
             memoryUsage: 0
         };
         
-        console.log('🏛️ HistoryManager初期化完了');
+        console.log('🏛️ HistoryManager初期化完了（v1.8修正版）');
         
-        // 初期状態を記録
-        this.recordInitialState();
+        // 🔧 修正：初期状態記録を遅延実行（ツールシステム完全初期化後）
+        setTimeout(() => {
+            this.recordInitialState();
+        }, HISTORY_CONFIG.INITIAL_STATE_DELAY);
     }
     
     // ==== 外部依存関係設定 ====
@@ -311,27 +339,54 @@ class HistoryManager {
         this.uiManager = uiManager;
     }
     
-    // ==== 初期化メソッド ====
+    // ==== 初期化メソッド（v1.8修正版）====
     
     /**
-     * 初期状態の記録
+     * 初期状態の記録（v1.8修正版）
      */
     recordInitialState() {
         try {
+            // 🔧 修正：ツールシステムの準備確認
+            if (!this.toolsSystem) {
+                console.warn('初期状態記録: ツールシステムが設定されていません。記録をスキップします。');
+                return;
+            }
+            
+            // 🔧 修正：getCurrentToolメソッドの存在確認
+            if (!this.toolsSystem.getCurrentTool) {
+                console.warn('初期状態記録: getCurrentToolメソッドが見つかりません。記録をスキップします。');
+                return;
+            }
+            
+            // 🔧 修正：アクティブツールの確認
+            const currentTool = this.toolsSystem.getCurrentTool();
+            if (!currentTool) {
+                console.warn('初期状態記録: アクティブツールが設定されていません。記録をスキップします。');
+                return;
+            }
+            
+            // 状態キャプチャの実行
             const drawingState = InternalStateCapture.captureDrawingState(this.app);
             const brushSettings = InternalStateCapture.captureBrushSettings(this.toolsSystem);
             const canvasSettings = InternalStateCapture.captureCanvasSettings(this.app);
             
-            this.recordHistory(HISTORY_TYPES.DRAWING, {
-                before: null,
-                after: drawingState,
-                brushSettings: brushSettings,
-                canvasSettings: canvasSettings
-            }, '初期状態');
+            // キャプチャが成功した場合のみ記録
+            if (drawingState || brushSettings || canvasSettings) {
+                this.recordHistory(HISTORY_TYPES.DRAWING, {
+                    before: null,
+                    after: drawingState,
+                    brushSettings: brushSettings,
+                    canvasSettings: canvasSettings
+                }, '初期状態');
+                
+                console.log('📝 初期状態記録完了');
+            } else {
+                console.warn('初期状態記録: 状態キャプチャに失敗しました');
+            }
             
-            console.log('📝 初期状態記録完了');
         } catch (error) {
-            console.warn('初期状態記録に失敗:', error);
+            console.error('初期状態記録に失敗:', error);
+            // エラーが発生しても続行する（非致命的エラー）
         }
     }
     
@@ -602,8 +657,14 @@ class HistoryManager {
         
         if (!targetState) return false;
         
-        const presetManager = this.uiManager?.getPenPresetManager ? 
-            this.uiManager.getPenPresetManager() : null;
+        // 🔧 修正：安全なPenPresetManagerの取得
+        let presetManager = null;
+        
+        if (this.toolsSystem && this.toolsSystem.getPenPresetManager) {
+            presetManager = this.toolsSystem.getPenPresetManager();
+        } else if (this.uiManager && this.uiManager.getPenPresetManager) {
+            presetManager = this.uiManager.getPenPresetManager();
+        }
         
         if (!presetManager) {
             console.warn('PenPresetManagerが見つかりません');
@@ -904,7 +965,13 @@ if (typeof window !== 'undefined') {
     window.HISTORY_TYPES = HISTORY_TYPES;
     window.HISTORY_CONFIG = HISTORY_CONFIG;
     
-    console.log('🏛️ history-manager.js v1.5 読み込み完了');
+    console.log('🏛️ history-manager.js v1.8修正版 読み込み完了');
+    console.log('🔧 修正項目:');
+    console.log('  - recordInitialState() エラーハンドリング強化');
+    console.log('  - ツールシステム準備確認の追加');
+    console.log('  - 初期状態記録の遅延実行');
+    console.log('  - getCurrentTool() null チェック対応');
+    console.log('  - PenPresetManager安全取得');
     console.log('📦 利用可能クラス: HistoryManager, HistoryEntry');
     console.log('🔧 内部システム: InternalStateCapture, InternalStateRestore');
     console.log('📚 履歴タイプ: HISTORY_TYPES');

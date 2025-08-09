@@ -1,0 +1,162 @@
+📋 現状分析と回復対象機能
+🎯 回復対象機能
+
+プリセットプレビューの動的サイズ変更
+
+ペンサイズ変更時の●サイズ連動（最大20px）
+リニア変換の実装
+
+
+プリセット数値表示の同期
+
+スライダー変更時のプリセット内数字更新
+ペンサイズ・透明度両方の対応
+
+
+プリセット履歴管理
+
+プリセット変更時の履歴記録
+アンドゥ・リドゥ対応
+
+
+リセット機能
+
+プリセットをデフォルト値に戻す機能
+UI上でのリセットボタン実装
+
+
+ショートカット・設定ポップアップ修復
+
+settings-manager.jsとの連携問題解決
+ポップアップ表示機能の修復
+
+
+
+📁 ファイル分類と作業計画
+🔧 修正対象ファイル（優先順）
+
+ui-manager.js ⭐⭐⭐
+
+プリセット表示ロジック修正
+スライダー連携強化
+リセット機能実装
+
+
+ui/components.js ⭐⭐
+
+PresetDisplayManager強化
+動的プレビューロジック実装
+
+
+history-manager.js ⭐⭐
+
+プリセット変更履歴対応
+設定変更の履歴記録
+
+
+settings-manager.js ⭐
+
+ショートカット機能修復
+ポップアップ連携修正
+
+
+
+📖 参考ファイル（修正せず・情報取得のみ）
+
+main.js
+
+システム連携状況確認
+初期化プロセス把握
+
+
+app-core.js
+
+基盤システム状態確認
+
+
+drawing-tools.js
+
+ブラシ設定連携確認
+
+
+styles.css
+
+UI要素のスタイル確認
+
+
+
+🎯 段階別修正計画
+Phase 1: プリセット表示システム修復
+対象: ui-manager.js, ui/components.js
+
+プリセットプレビューの●サイズ動的変更
+スライダー値とプリセット数字の同期
+表示更新タイミングの最適化
+
+Phase 2: 履歴管理機能拡張
+対象: history-manager.js, ui-manager.js
+
+プリセット変更の履歴記録
+設定変更履歴の実装
+アンドゥ・リドゥ対応
+
+Phase 3: リセット機能実装
+対象: ui-manager.js, ui/components.js
+
+デフォルト値復元機能
+リセットボタンUI実装
+プリセット初期化処理
+
+Phase 4: ショートカット・設定修復
+対象: settings-manager.js, ui-manager.js
+
+ショートカットシステム連携修正
+設定ポップアップ表示修復
+イベントハンドリング強化
+
+🔍 技術的解決方針
+プリセットプレビュー動的サイズ
+javascript// サイズ計算ロジック
+const maxPreviewSize = 20; // px
+const currentSize = sliderValue;
+const previewSize = Math.min(maxPreviewSize, (currentSize / 100) * maxPreviewSize);
+数値同期システム
+javascript// スライダー変更 → プリセット数字更新
+onSliderChange(value) {
+    this.updatePresetNumbers(value);
+    this.updatePreviewCircles(value);
+}
+履歴記録拡張
+javascript// プリセット変更履歴
+recordPresetChange(beforePreset, afterPreset) {
+    this.historyManager.recordStateChange('preset', beforePreset, afterPreset);
+}
+📋 必要な添付ファイル
+Phase 1実装用
+
+ui-manager.js (現在版確認)
+ui/components.js (PresetDisplayManager確認)
+
+Phase 2実装用
+
+history-manager.js (履歴システム確認)
+
+Phase 3実装用
+
+HTMLファイル (リセットボタン配置確認用)
+
+Phase 4実装用
+
+settings-manager.js (ショートカット機能確認)
+
+⚡ 作業効率化のポイント
+
+段階的実装: 1つずつ機能を確実に修復
+テスト駆動: 各機能修復後に動作確認
+最小限の変更: 既存コードへの影響を最小化
+デバッグ情報強化: 問題特定を容易にする
+
+
+Phase 1から開始しますか？
+まず ui-manager.js と ui/components.js の現在の状態を確認して、プリセットプレビューの動的サイズ変更機能から実装を始めましょう。
+必要なファイルを添付していただければ、すぐに修正作業に取り掛かれます！
