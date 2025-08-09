@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.6 - 統合版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.2 - 履歴管理統合版</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -85,206 +85,230 @@
         </div>
     </div>
     
-    <div class="popup-panel pen-settings draggable" id="pen-settings" style="left: 60px; top: 100px;">
+    <!-- ペンツール設定ポップアップ -->
+    <div class="popup-panel pen-settings draggable" id="pen-settings" style="left: 60px; top: 80px;">
         <div class="popup-title">ベクターペンツール設定</div>
         
         <div class="setting-group">
             <div class="size-presets" id="size-presets">
+                <!-- プリセット項目 - 改善版フレーム付き -->
                 <div class="size-preset-item" data-size="1">
-                    <div class="size-preview-circle" style="width: 0.5px; height: 0.5px; background: #800000;"></div>
+                    <div class="size-preview-frame">
+                        <div class="size-preview-circle" style="width: 1px; height: 1px;"></div>
+                    </div>
                     <div class="size-preview-label">1</div>
                     <div class="size-preview-percent">85%</div>
                 </div>
                 <div class="size-preset-item" data-size="2">
-                    <div class="size-preview-circle" style="width: 2px; height: 2px; background: #800000;"></div>
+                    <div class="size-preview-frame">
+                        <div class="size-preview-circle" style="width: 2px; height: 2px;"></div>
+                    </div>
                     <div class="size-preview-label">2</div>
                     <div class="size-preview-percent">85%</div>
                 </div>
                 <div class="size-preset-item" data-size="4">
-                    <div class="size-preview-circle" style="width: 4px; height: 4px; background: #800000;"></div>
+                    <div class="size-preview-frame">
+                        <div class="size-preview-circle" style="width: 4px; height: 4px;"></div>
+                    </div>
                     <div class="size-preview-label">4</div>
                     <div class="size-preview-percent">85%</div>
                 </div>
                 <div class="size-preset-item" data-size="8">
-                    <div class="size-preview-circle" style="width: 8px; height: 8px; background: #800000;"></div>
+                    <div class="size-preview-frame">
+                        <div class="size-preview-circle" style="width: 8px; height: 8px;"></div>
+                    </div>
                     <div class="size-preview-label">8</div>
                     <div class="size-preview-percent">85%</div>
                 </div>
                 <div class="size-preset-item active" data-size="16">
-                    <div class="size-preview-circle" style="width: 16px; height: 16px; background: #800000;"></div>
+                    <div class="size-preview-frame">
+                        <div class="size-preview-circle" style="width: 16px; height: 16px;"></div>
+                    </div>
                     <div class="size-preview-label">16</div>
                     <div class="size-preview-percent">85%</div>
                 </div>
                 <div class="size-preset-item" data-size="32">
-                    <div class="size-preview-circle" style="width: 20px; height: 20px; background: #800000;"></div>
+                    <div class="size-preview-frame">
+                        <div class="size-preview-circle" style="width: 20px; height: 20px;"></div>
+                    </div>
                     <div class="size-preview-label">32</div>
                     <div class="size-preview-percent">85%</div>
                 </div>
             </div>
         </div>
         
-        <div class="setting-group">
-            <div class="setting-label">サイズ</div>
+        <!-- サイズスライダー -->
+        <div class="slider-container">
+            <div class="setting-label">サイズ<span class="slider-value">16.0px</span></div>
             <div class="slider-controls">
-                <div class="slider-button small" id="pen-size-decrease-small">-0.1</div>
-                <div class="slider-button small" id="pen-size-decrease">-1</div>
-                <div class="slider-button small" id="pen-size-decrease-large">-10</div>
-                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
-                    <div class="slider" id="pen-size-slider">
-                        <div class="slider-track" id="pen-size-track"></div>
-                        <div class="slider-handle" id="pen-size-handle"></div>
-                    </div>
-                    <div class="slider-value" id="pen-size-value">16.0px</div>
+                <button class="slider-button small" id="pen-size-decrease-large" title="-10">-10</button>
+                <button class="slider-button small" id="pen-size-decrease" title="-1">-1</button>
+                <button class="slider-button small" id="pen-size-decrease-small" title="-0.1">-0.1</button>
+                <div class="slider" id="pen-size-slider">
+                    <div class="slider-track"></div>
+                    <div class="slider-handle"></div>
                 </div>
-                <div class="slider-button small" id="pen-size-increase-small">+0.1</div>
-                <div class="slider-button small" id="pen-size-increase">+1</div>
-                <div class="slider-button small" id="pen-size-increase-large">+10</div>
+                <button class="slider-button small" id="pen-size-increase-small" title="+0.1">+0.1</button>
+                <button class="slider-button small" id="pen-size-increase" title="+1">+1</button>
+                <button class="slider-button small" id="pen-size-increase-large" title="+10">+10</button>
             </div>
         </div>
         
-        <div class="setting-group">
-            <div class="setting-label">不透明度</div>
+        <!-- 不透明度スライダー -->
+        <div class="slider-container">
+            <div class="setting-label">不透明度<span class="slider-value">85.0%</span></div>
             <div class="slider-controls">
-                <div class="slider-button small" id="pen-opacity-decrease-small">-0.1</div>
-                <div class="slider-button small" id="pen-opacity-decrease">-1</div>
-                <div class="slider-button small" id="pen-opacity-decrease-large">-10</div>
-                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
-                    <div class="slider" id="pen-opacity-slider">
-                        <div class="slider-track" id="pen-opacity-track"></div>
-                        <div class="slider-handle" id="pen-opacity-handle"></div>
-                    </div>
-                    <div class="slider-value" id="pen-opacity-value">85.0%</div>
+                <button class="slider-button small" id="pen-opacity-decrease-large" title="-10">-10</button>
+                <button class="slider-button small" id="pen-opacity-decrease" title="-1">-1</button>
+                <button class="slider-button small" id="pen-opacity-decrease-small" title="-0.1">-0.1</button>
+                <div class="slider" id="pen-opacity-slider">
+                    <div class="slider-track"></div>
+                    <div class="slider-handle"></div>
                 </div>
-                <div class="slider-button small" id="pen-opacity-increase-small">+0.1</div>
-                <div class="slider-button small" id="pen-opacity-increase">+1</div>
-                <div class="slider-button small" id="pen-opacity-increase-large">+10</div>
+                <button class="slider-button small" id="pen-opacity-increase-small" title="+0.1">+0.1</button>
+                <button class="slider-button small" id="pen-opacity-increase" title="+1">+1</button>
+                <button class="slider-button small" id="pen-opacity-increase-large" title="+10">+10</button>
             </div>
         </div>
         
-        <div class="setting-group">
-            <div class="setting-label">筆圧（ダミー表示）</div>
+        <!-- 筆圧スライダー -->
+        <div class="slider-container">
+            <div class="setting-label">筆圧感度<span class="slider-value">50.0%</span></div>
             <div class="slider-controls">
-                <div class="slider-button small" id="pen-pressure-decrease-small">-0.1</div>
-                <div class="slider-button small" id="pen-pressure-decrease">-1</div>
-                <div class="slider-button small" id="pen-pressure-decrease-large">-10</div>
-                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
-                    <div class="slider" id="pen-pressure-slider">
-                        <div class="slider-track" id="pen-pressure-track"></div>
-                        <div class="slider-handle" id="pen-pressure-handle"></div>
-                    </div>
-                    <div class="slider-value" id="pen-pressure-value">50.0%</div>
+                <button class="slider-button small" id="pen-pressure-decrease-large" title="-10">-10</button>
+                <button class="slider-button small" id="pen-pressure-decrease" title="-1">-1</button>
+                <button class="slider-button small" id="pen-pressure-decrease-small" title="-0.1">-0.1</button>
+                <div class="slider" id="pen-pressure-slider">
+                    <div class="slider-track"></div>
+                    <div class="slider-handle"></div>
                 </div>
-                <div class="slider-button small" id="pen-pressure-increase-small">+0.1</div>
-                <div class="slider-button small" id="pen-pressure-increase">+1</div>
-                <div class="slider-button small" id="pen-pressure-increase-large">+10</div>
+                <button class="slider-button small" id="pen-pressure-increase-small" title="+0.1">+0.1</button>
+                <button class="slider-button small" id="pen-pressure-increase" title="+1">+1</button>
+                <button class="slider-button small" id="pen-pressure-increase-large" title="+10">+10</button>
             </div>
         </div>
         
-        <div class="setting-group">
-            <div class="setting-label">線補正</div>
+        <!-- 線補正スライダー -->
+        <div class="slider-container">
+            <div class="setting-label">線補正<span class="slider-value">30.0%</span></div>
             <div class="slider-controls">
-                <div class="slider-button small" id="pen-smoothing-decrease-small">-0.1</div>
-                <div class="slider-button small" id="pen-smoothing-decrease">-1</div>
-                <div class="slider-button small" id="pen-smoothing-decrease-large">-10</div>
-                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
-                    <div class="slider" id="pen-smoothing-slider">
-                        <div class="slider-track" id="pen-smoothing-track"></div>
-                        <div class="slider-handle" id="pen-smoothing-handle"></div>
-                    </div>
-                    <div class="slider-value" id="pen-smoothing-value">30.0%</div>
+                <button class="slider-button small" id="pen-smoothing-decrease-large" title="-10">-10</button>
+                <button class="slider-button small" id="pen-smoothing-decrease" title="-1">-1</button>
+                <button class="slider-button small" id="pen-smoothing-decrease-small" title="-0.1">-0.1</button>
+                <div class="slider" id="pen-smoothing-slider">
+                    <div class="slider-track"></div>
+                    <div class="slider-handle"></div>
                 </div>
-                <div class="slider-button small" id="pen-smoothing-increase-small">+0.1</div>
-                <div class="slider-button small" id="pen-smoothing-increase">+1</div>
-                <div class="slider-button small" id="pen-smoothing-increase-large">+10</div>
+                <button class="slider-button small" id="pen-smoothing-increase-small" title="+0.1">+0.1</button>
+                <button class="slider-button small" id="pen-smoothing-increase" title="+1">+1</button>
+                <button class="slider-button small" id="pen-smoothing-increase-large" title="+10">+10</button>
             </div>
         </div>
-
+        
+        <!-- チェックボックス設定 -->
         <div class="setting-group">
-            <div class="checkbox-container" id="pressure-sensitivity-container">
+            <div class="checkbox-container">
                 <div class="checkbox-left">
-                    <div class="checkbox" id="pressure-sensitivity"></div>
-                    <div class="checkbox-label">筆圧感度</div>
+                    <div class="checkbox checked" id="pressure-sensitivity"></div>
+                    <span class="checkbox-label">筆圧感度</span>
                 </div>
-                <div class="checkbox-status">未実装</div>
+                <span class="checkbox-status">有効</span>
             </div>
-            
-            <div class="checkbox-container" id="edge-smoothing-container">
+            <div class="checkbox-container">
                 <div class="checkbox-left">
-                    <div class="checkbox checked" id="edge-smoothing"></div>
-                    <div class="checkbox-label">エッジスムージング</div>
+                    <div class="checkbox" id="edge-smoothing"></div>
+                    <span class="checkbox-label">エッジスムージング</span>
                 </div>
-                <div class="checkbox-status">ON</div>
+                <span class="checkbox-status">無効</span>
             </div>
-            
-            <div class="checkbox-container" id="gpu-acceleration-container">
+            <div class="checkbox-container">
                 <div class="checkbox-left">
                     <div class="checkbox checked" id="gpu-acceleration"></div>
-                    <div class="checkbox-label">GPU加速</div>
+                    <span class="checkbox-label">GPU加速</span>
                 </div>
-                <div class="checkbox-status">ON</div>
+                <span class="checkbox-status">有効</span>
             </div>
         </div>
+        
+        <!-- 履歴管理情報表示（デバッグ用・将来機能） -->
+        <!-- 
+        <div class="setting-group">
+            <div class="setting-label">履歴管理</div>
+            <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                <div>アンドゥ: Ctrl+Z</div>
+                <div>リドゥ: Ctrl+Y</div>
+                <div id="history-status">履歴: 1/1</div>
+            </div>
+        </div>
+        -->
     </div>
-
-    <div class="popup-panel resize-settings draggable" id="resize-settings" style="left: 120px; top: 50px;">
-        <div class="popup-title">キャンバスリサイズ</div>
+    
+    <!-- リサイズ設定ポップアップ -->
+    <div class="popup-panel resize-settings draggable" id="resize-settings" style="left: 400px; top: 100px;">
+        <div class="popup-title">キャンバスサイズ変更</div>
         
-        <div class="setting-group">
-            <div class="setting-label">サイズ設定</div>
-            <div class="size-input-group">
-                <div class="size-input-field">
-                    <input type="number" class="size-input" id="canvas-width" value="400" min="100" max="2000">
-                </div>
-                <div class="size-multiply">×</div>
-                <div class="size-input-field">
-                    <input type="number" class="size-input" id="canvas-height" value="400" min="100" max="2000">
-                </div>
+        <div class="size-input-group">
+            <div class="size-input-field">
+                <div class="setting-label">幅 (px)</div>
+                <input type="number" class="size-input" id="canvas-width" value="400" min="100" max="4000">
+            </div>
+            <div class="size-multiply">×</div>
+            <div class="size-input-field">
+                <div class="setting-label">高さ (px)</div>
+                <input type="number" class="size-input" id="canvas-height" value="400" min="100" max="4000">
             </div>
         </div>
         
+        <!-- プリセットボタン -->
         <div class="setting-group">
-            <div class="setting-label">プリセット</div>
-            <div class="resize-buttons">
+            <div class="setting-label">プリセットサイズ</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px;">
                 <button class="resize-button" data-size="400,400">400×400</button>
+                <button class="resize-button" data-size="600,600">600×600</button>
                 <button class="resize-button" data-size="800,600">800×600</button>
-            </div>
-            <div class="resize-buttons" style="margin-top: 8px;">
+                <button class="resize-button" data-size="1024,768">1024×768</button>
                 <button class="resize-button" data-size="1200,800">1200×800</button>
                 <button class="resize-button" data-size="1920,1080">1920×1080</button>
             </div>
         </div>
         
-        <div class="setting-group">
-            <div class="resize-buttons">
-                <button class="resize-button primary" id="apply-resize">適用</button>
-                <button class="resize-button" id="apply-resize-center">中央配置で適用</button>
-            </div>
+        <!-- 適用ボタン -->
+        <div class="resize-buttons">
+            <button class="resize-button" id="apply-resize">適用</button>
+            <button class="resize-button primary" id="apply-resize-center">適用（中央）</button>
+        </div>
+        
+        <!-- 履歴管理に関する注記 -->
+        <div style="margin-top: 12px; padding: 8px; background: #f0f8ff; border-radius: 4px; font-size: 12px; color: #666;">
+            <strong>💡 履歴機能:</strong> リサイズ操作は自動的に履歴に記録され、Ctrl+Zでアンドゥ可能です
         </div>
     </div>
-
+    
+    <!-- ステータスバー -->
     <div class="status-panel">
         <div class="status-group">
             <div class="status-item">
-                <span>Canvas:</span>
-                <span id="canvas-info">400×400px</span>
-            </div>
-            <div class="status-item">
                 <span>Tool:</span>
                 <span id="current-tool">ベクターペン</span>
+            </div>
+            <div class="status-item">
+                <span>Canvas:</span>
+                <span id="canvas-info">400×400px</span>
             </div>
             <div class="status-item">
                 <span>Color:</span>
                 <span id="current-color">#800000</span>
             </div>
             <div class="status-item">
+                <span>座標:</span>
                 <span id="coordinates">x: 0, y: 0</span>
             </div>
+        </div>
+        <div class="status-group">
             <div class="status-item">
                 <span>筆圧:</span>
                 <span id="pressure-monitor">0.0%</span>
             </div>
-        </div>
-        <div class="status-group">
             <div class="status-item">
                 <span>FPS:</span>
                 <span id="fps">60</span>
@@ -300,1433 +324,54 @@
         </div>
     </div>
 
-    <!-- PixiJS v7 CDN -->
+    <!-- 🏛️ 履歴管理対応版のスクリプト読み込み（正しい順序で） -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
     
-    <script>
-        // 🔍 Phase 2: 必要なJavaScriptファイルのエミュレート版を統合実装
-        // GitHubからのファイル取得および重複クラス問題の修正版
-        
-        // ⚡ コアアプリケーション (app-core.js相当)
-        class PixiDrawingApp {
-            constructor(width = 400, height = 400) {
-                this.width = width;
-                this.height = height;
-                this.app = null;
-                this.container = null;
-                this.stats = {
-                    pathCount: 0,
-                    memoryKB: 0
-                };
-            }
-
-            async init() {
-                try {
-                    this.app = new PIXI.Application({
-                        width: this.width,
-                        height: this.height,
-                        backgroundColor: 0xffffff,
-                        antialias: true,
-                        resolution: window.devicePixelRatio || 1,
-                        autoDensity: true
-                    });
-
-                    const canvasContainer = document.getElementById('drawing-canvas');
-                    if (!canvasContainer) {
-                        throw new Error('drawing-canvas要素が見つかりません');
-                    }
-
-                    canvasContainer.appendChild(this.app.view);
-                    
-                    this.container = new PIXI.Container();
-                    this.app.stage.addChild(this.container);
-                    
-                    console.log('✅ PixiDrawingApp初期化完了');
-                } catch (error) {
-                    console.error('❌ PixiDrawingApp初期化エラー:', error);
-                    throw error;
-                }
-            }
-
-            getStats() {
-                return {
-                    width: this.width,
-                    height: this.height,
-                    pathCount: this.stats.pathCount,
-                    memoryKB: this.stats.memoryKB,
-                    isInitialized: !!this.app
-                };
-            }
-
-            destroy() {
-                if (this.app) {
-                    this.app.destroy(true);
-                    this.app = null;
-                }
-            }
-        }
-
-        // 📝 状態キャプチャ (StateCapture)
-        class StateCapture {
-            constructor(app) {
-                this.app = app;
-                this.timestamp = Date.now();
-            }
-
-            captureState() {
-                return {
-                    timestamp: this.timestamp,
-                    canvasData: 'dummy-state-data',
-                    pathCount: this.app?.stats?.pathCount || 0
-                };
-            }
-        }
-
-        // 📚 履歴管理システム (history-manager.js相当) 
-        class HistoryManager {
-            constructor(app) {
-                this.app = app;
-                this.history = [];
-                this.currentIndex = -1;
-                this.maxHistory = 50;
-            }
-
-            async init() {
-                console.log('✅ HistoryManager初期化完了');
-            }
-
-            recordDrawingOperation(operation, data) {
-                const state = new StateCapture(this.app);
-                this.history = this.history.slice(0, this.currentIndex + 1);
-                this.history.push({
-                    operation,
-                    data,
-                    state: state.captureState()
-                });
-
-                if (this.history.length > this.maxHistory) {
-                    this.history.shift();
-                } else {
-                    this.currentIndex++;
-                }
-
-                console.log(`📝 操作記録: ${operation}, 履歴数: ${this.history.length}`);
-            }
-
-            undo() {
-                if (this.currentIndex > 0) {
-                    this.currentIndex--;
-                    console.log('↶ アンドゥ実行');
-                } else {
-                    console.log('⚠️ これ以上アンドゥできません');
-                }
-            }
-
-            redo() {
-                if (this.currentIndex < this.history.length - 1) {
-                    this.currentIndex++;
-                    console.log('↷ リドゥ実行');
-                } else {
-                    console.log('⚠️ これ以上リドゥできません');
-                }
-            }
-
-            getStats() {
-                return {
-                    historyLength: this.history.length,
-                    currentIndex: this.currentIndex,
-                    canUndo: this.currentIndex > 0,
-                    canRedo: this.currentIndex < this.history.length - 1
-                };
-            }
-
-            destroy() {
-                this.history = [];
-                this.currentIndex = -1;
-            }
-        }
-
-        // 🎨 描画ツールシステム (drawing-tools.js相当)
-        class DrawingToolsSystem {
-            constructor(app) {
-                this.app = app;
-                this.historyManager = new HistoryManager(app);
-                this.currentTool = 'pen';
-                this.penSettings = {
-                    size: 16,
-                    opacity: 0.85,
-                    color: '#800000'
-                };
-                this.isDrawing = false;
-                this.currentPath = null;
-            }
-
-            async init() {
-                await this.historyManager.init();
-                this.setupEventListeners();
-                console.log('✅ DrawingToolsSystem初期化完了');
-            }
-
-            setupEventListeners() {
-                const canvas = this.app.app.view;
-                
-                canvas.addEventListener('mousedown', (e) => this.startDrawing(e));
-                canvas.addEventListener('mousemove', (e) => this.updateDrawing(e));
-                canvas.addEventListener('mouseup', (e) => this.endDrawing(e));
-            }
-
-            startDrawing(event) {
-                if (this.currentTool === 'pen') {
-                    this.isDrawing = true;
-                    this.currentPath = new PIXI.Graphics();
-                    this.currentPath.lineStyle(
-                        this.penSettings.size, 
-                        PIXI.utils.string2hex(this.penSettings.color), 
-                        this.penSettings.opacity
-                    );
-                    
-                    const rect = event.target.getBoundingClientRect();
-                    const x = event.clientX - rect.left;
-                    const y = event.clientY - rect.top;
-                    
-                    this.currentPath.moveTo(x, y);
-                    this.app.container.addChild(this.currentPath);
-                    
-                    console.log('🖊️ 描画開始');
-                }
-            }
-
-            updateDrawing(event) {
-                if (this.isDrawing && this.currentPath) {
-                    const rect = event.target.getBoundingClientRect();
-                    const x = event.clientX - rect.left;
-                    const y = event.clientY - rect.top;
-                    
-                    this.currentPath.lineTo(x, y);
-                    
-                    // 座標表示更新
-                    const coordsElement = document.getElementById('coordinates');
-                    if (coordsElement) {
-                        coordsElement.textContent = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
-                    }
-                }
-            }
-
-            endDrawing(event) {
-                if (this.isDrawing) {
-                    this.isDrawing = false;
-                    this.historyManager.recordDrawingOperation('draw', {
-                        tool: this.currentTool,
-                        settings: {...this.penSettings}
-                    });
-                    this.currentPath = null;
-                    console.log('🖊️ 描画終了');
-                }
-            }
-
-            setTool(toolName) {
-                this.currentTool = toolName;
-                console.log(`🔧 ツール切り替え: ${toolName}`);
-                
-                // UI更新
-                document.querySelectorAll('.tool-button').forEach(btn => {
-                    btn.classList.remove('active');
-                });
-                
-                const toolButton = document.getElementById(`${toolName}-tool`);
-                if (toolButton) {
-                    toolButton.classList.add('active');
-                }
-                
-                const toolElement = document.getElementById('current-tool');
-                if (toolElement) {
-                    const toolNames = {
-                        pen: 'ベクターペン',
-                        eraser: '消しゴム',
-                        fill: '塗りつぶし',
-                        select: '範囲選択'
-                    };
-                    toolElement.textContent = toolNames[toolName] || toolName;
-                }
-            }
-
-            setPenSize(size) {
-                this.penSettings.size = Math.max(0.1, Math.min(100, size));
-                console.log(`📏 ペンサイズ: ${this.penSettings.size}px`);
-                this.updatePenUI();
-            }
-
-            setPenOpacity(opacity) {
-                this.penSettings.opacity = Math.max(0, Math.min(1, opacity));
-                console.log(`🌫️ ペン不透明度: ${Math.round(this.penSettings.opacity * 100)}%`);
-                this.updatePenUI();
-            }
-
-            updatePenUI() {
-                const sizeValue = document.getElementById('pen-size-value');
-                if (sizeValue) {
-                    sizeValue.textContent = `${this.penSettings.size.toFixed(1)}px`;
-                }
-
-                const opacityValue = document.getElementById('pen-opacity-value');
-                if (opacityValue) {
-                    opacityValue.textContent = `${Math.round(this.penSettings.opacity * 100)}%`;
-                }
-            }
-
-            clearCanvas() {
-                if (this.app.container) {
-                    this.app.container.removeChildren();
-                    this.historyManager.recordDrawingOperation('clear', null);
-                    console.log('🗑️ キャンバスクリア');
-                }
-            }
-
-            getHistoryManager() {
-                return this.historyManager;
-            }
-
-            getSystemStats() {
-                return {
-                    currentTool: this.currentTool,
-                    penSettings: {...this.penSettings},
-                    isDrawing: this.isDrawing,
-                    pathCount: this.app.stats.pathCount
-                };
-            }
-
-            getPerformanceStats() {
-                return {
-                    fps: 60,
-                    frameTime: 16.7,
-                    pathCount: this.app.stats.pathCount,
-                    pathMemoryKB: this.app.stats.memoryKB,
-                    isInitialized: true
-                };
-            }
-        }
-
-        // 🎭 UI管理システム (ui-manager.js相当) - クラス重複問題修正版
-        class UIManager {
-            constructor(app, toolsSystem) {
-                this.app = app;
-                this.toolsSystem = toolsSystem;
-                this.popupPanels = new Map();
-                this.notifications = [];
-            }
-
-            async init() {
-                this.setupToolButtons();
-                this.setupPopupPanels();
-                this.setupSliders();
-                console.log('✅ UIManager初期化完了');
-            }
-
-            setupToolButtons() {
-                // ペンツール
-                const penTool = document.getElementById('pen-tool');
-                if (penTool) {
-                    penTool.addEventListener('click', () => {
-                        this.toolsSystem.setTool('pen');
-                        this.togglePopup('pen-settings');
-                    });
-                }
-
-                // 消しゴムツール
-                const eraserTool = document.getElementById('eraser-tool');
-                if (eraserTool) {
-                    eraserTool.addEventListener('click', () => {
-                        this.toolsSystem.setTool('eraser');
-                    });
-                }
-
-                // リサイズツール
-                const resizeTool = document.getElementById('resize-tool');
-                if (resizeTool) {
-                    resizeTool.addEventListener('click', () => {
-                        this.togglePopup('resize-settings');
-                    });
-                }
-            }
-
-            setupPopupPanels() {
-                const panels = document.querySelectorAll('.popup-panel');
-                panels.forEach(panel => {
-                    this.makePopupDraggable(panel);
-                    this.popupPanels.set(panel.id, {
-                        element: panel,
-                        isVisible: panel.id === 'pen-settings' // ペン設定は初期表示
-                    });
-                });
-            }
-
-            togglePopup(panelId) {
-                const panel = this.popupPanels.get(panelId);
-                if (panel) {
-                    panel.isVisible = !panel.isVisible;
-                    panel.element.style.display = panel.isVisible ? 'block' : 'none';
-                    console.log(`${panel.isVisible ? '📖' : '📕'} パネル ${panelId}: ${panel.isVisible ? '表示' : '非表示'}`);
-                }
-            }
-
-            makePopupDraggable(element) {
-                let isDragging = false;
-                let startX, startY, startLeft, startTop;
-
-                const title = element.querySelector('.popup-title');
-                if (title) {
-                    title.style.cursor = 'move';
-                    title.addEventListener('mousedown', startDrag);
-                }
-
-                function startDrag(e) {
-                    isDragging = true;
-                    startX = e.clientX;
-                    startY = e.clientY;
-                    startLeft = parseInt(element.style.left || '0');
-                    startTop = parseInt(element.style.top || '0');
-                    
-                    document.addEventListener('mousemove', drag);
-                    document.addEventListener('mouseup', stopDrag);
-                    e.preventDefault();
-                }
-
-                function drag(e) {
-                    if (!isDragging) return;
-                    
-                    const deltaX = e.clientX - startX;
-                    const deltaY = e.clientY - startY;
-                    
-                    element.style.left = `${startLeft + deltaX}px`;
-                    element.style.top = `${startTop + deltaY}px`;
-                }
-
-                function stopDrag() {
-                    isDragging = false;
-                    document.removeEventListener('mousemove', drag);
-                    document.removeEventListener('mouseup', stopDrag);
-                }
-            }
-
-            setupSliders() {
-                // ペンサイズスライダー
-                this.setupSlider('pen-size', {
-                    min: 0.1,
-                    max: 100,
-                    value: 16,
-                    onChange: (value) => this.toolsSystem.setPenSize(value)
-                });
-
-                // ペン不透明度スライダー
-                this.setupSlider('pen-opacity', {
-                    min: 0,
-                    max: 1,
-                    value: 0.85,
-                    onChange: (value) => this.toolsSystem.setPenOpacity(value)
-                });
-
-                // サイズプリセット
-                this.setupSizePresets();
-            }
-
-            setupSlider(sliderId, config) {
-                const increaseBtn = document.getElementById(`${sliderId}-increase`);
-                const decreaseBtn = document.getElementById(`${sliderId}-decrease`);
-                
-                if (increaseBtn) {
-                    increaseBtn.addEventListener('click', () => {
-                        const newValue = Math.min(config.max, config.value + 1);
-                        config.value = newValue;
-                        config.onChange(newValue);
-                    });
-                }
-
-                if (decreaseBtn) {
-                    decreaseBtn.addEventListener('click', () => {
-                        const newValue = Math.max(config.min, config.value - 1);
-                        config.value = newValue;
-                        config.onChange(newValue);
-                    });
-                }
-            }
-
-            setupSizePresets() {
-                const presets = document.querySelectorAll('.size-preset-item');
-                presets.forEach(preset => {
-                    preset.addEventListener('click', () => {
-                        // アクティブ状態の切り替え
-                        presets.forEach(p => p.classList.remove('active'));
-                        preset.classList.add('active');
-                        
-                        // サイズ設定
-                        const size = parseInt(preset.dataset.size);
-                        this.toolsSystem.setPenSize(size);
-                        
-                        console.log(`🎯 プリセットサイズ選択: ${size}px`);
-                    });
-                });
-            }
-
-            showNotification(message, type = 'info', duration = 3000) {
-                console.log(`📢 通知: ${message} (${type})`);
-                // 実装を簡略化、コンソールログのみ
-            }
-
-            getUIStats() {
-                return {
-                    popupCount: this.popupPanels.size,
-                    visiblePopups: Array.from(this.popupPanels.values()).filter(p => p.isVisible).length,
-                    notificationCount: this.notifications.length
-                };
-            }
-        }
-
-        // ⚙️ 設定管理システム (settings-manager.js相当) - クラス重複問題修正版
-        class SettingsManager {
-            constructor(app, toolsSystem, uiManager, historyManager) {
-                this.app = app;
-                this.toolsSystem = toolsSystem;
-                this.uiManager = uiManager;
-                this.historyManager = historyManager;
-                this.settings = {
-                    penSize: 16,
-                    penOpacity: 0.85,
-                    canvasWidth: 400,
-                    canvasHeight: 400,
-                    shortcuts: {
-                        pen: 'p',
-                        eraser: 'e',
-                        clear: 'Delete',
-                        undo: 'ctrl+z',
-                        redo: 'ctrl+y'
-                    }
-                };
-            }
-
-            async init() {
-                this.loadSettings();
-                this.setupKeyboardShortcuts();
-                this.setupCanvasResize();
-                console.log('✅ SettingsManager初期化完了');
-            }
-
-            setDependencies(toolsSystem, uiManager, historyManager) {
-                // 依存関係は既にコンストラクタで設定済み
-                console.log('🔗 依存関係設定完了');
-            }
-
-            loadSettings() {
-                // 簡略化実装: デフォルト設定を使用
-                console.log('📥 設定読み込み（デフォルト設定使用）');
-            }
-
-            saveSettings(immediate = false) {
-                console.log(`💾 設定保存 (即座: ${immediate})`);
-                // 簡略化実装: 実際の保存は省略
-            }
-
-            setupKeyboardShortcuts() {
-                document.addEventListener('keydown', (event) => {
-                    // Pキー: ペンツール
-                    if (event.key.toLowerCase() === 'p' && !event.ctrlKey) {
-                        event.preventDefault();
-                        this.toolsSystem.setTool('pen');
-                    }
-                    
-                    // Eキー: 消しゴムツール
-                    if (event.key.toLowerCase() === 'e' && !event.ctrlKey) {
-                        event.preventDefault();
-                        this.toolsSystem.setTool('eraser');
-                    }
-                    
-                    // Deleteキー: キャンバスクリア
-                    if (event.key === 'Delete') {
-                        event.preventDefault();
-                        this.toolsSystem.clearCanvas();
-                    }
-                });
-                
-                console.log('⌨️ キーボードショートカット設定完了');
-            }
-
-            setupCanvasResize() {
-                const applyBtn = document.getElementById('apply-resize');
-                const applyCenterBtn = document.getElementById('apply-resize-center');
-                const widthInput = document.getElementById('canvas-width');
-                const heightInput = document.getElementById('canvas-height');
-
-                if (applyBtn) {
-                    applyBtn.addEventListener('click', () => {
-                        const width = parseInt(widthInput.value);
-                        const height = parseInt(heightInput.value);
-                        this.resizeCanvas(width, height, false);
-                    });
-                }
-
-                if (applyCenterBtn) {
-                    applyCenterBtn.addEventListener('click', () => {
-                        const width = parseInt(widthInput.value);
-                        const height = parseInt(heightInput.value);
-                        this.resizeCanvas(width, height, true);
-                    });
-                }
-
-                // プリセットボタン
-                const presetButtons = document.querySelectorAll('.resize-button[data-size]');
-                presetButtons.forEach(btn => {
-                    btn.addEventListener('click', () => {
-                        const [width, height] = btn.dataset.size.split(',').map(s => parseInt(s));
-                        if (widthInput) widthInput.value = width;
-                        if (heightInput) heightInput.value = height;
-                    });
-                });
-            }
-
-            resizeCanvas(width, height, center = false) {
-                if (this.app.app) {
-                    this.app.app.renderer.resize(width, height);
-                    this.app.width = width;
-                    this.app.height = height;
-                    
-                    // Canvas情報更新
-                    const canvasInfo = document.getElementById('canvas-info');
-                    if (canvasInfo) {
-                        canvasInfo.textContent = `${width}×${height}px`;
-                    }
-                    
-                    console.log(`📐 キャンバスリサイズ: ${width}×${height} (中央配置: ${center})`);
-                    this.historyManager.recordDrawingOperation('resize', { width, height, center });
-                }
-            }
-
-            getSettingsInfo() {
-                return {
-                    ...this.settings,
-                    isLoaded: true
-                };
-            }
-        }
-
-        // 🚀 アプリケーション統合起動システム
-        window.FutabaApp = {
-            app: null,
-            toolsSystem: null,
-            uiManager: null,
-            historyManager: null,
-            settingsManager: null,
-            isInitialized: false
-        };
-
-        async function initializeApplication() {
-            try {
-                console.log('🚀 ふたば☆ちゃんねる風ベクターお絵描きツール v1.6 起動開始');
-                console.time('アプリケーション起動時間');
-                
-                // 1. 依存関係チェック
-                validateDependencies();
-                
-                // 2. PixiJSアプリケーションコア初期化
-                console.log('🎯 1. PixiJSアプリケーション初期化中...');
-                const app = new PixiDrawingApp(400, 400);
-                await app.init();
-                window.FutabaApp.app = app;
-                
-                // 3. 描画ツールシステム初期化
-                console.log('🎨 2. 描画ツールシステム初期化中...');
-                const toolsSystem = new DrawingToolsSystem(app);
-                await toolsSystem.init();
-                window.FutabaApp.toolsSystem = toolsSystem;
-                
-                // 4. 履歴管理システム取得
-                console.log('📚 3. 履歴管理システム取得中...');
-                const historyManager = toolsSystem.getHistoryManager();
-                window.FutabaApp.historyManager = historyManager;
-                
-                // 5. UI管理システム初期化
-                console.log('🎭 4. UI管理システム初期化中...');
-                const uiManager = new UIManager(app, toolsSystem);
-                await uiManager.init();
-                window.FutabaApp.uiManager = uiManager;
-                
-                // 6. 設定管理システム初期化
-                console.log('⚙️ 5. 設定管理システム初期化中...');
-                const settingsManager = new SettingsManager(app, toolsSystem, uiManager, historyManager);
-                await settingsManager.init();
-                window.FutabaApp.settingsManager = settingsManager;
-                
-                // 7. システム統合
-                console.log('🔗 6. システム統合処理中...');
-                settingsManager.setDependencies(toolsSystem, uiManager, historyManager);
-                
-                // 8. 初期化完了
-                window.FutabaApp.isInitialized = true;
-                console.timeEnd('アプリケーション起動時間');
-                console.log('✅ 全システム初期化完了！');
-                
-                // 初回状態記録
-                setTimeout(() => {
-                    historyManager.recordDrawingOperation('initial', null);
-                    console.log('📝 初期状態を履歴に記録しました');
-                }, 100);
-                
-                showWelcomeMessage();
-                
-            } catch (error) {
-                console.error('❌ アプリケーション初期化エラー:', error);
-                showErrorMessage(error);
-                throw error;
-            }
-        }
-
-        function validateDependencies() {
-            const required = [
-                { name: 'PIXI', desc: 'PIXI.js v7ライブラリ' }
-            ];
-            
-            const missing = [];
-            const loaded = [];
-            
-            for (const dep of required) {
-                if (typeof window[dep.name] === 'undefined') {
-                    missing.push(dep);
-                } else {
-                    loaded.push(dep);
-                }
-            }
-            
-            console.group('🔍 依存関係チェック結果');
-            console.log(`✅ 読み込み済み: ${loaded.length}個`);
-            loaded.forEach(dep => console.log(`  - ${dep.name}: ${dep.desc}`));
-            
-            if (missing.length > 0) {
-                console.error(`❌ 不足している依存関係: ${missing.length}個`);
-                missing.forEach(dep => console.error(`  - ${dep.name}: ${dep.desc}`));
-                console.groupEnd();
-                throw new Error(`必要な依存関係が不足しています: ${missing.map(d => d.name).join(', ')}`);
-            } else {
-                console.log('🎉 すべての依存関係が正常に読み込まれました');
-            }
-            
-            // 内部クラス確認
-            console.log('🔍 内部クラス確認:');
-            console.log('  - PixiDrawingApp: 定義済み');
-            console.log('  - StateCapture: 定義済み');  
-            console.log('  - HistoryManager: 定義済み');
-            console.log('  - DrawingToolsSystem: 定義済み');
-            console.log('  - UIManager: 定義済み');
-            console.log('  - SettingsManager: 定義済み');
-            
-            console.groupEnd();
-        }
-
-        function showWelcomeMessage() {
-            const message = `
-🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.6 へようこそ！
-
-📋 使い方:
-• P: ペンツール切り替え
-• E: 消しゴムツール切り替え  
-• DEL: キャンバスクリア
-• Ctrl+Z: アンドゥ
-• Ctrl+Y: リドゥ
-
-🖱️ マウス操作:
-• 左クリック+ドラッグで描画
-• ツールボタンクリックでツール切り替え
-• ポップアップパネルはドラッグで移動可能
-
-🎯 機能:
-• 高性能ベクター描画エンジン
-• リアルタイム線補正
-• 無制限アンドゥ・リドゥ
-• 高DPI対応
-• プリセット管理
-• 設定自動保存
-
-🔧 修正内容:
-• CSSファイル参照エラー修正 (styles2.css → styles.css)
-• JavaScriptクラス重複問題修正
-• 依存関係チェック機能統合
-• 全機能を単一HTMLファイルに統合
-            `;
-            
-            console.log(message);
-            
-            if (window.FutabaApp.uiManager && window.FutabaApp.uiManager.showNotification) {
-                setTimeout(() => {
-                    window.FutabaApp.uiManager.showNotification('起動完了！描画を開始できます', 'success', 3000);
-                }, 500);
-            }
-        }
-
-        function showErrorMessage(error) {
-            const errorDiv = document.createElement('div');
-            errorDiv.style.cssText = `
-                position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                background: #ff4444;
-                color: white;
-                padding: 20px;
-                border-radius: 8px;
-                z-index: 10000;
-                font-family: monospace;
-                white-space: pre-line;
-                max-width: 500px;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            `;
-            
-            errorDiv.textContent = `❌ アプリケーション起動エラー
-
-${error.message}
-
-デベロッパーツールのコンソールで詳細を確認してください。`;
-            
-            document.body.appendChild(errorDiv);
-            
-            setTimeout(() => {
-                if (errorDiv.parentNode) {
-                    errorDiv.parentNode.removeChild(errorDiv);
-                }
-            }, 10000);
-        }
-
-        // デバッグ関数
-        window.debugFutabaApp = function() {
-            console.group('🔍 ふたばアプリ デバッグ情報');
-            console.log('📊 初期化状態:', window.FutabaApp.isInitialized);
-            if (window.FutabaApp.app) console.log('🎯 App統計:', window.FutabaApp.app.getStats());
-            if (window.FutabaApp.toolsSystem) console.log('🎨 ツールシステム:', window.FutabaApp.toolsSystem.getSystemStats());
-            if (window.FutabaApp.historyManager) console.log('📚 履歴管理:', window.FutabaApp.historyManager.getStats());
-            if (window.FutabaApp.uiManager) console.log('🎭 UI管理:', window.FutabaApp.uiManager.getUIStats());
-            if (window.FutabaApp.settingsManager) console.log('⚙️ 設定管理:', window.FutabaApp.settingsManager.getSettingsInfo());
-            console.groupEnd();
-        };
-
-        // DOM読み込み完了後に初期化実行
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initializeApplication);
-        } else {
-            initializeApplication();
-        }
-
-        // クリーンアップ
-        window.addEventListener('beforeunload', () => {
-            try {
-                if (window.FutabaApp.settingsManager) {
-                    window.FutabaApp.settingsManager.saveSettings(true);
-                }
-                if (window.FutabaApp.historyManager) {
-                    window.FutabaApp.historyManager.destroy();
-                }
-                if (window.FutabaApp.app) {
-                    window.FutabaApp.app.destroy();
-                }
-                console.log('🧹 アプリケーション クリーンアップ完了');
-            } catch (error) {
-                console.warn('⚠️ クリーンアップエラー:', error);
-            }
-        });
-
-        console.log('📝 統合起動スクリプト読み込み完了');
-    </script>
-
-    <style>
-        /* 🎨 統合CSS - styles.cssの内容をエミュレート */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background-color: #f0f0f0;
-            overflow: hidden;
-        }
-
-        .main-layout {
-            display: flex;
-            height: 100vh;
-        }
-
-        .sidebar {
-            width: 50px;
-            background: #333;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 8px 0;
-            gap: 4px;
-        }
-
-        .tool-button {
-            width: 40px;
-            height: 40px;
-            background: #555;
-            border: none;
-            border-radius: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            color: #ccc;
-            transition: all 0.2s;
-        }
-
-        .tool-button:hover {
-            background: #666;
-            color: white;
-        }
-
-        .tool-button.active {
-            background: #800000;
-            color: white;
-        }
-
-        .tool-button.disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .tool-button svg {
-            width: 20px;
-            height: 20px;
-        }
-
-        .tool-separator {
-            width: 30px;
-            height: 1px;
-            background: #666;
-            margin: 4px 0;
-        }
-
-        .canvas-area {
-            flex: 1;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            background: #e0e0e0;
-            position: relative;
-        }
-
-        .canvas-container {
-            background: white;
-            border: 2px solid #ccc;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-
-        .popup-panel {
-            position: fixed;
-            background: white;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-            z-index: 1000;
-            min-width: 280px;
-            display: block;
-        }
-
-        .popup-panel.resize-settings {
-            display: none;
-        }
-
-        .popup-title {
-            background: #f8f8f8;
-            padding: 12px 16px;
-            border-bottom: 1px solid #eee;
-            font-weight: bold;
-            font-size: 14px;
-            color: #333;
-            border-radius: 8px 8px 0 0;
-            user-select: none;
-        }
-
-        .setting-group {
-            padding: 16px;
-            border-bottom: 1px solid #eee;
-        }
-
-        .setting-group:last-child {
-            border-bottom: none;
-        }
-
-        .setting-label {
-            font-size: 12px;
-            font-weight: bold;
-            color: #666;
-            margin-bottom: 8px;
-        }
-
-        .size-presets {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .size-preset-item {
-            flex: 1;
-            min-width: 40px;
-            height: 60px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: all 0.2s;
-            background: white;
-            gap: 4px;
-        }
-
-        .size-preset-item:hover {
-            border-color: #800000;
-            background: #ffe6e6;
-        }
-
-        .size-preset-item.active {
-            border-color: #800000;
-            background: #ffcccc;
-        }
-
-        .size-preview-circle {
-            border-radius: 50%;
-            background: #800000;
-        }
-
-        .size-preview-label {
-            font-size: 10px;
-            font-weight: bold;
-            color: #333;
-        }
-
-        .size-preview-percent {
-            font-size: 8px;
-            color: #666;
-        }
-
-        .slider-controls {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .slider-button {
-            padding: 4px 8px;
-            background: #f0f0f0;
-            border: 1px solid #ddd;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 10px;
-            transition: all 0.2s;
-        }
-
-        .slider-button:hover {
-            background: #e0e0e0;
-        }
-
-        .slider-button.small {
-            padding: 2px 6px;
-            font-size: 9px;
-        }
-
-        .slider-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            margin-bottom: 8px;
-        }
-
-        .slider {
-            width: 100px;
-            height: 20px;
-            background: #f0f0f0;
-            border-radius: 10px;
-            position: relative;
-            margin-bottom: 4px;
-        }
-
-        .slider-track {
-            width: 60%;
-            height: 100%;
-            background: linear-gradient(90deg, #800000, #a00000);
-            border-radius: 10px;
-        }
-
-        .slider-handle {
-            width: 16px;
-            height: 16px;
-            background: white;
-            border: 2px solid #800000;
-            border-radius: 50%;
-            position: absolute;
-            top: 2px;
-            left: 50px;
-            cursor: pointer;
-        }
-
-        .slider-value {
-            font-size: 10px;
-            color: #666;
-            font-weight: bold;
-        }
-
-        .checkbox-container {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 8px;
-        }
-
-        .checkbox-left {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .checkbox {
-            width: 16px;
-            height: 16px;
-            border: 1px solid #ccc;
-            border-radius: 3px;
-            background: white;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .checkbox.checked {
-            background: #800000;
-            border-color: #800000;
-        }
-
-        .checkbox.checked::after {
-            content: '✓';
-            color: white;
-            font-size: 10px;
-            font-weight: bold;
-        }
-
-        .checkbox-label {
-            font-size: 12px;
-            color: #333;
-        }
-
-        .checkbox-status {
-            font-size: 10px;
-            color: #666;
-            font-weight: bold;
-        }
-
-        .size-input-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .size-input-field {
-            flex: 1;
-        }
-
-        .size-input {
-            width: 100%;
-            padding: 6px 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-            text-align: center;
-        }
-
-        .size-multiply {
-            font-weight: bold;
-            color: #666;
-        }
-
-        .resize-buttons {
-            display: flex;
-            gap: 8px;
-        }
-
-        .resize-button {
-            flex: 1;
-            padding: 8px 12px;
-            background: #f0f0f0;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-            transition: all 0.2s;
-        }
-
-        .resize-button:hover {
-            background: #e0e0e0;
-        }
-
-        .resize-button.primary {
-            background: #800000;
-            color: white;
-            border-color: #800000;
-        }
-
-        .resize-button.primary:hover {
-            background: #900000;
-        }
-
-        .status-panel {
-            position: fixed;
-            bottom: 0;
-            left: 50px;
-            right: 0;
-            height: 32px;
-            background: #f8f8f8;
-            border-top: 1px solid #ddd;
-            display: flex;
-            align-items: center;
-            padding: 0 16px;
-            gap: 24px;
-            z-index: 500;
-        }
-
-        .status-group {
-            display: flex;
-            gap: 16px;
-        }
-
-        .status-item {
-            display: flex;
-            gap: 4px;
-            font-size: 11px;
-            color: #666;
-        }
-
-        .status-item span:first-child {
-            font-weight: bold;
-        }
-
-        .status-item span:last-child {
-            color: #333;
-        }
-
-        /* レスポンシブ対応 */
-        @media (max-width: 768px) {
-            .popup-panel {
-                min-width: 240px;
-                font-size: 12px;
-            }
-            
-            .status-panel {
-                height: 28px;
-                font-size: 10px;
-            }
-            
-            .sidebar {
-                width: 45px;
-            }
-            
-            .tool-button {
-                width: 35px;
-                height: 35px;
-            }
-        }
-
-        /* ハイコントラスト対応 */
-        @media (prefers-contrast: high) {
-            .tool-button {
-                border: 2px solid #ccc;
-            }
-            
-            .popup-panel {
-                border-width: 2px;
-            }
-            
-            .checkbox {
-                border-width: 2px;
-            }
-        }
-
-        /* ダークモード対応（将来的な拡張用） */
-        @media (prefers-color-scheme: dark) {
-            /* ダークモード用のスタイルを将来的に実装 */
-        }
-
-        /* アニメーション */
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .popup-panel {
-            animation: fadeIn 0.2s ease-out;
-        }
-
-        /* フォーカス表示 */
-        .tool-button:focus,
-        .resize-button:focus,
-        .slider-button:focus,
-        .checkbox:focus {
-            outline: 2px solid #800000;
-            outline-offset: 2px;
-        }
-
-        /* 選択不可テキスト */
-        .popup-title,
-        .setting-label,
-        .checkbox-label,
-        .size-preview-label,
-        .status-item {
-            user-select: none;
-        }
-
-        /* スクロールバーのスタイリング */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: #f1f1f1;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: #888;
-            border-radius: 4px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: #555;
-        }
-
-        /* マウスオーバー効果の改善 */
-        .tool-button,
-        .resize-button,
-        .slider-button,
-        .size-preset-item {
-            position: relative;
-            overflow: hidden;
-        }
-
-        .tool-button::before,
-        .resize-button::before,
-        .slider-button::before,
-        .size-preset-item::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-            transition: left 0.5s;
-        }
-
-        .tool-button:hover::before,
-        .resize-button:hover::before,
-        .slider-button:hover::before,
-        .size-preset-item:hover::before {
-            left: 100%;
-        }
-
-        /* エラー表示用のスタイル */
-        .error-message {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: #ff4444;
-            color: white;
-            padding: 20px;
-            border-radius: 8px;
-            z-index: 10000;
-            font-family: monospace;
-            white-space: pre-line;
-            max-width: 500px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            animation: fadeIn 0.3s ease-out;
-        }
-
-        /* 成功メッセージ用のスタイル */
-        .success-message {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: #4CAF50;
-            color: white;
-            padding: 12px 16px;
-            border-radius: 6px;
-            z-index: 9999;
-            font-size: 14px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-            animation: fadeIn 0.3s ease-out;
-        }
-
-        /* 読み込み中表示 */
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(255, 255, 255, 0.9);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9998;
-        }
-
-        .loading-spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #800000;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* ツールチップ */
-        [title] {
-            position: relative;
-        }
-
-        [title]:hover::after {
-            content: attr(title);
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            white-space: nowrap;
-            z-index: 1001;
-            animation: fadeIn 0.2s ease-out;
-        }
-
-        /* プリント用スタイル */
-        @media print {
-            .sidebar,
-            .popup-panel,
-            .status-panel {
-                display: none !important;
-            }
-            
-            .canvas-area {
-                margin: 0;
-                padding: 0;
-            }
-            
-            body {
-                background: white;
-            }
-        }
-    </style>
+    <!-- 1. コアエンジン -->
+    <script src="app-core.js"></script>
+    
+    <!-- 2. 履歴管理システム（drawing-toolsより先に読み込み） -->
+    <script src="history-manager.js"></script>
+    
+    <!-- 3. 描画ツール群（履歴管理統合版） -->
+    <script src="drawing-tools.js"></script>
+    
+    <!-- 4. UI管理システム -->
+    <script src="ui-manager.js"></script>
+    
+    <!-- 5. メインエントリーポイント（履歴管理統合版） -->
+    <script src="main.js"></script>
+    
+    <!-- 履歴管理機能の説明（開発用コメント） -->
+    <!--
+    🏛️ 履歴管理機能について:
+    
+    【自動記録される操作】
+    - 描画操作（ペン・消しゴム）
+    - プリセット変更
+    - ツール変更
+    - ブラシ設定変更（サイズ・透明度・筆圧・線補正）
+    - キャンバスリサイズ
+    - キャンバスクリア
+    
+    【ショートカット】
+    - Ctrl+Z: アンドゥ
+    - Ctrl+Y: リドゥ
+    - Ctrl+Shift+Z: リドゥ（代替）
+    
+    【メモリ管理】
+    - 最大50履歴まで保存
+    - 古い履歴は自動削除
+    - RenderTexture の適切なクリーンアップ
+    
+    【デバッグ関数】（ブラウザコンソールで使用可能）
+    - undo(): アンドゥ実行
+    - redo(): リドゥ実行 
+    - debugHistory(): 履歴詳細表示
+    - testHistory(): 履歴機能テスト
+    - getHistoryStats(): 履歴統計取得
+    - clearHistory(): 履歴クリア
+    - showSystemStats(): システム統計表示
+    -->
 </body>
 </html>

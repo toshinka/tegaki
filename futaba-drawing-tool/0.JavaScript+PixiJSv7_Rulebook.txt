@@ -47,15 +47,21 @@
    - レイヤー表示・非表示、透明度制御。
    - アクティブレイヤーの管理。
 
-### 2.3 ファイル間依存関係
+### 2.3 ファイル間依存関係（UI分割対応）
 ```
 app-core.js
 ├─ drawing-tools.js
 ├─ ui-manager.js
+│  └─ ui/components.js ★依存追加
 ├─ history-manager.js
 ├─ settings-manager.js
 ├─ transform-manager.js
 └─ layer-manager.js
+
+ui/components.js
+├─ UI_CONFIG（UI設定定数）
+├─ UI_EVENTS（UIイベント定数）
+└─ 4つの独立UIクラス
 
 settings-manager.js
 └─ app-core.js (設定適用)
@@ -71,21 +77,43 @@ layer-manager.js
 
 ---
 
-## 3. コードスタイル規約
+## 3. UIコンポーネント分離ルール
+### 3.1 独立性の高いコンポーネント（ui/components.js移行対象）
+```javascript
+// 移行対象クラスの特徴
+class SliderController {
+    // スライダー操作のみに特化・他システムとの依存最小
+}
+
+class PopupManager {
+    // ポップアップ表示管理のみ・独立性が高い
+}
+
+class StatusBarManager {
+    // ステータス表示のみ・他システムへの影響なし
+}
+
+class PresetDisplayManager {
+    // プリセット表示管理・ツールシステム依存だが分離可能
+}
+```
+## 3.2 コードスタイル規約（UI分割対応）
 ### 命名規則
 - **変数 / 関数**: `camelCase`（例：`drawLine`, `pointerPosition`）
 - **定数**: `SCREAMING_SNAKE_CASE`（例：`CANVAS_WIDTH`, `BG_COLOR`）
 - **クラス / コンストラクタ関数**: `PascalCase`（例：`VectorPenTool`, `UIManager`）
-- **イベント名**: 定数化（例：`EVENTS.POINTER_DOWN`）
+- **UIイベント名**: 定数化（例：`UI_EVENTS.SLIDER_CHANGE`）
+- **UI設定定数**: `UI_CONFIG`に集約（例：`UI_CONFIG.POPUP_FADE_TIME`）
 - **PixiJSオブジェクト変数**: 役割接尾辞（`backgroundLayer`, `drawingContainer`）
 
-### 関数名の原則
-- 動詞＋目的語（例：`updateLayer`, `loadTexture`）
-- 1関数1責務
+### UI関連関数名の原則
+- **コンポーネント操作**: `update{Component}`, `show{Component}`, `hide{Component}`
+- **イベント処理**: `handle{Event}`, `on{Event}`
+- **状態管理**: `get{State}`, `set{State}`, `toggle{State}`
 
 ---
 
-## 4. シンボル辞書（推奨用語）
+## 4. シンボル辞書（UI分割対応版）
 | 用途 | 命名例 | 補足 |
 |------|--------|------|
 | アプリ全体 | `app` | PIXI.Application |
@@ -94,16 +122,20 @@ layer-manager.js
 | コンテナ | `{name}Container` | UI部品など |
 | ツール | `{ToolName}Tool` | VectorPenTool, EraserTool |
 | 設定 | `CONFIG` | 全定数まとめ |
+| UI設定 | `UI_CONFIG` | UI専用定数 |
+| UIイベント | `UI_EVENTS` | UI専用イベント定数 |
 | 状態 | `state` | 現在の描画設定 |
-| イベント一覧 | `EVENTS` | pointerdown等を定数化 |
 | 履歴管理 | `historyManager` | アンドゥ・リドゥ管理 |
 | 履歴エントリ | `historyEntry` | 個別の操作記録 |
 | 設定管理 | `settingsManager` | アプリケーション設定管理 |
 | 変形管理 | `transformManager` | キャンバス・オブジェクト変形 |
 | レイヤー管理 | `layerManager` | レイヤー操作管理 |
-| キャンバス変形 | `canvasTransform` | キャンバス全体変形状態 |
-| オブジェクト変形 | `objectTransform` | 個別オブジェクト変形状態 |
-| アクティブレイヤー | `activeLayer` | 現在編集中のレイヤー |
+| UI統括管理 | `uiManager` | UI全体の統括制御 |
+| スライダー制御 | `sliderController` | スライダー操作管理 |
+| ポップアップ管理 | `popupManager` | ポップアップ表示管理 |
+| ステータス管理 | `statusBarManager` | ステータス表示管理 |
+| プリセット表示 | `presetDisplayManager` | プリセット表示管理 |
+| 設定パネル管理 | `settingsPanelManager` | 設定パネル専用管理 |
 
 ---
 
@@ -195,7 +227,8 @@ stage
 4. **transform-manager.js**: 変形システム初期化
 5. **drawing-tools.js**: 描画ツール初期化
 6. **history-manager.js**: 履歴システム初期化
-7. **ui-manager.js**: UI統合・最終調整
+7. **ui/components.js: UIコンポーネント初期化 ★追加
+8. **ui-manager.js**: UI統合・最終調整
 
 ---
 
@@ -352,6 +385,15 @@ AIによるコード補完やバグ診断が難しくなるからです。
 - **エラー通知**: ユーザーフレンドリーなエラーメッセージ
 - **リカバリ機能**: 致命的エラーからの自動復旧
 
+### 18 ふたば☆ちゃんねるカラー
+- **Adobe Frescoの優れたUXにふたば☆ちゃんねるの親しみやすいカラーリングを融合したものとする
+  /* Adobe Fresco風ふたば色定義 */
+  --futaba-maroon: #800000;        /* 主線・基調色・ふたばカラーパレット1 */
+  --futaba-light-maroon: #aa5a56;  /* セカンダリ・ボタン・ふたばカラーパレット2 */
+  --futaba-medium: #cf9c97;        /* アクセント・ホバー・ふたばカラーパレット3 */
+  --futaba-light-medium: #e9c2ba;  /* 境界線・分離線 ・ふたばカラーパレット4*/
+  --futaba-cream: #f0e0d6;         /* キャンバス背景・ふたばカラーパレット5 */
+  --futaba-background: #ffffee;    /* アプリ背景 */
 ---
 
 この拡張版Rulebookは、現行の4ファイル構成から7ファイル構成への段階的移行を支援し、プロクリエイト級の高機能お絵描きツール開発を目指しています。各ファイルの責務を明確に分離することで、保守性と拡張性を両立させることが可能になります。
