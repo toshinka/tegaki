@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.6 - 統合版</title>
-    <link rel="stylesheet" href="styles2.css">
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="main-layout">
@@ -311,7 +311,7 @@
     <!-- 2. UIコンポーネント（基盤UIシステム） -->
     <script src="ui/components.js"></script>
     
-    <!-- 3. 履歴管理（状態管理）- StateCapture クラスを含むため先に読み込み -->
+    <!-- 3. 履歴管理（状態管理）- InternalStateCapture クラスを含むため先に読み込み -->
     <script src="history-manager.js"></script>
     
     <!-- 4. 描画ツール（描画エンジン） -->
@@ -320,7 +320,7 @@
     <!-- 5. 設定管理（システム設定） -->
     <script src="settings-manager.js"></script>
     
-    <!-- 6. UI管理（統合UI制御） - 正しいファイル名に修正 -->
+    <!-- 6. UI管理（統合UI制御） -->
     <script src="ui-manager.js"></script>
     
     <!-- 7. アプリケーション統合・起動 -->
@@ -379,7 +379,9 @@
                 
                 // 6. システム間の相互依存関係を設定
                 console.log('🔗 6. システム統合処理中...');
-                settingsManager.setDependencies(toolsSystem, uiManager, historyManager);
+                uiManager.setHistoryManager(historyManager);
+                uiManager.setSettingsManager(settingsManager);
+                historyManager.setUIManager(uiManager);
                 
                 // 7. ショートカットキー統合（Ctrl+Z, Ctrl+Y for Undo/Redo）
                 console.log('⌨️ 7. ショートカットキー統合中...');
@@ -549,12 +551,12 @@ ${error.message}
             });
         };
         
-        // 依存関係チェック関数
+        // 依存関係チェック関数（修正版）
         function validateDependencies() {
             const required = [
                 { name: 'PIXI', desc: 'PIXI.js v7ライブラリ' },
                 { name: 'PixiDrawingApp', desc: 'アプリケーションコア (app-core.js)' },
-                { name: 'StateCapture', desc: '状態キャプチャクラス (history-manager.js)' },
+                { name: 'InternalStateCapture', desc: '状態キャプチャクラス (history-manager.js)' },
                 { name: 'HistoryManager', desc: '履歴管理システム (history-manager.js)' },
                 { name: 'DrawingToolsSystem', desc: 'ツールシステム (drawing-tools.js)' },
                 { name: 'UIManager', desc: 'UI管理システム (ui-manager.js)' },
