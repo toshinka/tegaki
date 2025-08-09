@@ -1,21 +1,20 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.5
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.6
  * 設定管理システム - settings-manager.js
  * 
  * 責務: アプリケーション設定の一元管理
  * 依存: app-core.js, ui-manager.js, history-manager.js
  * 
- * 主要機能:
- * 1. 高DPI設定の動的切り替え
- * 2. ショートカットキー管理
- * 3. ユーザー設定の永続化（LocalStorage）
- * 4. 設定変更の履歴記録
+ * 循環参照修正版:
+ * - history-manager.jsのStateCapture/StateRestoreへの依存を削除
+ * - 独自の軽量状態管理を実装
+ * - ui-manager.jsのクラス重複問題を回避
  */
 
 // ==== 設定管理定数 ====
 const SETTINGS_CONFIG = {
     STORAGE_KEY: 'futaba_drawing_tool_settings',
-    VERSION: '1.3',
+    VERSION: '1.6',
     AUTO_SAVE_DELAY: 500,  // 設定自動保存遅延（ms）
     DEBUG_MODE: false
 };
@@ -60,6 +59,37 @@ const SETTINGS_EVENTS = {
     SETTINGS_LOADED: 'settings:loaded',
     SETTINGS_SAVED: 'settings:saved'
 };
+
+// ==== 軽量状態キャプチャ（設定専用） ====
+class SettingsStateCapture {
+    /**
+     * 描画状態の軽量キャプチャ（設定変更用）
+     */
+    static captureDrawingStateLight(app) {
+        if (!app || !app.paths) return null;
+        
+        return {
+            pathCount: app.paths.length,
+            canvasWidth: app.width,
+            canvasHeight: app.height,
+            timestamp: Date.now()
+        };
+    }
+    
+    /**
+     * PixiJS設定状態をキャプチャ
+     */
+    static capturePixiSettings(app) {
+        if (!app || !app.app) return null;
+        
+        return {
+            resolution: app.app.renderer.resolution,
+            autoDensity: app.app.renderer.plugins?.interaction?.autoPreventDefault || false,
+            antialias: app.app.renderer.options?.antialias || true,
+            backgroundColor: app.app.renderer.backgroundColor
+        };
+    }
+}
 
 // ==== ショートカット管理クラス ====
 class ShortcutManager {
@@ -347,104 +377,91 @@ class SettingsManager {
         try {
             this.isSaving = true;
             
-            const dataToSave = {
+            const saveData = {
                 version: SETTINGS_CONFIG.VERSION,
                 timestamp: Date.now(),
                 settings: { ...this.settings }
             };
             
-            localStorage.setItem(SETTINGS_CONFIG.STORAGE_KEY, JSON.stringify(dataToSave));
+            localStorage.setItem(SETTINGS_CONFIG.STORAGE_KEY, JSON.stringify(saveData));
             
             this.originalSettings = { ...this.settings };
             this.emit(SETTINGS_EVENTS.SETTINGS_SAVED, { settings: this.settings });
             
-            if (SETTINGS_CONFIG.DEBUG_MODE) {
-                console.log('💾 設定保存完了:', this.settings);
-            }
+            console.log('💾 設定保存完了');
             
         } catch (error) {
-            console.error('💾 設定保存処理エラー:', error);
-            throw error;
+            console.error('💾 設定保存失敗:', error);
         } finally {
             this.isSaving = false;
         }
     }
     
-    // ==== 設定値の取得・設定 ====
+    // ==== 設定取得・変更メソッド ====
     
     getSetting(key) {
         return this.settings[key];
     }
     
-    setSetting(key, value, recordHistory = true) {
-        if (this.settings[key] === value) return false; // 変更なし
+    setSetting(key, value, saveImmediate = false) {
+        if (!SETTING_TYPES.hasOwnProperty(key.toUpperCase())) {
+            console.warn('無効な設定キー:', key);
+            return false;
+        }
         
         const oldValue = this.settings[key];
         this.settings[key] = value;
         
-        // 履歴記録（設定変更も履歴管理の対象）
-        if (recordHistory && this.historyManager) {
-            this.historyManager.recordHistory(HISTORY_TYPES.SETTINGS_CHANGE || 'settings_change', {
-                key: key,
-                before: oldValue,
-                after: value
-            }, `設定変更: ${key}`);
-        }
+        // 設定変更イベント発火
+        this.emit(SETTINGS_EVENTS.SETTING_CHANGED, { key, oldValue, newValue: value });
         
-        // 特定設定の変更処理
+        // 特定設定の特別処理
         this.handleSettingChange(key, value, oldValue);
         
-        // イベント発火
-        this.emit(SETTINGS_EVENTS.SETTING_CHANGED, { key, value, oldValue });
-        
         // 自動保存
-        if (this.getSetting(SETTING_TYPES.AUTO_SAVE)) {
-            this.saveSettings();
+        if (this.settings[SETTING_TYPES.AUTO_SAVE] || saveImmediate) {
+            this.saveSettings(saveImmediate);
         }
         
-        console.log(`⚙️ 設定変更: ${key} = ${value} (前: ${oldValue})`);
         return true;
     }
     
-    updateSettings(updates, recordHistory = true) {
-        const changes = {};
-        let hasChanges = false;
+    setSettings(settingsObject, saveImmediate = false) {
+        let changed = false;
         
-        for (const [key, value] of Object.entries(updates)) {
-            if (this.settings[key] !== value) {
-                changes[key] = {
-                    before: this.settings[key],
-                    after: value
-                };
-                this.settings[key] = value;
-                hasChanges = true;
+        for (const [key, value] of Object.entries(settingsObject)) {
+            if (this.setSetting(key, value, false)) {
+                changed = true;
             }
         }
         
-        if (!hasChanges) return false;
-        
-        // 履歴記録
-        if (recordHistory && this.historyManager) {
-            this.historyManager.recordHistory(HISTORY_TYPES.SETTINGS_CHANGE || 'settings_change', {
-                changes: changes
-            }, '設定一括変更');
+        if (changed && (this.settings[SETTING_TYPES.AUTO_SAVE] || saveImmediate)) {
+            this.saveSettings(saveImmediate);
         }
         
-        // 各設定の変更処理
-        for (const [key, change] of Object.entries(changes)) {
-            this.handleSettingChange(key, change.after, change.before);
-            this.emit(SETTINGS_EVENTS.SETTING_CHANGED, {
-                key,
-                value: change.after,
-                oldValue: change.before
-            });
+        return changed;
+    }
+    
+    resetSettings(saveImmediate = true) {
+        const oldSettings = { ...this.settings };
+        this.settings = { ...DEFAULT_SETTINGS };
+        
+        this.emit(SETTINGS_EVENTS.SETTING_CHANGED, {
+            key: 'ALL',
+            oldValue: oldSettings,
+            newValue: this.settings
+        });
+        
+        // 全設定の特別処理
+        for (const [key, value] of Object.entries(this.settings)) {
+            this.handleSettingChange(key, value, oldSettings[key]);
         }
         
-        // 自動保存
-        if (this.getSetting(SETTING_TYPES.AUTO_SAVE)) {
-            this.saveSettings();
+        if (saveImmediate) {
+            this.saveSettings(true);
         }
         
+        console.log('⚙️ 設定をリセットしました');
         return true;
     }
     
@@ -453,180 +470,66 @@ class SettingsManager {
     handleSettingChange(key, newValue, oldValue) {
         switch (key) {
             case SETTING_TYPES.HIGH_DPI:
-                this.applyHighDpiSetting(newValue);
-                this.emit(SETTINGS_EVENTS.HIGH_DPI_CHANGED, { enabled: newValue });
+                this.applyHighDpiSetting();
+                this.emit(SETTINGS_EVENTS.HIGH_DPI_CHANGED, { newValue, oldValue });
                 break;
                 
             case SETTING_TYPES.SHORTCUTS_ENABLED:
                 if (this.shortcutManager) {
                     this.shortcutManager.setEnabled(newValue);
                 }
-                this.emit(SETTINGS_EVENTS.SHORTCUTS_CHANGED, { enabled: newValue });
-                break;
-                
-            case SETTING_TYPES.SHOW_COORDINATES:
-            case SETTING_TYPES.SHOW_PRESSURE:
-            case SETTING_TYPES.NOTIFICATIONS_ENABLED:
-                // UI側で処理（UIManagerに通知）
-                if (this.uiManager && this.uiManager.handleSettingChange) {
-                    this.uiManager.handleSettingChange(key, newValue);
-                }
+                this.emit(SETTINGS_EVENTS.SHORTCUTS_CHANGED, { newValue, oldValue });
                 break;
         }
     }
     
-    // ==== 高DPI設定の適用 ====
-    
-    applyHighDpiSetting(enabled = null) {
-        if (enabled === null) {
-            enabled = this.getSetting(SETTING_TYPES.HIGH_DPI);
-        }
+    applyHighDpiSetting() {
+        const highDpi = this.getSetting(SETTING_TYPES.HIGH_DPI);
         
-        try {
-            // アプリケーションの再初期化が必要
-            if (this.app && this.app.app) {
-                const currentResolution = this.app.app.renderer.resolution;
-                const targetResolution = enabled ? (window.devicePixelRatio || 1) : 1;
+        if (this.app && this.app.app) {
+            try {
+                const targetResolution = highDpi ? 2.0 : 1.0;
                 
-                if (currentResolution !== targetResolution) {
-                    // 描画内容を一時保存
-                    const drawingState = this.captureCurrentDrawingState();
+                if (Math.abs(this.app.app.renderer.resolution - targetResolution) > 0.1) {
+                    // 解像度変更
+                    this.app.app.renderer.resolution = targetResolution;
                     
-                    // PixiJSアプリケーションの再初期化
-                    this.reinitializePixiApp(enabled);
+                    // キャンバスの再レンダリングが必要な場合
+                    this.app.app.renderer.resize(
+                        this.app.app.screen.width,
+                        this.app.app.screen.height
+                    );
                     
-                    // 描画内容を復元
-                    if (drawingState) {
-                        this.restoreDrawingState(drawingState);
+                    console.log(`🎨 DPI設定変更: ${highDpi ? 'High' : 'Low'} DPI (resolution: ${targetResolution})`);
+                    
+                    // UI通知
+                    if (this.uiManager && this.uiManager.showNotification) {
+                        this.uiManager.showNotification(
+                            `${highDpi ? '高' : '低'}DPIモードに変更しました`,
+                            'info',
+                            3000
+                        );
                     }
-                    
-                    console.log(`🖥️ 高DPI設定適用: ${enabled ? 'ON' : 'OFF'} (解像度: ${targetResolution})`);
                 }
+            } catch (error) {
+                console.error('DPI設定適用エラー:', error);
             }
-            
-        } catch (error) {
-            console.error('❌ 高DPI設定適用エラー:', error);
-            // エラー時は元の設定に戻す
-            this.settings[SETTING_TYPES.HIGH_DPI] = !enabled;
         }
     }
     
-    reinitializePixiApp(highDpiEnabled) {
-        if (!this.app) return;
-        
-        try {
-            // 新しい解像度設定
-            const resolution = highDpiEnabled ? (window.devicePixelRatio || 1) : 1;
-            const autoDensity = highDpiEnabled;
-            
-            // PixiJSアプリケーションを破棄
-            const width = this.app.width;
-            const height = this.app.height;
-            const canvasContainer = document.getElementById('drawing-canvas');
-            
-            if (this.app.app) {
-                this.app.app.destroy(true, { children: true, texture: false });
-            }
-            
-            // 新しいPixiJSアプリケーションを作成
-            this.app.app = new PIXI.Application({
-                width: width,
-                height: height,
-                backgroundColor: CONFIG.BG_COLOR,
-                antialias: CONFIG.ANTIALIAS,
-                resolution: resolution,
-                autoDensity: autoDensity
-            });
-            
-            // DOM要素を再配置
-            if (canvasContainer) {
-                canvasContainer.innerHTML = '';
-                canvasContainer.appendChild(this.app.app.view);
-            }
-            
-            // レイヤー構造を再構築
-            this.app.setupLayers();
-            this.app.setupInteraction();
-            
-            console.log(`🔄 PixiJSアプリ再初期化完了 (解像度: ${resolution}, autoDensity: ${autoDensity})`);
-            
-        } catch (error) {
-            console.error('❌ PixiJSアプリ再初期化エラー:', error);
-            throw error;
-        }
-    }
-    
-    captureCurrentDrawingState() {
-        try {
-            if (!this.app || !this.app.layers) return null;
-            
-            return StateCapture.captureDrawingState(this.app);
-        } catch (error) {
-            console.warn('⚠️ 描画状態キャプチャエラー:', error);
-            return null;
-        }
-    }
-    
-    restoreDrawingState(drawingState) {
-        try {
-            if (!drawingState || !this.app) return false;
-            
-            return StateRestore.restoreDrawingState(this.app, drawingState);
-        } catch (error) {
-            console.warn('⚠️ 描画状態復元エラー:', error);
-            return false;
-        }
-    }
-    
-    // ==== 便利メソッド ====
-    
-    isHighDpiEnabled() {
-        return this.getSetting(SETTING_TYPES.HIGH_DPI);
-    }
-    
-    areShortcutsEnabled() {
-        return this.getSetting(SETTING_TYPES.SHORTCUTS_ENABLED);
-    }
-    
-    isAutoSaveEnabled() {
-        return this.getSetting(SETTING_TYPES.AUTO_SAVE);
-    }
-    
-    toggleHighDpi() {
-        const current = this.isHighDpiEnabled();
-        return this.setSetting(SETTING_TYPES.HIGH_DPI, !current);
-    }
-    
-    toggleShortcuts() {
-        const current = this.areShortcutsEnabled();
-        return this.setSetting(SETTING_TYPES.SHORTCUTS_ENABLED, !current);
-    }
-    
-    // ==== システム連携メソッド ====
+    // ==== 依存システム設定 ====
     
     setupDependentSystems() {
-        // ショートカット有効状態の適用
+        // ショートカット設定の適用
         if (this.shortcutManager) {
-            this.shortcutManager.setEnabled(this.areShortcutsEnabled());
+            this.shortcutManager.setEnabled(this.getSetting(SETTING_TYPES.SHORTCUTS_ENABLED));
         }
         
-        // UIManagerに設定通知
-        if (this.uiManager && this.uiManager.handleSettingsLoaded) {
-            this.uiManager.handleSettingsLoaded(this.settings);
-        }
+        console.log('✅ 依存システム設定完了');
     }
     
-    setDependencies(toolsSystem = null, uiManager = null, historyManager = null) {
-        if (toolsSystem) this.toolsSystem = toolsSystem;
-        if (uiManager) this.uiManager = uiManager;
-        if (historyManager) this.historyManager = historyManager;
-        
-        if (this.isInitialized) {
-            this.setupDependentSystems();
-        }
-    }
+    // ==== 依存オブジェクト取得メソッド ====
     
-    // 依存システムの取得メソッド
     getApp() {
         return this.app;
     }
@@ -647,39 +550,10 @@ class SettingsManager {
         if (this.toolsSystem && this.toolsSystem.getPenPresetManager) {
             return this.toolsSystem.getPenPresetManager();
         }
-        if (this.uiManager && this.uiManager.penPresetManager) {
-            return this.uiManager.penPresetManager;
-        }
         return null;
     }
     
-    // ==== 設定のリセット ====
-    
-    resetToDefaults(recordHistory = true) {
-        const oldSettings = { ...this.settings };
-        this.settings = { ...DEFAULT_SETTINGS };
-        
-        if (recordHistory && this.historyManager) {
-            this.historyManager.recordHistory(HISTORY_TYPES.SETTINGS_CHANGE || 'settings_change', {
-                before: oldSettings,
-                after: this.settings
-            }, '設定リセット');
-        }
-        
-        // 各設定の適用
-        this.applyHighDpiSetting();
-        this.setupDependentSystems();
-        
-        // 保存
-        if (this.isAutoSaveEnabled()) {
-            this.saveSettings(true);
-        }
-        
-        console.log('🔄 設定をデフォルトにリセットしました');
-        return true;
-    }
-    
-    // ==== イベントシステム ====
+    // ==== イベント管理 ====
     
     on(eventName, handler) {
         if (!this.eventHandlers.has(eventName)) {
@@ -705,127 +579,75 @@ class SettingsManager {
                 try {
                     handler(data);
                 } catch (error) {
-                    console.error(`⚠️ 設定イベントハンドラーエラー (${eventName}):`, error);
+                    console.error(`イベントハンドラーエラー (${eventName}):`, error);
                 }
             });
         }
     }
     
-    // ==== デバッグ・統計情報 ====
+    // ==== 状態・統計情報 ====
     
     getSettingsInfo() {
         return {
-            current: { ...this.settings },
-            defaults: { ...DEFAULT_SETTINGS },
-            hasChanges: JSON.stringify(this.settings) !== JSON.stringify(this.originalSettings),
+            version: SETTINGS_CONFIG.VERSION,
             isInitialized: this.isInitialized,
             isLoading: this.isLoading,
             isSaving: this.isSaving,
-            version: SETTINGS_CONFIG.VERSION
+            hasChanges: this.hasUnsavedChanges(),
+            settings: { ...this.settings }
         };
+    }
+    
+    hasUnsavedChanges() {
+        if (!this.originalSettings) return false;
+        
+        return JSON.stringify(this.settings) !== JSON.stringify(this.originalSettings);
     }
     
     getShortcutInfo() {
         return {
-            enabled: this.areShortcutsEnabled(),
-            shortcuts: { ...SHORTCUT_KEYS },
+            enabled: this.getSetting(SETTING_TYPES.SHORTCUTS_ENABLED),
             manager: this.shortcutManager ? {
                 isEnabled: this.shortcutManager.isEnabled,
-                pressedKeys: Array.from(this.shortcutManager.pressedKeys),
-                sequenceKeys: Array.from(this.shortcutManager.sequenceKeys)
-            } : null
+                pressedKeysCount: this.shortcutManager.pressedKeys.size
+            } : null,
+            shortcuts: { ...SHORTCUT_KEYS }
         };
     }
+    
+    // ==== デバッグメソッド ====
     
     debugSettings() {
-        console.group('⚙️ 設定管理デバッグ情報');
-        console.log('📋 設定情報:', this.getSettingsInfo());
-        console.log('⌨️ ショートカット情報:', this.getShortcutInfo());
-        console.log('🎯 依存システム:', {
-            app: !!this.app,
-            toolsSystem: !!this.toolsSystem,
-            uiManager: !!this.uiManager,
-            historyManager: !!this.historyManager
-        });
+        console.group('⚙️ SettingsManager デバッグ情報');
+        console.log('設定情報:', this.getSettingsInfo());
+        console.log('ショートカット情報:', this.getShortcutInfo());
+        console.log('イベントハンドラー:', Object.fromEntries(this.eventHandlers));
         console.groupEnd();
-    }
-    
-    // ==== エクスポート・インポート（将来実装用）====
-    
-    exportSettings() {
-        return {
-            version: SETTINGS_CONFIG.VERSION,
-            timestamp: Date.now(),
-            settings: { ...this.settings },
-            metadata: {
-                userAgent: navigator.userAgent,
-                platform: navigator.platform
-            }
-        };
-    }
-    
-    importSettings(data) {
-        try {
-            if (!data || !data.settings) {
-                throw new Error('無効な設定データです');
-            }
-            
-            if (data.version !== SETTINGS_CONFIG.VERSION) {
-                console.warn('⚠️ 設定データのバージョンが異なります');
-            }
-            
-            const oldSettings = { ...this.settings };
-            this.settings = { ...DEFAULT_SETTINGS, ...data.settings };
-            
-            // 履歴記録
-            if (this.historyManager) {
-                this.historyManager.recordHistory(HISTORY_TYPES.SETTINGS_CHANGE || 'settings_change', {
-                    before: oldSettings,
-                    after: this.settings
-                }, '設定インポート');
-            }
-            
-            // 設定適用
-            this.applyHighDpiSetting();
-            this.setupDependentSystems();
-            
-            // 保存
-            if (this.isAutoSaveEnabled()) {
-                this.saveSettings(true);
-            }
-            
-            console.log('📥 設定インポート完了');
-            return true;
-            
-        } catch (error) {
-            console.error('❌ 設定インポートエラー:', error);
-            return false;
-        }
     }
     
     // ==== クリーンアップ ====
     
-    destroy() {
+    async destroy() {
         console.log('⚙️ SettingsManager破棄開始');
         
-        // 最終保存
-        if (this.isAutoSaveEnabled() && !this.isSaving) {
-            this.saveSettings(true);
+        // 未保存の設定を保存
+        if (this.hasUnsavedChanges()) {
+            await this.saveSettings(true);
         }
         
-        // タイマーのクリーンアップ
-        if (this.autoSaveTimeout) {
-            clearTimeout(this.autoSaveTimeout);
-            this.autoSaveTimeout = null;
-        }
-        
-        // ショートカット管理の破棄
+        // ショートカットマネージャーの破棄
         if (this.shortcutManager) {
             this.shortcutManager.destroy();
             this.shortcutManager = null;
         }
         
-        // イベントハンドラーのクリーンアップ
+        // タイマーのクリア
+        if (this.autoSaveTimeout) {
+            clearTimeout(this.autoSaveTimeout);
+            this.autoSaveTimeout = null;
+        }
+        
+        // イベントハンドラーのクリア
         this.eventHandlers.clear();
         
         // 参照のクリア
@@ -833,75 +655,30 @@ class SettingsManager {
         this.toolsSystem = null;
         this.uiManager = null;
         this.historyManager = null;
-        this.settings = null;
-        this.originalSettings = null;
         
         console.log('✅ SettingsManager破棄完了');
     }
 }
 
-// ==== 設定復元ユーティリティ ====
-class SettingsRestore {
-    /**
-     * 設定変更を復元
-     */
-    static restoreSettingChange(settingsManager, changeData, direction) {
-        if (!settingsManager || !changeData) return false;
-        
-        try {
-            if (changeData.key) {
-                // 単一設定の復元
-                const targetValue = direction === 'undo' ? changeData.before : changeData.after;
-                return settingsManager.setSetting(changeData.key, targetValue, false);
-            } else if (changeData.changes) {
-                // 複数設定の復元
-                const updates = {};
-                for (const [key, change] of Object.entries(changeData.changes)) {
-                    updates[key] = direction === 'undo' ? change.before : change.after;
-                }
-                return settingsManager.updateSettings(updates, false);
-            }
-            
-            return false;
-        } catch (error) {
-            console.error('❌ 設定復元エラー:', error);
-            return false;
-        }
-    }
-}
-
-// ==== グローバルエクスポート ====
+// ==== エクスポート ====
 if (typeof window !== 'undefined') {
     window.SettingsManager = SettingsManager;
     window.ShortcutManager = ShortcutManager;
-    window.SettingsRestore = SettingsRestore;
+    window.SettingsStateCapture = SettingsStateCapture;
     window.SETTINGS_CONFIG = SETTINGS_CONFIG;
     window.SETTING_TYPES = SETTING_TYPES;
     window.DEFAULT_SETTINGS = DEFAULT_SETTINGS;
     window.SHORTCUT_KEYS = SHORTCUT_KEYS;
     window.SETTINGS_EVENTS = SETTINGS_EVENTS;
-    
-    console.log('⚙️ settings-manager.js 読み込み完了');
-    console.log('📝 利用可能クラス: SettingsManager, ShortcutManager, SettingsRestore');
-    console.log('⚙️ 設定項目: SETTING_TYPES, DEFAULT_SETTINGS');
-    console.log('⌨️ ショートカット: SHORTCUT_KEYS');
-    console.log('🎯 実装機能:');
-    console.log('  - P: ペンツール切り替え');
-    console.log('  - P + [: 前のプリセット');
-    console.log('  - P + ]: 次のプリセット'); 
-    console.log('  - DEL: キャンバスクリア');
-    console.log('  - 高DPI設定の動的切り替え');
-    console.log('  - 設定の永続化（LocalStorage）');
-    console.log('  - 設定変更の履歴記録');
 }
 
 // ES6 module export (将来のTypeScript移行用)
 // export { 
 //     SettingsManager, 
-//     ShortcutManager,
-//     SettingsRestore,
-//     SETTINGS_CONFIG, 
-//     SETTING_TYPES, 
+//     ShortcutManager, 
+//     SettingsStateCapture,
+//     SETTINGS_CONFIG,
+//     SETTING_TYPES,
 //     DEFAULT_SETTINGS,
 //     SHORTCUT_KEYS,
 //     SETTINGS_EVENTS
