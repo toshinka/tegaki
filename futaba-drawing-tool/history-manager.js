@@ -1,6 +1,6 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.9
- * 履歴管理システム - history-manager.js (v1.8修正版)
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev2
+ * 履歴管理システム - history-manager.js 
  * 
  * 🔧 v1.8修正内容:
  * 1. recordInitialState() エラーハンドリング強化
