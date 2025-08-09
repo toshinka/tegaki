@@ -1,18 +1,20 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.1
- * 描画ツール群 - drawing-tools.js
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.2
+ * 描画ツール群 - drawing-tools.js (履歴管理統合版)
  * 
- * 責務: 各描画ツールや機能をクラス化
- * 依存: app-core.js (PixiDrawingApp, CONFIG, EVENTS)
+ * 責務: 各描画ツールや機能をクラス化・履歴管理との統合
+ * 依存: app-core.js (PixiDrawingApp, CONFIG, EVENTS), history-manager.js
  */
 
 // ==== ベースツールクラス ====
 class BaseTool {
-    constructor(name, app) {
+    constructor(name, app, historyManager = null) {
         this.name = name;
         this.app = app;
+        this.historyManager = historyManager;
         this.isActive = false;
         this.currentPath = null;
+        this.operationStartState = null; // 履歴管理用の開始状態
     }
     
     activate() {
@@ -25,6 +27,24 @@ class BaseTool {
         this.onDeactivate();
     }
     
+    // 操作開始時の状態キャプチャ
+    captureStartState() {
+        if (this.historyManager) {
+            this.operationStartState = StateCapture.captureDrawingState(this.app);
+        }
+    }
+    
+    // 操作終了時の履歴記録
+    recordOperation() {
+        if (this.historyManager && this.operationStartState) {
+            this.historyManager.recordDrawingOperation(
+                this.name, 
+                this.operationStartState
+            );
+            this.operationStartState = null;
+        }
+    }
+    
     // 抽象メソッド（サブクラスで実装）
     onActivate() {}
     onDeactivate() {}
@@ -33,10 +53,10 @@ class BaseTool {
     onPointerUp(x, y, event) {}
 }
 
-// ==== ベクターペンツール ====
+// ==== ベクターペンツール（履歴管理対応版）====
 class VectorPenTool extends BaseTool {
-    constructor(app) {
-        super('pen', app);
+    constructor(app, historyManager = null) {
+        super('pen', app, historyManager);
         this.lastPoint = null;
         this.smoothingBuffer = [];
         this.maxBufferSize = 5;
@@ -82,6 +102,9 @@ class VectorPenTool extends BaseTool {
     }
     
     onPointerDown(x, y, event) {
+        // 履歴管理：操作開始状態をキャプチャ
+        this.captureStartState();
+        
         this.currentPath = this.app.createPath(x, y, 'pen');
         this.lastPoint = { x, y };
         this.smoothingBuffer = [{ x, y }];
@@ -102,6 +125,10 @@ class VectorPenTool extends BaseTool {
     onPointerUp(x, y, event) {
         if (this.currentPath) {
             this.app.finalizePath(this.currentPath);
+            
+            // 履歴管理：描画操作を記録
+            this.recordOperation();
+            
             console.log(`ペン終了: パス完成 (${this.currentPath.points.length}点)`);
         }
         
@@ -137,13 +164,14 @@ class VectorPenTool extends BaseTool {
         this.currentPath = null;
         this.lastPoint = null;
         this.smoothingBuffer = [];
+        this.operationStartState = null;
     }
 }
 
-// ==== 消しゴムツール ====
+// ==== 消しゴムツール（履歴管理対応版）====
 class EraserTool extends BaseTool {
-    constructor(app) {
-        super('eraser', app);
+    constructor(app, historyManager = null) {
+        super('eraser', app, historyManager);
         this.lastPoint = null;
     }
     
@@ -185,6 +213,9 @@ class EraserTool extends BaseTool {
     }
     
     onPointerDown(x, y, event) {
+        // 履歴管理：操作開始状態をキャプチャ
+        this.captureStartState();
+        
         // 背景色で描画することで消しゴム効果を実現
         this.currentPath = this.app.createPath(x, y, 'eraser');
         this.lastPoint = { x, y };
@@ -202,6 +233,10 @@ class EraserTool extends BaseTool {
     onPointerUp(x, y, event) {
         if (this.currentPath) {
             this.app.finalizePath(this.currentPath);
+            
+            // 履歴管理：消しゴム操作を記録
+            this.recordOperation();
+            
             console.log(`消しゴム終了: パス完成`);
         }
         
@@ -211,22 +246,23 @@ class EraserTool extends BaseTool {
     cleanup() {
         this.currentPath = null;
         this.lastPoint = null;
+        this.operationStartState = null;
     }
 }
 
-// ==== ペンプリセット管理システム ====
+// ==== ペンプリセット管理クラス（履歴管理対応版）====
 class PenPresetManager {
-    constructor(app) {
-        this.app = app;
+    constructor(drawingToolsSystem, historyManager = null) {
+        this.drawingToolsSystem = drawingToolsSystem;
+        this.historyManager = historyManager;
         this.presets = new Map();
         this.activePresetId = null;
-        this.currentLiveValues = null; // ライブプレビュー用
+        this.currentLiveValues = null;
         
         this.initializeDefaultPresets();
     }
     
     initializeDefaultPresets() {
-        // デフォルトプリセットの定義
         const defaultPresets = [
             { id: 'preset-1', size: 1, opacity: 0.85, color: 0x800000, label: '1' },
             { id: 'preset-2', size: 2, opacity: 0.85, color: 0x800000, label: '2' },
@@ -240,11 +276,34 @@ class PenPresetManager {
             this.presets.set(preset.id, preset);
         });
         
-        this.activePresetId = 'preset-16'; // デフォルトをプリセット16に
-        console.log('✅ ペンプリセット初期化完了');
+        this.activePresetId = 'preset-16';
+        console.log('✅ ペンプリセット初期化完了（履歴管理対応版）');
     }
     
-    // ライブプレビュー値を更新
+    selectPreset(presetId) {
+        if (!this.presets.has(presetId)) return false;
+        
+        // 履歴管理：変更前の状態をキャプチャ
+        const beforeState = this.historyManager ? 
+            StateCapture.capturePresetState(this) : null;
+        
+        // プリセット選択実行
+        this.activePresetId = presetId;
+        this.currentLiveValues = null;
+        
+        const preset = this.presets.get(presetId);
+        
+        // 履歴管理：変更後の状態を記録
+        if (this.historyManager && beforeState) {
+            const afterState = StateCapture.capturePresetState(this);
+            this.historyManager.recordPresetChange(beforeState, afterState);
+        }
+        
+        console.log('🎯 プリセット選択（履歴対応）:', presetId, preset);
+        
+        return preset;
+    }
+    
     updateActivePresetLive(size, opacity, color = null) {
         if (!this.activePresetId) return;
         
@@ -257,21 +316,19 @@ class PenPresetManager {
             color: color || activePreset.color
         };
         
-        console.log('🎨 ライブプレビュー更新:', {
+        console.log('🎨 ライブプレビュー更新（履歴対応）:', {
             preset: this.activePresetId,
             size: size,
             opacity: opacity
         });
     }
     
-    // プレビュー表示用データ生成
     generatePreviewData() {
         const previewData = [];
         
         this.presets.forEach((preset, presetId) => {
             const isActive = presetId === this.activePresetId;
             
-            // アクティブプリセットの場合はライブ値を使用
             let displayValues = preset;
             if (isActive && this.currentLiveValues) {
                 displayValues = {
@@ -282,13 +339,12 @@ class PenPresetManager {
                 };
             }
             
-            // プレビュー円のサイズ計算（最大20px制限）
             const displaySize = Math.min(20, Math.max(0.5, displayValues.size));
             
             previewData.push({
                 id: presetId,
-                dataSize: preset.size, // data-size属性用の元サイズ
-                size: displaySize, // 表示用のサイズ（20px制限）
+                dataSize: preset.size,
+                size: displaySize,
                 opacity: displayValues.opacity,
                 color: this.colorToHex(displayValues.color),
                 label: displayValues.size.toFixed(1),
@@ -300,20 +356,6 @@ class PenPresetManager {
         return previewData;
     }
     
-    // プリセット選択
-    selectPreset(presetId) {
-        if (!this.presets.has(presetId)) return false;
-        
-        this.activePresetId = presetId;
-        this.currentLiveValues = null; // ライブ値をクリア
-        
-        const preset = this.presets.get(presetId);
-        console.log('🎯 プリセット選択:', presetId, preset);
-        
-        return preset;
-    }
-    
-    // サイズからプリセットIDを取得
     getPresetIdBySize(size) {
         for (const [presetId, preset] of this.presets) {
             if (Math.abs(preset.size - size) < 0.1) {
@@ -323,7 +365,6 @@ class PenPresetManager {
         return null;
     }
     
-    // カラー値を16進数に変換
     colorToHex(color) {
         if (typeof color === 'string') return color;
         return '#' + color.toString(16).padStart(6, '0');
@@ -337,24 +378,29 @@ class PenPresetManager {
         return this.activePresetId;
     }
     
-    // プリセット設定を保存
-    savePreset(presetId, size, opacity, color) {
-        if (!this.presets.has(presetId)) return false;
+    // 履歴復元用のプリセットデータ適用
+    applyPresetData(presetId, presetData) {
+        if (!presetId || !presetData) return false;
         
-        const preset = this.presets.get(presetId);
-        preset.size = size;
-        preset.opacity = opacity;
-        preset.color = color;
-        
-        console.log('💾 プリセット保存:', presetId, preset);
-        return true;
+        try {
+            this.activePresetId = presetData.activePresetId || presetId;
+            this.currentLiveValues = presetData.currentLiveValues ? 
+                { ...presetData.currentLiveValues } : null;
+            
+            console.log('🔄 プリセットデータ復元:', presetId, presetData);
+            return true;
+        } catch (error) {
+            console.error('プリセットデータ適用エラー:', error);
+            return false;
+        }
     }
 }
 
-// ==== ツール管理システム ====
+// ==== ツール管理システム（履歴管理統合版）====
 class ToolManager {
-    constructor(app) {
+    constructor(app, historyManager = null) {
         this.app = app;
+        this.historyManager = historyManager;
         this.tools = new Map();
         this.activeTool = null;
         
@@ -362,20 +408,16 @@ class ToolManager {
     }
     
     initializeTools() {
-        // 各ツールを登録
-        this.registerTool('pen', new VectorPenTool(this.app));
-        this.registerTool('eraser', new EraserTool(this.app));
+        // 履歴管理対応版ツールを登録
+        this.registerTool('pen', new VectorPenTool(this.app, this.historyManager));
+        this.registerTool('eraser', new EraserTool(this.app, this.historyManager));
         
-        // 将来のツール（コメントアウト）
-        // this.registerTool('fill', new FillTool(this.app));
-        // this.registerTool('select', new SelectTool(this.app));
-        
-        console.log(`✅ ${this.tools.size}個のツールを登録完了`);
+        console.log(`✅ ${this.tools.size}個のツールを登録完了（履歴管理対応版）`);
     }
     
     registerTool(name, tool) {
         this.tools.set(name, tool);
-        console.log(`🔧 ツール登録: ${name}`);
+        console.log(`🔧 ツール登録（履歴対応）: ${name}`);
     }
     
     setActiveTool(toolName) {
@@ -383,6 +425,9 @@ class ToolManager {
             console.warn(`未知のツール: ${toolName}`);
             return false;
         }
+        
+        // 履歴管理：ツール変更を記録
+        const beforeTool = this.activeTool ? this.activeTool.name : null;
         
         // 現在のツールを非アクティブ化
         if (this.activeTool) {
@@ -393,7 +438,12 @@ class ToolManager {
         this.activeTool = this.tools.get(toolName);
         this.activeTool.activate();
         
-        console.log(`🔄 ツール切り替え: ${toolName}`);
+        // 履歴管理：ツール変更を記録
+        if (this.historyManager && beforeTool !== toolName) {
+            this.historyManager.recordToolChange(beforeTool, toolName);
+        }
+        
+        console.log(`🔄 ツール切り替え（履歴対応）: ${toolName}`);
         return true;
     }
     
@@ -403,6 +453,149 @@ class ToolManager {
     
     getAvailableTools() {
         return Array.from(this.tools.keys());
+    }
+}
+
+// ==== ショートカット管理システム（履歴管理対応版）====
+class ShortcutManager {
+    constructor(toolManager, app, historyManager = null) {
+        this.toolManager = toolManager;
+        this.app = app;
+        this.historyManager = historyManager;
+        this.shortcuts = new Map();
+        this.isEnabled = true;
+    }
+    
+    init() {
+        this.registerDefaultShortcuts();
+        this.setupEventListeners();
+        console.log('⌨️ ショートカットシステム初期化完了（履歴管理対応版）');
+    }
+    
+    registerDefaultShortcuts() {
+        // ツール切り替え
+        this.register('KeyB', () => this.toolManager.setActiveTool('pen'));
+        this.register('KeyE', () => this.toolManager.setActiveTool('eraser'));
+        
+        // 操作系
+        this.register('Escape', () => this.clearCanvasWithHistory());
+        
+        // 🎯 履歴管理ショートカット（メインの追加機能）
+        this.register('KeyZ', (e) => {
+            if (e.ctrlKey && !e.shiftKey) {
+                e.preventDefault();
+                this.executeUndo();
+            }
+        });
+        
+        this.register('KeyY', (e) => {
+            if (e.ctrlKey) {
+                e.preventDefault();
+                this.executeRedo();
+            }
+        });
+        
+        // Ctrl+Shift+Z でもリドゥ対応（Photoshop風）
+        this.register('KeyZ', (e) => {
+            if (e.ctrlKey && e.shiftKey) {
+                e.preventDefault();
+                this.executeRedo();
+            }
+        });
+        
+        console.log('⌨️ 履歴管理ショートカット登録完了:');
+        console.log('  - Ctrl+Z: アンドゥ');
+        console.log('  - Ctrl+Y: リドゥ');
+        console.log('  - Ctrl+Shift+Z: リドゥ');
+    }
+    
+    // 履歴管理付きキャンバスクリア
+    clearCanvasWithHistory() {
+        if (this.historyManager) {
+            this.historyManager.recordCanvasClear();
+        }
+        this.app.clear();
+    }
+    
+    // アンドゥ実行
+    executeUndo() {
+        if (!this.historyManager) {
+            console.warn('履歴管理システムが利用できません');
+            return false;
+        }
+        
+        const success = this.historyManager.undo();
+        
+        if (!success) {
+            // アンドゥできない場合の通知（音や視覚効果なし、ログのみ）
+            console.log('アンドゥ: 実行できる履歴がありません');
+        }
+        
+        return success;
+    }
+    
+    // リドゥ実行
+    executeRedo() {
+        if (!this.historyManager) {
+            console.warn('履歴管理システムが利用できません');
+            return false;
+        }
+        
+        const success = this.historyManager.redo();
+        
+        if (!success) {
+            // リドゥできない場合の通知（音や視覚効果なし、ログのみ）
+            console.log('リドゥ: 実行できる履歴がありません');
+        }
+        
+        return success;
+    }
+    
+    register(keyCode, handler) {
+        if (!this.shortcuts.has(keyCode)) {
+            this.shortcuts.set(keyCode, []);
+        }
+        this.shortcuts.get(keyCode).push(handler);
+        console.log(`⌨️ ショートカット登録: ${keyCode}`);
+    }
+    
+    setupEventListeners() {
+        document.addEventListener('keydown', (event) => {
+            if (!this.isEnabled) return;
+            
+            const handlers = this.shortcuts.get(event.code);
+            if (handlers) {
+                for (const handler of handlers) {
+                    try {
+                        if (handler(event) !== false) {
+                            // ハンドラーがfalseを返さない限り、以降のハンドラーは実行しない
+                            break;
+                        }
+                    } catch (error) {
+                        console.error(`ショートカットハンドラーエラー (${event.code}):`, error);
+                    }
+                }
+            }
+        });
+    }
+    
+    enable() {
+        this.isEnabled = true;
+        console.log('⌨️ ショートカット有効化');
+    }
+    
+    disable() {
+        this.isEnabled = false;
+        console.log('⌨️ ショートカット無効化');
+    }
+    
+    // 現在のショートカット一覧を取得
+    getRegisteredShortcuts() {
+        const shortcuts = {};
+        this.shortcuts.forEach((handlers, keyCode) => {
+            shortcuts[keyCode] = handlers.length;
+        });
+        return shortcuts;
     }
 }
 
@@ -459,7 +652,7 @@ class PerformanceMonitor {
             fpsElement.textContent = this.stats.fps;
         }
         
-        // メモリ使用量表示（簡易実装）
+        // メモリ使用量表示
         const memoryElement = document.getElementById('memory-usage');
         if (memoryElement && performance.memory) {
             const usedMB = Math.round(performance.memory.usedJSHeapSize / 1024 / 1024 * 10) / 10;
@@ -476,64 +669,6 @@ class PerformanceMonitor {
     
     getStats() {
         return { ...this.stats };
-    }
-}
-
-// ==== ショートカット管理システム ====
-class ShortcutManager {
-    constructor(toolManager, app) {
-        this.toolManager = toolManager;
-        this.app = app;
-        this.shortcuts = new Map();
-        this.isEnabled = true;
-    }
-    
-    init() {
-        this.registerDefaultShortcuts();
-        this.setupEventListeners();
-        console.log('⌨️ ショートカットシステム初期化完了');
-    }
-    
-    registerDefaultShortcuts() {
-        // ツール切り替え
-        this.register('KeyB', () => this.toolManager.setActiveTool('pen'));
-        this.register('KeyE', () => this.toolManager.setActiveTool('eraser'));
-        
-        // 操作系
-        this.register('Escape', () => this.app.clear());
-        
-        // 将来の機能（コメントアウト）
-        // this.register('KeyZ', (e) => e.ctrlKey && this.undo());
-        // this.register('KeyY', (e) => e.ctrlKey && this.redo());
-    }
-    
-    register(keyCode, handler) {
-        this.shortcuts.set(keyCode, handler);
-        console.log(`⌨️ ショートカット登録: ${keyCode}`);
-    }
-    
-    setupEventListeners() {
-        document.addEventListener('keydown', (event) => {
-            if (!this.isEnabled) return;
-            
-            const handler = this.shortcuts.get(event.code);
-            if (handler) {
-                event.preventDefault();
-                try {
-                    handler(event);
-                } catch (error) {
-                    console.error(`ショートカットハンドラーエラー (${event.code}):`, error);
-                }
-            }
-        });
-    }
-    
-    enable() {
-        this.isEnabled = true;
-    }
-    
-    disable() {
-        this.isEnabled = false;
     }
 }
 
@@ -597,35 +732,59 @@ class LayerSystem {
     }
 }
 
-// ==== メインツールシステム統合クラス ====
+// ==== メインツールシステム統合クラス（履歴管理統合版）====
 class DrawingToolsSystem {
     constructor(app) {
         this.app = app;
-        this.toolManager = new ToolManager(app);
+        
+        // 履歴管理システムを最初に初期化
+        this.historyManager = null; // init()で初期化される
+        
+        // その他のシステム（履歴管理を依存として渡す）
+        this.toolManager = null;
+        this.penPresetManager = null;
         this.performanceMonitor = new PerformanceMonitor();
-        this.shortcutManager = new ShortcutManager(this.toolManager, app);
+        this.shortcutManager = null;
         this.layerSystem = new LayerSystem(app);
-        this.penPresetManager = new PenPresetManager(app); // 追加
         
         this.isInitialized = false;
     }
     
     async init() {
         try {
-            console.log('🎯 DrawingToolsSystem初期化開始...');
+            console.log('🎯 DrawingToolsSystem初期化開始（履歴管理統合版）...');
             
-            // 各サブシステムの初期化
+            // 1. 履歴管理システムを最初に初期化
+            this.historyManager = new HistoryManager(this.app, this);
+            
+            // 2. 履歴管理を依存として他システムを初期化
+            this.toolManager = new ToolManager(this.app, this.historyManager);
+            this.penPresetManager = new PenPresetManager(this, this.historyManager);
+            this.shortcutManager = new ShortcutManager(
+                this.toolManager, 
+                this.app, 
+                this.historyManager
+            );
+            
+            // 3. 各サブシステムの初期化
             this.layerSystem.init();
             this.shortcutManager.init();
             
-            // デフォルトツールをアクティブ化
+            // 4. デフォルトツールをアクティブ化
             this.toolManager.setActiveTool('pen');
             
-            // パフォーマンス監視開始
+            // 5. パフォーマンス監視開始
             this.performanceMonitor.start();
             
             this.isInitialized = true;
-            console.log('✅ DrawingToolsSystem初期化完了');
+            console.log('✅ DrawingToolsSystem初期化完了（履歴管理統合版）');
+            console.log('🏛️ 履歴管理機能:');
+            console.log('  - Ctrl+Z: アンドゥ');
+            console.log('  - Ctrl+Y: リドゥ');
+            console.log('  - Ctrl+Shift+Z: リドゥ（代替）');
+            console.log('  - 描画操作自動記録');
+            console.log('  - プリセット変更記録');
+            console.log('  - ツール変更記録');
             
         } catch (error) {
             console.error('❌ DrawingToolsSystem初期化エラー:', error);
@@ -648,6 +807,10 @@ class DrawingToolsSystem {
     }
     
     updateBrushSettings(settings) {
+        // 履歴管理：変更前の設定をキャプチャ
+        const beforeSettings = this.historyManager ? 
+            StateCapture.captureBrushSettings(this) : null;
+        
         const updates = {};
         
         if ('size' in settings) {
@@ -667,7 +830,14 @@ class DrawingToolsSystem {
         }
         
         this.app.updateState(updates);
-        console.log('🎨 ブラシ設定更新:', updates);
+        
+        // 履歴管理：変更後の設定を記録
+        if (this.historyManager && beforeSettings) {
+            const afterSettings = StateCapture.captureBrushSettings(this);
+            this.historyManager.recordBrushSettingChange(beforeSettings, afterSettings);
+        }
+        
+        console.log('🎨 ブラシ設定更新（履歴対応）:', updates);
     }
     
     getBrushSettings() {
@@ -681,16 +851,93 @@ class DrawingToolsSystem {
         };
     }
     
-    // ==== ペンプリセット関連 ====
+    // ==== 履歴管理関連API ====
+    
+    /**
+     * 履歴管理システムへのアクセサー
+     */
+    getHistoryManager() {
+        return this.historyManager;
+    }
+    
+    /**
+     * PenPresetManagerへのアクセサー
+     */
     getPenPresetManager() {
         return this.penPresetManager;
     }
     
+    /**
+     * アンドゥ実行
+     */
+    undo() {
+        return this.historyManager ? this.historyManager.undo() : false;
+    }
+    
+    /**
+     * リドゥ実行
+     */
+    redo() {
+        return this.historyManager ? this.historyManager.redo() : false;
+    }
+    
+    /**
+     * アンドゥ可能状態
+     */
+    canUndo() {
+        return this.historyManager ? this.historyManager.canUndo() : false;
+    }
+    
+    /**
+     * リドゥ可能状態
+     */
+    canRedo() {
+        return this.historyManager ? this.historyManager.canRedo() : false;
+    }
+    
+    /**
+     * 履歴統計取得
+     */
+    getHistoryStats() {
+        return this.historyManager ? this.historyManager.getStats() : null;
+    }
+    
+    /**
+     * 履歴リスト取得（デバッグ用）
+     */
+    getHistoryList() {
+        return this.historyManager ? this.historyManager.getHistoryList() : [];
+    }
+    
+    /**
+     * 履歴記録の有効/無効切り替え
+     */
+    setHistoryRecording(enabled) {
+        if (this.historyManager) {
+            return this.historyManager.setRecording(enabled);
+        }
+        return false;
+    }
+    
+    /**
+     * 履歴クリア
+     */
+    clearHistory() {
+        if (this.historyManager) {
+            this.historyManager.clearHistory();
+        }
+    }
+    
     // ==== パフォーマンス関連 ====
     getPerformanceStats() {
+        const baseStats = this.performanceMonitor.getStats();
+        const appStats = this.app.getStats();
+        const historyStats = this.getHistoryStats();
+        
         return {
-            ...this.performanceMonitor.getStats(),
-            ...this.app.getStats()
+            ...baseStats,
+            ...appStats,
+            history: historyStats
         };
     }
     
@@ -720,8 +967,14 @@ class DrawingToolsSystem {
         this.shortcutManager.disable();
     }
     
+    getRegisteredShortcuts() {
+        return this.shortcutManager.getRegisteredShortcuts();
+    }
+    
     // ==== デバッグ・統計 ====
     getSystemStats() {
+        const historyStats = this.getHistoryStats();
+        
         return {
             initialized: this.isInitialized,
             currentTool: this.getCurrentTool(),
@@ -730,20 +983,132 @@ class DrawingToolsSystem {
             performance: this.getPerformanceStats(),
             layerCount: this.layerSystem.layers.length,
             activeLayer: this.getActiveLayer()?.name,
-            activePreset: this.penPresetManager.getActivePresetId()
+            history: {
+                canUndo: this.canUndo(),
+                canRedo: this.canRedo(),
+                totalRecorded: historyStats?.totalRecorded || 0,
+                currentIndex: historyStats?.currentIndex || -1,
+                memoryUsageMB: historyStats?.memoryUsageMB || 0
+            },
+            shortcuts: this.getRegisteredShortcuts()
         };
+    }
+    
+    // ==== デバッグメソッド ====
+    
+    /**
+     * 履歴の詳細表示（デバッグ用）
+     */
+    debugHistory() {
+        if (this.historyManager) {
+            this.historyManager.debugHistory();
+        } else {
+            console.warn('履歴管理システムが利用できません');
+        }
+    }
+    
+    /**
+     * 履歴デバッグモードの切り替え
+     */
+    toggleHistoryDebug() {
+        if (this.historyManager) {
+            this.historyManager.toggleDebugMode();
+        }
+    }
+    
+    /**
+     * システム全体のデバッグ情報表示
+     */
+    debugSystem() {
+        console.group('🔍 DrawingToolsSystem デバッグ情報');
+        console.log('システム統計:', this.getSystemStats());
+        
+        if (this.historyManager) {
+            console.log('履歴統計:', this.getHistoryStats());
+            console.log('履歴リスト:', this.getHistoryList());
+        }
+        
+        console.log('ショートカット:', this.getRegisteredShortcuts());
+        console.groupEnd();
+    }
+    
+    // ==== テスト用メソッド ====
+    
+    /**
+     * 履歴機能のテスト実行
+     */
+    testHistoryFunction() {
+        console.group('🧪 履歴機能テスト');
+        
+        // 1. 現在の状態を確認
+        console.log('1. 初期状態:', {
+            canUndo: this.canUndo(),
+            canRedo: this.canRedo(),
+            historyLength: this.getHistoryStats()?.historyLength || 0
+        });
+        
+        // 2. ダミーのブラシ設定変更
+        console.log('2. ブラシ設定変更実行...');
+        this.updateBrushSettings({ size: 20, opacity: 0.7 });
+        
+        // 3. 変更後の状態確認
+        console.log('3. 変更後の状態:', {
+            canUndo: this.canUndo(),
+            canRedo: this.canRedo(),
+            historyLength: this.getHistoryStats()?.historyLength || 0
+        });
+        
+        // 4. アンドゥテスト
+        console.log('4. アンドゥ実行...');
+        const undoResult = this.undo();
+        console.log('アンドゥ結果:', undoResult);
+        
+        // 5. アンドゥ後の状態確認
+        console.log('5. アンドゥ後の状態:', {
+            canUndo: this.canUndo(),
+            canRedo: this.canRedo(),
+            brushSettings: this.getBrushSettings()
+        });
+        
+        // 6. リドゥテスト
+        console.log('6. リドゥ実行...');
+        const redoResult = this.redo();
+        console.log('リドゥ結果:', redoResult);
+        
+        // 7. 最終状態確認
+        console.log('7. 最終状態:', {
+            canUndo: this.canUndo(),
+            canRedo: this.canRedo(),
+            brushSettings: this.getBrushSettings()
+        });
+        
+        console.groupEnd();
     }
     
     // ==== クリーンアップ ====
     destroy() {
+        console.log('🎯 DrawingToolsSystem破棄開始...');
+        
+        // パフォーマンス監視停止
         this.performanceMonitor.stop();
         
         // ツールの非アクティブ化
-        if (this.toolManager.activeTool) {
+        if (this.toolManager && this.toolManager.activeTool) {
             this.toolManager.activeTool.deactivate();
         }
         
-        console.log('DrawingToolsSystem destroyed');
+        // 履歴管理システムの破棄
+        if (this.historyManager) {
+            this.historyManager.destroy();
+        }
+        
+        // 参照のクリア
+        this.historyManager = null;
+        this.toolManager = null;
+        this.penPresetManager = null;
+        this.shortcutManager = null;
+        
+        console.log('✅ DrawingToolsSystem破棄完了');
     }
 }
 
@@ -753,7 +1118,7 @@ if (typeof window !== 'undefined') {
     window.ToolManager = ToolManager;
     window.VectorPenTool = VectorPenTool;
     window.EraserTool = EraserTool;
-    window.PenPresetManager = PenPresetManager; // 追加
+    window.PenPresetManager = PenPresetManager;
     window.PerformanceMonitor = PerformanceMonitor;
     window.ShortcutManager = ShortcutManager;
     window.LayerSystem = LayerSystem;
@@ -765,7 +1130,7 @@ if (typeof window !== 'undefined') {
 //     ToolManager, 
 //     VectorPenTool, 
 //     EraserTool, 
-//     PenPresetManager, // 追加
+//     PenPresetManager,
 //     PerformanceMonitor, 
 //     ShortcutManager, 
 //     LayerSystem 

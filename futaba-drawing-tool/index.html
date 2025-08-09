@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.1 - プレビュー改善版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.2 - 履歴管理統合版</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -193,8 +193,8 @@
             <div class="setting-label">線補正<span class="slider-value">30.0%</span></div>
             <div class="slider-controls">
                 <button class="slider-button small" id="pen-smoothing-decrease-large" title="-10">-10</button>
-                <button class="slider-button small" id="pen-smoothing-decrease" title="-1">-10</button>
-                <button class="slider-button small" id="pen-smoothing-decrease-small" title="-0.1">-10</button>
+                <button class="slider-button small" id="pen-smoothing-decrease" title="-1">-1</button>
+                <button class="slider-button small" id="pen-smoothing-decrease-small" title="-0.1">-0.1</button>
                 <div class="slider" id="pen-smoothing-slider">
                     <div class="slider-track"></div>
                     <div class="slider-handle"></div>
@@ -229,6 +229,18 @@
                 <span class="checkbox-status">有効</span>
             </div>
         </div>
+        
+        <!-- 履歴管理情報表示（デバッグ用・将来機能） -->
+        <!-- 
+        <div class="setting-group">
+            <div class="setting-label">履歴管理</div>
+            <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                <div>アンドゥ: Ctrl+Z</div>
+                <div>リドゥ: Ctrl+Y</div>
+                <div id="history-status">履歴: 1/1</div>
+            </div>
+        </div>
+        -->
     </div>
     
     <!-- リサイズ設定ポップアップ -->
@@ -265,6 +277,11 @@
             <button class="resize-button" id="apply-resize">適用</button>
             <button class="resize-button primary" id="apply-resize-center">適用（中央）</button>
         </div>
+        
+        <!-- 履歴管理に関する注記 -->
+        <div style="margin-top: 12px; padding: 8px; background: #f0f8ff; border-radius: 4px; font-size: 12px; color: #666;">
+            <strong>💡 履歴機能:</strong> リサイズ操作は自動的に履歴に記録され、Ctrl+Zでアンドゥ可能です
+        </div>
     </div>
     
     <!-- ステータスバー -->
@@ -279,7 +296,7 @@
                 <span id="canvas-info">400×400px</span>
             </div>
             <div class="status-item">
-                <span>color:</span>
+                <span>Color:</span>
                 <span id="current-color">#800000</span>
             </div>
             <div class="status-item">
@@ -307,11 +324,54 @@
         </div>
     </div>
 
-    <!-- スクリプト読み込み（正しい順序で） -->
+    <!-- 🏛️ 履歴管理対応版のスクリプト読み込み（正しい順序で） -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
+    
+    <!-- 1. コアエンジン -->
     <script src="app-core.js"></script>
+    
+    <!-- 2. 履歴管理システム（drawing-toolsより先に読み込み） -->
+    <script src="history-manager.js"></script>
+    
+    <!-- 3. 描画ツール群（履歴管理統合版） -->
     <script src="drawing-tools.js"></script>
+    
+    <!-- 4. UI管理システム -->
     <script src="ui-manager.js"></script>
+    
+    <!-- 5. メインエントリーポイント（履歴管理統合版） -->
     <script src="main.js"></script>
+    
+    <!-- 履歴管理機能の説明（開発用コメント） -->
+    <!--
+    🏛️ 履歴管理機能について:
+    
+    【自動記録される操作】
+    - 描画操作（ペン・消しゴム）
+    - プリセット変更
+    - ツール変更
+    - ブラシ設定変更（サイズ・透明度・筆圧・線補正）
+    - キャンバスリサイズ
+    - キャンバスクリア
+    
+    【ショートカット】
+    - Ctrl+Z: アンドゥ
+    - Ctrl+Y: リドゥ
+    - Ctrl+Shift+Z: リドゥ（代替）
+    
+    【メモリ管理】
+    - 最大50履歴まで保存
+    - 古い履歴は自動削除
+    - RenderTexture の適切なクリーンアップ
+    
+    【デバッグ関数】（ブラウザコンソールで使用可能）
+    - undo(): アンドゥ実行
+    - redo(): リドゥ実行 
+    - debugHistory(): 履歴詳細表示
+    - testHistory(): 履歴機能テスト
+    - getHistoryStats(): 履歴統計取得
+    - clearHistory(): 履歴クリア
+    - showSystemStats(): システム統計表示
+    -->
 </body>
 </html>
