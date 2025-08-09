@@ -1,17 +1,19 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev3
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev4
  * UI管理システム - ui-manager.js 
  * 
- * 🔧 v1rev3修正内容（Rulebook準拠責務分離版）:
- * 1. PerformanceMonitor追加（drawing-tools.jsから移行）
- * 2. パフォーマンス監視とUI統合
- * 3. 責務をUI統合管理に明確化
+ * 🔧 v1rev4修正内容（構文エラー完全修正版）:
+ * 1. 構文エラーの完全修正（585行目周辺の切り取り問題解決）
+ * 2. PerformanceMonitor完全実装（drawing-tools.jsから移行）
+ * 3. UIManagerクラスの完全復旧
+ * 4. 全メソッドの完全実装とエラーハンドリング強化
+ * 5. 責務をUI統合管理に明確化
  * 
  * 責務: UIコンテナ管理・UIイベント処理・プリセット管理・パフォーマンス監視
  * 依存: app-core.js, drawing-tools.js, ui/components.js
  */
 
-// ==== パフォーマンス監視システム（drawing-tools.jsから移行）====
+// ==== パフォーマンス監視システム（drawing-tools.jsから移行・完全版）====
 class PerformanceMonitor {
     constructor() {
         this.frameCount = 0;
@@ -269,7 +271,7 @@ class PenPresetManager {
     }
 }
 
-// ==== メインUI管理クラス（v1.9修正版）====
+// ==== メインUI管理クラス（v1rev4完全修正版）====
 class UIManager {
     constructor(app, toolsSystem) {
         this.app = app;
@@ -301,7 +303,7 @@ class UIManager {
     
     async init() {
         try {
-            console.log('🎯 UIManager初期化開始（v1.9修正版・パフォーマンス監視統合）...');
+            console.log('🎯 UIManager初期化開始（v1rev4完全修正版・パフォーマンス監視統合）...');
             
             // 依存コンポーネントのチェック
             this.checkDependencies();
@@ -320,10 +322,11 @@ class UIManager {
             this.updateAllDisplays();
             
             this.isInitialized = true;
-            console.log('✅ UIManager初期化完了（v1.9修正版）');
+            console.log('✅ UIManager初期化完了（v1rev4完全修正版）');
             console.log('🔧 修正項目:');
-            console.log('  - PerformanceMonitor統合（drawing-tools.jsから移行）');
-            console.log('  - パフォーマンス監視とUI統合');
+            console.log('  - 構文エラー完全修正（585行目周辺）');
+            console.log('  - PerformanceMonitor完全統合（drawing-tools.jsから移行）');
+            console.log('  - 全メソッドの完全実装');
             console.log('  - 責務をUI統合管理に明確化');
             
         } catch (error) {
@@ -582,4 +585,477 @@ class UIManager {
             { id: 'pen-smoothing-decrease', slider: 'pen-smoothing-slider', delta: -1 },
             { id: 'pen-smoothing-decrease-large', slider: 'pen-smoothing-slider', delta: -10 },
             { id: 'pen-smoothing-increase-small', slider: 'pen-smoothing-slider', delta: 0.1 },
-            { id: 'pen-smoothing-increase', slider: 'pen-smoothing-slider', delta:
+            { id: 'pen-smoothing-increase', slider: 'pen-smoothing-slider', delta: 1 },
+            { id: 'pen-smoothing-increase-large', slider: 'pen-smoothing-slider', delta: 10 }
+        ];
+        
+        buttonConfigs.forEach(config => {
+            const button = document.getElementById(config.id);
+            if (button) {
+                button.addEventListener('click', () => {
+                    const slider = this.sliders.get(config.slider);
+                    if (slider) {
+                        slider.adjustValue(config.delta);
+                    }
+                });
+            }
+        });
+        
+        console.log('✅ スライダー調整ボタン設定完了');
+    }
+    
+    // ==== リサイズ設定 ====
+    
+    setupResize() {
+        // キャンバスサイズ設定ボタン
+        const resizeButtons = [
+            { id: 'resize-400-400', width: 400, height: 400 },
+            { id: 'resize-600-600', width: 600, height: 600 },
+            { id: 'resize-800-600', width: 800, height: 600 },
+            { id: 'resize-1000-1000', width: 1000, height: 1000 }
+        ];
+        
+        resizeButtons.forEach(config => {
+            const button = document.getElementById(config.id);
+            if (button) {
+                button.addEventListener('click', () => {
+                    this.resizeCanvas(config.width, config.height);
+                });
+            }
+        });
+        
+        console.log('✅ リサイズ設定完了');
+    }
+    
+    resizeCanvas(width, height) {
+        if (this.app && this.app.resize) {
+            this.app.resize(width, height);
+            
+            if (this.statusBar) {
+                this.statusBar.updateCanvasInfo(width, height);
+            }
+            
+            console.log(`キャンバスリサイズ: ${width}x${height}px`);
+        }
+    }
+    
+    // ==== チェックボックス設定 ====
+    
+    setupCheckboxes() {
+        // 高DPI設定
+        const highDpiCheckbox = document.getElementById('high-dpi-checkbox');
+        if (highDpiCheckbox) {
+            highDpiCheckbox.addEventListener('change', (event) => {
+                if (this.settingsManager) {
+                    this.settingsManager.setSetting('highDPI', event.target.checked);
+                }
+            });
+        }
+        
+        // デバッグ情報表示
+        const debugInfoCheckbox = document.getElementById('debug-info-checkbox');
+        if (debugInfoCheckbox) {
+            debugInfoCheckbox.addEventListener('change', (event) => {
+                const debugInfoElement = document.getElementById('debug-info');
+                if (debugInfoElement) {
+                    debugInfoElement.style.display = event.target.checked ? 'block' : 'none';
+                }
+            });
+        }
+        
+        console.log('✅ チェックボックス設定完了');
+    }
+    
+    // ==== アプリイベントリスナー設定 ====
+    
+    setupAppEventListeners() {
+        // キャンバス上のマウス座標更新
+        if (this.app && this.app.view) {
+            this.app.view.addEventListener('pointermove', (event) => {
+                this.updateCoordinatesThrottled(event.offsetX, event.offsetY);
+            });
+        }
+        
+        // ウィンドウリサイズ対応
+        window.addEventListener('resize', () => {
+            this.handleWindowResize();
+        });
+        
+        console.log('✅ アプリイベントリスナー設定完了');
+    }
+    
+    updateCoordinatesThrottled(x, y) {
+        if (this.coordinateUpdateThrottle) {
+            clearTimeout(this.coordinateUpdateThrottle);
+        }
+        
+        this.coordinateUpdateThrottle = setTimeout(() => {
+            if (this.statusBar) {
+                this.statusBar.updateCoordinates(x, y);
+            }
+        }, 16); // 60fps相当
+    }
+    
+    handleWindowResize() {
+        // ウィンドウリサイズ時の処理
+        if (this.popupManager) {
+            // ポップアップ位置の調整（必要に応じて）
+            this.popupManager.hideAllPopups();
+        }
+        
+        // デバウンス処理
+        clearTimeout(this.resizeTimeout);
+        this.resizeTimeout = setTimeout(() => {
+            console.log('ウィンドウリサイズ対応完了');
+        }, 300);
+    }
+    
+    // ==== 表示更新メソッド群 ====
+    
+    updateAllDisplays() {
+        try {
+            this.updatePresetsDisplay();
+            this.updateToolDisplay();
+            this.updateStatusDisplay();
+            
+            console.log('✅ 全表示更新完了');
+        } catch (error) {
+            console.warn('表示更新エラー:', error);
+        }
+    }
+    
+    updatePresetsDisplay() {
+        if (this.presetDisplayManager) {
+            this.presetDisplayManager.updatePresetsDisplay();
+        }
+    }
+    
+    updateToolDisplay() {
+        if (this.toolsSystem && this.statusBar) {
+            const currentTool = this.toolsSystem.getCurrentTool();
+            this.statusBar.updateCurrentTool(currentTool);
+            
+            const brushSettings = this.toolsSystem.getBrushSettings();
+            if (brushSettings) {
+                this.statusBar.updateCurrentColor(brushSettings.color);
+            }
+        }
+    }
+    
+    updateStatusDisplay() {
+        if (this.app && this.statusBar) {
+            const appStats = this.app.getStats ? this.app.getStats() : {};
+            if (appStats.width && appStats.height) {
+                this.statusBar.updateCanvasInfo(appStats.width, appStats.height);
+            }
+        }
+    }
+    
+    // ==== スライダー関連メソッド ====
+    
+    updateSliderValue(sliderId, value) {
+        const slider = this.sliders.get(sliderId);
+        if (slider) {
+            slider.setValue(value, true);
+        }
+    }
+    
+    getAllSliderValues() {
+        const values = {};
+        for (const [id, slider] of this.sliders) {
+            values[id] = slider.value;
+        }
+        return values;
+    }
+    
+    // ==== プリセット関連メソッド ====
+    
+    selectPreset(presetId) {
+        const preset = this.penPresetManager.selectPreset(presetId);
+        if (preset) {
+            // スライダーの値も更新
+            this.updateSliderValue('pen-size-slider', preset.size);
+            this.updateSliderValue('pen-opacity-slider', preset.opacity * 100);
+            this.updateSliderValue('pen-pressure-slider', preset.pressure * 100);
+            this.updateSliderValue('pen-smoothing-slider', preset.smoothing * 100);
+            
+            // 表示更新
+            this.updatePresetsDisplay();
+            this.updateToolDisplay();
+            
+            return preset;
+        }
+        return null;
+    }
+    
+    selectNextPreset() {
+        const preset = this.penPresetManager.selectNextPreset();
+        if (preset) {
+            this.updateSliderValue('pen-size-slider', preset.size);
+            this.updateSliderValue('pen-opacity-slider', preset.opacity * 100);
+            this.updatePresetsDisplay();
+        }
+        return preset;
+    }
+    
+    selectPreviousPreset() {
+        const preset = this.penPresetManager.selectPreviousPreset();
+        if (preset) {
+            this.updateSliderValue('pen-size-slider', preset.size);
+            this.updateSliderValue('pen-opacity-slider', preset.opacity * 100);
+            this.updatePresetsDisplay();
+        }
+        return preset;
+    }
+    
+    // ==== ポップアップ関連メソッド ====
+    
+    showPopup(popupId) {
+        if (this.popupManager) {
+            return this.popupManager.showPopup(popupId);
+        }
+        return false;
+    }
+    
+    hidePopup(popupId) {
+        if (this.popupManager) {
+            return this.popupManager.hidePopup(popupId);
+        }
+        return false;
+    }
+    
+    hideAllPopups() {
+        if (this.popupManager) {
+            this.popupManager.hideAllPopups();
+        }
+    }
+    
+    // ==== 通知・エラー表示 ====
+    
+    showNotification(message, type = 'info', duration = 3000) {
+        console.log(`[${type.toUpperCase()}] ${message}`);
+        
+        // 将来的にはより高度な通知システムを実装予定
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            background: ${type === 'error' ? '#ff4444' : type === 'success' ? '#44ff44' : '#4444ff'};
+            color: white;
+            border-radius: 8px;
+            z-index: 10000;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        `;
+        
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, duration);
+    }
+    
+    showError(message, duration = 5000) {
+        this.showNotification(message, 'error', duration);
+    }
+    
+    // ==== 設定関連ハンドラ ====
+    
+    handleSettingChange(key, newValue) {
+        console.log(`設定変更: ${key} = ${newValue}`);
+        
+        // 設定に応じた処理
+        switch (key) {
+            case 'highDPI':
+                this.handleHighDPIChange(newValue);
+                break;
+            case 'showDebugInfo':
+                this.handleDebugInfoChange(newValue);
+                break;
+            default:
+                console.log(`未処理の設定変更: ${key}`);
+        }
+    }
+    
+    handleSettingsLoaded(settings) {
+        console.log('設定読み込み完了:', settings);
+        
+        // UI要素に設定を反映
+        if (settings.highDPI !== undefined) {
+            const checkbox = document.getElementById('high-dpi-checkbox');
+            if (checkbox) {
+                checkbox.checked = settings.highDPI;
+            }
+        }
+        
+        if (settings.showDebugInfo !== undefined) {
+            const checkbox = document.getElementById('debug-info-checkbox');
+            if (checkbox) {
+                checkbox.checked = settings.showDebugInfo;
+            }
+            this.handleDebugInfoChange(settings.showDebugInfo);
+        }
+    }
+    
+    handleHighDPIChange(enabled) {
+        if (this.app && this.app.setHighDPI) {
+            this.app.setHighDPI(enabled);
+            this.showNotification(
+                enabled ? '高DPI設定を有効にしました' : '高DPI設定を無効にしました',
+                'info'
+            );
+        }
+    }
+    
+    handleDebugInfoChange(enabled) {
+        const debugElement = document.getElementById('debug-info');
+        if (debugElement) {
+            debugElement.style.display = enabled ? 'block' : 'none';
+        }
+    }
+    
+    // ==== システム統計・デバッグ ====
+    
+    getUIStats() {
+        return {
+            initialized: this.isInitialized,
+            activePopup: this.popupManager ? this.popupManager.activePopup : null,
+            sliderCount: this.sliders.size,
+            activePreset: this.penPresetManager.getActivePresetId(),
+            performanceMonitoring: this.performanceMonitor.isRunning,
+            components: {
+                popupManager: !!this.popupManager,
+                statusBar: !!this.statusBar,
+                presetDisplayManager: !!this.presetDisplayManager,
+                penPresetManager: !!this.penPresetManager,
+                performanceMonitor: !!this.performanceMonitor
+            }
+        };
+    }
+    
+    debugUI() {
+        console.group('🔍 UIManager デバッグ情報（v1rev4）');
+        
+        console.log('基本情報:', {
+            initialized: this.isInitialized,
+            sliders: this.sliders.size,
+            activePreset: this.penPresetManager.getActivePresetId()
+        });
+        
+        console.log('コンポーネント状態:', this.getUIStats().components);
+        
+        console.log('スライダー値:', this.getAllSliderValues());
+        
+        if (this.performanceMonitor) {
+            console.log('パフォーマンス統計:', this.performanceMonitor.getStats());
+        }
+        
+        if (this.penPresetManager) {
+            console.log('プリセット一覧:', Array.from(this.penPresetManager.presets.keys()));
+            console.log('アクティブプリセット:', this.penPresetManager.getActivePreset());
+        }
+        
+        console.groupEnd();
+    }
+    
+    // ==== 外部連携メソッド ====
+    
+    onToolChange(newTool) {
+        // ツール変更時の処理
+        this.updateToolDisplay();
+        
+        // ツールボタンのアクティブ状態更新
+        document.querySelectorAll('.tool-button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        
+        const toolButton = document.getElementById(`${newTool}-tool`);
+        if (toolButton) {
+            toolButton.classList.add('active');
+        }
+    }
+    
+    onBrushSettingsChange(settings) {
+        // ブラシ設定変更時の処理
+        if (settings.size !== undefined) {
+            this.updateSliderValue('pen-size-slider', settings.size);
+        }
+        if (settings.opacity !== undefined) {
+            this.updateSliderValue('pen-opacity-slider', settings.opacity * 100);
+        }
+        if (settings.pressure !== undefined) {
+            this.updateSliderValue('pen-pressure-slider', settings.pressure * 100);
+        }
+        if (settings.smoothing !== undefined) {
+            this.updateSliderValue('pen-smoothing-slider', settings.smoothing * 100);
+        }
+        
+        this.updatePresetsDisplay();
+        this.updateToolDisplay();
+    }
+    
+    // ==== クリーンアップ ====
+    
+    destroy() {
+        try {
+            // パフォーマンス監視停止
+            if (this.performanceMonitor) {
+                this.performanceMonitor.stop();
+            }
+            
+            // スライダーのクリーンアップ
+            for (const slider of this.sliders.values()) {
+                if (slider.destroy) {
+                    slider.destroy();
+                }
+            }
+            this.sliders.clear();
+            
+            // タイムアウトのクリア
+            if (this.coordinateUpdateThrottle) {
+                clearTimeout(this.coordinateUpdateThrottle);
+            }
+            if (this.resizeTimeout) {
+                clearTimeout(this.resizeTimeout);
+            }
+            
+            console.log('✅ UIManager クリーンアップ完了');
+            
+        } catch (error) {
+            console.error('UIManager クリーンアップエラー:', error);
+        }
+    }
+}
+
+// ==== グローバル登録 ====
+if (typeof window !== 'undefined') {
+    window.UIManager = UIManager;
+    window.PerformanceMonitor = PerformanceMonitor;
+    window.PenPresetManager = PenPresetManager;
+    
+    console.log('🎯 ui-manager.js v1rev4 読み込み完了（構文エラー完全修正版）');
+    console.log('📦 エクスポートクラス:');
+    console.log('  - UIManager: UI統合管理（パフォーマンス監視統合）');
+    console.log('  - PerformanceMonitor: パフォーマンス監視システム');
+    console.log('  - PenPresetManager: ペンプリセット管理');
+    console.log('🔧 v1rev4修正内容:');
+    console.log('  ✅ 構文エラー完全修正（585行目周辺の切り取り問題解決）');
+    console.log('  ✅ PerformanceMonitor完全実装（drawing-tools.jsから移行）');
+    console.log('  ✅ UIManagerクラスの完全復旧');
+    console.log('  ✅ 全メソッドの完全実装とエラーハンドリング強化');
+    console.log('  ✅ 責務をUI統合管理に明確化');
+    console.log('🏗️ 統合機能:');
+    console.log('  - スライダー制御とプリセット管理の連携');
+    console.log('  - パフォーマンス監視とUI表示の統合');
+    console.log('  - ツール切り替えと履歴管理の連携');
+    console.log('  - 設定変更とUI反映の自動化');
+}
+
+// ==== ES6モジュールエクスポート（将来のTypeScript移行用）====
+// export { UIManager, PerformanceMonitor, PenPresetManager };
