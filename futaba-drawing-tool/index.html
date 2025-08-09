@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.3 - 履歴管理統合版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.4 - 設定管理統合版</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -70,7 +70,8 @@
             
             <div class="tool-separator"></div>
             
-            <div class="tool-button disabled" id="settings-tool" title="設定">
+            <!-- 設定ツールボタン（有効化） -->
+            <div class="tool-button" id="settings-tool" data-popup="settings-panel" title="設定">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="3"/>
                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -229,18 +230,6 @@
                 <span class="checkbox-status">有効</span>
             </div>
         </div>
-        
-        <!-- 履歴管理情報表示（デバッグ用・将来機能） -->
-        <!-- 
-        <div class="setting-group">
-            <div class="setting-label">履歴管理</div>
-            <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                <div>アンドゥ: Ctrl+Z</div>
-                <div>リドゥ: Ctrl+Y</div>
-                <div id="history-status">履歴: 1/1</div>
-            </div>
-        </div>
-        -->
     </div>
     
     <!-- リサイズ設定ポップアップ -->
@@ -284,6 +273,113 @@
         </div>
     </div>
     
+    <!-- 設定パネル（新規追加） -->
+    <div class="popup-panel settings-panel draggable" id="settings-panel" style="left: 70px; top: 150px;">
+        <div class="popup-title">アプリケーション設定</div>
+        
+        <!-- 描画・表示設定 -->
+        <div class="setting-group">
+            <div class="setting-label">描画・表示設定</div>
+            
+            <div class="settings-checkbox-container">
+                <div class="checkbox-left">
+                    <input type="checkbox" class="settings-checkbox" id="high-dpi-setting">
+                    <span class="checkbox-label">高DPI（高解像度）</span>
+                </div>
+                <div class="setting-description">高解像度ディスプレイでクリアな描画</div>
+            </div>
+            
+            <div class="settings-checkbox-container">
+                <div class="checkbox-left">
+                    <input type="checkbox" class="settings-checkbox" id="show-coordinates-setting" checked>
+                    <span class="checkbox-label">座標表示</span>
+                </div>
+                <div class="setting-description">ステータスバーにマウス座標を表示</div>
+            </div>
+            
+            <div class="settings-checkbox-container">
+                <div class="checkbox-left">
+                    <input type="checkbox" class="settings-checkbox" id="show-pressure-setting" checked>
+                    <span class="checkbox-label">筆圧表示</span>
+                </div>
+                <div class="setting-description">ステータスバーに筆圧情報を表示</div>
+            </div>
+        </div>
+        
+        <!-- 操作・機能設定 -->
+        <div class="setting-group">
+            <div class="setting-label">操作・機能設定</div>
+            
+            <div class="settings-checkbox-container">
+                <div class="checkbox-left">
+                    <input type="checkbox" class="settings-checkbox" id="shortcuts-setting" checked>
+                    <span class="checkbox-label">ショートカットキー</span>
+                </div>
+                <div class="setting-description">キーボードショートカットを有効化</div>
+            </div>
+            
+            <div class="settings-checkbox-container">
+                <div class="checkbox-left">
+                    <input type="checkbox" class="settings-checkbox" id="auto-save-setting" checked>
+                    <span class="checkbox-label">設定の自動保存</span>
+                </div>
+                <div class="setting-description">設定変更を自動的に保存</div>
+            </div>
+            
+            <div class="settings-checkbox-container">
+                <div class="checkbox-left">
+                    <input type="checkbox" class="settings-checkbox" id="notifications-setting" checked>
+                    <span class="checkbox-label">通知表示</span>
+                </div>
+                <div class="setting-description">操作通知・メッセージを表示</div>
+            </div>
+        </div>
+        
+        <!-- システム情報 -->
+        <div class="setting-group">
+            <div class="setting-label">システム情報</div>
+            
+            <div class="info-item">
+                <div class="info-label">現在の解像度:</div>
+                <div class="info-value" id="current-resolution">1.0 (デバイス: 1.0)</div>
+            </div>
+            
+            <div class="info-item">
+                <div class="info-label">バージョン:</div>
+                <div class="info-value" id="version-info">v1.3</div>
+            </div>
+        </div>
+        
+        <!-- ショートカット一覧 -->
+        <div class="setting-group">
+            <div class="setting-label">ショートカットキー一覧</div>
+            <div class="shortcut-list" id="shortcut-info">
+                <div>P: ペンツール</div>
+                <div>E: 消しゴム</div>
+                <div>DEL: キャンバスクリア</div>
+                <div>P + [: 前のプリセット</div>
+                <div>P + ]: 次のプリセット</div>
+                <div>Ctrl+Z: アンドゥ</div>
+                <div>Ctrl+Y: リドゥ</div>
+            </div>
+        </div>
+        
+        <!-- 設定管理ボタン -->
+        <div class="setting-group">
+            <div class="setting-label">設定管理</div>
+            <div class="settings-buttons">
+                <button class="settings-button" id="settings-reset">デフォルトに戻す</button>
+                <button class="settings-button" id="settings-export">設定をエクスポート</button>
+                <button class="settings-button" id="settings-import">設定をインポート</button>
+            </div>
+        </div>
+        
+        <!-- 設定に関する注記 -->
+        <div style="margin-top: 12px; padding: 8px; background: #f0f8ff; border-radius: 4px; font-size: 12px; color: #666;">
+            <strong>💡 設定について:</strong> 設定変更は即座に適用され、自動保存が有効な場合はブラウザに保存されます。設定変更もアンドゥ・リドゥの対象です。
+        </div>
+    </div>
+    
     <!-- ステータスバー -->
     <div class="status-panel">
         <div class="status-group">
@@ -324,54 +420,66 @@
         </div>
     </div>
 
-    <!-- 🏛️ 履歴管理対応版のスクリプト読み込み（正しい順序で） -->
+    <!-- 🏛️ 設定管理対応版のスクリプト読み込み（正しい順序で） -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
     
-    <!-- 1. コアエンジン -->
+    <!-- 1. コアエンジン（設定対応版） -->
     <script src="app-core.js"></script>
     
-    <!-- 2. 履歴管理システム（drawing-toolsより先に読み込み） -->
+    <!-- 2. 設定管理システム（新規追加） -->
+    <script src="settings-manager.js"></script>
+    
+    <!-- 3. 履歴管理システム（設定対応版） -->
     <script src="history-manager.js"></script>
     
-    <!-- 3. 描画ツール群（履歴管理統合版） -->
+    <!-- 4. 描画ツール群 -->
     <script src="drawing-tools.js"></script>
     
-    <!-- 4. UI管理システム -->
+    <!-- 5. UI管理システム（設定対応版） -->
     <script src="ui-manager.js"></script>
     
-    <!-- 5. メインエントリーポイント（履歴管理統合版） -->
+    <!-- 6. メインエントリーポイント（設定管理統合版） -->
     <script src="main.js"></script>
     
-    <!-- 履歴管理機能の説明（開発用コメント） -->
+    <!-- 設定管理機能の説明（開発用コメント） -->
     <!--
-    🏛️ 履歴管理機能について:
+    ⚙️ 設定管理機能について:
     
-    【自動記録される操作】
-    - 描画操作（ペン・消しゴム）
-    - プリセット変更
-    - ツール変更
-    - ブラシ設定変更（サイズ・透明度・筆圧・線補正）
-    - キャンバスリサイズ
-    - キャンバスクリア
+    【設定項目】
+    - 高DPI設定: 高解像度ディスプレイでのクリアな描画
+    - ショートカットキー: キーボード操作の有効/無効
+    - 座標表示: ステータスバーでの座標表示制御
+    - 筆圧表示: ステータスバーでの筆圧表示制御
+    - 通知表示: 操作通知メッセージの表示制御
+    - 自動保存: 設定変更の自動保存
     
-    【ショートカット】
+    【ショートカットキー】
+    - P: ペンツール選択
+    - E: 消しゴム選択
+    - DEL: キャンバスクリア
+    - P + [: 前のプリセット
+    - P + ]: 次のプリセット
     - Ctrl+Z: アンドゥ
     - Ctrl+Y: リドゥ
-    - Ctrl+Shift+Z: リドゥ（代替）
     
-    【メモリ管理】
-    - 最大50履歴まで保存
-    - 古い履歴は自動削除
-    - RenderTexture の適切なクリーンアップ
+    【設定管理】
+    - 設定は LocalStorage に自動保存
+    - 設定変更も履歴管理の対象
+    - エクスポート・インポート機能
+    - デフォルト設定への一括リセット
+    
+    【高DPI機能】
+    - PixiJSアプリケーションの動的再初期化
+    - 描画内容を保持したままの解像度切り替え
+    - デバイス解像度の自動検出と適用
     
     【デバッグ関数】（ブラウザコンソールで使用可能）
-    - undo(): アンドゥ実行
-    - redo(): リドゥ実行 
-    - debugHistory(): 履歴詳細表示
-    - testHistory(): 履歴機能テスト
-    - getHistoryStats(): 履歴統計取得
-    - clearHistory(): 履歴クリア
-    - showSystemStats(): システム統計表示
+    - settingsManager.debugSettings(): 設定詳細表示
+    - settingsManager.toggleHighDpi(): 高DPI切り替え
+    - settingsManager.resetToDefaults(): 設定リセット
+    - settingsManager.exportSettings(): 設定エクスポート
+    - uiManager.debugUI(): UI状態表示
+    - historyManager.debugHistory(): 履歴詳細表示
     -->
 </body>
 </html>

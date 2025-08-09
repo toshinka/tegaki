@@ -1,12 +1,18 @@
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.3
- * アプリケーションコア - app-core.js
+ * アプリケーションコア - app-core.js（設定動的化版）
  * 
- * 責務: PixiJSアプリ生成・描画ループ管理・リソースロード
- * 依存: PIXI.js v7
+ * 責務: PixiJSアプリ生成・描画ループ管理・リソースロード・設定連携
+ * 依存: PIXI.js v7, settings-manager.js
+ * 
+ * 修正内容:
+ * 1. CONFIG の動的化（高DPI設定対応）
+ * 2. SettingsManager 連携
+ * 3. アプリケーション再初期化メソッド追加
+ * 4. 設定変更イベント対応
  */
 
-// ==== 設定定数 ====
+// ==== 動的設定定数（settings-manager連携） ====
 const CONFIG = {
     // キャンバス設定
     CANVAS_WIDTH: 400,
@@ -20,17 +26,30 @@ const CONFIG = {
     DEFAULT_PRESSURE: 0.5,
     DEFAULT_SMOOTHING: 0.3,
     
-    // パフォーマンス設定
+    // パフォーマンス設定（動的取得）
     ANTIALIAS: true,
-    RESOLUTION: 1,
-    AUTO_DENSITY: false,
+    get RESOLUTION() {
+        // SettingsManager が利用可能な場合は設定から取得
+        if (window.settingsManager && window.settingsManager.isInitialized) {
+            return window.settingsManager.isHighDpiEnabled() ? 
+                (window.devicePixelRatio || 1) : 1;
+        }
+        // フォールバック: 初期化前は低DPI
+        return 1;
+    },
+    get AUTO_DENSITY() {
+        if (window.settingsManager && window.settingsManager.isInitialized) {
+            return window.settingsManager.isHighDpiEnabled();
+        }
+        return false;
+    },
     
     // 描画最適化
     MIN_DISTANCE_FILTER: 1.5,
     BRUSH_STEPS_MULTIPLIER: 1.5
 };
 
-// ==== イベント定数 ====
+// ==== イベント定数（拡張版） ====
 const EVENTS = {
     POINTER_DOWN: 'pointerdown',
     POINTER_MOVE: 'pointermove',
@@ -41,10 +60,15 @@ const EVENTS = {
     CANVAS_READY: 'canvas:ready',
     TOOL_CHANGED: 'tool:changed',
     DRAWING_START: 'drawing:start',
-    DRAWING_END: 'drawing:end'
+    DRAWING_END: 'drawing:end',
+    
+    // 設定関連イベント（新規追加）
+    SETTINGS_APPLIED: 'settings:applied',
+    HIGH_DPI_CHANGED: 'highDpi:changed',
+    APP_REINITIALIZED: 'app:reinitialized'
 };
 
-// ==== メインアプリケーションクラス ====
+// ==== メインアプリケーションクラス（設定連携版） ====
 class PixiDrawingApp {
     constructor(width = CONFIG.CANVAS_WIDTH, height = CONFIG.CANVAS_HEIGHT) {
         this.width = width;
@@ -74,14 +98,24 @@ class PixiDrawingApp {
         this.paths = [];
         this.currentPathId = 0;
         
+        // 設定関連（新規追加）
+        this.settingsManager = null;
+        this.lastHighDpiState = false;
+        
         // イベントエミッター（簡易実装）
         this.eventHandlers = new Map();
     }
     
-    // ==== 初期化 ====
-    async init() {
+    // ==== 初期化（設定連携版） ====
+    async init(settingsManager = null) {
         try {
             console.log('🎯 PixiDrawingApp初期化開始...');
+            
+            // SettingsManager の登録
+            if (settingsManager) {
+                this.settingsManager = settingsManager;
+                this.setupSettingsEventListeners();
+            }
             
             await this.createApplication();
             this.setupLayers();
@@ -99,16 +133,42 @@ class PixiDrawingApp {
         }
     }
     
+    // ==== 設定イベントリスナー設定 ====
+    setupSettingsEventListeners() {
+        if (!this.settingsManager) return;
+        
+        // 高DPI設定変更の監視
+        this.settingsManager.on(SETTINGS_EVENTS.HIGH_DPI_CHANGED || 'settings:highDpiChanged', (event) => {
+            console.log('🖥️ 高DPI設定変更検知:', event.enabled);
+            this.handleHighDpiChange(event.enabled);
+        });
+        
+        // その他の設定変更監視（将来拡張用）
+        this.settingsManager.on(SETTINGS_EVENTS.SETTING_CHANGED || 'settings:changed', (event) => {
+            this.handleSettingChange(event.key, event.value);
+        });
+    }
+    
+    // ==== アプリケーション作成（設定対応版） ====
     async createApplication() {
+        // 現在の設定から解像度とautoDensityを取得
+        const resolution = CONFIG.RESOLUTION;
+        const autoDensity = CONFIG.AUTO_DENSITY;
+        
+        console.log(`📱 PixiJSアプリケーション作成: 解像度${resolution}, autoDensity=${autoDensity}`);
+        
         // PIXI.js v7の正しい初期化
         this.app = new PIXI.Application({
             width: this.width,
             height: this.height,
             backgroundColor: CONFIG.BG_COLOR,
             antialias: CONFIG.ANTIALIAS,
-            resolution: CONFIG.RESOLUTION,
-            autoDensity: CONFIG.AUTO_DENSITY
+            resolution: resolution,
+            autoDensity: autoDensity
         });
+        
+        // 現在の高DPI状態を記録
+        this.lastHighDpiState = autoDensity;
         
         // キャンバス要素をDOMに追加
         const canvasContainer = document.getElementById('drawing-canvas');
@@ -152,7 +212,187 @@ class PixiDrawingApp {
         });
     }
     
-    // ==== 描画API ====
+    // ==== 高DPI設定変更処理（新規追加） ====
+    async handleHighDpiChange(enabled) {
+        try {
+            console.log(`🔄 高DPI設定変更: ${enabled ? 'ON' : 'OFF'}`);
+            
+            // 現在の描画状態をキャプチャ
+            const drawingState = this.captureDrawingState();
+            
+            // アプリケーションを再初期化
+            await this.reinitializeWithHighDpi(enabled);
+            
+            // 描画状態を復元
+            if (drawingState) {
+                this.restoreDrawingState(drawingState);
+            }
+            
+            this.lastHighDpiState = enabled;
+            this.emit(EVENTS.HIGH_DPI_CHANGED, { enabled });
+            
+            console.log('✅ 高DPI設定変更完了');
+            
+        } catch (error) {
+            console.error('❌ 高DPI設定変更エラー:', error);
+            throw error;
+        }
+    }
+    
+    // ==== アプリケーション再初期化（新規追加） ====
+    async reinitializeWithHighDpi(highDpiEnabled) {
+        try {
+            console.log('🔄 PixiJSアプリケーション再初期化開始...');
+            
+            const canvasContainer = document.getElementById('drawing-canvas');
+            if (!canvasContainer) {
+                throw new Error('drawing-canvas要素が見つかりません');
+            }
+            
+            // 既存アプリケーションの破棄
+            if (this.app) {
+                canvasContainer.removeChild(this.app.view);
+                this.app.destroy(true, { children: true, texture: false });
+            }
+            
+            // 新しい解像度設定で再作成
+            const resolution = highDpiEnabled ? (window.devicePixelRatio || 1) : 1;
+            const autoDensity = highDpiEnabled;
+            
+            this.app = new PIXI.Application({
+                width: this.width,
+                height: this.height,
+                backgroundColor: CONFIG.BG_COLOR,
+                antialias: CONFIG.ANTIALIAS,
+                resolution: resolution,
+                autoDensity: autoDensity
+            });
+            
+            // DOM要素を再配置
+            canvasContainer.appendChild(this.app.view);
+            
+            // レイヤー構造とインタラクションを再構築
+            this.setupLayers();
+            this.setupInteraction();
+            
+            this.emit(EVENTS.APP_REINITIALIZED, { 
+                resolution, 
+                autoDensity, 
+                highDpiEnabled 
+            });
+            
+            console.log(`✅ PixiJSアプリケーション再初期化完了 (解像度: ${resolution})`);
+            
+        } catch (error) {
+            console.error('❌ PixiJSアプリケーション再初期化エラー:', error);
+            throw error;
+        }
+    }
+    
+    // ==== 描画状態のキャプチャ・復元（新規追加） ====
+    captureDrawingState() {
+        try {
+            if (!this.layers || !this.layers.drawingLayer) return null;
+            
+            // パスデータと描画内容をキャプチャ
+            const pathsData = this.paths.map(path => ({
+                id: path.id,
+                color: path.color,
+                size: path.size,
+                opacity: path.opacity,
+                tool: path.tool,
+                points: [...path.points],
+                isComplete: path.isComplete,
+                timestamp: path.timestamp
+            }));
+            
+            return {
+                paths: pathsData,
+                currentPathId: this.currentPathId,
+                state: { ...this.state },
+                timestamp: Date.now()
+            };
+            
+        } catch (error) {
+            console.warn('⚠️ 描画状態キャプチャエラー:', error);
+            return null;
+        }
+    }
+    
+    restoreDrawingState(drawingState) {
+        try {
+            if (!drawingState || !this.layers) return false;
+            
+            // レイヤーをクリア
+            this.layers.drawingLayer.removeChildren();
+            
+            // パスを復元
+            this.paths = [];
+            this.currentPathId = drawingState.currentPathId || 0;
+            
+            drawingState.paths.forEach(pathData => {
+                const graphics = new PIXI.Graphics();
+                
+                // ポイントから描画を再現
+                pathData.points.forEach((point, index) => {
+                    if (index === 0) {
+                        // 最初の点
+                        this.drawCircle(graphics, point.x, point.y, pathData.size / 2, pathData.color, pathData.opacity);
+                    } else {
+                        // 線の描画
+                        const prevPoint = pathData.points[index - 1];
+                        const distance = this.calculateDistance(point.x, point.y, prevPoint.x, prevPoint.y);
+                        const steps = Math.max(1, Math.ceil(distance / CONFIG.BRUSH_STEPS_MULTIPLIER));
+                        
+                        for (let i = 1; i <= steps; i++) {
+                            const t = i / steps;
+                            const px = prevPoint.x + (point.x - prevPoint.x) * t;
+                            const py = prevPoint.y + (point.y - prevPoint.y) * t;
+                            this.drawCircle(graphics, px, py, pathData.size / 2, pathData.color, pathData.opacity);
+                        }
+                    }
+                });
+                
+                // パスオブジェクトを復元
+                const restoredPath = {
+                    ...pathData,
+                    graphics: graphics
+                };
+                
+                this.layers.drawingLayer.addChild(graphics);
+                this.paths.push(restoredPath);
+            });
+            
+            // 状態を復元
+            if (drawingState.state) {
+                this.state = { ...this.state, ...drawingState.state };
+                this.state.currentPath = null; // 描画中状態はリセット
+                this.state.isDrawing = false;
+            }
+            
+            console.log(`✅ 描画状態復元完了: ${this.paths.length}個のパス`);
+            return true;
+            
+        } catch (error) {
+            console.error('❌ 描画状態復元エラー:', error);
+            return false;
+        }
+    }
+    
+    // ==== 設定変更処理（新規追加） ====
+    handleSettingChange(key, value) {
+        // 将来的に他の設定変更に対応
+        switch (key) {
+            case 'highDpi':
+                // 既に handleHighDpiChange で処理される
+                break;
+            default:
+                console.log(`⚙️ 設定変更: ${key} = ${value}`);
+                break;
+        }
+    }
+    
+    // ==== 描画API（変更なし） ====
     createPath(x, y, tool = null) {
         const currentTool = tool || this.state.currentTool;
         const pathId = this.generatePathId();
@@ -217,7 +457,7 @@ class PixiDrawingApp {
         this.emit(EVENTS.DRAWING_END, { path });
     }
     
-    // ==== 描画ユーティリティ ====
+    // ==== 描画ユーティリティ（変更なし） ====
     drawCircle(graphics, x, y, radius, color, opacity) {
         graphics.beginFill(color, opacity);
         graphics.drawCircle(x, y, radius);
@@ -232,7 +472,7 @@ class PixiDrawingApp {
         return `path_${Date.now()}_${(++this.currentPathId).toString(36)}`;
     }
     
-    // ==== 座標変換 ====
+    // ==== 座標変換（変更なし） ====
     getLocalPointerPosition(event) {
         try {
             const rect = this.app.view.getBoundingClientRect();
@@ -248,7 +488,7 @@ class PixiDrawingApp {
         }
     }
     
-    // ==== 状態管理 ====
+    // ==== 状態管理（変更なし） ====
     updateState(updates) {
         Object.assign(this.state, updates);
         this.emit(EVENTS.TOOL_CHANGED, { state: this.state });
@@ -258,7 +498,7 @@ class PixiDrawingApp {
         return { ...this.state };
     }
     
-    // ==== キャンバス操作 ====
+    // ==== キャンバス操作（変更なし） ====
     resize(newWidth, newHeight, centerContent = false) {
         const oldWidth = this.width;
         const oldHeight = this.height;
@@ -299,7 +539,22 @@ class PixiDrawingApp {
         console.log('Canvas cleared');
     }
     
-    // ==== イベントシステム（簡易実装） ====
+    // ==== 設定連携メソッド（新規追加） ====
+    setSettingsManager(settingsManager) {
+        this.settingsManager = settingsManager;
+        this.setupSettingsEventListeners();
+        console.log('⚙️ SettingsManager連携完了');
+    }
+    
+    getCurrentResolution() {
+        return this.app ? this.app.renderer.resolution : 1;
+    }
+    
+    isHighDpiActive() {
+        return this.lastHighDpiState;
+    }
+    
+    // ==== イベントシステム（変更なし） ====
     on(eventName, handler) {
         if (!this.eventHandlers.has(eventName)) {
             this.eventHandlers.set(eventName, []);
@@ -320,7 +575,7 @@ class PixiDrawingApp {
         }
     }
     
-    // ==== デバッグ・統計情報 ====
+    // ==== デバッグ・統計情報（拡張版） ====
     getStats() {
         return {
             width: this.width,
@@ -329,6 +584,9 @@ class PixiDrawingApp {
             isInitialized: this.app !== null,
             isDrawing: this.state.isDrawing,
             currentTool: this.state.currentTool,
+            resolution: this.getCurrentResolution(),
+            isHighDpi: this.isHighDpiActive(),
+            hasSettingsManager: !!this.settingsManager,
             memoryUsage: this.getMemoryUsage()
         };
     }
@@ -346,7 +604,7 @@ class PixiDrawingApp {
         };
     }
     
-    // ==== クリーンアップ ====
+    // ==== クリーンアップ（拡張版） ====
     destroy() {
         if (this.app) {
             this.clear();
@@ -355,6 +613,8 @@ class PixiDrawingApp {
         }
         
         this.eventHandlers.clear();
+        this.settingsManager = null;
+        
         console.log('PixiDrawingApp destroyed');
     }
 }
@@ -364,6 +624,10 @@ if (typeof window !== 'undefined') {
     window.PixiDrawingApp = PixiDrawingApp;
     window.CONFIG = CONFIG;
     window.EVENTS = EVENTS;
+    
+    console.log('🎯 app-core.js (設定動的化版) 読み込み完了');
+    console.log('🖥️ 高DPI設定対応済み');
+    console.log('⚙️ SettingsManager連携対応済み');
 }
 
 // ES6 module export (将来のTypeScript移行用)
