@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.6 - 統合版</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="tool-button disabled" id="download-tool" title="ダウンロード">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7,10 12,15 17,10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+            </div>
+            
+            <div class="tool-button" id="resize-tool" data-popup="resize-settings" title="リサイズ">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <path d="M8 12h8"/>
+                    <path d="M12 8v8"/>
+                </svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+                   
+            <div class="tool-button disabled" id="palette-tool" title="カラーパレット">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="13.5" cy="6.5" r=".5"/>
+                    <circle cx="17.5" cy="10.5" r=".5"/>
+                    <circle cx="8.5" cy="7.5" r=".5"/>
+                    <circle cx="6.5" cy="12.5" r=".5"/>
+                    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
+                </svg>
+            </div>
+     
+            <div class="tool-button active" id="pen-tool" data-popup="pen-settings" title="ベクターペン">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 21v-4a4 4 0 1 1 4 4h-4"/>
+                    <path d="M21 3a16 16 0 0 0 -12.8 10.2"/>
+                    <path d="M21 3a16 16 0 0 1 -10.2 12.8"/>
+                    <path d="M10.6 9a9 9 0 0 1 4.4 4.4"/>
+                </svg>
+            </div>
+            
+            <div class="tool-button" id="eraser-tool" title="消しゴム">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 20h-10.5l-4.21-4.3a1 1 0 0 1 0-1.41l10-10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41L11.5 20"/>
+                    <path d="M18 13.3l-6.3-6.3"/>
+                </svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <div class="tool-button disabled" id="fill-tool" title="塗りつぶし">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 11H5m14 0a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2m14 0V9a2 2 0 0 0-2-2M5 11V9a2 2 0 0 1 2-2m0 0V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2M7 7h10"/>
+                </svg>
+            </div>
+            
+            <div class="tool-button disabled" id="select-tool" title="範囲選択">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="4" y="4" width="16" height="16" rx="2" ry="2"/>
+                    <path d="M9 9h6v6H9z"/>
+                </svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <div class="tool-button disabled" id="settings-tool" title="設定">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+            </div>
+        </div>
+        
+        <div class="canvas-area">
+            <div class="canvas-container">
+                <div id="drawing-canvas"></div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="popup-panel pen-settings draggable" id="pen-settings" style="left: 60px; top: 100px;">
+        <div class="popup-title">ベクターペンツール設定</div>
+        
+        <div class="setting-group">
+            <div class="size-presets" id="size-presets">
+                <div class="size-preset-item" data-size="1">
+                    <div class="size-preview-circle" style="width: 0.5px; height: 0.5px; background: #800000;"></div>
+                    <div class="size-preview-label">1</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="2">
+                    <div class="size-preview-circle" style="width: 2px; height: 2px; background: #800000;"></div>
+                    <div class="size-preview-label">2</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="4">
+                    <div class="size-preview-circle" style="width: 4px; height: 4px; background: #800000;"></div>
+                    <div class="size-preview-label">4</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="8">
+                    <div class="size-preview-circle" style="width: 8px; height: 8px; background: #800000;"></div>
+                    <div class="size-preview-label">8</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item active" data-size="16">
+                    <div class="size-preview-circle" style="width: 16px; height: 16px; background: #800000;"></div>
+                    <div class="size-preview-label">16</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="32">
+                    <div class="size-preview-circle" style="width: 20px; height: 20px; background: #800000;"></div>
+                    <div class="size-preview-label">32</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">サイズ</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-size-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-size-decrease">-1</div>
+                <div class="slider-button small" id="pen-size-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-size-slider">
+                        <div class="slider-track" id="pen-size-track"></div>
+                        <div class="slider-handle" id="pen-size-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-size-value">16.0px</div>
+                </div>
+                <div class="slider-button small" id="pen-size-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-size-increase">+1</div>
+                <div class="slider-button small" id="pen-size-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">不透明度</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-opacity-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-opacity-decrease">-1</div>
+                <div class="slider-button small" id="pen-opacity-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-opacity-slider">
+                        <div class="slider-track" id="pen-opacity-track"></div>
+                        <div class="slider-handle" id="pen-opacity-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-opacity-value">85.0%</div>
+                </div>
+                <div class="slider-button small" id="pen-opacity-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-opacity-increase">+1</div>
+                <div class="slider-button small" id="pen-opacity-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">筆圧（ダミー表示）</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-pressure-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-pressure-decrease">-1</div>
+                <div class="slider-button small" id="pen-pressure-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-pressure-slider">
+                        <div class="slider-track" id="pen-pressure-track"></div>
+                        <div class="slider-handle" id="pen-pressure-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-pressure-value">50.0%</div>
+                </div>
+                <div class="slider-button small" id="pen-pressure-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-pressure-increase">+1</div>
+                <div class="slider-button small" id="pen-pressure-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">線補正</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-smoothing-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-smoothing-decrease">-1</div>
+                <div class="slider-button small" id="pen-smoothing-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-smoothing-slider">
+                        <div class="slider-track" id="pen-smoothing-track"></div>
+                        <div class="slider-handle" id="pen-smoothing-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-smoothing-value">30.0%</div>
+                </div>
+                <div class="slider-button small" id="pen-smoothing-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-smoothing-increase">+1</div>
+                <div class="slider-button small" id="pen-smoothing-increase-large">+10</div>
+            </div>
+        </div>
+
+        <div class="setting-group">
+            <div class="checkbox-container" id="pressure-sensitivity-container">
+                <div class="checkbox-left">
+                    <div class="checkbox" id="pressure-sensitivity"></div>
+                    <div class="checkbox-label">筆圧感度</div>
+                </div>
+                <div class="checkbox-status">未実装</div>
+            </div>
+            
+            <div class="checkbox-container" id="edge-smoothing-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="edge-smoothing"></div>
+                    <div class="checkbox-label">エッジスムージング</div>
+                </div>
+                <div class="checkbox-status">ON</div>
+            </div>
+            
+            <div class="checkbox-container" id="gpu-acceleration-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="gpu-acceleration"></div>
+                    <div class="checkbox-label">GPU加速</div>
+                </div>
+                <div class="checkbox-status">ON</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="popup-panel resize-settings draggable" id="resize-settings" style="left: 120px; top: 50px;">
+        <div class="popup-title">キャンバスリサイズ</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">サイズ設定</div>
+            <div class="size-input-group">
+                <div class="size-input-field">
+                    <input type="number" class="size-input" id="canvas-width" value="400" min="100" max="2000">
+                </div>
+                <div class="size-multiply">×</div>
+                <div class="size-input-field">
+                    <input type="number" class="size-input" id="canvas-height" value="400" min="100" max="2000">
+                </div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">プリセット</div>
+            <div class="resize-buttons">
+                <button class="resize-button" data-size="400,400">400×400</button>
+                <button class="resize-button" data-size="800,600">800×600</button>
+            </div>
+            <div class="resize-buttons" style="margin-top: 8px;">
+                <button class="resize-button" data-size="1200,800">1200×800</button>
+                <button class="resize-button" data-size="1920,1080">1920×1080</button>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="resize-buttons">
+                <button class="resize-button primary" id="apply-resize">適用</button>
+                <button class="resize-button" id="apply-resize-center">中央配置で適用</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">
+                <span>Canvas:</span>
+                <span id="canvas-info">400×400px</span>
+            </div>
+            <div class="status-item">
+                <span>Tool:</span>
+                <span id="current-tool">ベクターペン</span>
+            </div>
+            <div class="status-item">
+                <span>Color:</span>
+                <span id="current-color">#800000</span>
+            </div>
+            <div class="status-item">
+                <span id="coordinates">x: 0, y: 0</span>
+            </div>
+            <div class="status-item">
+                <span>筆圧:</span>
+                <span id="pressure-monitor">0.0%</span>
+            </div>
+        </div>
+        <div class="status-group">
+            <div class="status-item">
+                <span>FPS:</span>
+                <span id="fps">60</span>
+            </div>
+            <div class="status-item">
+                <span>GPU:</span>
+                <span id="gpu-usage">45%</span>
+            </div>
+            <div class="status-item">
+                <span>Memory:</span>
+                <span id="memory-usage">12.3MB</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- PixiJS v7 CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
+    
+    <!--⚠️ 重要: 依存関係の順序を厳格に管理 ⚠️ -->
+    
+    <!-- 1. コアシステム（基盤） -->
+    <script src="app-core.js"></script>
+    
+    <!-- 2. UIコンポーネント（基盤UIシステム） -->
+    <script src="ui/components.js"></script>
+    
+    <!-- 3. 描画ツール（描画エンジン） -->
+    <script src="drawing-tools.js"></script>
+    
+    <!-- 4. 履歴管理（状態管理） -->
+    <script src="history-manager.js"></script>
+    
+    <!-- 5. 設定管理（システム設定） -->
+    <script src="settings-manager.js"></script>
+    
+    <!-- 6. UI管理（統合UI制御） -->
+    <script src="ui-manager.js"></script>
+    
+    <!-- 7. アプリケーション統合・起動 -->
+    <script>
+        /**
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.5
+         * アプリケーション統合起動スクリプト
+         * 
+         * このスクリプトは、全システムを正しい順序で初期化し、統合します。
+         */
+        
+        // グローバル変数（デバッグ用）
+        window.FutabaApp = {
+            app: null,
+            toolsSystem: null,
+            uiManager: null,
+            historyManager: null,
+            settingsManager: null,
+            isInitialized: false
+        };
+        
+        // 初期化関数
+        async function initializeApplication() {
+            try {
+                console.log('🚀 ふたば☆ちゃんねる風ベクターお絵描きツール v1.5 起動開始');
+                console.time('アプリケーション起動時間');
+                
+                // 1. PixiJSアプリケーションコア初期化
+                console.log('🎯 1. PixiJSアプリケーション初期化中...');
+                const app = new PixiDrawingApp(400, 400);
+                await app.init();
+                window.FutabaApp.app = app;
+                
+                // 2. 描画ツールシステム初期化
+                console.log('🎨 2. 描画ツールシステム初期化中...');
+                const toolsSystem = new DrawingToolsSystem(app);
+                await toolsSystem.init();
+                window.FutabaApp.toolsSystem = toolsSystem;
+                
+                // 3. 履歴管理システム初期化
+                console.log('📚 3. 履歴管理システム初期化中...');
+                const historyManager = new HistoryManager(app, toolsSystem);
+                window.FutabaApp.historyManager = historyManager;
+                
+                // 4. UI管理システム初期化
+                console.log('🎭 4. UI管理システム初期化中...');
+                const uiManager = new UIManager(app, toolsSystem);
+                await uiManager.init();
+                window.FutabaApp.uiManager = uiManager;
+                
+                // 5. 設定管理システム初期化
+                console.log('⚙️ 5. 設定管理システム初期化中...');
+                const settingsManager = new SettingsManager(app, toolsSystem, uiManager, historyManager);
+                await settingsManager.init();
+                window.FutabaApp.settingsManager = settingsManager;
+                
+                // 6. システム間の相互依存関係を設定
+                console.log('🔗 6. システム統合処理中...');
+                settingsManager.setDependencies(toolsSystem, uiManager, historyManager);
+                
+                // 7. ショートカットキー統合（Ctrl+Z, Ctrl+Y for Undo/Redo）
+                console.log('⌨️ 7. ショートカットキー統合中...');
+                setupHistoryShortcuts(historyManager);
+                
+                // 8. 初期化完了
+                window.FutabaApp.isInitialized = true;
+                console.timeEnd('アプリケーション起動時間');
+                console.log('✅ 全システム初期化完了！');
+                
+                // 初回描画状態をキャプチャ（履歴の起点）
+                setTimeout(() => {
+                    historyManager.recordDrawingOperation('initial', null);
+                    console.log('📝 初期状態を履歴に記録しました');
+                }, 100);
+                
+                // 起動完了メッセージ
+                showWelcomeMessage();
+                
+            } catch (error) {
+                console.error('❌ アプリケーション初期化エラー:', error);
+                showErrorMessage(error);
+                throw error;
+            }
+        }
+        
+        // 履歴管理用ショートカット設定
+        function setupHistoryShortcuts(historyManager) {
+            document.addEventListener('keydown', (event) => {
+                // Ctrl+Z: アンドゥ
+                if (event.ctrlKey && event.key === 'z' && !event.shiftKey) {
+                    event.preventDefault();
+                    historyManager.undo();
+                    return;
+                }
+                
+                // Ctrl+Y または Ctrl+Shift+Z: リドゥ
+                if ((event.ctrlKey && event.key === 'y') || 
+                    (event.ctrlKey && event.shiftKey && event.key === 'Z')) {
+                    event.preventDefault();
+                    historyManager.redo();
+                    return;
+                }
+            });
+            
+            console.log('⌨️ 履歴管理ショートカット設定完了 (Ctrl+Z: Undo, Ctrl+Y/Ctrl+Shift+Z: Redo)');
+        }
+        
+        // ウェルカムメッセージ表示
+        function showWelcomeMessage() {
+            const message = `
+🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.5 へようこそ！
+
+📋 使い方:
+• P: ペンツール切り替え
+• E: 消しゴムツール切り替え  
+• P + [: 前のプリセット
+• P + ]: 次のプリセット
+• DEL: キャンバスクリア
+• Ctrl+Z: アンドゥ
+• Ctrl+Y: リドゥ
+
+🖱️ マウス操作:
+• 左クリック+ドラッグで描画
+• ツールボタンクリックでツール切り替え
+• ポップアップパネルはドラッグで移動可能
+
+🎯 機能:
+• 高性能ベクター描画エンジン
+• リアルタイム線補正
+• 無制限アンドゥ・リドゥ
+• 高DPI対応
+• プリセット管理
+• 設定自動保存
+            `;
+            
+            console.log(message);
+            
+            // UI通知も表示
+            if (window.FutabaApp.uiManager && window.FutabaApp.uiManager.showNotification) {
+                setTimeout(() => {
+                    window.FutabaApp.uiManager.showNotification('起動完了！描画を開始できます', 'success', 3000);
+                }, 500);
+            }
+        }
+        
+        // エラーメッセージ表示
+        function showErrorMessage(error) {
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: #ff4444;
+                color: white;
+                padding: 20px;
+                border-radius: 8px;
+                z-index: 10000;
+                font-family: monospace;
+                white-space: pre-line;
+                max-width: 500px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            `;
+            
+            errorDiv.textContent = `❌ アプリケーション起動エラー
+
+${error.message}
+
+デベロッパーツールのコンソールで詳細を確認してください。
+
+このエラーが続く場合:
+1. ページを再読み込みしてください
+2. ブラウザのキャッシュをクリアしてください
+3. 開発者にお問い合わせください`;
+            
+            document.body.appendChild(errorDiv);
+            
+            // 10秒後に自動削除
+            setTimeout(() => {
+                if (errorDiv.parentNode) {
+                    errorDiv.parentNode.removeChild(errorDiv);
+                }
+            }, 10000);
+        }
+        
+        // グローバルデバッグ関数
+        window.debugFutabaApp = function() {
+            console.group('🔍 ふたばアプリ デバッグ情報');
+            
+            console.log('📊 初期化状態:', window.FutabaApp.isInitialized);
+            
+            if (window.FutabaApp.app) {
+                console.log('🎯 App統計:', window.FutabaApp.app.getStats());
+            }
+            
+            if (window.FutabaApp.toolsSystem) {
+                console.log('🎨 ツールシステム:', window.FutabaApp.toolsSystem.getSystemStats());
+            }
+            
+            if (window.FutabaApp.historyManager) {
+                console.log('📚 履歴管理:', window.FutabaApp.historyManager.getStats());
+            }
+            
+            if (window.FutabaApp.uiManager) {
+                console.log('🎭 UI管理:', window.FutabaApp.uiManager.getUIStats());
+            }
+            
+            if (window.FutabaApp.settingsManager) {
+                console.log('⚙️ 設定管理:', window.FutabaApp.settingsManager.getSettingsInfo());
+            }
+            
+            console.groupEnd();
+        };
+        
+        // パフォーマンス監視用グローバル関数
+        window.showPerformanceStats = function() {
+            if (!window.FutabaApp.toolsSystem) return;
+            
+            const stats = window.FutabaApp.toolsSystem.getPerformanceStats();
+            console.table({
+                'FPS': stats.fps,
+                'フレーム時間 (ms)': stats.frameTime,
+                'パス数': stats.pathCount,
+                'メモリ使用量 (KB)': stats.pathMemoryKB,
+                '初期化済み': stats.isInitialized
+            });
+        };
+        
+        // DOM読み込み完了後に初期化実行
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeApplication);
+        } else {
+            // すでに読み込み完了している場合は即実行
+            initializeApplication();
+        }
+        
+        // ページ離脱時のクリーンアップ
+        window.addEventListener('beforeunload', () => {
+            try {
+                if (window.FutabaApp.settingsManager) {
+                    window.FutabaApp.settingsManager.saveSettings(true); // 即座に保存
+                }
+                
+                if (window.FutabaApp.historyManager) {
+                    window.FutabaApp.historyManager.destroy();
+                }
+                
+                if (window.FutabaApp.app) {
+                    window.FutabaApp.app.destroy();
+                }
+                
+                console.log('🧹 アプリケーション クリーンアップ完了');
+            } catch (error) {
+                console.warn('⚠️ クリーンアップエラー:', error);
+            }
+        });
+        
+        console.log('📝 統合起動スクリプト読み込み完了');
+    </script>
+</body>
+</html>
