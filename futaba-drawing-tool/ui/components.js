@@ -1,19 +1,18 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.5
- * UI管理システム - ui-manager.js（設定パネル対応版）
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.4
+ * UIコンポーネント群 - ui/components.js
  * 
- * 責務: UIコンテナ管理・UIイベント処理・設定UI管理
- * 依存: app-core.js, drawing-tools.js, settings-manager.js
+ * 責務: 独立性の高いUIコンポーネント（ui-manager.jsから分離）
+ * 依存: app-core.js, drawing-tools.js（間接的）
  * 
- * 修正内容:
- * 1. 設定パネルUIの追加
- * 2. SettingsManager 連携
- * 3. 設定ボタンの有効化
- * 4. 設定変更イベントの処理
- * 5. 高DPI切り替えUI
+ * 含まれるクラス:
+ * - SliderController: スライダー操作管理
+ * - PopupManager: ポップアップ表示管理
+ * - StatusBarManager: ステータス表示管理
+ * - PresetDisplayManager: プリセット表示管理
  */
 
-// ==== UI設定定数（拡張版） ====
+// ==== UI設定定数 ====
 const UI_CONFIG = {
     // ポップアップ設定
     POPUP_ANIMATION_DURATION: 300,
@@ -22,7 +21,7 @@ const UI_CONFIG = {
     
     // スライダー設定
     SLIDER_UPDATE_THROTTLE: 16, // 60fps
-    SLIDER_DEBUG: false, // 本番環境では false
+    SLIDER_DEBUG: false,
     
     // ドラッグ設定
     DRAG_THRESHOLD: 3,
@@ -30,26 +29,19 @@ const UI_CONFIG = {
     // プリセット設定
     SIZE_PRESETS: [1, 2, 4, 8, 16, 32],
     SIZE_PREVIEW_MIN: 0.5,
-    SIZE_PREVIEW_MAX: 20,
-    
-    // 設定パネル設定（新規追加）
-    SETTINGS_SAVE_DELAY: 1000 // 設定変更後の自動保存遅延
+    SIZE_PREVIEW_MAX: 20
 };
 
-// ==== UIイベント定数（拡張版） ====
+// ==== UIイベント定数 ====
 const UI_EVENTS = {
     TOOL_SELECTED: 'ui:tool_selected',
     POPUP_OPENED: 'ui:popup_opened',
     POPUP_CLOSED: 'ui:popup_closed',
     SETTING_CHANGED: 'ui:setting_changed',
-    COORDINATES_UPDATED: 'ui:coordinates_updated',
-    // 設定関連イベント（新規追加）
-    SETTINGS_PANEL_OPENED: 'ui:settings_panel_opened',
-    SETTINGS_PANEL_CLOSED: 'ui:settings_panel_closed',
-    HIGH_DPI_TOGGLED: 'ui:high_dpi_toggled'
+    COORDINATES_UPDATED: 'ui:coordinates_updated'
 };
 
-// ==== スライダーコントローラー（変更なし）====
+// ==== スライダーコントローラー ====
 class SliderController {
     constructor(sliderId, min, max, initial, updateCallback) {
         this.sliderId = sliderId;
@@ -68,7 +60,7 @@ class SliderController {
     }
     
     /**
-     * DOM要素を検索（修正版：より確実な検索）
+     * DOM要素を検索
      */
     findElements() {
         const container = document.getElementById(this.sliderId);
@@ -77,41 +69,27 @@ class SliderController {
             return {};
         }
         
-        // より確実なvalueDisplay要素の検索
         const valueDisplay = this.findValueDisplayElement(container);
         
-        const elements = {
+        return {
             container,
             track: container.querySelector('.slider-track'),
             handle: container.querySelector('.slider-handle'),
             valueDisplay
         };
-        
-        // デバッグログ
-        if (UI_CONFIG.SLIDER_DEBUG) {
-            console.log(`[${this.sliderId}] 要素検索結果:`, {
-                container: !!elements.container,
-                track: !!elements.track,
-                handle: !!elements.handle,
-                valueDisplay: !!elements.valueDisplay
-            });
-        }
-        
-        return elements;
     }
     
     /**
-     * valueDisplay要素を複数の方法で検索
+     * valueDisplay要素を検索
      */
     findValueDisplayElement(container) {
         let valueDisplay = null;
         
-        // 方法1: 親ノードから検索
+        // 複数の方法で検索
         if (container.parentNode) {
             valueDisplay = container.parentNode.querySelector('.slider-value');
         }
         
-        // 方法2: slider-controls内から検索
         if (!valueDisplay) {
             const controls = container.closest('.slider-controls');
             if (controls) {
@@ -119,7 +97,6 @@ class SliderController {
             }
         }
         
-        // 方法3: slider-container内から検索
         if (!valueDisplay) {
             const sliderContainer = container.closest('.slider-container');
             if (sliderContainer) {
@@ -137,15 +114,9 @@ class SliderController {
     setupEventListeners() {
         const { container } = this.elements;
         
-        // マウスイベント
         container.addEventListener('mousedown', (e) => this.onMouseDown(e));
         document.addEventListener('mousemove', (e) => this.onMouseMove(e));
         document.addEventListener('mouseup', () => this.onMouseUp());
-        
-        // タッチイベント（将来実装）
-        // container.addEventListener('touchstart', (e) => this.onTouchStart(e));
-        // document.addEventListener('touchmove', (e) => this.onTouchMove(e));
-        // document.addEventListener('touchend', () => this.onTouchEnd());
     }
     
     onMouseDown(event) {
@@ -174,7 +145,7 @@ class SliderController {
     }
     
     /**
-     * 値を設定（修正版：数値表示の確実な更新）
+     * 値を設定
      */
     setValue(value, updateDisplay = true) {
         const oldValue = this.value;
@@ -184,13 +155,8 @@ class SliderController {
             this.updateDisplay();
         }
         
-        // 値が変更された場合のコールバック実行
         if (this.updateCallback && Math.abs(this.value - oldValue) > 0.001) {
             this.throttledCallback();
-            // 数値表示も強制更新
-            if (updateDisplay) {
-                setTimeout(() => this.updateValueDisplay(), 10);
-            }
         }
     }
     
@@ -206,7 +172,7 @@ class SliderController {
     }
     
     /**
-     * 表示更新（修正版：数値表示を分離）
+     * 表示更新
      */
     updateDisplay() {
         if (!this.elements.track || !this.elements.handle) return;
@@ -216,44 +182,27 @@ class SliderController {
         this.elements.track.style.width = percentage + '%';
         this.elements.handle.style.left = percentage + '%';
         
-        // 数値表示の更新
         this.updateValueDisplay();
     }
     
     /**
-     * 数値表示の確実な更新（新規追加）
+     * 数値表示更新
      */
     updateValueDisplay() {
         if (!this.elements.valueDisplay || !this.updateCallback) return;
         
         try {
-            const displayValue = this.updateCallback(this.value, true); // displayOnly = true
+            const displayValue = this.updateCallback(this.value, true);
             
             if (typeof displayValue === 'string' && displayValue.trim()) {
                 this.elements.valueDisplay.textContent = displayValue;
                 this.elements.valueDisplay.style.display = 'block';
                 this.elements.valueDisplay.style.visibility = 'visible';
-                
-                if (UI_CONFIG.SLIDER_DEBUG) {
-                    console.log(`[${this.sliderId}] 数値表示更新: ${displayValue}`);
-                }
             } else {
-                // フォールバック: 基本的な数値表示
                 this.elements.valueDisplay.textContent = this.value.toFixed(1);
-                if (UI_CONFIG.SLIDER_DEBUG) {
-                    console.warn(`[${this.sliderId}] フォールバック表示: ${this.value.toFixed(1)}`);
-                }
-            }
-            
-            // バリデーション: NaNやundefinedチェック
-            const currentText = this.elements.valueDisplay.textContent;
-            if (currentText.includes('NaN') || currentText.includes('undefined')) {
-                this.elements.valueDisplay.textContent = this.value.toFixed(1);
-                console.warn(`[${this.sliderId}] 不正な表示値を修正: ${currentText} -> ${this.value.toFixed(1)}`);
             }
             
         } catch (error) {
-            // エラー時のフォールバック表示
             this.elements.valueDisplay.textContent = this.value.toFixed(1);
             console.error(`[${this.sliderId}] 数値表示更新エラー:`, error);
         }
@@ -262,9 +211,15 @@ class SliderController {
     adjustValue(delta) {
         this.setValue(this.value + delta);
     }
+    
+    destroy() {
+        if (this.throttleTimeout) {
+            clearTimeout(this.throttleTimeout);
+        }
+    }
 }
 
-// ==== ポップアップマネージャー（設定パネル対応版） ====
+// ==== ポップアップマネージャー ====
 class PopupManager {
     constructor() {
         this.activePopup = null;
@@ -295,10 +250,8 @@ class PopupManager {
         const popupData = this.popups.get(popupId);
         if (!popupData) return false;
         
-        // 他のポップアップを閉じる
         this.hideAllPopups();
         
-        // ポップアップを表示
         popupData.element.classList.add('show');
         this.activePopup = popupId;
         
@@ -327,14 +280,13 @@ class PopupManager {
     }
     
     hideAllPopups() {
-        this.popups.forEach((popupData, popupId) => {
+        this.popups.forEach((popupData) => {
             popupData.element.classList.remove('show');
         });
         this.activePopup = null;
     }
     
     setupGlobalListeners() {
-        // ポップアップ外クリックで閉じる
         document.addEventListener('click', (event) => {
             if (!event.target.closest('.popup-panel') && 
                 !event.target.closest('.tool-button[data-popup]')) {
@@ -342,7 +294,6 @@ class PopupManager {
             }
         });
         
-        // ESCキーでポップアップを閉じる
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape' && this.activePopup) {
                 this.hideAllPopups();
@@ -463,9 +414,108 @@ class StatusBarManager {
     }
 }
 
-// ==== プリセット表示管理（修正版） ====
+// ==== プリセット表示管理 ====
 class PresetDisplayManager {
     constructor(toolsSystem) {
         this.toolsSystem = toolsSystem;
     }
     
+    /**
+     * ライブプレビュー更新
+     */
+    updateLivePreview(size, opacity, color = null) {
+        if (!this.toolsSystem) return;
+        
+        const penPresetManager = this.toolsSystem.getPenPresetManager();
+        if (!penPresetManager) return;
+        
+        penPresetManager.updateActivePresetLive(size, opacity, color);
+        this.updatePresetsDisplay();
+    }
+    
+    /**
+     * プリセット表示の更新
+     */
+    updatePresetsDisplay() {
+        if (!this.toolsSystem) return;
+        
+        const penPresetManager = this.toolsSystem.getPenPresetManager();
+        if (!penPresetManager) return;
+        
+        const previewData = penPresetManager.generatePreviewData();
+        const presetsContainer = document.getElementById('size-presets');
+        
+        if (!presetsContainer) return;
+        
+        const presetItems = presetsContainer.querySelectorAll('.size-preset-item');
+        
+        previewData.forEach((data, index) => {
+            if (index < presetItems.length) {
+                const item = presetItems[index];
+                const circle = item.querySelector('.size-preview-circle');
+                const label = item.querySelector('.size-preview-label');
+                const percent = item.querySelector('.size-preview-percent');
+                
+                item.setAttribute('data-size', data.dataSize);
+                
+                if (circle) {
+                    circle.style.width = data.size + 'px';
+                    circle.style.height = data.size + 'px';
+                    circle.style.background = data.color;
+                    circle.style.opacity = data.opacity;
+                }
+                
+                if (label) {
+                    label.textContent = data.label;
+                }
+                
+                if (percent) {
+                    percent.textContent = data.opacityLabel;
+                }
+                
+                item.classList.toggle('active', data.isActive);
+            }
+        });
+    }
+    
+    /**
+     * プリセット選択処理
+     */
+    handlePresetSelection(presetSize) {
+        if (!this.toolsSystem) return;
+        
+        const penPresetManager = this.toolsSystem.getPenPresetManager();
+        if (!penPresetManager) return;
+        
+        const presetId = penPresetManager.getPresetIdBySize(presetSize);
+        if (!presetId) return;
+        
+        const preset = penPresetManager.selectPreset(presetId);
+        if (!preset) return;
+        
+        return preset;
+    }
+}
+
+// ==== エクスポート ====
+if (typeof window !== 'undefined') {
+    window.SliderController = SliderController;
+    window.PopupManager = PopupManager;
+    window.StatusBarManager = StatusBarManager;
+    window.PresetDisplayManager = PresetDisplayManager;
+    window.UI_CONFIG = UI_CONFIG;
+    window.UI_EVENTS = UI_EVENTS;
+    
+    console.log('🎨 ui/components.js 読み込み完了');
+    console.log('📦 利用可能クラス: SliderController, PopupManager, StatusBarManager, PresetDisplayManager');
+}
+
+// ES6 module export (将来のTypeScript移行用)
+// export { 
+//     SliderController, 
+//     PopupManager, 
+//     StatusBarManager, 
+//     PresetDisplayManager,
+//     UI_CONFIG,
+//     UI_EVENTS 
+// };
