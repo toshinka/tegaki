@@ -5,7 +5,7 @@
  * 責務: UIコンテナ管理・UIイベント処理・プリセット管理
  * 依存: app-core.js, drawing-tools.js, ui/components.js
  * 
- * 重複削除版: ui/components.jsで定義されたクラスを利用
+ * 修正版: PenPresetManager重複削除・依存関係整理
  */
 
 // ==== プリセット管理クラス ====
@@ -21,7 +21,9 @@ class PenPresetManager {
     }
     
     createDefaultPresets() {
-        const sizes = UI_CONFIG.SIZE_PRESETS;
+        // UI_CONFIGが利用可能な場合は使用、そうでなければフォールバック
+        const sizes = (typeof UI_CONFIG !== 'undefined' && UI_CONFIG.SIZE_PRESETS) ? 
+            UI_CONFIG.SIZE_PRESETS : [1, 2, 4, 8, 16, 32];
         const presets = new Map();
         
         sizes.forEach((size, index) => {
@@ -130,6 +132,12 @@ class PenPresetManager {
         const activePreset = this.getActivePreset();
         const liveValues = this.currentLiveValues;
         
+        // UI_CONFIGのフォールバック値を使用
+        const previewMin = (typeof UI_CONFIG !== 'undefined' && UI_CONFIG.SIZE_PREVIEW_MIN) ? 
+            UI_CONFIG.SIZE_PREVIEW_MIN : 0.5;
+        const previewMax = (typeof UI_CONFIG !== 'undefined' && UI_CONFIG.SIZE_PREVIEW_MAX) ? 
+            UI_CONFIG.SIZE_PREVIEW_MAX : 20;
+        
         for (const preset of this.presets.values()) {
             const isActive = preset.id === this.activePresetId;
             
@@ -137,13 +145,13 @@ class PenPresetManager {
             let displaySize;
             if (isActive && liveValues) {
                 displaySize = Math.max(
-                    UI_CONFIG.SIZE_PREVIEW_MIN,
-                    Math.min(UI_CONFIG.SIZE_PREVIEW_MAX, (liveValues.size / 100) * 19.5 + 0.5)
+                    previewMin,
+                    Math.min(previewMax, (liveValues.size / 100) * 19.5 + 0.5)
                 );
             } else {
                 displaySize = Math.max(
-                    UI_CONFIG.SIZE_PREVIEW_MIN,
-                    Math.min(UI_CONFIG.SIZE_PREVIEW_MAX, (preset.size / 100) * 19.5 + 0.5)
+                    previewMin,
+                    Math.min(previewMax, (preset.size / 100) * 19.5 + 0.5)
                 );
             }
             
@@ -172,10 +180,11 @@ class UIManager {
         this.app = app;
         this.toolsSystem = toolsSystem;
         
-        // 外部コンポーネント（ui/components.jsから）
-        this.popupManager = new PopupManager();
-        this.statusBar = new StatusBarManager();
-        this.presetDisplayManager = new PresetDisplayManager(toolsSystem);
+        // 外部コンポーネント（ui/components.jsから）- 存在チェック付き
+        this.popupManager = (typeof PopupManager !== 'undefined') ? new PopupManager() : null;
+        this.statusBar = (typeof StatusBarManager !== 'undefined') ? new StatusBarManager() : null;
+        this.presetDisplayManager = (typeof PresetDisplayManager !== 'undefined') ? 
+            new PresetDisplayManager(toolsSystem) : null;
         
         // 内部管理システム
         this.penPresetManager = new PenPresetManager(toolsSystem);
@@ -196,6 +205,9 @@ class UIManager {
         try {
             console.log('🎯 UIManager初期化開始...');
             
+            // 依存コンポーネントのチェック
+            this.checkDependencies();
+            
             this.setupToolButtons();
             this.setupPopups();
             this.setupSliders();
@@ -212,6 +224,24 @@ class UIManager {
         } catch (error) {
             console.error('❌ UIManager初期化エラー:', error);
             throw error;
+        }
+    }
+    
+    // ==== 依存関係チェック ====
+    
+    checkDependencies() {
+        const missing = [];
+        
+        if (typeof PopupManager === 'undefined') missing.push('PopupManager');
+        if (typeof StatusBarManager === 'undefined') missing.push('StatusBarManager');
+        if (typeof PresetDisplayManager === 'undefined') missing.push('PresetDisplayManager');
+        if (typeof SliderController === 'undefined') missing.push('SliderController');
+        
+        if (missing.length > 0) {
+            console.warn('⚠️ UIManager: 一部依存コンポーネントが見つかりません:', missing);
+            console.warn('ui/components.js が正しく読み込まれているか確認してください');
+        } else {
+            console.log('✅ UIManager: 全依存コンポーネントが利用可能');
         }
     }
     
@@ -257,7 +287,7 @@ class UIManager {
         }
         
         // ポップアップ表示/非表示
-        if (popupId) {
+        if (popupId && this.popupManager) {
             this.popupManager.togglePopup(popupId);
         }
     }
@@ -277,13 +307,20 @@ class UIManager {
                 button.classList.add('active');
             }
             
-            this.statusBar.updateCurrentTool(toolName);
+            if (this.statusBar) {
+                this.statusBar.updateCurrentTool(toolName);
+            }
         }
     }
     
     // ==== ポップアップ設定 ====
     
     setupPopups() {
+        if (!this.popupManager) {
+            console.warn('PopupManager が利用できません');
+            return;
+        }
+        
         // ポップアップの登録
         this.popupManager.registerPopup('pen-settings');
         this.popupManager.registerPopup('resize-settings');
@@ -294,6 +331,11 @@ class UIManager {
     // ==== スライダー設定 ====
     
     setupSliders() {
+        if (typeof SliderController === 'undefined') {
+            console.warn('SliderController が利用できません');
+            return;
+        }
+        
         // ペンサイズスライダー
         this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value, displayOnly = false) => {
             if (!displayOnly) {
@@ -336,6 +378,11 @@ class UIManager {
     }
     
     createSlider(sliderId, min, max, initial, callback) {
+        if (typeof SliderController === 'undefined') {
+            console.warn('SliderController is not available');
+            return null;
+        }
+        
         const slider = new SliderController(sliderId, min, max, initial, callback);
         this.sliders.set(sliderId, slider);
         return slider;
@@ -445,16 +492,22 @@ class UIManager {
             // 履歴記録（リサイズ前の状態）
             if (this.historyManager) {
                 const beforeSize = { 
-                    width: this.app.width, 
-                    height: this.app.height 
+                    width: this.app.width || this.app.app?.screen?.width, 
+                    height: this.app.height || this.app.app?.screen?.height 
                 };
                 const afterSize = { width, height };
                 this.historyManager.recordCanvasResize(beforeSize, afterSize);
             }
             
             this.app.resize(width, height, centerContent);
-            this.statusBar.updateCanvasInfo(width, height);
-            this.popupManager.hideAllPopups();
+            
+            if (this.statusBar) {
+                this.statusBar.updateCanvasInfo(width, height);
+            }
+            
+            if (this.popupManager) {
+                this.popupManager.hideAllPopups();
+            }
             
             console.log(`Canvas resized to ${width}x${height}px (center: ${centerContent})`);
             
@@ -501,33 +554,48 @@ class UIManager {
     // ==== アプリイベントリスナー設定 ====
     
     setupAppEventListeners() {
-        // アプリケーション側のイベントを監視
-        this.app.on(EVENTS.CANVAS_READY, (data) => {
-            console.log('Canvas ready event received');
-            this.updateAllDisplays();
-        });
+        // EVENTSが定義されていない場合の安全な実装
+        const EVENTS = (typeof window !== 'undefined' && window.EVENTS) ? window.EVENTS : {
+            CANVAS_READY: 'canvas_ready',
+            TOOL_CHANGED: 'tool_changed',
+            POINTER_MOVE: 'pointermove',
+            POINTER_UP: 'pointerup'
+        };
         
-        this.app.on(EVENTS.TOOL_CHANGED, (data) => {
-            console.log('Tool changed event received:', data.state.currentTool);
-            this.statusBar.updateCurrentTool(data.state.currentTool);
-            this.statusBar.updateCurrentColor(data.state.brushColor);
-        });
+        // アプリケーション側のイベントを監視
+        if (this.app.on) {
+            this.app.on(EVENTS.CANVAS_READY, (data) => {
+                console.log('Canvas ready event received');
+                this.updateAllDisplays();
+            });
+            
+            this.app.on(EVENTS.TOOL_CHANGED, (data) => {
+                console.log('Tool changed event received:', data.state?.currentTool);
+                if (this.statusBar) {
+                    this.statusBar.updateCurrentTool(data.state?.currentTool);
+                    this.statusBar.updateCurrentColor(data.state?.brushColor);
+                }
+            });
+        }
         
         // 描画レイヤーのマウス移動イベント
-        if (this.app.layers && this.app.layers.drawingLayer) {
+        if (this.app.layers && this.app.layers.drawingLayer && this.app.layers.drawingLayer.on) {
             this.app.layers.drawingLayer.on(EVENTS.POINTER_MOVE, (event) => {
-                const point = this.app.getLocalPointerPosition(event);
+                const point = this.app.getLocalPointerPosition ? 
+                    this.app.getLocalPointerPosition(event) : { x: 0, y: 0 };
                 this.updateCoordinatesThrottled(point.x, point.y);
                 
                 // 筆圧モニター更新（描画中のみ）
-                if (this.app.state.isDrawing) {
-                    const pressure = Math.min(100, this.app.state.pressure * 100 + Math.random() * 20);
+                if (this.app.state?.isDrawing && this.statusBar) {
+                    const pressure = Math.min(100, (this.app.state.pressure || 0) * 100 + Math.random() * 20);
                     this.statusBar.updatePressureMonitor(pressure);
                 }
             });
             
             this.app.layers.drawingLayer.on(EVENTS.POINTER_UP, () => {
-                this.statusBar.updatePressureMonitor(0);
+                if (this.statusBar) {
+                    this.statusBar.updatePressureMonitor(0);
+                }
             });
         }
         
@@ -539,21 +607,38 @@ class UIManager {
             clearTimeout(this.coordinateUpdateThrottle);
         }
         
+        const throttleTime = (typeof UI_CONFIG !== 'undefined' && UI_CONFIG.SLIDER_UPDATE_THROTTLE) ?
+            UI_CONFIG.SLIDER_UPDATE_THROTTLE : 16;
+        
         this.coordinateUpdateThrottle = setTimeout(() => {
-            this.statusBar.updateCoordinates(x, y);
-        }, UI_CONFIG.SLIDER_UPDATE_THROTTLE);
+            if (this.statusBar) {
+                this.statusBar.updateCoordinates(x, y);
+            }
+        }, throttleTime);
     }
     
     updateAllDisplays() {
         // 初期状態の表示更新
-        const stats = this.app.getStats();
-        this.statusBar.updateCanvasInfo(stats.width, stats.height);
+        if (this.app.getStats) {
+            const stats = this.app.getStats();
+            if (this.statusBar) {
+                this.statusBar.updateCanvasInfo(stats.width, stats.height);
+            }
+        }
         
-        const brushSettings = this.toolsSystem.getBrushSettings();
-        this.statusBar.updateCurrentColor(brushSettings.color);
+        if (this.toolsSystem.getBrushSettings) {
+            const brushSettings = this.toolsSystem.getBrushSettings();
+            if (this.statusBar) {
+                this.statusBar.updateCurrentColor(brushSettings.color);
+            }
+        }
         
-        const currentTool = this.toolsSystem.getCurrentTool();
-        this.statusBar.updateCurrentTool(currentTool);
+        if (this.toolsSystem.getCurrentTool) {
+            const currentTool = this.toolsSystem.getCurrentTool();
+            if (this.statusBar) {
+                this.statusBar.updateCurrentTool(currentTool);
+            }
+        }
         
         // プリセット表示更新
         this.updatePresetsDisplay();
@@ -570,15 +655,17 @@ class UIManager {
     // ==== 公開API ====
     
     showPopup(popupId) {
-        return this.popupManager.showPopup(popupId);
+        return this.popupManager ? this.popupManager.showPopup(popupId) : false;
     }
     
     hidePopup(popupId) {
-        return this.popupManager.hidePopup(popupId);
+        return this.popupManager ? this.popupManager.hidePopup(popupId) : false;
     }
     
     hideAllPopups() {
-        this.popupManager.hideAllPopups();
+        if (this.popupManager) {
+            this.popupManager.hideAllPopups();
+        }
     }
     
     updateSliderValue(sliderId, value) {
@@ -589,6 +676,8 @@ class UIManager {
     }
     
     updateStatusBar(updates) {
+        if (!this.statusBar) return;
+        
         if (updates.canvasInfo) {
             this.statusBar.updateCanvasInfo(updates.canvasInfo.width, updates.canvasInfo.height);
         }
@@ -624,15 +713,20 @@ class UIManager {
     
     handleSettingChange(key, newValue) {
         // 設定管理システムからの通知を処理
+        const SETTING_TYPES = (typeof window !== 'undefined' && window.SETTING_TYPES) ? 
+            window.SETTING_TYPES : null;
+        
+        if (!SETTING_TYPES) return;
+        
         switch (key) {
-            case SETTING_TYPES?.SHOW_COORDINATES:
+            case SETTING_TYPES.SHOW_COORDINATES:
                 const coordElement = document.getElementById('coordinates');
                 if (coordElement) {
                     coordElement.style.display = newValue ? 'block' : 'none';
                 }
                 break;
                 
-            case SETTING_TYPES?.SHOW_PRESSURE:
+            case SETTING_TYPES.SHOW_PRESSURE:
                 const pressureElement = document.getElementById('pressure-monitor');
                 if (pressureElement) {
                     pressureElement.style.display = newValue ? 'block' : 'none';
@@ -645,8 +739,11 @@ class UIManager {
         // 設定読み込み完了時の処理
         console.log('⚙️ UIManager: 設定読み込み完了');
         
+        const SETTING_TYPES = (typeof window !== 'undefined' && window.SETTING_TYPES) ? 
+            window.SETTING_TYPES : null;
+        
         // 設定に基づいてUI要素の表示/非表示を設定
-        if (SETTING_TYPES) {
+        if (SETTING_TYPES && settings) {
             this.handleSettingChange(SETTING_TYPES.SHOW_COORDINATES, settings[SETTING_TYPES.SHOW_COORDINATES]);
             this.handleSettingChange(SETTING_TYPES.SHOW_PRESSURE, settings[SETTING_TYPES.SHOW_PRESSURE]);
         }
@@ -730,9 +827,9 @@ class UIManager {
     getUIStats() {
         return {
             initialized: this.isInitialized,
-            activePopup: this.popupManager.activePopup,
+            activePopup: this.popupManager ? this.popupManager.activePopup : null,
             sliderCount: this.sliders.size,
-            popupCount: this.popupManager.popups.size,
+            popupCount: this.popupManager ? this.popupManager.popups.size : 0,
             presetManager: {
                 activePresetId: this.penPresetManager.getActivePresetId(),
                 hasLiveValues: !!this.penPresetManager.currentLiveValues,
@@ -753,8 +850,8 @@ class UIManager {
         });
         console.log('📱 スライダー情報:', Array.from(this.sliders.keys()));
         console.log('📋 ポップアップ情報:', {
-            registered: Array.from(this.popupManager.popups.keys()),
-            active: this.popupManager.activePopup
+            registered: this.popupManager ? Array.from(this.popupManager.popups.keys()) : [],
+            active: this.popupManager ? this.popupManager.activePopup : null
         });
         console.groupEnd();
     }
@@ -805,9 +902,10 @@ if (typeof window !== 'undefined') {
     window.UIManager = UIManager;
     window.PenPresetManager = PenPresetManager;
     
-    console.log('🎭 ui-manager.js v1.5 読み込み完了');
+    console.log('🎭 ui-manager.js v1.6 読み込み完了（修正版）');
     console.log('📦 利用可能クラス: UIManager, PenPresetManager');
     console.log('🔗 依存: ui/components.js (SliderController, PopupManager, StatusBarManager)');
+    console.log('✅ 重複問題解決・依存チェック追加');
 }
 
 // ES6 module export (将来のTypeScript移行用)
