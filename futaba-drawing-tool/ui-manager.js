@@ -1,8 +1,8 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev2
- * UI管理システム - ui-manager.js (v1.9修正版)
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev3
+ * UI管理システム - ui-manager.js 
  * 
- * 🔧 v1.9修正内容（Rulebook準拠責務分離版）:
+ * 🔧 v1rev3修正内容（Rulebook準拠責務分離版）:
  * 1. PerformanceMonitor追加（drawing-tools.jsから移行）
  * 2. パフォーマンス監視とUI統合
  * 3. 責務をUI統合管理に明確化
