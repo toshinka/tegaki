@@ -1,12 +1,17 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
- * メインエントリーポイント - main.js（分割アーキテクチャ対応版）
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.1
+ * メインエントリーポイント - main.js（修正版）
  * 
  * 依存関係:
  * 1. PIXI.js v7 (CDN)
  * 2. app-core.js -> PixiDrawingApp, CONFIG, EVENTS
  * 3. drawing-tools.js -> DrawingToolsSystem
  * 4. ui-manager.js -> UIManager
+ * 
+ * 修正内容:
+ * 1. プリセット選択時の数値同期改善
+ * 2. スライダー数値表示の強制更新メソッド追加
+ * 3. ライブプレビュー更新の改善
  */
 
 // ==== グローバル変数 ====
@@ -130,7 +135,7 @@ class SimplePenPresetManager {
     }
 }
 
-// ==== 統合UIManager（新アーキテクチャ対応）====
+// ==== 統合UIManager（修正版）====
 class IntegratedUIManager extends UIManager {
     constructor(app, drawingToolsSystem) {
         // 元のUIManagerをベースクラスとして使用
@@ -142,6 +147,19 @@ class IntegratedUIManager extends UIManager {
     
     async init() {
         try {
+            console.log('🎯 IntegratedUIManager初期化開始...');
+            
+            this.setupToolButtons();
+            this.setupPopups();
+            this.setupSliders();
+            this.setupPresetListeners();
+            this.setupResize();
+            this.setupCheckboxes();
+            this.setupEventListeners();
+            
+            this.updateAllDisplays();
+            this.startPerformanceMonitoring();
+            
             console.log('✅ IntegratedUIManager初期化完了');
             
         } catch (error) {
@@ -191,6 +209,7 @@ class IntegratedUIManager extends UIManager {
         }
     }
     
+    // 修正: スライダー設定の改善
     setupSliders() {
         this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value, displayOnly = false) => {
             if (!displayOnly) {
@@ -198,6 +217,8 @@ class IntegratedUIManager extends UIManager {
                 const currentOpacity = this.getCurrentOpacity();
                 this.penPresetManager.updateActivePresetLive(value, currentOpacity);
                 this.updatePresetsDisplay();
+                // 数値表示の確実な更新
+                this.forceUpdateSliderDisplay('pen-size-slider', value.toFixed(1) + 'px');
             }
             return value.toFixed(1) + 'px';
         });
@@ -208,6 +229,8 @@ class IntegratedUIManager extends UIManager {
                 const currentSize = this.getCurrentSize();
                 this.penPresetManager.updateActivePresetLive(currentSize, value / 100);
                 this.updatePresetsDisplay();
+                // 数値表示の確実な更新
+                this.forceUpdateSliderDisplay('pen-opacity-slider', value.toFixed(1) + '%');
             }
             return value.toFixed(1) + '%';
         });
@@ -215,6 +238,8 @@ class IntegratedUIManager extends UIManager {
         this.createSlider('pen-pressure-slider', 0, 100, 50.0, (value, displayOnly = false) => {
             if (!displayOnly) {
                 this.toolsSystem.updateBrushSettings({ pressure: value / 100 });
+                // 数値表示の確実な更新
+                this.forceUpdateSliderDisplay('pen-pressure-slider', value.toFixed(1) + '%');
             }
             return value.toFixed(1) + '%';
         });
@@ -222,6 +247,8 @@ class IntegratedUIManager extends UIManager {
         this.createSlider('pen-smoothing-slider', 0, 100, 30.0, (value, displayOnly = false) => {
             if (!displayOnly) {
                 this.toolsSystem.updateBrushSettings({ smoothing: value / 100 });
+                // 数値表示の確実な更新
+                this.forceUpdateSliderDisplay('pen-smoothing-slider', value.toFixed(1) + '%');
             }
             return value.toFixed(1) + '%';
         });
@@ -230,6 +257,16 @@ class IntegratedUIManager extends UIManager {
         console.log('✅ スライダー設定完了');
     }
     
+    // 新規追加: 数値表示強制更新メソッド
+    forceUpdateSliderDisplay(sliderId, displayValue) {
+        const slider = this.sliders.get(sliderId);
+        if (slider && slider.elements.valueDisplay) {
+            slider.elements.valueDisplay.textContent = displayValue;
+            slider.elements.valueDisplay.style.opacity = '1';
+        }
+    }
+    
+    // 修正: プリセット選択処理の改善
     setupPresetListeners() {
         const presetsContainer = document.getElementById('size-presets');
         if (!presetsContainer) {
@@ -258,6 +295,10 @@ class IntegratedUIManager extends UIManager {
                     });
                     
                     this.updatePresetsDisplay();
+                    
+                    // 数値表示の確実な同期
+                    this.forceUpdateSliderDisplay('pen-size-slider', preset.size.toFixed(1) + 'px');
+                    this.forceUpdateSliderDisplay('pen-opacity-slider', (preset.opacity * 100).toFixed(1) + '%');
                     
                     console.log(`プリセット選択: サイズ${preset.size}, 不透明度${Math.round(preset.opacity * 100)}%`);
                 }
@@ -439,8 +480,8 @@ class IntegratedUIManager extends UIManager {
 // ==== アプリケーション初期化 ====
 window.addEventListener('DOMContentLoaded', async () => {
     try {
-        console.log('🚀 ふたば☆ちゃんねる風ベクターお絵描きツール v0.9 起動開始');
-        console.log('✨ 分割アーキテクチャ対応版 - プレビュー改善');
+        console.log('🚀 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0 起動開始');
+        console.log('✨ 分割アーキテクチャ対応版 - UI改善修正版');
         
         // 依存関係チェック
         if (typeof PIXI === 'undefined') {
@@ -477,8 +518,10 @@ window.addEventListener('DOMContentLoaded', async () => {
         console.log('🎉 アプリケーション起動完了！');
         console.log('💡 改善ポイント:');
         console.log('  ✅ 分割アーキテクチャ対応');
-        console.log('  ✅ プレビューフレーム統一 (20px固定)');
-        console.log('  ✅ アクティブ状態を枠で表示');
+        console.log('  ✅ プリセット配置改善 (均等配置)');
+        console.log('  ✅ スライダー数値表示修正');
+        console.log('  ✅ アクティブ状態を背景色で表示');
+        console.log('  ✅ ポップアップサイズ最適化');
         console.log('  ✅ 描画ツールシステム統合');
         console.log('💡 利用可能機能:');
         console.log('  ✅ ベクターペン描画 (線補正付き)');
@@ -490,7 +533,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         
         // 成功通知
         if (uiManager && uiManager.showNotification) {
-            uiManager.showNotification('アプリケーション起動完了！分割アーキテクチャ対応版', 'success');
+            uiManager.showNotification('UI改善版起動完了！プリセット・スライダー改善済み', 'success');
         }
         
         // デバッグ用グローバル関数
@@ -533,6 +576,30 @@ window.addEventListener('DOMContentLoaded', async () => {
             return false;
         };
         
+        // 修正テスト関数の追加
+        window.testSliderUpdate = () => {
+            if (uiManager) {
+                console.log('🔧 スライダー数値表示テスト:');
+                uiManager.forceUpdateSliderDisplay('pen-size-slider', '16.0px');
+                uiManager.forceUpdateSliderDisplay('pen-opacity-slider', '85.0%');
+                console.log('  数値表示を強制更新しました');
+            }
+        };
+        
+        window.testPresetSync = () => {
+            if (uiManager && uiManager.penPresetManager) {
+                console.log('🎯 プリセット同期テスト:');
+                const preset = uiManager.penPresetManager.selectPreset('preset-8');
+                if (preset) {
+                    uiManager.updateSliderValue('pen-size-slider', preset.size);
+                    uiManager.updateSliderValue('pen-opacity-slider', preset.opacity * 100);
+                    uiManager.forceUpdateSliderDisplay('pen-size-slider', preset.size.toFixed(1) + 'px');
+                    uiManager.forceUpdateSliderDisplay('pen-opacity-slider', (preset.opacity * 100).toFixed(1) + '%');
+                    console.log('  プリセット8に切り替え、数値同期完了');
+                }
+            }
+        };
+        
     } catch (error) {
         console.error('❌ アプリケーション起動エラー:', error);
         showStartupError(error);
@@ -573,17 +640,4 @@ ${error.stack || 'スタック情報なし'}
         </div>
     `;
     document.body.appendChild(errorDiv);
-}🎯 IntegratedUIManager初期化開始...');
-            
-            this.setupToolButtons();
-            this.setupPopups();
-            this.setupSliders();
-            this.setupPresetListeners();
-            this.setupResize();
-            this.setupCheckboxes();
-            this.setupEventListeners();
-            
-            this.updateAllDisplays();
-            this.startPerformanceMonitoring();
-            
-            console.log('
+}

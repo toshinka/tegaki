@@ -1,0 +1,266 @@
+# UI改善パッチ（完全版）
+# 1. ペンサイズプリセットの配置改善
+# 2. スライダー数値表示の修正  
+# 3. ポップアップサイズの最適化
+
+## ==== index.html の修正 ====
+
+### ポップアップの初期位置調整
+- 変更前: style="left: 60px; top: 100px;"
++ 変更後: style="left: 60px; top: 80px;"
+
+## ==== styles.css の修正 ====
+
+### 1. ポップアップサイズの最適化
+```css
+/* ペン設定ポップアップのサイズ縮小 */
+.pen-settings {
+-    width: 320px;
+-    min-height: 400px;
++    width: 280px;
++    min-height: 350px;
+}
+
+/* ポップアップ全体のパディング縮小 */
+.popup-panel {
+-    padding: 20px;
++    padding: 16px;
+}
+
+/* タイトル下の間隔縮小 */
+.popup-title {
+-    margin-bottom: 16px;
++    margin-bottom: 12px;
+}
+
+/* 設定グループ間の間隔縮小 */
+.setting-group {
+-    margin-bottom: 16px;
++    margin-bottom: 12px;
+}
+
+/* スライダーコンテナの間隔縮小 */
+.slider-container {
+-    margin-bottom: 16px;
++    margin-bottom: 12px;
+}
+
+/* チェックボックスの間隔縮小 */
+.checkbox-container {
+-    margin-bottom: 8px;
++    margin-bottom: 6px;
+}
+```
+
+### 2. ペンサイズプリセットの配置改善
+```css
+/* プリセット配置を均等配置に変更 */
+.size-presets {
+-    justify-content: space-between;
+-    gap: 6px;
+-    margin-bottom: 16px;
+-    padding: 12px;
++    justify-content: space-around;
++    gap: 4px;
++    margin-bottom: 12px;
++    padding: 10px;
+}
+
+/* プリセットアイテムのサイズとパディング調整 */
+.size-preset-item {
+-    gap: 4px;
+-    padding: 6px 4px;
+-    min-width: 40px;
++    gap: 3px;
++    padding: 4px 3px;
++    min-width: 36px;
+}
+
+/* アクティブプリセットのスタイル変更（枠線削除、背景色のみ） */
+-.size-preset-item.active .size-preview-frame {
+-    border: 3px solid var(--futaba-maroon);
+-    background: var(--futaba-cream);
+-}
+
+-.size-preset-item.active {
+-    background: var(--futaba-light-medium);
+-}
+
++.size-preset-item.active .size-preview-frame {
++    background: var(--futaba-cream);
++}
+
++.size-preset-item.active {
++    background: var(--futaba-maroon);
++    color: var(--text-inverse);
++}
+
+/* ラベルの間隔微調整 */
+.size-preview-label {
+-    margin-top: 2px;
++    margin-top: 1px;
+}
+
+.size-preview-percent {
+-    margin-top: 1px;
++    margin-top: 0px;
+}
+```
+
+### 3. スライダー数値表示の修正
+```css
+/* スライダー数値表示位置の調整 */
+.slider-value {
+    position: absolute;
+-    right: 0;
+-    top: -20px;
++    right: 4px;
++    top: -18px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-family: monospace;
+    min-width: 40px;
+    text-align: right;
++    background: var(--futaba-cream);
++    padding: 2px 4px;
++    border-radius: 3px;
++    border: 1px solid var(--futaba-light-medium);
++    font-weight: 500;
+}
+```
+
+## ==== ui-manager.js の修正 ====
+
+### スライダー数値表示の改善
+```javascript
+// SliderController.updateDisplay() メソッド内の修正
+updateDisplay() {
+    if (!this.elements.track || !this.elements.handle) return;
+    
+    const percentage = ((this.value - this.min) / (this.max - this.min)) * 100;
+    
+    this.elements.track.style.width = percentage + '%';
+    this.elements.handle.style.left = percentage + '%';
+    
++    // 数値表示の改善
+    if (this.elements.valueDisplay && this.updateCallback) {
+-        // updateCallbackが表示用の値を返すと仮定
+        const displayValue = this.updateCallback(this.value, true);
+        if (typeof displayValue === 'string') {
+            this.elements.valueDisplay.textContent = displayValue;
++            // 表示要素のスタイル確保
++            this.elements.valueDisplay.style.display = 'block';
++            this.elements.valueDisplay.style.visibility = 'visible';
+        }
+    }
+}
+
+// createSlider メソッド内でコールバック処理の改善
+createSlider(sliderId, min, max, initial, callback) {
+    const slider = new SliderController(sliderId, min, max, initial, (value, displayOnly = false) => {
+        if (!displayOnly) {
+            // 実際の値更新処理
+            const result = callback(value, displayOnly);
++            // 数値表示の強制更新
++            setTimeout(() => {
++                const displayValue = callback(value, true);
++                const valueElement = slider.elements.valueDisplay;
++                if (valueElement && typeof displayValue === 'string') {
++                    valueElement.textContent = displayValue;
++                }
++            }, 0);
+            return result;
+        } else {
+            // 表示用の値を返す
+            return callback(value, displayOnly);
+        }
+    });
+    this.sliders.set(sliderId, slider);
+    return slider;
+}
+```
+
+## ==== main.js の修正 ====
+
+### プリセット選択時の数値同期改善
+```javascript
+// setupSliders メソッド内でライブプレビュー更新の改善
+setupSliders() {
+    this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value, displayOnly = false) => {
+        if (!displayOnly) {
+            this.toolsSystem.updateBrushSettings({ size: value });
+            const currentOpacity = this.getCurrentOpacity();
+            this.penPresetManager.updateActivePresetLive(value, currentOpacity);
+            this.updatePresetsDisplay();
++            // 数値表示の確実な更新
++            this.forceUpdateSliderDisplay('pen-size-slider', value.toFixed(1) + 'px');
+        }
+        return value.toFixed(1) + 'px';
+    });
+
+    this.createSlider('pen-opacity-slider', 0, 100, 85.0, (value, displayOnly = false) => {
+        if (!displayOnly) {
+            this.toolsSystem.updateBrushSettings({ opacity: value / 100 });
+            const currentSize = this.getCurrentSize();
+            this.penPresetManager.updateActivePresetLive(currentSize, value / 100);
+            this.updatePresetsDisplay();
++            // 数値表示の確実な更新
++            this.forceUpdateSliderDisplay('pen-opacity-slider', value.toFixed(1) + '%');
+        }
+        return value.toFixed(1) + '%';
+    });
+
+    // 他のスライダーも同様に修正...
+}
+
++// 数値表示強制更新メソッドの追加
++forceUpdateSliderDisplay(sliderId, displayValue) {
++    const slider = this.sliders.get(sliderId);
++    if (slider && slider.elements.valueDisplay) {
++        slider.elements.valueDisplay.textContent = displayValue;
++        slider.elements.valueDisplay.style.opacity = '1';
++    }
++}
+
+// プリセット選択処理の改善
+setupPresetListeners() {
+    // 既存のコード...
+    
+    presetsContainer.addEventListener('click', (event) => {
+        // 既存のコード...
+        
+        if (preset) {
+            this.updateSliderValue('pen-size-slider', preset.size);
+            this.updateSliderValue('pen-opacity-slider', preset.opacity * 100);
+            
+            this.toolsSystem.updateBrushSettings({
+                size: preset.size,
+                opacity: preset.opacity
+            });
+            
+            this.updatePresetsDisplay();
+            
++            // 数値表示の確実な同期
++            this.forceUpdateSliderDisplay('pen-size-slider', preset.size.toFixed(1) + 'px');
++            this.forceUpdateSliderDisplay('pen-opacity-slider', (preset.opacity * 100).toFixed(1) + '%');
+            
+            console.log(`プリセット選択: サイズ${preset.size}, 不透明度${Math.round(preset.opacity * 100)}%`);
+        }
+    });
+}
+```
+
+## ==== 適用方法 ====
+
+1. 上記の変更を各ファイルに適用してください
+2. ブラウザでリロードして動作確認
+3. プリセット選択とスライダー操作で数値表示が正しく更新されることを確認
+
+## ==== 期待される改善結果 ====
+
+✅ プリセットが画面中央に均等配置される
+✅ アクティブプリセットが背景色（茶色）で明確に識別できる  
+✅ ポップアップがコンパクトになり画面に収まりやすくなる
+✅ スライダー数値が適切な位置に表示される
+✅ プリセット選択時とスライダー操作時に数値がリアルタイム更新される
+✅ 数値表示に背景と枠線が追加されて視認性が向上する

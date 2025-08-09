@@ -1,9 +1,16 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
- * UI管理システム - ui-manager.js
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.1
+ * UI管理システム - ui-manager.js（スライダー数値同期修正版）
  * 
  * 責務: UIコンテナ管理・UIイベント処理
  * 依存: app-core.js, drawing-tools.js
+ * 
+ * 修正内容:
+ * 1. スライダー数値表示の確実な同期機能追加
+ * 2. プリセット選択時の数値表示強制更新
+ * 3. SliderController の updateDisplay() ロジック改善
+ * 4. DOM要素選択の確実化
+ * 5. デバッグログ追加
  */
 
 // ==== UI設定定数 ====
@@ -11,10 +18,11 @@ const UI_CONFIG = {
     // ポップアップ設定
     POPUP_ANIMATION_DURATION: 300,
     POPUP_MIN_WIDTH: 280,
-    POPUP_MIN_HEIGHT: 200,
+    POPUP_MIN_HEIGHT: 350,
     
     // スライダー設定
     SLIDER_UPDATE_THROTTLE: 16, // 60fps
+    SLIDER_DEBUG: false, // 本番環境では false
     
     // ドラッグ設定
     DRAG_THRESHOLD: 3,
@@ -34,7 +42,7 @@ const UI_EVENTS = {
     COORDINATES_UPDATED: 'ui:coordinates_updated'
 };
 
-// ==== スライダーコントローラー ====
+// ==== スライダーコントローラー（修正版）====
 class SliderController {
     constructor(sliderId, min, max, initial, updateCallback) {
         this.sliderId = sliderId;
@@ -52,6 +60,9 @@ class SliderController {
         }
     }
     
+    /**
+     * DOM要素を検索（修正版：より確実な検索）
+     */
     findElements() {
         const container = document.getElementById(this.sliderId);
         if (!container) {
@@ -59,12 +70,61 @@ class SliderController {
             return {};
         }
         
-        return {
+        // より確実なvalueDisplay要素の検索
+        const valueDisplay = this.findValueDisplayElement(container);
+        
+        const elements = {
             container,
             track: container.querySelector('.slider-track'),
             handle: container.querySelector('.slider-handle'),
-            valueDisplay: container.parentNode.querySelector('.slider-value')
+            valueDisplay
         };
+        
+        // デバッグログ
+        if (UI_CONFIG.SLIDER_DEBUG) {
+            console.log(`[${this.sliderId}] 要素検索結果:`, {
+                container: !!elements.container,
+                track: !!elements.track,
+                handle: !!elements.handle,
+                valueDisplay: !!elements.valueDisplay
+            });
+        }
+        
+        return elements;
+    }
+    
+    /**
+     * valueDisplay要素を複数の方法で検索
+     */
+    findValueDisplayElement(container) {
+        let valueDisplay = null;
+        
+        // 方法1: 親ノードから検索
+        if (container.parentNode) {
+            valueDisplay = container.parentNode.querySelector('.slider-value');
+        }
+        
+        // 方法2: slider-controls内から検索
+        if (!valueDisplay) {
+            const controls = container.closest('.slider-controls');
+            if (controls) {
+                valueDisplay = controls.querySelector('.slider-value');
+            }
+        }
+        
+        // 方法3: slider-container内から検索
+        if (!valueDisplay) {
+            const sliderContainer = container.closest('.slider-container');
+            if (sliderContainer) {
+                valueDisplay = sliderContainer.querySelector('.slider-value');
+            }
+        }
+        
+        if (!valueDisplay) {
+            console.warn(`[${this.sliderId}] .slider-value 要素が見つかりません`);
+        }
+        
+        return valueDisplay;
     }
     
     setupEventListeners() {
@@ -106,6 +166,9 @@ class SliderController {
         this.setValue(newValue);
     }
     
+    /**
+     * 値を設定（修正版：数値表示の確実な更新）
+     */
     setValue(value, updateDisplay = true) {
         const oldValue = this.value;
         this.value = Math.max(this.min, Math.min(this.max, value));
@@ -114,9 +177,13 @@ class SliderController {
             this.updateDisplay();
         }
         
-        // スロットリング付きコールバック実行
+        // 値が変更された場合のコールバック実行
         if (this.updateCallback && Math.abs(this.value - oldValue) > 0.001) {
             this.throttledCallback();
+            // 数値表示も強制更新
+            if (updateDisplay) {
+                setTimeout(() => this.updateValueDisplay(), 10);
+            }
         }
     }
     
@@ -131,6 +198,9 @@ class SliderController {
         }, UI_CONFIG.SLIDER_UPDATE_THROTTLE);
     }
     
+    /**
+     * 表示更新（修正版：数値表示を分離）
+     */
     updateDisplay() {
         if (!this.elements.track || !this.elements.handle) return;
         
@@ -139,12 +209,46 @@ class SliderController {
         this.elements.track.style.width = percentage + '%';
         this.elements.handle.style.left = percentage + '%';
         
-        if (this.elements.valueDisplay && this.updateCallback) {
-            // updateCallbackが表示用の値を返すと仮定
-            const displayValue = this.updateCallback(this.value, true);
-            if (typeof displayValue === 'string') {
+        // 数値表示の更新
+        this.updateValueDisplay();
+    }
+    
+    /**
+     * 数値表示の確実な更新（新規追加）
+     */
+    updateValueDisplay() {
+        if (!this.elements.valueDisplay || !this.updateCallback) return;
+        
+        try {
+            const displayValue = this.updateCallback(this.value, true); // displayOnly = true
+            
+            if (typeof displayValue === 'string' && displayValue.trim()) {
                 this.elements.valueDisplay.textContent = displayValue;
+                this.elements.valueDisplay.style.display = 'block';
+                this.elements.valueDisplay.style.visibility = 'visible';
+                
+                if (UI_CONFIG.SLIDER_DEBUG) {
+                    console.log(`[${this.sliderId}] 数値表示更新: ${displayValue}`);
+                }
+            } else {
+                // フォールバック: 基本的な数値表示
+                this.elements.valueDisplay.textContent = this.value.toFixed(1);
+                if (UI_CONFIG.SLIDER_DEBUG) {
+                    console.warn(`[${this.sliderId}] フォールバック表示: ${this.value.toFixed(1)}`);
+                }
             }
+            
+            // バリデーション: NaNやundefinedチェック
+            const currentText = this.elements.valueDisplay.textContent;
+            if (currentText.includes('NaN') || currentText.includes('undefined')) {
+                this.elements.valueDisplay.textContent = this.value.toFixed(1);
+                console.warn(`[${this.sliderId}] 不正な表示値を修正: ${currentText} -> ${this.value.toFixed(1)}`);
+            }
+            
+        } catch (error) {
+            // エラー時のフォールバック表示
+            this.elements.valueDisplay.textContent = this.value.toFixed(1);
+            console.error(`[${this.sliderId}] 数値表示更新エラー:`, error);
         }
     }
     
@@ -352,7 +456,7 @@ class StatusBarManager {
     }
 }
 
-// ==== プリセット表示管理（新実装） ====
+// ==== プリセット表示管理（修正版） ====
 class PresetDisplayManager {
     constructor(toolsSystem) {
         this.toolsSystem = toolsSystem;
@@ -435,7 +539,7 @@ class PresetDisplayManager {
     }
 }
 
-// ==== メインUI管理クラス ====
+// ==== メインUI管理クラス（修正版）====
 class UIManager {
     constructor(app, toolsSystem) {
         this.app = app;
@@ -444,7 +548,7 @@ class UIManager {
         // サブシステム
         this.popupManager = new PopupManager();
         this.statusBar = new StatusBarManager();
-        this.presetDisplay = new PresetDisplayManager(toolsSystem); // 新しいプリセット管理
+        this.presetDisplay = new PresetDisplayManager(toolsSystem);
         
         // スライダー管理
         this.sliders = new Map();
@@ -461,7 +565,7 @@ class UIManager {
             this.setupToolButtons();
             this.setupPopups();
             this.setupSliders();
-            this.setupPresetListeners(); // 追加
+            this.setupPresetListeners();
             this.setupResize();
             this.setupCheckboxes();
             this.setupAppEventListeners();
@@ -529,6 +633,9 @@ class UIManager {
         console.log('✅ ポップアップ設定完了');
     }
     
+    /**
+     * スライダー設定（修正版：シンプル化されたコールバック処理）
+     */
     setupSliders() {
         // ペンサイズスライダー
         this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value, displayOnly = false) => {
@@ -572,13 +679,56 @@ class UIManager {
         console.log('✅ スライダー設定完了');
     }
     
+    /**
+     * スライダー作成（修正版：シンプル化されたコールバック）
+     */
     createSlider(sliderId, min, max, initial, callback) {
-        const slider = new SliderController(sliderId, min, max, initial, callback);
+        const slider = new SliderController(sliderId, min, max, initial, (value, displayOnly = false) => {
+            // シンプル化: コールバックはそのまま実行
+            return callback(value, displayOnly);
+        });
+        
         this.sliders.set(sliderId, slider);
+        
+        // 初期値の数値表示を確実に設定
+        setTimeout(() => {
+            slider.updateValueDisplay();
+        }, 100);
+        
         return slider;
     }
     
-    // プリセット選択イベントの設定（新追加）
+    /**
+     * 数値表示強制更新メソッド（新規追加）
+     */
+    forceUpdateSliderDisplay(sliderId, displayValue) {
+        const slider = this.sliders.get(sliderId);
+        if (slider && slider.elements.valueDisplay) {
+            slider.elements.valueDisplay.textContent = displayValue;
+            slider.elements.valueDisplay.style.opacity = '1';
+            slider.elements.valueDisplay.style.display = 'block';
+            slider.elements.valueDisplay.style.visibility = 'visible';
+            
+            if (UI_CONFIG.SLIDER_DEBUG) {
+                console.log(`[${sliderId}] 強制表示更新: ${displayValue}`);
+            }
+        }
+    }
+    
+    /**
+     * 全スライダーの数値表示強制更新（新規追加）
+     */
+    forceUpdateAllSliderDisplays() {
+        this.sliders.forEach((slider, sliderId) => {
+            setTimeout(() => {
+                slider.updateValueDisplay();
+            }, 50);
+        });
+    }
+    
+    /**
+     * プリセット選択イベントの設定（修正版：数値同期改善）
+     */
     setupPresetListeners() {
         const presetsContainer = document.getElementById('size-presets');
         if (!presetsContainer) {
@@ -607,6 +757,17 @@ class UIManager {
                     
                     // プリセット表示を更新
                     this.presetDisplay.updatePresetsDisplay();
+                    
+                    // 数値表示の確実な同期（複数回の更新で確実に）
+                    setTimeout(() => {
+                        this.forceUpdateSliderDisplay('pen-size-slider', preset.size.toFixed(1) + 'px');
+                        this.forceUpdateSliderDisplay('pen-opacity-slider', (preset.opacity * 100).toFixed(1) + '%');
+                    }, 10);
+                    
+                    setTimeout(() => {
+                        this.forceUpdateSliderDisplay('pen-size-slider', preset.size.toFixed(1) + 'px');
+                        this.forceUpdateSliderDisplay('pen-opacity-slider', (preset.opacity * 100).toFixed(1) + '%');
+                    }, 50);
                     
                     console.log(`プリセット選択: サイズ${preset.size}, 不透明度${Math.round(preset.opacity * 100)}%`);
                 }
@@ -830,6 +991,9 @@ class UIManager {
         // プリセット表示の初期化
         this.presetDisplay.updatePresetsDisplay();
         
+        // 全スライダーの数値表示を強制更新
+        this.forceUpdateAllSliderDisplays();
+        
         console.log('✅ 全ディスプレイ更新完了');
     }
     
@@ -846,10 +1010,17 @@ class UIManager {
         this.popupManager.hideAllPopups();
     }
     
+    /**
+     * スライダー値更新（修正版：数値表示も同時更新）
+     */
     updateSliderValue(sliderId, value) {
         const slider = this.sliders.get(sliderId);
         if (slider) {
             slider.setValue(value);
+            // 数値表示の確実な更新
+            setTimeout(() => {
+                slider.updateValueDisplay();
+            }, 10);
         }
     }
     
@@ -952,7 +1123,86 @@ class UIManager {
         }, duration);
     }
     
-    // ==== デバッグ情報 ====
+    // ==== デバッグ機能（新規追加）====
+    
+    /**
+     * スライダーデバッグ情報の取得
+     */
+    getSliderDebugInfo() {
+        const debugInfo = {};
+        this.sliders.forEach((slider, sliderId) => {
+            debugInfo[sliderId] = {
+                value: slider.value,
+                displayValue: slider.elements.valueDisplay ? slider.elements.valueDisplay.textContent : 'なし',
+                hasValueDisplay: !!slider.elements.valueDisplay,
+                elementFound: {
+                    container: !!slider.elements.container,
+                    track: !!slider.elements.track,
+                    handle: !!slider.elements.handle,
+                    valueDisplay: !!slider.elements.valueDisplay
+                }
+            };
+        });
+        return debugInfo;
+    }
+    
+    /**
+     * スライダーの診断実行
+     */
+    diagnoseSliders() {
+        console.group('🔍 スライダー診断結果');
+        
+        this.sliders.forEach((slider, sliderId) => {
+            console.group(`📊 ${sliderId}`);
+            
+            const elements = slider.elements;
+            console.log('要素チェック:', {
+                container: !!elements.container,
+                track: !!elements.track,
+                handle: !!elements.handle,
+                valueDisplay: !!elements.valueDisplay
+            });
+            
+            if (elements.valueDisplay) {
+                console.log('数値表示:', {
+                    textContent: elements.valueDisplay.textContent,
+                    display: elements.valueDisplay.style.display,
+                    visibility: elements.valueDisplay.style.visibility,
+                    opacity: elements.valueDisplay.style.opacity
+                });
+            } else {
+                console.warn('⚠️ valueDisplay要素が見つかりません');
+            }
+            
+            console.log('現在値:', slider.value);
+            
+            // テスト更新
+            try {
+                slider.updateValueDisplay();
+                console.log('✅ 数値表示更新テスト成功');
+            } catch (error) {
+                console.error('❌ 数値表示更新テストエラー:', error);
+            }
+            
+            console.groupEnd();
+        });
+        
+        console.groupEnd();
+    }
+    
+    /**
+     * デバッグモードの切り替え
+     */
+    toggleSliderDebug() {
+        UI_CONFIG.SLIDER_DEBUG = !UI_CONFIG.SLIDER_DEBUG;
+        console.log(`スライダーデバッグモード: ${UI_CONFIG.SLIDER_DEBUG ? 'ON' : 'OFF'}`);
+        
+        if (UI_CONFIG.SLIDER_DEBUG) {
+            this.diagnoseSliders();
+        }
+    }
+    
+    // ==== UIStats取得 ====
     getUIStats() {
         return {
             initialized: this.isInitialized,
@@ -960,7 +1210,8 @@ class UIManager {
             sliderCount: this.sliders.size,
             popupCount: this.popupManager.popups.size,
             currentSize: this.getCurrentSize(),
-            currentOpacity: this.getCurrentOpacity()
+            currentOpacity: this.getCurrentOpacity(),
+            sliderDebugInfo: this.getSliderDebugInfo()
         };
     }
     
@@ -1003,7 +1254,7 @@ if (typeof window !== 'undefined') {
     window.SliderController = SliderController;
     window.PopupManager = PopupManager;
     window.StatusBarManager = StatusBarManager;
-    window.PresetDisplayManager = PresetDisplayManager; // 追加
+    window.PresetDisplayManager = PresetDisplayManager;
     window.UI_CONFIG = UI_CONFIG;
     window.UI_EVENTS = UI_EVENTS;
 }
@@ -1014,7 +1265,7 @@ if (typeof window !== 'undefined') {
 //     SliderController, 
 //     PopupManager, 
 //     StatusBarManager, 
-//     PresetDisplayManager, // 追加
+//     PresetDisplayManager,
 //     UI_CONFIG,
 //     UI_EVENTS 
 // };
