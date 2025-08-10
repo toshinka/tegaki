@@ -449,7 +449,7 @@ class StatusBarManager {
     }
 }
 
-// ==== 4. プリセット表示管理コンポーネント（プレビュー連動機能強化版）====
+// ==== 4. プリセット表示管理コンポーネント（Phase2D拡張版：プレビュー連動機能実装）====
 class PresetDisplayManager {
     constructor(toolsSystem = null) {
         this.toolsSystem = toolsSystem;
@@ -460,10 +460,9 @@ class PresetDisplayManager {
         this.presetsContainer = null;
         this.presetElements = new Map();
         
-        // プレビュー連動機能
-        this.liveUpdateEnabled = true;
-        this.updateThrottle = null;
-        this.lastUpdateTime = 0;
+        // Phase2D新機能: ライブプレビュー管理
+        this.livePreviewValues = new Map(); // プリセットID → { size, opacity }
+        this.isLiveUpdateEnabled = true;
         
         this.init();
     }
@@ -479,7 +478,7 @@ class PresetDisplayManager {
             this.setupPresetElements();
             this.isInitialized = true;
             
-            console.log('✅ PresetDisplayManager初期化完了（プレビュー連動機能強化版）');
+            console.log('✅ PresetDisplayManager初期化完了（Phase2D拡張版）');
             
         } catch (error) {
             console.error('PresetDisplayManager初期化エラー:', error);
@@ -488,7 +487,7 @@ class PresetDisplayManager {
     
     setPenPresetManager(penPresetManager) {
         this.penPresetManager = penPresetManager;
-        console.log('🎨 PenPresetManager連携完了（PresetDisplayManager）');
+        console.log('🎨 PenPresetManager連携完了（PresetDisplayManager Phase2D版）');
         
         if (this.isInitialized) {
             this.updatePresetsDisplay();
@@ -510,10 +509,13 @@ class PresetDisplayManager {
             }
         });
         
-        console.log(`📋 プリセット要素設定完了: ${this.presetElements.size}個`);
+        console.log(`📋 プリセット要素設定完了: ${this.presetElements.size}個（Phase2D対応）`);
     }
     
     handlePresetClick(size) {
+        // Phase2D: ライブ値をクリア（プリセット選択時）
+        this.clearLiveValuesForPreset(`preset_${size}`);
+        
         if (this.penPresetManager && this.penPresetManager.selectPresetBySize) {
             const success = this.penPresetManager.selectPresetBySize(size);
             if (success) {
@@ -526,39 +528,138 @@ class PresetDisplayManager {
         }
     }
     
+    // ==== Phase2D新機能: ライブプレビュー更新 ====
+    
     /**
-     * 🆕 プレビュー連動機能: プリセット表示更新（リアルタイム対応）
+     * アクティブプリセットのライブプレビュー値を更新
+     * @param {number} size - ブラシサイズ（nullで変更なし）
+     * @param {number} opacity - 透明度0-1（nullで変更なし）
      */
+    updateActivePresetLiveValues(size = null, opacity = null) {
+        if (!this.isLiveUpdateEnabled || !this.penPresetManager) {
+            return false;
+        }
+        
+        const activePreset = this.penPresetManager.getActivePreset();
+        if (!activePreset) {
+            return false;
+        }
+        
+        // 現在のライブ値を取得または初期化
+        let liveValues = this.livePreviewValues.get(activePreset.id) || {
+            size: activePreset.size,
+            opacity: activePreset.opacity
+        };
+        
+        // 値の更新
+        let changed = false;
+        if (size !== null && size !== liveValues.size) {
+            liveValues.size = validateBrushSize(size); // utils.js関数使用
+            changed = true;
+        }
+        
+        if (opacity !== null && opacity !== liveValues.opacity) {
+            liveValues.opacity = validateOpacity(opacity); // utils.js関数使用
+            changed = true;
+        }
+        
+        if (changed) {
+            this.livePreviewValues.set(activePreset.id, liveValues);
+            
+            // アクティブプリセットのプレビューのみ更新
+            this.updateActivePresetPreview();
+            
+            debugLog('PresetDisplay', `ライブプレビュー更新: ${activePreset.id}`, liveValues); // utils.js関数使用
+        }
+        
+        return changed;
+    }
+    
+    /**
+     * アクティブプリセットのプレビューのみ更新（パフォーマンス重視）
+     */
+    updateActivePresetPreview() {
+        if (!this.isInitialized || !this.penPresetManager) return;
+        
+        const activePreset = this.penPresetManager.getActivePreset();
+        if (!activePreset) return;
+        
+        const element = this.presetElements.get(activePreset.size);
+        if (!element) return;
+        
+        // ライブ値または元の値を使用
+        const liveValues = this.livePreviewValues.get(activePreset.id);
+        const displayValues = liveValues || {
+            size: activePreset.size,
+            opacity: activePreset.opacity
+        };
+        
+        this.updatePresetPreview(element, activePreset.size, displayValues, true);
+    }
+    
+    /**
+     * 全プレビューライブ値をクリア
+     */
+    clearAllLiveValues() {
+        const clearedCount = this.livePreviewValues.size;
+        this.livePreviewValues.clear();
+        
+        // 全プリセット表示を更新
+        this.updatePresetsDisplay();
+        
+        console.log(`🔄 全ライブプレビュー値クリア: ${clearedCount}件`);
+        return clearedCount > 0;
+    }
+    
+    /**
+     * 特定プリセットのライブ値をクリア
+     */
+    clearLiveValuesForPreset(presetId) {
+        const hadLiveValues = this.livePreviewValues.has(presetId);
+        this.livePreviewValues.delete(presetId);
+        
+        if (hadLiveValues) {
+            debugLog('PresetDisplay', `ライブ値クリア: ${presetId}`);
+        }
+        
+        return hadLiveValues;
+    }
+    
+    /**
+     * ライブ値の存在確認
+     */
+    hasLiveValues() {
+        return this.livePreviewValues.size > 0;
+    }
+    
+    // ==== 既存機能の拡張 ====
+    
     updatePresetsDisplay() {
         if (!this.isInitialized) return;
         
         try {
-            let activePresetId = null;
+            let activeSize = null;
             let currentSettings = null;
-            let liveValues = null;
             
-            // 現在の設定とライブ値を取得
-            if (this.penPresetManager) {
+            // 現在の設定を取得
+            if (this.penPresetManager && this.penPresetManager.getActivePreset) {
                 const activePreset = this.penPresetManager.getActivePreset();
                 if (activePreset) {
-                    activePresetId = activePreset.id;
+                    activeSize = activePreset.size;
                     currentSettings = {
                         size: activePreset.size,
                         opacity: activePreset.opacity,
                         color: activePreset.color || safeConfigGet('DEFAULT_COLOR', 0x800000)
                     };
                 }
-                
-                // ライブ値取得
-                liveValues = this.penPresetManager.getLiveValues();
             } else if (this.toolsSystem && this.toolsSystem.getBrushSettings) {
                 currentSettings = this.toolsSystem.getBrushSettings();
+                activeSize = currentSettings.size;
             }
             
-            // 各プリセット表示を更新
+            // プリセット表示を更新
             this.presetElements.forEach((element, presetSize) => {
-                const presetId = `preset_${presetSize}`;
-                const isActive = presetId === activePresetId;
+                const isActive = Math.abs(presetSize - (activeSize || 0)) < 0.1;
                 
                 // アクティブ状態の更新
                 if (isActive) {
@@ -567,16 +668,16 @@ class PresetDisplayManager {
                     element.classList.remove('active');
                 }
                 
-                // プレビュー更新（アクティブプリセットはライブ値適用）
-                if (isActive && liveValues) {
-                    this.updatePresetPreview(element, presetSize, {
-                        size: liveValues.size,
-                        opacity: liveValues.opacity,
-                        color: currentSettings?.color || liveValues.color
-                    }, true);
-                } else {
-                    this.updatePresetPreview(element, presetSize, currentSettings, false);
-                }
+                // プレビューサイズとラベルの更新（Phase2D: ライブ値対応）
+                const presetId = `preset_${presetSize}`;
+                const liveValues = this.livePreviewValues.get(presetId);
+                const displaySettings = liveValues ? {
+                    ...currentSettings,
+                    size: liveValues.size,
+                    opacity: liveValues.opacity
+                } : currentSettings;
+                
+                this.updatePresetPreview(element, presetSize, displaySettings, isActive && !!liveValues);
             });
             
         } catch (error) {
@@ -584,52 +685,7 @@ class PresetDisplayManager {
         }
     }
     
-    /**
-     * 🆕 プレビュー連動機能: アクティブプリセットのライブプレビュー更新
-     */
-    updateActivePresetPreview(size = null, opacity = null) {
-        if (!this.isInitialized || !this.penPresetManager) return;
-        
-        try {
-            const activePreset = this.penPresetManager.getActivePreset();
-            if (!activePreset) return;
-            
-            const presetSize = activePreset.originalSize || activePreset.size;
-            const element = this.presetElements.get(presetSize);
-            if (!element) return;
-            
-            // 現在の設定を取得
-            let currentSettings = {
-                size: size !== null ? size : activePreset.size,
-                opacity: opacity !== null ? opacity / 100 : activePreset.opacity,
-                color: activePreset.color || safeConfigGet('DEFAULT_COLOR', 0x800000)
-            };
-            
-            // ツールシステムから現在の色を取得
-            if (this.toolsSystem && this.toolsSystem.getBrushSettings) {
-                const brushSettings = this.toolsSystem.getBrushSettings();
-                if (brushSettings.color !== undefined) {
-                    currentSettings.color = brushSettings.color;
-                }
-            }
-            
-            // プレビュー更新（ライブ値として適用）
-            this.updatePresetPreview(element, presetSize, currentSettings, true);
-            
-            console.log('🔄 アクティブプリセットプレビュー更新:', {
-                size: currentSettings.size.toFixed(1) + 'px',
-                opacity: Math.round(currentSettings.opacity * 100) + '%'
-            });
-            
-        } catch (error) {
-            console.warn('アクティブプリセットプレビュー更新エラー:', error);
-        }
-    }
-    
-    /**
-     * 🆕 プレビュー連動機能: プレビュー更新（20px制限強化版）
-     */
-    updatePresetPreview(element, presetSize, settings, isLiveUpdate = false) {
+    updatePresetPreview(element, originalSize, displaySettings, isLivePreview = false) {
         try {
             const previewFrame = element.querySelector('.size-preview-frame');
             const previewCircle = element.querySelector('.size-preview-circle');
@@ -640,133 +696,75 @@ class PresetDisplayManager {
                 return;
             }
             
-            // 表示するサイズと透明度を決定
-            const displaySize = settings?.size ?? presetSize;
-            const displayOpacity = settings?.opacity ?? safeConfigGet('DEFAULT_OPACITY', 1.0);
-            const displayColor = settings?.color ?? safeConfigGet('DEFAULT_COLOR', 0x800000);
+            // Phase2D: 表示する実際のサイズ（ライブ値があれば優先）
+            const displaySize = displaySettings ? displaySettings.size : originalSize;
+            const displayOpacity = displaySettings ? displaySettings.opacity : 1.0;
             
-            // プレビューサイズ計算（20px制限強化）
-            const previewSize = this.calculateConstrainedPreviewSize(displaySize);
+            // プレビューサイズ計算（utils.js関数使用・20px制限）
+            const previewSize = calculatePreviewSize(displaySize); // utils.js関数
             
             // プレビューサークル更新
             previewCircle.style.width = `${previewSize}px`;
             previewCircle.style.height = `${previewSize}px`;
             
             // 色と透明度の適用
-            const r = (displayColor >> 16) & 0xFF;
-            const g = (displayColor >> 8) & 0xFF;
-            const b = displayColor & 0xFF;
+            if (displaySettings) {
+                const color = displaySettings.color || safeConfigGet('DEFAULT_COLOR', 0x800000);
+                const rgbaColor = colorToRGBA(color, displayOpacity); // utils.js関数使用
+                previewCircle.style.backgroundColor = rgbaColor;
+            }
             
-            previewCircle.style.backgroundColor = `rgba(${r}, ${g}, ${b}, ${displayOpacity})`;
-            
-            // ラベル更新（ライブ更新時は小数点表示）
-            if (isLiveUpdate) {
-                sizeLabel.textContent = displaySize.toFixed(1);
-                percentLabel.textContent = Math.round(displayOpacity * 100) + '%';
-                
-                // ライブ更新時は少し強調
-                element.style.backgroundColor = 'rgba(128, 0, 0, 0.1)';
-                setTimeout(() => {
-                    element.style.backgroundColor = '';
-                }, 100);
+            // Phase2D: ライブプレビュー時の視覚的フィードバック
+            if (isLivePreview) {
+                previewFrame.classList.add('live-preview');
+                element.classList.add('live-preview');
             } else {
-                sizeLabel.textContent = Math.round(displaySize).toString();
-                percentLabel.textContent = Math.round(displayOpacity * 100) + '%';
+                previewFrame.classList.remove('live-preview');
+                element.classList.remove('live-preview');
+            }
+            
+            // ラベル更新（Phase2D: ライブ値対応）
+            if (isLivePreview) {
+                sizeLabel.textContent = displaySize.toFixed(1);
+                sizeLabel.classList.add('live-value');
+            } else {
+                sizeLabel.textContent = originalSize.toString();
+                sizeLabel.classList.remove('live-value');
+            }
+            
+            // 透明度表示（Phase2D: ライブ値対応）
+            const opacityPercent = Math.round(displayOpacity * 100);
+            percentLabel.textContent = `${opacityPercent}%`;
+            
+            if (isLivePreview) {
+                percentLabel.classList.add('live-value');
+            } else {
+                percentLabel.classList.remove('live-value');
             }
             
         } catch (error) {
-            console.warn(`プリセットプレビュー更新エラー (${presetSize}px):`, error);
+            logError(createApplicationError(`プリセットプレビュー更新エラー (${originalSize}px)`, { error }), 'PresetDisplayManager'); // utils.js関数使用
         }
     }
     
-    /**
-     * 🆕 プレビュー連動機能: 20px制限を考慮したプレビューサイズ計算
-     */
-    calculateConstrainedPreviewSize(actualSize) {
-        const size = parseFloat(actualSize);
-        if (isNaN(size) || size <= 0) {
-            return safeConfigGet('PREVIEW_MIN_SIZE', 0.5);
-        }
-        
-        const maxSize = safeConfigGet('PREVIEW_MAX_SIZE', 20);
-        const minSize = safeConfigGet('PREVIEW_MIN_SIZE', 0.5);
-        
-        // 32px以下は線形スケール
-        if (size <= 32) {
-            const normalizedSize = Math.min(1.0, size / 32);
-            const calculatedSize = normalizedSize * maxSize;
-            return Math.max(minSize, Math.min(maxSize, calculatedSize));
-        } else {
-            // 32px超は対数スケールで圧縮（500px対応）
-            const maxBrushSize = safeConfigGet('MAX_BRUSH_SIZE', 500);
-            const logScale = Math.log(size / 32) / Math.log(maxBrushSize / 32);
-            const compressedScale = logScale * 0.3; // 圧縮率30%
-            const calculatedSize = maxSize * (0.7 + compressedScale);
-            return Math.min(maxSize, calculatedSize);
-        }
-    }
+    // ==== パフォーマンス最適化（Phase2D）====
     
     /**
-     * 🆕 プレビュー連動機能: ライブ値同期
+     * スロットル付きライブプレビュー更新（パフォーマンス重視）
      */
-    syncPreviewWithLiveValues() {
-        if (!this.penPresetManager) return;
-        
-        // スロットリング制御（60fps制限）
-        const now = performance.now();
-        if (now - this.lastUpdateTime < 16) { // 60fps相当
-            if (this.updateThrottle) clearTimeout(this.updateThrottle);
-            this.updateThrottle = setTimeout(() => {
-                this.syncPreviewWithLiveValues();
-            }, 16);
-            return;
-        }
-        this.lastUpdateTime = now;
-        
-        try {
-            const activePreset = this.penPresetManager.getActivePreset();
-            const liveValues = this.penPresetManager.getLiveValues();
-            
-            if (activePreset && liveValues) {
-                // アクティブプリセットのプレビューのみ更新
-                const presetSize = activePreset.originalSize || activePreset.size;
-                const element = this.presetElements.get(presetSize);
-                
-                if (element) {
-                    this.updatePresetPreview(element, presetSize, {
-                        size: liveValues.size,
-                        opacity: liveValues.opacity,
-                        color: liveValues.color || activePreset.color
-                    }, true);
-                }
-            }
-            
-        } catch (error) {
-            console.warn('ライブ値同期エラー:', error);
-        }
-    }
+    updateActivePresetPreviewThrottled = throttle(() => {
+        this.updateActivePresetPreview();
+    }, safeConfigGet('PRESET_UPDATE_THROTTLE', 16)); // utils.js関数・16ms = 60fps
     
     /**
-     * 🆕 プレビュー連動機能: 全プレビューリセット
+     * ライブ更新の有効/無効切り替え
      */
-    resetAllPreviews() {
-        if (!this.penPresetManager) return false;
-        
-        try {
-            // PenPresetManagerのライブ値をクリア
-            this.penPresetManager.clearAllLiveValues();
-            
-            // 表示を更新
-            this.updatePresetsDisplay();
-            
-            console.log('🔄 全プレビューリセット完了');
-            return true;
-            
-        } catch (error) {
-            console.error('全プレビューリセットエラー:', error);
-            return false;
-        }
+    setLiveUpdateEnabled(enabled) {
+        this.isLiveUpdateEnabled = !!enabled;
+        console.log(`🎛️ ライブプレビュー更新: ${enabled ? '有効' : '無効'}`);
     }
+    
+    // ==== デバッグ・統計機能（Phase2D）====
     
     getStatus() {
         return {
@@ -774,8 +772,49 @@ class PresetDisplayManager {
             presetsCount: this.presetElements.size,
             penPresetManager: !!this.penPresetManager,
             toolsSystem: !!this.toolsSystem,
-            liveUpdateEnabled: this.liveUpdateEnabled
+            liveValuesCount: this.livePreviewValues.size,
+            isLiveUpdateEnabled: this.isLiveUpdateEnabled,
+            hasActivePreview: this.penPresetManager ? 
+                this.livePreviewValues.has(this.penPresetManager.getActivePreset()?.id) : false
         };
+    }
+    
+    getDetailedStats() {
+        const activePreset = this.penPresetManager?.getActivePreset();
+        const liveValues = activePreset ? this.livePreviewValues.get(activePreset.id) : null;
+        
+        return {
+            ...this.getStatus(),
+            activePresetId: activePreset?.id || null,
+            activeLiveValues: liveValues || null,
+            allLiveValues: Object.fromEntries(this.livePreviewValues),
+            performance: {
+                throttleDelay: safeConfigGet('PRESET_UPDATE_THROTTLE', 16),
+                updatesSinceInit: this._updateCount || 0
+            }
+        };
+    }
+    
+    // ==== デストラクタ（メモリリーク対策）====
+    
+    destroy() {
+        // イベントリスナーの削除
+        this.presetElements.forEach((element) => {
+            const clone = element.cloneNode(true);
+            element.parentNode.replaceChild(clone, element);
+        });
+        
+        // データクリア
+        this.presetElements.clear();
+        this.livePreviewValues.clear();
+        
+        // スロットル関数のキャンセル（必要に応じて）
+        if (this.updateActivePresetPreviewThrottled.cancel) {
+            this.updateActivePresetPreviewThrottled.cancel();
+        }
+        
+        this.isInitialized = false;
+        console.log('🗑️ PresetDisplayManager破棄完了');
     }
 }
 
