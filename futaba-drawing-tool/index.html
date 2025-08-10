@@ -206,20 +206,15 @@
         </div>
         
         <!-- Phase2D: リセット機能ボタン追加 -->
-        <div class="setting-group">
-            <div class="setting-label">リセット機能</div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px;">
-                <button class="resize-button" id="reset-active-preset" title="アクティブプリセットをデフォルト値にリセット">
-                    アクティブリセット
-                </button>
-                <button class="resize-button" id="reset-all-presets" title="全プリセットをデフォルト値にリセット">
-                    全プリセットリセット
-                </button>
-            </div>
-            <button class="resize-button primary" id="reset-canvas" title="キャンバスを消去（Ctrl+Zで復元可能）">
-                キャンバスクリア
-            </button>
+<div class="setting-group">
+    <div class="setting-label">リセット機能</div>
+    <div class="setting-content">
+        <!-- ResetButtonManagerが動的に生成するコンテナ -->
+        <div class="reset-buttons-container">
+            <!-- SVGボタンはJavaScriptで自動生成されます -->
         </div>
+    </div>
+</div>
         
         <!-- チェックボックス設定 -->
         <div class="setting-group">

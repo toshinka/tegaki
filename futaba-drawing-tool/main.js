@@ -1245,3 +1245,44 @@ if (typeof window !== 'undefined') {
     console.log('🚀 準備完了: Phase2D統合版アプリケーション初期化実行中...');
     console.log('📋 次のステップ: ui-manager.js Phase2D統合（ui-events.js連携）');
 }
+
+// UIManager初期化（Phase 2-4対応）
+async function initializeUI() {
+    try {
+        // UIManager作成（drawingSystem, historyManager必須）
+        window.uiManager = new UIManager(window.drawingSystem, window.historyManager);
+        
+        // 初期化待機
+        await window.uiManager.init();
+        
+        console.log('✅ UIシステム初期化完了（Phase 2-4）');
+        
+        // デバッグ用グローバル参照
+        window.debugApp = function() {
+            console.group('🔍 アプリケーション全体デバッグ');
+            console.log('UIManager状態:', window.uiManager.getSystemStatus());
+            window.debugUI();
+            window.debugUIIntegration();
+            console.groupEnd();
+        };
+        
+    } catch (error) {
+        console.error('UI初期化エラー:', error);
+    }
+}
+
+// DOMContentLoaded後に実行
+document.addEventListener('DOMContentLoaded', () => {
+    // CONFIG初期化後にUI初期化
+    if (window.CONFIG) {
+        initializeUI();
+    } else {
+        // CONFIG待機
+        const configCheck = setInterval(() => {
+            if (window.CONFIG) {
+                clearInterval(configCheck);
+                initializeUI();
+            }
+        }, 100);
+    }
+});
