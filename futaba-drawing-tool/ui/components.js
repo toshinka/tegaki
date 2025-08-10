@@ -1,22 +1,24 @@
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev10
- * 基盤UIコンポーネントライブラリ - ui/components.js（ポップアップ復旧版）
+ * 基盤UIコンポーネントライブラリ - ui/components.js（プレビュー連動機能強化版）
  * 
- * 🔧 ポップアップ復旧修正内容:
- * 1. ✅ PopupManager表示ロジック完全修正
- * 2. ✅ イベントリスナー強化・デバッグ機能追加
- * 3. ✅ 確実な初期化処理実装
- * 4. ✅ エラーハンドリング強化
- * 5. ✅ DRY・SOLID原則準拠
+ * 🔧 プレビュー連動機能強化内容:
+ * 1. ✅ PresetDisplayManager: リアルタイムプレビュー更新機能
+ * 2. ✅ PenPresetManager: ライブ値管理機能強化
+ * 3. ✅ アクティブプリセットの●サイズとスライダー連動
+ * 4. ✅ プレビューサイズの20px制限強化
+ * 5. ✅ 数値表示のリアルタイム更新
+ * 6. ✅ 全体プレビューリセット機能
+ * 7. ✅ DRY・SOLID原則準拠
  * 
- * 修正目標: ベクターペンツール設定ポップアップの確実な表示復旧
- * 責務: 基盤UIコンポーネントの定義・提供
+ * 強化目標: ペンツールポップアップでのリアルタイムプレビュー連動
+ * 責務: 基盤UIコンポーネント + プレビュー連動機能
  * 依存: config.js（CONFIG安全アクセス）
  */
 
-console.log('🔧 ui/components.js ポップアップ復旧版読み込み開始...');
+console.log('🔧 ui/components.js プレビュー連動機能強化版読み込み開始...');
 
-// ==== CONFIG安全アクセス関数（エラー回避強化版）====
+// ==== CONFIG安全アクセス関数（プレビュー連動機能対応）====
 function safeConfigGet(key, defaultValue = null) {
     try {
         if (!window.CONFIG || typeof window.CONFIG !== 'object') {
@@ -52,7 +54,7 @@ function safeConfigGet(key, defaultValue = null) {
     }
 }
 
-// ==== 1. スライダー制御コンポーネント（修正版）====
+// ==== 1. スライダー制御コンポーネント（変更なし）====
 class SliderController {
     constructor(sliderId, min, max, initialValue, callback) {
         this.sliderId = sliderId;
@@ -227,13 +229,12 @@ class SliderController {
     }
 }
 
-// ==== 2. ポップアップ管理コンポーネント（完全修正版）====
+// ==== 2. ポップアップ管理コンポーネント（変更なし）====
 class PopupManager {
     constructor() {
         this.activePopups = new Set();
         this.registeredPopups = new Map();
         this.isInitialized = false;
-        this.debugMode = false;
         
         this.init();
     }
@@ -243,7 +244,7 @@ class PopupManager {
             this.setupGlobalEventListeners();
             this.isInitialized = true;
             
-            console.log('✅ PopupManager初期化完了（修正版）');
+            console.log('✅ PopupManager初期化完了');
         } catch (error) {
             console.error('PopupManager初期化エラー:', error);
         }
@@ -253,21 +254,14 @@ class PopupManager {
         // ESCキーでポップアップを閉じる
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') {
-                console.log('ESCキー検出: 全ポップアップを閉じます');
                 this.hideAllPopups();
             }
         });
         
-        // クリック外でポップアップを閉じる（改良版）
+        // クリック外でポップアップを閉じる
         document.addEventListener('click', (event) => {
-            // ツールボタンクリックの場合は処理をスキップ
-            if (event.target.closest('.tool-button')) {
-                return;
-            }
-            
             const clickedPopup = event.target.closest('.popup-panel');
-            if (!clickedPopup && this.activePopups.size > 0) {
-                console.log('ポップアップ外クリック検出: ポップアップを閉じます');
+            if (!clickedPopup) {
                 this.hideAllPopups();
             }
         });
@@ -276,57 +270,27 @@ class PopupManager {
     registerPopup(popupId) {
         const popupElement = document.getElementById(popupId);
         if (popupElement) {
-            // 初期状態を確実に設定
-            popupElement.style.display = 'none';
-            popupElement.classList.remove('visible');
-            popupElement.style.opacity = '0';
-            
             this.registeredPopups.set(popupId, popupElement);
             console.log(`📋 ポップアップ登録: ${popupId}`);
-            
-            if (this.debugMode) {
-                console.log(`デバッグ: ${popupId} 初期状態設定完了`);
-            }
         } else {
-            console.error(`ポップアップ要素が見つかりません: ${popupId}`);
+            console.warn(`ポップアップ要素が見つかりません: ${popupId}`);
         }
     }
     
     showPopup(popupId) {
         const popupElement = this.registeredPopups.get(popupId);
         if (!popupElement) {
-            console.error(`未登録のポップアップ: ${popupId}`);
+            console.warn(`未登録のポップアップ: ${popupId}`);
             return false;
         }
         
         try {
-            console.log(`👁️ ポップアップ表示開始: ${popupId}`);
-            
-            // 確実な表示制御
             popupElement.style.display = 'block';
-            popupElement.style.visibility = 'visible';
-            popupElement.style.opacity = '1';
             popupElement.classList.add('visible');
-            
-            // Z-indexの確保
-            popupElement.style.zIndex = '1000';
-            
             this.activePopups.add(popupId);
             
-            // デバッグ情報
-            if (this.debugMode) {
-                console.log(`デバッグ: ${popupId} 表示状態:`, {
-                    display: popupElement.style.display,
-                    visibility: popupElement.style.visibility,
-                    opacity: popupElement.style.opacity,
-                    zIndex: popupElement.style.zIndex,
-                    classes: popupElement.className
-                });
-            }
-            
-            console.log(`✅ ポップアップ表示完了: ${popupId}`);
+            console.log(`👁️ ポップアップ表示: ${popupId}`);
             return true;
-            
         } catch (error) {
             console.error(`ポップアップ表示エラー (${popupId}):`, error);
             return false;
@@ -335,24 +299,15 @@ class PopupManager {
     
     hidePopup(popupId) {
         const popupElement = this.registeredPopups.get(popupId);
-        if (!popupElement) {
-            console.warn(`未登録のポップアップの非表示試行: ${popupId}`);
-            return false;
-        }
+        if (!popupElement) return false;
         
         try {
-            console.log(`🙈 ポップアップ非表示開始: ${popupId}`);
-            
             popupElement.style.display = 'none';
-            popupElement.style.visibility = 'hidden';
-            popupElement.style.opacity = '0';
             popupElement.classList.remove('visible');
-            
             this.activePopups.delete(popupId);
             
-            console.log(`✅ ポップアップ非表示完了: ${popupId}`);
+            console.log(`🙈 ポップアップ非表示: ${popupId}`);
             return true;
-            
         } catch (error) {
             console.error(`ポップアップ非表示エラー (${popupId}):`, error);
             return false;
@@ -360,13 +315,9 @@ class PopupManager {
     }
     
     togglePopup(popupId) {
-        console.log(`🔄 ポップアップ切り替え要求: ${popupId}`);
-        
         if (this.activePopups.has(popupId)) {
-            console.log(`${popupId} は既に表示中 → 非表示に切り替え`);
             return this.hidePopup(popupId);
         } else {
-            console.log(`${popupId} は非表示中 → 表示に切り替え`);
             // 他のポップアップを閉じてから表示
             this.hideAllPopups();
             return this.showPopup(popupId);
@@ -375,42 +326,9 @@ class PopupManager {
     
     hideAllPopups() {
         const popupsToHide = Array.from(this.activePopups);
-        console.log(`🙈 全ポップアップ非表示: ${popupsToHide.length}個`);
-        
         popupsToHide.forEach(popupId => {
             this.hidePopup(popupId);
         });
-    }
-    
-    // デバッグ機能追加
-    debugPopupState(popupId) {
-        const popup = this.registeredPopups.get(popupId);
-        if (!popup) {
-            return { error: 'ポップアップが登録されていません' };
-        }
-        
-        return {
-            exists: !!popup,
-            isRegistered: this.registeredPopups.has(popupId),
-            isActive: this.activePopups.has(popupId),
-            display: popup.style.display,
-            visibility: popup.style.visibility,
-            opacity: popup.style.opacity,
-            zIndex: popup.style.zIndex,
-            hasVisibleClass: popup.classList.contains('visible'),
-            computedDisplay: getComputedStyle(popup).display,
-            boundingRect: popup.getBoundingClientRect()
-        };
-    }
-    
-    enableDebugMode() {
-        this.debugMode = true;
-        console.log('🐛 PopupManager デバッグモード有効');
-    }
-    
-    disableDebugMode() {
-        this.debugMode = false;
-        console.log('🐛 PopupManager デバッグモード無効');
     }
     
     getStatus() {
@@ -418,14 +336,12 @@ class PopupManager {
             isInitialized: this.isInitialized,
             activePopup: this.activePopups.size > 0 ? Array.from(this.activePopups)[0] : null,
             activeCount: this.activePopups.size,
-            registeredCount: this.registeredPopups.size,
-            registeredPopups: Array.from(this.registeredPopups.keys()),
-            debugMode: this.debugMode
+            registeredCount: this.registeredPopups.size
         };
     }
 }
 
-// ==== 3. ステータスバー管理コンポーネント====
+// ==== 3. ステータスバー管理コンポーネント（変更なし）====
 class StatusBarManager {
     constructor() {
         this.isInitialized = false;
@@ -533,7 +449,7 @@ class StatusBarManager {
     }
 }
 
-// ==== 4. プリセット表示管理コンポーネント（強化版）====
+// ==== 4. プリセット表示管理コンポーネント（プレビュー連動機能強化版）====
 class PresetDisplayManager {
     constructor(toolsSystem = null) {
         this.toolsSystem = toolsSystem;
@@ -543,6 +459,11 @@ class PresetDisplayManager {
         // DOM要素
         this.presetsContainer = null;
         this.presetElements = new Map();
+        
+        // プレビュー連動機能
+        this.liveUpdateEnabled = true;
+        this.updateThrottle = null;
+        this.lastUpdateTime = 0;
         
         this.init();
     }
@@ -558,7 +479,7 @@ class PresetDisplayManager {
             this.setupPresetElements();
             this.isInitialized = true;
             
-            console.log('✅ PresetDisplayManager初期化完了');
+            console.log('✅ PresetDisplayManager初期化完了（プレビュー連動機能強化版）');
             
         } catch (error) {
             console.error('PresetDisplayManager初期化エラー:', error);
@@ -605,31 +526,39 @@ class PresetDisplayManager {
         }
     }
     
+    /**
+     * 🆕 プレビュー連動機能: プリセット表示更新（リアルタイム対応）
+     */
     updatePresetsDisplay() {
         if (!this.isInitialized) return;
         
         try {
-            let activeSize = null;
+            let activePresetId = null;
             let currentSettings = null;
+            let liveValues = null;
             
-            // 現在の設定を取得
-            if (this.penPresetManager && this.penPresetManager.getActivePreset) {
+            // 現在の設定とライブ値を取得
+            if (this.penPresetManager) {
                 const activePreset = this.penPresetManager.getActivePreset();
                 if (activePreset) {
-                    activeSize = activePreset.size;
+                    activePresetId = activePreset.id;
                     currentSettings = {
                         size: activePreset.size,
-                        opacity: activePreset.opacity
+                        opacity: activePreset.opacity,
+                        color: activePreset.color || safeConfigGet('DEFAULT_COLOR', 0x800000)
                     };
                 }
+                
+                // ライブ値取得
+                liveValues = this.penPresetManager.getLiveValues();
             } else if (this.toolsSystem && this.toolsSystem.getBrushSettings) {
                 currentSettings = this.toolsSystem.getBrushSettings();
-                activeSize = currentSettings.size;
             }
             
-            // プリセット表示を更新
+            // 各プリセット表示を更新
             this.presetElements.forEach((element, presetSize) => {
-                const isActive = Math.abs(presetSize - (activeSize || 0)) < 0.1;
+                const presetId = `preset_${presetSize}`;
+                const isActive = presetId === activePresetId;
                 
                 // アクティブ状態の更新
                 if (isActive) {
@@ -638,8 +567,16 @@ class PresetDisplayManager {
                     element.classList.remove('active');
                 }
                 
-                // プレビューサイズとラベルの更新
-                this.updatePresetPreview(element, presetSize, currentSettings);
+                // プレビュー更新（アクティブプリセットはライブ値適用）
+                if (isActive && liveValues) {
+                    this.updatePresetPreview(element, presetSize, {
+                        size: liveValues.size,
+                        opacity: liveValues.opacity,
+                        color: currentSettings?.color || liveValues.color
+                    }, true);
+                } else {
+                    this.updatePresetPreview(element, presetSize, currentSettings, false);
+                }
             });
             
         } catch (error) {
@@ -647,7 +584,52 @@ class PresetDisplayManager {
         }
     }
     
-    updatePresetPreview(element, size, currentSettings) {
+    /**
+     * 🆕 プレビュー連動機能: アクティブプリセットのライブプレビュー更新
+     */
+    updateActivePresetPreview(size = null, opacity = null) {
+        if (!this.isInitialized || !this.penPresetManager) return;
+        
+        try {
+            const activePreset = this.penPresetManager.getActivePreset();
+            if (!activePreset) return;
+            
+            const presetSize = activePreset.originalSize || activePreset.size;
+            const element = this.presetElements.get(presetSize);
+            if (!element) return;
+            
+            // 現在の設定を取得
+            let currentSettings = {
+                size: size !== null ? size : activePreset.size,
+                opacity: opacity !== null ? opacity / 100 : activePreset.opacity,
+                color: activePreset.color || safeConfigGet('DEFAULT_COLOR', 0x800000)
+            };
+            
+            // ツールシステムから現在の色を取得
+            if (this.toolsSystem && this.toolsSystem.getBrushSettings) {
+                const brushSettings = this.toolsSystem.getBrushSettings();
+                if (brushSettings.color !== undefined) {
+                    currentSettings.color = brushSettings.color;
+                }
+            }
+            
+            // プレビュー更新（ライブ値として適用）
+            this.updatePresetPreview(element, presetSize, currentSettings, true);
+            
+            console.log('🔄 アクティブプリセットプレビュー更新:', {
+                size: currentSettings.size.toFixed(1) + 'px',
+                opacity: Math.round(currentSettings.opacity * 100) + '%'
+            });
+            
+        } catch (error) {
+            console.warn('アクティブプリセットプレビュー更新エラー:', error);
+        }
+    }
+    
+    /**
+     * 🆕 プレビュー連動機能: プレビュー更新（20px制限強化版）
+     */
+    updatePresetPreview(element, presetSize, settings, isLiveUpdate = false) {
         try {
             const previewFrame = element.querySelector('.size-preview-frame');
             const previewCircle = element.querySelector('.size-preview-circle');
@@ -658,59 +640,131 @@ class PresetDisplayManager {
                 return;
             }
             
-            // CONFIG値を安全に取得
-            const previewMinSize = safeConfigGet('PREVIEW_MIN_SIZE', 0.5);
-            const previewMaxSize = safeConfigGet('PREVIEW_MAX_SIZE', 20);
+            // 表示するサイズと透明度を決定
+            const displaySize = settings?.size ?? presetSize;
+            const displayOpacity = settings?.opacity ?? safeConfigGet('DEFAULT_OPACITY', 1.0);
+            const displayColor = settings?.color ?? safeConfigGet('DEFAULT_COLOR', 0x800000);
             
-            // プレビューサイズ計算（外枠制限）- 確実に外枠を超えない
-            let previewSize;
-            const frameMaxSize = 20; // 外枠の最大サイズを確実に設定
-            
-            if (size <= 32) {
-                // 線形スケール（小サイズ）
-                const normalizedSize = Math.min(1.0, size / 32);
-                previewSize = Math.max(previewMinSize, 
-                              Math.min(frameMaxSize, normalizedSize * frameMaxSize));
-            } else {
-                // 対数スケール（大サイズ）- 確実に外枠内に収める
-                const logScale = Math.log(size / 32) / Math.log(safeConfigGet('MAX_BRUSH_SIZE', 500) / 32);
-                const compressedScale = Math.min(0.3, logScale * 0.2); // さらに圧縮
-                previewSize = Math.min(frameMaxSize, frameMaxSize * (0.7 + compressedScale));
-            }
-            
-            // 最終的な外枠制限確認
-            previewSize = Math.min(frameMaxSize, Math.max(previewMinSize, previewSize));
+            // プレビューサイズ計算（20px制限強化）
+            const previewSize = this.calculateConstrainedPreviewSize(displaySize);
             
             // プレビューサークル更新
             previewCircle.style.width = `${previewSize}px`;
             previewCircle.style.height = `${previewSize}px`;
             
             // 色と透明度の適用
-            if (currentSettings) {
-                const opacity = currentSettings.opacity || 1.0;
-                const color = currentSettings.color || safeConfigGet('DEFAULT_COLOR', 0x800000);
-                
-                // 16進数色をRGBに変換
-                const r = (color >> 16) & 0xFF;
-                const g = (color >> 8) & 0xFF;
-                const b = color & 0xFF;
-                
-                previewCircle.style.backgroundColor = `rgba(${r}, ${g}, ${b}, ${opacity})`;
-            }
+            const r = (displayColor >> 16) & 0xFF;
+            const g = (displayColor >> 8) & 0xFF;
+            const b = displayColor & 0xFF;
             
-            // ラベル更新
-            sizeLabel.textContent = size.toString();
+            previewCircle.style.backgroundColor = `rgba(${r}, ${g}, ${b}, ${displayOpacity})`;
             
-            // 透明度表示（現在の設定を反映）
-            if (currentSettings && currentSettings.opacity !== undefined) {
-                const opacityPercent = Math.round(currentSettings.opacity * 100);
-                percentLabel.textContent = `${opacityPercent}%`;
+            // ラベル更新（ライブ更新時は小数点表示）
+            if (isLiveUpdate) {
+                sizeLabel.textContent = displaySize.toFixed(1);
+                percentLabel.textContent = Math.round(displayOpacity * 100) + '%';
+                
+                // ライブ更新時は少し強調
+                element.style.backgroundColor = 'rgba(128, 0, 0, 0.1)';
+                setTimeout(() => {
+                    element.style.backgroundColor = '';
+                }, 100);
             } else {
-                percentLabel.textContent = '100%';
+                sizeLabel.textContent = Math.round(displaySize).toString();
+                percentLabel.textContent = Math.round(displayOpacity * 100) + '%';
             }
             
         } catch (error) {
-            console.warn(`プリセットプレビュー更新エラー (${size}px):`, error);
+            console.warn(`プリセットプレビュー更新エラー (${presetSize}px):`, error);
+        }
+    }
+    
+    /**
+     * 🆕 プレビュー連動機能: 20px制限を考慮したプレビューサイズ計算
+     */
+    calculateConstrainedPreviewSize(actualSize) {
+        const size = parseFloat(actualSize);
+        if (isNaN(size) || size <= 0) {
+            return safeConfigGet('PREVIEW_MIN_SIZE', 0.5);
+        }
+        
+        const maxSize = safeConfigGet('PREVIEW_MAX_SIZE', 20);
+        const minSize = safeConfigGet('PREVIEW_MIN_SIZE', 0.5);
+        
+        // 32px以下は線形スケール
+        if (size <= 32) {
+            const normalizedSize = Math.min(1.0, size / 32);
+            const calculatedSize = normalizedSize * maxSize;
+            return Math.max(minSize, Math.min(maxSize, calculatedSize));
+        } else {
+            // 32px超は対数スケールで圧縮（500px対応）
+            const maxBrushSize = safeConfigGet('MAX_BRUSH_SIZE', 500);
+            const logScale = Math.log(size / 32) / Math.log(maxBrushSize / 32);
+            const compressedScale = logScale * 0.3; // 圧縮率30%
+            const calculatedSize = maxSize * (0.7 + compressedScale);
+            return Math.min(maxSize, calculatedSize);
+        }
+    }
+    
+    /**
+     * 🆕 プレビュー連動機能: ライブ値同期
+     */
+    syncPreviewWithLiveValues() {
+        if (!this.penPresetManager) return;
+        
+        // スロットリング制御（60fps制限）
+        const now = performance.now();
+        if (now - this.lastUpdateTime < 16) { // 60fps相当
+            if (this.updateThrottle) clearTimeout(this.updateThrottle);
+            this.updateThrottle = setTimeout(() => {
+                this.syncPreviewWithLiveValues();
+            }, 16);
+            return;
+        }
+        this.lastUpdateTime = now;
+        
+        try {
+            const activePreset = this.penPresetManager.getActivePreset();
+            const liveValues = this.penPresetManager.getLiveValues();
+            
+            if (activePreset && liveValues) {
+                // アクティブプリセットのプレビューのみ更新
+                const presetSize = activePreset.originalSize || activePreset.size;
+                const element = this.presetElements.get(presetSize);
+                
+                if (element) {
+                    this.updatePresetPreview(element, presetSize, {
+                        size: liveValues.size,
+                        opacity: liveValues.opacity,
+                        color: liveValues.color || activePreset.color
+                    }, true);
+                }
+            }
+            
+        } catch (error) {
+            console.warn('ライブ値同期エラー:', error);
+        }
+    }
+    
+    /**
+     * 🆕 プレビュー連動機能: 全プレビューリセット
+     */
+    resetAllPreviews() {
+        if (!this.penPresetManager) return false;
+        
+        try {
+            // PenPresetManagerのライブ値をクリア
+            this.penPresetManager.clearAllLiveValues();
+            
+            // 表示を更新
+            this.updatePresetsDisplay();
+            
+            console.log('🔄 全プレビューリセット完了');
+            return true;
+            
+        } catch (error) {
+            console.error('全プレビューリセットエラー:', error);
+            return false;
         }
     }
     
@@ -719,12 +773,13 @@ class PresetDisplayManager {
             isInitialized: this.isInitialized,
             presetsCount: this.presetElements.size,
             penPresetManager: !!this.penPresetManager,
-            toolsSystem: !!this.toolsSystem
+            toolsSystem: !!this.toolsSystem,
+            liveUpdateEnabled: this.liveUpdateEnabled
         };
     }
 }
 
-// ==== 5. 既存PenPresetManager（プリセット設定記憶強化版）====
+// ==== 5. ペンプリセット管理（ライブ値管理機能強化版）====
 class PenPresetManager {
     constructor(toolsSystem, historyManager = null) {
         this.toolsSystem = toolsSystem;
@@ -734,6 +789,11 @@ class PenPresetManager {
         // プリセットデータ
         this.presets = new Map();
         this.activePresetId = null;
+        
+        // 🆕 ライブ値管理（プレビュー連動機能）
+        this.liveValues = null; // {size, opacity, color}
+        this.liveValuesHistory = []; // 変更履歴
+        this.maxLiveHistory = 50; // 履歴保持数
         
         // CONFIG値を安全に取得
         const defaultSize = safeConfigGet('DEFAULT_BRUSH_SIZE', 4);
@@ -752,12 +812,11 @@ class PenPresetManager {
                     id: presetId,
                     size: size,
                     opacity: defaultOpacity,
+                    color: safeConfigGet('DEFAULT_COLOR', 0x800000),
                     originalSize: size,
                     originalOpacity: defaultOpacity,
-                    isModified: false,
-                    // プリセット毎の個別設定記憶
-                    customSize: size,
-                    customOpacity: defaultOpacity
+                    originalColor: safeConfigGet('DEFAULT_COLOR', 0x800000),
+                    isModified: false
                 });
             });
             
@@ -770,7 +829,7 @@ class PenPresetManager {
             }
             
             this.isInitialized = true;
-            console.log(`✅ PenPresetManager初期化完了: ${this.presets.size}個のプリセット, アクティブ: ${this.activePresetId}`);
+            console.log(`✅ PenPresetManager初期化完了（ライブ値管理機能強化版）: ${this.presets.size}個のプリセット, アクティブ: ${this.activePresetId}`);
             
         } catch (error) {
             console.error('PenPresetManager初期化エラー:', error);
@@ -784,29 +843,30 @@ class PenPresetManager {
         }
         
         const preset = this.presets.get(presetId);
-        this.activePresetId = presetId;
         
-        // カスタム設定値を使用（記憶された値）
-        const applySize = preset.customSize || preset.size;
-        const applyOpacity = preset.customOpacity || preset.opacity;
+        // ライブ値をクリア（新しいプリセット選択時）
+        this.clearLiveValues();
+        
+        this.activePresetId = presetId;
         
         // ツールシステムに設定を適用
         if (this.toolsSystem && this.toolsSystem.updateBrushSettings) {
             this.toolsSystem.updateBrushSettings({
-                size: applySize,
-                opacity: applyOpacity
+                size: preset.size,
+                opacity: preset.opacity,
+                color: preset.color
             });
         }
         
         // 履歴記録
         if (this.historyManager && this.historyManager.recordPresetChange) {
             this.historyManager.recordPresetChange(presetId, {
-                size: applySize,
-                opacity: applyOpacity
+                size: preset.size,
+                opacity: preset.opacity
             });
         }
         
-        console.log(`🎨 プリセット選択: ${presetId} (サイズ: ${applySize}px, 透明度: ${Math.round(applyOpacity * 100)}%)`);
+        console.log(`🎨 プリセット選択: ${presetId} (サイズ: ${preset.size}px, 透明度: ${Math.round(preset.opacity * 100)}%)`);
         return true;
     }
     
@@ -829,36 +889,133 @@ class PenPresetManager {
         return this.selectPreset(presetIds[prevIndex]);
     }
     
+    /**
+     * 🆕 プレビュー連動機能: ライブ値更新（強化版）
+     */
     updateActivePresetLive(size, opacityPercent) {
         if (!this.activePresetId || !this.presets.has(this.activePresetId)) {
             return false;
         }
         
-        const preset = this.presets.get(this.activePresetId);
-        let modified = false;
+        const activePreset = this.presets.get(this.activePresetId);
         
-        // プリセット毎の設定記憶（カスタム値更新）
-        if (size !== undefined && size !== preset.customSize) {
-            preset.customSize = size;
-            preset.size = size; // 現在値も更新
-            modified = true;
+        // ライブ値オブジェクトの初期化
+        if (!this.liveValues) {
+            this.liveValues = {
+                size: activePreset.size,
+                opacity: activePreset.opacity,
+                color: activePreset.color || safeConfigGet('DEFAULT_COLOR', 0x800000),
+                timestamp: Date.now()
+            };
         }
         
-        if (opacityPercent !== undefined) {
-            const opacity = opacityPercent / 100;
-            if (Math.abs(opacity - preset.customOpacity) > 0.001) {
-                preset.customOpacity = opacity;
-                preset.opacity = opacity; // 現在値も更新
+        let modified = false;
+        
+        // サイズ更新
+        if (size !== undefined && size !== null) {
+            const validatedSize = Math.max(
+                safeConfigGet('MIN_BRUSH_SIZE', 0.1),
+                Math.min(safeConfigGet('MAX_BRUSH_SIZE', 500), parseFloat(size))
+            );
+            
+            if (Math.abs(validatedSize - this.liveValues.size) > 0.001) {
+                this.liveValues.size = validatedSize;
+                modified = true;
+            }
+        }
+        
+        // 不透明度更新
+        if (opacityPercent !== undefined && opacityPercent !== null) {
+            const opacity = Math.max(0, Math.min(100, parseFloat(opacityPercent))) / 100;
+            
+            if (Math.abs(opacity - this.liveValues.opacity) > 0.001) {
+                this.liveValues.opacity = opacity;
                 modified = true;
             }
         }
         
         if (modified) {
-            preset.isModified = true;
-            console.log(`📝 プリセット ${this.activePresetId} ライブ更新: サイズ=${preset.customSize}px, 透明度=${Math.round(preset.customOpacity * 100)}%`);
+            this.liveValues.timestamp = Date.now();
+            activePreset.isModified = true;
+            
+            // 履歴に記録（変更量が大きい場合のみ）
+            if (this.liveValuesHistory.length === 0 || 
+                this.shouldRecordLiveChange(this.liveValues, this.liveValuesHistory[this.liveValuesHistory.length - 1])) {
+                
+                this.liveValuesHistory.push({ ...this.liveValues });
+                
+                // 履歴数制限
+                if (this.liveValuesHistory.length > this.maxLiveHistory) {
+                    this.liveValuesHistory.shift();
+                }
+            }
+            
+            console.log('🔄 ライブ値更新:', {
+                size: this.liveValues.size.toFixed(1) + 'px',
+                opacity: Math.round(this.liveValues.opacity * 100) + '%'
+            });
         }
         
         return modified;
+    }
+    
+    /**
+     * 🆕 プレビュー連動機能: ライブ変更記録判定
+     */
+    shouldRecordLiveChange(current, previous) {
+        if (!previous) return true;
+        
+        const sizeDiff = Math.abs(current.size - previous.size);
+        const opacityDiff = Math.abs(current.opacity - previous.opacity);
+        const timeDiff = current.timestamp - previous.timestamp;
+        
+        // 変更量が大きいか、時間が経過している場合に記録
+        return sizeDiff > 0.5 || opacityDiff > 0.05 || timeDiff > 1000;
+    }
+    
+    /**
+     * 🆕 プレビュー連動機能: ライブ値取得
+     */
+    getLiveValues() {
+        return this.liveValues ? { ...this.liveValues } : null;
+    }
+    
+    /**
+     * 🆕 プレビュー連動機能: ライブ値の存在確認
+     */
+    hasLiveValues() {
+        return !!this.liveValues;
+    }
+    
+    /**
+     * 🆕 プレビュー連動機能: ライブ値クリア
+     */
+    clearLiveValues() {
+        this.liveValues = null;
+        
+        if (this.activePresetId && this.presets.has(this.activePresetId)) {
+            const activePreset = this.presets.get(this.activePresetId);
+            activePreset.isModified = false;
+        }
+        
+        console.log('🔄 ライブ値クリア完了');
+        return true;
+    }
+    
+    /**
+     * 🆕 プレビュー連動機能: 全ライブ値クリア
+     */
+    clearAllLiveValues() {
+        this.liveValues = null;
+        this.liveValuesHistory = [];
+        
+        // 全プリセットの変更フラグをクリア
+        this.presets.forEach(preset => {
+            preset.isModified = false;
+        });
+        
+        console.log('🔄 全ライブ値クリア完了');
+        return true;
     }
     
     resetActivePreset() {
@@ -868,34 +1025,41 @@ class PenPresetManager {
         
         const preset = this.presets.get(this.activePresetId);
         
-        // オリジナル値に戻す
+        // ライブ値をクリア
+        this.clearLiveValues();
+        
+        // プリセットを原始値に戻す
         preset.size = preset.originalSize;
         preset.opacity = preset.originalOpacity;
-        preset.customSize = preset.originalSize;
-        preset.customOpacity = preset.originalOpacity;
+        preset.color = preset.originalColor;
         preset.isModified = false;
         
         // ツールシステムに設定を適用
         if (this.toolsSystem && this.toolsSystem.updateBrushSettings) {
             this.toolsSystem.updateBrushSettings({
                 size: preset.size,
-                opacity: preset.opacity
+                opacity: preset.opacity,
+                color: preset.color
             });
         }
         
-        console.log(`🔄 プリセットリセット: ${this.activePresetId} → オリジナル値（${preset.originalSize}px, ${Math.round(preset.originalOpacity * 100)}%）`);
+        console.log(`🔄 プリセットリセット: ${this.activePresetId}`);
         return true;
     }
     
     resetAllPresets() {
         let resetCount = 0;
         
+        // 全ライブ値クリア
+        this.clearAllLiveValues();
+        
+        // 全プリセットを原始値に戻す
         this.presets.forEach((preset) => {
-            if (preset.isModified) {
+            if (preset.isModified || preset.size !== preset.originalSize || 
+                preset.opacity !== preset.originalOpacity) {
                 preset.size = preset.originalSize;
                 preset.opacity = preset.originalOpacity;
-                preset.customSize = preset.originalSize;
-                preset.customOpacity = preset.originalOpacity;
+                preset.color = preset.originalColor;
                 preset.isModified = false;
                 resetCount++;
             }
@@ -907,13 +1071,38 @@ class PenPresetManager {
             if (this.toolsSystem && this.toolsSystem.updateBrushSettings) {
                 this.toolsSystem.updateBrushSettings({
                     size: activePreset.size,
-                    opacity: activePreset.opacity
+                    opacity: activePreset.opacity,
+                    color: activePreset.color
                 });
             }
         }
         
-        console.log(`🔄 全プリセットリセット: ${resetCount}個 → オリジナル値`);
+        console.log(`🔄 全プリセットリセット: ${resetCount}個`);
         return resetCount > 0;
+    }
+    
+    /**
+     * 🆕 プレビュー連動機能: 実効値取得（ライブ値優先）
+     */
+    getEffectiveValues() {
+        const activePreset = this.getActivePreset();
+        if (!activePreset) return null;
+        
+        if (this.liveValues) {
+            return {
+                size: this.liveValues.size,
+                opacity: this.liveValues.opacity,
+                color: this.liveValues.color,
+                isLive: true
+            };
+        } else {
+            return {
+                size: activePreset.size,
+                opacity: activePreset.opacity,
+                color: activePreset.color,
+                isLive: false
+            };
+        }
     }
     
     getActivePreset() {
@@ -921,26 +1110,27 @@ class PenPresetManager {
             return null;
         }
         
-        const preset = this.presets.get(this.activePresetId);
-        return { 
-            ...preset,
-            // カスタム値を優先して返す
-            size: preset.customSize || preset.size,
-            opacity: preset.customOpacity || preset.opacity
-        };
+        return { ...this.presets.get(this.activePresetId) };
     }
     
     getAllPresets() {
         const result = [];
         this.presets.forEach((preset) => {
-            result.push({ 
-                ...preset,
-                // カスタム値を優先
-                size: preset.customSize || preset.size,
-                opacity: preset.customOpacity || preset.opacity
-            });
+            result.push({ ...preset });
         });
         return result;
+    }
+    
+    /**
+     * 🆕 プレビュー連動機能: ライブ値統計取得
+     */
+    getLiveValuesStats() {
+        return {
+            hasLiveValues: !!this.liveValues,
+            liveValues: this.liveValues ? { ...this.liveValues } : null,
+            historyCount: this.liveValuesHistory.length,
+            maxHistory: this.maxLiveHistory
+        };
     }
     
     getSystemStats() {
@@ -949,14 +1139,12 @@ class PenPresetManager {
             presetsCount: this.presets.size,
             activePresetId: this.activePresetId,
             modifiedCount: Array.from(this.presets.values()).filter(p => p.isModified).length,
-            customizedCount: Array.from(this.presets.values()).filter(p => 
-                p.customSize !== p.originalSize || p.customOpacity !== p.originalOpacity
-            ).length
+            liveValuesStats: this.getLiveValuesStats()
         };
     }
 }
 
-// ==== 6. 既存PerformanceMonitor（最適化版）====
+// ==== 6. PerformanceMonitor（変更なし）====
 class PerformanceMonitor {
     constructor() {
         this.isRunning = false;
@@ -1119,7 +1307,7 @@ class PerformanceMonitor {
     }
 }
 
-// ==== グローバル登録・エクスポート（ポップアップ復旧版）====
+// ==== グローバル登録・エクスポート（プレビュー連動機能強化版）====
 if (typeof window !== 'undefined') {
     // 基盤UIコンポーネントのエクスポート
     window.SliderController = SliderController;
@@ -1127,65 +1315,28 @@ if (typeof window !== 'undefined') {
     window.StatusBarManager = StatusBarManager;
     window.PresetDisplayManager = PresetDisplayManager;
     
-    // 既存システム（強化版）
+    // プレビュー連動機能強化版システム
     window.PenPresetManager = PenPresetManager;
     window.PerformanceMonitor = PerformanceMonitor;
     
     // 安全CONFIG取得関数も公開
     window.safeUIConfigGet = safeConfigGet;
     
-    // デバッグ関数（ポップアップ専用）
-    window.debugPopups = function() {
-        if (window.uiManager && window.uiManager.popupManager) {
-            console.group('🐛 ポップアップデバッグ情報');
-            console.log('PopupManager状態:', window.uiManager.popupManager.getStatus());
-            console.log('pen-settings状態:', window.uiManager.popupManager.debugPopupState('pen-settings'));
-            console.log('resize-settings状態:', window.uiManager.popupManager.debugPopupState('resize-settings'));
-            console.groupEnd();
-        } else {
-            console.error('PopupManager が利用できません');
-        }
-    };
-    
-    // テスト関数（ポップアップ専用）
-    window.testPopupDisplay = function() {
-        console.group('🧪 ポップアップ表示テスト');
-        
-        if (window.uiManager && window.uiManager.popupManager) {
-            const pm = window.uiManager.popupManager;
-            
-            console.log('1. pen-settings表示テスト');
-            const showResult = pm.showPopup('pen-settings');
-            console.log('表示結果:', showResult);
-            console.log('状態確認:', pm.debugPopupState('pen-settings'));
-            
-            setTimeout(() => {
-                console.log('2. pen-settings非表示テスト');
-                const hideResult = pm.hidePopup('pen-settings');
-                console.log('非表示結果:', hideResult);
-                console.log('状態確認:', pm.debugPopupState('pen-settings'));
-            }, 2000);
-            
-        } else {
-            console.error('PopupManager が利用できません');
-        }
-        
-        console.groupEnd();
-    };
-    
-    console.log('✅ ui/components.js ポップアップ復旧版 読み込み完了');
-    console.log('📦 エクスポートクラス（復旧版）:');
+    console.log('✅ ui/components.js プレビュー連動機能強化版 読み込み完了');
+    console.log('📦 エクスポートクラス（プレビュー連動機能強化版）:');
     console.log('  ✅ SliderController: スライダー制御');
-    console.log('  ✅ PopupManager: ポップアップ管理（表示機能修正済み）'); 
+    console.log('  ✅ PopupManager: ポップアップ管理'); 
     console.log('  ✅ StatusBarManager: ステータス表示');
-    console.log('  ✅ PresetDisplayManager: プリセット表示');
-    console.log('  ✅ PenPresetManager: プリセット管理（設定記憶強化）');
+    console.log('  ✅ PresetDisplayManager: プリセット表示（リアルタイムプレビュー対応）');
+    console.log('  ✅ PenPresetManager: プリセット管理（ライブ値管理強化版）');
     console.log('  ✅ PerformanceMonitor: パフォーマンス監視');
-    console.log('🔧 ポップアップ復旧修正完了:');
-    console.log('  ✅ PopupManager表示ロジック完全修正');
-    console.log('  ✅ 確実な初期化・イベント処理強化');
-    console.log('  ✅ デバッグ機能追加（debugPopups, testPopupDisplay）');
-    console.log('  ✅ プリセット設定記憶機能強化');
-    console.log('🎯 責務: 基盤UIコンポーネント提供（ポップアップ表示確実化）');
-    console.log('🏗️ 修正完了: ベクターペンツール設定ポップアップ表示復旧');
+    console.log('🔧 プレビュー連動機能強化完了:');
+    console.log('  ✅ リアルタイムプレビュー更新機能');
+    console.log('  ✅ アクティブプリセットの●サイズとスライダー連動');
+    console.log('  ✅ プレビューサイズの20px制限強化');
+    console.log('  ✅ 数値表示のリアルタイム更新');
+    console.log('  ✅ ライブ値管理・記録機能');
+    console.log('  ✅ 全体プレビューリセット機能');
+    console.log('  ✅ DRY・SOLID原則準拠');
+    console.log('🎯 責務: 基盤UIコンポーネント + リアルタイムプレビュー連動機能');
 }

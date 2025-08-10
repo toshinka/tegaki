@@ -908,3 +908,160 @@ body {
     pointer-events: none;
     animation: fadeIn 0.3s ease;
 }
+
+
+/* プレビューリセットボタン用のコンパクトスタイル */
+.resize-button.compact {
+    padding: 8px 12px;
+    font-size: 11px;
+    min-height: 32px;
+    font-weight: 500;
+    border-width: 1px;
+    background: var(--futaba-light-medium);
+    color: var(--text-primary);
+    transition: all 0.2s ease;
+}
+
+.resize-button.compact:hover {
+    background: var(--futaba-medium);
+    color: var(--text-primary);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(128, 0, 0, 0.15);
+}
+
+.resize-button.compact:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 4px rgba(128, 0, 0, 0.15);
+}
+
+/* ライブプレビュー更新時のアニメーション効果 */
+.size-preset-item.live-updating {
+    background: rgba(128, 0, 0, 0.1);
+    animation: livePreviewPulse 0.3s ease-out;
+}
+
+@keyframes livePreviewPulse {
+    0% { 
+        background: rgba(128, 0, 0, 0.1);
+        transform: scale(1);
+    }
+    50% { 
+        background: rgba(128, 0, 0, 0.2);
+        transform: scale(1.02);
+    }
+    100% { 
+        background: rgba(128, 0, 0, 0.1);
+        transform: scale(1);
+    }
+}
+
+/* プレビューサークルのスムーズな変更アニメーション */
+.size-preview-circle.live-updating {
+    transition: all 0.1s ease-out;
+}
+
+/* アクティブプリセットのライブ状態強調 */
+.size-preset-item.active.has-live-values {
+    background: rgba(128, 0, 0, 0.15);
+    border: 1px solid rgba(128, 0, 0, 0.3);
+    border-radius: 4px;
+}
+
+.size-preset-item.active.has-live-values .size-preview-frame {
+    border-color: var(--futaba-maroon);
+    border-width: 2px;
+    background: rgba(240, 224, 214, 0.8);
+}
+
+/* プレビュー連動情報パネルの調整 */
+.info-panel {
+    margin-top: 12px;
+    padding: 10px;
+    background: var(--settings-info-bg);
+    border-radius: 6px;
+    border-left: 3px solid var(--futaba-maroon);
+    font-size: 11px;
+    color: #666;
+    line-height: 1.4;
+}
+
+/* プレビューリセットボタンのアイコン風装飾 */
+#reset-all-previews:before {
+    content: "🔄";
+    margin-right: 4px;
+    font-size: 10px;
+}
+
+/* 高DPI環境でのプレビュー調整 */
+@media (min-resolution: 2dppx) {
+    .size-preview-circle {
+        /* 高DPI環境でのシャープな描画 */
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+    }
+    
+    .size-preview-frame {
+        /* 高DPI環境での境界調整 */
+        border-width: 0.5px;
+    }
+}
+
+/* プレビューサイズの制限表示（デバッグ時） */
+.size-preview-frame.debug-bounds {
+    border: 2px dashed var(--futaba-maroon);
+    background: rgba(128, 0, 0, 0.05);
+}
+
+.size-preview-frame.debug-bounds:after {
+    content: "20px";
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 8px;
+    color: var(--futaba-maroon);
+    background: white;
+    padding: 1px 3px;
+    border-radius: 2px;
+    border: 1px solid var(--futaba-maroon);
+}
+
+/* レスポンシブ対応（プレビューリセットボタン） */
+@media (max-width: 768px) {
+    .resize-button.compact {
+        padding: 6px 8px;
+        font-size: 10px;
+        min-height: 28px;
+    }
+    
+    #reset-all-previews:before {
+        margin-right: 2px;
+        font-size: 9px;
+    }
+}
+
+/* プリント時のプレビュー連動機能非表示 */
+@media print {
+    .size-preview-circle,
+    .live-updating,
+    #reset-all-previews {
+        display: none !important;
+    }
+}
+
+/* アクセシビリティ対応（プレビュー連動機能） */
+@media (prefers-reduced-motion: reduce) {
+    .size-preview-circle.live-updating,
+    .size-preset-item.live-updating {
+        transition: none !important;
+        animation: none !important;
+    }
+}
+
+/* ダークモード対応（将来実装用） */
+@media (prefers-color-scheme: dark) {
+    .size-preset-item.active.has-live-values {
+        /* ダークモード用のライブ状態強調（準備のみ） */
+        /* background: rgba(255, 100, 100, 0.15); */
+    }
+}

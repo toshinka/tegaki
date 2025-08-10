@@ -1,63 +1,64 @@
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev10
- * UI統合管理システム - ui-manager.js（Phase2C緊急修正版）
+ * UI統合管理システム - ui-manager.js（プレビュー連動機能強化版）
  * 
- * 🔧 Phase2C緊急修正内容:
- * 1. ✅ 重複クラス問題解決（ui/components.js との分離）
- * 2. ✅ 既存システム活用（toolsSystemからPenPresetManager取得）
- * 3. ✅ 依存関係エラー解決（ui/components.js 定義クラス使用）
- * 4. ✅ CONFIG安全アクセス（safeConfigGet実装）
- * 5. ✅ エラーハンドリング強化・実用性重視
- * 6. ✅ 基本機能特化・安定動作優先
- * 7. ✅ 段階的拡張準備（将来実装用接続点確保）
+ * 🔧 プレビュー連動機能強化内容:
+ * 1. ✅ スライダーコールバック強化（プレビュー更新連携）
+ * 2. ✅ リアルタイムプレビュー更新システム
+ * 3. ✅ 全体プレビューリセット機能
+ * 4. ✅ プレビュー同期システム
+ * 5. ✅ ライブ値管理との連携強化
+ * 6. ✅ プレビュー連動デバッグ機能
+ * 7. ✅ DRY・SOLID原則準拠
  * 
- * Phase2C緊急修正目標: アプリ起動復旧・基本機能安定・依存関係解決
- * 責務: UI統合制御のみ（基盤コンポーネントは ui/components.js に分離）
+ * 強化目標: スライダーとプレビューの完全連動・リアルタイム更新
+ * 責務: UI統合制御 + プレビュー連動システム
  * 依存: config.js, ui/components.js
  */
 
-console.log('🔧 ui-manager.js Phase2C緊急修正版読み込み開始...');
+console.log('🔧 ui-manager.js プレビュー連動機能強化版読み込み開始...');
 
-// ==== Phase2C緊急修正: UI統合管理クラス（依存関係解決版）====
+// ==== プレビュー連動機能強化: UI統合管理クラス ====
 class UIManagerSystem {
     constructor(app, toolsSystem, historyManager = null) {
         this.app = app;
         this.toolsSystem = toolsSystem;
         this.historyManager = historyManager;
         
-        // Phase2C緊急修正: ui/components.js 定義クラス活用
+        // ui/components.js 定義クラス活用
         this.popupManager = this.initializeComponent('PopupManager');
         this.statusBar = this.initializeComponent('StatusBarManager');
         this.presetDisplayManager = this.initializeComponent('PresetDisplayManager', [toolsSystem]);
         
-        // Phase2C緊急修正: 既存システムとの連携
+        // 既存システムとの連携
         this.penPresetManager = null; // toolsSystemから取得
         this.performanceMonitor = null; // ui/components.js から取得
         
-        // Phase2C緊急修正: 内蔵パフォーマンス監視（簡易版）
+        // 内蔵パフォーマンス監視（簡易版）
         this.simplePerformanceMonitor = new SimplePerformanceMonitor();
-        
-        // Phase2C緊急修正: 将来の新システム準備（段階的実装用）
-        this.newPresetManager = null;     // 段階的実装用
-        this.newPerformanceMonitor = null; // 段階的実装用
         
         // スライダー管理
         this.sliders = new Map();
+        
+        // 🆕 プレビュー連動機能用の状態
+        this.previewSyncEnabled = true;
+        this.previewUpdateThrottle = null;
+        this.lastPreviewUpdate = 0;
         
         // 状態
         this.isInitialized = false;
         this.coordinateUpdateThrottle = null;
         this.errorCount = 0;
-        this.maxErrors = 10; // 緊急修正: エラー許容度拡大
+        this.maxErrors = 10;
         
         // 外部参照
         this.settingsManager = null;
         
-        console.log('🎯 UIManagerSystem初期化（Phase2C緊急修正版・依存関係解決）');
+        console.log('🎯 UIManagerSystem初期化（プレビュー連動機能強化版）');
     }
     
     /**
-     * Phase2C緊急修正: CONFIG値安全取得
+     * CONFIG値安全取得
      */
     safeConfigGet(key, defaultValue) {
         try {
@@ -76,7 +77,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: コンポーネント安全初期化
+     * コンポーネント安全初期化
      */
     initializeComponent(ComponentClass, constructorArgs = []) {
         try {
@@ -93,7 +94,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: 履歴管理システム設定
+     * 履歴管理システム設定
      */
     setHistoryManager(historyManager) {
         this.historyManager = historyManager;
@@ -101,11 +102,11 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: 初期化（依存関係解決版）
+     * 初期化（プレビュー連動機能強化版）
      */
     async init() {
         try {
-            console.log('🎯 UIManagerSystem初期化開始（Phase2C緊急修正版）...');
+            console.log('🎯 UIManagerSystem初期化開始（プレビュー連動機能強化版）...');
             
             // 既存システム取得
             this.setupExistingSystems();
@@ -113,13 +114,16 @@ class UIManagerSystem {
             // 基本UI設定
             this.setupToolButtons();
             this.setupPopups();
-            this.setupSliders();
+            this.setupSliders(); // 🆕 プレビュー連動機能強化
             this.setupResize();
             this.setupCheckboxes();
             this.setupAppEventListeners();
             
             // リセット機能
-            this.setupResetFunctions();
+            this.setupResetFunctions(); // 🆕 プレビューリセット機能追加
+            
+            // 🆕 プレビュー連動システム初期化
+            this.setupPreviewSync();
             
             // パフォーマンス監視開始
             this.startPerformanceMonitoring();
@@ -128,7 +132,7 @@ class UIManagerSystem {
             this.updateAllDisplays();
             
             this.isInitialized = true;
-            console.log('✅ UIManagerSystem初期化完了（Phase2C緊急修正版）');
+            console.log('✅ UIManagerSystem初期化完了（プレビュー連動機能強化版）');
             
         } catch (error) {
             console.error('❌ UIManagerSystem初期化エラー:', error);
@@ -138,7 +142,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: 既存システム取得
+     * 既存システム取得
      */
     setupExistingSystems() {
         // 既存PenPresetManager取得
@@ -179,7 +183,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: パフォーマンス監視開始
+     * パフォーマンス監視開始
      */
     startPerformanceMonitoring() {
         // ui/components.js の PerformanceMonitor 優先
@@ -195,7 +199,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: ツールボタン設定（簡略版）
+     * ツールボタン設定
      */
     setupToolButtons() {
         document.querySelectorAll('.tool-button').forEach(button => {
@@ -248,7 +252,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: ポップアップ設定（簡略版）
+     * ポップアップ設定
      */
     setupPopups() {
         if (!this.popupManager) {
@@ -264,7 +268,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: スライダー設定（CONFIG安全アクセス版）
+     * 🆕 プレビュー連動機能: スライダー設定（プレビュー更新連携強化版）
      */
     setupSliders() {
         if (typeof SliderController === 'undefined') {
@@ -281,22 +285,34 @@ class UIManagerSystem {
             const defaultPressure = this.safeConfigGet('DEFAULT_PRESSURE', 0.5);
             const defaultSmoothing = this.safeConfigGet('DEFAULT_SMOOTHING', 0.3);
             
-            // ペンサイズスライダー
+            // 🆕 ペンサイズスライダー（プレビュー連動強化版）
             this.createSlider('pen-size-slider', minSize, maxSize, defaultSize, 
                 (value, displayOnly = false) => {
                     if (!displayOnly) {
+                        // ツールシステム更新
                         this.toolsSystem.updateBrushSettings({ size: value });
+                        
+                        // 🆕 プレビュー連動: ライブ値更新
                         this.updatePresetLiveValues(value, null);
+                        
+                        // 🆕 プレビュー連動: リアルタイムプレビュー更新
+                        this.updateActivePresetPreview(value, null);
                     }
                     return value.toFixed(1) + 'px';
                 });
             
-            // 不透明度スライダー
+            // 🆕 不透明度スライダー（プレビュー連動強化版）
             this.createSlider('pen-opacity-slider', 0, 100, defaultOpacity * 100, 
                 (value, displayOnly = false) => {
                     if (!displayOnly) {
+                        // ツールシステム更新
                         this.toolsSystem.updateBrushSettings({ opacity: value / 100 });
+                        
+                        // 🆕 プレビュー連動: ライブ値更新
                         this.updatePresetLiveValues(null, value);
+                        
+                        // 🆕 プレビュー連動: リアルタイムプレビュー更新
+                        this.updateActivePresetPreview(null, value);
                     }
                     return value.toFixed(1) + '%';
                 });
@@ -319,7 +335,7 @@ class UIManagerSystem {
                 });
             
             this.setupSliderButtons();
-            console.log('✅ スライダー設定完了（Phase2C緊急修正版）');
+            console.log('✅ スライダー設定完了（プレビュー連動機能強化版）');
             
         } catch (error) {
             console.error('スライダー設定エラー:', error);
@@ -371,7 +387,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: プリセットライブ値更新（既存システム版）
+     * 🆕 プレビュー連動機能: プリセットライブ値更新（強化版）
      */
     updatePresetLiveValues(size, opacity) {
         if (this.penPresetManager && this.penPresetManager.updateActivePresetLive) {
@@ -380,12 +396,71 @@ class UIManagerSystem {
             const finalSize = size !== null ? size : currentSettings.size;
             const finalOpacity = opacity !== null ? opacity : (currentSettings.opacity * 100);
             
-            this.penPresetManager.updateActivePresetLive(finalSize, finalOpacity);
+            // ライブ値更新
+            const updated = this.penPresetManager.updateActivePresetLive(finalSize, finalOpacity);
+            
+            if (updated) {
+                console.log('🔄 プリセットライブ値更新:', {
+                    size: finalSize.toFixed(1) + 'px',
+                    opacity: finalOpacity.toFixed(1) + '%'
+                });
+            }
         }
     }
     
     /**
-     * Phase2C緊急修正: リサイズ設定（簡略版）
+     * 🆕 プレビュー連動機能: アクティブプリセットプレビュー更新（リアルタイム）
+     */
+    updateActivePresetPreview(size = null, opacity = null) {
+        if (!this.previewSyncEnabled || !this.presetDisplayManager) return;
+        
+        // スロットリング制御（60fps制限）
+        const now = performance.now();
+        if (now - this.lastPreviewUpdate < 16) { // 60fps相当
+            if (this.previewUpdateThrottle) clearTimeout(this.previewUpdateThrottle);
+            this.previewUpdateThrottle = setTimeout(() => {
+                this.updateActivePresetPreview(size, opacity);
+            }, 16);
+            return;
+        }
+        this.lastPreviewUpdate = now;
+        
+        try {
+            // PresetDisplayManagerのライブプレビュー更新を呼び出し
+            if (this.presetDisplayManager.updateActivePresetPreview) {
+                this.presetDisplayManager.updateActivePresetPreview(size, opacity);
+            }
+            
+            // 代替手段: 全体プレビュー同期
+            else if (this.presetDisplayManager.syncPreviewWithLiveValues) {
+                this.presetDisplayManager.syncPreviewWithLiveValues();
+            }
+            
+        } catch (error) {
+            console.warn('アクティブプリセットプレビュー更新エラー:', error);
+        }
+    }
+    
+    /**
+     * 🆕 プレビュー連動機能: プレビュー同期システム初期化
+     */
+    setupPreviewSync() {
+        try {
+            // プレビュー同期が有効な場合のみ設定
+            if (this.previewSyncEnabled && this.presetDisplayManager && this.penPresetManager) {
+                console.log('🔗 プレビュー同期システム初期化完了');
+            } else {
+                console.warn('⚠️ プレビュー同期システムの初期化をスキップ（必要なコンポーネントが不足）');
+            }
+            
+        } catch (error) {
+            console.error('プレビュー同期システム初期化エラー:', error);
+            this.previewSyncEnabled = false;
+        }
+    }
+    
+    /**
+     * リサイズ設定
      */
     setupResize() {
         const resizeButtons = [
@@ -416,7 +491,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: チェックボックス設定（簡略版）
+     * チェックボックス設定
      */
     setupCheckboxes() {
         const highDpiCheckbox = document.getElementById('high-dpi-checkbox');
@@ -440,7 +515,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: アプリイベントリスナー設定（簡略版）
+     * アプリイベントリスナー設定
      */
     setupAppEventListeners() {
         // キャンバス上のマウス座標更新
@@ -462,7 +537,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: キーボードショートカット処理（簡潔版）
+     * キーボードショートカット処理（プレビューリセット追加）
      */
     handleKeyboardShortcuts(event) {
         // Ctrl+Z: アンドゥ
@@ -494,6 +569,13 @@ class UIManagerSystem {
             this.handleResetActivePreset();
             return;
         }
+        
+        // 🆕 Shift+R: 全プレビューリセット
+        if (event.key === 'R' && event.shiftKey && !event.ctrlKey) {
+            event.preventDefault();
+            this.handleResetAllPreviews();
+            return;
+        }
     }
     
     updateCoordinatesThrottled(x, y) {
@@ -515,7 +597,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: リセット機能セットアップ（既存システム版）
+     * 🆕 プレビュー連動機能: リセット機能セットアップ（プレビューリセット追加）
      */
     setupResetFunctions() {
         // アクティブプリセットリセット
@@ -534,6 +616,14 @@ class UIManagerSystem {
             });
         }
         
+        // 🆕 全プレビューリセット（新機能）
+        const resetAllPreviewsBtn = document.getElementById('reset-all-previews');
+        if (resetAllPreviewsBtn) {
+            resetAllPreviewsBtn.addEventListener('click', () => {
+                this.handleResetAllPreviews();
+            });
+        }
+        
         // キャンバスリセット
         const resetCanvasBtn = document.getElementById('reset-canvas');
         if (resetCanvasBtn) {
@@ -544,7 +634,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: リセット処理（既存システム版）
+     * アクティブプリセットリセット処理
      */
     handleResetActivePreset() {
         if (this.penPresetManager && this.penPresetManager.resetActivePreset) {
@@ -574,6 +664,23 @@ class UIManagerSystem {
         }
     }
     
+    /**
+     * 🆕 プレビュー連動機能: 全プレビューリセット処理
+     */
+    handleResetAllPreviews() {
+        if (this.presetDisplayManager && this.presetDisplayManager.resetAllPreviews) {
+            const success = this.presetDisplayManager.resetAllPreviews();
+            
+            if (success) {
+                this.updateSliderValuesFromToolsSystem();
+                this.updateAllDisplays();
+                this.showNotification('全プレビューをリセットしました', 'success', 2000);
+            }
+        } else {
+            this.showNotification('プレビューリセット機能が利用できません', 'error', 3000);
+        }
+    }
+    
     handleResetCanvas() {
         if (confirm('キャンバスを消去しますか？この操作は取り消すことができます。')) {
             if (this.app && this.app.clear) {
@@ -584,7 +691,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: 表示更新メソッド群（簡略版）
+     * 🆕 プレビュー連動機能: 表示更新メソッド群（プレビュー同期追加）
      */
     updateAllDisplays() {
         try {
@@ -592,9 +699,15 @@ class UIManagerSystem {
             this.updateToolDisplay();
             this.updateStatusDisplay();
             
-            // プリセット表示更新
+            // プリセット表示更新（プレビュー同期含む）
             if (this.presetDisplayManager && this.presetDisplayManager.updatePresetsDisplay) {
                 this.presetDisplayManager.updatePresetsDisplay();
+            }
+            
+            // 🆕 プレビュー同期実行
+            if (this.previewSyncEnabled && this.presetDisplayManager && 
+                this.presetDisplayManager.syncPreviewWithLiveValues) {
+                this.presetDisplayManager.syncPreviewWithLiveValues();
             }
             
         } catch (error) {
@@ -658,7 +771,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: スライダー関連メソッド
+     * スライダー関連メソッド
      */
     updateSliderValue(sliderId, value) {
         const slider = this.sliders.get(sliderId);
@@ -679,25 +792,37 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: プリセット関連メソッド（既存システム版）
+     * プリセット関連メソッド
      */
     selectPreset(presetId) {
         if (this.penPresetManager && this.penPresetManager.selectPreset) {
-            return this.penPresetManager.selectPreset(presetId);
+            const result = this.penPresetManager.selectPreset(presetId);
+            if (result) {
+                this.updateAllDisplays();
+            }
+            return result;
         }
         return null;
     }
     
     selectNextPreset() {
         if (this.penPresetManager && this.penPresetManager.selectNextPreset) {
-            return this.penPresetManager.selectNextPreset();
+            const result = this.penPresetManager.selectNextPreset();
+            if (result) {
+                this.updateAllDisplays();
+            }
+            return result;
         }
         return null;
     }
     
     selectPreviousPreset() {
         if (this.penPresetManager && this.penPresetManager.selectPreviousPreset) {
-            return this.penPresetManager.selectPreviousPreset();
+            const result = this.penPresetManager.selectPreviousPreset();
+            if (result) {
+                this.updateAllDisplays();
+            }
+            return result;
         }
         return null;
     }
@@ -706,12 +831,36 @@ class UIManagerSystem {
         return this.handleResetActivePreset();
     }
     
+    /**
+     * 🆕 プレビュー連動機能: 全プレビューリセット（外部API）
+     */
+    resetAllPreviews() {
+        return this.handleResetAllPreviews();
+    }
+    
+    /**
+     * 🆕 プレビュー連動機能: プレビュー同期制御
+     */
+    enablePreviewSync() {
+        this.previewSyncEnabled = true;
+        console.log('✅ プレビュー同期有効化');
+    }
+    
+    disablePreviewSync() {
+        this.previewSyncEnabled = false;
+        console.log('❌ プレビュー同期無効化');
+    }
+    
+    isPreviewSyncEnabled() {
+        return this.previewSyncEnabled;
+    }
+    
     getPenPresetManager() {
         return this.penPresetManager;
     }
     
     /**
-     * Phase2C緊急修正: パフォーマンス関連メソッド
+     * パフォーマンス関連メソッド
      */
     getPerformanceStats() {
         if (this.performanceMonitor && this.performanceMonitor.getStats) {
@@ -723,7 +872,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: ポップアップ関連メソッド
+     * ポップアップ関連メソッド
      */
     showPopup(popupId) {
         if (this.popupManager) {
@@ -746,7 +895,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: 履歴管理関連メソッド
+     * 履歴管理関連メソッド
      */
     getHistoryManager() {
         return this.historyManager;
@@ -785,7 +934,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: 通知表示（簡潔版）
+     * 通知表示
      */
     showNotification(message, type = 'info', duration = 3000) {
         console.log(`[${type.toUpperCase()}] ${message}`);
@@ -826,7 +975,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: エラーハンドリング（強化版）
+     * エラーハンドリング
      */
     handleError(error) {
         this.errorCount++;
@@ -841,7 +990,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: 設定関連ハンドラ
+     * 設定関連ハンドラ
      */
     setSettingsManager(settingsManager) {
         this.settingsManager = settingsManager;
@@ -856,6 +1005,14 @@ class UIManagerSystem {
                 break;
             case 'showDebugInfo':
                 this.handleDebugInfoChange(newValue);
+                break;
+            case 'previewSync':
+                // 🆕 プレビュー同期設定
+                if (newValue) {
+                    this.enablePreviewSync();
+                } else {
+                    this.disablePreviewSync();
+                }
                 break;
         }
     }
@@ -877,6 +1034,11 @@ class UIManagerSystem {
             }
             this.handleDebugInfoChange(settings.showDebugInfo);
         }
+        
+        // 🆕 プレビュー同期設定
+        if (settings.previewSync !== undefined) {
+            this.previewSyncEnabled = settings.previewSync;
+        }
     }
     
     handleHighDPIChange(enabled) {
@@ -897,11 +1059,12 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: システム統計・デバッグ（強化版）
+     * 🆕 プレビュー連動機能: システム統計・デバッグ（プレビュー連動情報追加）
      */
     getUIStats() {
         const historyStats = this.getHistoryStats();
         const performanceStats = this.getPerformanceStats();
+        const previewStats = this.getPreviewSyncStats();
         
         return {
             initialized: this.isInitialized,
@@ -910,8 +1073,10 @@ class UIManagerSystem {
             errorCount: this.errorCount,
             maxErrors: this.maxErrors,
             penPresetManager: !!this.penPresetManager,
+            previewSyncEnabled: this.previewSyncEnabled,
             historyStats: historyStats,
             performanceStats: performanceStats,
+            previewStats: previewStats,
             components: {
                 popupManager: !!this.popupManager,
                 statusBar: !!this.statusBar,
@@ -924,17 +1089,50 @@ class UIManagerSystem {
         };
     }
     
+    /**
+     * 🆕 プレビュー連動機能: プレビュー同期統計取得
+     */
+    getPreviewSyncStats() {
+        if (!this.penPresetManager) return null;
+        
+        try {
+            const liveValuesStats = this.penPresetManager.getLiveValuesStats ? 
+                this.penPresetManager.getLiveValuesStats() : null;
+            
+            const presetDisplayStats = this.presetDisplayManager ? 
+                this.presetDisplayManager.getStatus() : null;
+            
+            return {
+                enabled: this.previewSyncEnabled,
+                lastUpdate: this.lastPreviewUpdate,
+                liveValues: liveValuesStats,
+                displayManager: presetDisplayStats
+            };
+            
+        } catch (error) {
+            console.warn('プレビュー同期統計取得エラー:', error);
+            return null;
+        }
+    }
+    
     debugUI() {
-        console.group('🔍 UIManagerSystem デバッグ情報（Phase2C緊急修正版）');
+        console.group('🔍 UIManagerSystem デバッグ情報（プレビュー連動機能強化版）');
         
         console.log('基本情報:', {
             initialized: this.isInitialized,
             sliders: this.sliders.size,
-            errorCount: `${this.errorCount}/${this.maxErrors}`
+            errorCount: `${this.errorCount}/${this.maxErrors}`,
+            previewSyncEnabled: this.previewSyncEnabled
         });
         
         console.log('コンポーネント状態:', this.getUIStats().components);
         console.log('スライダー値:', this.getAllSliderValues());
+        
+        // 🆕 プレビュー連動デバッグ情報
+        const previewStats = this.getPreviewSyncStats();
+        if (previewStats) {
+            console.log('プレビュー同期状態:', previewStats);
+        }
         
         if (this.penPresetManager && this.penPresetManager.getSystemStats) {
             console.log('PenPresetManager統計:', this.penPresetManager.getSystemStats());
@@ -948,7 +1146,40 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2C緊急修正: 外部システム連携
+     * 🆕 プレビュー連動機能: プレビューデバッグ機能
+     */
+    debugPreviewSync() {
+        console.group('🔍 プレビュー連動デバッグ情報');
+        
+        console.log('プレビュー同期設定:', {
+            enabled: this.previewSyncEnabled,
+            lastUpdate: this.lastPreviewUpdate,
+            updateThrottle: !!this.previewUpdateThrottle
+        });
+        
+        if (this.penPresetManager) {
+            const liveStats = this.penPresetManager.getLiveValuesStats ? 
+                this.penPresetManager.getLiveValuesStats() : null;
+            console.log('ライブ値状態:', liveStats);
+            
+            const activePreset = this.penPresetManager.getActivePreset();
+            const effectiveValues = this.penPresetManager.getEffectiveValues ? 
+                this.penPresetManager.getEffectiveValues() : null;
+            
+            console.log('アクティブプリセット:', activePreset);
+            console.log('実効値:', effectiveValues);
+        }
+        
+        if (this.presetDisplayManager) {
+            const displayStats = this.presetDisplayManager.getStatus();
+            console.log('表示管理状態:', displayStats);
+        }
+        
+        console.groupEnd();
+    }
+    
+    /**
+     * 外部システム連携
      */
     onToolChange(newTool) {
         this.updateToolDisplay();
@@ -979,18 +1210,27 @@ class UIManagerSystem {
             this.updateSliderValue('pen-smoothing-slider', settings.smoothing * 100);
         }
         
-        // プリセットライブ値更新
+        // 🆕 プレビュー連動: プリセットライブ値更新
         this.updatePresetLiveValues(settings.size, settings.opacity ? settings.opacity * 100 : null);
+        
+        // 🆕 プレビュー連動: アクティブプレビュー更新
+        this.updateActivePresetPreview(settings.size, settings.opacity ? settings.opacity * 100 : null);
         
         this.updateToolDisplay();
     }
     
     /**
-     * Phase2C緊急修正: クリーンアップ（強化版）
+     * クリーンアップ（プレビュー連動機能対応）
      */
     destroy() {
         try {
-            console.log('🧹 UIManagerSystem クリーンアップ開始（Phase2C緊急修正版）');
+            console.log('🧹 UIManagerSystem クリーンアップ開始（プレビュー連動機能強化版）');
+            
+            // 🆕 プレビュー更新スロットリングのクリア
+            if (this.previewUpdateThrottle) {
+                clearTimeout(this.previewUpdateThrottle);
+                this.previewUpdateThrottle = null;
+            }
             
             // パフォーマンス監視停止
             if (this.performanceMonitor && this.performanceMonitor.stop) {
@@ -1023,7 +1263,7 @@ class UIManagerSystem {
             this.statusBar = null;
             this.settingsManager = null;
             
-            console.log('✅ UIManagerSystem クリーンアップ完了（Phase2C緊急修正版）');
+            console.log('✅ UIManagerSystem クリーンアップ完了（プレビュー連動機能強化版）');
             
         } catch (error) {
             console.error('UIManagerSystem クリーンアップエラー:', error);
@@ -1031,7 +1271,7 @@ class UIManagerSystem {
     }
 }
 
-// ==== Phase2C緊急修正: 簡易パフォーマンス監視（フォールバック版）====
+// ==== 簡易パフォーマンス監視（フォールバック版・変更なし）====
 class SimplePerformanceMonitor {
     constructor() {
         this.isRunning = false;
@@ -1093,28 +1333,56 @@ class SimplePerformanceMonitor {
     }
 }
 
-// ==== グローバル登録・エクスポート（Phase2C緊急修正版）====
+// ==== グローバル登録・エクスポート（プレビュー連動機能強化版）====
 if (typeof window !== 'undefined') {
-    // Phase2C緊急修正: UIManager → UIManagerSystem にリネーム（重複回避）
     window.UIManager = UIManagerSystem;
     window.SimplePerformanceMonitor = SimplePerformanceMonitor;
     
-    console.log('✅ ui-manager.js Phase2C緊急修正版 読み込み完了');
-    console.log('📦 エクスポートクラス（依存関係解決版）:');
-    console.log('  ✅ UIManager: UI統合管理（UIManagerSystem実装・重複回避）');
+    // 🆕 プレビュー連動機能用グローバル関数
+    window.debugPreviewSync = function() {
+        if (window.uiManager && window.uiManager.debugPreviewSync) {
+            window.uiManager.debugPreviewSync();
+        } else {
+            console.warn('UIManager が利用できません');
+        }
+    };
+    
+    window.resetAllPreviews = function() {
+        if (window.uiManager && window.uiManager.resetAllPreviews) {
+            return window.uiManager.resetAllPreviews();
+        } else {
+            console.warn('UIManager が利用できません');
+            return false;
+        }
+    };
+    
+    window.togglePreviewSync = function() {
+        if (window.uiManager) {
+            if (window.uiManager.isPreviewSyncEnabled()) {
+                window.uiManager.disablePreviewSync();
+                console.log('プレビュー同期を無効化しました');
+            } else {
+                window.uiManager.enablePreviewSync();
+                console.log('プレビュー同期を有効化しました');
+            }
+        }
+    };
+    
+    console.log('✅ ui-manager.js プレビュー連動機能強化版 読み込み完了');
+    console.log('📦 エクスポートクラス（プレビュー連動機能強化版）:');
+    console.log('  ✅ UIManager: UI統合管理（プレビュー連動機能強化版）');
     console.log('  ✅ SimplePerformanceMonitor: 簡易パフォーマンス監視（フォールバック版）');
-    console.log('🔧 Phase2C緊急修正完了:');
-    console.log('  ✅ 重複クラス問題解決（ui/components.js との完全分離）');
-    console.log('  ✅ 依存関係エラー解決（ui/components.js 定義クラス活用）');
-    console.log('  ✅ 既存システム活用（toolsSystemからPenPresetManager取得）');
-    console.log('  ✅ CONFIG安全アクセス（safeConfigGet実装）');
-    console.log('  ✅ エラーハンドリング強化・実用性重視');
-    console.log('  ✅ 基本機能特化・安定動作優先');
-    console.log('  ✅ 段階的拡張準備（将来実装用接続点確保）');
-    console.log('🎯 責務: UI統合制御のみ（基盤コンポーネント ui/components.js と完全分離）');
-    console.log('🏗️ Phase2C緊急修正: アプリ起動復旧・基本機能安定・依存関係解決完了');
-    console.log('🔄 システム構成:');
-    console.log('  📄 ui/components.js: 基盤UIコンポーネントライブラリ（SliderController, PopupManager等）');
-    console.log('  📄 ui-manager.js: UI統合管理システム（UIManagerSystem実装）');
-    console.log('  🤝 相互連携: components → manager の一方向依存関係で循環参照回避');
+    console.log('🔧 プレビュー連動機能強化完了:');
+    console.log('  ✅ スライダーコールバック強化（プレビュー更新連携）');
+    console.log('  ✅ リアルタイムプレビュー更新システム（60fps制限）');
+    console.log('  ✅ 全体プレビューリセット機能');
+    console.log('  ✅ プレビュー同期システム（有効/無効制御）');
+    console.log('  ✅ ライブ値管理との完全連携');
+    console.log('  ✅ プレビュー連動デバッグ機能');
+    console.log('  ✅ キーボードショートカット拡張（Shift+R: 全プレビューリセット）');
+    console.log('🎯 責務: UI統合制御 + リアルタイムプレビュー連動システム');
+    console.log('🐛 デバッグ関数:');
+    console.log('  - window.debugPreviewSync() - プレビュー連動状態表示');
+    console.log('  - window.resetAllPreviews() - 全プレビューリセット');
+    console.log('  - window.togglePreviewSync() - プレビュー同期有効/無効切り替え');
 }
