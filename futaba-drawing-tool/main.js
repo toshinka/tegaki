@@ -1,20 +1,18 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev8
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev9
  * メイン初期化スクリプト - main.js
  * 
- * 🔧 Phase2A緊急修正内容（CONFIG連携修正版）:
- * 1. ✅ CONFIG.SIZE_PRESETSアクセスエラー解決（空配列問題修正）
- * 2. ✅ PenPresetManager.createDefaultPresets() forEach エラー解決
- * 3. ✅ CONFIG値の安全な取得・妥当性チェック強化
- * 4. ✅ config.js読み込み確認処理の改善
- * 5. ✅ デフォルト値フォールバック処理の実装
- * 6. ✅ 初期化順序の最適化
+ * 🔧 CONFIG連携修正強化内容:
+ * 1. ✅ safeConfigGet関数実装（完全なundefinedアクセス回避）
+ * 2. ✅ CONFIG妥当性チェック・自動修復機能強化
+ * 3. ✅ SIZE_PRESETS空配列問題の根本解決
+ * 4. ✅ デフォルト値フォールバック強化
+ * 5. ✅ エラー時のグレースフル・デグラデーション
+ * 6. ✅ 初期化順序最適化（段階的エラーハンドリング）
+ * 7. ✅ Phase2C緊急修正版ui-manager.js対応
  * 
- * Phase2A緊急修正目標: CONFIG連携エラー解決 + 基本機能復旧
- * 対象: main.js
- * 
- * 責務: アプリケーション統合初期化・エラーハンドリング・循環参照解決
- * 依存: config.js（最初）→ 全システムファイル（Phase2A対応7ファイル構成）
+ * 修正目標: CONFIG値アクセスエラー完全解決・アプリケーション確実起動
+ * 対象: CONFIG関連エラー・初期化失敗・空配列問題
  */
 
 // ==== グローバル状態管理 ====
@@ -35,18 +33,19 @@ const APP_STATE = {
         errorCount: 0,
         lastError: null
     },
-    // Phase2A: CONFIG値管理
     config: {
         loaded: false,
         values: null,
-        validated: false
+        validated: false,
+        fixed: false
     }
 };
 
 // ==== 初期化ステップ定義 ====
 const INIT_STEPS = {
     CHECKING_CONFIG: 'checking_config',
-    VALIDATING_CONFIG: 'validating_config', // Phase2A: CONFIG妥当性チェック追加
+    VALIDATING_CONFIG: 'validating_config',
+    FIXING_CONFIG: 'fixing_config',
     CHECKING_DEPENDENCIES: 'checking_dependencies',
     CREATING_APP: 'creating_app',
     CREATING_TOOLS_SYSTEM: 'creating_tools_system',
@@ -69,38 +68,93 @@ class InitializationError extends Error {
     }
 }
 
-// ==== Phase2A: 安全なオブジェクトアクセス関数（強化版）====
-function safeAccess(obj, path, defaultValue = null) {
+// ==== CONFIG連携修正強化: 完全な安全アクセス関数 ====
+function safeConfigGet(key, defaultValue = null) {
     try {
-        if (!obj || typeof obj !== 'object') {
-            console.warn(`safeAccess: 無効なオブジェクト:`, obj);
+        // CONFIG オブジェクトの存在確認
+        if (!window.CONFIG || typeof window.CONFIG !== 'object') {
+            console.warn(`safeConfigGet: CONFIG未初期化 (${key}) → デフォルト値使用:`, defaultValue);
             return defaultValue;
         }
         
-        const keys = path.split('.');
-        let current = obj;
-        
-        for (const key of keys) {
-            if (current == null || typeof current !== 'object' || !(key in current)) {
-                console.warn(`safeAccess: プロパティが見つかりません: ${path} (${key})`);
-                return defaultValue;
-            }
-            current = current[key];
+        // キーの存在確認
+        if (!(key in window.CONFIG)) {
+            console.warn(`safeConfigGet: キー不存在 (${key}) → デフォルト値使用:`, defaultValue);
+            return defaultValue;
         }
         
-        return current;
+        const value = window.CONFIG[key];
+        
+        // null/undefined チェック
+        if (value === null || value === undefined) {
+            console.warn(`safeConfigGet: 値がnull/undefined (${key}) → デフォルト値使用:`, defaultValue);
+            return defaultValue;
+        }
+        
+        // 特別処理: SIZE_PRESETS
+        if (key === 'SIZE_PRESETS') {
+            if (!Array.isArray(value)) {
+                console.warn(`safeConfigGet: SIZE_PRESETS が配列でない (${key}) → デフォルト値使用:`, defaultValue);
+                return defaultValue || [1, 2, 4, 8, 16, 32];
+            }
+            
+            if (value.length === 0) {
+                console.warn(`safeConfigGet: SIZE_PRESETS が空配列 (${key}) → デフォルト値使用:`, defaultValue);
+                return defaultValue || [1, 2, 4, 8, 16, 32];
+            }
+            
+            // 配列要素の妥当性確認
+            const validElements = value.filter(element => {
+                const num = parseFloat(element);
+                return !isNaN(num) && num > 0 && num <= 1000;
+            });
+            
+            if (validElements.length === 0) {
+                console.warn(`safeConfigGet: SIZE_PRESETS に有効要素なし (${key}) → デフォルト値使用:`, defaultValue);
+                return defaultValue || [1, 2, 4, 8, 16, 32];
+            }
+            
+            if (validElements.length !== value.length) {
+                console.warn(`safeConfigGet: SIZE_PRESETS の一部要素が無効 → 有効要素のみ返却:`, validElements);
+                return validElements;
+            }
+        }
+        
+        // 数値型の妥当性確認
+        if (typeof defaultValue === 'number') {
+            const numValue = parseFloat(value);
+            if (isNaN(numValue)) {
+                console.warn(`safeConfigGet: 数値変換失敗 (${key}: ${value}) → デフォルト値使用:`, defaultValue);
+                return defaultValue;
+            }
+            
+            // 範囲チェック
+            if (key === 'DEFAULT_OPACITY' && (numValue < 0 || numValue > 1)) {
+                console.warn(`safeConfigGet: DEFAULT_OPACITY 範囲外 (${numValue}) → デフォルト値使用:`, defaultValue);
+                return defaultValue;
+            }
+            
+            if (key.includes('SIZE') && numValue < 0) {
+                console.warn(`safeConfigGet: サイズ値が負数 (${key}: ${numValue}) → デフォルト値使用:`, defaultValue);
+                return defaultValue;
+            }
+        }
+        
+        return value;
+        
     } catch (error) {
-        console.warn(`safeAccess エラー: ${path}`, error);
+        console.error(`safeConfigGet: アクセスエラー (${key}):`, error, '→ デフォルト値使用:', defaultValue);
         return defaultValue;
     }
 }
 
-// ==== Phase2A: CONFIG値の妥当性チェック・デフォルト値設定 ====
-function validateAndFixConfig() {
-    console.log('🔍 CONFIG妥当性チェック・デフォルト値設定開始（Phase2A修正版）...');
+// ==== CONFIG連携修正強化: CONFIG完全修復機能 ====
+function fixConfigCompletely() {
+    console.log('🔧 CONFIG完全修復開始...');
     
-    // デフォルト値の定義
-    const DEFAULT_CONFIG = {
+    // 完全なデフォルト設定定義
+    const COMPLETE_DEFAULT_CONFIG = {
+        // Phase2対応: デフォルト値変更
         DEFAULT_BRUSH_SIZE: 4,
         DEFAULT_OPACITY: 1.0,
         MAX_BRUSH_SIZE: 500,
@@ -108,16 +162,26 @@ function validateAndFixConfig() {
         DEFAULT_COLOR: 0x800000,
         DEFAULT_PRESSURE: 0.5,
         DEFAULT_SMOOTHING: 0.3,
+        
+        // プリセット設定
         SIZE_PRESETS: [1, 2, 4, 8, 16, 32],
         DEFAULT_ACTIVE_PRESET: 'preset_4',
+        
+        // キャンバス設定
         CANVAS_WIDTH: 400,
         CANVAS_HEIGHT: 400,
         BG_COLOR: 0xf0e0d6,
+        
+        // パフォーマンス設定
         TARGET_FPS: 60,
         PERFORMANCE_UPDATE_INTERVAL: 1000,
         MEMORY_WARNING_THRESHOLD: 100,
+        
+        // プレビュー設定
         PREVIEW_MIN_SIZE: 0.5,
         PREVIEW_MAX_SIZE: 20,
+        
+        // UI設定
         POPUP_FADE_TIME: 300,
         NOTIFICATION_DURATION: 3000,
         SLIDER_UPDATE_THROTTLE: 16,
@@ -125,193 +189,214 @@ function validateAndFixConfig() {
     };
     
     let fixedCount = 0;
-    let errorCount = 0;
+    let createdCount = 0;
     
-    // CONFIG オブジェクトの存在確認
+    // CONFIG オブジェクトの作成・確認
     if (!window.CONFIG || typeof window.CONFIG !== 'object') {
-        console.error('❌ window.CONFIG が利用できません。デフォルト値でCONFIGを作成します。');
+        console.warn('🔧 CONFIG オブジェクトが存在しないか無効 → 新規作成');
         window.CONFIG = {};
+        createdCount = 1;
     }
     
-    // 各設定値の妥当性チェック・修正
-    for (const [key, defaultValue] of Object.entries(DEFAULT_CONFIG)) {
+    // 各設定値の完全修復
+    for (const [key, defaultValue] of Object.entries(COMPLETE_DEFAULT_CONFIG)) {
         try {
+            // 現在値の検証
             const currentValue = window.CONFIG[key];
+            let needsFix = false;
+            let reason = '';
             
-            // 値が存在しない、またはnull/undefinedの場合
-            if (currentValue === null || currentValue === undefined) {
-                window.CONFIG[key] = defaultValue;
-                fixedCount++;
-                console.log(`🔧 修正: ${key} = ${defaultValue} （未定義）`);
-                continue;
+            // 存在チェック
+            if (currentValue === undefined || currentValue === null) {
+                needsFix = true;
+                reason = '未定義または null';
             }
-            
-            // 配列の場合の特別処理
-            if (key === 'SIZE_PRESETS') {
-                if (!Array.isArray(currentValue) || currentValue.length === 0) {
-                    window.CONFIG[key] = defaultValue;
-                    fixedCount++;
-                    console.log(`🔧 修正: ${key} = [${defaultValue.join(', ')}] （配列が無効）`);
-                    continue;
+            // 配列の特別処理
+            else if (key === 'SIZE_PRESETS') {
+                if (!Array.isArray(currentValue)) {
+                    needsFix = true;
+                    reason = '配列でない';
+                } else if (currentValue.length === 0) {
+                    needsFix = true;
+                    reason = '空配列';
+                } else {
+                    // 要素妥当性チェック
+                    const validElements = currentValue.filter(elem => {
+                        const num = parseFloat(elem);
+                        return !isNaN(num) && num > 0 && num <= 1000;
+                    });
+                    if (validElements.length === 0) {
+                        needsFix = true;
+                        reason = '有効要素なし';
+                    } else if (validElements.length !== currentValue.length) {
+                        // 無効要素を含む場合は有効要素のみで更新
+                        window.CONFIG[key] = validElements;
+                        fixedCount++;
+                        console.log(`🔧 修正: ${key} → 有効要素のみ [${validElements.join(', ')}] （無効要素削除）`);
+                        continue;
+                    }
                 }
-                
-                // 配列要素の妥当性チェック
-                const validPresets = currentValue.filter(size => {
-                    const num = parseFloat(size);
-                    return !isNaN(num) && num > 0 && num <= 1000;
-                });
-                
-                if (validPresets.length === 0) {
-                    window.CONFIG[key] = defaultValue;
-                    fixedCount++;
-                    console.log(`🔧 修正: ${key} = [${defaultValue.join(', ')}] （有効な要素なし）`);
-                } else if (validPresets.length !== currentValue.length) {
-                    window.CONFIG[key] = validPresets;
-                    fixedCount++;
-                    console.log(`🔧 修正: ${key} = [${validPresets.join(', ')}] （無効要素を削除）`);
-                }
-                continue;
             }
-            
-            // 数値の場合の妥当性チェック
-            if (typeof defaultValue === 'number') {
+            // 数値の妥当性チェック
+            else if (typeof defaultValue === 'number') {
                 const numValue = parseFloat(currentValue);
                 if (isNaN(numValue)) {
-                    window.CONFIG[key] = defaultValue;
-                    fixedCount++;
-                    console.log(`🔧 修正: ${key} = ${defaultValue} （数値が無効）`);
-                    continue;
-                }
-                
-                // 範囲チェック（特定の設定値のみ）
-                if (key === 'DEFAULT_OPACITY' && (numValue < 0 || numValue > 1)) {
-                    window.CONFIG[key] = defaultValue;
-                    fixedCount++;
-                    console.log(`🔧 修正: ${key} = ${defaultValue} （範囲外: 0-1）`);
+                    needsFix = true;
+                    reason = '数値でない';
+                } else if (key === 'DEFAULT_OPACITY' && (numValue < 0 || numValue > 1)) {
+                    needsFix = true;
+                    reason = '透明度範囲外 (0-1)';
                 } else if (key.includes('SIZE') && numValue < 0) {
-                    window.CONFIG[key] = defaultValue;
-                    fixedCount++;
-                    console.log(`🔧 修正: ${key} = ${defaultValue} （負の値）`);
+                    needsFix = true;
+                    reason = 'サイズが負数';
                 }
             }
+            // 文字列の妥当性チェック
+            else if (typeof defaultValue === 'string' && typeof currentValue !== 'string') {
+                needsFix = true;
+                reason = '文字列でない';
+            }
             
-            // 文字列の場合の妥当性チェック
-            if (typeof defaultValue === 'string' && typeof currentValue !== 'string') {
+            // 修復実行
+            if (needsFix) {
                 window.CONFIG[key] = defaultValue;
                 fixedCount++;
-                console.log(`🔧 修正: ${key} = "${defaultValue}" （文字列型でない）`);
+                console.log(`🔧 修復: ${key} = ${JSON.stringify(defaultValue)} （理由: ${reason}）`);
             }
             
         } catch (error) {
-            console.error(`❌ CONFIG妥当性チェックエラー (${key}):`, error);
+            // エラー時は強制的にデフォルト値設定
             window.CONFIG[key] = defaultValue;
             fixedCount++;
-            errorCount++;
+            console.error(`🔧 修復（エラー）: ${key} = ${JSON.stringify(defaultValue)}`, error);
         }
     }
     
-    // 妥当性チェック結果
-    APP_STATE.config.validated = true;
-    console.log('✅ CONFIG妥当性チェック完了:');
-    console.log(`  📝 チェック項目: ${Object.keys(DEFAULT_CONFIG).length}個`);
-    console.log(`  🔧 修正項目: ${fixedCount}個`);
-    console.log(`  ❌ エラー項目: ${errorCount}個`);
+    // 修復結果
+    APP_STATE.config.fixed = true;
+    console.log('✅ CONFIG完全修復完了:');
+    console.log(`  📝 チェック項目: ${Object.keys(COMPLETE_DEFAULT_CONFIG).length}個`);
+    console.log(`  🔧 修復項目: ${fixedCount}個`);
+    console.log(`  🆕 新規作成: ${createdCount}個`);
     
-    if (fixedCount > 0 || errorCount > 0) {
-        console.log('🆘 CONFIG設定に問題がありましたが、自動修正により継続可能です。');
+    if (fixedCount > 0 || createdCount > 0) {
+        console.log('🆘 CONFIG に問題がありましたが、完全修復により正常化しました。');
+    } else {
+        console.log('✨ CONFIG は正常でした。');
     }
     
     return true;
 }
 
-// ==== Phase2A: CONFIG読み込み確認（修正版）====
-function checkConfigLoaded() {
-    console.log('🔍 CONFIG読み込み確認開始（Phase2A修正版）...');
+// ==== CONFIG連携修正強化: CONFIG読み込み確認（完全版）====
+function checkConfigLoadedCompletely() {
+    console.log('🔍 CONFIG読み込み完認強化版開始...');
     
-    // CONFIG関連のオブジェクト確認
-    const configObjects = {
-        'CONFIG': typeof window.CONFIG !== 'undefined' && window.CONFIG !== null,
-        'UI_CONFIG': typeof window.UI_CONFIG !== 'undefined' && window.UI_CONFIG !== null,
-        'UI_EVENTS': typeof window.UI_EVENTS !== 'undefined' && window.UI_EVENTS !== null,
-        'CONFIG_VALIDATION': typeof window.CONFIG_VALIDATION !== 'undefined' && window.CONFIG_VALIDATION !== null,
-        'PREVIEW_UTILS': typeof window.PREVIEW_UTILS !== 'undefined' && window.PREVIEW_UTILS !== null,
-        'DEFAULT_SETTINGS': typeof window.DEFAULT_SETTINGS !== 'undefined' && window.DEFAULT_SETTINGS !== null,
-        'FUTABA_COLORS': typeof window.FUTABA_COLORS !== 'undefined' && window.FUTABA_COLORS !== null
-    };
-    
-    const missing = [];
-    const available = [];
-    
-    for (const [objName, isAvailable] of Object.entries(configObjects)) {
-        if (isAvailable) {
-            available.push(objName);
-        } else {
-            missing.push(objName);
-        }
-    }
-    
-    console.log(`✅ CONFIG利用可能: ${available.length}個`, available);
-    
-    if (missing.length > 0) {
-        console.warn(`⚠️ CONFIG一部不足: ${missing.length}個`, missing);
-        console.warn('不足しているCONFIG要素がありますが、基本機能で継続します。');
-    }
-    
-    // 必須のCONFIG確認
-    if (!window.CONFIG) {
-        console.error('❌ 必須のCONFIGオブジェクトが見つかりません。');
-        throw new InitializationError(
-            'CONFIG オブジェクトが初期化されていません',
-            INIT_STEPS.CHECKING_CONFIG
-        );
-    }
-    
-    APP_STATE.config.values = window.CONFIG;
-    APP_STATE.config.loaded = true;
-    
-    // CONFIG基本値の確認（安全アクセス版）
-    console.log('🔧 Phase2A CONFIG値確認（修正版）:');
-    
-    const brushSize = safeAccess(window.CONFIG, 'DEFAULT_BRUSH_SIZE', 4);
-    const opacity = safeAccess(window.CONFIG, 'DEFAULT_OPACITY', 1.0);
-    const maxSize = safeAccess(window.CONFIG, 'MAX_BRUSH_SIZE', 500);
-    const sizePresets = safeAccess(window.CONFIG, 'SIZE_PRESETS', []);
-    const previewMin = safeAccess(window.CONFIG, 'PREVIEW_MIN_SIZE', 0.5);
-    const previewMax = safeAccess(window.CONFIG, 'PREVIEW_MAX_SIZE', 20);
-    
-    console.log(`  ✅ デフォルトサイズ: ${brushSize}px （16→4に変更）`);
-    console.log(`  ✅ デフォルト透明度: ${opacity === null ? 'N/A' : (opacity * 100)}% （85%→100%に変更）`);
-    console.log(`  ✅ 最大サイズ: ${maxSize}px （100→500に変更）`);
-    
-    // 🔧 SIZE_PRESETS の安全確認（修正版）
-    if (Array.isArray(sizePresets) && sizePresets.length > 0) {
-        // 各要素が有効な数値かチェック
-        const validElements = sizePresets.filter(size => {
-            const num = parseFloat(size);
-            return !isNaN(num) && num > 0;
+    try {
+        // 1. 基本オブジェクト存在確認
+        const configObjects = [
+            'CONFIG', 'UI_CONFIG', 'UI_EVENTS', 'CONFIG_VALIDATION',
+            'PREVIEW_UTILS', 'DEFAULT_SETTINGS', 'FUTABA_COLORS'
+        ];
+        
+        const missing = [];
+        const available = [];
+        
+        configObjects.forEach(objName => {
+            if (window[objName] && typeof window[objName] === 'object') {
+                available.push(objName);
+            } else {
+                missing.push(objName);
+            }
         });
         
-        if (validElements.length > 0) {
-            console.log(`  🎨 プリセット: [${validElements.join(', ')}]px （${validElements.length}個）`);
-        } else {
-            console.warn(`  ⚠️ プリセット: 有効な要素がありません。デフォルト値で継続。`);
+        console.log(`✅ CONFIG関連オブジェクト利用可能: ${available.length}/${configObjects.length}個`, available);
+        
+        if (missing.length > 0) {
+            console.warn(`⚠️ CONFIG関連オブジェクト不足: ${missing.length}個`, missing);
         }
-    } else {
-        console.warn(`  ⚠️ プリセット: SIZE_PRESETSが配列ではないか空です:`, sizePresets);
+        
+        // 2. 必須CONFIG確認・作成
+        if (!window.CONFIG) {
+            console.error('❌ 必須のCONFIGオブジェクトが見つかりません → 作成します');
+            window.CONFIG = {};
+        }
+        
+        // 3. CONFIG完全修復実行
+        fixConfigCompletely();
+        
+        // 4. 重要設定値の最終確認
+        const criticalValues = {
+            'DEFAULT_BRUSH_SIZE': safeConfigGet('DEFAULT_BRUSH_SIZE', 4),
+            'DEFAULT_OPACITY': safeConfigGet('DEFAULT_OPACITY', 1.0),
+            'MAX_BRUSH_SIZE': safeConfigGet('MAX_BRUSH_SIZE', 500),
+            'SIZE_PRESETS': safeConfigGet('SIZE_PRESETS', [1, 2, 4, 8, 16, 32]),
+            'PREVIEW_MIN_SIZE': safeConfigGet('PREVIEW_MIN_SIZE', 0.5),
+            'PREVIEW_MAX_SIZE': safeConfigGet('PREVIEW_MAX_SIZE', 20)
+        };
+        
+        console.log('🔧 重要設定値確認完了:');
+        Object.entries(criticalValues).forEach(([key, value]) => {
+            if (key === 'SIZE_PRESETS') {
+                console.log(`  ✅ ${key}: [${Array.isArray(value) ? value.join(', ') : 'N/A'}] (${Array.isArray(value) ? value.length : 0}個)`);
+            } else if (key === 'DEFAULT_OPACITY') {
+                console.log(`  ✅ ${key}: ${value} (${typeof value === 'number' ? (value * 100) + '%' : 'N/A'})`);
+            } else {
+                console.log(`  ✅ ${key}: ${value}${typeof value === 'number' && key.includes('SIZE') ? 'px' : ''}`);
+            }
+        });
+        
+        // 5. Phase2デフォルト値変更確認
+        const phase2Changes = {
+            brushSizeChanged: criticalValues.DEFAULT_BRUSH_SIZE === 4,
+            opacityChanged: criticalValues.DEFAULT_OPACITY === 1.0,
+            maxSizeChanged: criticalValues.MAX_BRUSH_SIZE === 500,
+            presetsValid: Array.isArray(criticalValues.SIZE_PRESETS) && criticalValues.SIZE_PRESETS.length > 0
+        };
+        
+        const changesOK = Object.values(phase2Changes).every(Boolean);
+        console.log('🎯 Phase2デフォルト値変更確認:', changesOK ? '✅ 全て適用済み' : '❌ 一部未適用');
+        
+        if (!changesOK) {
+            console.warn('Phase2変更状況:', phase2Changes);
+        }
+        
+        // 6. 最終状態設定
+        APP_STATE.config.values = window.CONFIG;
+        APP_STATE.config.loaded = true;
+        APP_STATE.config.validated = true;
+        
+        console.log('✅ CONFIG読み込み確認完了（完全版）');
+        return true;
+        
+    } catch (error) {
+        console.error('❌ CONFIG読み込み確認エラー:', error);
+        
+        // 緊急時の最小限CONFIG作成
+        window.CONFIG = {
+            DEFAULT_BRUSH_SIZE: 4,
+            DEFAULT_OPACITY: 1.0,
+            MAX_BRUSH_SIZE: 500,
+            MIN_BRUSH_SIZE: 0.1,
+            SIZE_PRESETS: [1, 2, 4, 8, 16, 32],
+            CANVAS_WIDTH: 400,
+            CANVAS_HEIGHT: 400,
+            PREVIEW_MIN_SIZE: 0.5,
+            PREVIEW_MAX_SIZE: 20
+        };
+        
+        console.log('🆘 緊急時最小限CONFIG作成完了');
+        APP_STATE.config.loaded = true;
+        return true;
     }
-    
-    console.log(`  📐 プレビュー制限: ${previewMin}-${previewMax}px`);
-    
-    console.log('✅ CONFIG読み込み確認完了（Phase2A修正版）');
-    return true;
 }
 
-// ==== 依存関係チェック（Phase2A対応版）====
+// ==== 依存関係チェック（Phase2C緊急修正対応版）====
 function checkDependencies() {
-    console.log('🔍 依存関係チェック開始（Phase2A対応版）...');
+    console.log('🔍 依存関係チェック開始（Phase2C緊急修正対応版）...');
     
     const requiredClasses = {
-        // PIXI.js
+        // PIXI.js（必須）
         'PIXI': typeof PIXI !== 'undefined',
         
         // Core classes（必須）
@@ -320,50 +405,66 @@ function checkDependencies() {
         'HistoryManager': typeof HistoryManager !== 'undefined',
         'UIManager': typeof UIManager !== 'undefined',
         
-        // Settings classes（必須）
+        // Settings classes（準必須）
         'SettingsManager': typeof SettingsManager !== 'undefined',
         
-        // UI Component classes（ui/components.jsから）
+        // UI Component classes（ui/components.jsから・準必須）
         'SliderController': typeof SliderController !== 'undefined',
         'PopupManager': typeof PopupManager !== 'undefined',
         'StatusBarManager': typeof StatusBarManager !== 'undefined',
         'PresetDisplayManager': typeof PresetDisplayManager !== 'undefined',
         
-        // Performance Monitor（ui-manager.js内）
-        'PerformanceMonitor': typeof PerformanceMonitor !== 'undefined',
+        // Phase2C緊急修正: 既存システム（必須）
         'PenPresetManager': typeof PenPresetManager !== 'undefined',
+        'PerformanceMonitor': typeof PerformanceMonitor !== 'undefined',
         
-        // State management（history-manager.js内）
+        // State management（history-manager.js内・必須）
         'InternalStateCapture': typeof InternalStateCapture !== 'undefined',
         'InternalStateRestore': typeof InternalStateRestore !== 'undefined',
         
-        // StateCapture/StateRestore エイリアス（drawing-tools.js内）
+        // StateCapture/StateRestore エイリアス（drawing-tools.js内・必須）
         'StateCapture': typeof StateCapture !== 'undefined',
-        'StateRestore': typeof StateRestore !== 'undefined'
+        'StateRestore': typeof StateRestore !== 'undefined',
+        
+        // Phase2C緊急修正: 新システム（オプショナル・段階的実装用）
+        'PresetManager': typeof PresetManager !== 'undefined', // 将来実装
+        'PerformanceMonitorSystem': typeof PerformanceMonitorSystem !== 'undefined' // 将来実装
     };
     
     const missing = [];
     const available = [];
+    const optional = [];
+    
+    // 必須・準必須・オプショナルの分類
+    const criticalClasses = [
+        'PIXI', 'PixiDrawingApp', 'DrawingToolsSystem', 'HistoryManager', 'UIManager',
+        'PenPresetManager', 'PerformanceMonitor', 'InternalStateCapture', 'InternalStateRestore',
+        'StateCapture', 'StateRestore'
+    ];
+    
+    const optionalClasses = ['PresetManager', 'PerformanceMonitorSystem'];
     
     for (const [className, isAvailable] of Object.entries(requiredClasses)) {
         if (isAvailable) {
             available.push(className);
+        } else if (optionalClasses.includes(className)) {
+            optional.push(className);
         } else {
             missing.push(className);
         }
     }
     
     console.log(`✅ 利用可能: ${available.length}個`, available);
+    console.log(`🔄 段階的実装予定: ${optional.length}個`, optional);
     
     if (missing.length > 0) {
-        console.error(`❌ 不足: ${missing.length}個`, missing);
+        console.warn(`❌ 不足: ${missing.length}個`, missing);
         
-        // 重要でない不足があっても警告のみで続行する場合の処理
-        const criticalMissing = missing.filter(className => 
-            ['PIXI', 'PixiDrawingApp', 'DrawingToolsSystem', 'HistoryManager', 'UIManager'].includes(className)
-        );
+        // クリティカルなクラスの不足チェック
+        const criticalMissing = missing.filter(className => criticalClasses.includes(className));
         
         if (criticalMissing.length > 0) {
+            console.error('🚨 重要なクラスが見つかりません:', criticalMissing);
             throw new InitializationError(
                 `重要なクラスが見つかりません: ${criticalMissing.join(', ')}`,
                 INIT_STEPS.CHECKING_DEPENDENCIES
@@ -371,26 +472,34 @@ function checkDependencies() {
         } else {
             console.warn(`⚠️ 一部クラスが不足していますが、初期化を続行します: ${missing.join(', ')}`);
         }
+    } else {
+        console.log('✨ 全ての必須クラスが利用可能です');
     }
     
-    console.log('✅ 依存関係チェック完了（Phase2A対応版）');
+    if (optional.length > 0) {
+        console.log(`🔮 段階的実装準備: ${optional.join(', ')} は後日実装予定`);
+    }
+    
+    console.log('✅ 依存関係チェック完了（Phase2C緊急修正対応版）');
     return true;
 }
 
-// ==== アプリケーション作成（Phase2A: CONFIG連携版・安全アクセス版） ====
+// ==== アプリケーション作成（CONFIG連携修正強化版）====
 async function createApplication() {
-    console.log('🎯 PixiDrawingApp作成中（Phase2A: CONFIG連携版・安全アクセス版）...');
+    console.log('🎯 PixiDrawingApp作成中（CONFIG連携修正強化版）...');
     
     try {
-        // Phase2A: CONFIG値を安全に取得
-        const width = safeAccess(window.CONFIG, 'CANVAS_WIDTH', 400);
-        const height = safeAccess(window.CONFIG, 'CANVAS_HEIGHT', 400);
+        // CONFIG値を安全に取得
+        const width = safeConfigGet('CANVAS_WIDTH', 400);
+        const height = safeConfigGet('CANVAS_HEIGHT', 400);
+        
+        console.log(`🎯 キャンバスサイズ: ${width}×${height}px`);
         
         const app = new PixiDrawingApp(width, height);
-        await app.init(); // settings-managerはnullで初期化（後で設定）
+        await app.init();
         
         APP_STATE.components.app = app;
-        console.log(`✅ PixiDrawingApp作成完了（${width}x${height}px）`);
+        console.log(`✅ PixiDrawingApp作成完了（${width}×${height}px）`);
         
         return app;
     } catch (error) {
@@ -402,9 +511,9 @@ async function createApplication() {
     }
 }
 
-// ==== ツールシステム作成（安全アクセス版） ====
+// ==== ツールシステム作成（CONFIG連携修正強化版）====
 async function createToolsSystem(app) {
-    console.log('🔧 DrawingToolsSystem作成中（Phase2A: CONFIG連携版・安全アクセス版）...');
+    console.log('🔧 DrawingToolsSystem作成中（CONFIG連携修正強化版）...');
     
     try {
         const toolsSystem = new DrawingToolsSystem(app);
@@ -412,21 +521,21 @@ async function createToolsSystem(app) {
         
         APP_STATE.components.toolsSystem = toolsSystem;
         
-        // Phase2A: デフォルト値をCONFIGから安全に取得して適用
+        // Phase2デフォルト値をCONFIGから安全に取得して適用
         const defaultSettings = {
-            size: safeAccess(window.CONFIG, 'DEFAULT_BRUSH_SIZE', 4),
-            opacity: safeAccess(window.CONFIG, 'DEFAULT_OPACITY', 1.0),
-            color: safeAccess(window.CONFIG, 'DEFAULT_COLOR', 0x800000),
-            pressure: safeAccess(window.CONFIG, 'DEFAULT_PRESSURE', 0.5),
-            smoothing: safeAccess(window.CONFIG, 'DEFAULT_SMOOTHING', 0.3)
+            size: safeConfigGet('DEFAULT_BRUSH_SIZE', 4),
+            opacity: safeConfigGet('DEFAULT_OPACITY', 1.0),
+            color: safeConfigGet('DEFAULT_COLOR', 0x800000),
+            pressure: safeConfigGet('DEFAULT_PRESSURE', 0.5),
+            smoothing: safeConfigGet('DEFAULT_SMOOTHING', 0.3)
         };
         
         if (toolsSystem.updateBrushSettings) {
             toolsSystem.updateBrushSettings(defaultSettings);
-            console.log('🔧 Phase2Aデフォルト設定適用（安全アクセス版）:', defaultSettings);
+            console.log('🔧 Phase2デフォルト設定適用完了:', defaultSettings);
         }
         
-        console.log('✅ DrawingToolsSystem作成完了（Phase2A: CONFIG連携版・安全アクセス版）');
+        console.log('✅ DrawingToolsSystem作成完了（CONFIG連携修正強化版）');
         
         return toolsSystem;
     } catch (error) {
@@ -438,21 +547,22 @@ async function createToolsSystem(app) {
     }
 }
 
-// ==== UI管理システム作成（Phase2A: CONFIG連携版） ====
+// ==== UI管理システム作成（Phase2C緊急修正対応版）====
 async function createUIManager(app, toolsSystem) {
-    console.log('🎭 UIManager作成中（Phase2A: CONFIG連携版）...');
+    console.log('🎭 UIManager作成中（Phase2C緊急修正対応版）...');
     
     try {
-        // Phase2A: 履歴管理システムを取得
+        // 履歴管理システムを取得
         const historyManager = toolsSystem.getHistoryManager();
         
+        // Phase2C緊急修正版UIManagerを作成
         const uiManager = new UIManager(app, toolsSystem, historyManager);
         await uiManager.init();
         
         APP_STATE.components.uiManager = uiManager;
-        APP_STATE.components.historyManager = historyManager; // グローバル参照用
+        APP_STATE.components.historyManager = historyManager;
         
-        console.log('✅ UIManager作成完了（Phase2A: CONFIG連携版）');
+        console.log('✅ UIManager作成完了（Phase2C緊急修正対応版）');
         
         return uiManager;
     } catch (error) {
@@ -466,10 +576,9 @@ async function createUIManager(app, toolsSystem) {
 
 // ==== 設定管理システム作成 ====
 async function createSettingsManager(app, toolsSystem, uiManager) {
-    console.log('⚙️ SettingsManager作成中（Phase2A対応版）...');
+    console.log('⚙️ SettingsManager作成中...');
     
     try {
-        // 履歴管理システムは toolsSystem から取得
         const historyManager = toolsSystem.getHistoryManager();
         
         if (typeof SettingsManager === 'undefined') {
@@ -477,17 +586,11 @@ async function createSettingsManager(app, toolsSystem, uiManager) {
             return null;
         }
         
-        const settingsManager = new SettingsManager(
-            app, 
-            toolsSystem, 
-            uiManager, 
-            historyManager
-        );
-        
+        const settingsManager = new SettingsManager(app, toolsSystem, uiManager, historyManager);
         await settingsManager.init();
         
         APP_STATE.components.settingsManager = settingsManager;
-        console.log('✅ SettingsManager作成完了（Phase2A対応版）');
+        console.log('✅ SettingsManager作成完了');
         
         return settingsManager;
     } catch (error) {
@@ -497,9 +600,9 @@ async function createSettingsManager(app, toolsSystem, uiManager) {
     }
 }
 
-// ==== システム間連携設定（Phase2A拡張版・安全アクセス版） ====
+// ==== システム間連携設定（CONFIG連携修正強化版）====
 async function connectSystems() {
-    console.log('🔗 システム間連携設定中（Phase2A拡張版・安全アクセス版）...');
+    console.log('🔗 システム間連携設定中（CONFIG連携修正強化版）...');
     
     try {
         const { app, toolsSystem, uiManager, settingsManager } = APP_STATE.components;
@@ -540,11 +643,11 @@ async function connectSystems() {
         window.historyManager = historyManager;
         window.settingsManager = settingsManager;
         
-        // Phase2A: CONFIG値もグローバル参照に追加（安全アクセス版）
+        // 5. CONFIG関連のグローバル参照
         window.appConfig = window.CONFIG || {};
         window.uiConfig = window.UI_CONFIG || {};
         
-        // 5. デバッグ用のグローバル関数設定
+        // 6. デバッグ用のグローバル関数設定
         window.undo = () => historyManager ? historyManager.undo() : false;
         window.redo = () => historyManager ? historyManager.redo() : false;
         window.debugHistory = () => toolsSystem ? toolsSystem.debugHistory() : console.warn('ToolsSystem not available');
@@ -553,96 +656,36 @@ async function connectSystems() {
         window.clearHistory = () => historyManager ? historyManager.clearHistory() : false;
         window.showSystemStats = () => toolsSystem ? console.log(toolsSystem.getSystemStats()) : console.warn('ToolsSystem not available');
         
-        // 6. Phase2A: パフォーマンス統計とUI統合デバッグ関数
-        window.getPerformanceStats = () => uiManager ? uiManager.getPerformanceStats() : null;
-        window.debugUI = () => uiManager ? uiManager.debugUI() : console.warn('UIManager not available');
-        window.debugSettings = () => settingsManager ? settingsManager.debugSettings() : console.warn('SettingsManager not available');
-        
-        // Phase2A: プリセット関連デバッグ関数
-        window.debugPresets = () => {
-            if (uiManager && uiManager.getPenPresetManager) {
-                const presetManager = uiManager.getPenPresetManager();
-                console.log('🎨 プリセット情報:');
-                console.log('  アクティブプリセット:', presetManager.getActivePreset());
-                console.log('  プリセット一覧:', Array.from(presetManager.presets.keys()));
-                console.log('  ライブ値:', presetManager.currentLiveValues);
-                console.log('  プレビューデータ:', presetManager.generatePreviewData());
-            } else {
-                console.warn('PresetManager not available');
-            }
-        };
-        
-        // Phase2A: CONFIG値デバッグ関数（安全アクセス版）
+        // 7. CONFIG連携デバッグ関数（強化版）
         window.debugConfig = () => {
-            console.group('🔧 CONFIG設定情報（Phase2A・安全アクセス版）');
+            console.group('🔧 CONFIG設定情報（連携修正強化版）');
             console.log('CONFIG:', window.CONFIG || 'N/A');
             console.log('UI_CONFIG:', window.UI_CONFIG || 'N/A');
             console.log('UI_EVENTS:', window.UI_EVENTS || 'N/A');
             console.log('DEFAULT_SETTINGS:', window.DEFAULT_SETTINGS || 'N/A');
-            console.log('CONFIG_VALIDATION:', window.CONFIG_VALIDATION || 'N/A');
             
-            // 安全にPhase2A変更項目を表示
-            const brushSize = safeAccess(window.CONFIG, 'DEFAULT_BRUSH_SIZE', 'N/A');
-            const opacity = safeAccess(window.CONFIG, 'DEFAULT_OPACITY', 'N/A');
-            const maxSize = safeAccess(window.CONFIG, 'MAX_BRUSH_SIZE', 'N/A');
-            const sizePresets = safeAccess(window.CONFIG, 'SIZE_PRESETS', []);
+            // Phase2重要設定の表示
+            const criticalSettings = [
+                'DEFAULT_BRUSH_SIZE', 'DEFAULT_OPACITY', 'MAX_BRUSH_SIZE',
+                'SIZE_PRESETS', 'PREVIEW_MIN_SIZE', 'PREVIEW_MAX_SIZE'
+            ].reduce((obj, key) => {
+                obj[key] = safeConfigGet(key, 'N/A');
+                return obj;
+            }, {});
             
-            console.log('Phase2A変更項目:', {
-                oldBrushSize: '16px',
-                newBrushSize: brushSize === 'N/A' ? 'N/A' : brushSize + 'px',
-                oldOpacity: '85%',
-                newOpacity: opacity === 'N/A' ? 'N/A' : (opacity * 100) + '%',
-                oldMaxSize: '100px',
-                newMaxSize: maxSize === 'N/A' ? 'N/A' : maxSize + 'px',
-                sizePresetsCount: Array.isArray(sizePresets) ? sizePresets.length : 'N/A'
-            });
+            console.log('Phase2重要設定:', criticalSettings);
+            console.log('CONFIG状態:', APP_STATE.config);
             console.groupEnd();
         };
         
-        // Phase2A: リセット機能デバッグ関数
-        window.testResetFunctions = () => {
-            console.group('🔄 リセット機能テスト（Phase2A）');
-            
-            if (uiManager && uiManager.getPenPresetManager) {
-                const presetManager = uiManager.getPenPresetManager();
-                
-                console.log('1. 現在の状態:');
-                console.log('  アクティブプリセット:', presetManager.getActivePreset());
-                console.log('  ライブ値:', presetManager.currentLiveValues);
-                
-                console.log('2. アクティブプリセットリセット実行...');
-                const resetResult = presetManager.resetActivePreset();
-                console.log('  リセット結果:', resetResult);
-                
-                console.log('3. リセット後の状態:');
-                console.log('  アクティブプリセット:', presetManager.getActivePreset());
-                console.log('  ライブ値:', presetManager.currentLiveValues);
-            } else {
-                console.warn('PresetManager not available');
-            }
-            
-            console.groupEnd();
-        };
+        // 8. 安全アクセス関数をグローバル公開
+        window.safeConfigGet = safeConfigGet;
         
-        console.log('✅ システム間連携設定完了（Phase2A拡張版・安全アクセス版）');
-        console.log('🐛 デバッグ関数設定完了（Phase2A拡張版）:');
-        console.log('  【履歴管理】');
-        console.log('    - window.undo() - アンドゥ実行');
-        console.log('    - window.redo() - リドゥ実行');
-        console.log('    - window.debugHistory() - 履歴詳細表示');
-        console.log('    - window.testHistory() - 履歴機能テスト');
-        console.log('    - window.getHistoryStats() - 履歴統計取得');
-        console.log('    - window.clearHistory() - 履歴クリア');
-        console.log('  【システム統計】');
-        console.log('    - window.showSystemStats() - システム統計表示');
-        console.log('    - window.getPerformanceStats() - パフォーマンス統計');
-        console.log('  【デバッグ】');
-        console.log('    - window.debugUI() - UI管理デバッグ');
-        console.log('    - window.debugSettings() - 設定管理デバッグ');
-        console.log('  【Phase2A新規】');
-        console.log('    - window.debugPresets() - プリセット詳細表示');
-        console.log('    - window.debugConfig() - CONFIG設定表示（安全アクセス版）');
-        console.log('    - window.testResetFunctions() - リセット機能テスト');
+        console.log('✅ システム間連携設定完了（CONFIG連携修正強化版）');
+        console.log('🐛 デバッグ関数設定完了:');
+        console.log('  📋 基本機能: undo(), redo(), debugHistory(), testHistory()');
+        console.log('  📊 統計: getHistoryStats(), showSystemStats()');
+        console.log('  🔧 CONFIG: debugConfig(), safeConfigGet()');
         
     } catch (error) {
         throw new InitializationError(
@@ -653,9 +696,9 @@ async function connectSystems() {
     }
 }
 
-// ==== 最終セットアップ（Phase2A拡張版・安全アクセス版） ====
+// ==== 最終セットアップ（CONFIG連携修正強化版）====
 async function finalSetup() {
-    console.log('🎨 最終セットアップ中（Phase2A拡張版・安全アクセス版）...');
+    console.log('🎨 最終セットアップ中（CONFIG連携修正強化版）...');
     
     try {
         const { app, toolsSystem, uiManager, settingsManager } = APP_STATE.components;
@@ -671,51 +714,26 @@ async function finalSetup() {
         // 3. デバッグ機能設定
         setupDebugFunctions();
         
-        // 4. Phase2A: パフォーマンス監視状態確認
-        if (uiManager && uiManager.getPerformanceStats) {
-            const performanceStats = uiManager.getPerformanceStats();
-            const targetFPS = safeAccess(window.CONFIG, 'TARGET_FPS', 60);
-            
-            console.log('📊 パフォーマンス監視状態（Phase2A）:', {
-                fps: performanceStats.fps || 'N/A',
-                memoryUsage: performanceStats.memoryUsage || 'N/A',
-                integrated: 'UI統合版',
-                targetFPS: targetFPS
-            });
-        }
+        // 4. Phase2設定値確認・表示
+        const phase2Settings = {
+            brushSize: safeConfigGet('DEFAULT_BRUSH_SIZE', 4),
+            opacity: safeConfigGet('DEFAULT_OPACITY', 1.0),
+            maxSize: safeConfigGet('MAX_BRUSH_SIZE', 500),
+            sizePresets: safeConfigGet('SIZE_PRESETS', [1, 2, 4, 8, 16, 32])
+        };
         
-        // 5. Phase2A: プリセットシステム状態確認
-        if (uiManager && uiManager.getPenPresetManager) {
-            const presetManager = uiManager.getPenPresetManager();
-            const defaultSize = safeAccess(window.CONFIG, 'DEFAULT_BRUSH_SIZE', 4);
-            const defaultOpacity = safeAccess(window.CONFIG, 'DEFAULT_OPACITY', 1.0);
-            const maxSize = safeAccess(window.CONFIG, 'MAX_BRUSH_SIZE', 500);
-            
-            console.log('🎨 プリセットシステム状態（Phase2A）:', {
-                activePreset: presetManager.getActivePresetId(),
-                presetCount: presetManager.presets.size,
-                defaultSize: defaultSize,
-                defaultOpacity: defaultOpacity * 100 + '%',
-                maxSize: maxSize
-            });
-        }
+        console.log('🎯 Phase2設定値確認:');
+        console.log(`  🖊️  デフォルトペンサイズ: ${phase2Settings.brushSize}px（16→4に変更）`);
+        console.log(`  🎨 デフォルト透明度: ${phase2Settings.opacity * 100}%（85%→100%に変更）`);
+        console.log(`  📏 最大ペンサイズ: ${phase2Settings.maxSize}px（100→500に変更）`);
+        console.log(`  🎯 プリセット: [${Array.isArray(phase2Settings.sizePresets) ? phase2Settings.sizePresets.join(', ') : 'N/A'}]px`);
         
-        // 6. ショートカットシステム状態確認
-        if (settingsManager && settingsManager.getShortcutInfo) {
-            const shortcutInfo = settingsManager.getShortcutInfo();
-            console.log('⌨️ ショートカットシステム状態:', {
-                enabled: shortcutInfo.enabled,
-                managerActive: shortcutInfo.manager?.isEnabled || false,
-                integrated: 'Settings統合版'
-            });
-        }
-        
-        // 7. アプリケーション状態の最終確認
+        // 5. システム状態の最終確認
         const appStats = app.getStats ? app.getStats() : {};
         const systemStats = toolsSystem.getSystemStats ? toolsSystem.getSystemStats() : {};
         const uiStats = uiManager ? uiManager.getUIStats() : null;
         
-        console.log('📈 システム状態確認（Phase2A拡張版・安全アクセス版）:');
+        console.log('📈 システム状態確認（CONFIG連携修正強化版）:');
         console.log('  - App:', appStats);
         console.log('  - Tools:', systemStats);
         if (uiStats) {
@@ -725,22 +743,15 @@ async function finalSetup() {
             console.log('  - Settings:', settingsManager.getSettingsInfo());
         }
         
-        // Phase2A: CONFIG情報表示（安全アクセス版）
-        const brushSize = safeAccess(window.CONFIG, 'DEFAULT_BRUSH_SIZE', 'N/A');
-        const opacity = safeAccess(window.CONFIG, 'DEFAULT_OPACITY', 'N/A');
-        const maxSize = safeAccess(window.CONFIG, 'MAX_BRUSH_SIZE', 'N/A');
-        const sizePresets = safeAccess(window.CONFIG, 'SIZE_PRESETS', []);
-        
-        console.log('  - Config（Phase2A・安全アクセス版）:', {
+        // CONFIG情報表示
+        console.log('  - Config:', {
             loaded: APP_STATE.config.loaded,
             validated: APP_STATE.config.validated,
-            brushSize: brushSize,
-            opacity: opacity === 'N/A' ? 'N/A' : opacity * 100 + '%',
-            maxSize: maxSize,
-            presets: Array.isArray(sizePresets) ? sizePresets.length : 'N/A'
+            fixed: APP_STATE.config.fixed,
+            phase2Applied: phase2Settings.brushSize === 4 && phase2Settings.opacity === 1.0
         });
         
-        console.log('✅ 最終セットアップ完了（Phase2A拡張版・安全アクセス版）');
+        console.log('✅ 最終セットアップ完了（CONFIG連携修正強化版）');
         
     } catch (error) {
         throw new InitializationError(
@@ -794,11 +805,11 @@ function setupGlobalErrorHandlers() {
     console.log('🛡️ グローバルエラーハンドラー設定完了');
 }
 
-// ==== デバッグ機能設定（Phase2A拡張版・安全アクセス版） ====
+// ==== デバッグ機能設定（CONFIG連携修正強化版）====
 function setupDebugFunctions() {
     // グローバルデバッグ関数
     window.debugApp = function() {
-        console.group('🔍 アプリケーションデバッグ情報（Phase2A拡張版・安全アクセス版）');
+        console.group('🔍 アプリケーションデバッグ情報（CONFIG連携修正強化版）');
         console.log('状態:', APP_STATE);
         
         if (APP_STATE.components.app) {
@@ -811,40 +822,30 @@ function setupDebugFunctions() {
         
         if (APP_STATE.components.uiManager) {
             console.log('UI統計:', APP_STATE.components.uiManager.getUIStats ? APP_STATE.components.uiManager.getUIStats() : 'N/A');
-            
-            // Phase2A: パフォーマンス統計も含める
-            if (APP_STATE.components.uiManager.getPerformanceStats) {
-                console.log('Performance統計:', APP_STATE.components.uiManager.getPerformanceStats());
-            }
         }
         
         if (APP_STATE.components.settingsManager && APP_STATE.components.settingsManager.getSettingsInfo) {
             console.log('Settings統計:', APP_STATE.components.settingsManager.getSettingsInfo());
-            
-            // ショートカット情報も含める
-            if (APP_STATE.components.settingsManager.getShortcutInfo) {
-                console.log('Shortcut統計:', APP_STATE.components.settingsManager.getShortcutInfo());
-            }
         }
         
-        // Phase2A: CONFIG情報表示（安全アクセス版）
+        // CONFIG情報表示（強化版）
         if (APP_STATE.config.loaded) {
-            const brushSize = safeAccess(window.CONFIG, 'DEFAULT_BRUSH_SIZE', 'N/A');
-            const opacity = safeAccess(window.CONFIG, 'DEFAULT_OPACITY', 'N/A');
-            const maxSize = safeAccess(window.CONFIG, 'MAX_BRUSH_SIZE', 'N/A');
-            const sizePresets = safeAccess(window.CONFIG, 'SIZE_PRESETS', []);
-            const previewMin = safeAccess(window.CONFIG, 'PREVIEW_MIN_SIZE', 'N/A');
-            const previewMax = safeAccess(window.CONFIG, 'PREVIEW_MAX_SIZE', 'N/A');
-            
-            console.log('Config（Phase2A・安全アクセス版）:', {
+            const configInfo = {
                 loaded: APP_STATE.config.loaded,
                 validated: APP_STATE.config.validated,
-                defaultBrushSize: brushSize,
-                defaultOpacity: opacity === 'N/A' ? 'N/A' : opacity * 100 + '%',
-                maxBrushSize: maxSize,
-                sizePresets: Array.isArray(sizePresets) ? sizePresets : 'N/A',
-                previewLimits: `${previewMin}-${previewMax}px`
-            });
+                fixed: APP_STATE.config.fixed
+            };
+            
+            // Phase2重要設定確認
+            const phase2Settings = {
+                brushSize: safeConfigGet('DEFAULT_BRUSH_SIZE', 'N/A'),
+                opacity: safeConfigGet('DEFAULT_OPACITY', 'N/A'),
+                maxSize: safeConfigGet('MAX_BRUSH_SIZE', 'N/A'),
+                sizePresets: safeConfigGet('SIZE_PRESETS', [])
+            };
+            
+            console.log('Config状態:', configInfo);
+            console.log('Phase2設定:', phase2Settings);
         }
         
         console.groupEnd();
@@ -858,41 +859,88 @@ function setupDebugFunctions() {
         console.groupEnd();
     };
     
-    // Phase2A: 統合テスト関数拡張版（安全アクセス版）
+    // CONFIG連携テスト関数（強化版）
+    window.testConfigSystem = function() {
+        console.group('🧪 CONFIGシステムテスト（連携修正強化版）');
+        
+        // 1. 基本アクセステスト
+        console.log('1. 基本アクセステスト...');
+        const testKeys = [
+            'DEFAULT_BRUSH_SIZE', 'DEFAULT_OPACITY', 'MAX_BRUSH_SIZE',
+            'SIZE_PRESETS', 'PREVIEW_MIN_SIZE', 'PREVIEW_MAX_SIZE'
+        ];
+        
+        testKeys.forEach(key => {
+            const value = safeConfigGet(key, 'DEFAULT');
+            console.log(`  ${key}: ${JSON.stringify(value)}`);
+        });
+        
+        // 2. Phase2デフォルト値テスト
+        console.log('2. Phase2デフォルト値テスト...');
+        const phase2Tests = [
+            { key: 'DEFAULT_BRUSH_SIZE', expected: 4, actual: safeConfigGet('DEFAULT_BRUSH_SIZE', 0) },
+            { key: 'DEFAULT_OPACITY', expected: 1.0, actual: safeConfigGet('DEFAULT_OPACITY', 0) },
+            { key: 'MAX_BRUSH_SIZE', expected: 500, actual: safeConfigGet('MAX_BRUSH_SIZE', 0) }
+        ];
+        
+        phase2Tests.forEach(test => {
+            const passed = test.actual === test.expected;
+            console.log(`  ${test.key}: ${passed ? '✅' : '❌'} ${test.actual} (期待値: ${test.expected})`);
+        });
+        
+        // 3. SIZE_PRESTESテスト
+        console.log('3. SIZE_PRESTESテスト...');
+        const presets = safeConfigGet('SIZE_PRESETS', []);
+        console.log(`  配列判定: ${Array.isArray(presets) ? '✅' : '❌'}`);
+        console.log(`  要素数: ${Array.isArray(presets) ? presets.length : 'N/A'}`);
+        console.log(`  内容: [${Array.isArray(presets) ? presets.join(', ') : 'N/A'}]`);
+        
+        // 4. エラーハンドリングテスト
+        console.log('4. エラーハンドリングテスト...');
+        const errorTest1 = safeConfigGet('NON_EXISTENT_KEY', 'DEFAULT_VALUE');
+        const errorTest2 = safeConfigGet(null, 'NULL_KEY_TEST');
+        console.log(`  存在しないキー: ${errorTest1}`);
+        console.log(`  nullキー: ${errorTest2}`);
+        
+        console.log('✅ CONFIGシステムテスト完了');
+        console.groupEnd();
+    };
+    
+    // 統合システムテスト関数（強化版）
     window.testSystem = function() {
-        console.group('🧪 システム統合テスト（Phase2A拡張版・安全アクセス版）');
+        console.group('🧪 システム統合テスト（CONFIG連携修正強化版）');
         
         // 1. 基本機能テスト
         console.log('1. 基本機能テスト...');
         console.log('   - CONFIG読み込み:', APP_STATE.config.loaded);
         console.log('   - CONFIG妥当性チェック:', APP_STATE.config.validated);
+        console.log('   - CONFIG修復完了:', APP_STATE.config.fixed);
         console.log('   - App初期化:', !!APP_STATE.components.app);
         console.log('   - ToolsSystem:', !!APP_STATE.components.toolsSystem);
         console.log('   - UIManager:', !!APP_STATE.components.uiManager);
         console.log('   - HistoryManager:', !!APP_STATE.components.historyManager);
         console.log('   - SettingsManager:', !!APP_STATE.components.settingsManager);
         
-        // 2. Phase2A: デフォルト値テスト（安全アクセス版）
-        console.log('2. Phase2Aデフォルト値テスト（安全アクセス版）...');
-        if (APP_STATE.config.loaded) {
-            const brushSize = safeAccess(window.CONFIG, 'DEFAULT_BRUSH_SIZE', 'N/A');
-            const opacity = safeAccess(window.CONFIG, 'DEFAULT_OPACITY', 'N/A');
-            const maxSize = safeAccess(window.CONFIG, 'MAX_BRUSH_SIZE', 'N/A');
-            const sizePresets = safeAccess(window.CONFIG, 'SIZE_PRESETS', []);
-            
-            console.log(`   - デフォルトサイズ: ${brushSize}px (期待値: 4px)`);
-            console.log(`   - デフォルト透明度: ${opacity === 'N/A' ? 'N/A' : opacity * 100}% (期待値: 100%)`);
-            console.log(`   - 最大サイズ: ${maxSize}px (期待値: 500px)`);
-            console.log(`   - プリセット数: ${Array.isArray(sizePresets) ? sizePresets.length : 'N/A'} (期待値: 6個)`);
-        }
+        // 2. Phase2デフォルト値テスト
+        console.log('2. Phase2デフォルト値テスト...');
+        const brushSize = safeConfigGet('DEFAULT_BRUSH_SIZE', 0);
+        const opacity = safeConfigGet('DEFAULT_OPACITY', 0);
+        const maxSize = safeConfigGet('MAX_BRUSH_SIZE', 0);
+        const sizePresets = safeConfigGet('SIZE_PRESETS', []);
         
-        // 3. プリセット機能テスト
-        console.log('3. プリセット機能テスト...');
-        if (APP_STATE.components.uiManager && APP_STATE.components.uiManager.getPenPresetManager) {
-            const presetManager = APP_STATE.components.uiManager.getPenPresetManager();
-            console.log('   - アクティブプリセット:', presetManager.getActivePresetId());
-            console.log('   - プリセット数:', presetManager.presets.size);
-            console.log('   - ライブ値:', !!presetManager.currentLiveValues);
+        console.log(`   - デフォルトサイズ: ${brushSize}px (期待値: 4px) ${brushSize === 4 ? '✅' : '❌'}`);
+        console.log(`   - デフォルト透明度: ${opacity * 100}% (期待値: 100%) ${opacity === 1.0 ? '✅' : '❌'}`);
+        console.log(`   - 最大サイズ: ${maxSize}px (期待値: 500px) ${maxSize === 500 ? '✅' : '❌'}`);
+        console.log(`   - プリセット数: ${Array.isArray(sizePresets) ? sizePresets.length : 0} (期待値: 6個) ${Array.isArray(sizePresets) && sizePresets.length === 6 ? '✅' : '❌'}`);
+        
+        // 3. UIManagerテスト（Phase2C緊急修正版）
+        console.log('3. UIManagerテスト（Phase2C緊急修正版）...');
+        if (APP_STATE.components.uiManager) {
+            const uiStats = APP_STATE.components.uiManager.getUIStats();
+            console.log('   - 初期化完了:', uiStats.initialized);
+            console.log('   - PenPresetManager:', uiStats.components.penPresetManager);
+            console.log('   - PerformanceMonitor:', uiStats.components.performanceMonitor);
+            console.log('   - エラーカウント:', `${uiStats.errorCount}/${uiStats.maxErrors}`);
         }
         
         // 4. 履歴機能テスト
@@ -901,104 +949,23 @@ function setupDebugFunctions() {
             APP_STATE.components.toolsSystem.testHistoryFunction();
         }
         
-        // 5. パフォーマンス監視テスト
-        console.log('5. パフォーマンス監視テスト...');
-        if (APP_STATE.components.uiManager && APP_STATE.components.uiManager.getPerformanceStats) {
-            const perfStats = APP_STATE.components.uiManager.getPerformanceStats();
-            console.log('   - FPS:', perfStats.fps || 'N/A');
-            console.log('   - メモリ:', perfStats.memoryUsage || 'N/A');
+        // 5. CONFIGシステムテスト
+        console.log('5. CONFIGシステムテスト...');
+        if (typeof window.testConfigSystem === 'function') {
+            window.testConfigSystem();
         }
         
-        // 6. ショートカットシステムテスト
-        console.log('6. ショートカットシステムテスト...');
-        if (APP_STATE.components.settingsManager && APP_STATE.components.settingsManager.getShortcutInfo) {
-            const shortcutInfo = APP_STATE.components.settingsManager.getShortcutInfo();
-            console.log('   - ショートカット有効:', shortcutInfo.enabled);
-            console.log('   - マネージャー状態:', shortcutInfo.manager?.isEnabled || false);
-        }
-        
-        // 7. Phase2A: リセット機能テスト
-        console.log('7. リセット機能テスト...');
-        if (typeof window.testResetFunctions === 'function') {
-            window.testResetFunctions();
-        }
-        
-        console.log('✅ システム統合テスト完了（Phase2A拡張版・安全アクセス版）');
+        console.log('✅ システム統合テスト完了（CONFIG連携修正強化版）');
         console.groupEnd();
     };
     
-    // Phase2A: CONFIG専用テスト関数（安全アクセス版）
-    window.testConfigValues = function() {
-        console.group('🧪 CONFIG値テスト（Phase2A・安全アクセス版）');
-        
-        if (!APP_STATE.config.loaded) {
-            console.error('❌ CONFIG が読み込まれていません');
-            console.groupEnd();
-            return;
-        }
-        
-        // デフォルト値の検証（安全アクセス版）
-        const brushSize = safeAccess(window.CONFIG, 'DEFAULT_BRUSH_SIZE', 'N/A');
-        const opacity = safeAccess(window.CONFIG, 'DEFAULT_OPACITY', 'N/A');
-        const maxSize = safeAccess(window.CONFIG, 'MAX_BRUSH_SIZE', 'N/A');
-        const sizePresets = safeAccess(window.CONFIG, 'SIZE_PRESETS', []);
-        
-        const tests = [
-            {
-                name: 'デフォルトブラシサイズ',
-                actual: brushSize,
-                expected: 4,
-                unit: 'px'
-            },
-            {
-                name: 'デフォルト透明度',
-                actual: opacity,
-                expected: 1.0,
-                unit: ''
-            },
-            {
-                name: '最大ブラシサイズ',
-                actual: maxSize,
-                expected: 500,
-                unit: 'px'
-            },
-            {
-                name: 'プリセット数',
-                actual: Array.isArray(sizePresets) ? sizePresets.length : 'N/A',
-                expected: 6,
-                unit: '個'
-            }
-        ];
-        
-        tests.forEach(test => {
-            const passed = test.actual === test.expected;
-            const status = passed ? '✅' : '❌';
-            console.log(`${status} ${test.name}: ${test.actual}${test.unit} (期待値: ${test.expected}${test.unit})`);
-        });
-        
-        // プレビュー計算テスト（安全アクセス版）
-        console.log('🔍 プレビュー計算テスト:');
-        const testSizes = [1, 4, 16, 32, 100, 500];
-        const previewMax = safeAccess(window.CONFIG, 'PREVIEW_MAX_SIZE', 20);
-        
-        testSizes.forEach(size => {
-            if (window.PREVIEW_UTILS && window.PREVIEW_UTILS.calculatePreviewSize) {
-                const previewSize = window.PREVIEW_UTILS.calculatePreviewSize(size);
-                console.log(`  ${size}px → ${previewSize.toFixed(1)}px (制限: ${previewMax}px)`);
-            } else {
-                console.log(`  ${size}px → プレビュー計算不可（PREVIEW_UTILS未定義）`);
-            }
-        });
-        
-        console.groupEnd();
-    };
-    
-    console.log('🐛 デバッグ機能設定完了（Phase2A拡張版・安全アクセス版）');
+    console.log('🐛 デバッグ機能設定完了（CONFIG連携修正強化版）');
     console.log('📝 利用可能なデバッグ関数:');
-    console.log('  - window.debugApp() - アプリ全体の状態表示（CONFIG安全アクセス版）');
+    console.log('  - window.debugApp() - アプリ全体の状態表示（CONFIG強化版）');
     console.log('  - window.showErrorInfo() - エラー情報表示');
-    console.log('  - window.testSystem() - システム統合テスト（Phase2A拡張版・安全アクセス版）');
-    console.log('  - window.testConfigValues() - CONFIG値検証テスト（Phase2A・安全アクセス版）');
+    console.log('  - window.testSystem() - システム統合テスト（CONFIG強化版）');
+    console.log('  - window.testConfigSystem() - CONFIGシステムテスト（新規）');
+    console.log('  - window.safeConfigGet(key, defaultValue) - 安全CONFIG取得');
 }
 
 // ==== 初期化ステップ更新関数 ====
@@ -1006,15 +973,16 @@ function updateInitStep(step, details = null) {
     APP_STATE.initializationStep = step;
     
     const stepMessages = {
-        [INIT_STEPS.CHECKING_CONFIG]: 'CONFIG読み込み確認中（Phase2A修正版）...',
-        [INIT_STEPS.VALIDATING_CONFIG]: 'CONFIG妥当性チェック中（Phase2A）...',
-        [INIT_STEPS.CHECKING_DEPENDENCIES]: '依存関係チェック中（Phase2A対応版）...',
-        [INIT_STEPS.CREATING_APP]: 'アプリケーション作成中（CONFIG連携版・安全アクセス版）...',
-        [INIT_STEPS.CREATING_TOOLS_SYSTEM]: 'ツールシステム作成中（CONFIG連携版・安全アクセス版）...',
-        [INIT_STEPS.CREATING_UI_MANAGER]: 'UI管理システム作成中（CONFIG連携版）...',
+        [INIT_STEPS.CHECKING_CONFIG]: 'CONFIG読み込み確認中（完全版）...',
+        [INIT_STEPS.VALIDATING_CONFIG]: 'CONFIG妥当性チェック中...',
+        [INIT_STEPS.FIXING_CONFIG]: 'CONFIG完全修復中...',
+        [INIT_STEPS.CHECKING_DEPENDENCIES]: '依存関係チェック中（Phase2C緊急修正対応版）...',
+        [INIT_STEPS.CREATING_APP]: 'アプリケーション作成中（CONFIG連携修正強化版）...',
+        [INIT_STEPS.CREATING_TOOLS_SYSTEM]: 'ツールシステム作成中（CONFIG連携修正強化版）...',
+        [INIT_STEPS.CREATING_UI_MANAGER]: 'UI管理システム作成中（Phase2C緊急修正対応版）...',
         [INIT_STEPS.CREATING_SETTINGS_MANAGER]: '設定管理システム作成中...',
-        [INIT_STEPS.CONNECTING_SYSTEMS]: 'システム連携設定中（Phase2A拡張版・安全アクセス版）...',
-        [INIT_STEPS.FINAL_SETUP]: '最終セットアップ中（Phase2A拡張版・安全アクセス版）...',
+        [INIT_STEPS.CONNECTING_SYSTEMS]: 'システム連携設定中（CONFIG連携修正強化版）...',
+        [INIT_STEPS.FINAL_SETUP]: '最終セットアップ中（CONFIG連携修正強化版）...',
         [INIT_STEPS.COMPLETED]: '初期化完了！',
         [INIT_STEPS.ERROR]: '初期化エラー'
     };
@@ -1022,100 +990,82 @@ function updateInitStep(step, details = null) {
     console.log(`📋 ${stepMessages[step] || step}`, details || '');
 }
 
-// ==== メイン初期化関数（Phase2A対応版・CONFIG連携修正版） ====
+// ==== メイン初期化関数（CONFIG連携修正強化版）====
 async function initializeApplication() {
     try {
         APP_STATE.startTime = performance.now();
-        console.log('🚀 ふたば☆ちゃんねる風ベクターお絵描きツール Phase2A 初期化開始（CONFIG連携修正版）');
+        console.log('🚀 ふたば☆ちゃんねる風ベクターお絵描きツール 初期化開始（CONFIG連携修正強化版）');
         
-        // 1. Phase2A: CONFIG読み込み確認
+        // 1. CONFIG読み込み確認（完全版）
         updateInitStep(INIT_STEPS.CHECKING_CONFIG);
-        checkConfigLoaded();
+        checkConfigLoadedCompletely();
         
-        // 2. Phase2A: CONFIG妥当性チェック・デフォルト値設定
-        updateInitStep(INIT_STEPS.VALIDATING_CONFIG);
-        validateAndFixConfig();
-        
-        // 3. 依存関係チェック
+        // 2. 依存関係チェック（Phase2C緊急修正対応版）
         updateInitStep(INIT_STEPS.CHECKING_DEPENDENCIES);
         checkDependencies();
         
-        // 4. アプリケーション作成
+        // 3. アプリケーション作成（CONFIG連携修正強化版）
         updateInitStep(INIT_STEPS.CREATING_APP);
         const app = await createApplication();
         
-        // 5. ツールシステム作成
+        // 4. ツールシステム作成（CONFIG連携修正強化版）
         updateInitStep(INIT_STEPS.CREATING_TOOLS_SYSTEM);
         const toolsSystem = await createToolsSystem(app);
         
-        // 6. UI管理システム作成
+        // 5. UI管理システム作成（Phase2C緊急修正対応版）
         updateInitStep(INIT_STEPS.CREATING_UI_MANAGER);
         const uiManager = await createUIManager(app, toolsSystem);
         
-        // 7. 設定管理システム作成
+        // 6. 設定管理システム作成
         updateInitStep(INIT_STEPS.CREATING_SETTINGS_MANAGER);
         const settingsManager = await createSettingsManager(app, toolsSystem, uiManager);
         
-        // 8. システム間連携設定
+        // 7. システム間連携設定（CONFIG連携修正強化版）
         updateInitStep(INIT_STEPS.CONNECTING_SYSTEMS);
         await connectSystems();
         
-        // 9. 最終セットアップ
+        // 8. 最終セットアップ（CONFIG連携修正強化版）
         updateInitStep(INIT_STEPS.FINAL_SETUP);
         await finalSetup();
         
-        // 10. 初期化完了
+        // 9. 初期化完了
         updateInitStep(INIT_STEPS.COMPLETED);
         APP_STATE.initialized = true;
         APP_STATE.stats.initTime = performance.now() - APP_STATE.startTime;
         
-        // 初期化完了ログ（安全アクセス版）
-        console.log('🎉 アプリケーション初期化完了（Phase2A: CONFIG連携修正版）！');
+        // 初期化完了ログ
+        console.log('🎉 アプリケーション初期化完了（CONFIG連携修正強化版）！');
         console.log(`⏱️ 初期化時間: ${APP_STATE.stats.initTime.toFixed(2)}ms`);
         console.log('🎨 描画の準備ができました！');
         
-        // Phase2A: システム概要表示（安全アクセス版）
-        console.group('📋 システム概要（Phase2A: CONFIG連携修正版）');
+        // システム概要表示（強化版）
+        console.group('📋 システム概要（CONFIG連携修正強化版）');
         
-        const canvasWidth = safeAccess(window.CONFIG, 'CANVAS_WIDTH', 400);
-        const canvasHeight = safeAccess(window.CONFIG, 'CANVAS_HEIGHT', 400);
-        const brushSize = safeAccess(window.CONFIG, 'DEFAULT_BRUSH_SIZE', 4);
-        const opacity = safeAccess(window.CONFIG, 'DEFAULT_OPACITY', 1.0);
-        const maxSize = safeAccess(window.CONFIG, 'MAX_BRUSH_SIZE', 500);
-        const sizePresets = safeAccess(window.CONFIG, 'SIZE_PRESETS', []);
-        const previewMin = safeAccess(window.CONFIG, 'PREVIEW_MIN_SIZE', 0.5);
-        const previewMax = safeAccess(window.CONFIG, 'PREVIEW_MAX_SIZE', 20);
+        const canvasWidth = safeConfigGet('CANVAS_WIDTH', 400);
+        const canvasHeight = safeConfigGet('CANVAS_HEIGHT', 400);
+        const brushSize = safeConfigGet('DEFAULT_BRUSH_SIZE', 4);
+        const opacity = safeConfigGet('DEFAULT_OPACITY', 1.0);
+        const maxSize = safeConfigGet('MAX_BRUSH_SIZE', 500);
+        const sizePresets = safeConfigGet('SIZE_PRESETS', []);
         
         console.log(`🖼️  キャンバス: ${canvasWidth}×${canvasHeight}px`);
         console.log(`🖊️  デフォルトペンサイズ: ${brushSize}px（16→4に変更）`);
         console.log(`🎨 デフォルト透明度: ${opacity * 100}%（85%→100%に変更）`);
         console.log(`📏 最大ペンサイズ: ${maxSize}px（100→500に変更）`);
-        
-        // SIZE_PRESETS の安全確認・表示
-        if (Array.isArray(sizePresets) && sizePresets.length > 0) {
-            const validElements = sizePresets.filter(size => {
-                const num = parseFloat(size);
-                return !isNaN(num) && num > 0;
-            });
-            console.log(`🎯 プリセット: [${validElements.join(', ')}]px（${validElements.length}個）`);
-        } else {
-            console.log(`🎯 プリセット: デフォルト値適用済み`);
-        }
-        
-        console.log(`📐 プレビュー制限: ${previewMin}-${previewMax}px（外枠制限対応）`);
+        console.log(`🎯 プリセット: [${Array.isArray(sizePresets) ? sizePresets.join(', ') : 'N/A'}]px`);
         console.log('🧽 消しゴム: 背景色描画方式');
         console.log('🏛️  履歴管理: Ctrl+Z/Ctrl+Y 対応');
         console.log('⚙️  設定管理: 高DPI・ショートカット統合');
-        console.log('⌨️  ショートカット: P+キー組み合わせ対応');
-        console.log('📊 パフォーマンス監視: UI統合版');
-        console.log('🔄 リセット機能: アクティブ/全プリセット/キャンバス対応');
-        console.log('🔧 Phase2A実装: CONFIG連携修正・妥当性チェック・エラー解決');
+        console.log('📊 パフォーマンス監視: 簡易版（内蔵）');
+        console.log('🔄 リセット機能: プリセット・キャンバス対応');
+        console.log('🔧 CONFIG連携修正: 完全修復・安全アクセス・エラー解決');
+        console.log('🏗️ Phase2C緊急修正: 既存システム活用・段階的拡張準備');
         console.groupEnd();
         
         // UI通知
         if (uiManager && uiManager.showNotification) {
             uiManager.showNotification(
-                'Phase2A初期化完了！CONFIG連携修正・デフォルト値適用',
+                'CONFIG連携修正強化版初期化完了！基本機能復旧・Phase2設定適用',
                 'success',
                 4000
             );
@@ -1189,7 +1139,7 @@ function showInitializationError(error) {
         ">ページを再読み込み</button>
         <div style="margin-top: 15px; font-size: 12px; opacity: 0.6;">
             詳細なエラー情報はブラウザのコンソール（F12）をご確認ください。<br>
-            Phase2A: CONFIG連携修正版
+            CONFIG連携修正強化版
         </div>
     `;
     
@@ -1255,28 +1205,24 @@ if (typeof window !== 'undefined') {
     window.APP_STATE = APP_STATE;
     window.INIT_STEPS = INIT_STEPS;
     window.initializeApplication = initializeApplication; // 手動再初期化用
-    window.safeAccess = safeAccess; // デバッグ用に公開
-    window.validateAndFixConfig = validateAndFixConfig; // CONFIG修正用
+    window.safeConfigGet = safeConfigGet; // 安全CONFIG取得
+    window.fixConfigCompletely = fixConfigCompletely; // CONFIG修復
+    window.checkConfigLoadedCompletely = checkConfigLoadedCompletely; // CONFIG確認
     
-    console.log('🔧 main.js Phase2A 読み込み完了（CONFIG連携修正版）');
-    console.log('🔧 Phase2A緊急修正項目:');
-    console.log('  ✅ CONFIG.SIZE_PRESETSアクセスエラー解決（空配列問題修正）');
-    console.log('  ✅ PenPresetManager.createDefaultPresets() forEach エラー解決');
-    console.log('  ✅ CONFIG値の安全な取得・妥当性チェック強化');
-    console.log('  ✅ config.js読み込み確認処理の改善');
-    console.log('  ✅ デフォルト値フォールバック処理の実装');
-    console.log('  ✅ 初期化順序の最適化（CONFIG確認 → 妥当性チェック → ...）');
-    console.log('  ✅ safeAccess関数強化（undefinedアクセスエラー完全回避）');
-    console.log('  ✅ validateAndFixConfig関数追加（自動修復機能）');
-    console.log('🏗️ Phase2A対応初期化順序:');
-    console.log('  1. config.js（設定値読み込み・グローバル変数形式）');
-    console.log('  2. CONFIG読み込み確認（存在チェック）');
-    console.log('  3. CONFIG妥当性チェック・自動修復（新規追加）');
-    console.log('  4. 依存関係チェック（クラス存在確認）');
-    console.log('  5. app-core.js（PixiJS基盤・CONFIG値安全適用）');
-    console.log('  6. drawing-tools.js（描画ツール・CONFIG値安全適用）');
-    console.log('  7. ui-manager.js（UI統合・PenPresetManager含む）');
-    console.log('  8. settings-manager.js（設定適用）');
-    console.log('  9. システム統合・最終調整');
-    console.log('🚀 準備完了: アプリケーション初期化待機中...');
+    console.log('🔧 main.js CONFIG連携修正強化版 読み込み完了');
+    console.log('🔧 CONFIG連携修正強化項目:');
+    console.log('  ✅ safeConfigGet関数実装（完全なundefinedアクセス回避）');
+    console.log('  ✅ fixConfigCompletely関数実装（自動修復機能）');
+    console.log('  ✅ checkConfigLoadedCompletely関数実装（完全確認）');
+    console.log('  ✅ SIZE_PRESETS空配列問題の根本解決');
+    console.log('  ✅ デフォルト値フォールバック強化');
+    console.log('  ✅ エラー時のグレースフル・デグラデーション');
+    console.log('  ✅ 初期化順序最適化（段階的エラーハンドリング）');
+    console.log('  ✅ Phase2C緊急修正版ui-manager.js対応');
+    console.log('🏗️ CONFIG修復機能:');
+    console.log('  1. window.safeConfigGet(key, defaultValue) - 安全なCONFIG値取得');
+    console.log('  2. window.fixConfigCompletely() - CONFIG完全修復');
+    console.log('  3. window.checkConfigLoadedCompletely() - CONFIG完全確認');
+    console.log('  4. window.testConfigSystem() - CONFIGシステムテスト');
+    console.log('🚀 準備完了: アプリケーション初期化実行中...');
 }
