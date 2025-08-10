@@ -1,569 +1,108 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev11
- * UI統合管理システム - ui-manager.js（Phase2D: プレビュー連動機能統合修正版）
- * 
- * 🔧 Phase2D統合修正内容:
- * 1. ✅ 構文エラー修正（'{' token エラー解決）
- * 2. ✅ enhanced_ui_manager_slider_sync.js の完全統合
- * 3. ✅ CONFIG不足対応（SIZE_PRESETS, PREVIEW_MIN_SIZE, PREVIEW_MAX_SIZE）
- * 4. ✅ プレビュー連動機能の完全実装
- * 5. ✅ スライダー・プレビュー・ライブ値の完全同期
- * 6. ✅ DRY・SOLID原則準拠の統合実装
- * 7. ✅ エラーハンドリング・フォールバック強化
- * 
- * Phase2D修正目標: 構文エラー解決 + プレビュー連動機能完全統合
- * 責務: UI統合制御 + リアルタイムプレビュー連動システム
- * 依存: config.js, ui/components.js
- */
-
-console.log('🔧 ui-manager.js Phase2D統合修正版読み込み開始...');
-
-// ==== Phase2D: UI統合管理クラス（プレビュー連動機能完全統合版） ====
-class UIManagerSystem {
-    constructor(app, toolsSystem, historyManager = null) {
-        this.app = app;
-        this.toolsSystem = toolsSystem;
-        this.historyManager = historyManager;
-        
-        // ui/components.js 定義クラス活用
-        this.popupManager = this.initializeComponent('PopupManager');
-        this.statusBar = this.initializeComponent('StatusBarManager');
-        this.presetDisplayManager = this.initializeComponent('PresetDisplayManager', [toolsSystem]);
-        
-        // 既存システムとの連携
-        this.penPresetManager = null; // toolsSystemから取得
-        this.performanceMonitor = null; // ui/components.js から取得
-        
-        // 内蔵パフォーマンス監視（簡易版）
-        this.simplePerformanceMonitor = new SimplePerformanceMonitor();
-        
-        // スライダー管理
-        this.sliders = new Map();
-        
-        // Phase2D: プレビュー連動機能用の状態
-        this.previewSyncEnabled = true;
-        this.previewUpdateThrottle = null;
-        this.lastPreviewUpdate = 0;
-        
-        // 状態
-        this.isInitialized = false;
-        this.coordinateUpdateThrottle = null;
-        this.errorCount = 0;
-        this.maxErrors = 10;
-        
-        // 外部参照
-        this.settingsManager = null;
-        
-        console.log('🎯 UIManagerSystem初期化（Phase2D統合修正版）');
-    }
-    
-    /**
-     * CONFIG値安全取得（Phase2D: フォールバック強化）
+     * プレビュー連動機能: プリセットライブ値更新
      */
-    safeConfigGet(key, defaultValue) {
-        try {
-            if (window.CONFIG && window.CONFIG[key] !== undefined && window.CONFIG[key] !== null) {
-                const value = window.CONFIG[key];
-                // 配列の場合の特別処理
-                if (key === 'SIZE_PRESETS' && Array.isArray(value) && value.length === 0) {
-                    return defaultValue || [1, 2, 4, 8, 16, 32];
-                }
-                return value;
-            }
-        } catch (error) {
-            console.warn(`CONFIG.${key} アクセスエラー:`, error);
-        }
-        
-        // Phase2D: CONFIG不足時のフォールバック値
-        const fallbackValues = {
-            'SIZE_PRESETS': [1, 2, 4, 8, 16, 32],
-            'PREVIEW_MIN_SIZE': 0.5,
-            'PREVIEW_MAX_SIZE': 20,
-            'MIN_BRUSH_SIZE': 0.1,
-            'MAX_BRUSH_SIZE': 500,
-            'DEFAULT_BRUSH_SIZE': 4,
-            'DEFAULT_OPACITY': 1.0,
-            'DEFAULT_PRESSURE': 0.5,
-            'DEFAULT_SMOOTHING': 0.3,
-            'SLIDER_UPDATE_THROTTLE': 16
-        };
-        
-        if (fallbackValues.hasOwnProperty(key)) {
-            console.warn(`CONFIG.${key} が不足 - フォールバック値使用: ${JSON.stringify(fallbackValues[key])}`);
-            return fallbackValues[key];
-        }
-        
-        return defaultValue;
-    }
-    
-    /**
-     * コンポーネント安全初期化
-     */
-    initializeComponent(ComponentClass, constructorArgs = []) {
-        try {
-            if (typeof window[ComponentClass] !== 'undefined') {
-                return new window[ComponentClass](...constructorArgs);
-            } else {
-                console.warn(`${ComponentClass} が利用できません`);
-                return null;
-            }
-        } catch (error) {
-            console.error(`${ComponentClass} 初期化エラー:`, error);
-            return null;
-        }
-    }
-    
-    /**
-     * 履歴管理システム設定
-     */
-    setHistoryManager(historyManager) {
-        this.historyManager = historyManager;
-        console.log('📚 UIManagerSystem: 履歴管理システム連携完了');
-    }
-    
-    /**
-     * 初期化（Phase2D: プレビュー連動機能完全統合版）
-     */
-    async init() {
-        try {
-            console.log('🎯 UIManagerSystem初期化開始（Phase2D統合修正版）...');
+    updatePresetLiveValues(size, opacity) {
+        if (this.penPresetManager && this.penPresetManager.updateActivePresetLive) {
+            // 現在の値を取得
+            const currentSettings = this.getBrushSettingsSafe();
+            const finalSize = size !== null ? size : currentSettings.size;
+            const finalOpacity = opacity !== null ? opacity : (currentSettings.opacity * 100);
             
-            // 既存システム取得
-            this.setupExistingSystems();
-            
-            // 基本UI設定
-            this.setupToolButtons();
-            this.setupPopups();
-            this.setupSliders(); // Phase2D: プレビュー連動機能統合
-            this.setupResize();
-            this.setupCheckboxes();
-            this.setupAppEventListeners();
-            
-            // リセット機能（Phase2D: プレビューリセット統合）
-            this.setupResetFunctions();
-            
-            // Phase2D: プレビュー連動システム初期化
-            this.setupPreviewSync();
-            
-            // パフォーマンス監視開始
-            this.startPerformanceMonitoring();
-            
-            // 初期状態の更新
-            this.updateAllDisplays();
-            
-            this.isInitialized = true;
-            console.log('✅ UIManagerSystem初期化完了（Phase2D統合修正版）');
-            
-        } catch (error) {
-            console.error('❌ UIManagerSystem初期化エラー:', error);
-            this.handleError(error);
-            throw error;
-        }
-    }
-    
-    /**
-     * 既存システム取得
-     */
-    setupExistingSystems() {
-        // 既存PenPresetManager取得
-        if (this.toolsSystem && this.toolsSystem.getPenPresetManager) {
-            this.penPresetManager = this.toolsSystem.getPenPresetManager();
-            
-            if (this.penPresetManager) {
-                console.log('🎨 既存PenPresetManager連携完了');
-                
-                // PresetDisplayManagerに設定
-                if (this.presetDisplayManager && this.presetDisplayManager.setPenPresetManager) {
-                    this.presetDisplayManager.setPenPresetManager(this.penPresetManager);
-                }
-            } else {
-                console.warn('PenPresetManager が取得できません');
-            }
-        }
-        
-        // ui/components.js の PerformanceMonitor 取得
-        if (typeof window.PerformanceMonitor !== 'undefined') {
-            try {
-                this.performanceMonitor = new window.PerformanceMonitor();
-                console.log('📊 ui/components.js PerformanceMonitor連携完了');
-            } catch (error) {
-                console.warn('PerformanceMonitor初期化エラー:', error);
-            }
-        }
-        
-        // フォールバック用簡易システムがない場合は作成
-        if (!this.penPresetManager && typeof window.PenPresetManager !== 'undefined') {
-            try {
-                this.penPresetManager = new window.PenPresetManager(this.toolsSystem, this.historyManager);
-                console.log('🎨 フォールバックPenPresetManager作成完了');
-            } catch (error) {
-                console.warn('フォールバックPenPresetManager作成エラー:', error);
-            }
-        }
-    }
-    
-    /**
-     * パフォーマンス監視開始
-     */
-    startPerformanceMonitoring() {
-        // ui/components.js の PerformanceMonitor 優先
-        if (this.performanceMonitor && this.performanceMonitor.start) {
-            this.performanceMonitor.start();
-            console.log('📊 PerformanceMonitor開始');
-        } 
-        // 簡易版をフォールバック
-        else if (this.simplePerformanceMonitor) {
-            this.simplePerformanceMonitor.start();
-            console.log('📊 SimplePerformanceMonitor開始（フォールバック）');
-        }
-    }
-    
-    /**
-     * ツールボタン設定
-     */
-    setupToolButtons() {
-        document.querySelectorAll('.tool-button').forEach(button => {
-            button.addEventListener('click', (event) => {
-                if (button.classList.contains('disabled')) return;
-                
-                const toolId = button.id;
-                const popupId = button.getAttribute('data-popup');
-                
-                this.handleToolButtonClick(toolId, popupId, button);
-            });
-        });
-        
-        console.log('✅ ツールボタン設定完了');
-    }
-    
-    handleToolButtonClick(toolId, popupId, button) {
-        // ツール切り替え
-        if (toolId === 'pen-tool') {
-            this.setActiveTool('pen', button);
-        } else if (toolId === 'eraser-tool') {
-            this.setActiveTool('eraser', button);
-        }
-        
-        // ポップアップ表示/非表示
-        if (popupId && this.popupManager) {
-            this.popupManager.togglePopup(popupId);
-        }
-    }
-    
-    setActiveTool(toolName, button) {
-        // ツールシステムに切り替えを依頼
-        if (this.toolsSystem.setTool(toolName)) {
-            // 履歴記録
-            if (this.historyManager) {
-                this.historyManager.recordToolChange(toolName);
-            }
-            
-            // UI更新
-            document.querySelectorAll('.tool-button').forEach(btn => 
-                btn.classList.remove('active'));
-            if (button) {
-                button.classList.add('active');
-            }
-            
-            if (this.statusBar) {
-                this.statusBar.updateCurrentTool(toolName);
-            }
-        }
-    }
-    
-    /**
-     * ポップアップ設定
-     */
-    setupPopups() {
-        if (!this.popupManager) {
-            console.warn('PopupManager が利用できません');
-            return;
-        }
-        
-        // ポップアップの登録
-        this.popupManager.registerPopup('pen-settings');
-        this.popupManager.registerPopup('resize-settings');
-        
-        console.log('✅ ポップアップ設定完了');
-    }
-    
-    /**
-     * Phase2D拡張: スライダー設定（プレビュー連動機能統合版）
-     */
-    setupSliders() {
-        if (typeof SliderController === 'undefined') {
-            console.warn('SliderController が利用できません');
-            return;
-        }
-        
-        try {
-            // CONFIG値を安全に取得
-            const minSize = this.safeConfigGet('MIN_BRUSH_SIZE', 0.1);
-            const maxSize = this.safeConfigGet('MAX_BRUSH_SIZE', 500);
-            const defaultSize = this.safeConfigGet('DEFAULT_BRUSH_SIZE', 4);
-            const defaultOpacity = this.safeConfigGet('DEFAULT_OPACITY', 1.0);
-            const defaultPressure = this.safeConfigGet('DEFAULT_PRESSURE', 0.5);
-            const defaultSmoothing = this.safeConfigGet('DEFAULT_SMOOTHING', 0.3);
-            
-            // Phase2D: スロットリング設定
-            const sliderThrottleDelay = this.safeConfigGet('SLIDER_UPDATE_THROTTLE', 16);
-            
-            // ペンサイズスライダー（Phase2D拡張: プレビュー連動機能）
-            this.createSlider('pen-size-slider', minSize, maxSize, defaultSize, 
-                this.throttle((value, displayOnly = false) => {
-                    if (!displayOnly) {
-                        // ツールシステム更新
-                        this.toolsSystem.updateBrushSettings({ size: value });
-                        
-                        // Phase2D: プレビュー連動更新
-                        this.updateActivePresetLivePreview(value, null);
-                    }
-                    return value.toFixed(1) + 'px';
-                }, sliderThrottleDelay));
-            
-            // 不透明度スライダー（Phase2D拡張: プレビュー連動機能）
-            this.createSlider('pen-opacity-slider', 0, 100, defaultOpacity * 100, 
-                this.throttle((value, displayOnly = false) => {
-                    if (!displayOnly) {
-                        // ツールシステム更新
-                        this.toolsSystem.updateBrushSettings({ opacity: value / 100 });
-                        
-                        // Phase2D: プレビュー連動更新
-                        this.updateActivePresetLivePreview(null, value / 100);
-                    }
-                    return value.toFixed(1) + '%';
-                }, sliderThrottleDelay));
-            
-            // 筆圧・線補正スライダー（既存機能）
-            this.createSlider('pen-pressure-slider', 0, 100, defaultPressure * 100, 
-                (value, displayOnly = false) => {
-                    if (!displayOnly) {
-                        this.toolsSystem.updateBrushSettings({ pressure: value / 100 });
-                    }
-                    return value.toFixed(1) + '%';
-                });
-            
-            this.createSlider('pen-smoothing-slider', 0, 100, defaultSmoothing * 100, 
-                (value, displayOnly = false) => {
-                    if (!displayOnly) {
-                        this.toolsSystem.updateBrushSettings({ smoothing: value / 100 });
-                    }
-                    return value.toFixed(1) + '%';
-                });
-            
-            this.setupSliderButtons();
-            
-            // Phase2D: プレビューリセットボタン設定
-            this.setupPreviewResetButton();
-            
-            console.log('✅ スライダー設定完了（Phase2D拡張版: プレビュー連動機能統合）');
-            
-        } catch (error) {
-            console.error('スライダー設定エラー:', error);
-            this.handleError(error);
-        }
-    }
-    
-    createSlider(sliderId, min, max, initial, callback) {
-        try {
-            const slider = new SliderController(sliderId, min, max, initial, callback);
-            this.sliders.set(sliderId, slider);
-            return slider;
-        } catch (error) {
-            console.error(`スライダー作成エラー (${sliderId}):`, error);
-            return null;
-        }
-    }
-    
-    /**
-     * Phase2D新機能: アクティブプリセットのライブプレビュー更新
-     */
-    updateActivePresetLivePreview(size = null, opacity = null) {
-        if (!this.presetDisplayManager || !this.presetDisplayManager.updateActivePresetLiveValues) {
-            return false;
-        }
-        
-        try {
-            const updated = this.presetDisplayManager.updateActivePresetLiveValues(size, opacity);
+            // ライブ値更新
+            const updated = this.penPresetManager.updateActivePresetLive(finalSize, finalOpacity);
             
             if (updated) {
-                // PenPresetManagerにもライブ値を反映
-                if (this.penPresetManager && this.penPresetManager.updateActivePresetLive) {
-                    const sizePercent = size !== null ? size : null;
-                    const opacityPercent = opacity !== null ? (opacity * 100) : null;
-                    this.penPresetManager.updateActivePresetLive(sizePercent, opacityPercent);
-                }
-                
-                this.debugLog('UIManager', `アクティブプリセットライブプレビュー更新`, {
-                    size: size,
-                    opacity: opacity
+                console.log('🔄 プリセットライブ値更新:', {
+                    size: finalSize.toFixed(1) + 'px',
+                    opacity: finalOpacity.toFixed(1) + '%'
                 });
             }
-            
-            return updated;
-        } catch (error) {
-            this.logError(this.createApplicationError('ライブプレビュー更新エラー', { size, opacity, error }), 'UIManager');
-            return false;
         }
     }
     
     /**
-     * Phase2D新機能: プレビューリセットボタン設定
+     * 🚨 Phase2E新規: ブラシ設定安全取得
      */
-    setupPreviewResetButton() {
-        const resetPreviewBtn = document.getElementById('reset-preview-values');
-        if (resetPreviewBtn) {
-            resetPreviewBtn.addEventListener('click', () => {
-                this.handleResetPreviewValues();
-            });
-            console.log('✅ プレビューリセットボタン設定完了');
-        } else {
-            console.warn('プレビューリセットボタンが見つかりません: reset-preview-values');
-        }
-    }
-    
-    /**
-     * Phase2D新機能: プレビューライブ値リセット処理
-     */
-    handleResetPreviewValues() {
+    getBrushSettingsSafe() {
         try {
-            if (!this.presetDisplayManager || !this.presetDisplayManager.clearAllLiveValues) {
-                this.showNotification('プレビューリセット機能が利用できません', 'error', 3000);
-                return;
-            }
-            
-            const hadLiveValues = this.presetDisplayManager.hasLiveValues();
-            
-            if (!hadLiveValues) {
-                this.showNotification('リセットするプレビュー変更がありません', 'info', 2000);
-                return;
-            }
-            
-            // ライブ値をクリア
-            const clearedCount = this.presetDisplayManager.clearAllLiveValues();
-            
-            if (clearedCount) {
-                // アクティブプリセットの元の値でツールシステムを更新
-                this.resetActivePresetToOriginal();
+            if (this.toolsSystemStatus.availableMethods.has('getBrushSettings') && 
+                this.toolsSystem.getBrushSettings) {
+                return this.toolsSystem.getBrushSettings();
+            } else {
+                console.warn('toolsSystem.getBrushSettings が利用できません → デフォルト値返却');
                 
-                this.showNotification(
-                    `プレビューライブ値をリセットしました（${clearedCount}件）`,
-                    'success',
-                    2000
-                );
-                
-                console.log(`🔄 プレビューライブ値リセット完了: ${clearedCount}件`);
+                // ローカル設定またはデフォルト値を返却
+                return this.localBrushSettings || {
+                    size: this.safeConfigGet('DEFAULT_BRUSH_SIZE', 4),
+                    opacity: this.safeConfigGet('DEFAULT_OPACITY', 1.0),
+                    color: this.safeConfigGet('DEFAULT_COLOR', 0x800000),
+                    pressure: this.safeConfigGet('DEFAULT_PRESSURE', 0.5),
+                    smoothing: this.safeConfigGet('DEFAULT_SMOOTHING', 0.3)
+                };
             }
-            
         } catch (error) {
-            this.logError(this.createApplicationError('プレビューリセットエラー', { error }), 'UIManager');
-            this.showNotification('プレビューリセット中にエラーが発生しました', 'error', 3000);
+            console.error('ブラシ設定取得エラー:', error);
+            
+            // エラー時はデフォルト値を返却
+            return {
+                size: 4,
+                opacity: 1.0,
+                color: 0x800000,
+                pressure: 0.5,
+                smoothing: 0.3
+            };
         }
     }
     
     /**
-     * Phase2D新機能: アクティブプリセットを元の値にリセット
+     * プレビュー連動機能: アクティブプリセットプレビュー更新（リアルタイム）
      */
-    resetActivePresetToOriginal() {
-        if (!this.penPresetManager || !this.penPresetManager.getActivePreset) {
-            return false;
+    updateActivePresetPreview(size = null, opacity = null) {
+        if (!this.previewSyncEnabled || !this.presetDisplayManager) return;
+        
+        // スロットリング制御（60fps制限）
+        const now = performance.now();
+        if (now - this.lastPreviewUpdate < 16) { // 60fps相当
+            if (this.previewUpdateThrottle) clearTimeout(this.previewUpdateThrottle);
+            this.previewUpdateThrottle = setTimeout(() => {
+                this.updateActivePresetPreview(size, opacity);
+            }, 16);
+            return;
         }
+        this.lastPreviewUpdate = now;
         
         try {
-            const activePreset = this.penPresetManager.getActivePreset();
-            if (!activePreset) {
-                return false;
+            // PresetDisplayManagerのライブプレビュー更新を呼び出し
+            if (this.presetDisplayManager.updateActivePresetPreview) {
+                this.presetDisplayManager.updateActivePresetPreview(size, opacity);
             }
             
-            // 元の値を取得
-            const originalSize = activePreset.originalSize || activePreset.size;
-            const originalOpacity = activePreset.originalOpacity || activePreset.opacity;
+            // 代替手段: 全体プレビュー同期
+            else if (this.presetDisplayManager.syncPreviewWithLiveValues) {
+                this.presetDisplayManager.syncPreviewWithLiveValues();
+            }
             
-            // ツールシステムに元の値を設定
-            this.toolsSystem.updateBrushSettings({
-                size: originalSize,
-                opacity: originalOpacity
-            });
-            
-            // スライダーを元の値に更新
-            this.updateSliderValue('pen-size-slider', originalSize);
-            this.updateSliderValue('pen-opacity-slider', originalOpacity * 100);
-            
-            this.debugLog('UIManager', 'アクティブプリセットを元の値にリセット', {
-                size: originalSize,
-                opacity: originalOpacity
-            });
-            
-            return true;
         } catch (error) {
-            this.logError(this.createApplicationError('プリセット元値リセットエラー', { error }), 'UIManager');
-            return false;
+            console.warn('アクティブプリセットプレビュー更新エラー:', error);
         }
-    }
-    
-    setupSliderButtons() {
-        const buttonConfigs = [
-            // ペンサイズ
-            { id: 'pen-size-decrease-small', slider: 'pen-size-slider', delta: -0.1 },
-            { id: 'pen-size-decrease', slider: 'pen-size-slider', delta: -1 },
-            { id: 'pen-size-decrease-large', slider: 'pen-size-slider', delta: -10 },
-            { id: 'pen-size-increase-small', slider: 'pen-size-slider', delta: 0.1 },
-            { id: 'pen-size-increase', slider: 'pen-size-slider', delta: 1 },
-            { id: 'pen-size-increase-large', slider: 'pen-size-slider', delta: 10 },
-            
-            // 不透明度
-            { id: 'pen-opacity-decrease-small', slider: 'pen-opacity-slider', delta: -0.1 },
-            { id: 'pen-opacity-decrease', slider: 'pen-opacity-slider', delta: -1 },
-            { id: 'pen-opacity-decrease-large', slider: 'pen-opacity-slider', delta: -10 },
-            { id: 'pen-opacity-increase-small', slider: 'pen-opacity-slider', delta: 0.1 },
-            { id: 'pen-opacity-increase', slider: 'pen-opacity-slider', delta: 1 },
-            { id: 'pen-opacity-increase-large', slider: 'pen-opacity-slider', delta: 10 }
-        ];
-        
-        buttonConfigs.forEach(config => {
-            const button = document.getElementById(config.id);
-            if (button) {
-                button.addEventListener('click', () => {
-                    const slider = this.sliders.get(config.slider);
-                    if (slider) {
-                        slider.adjustValue(config.delta);
-                    }
-                });
-            }
-        });
     }
     
     /**
-     * Phase2D拡張: リセット機能セットアップ（プレビューリセット統合版）
+     * プレビュー連動機能: プレビュー同期システム初期化
      */
-    setupResetFunctions() {
-        // アクティブプリセットリセット
-        const resetPresetBtn = document.getElementById('reset-active-preset');
-        if (resetPresetBtn) {
-            resetPresetBtn.addEventListener('click', () => {
-                this.handleResetActivePreset();
-            });
+    setupPreviewSync() {
+        try {
+            // プレビュー同期が有効な場合のみ設定
+            if (this.previewSyncEnabled && this.presetDisplayManager && this.penPresetManager) {
+                console.log('🔗 プレビュー同期システム初期化完了');
+            } else {
+                console.warn('⚠️ プレビュー同期システムの初期化をスキップ（必要なコンポーネントが不足）');
+            }
+            
+        } catch (error) {
+            console.error('プレビュー同期システム初期化エラー:', error);
+            this.previewSyncEnabled = false;
         }
-        
-        // 全プリセットリセット
-        const resetAllPresetsBtn = document.getElementById('reset-all-presets');
-        if (resetAllPresetsBtn) {
-            resetAllPresetsBtn.addEventListener('click', () => {
-                this.handleResetAllPresets();
-            });
-        }
-        
-        // Phase2D: プレビューリセット（上記で設定済み）
-        
-        // キャンバスリセット
-        const resetCanvasBtn = document.getElementById('reset-canvas');
-        if (resetCanvasBtn) {
-            resetCanvasBtn.addEventListener('click', () => {
-                this.handleResetCanvas();
-            });
-        }
-        
-        console.log('✅ リセット機能設定完了（Phase2D拡張版: プレビューリセット統合）');
     }
     
     /**
@@ -644,7 +183,7 @@ class UIManagerSystem {
     }
     
     /**
-     * キーボードショートカット処理
+     * キーボードショートカット処理（プレビューリセット追加）
      */
     handleKeyboardShortcuts(event) {
         // Ctrl+Z: アンドゥ
@@ -680,7 +219,7 @@ class UIManagerSystem {
         // Shift+R: 全プレビューリセット
         if (event.key === 'R' && event.shiftKey && !event.ctrlKey) {
             event.preventDefault();
-            this.handleResetPreviewValues();
+            this.handleResetAllPreviews();
             return;
         }
     }
@@ -704,20 +243,39 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2D: プレビュー連動システム初期化
+     * リセット機能セットアップ（プレビューリセット追加）
      */
-    setupPreviewSync() {
-        try {
-            // プレビュー同期が有効な場合のみ設定
-            if (this.previewSyncEnabled && this.presetDisplayManager && this.penPresetManager) {
-                console.log('🔗 プレビュー同期システム初期化完了');
-            } else {
-                console.warn('⚠️ プレビュー同期システムの初期化をスキップ（必要なコンポーネントが不足）');
-            }
-            
-        } catch (error) {
-            console.error('プレビュー同期システム初期化エラー:', error);
-            this.previewSyncEnabled = false;
+    setupResetFunctions() {
+        // アクティブプリセットリセット
+        const resetPresetBtn = document.getElementById('reset-active-preset');
+        if (resetPresetBtn) {
+            resetPresetBtn.addEventListener('click', () => {
+                this.handleResetActivePreset();
+            });
+        }
+        
+        // 全プリセットリセット
+        const resetAllPresetsBtn = document.getElementById('reset-all-presets');
+        if (resetAllPresetsBtn) {
+            resetAllPresetsBtn.addEventListener('click', () => {
+                this.handleResetAllPresets();
+            });
+        }
+        
+        // 全プレビューリセット（新機能）
+        const resetAllPreviewsBtn = document.getElementById('reset-all-previews');
+        if (resetAllPreviewsBtn) {
+            resetAllPreviewsBtn.addEventListener('click', () => {
+                this.handleResetAllPreviews();
+            });
+        }
+        
+        // キャンバスリセット
+        const resetCanvasBtn = document.getElementById('reset-canvas');
+        if (resetCanvasBtn) {
+            resetCanvasBtn.addEventListener('click', () => {
+                this.handleResetCanvas();
+            });
         }
     }
     
@@ -752,6 +310,23 @@ class UIManagerSystem {
         }
     }
     
+    /**
+     * プレビュー連動機能: 全プレビューリセット処理
+     */
+    handleResetAllPreviews() {
+        if (this.presetDisplayManager && this.presetDisplayManager.resetAllPreviews) {
+            const success = this.presetDisplayManager.resetAllPreviews();
+            
+            if (success) {
+                this.updateSliderValuesFromToolsSystem();
+                this.updateAllDisplays();
+                this.showNotification('全プレビューをリセットしました', 'success', 2000);
+            }
+        } else {
+            this.showNotification('プレビューリセット機能が利用できません', 'error', 3000);
+        }
+    }
+    
     handleResetCanvas() {
         if (confirm('キャンバスを消去しますか？この操作は取り消すことができます。')) {
             if (this.app && this.app.clear) {
@@ -762,15 +337,7 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2D拡張: プリセットライブ値更新（DRY原則準拠・統合版）
-     */
-    updatePresetLiveValues(size, opacity) {
-        // PresetDisplayManagerのライブプレビュー機能を使用
-        this.updateActivePresetLivePreview(size, opacity);
-    }
-    
-    /**
-     * Phase2D拡張: 表示更新メソッド群（プレビュー連動対応版）
+     * 表示更新メソッド群（プレビュー同期追加）
      */
     updateAllDisplays() {
         try {
@@ -778,9 +345,15 @@ class UIManagerSystem {
             this.updateToolDisplay();
             this.updateStatusDisplay();
             
-            // Phase2D: プリセット表示更新（ライブプレビュー対応）
+            // プリセット表示更新（プレビュー同期含む）
             if (this.presetDisplayManager && this.presetDisplayManager.updatePresetsDisplay) {
                 this.presetDisplayManager.updatePresetsDisplay();
+            }
+            
+            // プレビュー同期実行
+            if (this.previewSyncEnabled && this.presetDisplayManager && 
+                this.presetDisplayManager.syncPreviewWithLiveValues) {
+                this.presetDisplayManager.syncPreviewWithLiveValues();
             }
             
         } catch (error) {
@@ -789,10 +362,13 @@ class UIManagerSystem {
         }
     }
     
+    /**
+     * 🚨 Phase2E修正: スライダー値更新（toolsSystem安全呼び出し）
+     */
     updateSliderValuesFromToolsSystem() {
         if (!this.toolsSystem) return;
         
-        const settings = this.toolsSystem.getBrushSettings();
+        const settings = this.getBrushSettingsSafe();
         if (settings) {
             this.updateSliderValue('pen-size-slider', settings.size);
             this.updateSliderValue('pen-opacity-slider', settings.opacity * 100);
@@ -801,13 +377,30 @@ class UIManagerSystem {
         }
     }
     
+    /**
+     * 🚨 Phase2E修正: ツール表示更新（toolsSystem安全呼び出し）
+     */
     updateToolDisplay() {
         if (this.toolsSystem && this.statusBar) {
-            const currentTool = this.toolsSystem.getCurrentTool();
+            // 現在のツール取得（安全）
+            let currentTool;
+            if (this.toolsSystemStatus.availableMethods.has('getCurrentTool') && 
+                this.toolsSystem.getCurrentTool) {
+                try {
+                    currentTool = this.toolsSystem.getCurrentTool();
+                } catch (error) {
+                    console.warn('getCurrentTool エラー:', error);
+                    currentTool = this.currentTool || 'pen'; // フォールバック
+                }
+            } else {
+                currentTool = this.currentTool || 'pen'; // ローカル状態使用
+            }
+            
             this.statusBar.updateCurrentTool(currentTool);
             
-            const brushSettings = this.toolsSystem.getBrushSettings();
-            if (brushSettings) {
+            // ブラシ設定取得（安全）
+            const brushSettings = this.getBrushSettingsSafe();
+            if (brushSettings && brushSettings.color !== undefined) {
                 this.statusBar.updateCurrentColor(brushSettings.color);
             }
         }
@@ -844,27 +437,6 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2D拡張: プリセット選択処理（ライブ値クリア対応版）
-     */
-    selectPreset(presetId) {
-        if (this.penPresetManager && this.penPresetManager.selectPreset) {
-            // プリセット選択前にライブ値をクリア
-            if (this.presetDisplayManager && this.presetDisplayManager.clearLiveValuesForPreset) {
-                this.presetDisplayManager.clearLiveValuesForPreset(presetId);
-            }
-            
-            const success = this.penPresetManager.selectPreset(presetId);
-            
-            if (success) {
-                this.updateAllDisplays();
-            }
-            
-            return success;
-        }
-        return false;
-    }
-    
-    /**
      * スライダー関連メソッド
      */
     updateSliderValue(sliderId, value) {
@@ -883,6 +455,20 @@ class UIManagerSystem {
             }
         }
         return values;
+    }
+    
+    /**
+     * プリセット関連メソッド
+     */
+    selectPreset(presetId) {
+        if (this.penPresetManager && this.penPresetManager.selectPreset) {
+            const result = this.penPresetManager.selectPreset(presetId);
+            if (result) {
+                this.updateAllDisplays();
+            }
+            return result;
+        }
+        return null;
     }
     
     selectNextPreset() {
@@ -909,6 +495,30 @@ class UIManagerSystem {
     
     resetActivePreset() {
         return this.handleResetActivePreset();
+    }
+    
+    /**
+     * プレビュー連動機能: 全プレビューリセット（外部API）
+     */
+    resetAllPreviews() {
+        return this.handleResetAllPreviews();
+    }
+    
+    /**
+     * プレビュー連動機能: プレビュー同期制御
+     */
+    enablePreviewSync() {
+        this.previewSyncEnabled = true;
+        console.log('✅ プレビュー同期有効化');
+    }
+    
+    disablePreviewSync() {
+        this.previewSyncEnabled = false;
+        console.log('❌ プレビュー同期無効化');
+    }
+    
+    isPreviewSyncEnabled() {
+        return this.previewSyncEnabled;
     }
     
     getPenPresetManager() {
@@ -990,30 +600,6 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2D拡張: ブラシ設定変更ハンドラ（ライブプレビュー対応版）
-     */
-    onBrushSettingsChange(settings) {
-        // ブラシ設定変更時のスライダー更新
-        if (settings.size !== undefined) {
-            this.updateSliderValue('pen-size-slider', settings.size);
-        }
-        if (settings.opacity !== undefined) {
-            this.updateSliderValue('pen-opacity-slider', settings.opacity * 100);
-        }
-        if (settings.pressure !== undefined) {
-            this.updateSliderValue('pen-pressure-slider', settings.pressure * 100);
-        }
-        if (settings.smoothing !== undefined) {
-            this.updateSliderValue('pen-smoothing-slider', settings.smoothing * 100);
-        }
-        
-        // Phase2D: プレビュー連動更新（外部からの変更時）
-        this.updateActivePresetLivePreview(settings.size, settings.opacity);
-        
-        this.updateToolDisplay();
-    }
-    
-    /**
      * 通知表示
      */
     showNotification(message, type = 'info', duration = 3000) {
@@ -1027,7 +613,7 @@ class UIManagerSystem {
             top: 20px;
             right: 20px;
             padding: 12px 20px;
-            background: ${type === 'error' ? '#ff4444' : type === 'success' ? '#44ff44' : '#4444ff'};
+            background: ${type === 'error' ? '#ff4444' : type === 'success' ? '#44ff44' : type === 'warning' ? '#ffaa44' : '#4444ff'};
             color: white;
             border-radius: 8px;
             z-index: 10000;
@@ -1070,6 +656,102 @@ class UIManagerSystem {
     }
     
     /**
+     * 🚨 Phase2E新規: システム診断・デバッグ機能
+     */
+    getUIStats() {
+        const historyStats = this.getHistoryStats();
+        const performanceStats = this.getPerformanceStats();
+        const previewStats = this.getPreviewSyncStats();
+        
+        return {
+            initialized: this.isInitialized,
+            activePopup: this.popupManager ? this.popupManager.getStatus().activePopup : null,
+            sliderCount: this.sliders.size,
+            errorCount: this.errorCount,
+            maxErrors: this.maxErrors,
+            penPresetManager: !!this.penPresetManager,
+            previewSyncEnabled: this.previewSyncEnabled,
+            currentTool: this.currentTool,
+            localBrushSettings: this.localBrushSettings,
+            toolsSystemStatus: this.toolsSystemStatus, // Phase2E新規
+            historyStats: historyStats,
+            performanceStats: performanceStats,
+            previewStats: previewStats,
+            components: {
+                popupManager: !!this.popupManager,
+                statusBar: !!this.statusBar,
+                presetDisplayManager: !!this.presetDisplayManager,
+                penPresetManager: !!this.penPresetManager,
+                performanceMonitor: !!this.performanceMonitor,
+                simplePerformanceMonitor: !!this.simplePerformanceMonitor,
+                historyManager: !!this.historyManager
+            }
+        };
+    }
+    
+    /**
+     * プレビュー連動機能: プレビュー同期統計取得
+     */
+    getPreviewSyncStats() {
+        if (!this.penPresetManager) return null;
+        
+        try {
+            const liveValuesStats = this.penPresetManager.getLiveValuesStats ? 
+                this.penPresetManager.getLiveValuesStats() : null;
+            
+            const presetDisplayStats = this.presetDisplayManager ? 
+                this.presetDisplayManager.getStatus() : null;
+            
+            return {
+                enabled: this.previewSyncEnabled,
+                lastUpdate: this.lastPreviewUpdate,
+                liveValues: liveValuesStats,
+                displayManager: presetDisplayStats
+            };
+            
+        } catch (error) {
+            console.warn('プレビュー同期統計取得エラー:', error);
+            return null;
+        }
+    }
+    
+    /**
+     * 🚨 Phase2E新規: システム診断実行
+     */
+    diagnosisSystem() {
+        console.group('🔍 UIManagerSystem Phase2E診断');
+        
+        // toolsSystem状態診断
+        console.log('1. toolsSystem診断:');
+        this.checkToolsSystemMethods();
+        console.log('  - 利用可能:', this.toolsSystemStatus.available);
+        console.log('  - メソッド:', Array.from(this.toolsSystemStatus.availableMethods));
+        
+        // 基本機能診断
+        console.log('2. 基本機能診断:');
+        console.log('  - 初期化完了:', this.isInitialized);
+        console.log('  - スライダー数:', this.sliders.size);
+        console.log('  - エラー数:', `${this.errorCount}/${this.maxErrors}`);
+        
+        // コンポーネント診断
+        console.log('3. コンポーネント診断:', this.getUIStats().components);
+        
+        // プレビュー同期診断
+        const previewStats = this.getPreviewSyncStats();
+        if (previewStats) {
+            console.log('4. プレビュー同期診断:', previewStats);
+        }
+        
+        // 推奨対処法
+        console.log('5. Phase2E修正状況:');
+        console.log('  - toolsSystem連携:', this.toolsSystemStatus.available ? '✅ 正常' : '⚠️ フォールバック');
+        console.log('  - ペンツール機能:', this.toolsSystemStatus.availableMethods.has('setTool') ? '✅ 利用可能' : '❌ 制限モード');
+        console.log('  - エラー制御:', this.errorCount < this.maxErrors ? '✅ 正常' : '⚠️ 上限接近');
+        
+        console.groupEnd();
+    }
+    
+    /**
      * 設定関連ハンドラ
      */
     setSettingsManager(settingsManager) {
@@ -1087,7 +769,6 @@ class UIManagerSystem {
                 this.handleDebugInfoChange(newValue);
                 break;
             case 'previewSync':
-                // プレビュー同期設定
                 if (newValue) {
                     this.enablePreviewSync();
                 } else {
@@ -1115,7 +796,6 @@ class UIManagerSystem {
             this.handleDebugInfoChange(settings.showDebugInfo);
         }
         
-        // プレビュー同期設定
         if (settings.previewSync !== undefined) {
             this.previewSyncEnabled = settings.previewSync;
         }
@@ -1139,151 +819,10 @@ class UIManagerSystem {
     }
     
     /**
-     * Phase2D拡張: プレビュー同期制御
-     */
-    enablePreviewSync() {
-        this.previewSyncEnabled = true;
-        console.log('✅ プレビュー同期有効化');
-    }
-    
-    disablePreviewSync() {
-        this.previewSyncEnabled = false;
-        console.log('❌ プレビュー同期無効化');
-    }
-    
-    isPreviewSyncEnabled() {
-        return this.previewSyncEnabled;
-    }
-    
-    /**
-     * Phase2D拡張: システム統計・デバッグ（プレビュー機能統合版）
-     */
-    getUIStats() {
-        const historyStats = this.getHistoryStats();
-        const performanceStats = this.getPerformanceStats();
-        
-        // Phase2D: プレビュー統計情報
-        const previewStats = this.presetDisplayManager ? 
-            this.presetDisplayManager.getStatus() : null;
-        
-        return {
-            initialized: this.isInitialized,
-            activePopup: this.popupManager ? this.popupManager.getStatus().activePopup : null,
-            sliderCount: this.sliders.size,
-            errorCount: this.errorCount,
-            maxErrors: this.maxErrors,
-            penPresetManager: !!this.penPresetManager,
-            previewSyncEnabled: this.previewSyncEnabled,
-            historyStats: historyStats,
-            performanceStats: performanceStats,
-            previewStats: previewStats, // Phase2D追加
-            components: {
-                popupManager: !!this.popupManager,
-                statusBar: !!this.statusBar,
-                presetDisplayManager: !!this.presetDisplayManager,
-                penPresetManager: !!this.penPresetManager,
-                performanceMonitor: !!this.performanceMonitor,
-                simplePerformanceMonitor: !!this.simplePerformanceMonitor,
-                historyManager: !!this.historyManager
-            }
-        };
-    }
-    
-    /**
-     * Phase2D拡張: デバッグ情報表示（プレビュー機能統合版）
-     */
-    debugUI() {
-        console.group('🔍 UIManagerSystem デバッグ情報（Phase2D統合修正版）');
-        
-        console.log('基本情報:', {
-            initialized: this.isInitialized,
-            sliders: this.sliders.size,
-            errorCount: `${this.errorCount}/${this.maxErrors}`,
-            previewSyncEnabled: this.previewSyncEnabled
-        });
-        
-        console.log('コンポーネント状態:', this.getUIStats().components);
-        console.log('スライダー値:', this.getAllSliderValues());
-        
-        if (this.penPresetManager && this.penPresetManager.getSystemStats) {
-            console.log('PenPresetManager統計:', this.penPresetManager.getSystemStats());
-        }
-        
-        // Phase2D: プレビュー機能デバッグ情報
-        if (this.presetDisplayManager && this.presetDisplayManager.getDetailedStats) {
-            console.log('PresetDisplayManager詳細統計:', this.presetDisplayManager.getDetailedStats());
-        }
-        
-        if (this.historyManager) {
-            console.log('履歴統計:', this.getHistoryStats());
-        }
-        
-        console.groupEnd();
-    }
-    
-    /**
-     * Phase2D新機能: プレビュー連動機能のテスト
-     */
-    testPreviewSyncFeature() {
-        console.group('🧪 プレビュー連動機能テスト');
-        
-        try {
-            // 1. 初期状態確認
-            const initialStats = this.presetDisplayManager?.getStatus();
-            console.log('1. 初期状態:', initialStats);
-            
-            // 2. ライブプレビュー更新テスト
-            console.log('2. ライブプレビュー更新テスト...');
-            const updateResult = this.updateActivePresetLivePreview(8, 0.8);
-            console.log('   更新結果:', updateResult);
-            
-            // 3. ライブ値確認
-            const liveStats = this.presetDisplayManager?.getDetailedStats();
-            console.log('3. ライブ値確認:', liveStats?.activeLiveValues);
-            
-            // 4. プレビューリセットテスト
-            console.log('4. プレビューリセットテスト...');
-            const resetResult = this.presetDisplayManager?.clearAllLiveValues();
-            console.log('   リセット結果:', resetResult);
-            
-            // 5. 最終状態確認
-            const finalStats = this.presetDisplayManager?.getStatus();
-            console.log('5. 最終状態:', finalStats);
-            
-            console.log('✅ プレビュー連動機能テスト完了');
-            
-        } catch (error) {
-            console.error('❌ プレビュー連動機能テストエラー:', error);
-        }
-        
-        console.groupEnd();
-    }
-    
-    /**
-     * Phase2D新機能: プレビューライブ値の存在確認
-     */
-    hasLivePreviewValues() {
-        return this.presetDisplayManager ? 
-            this.presetDisplayManager.hasLiveValues() : false;
-    }
-    
-    /**
-     * Phase2D新機能: アクティブプリセットのライブ値取得
-     */
-    getActivePresetLiveValues() {
-        if (!this.penPresetManager) return null;
-        
-        const activePreset = this.penPresetManager.getActivePreset();
-        if (!activePreset || !this.presetDisplayManager) return null;
-        
-        const stats = this.presetDisplayManager.getDetailedStats();
-        return stats ? stats.activeLiveValues : null;
-    }
-    
-    /**
      * 外部システム連携
      */
     onToolChange(newTool) {
+        this.currentTool = newTool; // Phase2E新規: ローカル状態更新
         this.updateToolDisplay();
         
         // ツールボタンのアクティブ状態更新
@@ -1297,53 +836,40 @@ class UIManagerSystem {
         }
     }
     
-    /**
-     * ユーティリティメソッド
-     */
-    throttle(func, delay) {
-        let timeoutId;
-        let lastExecTime = 0;
-        return function (...args) {
-            const currentTime = Date.now();
-            
-            if (currentTime - lastExecTime > delay) {
-                func.apply(this, args);
-                lastExecTime = currentTime;
-            } else {
-                clearTimeout(timeoutId);
-                timeoutId = setTimeout(() => {
-                    func.apply(this, args);
-                    lastExecTime = Date.now();
-                }, delay);
-            }
-        };
-    }
-    
-    debugLog(module, message, data = null) {
-        if (window.DEBUG_CONFIG && window.DEBUG_CONFIG.ENABLE_LOGGING) {
-            console.log(`[${module}] ${message}`, data);
+    onBrushSettingsChange(settings) {
+        // ブラシ設定変更時のスライダー更新
+        if (settings.size !== undefined) {
+            this.updateSliderValue('pen-size-slider', settings.size);
         }
-    }
-    
-    logError(error, module) {
-        console.error(`[${module}] エラー:`, error);
-    }
-    
-    createApplicationError(message, details = {}) {
-        return {
-            message: message,
-            details: details,
-            timestamp: new Date().toISOString(),
-            stack: new Error().stack
-        };
+        if (settings.opacity !== undefined) {
+            this.updateSliderValue('pen-opacity-slider', settings.opacity * 100);
+        }
+        if (settings.pressure !== undefined) {
+            this.updateSliderValue('pen-pressure-slider', settings.pressure * 100);
+        }
+        if (settings.smoothing !== undefined) {
+            this.updateSliderValue('pen-smoothing-slider', settings.smoothing * 100);
+        }
+        
+        // プレビュー連動: プリセットライブ値更新
+        this.updatePresetLiveValues(settings.size, settings.opacity ? settings.opacity * 100 : null);
+        
+        // プレビュー連動: アクティブプレビュー更新
+        this.updateActivePresetPreview(settings.size, settings.opacity ? settings.opacity * 100 : null);
+        
+        // 🚨 Phase2E新規: ローカル設定も更新
+        this.localBrushSettings = this.localBrushSettings || {};
+        Object.assign(this.localBrushSettings, settings);
+        
+        this.updateToolDisplay();
     }
     
     /**
-     * クリーンアップ（プレビュー連動機能対応）
+     * クリーンアップ（Phase2E修正版）
      */
     destroy() {
         try {
-            console.log('🧹 UIManagerSystem クリーンアップ開始（Phase2D統合修正版）');
+            console.log('🧹 UIManagerSystem クリーンアップ開始（Phase2E緊急エラー修正版）');
             
             // プレビュー更新スロットリングのクリア
             if (this.previewUpdateThrottle) {
@@ -1382,7 +908,7 @@ class UIManagerSystem {
             this.statusBar = null;
             this.settingsManager = null;
             
-            console.log('✅ UIManagerSystem クリーンアップ完了（Phase2D統合修正版）');
+            console.log('✅ UIManagerSystem クリーンアップ完了（Phase2E緊急エラー修正版）');
             
         } catch (error) {
             console.error('UIManagerSystem クリーンアップエラー:', error);
@@ -1390,7 +916,7 @@ class UIManagerSystem {
     }
 }
 
-// ==== 簡易パフォーマンス監視（フォールバック版）====
+// ==== 簡易パフォーマンス監視（フォールバック版・変更なし）====
 class SimplePerformanceMonitor {
     constructor() {
         this.isRunning = false;
@@ -1452,31 +978,23 @@ class SimplePerformanceMonitor {
     }
 }
 
-// ==== グローバル登録・エクスポート（Phase2D統合修正版）====
+// ==== グローバル登録・エクスポート（Phase2E修正版）====
 if (typeof window !== 'undefined') {
     window.UIManager = UIManagerSystem;
     window.SimplePerformanceMonitor = SimplePerformanceMonitor;
     
-    // Phase2D: プレビュー連動機能用グローバル関数
+    // Phase2E新規: プレビュー連動機能用グローバル関数
     window.debugPreviewSync = function() {
-        if (window.uiManager && window.uiManager.debugUI) {
-            window.uiManager.debugUI();
+        if (window.uiManager && window.uiManager.debugPreviewSync) {
+            window.uiManager.debugPreviewSync();
         } else {
             console.warn('UIManager が利用できません');
         }
     };
     
-    window.testPreviewSync = function() {
-        if (window.uiManager && window.uiManager.testPreviewSyncFeature) {
-            window.uiManager.testPreviewSyncFeature();
-        } else {
-            console.warn('UIManager が利用できません');
-        }
-    };
-    
-    window.resetPreviewValues = function() {
-        if (window.uiManager && window.uiManager.handleResetPreviewValues) {
-            return window.uiManager.handleResetPreviewValues();
+    window.resetAllPreviews = function() {
+        if (window.uiManager && window.uiManager.resetAllPreviews) {
+            return window.uiManager.resetAllPreviews();
         } else {
             console.warn('UIManager が利用できません');
             return false;
@@ -1495,24 +1013,658 @@ if (typeof window !== 'undefined') {
         }
     };
     
-    console.log('✅ ui-manager.js Phase2D統合修正版 読み込み完了');
-    console.log('📦 エクスポートクラス（Phase2D統合修正版）:');
-    console.log('  ✅ UIManager: UI統合管理（プレビュー連動機能完全統合版）');
-    console.log('  ✅ SimplePerformanceMonitor: 簡易パフォーマンス監視（フォールバック版）');
-    console.log('🔧 Phase2D統合修正完了:');
-    console.log('  ✅ 構文エラー修正（\'{\'トークンエラー解決）');
-    console.log('  ✅ enhanced_ui_manager_slider_sync.js 完全統合');
-    console.log('  ✅ CONFIG不足対応（フォールバック機能強化）');
-    console.log('  ✅ スライダー・プレビュー・ライブ値の完全同期');
-    console.log('  ✅ リアルタイムプレビュー更新システム（60fps制限）');
-    console.log('  ✅ プレビューライブ値リセット機能');
-    console.log('  ✅ プレビュー同期システム（有効/無効制御）');
-    console.log('  ✅ DRY・SOLID原則準拠の統合実装');
-    console.log('  ✅ エラーハンドリング・フォールバック強化');
-    console.log('🎯 責務: UI統合制御 + リアルタイムプレビュー連動システム');
-    console.log('🐛 デバッグ関数:');
+    // 🚨 Phase2E新規: 緊急診断関数
+    window.diagnosisUI = function() {
+        if (window.uiManager && window.uiManager.diagnosisSystem) {
+            window.uiManager.diagnosisSystem();
+        } else {
+            console.warn('UIManager が利用できません');
+        }
+    };
+    
+    window.checkToolsSystem = function() {
+        if (window.uiManager && window.uiManager.checkToolsSystemMethods) {
+            return window.uiManager.checkToolsSystemMethods();
+        } else {
+            console.warn('UIManager が利用できません');
+            return false;
+        }
+    };
+    
+    console.log('✅ ui-manager.js Phase2E緊急エラー修正版 読み込み完了');
+    console.log('🚨 Phase2E緊急修正完了項目:');
+    console.log('  ✅ toolsSystem.setTool未定義エラー対策（フォールバック処理追加）');
+    console.log('  ✅ setActiveTool()エラーハンドリング強化（メソッド存在確認）');
+    console.log('  ✅ ペンツールポップアップ表示修復（直接DOM操作フォールバック）');
+    console.log('  ✅ toolsSystemメソッド存在確認強化（動的チェック）');
+    console.log('  ✅ フォールバック処理実装（ローカル状態管理）');
+    console.log('  ✅ エラー時の緊急処理追加（最小限機能保証）');
+    
+    console.log('🔧 Phase2E新規機能:');
+    console.log('  - window.diagnosisUI() - UIシステム診断実行');
+    console.log('  - window.checkToolsSystem() - toolsSystem状態確認');
     console.log('  - window.debugPreviewSync() - プレビュー連動状態表示');
-    console.log('  - window.testPreviewSync() - プレビュー連動機能テスト');
-    console.log('  - window.resetPreviewValues() - プレビューライブ値リセット');
+    console.log('  - window.resetAllPreviews() - 全プレビューリセット');
     console.log('  - window.togglePreviewSync() - プレビュー同期有効/無効切り替え');
-}
+    
+    console.log('🎯 Phase2E効果:');
+    console.log('  🚨 ペンツール機能復旧: setTool未定義エラー解消・フォールバック処理');
+    console.log('  🛡️ UI操作安定化: エラー耐性強化・緊急処理実装');
+    console.log('  ⚡ 動作継続性: toolsSystem状態監視・ローカル管理');
+    console.log('  🔄 自動回復: メソッド確認・段階的フォールバック');
+    console.log('  🔧 診断機能: システム状況可視化・問題特定支援');
+}/**
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev11_phase2e
+ * UI統合管理システム - ui-manager.js（Phase2E緊急エラー修正版）
+ * 
+ * 🚨 Phase2E修正内容:
+ * 1. ✅ toolsSystem.setTool未定義エラー対策（フォールバック処理追加）
+ * 2. ✅ setActiveTool()エラーハンドリング強化
+ * 3. ✅ ペンツールポップアップ表示修復
+ * 4. ✅ toolsSystemメソッド存在確認強化
+ * 5. ✅ フォールバック処理実装
+ * 6. ✅ エラー時の緊急処理追加
+ * 
+ * Phase2E目標: ペンツール機能復旧・UI操作安定化・エラー耐性強化
+ */
+
+console.log('🔧 ui-manager.js Phase2E緊急エラー修正版読み込み開始...');
+
+// ==== UI統合管理クラス（Phase2E修正版）====
+class UIManagerSystem {
+    constructor(app, toolsSystem, historyManager = null) {
+        this.app = app;
+        this.toolsSystem = toolsSystem;
+        this.historyManager = historyManager;
+        
+        // ui/components.js 定義クラス活用
+        this.popupManager = this.initializeComponent('PopupManager');
+        this.statusBar = this.initializeComponent('StatusBarManager');
+        this.presetDisplayManager = this.initializeComponent('PresetDisplayManager', [toolsSystem]);
+        
+        // 既存システムとの連携
+        this.penPresetManager = null;
+        this.performanceMonitor = null;
+        
+        // 内蔵パフォーマンス監視（簡易版）
+        this.simplePerformanceMonitor = new SimplePerformanceMonitor();
+        
+        // スライダー管理
+        this.sliders = new Map();
+        
+        // プレビュー連動機能用の状態
+        this.previewSyncEnabled = true;
+        this.previewUpdateThrottle = null;
+        this.lastPreviewUpdate = 0;
+        
+        // 状態
+        this.isInitialized = false;
+        this.coordinateUpdateThrottle = null;
+        this.errorCount = 0;
+        this.maxErrors = 10;
+        
+        // 🚨 Phase2E新規: toolsSystem状態監視
+        this.toolsSystemStatus = {
+            available: false,
+            methodsChecked: false,
+            availableMethods: new Set(),
+            lastCheck: 0
+        };
+        
+        // 外部参照
+        this.settingsManager = null;
+        
+        console.log('🎯 UIManagerSystem初期化（Phase2E緊急エラー修正版）');
+    }
+    
+    /**
+     * CONFIG値安全取得（utils.js使用）
+     */
+    safeConfigGet(key, defaultValue) {
+        return window.safeConfigGet ? window.safeConfigGet(key, defaultValue) : defaultValue;
+    }
+    
+    /**
+     * コンポーネント安全初期化
+     */
+    initializeComponent(ComponentClass, constructorArgs = []) {
+        try {
+            if (typeof window[ComponentClass] !== 'undefined') {
+                return new window[ComponentClass](...constructorArgs);
+            } else {
+                console.warn(`${ComponentClass} が利用できません`);
+                return null;
+            }
+        } catch (error) {
+            console.error(`${ComponentClass} 初期化エラー:`, error);
+            return null;
+        }
+    }
+    
+    /**
+     * 🚨 Phase2E新規: toolsSystemメソッド存在確認
+     */
+    checkToolsSystemMethods() {
+        if (!this.toolsSystem) {
+            this.toolsSystemStatus.available = false;
+            return false;
+        }
+        
+        const now = performance.now();
+        
+        // 10秒以内なら前回結果を使用（パフォーマンス考慮）
+        if (this.toolsSystemStatus.methodsChecked && 
+            (now - this.toolsSystemStatus.lastCheck) < 10000) {
+            return this.toolsSystemStatus.available;
+        }
+        
+        const requiredMethods = [
+            'setTool', 'getCurrentTool', 'getBrushSettings', 
+            'updateBrushSettings', 'getHistoryManager'
+        ];
+        
+        this.toolsSystemStatus.availableMethods.clear();
+        
+        for (const method of requiredMethods) {
+            if (this.toolsSystem[method] && typeof this.toolsSystem[method] === 'function') {
+                this.toolsSystemStatus.availableMethods.add(method);
+            }
+        }
+        
+        this.toolsSystemStatus.available = this.toolsSystemStatus.availableMethods.has('setTool');
+        this.toolsSystemStatus.methodsChecked = true;
+        this.toolsSystemStatus.lastCheck = now;
+        
+        console.log('🔍 toolsSystemメソッド確認:', {
+            available: this.toolsSystemStatus.available,
+            methods: Array.from(this.toolsSystemStatus.availableMethods),
+            missing: requiredMethods.filter(m => !this.toolsSystemStatus.availableMethods.has(m))
+        });
+        
+        return this.toolsSystemStatus.available;
+    }
+    
+    /**
+     * 履歴管理システム設定
+     */
+    setHistoryManager(historyManager) {
+        this.historyManager = historyManager;
+        console.log('📚 UIManagerSystem: 履歴管理システム連携完了');
+    }
+    
+    /**
+     * 初期化（Phase2E修正版）
+     */
+    async init() {
+        try {
+            console.log('🎯 UIManagerSystem初期化開始（Phase2E緊急エラー修正版）...');
+            
+            // 🚨 Phase2E新規: toolsSystem状態確認
+            this.checkToolsSystemMethods();
+            
+            // 既存システム取得
+            this.setupExistingSystems();
+            
+            // 基本UI設定
+            this.setupToolButtons();
+            this.setupPopups();
+            this.setupSliders();
+            this.setupResize();
+            this.setupCheckboxes();
+            this.setupAppEventListeners();
+            
+            // リセット機能
+            this.setupResetFunctions();
+            
+            // プレビュー連動システム初期化
+            this.setupPreviewSync();
+            
+            // パフォーマンス監視開始
+            this.startPerformanceMonitoring();
+            
+            // 初期状態の更新
+            this.updateAllDisplays();
+            
+            this.isInitialized = true;
+            console.log('✅ UIManagerSystem初期化完了（Phase2E緊急エラー修正版）');
+            
+        } catch (error) {
+            console.error('❌ UIManagerSystem初期化エラー:', error);
+            this.handleError(error);
+            throw error;
+        }
+    }
+    
+    /**
+     * 既存システム取得
+     */
+    setupExistingSystems() {
+        // 既存PenPresetManager取得
+        if (this.toolsSystemStatus.availableMethods.has('getPenPresetManager') && 
+            this.toolsSystem.getPenPresetManager) {
+            this.penPresetManager = this.toolsSystem.getPenPresetManager();
+            
+            if (this.penPresetManager) {
+                console.log('🎨 既存PenPresetManager連携完了');
+                
+                // PresetDisplayManagerに設定
+                if (this.presetDisplayManager && this.presetDisplayManager.setPenPresetManager) {
+                    this.presetDisplayManager.setPenPresetManager(this.penPresetManager);
+                }
+            } else {
+                console.warn('PenPresetManager が取得できません');
+            }
+        }
+        
+        // ui/components.js の PerformanceMonitor 取得
+        if (typeof window.PerformanceMonitor !== 'undefined') {
+            try {
+                this.performanceMonitor = new window.PerformanceMonitor();
+                console.log('📊 ui/components.js PerformanceMonitor連携完了');
+            } catch (error) {
+                console.warn('PerformanceMonitor初期化エラー:', error);
+            }
+        }
+        
+        // フォールバック用簡易システムがない場合は作成
+        if (!this.penPresetManager && typeof window.PenPresetManager !== 'undefined') {
+            try {
+                this.penPresetManager = new window.PenPresetManager(this.toolsSystem, this.historyManager);
+                console.log('🎨 フォールバックPenPresetManager作成完了');
+            } catch (error) {
+                console.warn('フォールバックPenPresetManager作成エラー:', error);
+            }
+        }
+    }
+    
+    /**
+     * パフォーマンス監視開始
+     */
+    startPerformanceMonitoring() {
+        // ui/components.js の PerformanceMonitor 優先
+        if (this.performanceMonitor && this.performanceMonitor.start) {
+            this.performanceMonitor.start();
+            console.log('📊 PerformanceMonitor開始');
+        } 
+        // 簡易版をフォールバック
+        else if (this.simplePerformanceMonitor) {
+            this.simplePerformanceMonitor.start();
+            console.log('📊 SimplePerformanceMonitor開始（フォールバック）');
+        }
+    }
+    
+    /**
+     * ツールボタン設定（Phase2E修正版）
+     */
+    setupToolButtons() {
+        document.querySelectorAll('.tool-button').forEach(button => {
+            button.addEventListener('click', (event) => {
+                if (button.classList.contains('disabled')) return;
+                
+                const toolId = button.id;
+                const popupId = button.getAttribute('data-popup');
+                
+                this.handleToolButtonClick(toolId, popupId, button);
+            });
+        });
+        
+        console.log('✅ ツールボタン設定完了（Phase2E修正版）');
+    }
+    
+    /**
+     * 🚨 Phase2E修正: ツールボタンクリック処理（エラーハンドリング強化）
+     */
+    handleToolButtonClick(toolId, popupId, button) {
+        try {
+            // ツール切り替え
+            if (toolId === 'pen-tool') {
+                this.setActiveTool('pen', button);
+            } else if (toolId === 'eraser-tool') {
+                this.setActiveTool('eraser', button);
+            }
+            
+            // ポップアップ表示/非表示
+            if (popupId && this.popupManager) {
+                const result = this.popupManager.togglePopup(popupId);
+                
+                // ポップアップ表示結果を確認
+                if (!result) {
+                    console.warn(`ポップアップ表示失敗: ${popupId}`);
+                    // フォールバック: 直接DOM操作
+                    this.handlePopupFallback(popupId);
+                }
+            }
+            
+        } catch (error) {
+            console.error('ツールボタンクリック処理エラー:', error);
+            this.handleError(error);
+            
+            // 🚨 Phase2E新規: 緊急フォールバック処理
+            this.handleToolButtonClickFallback(toolId, popupId, button);
+        }
+    }
+    
+    /**
+     * 🚨 Phase2E修正: setActiveTool（メソッド存在確認・フォールバック処理追加）
+     */
+    setActiveTool(toolName, button) {
+        try {
+            // 🚨 Phase2E新規: メソッド存在確認
+            if (this.toolsSystem && this.toolsSystemStatus.availableMethods.has('setTool')) {
+                console.log(`🔧 ツール切り替え実行: ${toolName}`);
+                
+                const result = this.toolsSystem.setTool(toolName);
+                
+                if (result) {
+                    // 成功処理
+                    console.log(`✅ ツール切り替え成功: ${toolName}`);
+                    
+                    // 履歴記録
+                    if (this.historyManager && this.historyManager.recordToolChange) {
+                        this.historyManager.recordToolChange(toolName);
+                    }
+                    
+                    // UI更新
+                    this.updateToolButtonState(toolName, button);
+                    
+                    // ステータスバー更新
+                    if (this.statusBar && this.statusBar.updateCurrentTool) {
+                        this.statusBar.updateCurrentTool(toolName);
+                    }
+                    
+                } else {
+                    console.warn(`ツール切り替え失敗: ${toolName} → フォールバック処理実行`);
+                    this.handleToolChangeFallback(toolName, button);
+                }
+                
+            } else {
+                console.warn('toolsSystem.setTool が利用できません → フォールバック処理実行');
+                this.handleToolChangeFallback(toolName, button);
+            }
+            
+        } catch (error) {
+            console.error(`setActiveTool エラー (${toolName}):`, error);
+            this.handleError(error);
+            
+            // 🚨 Phase2E新規: 緊急フォールバック処理
+            this.handleToolChangeFallback(toolName, button);
+        }
+    }
+    
+    /**
+     * 🚨 Phase2E新規: ツール切り替えフォールバック処理
+     */
+    handleToolChangeFallback(toolName, button) {
+        console.log(`🆘 ツール切り替えフォールバック処理: ${toolName}`);
+        
+        try {
+            // UI状態のみ更新（ツールシステムが利用できない場合）
+            this.updateToolButtonState(toolName, button);
+            
+            // ローカル状態管理
+            this.currentTool = toolName;
+            
+            // ステータスバー更新（可能な場合）
+            if (this.statusBar && this.statusBar.updateCurrentTool) {
+                this.statusBar.updateCurrentTool(toolName);
+            }
+            
+            // 通知表示
+            this.showNotification(
+                `ツール切り替え: ${toolName}（簡易モード）`,
+                'warning', 
+                3000
+            );
+            
+            console.log(`✅ フォールバック処理完了: ${toolName}`);
+            
+        } catch (fallbackError) {
+            console.error('フォールバック処理もエラー:', fallbackError);
+            
+            // 最終手段: 最小限の処理
+            this.currentTool = toolName;
+            console.log(`🆘 最小限処理完了: ${toolName}`);
+        }
+    }
+    
+    /**
+     * 🚨 Phase2E新規: ツールボタン状態更新
+     */
+    updateToolButtonState(toolName, activeButton) {
+        try {
+            // 全ツールボタンのアクティブ状態解除
+            document.querySelectorAll('.tool-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // アクティブボタン設定
+            if (activeButton) {
+                activeButton.classList.add('active');
+            } else {
+                // activeButtonが無い場合は検索
+                const toolButton = document.getElementById(`${toolName}-tool`);
+                if (toolButton) {
+                    toolButton.classList.add('active');
+                }
+            }
+            
+        } catch (error) {
+            console.error('ツールボタン状態更新エラー:', error);
+        }
+    }
+    
+    /**
+     * 🚨 Phase2E新規: ツールボタンクリック緊急フォールバック
+     */
+    handleToolButtonClickFallback(toolId, popupId, button) {
+        console.log('🆘 ツールボタンクリック緊急フォールバック処理');
+        
+        try {
+            // 最小限のツール状態管理
+            if (toolId === 'pen-tool') {
+                this.currentTool = 'pen';
+                button.classList.add('active');
+            } else if (toolId === 'eraser-tool') {
+                this.currentTool = 'eraser';
+                button.classList.add('active');
+            }
+            
+            // ポップアップのフォールバック処理
+            if (popupId) {
+                this.handlePopupFallback(popupId);
+            }
+            
+            // 通知
+            this.showNotification('基本機能で動作中', 'warning', 2000);
+            
+        } catch (error) {
+            console.error('緊急フォールバック処理エラー:', error);
+        }
+    }
+    
+    /**
+     * 🚨 Phase2E新規: ポップアップフォールバック処理
+     */
+    handlePopupFallback(popupId) {
+        try {
+            const popup = document.getElementById(popupId);
+            if (popup) {
+                const isVisible = popup.style.display !== 'none';
+                popup.style.display = isVisible ? 'none' : 'block';
+                
+                console.log(`🔄 ポップアップ直接操作: ${popupId} → ${isVisible ? '非表示' : '表示'}`);
+            } else {
+                console.warn(`ポップアップ要素が見つかりません: ${popupId}`);
+            }
+        } catch (error) {
+            console.error('ポップアップフォールバック処理エラー:', error);
+        }
+    }
+    
+    /**
+     * ポップアップ設定
+     */
+    setupPopups() {
+        if (!this.popupManager) {
+            console.warn('PopupManager が利用できません');
+            return;
+        }
+        
+        // ポップアップの登録
+        this.popupManager.registerPopup('pen-settings');
+        this.popupManager.registerPopup('resize-settings');
+        
+        console.log('✅ ポップアップ設定完了');
+    }
+    
+    /**
+     * スライダー設定（Phase2E修正版）
+     */
+    setupSliders() {
+        if (typeof SliderController === 'undefined') {
+            console.warn('SliderController が利用できません');
+            return;
+        }
+        
+        try {
+            // CONFIG値を安全に取得
+            const minSize = this.safeConfigGet('MIN_BRUSH_SIZE', 0.1);
+            const maxSize = this.safeConfigGet('MAX_BRUSH_SIZE', 500);
+            const defaultSize = this.safeConfigGet('DEFAULT_BRUSH_SIZE', 4);
+            const defaultOpacity = this.safeConfigGet('DEFAULT_OPACITY', 1.0);
+            const defaultPressure = this.safeConfigGet('DEFAULT_PRESSURE', 0.5);
+            const defaultSmoothing = this.safeConfigGet('DEFAULT_SMOOTHING', 0.3);
+            
+            // ペンサイズスライダー（Phase2E修正版）
+            this.createSlider('pen-size-slider', minSize, maxSize, defaultSize, 
+                (value, displayOnly = false) => {
+                    if (!displayOnly) {
+                        // 🚨 Phase2E修正: toolsSystem安全呼び出し
+                        this.safeUpdateBrushSettings({ size: value });
+                        
+                        // プレビュー連動: ライブ値更新
+                        this.updatePresetLiveValues(value, null);
+                        
+                        // プレビュー連動: リアルタイムプレビュー更新
+                        this.updateActivePresetPreview(value, null);
+                    }
+                    return value.toFixed(1) + 'px';
+                });
+            
+            // 不透明度スライダー（Phase2E修正版）
+            this.createSlider('pen-opacity-slider', 0, 100, defaultOpacity * 100, 
+                (value, displayOnly = false) => {
+                    if (!displayOnly) {
+                        // 🚨 Phase2E修正: toolsSystem安全呼び出し
+                        this.safeUpdateBrushSettings({ opacity: value / 100 });
+                        
+                        // プレビュー連動: ライブ値更新
+                        this.updatePresetLiveValues(null, value);
+                        
+                        // プレビュー連動: リアルタイムプレビュー更新
+                        this.updateActivePresetPreview(null, value);
+                    }
+                    return value.toFixed(1) + '%';
+                });
+            
+            // 筆圧・線補正スライダー
+            this.createSlider('pen-pressure-slider', 0, 100, defaultPressure * 100, 
+                (value, displayOnly = false) => {
+                    if (!displayOnly) {
+                        this.safeUpdateBrushSettings({ pressure: value / 100 });
+                    }
+                    return value.toFixed(1) + '%';
+                });
+            
+            this.createSlider('pen-smoothing-slider', 0, 100, defaultSmoothing * 100, 
+                (value, displayOnly = false) => {
+                    if (!displayOnly) {
+                        this.safeUpdateBrushSettings({ smoothing: value / 100 });
+                    }
+                    return value.toFixed(1) + '%';
+                });
+            
+            this.setupSliderButtons();
+            console.log('✅ スライダー設定完了（Phase2E修正版）');
+            
+        } catch (error) {
+            console.error('スライダー設定エラー:', error);
+            this.handleError(error);
+        }
+    }
+    
+    /**
+     * 🚨 Phase2E新規: toolsSystem安全更新
+     */
+    safeUpdateBrushSettings(settings) {
+        try {
+            if (this.toolsSystemStatus.availableMethods.has('updateBrushSettings') && 
+                this.toolsSystem.updateBrushSettings) {
+                
+                this.toolsSystem.updateBrushSettings(settings);
+                console.log('🔧 ブラシ設定更新:', settings);
+                
+            } else {
+                console.warn('toolsSystem.updateBrushSettings が利用できません → ローカル保存');
+                
+                // ローカル状態管理
+                this.localBrushSettings = this.localBrushSettings || {};
+                Object.assign(this.localBrushSettings, settings);
+                
+                console.log('📝 ローカルブラシ設定保存:', this.localBrushSettings);
+            }
+            
+        } catch (error) {
+            console.error('ブラシ設定更新エラー:', error);
+            this.handleError(error);
+        }
+    }
+    
+    /**
+     * スライダー作成
+     */
+    createSlider(sliderId, min, max, initial, callback) {
+        try {
+            const slider = new SliderController(sliderId, min, max, initial, callback);
+            this.sliders.set(sliderId, slider);
+            return slider;
+        } catch (error) {
+            console.error(`スライダー作成エラー (${sliderId}):`, error);
+            return null;
+        }
+    }
+    
+    /**
+     * スライダーボタン設定
+     */
+    setupSliderButtons() {
+        const buttonConfigs = [
+            // ペンサイズ
+            { id: 'pen-size-decrease-small', slider: 'pen-size-slider', delta: -0.1 },
+            { id: 'pen-size-decrease', slider: 'pen-size-slider', delta: -1 },
+            { id: 'pen-size-decrease-large', slider: 'pen-size-slider', delta: -10 },
+            { id: 'pen-size-increase-small', slider: 'pen-size-slider', delta: 0.1 },
+            { id: 'pen-size-increase', slider: 'pen-size-slider', delta: 1 },
+            { id: 'pen-size-increase-large', slider: 'pen-size-slider', delta: 10 },
+            
+            // 不透明度
+            { id: 'pen-opacity-decrease-small', slider: 'pen-opacity-slider', delta: -0.1 },
+            { id: 'pen-opacity-decrease', slider: 'pen-opacity-slider', delta: -1 },
+            { id: 'pen-opacity-decrease-large', slider: 'pen-opacity-slider', delta: -10 },
+            { id: 'pen-opacity-increase-small', slider: 'pen-opacity-slider', delta: 0.1 },
+            { id: 'pen-opacity-increase', slider: 'pen-opacity-slider', delta: 1 },
+            { id: 'pen-opacity-increase-large', slider: 'pen-opacity-slider', delta: 10 }
+        ];
+        
+        buttonConfigs.forEach(config => {
+            const button = document.getElementById(config.id);
+            if (button) {
+                button.addEventListener('click', () => {
+                    const slider = this.sliders.get(config.slider);
+                    if (slider) {
+                        slider.adjustValue(config.delta);
+                    }
+                });
+            }
+        });
+    }

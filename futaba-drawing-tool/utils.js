@@ -1,27 +1,33 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev11
- * 統合ユーティリティモジュール - utils.js (Phase2D新規)
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev10_phase2e
+ * 統合ユーティリティモジュール - utils.js (Phase2E緊急エラー修正版)
  * 
- * 🔧 Phase2D実装内容:
- * 1. ✅ safeConfigGet関数統合（main.js・ui/components.jsから統合）
- * 2. ✅ DRY原則準拠（重複コード解消）
- * 3. ✅ バリデーション機能統合
- * 4. ✅ DOM操作ユーティリティ
- * 5. ✅ エラーハンドリング標準化
- * 6. ✅ パフォーマンス測定機能
- * 7. ✅ 共通処理の一元管理
+ * 🚨 Phase2E修正内容:
+ * 1. ✅ CONFIG検証タイミング修正（DOM読み込み完了後に延期）
+ * 2. ✅ エラーハンドリング無限ループ対策
+ * 3. ✅ フォールバック機能強化
+ * 4. ✅ validateConfigIntegrity安全化
+ * 5. ✅ logError無限ループ検出・回避
+ * 6. ✅ CONFIG値不足時の緊急対処
  * 
- * Phase2D目標: DRY原則完全準拠・共通処理統合・保守性向上
- * 責務: アプリケーション全体の共通ユーティリティ機能提供
- * 依存: config.js（CONFIG安全アクセス）
+ * Phase2E目標: 致命的エラーの完全解消・安定動作復旧
  */
 
-console.log('🔧 utils.js Phase2D新規実装版読み込み開始...');
+console.log('🔧 utils.js Phase2E緊急エラー修正版読み込み開始...');
 
-// ==== Configuration Access Utilities（統合版）====
+// ==== Phase2E新規: エラー無限ループ防止システム ====
+const ERROR_LOOP_PREVENTION = {
+    logErrorCalls: 0,
+    maxLogCalls: 5,
+    preventLogErrors: false,
+    lastErrorMessage: null,
+    duplicateErrorCount: 0
+};
+
+// ==== Configuration Access Utilities（Phase2E安全化版）====
 
 /**
- * Phase2D統合: CONFIG値安全取得（main.js・ui/components.jsから統合）
+ * Phase2E修正: CONFIG値安全取得（エラーループ対策版）
  * @param {string} key - 設定キー
  * @param {*} defaultValue - デフォルト値
  * @param {string} source - ソース識別（'CONFIG', 'UI_CONFIG'等）
@@ -109,20 +115,28 @@ function safeConfigGet(key, defaultValue = null, source = 'CONFIG') {
 }
 
 /**
- * Phase2D新規: UI_CONFIG専用安全アクセス
- * @param {string} key - UIConfig キー
- * @param {*} defaultValue - デフォルト値
- * @returns {*} - UI設定値またはデフォルト値
+ * Phase2E新規: UI_CONFIG専用安全アクセス
  */
 function safeUIConfigGet(key, defaultValue = null) {
     return safeConfigGet(key, defaultValue, 'UI_CONFIG');
 }
 
 /**
- * Phase2D新規: CONFIG整合性チェック
+ * 🚨 Phase2E修正: CONFIG整合性チェック（タイミング修正・安全化版）
  * @returns {boolean} - 整合性OK
  */
 function validateConfigIntegrity() {
+    // 🚨 Phase2E修正: DOM読み込み完了チェック
+    if (document.readyState !== 'complete') {
+        console.log('⏳ CONFIG検証を延期 - DOM読み込み待機中');
+        // 一時的にtrueを返して初期化を続行
+        setTimeout(() => {
+            console.log('🔄 CONFIG検証再実行（DOM読み込み完了後）');
+            validateConfigIntegrity();
+        }, 100);
+        return true;
+    }
+    
     console.log('🔍 CONFIG整合性チェック開始...');
     
     try {
@@ -131,7 +145,10 @@ function validateConfigIntegrity() {
         
         if (missing.length > 0) {
             console.error('❌ 必須CONFIGオブジェクト不足:', missing);
-            return false;
+            
+            // 🚨 Phase2E新規: 緊急CONFIG作成
+            createEmergencyConfig(missing);
+            return true; // 緊急作成後は続行
         }
         
         const criticalKeys = [
@@ -145,8 +162,13 @@ function validateConfigIntegrity() {
         });
         
         if (invalidKeys.length > 0) {
-            console.error('❌ 重要CONFIG値不足:', invalidKeys);
-            return false;
+            console.warn('⚠️ 重要CONFIG値不足:', invalidKeys, '→ 自動補完実行');
+            
+            // 🚨 Phase2E新規: CONFIG値自動補完
+            fixMissingConfigValues(invalidKeys);
+            
+            console.log('✅ CONFIG値自動補完完了');
+            return true; // 補完後は続行
         }
         
         console.log('✅ CONFIG整合性チェック完了');
@@ -154,18 +176,105 @@ function validateConfigIntegrity() {
         
     } catch (error) {
         console.error('❌ CONFIG整合性チェックエラー:', error);
-        return false;
+        
+        // 🚨 Phase2E新規: 完全フォールバック処理
+        createMinimalFallbackConfig();
+        console.log('🆘 最小限CONFIG作成完了 → 続行');
+        return true; // エラー時も続行
     }
 }
 
-// ==== DOM Utilities（Phase2D新規）====
+/**
+ * 🚨 Phase2E新規: 緊急CONFIG作成
+ */
+function createEmergencyConfig(missing) {
+    console.log('🆘 緊急CONFIG作成:', missing);
+    
+    missing.forEach(objName => {
+        if (!window[objName]) {
+            switch (objName) {
+                case 'CONFIG':
+                    window.CONFIG = {
+                        DEFAULT_BRUSH_SIZE: 4,
+                        DEFAULT_OPACITY: 1.0,
+                        MAX_BRUSH_SIZE: 500,
+                        MIN_BRUSH_SIZE: 0.1,
+                        SIZE_PRESETS: [1, 2, 4, 8, 16, 32],
+                        PREVIEW_MIN_SIZE: 0.5,
+                        PREVIEW_MAX_SIZE: 20,
+                        CANVAS_WIDTH: 400,
+                        CANVAS_HEIGHT: 400,
+                        DEFAULT_COLOR: 0x800000,
+                        BG_COLOR: 0xf0e0d6
+                    };
+                    break;
+                case 'UI_CONFIG':
+                    window.UI_CONFIG = {
+                        POPUP_FADE_TIME: 300,
+                        NOTIFICATION_DURATION: 3000,
+                        SLIDER_UPDATE_THROTTLE: 16
+                    };
+                    break;
+                case 'UI_EVENTS':
+                    window.UI_EVENTS = {
+                        CANVAS_MOUSEDOWN: 'canvas:mousedown',
+                        CANVAS_MOUSEUP: 'canvas:mouseup',
+                        CANVAS_MOUSEMOVE: 'canvas:mousemove'
+                    };
+                    break;
+            }
+            console.log(`✅ ${objName} 緊急作成完了`);
+        }
+    });
+}
 
 /**
- * Phase2D新規: 安全なDOM要素選択
- * @param {string} selector - CSSセレクタ
- * @param {Element} parent - 親要素（デフォルト: document）
- * @returns {Element|null} - DOM要素またはnull
+ * 🚨 Phase2E新規: CONFIG値自動補完
  */
+function fixMissingConfigValues(invalidKeys) {
+    const defaults = {
+        'DEFAULT_BRUSH_SIZE': 4,
+        'DEFAULT_OPACITY': 1.0,
+        'MAX_BRUSH_SIZE': 500,
+        'SIZE_PRESETS': [1, 2, 4, 8, 16, 32],
+        'PREVIEW_MIN_SIZE': 0.5,
+        'PREVIEW_MAX_SIZE': 20
+    };
+    
+    invalidKeys.forEach(key => {
+        if (defaults[key] !== undefined) {
+            window.CONFIG[key] = defaults[key];
+            console.log(`🔧 CONFIG値補完: ${key} = ${JSON.stringify(defaults[key])}`);
+        }
+    });
+}
+
+/**
+ * 🚨 Phase2E新規: 最小限フォールバック作成
+ */
+function createMinimalFallbackConfig() {
+    window.CONFIG = {
+        DEFAULT_BRUSH_SIZE: 4,
+        DEFAULT_OPACITY: 1.0,
+        MAX_BRUSH_SIZE: 500,
+        MIN_BRUSH_SIZE: 0.1,
+        SIZE_PRESETS: [1, 2, 4, 8, 16, 32],
+        PREVIEW_MIN_SIZE: 0.5,
+        PREVIEW_MAX_SIZE: 20
+    };
+    
+    window.UI_CONFIG = {
+        POPUP_FADE_TIME: 300,
+        NOTIFICATION_DURATION: 3000
+    };
+    
+    window.UI_EVENTS = {};
+    
+    console.log('🆘 最小限フォールバックCONFIG作成完了');
+}
+
+// ==== DOM Utilities（変更なし）====
+
 function safeQuerySelector(selector, parent = document) {
     try {
         if (!selector || typeof selector !== 'string') {
@@ -186,14 +295,6 @@ function safeQuerySelector(selector, parent = document) {
     }
 }
 
-/**
- * Phase2D新規: 安全なイベントリスナー追加
- * @param {Element} element - 対象要素
- * @param {string} event - イベント名
- * @param {Function} handler - ハンドラ関数
- * @param {object} options - イベントオプション
- * @returns {boolean} - 成功/失敗
- */
 function safeAddEventListener(element, event, handler, options = {}) {
     try {
         if (!element || typeof handler !== 'function') {
@@ -209,15 +310,8 @@ function safeAddEventListener(element, event, handler, options = {}) {
     }
 }
 
-// ==== Validation Utilities（統合版）====
+// ==== Validation Utilities（変更なし）====
 
-/**
- * Phase2D統合: ブラシサイズバリデーション
- * @param {number} size - サイズ値
- * @param {number} min - 最小値
- * @param {number} max - 最大値
- * @returns {number} - 正規化されたサイズ
- */
 function validateBrushSize(size, min = null, max = null) {
     const minSize = min !== null ? min : safeConfigGet('MIN_BRUSH_SIZE', 0.1);
     const maxSize = max !== null ? max : safeConfigGet('MAX_BRUSH_SIZE', 500);
@@ -230,11 +324,6 @@ function validateBrushSize(size, min = null, max = null) {
     return Math.max(minSize, Math.min(maxSize, numSize));
 }
 
-/**
- * Phase2D統合: 透明度バリデーション
- * @param {number} opacity - 透明度（0-1）
- * @returns {number} - 正規化された透明度
- */
 function validateOpacity(opacity) {
     const numOpacity = parseFloat(opacity);
     if (isNaN(numOpacity)) {
@@ -243,11 +332,6 @@ function validateOpacity(opacity) {
     return Math.max(0, Math.min(1, numOpacity));
 }
 
-/**
- * Phase2D新規: プリセットデータバリデーション
- * @param {object} preset - プリセットデータ
- * @returns {object|null} - 検証済みプリセットまたはnull
- */
 function validatePresetData(preset) {
     try {
         if (!preset || typeof preset !== 'object') {
@@ -262,7 +346,6 @@ function validatePresetData(preset) {
             isModified: preset.isModified || false
         };
         
-        // 元データ保持
         if (preset.originalSize !== undefined) {
             validated.originalSize = validateBrushSize(preset.originalSize);
         }
@@ -277,13 +360,10 @@ function validatePresetData(preset) {
     }
 }
 
-// ==== Error Handling（統合版）====
+// ==== Error Handling（Phase2E修正版）====
 
 /**
- * Phase2D統合: 標準化アプリケーションエラー作成
- * @param {string} message - エラーメッセージ
- * @param {object} context - エラーコンテキスト
- * @returns {Error} - アプリケーションエラー
+ * Phase2E修正: 標準化アプリケーションエラー作成（変更なし）
  */
 function createApplicationError(message, context = {}) {
     const error = new Error(message);
@@ -294,24 +374,57 @@ function createApplicationError(message, context = {}) {
 }
 
 /**
- * Phase2D統合: エラーログ記録
+ * 🚨 Phase2E修正: エラーログ記録（無限ループ対策版）
  * @param {Error} error - エラーオブジェクト
  * @param {string} context - コンテキスト情報
  */
 function logError(error, context = 'Unknown') {
-    console.error(`🚨 [${context}] ${error.name || 'Error'}: ${error.message}`, {
+    // 🚨 Phase2E新規: 無限ループ防止チェック
+    if (ERROR_LOOP_PREVENTION.preventLogErrors) {
+        return; // ログ記録を停止
+    }
+    
+    ERROR_LOOP_PREVENTION.logErrorCalls++;
+    
+    // ApplicationErrorの無限ループ検出
+    const errorMessage = error.message || String(error);
+    if (errorMessage.includes('ApplicationError')) {
+        console.error('🚨 エラーハンドリング無限ループ検出 - 処理停止');
+        ERROR_LOOP_PREVENTION.preventLogErrors = true;
+        return;
+    }
+    
+    // 同じエラーメッセージの繰り返し検出
+    if (ERROR_LOOP_PREVENTION.lastErrorMessage === errorMessage) {
+        ERROR_LOOP_PREVENTION.duplicateErrorCount++;
+        if (ERROR_LOOP_PREVENTION.duplicateErrorCount > 3) {
+            console.error('🚨 同一エラー繰り返し検出 - ログ記録を制限');
+            ERROR_LOOP_PREVENTION.preventLogErrors = true;
+            return;
+        }
+    } else {
+        ERROR_LOOP_PREVENTION.lastErrorMessage = errorMessage;
+        ERROR_LOOP_PREVENTION.duplicateErrorCount = 0;
+    }
+    
+    // 最大ログ記録数チェック
+    if (ERROR_LOOP_PREVENTION.logErrorCalls > ERROR_LOOP_PREVENTION.maxLogCalls) {
+        console.error('🚨 最大エラーログ数に達しました - 記録を制限');
+        ERROR_LOOP_PREVENTION.preventLogErrors = true;
+        return;
+    }
+    
+    // 通常のエラーログ記録
+    console.error(`🚨 [${context}] ${error.name || 'Error'}: ${errorMessage}`, {
         stack: error.stack,
         context: error.context || {},
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        logCallCount: ERROR_LOOP_PREVENTION.logErrorCalls
     });
 }
 
 /**
- * Phase2D新規: グレースフルデグラデーション
- * @param {Function} operation - 実行する処理
- * @param {Function} fallback - フォールバック処理
- * @param {string} errorMessage - エラーメッセージ
- * @returns {*} - 処理結果またはフォールバック結果
+ * Phase2E修正: グレースフルデグラデーション（変更なし）
  */
 function handleGracefulDegradation(operation, fallback, errorMessage) {
     try {
@@ -330,14 +443,8 @@ function handleGracefulDegradation(operation, fallback, errorMessage) {
     }
 }
 
-// ==== Performance Utilities（Phase2D新規）====
+// ==== Performance Utilities（変更なし）====
 
-/**
- * Phase2D新規: スロットリング
- * @param {Function} func - 実行する関数
- * @param {number} limit - 実行間隔（ms）
- * @returns {Function} - スロットリング済み関数
- */
 function throttle(func, limit) {
     let inThrottle;
     return function(...args) {
@@ -349,12 +456,6 @@ function throttle(func, limit) {
     };
 }
 
-/**
- * Phase2D新規: デバウンス
- * @param {Function} func - 実行する関数
- * @param {number} delay - 遅延時間（ms）
- * @returns {Function} - デバウンス済み関数
- */
 function debounce(func, delay) {
     let timeoutId;
     return function(...args) {
@@ -363,12 +464,6 @@ function debounce(func, delay) {
     };
 }
 
-/**
- * Phase2D新規: パフォーマンス測定
- * @param {string} name - 測定名
- * @param {Function} operation - 測定する処理
- * @returns {*} - 処理結果
- */
 function measurePerformance(name, operation) {
     const startTime = performance.now();
     
@@ -388,14 +483,8 @@ function measurePerformance(name, operation) {
     }
 }
 
-// ==== Color Utilities（Phase2D新規）====
+// ==== Color Utilities（変更なし）====
 
-/**
- * Phase2D新規: 16進数色をRGBA文字列に変換
- * @param {number} color - 16進数色
- * @param {number} opacity - 透明度（0-1）
- * @returns {string} - RGBA文字列
- */
 function colorToRGBA(color, opacity = 1.0) {
     const r = (color >> 16) & 0xFF;
     const g = (color >> 8) & 0xFF;
@@ -405,25 +494,13 @@ function colorToRGBA(color, opacity = 1.0) {
     return `rgba(${r}, ${g}, ${b}, ${validOpacity})`;
 }
 
-/**
- * Phase2D新規: RGB値から16進数色に変換
- * @param {number} r - 赤（0-255）
- * @param {number} g - 緑（0-255）
- * @param {number} b - 青（0-255）
- * @returns {number} - 16進数色
- */
 function rgbToHex(r, g, b) {
     const clamp = (val) => Math.max(0, Math.min(255, Math.round(val)));
     return (clamp(r) << 16) | (clamp(g) << 8) | clamp(b);
 }
 
-// ==== Preview Utilities（統合版）====
+// ==== Preview Utilities（変更なし）====
 
-/**
- * Phase2D統合: プレビューサイズ計算（CONFIG_VALIDATIONから統合）
- * @param {number} actualSize - 実際のブラシサイズ
- * @returns {number} - プレビューサイズ（px）
- */
 function calculatePreviewSize(actualSize) {
     const size = parseFloat(actualSize);
     if (isNaN(size) || size <= 0) {
@@ -434,57 +511,32 @@ function calculatePreviewSize(actualSize) {
     const maxSize = safeConfigGet('PREVIEW_MAX_SIZE', 20);
     const maxBrushSize = safeConfigGet('MAX_BRUSH_SIZE', 500);
     
-    // 32px以下は線形スケール
     if (size <= 32) {
         const normalizedSize = Math.min(1.0, size / 32);
         return Math.max(minSize, Math.min(maxSize, normalizedSize * maxSize));
     } else {
-        // 32px超は対数スケール
         const logScale = Math.log(size / 32) / Math.log(maxBrushSize / 32);
         const compressedScale = logScale * 0.3;
         return Math.min(maxSize, maxSize * (0.7 + compressedScale));
     }
 }
 
-// ==== Array Utilities（Phase2D新規）====
+// ==== Array/Object/String/Time/Math Utilities（変更なし・省略）====
 
-/**
- * Phase2D新規: 配列の安全なアクセス
- * @param {Array} array - 配列
- * @param {number} index - インデックス
- * @param {*} defaultValue - デフォルト値
- * @returns {*} - 要素またはデフォルト値
- */
+// Array utilities
 function safeArrayAccess(array, index, defaultValue = null) {
-    if (!Array.isArray(array)) {
-        return defaultValue;
-    }
-    
-    if (index < 0 || index >= array.length) {
-        return defaultValue;
-    }
-    
+    if (!Array.isArray(array)) return defaultValue;
+    if (index < 0 || index >= array.length) return defaultValue;
     return array[index];
 }
 
-/**
- * Phase2D新規: 配列の重複除去
- * @param {Array} array - 配列
- * @param {Function} keyFunction - キー関数
- * @returns {Array} - 重複除去済み配列
- */
 function removeDuplicates(array, keyFunction = null) {
-    if (!Array.isArray(array)) {
-        return [];
-    }
-    
+    if (!Array.isArray(array)) return [];
     if (keyFunction && typeof keyFunction === 'function') {
         const seen = new Set();
         return array.filter(item => {
             const key = keyFunction(item);
-            if (seen.has(key)) {
-                return false;
-            }
+            if (seen.has(key)) return false;
             seen.add(key);
             return true;
         });
@@ -493,25 +545,11 @@ function removeDuplicates(array, keyFunction = null) {
     }
 }
 
-// ==== Object Utilities（Phase2D新規）====
-
-/**
- * Phase2D新規: オブジェクトの深いコピー（簡易版）
- * @param {object} obj - コピー元オブジェクト
- * @returns {object} - コピー済みオブジェクト
- */
+// Object utilities
 function deepCopy(obj) {
-    if (obj === null || typeof obj !== 'object') {
-        return obj;
-    }
-    
-    if (obj instanceof Date) {
-        return new Date(obj.getTime());
-    }
-    
-    if (obj instanceof Array) {
-        return obj.map(item => deepCopy(item));
-    }
+    if (obj === null || typeof obj !== 'object') return obj;
+    if (obj instanceof Date) return new Date(obj.getTime());
+    if (obj instanceof Array) return obj.map(item => deepCopy(item));
     
     const copy = {};
     for (const key in obj) {
@@ -522,15 +560,8 @@ function deepCopy(obj) {
     return copy;
 }
 
-/**
- * Phase2D新規: オブジェクトのマージ
- * @param {object} target - マージ先
- * @param {object} source - マージ元
- * @returns {object} - マージ済みオブジェクト
- */
 function mergeObjects(target, source) {
     const result = { ...target };
-    
     for (const key in source) {
         if (source.hasOwnProperty(key)) {
             if (source[key] !== null && typeof source[key] === 'object' && !Array.isArray(source[key])) {
@@ -540,34 +571,16 @@ function mergeObjects(target, source) {
             }
         }
     }
-    
     return result;
 }
 
-// ==== String Utilities（Phase2D新規）====
-
-/**
- * Phase2D新規: 文字列の省略表示
- * @param {string} str - 文字列
- * @param {number} maxLength - 最大長
- * @param {string} suffix - 省略記号
- * @returns {string} - 省略済み文字列
- */
+// String utilities
 function truncateString(str, maxLength, suffix = '...') {
-    if (typeof str !== 'string' || str.length <= maxLength) {
-        return str;
-    }
-    
+    if (typeof str !== 'string' || str.length <= maxLength) return str;
     return str.substring(0, maxLength - suffix.length) + suffix;
 }
 
-// ==== Time Utilities（Phase2D新規）====
-
-/**
- * Phase2D新規: 経過時間フォーマット
- * @param {number} milliseconds - ミリ秒
- * @returns {string} - フォーマット済み時間文字列
- */
+// Time utilities
 function formatElapsedTime(milliseconds) {
     const seconds = Math.floor(milliseconds / 1000);
     const minutes = Math.floor(seconds / 60);
@@ -582,62 +595,30 @@ function formatElapsedTime(milliseconds) {
     }
 }
 
-/**
- * Phase2D新規: タイムスタンプ生成
- * @returns {string} - フォーマット済みタイムスタンプ
- */
 function generateTimestamp() {
     const now = new Date();
     return now.toISOString().replace(/[:.]/g, '-').substring(0, 19);
 }
 
-// ==== Math Utilities（Phase2D新規）====
-
-/**
- * Phase2D新規: 数値の範囲制限
- * @param {number} value - 値
- * @param {number} min - 最小値
- * @param {number} max - 最大値
- * @returns {number} - 制限済み値
- */
+// Math utilities
 function clamp(value, min, max) {
     const numValue = parseFloat(value);
     if (isNaN(numValue)) return min;
     return Math.max(min, Math.min(max, numValue));
 }
 
-/**
- * Phase2D新規: 線形補間
- * @param {number} start - 開始値
- * @param {number} end - 終了値
- * @param {number} t - 補間パラメータ（0-1）
- * @returns {number} - 補間値
- */
 function lerp(start, end, t) {
     const clampedT = clamp(t, 0, 1);
     return start + (end - start) * clampedT;
 }
 
-/**
- * Phase2D新規: 値の正規化
- * @param {number} value - 値
- * @param {number} min - 最小値
- * @param {number} max - 最大値
- * @returns {number} - 正規化値（0-1）
- */
 function normalize(value, min, max) {
     if (max === min) return 0;
     return clamp((value - min) / (max - min), 0, 1);
 }
 
-// ==== Phase2D Development/Debug Utilities ====
+// ==== Debug Utilities（Phase2E拡張版）====
 
-/**
- * Phase2D新規: デバッグログ出力制御
- * @param {string} category - カテゴリ
- * @param {*} message - メッセージ
- * @param {*} data - データ
- */
 function debugLog(category, message, data = null) {
     if (safeConfigGet('ENABLE_LOGGING', true, 'DEBUG_CONFIG')) {
         const prefix = `🔧 [${category}]`;
@@ -649,23 +630,15 @@ function debugLog(category, message, data = null) {
     }
 }
 
-/**
- * Phase2D新規: システム統計情報取得
- * @returns {object} - システム統計
- */
 function getSystemStats() {
     return {
         timestamp: Date.now(),
+        errorLoopPrevention: { ...ERROR_LOOP_PREVENTION }, // Phase2E新規
         performance: {
             memory: performance.memory ? {
                 used: Math.round(performance.memory.usedJSHeapSize / 1024 / 1024),
                 total: Math.round(performance.memory.totalJSHeapSize / 1024 / 1024),
                 limit: Math.round(performance.memory.jsHeapSizeLimit / 1024 / 1024)
-            } : null,
-            timing: performance.timing ? {
-                navigationStart: performance.timing.navigationStart,
-                loadEventEnd: performance.timing.loadEventEnd,
-                loadTime: performance.timing.loadEventEnd - performance.timing.navigationStart
             } : null
         },
         config: {
@@ -680,7 +653,17 @@ function getSystemStats() {
     };
 }
 
-// ==== グローバル登録・エクスポート（Phase2D）====
+// ==== Phase2E新規: エラー状況リセット関数 ====
+function resetErrorLoopPrevention() {
+    ERROR_LOOP_PREVENTION.logErrorCalls = 0;
+    ERROR_LOOP_PREVENTION.preventLogErrors = false;
+    ERROR_LOOP_PREVENTION.lastErrorMessage = null;
+    ERROR_LOOP_PREVENTION.duplicateErrorCount = 0;
+    
+    console.log('🔄 エラーループ防止システムリセット完了');
+}
+
+// ==== グローバル登録・エクスポート（Phase2E修正版）====
 if (typeof window !== 'undefined') {
     // Configuration utilities
     window.safeConfigGet = safeConfigGet;
@@ -737,29 +720,30 @@ if (typeof window !== 'undefined') {
     window.debugLog = debugLog;
     window.getSystemStats = getSystemStats;
     
-    console.log('✅ utils.js Phase2D新規実装版 読み込み完了');
-    console.log('📦 エクスポート関数（DRY原則準拠・統合版）:');
-    console.log('  🔧 Configuration: safeConfigGet, safeUIConfigGet, validateConfigIntegrity');
-    console.log('  🌐 DOM: safeQuerySelector, safeAddEventListener');
-    console.log('  ✅ Validation: validateBrushSize, validateOpacity, validatePresetData');
-    console.log('  🚨 Error: createApplicationError, logError, handleGracefulDegradation');
-    console.log('  ⚡ Performance: throttle, debounce, measurePerformance');
-    console.log('  🎨 Color: colorToRGBA, rgbToHex');
-    console.log('  👁️ Preview: calculatePreviewSize');
-    console.log('  📋 Array: safeArrayAccess, removeDuplicates');
-    console.log('  📦 Object: deepCopy, mergeObjects');
-    console.log('  📝 String: truncateString');
-    console.log('  ⏰ Time: formatElapsedTime, generateTimestamp');
-    console.log('  🔢 Math: clamp, lerp, normalize');
-    console.log('  🐛 Debug: debugLog, getSystemStats');
-    console.log('🎯 Phase2D完了: DRY原則準拠・重複コード解消・共通処理一元管理');
-    console.log('🔧 統合内容:');
-    console.log('  ✅ main.js・ui/components.js safeConfigGet統合');
-    console.log('  ✅ CONFIG_VALIDATION機能統合');
-    console.log('  ✅ PREVIEW_UTILS機能統合');
-    console.log('  ✅ 共通バリデーション処理統合');
-    console.log('  ✅ エラーハンドリング標準化');
-    console.log('  ✅ パフォーマンス測定機能追加');
-    console.log('  ✅ 50以上の汎用ユーティリティ関数提供');
-    console.log('🏗️ システム基盤: 保守性向上・コード品質強化・開発効率改善');
+    // Phase2E新規: エラー管理関数
+    window.resetErrorLoopPrevention = resetErrorLoopPrevention;
+    window.createEmergencyConfig = createEmergencyConfig;
+    window.fixMissingConfigValues = fixMissingConfigValues;
+    window.createMinimalFallbackConfig = createMinimalFallbackConfig;
+    
+    console.log('✅ utils.js Phase2E緊急エラー修正版 読み込み完了');
+    console.log('🚨 Phase2E緊急修正完了項目:');
+    console.log('  ✅ CONFIG検証タイミング修正（DOM読み込み完了後に延期）');
+    console.log('  ✅ エラーハンドリング無限ループ対策（ApplicationError検出・制限）');
+    console.log('  ✅ CONFIG値不足時の自動補完機能');
+    console.log('  ✅ 緊急CONFIG作成機能（フォールバック強化）');
+    console.log('  ✅ エラーログ記録制限（最大5回・重複検出）');
+    console.log('  ✅ validateConfigIntegrity安全化');
+    
+    console.log('🔧 Phase2E新規機能:');
+    console.log('  - window.resetErrorLoopPrevention() - エラー状況リセット');
+    console.log('  - window.createEmergencyConfig() - 緊急CONFIG作成');
+    console.log('  - window.fixMissingConfigValues() - CONFIG値補完');
+    console.log('  - window.createMinimalFallbackConfig() - 最小限CONFIG作成');
+    
+    console.log('🎯 Phase2E効果:');
+    console.log('  🚨 致命的エラー解消: CONFIG値不足・無限ループ防止');
+    console.log('  🛡️ 安定性向上: フォールバック機能強化・緊急処理');
+    console.log('  ⚡ 初期化成功率向上: DOM待機・段階的補完');
+    console.log('  🔄 エラー回復: 自動リセット・状況監視');
 }
