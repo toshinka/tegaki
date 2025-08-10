@@ -1,0 +1,86 @@
+📋 UI分割修繕計画書とRulebook更新完了
+🎯 解決方針の要点
+
+ui-manager.jsの肥大化問題を根本解決
+
+現在2000行超 → 5ファイルに分割（各300-600行）
+責務分離により保守性を大幅向上
+
+
+Phase2-4を包括した段階的実装計画
+
+Phase2A（緊急）: シンタックスエラー修正・デフォルト値対応
+Phase2B-C: プリセット・パフォーマンス機能分離
+Phase3-4: 履歴拡張・変形管理・レイヤー管理
+
+
+Rulebook準拠の設計原則
+
+ファイルサイズ制限（800行以下）
+循環参照回避
+段階的エラーハンドリング
+config.js による設定値統一
+
+
+
+📁 新しいファイル構成
+現在の問題:
+ui-manager.js (2000行超・責務混在)
+
+分離後の構成:
+├─ config.js 🆕 (設定値統一)
+├─ ui-manager.js 🔄 (300-500行・統合制御のみ)
+├─ ui/
+│  ├─ components.js ✅ (既存・軽微修正)
+│  ├─ preset-manager.js 🆕 (200-400行・プリセット専門)
+│  ├─ performance-monitor.js 🆕 (100-200行・監視専門)
+│  └─ ui-events.js 🆕 (200-300行・イベント専門)
+├─ transform-manager.js 🆕 (変形操作専門)
+└─ layer-manager.js 🆕 (将来・レイヤー専門)
+⚡ 即座実施項目（Phase2A）
+
+緊急エラー修正
+javascript// ui-manager.js のシンタックスエラー解決
+// 基本機能のみに絞り込み
+
+config.js新規作成
+javascriptexport const CONFIG = {
+    DEFAULT_BRUSH_SIZE: 4,     // 16 → 4
+    DEFAULT_OPACITY: 1.0,      // 85% → 100%
+    MAX_BRUSH_SIZE: 500,       // 100 → 500
+    SIZE_PRESETS: [1, 2, 4, 8, 16, 32]
+};
+
+段階的機能分離
+
+プリセット管理 → ui/preset-manager.js
+パフォーマンス監視 → ui/performance-monitor.js
+イベント処理 → ui/ui-events.js
+
+
+
+🔧 実装優先順位
+immediate（今すぐ）:
+
+ シンタックスエラー修正
+ config.js作成
+ ui-manager.js最小化
+
+1週間以内:
+
+ ui/preset-manager.js実装
+ Phase2デフォルト値対応完了
+ プリセット履歴機能実装
+
+2週間以内:
+
+ ui/performance-monitor.js実装
+ transform-manager.js実装
+ リセット機能完全実装
+
+3週間以内:
+
+ layer-manager.js実装
+ 全システム統合テスト完了
+
+この計画に従って実装を進めれば、現在のエラーを解決しつつ、Phase2-4の要件をすべて満たす堅牢なシステムを構築できます。まずはPhase2Aの緊急修正から開始することをお勧めします。

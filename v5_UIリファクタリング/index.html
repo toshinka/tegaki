@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev5b (Phase2A)</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev5</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -85,21 +85,59 @@
         </div>
     </div>
     
-    <!-- ペンツール設定ポップアップ（Phase2A: デフォルト値変更対応） -->
+    <!-- ペンツール設定ポップアップ -->
     <div class="popup-panel pen-settings draggable" id="pen-settings" style="left: 60px; top: 80px;">
         <div class="popup-title">ベクターペンツール設定</div>
         
         <div class="setting-group">
             <div class="size-presets" id="size-presets">
-                <!-- プリセット項目 - Phase2A: デフォルト値変更対応版 -->
+                <!-- プリセット項目 - 改善版フレーム付き -->
                 <div class="size-preset-item" data-size="1">
+                    <div class="size-preview-frame">
+                        <div class="size-preview-circle" style="width: 1px; height: 1px;"></div>
+                    </div>
+                    <div class="size-preview-label">1</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="2">
+                    <div class="size-preview-frame">
+                        <div class="size-preview-circle" style="width: 2px; height: 2px;"></div>
+                    </div>
+                    <div class="size-preview-label">2</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="4">
+                    <div class="size-preview-frame">
+                        <div class="size-preview-circle" style="width: 4px; height: 4px;"></div>
+                    </div>
+                    <div class="size-preview-label">4</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="8">
+                    <div class="size-preview-frame">
+                        <div class="size-preview-circle" style="width: 8px; height: 8px;"></div>
+                    </div>
+                    <div class="size-preview-label">8</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item active" data-size="16">
+                    <div class="size-preview-frame">
+                        <div class="size-preview-circle" style="width: 16px; height: 16px;"></div>
+                    </div>
+                    <div class="size-preview-label">16</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="32">
+                    <div class="size-preview-frame">
+                        <div class="size-preview-circle" style="width: 20px; height: 20px;"></div>
+                    </div>
                     <div class="size-preview-label">32</div>
-                    <div class="size-preview-percent">100%</div>
+                    <div class="size-preview-percent">85%</div>
                 </div>
             </div>
         </div>
         
-        <!-- サイズスライダー（Phase2A: デフォルト値変更対応） -->
+        <!-- サイズスライダー -->
         <div class="slider-container">
             <div class="setting-label">サイズ<span class="slider-value">4.0px</span></div>
             <div class="slider-controls">
@@ -116,7 +154,7 @@
             </div>
         </div>
         
-        <!-- 不透明度スライダー（Phase2A: デフォルト値変更対応） -->
+        <!-- 不透明度スライダー -->
         <div class="slider-container">
             <div class="setting-label">不透明度<span class="slider-value">100.0%</span></div>
             <div class="slider-controls">
@@ -165,22 +203,6 @@
                 <button class="slider-button small" id="pen-smoothing-increase" title="+1">+1</button>
                 <button class="slider-button small" id="pen-smoothing-increase-large" title="+10">+10</button>
             </div>
-        </div>
-        
-        <!-- Phase2A: リセット機能ボタン追加 -->
-        <div class="setting-group">
-            <div class="setting-label">リセット機能</div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px;">
-                <button class="resize-button" id="reset-active-preset" title="アクティブプリセットをデフォルト値にリセット">
-                    アクティブリセット
-                </button>
-                <button class="resize-button" id="reset-all-presets" title="全プリセットをデフォルト値にリセット">
-                    全プリセットリセット
-                </button>
-            </div>
-            <button class="resize-button primary" id="reset-canvas" title="キャンバスを消去（Ctrl+Zで復元可能）">
-                キャンバスクリア
-            </button>
         </div>
         
         <!-- チェックボックス設定 -->
@@ -290,11 +312,8 @@
         </div>
     </div>
 
-    <!-- 🔧 Phase2A修正版 - config.js連携対応・正しい初期化順序（Rulebook準拠）-->
+    <!-- 🔧 v1.7修正版 - 正しい初期化順序とファイル構成（Rulebook準拠）-->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
-    
-    <!-- 【ステップ0】 Phase2A: 設定統一管理（最初に読み込み）-->
-    <script src="config.js"></script>
     
     <!-- 【ステップ1】 コアアプリケーション基盤 -->
     <script src="app-core.js"></script>
@@ -311,129 +330,53 @@
     <!-- 【ステップ5】 UIコンポーネント群（UI統合管理の前に必要）-->
     <script src="ui/components.js"></script>
     
-    <!-- 【ステップ6】 UI統合管理システム（Phase2A: 緊急修正版） -->
+    <!-- 【ステップ6】 UI統合管理システム -->
     <script src="ui-manager.js"></script>
     
-    <!-- 【ステップ7】 メイン初期化スクリプト（全システム統合・循環参照解決・config.js連携版）-->
+    <!-- 【ステップ7】 メイン初期化スクリプト（全システム統合・循環参照解決）-->
     <script src="main.js"></script>
     
-    <!-- 🏛️ Phase2A修正完了内容説明 -->
+    <!-- 🏛️ 修正完了内容説明 -->
     <!--
-    🔧 Phase2A修正内容（緊急修正・config.js連携対応完了）:
+    🔧 v1.7修正内容（改修計画書対応完了）:
     
     【解決された問題】
-    1. ✅ シンタックスエラー修正（アプリ起動可能）
-    2. ✅ config.js新規作成・最優先読み込み（設定値統一管理）
-    3. ✅ デフォルト値変更対応（サイズ4px、透明度100%、最大サイズ500px）
-    4. ✅ ui-manager.js緊急修正（CONFIG値連携・基本機能復旧）
-    5. ✅ main.js修正（config.js連携・初期化順序最適化）
-    6. ✅ HTMLデフォルト値表示更新（プリセット4px activeに変更、透明度100%に変更）
+    1. ✅ history-manager.js 読み込み順序修正（描画ツール前に配置）
+    2. ✅ ui/components.js を ui-manager.js より先に読み込み（依存関係解決）
+    3. ✅ settings-manager.js を早期に読み込み（高DPI設定適用のため）
+    4. ✅ Rulebook準拠の7ファイル構成初期化順序に変更
+    5. ✅ 循環参照問題解決（main.jsで統合初期化）
     
-    【Phase2A初期化順序（config.js連携対応版）】
-    0. config.js（設定統一管理・最優先）
+    【初期化順序（Rulebook第9章準拠）】
     1. app-core.js（PixiJSアプリケーション基盤）
     2. settings-manager.js（設定適用・高DPI等）
     3. history-manager.js（履歴システム初期化）
     4. drawing-tools.js（描画ツール初期化）
     5. ui/components.js（UIコンポーネント初期化）
-    6. ui-manager.js（UI統合・緊急修正版）
-    7. main.js（システム統合・config.js連携版）
+    6. ui-manager.js（UI統合・最終調整）
+    7. main.js（システム統合・循環参照解決）
     
     【責務分界の明確化】
-    - CONFIG, UI_CONFIG, UI_EVENTS → config.js に統一集約
+    - UI_CONFIG, UI_EVENTS → ui/components.js に集約
     - SliderController, PopupManager 等 → ui/components.js で定義
-    - PenPresetManager → ui-manager.js 内で定義（Phase2A修正版）
+    - PenPresetManager → ui-manager.js 内で定義（重複削除）
     - 履歴管理 → history-manager.js で完全分離
     - 設定管理 → settings-manager.js で完全分離
-    
-    【Phase2Aデフォルト値変更】
-    - ペンサイズ: 16px → 4px
-    - 透明度: 85% → 100%
-    - 最大サイズ: 100px → 500px
-    - アクティブプリセット: 16px → 4px
-    - プレビュー制限: 外枠◯を超えない制限強化
     
     【自動記録される操作（履歴機能）】
     - 描画操作（ペン・消しゴム）
     - プリセット変更・ツール変更  
     - ブラシ設定変更（サイズ・透明度・筆圧・線補正）
     - キャンバスリサイズ・キャンバスクリア
-    - プリセットリセット操作（Phase2A新機能）
     
     【ショートカット】
     - Ctrl+Z: アンドゥ / Ctrl+Y: リドゥ / Ctrl+Shift+Z: リドゥ（代替）
-    - R: アクティブプリセットリセット（Phase2A新機能）
-    
-    【Phase2A新機能】
-    - リセット機能: アクティブプリセット/全プリセット/キャンバス
-    - 通知システム: 成功・エラー・情報表示
-    - プレビュー制限強化: 外枠を超えない大サイズ対応
-    - CONFIG値統一管理: ハードコーディング解消
     
     【デバッグ関数（ブラウザコンソール使用可能）】
-    - debugApp(): 全システム状態表示（CONFIG情報含む）
+    - debugApp(): 全システム状態表示
     - debugHistory(): 履歴詳細表示  
-    - testSystem(): システムテスト実行（Phase2A拡張版）
-    - debugConfig(): CONFIG設定表示（Phase2A新規）
-    - debugPresets(): プリセット詳細表示（Phase2A新規）
-    - testConfigValues(): CONFIG値検証テスト（Phase2A新規）
-    - testResetFunctions(): リセット機能テスト（Phase2A新規）
+    - testSystem(): システムテスト実行
     - showErrorInfo(): エラー情報表示
-    
-    【Phase2A実装完了項目】
-    ✅ シンタックスエラー解決・アプリ起動復旧
-    ✅ デフォルト値仕様変更の完全対応
-    ✅ 設定値統一管理システム（config.js）
-    ✅ プリセット履歴管理機能実装
-    ✅ リセット機能実装（3種類対応）
-    ✅ プレビュー制限強化（500px対応）
-    ✅ キーボードショートカット強化
-    ✅ 通知・エラー表示システム
-    ✅ デバッグ・テスト機能充実
-    ✅ UI表示の即座更新システム
-    
-    【Phase2B以降の準備】
-    - ui/preset-manager.js分離準備完了
-    - ui/performance-monitor.js分離準備完了
-    - phase2C以降の段階的分離基盤完成
     -->
 </body>
-</html>="size-preview-frame">
-                        <div class="size-preview-circle" style="width: 1px; height: 1px;"></div>
-                    </div>
-                    <div class="size-preview-label">1</div>
-                    <div class="size-preview-percent">100%</div>
-                </div>
-                <div class="size-preset-item" data-size="2">
-                    <div class="size-preview-frame">
-                        <div class="size-preview-circle" style="width: 2px; height: 2px;"></div>
-                    </div>
-                    <div class="size-preview-label">2</div>
-                    <div class="size-preview-percent">100%</div>
-                </div>
-                <div class="size-preset-item active" data-size="4">
-                    <div class="size-preview-frame">
-                        <div class="size-preview-circle" style="width: 4px; height: 4px;"></div>
-                    </div>
-                    <div class="size-preview-label">4</div>
-                    <div class="size-preview-percent">100%</div>
-                </div>
-                <div class="size-preset-item" data-size="8">
-                    <div class="size-preview-frame">
-                        <div class="size-preview-circle" style="width: 8px; height: 8px;"></div>
-                    </div>
-                    <div class="size-preview-label">8</div>
-                    <div class="size-preview-percent">100%</div>
-                </div>
-                <div class="size-preset-item" data-size="16">
-                    <div class="size-preview-frame">
-                        <div class="size-preview-circle" style="width: 16px; height: 16px;"></div>
-                    </div>
-                    <div class="size-preview-label">16</div>
-                    <div class="size-preview-percent">100%</div>
-                </div>
-                <div class="size-preset-item" data-size="32">
-                    <div class="size-preview-frame">
-                        <div class="size-preview-circle" style="width: 20px; height: 20px;"></div>
-                    </div>
-                    <div class
+</html>

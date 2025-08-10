@@ -1,0 +1,747 @@
+# JavaScript + PixiJS v7 Rulebook v2（UI分割対応・責務分離強化版）
+
+## 1. 基本理念
+- 安定動作・可読性・拡張性を優先し、将来的なTypeScript + Vite + ES6移行を意識する。
+- ファイル間の依存は明確化し、循環参照を作らない。
+- **責務分離の強化**: 単一ファイルへの機能集中を避け、適切な粒度でファイル分割する。
+- **UI分割設計**: UIシステムを複数の専門ファイルに分離し、メンテナンス性を向上させる。
+- PixiJS v7の公式API仕様に沿い、非推奨機能は使用しない。
+- PixiJS v7の範囲で可能な限りモダンな実装を行い、ブラウザ互換は考慮せず最新Chrome APIを優先的に活用する。
+- ES2023構文使用OK（可読性のためなら）
+- OffscreenCanvasや最新Canvas APIも使用OK
+- 初期開発段階ではPC＋液タブ操作を優先し、タッチ操作は未実装とする。将来的に追加予定の箇所はコメントアウトで残し、後の拡張を容易にする
+- 内部構造は分割しやすい責任分界がされたものとする。冗長化を避けて、コンパクトなファイル作りをしつつ、必要なものは密に盛り込んだバランスの良いコーディングを。
+- **ファイルサイズ制限**: 単一ファイルは800行以下を目安とし、それを超える場合は責務に応じて分割する。
+
+---
+
+## 2. ファイル構成ルール（UI分割対応拡張版）
+拡張された11ファイル構成（責務分離強化版）：
+
+### 2.1 コア（必須）ファイル群
+1. **app-core.js**  
+   - PixiJSアプリ生成・描画ループ管理・リソースロード。
+   - Application / Stage / Renderer 初期化はここに集約。
+
+2. **drawing-tools.js**  
+   - 各描画ツールや機能（ペン、消しゴム、ベクターペンなど）をクラス化。
+   - PixiJS Graphics / Mesh / Container の使用はツール内に閉じる。
+
+3. **history-manager.js**
+   - アンドゥ・リドゥ・履歴管理システム。
+   - 操作履歴の記録と復元機能を提供。
+
+4. **config.js** 🆕
+   - アプリケーション全体の設定値を定数として管理。
+   - デフォルト値、制限値、UI設定値を統一管理。
+
+### 2.2 UI システム（分割強化版）
+5. **ui-manager.js**（縮小版）
+   - **責務**: UI全体の統合制御のみ（800行以下）
+   - 各専門UIマネージャーの初期化・連携調整
+   - **削除された責務**: プリセット管理、パフォーマンス監視、詳細UIロジック
+
+6. **ui/components.js** ✅（既存・軽微修正のみ）
+   - 基本UIコンポーネント（Slider, Popup, StatusBar, PresetDisplay）
+   - 独立性の高いUI要素
+
+7. **ui/preset-manager.js** 🆕
+   - プリセット管理専門システム
+   - プリセット選択、リセット、履歴記録、プレビュー生成
+
+8. **ui/performance-monitor.js** 🆕
+   - パフォーマンス監視専門システム
+   - FPS、メモリ、GPU使用率の監視・表示
+
+9. **ui/ui-events.js** 🆕
+   - UIイベント処理専門システム
+   - キーボードショートカット、マウス操作の統合管理
+
+### 2.3 拡張機能ファイル群
+10. **settings-manager.js**
+    - アプリ全体の動作設定を一元管理。
+    - 高DPI設定、ユーザー設定保存。
+
+11. **transform-manager.js**（新規）
+    - キャンバス操作とオブジェクト変形の一元管理。
+    - キャンバス全体の移動・回転・反転機能。
+    - アクティブレイヤー内コンテンツの移動機能。
+
+### 2.4 将来実装予定
+12. **layer-manager.js**（将来実装）
+    - レイヤー機能の管理（追加、削除、並び替え）。
+    - レイヤー表示・非表示、透明度制御。
+    - アクティブレイヤーの管理。
+
+### 2.5 ファイル間依存関係（UI分割対応）
+```
+config.js (設定値統一)
+├─ app-core.js
+│  ├─ drawing-tools.js
+│  └─ history-manager.js
+├─ settings-manager.js
+├─ transform-manager.js
+├─ ui-manager.js (統合制御のみ)
+│  ├─ ui/components.js
+│  ├─ ui/preset-manager.js
+│  ├─ ui/performance-monitor.js
+│  └─ ui/ui-events.js
+└─ layer-manager.js (将来実装)
+
+依存関係の原則:
+- 循環参照厳禁
+- 下位から上位への依存のみ
+- config.js は全ファイルから参照可能
+- ui/ 配下は ui-manager.js からのみアクセス
+```
+
+---
+
+## 3. UI分割設計原則
+
+### 3.1 UI責務分離の指針
+```javascript
+// 分割基準
+1. 機能単位での分離
+   - プリセット管理 → ui/preset-manager.js
+   - パフォーマンス監視 → ui/performance-monitor.js
+   - イベント処理 → ui/ui-events.js
+
+2. サイズ制限による分離
+   - 単一ファイル800行超過時は自動分割対象
+   
+3. 独立性による分離
+   - 他システムとの依存が少ない機能は分離
+
+4. テスタビリティによる分離
+   - 単独でテスト可能な機能は分離
+```
+
+### 3.2 分割後のファイルサイズ目標
+| ファイル名 | 目標サイズ | 主な責務 |
+|-----------|-----------|----------|
+| ui-manager.js | 300-500行 | 統合制御のみ |
+| ui/preset-manager.js | 200-400行 | プリセット専門 |
+| ui/performance-monitor.js | 100-200行 | パフォーマンス専門 |
+| ui/ui-events.js | 200-300行 | イベント専門 |
+| ui/components.js | 400-600行 | 基本UI要素 |
+
+### 3.3 独立性の高いコンポーネント（ui/配下）
+```javascript
+// 高独立性コンポーネント
+class SliderController {
+    // スライダー操作のみ・他システム依存最小
+}
+
+class PopupManager {
+    // ポップアップ表示管理・完全独立
+}
+
+class StatusBarManager {
+    // ステータス表示・他システムへの影響なし
+}
+
+class PresetDisplayManager {
+    // プリセット表示・データ受信のみ
+}
+
+// 専門システム
+class PresetManager {
+    // プリセット管理・ロジック集約
+}
+
+class PerformanceMonitorSystem {
+    // パフォーマンス監視・完全独立
+}
+
+class UIEventSystem {
+    // UIイベント・入力処理統合
+}
+```
+
+---
+
+## 4. コードスタイル規約（UI分割対応）
+
+### 4.1 命名規則
+- **変数 / 関数**: `camelCase`（例：`drawLine`, `pointerPosition`）
+- **定数**: `SCREAMING_SNAKE_CASE`（例：`CANVAS_WIDTH`, `BG_COLOR`）
+- **クラス / コンストラクタ関数**: `PascalCase`（例：`VectorPenTool`, `PresetManager`）
+- **ファイル名**: `kebab-case`（例：`preset-manager.js`, `ui-events.js`）
+- **UIイベント名**: 定数化（例：`UI_EVENTS.SLIDER_CHANGE`）
+- **UI設定定数**: `UI_CONFIG`に集約（例：`UI_CONFIG.POPUP_FADE_TIME`）
+- **アプリ設定定数**: `CONFIG`に集約（例：`CONFIG.DEFAULT_BRUSH_SIZE`）
+- **PixiJSオブジェクト変数**: 役割接尾辞（`backgroundLayer`, `drawingContainer`）
+
+### 4.2 UI関連関数名の原則
+- **コンポーネント操作**: `update{Component}`, `show{Component}`, `hide{Component}`
+- **イベント処理**: `handle{Event}`, `on{Event}`
+- **状態管理**: `get{State}`, `set{State}`, `toggle{State}`
+- **管理クラスの操作**: `{action}{Target}`（例：`selectPreset`, `resetActivePreset`）
+
+### 4.3 ファイル分割時の命名規則
+```javascript
+// 管理クラス命名
+{Domain}Manager    // 例: PresetManager, LayerManager
+{Domain}System     // 例: PerformanceMonitorSystem, UIEventSystem
+{Domain}Controller // 例: SliderController, TransformController
+
+// ファイル命名
+{domain}-manager.js    // 例: preset-manager.js
+{domain}-system.js     // 例: ui-events.js
+{domain}-controller.js // 例: transform-controller.js
+```
+
+---
+
+## 5. シンボル辞書（UI分割対応版）
+| 用途 | 命名例 | 補足 | ファイル配置 |
+|------|--------|------|------------|
+| アプリ全体 | `app` | PIXI.Application | app-core.js |
+| 設定統一 | `CONFIG` | 全設定値 | config.js |
+| UI設定 | `UI_CONFIG` | UI専用設定 | ui/components.js |
+| UIイベント | `UI_EVENTS` | UI専用イベント定数 | ui/ui-events.js |
+| プリセット管理 | `presetManager` | プリセット専門管理 | ui/preset-manager.js |
+| パフォーマンス監視 | `performanceMonitor` | パフォーマンス専門監視 | ui/performance-monitor.js |
+| UIイベント管理 | `uiEventSystem` | UIイベント専門処理 | ui/ui-events.js |
+| UI統括管理 | `uiManager` | UI全体の統合制御（縮小版） | ui-manager.js |
+| 変形管理 | `transformManager` | キャンバス・オブジェクト変形 | transform-manager.js |
+| レイヤー管理 | `layerManager` | レイヤー操作管理 | layer-manager.js |
+| 履歴管理 | `historyManager` | アンドゥ・リドゥ管理 | history-manager.js |
+| 設定管理 | `settingsManager` | アプリケーション設定管理 | settings-manager.js |
+
+---
+
+## 6. PixiJS v7 実装ルール（UI分割対応）
+
+### 6.1 ステージ構造（変形管理対応）
+```
+stage
+├─ canvasRootContainer（変形管理用）
+│  ├─ backgroundLayer
+│  ├─ drawingLayer
+│  │  ├─ layer1Container
+│  │  ├─ layer2Container
+│  │  └─ ...
+│  └─ effectsLayer（将来実装用）
+└─ uiLayer（変形対象外）
+```
+
+### 6.2 UI分割における描画最適化
+- **UI更新最適化**: 各UIマネージャーは独立して更新タイミングを制御
+- **イベント分離**: UI層と描画層のイベントを完全分離
+- **パフォーマンス監視**: 専門システムによる効率的な監視
+- **プリセットプレビュー**: 専門管理による最適化されたプレビュー生成
+
+---
+
+## 7. 設定管理システム（config.js）
+
+### 7.1 設定値分離の原則
+```javascript
+// config.js - 設定値の統一管理
+export const CONFIG = {
+    // 描画設定（Phase2対応）
+    DEFAULT_BRUSH_SIZE: 4,        // デフォルト: 16 → 4
+    DEFAULT_OPACITY: 1.0,         // デフォルト: 0.85 → 1.0 (100%)
+    MAX_BRUSH_SIZE: 500,          // 最大: 100 → 500
+    MIN_BRUSH_SIZE: 0.1,
+    
+    // プリセット設定
+    SIZE_PRESETS: [1, 2, 4, 8, 16, 32],
+    
+    // キャンバス設定
+    CANVAS_WIDTH: 400,
+    CANVAS_HEIGHT: 400,
+    BG_COLOR: 0xf0e0d6,
+    
+    // パフォーマンス設定
+    TARGET_FPS: 60,
+    PERFORMANCE_UPDATE_INTERVAL: 1000,
+    
+    // UI設定
+    PREVIEW_MIN_SIZE: 0.5,
+    PREVIEW_MAX_SIZE: 20,
+    POPUP_FADE_TIME: 300,
+    NOTIFICATION_DURATION: 3000
+};
+
+// UI専用設定
+export const UI_CONFIG = {
+    SIZE_PREVIEW_MIN: 0.5,
+    SIZE_PREVIEW_MAX: 20,
+    POPUP_FADE_TIME: 300,
+    SLIDER_UPDATE_THROTTLE: 16, // 60fps
+    PRESET_UPDATE_THROTTLE: 16
+};
+
+// UIイベント定数
+export const UI_EVENTS = {
+    SLIDER_CHANGE: 'slider:change',
+    PRESET_SELECT: 'preset:select',
+    TOOL_CHANGE: 'tool:change',
+    POPUP_SHOW: 'popup:show',
+    POPUP_HIDE: 'popup:hide',
+    PERFORMANCE_UPDATE: 'performance:update'
+};
+```
+
+---
+
+## 8. UI分割における状態管理
+
+### 8.1 状態管理の分散化
+```javascript
+// 各管理システムの状態
+- app-core.js: 描画状態（色、太さ、ツール種別）
+- settings-manager.js: アプリケーション設定
+- transform-manager.js: キャンバス変形状態  
+- layer-manager.js: レイヤー状態
+- ui/preset-manager.js: プリセット状態
+- ui/performance-monitor.js: パフォーマンス統計
+- history-manager.js: 履歴状態（全操作統合）
+```
+
+### 8.2 状態同期メカニズム
+```javascript
+// イベントベースの状態同期
+class UIManager {
+    connectSystems() {
+        // プリセット変更の他システムへの通知
+        this.presetManager.on('preset:changed', (preset) => {
+            this.toolsSystem.updateBrushSettings(preset);
+            this.historyManager.recordPresetChange(preset);
+        });
+        
+        // パフォーマンス統計の更新通知
+        this.performanceMonitor.on('stats:updated', (stats) => {
+            this.statusBar.updatePerformanceDisplay(stats);
+        });
+        
+        // UI イベントの統合処理
+        this.uiEventSystem.on('shortcut:triggered', (shortcut) => {
+            this.handleShortcut(shortcut);
+        });
+    }
+}
+```
+
+---
+
+## 9. 各ファイルの詳細責務（UI分割対応版）
+
+### 9.1 config.js 🆕
+**主責務**: アプリケーション設定値の統一管理
+- **設定値定数**: DEFAULT_BRUSH_SIZE, DEFAULT_OPACITY, MAX_BRUSH_SIZE等
+- **プリセット定義**: SIZE_PRESETS配列
+- **UI設定**: プレビューサイズ制限、更新間隔等
+- **イベント定数**: UI_EVENTS定義
+- **バリデーション**: 設定値の整合性チェック
+
+### 9.2 ui-manager.js（縮小版）
+**主責務**: UI全体の統合制御のみ（800行以下）
+- **初期化統合**: 各UIマネージャーの初期化・連携調整
+- **システム連携**: 各専門システム間のイベント仲介
+- **最小限の制御**: 基本的なUI表示制御のみ
+- **エラーハンドリング**: UI関連エラーの統合処理
+- **削除された責務**: 
+  - プリセット管理詳細 → ui/preset-manager.js
+  - パフォーマンス監視 → ui/performance-monitor.js
+  - 詳細UIイベント処理 → ui/ui-events.js
+
+### 9.3 ui/preset-manager.js 🆕
+**主責務**: プリセット管理専門システム
+- **プリセット操作**:
+  - プリセット選択・変更（履歴記録付き）
+  - デフォルト値リセット機能
+  - 全プリセットリセット機能
+- **プレビュー生成**:
+  - 動的サイズ計算（外枠制限対応）
+  - リニア変換・対数スケール対応
+  - ライブプレビュー更新
+- **履歴連携**: プリセット変更の履歴記録
+- **設定同期**: CONFIG値との連携
+
+### 9.4 ui/performance-monitor.js 🆕
+**主責務**: パフォーマンス監視専門システム
+- **監視機能**:
+  - FPS監視・計算
+  - メモリ使用量監視
+  - GPU使用率計算（推定）
+- **統計管理**:
+  - パフォーマンス統計の保持・更新
+  - 履歴統計の統合表示
+  - メモリリーク検知
+- **表示制御**:
+  - リアルタイム表示更新
+  - デバッグ情報表示
+  - 通知システム連携
+
+### 9.5 ui/ui-events.js 🆕
+**主責務**: UIイベント処理専門システム
+- **イベント統合**:
+  - キーボードショートカット処理
+  - マウス操作の統合管理
+  - タッチイベント処理（将来対応）
+- **ショートカット管理**:
+  - Ctrl+Z/Ctrl+Y（アンドゥ・リドゥ）
+  - R（リセット）
+  - ツール切り替えショートカット
+- **イベント配信**:
+  - システム間イベント仲介
+  - カスタムイベント管理
+  - エラーハンドリング
+
+### 9.6 transform-manager.js
+**主責務**: 変形操作の一元管理
+- **キャンバス変形**: 
+  - 全体移動（パン）
+  - 回転・反転
+  - ズーム（将来実装）
+- **レイヤーコンテンツ変形**:
+  - アクティブレイヤー内オブジェクトの移動
+  - 選択範囲の変形（将来実装）
+- **座標変換**: 変形状態を考慮した座標計算ユーティリティ
+- **変形履歴**: transform操作の履歴管理対象化
+
+### 9.7 layer-manager.js（将来実装）
+**主責務**: レイヤー機能の完全実装
+- **レイヤー管理**:
+  - 作成・削除・複製
+  - 並び替え（Z-order）
+  - 名前変更
+- **レイヤー状態**:
+  - 表示・非表示切り替え
+  - 透明度制御
+  - ロック状態管理
+- **アクティブレイヤー**: 描画対象レイヤーの管理
+- **レイヤー履歴**: レイヤー操作も履歴管理対象
+
+---
+
+## 10. 初期化順序（UI分割対応版）
+機能の依存関係を考慮した推奨初期化順序：
+
+1. **config.js**: 設定値読み込み 🆕
+2. **app-core.js**: PixiJSアプリケーション基盤
+3. **settings-manager.js**: 設定適用（高DPI等）
+4. **history-manager.js**: 履歴システム初期化
+5. **drawing-tools.js**: 描画ツール初期化
+6. **ui/components.js**: 基本UIコンポーネント初期化
+7. **ui/preset-manager.js**: プリセット管理システム初期化 🆕
+8. **ui/performance-monitor.js**: パフォーマンス監視システム初期化 🆕
+9. **ui/ui-events.js**: UIイベントシステム初期化 🆕
+10. **transform-manager.js**: 変形システム初期化
+11. **ui-manager.js**: UI統合・最終調整（縮小版）
+
+---
+
+## 11. 禁止事項（UI分割強化版）
+- DOM直接操作（Pixi外の`querySelector`等）  
+- Pixi内部プロパティへの直接アクセス  
+- 複数責務を1関数にまとめる
+- **単一ファイル800行超過**（分割必須）
+- **循環参照の作成**（特にUI系ファイル間）
+- **設定値の直接変更**（必ずconfig.js経由）
+- **UI管理の責務混在**（専門ファイルに分離）
+- **パフォーマンス監視の他機能混入**（専門ファイルで管理）
+
+---
+
+## 12. UI分割時のエラーハンドリング
+
+### 12.1 段階的エラーハンドリング
+```javascript
+// グレースフル・デグラデーション原則
+class UIManager {
+    async init() {
+        try {
+            await this.initPresetManager();
+        } catch (error) {
+            console.warn('PresetManager初期化失敗、基本機能で継続');
+            this.presetManager = new FallbackPresetManager();
+        }
+        
+        try {
+            await this.initPerformanceMonitor();
+        } catch (error) {
+            console.warn('PerformanceMonitor初期化失敗、監視機能無効');
+            this.performanceMonitor = null;
+        }
+        
+        // 必要最小限の機能は確実に初期化
+        await this.initCriticalComponents();
+    }
+}
+```
+
+### 12.2 ファイル分割時の依存関係エラー
+```javascript
+// 依存関係チェック強化
+function checkUISystemDependencies() {
+    const required = [
+        'CONFIG', // config.js
+        'PresetManager', // ui/preset-manager.js  
+        'PerformanceMonitorSystem', // ui/performance-monitor.js
+        'UIEventSystem' // ui/ui-events.js
+    ];
+    
+    const missing = required.filter(dep => typeof window[dep] === 'undefined');
+    
+    if (missing.length > 0) {
+        throw new Error(`UI分割ファイルの依存関係不足: ${missing.join(', ')}`);
+    }
+}
+```
+
+---
+
+## 13. Phase2-4対応指針
+
+### 13.1 Phase2: デフォルト値変更対応
+```javascript
+// config.js での統一管理
+export const CONFIG = {
+    DEFAULT_BRUSH_SIZE: 4,        // 16 → 4
+    DEFAULT_OPACITY: 1.0,         // 0.85 → 1.0 (100%)
+    MAX_BRUSH_SIZE: 500,          // 100 → 500
+    SIZE_PRESETS: [1, 2, 4, 8, 16, 32]
+};
+
+// ui/preset-manager.js での適用
+class PresetManager {
+    createDefaultPresets() {
+        return CONFIG.SIZE_PRESETS.map(size => ({
+            size: size,
+            opacity: CONFIG.DEFAULT_OPACITY // 100%統一
+        }));
+    }
+    
+    // プレビュー制限（外枠を超えない）
+    calculatePreviewSize(actualSize) {
+        if (actualSize <= 32) {
+            // 線形スケール
+            return Math.min(CONFIG.PREVIEW_MAX_SIZE, 
+                           actualSize / 32 * CONFIG.PREVIEW_MAX_SIZE);
+        } else {
+            // 対数スケール（大サイズ対応）
+            const logScale = Math.log(actualSize / 32) / 
+                           Math.log(CONFIG.MAX_BRUSH_SIZE / 32);
+            return Math.min(CONFIG.PREVIEW_MAX_SIZE, 
+                          CONFIG.PREVIEW_MAX_SIZE * (0.7 + logScale * 0.3));
+        }
+    }
+}
+```
+
+### 13.2 Phase3: 履歴管理拡張
+```javascript
+// history-manager.js での拡張記録
+class HistoryManager {
+    recordPresetChange(beforeState, afterState) {
+        // プリセット変更履歴
+    }
+    
+    recordCanvasResize(beforeSize, afterSize) {
+        // キャンバスリサイズ履歴
+    }
+    
+    recordTransformOperation(operation, parameters) {
+        // 変形操作履歴
+    }
+    
+    recordLayerOperation(operation, layerData) {
+        // レイヤー操作履歴
+    }
+}
+```
+
+### 13.3 Phase4: リセット機能実装
+```javascript
+// ui/preset-manager.js でのリセット機能
+class PresetManager {
+    resetActivePreset() {
+        const beforeState = this.captureCurrentState();
+        
+        // デフォルト値に戻す
+        const defaultSettings = {
+            size: this.activePreset.originalSize,
+            opacity: CONFIG.DEFAULT_OPACITY,
+            pressure: 0.5,
+            smoothing: 0.3
+        };
+        
+        this.applySettings(defaultSettings);
+        
+        // 履歴記録
+        if (this.historyManager) {
+            const afterState = this.captureCurrentState();
+            this.historyManager.recordPresetChange(beforeState, afterState);
+        }
+    }
+    
+    resetAllPresets() {
+        // 全プリセットのデフォルト値リセット
+    }
+}
+```
+
+---
+
+## 14. テスト・デバッグ方針（UI分割対応）
+
+### 14.1 分割ファイル単体テスト
+```javascript
+// 各管理システムの単体テスト
+window.testPresetManager = () => {
+    console.group('🧪 PresetManager単体テスト');
+    // プリセット機能のみをテスト
+    console.groupEnd();
+};
+
+window.testPerformanceMonitor = () => {
+    console.group('🧪 PerformanceMonitor単体テスト');
+    // パフォーマンス監視機能のみをテスト
+    console.groupEnd();
+};
+
+window.testUIEventSystem = () => {
+    console.group('🧪 UIEventSystem単体テスト');
+    // UIイベント処理のみをテスト
+    console.groupEnd();
+};
+```
+
+### 14.2 統合テスト強化
+```javascript
+// UI分割後の統合テスト
+window.testUIIntegration = () => {
+    console.group('🧪 UI統合テスト');
+    
+    // 1. 各システムの初期化確認
+    const systems = [
+        'presetManager', 
+        'performanceMonitor', 
+        'uiEventSystem'
+    ];
+    
+    systems.forEach(system => {
+        console.log(`${system}:`, !!window.uiManager[system]);
+    });
+    
+    // 2. システム間連携テスト
+    // プリセット変更 → 他システムへの影響確認
+    
+    // 3. エラーハンドリングテスト
+    // 各システムの個別障害時の動作確認
+    
+    console.groupEnd();
+};
+```
+
+---
+
+## 15. ふたば☆ちゃんねるカラー（変更なし）
+- **Adobe Frescoの優れたUXにふたば☆ちゃんねるの親しみやすいカラーリングを融合したものとする**
+```css
+/* Adobe Fresco風ふたば色定義 */
+--futaba-maroon: #800000;        /* 主線・基調色・ふたばカラーパレット1 */
+--futaba-light-maroon: #aa5a56;  /* セカンダリ・ボタン・ふたばカラーパレット2 */
+--futaba-medium: #cf9c97;        /* アクセント・ホバー・ふたばカラーパレット3 */
+--futaba-light-medium: #e9c2ba;  /* 境界線・分離線 ・ふたばカラーパレット4*/
+--futaba-cream: #f0e0d6;         /* キャンバス背景・ふたばカラーパレット5 */
+--futaba-background: #ffffee;    /* アプリ背景 */
+```
+
+---
+
+## 16. 移行戦略・バージョン管理
+
+### 16.1 段階的UI分割アプローチ
+```
+Phase 2A: 緊急修正
+├─ config.js 新規作成
+├─ ui-manager.js シンタックスエラー修正
+└─ 基本機能復旧
+
+Phase 2B: プリセット分離
+├─ ui/preset-manager.js 新規作成
+├─ プリセット機能完全移行
+└─ 履歴記録機能実装
+
+Phase 2C: パフォーマンス分離  
+├─ ui/performance-monitor.js 新規作成
+├─ パフォーマンス監視完全移行
+└─ UI統合表示最適化
+
+Phase 3: 包括的システム分離
+├─ ui/ui-events.js 新規作成
+├─ transform-manager.js 実装
+└─ 履歴管理拡張
+
+Phase 4: 最終統合最適化
+├─ layer-manager.js 実装
+├─ ui-manager.js 最小化完了
+└─ 全システム統合テスト
+```
+
+### 16.2 コミット戦略
+```
+git branch ui-split-phase2a  # 緊急修正
+git branch ui-split-phase2b  # プリセット分離
+git branch ui-split-phase2c  # パフォーマンス分離
+git branch ui-split-phase3   # システム分離
+git branch ui-split-phase4   # 最終統合
+
+# 各フェーズ完了時にmainへマージ
+# ロールバック可能な状態を常に維持
+```
+
+---
+
+## 17. パフォーマンス最適化指針（UI分割対応）
+
+### 17.1 分割による最適化効果
+```javascript
+// ファイル分割によるメリット
+1. 並列読み込み: 各UIファイルの並列初期化
+2. キャッシュ効率: 変更されないファイルのキャッシュ活用  
+3. メモリ効率: 不要な機能の遅延読み込み
+4. デバッグ効率: 問題箇所の特定が容易
+
+// 実装例
+class UIManager {
+    async init() {
+        // 並列初期化
+        await Promise.all([
+            this.initPresetManager(),
+            this.initPerformanceMonitor(),
+            this.initUIEventSystem()
+        ]);
+    }
+}
+```
+
+### 17.2 UI更新最適化
+```javascript
+// 各システムの独立更新
+class PresetManager {
+    updatePreview() {
+        // プリセット専用の最適化された更新
+        this.throttledUpdate(() => {
+            this.renderPreview();
+        }, 16); // 60fps
+    }
+}
+
+class PerformanceMonitorSystem {
+    updateStats() {
+        // パフォーマンス専用の効率的な更新
+        this.updateInterval = 1000; // 1秒間隔
+    }
+}
+```
+
+---
+
+この拡張版Rulebookは、UI分割による責務分離を強化し、Phase2-4の要件を満たしながら、メンテナンス性と拡張性を両立させる設計指針を提供しています。各ファイルの責務を明確に分離することで、開発効率と品質の向上を実現できます。

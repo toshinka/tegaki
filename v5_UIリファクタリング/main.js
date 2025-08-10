@@ -1,19 +1,15 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev5b
- * メイン初期化スクリプト - main.js（Phase2A: config.js連携対応版）
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev5
+ * メイン初期化スクリプト - main.js 
  * 
- * 🔧 Phase2A修正内容（config.js連携対応）:
- * 1. ✅ config.js連携（CONFIG値の利用）
- * 2. ✅ 初期化順序修正（config.js → app-core.js → ...）
- * 3. ✅ デフォルト値変更対応（サイズ4、透明度100%、最大500）
- * 4. ✅ 依存関係チェック修正（Phase2A対応）
- * 5. ✅ システム統合テスト拡張（Phase2A機能対応）
- * 
- * Phase2A目標: config.js連携 + 緊急修正 + 基本機能復旧
- * 対象: main.js
+ * 🔧 v1.9修正内容（Rulebook準拠・責務分離対応版）:
+ * 1. 依存関係チェック修正（削除されたクラスの除外）
+ * 2. ShortcutManager、PerformanceMonitor、LayerSystemの依存関係削除
+ * 3. 正しいクラス配置確認
+ * 4. エラーハンドリング最適化
  * 
  * 責務: アプリケーション統合初期化・エラーハンドリング・循環参照解決
- * 依存: config.js（最初）→ 全システムファイル（Phase2A対応7ファイル構成）
+ * 依存: 全システムファイル（Rulebook準拠7ファイル構成）
  */
 
 // ==== グローバル状態管理 ====
@@ -33,17 +29,11 @@ const APP_STATE = {
         initTime: 0,
         errorCount: 0,
         lastError: null
-    },
-    // Phase2A: CONFIG値管理
-    config: {
-        loaded: false,
-        values: null
     }
 };
 
 // ==== 初期化ステップ定義 ====
 const INIT_STEPS = {
-    CHECKING_CONFIG: 'checking_config', // Phase2A: CONFIG確認追加
     CHECKING_DEPENDENCIES: 'checking_dependencies',
     CREATING_APP: 'creating_app',
     CREATING_TOOLS_SYSTEM: 'creating_tools_system',
@@ -66,62 +56,9 @@ class InitializationError extends Error {
     }
 }
 
-// ==== Phase2A: CONFIG読み込み確認 ====
-function checkConfigLoaded() {
-    console.log('🔍 CONFIG読み込み確認開始（Phase2A）...');
-    
-    // CONFIG関連のオブジェクト確認
-    const configObjects = {
-        'CONFIG': typeof CONFIG !== 'undefined',
-        'UI_CONFIG': typeof UI_CONFIG !== 'undefined',
-        'UI_EVENTS': typeof UI_EVENTS !== 'undefined',
-        'CONFIG_VALIDATION': typeof CONFIG_VALIDATION !== 'undefined',
-        'PREVIEW_UTILS': typeof PREVIEW_UTILS !== 'undefined',
-        'DEFAULT_SETTINGS': typeof DEFAULT_SETTINGS !== 'undefined',
-        'FUTABA_COLORS': typeof FUTABA_COLORS !== 'undefined'
-    };
-    
-    const missing = [];
-    const available = [];
-    
-    for (const [objName, isAvailable] of Object.entries(configObjects)) {
-        if (isAvailable) {
-            available.push(objName);
-        } else {
-            missing.push(objName);
-        }
-    }
-    
-    console.log(`✅ CONFIG利用可能: ${available.length}個`, available);
-    
-    if (missing.length > 0) {
-        console.error(`❌ CONFIG不足: ${missing.length}個`, missing);
-        throw new InitializationError(
-            `config.js の設定オブジェクトが見つかりません: ${missing.join(', ')}`,
-            INIT_STEPS.CHECKING_CONFIG
-        );
-    }
-    
-    // Phase2A: デフォルト値確認
-    if (typeof CONFIG !== 'undefined') {
-        APP_STATE.config.values = CONFIG;
-        APP_STATE.config.loaded = true;
-        
-        console.log('🔧 Phase2A デフォルト値確認:');
-        console.log(`  ✅ デフォルトサイズ: ${CONFIG.DEFAULT_BRUSH_SIZE}px （16→4に変更）`);
-        console.log(`  ✅ デフォルト透明度: ${CONFIG.DEFAULT_OPACITY * 100}% （85%→100%に変更）`);
-        console.log(`  ✅ 最大サイズ: ${CONFIG.MAX_BRUSH_SIZE}px （100→500に変更）`);
-        console.log(`  🎨 プリセット: [${CONFIG.SIZE_PRESETS.join(', ')}]px`);
-        console.log(`  📐 プレビュー制限: ${CONFIG.PREVIEW_MIN_SIZE}-${CONFIG.PREVIEW_MAX_SIZE}px`);
-    }
-    
-    console.log('✅ CONFIG読み込み確認完了（Phase2A）');
-    return true;
-}
-
-// ==== 依存関係チェック（Phase2A対応版・config.js連携）====
+// ==== 依存関係チェック（v1.9修正版・責務分離対応）====
 function checkDependencies() {
-    console.log('🔍 依存関係チェック開始（Phase2A対応版・config.js連携）...');
+    console.log('🔍 依存関係チェック開始（v1.9修正版・責務分離対応）...');
     
     const requiredClasses = {
         // PIXI.js
@@ -135,16 +72,15 @@ function checkDependencies() {
         
         // Settings classes（必須）
         'SettingsManager': typeof SettingsManager !== 'undefined',
+        'ShortcutManager': typeof ShortcutManager !== 'undefined', // settings-manager.js内
         
         // UI Component classes（ui/components.jsから）
         'SliderController': typeof SliderController !== 'undefined',
         'PopupManager': typeof PopupManager !== 'undefined',
         'StatusBarManager': typeof StatusBarManager !== 'undefined',
-        'PresetDisplayManager': typeof PresetDisplayManager !== 'undefined',
         
         // Performance Monitor（ui-manager.js内）
         'PerformanceMonitor': typeof PerformanceMonitor !== 'undefined',
-        'PenPresetManager': typeof PenPresetManager !== 'undefined',
         
         // State management（history-manager.js内）
         'InternalStateCapture': typeof InternalStateCapture !== 'undefined',
@@ -186,30 +122,26 @@ function checkDependencies() {
         }
     }
     
-    console.log('✅ 依存関係チェック完了（Phase2A対応版）');
-    console.log('🔧 Phase2A修正項目:');
-    console.log('  - CONFIG連携: 設定値統一管理対応');
+    console.log('✅ 依存関係チェック完了（v1.9修正版）');
+    console.log('🔧 修正項目:');
+    console.log('  - ShortcutManager: settings-manager.js内で確認');
     console.log('  - PerformanceMonitor: ui-manager.js内で確認');
-    console.log('  - PenPresetManager: ui-manager.js内で確認');
+    console.log('  - LayerSystem: 削除（将来のlayer-manager.js予定）');
     console.log('  - StateCapture/StateRestore: 正しい参照確認');
     
     return true;
 }
 
-// ==== アプリケーション作成（Phase2A: CONFIG連携版） ====
+// ==== アプリケーション作成 ====
 async function createApplication() {
-    console.log('🎯 PixiDrawingApp作成中（Phase2A: CONFIG連携版）...');
+    console.log('🎯 PixiDrawingApp作成中...');
     
     try {
-        // Phase2A: CONFIG値を使用
-        const width = CONFIG.CANVAS_WIDTH;
-        const height = CONFIG.CANVAS_HEIGHT;
-        
-        const app = new PixiDrawingApp(width, height);
+        const app = new PixiDrawingApp(400, 400);
         await app.init(); // settings-managerはnullで初期化（後で設定）
         
         APP_STATE.components.app = app;
-        console.log(`✅ PixiDrawingApp作成完了（${width}x${height}px）`);
+        console.log('✅ PixiDrawingApp作成完了');
         
         return app;
     } catch (error) {
@@ -223,29 +155,14 @@ async function createApplication() {
 
 // ==== ツールシステム作成 ====
 async function createToolsSystem(app) {
-    console.log('🔧 DrawingToolsSystem作成中（Phase2A: CONFIG連携版）...');
+    console.log('🔧 DrawingToolsSystem作成中（v1.9責務分離版）...');
     
     try {
         const toolsSystem = new DrawingToolsSystem(app);
         await toolsSystem.init();
         
         APP_STATE.components.toolsSystem = toolsSystem;
-        
-        // Phase2A: デフォルト値をCONFIGから適用
-        const defaultSettings = {
-            size: CONFIG.DEFAULT_BRUSH_SIZE,
-            opacity: CONFIG.DEFAULT_OPACITY,
-            color: CONFIG.DEFAULT_COLOR,
-            pressure: CONFIG.DEFAULT_PRESSURE,
-            smoothing: CONFIG.DEFAULT_SMOOTHING
-        };
-        
-        if (toolsSystem.updateBrushSettings) {
-            toolsSystem.updateBrushSettings(defaultSettings);
-            console.log('🔧 Phase2Aデフォルト設定適用:', defaultSettings);
-        }
-        
-        console.log('✅ DrawingToolsSystem作成完了（Phase2A: CONFIG連携版）');
+        console.log('✅ DrawingToolsSystem作成完了（v1.9責務分離版）');
         
         return toolsSystem;
     } catch (error) {
@@ -257,21 +174,16 @@ async function createToolsSystem(app) {
     }
 }
 
-// ==== UI管理システム作成（Phase2A: CONFIG連携版） ====
+// ==== UI管理システム作成 ====
 async function createUIManager(app, toolsSystem) {
-    console.log('🎭 UIManager作成中（Phase2A: CONFIG連携版）...');
+    console.log('🎭 UIManager作成中（v1.9パフォーマンス監視統合版）...');
     
     try {
-        // Phase2A: 履歴管理システムを取得
-        const historyManager = toolsSystem.getHistoryManager();
-        
-        const uiManager = new UIManager(app, toolsSystem, historyManager);
+        const uiManager = new UIManager(app, toolsSystem);
         await uiManager.init();
         
         APP_STATE.components.uiManager = uiManager;
-        APP_STATE.components.historyManager = historyManager; // グローバル参照用
-        
-        console.log('✅ UIManager作成完了（Phase2A: CONFIG連携版）');
+        console.log('✅ UIManager作成完了（v1.9パフォーマンス監視統合版）');
         
         return uiManager;
     } catch (error) {
@@ -285,7 +197,7 @@ async function createUIManager(app, toolsSystem) {
 
 // ==== 設定管理システム作成 ====
 async function createSettingsManager(app, toolsSystem, uiManager) {
-    console.log('⚙️ SettingsManager作成中（Phase2A対応版）...');
+    console.log('⚙️ SettingsManager作成中（v1.9ショートカット統合版）...');
     
     try {
         // 履歴管理システムは toolsSystem から取得
@@ -306,7 +218,7 @@ async function createSettingsManager(app, toolsSystem, uiManager) {
         await settingsManager.init();
         
         APP_STATE.components.settingsManager = settingsManager;
-        console.log('✅ SettingsManager作成完了（Phase2A対応版）');
+        console.log('✅ SettingsManager作成完了（v1.9ショートカット統合版）');
         
         return settingsManager;
     } catch (error) {
@@ -316,9 +228,9 @@ async function createSettingsManager(app, toolsSystem, uiManager) {
     }
 }
 
-// ==== システム間連携設定（Phase2A拡張版） ====
+// ==== システム間連携設定 ====
 async function connectSystems() {
-    console.log('🔗 システム間連携設定中（Phase2A拡張版）...');
+    console.log('🔗 システム間連携設定中（v1.9修正版）...');
     
     try {
         const { app, toolsSystem, uiManager, settingsManager } = APP_STATE.components;
@@ -359,10 +271,6 @@ async function connectSystems() {
         window.historyManager = historyManager;
         window.settingsManager = settingsManager;
         
-        // Phase2A: CONFIG値もグローバル参照に追加
-        window.appConfig = CONFIG;
-        window.uiConfig = UI_CONFIG;
-        
         // 5. デバッグ用のグローバル関数設定
         window.undo = () => historyManager ? historyManager.undo() : false;
         window.redo = () => historyManager ? historyManager.redo() : false;
@@ -372,70 +280,13 @@ async function connectSystems() {
         window.clearHistory = () => historyManager ? historyManager.clearHistory() : false;
         window.showSystemStats = () => toolsSystem ? console.log(toolsSystem.getSystemStats()) : console.warn('ToolsSystem not available');
         
-        // 6. Phase2A: パフォーマンス統計とUI統合デバッグ関数
+        // 6. v1.9追加：パフォーマンス統計とUI統合デバッグ関数
         window.getPerformanceStats = () => uiManager ? uiManager.getPerformanceStats() : null;
         window.debugUI = () => uiManager ? uiManager.debugUI() : console.warn('UIManager not available');
         window.debugSettings = () => settingsManager ? settingsManager.debugSettings() : console.warn('SettingsManager not available');
         
-        // Phase2A: プリセット関連デバッグ関数
-        window.debugPresets = () => {
-            if (uiManager && uiManager.getPenPresetManager) {
-                const presetManager = uiManager.getPenPresetManager();
-                console.log('🎨 プリセット情報:');
-                console.log('  アクティブプリセット:', presetManager.getActivePreset());
-                console.log('  プリセット一覧:', Array.from(presetManager.presets.keys()));
-                console.log('  ライブ値:', presetManager.currentLiveValues);
-                console.log('  プレビューデータ:', presetManager.generatePreviewData());
-            } else {
-                console.warn('PresetManager not available');
-            }
-        };
-        
-        // Phase2A: CONFIG値デバッグ関数
-        window.debugConfig = () => {
-            console.group('🔧 CONFIG設定情報（Phase2A）');
-            console.log('CONFIG:', CONFIG);
-            console.log('UI_CONFIG:', UI_CONFIG);
-            console.log('UI_EVENTS:', UI_EVENTS);
-            console.log('DEFAULT_SETTINGS:', DEFAULT_SETTINGS);
-            console.log('Phase2A変更項目:', {
-                oldBrushSize: '16px',
-                newBrushSize: CONFIG.DEFAULT_BRUSH_SIZE + 'px',
-                oldOpacity: '85%',
-                newOpacity: (CONFIG.DEFAULT_OPACITY * 100) + '%',
-                oldMaxSize: '100px',
-                newMaxSize: CONFIG.MAX_BRUSH_SIZE + 'px'
-            });
-            console.groupEnd();
-        };
-        
-        // Phase2A: リセット機能デバッグ関数
-        window.testResetFunctions = () => {
-            console.group('🔄 リセット機能テスト（Phase2A）');
-            
-            if (uiManager && uiManager.getPenPresetManager) {
-                const presetManager = uiManager.getPenPresetManager();
-                
-                console.log('1. 現在の状態:');
-                console.log('  アクティブプリセット:', presetManager.getActivePreset());
-                console.log('  ライブ値:', presetManager.currentLiveValues);
-                
-                console.log('2. アクティブプリセットリセット実行...');
-                const resetResult = presetManager.resetActivePreset();
-                console.log('  リセット結果:', resetResult);
-                
-                console.log('3. リセット後の状態:');
-                console.log('  アクティブプリセット:', presetManager.getActivePreset());
-                console.log('  ライブ値:', presetManager.currentLiveValues);
-            } else {
-                console.warn('PresetManager not available');
-            }
-            
-            console.groupEnd();
-        };
-        
-        console.log('✅ システム間連携設定完了（Phase2A拡張版）');
-        console.log('🐛 デバッグ関数設定完了（Phase2A拡張版）:');
+        console.log('✅ システム間連携設定完了（v1.9修正版）');
+        console.log('🐛 デバッグ関数設定完了:');
         console.log('  【履歴管理】');
         console.log('    - window.undo() - アンドゥ実行');
         console.log('    - window.redo() - リドゥ実行');
@@ -445,14 +296,10 @@ async function connectSystems() {
         console.log('    - window.clearHistory() - 履歴クリア');
         console.log('  【システム統計】');
         console.log('    - window.showSystemStats() - システム統計表示');
-        console.log('    - window.getPerformanceStats() - パフォーマンス統計');
+        console.log('    - window.getPerformanceStats() - パフォーマンス統計（v1.9新規）');
         console.log('  【デバッグ】');
-        console.log('    - window.debugUI() - UI管理デバッグ');
-        console.log('    - window.debugSettings() - 設定管理デバッグ');
-        console.log('  【Phase2A新規】');
-        console.log('    - window.debugPresets() - プリセット詳細表示');
-        console.log('    - window.debugConfig() - CONFIG設定表示');
-        console.log('    - window.testResetFunctions() - リセット機能テスト');
+        console.log('    - window.debugUI() - UI管理デバッグ（v1.9新規）');
+        console.log('    - window.debugSettings() - 設定管理デバッグ（v1.9新規）');
         
     } catch (error) {
         throw new InitializationError(
@@ -463,9 +310,9 @@ async function connectSystems() {
     }
 }
 
-// ==== 最終セットアップ（Phase2A拡張版） ====
+// ==== 最終セットアップ ====
 async function finalSetup() {
-    console.log('🎨 最終セットアップ中（Phase2A拡張版）...');
+    console.log('🎨 最終セットアップ中（v1.9修正版）...');
     
     try {
         const { app, toolsSystem, uiManager, settingsManager } = APP_STATE.components;
@@ -481,30 +328,17 @@ async function finalSetup() {
         // 3. デバッグ機能設定
         setupDebugFunctions();
         
-        // 4. Phase2A: パフォーマンス監視状態確認
+        // 4. パフォーマンス監視状態確認（v1.9新規）
         if (uiManager && uiManager.getPerformanceStats) {
             const performanceStats = uiManager.getPerformanceStats();
-            console.log('📊 パフォーマンス監視状態（Phase2A）:', {
+            console.log('📊 パフォーマンス監視状態:', {
                 fps: performanceStats.fps || 'N/A',
                 memoryUsage: performanceStats.memoryUsage || 'N/A',
-                integrated: 'UI統合版',
-                targetFPS: CONFIG.TARGET_FPS
+                integrated: 'UI統合版'
             });
         }
         
-        // 5. Phase2A: プリセットシステム状態確認
-        if (uiManager && uiManager.getPenPresetManager) {
-            const presetManager = uiManager.getPenPresetManager();
-            console.log('🎨 プリセットシステム状態（Phase2A）:', {
-                activePreset: presetManager.getActivePresetId(),
-                presetCount: presetManager.presets.size,
-                defaultSize: CONFIG.DEFAULT_BRUSH_SIZE,
-                defaultOpacity: CONFIG.DEFAULT_OPACITY * 100 + '%',
-                maxSize: CONFIG.MAX_BRUSH_SIZE
-            });
-        }
-        
-        // 6. ショートカットシステム状態確認
+        // 5. ショートカットシステム状態確認（v1.9新規）
         if (settingsManager && settingsManager.getShortcutInfo) {
             const shortcutInfo = settingsManager.getShortcutInfo();
             console.log('⌨️ ショートカットシステム状態:', {
@@ -514,12 +348,12 @@ async function finalSetup() {
             });
         }
         
-        // 7. アプリケーション状態の最終確認
+        // 6. アプリケーション状態の最終確認
         const appStats = app.getStats ? app.getStats() : {};
         const systemStats = toolsSystem.getSystemStats ? toolsSystem.getSystemStats() : {};
         const uiStats = uiManager ? uiManager.getUIStats() : null;
         
-        console.log('📈 システム状態確認（Phase2A拡張版）:');
+        console.log('📈 システム状態確認（v1.9修正版）:');
         console.log('  - App:', appStats);
         console.log('  - Tools:', systemStats);
         if (uiStats) {
@@ -529,16 +363,7 @@ async function finalSetup() {
             console.log('  - Settings:', settingsManager.getSettingsInfo());
         }
         
-        // Phase2A: CONFIG情報表示
-        console.log('  - Config（Phase2A）:', {
-            loaded: APP_STATE.config.loaded,
-            brushSize: CONFIG.DEFAULT_BRUSH_SIZE,
-            opacity: CONFIG.DEFAULT_OPACITY * 100 + '%',
-            maxSize: CONFIG.MAX_BRUSH_SIZE,
-            presets: CONFIG.SIZE_PRESETS.length
-        });
-        
-        console.log('✅ 最終セットアップ完了（Phase2A拡張版）');
+        console.log('✅ 最終セットアップ完了（v1.9修正版）');
         
     } catch (error) {
         throw new InitializationError(
@@ -592,11 +417,11 @@ function setupGlobalErrorHandlers() {
     console.log('🛡️ グローバルエラーハンドラー設定完了');
 }
 
-// ==== デバッグ機能設定（Phase2A拡張版） ====
+// ==== デバッグ機能設定 ====
 function setupDebugFunctions() {
     // グローバルデバッグ関数
     window.debugApp = function() {
-        console.group('🔍 アプリケーションデバッグ情報（Phase2A拡張版）');
+        console.group('🔍 アプリケーションデバッグ情報（v1.9修正版）');
         console.log('状態:', APP_STATE);
         
         if (APP_STATE.components.app) {
@@ -610,7 +435,7 @@ function setupDebugFunctions() {
         if (APP_STATE.components.uiManager) {
             console.log('UI統計:', APP_STATE.components.uiManager.getUIStats ? APP_STATE.components.uiManager.getUIStats() : 'N/A');
             
-            // Phase2A: パフォーマンス統計も含める
+            // v1.9新規：パフォーマンス統計も含める
             if (APP_STATE.components.uiManager.getPerformanceStats) {
                 console.log('Performance統計:', APP_STATE.components.uiManager.getPerformanceStats());
             }
@@ -619,21 +444,10 @@ function setupDebugFunctions() {
         if (APP_STATE.components.settingsManager && APP_STATE.components.settingsManager.getSettingsInfo) {
             console.log('Settings統計:', APP_STATE.components.settingsManager.getSettingsInfo());
             
-            // ショートカット情報も含める
+            // v1.9新規：ショートカット情報も含める
             if (APP_STATE.components.settingsManager.getShortcutInfo) {
                 console.log('Shortcut統計:', APP_STATE.components.settingsManager.getShortcutInfo());
             }
-        }
-        
-        // Phase2A: CONFIG情報表示
-        if (APP_STATE.config.loaded) {
-            console.log('Config（Phase2A）:', {
-                defaultBrushSize: CONFIG.DEFAULT_BRUSH_SIZE,
-                defaultOpacity: CONFIG.DEFAULT_OPACITY * 100 + '%',
-                maxBrushSize: CONFIG.MAX_BRUSH_SIZE,
-                sizePresets: CONFIG.SIZE_PRESETS,
-                previewLimits: `${CONFIG.PREVIEW_MIN_SIZE}-${CONFIG.PREVIEW_MAX_SIZE}px`
-            });
         }
         
         console.groupEnd();
@@ -647,129 +461,49 @@ function setupDebugFunctions() {
         console.groupEnd();
     };
     
-    // Phase2A: 統合テスト関数拡張版
+    // v1.9新規：統合テスト関数
     window.testSystem = function() {
-        console.group('🧪 システム統合テスト（Phase2A拡張版）');
+        console.group('🧪 システム統合テスト（v1.9修正版）');
         
         // 1. 基本機能テスト
         console.log('1. 基本機能テスト...');
-        console.log('   - CONFIG読み込み:', APP_STATE.config.loaded);
         console.log('   - App初期化:', !!APP_STATE.components.app);
         console.log('   - ToolsSystem:', !!APP_STATE.components.toolsSystem);
         console.log('   - UIManager:', !!APP_STATE.components.uiManager);
         console.log('   - HistoryManager:', !!APP_STATE.components.historyManager);
         console.log('   - SettingsManager:', !!APP_STATE.components.settingsManager);
         
-        // 2. Phase2A: デフォルト値テスト
-        console.log('2. Phase2Aデフォルト値テスト...');
-        if (APP_STATE.config.loaded) {
-            console.log(`   - デフォルトサイズ: ${CONFIG.DEFAULT_BRUSH_SIZE}px (期待値: 4px)`);
-            console.log(`   - デフォルト透明度: ${CONFIG.DEFAULT_OPACITY * 100}% (期待値: 100%)`);
-            console.log(`   - 最大サイズ: ${CONFIG.MAX_BRUSH_SIZE}px (期待値: 500px)`);
-        }
-        
-        // 3. プリセット機能テスト
-        console.log('3. プリセット機能テスト...');
-        if (APP_STATE.components.uiManager && APP_STATE.components.uiManager.getPenPresetManager) {
-            const presetManager = APP_STATE.components.uiManager.getPenPresetManager();
-            console.log('   - アクティブプリセット:', presetManager.getActivePresetId());
-            console.log('   - プリセット数:', presetManager.presets.size);
-            console.log('   - ライブ値:', !!presetManager.currentLiveValues);
-        }
-        
-        // 4. 履歴機能テスト
-        console.log('4. 履歴機能テスト...');
+        // 2. 履歴機能テスト
+        console.log('2. 履歴機能テスト...');
         if (APP_STATE.components.toolsSystem && APP_STATE.components.toolsSystem.testHistoryFunction) {
             APP_STATE.components.toolsSystem.testHistoryFunction();
         }
         
-        // 5. パフォーマンス監視テスト
-        console.log('5. パフォーマンス監視テスト...');
+        // 3. パフォーマンス監視テスト（v1.9新規）
+        console.log('3. パフォーマンス監視テスト...');
         if (APP_STATE.components.uiManager && APP_STATE.components.uiManager.getPerformanceStats) {
             const perfStats = APP_STATE.components.uiManager.getPerformanceStats();
             console.log('   - FPS:', perfStats.fps || 'N/A');
             console.log('   - メモリ:', perfStats.memoryUsage || 'N/A');
         }
         
-        // 6. ショートカットシステムテスト
-        console.log('6. ショートカットシステムテスト...');
+        // 4. ショートカットシステムテスト（v1.9新規）
+        console.log('4. ショートカットシステムテスト...');
         if (APP_STATE.components.settingsManager && APP_STATE.components.settingsManager.getShortcutInfo) {
             const shortcutInfo = APP_STATE.components.settingsManager.getShortcutInfo();
             console.log('   - ショートカット有効:', shortcutInfo.enabled);
             console.log('   - マネージャー状態:', shortcutInfo.manager?.isEnabled || false);
         }
         
-        // 7. Phase2A: リセット機能テスト
-        console.log('7. リセット機能テスト...');
-        if (typeof window.testResetFunctions === 'function') {
-            window.testResetFunctions();
-        }
-        
-        console.log('✅ システム統合テスト完了（Phase2A拡張版）');
+        console.log('✅ システム統合テスト完了');
         console.groupEnd();
     };
     
-    // Phase2A: CONFIG専用テスト関数
-    window.testConfigValues = function() {
-        console.group('🧪 CONFIG値テスト（Phase2A）');
-        
-        if (!APP_STATE.config.loaded) {
-            console.error('❌ CONFIG が読み込まれていません');
-            console.groupEnd();
-            return;
-        }
-        
-        // デフォルト値の検証
-        const tests = [
-            {
-                name: 'デフォルトブラシサイズ',
-                actual: CONFIG.DEFAULT_BRUSH_SIZE,
-                expected: 4,
-                unit: 'px'
-            },
-            {
-                name: 'デフォルト透明度',
-                actual: CONFIG.DEFAULT_OPACITY,
-                expected: 1.0,
-                unit: ''
-            },
-            {
-                name: '最大ブラシサイズ',
-                actual: CONFIG.MAX_BRUSH_SIZE,
-                expected: 500,
-                unit: 'px'
-            },
-            {
-                name: 'プリセット数',
-                actual: CONFIG.SIZE_PRESETS.length,
-                expected: 6,
-                unit: '個'
-            }
-        ];
-        
-        tests.forEach(test => {
-            const passed = test.actual === test.expected;
-            const status = passed ? '✅' : '❌';
-            console.log(`${status} ${test.name}: ${test.actual}${test.unit} (期待値: ${test.expected}${test.unit})`);
-        });
-        
-        // プレビュー計算テスト
-        console.log('🔍 プレビュー計算テスト:');
-        const testSizes = [1, 4, 16, 32, 100, 500];
-        testSizes.forEach(size => {
-            const previewSize = PREVIEW_UTILS.calculatePreviewSize(size);
-            console.log(`  ${size}px → ${previewSize.toFixed(1)}px (制限: ${CONFIG.PREVIEW_MAX_SIZE}px)`);
-        });
-        
-        console.groupEnd();
-    };
-    
-    console.log('🐛 デバッグ機能設定完了（Phase2A拡張版）');
+    console.log('🐛 デバッグ機能設定完了（v1.9修正版）');
     console.log('📝 利用可能なデバッグ関数:');
-    console.log('  - window.debugApp() - アプリ全体の状態表示（CONFIG情報含む）');
+    console.log('  - window.debugApp() - アプリ全体の状態表示（パフォーマンス統計含む）');
     console.log('  - window.showErrorInfo() - エラー情報表示');
-    console.log('  - window.testSystem() - システム統合テスト（Phase2A拡張版）');
-    console.log('  - window.testConfigValues() - CONFIG値検証テスト（Phase2A新規）');
+    console.log('  - window.testSystem() - システム統合テスト（v1.9新規）');
 }
 
 // ==== 初期化ステップ更新関数 ====
@@ -777,14 +511,13 @@ function updateInitStep(step, details = null) {
     APP_STATE.initializationStep = step;
     
     const stepMessages = {
-        [INIT_STEPS.CHECKING_CONFIG]: 'CONFIG読み込み確認中（Phase2A）...', // Phase2A追加
-        [INIT_STEPS.CHECKING_DEPENDENCIES]: '依存関係チェック中（Phase2A対応版）...',
-        [INIT_STEPS.CREATING_APP]: 'アプリケーション作成中（CONFIG連携版）...',
-        [INIT_STEPS.CREATING_TOOLS_SYSTEM]: 'ツールシステム作成中（CONFIG連携版）...',
-        [INIT_STEPS.CREATING_UI_MANAGER]: 'UI管理システム作成中（CONFIG連携版）...',
-        [INIT_STEPS.CREATING_SETTINGS_MANAGER]: '設定管理システム作成中...',
-        [INIT_STEPS.CONNECTING_SYSTEMS]: 'システム連携設定中（Phase2A拡張版）...',
-        [INIT_STEPS.FINAL_SETUP]: '最終セットアップ中（Phase2A拡張版）...',
+        [INIT_STEPS.CHECKING_DEPENDENCIES]: '依存関係チェック中（v1.9責務分離版）...',
+        [INIT_STEPS.CREATING_APP]: 'アプリケーション作成中...',
+        [INIT_STEPS.CREATING_TOOLS_SYSTEM]: 'ツールシステム作成中（責務分離版）...',
+        [INIT_STEPS.CREATING_UI_MANAGER]: 'UI管理システム作成中（パフォーマンス統合版）...',
+        [INIT_STEPS.CREATING_SETTINGS_MANAGER]: '設定管理システム作成中（ショートカット統合版）...',
+        [INIT_STEPS.CONNECTING_SYSTEMS]: 'システム連携設定中...',
+        [INIT_STEPS.FINAL_SETUP]: '最終セットアップ中...',
         [INIT_STEPS.COMPLETED]: '初期化完了！',
         [INIT_STEPS.ERROR]: '初期化エラー'
     };
@@ -792,77 +525,69 @@ function updateInitStep(step, details = null) {
     console.log(`📋 ${stepMessages[step] || step}`, details || '');
 }
 
-// ==== メイン初期化関数（Phase2A対応版） ====
+// ==== メイン初期化関数 ====
 async function initializeApplication() {
     try {
         APP_STATE.startTime = performance.now();
-        console.log('🚀 ふたば☆ちゃんねる風ベクターお絵描きツール Phase2A 初期化開始（config.js連携対応版）');
+        console.log('🚀 ふたば☆ちゃんねる風ベクターお絵描きツール v1.9 初期化開始（修正版・責務分離対応）');
         
-        // 1. Phase2A: CONFIG読み込み確認
-        updateInitStep(INIT_STEPS.CHECKING_CONFIG);
-        checkConfigLoaded();
-        
-        // 2. 依存関係チェック
+        // 1. 依存関係チェック
         updateInitStep(INIT_STEPS.CHECKING_DEPENDENCIES);
         checkDependencies();
         
-        // 3. アプリケーション作成
+        // 2. アプリケーション作成
         updateInitStep(INIT_STEPS.CREATING_APP);
         const app = await createApplication();
         
-        // 4. ツールシステム作成
+        // 3. ツールシステム作成
         updateInitStep(INIT_STEPS.CREATING_TOOLS_SYSTEM);
         const toolsSystem = await createToolsSystem(app);
         
-        // 5. UI管理システム作成
+        // 4. UI管理システム作成
         updateInitStep(INIT_STEPS.CREATING_UI_MANAGER);
         const uiManager = await createUIManager(app, toolsSystem);
         
-        // 6. 設定管理システム作成
+        // 5. 設定管理システム作成
         updateInitStep(INIT_STEPS.CREATING_SETTINGS_MANAGER);
         const settingsManager = await createSettingsManager(app, toolsSystem, uiManager);
         
-        // 7. システム間連携設定
+        // 6. システム間連携設定
         updateInitStep(INIT_STEPS.CONNECTING_SYSTEMS);
         await connectSystems();
         
-        // 8. 最終セットアップ
+        // 7. 最終セットアップ
         updateInitStep(INIT_STEPS.FINAL_SETUP);
         await finalSetup();
         
-        // 9. 初期化完了
+        // 8. 初期化完了
         updateInitStep(INIT_STEPS.COMPLETED);
         APP_STATE.initialized = true;
         APP_STATE.stats.initTime = performance.now() - APP_STATE.startTime;
         
         // 初期化完了ログ
-        console.log('🎉 アプリケーション初期化完了（Phase2A: config.js連携対応版）！');
+        console.log('🎉 アプリケーション初期化完了（v1.9修正版・責務分離対応）！');
         console.log(`⏱️ 初期化時間: ${APP_STATE.stats.initTime.toFixed(2)}ms`);
         console.log('🎨 描画の準備ができました！');
         
-        // Phase2A: システム概要表示
-        console.group('📋 システム概要（Phase2A: config.js連携対応版）');
-        console.log(`🖼️  キャンバス: ${CONFIG.CANVAS_WIDTH}×${CONFIG.CANVAS_HEIGHT}px`);
-        console.log(`🖊️  デフォルトペンサイズ: ${CONFIG.DEFAULT_BRUSH_SIZE}px（16→4に変更）`);
-        console.log(`🎨 デフォルト透明度: ${CONFIG.DEFAULT_OPACITY * 100}%（85%→100%に変更）`);
-        console.log(`📏 最大ペンサイズ: ${CONFIG.MAX_BRUSH_SIZE}px（100→500に変更）`);
-        console.log(`🎯 プリセット: [${CONFIG.SIZE_PRESETS.join(', ')}]px`);
-        console.log(`📐 プレビュー制限: ${CONFIG.PREVIEW_MIN_SIZE}-${CONFIG.PREVIEW_MAX_SIZE}px（外枠制限対応）`);
+        // システム概要表示（v1.9修正版）
+        console.group('📋 システム概要（v1.9修正版・Rulebook準拠）');
+        console.log('🖼️  キャンバス: 400×400px');
+        console.log('🖊️  ペンツール: 線補正・筆圧対応');
         console.log('🧽 消しゴム: 背景色描画方式');
         console.log('🏛️  履歴管理: Ctrl+Z/Ctrl+Y 対応');
         console.log('⚙️  設定管理: 高DPI・ショートカット統合');
         console.log('⌨️  ショートカット: P+キー組み合わせ対応');
         console.log('📊 パフォーマンス監視: UI統合版');
-        console.log('🔄 リセット機能: アクティブ/全プリセット/キャンバス対応');
-        console.log('🔧 Phase2A実装: config.js連携・デフォルト値変更・設定統一管理');
+        console.log('🎯 プリセット: 6段階サイズ・ライブプレビュー');
+        console.log('🔧 責務分離: Rulebook準拠7ファイル構成');
         console.groupEnd();
         
         // UI通知
         if (uiManager && uiManager.showNotification) {
             uiManager.showNotification(
-                'Phase2A初期化完了！新デフォルト値（サイズ4px、透明度100%）',
+                'アプリケーション初期化完了！',
                 'success',
-                4000
+                3000
             );
         }
         
@@ -934,7 +659,7 @@ function showInitializationError(error) {
         ">ページを再読み込み</button>
         <div style="margin-top: 15px; font-size: 12px; opacity: 0.6;">
             詳細なエラー情報はブラウザのコンソール（F12）をご確認ください。<br>
-            Phase2A: config.js連携対応版
+            v1.9修正版・責務分離対応
         </div>
     `;
     
@@ -1001,20 +726,20 @@ if (typeof window !== 'undefined') {
     window.INIT_STEPS = INIT_STEPS;
     window.initializeApplication = initializeApplication; // 手動再初期化用
     
-    console.log('🔧 main.js Phase2A 読み込み完了（config.js連携対応版）');
-    console.log('🔧 Phase2A修正項目:');
-    console.log('  ✅ config.js連携（CONFIG値の統一利用）');
-    console.log('  ✅ 初期化順序修正（CONFIG確認 → 依存関係チェック → ...）');
-    console.log('  ✅ デフォルト値変更対応（サイズ4、透明度100%、最大500）');
-    console.log('  ✅ システム統合テスト拡張（Phase2A機能対応）');
-    console.log('  ✅ デバッグ機能強化（CONFIG/プリセット/リセット機能）');
-    console.log('🏗️ Phase2A対応初期化順序:');
-    console.log('  1. config.js（設定値読み込み）');
-    console.log('  2. app-core.js（PixiJS基盤・CONFIG値適用）');
-    console.log('  3. settings-manager.js（設定適用）');
-    console.log('  4. history-manager.js（履歴システム初期化）');
-    console.log('  5. drawing-tools.js（描画ツール・CONFIG値適用）');
-    console.log('  6. ui/components.js（UIコンポーネント）');
-    console.log('  7. ui-manager.js（UI統合・CONFIG値統合）');
-    console.log('  8. main.js（システム統合・最終調整）');
+    console.log('🔧 main.js v1.9修正版 読み込み完了（責務分離対応）');
+    console.log('🔧 修正項目:');
+    console.log('  ✅ 依存関係チェック修正（削除されたクラスの除外）');
+    console.log('  ✅ ShortcutManager: settings-manager.js内で確認');
+    console.log('  ✅ PerformanceMonitor: ui-manager.js内で確認');
+    console.log('  ✅ LayerSystem削除（将来のlayer-manager.js予定）');
+    console.log('  ✅ StateCapture/StateRestore: 正しい外部参照確認');
+    console.log('  ✅ エラーハンドリング最適化');
+    console.log('🏗️ Rulebook準拠7ファイル構成:');
+    console.log('  1. app-core.js（PixiJS基盤）');
+    console.log('  2. settings-manager.js（設定・ショートカット統合）');
+    console.log('  3. history-manager.js（履歴システム）');
+    console.log('  4. drawing-tools.js（描画ツール・責務分離版）');
+    console.log('  5. ui/components.js（UIコンポーネント）');
+    console.log('  6. ui-manager.js（UI統合・パフォーマンス監視統合）');
+    console.log('  7. main.js（システム統合・循環参照解決）');
 }
