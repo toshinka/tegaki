@@ -1,4 +1,4 @@
-# JavaScript + PixiJS v7 Rulebook v2（UI分割対応・責務分離強化版）
+# JavaScript + PixiJS v7 Rulebook v3（UI分割対応・責務分離強化版）
 
 ## 1. 基本理念
 - 安定動作・可読性・拡張性を優先し、将来的なTypeScript + Vite + ES6移行を意識する。
@@ -19,9 +19,10 @@
 ## 2. ファイル構成ルール（UI分割対応拡張版）
 拡張された11ファイル構成（責務分離強化版）：
 
+
 ### 2.1 コア（必須）ファイル群
 1. **app-core.js**  
-   - PixiJSアプリ生成・描画ループ管理・リソースロード。
+   - PixiJSアプリ生成・描画ループ管理・リソースロード・設定連携。
    - Application / Stage / Renderer 初期化はここに集約。
 
 2. **drawing-tools.js**  
@@ -32,68 +33,94 @@
    - アンドゥ・リドゥ・履歴管理システム。
    - 操作履歴の記録と復元機能を提供。
 
-4. **config.js** 🆕
+4. **config.js** ✅（既存・Phase2A完成）
    - アプリケーション全体の設定値を定数として管理。
    - デフォルト値、制限値、UI設定値を統一管理。
+   - Phase2A: デフォルトサイズ4px、透明度100%、最大サイズ500px対応。
 
-### 2.2 UI システム（分割強化版）
-5. **ui-manager.js**（縮小版）
-   - **責務**: UI全体の統合制御のみ（800行以下）
+5. **utils.js** 🆕（Phase2D新規）
+   - 共通ユーティリティ関数の統合管理。
+   - DRY原則に基づく重複コード解消。
+   - safeConfigGet、バリデーション、エラーハンドリングの統一。
+
+### 2.2 UI システム（Phase2D完全分割版）
+6. **ui-manager.js**（Phase2D縮小版 - 400行目標）
+   - **責務**: UI全体の統合制御のみ（600行以下）
    - 各専門UIマネージャーの初期化・連携調整
-   - **削除された責務**: プリセット管理、パフォーマンス監視、詳細UIロジック
+   - **削除された責務**: イベント処理、ユーティリティ関数
 
-6. **ui/components.js** ✅（既存・軽微修正のみ）
+7. **ui/components.js** ✅（既存・Phase2D軽微修正）
    - 基本UIコンポーネント（Slider, Popup, StatusBar, PresetDisplay）
    - 独立性の高いUI要素
+   - Phase2D: utils.js活用によるコード重複解消
 
-7. **ui/preset-manager.js** 🆕
-   - プリセット管理専門システム
-   - プリセット選択、リセット、履歴記録、プレビュー生成
-
-8. **ui/performance-monitor.js** 🆕
-   - パフォーマンス監視専門システム
-   - FPS、メモリ、GPU使用率の監視・表示
-
-9. **ui/ui-events.js** 🆕
+8. **ui/ui-events.js** 🆕（Phase2D新規・UIイベント専門）
    - UIイベント処理専門システム
    - キーボードショートカット、マウス操作の統合管理
+   - P+キーシーケンス、コンテキスト認識ショートカット
+   - ui-manager.jsからイベント処理ロジックを完全分離
+
+9. **ui/preset-manager.js** 🔄（Phase2D段階的実装予定）
+   - プリセット管理専門システム（既存PenPresetManagerの後継）
+   - プリセット選択、リセット、履歴記録、プレビュー生成
+   - Phase2D: 既存システムとの段階的移行
+
+10. **ui/performance-monitor.js** 🔄（Phase2D段階的実装予定）
+    - パフォーマンス監視専門システム（既存PerformanceMonitorの拡張）
+    - FPS、メモリ、GPU使用率の監視・表示
+    - Phase2D: utils.jsのパフォーマンス測定機能活用
 
 ### 2.3 拡張機能ファイル群
-10. **settings-manager.js**
+11. **settings-manager.js** ✅（既存・Phase2D連携強化）
     - アプリ全体の動作設定を一元管理。
     - 高DPI設定、ユーザー設定保存。
+    - Phase2D: utils.js連携とui-events.js統合
 
-11. **transform-manager.js**（新規）
+12. **transform-manager.js**（Phase3実装予定）
     - キャンバス操作とオブジェクト変形の一元管理。
     - キャンバス全体の移動・回転・反転機能。
     - アクティブレイヤー内コンテンツの移動機能。
 
 ### 2.4 将来実装予定
-12. **layer-manager.js**（将来実装）
+13. **layer-manager.js**（Phase3実装予定）
     - レイヤー機能の管理（追加、削除、並び替え）。
     - レイヤー表示・非表示、透明度制御。
     - アクティブレイヤーの管理。
 
-### 2.5 ファイル間依存関係（UI分割対応）
+### 2.5 Phase2D実装中の段階的移行ファイル
+14. **ui/preset-manager-new.js** 🔄（Phase2D段階的移行）
+    - 新しいプリセット管理システム
+    - 既存PenPresetManagerからの段階的移行
+    - utils.js活用による高品質実装
+
+15. **ui/performance-monitor-enhanced.js** 🔄（Phase2D段階的移行）
+    - 拡張パフォーマンス監視システム
+    - utils.js測定機能との統合
+    - 既存システムからの段階的移行
+
+### 2.6 ファイル間依存関係（UI分割対応）
 ```
 config.js (設定値統一)
+├ utils.js 🆕 (共通ユーティリティ・DRY原則準拠)
 ├─ app-core.js
 │  ├─ drawing-tools.js
 │  └─ history-manager.js
-├─ settings-manager.js
-├─ transform-manager.js
-├─ ui-manager.js (統合制御のみ)
-│  ├─ ui/components.js
-│  ├─ ui/preset-manager.js
-│  ├─ ui/performance-monitor.js
-│  └─ ui/ui-events.js
-└─ layer-manager.js (将来実装)
+├─ settings-manager.js (utils.js活用)
+├─ transform-manager.js (Phase3)
+├─ ui-manager.js (Phase2D縮小版・400行目標)
+│  ├─ ui/components.js (utils.js活用)
+│  ├─ ui/ui-events.js 🆕 (イベント処理専門)
+│  ├─ ui/preset-manager.js (段階的移行)
+│  └─ ui/performance-monitor.js (段階的移行)
+└─ layer-manager.js (Phase3)
 
 依存関係の原則:
 - 循環参照厳禁
 - 下位から上位への依存のみ
 - config.js は全ファイルから参照可能
+- utils.js は config.js 以外から参照可能
 - ui/ 配下は ui-manager.js からのみアクセス
+- ui-events.js は ui-manager.js に統合される
 ```
 
 ---
