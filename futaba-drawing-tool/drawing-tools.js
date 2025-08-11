@@ -1,68 +1,17 @@
 /**
- * ⚠️ 【重要】開発・改修時の注意事項:
- * 必ずdebug/またはmonitoring/ディレクトリの既存モジュールを確認し、重複を避けてください。
- * - debug/debug-manager.js: デバッグ機能統合
- * - debug/diagnostics.js: システム診断
- * - debug/performance-logger.js: パフォーマンス測定
- * - monitoring/system-monitor.js: システム監視
- * これらの機能はこのファイルに重複実装しないでください。
- */
-
-/**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev12
- * 描画ツール群 - drawing-tools.js (STEP 2完成版: PenToolUI統合)
+ * 描画ツール群 - drawing-tools.js (Phase2: ペンサイズ範囲拡張版)
  * 
- * 🔧 STEP 2実装完了（ペンUI責務移譲）:
- * 1. ✅ PenToolUIクラス完成: ui-manager.jsからスライダー制御機能完全移譲
- * 2. ✅ スライダー制御システム: setupSliders, createSlider, updateSliderValue等
- * 3. ✅ 外部システム依存注入: SliderController, PenPresetManager統合
- * 4. ✅ DrawingToolsSystem API拡張: initUI, getPenUI, onBrushSettingsChanged
- * 5. ✅ エラーハンドリング強化・デバッグ機能充実
- * 6. ✅ DRY・SOLID原則準拠（単一責任原則・依存性逆転）
+ * 🔧 v1rev5b修正内容（Phase2: ペンサイズ範囲拡張）:
+ * 1. ✅ updateBrushSettings: ペンサイズ最大値 100 → 500 に変更
+ * 2. ✅ DEFAULT_BRUSH_SIZE使用: CONFIG値を参照するように修正
+ * 3. ✅ ブラシ設定変更の履歴記録強化
  * 
- * 責務: 描画ツール管理 + ペンツール専用UI制御
- * 依存: app-core.js, ui/components.js, config.js
+ * 責務: 各描画ツール（ペン・消しゴム）とツール管理のみ
+ * 依存: app-core.js (PixiDrawingApp, CONFIG, EVENTS), history-manager.js
  * 
- * STEP 2達成目標: ペンスライダー制御の完全独立性確保
+ * Phase2目標: ペンサイズ範囲の拡張対応
  */
-
-console.log('🔧 drawing-tools.js STEP 2完成版読み込み開始...');
-
-// ==== EVENTS定数の確保 ====
-const EVENTS = window.EVENTS || {
-    POINTER_DOWN: 'pointerdown',
-    POINTER_MOVE: 'pointermove', 
-    POINTER_UP: 'pointerup',
-    POINTER_UP_OUTSIDE: 'pointerupoutside'
-};
-
-// ==== CONFIG値安全取得（DRY原則準拠）====
-function safeConfigGet(key, defaultValue = null) {
-    try {
-        if (!window.CONFIG || typeof window.CONFIG !== 'object') {
-            console.warn(`safeConfigGet: CONFIG未初期化 (${key}) → デフォルト値使用:`, defaultValue);
-            return defaultValue;
-        }
-        
-        if (!(key in window.CONFIG)) {
-            console.warn(`safeConfigGet: キー不存在 (${key}) → デフォルト値使用:`, defaultValue);
-            return defaultValue;
-        }
-        
-        const value = window.CONFIG[key];
-        
-        if (value === null || value === undefined) {
-            console.warn(`safeConfigGet: 値がnull/undefined (${key}) → デフォルト値使用:`, defaultValue);
-            return defaultValue;
-        }
-        
-        return value;
-        
-    } catch (error) {
-        console.error(`safeConfigGet: アクセスエラー (${key}):`, error, '→ デフォルト値使用:', defaultValue);
-        return defaultValue;
-    }
-}
 
 // ==== ベースツールクラス ====
 class BaseTool {
@@ -72,7 +21,7 @@ class BaseTool {
         this.historyManager = historyManager;
         this.isActive = false;
         this.currentPath = null;
-        this.operationStartState = null;
+        this.operationStartState = null; // 履歴管理用の開始状態
     }
     
     activate() {
@@ -85,16 +34,19 @@ class BaseTool {
         this.onDeactivate();
     }
     
+    // 履歴管理システムの後設定メソッド
     setHistoryManager(historyManager) {
         this.historyManager = historyManager;
     }
     
+    // 操作開始時の状態キャプチャ
     captureStartState() {
         if (this.historyManager && window.InternalStateCapture) {
             this.operationStartState = window.InternalStateCapture.captureDrawingState(this.app);
         }
     }
     
+    // 操作終了時の履歴記録
     recordOperation() {
         if (this.historyManager && this.operationStartState) {
             this.historyManager.recordDrawingOperation(
@@ -105,6 +57,7 @@ class BaseTool {
         }
     }
     
+    // 抽象メソッド（サブクラスで実装）
     onActivate() {}
     onDeactivate() {}
     onPointerDown(x, y, event) {}
@@ -124,6 +77,8 @@ class VectorPenTool extends BaseTool {
     onActivate() {
         console.log('🖊️ ベクターペンツール アクティブ');
         this.app.updateState({ currentTool: 'pen' });
+        
+        // 描画レイヤーにイベントリスナーを設定
         this.setupEventListeners();
     }
     
@@ -159,16 +114,22 @@ class VectorPenTool extends BaseTool {
     }
     
     onPointerDown(x, y, event) {
+        // 履歴管理：操作開始状態をキャプチャ
         this.captureStartState();
+        
         this.currentPath = this.app.createPath(x, y, 'pen');
         this.lastPoint = { x, y };
         this.smoothingBuffer = [{ x, y }];
+        
         console.log(`ペン開始: (${x.toFixed(1)}, ${y.toFixed(1)})`);
     }
     
     onPointerMove(x, y, event) {
         if (!this.currentPath || !this.app.state.isDrawing) return;
+        
+        // 線補正処理
         const smoothedPoint = this.applySmoothingFilter(x, y);
+        
         this.app.extendPath(this.currentPath, smoothedPoint.x, smoothedPoint.y);
         this.lastPoint = smoothedPoint;
     }
@@ -176,9 +137,13 @@ class VectorPenTool extends BaseTool {
     onPointerUp(x, y, event) {
         if (this.currentPath) {
             this.app.finalizePath(this.currentPath);
+            
+            // 履歴管理：描画操作を記録
             this.recordOperation();
+            
             console.log(`ペン終了: パス完成 (${this.currentPath.points.length}点)`);
         }
+        
         this.cleanup();
     }
     
@@ -190,6 +155,7 @@ class VectorPenTool extends BaseTool {
             return { x, y };
         }
         
+        // 移動平均による線補正
         this.smoothingBuffer.push({ x, y });
         if (this.smoothingBuffer.length > this.maxBufferSize) {
             this.smoothingBuffer.shift();
@@ -199,6 +165,7 @@ class VectorPenTool extends BaseTool {
         const avgX = this.smoothingBuffer.reduce((sum, p) => sum + p.x, 0) / bufferLength;
         const avgY = this.smoothingBuffer.reduce((sum, p) => sum + p.y, 0) / bufferLength;
         
+        // スムージング強度に応じて補正
         const smoothedX = x + (avgX - x) * smoothing;
         const smoothedY = y + (avgY - y) * smoothing;
         
@@ -258,14 +225,19 @@ class EraserTool extends BaseTool {
     }
     
     onPointerDown(x, y, event) {
+        // 履歴管理：操作開始状態をキャプチャ
         this.captureStartState();
+        
+        // 背景色で描画することで消しゴム効果を実現
         this.currentPath = this.app.createPath(x, y, 'eraser');
         this.lastPoint = { x, y };
+        
         console.log(`消しゴム開始: (${x.toFixed(1)}, ${y.toFixed(1)})`);
     }
     
     onPointerMove(x, y, event) {
         if (!this.currentPath || !this.app.state.isDrawing) return;
+        
         this.app.extendPath(this.currentPath, x, y);
         this.lastPoint = { x, y };
     }
@@ -273,9 +245,13 @@ class EraserTool extends BaseTool {
     onPointerUp(x, y, event) {
         if (this.currentPath) {
             this.app.finalizePath(this.currentPath);
+            
+            // 履歴管理：消しゴム操作を記録
             this.recordOperation();
+            
             console.log(`消しゴム終了: パス完成`);
         }
+        
         this.cleanup();
     }
     
@@ -286,27 +262,30 @@ class EraserTool extends BaseTool {
     }
 }
 
-// ==== ツール管理システム（履歴管理統合版）====
+// ==== ツール管理システム（履歴管理統合版・修正版）====
 class ToolManager {
     constructor(app, historyManager = null) {
         this.app = app;
         this.historyManager = historyManager;
         this.tools = new Map();
-        this.activeTool = null;
+        this.activeTool = null; // 初期化時はnull
         
         this.initializeTools();
     }
     
     initializeTools() {
+        // 履歴管理対応版ツールを登録
         this.registerTool('pen', new VectorPenTool(this.app, this.historyManager));
         this.registerTool('eraser', new EraserTool(this.app, this.historyManager));
         
         console.log(`✅ ${this.tools.size}個のツールを登録完了（履歴管理対応版）`);
     }
     
+    // 履歴管理システムの後設定メソッド
     setHistoryManager(historyManager) {
         this.historyManager = historyManager;
         
+        // 既存のツールにも履歴管理を設定
         this.tools.forEach(tool => {
             if (tool.setHistoryManager) {
                 tool.setHistoryManager(historyManager);
@@ -327,15 +306,19 @@ class ToolManager {
             return false;
         }
         
+        // 履歴管理：ツール変更を記録
         const beforeTool = this.activeTool ? this.activeTool.name : null;
         
+        // 現在のツールを非アクティブ化
         if (this.activeTool) {
             this.activeTool.deactivate();
         }
         
+        // 新しいツールをアクティブ化
         this.activeTool = this.tools.get(toolName);
         this.activeTool.activate();
         
+        // 履歴管理：ツール変更を記録
         if (this.historyManager && beforeTool !== toolName) {
             this.historyManager.recordToolChange(beforeTool, toolName);
         }
@@ -344,8 +327,9 @@ class ToolManager {
         return true;
     }
     
+    // getCurrentTool() null チェック修正
     getActiveTool() {
-        return this.activeTool;
+        return this.activeTool; // null の可能性あり
     }
     
     getAvailableTools() {
@@ -353,462 +337,45 @@ class ToolManager {
     }
 }
 
-// ==== STEP 2完成: PenToolUI クラス（スライダー制御完全版）====
-class PenToolUI {
-    constructor(drawingToolsSystem) {
-        this.drawingToolsSystem = drawingToolsSystem;
-        this.app = drawingToolsSystem.app;
-        
-        // 外部システム参照（依存注入パターン）
-        this.sliders = new Map();
-        this.sliderController = null;
-        this.penPresetManager = null;
-        this.presetDisplayManager = null;
-        
-        // UI制御状態
-        this.isInitialized = false;
-        this.errorCount = 0;
-        this.maxErrors = 5;
-        
-        // プレビュー連動制御（STEP 3で実装予定）
-        this.previewSyncEnabled = true;
-        this.previewUpdateThrottle = null;
-        this.lastPreviewUpdate = 0;
-        
-        console.log('🎨 PenToolUI初期化準備（STEP 2完成版: スライダー制御特化）');
-    }
-    
-    /**
-     * STEP 2: 外部システム安全初期化（DRY原則準拠）
-     */
-    initializeExternalSystems() {
-        let initSuccess = 0;
-        let initTotal = 0;
-        
-        try {
-            // SliderControllerクラスの確認・初期化
-            initTotal++;
-            if (typeof window.SliderController !== 'undefined') {
-                this.sliderController = window.SliderController;
-                console.log('✅ SliderController連携完了');
-                initSuccess++;
-            } else {
-                console.warn('⚠️ SliderController が利用できません');
-            }
-            
-            // PenPresetManagerクラスの確認（STEP 3で使用予定）
-            initTotal++;
-            if (typeof window.PenPresetManager !== 'undefined') {
-                // 初期化はしないが、存在確認のみ
-                console.log('✅ PenPresetManager検出完了（STEP 3で使用予定）');
-                initSuccess++;
-            } else {
-                console.warn('⚠️ PenPresetManager が利用できません（STEP 3で必要）');
-            }
-            
-            // PresetDisplayManagerクラスの確認（STEP 3で使用予定）
-            initTotal++;
-            if (typeof window.PresetDisplayManager !== 'undefined') {
-                console.log('✅ PresetDisplayManager検出完了（STEP 3で使用予定）');
-                initSuccess++;
-            } else {
-                console.warn('⚠️ PresetDisplayManager が利用できません（STEP 3で必要）');
-            }
-            
-            console.log(`📊 外部システム統合状況: ${initSuccess}/${initTotal}システム利用可能`);
-            
-            // STEP 2では SliderController のみが必須
-            return !!this.sliderController;
-            
-        } catch (error) {
-            console.error('外部システム初期化エラー:', error);
-            this.handleError(error);
-            return false;
-        }
-    }
-    
-    /**
-     * STEP 2: メインUI初期化（ui-manager.jsから移譲完了版）
-     */
-    async init() {
-        try {
-            console.log('🎯 PenToolUI初期化開始（STEP 2完成版: スライダー制御移譲）...');
-            
-            // 外部システムの取得・初期化
-            if (!this.initializeExternalSystems()) {
-                throw new Error('必須システム初期化失敗（SliderController不足）');
-            }
-            
-            // STEP 2: スライダー制御初期化（ui-manager.jsから完全移譲）
-            this.initSliders();
-            
-            // STEP 3予定機能のプレースホルダー
-            this.prepareStep3Features();
-            
-            this.isInitialized = true;
-            console.log('✅ PenToolUI初期化完了（STEP 2完成版: スライダー制御移譲）');
-            
-            return true;
-            
-        } catch (error) {
-            console.error('❌ PenToolUI初期化エラー:', error);
-            this.handleError(error);
-            throw error;
-        }
-    }
-    
-    /**
-     * STEP 2: スライダー制御初期化（ui-manager.jsから完全移譲）
-     */
-    initSliders() {
-        if (!this.sliderController) {
-            console.warn('SliderController が利用できません');
-            return;
-        }
-        
-        try {
-            // CONFIG値を安全に取得（DRY原則）
-            const minSize = safeConfigGet('MIN_BRUSH_SIZE', 0.1);
-            const maxSize = safeConfigGet('MAX_BRUSH_SIZE', 500);
-            const defaultSize = safeConfigGet('DEFAULT_BRUSH_SIZE', 4);
-            const defaultOpacity = safeConfigGet('DEFAULT_OPACITY', 1.0);
-            const defaultPressure = safeConfigGet('DEFAULT_PRESSURE', 0.5);
-            const defaultSmoothing = safeConfigGet('DEFAULT_SMOOTHING', 0.3);
-            
-            console.log('📐 スライダー設定値:', {
-                サイズ範囲: `${minSize}-${maxSize}px`,
-                デフォルト: `${defaultSize}px, ${defaultOpacity * 100}%透明度`,
-                筆圧: `${defaultPressure * 100}%`,
-                補正: `${defaultSmoothing * 100}%`
-            });
-            
-            // ペンサイズスライダー（ui-manager.jsから移譲）
-            this.createSlider('pen-size-slider', minSize, maxSize, defaultSize, 
-                (value, displayOnly = false) => {
-                    if (!displayOnly) {
-                        this.drawingToolsSystem.updateBrushSettings({ size: value });
-                        // STEP 3で実装予定: プレビュー連動
-                        // this.updatePresetLiveValues(value, null);
-                        // this.updateActivePresetPreview(value, null);
-                        console.log(`🎛️ ペンサイズ変更: ${value.toFixed(1)}px`);
-                    }
-                    return value.toFixed(1) + 'px';
-                });
-            
-            // 不透明度スライダー（ui-manager.jsから移譲）
-            this.createSlider('pen-opacity-slider', 0, 100, defaultOpacity * 100, 
-                (value, displayOnly = false) => {
-                    if (!displayOnly) {
-                        this.drawingToolsSystem.updateBrushSettings({ opacity: value / 100 });
-                        // STEP 3で実装予定: プレビュー連動
-                        // this.updatePresetLiveValues(null, value);
-                        // this.updateActivePresetPreview(null, value);
-                        console.log(`🎛️ 不透明度変更: ${value.toFixed(1)}%`);
-                    }
-                    return value.toFixed(1) + '%';
-                });
-            
-            // 筆圧スライダー（ui-manager.jsから移譲）
-            this.createSlider('pen-pressure-slider', 0, 100, defaultPressure * 100, 
-                (value, displayOnly = false) => {
-                    if (!displayOnly) {
-                        this.drawingToolsSystem.updateBrushSettings({ pressure: value / 100 });
-                        console.log(`🎛️ 筆圧変更: ${value.toFixed(1)}%`);
-                    }
-                    return value.toFixed(1) + '%';
-                });
-            
-            // 線補正スライダー（ui-manager.jsから移譲）
-            this.createSlider('pen-smoothing-slider', 0, 100, defaultSmoothing * 100, 
-                (value, displayOnly = false) => {
-                    if (!displayOnly) {
-                        this.drawingToolsSystem.updateBrushSettings({ smoothing: value / 100 });
-                        console.log(`🎛️ 線補正変更: ${value.toFixed(1)}%`);
-                    }
-                    return value.toFixed(1) + '%';
-                });
-            
-            // スライダーボタンの設定（ui-manager.jsから移譲）
-            this.initSliderButtons();
-            
-            console.log('✅ PenToolUI: スライダー設定完了（STEP 2完全移譲版）');
-            
-        } catch (error) {
-            console.error('スライダー設定エラー:', error);
-            this.handleError(error);
-        }
-    }
-    
-    /**
-     * STEP 2: スライダー作成（ui-manager.jsから移譲）
-     */
-    createSlider(sliderId, min, max, initial, callback) {
-        try {
-            const slider = new this.sliderController(sliderId, min, max, initial, callback);
-            this.sliders.set(sliderId, slider);
-            console.log(`🎛️ スライダー作成完了: ${sliderId} (${min}-${max}, 初期値: ${initial})`);
-            return slider;
-        } catch (error) {
-            console.error(`スライダー作成エラー (${sliderId}):`, error);
-            this.handleError(error);
-            return null;
-        }
-    }
-    
-    /**
-     * STEP 2: スライダーボタン設定（ui-manager.jsから移譲・拡張）
-     */
-    initSliderButtons() {
-        const buttonConfigs = [
-            // ペンサイズ調整ボタン（微調整・標準・大幅調整）
-            { id: 'pen-size-decrease-small', slider: 'pen-size-slider', delta: -0.1 },
-            { id: 'pen-size-decrease', slider: 'pen-size-slider', delta: -1 },
-            { id: 'pen-size-decrease-large', slider: 'pen-size-slider', delta: -10 },
-            { id: 'pen-size-increase-small', slider: 'pen-size-slider', delta: 0.1 },
-            { id: 'pen-size-increase', slider: 'pen-size-slider', delta: 1 },
-            { id: 'pen-size-increase-large', slider: 'pen-size-slider', delta: 10 },
-            
-            // 不透明度調整ボタン（微調整・標準・大幅調整）
-            { id: 'pen-opacity-decrease-small', slider: 'pen-opacity-slider', delta: -0.1 },
-            { id: 'pen-opacity-decrease', slider: 'pen-opacity-slider', delta: -1 },
-            { id: 'pen-opacity-decrease-large', slider: 'pen-opacity-slider', delta: -10 },
-            { id: 'pen-opacity-increase-small', slider: 'pen-opacity-slider', delta: 0.1 },
-            { id: 'pen-opacity-increase', slider: 'pen-opacity-slider', delta: 1 },
-            { id: 'pen-opacity-increase-large', slider: 'pen-opacity-slider', delta: 10 }
-        ];
-        
-        let setupCount = 0;
-        buttonConfigs.forEach(config => {
-            const button = document.getElementById(config.id);
-            if (button) {
-                button.addEventListener('click', (event) => {
-                    event.preventDefault();
-                    const slider = this.sliders.get(config.slider);
-                    if (slider && slider.adjustValue) {
-                        slider.adjustValue(config.delta);
-                        console.log(`🔘 ボタン調整: ${config.id} (${config.delta > 0 ? '+' : ''}${config.delta})`);
-                    }
-                });
-                setupCount++;
-            }
-        });
-        
-        console.log(`🎛️ スライダーボタン設定完了: ${setupCount}個`);
-    }
-    
-    /**
-     * STEP 2: スライダー値更新（ui-manager.jsから移譲）
-     */
-    updateSliderValue(sliderId, value) {
-        const slider = this.sliders.get(sliderId);
-        if (slider && slider.setValue) {
-            slider.setValue(value, true); // displayOnly = true
-            return true;
-        }
-        console.warn(`スライダー更新失敗: ${sliderId}`);
-        return false;
-    }
-    
-    /**
-     * STEP 2: 全スライダー値取得（ui-manager.jsから移譲）
-     */
-    getAllSliderValues() {
-        const values = {};
-        for (const [id, slider] of this.sliders) {
-            if (slider && slider.getStatus) {
-                const status = slider.getStatus();
-                values[id] = status.value;
-            }
-        }
-        return values;
-    }
-    
-    /**
-     * STEP 2: ブラシ設定変更通知（DrawingToolsSystemから呼び出し）
-     */
-    onBrushSettingsChanged(settings) {
-        try {
-            // スライダー値の同期（ツールシステム → UI）
-            let syncCount = 0;
-            
-            if ('size' in settings) {
-                if (this.updateSliderValue('pen-size-slider', settings.size)) {
-                    syncCount++;
-                }
-            }
-            
-            if ('opacity' in settings) {
-                if (this.updateSliderValue('pen-opacity-slider', settings.opacity * 100)) {
-                    syncCount++;
-                }
-            }
-            
-            if ('pressure' in settings) {
-                if (this.updateSliderValue('pen-pressure-slider', settings.pressure * 100)) {
-                    syncCount++;
-                }
-            }
-            
-            if ('smoothing' in settings) {
-                if (this.updateSliderValue('pen-smoothing-slider', settings.smoothing * 100)) {
-                    syncCount++;
-                }
-            }
-            
-            if (syncCount > 0) {
-                console.log(`🔄 スライダー同期完了: ${syncCount}個更新`);
-            }
-            
-            // STEP 3で実装予定: プレビュー連動機能
-            // this.updatePresetLiveValues(settings.size, settings.opacity ? settings.opacity * 100 : null);
-            // this.updateActivePresetPreview(settings.size, settings.opacity ? settings.opacity * 100 : null);
-            
-        } catch (error) {
-            console.error('ブラシ設定変更同期エラー:', error);
-            this.handleError(error);
-        }
-    }
-    
-    /**
-     * STEP 3予定機能のプレースホルダー（プレビュー連動機能）
-     */
-    prepareStep3Features() {
-        // STEP 3で実装予定の機能群
-        console.log('📋 STEP 3予定機能準備:');
-        console.log('  - プレビュー連動システム初期化');
-        console.log('  - PenPresetManager統合');
-        console.log('  - PresetDisplayManager統合');
-        console.log('  - リアルタイムプレビュー更新');
-        console.log('  - ライブ値管理機能');
-    }
-    
-    /**
-     * STEP 2: エラーハンドリング（DRY原則準拠）
-     */
-    handleError(error) {
-        this.errorCount++;
-        
-        if (this.errorCount > this.maxErrors) {
-            console.error(`PenToolUI: 最大エラー数 (${this.maxErrors}) に達しました。`);
-            return false;
-        }
-        
-        console.warn(`PenToolUI エラー ${this.errorCount}/${this.maxErrors}:`, error);
-        return true;
-    }
-    
-    /**
-     * STEP 2: デバッグ機能（基本版）
-     */
-    debugPenUI() {
-        console.group('🔍 PenToolUI デバッグ情報（STEP 2完成版）');
-        
-        console.log('基本情報:', {
-            initialized: this.isInitialized,
-            sliders: this.sliders.size,
-            errorCount: `${this.errorCount}/${this.maxErrors}`,
-            previewSyncEnabled: this.previewSyncEnabled
-        });
-        
-        console.log('外部システム連携:', {
-            sliderController: !!this.sliderController,
-            penPresetManager: !!this.penPresetManager,
-            presetDisplayManager: !!this.presetDisplayManager
-        });
-        
-        console.log('スライダー状態:', this.getAllSliderValues());
-        
-        console.groupEnd();
-    }
-    
-    /**
-     * STEP 2: 統計取得
-     */
-    getStats() {
-        return {
-            isInitialized: this.isInitialized,
-            slidersCount: this.sliders.size,
-            errorCount: this.errorCount,
-            maxErrors: this.maxErrors,
-            previewSyncEnabled: this.previewSyncEnabled,
-            externalSystems: {
-                sliderController: !!this.sliderController,
-                penPresetManager: !!this.penPresetManager,
-                presetDisplayManager: !!this.presetDisplayManager
-            },
-            step2Completed: true,
-            step3Ready: false
-        };
-    }
-    
-    /**
-     * STEP 2: クリーンアップ
-     */
-    destroy() {
-        try {
-            console.log('🧹 PenToolUI クリーンアップ開始（STEP 2版）');
-            
-            // プレビュー更新スロットリングのクリア
-            if (this.previewUpdateThrottle) {
-                clearTimeout(this.previewUpdateThrottle);
-                this.previewUpdateThrottle = null;
-            }
-            
-            // スライダーのクリーンアップ
-            for (const slider of this.sliders.values()) {
-                if (slider && slider.destroy) {
-                    slider.destroy();
-                }
-            }
-            this.sliders.clear();
-            
-            // 参照のクリア
-            this.sliderController = null;
-            this.penPresetManager = null;
-            this.presetDisplayManager = null;
-            
-            this.isInitialized = false;
-            console.log('✅ PenToolUI クリーンアップ完了（STEP 2版）');
-            
-        } catch (error) {
-            console.error('PenToolUI クリーンアップエラー:', error);
-        }
-    }
-}
-
-// ==== DrawingToolsSystem（STEP 2拡張版：PenToolUI統合）====
+// ==== メインツールシステム統合クラス（v1rev5b Phase2: ペンサイズ範囲拡張版）====
 class DrawingToolsSystem {
     constructor(app) {
         this.app = app;
-        this.toolManager = null;
+        
+        // 履歴管理システムは後で初期化
         this.historyManager = null;
         
-        // STEP 2新規追加: ペンツール専用UI制御システム
-        this.penToolUI = null;
+        // 描画ツール管理（履歴管理なしで初期化）
+        this.toolManager = null;
         
-        // ブラシ設定状態
-        this.brushSettings = {
-            size: safeConfigGet('DEFAULT_BRUSH_SIZE', 4),
-            opacity: safeConfigGet('DEFAULT_OPACITY', 1.0),
-            color: safeConfigGet('DEFAULT_COLOR', 0x800000),
-            pressure: safeConfigGet('DEFAULT_PRESSURE', 0.5),
-            smoothing: safeConfigGet('DEFAULT_SMOOTHING', 0.3)
-        };
+        // 外部システムへの参照
+        this.uiManager = null; // UIManagerへの参照
         
-        console.log('🎯 DrawingToolsSystem初期化（STEP 2拡張版：PenToolUI統合）');
+        this.isInitialized = false;
     }
     
     async init() {
         try {
-            console.log('🎯 DrawingToolsSystem初期化開始（STEP 2拡張版）...');
+            console.log('🎯 DrawingToolsSystem初期化開始（v1rev5b Phase2: ペンサイズ範囲拡張版）...');
             
-            // 基本システムの初期化
-            this.toolManager = new ToolManager(this.app, this.historyManager);
+            // 1. 基本システムの初期化（履歴管理なし）
+            this.toolManager = new ToolManager(this.app, null); // 履歴管理は後で設定
             
-            // デフォルトツールの設定
+            // 2. デフォルトツールをアクティブ化（履歴記録前）
             this.toolManager.setActiveTool('pen');
             
-            console.log('✅ DrawingToolsSystem初期化完了（STEP 2拡張版）');
+            // 3. 履歴管理システムを初期化（ツール準備完了後）
+            this.historyManager = new HistoryManager(this.app, this);
+            
+            // 4. ツールマネージャーに履歴管理を設定
+            this.toolManager.setHistoryManager(this.historyManager);
+            
+            this.isInitialized = true;
+            console.log('✅ DrawingToolsSystem初期化完了（v1rev5b Phase2: ペンサイズ範囲拡張版）');
+            console.log('🔧 Phase2修正項目:');
+            console.log('  - ペンサイズ最大値: 100 → 500 に変更');
+            console.log('  - CONFIG値参照の徹底');
+            console.log('  - ブラシ設定変更履歴記録の強化');
             
         } catch (error) {
             console.error('❌ DrawingToolsSystem初期化エラー:', error);
@@ -816,265 +383,450 @@ class DrawingToolsSystem {
         }
     }
     
-    /**
-     * STEP 2新規API: ペンツール専用UI初期化
-     */
-    async initUI() {
-        try {
-            console.log('🎨 ペンツールUI初期化開始（STEP 2新規API）...');
-            
-            if (!this.penToolUI) {
-                this.penToolUI = new PenToolUI(this);
-            }
-            
-            const success = await this.penToolUI.init();
-            
-            if (success) {
-                console.log('✅ ペンツールUI初期化完了（STEP 2新規API）');
-            } else {
-                console.error('❌ ペンツールUI初期化失敗');
-            }
-            
-            return success;
-            
-        } catch (error) {
-            console.error('❌ ペンツールUI初期化エラー:', error);
-            throw error;
-        }
-    }
-    
-    /**
-     * STEP 2新規API: PenToolUI取得
-     */
-    getPenUI() {
-        return this.penToolUI;
-    }
-    
-    /**
-     * STEP 2拡張: ブラシ設定更新（UI通知機能付き）
-     */
-    updateBrushSettings(newSettings) {
-        let updated = false;
-        const oldSettings = { ...this.brushSettings };
+    // UIManager設定メソッド
+    setUIManager(uiManager) {
+        this.uiManager = uiManager;
         
-        // 設定値の更新と検証
-        Object.keys(newSettings).forEach(key => {
-            if (key in this.brushSettings) {
-                let value = newSettings[key];
-                
-                // 値の妥当性チェック
-                switch (key) {
-                    case 'size':
-                        value = Math.max(
-                            safeConfigGet('MIN_BRUSH_SIZE', 0.1),
-                            Math.min(safeConfigGet('MAX_BRUSH_SIZE', 500), parseFloat(value))
-                        );
-                        break;
-                    case 'opacity':
-                    case 'pressure':
-                    case 'smoothing':
-                        value = Math.max(0, Math.min(1, parseFloat(value)));
-                        break;
-                    case 'color':
-                        value = parseInt(value, 10) || this.brushSettings.color;
-                        break;
-                }
-                
-                if (this.brushSettings[key] !== value) {
-                    this.brushSettings[key] = value;
-                    updated = true;
-                }
-            }
-        });
-        
-        // アプリケーション状態の更新
-        if (updated) {
-            this.app.updateState({
-                size: this.brushSettings.size,
-                opacity: this.brushSettings.opacity,
-                color: this.brushSettings.color,
-                pressure: this.brushSettings.pressure,
-                smoothing: this.brushSettings.smoothing
-            });
-            
-            // STEP 2新規: PenToolUIに変更を通知
-            if (this.penToolUI && this.penToolUI.onBrushSettingsChanged) {
-                this.penToolUI.onBrushSettingsChanged(newSettings);
-            }
-            
-            console.log('🔄 ブラシ設定更新（UI通知付き）:', newSettings);
+        // 履歴管理システムにも設定
+        if (this.historyManager) {
+            this.historyManager.setUIManager(uiManager);
         }
         
-        return updated;
+        console.log('🔧 DrawingToolsSystem: UIManager設定完了');
     }
     
-    // 既存メソッド群（変更なし）
-    getBrushSettings() {
-        return { ...this.brushSettings };
-    }
-    
-    setHistoryManager(historyManager) {
-        this.historyManager = historyManager;
-        
-        if (this.toolManager) {
-            this.toolManager.setHistoryManager(historyManager);
+    // getPenPresetManager() API メソッド
+    getPenPresetManager() {
+        if (this.uiManager && this.uiManager.getPenPresetManager) {
+            return this.uiManager.getPenPresetManager();
         }
         
-        console.log('📚 DrawingToolsSystem: 履歴管理システム設定完了');
+        // UIManager経由でPenPresetManagerを取得する試行
+        if (typeof window !== 'undefined' && window.uiManager && window.uiManager.getPenPresetManager) {
+            return window.uiManager.getPenPresetManager();
+        }
+        
+        console.warn('PenPresetManagerが見つかりません');
+        return null;
     }
     
+    // ==== 公開API ====
     setTool(toolName) {
-        if (this.toolManager) {
-            return this.toolManager.setActiveTool(toolName);
+        return this.toolManager.setActiveTool(toolName);
+    }
+    
+    // getCurrentTool() null チェック修正
+    getCurrentTool() {
+        const activeTool = this.toolManager.getActiveTool();
+        if (!activeTool) {
+            console.warn('getCurrentTool(): アクティブツールが設定されていません');
+            return null;
+        }
+        return activeTool.name;
+    }
+    
+    getAvailableTools() {
+        return this.toolManager.getAvailableTools();
+    }
+    
+    // 🆕 Phase2: ブラシ設定更新（ペンサイズ範囲拡張版）
+    updateBrushSettings(settings) {
+        // 履歴管理：変更前の設定をキャプチャ
+        const beforeSettings = this.historyManager && window.InternalStateCapture ? 
+            window.InternalStateCapture.captureBrushSettings(this) : null;
+        
+        const updates = {};
+        
+        // 🆕 Phase2: ペンサイズ範囲の拡張（0.1 ～ 500）
+        if ('size' in settings) {
+            const minSize = (typeof CONFIG !== 'undefined' && CONFIG.MIN_BRUSH_SIZE) ? 
+                CONFIG.MIN_BRUSH_SIZE : 0.1;
+            const maxSize = (typeof CONFIG !== 'undefined' && CONFIG.MAX_BRUSH_SIZE) ? 
+                CONFIG.MAX_BRUSH_SIZE : 500;
+            
+            updates.brushSize = Math.max(minSize, Math.min(maxSize, settings.size));
+            
+            // Phase2: サイズが範囲外の場合の警告
+            if (settings.size > maxSize) {
+                console.warn(`⚠️ ペンサイズ ${settings.size} は最大値 ${maxSize} を超えています。${maxSize} に制限されました。`);
+            } else if (settings.size < minSize) {
+                console.warn(`⚠️ ペンサイズ ${settings.size} は最小値 ${minSize} を下回っています。${minSize} に制限されました。`);
+            }
+        }
+        
+        if ('color' in settings) {
+            updates.brushColor = settings.color;
+        }
+        if ('opacity' in settings) {
+            updates.opacity = Math.max(0, Math.min(1, settings.opacity));
+        }
+        if ('pressure' in settings) {
+            updates.pressure = Math.max(0, Math.min(1, settings.pressure));
+        }
+        if ('smoothing' in settings) {
+            updates.smoothing = Math.max(0, Math.min(1, settings.smoothing));
+        }
+        
+        this.app.updateState(updates);
+        
+        // 履歴管理：変更後の設定を記録
+        if (this.historyManager && beforeSettings && window.InternalStateCapture) {
+            const afterSettings = window.InternalStateCapture.captureBrushSettings(this);
+            this.historyManager.recordBrushSettingChange(beforeSettings, afterSettings);
+        }
+        
+        // 🆕 Phase2: 詳細ログ出力
+        const logUpdates = { ...updates };
+        if ('brushSize' in logUpdates) {
+            logUpdates.brushSize = `${logUpdates.brushSize}px`;
+        }
+        if ('opacity' in logUpdates) {
+            logUpdates.opacity = `${Math.round(logUpdates.opacity * 100)}%`;
+        }
+        
+        console.log('🎨 ブラシ設定更新（Phase2範囲拡張対応）:', logUpdates);
+        
+        // Phase2: 設定範囲情報もログに出力
+        if ('size' in settings) {
+            const minSize = (typeof CONFIG !== 'undefined' && CONFIG.MIN_BRUSH_SIZE) ? 
+                CONFIG.MIN_BRUSH_SIZE : 0.1;
+            const maxSize = (typeof CONFIG !== 'undefined' && CONFIG.MAX_BRUSH_SIZE) ? 
+                CONFIG.MAX_BRUSH_SIZE : 500;
+            console.log(`📏 ペンサイズ範囲: ${minSize}px ～ ${maxSize}px`);
+        }
+    }
+    
+    getBrushSettings() {
+        const state = this.app.getState();
+        return {
+            size: state.brushSize,
+            color: state.brushColor,
+            opacity: state.opacity,
+            pressure: state.pressure,
+            smoothing: state.smoothing
+        };
+    }
+    
+    // ==== 履歴管理関連API ====
+    
+    /**
+     * 履歴管理システムへのアクセサー
+     */
+    getHistoryManager() {
+        return this.historyManager;
+    }
+    
+    /**
+     * アンドゥ実行
+     */
+    undo() {
+        return this.historyManager ? this.historyManager.undo() : false;
+    }
+    
+    /**
+     * リドゥ実行
+     */
+    redo() {
+        return this.historyManager ? this.historyManager.redo() : false;
+    }
+    
+    /**
+     * アンドゥ可能状態
+     */
+    canUndo() {
+        return this.historyManager ? this.historyManager.canUndo() : false;
+    }
+    
+    /**
+     * リドゥ可能状態
+     */
+    canRedo() {
+        return this.historyManager ? this.historyManager.canRedo() : false;
+    }
+    
+    /**
+     * 履歴統計取得
+     */
+    getHistoryStats() {
+        return this.historyManager ? this.historyManager.getStats() : null;
+    }
+    
+    /**
+     * 履歴リスト取得（デバッグ用）
+     */
+    getHistoryList() {
+        return this.historyManager ? this.historyManager.getHistoryList() : [];
+    }
+    
+    /**
+     * 履歴記録の有効/無効切り替え
+     */
+    setHistoryRecording(enabled) {
+        if (this.historyManager) {
+            return this.historyManager.setRecording(enabled);
         }
         return false;
     }
     
-    getCurrentTool() {
-        if (this.toolManager && this.toolManager.getActiveTool()) {
-            return this.toolManager.getActiveTool().name;
-        }
-        return null;
-    }
-    
-    getAvailableTools() {
-        if (this.toolManager) {
-            return this.toolManager.getAvailableTools();
-        }
-        return [];
-    }
-    
     /**
-     * STEP 2拡張: 統計取得（UI統合情報付き）
+     * 履歴クリア
      */
-    getStats() {
-        const baseStats = {
-            brushSettings: { ...this.brushSettings },
+    clearHistory() {
+        if (this.historyManager) {
+            this.historyManager.clearHistory();
+        }
+    }
+    
+    // ==== デバッグ・統計 ====
+    getSystemStats() {
+        const historyStats = this.getHistoryStats();
+        const brushSettings = this.getBrushSettings();
+        
+        // 🆕 Phase2: ブラシ設定範囲情報の追加
+        const minSize = (typeof CONFIG !== 'undefined' && CONFIG.MIN_BRUSH_SIZE) ? 
+            CONFIG.MIN_BRUSH_SIZE : 0.1;
+        const maxSize = (typeof CONFIG !== 'undefined' && CONFIG.MAX_BRUSH_SIZE) ? 
+            CONFIG.MAX_BRUSH_SIZE : 500;
+        const defaultSize = (typeof CONFIG !== 'undefined' && CONFIG.DEFAULT_BRUSH_SIZE) ? 
+            CONFIG.DEFAULT_BRUSH_SIZE : 4;
+        const defaultOpacity = (typeof CONFIG !== 'undefined' && CONFIG.DEFAULT_OPACITY) ? 
+            CONFIG.DEFAULT_OPACITY : 1.0;
+        
+        return {
+            initialized: this.isInitialized,
             currentTool: this.getCurrentTool(),
             availableTools: this.getAvailableTools(),
-            historyManager: !!this.historyManager,
-            toolManager: !!this.toolManager
+            brushSettings: {
+                ...brushSettings,
+                // 🆕 Phase2: 範囲情報付きブラシ設定
+                sizeRange: { min: minSize, max: maxSize, default: defaultSize, current: brushSettings.size },
+                opacityRange: { min: 0, max: 1, default: defaultOpacity, current: brushSettings.opacity }
+            },
+            history: {
+                canUndo: this.canUndo(),
+                canRedo: this.canRedo(),
+                totalRecorded: historyStats?.totalRecorded || 0,
+                currentIndex: historyStats?.currentIndex || -1,
+                memoryUsageMB: historyStats?.memoryUsageMB || 0
+            }
         };
-        
-        // STEP 2新規: PenToolUI統計情報の統合
-        if (this.penToolUI) {
-            baseStats.penToolUI = this.penToolUI.getStats();
-        } else {
-            baseStats.penToolUI = null;
-        }
-        
-        return baseStats;
     }
     
     /**
-     * STEP 2拡張: デバッグ機能（UI統合情報付き）
+     * 履歴の詳細表示（デバッグ用）
      */
-    debugDrawingTools() {
-        console.group('🔍 DrawingToolsSystem デバッグ情報（STEP 2拡張版）');
+    debugHistory() {
+        if (this.historyManager) {
+            this.historyManager.debugHistory();
+        } else {
+            console.warn('履歴管理システムが利用できません');
+        }
+    }
+    
+    /**
+     * 履歴デバッグモードの切り替え
+     */
+    toggleHistoryDebug() {
+        if (this.historyManager) {
+            this.historyManager.toggleDebugMode();
+        }
+    }
+    
+    /**
+     * システム全体のデバッグ情報表示
+     */
+    debugSystem() {
+        console.group('🔍 DrawingToolsSystem デバッグ情報（Phase2対応）');
+        console.log('システム統計:', this.getSystemStats());
         
-        console.log('基本情報:', {
-            currentTool: this.getCurrentTool(),
-            availableTools: this.getAvailableTools(),
-            brushSettings: this.brushSettings
-        });
-        
-        console.log('システム状態:', {
-            toolManager: !!this.toolManager,
-            historyManager: !!this.historyManager,
-            penToolUI: !!this.penToolUI
-        });
-        
-        // STEP 2新規: PenToolUIデバッグ情報
-        if (this.penToolUI) {
-            console.log('PenToolUI統合状況:', this.penToolUI.getStats());
+        if (this.historyManager) {
+            console.log('履歴統計:', this.getHistoryStats());
+            console.log('履歴リスト:', this.getHistoryList());
         }
         
         console.groupEnd();
     }
     
     /**
-     * STEP 2拡張: クリーンアップ（UI統合対応）
+     * 履歴機能のテスト実行
      */
+    testHistoryFunction() {
+        console.group('🧪 履歴機能テスト（Phase2: ペンサイズ範囲拡張対応）');
+        
+        // 1. 現在の状態を確認
+        console.log('1. 初期状態:', {
+            canUndo: this.canUndo(),
+            canRedo: this.canRedo(),
+            historyLength: this.getHistoryStats()?.historyLength || 0
+        });
+        
+        // 2. ダミーのブラシ設定変更（Phase2: 拡張範囲テスト）
+        console.log('2. ブラシ設定変更実行（範囲拡張テスト）...');
+        this.updateBrushSettings({ size: 50, opacity: 1.0 }); // Phase2: 透明度100%
+        
+        // 3. 変更後の状態確認
+        console.log('3. 変更後の状態:', {
+            canUndo: this.canUndo(),
+            canRedo: this.canRedo(),
+            historyLength: this.getHistoryStats()?.historyLength || 0
+        });
+        
+        // 4. 範囲外値のテスト（Phase2）
+        console.log('4. 範囲外値テスト...');
+        this.updateBrushSettings({ size: 600 }); // 最大値500を超える値
+        this.updateBrushSettings({ size: 0.05 }); // 最小値0.1を下回る値
+        
+        // 5. アンドゥテスト
+        console.log('5. アンドゥ実行...');
+        const undoResult = this.undo();
+        console.log('アンドゥ結果:', undoResult);
+        
+        // 6. アンドゥ後の状態確認
+        console.log('6. アンドゥ後の状態:', {
+            canUndo: this.canUndo(),
+            canRedo: this.canRedo(),
+            brushSettings: this.getBrushSettings()
+        });
+        
+        // 7. リドゥテスト
+        console.log('7. リドゥ実行...');
+        const redoResult = this.redo();
+        console.log('リドゥ結果:', redoResult);
+        
+        // 8. 最終状態確認
+        console.log('8. 最終状態:', {
+            canUndo: this.canUndo(),
+            canRedo: this.canRedo(),
+            brushSettings: this.getBrushSettings()
+        });
+        
+        console.groupEnd();
+    }
+    
+    // ==== クリーンアップ ====
     destroy() {
-        try {
-            console.log('🧹 DrawingToolsSystem クリーンアップ開始（STEP 2拡張版）');
-            
-            // STEP 2新規: PenToolUIクリーンアップ
-            if (this.penToolUI) {
-                this.penToolUI.destroy();
-                this.penToolUI = null;
-            }
-            
-            // ツール管理のクリーンアップ
-            if (this.toolManager) {
-                // 各ツールのクリーンアップ
-                this.toolManager.tools.forEach(tool => {
-                    if (tool.destroy) {
-                        tool.destroy();
-                    }
-                });
-                this.toolManager = null;
-            }
-            
-            // 参照のクリア
-            this.historyManager = null;
-            
-            console.log('✅ DrawingToolsSystem クリーンアップ完了（STEP 2拡張版）');
-            
-        } catch (error) {
-            console.error('DrawingToolsSystem クリーンアップエラー:', error);
+        console.log('🎯 DrawingToolsSystem破棄開始...');
+        
+        // ツールの非アクティブ化
+        if (this.toolManager && this.toolManager.activeTool) {
+            this.toolManager.activeTool.deactivate();
         }
+        
+        // 履歴管理システムの破棄
+        if (this.historyManager) {
+            this.historyManager.destroy();
+        }
+        
+        // 参照のクリア
+        this.historyManager = null;
+        this.toolManager = null;
+        this.uiManager = null;
+        
+        console.log('✅ DrawingToolsSystem破棄完了');
     }
 }
 
-// ==== グローバル登録・エクスポート（STEP 2完成版）====
+// ==== StateCapture・StateRestore の外部参照エイリアス（修正版）====
+// main.js が期待する StateCapture, StateRestore クラスへのエイリアス
+// 正しい外部参照実装
+const StateCapture = {
+    captureDrawingState: (app) => {
+        if (typeof window !== 'undefined' && window.InternalStateCapture) {
+            return window.InternalStateCapture.captureDrawingState(app);
+        }
+        console.warn('InternalStateCapture が利用できません');
+        return null;
+    },
+    capturePresetState: (presetManager) => {
+        if (typeof window !== 'undefined' && window.InternalStateCapture) {
+            return window.InternalStateCapture.capturePresetState(presetManager);
+        }
+        console.warn('InternalStateCapture が利用できません');
+        return null;
+    },
+    captureBrushSettings: (toolsSystem) => {
+        if (typeof window !== 'undefined' && window.InternalStateCapture) {
+            return window.InternalStateCapture.captureBrushSettings(toolsSystem);
+        }
+        console.warn('InternalStateCapture が利用できません');
+        return null;
+    },
+    captureCanvasSettings: (app) => {
+        if (typeof window !== 'undefined' && window.InternalStateCapture) {
+            return window.InternalStateCapture.captureCanvasSettings(app);
+        }
+        console.warn('InternalStateCapture が利用できません');
+        return null;
+    }
+};
+
+const StateRestore = {
+    restoreDrawingState: (app, state) => {
+        if (typeof window !== 'undefined' && window.InternalStateRestore) {
+            return window.InternalStateRestore.restoreDrawingState(app, state);
+        }
+        console.warn('InternalStateRestore が利用できません');
+        return false;
+    },
+    restorePresetState: (presetManager, uiManager, state) => {
+        if (typeof window !== 'undefined' && window.InternalStateRestore) {
+            return window.InternalStateRestore.restorePresetState(presetManager, uiManager, state);
+        }
+        console.warn('InternalStateRestore が利用できません');
+        return false;
+    },
+    restoreBrushSettings: (toolsSystem, uiManager, state) => {
+        if (typeof window !== 'undefined' && window.InternalStateRestore) {
+            return window.InternalStateRestore.restoreBrushSettings(toolsSystem, uiManager, state);
+        }
+        console.warn('InternalStateRestore が利用できません');
+        return false;
+    },
+    restoreCanvasSettings: (app, uiManager, state) => {
+        if (typeof window !== 'undefined' && window.InternalStateRestore) {
+            return window.InternalStateRestore.restoreCanvasSettings(app, uiManager, state);
+        }
+        console.warn('InternalStateRestore が利用できません');
+        return false;
+    }
+};
+
+// ==== エクスポート（Phase2修正版）====
 if (typeof window !== 'undefined') {
-    // 基本クラスのエクスポート
-    window.BaseTool = BaseTool;
+    // メインクラスの確実な登録
+    window.DrawingToolsSystem = DrawingToolsSystem;
+    window.ToolManager = ToolManager;
     window.VectorPenTool = VectorPenTool;
     window.EraserTool = EraserTool;
-    window.ToolManager = ToolManager;
     
-    // STEP 2新規: ペンツール専用UI
-    window.PenToolUI = PenToolUI;
+    // StateCapture/StateRestore エイリアスの確実な登録
+    window.StateCapture = StateCapture;
+    window.StateRestore = StateRestore;
     
-    // メインシステム
-    window.DrawingToolsSystem = DrawingToolsSystem;
-    
-    // STEP 2新規: デバッグ関数
-    window.debugPenToolUI = function() {
-        if (window.drawingTools && window.drawingTools.penToolUI) {
-            window.drawingTools.penToolUI.debugPenUI();
-        } else {
-            console.warn('PenToolUI が利用できません');
-        }
-    };
-    
-    window.debugDrawingToolsSystem = function() {
-        if (window.drawingTools) {
-            window.drawingTools.debugDrawingTools();
-        } else {
-            console.warn('DrawingToolsSystem が利用できません');
-        }
-    };
-    
-    console.log('✅ drawing-tools.js STEP 2完成版 読み込み完了');
-    console.log('📦 エクスポートクラス（STEP 2完成版）:');
-    console.log('  ✅ BaseTool, VectorPenTool, EraserTool: 描画ツール基盤');
-    console.log('  ✅ ToolManager: ツール管理システム（履歴対応版）');
-    console.log('  ✅ PenToolUI: ペンツール専用UI制御（スライダー制御完全版）');
-    console.log('  ✅ DrawingToolsSystem: 統合描画システム（UI統合版）');
-    console.log('🔧 STEP 2実装完了:');
-    console.log('  ✅ ui-manager.jsからスライダー制御機能完全移譲');
-    console.log('  ✅ 外部システム依存注入（SliderController統合）');
-    console.log('  ✅ DrawingToolsSystem API拡張（initUI, getPenUI）');
-    console.log('  ✅ エラーハンドリング強化・デバッグ機能充実');
-    console.log('  ✅ DRY・SOLID原則準拠（単一責任原則・依存性逆転）');
-    console.log('🎯 責務: 描画ツール管理 + ペンツール専用UI制御');
-    console.log('🐛 デバッグ関数（STEP 2版）:');
-    console.log('  - window.debugPenToolUI() - PenToolUI状態表示');
-    console.log('  - window.debugDrawingToolsSystem() - システム全体状態表示');
-    console.log('📋 STEP 3準備完了: プレビュー連動機能移譲対応');
+    console.log('🔧 drawing-tools.js v1rev5b 読み込み完了（Phase2: ペンサイズ範囲拡張版）');
+    console.log('🔧 Phase2修正項目:');
+    console.log('  ✅ updateBrushSettings: ペンサイズ最大値 100 → 500 に変更');
+    console.log('  ✅ DEFAULT_BRUSH_SIZE使用: CONFIG値を参照するように修正');
+    console.log('  ✅ ブラシ設定変更の履歴記録強化');
+    console.log('  ✅ 範囲外値の警告システム追加');
+    console.log('  ✅ デバッグ機能の拡張（範囲情報表示）');
+    console.log('📦 利用可能クラス:');
+    console.log('  - DrawingToolsSystem（メイン統合クラス・Phase2対応）');
+    console.log('  - ToolManager（ツール管理）');
+    console.log('  - VectorPenTool, EraserTool（描画ツール）');
+    console.log('  - StateCapture, StateRestore（外部参照エイリアス）');
+    console.log('🎯 Phase2新機能:');
+    console.log('  - ペンサイズ範囲: 0.1px ～ 500px');
+    console.log('  - デフォルト透明度: 100%（不透明）');
+    console.log('  - 設定変更履歴の強化');
 }
 
-console.log('🏆 drawing-tools.js STEP 2完成版 初期化完了');
+// ES6 module export (将来のTypeScript移行用)
+// export { 
+//     DrawingToolsSystem, 
+//     ToolManager, 
+//     VectorPenTool, 
+//     EraserTool, 
+//     StateCapture,
+//     StateRestore
+// };
