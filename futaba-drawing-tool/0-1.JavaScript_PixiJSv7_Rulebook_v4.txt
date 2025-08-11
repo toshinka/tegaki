@@ -113,7 +113,7 @@ config.js (設定値統一)
 │  ├─ ui/ui-events.js  (イベント処理専門)
 │  ├─ ui/preset-manager.js (段階的移行)
 │  └─ ui/performance-monitor.js (段階的移行)
-│  └─ preview-manager.js🆕
+│  └─ ui/ppreview-manager.js🆕
 └─ layer-manager.js (Phase3)
 ### 🏗️ 新設ディレクトリ構造
 ├── debug/                    # Phase2F新設: デバッグ機能分離
