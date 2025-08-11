@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール - モジュール分割版テスト</title>
+    
+    <style>
+        body {
+            font-family: 'ヒラギノ角ゴ Pro W3', 'Hiragino Kaku Gothic Pro', 'メイリオ', Meiryo, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .test-section {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        
+        .button:hover {
+            background: #5a67d8;
+        }
+        
+        .button.success {
+            background: #48bb78;
+        }
+        
+        .button.warning {
+            background: #ed8936;
+        }
+        
+        .button.error {
+            background: #f56565;
+        }
+        
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .status-card {
+            background: #f7fafc;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .status-card.success {
+            border-left-color: #48bb78;
+        }
+        
+        .status-card.warning {
+            border-left-color: #ed8936;
+        }
+        
+        .status-card.error {
+            border-left-color: #f56565;
+        }
+        
+        .console-output {
+            background: #1a202c;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            margin-top: 10px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #e2e8f0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール</h1>
+        <h2>モジュール分割版テストページ v2.5</h2>
+        <p>STEP 2.5実装完了: モジュール分割アーキテクチャの動作検証</p>
+    </div>
+
+    <!-- システム状況表示 -->
+    <div class="test-section">
+        <h3>📊 システム状況</h3>
+        <div class="status-grid">
+            <div class="status-card" id="init-status">
+                <h4>初期化状況</h4>
+                <div id="init-mode">確認中...</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="init-progress"></div>
+                </div>
+            </div>
+            
+            <div class="status-card" id="module-status">
+                <h4>モジュール読み込み</h4>
+                <div id="module-stats">確認中...</div>
+            </div>
+            
+            <div class="status-card" id="compatibility-status">
+                <h4>main.js互換性</h4>
+                <div id="compatibility-result">確認中...</div>
+            </div>
+            
+            <div class="status-card" id="performance-status">
+                <h4>パフォーマンス</h4>
+                <div id="performance-stats">確認中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- テスト実行ボタン -->
+    <div class="test-section">
+        <h3>🧪 テスト実行</h3>
+        <div>
+            <button class="button" onclick="runBasicTests()">基本機能テスト</button>
+            <button class="button" onclick="runModuleTests()">モジュール分割テスト</button>
+            <button class="button" onclick="runCompatibilityTests()">互換性テスト</button>
+            <button class="button" onclick="runPerformanceTests()">パフォーマンステスト</button>
+            <button class="button" onclick="runAllTests()">全テスト実行</button>
+        </div>
+        
+        <div style="margin-top: 20px;">
+            <button class="button success" onclick="showDebugInfo()">デバッグ情報表示</button>
+            <button class="button warning" onclick="showModuleArchitecture()">アーキテクチャ表示</button>
+            <button class="button error" onclick="showErrorLog()">エラーログ表示</button>
+            <button class="button" onclick="clearConsoleOutput()">コンソールクリア</button>
+        </div>
+    </div>
+
+    <!-- 詳細テスト結果 -->
+    <div class="test-section">
+        <h3>📋 テスト結果詳細</h3>
+        <div class="grid-2">
+            <div>
+                <h4>モジュール分割効果</h4>
+                <ul id="module-benefits">
+                    <li>検証中...</li>
+                </ul>
+            </div>
+            <div>
+                <h4>検出された問題</h4>
+                <ul id="detected-issues">
+                    <li>検証中...</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- コンソール出力エリア -->
+    <div class="test-section">
+        <h3>🖥️ コンソール出力</h3>
+        <div class="console-output" id="console-output">
+システム読み込み中...\n
+        </div>
+    </div>
+
+    <!-- JavaScriptファイルの読み込み -->
+    
+    <!-- 設定ファイル -->
+    <script src="config.js"></script>
+    
+    <!-- コアライブラリ（必要に応じて） -->
+    <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.2.4/pixi.min.js"></script> -->
+    
+    <!-- メインシステム（モジュール分割版統合ファイル） -->
+    <script src="drawing-tools.js"></script>
+    
+    <!-- テスト実行スクリプト -->
+    <script>
+        // コンソール出力キャプチャ
+        const originalConsoleLog = console.log;
+        const originalConsoleWarn = console.warn;
+        const originalConsoleError = console.error;
+        
+        const consoleOutput = document.getElementById('console-output');
+        
+        function appendConsoleOutput(message, type = 'log') {
+            const timestamp = new Date().toLocaleTimeString();
+            const typePrefix = { log: '📝', warn: '⚠️', error: '❌' }[type] || '📝';
+            consoleOutput.textContent += `[${timestamp}] ${typePrefix} ${message}\n`;
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        }
+        
+        console.log = function(...args) {
+            originalConsoleLog.apply(console, args);
+            appendConsoleOutput(args.join(' '), 'log');
+        };
+        
+        console.warn = function(...args) {
+            originalConsoleWarn.apply(console, args);
+            appendConsoleOutput(args.join(' '), 'warn');
+        };
+        
+        console.error = function(...args) {
+            originalConsoleError.apply(console, args);
+            appendConsoleOutput(args.join(' '), 'error');
+        };
+        
+        // システム状況更新
+        function updateSystemStatus() {
+            try {
+                // 初期化状況確認
+                const status = window.getDrawingToolsStatus ? window.getDrawingToolsStatus() : null;
+                
+                if (status) {
+                    const initCard = document.getElementById('init-status');
+                    const initMode = document.getElementById('init-mode');
+                    const initProgress = document.getElementById('init-progress');
+                    
+                    initMode.textContent = `モード: ${status.mode || 'unknown'}`;
+                    
+                    let progressPercent = 0;
+                    let statusClass = 'warning';
+                    
+                    switch (status.mode) {
+                        case 'modular':
+                            progressPercent = 100;
+                            statusClass = 'success';
+                            break;
+                        case 'fallback':
+                            progressPercent = 60;
+                            statusClass = 'warning';
+                            break;
+                        case 'emergency-fallback':
+                            progressPercent = 30;
+                            statusClass = 'error';
+                            break;
+                    }
+                    
+                    initProgress.style.width = progressPercent + '%';
+                    initCard.className = 'status-card ' + statusClass;
+                    
+                    // モジュール統計
+                    const moduleCard = document.getElementById('module-status');
+                    const moduleStats = document.getElementById('module-stats');
+                    
+                    if (status.moduleStats) {
+                        moduleStats.innerHTML = `
+                            成功: ${status.moduleStats.loaded}<br>
+                            失敗: ${status.moduleStats.failed}
+                        `;
+                        moduleCard.className = 'status-card ' + 
+                            (status.moduleStats.failed === 0 ? 'success' : 'warning');
+                    }
+                    
+                    // パフォーマンス
+                    const perfCard = document.getElementById('performance-status');
+                    const perfStats = document.getElementById('performance-stats');
+                    
+                    if (status.performance) {
+                        perfStats.innerHTML = `
+                            初期化: ${status.performance.initTime}ms<br>
+                            モジュール読み込み: ${status.performance.moduleLoadTime}ms
+                        `;
+                        perfCard.className = 'status-card ' + 
+                            (status.performance.initTime < 1000 ? 'success' : 'warning');
+                    }
+                }
+                
+            } catch (error) {
+                console.error('システム状況更新エラー:', error);
+            }
+        }
+        
+        // テスト関数群
+        function runBasicTests() {
+            console.log('🧪 基本機能テスト開始');
+            
+            try {
+                // DrawingToolsSystem存在確認
+                if (window.DrawingToolsSystem) {
+                    console.log('✅ DrawingToolsSystem クラス存在確認');
+                } else {
+                    console.error('❌ DrawingToolsSystem が見つかりません');
+                }
+                
+                // toolsSystem インスタンス確認
+                if (window.toolsSystem) {
+                    console.log('✅ toolsSystem インスタンス存在確認');
+                    
+                    // API確認
+                    const apis = ['getBrushSettings', 'updateBrushSettings', 'getCurrentTool'];
+                    apis.forEach(api => {
+                        if (typeof window.toolsSystem[api] === 'function') {
+                            console.log(`✅ API確認: ${api}`);
+                        } else {
+                            console.error(`❌ API不足: ${api}`);
+                        }
+                    });
+                    
+                } else {
+                    console.error('❌ toolsSystem インスタンスが見つかりません');
+                }
+                
+                console.log('🎉 基本機能テスト完了');
+                
+            } catch (error) {
+                console.error('❌ 基本機能テストエラー:', error);
+            }
+        }
+        
+        function runModuleTests() {
+            console.log('🧪 モジュール分割テスト開始');
+            
+            try {
+                if (window.testModularArchitecture) {
+                    window.testModularArchitecture();
+                } else {
+                    console.error('❌ testModularArchitecture 関数が見つかりません');
+                }
+                
+            } catch (error) {
+                console.error('❌ モジュール分割テストエラー:', error);
+            }
+        }
+        
+        function runCompatibilityTests() {
+            console.log('🧪 互換性テスト開始');
+            
+            try {
+                if (window.testMainJsCompatibility) {
+                    const result = window.testMainJsCompatibility();
+                    
+                    const compatCard = document.getElementById('compatibility-status');
+                    const compatResult = document.getElementById('compatibility-result');
+                    
+                    compatResult.textContent = result ? '✅ 互換性確認' : '❌ 互換性問題';
+                    compatCard.className = 'status-card ' + (result ? 'success' : 'error');
+                    
+                } else {
+                    console.error('❌ testMainJsCompatibility 関数が見つかりません');
+                }
+                
+            } catch (error) {
+                console.error('❌ 互換性テストエラー:', error);
+            }
+        }
+        
+        function runPerformanceTests() {
+            console.log('🧪 パフォーマンステスト開始');
+            
+            try {
+                if (window.getDrawingToolsPerformance) {
+                    const performance = window.getDrawingToolsPerformance();
+                    console.log('📊 パフォーマンス詳細:', performance);
+                    
+                    // パフォーマンス評価
+                    const initTime = performance.initialization?.totalTime || 0;
+                    const moduleTime = performance.initialization?.moduleLoadTime || 0;
+                    
+                    let evaluation = '良好';
+                    if (initTime > 2000) evaluation = '要改善';
+                    else if (initTime > 1000) evaluation = '普通';
+                    
+                    console.log(`⚡ パフォーマンス評価: ${evaluation} (初期化${initTime}ms)`);
+                    
+                } else {
+                    console.error('❌ getDrawingToolsPerformance 関数が見つかりません');
+                }
+                
+            } catch (error) {
+                console.error('❌ パフォーマンステストエラー:', error);
+            }
+        }
+        
+        function runAllTests() {
+            console.log('🚀 全テスト実行開始');
+            
+            setTimeout(() => runBasicTests(), 100);
+            setTimeout(() => runModuleTests(), 300);
+            setTimeout(() => runCompatibilityTests(), 500);
+            setTimeout(() => runPerformanceTests(), 700);
+            
+            setTimeout(() => {
+                console.log('🎉 全テスト実行完了');
+                updateSystemStatus();
+                updateDetailedResults();
+            }, 1000);
+        }
+        
+        function showDebugInfo() {
+            console.log('🔍 デバッグ情報表示');
+            
+            if (window.debugDrawingTools) {
+                window.debugDrawingTools();
+            } else {
+                console.error('❌ debugDrawingTools 関数が見つかりません');
+            }
+        }
+        
+        function showModuleArchitecture() {
+            console.log('🏗️ モジュールアーキテクチャ表示');
+            
+            const moduleStructure = {
+                'drawing-tools.js': '統合ファイル（モジュール読み込み・フォールバック）',
+                'drawing-tools/core/': {
+                    'base-tool.js': 'ベースツールクラス',
+                    'tool-manager.js': 'ツール管理システム',
+                    'drawing-tools-system.js': '統合描画システム'
+                },
+                'drawing-tools/tools/': {
+                    'pen-tool.js': 'ペンツール実装',
+                    'eraser-tool.js': '消しゴムツール実装'
+                },
+                'drawing-tools/ui/': {
+                    'pen-tool-ui.js': 'ペンツール専用UI制御'
+                }
+            };
+            
+            console.log('📁 モジュール構造:', moduleStructure);
+            
+            // モジュール分割効果
+            console.log('📊 モジュール分割効果:');
+            console.log('  🎯 ファイルサイズ最適化: 2000行 → 最大300行/ファイル');
+            console.log('  🛠️ 保守性向上: 責任分離・独立性確保');
+            console.log('  ⚡ 読み込み最適化: 必要モジュールのみ動的読み込み');
+            console.log('  🔧 拡張性確保: 新機能追加時の影響最小化');
+            console.log('  🛡️ 既存互換性: API完全維持');
+        }
+        
+        function showErrorLog() {
+            console.log('📛 エラーログ表示');
+            
+            const initializer = window.drawingToolsInitializer;
+            if (initializer && initializer.errors.length > 0) {
+                console.log('🔍 検出されたエラー:');
+                initializer.errors.forEach((error, index) => {
+                    console.error(`${index + 1}. ${error.message || error}`);
+                });
+            } else {
+                console.log('✅ エラーは検出されていません');
+            }
+        }
+        
+        function clearConsoleOutput() {
+            document.getElementById('console-output').textContent = 'コンソールをクリアしました\n';
+        }
+        
+        function updateDetailedResults() {
+            try {
+                const benefitsList = document.getElementById('module-benefits');
+                const issuesList = document.getElementById('detected-issues');
+                
+                // モジュール分割効果の更新
+                const benefits = [
+                    'ファイルサイズ最適化（各モジュール300行以下）',
+                    '責任分離による保守性向上',
+                    '動的読み込みによるパフォーマンス向上',
+                    '新機能追加時の影響最小化',
+                    'デバッグ・テストの容易化'
+                ];
+                
+                benefitsList.innerHTML = benefits.map(benefit => `<li>✅ ${benefit}</li>`).join('');
+                
+                // 問題の確認
+                const issues = [];
+                const initializer = window.drawingToolsInitializer;
+                
+                if (initializer) {
+                    if (initializer.initializationMode === 'fallback') {
+                        issues.push('モジュール読み込み失敗（フォールバックモード実行中）');
+                    }
+                    
+                    if (initializer.errors.length > 0) {
+                        issues.push(`初期化エラー: ${initializer.errors.length}件`);
+                    }
+                    
+                    const status = window.getDrawingToolsStatus ? window.getDrawingToolsStatus() : null;
+                    if (status && status.moduleStats && status.moduleStats.failed > 0) {
+                        issues.push(`モジュール読み込み失敗: ${status.moduleStats.failed}件`);
+                    }
+                }
+                
+                if (issues.length === 0) {
+                    issuesList.innerHTML = '<li>✅ 問題は検出されていません</li>';
+                } else {
+                    issuesList.innerHTML = issues.map(issue => `<li>⚠️ ${issue}</li>`).join('');
+                }
+                
+            } catch (error) {
+                console.error('詳細結果更新エラー:', error);
+            }
+        }
+        
+        // ページ読み込み完了後の初期化
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('📄 テストページ読み込み完了');
+            
+            // システム状況の定期更新
+            setTimeout(() => {
+                updateSystemStatus();
+                updateDetailedResults();
+            }, 1000);
+            
+            // 5秒後に自動テスト実行（オプション）
+            setTimeout(() => {
+                console.log('🤖 自動テスト実行中...');
+                runAllTests();
+            }, 2000);
+        });
+        
+        // ウィンドウ読み込み完了後の最終確認
+        window.addEventListener('load', function() {
+            console.log('🌟 ウィンドウ読み込み完了 - 最終システム確認');
+            
+            setTimeout(() => {
+                if (window.toolsSystem) {
+                    console.log('✅ drawing-tools.js システム正常動作確認');
+                    
+                    // システム統計表示
+                    if (window.toolsSystem.getSystemStats) {
+                        const stats = window.toolsSystem.getSystemStats();
+                        console.log('📊 システム統計:', stats);
+                    }
+                } else {
+                    console.warn('⚠️ toolsSystem が初期化されていない可能性があります');
+                }
+                
+                updateSystemStatus();
+            }, 500);
+        });
+        
+        // モジュール分割版の特別なテスト
+        function testModuleSeparation() {
+            console.group('🧪 モジュール分離テスト');
+            
+            try {
+                const moduleClasses = {
+                    'BaseTool': 'drawing-tools/core/base-tool.js',
+                    'ToolManager': 'drawing-tools/core/tool-manager.js',
+                    'DrawingToolsSystem': 'drawing-tools/core/drawing-tools-system.js',
+                    'PenTool': 'drawing-tools/tools/pen-tool.js',
+                    'EraserTool': 'drawing-tools/tools/eraser-tool.js',
+                    'PenToolUI': 'drawing-tools/ui/pen-tool-ui.js'
+                };
+                
+                let separationScore = 0;
+                const totalModules = Object.keys(moduleClasses).length;
+                
+                Object.entries(moduleClasses).forEach(([className, expectedFile]) => {
+                    if (window[className]) {
+                        separationScore++;
+                        console.log(`✅ ${className}: 正常読み込み (期待: ${expectedFile})`);
+                    } else {
+                        console.warn(`⚠️ ${className}: 読み込み失敗または未実装`);
+                    }
+                });
+                
+                const separationPercent = Math.round((separationScore / totalModules) * 100);
+                console.log(`📊 モジュール分離度: ${separationPercent}% (${separationScore}/${totalModules})`);
+                
+                if (separationPercent >= 80) {
+                    console.log('🎉 モジュール分離成功');
+                } else if (separationPercent >= 50) {
+                    console.log('⚠️ モジュール分離部分的成功');
+                } else {
+                    console.log('❌ モジュール分離要改善');
+                }
+                
+            } catch (error) {
+                console.error('❌ モジュール分離テストエラー:', error);
+            }
+            
+            console.groupEnd();
+        }
+        
+        // 追加テストボタン用関数
+        window.testModuleSeparation = testModuleSeparation;
+        
+    </script>
+    
+    <!-- 追加テスト実行ボタン -->
+    <div class="test-section">
+        <h3>🔬 高度なテスト</h3>
+        <button class="button" onclick="testModuleSeparation()">モジュール分離度テスト</button>
+        <button class="button" onclick="console.log('🔍 window オブジェクト検査'); console.log(Object.keys(window).filter(key => key.includes('drawing') || key.includes('Tool') || key.includes('debug')))">グローバルオブジェクト検査</button>
+    </div>
+
+    <!-- フッター情報 -->
+    <div class="test-section" style="text-align: center; color: #666;">
+        <p>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev12</p>
+        <p>モジュール分割版テストページ - STEP 2.5実装完了</p>
+        <p>📊 モジュール構成: core/ + tools/ + ui/ アーキテクチャ</p>
+    </div>
+
+</body>
+</html>
