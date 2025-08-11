@@ -113,6 +113,13 @@ config.js (設定値統一)
 │  ├─ ui/preset-manager.js (段階的移行)
 │  └─ ui/performance-monitor.js (段階的移行)
 └─ layer-manager.js (Phase3)
+### 🏗️ 新設ディレクトリ構造
+├── debug/                    # Phase2F新設: デバッグ機能分離
+│   ├── debug-manager.js      # 統合デバッグ管理
+│   ├── diagnostics.js        # システム診断機能
+│   └── performance-logger.js # パフォーマンス測定
+└── monitoring/               # Phase2F新設: 監視機能分離
+     └── system-monitor.js     # システム監視統合
 
 依存関係の原則:
 - 循環参照厳禁
@@ -122,8 +129,6 @@ config.js (設定値統一)
 - ui/ 配下は ui-manager.js からのみアクセス
 - ui-events.js は ui-manager.js に統合される
 ```
-
----
 
 ## 3. UI分割設計原則
 

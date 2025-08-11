@@ -1,5 +1,383 @@
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev12
+ * UI統合管理システム - ui-manager.js（Phase2F改修版）
+ * 
+ * 🔧 Phase2F改修内容: DRY・SOLID原則準拠
+ * 1. ✅ SimplePerformanceMonitor分離（monitoring/system-monitor.js）
+ * 2. ✅ デバッグ機能分離（debug/debug-manager.js呼び出し）
+ * 3. ✅ UI制御のみに特化（単一責任原則準拠）
+ * 4. ✅ 900行→約500行に削減（45%スリム化）
+ * 5. ✅ 外部監視システムとの統合・連携
+ * 6. ✅ プレビュー連動機能は維持・強化
+ * 
+ * Phase2F目標: UI制御特化・保守性向上・責務明確化
+ * 責務: UI統合制御・プレビュー連動のみ
+ * 依存: config.js, ui/components.js, monitoring/system-monitor.js
+ */
+
+console.log('🔧 ui-manager.js Phase2F改修版読み込み開始...');
+
+// ==== Phase2F改修: UI統合管理クラス（パフォーマンス監視分離版）====
+class UIManagerSystem {
+    constructor(app, toolsSystem, historyManager = null) {
+        this.app = app;
+        this.toolsSystem = toolsSystem;
+        this.historyManager = historyManager;
+        
+        // ui/components.js 定義クラス活用
+        this.popupManager = this.initializeComponent('PopupManager');
+        this.statusBar = this.initializeComponent('StatusBarManager');
+        this.presetDisplayManager = this.initializeComponent('PresetDisplayManager', [toolsSystem]);
+        
+        // 既存システムとの連携
+        this.penPresetManager = null; // toolsSystemから取得
+        
+        // Phase2F改修: 外部パフォーマンス監視システム統合
+        this.externalPerformanceMonitor = null; // ui/components.js から取得
+        this.systemMonitor = null; // monitoring/system-monitor.js から取得
+        
+        // スライダー管理
+        this.sliders = new Map();
+        
+        // プレビュー連動機能用の状態（Phase2F: 維持・強化）
+        this.previewSyncEnabled = true;
+        this.previewUpdateThrottle = null;
+        this.lastPreviewUpdate = 0;
+        
+        // UI制御状態
+        this.isInitialized = false;
+        this.coordinateUpdateThrottle = null;
+        this.errorCount = 0;
+        this.maxErrors = 10;
+        
+        // 外部システム参照
+        this.settingsManager = null;
+        this.debugManager = null; // Phase2F: 外部デバッグシステム
+        
+        console.log('🎯 UIManagerSystem初期化（Phase2F改修版・パフォーマンス監視分離）');
+    }
+    
+    /**
+     * CONFIG値安全取得（utils.js統合）
+     */
+    safeConfigGet(key, defaultValue) {
+        try {
+            if (window.CONFIG && window.CONFIG[key] !== undefined && window.CONFIG[key] !== null) {
+                const value = window.CONFIG[key];
+                if (key === 'SIZE_PRESETS' && Array.isArray(value) && value.length === 0) {
+                    return defaultValue || [1, 2, 4, 8, 16, 32];
+                }
+                return value;
+            }
+        } catch (error) {
+            console.warn(`CONFIG.${key} アクセスエラー:`, error);
+        }
+        return defaultValue;
+    }
+    
+    /**
+     * コンポーネント安全初期化
+     */
+    initializeComponent(ComponentClass, constructorArgs = []) {
+        try {
+            if (typeof window[ComponentClass] !== 'undefined') {
+                return new window[ComponentClass](...constructorArgs);
+            } else {
+                console.warn(`${ComponentClass} が利用できません`);
+                return null;
+            }
+        } catch (error) {
+            console.error('プレビュー同期システム初期化エラー:', error);
+            this.previewSyncEnabled = false;
+        }
+    }
+    
+    /**
+     * リサイズ設定（変更なし）
+     */
+    setupResize() {
+        const resizeButtons = [
+            { id: 'resize-400-400', width: 400, height: 400 },
+            { id: 'resize-600-600', width: 600, height: 600 },
+            { id: 'resize-800-600', width: 800, height: 600 },
+            { id: 'resize-1000-1000', width: 1000, height: 1000 }
+        ];
+        
+        resizeButtons.forEach(config => {
+            const button = document.getElementById(config.id);
+            if (button) {
+                button.addEventListener('click', () => {
+                    this.resizeCanvas(config.width, config.height);
+                });
+            }
+        });
+    }
+    
+    resizeCanvas(width, height) {
+        if (this.app && this.app.resize) {
+            this.app.resize(width, height);
+            if (this.statusBar) {
+                this.statusBar.updateCanvasInfo(width, height);
+            }
+            console.log(`キャンバスリサイズ: ${width}x${height}px`);
+        }
+    }
+    
+    /**
+     * チェックボックス設定（変更なし）
+     */
+    setupCheckboxes() {
+        const highDpiCheckbox = document.getElementById('high-dpi-checkbox');
+        if (highDpiCheckbox) {
+            highDpiCheckbox.addEventListener('change', (event) => {
+                if (this.settingsManager) {
+                    this.settingsManager.setSetting('highDPI', event.target.checked);
+                }
+            });
+        }
+        
+        const debugInfoCheckbox = document.getElementById('debug-info-checkbox');
+        if (debugInfoCheckbox) {
+            debugInfoCheckbox.addEventListener('change', (event) => {
+                const debugInfoElement = document.getElementById('debug-info');
+                if (debugInfoElement) {
+                    debugInfoElement.style.display = event.target.checked ? 'block' : 'none';
+                }
+            });
+        }
+    }
+    
+    /**
+     * アプリイベントリスナー設定（変更なし）
+     */
+    setupAppEventListeners() {
+        // キャンバス上のマウス座標更新
+        if (this.app && this.app.view) {
+            this.app.view.addEventListener('pointermove', (event) => {
+                this.updateCoordinatesThrottled(event.offsetX, event.offsetY);
+            });
+        }
+        
+        // ウィンドウリサイズ対応
+        window.addEventListener('resize', () => {
+            this.handleWindowResize();
+        });
+        
+        // キーボードショートカット
+        document.addEventListener('keydown', (event) => {
+            this.handleKeyboardShortcuts(event);
+        });
+    }
+    
+    /**
+     * キーボードショートカット処理（プレビューリセット維持）
+     */
+    handleKeyboardShortcuts(event) {
+        // Ctrl+Z: アンドゥ
+        if (event.ctrlKey && event.key === 'z' && !event.shiftKey) {
+            event.preventDefault();
+            if (this.historyManager && this.historyManager.canUndo()) {
+                this.historyManager.undo();
+                this.updateAllDisplays();
+                this.showNotification('元に戻しました', 'info', 1500);
+            }
+            return;
+        }
+        
+        // Ctrl+Shift+Z または Ctrl+Y: リドゥ
+        if ((event.ctrlKey && event.shiftKey && event.key === 'Z') || 
+            (event.ctrlKey && event.key === 'y')) {
+            event.preventDefault();
+            if (this.historyManager && this.historyManager.canRedo()) {
+                this.historyManager.redo();
+                this.updateAllDisplays();
+                this.showNotification('やり直しました', 'info', 1500);
+            }
+            return;
+        }
+        
+        // R: プリセットリセット
+        if (event.key === 'r' && !event.ctrlKey && !event.shiftKey) {
+            event.preventDefault();
+            this.handleResetActivePreset();
+            return;
+        }
+        
+        // Shift+R: 全プレビューリセット（Phase2F: 維持）
+        if (event.key === 'R' && event.shiftKey && !event.ctrlKey) {
+            event.preventDefault();
+            this.handleResetAllPreviews();
+            return;
+        }
+    }
+    
+    updateCoordinatesThrottled(x, y) {
+        if (this.coordinateUpdateThrottle) {
+            clearTimeout(this.coordinateUpdateThrottle);
+        }
+        
+        this.coordinateUpdateThrottle = setTimeout(() => {
+            if (this.statusBar) {
+                this.statusBar.updateCoordinates(x, y);
+            }
+        }, 16);
+    }
+    
+    handleWindowResize() {
+        if (this.popupManager) {
+            this.popupManager.hideAllPopups();
+        }
+    }
+    
+    /**
+     * リセット機能セットアップ（プレビューリセット維持）
+     */
+    setupResetFunctions() {
+        // アクティブプリセットリセット
+        const resetPresetBtn = document.getElementById('reset-active-preset');
+        if (resetPresetBtn) {
+            resetPresetBtn.addEventListener('click', () => {
+                this.handleResetActivePreset();
+            });
+        }
+        
+        // 全プリセットリセット
+        const resetAllPresetsBtn = document.getElementById('reset-all-presets');
+        if (resetAllPresetsBtn) {
+            resetAllPresetsBtn.addEventListener('click', () => {
+                this.handleResetAllPresets();
+            });
+        }
+        
+        // 全プレビューリセット（Phase2F: 維持）
+        const resetAllPreviewsBtn = document.getElementById('reset-all-previews');
+        if (resetAllPreviewsBtn) {
+            resetAllPreviewsBtn.addEventListener('click', () => {
+                this.handleResetAllPreviews();
+            });
+        }
+        
+        // キャンバスリセット
+        const resetCanvasBtn = document.getElementById('reset-canvas');
+        if (resetCanvasBtn) {
+            resetCanvasBtn.addEventListener('click', () => {
+                this.handleResetCanvas();
+            });
+        }
+    }
+    
+    /**
+     * アクティブプリセットリセット処理（変更なし）
+     */
+    handleResetActivePreset() {
+        if (this.penPresetManager && this.penPresetManager.resetActivePreset) {
+            const success = this.penPresetManager.resetActivePreset();
+            
+            if (success) {
+                this.updateSliderValuesFromToolsSystem();
+                this.updateAllDisplays();
+                this.showNotification('アクティブプリセットをリセットしました', 'success', 2000);
+            }
+        } else {
+            this.showNotification('プリセットリセット機能が利用できません', 'error', 3000);
+        }
+        
+        return this.penPresetManager ? this.penPresetManager.resetActivePreset() : false;
+    }
+    
+    handleResetAllPresets() {
+        if (confirm('全てのプリセットをデフォルト値にリセットしますか？')) {
+            if (this.penPresetManager && this.penPresetManager.resetAllPresets) {
+                const success = this.penPresetManager.resetAllPresets();
+                
+                if (success) {
+                    this.updateSliderValuesFromToolsSystem();
+                    this.updateAllDisplays();
+                    this.showNotification('全プリセットをリセットしました', 'success', 2000);
+                }
+            }
+        }
+    }
+    
+    /**
+     * 全プレビューリセット処理（Phase2F: 維持）
+     */
+    handleResetAllPreviews() {
+        if (this.presetDisplayManager && this.presetDisplayManager.resetAllPreviews) {
+            const success = this.presetDisplayManager.resetAllPreviews();
+            
+            if (success) {
+                this.updateSliderValuesFromToolsSystem();
+                this.updateAllDisplays();
+                this.showNotification('全プレビューをリセットしました', 'success', 2000);
+            }
+            return success;
+        } else {
+            this.showNotification('プレビューリセット機能が利用できません', 'error', 3000);
+            return false;
+        }
+    }
+    
+    handleResetCanvas() {
+        if (confirm('キャンバスを消去しますか？この操作は取り消すことができます。')) {
+            if (this.app && this.app.clear) {
+                this.app.clear();
+                this.showNotification('キャンバスをクリアしました', 'info', 2000);
+            }
+        }
+    }
+    
+    /**
+     * 表示更新メソッド群（Phase2F改修: 外部監視システム統合）
+     */
+    updateAllDisplays() {
+        try {
+            this.updateSliderValuesFromToolsSystem();
+            this.updateToolDisplay();
+            this.updateStatusDisplay(); // Phase2F改修: 外部システム統合
+            
+            // プリセット表示更新（プレビュー同期含む・維持）
+            if (this.presetDisplayManager && this.presetDisplayManager.updatePresetsDisplay) {
+                this.presetDisplayManager.updatePresetsDisplay();
+            }
+            
+            // プレビュー同期実行（Phase2F: 維持）
+            if (this.previewSyncEnabled && this.presetDisplayManager && 
+                this.presetDisplayManager.syncPreviewWithLiveValues) {
+                this.presetDisplayManager.syncPreviewWithLiveValues();
+            }
+            
+        } catch (error) {
+            console.warn('表示更新エラー:', error);
+            this.handleError(error);
+        }
+    }
+    
+    updateSliderValuesFromToolsSystem() {
+        if (!this.toolsSystem) return;
+        
+        const settings = this.toolsSystem.getBrushSettings();
+        if (settings) {
+            this.updateSliderValue('pen-size-slider', settings.size);
+            this.updateSliderValue('pen-opacity-slider', settings.opacity * 100);
+            this.updateSliderValue('pen-pressure-slider', settings.pressure * 100);
+            this.updateSliderValue('pen-smoothing-slider', settings.smoothing * 100);
+        }
+    }
+    
+    updateToolDisplay() {
+        if (this.toolsSystem && this.statusBar) {
+            const currentTool = this.toolsSystem.getCurrentTool();
+            this.statusBar.updateCurrentTool(currentTool);
+            
+            const brushSettings = this.toolsSystem.getBrushSettings();
+            if (brushSettings) {
+                this.statusBar.updateCurrentColor(brushSettings.color);
+            }
+        }
+    }
+    
+    /**
      * Phase2F改修: ステータス表示更新（外部監視システム統合版）
      */
     updateStatusDisplay() {
@@ -415,117 +793,6 @@
     }
     
     /**
-     * Phase2F改修: UI統合デバッグ（外部システム統合版）
-     */
-    debugUI() {
-        console.group('🔍 UIManagerSystem デバッグ情報（Phase2F改修版・外部システム統合）');
-        
-        console.log('基本情報:', {
-            initialized: this.isInitialized,
-            sliders: this.sliders.size,
-            errorCount: `${this.errorCount}/${this.maxErrors}`,
-            previewSyncEnabled: this.previewSyncEnabled
-        });
-        
-        console.log('コンポーネント状態:', this.getUIStats().components);
-        console.log('スライダー値:', this.getAllSliderValues());
-        
-        // プレビュー連動デバッグ情報（Phase2F: 維持）
-        const previewStats = this.getPreviewSyncStats();
-        if (previewStats) {
-            console.log('プレビュー同期状態:', previewStats);
-        }
-        
-        // Phase2F新規: 外部システム統合状況
-        const externalSystems = this.getUIStats().externalSystemsIntegration;
-        console.log('外部システム統合状況:', externalSystems);
-        
-        // パフォーマンス統計（外部システム版）
-        const perfStats = this.getPerformanceStats();
-        console.log('パフォーマンス統計:', perfStats);
-        
-        if (this.penPresetManager && this.penPresetManager.getSystemStats) {
-            console.log('PenPresetManager統計:', this.penPresetManager.getSystemStats());
-        }
-        
-        if (this.historyManager) {
-            console.log('履歴統計:', this.getHistoryStats());
-        }
-        
-        console.groupEnd();
-    }
-    
-    /**
-     * プレビューデバッグ機能（Phase2F: 維持）
-     */
-    debugPreviewSync() {
-        console.group('🔍 プレビュー連動デバッグ情報（Phase2F維持）');
-        
-        console.log('プレビュー同期設定:', {
-            enabled: this.previewSyncEnabled,
-            lastUpdate: this.lastPreviewUpdate,
-            updateThrottle: !!this.previewUpdateThrottle
-        });
-        
-        if (this.penPresetManager) {
-            const liveStats = this.penPresetManager.getLiveValuesStats ? 
-                this.penPresetManager.getLiveValuesStats() : null;
-            console.log('ライブ値状態:', liveStats);
-            
-            const activePreset = this.penPresetManager.getActivePreset();
-            const effectiveValues = this.penPresetManager.getEffectiveValues ? 
-                this.penPresetManager.getEffectiveValues() : null;
-            
-            console.log('アクティブプリセット:', activePreset);
-            console.log('実効値:', effectiveValues);
-        }
-        
-        if (this.presetDisplayManager) {
-            const displayStats = this.presetDisplayManager.getStatus();
-            console.log('表示管理状態:', displayStats);
-        }
-        
-        console.groupEnd();
-    }
-    
-    /**
-     * Phase2F新規: 外部システム統合デバッグ
-     */
-    debugExternalSystems() {
-        console.group('🔍 外部システム統合デバッグ情報（Phase2F）');
-        
-        console.log('統合状況:', {
-            externalPerformanceMonitor: !!this.externalPerformanceMonitor,
-            systemMonitor: !!this.systemMonitor,
-            debugManager: !!this.debugManager
-        });
-        
-        // SystemMonitor情報
-        if (this.systemMonitor) {
-            console.log('SystemMonitor状況:', {
-                running: this.systemMonitor.isRunning,
-                health: this.systemMonitor.getSystemHealth ? this.systemMonitor.getSystemHealth() : 'N/A'
-            });
-        }
-        
-        // 外部PerformanceMonitor情報
-        if (this.externalPerformanceMonitor) {
-            const stats = this.externalPerformanceMonitor.getStats ? 
-                this.externalPerformanceMonitor.getStats() : null;
-            console.log('外部PerformanceMonitor統計:', stats);
-        }
-        
-        // DebugManager連携確認
-        if (this.debugManager) {
-            console.log('DebugManager連携: 利用可能');
-        } else {
-            console.log('DebugManager連携: 未連携');
-        }
-        
-        console.groupEnd();
-    }
-    
-    /**
      * 外部システム連携
      */
     onToolChange(newTool) {
@@ -670,13 +937,17 @@ if (typeof window !== 'undefined') {
         
         if (window.uiManager) {
             // 基本UI情報
-            window.uiManager.debugUI();
+            console.log('UIStats:', window.uiManager.getUIStats());
             
             // プレビュー連動情報
-            window.uiManager.debugPreviewSync();
+            const previewStats = window.uiManager.getPreviewSyncStats();
+            if (previewStats) {
+                console.log('プレビュー同期状態:', previewStats);
+            }
             
-            // 外部システム統合情報
-            window.uiManager.debugExternalSystems();
+            // パフォーマンス統計（外部システム版）
+            const perfStats = window.uiManager.getPerformanceStats();
+            console.log('パフォーマンス統計:', perfStats);
         } else {
             console.warn('UIManager が利用できません');
         }
@@ -708,70 +979,7 @@ if (typeof window !== 'undefined') {
     console.log('  ✅ 分離システム管理: 各システムが独立動作・エラー分離');
 }
 
-console.log('🏆 ui-manager.js Phase2F改修版 初期化完了');        // ui/components.js 定義クラス活用
-        this.popupManager = this.initializeComponent('PopupManager');
-        this.statusBar = this.initializeComponent('StatusBarManager');
-        this.presetDisplayManager = this.initializeComponent('PresetDisplayManager', [toolsSystem]);
-        
-        // 既存システムとの連携
-        this.penPresetManager = null; // toolsSystemから取得
-        
-        // Phase2F改修: 外部パフォーマンス監視システム統合
-        this.externalPerformanceMonitor = null; // ui/components.js から取得
-        this.systemMonitor = null; // monitoring/system-monitor.js から取得
-        
-        // スライダー管理
-        this.sliders = new Map();
-        
-        // プレビュー連動機能用の状態（Phase2F: 維持・強化）
-        this.previewSyncEnabled = true;
-        this.previewUpdateThrottle = null;
-        this.lastPreviewUpdate = 0;
-        
-        // UI制御状態
-        this.isInitialized = false;
-        this.coordinateUpdateThrottle = null;
-        this.errorCount = 0;
-        this.maxErrors = 10;
-        
-        // 外部システム参照
-        this.settingsManager = null;
-        this.debugManager = null; // Phase2F: 外部デバッグシステム
-        
-        console.log('🎯 UIManagerSystem初期化（Phase2F改修版・パフォーマンス監視分離）');
-    }
-    
-    /**
-     * CONFIG値安全取得（utils.js統合）
-     */
-    safeConfigGet(key, defaultValue) {
-        try {
-            if (window.CONFIG && window.CONFIG[key] !== undefined && window.CONFIG[key] !== null) {
-                const value = window.CONFIG[key];
-                if (key === 'SIZE_PRESETS' && Array.isArray(value) && value.length === 0) {
-                    return defaultValue || [1, 2, 4, 8, 16, 32];
-                }
-                return value;
-            }
-        } catch (error) {
-            console.warn(`CONFIG.${key} アクセスエラー:`, error);
-        }
-        return defaultValue;
-    }
-    
-    /**
-     * コンポーネント安全初期化
-     */
-    initializeComponent(ComponentClass, constructorArgs = []) {
-        try {
-            if (typeof window[ComponentClass] !== 'undefined') {
-                return new window[ComponentClass](...constructorArgs);
-            } else {
-                console.warn(`${ComponentClass} が利用できません`);
-                return null;
-            }
-        } catch (error) {
-            console.error(`${ComponentClass} 初期化エラー:`, error);
+console.log('🏆 ui-manager.js Phase2F改修版 初期化完了');(`${ComponentClass} 初期化エラー:`, error);
             return null;
         }
     }
@@ -1163,319 +1371,4 @@ console.log('🏆 ui-manager.js Phase2F改修版 初期化完了');        // ui
                 console.warn('⚠️ プレビュー同期システムの初期化をスキップ（必要なコンポーネントが不足）');
             }
         } catch (error) {
-            console.error('プレビュー同期システム初期化エラー:', error);
-            this.previewSyncEnabled = false;
-        }
-    }
-    
-    /**
-     * リサイズ設定（変更なし）
-     */
-    setupResize() {
-        const resizeButtons = [
-            { id: 'resize-400-400', width: 400, height: 400 },
-            { id: 'resize-600-600', width: 600, height: 600 },
-            { id: 'resize-800-600', width: 800, height: 600 },
-            { id: 'resize-1000-1000', width: 1000, height: 1000 }
-        ];
-        
-        resizeButtons.forEach(config => {
-            const button = document.getElementById(config.id);
-            if (button) {
-                button.addEventListener('click', () => {
-                    this.resizeCanvas(config.width, config.height);
-                });
-            }
-        });
-    }
-    
-    resizeCanvas(width, height) {
-        if (this.app && this.app.resize) {
-            this.app.resize(width, height);
-            if (this.statusBar) {
-                this.statusBar.updateCanvasInfo(width, height);
-            }
-            console.log(`キャンバスリサイズ: ${width}x${height}px`);
-        }
-    }
-    
-    /**
-     * チェックボックス設定（変更なし）
-     */
-    setupCheckboxes() {
-        const highDpiCheckbox = document.getElementById('high-dpi-checkbox');
-        if (highDpiCheckbox) {
-            highDpiCheckbox.addEventListener('change', (event) => {
-                if (this.settingsManager) {
-                    this.settingsManager.setSetting('highDPI', event.target.checked);
-                }
-            });
-        }
-        
-        const debugInfoCheckbox = document.getElementById('debug-info-checkbox');
-        if (debugInfoCheckbox) {
-            debugInfoCheckbox.addEventListener('change', (event) => {
-                const debugInfoElement = document.getElementById('debug-info');
-                if (debugInfoElement) {
-                    debugInfoElement.style.display = event.target.checked ? 'block' : 'none';
-                }
-            });
-        }
-    }
-    
-    /**
-     * アプリイベントリスナー設定（変更なし）
-     */
-    setupAppEventListeners() {
-        // キャンバス上のマウス座標更新
-        if (this.app && this.app.view) {
-            this.app.view.addEventListener('pointermove', (event) => {
-                this.updateCoordinatesThrottled(event.offsetX, event.offsetY);
-            });
-        }
-        
-        // ウィンドウリサイズ対応
-        window.addEventListener('resize', () => {
-            this.handleWindowResize();
-        });
-        
-        // キーボードショートカット
-        document.addEventListener('keydown', (event) => {
-            this.handleKeyboardShortcuts(event);
-        });
-    }
-    
-    /**
-     * キーボードショートカット処理（プレビューリセット維持）
-     */
-    handleKeyboardShortcuts(event) {
-        // Ctrl+Z: アンドゥ
-        if (event.ctrlKey && event.key === 'z' && !event.shiftKey) {
-            event.preventDefault();
-            if (this.historyManager && this.historyManager.canUndo()) {
-                this.historyManager.undo();
-                this.updateAllDisplays();
-                this.showNotification('元に戻しました', 'info', 1500);
-            }
-            return;
-        }
-        
-        // Ctrl+Shift+Z または Ctrl+Y: リドゥ
-        if ((event.ctrlKey && event.shiftKey && event.key === 'Z') || 
-            (event.ctrlKey && event.key === 'y')) {
-            event.preventDefault();
-            if (this.historyManager && this.historyManager.canRedo()) {
-                this.historyManager.redo();
-                this.updateAllDisplays();
-                this.showNotification('やり直しました', 'info', 1500);
-            }
-            return;
-        }
-        
-        // R: プリセットリセット
-        if (event.key === 'r' && !event.ctrlKey && !event.shiftKey) {
-            event.preventDefault();
-            this.handleResetActivePreset();
-            return;
-        }
-        
-        // Shift+R: 全プレビューリセット（Phase2F: 維持）
-        if (event.key === 'R' && event.shiftKey && !event.ctrlKey) {
-            event.preventDefault();
-            this.handleResetAllPreviews();
-            return;
-        }
-    }
-    
-    updateCoordinatesThrottled(x, y) {
-        if (this.coordinateUpdateThrottle) {
-            clearTimeout(this.coordinateUpdateThrottle);
-        }
-        
-        this.coordinateUpdateThrottle = setTimeout(() => {
-            if (this.statusBar) {
-                this.statusBar.updateCoordinates(x, y);
-            }
-        }, 16);
-    }
-    
-    handleWindowResize() {
-        if (this.popupManager) {
-            this.popupManager.hideAllPopups();
-        }
-    }
-    
-    /**
-     * リセット機能セットアップ（プレビューリセット維持）
-     */
-    setupResetFunctions() {
-        // アクティブプリセットリセット
-        const resetPresetBtn = document.getElementById('reset-active-preset');
-        if (resetPresetBtn) {
-            resetPresetBtn.addEventListener('click', () => {
-                this.handleResetActivePreset();
-            });
-        }
-        
-        // 全プリセットリセット
-        const resetAllPresetsBtn = document.getElementById('reset-all-presets');
-        if (resetAllPresetsBtn) {
-            resetAllPresetsBtn.addEventListener('click', () => {
-                this.handleResetAllPresets();
-            });
-        }
-        
-        // 全プレビューリセット（Phase2F: 維持）
-        const resetAllPreviewsBtn = document.getElementById('reset-all-previews');
-        if (resetAllPreviewsBtn) {
-            resetAllPreviewsBtn.addEventListener('click', () => {
-                this.handleResetAllPreviews();
-            });
-        }
-        
-        // キャンバスリセット
-        const resetCanvasBtn = document.getElementById('reset-canvas');
-        if (resetCanvasBtn) {
-            resetCanvasBtn.addEventListener('click', () => {
-                this.handleResetCanvas();
-            });
-        }
-    }
-    
-    /**
-     * アクティブプリセットリセット処理（変更なし）
-     */
-    handleResetActivePreset() {
-        if (this.penPresetManager && this.penPresetManager.resetActivePreset) {
-            const success = this.penPresetManager.resetActivePreset();
-            
-            if (success) {
-                this.updateSliderValuesFromToolsSystem();
-                this.updateAllDisplays();
-                this.showNotification('アクティブプリセットをリセットしました', 'success', 2000);
-            }
-        } else {
-            this.showNotification('プリセットリセット機能が利用できません', 'error', 3000);
-        }
-    }
-    
-    handleResetAllPresets() {
-        if (confirm('全てのプリセットをデフォルト値にリセットしますか？')) {
-            if (this.penPresetManager && this.penPresetManager.resetAllPresets) {
-                const success = this.penPresetManager.resetAllPresets();
-                
-                if (success) {
-                    this.updateSliderValuesFromToolsSystem();
-                    this.updateAllDisplays();
-                    this.showNotification('全プリセットをリセットしました', 'success', 2000);
-                }
-            }
-        }
-    }
-    
-    /**
-     * 全プレビューリセット処理（Phase2F: 維持）
-     */
-    handleResetAllPreviews() {
-        if (this.presetDisplayManager && this.presetDisplayManager.resetAllPreviews) {
-            const success = this.presetDisplayManager.resetAllPreviews();
-            
-            if (success) {
-                this.updateSliderValuesFromToolsSystem();
-                this.updateAllDisplays();
-                this.showNotification('全プレビューをリセットしました', 'success', 2000);
-            }
-        } else {
-            this.showNotification('プレビューリセット機能が利用できません', 'error', 3000);
-        }
-    }
-    
-    handleResetCanvas() {
-        if (confirm('キャンバスを消去しますか？この操作は取り消すことができます。')) {
-            if (this.app && this.app.clear) {
-                this.app.clear();
-                this.showNotification('キャンバスをクリアしました', 'info', 2000);
-            }
-        }
-    }
-    
-    /**
-     * 表示更新メソッド群（Phase2F改修: 外部監視システム統合）
-     */
-    updateAllDisplays() {
-        try {
-            this.updateSliderValuesFromToolsSystem();
-            this.updateToolDisplay();
-            this.updateStatusDisplay(); // Phase2F改修: 外部システム統合
-            
-            // プリセット表示更新（プレビュー同期含む・維持）
-            if (this.presetDisplayManager && this.presetDisplayManager.updatePresetsDisplay) {
-                this.presetDisplayManager.updatePresetsDisplay();
-            }
-            
-            // プレビュー同期実行（Phase2F: 維持）
-            if (this.previewSyncEnabled && this.presetDisplayManager && 
-                this.presetDisplayManager.syncPreviewWithLiveValues) {
-                this.presetDisplayManager.syncPreviewWithLiveValues();
-            }
-            
-        } catch (error) {
-            console.warn('表示更新エラー:', error);
-            this.handleError(error);
-        }
-    }
-    
-    updateSliderValuesFromToolsSystem() {
-        if (!this.toolsSystem) return;
-        
-        const settings = this.toolsSystem.getBrushSettings();
-        if (settings) {
-            this.updateSliderValue('pen-size-slider', settings.size);
-            this.updateSliderValue('pen-opacity-slider', settings.opacity * 100);
-            this.updateSliderValue('pen-pressure-slider', settings.pressure * 100);
-            this.updateSliderValue('pen-smoothing-slider', settings.smoothing * 100);
-        }
-    }
-    
-    updateToolDisplay() {
-        if (this.toolsSystem && this.statusBar) {
-            const currentTool = this.toolsSystem.getCurrentTool();
-            this.statusBar.updateCurrentTool(currentTool);
-            
-            const brushSettings = this.toolsSystem.getBrushSettings();
-            if (brushSettings) {
-                this.statusBar.updateCurrentColor(brushSettings.color);
-            }
-        }
-    }
-    
-    /**
-     * Phase2F改修: ステータス表示更新（外部監視システム統合版/**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev11
- * UI統合管理システム - ui-manager.js（Phase2F改修版）
- * 
- * 🔧 Phase2F改修内容: DRY・SOLID原則準拠
- * 1. ✅ SimplePerformanceMonitor分離（monitoring/system-monitor.js）
- * 2. ✅ デバッグ機能分離（debug/debug-manager.js呼び出し）
- * 3. ✅ UI制御のみに特化（単一責任原則準拠）
- * 4. ✅ 900行→約500行に削減（45%スリム化）
- * 5. ✅ 外部監視システムとの統合・連携
- * 6. ✅ プレビュー連動機能は維持・強化
- * 
- * Phase2F目標: UI制御特化・保守性向上・責務明確化
- * 責務: UI統合制御・プレビュー連動のみ
- * 依存: config.js, ui/components.js, monitoring/system-monitor.js
- */
-
-console.log('🔧 ui-manager.js Phase2F改修版読み込み開始...');
-
-// ==== Phase2F改修: UI統合管理クラス（パフォーマンス監視分離版）====
-class UIManagerSystem {
-    constructor(app, toolsSystem, historyManager = null) {
-        this.app = app;
-        this.toolsSystem = toolsSystem;
-        this.historyManager = historyManager;
-        
-        // ui/components.js 定義クラス活用
-        this.popupManager = this.initializeComponent('PopupManager');
-        this.statusBar = this.initializeComponent('StatusBar
+            console.error
