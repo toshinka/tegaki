@@ -10,10 +10,11 @@
 - PixiJS v7の範囲で可能な限りモダンな実装を行い、ブラウザ互換は考慮せず最新Chrome APIを優先的に活用する。
 - ES2023構文使用OK（可読性のためなら）
 - OffscreenCanvasや最新Canvas APIも使用OK
+- 最新Chrome+デスクトップPC環境を想定してるため、後方互換は意識しなくて良い。その分ファイルのスリム化を。
 - 初期開発段階ではPC＋液タブ操作を優先し、タッチ操作は未実装とする。将来的に追加予定の箇所はコメントアウトで残し、後の拡張を容易にする
 - 責務を明確に分離し、保守しやすいコードにしてください。DRY原則とSOLID原則に基づいて、コンポーネントを設計し、各ファイルが単一の責任を持つように整理し、重複コードを排除する事。ボイラープレートが多すぎないか、適切なのかも確認。
 - **ファイルサイズ制限**: 単一ファイルは800行以下を目安とし、それを超える場合は責務に応じて分割する。
-
+- 必ずdebug/またはmonitoring/ディレクトリの既存モジュールを確認し、重複を避ける事。
 ---
 
 ## 2. ファイル構成ルール（UI分割対応拡張版）
@@ -109,9 +110,10 @@ config.js (設定値統一)
 ├─ transform-manager.js (Phase3)
 ├─ ui-manager.js (Phase2D縮小版・400行目標)
 │  ├─ ui/components.js (utils.js活用)
-│  ├─ ui/ui-events.js 🆕 (イベント処理専門)
+│  ├─ ui/ui-events.js  (イベント処理専門)
 │  ├─ ui/preset-manager.js (段階的移行)
 │  └─ ui/performance-monitor.js (段階的移行)
+│  └─ preview-manager.js🆕
 └─ layer-manager.js (Phase3)
 ### 🏗️ 新設ディレクトリ構造
 ├── debug/                    # Phase2F新設: デバッグ機能分離
