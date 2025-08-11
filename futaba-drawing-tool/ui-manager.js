@@ -497,7 +497,7 @@ class UIManagerSystem {
             if (this.previewSyncEnabled && this.presetDisplayManager && this.penPresetManager) {
                 console.log('🔗 プレビュー同期システム初期化完了');
             } else {
-                console.warn(⚠️ プレビュー同期システムの初期化をスキップ（必要なコンポーネントが不足）');
+                console.warn('⚠️ プレビュー同期システムの初期化をスキップ（必要なコンポーネントが不足）');
             }
         } catch (error) {
             console.error('プレビュー同期システム初期化エラー:', error);
