@@ -1,5 +1,5 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev11
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev12
  * パフォーマンスログ専用モジュール - performance-logger.js (Phase2F完成版)
  * 
  * 🔧 Phase2F新設: DRY・SOLID原則準拠
