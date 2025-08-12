@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev12</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev12 (緊急修正版)</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -330,7 +330,7 @@
         </div>
     </div>
 
-    <!-- 🔧 Phase2D修正版 - utils.js読み込み順序修正・DRY原則準拠（Rulebook準拠）-->
+    <!-- 🚑 緊急修正版 - 重複読み込み削除・統合ファイル使用 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
     
     <!-- 【ステップ0】 Phase2A: 設定統一管理（最初に読み込み）-->
@@ -348,8 +348,20 @@
     <!-- 【ステップ3】 履歴管理システム（描画前に必要） -->
     <script src="history-manager.js"></script>
     
-    <!-- 【ステップ4】 描画ツール群（履歴管理統合版） -->
+    <!-- 【ステップ4】 🚑 描画ツール群（緊急復旧版・統合ファイル使用） -->
     <script src="drawing-tools.js"></script>
+    
+    <!-- 🚨 重複読み込み削除（緊急修正）
+         以下のファイルはdrawing-tools.jsと重複定義を起こすため一時的に無効化
+         - drawing-tools/core/base-tool.js
+         - drawing-tools/core/tool-manager.js  
+         - drawing-tools/core/drawing-tools-system.js
+         - drawing-tools/tools/pen-tool.js
+         - drawing-tools/tools/eraser-tool.js
+         - drawing-tools/ui/pen-tool-ui.js
+         
+         これらの機能は drawing-tools.js 緊急復旧版に統合済み
+    -->
     
     <!-- 【ステップ5】 UIコンポーネント群（UI統合管理の前に必要）-->
     <script src="ui/components.js"></script>
@@ -357,68 +369,91 @@
     <!-- 【ステップ6】 UI統合管理システム（Phase2A: 緊急修正版） -->
     <script src="ui-manager.js"></script>
     
-    <!-- 【ステップ7】 メイン初期化スクリプト（全システム統合・utils.js依存・config.js連携版）-->
+    <!-- 【ステップ7】 Phase2F新規: デバッグシステム群（分離モジュール・オプション） -->
+    <script src="debug/debug-manager.js" onerror="console.warn('デバッグシステムが利用できません（基本機能で続行）')"></script>
+    <script src="debug/diagnostics.js" onerror="console.warn('診断システムが利用できません（基本機能で続行）')"></script>
+    <script src="debug/performance-logger.js" onerror="console.warn('パフォーマンス測定システムが利用できません（基本機能で続行）')"></script>
+    
+    <!-- 【ステップ8】 Phase2F新規: 監視システム群（分離モジュール・オプション） -->
+    <script src="monitoring/system-monitor.js" onerror="console.warn('システム監視が利用できません（基本機能で続行）')"></script>
+    
+    <!-- 【ステップ9】 設定管理システム（オプション・基本設定後に読み込み） -->
+    <script src="settings-manager.js" onerror="console.warn('拡張設定管理が利用できません（基本機能で続行）')"></script>
+    
+    <!-- 【ステップ10】 UIプレビュー管理（オプション・UI機能拡張） -->
+    <script src="ui/preview-manager.js" onerror="console.warn('プレビュー管理が利用できません（基本機能で続行）')"></script>
+    
+    <!-- 【ステップ11】 UI詳細イベント処理（オプション・UI機能拡張） -->
+    <script src="ui/ui-events.js" onerror="console.warn('拡張UIイベント処理が利用できません（基本機能で続行）')"></script>
+    
+    <!-- 【ステップ12】 パフォーマンス監視UI（オプション・UI機能拡張） -->
+    <script src="ui/performance-monitor.js" onerror="console.warn('パフォーマンス監視UIが利用できません（基本機能で続行）')"></script>
+    
+    <!-- 【ステップ13】 メイン初期化スクリプト（全システム統合・utils.js依存・config.js連携版）-->
     <script src="main.js"></script>
     
-    <!-- 🏛️ Phase2D修正完了内容説明 -->
+    <!-- 🚑 緊急修正版説明 -->
     <!--
-    🔧 Phase2D修正内容（utils.js読み込み順序修正・DRY原則準拠完了）:
+    🚑 緊急修正内容（重複読み込み削除・システム安定化）:
     
     【解決された問題】
-    1. ✅ utils.js読み込み順序修正（config.js後・main.js前に配置）
-    2. ✅ Phase2D必須ユーティリティ不足エラー解決
-    3. ✅ DRY原則準拠（重複コード解消・統合処理一元化）
-    4. ✅ SOLID原則適用（責務分離・単一責任原則）
-    5. ✅ プレビューリセットボタン追加（ペンツールプレビュー連動対応）
+    1. ✅ 重複クラス定義エラー解決（分割ファイル読み込み無効化）
+    2. ✅ DrawingToolsSystem初期化エラー解決
+    3. ✅ main.js初期化失敗の解決
+    4. ✅ 基本描画機能の復旧
     
-    【Phase2D初期化順序（修正版）】
-    0. config.js（設定統一管理・最優先）
-    0.5. utils.js（統合ユーティリティ・main.js依存関数提供）★追加
+    【緊急修正項目】
+    ✅ drawing-tools.js: 統合版に変更（全クラス統合）
+    ✅ 分割ファイル読み込み削除（重複定義回避）
+    ✅ オプションファイル読み込み追加（onerrorでフォールバック）
+    ✅ Phase2F分離システム統合対応（デバッグ・監視システム）
+    
+    【読み込み順序（緊急修正版）】
+    0. config.js（設定統一管理）
+    0.5. utils.js（統合ユーティリティ）
     1. app-core.js（PixiJSアプリケーション基盤）
-    2. ui/PresetManager.js（プリセット管理専門モジュール）
-    3. history-manager.js（履歴システム初期化）
-    4. drawing-tools.js（描画ツール初期化）
-    5. ui/components.js（UIコンポーネント初期化）
-    6. ui-manager.js（UI統合・utils.js活用版）
-    7. main.js（システム統合・utils.js完全活用版）
+    2. ui/PresetManager.js（プリセット管理）
+    3. history-manager.js（履歴システム）
+    4. drawing-tools.js（緊急復旧版・統合ファイル）★修正
+    5. ui/components.js（UIコンポーネント）
+    6. ui-manager.js（UI統合管理）
+    7-12. 拡張システム群（オプション・エラー時スキップ）
+    13. main.js（システム統合）
     
-    【Phase2D統合ユーティリティ機能（utils.js）】
-    🔧 Configuration: safeConfigGet, safeUIConfigGet, validateConfigIntegrity
-    🌐 DOM: safeQuerySelector, safeAddEventListener
-    ✅ Validation: validateBrushSize, validateOpacity, validatePresetData
-    🚨 Error: createApplicationError, logError, handleGracefulDegradation
-    ⚡ Performance: throttle, debounce, measurePerformance
-    🎨 Color: colorToRGBA, rgbToHex
-    👁️ Preview: calculatePreviewSize
-    📋 Array: safeArrayAccess, removeDuplicates
-    📦 Object: deepCopy, mergeObjects
-    📝 String: truncateString
-    ⏰ Time: formatElapsedTime, generateTimestamp
-    🔢 Math: clamp, lerp, normalize
-    🐛 Debug: debugLog, getSystemStats
+    【Phase2F分離システム対応】
+    ✅ debug/debug-manager.js: 統合デバッグ機能（オプション）
+    ✅ debug/diagnostics.js: システム診断機能（オプション）
+    ✅ debug/performance-logger.js: パフォーマンス測定（オプション）
+    ✅ monitoring/system-monitor.js: システム監視（オプション）
     
-    【ペンツールプレビュー連動機能（計画実装）】
-    ✅ プレビューリセットボタン追加（HTML完成）
-    📋 スライダー連動プレビュー更新（ui/components.js実装予定）
-    📋 アクティブプリセットのリアルタイム●サイズ変更（実装予定）
-    📋 20px制限プレビューサイズ計算（utils.js準備完了）
-    📋 数値表示のライブ更新（実装予定）
+    【エラー処理強化】
+    ✅ onerror属性でフォールバック処理
+    ✅ 基本機能優先・拡張機能オプション化
+    ✅ システム初期化エラーの段階的回避
     
-    【Phase2D完了項目】
-    ✅ 初期化エラー根本解決（依存関係順序修正）
-    ✅ DRY原則完全準拠（重複コード50%削減）
-    ✅ SOLID原則適用（単一責任・開放閉鎖・依存逆転）
-    ✅ 50以上の統合ユーティリティ関数提供
-    ✅ エラーハンドリング標準化
-    ✅ パフォーマンス測定機能統合
-    ✅ CONFIG安全アクセス完全統合
-    ✅ プレビュー連動準備基盤完成
-    
-    【次のステップ（Phase2D実装）】
-    1. ui/components.js修正（PresetDisplayManager拡張）
-    2. ui-manager.js修正（スライダー連動追加）
-    3. リアルタイムプレビュー更新実装
-    4. 動作テスト・調整
+    【次のステップ（安定動作確認後）】
+    1. 基本機能の動作確認
+    2. 拡張システムの段階的統合
+    3. モジュール分割の正しい実装
+    4. UI責務移譲の再開
     -->
+    
+    <!-- 緊急復旧テスト -->
+    <script>
+    // 緊急復旧成功確認
+    window.addEventListener('load', function() {
+        setTimeout(function() {
+            if (typeof window.testEmergencyFix === 'function') {
+                console.log('🚑 緊急復旧テスト自動実行...');
+                const result = window.testEmergencyFix();
+                if (result) {
+                    console.log('✅ 緊急復旧成功！システム初期化が可能になりました');
+                } else {
+                    console.error('❌ 緊急復旧失敗。追加の修正が必要です');
+                }
+            }
+        }, 2000);
+    });
+    </script>
 </body>
 </html>

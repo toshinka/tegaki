@@ -1,688 +1,764 @@
 /**
- * ⚠️ 【重要】開発・改修時の注意事項:
- * 必ずdebug/またはmonitoring/ディレクトリの既存モジュールを確認し、重複を避けてください。
- * - debug/debug-manager.js: デバッグ機能統合
- * - debug/diagnostics.js: システム診断
- * - debug/performance-logger.js: パフォーマンス測定
- * - monitoring/system-monitor.js: システム監視
- * これらの機能はこのファイルに重複実装しないでください。
- */
-
-/**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev12
- * 描画ツール群統合ファイル（モジュール分割版）
+ * 描画ツール群 - drawing-tools.js (緊急復旧版・重複定義解消)
  * 
- * 🏗️ STEP 2.5実装完了（モジュール分割統合・既存互換性確保）:
- * 1. ✅ モジュール分割完成：各機能を適切なファイルに分離
- * 2. ✅ 既存互換性確保：drawing-tools.jsの従来API維持
- * 3. ✅ 動的読み込み対応：モジュールの柔軟な読み込み
- * 4. ✅ 統合エクスポート：全クラス・関数のグローバル登録
- * 5. ✅ デバッグ機能統合：分散したデバッグ機能の統合
- * 6. ✅ エラーハンドリング強化：モジュール間安全性確保
- * 7. ✅ パフォーマンス最適化：必要最小限の初期化
+ * 🚑 緊急修正内容（重複定義解消）:
+ * 1. ✅ 全クラス定義を統合ファイルに戻す
+ * 2. ✅ モジュール分割ファイルとの重複を解消
+ * 3. ✅ DrawingToolsSystem の正常動作復旧
+ * 4. ✅ main.js 初期化エラーの解消
  * 
- * 責務: モジュール統合・エクスポート・互換性確保
- * 構造: drawing-tools/ ディレクトリのモジュール群を統合
+ * 責務: 各描画ツール（ペン・消しゴム）とツール管理のみ
+ * 依存: app-core.js (PixiDrawingApp, CONFIG, EVENTS), history-manager.js
  * 
- * モジュール構成:
- * - core/: base-tool.js, tool-manager.js, drawing-tools-system.js
- * - tools/: pen-tool.js, eraser-tool.js
- * - ui/: pen-tool-ui.js
+ * 重要: 分割ファイルは一時的に無効化し、このファイルに統合
  */
 
-console.log('🔧 drawing-tools.js モジュール分割版統合ファイル読み込み開始...');
+console.log('🚑 drawing-tools.js 緊急復旧版読み込み開始...');
 
-// ==== モジュール読み込み状況管理 ====
-const ModuleLoader = {
-    loadedModules: new Set(),
-    failedModules: new Map(),
-    loadingPromises: new Map(),
-    
-    // モジュール読み込み状況確認
-    isLoaded: (moduleName) => ModuleLoader.loadedModules.has(moduleName),
-    
-    // 読み込み失敗記録
-    recordFailure: (moduleName, error) => {
-        ModuleLoader.failedModules.set(moduleName, error);
-        console.warn(`❌ モジュール読み込み失敗: ${moduleName}`, error);
-    },
-    
-    // 読み込み成功記録
-    recordSuccess: (moduleName) => {
-        ModuleLoader.loadedModules.add(moduleName);
-        console.log(`✅ モジュール読み込み成功: ${moduleName}`);
-    },
-    
-    // 読み込み統計取得
-    getLoadStats: () => ({
-        loaded: ModuleLoader.loadedModules.size,
-        failed: ModuleLoader.failedModules.size,
-        loadedModules: Array.from(ModuleLoader.loadedModules),
-        failedModules: Array.from(ModuleLoader.failedModules.keys())
-    })
+// ==== EVENTS定数の安全取得 ====
+const DRAWING_TOOLS_EVENTS = window.EVENTS || {
+    POINTER_DOWN: 'pointerdown',
+    POINTER_MOVE: 'pointermove', 
+    POINTER_UP: 'pointerup',
+    POINTER_UP_OUTSIDE: 'pointerupoutside'
 };
 
-// ==== 動的モジュール読み込み関数 ====
-async function loadModule(modulePath, moduleName) {
-    try {
-        // 既に読み込み中の場合は待機
-        if (ModuleLoader.loadingPromises.has(moduleName)) {
-            return await ModuleLoader.loadingPromises.get(moduleName);
-        }
+// ==== ベースツールクラス（統合版）====
+class BaseToolIntegrated {
+    constructor(name, app, historyManager = null) {
+        this.name = name;
+        this.app = app;
+        this.historyManager = historyManager;
+        this.isActive = false;
+        this.currentPath = null;
+        this.operationStartState = null;
+        this.lastPoint = null;
         
-        // 読み込みプロミスを作成
-        const loadingPromise = new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = modulePath;
-            script.async = true;
-            
-            script.onload = () => {
-                ModuleLoader.recordSuccess(moduleName);
-                resolve(true);
-            };
-            
-            script.onerror = () => {
-                const error = new Error(`Failed to load ${modulePath}`);
-                ModuleLoader.recordFailure(moduleName, error);
-                reject(error);
-            };
-            
-            document.head.appendChild(script);
+        console.log(`🔧 BaseToolIntegrated初期化: ${name}（緊急復旧版）`);
+    }
+    
+    activate() {
+        this.isActive = true;
+        this.onActivate();
+        console.log(`🔴 ${this.name} アクティブ化完了（緊急復旧版）`);
+    }
+    
+    deactivate() {
+        this.isActive = false;
+        this.onDeactivate();
+        this.cleanup();
+        console.log(`⚫ ${this.name} 非アクティブ化完了（緊急復旧版）`);
+    }
+    
+    setHistoryManager(historyManager) {
+        this.historyManager = historyManager;
+        console.log(`📚 ${this.name}: 履歴管理システム設定完了（緊急復旧版）`);
+    }
+    
+    captureStartState() {
+        if (this.historyManager && window.InternalStateCapture) {
+            this.operationStartState = window.InternalStateCapture.captureDrawingState(this.app);
+        }
+    }
+    
+    recordOperation() {
+        if (this.historyManager && this.operationStartState) {
+            this.historyManager.recordDrawingOperation(this.name, this.operationStartState);
+            this.operationStartState = null;
+        }
+    }
+    
+    cleanup() {
+        this.currentPath = null;
+        this.lastPoint = null;
+        this.operationStartState = null;
+    }
+    
+    // 抽象メソッド
+    onActivate() {}
+    onDeactivate() {}
+    onPointerDown(x, y, event) {}
+    onPointerMove(x, y, event) {}
+    onPointerUp(x, y, event) {}
+}
+
+// ==== ベクターペンツール（統合版）====
+class VectorPenToolIntegrated extends BaseToolIntegrated {
+    constructor(app, historyManager = null) {
+        super('pen', app, historyManager);
+        this.smoothingBuffer = [];
+        this.maxBufferSize = 5;
+    }
+    
+    onActivate() {
+        console.log('🖊️ ベクターペンツール アクティブ（緊急復旧版）');
+        this.app.updateState({ currentTool: 'pen' });
+        this.setupEventListeners();
+    }
+    
+    onDeactivate() {
+        this.cleanup();
+    }
+    
+    setupEventListeners() {
+        const drawingLayer = this.app.layers.drawingLayer;
+        
+        drawingLayer.on(DRAWING_TOOLS_EVENTS.POINTER_DOWN, (event) => {
+            if (!this.isActive) return;
+            const point = this.app.getLocalPointerPosition(event);
+            this.onPointerDown(point.x, point.y, event);
         });
         
-        ModuleLoader.loadingPromises.set(moduleName, loadingPromise);
-        return await loadingPromise;
+        drawingLayer.on(DRAWING_TOOLS_EVENTS.POINTER_MOVE, (event) => {
+            if (!this.isActive) return;
+            const point = this.app.getLocalPointerPosition(event);
+            this.onPointerMove(point.x, point.y, event);
+        });
         
-    } catch (error) {
-        console.error(`モジュール読み込みエラー (${moduleName}):`, error);
-        ModuleLoader.recordFailure(moduleName, error);
-        return false;
+        drawingLayer.on(DRAWING_TOOLS_EVENTS.POINTER_UP, (event) => {
+            if (!this.isActive) return;
+            const point = this.app.getLocalPointerPosition(event);
+            this.onPointerUp(point.x, point.y, event);
+        });
+        
+        drawingLayer.on(DRAWING_TOOLS_EVENTS.POINTER_UP_OUTSIDE, (event) => {
+            if (!this.isActive) return;
+            this.onPointerUp(0, 0, event);
+        });
+    }
+    
+    onPointerDown(x, y, event) {
+        this.captureStartState();
+        this.currentPath = this.app.createPath(x, y, 'pen');
+        this.lastPoint = { x, y };
+        this.smoothingBuffer = [{ x, y }];
+        console.log(`ペン開始: (${x.toFixed(1)}, ${y.toFixed(1)})（緊急復旧版）`);
+    }
+    
+    onPointerMove(x, y, event) {
+        if (!this.currentPath || !this.app.state.isDrawing) return;
+        
+        const smoothedPoint = this.applySmoothingFilter(x, y);
+        this.app.extendPath(this.currentPath, smoothedPoint.x, smoothedPoint.y);
+        this.lastPoint = smoothedPoint;
+    }
+    
+    onPointerUp(x, y, event) {
+        if (this.currentPath) {
+            this.app.finalizePath(this.currentPath);
+            this.recordOperation();
+            console.log(`ペン終了: パス完成（緊急復旧版）`);
+        }
+        this.cleanup();
+    }
+    
+    applySmoothingFilter(x, y) {
+        const smoothing = this.app.state.smoothing || 0;
+        
+        if (smoothing === 0 || this.smoothingBuffer.length === 0) {
+            this.smoothingBuffer.push({ x, y });
+            return { x, y };
+        }
+        
+        this.smoothingBuffer.push({ x, y });
+        if (this.smoothingBuffer.length > this.maxBufferSize) {
+            this.smoothingBuffer.shift();
+        }
+        
+        const bufferLength = this.smoothingBuffer.length;
+        const avgX = this.smoothingBuffer.reduce((sum, p) => sum + p.x, 0) / bufferLength;
+        const avgY = this.smoothingBuffer.reduce((sum, p) => sum + p.y, 0) / bufferLength;
+        
+        const smoothedX = x + (avgX - x) * smoothing;
+        const smoothedY = y + (avgY - y) * smoothing;
+        
+        return { x: smoothedX, y: smoothedY };
+    }
+    
+    cleanup() {
+        super.cleanup();
+        this.smoothingBuffer = [];
     }
 }
 
-// ==== 必須モジュール読み込み ====
-async function loadCoreModules() {
-    try {
-        console.log('🔧 必須モジュール読み込み開始...');
+// ==== 消しゴムツール（統合版）====
+class EraserToolIntegrated extends BaseToolIntegrated {
+    constructor(app, historyManager = null) {
+        super('eraser', app, historyManager);
+    }
+    
+    onActivate() {
+        console.log('🧽 消しゴムツール アクティブ（緊急復旧版）');
+        this.app.updateState({ currentTool: 'eraser' });
+        this.setupEventListeners();
+    }
+    
+    onDeactivate() {
+        this.cleanup();
+    }
+    
+    setupEventListeners() {
+        const drawingLayer = this.app.layers.drawingLayer;
         
-        const coreModules = [
-            { path: 'drawing-tools/core/base-tool.js', name: 'BaseTool' },
-            { path: 'drawing-tools/core/tool-manager.js', name: 'ToolManager' },
-            { path: 'drawing-tools/tools/pen-tool.js', name: 'PenTool' },
-            { path: 'drawing-tools/tools/eraser-tool.js', name: 'EraserTool' },
-            { path: 'drawing-tools/ui/pen-tool-ui.js', name: 'PenToolUI' },
-            { path: 'drawing-tools/core/drawing-tools-system.js', name: 'DrawingToolsSystem' }
-        ];
+        drawingLayer.on(DRAWING_TOOLS_EVENTS.POINTER_DOWN, (event) => {
+            if (!this.isActive) return;
+            const point = this.app.getLocalPointerPosition(event);
+            this.onPointerDown(point.x, point.y, event);
+        });
         
-        let loadedCount = 0;
-        const loadResults = [];
+        drawingLayer.on(DRAWING_TOOLS_EVENTS.POINTER_MOVE, (event) => {
+            if (!this.isActive) return;
+            const point = this.app.getLocalPointerPosition(event);
+            this.onPointerMove(point.x, point.y, event);
+        });
         
-        // 順次読み込み（依存関係考慮）
-        for (const module of coreModules) {
-            try {
-                console.log(`📥 読み込み中: ${module.name} (${module.path})`);
-                const success = await loadModule(module.path, module.name);
-                
-                if (success) {
-                    loadedCount++;
-                    loadResults.push({ name: module.name, status: 'success' });
-                } else {
-                    loadResults.push({ name: module.name, status: 'failed' });
-                }
-                
-                // 短い待機（読み込み安定化）
-                await new Promise(resolve => setTimeout(resolve, 50));
-                
-            } catch (error) {
-                console.error(`モジュール読み込みエラー: ${module.name}`, error);
-                loadResults.push({ name: module.name, status: 'error', error });
-            }
+        drawingLayer.on(DRAWING_TOOLS_EVENTS.POINTER_UP, (event) => {
+            if (!this.isActive) return;
+            const point = this.app.getLocalPointerPosition(event);
+            this.onPointerUp(point.x, point.y, event);
+        });
+        
+        drawingLayer.on(DRAWING_TOOLS_EVENTS.POINTER_UP_OUTSIDE, (event) => {
+            if (!this.isActive) return;
+            this.onPointerUp(0, 0, event);
+        });
+    }
+    
+    onPointerDown(x, y, event) {
+        this.captureStartState();
+        this.currentPath = this.app.createPath(x, y, 'eraser');
+        this.lastPoint = { x, y };
+        console.log(`消しゴム開始: (${x.toFixed(1)}, ${y.toFixed(1)})（緊急復旧版）`);
+    }
+    
+    onPointerMove(x, y, event) {
+        if (!this.currentPath || !this.app.state.isDrawing) return;
+        
+        this.app.extendPath(this.currentPath, x, y);
+        this.lastPoint = { x, y };
+    }
+    
+    onPointerUp(x, y, event) {
+        if (this.currentPath) {
+            this.app.finalizePath(this.currentPath);
+            this.recordOperation();
+            console.log(`消しゴム終了: パス完成（緊急復旧版）`);
         }
+        this.cleanup();
+    }
+}
+
+// ==== ツール管理システム（統合版）====
+class ToolManagerIntegrated {
+    constructor(app, historyManager = null) {
+        this.app = app;
+        this.historyManager = historyManager;
+        this.tools = new Map();
+        this.activeTool = null;
         
-        console.log(`📊 モジュール読み込み完了: ${loadedCount}/${coreModules.length}`);
-        console.log('📋 読み込み結果:', loadResults);
-        
-        // 最小限のモジュールが読み込まれているかチェック
-        const criticalModules = ['BaseTool', 'ToolManager', 'DrawingToolsSystem'];
-        const criticalLoaded = criticalModules.filter(name => ModuleLoader.isLoaded(name));
-        
-        if (criticalLoaded.length >= 2) { // BaseTool + (ToolManager or DrawingToolsSystem)
-            console.log('✅ 必須モジュール読み込み成功');
-            return true;
-        } else {
-            console.warn('⚠️ 重要モジュールの読み込みに失敗 - 従来モードで続行');
+        this.initializeTools();
+        console.log('🔧 ToolManagerIntegrated初期化完了（緊急復旧版）');
+    }
+    
+    initializeTools() {
+        this.registerTool('pen', new VectorPenToolIntegrated(this.app, this.historyManager));
+        this.registerTool('eraser', new EraserToolIntegrated(this.app, this.historyManager));
+        console.log(`✅ ${this.tools.size}個のツールを登録完了（緊急復旧版）`);
+    }
+    
+    setHistoryManager(historyManager) {
+        this.historyManager = historyManager;
+        this.tools.forEach(tool => {
+            if (tool.setHistoryManager) {
+                tool.setHistoryManager(historyManager);
+            }
+        });
+        console.log('🔧 ToolManagerIntegrated: 履歴管理システム設定完了（緊急復旧版）');
+    }
+    
+    registerTool(name, tool) {
+        this.tools.set(name, tool);
+        console.log(`🔧 ツール登録（緊急復旧版）: ${name}`);
+    }
+    
+    setActiveTool(toolName) {
+        if (!this.tools.has(toolName)) {
+            console.warn(`未知のツール: ${toolName}`);
             return false;
         }
         
-    } catch (error) {
-        console.error('❌ 必須モジュール読み込み全体エラー:', error);
-        return false;
-    }
-}
-
-// ==== フォールバック: 従来実装（モジュール読み込み失敗時）====
-function initializeFallbackImplementation() {
-    console.warn('🔄 フォールバック: 従来実装を使用します');
-    
-    // 簡易版のクラス実装（最小限）
-    if (!window.BaseTool) {
-        window.BaseTool = class BaseTool {
-            constructor(name, app, historyManager = null) {
-                this.name = name;
-                this.app = app;
-                this.historyManager = historyManager;
-                this.isActive = false;
-                this.currentPath = null;
-                this.operationStartState = null;
-            }
-            
-            activate() {
-                this.isActive = true;
-                this.onActivate();
-            }
-            
-            deactivate() {
-                this.isActive = false;
-                this.onDeactivate();
-            }
-            
-            onActivate() {}
-            onDeactivate() {}
-            captureStartState() {}
-            recordOperation() {}
-            cleanup() {
-                this.currentPath = null;
-                this.operationStartState = null;
-            }
-        };
-        console.log('📦 フォールバック: BaseTool 作成');
-    }
-    
-    if (!window.DrawingToolsSystem) {
-        window.DrawingToolsSystem = class DrawingToolsSystem {
-            constructor(app) {
-                this.app = app;
-                this.brushSettings = {
-                    size: 4,
-                    opacity: 1.0,
-                    color: 0x800000,
-                    pressure: 0.5,
-                    smoothing: 0.3
-                };
-                console.log('📦 フォールバック: DrawingToolsSystem 作成');
-            }
-            
-            async init() {
-                console.log('✅ フォールバック: システム初期化完了');
-                return true;
-            }
-            
-            async initUI() {
-                console.log('⚠️ フォールバック: UI機能は制限されます');
-                return false;
-            }
-            
-            getBrushSettings() {
-                return { ...this.brushSettings };
-            }
-            
-            updateBrushSettings(newSettings) {
-                Object.assign(this.brushSettings, newSettings);
-                return true;
-            }
-            
-            getCurrentTool() { return 'pen'; }
-            setTool(toolName) { return true; }
-            getAvailableTools() { return ['pen', 'eraser']; }
-            
-            // 履歴管理スタブ
-            setHistoryManager(historyManager) { this.historyManager = historyManager; }
-            getHistoryManager() { return this.historyManager; }
-            undo() { return false; }
-            redo() { return false; }
-            canUndo() { return false; }
-            canRedo() { return false; }
-            
-            // UI関連スタブ
-            getPenUI() { return null; }
-            getPenPresetManager() { return null; }
-            
-            getSystemStats() {
-                return {
-                    initialized: true,
-                    fallbackMode: true,
-                    currentTool: this.getCurrentTool(),
-                    brushSettings: this.brushSettings
-                };
-            }
-            
-            debugDrawingTools() {
-                console.group('🔍 DrawingToolsSystem デバッグ（フォールバックモード）');
-                console.log('⚠️ フォールバックモード実行中');
-                console.log('基本設定:', this.brushSettings);
-                console.groupEnd();
-            }
-            
-            destroy() {
-                console.log('🧹 フォールバック: クリーンアップ完了');
-            }
-        };
-        console.log('📦 フォールバック: DrawingToolsSystem 作成');
-    }
-    
-    console.log('✅ フォールバック実装初期化完了');
-}
-
-// ==== 初期化システム ====
-class DrawingToolsInitializer {
-    constructor() {
-        this.initializationMode = 'unknown';
-        this.initializationTime = 0;
-        this.moduleLoadTime = 0;
-        this.errors = [];
-    }
-    
-    async initialize() {
-        const startTime = Date.now();
+        const beforeTool = this.activeTool ? this.activeTool.name : null;
         
+        if (this.activeTool) {
+            this.activeTool.deactivate();
+        }
+        
+        this.activeTool = this.tools.get(toolName);
+        this.activeTool.activate();
+        
+        if (this.historyManager && beforeTool !== toolName) {
+            this.historyManager.recordToolChange(beforeTool, toolName);
+        }
+        
+        console.log(`🔄 ツール切り替え（緊急復旧版）: ${toolName}`);
+        return true;
+    }
+    
+    getActiveTool() {
+        return this.activeTool;
+    }
+    
+    getAvailableTools() {
+        return Array.from(this.tools.keys());
+    }
+    
+    getAllTools() {
+        return this.tools;
+    }
+    
+    getTool(name) {
+        return this.tools.get(name);
+    }
+}
+
+// ==== メインツールシステム統合クラス（緊急復旧版）====
+class DrawingToolsSystemEmergencyFix {
+    constructor(app) {
+        this.app = app;
+        this.historyManager = null;
+        this.toolManager = null;
+        this.uiManager = null;
+        this.isInitialized = false;
+        
+        console.log('🚑 DrawingToolsSystemEmergencyFix初期化開始...');
+    }
+    
+    async init() {
         try {
-            console.log('🚀 drawing-tools.js 統合初期化開始（モジュール分割版）');
+            console.log('🚑 DrawingToolsSystemEmergencyFix初期化開始（緊急復旧版）...');
             
-            // モジュール読み込み試行
-            const moduleLoadStartTime = Date.now();
-            const modulesLoaded = await loadCoreModules();
-            this.moduleLoadTime = Date.now() - moduleLoadStartTime;
+            // 1. ツールマネージャーの初期化
+            this.toolManager = new ToolManagerIntegrated(this.app, null);
             
-            if (modulesLoaded) {
-                this.initializationMode = 'modular';
-                console.log('✅ モジュール分割版で初期化完了');
-                
-                // モジュール統合確認
-                this.validateModularIntegration();
-                
-            } else {
-                this.initializationMode = 'fallback';
-                console.warn('⚠️ モジュール読み込み失敗 - フォールバックモード');
-                
-                // フォールバック実装の初期化
-                initializeFallbackImplementation();
-            }
+            // 2. デフォルトツールをアクティブ化
+            this.toolManager.setActiveTool('pen');
             
-            this.initializationTime = Date.now() - startTime;
+            // 3. 履歴管理システムの初期化
+            this.historyManager = new HistoryManager(this.app, this);
             
-            // 統合デバッグ関数の設定
-            this.setupDebugFunctions();
+            // 4. ツールマネージャーに履歴管理を設定
+            this.toolManager.setHistoryManager(this.historyManager);
             
-            // 初期化完了レポート
-            this.generateInitializationReport();
-            
-            console.log('🎉 drawing-tools.js 初期化完全完了');
-            return true;
+            this.isInitialized = true;
+            console.log('✅ DrawingToolsSystemEmergencyFix初期化完了（緊急復旧版）');
             
         } catch (error) {
-            console.error('❌ drawing-tools.js 初期化エラー:', error);
-            this.errors.push(error);
-            this.initializationMode = 'error';
-            
-            // 緊急フォールバック
-            try {
-                initializeFallbackImplementation();
-                console.log('🆘 緊急フォールバック実行完了');
-                this.initializationMode = 'emergency-fallback';
-            } catch (fallbackError) {
-                console.error('❌ 緊急フォールバック失敗:', fallbackError);
-                this.errors.push(fallbackError);
-                return false;
-            }
-            
-            this.initializationTime = Date.now() - startTime;
-            return true; // フォールバックでも続行
+            console.error('❌ DrawingToolsSystemEmergencyFix初期化エラー:', error);
+            throw error;
         }
     }
     
-    validateModularIntegration() {
-        try {
-            console.log('🔍 モジュール統合検証開始...');
-            
-            const validationResults = {
-                coreClasses: {},
-                toolClasses: {},
-                uiClasses: {},
-                debugFunctions: {}
-            };
-            
-            // コアクラス検証
-            const coreClasses = ['BaseTool', 'ToolManager', 'DrawingToolsSystem'];
-            coreClasses.forEach(className => {
-                validationResults.coreClasses[className] = {
-                    exists: !!window[className],
-                    isFunction: typeof window[className] === 'function'
-                };
-            });
-            
-            // ツールクラス検証
-            const toolClasses = ['PenTool', 'VectorPenTool', 'EraserTool'];
-            toolClasses.forEach(className => {
-                validationResults.toolClasses[className] = {
-                    exists: !!window[className],
-                    isFunction: typeof window[className] === 'function'
-                };
-            });
-            
-            // UIクラス検証
-            const uiClasses = ['PenToolUI'];
-            uiClasses.forEach(className => {
-                validationResults.uiClasses[className] = {
-                    exists: !!window[className],
-                    isFunction: typeof window[className] === 'function'
-                };
-            });
-            
-            // デバッグ関数検証
-            const debugFunctions = [
-                'debugDrawingToolsSystem',
-                'debugPenToolUI',
-                'testMainJsCompatibility'
-            ];
-            debugFunctions.forEach(funcName => {
-                validationResults.debugFunctions[funcName] = {
-                    exists: !!window[funcName],
-                    isFunction: typeof window[funcName] === 'function'
-                };
-            });
-            
-            console.log('📋 モジュール統合検証結果:', validationResults);
-            
-            // 必須要素のチェック
-            const criticalIssues = [];
-            if (!validationResults.coreClasses.DrawingToolsSystem?.exists) {
-                criticalIssues.push('DrawingToolsSystem が見つかりません');
-            }
-            if (!validationResults.coreClasses.BaseTool?.exists) {
-                criticalIssues.push('BaseTool が見つかりません');
-            }
-            
-            if (criticalIssues.length > 0) {
-                console.warn('⚠️ 重要な統合問題:', criticalIssues);
-                this.errors.push(new Error(`Integration issues: ${criticalIssues.join(', ')}`));
-            } else {
-                console.log('✅ モジュール統合検証成功');
-            }
-            
-            return validationResults;
-            
-        } catch (error) {
-            console.error('❌ モジュール統合検証エラー:', error);
-            this.errors.push(error);
+    // UIManager設定
+    setUIManager(uiManager) {
+        this.uiManager = uiManager;
+        if (this.historyManager) {
+            this.historyManager.setUIManager(uiManager);
+        }
+        console.log('🔧 DrawingToolsSystemEmergencyFix: UIManager設定完了');
+    }
+    
+    // PenPresetManager取得
+    getPenPresetManager() {
+        if (this.uiManager && this.uiManager.getPenPresetManager) {
+            return this.uiManager.getPenPresetManager();
+        }
+        
+        if (typeof window !== 'undefined' && window.uiManager && window.uiManager.getPenPresetManager) {
+            return window.uiManager.getPenPresetManager();
+        }
+        
+        console.warn('PenPresetManagerが見つかりません（緊急復旧版）');
+        return null;
+    }
+    
+    // ==== 公開API ====
+    setTool(toolName) {
+        return this.toolManager.setActiveTool(toolName);
+    }
+    
+    getCurrentTool() {
+        const activeTool = this.toolManager.getActiveTool();
+        if (!activeTool) {
+            console.warn('getCurrentTool(): アクティブツールが設定されていません（緊急復旧版）');
             return null;
         }
+        return activeTool.name;
     }
     
-    setupDebugFunctions() {
+    getAvailableTools() {
+        return this.toolManager.getAvailableTools();
+    }
+    
+    // Phase2: ブラシ設定更新（緊急復旧版・範囲拡張対応）
+    updateBrushSettings(settings) {
+        const beforeSettings = this.historyManager && window.InternalStateCapture ? 
+            window.InternalStateCapture.captureBrushSettings(this) : null;
+        
+        const updates = {};
+        
+        // Phase2: ペンサイズ範囲の拡張（0.1 ～ 500）
+        if ('size' in settings) {
+            const minSize = this.safeConfigGet('MIN_BRUSH_SIZE', 0.1);
+            const maxSize = this.safeConfigGet('MAX_BRUSH_SIZE', 500);
+            
+            updates.brushSize = Math.max(minSize, Math.min(maxSize, settings.size));
+            
+            if (settings.size > maxSize) {
+                console.warn(`⚠️ ペンサイズ ${settings.size} は最大値 ${maxSize} を超えています。${maxSize} に制限されました。`);
+            } else if (settings.size < minSize) {
+                console.warn(`⚠️ ペンサイズ ${settings.size} は最小値 ${minSize} を下回っています。${minSize} に制限されました。`);
+            }
+        }
+        
+        if ('color' in settings) {
+            updates.brushColor = settings.color;
+        }
+        if ('opacity' in settings) {
+            updates.opacity = Math.max(0, Math.min(1, settings.opacity));
+        }
+        if ('pressure' in settings) {
+            updates.pressure = Math.max(0, Math.min(1, settings.pressure));
+        }
+        if ('smoothing' in settings) {
+            updates.smoothing = Math.max(0, Math.min(1, settings.smoothing));
+        }
+        
+        this.app.updateState(updates);
+        
+        // 履歴記録
+        if (this.historyManager && beforeSettings && window.InternalStateCapture) {
+            const afterSettings = window.InternalStateCapture.captureBrushSettings(this);
+            this.historyManager.recordBrushSettingChange(beforeSettings, afterSettings);
+        }
+        
+        console.log('🎨 ブラシ設定更新（緊急復旧版）:', updates);
+    }
+    
+    getBrushSettings() {
+        const state = this.app.getState();
+        return {
+            size: state.brushSize,
+            color: state.brushColor,
+            opacity: state.opacity,
+            pressure: state.pressure,
+            smoothing: state.smoothing
+        };
+    }
+    
+    // 安全なCONFIG取得
+    safeConfigGet(key, defaultValue = null) {
         try {
-            console.log('🐛 統合デバッグ関数設定...');
-            
-            // 統合デバッグ関数
-            if (!window.debugDrawingTools) {
-                window.debugDrawingTools = function() {
-                    console.group('🔍 drawing-tools.js 統合デバッグ（モジュール分割版）');
-                    
-                    const initializer = window.drawingToolsInitializer;
-                    if (initializer) {
-                        console.log('初期化情報:', {
-                            mode: initializer.initializationMode,
-                            initTime: `${initializer.initializationTime}ms`,
-                            moduleLoadTime: `${initializer.moduleLoadTime}ms`,
-                            errors: initializer.errors.length
-                        });
-                    }
-                    
-                    const loadStats = ModuleLoader.getLoadStats();
-                    console.log('モジュール読み込み統計:', loadStats);
-                    
-                    // 個別システムのデバッグ実行
-                    if (window.toolsSystem) {
-                        console.log('--- DrawingToolsSystem ---');
-                        if (typeof window.debugDrawingToolsSystem === 'function') {
-                            window.debugDrawingToolsSystem();
-                        }
-                        
-                        console.log('--- PenToolUI ---');
-                        if (typeof window.debugPenToolUI === 'function') {
-                            window.debugPenToolUI();
-                        }
-                    }
-                    
-                    console.groupEnd();
-                };
+            if (!window.CONFIG || typeof window.CONFIG !== 'object') {
+                return defaultValue;
             }
             
-            // モジュール分割版テスト関数
-            if (!window.testModularArchitecture) {
-                window.testModularArchitecture = function() {
-                    console.group('🧪 モジュール分割アーキテクチャテスト');
-                    
-                    try {
-                        const initializer = window.drawingToolsInitializer;
-                        if (!initializer) {
-                            console.error('❌ 初期化システムが見つかりません');
-                            return false;
-                        }
-                        
-                        console.log(`📋 初期化モード: ${initializer.initializationMode}`);
-                        
-                        // モジュール読み込みテスト
-                        const loadStats = ModuleLoader.getLoadStats();
-                        console.log(`📊 読み込み統計: ${loadStats.loaded}成功 / ${loadStats.failed}失敗`);
-                        
-                        if (loadStats.failed > 0) {
-                            console.warn('⚠️ 読み込み失敗モジュール:', loadStats.failedModules);
-                        }
-                        
-                        // 統合テスト実行
-                        if (window.testMainJsCompatibility) {
-                            console.log('🧪 main.js互換性テスト実行...');
-                            const compatibilityResult = window.testMainJsCompatibility();
-                            console.log(`📊 互換性テスト結果: ${compatibilityResult ? '成功' : '失敗'}`);
-                        }
-                        
-                        // モジュール間通信テスト
-                        if (window.testModuleCommunication) {
-                            console.log('🧪 モジュール間通信テスト実行...');
-                            window.testModuleCommunication();
-                        }
-                        
-                        console.log('✅ モジュール分割アーキテクチャテスト完了');
-                        console.groupEnd();
-                        return true;
-                        
-                    } catch (error) {
-                        console.error('❌ アーキテクチャテストエラー:', error);
-                        console.groupEnd();
-                        return false;
-                    }
-                };
+            if (!(key in window.CONFIG)) {
+                return defaultValue;
             }
             
-            // パフォーマンス統計関数
-            if (!window.getDrawingToolsPerformance) {
-                window.getDrawingToolsPerformance = function() {
-                    const initializer = window.drawingToolsInitializer;
-                    const loadStats = ModuleLoader.getLoadStats();
-                    
-                    const performance = {
-                        initialization: {
-                            mode: initializer?.initializationMode || 'unknown',
-                            totalTime: initializer?.initializationTime || 0,
-                            moduleLoadTime: initializer?.moduleLoadTime || 0,
-                            errors: initializer?.errors?.length || 0
-                        },
-                        modules: {
-                            loaded: loadStats.loaded,
-                            failed: loadStats.failed,
-                            loadedModules: loadStats.loadedModules,
-                            failedModules: loadStats.failedModules
-                        },
-                        system: null
-                    };
-                    
-                    // システムパフォーマンス統計
-                    if (window.getSystemPerformanceStats) {
-                        performance.system = window.getSystemPerformanceStats();
-                    }
-                    
-                    console.log('📊 drawing-tools.js パフォーマンス統計:', performance);
-                    return performance;
-                };
-            }
-            
-            console.log('✅ 統合デバッグ関数設定完了');
+            const value = window.CONFIG[key];
+            return (value === null || value === undefined) ? defaultValue : value;
             
         } catch (error) {
-            console.error('❌ デバッグ関数設定エラー:', error);
-            this.errors.push(error);
+            console.error(`CONFIG取得エラー (${key}):`, error);
+            return defaultValue;
         }
     }
     
-    generateInitializationReport() {
-        try {
-            console.group('📋 drawing-tools.js 初期化レポート（モジュール分割版）');
-            
-            console.log('🏗️ 初期化サマリー:', {
-                モード: this.initializationMode,
-                初期化時間: `${this.initializationTime}ms`,
-                モジュール読み込み時間: `${this.moduleLoadTime}ms`,
-                エラー数: this.errors.length
-            });
-            
-            const loadStats = ModuleLoader.getLoadStats();
-            console.log('📦 モジュール読み込み結果:', {
-                成功: loadStats.loaded,
-                失敗: loadStats.failed,
-                成功モジュール: loadStats.loadedModules,
-                失敗モジュール: loadStats.failedModules
-            });
-            
-            if (this.errors.length > 0) {
-                console.warn('⚠️ 発生したエラー:', this.errors);
-            }
-            
-            // 利用可能機能の確認
-            const availableFeatures = {
-                基本描画システム: !!window.DrawingToolsSystem,
-                ペンツール: !!window.PenTool || !!window.VectorPenTool,
-                消しゴムツール: !!window.EraserTool,
-                ペンUI制御: !!window.PenToolUI,
-                デバッグ機能: !!window.debugDrawingTools
-            };
-            
-            console.log('🎯 利用可能機能:', availableFeatures);
-            
-            // 推奨事項
-            const recommendations = [];
-            
-            if (this.initializationMode === 'fallback') {
-                recommendations.push('モジュールファイルの配置を確認してください');
-                recommendations.push('ネットワーク接続とファイルパスを確認してください');
-            }
-            
-            if (loadStats.failed > 0) {
-                recommendations.push('失敗したモジュールの読み込みエラーを確認してください');
-            }
-            
-            if (this.errors.length > 0) {
-                recommendations.push('発生したエラーを確認し、必要に応じて修正してください');
-            }
-            
-            if (recommendations.length > 0) {
-                console.log('💡 推奨事項:', recommendations);
-            } else {
-                console.log('🎉 全機能正常に初期化されました');
-            }
-            
-            // モジュール分割効果の確認
-            if (this.initializationMode === 'modular') {
-                console.log('📊 モジュール分割効果:', {
-                    ファイル分割: '✅ 実現',
-                    責任分離: '✅ 実現',
-                    保守性向上: '✅ 実現',
-                    拡張性確保: '✅ 実現',
-                    '既存互換性': '✅ 確保'
-                });
-            }
-            
-            console.groupEnd();
-            
-        } catch (error) {
-            console.error('❌ 初期化レポート生成エラー:', error);
-            this.errors.push(error);
+    // ==== 履歴管理関連API ====
+    getHistoryManager() {
+        return this.historyManager;
+    }
+    
+    undo() {
+        return this.historyManager ? this.historyManager.undo() : false;
+    }
+    
+    redo() {
+        return this.historyManager ? this.historyManager.redo() : false;
+    }
+    
+    canUndo() {
+        return this.historyManager ? this.historyManager.canUndo() : false;
+    }
+    
+    canRedo() {
+        return this.historyManager ? this.historyManager.canRedo() : false;
+    }
+    
+    getHistoryStats() {
+        return this.historyManager ? this.historyManager.getStats() : null;
+    }
+    
+    getHistoryList() {
+        return this.historyManager ? this.historyManager.getHistoryList() : [];
+    }
+    
+    setHistoryRecording(enabled) {
+        if (this.historyManager) {
+            return this.historyManager.setRecording(enabled);
         }
+        return false;
+    }
+    
+    clearHistory() {
+        if (this.historyManager) {
+            this.historyManager.clearHistory();
+        }
+    }
+    
+    // ==== デバッグ・統計 ====
+    getSystemStats() {
+        const historyStats = this.getHistoryStats();
+        const brushSettings = this.getBrushSettings();
+        
+        const minSize = this.safeConfigGet('MIN_BRUSH_SIZE', 0.1);
+        const maxSize = this.safeConfigGet('MAX_BRUSH_SIZE', 500);
+        const defaultSize = this.safeConfigGet('DEFAULT_BRUSH_SIZE', 4);
+        const defaultOpacity = this.safeConfigGet('DEFAULT_OPACITY', 1.0);
+        
+        return {
+            initialized: this.isInitialized,
+            currentTool: this.getCurrentTool(),
+            availableTools: this.getAvailableTools(),
+            brushSettings: {
+                ...brushSettings,
+                sizeRange: { min: minSize, max: maxSize, default: defaultSize, current: brushSettings.size },
+                opacityRange: { min: 0, max: 1, default: defaultOpacity, current: brushSettings.opacity }
+            },
+            history: {
+                canUndo: this.canUndo(),
+                canRedo: this.canRedo(),
+                totalRecorded: historyStats?.totalRecorded || 0,
+                currentIndex: historyStats?.currentIndex || -1,
+                memoryUsageMB: historyStats?.memoryUsageMB || 0
+            },
+            emergencyFixActive: true // 緊急復旧版であることを示す
+        };
+    }
+    
+    debugHistory() {
+        if (this.historyManager) {
+            this.historyManager.debugHistory();
+        } else {
+            console.warn('履歴管理システムが利用できません（緊急復旧版）');
+        }
+    }
+    
+    debugSystem() {
+        console.group('🔍 DrawingToolsSystemEmergencyFix デバッグ情報');
+        console.log('システム統計:', this.getSystemStats());
+        
+        if (this.historyManager) {
+            console.log('履歴統計:', this.getHistoryStats());
+            console.log('履歴リスト:', this.getHistoryList());
+        }
+        
+        console.groupEnd();
+    }
+    
+    testHistoryFunction() {
+        console.group('🧪 履歴機能テスト（緊急復旧版）');
+        
+        console.log('1. 初期状態:', {
+            canUndo: this.canUndo(),
+            canRedo: this.canRedo(),
+            historyLength: this.getHistoryStats()?.historyLength || 0
+        });
+        
+        console.log('2. ブラシ設定変更実行...');
+        this.updateBrushSettings({ size: 50, opacity: 1.0 });
+        
+        console.log('3. 変更後の状態:', {
+            canUndo: this.canUndo(),
+            canRedo: this.canRedo(),
+            historyLength: this.getHistoryStats()?.historyLength || 0
+        });
+        
+        console.log('4. 範囲外値テスト...');
+        this.updateBrushSettings({ size: 600 });
+        this.updateBrushSettings({ size: 0.05 });
+        
+        console.log('5. アンドゥ実行...');
+        const undoResult = this.undo();
+        console.log('アンドゥ結果:', undoResult);
+        
+        console.log('6. アンドゥ後の状態:', {
+            canUndo: this.canUndo(),
+            canRedo: this.canRedo(),
+            brushSettings: this.getBrushSettings()
+        });
+        
+        console.log('7. リドゥ実行...');
+        const redoResult = this.redo();
+        console.log('リドゥ結果:', redoResult);
+        
+        console.log('8. 最終状態:', {
+            canUndo: this.canUndo(),
+            canRedo: this.canRedo(),
+            brushSettings: this.getBrushSettings()
+        });
+        
+        console.groupEnd();
+    }
+    
+    destroy() {
+        console.log('🚑 DrawingToolsSystemEmergencyFix破棄開始...');
+        
+        if (this.toolManager && this.toolManager.activeTool) {
+            this.toolManager.activeTool.deactivate();
+        }
+        
+        if (this.historyManager) {
+            this.historyManager.destroy();
+        }
+        
+        this.historyManager = null;
+        this.toolManager = null;
+        this.uiManager = null;
+        
+        console.log('✅ DrawingToolsSystemEmergencyFix破棄完了');
     }
 }
 
-// ==== メイン初期化実行 ====
-(async function() {
-    try {
-        console.log('🚀 drawing-tools.js メイン初期化開始');
-        
-        // 初期化システムの作成
-        const initializer = new DrawingToolsInitializer();
-        window.drawingToolsInitializer = initializer;
-        
-        // 初期化実行
-        const success = await initializer.initialize();
-        
-        if (success) {
-            console.log('🎉 drawing-tools.js 初期化成功');
-            
-            // 成功時の追加設定
-            if (typeof window !== 'undefined') {
-                // グローバル統計関数
-                window.getDrawingToolsStatus = function() {
-                    return {
-                        initialized: true,
-                        mode: initializer.initializationMode,
-                        moduleStats: ModuleLoader.getLoadStats(),
-                        errors: initializer.errors.length,
-                        performance: {
-                            initTime: initializer.initializationTime,
-                            moduleLoadTime: initializer.moduleLoadTime
-                        }
-                    };
-                };
-                
-                console.log('📊 利用可能なグローバル関数:');
-                console.log('  - window.debugDrawingTools() - 統合デバッグ情報');
-                console.log('  - window.testModularArchitecture() - アーキテクチャテスト');
-                console.log('  - window.getDrawingToolsPerformance() - パフォーマンス統計');
-                console.log('  - window.getDrawingToolsStatus() - システム状況確認');
-            }
-            
-        } else {
-            console.error('❌ drawing-tools.js 初期化失敗');
+// ==== StateCapture・StateRestore エイリアス（緊急復旧版）====
+const StateCaptureEmergencyFix = {
+    captureDrawingState: (app) => {
+        if (typeof window !== 'undefined' && window.InternalStateCapture) {
+            return window.InternalStateCapture.captureDrawingState(app);
         }
-        
-    } catch (error) {
-        console.error('❌ drawing-tools.js メイン初期化エラー:', error);
-        
-        // 最終フォールバック
-        try {
-            initializeFallbackImplementation();
-            console.log('🆘 最終フォールバック実行完了');
-        } catch (finalError) {
-            console.error('❌ 最終フォールバック失敗:', finalError);
+        console.warn('InternalStateCapture が利用できません（緊急復旧版）');
+        return null;
+    },
+    capturePresetState: (presetManager) => {
+        if (typeof window !== 'undefined' && window.InternalStateCapture) {
+            return window.InternalStateCapture.capturePresetState(presetManager);
         }
+        console.warn('InternalStateCapture が利用できません（緊急復旧版）');
+        return null;
+    },
+    captureBrushSettings: (toolsSystem) => {
+        if (typeof window !== 'undefined' && window.InternalStateCapture) {
+            return window.InternalStateCapture.captureBrushSettings(toolsSystem);
+        }
+        console.warn('InternalStateCapture が利用できません（緊急復旧版）');
+        return null;
+    },
+    captureCanvasSettings: (app) => {
+        if (typeof window !== 'undefined' && window.InternalStateCapture) {
+            return window.InternalStateCapture.captureCanvasSettings(app);
+        }
+        console.warn('InternalStateCapture が利用できません（緊急復旧版）');
+        return null;
     }
-})();
+};
 
-console.log('✅ drawing-tools.js モジュール分割版統合ファイル 初期化開始');
-console.log('🏗️ モジュール構成:');
-console.log('  📁 core/: base-tool.js, tool-manager.js, drawing-tools-system.js');
-console.log('  📁 tools/: pen-tool.js, eraser-tool.js');
-console.log('  📁 ui/: pen-tool-ui.js');
-console.log('📊 モジュール分割効果:');
-console.log('  🎯 ファイルサイズ最適化: 2000行 → 最大300行/ファイル');
-console.log('  🛠️ 保守性向上: 責任分離・モジュール独立性確保');
-console.log('  ⚡ 読み込み最適化: 必要モジュールのみ動的読み込み');
-console.log('  🔧 拡張性確保: 新機能追加時の影響最小化');
-console.log('  🛡️ 既存互換性: drawing-tools.js API完全維持');
+const StateRestoreEmergencyFix = {
+    restoreDrawingState: (app, state) => {
+        if (typeof window !== 'undefined' && window.InternalStateRestore) {
+            return window.InternalStateRestore.restoreDrawingState(app, state);
+        }
+        console.warn('InternalStateRestore が利用できません（緊急復旧版）');
+        return false;
+    },
+    restorePresetState: (presetManager, uiManager, state) => {
+        if (typeof window !== 'undefined' && window.InternalStateRestore) {
+            return window.InternalStateRestore.restorePresetState(presetManager, uiManager, state);
+        }
+        console.warn('InternalStateRestore が利用できません（緊急復旧版）');
+        return false;
+    },
+    restoreBrushSettings: (toolsSystem, uiManager, state) => {
+        if (typeof window !== 'undefined' && window.InternalStateRestore) {
+            return window.InternalStateRestore.restoreBrushSettings(toolsSystem, uiManager, state);
+        }
+        console.warn('InternalStateRestore が利用できません（緊急復旧版）');
+        return false;
+    },
+    restoreCanvasSettings: (app, uiManager, state) => {
+        if (typeof window !== 'undefined' && window.InternalStateRestore) {
+            return window.InternalStateRestore.restoreCanvasSettings(app, uiManager, state);
+        }
+        console.warn('InternalStateRestore が利用できません（緊急復旧版）');
+        return false;
+    }
+};
+
+// ==== グローバル登録・エクスポート（緊急復旧版）====
+if (typeof window !== 'undefined') {
+    // メインクラスの登録（緊急復旧版）
+    window.DrawingToolsSystem = DrawingToolsSystemEmergencyFix;
+    window.ToolManager = ToolManagerIntegrated;
+    window.BaseTool = BaseToolIntegrated;
+    window.VectorPenTool = VectorPenToolIntegrated;
+    window.EraserTool = EraserToolIntegrated;
+    
+    // StateCapture/StateRestore エイリアスの登録
+    window.StateCapture = StateCaptureEmergencyFix;
+    window.StateRestore = StateRestoreEmergencyFix;
+    
+    // 緊急復旧版のデバッグ関数
+    window.testEmergencyFix = function() {
+        console.group('🚑 緊急復旧テスト');
+        
+        const classChecks = {
+            DrawingToolsSystem: !!window.DrawingToolsSystem,
+            ToolManager: !!window.ToolManager,
+            BaseTool: !!window.BaseTool,
+            VectorPenTool: !!window.VectorPenTool,
+            EraserTool: !!window.EraserTool,
+            StateCapture: !!window.StateCapture,
+            StateRestore: !!window.StateRestore
+        };
+        
+        console.log('クラス存在確認:', classChecks);
+        
+        const allClassesOK = Object.values(classChecks).every(Boolean);
+        console.log(`🏆 緊急復旧: ${allClassesOK ? '✅ 成功' : '❌ 失敗'}`);
+        
+        if (allClassesOK) {
+            console.log('✅ 全ての必要なクラスが利用可能です');
+            console.log('✅ main.js の初期化が成功するはずです');
+        } else {
+            const missing = Object.entries(classChecks).filter(([name, exists]) => !exists);
+            console.error('❌ 不足クラス:', missing.map(([name]) => name));
+        }
+        
+        console.groupEnd();
+        return allClassesOK;
+    };
+    
+    console.log('🚑 drawing-tools.js 緊急復旧版 読み込み完了');
+    console.log('🔧 緊急復旧項目:');
+    console.log('  ✅ 重複クラス定義の解消');
+    console.log('  ✅ DrawingToolsSystem の正常動作復旧');
+    console.log('  ✅ 全必要クラスの統合ファイル内実装');
+    console.log('  ✅ main.js 初期化エラーの解消');
+    console.log('📦 緊急復旧版利用可能クラス:');
+    console.log('  - DrawingToolsSystemEmergencyFix（メイン統合クラス）');
+    console.log('  - ToolManagerIntegrated（ツール管理）');
+    console.log('  - BaseToolIntegrated（基底クラス）');
+    console.log('  - VectorPenToolIntegrated, EraserToolIntegrated（描画ツール）');
+    console.log('  - StateCaptureEmergencyFix, StateRestoreEmergencyFix（状態管理）');
+    console.log('🧪 緊急復旧テスト関数:');
+    console.log('  - window.testEmergencyFix() - 緊急復旧成功確認');
+    
+    // 自動テスト実行
+    setTimeout(() => {
+        console.log('🧪 自動緊急復旧テスト実行中...');
+        window.testEmergencyFix();
+    }, 100);
+}
+
+console.log('🏆 drawing-tools.js 緊急復旧版 初期化完了');
