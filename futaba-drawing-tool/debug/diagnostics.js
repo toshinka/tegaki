@@ -45,6 +45,545 @@ class DiagnosticsSystem {
     }
     
     /**
+     * Phase2値設定
+     */
+    setPhase2Value(key, expectedValue) {
+        try {
+            if (!window.CONFIG) window.CONFIG = {};
+            window.CONFIG[key] = expectedValue;
+            
+            return {
+                success: true,
+                message: `${key} をPhase2値に修正: ${expectedValue}`
+            };
+            
+        } catch (error) {
+            return {
+                success: false,
+                message: `Phase2値設定エラー: ${error.message}`
+            };
+        }
+    }
+    
+    /**
+     * Phase2設定リセット
+     */
+    resetPhase2Settings() {
+        try {
+            const phase2Defaults = {
+                DEFAULT_BRUSH_SIZE: 4,
+                DEFAULT_OPACITY: 1.0,
+                MAX_BRUSH_SIZE: 500
+            };
+            
+            let resetCount = 0;
+            for (const [key, value] of Object.entries(phase2Defaults)) {
+                if (window.CONFIG) {
+                    window.CONFIG[key] = value;
+                    resetCount++;
+                }
+            }
+            
+            return {
+                success: resetCount > 0,
+                message: `Phase2設定をリセット: ${resetCount}項目`
+            };
+            
+        } catch (error) {
+            return {
+                success: false,
+                message: `Phase2設定リセットエラー: ${error.message}`
+            };
+        }
+    }
+    
+    /**
+     * 🆕 Phase2F: エラーループ防止システム（main.jsから移管・強化）
+     */
+    resetErrorLoopPrevention() {
+        try {
+            const now = Date.now();
+            
+            // 定期的なリセット
+            if (now - this.errorLoopPrevention.lastReset > this.errorLoopPrevention.resetInterval) {
+                this.errorLoopPrevention.errorCounts.clear();
+                this.errorLoopPrevention.lastReset = now;
+                console.log('🔄 エラーループ防止リセット実行');
+            }
+            
+            // 手動リセット
+            this.errorLoopPrevention.errorCounts.clear();
+            console.log('✅ エラーループ防止システムリセット完了');
+            
+            return true;
+            
+        } catch (error) {
+            console.error('エラーループ防止リセットエラー:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * エラー記録（ループ防止付き）
+     */
+    recordError(source, error) {
+        try {
+            const errorKey = `${source}_${error.message}`;
+            const count = this.errorLoopPrevention.errorCounts.get(errorKey) || 0;
+            
+            if (count >= this.errorLoopPrevention.maxErrors) {
+                console.warn(`⚠️ エラーループ防止: ${source} のエラーを抑制中`);
+                return false;
+            }
+            
+            this.errorLoopPrevention.errorCounts.set(errorKey, count + 1);
+            
+            // 診断履歴に記録
+            this.diagnosticHistory.push({
+                type: 'error',
+                timestamp: Date.now(),
+                source: source,
+                error: {
+                    message: error.message,
+                    stack: error.stack,
+                    name: error.name
+                },
+                count: count + 1
+            });
+            
+            return true;
+            
+        } catch (recordError) {
+            console.error('エラー記録失敗:', recordError);
+            return false;
+        }
+    }
+    
+    /**
+     * utils.js修復試行
+     */
+    attemptUtilsRepair(missingFunctions) {
+        console.log('🔧 utils.js修復試行開始...');
+        
+        const repaired = [];
+        
+        // 基本的なフォールバック関数作成
+        for (const funcName of missingFunctions) {
+            try {
+                const fallback = this.createUtilsFallback(funcName);
+                if (fallback) {
+                    window[funcName] = fallback;
+                    repaired.push(funcName);
+                    console.log(`🔧 ${funcName} フォールバック作成完了`);
+                }
+            } catch (error) {
+                console.warn(`${funcName} フォールバック作成失敗:`, error);
+            }
+        }
+        
+        console.log(`🔧 utils.js修復完了: ${repaired.length}/${missingFunctions.length}関数`);
+        return repaired;
+    }
+    
+    /**
+     * utils.jsフォールバック関数作成
+     */
+    createUtilsFallback(funcName) {
+        switch (funcName) {
+            case 'safeConfigGet':
+                return (key, defaultValue) => {
+                    try {
+                        return window.CONFIG?.[key] ?? defaultValue;
+                    } catch {
+                        return defaultValue;
+                    }
+                };
+                
+            case 'validateBrushSize':
+                return (size) => {
+                    const num = Number(size);
+                    if (isNaN(num)) return 4;
+                    return Math.max(0.1, Math.min(500, num));
+                };
+                
+            case 'validateOpacity':
+                return (opacity) => {
+                    const num = Number(opacity);
+                    if (isNaN(num)) return 1.0;
+                    return Math.max(0, Math.min(1, num));
+                };
+                
+            case 'logError':
+                return (error, context) => {
+                    console.error(`[${context}]`, error);
+                };
+                
+            case 'measurePerformance':
+                return (name, func) => {
+                    const start = performance.now();
+                    const result = func();
+                    const end = performance.now();
+                    console.log(`⚡ ${name}: ${(end - start).toFixed(2)}ms`);
+                    return result;
+                };
+                
+            case 'throttle':
+                return (func, delay) => {
+                    let lastCall = 0;
+                    return (...args) => {
+                        const now = Date.now();
+                        if (now - lastCall >= delay) {
+                            lastCall = now;
+                            return func(...args);
+                        }
+                    };
+                };
+                
+            case 'debounce':
+                return (func, delay) => {
+                    let timeout;
+                    return (...args) => {
+                        clearTimeout(timeout);
+                        timeout = setTimeout(() => func(...args), delay);
+                    };
+                };
+                
+            default:
+                return null;
+        }
+    }
+    
+    /**
+     * 診断結果重要度計算
+     */
+    calculateSeverity(issues) {
+        if (issues.length === 0) return 'none';
+        
+        const severities = issues.map(issue => issue.severity);
+        
+        if (severities.includes('critical')) return 'critical';
+        if (severities.includes('high')) return 'high';
+        if (severities.includes('medium')) return 'medium';
+        return 'low';
+    }
+    
+    /**
+     * 総合健全性計算
+     */
+    calculateOverallHealth(results) {
+        try {
+            const scores = [];
+            
+            // CONFIG整合性
+            if (results.config?.integrity) {
+                scores.push(100);
+            } else {
+                const issues = results.config?.issues || [];
+                const criticalIssues = issues.filter(i => i.severity === 'critical').length;
+                scores.push(Math.max(0, 100 - criticalIssues * 30 - issues.length * 10));
+            }
+            
+            // utils.js統合
+            scores.push(results.utils?.integrated ? 100 : 50);
+            
+            // 依存関係
+            scores.push(results.dependencies?.satisfied ? 100 : 70);
+            
+            // システム健全性
+            const health = results.health?.overall;
+            if (health === 'healthy') scores.push(100);
+            else if (health === 'warning') scores.push(70);
+            else if (health === 'critical') scores.push(30);
+            else scores.push(50);
+            
+            // エラー状況
+            const errorStatus = results.errors?.status;
+            if (errorStatus === 'clean') scores.push(100);
+            else if (errorStatus === 'minor') scores.push(80);
+            else if (errorStatus === 'warning') scores.push(50);
+            else scores.push(20);
+            
+            const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+            
+            if (avgScore >= 90) return 'excellent';
+            if (avgScore >= 75) return 'good';
+            if (avgScore >= 60) return 'fair';
+            if (avgScore >= 40) return 'poor';
+            return 'critical';
+            
+        } catch (error) {
+            console.error('総合健全性計算エラー:', error);
+            return 'unknown';
+        }
+    }
+    
+    /**
+     * 推奨事項生成
+     */
+    generateRecommendations(results) {
+        const recommendations = [];
+        
+        try {
+            // CONFIG問題
+            if (!results.config?.integrity) {
+                recommendations.push({
+                    type: 'config',
+                    priority: 'high',
+                    message: 'CONFIG設定を確認し、必要に応じて修復してください',
+                    action: 'fixConfigCompletely()'
+                });
+            }
+            
+            // utils.js統合問題
+            if (!results.utils?.integrated) {
+                recommendations.push({
+                    type: 'utils',
+                    priority: 'critical',
+                    message: 'utils.jsの再読み込みまたは統合確認が必要です',
+                    action: 'location.reload()'
+                });
+            }
+            
+            // 依存関係問題
+            if (!results.dependencies?.satisfied) {
+                recommendations.push({
+                    type: 'dependencies',
+                    priority: 'high',
+                    message: '必須ライブラリまたはコンポーネントが不足しています',
+                    action: 'ライブラリファイルの読み込み確認'
+                });
+            }
+            
+            // パフォーマンス問題
+            const perfStatus = results.performance?.status;
+            if (perfStatus === 'poor' || perfStatus === 'slow') {
+                recommendations.push({
+                    type: 'performance',
+                    priority: 'medium',
+                    message: 'パフォーマンスが低下しています。不要な処理を確認してください',
+                    action: 'システム監視・最適化'
+                });
+            }
+            
+            // エラー問題
+            const errorStatus = results.errors?.status;
+            if (errorStatus === 'warning' || errorStatus === 'critical') {
+                recommendations.push({
+                    type: 'errors',
+                    priority: 'high',
+                    message: '多数のエラーが発生しています。ログを確認してください',
+                    action: 'エラーログ確認・修復'
+                });
+            }
+            
+        } catch (error) {
+            console.error('推奨事項生成エラー:', error);
+        }
+        
+        return recommendations;
+    }
+    
+    /**
+     * システム健全性更新
+     */
+    updateSystemHealth(diagnostics) {
+        this.systemHealth = {
+            overall: diagnostics.overall,
+            components: diagnostics.results,
+            lastCheck: diagnostics.timestamp,
+            issues: this.extractIssues(diagnostics.results),
+            recommendations: diagnostics.recommendations || []
+        };
+    }
+    
+    /**
+     * 問題抽出
+     */
+    extractIssues(results) {
+        const issues = [];
+        
+        try {
+            // CONFIG問題
+            if (results.config?.issues) {
+                issues.push(...results.config.issues);
+            }
+            
+            // 依存関係問題
+            if (results.dependencies && !results.dependencies.satisfied) {
+                issues.push({
+                    type: 'dependencies',
+                    message: '依存関係不足',
+                    severity: 'high'
+                });
+            }
+            
+            // エラー問題
+            if (results.errors && results.errors.status !== 'clean') {
+                issues.push({
+                    type: 'errors',
+                    message: `エラー状況: ${results.errors.status}`,
+                    severity: results.errors.status === 'critical' ? 'critical' : 'medium'
+                });
+            }
+            
+        } catch (error) {
+            console.error('問題抽出エラー:', error);
+        }
+        
+        return issues;
+    }
+    
+    /**
+     * 各種状態取得メソッド
+     */
+    getConfigIssues() {
+        return this.diagnosticHistory
+            .filter(record => record.type === 'config' || record.issues)
+            .flatMap(record => record.issues || [])
+            .slice(-10); // 最新10件
+    }
+    
+    getUtilsStatus() {
+        const utilsRecords = this.diagnosticHistory.filter(record => record.type === 'utils_integration');
+        return utilsRecords.length > 0 ? utilsRecords[utilsRecords.length - 1].result : null;
+    }
+    
+    getDependencyStatus() {
+        const depRecords = this.diagnosticHistory.filter(record => record.type === 'dependencies');
+        return depRecords.length > 0 ? depRecords[depRecords.length - 1].result : null;
+    }
+    
+    /**
+     * 公開API
+     */
+    getSystemHealth() {
+        return { ...this.systemHealth };
+    }
+    
+    getDiagnosticHistory() {
+        return [...this.diagnosticHistory];
+    }
+    
+    getRepairHistory() {
+        return [...this.repairHistory];
+    }
+    
+    getStatus() {
+        return {
+            autoRepairEnabled: this.autoRepairEnabled,
+            maxRepairAttempts: this.maxRepairAttempts,
+            activeRepairs: this.repairAttempts.size,
+            diagnosticCount: this.diagnosticHistory.length,
+            repairCount: this.repairHistory.length,
+            errorLoopPrevention: {
+                ...this.errorLoopPrevention,
+                activeErrors: this.errorLoopPrevention.errorCounts.size
+            }
+        };
+    }
+    
+    /**
+     * 設定変更
+     */
+    enableAutoRepair() {
+        this.autoRepairEnabled = true;
+        console.log('🔧 自動修復有効化');
+    }
+    
+    disableAutoRepair() {
+        this.autoRepairEnabled = false;
+        console.log('🔧 自動修復無効化');
+    }
+    
+    setMaxRepairAttempts(max) {
+        this.maxRepairAttempts = Math.max(1, Math.min(10, max));
+        console.log(`🔧 最大修復試行回数変更: ${this.maxRepairAttempts}`);
+    }
+    
+    /**
+     * クリーンアップ
+     */
+    cleanup() {
+        this.diagnosticHistory.length = 0;
+        this.repairHistory.length = 0;
+        this.repairAttempts.clear();
+        this.errorLoopPrevention.errorCounts.clear();
+        
+        this.systemHealth = {
+            overall: 'unknown',
+            components: {},
+            lastCheck: null,
+            issues: []
+        };
+        
+        console.log('🧹 DiagnosticsSystem クリーンアップ完了');
+    }
+}
+
+// ==== グローバル登録・エクスポート（Phase2F版）====
+if (typeof window !== 'undefined') {
+    window.DiagnosticsSystem = DiagnosticsSystem;
+    
+    // グローバル診断インスタンス作成
+    window.diagnosticsSystem = new DiagnosticsSystem();
+    
+    // グローバル関数（後方互換性維持）
+    window.validateConfigIntegrity = function() {
+        return window.diagnosticsSystem.validateConfigIntegrity();
+    };
+    
+    window.checkUtilsIntegration = function() {
+        return window.diagnosticsSystem.checkUtilsIntegration();
+    };
+    
+    window.checkDependencies = function() {
+        return window.diagnosticsSystem.checkDependencies();
+    };
+    
+    window.resetErrorLoopPrevention = function() {
+        return window.diagnosticsSystem.resetErrorLoopPrevention();
+    };
+    
+    // 🆕 Phase2F新規関数
+    window.runFullDiagnostics = function() {
+        return window.diagnosticsSystem.runFullDiagnostics();
+    };
+    
+    window.getSystemHealth = function() {
+        return window.diagnosticsSystem.getSystemHealth();
+    };
+    
+    window.autoRepairConfig = function() {
+        const issues = window.diagnosticsSystem.getConfigIssues();
+        if (issues.length > 0) {
+            return window.diagnosticsSystem.autoRepairConfig(issues);
+        } else {
+            console.log('修復対象の問題が見つかりません');
+            return [];
+        }
+    };
+    
+    console.log('✅ diagnostics.js Phase2F版読み込み完了');
+    console.log('📦 エクスポートクラス・関数（Phase2F版）:');
+    console.log('  ✅ DiagnosticsSystem: システム診断専用（単一責務）');
+    console.log('  ✅ window.validateConfigIntegrity() - CONFIG整合性検証（main.jsから移管）');
+    console.log('  ✅ window.checkUtilsIntegration() - utils.js統合確認（main.jsから移管）');
+    console.log('  ✅ window.checkDependencies() - 依存関係チェック（main.jsから移管）');
+    console.log('  ✅ window.resetErrorLoopPrevention() - エラーループ防止（main.jsから移管）');
+    console.log('  ✅ window.runFullDiagnostics() - 完全診断実行（新規）');
+    console.log('  ✅ window.getSystemHealth() - システム健全性取得（新規）');
+    console.log('  ✅ window.autoRepairConfig() - CONFIG自動修復（新規）');
+    console.log('🎯 責務: システム診断・問題検出・自動修復・健全性監視（単一責務）');
+    console.log('🔗 連携: debug-manager.js, system-monitor.js');
+    console.log('📋 Phase2F改修効果:');
+    console.log('  🔧 main.jsから約300行の診断コード分離');
+    console.log('  🏥 体系的なシステム健全性監視');
+    console.log('  🔧 自動修復システム・エラーループ防止強化');
+    console.log('  📊 診断履歴・修復履歴管理');
+}
+
+console.log('🎯 diagnostics.js Phase2F版初期化完了 - システム診断準備完了');
+
      * 🆕 Phase2F: CONFIG整合性検証（main.jsから移管・強化）
      */
     validateConfigIntegrity() {
@@ -788,527 +1327,7 @@ class DiagnosticsSystem {
         } catch (error) {
             return {
                 success: false,
-                message: `Phase2値設定エラー: ${error.message}`
-            };
-        }
-    }
-    
-    /**
-     * Phase2設定リセット
-     */
-    resetPhase2Settings() {
-        try {
-            const phase2Defaults = {
-                DEFAULT_BRUSH_SIZE: 4,
-                DEFAULT_OPACITY: 1.0,
-                MAX_BRUSH_SIZE: 500
-            };
-            
-            let resetCount = 0;
-            for (const [key, value] of Object.entries(phase2Defaults)) {
-                if (window.CONFIG) {
-                    window.CONFIG[key] = value;
-                    resetCount++;
-                }
-            }
-            
-            return {
-                success: resetCount > 0,
-                message: `Phase2設定をリセット: ${resetCount}項目`
-            };
-            
-        } catch (error) {
-            return {
-                success: false,
-                message: `Phase2設定リセットエラー: ${error.message}`
-            };
-        }
-    }
-    
-    /**
-     * 🆕 Phase2F: エラーループ防止システム（main.jsから移管・強化）
-     */
-    resetErrorLoopPrevention() {
-        try {
-            const now = Date.now();
-            
-            // 定期的なリセット
-            if (now - this.errorLoopPrevention.lastReset > this.errorLoopPrevention.resetInterval) {
-                this.errorLoopPrevention.errorCounts.clear();
-                this.errorLoopPrevention.lastReset = now;
-                console.log('🔄 エラーループ防止リセット実行');
-            }
-            
-            // 手動リセット
-            this.errorLoopPrevention.errorCounts.clear();
-            console.log('✅ エラーループ防止システムリセット完了');
-            
-            return true;
-            
-        } catch (error) {
-            console.error('エラーループ防止リセットエラー:', error);
-            return false;
-        }
-    }
-    
-    /**
-     * エラー記録（ループ防止付き）
-     */
-    recordError(source, error) {
-        try {
-            const errorKey = `${source}_${error.message}`;
-            const count = this.errorLoopPrevention.errorCounts.get(errorKey) || 0;
-            
-            if (count >= this.errorLoopPrevention.maxErrors) {
-                console.warn(`⚠️ エラーループ防止: ${source} のエラーを抑制中`);
-                return false;
-            }
-            
-            this.errorLoopPrevention.errorCounts.set(errorKey, count + 1);
-            
-            // 診断履歴に記録
-            this.diagnosticHistory.push({
-                type: 'error',
-                timestamp: Date.now(),
-                source: source,
-                error: {
-                    message: error.message,
-                    stack: error.stack,
-                    name: error.name
-                },
-                count: count + 1
-            });
-            
-            return true;
-            
-        } catch (recordError) {
-            console.error('エラー記録失敗:', recordError);
-            return false;
-        }
-    }
-    
-    /**
-     * utils.js修復試行
-     */
-    attemptUtilsRepair(missingFunctions) {
-        console.log('🔧 utils.js修復試行開始...');
-        
-        const repaired = [];
-        
-        // 基本的なフォールバック関数作成
-        for (const funcName of missingFunctions) {
-            try {
-                const fallback = this.createUtilsFallback(funcName);
-                if (fallback) {
-                    window[funcName] = fallback;
-                    repaired.push(funcName);
-                    console.log(`🔧 ${funcName} フォールバック作成完了`);
-                }
-            } catch (error) {
-                console.warn(`${funcName} フォールバック作成失敗:`, error);
-            }
-        }
-        
-        console.log(`🔧 utils.js修復完了: ${repaired.length}/${missingFunctions.length}関数`);
-        return repaired;
-    }
-    
-    /**
-     * utils.jsフォールバック関数作成
-     */
-    createUtilsFallback(funcName) {
-        switch (funcName) {
-            case 'safeConfigGet':
-                return (key, defaultValue) => {
-                    try {
-                        return window.CONFIG?.[key] ?? defaultValue;
-                    } catch {
-                        return defaultValue;
-                    }
-                };
-                
-            case 'validateBrushSize':
-                return (size) => {
-                    const num = Number(size);
-                    if (isNaN(num)) return 4;
-                    return Math.max(0.1, Math.min(500, num));
-                };
-                
-            case 'validateOpacity':
-                return (opacity) => {
-                    const num = Number(opacity);
-                    if (isNaN(num)) return 1.0;
-                    return Math.max(0, Math.min(1, num));
-                };
-                
-            case 'logError':
-                return (error, context) => {
-                    console.error(`[${context}]`, error);
-                };
-                
-            case 'measurePerformance':
-                return (name, func) => {
-                    const start = performance.now();
-                    const result = func();
-                    const end = performance.now();
-                    console.log(`⚡ ${name}: ${(end - start).toFixed(2)}ms`);
-                    return result;
-                };
-                
-            case 'throttle':
-                return (func, delay) => {
-                    let lastCall = 0;
-                    return (...args) => {
-                        const now = Date.now();
-                        if (now - lastCall >= delay) {
-                            lastCall = now;
-                            return func(...args);
-                        }
-                    };
-                };
-                
-            case 'debounce':
-                return (func, delay) => {
-                    let timeout;
-                    return (...args) => {
-                        clearTimeout(timeout);
-                        timeout = setTimeout(() => func(...args), delay);
-                    };
-                };
-                
-            default:
-                return null;
-        }
-    }
-    
-    /**
-     * 診断結果重要度計算
-     */
-    calculateSeverity(issues) {
-        if (issues.length === 0) return 'none';
-        
-        const severities = issues.map(issue => issue.severity);
-        
-        if (severities.includes('critical')) return 'critical';
-        if (severities.includes('high')) return 'high';
-        if (severities.includes('medium')) return 'medium';
-        return 'low';
-    }
-    
-    /**
-     * 総合健全性計算
-     */
-    calculateOverallHealth(results) {
-        try {
-            const scores = [];
-            
-            // CONFIG整合性
-            if (results.config?.integrity) {
-                scores.push(100);
-            } else {
-                const issues = results.config?.issues || [];
-                const criticalIssues = issues.filter(i => i.severity === 'critical').length;
-                scores.push(Math.max(0, 100 - criticalIssues * 30 - issues.length * 10));
-            }
-            
-            // utils.js統合
-            scores.push(results.utils?.integrated ? 100 : 50);
-            
-            // 依存関係
-            scores.push(results.dependencies?.satisfied ? 100 : 70);
-            
-            // システム健全性
-            const health = results.health?.overall;
-            if (health === 'healthy') scores.push(100);
-            else if (health === 'warning') scores.push(70);
-            else if (health === 'critical') scores.push(30);
-            else scores.push(50);
-            
-            // エラー状況
-            const errorStatus = results.errors?.status;
-            if (errorStatus === 'clean') scores.push(100);
-            else if (errorStatus === 'minor') scores.push(80);
-            else if (errorStatus === 'warning') scores.push(50);
-            else scores.push(20);
-            
-            const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
-            
-            if (avgScore >= 90) return 'excellent';
-            if (avgScore >= 75) return 'good';
-            if (avgScore >= 60) return 'fair';
-            if (avgScore >= 40) return 'poor';
-            return 'critical';
-            
-        } catch (error) {
-            console.error('総合健全性計算エラー:', error);
-            return 'unknown';
-        }
-    }
-    
-    /**
-     * 推奨事項生成
-     */
-    generateRecommendations(results) {
-        const recommendations = [];
-        
-        try {
-            // CONFIG問題
-            if (!results.config?.integrity) {
-                recommendations.push({
-                    type: 'config',
-                    priority: 'high',
-                    message: 'CONFIG設定を確認し、必要に応じて修復してください',
-                    action: 'fixConfigCompletely()'
-                });
-            }
-            
-            // utils.js統合問題
-            if (!results.utils?.integrated) {
-                recommendations.push({
-                    type: 'utils',
-                    priority: 'critical',
-                    message: 'utils.jsの再読み込みまたは統合確認が必要です',
-                    action: 'location.reload()'
-                });
-            }
-            
-            // 依存関係問題
-            if (!results.dependencies?.satisfied) {
-                recommendations.push({
-                    type: 'dependencies',
-                    priority: 'high',
-                    message: '必須ライブラリまたはコンポーネントが不足しています',
-                    action: 'ライブラリファイルの読み込み確認'
-                });
-            }
-            
-            // パフォーマンス問題
-            const perfStatus = results.performance?.status;
-            if (perfStatus === 'poor' || perfStatus === 'slow') {
-                recommendations.push({
-                    type: 'performance',
-                    priority: 'medium',
-                    message: 'パフォーマンスが低下しています。不要な処理を確認してください',
-                    action: 'システム監視・最適化'
-                });
-            }
-            
-            // エラー問題
-            const errorStatus = results.errors?.status;
-            if (errorStatus === 'warning' || errorStatus === 'critical') {
-                recommendations.push({
-                    type: 'errors',
-                    priority: 'high',
-                    message: '多数のエラーが発生しています。ログを確認してください',
-                    action: 'エラーログ確認・修復'
-                });
-            }
-            
-        } catch (error) {
-            console.error('推奨事項生成エラー:', error);
-        }
-        
-        return recommendations;
-    }
-    
-    /**
-     * システム健全性更新
-     */
-    updateSystemHealth(diagnostics) {
-        this.systemHealth = {
-            overall: diagnostics.overall,
-            components: diagnostics.results,
-            lastCheck: diagnostics.timestamp,
-            issues: this.extractIssues(diagnostics.results),
-            recommendations: diagnostics.recommendations || []
-        };
-    }
-    
-    /**
-     * 問題抽出
-     */
-    extractIssues(results) {
-        const issues = [];
-        
-        try {
-            // CONFIG問題
-            if (results.config?.issues) {
-                issues.push(...results.config.issues);
-            }
-            
-            // 依存関係問題
-            if (results.dependencies && !results.dependencies.satisfied) {
-                issues.push({
-                    type: 'dependencies',
-                    message: '依存関係不足',
-                    severity: 'high'
-                });
-            }
-            
-            // エラー問題
-            if (results.errors && results.errors.status !== 'clean') {
-                issues.push({
-                    type: 'errors',
-                    message: `エラー状況: ${results.errors.status}`,
-                    severity: results.errors.status === 'critical' ? 'critical' : 'medium'
-                });
-            }
-            
-        } catch (error) {
-            console.error('問題抽出エラー:', error);
-        }
-        
-        return issues;
-    }
-    
-    /**
-     * 各種状態取得メソッド
-     */
-    getConfigIssues() {
-        return this.diagnosticHistory
-            .filter(record => record.type === 'config' || record.issues)
-            .flatMap(record => record.issues || [])
-            .slice(-10); // 最新10件
-    }
-    
-    getUtilsStatus() {
-        const utilsRecords = this.diagnosticHistory.filter(record => record.type === 'utils_integration');
-        return utilsRecords.length > 0 ? utilsRecords[utilsRecords.length - 1].result : null;
-    }
-    
-    getDependencyStatus() {
-        const depRecords = this.diagnosticHistory.filter(record => record.type === 'dependencies');
-        return depRecords.length > 0 ? depRecords[depRecords.length - 1].result : null;
-    }
-    
-    /**
-     * 公開API
-     */
-    getSystemHealth() {
-        return { ...this.systemHealth };
-    }
-    
-    getDiagnosticHistory() {
-        return [...this.diagnosticHistory];
-    }
-    
-    getRepairHistory() {
-        return [...this.repairHistory];
-    }
-    
-    getStatus() {
-        return {
-            autoRepairEnabled: this.autoRepairEnabled,
-            maxRepairAttempts: this.maxRepairAttempts,
-            activeRepairs: this.repairAttempts.size,
-            diagnosticCount: this.diagnosticHistory.length,
-            repairCount: this.repairHistory.length,
-            errorLoopPrevention: {
-                ...this.errorLoopPrevention,
-                activeErrors: this.errorLoopPrevention.errorCounts.size
-            }
-        };
-    }
-    
-    /**
-     * 設定変更
-     */
-    enableAutoRepair() {
-        this.autoRepairEnabled = true;
-        console.log('🔧 自動修復有効化');
-    }
-    
-    disableAutoRepair() {
-        this.autoRepairEnabled = false;
-        console.log('🔧 自動修復無効化');
-    }
-    
-    setMaxRepairAttempts(max) {
-        this.maxRepairAttempts = Math.max(1, Math.min(10, max));
-        console.log(`🔧 最大修復試行回数変更: ${this.maxRepairAttempts}`);
-    }
-    
-    /**
-     * クリーンアップ
-     */
-    cleanup() {
-        this.diagnosticHistory.length = 0;
-        this.repairHistory.length = 0;
-        this.repairAttempts.clear();
-        this.errorLoopPrevention.errorCounts.clear();
-        
-        this.systemHealth = {
-            overall: 'unknown',
-            components: {},
-            lastCheck: null,
-            issues: []
-        };
-        
-        console.log('🧹 DiagnosticsSystem クリーンアップ完了');
-    }
-}
-
-// ==== グローバル登録・エクスポート（Phase2F版）====
-if (typeof window !== 'undefined') {
-    window.DiagnosticsSystem = DiagnosticsSystem;
-    
-    // グローバル診断インスタンス作成
-    window.diagnosticsSystem = new DiagnosticsSystem();
-    
-    // グローバル関数（後方互換性維持）
-    window.validateConfigIntegrity = function() {
-        return window.diagnosticsSystem.validateConfigIntegrity();
-    };
-    
-    window.checkUtilsIntegration = function() {
-        return window.diagnosticsSystem.checkUtilsIntegration();
-    };
-    
-    window.checkDependencies = function() {
-        return window.diagnosticsSystem.checkDependencies();
-    };
-    
-    window.resetErrorLoopPrevention = function() {
-        return window.diagnosticsSystem.resetErrorLoopPrevention();
-    };
-    
-    // 🆕 Phase2F新規関数
-    window.runFullDiagnostics = function() {
-        return window.diagnosticsSystem.runFullDiagnostics();
-    };
-    
-    window.getSystemHealth = function() {
-        return window.diagnosticsSystem.getSystemHealth();
-    };
-    
-    window.autoRepairConfig = function() {
-        const issues = window.diagnosticsSystem.getConfigIssues();
-        if (issues.length > 0) {
-            return window.diagnosticsSystem.autoRepairConfig(issues);
-        } else {
-            console.log('修復対象の問題が見つかりません');
-            return [];
-        }
-    };
-    
-    console.log('✅ diagnostics.js Phase2F版読み込み完了');
-    console.log('📦 エクスポートクラス・関数（Phase2F版）:');
-    console.log('  ✅ DiagnosticsSystem: システム診断専用（単一責務）');
-    console.log('  ✅ window.validateConfigIntegrity() - CONFIG整合性検証（main.jsから移管）');
-    console.log('  ✅ window.checkUtilsIntegration() - utils.js統合確認（main.jsから移管）');
-    console.log('  ✅ window.checkDependencies() - 依存関係チェック（main.jsから移管）');
-    console.log('  ✅ window.resetErrorLoopPrevention() - エラーループ防止（main.jsから移管）');
-    console.log('  ✅ window.runFullDiagnostics() - 完全診断実行（新規）');
-    console.log('  ✅ window.getSystemHealth() - システム健全性取得（新規）');
-    console.log('  ✅ window.autoRepairConfig() - CONFIG自動修復（新規）');
-    console.log('🎯 責務: システム診断・問題検出・自動修復・健全性監視（単一責務）');
-    console.log('🔗 連携: debug-manager.js, system-monitor.js');
-    console.log('📋 Phase2F改修効果:');
-    console.log('  🔧 main.jsから約300行の診断コード分離');
-    console.log('  🏥 体系的なシステム健全性監視');
-    console.log('  🔧 自動修復システム・エラーループ防止強化');
-    console.log('  📊 診断履歴・修復履歴管理');
-} `最小限CONFIG作成エラー: ${error.message}`
+                message: `最小限CONFIG作成エラー: ${error.message}`
             };
         }
     }
@@ -1354,19 +1373,3 @@ if (typeof window !== 'undefined') {
     }
     
     /**
-     * Phase2値設定
-     */
-    setPhase2Value(key, expectedValue) {
-        try {
-            if (!window.CONFIG) window.CONFIG = {};
-            window.CONFIG[key] = expectedValue;
-            
-            return {
-                success: true,
-                message: `${key} をPhase2値に修正: ${expectedValue}`
-            };
-            
-        } catch (error) {
-            return {
-                success: false,
-                message:
