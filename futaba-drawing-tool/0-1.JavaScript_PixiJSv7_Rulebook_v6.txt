@@ -103,7 +103,8 @@ config.js (設定統一管理)
 │     └─ ui/ (責務移譲完成)
 │        ├─ pen-tool-ui.js (STEP3完成・統合UI制御)
 │        └─ components/
-│           └─ preview-sync.js (プレビュー連動専門)
+│           ├─ preview-sync.js (プレビュー連動専門)
+│           └─ event-manager.js(計画になかったがSTEP5にて発生)
 └─ ui-manager.js (スリム化完成・汎用UI管理のみ)
    ├─ ui/components.js
    ├─ ui/PresetManager.js
