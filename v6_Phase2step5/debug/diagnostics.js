@@ -788,6 +788,67 @@ class DiagnosticsSystem {
         } catch (error) {
             return {
                 success: false,
+                message: `最小限CONFIG作成エラー: ${error.message}`
+            };
+        }
+    }
+    
+    /**
+     * デフォルト値設定
+     */
+    setDefaultConfigValue(key) {
+        const defaults = {
+            DEFAULT_BRUSH_SIZE: 4,
+            DEFAULT_OPACITY: 1.0,
+            MAX_BRUSH_SIZE: 500,
+            MIN_BRUSH_SIZE: 0.1,
+            SIZE_PRESETS: [1, 2, 4, 8, 16, 32],
+            CANVAS_WIDTH: 400,
+            CANVAS_HEIGHT: 400,
+            PREVIEW_MIN_SIZE: 0.5,
+            PREVIEW_MAX_SIZE: 20
+        };
+        
+        try {
+            if (key in defaults) {
+                if (!window.CONFIG) window.CONFIG = {};
+                window.CONFIG[key] = defaults[key];
+                
+                return {
+                    success: true,
+                    message: `${key} にデフォルト値を設定: ${defaults[key]}`
+                };
+            } else {
+                return {
+                    success: false,
+                    message: `未知の設定キー: ${key}`
+                };
+            }
+            
+        } catch (error) {
+            return {
+                success: false,
+                message: `デフォルト値設定エラー: ${error.message}`
+            };
+        }
+    }
+    
+    /**
+     * Phase2値設定
+     */
+    setPhase2Value(key, expectedValue) {
+        try {
+            if (!window.CONFIG) window.CONFIG = {};
+            window.CONFIG[key] = expectedValue;
+            
+            return {
+                success: true,
+                message: `${key} をPhase2値に修正: ${expectedValue}`
+            };
+            
+        } catch (error) {
+            return {
+                success: false,
                 message: `Phase2値設定エラー: ${error.message}`
             };
         }
@@ -1308,65 +1369,6 @@ if (typeof window !== 'undefined') {
     console.log('  🏥 体系的なシステム健全性監視');
     console.log('  🔧 自動修復システム・エラーループ防止強化');
     console.log('  📊 診断履歴・修復履歴管理');
-} `最小限CONFIG作成エラー: ${error.message}`
-            };
-        }
-    }
-    
-    /**
-     * デフォルト値設定
-     */
-    setDefaultConfigValue(key) {
-        const defaults = {
-            DEFAULT_BRUSH_SIZE: 4,
-            DEFAULT_OPACITY: 1.0,
-            MAX_BRUSH_SIZE: 500,
-            MIN_BRUSH_SIZE: 0.1,
-            SIZE_PRESETS: [1, 2, 4, 8, 16, 32],
-            CANVAS_WIDTH: 400,
-            CANVAS_HEIGHT: 400,
-            PREVIEW_MIN_SIZE: 0.5,
-            PREVIEW_MAX_SIZE: 20
-        };
-        
-        try {
-            if (key in defaults) {
-                if (!window.CONFIG) window.CONFIG = {};
-                window.CONFIG[key] = defaults[key];
-                
-                return {
-                    success: true,
-                    message: `${key} にデフォルト値を設定: ${defaults[key]}`
-                };
-            } else {
-                return {
-                    success: false,
-                    message: `未知の設定キー: ${key}`
-                };
-            }
-            
-        } catch (error) {
-            return {
-                success: false,
-                message: `デフォルト値設定エラー: ${error.message}`
-            };
-        }
-    }
-    
-    /**
-     * Phase2値設定
-     */
-    setPhase2Value(key, expectedValue) {
-        try {
-            if (!window.CONFIG) window.CONFIG = {};
-            window.CONFIG[key] = expectedValue;
-            
-            return {
-                success: true,
-                message: `${key} をPhase2値に修正: ${expectedValue}`
-            };
-            
-        } catch (error) {
-            return {
-                success: false,
-                message:
+}
+
+console.log('🎯 diagnostics.js Phase2F版初期化完了 - システム診断準備完了');

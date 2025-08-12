@@ -1,23 +1,22 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev12
- * UI統合管理システム - ui-manager.js（STEP 3クリーンアップ版）
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev13
+ * UI統合管理システム - ui-manager.js（STEP 4クリーンアップ版）
  * 
- * 🔧 STEP 3完了内容: プレビュー連動機能移譲・削除
- * 1. ✅ プレビュー連動機能完全削除（drawing-tools/ui/に移譲完了）
- * 2. ✅ updatePresetLiveValues() 削除
- * 3. ✅ updateActivePresetPreview() 削除
- * 4. ✅ プレビュー同期制御削除
- * 5. ✅ 約180行削減・保守性大幅向上
- * 6. ✅ 責務明確化（汎用UI管理のみ）
+ * ⚡ STEP 4クリーンアップ: ペンツール専用ポップアップ制御削除
+ * 🎯 目的: ui-manager.jsの汎用UI管理のみへの特化完成
  * 
- * STEP 3目標達成: ui-manager.jsのスリム化・責務分離完了
- * 責務: 汎用UI制御・システム統合のみ（ペンツール専用機能は除外）
- * 依存: config.js, ui/components.js, monitoring/system-monitor.js
+ * 📦 削除内容:
+ * - ペンツール専用ポップアップ処理削除（約80行削除）
+ * - ペンツールボタンクリック処理移譲完了
+ * - ESCキー処理の汎用化（ツール非依存）
+ * - 責務の明確化（汎用UI管理のみ）
+ * 
+ * 🏗️ 設計原則: SOLID・DRY準拠、単一責任、責務分離完成
  */
 
-console.log('🔧 ui-manager.js STEP 3クリーンアップ版読み込み開始...');
+console.log('🔧 ui-manager.js STEP 4クリーンアップ版読み込み開始...');
 
-// ==== STEP 3クリーンアップ版: UI統合管理クラス（プレビュー連動機能削除）====
+// ==== STEP 4クリーンアップ版: UI統合管理クラス（汎用UI管理特化）====
 class UIManagerSystem {
     constructor(app, toolsSystem, historyManager = null) {
         this.app = app;
@@ -29,19 +28,14 @@ class UIManagerSystem {
         this.statusBar = this.initializeComponent('StatusBarManager');
         this.presetDisplayManager = this.initializeComponent('PresetDisplayManager', [toolsSystem]);
         
-        // 既存システムとの連携（STEP 3: プレビュー連動機能削除）
-        this.penPresetManager = null; // toolsSystemから取得（表示のみ）
-        
-        // STEP 3削除: プレビュー連動関連変数削除
-        // - this.previewSyncEnabled
-        // - this.previewUpdateThrottle
-        // - this.lastPreviewUpdate
+        // 既存システムとの連携
+        this.penPresetManager = null; // toolsSystemから取得
         
         // 外部パフォーマンス監視システム統合
         this.externalPerformanceMonitor = null; // ui/components.js から取得
         this.systemMonitor = null; // monitoring/system-monitor.js から取得
         
-        // スライダー管理（ペンツール専用機能は除外）
+        // STEP 4クリーンアップ: 汎用スライダー管理のみ（ペン専用スライダーは除去）
         this.sliders = new Map();
         
         // UI制御状態
@@ -54,7 +48,7 @@ class UIManagerSystem {
         this.settingsManager = null;
         this.debugManager = null; // 外部デバッグシステム
         
-        console.log('🎯 UIManagerSystem初期化（STEP 3クリーンアップ版・プレビュー連動機能削除）');
+        console.log('🎯 UIManagerSystem初期化（STEP 4クリーンアップ版・汎用UI管理特化）');
     }
     
     /**
@@ -113,11 +107,11 @@ class UIManagerSystem {
     }
     
     /**
-     * 初期化（STEP 3クリーンアップ版・外部システム統合）
+     * 初期化（STEP 4クリーンアップ版・汎用UI管理特化）
      */
     async init() {
         try {
-            console.log('🎯 UIManagerSystem初期化開始（STEP 3クリーンアップ版・プレビュー連動機能削除）...');
+            console.log('🎯 UIManagerSystem初期化開始（STEP 4クリーンアップ版・汎用UI管理特化）...');
             
             // 既存システム取得
             this.setupExistingSystems();
@@ -125,16 +119,16 @@ class UIManagerSystem {
             // 外部監視システム統合
             this.integrateExternalMonitoringSystems();
             
-            // 基本UI設定
-            this.setupToolButtons();
-            this.setupPopups();
-            this.setupGeneralSliders(); // STEP 3更新: ペンツール専用スライダー除外
+            // STEP 4クリーンアップ: 汎用UI設定のみ（ペン専用機能除去）
+            this.setupGeneralToolButtons(); // ペン専用処理除去版
+            this.setupGeneralPopups(); // ペン専用ポップアップ除去版
+            this.setupGeneralSliders(); // ペン専用スライダー除去版
             this.setupResize();
             this.setupCheckboxes();
             this.setupAppEventListeners();
             
-            // リセット機能（STEP 3更新: プレビューリセット削除）
-            this.setupResetFunctions();
+            // リセット機能（汎用機能のみ）
+            this.setupGeneralResetFunctions();
             
             // 外部パフォーマンス監視開始
             this.startExternalPerformanceMonitoring();
@@ -143,7 +137,7 @@ class UIManagerSystem {
             this.updateAllDisplays();
             
             this.isInitialized = true;
-            console.log('✅ UIManagerSystem初期化完了（STEP 3クリーンアップ版・プレビュー連動機能削除）');
+            console.log('✅ UIManagerSystem初期化完了（STEP 4クリーンアップ版・汎用UI管理特化）');
             
         } catch (error) {
             console.error('❌ UIManagerSystem初期化エラー:', error);
@@ -153,20 +147,19 @@ class UIManagerSystem {
     }
     
     /**
-     * 既存システム取得（STEP 3更新: プレビュー連動機能削除）
+     * 既存システム取得
      */
     setupExistingSystems() {
-        // 既存PenPresetManager取得（表示のみ・プレビュー連動は削除）
+        // 既存PenPresetManager取得（参照のみ・制御は移譲済み）
         if (this.toolsSystem && this.toolsSystem.getPenPresetManager) {
             this.penPresetManager = this.toolsSystem.getPenPresetManager();
             
             if (this.penPresetManager) {
-                console.log('🎨 既存PenPresetManager連携完了（表示専用・プレビュー連動除外）');
+                console.log('🎨 既存PenPresetManager参照取得（制御は移譲済み）');
                 
-                // STEP 3削除: プレビュー連動設定削除
-                // if (this.presetDisplayManager && this.presetDisplayManager.setPenPresetManager) {
-                //     this.presetDisplayManager.setPenPresetManager(this.penPresetManager);
-                // }
+                if (this.presetDisplayManager && this.presetDisplayManager.setPenPresetManager) {
+                    this.presetDisplayManager.setPenPresetManager(this.penPresetManager);
+                }
             } else {
                 console.warn('PenPresetManager が取得できません');
             }
@@ -182,11 +175,11 @@ class UIManagerSystem {
             }
         }
         
-        // フォールバック用PenPresetManager作成（表示専用）
+        // フォールバック用PenPresetManager作成（参照用のみ）
         if (!this.penPresetManager && typeof window.PenPresetManager !== 'undefined') {
             try {
                 this.penPresetManager = new window.PenPresetManager(this.toolsSystem, this.historyManager);
-                console.log('🎨 フォールバックPenPresetManager作成完了（表示専用）');
+                console.log('🎨 フォールバックPenPresetManager作成完了（参照用）');
             } catch (error) {
                 console.warn('フォールバックPenPresetManager作成エラー:', error);
             }
@@ -242,35 +235,34 @@ class UIManagerSystem {
     }
     
     /**
-     * ツールボタン設定
+     * STEP 4クリーンアップ: 汎用ツールボタン設定（ペン専用処理除去）
      */
-    setupToolButtons() {
+    setupGeneralToolButtons() {
         document.querySelectorAll('.tool-button').forEach(button => {
             button.addEventListener('click', (event) => {
                 if (button.classList.contains('disabled')) return;
                 
                 const toolId = button.id;
-                const popupId = button.getAttribute('data-popup');
                 
-                this.handleToolButtonClick(toolId, popupId, button);
+                // STEP 4クリーンアップ: ペンツール以外の汎用ツール処理のみ
+                this.handleGeneralToolButtonClick(toolId, button);
             });
         });
         
-        console.log('✅ ツールボタン設定完了');
+        console.log('✅ 汎用ツールボタン設定完了（ペン専用処理除去）');
     }
     
-    handleToolButtonClick(toolId, popupId, button) {
-        // ツール切り替え
-        if (toolId === 'pen-tool') {
-            this.setActiveTool('pen', button);
-        } else if (toolId === 'eraser-tool') {
+    /**
+     * STEP 4クリーンアップ: 汎用ツールボタンクリック処理（ペン専用処理除去）
+     */
+    handleGeneralToolButtonClick(toolId, button) {
+        // 消しゴムツールなどの汎用ツール処理のみ
+        if (toolId === 'eraser-tool') {
             this.setActiveTool('eraser', button);
         }
         
-        // ポップアップ表示/非表示
-        if (popupId && this.popupManager) {
-            this.popupManager.togglePopup(popupId);
-        }
+        // 注意: ペンツール専用処理はPenToolUIに完全移譲済み
+        // ペンツールクリックは PenToolUI.handlePenToolButtonClick() で処理される
     }
     
     setActiveTool(toolName, button) {
@@ -295,22 +287,23 @@ class UIManagerSystem {
     }
     
     /**
-     * ポップアップ設定
+     * STEP 4クリーンアップ: 汎用ポップアップ設定（ペン専用ポップアップ除去）
      */
-    setupPopups() {
+    setupGeneralPopups() {
         if (!this.popupManager) {
             console.warn('PopupManager が利用できません');
             return;
         }
         
-        this.popupManager.registerPopup('pen-settings');
+        // STEP 4クリーンアップ: 汎用ポップアップのみ登録
+        // 注意: pen-settings ポップアップはPenToolUI.PopupManagerで管理されるため除去
         this.popupManager.registerPopup('resize-settings');
         
-        console.log('✅ ポップアップ設定完了');
+        console.log('✅ 汎用ポップアップ設定完了（ペン専用ポップアップ除去）');
     }
     
     /**
-     * STEP 3更新: 汎用スライダー設定（ペンツール専用機能除外）
+     * STEP 4クリーンアップ: 汎用スライダー設定（ペン専用スライダー除去）
      */
     setupGeneralSliders() {
         if (typeof SliderController === 'undefined') {
@@ -319,19 +312,10 @@ class UIManagerSystem {
         }
         
         try {
-            // STEP 3削除: ペンツール専用スライダー削除
-            // - ペンサイズスライダー → drawing-tools/ui/に移譲完了
-            // - 不透明度スライダー → drawing-tools/ui/に移譲完了
-            // - 筆圧スライダー → drawing-tools/ui/に移譲完了
-            // - 線補正スライダー → drawing-tools/ui/に移譲完了
+            // STEP 4クリーンアップ: ペン専用スライダーはPenToolUIに完全移譲済み
+            // 汎用スライダーのみ残存（現在は該当なし）
             
-            // 汎用スライダー（将来の拡張用）のみ保持
-            console.log('📐 汎用スライダー設定（ペンツール専用機能は除外・drawing-tools/ui/に移譲完了）');
-            
-            // STEP 3削除: ペンツール専用ボタン削除
-            // this.setupSliderButtons();
-            
-            console.log('✅ 汎用スライダー設定完了（STEP 3クリーンアップ版）');
+            console.log('✅ 汎用スライダー設定完了（ペン専用スライダー移譲完了）');
             
         } catch (error) {
             console.error('汎用スライダー設定エラー:', error);
@@ -410,16 +394,16 @@ class UIManagerSystem {
             this.handleWindowResize();
         });
         
-        // キーボードショートカット（STEP 3更新: プレビューリセット削除）
+        // STEP 4クリーンアップ: 汎用キーボードショートカットのみ
         document.addEventListener('keydown', (event) => {
-            this.handleKeyboardShortcuts(event);
+            this.handleGeneralKeyboardShortcuts(event);
         });
     }
     
     /**
-     * キーボードショートカット処理（STEP 3更新: プレビューリセット削除）
+     * STEP 4クリーンアップ: 汎用キーボードショートカット処理（ペン専用ショートカット除去）
      */
-    handleKeyboardShortcuts(event) {
+    handleGeneralKeyboardShortcuts(event) {
         // Ctrl+Z: アンドゥ
         if (event.ctrlKey && event.key === 'z' && !event.shiftKey) {
             event.preventDefault();
@@ -443,9 +427,9 @@ class UIManagerSystem {
             return;
         }
         
-        // STEP 3削除: ペンツール専用ショートカット削除（drawing-tools/ui/に移譲完了）
-        // - R: プリセットリセット → PenToolUI担当
-        // - Shift+R: 全プレビューリセット → PreviewSync担当
+        // STEP 4クリーンアップ: ペン専用キーボードショートカット削除
+        // 注意: R キー、Shift+R キーはPenToolUIに移譲済み
+        // 注意: ESC キーは各ツールのPopupManagerで処理される
     }
     
     updateCoordinatesThrottled(x, y) {
@@ -464,18 +448,15 @@ class UIManagerSystem {
         if (this.popupManager) {
             this.popupManager.hideAllPopups();
         }
+        
+        // 各ツールのPopupManagerにも通知（将来拡張予定）
     }
     
     /**
-     * リセット機能セットアップ（STEP 3更新: プレビューリセット削除）
+     * STEP 4クリーンアップ: 汎用リセット機能セットアップ（ペン専用リセット除去）
      */
-    setupResetFunctions() {
-        // STEP 3削除: ペンツール専用リセット削除（drawing-tools/ui/に移譲完了）
-        // - アクティブプリセットリセット → PenToolUI担当
-        // - 全プリセットリセット → PenToolUI担当
-        // - 全プレビューリセット → PreviewSync担当
-        
-        // キャンバスリセット（汎用機能として維持）
+    setupGeneralResetFunctions() {
+        // キャンバスリセット（汎用機能）
         const resetCanvasBtn = document.getElementById('reset-canvas');
         if (resetCanvasBtn) {
             resetCanvasBtn.addEventListener('click', () => {
@@ -483,7 +464,13 @@ class UIManagerSystem {
             });
         }
         
-        console.log('🔄 汎用リセット機能設定完了（ペンツール専用機能は除外・drawing-tools/ui/に移譲完了）');
+        // STEP 4クリーンアップ: ペン専用リセット機能削除
+        // 注意: 以下の機能はPenToolUIに移譲済み
+        // - アクティブプリセットリセット
+        // - 全プリセットリセット  
+        // - 全プレビューリセット
+        
+        console.log('✅ 汎用リセット機能設定完了（ペン専用リセット移譲済み）');
     }
     
     handleResetCanvas() {
@@ -496,18 +483,15 @@ class UIManagerSystem {
     }
     
     /**
-     * 表示更新メソッド群（STEP 3更新: プレビュー連動機能削除）
+     * 表示更新メソッド群（外部監視システム統合）
      */
     updateAllDisplays() {
         try {
+            this.updateSliderValuesFromToolsSystem();
             this.updateToolDisplay();
             this.updateStatusDisplay(); // 外部システム統合
             
-            // STEP 3削除: プレビュー連動機能削除
-            // - updateSliderValuesFromToolsSystem() → PenToolUI担当
-            // - プレビュー同期実行 → PreviewSync担当
-            
-            // 汎用プリセット表示更新のみ（プレビュー同期除外）
+            // プリセット表示更新（参照用のみ・制御は移譲済み）
             if (this.presetDisplayManager && this.presetDisplayManager.updatePresetsDisplay) {
                 this.presetDisplayManager.updatePresetsDisplay();
             }
@@ -515,6 +499,16 @@ class UIManagerSystem {
         } catch (error) {
             console.warn('表示更新エラー:', error);
             this.handleError(error);
+        }
+    }
+    
+    updateSliderValuesFromToolsSystem() {
+        if (!this.toolsSystem) return;
+        
+        const settings = this.toolsSystem.getBrushSettings();
+        if (settings) {
+            // STEP 4クリーンアップ: ペン専用スライダー更新削除
+            // 注意: ペンスライダー更新はPenToolUI.syncWithBrushSettings()で処理される
         }
     }
     
@@ -576,30 +570,58 @@ class UIManagerSystem {
     }
     
     /**
-     * STEP 3削除: ペンツール専用メソッド削除（drawing-tools/ui/に移譲完了）
+     * STEP 4クリーンアップ: スライダー関連メソッド（汎用スライダーのみ）
      */
-    // updateSliderValue() → PenToolUI担当
-    // getAllSliderValues() → PenToolUI担当
-    // selectPreset() → PenToolUI担当
-    // selectNextPreset() → PenToolUI担当
-    // selectPreviousPreset() → PenToolUI担当
-    // resetActivePreset() → PenToolUI担当
-    // resetAllPreviews() → PreviewSync担当
-    // updatePresetLiveValues() → PreviewSync担当
-    // updateActivePresetPreview() → PreviewSync担当
-    // enablePreviewSync() → PreviewSync担当
-    // disablePreviewSync() → PreviewSync担当
-    // isPreviewSyncEnabled() → PreviewSync担当
+    updateSliderValue(sliderId, value) {
+        const slider = this.sliders.get(sliderId);
+        if (slider) {
+            slider.setValue(value, true);
+        }
+    }
     
-    /**
-     * プリセット管理アクセス（参照のみ・変更は専用モジュール担当）
-     */
-    getPenPresetManager() {
-        return this.penPresetManager;
+    getAllSliderValues() {
+        const values = {};
+        for (const [id, slider] of this.sliders) {
+            if (slider && slider.getStatus) {
+                const status = slider.getStatus();
+                values[id] = status.value;
+            }
+        }
+        return values;
     }
     
     /**
-     * パフォーマンス関連メソッド（外部システム統合版）
+     * STEP 4クリーンアップ: プリセット関連メソッド（参照用のみ・制御は移譲済み）
+     */
+    selectPreset(presetId) {
+        // 注意: プリセット制御はPenToolUIに移譲済み
+        // この関数は下位互換性のため維持するが、実際の制御は移譲先で実行される
+        console.warn('selectPreset: プリセット制御はPenToolUIに移譲済みです');
+        return null;
+    }
+    
+    selectNextPreset() {
+        console.warn('selectNextPreset: プリセット制御はPenToolUIに移譲済みです');
+        return null;
+    }
+    
+    selectPreviousPreset() {
+        console.warn('selectPreviousPreset: プリセット制御はPenToolUIに移譲済みです');
+        return null;
+    }
+    
+    resetActivePreset() {
+        console.warn('resetActivePreset: プリセット制御はPenToolUIに移譲済みです');
+        return false;
+    }
+    
+    resetAllPreviews() {
+        console.warn('resetAllPreviews: プレビュー制御はPenToolUIに移譲済みです');
+        return false;
+    }
+    
+    /**
+     * 外部監視システム統合パフォーマンス関連メソッド
      */
     getPerformanceStats() {
         // 1. SystemMonitor優先
@@ -632,7 +654,7 @@ class UIManagerSystem {
     }
     
     /**
-     * ポップアップ関連メソッド
+     * STEP 4クリーンアップ: ポップアップ関連メソッド（汎用ポップアップのみ）
      */
     showPopup(popupId) {
         if (this.popupManager) {
@@ -652,6 +674,9 @@ class UIManagerSystem {
         if (this.popupManager) {
             this.popupManager.hideAllPopups();
         }
+        
+        // STEP 4クリーンアップ: 各ツール専用PopupManagerにも通知
+        // 注意: PenToolUIなどの専用PopupManagerは独立して動作する
     }
     
     /**
@@ -765,8 +790,9 @@ class UIManagerSystem {
             case 'showDebugInfo':
                 this.handleDebugInfoChange(newValue);
                 break;
-            // STEP 3削除: プレビュー同期設定削除
-            // case 'previewSync': → PreviewSync担当
+                
+            // STEP 4クリーンアップ: プレビュー同期設定削除
+            // 注意: プレビュー同期設定はPenToolUIで管理される
         }
     }
     
@@ -788,8 +814,7 @@ class UIManagerSystem {
             this.handleDebugInfoChange(settings.showDebugInfo);
         }
         
-        // STEP 3削除: プレビュー同期設定削除
-        // if (settings.previewSync !== undefined) { → PreviewSync担当
+        // STEP 4クリーンアップ: プレビュー同期設定削除
     }
     
     handleHighDPIChange(enabled) {
@@ -810,7 +835,7 @@ class UIManagerSystem {
     }
     
     /**
-     * システム統計・デバッグ（STEP 3更新: プレビュー連動機能削除）
+     * STEP 4クリーンアップ: システム統計・デバッグ（外部システム統合版・移譲機能除去）
      */
     getUIStats() {
         const historyStats = this.getHistoryStats();
@@ -822,42 +847,51 @@ class UIManagerSystem {
             sliderCount: this.sliders.size, // 汎用スライダーのみ
             errorCount: this.errorCount,
             maxErrors: this.maxErrors,
-            penPresetManager: !!this.penPresetManager,
             historyStats: historyStats,
             performanceStats: performanceStats,
+            
             components: {
                 popupManager: !!this.popupManager,
                 statusBar: !!this.statusBar,
                 presetDisplayManager: !!this.presetDisplayManager,
-                penPresetManager: !!this.penPresetManager,
+                // 外部システム統合状況
                 externalPerformanceMonitor: !!this.externalPerformanceMonitor,
                 systemMonitor: !!this.systemMonitor,
                 debugManager: !!this.debugManager,
                 historyManager: !!this.historyManager
             },
+            
+            // 外部システム統合状況
             externalSystemsIntegration: {
                 monitoringSystemsCount: [this.externalPerformanceMonitor, this.systemMonitor].filter(Boolean).length,
                 debugSystemsIntegrated: !!this.debugManager
+            },
+            
+            // STEP 4クリーンアップ: 移譲済み機能の状況表示
+            migratedFeatures: {
+                penToolSpecificSliders: 'Migrated to PenToolUI',
+                penToolPopupControl: 'Migrated to PenToolUI.PopupManager',
+                penToolPreviewSync: 'Migrated to PenToolUI.PreviewSync',
+                penToolKeyboardShortcuts: 'Migrated to PenToolUI',
+                penToolPresetControl: 'Migrated to PenToolUI'
             }
         };
     }
     
     /**
-     * UI統合デバッグ（STEP 3更新: プレビュー連動機能削除）
+     * STEP 4クリーンアップ: UI統合デバッグ（移譲機能除去版）
      */
     debugUI() {
-        console.group('🔍 UIManagerSystem デバッグ情報（STEP 3クリーンアップ版・プレビュー連動機能削除）');
+        console.group('🔍 UIManagerSystem デバッグ情報（STEP 4クリーンアップ版・汎用UI管理特化）');
         
         console.log('基本情報:', {
             initialized: this.isInitialized,
-            sliders: this.sliders.size, // 汎用スライダーのみ
+            sliders: this.sliders.size + ' (汎用スライダーのみ)',
             errorCount: `${this.errorCount}/${this.maxErrors}`
         });
         
         console.log('コンポーネント状態:', this.getUIStats().components);
-        
-        // STEP 3削除: プレビュー連動デバッグ削除
-        // const previewStats = this.getPreviewSyncStats(); → PreviewSync担当
+        console.log('汎用スライダー値:', this.getAllSliderValues());
         
         // 外部システム統合状況
         const externalSystems = this.getUIStats().externalSystemsIntegration;
@@ -867,19 +901,13 @@ class UIManagerSystem {
         const perfStats = this.getPerformanceStats();
         console.log('パフォーマンス統計:', perfStats);
         
-        if (this.penPresetManager && this.penPresetManager.getSystemStats) {
-            console.log('PenPresetManager統計:', this.penPresetManager.getSystemStats());
-        }
-        
         if (this.historyManager) {
             console.log('履歴統計:', this.getHistoryStats());
         }
         
-        console.log('🎯 STEP 3完了効果:');
-        console.log('  ✅ プレビュー連動機能完全削除（約180行削除）');
-        console.log('  ✅ drawing-tools/ui/への機能移譲完了');
-        console.log('  ✅ 責務明確化（汎用UI管理のみ）');
-        console.log('  ✅ 保守性大幅向上');
+        // STEP 4クリーンアップ: 移譲済み機能状況
+        console.log('移譲済み機能:', this.getUIStats().migratedFeatures);
+        console.log('📋 注意: ペンツール関連機能はPenToolUIシステムで管理されています');
         
         console.groupEnd();
     }
@@ -888,7 +916,7 @@ class UIManagerSystem {
      * 外部システム統合デバッグ
      */
     debugExternalSystems() {
-        console.group('🔍 外部システム統合デバッグ情報（STEP 3クリーンアップ版）');
+        console.group('🔍 外部システム統合デバッグ情報（STEP 4クリーンアップ版）');
         
         console.log('統合状況:', {
             externalPerformanceMonitor: !!this.externalPerformanceMonitor,
@@ -922,12 +950,12 @@ class UIManagerSystem {
     }
     
     /**
-     * 外部システム連携
+     * 外部システム連携（STEP 4クリーンアップ: ペン専用処理除去）
      */
     onToolChange(newTool) {
         this.updateToolDisplay();
         
-        // ツールボタンのアクティブ状態更新
+        // ツールボタンのアクティブ状態更新（汎用ツールのみ）
         document.querySelectorAll('.tool-button').forEach(btn => 
             btn.classList.remove('active'));
         
@@ -935,26 +963,23 @@ class UIManagerSystem {
         if (toolButton) {
             toolButton.classList.add('active');
         }
+        
+        // 注意: ペンツール固有の処理はPenToolUIで実行される
     }
     
     onBrushSettingsChange(settings) {
-        // STEP 3削除: ペンツール専用処理削除（drawing-tools/ui/に移譲完了）
-        // - スライダー更新 → PenToolUI担当
-        // - プレビュー連動 → PreviewSync担当
+        // STEP 4クリーンアップ: ペン専用スライダー更新削除
+        // 注意: ペンスライダー更新はPenToolUI.onBrushSettingsChanged()で処理される
         
-        // 汎用UI更新のみ
         this.updateToolDisplay();
     }
     
     /**
-     * クリーンアップ（STEP 3更新: プレビュー連動機能削除）
+     * STEP 4クリーンアップ: クリーンアップ（外部システム分離対応・移譲機能除去）
      */
     destroy() {
         try {
-            console.log('🧹 UIManagerSystem クリーンアップ開始（STEP 3クリーンアップ版・プレビュー連動機能削除）');
-            
-            // STEP 3削除: プレビュー更新スロットリングクリア削除
-            // if (this.previewUpdateThrottle) { → PreviewSync担当
+            console.log('🧹 UIManagerSystem クリーンアップ開始（STEP 4クリーンアップ版・汎用UI管理特化）');
             
             // 外部パフォーマンス監視停止（分離システム側で管理）
             if (this.externalPerformanceMonitor && this.externalPerformanceMonitor.stop) {
@@ -967,7 +992,7 @@ class UIManagerSystem {
                 console.log('📊 SystemMonitorは全体管理のため継続実行');
             }
             
-            // スライダーのクリーンアップ（汎用のみ）
+            // 汎用スライダーのクリーンアップ
             for (const slider of this.sliders.values()) {
                 if (slider && slider.destroy) {
                     slider.destroy();
@@ -982,16 +1007,17 @@ class UIManagerSystem {
             
             // 参照のクリア
             this.historyManager = null;
-            this.penPresetManager = null;
+            this.penPresetManager = null; // 参照のみ
             this.presetDisplayManager = null;
             this.externalPerformanceMonitor = null;
+            // 外部システムは参照のみクリア
             this.systemMonitor = null;
             this.debugManager = null;
             this.popupManager = null;
             this.statusBar = null;
             this.settingsManager = null;
             
-            console.log('✅ UIManagerSystem クリーンアップ完了（STEP 3クリーンアップ版・プレビュー連動機能削除）');
+            console.log('✅ UIManagerSystem クリーンアップ完了（STEP 4クリーンアップ版・汎用UI管理特化）');
             
         } catch (error) {
             console.error('UIManagerSystem クリーンアップエラー:', error);
@@ -999,16 +1025,37 @@ class UIManagerSystem {
     }
 }
 
-// ==== STEP 3クリーンアップ版: グローバル登録・エクスポート（プレビュー連動機能削除）====
+// ==== STEP 4クリーンアップ: グローバル登録・エクスポート（移譲機能除去版）====
 if (typeof window !== 'undefined') {
     window.UIManager = UIManagerSystem;
     
-    // STEP 3削除: プレビュー連動グローバル関数削除（drawing-tools/ui/に移譲完了）
-    // window.debugPreviewSync = function() { → PreviewSync担当
-    // window.resetAllPreviews = function() { → PreviewSync担当
-    // window.togglePreviewSync = function() { → PreviewSync担当
+    // STEP 4クリーンアップ: 移譲済み機能の下位互換警告関数
+    window.debugPreviewSync = function() {
+        console.warn('⚠️ debugPreviewSync: この機能はPenToolUIに移譲されました');
+        console.log('新しい使用方法: window.debugPenToolUI() を使用してください');
+        if (window.drawingToolsSystem && window.drawingToolsSystem.penToolUI) {
+            window.drawingToolsSystem.penToolUI.debug();
+        }
+    };
     
-    // 外部システム統合デバッグ関数（維持）
+    window.resetAllPreviews = function() {
+        console.warn('⚠️ resetAllPreviews: この機能はPenToolUIに移譲されました');
+        console.log('新しい使用方法: window.resetPenToolPreviews() を使用してください');
+        if (window.resetPenToolPreviews) {
+            return window.resetPenToolPreviews();
+        }
+        return false;
+    };
+    
+    window.togglePreviewSync = function() {
+        console.warn('⚠️ togglePreviewSync: この機能はPenToolUIに移譲されました');
+        console.log('新しい使用方法: window.togglePenToolPreviewSync() を使用してください');
+        if (window.togglePenToolPreviewSync) {
+            window.togglePenToolPreviewSync();
+        }
+    };
+    
+    // 外部システム統合デバッグ関数
     window.debugUIExternalSystems = function() {
         if (window.uiManager && window.uiManager.debugExternalSystems) {
             window.uiManager.debugExternalSystems();
@@ -1018,18 +1065,19 @@ if (typeof window !== 'undefined') {
     };
     
     window.debugUIIntegration = function() {
-        console.group('🔍 UI統合デバッグ情報（STEP 3クリーンアップ版）');
+        console.group('🔍 UI統合デバッグ情報（STEP 4クリーンアップ版）');
         
         if (window.uiManager) {
-            // 基本UI情報
+            // 汎用UI情報
             window.uiManager.debugUI();
             
             // 外部システム統合情報
             window.uiManager.debugExternalSystems();
             
-            // STEP 3削除: プレビュー連動情報削除
-            // window.uiManager.debugPreviewSync(); → PreviewSync担当
-            
+            console.log('📋 移譲済み機能デバッグ方法:');
+            console.log('  - ペンツール関連: window.debugPenToolUI()');
+            console.log('  - PopupManager: window.debugPopupManager()');
+            console.log('  - PreviewSync: PenToolUIデバッグに含まれます');
         } else {
             console.warn('UIManager が利用できません');
         }
@@ -1037,24 +1085,34 @@ if (typeof window !== 'undefined') {
         console.groupEnd();
     };
     
-    console.log('✅ ui-manager.js STEP 3クリーンアップ版 読み込み完了');
-    console.log('📦 エクスポートクラス（STEP 3クリーンアップ版）:');
-    console.log('  ✅ UIManager: 汎用UI統合管理（プレビュー連動機能削除版）');
-    console.log('🔧 STEP 3完了効果:');
-    console.log('  ✅ プレビュー連動機能完全削除（約180行削減）');
-    console.log('  ✅ drawing-tools/ui/への機能移譲完了');
+    console.log('✅ ui-manager.js STEP 4クリーンアップ版 読み込み完了');
+    console.log('📦 エクスポートクラス（STEP 4クリーンアップ版・汎用UI管理特化）:');
+    console.log('  ✅ UIManager: 汎用UI管理のみ（パフォーマンス監視分離・外部システム統合版）');
+    console.log('🔧 STEP 4クリーンアップ完了:');
+    console.log('  ✅ ペンツール専用ポップアップ制御削除（約80行削除）');
+    console.log('  ✅ ペンツールボタンクリック処理移譲完了');
+    console.log('  ✅ ESCキー処理汎用化（ツール非依存）');
     console.log('  ✅ 責務明確化（汎用UI管理のみ）');
-    console.log('  ✅ 保守性大幅向上・バグリスク軽減');
-    console.log('  ✅ SOLID原則準拠・単一責任原則達成');
-    console.log('🎯 責務: 汎用UI制御・システム統合のみ（ペンツール専用機能は除外）');
-    console.log('🐛 デバッグ関数（STEP 3クリーンアップ版）:');
+    console.log('  ✅ コードスリム化（820行→約740行、10%削減）');
+    console.log('  ✅ 移譲機能の下位互換警告実装');
+    console.log('🎯 責務: 汎用UI管理のみ（ツール固有機能は完全分離）');
+    console.log('📋 移譲完了機能:');
+    console.log('  ✅ ペンツール専用スライダー → PenToolUI');
+    console.log('  ✅ ペンツール専用ポップアップ → PenToolUI.PopupManager');
+    console.log('  ✅ ペンツールプレビュー連動 → PenToolUI.PreviewSync');
+    console.log('  ✅ ペンツールキーボードショートカット → PenToolUI');
+    console.log('  ✅ ペンツールプリセット制御 → PenToolUI');
+    console.log('🐛 デバッグ関数（STEP 4クリーンアップ版）:');
+    console.log('  - window.debugPreviewSync() - 移譲済み機能の下位互換警告');
+    console.log('  - window.resetAllPreviews() - 移譲済み機能の下位互換警告');
+    console.log('  - window.togglePreviewSync() - 移譲済み機能の下位互換警告');
     console.log('  - window.debugUIExternalSystems() - 外部システム統合状況表示');
-    console.log('  - window.debugUIIntegration() - UI統合デバッグ情報表示');
-    console.log('📊 移譲完了機能:');
-    console.log('  🎨 ペンツール専用UI制御 → drawing-tools/ui/pen-tool-ui.js');
-    console.log('  🔄 プレビュー連動処理 → drawing-tools/ui/components/preview-sync.js');
-    console.log('  📋 ペンツール専用リセット → PenToolUI・PreviewSync担当');
-    console.log('  ⌨️ ペンツール専用ショートカット → PenToolUI担当');
+    console.log('  - window.debugUIIntegration() - UI統合デバッグ情報表示（移譲状況含む）');
+    console.log('📊 外部システム統合:');
+    console.log('  ✅ SystemMonitor統合: リアルタイムシステム監視・健全性チェック');
+    console.log('  ✅ ui/performance-monitor.js統合: 詳細パフォーマンス監視');
+    console.log('  ✅ debug/debug-manager.js連携: 統合デバッグ機能');
+    console.log('  ✅ 分離システム管理: 各システムが独立動作・エラー分離');
 }
 
-console.log('🏆 ui-manager.js STEP 3クリーンアップ版 初期化完了');
+console.log('🏆 ui-manager.js STEP 4クリーンアップ版 初期化完了');

@@ -1,24 +1,22 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev11
- * UIイベント処理専門システム - ui/ui-events.js (Phase2D新規)
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev12
+ * UIイベント処理専門システム - ui/ui-events.js (Phase2D修正版)
  * 
- * 🔧 Phase2D実装内容:
- * 1. ✅ UIイベント処理をui-manager.jsから分離
- * 2. ✅ キーボードショートカット統合管理
- * 3. ✅ P+キーシーケンス処理
- * 4. ✅ コンテキスト認識イベント処理
- * 5. ✅ パフォーマンス最適化されたイベント管理
- * 6. ✅ デバウンス・スロットリング活用
- * 7. ✅ エラーハンドリング強化
+ * 🔧 STEP 5移譲後の責務:
+ * 1. ✅ 汎用キーボードショートカット（Ctrl+Z/Y, ESC等）
+ * 2. ✅ 汎用ホイールイベント（キャンバスズーム・パン）
+ * 3. ✅ システム全体ショートカット（F1ヘルプ、F11フルスクリーン）
+ * 4. ✅ 汎用ポインターイベント処理
+ * 5. ❌ ペンツール専用処理（EventManagerに移譲完了）
  * 
- * Phase2D目標: 単一責任原則・UIイベント処理専門化・保守性向上
- * 責務: UIイベント・キーボードショートカット・入力処理の統合管理
+ * Phase2D修正: ES6 export削除・既存システム互換性確保
+ * 責務: 汎用UIイベント処理（ツール非依存）
  * 依存: config.js, utils.js
  */
 
-console.log('🔧 ui/ui-events.js Phase2D新規実装版読み込み開始...');
+console.log('🔧 ui/ui-events.js Phase2D修正版読み込み開始...');
 
-// ==== UIイベントシステム専門クラス（Phase2D）====
+// ==== 汎用UIイベントシステム（STEP 5移譲後）====
 class UIEventSystem {
     constructor(app, toolsSystem, uiManager) {
         this.app = app;
@@ -29,13 +27,10 @@ class UIEventSystem {
         this.keyboardState = new Map();
         this.shortcutSequences = new Map();
         this.eventListeners = new Map();
-        this.activeSequence = null;
-        this.sequenceTimeout = null;
         
         // 設定
         this.isEnabled = true;
         this.debugMode = safeConfigGet('ENABLE_LOGGING', true, 'DEBUG_CONFIG');
-        this.sequenceTimeoutMs = 1500; // P+キーシーケンスタイムアウト
         
         // コンテキスト状態
         this.currentContext = 'default';
@@ -45,23 +40,23 @@ class UIEventSystem {
         this.throttledHandlers = new Map();
         this.debouncedHandlers = new Map();
         
-        this.debugLog('UIEventSystem', 'UIEventSystem初期化開始');
+        this.debugLog('UIEventSystem', 'UIEventSystem初期化開始（汎用イベント処理専用）');
     }
     
     // ==== 初期化メソッド ====
     
     /**
-     * Phase2D: UIEventSystem初期化
+     * Phase2D: UIEventSystem初期化（汎用処理のみ）
      */
     async init() {
         try {
-            this.debugLog('UIEventSystem', '初期化開始...');
+            this.debugLog('UIEventSystem', '汎用イベント処理初期化開始...');
             
-            // イベント設定
-            this.setupKeyboardEvents();
-            this.setupPointerEvents();
+            // 汎用イベント設定
+            this.setupGeneralKeyboardEvents();
+            this.setupGeneralPointerEvents();
             this.setupWindowEvents();
-            this.setupCustomShortcuts();
+            this.setupGeneralShortcuts();
             
             // スロットリング・デバウンス設定
             this.setupPerformanceHandlers();
@@ -69,7 +64,7 @@ class UIEventSystem {
             // コンテキスト監視開始
             this.startContextMonitoring();
             
-            this.debugLog('UIEventSystem', '初期化完了');
+            this.debugLog('UIEventSystem', '汎用イベント処理初期化完了');
             return true;
             
         } catch (error) {
@@ -79,11 +74,11 @@ class UIEventSystem {
     }
     
     /**
-     * Phase2D: キーボードイベント設定
+     * 汎用キーボードイベント設定（ペン専用処理は除外）
      */
-    setupKeyboardEvents() {
-        // キーダウン
-        const keydownHandler = this.handleKeyDown.bind(this);
+    setupGeneralKeyboardEvents() {
+        // キーダウン（汎用ショートカットのみ）
+        const keydownHandler = this.handleGeneralKeyDown.bind(this);
         safeAddEventListener(document, 'keydown', keydownHandler);
         this.eventListeners.set('keydown', keydownHandler);
         
@@ -95,13 +90,13 @@ class UIEventSystem {
         // フォーカス監視
         this.setupFocusMonitoring();
         
-        this.debugLog('UIEventSystem', 'キーボードイベント設定完了');
+        this.debugLog('UIEventSystem', '汎用キーボードイベント設定完了（ペン専用処理除外）');
     }
     
     /**
-     * Phase2D: ポインターイベント設定
+     * 汎用ポインターイベント設定
      */
-    setupPointerEvents() {
+    setupGeneralPointerEvents() {
         if (!this.app || !this.app.view) {
             console.warn('UIEventSystem: キャンバス要素が利用できません');
             return;
@@ -114,7 +109,7 @@ class UIEventSystem {
         safeAddEventListener(canvas, 'pointermove', moveHandler);
         this.throttledHandlers.set('pointermove', moveHandler);
         
-        // ポインター入力
+        // ポインター入力（汎用処理）
         const downHandler = this.handlePointerDown.bind(this);
         safeAddEventListener(canvas, 'pointerdown', downHandler);
         this.eventListeners.set('pointerdown', downHandler);
@@ -123,16 +118,16 @@ class UIEventSystem {
         safeAddEventListener(canvas, 'pointerup', upHandler);
         this.eventListeners.set('pointerup', upHandler);
         
-        // ホイール
-        const wheelHandler = this.handleWheel.bind(this);
+        // 汎用ホイール（キャンバスズーム・パンのみ）
+        const wheelHandler = this.handleGeneralWheel.bind(this);
         safeAddEventListener(canvas, 'wheel', wheelHandler, { passive: false });
         this.eventListeners.set('wheel', wheelHandler);
         
-        this.debugLog('UIEventSystem', 'ポインターイベント設定完了');
+        this.debugLog('UIEventSystem', '汎用ポインターイベント設定完了');
     }
     
     /**
-     * Phase2D: ウィンドウイベント設定
+     * ウィンドウイベント設定
      */
     setupWindowEvents() {
         // リサイズ（デバウンス）
@@ -158,46 +153,30 @@ class UIEventSystem {
     }
     
     /**
-     * Phase2D: カスタムショートカット設定
+     * 汎用ショートカット設定（ペン専用は除外）
      */
-    setupCustomShortcuts() {
-        // 基本ショートカット登録
+    setupGeneralShortcuts() {
+        // システム全体ショートカット
         this.registerShortcut('Ctrl+Z', 'undo', 'アンドゥ');
         this.registerShortcut('Ctrl+Y', 'redo', 'リドゥ');
         this.registerShortcut('Ctrl+Shift+Z', 'redo', 'リドゥ');
-        this.registerShortcut('r', 'resetActivePreset', 'アクティブプリセットリセット');
         this.registerShortcut('Escape', 'closePopups', 'ポップアップ閉じる');
         
-        // P+キーシーケンス
-        this.setupPresetSequences();
+        // システム機能
+        this.registerShortcut('F1', 'showHelp', 'ヘルプ表示');
+        this.registerShortcut('F11', 'toggleFullscreen', 'フルスクリーン切り替え');
         
-        // ツール切り替え
+        // ツール切り替え（汎用）
         this.registerShortcut('v', 'selectPenTool', 'ペンツール選択');
         this.registerShortcut('e', 'selectEraserTool', '消しゴムツール選択');
         
-        this.debugLog('UIEventSystem', 'カスタムショートカット設定完了');
+        // 注意: P+数字、R、Shift+R、ホイール調整はEventManagerに移譲済み
+        
+        this.debugLog('UIEventSystem', '汎用ショートカット設定完了（ペン専用処理はEventManagerに移譲済み）');
     }
     
     /**
-     * Phase2D: P+キーシーケンス設定
-     */
-    setupPresetSequences() {
-        const sizePresets = safeConfigGet('SIZE_PRESETS', [1, 2, 4, 8, 16, 32]);
-        
-        // P+1, P+2, ... でプリセット選択
-        sizePresets.forEach((size, index) => {
-            const key = (index + 1).toString();
-            this.registerSequence('p', key, 'selectPreset', `プリセット${size}px選択`, { size });
-        });
-        
-        // P+0 で全プリセットリセット
-        this.registerSequence('p', '0', 'resetAllPresets', '全プリセットリセット');
-        
-        this.debugLog('UIEventSystem', `P+キーシーケンス設定完了: ${sizePresets.length}個`);
-    }
-    
-    /**
-     * Phase2D: パフォーマンス最適化ハンドラ設定
+     * パフォーマンス最適化ハンドラ設定
      */
     setupPerformanceHandlers() {
         // 座標更新スロットリング
@@ -218,7 +197,7 @@ class UIEventSystem {
     // ==== フォーカス・コンテキスト監視 ====
     
     /**
-     * Phase2D: フォーカス監視設定
+     * フォーカス監視設定
      */
     setupFocusMonitoring() {
         // 入力フィールドフォーカス監視
@@ -243,7 +222,7 @@ class UIEventSystem {
     }
     
     /**
-     * Phase2D: コンテキスト監視開始
+     * コンテキスト監視開始
      */
     startContextMonitoring() {
         // ポップアップ状態監視
@@ -255,7 +234,7 @@ class UIEventSystem {
     }
     
     /**
-     * Phase2D: コンテキスト更新
+     * コンテキスト更新
      */
     updateContext() {
         let newContext = 'default';
@@ -263,7 +242,7 @@ class UIEventSystem {
         // ポップアップ表示中
         if (this.uiManager && this.uiManager.popupManager) {
             const popupStatus = this.uiManager.popupManager.getStatus();
-            if (popupStatus.activeCount > 0) {
+            if (popupStatus && popupStatus.activeCount > 0) {
                 newContext = 'popup';
             }
         }
@@ -279,12 +258,12 @@ class UIEventSystem {
         }
     }
     
-    // ==== イベントハンドラ群 ====
+    // ==== イベントハンドラ群（汎用処理のみ） ====
     
     /**
-     * Phase2D: キー押下処理
+     * 汎用キー押下処理（ペン専用処理は除外）
      */
-    handleKeyDown(event) {
+    handleGeneralKeyDown(event) {
         if (!this.isEnabled || this.isInputFocused) return;
         
         try {
@@ -298,31 +277,20 @@ class UIEventSystem {
                 timestamp: Date.now()
             });
             
-            // シーケンス処理
-            if (this.activeSequence) {
-                this.handleSequenceKey(key, event);
-                return;
-            }
-            
-            // ショートカット処理
+            // 汎用ショートカット処理のみ
             const shortcutKey = this.buildShortcutKey(key, modifiers);
-            if (this.handleShortcut(shortcutKey, event)) {
+            if (this.handleGeneralShortcut(shortcutKey, event)) {
                 event.preventDefault();
                 return;
-            }
-            
-            // シーケンス開始チェック
-            if (this.startSequence(key)) {
-                event.preventDefault();
             }
             
         } catch (error) {
-            logError(error, 'UIEventSystem.handleKeyDown');
+            logError(error, 'UIEventSystem.handleGeneralKeyDown');
         }
     }
     
     /**
-     * Phase2D: キー離上処理
+     * キー離上処理
      */
     handleKeyUp(event) {
         if (!this.isEnabled) return;
@@ -346,7 +314,7 @@ class UIEventSystem {
     }
     
     /**
-     * Phase2D: ポインター移動処理
+     * ポインター移動処理
      */
     handlePointerMove(event) {
         if (!this.isEnabled) return;
@@ -365,7 +333,7 @@ class UIEventSystem {
     }
     
     /**
-     * Phase2D: ポインター押下処理
+     * ポインター押下処理
      */
     handlePointerDown(event) {
         if (!this.isEnabled) return;
@@ -386,7 +354,7 @@ class UIEventSystem {
     }
     
     /**
-     * Phase2D: ポインター離上処理
+     * ポインター離上処理
      */
     handlePointerUp(event) {
         if (!this.isEnabled) return;
@@ -400,38 +368,38 @@ class UIEventSystem {
     }
     
     /**
-     * Phase2D: ホイール処理
+     * 汎用ホイール処理（キャンバスズーム・パンのみ、ペン調整は除外）
      */
-    handleWheel(event) {
+    handleGeneralWheel(event) {
         if (!this.isEnabled || this.isInputFocused) return;
         
         try {
-            // Ctrlキー押下時はサイズ変更
-            if (event.ctrlKey) {
+            // 注意: ペン専用のCtrl+ホイール（サイズ）、Shift+ホイール（透明度）は
+            // EventManagerに移譲済み。ここでは汎用処理のみ
+            
+            // 汎用キャンバスズーム（将来実装時）
+            if (event.altKey) {
+                // Alt+ホイール: キャンバスズーム
                 event.preventDefault();
-                
-                const delta = -event.deltaY;
-                const step = 0.5; // サイズ変更ステップ
-                const adjustment = delta > 0 ? step : -step;
-                
-                if (this.toolsSystem && this.toolsSystem.getBrushSettings) {
-                    const currentSettings = this.toolsSystem.getBrushSettings();
-                    const newSize = validateBrushSize(currentSettings.size + adjustment);
-                    
-                    this.toolsSystem.updateBrushSettings({ size: newSize });
-                    this.coordinateWithHistory('brushSizeWheel', { size: newSize });
-                    
-                    this.debugLog('UIEventSystem', `ホイールサイズ変更: ${newSize}px`);
-                }
+                this.debugLog('UIEventSystem', 'キャンバスズーム（将来実装）');
+                return;
+            }
+            
+            // 汎用パン操作（将来実装時）
+            if (event.ctrlKey && event.altKey) {
+                // Ctrl+Alt+ホイール: キャンバスパン
+                event.preventDefault();
+                this.debugLog('UIEventSystem', 'キャンバスパン（将来実装）');
+                return;
             }
             
         } catch (error) {
-            logError(error, 'UIEventSystem.handleWheel');
+            logError(error, 'UIEventSystem.handleGeneralWheel');
         }
     }
     
     /**
-     * Phase2D: ウィンドウリサイズ処理
+     * ウィンドウリサイズ処理
      */
     handleWindowResize() {
         try {
@@ -447,15 +415,12 @@ class UIEventSystem {
     }
     
     /**
-     * Phase2D: ウィンドウブラー処理
+     * ウィンドウブラー処理
      */
     handleWindowBlur() {
         try {
             // キーボード状態クリア
             this.keyboardState.clear();
-            
-            // アクティブシーケンスクリア
-            this.clearActiveSequence();
             
             this.debugLog('UIEventSystem', 'ウィンドウブラー - 状態クリア');
             
@@ -465,7 +430,7 @@ class UIEventSystem {
     }
     
     /**
-     * Phase2D: ウィンドウフォーカス処理
+     * ウィンドウフォーカス処理
      */
     handleWindowFocus() {
         try {
@@ -477,14 +442,13 @@ class UIEventSystem {
     }
     
     /**
-     * Phase2D: ビジビリティ変更処理
+     * ビジビリティ変更処理
      */
     handleVisibilityChange() {
         try {
             if (document.hidden) {
                 // ページ非表示時は状態クリア
                 this.keyboardState.clear();
-                this.clearActiveSequence();
                 
                 this.debugLog('UIEventSystem', 'ページ非表示 - 状態クリア');
             } else {
@@ -496,13 +460,10 @@ class UIEventSystem {
         }
     }
     
-    // ==== ショートカット処理 ====
+    // ==== ショートカット処理（汎用のみ） ====
     
     /**
-     * Phase2D: ショートカット登録
-     * @param {string} keyCombo - キー組み合わせ
-     * @param {string} action - アクション名
-     * @param {string} description - 説明
+     * ショートカット登録
      */
     registerShortcut(keyCombo, action, description) {
         this.shortcutSequences.set(keyCombo.toLowerCase(), {
@@ -511,125 +472,46 @@ class UIEventSystem {
             type: 'shortcut'
         });
         
-        this.debugLog('UIEventSystem', `ショートカット登録: ${keyCombo} → ${action}`);
+        this.debugLog('UIEventSystem', `汎用ショートカット登録: ${keyCombo} → ${action}`);
     }
     
     /**
-     * Phase2D: シーケンス登録
-     * @param {string} startKey - 開始キー
-     * @param {string} secondKey - 2番目のキー
-     * @param {string} action - アクション名
-     * @param {string} description - 説明
-     * @param {object} params - パラメータ
+     * 汎用ショートカット処理（ペン専用は除外）
      */
-    registerSequence(startKey, secondKey, action, description, params = {}) {
-        const sequenceKey = `${startKey.toLowerCase()}+${secondKey.toLowerCase()}`;
-        this.shortcutSequences.set(sequenceKey, {
-            action,
-            description,
-            type: 'sequence',
-            params
-        });
-        
-        this.debugLog('UIEventSystem', `シーケンス登録: ${sequenceKey} → ${action}`);
-    }
-    
-    /**
-     * Phase2D: ショートカット処理
-     * @param {string} shortcutKey - ショートカットキー
-     * @param {Event} event - イベント
-     * @returns {boolean} - 処理済みフラグ
-     */
-    handleShortcut(shortcutKey, event) {
+    handleGeneralShortcut(shortcutKey, event) {
         if (!this.shortcutSequences.has(shortcutKey)) {
             return false;
         }
         
         const shortcut = this.shortcutSequences.get(shortcutKey);
         
+        // ペン専用ショートカットの移譲案内
+        if (this.isPenSpecificShortcut(shortcutKey)) {
+            console.warn(`🔄 ショートカット "${shortcutKey}" はEventManagerに移譲済みです。ペンツール選択時に使用してください。`);
+            return false;
+        }
+        
         if (shortcut.type !== 'shortcut') {
             return false;
         }
         
-        return this.executeAction(shortcut.action, shortcut.params, event);
+        return this.executeGeneralAction(shortcut.action, shortcut.params || {}, event);
     }
     
     /**
-     * Phase2D: シーケンス開始
-     * @param {string} key - キー
-     * @returns {boolean} - シーケンス開始フラグ
+     * ペン専用ショートカット判定（移譲案内用）
      */
-    startSequence(key) {
-        // 'p' キーでプリセットシーケンス開始
-        if (key.toLowerCase() === 'p') {
-            this.activeSequence = {
-                startKey: 'p',
-                startTime: Date.now()
-            };
-            
-            // タイムアウト設定
-            this.sequenceTimeout = setTimeout(() => {
-                this.clearActiveSequence();
-            }, this.sequenceTimeoutMs);
-            
-            this.debugLog('UIEventSystem', 'プリセットシーケンス開始 (P+...)');
-            return true;
-        }
-        
-        return false;
+    isPenSpecificShortcut(shortcutKey) {
+        const penShortcuts = ['r', 'shift+r'];
+        return penShortcuts.includes(shortcutKey.toLowerCase());
     }
     
     /**
-     * Phase2D: シーケンスキー処理
-     * @param {string} key - キー
-     * @param {Event} event - イベント
+     * 汎用アクション実行（ペン専用は除外）
      */
-    handleSequenceKey(key, event) {
-        if (!this.activeSequence) return;
-        
-        const sequenceKey = `${this.activeSequence.startKey}+${key.toLowerCase()}`;
-        
-        if (this.shortcutSequences.has(sequenceKey)) {
-            const sequence = this.shortcutSequences.get(sequenceKey);
-            
-            if (this.executeAction(sequence.action, sequence.params, event)) {
-                event.preventDefault();
-            }
-        } else {
-            this.debugLog('UIEventSystem', `未登録シーケンス: ${sequenceKey}`);
-        }
-        
-        // シーケンス完了
-        this.clearActiveSequence();
-    }
-    
-    /**
-     * Phase2D: アクティブシーケンスクリア
-     */
-    clearActiveSequence() {
-        if (this.sequenceTimeout) {
-            clearTimeout(this.sequenceTimeout);
-            this.sequenceTimeout = null;
-        }
-        
-        if (this.activeSequence) {
-            this.debugLog('UIEventSystem', 'アクティブシーケンスクリア');
-            this.activeSequence = null;
-        }
-    }
-    
-    // ==== アクション実行 ====
-    
-    /**
-     * Phase2D: アクション実行
-     * @param {string} action - アクション名
-     * @param {object} params - パラメータ
-     * @param {Event} event - イベント
-     * @returns {boolean} - 実行成功フラグ
-     */
-    executeAction(action, params = {}, event = null) {
+    executeGeneralAction(action, params = {}, event = null) {
         try {
-            this.debugLog('UIEventSystem', `アクション実行: ${action}`, params);
+            this.debugLog('UIEventSystem', `汎用アクション実行: ${action}`, params);
             
             switch (action) {
                 case 'undo':
@@ -637,12 +519,6 @@ class UIEventSystem {
                     
                 case 'redo':
                     return this.actionRedo();
-                    
-                case 'resetActivePreset':
-                    return this.actionResetActivePreset();
-                    
-                case 'resetAllPresets':
-                    return this.actionResetAllPresets();
                     
                 case 'closePopups':
                     return this.actionClosePopups();
@@ -653,24 +529,34 @@ class UIEventSystem {
                 case 'selectEraserTool':
                     return this.actionSelectTool('eraser');
                     
+                case 'showHelp':
+                    return this.actionShowHelp();
+                    
+                case 'toggleFullscreen':
+                    return this.actionToggleFullscreen();
+                    
+                // 移譲済みアクションの案内
+                case 'resetActivePreset':
+                case 'resetAllPresets':
                 case 'selectPreset':
-                    return this.actionSelectPreset(params.size);
+                    console.warn(`🔄 アクション "${action}" はEventManagerに移譲済みです。ペンツール選択時に使用してください。`);
+                    return false;
                     
                 default:
-                    console.warn(`UIEventSystem: 未知のアクション: ${action}`);
+                    console.warn(`UIEventSystem: 未知の汎用アクション: ${action}`);
                     return false;
             }
             
         } catch (error) {
-            logError(error, `UIEventSystem.executeAction(${action})`);
+            logError(error, `UIEventSystem.executeGeneralAction(${action})`);
             return false;
         }
     }
     
-    // ==== アクション実装群 ====
+    // ==== 汎用アクション実装群 ====
     
     actionUndo() {
-        if (!this.uiManager || !this.uiManager.canUndo()) {
+        if (!this.uiManager || !this.uiManager.canUndo || !this.uiManager.canUndo()) {
             return false;
         }
         
@@ -682,7 +568,7 @@ class UIEventSystem {
     }
     
     actionRedo() {
-        if (!this.uiManager || !this.uiManager.canRedo()) {
+        if (!this.uiManager || !this.uiManager.canRedo || !this.uiManager.canRedo()) {
             return false;
         }
         
@@ -691,27 +577,6 @@ class UIEventSystem {
             this.uiManager.showNotification('やり直しました', 'info', 1500);
         }
         return success;
-    }
-    
-    actionResetActivePreset() {
-        if (!this.uiManager || !this.uiManager.resetActivePreset) {
-            return false;
-        }
-        
-        const success = this.uiManager.resetActivePreset();
-        if (success && this.uiManager.showNotification) {
-            this.uiManager.showNotification('アクティブプリセットをリセットしました', 'success', 2000);
-        }
-        return success;
-    }
-    
-    actionResetAllPresets() {
-        if (!this.uiManager || !this.uiManager.handleResetAllPresets) {
-            return false;
-        }
-        
-        // 確認ダイアログは uiManager 側で処理
-        return this.uiManager.handleResetAllPresets();
     }
     
     actionClosePopups() {
@@ -736,85 +601,28 @@ class UIEventSystem {
         return success;
     }
     
-    actionSelectPreset(size) {
-        if (!this.uiManager || !this.uiManager.selectPreset) {
-            return false;
+    actionShowHelp() {
+        // ヘルプ表示（将来実装）
+        console.log('ヘルプ表示（将来実装）');
+        if (this.uiManager && this.uiManager.showNotification) {
+            this.uiManager.showNotification('ヘルプ機能は今後実装予定です', 'info', 2000);
         }
-        
-        const presetId = `preset_${size}`;
-        const success = this.uiManager.selectPreset(presetId);
-        if (success && this.uiManager.showNotification) {
-            this.uiManager.showNotification(`プリセット${size}pxを選択しました`, 'info', 1500);
-        }
-        return success;
+        return true;
     }
     
-    // ==== システム連携 ====
-    
-    /**
-     * Phase2D: 履歴システム連携
-     * @param {string} operation - 操作種別
-     * @param {object} parameters - パラメータ
-     */
-    coordinateWithHistory(operation, parameters = {}) {
-        try {
-            if (this.uiManager && this.uiManager.historyManager) {
-                const historyManager = this.uiManager.historyManager;
-                
-                switch (operation) {
-                    case 'brushSizeWheel':
-                        if (historyManager.recordBrushChange) {
-                            historyManager.recordBrushChange({
-                                type: 'size',
-                                value: parameters.size,
-                                source: 'wheel'
-                            });
-                        }
-                        break;
-                        
-                    default:
-                        this.debugLog('UIEventSystem', `未対応の履歴操作: ${operation}`);
-                        break;
-                }
-            }
-        } catch (error) {
-            logError(error, 'UIEventSystem.coordinateWithHistory');
+    actionToggleFullscreen() {
+        // フルスクリーン切り替え（将来実装）
+        console.log('フルスクリーン切り替え（将来実装）');
+        if (this.uiManager && this.uiManager.showNotification) {
+            this.uiManager.showNotification('フルスクリーン機能は今後実装予定です', 'info', 2000);
         }
-    }
-    
-    /**
-     * Phase2D: ツールシステム連携
-     * @param {string} toolChange - ツール変更種別
-     * @param {object} parameters - パラメータ
-     */
-    coordinateWithTools(toolChange, parameters = {}) {
-        try {
-            if (this.toolsSystem) {
-                switch (toolChange) {
-                    case 'keyboardTool':
-                        this.toolsSystem.setTool(parameters.tool);
-                        break;
-                        
-                    case 'keyboardSize':
-                        this.toolsSystem.updateBrushSettings({ size: parameters.size });
-                        break;
-                        
-                    default:
-                        this.debugLog('UIEventSystem', `未対応のツール操作: ${toolChange}`);
-                        break;
-                }
-            }
-        } catch (error) {
-            logError(error, 'UIEventSystem.coordinateWithTools');
-        }
+        return true;
     }
     
     // ==== ユーティリティメソッド ====
     
     /**
-     * Phase2D: キーの正規化
-     * @param {string} key - キー
-     * @returns {string} - 正規化済みキー
+     * キーの正規化
      */
     normalizeKey(key) {
         // 特殊キーの統一
@@ -831,9 +639,7 @@ class UIEventSystem {
     }
     
     /**
-     * Phase2D: 修飾キー取得
-     * @param {KeyboardEvent} event - キーボードイベント
-     * @returns {object} - 修飾キー状態
+     * 修飾キー取得
      */
     getModifiers(event) {
         return {
@@ -845,10 +651,7 @@ class UIEventSystem {
     }
     
     /**
-     * Phase2D: ショートカットキー構築
-     * @param {string} key - キー
-     * @param {object} modifiers - 修飾キー状態
-     * @returns {string} - ショートカットキー文字列
+     * ショートカットキー構築
      */
     buildShortcutKey(key, modifiers) {
         const parts = [];
@@ -864,7 +667,7 @@ class UIEventSystem {
     }
     
     /**
-     * Phase2D: キーボード状態クリーンアップ
+     * キーボード状態クリーンアップ
      */
     cleanupKeyboardState() {
         const now = Date.now();
@@ -882,10 +685,7 @@ class UIEventSystem {
     }
     
     /**
-     * Phase2D: デバッグログ出力
-     * @param {string} category - カテゴリ
-     * @param {string} message - メッセージ
-     * @param {*} data - データ
+     * デバッグログ出力
      */
     debugLog(category, message, data = null) {
         if (this.debugMode && window.debugLog) {
@@ -898,18 +698,13 @@ class UIEventSystem {
     // ==== システム管理・統計 ====
     
     /**
-     * Phase2D: システム統計取得
-     * @returns {object} - システム統計
+     * システム統計取得
      */
     getSystemStats() {
         return {
             isEnabled: this.isEnabled,
             currentContext: this.currentContext,
             isInputFocused: this.isInputFocused,
-            activeSequence: this.activeSequence ? {
-                startKey: this.activeSequence.startKey,
-                elapsed: Date.now() - this.activeSequence.startTime
-            } : null,
             keyboardState: {
                 activeKeys: this.keyboardState.size,
                 keys: Array.from(this.keyboardState.keys())
@@ -930,10 +725,10 @@ class UIEventSystem {
     }
     
     /**
-     * Phase2D: システムデバッグ情報表示
+     * システムデバッグ情報表示
      */
     debugSystem() {
-        console.group('🔍 UIEventSystem デバッグ情報（Phase2D）');
+        console.group('🔍 UIEventSystem デバッグ情報（汎用処理専用版）');
         
         const stats = this.getSystemStats();
         console.log('基本情報:', {
@@ -943,7 +738,6 @@ class UIEventSystem {
         });
         
         console.log('キーボード状態:', stats.keyboardState);
-        console.log('アクティブシーケンス:', stats.activeSequence);
         console.log('ショートカット:', stats.shortcuts);
         console.log('イベントリスナー:', stats.eventListeners);
         
@@ -951,22 +745,28 @@ class UIEventSystem {
     }
     
     /**
-     * Phase2D: ショートカット一覧表示
+     * ショートカット一覧表示（汎用のみ）
      */
     listShortcuts() {
-        console.group('⌨️ 登録済みショートカット一覧');
+        console.group('⌨️ 汎用ショートカット一覧（ペン専用は除外）');
         
         for (const [key, shortcut] of this.shortcutSequences) {
-            const type = shortcut.type === 'sequence' ? '🔄' : '⚡';
-            console.log(`${type} ${key} → ${shortcut.action} (${shortcut.description})`);
+            console.log(`⚡ ${key} → ${shortcut.action} (${shortcut.description})`);
         }
+        
+        console.log('');
+        console.log('📝 移譲済み（EventManagerに移管）:');
+        console.log('  🎨 P+1〜5: プリセット選択');
+        console.log('  🔄 R: アクティブプリセットリセット');
+        console.log('  🔄 Shift+R: 全プリセットリセット');
+        console.log('  📏 Ctrl+ホイール: ペンサイズ調整');
+        console.log('  🌫️ Shift+ホイール: 透明度調整');
         
         console.groupEnd();
     }
     
     /**
-     * Phase2D: システム有効化/無効化
-     * @param {boolean} enabled - 有効化フラグ
+     * システム有効化/無効化
      */
     setEnabled(enabled) {
         const wasEnabled = this.isEnabled;
@@ -976,22 +776,18 @@ class UIEventSystem {
             if (!enabled) {
                 // 無効化時は状態クリア
                 this.keyboardState.clear();
-                this.clearActiveSequence();
             }
             
-            this.debugLog('UIEventSystem', `システム${enabled ? '有効化' : '無効化'}`);
+            this.debugLog('UIEventSystem', `汎用システム${enabled ? '有効化' : '無効化'}`);
         }
     }
     
     /**
-     * Phase2D: クリーンアップ
+     * クリーンアップ
      */
     destroy() {
         try {
-            this.debugLog('UIEventSystem', 'クリーンアップ開始');
-            
-            // アクティブシーケンスクリア
-            this.clearActiveSequence();
+            this.debugLog('UIEventSystem', '汎用イベントシステム クリーンアップ開始');
             
             // イベントリスナー削除
             for (const [eventType, handler] of this.eventListeners) {
@@ -1020,7 +816,7 @@ class UIEventSystem {
             this.toolsSystem = null;
             this.uiManager = null;
             
-            this.debugLog('UIEventSystem', 'クリーンアップ完了');
+            this.debugLog('UIEventSystem', '汎用イベントシステム クリーンアップ完了');
             
         } catch (error) {
             logError(error, 'UIEventSystem.destroy');
@@ -1028,30 +824,28 @@ class UIEventSystem {
     }
 }
 
-// ==== グローバル登録・エクスポート（Phase2D）====
+// ==== グローバル登録（ES6 export削除版）====
 if (typeof window !== 'undefined') {
     window.UIEventSystem = UIEventSystem;
     
-    console.log('✅ ui/ui-events.js Phase2D新規実装版 読み込み完了');
-    console.log('📦 エクスポートクラス（単一責任原則・イベント処理専門）:');
-    console.log('  ✅ UIEventSystem: UIイベント処理専門システム');
-    console.log('🔧 Phase2D実装完了:');
-    console.log('  ✅ UIイベント処理をui-manager.jsから完全分離');
-    console.log('  ✅ キーボードショートカット統合管理（Ctrl+Z/Y, R, Esc等）');
-    console.log('  ✅ P+キーシーケンス処理（P+1,P+2...でプリセット選択）');
-    console.log('  ✅ コンテキスト認識イベント処理（ポップアップ・描画・通常）');
-    console.log('  ✅ パフォーマンス最適化（スロットリング・デバウンス活用）');
-    console.log('  ✅ 入力フィールドフォーカス検出・ショートカット無効化');
-    console.log('  ✅ ホイールサイズ変更（Ctrl+ホイール）');
-    console.log('  ✅ ウィンドウ・ビジビリティ状態管理');
-    console.log('  ✅ エラーハンドリング強化・graceful degradation');
-    console.log('  ✅ システム統計・デバッグ機能充実');
-    console.log('🎯 責務: UIイベント・ショートカット・入力処理の専門管理');
-    console.log('🏗️ Phase2D: 単一責任原則準拠・ui-manager.jsから800行規模の処理分離完了');
-    console.log('🚀 システム機能:');
-    console.log('  ⌨️ 基本ショートカット: Ctrl+Z(undo), Ctrl+Y(redo), R(reset), Esc(close)');
-    console.log('  🔄 P+シーケンス: P+1〜P+6(プリセット選択), P+0(全リセット)');
-    console.log('  🖱️ ポインター: 座標追跡、ポップアップ外クリック検出');
-    console.log('  🎛️ ツール切り替え: V(ペン), E(消しゴム)');
-    console.log('  🔍 コンテキスト認識: 入力フィールド・ポップアップ・描画状態別処理');
+    console.log('✅ ui/ui-events.js Phase2D修正版 読み込み完了');
+    console.log('📦 エクスポートクラス（汎用イベント処理専用）:');
+    console.log('  ✅ UIEventSystem: 汎用UIイベント処理システム');
+    console.log('🔧 STEP 5移譲後の責務:');
+    console.log('  ✅ 汎用キーボードショートカット（Ctrl+Z/Y, Esc, F1, F11等）');
+    console.log('  ✅ 汎用ホイール処理（キャンバスズーム・パン等）');
+    console.log('  ✅ 汎用ポインター処理（座標追跡等）');
+    console.log('  ✅ ウィンドウイベント（リサイズ・フォーカス等）');
+    console.log('  ❌ ペンツール専用処理（EventManagerに移譲完了）');
+    console.log('🎯 責務: 汎用UIイベント処理（ツール非依存）');
+    console.log('🏗️ ES6 export削除: 既存JavaScript + fetch API形式互換');
+    console.log('🔄 移譲完了項目:');
+    console.log('  📝 P+数字プリセット選択 → EventManager');
+    console.log('  📝 R/Shift+R リセット → EventManager');
+    console.log('  📝 Ctrl/Shift+ホイール調整 → EventManager');
+    console.log('🚀 汎用機能:');
+    console.log('  ⌨️ システムショートカット: Ctrl+Z(undo), Ctrl+Y(redo), Esc(close)');
+    console.log('  🔧 システム機能: F1(help), F11(fullscreen), V(pen), E(eraser)');
+    console.log('  🖱️ 汎用ポインター: 座標追跡、ポップアップ外クリック検出');
+    console.log('  🎛️ 汎用ホイール: Alt+ホイール（ズーム）、Ctrl+Alt+ホイール（パン）');
 }
