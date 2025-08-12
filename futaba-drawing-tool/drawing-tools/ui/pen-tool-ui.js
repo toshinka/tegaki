@@ -10,24 +10,39 @@
 
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev12
- * ペンツール専用UI制御（モジュール分割版）
+ * ペンツール専用UI制御（STEP 3更新版：PreviewSync統合）
+ * drawing-tools/ui/pen-tool-ui.js
  * 
- * 🏗️ STEP 2.5実装完了（ペンUI制御専用モジュール）:
- * 1. ✅ 単一責任原則：ペンツールUI制御のみ
- * 2. ✅ ui-manager.jsからの完全分離：独立性確保
- * 3. ✅ 外部システム連携：依存注入パターン採用
- * 4. ✅ プレビュー連動機能：リアルタイム同期対応
- * 5. ✅ スライダー制御統合：専用UI管理システム
- * 6. ✅ エラーハンドリング強化：安全な例外処理
- * 7. ✅ UI同期システム：無限ループ回避機能
+ * 🏗️ STEP 3完了状況（プレビュー連動機能移譲・最適化）:
+ * 1. ✅ PreviewSyncコンポーネント統合
+ * 2. ✅ ui-manager.jsからプレビュー連動機能完全移譲
+ * 3. ✅ SOLID原則準拠（単一責任・依存注入）
+ * 4. ✅ DRY原則準拠（重複コード排除）
+ * 5. ✅ プレビュー機能の専用モジュール化
+ * 6. ✅ エラーハンドリング強化
+ * 7. ✅ パフォーマンス最適化
  * 
- * 責務: ペンツール専用UI制御のみ
- * 依存: SliderController, PenPresetManager, PresetDisplayManager
- * 
- * モジュール化効果: ui-manager.jsからペン専用機能を完全分離
+ * 責務: ペンツール専用UI制御・コンポーネント統合管理
+ * 依存: SliderController, PreviewSync, PopupManager
  */
 
-console.log('🎨 pen-tool-ui.js モジュール分割版読み込み開始...');
+console.log('🎨 pen-tool-ui.js STEP 3更新版（PreviewSync統合）読み込み開始...');
+
+// PreviewSyncコンポーネント動的読み込み
+async function loadPreviewSync() {
+    if (window.PreviewSync) {
+        return window.PreviewSync;
+    }
+    
+    // 動的import（フォールバック）
+    try {
+        const module = await import('./components/preview-sync.js');
+        return module.PreviewSync || window.PreviewSync;
+    } catch (error) {
+        console.warn('PreviewSync動的読み込みエラー:', error);
+        return null;
+    }
+}
 
 // 依存関係の動的取得
 let SliderController = null;
@@ -93,7 +108,7 @@ function initializeDependencies() {
     });
 }
 
-// ==== ペンツール専用UI制御クラス（モジュール分割版）====
+// ==== ペンツール専用UI制御クラス（STEP 3更新版：PreviewSync統合）====
 class PenToolUI {
     constructor(drawingToolsSystem) {
         this.drawingToolsSystem = drawingToolsSystem;
@@ -108,23 +123,20 @@ class PenToolUI {
         this.presetDisplayManager = null;
         this.popupManager = PopupManager;
         
+        // STEP 3新規: PreviewSyncコンポーネント
+        this.previewSync = null;
+        
         // UI制御状態
         this.sliders = new Map();
         this.isInitialized = false;
         this.errorCount = 0;
         this.maxErrors = 5;
         
-        // プレビュー連動制御
-        this.previewSyncEnabled = true;
-        this.previewUpdateThrottle = null;
-        this.lastPreviewUpdate = 0;
-        this.previewUpdateInterval = safeConfigGet('PRESET_UPDATE_THROTTLE', 16);
-        
         // UI同期制御
         this.syncInProgress = false;
         this.pendingSyncUpdates = new Map();
         
-        console.log('🎨 PenToolUI初期化準備（モジュール分割版：プレビュー連動機能統合）');
+        console.log('🎨 PenToolUI初期化準備（STEP 3更新版：PreviewSync統合）');
     }
     
     /**
@@ -186,11 +198,43 @@ class PenToolUI {
     }
     
     /**
-     * メインUI初期化
+     * STEP 3新規: PreviewSyncコンポーネント初期化
+     */
+    async initializePreviewSync() {
+        try {
+            const PreviewSyncClass = await loadPreviewSync();
+            
+            if (!PreviewSyncClass) {
+                console.warn('⚠️ PreviewSyncコンポーネントが読み込めません');
+                return false;
+            }
+            
+            this.previewSync = new PreviewSyncClass(this);
+            const initSuccess = await this.previewSync.init();
+            
+            if (initSuccess) {
+                console.log('✅ PreviewSyncコンポーネント統合完了');
+                return true;
+            } else {
+                console.warn('⚠️ PreviewSyncコンポーネント初期化失敗');
+                this.previewSync = null;
+                return false;
+            }
+            
+        } catch (error) {
+            console.error('PreviewSyncコンポーネント初期化エラー:', error);
+            this.previewSync = null;
+            this.handleError(error);
+            return false;
+        }
+    }
+    
+    /**
+     * メインUI初期化（STEP 3更新版）
      */
     async init() {
         try {
-            console.log('🎯 PenToolUI初期化開始（モジュール分割版）...');
+            console.log('🎯 PenToolUI初期化開始（STEP 3更新版：PreviewSync統合）...');
             
             // 外部システムの取得・初期化
             if (!this.initializeExternalSystems()) {
@@ -200,8 +244,8 @@ class PenToolUI {
             // スライダー制御初期化
             this.initSliders();
             
-            // プレビュー連動システム初期化
-            this.initPreviewSystem();
+            // STEP 3新規: PreviewSyncコンポーネント初期化
+            await this.initializePreviewSync();
             
             // ポップアップ制御初期化
             this.initPopupControl();
@@ -213,7 +257,7 @@ class PenToolUI {
             this.initSyncSystem();
             
             this.isInitialized = true;
-            console.log('✅ PenToolUI初期化完了（モジュール分割版）');
+            console.log('✅ PenToolUI初期化完了（STEP 3更新版：PreviewSync統合）');
             
             return true;
             
@@ -225,7 +269,7 @@ class PenToolUI {
     }
     
     /**
-     * スライダー制御初期化
+     * スライダー制御初期化（STEP 3更新版：PreviewSync連携）
      */
     initSliders() {
         if (!this.sliderController) {
@@ -249,25 +293,25 @@ class PenToolUI {
                 補正: `${defaultSmoothing * 100}%`
             });
             
-            // ペンサイズスライダー（プレビュー連動対応）
+            // ペンサイズスライダー（STEP 3更新：PreviewSync連携版）
             this.createSlider('pen-size-slider', minSize, maxSize, defaultSize, 
                 (value, displayOnly = false) => {
                     if (!displayOnly) {
                         this.drawingToolsSystem.updateBrushSettings({ size: value });
-                        this.updatePresetLiveValues(value, null);
-                        this.updateActivePresetPreview(value, null);
+                        // STEP 3更新: PreviewSync経由で同期
+                        this.syncWithPreviewSystem({ size: value });
                         console.log(`🎛️ ペンサイズ変更: ${value.toFixed(1)}px`);
                     }
                     return value.toFixed(1) + 'px';
                 });
             
-            // 不透明度スライダー（プレビュー連動対応）
+            // 不透明度スライダー（STEP 3更新：PreviewSync連携版）
             this.createSlider('pen-opacity-slider', 0, 100, defaultOpacity * 100, 
                 (value, displayOnly = false) => {
                     if (!displayOnly) {
                         this.drawingToolsSystem.updateBrushSettings({ opacity: value / 100 });
-                        this.updatePresetLiveValues(null, value);
-                        this.updateActivePresetPreview(null, value);
+                        // STEP 3更新: PreviewSync経由で同期
+                        this.syncWithPreviewSystem({ opacity: value / 100 });
                         console.log(`🎛️ 不透明度変更: ${value.toFixed(1)}%`);
                     }
                     return value.toFixed(1) + '%';
@@ -296,11 +340,30 @@ class PenToolUI {
             // スライダーボタンの設定
             this.initSliderButtons();
             
-            console.log('✅ PenToolUI: スライダー設定完了（プレビュー連動対応版）');
+            console.log('✅ PenToolUI: スライダー設定完了（STEP 3更新：PreviewSync連携版）');
             
         } catch (error) {
             console.error('スライダー設定エラー:', error);
             this.handleError(error);
+        }
+    }
+    
+    /**
+     * STEP 3新規: PreviewSyncとの連携処理
+     */
+    syncWithPreviewSystem(settings) {
+        if (!this.previewSync || !this.previewSync.isSyncEnabled()) {
+            return false;
+        }
+        
+        try {
+            // PreviewSyncコンポーネントに同期を依頼
+            return this.previewSync.syncWithBrushSettings(settings);
+            
+        } catch (error) {
+            console.warn('PreviewSync連携エラー:', error);
+            this.handleError(error);
+            return false;
         }
     }
     
@@ -362,36 +425,6 @@ class PenToolUI {
     }
     
     /**
-     * プレビュー連動システム初期化
-     */
-    initPreviewSystem() {
-        try {
-            console.log('🔄 プレビュー連動システム初期化...');
-            
-            // プレビュー系システムの整合性確認
-            if (!this.penPresetManager && !this.presetDisplayManager) {
-                console.warn('⚠️ プレビューシステムが利用できません');
-                this.previewSyncEnabled = false;
-                return;
-            }
-            
-            // プレビュー更新設定
-            this.previewUpdateInterval = safeConfigGet('PRESET_UPDATE_THROTTLE', 16);
-            this.previewSyncEnabled = true;
-            
-            // 初回プレビュー同期
-            this.syncPreviewsWithCurrentSettings();
-            
-            console.log('✅ プレビュー連動システム初期化完了');
-            
-        } catch (error) {
-            console.error('プレビューシステム初期化エラー:', error);
-            this.handleError(error);
-            this.previewSyncEnabled = false;
-        }
-    }
-    
-    /**
      * ポップアップ制御初期化
      */
     initPopupControl() {
@@ -413,11 +446,11 @@ class PenToolUI {
     }
     
     /**
-     * キーボードショートカット初期化
+     * キーボードショートカット初期化（STEP 3更新版：PreviewSync連携）
      */
     initKeyboardShortcuts() {
         try {
-            console.log('⌨️ キーボードショートカット初期化...');
+            console.log('⌨️ キーボードショートカット初期化（STEP 3更新版）...');
             
             // 基本的なペン関連ショートカット
             document.addEventListener('keydown', (event) => {
@@ -428,9 +461,9 @@ class PenToolUI {
                     case 'r':
                     case 'R':
                         if (event.shiftKey) {
-                            // Shift+R: 全プレビューリセット
+                            // Shift+R: 全プレビューリセット（STEP 3更新：PreviewSync経由）
                             this.resetAllPreviews();
-                            console.log('🔄 全プレビューリセット');
+                            console.log('🔄 全プレビューリセット（PreviewSync経由）');
                         } else {
                             // R: アクティブプリセットリセット
                             this.resetActivePreset();
@@ -441,7 +474,7 @@ class PenToolUI {
                 }
             });
             
-            console.log('✅ キーボードショートカット初期化完了');
+            console.log('✅ キーボードショートカット初期化完了（STEP 3更新版）');
             
         } catch (error) {
             console.error('キーボードショートカット初期化エラー:', error);
@@ -469,107 +502,30 @@ class PenToolUI {
     }
     
     /**
-     * プリセット連動値更新
+     * STEP 3更新版: プリセット連動処理（PreviewSync統合）
      */
-    updatePresetLiveValues(size, opacity) {
-        if (!this.previewSyncEnabled || !this.penPresetManager) return;
-        
-        try {
-            // スロットリング制御
-            const now = Date.now();
-            if (now - this.lastPreviewUpdate < this.previewUpdateInterval) {
-                // 更新が頻繁すぎる場合、スロットリング実行
-                if (this.previewUpdateThrottle) {
-                    clearTimeout(this.previewUpdateThrottle);
-                }
-                
-                this.previewUpdateThrottle = setTimeout(() => {
-                    this.updatePresetLiveValues(size, opacity);
-                }, this.previewUpdateInterval);
-                
-                return;
-            }
-            
-            this.lastPreviewUpdate = now;
-            
-            // PenPresetManagerの更新実行
-            if (this.penPresetManager.updateActivePresetLive) {
-                const updateData = {};
-                if (size !== null && size !== undefined) updateData.size = size;
-                if (opacity !== null && opacity !== undefined) updateData.opacity = opacity;
-                
-                this.penPresetManager.updateActivePresetLive(updateData);
-                console.log(`🔄 プリセットライブ更新:`, updateData);
-            }
-            
-        } catch (error) {
-            console.error('プリセットライブ値更新エラー:', error);
-            this.handleError(error);
-        }
-    }
     
     /**
-     * アクティブプリセットプレビュー更新
-     */
-    updateActivePresetPreview(size, opacity) {
-        if (!this.previewSyncEnabled) return;
-        
-        try {
-            // PresetDisplayManager経由での更新
-            if (this.presetDisplayManager?.updateActivePreview) {
-                const updateData = {};
-                if (size !== null && size !== undefined) updateData.size = size;
-                if (opacity !== null && opacity !== undefined) updateData.opacity = opacity;
-                
-                this.presetDisplayManager.updateActivePreview(updateData);
-                console.log(`🎨 アクティブプリセットプレビュー更新:`, updateData);
-            }
-            
-            // PenPresetManager経由での更新（フォールバック）
-            if (this.penPresetManager?.updateActivePresetPreview) {
-                this.penPresetManager.updateActivePresetPreview(size, opacity);
-            }
-            
-        } catch (error) {
-            console.error('アクティブプリセットプレビュー更新エラー:', error);
-            this.handleError(error);
-        }
-    }
-    
-    /**
-     * プレビューとの同期（現在設定との同期）
-     */
-    syncPreviewsWithCurrentSettings() {
-        if (!this.previewSyncEnabled) return;
-        
-        try {
-            const brushSettings = this.drawingToolsSystem.getBrushSettings();
-            
-            if (brushSettings) {
-                this.updatePresetLiveValues(brushSettings.size, brushSettings.opacity * 100);
-                this.updateActivePresetPreview(brushSettings.size, brushSettings.opacity * 100);
-                console.log('🔄 プレビュー初期同期完了:', brushSettings);
-            }
-            
-        } catch (error) {
-            console.error('プレビュー同期エラー:', error);
-            this.handleError(error);
-        }
-    }
-    
-    /**
-     * アクティブプリセットリセット
+     * アクティブプリセットリセット（STEP 3更新：PreviewSync連携）
      */
     resetActivePreset() {
         try {
             if (this.penPresetManager?.resetActivePreset) {
-                this.penPresetManager.resetActivePreset();
+                const success = this.penPresetManager.resetActivePreset();
                 
-                // 現在の設定でプレビューを更新
-                this.syncPreviewsWithCurrentSettings();
-                
-                console.log('🔄 アクティブプリセットリセット完了');
-                return true;
+                if (success) {
+                    // STEP 3更新: PreviewSync経由で同期
+                    if (this.previewSync) {
+                        const brushSettings = this.drawingToolsSystem.getBrushSettings();
+                        this.previewSync.syncWithBrushSettings(brushSettings);
+                    }
+                    
+                    console.log('🔄 アクティブプリセットリセット完了（PreviewSync連携）');
+                    return true;
+                } else {
+                    console.warn('アクティブプリセットリセット失敗');
+                    return false;
+                }
             } else {
                 console.warn('PenPresetManager.resetActivePreset が利用できません');
                 return false;
@@ -582,32 +538,23 @@ class PenToolUI {
     }
     
     /**
-     * 全プリセットプレビューリセット
+     * 全プリセットプレビューリセット（STEP 3更新：PreviewSync統合）
      */
     resetAllPreviews() {
         try {
-            let resetCount = 0;
-            
-            // PresetDisplayManager経由でのリセット
-            if (this.presetDisplayManager?.resetAllPreviews) {
-                this.presetDisplayManager.resetAllPreviews();
-                resetCount++;
-            }
-            
-            // PenPresetManager経由でのリセット（フォールバック）
-            if (this.penPresetManager?.resetAllPreviews) {
-                this.penPresetManager.resetAllPreviews();
-                resetCount++;
-            }
-            
-            if (resetCount > 0) {
-                // 現在の設定でプレビューを更新
-                this.syncPreviewsWithCurrentSettings();
+            if (this.previewSync && this.previewSync.resetAllPreviews) {
+                // STEP 3更新: PreviewSyncコンポーネント経由でリセット
+                const success = this.previewSync.resetAllPreviews();
                 
-                console.log(`🔄 全プレビューリセット完了: ${resetCount}システム`);
-                return true;
+                if (success) {
+                    console.log('🔄 全プレビューリセット完了（PreviewSync統合版）');
+                    return true;
+                } else {
+                    console.warn('全プレビューリセット失敗（PreviewSync）');
+                    return false;
+                }
             } else {
-                console.warn('プレビューリセット機能が利用できません');
+                console.warn('PreviewSync.resetAllPreviews が利用できません');
                 return false;
             }
         } catch (error) {
@@ -618,7 +565,7 @@ class PenToolUI {
     }
     
     /**
-     * プリセット選択
+     * プリセット選択（STEP 3更新：PreviewSync連携）
      */
     selectPreset(presetId) {
         try {
@@ -635,10 +582,16 @@ class PenToolUI {
                     // 選択後の設定を取得してスライダーに反映
                     this.updateSlidersFromPreset(presetId);
                     
-                    // プレビュー更新
-                    this.syncPreviewsWithCurrentSettings();
+                    // STEP 3更新: PreviewSync経由でプレビュー更新
+                    if (this.previewSync) {
+                        const presetData = this.penPresetManager.getPresetData ? 
+                            this.penPresetManager.getPresetData(presetId) : null;
+                        if (presetData) {
+                            this.previewSync.syncWithPreset(presetData);
+                        }
+                    }
                     
-                    console.log(`🎯 プリセット選択完了: ${presetId}`);
+                    console.log(`🎯 プリセット選択完了（PreviewSync連携）: ${presetId}`);
                     return true;
                 } else {
                     console.warn(`プリセット選択失敗: ${presetId}`);
@@ -718,7 +671,7 @@ class PenToolUI {
     }
     
     /**
-     * ブラシ設定変更通知（DrawingToolsSystemから呼び出し・プレビュー連動対応）
+     * ブラシ設定変更通知（STEP 3更新版：PreviewSync統合）
      */
     onBrushSettingsChanged(settings) {
         try {
@@ -761,13 +714,9 @@ class PenToolUI {
                 console.log(`🔄 スライダー同期完了: ${syncCount}個更新`);
             }
             
-            // プレビュー連動機能
-            if (this.previewSyncEnabled) {
-                const size = 'size' in settings ? settings.size : null;
-                const opacity = 'opacity' in settings ? settings.opacity * 100 : null;
-                
-                this.updatePresetLiveValues(size, opacity);
-                this.updateActivePresetPreview(size, opacity);
+            // STEP 3更新: PreviewSync統合での連動処理
+            if (this.previewSync && this.previewSync.isSyncEnabled()) {
+                this.previewSync.syncWithBrushSettings(settings);
             }
             
             this.syncInProgress = false;
@@ -787,19 +736,29 @@ class PenToolUI {
     }
     
     /**
-     * プレビュー同期有効/無効切り替え
+     * STEP 3新規: プレビュー同期制御（PreviewSync統合）
      */
     setPreviewSyncEnabled(enabled) {
-        const wasEnabled = this.previewSyncEnabled;
-        this.previewSyncEnabled = !!enabled;
-        
-        if (!wasEnabled && this.previewSyncEnabled) {
-            // 有効化時は現在設定で同期
-            this.syncPreviewsWithCurrentSettings();
+        if (!this.previewSync) {
+            console.warn('PreviewSyncコンポーネントが利用できません');
+            return false;
         }
         
-        console.log(`🔄 プレビュー同期: ${this.previewSyncEnabled ? '有効' : '無効'}`);
-        return this.previewSyncEnabled;
+        const wasEnabled = this.previewSync.isSyncEnabled();
+        
+        if (enabled && !wasEnabled) {
+            this.previewSync.enableSync();
+            console.log('🔄 プレビュー同期を有効化しました（PreviewSync統合版）');
+        } else if (!enabled && wasEnabled) {
+            this.previewSync.disableSync();
+            console.log('🔄 プレビュー同期を無効化しました（PreviewSync統合版）');
+        }
+        
+        return this.previewSync.isSyncEnabled();
+    }
+    
+    isPreviewSyncEnabled() {
+        return this.previewSync ? this.previewSync.isSyncEnabled() : false;
     }
     
     /**
@@ -818,16 +777,15 @@ class PenToolUI {
     }
     
     /**
-     * デバッグ機能
+     * デバッグ機能（STEP 3更新版：PreviewSync統合）
      */
     debugPenUI() {
-        console.group('🔍 PenToolUI デバッグ情報（モジュール分割版）');
+        console.group('🔍 PenToolUI デバッグ情報（STEP 3更新版：PreviewSync統合）');
         
         console.log('基本情報:', {
             initialized: this.isInitialized,
             sliders: this.sliders.size,
             errorCount: `${this.errorCount}/${this.maxErrors}`,
-            previewSyncEnabled: this.previewSyncEnabled,
             syncInProgress: this.syncInProgress
         });
         
@@ -835,17 +793,22 @@ class PenToolUI {
             sliderController: !!this.sliderController,
             penPresetManager: !!this.penPresetManager,
             presetDisplayManager: !!this.presetDisplayManager,
-            popupManager: !!this.popupManager
+            popupManager: !!this.popupManager,
+            previewSync: !!this.previewSync // STEP 3新規
         });
         
         console.log('スライダー状態:', this.getAllSliderValues());
         
-        console.log('プレビュー連動状態:', {
-            enabled: this.previewSyncEnabled,
-            updateInterval: this.previewUpdateInterval,
-            lastUpdate: this.lastPreviewUpdate,
-            throttleActive: !!this.previewUpdateThrottle
-        });
+        // STEP 3新規: PreviewSync統合状況
+        if (this.previewSync) {
+            console.log('PreviewSync統合状況:', this.previewSync.getStats());
+            
+            // PreviewSyncのデバッグも実行
+            console.log('🔄 PreviewSyncコンポーネントデバッグ実行...');
+            this.previewSync.debugSync();
+        } else {
+            console.warn('⚠️ PreviewSyncコンポーネントが統合されていません');
+        }
         
         if (this.pendingSyncUpdates.size > 0) {
             console.log('保留中更新:', Array.from(this.pendingSyncUpdates.keys()));
@@ -855,7 +818,7 @@ class PenToolUI {
     }
     
     /**
-     * 統計取得
+     * 統計取得（STEP 3更新版：PreviewSync統合）
      */
     getStats() {
         return {
@@ -863,35 +826,33 @@ class PenToolUI {
             slidersCount: this.sliders.size,
             errorCount: this.errorCount,
             maxErrors: this.maxErrors,
-            previewSync: {
-                enabled: this.previewSyncEnabled,
-                updateInterval: this.previewUpdateInterval,
-                lastUpdate: this.lastPreviewUpdate,
-                throttleActive: !!this.previewUpdateThrottle,
-                syncInProgress: this.syncInProgress,
-                pendingUpdates: this.pendingSyncUpdates.size
-            },
+            syncInProgress: this.syncInProgress,
+            pendingUpdates: this.pendingSyncUpdates.size,
             externalSystems: {
                 sliderController: !!this.sliderController,
                 penPresetManager: !!this.penPresetManager,
                 presetDisplayManager: !!this.presetDisplayManager,
-                popupManager: !!this.popupManager
+                popupManager: !!this.popupManager,
+                previewSync: !!this.previewSync // STEP 3新規
             },
-            moduleVersion: 'v2.5-separated'
+            // STEP 3新規: PreviewSync統合状況
+            previewSync: this.previewSync ? this.previewSync.getStats() : null,
+            moduleVersion: 'v3.0-step3-preview-sync-integrated'
         };
     }
     
     /**
-     * クリーンアップ
+     * クリーンアップ（STEP 3更新版：PreviewSync統合）
      */
     destroy() {
         try {
-            console.log('🧹 PenToolUI クリーンアップ開始（モジュール分割版）');
+            console.log('🧹 PenToolUI クリーンアップ開始（STEP 3更新版：PreviewSync統合）');
             
-            // プレビュー更新スロットリングのクリア
-            if (this.previewUpdateThrottle) {
-                clearTimeout(this.previewUpdateThrottle);
-                this.previewUpdateThrottle = null;
+            // STEP 3新規: PreviewSyncコンポーネントのクリーンアップ
+            if (this.previewSync) {
+                this.previewSync.destroy();
+                this.previewSync = null;
+                console.log('🔄 PreviewSyncコンポーネント クリーンアップ完了');
             }
             
             // スライダーのクリーンアップ
@@ -913,7 +874,7 @@ class PenToolUI {
             this.popupManager = null;
             
             this.isInitialized = false;
-            console.log('✅ PenToolUI クリーンアップ完了（モジュール分割版）');
+            console.log('✅ PenToolUI クリーンアップ完了（STEP 3更新版：PreviewSync統合）');
             
         } catch (error) {
             console.error('PenToolUI クリーンアップエラー:', error);
@@ -925,7 +886,7 @@ class PenToolUI {
 if (typeof window !== 'undefined') {
     window.PenToolUI = PenToolUI;
     
-    // デバッグ関数登録
+    // STEP 3更新: PreviewSync統合版デバッグ関数
     window.debugPenToolUI = function() {
         if (window.toolsSystem?.penToolUI) {
             window.toolsSystem.penToolUI.debugPenUI();
@@ -939,9 +900,9 @@ if (typeof window !== 'undefined') {
     window.togglePreviewSync = function() {
         if (window.toolsSystem?.penToolUI) {
             const penUI = window.toolsSystem.penToolUI;
-            const stats = penUI.getStats();
-            const newState = penUI.setPreviewSyncEnabled(!stats.previewSync.enabled);
-            console.log(`🔄 プレビュー同期切り替え: ${newState ? '有効' : '無効'}`);
+            const currentState = penUI.isPreviewSyncEnabled();
+            const newState = penUI.setPreviewSyncEnabled(!currentState);
+            console.log(`🔄 プレビュー同期切り替え（PreviewSync統合版）: ${newState ? '有効' : '無効'}`);
             return newState;
         } else {
             console.warn('PenToolUI が利用できません');
@@ -950,43 +911,51 @@ if (typeof window !== 'undefined') {
     };
     
     window.debugPreviewSync = function() {
-        if (window.toolsSystem?.penToolUI) {
-            const penUI = window.toolsSystem.penToolUI;
-            console.group('🔍 プレビュー連動デバッグ（モジュール分割版）');
+        if (window.toolsSystem?.penToolUI?.previewSync) {
+            const previewSync = window.toolsSystem.penToolUI.previewSync;
+            console.group('🔍 プレビュー連動デバッグ（STEP 3統合版）');
             
-            const stats = penUI.getStats();
-            console.log('プレビュー同期状態:', stats.previewSync);
-            console.log('外部システム:', stats.externalSystems);
-            
-            // テスト実行
-            console.log('🧪 プレビュー同期テスト実行中...');
-            penUI.syncPreviewsWithCurrentSettings();
+            previewSync.debugSync();
             
             console.groupEnd();
         } else {
-            console.warn('PenToolUI が利用できません');
+            console.warn('PreviewSyncコンポーネントが利用できません');
         }
     };
     
-    console.log('✅ pen-tool-ui.js モジュール分割版 読み込み完了');
-    console.log('📦 エクスポートクラス:');
-    console.log('  ✅ PenToolUI: ペンツール専用UI制御（完全分離版）');
-    console.log('🎨 主要機能:');
-    console.log('  ✅ スライダー制御統合（専用UI管理システム）');
-    console.log('  ✅ プレビュー連動機能（リアルタイム同期対応）');
-    console.log('  ✅ 外部システム連携（依存注入パターン採用）');
-    console.log('  ✅ UI同期システム（無限ループ回避機能）');
-    console.log('  ✅ エラーハンドリング強化（安全な例外処理）');
-    console.log('  ✅ キーボードショートカット対応');
-    console.log('🐛 デバッグ関数:');
-    console.log('  - window.debugPenToolUI() - PenToolUI状態表示');
+    // STEP 3新規: PreviewSync統計表示
+    window.getPreviewSyncStats = function() {
+        if (window.toolsSystem?.penToolUI?.previewSync) {
+            const stats = window.toolsSystem.penToolUI.previewSync.getStats();
+            console.log('📊 PreviewSync統計（STEP 3統合版）:', stats);
+            return stats;
+        } else {
+            console.warn('PreviewSyncコンポーネントが利用できません');
+            return null;
+        }
+    };
+    
+    console.log('✅ pen-tool-ui.js STEP 3更新版（PreviewSync統合） 読み込み完了');
+    console.log('📦 エクスポートクラス（STEP 3更新版）:');
+    console.log('  ✅ PenToolUI: ペンツール専用UI制御（PreviewSync統合版）');
+    console.log('🎨 STEP 3完了効果:');
+    console.log('  ✅ PreviewSyncコンポーネント統合完了');
+    console.log('  ✅ ui-manager.jsからプレビュー連動機能完全移譲');
+    console.log('  ✅ SOLID原則準拠（単一責任・依存注入）');
+    console.log('  ✅ DRY原則準拠（重複コード排除）');
+    console.log('  ✅ プレビュー機能の専用モジュール化');
+    console.log('  ✅ エラーハンドリング強化');
+    console.log('  ✅ パフォーマンス最適化（スロットリング制御）');
+    console.log('🐛 デバッグ関数（STEP 3更新版）:');
+    console.log('  - window.debugPenToolUI() - PenToolUI統合状態表示');
     console.log('  - window.togglePreviewSync() - プレビュー同期切り替え');
-    console.log('  - window.debugPreviewSync() - プレビュー連動デバッグ');
-    console.log('📊 モジュール化効果:');
-    console.log('  🎯 単一責任原則準拠（ペンツールUI制御のみ）');
-    console.log('  🔗 ui-manager.jsからの完全分離（独立性確保）');
-    console.log('  🛡️ 外部システム安全統合（依存注入対応）');
-    console.log('  ⚡ プレビュー連動最適化（スロットリング制御）');
+    console.log('  - window.debugPreviewSync() - PreviewSync専用デバッグ');
+    console.log('  - window.getPreviewSyncStats() - PreviewSync統計表示（新規）');
+    console.log('📊 モジュール化効果（STEP 3完了）:');
+    console.log('  🎯 プレビュー連動機能の完全独立');
+    console.log('  🔗 ui-manager.jsとの依存関係解消');
+    console.log('  🛡️ コンポーネント単位でのエラー分離');
+    console.log('  ⚡ プレビュー同期処理の最適化・高速化');
 }
 
-console.log('🏆 pen-tool-ui.js モジュール分割版 初期化完了');
+console.log('🏆 pen-tool-ui.js STEP 3更新版（PreviewSync統合） 初期化完了');
