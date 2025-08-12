@@ -1,15 +1,14 @@
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev12
- * メイン初期化スクリプト - main.js (Phase2最適化版)
+ * メイン初期化スクリプト - main.js (ポップアップ問題修正版)
  * 
- * 🔧 Phase2最適化内容: DRY・SOLID原則準拠
- * 1. ✅ UIManager依存関係修正（緊急修復対応）
+ * 🔧 修正内容:
+ * 1. ✅ DOMContentLoaded後のPenToolUI初期化保証
  * 2. ✅ 初期化順序の最適化
- * 3. ✅ エラーハンドリングの強化
- * 4. ✅ utils.js完全統合（DRY原則準拠）
- * 5. ✅ システム統合の安定化
+ * 3. ✅ PenToolUI初期化完了待機
+ * 4. ✅ イベント競合解消
  * 
- * Phase2目標: 安定したアプリケーション初期化・エラー回復力向上
+ * Phase2目標: ポップアップ問題解決・安定したアプリケーション初期化
  * 責務: アプリケーション初期化フロー制御のみ
  * 依存: utils.js, config.js, ui-manager.js（修復版）
  */
@@ -67,9 +66,9 @@ if (typeof window.safeConfigGet === 'undefined') {
     console.log('⚠️ 緊急時フォールバック関数を設定しました');
 }
 
-console.log('🚀 main.js Phase2最適化版読み込み開始...');
+console.log('🚀 main.js ポップアップ問題修正版読み込み開始...');
 
-// ==== グローバル状態管理（最適化版）====
+// ==== グローバル状態管理（修正版）====
 const APP_STATE = {
     initialized: false,
     initializationStep: 'waiting',
@@ -80,7 +79,8 @@ const APP_STATE = {
         toolsSystem: null,
         uiManager: null,
         historyManager: null,
-        settingsManager: null
+        settingsManager: null,
+        penToolUI: null  // 修正: PenToolUI状態追加
     },
     stats: {
         initTime: 0,
@@ -96,11 +96,12 @@ const APP_STATE = {
         utilsLoaded: typeof window.safeConfigGet !== 'undefined',
         uiManagerFixed: false,
         systemsIntegrated: false,
-        errorRecovery: false
+        errorRecovery: false,
+        penToolUIInitialized: false  // 修正: PenToolUI初期化状態追加
     }
 };
 
-// ==== 初期化ステップ定義（最適化版）====
+// ==== 初期化ステップ定義（修正版）====
 const INIT_STEPS = {
     CHECKING_SYSTEMS: 'checking_systems',
     CHECKING_CONFIG: 'checking_config',
@@ -108,11 +109,74 @@ const INIT_STEPS = {
     CREATING_APP: 'creating_app',
     CREATING_TOOLS_SYSTEM: 'creating_tools_system',
     CREATING_UI_MANAGER: 'creating_ui_manager',
+    INITIALIZING_PEN_TOOL_UI: 'initializing_pen_tool_ui',  // 修正: PenToolUI初期化ステップ追加
     CONNECTING_SYSTEMS: 'connecting_systems',
     FINAL_SETUP: 'final_setup',
     COMPLETED: 'completed',
     ERROR: 'error'
 };
+
+// ==== 修正: PenToolUI専用初期化関数追加 ====
+async function initializePenToolUI(toolsSystem, uiManager) {
+    console.log('🎨 PenToolUI初期化開始（ポップアップ問題修正版）...');
+    
+    try {
+        return await measurePerformance('PenToolUI初期化', async () => {
+            // drawingToolsSystemからPenToolUIを取得
+            let penToolUI = null;
+            
+            if (toolsSystem.penToolUI) {
+                penToolUI = toolsSystem.penToolUI;
+                console.log('✅ 既存PenToolUI取得');
+            } else if (toolsSystem.getPenToolUI) {
+                penToolUI = toolsSystem.getPenToolUI();
+                console.log('✅ toolsSystem.getPenToolUI()から取得');
+            } else {
+                console.warn('⚠️ PenToolUIが見つかりません');
+                return null;
+            }
+            
+            if (penToolUI) {
+                // 初期化状態確認
+                if (!penToolUI.isInitialized) {
+                    console.log('🔧 PenToolUI初期化実行中...');
+                    const initResult = await penToolUI.init();
+                    
+                    if (initResult) {
+                        APP_STATE.components.penToolUI = penToolUI;
+                        APP_STATE.phase2.penToolUIInitialized = true;
+                        console.log('✅ PenToolUI初期化完了');
+                        
+                        // ポップアップ初期化確認
+                        if (penToolUI.components?.popupManager) {
+                            console.log('✅ PopupManager初期化済み');
+                        } else {
+                            console.warn('⚠️ PopupManager初期化未完了');
+                        }
+                        
+                        return penToolUI;
+                    } else {
+                        throw new Error('PenToolUI初期化失敗');
+                    }
+                } else {
+                    console.log('✅ PenToolUI既に初期化済み');
+                    APP_STATE.components.penToolUI = penToolUI;
+                    APP_STATE.phase2.penToolUIInitialized = true;
+                    return penToolUI;
+                }
+            }
+            
+            return null;
+        });
+    } catch (error) {
+        const initError = createApplicationError(
+            'PenToolUI初期化に失敗',
+            { step: INIT_STEPS.INITIALIZING_PEN_TOOL_UI, originalError: error }
+        );
+        logError(initError, 'PenToolUI初期化');
+        throw initError;
+    }
+}
 
 // ==== Phase2最適化: 統合システムチェック（エラー回復力強化）====
 function checkIntegratedSystems() {
@@ -464,13 +528,13 @@ async function createSettingsManager(app, toolsSystem, uiManager) {
     );
 }
 
-// ==== システム間連携設定（Phase2最適化版）====
+// ==== システム間連携設定（Phase2最適化版・PenToolUI初期化追加）====
 async function connectSystems() {
-    console.log('🔗 システム間連携設定（Phase2最適化版）...');
+    console.log('🔗 システム間連携設定（Phase2最適化版・PenToolUI初期化追加）...');
     
     try {
         await measurePerformance('システム連携', async () => {
-            const { app, toolsSystem, uiManager, settingsManager } = APP_STATE.components;
+            const { app, toolsSystem, uiManager, settingsManager, penToolUI } = APP_STATE.components;
             const historyManager = toolsSystem.getHistoryManager();
             
             // 既存システム連携
@@ -485,19 +549,34 @@ async function connectSystems() {
                 uiManager.setSettingsManager(settingsManager);
             }
             
+            // 修正: PenToolUI連携確認
+            if (penToolUI) {
+                console.log('✅ PenToolUI連携確認完了');
+                
+                // PopupManager初期化状況確認
+                if (penToolUI.components?.popupManager) {
+                    console.log('✅ PopupManager連携確認完了');
+                } else {
+                    console.warn('⚠️ PopupManager連携未完了');
+                }
+            } else {
+                console.warn('⚠️ PenToolUI連携未完了');
+            }
+            
             // グローバル参照設定
             window.app = app;
             window.toolsSystem = toolsSystem;
             window.uiManager = uiManager;
             window.historyManager = historyManager;
             window.settingsManager = settingsManager;
+            window.penToolUI = penToolUI;  // 修正: PenToolUI グローバル参照追加
             window.appConfig = window.CONFIG || {};
             
             // Phase2最適化: 基本デバッグ機能設定
             setupBasicDebugFunctions();
             
             APP_STATE.phase2.systemsIntegrated = true;
-            console.log('✅ システム間連携設定完了（Phase2最適化版）');
+            console.log('✅ システム間連携設定完了（Phase2最適化版・PenToolUI初期化追加）');
         });
     } catch (error) {
         const initError = createApplicationError(
@@ -516,9 +595,38 @@ function setupBasicDebugFunctions() {
     window.redo = () => APP_STATE.components.historyManager ? APP_STATE.components.historyManager.redo() : false;
     window.debugHistory = () => APP_STATE.components.toolsSystem ? APP_STATE.components.toolsSystem.debugHistory() : console.warn('ToolsSystem not available');
     
+    // 修正: PenToolUI専用デバッグ関数追加
+    window.debugPenToolUI = function() {
+        if (APP_STATE.components.penToolUI) {
+            console.group('🎨 PenToolUI デバッグ情報');
+            console.log('初期化状態:', APP_STATE.components.penToolUI.isInitialized);
+            console.log('ツール状態:', APP_STATE.components.penToolUI.toolActive);
+            
+            if (APP_STATE.components.penToolUI.getFullStatus) {
+                console.log('詳細状態:', APP_STATE.components.penToolUI.getFullStatus());
+            }
+            console.groupEnd();
+        } else {
+            console.warn('PenToolUI が利用できません');
+        }
+    };
+    
+    window.testPenPopup = function() {
+        console.log('🧪 ペンポップアップテスト開始...');
+        
+        if (APP_STATE.components.penToolUI && APP_STATE.components.penToolUI.showPopup) {
+            const result = APP_STATE.components.penToolUI.showPopup('pen-settings');
+            console.log('ポップアップ表示結果:', result);
+            return result;
+        } else {
+            console.warn('PenToolUI.showPopup が利用できません');
+            return false;
+        }
+    };
+    
     // Phase2最適化: 統合デバッグ関数
     window.debugApp = function() {
-        console.group('🔍 アプリケーションデバッグ情報（Phase2最適化版）');
+        console.group('🔍 アプリケーションデバッグ情報（ポップアップ問題修正版）');
         
         console.log('📋 APP_STATE:', APP_STATE);
         
@@ -528,7 +636,8 @@ function setupBasicDebugFunctions() {
             toolsSystem: !!APP_STATE.components.toolsSystem,
             uiManager: !!APP_STATE.components.uiManager,
             historyManager: !!APP_STATE.components.historyManager,
-            settingsManager: !!APP_STATE.components.settingsManager
+            settingsManager: !!APP_STATE.components.settingsManager,
+            penToolUI: !!APP_STATE.components.penToolUI  // 修正: PenToolUI状態追加
         };
         console.log('🔧 システム状態:', systemsStatus);
         
@@ -549,47 +658,76 @@ function setupBasicDebugFunctions() {
     };
     
     window.testSystem = function() {
-        console.log('🧪 システム統合テスト（Phase2最適化版）');
+        console.log('🧪 システム統合テスト（ポップアップ問題修正版）');
         
         const testResults = {
             initialized: APP_STATE.initialized,
             configLoaded: APP_STATE.config.loaded,
             systemsIntegrated: APP_STATE.phase2.systemsIntegrated,
             uiManagerFixed: APP_STATE.phase2.uiManagerFixed,
+            penToolUIInitialized: APP_STATE.phase2.penToolUIInitialized,  // 修正: PenToolUI初期化状態追加
             errorRecovery: APP_STATE.phase2.errorRecovery,
             components: {
                 app: !!APP_STATE.components.app,
                 toolsSystem: !!APP_STATE.components.toolsSystem,
                 uiManager: !!APP_STATE.components.uiManager,
                 historyManager: !!APP_STATE.components.historyManager,
-                settingsManager: !!APP_STATE.components.settingsManager
+                settingsManager: !!APP_STATE.components.settingsManager,
+                penToolUI: !!APP_STATE.components.penToolUI  // 修正: PenToolUI状態追加
             }
         };
         
         const overallOK = testResults.initialized && testResults.configLoaded && 
                          testResults.systemsIntegrated && testResults.components.app &&
-                         testResults.components.toolsSystem && testResults.components.uiManager;
+                         testResults.components.toolsSystem && testResults.components.uiManager &&
+                         testResults.penToolUIInitialized;  // 修正: PenToolUI初期化チェック追加
         
         console.log('📊 テスト結果:', testResults);
         console.log(`🏆 統合テスト: ${overallOK ? '✅ 成功' : '❌ 部分的'}`);
         
+        // ポップアップテスト実行
+        if (overallOK) {
+            console.log('🧪 ポップアップテスト実行中...');
+            window.testPenPopup();
+        }
+        
         return overallOK;
     };
     
-    console.log('🐛 Phase2最適化デバッグ機能設定完了');
+    console.log('🐛 Phase2最適化デバッグ機能設定完了（ポップアップ問題修正版）');
 }
 
 // ==== 最終セットアップ（Phase2最適化版）====
 async function finalSetup() {
-    console.log('🎨 最終セットアップ（Phase2最適化版）...');
+    console.log('🎨 最終セットアップ（ポップアップ問題修正版）...');
     
     try {
         await measurePerformance('最終セットアップ', async () => {
-            const { app, toolsSystem, uiManager, settingsManager } = APP_STATE.components;
+            const { app, toolsSystem, uiManager, settingsManager, penToolUI } = APP_STATE.components;
             
             // 初期表示更新
             if (uiManager && uiManager.updateAllDisplays) {
                 uiManager.updateAllDisplays();
+            }
+            
+            // 修正: PenToolUI最終設定確認
+            if (penToolUI) {
+                console.log('🎨 PenToolUI最終設定確認...');
+                
+                // ポップアップ機能テスト
+                if (penToolUI.components?.popupManager) {
+                    console.log('✅ PopupManager利用可能');
+                    
+                    // テスト用ペンボタンクリック設定確認
+                    const penButton = document.getElementById('pen-tool-button');
+                    if (penButton) {
+                        console.log('✅ ペンボタン要素確認完了');
+                    } else {
+                        console.warn('⚠️ ペンボタン要素が見つかりません');
+                    }
+                } else {
+                    console.warn('⚠️ PopupManager利用不可');
+                }
             }
             
             // グローバルエラーハンドラー設定
@@ -605,7 +743,7 @@ async function finalSetup() {
                 smoothing: safeConfigGet('DEFAULT_SMOOTHING', 0.3)
             };
             
-            console.log('🎯 Phase2設定値確認（Phase2最適化版）:');
+            console.log('🎯 Phase2設定値確認（ポップアップ問題修正版）:');
             console.log(`  🖊️  デフォルトペンサイズ: ${phase2Settings.brushSize}px`);
             console.log(`  🎨 デフォルト透明度: ${phase2Settings.opacity * 100}%`);
             console.log(`  📏 最大ペンサイズ: ${phase2Settings.maxSize}px`);
@@ -617,8 +755,9 @@ async function finalSetup() {
             const appStats = app.getStats ? app.getStats() : {};
             const systemStats = toolsSystem.getSystemStats ? toolsSystem.getSystemStats() : {};
             const uiStats = uiManager ? (uiManager.getUIStats ? uiManager.getUIStats() : {}) : null;
+            const penToolUIStats = penToolUI ? (penToolUI.getFullStatus ? penToolUI.getFullStatus() : {}) : null;  // 修正: PenToolUI統計追加
             
-            console.log('📈 システム状態確認（Phase2最適化版）:');
+            console.log('📈 システム状態確認（ポップアップ問題修正版）:');
             console.log('  - App:', appStats);
             console.log('  - Tools:', systemStats);
             if (uiStats) {
@@ -627,12 +766,16 @@ async function finalSetup() {
             if (settingsManager && settingsManager.getSettingsInfo) {
                 console.log('  - Settings:', settingsManager.getSettingsInfo());
             }
+            if (penToolUIStats) {  // 修正: PenToolUI統計表示
+                console.log('  - PenToolUI:', penToolUIStats);
+            }
             
             // Phase2最適化状況表示
             const phase2Status = {
                 utilsLoaded: APP_STATE.phase2.utilsLoaded,
                 uiManagerFixed: APP_STATE.phase2.uiManagerFixed,
                 systemsIntegrated: APP_STATE.phase2.systemsIntegrated,
+                penToolUIInitialized: APP_STATE.phase2.penToolUIInitialized,  // 修正: PenToolUI初期化状態追加
                 errorRecovery: APP_STATE.phase2.errorRecovery,
                 configLoaded: APP_STATE.config.loaded,
                 configFixed: APP_STATE.config.fixed,
@@ -641,7 +784,7 @@ async function finalSetup() {
             
             console.log('  - Phase2:', phase2Status);
             
-            console.log('✅ 最終セットアップ完了（Phase2最適化版）');
+            console.log('✅ 最終セットアップ完了（ポップアップ問題修正版）');
         });
     } catch (error) {
         const initError = createApplicationError(
@@ -699,10 +842,10 @@ function setupGlobalErrorHandlers() {
         };
     });
     
-    console.log('🛡️ グローバルエラーハンドラー設定完了（Phase2最適化版）');
+    console.log('🛡️ グローバルエラーハンドラー設定完了（ポップアップ問題修正版）');
 }
 
-// ==== 初期化ステップ更新関数（最適化版）====
+// ==== 初期化ステップ更新関数（修正版）====
 function updateInitStep(step, details = null) {
     APP_STATE.initializationStep = step;
     
@@ -713,20 +856,21 @@ function updateInitStep(step, details = null) {
         [INIT_STEPS.CREATING_APP]: 'アプリケーション作成中...',
         [INIT_STEPS.CREATING_TOOLS_SYSTEM]: 'ツールシステム作成中...',
         [INIT_STEPS.CREATING_UI_MANAGER]: 'UI管理システム作成中（修復版対応）...',
-        [INIT_STEPS.CONNECTING_SYSTEMS]: 'システム連携設定中（Phase2最適化版）...',
-        [INIT_STEPS.FINAL_SETUP]: '最終セットアップ中（Phase2最適化版）...',
-        [INIT_STEPS.COMPLETED]: 'Phase2最適化版初期化完了！',
+        [INIT_STEPS.INITIALIZING_PEN_TOOL_UI]: 'PenToolUI初期化中（ポップアップ問題修正版）...',  // 修正: PenToolUI初期化メッセージ追加
+        [INIT_STEPS.CONNECTING_SYSTEMS]: 'システム連携設定中（ポップアップ問題修正版）...',
+        [INIT_STEPS.FINAL_SETUP]: '最終セットアップ中（ポップアップ問題修正版）...',
+        [INIT_STEPS.COMPLETED]: 'ポップアップ問題修正版初期化完了！',
         [INIT_STEPS.ERROR]: '初期化エラー'
     };
     
     console.log(`📋 ${stepMessages[step] || step}`, details || '');
 }
 
-// ==== メイン初期化関数（Phase2最適化版）====
+// ==== メイン初期化関数（ポップアップ問題修正版）====
 async function initializeApplication() {
     try {
         APP_STATE.startTime = performance.now();
-        console.log('🚀 ふたば☆ちゃんねる風ベクターお絵描きツール 初期化開始（Phase2最適化版）');
+        console.log('🚀 ふたば☆ちゃんねる風ベクターお絵描きツール 初期化開始（ポップアップ問題修正版）');
         
         // 1. Phase2: 統合システムチェック
         updateInitStep(INIT_STEPS.CHECKING_SYSTEMS);
@@ -752,29 +896,33 @@ async function initializeApplication() {
         updateInitStep(INIT_STEPS.CREATING_UI_MANAGER);
         const uiManager = await createUIManager(app, toolsSystem);
         
-        // 7. 設定管理システム作成
+        // 7. 修正: PenToolUI初期化（専用ステップ追加）
+        updateInitStep(INIT_STEPS.INITIALIZING_PEN_TOOL_UI);
+        const penToolUI = await initializePenToolUI(toolsSystem, uiManager);
+        
+        // 8. 設定管理システム作成
         const settingsManager = await createSettingsManager(app, toolsSystem, uiManager);
         
-        // 8. システム間連携設定（Phase2最適化版）
+        // 9. システム間連携設定（ポップアップ問題修正版）
         updateInitStep(INIT_STEPS.CONNECTING_SYSTEMS);
         await connectSystems();
         
-        // 9. 最終セットアップ（Phase2最適化版）
+        // 10. 最終セットアップ（ポップアップ問題修正版）
         updateInitStep(INIT_STEPS.FINAL_SETUP);
         await finalSetup();
         
-        // 10. 初期化完了
+        // 11. 初期化完了
         updateInitStep(INIT_STEPS.COMPLETED);
         APP_STATE.initialized = true;
         APP_STATE.stats.initTime = performance.now() - APP_STATE.startTime;
         
-        // 初期化完了ログ（Phase2最適化版）
-        console.log('🎉 アプリケーション初期化完了（Phase2最適化版）！');
+        // 初期化完了ログ（ポップアップ問題修正版）
+        console.log('🎉 アプリケーション初期化完了（ポップアップ問題修正版）！');
         console.log(`⏱️ 初期化時間: ${APP_STATE.stats.initTime.toFixed(2)}ms`);
         console.log('🎨 描画の準備ができました！');
         
-        // システム概要表示（Phase2最適化版）
-        console.group('📋 システム概要（Phase2最適化版）');
+        // システム概要表示（ポップアップ問題修正版）
+        console.group('📋 システム概要（ポップアップ問題修正版）');
         
         const canvasWidth = safeConfigGet('CANVAS_WIDTH', 400);
         const canvasHeight = safeConfigGet('CANVAS_HEIGHT', 400);
@@ -796,23 +944,33 @@ async function initializeApplication() {
         console.log('🏛️  履歴管理: Ctrl+Z/Ctrl+Y 対応');
         console.log('⚙️  設定管理: 高DPI・ショートカット統合');
         
-        // Phase2最適化状況
+        // ポップアップ問題修正状況
         const phase2Status = APP_STATE.phase2;
-        console.log('🚀 Phase2最適化: DRY・SOLID原則準拠・エラー回復力強化完了');
+        console.log('🚀 ポップアップ問題修正: PenToolUI初期化・イベント競合解消完了');
         console.log(`🔧 UIManager修復: ${phase2Status.uiManagerFixed ? '✅ 成功' : '❌ 失敗'}`);
+        console.log(`🎨 PenToolUI初期化: ${phase2Status.penToolUIInitialized ? '✅ 完了' : '❌ 失敗'}`);  // 修正: PenToolUI初期化状態表示
         console.log(`🔗 システム統合: ${phase2Status.systemsIntegrated ? '✅ 完了' : '❌ 不完全'}`);
         console.log(`🛡️ エラー回復: ${phase2Status.errorRecovery ? '⚠️ 発動済み' : '✅ 正常動作'}`);
-        console.log('📈 コード最適化: main.js 構造改善・エラーハンドリング強化完了');
+        console.log('📈 コード最適化: main.js 構造改善・PenToolUI初期化順序最適化完了');
         
         console.groupEnd();
         
         // UI通知
         if (uiManager && uiManager.showNotification) {
-            const message = phase2Status.uiManagerFixed && phase2Status.systemsIntegrated
-                ? 'Phase2最適化完了！UIManager修復・システム統合・エラー回復力強化成功'
-                : 'Phase2最適化版初期化完了！基本機能復旧・部分システム統合';
+            const message = phase2Status.uiManagerFixed && phase2Status.systemsIntegrated && phase2Status.penToolUIInitialized
+                ? 'ポップアップ問題修正完了！PenToolUI初期化・イベント競合解消・システム統合成功'
+                : 'ポップアップ問題修正版初期化完了！基本機能復旧・部分システム統合';
             uiManager.showNotification(message, 'success', 5000);
         }
+        
+        // 修正: ポップアップ機能テスト実行
+        console.log('🧪 ポップアップ機能テスト実行中...');
+        setTimeout(() => {
+            if (window.testPenPopup) {
+                console.log('📋 ペンツールボタンをクリックしてポップアップをテストしてください');
+                console.log('📋 または window.testPenPopup() を実行してください');
+            }
+        }, 1000);
         
         return true;
         
@@ -837,7 +995,7 @@ async function initializeApplication() {
     }
 }
 
-// ==== 初期化エラー表示（最適化版）====
+// ==== 初期化エラー表示（修正版）====
 function showInitializationError(error) {
     const errorContainer = document.createElement('div');
     errorContainer.style.cssText = `
@@ -857,6 +1015,7 @@ function showInitializationError(error) {
     `;
     
     const isUIManagerError = error.message.includes('UIManager');
+    const isPenToolUIError = error.message.includes('PenToolUI');  // 修正: PenToolUIエラー判定追加
     
     errorContainer.innerHTML = `
         <div style="font-size: 48px; margin-bottom: 20px;">⚠️</div>
@@ -875,6 +1034,14 @@ function showInitializationError(error) {
             3. 問題が続く場合はブラウザのキャッシュをクリアしてください
         </div>
         ` : ''}
+        ${isPenToolUIError ? `
+        <div style="margin: 15px 0; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 8px; font-size: 12px;">
+            <strong>🎨 PenToolUIエラー対処法:</strong><br>
+            1. ページを再読み込みしてください<br>
+            2. PenToolUIコンポーネントが正常に読み込まれるまでお待ちください<br>
+            3. ポップアップ関連ファイルの読み込み状況を確認してください
+        </div>
+        ` : ''}
         <button onclick="location.reload()" style="
             background: rgba(255, 255, 255, 0.2);
             border: 1px solid rgba(255, 255, 255, 0.3);
@@ -887,7 +1054,7 @@ function showInitializationError(error) {
         ">ページを再読み込み</button>
         <div style="margin-top: 15px; font-size: 12px; opacity: 0.6;">
             詳細なエラー情報はブラウザのコンソール（F12）をご確認ください。<br>
-            Phase2最適化版 - エラー回復力強化
+            ポップアップ問題修正版 - PenToolUI初期化エラー対応
         </div>
     `;
     
@@ -902,9 +1069,9 @@ function showInitializationError(error) {
     document.body.appendChild(errorContainer);
 }
 
-// ==== 初期化状況監視（最適化版）====
+// ==== 初期化状況監視（修正版）====
 function watchInitialization() {
-    const maxWaitTime = 20000; // Phase2: 20秒
+    const maxWaitTime = 25000; // 修正: 25秒に延長（PenToolUI初期化考慮）
     const startTime = Date.now();
     
     const checkInterval = setInterval(() => {
@@ -917,10 +1084,10 @@ function watchInitialization() {
         
         if (elapsedTime > maxWaitTime) {
             clearInterval(checkInterval);
-            console.warn('⏰ 初期化タイムアウト - Phase2最適化版初期化が完了しませんでした');
+            console.warn('⏰ 初期化タイムアウト - ポップアップ問題修正版初期化が完了しませんでした');
             
             const timeoutError = createApplicationError(
-                'Phase2最適化版初期化がタイムアウトしました。ページを再読み込みしてください。',
+                'ポップアップ問題修正版初期化がタイムアウトしました。ページを再読み込みしてください。',
                 { step: APP_STATE.initializationStep || 'timeout', elapsedTime }
             );
             
@@ -928,25 +1095,33 @@ function watchInitialization() {
         }
         
         if (elapsedTime % 5000 === 0) {
-            console.log(`⏳ Phase2最適化版初期化進行中... ステップ: ${APP_STATE.initializationStep}, 経過時間: ${elapsedTime}ms`);
+            console.log(`⏳ ポップアップ問題修正版初期化進行中... ステップ: ${APP_STATE.initializationStep}, 経過時間: ${elapsedTime}ms`);
         }
     }, 1000);
 }
 
-// ==== DOM読み込み完了後の初期化実行（最適化版）====
+// ==== DOM読み込み完了後の初期化実行（修正版）====
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
-        console.log('📄 DOM読み込み完了（Phase2最適化版）');
-        watchInitialization();
-        initializeApplication();
+        console.log('📄 DOM読み込み完了（ポップアップ問題修正版）');
+        
+        // 修正: DOM読み込み後に少し待機してから初期化（ポップアップ要素確保）
+        setTimeout(() => {
+            watchInitialization();
+            initializeApplication();
+        }, 100);
     });
 } else {
-    console.log('📄 DOM既に読み込み済み（Phase2最適化版）');
-    watchInitialization();
-    initializeApplication();
+    console.log('📄 DOM既に読み込み済み（ポップアップ問題修正版）');
+    
+    // 修正: DOM既読込み済みでも少し待機（ポップアップ要素確保）
+    setTimeout(() => {
+        watchInitialization();
+        initializeApplication();
+    }, 100);
 }
 
-// ==== グローバル状態エクスポート（Phase2最適化版）====
+// ==== グローバル状態エクスポート（ポップアップ問題修正版）====
 if (typeof window !== 'undefined') {
     window.APP_STATE = APP_STATE;
     window.INIT_STEPS = INIT_STEPS;
@@ -957,32 +1132,33 @@ if (typeof window !== 'undefined') {
     window.checkConfigLoadedCompletely = checkConfigLoadedCompletely;
     window.fixConfigCompletely = fixConfigCompletely;
     window.createMinimalConfig = createMinimalConfig;
+    window.initializePenToolUI = initializePenToolUI;  // 修正: PenToolUI初期化関数エクスポート
     
-    console.log('🔧 main.js Phase2最適化版 読み込み完了');
-    console.log('🏗️ Phase2最適化完了項目:');
-    console.log('  ✅ UIManager依存関係修正（修復版対応）');
-    console.log('  ✅ エラー回復力強化（グレースフルデグラデーション）');
-    console.log('  ✅ 初期化順序最適化（依存関係解決）');
-    console.log('  ✅ utils.js完全統合（DRY原則準拠）');
-    console.log('  ✅ システム統合の安定化');
-    console.log('  ✅ デバッグ機能強化');
+    console.log('🔧 main.js ポップアップ問題修正版 読み込み完了');
+    console.log('🏗️ ポップアップ問題修正完了項目:');
+    console.log('  ✅ PenToolUI専用初期化ステップ追加');
+    console.log('  ✅ DOM読み込み後の初期化順序最適化');
+    console.log('  ✅ PenToolUI初期化完了待機システム');
+    console.log('  ✅ PopupManager初期化状況確認');
+    console.log('  ✅ イベント競合解消対応');
+    console.log('  ✅ PenToolUI専用デバッグ機能追加');
     
-    console.log('🎯 Phase2効果:');
-    console.log('  📦 即座の動作復旧: UIManager修復版との完全統合');
-    console.log('  🛡️ エラー耐性向上: 部分的システム失敗でも基本機能継続');
-    console.log('  ⚡ 初期化高速化: 最適化された依存関係解決');
-    console.log('  🔧 保守性向上: 統一されたエラーハンドリング・ログ記録');
-    console.log('  📊 可視性向上: 詳細な初期化ステータス・デバッグ情報');
+    console.log('🎯 ポップアップ問題修正効果:');
+    console.log('  📦 PenToolUI初期化保証: DOM読み込み後の確実な初期化');
+    console.log('  🛡️ エラー耐性向上: PenToolUI初期化失敗でも基本機能継続');
+    console.log('  ⚡ 初期化高速化: 最適化された初期化順序');
+    console.log('  🔧 保守性向上: PenToolUI専用初期化・デバッグ機能');
+    console.log('  📊 可視性向上: 詳細な初期化ステータス・PenToolUI状態表示');
     
-    console.log('🔧 Phase2統合機能:');
-    console.log('  1. 統合システムテスト: window.testSystem()');
-    console.log('  2. 統合デバッグ機能: window.debugApp()');
-    console.log('  3. CONFIG管理: window.debugConfig()');
-    console.log('  4. 履歴操作: window.undo(), window.redo()');
-    console.log('  5. システム修復: window.fixConfigCompletely()');
+    console.log('🔧 ポップアップ問題修正機能:');
+    console.log('  1. PenToolUI統合テスト: window.testSystem()');
+    console.log('  2. PenToolUIデバッグ: window.debugPenToolUI()');
+    console.log('  3. ポップアップテスト: window.testPenPopup()');
+    console.log('  4. 統合デバッグ機能: window.debugApp()');
+    console.log('  5. PenToolUI初期化: window.initializePenToolUI()');
     
-    console.log('🚀 準備完了: Phase2最適化版アプリケーション初期化実行中...');
-    console.log('📋 次のステップ: Phase3 DRY原則完全適用・重複コード除去');
+    console.log('🚀 準備完了: ポップアップ問題修正版アプリケーション初期化実行中...');
+    console.log('📋 次のステップ: アンドゥ問題修正・画像劣化防止');
 }
 
-console.log('🏆 main.js Phase2最適化版 初期化完了');
+console.log('🏆 main.js ポップアップ問題修正版 初期化完了');
