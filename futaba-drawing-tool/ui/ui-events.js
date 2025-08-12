@@ -1,473 +1,851 @@
 /**
- * ui-events.js - STEP 5クリーンアップ版
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev12
+ * UIイベント処理専門システム - ui/ui-events.js (Phase2D修正版)
  * 
- * 変更内容:
- * ❌ 削除: ペンツール専用キーボードショートカット（P+数字、R/Shift+R）
- * ❌ 削除: ペンツール専用ホイールイベント処理（サイズ・透明度調整）
- * ❌ 削除: ペンツール状態判定（isActiveTool('pen')）
- * ✅ 維持: 汎用キーボード・ホイールイベント処理
- * ✅ 追加: 移譲済み機能の警告・案内
+ * 🔧 STEP 5移譲後の責務:
+ * 1. ✅ 汎用キーボードショートカット（Ctrl+Z/Y, ESC等）
+ * 2. ✅ 汎用ホイールイベント（キャンバスズーム・パン）
+ * 3. ✅ システム全体ショートカット（F1ヘルプ、F11フルスクリーン）
+ * 4. ✅ 汎用ポインターイベント処理
+ * 5. ❌ ペンツール専用処理（EventManagerに移譲完了）
+ * 
+ * Phase2D修正: ES6 export削除・既存システム互換性確保
+ * 責務: 汎用UIイベント処理（ツール非依存）
+ * 依存: config.js, utils.js
  */
 
+console.log('🔧 ui/ui-events.js Phase2D修正版読み込み開始...');
+
+// ==== 汎用UIイベントシステム（STEP 5移譲後）====
 class UIEventSystem {
-    constructor(app) {
+    constructor(app, toolsSystem, uiManager) {
         this.app = app;
+        this.toolsSystem = toolsSystem;
+        this.uiManager = uiManager;
+        
+        // イベント状態管理
+        this.keyboardState = new Map();
+        this.shortcutSequences = new Map();
+        this.eventListeners = new Map();
+        
+        // 設定
         this.isEnabled = true;
-        this.eventStats = {
-            keyboardEvents: 0,
-            wheelEvents: 0,
-            touchEvents: 0,
-            errors: 0
-        };
+        this.debugMode = safeConfigGet('ENABLE_LOGGING', true, 'DEBUG_CONFIG');
         
-        // STEP 5: 移譲済み機能の警告制御
-        this.migrationWarnings = {
-            penKeyboardShortcuts: false,
-            penWheelEvents: false
-        };
+        // コンテキスト状態
+        this.currentContext = 'default';
+        this.isInputFocused = false;
         
-        this.setupEventListeners();
-        console.log('🎮 UIEventSystem初期化（汎用処理特化版）');
+        // パフォーマンス最適化
+        this.throttledHandlers = new Map();
+        this.debouncedHandlers = new Map();
+        
+        this.debugLog('UIEventSystem', 'UIEventSystem初期化開始（汎用イベント処理専用）');
     }
     
-    setupEventListeners() {
-        // キーボードイベント（汎用のみ）
-        document.addEventListener('keydown', (e) => this.handleGlobalKeyboard(e));
-        
-        // ホイールイベント（汎用のみ） 
-        document.addEventListener('wheel', (e) => this.handleGlobalWheel(e), { passive: false });
-        
-        // タッチイベント（汎用）
-        document.addEventListener('touchstart', (e) => this.handleTouchStart(e), { passive: false });
-        document.addEventListener('touchmove', (e) => this.handleTouchMove(e), { passive: false });
-        document.addEventListener('touchend', (e) => this.handleTouchEnd(e), { passive: false });
-        
-        // ウィンドウイベント
-        window.addEventListener('resize', (e) => this.handleWindowResize(e));
-        window.addEventListener('beforeunload', (e) => this.handleBeforeUnload(e));
-        
-        console.log('✅ 汎用イベントリスナー設定完了');
-    }
+    // ==== 初期化メソッド ====
     
     /**
-     * 汎用キーボードイベント処理（STEP 5クリーンアップ版）
+     * Phase2D: UIEventSystem初期化（汎用処理のみ）
      */
-    handleGlobalKeyboard(event) {
-        if (!this.isEnabled) return;
-        
+    async init() {
         try {
-            this.eventStats.keyboardEvents++;
-            const key = event.key.toLowerCase();
-            const { ctrlKey, shiftKey, altKey, metaKey } = event;
+            this.debugLog('UIEventSystem', '汎用イベント処理初期化開始...');
             
-            // システム全体ショートカット
-            if (ctrlKey || metaKey) {
-                this.handleSystemShortcuts(key, event);
-                return;
-            }
+            // 汎用イベント設定
+            this.setupGeneralKeyboardEvents();
+            this.setupGeneralPointerEvents();
+            this.setupWindowEvents();
+            this.setupGeneralShortcuts();
             
-            // 汎用ショートカット
-            switch (key) {
-                case 'escape':
-                    this.handleEscapeKey(event);
-                    break;
-                    
-                case 'f1':
-                    this.handleHelpKey(event);
-                    break;
-                    
-                case 'f11':
-                    this.handleFullscreenKey(event);
-                    break;
-                    
-                // STEP 5削除: ペンツール専用ショートカット
-                case 'p':
-                    if (!ctrlKey && !altKey && !metaKey) {
-                        this.showMigrationWarning('penKeyboardShortcuts', 
-                            'P+数字のプリセット選択はペンツール専用システムに移行しました。' +
-                            'ペンツールを選択してからご使用ください。');
-                    }
-                    break;
-                    
-                case 'r':
-                    if (!ctrlKey && !altKey && !metaKey) {
-                        this.showMigrationWarning('penKeyboardShortcuts',
-                            'Rキーでのリセット機能はペンツール専用システムに移行しました。' +
-                            'ペンツールを選択してからご使用ください。');
-                    }
-                    break;
-            }
+            // スロットリング・デバウンス設定
+            this.setupPerformanceHandlers();
+            
+            // コンテキスト監視開始
+            this.startContextMonitoring();
+            
+            this.debugLog('UIEventSystem', '汎用イベント処理初期化完了');
+            return true;
             
         } catch (error) {
-            this.handleError('keyboard', error);
+            logError(error, 'UIEventSystem.init');
+            throw createApplicationError('UIEventSystem初期化に失敗', { error });
         }
     }
     
     /**
-     * システム全体ショートカット処理
+     * 汎用キーボードイベント設定（ペン専用処理は除外）
      */
-    handleSystemShortcuts(key, event) {
-        const { ctrlKey, metaKey } = event;
-        const cmdCtrl = ctrlKey || metaKey;
+    setupGeneralKeyboardEvents() {
+        // キーダウン（汎用ショートカットのみ）
+        const keydownHandler = this.handleGeneralKeyDown.bind(this);
+        safeAddEventListener(document, 'keydown', keydownHandler);
+        this.eventListeners.set('keydown', keydownHandler);
         
-        if (cmdCtrl) {
-            switch (key) {
-                case 'z':
-                    this.handleUndo(event);
-                    break;
-                    
-                case 'y':
-                    this.handleRedo(event);
-                    break;
-                    
-                case 's':
-                    this.handleSave(event);
-                    break;
-                    
-                case 'o':
-                    this.handleOpen(event);
-                    break;
-                    
-                case 'n':
-                    this.handleNew(event);
-                    break;
-            }
-        }
+        // キーアップ
+        const keyupHandler = this.handleKeyUp.bind(this);
+        safeAddEventListener(document, 'keyup', keyupHandler);
+        this.eventListeners.set('keyup', keyupHandler);
+        
+        // フォーカス監視
+        this.setupFocusMonitoring();
+        
+        this.debugLog('UIEventSystem', '汎用キーボードイベント設定完了（ペン専用処理除外）');
     }
     
     /**
-     * 汎用ホイールイベント処理（STEP 5クリーンアップ版）
+     * 汎用ポインターイベント設定
      */
-    handleGlobalWheel(event) {
-        if (!this.isEnabled) return;
-        
-        try {
-            this.eventStats.wheelEvents++;
-            const { deltaY, ctrlKey, shiftKey } = event;
-            
-            // キャンバス上でのホイールイベントのみ処理
-            if (!this.isOverCanvas(event.target)) {
-                return;
-            }
-            
-            // Ctrlキー + ホイール: キャンバスズーム（汎用機能）
-            if (ctrlKey && !shiftKey) {
-                this.handleCanvasZoom(deltaY, event);
-                return;
-            }
-            
-            // Shiftキー + ホイール: 水平スクロール（汎用機能）
-            if (shiftKey && !ctrlKey) {
-                this.handleHorizontalScroll(deltaY, event);
-                return;
-            }
-            
-            // 修飾キーなし: 垂直スクロール（汎用機能）
-            if (!ctrlKey && !shiftKey) {
-                this.handleVerticalScroll(deltaY, event);
-                return;
-            }
-            
-            // STEP 5削除: ペンツール専用ホイールイベント
-            // 以前はここでペンサイズ・透明度調整を処理していたが、
-            // ペンツール専用システム（EventManager）に移行済み
-            if (ctrlKey || shiftKey) {
-                this.showMigrationWarning('penWheelEvents',
-                    'ペンサイズ・透明度のホイール調整はペンツール専用システムに移行しました。' +
-                    'ペンツールを選択してからCtrl+ホイール（サイズ）、Shift+ホイール（透明度）をご使用ください。');
-            }
-            
-        } catch (error) {
-            this.handleError('wheel', error);
-        }
-    }
-    
-    /**
-     * キャンバス上判定
-     */
-    isOverCanvas(target) {
-        return target.closest('#canvas-container') || 
-               target.closest('canvas') ||
-               target.id === 'canvas-container';
-    }
-    
-    /**
-     * キャンバスズーム処理（汎用）
-     */
-    handleCanvasZoom(deltaY, event) {
-        const zoomFactor = deltaY > 0 ? 0.9 : 1.1;
-        
-        if (this.app && this.app.stage) {
-            const currentScale = this.app.stage.scale.x;
-            const newScale = Math.max(0.1, Math.min(5.0, currentScale * zoomFactor));
-            
-            this.app.stage.scale.set(newScale);
-            
-            console.log(`🔍 キャンバスズーム: ${(newScale * 100).toFixed(1)}%`);
-        }
-        
-        event.preventDefault();
-    }
-    
-    /**
-     * 水平スクロール処理（汎用）
-     */
-    handleHorizontalScroll(deltaY, event) {
-        if (this.app && this.app.stage) {
-            this.app.stage.x += deltaY > 0 ? -20 : 20;
-            console.log(`↔️  水平スクロール: x=${this.app.stage.x}`);
-        }
-        
-        event.preventDefault();
-    }
-    
-    /**
-     * 垂直スクロール処理（汎用）
-     */
-    handleVerticalScroll(deltaY, event) {
-        if (this.app && this.app.stage) {
-            this.app.stage.y += deltaY > 0 ? -20 : 20;
-            console.log(`↕️  垂直スクロール: y=${this.app.stage.y}`);
-        }
-        
-        event.preventDefault();
-    }
-    
-    /**
-     * STEP 5新規: 移譲済み機能の警告表示
-     */
-    showMigrationWarning(warningType, message) {
-        // 同じ警告は1回だけ表示
-        if (this.migrationWarnings[warningType]) return;
-        
-        console.warn(`⚠️  機能移行: ${message}`);
-        
-        // UI通知（存在する場合）
-        if (window.uiManager && window.uiManager.showNotification) {
-            window.uiManager.showNotification(message, 'info', 5000);
-        }
-        
-        this.migrationWarnings[warningType] = true;
-    }
-    
-    // ==========================================
-    // 汎用イベント処理メソッド
-    // ==========================================
-    
-    /**
-     * ESCキー処理
-     */
-    handleEscapeKey(event) {
-        // モーダル・ポップアップを閉じる
-        const modal = document.querySelector('.modal:not(.hidden)');
-        if (modal) {
-            modal.classList.add('hidden');
-            event.preventDefault();
+    setupGeneralPointerEvents() {
+        if (!this.app || !this.app.view) {
+            console.warn('UIEventSystem: キャンバス要素が利用できません');
             return;
         }
         
-        const popup = document.querySelector('.popup:not(.hidden)');
-        if (popup) {
-            popup.classList.add('hidden');
-            event.preventDefault();
-            return;
-        }
+        const canvas = this.app.view;
         
-        // フルスクリーン解除
-        if (document.fullscreenElement) {
-            document.exitFullscreen();
-            event.preventDefault();
-        }
+        // ポインター移動（スロットリング）
+        const moveHandler = throttle(this.handlePointerMove.bind(this), 16); // 60fps
+        safeAddEventListener(canvas, 'pointermove', moveHandler);
+        this.throttledHandlers.set('pointermove', moveHandler);
+        
+        // ポインター入力（汎用処理）
+        const downHandler = this.handlePointerDown.bind(this);
+        safeAddEventListener(canvas, 'pointerdown', downHandler);
+        this.eventListeners.set('pointerdown', downHandler);
+        
+        const upHandler = this.handlePointerUp.bind(this);
+        safeAddEventListener(canvas, 'pointerup', upHandler);
+        this.eventListeners.set('pointerup', upHandler);
+        
+        // 汎用ホイール（キャンバスズーム・パンのみ）
+        const wheelHandler = this.handleGeneralWheel.bind(this);
+        safeAddEventListener(canvas, 'wheel', wheelHandler, { passive: false });
+        this.eventListeners.set('wheel', wheelHandler);
+        
+        this.debugLog('UIEventSystem', '汎用ポインターイベント設定完了');
     }
     
     /**
-     * F1キー（ヘルプ）処理
+     * ウィンドウイベント設定
      */
-    handleHelpKey(event) {
-        if (window.uiManager && window.uiManager.showHelp) {
-            window.uiManager.showHelp();
-            event.preventDefault();
-        }
+    setupWindowEvents() {
+        // リサイズ（デバウンス）
+        const resizeHandler = debounce(this.handleWindowResize.bind(this), 250);
+        safeAddEventListener(window, 'resize', resizeHandler);
+        this.debouncedHandlers.set('resize', resizeHandler);
+        
+        // ブラー・フォーカス
+        const blurHandler = this.handleWindowBlur.bind(this);
+        safeAddEventListener(window, 'blur', blurHandler);
+        this.eventListeners.set('blur', blurHandler);
+        
+        const focusHandler = this.handleWindowFocus.bind(this);
+        safeAddEventListener(window, 'focus', focusHandler);
+        this.eventListeners.set('focus', focusHandler);
+        
+        // ビジビリティ変更
+        const visibilityHandler = this.handleVisibilityChange.bind(this);
+        safeAddEventListener(document, 'visibilitychange', visibilityHandler);
+        this.eventListeners.set('visibilitychange', visibilityHandler);
+        
+        this.debugLog('UIEventSystem', 'ウィンドウイベント設定完了');
     }
     
     /**
-     * F11キー（フルスクリーン）処理
+     * 汎用ショートカット設定（ペン専用は除外）
      */
-    handleFullscreenKey(event) {
-        if (document.fullscreenElement) {
-            document.exitFullscreen();
-        } else {
-            document.documentElement.requestFullscreen();
-        }
-        event.preventDefault();
+    setupGeneralShortcuts() {
+        // システム全体ショートカット
+        this.registerShortcut('Ctrl+Z', 'undo', 'アンドゥ');
+        this.registerShortcut('Ctrl+Y', 'redo', 'リドゥ');
+        this.registerShortcut('Ctrl+Shift+Z', 'redo', 'リドゥ');
+        this.registerShortcut('Escape', 'closePopups', 'ポップアップ閉じる');
+        
+        // システム機能
+        this.registerShortcut('F1', 'showHelp', 'ヘルプ表示');
+        this.registerShortcut('F11', 'toggleFullscreen', 'フルスクリーン切り替え');
+        
+        // ツール切り替え（汎用）
+        this.registerShortcut('v', 'selectPenTool', 'ペンツール選択');
+        this.registerShortcut('e', 'selectEraserTool', '消しゴムツール選択');
+        
+        // 注意: P+数字、R、Shift+R、ホイール調整はEventManagerに移譲済み
+        
+        this.debugLog('UIEventSystem', '汎用ショートカット設定完了（ペン専用処理はEventManagerに移譲済み）');
     }
     
     /**
-     * Undo処理
+     * パフォーマンス最適化ハンドラ設定
      */
-    handleUndo(event) {
-        if (window.historyManager && window.historyManager.undo) {
-            window.historyManager.undo();
-            event.preventDefault();
-            console.log('↶ Undo実行');
-        }
+    setupPerformanceHandlers() {
+        // 座標更新スロットリング
+        this.throttledCoordinateUpdate = throttle((x, y) => {
+            if (this.uiManager && this.uiManager.statusBar) {
+                this.uiManager.statusBar.updateCoordinates(x, y);
+            }
+        }, 16); // 60fps
+        
+        // キーボード状態クリーンアップデバウンス
+        this.debouncedStateCleanup = debounce(() => {
+            this.cleanupKeyboardState();
+        }, 5000);
+        
+        this.debugLog('UIEventSystem', 'パフォーマンス最適化ハンドラ設定完了');
+    }
+    
+    // ==== フォーカス・コンテキスト監視 ====
+    
+    /**
+     * フォーカス監視設定
+     */
+    setupFocusMonitoring() {
+        // 入力フィールドフォーカス監視
+        const focusHandler = (event) => {
+            const target = event.target;
+            this.isInputFocused = target && (
+                target.tagName === 'INPUT' ||
+                target.tagName === 'TEXTAREA' ||
+                target.contentEditable === 'true'
+            );
+            
+            if (this.isInputFocused) {
+                this.debugLog('UIEventSystem', 'テキスト入力フォーカス検出 - ショートカット無効化');
+            }
+        };
+        
+        safeAddEventListener(document, 'focusin', focusHandler);
+        safeAddEventListener(document, 'focusout', focusHandler);
+        
+        this.eventListeners.set('focusin', focusHandler);
+        this.eventListeners.set('focusout', focusHandler);
     }
     
     /**
-     * Redo処理
+     * コンテキスト監視開始
      */
-    handleRedo(event) {
-        if (window.historyManager && window.historyManager.redo) {
-            window.historyManager.redo();
-            event.preventDefault();
-            console.log('↷ Redo実行');
-        }
+    startContextMonitoring() {
+        // ポップアップ状態監視
+        setInterval(() => {
+            this.updateContext();
+        }, 500);
+        
+        this.debugLog('UIEventSystem', 'コンテキスト監視開始');
     }
     
     /**
-     * 保存処理
+     * コンテキスト更新
      */
-    handleSave(event) {
-        if (window.uiManager && window.uiManager.saveCanvas) {
-            window.uiManager.saveCanvas();
-            event.preventDefault();
-            console.log('💾 保存実行');
-        }
-    }
-    
-    /**
-     * 開く処理
-     */
-    handleOpen(event) {
-        if (window.uiManager && window.uiManager.openFile) {
-            window.uiManager.openFile();
-            event.preventDefault();
-            console.log('📁 ファイル開く実行');
-        }
-    }
-    
-    /**
-     * 新規作成処理
-     */
-    handleNew(event) {
-        if (window.uiManager && window.uiManager.newCanvas) {
-            window.uiManager.newCanvas();
-            event.preventDefault();
-            console.log('📄 新規作成実行');
-        }
-    }
-    
-    // ==========================================
-    // タッチイベント処理（汎用）
-    // ==========================================
-    
-    handleTouchStart(event) {
-        this.eventStats.touchEvents++;
-        // タッチ処理の実装（将来拡張）
-    }
-    
-    handleTouchMove(event) {
-        // タッチ移動処理（将来拡張）
-    }
-    
-    handleTouchEnd(event) {
-        // タッチ終了処理（将来拡張）
-    }
-    
-    // ==========================================
-    // ウィンドウイベント処理
-    // ==========================================
-    
-    handleWindowResize(event) {
-        if (this.app && this.app.renderer) {
-            // キャンバスリサイズ
-            const container = document.getElementById('canvas-container');
-            if (container) {
-                this.app.renderer.resize(container.clientWidth, container.clientHeight);
-                console.log(`🔄 キャンバスリサイズ: ${container.clientWidth}x${container.clientHeight}`);
+    updateContext() {
+        let newContext = 'default';
+        
+        // ポップアップ表示中
+        if (this.uiManager && this.uiManager.popupManager) {
+            const popupStatus = this.uiManager.popupManager.getStatus();
+            if (popupStatus && popupStatus.activeCount > 0) {
+                newContext = 'popup';
             }
         }
-    }
-    
-    handleBeforeUnload(event) {
-        // 未保存の変更がある場合の警告
-        if (window.historyManager && window.historyManager.hasUnsavedChanges && 
-            window.historyManager.hasUnsavedChanges()) {
-            event.preventDefault();
-            event.returnValue = '未保存の変更があります。本当にページを離れますか？';
-        }
-    }
-    
-    // ==========================================
-    // ユーティリティ・デバッグ
-    // ==========================================
-    
-    /**
-     * エラーハンドリング
-     */
-    handleError(context, error) {
-        this.eventStats.errors++;
-        console.error(`UIEventSystem ${context} error:`, error);
         
-        // 重大エラーの場合はシステム無効化
-        if (this.eventStats.errors > 100) {
-            console.warn('UIEventSystem: 大量エラー発生のため無効化します');
-            this.isEnabled = false;
+        // 描画中
+        if (this.toolsSystem && this.toolsSystem.isDrawing && this.toolsSystem.isDrawing()) {
+            newContext = 'drawing';
+        }
+        
+        if (newContext !== this.currentContext) {
+            this.currentContext = newContext;
+            this.debugLog('UIEventSystem', `コンテキスト変更: ${newContext}`);
+        }
+    }
+    
+    // ==== イベントハンドラ群（汎用処理のみ） ====
+    
+    /**
+     * 汎用キー押下処理（ペン専用処理は除外）
+     */
+    handleGeneralKeyDown(event) {
+        if (!this.isEnabled || this.isInputFocused) return;
+        
+        try {
+            const key = this.normalizeKey(event.key);
+            const modifiers = this.getModifiers(event);
+            
+            // キー状態記録
+            this.keyboardState.set(key, {
+                pressed: true,
+                modifiers,
+                timestamp: Date.now()
+            });
+            
+            // 汎用ショートカット処理のみ
+            const shortcutKey = this.buildShortcutKey(key, modifiers);
+            if (this.handleGeneralShortcut(shortcutKey, event)) {
+                event.preventDefault();
+                return;
+            }
+            
+        } catch (error) {
+            logError(error, 'UIEventSystem.handleGeneralKeyDown');
         }
     }
     
     /**
-     * イベントシステム有効/無効制御
+     * キー離上処理
+     */
+    handleKeyUp(event) {
+        if (!this.isEnabled) return;
+        
+        try {
+            const key = this.normalizeKey(event.key);
+            
+            // キー状態更新
+            if (this.keyboardState.has(key)) {
+                const state = this.keyboardState.get(key);
+                state.pressed = false;
+                state.timestamp = Date.now();
+            }
+            
+            // 状態クリーンアップ（デバウンス）
+            this.debouncedStateCleanup();
+            
+        } catch (error) {
+            logError(error, 'UIEventSystem.handleKeyUp');
+        }
+    }
+    
+    /**
+     * ポインター移動処理
+     */
+    handlePointerMove(event) {
+        if (!this.isEnabled) return;
+        
+        try {
+            const rect = event.target.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            
+            // 座標更新（スロットリング済み）
+            this.throttledCoordinateUpdate(x, y);
+            
+        } catch (error) {
+            logError(error, 'UIEventSystem.handlePointerMove');
+        }
+    }
+    
+    /**
+     * ポインター押下処理
+     */
+    handlePointerDown(event) {
+        if (!this.isEnabled) return;
+        
+        try {
+            // ポップアップ外クリック時は閉じる
+            if (!event.target.closest('.popup-panel')) {
+                if (this.uiManager && this.uiManager.hideAllPopups) {
+                    this.uiManager.hideAllPopups();
+                }
+            }
+            
+            this.debugLog('UIEventSystem', 'ポインター押下');
+            
+        } catch (error) {
+            logError(error, 'UIEventSystem.handlePointerDown');
+        }
+    }
+    
+    /**
+     * ポインター離上処理
+     */
+    handlePointerUp(event) {
+        if (!this.isEnabled) return;
+        
+        try {
+            this.debugLog('UIEventSystem', 'ポインター離上');
+            
+        } catch (error) {
+            logError(error, 'UIEventSystem.handlePointerUp');
+        }
+    }
+    
+    /**
+     * 汎用ホイール処理（キャンバスズーム・パンのみ、ペン調整は除外）
+     */
+    handleGeneralWheel(event) {
+        if (!this.isEnabled || this.isInputFocused) return;
+        
+        try {
+            // 注意: ペン専用のCtrl+ホイール（サイズ）、Shift+ホイール（透明度）は
+            // EventManagerに移譲済み。ここでは汎用処理のみ
+            
+            // 汎用キャンバスズーム（将来実装時）
+            if (event.altKey) {
+                // Alt+ホイール: キャンバスズーム
+                event.preventDefault();
+                this.debugLog('UIEventSystem', 'キャンバスズーム（将来実装）');
+                return;
+            }
+            
+            // 汎用パン操作（将来実装時）
+            if (event.ctrlKey && event.altKey) {
+                // Ctrl+Alt+ホイール: キャンバスパン
+                event.preventDefault();
+                this.debugLog('UIEventSystem', 'キャンバスパン（将来実装）');
+                return;
+            }
+            
+        } catch (error) {
+            logError(error, 'UIEventSystem.handleGeneralWheel');
+        }
+    }
+    
+    /**
+     * ウィンドウリサイズ処理
+     */
+    handleWindowResize() {
+        try {
+            if (this.uiManager && this.uiManager.hideAllPopups) {
+                this.uiManager.hideAllPopups();
+            }
+            
+            this.debugLog('UIEventSystem', 'ウィンドウリサイズ処理');
+            
+        } catch (error) {
+            logError(error, 'UIEventSystem.handleWindowResize');
+        }
+    }
+    
+    /**
+     * ウィンドウブラー処理
+     */
+    handleWindowBlur() {
+        try {
+            // キーボード状態クリア
+            this.keyboardState.clear();
+            
+            this.debugLog('UIEventSystem', 'ウィンドウブラー - 状態クリア');
+            
+        } catch (error) {
+            logError(error, 'UIEventSystem.handleWindowBlur');
+        }
+    }
+    
+    /**
+     * ウィンドウフォーカス処理
+     */
+    handleWindowFocus() {
+        try {
+            this.debugLog('UIEventSystem', 'ウィンドウフォーカス復帰');
+            
+        } catch (error) {
+            logError(error, 'UIEventSystem.handleWindowFocus');
+        }
+    }
+    
+    /**
+     * ビジビリティ変更処理
+     */
+    handleVisibilityChange() {
+        try {
+            if (document.hidden) {
+                // ページ非表示時は状態クリア
+                this.keyboardState.clear();
+                
+                this.debugLog('UIEventSystem', 'ページ非表示 - 状態クリア');
+            } else {
+                this.debugLog('UIEventSystem', 'ページ表示復帰');
+            }
+            
+        } catch (error) {
+            logError(error, 'UIEventSystem.handleVisibilityChange');
+        }
+    }
+    
+    // ==== ショートカット処理（汎用のみ） ====
+    
+    /**
+     * ショートカット登録
+     */
+    registerShortcut(keyCombo, action, description) {
+        this.shortcutSequences.set(keyCombo.toLowerCase(), {
+            action,
+            description,
+            type: 'shortcut'
+        });
+        
+        this.debugLog('UIEventSystem', `汎用ショートカット登録: ${keyCombo} → ${action}`);
+    }
+    
+    /**
+     * 汎用ショートカット処理（ペン専用は除外）
+     */
+    handleGeneralShortcut(shortcutKey, event) {
+        if (!this.shortcutSequences.has(shortcutKey)) {
+            return false;
+        }
+        
+        const shortcut = this.shortcutSequences.get(shortcutKey);
+        
+        // ペン専用ショートカットの移譲案内
+        if (this.isPenSpecificShortcut(shortcutKey)) {
+            console.warn(`🔄 ショートカット "${shortcutKey}" はEventManagerに移譲済みです。ペンツール選択時に使用してください。`);
+            return false;
+        }
+        
+        if (shortcut.type !== 'shortcut') {
+            return false;
+        }
+        
+        return this.executeGeneralAction(shortcut.action, shortcut.params || {}, event);
+    }
+    
+    /**
+     * ペン専用ショートカット判定（移譲案内用）
+     */
+    isPenSpecificShortcut(shortcutKey) {
+        const penShortcuts = ['r', 'shift+r'];
+        return penShortcuts.includes(shortcutKey.toLowerCase());
+    }
+    
+    /**
+     * 汎用アクション実行（ペン専用は除外）
+     */
+    executeGeneralAction(action, params = {}, event = null) {
+        try {
+            this.debugLog('UIEventSystem', `汎用アクション実行: ${action}`, params);
+            
+            switch (action) {
+                case 'undo':
+                    return this.actionUndo();
+                    
+                case 'redo':
+                    return this.actionRedo();
+                    
+                case 'closePopups':
+                    return this.actionClosePopups();
+                    
+                case 'selectPenTool':
+                    return this.actionSelectTool('pen');
+                    
+                case 'selectEraserTool':
+                    return this.actionSelectTool('eraser');
+                    
+                case 'showHelp':
+                    return this.actionShowHelp();
+                    
+                case 'toggleFullscreen':
+                    return this.actionToggleFullscreen();
+                    
+                // 移譲済みアクションの案内
+                case 'resetActivePreset':
+                case 'resetAllPresets':
+                case 'selectPreset':
+                    console.warn(`🔄 アクション "${action}" はEventManagerに移譲済みです。ペンツール選択時に使用してください。`);
+                    return false;
+                    
+                default:
+                    console.warn(`UIEventSystem: 未知の汎用アクション: ${action}`);
+                    return false;
+            }
+            
+        } catch (error) {
+            logError(error, `UIEventSystem.executeGeneralAction(${action})`);
+            return false;
+        }
+    }
+    
+    // ==== 汎用アクション実装群 ====
+    
+    actionUndo() {
+        if (!this.uiManager || !this.uiManager.canUndo || !this.uiManager.canUndo()) {
+            return false;
+        }
+        
+        const success = this.uiManager.undo();
+        if (success && this.uiManager.showNotification) {
+            this.uiManager.showNotification('元に戻しました', 'info', 1500);
+        }
+        return success;
+    }
+    
+    actionRedo() {
+        if (!this.uiManager || !this.uiManager.canRedo || !this.uiManager.canRedo()) {
+            return false;
+        }
+        
+        const success = this.uiManager.redo();
+        if (success && this.uiManager.showNotification) {
+            this.uiManager.showNotification('やり直しました', 'info', 1500);
+        }
+        return success;
+    }
+    
+    actionClosePopups() {
+        if (!this.uiManager || !this.uiManager.hideAllPopups) {
+            return false;
+        }
+        
+        this.uiManager.hideAllPopups();
+        return true;
+    }
+    
+    actionSelectTool(toolName) {
+        if (!this.uiManager || !this.uiManager.setActiveTool) {
+            return false;
+        }
+        
+        const success = this.uiManager.setActiveTool(toolName);
+        if (success && this.uiManager.showNotification) {
+            const toolNames = { 'pen': 'ペンツール', 'eraser': '消しゴムツール' };
+            this.uiManager.showNotification(`${toolNames[toolName] || toolName}に切り替えました`, 'info', 1500);
+        }
+        return success;
+    }
+    
+    actionShowHelp() {
+        // ヘルプ表示（将来実装）
+        console.log('ヘルプ表示（将来実装）');
+        if (this.uiManager && this.uiManager.showNotification) {
+            this.uiManager.showNotification('ヘルプ機能は今後実装予定です', 'info', 2000);
+        }
+        return true;
+    }
+    
+    actionToggleFullscreen() {
+        // フルスクリーン切り替え（将来実装）
+        console.log('フルスクリーン切り替え（将来実装）');
+        if (this.uiManager && this.uiManager.showNotification) {
+            this.uiManager.showNotification('フルスクリーン機能は今後実装予定です', 'info', 2000);
+        }
+        return true;
+    }
+    
+    // ==== ユーティリティメソッド ====
+    
+    /**
+     * キーの正規化
+     */
+    normalizeKey(key) {
+        // 特殊キーの統一
+        const keyMap = {
+            ' ': 'Space',
+            'ArrowUp': 'Up',
+            'ArrowDown': 'Down',
+            'ArrowLeft': 'Left',
+            'ArrowRight': 'Right',
+            'Delete': 'Del'
+        };
+        
+        return keyMap[key] || key;
+    }
+    
+    /**
+     * 修飾キー取得
+     */
+    getModifiers(event) {
+        return {
+            ctrl: event.ctrlKey,
+            shift: event.shiftKey,
+            alt: event.altKey,
+            meta: event.metaKey
+        };
+    }
+    
+    /**
+     * ショートカットキー構築
+     */
+    buildShortcutKey(key, modifiers) {
+        const parts = [];
+        
+        if (modifiers.ctrl) parts.push('Ctrl');
+        if (modifiers.shift) parts.push('Shift');
+        if (modifiers.alt) parts.push('Alt');
+        if (modifiers.meta) parts.push('Meta');
+        
+        parts.push(key);
+        
+        return parts.join('+').toLowerCase();
+    }
+    
+    /**
+     * キーボード状態クリーンアップ
+     */
+    cleanupKeyboardState() {
+        const now = Date.now();
+        const maxAge = 10000; // 10秒
+        
+        for (const [key, state] of this.keyboardState) {
+            if (now - state.timestamp > maxAge) {
+                this.keyboardState.delete(key);
+            }
+        }
+        
+        if (this.keyboardState.size === 0) {
+            this.debugLog('UIEventSystem', 'キーボード状態クリーンアップ完了');
+        }
+    }
+    
+    /**
+     * デバッグログ出力
+     */
+    debugLog(category, message, data = null) {
+        if (this.debugMode && window.debugLog) {
+            debugLog(category, message, data);
+        } else if (this.debugMode) {
+            console.log(`🔧 [${category}]`, message, data || '');
+        }
+    }
+    
+    // ==== システム管理・統計 ====
+    
+    /**
+     * システム統計取得
+     */
+    getSystemStats() {
+        return {
+            isEnabled: this.isEnabled,
+            currentContext: this.currentContext,
+            isInputFocused: this.isInputFocused,
+            keyboardState: {
+                activeKeys: this.keyboardState.size,
+                keys: Array.from(this.keyboardState.keys())
+            },
+            shortcuts: {
+                registered: this.shortcutSequences.size,
+                list: Array.from(this.shortcutSequences.keys())
+            },
+            eventListeners: {
+                registered: this.eventListeners.size + this.throttledHandlers.size + this.debouncedHandlers.size,
+                types: [
+                    ...Array.from(this.eventListeners.keys()),
+                    ...Array.from(this.throttledHandlers.keys()),
+                    ...Array.from(this.debouncedHandlers.keys())
+                ]
+            }
+        };
+    }
+    
+    /**
+     * システムデバッグ情報表示
+     */
+    debugSystem() {
+        console.group('🔍 UIEventSystem デバッグ情報（汎用処理専用版）');
+        
+        const stats = this.getSystemStats();
+        console.log('基本情報:', {
+            enabled: stats.isEnabled,
+            context: stats.currentContext,
+            inputFocused: stats.isInputFocused
+        });
+        
+        console.log('キーボード状態:', stats.keyboardState);
+        console.log('ショートカット:', stats.shortcuts);
+        console.log('イベントリスナー:', stats.eventListeners);
+        
+        console.groupEnd();
+    }
+    
+    /**
+     * ショートカット一覧表示（汎用のみ）
+     */
+    listShortcuts() {
+        console.group('⌨️ 汎用ショートカット一覧（ペン専用は除外）');
+        
+        for (const [key, shortcut] of this.shortcutSequences) {
+            console.log(`⚡ ${key} → ${shortcut.action} (${shortcut.description})`);
+        }
+        
+        console.log('');
+        console.log('📝 移譲済み（EventManagerに移管）:');
+        console.log('  🎨 P+1〜5: プリセット選択');
+        console.log('  🔄 R: アクティブプリセットリセット');
+        console.log('  🔄 Shift+R: 全プリセットリセット');
+        console.log('  📏 Ctrl+ホイール: ペンサイズ調整');
+        console.log('  🌫️ Shift+ホイール: 透明度調整');
+        
+        console.groupEnd();
+    }
+    
+    /**
+     * システム有効化/無効化
      */
     setEnabled(enabled) {
+        const wasEnabled = this.isEnabled;
         this.isEnabled = enabled;
-        console.log(`🎮 UIEventSystem ${enabled ? '有効' : '無効'}`);
-    }
-    
-    /**
-     * 統計情報取得
-     */
-    getEventStats() {
-        return {
-            ...this.eventStats,
-            enabled: this.isEnabled,
-            migrationWarnings: { ...this.migrationWarnings }
-        };
-    }
-    
-    /**
-     * システム状況取得
-     */
-    getStatus() {
-        return {
-            enabled: this.isEnabled,
-            stats: this.getEventStats(),
-            features: {
-                globalKeyboard: true,
-                globalWheel: true,
-                touchEvents: true,
-                windowEvents: true,
-                penSpecificEvents: false  // STEP 5で移譲済み
-            },
-            migration: {
-                penKeyboardShortcuts: 'EventManager（ペンツール専用システム）',
-                penWheelEvents: 'EventManager（ペンツール専用システム）'
+        
+        if (wasEnabled !== enabled) {
+            if (!enabled) {
+                // 無効化時は状態クリア
+                this.keyboardState.clear();
             }
-        };
+            
+            this.debugLog('UIEventSystem', `汎用システム${enabled ? '有効化' : '無効化'}`);
+        }
     }
     
     /**
      * クリーンアップ
      */
     destroy() {
-        this.isEnabled = false;
-        console.log('🧹 UIEventSystem クリーンアップ完了（汎用イベント処理）');
+        try {
+            this.debugLog('UIEventSystem', '汎用イベントシステム クリーンアップ開始');
+            
+            // イベントリスナー削除
+            for (const [eventType, handler] of this.eventListeners) {
+                document.removeEventListener(eventType, handler);
+            }
+            
+            for (const [eventType, handler] of this.throttledHandlers) {
+                if (this.app && this.app.view) {
+                    this.app.view.removeEventListener(eventType, handler);
+                }
+            }
+            
+            for (const [eventType, handler] of this.debouncedHandlers) {
+                window.removeEventListener(eventType, handler);
+            }
+            
+            // 状態クリア
+            this.keyboardState.clear();
+            this.shortcutSequences.clear();
+            this.eventListeners.clear();
+            this.throttledHandlers.clear();
+            this.debouncedHandlers.clear();
+            
+            // 参照クリア
+            this.app = null;
+            this.toolsSystem = null;
+            this.uiManager = null;
+            
+            this.debugLog('UIEventSystem', '汎用イベントシステム クリーンアップ完了');
+            
+        } catch (error) {
+            logError(error, 'UIEventSystem.destroy');
+        }
     }
 }
 
-// グローバル公開（既存システムとの互換性）
+// ==== グローバル登録（ES6 export削除版）====
 if (typeof window !== 'undefined') {
     window.UIEventSystem = UIEventSystem;
+    
+    console.log('✅ ui/ui-events.js Phase2D修正版 読み込み完了');
+    console.log('📦 エクスポートクラス（汎用イベント処理専用）:');
+    console.log('  ✅ UIEventSystem: 汎用UIイベント処理システム');
+    console.log('🔧 STEP 5移譲後の責務:');
+    console.log('  ✅ 汎用キーボードショートカット（Ctrl+Z/Y, Esc, F1, F11等）');
+    console.log('  ✅ 汎用ホイール処理（キャンバスズーム・パン等）');
+    console.log('  ✅ 汎用ポインター処理（座標追跡等）');
+    console.log('  ✅ ウィンドウイベント（リサイズ・フォーカス等）');
+    console.log('  ❌ ペンツール専用処理（EventManagerに移譲完了）');
+    console.log('🎯 責務: 汎用UIイベント処理（ツール非依存）');
+    console.log('🏗️ ES6 export削除: 既存JavaScript + fetch API形式互換');
+    console.log('🔄 移譲完了項目:');
+    console.log('  📝 P+数字プリセット選択 → EventManager');
+    console.log('  📝 R/Shift+R リセット → EventManager');
+    console.log('  📝 Ctrl/Shift+ホイール調整 → EventManager');
+    console.log('🚀 汎用機能:');
+    console.log('  ⌨️ システムショートカット: Ctrl+Z(undo), Ctrl+Y(redo), Esc(close)');
+    console.log('  🔧 システム機能: F1(help), F11(fullscreen), V(pen), E(eraser)');
+    console.log('  🖱️ 汎用ポインター: 座標追跡、ポップアップ外クリック検出');
+    console.log('  🎛️ 汎用ホイール: Alt+ホイール（ズーム）、Ctrl+Alt+ホイール（パン）');
 }
-
-export { UIEventSystem };
