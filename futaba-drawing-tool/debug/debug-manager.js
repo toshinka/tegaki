@@ -800,4 +800,13 @@ if (typeof window !== 'undefined') {
     console.log('  ✅ window.testSystem() - システム統合テスト（main.jsから移管・拡張）');
     console.log('  ✅ window.emergencyDiagnosis() - 緊急診断（main.jsから移管）');
     console.log('  ✅ window.debugComponent() - 個別コンポーネントデバッグ（新規）');
-    console.log('  ✅ window.generateDebug
+    console.log('  ✅ window.generateDebugReport() - デバッグレポート生成（新規）');
+    console.log('  ✅ window.runSystemTests() - システムテスト実行（新規）');
+}
+
+console.log('🎯 Phase2F改修効果:');
+console.log('  🔧 main.jsから約500行のデバッグコード分離');
+console.log('  🏗️ DRY・SOLID原則準拠設計');
+console.log('  🧪 統合テストシステム強化');
+console.log('  📊 コンポーネント統計・レポート機能');
+console.log('  🔗 外部システム連携（診断・監視）');
