@@ -1,84 +1,157 @@
-# 📄 PixiJS v8 Migration Design Notes (Supplement to Rulebook)
+# 📄 PixiJS v8 Migration Design Notes for Futaba Drawing Tool (Supplement to Rulebook)
 
-This document is an additional chapter for the **JavaScript + PixiJS v7 Rulebook**.  
-Its purpose is to ensure smooth migration from PixiJS v7 to v8, especially for projects aiming to add GIF animation mode, deformers (Live2D/SPINE-like), and mesh-based transformations.
+This document is an updated supplement to the **JavaScript + PixiJS v7 Rulebook** for the Futaba Drawing Tool project (Phase0).  
+Its purpose is to ensure smooth migration from PixiJS v7 to v8, tailored to the current drawing application focusing on pen/eraser tools, history management, UI, and performance monitoring. It prepares for future additions like layers, while incorporating preparations for TypeScript migration. Based on official PixiJS v8 migration guide (as of 2025).
 
 ---
 
 ## 1. Core Principles for v8 Readiness
 
 1. **Centralize PixiJS API Calls**  
-   - All PixiJS rendering, mesh creation, and texture loading should be handled in the `Core` layer (e.g., `PixiDrawingApp`).  
-   - Avoid direct `PIXI.*` calls inside UI or tool modules.
+   - All PixiJS rendering, graphics drawing, texture handling, and event setup should be confined to the `app-core.js` (PixiDrawingApp).  
+   - Avoid direct `PIXI.*` calls in `drawing-tools/`, `ui/`, or other modules like `history-manager.js`.
 
-2. **Abstract Rendering Logic**  
-   - Create wrapper methods for drawing shapes, adding/removing objects, and applying filters.  
+2. **Abstract Rendering and Event Logic**  
+   - Create wrapper methods in `app-core.js` for drawing operations (e.g., line drawing with Graphics), adding/removing objects, and handling pointer events.  
    - Example:
      ```js
-     // Core abstraction
-     addToStage(displayObject) { this.stage.addChild(displayObject); }
+     // In app-core.js
+     drawLine(graphics, fromX, fromY, toX, toY) {
+       graphics.moveTo(fromX, fromY).lineTo(toX, toY);
+     }
      ```
 
-3. **Separate Logic and Rendering**  
-   - Tool logic (`DrawingToolsSystem`) should never depend on specific Pixi v7 classes.  
-   - Pass only abstracted methods or interfaces.
+3. **Separate Tool Logic from Rendering**  
+   - `drawing-tools/core/` (e.g., `drawing-tools-system.js`, `tool-manager.js`) should handle abstract data (points, states) and pass to core wrappers. No direct Pixi dependencies.  
+   - This eases v8 Graphics API changes and TypeScript typing.
 
-4. **Define Geometry & Mesh Interfaces**  
-   - All custom mesh/deformer logic should have clear vertex data structures and update methods.  
-   - Keep them independent from the current Pixi `Mesh` class to allow swapping to v8's new Mesh API.
+4. **Define Interfaces for Key Components**  
+   - Prepare for TypeScript by defining loose interfaces for tools, history snapshots, and UI events.  
+   - Keep geometry (e.g., paths in PenTool) independent of Pixi Graphics for easy swapping to v8's new GraphicsContext.
+
+5. **Performance and Debugging Abstraction**  
+   - Wrap ticker, renderer options, and performance monitors (`performance-logger.js`) to handle v8 changes like ticker callbacks.
 
 ---
 
 ## 2. Known API Changes (v7 → v8)
 
+Based on official PixiJS v8 migration guide. Focused on relevant areas for this drawing tool (Graphics for pen/eraser, Application, Events, Textures for history snapshots, Rendering).
+
 | Area                  | v7 Approach                           | v8 Approach                                | Migration Tip |
-|-----------------------|----------------------------------------|---------------------------------------------|--------------|
-| Application Init      | `new PIXI.Application({ ... })`       | Mostly same, but config keys may change     | Wrap in a factory method |
-| Graphics API          | `graphics.drawCircle()` etc.          | Mostly same, minor param changes possible   | Keep all Graphics calls in one helper |
-| Mesh                  | `PIXI.SimpleMesh` / `PIXI.Mesh`        | New Mesh system with better attribute binding | Use wrapper class for mesh creation |
-| Textures              | `PIXI.Texture.from()`                 | Still valid, new loader optimizations       | Centralize all texture creation |
-| Filters               | `new PIXI.Filter()`                   | Still valid, uniform binding changes        | Abstract filter creation and assignment |
+|-----------------------|---------------------------------------|--------------------------------------------|--------------|
+| Application Init      | `new PIXI.Application({ ... })`       | Async: `await app.init({ options })`      | Wrap init in async function in `main.js`. Update for WebGPU if needed. |
+| Graphics API          | `graphics.beginFill().drawRect()` etc.| New syntax: `graphics.rect().fill()`      | Refactor all drawing in `pen-tool.js` and `eraser-tool.js` via wrappers. Test lineTo/moveTo. |
+| Textures              | `PIXI.Texture.from(canvas)`           | Pre-load with `Assets.load`, use `Texture.from(source)` | Update `history-manager.js` snapshots; centralize in new `TextureManager`. |
+| Events                | Pointer events with `interaction`     | Default `passive` mode; minor handler changes | Check `drawing-tools-system.js` for pointerdown/move/up. Use wrappers. |
+| Rendering Settings    | `PIXI.settings.RENDER_OPTIONS`        | Removed; use `app.renderer.options`       | Move all configs from `config.js` to app init options. |
+| Ticker Callback       | Callback gets deltaTime               | Gets `Ticker` instance; access `deltaTime`| Update any animation/ticker in `app-core.js` or performance monitors. |
+| Filters (if added)    | `new PIXI.Filter()`                   | New shader structure with resources       | Prepare for future eraser/filters; abstract creation. |
+| Meshes (future)       | `PIXI.Mesh`                           | Renamed classes like `MeshSimple`         | Not used yet, but prepare wrappers for layer deformations if planned. |
+
+New Features Relevant:
+- WebGPU support: Improves rendering performance for high-res drawing; enable in app init.
+- Simplified Graphics: Better for vector paths in pen tool.
+- TypeScript Improvements: Better typing for Application/Renderer; use for safer code.
 
 ---
 
 ## 3. Suggested File/Module Structure for Migration
 
-```
-src/
-  core/
-    PixiDrawingApp.js       // All Pixi init & rendering API
-    MeshManager.js          // Mesh creation & deformation
-    TextureManager.js       // Texture loading & caching
-  tools/
-    DrawingToolsSystem.js   // Tool logic (no direct Pixi API)
-    PenTool.js
-    EraserTool.js
+Adapt current Phase0 structure for v8 and TypeScript readiness. Add new files for abstraction.
+
+
+
+v1rev12_Phase0/
+  index.html
+  main.js                 // Async init, dependency checks
+  styles.css
+  config.js               // Renderer options here
+  utils.js
+  app-core.js             // PixiDrawingApp: All Pixi API, wrappers for drawing/events
+  drawing-tools.js        // Entry for tools
+  drawing-tools/
+    core/
+      base-tool.js        // Abstract tool interface
+      drawing-tools-system.js
+      tool-manager.js
+    tools/
+      pen-tool.js         // Logic only, call core wrappers
+      eraser-tool.js
+    ui/
+      pen-tool-ui.js
+      components/
+        ...
+  ui-manager.js           // UI logic, no Pixi
   ui/
-    UIManager.js            // UI logic only
-    panels/
-    controls/
-  utils/
-    geometryUtils.js
-    colorUtils.js
-```
+    PresetManager.js
+    components.js
+    performance-monitor.js
+    ui-events.js
+    preview-manager.js
+  history-manager.js      // Use texture wrappers for snapshots
+  settings-manager.js
+  debug/
+    ...
+  monitoring/
+    system-monitor.js
+  // New for migration:
+  core/                   // Optional subdir if growing
+    TextureManager.js     // Central texture handling
+    EventWrapper.js       // Abstract events
+
+
+
+For TypeScript: Rename to .ts, add `types/` for interfaces (e.g., ITool, IDrawingApp).
 
 ---
 
 ## 4. Migration Checklist
 
-- [ ] No direct `PIXI.*` calls in `ui/` or `tools/` directories.
-- [ ] All rendering API calls in `core/` only.
-- [ ] Mesh and geometry updates use wrapper functions.
-- [ ] Textures and assets loaded only via `TextureManager`.
-- [ ] Filters created only via centralized factory.
+- [ ] Update imports to single `pixi.js` package (if using modules).
+- [ ] Make app init async in `main.js`.
+- [ ] Refactor Graphics drawing in tools to use v8 syntax via wrappers in `app-core.js`.
+- [ ] Centralize texture creation (e.g., for history) in new TextureManager.
+- [ ] No direct `PIXI.*` in `drawing-tools/`, `ui/`, or `history-manager.js`.
+- [ ] Test pointer events and performance post-migration.
+- [ ] For TypeScript prep: Add tsconfig.json, define interfaces for classes (e.g., in `app-core.ts`: interface IPixiDrawingApp).
 
 ---
 
-## 5. When to Migrate to v8
+## 5. Preparing for TypeScript Migration
 
-Recommended timing:
-1. **After GIF Animation Mode is stable** (v7)  
-2. Before adding **Live2D/SPINE-like deformers**  
-3. Use this document + Rulebook + Symbol Dictionary for AI-assisted migration.
+To align with v8's improved TypeScript support:
+
+1. **Setup tsconfig.json**  
+   - Use strict mode: `"strict": true`, target ES2023.
+   - Include PixiJS types: Install `@pixi/*` or use `pixi.js` types.
+
+2. **Define Interfaces**  
+   - For tools: `interface IBaseTool { activate(): void; onPointerDown(event: PointerEvent): void; }`
+   - For core: `interface IDrawingApp { drawLine(graphics: PIXI.Graphics, ...): void; }`
+   - Use Symbol Dictionary to name types consistently.
+
+3. **Gradual Typing**  
+   - Start with `main.ts`, add types to classes (e.g., extend PIXI.Application).
+   - Avoid `any`; use unions for flexible params.
+   - Test: Compile to JS, ensure no runtime changes initially.
+
+4. **Integration with v8**  
+   - Leverage v8's better renderer typing (e.g., `Application<WebGLRenderer>`).
+   - Type wrappers: Make abstract methods typed for safety.
+
+Migrate TypeScript first, then v8, as per previous analysis.
 
 ---
+
+## 6. When to Migrate to v8
+
+Recommended timing (aligned with project phases):
+1. **After Phase0 stabilization** (current basic tools).  
+2. **Before adding layers** (Phase1) to leverage v8 performance for multi-layer rendering.  
+3. After TypeScript migration for type-safe updates.  
+4. Use this document + Rulebook + Symbol Dictionary for AI-assisted code conversion.
+
+---
+
+

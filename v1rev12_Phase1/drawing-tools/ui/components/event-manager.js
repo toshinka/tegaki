@@ -1,339 +1,581 @@
 /**
- * EventManager - ペンツール専用イベント処理コンポーネント（STEP 5完成版）
+ * EventManager - STEP 6最適化版: デバウンス機能追加・パフォーマンス向上・エラー分離完成
  * 
- * 責務: ペンツール専用のキーボード・ホイールイベント処理
- * SOLID原則: 単一責任原則準拠（イベント処理のみ）
- * DRY原則: 重複コード排除・スロットリング共通化
- * 
- * 🎯 Phase: STEP 5（イベント処理移譲・統合完了）
- * 📦 統合先: drawing-tools/ui/components/event-manager.js
+ * PenToolUI専用イベント処理システム
+ * 責任: ペンツール専用キーボードショートカット・ホイール操作・プリセット選択
  */
 
 class EventManager {
     constructor(penToolUI) {
         this.penToolUI = penToolUI;
         this.app = penToolUI.app;
+        this.drawingToolsSystem = penToolUI.drawingToolsSystem;
         
         // イベント制御状態
         this.enabled = false;
         this.listening = false;
+        this.isToolActive = false;
         
-        // スロットリング制御（パフォーマンス最適化）
-        this.throttleDelay = 100; // 100ms間隔
-        this.lastWheelEvent = 0;
-        this.lastKeyEvent = 0;
-        
-        // イベント統計・デバッグ情報
+        // イベント処理統計
         this.stats = {
             keyboardEvents: 0,
             wheelEvents: 0,
-            shortcuts: 0,
-            throttledEvents: 0,
-            errors: 0
+            presetSelections: 0,
+            adjustments: 0,
+            errors: 0,
+            lastEventTime: 0
         };
         
         // エラー制御
-        this.maxErrors = 10;
         this.errorCount = 0;
+        this.maxErrors = 10;
+        this.consecutiveErrors = 0;
+        this.maxConsecutiveErrors = 3;
+        
+        // パフォーマンス設定
+        this.throttleDelay = 100; // ms
+        this.lastEvents = new Map();
+        
+        // STEP 6新規: デバウンス制御
+        this.debounceDelay = 50; // ms
+        this.debounceTimers = new Map();
+        
+        // STEP 6新規: パフォーマンス最適化設定
+        this.performanceConfig = {
+            maxEventRate: 60, // events/second
+            eventRateWindow: 1000, // ms
+            recentEvents: [],
+            throttleEnabled: true,
+            debounceEnabled: true
+        };
         
         // イベントリスナー管理
         this.eventListeners = new Map();
         
-        console.log('🎮 EventManager初期化準備完了');
+        console.log('🎮 EventManager (STEP 6最適化版) 初期化');
     }
     
     /**
-     * EventManagerコンポーネント初期化
-     * SOLID原則: 単一責任（イベント処理のみ）
+     * 初期化
      */
     async init() {
         try {
-            console.log('🎮 EventManager初期化開始...');
+            console.log('🎮 EventManager STEP 6最適化版 初期化開始...');
             
-            this.setupKeyboardListeners();
-            this.setupWheelListeners();
+            this.setupEventListeners();
+            this.startPerformanceMonitoring();
             
-            this.listening = true;
-            console.log('✅ EventManager初期化完了');
-            
+            console.log('✅ EventManager STEP 6最適化版 初期化完了');
             return true;
+            
         } catch (error) {
             console.error('❌ EventManager初期化失敗:', error);
-            this.handleError('init', error);
+            this.handleError(error, 'init');
             return false;
         }
     }
     
     /**
-     * キーボードイベントリスナー設定
-     * DRY原則: 共通イベント処理パターン統一
+     * STEP 6新規: パフォーマンス監視開始
      */
-    setupKeyboardListeners() {
-        const keydownHandler = (event) => {
-            if (this.shouldHandleEvent('keyboard', event)) {
-                this.handleKeyboardEvent(event);
-            }
-        };
+    startPerformanceMonitoring() {
+        // イベント処理レート監視
+        setInterval(() => {
+            this.cleanupRecentEvents();
+            this.adjustPerformanceSettings();
+        }, 5000); // 5秒ごと
         
-        document.addEventListener('keydown', keydownHandler);
-        this.eventListeners.set('keydown', keydownHandler);
-        
-        console.log('⌨️  キーボードイベントリスナー設定完了');
+        console.log('📊 EventManager パフォーマンス監視開始');
     }
     
     /**
-     * ホイールイベントリスナー設定
-     * パフォーマンス最適化: passive: false でpreventDefault可能
+     * STEP 6新規: 最近のイベントクリーンアップ
      */
-    setupWheelListeners() {
-        const wheelHandler = (event) => {
-            if (this.shouldHandleEvent('wheel', event)) {
-                this.handleWheelEvent(event);
-            }
-        };
+    cleanupRecentEvents() {
+        const now = Date.now();
+        const window = this.performanceConfig.eventRateWindow;
         
-        document.addEventListener('wheel', wheelHandler, { passive: false });
+        this.performanceConfig.recentEvents = this.performanceConfig.recentEvents.filter(
+            eventTime => now - eventTime < window
+        );
+    }
+    
+    /**
+     * STEP 6新規: パフォーマンス設定調整
+     */
+    adjustPerformanceSettings() {
+        const eventRate = this.performanceConfig.recentEvents.length;
+        
+        // 高負荷時は制限を強化
+        if (eventRate > this.performanceConfig.maxEventRate * 0.8) {
+            this.throttleDelay = Math.min(this.throttleDelay * 1.2, 200);
+            this.debounceDelay = Math.min(this.debounceDelay * 1.1, 100);
+        }
+        // 低負荷時は制限を緩和
+        else if (eventRate < this.performanceConfig.maxEventRate * 0.3) {
+            this.throttleDelay = Math.max(this.throttleDelay * 0.9, 50);
+            this.debounceDelay = Math.max(this.debounceDelay * 0.95, 25);
+        }
+    }
+    
+    /**
+     * イベントリスナー設定
+     */
+    setupEventListeners() {
+        const keydownHandler = this.handleKeydown.bind(this);
+        const wheelHandler = this.handleWheel.bind(this);
+        
+        this.eventListeners.set('keydown', keydownHandler);
         this.eventListeners.set('wheel', wheelHandler);
         
-        console.log('🖱️  ホイールイベントリスナー設定完了');
+        document.addEventListener('keydown', keydownHandler);
+        if (this.app && this.app.view) {
+            this.app.view.addEventListener('wheel', wheelHandler, { passive: false });
+        }
+        
+        console.log('🎮 EventManager イベントリスナー設定完了');
     }
     
     /**
-     * イベント処理判定（コンテキスト認識・スロットリング）
-     * SOLID原則: 単一責任（判定ロジックの統一）
+     * 有効化/無効化制御
      */
-    shouldHandleEvent(type, event) {
-        // 基本制御
-        if (!this.enabled) return false;
-        if (!this.penToolUI.isToolActive()) return false;
+    setEnabled(enabled) {
+        this.enabled = enabled;
+        this.listening = enabled && this.isToolActive;
         
-        // UI要素フォーカス時の除外（入力フィールド等）
-        const activeElement = document.activeElement;
-        if (activeElement && (
-            activeElement.tagName === 'INPUT' ||
-            activeElement.tagName === 'TEXTAREA' ||
-            activeElement.contentEditable === 'true'
-        )) {
+        console.log(`🎮 EventManager: ${enabled ? '有効' : '無効'}, リスニング: ${this.listening}`);
+    }
+    
+    /**
+     * ツールアクティブ状態設定
+     */
+    setToolActive(active) {
+        this.isToolActive = active;
+        this.listening = this.enabled && active;
+        
+        console.log(`🎮 EventManager ツールアクティブ: ${active}, リスニング: ${this.listening}`);
+    }
+    
+    /**
+     * キーボードイベント処理
+     */
+    handleKeydown(event) {
+        if (!this.listening || this.isInputFocused(event.target)) {
             return false;
         }
         
-        // スロットリングチェック（パフォーマンス最適化）
+        try {
+            this.recordEventForPerformance();
+            this.stats.keyboardEvents++;
+            this.stats.lastEventTime = Date.now();
+            this.consecutiveErrors = 0; // 成功時はリセット
+            
+            const key = event.key.toLowerCase();
+            const handled = this.processKeyboardEvent(key, event);
+            
+            if (handled) {
+                event.preventDefault();
+                return true;
+            }
+            
+            return false;
+            
+        } catch (error) {
+            this.handleError(error, 'keyboard');
+            return false;
+        }
+    }
+    
+    /**
+     * STEP 6新規: パフォーマンス用イベント記録
+     */
+    recordEventForPerformance() {
         const now = Date.now();
-        if (type === 'wheel') {
-            if (now - this.lastWheelEvent < this.throttleDelay) {
-                this.stats.throttledEvents++;
-                return false;
-            }
-            this.lastWheelEvent = now;
+        this.performanceConfig.recentEvents.push(now);
+        
+        // 古いイベントを削除
+        const windowStart = now - this.performanceConfig.eventRateWindow;
+        this.performanceConfig.recentEvents = this.performanceConfig.recentEvents.filter(
+            eventTime => eventTime >= windowStart
+        );
+    }
+    
+    /**
+     * キーボードイベント処理（具体的な処理）
+     */
+    processKeyboardEvent(key, event) {
+        // P+数字シーケンス（プリセット選択）
+        if (key === 'p' && !event.ctrlKey && !event.shiftKey) {
+            this.startPresetSequence();
+            return true;
         }
         
-        if (type === 'keyboard') {
-            if (now - this.lastKeyEvent < this.throttleDelay) {
-                this.stats.throttledEvents++;
-                return false;
+        // プリセットシーケンス中
+        if (this.activeSequence === 'preset') {
+            const presetIndex = parseInt(key) - 1;
+            if (!isNaN(presetIndex) && presetIndex >= 0 && presetIndex < 6) {
+                return this.debounce('preset-select', () => {
+                    this.selectPreset(presetIndex);
+                });
+            } else if (key === '0') {
+                return this.debounce('preset-reset-all', () => {
+                    this.resetAllPreviews();
+                });
             }
-            this.lastKeyEvent = now;
+            this.clearActiveSequence();
+            return false;
         }
         
+        // R: プリセットリセット
+        if (key === 'r' && !event.ctrlKey && !event.shiftKey) {
+            return this.debounce('preset-reset', () => {
+                this.resetActivePreset();
+            });
+        }
+        
+        // Shift+R: 全プレビューリセット
+        if (key === 'r' && event.shiftKey && !event.ctrlKey) {
+            return this.debounce('preview-reset-all', () => {
+                this.resetAllPreviews();
+            });
+        }
+        
+        return false;
+    }
+    
+    /**
+     * STEP 6新規: デバウンス処理
+     */
+    debounce(key, fn, delay = this.debounceDelay) {
+        if (!this.performanceConfig.debounceEnabled) {
+            fn();
+            return true;
+        }
+        
+        if (this.debounceTimers.has(key)) {
+            clearTimeout(this.debounceTimers.get(key));
+        }
+        
+        const timer = setTimeout(() => {
+            fn();
+            this.debounceTimers.delete(key);
+        }, delay);
+        
+        this.debounceTimers.set(key, timer);
         return true;
     }
     
     /**
-     * キーボードイベント処理（ペンツール専用ショートカット）
-     * 単一責任原則: ペンツール関連ショートカットのみ
+     * プリセットシーケンス開始
      */
-    handleKeyboardEvent(event) {
-        try {
-            this.stats.keyboardEvents++;
-            
-            // P+数字: プリセット選択シーケンス
-            if (event.key.toLowerCase() === 'p' && !event.repeat) {
-                this.handlePresetSequence(event);
-                return true;
-            }
-            
-            // R: リセット機能
-            if (event.key.toLowerCase() === 'r' && !event.repeat) {
-                if (event.shiftKey) {
-                    // Shift+R: 全プリセットリセット
-                    this.penToolUI.resetAllPreviews();
-                } else {
-                    // R: アクティブプリセットリセット
-                    this.penToolUI.resetActivePreset();
-                }
-                this.stats.shortcuts++;
-                event.preventDefault();
-                return true;
-            }
-            
-            return false;
-        } catch (error) {
-            this.handleError('keyboard', error);
+    startPresetSequence() {
+        this.activeSequence = 'preset';
+        this.sequenceStartTime = Date.now();
+        
+        // タイムアウト設定
+        this.sequenceTimeout = setTimeout(() => {
+            this.clearActiveSequence();
+        }, 1500);
+        
+        console.log('🎨 プリセットシーケンス開始 (P+...)');
+    }
+    
+    /**
+     * アクティブシーケンスクリア
+     */
+    clearActiveSequence() {
+        if (this.sequenceTimeout) {
+            clearTimeout(this.sequenceTimeout);
+            this.sequenceTimeout = null;
+        }
+        this.activeSequence = null;
+        this.sequenceStartTime = null;
+    }
+    
+    /**
+     * ホイールイベント処理
+     */
+    handleWheel(event) {
+        if (!this.listening || this.isInputFocused(event.target)) {
             return false;
         }
-    }
-    
-    /**
-     * P+数字プリセット選択シーケンス処理
-     * DRY原則: シーケンス処理の共通化
-     */
-    handlePresetSequence(initialEvent) {
-        const timeout = 1000; // 1秒のタイムアウト
-        const startTime = Date.now();
         
-        console.log('🔄 プリセット選択シーケンス開始 (P+数字)');
-        
-        const numberListener = (event) => {
-            // タイムアウトチェック
-            if (Date.now() - startTime > timeout) {
-                document.removeEventListener('keydown', numberListener);
-                return;
-            }
-            
-            const num = parseInt(event.key);
-            if (num >= 1 && num <= 5) {
-                this.penToolUI.selectPreset(num - 1);
-                this.stats.shortcuts++;
-                event.preventDefault();
-                document.removeEventListener('keydown', numberListener);
-                console.log(`🎨 プリセット ${num} 選択完了`);
-            }
-        };
-        
-        document.addEventListener('keydown', numberListener);
-        
-        // タイムアウト処理（メモリリーク防止）
-        setTimeout(() => {
-            document.removeEventListener('keydown', numberListener);
-        }, timeout);
-        
-        initialEvent.preventDefault();
-    }
-    
-    /**
-     * ホイールイベント処理（ペンツール専用調整）
-     * 単一責任原則: ペンツール関連ホイール操作のみ
-     */
-    handleWheelEvent(event) {
         try {
+            this.recordEventForPerformance();
             this.stats.wheelEvents++;
+            this.stats.lastEventTime = Date.now();
+            this.consecutiveErrors = 0;
             
-            // Ctrl+ホイール: サイズ調整
-            if (event.ctrlKey) {
-                const delta = event.deltaY > 0 ? -1 : 1;
-                this.penToolUI.adjustSize(delta);
-                event.preventDefault();
-                console.log(`📏 ペンサイズホイール調整: ${delta > 0 ? '+' : ''}${delta}`);
-                return true;
-            }
+            const handled = this.processWheelEvent(event);
             
-            // Shift+ホイール: 透明度調整
-            if (event.shiftKey) {
-                const delta = event.deltaY > 0 ? -5 : 5;
-                this.penToolUI.adjustOpacity(delta);
+            if (handled) {
                 event.preventDefault();
-                console.log(`🌫️  透明度ホイール調整: ${delta > 0 ? '+' : ''}${delta}%`);
                 return true;
             }
             
             return false;
+            
         } catch (error) {
-            this.handleError('wheel', error);
+            this.handleError(error, 'wheel');
             return false;
         }
     }
     
     /**
-     * EventManager有効/無効制御
-     * SOLID原則: オープン・クローズ原則（状態制御の統一）
+     * ホイールイベント処理（具体的な処理）
      */
-    setEnabled(enabled) {
-        const wasEnabled = this.enabled;
-        this.enabled = enabled;
+    processWheelEvent(event) {
+        const delta = -event.deltaY;
         
-        if (wasEnabled !== enabled) {
-            console.log(`🎮 EventManager: ${enabled ? '有効化' : '無効化'}`);
+        // スロットリング制御
+        if (this.isThrottled('wheel')) {
+            return true; // 処理済み扱い
         }
+        
+        // Ctrl+ホイール: ペンサイズ調整
+        if (event.ctrlKey) {
+            const step = event.shiftKey ? 5 : 1; // Shiftで大きなステップ
+            const adjustment = delta > 0 ? step : -step;
+            
+            this.adjustSize(adjustment);
+            return true;
+        }
+        
+        // Shift+ホイール: 透明度調整
+        if (event.shiftKey) {
+            const step = event.ctrlKey ? 10 : 5; // Ctrlで大きなステップ
+            const adjustment = delta > 0 ? step : -step;
+            
+            this.adjustOpacity(adjustment);
+            return true;
+        }
+        
+        return false;
     }
     
     /**
-     * エラーハンドリング（安全な動作継続）
-     * 単一責任原則: エラー処理の統一
+     * スロットリング制御
      */
-    handleError(context, error) {
+    isThrottled(eventType) {
+        if (!this.performanceConfig.throttleEnabled) {
+            return false;
+        }
+        
+        const now = Date.now();
+        const lastTime = this.lastEvents.get(eventType) || 0;
+        
+        if (now - lastTime < this.throttleDelay) {
+            return true;
+        }
+        
+        this.lastEvents.set(eventType, now);
+        return false;
+    }
+    
+    /**
+     * プリセット選択
+     */
+    selectPreset(index) {
+        if (this.penToolUI && this.penToolUI.selectPreset) {
+            const success = this.penToolUI.selectPreset(index);
+            if (success) {
+                this.stats.presetSelections++;
+                console.log(`🎨 プリセット ${index + 1} 選択完了`);
+            }
+            return success;
+        }
+        return false;
+    }
+    
+    /**
+     * アクティブプリセットリセット
+     */
+    resetActivePreset() {
+        if (this.penToolUI && this.penToolUI.resetActivePreset) {
+            const success = this.penToolUI.resetActivePreset();
+            if (success) {
+                console.log('🔄 アクティブプリセット リセット完了');
+            }
+            return success;
+        }
+        return false;
+    }
+    
+    /**
+     * 全プレビューリセット
+     */
+    resetAllPreviews() {
+        if (this.penToolUI && this.penToolUI.resetAllPreviews) {
+            const success = this.penToolUI.resetAllPreviews();
+            if (success) {
+                console.log('🔄 全プレビュー リセット完了');
+            }
+            return success;
+        }
+        return false;
+    }
+    
+    /**
+     * ペンサイズ調整
+     */
+    adjustSize(delta) {
+        if (this.penToolUI && this.penToolUI.adjustSize) {
+            const success = this.penToolUI.adjustSize(delta);
+            if (success) {
+                this.stats.adjustments++;
+                console.log(`📏 ペンサイズ調整: ${delta > 0 ? '+' : ''}${delta}`);
+            }
+            return success;
+        }
+        return false;
+    }
+    
+    /**
+     * 透明度調整
+     */
+    adjustOpacity(delta) {
+        if (this.penToolUI && this.penToolUI.adjustOpacity) {
+            const success = this.penToolUI.adjustOpacity(delta);
+            if (success) {
+                this.stats.adjustments++;
+                console.log(`🌫️ 透明度調整: ${delta > 0 ? '+' : ''}${delta}%`);
+            }
+            return success;
+        }
+        return false;
+    }
+    
+    /**
+     * 入力フィールドフォーカス判定
+     */
+    isInputFocused(target) {
+        return target && (
+            target.tagName === 'INPUT' ||
+            target.tagName === 'TEXTAREA' ||
+            target.contentEditable === 'true'
+        );
+    }
+    
+    /**
+     * STEP 6強化: エラーハンドリング
+     */
+    handleError(error, context) {
         this.errorCount++;
+        this.consecutiveErrors++;
         this.stats.errors++;
-        console.error(`EventManager ${context} error:`, error);
         
-        // エラー数制限による安全機能
-        if (this.errorCount > this.maxErrors) {
-            console.warn('EventManager: エラー数が上限に達しました。安全のため無効化します。');
+        console.error(`EventManager エラー (${context}):`, error);
+        
+        // 連続エラー時は一時無効化
+        if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
+            console.warn(`EventManager: 連続エラー${this.consecutiveErrors}回 - 一時無効化`);
             this.enabled = false;
+            
+            // 30秒後に再有効化を試行
+            setTimeout(() => {
+                this.consecutiveErrors = 0;
+                this.enabled = true;
+                console.log('EventManager: 自動再有効化');
+            }, 30000);
+        }
+        
+        // 最大エラー数到達時は完全無効化
+        if (this.errorCount >= this.maxErrors) {
+            console.error(`EventManager: 最大エラー数${this.maxErrors}到達 - 完全無効化`);
+            this.enabled = false;
+            this.listening = false;
         }
     }
     
     /**
-     * EventManager統計・状況取得
-     * デバッグ・監視用API
+     * 状況取得
      */
     getStatus() {
         return {
             enabled: this.enabled,
             listening: this.listening,
+            isToolActive: this.isToolActive,
             stats: { ...this.stats },
             errorCount: this.errorCount,
             maxErrors: this.maxErrors,
+            consecutiveErrors: this.consecutiveErrors,
             throttleDelay: this.throttleDelay,
-            isToolActive: this.penToolUI.isToolActive(),
-            lastEvents: {
-                wheel: this.lastWheelEvent,
-                key: this.lastKeyEvent
-            }
+            debounceDelay: this.debounceDelay,
+            lastEvents: Object.fromEntries(this.lastEvents),
+            performanceConfig: {
+                eventRate: this.performanceConfig.recentEvents.length,
+                maxEventRate: this.performanceConfig.maxEventRate,
+                throttleEnabled: this.performanceConfig.throttleEnabled,
+                debounceEnabled: this.performanceConfig.debounceEnabled
+            },
+            activeSequence: this.activeSequence,
+            sequenceElapsed: this.sequenceStartTime ? Date.now() - this.sequenceStartTime : null
         };
     }
     
     /**
-     * EventManagerクリーンアップ
-     * メモリリーク防止・適切なリソース解放
+     * STEP 6新規: パフォーマンス統計取得
+     */
+    getPerformanceStats() {
+        const now = Date.now();
+        const recentEventCount = this.performanceConfig.recentEvents.length;
+        const eventRate = recentEventCount; // events per second in last window
+        
+        return {
+            eventRate: eventRate,
+            maxEventRate: this.performanceConfig.maxEventRate,
+            throttleDelay: this.throttleDelay,
+            debounceDelay: this.debounceDelay,
+            recentEvents: recentEventCount,
+            totalEvents: this.stats.keyboardEvents + this.stats.wheelEvents,
+            errorRate: this.errorCount > 0 ? (this.stats.errors / (this.stats.keyboardEvents + this.stats.wheelEvents)) : 0,
+            lastEventTime: this.stats.lastEventTime,
+            uptime: now - (this.initTime || now)
+        };
+    }
+    
+    /**
+     * クリーンアップ
      */
     async destroy() {
         try {
-            console.log('🧹 EventManager クリーンアップ開始...');
+            console.log('🧹 EventManager STEP 6最適化版 クリーンアップ開始...');
+            
+            // アクティブシーケンスクリア
+            this.clearActiveSequence();
+            
+            // デバウンスタイマークリア
+            for (const timer of this.debounceTimers.values()) {
+                clearTimeout(timer);
+            }
+            this.debounceTimers.clear();
             
             // イベントリスナー削除
             for (const [eventType, handler] of this.eventListeners) {
-                document.removeEventListener(eventType, handler);
-                console.log(`✅ ${eventType} リスナー削除完了`);
+                if (eventType === 'keydown') {
+                    document.removeEventListener(eventType, handler);
+                } else if (eventType === 'wheel' && this.app && this.app.view) {
+                    this.app.view.removeEventListener(eventType, handler);
+                }
             }
             
-            // 状態リセット
-            this.enabled = false;
-            this.listening = false;
+            // 参照クリア
+            this.penToolUI = null;
+            this.app = null;
+            this.drawingToolsSystem = null;
             this.eventListeners.clear();
+            this.lastEvents.clear();
             
-            // 統計リセット
-            this.stats = {
-                keyboardEvents: 0,
-                wheelEvents: 0,
-                shortcuts: 0,
-                throttledEvents: 0,
-                errors: 0
-            };
+            console.log('✅ EventManager STEP 6最適化版 クリーンアップ完了');
             
-            console.log('✅ EventManager クリーンアップ完了');
         } catch (error) {
-            console.error('❌ EventManager クリーンアップ失敗:', error);
+            console.error('EventManager クリーンアップエラー:', error);
         }
     }
 }
 
-// グローバル公開（既存システムとの互換性）
+// グローバル公開
 if (typeof window !== 'undefined') {
     window.EventManager = EventManager;
-    
-    console.log('✅ EventManager コンポーネント読み込み完了');
-    console.log('🎯 STEP 5: ペンツール専用イベント処理（SOLID・DRY原則準拠）');
-    console.log('⌨️  対応ショートカット: P+1〜5（プリセット選択）、R/Shift+R（リセット）');
-    console.log('🖱️  対応ホイール: Ctrl+ホイール（サイズ）、Shift+ホイール（透明度）');
-    console.log('🔧 最適化機能: スロットリング、コンテキスト認識、エラー制御');
+    console.log('✅ EventManager (STEP 6最適化版) 読み込み完了');
 }
