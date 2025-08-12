@@ -1,226 +1,125 @@
-/**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール
- * PopupManager Component - ポップアップ問題修正版
- * 
- * 🔧 修正内容:
- * 1. ✅ 強制表示機能追加（display/visibility/opacity）
- * 2. ✅ 初期化プロセス確認強化
- * 3. ✅ DOM要素検証・作成機能
- * 4. ✅ エラーハンドリング改善
- * 5. ✅ フェードアニメーション最適化
- * 
- * ⚡ STEP 4実装: ペンツール専用ポップアップ制御移譲
- * 🎯 目的: ui-manager.jsからポップアップ制御機能を完全分離
- * 
- * 📦 実装内容:
- * - ペンツール専用ポップアップ制御システム
- * - ui-manager.js非依存でのポップアップ動作
- * - ESCキー・外部クリック対応
- * - 状態同期・エラーハンドリング
- * 
- * 🏗️ 設計原則: SOLID・DRY準拠、単一責任、依存注入
- */
-
-console.log('🔧 PopupManager Component (ポップアップ問題修正版) 読み込み開始...');
-
-// ==== CONFIG値安全取得（utils.js統合）====
-function safeConfigGet(key, defaultValue) {
-    try {
-        if (window.CONFIG && window.CONFIG[key] !== undefined && window.CONFIG[key] !== null) {
-            return window.CONFIG[key];
-        }
-    } catch (error) {
-        console.warn(`CONFIG.${key} アクセスエラー:`, error);
-    }
-    return defaultValue;
-}
-
-/**
- * PopupManagerコンポーネント（ポップアップ問題修正版）
- * ペンツール専用ポップアップ制御システム
- */
-class PopupManager {
-    constructor() {
-        console.log('📦 PopupManager初期化開始（ポップアップ問題修正版）...');
+executeCompleteHide(element) {
+        const hideStyles = {
+            display: 'none',
+            visibility: 'hidden',
+            opacity: '0',
+            pointerEvents: 'none'
+        };
         
-        // 基本設定
-        this.popupFadeTime = safeConfigGet('POPUP_FADE_TIME', 300);
-        this.maxErrors = safeConfigGet('MAX_ERRORS', 10);
-        
-        // 状態管理
-        this.activePopup = null;
-        this.popupStates = new Map();
-        this.errorCount = 0;
-        this.isInitialized = false;
-        
-        // 修正: 初期化状態詳細管理
-        this.initializationAttempts = 0;
-        this.maxInitAttempts = 3;
-        this.domElementsReady = false;
-        this.eventListenersReady = false;
-        
-        // ポップアップ要素キャッシュ
-        this.popupElements = new Map();
-        this.overlayElement = null;
-        
-        // 統計・デバッグ情報
-        this.showCount = 0;
-        this.hideCount = 0;
-        this.lastAction = null;
-        this.lastActionTime = 0;
-        
-        // 修正: ポップアップ問題対応設定
-        this.forceShowEnabled = true;
-        this.cssValidationEnabled = true;
-        this.animationFallbackEnabled = true;
-        
-        console.log('✅ PopupManager初期化完了（ポップアップ問題修正版）');
-    }
-    
-    /**
-     * 修正: PopupManager初期化（ポップアップ問題修正版）
-     */
-    async init() {
-        try {
-            console.log('🎯 PopupManager初期化開始（ポップアップ問題修正版）...');
-            
-            this.initializationAttempts++;
-            
-            if (this.initializationAttempts > this.maxInitAttempts) {
-                throw new Error(`初期化試行回数上限 (${this.maxInitAttempts}) に達しました`);
-            }
-            
-            // 修正: 段階的初期化プロセス
-            await this.validateDOMReady();
-            await this.setupPopupElements();
-            await this.setupEventListeners();
-            await this.setupOverlay();
-            
-            // 修正: 初期化完了確認
-            await this.validateInitialization();
-            
-            this.isInitialized = true;
-            console.log('✅ PopupManager初期化完了（ポップアップ問題修正版）');
-            
-            return true;
-            
-        } catch (error) {
-            console.error('❌ PopupManager初期化エラー（ポップアップ問題修正版）:', error);
-            this.handleError(error);
-            
-            // 修正: リトライ処理
-            if (this.initializationAttempts < this.maxInitAttempts) {
-                console.log(`🔄 PopupManager初期化リトライ ${this.initializationAttempts}/${this.maxInitAttempts}`);
-                await new Promise(resolve => setTimeout(resolve, 500));
-                return await this.init();
-            }
-            
-            throw error;
+        for (const [property, value] of Object.entries(hideStyles)) {
+            element.style.setProperty(property, value, 'important');
         }
     }
     
-    /**
-     * 修正: DOM準備状態確認
-     */
-    async validateDOMReady() {
-        console.log('📄 DOM準備状態確認中...');
-        
-        return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                reject(new Error('DOM準備タイムアウト'));
-            }, 5000);
-            
-            const checkDOM = () => {
-                if (document.readyState === 'complete' || document.readyState === 'interactive') {
-                    clearTimeout(timeout);
-                    console.log('✅ DOM準備確認完了');
-                    resolve();
-                } else {
-                    setTimeout(checkDOM, 100);
+    executeFadeIn(element, popupId, onComplete) {
+        return requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                element.style.transition = `opacity ${this.fadeTime}ms ease-out`;
+                element.style.setProperty('opacity', '1', 'important');
+                
+                if (onComplete) {
+                    setTimeout(onComplete, this.fadeTime);
                 }
-            };
-            
-            checkDOM();
+                
+                console.log(`✨ ${popupId} フェードイン開始`);
+            });
         });
     }
     
-    /**
-     * 修正: ポップアップ要素セットアップ（要素作成機能付き）
-     */
-    async setupPopupElements() {
-        console.log('📋 ポップアップ要素セットアップ開始（修正版）...');
+    executeFadeOut(element, popupId, onComplete) {
+        element.style.transition = `opacity ${this.fadeTime}ms ease-out`;
+        element.style.opacity = '0';
         
-        // ペン設定ポップアップ
-        await this.setupPenSettingsPopup();
-        
-        // リサイズ設定ポップアップ
-        await this.setupResizeSettingsPopup();
-        
-        this.domElementsReady = true;
-        console.log(`📋 ポップアップ要素セットアップ完了: ${this.popupElements.size}個`);
+        return setTimeout(() => {
+            this.executeCompleteHide(element);
+            if (onComplete) {
+                onComplete();
+            }
+            console.log(`🌫️ ${popupId} フェードアウト完了`);
+        }, this.fadeTime);
     }
     
-    /**
-     * 修正: ペン設定ポップアップセットアップ（要素作成機能付き）
-     */
-    async setupPenSettingsPopup() {
-        let penSettingsPopup = document.getElementById('pen-settings-popup');
-        
-        if (!penSettingsPopup) {
-            console.log('🔧 pen-settings-popup要素が見つかりません → 作成します');
-            penSettingsPopup = this.createPenSettingsPopup();
-        }
-        
-        if (penSettingsPopup) {
-            // 修正: CSS強制適用
-            this.validateAndFixPopupCSS(penSettingsPopup, 'pen-settings');
-            
-            this.popupElements.set('pen-settings', penSettingsPopup);
-            this.popupStates.set('pen-settings', {
-                visible: false,
-                element: penSettingsPopup,
-                fadeTimeout: null,
-                showCount: 0,
-                hideCount: 0,
-                cssValidated: true
-            });
-            
-            console.log('✅ pen-settings-popup要素セットアップ完了');
-        } else {
-            console.error('❌ pen-settings-popup要素作成失敗');
+    cancelAnimation(popupId) {
+        const animation = this.activeAnimations.get(popupId);
+        if (animation) {
+            if (typeof animation === 'number') {
+                clearTimeout(animation);
+            } else if (typeof animation === 'function') {
+                // requestAnimationFrame のキャンセル（実装依存）
+                try {
+                    cancelAnimationFrame(animation);
+                } catch (e) {
+                    // キャンセル失敗は無視
+                }
+            }
+            this.activeAnimations.delete(popupId);
         }
     }
     
-    /**
-     * 修正: ペン設定ポップアップ要素作成
-     */
+    cancelAllAnimations() {
+        for (const popupId of this.activeAnimations.keys()) {
+            this.cancelAnimation(popupId);
+        }
+    }
+    
+    cleanup() {
+        this.cancelAllAnimations();
+    }
+}
+
+// ==== Phase 3: DOM要素作成ファクトリ（ファクトリパターン） ====
+class PopupElementFactory {
+    constructor(cssManager, errorHandler) {
+        this.cssManager = cssManager;
+        this.errorHandler = errorHandler;
+        this.config = PopupConfigUtils.getPopupDefaults();
+    }
+    
     createPenSettingsPopup() {
-        const popup = document.createElement('div');
-        popup.id = 'pen-settings-popup';
-        popup.className = 'popup pen-settings-popup';
-        
-        // 修正: 確実な表示用CSS設定
-        popup.style.cssText = `
-            display: none;
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: white;
-            border: 2px solid #800000;
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            z-index: 10000;
-            min-width: 300px;
-            max-width: 500px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            visibility: hidden;
-            opacity: 0;
-            transition: opacity ${this.popupFadeTime}ms ease-out;
-        `;
-        
-        popup.innerHTML = `
+        try {
+            const popup = document.createElement('div');
+            popup.id = 'pen-settings-popup';
+            popup.className = 'popup pen-settings-popup';
+            popup.style.cssText = this.cssManager.createPopupBaseStyle(
+                this.config.fadeTime, 
+                this.config.zIndexBase
+            );
+            
+            popup.innerHTML = this.getPenSettingsContent();
+            this.setupPopupEventHandlers(popup);
+            
+            document.body.appendChild(popup);
+            console.log('✅ pen-settings-popup要素作成完了');
+            
+            return popup;
+        } catch (error) {
+            this.errorHandler.handleError(error, 'CreatePenSettingsPopup');
+            return null;
+        }
+    }
+    
+    createOverlayElement() {
+        try {
+            const overlay = document.createElement('div');
+            overlay.id = 'popup-overlay';
+            overlay.className = 'popup-overlay';
+            overlay.style.cssText = this.cssManager.createOverlayStyle(
+                this.config.fadeTime, 
+                this.config.zIndexBase - 1
+            );
+            
+            document.body.appendChild(overlay);
+            console.log('✅ ポップアップオーバーレイ作成完了');
+            
+            return overlay;
+        } catch (error) {
+            this.errorHandler.handleError(error, 'CreateOverlay');
+            return null;
+        }
+    }
+    
+    getPenSettingsContent() {
+        return `
             <div class="popup-header" style="margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #ddd;">
                 <h3 style="margin: 0; color: #800000; font-size: 18px;">🎨 ペン設定</h3>
             </div>
@@ -259,7 +158,9 @@ class PopupManager {
                    onmouseout="this.style.background='#800000'">閉じる</button>
             </div>
         `;
-        
+    }
+    
+    setupPopupEventHandlers(popup) {
         // クリック時の伝播防止
         popup.addEventListener('click', (event) => {
             event.stopPropagation();
@@ -269,87 +170,228 @@ class PopupManager {
         const closeBtn = popup.querySelector('.close-popup-btn');
         if (closeBtn) {
             closeBtn.addEventListener('click', () => {
-                this.hidePopup('pen-settings');
+                if (window.penToolUI) {
+                    window.penToolUI.hidePopup('pen-settings');
+                } else {
+                    popup.style.display = 'none';
+                }
             });
         }
-        
-        document.body.appendChild(popup);
-        console.log('✅ pen-settings-popup要素作成完了');
-        
-        return popup;
     }
-    
-    /**
-     * 修正: リサイズ設定ポップアップセットアップ
-     */
-    async setupResizeSettingsPopup() {
-        const resizeSettingsPopup = document.getElementById('resize-settings-popup');
-        if (resizeSettingsPopup) {
-            this.validateAndFixPopupCSS(resizeSettingsPopup, 'resize-settings');
-            
-            this.popupElements.set('resize-settings', resizeSettingsPopup);
-            this.popupStates.set('resize-settings', {
-                visible: false,
-                element: resizeSettingsPopup,
-                fadeTimeout: null,
-                showCount: 0,
-                hideCount: 0,
-                cssValidated: true
-            });
-            
-            console.log('✅ resize-settings-popup要素確認完了');
-        }
-    }
-    
-    /**
-     * 修正: ポップアップCSS検証・修正
-     */
-    validateAndFixPopupCSS(element, popupId) {
-        if (!this.cssValidationEnabled) return;
+}
+
+// ==== Phase 3: PopupManager本体クラス（完全リファクタリング版） ====
+class PopupManager {
+    constructor() {
+        console.log('📦 PopupManager Phase 3初期化開始...');
         
-        const computedStyle = window.getComputedStyle(element);
+        // Phase 3: 依存注入パターン採用
+        this.config = PopupConfigUtils.getPopupDefaults();
+        this.errorHandler = new PopupErrorHandler(this.config.maxErrors, 'PopupManager');
+        this.cssManager = new PopupCSSManager(this.errorHandler);
+        this.animationManager = new PopupAnimationManager(this.config.fadeTime, this.errorHandler);
+        this.elementFactory = new PopupElementFactory(this.cssManager, this.errorHandler);
         
-        // 必須スタイルの確認・修正
-        const requiredStyles = {
-            position: 'fixed',
-            zIndex: '10000'
+        // 状態管理（統合版）
+        this.state = {
+            activePopup: null,
+            isInitialized: false,
+            initializationAttempts: 0,
+            domElementsReady: false,
+            eventListenersReady: false
         };
         
-        let modified = false;
+        // ポップアップ管理
+        this.popups = new Map();
+        this.overlayElement = null;
         
-        for (const [property, expectedValue] of Object.entries(requiredStyles)) {
-            const currentValue = computedStyle.getPropertyValue(property);
-            if (currentValue !== expectedValue) {
-                element.style.setProperty(property, expectedValue, 'important');
-                modified = true;
+        // 統計情報
+        this.statistics = {
+            showCount: 0,
+            hideCount: 0,
+            lastAction: null,
+            lastActionTime: 0,
+            operationTimes: new Map()
+        };
+        
+        console.log('✅ PopupManager Phase 3初期化準備完了');
+    }
+    
+    /**
+     * Phase 3: 統合初期化システム（完全リファクタリング版）
+     */
+    async init() {
+        try {
+            console.log('🎯 PopupManager Phase 3初期化開始...');
+            
+            this.state.initializationAttempts++;
+            
+            if (this.state.initializationAttempts > this.config.retryAttempts) {
+                throw new Error(`初期化試行回数上限 (${this.config.retryAttempts}) に達しました`);
             }
+            
+            // Phase 3: 段階的初期化プロセス
+            await this.executeInitializationSteps();
+            
+            this.state.isInitialized = true;
+            console.log('✅ PopupManager Phase 3初期化完了');
+            
+            return true;
+            
+        } catch (error) {
+            this.errorHandler.handleError(error, 'Init');
+            
+            // リトライ処理
+            if (this.state.initializationAttempts < this.config.retryAttempts) {
+                console.log(`🔄 PopupManager初期化リトライ ${this.state.initializationAttempts}/${this.config.retryAttempts}`);
+                await new Promise(resolve => setTimeout(resolve, 500));
+                return await this.init();
+            }
+            
+            throw error;
         }
+    }
+    
+    async executeInitializationSteps() {
+        const initSteps = [
+            () => this.validateDOMReady(),
+            () => this.setupPopupElements(),
+            () => this.setupEventListeners(),
+            () => this.setupOverlay(),
+            () => this.validateInitialization()
+        ];
         
-        if (modified) {
-            console.log(`🔧 ${popupId} CSS修正完了`);
+        for (let i = 0; i < initSteps.length; i++) {
+            try {
+                await initSteps[i]();
+            } catch (error) {
+                throw new Error(`初期化ステップ ${i + 1} で失敗: ${error.message}`);
+            }
         }
     }
     
     /**
-     * 修正: イベントリスナーセットアップ（強化版）
+     * Phase 3: DOM準備状態確認（統一処理）
+     */
+    async validateDOMReady() {
+        console.log('📄 DOM準備状態確認中...');
+        
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('DOM準備タイムアウト'));
+            }, this.config.initTimeout);
+            
+            const checkDOM = () => {
+                if (document.readyState === 'complete' || document.readyState === 'interactive') {
+                    clearTimeout(timeout);
+                    console.log('✅ DOM準備確認完了');
+                    resolve();
+                } else {
+                    setTimeout(checkDOM, 100);
+                }
+            };
+            
+            checkDOM();
+        });
+    }
+    
+    /**
+     * Phase 3: ポップアップ要素セットアップ（ファクトリパターン採用）
+     */
+    async setupPopupElements() {
+        console.log('📋 ポップアップ要素セットアップ開始...');
+        
+        // ペン設定ポップアップ
+        await this.setupPenSettingsPopup();
+        
+        // リサイズ設定ポップアップ（既存要素確認のみ）
+        await this.setupExistingPopups();
+        
+        this.state.domElementsReady = true;
+        console.log(`📋 ポップアップ要素セットアップ完了: ${this.popups.size}個`);
+    }
+    
+    async setupPenSettingsPopup() {
+        try {
+            let penSettingsPopup = document.getElementById('pen-settings-popup');
+            
+            if (!penSettingsPopup) {
+                console.log('🔧 pen-settings-popup要素が見つかりません → 作成します');
+                penSettingsPopup = this.elementFactory.createPenSettingsPopup();
+            }
+            
+            if (penSettingsPopup) {
+                this.registerPopupElement('pen-settings', penSettingsPopup);
+                console.log('✅ pen-settings-popup要素セットアップ完了');
+            } else {
+                throw new Error('pen-settings-popup要素作成失敗');
+            }
+        } catch (error) {
+            this.errorHandler.handleError(error, 'SetupPenSettings');
+        }
+    }
+    
+    async setupExistingPopups() {
+        const existingPopups = [
+            { id: 'resize-settings-popup', name: 'resize-settings' }
+        ];
+        
+        for (const popupInfo of existingPopups) {
+            const element = document.getElementById(popupInfo.id);
+            if (element) {
+                this.registerPopupElement(popupInfo.name, element);
+                console.log(`✅ ${popupInfo.id}要素確認完了`);
+            }
+        }
+    }
+    
+    registerPopupElement(popupId, element) {
+        // CSS検証・修正
+        this.cssManager.validateAndFixPopupCSS(element, popupId);
+        
+        // ポップアップ登録
+        this.popups.set(popupId, {
+            element: element,
+            visible: false,
+            showCount: 0,
+            hideCount: 0,
+            lastOperation: null,
+            operationTimes: []
+        });
+    }
+    
+    /**
+     * Phase 3: イベントリスナーセットアップ（重複防止）
      */
     async setupEventListeners() {
-        console.log('🎧 イベントリスナーセットアップ開始（修正版）...');
+        console.log('🎧 イベントリスナーセットアップ開始...');
         
-        // ESCキーでポップアップを閉じる（重複削除）
+        // ESCキーリスナー（重複防止）
+        this.setupEscapeKeyListener();
+        
+        // ポップアップ内クリック伝播防止
+        this.setupClickPropagationPrevention();
+        
+        this.state.eventListenersReady = true;
+        console.log('✅ PopupManagerイベントリスナー設定完了');
+    }
+    
+    setupEscapeKeyListener() {
         if (!document._popupEscListenerSet) {
             document.addEventListener('keydown', (event) => {
-                if (event.key === 'Escape' && this.activePopup) {
+                if (event.key === 'Escape' && this.state.activePopup) {
                     event.preventDefault();
-                    this.hidePopup(this.activePopup);
+                    this.hidePopup(this.state.activePopup);
                 }
             });
             document._popupEscListenerSet = true;
             console.log('✅ ESCキーリスナー設定完了');
         }
-        
-        // ポップアップ内クリック時の伝播防止
-        for (const [popupId, element] of this.popupElements) {
+    }
+    
+    setupClickPropagationPrevention() {
+        for (const [popupId, popupInfo] of this.popups) {
+            const element = popupInfo.element;
             if (!element._clickListenerSet) {
                 element.addEventListener('click', (event) => {
                     event.stopPropagation();
@@ -358,96 +400,63 @@ class PopupManager {
                 console.log(`✅ ${popupId} クリック伝播防止設定完了`);
             }
         }
-        
-        this.eventListenersReady = true;
-        console.log('🎧 PopupManagerイベントリスナー設定完了（修正版）');
     }
     
     /**
-     * 修正: オーバーレイセットアップ（強化版）
+     * Phase 3: オーバーレイセットアップ（ファクトリパターン）
      */
     async setupOverlay() {
-        console.log('🌫️ オーバーレイセットアップ開始（修正版）...');
+        console.log('🌫️ オーバーレイセットアップ開始...');
         
-        // 既存オーバーレイ確認
-        this.overlayElement = document.getElementById('popup-overlay');
-        
-        if (!this.overlayElement) {
-            // オーバーレイ作成
-            this.overlayElement = document.createElement('div');
-            this.overlayElement.id = 'popup-overlay';
-            this.overlayElement.className = 'popup-overlay';
-            this.overlayElement.style.cssText = `
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: rgba(0, 0, 0, 0.5);
-                z-index: 9999;
-                opacity: 0;
-                visibility: hidden;
-                transition: opacity ${this.popupFadeTime}ms ease-out,
-                           visibility ${this.popupFadeTime}ms ease-out;
-                pointer-events: none;
-            `;
+        try {
+            this.overlayElement = document.getElementById('popup-overlay');
             
-            // オーバーレイクリックで閉じる
-            this.overlayElement.addEventListener('click', (event) => {
-                event.preventDefault();
-                if (this.activePopup) {
-                    this.hidePopup(this.activePopup);
-                }
-            });
-            
-            document.body.appendChild(this.overlayElement);
-            console.log('🌫️ ポップアップオーバーレイ作成完了');
-        }
-        
-        // 修正: オーバーレイCSS検証
-        this.validateOverlayCSS();
-    }
-    
-    /**
-     * 修正: オーバーレイCSS検証
-     */
-    validateOverlayCSS() {
-        if (this.overlayElement) {
-            const computedStyle = window.getComputedStyle(this.overlayElement);
-            
-            if (computedStyle.position !== 'fixed') {
-                this.overlayElement.style.position = 'fixed';
-                console.log('🔧 オーバーレイposition修正');
+            if (!this.overlayElement) {
+                this.overlayElement = this.elementFactory.createOverlayElement();
             }
             
-            if (parseInt(computedStyle.zIndex) < 9999) {
-                this.overlayElement.style.zIndex = '9999';
-                console.log('🔧 オーバーレイz-index修正');
+            if (this.overlayElement) {
+                this.setupOverlayEventHandlers();
+                this.cssManager.validateAndFixPopupCSS(this.overlayElement, 'overlay');
+            } else {
+                throw new Error('オーバーレイ要素作成失敗');
             }
+        } catch (error) {
+            this.errorHandler.handleError(error, 'SetupOverlay');
         }
     }
     
+    setupOverlayEventHandlers() {
+        this.overlayElement.addEventListener('click', (event) => {
+            event.preventDefault();
+            if (this.state.activePopup) {
+                this.hidePopup(this.state.activePopup);
+            }
+        });
+    }
+    
     /**
-     * 修正: 初期化完了確認
+     * Phase 3: 初期化完了確認（詳細検証）
      */
     async validateInitialization() {
         console.log('🔍 初期化完了確認中...');
         
         const validationResults = {
-            domElementsReady: this.domElementsReady,
-            eventListenersReady: this.eventListenersReady,
-            popupElementsCount: this.popupElements.size,
-            popupStatesCount: this.popupStates.size,
-            overlayElement: !!this.overlayElement
+            domElementsReady: this.state.domElementsReady,
+            eventListenersReady: this.state.eventListenersReady,
+            popupCount: this.popups.size,
+            overlayElement: !!this.overlayElement,
+            errorCount: this.errorHandler.errorCount
         };
         
         console.log('📊 初期化検証結果:', validationResults);
         
-        const requiredElements = ['pen-settings'];
-        const missingElements = requiredElements.filter(id => !this.popupElements.has(id));
+        // 必須要素確認
+        const requiredPopups = ['pen-settings'];
+        const missingPopups = requiredPopups.filter(id => !this.popups.has(id));
         
-        if (missingElements.length > 0) {
-            throw new Error(`必須ポップアップ要素が不足: ${missingElements.join(', ')}`);
+        if (missingPopups.length > 0) {
+            throw new Error(`必須ポップアップ要素が不足: ${missingPopups.join(', ')}`);
         }
         
         if (!this.overlayElement) {
@@ -458,193 +467,219 @@ class PopupManager {
     }
     
     /**
-     * 修正: ポップアップ表示（強制表示機能付き）
+     * Phase 3: ポップアップ表示（統一処理・統計付き）
      */
     showPopup(popupId) {
+        const startTime = performance.now();
+        
         try {
-            console.log(`📋 ポップアップ表示開始: ${popupId} (修正版)`);
+            console.log(`📋 ポップアップ表示開始: ${popupId}`);
             
-            if (!this.isInitialized) {
-                console.warn('PopupManagerが初期化されていません');
+            if (!this.validateShowRequest(popupId)) {
                 return false;
             }
             
-            const popupState = this.popupStates.get(popupId);
-            if (!popupState) {
-                console.warn(`ポップアップが見つかりません: ${popupId}`);
-                return false;
-            }
+            const popupInfo = this.popups.get(popupId);
             
             // 他のポップアップを閉じる
-            if (this.activePopup && this.activePopup !== popupId) {
-                this.hidePopup(this.activePopup);
-            }
+            this.hideOtherPopups(popupId);
             
             // 既に表示中の場合
-            if (popupState.visible) {
+            if (popupInfo.visible) {
                 console.log(`ポップアップ既に表示中: ${popupId}`);
                 return true;
             }
             
-            // フェードアウトタイマークリア
-            if (popupState.fadeTimeout) {
-                clearTimeout(popupState.fadeTimeout);
-                popupState.fadeTimeout = null;
+            // 表示実行
+            const success = this.executeShow(popupId, popupInfo);
+            
+            if (success) {
+                this.updateShowStatistics(popupId, startTime);
             }
             
-            // オーバーレイ表示
-            this.showOverlay();
-            
-            // 修正: 強制表示処理
-            const element = popupState.element;
-            
-            // 段階的表示処理
-            this.forceShowElement(element);
-            
-            // フェードイン
-            if (this.animationFallbackEnabled) {
-                this.performFadeIn(element);
-            } else {
-                element.style.opacity = '1';
-            }
-            
-            // 状態更新
-            popupState.visible = true;
-            popupState.showCount++;
-            this.activePopup = popupId;
-            this.showCount++;
-            this.lastAction = 'show';
-            this.lastActionTime = Date.now();
-            
-            console.log(`✅ ポップアップ表示完了: ${popupId}`);
-            return true;
+            return success;
             
         } catch (error) {
-            console.error(`❌ ポップアップ表示エラー (${popupId}):`, error);
-            this.handleError(error);
+            this.errorHandler.handleError(error, `popup_${popupId}_show`);
             return false;
         }
     }
     
-    /**
-     * 修正: 要素強制表示
-     */
-    forceShowElement(element) {
-        if (!this.forceShowEnabled) return;
-        
-        // 修正: 全ての表示関連プロパティを強制設定
-        const forceStyles = {
-            display: 'block',
-            visibility: 'visible',
-            opacity: '0',
-            pointerEvents: 'auto'
-        };
-        
-        for (const [property, value] of Object.entries(forceStyles)) {
-            element.style.setProperty(property, value, 'important');
+    validateShowRequest(popupId) {
+        if (!this.state.isInitialized) {
+            console.warn('PopupManagerが初期化されていません');
+            return false;
         }
         
-        console.log('🔧 要素強制表示処理完了');
+        if (!this.popups.has(popupId)) {
+            console.warn(`ポップアップが見つかりません: ${popupId}`);
+            return false;
+        }
+        
+        return true;
     }
     
-    /**
-     * 修正: フェードイン処理
-     */
-    performFadeIn(element) {
-        // フェードイン用タイマー
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                element.style.transition = `opacity ${this.popupFadeTime}ms ease-out`;
-                element.style.setProperty('opacity', '1', 'important');
-                
-                console.log('✨ フェードイン開始');
-            });
+    hideOtherPopups(currentPopupId) {
+        if (this.state.activePopup && this.state.activePopup !== currentPopupId) {
+            this.hidePopup(this.state.activePopup);
+        }
+    }
+    
+    executeShow(popupId, popupInfo) {
+        // オーバーレイ表示
+        this.showOverlay();
+        
+        // アニメーション付き表示
+        const success = this.animationManager.showWithAnimation(
+            popupInfo.element, 
+            popupId,
+            () => {
+                console.log(`✅ ${popupId} 表示アニメーション完了`);
+            }
+        );
+        
+        if (success) {
+            // 状態更新
+            popupInfo.visible = true;
+            popupInfo.showCount++;
+            popupInfo.lastOperation = 'show';
+            this.state.activePopup = popupId;
+        }
+        
+        return success;
+    }
+    
+    updateShowStatistics(popupId, startTime) {
+        const operationTime = performance.now() - startTime;
+        
+        this.statistics.showCount++;
+        this.statistics.lastAction = 'show';
+        this.statistics.lastActionTime = Date.now();
+        
+        const popupInfo = this.popups.get(popupId);
+        popupInfo.operationTimes.push({
+            operation: 'show',
+            time: operationTime,
+            timestamp: Date.now()
         });
+        
+        // 統計履歴制限
+        if (popupInfo.operationTimes.length > 10) {
+            popupInfo.operationTimes.shift();
+        }
+        
+        console.log(`✅ ポップアップ表示完了: ${popupId} (${operationTime.toFixed(1)}ms)`);
     }
     
     /**
-     * 修正: ポップアップ非表示（改善版）
+     * Phase 3: ポップアップ非表示（統一処理・統計付き）
      */
     hidePopup(popupId) {
+        const startTime = performance.now();
+        
         try {
-            console.log(`❌ ポップアップ非表示開始: ${popupId} (修正版)`);
+            console.log(`❌ ポップアップ非表示開始: ${popupId}`);
             
-            if (!this.isInitialized) {
-                console.warn('PopupManagerが初期化されていません');
+            if (!this.validateHideRequest(popupId)) {
                 return false;
             }
             
-            const popupState = this.popupStates.get(popupId);
-            if (!popupState) {
-                console.warn(`ポップアップが見つかりません: ${popupId}`);
-                return false;
-            }
+            const popupInfo = this.popups.get(popupId);
             
             // 既に非表示の場合
-            if (!popupState.visible) {
+            if (!popupInfo.visible) {
                 console.log(`ポップアップ既に非表示: ${popupId}`);
                 return true;
             }
             
-            const element = popupState.element;
+            // 非表示実行
+            const success = this.executeHide(popupId, popupInfo);
             
-            // フェードアウト
-            element.style.transition = `opacity ${this.popupFadeTime}ms ease-out`;
-            element.style.opacity = '0';
+            if (success) {
+                this.updateHideStatistics(popupId, startTime);
+            }
             
-            // フェードアウト完了後に非表示
-            popupState.fadeTimeout = setTimeout(() => {
-                this.completeHideAnimation(popupId, popupState, element);
-            }, this.popupFadeTime);
-            
-            // 統計更新
-            this.hideCount++;
-            this.lastAction = 'hide';
-            this.lastActionTime = Date.now();
-            
-            console.log(`✅ ポップアップ非表示開始: ${popupId}`);
-            return true;
+            return success;
             
         } catch (error) {
-            console.error(`❌ ポップアップ非表示エラー (${popupId}):`, error);
-            this.handleError(error);
+            this.errorHandler.handleError(error, `popup_${popupId}_hide`);
             return false;
         }
     }
     
-    /**
-     * 修正: 非表示アニメーション完了処理
-     */
-    completeHideAnimation(popupId, popupState, element) {
-        element.style.display = 'none';
-        element.style.visibility = 'hidden';
-        element.style.pointerEvents = 'none';
+    validateHideRequest(popupId) {
+        if (!this.state.isInitialized) {
+            console.warn('PopupManagerが初期化されていません');
+            return false;
+        }
         
-        // 状態更新
-        popupState.visible = false;
-        popupState.hideCount++;
-        popupState.fadeTimeout = null;
+        if (!this.popups.has(popupId)) {
+            console.warn(`ポップアップが見つかりません: ${popupId}`);
+            return false;
+        }
         
+        return true;
+    }
+    
+    executeHide(popupId, popupInfo) {
+        // アニメーション付き非表示
+        const success = this.animationManager.hideWithAnimation(
+            popupInfo.element,
+            popupId,
+            () => {
+                // アニメーション完了時の処理
+                this.completeHideOperation(popupId, popupInfo);
+            }
+        );
+        
+        if (success) {
+            // 即座に状態更新（アニメーション完了を待たない）
+            popupInfo.visible = false;
+            popupInfo.hideCount++;
+            popupInfo.lastOperation = 'hide';
+        }
+        
+        return success;
+    }
+    
+    completeHideOperation(popupId, popupInfo) {
         // アクティブポップアップ更新
-        if (this.activePopup === popupId) {
-            this.activePopup = null;
+        if (this.state.activePopup === popupId) {
+            this.state.activePopup = null;
             this.hideOverlay();
         }
         
         console.log(`🏁 ポップアップ非表示完了: ${popupId}`);
     }
     
+    updateHideStatistics(popupId, startTime) {
+        const operationTime = performance.now() - startTime;
+        
+        this.statistics.hideCount++;
+        this.statistics.lastAction = 'hide';
+        this.statistics.lastActionTime = Date.now();
+        
+        const popupInfo = this.popups.get(popupId);
+        popupInfo.operationTimes.push({
+            operation: 'hide',
+            time: operationTime,
+            timestamp: Date.now()
+        });
+        
+        console.log(`✅ ポップアップ非表示開始: ${popupId} (${operationTime.toFixed(1)}ms)`);
+    }
+    
     /**
-     * ポップアップトグル
+     * ポップアップトグル（統一処理）
      */
     togglePopup(popupId) {
-        const popupState = this.popupStates.get(popupId);
-        if (!popupState) {
+        const popupInfo = this.popups.get(popupId);
+        if (!popupInfo) {
             console.warn(`ポップアップが見つかりません: ${popupId}`);
             return false;
         }
         
-        if (popupState.visible) {
+        if (popupInfo.visible) {
             return this.hidePopup(popupId);
         } else {
             return this.showPopup(popupId);
@@ -652,16 +687,17 @@ class PopupManager {
     }
     
     /**
-     * 全ポップアップ非表示
+     * 全ポップアップ非表示（統一処理）
      */
     hideAllPopups() {
         try {
             let hiddenCount = 0;
             
-            for (const [popupId, popupState] of this.popupStates) {
-                if (popupState.visible) {
-                    this.hidePopup(popupId);
-                    hiddenCount++;
+            for (const [popupId, popupInfo] of this.popups) {
+                if (popupInfo.visible) {
+                    if (this.hidePopup(popupId)) {
+                        hiddenCount++;
+                    }
                 }
             }
             
@@ -672,14 +708,13 @@ class PopupManager {
             return hiddenCount > 0;
             
         } catch (error) {
-            console.error('❌ 全ポップアップ非表示エラー:', error);
-            this.handleError(error);
+            this.errorHandler.handleError(error, 'HideAllPopups');
             return false;
         }
     }
     
     /**
-     * オーバーレイ表示
+     * Phase 3: オーバーレイ制御（統一処理）
      */
     showOverlay() {
         if (this.overlayElement) {
@@ -691,271 +726,416 @@ class PopupManager {
         }
     }
     
-    /**
-     * オーバーレイ非表示
-     */
     hideOverlay() {
         if (this.overlayElement) {
             this.overlayElement.style.opacity = '0';
             setTimeout(() => {
-                if (this.overlayElement && !this.activePopup) {
+                if (this.overlayElement && !this.state.activePopup) {
                     this.overlayElement.style.visibility = 'hidden';
                     this.overlayElement.style.pointerEvents = 'none';
                 }
-            }, this.popupFadeTime);
+            }, this.config.fadeTime);
         }
     }
     
     /**
-     * ポップアップ状態取得
+     * Phase 3: 状態取得・統計（完全版）
      */
     getPopupState(popupId) {
-        const popupState = this.popupStates.get(popupId);
-        if (!popupState) {
+        const popupInfo = this.popups.get(popupId);
+        if (!popupInfo) {
             return null;
         }
         
+        const recentOperations = popupInfo.operationTimes.slice(-3);
+        
         return {
-            visible: popupState.visible,
-            showCount: popupState.showCount,
-            hideCount: popupState.hideCount,
-            hasFadeTimeout: !!popupState.fadeTimeout,
-            cssValidated: popupState.cssValidated || false
+            visible: popupInfo.visible,
+            showCount: popupInfo.showCount,
+            hideCount: popupInfo.hideCount,
+            lastOperation: popupInfo.lastOperation,
+            recentOperations: recentOperations,
+            averageOperationTime: this.calculateAverageOperationTime(popupInfo.operationTimes),
+            errorCount: this.errorHandler.getPopupErrorCount(popupId)
         };
     }
     
-    /**
-     * 修正: 全ポップアップ状態取得（詳細版）
-     */
+    calculateAverageOperationTime(operationTimes) {
+        if (operationTimes.length === 0) return 0;
+        
+        const totalTime = operationTimes.reduce((sum, op) => sum + op.time, 0);
+        return Math.round(totalTime / operationTimes.length * 100) / 100;
+    }
+    
     getStatus() {
         const popupStatuses = {};
         
-        for (const [popupId, popupState] of this.popupStates) {
+        for (const [popupId, popupInfo] of this.popups) {
             popupStatuses[popupId] = this.getPopupState(popupId);
         }
         
         return {
-            initialized: this.isInitialized,
-            activePopup: this.activePopup,
-            popupCount: this.popupStates.size,
-            errorCount: this.errorCount,
+            initialized: this.state.isInitialized,
+            activePopup: this.state.activePopup,
+            popupCount: this.popups.size,
             
-            // 修正: 初期化詳細状況追加
             initialization: {
-                attempts: this.initializationAttempts,
-                maxAttempts: this.maxInitAttempts,
-                domElementsReady: this.domElementsReady,
-                eventListenersReady: this.eventListenersReady
-            },
-            
-            // 修正: ポップアップ問題対応設定
-            popupFix: {
-                forceShowEnabled: this.forceShowEnabled,
-                cssValidationEnabled: this.cssValidationEnabled,
-                animationFallbackEnabled: this.animationFallbackEnabled
+                attempts: this.state.initializationAttempts,
+                maxAttempts: this.config.retryAttempts,
+                domElementsReady: this.state.domElementsReady,
+                eventListenersReady: this.state.eventListenersReady
             },
             
             statistics: {
-                totalShows: this.showCount,
-                totalHides: this.hideCount,
-                lastAction: this.lastAction,
-                lastActionTime: this.lastActionTime
+                totalShows: this.statistics.showCount,
+                totalHides: this.statistics.hideCount,
+                lastAction: this.statistics.lastAction,
+                lastActionTime: this.statistics.lastActionTime
             },
-            popups: popupStatuses
+            
+            errorStats: this.errorHandler.getStats(),
+            
+            popups: popupStatuses,
+            
+            config: this.config
         };
     }
     
     /**
-     * エラーハンドリング
+     * ポップアップ登録（外部用）
      */
-    handleError(error) {
-        this.errorCount++;
-        
-        if (this.errorCount > this.maxErrors) {
-            console.error(`PopupManager: 最大エラー数 (${this.maxErrors}) に達しました。`);
-            return;
+    registerPopup(popupId) {
+        const element = document.getElementById(`${popupId}-popup`) || document.getElementById(popupId);
+        if (element && !this.popups.has(popupId)) {
+            this.registerPopupElement(popupId, element);
+            console.log(`📋 外部ポップアップ登録: ${popupId}`);
+            return true;
         }
-        
-        console.warn(`PopupManager エラー ${this.errorCount}/${this.maxErrors}:`, error);
+        return false;
     }
     
     /**
-     * 修正: デバッグ情報表示（詳細版）
+     * Phase 3: デバッグ情報表示（完全版）
      */
     debug() {
-        console.group('🔍 PopupManager デバッグ情報（ポップアップ問題修正版）');
+        console.group('🔍 PopupManager Phase 3 デバッグ情報（DRY・SOLID準拠版）');
+        
+        const status = this.getStatus();
         
         console.log('基本情報:', {
-            initialized: this.isInitialized,
-            activePopup: this.activePopup,
-            popupCount: this.popupStates.size,
-            errorCount: `${this.errorCount}/${this.maxErrors}`
+            initialized: status.initialized,
+            activePopup: status.activePopup,
+            popupCount: status.popupCount
         });
         
-        console.log('初期化詳細:', {
-            attempts: `${this.initializationAttempts}/${this.maxInitAttempts}`,
-            domElementsReady: this.domElementsReady,
-            eventListenersReady: this.eventListenersReady
-        });
+        console.log('初期化詳細:', status.initialization);
+        console.log('統計情報:', status.statistics);
+        console.log('エラー統計:', status.errorStats);
+        console.log('設定情報:', status.config);
         
-        console.log('ポップアップ問題対応設定:', {
-            forceShowEnabled: this.forceShowEnabled,
-            cssValidationEnabled: this.cssValidationEnabled,
-            animationFallbackEnabled: this.animationFallbackEnabled
-        });
-        
-        console.log('統計情報:', {
-            totalShows: this.showCount,
-            totalHides: this.hideCount,
-            lastAction: this.lastAction,
-            lastActionTime: this.lastActionTime ? new Date(this.lastActionTime).toLocaleTimeString() : 'なし'
-        });
-        
-        console.log('ポップアップ状態:');
-        for (const [popupId, popupState] of this.popupStates) {
-            const elementInfo = {
+        console.log('ポップアップ詳細状態:');
+        for (const [popupId, popupState] of Object.entries(status.popups)) {
+            console.log(`  ${popupId}:`, {
                 visible: popupState.visible,
                 shows: popupState.showCount,
                 hides: popupState.hideCount,
-                hasFadeTimeout: !!popupState.fadeTimeout,
-                element: !!popupState.element,
-                cssValidated: popupState.cssValidated || false
-            };
-            
-            if (popupState.element) {
-                const computedStyle = window.getComputedStyle(popupState.element);
-                elementInfo.currentDisplay = computedStyle.display;
-                elementInfo.currentVisibility = computedStyle.visibility;
-                elementInfo.currentOpacity = computedStyle.opacity;
-            }
-            
-            console.log(`  ${popupId}:`, elementInfo);
+                lastOperation: popupState.lastOperation,
+                avgTime: `${popupState.averageOperationTime}ms`,
+                errors: popupState.errorCount,
+                recentOps: popupState.recentOperations.length
+            });
         }
         
+        // DOM要素状況確認
         console.log('DOM要素状況:', {
             overlay: !!this.overlayElement,
-            popupElements: this.popupElements.size,
+            popupElements: this.popups.size,
             penSettingsExists: !!document.getElementById('pen-settings-popup'),
             bodyChildren: document.body.children.length
         });
         
-        // 修正: ポップアップ要素詳細確認
+        // 各ポップアップ要素の詳細確認
         console.log('要素詳細確認:');
-        const penSettings = document.getElementById('pen-settings-popup');
-        if (penSettings) {
-            console.log('  pen-settings-popup:', {
-                id: penSettings.id,
-                className: penSettings.className,
-                display: penSettings.style.display,
-                visibility: penSettings.style.visibility,
-                opacity: penSettings.style.opacity,
-                zIndex: penSettings.style.zIndex,
-                position: penSettings.style.position
+        for (const [popupId, popupInfo] of this.popups) {
+            const element = popupInfo.element;
+            console.log(`  ${popupId}:`, {
+                exists: !!element,
+                id: element?.id,
+                className: element?.className,
+                display: element?.style.display,
+                visibility: element?.style.visibility,
+                opacity: element?.style.opacity,
+                zIndex: element?.style.zIndex
             });
-        } else {
-            console.log('  pen-settings-popup: 要素が見つかりません');
         }
+        
+        // CSS管理状況
+        console.log('CSS管理状況:', {
+            validatedElements: this.cssManager.validatedElements.size,
+            activeAnimations: this.animationManager.activeAnimations.size
+        });
         
         console.groupEnd();
     }
     
     /**
-     * 修正: クリーンアップ（強化版）
+     * Phase 3: パフォーマンス統計
+     */
+    getPerformanceStats() {
+        const popupPerformance = {};
+        
+        for (const [popupId, popupInfo] of this.popups) {
+            const operations = popupInfo.operationTimes;
+            
+            if (operations.length > 0) {
+                const showOps = operations.filter(op => op.operation === 'show');
+                const hideOps = operations.filter(op => op.operation === 'hide');
+                
+                popupPerformance[popupId] = {
+                    totalOperations: operations.length,
+                    showOperations: showOps.length,
+                    hideOperations: hideOps.length,
+                    averageShowTime: showOps.length > 0 ? 
+                        showOps.reduce((sum, op) => sum + op.time, 0) / showOps.length : 0,
+                    averageHideTime: hideOps.length > 0 ? 
+                        hideOps.reduce((sum, op) => sum + op.time, 0) / hideOps.length : 0,
+                    lastOperationTime: operations[operations.length - 1]?.timestamp || 0
+                };
+            }
+        }
+        
+        return {
+            initialized: this.state.isInitialized,
+            uptime: Date.now() - (this.statistics.lastActionTime || Date.now()),
+            totalOperations: this.statistics.showCount + this.statistics.hideCount,
+            errorRate: this.popups.size > 0 ? 
+                this.errorHandler.errorCount / (this.statistics.showCount + this.statistics.hideCount + 1) : 0,
+            popupPerformance: popupPerformance,
+            memoryUsage: {
+                popups: this.popups.size,
+                validatedElements: this.cssManager.validatedElements.size,
+                activeAnimations: this.animationManager.activeAnimations.size,
+                errorLogSize: this.errorHandler.errorLog.length
+            }
+        };
+    }
+    
+    /**
+     * Phase 3: 完全クリーンアップ（統一版）
      */
     destroy() {
         try {
-            console.log('🧹 PopupManager クリーンアップ開始（ポップアップ問題修正版）...');
+            console.log('🧹 PopupManager Phase 3 完全クリーンアップ開始...');
+            
+            const startTime = performance.now();
+            
+            // アクティブアニメーション停止
+            this.animationManager.cleanup();
             
             // 全ポップアップ非表示
             this.hideAllPopups();
             
-            // フェードタイマークリア
-            for (const popupState of this.popupStates.values()) {
-                if (popupState.fadeTimeout) {
-                    clearTimeout(popupState.fadeTimeout);
-                    popupState.fadeTimeout = null;
-                }
-            }
+            // イベントリスナークリーンアップ
+            this.cleanupEventListeners();
             
-            // 修正: イベントリスナークリーンアップ
-            if (document._popupEscListenerSet) {
-                // ESCキーリスナーは他のPopupManagerでも使用される可能性があるため、
-                // グローバルフラグのみリセット（実際のリスナー削除はしない）
-                console.log('🧹 ESCキーリスナー参照クリア');
-            }
+            // DOM要素クリーンアップ
+            this.cleanupDOMElements();
             
-            // ポップアップ要素のイベントリスナークリア
-            for (const [popupId, element] of this.popupElements) {
-                if (element._clickListenerSet) {
-                    element._clickListenerSet = false;
-                    console.log(`🧹 ${popupId} イベントリスナークリア`);
-                }
-            }
+            // 内部状態リセット
+            this.resetInternalState();
             
-            // オーバーレイ削除
-            if (this.overlayElement && this.overlayElement.parentNode) {
-                this.overlayElement.parentNode.removeChild(this.overlayElement);
-                this.overlayElement = null;
-                console.log('🧹 オーバーレイ削除完了');
-            }
+            // 管理システムクリーンアップ
+            this.cleanupManagementSystems();
             
-            // 参照クリア
-            this.popupStates.clear();
-            this.popupElements.clear();
-            this.activePopup = null;
-            this.isInitialized = false;
-            this.domElementsReady = false;
-            this.eventListenersReady = false;
-            
-            console.log('✅ PopupManager クリーンアップ完了（ポップアップ問題修正版）');
+            const endTime = performance.now();
+            console.log(`✅ PopupManager Phase 3 完全クリーンアップ完了 (${(endTime - startTime).toFixed(1)}ms)`);
             
         } catch (error) {
             console.error('❌ PopupManager クリーンアップエラー:', error);
         }
     }
+    
+    cleanupEventListeners() {
+        // ESCキーリスナーは他のPopupManagerでも使用される可能性があるため、
+        // グローバルフラグのみリセット（実際のリスナー削除はしない）
+        if (document._popupEscListenerSet) {
+            console.log('🧹 ESCキーリスナー参照クリア');
+        }
+        
+        // ポップアップ要素のイベントリスナークリア
+        for (const [popupId, popupInfo] of this.popups) {
+            const element = popupInfo.element;
+            if (element && element._clickListenerSet) {
+                element._clickListenerSet = false;
+                console.log(`🧹 ${popupId} イベントリスナークリア`);
+            }
+        }
+    }
+    
+    cleanupDOMElements() {
+        // オーバーレイ削除
+        if (this.overlayElement && this.overlayElement.parentNode) {
+            this.overlayElement.parentNode.removeChild(this.overlayElement);
+            this.overlayElement = null;
+            console.log('🧹 オーバーレイ削除完了');
+        }
+        
+        // 動的作成されたポップアップ要素の削除
+        // （既存のHTML要素は残す）
+        for (const [popupId, popupInfo] of this.popups) {
+            const element = popupInfo.element;
+            if (element && element.id === 'pen-settings-popup' && element.parentNode) {
+                // pen-settings-popupは動的作成されるため削除
+                element.parentNode.removeChild(element);
+                console.log(`🧹 ${popupId} 動的要素削除完了`);
+            }
+        }
+    }
+    
+    resetInternalState() {
+        // 状態管理リセット
+        this.state = {
+            activePopup: null,
+            isInitialized: false,
+            initializationAttempts: 0,
+            domElementsReady: false,
+            eventListenersReady: false
+        };
+        
+        // ポップアップ管理クリア
+        this.popups.clear();
+        
+        // 統計情報リセット
+        this.statistics = {
+            showCount: 0,
+            hideCount: 0,
+            lastAction: null,
+            lastActionTime: 0,
+            operationTimes: new Map()
+        };
+        
+        console.log('🔄 内部状態リセット完了');
+    }
+    
+    cleanupManagementSystems() {
+        // CSS管理システムクリーンアップ
+        this.cssManager.cleanup();
+        
+        // アニメーション管理システムクリーンアップ
+        this.animationManager.cleanup();
+        
+        // エラーハンドラーリセット
+        this.errorHandler.reset();
+        
+        console.log('🧹 管理システムクリーンアップ完了');
+    }
 }
 
-// ==== グローバル登録・エクスポート（ポップアップ問題修正版）====
+// ==== Phase 3: グローバル登録・エクスポート（DRY・SOLID準拠版）====
 if (typeof window !== 'undefined') {
     window.PopupManager = PopupManager;
     
-    // 修正: ポップアップ問題修正版デバッグ関数
-    window.debugPopupManagerFixed = function() {
-        if (window.penToolUI && window.penToolUI.components?.popupManager) {
-            window.penToolUI.components.popupManager.debug();
+    // Phase 3: 統合デバッグ関数
+    window.debugPopupManagerPhase3 = function() {
+        if (window.penToolUI && window.penToolUI.components?.get('popupManager')) {
+            window.penToolUI.components.get('popupManager').debug();
         } else if (window.uiManager && window.uiManager.popupManager) {
             window.uiManager.popupManager.debug();
         } else {
             console.warn('PopupManager が利用できません');
             
             // フォールバック: 直接要素確認
-            console.group('🔍 PopupManager フォールバック確認');
+            console.group('🔍 PopupManager フォールバック確認（Phase 3）');
             const penSettings = document.getElementById('pen-settings-popup');
             console.log('pen-settings-popup要素:', {
                 exists: !!penSettings,
                 display: penSettings ? penSettings.style.display : 'N/A',
                 visibility: penSettings ? penSettings.style.visibility : 'N/A',
-                opacity: penSettings ? penSettings.style.opacity : 'N/A'
+                opacity: penSettings ? penSettings.style.opacity : 'N/A',
+                className: penSettings ? penSettings.className : 'N/A'
             });
+            
+            const overlay = document.getElementById('popup-overlay');
+            console.log('popup-overlay要素:', {
+                exists: !!overlay,
+                display: overlay ? overlay.style.display : 'N/A'
+            });
+            
             console.groupEnd();
         }
     };
     
-    window.showPenSettingsFixed = function() {
-        console.log('🧪 ペン設定表示テスト（修正版）開始...');
+    // Phase 3: 個別テスト関数
+    window.testPopupManagerPhase3 = function() {
+        console.log('🧪 PopupManager Phase 3 テスト開始...');
         
-        if (window.penToolUI && window.penToolUI.components?.popupManager) {
-            const result = window.penToolUI.components.popupManager.showPopup('pen-settings');
+        const popupManager = window.penToolUI?.components?.get('popupManager') || 
+                           window.uiManager?.popupManager;
+        
+        if (popupManager) {
+            console.log('PopupManager発見、テスト実行中...');
+            
+            // 基本状態確認
+            const status = popupManager.getStatus();
+            console.log('基本状態:', {
+                initialized: status.initialized,
+                popupCount: status.popupCount,
+                activePopup: status.activePopup
+            });
+            
+            // パフォーマンス統計
+            const perfStats = popupManager.getPerformanceStats();
+            console.log('パフォーマンス統計:', perfStats);
+            
+            // ポップアップ表示テスト
+            console.log('ポップアップ表示テスト実行中...');
+            const showResult = popupManager.showPopup('pen-settings');
+            console.log('表示テスト結果:', showResult);
+            
+            // 2秒後に非表示テスト
+            setTimeout(() => {
+                console.log('ポップアップ非表示テスト実行中...');
+                const hideResult = popupManager.hidePopup('pen-settings');
+                console.log('非表示テスト結果:', hideResult);
+            }, 2000);
+            
+            return status;
+        } else {
+            console.warn('PopupManager が利用できません');
+            return null;
+        }
+    };
+    
+    // Phase 3: ポップアップ制御関数（改善版）
+    window.showPenSettingsPhase3 = function() {
+        console.log('🧪 ペン設定表示テスト（Phase 3版）開始...');
+        
+        const popupManager = window.penToolUI?.components?.get('popupManager') || 
+                           window.uiManager?.popupManager;
+        
+        if (popupManager) {
+            const result = popupManager.showPopup('pen-settings');
             console.log('PopupManager経由結果:', result);
             return result;
         } else {
-            // フォールバック表示
+            // 高度なフォールバック表示
             const penSettings = document.getElementById('pen-settings-popup');
             if (penSettings) {
-                penSettings.style.display = 'block';
-                penSettings.style.visibility = 'visible';
-                penSettings.style.opacity = '1';
-                console.log('フォールバック表示実行');
+                // CSS強制適用
+                penSettings.style.cssText = `
+                    display: block !important;
+                    visibility: visible !important;
+                    opacity: 1 !important;
+                    position: fixed !important;
+                    top: 50% !important;
+                    left: 50% !important;
+                    transform: translate(-50%, -50%) !important;
+                    z-index: 10000 !important;
+                    background: white !important;
+                    border: 2px solid #800000 !important;
+                    padding: 20px !important;
+                `;
+                console.log('高度なフォールバック表示実行');
                 return true;
             } else {
                 console.warn('pen-settings-popup要素が見つかりません');
@@ -964,15 +1144,17 @@ if (typeof window !== 'undefined') {
         }
     };
     
-    window.hidePenSettingsFixed = function() {
-        console.log('❌ ペン設定非表示テスト（修正版）開始...');
+    window.hidePenSettingsPhase3 = function() {
+        console.log('❌ ペン設定非表示テスト（Phase 3版）開始...');
         
-        if (window.penToolUI && window.penToolUI.components?.popupManager) {
-            const result = window.penToolUI.components.popupManager.hidePopup('pen-settings');
+        const popupManager = window.penToolUI?.components?.get('popupManager') || 
+                           window.uiManager?.popupManager;
+        
+        if (popupManager) {
+            const result = popupManager.hidePopup('pen-settings');
             console.log('PopupManager経由結果:', result);
             return result;
         } else {
-            // フォールバック非表示
             const penSettings = document.getElementById('pen-settings-popup');
             if (penSettings) {
                 penSettings.style.display = 'none';
@@ -980,76 +1162,338 @@ if (typeof window !== 'undefined') {
                 penSettings.style.opacity = '0';
                 console.log('フォールバック非表示実行');
                 return true;
-            } else {
-                console.warn('pen-settings-popup要素が見つかりません');
-                return false;
             }
-        }
-    };
-    
-    window.hideAllPopupsFixed = function() {
-        console.log('📋 全ポップアップ非表示テスト（修正版）開始...');
-        
-        if (window.penToolUI && window.penToolUI.components?.popupManager) {
-            return window.penToolUI.components.popupManager.hideAllPopups();
-        } else if (window.uiManager && window.uiManager.hideAllPopups) {
-            return window.uiManager.hideAllPopups();
-        } else {
-            console.warn('PopupManager が利用できません');
             return false;
         }
     };
     
-    // 修正: ポップアップ要素強制作成関数
-    window.createPenSettingsPopupForced = function() {
-        console.log('🔧 pen-settings-popup強制作成開始...');
+    // Phase 3: パフォーマンス統計表示
+    window.getPopupManagerPerformance = function() {
+        const popupManager = window.penToolUI?.components?.get('popupManager') || 
+                           window.uiManager?.popupManager;
         
-        const existing = document.getElementById('pen-settings-popup');
-        if (existing) {
-            console.log('⚠️ pen-settings-popup既に存在します');
-            return existing;
+        if (popupManager && typeof popupManager.getPerformanceStats === 'function') {
+            const stats = popupManager.getPerformanceStats();
+            console.log('📊 PopupManager パフォーマンス統計:', stats);
+            return stats;
+        } else {
+            console.warn('PopupManager パフォーマンス統計が利用できません');
+            return null;
         }
-        
-        // PopupManagerインスタンスを作成して要素作成
-        const tempManager = new PopupManager();
-        const popup = tempManager.createPenSettingsPopup();
-        
-        console.log('✅ pen-settings-popup強制作成完了');
-        return popup;
     };
     
-    console.log('✅ PopupManager Component (ポップアップ問題修正版) 読み込み完了');
-    console.log('📦 エクスポートクラス: PopupManager（ポップアップ問題修正版）');
-    console.log('🔧 修正内容:');
-    console.log('  ✅ 強制表示機能追加（display/visibility/opacity）');
-    console.log('  ✅ 初期化プロセス確認強化・リトライ処理');
-    console.log('  ✅ DOM要素検証・自動作成機能');
-    console.log('  ✅ エラーハンドリング改善・詳細ログ');
-    console.log('  ✅ フェードアニメーション最適化・フォールバック');
-    console.log('  ✅ CSS検証・修正機能');
-    console.log('🎯 機能: ペンツール専用ポップアップ制御（問題修正版）');
-    console.log('🔧 特徴: ui-manager.js非依存・ESC/外部クリック対応・状態同期・強制表示');
-    console.log('🐛 デバッグ関数（ポップアップ問題修正版）:');
-    console.log('  - window.debugPopupManagerFixed() - PopupManager詳細表示（修正版）');
-    console.log('  - window.showPenSettingsFixed() - ペン設定表示（修正版）');
-    console.log('  - window.hidePenSettingsFixed() - ペン設定非表示（修正版）');
-    console.log('  - window.hideAllPopupsFixed() - 全ポップアップ非表示（修正版）');
-    console.log('  - window.createPenSettingsPopupForced() - ポップアップ要素強制作成');
+    // Phase 3: エラー統計リセット
+    window.resetPopupManagerErrors = function() {
+        const popupManager = window.penToolUI?.components?.get('popupManager') || 
+                           window.uiManager?.popupManager;
+        
+        if (popupManager && popupManager.errorHandler) {
+            popupManager.errorHandler.reset();
+            console.log('✅ PopupManager エラー統計リセット完了');
+        } else {
+            console.warn('PopupManager エラーハンドラーが利用できません');
+        }
+    };
+    
+    console.log('✅ PopupManager Component Phase 3 DRY・SOLID準拠クリーンアップ版 読み込み完了');
+    console.log('📦 エクスポートクラス（Phase 3 完全リファクタリング版）:');
+    console.log('  ✅ PopupManager: ポップアップ制御（完全クリーンアップ版）');
+    console.log('  ✅ PopupErrorHandler: 統一エラーハンドリング');
+    console.log('  ✅ PopupCSSManager: CSS管理・検証・修正システム');
+    console.log('  ✅ PopupAnimationManager: アニメーション制御システム');
+    console.log('  ✅ PopupElementFactory: DOM要素作成ファクトリ');
+    console.log('  ✅ PopupConfigUtils: 設定値安全取得ユーティリティ');
+    console.log('🔧 Phase 3 改善完了:');
+    console.log('  ✅ DRY原則完全準拠（重複コード削除）');
+    console.log('  ✅ SOLID原則完全準拠（S・O・L・I・D）');
+    console.log('  ✅ エラーハンドリング統一・ポップアップ別統計');
+    console.log('  ✅ CSS検証・修正システム統一');
+    console.log('  ✅ アニメーション制御統一・キャンセル機能');
+    console.log('  ✅ DOM要素作成ファクトリパターン採用');
+    console.log('  ✅ パフォーマンス統計・監視機能');
+    console.log('  ✅ 初期化プロセス最適化・リトライ機能');
+    console.log('🎯 機能: ポップアップ制御・アニメーション・CSS管理・統計収集');
+    console.log('🔧 特徴: 統一エラーハンドリング・パフォーマンス監視・自動CSS修正');
+    console.log('🐛 デバッグ関数（Phase 3版）:');
+    console.log('  - window.debugPopupManagerPhase3() - 完全デバッグ情報表示');
+    console.log('  - window.testPopupManagerPhase3() - Phase 3機能テスト');
+    console.log('  - window.showPenSettingsPhase3() - ペン設定表示（高度版）');
+    console.log('  - window.hidePenSettingsPhase3() - ペン設定非表示（高度版）');
+    console.log('  - window.getPopupManagerPerformance() - パフォーマンス統計表示');
+    console.log('  - window.resetPopupManagerErrors() - エラー統計リセット');
+    console.log('📊 統合システム（Phase 3）:');
+    console.log('  ✅ 統一エラーハンドリング: ポップアップ別統計・閾値制御');
+    console.log('  ✅ CSS管理システム: 自動検証・修正・スタイル統一');
+    console.log('  ✅ アニメーション管理: フェード制御・キャンセル・統計');
+    console.log('  ✅ 要素作成ファクトリ: DOM生成・イベント設定・構造化');
+    console.log('  ✅ 設定管理: CONFIG安全取得・デフォルト値・検証');
+    console.log('  ✅ パフォーマンス監視: 操作時間・メモリ使用量・統計分析');
+    console.log('🏆 Phase 3達成: DRY・SOLID原則完全準拠・保守性最大化完成');
 }
 
-console.log('🏆 PopupManager Component (ポップアップ問題修正版) 初期化完了');/**
+console.log('🏆 PopupManager Component Phase 3 DRY・SOLID準拠クリーンアップ版 初期化完了');/**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール
- * PopupManager Component - ポップアップ問題修正版
+ * PopupManager Component - Phase 3 DRY・SOLID準拠クリーンアップ版
  * 
- * 🔧 修正内容:
- * 1. ✅ 強制表示機能追加（display/visibility/opacity）
- * 2. ✅ 初期化プロセス確認強化
- * 3. ✅ DOM要素検証・作成機能
- * 4. ✅ エラーハンドリング改善
- * 5. ✅ フェードアニメーション最適化
+ * 🔧 Phase 3 改善内容:
+ * 1. ✅ DRY原則完全準拠（重複コード削除）
+ * 2. ✅ SOLID原則完全準拠（単一責任・開放閉鎖・依存逆転）
+ * 3. ✅ エラーハンドリング統一・強化
+ * 4. ✅ 初期化プロセス最適化
+ * 5. ✅ CSS検証・修正システム統一
+ * 6. ✅ アニメーション制御統一
  * 
- * ⚡ STEP 4実装: ペンツール専用ポップアップ制御移譲
- * 🎯 目的: ui-manager.jsからポップアップ制御機能を完全分離
+ * ⚡ Phase 3実装: 完全クリーンアップ・保守性最大化
+ * 🎯 目的: ポップアップ制御機能の完全統一・エラー分離・品質向上
  * 
  * 📦 実装内容:
- * - ペンツール専用
+ * - 統一エラーハンドリング・統計収集
+ * - CSS検証・修正システム
+ * - アニメーション制御システム
+ * - DOM要素作成・管理システム
+ * 
+ * 🏗️ 設計原則: SOLID・DRY準拠、単一責任、依存注入、ファクトリパターン
+ */
+
+console.log('🔧 PopupManager Component Phase 3 DRY・SOLID準拠クリーンアップ版読み込み開始...');
+
+// ==== Phase 3: CONFIG値安全取得ユーティリティ（DRY原則） ====
+class PopupConfigUtils {
+    static safeGet(key, defaultValue) {
+        try {
+            if (window.CONFIG && window.CONFIG[key] !== undefined && window.CONFIG[key] !== null) {
+                return window.CONFIG[key];
+            }
+        } catch (error) {
+            console.warn(`CONFIG.${key} アクセスエラー:`, error);
+        }
+        return defaultValue;
+    }
+    
+    static getPopupDefaults() {
+        return {
+            fadeTime: this.safeGet('POPUP_FADE_TIME', 300),
+            maxErrors: this.safeGet('MAX_ERRORS', 10),
+            initTimeout: this.safeGet('INIT_TIMEOUT', 5000),
+            retryAttempts: this.safeGet('RETRY_ATTEMPTS', 3),
+            zIndexBase: this.safeGet('POPUP_Z_INDEX_BASE', 10000)
+        };
+    }
+}
+
+// ==== Phase 3: 統一エラーハンドリング ====
+class PopupErrorHandler {
+    constructor(maxErrors = 10, context = 'PopupManager') {
+        this.maxErrors = maxErrors;
+        this.context = context;
+        this.errorCount = 0;
+        this.errorLog = [];
+        this.popupErrors = new Map();
+    }
+    
+    handleError(error, subContext = '') {
+        this.errorCount++;
+        const fullContext = subContext ? `${this.context}.${subContext}` : this.context;
+        
+        const errorInfo = {
+            timestamp: Date.now(),
+            context: fullContext,
+            message: error.message || error,
+            count: this.errorCount
+        };
+        
+        this.errorLog.push(errorInfo);
+        
+        // ポップアップ別エラー統計
+        if (subContext.startsWith('popup_')) {
+            const popupId = subContext.replace('popup_', '');
+            const currentCount = this.popupErrors.get(popupId) || 0;
+            this.popupErrors.set(popupId, currentCount + 1);
+        }
+        
+        if (this.errorCount > this.maxErrors) {
+            console.error(`❌ ${fullContext}: 最大エラー数 (${this.maxErrors}) に達しました。`);
+            return false;
+        }
+        
+        console.warn(`⚠️ ${fullContext} エラー ${this.errorCount}/${this.maxErrors}:`, error);
+        return true;
+    }
+    
+    getPopupErrorCount(popupId) {
+        return this.popupErrors.get(popupId) || 0;
+    }
+    
+    getStats() {
+        return {
+            errorCount: this.errorCount,
+            maxErrors: this.maxErrors,
+            popupErrors: Object.fromEntries(this.popupErrors),
+            recentErrors: this.errorLog.slice(-5)
+        };
+    }
+    
+    reset() {
+        this.errorCount = 0;
+        this.errorLog = [];
+        this.popupErrors.clear();
+    }
+}
+
+// ==== Phase 3: CSS管理システム（単一責任原則） ====
+class PopupCSSManager {
+    constructor(errorHandler) {
+        this.errorHandler = errorHandler;
+        this.validatedElements = new Set();
+    }
+    
+    validateAndFixPopupCSS(element, popupId) {
+        try {
+            if (this.validatedElements.has(element)) {
+                return true; // 既に検証済み
+            }
+            
+            const computedStyle = window.getComputedStyle(element);
+            const fixes = this.getRequiredCSSFixes(computedStyle);
+            
+            this.applyCSSFixes(element, fixes);
+            this.validatedElements.add(element);
+            
+            if (Object.keys(fixes).length > 0) {
+                console.log(`🔧 ${popupId} CSS修正完了:`, fixes);
+            }
+            
+            return true;
+        } catch (error) {
+            this.errorHandler.handleError(error, `CSSValidation_${popupId}`);
+            return false;
+        }
+    }
+    
+    getRequiredCSSFixes(computedStyle) {
+        const fixes = {};
+        const requiredStyles = {
+            position: 'fixed',
+            zIndex: '10000'
+        };
+        
+        for (const [property, expectedValue] of Object.entries(requiredStyles)) {
+            const currentValue = computedStyle.getPropertyValue(property);
+            if (currentValue !== expectedValue) {
+                fixes[property] = expectedValue;
+            }
+        }
+        
+        return fixes;
+    }
+    
+    applyCSSFixes(element, fixes) {
+        for (const [property, value] of Object.entries(fixes)) {
+            element.style.setProperty(property, value, 'important');
+        }
+    }
+    
+    createPopupBaseStyle(fadeTime, zIndex) {
+        return `
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border: 2px solid #800000;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: ${zIndex};
+            min-width: 300px;
+            max-width: 500px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity ${fadeTime}ms ease-out;
+        `;
+    }
+    
+    createOverlayStyle(fadeTime, zIndex) {
+        return `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: ${zIndex - 1};
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity ${fadeTime}ms ease-out,
+                       visibility ${fadeTime}ms ease-out;
+            pointer-events: none;
+        `;
+    }
+    
+    cleanup() {
+        this.validatedElements.clear();
+    }
+}
+
+// ==== Phase 3: アニメーション制御システム（開放閉鎖原則） ====
+class PopupAnimationManager {
+    constructor(fadeTime, errorHandler) {
+        this.fadeTime = fadeTime;
+        this.errorHandler = errorHandler;
+        this.activeAnimations = new Map();
+    }
+    
+    showWithAnimation(element, popupId, onComplete = null) {
+        try {
+            // 既存のアニメーションをキャンセル
+            this.cancelAnimation(popupId);
+            
+            // 強制表示
+            this.forceShowElement(element);
+            
+            // フェードイン実行
+            const animation = this.executeFadeIn(element, popupId, onComplete);
+            this.activeAnimations.set(popupId, animation);
+            
+            return true;
+        } catch (error) {
+            this.errorHandler.handleError(error, `ShowAnimation_${popupId}`);
+            return false;
+        }
+    }
+    
+    hideWithAnimation(element, popupId, onComplete = null) {
+        try {
+            // 既存のアニメーションをキャンセル
+            this.cancelAnimation(popupId);
+            
+            // フェードアウト実行
+            const animation = this.executeFadeOut(element, popupId, onComplete);
+            this.activeAnimations.set(popupId, animation);
+            
+            return true;
+        } catch (error) {
+            this.errorHandler.handleError(error, `HideAnimation_${popupId}`);
+            return false;
+        }
+    }
+    
+    forceShowElement(element) {
+        const forceStyles = {
+            display: 'block',
+            visibility: 'visible',
+            opacity: '0',
+            pointerEvents: 'auto'
+        };
+        
+        for (const [property, value] of Object.entries(forceStyles)) {
+            element.style.setProperty(property, value, 'important');
+        }
+    }
+    
+    executeCompleteHide(element) {
+        const hideStyles = {
+            display: 'none',
+            visibility
