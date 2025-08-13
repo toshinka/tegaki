@@ -1,0 +1,91 @@
+// ==== Phase2追加: 新規ライブラリ検出 ====
+
+// pixi-viewport
+totalCount++;
+if (typeof window.PIXI_VIEWPORT !== 'undefined' || (PIXI && PIXI.extras && PIXI.extras.Viewport)) {
+    console.log('✅ pixi-viewport 検出 - 無限キャンバス機能利用可能');
+    const vpSource = window.PIXI_VIEWPORT || PIXI.extras;
+    extensions.Viewport = {
+        Viewport: vpSource.Viewport,
+        available: true,
+        source: 'CDN'
+    };
+    loadedCount++;
+} else {
+    console.warn('⚠️ pixi-viewport 未検出 - キャンバス移動は独自実装使用');
+    extensions.Viewport = { available: false };
+}
+
+// pixi-filters
+totalCount++;
+if (typeof window.PIXI_FILTERS !== 'undefined' || (PIXI && PIXI.filters)) {
+    console.log('✅ pixi-filters 検出 - フィルター効果利用可能');
+    extensions.Filters = {
+        filters: PIXI.filters,
+        available: true,
+        source: 'CDN'
+    };
+    loadedCount++;
+} else {
+    console.warn('⚠️ pixi-filters 未検出 - フィルター効果無効');
+    extensions.Filters = { available: false };
+}
+
+// @pixi/assets
+totalCount++;
+if (PIXI && PIXI.Assets) {
+    console.log('✅ @pixi/assets 検出 - 標準アセットローダー利用可能');
+    extensions.Assets = {
+        Assets: PIXI.Assets,
+        available: true,
+        source: 'CDN'
+    };
+    loadedCount++;
+} else {
+    console.warn('⚠️ @pixi/assets 未検出 - 手動fetchでのアセット読み込み');
+    extensions.Assets = { available: false };
+}
+
+// pixi-svg + Tabler Icons SVG loader
+totalCount++;
+if (typeof window.PIXI_SVG !== 'undefined' || (PIXI && PIXI.SVG)) {
+    console.log('✅ pixi-svg 検出 - SVG描画利用可能');
+    extensions.SVG = {
+        SVG: PIXI.SVG,
+        available: true,
+        source: 'CDN'
+    };
+    loadedCount++;
+} else {
+    console.warn('⚠️ pixi-svg 未検出 - SVG読み込み無効');
+    extensions.SVG = { available: false };
+}
+
+// Tabler Icons 簡易ローダー
+extensions.Tabler = {
+    /**
+     * Tabler Icons SVG を Pixi Graphics に変換
+     * @param {string} iconName 例: 'alarm', 'user'
+     * @returns {Promise<PIXI.Graphics|null>}
+     */
+    loadIcon: async function(iconName) {
+        try {
+            const url = `https://tabler-icons.io/static/icons/${iconName}.svg`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const svgText = await res.text();
+
+            if (extensions.SVG?.available) {
+                const svgGraphics = new extensions.SVG.SVG(svgText);
+                return svgGraphics;
+            } else {
+                console.warn('⚠️ pixi-svg が無効のため Graphics に変換できません');
+                return null;
+            }
+        } catch (err) {
+            console.error(`❌ Tabler Icon 読み込み失敗 (${iconName}):`, err);
+            return null;
+        }
+    },
+    available: true
+};
