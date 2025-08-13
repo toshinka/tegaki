@@ -1,113 +1,136 @@
-# JavaScript + PixiJS v7 Rulebook v6（モジュール分割・責務移譲完成版）
+# JavaScript + PixiJS v7 Rulebook v7（ライブラリ統合指針版）
 
 ## 1. 基本理念
-- 安定動作・可読性・拡張性を優先し、将来的なPixiJS v8移行を意識する。
-- 車輪の再発明は避け、有効なライブラリは活用する。
-- 現在はJavaScript+fetch API分割でありグローバル変数形式で実装する。
-- ファイル間の依存は明確化し、循環参照を作らない。
-- **SOLID・DRY原則準拠**: 単一責任・責務分離・重複コード排除を徹底する。
-- **モジュール分割設計**: 機能ごとの専門ファイル分離による保守性向上。
-- PixiJS v7の公式API仕様に沿い、非推奨機能は使用しない。
-- ES2023構文使用OK、OffscreenCanvasや最新Canvas APIも使用OK。
-- 最新Chrome+デスクトップPC環境を想定、後方互換は意識しない。
-- **ファイルサイズ制限**: 単一ファイルは800行以下を目安とし、それを超える場合は責務に応じて分割する。
-- 必ずdebug/またはmonitoring/ディレクトリの既存モジュールを確認し、重複を避ける事。
+
+### 1.1 核心方針
+- **安定動作・可読性・拡張性を優先**し、将来的なTypeScript + Vite + ES6移行を意識する
+- **PixiJSエコシステム活用**により、車輪の再発明を避け、標準実装を採用する
+- **段階的品質向上**と既存システムとの互換性維持を両立する
+- **AI協働最適化**を考慮した標準パターンの採用を推奨する
+
+### 1.2 実装原則
+- 現在はJavaScript+fetch API分割でありグローバル変数形式で実装する
+- ファイル間の依存は明確化し、循環参照を作らない
+- **SOLID・DRY原則準拠**: 単一責任・責務分離・重複コード排除を徹底する
+- **モジュール分割設計**: 機能ごとの専門ファイル分離による保守性向上
+- PixiJS v7の公式API仕様に沿い、非推奨機能は使用しない
+- ES2023構文使用OK、OffscreenCanvasや最新Canvas APIも使用OK
+- 最新Chrome+デスクトップPC環境を想定、後方互換は意識しない
+- **ファイルサイズ制限**: 単一ファイルは800行以下を目安とし、それを超える場合は責務に応じて分割する
+- 必ずdebug/またはmonitoring/ディレクトリの既存モジュールを確認し、重複を避ける事
 
 ---
 
-## 2. ファイル構成（モジュール分割・責務移譲完成版）
+## 2. ファイル構成（ライブラリ統合対応・完全版）
 
 ### 2.1 コアファイル群
-1. **config.js** ✅（完成）
-   - アプリケーション全体の設定値を定数として管理。
-   - デフォルト値、制限値、UI設定値を統一管理。
+1. **config.js** ✅（ライブラリ設定統合）
+   - アプリケーション全体の設定値を定数として管理
+   - PixiJS拡張ライブラリの設定値統合
+   - デフォルト値、制限値、UI設定値、ライブラリ設定値の統一管理
 
 2. **utils.js** ✅（完成）
-   - 共通ユーティリティ関数の統合管理。
-   - DRY原則に基づく重複コード解消。
-   - safeConfigGet、バリデーション、エラーハンドリングの統一。
+   - 共通ユーティリティ関数の統合管理
+   - DRY原則に基づく重複コード解消
+   - safeConfigGet、バリデーション、エラーハンドリングの統一
 
 3. **app-core.js** ✅（完成）
-   - PixiJSアプリ生成・描画ループ管理・リソースロード・設定連携。
-   - Application / Stage / Renderer 初期化。
+   - PixiJSアプリ生成・描画ループ管理・リソースロード・設定連携
+   - Application / Stage / Renderer 初期化
 
 4. **history-manager.js** ✅（完成）
-   - アンドゥ・リドゥ・履歴管理システム。
-   - 操作履歴の記録と復元機能を提供。
+   - アンドゥ・リドゥ・履歴管理システム
+   - 操作履歴の記録と復元機能を提供
 
 5. **settings-manager.js** ✅（完成）
-   - アプリ全体の動作設定を一元管理。
-   - 高DPI設定、ユーザー設定保存。
+   - アプリ全体の動作設定を一元管理
+   - 高DPI設定、ユーザー設定保存
 
-### 2.2 描画ツール群（モジュール分割完成）
-6. **drawing-tools.js** ✅（下位互換維持）
+### 2.2 ライブラリ統合ファイル群 🆕
+6. **libs/pixi-extensions.js** 🆕（ライブラリ統合基盤）
+   - PixiJS拡張ライブラリの統合インポート・初期化
+   - fetch API分割対応のグローバル登録
+   - ライブラリ読み込み状況の監視・エラーハンドリング
+
+7. **layer-manager.js** 🆕（レイヤー管理システム）
+   - @pixi/layersを使用したレイヤー管理
+   - 非破壊的レイヤー移動・変形機能
+   - RenderTextureによる履歴・状態管理連携
+
+8. **gif-export-manager.js** 🆕（GIF機能システム）
+   - @pixi/gifを使用したGIF生成・エクスポート
+   - アニメーションフレーム管理
+   - 描画履歴との連携によるGIF生成
+
+### 2.3 描画ツール群（ライブラリ統合対応）
+9. **drawing-tools.js** ✅（ライブラリ統合対応）
    - レガシー統合ファイル（main.js互換性維持用）
+   - PixiJS拡張ライブラリとの統合処理
    - 新しいモジュール分割システムへのエイリアス提供
 
-7. **drawing-tools/core/** ✅（モジュール分割完成）
-   - **drawing-tools-system.js** - システム統合・API提供・依存注入
-   - **tool-manager.js** - ツール切り替え・管理
-   - **base-tool.js** - ベースツールクラス
+10. **drawing-tools/core/** ✅（モジュール分割完成）
+    - **drawing-tools-system.js** - システム統合・API提供・ライブラリ統合
+    - **tool-manager.js** - ツール切り替え・管理
+    - **base-tool.js** - ベースツールクラス・ライブラリ機能統合
 
-8. **drawing-tools/tools/** ✅（ツール分離完成）
-   - **pen-tool.js** - ペンツール実装
-   - **eraser-tool.js** - 消しゴムツール実装
+11. **drawing-tools/tools/** ✅（ライブラリ統合ツール）
+    - **pen-tool.js** - ペンツール実装・@pixi/graphics-smooth統合
+    - **eraser-tool.js** - 消しゴムツール実装
 
-9. **drawing-tools/ui/** ✅（UI責務移譲完成）
-   - **pen-tool-ui.js** - ペンツール専用UI制御（STEP3完成版）
-   - **components/preview-sync.js** - プレビュー連動処理専門
+12. **drawing-tools/ui/** ✅（UIライブラリ統合）
+    - **pen-tool-ui.js** - ペンツール専用UI制御・@pixi/ui統合
+    - **components/preview-sync.js** - プレビュー連動処理専門
+    - **components/event-manager.js** - イベント管理専門
 
-### 2.3 UIシステム（責務分離完成）
-10. **ui-manager.js** ✅（スリム化完成・820行）
-    - **責務**: 汎用UI管理のみ（キャンバス・ポップアップ・通知）
-    - **移譲完了**: ペン関連機能は drawing-tools/ui/ に完全移譲
+### 2.4 UIシステム（ライブラリ統合対応）
+13. **ui-manager.js** ✅（ライブラリ統合対応）
+    - 汎用UI管理・@pixi/ui統合
+    - キャンバス・ポップアップ・通知管理
+    - ライブラリUI コンポーネントとの連携
 
-11. **ui/components.js** ✅（完成）
-    - 基本UIコンポーネント（Slider, Popup, StatusBar, PresetDisplay）
-    - 独立性の高いUI要素
+14. **ui/components.js** ✅（ライブラリ統合対応）
+    - 基本UIコンポーネント・@pixi/ui拡張
+    - Slider, Popup, StatusBar, PresetDisplay
+    - ライブラリコンポーネントとの統合
 
-12. **ui/PresetManager.js** ✅（完成）
+15. **ui/PresetManager.js** ✅（完成）
     - プリセット管理専門システム
     - プリセット選択、リセット、履歴記録、プレビュー生成
 
-13. **ui/ui-events.js** ✅（完成）
+16. **ui/ui-events.js** ✅（完成）
     - UIイベント処理専門システム
     - キーボードショートカット、マウス操作の統合管理
 
-14. **ui/performance-monitor.js** ✅（完成）
+17. **ui/performance-monitor.js** ✅（完成）
     - パフォーマンス監視専門システム
     - FPS、メモリ、GPU使用率の監視・表示
 
-### 2.4 将来実装予定
-15. **transform-manager.js**（Phase3実装予定）
-    - キャンバス操作とオブジェクト変形の一元管理。
-
-16. **layer-manager.js**（Phase3実装予定）
-    - レイヤー機能の管理（追加、削除、並び替え）。
-
-### 2.5 ファイル間依存関係（モジュール分割完成版）
+### 2.5 ファイル間依存関係（ライブラリ統合対応・完全版）
 ```
-config.js (設定統一管理)
+config.js (設定統一管理 + ライブラリ設定)
 ├─ utils.js (共通ユーティリティ・DRY原則準拠)
+├─ libs/pixi-extensions.js (ライブラリ統合基盤)
 ├─ app-core.js
 ├─ history-manager.js
 ├─ settings-manager.js
-├─ drawing-tools.js (レガシー互換維持)
+├─ layer-manager.js (レイヤーシステム・@pixi/layers)
+├─ gif-export-manager.js (GIF機能・@pixi/gif)
+├─ drawing-tools.js (レガシー互換維持 + ライブラリ統合)
 │  └─ drawing-tools/ (モジュール分割完成)
 │     ├─ core/
-│     │  ├─ drawing-tools-system.js (統合管理)
+│     │  ├─ drawing-tools-system.js (統合管理 + ライブラリ統合)
 │     │  ├─ tool-manager.js
-│     │  └─ base-tool.js
+│     │  └─ base-tool.js (ライブラリ機能統合)
 │     ├─ tools/
-│     │  ├─ pen-tool.js
+│     │  ├─ pen-tool.js (@pixi/graphics-smooth統合)
 │     │  └─ eraser-tool.js
-│     └─ ui/ (責務移譲完成)
-│        ├─ pen-tool-ui.js (STEP3完成・統合UI制御)
+│     └─ ui/ (責務移譲完成 + ライブラリ統合)
+│        ├─ pen-tool-ui.js (@pixi/ui統合)
 │        └─ components/
 │           ├─ preview-sync.js (プレビュー連動専門)
-│           └─ event-manager.js(計画になかったがSTEP5にて発生)
-└─ ui-manager.js (スリム化完成・汎用UI管理のみ)
-   ├─ ui/components.js
+│           └─ event-manager.js (イベント管理専門)
+└─ ui-manager.js (汎用UI管理 + ライブラリ統合)
+   ├─ ui/components.js (@pixi/ui拡張)
    ├─ ui/PresetManager.js
    ├─ ui/ui-events.js
    └─ ui/performance-monitor.js
@@ -117,305 +140,346 @@ config.js (設定統一管理)
 - 下位から上位への依存のみ
 - config.js は全ファイルから参照可能
 - utils.js は config.js 以外から参照可能
-- drawing-tools/ 配下は独立性を維持
-- ui/ 配下は ui-manager.js からアクセス
+- libs/pixi-extensions.js は ライブラリ使用ファイルの事前依存
+- ライブラリ統合ファイルは段階的導入に対応
 ```
 
 ---
 
-## 3. モジュール分割設計原則
+## 3. ライブラリ統合設計原則
 
-### 3.1 SOLID原則適用実績
+### 3.1 ライブラリ選定基準
+- **PixiJSエコシステム内優先**: 公式・準公式ライブラリを最優先
+- **fetch API分割対応**: グローバル変数形式での使用が可能
+- **AI生成親和性**: 標準的なAPIパターンを持つ
+- **メンテナンス継続性**: アクティブに開発・保守されている
+- **互換性保証**: PixiJS v7との互換性が確認されている
+
+### 3.2 統合実装パターン
+
+#### 3.2.1 ライブラリ読み込みパターン
 ```javascript
-// 単一責任原則（SRP）準拠
-- drawing-tools-system.js: システム統合・API提供のみ
-- pen-tool-ui.js: ペンツール専用UI制御のみ  
-- preview-sync.js: プレビュー連動処理のみ
-- ui-manager.js: 汎用UI管理のみ（820行に削減）
-
-// オープン・クローズ原則（OCP）準拠
-- base-tool.js: 新ツール追加時の拡張基盤
-- pen-tool-ui.js: 他ツールUI実装の拡張パターン
-
-// 依存関係逆転原則（DIP）準拠
-- 依存注入パターンによる疎結合
-- インターフェース経由での抽象化
+// libs/pixi-extensions.js での統合パターン
+window.PixiExtensions = {
+    // @pixi/ui
+    Button: null,
+    Slider: null,
+    // @pixi/layers  
+    Layer: null,
+    // @pixi/gif
+    AnimatedGIF: null,
+    // @pixi/graphics-smooth
+    SmoothGraphics: null,
+    // 読み込み状況
+    loaded: {
+        ui: false,
+        layers: false,
+        gif: false,
+        graphicsSmooth: false,
+        graphicsExtras: false
+    }
+};
 ```
 
-### 3.2 責務移譲実績（STEP3完了）
-| 移譲元 | 移譲先 | 移譲内容 | 削減行数 |
-|--------|--------|-----------|----------|
-| ui-manager.js | pen-tool-ui.js | ペンスライダー制御 | ~120行 |
-| ui-manager.js | pen-tool-ui.js | キーボードショートカット | ~60行 |
-| ui-manager.js | preview-sync.js | プレビュー連動処理 | ~180行 |
-| **合計** | **drawing-tools/ui/** | **ペンツール関連機能** | **~360行** |
+#### 3.2.2 段階的有効化パターン
+設定による機能の段階的有効化を支援
+```javascript
+// config.js でのライブラリ制御
+LIBRARY_FLAGS: {
+    ENABLE_PIXI_UI: true,
+    ENABLE_PIXI_LAYERS: true,
+    ENABLE_PIXI_GIF: false,  // Phase別有効化
+    ENABLE_SMOOTH_GRAPHICS: true,
+    ENABLE_GRAPHICS_EXTRAS: true
+}
+```
 
-### 3.3 ファイルサイズ実績
-| ファイル名 | 分割前 | 分割後 | 削減率 |
-|-----------|--------|--------|--------|
-| ui-manager.js | ~1200行 | ~820行 | **31%削減** |
-| drawing-tools.js | ~1400行 | ~200行（エイリアス） | **85%削減** |
-| **新規作成** | - | 各300行以下 | モジュール化完成 |
+### 3.3 互換性保持原則
+- **既存API維持**: 既存の関数・メソッド署名は維持
+- **段階的移行**: 内部実装のみライブラリ使用に変更
+- **フォールバック実装**: ライブラリ読み込み失敗時の代替処理
+- **設定による制御**: ライブラリ使用の有効・無効切り替え対応
 
 ---
 
-## 4. コードスタイル規約（モジュール分割対応）
+## 4. コードスタイル規約（ライブラリ統合対応）
 
-### 4.1 命名規則
+### 4.1 命名規則（拡張版）
 - **変数 / 関数**: `camelCase`（例：`drawLine`, `pointerPosition`）
 - **定数**: `SCREAMING_SNAKE_CASE`（例：`CANVAS_WIDTH`, `BG_COLOR`）
 - **クラス**: `PascalCase`（例：`VectorPenTool`, `PresetManager`）
 - **ファイル名**: `kebab-case`（例：`pen-tool-ui.js`, `preview-sync.js`）
-- **モジュール分割関数名**: `{action}{Target}`（例：`initPreviewSync`, `updateBrushSettings`）
+- **ライブラリ統合関数**: `lib{Feature}`（例：`libSmoothGraphics`, `libCreateButton`）
+- **ライブラリ設定**: `{LIBRARY}_CONFIG`（例：`PIXI_UI_CONFIG`）
 
-### 4.2 モジュール固有の命名規則
+### 4.2 ライブラリ使用パターン
 ```javascript
-// 統合システム命名
-{Domain}System     // 例: DrawingToolsSystem
-{Domain}Manager    // 例: ToolManager, PresetManager
+// 推奨: ライブラリ機能の標準使用
+const button = new window.PixiExtensions.Button({ text: 'OK' });
 
-// UI専門システム命名  
-{Tool}UI          // 例: PenToolUI
-{Function}Sync    // 例: PreviewSync
+// 推奨: フォールバック付き使用
+const graphics = window.PixiExtensions.SmoothGraphics ? 
+    new window.PixiExtensions.SmoothGraphics() : 
+    new PIXI.Graphics();
 
-// コンポーネント命名
-{Feature}Component // 例: SliderComponent
-
-// ファイル命名
-{domain}/core/{name}.js     // 例: drawing-tools/core/tool-manager.js
-{domain}/ui/{name}.js       // 例: drawing-tools/ui/pen-tool-ui.js
-{domain}/ui/components/{name}.js // 例: drawing-tools/ui/components/preview-sync.js
+// 禁止: ライブラリ機能の独自実装
+// const customButton = this.createCustomButton(); // NG
 ```
 
 ---
 
-## 5. PixiJS v7 実装ルール（モジュール分割対応）
+## 5. PixiJS v7 実装ルール（ライブラリ統合対応）
 
-### 5.1 ステージ構造
+### 5.1 ステージ構造（ライブラリ統合版）
 ```
 stage
 ├─ canvasRootContainer（変形管理用）
 │  ├─ backgroundLayer
-│  ├─ drawingLayer
-│  │  ├─ layer1Container
-│  │  ├─ layer2Container
+│  ├─ drawingLayer（@pixi/layers使用可能）
+│  │  ├─ layer1Container（Layer インスタンス）
+│  │  ├─ layer2Container（Layer インスタンス）
 │  │  └─ ...
 │  └─ effectsLayer（将来実装用）
-└─ uiLayer（変形対象外）
+└─ uiLayer（@pixi/ui コンポーネント配置・変形対象外）
 ```
 
-### 5.2 モジュール分割における描画最適化
+### 5.2 描画最適化（ライブラリ統合版）
+- **スムーズ描画**: @pixi/graphics-smooth使用推奨
+- **レイヤー管理**: @pixi/layers の zOrder制御活用
+- **UIコンポーネント**: @pixi/ui の標準コンポーネント使用
 - **独立更新**: 各モジュールが独立して更新タイミングを制御
 - **イベント分離**: 描画層とUI層のイベント完全分離
-- **専門最適化**: 各モジュールが専門機能に特化した最適化実装
 
 ---
 
-## 6. 設定管理システム（config.js）
+## 6. 設定管理システム（ライブラリ統合対応）
 
-### 6.1 設定値分離の原則
+### 6.1 ライブラリ設定の統合管理
 ```javascript
-// config.js - 設定値の統一管理
+// config.js - ライブラリ設定統合
 export const CONFIG = {
-    // 描画設定（Phase2対応）
-    DEFAULT_BRUSH_SIZE: 4,        // デフォルト値
-    DEFAULT_OPACITY: 1.0,         // 100%不透明
-    MAX_BRUSH_SIZE: 500,          // 最大値拡張
-    MIN_BRUSH_SIZE: 0.1,
+    // 既存設定...
+    DEFAULT_BRUSH_SIZE: 4,
+    DEFAULT_OPACITY: 1.0,
+    MAX_BRUSH_SIZE: 500,
     
-    // プリセット設定
-    SIZE_PRESETS: [1, 2, 4, 8, 16, 32],
+    // ライブラリ統合設定
+    LIBRARY_CONFIG: {
+        // @pixi/ui設定
+        UI_THEME: 'futaba',
+        UI_BUTTON_STYLE: {
+            backgroundColor: 0x800000,  // FUTABA_MAROON
+            hoverColor: 0xaa5a56,       // FUTABA_LIGHT_MAROON
+            textColor: 0xFFFFFF
+        },
+        
+        // @pixi/layers設定
+        LAYER_MAX_COUNT: 10,
+        LAYER_BLEND_MODES: ['normal', 'multiply', 'screen'],
+        
+        // @pixi/gif設定
+        GIF_MAX_FRAMES: 60,
+        GIF_DEFAULT_DELAY: 100,
+        
+        // graphics系設定
+        SMOOTH_GRAPHICS_QUALITY: 'high',
+        GRAPHICS_EXTRAS_ENABLED: true
+    },
     
-    // キャンバス設定
-    CANVAS_WIDTH: 400,
-    CANVAS_HEIGHT: 400,
-    BG_COLOR: 0xf0e0d6,
-    
-    // パフォーマンス設定
-    TARGET_FPS: 60,
-    PERFORMANCE_UPDATE_INTERVAL: 1000,
-    
-    // UI設定
-    PREVIEW_MIN_SIZE: 0.5,
-    PREVIEW_MAX_SIZE: 20,
-    POPUP_FADE_TIME: 300,
-    NOTIFICATION_DURATION: 3000
+    // ライブラリ有効化制御
+    LIBRARY_FLAGS: {
+        ENABLE_PIXI_UI: true,
+        ENABLE_PIXI_LAYERS: true,
+        ENABLE_PIXI_GIF: false,      // 段階的有効化
+        ENABLE_SMOOTH_GRAPHICS: true,
+        ENABLE_GRAPHICS_EXTRAS: true
+    }
 };
 ```
 
 ---
 
-## 7. モジュール分割における状態管理
+## 7. モジュール分割における状態管理（ライブラリ統合版）
 
-### 7.1 状態管理の分散化（実装完了版）
+### 7.1 状態管理の分散化
 ```javascript
-// 各管理システムの独立状態
+// 各管理システムの独立状態（ライブラリ統合対応）
 - app-core.js: PixiJSアプリケーション基盤状態
+- libs/pixi-extensions.js: ライブラリ読み込み・初期化状態
 - drawing-tools-system.js: 描画ツール統合状態・ブラシ設定
-- pen-tool-ui.js: ペンツール専用UI状態（STEP3完成）
-- preview-sync.js: プレビュー連動状態（STEP3完成）
-- ui-manager.js: 汎用UI管理状態（スリム化完成）
+- layer-manager.js: レイヤー管理状態（@pixi/layers統合）
+- gif-export-manager.js: GIF機能状態（@pixi/gif統合）
+- pen-tool-ui.js: ペンツール専用UI状態（@pixi/ui統合）
+- preview-sync.js: プレビュー連動状態
+- ui-manager.js: 汎用UI管理状態（@pixi/ui統合）
 - history-manager.js: 操作履歴状態（全操作統合）
 - settings-manager.js: アプリケーション設定状態
 ```
 
-### 7.2 状態同期メカニズム（モジュール分割版）
+### 7.2 ライブラリ統合状態同期
 ```javascript
-// イベントベース＋直接API呼び出し
+// ライブラリ統合における状態同期メカニズム
 class DrawingToolsSystem {
     updateBrushSettings(settings) {
         // 内部状態更新
         this.brushSettings = { ...this.brushSettings, ...settings };
         
+        // ライブラリ連携更新
+        if (window.PixiExtensions.loaded.ui) {
+            this.updateLibraryUIComponents(settings);
+        }
+        
         // アプリケーション状態更新
         this.app.updateState(appStateUpdates);
         
-        // PenToolUIに変更通知（STEP3実装）
+        // 既存システム通知
         if (this.penToolUI?.onBrushSettingsChanged) {
             this.penToolUI.onBrushSettingsChanged(settings);
         }
     }
 }
-
-class PenToolUI {
-    onBrushSettingsChanged(settings) {
-        // プレビュー同期システムに通知（STEP3実装）
-        if (this.previewSync?.updateSettings) {
-            this.previewSync.updateSettings(settings);
-        }
-    }
-}
 ```
 
 ---
 
-## 8. 各ファイルの詳細責務（モジュール分割・責務移譲完成版）
+## 8. 品質保証・検証方法（ライブラリ統合版）
 
-### 8.1 drawing-tools-system.js ✅（統合システム・200行）
-**責務**: モジュール統合・API提供・依存注入管理
-- **システム統合**: 各ツールモジュールの初期化・連携調整
-- **API提供**: main.js互換性を保持したAPI提供
-- **依存注入**: モジュール間の疎結合実現
-- **ブラシ設定管理**: 統合ブラシ設定・バリデーション
-- **履歴管理統合**: 履歴システムとの連携
+### 8.1 ライブラリ統合検証
+```javascript
+// ライブラリ読み込み状況確認
+window.debugLibraries = function() {
+    console.group('🔍 PixiJS拡張ライブラリ状況');
+    
+    const libraries = window.PixiExtensions || {};
+    console.log('読み込み状況:', libraries.loaded || {});
+    
+    const availableFeatures = [];
+    if (libraries.Button) availableFeatures.push('UI Components');
+    if (libraries.Layer) availableFeatures.push('Layer System');
+    if (libraries.AnimatedGIF) availableFeatures.push('GIF Export');
+    if (libraries.SmoothGraphics) availableFeatures.push('Smooth Graphics');
+    
+    console.log('利用可能機能:', availableFeatures);
+    console.groupEnd();
+};
+```
 
-### 8.2 pen-tool-ui.js ✅（STEP3完成版・520行）
-**責務**: ペンツール専用UI制御・統合管理
-- **スライダー制御**: ペン専用スライダー管理（STEP2移譲完了）
-- **プレビュー連動**: PreviewSyncコンポーネント統合（STEP3完了）
-- **キーボードショートカット**: ペン固有ショートカット処理
-- **設定同期**: ブラシ設定変更の受信・反映
-- **エラーハンドリング**: ペンUI固有のエラー処理
-
-### 8.3 preview-sync.js ✅（STEP3完成・300行）
-**責務**: プレビュー連動処理専門システム
-- **リアルタイム同期**: スライダー操作とプレビューの同期
-- **プレビュー更新**: アクティブプリセットプレビューの動的更新
-- **スロットリング制御**: 60fps制限によるパフォーマンス最適化
-- **全リセット機能**: Shift+Rキーでの全プレビューリセット
-- **エラー制御**: 最大エラー数制御・安全な例外処理
-
-### 8.4 ui-manager.js ✅（スリム化完成・820行）
-**責務**: 汎用UI管理のみ（ペン関連機能完全除去）
-- **キャンバス制御**: リサイズ・キャンバス操作
-- **汎用ポップアップ**: 非ツール固有ポップアップ管理
-- **通知システム**: 全体通知・メッセージ表示
-- **ステータス表示**: 汎用ステータス情報表示
-- **システム統合**: 外部システムとの連携（monitoring等）
-
-### 8.5 tool-manager.js ✅（150行）
-**責務**: ツール切り替え・管理のみ
-- **ツール登録**: 各ツールの登録・管理
-- **アクティブツール管理**: 現在選択中ツール状態管理
-- **切り替え制御**: ツール間の安全な切り替え処理
-- **履歴連携**: ツール変更履歴の記録
+### 8.2 統合検証項目
+- **ライブラリ読み込み**: 各ライブラリの正常な読み込み確認
+- **機能統合**: ライブラリ機能と既存システムの連携確認
+- **パフォーマンス**: ライブラリ導入前後の性能比較
+- **互換性**: 既存機能の非回帰確認
+- **AI生成**: 標準APIパターンでのコード生成品質確認
 
 ---
 
-## 9. 初期化順序（モジュール分割・責務移譲完成版）
+## 9. 初期化順序（ライブラリ統合対応）
 
 ### 9.1 基盤システム初期化
 ```javascript
-// index.html読み込み順序（実装完了版）
-1. config.js                    // 設定統一管理
-2. utils.js                     // 共通ユーティリティ・DRY準拠
-3. app-core.js                  // PixiJSアプリケーション基盤
-4. ui/PresetManager.js          // プリセット管理専門
-5. history-manager.js           // 履歴システム
-6. drawing-tools.js             // 描画ツール（レガシー互換）
-7. ui/components.js             // UIコンポーネント
-8. ui-manager.js                // UI統合（スリム化版）
-9. main.js                      // システム統合・初期化
-```
-
-### 9.2 動的モジュール初期化（main.js内）
-```javascript
-// main.js内での初期化順序
-1. DrawingToolsSystem初期化    // モジュール統合システム
-2. ツール登録・管理システム    // ToolManager、各ツール
-3. PenToolUI初期化            // ペンツール専用UI（STEP3対応）
-4. 履歴管理統合              // HistoryManager連携
-5. UI最終統合                // UIManager連携
+// index.html読み込み順序（ライブラリ統合対応）
+1. config.js                      // 設定統一管理（ライブラリ設定含む）
+2. utils.js                       // 共通ユーティリティ・DRY準拠
+3. libs/pixi-extensions.js        // ライブラリ統合基盤
+4. app-core.js                    // PixiJSアプリケーション基盤
+5. layer-manager.js               // レイヤー管理システム
+6. gif-export-manager.js          // GIF機能システム
+7. ui/PresetManager.js            // プリセット管理専門
+8. history-manager.js             // 履歴システム
+9. drawing-tools.js               // 描画ツール（ライブラリ統合）
+10. ui/components.js              // UIコンポーネント（ライブラリ統合）
+11. ui-manager.js                 // UI統合（ライブラリ統合）
+12. main.js                       // システム統合・初期化
 ```
 
 ---
 
-## 10. 禁止事項（モジュール分割・責務移譲完成版）
+## 10. 禁止事項（ライブラリ統合対応）
 
-### 10.1 基本禁止事項
+### 10.1 基本禁止事項（継続）
 - DOM直接操作（Pixi外の`querySelector`等）
 - Pixi内部プロパティへの直接アクセス
 - 複数責務を1関数にまとめる
 - **単一ファイル800行超過**（分割必須）
 
-### 10.2 モジュール分割固有禁止事項
-- **循環参照の作成**（特にモジュール間）
-- **責務の重複実装**（debug/, monitoring/ディレクトリ確認必須）
-- **設定値の直接変更**（必ずconfig.js、utils.js経由）
-- **UI管理の責務混在**（移譲済み機能の逆流）
-- **プレビュー連動の重複実装**（preview-sync.js使用必須）
+### 10.2 ライブラリ統合固有禁止事項
+- **利用可能ライブラリの独自実装**: 標準機能の再実装禁止
+- **ライブラリ機能の部分的複製**: 必ずライブラリ経由で使用
+- **非標準APIパターンの新規作成**: AI生成困難パターンの回避
+- **ライブラリ設定の直接変更**: 必ずCONFIG経由で制御
+- **段階的導入の無視**: 一度に複数ライブラリ変更禁止
+
+### 10.3 品質劣化防止事項
+- **エラーハンドリング省略**: ライブラリ読み込み失敗対応必須
+- **パフォーマンス監視省略**: 導入前後の測定必須
+- **互換性テスト省略**: 既存機能の非回帰テスト必須
+- **責務の重複実装**: debug/, monitoring/ディレクトリ確認必須
 
 ---
 
-## 11. 品質保証・検証方法（モジュール分割版）
+## 11. 期待される運用品質
 
-### 11.1 各モジュール単体検証
+### 11.1 保守性向上
+- **標準APIパターン**: PixiJSエコシステムの標準的な実装パターン採用
+- **ドキュメント参照**: 公式ドキュメントによる機能理解の向上
+- **コミュニティ活用**: StackOverflow等での情報取得の容易さ
+- **継続的更新**: ライブラリ側での継続的品質向上の恩恵
+
+### 11.2 開発効率向上
+- **実装時間短縮**: 標準コンポーネント使用による開発速度向上
+- **バグ修正効率**: ライブラリ側での修正による自動的品質向上
+- **機能拡張容易**: 標準パターンによる新機能追加の簡便さ
+- **学習コスト削減**: 独自実装理解不要による習得容易さ
+
+### 11.3 AI協働最適化
+- **コード予測性**: 標準APIパターンによるAI生成品質向上
+- **エラー解決**: 一般的なエラーパターンによる解決情報の豊富さ
+- **実装パターン**: 確立されたベストプラクティスの活用
+- **継続的改善**: エコシステム発展による自動的品質向上
+
+---
+
+## 12. 将来展望・発展方針
+
+### 12.1 PixiJS v8移行対応
+- **段階的バージョンアップ**: ライブラリのv8対応版への移行
+- **新機能活用**: v8固有機能（WebGPU、ネイティブGIF等）の活用
+- **互換性維持**: 既存実装との互換性を保持した移行戦略
+
+### 12.2 エコシステム拡張
+- **追加ライブラリ検討**: パーティクル、サウンド、アニメーション等
+- **カスタムライブラリ開発**: プロジェクト固有機能のライブラリ化
+- **コミュニティ貢献**: エコシステムへの機能提供・フィードバック
+
+---
+
+## 13. テスト・デバッグ方針（ライブラリ統合版）
+
+### 13.1 段階的テストシステム
 ```javascript
-// 専用デバッグ関数（実装完了）
-window.debugDrawingToolsSystem()     // 統合システム状態
-window.debugPenToolUI()             // ペンUI統合状況（STEP3対応）
-window.debugPreviewSync()           // プレビュー連動状況（STEP3対応）
-window.testModuleCommunication()    // モジュール間通信テスト
+// ライブラリ統合テスト関数群
+window.testLibraryIntegration = function() {
+    // Phase別ライブラリテスト
+    // 各段階での機能確認
+    // 性能測定・比較
+};
+
+window.debugLibraryStatus = function() {
+    // ライブラリ読み込み状況確認
+    // 設定値確認
+    // エラー状況確認
+};
 ```
 
-### 11.2 統合検証項目
-- **モジュール間通信**: 依存注入・API呼び出しの正常性
-- **責務分離**: 単一責任原則の遵守確認
-- **パフォーマンス**: モジュール分割によるオーバーヘッド確認
-- **メモリ管理**: モジュール独立性によるリーク回避確認
+### 13.2 品質保証プロセス
+- **非回帰テスト**: 既存機能の動作保証
+- **統合テスト**: ライブラリ間連携の確認
+- **パフォーマンステスト**: 性能劣化の監視
+- **AI生成テスト**: 標準APIパターンでの生成品質確認
 
 ---
 
-## 12. 期待される効果（実装完了実績）
-
-### 12.1 コード削減効果（実績）
-- **ui-manager.js**: 1200行 → 820行（31%削減）
-- **drawing-tools.js**: 1400行 → 200行（85%削減・エイリアス化）
-- **責務明確化**: 各モジュール300行以下の適切なサイズ
-
-### 12.2 保守性向上効果（実績）
-- **修正影響範囲限定**: プレビュー機能修正時、ui-manager.js無関係
-- **バグ発生リスク軽減**: モジュール間依存関係の明確化
-- **新機能追加容易**: レイヤー機能等の追加基盤完成
-
-### 12.3 開発効率向上効果（実績）
-- **並行開発可能**: モジュール単位での独立開発
-- **テスト効率化**: コンポーネント単体テスト実装済み
-- **デバッグ容易**: 階層化されたデバッグ情報提供
-
----
-
-## 13. ふたば☆ちゃんねるカラー（変更なし）
+## 14. ふたば☆ちゃんねるカラー（変更なし）
 ```css
 /* Adobe Fresco風ふたば色定義 */
 --futaba-maroon: #800000;        /* 主線・基調色 */
@@ -428,50 +492,19 @@ window.testModuleCommunication()    // モジュール間通信テスト
 
 ---
 
-## 14. バージョン管理・今後の展開
+## 15. バージョン管理・継続的改善
 
-### 14.1 完成実績（STEP3完了時点）
-- ✅ **モジュール分割基盤**: drawing-tools/配下の完全分離
-- ✅ **責務移譲完了**: ペンツール関連機能のdrawing-tools/ui/への移譲
-- ✅ **SOLID・DRY原則準拠**: 単一責任・重複コード排除
-- ✅ **UI統合システム**: PenToolUIによるペン機能統合管理
-- ✅ **プレビュー連動**: PreviewSyncコンポーネントによる専門処理
+### 15.1 段階的実装指針
+- **Phase別導入**: 機能領域別の段階的ライブラリ統合
+- **品質維持**: 各段階での品質保証・性能確認
+- **互換性保持**: 既存システムとの継続的互換性維持
+- **文書化**: 各段階での実装状況・設定変更の記録
 
-### 14.2 次期実装予定
-- **STEP 4**: ポップアップ制御移譲（PopupManagerコンポーネント作成）
-- **STEP 5**: イベント処理統合（UIEventSystemとの連携強化）
-- **STEP 6**: 最終統合最適化（全機能統合・パフォーマンス最適化）
-
-### 14.3 将来展望（Phase3以降）
-- **transform-manager.js**: キャンバス変形管理システム
-- **layer-manager.js**: レイヤー機能完全実装
-- **TypeScript移行**: ES6モジュールへの段階的移行
+### 15.2 継続的品質向上
+- **エコシステム追従**: PixiJSエコシステムの発展への対応
+- **ベストプラクティス採用**: 業界標準・推奨パターンの採用
+- **コミュニティ連携**: 開発者コミュニティとの情報共有・貢献
 
 ---
 
-## 15. テスト・デバッグ方針（モジュール分割版）
-
-### 15.1 階層化デバッグシステム（実装完了）
-```javascript
-// システム階層デバッグ
-🔍 DrawingToolsSystem
-├── モジュール依存関係状況
-├── ブラシ設定・ツール状態
-└── PenToolUI統合状況
-    ├── スライダー制御状況
-    ├── キーボードショートカット
-    └── PreviewSyncコンポーネント
-        ├── 同期状態・更新統計
-        ├── スロットリング設定
-        └── エラー処理状況
-```
-
-### 15.2 モジュール間通信テスト（実装完了）
-- **依存注入テスト**: 各モジュールの正常な読み込み確認
-- **API互換性テスト**: main.js期待APIの動作確認
-- **状態同期テスト**: モジュール間状態変更の正常な伝播確認
-- **パフォーマンステスト**: モジュール分割オーバーヘッドの測定
-
----
-
-このRulebook v6は、STEP 2.5でのモジュール分割基盤構築とSTEP 3でのプレビュー連動機能移譲完了を反映し、実装された構造に基づいて現実的な内容に調整されています。今後のSTEP 4-6実装時も、このルールブックを基準として段階的な改修を進めることで、品質と保守性を両立できます。
+このRulebook v7は、PixiJSエコシステムを活用した高品質なアプリケーション開発のための恒久的な指針を提供します。ライブラリ統合による品質向上と、継続的な保守・拡張を支援する運用ルールとして機能します。
