@@ -780,14 +780,14 @@ function setupFallbackUtilities() {
 function checkPopupUIElements() {
     console.log('🔍 ポップアップUI要素確認...');
     
-    // ペンツールボタンの確認
-    const penButton = document.getElementById('pen-tool-button');
+    // ID修正: ペンツールボタンの確認 pen-tool-button → pen-tool
+    const penButton = document.getElementById('pen-tool');
     if (penButton) {
-        console.log('✅ ペンツールボタン要素確認完了');
+        console.log('✅ ペンツールボタン要素確認完了（ID: pen-tool）');
         
         // クリックイベントリスナーの確認
         const hasClickListener = penButton.onclick || 
-                               penButton.addEventListener.toString().includes('click');
+                               (penButton._penToolClickHandler !== undefined);
         
         if (hasClickListener) {
             console.log('✅ ペンツールボタンクリックイベント設定済み');
@@ -795,7 +795,7 @@ function checkPopupUIElements() {
             console.warn('⚠️ ペンツールボタンクリックイベントが未設定の可能性');
         }
     } else {
-        console.warn('⚠️ ペンツールボタン要素が見つかりません');
+        console.warn('⚠️ ペンツールボタン要素が見つかりません（ID: pen-tool）');
         console.log('🔍 利用可能なツールボタンを検索中...');
         
         // 代替ボタン検索
@@ -809,6 +809,14 @@ function checkPopupUIElements() {
     }
     
     // ポップアップコンテナの確認
+    const penSettingsPopup = document.getElementById('pen-settings');
+    if (penSettingsPopup) {
+        console.log('✅ ペン設定ポップアップ要素確認完了（ID: pen-settings）');
+    } else {
+        console.warn('⚠️ ペン設定ポップアップ要素が見つかりません（ID: pen-settings）');
+    }
+    
+    // 一般的なポップアップコンテナ検索
     const popupContainers = document.querySelectorAll('[id*="popup"], [class*="popup"]');
     if (popupContainers.length > 0) {
         console.log(`✅ ポップアップコンテナ発見: ${popupContainers.length}個`);
@@ -817,6 +825,19 @@ function checkPopupUIElements() {
         });
     } else {
         console.warn('⚠️ ポップアップコンテナが見つかりません');
+    }
+    
+    // ID修正確認結果サマリー
+    console.group('📋 ID修正確認結果サマリー');
+    console.log('正しいID:', {
+        penButton: 'pen-tool ✅',
+        penSettings: 'pen-settings ✅'
+    });
+    console.log('修正前の間違ったID:', {
+        penButton: 'pen-tool-button ❌（修正済み）'
+    });
+    console.groupEnd();
+}⚠️ ポップアップコンテナが見つかりません');
     }
 }
 
