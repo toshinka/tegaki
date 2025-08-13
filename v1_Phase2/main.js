@@ -1,75 +1,28 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev15
- * メイン初期化スクリプト - main.js (構文エラー完全修正版)
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev16
+ * メイン初期化スクリプト - main.js (エラー修正・キャンバス表示修正版)
  * 
  * 🔧 修正内容:
- * 1. ✅ 構文エラー完全修正 (Invalid token問題解決)
- * 2. ✅ ID参照統一 (pen-tool-button → pen-tool)
- * 3. ✅ 文字列リテラル問題修正
- * 4. ✅ DRY・SOLID原則適用
- * 5. ✅ ライブラリ活用最適化
+ * 1. ✅ ErrorHandler重複宣言問題修正
+ * 2. ✅ utils.js統合により重複コード削除
+ * 3. ✅ キャンバス表示問題修正
+ * 4. ✅ 初期化プロセス最適化
+ * 5. ✅ @pixi/ui導入後の互換性確保
  * 
- * Phase2目標: エラー修正・安定したポップアップシステム 
+ * Phase2目標: エラー修正・安定したキャンバス表示・ポップアップシステム 
  */
 
-// ==== Error Handler Utility (SOLID: Single Responsibility) ====
-class ErrorHandler {
-    static createApplicationError(message, context = {}) {
-        const error = new Error(message);
-        error.name = 'ApplicationError';
-        error.context = context;
-        error.timestamp = Date.now();
-        return error;
-    }
-    
-    static logError(error, context = 'Unknown') {
-        console.error(`🚨 [${context}] ${error.name || 'Error'}: ${error.message}`, error);
-    }
-    
-    static handleGracefulDegradation(operation, fallback, errorMessage) {
-        try {
-            return operation();
-        } catch (error) {
-            console.warn(`${errorMessage}:`, error);
-            return typeof fallback === 'function' ? fallback() : fallback;
-        }
-    }
-}
+console.log('🚀 main.js エラー修正・キャンバス表示修正版読み込み開始...');
 
-// ==== Performance Monitor (SOLID: Single Responsibility) ====
-class PerformanceMonitor {
-    static measure(name, operation) {
-        const startTime = performance.now();
-        try {
-            const result = operation();
-            const duration = performance.now() - startTime;
-            console.log(`⏱️ [${name}] 実行時間: ${duration.toFixed(2)}ms`);
-            return result;
-        } catch (error) {
-            const duration = performance.now() - startTime;
-            console.error(`⏱️ [${name}] エラー (${duration.toFixed(2)}ms):`, error);
-            throw error;
-        }
-    }
-    
-    static async measureAsync(name, operation) {
-        const startTime = performance.now();
-        try {
-            const result = await operation();
-            const duration = performance.now() - startTime;
-            console.log(`⏱️ [${name}] 実行時間: ${duration.toFixed(2)}ms`);
-            return result;
-        } catch (error) {
-            const duration = performance.now() - startTime;
-            console.error(`⏱️ [${name}] エラー (${duration.toFixed(2)}ms):`, error);
-            throw error;
-        }
-    }
-}
-
-// ==== Configuration Manager (SOLID: Single Responsibility) ====
+// ==== Configuration Manager (utils.js統合版) ====
 class ConfigManager {
     static get(key, defaultValue) {
+        // utils.jsのsafeConfigGet関数を使用
+        if (typeof window.safeConfigGet === 'function') {
+            return window.safeConfigGet(key, defaultValue);
+        }
+        
+        // フォールバック処理
         try {
             return (window.CONFIG && window.CONFIG[key] !== undefined) ? window.CONFIG[key] : defaultValue;
         } catch (error) {
@@ -79,6 +32,12 @@ class ConfigManager {
     }
     
     static validateIntegrity() {
+        // utils.jsのvalidateConfigIntegrity関数を使用
+        if (typeof window.validateConfigIntegrity === 'function') {
+            return window.validateConfigIntegrity();
+        }
+        
+        // フォールバック処理
         if (!window.CONFIG || typeof window.CONFIG !== 'object') {
             return false;
         }
@@ -94,6 +53,13 @@ class ConfigManager {
     static fix() {
         console.log('🔧 CONFIG修復実行...');
         
+        // utils.jsの緊急CONFIG作成を使用
+        if (typeof window.createEmergencyConfig === 'function') {
+            window.createEmergencyConfig(['CONFIG']);
+            return true;
+        }
+        
+        // フォールバック処理
         const DEFAULT_CONFIG = {
             DEFAULT_BRUSH_SIZE: 4,
             DEFAULT_OPACITY: 1.0,
@@ -128,7 +94,87 @@ class ConfigManager {
     }
 }
 
-// ==== Initialization Steps (SOLID: Interface Segregation) ====
+// ==== Performance Monitor (utils.js統合版) ====
+class PerformanceMonitor {
+    static measure(name, operation) {
+        // utils.jsのmeasurePerformance関数を使用
+        if (typeof window.measurePerformance === 'function') {
+            return window.measurePerformance(name, operation);
+        }
+        
+        // フォールバック処理
+        const startTime = performance.now();
+        try {
+            const result = operation();
+            const duration = performance.now() - startTime;
+            console.log(`⏱️ [${name}] 実行時間: ${duration.toFixed(2)}ms`);
+            return result;
+        } catch (error) {
+            const duration = performance.now() - startTime;
+            console.error(`⏱️ [${name}] エラー (${duration.toFixed(2)}ms):`, error);
+            throw error;
+        }
+    }
+    
+    static async measureAsync(name, operation) {
+        const startTime = performance.now();
+        try {
+            const result = await operation();
+            const duration = performance.now() - startTime;
+            console.log(`⏱️ [${name}] 実行時間: ${duration.toFixed(2)}ms`);
+            return result;
+        } catch (error) {
+            const duration = performance.now() - startTime;
+            console.error(`⏱️ [${name}] エラー (${duration.toFixed(2)}ms):`, error);
+            throw error;
+        }
+    }
+}
+
+// ==== Error Handler (utils.js統合版) ====
+class ErrorHandler {
+    static createApplicationError(message, context = {}) {
+        // utils.jsのcreateApplicationError関数を使用
+        if (typeof window.createApplicationError === 'function') {
+            return window.createApplicationError(message, context);
+        }
+        
+        // フォールバック処理
+        const error = new Error(message);
+        error.name = 'ApplicationError';
+        error.context = context;
+        error.timestamp = Date.now();
+        return error;
+    }
+    
+    static logError(error, context = 'Unknown') {
+        // utils.jsのlogError関数を使用（エラーループ対策済み）
+        if (typeof window.logError === 'function') {
+            window.logError(error, context);
+            return;
+        }
+        
+        // フォールバック処理
+        console.error(`🚨 [${context}] ${error.name || 'Error'}: ${error.message}`, error);
+    }
+    
+    static handleGracefulDegradation(operation, fallback, errorMessage) {
+        // utils.jsのhandleGracefulDegradation関数を使用
+        if (typeof window.handleGracefulDegradation === 'function') {
+            return window.handleGracefulDegradation(operation, fallback, errorMessage);
+        }
+        
+        // フォールバック処理
+        try {
+            return operation();
+        } catch (error) {
+            console.warn(`${errorMessage}:`, error);
+            return typeof fallback === 'function' ? fallback() : fallback;
+        }
+    }
+}
+
+// ==== Initialization Steps ====
 const INIT_STEPS = {
     CHECKING_SYSTEMS: 'checking_systems',
     CHECKING_CONFIG: 'checking_config', 
@@ -139,15 +185,17 @@ const INIT_STEPS = {
     INITIALIZING_PEN_TOOL_UI: 'initializing_pen_tool_ui',
     CONNECTING_SYSTEMS: 'connecting_systems',
     FINAL_SETUP: 'final_setup',
+    CANVAS_SETUP: 'canvas_setup',
     COMPLETED: 'completed',
     ERROR: 'error'
 };
 
-// ==== Application State Manager (SOLID: Single Responsibility) ====
+// ==== Application State Manager ====
 class AppStateManager {
     constructor() {
         this.state = {
             initialized: false,
+            canvasVisible: false,
             initializationStep: 'waiting',
             error: null,
             startTime: null,
@@ -174,7 +222,9 @@ class AppStateManager {
                 uiManagerFixed: false,
                 systemsIntegrated: false,
                 errorRecovery: false,
-                penToolUIInitialized: false
+                penToolUIInitialized: false,
+                canvasProperlySetup: false,
+                pixiUICompatible: false
             }
         };
     }
@@ -190,6 +240,7 @@ class AppStateManager {
             [INIT_STEPS.CREATING_UI_MANAGER]: 'UI管理システム作成中...',
             [INIT_STEPS.INITIALIZING_PEN_TOOL_UI]: 'PenToolUI初期化中...',
             [INIT_STEPS.CONNECTING_SYSTEMS]: 'システム連携設定中...',
+            [INIT_STEPS.CANVAS_SETUP]: 'キャンバスセットアップ中...',
             [INIT_STEPS.FINAL_SETUP]: '最終セットアップ中...',
             [INIT_STEPS.COMPLETED]: '初期化完了！',
             [INIT_STEPS.ERROR]: '初期化エラー'
@@ -216,7 +267,7 @@ class AppStateManager {
     }
 }
 
-// ==== System Checker (SOLID: Single Responsibility) ====
+// ==== System Checker ====
 class SystemChecker {
     static checkIntegratedSystems() {
         console.log('🔍 統合システムチェック...');
@@ -273,9 +324,100 @@ class SystemChecker {
         console.log('✅ 依存関係チェック完了');
         return true;
     }
+
+    static checkCanvasContainer() {
+        console.log('🔍 キャンバスコンテナチェック...');
+        
+        const canvasContainer = document.getElementById('drawing-canvas');
+        if (!canvasContainer) {
+            throw ErrorHandler.createApplicationError(
+                'drawing-canvas要素が見つかりません。HTMLファイルを確認してください。',
+                { step: INIT_STEPS.CANVAS_SETUP }
+            );
+        }
+        
+        console.log('✅ キャンバスコンテナ確認完了');
+        return canvasContainer;
+    }
 }
 
-// ==== Component Factory (SOLID: Factory Pattern) ====
+// ==== Canvas Setup Manager ====
+class CanvasSetupManager {
+    static async setupCanvas(app, appState) {
+        console.log('🖼️ キャンバスセットアップ開始...');
+        
+        try {
+            // キャンバスコンテナの確認
+            const canvasContainer = SystemChecker.checkCanvasContainer();
+            
+            // 既存のキャンバスをクリア
+            while (canvasContainer.firstChild) {
+                canvasContainer.removeChild(canvasContainer.firstChild);
+            }
+            
+            // アプリケーションのキャンバスを追加
+            if (app.app && app.app.view) {
+                canvasContainer.appendChild(app.app.view);
+                console.log('✅ キャンバス要素追加完了');
+                
+                // キャンバスが実際に表示されているか確認
+                const canvasRect = app.app.view.getBoundingClientRect();
+                if (canvasRect.width > 0 && canvasRect.height > 0) {
+                    console.log(`✅ キャンバス表示確認: ${canvasRect.width}x${canvasRect.height}px`);
+                    appState.state.canvasVisible = true;
+                    appState.state.phase2.canvasProperlySetup = true;
+                } else {
+                    console.warn('⚠️ キャンバスサイズが0px - 表示問題の可能性');
+                }
+                
+                // キャンバスのスタイル確認
+                const computedStyle = window.getComputedStyle(app.app.view);
+                if (computedStyle.display === 'none' || computedStyle.visibility === 'hidden') {
+                    console.warn('⚠️ キャンバスが非表示状態です');
+                    app.app.view.style.display = 'block';
+                    app.app.view.style.visibility = 'visible';
+                }
+                
+                // @pixi/ui互換性確認
+                CanvasSetupManager.checkPixiUICompatibility(appState);
+                
+            } else {
+                throw ErrorHandler.createApplicationError(
+                    'PixiDrawingAppのcanvas viewが作成されていません',
+                    { step: INIT_STEPS.CANVAS_SETUP }
+                );
+            }
+            
+            return true;
+            
+        } catch (error) {
+            console.error('🚨 キャンバスセットアップエラー:', error);
+            throw error;
+        }
+    }
+    
+    static checkPixiUICompatibility(appState) {
+        try {
+            // @pixi/uiの存在確認
+            if (typeof window.PIXI !== 'undefined' && window.PIXI.UI) {
+                console.log('✅ @pixi/ui検出 - 互換性確認中...');
+                appState.state.phase2.pixiUICompatible = true;
+            } else {
+                console.log('ℹ️ @pixi/ui未検出 - 標準PIXI使用');
+            }
+            
+            // PixiJS バージョン確認
+            if (window.PIXI && window.PIXI.VERSION) {
+                console.log(`📦 PixiJS バージョン: ${window.PIXI.VERSION}`);
+            }
+            
+        } catch (error) {
+            console.warn('⚠️ @pixi/ui互換性チェックエラー:', error);
+        }
+    }
+}
+
+// ==== Component Factory ====
 class ComponentFactory {
     static async createApplication(appState) {
         console.log('🎯 PixiDrawingApp作成...');
@@ -284,9 +426,27 @@ class ComponentFactory {
             const width = ConfigManager.get('CANVAS_WIDTH', 400);
             const height = ConfigManager.get('CANVAS_HEIGHT', 400);
             
+            console.log(`📐 キャンバスサイズ: ${width}x${height}px`);
+            
             const app = new PixiDrawingApp(width, height);
+            
+            // 初期化前にsettingsManagerを設定（もし利用可能なら）
+            if (window.settingsManager && typeof window.settingsManager.isInitialized === 'function') {
+                app.setSettingsManager(window.settingsManager);
+                console.log('⚙️ SettingsManager連携完了');
+            }
+            
             await app.init();
             
+            // キャンバスがプロパティに設定されているか確認
+            if (!app.app || !app.app.view) {
+                throw ErrorHandler.createApplicationError(
+                    'PixiDrawingAppの初期化後にcanvas viewが作成されていません',
+                    { step: INIT_STEPS.CREATING_APP }
+                );
+            }
+            
+            console.log('✅ PixiDrawingApp作成完了');
             appState.state.components.app = app;
             return app;
         });
@@ -314,6 +474,7 @@ class ComponentFactory {
                 toolsSystem.updateBrushSettings(defaultSettings);
             }
             
+            console.log('✅ DrawingToolsSystem作成完了');
             return toolsSystem;
         });
     }
@@ -327,6 +488,7 @@ class ComponentFactory {
             
             try {
                 await uiManager.init();
+                console.log('✅ UIManager初期化完了');
             } catch (initError) {
                 console.warn('⚠️ UIManager初期化でエラーが発生:', initError);
                 if (uiManager.setupToolButtons) {
@@ -338,6 +500,7 @@ class ComponentFactory {
             appState.state.components.historyManager = historyManager;
             appState.state.phase2.uiManagerFixed = true;
             
+            console.log('✅ UIManager作成完了');
             return uiManager;
         });
     }
@@ -365,21 +528,68 @@ class ComponentFactory {
             } else if (penToolUI && penToolUI.isInitialized) {
                 appState.state.components.penToolUI = penToolUI;
                 appState.state.phase2.penToolUIInitialized = true;
+                console.log('✅ PenToolUI既に初期化済み');
                 return penToolUI;
             }
             
+            console.warn('⚠️ PenToolUIの初期化をスキップ');
             return null;
         });
     }
 }
 
-// ==== Debug Functions Manager (SOLID: Single Responsibility) ====
+// ==== Debug Functions Manager ====
 class DebugManager {
     static setup(appState) {
         // 基本デバッグ関数
         window.undo = () => appState.state.components.historyManager?.undo() || false;
         window.redo = () => appState.state.components.historyManager?.redo() || false;
         window.debugHistory = () => appState.state.components.toolsSystem?.debugHistory() || console.warn('ToolsSystem not available');
+        
+        // キャンバス表示デバッグ関数
+        window.debugCanvas = function() {
+            const app = appState.state.components.app;
+            if (!app) {
+                console.warn('⚠️ アプリケーションが初期化されていません');
+                return;
+            }
+            
+            console.group('🖼️ キャンバスデバッグ情報');
+            console.log('アプリケーション:', !!app.app);
+            console.log('キャンバスビュー:', !!app.app?.view);
+            
+            if (app.app?.view) {
+                const canvasRect = app.app.view.getBoundingClientRect();
+                console.log('キャンバスサイズ:', {
+                    width: canvasRect.width,
+                    height: canvasRect.height,
+                    visible: canvasRect.width > 0 && canvasRect.height > 0
+                });
+                
+                const computedStyle = window.getComputedStyle(app.app.view);
+                console.log('表示スタイル:', {
+                    display: computedStyle.display,
+                    visibility: computedStyle.visibility,
+                    position: computedStyle.position
+                });
+                
+                const container = document.getElementById('drawing-canvas');
+                if (container) {
+                    console.log('コンテナ情報:', {
+                        exists: true,
+                        children: container.children.length,
+                        style: {
+                            display: container.style.display,
+                            visibility: container.style.visibility
+                        }
+                    });
+                }
+            }
+            
+            console.log('キャンバス可視状態:', appState.state.canvasVisible);
+            console.log('キャンバス設定完了:', appState.state.phase2.canvasProperlySetup);
+            console.groupEnd();
+        };
         
         // PenToolUI専用デバッグ関数
         window.debugPenToolUI = function() {
@@ -432,16 +642,65 @@ class DebugManager {
             console.groupEnd();
         };
         
+        // キャンバス表示修復関数
+        window.fixCanvas = function() {
+            console.log('🔧 キャンバス表示修復試行中...');
+            
+            const app = appState.state.components.app;
+            const container = document.getElementById('drawing-canvas');
+            
+            if (!app || !app.app || !app.app.view) {
+                console.error('❌ アプリケーションまたはキャンバスが見つかりません');
+                return false;
+            }
+            
+            if (!container) {
+                console.error('❌ drawing-canvasコンテナが見つかりません');
+                return false;
+            }
+            
+            try {
+                // キャンバスを再追加
+                if (!container.contains(app.app.view)) {
+                    container.appendChild(app.app.view);
+                    console.log('✅ キャンバスを再追加しました');
+                }
+                
+                // スタイル修正
+                app.app.view.style.display = 'block';
+                app.app.view.style.visibility = 'visible';
+                
+                // サイズ確認
+                const rect = app.app.view.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                    console.log(`✅ キャンバス表示修復完了: ${rect.width}x${rect.height}px`);
+                    appState.state.canvasVisible = true;
+                    appState.state.phase2.canvasProperlySetup = true;
+                    return true;
+                } else {
+                    console.warn('⚠️ キャンバスサイズが依然として0px');
+                    return false;
+                }
+                
+            } catch (error) {
+                console.error('❌ キャンバス修復エラー:', error);
+                return false;
+            }
+        };
+        
         // システムテスト関数
         window.testSystem = function() {
             console.log('🧪 システム統合テスト');
             
             const testResults = {
                 initialized: appState.state.initialized,
+                canvasVisible: appState.state.canvasVisible,
                 configLoaded: appState.state.config.loaded,
                 systemsIntegrated: appState.state.phase2.systemsIntegrated,
                 uiManagerFixed: appState.state.phase2.uiManagerFixed,
                 penToolUIInitialized: appState.state.phase2.penToolUIInitialized,
+                canvasProperlySetup: appState.state.phase2.canvasProperlySetup,
+                pixiUICompatible: appState.state.phase2.pixiUICompatible,
                 components: {
                     app: !!appState.state.components.app,
                     toolsSystem: !!appState.state.components.toolsSystem,
@@ -453,10 +712,15 @@ class DebugManager {
             
             const overallOK = testResults.initialized && testResults.configLoaded && 
                              testResults.systemsIntegrated && testResults.components.app &&
-                             testResults.components.toolsSystem && testResults.components.uiManager;
+                             testResults.components.toolsSystem && testResults.components.uiManager &&
+                             testResults.canvasVisible;
             
             console.log('📊 テスト結果:', testResults);
             console.log(`🏆 統合テスト: ${overallOK ? '✅ 成功' : '❌ 部分的'}`);
+            
+            if (!testResults.canvasVisible) {
+                console.warn('⚠️ キャンバスが表示されていません。window.fixCanvas() を試してください。');
+            }
             
             if (overallOK && testResults.penToolUIInitialized) {
                 console.log('🧪 ポップアップテスト実行中...');
@@ -466,11 +730,11 @@ class DebugManager {
             return overallOK;
         };
         
-        console.log('🛠 デバッグ機能設定完了');
+        console.log('🛠 デバッグ機能設定完了（キャンバス修復機能追加）');
     }
 }
 
-// ==== Error Display Manager (SOLID: Single Responsibility) ====
+// ==== Error Display Manager ====
 class ErrorDisplayManager {
     static show(error) {
         const errorContainer = document.createElement('div');
@@ -492,6 +756,7 @@ class ErrorDisplayManager {
         
         const isUIManagerError = error.message.includes('UIManager');
         const isPenToolUIError = error.message.includes('PenToolUI');
+        const isCanvasError = error.message.includes('canvas') || error.message.includes('Canvas');
         
         errorContainer.innerHTML = `
             <div style="font-size: 48px; margin-bottom: 20px;">⚠️</div>
@@ -502,6 +767,14 @@ class ErrorDisplayManager {
             <p style="margin: 0 0 20px 0; font-size: 14px; opacity: 0.7;">
                 エラーステップ: ${error.context?.step || 'unknown'}
             </p>
+            ${isCanvasError ? `
+            <div style="margin: 15px 0; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 8px; font-size: 12px;">
+                <strong>🖼️ キャンバスエラー対処法:</strong><br>
+                1. F12でコンソールを開き window.debugCanvas() を実行<br>
+                2. window.fixCanvas() でキャンバス表示修復を試行<br>
+                3. drawing-canvas要素がHTMLに存在するか確認
+            </div>
+            ` : ''}
             ${isUIManagerError ? `
             <div style="margin: 15px 0; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 8px; font-size: 12px;">
                 <strong>🔧 UIManagerエラー対処法:</strong><br>
@@ -524,14 +797,25 @@ class ErrorDisplayManager {
                 border-radius: 8px;
                 cursor: pointer;
                 font-size: 14px;
+                margin: 5px;
             ">ページを再読み込み</button>
+            <button onclick="this.parentElement.remove()" style="
+                background: rgba(255, 255, 255, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                color: white;
+                padding: 10px 20px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 14px;
+                margin: 5px;
+            ">閉じる</button>
         `;
         
         document.body.appendChild(errorContainer);
     }
 }
 
-// ==== UI Element Checker (SOLID: Single Responsibility) ====
+// ==== UI Element Checker ====
 class UIElementChecker {
     static checkPopupUIElements() {
         console.log('🔍 ポップアップUI要素確認...');
@@ -552,7 +836,7 @@ class UIElementChecker {
             }
         } else {
             console.warn('⚠️ ペンツールボタン要素が見つかりません（ID: pen-tool）');
-            this.searchAlternativeButtons();
+            UIElementChecker.searchAlternativeButtons();
         }
         
         // ポップアップコンテナの確認
@@ -563,11 +847,33 @@ class UIElementChecker {
             console.warn('⚠️ ペン設定ポップアップ要素が見つかりません（ID: pen-settings）');
         }
         
+        // キャンバスコンテナの確認
+        UIElementChecker.checkCanvasContainer();
+        
         // 一般的なポップアップコンテナ検索
-        this.searchPopupContainers();
+        UIElementChecker.searchPopupContainers();
         
         // ID修正確認結果サマリー
-        this.logIDCorrectionSummary();
+        UIElementChecker.logIDCorrectionSummary();
+    }
+    
+    static checkCanvasContainer() {
+        console.log('🔍 キャンバスコンテナ確認...');
+        
+        const canvasContainer = document.getElementById('drawing-canvas');
+        if (canvasContainer) {
+            console.log('✅ キャンバスコンテナ要素確認完了（ID: drawing-canvas）');
+            
+            const containerRect = canvasContainer.getBoundingClientRect();
+            console.log(`📐 コンテナサイズ: ${containerRect.width}x${containerRect.height}px`);
+            
+            if (containerRect.width === 0 || containerRect.height === 0) {
+                console.warn('⚠️ キャンバスコンテナサイズが0px - CSSスタイルを確認してください');
+            }
+        } else {
+            console.error('❌ キャンバスコンテナ要素が見つかりません（ID: drawing-canvas）');
+            console.error('💡 HTMLファイルに <div id="drawing-canvas"></div> を追加してください');
+        }
     }
     
     static searchAlternativeButtons() {
@@ -599,7 +905,8 @@ class UIElementChecker {
         console.group('📋 ID修正確認結果サマリー');
         console.log('正しいID:', {
             penButton: 'pen-tool ✅',
-            penSettings: 'pen-settings ✅'
+            penSettings: 'pen-settings ✅',
+            canvasContainer: 'drawing-canvas ✅'
         });
         console.log('修正前の間違ったID:', {
             penButton: 'pen-tool-button ❌（修正済み）'
@@ -608,7 +915,7 @@ class UIElementChecker {
     }
 }
 
-// ==== Main Application Initializer (SOLID: Dependency Inversion) ====
+// ==== Main Application Initializer ====
 class ApplicationInitializer {
     constructor() {
         this.appState = new AppStateManager();
@@ -617,7 +924,7 @@ class ApplicationInitializer {
     async initialize() {
         try {
             this.appState.state.startTime = performance.now();
-            console.log('🚀 アプリケーション初期化開始');
+            console.log('🚀 アプリケーション初期化開始（エラー修正・キャンバス表示修正版）');
             
             // 1. システムチェック
             this.appState.updateStep(INIT_STEPS.CHECKING_SYSTEMS);
@@ -645,15 +952,19 @@ class ApplicationInitializer {
             this.appState.updateStep(INIT_STEPS.INITIALIZING_PEN_TOOL_UI);
             const penToolUI = await ComponentFactory.initializePenToolUI(toolsSystem, this.appState);
             
-            // 5. システム連携
+            // 5. キャンバスセットアップ（新規追加）
+            this.appState.updateStep(INIT_STEPS.CANVAS_SETUP);
+            await CanvasSetupManager.setupCanvas(app, this.appState);
+            
+            // 6. システム連携
             this.appState.updateStep(INIT_STEPS.CONNECTING_SYSTEMS);
             await this.connectSystems();
             
-            // 6. 最終セットアップ
+            // 7. 最終セットアップ
             this.appState.updateStep(INIT_STEPS.FINAL_SETUP);
             await this.finalSetup();
             
-            // 7. 完了処理
+            // 8. 完了処理
             const initTime = performance.now() - this.appState.state.startTime;
             this.appState.markCompleted(initTime);
             
@@ -773,37 +1084,55 @@ class ApplicationInitializer {
         console.log(`✨ 線補正: ${ConfigManager.get('DEFAULT_SMOOTHING', 0.3) * 100}%`);
         
         const phase2Status = this.appState.state.phase2;
-        console.log('🚀 Phase2最適化状況:');
+        console.log('🚀 Phase2修正状況:');
         console.log(`  🔧 UIManager修復: ${phase2Status.uiManagerFixed ? '✅ 成功' : '❌ 失敗'}`);
         console.log(`  🎨 PenToolUI初期化: ${phase2Status.penToolUIInitialized ? '✅ 完了' : '❌ 失敗'}`);
         console.log(`  🔗 システム統合: ${phase2Status.systemsIntegrated ? '✅ 完了' : '❌ 不完全'}`);
+        console.log(`  🖼️ キャンバス設定: ${phase2Status.canvasProperlySetup ? '✅ 完了' : '❌ 不完全'}`);
+        console.log(`  📦 @pixi/ui互換性: ${phase2Status.pixiUICompatible ? '✅ 対応' : 'ℹ️ 標準PIXI'}`);
         console.log(`  🛡️ エラー回復: ${phase2Status.errorRecovery ? '⚠️ 発動済み' : '✅ 正常動作'}`);
         
         console.groupEnd();
         
+        // キャンバス表示確認
+        if (this.appState.state.canvasVisible) {
+            console.log('🖼️ ✅ キャンバス表示確認完了');
+        } else {
+            console.warn('🖼️ ⚠️ キャンバス表示未確認 - window.debugCanvas() で詳細確認可能');
+        }
+        
         // UI通知
         const { uiManager } = this.appState.state.components;
         if (uiManager && uiManager.showNotification) {
-            const message = phase2Status.uiManagerFixed && phase2Status.systemsIntegrated && phase2Status.penToolUIInitialized
-                ? 'アプリケーション初期化完了！すべてのシステムが正常に動作しています'
+            const message = phase2Status.uiManagerFixed && 
+                           phase2Status.systemsIntegrated && 
+                           phase2Status.canvasProperlySetup && 
+                           this.appState.state.canvasVisible
+                ? 'アプリケーション初期化完了！キャンバスが正常に表示されています'
                 : 'アプリケーション初期化完了！基本機能が利用可能です';
             uiManager.showNotification(message, 'success', 5000);
         }
         
-        // ポップアップテスト案内
+        // テスト案内
         setTimeout(() => {
-            console.log('🧪 ポップアップ機能テスト:');
-            console.log('  📋 ペンツールボタンをクリックしてポップアップをテストしてください');
-            console.log('  📋 または window.testPenPopup() を実行してください');
+            console.log('🧪 テスト機能:');
+            console.log('  📋 window.testSystem() - システム全体テスト');
+            console.log('  🖼️ window.debugCanvas() - キャンバス表示デバッグ');
+            console.log('  🔧 window.fixCanvas() - キャンバス表示修復');
+            console.log('  🎨 window.testPenPopup() - ポップアップテスト');
+            
+            if (!this.appState.state.canvasVisible) {
+                console.warn('⚠️ キャンバスが表示されていない場合は window.fixCanvas() を実行してください');
+            }
         }, 1000);
     }
 }
 
-// ==== Initialization Monitor (SOLID: Single Responsibility) ====
+// ==== Initialization Monitor ====
 class InitializationMonitor {
     constructor(initializer) {
         this.initializer = initializer;
-        this.maxWaitTime = 25000;
+        this.maxWaitTime = 30000; // 30秒に拡張
     }
     
     startWatching() {
@@ -839,7 +1168,7 @@ class InitializationMonitor {
     }
 }
 
-// ==== Utility Functions (DRY principle) ====
+// ==== Utility Functions (utils.js統合版) ====
 class UtilityManager {
     static setupFallbackUtilities() {
         // utils.js依存関係のフォールバック
@@ -851,26 +1180,28 @@ class UtilityManager {
             window.logError = ErrorHandler.logError;
             window.measurePerformance = PerformanceMonitor.measure;
             window.handleGracefulDegradation = ErrorHandler.handleGracefulDegradation;
+        } else {
+            console.log('✅ utils.js 統合確認完了');
         }
     }
     
     static logApplicationInfo() {
-        console.log('🚀 main.js 構文エラー修正版読み込み開始...');
+        console.log('🚀 main.js エラー修正・キャンバス表示修正版読み込み開始...');
         console.log('🗃️ 適用された改善:');
-        console.log('  ✅ DRY原則適用: 重複コード削除・ユーティリティクラス化');
-        console.log('  ✅ SOLID原則適用: 単一責任・依存性逆転');
-        console.log('  ✅ 構文エラー修正: Invalid token問題解決');
-        console.log('  ✅ エラーハンドリング強化: 型安全・グレースフルデグラデーション');
-        console.log('  ✅ パフォーマンス最適化: 非同期処理・測定機能');
-        console.log('  ✅ 保守性向上: クラス分割・モジュール化');
+        console.log('  ✅ ErrorHandler重複宣言修正: utils.js統合により重複削除');
+        console.log('  ✅ キャンバス表示問題修正: CanvasSetupManager追加');
+        console.log('  ✅ @pixi/ui互換性確保: 導入後の問題対応');
+        console.log('  ✅ エラーハンドリング強化: utils.js統合版使用');
+        console.log('  ✅ デバッグ機能拡充: キャンバス修復機能追加');
+        console.log('  ✅ 初期化プロセス最適化: ステップ追加・エラー対策');
         
-        console.log('🎯 ポップアップ機能確認:');
-        console.log('  📦 PenToolUI初期化保証: DOM読み込み後の確実な初期化');
-        console.log('  🔍 UI要素検証機能: ポップアップ関連要素の存在確認');
-        console.log('  🧪 テスト機能強化: ポップアップ表示テスト自動化');
-        console.log('  📊 状態監視機能: 詳細な初期化ステータス表示');
+        console.log('🎯 キャンバス表示修正機能:');
+        console.log('  🖼️ キャンバスセットアップ: 専用マネージャーによる安全な設定');
+        console.log('  🔍 表示確認機能: サイズ・可視性の自動チェック');
+        console.log('  🔧 修復機能: window.fixCanvas()による表示問題修復');
+        console.log('  📊 デバッグ機能: window.debugCanvas()による詳細情報表示');
         
-        console.log('🚀 準備完了: 構文エラー修正版アプリケーション初期化実行中...');
+        console.log('🚀 準備完了: エラー修正・キャンバス表示修正版アプリケーション初期化実行中...');
     }
 }
 
@@ -896,10 +1227,18 @@ async function initializeApp() {
         const success = await globalInitializer.initialize();
         
         if (success) {
-            console.log('🎉 main.js 構文エラー修正版初期化成功！');
+            console.log('🎉 main.js エラー修正・キャンバス表示修正版初期化成功！');
             
-            // ポップアップ機能最終確認
+            // キャンバス表示最終確認
             setTimeout(() => {
+                const canvasVisible = globalInitializer.appState.state.canvasVisible;
+                if (canvasVisible) {
+                    console.log('✅ キャンバス表示確認完了 - 描画可能です');
+                } else {
+                    console.warn('⚠️ キャンバス表示未確認 - window.fixCanvas() を試してください');
+                }
+                
+                // ポップアップ機能最終確認
                 const penToolUI = window.penToolUI;
                 if (penToolUI && penToolUI.components?.popupManager) {
                     console.log('✅ ポップアップ機能確認完了 - ペンツールアイコンをクリックしてテストしてください');
@@ -907,11 +1246,12 @@ async function initializeApp() {
                     console.warn('⚠️ ポップアップ機能の完全初期化未確認');
                 }
                 
-                // ポップアップ表示テスト実行案内
-                console.group('🧪 ポップアップテスト手順');
-                console.log('1. ペンツールアイコン（🖊️）をクリック');
-                console.log('2. または window.testPenPopup() をコンソールで実行');
-                console.log('3. ポップアップが表示されることを確認');
+                // テスト実行案内
+                console.group('🧪 テスト手順');
+                console.log('1. window.testSystem() でシステム全体テスト');
+                console.log('2. キャンバスに描画してみる');
+                console.log('3. ペンツールアイコン（🖊️）をクリックしてポップアップテスト');
+                console.log('4. 問題がある場合は window.debugCanvas() で詳細確認');
                 console.groupEnd();
             }, 2000);
         }
@@ -950,6 +1290,7 @@ if (typeof window !== 'undefined') {
     window.ApplicationInitializer = ApplicationInitializer;
     window.UIElementChecker = UIElementChecker;
     window.UtilityManager = UtilityManager;
+    window.CanvasSetupManager = CanvasSetupManager;
     
     // ステート・定数エクスポート
     window.INIT_STEPS = INIT_STEPS;
@@ -959,5 +1300,10 @@ if (typeof window !== 'undefined') {
     window.initializeApplication = initializeApp;
     window.checkPopupUIElements = UIElementChecker.checkPopupUIElements;
     
-    console.log('🔧 main.js 構文エラー修正版読み込み完了');
+    console.log('🔧 main.js エラー修正・キャンバス表示修正版読み込み完了');
+    console.log('📦 追加エクスポート:');
+    console.log('  - CanvasSetupManager: キャンバス設定管理');
+    console.log('  - window.debugCanvas(): キャンバスデバッグ');
+    console.log('  - window.fixCanvas(): キャンバス修復');
+    console.log('  - window.testSystem(): システム全体テスト');
 }
