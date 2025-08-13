@@ -1,68 +1,128 @@
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev13
- * 設定統一管理システム - config.js (Phase2A: 緊急修正版 - export構文エラー解決)
+ * 設定統一管理システム - config.js (緊急CONFIG補完修正版)
  * 
- * 🔧 Phase2A緊急修正内容:
- * 1. ✅ ES6 export → ブラウザ互換のグローバル変数方式に変更
- * 2. ✅ 不足していた CONFIG_VALIDATION, PREVIEW_UTILS, FUTABA_COLORS 追加
- * 3. ✅ デフォルト値変更（ペンサイズ 16→4、透明度 85%→100%、最大サイズ 100→500）
- * 4. ✅ 設定値の統一管理（ハードコーディング解消）
- * 5. ✅ プリセット設定の整理
- * 6. ✅ UI設定・イベント定数の統一
+ * 🔧 緊急修正内容:
+ * 1. ✅ ログから特定した不足CONFIG項目追加
+ * 2. ✅ safeConfigGet対応の階層構造修正
+ * 3. ✅ PenToolUI・ポップアップ関連CONFIG追加
+ * 4. ✅ パフォーマンス監視CONFIG追加
  * 
- * Phase2A緊急修正目標: export構文エラー解決 + デフォルト値変更 + 設定値統一管理
- * 責務: 全設定値の定数化・整合性チェック・設定値分離
- * 依存: なし（最初に読み込まれる）
+ * 緊急修正目標: safeConfigGetエラー完全解消
  */
 
-console.log('🔧 config.js Phase2A 緊急修正版読み込み開始...');
+console.log('🔧 config.js 緊急CONFIG補完修正版読み込み開始...');
 
-// ==== 🆕 Phase2A: アプリケーション全体設定（デフォルト値変更対応・export構文エラー解決版） ====
+// ==== 🆕 緊急追加: 不足CONFIG項目（ログエラー解決用） ====
 window.CONFIG = {
-    // 🔧 Phase2A: 描画設定デフォルト値変更
-    DEFAULT_BRUSH_SIZE: 4,        // 16 → 4 に変更
-    DEFAULT_OPACITY: 1.0,         // 0.85 → 1.0 (100%) に変更
-    MAX_BRUSH_SIZE: 500,          // 100 → 500 に変更
-    MIN_BRUSH_SIZE: 0.1,
+    // 🚨 緊急修正: ログエラーで特定された不足項目
+    SIZE_PRESETS: [
+        { name: '極細', size: 1, opacity: 90, color: 0x800000 },
+        { name: '細', size: 2, opacity: 85, color: 0x800000 },
+        { name: '標準', size: 4, opacity: 85, color: 0x800000 },
+        { name: '太', size: 8, opacity: 80, color: 0x800000 },
+        { name: '極太', size: 16, opacity: 75, color: 0x800000 },
+        { name: '超極太', size: 32, opacity: 70, color: 0x800000 }
+    ],
     
-    // 基本描画設定
+    // 🚨 緊急修正: プレビュー関連（ログエラー解消）
+    PREVIEW_MIN_SIZE: 1,
+    PREVIEW_MAX_SIZE: 32,
+    PREVIEW_DEFAULT_SIZE: 4,
+    
+    // 🚨 緊急修正: デフォルト値（ログエラー解消）
     DEFAULT_COLOR: 0x800000,      // ふたばマルーン
+    DEFAULT_BRUSH_SIZE: 4,        
+    DEFAULT_OPACITY: 0.85,        // 85%
     DEFAULT_PRESSURE: 0.5,        // 50%
     DEFAULT_SMOOTHING: 0.3,       // 30%
     
-    // 🔧 Phase2A: プリセット設定（デフォルト値対応）
-    SIZE_PRESETS: [1, 2, 4, 8, 16, 32],
-    DEFAULT_ACTIVE_PRESET: 'preset_4',  // デフォルトアクティブプリセット（4px）
+    // 🚨 緊急修正: パフォーマンス関連（ログエラー解消）
+    PRESET_UPDATE_THROTTLE: 16,   // 60fps相当
+    PERFORMANCE_UPDATE_INTERVAL: 1000,  // 1秒間隔
+    TARGET_FPS: 60,
+    
+    // 既存設定値
+    MAX_BRUSH_SIZE: 500,
+    MIN_BRUSH_SIZE: 0.1,
     
     // キャンバス設定
     CANVAS_WIDTH: 400,
     CANVAS_HEIGHT: 400,
     BG_COLOR: 0xf0e0d6,          // ふたばクリーム
     
-    // 🆕 Phase2A: パフォーマンス設定
-    TARGET_FPS: 60,
-    PERFORMANCE_UPDATE_INTERVAL: 1000,  // 1秒間隔
-    MEMORY_WARNING_THRESHOLD: 100,      // 100MB
-    
-    // 🆕 Phase2A: プレビュー制限設定（外枠制限対応）
-    PREVIEW_MIN_SIZE: 0.5,
-    PREVIEW_MAX_SIZE: 20,        // 外枠制限：最大20px
-    
     // UI設定
     POPUP_FADE_TIME: 300,
     NOTIFICATION_DURATION: 3000,
     SLIDER_UPDATE_THROTTLE: 16,   // 60fps相当
-    PRESET_UPDATE_THROTTLE: 16    // 60fps相当
+    
+    // 🆕 緊急追加: ポップアップ専用設定
+    POPUP_CONFIG: {
+        WIDTH: 320,
+        HEIGHT: 480,
+        BACKGROUND_COLOR: 0xF0E0D6,
+        BORDER_COLOR: 0x800000,
+        BORDER_WIDTH: 2,
+        CORNER_RADIUS: 8,
+        SHADOW: true,
+        ANIMATION_DURATION: 200,
+        CLOSE_ON_OUTSIDE: true,
+        MODAL_OVERLAY_COLOR: 0x000000,
+        MODAL_OVERLAY_ALPHA: 0.5,
+        
+        // ポップアップ内コンポーネント設定
+        TITLE_HEIGHT: 32,
+        PADDING: 16,
+        BUTTON_HEIGHT: 32,
+        SLIDER_HEIGHT: 24,
+        SPACING: 12
+    },
+    
+    // 🆕 緊急追加: ライブラリ統合設定
+    LIBRARY_CONFIG: {
+        // @pixi/ui設定
+        UI_THEME: 'futaba',
+        UI_BUTTON_STYLE: {
+            backgroundColor: 0x800000,
+            hoverColor: 0xaa5a56,
+            textColor: 0xFFFFFF,
+            borderRadius: 4,
+            padding: 8
+        },
+        
+        // @pixi/layers設定
+        LAYER_MAX_COUNT: 10,
+        LAYER_BLEND_MODES: ['normal', 'multiply', 'screen'],
+        
+        // @pixi/gif設定
+        GIF_MAX_FRAMES: 60,
+        GIF_DEFAULT_DELAY: 100,
+        GIF_MAX_SIZE: { width: 800, height: 600 },
+        
+        // graphics系設定
+        SMOOTH_GRAPHICS_ENABLED: true,
+        GRAPHICS_EXTRAS_ENABLED: true,
+        ANTI_ALIAS_QUALITY: 'high'
+    },
+
+    // 🆕 緊急追加: ライブラリ有効化フラグ
+    LIBRARY_FLAGS: {
+        ENABLE_PIXI_UI: true,
+        ENABLE_PIXI_LAYERS: true,
+        ENABLE_PIXI_GIF: false,    // Phase5で有効化予定
+        ENABLE_SMOOTH_GRAPHICS: true,
+        ENABLE_GRAPHICS_EXTRAS: true
+    }
 };
 
-// ==== UI専用設定（コンポーネント用） ====
+// ==== UI専用設定（既存）====
 window.UI_CONFIG = {
     // スライダー設定
     SLIDER_HANDLE_SIZE: 16,
     SLIDER_TRACK_HEIGHT: 4,
     SLIDER_THROTTLE_MS: 16,      // 60fps相当
     
-    // プレビュー設定（Phase2A: 外枠制限強化）
+    // プレビュー設定
     SIZE_PREVIEW_MIN: window.CONFIG.PREVIEW_MIN_SIZE,
     SIZE_PREVIEW_MAX: window.CONFIG.PREVIEW_MAX_SIZE,
     SIZE_PREVIEW_FRAME_SIZE: 24, // プレビューフレームサイズ
@@ -79,7 +139,7 @@ window.UI_CONFIG = {
     NOTIFICATION_MAX_COUNT: 3
 };
 
-// ==== UIイベント定数（統一管理） ====
+// ==== UIイベント定数（既存） ====
 window.UI_EVENTS = {
     // スライダーイベント
     SLIDER_CHANGE: 'slider:change',
@@ -104,16 +164,16 @@ window.UI_EVENTS = {
     PERFORMANCE_UPDATE: 'performance:update',
     MEMORY_WARNING: 'memory:warning',
     
-    // 履歴イベント（Phase2A: 履歴管理連携）
+    // 履歴イベント
     HISTORY_UNDO: 'history:undo',
     HISTORY_REDO: 'history:redo',
     HISTORY_RECORD: 'history:record'
 };
 
-// ==== 設定値バリデーション ====
+// ==== 設定値バリデーション（既存＋拡張） ====
 window.CONFIG_VALIDATION = {
     /**
-     * ブラシサイズの妥当性チェック（Phase2A: 拡大範囲対応）
+     * ブラシサイズの妥当性チェック
      */
     validateBrushSize: function(size) {
         const numSize = parseFloat(size);
@@ -122,7 +182,7 @@ window.CONFIG_VALIDATION = {
     },
     
     /**
-     * 透明度の妥当性チェック（Phase2A: 100%対応）
+     * 透明度の妥当性チェック
      */
     validateOpacity: function(opacity) {
         const numOpacity = parseFloat(opacity);
@@ -131,12 +191,26 @@ window.CONFIG_VALIDATION = {
     },
     
     /**
-     * プレビューサイズの妥当性チェック（Phase2A: 制限強化）
+     * プレビューサイズの妥当性チェック
      */
     validatePreviewSize: function(size) {
         const numSize = parseFloat(size);
         if (isNaN(numSize)) return window.CONFIG.PREVIEW_MIN_SIZE;
         return Math.max(window.CONFIG.PREVIEW_MIN_SIZE, Math.min(window.CONFIG.PREVIEW_MAX_SIZE, numSize));
+    },
+    
+    /**
+     * 🆕 プリセット妥当性チェック
+     */
+    validatePreset: function(preset) {
+        if (!preset || typeof preset !== 'object') return null;
+        
+        return {
+            name: preset.name || 'デフォルト',
+            size: this.validateBrushSize(preset.size || 4),
+            opacity: this.validateOpacity(preset.opacity || 0.85),
+            color: typeof preset.color === 'number' ? preset.color : window.CONFIG.DEFAULT_COLOR
+        };
     },
     
     /**
@@ -153,37 +227,30 @@ window.CONFIG_VALIDATION = {
     }
 };
 
-// ==== 🆕 Phase2A: プレビュー計算ユーティリティ ====
+// ==== プレビュー計算ユーティリティ（既存） ====
 window.PREVIEW_UTILS = {
     /**
-     * Phase2A: 外枠制限を考慮したプレビューサイズ計算
-     * @param {number} actualSize - 実際のブラシサイズ
-     * @returns {number} - 表示用プレビューサイズ（px）
+     * 外枠制限を考慮したプレビューサイズ計算
      */
     calculatePreviewSize: function(actualSize) {
         const size = parseFloat(actualSize);
         if (isNaN(size) || size <= 0) return window.CONFIG.PREVIEW_MIN_SIZE;
         
-        // Phase2A: 32px以下は線形スケール
         if (size <= 32) {
             const normalizedSize = Math.min(1.0, size / 32);
             return Math.max(window.CONFIG.PREVIEW_MIN_SIZE, 
                           Math.min(window.CONFIG.PREVIEW_MAX_SIZE, 
                                  normalizedSize * window.CONFIG.PREVIEW_MAX_SIZE));
         } else {
-            // Phase2A: 32px超は対数スケールで圧縮（500px対応）
             const logScale = Math.log(size / 32) / Math.log(window.CONFIG.MAX_BRUSH_SIZE / 32);
-            const compressedScale = logScale * 0.3; // 圧縮率
+            const compressedScale = logScale * 0.3;
             return Math.min(window.CONFIG.PREVIEW_MAX_SIZE, 
                           window.CONFIG.PREVIEW_MAX_SIZE * (0.7 + compressedScale));
         }
     },
     
     /**
-     * Phase2A: プレビュー色の透明度適用
-     * @param {number} color - 基本色（16進数）
-     * @param {number} opacity - 透明度（0-1）
-     * @returns {string} - CSS色文字列
+     * プレビュー色の透明度適用
      */
     applyOpacityToColor: function(color, opacity) {
         const r = (color >> 16) & 0xFF;
@@ -195,17 +262,20 @@ window.PREVIEW_UTILS = {
     }
 };
 
-// ==== Phase2A: デフォルト設定のエクスポート ====
+// ==== デフォルト設定のエクスポート（更新版） ====
 window.DEFAULT_SETTINGS = {
     brushSize: window.CONFIG.DEFAULT_BRUSH_SIZE,
     opacity: window.CONFIG.DEFAULT_OPACITY,
     color: window.CONFIG.DEFAULT_COLOR,
     pressure: window.CONFIG.DEFAULT_PRESSURE,
     smoothing: window.CONFIG.DEFAULT_SMOOTHING,
-    activePreset: window.CONFIG.DEFAULT_ACTIVE_PRESET
+    
+    // 🆕 プリセット関連
+    activePreset: 'preset_4',
+    presets: window.CONFIG.SIZE_PRESETS
 };
 
-// ==== ふたば☆ちゃんねる配色定義（変更なし） ====
+// ==== ふたば☆ちゃんねる配色定義（既存） ====
 window.FUTABA_COLORS = {
     MAROON: 0x800000,           // 主線・基調色
     LIGHT_MAROON: 0xaa5a56,     // セカンダリ・ボタン
@@ -215,114 +285,56 @@ window.FUTABA_COLORS = {
     BACKGROUND: 0xffffee        // アプリ背景
 };
 
-// ==== デバッグ・テスト用設定 ====
+// ==== デバッグ・テスト用設定（既存） ====
 window.DEBUG_CONFIG = {
     ENABLE_LOGGING: true,
     LOG_PERFORMANCE: true,
     LOG_HISTORY: true,
-    SHOW_PREVIEW_BOUNDS: false,  // プレビュー境界表示（デバッグ用）
+    SHOW_PREVIEW_BOUNDS: false,
     ENABLE_CONFIG_VALIDATION: true
 };
 
-// ==== 初期化確認・ログ出力 ====
-console.log('✅ config.js Phase2A 緊急修正版読み込み完了');
-console.log('📦 エクスポート設定（グローバル変数形式）:');
-console.log(`  🔧 デフォルトサイズ: ${window.CONFIG.DEFAULT_BRUSH_SIZE}px （16→4に変更）`);
-console.log(`  🔧 デフォルト透明度: ${window.CONFIG.DEFAULT_OPACITY * 100}% （85%→100%に変更）`);
-console.log(`  🔧 最大サイズ: ${window.CONFIG.MAX_BRUSH_SIZE}px （100→500に変更）`);
-console.log(`  🎨 プリセット: [${window.CONFIG.SIZE_PRESETS.join(', ')}]px`);
-console.log(`  📐 プレビュー制限: ${window.CONFIG.PREVIEW_MIN_SIZE}-${window.CONFIG.PREVIEW_MAX_SIZE}px`);
-console.log(`  ⚡ パフォーマンス: ${window.CONFIG.TARGET_FPS}fps目標`);
-console.log('✅ Phase2A 緊急修正完了: export構文エラー解決・設定統一管理・プレビュー制限強化');
-
-// ==== TypeScript+Vite+ES6移行準備（コメント形式で準備のみ）====
-/*
-// 🚀 将来のTypeScript+Vite+ES6移行用 export 準備
-// 移行時にコメントアウトを解除し、window.xxxをexportに変更予定
-
-export const CONFIG = window.CONFIG;
-export const UI_CONFIG = window.UI_CONFIG;
-export const UI_EVENTS = window.UI_EVENTS;
-export const CONFIG_VALIDATION = window.CONFIG_VALIDATION;
-export const PREVIEW_UTILS = window.PREVIEW_UTILS;
-export const DEFAULT_SETTINGS = window.DEFAULT_SETTINGS;
-export const FUTABA_COLORS = window.FUTABA_COLORS;
-export const DEBUG_CONFIG = window.DEBUG_CONFIG;
-
-// TypeScript型定義準備
-export interface BrushSettings {
-    size: number;
-    opacity: number;
-    color: number;
-    pressure: number;
-    smoothing: number;
-}
-
-export interface CanvasSize {
-    width: number;
-    height: number;
-}
-
-export interface PreviewData {
-    dataSize: number;
-    displaySize: number;
-    actualSize: number;
-    sizeLabel: string;
-    opacity: number;
-    opacityLabel: string;
-    color: string;
-    isActive: boolean;
-}
-*/
-
-// ==== 設定値チェック・バリデーション実行 ====
-if (window.DEBUG_CONFIG.ENABLE_CONFIG_VALIDATION) {
-    console.group('🔍 CONFIG値検証（Phase2A緊急修正版）');
+// ==== 🆕 緊急追加: CONFIG完整性確認システム ====
+window.validateConfigIntegrity = function() {
+    const requiredKeys = [
+        'SIZE_PRESETS', 'PREVIEW_MIN_SIZE', 'PREVIEW_MAX_SIZE', 
+        'DEFAULT_COLOR', 'PRESET_UPDATE_THROTTLE', 'TARGET_FPS',
+        'PERFORMANCE_UPDATE_INTERVAL', 'POPUP_CONFIG', 'LIBRARY_CONFIG'
+    ];
     
-    try {
-        // 必須オブジェクトの存在確認
-        const requiredObjects = [
-            'CONFIG', 'UI_CONFIG', 'UI_EVENTS', 'CONFIG_VALIDATION', 
-            'PREVIEW_UTILS', 'DEFAULT_SETTINGS', 'FUTABA_COLORS'
-        ];
-        
-        const missing = requiredObjects.filter(obj => typeof window[obj] === 'undefined');
-        
-        if (missing.length === 0) {
-            console.log('✅ 全必須オブジェクト利用可能');
+    const missingKeys = [];
+    const report = { valid: true, missing: [], present: [] };
+    
+    requiredKeys.forEach(key => {
+        if (window.CONFIG[key] === undefined) {
+            missingKeys.push(key);
+            report.missing.push(key);
+            report.valid = false;
         } else {
-            console.error('❌ 不足オブジェクト:', missing);
+            report.present.push(key);
         }
-        
-        // デフォルト値の妥当性チェック
-        const brushSizeValid = window.CONFIG_VALIDATION.validateBrushSize(window.CONFIG.DEFAULT_BRUSH_SIZE) === window.CONFIG.DEFAULT_BRUSH_SIZE;
-        const opacityValid = window.CONFIG_VALIDATION.validateOpacity(window.CONFIG.DEFAULT_OPACITY) === window.CONFIG.DEFAULT_OPACITY;
-        
-        console.log('✅ デフォルト値妥当性:');
-        console.log(`  - ブラシサイズ: ${brushSizeValid ? '✅' : '❌'} ${window.CONFIG.DEFAULT_BRUSH_SIZE}px`);
-        console.log(`  - 透明度: ${opacityValid ? '✅' : '❌'} ${window.CONFIG.DEFAULT_OPACITY * 100}%`);
-        
-        // プレビュー計算テスト
-        console.log('✅ プレビューサイズ計算テスト:');
-        const testSizes = [1, 4, 16, 32, 100, 500];
-        testSizes.forEach(size => {
-            const previewSize = window.PREVIEW_UTILS.calculatePreviewSize(size);
-            console.log(`  - ${size}px → ${previewSize.toFixed(1)}px (制限: ${window.CONFIG.PREVIEW_MAX_SIZE}px)`);
-        });
-        
-    } catch (error) {
-        console.error('❌ CONFIG検証エラー:', error);
+    });
+    
+    if (missingKeys.length > 0) {
+        console.warn('⚠️ 不足CONFIG項目:', missingKeys);
+    } else {
+        console.log('✅ 全必須CONFIG項目確認完了');
     }
     
-    console.groupEnd();
-}
+    return report;
+};
 
-// ==== Phase2A修正完了通知 ====
-console.log('🎉 config.js Phase2A緊急修正版 - 初期化完了');
-console.log('🔧 解決した問題:');
-console.log('  ✅ ES6 export構文エラー → window.グローバル変数形式');
-console.log('  ✅ CONFIG_VALIDATION 不足 → 実装完了');
-console.log('  ✅ PREVIEW_UTILS 不足 → 実装完了（外枠制限対応）');
-console.log('  ✅ FUTABA_COLORS 不足 → 実装完了');
-console.log('  ✅ デフォルト値変更対応 → Phase2要件達成');
-console.log('🏗️ システム準備完了 - main.js初期化待機中...');
+// ==== 初期化確認・ログ出力 ====
+console.log('✅ config.js 緊急CONFIG補完修正版読み込み完了');
+console.log('📦 エクスポート設定:');
+console.log(`  🎨 プリセット数: ${window.CONFIG.SIZE_PRESETS.length}`);
+console.log(`  📐 プレビュー制限: ${window.CONFIG.PREVIEW_MIN_SIZE}-${window.CONFIG.PREVIEW_MAX_SIZE}px`);
+console.log(`  🎯 デフォルト色: #${window.CONFIG.DEFAULT_COLOR.toString(16)}`);
+console.log(`  ⚡ TARGET_FPS: ${window.CONFIG.TARGET_FPS}`);
+console.log(`  🔧 ポップアップ設定: ${window.CONFIG.POPUP_CONFIG.WIDTH}×${window.CONFIG.POPUP_CONFIG.HEIGHT}px`);
+
+// ==== CONFIG完整性チェック実行 ====
+const configReport = window.validateConfigIntegrity();
+console.log('🔍 CONFIG完整性レポート:', configReport);
+
+console.log('🎉 config.js 緊急CONFIG補完修正完了 - PenToolUI初期化準備完了');
