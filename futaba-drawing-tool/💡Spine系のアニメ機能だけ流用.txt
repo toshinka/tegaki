@@ -1,0 +1,91 @@
+1. 該当ライブラリの有無
+Spineランタイム（@pixi/spine）
+対応機能
+
+メッシュ変形（頂点アニメーション）
+
+ボーン（階層変形）
+
+タイムライン（複数プロパティをキーフレーム制御）
+
+IK（Inverse Kinematics）や物理表現（スプリング系）
+
+制約
+
+JSONやskel形式のSpineデータを前提とするので、独自レイヤーを直に差し替えるのは難しい
+
+ただし、Spineデータを自前で生成することは可能（PixiJS上で独自エディタ → Spine形式にエクスポート）
+
+PixiJS + Mesh / SimpleMesh / SimpleRope
+対応機能
+
+任意テクスチャのメッシュ変形
+
+頂点配列を動的に制御可能（マウスや物理演算に連動）
+
+制約
+
+タイムライン機構は自作が必要（GSAPなどと組み合わせる）
+
+物理演算系
+pixi-spine 自体に簡易的な物理スプリング
+
+外部ライブラリで統合可能
+
+matter-js（剛体・ジョイント・バネ）
+
+planck.js（Box2D系）
+
+ammo.js（Bullet物理）
+
+2. 実現案（既存ライブラリの組み合わせ）
+機能	候補ライブラリ	コメント
+レイヤー構造	@pixi/layers	現状導入済み
+メッシュ変形	PIXI.SimpleMesh / PIXI.SimpleRope	軽量・自由度高
+ボーン階層	@pixi/spine（ボーン部分だけ利用）	タイムライン付き
+タイムライン制御	GSAP / anime.js / Pixi Timeline plugin	Spine依存なしで独自管理可
+物理演算	matter-js	メッシュ頂点やボーン先端にジョイント接続
+エディタUI	PixiJS + Custom Panels	Storyboarder風UIを自作
+
+3. Spine系が有利な理由
+SpineランタイムはPixiJS用に最適化されている（描画と変形が高速）
+
+タイムライン・ボーン構造・メッシュが全部揃っていて、「自前でゼロから作るより圧倒的に早い」
+
+Live2DのCubism SDKはPixiJS対応はあるが、モデル互換性が前提で独自パーツの差し替えが難しい
+
+Spine形式はJSONで書き出せるので、将来エクスポートして外部ツールで修正も可能
+
+4. 提案構成（PixiJS + Spine機能流用）
+@pixi/layers でレイヤー階層を構築
+
+各レイヤーを
+
+静的スプライト
+
+メッシュ（自由変形可能）
+
+Spineのスロット＋メッシュ
+として登録
+
+タイムライン制御は
+
+Spineの内部アニメ機構を使う
+
+もしくはGSAPで独自管理
+
+物理演算は matter-js でボーンや頂点を制御
+
+例: 髪の毛や布部分をスプリングジョイントで揺らす
+
+最終的にStoryBoarder風の「タイムラインUI」をPixiJS＋HTMLで構築し、レイヤーごとに動きを設定
+
+5. 次にやると良いこと
+@pixi/spine を入れて、最低限のボーン＋メッシュ変形だけを試すサンプル作成
+
+matter-js と組み合わせて、ボーン先端に物理演算を適用する実験
+
+UI部は既存の @pixi/ui / LayerManager と統合してタイムライン管理クラスを作成
+
+私としては、この方向なら 完全互換のLive2D/Spineではなく「Spine APIの部分利用」 が最適解です。
+理由は PixiJSとの親和性が高く、GIFやStoryboarder風UIとも合わせやすいからです。

@@ -1,0 +1,135 @@
+1. 現状分析
+1.1 現行構成（主要モジュール）
+drawing-tools/
+pen-tool.js, eraser-tool.js, drawing-tools-system.js, tool-manager.js など
+→ PixiJS 移行の途中。低レベルの座標管理や Canvas API に依存している部分が残存。
+
+ui/
+PresetManager.js, ui-events.js, performance-monitor.js など
+→ DOM イベントや設定 UI の基盤。
+
+history-manager.js
+→ 現状は「ラスタ画像状態の履歴」を逐次保存する形式（メモリ圧迫型）。非破壊編集やオブジェクト単位の履歴管理は未対応。
+
+debug/
+→ performance-logger.js, diagnostics.js が単発で存在。PixiJS の内部プロファイル機能とは連動していない。
+
+gif-export-manager.js
+→ 書き出しに依存。PixiJS v7 の Extract プラグイン活用が可能。
+
+layer-manager.js
+→ 単純なレイヤー配列管理。Pixi の Container ベースに移行可能だが、変形管理は未実装。
+
+2. 課題と改善ポイント
+2.1 車輪の再発明リスク
+PixiJS v7 には以下が既に含まれており、自作コードが重複している可能性大：
+
+スプライト / コンテナ階層管理（Container）
+
+座標系変換（displayObject.toLocal(), displayObject.toGlobal()）
+
+変形（position, rotation, scale, pivot）
+
+パフォーマンス監視（PIXI.utils.perf）
+
+提案: transform-manager.js の新規作成で「Pixi の Transform をラップ」し、既存のレイヤー移動・キャンバス移動・スケーリング機能を統合する。
+
+2.2  Spine 対応に必要な構造
+将来的に非破壊編集やメッシュ変形を導入するには：
+
+履歴管理を画像バッファ保存型から「操作ログ型」へ変更
+
+例: {action: "translateLayer", layerId: 2, dx: 5, dy: 5} のように、パラメータ記録型にする
+
+PixiJS の Mesh / Spine プラグイン活用
+
+Spine: @pixi/spine
+
+
+描画オブジェクトを ID で一意管理（履歴との同期用）
+
+2.3 debug 系の充実化
+既存 debug-manager.js を PixiJS の ticker や stats.js と統合
+
+実行時の描画負荷や GPU メモリ量を計測
+
+renderer.textureGC.count, renderer.performance
+
+ツール別の処理時間計測（ペンツールのストローク処理時間など）
+
+2.4 transform-manager.js の必要性
+現状の layer-manager.js は配列管理のみで座標変換が分散している
+
+PixiJS の Container ベースに集約し、
+
+レイヤー平行移動
+
+スケール
+
+回転
+
+中心基準の変換
+
+UI 側（マウスドラッグなど）と同期する形にすれば DRY / SOLID を満たす
+
+3. 推奨ライブラリ
+目的	ライブラリ	利点
+PixiJS コア	pixi.js	v7 安定版、描画・座標系・テクスチャ管理
+Spine 対応	@pixi/spine	Spine JSON データ直接読み込み
+Live2D 対応	pixi-live2d-display	Cubism 2/3 モデル描画
+パフォーマンス計測	stats.js / @pixi/inspector	FPS / メモリ / Draw Call 可視化
+履歴管理拡張	immer	オブジェクト状態の不変更新が容易
+状態管理	zustand または redux-toolkit	Undo/Redo 機構と相性良し
+ファイル操作	file-saver	GIF / PNG / JSON 書き出し統一
+
+4. 実装ガイドライン
+PixiJS 完全移行
+
+Canvas API 呼び出し部分を全削除
+
+BaseTool が PIXI.Graphics / PIXI.Container に描画
+
+transform-manager.js 新設
+
+全ての座標・スケール・回転変更を一元管理
+
+history-manager.js 改修
+
+「画像バッファ保存型」→「操作ログ型」
+
+applyHistory() で状態再現
+
+debug-manager.js 改修
+
+PixiJS のパフォーマンス API と統合
+
+オプションで stats.js をオーバーレイ
+
+NPM ローカル運用
+
+すべてのライブラリは package.json に登録
+
+ビルドは vite + import
+→ CDN 依存ゼロ化
+
+fetch() 部分も import.meta.url でローカルパス解決可能
+
+5. NPM ローカル化の可否と推奨構成
+可
+PixiJS v7、Spine 全て npm install 可能
+
+vite.config.js に assetsInclude 設定で .json, .model3.json, .moc3 などをバンドル可能
+
+fetch() もローカル public/ フォルダ経由で解決可能（例: /assets/models/...）
+
+6. 次ステップ（計画）
+transform-manager.js 作成（Pixi.Container ラップ）
+
+history-manager.js のログ型履歴化
+
+debug 系を Pixi Inspector + stats.js に統合
+
+npm install でローカル運用化、CDN 削除
+
+Spine のプレースホルダー実装を追加
+
