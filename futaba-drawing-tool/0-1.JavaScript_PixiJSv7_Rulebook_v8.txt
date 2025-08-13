@@ -1,0 +1,661 @@
+# JavaScript + PixiJS v7 Rulebook v8（Phase3統合システム対応版）
+
+## 1. 基本理念
+
+### 1.1 核心方針
+- **安定動作・可読性・拡張性を優先**し、将来的なTypeScript + Vite + ES6移行を意識する
+- **PixiJSエコシステム活用**により、車輪の再発明を避け、標準実装を採用する
+- **統合システム設計**により、座標変換・履歴管理・デバッグの一元化を推進する
+- **段階的品質向上**と既存システムとの互換性維持を両立する
+- **AI協働最適化**を考慮した標準パターンの採用を推奨する
+
+### 1.2 実装原則
+- 現在はJavaScript+fetch API分割でありグローバル変数形式で実装する
+- ファイル間の依存は明確化し、循環参照を作らない
+- **SOLID・DRY原則準拠**: 単一責任・責務分離・重複コード排除を徹底する
+- **統合システム設計**: 座標変換・履歴管理・監視機能の統合による効率化
+- **モジュール分割設計**: 機能ごとの専門ファイル分離による保守性向上
+- PixiJS v7の公式API仕様に沿い、非推奨機能は使用しない
+- ES2023構文使用OK、OffscreenCanvasや最新Canvas APIも使用OK
+- 最新Chrome+デスクトップPC環境を想定、後方互換は意識しない
+- **ファイルサイズ制限**: 単一ファイルは800行以下を目安とし、それを超える場合は責務に応じて分割する
+- 必ずdebug/またはmonitoring/ディレクトリの既存モジュールを確認し、重複を避ける事
+
+---
+
+## 2. ファイル構成（Phase3統合システム対応・完全版）
+
+### 2.1 コアファイル群
+1. **config.js** ✅（統合システム設定追加）
+   - アプリケーション全体の設定値を定数として管理
+   - PixiJS拡張ライブラリの設定値統合
+   - 統合システム（TransformManager、LogHistoryManager、DebugIntegration）設定
+   - デフォルト値、制限値、UI設定値、ライブラリ設定値の統一管理
+
+2. **utils.js** ✅（完成）
+   - 共通ユーティリティ関数の統合管理
+   - DRY原則に基づく重複コード解消
+   - safeConfigGet、バリデーション、エラーハンドリングの統一
+
+3. **app-core.js** ✅（統合システム連携）
+   - PixiJSアプリ生成・描画ループ管理・リソースロード・設定連携
+   - Application / Stage / Renderer 初期化
+   - TransformManager、統合履歴システム、デバッグ統合の初期化連携
+
+4. **transform-manager.js** 🆕（Phase3統合システム）
+   - PixiJS Container完全統合の座標変換システム
+   - レイヤー平行移動・スケール・回転の一元管理
+   - @pixi/layers Group zOrder活用による効率的変形制御
+   - UI同期機能（マウスドラッグ等イベントとの統合）
+   - 既存layer-manager.js機能の統合・発展
+
+5. **history-manager.js** ✅（Phase3ログ型統合）
+   - 操作ログ型履歴システム（メモリ効率化）
+   - アンドゥ・リドゥ・履歴管理システム
+   - TransformManager操作ログとの統合
+   - 描画操作・変形操作・設定変更の統合記録
+
+6. **settings-manager.js** ✅（完成）
+   - アプリ全体の動作設定を一元管理
+   - 高DPI設定、ユーザー設定保存
+   - 統合システム設定の管理
+
+### 2.2 ライブラリ統合ファイル群
+7. **libs/pixi-extensions.js** ✅（Phase3連携強化）
+   - PixiJS拡張ライブラリの統合インポート・初期化
+   - fetch API分割対応のグローバル登録
+   - ライブラリ読み込み状況の監視・エラーハンドリング
+   - 統合システムとのライブラリ連携支援
+
+8. **layer-manager.js** ⚠️（transform-manager.jsに統合予定）
+   - Phase3でTransformManagerに統合される
+   - 互換性維持のためエイリアス提供
+   - 段階的移行支援機能
+
+9. **gif-export-manager.js** ✅（統合履歴連携）
+   - @pixi/gifを使用したGIF生成・エクスポート
+   - アニメーションフレーム管理
+   - 統合履歴システムとの連携によるGIF生成
+
+### 2.3 統合デバッグシステム群（Phase3新設）
+10. **debug/debug-manager.js** 🆕（Phase3統合デバッグ）
+    - PixiJS標準監視 + stats.js統合デバッグ環境
+    - ツール別処理時間測定（ペン・消しゴム・変形操作）
+    - GPU メモリ・テクスチャ使用量・FPS統合監視
+    - performance-logger.js、diagnostics.jsの統合・発展
+
+11. **monitoring/system-monitor.js** ✅（統合デバッグ連携）
+    - システム全体監視機能
+    - 統合デバッグシステムとの連携
+
+### 2.4 描画ツール群（統合システム対応）
+12. **drawing-tools.js** ✅（統合システム連携）
+    - レガシー統合ファイル（main.js互換性維持用）
+    - PixiJS拡張ライブラリとの統合処理
+    - TransformManager、統合履歴との連携
+    - 新しいモジュール分割システムへのエイリアス提供
+
+13. **drawing-tools/core/** ✅（統合システム対応）
+    - **drawing-tools-system.js** - システム統合・API提供・統合システム連携
+    - **tool-manager.js** - ツール切り替え・管理・履歴連携
+    - **base-tool.js** - ベースツールクラス・統合システム機能統合
+
+14. **drawing-tools/tools/** ✅（統合システム連携）
+    - **pen-tool.js** - ペンツール実装・統合履歴記録・@pixi/graphics-smooth統合
+    - **eraser-tool.js** - 消しゴムツール実装・統合履歴記録
+
+15. **drawing-tools/ui/** ✅（統合システム対応）
+    - **pen-tool-ui.js** - ペンツール専用UI制御・@pixi/ui統合
+    - **components/preview-sync.js** - プレビュー連動処理専門
+    - **components/event-manager.js** - イベント管理専門・TransformManager統合
+
+### 2.5 UIシステム（統合システム対応）
+16. **ui-manager.js** ✅（統合システム連携）
+    - 汎用UI管理・@pixi/ui統合
+    - キャンバス・ポップアップ・通知管理
+    - 統合デバッグ表示との連携
+    - ライブラリUI コンポーネントとの連携
+
+17. **ui/components.js** ✅（統合システム対応）
+    - 基本UIコンポーネント・@pixi/ui拡張
+    - Slider, Popup, StatusBar, PresetDisplay
+    - 統合システムUI（変形コントロール、履歴表示、デバッグパネル）
+    - ライブラリコンポーネントとの統合
+
+18. **ui/PresetManager.js** ✅（完成）
+    - プリセット管理専門システム
+    - プリセット選択、リセット、履歴記録、プレビュー生成
+
+19. **ui/ui-events.js** ✅（TransformManager統合）
+    - UIイベント処理専門システム
+    - キーボードショートカット、マウス操作の統合管理
+    - TransformManager座標イベントとの統合
+
+20. **ui/performance-monitor.js** ⚠️（debug-manager.jsに統合予定）
+    - Phase3で統合デバッグシステムに統合される
+    - 互換性維持のためエイリアス提供
+
+### 2.6 ファイル間依存関係（Phase3統合システム対応・完全版）
+```
+config.js (統合システム設定追加)
+├─ utils.js (共通ユーティリティ・DRY原則準拠)
+├─ libs/pixi-extensions.js (ライブラリ統合基盤・統合システム連携)
+├─ app-core.js (統合システム初期化連携)
+├─ transform-manager.js (座標変換統合システム・@pixi/layers活用)
+├─ history-manager.js (ログ型履歴統合システム)
+├─ settings-manager.js (統合システム設定管理)
+├─ debug/debug-manager.js (統合デバッグシステム・stats.js連携)
+├─ gif-export-manager.js (GIF機能・統合履歴連携)
+├─ drawing-tools.js (統合システム連携・互換維持)
+│  └─ drawing-tools/ (統合システム対応)
+│     ├─ core/
+│     │  ├─ drawing-tools-system.js (統合システム連携)
+│     │  ├─ tool-manager.js (統合履歴連携)
+│     │  └─ base-tool.js (統合システム機能統合)
+│     ├─ tools/
+│     │  ├─ pen-tool.js (統合履歴記録・@pixi/graphics-smooth)
+│     │  └─ eraser-tool.js (統合履歴記録)
+│     └─ ui/ (統合システム対応)
+│        ├─ pen-tool-ui.js (@pixi/ui統合)
+│        └─ components/
+│           ├─ preview-sync.js (プレビュー連動専門)
+│           └─ event-manager.js (TransformManager統合)
+└─ ui-manager.js (統合システム連携・@pixi/ui統合)
+   ├─ ui/components.js (統合システムUI・@pixi/ui拡張)
+   ├─ ui/PresetManager.js
+   ├─ ui/ui-events.js (TransformManager統合)
+   └─ monitoring/system-monitor.js (統合デバッグ連携)
+
+Phase3統合システム依存原則:
+- 循環参照厳禁（継続）
+- 下位から上位への依存のみ（継続）
+- config.js は全ファイルから参照可能（継続）
+- utils.js は config.js 以外から参照可能（継続）
+- transform-manager.js は座標変換の統合窓口
+- history-manager.js は全操作履歴の統合窓口
+- debug-manager.js は全監視機能の統合窓口
+- 統合システム間は相互連携（Transform↔History↔Debug）
+```
+
+---
+
+## 3. Phase3統合システム設計原則
+
+### 3.1 統合システム設計思想
+- **単一責任の統合**: 各機能領域（座標・履歴・監視）の統合管理
+- **PixiJS標準API優先**: Container、Transform、ticker等の標準機能活用
+- **メモリ効率最適化**: 操作ログ型による効率的な履歴管理
+- **AI生成親和性**: 標準的な統合パターンの採用
+- **段階的統合**: 既存機能を段階的に統合システムに移行
+
+### 3.2 統合システム実装パターン
+
+#### 3.2.1 TransformManager統合パターン
+```javascript
+// transform-manager.js での統合パターン
+class TransformManager {
+    constructor(pixiApp, historyManager) {
+        this.app = pixiApp;
+        this.history = historyManager;  // 統合履歴との連携
+        this.layers = new Map();        // @pixi/layers活用
+        this.currentTransform = null;   // 現在の変形状態
+    }
+    
+    // 統合座標変換（履歴記録付き）
+    transformLayer(layerId, transform) {
+        // PixiJS Container Transform API使用
+        // 履歴システムへの自動記録
+        // @pixi/layers Group zOrder制御
+    }
+    
+    // UI同期（event-manager.js統合）
+    syncWithUI(eventData) {
+        // マウス・キーボードイベントの統合処理
+    }
+}
+```
+
+#### 3.2.2 LogHistoryManager統合パターン
+```javascript
+// history-manager.js での統合ログ型
+class LogBasedHistoryManager {
+    constructor() {
+        this.actionLog = [];            // 操作ログ統合
+        this.currentState = null;       // 現在状態
+        this.maxLogSize = 100;          // メモリ効率化
+    }
+    
+    // 統合アクション記録
+    recordAction(action) {
+        // {type: "transform", "draw", "erase", layerId, params, timestamp}
+        this.actionLog.push(action);
+        this.optimizeLog();  // メモリ最適化
+    }
+    
+    // 統合状態復元
+    replayToState(targetIndex) {
+        // 全操作タイプの統合復元
+    }
+}
+```
+
+#### 3.2.3 IntegratedDebugManager統合パターン
+```javascript
+// debug/debug-manager.js での統合監視
+class IntegratedDebugManager {
+    constructor(pixiApp, transformManager, historyManager) {
+        this.app = pixiApp;
+        this.transform = transformManager;  // 統合システム連携
+        this.history = historyManager;      // 統合システム連携
+        this.stats = null;                  // stats.js統合
+    }
+    
+    // 統合パフォーマンス監視
+    monitorIntegratedPerformance() {
+        return {
+            pixiStats: this.getPixiStats(),
+            transformStats: this.transform.getStats(),
+            historyStats: this.history.getStats(),
+            toolStats: this.getToolStats()
+        };
+    }
+}
+```
+
+### 3.3 段階的統合移行原則
+- **互換性維持**: 既存APIシグネチャの保持
+- **段階的統合**: 内部実装のみ統合システムに変更
+- **エイリアス提供**: 旧システムから新システムへのエイリアス
+- **設定による制御**: 統合機能の有効・無効切り替え
+
+---
+
+## 4. コードスタイル規約（Phase3統合システム対応）
+
+### 4.1 命名規則（統合システム拡張版）
+- **変数 / 関数**: `camelCase`（例：`drawLine`, `pointerPosition`）
+- **定数**: `SCREAMING_SNAKE_CASE`（例：`CANVAS_WIDTH`, `BG_COLOR`）
+- **クラス**: `PascalCase`（例：`TransformManager`, `LogBasedHistoryManager`）
+- **ファイル名**: `kebab-case`（例：`transform-manager.js`, `debug-manager.js`）
+- **統合システム関数**: `integrated{Feature}`（例：`integratedTransform`, `integratedHistory`）
+- **統合システム設定**: `{SYSTEM}_INTEGRATION_CONFIG`（例：`TRANSFORM_INTEGRATION_CONFIG`）
+
+### 4.2 統合システム使用パターン
+```javascript
+// 推奨: 統合システム経由の操作
+const transform = app.transformManager.transformLayer(layerId, { dx: 5, dy: 5 });
+
+// 推奨: 統合履歴との連携
+app.historyManager.recordAction({
+    type: 'transform', 
+    layerId, 
+    transform, 
+    timestamp: Date.now()
+});
+
+// 推奨: 統合デバッグ監視
+const stats = app.debugManager.monitorIntegratedPerformance();
+
+// 禁止: 直接的な分散操作
+// layer.x += 5; // NG - TransformManager経由必須
+// customHistoryArray.push(data); // NG - HistoryManager経由必須
+```
+
+---
+
+## 5. PixiJS v7 実装ルール（Phase3統合システム対応）
+
+### 5.1 ステージ構造（統合システム版）
+```
+stage
+├─ canvasRootContainer（TransformManager統合管理）
+│  ├─ backgroundLayer
+│  ├─ drawingLayer（@pixi/layers + TransformManager統合）
+│  │  ├─ layer1Container（統合変形制御）
+│  │  ├─ layer2Container（統合変形制御）
+│  │  └─ ...
+│  └─ effectsLayer（将来実装用）
+└─ uiLayer（@pixi/ui + 統合デバッグUI・変形対象外）
+```
+
+### 5.2 統合システム最適化
+- **統合座標変換**: TransformManagerによるPixiJS Container完全活用
+- **統合履歴管理**: 操作ログ型による効率的メモリ使用
+- **統合レイヤー管理**: @pixi/layers zOrder + TransformManager連携
+- **統合UIコンポーネント**: @pixi/ui + 統合システムUI
+- **統合デバッグ**: PixiJS標準監視 + stats.js + カスタム統合監視
+- **統合イベント**: 描画・変形・UI層の統合イベント管理
+
+---
+
+## 6. 設定管理システム（Phase3統合システム対応）
+
+### 6.1 統合システム設定の管理
+```javascript
+// config.js - Phase3統合システム設定
+export const CONFIG = {
+    // 既存設定...
+    DEFAULT_BRUSH_SIZE: 4,
+    DEFAULT_OPACITY: 1.0,
+    MAX_BRUSH_SIZE: 500,
+    
+    // Phase3統合システム設定
+    INTEGRATION_CONFIG: {
+        // TransformManager設定
+        TRANSFORM_SYSTEM: {
+            ENABLE_INTEGRATED_TRANSFORM: true,
+            MAX_TRANSFORM_HISTORY: 50,
+            TRANSFORM_PRECISION: 0.01,
+            ENABLE_UI_SYNC: true
+        },
+        
+        // LogHistoryManager設定
+        HISTORY_SYSTEM: {
+            ENABLE_LOG_BASED_HISTORY: true,
+            MAX_LOG_SIZE: 100,
+            LOG_COMPRESSION: true,
+            AUTO_OPTIMIZATION: true
+        },
+        
+        // IntegratedDebugManager設定
+        DEBUG_SYSTEM: {
+            ENABLE_INTEGRATED_DEBUG: true,
+            ENABLE_STATS_OVERLAY: false,  // 本番では無効
+            MONITOR_INTERVAL: 1000,       // 1秒間隔
+            ENABLE_TOOL_PROFILING: true
+        }
+    },
+    
+    // 既存ライブラリ設定（継続）
+    LIBRARY_CONFIG: {
+        // @pixi/ui設定
+        UI_THEME: 'futaba',
+        UI_BUTTON_STYLE: {
+            backgroundColor: 0x800000,
+            hoverColor: 0xaa5a56,
+            textColor: 0xFFFFFF
+        },
+        
+        // @pixi/layers設定
+        LAYER_MAX_COUNT: 10,
+        LAYER_BLEND_MODES: ['normal', 'multiply', 'screen'],
+        
+        // その他設定...
+    },
+    
+    // 統合システム有効化制御
+    INTEGRATION_FLAGS: {
+        ENABLE_TRANSFORM_MANAGER: true,
+        ENABLE_LOG_BASED_HISTORY: true,
+        ENABLE_INTEGRATED_DEBUG: true,
+        ENABLE_LEGACY_COMPATIBILITY: true  // 段階的移行支援
+    }
+};
+```
+
+---
+
+## 7. モジュール分割における状態管理（Phase3統合システム版）
+
+### 7.1 統合システムによる状態管理
+```javascript
+// Phase3統合システムでの状態管理アーキテクチャ
+- app-core.js: PixiJSアプリケーション基盤状態
+- transform-manager.js: 座標変換統合状態（全レイヤー・全変形）
+- history-manager.js: 操作履歴統合状態（全操作・全変更）
+- debug-manager.js: 監視統合状態（全パフォーマンス・全統計）
+- libs/pixi-extensions.js: ライブラリ読み込み・初期化状態
+- drawing-tools-system.js: 描画ツール統合状態（統合システム連携）
+- gif-export-manager.js: GIF機能状態（統合履歴連携）
+- ui-manager.js: UI管理状態（統合システム表示連携）
+- settings-manager.js: アプリケーション設定状態（統合システム設定）
+```
+
+### 7.2 統合システム間相互連携
+```javascript
+// 統合システム間の相互連携メカニズム
+class TransformManager {
+    transformLayer(layerId, transform) {
+        // 1. PixiJS Transform実行
+        const result = this.executeTransform(layerId, transform);
+        
+        // 2. 統合履歴への自動記録
+        this.historyManager.recordAction({
+            type: 'transform',
+            layerId,
+            transform,
+            timestamp: Date.now()
+        });
+        
+        // 3. 統合デバッグ監視更新
+        this.debugManager.logTransformOperation(layerId, transform);
+        
+        // 4. UI同期更新
+        this.syncUIState(layerId, result);
+        
+        return result;
+    }
+}
+```
+
+---
+
+## 8. 品質保証・検証方法（Phase3統合システム版）
+
+### 8.1 統合システム検証
+```javascript
+// 統合システム状況確認
+window.debugIntegratedSystems = function() {
+    console.group('🔍 Phase3統合システム状況');
+    
+    // TransformManager状況
+    const transformStats = app.transformManager?.getStats() || {};
+    console.log('座標変換統合:', transformStats);
+    
+    // LogHistoryManager状況  
+    const historyStats = app.historyManager?.getStats() || {};
+    console.log('履歴統合:', historyStats);
+    
+    // IntegratedDebugManager状況
+    const debugStats = app.debugManager?.getStats() || {};
+    console.log('監視統合:', debugStats);
+    
+    // システム間連携状況
+    const integrationStatus = {
+        transformHistorySync: app.transformManager?.historySync || false,
+        historyDebugSync: app.historyManager?.debugSync || false,
+        debugTransformSync: app.debugManager?.transformSync || false
+    };
+    console.log('システム間連携:', integrationStatus);
+    
+    console.groupEnd();
+};
+```
+
+### 8.2 統合検証項目
+- **統合システム連携**: TransformManager↔HistoryManager↔DebugManagerの連携確認
+- **メモリ効率**: ログ型履歴による使用量削減確認
+- **処理統合**: 座標変換処理の統合による効率化確認
+- **監視統合**: 統合デバッグシステムによる監視品質確認
+- **互換性**: 既存機能の非回帰確認（段階的移行）
+
+---
+
+## 9. 初期化順序（Phase3統合システム対応）
+
+### 9.1 統合システム初期化順序
+```javascript
+// index.html読み込み順序（Phase3統合システム対応）
+1. config.js                      // 統合システム設定追加
+2. utils.js                       // 共通ユーティリティ・DRY準拠
+3. libs/pixi-extensions.js        // ライブラリ統合基盤・統合システム連携
+4. app-core.js                    // PixiJSアプリケーション基盤・統合システム初期化
+5. transform-manager.js           // 座標変換統合システム
+6. history-manager.js             // ログ型履歴統合システム
+7. debug/debug-manager.js         // 統合デバッグシステム
+8. gif-export-manager.js          // GIF機能システム（統合履歴連携）
+9. ui/PresetManager.js            // プリセット管理専門
+10. drawing-tools.js              // 描画ツール（統合システム連携）
+11. ui/components.js              // UIコンポーネント（統合システムUI追加）
+12. ui-manager.js                 // UI統合（統合システム表示連携）
+13. settings-manager.js           // 設定管理（統合システム設定）
+14. main.js                       // 統合システム・既存システム統合初期化
+```
+
+---
+
+## 10. 禁止事項（Phase3統合システム対応）
+
+### 10.1 基本禁止事項（継続）
+- DOM直接操作（Pixi外の`querySelector`等）
+- Pixi内部プロパティへの直接アクセス
+- 複数責務を1関数にまとめる
+- **単一ファイル800行超過**（分割必須）
+
+### 10.2 統合システム固有禁止事項
+- **統合システム迂回**: TransformManager・HistoryManager・DebugManagerを経由しない直接操作
+- **分散状態管理**: 統合システムと並行した独自状態管理の新規作成
+- **履歴システム重複**: 独自履歴機能の新規実装（LogHistoryManager使用必須）
+- **座標変換分散**: 統合システム外での座標・変形処理の実装
+- **監視機能重複**: 独自デバッグ・監視機能の新規実装
+
+### 10.3 Phase3移行期禁止事項
+- **段階的移行無視**: 一度に複数システム統合変更禁止
+- **互換性破壊**: 既存API削除による破壊的変更禁止
+- **性能劣化放置**: 統合前後の性能測定・改善義務
+- **エラーハンドリング省略**: 統合システム障害対応必須
+
+---
+
+## 11. 期待される運用品質（Phase3統合システム版）
+
+### 11.1 統合システムによる品質向上
+- **処理統合**: 座標変換・履歴管理・監視の統合による処理効率向上
+- **メモリ最適化**: ログ型履歴システムによる大幅なメモリ使用量削減
+- **監視統合**: 統合デバッグシステムによる包括的品質監視
+- **状態一貫性**: 統合システム間連携による状態整合性保証
+
+### 11.2 開発効率・保守性向上
+- **単一窓口**: 各機能領域の統合窓口による開発・保守の簡便化
+- **標準パターン**: PixiJS標準APIベースの統合システムによる学習容易性
+- **AI協働最適化**: 統合システムの標準的パターンによるAI生成品質向上
+- **継続的改善**: 統合システム基盤による機能拡張・改善の効率化
+
+### 11.3 将来拡張性・発展性
+- **Spine/Live2D対応基盤**: TransformManager統合システムによる高度変形機能基盤
+- **エコシステム連携**: 統合システムによるPixiJSエコシステム活用の効率化
+- **パフォーマンス発展**: 統合監視システムによる継続的性能最適化基盤
+
+---
+
+## 12. 将来展望・発展方針（Phase3統合システム対応）
+
+### 12.1 統合システム発展戦略
+- **Phase4以降拡張**: 統合システム基盤を活用した高度機能追加
+- **Spine/Live2D統合**: TransformManagerベースの高度変形システム構築
+- **NPM完全移行**: 統合システム安定化後の段階的NPM化
+- **TypeScript移行**: 統合システムの型安全性向上による品質強化
+
+### 12.2 PixiJS v8移行対応（統合システム版）
+- **統合システム移行**: 各統合システムの段階的v8対応
+- **新機能統合**: WebGPU・ネイティブGIF等のv8機能統合
+- **互換性維持**: 統合システムレベルでの移行時互換性保証
+
+### 12.3 エコシステム統合発展
+- **ライブラリ統合拡張**: パーティクル・サウンド・アニメーション等の統合システム組み込み
+- **統合システム標準化**: コミュニティへの統合システムパターン提供・貢献
+- **AI協働発展**: 統合システムによるAI生成コード品質向上への貢献
+
+---
+
+## 13. テスト・デバッグ方針（Phase3統合システム版）
+
+### 13.1 統合システムテスト方針
+```javascript
+// Phase3統合システム統合テスト関数群
+window.testIntegratedSystems = function() {
+    console.group('🧪 Phase3統合システム統合テスト');
+    
+    // TransformManager統合テスト
+    testTransformManagerIntegration();
+    
+    // LogHistoryManager統合テスト  
+    testLogHistoryIntegration();
+    
+    // IntegratedDebugManager統合テスト
+    testIntegratedDebugSystem();
+    
+    // システム間連携テスト
+    testSystemIntegration();
+    
+    console.groupEnd();
+};
+
+window.benchmarkIntegratedPerformance = function() {
+    // 統合前後のパフォーマンス比較
+    // メモリ使用量測定
+    // 処理速度測定
+    // 統合効果検証
+};
+```
+
+### 13.2 品質保証プロセス（統合システム版）
+- **統合システム単体テスト**: 各統合システムの独立機能確認
+- **統合システム連携テスト**: システム間相互作用の確認
+- **非回帰テスト**: 既存機能の統合後動作保証
+- **パフォーマンステスト**: 統合による性能改善効果測定
+- **メモリ効率テスト**: ログ型履歴システムの効率化確認
+
+---
+
+## 14. ふたば☆ちゃんねるカラー（変更なし）
+```css
+/* Adobe Fresco風ふたば色定義 */
+--futaba-maroon: #800000;        /* 主線・基調色 */
+--futaba-light-maroon: #aa5a56;  /* セカンダリ・ボタン */
+--futaba-medium: #cf9c97;        /* アクセント・ホバー */
+--futaba-light-medium: #e9c2ba;  /* 境界線・分離線 */
+--futaba-cream: #f0e0d6;         /* キャンバス背景 */
+--futaba-background: #ffffee;    /* アプリ背景 */
+```
+
+---
+
+## 15. バージョン管理・継続的改善（Phase3対応）
+
+### 15.1 Phase3統合システム移行指針
+- **段階的統合**: 機能領域別の段階的統合システム導入
+- **互換性保持**: 各段階での既存システムとの互換性維持
+- **品質測定**: 統合前後の品質・性能測定による効果確認
+- **文書化**: 各統合システムの実装状況・設定変更の記録
+
+### 15.2 統合システム継続改善
+- **統合効果測定**: 定期的な統合効果（メモリ・性能・保守性）測定
+- **エコシステム追従**: PixiJSエコシステム発展への統合システム対応
+- **標準化推進**: 統合システムパターンの業界標準・ベストプラクティス化
+- **コミュニティ貢献**: 統合システム設計・実装の開発者コミュニティ貢献
+
+### 15.3 Phase4以降準備
+- **完全NPM化準備**: 統合システム安定化後のNPM移行計画
+- **TypeScript準備**: 統合システムの型定義・型安全性向上準備
+- **高度機能準備**: Spine/Live2D等統合システム基盤活用機能準備
+
+---
+
+## 16. Phase3統合システム移行ガイドライン
+
+### 16.1 移行原則
+- **既存機能保持**: 統合システム移行中も既存機能100%維持
+- **段階的移行**: 週次での段階的統合システム導入
+- **性能監視**: 移行各段階での性能劣化防止・改善確認
+- **互換性保証**: 既存コード・設定・操作方法の互換性保証
+
+### 16.2 移行後品質基準
+- **メモリ効率**: 履歴管理メモリ使用量70%削減達成
+- **処理統合**: 座標変換処理の統合による一貫性・効率性向上
+- **監視統合**: 統合デバッグシステムによる包括的品質監視実現
+- **拡張準備**: 将来機能（Spine等）導入基盤の確立
+
+---
+
+このRulebook v8は、Phase3統合システム実装による品質向上と、継続的な保守・拡張を支援する恒久的な運用指針として機能します。統合システムによる効率化・最適化と、将来発展への基盤整備を両立する設計思想を提供します。
