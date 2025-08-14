@@ -1124,7 +1124,6 @@ console.log(`  拡張機能: ${stats.loadedExtensions}/${stats.extensions}`);
 - **バケツツール実装**: フラッドフィル機能
 - **追加UIコンポーネント**: カラーピッカー、グリッド表示
 - **ファイル分割**: tools/*.js分割
-- **TypeScript移行準備**: 型定義追加
 
 ### Phase3 計画概要
 - **コラボレーション機能**: リアルタイム共同編集
