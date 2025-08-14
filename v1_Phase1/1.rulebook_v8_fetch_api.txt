@@ -1,0 +1,641 @@
+# JavaScript + PixiJS v7→v8 Rulebook v3.0 - Fetch API分割版
+
+## 1. 基本理念（Fetch API分割対応版）
+
+### 1.1 核心方針
+- **段階的品質向上**: v7完成→v8移行の安定的発展戦略
+- **fetch API分割**: HTML単体→モジュール分割の安定移行・単一責任原則による開発最適化
+- **非破壊的変形**: ベクターベース変形によるアニメ制作品質確保
+- **CDNライブラリ活用**: 車輪の再発明回避・@pixiエコシステム完全活用
+- **AI協働開発**: 必要ファイルのみ添付での効率的開発・保守
+- **統合システム設計**: 座標変換・履歴管理・デバッグの統一化推進
+
+### 1.2 実装原則（Fetch API対応版）
+- **SOLID・DRY原則徹底**: 単一責任・責務分離・重複コード排除
+- **500行ファイル制限**: 超過時は機能別分割・依存関係最小化
+- **fetch API統合**: fetch API動的読み込み
+- **CDN活用原則**: @pixi/ui、pixi-viewport等の積極活用
+- **非破壊品質保証**: アニメ制作における品質劣化完全防止
+
+### 1.3 Phase移行戦略
+- **Phase1**: HTML単体→fetch API分割移行（v7基盤）
+- **Phase2**: 描画機能完成・レイヤーシステム（v7完成版）  
+- **Phase3**: アニメーション・GIF機能（v7最終版）
+- **Phase4**: PixiJS v8移行・120FPS・SPINE対応
+
+---
+
+## 2. ファイル構成ルール（Fetch API分割版）
+
+### 2.1 基本構成（CDN統合対応）
+```
+🎨 tegaki-fetch/
+├─ index.html                     // CDNライブラリ統合・エントリーポイント
+├─ css/
+│  └─ styles.css                  // ふたば☆ちゃんねる風スタイル
+├─ js/
+│  ├─ main.js                     // アプリケーション初期化
+│  ├─ app-core.js                 // PixiJS初期化・基盤管理
+│  ├─ managers/                   // 統括管理層
+│  │  ├─ ui-manager.js           // UI系統括（@pixi/ui活用）
+│  │  ├─ tool-manager.js         // ツール系統括
+│  │  ├─ canvas-manager.js       // キャンバス制御（pixi-viewport活用）
+│  │  ├─ memory-manager.js       // 非破壊メモリ管理
+│  │  ├─ settings-manager.js     // 設定統括
+│  │  └─ library-manager.js      // CDNライブラリ管理
+│  ├─ tools/                     // 描画ツール群（AI分業対応）
+│  │  ├─ pen-tool.js            // ペンツール
+│  │  ├─ eraser-tool.js         // 消しゴムツール
+│  │  ├─ bucket-tool.js         // バケツツール
+│  │  └─ selection-tool.js      // 選択ツール
+│  ├─ ui/                        // UI コンポーネント群（@pixi/ui統合）
+│  │  ├─ popup-manager.js       // ポップアップ（@pixi/ui.FancyButton活用）
+│  │  ├─ slider-manager.js      // スライダー（@pixi/ui.Slider活用）
+│  │  ├─ status-display.js      // ステータス表示
+│  │  └─ preset-panel.js        // プリセットパネル
+│  ├─ layers/                    // レイヤーシステム
+│  │  ├─ layer-manager.js       // レイヤー管理
+│  │  └─ layer-ui.js           // レイヤーパネルUI
+│  ├─ transform/                 // 非破壊変形システム
+│  │  ├─ vector-transform.js    // ベクター変形
+│  │  └─ canvas-transform.js    // キャンバス変形（pixi-viewport統合）
+│  ├─ animation/                 // アニメーション機能（Phase3）
+│  │  ├─ gif-manager.js         // GIFアニメ
+│  │  └─ timeline-ui.js         // タイムライン
+│  ├─ utils/                     // 共通ユーティリティ
+│  │  ├─ coordinates.js         // 座標変換
+│  │  ├─ performance.js         // パフォーマンス監視
+│  │  └─ debug.js              // デバッグ支援
+│  └─ migration/                 // v8移行準備（Phase4）
+     ├─ v8-compatibility.js     // 互換性レイヤー
+     └─ webgpu-preparation.js   // WebGPU準備
+└─ assets/                      // 静的リソース
+   └─ icons/                    // SVGアイコン（pixi-svg活用）
+```
+
+### 2.2 CDNライブラリ統合（index.html）
+```html
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- CDNライブラリ統合（車輪の再発明防止） -->
+    
+    <!-- PixiJS v7 本体 -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@7/dist/pixi.min.js"></script>
+    
+    <!-- @pixi/ui: UIコンポーネント -->
+    <script src="https://cdn.jsdelivr.net/npm/@pixi/ui@0.7.0/dist/pixi-ui.min.js"></script>
+    
+    <!-- @pixi/text-bitmap: テキストUI高速化 -->
+    <script src="https://cdn.jsdelivr.net/npm/@pixi/text-bitmap@7/dist/pixi-text-bitmap.min.js"></script>
+    
+    <!-- pixi-viewport: 無限キャンバス・ズーム/パン -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi-viewport@5.0.2/dist/viewport.min.js"></script>
+    
+    <!-- pixi-filters: フィルター効果 -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi-filters@5.2.1/dist/pixi-filters.min.js"></script>
+    
+    <!-- pixi-svg: SVGアイコン読み込み -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi-svg@2.0.2/dist/pixi-svg.min.js"></script>
+    
+    <!-- GSAP: アニメーション -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    
+    <!-- Lodash: ユーティリティ -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    
+    <!-- Hammer.js: タッチジェスチャー -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    
+    <!-- アプリケーション本体 -->
+    <script type="module" src="js/main.js"></script>
+    
+    <div id="app-root"></div>
+</body>
+</html>
+```
+
+### 2.3 fetch API読み込みパターン
+```javascript
+// js/main.js - エントリーポイント
+class AppLoader {
+    async init() {
+        // 必須コア読み込み
+        const { AppCore } = await import('./app-core.js');
+        const { UIManager } = await import('./managers/ui-manager.js');
+        
+        // 条件付き読み込み（AI分業対応）
+        if (this.needsPenTool()) {
+            const { PenTool } = await import('./tools/pen-tool.js');
+        }
+        
+        // CDNライブラリ検出・初期化
+        const { LibraryManager } = await import('./managers/library-manager.js');
+        await LibraryManager.validateCDNLibraries();
+    }
+}
+```
+
+### 2.4 AI分業開発対応
+**パターンA: ペンツール改修時**
+```javascript
+// 必要ファイル（AI添付対象）:
+// - js/main.js, js/app-core.js
+// - js/managers/tool-manager.js
+// - js/tools/pen-tool.js
+// 除外可能: ui/*.js, layers/*.js, animation/*.js
+```
+
+**パターンB: UIコンポーネント改修時**
+```javascript
+// 必要ファイル（AI添付対象）:
+// - js/main.js, js/app-core.js  
+// - js/managers/ui-manager.js
+// - js/ui/popup-manager.js
+// 除外可能: tools/*.js, layers/*.js, animation/*.js
+```
+
+---
+
+## 3. CDNライブラリ活用ルール（車輪の再発明防止）
+
+### 3.1 @pixi/ui活用原則
+```javascript
+// ✅ 推奨: @pixi/ui使用
+import { FancyButton, Slider, CheckBox } from '@pixi/ui';
+
+const button = new FancyButton({
+    defaultView: 'button-default.png',
+    hoverView: 'button-hover.png',
+    pressedView: 'button-pressed.png',
+    text: new PIXI.Text('ペンツール', style)
+});
+
+// ❌ 禁止: 独自UI実装
+// 自作ボタンクラスの実装等
+```
+
+### 3.2 pixi-viewport活用原則
+```javascript
+// ✅ 推奨: pixi-viewport使用
+import { Viewport } from 'pixi-viewport';
+
+const viewport = new Viewport({
+    screenWidth: window.innerWidth,
+    screenHeight: window.innerHeight,
+    worldWidth: 4000,
+    worldHeight: 4000
+});
+
+viewport.drag().pinch().wheel();
+
+// ❌ 禁止: 独自キャンバス操作実装
+// 自作ズーム・パン機能等
+```
+
+### 3.3 pixi-svg活用原則
+```javascript
+// ✅ 推奨: pixi-svg使用（Tabler Icons）
+import { SVG } from 'pixi-svg';
+
+const icon = await SVG.from('assets/icons/brush.svg');
+// ❌ 禁止: 独自SVG読み込み実装
+```
+
+### 3.4 CDNライブラリ管理
+```javascript
+// js/managers/library-manager.js
+export class LibraryManager {
+    static async validateCDNLibraries() {
+        const required = [
+            'PIXI', 'PIXI_UI', 'Viewport', 
+            'PIXI.filters', 'gsap', '_', 'Hammer'
+        ];
+        
+        for (const lib of required) {
+            if (!window[lib]) {
+                throw new Error(`CDNライブラリ ${lib} が読み込まれていません`);
+            }
+        }
+    }
+}
+```
+
+---
+
+## 4. 非破壊的変形ルール（アニメ制作対応）
+
+### 4.1 ベクター保持原則
+```javascript
+// js/transform/vector-transform.js
+export class VectorTransform {
+    applyTransform(layer, transform) {
+        // ✅ ベクターデータに変形行列適用（非破壊）
+        layer.transform.setFromMatrix(transform);
+        
+        // ✅ 履歴に変形行列記録（完全復元可能）
+        MemoryManager.record('transform', {
+            layerId: layer.id,
+            transform: transform.clone(),
+            timestamp: Date.now()
+        });
+    }
+    
+    // ❌ 禁止: ラスター変換
+    // layer.toCanvas() → 品質劣化
+}
+```
+
+### 4.2 アニメ制作品質保証
+- **キーフレーム品質**: フレーム間でのベクター品質保持
+- **変形履歴**: アンドゥによる完全復元可能
+- **GIF出力品質**: ベクターからの高品質ラスタライズ
+
+---
+
+## 5. ファイル責務定義（Fetch API対応版）
+
+### 5.1 軽量main.js（エントリーポイント・100行以下）
+**主責務**: 初期化・CDN検証・動的読み込み
+```javascript
+// js/main.js
+export class AppInitializer {
+    async init() {
+        // CDNライブラリ検証
+        await LibraryManager.validateCDNLibraries();
+        
+        // コア初期化
+        const appCore = new AppCore();
+        await appCore.init();
+        
+        // 動的読み込み開始
+        this.startDynamicLoading();
+    }
+}
+```
+
+### 5.2 app-core.js（PixiJS基盤・300行以下）
+**主責務**: PixiJS初期化・基盤管理・Manager統括
+```javascript
+// js/app-core.js
+export class AppCore {
+    async init() {
+        // PixiJS Application初期化
+        this.app = new PIXI.Application({
+            width: 800,
+            height: 600,
+            backgroundColor: 0xf0e0d6,  // ふたば色
+            antialias: true
+        });
+        
+        // pixi-viewport統合
+        this.viewport = new Viewport({
+            screenWidth: 800,
+            screenHeight: 600,
+            worldWidth: 4000,
+            worldHeight: 4000
+        });
+        
+        this.app.stage.addChild(this.viewport);
+        
+        // Manager初期化
+        await this.initializeManagers();
+    }
+    
+    async initializeManagers() {
+        const { UIManager } = await import('./managers/ui-manager.js');
+        const { ToolManager } = await import('./managers/tool-manager.js');
+        
+        this.uiManager = new UIManager(this);
+        this.toolManager = new ToolManager(this);
+    }
+}
+```
+
+### 5.3 managers/ui-manager.js（@pixi/ui統合・400行以下）
+**主責務**: UI統括・@pixi/ui活用・コンポーネント管理
+```javascript
+// js/managers/ui-manager.js
+export class UIManager {
+    constructor(appCore) {
+        this.app = appCore.app;
+        this.viewport = appCore.viewport;
+        this.components = new Map();
+    }
+    
+    async createToolButton(toolName, iconPath) {
+        // @pixi/ui.FancyButton活用
+        const { FancyButton } = PIXI_UI;
+        
+        const icon = await SVG.from(iconPath);
+        const button = new FancyButton({
+            defaultView: icon,
+            text: toolName
+        });
+        
+        return button;
+    }
+    
+    async createSlider(options) {
+        // @pixi/ui.Slider活用
+        const { Slider } = PIXI_UI;
+        return new Slider(options);
+    }
+}
+```
+
+### 5.4 tools/pen-tool.js（ペン専用・300行以下）
+**主責務**: ペン描画・ベクター描画・設定管理
+```javascript
+// js/tools/pen-tool.js
+export class PenTool {
+    constructor(toolManager) {
+        this.toolManager = toolManager;
+        this.settings = {
+            size: 16.0,
+            color: 0x800000,
+            opacity: 0.85
+        };
+    }
+    
+    startDrawing(x, y) {
+        // ベクター描画開始
+        this.currentPath = new PIXI.Graphics();
+        this.currentPath.lineStyle(
+            this.settings.size, 
+            this.settings.color, 
+            this.settings.opacity
+        );
+        this.currentPath.moveTo(x, y);
+    }
+    
+    continueDrawing(x, y) {
+        if (this.currentPath) {
+            this.currentPath.lineTo(x, y);
+        }
+    }
+}
+```
+
+---
+
+## 6. AI分業開発ルール（Fetch API対応）
+
+### 6.1 分業ファイル識別システム
+```javascript
+// 各ファイル先頭に分業情報埋め込み
+/**
+ * 🎯 AI_WORK_SCOPE: ペンツール専用ファイル
+ * 🎯 DEPENDENCIES: main.js, app-core.js, managers/tool-manager.js
+ * 🎯 CDN_USAGE: なし（PIXI本体のみ）
+ * 🎯 SPLIT_THRESHOLD: 300行超過時 → pen-settings.js分割
+ */
+```
+
+### 6.2 分業パターン定義
+**最小構成開発**: 必要最小限ファイルでの開発・保守
+```javascript
+// ペンツール改修時の最小構成
+files: [
+    'js/main.js',           // エントリーポイント
+    'js/app-core.js',       // PixiJS基盤
+    'js/managers/tool-manager.js',  // ツール統括
+    'js/tools/pen-tool.js'  // ペン専用（改修対象）
+]
+// 除外可能: ui/*.js, layers/*.js, animation/*.js
+```
+
+### 6.3 依存関係最小化原則
+- **一方向依存**: Manager → 専門ファイルの単方向依存
+- **循環依存禁止**: ファイル間循環依存の完全排除
+- **明示的依存**: import文での明示的依存関係記述
+
+---
+
+## 7. パフォーマンス・品質保証ルール
+
+### 7.1 非破壊品質保証
+```javascript
+// js/utils/performance.js
+export class PerformanceMonitor {
+    static validateVectorQuality(graphics) {
+        // ベクター品質検証
+        if (graphics instanceof PIXI.Graphics) {
+            return graphics.geometry.points.length > 0;
+        }
+        return false;
+    }
+    
+    static monitorMemoryUsage() {
+        // メモリ使用量監視
+        return {
+            used: performance.memory?.usedJSHeapSize || 0,
+            total: performance.memory?.totalJSHeapSize || 0
+        };
+    }
+}
+```
+
+### 7.2 120FPS準備（Phase4向け）
+```javascript
+// Phase4移行予告
+// 📋 V8_MIGRATION: 120FPS対応予定
+// 📋 V8_FEATURE: WebGPU Renderer活用予定
+
+// 現在（v7）: 60FPS制限
+app.ticker.maxFPS = 60;
+
+// 移行後（v8）: 120FPS対応
+// app.ticker.maxFPS = 120;  // v8移行時有効化
+```
+
+---
+
+## 8. ショートカット・操作ルール
+
+### 8.1 Hammer.js統合（タッチ対応）
+```javascript
+// js/managers/input-manager.js
+export class InputManager {
+    constructor(appCore) {
+        this.setupKeyboardShortcuts();
+        this.setupTouchGestures();
+    }
+    
+    setupTouchGestures() {
+        // Hammer.js活用
+        const hammer = new Hammer(this.app.view);
+        
+        hammer.get('pinch').set({ enable: true });
+        hammer.on('pinch', (e) => {
+            this.viewport.scale.set(e.scale);
+        });
+    }
+    
+    setupKeyboardShortcuts() {
+        // ショートカット定義
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'z') {
+                MemoryManager.undo();
+            }
+        });
+    }
+}
+```
+
+---
+
+## 9. v8移行準備ルール
+
+### 9.1 移行予告システム
+```javascript
+// 各ファイルにv8移行予告埋め込み
+/**
+ * 📋 V8_MIGRATION: PixiJS v8移行対応予定
+ * 📋 V8_API_CHANGE: 
+ *   - new PIXI.Application() → await PIXI.Application.init()
+ *   - backgroundColor: 0xffffff → background: '#ffffff'
+ * 📋 V8_FEATURE: WebGPU Renderer対応予定
+ */
+```
+
+### 9.2 互換性レイヤー準備
+```javascript
+// js/migration/v8-compatibility.js
+export class V8Compatibility {
+    static async createApplication(options) {
+        // v7互換モード
+        if (PIXI.VERSION.startsWith('7')) {
+            return new PIXI.Application(options);
+        }
+        
+        // v8移行モード（Phase4）
+        // return await PIXI.Application.init(options);
+    }
+}
+```
+
+---
+
+## 10. 禁止事項（強化版）
+
+### 10.1 基本禁止事項
+- **独自UI実装**: @pixi/ui利用可能な機能の独自実装禁止
+- **独自キャンバス操作**: pixi-viewport利用可能な機能の独自実装禁止
+- **循環依存**: ファイル間循環依存の完全禁止
+- **ラスター変換**: ベクターデータの破壊的変換禁止
+
+### 10.2 CDN統合固有禁止事項
+- **CDN迂回**: 利用可能なCDNライブラリを無視した独自実装禁止
+- **バージョン混在**: 同一機能の複数CDNライブラリ混在使用禁止
+- **未検証使用**: LibraryManager検証を経ないCDN使用禁止
+
+### 10.3 Fetch API固有禁止事項
+- **同期読み込み**: 動的importを使わない同期的ファイル読み込み禁止
+- **重複読み込み**: 同一ファイルの重複import禁止
+- **依存無視**: 明示的依存関係を無視した読み込み順序禁止
+
+---
+
+## 11. ふたば☆ちゃんねるカラー（CDN統合版）
+
+### 11.1 カラーシステム統一
+```css
+/* css/styles.css */
+:root {
+  /* ふたば基本色（継続） */
+  --futaba-maroon: #800000;        /* メインカラー */
+  --futaba-light-maroon: #aa5a56;  /* アクセントカラー */
+  --futaba-medium: #cf9c97;        /* UI要素 */
+  --futaba-light-medium: #e9c2ba;  /* 境界線 */
+  --futaba-cream: #f0e0d6;         /* キャンバス背景 */
+  --futaba-background: #ffffee;    /* アプリ背景 */
+  
+  /* CDN統合用拡張色 */
+  --futaba-ui: var(--futaba-medium);     /* @pixi/ui要素 */
+  --futaba-tool: var(--futaba-maroon);   /* ツール系 */
+  --futaba-layer: var(--futaba-light-medium); /* レイヤー系 */
+}
+
+/* @pixi/ui統合スタイル */
+.pixi-ui-button {
+  background-color: var(--futaba-ui);
+  border-color: var(--futaba-maroon);
+}
+```
+
+---
+
+## 12. テスト・デバッグルール
+
+### 12.1 統合デバッグシステム
+```javascript
+// js/utils/debug.js
+export class DebugManager {
+    static validatePhaseCompletion(phase) {
+        switch(phase) {
+            case 1:
+                return this.validateFetchAPISplit();
+            case 2:
+                return this.validateDrawingFeatures();
+            case 3:
+                return this.validateAnimation();
+            case 4:
+                return this.validateV8Migration();
+        }
+    }
+    
+    static validateFetchAPISplit() {
+        // Phase1: fetch API分割確認
+        return {
+            coreLoaded: !!window.AppCore,
+            managersLoaded: !!window.UIManager,
+            cdnLibraries: LibraryManager.getLoadedLibraries()
+        };
+    }
+}
+```
+
+---
+
+## 13. 将来展望・発展方針
+
+### 13.1 Phase別技術発展
+- **Phase1**: HTML単体→fetch API分割→AI分業開発実現
+- **Phase2**: @pixi/ui完全統合→プロ級UI実現
+- **Phase3**: アニメーション機能→GIF制作環境実現  
+- **Phase4**: v8移行→WebGPU・120FPS・SPINE実現
+
+### 13.2 エコシステム統合戦略
+- **CDNライブラリ**: @pixiエコシステム完全活用
+- **AI協働**: 分業開発パターンの確立
+- **品質保証**: 非破壊変形による品質確保
+- **コミュニティ**: 開発パターンのコミュニティ提供
+
+---
+
+## 14. バージョン管理・継続改善
+
+### 14.1 品質管理指標
+- **Phase1**: fetch API分割成功率・CDNライブラリ活用率
+- **Phase2**: 非破壊変形品質・UI統合度  
+- **Phase3**: アニメーション品質・GIF出力品質
+- **Phase4**: v8移行成功率・120FPS達成率
+
+### 14.2 AI協働効率測定
+- **分業開発効率**: 必要ファイル数・作業時間短縮率
+- **保守効率**: 単一ファイル改修での影響範囲最小化
+- **品質維持**: AI開発での品質劣化防止率
+
+---
+
+*🎨 JavaScript + PixiJS v7→v8 Rulebook v3.0 - Fetch API分割版*  
+*作成日: 2025年8月15日*  
+*対応技術: PixiJS v7→v8, Fetch API, CDNライブラリ統合, AI協働開発*  
+*基本理念: 段階的品質向上・車輪の再発明防止・AI分業開発最適化*
