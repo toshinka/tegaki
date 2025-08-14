@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.2 - 履歴管理統合版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.2 - Phase1統合版</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -229,18 +229,6 @@
                 <span class="checkbox-status">有効</span>
             </div>
         </div>
-        
-        <!-- 履歴管理情報表示（デバッグ用・将来機能） -->
-        <!-- 
-        <div class="setting-group">
-            <div class="setting-label">履歴管理</div>
-            <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                <div>アンドゥ: Ctrl+Z</div>
-                <div>リドゥ: Ctrl+Y</div>
-                <div id="history-status">履歴: 1/1</div>
-            </div>
-        </div>
-        -->
     </div>
     
     <!-- リサイズ設定ポップアップ -->
@@ -324,54 +312,86 @@
         </div>
     </div>
 
-    <!-- 🏛️ 履歴管理対応版のスクリプト読み込み（正しい順序で） -->
+    <!-- 🏗️ Phase1対応 CDN拡張ライブラリ統合版 -->
+    <!-- PixiJS v7 本体（既存） -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
     
-    <!-- 1. コアエンジン -->
-    <script src="app-core.js"></script>
+    <!-- @pixi/ui: UIコンポーネント（ボタン、スライダー、ポップアップなど） -->
+    <script src="https://cdn.jsdelivr.net/npm/@pixi/ui@0.7.0/dist/pixi-ui.min.js"></script>
     
-    <!-- 2. 履歴管理システム（drawing-toolsより先に読み込み） -->
+    <!-- @pixi/text-bitmap: テキストUI高速化 -->
+    <script src="https://cdn.jsdelivr.net/npm/@pixi/text-bitmap@7/dist/pixi-text-bitmap.min.js"></script>
+    
+    <!-- pixi-viewport: 無限キャンバス・ズーム/パン -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi-viewport@5.0.2/dist/viewport.min.js"></script>
+    
+    <!-- pixi-filters: フィルター効果 -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi-filters@5.2.1/dist/pixi-filters.min.js"></script>
+    
+    <!-- pixi-svg: SVGアイコン読み込み -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi-svg@2.0.2/dist/pixi-svg.min.js"></script>
+    
+    <!-- GSAP: アニメーション -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    
+    <!-- Lodash: ユーティリティ -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    
+    <!-- Hammer.js: タッチジェスチャー -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    
+    <!-- Phase1 Manager階層システム -->
+    <!-- 拡張ライブラリ検出システム -->
+    <script src="managers/extension-loader.js"></script>
+    
+    <!-- Manager統括層 -->
+    <script src="managers/ui-manager.js"></script>
+    <script src="managers/tool-manager.js"></script>
+    <script src="managers/canvas-manager.js"></script>
+    <script src="managers/memory-manager.js"></script>
+    <script src="managers/settings-manager.js"></script>
+    
+    <!-- 既存機能ファイル（Manager統括下） -->
     <script src="history-manager.js"></script>
-    
-    <!-- 3. 描画ツール群（履歴管理統合版） -->
+    <script src="transform-manager.js"></script>
     <script src="drawing-tools.js"></script>
     
-    <!-- 4. UI管理システム -->
-    <script src="ui-manager.js"></script>
+    <!-- 軽量化AppCore -->
+    <script src="app-core.js"></script>
     
-    <!-- 5. メインエントリーポイント（履歴管理統合版） -->
+    <!-- 連携化メインエントリーポイント -->
     <script src="main.js"></script>
     
-    <!-- 履歴管理機能の説明（開発用コメント） -->
+    <!-- 📋 Phase1 機能説明（開発用コメント） -->
     <!--
-    🏛️ 履歴管理機能について:
+    🏗️ Phase1 Manager階層システムについて:
     
-    【自動記録される操作】
-    - 描画操作（ペン・消しゴム）
-    - プリセット変更
-    - ツール変更
-    - ブラシ設定変更（サイズ・透明度・筆圧・線補正）
-    - キャンバスリサイズ
-    - キャンバスクリア
+    【Manager階層構造】
+    - ExtensionLoader: CDN拡張ライブラリ自動検出
+    - UIManager: @pixi/ui活用のUI系統括制御
+    - ToolManager: ツール系統括制御
+    - CanvasManager: pixi-viewport活用の無限キャンバス制御
+    - MemoryManager: 非破壊アンドゥシステム統括
+    - SettingsManager: 設定統括制御
     
-    【ショートカット】
-    - Ctrl+Z: アンドゥ
-    - Ctrl+Y: リドゥ
-    - Ctrl+Shift+Z: リドゥ（代替）
+    【CDN拡張ライブラリ】
+    - @pixi/ui: ボタン・スライダー・ポップアップ
+    - pixi-viewport: 無限キャンバス・ズーム・パン
+    - pixi-filters: エフェクト・フィルター
+    - pixi-svg: SVGアイコン読み込み（Tabler Icons対応）
+    - GSAP: 高性能アニメーション
+    - Lodash: ユーティリティ関数
+    - Hammer.js: タッチジェスチャー
     
-    【メモリ管理】
-    - 最大50履歴まで保存
-    - 古い履歴は自動削除
-    - RenderTexture の適切なクリーンアップ
+    【フォールバック対応】
+    - ライブラリ未検出時は既存実装を使用
+    - 段階的品質向上（車輪の再発明回避）
+    - 既存機能100%保持
     
-    【デバッグ関数】（ブラウザコンソールで使用可能）
-    - undo(): アンドゥ実行
-    - redo(): リドゥ実行 
-    - debugHistory(): 履歴詳細表示
-    - testHistory(): 履歴機能テスト
-    - getHistoryStats(): 履歴統計取得
-    - clearHistory(): 履歴クリア
-    - showSystemStats(): システム統計表示
+    【デバッグ機能】（ブラウザコンソールで使用可能）
+    - window.debugTegaki.checkManagers(): Manager初期化状態確認
+    - window.debugTegaki.testManagerCommunication(): Manager間連携テスト
+    - window.debugTegaki.stats(): パフォーマンス統計取得
     -->
 </body>
 </html>
