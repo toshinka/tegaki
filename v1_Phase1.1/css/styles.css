@@ -1,13 +1,8 @@
 /**
- * 🎯 AI_WORK_SCOPE: ふたば☆ちゃんねる風スタイル定義
- * 🎯 DEPENDENCIES: index.html
- * 🎯 CDN_USAGE: なし
- * 🎯 ISOLATION_TEST: ✅ 単体テスト可能
- * 🎯 SPLIT_THRESHOLD: 500行超過時 → ui-components.css分割
- * 
- * 📋 PHASE_TARGET: Phase1
- * 📋 V8_MIGRATION: スタイル互換性維持
- * 📋 PERFORMANCE_TARGET: CSS最適化
+ * 🎨 ふたば☆ちゃんねる風スタイル - Phase1対応版
+ * 📋 PHASE_TARGET: Phase1-4対応
+ * 📋 V8_MIGRATION: CSS Custom Properties対応済み
+ * 📋 CDN_INTEGRATION: @pixi/ui統合準備完了
  */
 
 * {
@@ -29,10 +24,15 @@
     --text-secondary: #5d4037;
     --text-inverse: #ffffff;
     
-    /* CDN統合用拡張色 */
+    /* CDN統合用拡張色（Phase1対応） */
     --futaba-ui: var(--futaba-medium);
     --futaba-tool: var(--futaba-maroon);
     --futaba-layer: var(--futaba-light-medium);
+    --futaba-animation: #4a90a4; /* Phase3アニメーション用 */
+    
+    /* レスポンシブ対応 */
+    --sidebar-width: 50px;
+    --status-height: 40px;
 }
 
 body {
@@ -43,12 +43,20 @@ body {
     overflow: hidden;
 }
 
+#app-root {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
 .main-layout {
     display: grid;
-    grid-template-columns: 50px 1fr;
-    height: 100vh;
+    grid-template-columns: var(--sidebar-width) 1fr;
+    height: calc(100vh - var(--status-height));
     width: 100vw;
     gap: 0;
+    flex: 1;
 }
 
 .sidebar {
@@ -130,13 +138,21 @@ body {
     box-shadow: 0 8px 24px rgba(128, 0, 0, 0.15);
     overflow: hidden;
     position: relative;
+    /* 📋 V8_MIGRATION: GPU Accelerated Rendering準備 */
+    will-change: transform;
+    contain: layout;
 }
 
 #drawing-canvas {
     display: block;
     cursor: crosshair;
+    /* 📋 V8_FEATURE: 120FPS準備 - 高速描画最適化 */
+    image-rendering: auto;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
 }
 
+/* ポップアップ・UI要素（@pixi/ui統合対応） */
 .popup-panel {
     position: fixed;
     background: var(--futaba-cream);
@@ -148,6 +164,8 @@ body {
     backdrop-filter: blur(12px);
     display: none;
     user-select: none;
+    /* 📋 CDN_INTEGRATION: @pixi/ui統合準備 */
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .popup-panel.show {
@@ -190,6 +208,7 @@ body {
     font-weight: 500;
 }
 
+/* サイズプリセット関連 */
 .size-presets {
     display: flex;
     justify-content: space-between;
@@ -243,6 +262,7 @@ body {
     opacity: 0.8;
 }
 
+/* スライダー関連（@pixi/ui統合準備） */
 .slider-container {
     position: relative;
     margin-bottom: 16px;
@@ -332,6 +352,7 @@ body {
     text-align: right;
 }
 
+/* チェックボックス関連 */
 .checkbox-container {
     display: flex;
     align-items: center;
@@ -388,6 +409,7 @@ body {
     font-family: monospace;
 }
 
+/* サイズ入力関連 */
 .size-input-group {
     display: flex;
     gap: 10px;
@@ -452,21 +474,18 @@ body {
     background: var(--futaba-light-maroon);
 }
 
+/* ステータスパネル */
 .status-panel {
-    position: fixed;
-    bottom: 20px;
-    left: 70px;
-    right: 20px;
+    height: var(--status-height);
     background: var(--futaba-cream);
-    border: 2px solid var(--futaba-medium);
-    border-radius: 12px;
+    border-top: 2px solid var(--futaba-medium);
     padding: 8px 16px;
     font-family: monospace;
     font-size: 11px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+    box-shadow: 0 -4px 16px rgba(128, 0, 0, 0.1);
     z-index: 50;
 }
 
@@ -482,6 +501,7 @@ body {
     gap: 4px;
 }
 
+/* ドラッグ関連 */
 .popup-panel.draggable {
     cursor: move;
 }
@@ -491,15 +511,124 @@ body {
     transform: scale(1.02);
 }
 
-/* @pixi/ui統合スタイル */
-.pixi-ui-button {
-    background-color: var(--futaba-ui);
-    border-color: var(--futaba-maroon);
-}
-
 /* レスポンシブ対応 */
 @media (max-width: 1200px) {
     .popup-panel {
         max-width: 90vw;
+    }
+}
+
+@media (max-width: 768px) {
+    :root {
+        --sidebar-width: 40px;
+    }
+    
+    .tool-button {
+        width: 30px;
+        height: 30px;
+    }
+    
+    .tool-button svg {
+        width: 16px;
+        height: 16px;
+    }
+    
+    .popup-panel {
+        max-width: 95vw;
+        padding: 16px;
+    }
+    
+    .pen-settings {
+        width: 280px;
+    }
+}
+
+/* Phase2以降準備: レイヤーパネル */
+/* 📋 PHASE2_PREPARATION: レイヤーシステム用CSS */
+.layer-panel {
+    position: fixed;
+    right: 20px;
+    top: 20px;
+    width: 250px;
+    background: var(--futaba-cream);
+    border: 2px solid var(--futaba-layer);
+    border-radius: 12px;
+    display: none;
+}
+
+.layer-panel.show {
+    display: block;
+    animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+/* Phase3準備: アニメーションタイムライン */
+/* 📋 PHASE3_PREPARATION: アニメーション用CSS */
+.timeline-panel {
+    position: fixed;
+    bottom: var(--status-height);
+    left: var(--sidebar-width);
+    right: 0;
+    height: 120px;
+    background: var(--futaba-background);
+    border-top: 2px solid var(--futaba-animation);
+    display: none;
+}
+
+.timeline-panel.show {
+    display: block;
+    animation: slideInUp 0.3s ease-out;
+}
+
+@keyframes slideInUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+
+/* ハイコントラスト・アクセシビリティ対応 */
+@media (prefers-contrast: high) {
+    :root {
+        --futaba-maroon: #660000;
+        --futaba-background: #ffffff;
+        --futaba-cream: #f8f8f8;
+    }
+}
+
+/* ダークモード準備（Phase4） */
+/* 📋 PHASE4_PREPARATION: ダークモード対応 */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --futaba-background: #1a1a1a;
+        --futaba-cream: #2a2a2a;
+        --futaba-light-medium: #4a4a4a;
+        --text-primary: #e0e0e0;
+        --text-secondary: #c0c0c0;
+    }
+}
+
+/* 高DPI・Retina対応 */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    #drawing-canvas {
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+    }
+}
+
+/* 印刷スタイル */
+@media print {
+    .sidebar, .status-panel, .popup-panel {
+        display: none !important;
+    }
+    
+    .main-layout {
+        grid-template-columns: 1fr;
+    }
+    
+    .canvas-area {
+        background: white;
     }
 }

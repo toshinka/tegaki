@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0-Phase1</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- CDNライブラリ統合（車輪の再発明防止） -->
+    
+    <!-- PixiJS v7 本体 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
+    
+    <!-- @pixi/ui: UIコンポーネント（ボタン、スライダー、ポップアップなど） -->
+    <script src="https://cdn.jsdelivr.net/npm/@pixi/ui@0.7.0/dist/pixi-ui.min.js"></script>
+    
+    <!-- @pixi/text-bitmap: テキストUI高速化 -->
+    <script src="https://cdn.jsdelivr.net/npm/@pixi/text-bitmap@7/dist/pixi-text-bitmap.min.js"></script>
+    
+    <!-- pixi-viewport: 無限キャンバス・ズーム/パン -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi-viewport@5.0.2/dist/viewport.min.js"></script>
+    
+    <!-- pixi-filters: フィルター効果 -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi-filters@5.2.1/dist/pixi-filters.min.js"></script>
+    
+    <!-- pixi-svg: SVGアイコン読み込み -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi-svg@2.0.2/dist/pixi-svg.min.js"></script>
+    
+    <!-- GSAP: アニメーション -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    
+    <!-- Lodash: ユーティリティ -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    
+    <!-- Hammer.js: タッチジェスチャー -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    
+    <!-- 📋 Phase2以降で有効化予定: レイヤーシステム強化 -->
+    <!-- <script src="https://cdn.jsdelivr.net/npm/@pixi/layers@1.0.11/dist/pixi-layers.min.js"></script> -->
+    
+    <!-- 📋 Phase3で有効化予定: GIFアニメーション -->
+    <!-- <script src="https://cdn.jsdelivr.net/npm/@pixi/gif@2.1.0/dist/pixi-gif.min.js"></script> -->
+    
+    <!-- アプリケーション本体 -->
+    <script type="module" src="js/main.js"></script>
+    
+    <!-- アプリケーションルートコンテナ -->
+    <div id="app-root">
+        <div class="main-layout">
+            <div class="sidebar" id="tool-sidebar">
+                <!-- ツールボタンは動的生成 -->
+            </div>
+            
+            <div class="canvas-area" id="canvas-area">
+                <div class="canvas-container" id="canvas-container">
+                    <!-- PixiJSキャンバスは動的生成 -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- ポップアップ・UI要素は動的生成 -->
+        <div id="popup-container"></div>
+        
+        <!-- ステータスパネル -->
+        <div class="status-panel" id="status-panel">
+            <!-- ステータス情報は動的更新 -->
+        </div>
+    </div>
+</body>
+</html>

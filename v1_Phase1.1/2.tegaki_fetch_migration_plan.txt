@@ -48,6 +48,7 @@ vector-drawing-tool.html（1000行超）
 - pixi-svg統合（Tabler Iconsアイコン）
 - GSAP統合（アニメーション）
 - Hammer.js統合（タッチ操作）
+※補足：@pixi/layersと@pixi/gifの導入も有効なら検討する事
 
 #### 移行品質基準
 - [ ] 既存HTML機能100%再現
@@ -137,6 +138,7 @@ export class VectorTransform {
 ### Phase2.1: レイヤーシステム完全実装
 **期間**: 3週間  
 **目標**: プロ級レイヤー機能・アニメ制作準備完了
+※補足：　@pixi/layersの導入も有効なら検討する事
 
 #### レイヤー機能要件
 ```javascript
@@ -315,6 +317,7 @@ export class InputManager {
 ### Phase3.1: GIFアニメーション機能
 **期間**: 4週間  
 **目標**: GIFアニメ制作・エクスポート機能完成
+※補足：　@pixi/gifの導入も有効なら検討する事
 
 #### フレーム管理システム
 ```javascript
