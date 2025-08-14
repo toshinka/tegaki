@@ -1,0 +1,1135 @@
+# Tegaki Phase 1 - 詳細実装ガイド（統合版）
+
+## 🎯 目的
+- **Manager階層構築**: app-core.js の責務過多問題解決
+- **車輪の再発明抑制**: PixiJS公式拡張ライブラリをCDN経由で取り込み
+- **分業開発基盤構築**: Manager階層による責務分散実現
+- **既存機能100%保持**: 段階的移行でゼロダウンタイム
+
+## 📚 CDN ライブラリ統合（車輪の再発明抑制）
+
+### Phase1 必須ライブラリ
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <!-- PixiJS v7 本体（既存） -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@7/dist/pixi.min.js"></script>
+    
+    <!-- @pixi/ui: UIコンポーネント（ボタン、スライダー、ポップアップなど） -->
+    <script src="https://cdn.jsdelivr.net/npm/@pixi/ui@0.7.0/dist/pixi-ui.min.js"></script>
+    
+    <!-- @pixi/text-bitmap: テキストUI高速化 -->
+    <script src="https://cdn.jsdelivr.net/npm/@pixi/text-bitmap@7/dist/pixi-text-bitmap.min.js"></script>
+    
+    <!-- pixi-viewport: 無限キャンバス・ズーム/パン -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi-viewport@5.0.2/dist/viewport.min.js"></script>
+    
+    <!-- pixi-filters: フィルター効果 -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi-filters@5.2.1/dist/pixi-filters.min.js"></script>
+    
+    <!-- pixi-svg: SVGアイコン読み込み -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi-svg@2.0.2/dist/pixi-svg.min.js"></script>
+    
+    <!-- GSAP: アニメーション -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    
+    <!-- Lodash: ユーティリティ -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    
+    <!-- Hammer.js: タッチジェスチャー -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+</head>
+<body>
+    <div id="app"></div>
+</body>
+</html>
+```
+
+## 🏗️ Manager階層アーキテクチャ
+
+### フォルダ構造
+```
+v1_Phase1/
+├─ index.html                     // CDN追加済
+├─ styles.css                     // 不変
+├─ app-core.js                    // 軽量化済（200行以下目標）
+├─ main.js                        // 連携化改修済
+│
+├─ managers/                      // 新規Manager階層
+│  ├─ ui-manager.js              // UI統括（@pixi/ui活用）
+│  ├─ tool-manager.js            // ツール統括
+│  ├─ canvas-manager.js          // キャンバス制御統括（pixi-viewport活用）
+│  ├─ memory-manager.js          // 履歴管理統括
+│  ├─ settings-manager.js        // 設定統括
+│  └─ extension-loader.js        // 新規: CDNライブラリ検出・管理
+│
+├─ history-manager.js            // 不変（MemoryManager統括下）
+├─ transform-manager.js          // 不変（CanvasManager統括下）
+├─ drawing-tools.js              // 不変（ToolManager統括下）
+└─ ui-manager.js                 // 削除予定（managers/へ移行済）
+```
+
+## 🔧 Phase1.0: 拡張ライブラリ検出システム
+
+### managers/extension-loader.js（新規）
+```javascript
+/**
+ * 🔌 ExtensionLoader - CDNライブラリ検出・管理
+ * 責務: 
+ * - CDN経由ライブラリの自動検出
+ * - 利用可能拡張機能の管理
+ * - フォールバック処理
+ * - パフォーマンス監視
+ */
+
+class ExtensionLoader {
+    constructor() {
+        this.extensions = {};
+        this.totalCount = 0;
+        this.loadedCount = 0;
+    }
+    
+    async detectAvailableExtensions() {
+        console.log('🔍 CDN拡張ライブラリ検出開始...');
+        
+        // @pixi/ui 検出
+        this.checkPixiUI();
+        
+        // pixi-viewport 検出（無限キャンバス）
+        this.checkPixiViewport();
+        
+        // pixi-filters 検出
+        this.checkPixiFilters();
+        
+        // pixi-svg + Tabler Icons 検出
+        this.checkPixiSVG();
+        
+        // @pixi/assets 検出
+        this.checkPixiAssets();
+        
+        // GSAP 検出
+        this.checkGSAP();
+        
+        // Lodash 検出
+        this.checkLodash();
+        
+        // Hammer.js 検出
+        this.checkHammer();
+        
+        this.reportLoadStatus();
+        return this.extensions;
+    }
+    
+    checkPixiUI() {
+        this.totalCount++;
+        if (typeof PIXI !== 'undefined' && PIXI.UI) {
+            console.log('✅ @pixi/ui 検出 - UIコンポーネント利用可能');
+            this.extensions.UI = {
+                Button: PIXI.UI.Button,
+                Slider: PIXI.UI.Slider,
+                Popup: PIXI.UI.Popup,
+                available: true,
+                source: 'CDN'
+            };
+            this.loadedCount++;
+        } else {
+            console.warn('⚠️ @pixi/ui 未検出 - 手動UI実装使用');
+            this.extensions.UI = { available: false };
+        }
+    }
+    
+    checkPixiViewport() {
+        this.totalCount++;
+        if (typeof window.PIXI_VIEWPORT !== 'undefined' || (PIXI && PIXI.extras && PIXI.extras.Viewport)) {
+            console.log('✅ pixi-viewport 検出 - 無限キャンバス機能利用可能');
+            const vpSource = window.PIXI_VIEWPORT || PIXI.extras;
+            this.extensions.Viewport = {
+                Viewport: vpSource.Viewport,
+                available: true,
+                source: 'CDN'
+            };
+            this.loadedCount++;
+        } else {
+            console.warn('⚠️ pixi-viewport 未検出 - キャンバス移動は独自実装使用');
+            this.extensions.Viewport = { available: false };
+        }
+    }
+    
+    checkPixiFilters() {
+        this.totalCount++;
+        if (typeof window.PIXI_FILTERS !== 'undefined' || (PIXI && PIXI.filters)) {
+            console.log('✅ pixi-filters 検出 - フィルター効果利用可能');
+            this.extensions.Filters = {
+                filters: PIXI.filters,
+                available: true,
+                source: 'CDN'
+            };
+            this.loadedCount++;
+        } else {
+            console.warn('⚠️ pixi-filters 未検出 - フィルター効果無効');
+            this.extensions.Filters = { available: false };
+        }
+    }
+    
+    checkPixiSVG() {
+        this.totalCount++;
+        if (typeof window.PIXI_SVG !== 'undefined' || (PIXI && PIXI.SVG)) {
+            console.log('✅ pixi-svg 検出 - SVG描画利用可能');
+            this.extensions.SVG = {
+                SVG: PIXI.SVG,
+                available: true,
+                source: 'CDN'
+            };
+            this.loadedCount++;
+        } else {
+            console.warn('⚠️ pixi-svg 未検出 - SVG読み込み無効');
+            this.extensions.SVG = { available: false };
+        }
+        
+        // Tabler Icons 簡易ローダー
+        this.extensions.Tabler = {
+            loadIcon: async (iconName) => {
+                try {
+                    const url = `https://tabler-icons.io/static/icons/${iconName}.svg`;
+                    const res = await fetch(url);
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    const svgText = await res.text();
+
+                    if (this.extensions.SVG?.available) {
+                        const svgGraphics = new this.extensions.SVG.SVG(svgText);
+                        return svgGraphics;
+                    } else {
+                        console.warn('⚠️ pixi-svg が無効のため Graphics に変換できません');
+                        return null;
+                    }
+                } catch (err) {
+                    console.error(`❌ Tabler Icon 読み込み失敗 (${iconName}):`, err);
+                    return null;
+                }
+            },
+            available: true
+        };
+    }
+    
+    checkPixiAssets() {
+        this.totalCount++;
+        if (PIXI && PIXI.Assets) {
+            console.log('✅ @pixi/assets 検出 - 標準アセットローダー利用可能');
+            this.extensions.Assets = {
+                Assets: PIXI.Assets,
+                available: true,
+                source: 'CDN'
+            };
+            this.loadedCount++;
+        } else {
+            console.warn('⚠️ @pixi/assets 未検出 - 手動fetchでのアセット読み込み');
+            this.extensions.Assets = { available: false };
+        }
+    }
+    
+    checkGSAP() {
+        this.totalCount++;
+        if (typeof gsap !== 'undefined') {
+            console.log('✅ GSAP 検出 - 高性能アニメーション利用可能');
+            this.extensions.GSAP = {
+                gsap: gsap,
+                available: true,
+                source: 'CDN'
+            };
+            this.loadedCount++;
+        } else {
+            console.warn('⚠️ GSAP 未検出 - CSS遷移使用');
+            this.extensions.GSAP = { available: false };
+        }
+    }
+    
+    checkLodash() {
+        this.totalCount++;
+        if (typeof _ !== 'undefined') {
+            console.log('✅ Lodash 検出 - ユーティリティ関数利用可能');
+            this.extensions.Lodash = {
+                _: _,
+                available: true,
+                source: 'CDN'
+            };
+            this.loadedCount++;
+        } else {
+            console.warn('⚠️ Lodash 未検出 - 独自実装使用');
+            this.extensions.Lodash = { available: false };
+        }
+    }
+    
+    checkHammer() {
+        this.totalCount++;
+        if (typeof Hammer !== 'undefined') {
+            console.log('✅ Hammer.js 検出 - タッチジェスチャー利用可能');
+            this.extensions.Hammer = {
+                Hammer: Hammer,
+                available: true,
+                source: 'CDN'
+            };
+            this.loadedCount++;
+        } else {
+            console.warn('⚠️ Hammer.js 未検出 - 基本タッチのみ');
+            this.extensions.Hammer = { available: false };
+        }
+    }
+    
+    reportLoadStatus() {
+        const loadRate = Math.round((this.loadedCount / this.totalCount) * 100);
+        console.log(`📊 拡張ライブラリ読み込み完了: ${this.loadedCount}/${this.totalCount} (${loadRate}%)`);
+        
+        if (loadRate < 70) {
+            console.warn('⚠️ 拡張ライブラリの読み込み率が低いです。CDNの確認をお勧めします。');
+        }
+    }
+    
+    getExtension(name) {
+        return this.extensions[name];
+    }
+    
+    isAvailable(name) {
+        return this.extensions[name]?.available || false;
+    }
+}
+```
+
+## 🔧 Phase1.1: 各Manager実装
+
+### managers/ui-manager.js（@pixi/ui活用）
+```javascript
+/**
+ * 🎨 UIManager - UI系統括制御
+ * 責務: 
+ * - ツールボタン制御（@pixi/ui Button活用）
+ * - ポップアップ管理（@pixi/ui Popup活用）
+ * - スライダー制御（@pixi/ui Slider活用）
+ * - ステータスバー更新
+ * - アイコン管理（pixi-svg + Tabler Icons活用）
+ */
+
+class UIManager {
+    constructor(appCore) {
+        this.appCore = appCore;
+        this.extensions = appCore.extensions;
+        this.uiContainer = new PIXI.Container();
+        this.isInitialized = false;
+    }
+    
+    async init() {
+        await this.setupToolButtons();
+        await this.setupSliders();
+        await this.setupPopups();
+        await this.loadIcons();
+        
+        this.appCore.stage.addChild(this.uiContainer);
+        this.isInitialized = true;
+        console.log('🎨 UIManager 初期化完了');
+    }
+    
+    async setupToolButtons() {
+        if (this.extensions.isAvailable('UI')) {
+            // @pixi/ui Button使用
+            const penButton = new this.extensions.UI.Button({
+                text: 'Pen',
+                onClick: () => this.appCore.getManager('tool').setTool('pen')
+            });
+            
+            const eraserButton = new this.extensions.UI.Button({
+                text: 'Eraser', 
+                onClick: () => this.appCore.getManager('tool').setTool('eraser')
+            });
+            
+            penButton.x = 10;
+            penButton.y = 10;
+            eraserButton.x = 100;
+            eraserButton.y = 10;
+            
+            this.uiContainer.addChild(penButton, eraserButton);
+        } else {
+            // フォールバック: 独自実装
+            await this.createFallbackButtons();
+        }
+    }
+    
+    async setupSliders() {
+        if (this.extensions.isAvailable('UI')) {
+            // @pixi/ui Slider使用
+            const sizeSlider = new this.extensions.UI.Slider({
+                min: 1,
+                max: 100,
+                value: 5,
+                onChange: (value) => this.appCore.getManager('tool').setBrushSize(value)
+            });
+            
+            sizeSlider.x = 10;
+            sizeSlider.y = 60;
+            this.uiContainer.addChild(sizeSlider);
+        } else {
+            // フォールバック実装
+            await this.createFallbackSliders();
+        }
+    }
+    
+    async setupPopups() {
+        if (this.extensions.isAvailable('UI')) {
+            // @pixi/ui Popup使用
+            this.settingsPopup = new this.extensions.UI.Popup({
+                title: '設定',
+                content: '設定内容...'
+            });
+        }
+    }
+    
+    async loadIcons() {
+        if (this.extensions.isAvailable('SVG') && this.extensions.Tabler) {
+            // Tabler Icons読み込み
+            const penIcon = await this.extensions.Tabler.loadIcon('pencil');
+            const eraserIcon = await this.extensions.Tabler.loadIcon('eraser');
+            
+            if (penIcon && eraserIcon) {
+                console.log('✅ アイコン読み込み完了');
+                // アイコンをボタンに適用
+            }
+        }
+    }
+    
+    async createFallbackButtons() {
+        // 独自実装でのボタン作成（既存コードの移植）
+        console.log('⚠️ @pixi/ui未検出: フォールバックボタン作成');
+        // 既存ui-manager.jsのボタン作成コードを移植
+    }
+    
+    async createFallbackSliders() {
+        // 独自実装でのスライダー作成
+        console.log('⚠️ @pixi/ui未検出: フォールバックスライダー作成');
+        // 既存ui-manager.jsのスライダー作成コードを移植
+    }
+    
+    updateCurrentTool(toolName) {
+        // UI状態更新
+        console.log(`🔄 現在のツール: ${toolName}`);
+    }
+}
+```
+
+### managers/canvas-manager.js（pixi-viewport活用）
+```javascript
+/**
+ * 🖼️ CanvasManager - キャンバス移動・変形制御
+ * 責務:
+ * - 無限キャンバス管理（pixi-viewport活用）
+ * - ズーム・パン制御
+ * - 座標変換管理
+ * - ビュー制御
+ */
+
+class CanvasManager {
+    constructor(appCore) {
+        this.appCore = appCore;
+        this.extensions = appCore.extensions;
+        this.viewport = null;
+        this.isInitialized = false;
+    }
+    
+    async init() {
+        await this.setupViewport();
+        await this.setupControls();
+        
+        this.isInitialized = true;
+        console.log('🖼️ CanvasManager 初期化完了');
+    }
+    
+    async setupViewport() {
+        if (this.extensions.isAvailable('Viewport')) {
+            // pixi-viewport使用
+            this.viewport = new this.extensions.Viewport.Viewport({
+                screenWidth: window.innerWidth,
+                screenHeight: window.innerHeight,
+                worldWidth: 1000,
+                worldHeight: 1000,
+                interaction: this.appCore.app.renderer.plugins.interaction
+            });
+            
+            // ドラッグ、ピンチ、ホイール、ディセル機能を追加
+            this.viewport
+                .drag()
+                .pinch()
+                .wheel()
+                .decelerate();
+            
+            this.appCore.stage.addChild(this.viewport);
+            console.log('✅ pixi-viewport 無限キャンバス有効化');
+        } else {
+            // フォールバック: 独自実装
+            await this.setupFallbackTransform();
+        }
+    }
+    
+    async setupControls() {
+        // キーボードショートカット
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.resetView();
+            }
+        });
+        
+        // リサイズ対応
+        window.addEventListener('resize', () => {
+            this.handleResize();
+        });
+    }
+    
+    async setupFallbackTransform() {
+        console.log('⚠️ pixi-viewport未検出: 独自変形システム使用');
+        // 既存transform-manager.jsとの連携
+    }
+    
+    resetView() {
+        if (this.viewport) {
+            this.viewport.animate({
+                position: { x: 0, y: 0 },
+                scale: 1,
+                time: 300
+            });
+        }
+        console.log('🔄 ビューリセット');
+    }
+    
+    handleResize() {
+        if (this.viewport) {
+            this.viewport.resize(window.innerWidth, window.innerHeight);
+        }
+    }
+    
+    getDrawingContainer() {
+        return this.viewport || this.appCore.stage;
+    }
+}
+```
+
+### managers/tool-manager.js
+```javascript
+/**
+ * 🛠️ ToolManager - ツール系統括制御
+ * 責務:
+ * - ツール切替管理
+ * - 描画イベント処理
+ * - ブラシ設定管理
+ * - ショートカット処理
+ */
+
+class ToolManager {
+    constructor(appCore) {
+        this.appCore = appCore;
+        this.extensions = appCore.extensions;
+        this.currentTool = 'pen';
+        this.brushSize = 5;
+        this.tools = new Map();
+        this.isInitialized = false;
+        
+        // 📋 SPLIT_PLAN: Phase2でtools/*.js分割予定
+        // - PenTool → tools/pen-tool.js  
+        // - EraserTool → tools/eraser-tool.js
+    }
+    
+    async init() {
+        await this.setupTools();
+        await this.setupShortcuts();
+        
+        this.isInitialized = true;
+        console.log('🛠️ ToolManager 初期化完了');
+    }
+    
+    async setupTools() {
+        // 既存drawing-tools.jsとの統括
+        this.tools.set('pen', {
+            name: 'pen',
+            cursor: 'crosshair',
+            onStart: (event) => this.handleDrawStart(event),
+            onMove: (event) => this.handleDrawMove(event),
+            onEnd: (event) => this.handleDrawEnd(event)
+        });
+        
+        this.tools.set('eraser', {
+            name: 'eraser',
+            cursor: 'crosshair', 
+            onStart: (event) => this.handleEraseStart(event),
+            onMove: (event) => this.handleEraseMove(event),
+            onEnd: (event) => this.handleEraseEnd(event)
+        });
+    }
+    
+    async setupShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            switch(e.key.toLowerCase()) {
+                case 'p':
+                    this.setTool('pen');
+                    break;
+                case 'e':
+                    this.setTool('eraser');
+                    break;
+                case 'b':
+                    this.setTool('brush');
+                    break;
+            }
+        });
+    }
+    
+    setTool(toolName) {
+        if (this.tools.has(toolName)) {
+            this.currentTool = toolName;
+            const tool = this.tools.get(toolName);
+            
+            // カーソル変更
+            this.appCore.app.view.style.cursor = tool.cursor;
+            
+            // UI更新
+            this.appCore.getManager('ui').updateCurrentTool(toolName);
+            
+            console.log(`🔄 ツール変更: ${toolName}`);
+        }
+    }
+    
+    setBrushSize(size) {
+        this.brushSize = Math.max(1, Math.min(100, size));
+        console.log(`🖌️ ブラシサイズ: ${this.brushSize}`);
+    }
+    
+    handleDrawStart(event) {
+        // 既存drawing-tools.jsの処理を移植
+    }
+    
+    handleDrawMove(event) {
+        // 既存drawing-tools.jsの処理を移植
+    }
+    
+    handleDrawEnd(event) {
+        // 既存drawing-tools.jsの処理を移植
+        // 履歴管理への通知
+        this.appCore.getManager('memory').saveState();
+    }
+}
+```
+
+### managers/memory-manager.js
+```javascript
+/**
+ * 🧠 MemoryManager - 非破壊アンドゥシステム
+ * 責務:
+ * - 履歴管理統括
+ * - メモリ最適化
+ * - 状態保存・復元
+ */
+
+class MemoryManager {
+    constructor(appCore) {
+        this.appCore = appCore;
+        this.extensions = appCore.extensions;
+        this.isInitialized = false;
+        
+        // 既存history-manager.jsとの統括
+        this.historyManager = null;
+    }
+    
+    async init() {
+        // 既存history-manager.js統括
+        if (typeof HistoryManager !== 'undefined') {
+            this.historyManager = new HistoryManager(this.appCore);
+        }
+        
+        this.setupShortcuts();
+        this.isInitialized = true;
+        console.log('🧠 MemoryManager 初期化完了');
+    }
+    
+    setupShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                switch(e.key.toLowerCase()) {
+                    case 'z':
+                        e.preventDefault();
+                        if (e.shiftKey) {
+                            this.redo();
+                        } else {
+                            this.undo();
+                        }
+                        break;
+                    case 'y':
+                        e.preventDefault();
+                        this.redo();
+                        break;
+                }
+            }
+        });
+    }
+    
+    saveState() {
+        if (this.historyManager) {
+            this.historyManager.saveState();
+        }
+        console.log('💾 状態保存');
+    }
+    
+    undo() {
+        if (this.historyManager) {
+            this.historyManager.undo();
+        }
+        console.log('↶ アンドゥ実行');
+    }
+    
+    redo() {
+        if (this.historyManager) {
+            this.historyManager.redo();
+        }
+        console.log('↷ リドゥ実行');
+    }
+}
+```
+
+### managers/settings-manager.js
+```javascript
+/**
+ * ⚙️ SettingsManager - 設定統括制御  
+ * 責務:
+ * - アプリ設定管理
+ * - ユーザー設定保存
+ * - ショートカット管理
+ * - 高DPI対応
+ */
+
+class SettingsManager {
+    constructor(appCore) {
+        this.appCore = appCore;
+        this.extensions = appCore.extensions;
+        this.settings = {
+            // デフォルト設定
+            brushSize: 5,
+            brushColor: '#000000',
+            canvasSize: { width: 1920, height: 1080 },
+            shortcuts: {
+                pen: 'p',
+                eraser: 'e',
+                brush: 'b'
+            },
+            performance: {
+                targetFPS: 60,
+                enableFilters: true
+            }
+        };
+        this.isInitialized = false;
+    }
+    
+    async init() {
+        await this.loadSettings();
+        await this.applySettings();
+        
+        this.isInitialized = true;
+        console.log('⚙️ SettingsManager 初期化完了');
+    }
+    
+    async loadSettings() {
+        try {
+            const stored = localStorage.getItem('tegaki-settings');
+            if (stored) {
+                const loaded = JSON.parse(stored);
+                this.settings = { ...this.settings, ...loaded };
+                console.log('📂 設定読み込み完了');
+            }
+        } catch (err) {
+            console.warn('⚠️ 設定読み込み失敗:', err);
+        }
+    }
+    
+    async saveSettings() {
+        try {
+            localStorage.setItem('tegaki-settings', JSON.stringify(this.settings));
+            console.log('💾 設定保存完了');
+        } catch (err) {
+            console.warn('⚠️ 設定保存失敗:', err);
+        }
+    }
+    
+    async applySettings() {
+        // 高DPI対応
+        if (window.devicePixelRatio > 1) {
+            this.appCore.app.renderer.resolution = window.devicePixelRatio;
+        }
+        
+        // パフォーマンス設定
+        if (this.settings.performance.targetFPS === 30) {
+            this.appCore.app.ticker.maxFPS = 30;
+        }
+    }
+    
+    get(key) {
+        return this.extensions.isAvailable('Lodash') 
+            ? this.extensions.Lodash._.get(this.settings, key)
+            : this.getNestedValue(this.settings, key);
+    }
+    
+    set(key, value) {
+        if (this.extensions.isAvailable('Lodash')) {
+            this.extensions.Lodash._.set(this.settings, key, value);
+        } else {
+            this.setNestedValue(this.settings, key, value);
+        }
+        
+        // 自動保存（デバウンス）
+        if (this.extensions.isAvailable('Lodash')) {
+            const debouncedSave = this.extensions.Lodash._.debounce(() => this.saveSettings(), 1000);
+            debouncedSave();
+        } else {
+            setTimeout(() => this.saveSettings(), 1000);
+        }
+    }
+    
+    getNestedValue(obj, path) {
+        // Lodash無しでのネストアクセス
+        return path.split('.').reduce((current, key) => current?.[key], obj);
+    }
+    
+    setNestedValue(obj, path, value) {
+        // Lodash無しでのネスト設定
+        const keys = path.split('.');
+        const lastKey = keys.pop();
+        const target = keys.reduce((current, key) => {
+            if (!current[key]) current[key] = {};
+            return current[key];
+        }, obj);
+        target[lastKey] = value;
+    }
+}
+```
+
+## 🔧 Phase1.2: AppCore軽量化
+
+### app-core.js（軽量化版 - 200行以下目標）
+```javascript
+/**
+ * 🏗️ AppCore - アプリケーション統括制御（軽量化版）
+ * 責務:
+ * - PixiJS初期化
+ * - Manager統括管理
+ * - 共通API提供
+ * - グローバルイベント処理
+ * 
+ * Before: 1000行超（責務過多）
+ * After: 200行以下（統括のみ）
+ */
+
+class AppCore {
+    constructor() {
+        this.app = null;
+        this.stage = null;
+        this.managers = {};
+        this.extensions = {};
+        this.isInitialized = false;
+    }
+    
+    async init() {
+        console.log('🚀 Tegaki Phase1 起動開始...');
+        
+        // 拡張ライブラリ検出
+        const extensionLoader = new ExtensionLoader();
+        this.extensions = await extensionLoader.detectAvailableExtensions();
+        
+        // PixiJS初期化
+        await this.initializePixiJS();
+        
+        // Manager統括初期化
+        await this.initializeManagers();
+        
+        // グローバルイベント設定
+        this.setupGlobalEvents();
+        
+        this.isInitialized = true;
+        console.log('✅ Tegaki Phase1 起動完了');
+        
+        // デバッグ機能追加
+        this.setupDebugAPI();
+    }
+    
+    async initializePixiJS() {
+        // 📋 V8_MIGRATION: Phase4でv8移行予定
+        // - PIXI.Application → PIXI.Application (新構文)
+        // - WebGPU Renderer対応予定
+        
+        this.app = new PIXI.Application({
+            width: window.innerWidth,
+            height: window.innerHeight,
+            backgroundColor: 0xFFFFFF,
+            resolution: window.devicePixelRatio || 1,
+            autoDensity: true,
+            antialias: true
+        });
+        
+        this.stage = this.app.stage;
+        document.getElementById('app').appendChild(this.app.view);
+        
+        console.log('✅ PixiJS初期化完了');
+    }
+    
+    async initializeManagers() {
+        // Manager生成（依存関係順序）
+        this.managers.settings = new SettingsManager(this);
+        this.managers.canvas = new CanvasManager(this);
+        this.managers.memory = new MemoryManager(this);
+        this.managers.tool = new ToolManager(this);
+        this.managers.ui = new UIManager(this);
+        
+        // 並列初期化（高速化）
+        await Promise.all(
+            Object.values(this.managers).map(manager => manager.init())
+        );
+        
+        console.log('🏗️ 全Manager初期化完了');
+    }
+    
+    setupGlobalEvents() {
+        // リサイズ対応
+        window.addEventListener('resize', () => {
+            this.app.renderer.resize(window.innerWidth, window.innerHeight);
+            this.getManager('canvas')?.handleResize();
+        });
+        
+        // エラーハンドリング
+        window.addEventListener('error', (err) => {
+            console.error('❌ アプリケーションエラー:', err);
+        });
+        
+        // パフォーマンス監視
+        if (this.extensions.isAvailable('GSAP')) {
+            this.extensions.GSAP.gsap.ticker.add(this.updatePerformanceStats.bind(this));
+        }
+    }
+    
+    setupDebugAPI() {
+        // デバッグ機能をグローバルに公開
+        window.debugTegaki = {
+            app: this,
+            checkManagers: () => {
+                console.log('🏗️ Manager状態:');
+                Object.entries(this.managers).forEach(([name, manager]) => {
+                    console.log(`  ${name}: ${manager.isInitialized ? '✅' : '❌'}`);
+                });
+            },
+            testManagerCommunication: () => {
+                this.getManager('tool').setTool('pen');
+                this.getManager('ui').updateCurrentTool('pen');
+                console.log('✅ Manager間連携テスト完了');
+            },
+            stats: () => this.getStats()
+        };
+    }
+    
+    // 共通API
+    getManager(name) {
+        const manager = this.managers[name];
+        if (!manager) {
+            console.warn(`⚠️ Manager '${name}' が見つかりません`);
+        }
+        return manager;
+    }
+    
+    getLocalPointerPosition(event) {
+        const canvas = this.getManager('canvas');
+        if (canvas && canvas.viewport) {
+            return canvas.viewport.toLocal(event.data.global);
+        }
+        return event.data.global;
+    }
+    
+    emit(eventName, data) {
+        // Manager間イベント通信
+        Object.values(this.managers).forEach(manager => {
+            if (typeof manager.onEvent === 'function') {
+                manager.onEvent(eventName, data);
+            }
+        });
+    }
+    
+    getStats() {
+        return {
+            fps: this.app.ticker.FPS,
+            managers: Object.keys(this.managers).length,
+            extensions: Object.keys(this.extensions).length,
+            loadedExtensions: Object.values(this.extensions).filter(ext => ext.available).length
+        };
+    }
+    
+    updatePerformanceStats() {
+        // パフォーマンス監視
+        const fps = this.app.ticker.FPS;
+        if (fps < 30) {
+            console.warn(`⚠️ FPS低下: ${fps.toFixed(1)}`);
+        }
+    }
+}
+```
+
+### main.js（連携化版）
+```javascript
+/**
+ * 🚀 Main Entry Point - エントリーポイント（連携化版）
+ * 責務:
+ * - AppCore起動
+ * - グローバル変数管理
+ * - レガシー互換性維持
+ */
+
+// グローバル変数（レガシー互換性）
+let futabaApp;
+
+// Phase1 統合初期化
+async function initTegakiPhase1() {
+    try {
+        console.log('📋 Tegaki Phase1 初期化開始...');
+        
+        // AppCore一元初期化
+        futabaApp = new AppCore();
+        await futabaApp.init();
+        
+        console.log('🎉 Tegaki Phase1 完全起動!');
+        
+        // レガシー互換性のためのエイリアス
+        window.uiManager = futabaApp.getManager('ui');
+        window.toolManager = futabaApp.getManager('tool');
+        
+    } catch (error) {
+        console.error('❌ Tegaki Phase1 初期化失敗:', error);
+        
+        // フォールバック処理
+        console.log('🔄 フォールバックモードで再試行...');
+        await initFallbackMode();
+    }
+}
+
+async function initFallbackMode() {
+    // 既存システムでのフォールバック
+    console.warn('⚠️ フォールバックモード: 既存システム使用');
+    // 既存の初期化コードを実行
+}
+
+// DOM読み込み完了後に初期化
+document.addEventListener('DOMContentLoaded', initTegakiPhase1);
+
+// モジュールエクスポート（将来のTypeScript対応）
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { AppCore, initTegakiPhase1 };
+}
+```
+
+## 📋 Phase1 完了確認テスト
+
+### 必須テスト項目
+```javascript
+// Phase1完了確認テスト
+
+// 1. Manager初期化テスト
+console.log('🧪 Manager初期化テスト:');
+console.log(`  UI: ${futabaApp.getManager('ui').isInitialized ? '✅' : '❌'}`);
+console.log(`  Tool: ${futabaApp.getManager('tool').isInitialized ? '✅' : '❌'}`);
+console.log(`  Canvas: ${futabaApp.getManager('canvas').isInitialized ? '✅' : '❌'}`);
+console.log(`  Memory: ${futabaApp.getManager('memory').isInitialized ? '✅' : '❌'}`);
+console.log(`  Settings: ${futabaApp.getManager('settings').isInitialized ? '✅' : '❌'}`);
+
+// 2. 拡張ライブラリテスト
+console.log('📦 拡張ライブラリテスト:');
+const extensions = ['UI', 'Viewport', 'Filters', 'SVG', 'GSAP', 'Lodash', 'Hammer'];
+extensions.forEach(ext => {
+    const status = futabaApp.extensions.isAvailable(ext) ? '✅' : '❌';
+    console.log(`  ${ext}: ${status}`);
+});
+
+// 3. 基本機能テスト
+console.log('🎨 基本機能テスト:');
+try {
+    futabaApp.getManager('tool').setTool('pen');
+    console.log('  ペンツール切替: ✅');
+} catch (e) {
+    console.log('  ペンツール切替: ❌', e);
+}
+
+try {
+    futabaApp.getManager('tool').setTool('eraser');
+    console.log('  消しゴムツール切替: ✅');
+} catch (e) {
+    console.log('  消しゴムツール切替: ❌', e);
+}
+
+// 4. パフォーマンステスト
+const stats = futabaApp.getStats();
+console.log('⚡ パフォーマンス:');
+console.log(`  FPS: ${stats.fps.toFixed(1)}`);
+console.log(`  Manager数: ${stats.managers}`);
+console.log(`  拡張機能: ${stats.loadedExtensions}/${stats.extensions}`);
+```
+
+## 🔧 Phase1 実装スケジュール
+
+### 1日目: 基盤構築
+- [ ] index.htmlにCDN追加
+- [ ] ExtensionLoader実装
+- [ ] 5つのManagerクラス作成
+- [ ] 基本的なinit()実装
+
+### 2日目: UI系移行（@pixi/ui活用）
+- [ ] UIManager完全実装
+- [ ] ボタン・スライダー動作確認
+- [ ] アイコン読み込み確認
+- [ ] フォールバック実装
+
+### 3日目: ツール系移行
+- [ ] ToolManager完全実装
+- [ ] 描画機能移植
+- [ ] ショートカット動作確認
+- [ ] ブラシサイズ調整確認
+
+### 4日目: その他Manager実装
+- [ ] CanvasManager実装（pixi-viewport活用）
+- [ ] MemoryManager統括実装
+- [ ] SettingsManager実装
+- [ ] Manager間連携テスト
+
+### 5日目: 統合・最適化
+- [ ] app-core.js軽量化（200行以下）
+- [ ] main.js連携化
+- [ ] 総合テスト・品質確認
+- [ ] パフォーマンス確認・最適化
+
+## 🎯 Phase1 成功基準
+
+### 必達項目
+- ✅ app-core.js 200行以下達成
+- ✅ 5つのManager全て初期化成功
+- ✅ 既存機能100%動作確認
+- ✅ FPS60維持・メモリリーク無し
+- ✅ CDN拡張ライブラリ70%以上読み込み成功
+
+### 品質項目
+- ✅ Manager間責務境界明確
+- ✅ 循環依存無し
+- ✅ デバッグ機能完備
+- ✅ エラーハンドリング完備
+- ✅ 車輪の再発明回避（@pixi/ui等の活用確認）
+
+## 📋 Phase2 移行準備
+
+### Phase2 課題リスト
+- **レイヤーシステム実装**: 複数レイヤー対応
+- **高度描画ツール追加**: ベジェ曲線、図形ツール
+- **非破壊変形システム構築**: オブジェクト変形・回転
+- **バケツツール実装**: フラッドフィル機能
+- **追加UIコンポーネント**: カラーピッカー、グリッド表示
+- **ファイル分割**: tools/*.js分割
+- **TypeScript移行準備**: 型定義追加
+
+### Phase3 計画概要
+- **コラボレーション機能**: リアルタイム共同編集
+- **クラウド連携**: 作品保存・共有
+- **高度エフェクト**: pixi-filtersフル活用
+- **WebGPU対応**: パフォーマンス最適化
+
+Phase1完了後、Phase2-3の詳細計画書を作成いたします。
