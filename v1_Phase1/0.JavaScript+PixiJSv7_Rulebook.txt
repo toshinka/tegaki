@@ -1,28 +1,13 @@
-# JavaScript + PixiJS v8 Rulebook v1
+# JavaScript + PixiJS v7 Rulebook（UI分割対応版）
 
 ## 1. 基本理念
-
-### 1.1 核心方針
-- **安定動作・可読性・拡張性を優先する。
-- **PixiJSエコシステム活用**により、車輪の再発明を避け、標準実装を採用する
-- **統合システム設計**により、座標変換・履歴管理・デバッグの一元化を推進する
-- **段階的品質向上**と既存システムとの互換性維持を両立する
-- **AI協働最適化**を考慮した標準パターンの採用を推奨する
-
-### 1.2 実装原則
-- JavaScript+fetch API分割でありグローバル変数形式で実装する
-- ファイル間の依存は明確化し、循環参照を作らない
-- **SOLID・DRY原則準拠**: 単一責任・責務分離・重複コード排除を徹底する
-- **統合システム設計**: 座標変換・履歴管理・監視機能の統合による効率化
-- **モジュール分割設計**: 機能ごとの専門ファイル分離による保守性向上
-- PixiJS v8の公式API仕様に沿い、非推奨機能は使用しない
-- ES2023構文使用OK、OffscreenCanvasや最新Canvas APIも使用OK
-- 最新Chrome+デスクトップPC環境を想定、後方互換は意識しない
-- **ファイルサイズ制限**: 単一ファイルは800行以下を目安とし、それを超える場合は責務に応じて分割する
+- 安定動作・可読性・拡張性を優先し、将来的なTypeScript + Vite + ES6移行を意識する。
+- ファイル間の依存は明確化し、循環参照を作らない。
+- PixiJS v7の公式API仕様に沿い、非推奨機能は使用しない。
+- PixiJS v7の範囲で可能な限りモダンな実装を行い、ブラウザ互換は考慮せず最新Chrome APIを優先的に活用する。
+　　・ES2023構文使用OK（可読性のためなら）
+　　・OffscreenCanvasや最新Canvas APIも使用OK
 - 初期開発段階ではPC＋液タブ操作を優先し、タッチ操作は未実装とする。将来的に追加予定の箇所はコメントアウトで残し、後の拡張を容易にする
-- Rulebookは恒久的な指針・規約であり、改修の成果ではなく運用ルールを記載すべき
-  ・Rulebook：指針策定・構造ガイドライン・品質基準・移行戦略
-  ・計画書  ：具体的手順・ファイル別詳細・実装ガイド・テスト手順
 
 ---
 
@@ -97,9 +82,54 @@ layer-manager.js
 └─ history-manager.js (レイヤー操作履歴)
 ```
 
+### 2.4 UI分割の具体的効果
+**分割前（ui-manager.js）**: 約1800行
+- UIManager + 5つのクラス混在
+- 複数の責務が同一ファイルに混在
+
+**分割後（ui-manager.js + ui/components.js）**: 
+- **ui-manager.js**: 約700行（メイン統括管理のみ）
+- **ui/components.js**: 約600行（独立UIコンポーネント群）
+- **ファイルサイズ約60%削減効果**
+
 ---
 
-## 3. コードスタイル規約（UI分割対応）
+## 3. UIコンポーネント分離ルール
+### 3.1 独立性の高いコンポーネント（ui/components.js移行対象）
+```javascript
+// 移行対象クラスの特徴
+class SliderController {
+    // スライダー操作のみに特化・他システムとの依存最小
+}
+
+class PopupManager {
+    // ポップアップ表示管理のみ・独立性が高い
+}
+
+class StatusBarManager {
+    // ステータス表示のみ・他システムへの影響なし
+}
+
+class PresetDisplayManager {
+    // プリセット表示管理・ツールシステム依存だが分離可能
+}
+```
+
+### 3.2 統括管理残存クラス（ui-manager.js残存）
+```javascript
+// 残存対象クラスの特徴
+class UIManager {
+    // メイン統括管理・全体調整・中央集権的処理
+}
+
+class SettingsPanelManager {
+    // UIManagerと密結合・分離困難・設定パネル専用管理
+}
+```
+
+---
+
+## 4. コードスタイル規約（UI分割対応）
 ### 命名規則
 - **変数 / 関数**: `camelCase`（例：`drawLine`, `pointerPosition`）
 - **定数**: `SCREAMING_SNAKE_CASE`（例：`CANVAS_WIDTH`, `BG_COLOR`）
@@ -115,7 +145,7 @@ layer-manager.js
 
 ---
 
-## 4. シンボル辞書（UI分割対応版）
+## 5. シンボル辞書（UI分割対応版）
 | 用途 | 命名例 | 補足 |
 |------|--------|------|
 | アプリ全体 | `app` | PIXI.Application |
@@ -141,30 +171,31 @@ layer-manager.js
 
 ---
 
-### 5.1 ステージ構造（統合システム版）
+## 6. PixiJS v7 実装ルール（UI最適化対応）
+- **描画負荷軽減**: 無駄なUIイベント発火を抑制
+- **UI/描画分離**: UIイベントと描画イベントの明確な分離
+- **ステージ構造**:
+
 ```
 stage
-├─ canvasRootContainer（TransformManager統合管理）
+├─ canvasRootContainer（変形管理用）
 │  ├─ backgroundLayer
-│  ├─ drawingLayer（@pixi/layers + TransformManager統合）
-│  │  ├─ layer1Container（統合変形制御）
-│  │  ├─ layer2Container（統合変形制御）
+│  ├─ drawingLayer
+│  │  ├─ layer1Container
+│  │  ├─ layer2Container
 │  │  └─ ...
 │  └─ effectsLayer（将来実装用）
-└─ uiLayer（@pixi/ui + 統合デバッグUI・変形対象外）
+└─ uiLayer（UI専用・変形対象外）
 ```
 
-### 5.2 統合システム最適化
-- **統合座標変換**: TransformManagerによるPixiJS Container完全活用
-- **統合履歴管理**: 操作ログ型による効率的メモリ使用
-- **統合レイヤー管理**: @pixi/layers zOrder + TransformManager連携
-- **統合UIコンポーネント**: @pixi/ui + 統合システムUI
-- **統合デバッグ**: PixiJS標準監視 + stats.js + カスタム統合監視
-- **統合イベント**: 描画・変形・UI層の統合イベント管理
+- **UI専用最適化**:
+  - UIコンポーネントは再利用可能に設計
+  - DOM-PixiJS間の座標変換を最小化
+  - UI状態変更時のみ再描画実行
 
 ---
 
-## 6. イベント・入力ルール（UI分割対応）
+## 7. イベント・入力ルール（UI分割対応）
 - **描画系**: 常にPixi座標系を使用（`event.data.getLocalPosition(layer)`）
 - **UI系**: DOM座標系とPixi座標系の適切な変換
 - **イベント分離**: UIイベントは`stopPropagation()`で描画層と分離
@@ -247,27 +278,14 @@ UI分割を考慮した推奨初期化順序：
 
 ---
 
-## 11. 禁止事項（Phase3統合システム対応）
-
-### 11.1 基本禁止事項（継続）
-- DOM直接操作（Pixi外の`querySelector`等）
-- Pixi内部プロパティへの直接アクセス
+## 11. 禁止事項（UI分割対応）
+- DOM直接操作（Pixi外の`querySelector`等）  
+- Pixi内部プロパティへの直接アクセス  
 - 複数責務を1関数にまとめる
-- **単一ファイル800行超過**（分割必須）
-
-### 11.2 統合システム固有禁止事項
-- **統合システム迂回**: 
-- **分散状態管理**: 統合システムと並行した独自状態管理の新規作成
-- **履歴システム重複**: 独自履歴機能の新規実装（LogHistoryManager使用必須）
-- **座標変換分散**: 統合システム外での座標・変形処理の実装
-- **監視機能重複**: 独自デバッグ・監視機能の新規実装
-
-### 11.3 Phase3移行期禁止事項
-- **段階的移行無視**: 一度に複数システム統合変更禁止
-- **互換性破壊**: 既存API削除による破壊的変更禁止
-- **性能劣化放置**: 統合前後の性能測定・改善義務
-- **エラーハンドリング省略**: 統合システム障害対応必須
-
+- **循環参照の作成**（特にUI関連ファイル間）
+- **設定値の直接変更**（必ずsettings-manager経由）
+- **レイヤー構造の直接操作**（必ずlayer-manager経由）
+- **UIコンポーネントの直接操作**（必ずui-manager経由）
 
 ---
 

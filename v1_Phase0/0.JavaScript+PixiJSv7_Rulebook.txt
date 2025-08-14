@@ -1,16 +1,16 @@
-# JavaScript + PixiJS v8 Rulebook v1
+# JavaScript + PixiJS v8 Rulebook v1）
 
 ## 1. 基本理念
 
 ### 1.1 核心方針
-- **安定動作・可読性・拡張性を優先する。
+- **安定動作・可読性・拡張性を優先**
 - **PixiJSエコシステム活用**により、車輪の再発明を避け、標準実装を採用する
 - **統合システム設計**により、座標変換・履歴管理・デバッグの一元化を推進する
 - **段階的品質向上**と既存システムとの互換性維持を両立する
 - **AI協働最適化**を考慮した標準パターンの採用を推奨する
 
 ### 1.2 実装原則
-- JavaScript+fetch API分割でありグローバル変数形式で実装する
+- 現在はJavaScript+fetch API分割でありグローバル変数形式で実装する
 - ファイル間の依存は明確化し、循環参照を作らない
 - **SOLID・DRY原則準拠**: 単一責任・責務分離・重複コード排除を徹底する
 - **統合システム設計**: 座標変換・履歴管理・監視機能の統合による効率化
@@ -22,8 +22,7 @@
 - 初期開発段階ではPC＋液タブ操作を優先し、タッチ操作は未実装とする。将来的に追加予定の箇所はコメントアウトで残し、後の拡張を容易にする
 - Rulebookは恒久的な指針・規約であり、改修の成果ではなく運用ルールを記載すべき
   ・Rulebook：指針策定・構造ガイドライン・品質基準・移行戦略
-  ・計画書  ：具体的手順・ファイル別詳細・実装ガイド・テスト手順
-
+  ・計画書：具体的手順・ファイル別詳細・実装ガイド・テスト手順
 ---
 
 ## 2. ファイル構成ルール（UI分割対応版）
@@ -97,9 +96,54 @@ layer-manager.js
 └─ history-manager.js (レイヤー操作履歴)
 ```
 
+### 2.4 UI分割の具体的効果
+**分割前（ui-manager.js）**: 約1800行
+- UIManager + 5つのクラス混在
+- 複数の責務が同一ファイルに混在
+
+**分割後（ui-manager.js + ui/components.js）**: 
+- **ui-manager.js**: 約700行（メイン統括管理のみ）
+- **ui/components.js**: 約600行（独立UIコンポーネント群）
+- **ファイルサイズ約60%削減効果**
+
 ---
 
-## 3. コードスタイル規約（UI分割対応）
+## 3. UIコンポーネント分離ルール
+### 3.1 独立性の高いコンポーネント（ui/components.js移行対象）
+```javascript
+// 移行対象クラスの特徴
+class SliderController {
+    // スライダー操作のみに特化・他システムとの依存最小
+}
+
+class PopupManager {
+    // ポップアップ表示管理のみ・独立性が高い
+}
+
+class StatusBarManager {
+    // ステータス表示のみ・他システムへの影響なし
+}
+
+class PresetDisplayManager {
+    // プリセット表示管理・ツールシステム依存だが分離可能
+}
+```
+
+### 3.2 統括管理残存クラス（ui-manager.js残存）
+```javascript
+// 残存対象クラスの特徴
+class UIManager {
+    // メイン統括管理・全体調整・中央集権的処理
+}
+
+class SettingsPanelManager {
+    // UIManagerと密結合・分離困難・設定パネル専用管理
+}
+```
+
+---
+
+## 4. コードスタイル規約（UI分割対応）
 ### 命名規則
 - **変数 / 関数**: `camelCase`（例：`drawLine`, `pointerPosition`）
 - **定数**: `SCREAMING_SNAKE_CASE`（例：`CANVAS_WIDTH`, `BG_COLOR`）
@@ -115,7 +159,7 @@ layer-manager.js
 
 ---
 
-## 4. シンボル辞書（UI分割対応版）
+## 5. シンボル辞書（UI分割対応版）
 | 用途 | 命名例 | 補足 |
 |------|--------|------|
 | アプリ全体 | `app` | PIXI.Application |
@@ -141,7 +185,9 @@ layer-manager.js
 
 ---
 
-### 5.1 ステージ構造（統合システム版）
+## 6. PixiJS v7 実装ルール（
+
+### 6.1 ステージ構造（統合システム版）
 ```
 stage
 ├─ canvasRootContainer（TransformManager統合管理）
@@ -154,7 +200,7 @@ stage
 └─ uiLayer（@pixi/ui + 統合デバッグUI・変形対象外）
 ```
 
-### 5.2 統合システム最適化
+### 6.2 統合システム最適化
 - **統合座標変換**: TransformManagerによるPixiJS Container完全活用
 - **統合履歴管理**: 操作ログ型による効率的メモリ使用
 - **統合レイヤー管理**: @pixi/layers zOrder + TransformManager連携
@@ -164,7 +210,9 @@ stage
 
 ---
 
-## 6. イベント・入力ルール（UI分割対応）
+---
+
+## 7. イベント・入力ルール（UI分割対応）
 - **描画系**: 常にPixi座標系を使用（`event.data.getLocalPosition(layer)`）
 - **UI系**: DOM座標系とPixi座標系の適切な変換
 - **イベント分離**: UIイベントは`stopPropagation()`で描画層と分離
@@ -247,7 +295,7 @@ UI分割を考慮した推奨初期化順序：
 
 ---
 
-## 11. 禁止事項（Phase3統合システム対応）
+## 11. 禁止事項
 
 ### 11.1 基本禁止事項（継続）
 - DOM直接操作（Pixi外の`querySelector`等）
@@ -256,156 +304,35 @@ UI分割を考慮した推奨初期化順序：
 - **単一ファイル800行超過**（分割必須）
 
 ### 11.2 統合システム固有禁止事項
-- **統合システム迂回**: 
+- **統合システム迂回**: TransformManager・HistoryManager・DebugManagerを経由しない直接操作
 - **分散状態管理**: 統合システムと並行した独自状態管理の新規作成
 - **履歴システム重複**: 独自履歴機能の新規実装（LogHistoryManager使用必須）
 - **座標変換分散**: 統合システム外での座標・変形処理の実装
 - **監視機能重複**: 独自デバッグ・監視機能の新規実装
 
-### 11.3 Phase3移行期禁止事項
+### 11.3 Phase移行期禁止事項
 - **段階的移行無視**: 一度に複数システム統合変更禁止
 - **互換性破壊**: 既存API削除による破壊的変更禁止
 - **性能劣化放置**: 統合前後の性能測定・改善義務
 - **エラーハンドリング省略**: 統合システム障害対応必須
 
+---
+## 12. 将来展望・発展方針
+
+### 12.1 統合システム発展戦略
+- **Phasex以降拡張**: 統合システム基盤を活用した高度機能追加
+- **Spine/Live2D統合**: TransformManagerベースの高度変形システム構築
+
+### 12.2 エコシステム統合発展
+- **ライブラリ統合拡張**: パーティクル・サウンド・アニメーション等の統合システム組み込み
+- **統合システム標準化**: コミュニティへの統合システムパターン提供・貢献
+- **AI協働発展**: 統合システムによるAI生成コード品質向上への貢献
+
+
 
 ---
 
-## 12. UI分割実装ガイドライン
-
-### 12.1 ui/components.js作成時の注意点
-```javascript
-// ✅ 正しい実装例
-const UI_CONFIG = {
-    POPUP_FADE_TIME: 300,
-    SLIDER_UPDATE_THROTTLE: 16,
-    STATUS_UPDATE_INTERVAL: 100
-};
-
-const UI_EVENTS = {
-    SLIDER_CHANGE: 'sliderChange',
-    POPUP_SHOW: 'popupShow',
-    STATUS_UPDATE: 'statusUpdate'
-};
-
-class SliderController {
-    constructor() {
-        this.throttleTime = UI_CONFIG.SLIDER_UPDATE_THROTTLE;
-        // 独立性を保つ実装
-    }
-}
-
-// ❌ 避けるべき実装
-class BadSliderController {
-    constructor() {
-        // 他システムへの直接依存は避ける
-        this.drawingTools = window.drawingTools; // NG
-    }
-}
-```
-
-### 12.2 ui-manager.jsリファクタリング方針
-```javascript
-// ✅ 統括管理に集中
-class UIManager {
-    constructor() {
-        // 各コンポーネントの参照のみ保持
-        this.sliderController = new SliderController();
-        this.popupManager = new PopupManager();
-        // 統括的なイベント処理のみ実装
-    }
-    
-    // 全体調整メソッドのみ
-    initializeUI() {
-        // コンポーネント間の連携制御
-    }
-}
-
-// ❌ 避けるべき肥大化
-class BadUIManager {
-    // 個別コンポーネントの詳細実装は避ける
-    handleSliderDragDetailed() { /* 詳細実装 */ } // NG
-}
-```
-
----
-
-## 13. 最小構造サンプル（UI分割対応版）
-```javascript
-// ui/components.js - UIコンポーネント群
-const UI_CONFIG = {
-    POPUP_FADE_TIME: 300,
-    SLIDER_SENSITIVITY: 1.0
-};
-
-const UI_EVENTS = {
-    SLIDER_CHANGE: 'sliderChange',
-    POPUP_TOGGLE: 'popupToggle'
-};
-
-class SliderController {
-    constructor() {
-        this.sensitivity = UI_CONFIG.SLIDER_SENSITIVITY;
-    }
-    
-    updateValue(newValue) {
-        // スライダー専用処理
-    }
-}
-
-class PopupManager {
-    show(popupId) {
-        // ポップアップ表示処理
-    }
-}
-
-// ui-manager.js - 統括管理
-class UIManager {
-    constructor() {
-        this.sliderController = new SliderController();
-        this.popupManager = new PopupManager();
-    }
-    
-    initialize() {
-        // 全体調整・連携制御のみ
-    }
-}
-```
-
----
-
-## 14. パフォーマンス最適化指針（UI分割対応）
-
-### 14.1 UI描画最適化
-- **コンポーネント単位でのバッチング**: 同一コンポーネント内の要素をまとめて更新
-- **UI更新の間引き**: 高頻度UIイベントのスロットル処理
-- **DOM-Pixi同期最適化**: 座標変換の最小化
-
-### 14.2 UIメモリ最適化
-- **コンポーネント再利用**: 使い回し可能なUIコンポーネントの設計
-- **イベントリスナー管理**: 不要になったUIイベントリスナーの適切な削除
-- **UI状態キャッシュ**: 頻繁に参照されるUI状態のキャッシュ化
-
----
-
-## 15. UI分割移行手順
-
-### Phase 1: コンポーネント分離（即実行可能）
-1. **ui/ディレクトリ作成**
-2. **components.js作成**と4クラス移動
-3. **ui-manager.js簡素化**
-4. **index.html更新**（script追加）
-5. **動作確認**
-
-### Phase 2: コードクリーンアップ（Phase 1完了後）
-1. **重複コード削除**
-2. **UI専用ユーティリティ関数抽出**
-3. **イベントハンドリング統一**
-4. **最終テスト**
-
----
-
-## 16. ふたば☆ちゃんねるカラー（UI分割対応）
+## 14. ふたば☆ちゃんねるカラー（UI分割対応）
 UI分割後も一貫したカラーリングを維持：
 
 ```css
@@ -431,5 +358,40 @@ UI分割後も一貫したカラーリングを維持：
 ```
 
 ---
+
+## 15. バージョン管理・継続的改善（Phase3対応）
+
+### 15.1 Phase統合システム移行指針
+- **段階的統合**: 機能領域別の段階的統合システム導入
+- **互換性保持**: 各段階での既存システムとの互換性維持
+- **品質測定**: 統合前後の品質・性能測定による効果確認
+- **文書化**: 各統合システムの実装状況・設定変更の記録
+
+### 15.2 統合システム継続改善
+- **統合効果測定**: 定期的な統合効果（メモリ・性能・保守性）測定
+- **エコシステム追従**: PixiJSエコシステム発展への統合システム対応
+- **標準化推進**: 統合システムパターンの業界標準・ベストプラクティス化
+- **コミュニティ貢献**: 統合システム設計・実装の開発者コミュニティ貢献
+
+### 15.3 Phasex以降準備
+- **完全NPM化準備**: 統合システム安定化後のNPM移行計画
+- **TypeScript準備**: 統合システムの型定義・型安全性向上準備
+- **高度機能準備**: Spine/Live2D等統合システム基盤活用機能準備
+
+---
+
+## 16. Phase統合システム移行ガイドライン
+
+### 16.1 移行原則
+- **既存機能保持**: 統合システム移行中も既存機能100%維持
+- **段階的移行**: 週次での段階的統合システム導入
+- **性能監視**: 移行各段階での性能劣化防止・改善確認
+- **互換性保証**: 既存コード・設定・操作方法の互換性保証
+
+### 16.2 移行後品質基準
+- **メモリ効率**: 履歴管理メモリ使用量70%削減達成
+- **処理統合**: 座標変換処理の統合による一貫性・効率性向上
+- **監視統合**: 統合デバッグシステムによる包括的品質監視
+
 
 この改修版Rulebookは、UIManagerのリファクタリングを反映し、責務レベルでの2段階分割によるファイル構成を採用しています。8ファイル構成により、保守性と開発効率の向上を実現し、プロクリエイト級の高機能お絵描きツール開発を支援します。

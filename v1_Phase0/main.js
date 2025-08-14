@@ -1,1164 +1,823 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1rev12
- * メイン初期化スクリプト - main.js (ポップアップ問題修正版)
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.2
+ * メインエントリーポイント - main.js（履歴管理統合版）
  * 
- * 🔧 修正内容:
- * 1. ✅ DOMContentLoaded後のPenToolUI初期化保証
- * 2. ✅ 初期化順序の最適化
- * 3. ✅ PenToolUI初期化完了待機
- * 4. ✅ イベント競合解消
+ * 依存関係:
+ * 1. PIXI.js v7 (CDN)
+ * 2. app-core.js -> PixiDrawingApp, CONFIG, EVENTS
+ * 3. history-manager.js -> HistoryManager, StateCapture, StateRestore
+ * 4. drawing-tools.js -> DrawingToolsSystem (履歴管理統合版)
+ * 5. ui-manager.js -> UIManager
  * 
- * Phase2目標: ポップアップ問題解決・安定したアプリケーション初期化
- * 責務: アプリケーション初期化フロー制御のみ
- * 依存: utils.js, config.js, ui-manager.js（修復版）
+ * 新機能:
+ * 1. 履歴管理システム統合
+ * 2. アンドゥ・リドゥ機能（Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z）
+ * 3. 描画操作・プリセット変更・ツール変更の自動履歴記録
+ * 4. メモリ効率的な履歴管理
  */
 
-// ==== utils.js依存関係チェック（強化版）====
-if (typeof window.safeConfigGet === 'undefined') {
-    console.error('🚨 Phase2依存関係エラー: utils.js が読み込まれていません');
-    console.error('Phase2では utils.js の事前読み込みが必須です');
+// ==== グローバル変数 ====
+let futabaApp = null;          // PixiDrawingApp インスタンス
+let drawingToolsSystem = null; // DrawingToolsSystem インスタンス（履歴管理統合版）
+let uiManager = null;          // UIManager インスタンス
+let historyManager = null;     // HistoryManager インスタンス（drawingToolsSystem経由でアクセス）
+
+// ==== 統合UIManager（履歴管理対応版）====
+class IntegratedUIManager extends UIManager {
+    constructor(app, drawingToolsSystem) {
+        // 元のUIManagerをベースクラスとして使用
+        super(app, drawingToolsSystem);
+        
+        // 履歴管理対応版のPenPresetManagerを取得
+        this.penPresetManager = drawingToolsSystem.getPenPresetManager();
+        this.historyManager = drawingToolsSystem.getHistoryManager();
+        this.coordinateUpdateThrottle = null;
+    }
     
-    // 緊急時フォールバック関数
-    window.safeConfigGet = function(key, defaultValue) {
+    async init() {
         try {
-            return (window.CONFIG && window.CONFIG[key] !== undefined) ? window.CONFIG[key] : defaultValue;
+            console.log('🎯 IntegratedUIManager初期化開始（履歴管理対応版）...');
+            
+            this.setupToolButtons();
+            this.setupPopups();
+            this.setupSliders();
+            this.setupPresetListeners();
+            this.setupResize();
+            this.setupCheckboxes();
+            this.setupEventListeners();
+            this.setupHistoryUI();
+            
+            this.updateAllDisplays();
+            this.startPerformanceMonitoring();
+            
+            console.log('✅ IntegratedUIManager初期化完了（履歴管理対応版）');
+            
         } catch (error) {
-            console.warn(`緊急時CONFIG取得 (${key}):`, error);
-            return defaultValue;
-        }
-    };
-    
-    window.createApplicationError = function(message, context = {}) {
-        const error = new Error(message);
-        error.name = 'ApplicationError';
-        error.context = context;
-        error.timestamp = Date.now();
-        return error;
-    };
-    
-    window.logError = function(error, context = 'Unknown') {
-        console.error(`🚨 [${context}] ${error.name || 'Error'}: ${error.message}`, error);
-    };
-    
-    window.measurePerformance = function(name, operation) {
-        const startTime = performance.now();
-        try {
-            const result = operation();
-            const duration = performance.now() - startTime;
-            console.log(`⏱️ [${name}] 実行時間: ${duration.toFixed(2)}ms`);
-            return result;
-        } catch (error) {
-            const duration = performance.now() - startTime;
-            console.error(`⏱️ [${name}] エラー (${duration.toFixed(2)}ms):`, error);
+            console.error('❌ IntegratedUIManager初期化エラー:', error);
             throw error;
         }
-    };
-    
-    window.handleGracefulDegradation = function(operation, fallback, errorMessage) {
-        try {
-            return operation();
-        } catch (error) {
-            console.warn(`${errorMessage}:`, error);
-            return typeof fallback === 'function' ? fallback() : fallback;
-        }
-    };
-    
-    console.log('⚠️ 緊急時フォールバック関数を設定しました');
-}
-
-console.log('🚀 main.js ポップアップ問題修正版読み込み開始...');
-
-// ==== グローバル状態管理（修正版）====
-const APP_STATE = {
-    initialized: false,
-    initializationStep: 'waiting',
-    error: null,
-    startTime: null,
-    components: {
-        app: null,
-        toolsSystem: null,
-        uiManager: null,
-        historyManager: null,
-        settingsManager: null,
-        penToolUI: null  // 修正: PenToolUI状態追加
-    },
-    stats: {
-        initTime: 0,
-        errorCount: 0,
-        lastError: null
-    },
-    config: {
-        loaded: false,
-        validated: false,
-        fixed: false
-    },
-    phase2: {
-        utilsLoaded: typeof window.safeConfigGet !== 'undefined',
-        uiManagerFixed: false,
-        systemsIntegrated: false,
-        errorRecovery: false,
-        penToolUIInitialized: false  // 修正: PenToolUI初期化状態追加
     }
-};
-
-// ==== 初期化ステップ定義（修正版）====
-const INIT_STEPS = {
-    CHECKING_SYSTEMS: 'checking_systems',
-    CHECKING_CONFIG: 'checking_config',
-    CHECKING_DEPENDENCIES: 'checking_dependencies',
-    CREATING_APP: 'creating_app',
-    CREATING_TOOLS_SYSTEM: 'creating_tools_system',
-    CREATING_UI_MANAGER: 'creating_ui_manager',
-    INITIALIZING_PEN_TOOL_UI: 'initializing_pen_tool_ui',  // 修正: PenToolUI初期化ステップ追加
-    CONNECTING_SYSTEMS: 'connecting_systems',
-    FINAL_SETUP: 'final_setup',
-    COMPLETED: 'completed',
-    ERROR: 'error'
-};
-
-// ==== 修正: PenToolUI専用初期化関数追加 ====
-async function initializePenToolUI(toolsSystem, uiManager) {
-    console.log('🎨 PenToolUI初期化開始（ポップアップ問題修正版）...');
     
-    try {
-        return await measurePerformance('PenToolUI初期化', async () => {
-            // drawingToolsSystemからPenToolUIを取得
-            let penToolUI = null;
-            
-            if (toolsSystem.penToolUI) {
-                penToolUI = toolsSystem.penToolUI;
-                console.log('✅ 既存PenToolUI取得');
-            } else if (toolsSystem.getPenToolUI) {
-                penToolUI = toolsSystem.getPenToolUI();
-                console.log('✅ toolsSystem.getPenToolUI()から取得');
-            } else {
-                console.warn('⚠️ PenToolUIが見つかりません');
-                return null;
-            }
-            
-            if (penToolUI) {
-                // 初期化状態確認
-                if (!penToolUI.isInitialized) {
-                    console.log('🔧 PenToolUI初期化実行中...');
-                    const initResult = await penToolUI.init();
-                    
-                    if (initResult) {
-                        APP_STATE.components.penToolUI = penToolUI;
-                        APP_STATE.phase2.penToolUIInitialized = true;
-                        console.log('✅ PenToolUI初期化完了');
-                        
-                        // ポップアップ初期化確認
-                        if (penToolUI.components?.popupManager) {
-                            console.log('✅ PopupManager初期化済み');
-                        } else {
-                            console.warn('⚠️ PopupManager初期化未完了');
-                        }
-                        
-                        return penToolUI;
-                    } else {
-                        throw new Error('PenToolUI初期化失敗');
-                    }
-                } else {
-                    console.log('✅ PenToolUI既に初期化済み');
-                    APP_STATE.components.penToolUI = penToolUI;
-                    APP_STATE.phase2.penToolUIInitialized = true;
-                    return penToolUI;
-                }
-            }
-            
-            return null;
-        });
-    } catch (error) {
-        const initError = createApplicationError(
-            'PenToolUI初期化に失敗',
-            { step: INIT_STEPS.INITIALIZING_PEN_TOOL_UI, originalError: error }
-        );
-        logError(initError, 'PenToolUI初期化');
-        throw initError;
-    }
-}
-
-// ==== Phase2最適化: 統合システムチェック（エラー回復力強化）====
-function checkIntegratedSystems() {
-    console.log('🔍 Phase2統合システムチェック（エラー回復力強化）...');
+    // ==== 履歴管理UI関連（新機能）====
     
-    try {
-        const systemsStatus = {
-            utils: typeof window.safeConfigGet !== 'undefined',
-            config: typeof window.CONFIG !== 'undefined',
-            pixi: typeof window.PIXI !== 'undefined',
-            pixiApp: typeof window.PixiDrawingApp !== 'undefined',
-            toolsSystem: typeof window.DrawingToolsSystem !== 'undefined',
-            historyManager: typeof window.HistoryManager !== 'undefined',
-            uiManager: typeof window.UIManager !== 'undefined'
-        };
-        
-        const availableSystems = Object.entries(systemsStatus).filter(([name, available]) => available);
-        const missingSystems = Object.entries(systemsStatus).filter(([name, available]) => !available);
-        
-        console.log(`✅ 利用可能システム: ${availableSystems.length}/7システム`, availableSystems.map(([name]) => name));
-        
-        if (missingSystems.length > 0) {
-            console.warn('⚠️ 不足システム:', missingSystems.map(([name]) => name));
-            
-            // 重要システムの不足チェック
-            const criticalSystems = ['pixi', 'pixiApp', 'toolsSystem', 'uiManager'];
-            const missingCritical = criticalSystems.filter(system => !systemsStatus[system]);
-            
-            if (missingCritical.length > 0) {
-                console.error('❌ 重要システム不足:', missingCritical);
-                throw createApplicationError(`重要システムが不足: ${missingCritical.join(', ')}`);
-            }
-        }
-        
-        // UIManager修復確認
-        APP_STATE.phase2.uiManagerFixed = systemsStatus.uiManager;
-        
-        console.log('✅ Phase2統合システムチェック完了');
-        return true;
-        
-    } catch (error) {
-        logError(error, 'Phase2統合システムチェック');
-        
-        // エラー回復処理
-        return handleGracefulDegradation(
-            () => { throw error; },
-            () => {
-                console.log('🆘 緊急時システム確認: 基本機能で続行');
-                APP_STATE.phase2.errorRecovery = true;
-                return true;
-            },
-            'Phase2システムチェックエラー'
-        );
-    }
-}
-
-// ==== CONFIG関連処理（utils.js統合版・最適化）====
-function checkConfigLoadedCompletely() {
-    console.log('🔍 CONFIG読み込み確認（Phase2 utils.js統合版）...');
-    
-    try {
-        // utils.js統合チェック
-        if (typeof window.validateConfigIntegrity === 'function') {
-            const integrityOK = window.validateConfigIntegrity();
-            
-            if (!integrityOK) {
-                console.warn('⚠️ CONFIG整合性問題検出 → 自動修復実行');
-                fixConfigCompletely();
-            }
-        } else {
-            console.warn('⚠️ validateConfigIntegrity関数が利用できません → 基本チェック実行');
-            if (!window.CONFIG || typeof window.CONFIG !== 'object') {
-                throw createApplicationError('CONFIG オブジェクトが存在しません');
-            }
-        }
-        
-        APP_STATE.config.loaded = true;
-        APP_STATE.config.validated = true;
-        
-        console.log('✅ CONFIG読み込み確認完了（Phase2最適化版）');
-        return true;
-        
-    } catch (error) {
-        logError(error, 'CONFIG確認');
-        
-        return handleGracefulDegradation(
-            () => { throw error; },
-            () => {
-                console.log('🆘 緊急時最小限CONFIG作成');
-                createMinimalConfig();
-                APP_STATE.config.loaded = true;
-                APP_STATE.config.fixed = true;
-                return true;
-            },
-            'CONFIG確認エラー'
-        );
-    }
-}
-
-function fixConfigCompletely() {
-    console.log('🔧 CONFIG完全修復（Phase2 utils.js統合版）...');
-    
-    return measurePerformance('CONFIG修復', () => {
-        const COMPLETE_DEFAULT_CONFIG = {
-            DEFAULT_BRUSH_SIZE: 4,
-            DEFAULT_OPACITY: 1.0,
-            MAX_BRUSH_SIZE: 500,
-            MIN_BRUSH_SIZE: 0.1,
-            DEFAULT_COLOR: 0x800000,
-            SIZE_PRESETS: [1, 2, 4, 8, 16, 32],
-            CANVAS_WIDTH: 400,
-            CANVAS_HEIGHT: 400,
-            BG_COLOR: 0xf0e0d6,
-            TARGET_FPS: 60,
-            PREVIEW_MIN_SIZE: 0.5,
-            PREVIEW_MAX_SIZE: 20,
-            DEFAULT_PRESSURE: 0.5,
-            DEFAULT_SMOOTHING: 0.3
-        };
-        
-        if (!window.CONFIG || typeof window.CONFIG !== 'object') {
-            window.CONFIG = {};
-        }
-        
-        let fixedCount = 0;
-        
-        for (const [key, defaultValue] of Object.entries(COMPLETE_DEFAULT_CONFIG)) {
-            const currentValue = window.CONFIG[key];
-            
-            if (currentValue === undefined || currentValue === null || 
-                (key === 'SIZE_PRESETS' && (!Array.isArray(currentValue) || currentValue.length === 0))) {
-                
-                window.CONFIG[key] = defaultValue;
-                fixedCount++;
-            }
-        }
-        
-        APP_STATE.config.fixed = true;
-        console.log(`✅ CONFIG修復完了: ${fixedCount}項目修復`);
-        return true;
-    });
-}
-
-function createMinimalConfig() {
-    window.CONFIG = {
-        DEFAULT_BRUSH_SIZE: 4,
-        DEFAULT_OPACITY: 1.0,
-        MAX_BRUSH_SIZE: 500,
-        MIN_BRUSH_SIZE: 0.1,
-        SIZE_PRESETS: [1, 2, 4, 8, 16, 32],
-        CANVAS_WIDTH: 400,
-        CANVAS_HEIGHT: 400,
-        PREVIEW_MIN_SIZE: 0.5,
-        PREVIEW_MAX_SIZE: 20,
-        DEFAULT_PRESSURE: 0.5,
-        DEFAULT_SMOOTHING: 0.3
-    };
-    console.log('🆘 最小限CONFIG作成完了');
-}
-
-// ==== 依存関係チェック（エラー回復力強化）====
-function checkDependencies() {
-    console.log('🔍 依存関係チェック（Phase2エラー回復力強化版）...');
-    
-    const criticalClasses = [
-        { name: 'PIXI', required: true },
-        { name: 'PixiDrawingApp', required: true },
-        { name: 'DrawingToolsSystem', required: true },
-        { name: 'HistoryManager', required: true },
-        { name: 'UIManager', required: true }
-    ];
-    
-    const missing = criticalClasses.filter(cls => typeof window[cls.name] === 'undefined');
-    
-    if (missing.length > 0) {
-        const error = createApplicationError(
-            `重要なクラスが見つかりません: ${missing.map(cls => cls.name).join(', ')}`,
-            { step: INIT_STEPS.CHECKING_DEPENDENCIES, missing: missing.map(cls => cls.name) }
-        );
-        
-        // エラー回復処理
-        if (missing.some(cls => cls.name === 'UIManager')) {
-            console.error('❌ UIManager が見つかりません - ui-manager.js の読み込みを確認してください');
-            console.log('🔧 UIManager修復版が正常に読み込まれているか確認中...');
-            
-            // 数秒後に再確認
-            setTimeout(() => {
-                if (typeof window.UIManager !== 'undefined') {
-                    console.log('✅ UIManager が遅延読み込みされました');
-                    // 初期化を再試行
-                    initializeApplication();
-                }
+    /**
+     * 履歴管理関連UIの設定
+     */
+    setupHistoryUI() {
+        // 履歴情報の定期更新（デバッグ用）
+        if (this.historyManager && HISTORY_CONFIG?.DEBUG_MODE) {
+            setInterval(() => {
+                this.updateHistoryDebugInfo();
             }, 1000);
         }
         
-        throw error;
+        // 履歴統計をコンソールに表示（開発用）
+        console.log('🏛️ 履歴管理UI設定完了');
     }
     
-    console.log('✅ 依存関係チェック完了（Phase2エラー回復力強化版）');
-    return true;
-}
-
-// ==== アプリケーション作成（最適化版）====
-async function createApplication() {
-    console.log('🎯 PixiDrawingApp作成（Phase2最適化版）...');
-    
-    try {
-        return await measurePerformance('App作成', async () => {
-            const width = safeConfigGet('CANVAS_WIDTH', 400);
-            const height = safeConfigGet('CANVAS_HEIGHT', 400);
-            
-            console.log(`🎯 キャンバスサイズ: ${width}×${height}px`);
-            
-            const app = new PixiDrawingApp(width, height);
-            await app.init();
-            
-            APP_STATE.components.app = app;
-            console.log('✅ PixiDrawingApp作成完了（Phase2最適化版）');
-            
-            return app;
-        });
-    } catch (error) {
-        const initError = createApplicationError(
-            'PixiDrawingApp作成に失敗',
-            { step: INIT_STEPS.CREATING_APP, originalError: error }
-        );
-        logError(initError, 'App作成');
-        throw initError;
+    /**
+     * 履歴デバッグ情報の更新
+     */
+    updateHistoryDebugInfo() {
+        if (!this.historyManager) return;
+        
+        const stats = this.historyManager.getStats();
+        const positionInfo = this.historyManager.getPositionInfo();
+        
+        // ステータスバーに履歴情報を表示する場合（将来実装）
+        /*
+        const historyElement = document.getElementById('history-status');
+        if (historyElement) {
+            historyElement.textContent = 
+                `履歴: ${positionInfo.current + 1}/${positionInfo.total} ` +
+                `(${stats.memoryUsageMB}MB)`;
+        }
+        */
     }
-}
-
-// ==== ツールシステム作成（最適化版）====
-async function createToolsSystem(app) {
-    console.log('🔧 DrawingToolsSystem作成（Phase2最適化版）...');
     
-    try {
-        return await measurePerformance('ToolsSystem作成', async () => {
-            const toolsSystem = new DrawingToolsSystem(app);
-            await toolsSystem.init();
-            
-            APP_STATE.components.toolsSystem = toolsSystem;
-            
-            // Phase2設定適用（utils.js統合）
-            const defaultSettings = {
-                size: safeConfigGet('DEFAULT_BRUSH_SIZE', 4),
-                opacity: safeConfigGet('DEFAULT_OPACITY', 1.0),
-                color: safeConfigGet('DEFAULT_COLOR', 0x800000),
-                pressure: safeConfigGet('DEFAULT_PRESSURE', 0.5),
-                smoothing: safeConfigGet('DEFAULT_SMOOTHING', 0.3)
-            };
-            
-            if (toolsSystem.updateBrushSettings) {
-                toolsSystem.updateBrushSettings(defaultSettings);
-                console.log('🔧 Phase2設定適用完了:', defaultSettings);
-            }
-            
-            console.log('✅ DrawingToolsSystem作成完了（Phase2最適化版）');
-            return toolsSystem;
-        });
-    } catch (error) {
-        const initError = createApplicationError(
-            'DrawingToolsSystem作成に失敗',
-            { step: INIT_STEPS.CREATING_TOOLS_SYSTEM, originalError: error }
-        );
-        logError(initError, 'ToolsSystem作成');
-        throw initError;
-    }
-}
-
-// ==== UI管理システム作成（修復版対応・エラー回復力強化）====
-async function createUIManager(app, toolsSystem) {
-    console.log('🎭 UIManager作成（Phase2修復版対応・エラー回復力強化）...');
+    // ==== ツールボタン関連（履歴対応版）====
     
-    try {
-        return await measurePerformance('UIManager作成', async () => {
-            // UIManager クラスの存在確認（強化版）
-            if (typeof window.UIManager === 'undefined') {
-                throw createApplicationError('UIManager クラスが見つかりません - ui-manager.js修復版の読み込みを確認してください');
-            }
-            
-            const historyManager = toolsSystem.getHistoryManager();
-            
-            const uiManager = new window.UIManager(app, toolsSystem, historyManager);
-            
-            // 初期化エラー回復処理
-            let initSuccess = false;
-            try {
-                await uiManager.init();
-                initSuccess = true;
-            } catch (initError) {
-                console.warn('⚠️ UIManager初期化でエラーが発生:', initError);
+    setupToolButtons() {
+        document.querySelectorAll('.tool-button').forEach(button => {
+            button.addEventListener('click', (event) => {
+                if (button.classList.contains('disabled')) return;
                 
-                // 基本機能のみで続行
-                if (uiManager.setupToolButtons) {
-                    uiManager.setupToolButtons();
-                    console.log('🆘 基本UI機能で続行');
-                    initSuccess = true;
-                }
-            }
-            
-            if (!initSuccess) {
-                throw createApplicationError('UIManager初期化に完全に失敗しました');
-            }
-            
-            APP_STATE.components.uiManager = uiManager;
-            APP_STATE.components.historyManager = historyManager;
-            
-            console.log('✅ UIManager作成完了（Phase2修復版対応・エラー回復力強化）');
-            return uiManager;
-        });
-    } catch (error) {
-        const initError = createApplicationError(
-            'UIManager作成に失敗',
-            { step: INIT_STEPS.CREATING_UI_MANAGER, originalError: error }
-        );
-        logError(initError, 'UIManager作成');
-        throw initError;
-    }
-}
-
-// ==== 設定管理システム作成（最適化版）====
-async function createSettingsManager(app, toolsSystem, uiManager) {
-    console.log('⚙️ SettingsManager作成（Phase2最適化版）...');
-    
-    return await handleGracefulDegradation(
-        async () => {
-            if (typeof SettingsManager === 'undefined') {
-                console.warn('⚠️ SettingsManager が利用できません');
-                return null;
-            }
-            
-            return await measurePerformance('SettingsManager作成', async () => {
-                const historyManager = toolsSystem.getHistoryManager();
+                const toolId = button.id;
+                const popupId = button.getAttribute('data-popup');
                 
-                const settingsManager = new SettingsManager(app, toolsSystem, uiManager, historyManager);
-                await settingsManager.init();
-                
-                APP_STATE.components.settingsManager = settingsManager;
-                console.log('✅ SettingsManager作成完了（Phase2最適化版）');
-                
-                return settingsManager;
+                this.handleToolButtonClick(toolId, popupId, button);
             });
-        },
-        () => {
-            console.warn('⚠️ SettingsManager初期化失敗 → 基本機能のみで続行');
-            return null;
-        },
-        'SettingsManager作成エラー'
-    );
-}
-
-// ==== システム間連携設定（Phase2最適化版・PenToolUI初期化追加）====
-async function connectSystems() {
-    console.log('🔗 システム間連携設定（Phase2最適化版・PenToolUI初期化追加）...');
-    
-    try {
-        await measurePerformance('システム連携', async () => {
-            const { app, toolsSystem, uiManager, settingsManager, penToolUI } = APP_STATE.components;
-            const historyManager = toolsSystem.getHistoryManager();
-            
-            // 既存システム連携
-            if (app.setSettingsManager && settingsManager) {
-                app.setSettingsManager(settingsManager);
-            }
-            
-            if (uiManager.setHistoryManager) {
-                uiManager.setHistoryManager(historyManager);
-            }
-            if (uiManager.setSettingsManager && settingsManager) {
-                uiManager.setSettingsManager(settingsManager);
-            }
-            
-            // 修正: PenToolUI連携確認
-            if (penToolUI) {
-                console.log('✅ PenToolUI連携確認完了');
-                
-                // PopupManager初期化状況確認
-                if (penToolUI.components?.popupManager) {
-                    console.log('✅ PopupManager連携確認完了');
-                } else {
-                    console.warn('⚠️ PopupManager連携未完了');
-                }
-            } else {
-                console.warn('⚠️ PenToolUI連携未完了');
-            }
-            
-            // グローバル参照設定
-            window.app = app;
-            window.toolsSystem = toolsSystem;
-            window.uiManager = uiManager;
-            window.historyManager = historyManager;
-            window.settingsManager = settingsManager;
-            window.penToolUI = penToolUI;  // 修正: PenToolUI グローバル参照追加
-            window.appConfig = window.CONFIG || {};
-            
-            // Phase2最適化: 基本デバッグ機能設定
-            setupBasicDebugFunctions();
-            
-            APP_STATE.phase2.systemsIntegrated = true;
-            console.log('✅ システム間連携設定完了（Phase2最適化版・PenToolUI初期化追加）');
         });
-    } catch (error) {
-        const initError = createApplicationError(
-            'システム間連携設定に失敗',
-            { step: INIT_STEPS.CONNECTING_SYSTEMS, originalError: error }
-        );
-        logError(initError, 'システム連携');
-        throw initError;
+        
+        console.log('✅ ツールボタン設定完了（履歴対応版）');
     }
-}
-
-// ==== Phase2最適化: 基本デバッグ機能設定 ====
-function setupBasicDebugFunctions() {
-    // 基本デバッグ関数
-    window.undo = () => APP_STATE.components.historyManager ? APP_STATE.components.historyManager.undo() : false;
-    window.redo = () => APP_STATE.components.historyManager ? APP_STATE.components.historyManager.redo() : false;
-    window.debugHistory = () => APP_STATE.components.toolsSystem ? APP_STATE.components.toolsSystem.debugHistory() : console.warn('ToolsSystem not available');
     
-    // 修正: PenToolUI専用デバッグ関数追加
-    window.debugPenToolUI = function() {
-        if (APP_STATE.components.penToolUI) {
-            console.group('🎨 PenToolUI デバッグ情報');
-            console.log('初期化状態:', APP_STATE.components.penToolUI.isInitialized);
-            console.log('ツール状態:', APP_STATE.components.penToolUI.toolActive);
-            
-            if (APP_STATE.components.penToolUI.getFullStatus) {
-                console.log('詳細状態:', APP_STATE.components.penToolUI.getFullStatus());
-            }
-            console.groupEnd();
-        } else {
-            console.warn('PenToolUI が利用できません');
-        }
-    };
-    
-    window.testPenPopup = function() {
-        console.log('🧪 ペンポップアップテスト開始...');
-        
-        if (APP_STATE.components.penToolUI && APP_STATE.components.penToolUI.showPopup) {
-            const result = APP_STATE.components.penToolUI.showPopup('pen-settings');
-            console.log('ポップアップ表示結果:', result);
-            return result;
-        } else {
-            console.warn('PenToolUI.showPopup が利用できません');
-            return false;
-        }
-    };
-    
-    // Phase2最適化: 統合デバッグ関数
-    window.debugApp = function() {
-        console.group('🔍 アプリケーションデバッグ情報（ポップアップ問題修正版）');
-        
-        console.log('📋 APP_STATE:', APP_STATE);
-        
-        // システム状態
-        const systemsStatus = {
-            app: !!APP_STATE.components.app,
-            toolsSystem: !!APP_STATE.components.toolsSystem,
-            uiManager: !!APP_STATE.components.uiManager,
-            historyManager: !!APP_STATE.components.historyManager,
-            settingsManager: !!APP_STATE.components.settingsManager,
-            penToolUI: !!APP_STATE.components.penToolUI  // 修正: PenToolUI状態追加
-        };
-        console.log('🔧 システム状態:', systemsStatus);
-        
-        // Phase2最適化状況
-        console.log('🚀 Phase2最適化状況:', APP_STATE.phase2);
-        
-        // CONFIG状況
-        console.log('⚙️ CONFIG状況:', APP_STATE.config);
-        
-        console.groupEnd();
-    };
-    
-    window.debugConfig = function() {
-        console.group('🔧 CONFIG設定情報（Phase2最適化版）');
-        console.log('CONFIG:', window.CONFIG || 'N/A');
-        console.log('CONFIG状態:', APP_STATE.config);
-        console.groupEnd();
-    };
-    
-    window.testSystem = function() {
-        console.log('🧪 システム統合テスト（ポップアップ問題修正版）');
-        
-        const testResults = {
-            initialized: APP_STATE.initialized,
-            configLoaded: APP_STATE.config.loaded,
-            systemsIntegrated: APP_STATE.phase2.systemsIntegrated,
-            uiManagerFixed: APP_STATE.phase2.uiManagerFixed,
-            penToolUIInitialized: APP_STATE.phase2.penToolUIInitialized,  // 修正: PenToolUI初期化状態追加
-            errorRecovery: APP_STATE.phase2.errorRecovery,
-            components: {
-                app: !!APP_STATE.components.app,
-                toolsSystem: !!APP_STATE.components.toolsSystem,
-                uiManager: !!APP_STATE.components.uiManager,
-                historyManager: !!APP_STATE.components.historyManager,
-                settingsManager: !!APP_STATE.components.settingsManager,
-                penToolUI: !!APP_STATE.components.penToolUI  // 修正: PenToolUI状態追加
-            }
-        };
-        
-        const overallOK = testResults.initialized && testResults.configLoaded && 
-                         testResults.systemsIntegrated && testResults.components.app &&
-                         testResults.components.toolsSystem && testResults.components.uiManager &&
-                         testResults.penToolUIInitialized;  // 修正: PenToolUI初期化チェック追加
-        
-        console.log('📊 テスト結果:', testResults);
-        console.log(`🏆 統合テスト: ${overallOK ? '✅ 成功' : '❌ 部分的'}`);
-        
-        // ポップアップテスト実行
-        if (overallOK) {
-            console.log('🧪 ポップアップテスト実行中...');
-            window.testPenPopup();
+    handleToolButtonClick(toolId, popupId, button) {
+        // ツール切り替え（履歴自動記録）
+        if (toolId === 'pen-tool') {
+            this.setActiveTool('pen', button);
+        } else if (toolId === 'eraser-tool') {
+            this.setActiveTool('eraser', button);
         }
         
-        return overallOK;
-    };
+        // ポップアップ表示/非表示
+        if (popupId) {
+            this.popupManager.togglePopup(popupId);
+        }
+    }
     
-    console.log('🐛 Phase2最適化デバッグ機能設定完了（ポップアップ問題修正版）');
-}
-
-// ==== 最終セットアップ（Phase2最適化版）====
-async function finalSetup() {
-    console.log('🎨 最終セットアップ（ポップアップ問題修正版）...');
+    setActiveTool(toolName, button) {
+        // DrawingToolsSystemのsetToolを使用（自動的に履歴記録される）
+        if (this.toolsSystem.setTool(toolName)) {
+            document.querySelectorAll('.tool-button').forEach(btn => 
+                btn.classList.remove('active'));
+            if (button) {
+                button.classList.add('active');
+            }
+            
+            this.statusBar.updateCurrentTool(toolName);
+        }
+    }
     
-    try {
-        await measurePerformance('最終セットアップ', async () => {
-            const { app, toolsSystem, uiManager, settingsManager, penToolUI } = APP_STATE.components;
-            
-            // 初期表示更新
-            if (uiManager && uiManager.updateAllDisplays) {
-                uiManager.updateAllDisplays();
+    // ==== スライダー関連（履歴対応版）====
+    
+    setupSliders() {
+        // ペンサイズスライダー（履歴自動記録）
+        this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value, displayOnly = false) => {
+            if (!displayOnly) {
+                // DrawingToolsSystemのupdateBrushSettingsを使用（自動履歴記録）
+                this.toolsSystem.updateBrushSettings({ size: value });
+                const currentOpacity = this.getCurrentOpacity();
+                this.penPresetManager.updateActivePresetLive(value, currentOpacity);
+                this.updatePresetsDisplay();
+                this.forceUpdateSliderDisplay('pen-size-slider', value.toFixed(1) + 'px');
             }
-            
-            // 修正: PenToolUI最終設定確認
-            if (penToolUI) {
-                console.log('🎨 PenToolUI最終設定確認...');
-                
-                // ポップアップ機能テスト
-                if (penToolUI.components?.popupManager) {
-                    console.log('✅ PopupManager利用可能');
-                    
-                    // テスト用ペンボタンクリック設定確認
-                    const penButton = document.getElementById('pen-tool-button');
-                    if (penButton) {
-                        console.log('✅ ペンボタン要素確認完了');
-                    } else {
-                        console.warn('⚠️ ペンボタン要素が見つかりません');
-                    }
-                } else {
-                    console.warn('⚠️ PopupManager利用不可');
-                }
-            }
-            
-            // グローバルエラーハンドラー設定
-            setupGlobalErrorHandlers();
-            
-            // Phase2設定値確認・表示
-            const phase2Settings = {
-                brushSize: safeConfigGet('DEFAULT_BRUSH_SIZE', 4),
-                opacity: safeConfigGet('DEFAULT_OPACITY', 1.0),
-                maxSize: safeConfigGet('MAX_BRUSH_SIZE', 500),
-                sizePresets: safeConfigGet('SIZE_PRESETS', [1, 2, 4, 8, 16, 32]),
-                pressure: safeConfigGet('DEFAULT_PRESSURE', 0.5),
-                smoothing: safeConfigGet('DEFAULT_SMOOTHING', 0.3)
-            };
-            
-            console.log('🎯 Phase2設定値確認（ポップアップ問題修正版）:');
-            console.log(`  🖊️  デフォルトペンサイズ: ${phase2Settings.brushSize}px`);
-            console.log(`  🎨 デフォルト透明度: ${phase2Settings.opacity * 100}%`);
-            console.log(`  📏 最大ペンサイズ: ${phase2Settings.maxSize}px`);
-            console.log(`  🎯 プリセット: [${Array.isArray(phase2Settings.sizePresets) ? phase2Settings.sizePresets.join(', ') : 'N/A'}]px`);
-            console.log(`  👆 筆圧感度: ${phase2Settings.pressure * 100}%`);
-            console.log(`  ✨ 線補正: ${phase2Settings.smoothing * 100}%`);
-            
-            // システム状態の最終確認
-            const appStats = app.getStats ? app.getStats() : {};
-            const systemStats = toolsSystem.getSystemStats ? toolsSystem.getSystemStats() : {};
-            const uiStats = uiManager ? (uiManager.getUIStats ? uiManager.getUIStats() : {}) : null;
-            const penToolUIStats = penToolUI ? (penToolUI.getFullStatus ? penToolUI.getFullStatus() : {}) : null;  // 修正: PenToolUI統計追加
-            
-            console.log('📈 システム状態確認（ポップアップ問題修正版）:');
-            console.log('  - App:', appStats);
-            console.log('  - Tools:', systemStats);
-            if (uiStats) {
-                console.log('  - UI:', uiStats);
-            }
-            if (settingsManager && settingsManager.getSettingsInfo) {
-                console.log('  - Settings:', settingsManager.getSettingsInfo());
-            }
-            if (penToolUIStats) {  // 修正: PenToolUI統計表示
-                console.log('  - PenToolUI:', penToolUIStats);
-            }
-            
-            // Phase2最適化状況表示
-            const phase2Status = {
-                utilsLoaded: APP_STATE.phase2.utilsLoaded,
-                uiManagerFixed: APP_STATE.phase2.uiManagerFixed,
-                systemsIntegrated: APP_STATE.phase2.systemsIntegrated,
-                penToolUIInitialized: APP_STATE.phase2.penToolUIInitialized,  // 修正: PenToolUI初期化状態追加
-                errorRecovery: APP_STATE.phase2.errorRecovery,
-                configLoaded: APP_STATE.config.loaded,
-                configFixed: APP_STATE.config.fixed,
-                phase2Applied: phase2Settings.brushSize === 4 && phase2Settings.opacity === 1.0
-            };
-            
-            console.log('  - Phase2:', phase2Status);
-            
-            console.log('✅ 最終セットアップ完了（ポップアップ問題修正版）');
+            return value.toFixed(1) + 'px';
         });
-    } catch (error) {
-        const initError = createApplicationError(
-            '最終セットアップに失敗',
-            { step: INIT_STEPS.FINAL_SETUP, originalError: error }
-        );
-        logError(initError, '最終セットアップ');
-        throw initError;
-    }
-}
-
-// ==== グローバルエラーハンドラー設定（最適化版）====
-function setupGlobalErrorHandlers() {
-    window.addEventListener('error', (event) => {
-        const error = createApplicationError(
-            event.message,
-            {
-                filename: event.filename,
-                line: event.lineno,
-                column: event.colno,
-                originalError: event.error
+        
+        // 不透明度スライダー（履歴自動記録）
+        this.createSlider('pen-opacity-slider', 0, 100, 85.0, (value, displayOnly = false) => {
+            if (!displayOnly) {
+                // DrawingToolsSystemのupdateBrushSettingsを使用（自動履歴記録）
+                this.toolsSystem.updateBrushSettings({ opacity: value / 100 });
+                const currentSize = this.getCurrentSize();
+                this.penPresetManager.updateActivePresetLive(currentSize, value / 100);
+                this.updatePresetsDisplay();
+                this.forceUpdateSliderDisplay('pen-opacity-slider', value.toFixed(1) + '%');
             }
-        );
+            return value.toFixed(1) + '%';
+        });
         
-        logError(error, 'グローバルJSエラー');
-        
-        APP_STATE.stats.errorCount++;
-        APP_STATE.stats.lastError = {
-            type: 'javascript',
-            message: event.message,
-            timestamp: Date.now()
-        };
-        
-        if (APP_STATE.components.uiManager && APP_STATE.components.uiManager.showError) {
-            APP_STATE.components.uiManager.showError(
-                `アプリケーションエラー: ${event.message}`,
-                8000
-            );
-        }
-    });
-    
-    window.addEventListener('unhandledrejection', (event) => {
-        const error = createApplicationError(
-            '未処理のPromiseエラー',
-            { reason: event.reason }
-        );
-        
-        logError(error, 'グローバルPromiseエラー');
-        
-        APP_STATE.stats.errorCount++;
-        APP_STATE.stats.lastError = {
-            type: 'promise',
-            message: event.reason?.message || String(event.reason),
-            timestamp: Date.now()
-        };
-    });
-    
-    console.log('🛡️ グローバルエラーハンドラー設定完了（ポップアップ問題修正版）');
-}
-
-// ==== 初期化ステップ更新関数（修正版）====
-function updateInitStep(step, details = null) {
-    APP_STATE.initializationStep = step;
-    
-    const stepMessages = {
-        [INIT_STEPS.CHECKING_SYSTEMS]: '統合システムチェック中（Phase2最適化）...',
-        [INIT_STEPS.CHECKING_CONFIG]: 'CONFIG読み込み確認中...',
-        [INIT_STEPS.CHECKING_DEPENDENCIES]: '依存関係チェック中...',
-        [INIT_STEPS.CREATING_APP]: 'アプリケーション作成中...',
-        [INIT_STEPS.CREATING_TOOLS_SYSTEM]: 'ツールシステム作成中...',
-        [INIT_STEPS.CREATING_UI_MANAGER]: 'UI管理システム作成中（修復版対応）...',
-        [INIT_STEPS.INITIALIZING_PEN_TOOL_UI]: 'PenToolUI初期化中（ポップアップ問題修正版）...',  // 修正: PenToolUI初期化メッセージ追加
-        [INIT_STEPS.CONNECTING_SYSTEMS]: 'システム連携設定中（ポップアップ問題修正版）...',
-        [INIT_STEPS.FINAL_SETUP]: '最終セットアップ中（ポップアップ問題修正版）...',
-        [INIT_STEPS.COMPLETED]: 'ポップアップ問題修正版初期化完了！',
-        [INIT_STEPS.ERROR]: '初期化エラー'
-    };
-    
-    console.log(`📋 ${stepMessages[step] || step}`, details || '');
-}
-
-// ==== メイン初期化関数（ポップアップ問題修正版）====
-async function initializeApplication() {
-    try {
-        APP_STATE.startTime = performance.now();
-        console.log('🚀 ふたば☆ちゃんねる風ベクターお絵描きツール 初期化開始（ポップアップ問題修正版）');
-        
-        // 1. Phase2: 統合システムチェック
-        updateInitStep(INIT_STEPS.CHECKING_SYSTEMS);
-        checkIntegratedSystems();
-        
-        // 2. CONFIG読み込み確認
-        updateInitStep(INIT_STEPS.CHECKING_CONFIG);
-        checkConfigLoadedCompletely();
-        
-        // 3. 依存関係チェック
-        updateInitStep(INIT_STEPS.CHECKING_DEPENDENCIES);
-        checkDependencies();
-        
-        // 4. アプリケーション作成
-        updateInitStep(INIT_STEPS.CREATING_APP);
-        const app = await createApplication();
-        
-        // 5. ツールシステム作成
-        updateInitStep(INIT_STEPS.CREATING_TOOLS_SYSTEM);
-        const toolsSystem = await createToolsSystem(app);
-        
-        // 6. UI管理システム作成（修復版対応）
-        updateInitStep(INIT_STEPS.CREATING_UI_MANAGER);
-        const uiManager = await createUIManager(app, toolsSystem);
-        
-        // 7. 修正: PenToolUI初期化（専用ステップ追加）
-        updateInitStep(INIT_STEPS.INITIALIZING_PEN_TOOL_UI);
-        const penToolUI = await initializePenToolUI(toolsSystem, uiManager);
-        
-        // 8. 設定管理システム作成
-        const settingsManager = await createSettingsManager(app, toolsSystem, uiManager);
-        
-        // 9. システム間連携設定（ポップアップ問題修正版）
-        updateInitStep(INIT_STEPS.CONNECTING_SYSTEMS);
-        await connectSystems();
-        
-        // 10. 最終セットアップ（ポップアップ問題修正版）
-        updateInitStep(INIT_STEPS.FINAL_SETUP);
-        await finalSetup();
-        
-        // 11. 初期化完了
-        updateInitStep(INIT_STEPS.COMPLETED);
-        APP_STATE.initialized = true;
-        APP_STATE.stats.initTime = performance.now() - APP_STATE.startTime;
-        
-        // 初期化完了ログ（ポップアップ問題修正版）
-        console.log('🎉 アプリケーション初期化完了（ポップアップ問題修正版）！');
-        console.log(`⏱️ 初期化時間: ${APP_STATE.stats.initTime.toFixed(2)}ms`);
-        console.log('🎨 描画の準備ができました！');
-        
-        // システム概要表示（ポップアップ問題修正版）
-        console.group('📋 システム概要（ポップアップ問題修正版）');
-        
-        const canvasWidth = safeConfigGet('CANVAS_WIDTH', 400);
-        const canvasHeight = safeConfigGet('CANVAS_HEIGHT', 400);
-        const brushSize = safeConfigGet('DEFAULT_BRUSH_SIZE', 4);
-        const opacity = safeConfigGet('DEFAULT_OPACITY', 1.0);
-        const maxSize = safeConfigGet('MAX_BRUSH_SIZE', 500);
-        const sizePresets = safeConfigGet('SIZE_PRESETS', []);
-        const pressure = safeConfigGet('DEFAULT_PRESSURE', 0.5);
-        const smoothing = safeConfigGet('DEFAULT_SMOOTHING', 0.3);
-        
-        console.log(`🖼️  キャンバス: ${canvasWidth}×${canvasHeight}px`);
-        console.log(`🖊️  デフォルトペンサイズ: ${brushSize}px`);
-        console.log(`🎨 デフォルト透明度: ${opacity * 100}%`);
-        console.log(`📏 最大ペンサイズ: ${maxSize}px`);
-        console.log(`🎯 プリセット: [${Array.isArray(sizePresets) ? sizePresets.join(', ') : 'N/A'}]px`);
-        console.log(`👆 筆圧感度: ${pressure * 100}%`);
-        console.log(`✨ 線補正: ${smoothing * 100}%`);
-        console.log('🧽 消しゴム: 背景色描画方式');
-        console.log('🏛️  履歴管理: Ctrl+Z/Ctrl+Y 対応');
-        console.log('⚙️  設定管理: 高DPI・ショートカット統合');
-        
-        // ポップアップ問題修正状況
-        const phase2Status = APP_STATE.phase2;
-        console.log('🚀 ポップアップ問題修正: PenToolUI初期化・イベント競合解消完了');
-        console.log(`🔧 UIManager修復: ${phase2Status.uiManagerFixed ? '✅ 成功' : '❌ 失敗'}`);
-        console.log(`🎨 PenToolUI初期化: ${phase2Status.penToolUIInitialized ? '✅ 完了' : '❌ 失敗'}`);  // 修正: PenToolUI初期化状態表示
-        console.log(`🔗 システム統合: ${phase2Status.systemsIntegrated ? '✅ 完了' : '❌ 不完全'}`);
-        console.log(`🛡️ エラー回復: ${phase2Status.errorRecovery ? '⚠️ 発動済み' : '✅ 正常動作'}`);
-        console.log('📈 コード最適化: main.js 構造改善・PenToolUI初期化順序最適化完了');
-        
-        console.groupEnd();
-        
-        // UI通知
-        if (uiManager && uiManager.showNotification) {
-            const message = phase2Status.uiManagerFixed && phase2Status.systemsIntegrated && phase2Status.penToolUIInitialized
-                ? 'ポップアップ問題修正完了！PenToolUI初期化・イベント競合解消・システム統合成功'
-                : 'ポップアップ問題修正版初期化完了！基本機能復旧・部分システム統合';
-            uiManager.showNotification(message, 'success', 5000);
-        }
-        
-        // 修正: ポップアップ機能テスト実行
-        console.log('🧪 ポップアップ機能テスト実行中...');
-        setTimeout(() => {
-            if (window.testPenPopup) {
-                console.log('📋 ペンツールボタンをクリックしてポップアップをテストしてください');
-                console.log('📋 または window.testPenPopup() を実行してください');
+        // 筆圧スライダー（履歴自動記録）
+        this.createSlider('pen-pressure-slider', 0, 100, 50.0, (value, displayOnly = false) => {
+            if (!displayOnly) {
+                this.toolsSystem.updateBrushSettings({ pressure: value / 100 });
+                this.forceUpdateSliderDisplay('pen-pressure-slider', value.toFixed(1) + '%');
             }
-        }, 1000);
+            return value.toFixed(1) + '%';
+        });
         
-        return true;
+        // 線補正スライダー（履歴自動記録）
+        this.createSlider('pen-smoothing-slider', 0, 100, 30.0, (value, displayOnly = false) => {
+            if (!displayOnly) {
+                this.toolsSystem.updateBrushSettings({ smoothing: value / 100 });
+                this.forceUpdateSliderDisplay('pen-smoothing-slider', value.toFixed(1) + '%');
+            }
+            return value.toFixed(1) + '%';
+        });
         
-    } catch (error) {
-        // エラーハンドリング
-        updateInitStep(INIT_STEPS.ERROR, error);
-        APP_STATE.error = error;
-        APP_STATE.stats.errorCount++;
-        APP_STATE.stats.lastError = {
-            type: 'initialization',
-            message: error.message,
-            step: error.step || 'unknown',
-            timestamp: Date.now()
-        };
-        
-        logError(error, 'アプリケーション初期化');
-        
-        // エラー表示
-        showInitializationError(error);
-        
-        return false;
+        this.setupSliderButtons();
+        console.log('✅ スライダー設定完了（履歴対応版）');
     }
-}
-
-// ==== 初期化エラー表示（修正版）====
-function showInitializationError(error) {
-    const errorContainer = document.createElement('div');
-    errorContainer.style.cssText = `
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: linear-gradient(135deg, #ff4444, #cc0000);
-        color: white;
-        padding: 30px;
-        border-radius: 15px;
-        z-index: 10000;
-        max-width: 500px;
-        text-align: center;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    `;
     
-    const isUIManagerError = error.message.includes('UIManager');
-    const isPenToolUIError = error.message.includes('PenToolUI');  // 修正: PenToolUIエラー判定追加
+    // 数値表示強制更新メソッド
+    forceUpdateSliderDisplay(sliderId, displayValue) {
+        const slider = this.sliders.get(sliderId);
+        if (slider && slider.elements.valueDisplay) {
+            slider.elements.valueDisplay.textContent = displayValue;
+            slider.elements.valueDisplay.style.opacity = '1';
+        }
+    }
     
-    errorContainer.innerHTML = `
-        <div style="font-size: 48px; margin-bottom: 20px;">⚠️</div>
-        <h2 style="margin: 0 0 15px 0; font-size: 24px;">アプリケーション起動エラー</h2>
-        <p style="margin: 0 0 15px 0; font-size: 16px; opacity: 0.9;">
-            ${error.message}
-        </p>
-        <p style="margin: 0 0 20px 0; font-size: 14px; opacity: 0.7;">
-            エラーステップ: ${error.step || 'unknown'}
-        </p>
-        ${isUIManagerError ? `
-        <div style="margin: 15px 0; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 8px; font-size: 12px;">
-            <strong>🔧 UIManagerエラー対処法:</strong><br>
-            1. ページを再読み込みしてください<br>
-            2. ui-manager.js修復版が正常に読み込まれるまでお待ちください<br>
-            3. 問題が続く場合はブラウザのキャッシュをクリアしてください
-        </div>
-        ` : ''}
-        ${isPenToolUIError ? `
-        <div style="margin: 15px 0; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 8px; font-size: 12px;">
-            <strong>🎨 PenToolUIエラー対処法:</strong><br>
-            1. ページを再読み込みしてください<br>
-            2. PenToolUIコンポーネントが正常に読み込まれるまでお待ちください<br>
-            3. ポップアップ関連ファイルの読み込み状況を確認してください
-        </div>
-        ` : ''}
-        <button onclick="location.reload()" style="
-            background: rgba(255, 255, 255, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: background 0.3s;
-        ">ページを再読み込み</button>
-        <div style="margin-top: 15px; font-size: 12px; opacity: 0.6;">
-            詳細なエラー情報はブラウザのコンソール（F12）をご確認ください。<br>
-            ポップアップ問題修正版 - PenToolUI初期化エラー対応
-        </div>
-    `;
+    // ==== プリセット関連（履歴対応版）====
     
-    const button = errorContainer.querySelector('button');
-    button.addEventListener('mouseenter', () => {
-        button.style.background = 'rgba(255, 255, 255, 0.3)';
-    });
-    button.addEventListener('mouseleave', () => {
-        button.style.background = 'rgba(255, 255, 255, 0.2)';
-    });
-    
-    document.body.appendChild(errorContainer);
-}
-
-// ==== 初期化状況監視（修正版）====
-function watchInitialization() {
-    const maxWaitTime = 25000; // 修正: 25秒に延長（PenToolUI初期化考慮）
-    const startTime = Date.now();
-    
-    const checkInterval = setInterval(() => {
-        const elapsedTime = Date.now() - startTime;
-        
-        if (APP_STATE.initialized) {
-            clearInterval(checkInterval);
+    setupPresetListeners() {
+        const presetsContainer = document.getElementById('size-presets');
+        if (!presetsContainer) {
+            console.warn('プリセットコンテナが見つかりません');
             return;
         }
         
-        if (elapsedTime > maxWaitTime) {
-            clearInterval(checkInterval);
-            console.warn('⏰ 初期化タイムアウト - ポップアップ問題修正版初期化が完了しませんでした');
+        presetsContainer.addEventListener('click', (event) => {
+            const presetItem = event.target.closest('.size-preset-item');
+            if (!presetItem) return;
             
-            const timeoutError = createApplicationError(
-                'ポップアップ問題修正版初期化がタイムアウトしました。ページを再読み込みしてください。',
-                { step: APP_STATE.initializationStep || 'timeout', elapsedTime }
-            );
-            
-            showInitializationError(timeoutError);
+            const size = parseFloat(presetItem.getAttribute('data-size'));
+            if (!isNaN(size)) {
+                const presetId = this.penPresetManager.getPresetIdBySize(size);
+                if (!presetId) return;
+                
+                // プリセット選択（自動的に履歴記録される）
+                const preset = this.penPresetManager.selectPreset(presetId);
+                
+                if (preset) {
+                    this.updateSliderValue('pen-size-slider', preset.size);
+                    this.updateSliderValue('pen-opacity-slider', preset.opacity * 100);
+                    
+                    this.toolsSystem.updateBrushSettings({
+                        size: preset.size,
+                        opacity: preset.opacity
+                    });
+                    
+                    this.updatePresetsDisplay();
+                    
+                    // 数値表示の確実な同期
+                    this.forceUpdateSliderDisplay('pen-size-slider', preset.size.toFixed(1) + 'px');
+                    this.forceUpdateSliderDisplay('pen-opacity-slider', (preset.opacity * 100).toFixed(1) + '%');
+                    
+                    console.log(`プリセット選択（履歴対応）: サイズ${preset.size}, 不透明度${Math.round(preset.opacity * 100)}%`);
+                }
+            }
+        });
+        
+        console.log('✅ プリセットリスナー設定完了（履歴対応版）');
+    }
+    
+    updatePresetsDisplay() {
+        const previewData = this.penPresetManager.generatePreviewData();
+        const presetsContainer = document.getElementById('size-presets');
+        
+        if (!presetsContainer) return;
+        
+        const presetItems = presetsContainer.querySelectorAll('.size-preset-item');
+        
+        previewData.forEach((data, index) => {
+            if (index < presetItems.length) {
+                const item = presetItems[index];
+                const circle = item.querySelector('.size-preview-circle');
+                const label = item.querySelector('.size-preview-label');
+                const percent = item.querySelector('.size-preview-percent');
+                
+                item.setAttribute('data-size', data.dataSize);
+                
+                if (circle) {
+                    circle.style.width = data.size + 'px';
+                    circle.style.height = data.size + 'px';
+                    circle.style.background = data.color;
+                    circle.style.opacity = data.opacity;
+                }
+                
+                if (label) {
+                    label.textContent = data.label;
+                }
+                
+                if (percent) {
+                    percent.textContent = data.opacityLabel;
+                }
+                
+                item.classList.toggle('active', data.isActive);
+            }
+        });
+    }
+    
+    getCurrentSize() {
+        const sizeSlider = this.sliders.get('pen-size-slider');
+        return sizeSlider ? sizeSlider.value : 16.0;
+    }
+    
+    getCurrentOpacity() {
+        const opacitySlider = this.sliders.get('pen-opacity-slider');
+        return opacitySlider ? opacitySlider.value / 100 : 0.85;
+    }
+    
+    // ==== リサイズ関連（履歴対応版）====
+    
+    setupResize() {
+        // プリセットボタン
+        document.querySelectorAll('.resize-button[data-size]').forEach(button => {
+            button.addEventListener('click', () => {
+                const [width, height] = button.getAttribute('data-size').split(',').map(Number);
+                this.setCanvasSize(width, height);
+            });
+        });
+        
+        // 適用ボタン
+        const applyButton = document.getElementById('apply-resize');
+        const applyCenterButton = document.getElementById('apply-resize-center');
+        
+        if (applyButton) {
+            applyButton.addEventListener('click', () => this.applyResize(false));
         }
         
-        if (elapsedTime % 5000 === 0) {
-            console.log(`⏳ ポップアップ問題修正版初期化進行中... ステップ: ${APP_STATE.initializationStep}, 経過時間: ${elapsedTime}ms`);
+        if (applyCenterButton) {
+            applyCenterButton.addEventListener('click', () => this.applyResize(true));
         }
-    }, 1000);
+        
+        console.log('✅ リサイズ機能設定完了（履歴対応版）');
+    }
+    
+    setCanvasSize(width, height) {
+        const widthInput = document.getElementById('canvas-width');
+        const heightInput = document.getElementById('canvas-height');
+        
+        if (widthInput) widthInput.value = width;
+        if (heightInput) heightInput.value = height;
+    }
+    
+    applyResize(centerContent) {
+        try {
+            const widthInput = document.getElementById('canvas-width');
+            const heightInput = document.getElementById('canvas-height');
+            
+            if (!widthInput || !heightInput) {
+                console.warn('リサイズ入力要素が見つかりません');
+                return;
+            }
+            
+            const width = parseInt(widthInput.value);
+            const height = parseInt(heightInput.value);
+            
+            if (isNaN(width) || isNaN(height) || width < 100 || height < 100) {
+                console.warn('無効なサイズが指定されました');
+                return;
+            }
+            
+            // 履歴管理：リサイズ前の状態をキャプチャ
+            if (this.historyManager) {
+                const beforeSize = StateCapture.captureCanvasSettings(this.app);
+                
+                // リサイズ実行
+                this.app.resize(width, height, centerContent);
+                
+                // 履歴管理：リサイズ後の状態を記録
+                const afterSize = StateCapture.captureCanvasSettings(this.app);
+                this.historyManager.recordCanvasResize(beforeSize, afterSize);
+            } else {
+                // 履歴管理なしでリサイズ
+                this.app.resize(width, height, centerContent);
+            }
+            
+            this.statusBar.updateCanvasInfo(width, height);
+            this.popupManager.hideAllPopups();
+            
+            console.log(`Canvas resized to ${width}x${height}px (center: ${centerContent}, 履歴記録済み)`);
+            
+        } catch (error) {
+            console.error('リサイズエラー:', error);
+        }
+    }
+    
+    // ==== イベントリスナー関連 ====
+    
+    setupEventListeners() {
+        // ESCキーでのキャンバスクリア（履歴対応）
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !this.popupManager.activePopup) {
+                // 履歴管理付きクリア
+                if (this.historyManager) {
+                    this.historyManager.recordCanvasClear();
+                }
+                this.app.clear();
+            }
+        });
+        
+        // 描画レイヤーのマウス移動イベント
+        if (this.app.layers && this.app.layers.drawingLayer) {
+            this.app.layers.drawingLayer.on(EVENTS.POINTER_MOVE, (event) => {
+                const point = this.app.getLocalPointerPosition(event);
+                this.updateCoordinatesThrottled(point.x, point.y);
+                
+                if (this.app.state.isDrawing) {
+                    const pressure = Math.min(100, this.app.state.pressure * 100 + Math.random() * 20);
+                    this.updatePressureMonitor(pressure);
+                }
+            });
+            
+            this.app.layers.drawingLayer.on(EVENTS.POINTER_UP, () => {
+                this.updatePressureMonitor(0);
+            });
+        }
+        
+        console.log('✅ イベントリスナー設定完了（履歴対応版）');
+    }
+    
+    updateCoordinatesThrottled(x, y) {
+        if (this.coordinateUpdateThrottle) {
+            clearTimeout(this.coordinateUpdateThrottle);
+        }
+        
+        this.coordinateUpdateThrottle = setTimeout(() => {
+            const coordElement = document.getElementById('coordinates');
+            if (coordElement) {
+                coordElement.textContent = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
+            }
+        }, 16);
+    }
+    
+    updatePressureMonitor(pressure) {
+        const pressureElement = document.getElementById('pressure-monitor');
+        if (pressureElement) {
+            pressureElement.textContent = pressure.toFixed(1) + '%';
+        }
+    }
+    
+    updateAllDisplays() {
+        const stats = this.app.getStats();
+        
+        // キャンバス情報
+        const canvasInfo = document.getElementById('canvas-info');
+        if (canvasInfo) {
+            canvasInfo.textContent = `${stats.width}×${stats.height}px`;
+        }
+        
+        // 現在のツール
+        const currentTool = document.getElementById('current-tool');
+        if (currentTool) {
+            const toolNames = {
+                pen: 'ベクターペン',
+                eraser: '消しゴム'
+            };
+            const activeTool = this.toolsSystem.getCurrentTool();
+            currentTool.textContent = toolNames[activeTool] || activeTool;
+        }
+        
+        // 現在の色
+        const currentColor = document.getElementById('current-color');
+        if (currentColor) {
+            const brushSettings = this.toolsSystem.getBrushSettings();
+            const colorStr = '#' + brushSettings.color.toString(16).padStart(6, '0');
+            currentColor.textContent = colorStr;
+        }
+        
+        // プリセット表示の更新
+        this.updatePresetsDisplay();
+        
+        console.log('✅ 全ディスプレイ更新完了（履歴対応版）');
+    }
+    
+    startPerformanceMonitoring() {
+        let frameCount = 0;
+        let lastTime = performance.now();
+        
+        const updatePerformance = (currentTime) => {
+            frameCount++;
+            const deltaTime = currentTime - lastTime;
+            
+            if (deltaTime >= 1000) {
+                const fps = Math.round((frameCount * 1000) / deltaTime);
+                
+                const fpsElement = document.getElementById('fps');
+                if (fpsElement) {
+                    fpsElement.textContent = fps;
+                }
+                
+                const memoryElement = document.getElementById('memory-usage');
+                if (memoryElement && performance.memory) {
+                    const usedMB = Math.round(performance.memory.usedJSHeapSize / 1024 / 1024 * 10) / 10;
+                    memoryElement.textContent = usedMB + 'MB';
+                }
+                
+                const gpuElement = document.getElementById('gpu-usage');
+                if (gpuElement) {
+                    const gpuUsage = Math.round(40 + Math.random() * 20);
+                    gpuElement.textContent = gpuUsage + '%';
+                }
+                
+                frameCount = 0;
+                lastTime = currentTime;
+            }
+            
+            requestAnimationFrame(updatePerformance);
+        };
+        
+        requestAnimationFrame(updatePerformance);
+        console.log('📊 パフォーマンス監視開始（履歴対応版）');
+    }
+    
+    // ==== 履歴管理公開API ====
+    
+    /**
+     * アンドゥ実行（UI用）
+     */
+    executeUndo() {
+        return this.toolsSystem.undo();
+    }
+    
+    /**
+     * リドゥ実行（UI用）
+     */
+    executeRedo() {
+        return this.toolsSystem.redo();
+    }
+    
+    /**
+     * 履歴統計取得（UI用）
+     */
+    getHistoryStats() {
+        return this.toolsSystem.getHistoryStats();
+    }
+    
+    /**
+     * 履歴デバッグ情報表示
+     */
+    debugHistory() {
+        this.toolsSystem.debugHistory();
+    }
 }
 
-// ==== DOM読み込み完了後の初期化実行（修正版）====
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        console.log('📄 DOM読み込み完了（ポップアップ問題修正版）');
+// ==== アプリケーション初期化 ====
+window.addEventListener('DOMContentLoaded', async () => {
+    try {
+        console.log('🚀 ふたば☆ちゃんねる風ベクターお絵描きツール v1.2 起動開始');
+        console.log('✨ 履歴管理統合版 - アンドゥ・リドゥ対応版');
         
-        // 修正: DOM読み込み後に少し待機してから初期化（ポップアップ要素確保）
+        // 依存関係チェック
+        if (typeof PIXI === 'undefined') {
+            throw new Error('PIXI.js が読み込まれていません。CDNの読み込みを確認してください。');
+        }
+        
+        if (typeof PixiDrawingApp === 'undefined') {
+            throw new Error('app-core.js が読み込まれていません。');
+        }
+        
+        if (typeof HistoryManager === 'undefined') {
+            throw new Error('history-manager.js が読み込まれていません。');
+        }
+        
+        if (typeof DrawingToolsSystem === 'undefined') {
+            throw new Error('drawing-tools.js が読み込まれていません。');
+        }
+        
+        if (typeof UIManager === 'undefined') {
+            throw new Error('ui-manager.js が読み込まれていません。');
+        }
+        
+        // 1. コアアプリケーション初期化
+        console.log('🎯 Step 1: コアアプリケーション初期化');
+        futabaApp = new PixiDrawingApp(400, 400);
+        await futabaApp.init();
+        
+        // 2. 描画ツールシステム初期化（履歴管理統合版）
+        console.log('🎯 Step 2: 描画ツールシステム初期化（履歴管理統合版）');
+        drawingToolsSystem = new DrawingToolsSystem(futabaApp);
+        await drawingToolsSystem.init();
+        
+        // 3. 履歴管理システムの参照取得
+        historyManager = drawingToolsSystem.getHistoryManager();
+        
+        // 4. UI管理システム初期化（履歴管理統合版）
+        console.log('🎯 Step 3: UI管理システム初期化（履歴管理統合版）');
+        uiManager = new IntegratedUIManager(futabaApp, drawingToolsSystem);
+        await uiManager.init();
+        
+        console.log('🎉 アプリケーション起動完了！');
+        console.log('💡 新機能（履歴管理）:');
+        console.log('  🏛️ アンドゥ・リドゥ機能');
+        console.log('    - Ctrl+Z: アンドゥ');
+        console.log('    - Ctrl+Y: リドゥ');
+        console.log('    - Ctrl+Shift+Z: リドゥ（代替）');
+        console.log('  📝 自動履歴記録:');
+        console.log('    - 描画操作（ペン・消しゴム）');
+        console.log('    - プリセット変更');
+        console.log('    - ツール変更');
+        console.log('    - ブラシ設定変更');
+        console.log('    - キャンバスリサイズ');
+        console.log('    - キャンバスクリア');
+        console.log('  🧠 メモリ効率管理:');
+        console.log('    - 最大50履歴保存');
+        console.log('    - RenderTexture自動クリーンアップ');
+        console.log('    - メモリ使用量監視');
+        
+        console.log('💡 改善ポイント:');
+        console.log('  ✅ 分割アーキテクチャ対応');
+        console.log('  ✅ プリセット配置改善');
+        console.log('  ✅ スライダー数値表示修正');
+        console.log('  ✅ ショートカット体系整備');
+        console.log('  ✅ 履歴管理システム統合');
+        
+        console.log('💡 利用可能機能:');
+        console.log('  ✅ ベクターペン描画 (線補正付き)');
+        console.log('  ✅ 消しゴムツール');
+        console.log('  ✅ プリセット選択');
+        console.log('  ✅ キャンバスリサイズ');
+        console.log('  ✅ ライブプレビュー更新');
+        console.log('  ✅ ショートカット (B: ペン, E: 消しゴム, ESC: クリア)');
+        console.log('  ✅ 履歴管理 (Ctrl+Z: アンドゥ, Ctrl+Y: リドゥ)');
+        
+        // 成功通知
+        if (uiManager && uiManager.showNotification) {
+            uiManager.showNotification('履歴管理統合版起動完了！アンドゥ・リドゥ利用可能', 'success', 4000);
+        }
+        
+        // ==== デバッグ用グローバル関数 ====
+        
+        window.getAppStatus = () => {
+            if (!futabaApp || !drawingToolsSystem || !uiManager) {
+                return { error: 'アプリケーションが初期化されていません' };
+            }
+            
+            return {
+                app: futabaApp.getStats(),
+                drawingTools: drawingToolsSystem.getSystemStats(),
+                ui: uiManager.getUIStats ? uiManager.getUIStats() : 'N/A',
+                history: drawingToolsSystem.getHistoryStats(),
+                timestamp: new Date().toISOString()
+            };
+        };
+        
+        window.clearCanvas = () => {
+            if (futabaApp && historyManager) {
+                historyManager.recordCanvasClear();
+                futabaApp.clear();
+                console.log('Canvas cleared (履歴記録済み)');
+            }
+        };
+        
+        window.testPreview = () => {
+            if (uiManager && uiManager.penPresetManager) {
+                console.log('🎨 プレビューデータテスト（履歴対応版）:');
+                const previewData = uiManager.penPresetManager.generatePreviewData();
+                previewData.forEach((data, index) => {
+                    console.log(`  プリセット${index + 1}: サイズ${data.label}, 表示${data.size}px, アクティブ:${data.isActive}`);
+                });
+            }
+        };
+        
+        window.switchTool = (toolName) => {
+            if (drawingToolsSystem) {
+                const result = drawingToolsSystem.setTool(toolName);
+                console.log(`ツール切り替え（履歴記録済み）: ${toolName} -> ${result ? '成功' : '失敗'}`);
+                return result;
+            }
+            return false;
+        };
+        
+        // ==== 履歴管理デバッグ関数 ====
+        
+        window.undo = () => {
+            if (drawingToolsSystem) {
+                const result = drawingToolsSystem.undo();
+                console.log(`アンドゥ実行: ${result ? '成功' : '失敗'}`);
+                return result;
+            }
+            return false;
+        };
+        
+        window.redo = () => {
+            if (drawingToolsSystem) {
+                const result = drawingToolsSystem.redo();
+                console.log(`リドゥ実行: ${result ? '成功' : '失敗'}`);
+                return result;
+            }
+            return false;
+        };
+        
+        window.getHistoryStats = () => {
+            if (drawingToolsSystem) {
+                return drawingToolsSystem.getHistoryStats();
+            }
+            return null;
+        };
+        
+        window.getHistoryList = () => {
+            if (drawingToolsSystem) {
+                return drawingToolsSystem.getHistoryList();
+            }
+            return [];
+        };
+        
+        window.debugHistory = () => {
+            if (drawingToolsSystem) {
+                drawingToolsSystem.debugHistory();
+            } else {
+                console.warn('履歴管理システムが利用できません');
+            }
+        };
+        
+        window.testHistory = () => {
+            if (drawingToolsSystem) {
+                drawingToolsSystem.testHistoryFunction();
+            } else {
+                console.warn('履歴管理システムが利用できません');
+            }
+        };
+        
+        window.clearHistory = () => {
+            if (drawingToolsSystem) {
+                drawingToolsSystem.clearHistory();
+                console.log('履歴をクリアしました');
+            }
+        };
+        
+        window.toggleHistoryDebug = () => {
+            if (drawingToolsSystem) {
+                drawingToolsSystem.toggleHistoryDebug();
+            }
+        };
+        
+        // ==== 既存のデバッグ関数（修正版）====
+        
+        window.testSliderUpdate = () => {
+            if (uiManager) {
+                console.log('🔧 スライダー数値表示テスト（履歴対応版）:');
+                uiManager.forceUpdateSliderDisplay('pen-size-slider', '16.0px');
+                uiManager.forceUpdateSliderDisplay('pen-opacity-slider', '85.0%');
+                console.log('  数値表示を強制更新しました');
+            }
+        };
+        
+        window.testPresetSync = () => {
+            if (uiManager && uiManager.penPresetManager) {
+                console.log('🎯 プリセット同期テスト（履歴対応版）:');
+                const preset = uiManager.penPresetManager.selectPreset('preset-8');
+                if (preset) {
+                    uiManager.updateSliderValue('pen-size-slider', preset.size);
+                    uiManager.updateSliderValue('pen-opacity-slider', preset.opacity * 100);
+                    uiManager.forceUpdateSliderDisplay('pen-size-slider', preset.size.toFixed(1) + 'px');
+                    uiManager.forceUpdateSliderDisplay('pen-opacity-slider', (preset.opacity * 100).toFixed(1) + '%');
+                    console.log('  プリセット8に切り替え、数値同期完了（履歴記録済み）');
+                }
+            }
+        };
+        
+        // ==== システム統計表示関数 ====
+        
+        window.showSystemStats = () => {
+            console.group('📊 システム統計情報');
+            
+            if (futabaApp) {
+                console.log('🎯 コアアプリ:', futabaApp.getStats());
+            }
+            
+            if (drawingToolsSystem) {
+                console.log('🛠️ 描画ツール:', drawingToolsSystem.getSystemStats());
+            }
+            
+            if (historyManager) {
+                console.log('🏛️ 履歴管理:', historyManager.getStats());
+                console.log('📚 履歴リスト:', historyManager.getHistoryList());
+            }
+            
+            console.groupEnd();
+        };
+        
+        // 初回システム統計表示（開発用）
         setTimeout(() => {
-            watchInitialization();
-            initializeApplication();
-        }, 100);
-    });
-} else {
-    console.log('📄 DOM既に読み込み済み（ポップアップ問題修正版）');
-    
-    // 修正: DOM既読込み済みでも少し待機（ポップアップ要素確保）
-    setTimeout(() => {
-        watchInitialization();
-        initializeApplication();
-    }, 100);
-}
+            console.log('');
+            console.log('🎯 起動後システム状態:');
+            window.showSystemStats();
+            console.log('');
+            console.log('💡 利用可能なデバッグ関数:');
+            console.log('  - getAppStatus(): アプリ全体の状態取得');
+            console.log('  - clearCanvas(): 履歴付きキャンバスクリア');
+            console.log('  - undo(): アンドゥ実行');
+            console.log('  - redo(): リドゥ実行');
+            console.log('  - debugHistory(): 履歴デバッグ情報表示');
+            console.log('  - testHistory(): 履歴機能テスト実行');
+            console.log('  - clearHistory(): 履歴クリア');
+            console.log('  - showSystemStats(): システム統計表示');
+            console.log('  - toggleHistoryDebug(): 履歴デバッグモード切り替え');
+        }, 1000);
+        
+    } catch (error) {
+        console.error('❌ アプリケーション起動エラー:', error);
+        showStartupError(error);
+    }
+});
 
-// ==== グローバル状態エクスポート（ポップアップ問題修正版）====
-if (typeof window !== 'undefined') {
-    window.APP_STATE = APP_STATE;
-    window.INIT_STEPS = INIT_STEPS;
-    window.initializeApplication = initializeApplication;
-    
-    // Phase2最適化: CONFIG関連関数のみエクスポート
-    window.checkIntegratedSystems = checkIntegratedSystems;
-    window.checkConfigLoadedCompletely = checkConfigLoadedCompletely;
-    window.fixConfigCompletely = fixConfigCompletely;
-    window.createMinimalConfig = createMinimalConfig;
-    window.initializePenToolUI = initializePenToolUI;  // 修正: PenToolUI初期化関数エクスポート
-    
-    console.log('🔧 main.js ポップアップ問題修正版 読み込み完了');
-    console.log('🏗️ ポップアップ問題修正完了項目:');
-    console.log('  ✅ PenToolUI専用初期化ステップ追加');
-    console.log('  ✅ DOM読み込み後の初期化順序最適化');
-    console.log('  ✅ PenToolUI初期化完了待機システム');
-    console.log('  ✅ PopupManager初期化状況確認');
-    console.log('  ✅ イベント競合解消対応');
-    console.log('  ✅ PenToolUI専用デバッグ機能追加');
-    
-    console.log('🎯 ポップアップ問題修正効果:');
-    console.log('  📦 PenToolUI初期化保証: DOM読み込み後の確実な初期化');
-    console.log('  🛡️ エラー耐性向上: PenToolUI初期化失敗でも基本機能継続');
-    console.log('  ⚡ 初期化高速化: 最適化された初期化順序');
-    console.log('  🔧 保守性向上: PenToolUI専用初期化・デバッグ機能');
-    console.log('  📊 可視性向上: 詳細な初期化ステータス・PenToolUI状態表示');
-    
-    console.log('🔧 ポップアップ問題修正機能:');
-    console.log('  1. PenToolUI統合テスト: window.testSystem()');
-    console.log('  2. PenToolUIデバッグ: window.debugPenToolUI()');
-    console.log('  3. ポップアップテスト: window.testPenPopup()');
-    console.log('  4. 統合デバッグ機能: window.debugApp()');
-    console.log('  5. PenToolUI初期化: window.initializePenToolUI()');
-    
-    console.log('🚀 準備完了: ポップアップ問題修正版アプリケーション初期化実行中...');
-    console.log('📋 次のステップ: アンドゥ問題修正・画像劣化防止');
+// ==== エラー表示 ====
+function showStartupError(error) {
+    const errorDiv = document.createElement('div');
+    errorDiv.innerHTML = `
+        <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                    background: #ffebee; border: 2px solid #f44336; border-radius: 8px; 
+                    padding: 20px; max-width: 500px; z-index: 10000; 
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                    box-shadow: 0 8px 24px rgba(244, 67, 54, 0.3);">
+            <h3 style="color: #f44336; margin: 0 0 12px 0; font-size: 18px;">
+                🚨 アプリケーション起動エラー（履歴管理統合版）
+            </h3>
+            <p style="margin: 0 0 12px 0; color: #333; line-height: 1.5;">
+                ${error.message}
+            </p>
+            <details style="margin: 12px 0; color: #666;">
+                <summary style="cursor: pointer; font-weight: 500;">
+                    詳細情報を表示
+                </summary>
+                <pre style="margin: 8px 0 0 0; font-size: 12px; overflow: auto; max-height: 200px;">
+${error.stack || 'スタック情報なし'}
+                </pre>
+            </details>
+            <p style="margin: 12px 0 0 0; font-size: 12px; color: #666;">
+                💡 ブラウザのコンソール（F12）で詳細を確認できます<br>
+                🏛️ 履歴管理機能が正常に動作するか確認してください
+            </p>
+            <button onclick="this.parentElement.parentElement.remove()" 
+                    style="margin: 12px 0 0 0; padding: 8px 16px; background: #f44336; 
+                           color: white; border: none; border-radius: 4px; cursor: pointer;">
+                閉じる
+            </button>
+        </div>
+    `;
+    document.body.appendChild(errorDiv);
 }
-
-console.log('🏆 main.js ポップアップ問題修正版 初期化完了');
