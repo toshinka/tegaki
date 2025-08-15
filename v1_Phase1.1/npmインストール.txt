@@ -1,0 +1,127 @@
+
+確認結果とインストール方法
+1. PixiJS 本体
+
+パッケージ：pixi.js
+
+インストール方法：
+
+npm install pixi.js
+
+
+（CDN では pixi.min.js を使用）
+npm
+
+2. UI コンポーネント (@pixi/ui)
+
+パッケージ：@pixi/ui
+
+確認結果：NPM 上に存在し、最新バージョンが数週間前に公開されている
+npm
+
+インストール方法：
+
+npm install @pixi/ui
+
+3. テキスト高速化 (@pixi/text-bitmap)
+
+パッケージ：@pixi/text-bitmap
+
+確認結果：NPM 上に存在、最新バージョンは 7.4.3（数ヶ月前）
+npm
++1
+
+インストール方法：
+
+npm install @pixi/text-bitmap
+
+4. 無限キャンバス／ズーム・パン (pixi-viewport)
+
+パッケージ：pixi-viewport
+
+確認結果：NPM 上に存在、v5.0.2 は PixiJS v7.2+ に対応（本家最新版）
+npm
+
+インストール方法：
+
+npm install pixi-viewport
+
+5. フィルター効果 (pixi-filters)
+
+パッケージ：pixi-filters
+
+確認結果：NPM 上に存在、最新バージョンは v6.1.4、PixiJS v7.x 用
+npm
+
+インストール方法：
+
+npm install pixi-filters
+
+
+特定のフィルターを個別インストールする例（例：GlowFilter）：
+
+npm install @pixi/filter-glow
+
+
+npm
+
+6. SVG アイコン読み込み (pixi-svg)
+
+パッケージ：pixi-svg
+
+確認結果：NPM 上に存在、最新バージョンは 3.2.0（3年前）とややメンテナンス性に懸念あり
+npm
++1
+
+インストール方法：
+
+npm install pixi-svg
+
+
+************代替***************
+
+パッケージ名：@tabler/icons
+
+最新バージョンは 3.34.1（2025年7月ごろ公開）で、活発にメンテナンスされています 
+npm
+。
+
+インストール方法は以下の通りです：
+
+npm install @tabler/icons
+
+
+このパッケージは SVG ファイルそのものを提供しており、画像タグ、背景画像、inline HTML などで自由に使用可能。CSS によって色・大きさ・線の太さなどのスタイル調整も柔軟に行なえます
+********************************
+
+
+まとめ：package.json に記載する依存一覧例
+{
+  "dependencies": {
+    "pixi.js": "^...",
+    "@pixi/ui": "^...",
+    "@pixi/text-bitmap": "^...",
+    "pixi-viewport": "^...",
+    "pixi-filters": "^...",
+    // 特定のフィルターだけ別途追加したい場合:
+    "@pixi/filter-glow": "^...",
+    // SVG パッケージ (必要に応じてどちらか選択):
+    "pixi-svg": "^...",
+    // または
+    "@pixi-essentials/svg": "^..."
+  }
+}
+
+実装時のポイント
+
+バージョン規約：^ を付けることでメジャー更新以外（パッチやマイナー）を自動取得できますが、将来的に壊れる可能性のあるマイナーバージョン更新を避けたい場合は固定バージョン指定も検討してください。
+
+互換性チェック：例えば pixi-viewport@5.0.2 は PixiJS 7.2+ に対応しているなど、バージョン合わせには注意
+npm
+。
+
+メンテナンス状況：pixi-svg は更新が3年前でストール気味かもしれません。必要に応じて代替パッケージ（例：@pixi-essentials/svg）を選択する判断もアリ
+npm
++1
+。
+
