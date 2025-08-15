@@ -5,40 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0</title>
     
-    <!-- CSS分離: styles.css読み込み -->
+    <!-- CSS分離 -->
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-    <!-- node_modules統合・ローカル読み込み - CORS制限回避 -->
-    
-    <!-- PixiJS v7 本体 -->
-    <script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
-    
-    <!-- @pixi/ui: UIコンポーネント -->
-    <script src="./node_modules/@pixi/ui/dist/ui.min.js"></script>
-    
-    <!-- @pixi/layers: レイヤー機能 -->
-    <script src="./node_modules/@pixi/layers/dist/layers.min.js"></script>
-    
-    <!-- @pixi/gif: GIF機能 -->
-    <script src="./node_modules/@pixi/gif/dist/gif.min.js"></script>
-    
-    <!-- GSAP: アニメーション -->
-    <script src="./node_modules/gsap/dist/gsap.min.js"></script>
-    
-    <!-- Lodash: ユーティリティ -->
-    <script src="./node_modules/lodash/lodash.min.js"></script>
-    
-    <!-- Hammer.js: タッチジェスチャー -->
-    <script src="./node_modules/hammerjs/hammer.min.js"></script>
-    
-    <!-- PixiJS拡張統合ライブラリ -->
-    <script src="libs/pixi-extensions.js"></script>
-    
-    <!-- アプリケーション本体 -->
-    <script src="js/main.js"></script>
-    
-    <!-- メインレイアウト（元HTMLから移植） -->
     <div class="main-layout">
         <div class="sidebar">
             <div class="tool-button disabled" id="download-tool" title="ダウンロード">
@@ -117,7 +87,6 @@
         </div>
     </div>
     
-    <!-- ポップアップパネル（元HTMLから移植） -->
     <div class="popup-panel pen-settings draggable" id="pen-settings" style="left: 60px; top: 100px;">
         <div class="popup-title">ベクターペンツール設定</div>
         
@@ -305,5 +274,33 @@
             <div class="status-item">Memory: <span id="memory-usage">1.2GB</span></div>
         </div>
     </div>
+
+    <!-- node_modules統合: ローカル依存ライブラリ読み込み -->
+    <!-- PixiJS v7 本体 -->
+    <script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
+    
+    <!-- @pixi/ui: UIコンポーネント -->
+    <script src="./node_modules/@pixi/ui/dist/ui.min.js"></script>
+    
+    <!-- @pixi/layers: レイヤー機能 -->
+    <script src="./node_modules/@pixi/layers/dist/layers.min.js"></script>
+    
+    <!-- @pixi/gif: GIF機能 -->
+    <script src="./node_modules/@pixi/gif/dist/gif.min.js"></script>
+    
+    <!-- GSAP: アニメーション -->
+    <script src="./node_modules/gsap/dist/gsap.min.js"></script>
+    
+    <!-- Lodash: ユーティリティ -->
+    <script src="./node_modules/lodash/lodash.min.js"></script>
+    
+    <!-- Hammer.js: タッチジェスチャー -->
+    <script src="./node_modules/hammerjs/hammer.min.js"></script>
+    
+    <!-- PixiJS拡張統合ライブラリ -->
+    <script src="libs/pixi-extensions.js"></script>
+    
+    <!-- アプリケーション本体 -->
+    <script src="js/main.js"></script>
 </body>
 </html>
