@@ -1,0 +1,59 @@
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/v1_Phase1.1/1.rulebook_v8_fetch_api.txt
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/v1_Phase1.1/2.tegaki_fetch_migration_plan.txt
+vector-drawing-tool.htmlを分割するのに
+1.rulebook_v8_fetch_api.txt
+2.tegaki_fetch_migration_plan.txt
+を用意した。
+ただ、これを実装した時にCDNの読み込みエラーで、修正がどうにもならなくなった。
+別Claudeでの問題解析結果が
+1. ファイル読み込み問題
+**原因**:
+* `index.html` でローカルファイルとして開く際のCORS制限
+* ES6 modules (`type="module"`) がfile://プロトコルで動作不可
+**影響範囲**:
+* main.js以降のすべてのモジュール読み込み失敗
+* アプリケーション全体の初期化不可
+2. CDNライブラリ問題
+**原因**:
+* @pixi/ui CDNの不正確なURL・バージョン不整合
+* TypeScript定義の混在（typedSignalsエラー）
+**影響範囲**:
+* UI要素（スライダー・ボタン等）の初期化失敗
+* PIXI_UIライブラリへのアクセス不可
+3. DOM統合問題
+**原因**:
+* HTMLのDOM構造とJavaScript期待値の不一致
+* CSS読み込み失敗による見た目の問題
+上記のような感じだった。
+「現在はPixiJSv7（@pixiライブラリ活用）+JavaScript + fetch API分割でのコーディングです。
+」と明記してるので、実装時に違反があったっぽいです。ESM+TSは今回は導入しないです。完全実装後に検討はしますが、変に混ざるのであれば禁止しといても良いくらいですね。
+この辺りを改善するのにlibs/pixi-extensions.jsのようなものを組み込んだら良いかと思うのだけどどうだろうか？添付したpixi-extensions.jsは別プロジェクトで使ったもののため換骨奪胎が必要そうです。
+CDNでは無く、node_modulesフォルダから取得するようにし、オフラインからとるようにすれば良いのでは？と考えてます。
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@7.4.3/dist/pixi.min.js"></script>では無くて
+<script src="./node_modules/pixi.js/dist/pixi.min.js"></script>みたいな感じです。コードがこれで合ってるかは置いときますが雰囲気はこんな感じです。
+npmインストールは下記の通り済んでいます。
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/v1_Phase0/package.json
+https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/v1_Phase0/package-lock.json
+ファイル構造はこうでしょうか？
+├─ index.html                     // 拡張ライブラリ統合・エントリーポイント
+├─ package.json
+├─ package-lock.json
+├─ node_modules/
+│  ├─ @pixi/　…
+│  ├─ …
+│  …
+├─ css/
+│  └─ styles.css                  // ふたば☆ちゃんねる風スタイル
+├─ libs/                          // 拡張ライブラリ統合層
+│  └─ pixi-extensions.js         // PixiJS初期化・拡張統合基盤
+├─ js/
+│  ├─ main.js                     // アプリケーション初期化
+│  ├─ app-core.js                 // PixiJS初期
+
+
+もし賛同得られるのであれば、これらの導入のために1.rulebook_v8_fetch_api.txtと2.tegaki_fetch_migration_plan.txtの該当部分を改修・追記して欲しい。基本理念は変えずそのままに、最新Chrome用でベクターペンでWEBGL/WEBGPUな尖ったものとします。ファイル構成もなるべくそのままで挿入・変更する程度のが良いです
+また、責任分界がしっかりしたファイルづくりでお願いします。
+『Rulebookは恒久的な指針・規約であり、改修の成果ではなく運用ルールを記載すべき』
+・Rulebook：指針策定・構造・品質基準・移行戦略
+・計画書：具体的手順・ファイル別詳細・実装ガイド・テスト手順
+Claudeは、ついお手本コードに熱中してしまい、ルールブックを逸脱したガイド化させたり、計画書も恐ろしく肥大化させたりすることが良くあります。結局コーディングするのは同じClaudeなので、それを信頼して言葉での必要な説明を多くし、お手本コードは最小限で良いと思います。計画書現在もかなりの量なのでPhase1-2と3-4で分割してください。Phase1-2の方に3-4の極小の準備予告ダイジェストを入れてある程度は俯瞰できるようにはしてください。お手本コードは入れすぎると肥大化するのでガイド程度を心がけてください。
