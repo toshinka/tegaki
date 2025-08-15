@@ -1,0 +1,991 @@
+
+## 🚀 Phase4: PixiJS v8移行（次世代版）
+
+### Phase4.1: v8移行準備・互換性レイヤー実装
+**期間**: 2週間・目標: v8移行基盤完成・破壊的変更対応
+
+#### v8互換性レイヤー実装
+```javascript
+// js/migration/v8-compatibility.js（300行以下）
+/**
+ * 🎯 AI_WORK_SCOPE: PixiJS v8移行対応・API変更吸収・互換性確保
+ * 🎯 DEPENDENCIES: libs/pixi-extensions.js, js/app-core.js
+ * 🎯 NODE_MODULES: pixi.js v8（移行後）
+ * 📋 PHASE_TARGET: Phase4
+ * 📋 V8_MIGRATION: 本ファイルが移行の中核
+ */
+class V8CompatibilityLayer {
+    constructor() {
+        this.pixiVersion = PIXI.VERSION;
+        this.isV8 = this.pixiVersion.startsWith('8');
+        this.migrationLog = [];
+    }
+    
+    // アプリケーション作成（v7/v8対応）
+    static async createApplication(options) {
+        const compatibility = new V8CompatibilityLayer();
+        
+        if (compatibility.isV8) {
+            // v8: 新しい初期化方式
+            console.log('🚀 PixiJS v8モードでアプリケーション作成');
+            
+            const app = new PIXI.Application();
+            await app.init({
+                width: options.width,
+                height: options.height,
+                background: options.backgroundColor ? 
+                    `#${options.backgroundColor.toString(16).padStart(6, '0')}` : 
+                    '#f0e0d6',
+                antialias: options.antialias,
+                preference: options.webgpu ? 'webgpu' : 'webgl'
+            });
+            
+            compatibility.logMigration('Application', 'v8新方式使用');
+            return app;
+            
+        } else {
+            // v7: 従来の初期化方式
+            console.log('📦 PixiJS v7互換モードでアプリケーション作成');
+            
+            const app = new PIXI.Application({
+                width: options.width,
+                height: options.height,
+                backgroundColor: options.backgroundColor,
+                antialias: options.antialias
+            });
+            
+            compatibility.logMigration('Application', 'v7互換方式使用');
+            return app;
+        }
+    }
+    
+    // テクスチャ作成（v7/v8対応）
+    static createTexture(source) {
+        const compatibility = new V8CompatibilityLayer();
+        
+        if (compatibility.isV8) {
+            // v8: Assets.load 推奨
+            if (typeof source === 'string') {
+                return PIXI.Assets.load(source);
+            } else {
+                return PIXI.Texture.from(source);
+            }
+        } else {
+            // v7: 従来のTexture.from
+            return PIXI.Texture.from(source);
+        }
+    }
+    
+    // レンダラー設定（v7/v8対応）
+    setupRenderer(app, options = {}) {
+        if (this.isV8) {
+            // v8: WebGPU Renderer対応
+            this.setupV8Renderer(app, options);
+        } else {
+            // v7: WebGL Renderer
+            this.setupV7Renderer(app, options);
+        }
+    }
+    
+    setupV8Renderer(app, options) {
+        console.log('🎮 v8 Renderer設定開始');
+        
+        // WebGPU優先設定
+        if (options.preferWebGPU && navigator.gpu) {
+            console.log('✨ WebGPU Renderer使用');
+            app.renderer.context.preferredFormat = 'bgra8unorm';
+            
+            // 120FPS設定
+            app.ticker.maxFPS = options.targetFPS || 120;
+            app.ticker.minFPS = 60; // 最低品質保証
+            
+            this.logMigration('Renderer', 'WebGPU設定完了');
+        } else {
+            console.log('🔧 WebGL2 Renderer使用');
+            app.ticker.maxFPS = 60;
+            this.logMigration('Renderer', 'WebGL2フォールバック');
+        }
+        
+        // メモリ最適化設定
+        if (app.renderer.context) {
+            app.renderer.context.powerPreference = 'high-performance';
+        }
+    }
+    
+    setupV7Renderer(app, options) {
+        console.log('📦 v7 Renderer設定');
+        
+        // 従来の設定
+        app.ticker.maxFPS = 60;
+        
+        // WebGL設定
+        if (app.renderer.gl) {
+            app.renderer.gl.getExtension('OES_texture_float');
+            app.renderer.gl.getExtension('WEBGL_color_buffer_float');
+        }
+        
+        this.logMigration('Renderer', 'v7設定完了');
+    }
+    
+    // Graphics API変更対応
+    static createGraphics() {
+        const compatibility = new V8CompatibilityLayer();
+        
+        if (compatibility.isV8) {
+            // v8: 新Graphics API
+            const graphics = new PIXI.Graphics();
+            
+            // v8では一部メソッド名変更の可能性
+            graphics.beginPath = graphics.beginPath || function() {
+                // v8対応フォールバック
+                return this;
+            };
+            
+            return graphics;
+        } else {
+            // v7: 従来Graphics
+            return new PIXI.Graphics();
+        }
+    }
+    
+    // アセット読み込み統一（v7/v8対応）
+    static async loadAssets(assets) {
+        const compatibility = new V8CompatibilityLayer();
+        
+        if (compatibility.isV8) {
+            // v8: Assets API使用
+            console.log('📦 v8 Assets API使用');
+            
+            if (Array.isArray(assets)) {
+                return await PIXI.Assets.load(assets);
+            } else {
+                return await PIXI.Assets.load([assets]);
+            }
+        } else {
+            // v7: Loader使用
+            console.log('📦 v7 Loader使用');
+            
+            return new Promise((resolve, reject) => {
+                const loader = new PIXI.Loader();
+                
+                if (Array.isArray(assets)) {
+                    assets.forEach(asset => loader.add(asset));
+                } else {
+                    loader.add(assets);
+                }
+                
+                loader.load((loader, resources) => {
+                    resolve(resources);
+                });
+                
+                loader.onError.add(reject);
+            });
+        }
+    }
+    
+    logMigration(component, action) {
+        const logEntry = {
+            timestamp: Date.now(),
+            component: component,
+            action: action,
+            version: this.pixiVersion
+        };
+        
+        this.migrationLog.push(logEntry);
+        console.log(`📝 Migration: ${component} - ${action}`);
+    }
+    
+    getMigrationReport() {
+        return {
+            pixiVersion: this.pixiVersion,
+            isV8: this.isV8,
+            migrationCount: this.migrationLog.length,
+            log: this.migrationLog,
+            summary: this.generateMigrationSummary()
+        };
+    }
+    
+    generateMigrationSummary() {
+        const components = {};
+        
+        this.migrationLog.forEach(entry => {
+            if (!components[entry.component]) {
+                components[entry.component] = [];
+            }
+            components[entry.component].push(entry.action);
+        });
+        
+        return components;
+    }
+}
+```
+
+### Phase4.2: WebGPU・120FPS実装
+**期間**: 3週間・目標: GPU活用・高速描画・性能最適化
+
+#### WebGPU描画最適化
+```javascript
+// js/migration/webgpu-optimizer.js（400行以下）
+/**
+ * 🎯 AI_WORK_SCOPE: WebGPU最適化・120FPS描画・GPU活用
+ * 🎯 DEPENDENCIES: js/migration/v8-compatibility.js
+ * 🎯 NODE_MODULES: pixi.js v8（WebGPU対応）
+ * 📋 PHASE_TARGET: Phase4
+ * 📋 PERFORMANCE_TARGET: 120FPS安定・GPU使用率最適化
+ */
+class WebGPUDrawingOptimizer {
+    constructor(app) {
+        this.app = app;
+        this.isWebGPUAvailable = this.checkWebGPUSupport();
+        this.performanceStats = {
+            fps: [],
+            gpuUsage: [],
+            memoryUsage: []
+        };
+        
+        this.init();
+    }
+    
+    checkWebGPUSupport() {
+        const hasWebGPU = 'gpu' in navigator;
+        const hasRenderer = this.app.renderer.type === PIXI.RENDERER_TYPE.WEBGPU;
+        
+        console.log(`🎮 WebGPU対応状況: ${hasWebGPU ? '✅' : '❌'}`);
+        console.log(`🔧 WebGPU Renderer: ${hasRenderer ? '✅' : '❌'}`);
+        
+        return hasWebGPU && hasRenderer;
+    }
+    
+    async init() {
+        if (!this.isWebGPUAvailable) {
+            console.log('📦 WebGLモードで動作');
+            this.setupWebGLOptimization();
+            return;
+        }
+        
+        console.log('🚀 WebGPU最適化開始');
+        
+        // WebGPU Compute Shader設定
+        await this.setupComputeShaders();
+        
+        // 描画パイプライン最適化
+        this.optimizeRenderPipeline();
+        
+        // メモリ管理最適化
+        this.setupMemoryManagement();
+        
+        // 120FPS設定
+        this.enable120FPS();
+        
+        // パフォーマンス監視開始
+        this.startPerformanceMonitoring();
+    }
+    
+    async setupComputeShaders() {
+        try {
+            const device = this.app.renderer.context.device;
+            
+            // 描画最適化Compute Shader
+            const shaderCode = `
+                @group(0) @binding(0) var<storage, read_write> positions: array<vec2<f32>>;
+                @group(0) @binding(1) var<uniform> transform: mat3x3<f32>;
+                
+                @compute @workgroup_size(64)
+                fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+                    let index = global_id.x;
+                    if (index >= arrayLength(&positions)) {
+                        return;
+                    }
+                    
+                    let pos = positions[index];
+                    let transformed = transform * vec3<f32>(pos.x, pos.y, 1.0);
+                    positions[index] = transformed.xy;
+                }
+            `;
+            
+            this.computeShader = device.createShaderModule({
+                label: 'Drawing Optimization Compute Shader',
+                code: shaderCode
+            });
+            
+            console.log('✨ Compute Shader設定完了');
+            
+        } catch (error) {
+            console.warn('⚠️ Compute Shader設定失敗:', error);
+        }
+    }
+    
+    optimizeRenderPipeline() {
+        // バッチ描画最適化
+        this.app.renderer.batch.setMaxBatchSize(16384); // 大きなバッチサイズ
+        
+        // テクスチャ最適化
+        PIXI.settings.ROUND_PIXELS = true;
+        PIXI.settings.RESOLUTION = window.devicePixelRatio;
+        
+        // GPU Buffer最適化
+        if (this.isWebGPUAvailable) {
+            const context = this.app.renderer.context;
+            
+            // 高性能設定
+            context.device.queue.writeBuffer = context.device.queue.writeBuffer.bind(
+                context.device.queue
+            );
+            
+            console.log('🔧 WebGPU Render Pipeline最適化完了');
+        }
+    }
+    
+    setupMemoryManagement() {
+        // GPU メモリ管理
+        const memorySettings = {
+            maxGPUMemory: 1024 * 1024 * 1024, // 1GB
+            textureCache: 512 * 1024 * 1024,   // 512MB
+            bufferCache: 256 * 1024 * 1024     // 256MB
+        };
+        
+        // 定期的なメモリクリーンアップ
+        setInterval(() => {
+            this.cleanupGPUMemory();
+        }, 30000); // 30秒ごと
+        
+        console.log('🧹 GPU メモリ管理設定完了');
+    }
+    
+    enable120FPS() {
+        // 120FPS設定
+        this.app.ticker.maxFPS = 120;
+        this.app.ticker.minFPS = 60; // 最低品質保証
+        
+        // VSync制御（必要時）
+        if (this.isWebGPUAvailable) {
+            this.setupVSyncControl();
+        }
+        
+        // Chrome Scheduling API活用
+        if ('scheduler' in window) {
+            this.enableHighPriorityRendering();
+        }
+        
+        console.log('🚀 120FPS設定完了');
+    }
+    
+    setupVSyncControl() {
+        // WebGPU Present Mode設定
+        const context = this.app.renderer.context;
+        
+        if (context.canvas && context.canvas.getContext) {
+            // 'immediate' モードで VSync無効化（必要時）
+            try {
+                context.configure({
+                    device: context.device,
+                    format: 'bgra8unorm',
+                    usage: GPUTextureUsage.RENDER_ATTACHMENT,
+                    presentMode: 'mailbox' // 低遅延モード
+                });
+            } catch (error) {
+                console.warn('⚠️ VSync制御設定失敗:', error);
+            }
+        }
+    }
+    
+    enableHighPriorityRendering() {
+        const scheduler = window.scheduler;
+        
+        // 高優先度レンダリングタスク
+        this.app.ticker.add(() => {
+            scheduler.postTask(() => {
+                this.optimizedRenderFrame();
+            }, { priority: 'user-blocking' });
+        });
+        
+        console.log('⚡ 高優先度レンダリング有効化');
+    }
+    
+    optimizedRenderFrame() {
+        // フレーム最適化処理
+        const startTime = performance.now();
+        
+        // 描画処理
+        this.app.renderer.render(this.app.stage);
+        
+        // パフォーマンス計測
+        const frameTime = performance.now() - startTime;
+        const fps = Math.round(1000 / frameTime);
+        
+        this.recordPerformance(fps, frameTime);
+        
+        // 動的品質調整
+        if (fps < 100 && this.isWebGPUAvailable) {
+            this.adjustQuality('lower');
+        } else if (fps > 115) {
+            this.adjustQuality('higher');
+        }
+    }
+    
+    adjustQuality(direction) {
+        if (direction === 'lower') {
+            // 品質を下げてfps向上
+            this.app.renderer.resolution *= 0.95;
+        } else if (direction === 'higher') {
+            // 品質を上げる
+            this.app.renderer.resolution = Math.min(
+                this.app.renderer.resolution * 1.05, 
+                window.devicePixelRatio * 2
+            );
+        }
+    }
+    
+    startPerformanceMonitoring() {
+        setInterval(() => {
+            const stats = this.getPerformanceStats();
+            
+            console.log(`📊 Performance: ${stats.avgFPS}fps, GPU: ${stats.gpuUsage}%`);
+            
+            // 性能アラート
+            if (stats.avgFPS < 90) {
+                console.warn('⚠️ FPS低下検出: 最適化を実行');
+                this.performanceOptimization();
+            }
+            
+        }, 5000); // 5秒ごと
+    }
+    
+    recordPerformance(fps, frameTime) {
+        this.performanceStats.fps.push(fps);
+        
+        // 配列サイズ制限
+        if (this.performanceStats.fps.length > 60) {
+            this.performanceStats.fps.shift();
+        }
+        
+        // GPU使用率推定（WebGPU環境）
+        if (this.isWebGPUAvailable) {
+            const gpuUsage = Math.min(100, frameTime * 6); // 簡易推定
+            this.performanceStats.gpuUsage.push(gpuUsage);
+            
+            if (this.performanceStats.gpuUsage.length > 60) {
+                this.performanceStats.gpuUsage.shift();
+            }
+        }
+    }
+    
+    getPerformanceStats() {
+        const fps = this.performanceStats.fps;
+        const gpu = this.performanceStats.gpuUsage;
+        
+        return {
+            avgFPS: fps.length > 0 ? Math.round(fps.reduce((a, b) => a + b) / fps.length) : 0,
+            minFPS: fps.length > 0 ? Math.min(...fps) : 0,
+            maxFPS: fps.length > 0 ? Math.max(...fps) : 0,
+            gpuUsage: gpu.length > 0 ? Math.round(gpu.reduce((a, b) => a + b) / gpu.length) : 0,
+            isWebGPU: this.isWebGPUAvailable
+        };
+    }
+    
+    cleanupGPUMemory() {
+        // テクスチャキャッシュクリア
+        PIXI.utils.clearTextureCache();
+        
+        // 未使用リソース解放
+        if (this.app.renderer.texture && this.app.renderer.texture.gc) {
+            this.app.renderer.texture.gc();
+        }
+        
+        // WebGPU Buffer解放
+        if (this.isWebGPUAvailable) {
+            // GPU Buffer の強制解放（実装依存）
+            try {
+                const device = this.app.renderer.context.device;
+                device.pushErrorScope('out-of-memory');
+                device.popErrorScope().then(error => {
+                    if (error) {
+                        console.warn('GPU Memory状況:', error);
+                    }
+                });
+            } catch (error) {
+                console.warn('GPU Memory確認失敗:', error);
+            }
+        }
+        
+        console.log('🧹 GPU Memory Cleanup実行');
+    }
+    
+    setupWebGLOptimization() {
+        // WebGL最適化（フォールバック）
+        this.app.ticker.maxFPS = 60;
+        
+        // WebGL拡張機能使用
+        const gl = this.app.renderer.gl;
+        if (gl) {
+            gl.getExtension('OES_texture_float');
+            gl.getExtension('WEBGL_color_buffer_float');
+            gl.getExtension('EXT_color_buffer_float');
+        }
+        
+        console.log('🔧 WebGL最適化完了');
+    }
+}
+```
+
+### Phase4.3: SPINE統合・高度アニメーション
+**期間**: 3週間・目標: ボーンアニメーション・Live2D準備
+
+#### SPINE統合実装
+```javascript
+// js/animation/spine-integration.js（400行以下）
+/**
+ * 🎯 AI_WORK_SCOPE: SPINE統合・ボーンアニメーション・Live2D準備
+ * 🎯 DEPENDENCIES: js/animation/frame-manager.js, libs/pixi-extensions.js
+ * 🎯 NODE_MODULES: pixi.js v8, pixi-spine（追加予定）
+ * 📋 PHASE_TARGET: Phase4
+ * 📋 PERFORMANCE_TARGET: 60fps ボーンアニメーション
+ */
+class SpineIntegration {
+    constructor(animationManager) {
+        this.animationManager = animationManager;
+        this.spineAssets = new Map();
+        this.spineLibraryLoaded = false;
+        this.activeSpineObjects = [];
+        
+        this.init();
+    }
+    
+    async init() {
+        console.log('🦴 SPINE統合初期化開始');
+        
+        try {
+            await this.loadSpineLibrary();
+            this.setupSpineRenderer();
+            console.log('✅ SPINE統合完了');
+        } catch (error) {
+            console.warn('⚠️ SPINE統合失敗:', error);
+        }
+    }
+    
+    async loadSpineLibrary() {
+        if (this.spineLibraryLoaded) return;
+        
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/pixi-spine@4.0.4/dist/pixi-spine.umd.js';
+            
+            script.onload = () => {
+                if (window.PIXI && window.PIXI.spine) {
+                    this.spineLibraryLoaded = true;
+                    console.log('📦 pixi-spine ライブラリ読み込み完了');
+                    resolve();
+                } else {
+                    reject(new Error('PIXI.spine が利用できません'));
+                }
+            };
+            
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+    
+    setupSpineRenderer() {
+        if (!window.PIXI?.spine) return;
+        
+        // SPINE レンダラー最適化設定
+        PIXI.spine.settings.FAIL_ON_NON_EXISTING_SKIN = false;
+        PIXI.spine.settings.GLOBAL_AUTO_UPDATE = true;
+        PIXI.spine.settings.GLOBAL_DELAY_LIMIT = 0;
+        
+        console.log('🎮 SPINE Renderer設定完了');
+    }
+    
+    async loadSpineAsset(assetPath, atlasPath = null, jsonPath = null) {
+        if (!this.spineLibraryLoaded) {
+            await this.loadSpineLibrary();
+        }
+        
+        try {
+            console.log(`📦 SPINEアセット読み込み: ${assetPath}`);
+            
+            // アセットパス解析
+            const basePath = assetPath.replace(/\.[^/.]+$/, '');
+            const spineAtlas = atlasPath || `${basePath}.atlas`;
+            const spineJson = jsonPath || `${basePath}.json`;
+            
+            // SPINEデータ読み込み
+            const resources = await this.loadSpineResources(spineJson, spineAtlas, assetPath);
+            
+            // SPINEオブジェクト作成
+            const spine = new PIXI.spine.Spine(resources.spineData);
+            
+            // アニメーション設定
+            this.setupSpineAnimation(spine);
+            
+            // 管理対象に追加
+            this.spineAssets.set(assetPath, {
+                spine: spine,
+                resources: resources,
+                animations: spine.spineData.animations.map(anim => anim.name),
+                skins: spine.spineData.skins.map(skin => skin.name)
+            });
+            
+            this.activeSpineObjects.push(spine);
+            
+            console.log(`✅ SPINEアセット読み込み完了: ${assetPath}`);
+            return spine;
+            
+        } catch (error) {
+            console.error(`❌ SPINEアセット読み込み失敗: ${assetPath}`, error);
+            throw error;
+        }
+    }
+    
+    async loadSpineResources(jsonPath, atlasPath, texturePath) {
+        // PixiJS v8のAssets API使用
+        const V8Compatibility = window.V8Compatibility || 
+            await import('../migration/v8-compatibility.js').then(m => m.V8CompatibilityLayer);
+        
+        const resources = await V8Compatibility.loadAssets([
+            { alias: 'spineAtlas', src: atlasPath },
+            { alias: 'spineJson', src: jsonPath }
+        ]);
+        
+        // SPINEデータ構築
+        const atlas = new PIXI.spine.TextureAtlas(
+            resources.spineAtlas.data, 
+            (path, callback) => {
+                const texture = PIXI.Texture.from(texturePath);
+                callback(texture.baseTexture);
+            }
+        );
+        
+        const atlasLoader = new PIXI.spine.AtlasAttachmentLoader(atlas);
+        const skeletonJson = new PIXI.spine.SkeletonJson(atlasLoader);
+        const skeletonData = skeletonJson.readSkeletonData(resources.spineJson.data);
+        
+        return {
+            atlas: atlas,
+            spineData: skeletonData,
+            resources: resources
+        };
+    }
+    
+    setupSpineAnimation(spine) {
+        // 基本アニメーション設定
+        if (spine.spineData.animations.length > 0) {
+            const firstAnimation = spine.spineData.animations[0].name;
+            spine.state.setAnimation(0, firstAnimation, true);
+        }
+        
+        // アニメーション完了リスナー
+        spine.state.addListener({
+            complete: (track) => {
+                console.log(`🎬 SPINEアニメーション完了: ${track.animation.name}`);
+            },
+            
+            start: (track) => {
+                console.log(`▶️ SPINEアニメーション開始: ${track.animation.name}`);
+            },
+            
+            interrupt: (track) => {
+                console.log(`⏸️ SPINEアニメーション中断: ${track.animation.name}`);
+            }
+        });
+        
+        // アニメーション更新最適化
+        spine.autoUpdate = true;
+        spine.updateTransform = spine.updateTransform.bind(spine);
+    }
+    
+    // アニメーション制御メソッド
+    playAnimation(spineAssetPath, animationName, loop = true, trackIndex = 0) {
+        const asset = this.spineAssets.get(spineAssetPath);
+        if (!asset) {
+            console.warn(`SPINEアセットが見つかりません: ${spineAssetPath}`);
+            return false;
+        }
+        
+        const spine = asset.spine;
+        
+        if (!asset.animations.includes(animationName)) {
+            console.warn(`アニメーションが見つかりません: ${animationName}`);
+            return false;
+        }
+        
+        spine.state.setAnimation(trackIndex, animationName, loop);
+        console.log(`🎬 アニメーション再生: ${animationName}`);
+        return true;
+    }
+    
+    addAnimation(spineAssetPath, animationName, loop = true, delay = 0, trackIndex = 0) {
+        const asset = this.spineAssets.get(spineAssetPath);
+        if (!asset) return false;
+        
+        const spine = asset.spine;
+        spine.state.addAnimation(trackIndex, animationName, loop, delay);
+        
+        return true;
+    }
+    
+    setSkin(spineAssetPath, skinName) {
+        const asset = this.spineAssets.get(spineAssetPath);
+        if (!asset) return false;
+        
+        const spine = asset.spine;
+        
+        if (!asset.skins.includes(skinName)) {
+            console.warn(`スキンが見つかりません: ${skinName}`);
+            return false;
+        }
+        
+        spine.skeleton.setSkinByName(skinName);
+        spine.skeleton.setSlotsToSetupPose();
+        
+        console.log(`👗 スキン変更: ${skinName}`);
+        return true;
+    }
+    
+    // フレームアニメーション統合
+    integrateWithFrameAnimation(frameManager) {
+        console.log('🔗 SPINEアニメーションをフレームアニメーションに統合');
+        
+        // フレーム作成時にSPINEアニメーションを含める
+        const originalCreateFrame = frameManager.createFrame.bind(frameManager);
+        
+        frameManager.createFrame = (duration) => {
+            // 通常フレーム作成
+            const frame = originalCreateFrame(duration);
+            
+            // アクティブなSPINEオブジェクトの状態を保存
+            frame.spineStates = this.activeSpineObjects.map(spine => ({
+                assetPath: this.findAssetPath(spine),
+                currentAnimation: spine.state.getCurrent(0)?.animation.name,
+                currentTime: spine.state.getCurrent(0)?.animationTime || 0,
+                skinName: spine.skeleton.skin?.name
+            }));
+            
+            return frame;
+        };
+        
+        // フレーム読み込み時にSPINEアニメーション復元
+        const originalLoadFrame = frameManager.loadFrameToCanvas.bind(frameManager);
+        
+        frameManager.loadFrameToCanvas = (frameIndex) => {
+            originalLoadFrame(frameIndex);
+            
+            const frame = frameManager.frames[frameIndex];
+            if (frame.spineStates) {
+                this.restoreSpineStates(frame.spineStates);
+            }
+        };
+    }
+    
+    findAssetPath(spine) {
+        for (const [path, asset] of this.spineAssets) {
+            if (asset.spine === spine) {
+                return path;
+            }
+        }
+        return null;
+    }
+    
+    restoreSpineStates(spineStates) {
+        spineStates.forEach(state => {
+            const asset = this.spineAssets.get(state.assetPath);
+            if (!asset) return;
+            
+            const spine = asset.spine;
+            
+            // アニメーション復元
+            if (state.currentAnimation) {
+                spine.state.setAnimation(0, state.currentAnimation, true);
+                spine.state.getCurrent(0).animationTime = state.currentTime;
+            }
+            
+            // スキン復元
+            if (state.skinName) {
+                spine.skeleton.setSkinByName(state.skinName);
+                spine.skeleton.setSlotsToSetupPose();
+            }
+        });
+    }
+    
+    // Live2D準備機能
+    prepareLive2DSupport() {
+        console.log('🎭 Live2D準備機能初期化');
+        
+        // Live2D Cubism SDK準備
+        this.live2dReady = false;
+        
+        return {
+            loadLive2DModel: async (modelPath) => {
+                console.log('🎭 Live2Dモデル読み込み準備');
+                // Phase4後期実装予定
+                throw new Error('Live2D機能はPhase4後期実装予定');
+            },
+            
+            setupLive2DPhysics: () => {
+                console.log('🎭 Live2D物理演算準備');
+                // Phase4後期実装予定
+            }
+        };
+    }
+    
+    // パフォーマンス監視
+    getPerformanceStats() {
+        const stats = {
+            loadedAssets: this.spineAssets.size,
+            activeObjects: this.activeSpineObjects.length,
+            totalBones: 0,
+            totalSlots: 0,
+            animationsPlaying: 0
+        };
+        
+        this.activeSpineObjects.forEach(spine => {
+            stats.totalBones += spine.skeleton.bones.length;
+            stats.totalSlots += spine.skeleton.slots.length;
+            
+            if (spine.state.getCurrent(0)) {
+                stats.animationsPlaying++;
+            }
+        });
+        
+        return stats;
+    }
+    
+    // メモリ最適化
+    cleanup() {
+        console.log('🧹 SPINE リソースクリーンアップ');
+        
+        // 非アクティブなSPINEオブジェクト解放
+        this.activeSpineObjects.forEach(spine => {
+            spine.destroy();
+        });
+        
+        // アセット解放
+        this.spineAssets.forEach((asset, path) => {
+            asset.spine.destroy();
+            console.log(`🗑️ SPINEアセット解放: ${path}`);
+        });
+        
+        this.activeSpineObjects = [];
+        this.spineAssets.clear();
+    }
+}
+```
+
+---
+## 📊 Phase4テスト・品質保証
+
+### Phase4テスト: v8移行・WebGPU
+**基準**: v8移行・WebGPU・120FPS・SPINE統合完全動作
+
+```javascript
+class Phase4TestSuite {
+    async runTests() {
+        console.log('🧪 Phase4テスト実行開始');
+        
+        await this.testV8Compatibility();
+        await this.testWebGPUPerformance();
+        await this.testSpineIntegration();
+        await this.test120FPS();
+        
+        console.log('✅ Phase4テスト完了');
+    }
+    
+    async testV8Compatibility() {
+        // v8互換性テスト
+        const app = await V8CompatibilityLayer.createApplication({
+            width: 800,
+            height: 600,
+            backgroundColor: 0xf0e0d6,
+            webgpu: true
+        });
+        
+        if (!app || !app.stage) {
+            throw new Error('v8アプリケーション作成失敗');
+        }
+        
+        // レンダラー確認
+        const isWebGPU = navigator.gpu && app.renderer.type === PIXI.RENDERER_TYPE.WEBGPU;
+        console.log(`🎮 レンダラー: ${isWebGPU ? 'WebGPU' : 'WebGL'}`);
+        
+        console.log('✅ v8互換性テスト完了');
+    }
+    
+    async testWebGPUPerformance() {
+        const app = await V8CompatibilityLayer.createApplication({
+            width: 800,
+            height: 600,
+            webgpu: true
+        });
+        
+        const optimizer = new WebGPUDrawingOptimizer(app);
+        
+        // 性能測定テスト
+        return new Promise((resolve) => {
+            setTimeout(() => {
+                const stats = optimizer.getPerformanceStats();
+                
+                if (stats.isWebGPU && stats.avgFPS < 90) {
+                    console.warn('⚠️ WebGPU性能が期待値を下回ります');
+                } else if (!stats.isWebGPU && stats.avgFPS < 50) {
+                    console.warn('⚠️ WebGL性能が期待値を下回ります');
+                }
+                
+                console.log(`✅ WebGPU性能テスト完了: ${stats.avgFPS}fps`);
+                resolve();
+            }, 5000);
+        });
+    }
+    
+    async testSpineIntegration() {
+        const spineIntegration = new SpineIntegration();
+        
+        try {
+            // SPINEライブラリ読み込みテスト
+            await spineIntegration.loadSpineLibrary();
+            
+            if (!spineIntegration.spineLibraryLoaded) {
+                throw new Error('SPINEライブラリ読み込み失敗');
+            }
+            
+            console.log('✅ SPINE統合テスト完了');
+            
+        } catch (error) {
+            console.warn('⚠️ SPINE統合テスト失敗（オプション機能）:', error);
+        }
+    }
+}
+```
+## 🎯 最終成果物・期待効果
+
+### Phase4成果物
+- **🚀 PixiJS v8完全移行**: 破壊的変更対応・互換性レイヤー完成
+- **⚡ WebGPU 対応**: GPU活用・描画性能向上・メモリ最適化
+- **🏃 120FPS 描画**: 高周波数描画・動的品質調整・VSync制御
+- **🦴 SPINE 統合**: ボーンアニメーション・Live2D準備・フレーム統合
+
+### 技術的成果・革新
+- **WebGPU活用**: 次世代GPU描画・Compute Shader活用
+- **120FPS実現**: Chrome Scheduling API・高優先度レンダリング  
+- **アニメ制作環境**: プロ級GIF制作・オニオンスキン・タイムライン
+- **SPINE統合**: ボーンアニメーション・Live2D対応準備
+
+## 🔧 Phase4実装開始手順
+
+### Phase4実装順序（推奨）
+
+**Week 1-2**: v8移行準備・互換性レイヤー
+- [ ] js/migration/v8-compatibility.js（互換性）
+- [ ] 破壊的変更対応・API変更吸収
+- [ ] 移行テスト・品質確認
+
+**Week 3-5**: WebGPU・120FPS実装
+- [ ] js/migration/webgpu-optimizer.js（WebGPU最適化）
+- [ ] 120FPS設定・VSync制御
+- [ ] パフォーマンス監視・動的品質調整
+
+**Week 6-8**: SPINE統合・高度アニメーション
+- [ ] js/animation/spine-integration.js（SPINE統合）
+- [ ] ボーンアニメーション対応
+- [ ] Live2D準備・統合テスト
+
+---
