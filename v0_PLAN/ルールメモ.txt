@@ -1,0 +1,95 @@
+[⚠️ Suspicious Content] 📋 AIへの指示文テンプレート
+Plaintext
+
+# 絶対厳守のルール
+
+あなたはプロのフロントエンドエンジニアです。以下のルールを**絶対に**守って、コードを生成・修正してください。
+
+1.  **【最重要】Pure JavaScript (ECMAScript 5/6) のみ使用すること**
+    * `import` や `export` といった**ESM（モジュール）構文は絶対に使用禁止**です。
+    * TypeScriptも使用しません。
+
+2.  **ライブラリの読み込み方法**
+    * PixiJSなどのライブラリは、HTMLファイルの`<script>`タグを使って**ブラウザが直接読み込みます**。
+    * そのため、JavaScriptファイル内では、すでにグローバルスコープに`PIXI`オブジェクトなどが存在することを前提としてコードを書いてください。
+
+3.  **ファイル間の連携方法**
+    * ファイル（コンポーネント）間の連携は、グローバルオブジェクトやIIFE（即時実行関数式）を使って実現します。`import`は使いません。
+
+### 具体的なコード例
+
+**【禁止する書き方 ❌】**
+```javascript
+// main.js
+import * as PIXI from 'pixi.js'; // ← このimportは絶対に使わないで！
+import { PenTool } from './tools/pen-tool.js';
+【推奨する書き方 ⭕】
+
+HTML
+
+<script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
+
+<script src="js/tools/pen-tool.js"></script>
+<script src="js/main.js"></script>
+JavaScript
+
+// main.js
+// importは不要！ グローバルにあるPIXIを直接使う
+const app = new PIXI.Application();
+
+// PenToolもすでに読み込まれている前提で使う
+const penTool = new PenTool();
+上記のルールを理解した上で、[ここに具体的な修正依頼を記述]
+
+
+---
+
+### HTMLでのライブラリ参照方法について
+
+ご質問いただいた`node_modules`内のファイル参照方法は、とても良いアプローチです！まさに「Pure JavaScript」で開発を進めるための正しい方法です。
+
+> `<img src="node_modules/@tabler/icons/icons/heart.svg" alt="Heart icon">`
+> `<script src="./node_modules/@pixi/ui/dist/pixi-ui.js"></script>`
+
+この書き方の方向性で合っています。ただし、エラーが出ないようにするには、**`package.json`や実際のフォルダ構造を確認して、ファイルへのパスを正確に記述する**必要があります。
+
+現在のプロジェクト構成に合わせて、`index.html`の`<script>`タグを以下のように修正するのがおすすめです。
+
+#### `index.html`の修正案
+
+`<head>`タグの中か、`<body>`タグの閉じタグ`</body>`の直前に、以下の`<script>`タグを記述してください。ライブラリを先に、自作のスクリプトを後に読み込むのがポイントです。
+
+```html
+<script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
+
+<script src="./node_modules/@pixi/ui/dist/ui.min.js"></script>
+<script src="./node_modules/@pixi/layers/dist/layers.min.js"></script>
+<script src="js/utils/coordinates.js"></script>
+<script src="js/utils/performance.js"></script>
+<script src="js/utils/icon-manager.js"></script>
+
+<script src="js/tools/pen-tool.js"></script> [cite: 4]
+<script src="js/tools/eraser-tool.js"></script> [cite: 4]
+
+<script src="js/ui/popup-manager.js"></script>
+<script src="js/ui/slider-manager.js"></script>
+
+<script src="js/managers/ui-manager.js"></script> [cite: 3]
+<script src="js/managers/tool-manager.js"></script> [cite: 3]
+<script src="js/managers/canvas-manager.js"></script> [cite: 3]
+
+<script src="libs/pixi-extensions.js"></script>
+<script src="js/app-core.js"></script>
+<script src="js/main.js"></script> ```
+
+**【重要ポイント】**
+* **ローカルサーバーを使う**: このHTMLは、必ずVSCodeの拡張機能「**Live Server**」などで開いてください。ファイルを直接ダブルクリックして開くと、`file:///`というパスになり、セキュリティ制限で`node_modules`を読み込めず、同じエラーが出てしまいます。
+* **パスの確認**: `node_modules`内のファイルパスは、実際にフォルダを開いてみて、`.min.js`という名前のファイルがあるか確認すると確実です。
+
+### まとめと次のステップ 🚀
+
+1.  まず、ご自身の`index.html`に上記の**`<script>`タグ群を追加・修正**してみてください。`import`を使っている既存の`<script type="module">`タグは削除します。
+2.  VSCodeの「**Live Server**」で`index.html`を開き、`net::ERR_FILE_NOT_FOUND`が消えることを確認します。
+3.  次に、先ほど紹介した「**AIへの指示文テンプレート**」を使って、`main.js`やその他のJSファイルから`import`/`export`構文を削除し、グローバル変数（`PIXI`など）を使う形に修正するようAIに依頼してみてください。
+
+この手順で、エラーを解消し、ご自身が定めた「Pure JavaScript」のルールに沿った開発に戻れるは

@@ -1,22 +1,10 @@
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
  * 🎯 AI_WORK_SCOPE: アプリケーション初期化・統合エントリーポイント
- * 🎯 DEPENDENCIES: js/app-core.js, js/managers/*
- * 🎯 NODE_MODULES: pixi.js@^7.4.3（CDN経由）
- * 🎯 PIXI_EXTENSIONS: 基本機能のみ
- * 🎯 ISOLATION_TEST: ❌ 全体統括のため
- * 🎯 SPLIT_THRESHOLD: 150行（超過時分割検討）
- * 📋 PHASE_TARGET: Phase1
- * 📋 V8_MIGRATION: Application.init() 対応予定
+ * 🔧 修正内容: 座標変換・背景色・描画機能修正
  * 🚨 PURE_JAVASCRIPT: ES6モジュール禁止 - グローバル変数使用
  */
 
-/**
- * メインアプリケーションクラス
- * 元HTMLのFutabaDrawingToolを分割構造で再実装
- * DRY原則: 共通初期化処理の統合
- * SOLID原則: 単一責任 - アプリケーション統括のみ
- */
 class FutabaDrawingTool {
     constructor() {
         this.version = 'v1.0-Phase1.1';
@@ -35,7 +23,6 @@ class FutabaDrawingTool {
     
     /**
      * アプリケーション初期化
-     * 元HTMLのinitメソッドを分割構造で再実装
      */
     async init() {
         try {
@@ -80,14 +67,12 @@ class FutabaDrawingTool {
     
     /**
      * 拡張ライブラリ初期化
-     * pixi-extensions.js の機能を統合
      */
     async initializeExtensions() {
         if (typeof window.PIXIExtensions !== 'undefined') {
             const extensions = new window.PIXIExtensions();
             await extensions.initialize();
             
-            // 互換性チェック
             const issues = extensions.checkCompatibility();
             if (issues.length > 0) {
                 console.warn('⚠️ 互換性の問題:', issues);
@@ -106,7 +91,6 @@ class FutabaDrawingTool {
             await this.appCore.init();
             console.log('✅ AppCore初期化完了');
         } else {
-            // フォールバック: 直接PixiJS初期化
             console.warn('⚠️ AppCore未ロード - 直接初期化');
             await this.initializePixiDirectly();
         }
@@ -114,6 +98,7 @@ class FutabaDrawingTool {
     
     /**
      * 直接PixiJS初期化（フォールバック）
+     * 🔧 修正: ふたば風背景色・座標系修正
      */
     async initializePixiDirectly() {
         const canvasContainer = document.getElementById('drawing-canvas');
@@ -121,11 +106,11 @@ class FutabaDrawingTool {
             throw new Error('キャンバスコンテナが見つかりません');
         }
         
-        // PixiJS Application作成
+        // PixiJS Application作成 - ふたば風背景色
         this.pixiApp = new PIXI.Application({
             width: 400,
             height: 400,
-            backgroundColor: 0xffffff,
+            backgroundColor: 0xf0e0d6, // ふたば風背景色 #f0e0d6
             antialias: true,
             resolution: window.devicePixelRatio || 1,
             autoDensity: true
@@ -138,7 +123,7 @@ class FutabaDrawingTool {
         this.pixiApp.stage.interactive = true;
         this.pixiApp.stage.hitArea = new PIXI.Rectangle(0, 0, 400, 400);
         
-        console.log('✅ PixiJS直接初期化完了');
+        console.log('✅ PixiJS直接初期化完了（ふたば風背景色）');
     }
     
     /**
@@ -150,17 +135,27 @@ class FutabaDrawingTool {
             await this.canvasManager.init('drawing-canvas');
             console.log('✅ CanvasManager初期化完了');
         } else {
-            // フォールバック: 基本キャンバス管理
             console.warn('⚠️ CanvasManager未ロード - 基本管理使用');
             this.canvasManager = {
                 app: this.pixiApp,
+                
+                // 🔧 修正: 正しい座標変換
                 getLocalPointerPosition: (event) => {
-                    return event.data.global;
+                    const rect = this.pixiApp.view.getBoundingClientRect();
+                    const scaleX = this.pixiApp.view.width / rect.width;
+                    const scaleY = this.pixiApp.view.height / rect.height;
+                    
+                    return {
+                        x: (event.clientX - rect.left) * scaleX,
+                        y: (event.clientY - rect.top) * scaleY
+                    };
                 },
+                
                 getCanvasState: () => ({
                     width: this.pixiApp.screen.width,
                     height: this.pixiApp.screen.height
                 }),
+                
                 resize: (width, height, center) => {
                     this.pixiApp.renderer.resize(width, height);
                     this.pixiApp.stage.hitArea = new PIXI.Rectangle(0, 0, width, height);
@@ -177,7 +172,6 @@ class FutabaDrawingTool {
             this.toolManager = new window.ToolManager();
             this.toolManager.init(this.canvasManager);
             
-            // 個別ツール登録
             if (typeof window.PenTool !== 'undefined') {
                 const penTool = new window.PenTool(this.toolManager);
                 penTool.init();
@@ -190,7 +184,6 @@ class FutabaDrawingTool {
             
             console.log('✅ ToolManager初期化完了');
         } else {
-            // フォールバック: 基本描画機能
             console.warn('⚠️ ToolManager未ロード - 基本描画使用');
             this.setupBasicDrawing();
         }
@@ -198,6 +191,7 @@ class FutabaDrawingTool {
     
     /**
      * 基本描画機能設定（フォールバック）
+     * 🔧 修正: 描画座標とスタイル修正
      */
     setupBasicDrawing() {
         this.toolManager = {
@@ -207,36 +201,51 @@ class FutabaDrawingTool {
                 size: 16,
                 opacity: 0.85,
                 pressure: 0.5,
-                color: 0x800000
+                color: 0x800000 // ふたば風赤色 #800000
             },
             currentPath: null,
+            lastPoint: null,
             
             setTool: (tool) => {
                 this.toolManager.currentTool = tool;
+                console.log(`🔧 ツール切り替え: ${tool}`);
             },
             
             startDrawing: (x, y) => {
+                console.log(`🖊️ 描画開始: (${x}, ${y})`);
                 this.toolManager.isDrawing = true;
+                this.toolManager.lastPoint = { x, y };
+                
+                // グラフィックオブジェクト作成
                 const graphics = new PIXI.Graphics();
                 graphics.lineStyle({
                     width: this.toolManager.globalSettings.size,
                     color: this.toolManager.globalSettings.color,
-                    alpha: this.toolManager.globalSettings.opacity
+                    alpha: this.toolManager.globalSettings.opacity,
+                    cap: PIXI.LINE_CAP.ROUND,
+                    join: PIXI.LINE_JOIN.ROUND
                 });
+                
+                // 開始点に移動（線は引かない）
                 graphics.moveTo(x, y);
+                
                 this.toolManager.currentPath = graphics;
                 this.canvasManager.app.stage.addChild(graphics);
             },
             
             continueDrawing: (x, y) => {
-                if (this.toolManager.isDrawing && this.toolManager.currentPath) {
+                if (this.toolManager.isDrawing && this.toolManager.currentPath && this.toolManager.lastPoint) {
+                    // 前回の点から現在の点へ線を引く
                     this.toolManager.currentPath.lineTo(x, y);
+                    this.toolManager.lastPoint = { x, y };
                 }
             },
             
             stopDrawing: () => {
+                console.log('🖊️ 描画終了');
                 this.toolManager.isDrawing = false;
                 this.toolManager.currentPath = null;
+                this.toolManager.lastPoint = null;
             },
             
             getDrawingState: () => ({
@@ -255,7 +264,6 @@ class FutabaDrawingTool {
             this.uiManager.init();
             console.log('✅ UIManager初期化完了');
         } else {
-            // フォールバック: 基本UI機能
             console.warn('⚠️ UIManager未ロード - 基本UI使用');
             this.setupBasicUI();
         }
@@ -286,10 +294,7 @@ class FutabaDrawingTool {
             }
         };
         
-        // ツールボタンイベント設定
         this.setupToolButtons();
-        
-        // ポップアップイベント設定
         this.setupPopupEvents();
     }
     
@@ -314,7 +319,6 @@ class FutabaDrawingTool {
             });
         }
         
-        // リサイズツール
         const resizeTool = document.getElementById('resize-tool');
         if (resizeTool) {
             resizeTool.addEventListener('click', () => {
@@ -327,32 +331,30 @@ class FutabaDrawingTool {
      * アクティブツール設定
      */
     setActiveTool(tool, element) {
-        // 全ツールボタンの active クラス削除
         document.querySelectorAll('.tool-button').forEach(btn => {
             btn.classList.remove('active');
         });
         
-        // 選択ツールに active クラス追加
         if (element) {
             element.classList.add('active');
         }
         
-        // ツール設定
         this.toolManager.setTool(tool);
         
-        // ツール名表示更新
         const toolNames = {
             pen: 'ベクターペン',
             eraser: '消しゴム'
         };
-        document.getElementById('current-tool').textContent = toolNames[tool] || tool;
+        const currentToolElement = document.getElementById('current-tool');
+        if (currentToolElement) {
+            currentToolElement.textContent = toolNames[tool] || tool;
+        }
     }
     
     /**
      * ポップアップイベント設定
      */
     setupPopupEvents() {
-        // リサイズ適用ボタン
         const applyResize = document.getElementById('apply-resize');
         const applyResizeCenter = document.getElementById('apply-resize-center');
         
@@ -368,7 +370,6 @@ class FutabaDrawingTool {
             });
         }
         
-        // リサイズプリセット
         const resizeButtons = document.querySelectorAll('.resize-button[data-size]');
         resizeButtons.forEach(button => {
             button.addEventListener('click', (e) => {
@@ -381,7 +382,7 @@ class FutabaDrawingTool {
     
     /**
      * イベントハンドリング設定
-     * 元HTMLのsetupCanvasEventsを統合
+     * 🔧 修正: 正しいマウス座標取得
      */
     setupEventHandlers() {
         const app = this.canvasManager.app;
@@ -390,19 +391,21 @@ class FutabaDrawingTool {
             return;
         }
         
-        // PointerDown: 描画開始
-        app.stage.on('pointerdown', (event) => {
-            if (this.uiManager.activePopup) return; // ポップアップ表示中は無視
+        const canvas = app.view;
+        
+        // マウスイベント（デスクトップ）
+        canvas.addEventListener('mousedown', (event) => {
+            if (this.uiManager.activePopup) return;
             
             const point = this.canvasManager.getLocalPointerPosition(event);
+            console.log(`👆 マウスダウン: (${point.x}, ${point.y})`);
             this.toolManager.startDrawing(point.x, point.y);
         });
         
-        // PointerMove: 描画継続・座標更新
-        app.stage.on('pointermove', (event) => {
+        canvas.addEventListener('mousemove', (event) => {
             const point = this.canvasManager.getLocalPointerPosition(event);
             
-            // 座標表示更新（元HTML機能維持）
+            // 座標表示更新
             this.updateCoordinateDisplay(point.x, point.y);
             
             // 筆圧モニター更新
@@ -416,24 +419,55 @@ class FutabaDrawingTool {
             }
         });
         
-        // PointerUp: 描画終了
-        app.stage.on('pointerup', () => {
+        canvas.addEventListener('mouseup', () => {
+            console.log('👆 マウスアップ');
             this.toolManager.stopDrawing();
             this.resetPressureMonitor();
         });
         
-        // PointerUpOutside: キャンバス外での描画終了
-        app.stage.on('pointerupoutside', () => {
+        canvas.addEventListener('mouseleave', () => {
+            console.log('👆 マウス離脱');
             this.toolManager.stopDrawing();
             this.resetPressureMonitor();
         });
         
-        console.log('✅ イベントハンドリング設定完了');
+        // タッチイベント（モバイル）
+        canvas.addEventListener('touchstart', (event) => {
+            event.preventDefault();
+            if (this.uiManager.activePopup) return;
+            
+            const touch = event.touches[0];
+            const point = this.canvasManager.getLocalPointerPosition(touch);
+            this.toolManager.startDrawing(point.x, point.y);
+        });
+        
+        canvas.addEventListener('touchmove', (event) => {
+            event.preventDefault();
+            const touch = event.touches[0];
+            const point = this.canvasManager.getLocalPointerPosition(touch);
+            
+            this.updateCoordinateDisplay(point.x, point.y);
+            
+            if (this.toolManager.isDrawing) {
+                this.updatePressureMonitor();
+            }
+            
+            if (!this.uiManager.activePopup) {
+                this.toolManager.continueDrawing(point.x, point.y);
+            }
+        });
+        
+        canvas.addEventListener('touchend', (event) => {
+            event.preventDefault();
+            this.toolManager.stopDrawing();
+            this.resetPressureMonitor();
+        });
+        
+        console.log('✅ イベントハンドリング設定完了（マウス・タッチ両対応）');
     }
     
     /**
-     * キャンバスリサイズ適用（元HTML機能）
-     * @param {boolean} centerContent - 中央寄せフラグ
+     * キャンバスリサイズ適用
      */
     applyCanvasResize(centerContent) {
         const width = parseInt(document.getElementById('canvas-width').value);
@@ -448,10 +482,9 @@ class FutabaDrawingTool {
     }
     
     /**
-     * パフォーマンス監視開始（元HTML機能統合）
+     * パフォーマンス監視開始
      */
     startPerformanceMonitoring() {
-        // 元HTMLのPerformanceMonitorクラス機能を統合
         this.performanceMonitor = {
             frameCount: 0,
             lastTime: performance.now()
@@ -482,16 +515,12 @@ class FutabaDrawingTool {
     }
     
     /**
-     * 初期状態設定（元HTML機能維持）
+     * 初期状態設定
      */
     setupInitialState() {
-        // 初期ツール設定
         this.setActiveTool('pen', document.getElementById('pen-tool'));
-        
-        // 初期キャンバス情報更新
         this.updateCanvasInfo();
         
-        // 初期色設定表示
         const currentColor = document.getElementById('current-color');
         if (currentColor) {
             currentColor.textContent = '#800000';
@@ -499,9 +528,7 @@ class FutabaDrawingTool {
     }
     
     /**
-     * 座標表示更新（元HTML機能）
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
+     * 座標表示更新
      */
     updateCoordinateDisplay(x, y) {
         const coordinatesElement = document.getElementById('coordinates');
@@ -511,7 +538,7 @@ class FutabaDrawingTool {
     }
     
     /**
-     * 筆圧モニター更新（元HTML機能）
+     * 筆圧モニター更新
      */
     updatePressureMonitor() {
         const pressure = Math.min(100, 
@@ -523,7 +550,7 @@ class FutabaDrawingTool {
     }
     
     /**
-     * 筆圧モニターリセット（元HTML機能）
+     * 筆圧モニターリセット
      */
     resetPressureMonitor() {
         const pressureElement = document.getElementById('pressure-monitor');
@@ -533,7 +560,7 @@ class FutabaDrawingTool {
     }
     
     /**
-     * キャンバス情報更新（元HTML機能）
+     * キャンバス情報更新
      */
     updateCanvasInfo() {
         const state = this.canvasManager.getCanvasState();
@@ -545,7 +572,6 @@ class FutabaDrawingTool {
     
     /**
      * エラーメッセージ表示
-     * @param {Error} error - エラーオブジェクト
      */
     showErrorMessage(error) {
         const errorDiv = document.createElement('div');
@@ -576,7 +602,6 @@ class FutabaDrawingTool {
         
         document.body.appendChild(errorDiv);
         
-        // 5秒後自動削除
         setTimeout(() => {
             if (errorDiv.parentNode) {
                 errorDiv.remove();
@@ -585,7 +610,7 @@ class FutabaDrawingTool {
     }
     
     /**
-     * アプリケーション状態取得（デバッグ用）
+     * アプリケーション状態取得
      */
     getAppState() {
         return {
@@ -604,15 +629,13 @@ class FutabaDrawingTool {
 
 /**
  * アプリケーション起動
- * 元HTMLのDOMContentLoadedイベント統合
  */
 window.addEventListener('DOMContentLoaded', async () => {
     try {
         console.log('🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0');
-        console.log('📋 Phase1.1: 分割再構成版（Pure JavaScript）');
+        console.log('📋 Phase1.1: 座標・背景色修正版');
         console.log('🚀 起動開始...');
         
-        // グローバル変数として保存（元HTML同様）
         window.futabaDrawingTool = new FutabaDrawingTool();
         await window.futabaDrawingTool.init();
         
@@ -621,7 +644,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     } catch (error) {
         console.error('❌ アプリケーション起動失敗:', error);
         
-        // フォールバック表示（ふたば風デザイン維持）
         document.body.innerHTML = `
             <div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#ffffee;">
                 <div style="text-align:center;color:#800000;background:#f0e0d6;padding:32px;border:2px solid #aa5a56;border-radius:16px;">
