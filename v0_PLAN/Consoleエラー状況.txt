@@ -1,0 +1,59 @@
+
+※maim.jpの更新前のエラーは出るがキャンバスが出現し、ペンも使えた状態。：
+
+index.html:283  GET file:///D:/GitHub/tegaki/v1_Phase1.1/node_modules/@pixi/ui/dist/ui.min.js net::ERR_FILE_NOT_FOUND
+index.html:286  GET file:///D:/GitHub/tegaki/v1_Phase1.1/node_modules/@pixi/layers/dist/layers.min.js net::ERR_FILE_NOT_FOUND
+index.html:289  GET file:///D:/GitHub/tegaki/v1_Phase1.1/node_modules/@pixi/gif/dist/gif.min.js net::ERR_FILE_NOT_FOUND
+main.js:32 🎨 アプリケーション初期化 Phase1版
+pixi-extensions.js:38 🎨 PixiJS拡張ライブラリ統合初期化 Phase1版
+pixi-extensions.js:120 ⚠️ @pixi/ui 未検出 - 独自UI実装使用
+integrateUILibrary @ pixi-extensions.js:120
+initialize @ pixi-extensions.js:45
+initializeExtensions @ main.js:70
+init @ main.js:38
+startApplication @ main.js:201
+pixi-extensions.js:152 ⚠️ @pixi/layers 未検出 - 基本コンテナ使用
+integrateLayersLibrary @ pixi-extensions.js:152
+initialize @ pixi-extensions.js:46
+initializeExtensions @ main.js:70
+init @ main.js:38
+startApplication @ main.js:201
+pixi-extensions.js:182 ⚠️ @pixi/gif 未検出 - GIF機能無効
+integrateGIFLibrary @ pixi-extensions.js:182
+initialize @ pixi-extensions.js:47
+initializeExtensions @ main.js:70
+init @ main.js:38
+startApplication @ main.js:201
+main.js:79 ⚠️ 互換性の問題: ['@pixi/ui が利用できません - ポップアップ機能が制限されます']
+initializeExtensions @ main.js:79
+await in initializeExtensions
+init @ main.js:38
+startApplication @ main.js:201
+pixi-extensions.js:38 🎨 PixiJS拡張ライブラリ統合初期化 Phase1版
+pixi-extensions.js:120 ⚠️ @pixi/ui 未検出 - 独自UI実装使用
+integrateUILibrary @ pixi-extensions.js:120
+initialize @ pixi-extensions.js:45
+(anonymous) @ pixi-extensions.js:442
+pixi-extensions.js:152 ⚠️ @pixi/layers 未検出 - 基本コンテナ使用
+integrateLayersLibrary @ pixi-extensions.js:152
+initialize @ pixi-extensions.js:46
+(anonymous) @ pixi-extensions.js:442
+pixi-extensions.js:182 ⚠️ @pixi/gif 未検出 - GIF機能無効
+
+
+※maim.jpの更新後のエラーのキャンバスが出現せずペンも使えない状態。：
+
+index.html:283  GET file:///D:/GitHub/tegaki/v1_Phase1.1/node_modules/@pixi/ui/dist/ui.min.js net::ERR_FILE_NOT_FOUND
+index.html:286  GET file:///D:/GitHub/tegaki/v1_Phase1.1/node_modules/@pixi/layers/dist/layers.min.js net::ERR_FILE_NOT_FOUND
+index.html:289  GET file:///D:/GitHub/tegaki/v1_Phase1.1/node_modules/@pixi/gif/dist/gif.min.js net::ERR_FILE_NOT_FOUND
+main.js:13 Uncaught SyntaxError: Cannot use import statement outside a module
+pixi-extensions.js:38 🎨 PixiJS拡張ライブラリ統合初期化 Phase1版
+pixi-extensions.js:120 ⚠️ @pixi/ui 未検出 - 独自UI実装使用
+integrateUILibrary @ pixi-extensions.js:120
+initialize @ pixi-extensions.js:45
+(anonymous) @ pixi-extensions.js:442
+pixi-extensions.js:152 ⚠️ @pixi/layers 未検出 - 基本コンテナ使用
+integrateLayersLibrary @ pixi-extensions.js:152
+initialize @ pixi-extensions.js:46
+(anonymous) @ pixi-extensions.js:442
+pixi-extensions.js:182 ⚠️ @pixi/gif 未検出 - GIF機能無効
