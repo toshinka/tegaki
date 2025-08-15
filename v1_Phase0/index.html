@@ -4,68 +4,82 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0</title>
-    <link rel="stylesheet" href="./styles/main.css">
-    <!-- PixiJS v7 CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
-    <!-- PixiJS v8対応準備コメント -->
-    <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/8.0.0/pixi.min.js"></script> -->
     
-    <!-- PixiJS拡張ライブラリ（node_modules統合版） -->
-    <!-- 将来対応: @pixi/ui, @pixi/layers等 -->
+    <!-- Phase1: CSS分離対応 -->
+    <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
-    <!-- Phase1.1 STEP1: 基本HTML構造（元デザイン保持） -->
     <div class="main-layout">
-        <!-- サイドバー -->
         <div class="sidebar">
-            <!-- ダウンロード -->
             <div class="tool-button disabled" id="download-tool" title="ダウンロード">
-                <div class="icon-placeholder" data-icon="download"></div>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7,10 12,15 17,10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
             </div>
             
-            <!-- リサイズ -->
             <div class="tool-button" id="resize-tool" data-popup="resize-settings" title="リサイズ">
-                <div class="icon-placeholder" data-icon="resize"></div>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <path d="M8 12h8"/>
+                    <path d="M12 8v8"/>
+                </svg>
             </div>
             
             <div class="tool-separator"></div>
                    
-            <!-- カラーパレット -->
             <div class="tool-button disabled" id="palette-tool" title="カラーパレット">
-                <div class="icon-placeholder" data-icon="palette"></div>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="13.5" cy="6.5" r=".5"/>
+                    <circle cx="17.5" cy="10.5" r=".5"/>
+                    <circle cx="8.5" cy="7.5" r=".5"/>
+                    <circle cx="6.5" cy="12.5" r=".5"/>
+                    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
+                </svg>
             </div>
      
-            <!-- ベクターペン（アクティブ） -->
             <div class="tool-button active" id="pen-tool" data-popup="pen-settings" title="ベクターペン">
-                <div class="icon-placeholder" data-icon="brush"></div>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 21v-4a4 4 0 1 1 4 4h-4"/>
+                    <path d="M21 3a16 16 0 0 0 -12.8 10.2"/>
+                    <path d="M21 3a16 16 0 0 1 -10.2 12.8"/>
+                    <path d="M10.6 9a9 9 0 0 1 4.4 4.4"/>
+                </svg>
             </div>
             
-            <!-- 消しゴム -->
             <div class="tool-button" id="eraser-tool" title="消しゴム">
-                <div class="icon-placeholder" data-icon="eraser"></div>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 20h-10.5l-4.21-4.3a1 1 0 0 1 0-1.41l10-10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41L11.5 20"/>
+                    <path d="M18 13.3l-6.3-6.3"/>
+                </svg>
             </div>
             
             <div class="tool-separator"></div>
             
-            <!-- 塗りつぶし -->
             <div class="tool-button disabled" id="fill-tool" title="塗りつぶし">
-                <div class="icon-placeholder" data-icon="bucket"></div>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 11H5m14 0a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2m14 0V9a2 2 0 0 0-2-2M5 11V9a2 2 0 0 1 2-2m0 0V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2M7 7h10"/>
+                </svg>
             </div>
             
-            <!-- 範囲選択 -->
             <div class="tool-button disabled" id="select-tool" title="範囲選択">
-                <div class="icon-placeholder" data-icon="select"></div>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="4" y="4" width="16" height="16" rx="2" ry="2"/>
+                    <path d="M9 9h6v6H9z"/>
+                </svg>
             </div>
             
             <div class="tool-separator"></div>
             
-            <!-- 設定 -->
             <div class="tool-button disabled" id="settings-tool" title="設定">
-                <div class="icon-placeholder" data-icon="settings"></div>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
             </div>
         </div>
         
-        <!-- キャンバスエリア -->
         <div class="canvas-area">
             <div class="canvas-container">
                 <div id="drawing-canvas"></div>
@@ -73,7 +87,6 @@
         </div>
     </div>
     
-    <!-- ペン設定ポップアップ -->
     <div class="popup-panel pen-settings draggable" id="pen-settings" style="left: 60px; top: 100px;">
         <div class="popup-title">ベクターペンツール設定</div>
         
@@ -112,7 +125,6 @@
             </div>
         </div>
         
-        <!-- スライダー群 -->
         <div class="setting-group">
             <div class="setting-label">サイズ</div>
             <div class="slider-controls">
@@ -189,7 +201,6 @@
             </div>
         </div>
         
-        <!-- チェックボックス群 -->
         <div class="setting-group">
             <div class="checkbox-container">
                 <div class="checkbox-left">
@@ -215,7 +226,6 @@
         </div>
     </div>
     
-    <!-- リサイズ設定ポップアップ -->
     <div class="popup-panel resize-settings draggable" id="resize-settings" style="left: 60px; top: 150px;">
         <div class="popup-title">キャンバスリサイズ</div>
         
@@ -249,7 +259,6 @@
         </div>
     </div>
     
-    <!-- ステータスパネル -->
     <div class="status-panel">
         <div class="status-group">
             <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
@@ -266,21 +275,7 @@
         </div>
     </div>
 
-    <!-- Phase1.1 STEP1: fetch API分割読み込みシステム -->
-    <script>
-        console.log('🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0 起動中...');
-        console.log('📦 Phase1.1 STEP1: fetch API分割読み込みシステム初期化');
-    </script>
-    
-    <!-- 分割JSファイル読み込み（Phase1.1計画準拠） -->
-    <script src="./js/core/config.js"></script>
-    <script src="./js/core/constants.js"></script>
-    <script src="./js/utils/icon-manager.js"></script>
-    <script src="./js/main.js"></script>
-    
-    <!-- 将来Phase対応用スクリプトタグ準備 -->
-    <!-- Phase1.2: <script src="./js/tools/drawing-engine.js"></script> -->
-    <!-- Phase1.3: <script src="./js/ui/popup-system.js"></script> -->
-    <!-- Phase2: PixiJS拡張ライブラリ統合 -->
+    <!-- Phase1: JavaScript読み込み（仮置き、後で分割実装） -->
+    <script type="module" src="scripts/app.js"></script>
 </body>
 </html>

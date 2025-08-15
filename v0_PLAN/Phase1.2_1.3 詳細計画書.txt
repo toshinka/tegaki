@@ -1,0 +1,92 @@
+Phase1.2 詳細計画書: fetch API 統合とデータハンドリング強化 (PixiJS v7 ベース継続)概要この計画書は、元の 2_tegaki_migration_plan_phase1_2.txt の Phase1.2 を基に詳細化したものです。Phase1.1 でファイル分割を完了した後、fetch API を活用したデータロード/セーブ/エラーハンドリングを強化。元の計画が大雑把だった問題を避け、各 STEP を細分化。中間 Checkpoint で UI/機能確認を追加。ファイル追加は最小限 (e.g., data-manager.js の追加程度)。DRY/SOLID 原則厳守: データロジックを分離。PixiJS v8 移行コメントを継続挿入。元機能 (描画データ保存/ロード) を変えず移植。前提条件ベース: Phase1.1 完了状態の v1_Phase1/。
+fetch API: ブラウザネイティブ使用 (ポリフィルなし)。
+テスト: データサーバー模擬 (e.g., JSON placeholder or local JSON file)。
+参照: 1_rulebook_v8_node_modules.txt (fetch ルール), 元 HTML のデータ関連コード。
+
+Phase1.2 ファイル構造ツリー (最終目標: STEP5 達成時、Phase1.1 から拡張)
+
+v1_Phase1/
+├── index.html
+├── styles/
+│   └── main.css
+├── scripts/
+│   ├── app.js                # データ init 追加
+│   ├── ui-setup.js           # データ UI (ロード/セーブボタン) 強化
+│   ├── drawing-tools.js      # データシリアライズ追加
+│   ├── event-handlers.js     # データイベント追加
+│   ├── utils.js              # fetch ヘルパー関数
+│   ├── icon-manager.js
+│   └── data-manager.js       # fetch API 管理 (新規追加)
+├── assets/                   # データサンプル JSON 等
+└── node_modules/
+
+詳細ステップ各 STEP で、Phase1.1 のコードからデータ関連を抽出/強化。Checkpoint で動作確認。STEP1: データマネージャーセットアップSubstep1.1: scripts/data-manager.js を新規作成。fetch API 関数定義 (e.g., export async function loadData(url) { return await fetch(url).then(res => res.json()); })。
+Substep1.2: エラーハンドリング追加 (try-catch, ステータスチェック)。
+Substep1.3: 元のデータロードコードをここに移動 (e.g., 描画データのデシリアライズ)。
+Substep1.4: v8 コメント: // v8: Use WebGPU for data visualization if needed。
+Checkpoint1: コンソールで fetch テスト (e.g., sample JSON ロード)。UI は静的確認。
+
+STEP2: UI とデータ統合Substep2.1: ui-setup.js にロード/セーブボタン強化 (fetch 呼び出しリンク)。
+Substep2.2: drawing-tools.js にデータシリアライズ関数追加 (PixiJS Graphics を JSON 化)。
+Substep2.3: app.js で data-manager.js import & init (e.g., initData();)。
+Substep2.4: DRY: 重複 fetch を utils.js に移行。
+Checkpoint2: ブラウザでボタンクリック時、fetch 実行 & コンソール出力確認。UI 壊れなし。
+
+STEP3: セーブロジック実装Substep3.1: data-manager.js に saveData 関数 (POST fetch, JSON.stringify)。
+Substep3.2: event-handlers.js にセーブイベント追加 (キー/ボタン)。
+Substep3.3: SOLID: セーブを単一クラス化。
+Substep3.4: テストデータ用 assets/sample.json 作成。
+Checkpoint3: 描画後セーブテスト。データが正しく送信/保存か確認。機能変更なし。
+
+STEP4: エラーとローディング状態ハンドリングSubstep4.1: UI にローディングスピナー/エラーメッセージ追加 (ui-setup.js)。
+Substep4.2: data-manager.js に Promise ベースのハンドリング。
+Substep4.3: app.js で全体統合。
+Substep4.4: icon-manager.js でエラーアイコン活用。
+Checkpoint4: 意図的エラー (無効 URL) で UI 反応確認。フル機能テスト。
+
+STEP5: 最適化とクリーンアップSubstep5.1: レビュー: DRY/SOLID 確認、未使用削除。
+Substep5.2: fetch キャッシュ検討 (コメントアウトで v8 準備)。
+Substep5.3: ファイル構造確認 (上記ツリー通り)。
+Checkpoint5: 総合テスト。元と同一機能 (ロード/セーブ)。完了。
+
+注意事項エラー時: 前の STEP 戻り。
+次: Phase1.3 へ。
+参考: pixi-extensions(OLD).js 避け。
+
+Phase1.3 詳細計画書: PixiJS v8 移行準備とパフォーマンス最適化 (v7 ベース最終調整)概要この計画書は、元の 2_tegaki_migration_plan_phase1_2.txt の Phase1.3 を基に詳細化したものです。Phase1.2 完了後、PixiJS v8 移行を見据えたコード調整とパフォーマンス強化 (e.g., FPS 最適化)。大雑把問題回避のため細分化、Checkpoint 追加。ファイル追加なし (既存活用)。DRY/SOLID 厳守。元機能/デザイン変えず、v8 コメントを増やし移行容易に。前提条件ベース: Phase1.2 完了状態。
+v8 準備: コメントアウトで v7/v8 差分仕込み (e.g., Renderer 変更)。
+テスト: 高負荷描画で FPS 測定。
+
+Phase1.3 ファイル構造ツリー (最終目標: 変更なし、Phase1.2 同一)
+
+(Phase1.2 と同一、追加なし)
+
+詳細ステップ各 STEP で、コードレビュー/調整。Checkpoint で確認。STEP1: v8 移行ポイント特定Substep1.1: 全 JS ファイルスキャン、v7 特有コードにコメント追加 (e.g., @pixi/core -> // v8: pixi.js )。
+Substep1.2: 廃止 API リストアップ (e.g., Graphics 変更)。
+Substep1.3: utils.js に v8 互換ヘルパー仮置き。
+Checkpoint1: コードレビュー、コメント漏れなし確認。UI 静的テスト。
+
+STEP2: パフォーマンス最適化 (v7 内)Substep2.1: drawing-tools.js で Graphics 描画最適化 (バッチ化)。
+Substep2.2: event-handlers.js でイベント throttle/debounce 追加。
+Substep2.3: app.js で ticker/FPS 監視強化。
+Substep2.4: DRY: 重複ループ統合。
+Checkpoint2: 高負荷描画テスト、FPS 向上確認。UI 壊れなし。
+
+STEP3: 筆圧/タッチ対応強化Substep3.1: event-handlers.js で PointerEvent 活用 (v8 準備)。
+Substep3.2: drawing-tools.js で線幅変動最適化。
+Substep3.3: SOLID: 入力クラス化。
+Checkpoint3: タッチ/マウス描画テスト。機能同一確認。
+
+STEP4: 全体統合とテスト準備Substep4.1: app.js で v8 フラグ仮変数 (コメントアウト)。
+Substep4.2: data-manager.js でデータ最適化 (圧縮)。
+Substep4.3: icon-manager.js 最適化。
+Checkpoint4: フルシナリオテスト (描画+データ)。
+
+STEP5: 最終レビューとドキュメントSubstep5.1: 全コードクリーンアップ。
+Substep5.2: README に v8 移行ノート追加。
+Substep5.3: 構造確認。
+Checkpoint5: 元比較、同一パフォーマンス。Phase1 完了。
+
+注意事項v8 実際移行は Phase2。
+参考避け: OLD ファイル。
+
