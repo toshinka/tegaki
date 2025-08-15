@@ -1,6 +1,11 @@
 # Phase1 詳細計画書: vector-drawing-tool.html の分割再構成（修正版）
 ## PixiJS v7 + JavaScript + fetch API ベース - 正しいファイル構造対応
 
+🚨エラー発生頻発のため緊急提起
+⚠⚠⚠   1.2 実装原則：**JavaScript Pure**: ESM/TypeScript混在禁止・Pure JavaScript維持 ⚠⚠⚠
+※この計画書でESM/TypeScriptを示唆していた場合はその部分は間違ったものなので無視してください。混在したコードでエラーが多発してます。
+1_rulebook_v8_node_modules.txtの実装原則が優先されます。
+
 ### 📋 概要
 この計画書は、元の 2_tegaki_migration_plan_phase1_2.txt の Phase1 を基に、**正しいファイル構造**で詳細化・改善したものです。
 
