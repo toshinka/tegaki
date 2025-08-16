@@ -87,7 +87,7 @@ class PixiExtensionsManager {
         console.log('🔍 PixiJS本体検証中...');
         
         if (!window.PIXI) {
-            throw new Error('PixiJS が読み込まれていません - node_modules/pixi.js/dist/pixi.min.js を確認してください');
+            throw new Error('PixiJS が読み込まれていません - node_modules/pixi.js/dist/pixi.js を確認してください');
         }
         
         console.log(`✅ PixiJS v${PIXI.VERSION} 検出`);
