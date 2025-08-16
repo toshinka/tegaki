@@ -275,22 +275,23 @@
         </div>
     </div>
 
-    <!-- 🔧 修正: node_modules パス修正 - 正しいファイルパスに変更 -->
+    <!-- 🔧 修正: ライブラリ読み込み順序とパス最適化 -->
     
-    <!-- PixiJS v7 本体 -->
+    <!-- PixiJS v7 本体（最優先） -->
     <script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
     
-    <!-- 🚨 注意: 以下のライブラリは存在しないパスのためコメントアウト -->
-    <!-- 実際のファイルが存在する場合は適切なパスに修正してください -->
+    <!-- 🎯 修正: @pixiライブラリ群を有効化（コメントアウト解除） -->
     
-    <!-- @pixi/ui: UIコンポーネント (パス要確認) -->
-    <!-- <script src="./node_modules/@pixi/ui/dist/pixi-ui.js"></script> -->
+    <!-- @pixi/ui: UIコンポーネント -->
+    <script src="./node_modules/@pixi/ui/dist/pixi-ui.js"></script>
     
-    <!-- @pixi/layers: レイヤー機能 (パス要確認) -->
-    <!-- <script src="./node_modules/@pixi/layers/dist/pixi-layers.js"></script> -->
+    <!-- @pixi/layers: レイヤー機能 -->
+    <script src="./node_modules/@pixi/layers/dist/pixi-layers.js"></script>
     
-    <!-- @pixi/gif: GIF機能 (パス要確認) -->
-    <!-- <script src="./node_modules/@pixi/gif/dist/pixi-gif.js"></script> -->
+    <!-- @pixi/gif: GIF機能 -->
+    <script src="./node_modules/@pixi/gif/dist/pixi-gif.js"></script>
+    
+    <!-- ユーティリティライブラリ群 -->
     
     <!-- GSAP: アニメーション -->
     <script src="./node_modules/gsap/dist/gsap.min.js"></script>
