@@ -1,266 +1,62 @@
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
  * 🎯 AI_WORK_SCOPE: アプリケーション初期化・統合エントリーポイント
- * 🎯 DEPENDENCIES: js/app-core.js, js/managers/* (Pure JavaScript)
- * 🎯 NODE_MODULES: pixi.js@^7.4.3（ローカル読み込み）
- * 🎯 PIXI_EXTENSIONS: libs/pixi-extensions.js統合基盤活用
- * 🎯 ISOLATION_TEST: ❌ 全体統括のため
- * 🎯 SPLIT_THRESHOLD: 150行（超過時分割検討）
- * 📋 PHASE_TARGET: Phase1.1ss3 - Pure JavaScript完全準拠
- * 📋 V8_MIGRATION: Application.init() 対応予定
- * 📋 RULEBOOK_COMPLIANCE: 1.2実装原則「Pure JavaScript維持」完全準拠
+ * 🔧 修正内容: 座標変換・背景色・描画機能修正
+ * 🚨 PURE_JAVASCRIPT: ES6モジュール禁止 - グローバル変数使用
  */
 
-/**
- * アプリケーション動的読み込みシステム
- * ルールブック2.4 Pure JavaScript読み込みパターン準拠
- */
-class AppLoader {
-    constructor() {
-        this.loadedScripts = new Set();
-        this.loadQueue = [];
-        this.isInitialized = false;
-    }
-    
-    /**
-     * 動的スクリプト読み込み
-     * @param {string} src - スクリプトパス
-     * @returns {Promise}
-     */
-    async loadScript(src) {
-        if (this.loadedScripts.has(src)) {
-            return Promise.resolve();
-        }
-        
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = src;
-            script.onload = () => {
-                this.loadedScripts.add(src);
-                console.log(`✅ ${src} 読み込み完了`);
-                resolve();
-            };
-            script.onerror = (error) => {
-                console.error(`❌ ${src} 読み込み失敗:`, error);
-                reject(error);
-            };
-            document.head.appendChild(script);
-        });
-    }
-    
-    /**
-     * 必須コンポーネント読み込み
-     */
-    async loadCoreComponents() {
-        console.log('🔧 コアコンポーネント読み込み開始...');
-        
-        // 依存関係順で読み込み
-        const coreScripts = [
-            'js/utils/coordinates.js',
-            'js/utils/performance.js', 
-            'js/utils/icon-manager.js',
-            'js/app-core.js'
-        ];
-        
-        for (const script of coreScripts) {
-            await this.loadScript(script);
-        }
-        
-        console.log('✅ コアコンポーネント読み込み完了');
-    }
-    
-    /**
-     * 管理システム読み込み
-     */
-    async loadManagers() {
-        console.log('🔧 管理システム読み込み開始...');
-        
-        const managerScripts = [
-            'js/managers/canvas-manager.js',
-            'js/managers/tool-manager.js',
-            'js/managers/ui-manager.js'
-        ];
-        
-        for (const script of managerScripts) {
-            await this.loadScript(script);
-        }
-        
-        console.log('✅ 管理システム読み込み完了');
-    }
-    
-    /**
-     * 描画ツール読み込み
-     */
-    async loadTools() {
-        console.log('🔧 描画ツール読み込み開始...');
-        
-        const toolScripts = [
-            'js/tools/pen-tool.js',
-            'js/tools/eraser-tool.js'
-        ];
-        
-        for (const script of toolScripts) {
-            await this.loadScript(script);
-        }
-        
-        console.log('✅ 描画ツール読み込み完了');
-    }
-    
-    /**
-     * アプリケーション初期化
-     */
-    async init() {
-        try {
-            console.log('🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0');
-            console.log('📋 Phase1.1ss3: Pure JavaScript完全準拠版');
-            console.log('🚀 起動開始...');
-            
-            // PixiJS拡張ライブラリ初期化確認
-            if (!window.PixiExtensions) {
-                throw new Error('PixiExtensions が読み込まれていません');
-            }
-            
-            await window.PixiExtensions.initialize();
-            console.log('✅ PixiJS拡張ライブラリ初期化完了');
-            
-            // 段階的コンポーネント読み込み
-            await this.loadCoreComponents();
-            await this.loadManagers();
-            await this.loadTools();
-            
-            // メインアプリケーション起動
-            await this.startMainApplication();
-            
-            this.isInitialized = true;
-            console.log('🎉 アプリケーション起動完了！');
-            
-        } catch (error) {
-            console.error('❌ アプリケーション起動失敗:', error);
-            this.showErrorMessage(error);
-            throw error;
-        }
-    }
-    
-    /**
-     * メインアプリケーション起動
-     */
-    async startMainApplication() {
-        console.log('🔧 メインアプリケーション初期化...');
-        
-        // AppCore 初期化
-        if (!window.AppCore) {
-            throw new Error('AppCore クラスが読み込まれていません');
-        }
-        
-        const appCore = new window.AppCore();
-        await appCore.init();
-        
-        // グローバル参照として保存
-        window.futabaDrawingTool = new FutabaDrawingTool(appCore);
-        await window.futabaDrawingTool.init();
-        
-        console.log('✅ メインアプリケーション初期化完了');
-    }
-    
-    /**
-     * エラーメッセージ表示
-     */
-    showErrorMessage(error) {
-        const errorDiv = document.createElement('div');
-        errorDiv.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: #800000;
-            color: white;
-            padding: 16px;
-            border-radius: 8px;
-            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.3);
-            z-index: 9999;
-            max-width: 400px;
-            font-family: monospace;
-            font-size: 12px;
-        `;
-        
-        errorDiv.innerHTML = `
-            <strong>エラーが発生しました:</strong><br>
-            ${error.message || error}
-            <br><br>
-            <button onclick="this.parentNode.remove()" 
-                    style="background:rgba(255,255,255,0.2);border:none;color:white;padding:4px 8px;border-radius:4px;cursor:pointer;">
-                閉じる
-            </button>
-        `;
-        
-        document.body.appendChild(errorDiv);
-        
-        // 5秒後自動削除
-        setTimeout(() => {
-            if (errorDiv.parentNode) {
-                errorDiv.remove();
-            }
-        }, 5000);
-    }
-}
-
-/**
- * メインアプリケーションクラス
- * 元HTMLのFutabaDrawingToolを分割構造で再実装
- * DRY原則: 共通初期化処理の統合
- * SOLID原則: 単一責任 - アプリケーション統括のみ
- */
 class FutabaDrawingTool {
-    constructor(appCore) {
-        this.version = 'v1.0-Phase1.1ss3-PureJS';
+    constructor() {
+        this.version = 'v1.0-Phase1.1';
         this.isInitialized = false;
         this.startTime = performance.now();
         
         // 主要コンポーネント
-        this.appCore = appCore;
+        this.appCore = null;
         this.canvasManager = null;
         this.toolManager = null;
         this.uiManager = null;
         this.performanceMonitor = null;
         
-        console.log(`🎨 ${this.version} 構築完了`);
+        console.log('🎨 アプリケーション初期化 Phase1版');
     }
     
     /**
      * アプリケーション初期化
-     * 元HTMLのinitメソッドを分割構造で再実装
      */
     async init() {
         try {
-            console.log('🔧 Phase1.1ss3 Pure JavaScript構造での初期化開始');
+            console.log('🔧 Phase1.1 分割構造での初期化開始');
             
-            // Step 1: キャンバス管理システム初期化  
+            // Step 1: 拡張ライブラリ初期化
+            await this.initializeExtensions();
+            
+            // Step 2: AppCore初期化
+            await this.initializeAppCore();
+            
+            // Step 3: キャンバス管理システム初期化  
             await this.initializeCanvasManager();
             
-            // Step 2: ツール管理システム初期化
+            // Step 4: ツール管理システム初期化
             await this.initializeToolManager();
             
-            // Step 3: UI管理システム初期化
+            // Step 5: UI管理システム初期化
             await this.initializeUIManager();
             
-            // Step 4: イベントハンドリング設定
+            // Step 6: イベントハンドリング設定
             this.setupEventHandlers();
             
-            // Step 5: パフォーマンス監視開始
+            // Step 7: パフォーマンス監視開始
             this.startPerformanceMonitoring();
             
-            // Step 6: 初期状態設定
+            // Step 8: 初期状態設定
             this.setupInitialState();
             
             this.isInitialized = true;
             const initTime = performance.now() - this.startTime;
             
-            console.log('✅ Phase1.1ss3 Pure JavaScript初期化完了！');
+            console.log('✅ Phase1.1 初期化完了！');
             console.log(`⏱️ 初期化時間: ${initTime.toFixed(2)}ms`);
-            console.log('📊 Pure JavaScript構造対応状況:');
-            console.log('  - CanvasManager: PixiJS描画エンジン統合');
-            console.log('  - ToolManager: ペン・消しゴムツール分離');
-            console.log('  - UIManager: インターフェース統括');
-            console.log('  - ルールブック準拠: ESM禁止・Pure JavaScript完全準拠');
             
         } catch (error) {
             console.error('❌ 初期化失敗:', error);
@@ -270,83 +66,349 @@ class FutabaDrawingTool {
     }
     
     /**
+     * 拡張ライブラリ初期化
+     */
+    async initializeExtensions() {
+        if (typeof window.PIXIExtensions !== 'undefined') {
+            const extensions = new window.PIXIExtensions();
+            await extensions.initialize();
+            
+            const issues = extensions.checkCompatibility();
+            if (issues.length > 0) {
+                console.warn('⚠️ 互換性の問題:', issues);
+            }
+        } else {
+            console.warn('⚠️ PIXIExtensions未ロード - 基本機能のみ使用');
+        }
+    }
+    
+    /**
+     * AppCore初期化
+     */
+    async initializeAppCore() {
+        if (typeof window.AppCore !== 'undefined') {
+            this.appCore = new window.AppCore();
+            await this.appCore.init();
+            console.log('✅ AppCore初期化完了');
+        } else {
+            console.warn('⚠️ AppCore未ロード - 直接初期化');
+            await this.initializePixiDirectly();
+        }
+    }
+    
+    /**
+     * 直接PixiJS初期化（フォールバック）
+     * 🔧 修正: ふたば風背景色・座標系修正
+     */
+    async initializePixiDirectly() {
+        const canvasContainer = document.getElementById('drawing-canvas');
+        if (!canvasContainer) {
+            throw new Error('キャンバスコンテナが見つかりません');
+        }
+        
+        // PixiJS Application作成 - ふたば風背景色
+        this.pixiApp = new PIXI.Application({
+            width: 400,
+            height: 400,
+            backgroundColor: 0xf0e0d6, // ふたば風背景色 #f0e0d6
+            antialias: true,
+            resolution: window.devicePixelRatio || 1,
+            autoDensity: true
+        });
+        
+        // キャンバス追加
+        canvasContainer.appendChild(this.pixiApp.view);
+        
+        // インタラクティブ設定
+        this.pixiApp.stage.interactive = true;
+        this.pixiApp.stage.hitArea = new PIXI.Rectangle(0, 0, 400, 400);
+        
+        console.log('✅ PixiJS直接初期化完了（ふたば風背景色）');
+    }
+    
+    /**
      * キャンバス管理システム初期化
      */
     async initializeCanvasManager() {
-        if (!window.CanvasManager) {
-            throw new Error('CanvasManager クラスが読み込まれていません');
+        if (typeof window.CanvasManager !== 'undefined') {
+            this.canvasManager = new window.CanvasManager();
+            await this.canvasManager.init('drawing-canvas');
+            console.log('✅ CanvasManager初期化完了');
+        } else {
+            console.warn('⚠️ CanvasManager未ロード - 基本管理使用');
+            this.canvasManager = {
+                app: this.pixiApp,
+                
+                // 🔧 修正: 正しい座標変換
+                getLocalPointerPosition: (event) => {
+                    const rect = this.pixiApp.view.getBoundingClientRect();
+                    const scaleX = this.pixiApp.view.width / rect.width;
+                    const scaleY = this.pixiApp.view.height / rect.height;
+                    
+                    return {
+                        x: (event.clientX - rect.left) * scaleX,
+                        y: (event.clientY - rect.top) * scaleY
+                    };
+                },
+                
+                getCanvasState: () => ({
+                    width: this.pixiApp.screen.width,
+                    height: this.pixiApp.screen.height
+                }),
+                
+                resize: (width, height, center) => {
+                    this.pixiApp.renderer.resize(width, height);
+                    this.pixiApp.stage.hitArea = new PIXI.Rectangle(0, 0, width, height);
+                }
+            };
         }
-        
-        this.canvasManager = new window.CanvasManager();
-        await this.canvasManager.init('drawing-canvas');
-        console.log('✅ CanvasManager初期化完了');
     }
     
     /**
      * ツール管理システム初期化
      */
     async initializeToolManager() {
-        if (!window.ToolManager) {
-            throw new Error('ToolManager クラスが読み込まれていません');
+        if (typeof window.ToolManager !== 'undefined') {
+            this.toolManager = new window.ToolManager();
+            this.toolManager.init(this.canvasManager);
+            
+            if (typeof window.PenTool !== 'undefined') {
+                const penTool = new window.PenTool(this.toolManager);
+                penTool.init();
+            }
+            
+            if (typeof window.EraserTool !== 'undefined') {
+                const eraserTool = new window.EraserTool(this.toolManager);
+                eraserTool.init();
+            }
+            
+            console.log('✅ ToolManager初期化完了');
+        } else {
+            console.warn('⚠️ ToolManager未ロード - 基本描画使用');
+            this.setupBasicDrawing();
         }
-        
-        this.toolManager = new window.ToolManager();
-        this.toolManager.init(this.canvasManager);
-        
-        // 個別ツール登録
-        if (window.PenTool) {
-            const penTool = new window.PenTool(this.toolManager);
-            penTool.init();
-        }
-        
-        if (window.EraserTool) {
-            const eraserTool = new window.EraserTool(this.toolManager);
-            eraserTool.init();
-        }
-        
-        console.log('✅ ToolManager初期化完了');
+    }
+    
+    /**
+     * 基本描画機能設定（フォールバック）
+     * 🔧 修正: 描画座標とスタイル修正
+     */
+    setupBasicDrawing() {
+        this.toolManager = {
+            currentTool: 'pen',
+            isDrawing: false,
+            globalSettings: {
+                size: 16,
+                opacity: 0.85,
+                pressure: 0.5,
+                color: 0x800000 // ふたば風赤色 #800000
+            },
+            currentPath: null,
+            lastPoint: null,
+            
+            setTool: (tool) => {
+                this.toolManager.currentTool = tool;
+                console.log(`🔧 ツール切り替え: ${tool}`);
+            },
+            
+            startDrawing: (x, y) => {
+                console.log(`🖊️ 描画開始: (${x}, ${y})`);
+                this.toolManager.isDrawing = true;
+                this.toolManager.lastPoint = { x, y };
+                
+                // グラフィックオブジェクト作成
+                const graphics = new PIXI.Graphics();
+                graphics.lineStyle({
+                    width: this.toolManager.globalSettings.size,
+                    color: this.toolManager.globalSettings.color,
+                    alpha: this.toolManager.globalSettings.opacity,
+                    cap: PIXI.LINE_CAP.ROUND,
+                    join: PIXI.LINE_JOIN.ROUND
+                });
+                
+                // 開始点に移動（線は引かない）
+                graphics.moveTo(x, y);
+                
+                this.toolManager.currentPath = graphics;
+                this.canvasManager.app.stage.addChild(graphics);
+            },
+            
+            continueDrawing: (x, y) => {
+                if (this.toolManager.isDrawing && this.toolManager.currentPath && this.toolManager.lastPoint) {
+                    // 前回の点から現在の点へ線を引く
+                    this.toolManager.currentPath.lineTo(x, y);
+                    this.toolManager.lastPoint = { x, y };
+                }
+            },
+            
+            stopDrawing: () => {
+                console.log('🖊️ 描画終了');
+                this.toolManager.isDrawing = false;
+                this.toolManager.currentPath = null;
+                this.toolManager.lastPoint = null;
+            },
+            
+            getDrawingState: () => ({
+                tool: this.toolManager.currentTool,
+                isDrawing: this.toolManager.isDrawing
+            })
+        };
     }
     
     /**
      * UI管理システム初期化
      */
     async initializeUIManager() {
-        if (!window.UIManager) {
-            throw new Error('UIManager クラスが読み込まれていません');
+        if (typeof window.UIController !== 'undefined') {
+            this.uiManager = new window.UIController(this.toolManager);
+            this.uiManager.init();
+            console.log('✅ UIManager初期化完了');
+        } else {
+            console.warn('⚠️ UIManager未ロード - 基本UI使用');
+            this.setupBasicUI();
+        }
+    }
+    
+    /**
+     * 基本UI機能設定（フォールバック）
+     */
+    setupBasicUI() {
+        this.uiManager = {
+            activePopup: null,
+            
+            closeAllPopups: () => {
+                const popups = document.querySelectorAll('.popup-panel');
+                popups.forEach(popup => {
+                    popup.style.display = 'none';
+                });
+                this.uiManager.activePopup = null;
+            },
+            
+            showPopup: (popupId) => {
+                this.uiManager.closeAllPopups();
+                const popup = document.getElementById(popupId);
+                if (popup) {
+                    popup.style.display = 'block';
+                    this.uiManager.activePopup = popupId;
+                }
+            }
+        };
+        
+        this.setupToolButtons();
+        this.setupPopupEvents();
+    }
+    
+    /**
+     * ツールボタン設定
+     */
+    setupToolButtons() {
+        const penTool = document.getElementById('pen-tool');
+        const eraserTool = document.getElementById('eraser-tool');
+        
+        if (penTool) {
+            penTool.addEventListener('click', () => {
+                this.setActiveTool('pen', penTool);
+                this.uiManager.showPopup('pen-settings');
+            });
         }
         
-        this.uiManager = new window.UIManager(this.toolManager);
-        this.uiManager.init();
+        if (eraserTool) {
+            eraserTool.addEventListener('click', () => {
+                this.setActiveTool('eraser', eraserTool);
+                this.uiManager.closeAllPopups();
+            });
+        }
         
-        console.log('✅ UIManager初期化完了');
+        const resizeTool = document.getElementById('resize-tool');
+        if (resizeTool) {
+            resizeTool.addEventListener('click', () => {
+                this.uiManager.showPopup('resize-settings');
+            });
+        }
+    }
+    
+    /**
+     * アクティブツール設定
+     */
+    setActiveTool(tool, element) {
+        document.querySelectorAll('.tool-button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        
+        if (element) {
+            element.classList.add('active');
+        }
+        
+        this.toolManager.setTool(tool);
+        
+        const toolNames = {
+            pen: 'ベクターペン',
+            eraser: '消しゴム'
+        };
+        const currentToolElement = document.getElementById('current-tool');
+        if (currentToolElement) {
+            currentToolElement.textContent = toolNames[tool] || tool;
+        }
+    }
+    
+    /**
+     * ポップアップイベント設定
+     */
+    setupPopupEvents() {
+        const applyResize = document.getElementById('apply-resize');
+        const applyResizeCenter = document.getElementById('apply-resize-center');
+        
+        if (applyResize) {
+            applyResize.addEventListener('click', () => {
+                this.applyCanvasResize(false);
+            });
+        }
+        
+        if (applyResizeCenter) {
+            applyResizeCenter.addEventListener('click', () => {
+                this.applyCanvasResize(true);
+            });
+        }
+        
+        const resizeButtons = document.querySelectorAll('.resize-button[data-size]');
+        resizeButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+                const [width, height] = e.target.getAttribute('data-size').split(',');
+                document.getElementById('canvas-width').value = width;
+                document.getElementById('canvas-height').value = height;
+            });
+        });
     }
     
     /**
      * イベントハンドリング設定
-     * 元HTMLのsetupCanvasEventsを統合
+     * 🔧 修正: 正しいマウス座標取得
      */
     setupEventHandlers() {
-        if (!this.canvasManager.app) {
+        const app = this.canvasManager.app;
+        if (!app) {
             console.warn('⚠️ キャンバスアプリケーション未初期化');
             return;
         }
         
-        // PointerDown: 描画開始
-        this.canvasManager.app.stage.on('pointerdown', (event) => {
-            if (this.uiManager.activePopup) return; // ポップアップ表示中は無視
+        const canvas = app.view;
+        
+        // マウスイベント（デスクトップ）
+        canvas.addEventListener('mousedown', (event) => {
+            if (this.uiManager.activePopup) return;
             
             const point = this.canvasManager.getLocalPointerPosition(event);
+            console.log(`👆 マウスダウン: (${point.x}, ${point.y})`);
             this.toolManager.startDrawing(point.x, point.y);
         });
         
-        // PointerMove: 描画継続・座標更新
-        this.canvasManager.app.stage.on('pointermove', (event) => {
+        canvas.addEventListener('mousemove', (event) => {
             const point = this.canvasManager.getLocalPointerPosition(event);
             
-            // 座標表示更新（元HTML機能維持）
+            // 座標表示更新
             this.updateCoordinateDisplay(point.x, point.y);
             
-            // 筆圧モニター更新（簡易実装）
+            // 筆圧モニター更新
             if (this.toolManager.isDrawing) {
                 this.updatePressureMonitor();
             }
@@ -357,57 +419,72 @@ class FutabaDrawingTool {
             }
         });
         
-        // PointerUp: 描画終了
-        this.canvasManager.app.stage.on('pointerup', () => {
+        canvas.addEventListener('mouseup', () => {
+            console.log('👆 マウスアップ');
             this.toolManager.stopDrawing();
             this.resetPressureMonitor();
         });
         
-        // PointerUpOutside: キャンバス外での描画終了
-        this.canvasManager.app.stage.on('pointerupoutside', () => {
+        canvas.addEventListener('mouseleave', () => {
+            console.log('👆 マウス離脱');
             this.toolManager.stopDrawing();
             this.resetPressureMonitor();
         });
         
-        // リサイズイベント統合
-        this.setupResizeHandlers();
+        // タッチイベント（モバイル）
+        canvas.addEventListener('touchstart', (event) => {
+            event.preventDefault();
+            if (this.uiManager.activePopup) return;
+            
+            const touch = event.touches[0];
+            const point = this.canvasManager.getLocalPointerPosition(touch);
+            this.toolManager.startDrawing(point.x, point.y);
+        });
         
-        console.log('✅ イベントハンドリング設定完了');
+        canvas.addEventListener('touchmove', (event) => {
+            event.preventDefault();
+            const touch = event.touches[0];
+            const point = this.canvasManager.getLocalPointerPosition(touch);
+            
+            this.updateCoordinateDisplay(point.x, point.y);
+            
+            if (this.toolManager.isDrawing) {
+                this.updatePressureMonitor();
+            }
+            
+            if (!this.uiManager.activePopup) {
+                this.toolManager.continueDrawing(point.x, point.y);
+            }
+        });
+        
+        canvas.addEventListener('touchend', (event) => {
+            event.preventDefault();
+            this.toolManager.stopDrawing();
+            this.resetPressureMonitor();
+        });
+        
+        console.log('✅ イベントハンドリング設定完了（マウス・タッチ両対応）');
     }
     
     /**
-     * リサイズハンドラー設定（元HTML機能統合）
-     */
-    setupResizeHandlers() {
-        document.getElementById('apply-resize')?.addEventListener('click', () => {
-            this.applyCanvasResize(false);
-        });
-        
-        document.getElementById('apply-resize-center')?.addEventListener('click', () => {
-            this.applyCanvasResize(true);
-        });
-    }
-    
-    /**
-     * キャンバスリサイズ適用（元HTML機能）
-     * @param {boolean} centerContent - 中央寄せフラグ
+     * キャンバスリサイズ適用
      */
     applyCanvasResize(centerContent) {
         const width = parseInt(document.getElementById('canvas-width').value);
         const height = parseInt(document.getElementById('canvas-height').value);
         
-        if (width && height) {
+        if (width && height && width > 0 && height > 0) {
             this.canvasManager.resize(width, height, centerContent);
             this.updateCanvasInfo();
             this.uiManager.closeAllPopups();
+            console.log(`✅ キャンバスリサイズ: ${width}×${height}px (中央寄せ: ${centerContent})`);
         }
     }
     
     /**
-     * パフォーマンス監視開始（元HTML機能統合）
+     * パフォーマンス監視開始
      */
     startPerformanceMonitoring() {
-        // 元HTMLのPerformanceMonitorクラス機能を統合
         this.performanceMonitor = {
             frameCount: 0,
             lastTime: performance.now()
@@ -422,7 +499,9 @@ class FutabaDrawingTool {
                     (currentTime - this.performanceMonitor.lastTime));
                 
                 const fpsElement = document.getElementById('fps');
-                if (fpsElement) fpsElement.textContent = fps;
+                if (fpsElement) {
+                    fpsElement.textContent = fps;
+                }
                 
                 this.performanceMonitor.frameCount = 0;
                 this.performanceMonitor.lastTime = currentTime;
@@ -436,29 +515,20 @@ class FutabaDrawingTool {
     }
     
     /**
-     * 初期状態設定（元HTML機能維持）
+     * 初期状態設定
      */
     setupInitialState() {
-        // 初期ツール設定
-        if (this.toolManager.setTool) {
-            this.toolManager.setTool('pen');
-        }
-        
-        // 初期キャンバス情報更新
+        this.setActiveTool('pen', document.getElementById('pen-tool'));
         this.updateCanvasInfo();
         
-        // 初期色設定表示
-        const colorElement = document.getElementById('current-color');
-        if (colorElement) colorElement.textContent = '#800000';
-        
-        const toolElement = document.getElementById('current-tool');
-        if (toolElement) toolElement.textContent = 'ベクターペン';
+        const currentColor = document.getElementById('current-color');
+        if (currentColor) {
+            currentColor.textContent = '#800000';
+        }
     }
     
     /**
-     * 座標表示更新（元HTML機能）
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
+     * 座標表示更新
      */
     updateCoordinateDisplay(x, y) {
         const coordinatesElement = document.getElementById('coordinates');
@@ -468,7 +538,7 @@ class FutabaDrawingTool {
     }
     
     /**
-     * 筆圧モニター更新（元HTML機能）
+     * 筆圧モニター更新
      */
     updatePressureMonitor() {
         const pressure = Math.min(100, 
@@ -480,7 +550,7 @@ class FutabaDrawingTool {
     }
     
     /**
-     * 筆圧モニターリセット（元HTML機能）
+     * 筆圧モニターリセット
      */
     resetPressureMonitor() {
         const pressureElement = document.getElementById('pressure-monitor');
@@ -490,19 +560,18 @@ class FutabaDrawingTool {
     }
     
     /**
-     * キャンバス情報更新（元HTML機能）
+     * キャンバス情報更新
      */
     updateCanvasInfo() {
         const state = this.canvasManager.getCanvasState();
-        const infoElement = document.getElementById('canvas-info');
-        if (infoElement) {
-            infoElement.textContent = `${state.width}×${state.height}px`;
+        const canvasInfo = document.getElementById('canvas-info');
+        if (canvasInfo && state) {
+            canvasInfo.textContent = `${state.width}×${state.height}px`;
         }
     }
     
     /**
      * エラーメッセージ表示
-     * @param {Error} error - エラーオブジェクト
      */
     showErrorMessage(error) {
         const errorDiv = document.createElement('div');
@@ -533,7 +602,6 @@ class FutabaDrawingTool {
         
         document.body.appendChild(errorDiv);
         
-        // 5秒後自動削除
         setTimeout(() => {
             if (errorDiv.parentNode) {
                 errorDiv.remove();
@@ -542,7 +610,7 @@ class FutabaDrawingTool {
     }
     
     /**
-     * アプリケーション状態取得（デバッグ用）
+     * アプリケーション状態取得
      */
     getAppState() {
         return {
@@ -550,47 +618,32 @@ class FutabaDrawingTool {
             isInitialized: this.isInitialized,
             canvasState: this.canvasManager?.getCanvasState(),
             toolState: this.toolManager?.getDrawingState(),
-            performanceInfo: this.canvasManager?.getPerformanceInfo()
+            performanceInfo: this.pixiApp ? {
+                fps: this.performanceMonitor?.frameCount || 0,
+                width: this.pixiApp.screen.width,
+                height: this.pixiApp.screen.height
+            } : null
         };
-    }
-    
-    /**
-     * ツール設定更新（UIManagerからの通知用）
-     */
-    updateToolSettings(settings) {
-        if (this.toolManager && this.toolManager.updateGlobalSettings) {
-            this.toolManager.updateGlobalSettings(settings);
-        }
-    }
-    
-    /**
-     * キャンバスリサイズ（UIManagerからの通知用）
-     */
-    resize(width, height, centerContent) {
-        if (this.canvasManager) {
-            this.canvasManager.resize(width, height, centerContent);
-            this.updateCanvasInfo();
-        }
     }
 }
 
 /**
  * アプリケーション起動
- * ルールブック準拠：Pure JavaScript・DOMContentLoaded使用
  */
 window.addEventListener('DOMContentLoaded', async () => {
     try {
-        // AppLoader使用でPure JavaScript読み込みパターン実行
-        const loader = new AppLoader();
-        await loader.init();
+        console.log('🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0');
+        console.log('📋 Phase1.1: 座標・背景色修正版');
+        console.log('🚀 起動開始...');
         
-        console.log('🎉 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0');
-        console.log('✅ Pure JavaScript完全準拠版 - 起動完了！');
+        window.futabaDrawingTool = new FutabaDrawingTool();
+        await window.futabaDrawingTool.init();
+        
+        console.log('🎉 アプリケーション起動完了！');
         
     } catch (error) {
         console.error('❌ アプリケーション起動失敗:', error);
         
-        // フォールバック表示（ふたば風デザイン維持）
         document.body.innerHTML = `
             <div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#ffffee;">
                 <div style="text-align:center;color:#800000;background:#f0e0d6;padding:32px;border:2px solid #aa5a56;border-radius:16px;">
@@ -606,11 +659,3 @@ window.addEventListener('DOMContentLoaded', async () => {
         `;
     }
 });
-
-// デバッグ用グローバル公開
-window.AppLoader = AppLoader;
-window.FutabaDrawingTool = FutabaDrawingTool;
-
-console.log('🎨 main.js Pure JavaScript完全準拠版 - 準備完了');
-console.log('📋 ルールブック準拠: 1.2実装原則「ESM/TypeScript混在禁止・Pure JavaScript維持」');
-console.log('💡 使用例: window.futabaDrawingTool.getAppState() でアプリ状態確認可能');
