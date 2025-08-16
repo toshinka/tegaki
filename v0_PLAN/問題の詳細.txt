@@ -1,94 +1,252 @@
-問題の詳細
-attemptUILibraryDetection() {
-    ...
-    if (uiLib) {
-        // 成功処理
-    } else {
-        throw new Error('@pixi/ui ライブラリが検出されませんでした');
-    }
-}
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ふたば☆ちゃんねる風ベクターお絵描きツール v1.0</title>
+    
+    <!-- CSS -->
+    <link rel="stylesheet" href="css/styles.css">
+    
+    <!-- PixiJS v7 コア（最優先） -->
+    <script src="node_modules/pixi.js/dist/pixi.min.js"></script>
+    
+    <!-- 依存関係順序遵守: tweedle.js → @pixi/ui （重要修正）-->
+    <script src="node_modules/tweedle.js/dist/tweedle.umd.js"></script>
+    <script src="node_modules/@pixi/ui/dist/pixi-ui.js"></script>
+    
+    <!-- PixiJS 拡張ライブラリ（依存関係順） -->
+    <script src="node_modules/@pixi/layers/dist/pixi-layers.js"></script>
+    <script src="node_modules/@pixi/gif/dist/pixi-gif.js"></script>
+    
+    <!-- ユーティリティライブラリ -->
+    <script src="node_modules/gsap/dist/gsap.min.js"></script>
+    <script src="node_modules/lodash/lodash.min.js"></script>
+    <script src="node_modules/hammerjs/hammer.min.js"></script>
+    
+    <!-- PixiJS拡張統合基盤（Phase1版） -->
+    <script src="libs/pixi-extensions.js"></script>
+    
+    <!-- アプリケーション初期化（Phase1版） -->
+    <script src="js/utils/coordinates.js"></script>
+    <script src="js/utils/performance.js"></script>
+    <script src="js/utils/icon-manager.js"></script>
+    <script src="js/managers/ui-manager.js"></script>
+    <script src="js/managers/tool-manager.js"></script>
+    <script src="js/managers/canvas-manager.js"></script>
+    <script src="js/tools/pen-tool.js"></script>
+    <script src="js/tools/eraser-tool.js"></script>
+    <script src="js/app-core.js"></script>
+    <script src="js/main.js"></script>
+</head>
+<body>
+    <!-- ふたば☆ちゃんねる風レイアウト -->
+    <div class="container">
+        <!-- ヘッダー -->
+        <header class="header">
+            <h1>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール</h1>
+            <div class="version">Phase1.1ss3rev2 - PixiJS v7対応</div>
+        </header>
 
+        <!-- ツールバー -->
+        <div class="toolbar" id="toolbar">
+            <!-- ツールボタン -->
+            <div class="tool-group">
+                <button id="penTool" class="tool-btn active" data-tool="pen">
+                    <span class="icon">✏️</span>
+                    <span>ペン</span>
+                </button>
+                <button id="eraserTool" class="tool-btn" data-tool="eraser">
+                    <span class="icon">🧽</span>
+                    <span>消しゴム</span>
+                </button>
+            </div>
 
-ここで 強制的に throw しているため、pixi-extensions.js:171 のような致命エラーに直結しています。
+            <!-- 色選択 -->
+            <div class="tool-group">
+                <label for="colorPicker">色:</label>
+                <input type="color" id="colorPicker" value="#800000">
+                <div id="colorPreview" class="color-preview"></div>
+            </div>
 
-index.html 側では @pixi/ui の <script> を遅延ロード（document.createElement('script')）しているので、
-DOM Ready の瞬間にはまだ window.PIXI.UI が存在しない → throw → Console に ❌ が出る、という流れです。
+            <!-- サイズ調整 -->
+            <div class="tool-group">
+                <label for="brushSize">サイズ:</label>
+                <input type="range" id="brushSize" min="1" max="50" value="5">
+                <span id="brushSizeValue">5</span>px
+            </div>
 
-解決パッチ
-修正方針
+            <!-- 透明度調整 -->
+            <div class="tool-group">
+                <label for="opacity">透明度:</label>
+                <input type="range" id="opacity" min="0" max="100" value="100">
+                <span id="opacityValue">100</span>%
+            </div>
+        </div>
 
-throw せず、フォールバックモードに安全に移行する。
+        <!-- キャンバスエリア -->
+        <div class="canvas-area">
+            <div id="canvas-container" class="canvas-container">
+                <!-- PixiJSアプリケーションがここに挿入される -->
+            </div>
+            
+            <!-- ステータスバー -->
+            <div class="status-bar">
+                <div class="status-item">
+                    <span>座標: </span>
+                    <span id="coordinates">0, 0</span>
+                </div>
+                <div class="status-item">
+                    <span>FPS: </span>
+                    <span id="fps-counter">60</span>
+                </div>
+                <div class="status-item">
+                    <span>筆圧: </span>
+                    <span id="pressure">0.0</span>
+                </div>
+                <div class="status-item">
+                    <span>描画モード: </span>
+                    <span id="render-mode">GPU</span>
+                </div>
+            </div>
+        </div>
 
-ログを console.warn に格下げして動作継続。
+        <!-- コントロールパネル -->
+        <div class="control-panel">
+            <div class="panel-section">
+                <h3>レイヤー</h3>
+                <div id="layer-list" class="layer-list">
+                    <div class="layer-item active">
+                        <span>レイヤー 1</span>
+                        <div class="layer-controls">
+                            <input type="range" class="layer-opacity" min="0" max="100" value="100">
+                            <button class="layer-visible">👁</button>
+                        </div>
+                    </div>
+                </div>
+                <button id="addLayer" class="btn-secondary">+ レイヤー追加</button>
+            </div>
 
-リトライ (retryUIIntegration) で後からライブラリが来たら再検出。
+            <div class="panel-section">
+                <h3>アクション</h3>
+                <div class="action-buttons">
+                    <button id="undoBtn" class="btn-secondary">↶ 元に戻す</button>
+                    <button id="redoBtn" class="btn-secondary">↷ やり直し</button>
+                    <button id="clearBtn" class="btn-danger">🗑 クリア</button>
+                </div>
+            </div>
 
-パッチ修正版 attemptUILibraryDetection
-attemptUILibraryDetection() {
-    let uiLib = null;
-    let detectionMethod = '';
+            <div class="panel-section">
+                <h3>ファイル</h3>
+                <div class="file-buttons">
+                    <button id="saveBtn" class="btn-primary">💾 保存</button>
+                    <button id="loadBtn" class="btn-primary">📁 読込</button>
+                    <input type="file" id="fileInput" accept=".json,.png,.jpg,.svg" style="display: none;">
+                </div>
+            </div>
+        </div>
 
-    if (window.PIXI && window.PIXI.UI) {
-        uiLib = window.PIXI.UI;
-        detectionMethod = 'PIXI.UI';
-    } else if (window.PIXI && window.PIXI.FancyButton) {
-        uiLib = {
-            FancyButton: window.PIXI.FancyButton,
-            Button: window.PIXI.Button,
-            Slider: window.PIXI.Slider,
-            CheckBox: window.PIXI.CheckBox
-        };
-        detectionMethod = 'PIXI.FancyButton';
-    } else if (window.__PIXI_UI__) {
-        uiLib = window.__PIXI_UI__;
-        detectionMethod = '__PIXI_UI__';
-    }
+        <!-- ポップアップ・モーダル用コンテナ -->
+        <div id="popup-container" class="popup-container">
+            <!-- 動的に生成されるポップアップがここに挿入される -->
+        </div>
 
-    if (uiLib) {
-        // ✅ 検出成功処理はそのまま
-        const availableComponents = [];
-        const missingComponents = [];
-        ['FancyButton', 'Button', 'Slider', 'CheckBox'].forEach(component => {
-            if (uiLib[component]) availableComponents.push(component);
-            else missingComponents.push(component);
+        <!-- フッター -->
+        <footer class="footer">
+            <div class="footer-info">
+                <span>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0</span>
+                <span>| PixiJS v7 + JavaScript Pure</span>
+                <span>| Phase1.1ss3rev2</span>
+            </div>
+            <div class="footer-stats">
+                <span id="memory-usage">メモリ使用量: 0MB</span>
+                <span id="draw-calls">描画コール: 0</span>
+                <span id="total-objects">オブジェクト数: 0</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 初期化完了後の起動スクリプト -->
+    <script>
+        /**
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
+         * Phase1.1ss3rev2 - エントリーポイント
+         * 
+         * ⚡ 重要修正: tweedle.js依存関係解決
+         * 📋 V8_MIGRATION: Application.init()対応予定
+         */
+        
+        console.log('🎨 ふたば☆ちゃんねる風ベクターお絵描きツール Phase1.1ss3rev2 起動開始...');
+        
+        // DOMContentLoaded後に初期化実行
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                console.log('📦 依存関係チェック開始...');
+                
+                // 必須ライブラリ確認
+                if (!window.PIXI) {
+                    throw new Error('PixiJS が読み込まれていません');
+                }
+                console.log(`✅ PixiJS v${PIXI.VERSION} 検出`);
+                
+                // tweedle.js確認（重要修正）
+                if (window.tweedle_js || window.TWEEDLE) {
+                    console.log('✅ tweedle.js 検出 - @pixi/ui完全対応');
+                } else {
+                    console.warn('⚠️ tweedle.js 未検出 - 基本機能で継続');
+                }
+                
+                // PixiJS拡張機能初期化
+                if (window.PixiExtensions) {
+                    console.log('🔧 PixiJS拡張機能初期化開始...');
+                    await window.PixiExtensions.initialize();
+                    
+                    const stats = window.PixiExtensions.getStats();
+                    console.log(`📊 統合成功: ${stats.coverage} (${stats.loaded}/${stats.total})`);
+                } else {
+                    console.warn('⚠️ PixiJS拡張機能が見つかりません');
+                }
+                
+                // メインアプリケーション初期化
+                if (window.VectorDrawingApp) {
+                    console.log('🚀 メインアプリケーション初期化開始...');
+                    await window.VectorDrawingApp.initialize();
+                    console.log('✅ アプリケーション初期化完了');
+                } else {
+                    console.error('❌ メインアプリケーションが見つかりません');
+                }
+                
+                console.log('🎉 ふたば☆ちゃんねる風ベクターお絵描きツール 起動完了！');
+                
+            } catch (error) {
+                console.error('❌ 初期化エラー:', error);
+                
+                // エラーハンドリング - ユーザーに通知
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error-message';
+                errorDiv.innerHTML = `
+                    <h3>⚠️ 初期化エラー</h3>
+                    <p>${error.message}</p>
+                    <p>ページをリロードしてください。問題が継続する場合は開発者にお知らせください。</p>
+                    <button onclick="location.reload()">リロード</button>
+                `;
+                document.body.appendChild(errorDiv);
+            }
         });
-
-        this.extensions.set('ui', {
-            available: true,
-            FancyButton: uiLib.FancyButton || null,
-            Button: uiLib.Button || null,
-            Slider: uiLib.Slider || null,
-            CheckBox: uiLib.CheckBox || null,
-            source: 'node_modules',
-            detectionMethod,
-            availableComponents,
-            missingComponents,
-            typedSignalsOk: true
-        });
-        this.stats.loaded++;
-
-        console.log(`✅ @pixi/ui (${detectionMethod}) 検出`);
-        if (missingComponents.length > 0) {
-            console.warn(`⚠️ 不足コンポーネント: ${missingComponents.join(', ')}`);
-            this.stats.warnings.push(`Missing UI components: ${missingComponents.join(', ')}`);
-        }
-        console.log('🎨 @pixi/ui統合完了 - ポップアップ・UI機能利用可能');
-    } else {
-        // ❌ throwをやめてフォールバックに切り替える
-        console.warn('⚠️ @pixi/ui ライブラリ未検出 - フォールバックUIを使用します');
-        this.extensions.set('ui', {
-            available: false,
-            error: '@pixi/ui not yet loaded',
-            fallbackMode: true
-        });
-        this.stats.warnings.push('@pixi/ui not yet loaded - fallback mode');
-    }
-}
-
-効果
-
-即時の throw による致命エラーがなくなる。
-
-index.html の遅延ロードで後から @pixi/ui が来ても retryUIIntegration() で復帰できる。
-
-❌ @pixi/ui統合エラー が ⚠️ 警告ログに変わり、アプリ動作は継続。
+        
+        // v8移行準備コメント
+        /*
+         * 📋 V8_MIGRATION: PixiJS v8移行時の変更予定
+         * 
+         * 現在 (v7):
+         * - const app = new PIXI.Application(config);
+         * 
+         * v8予定:
+         * - const app = new PIXI.Application();
+         * - await app.init(config);
+         * 
+         * 互換性レイヤーでv8移行をスムーズに実行予定
+         */
+    </script>
+</body>
+</html>
