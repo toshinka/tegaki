@@ -1,0 +1,94 @@
+問題の詳細
+attemptUILibraryDetection() {
+    ...
+    if (uiLib) {
+        // 成功処理
+    } else {
+        throw new Error('@pixi/ui ライブラリが検出されませんでした');
+    }
+}
+
+
+ここで 強制的に throw しているため、pixi-extensions.js:171 のような致命エラーに直結しています。
+
+index.html 側では @pixi/ui の <script> を遅延ロード（document.createElement('script')）しているので、
+DOM Ready の瞬間にはまだ window.PIXI.UI が存在しない → throw → Console に ❌ が出る、という流れです。
+
+解決パッチ
+修正方針
+
+throw せず、フォールバックモードに安全に移行する。
+
+ログを console.warn に格下げして動作継続。
+
+リトライ (retryUIIntegration) で後からライブラリが来たら再検出。
+
+パッチ修正版 attemptUILibraryDetection
+attemptUILibraryDetection() {
+    let uiLib = null;
+    let detectionMethod = '';
+
+    if (window.PIXI && window.PIXI.UI) {
+        uiLib = window.PIXI.UI;
+        detectionMethod = 'PIXI.UI';
+    } else if (window.PIXI && window.PIXI.FancyButton) {
+        uiLib = {
+            FancyButton: window.PIXI.FancyButton,
+            Button: window.PIXI.Button,
+            Slider: window.PIXI.Slider,
+            CheckBox: window.PIXI.CheckBox
+        };
+        detectionMethod = 'PIXI.FancyButton';
+    } else if (window.__PIXI_UI__) {
+        uiLib = window.__PIXI_UI__;
+        detectionMethod = '__PIXI_UI__';
+    }
+
+    if (uiLib) {
+        // ✅ 検出成功処理はそのまま
+        const availableComponents = [];
+        const missingComponents = [];
+        ['FancyButton', 'Button', 'Slider', 'CheckBox'].forEach(component => {
+            if (uiLib[component]) availableComponents.push(component);
+            else missingComponents.push(component);
+        });
+
+        this.extensions.set('ui', {
+            available: true,
+            FancyButton: uiLib.FancyButton || null,
+            Button: uiLib.Button || null,
+            Slider: uiLib.Slider || null,
+            CheckBox: uiLib.CheckBox || null,
+            source: 'node_modules',
+            detectionMethod,
+            availableComponents,
+            missingComponents,
+            typedSignalsOk: true
+        });
+        this.stats.loaded++;
+
+        console.log(`✅ @pixi/ui (${detectionMethod}) 検出`);
+        if (missingComponents.length > 0) {
+            console.warn(`⚠️ 不足コンポーネント: ${missingComponents.join(', ')}`);
+            this.stats.warnings.push(`Missing UI components: ${missingComponents.join(', ')}`);
+        }
+        console.log('🎨 @pixi/ui統合完了 - ポップアップ・UI機能利用可能');
+    } else {
+        // ❌ throwをやめてフォールバックに切り替える
+        console.warn('⚠️ @pixi/ui ライブラリ未検出 - フォールバックUIを使用します');
+        this.extensions.set('ui', {
+            available: false,
+            error: '@pixi/ui not yet loaded',
+            fallbackMode: true
+        });
+        this.stats.warnings.push('@pixi/ui not yet loaded - fallback mode');
+    }
+}
+
+効果
+
+即時の throw による致命エラーがなくなる。
+
+index.html の遅延ロードで後から @pixi/ui が来ても retryUIIntegration() で復帰できる。
+
+❌ @pixi/ui統合エラー が ⚠️ 警告ログに変わり、アプリ動作は継続。

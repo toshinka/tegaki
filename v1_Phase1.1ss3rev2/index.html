@@ -275,23 +275,142 @@
         </div>
     </div>
 
-    <!-- 🔧 修正: ライブラリ読み込み順序とパス最適化 -->
+    <!-- 🔧 修正: ライブラリロード順序最適化・typed-signalsエラー対応 -->
     
-    <!-- PixiJS v7 本体（最優先） -->
+    <!-- PixiJS v7 本体 -->
     <script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
     
-    <!-- 🎯 修正: @pixiライブラリ群を有効化（コメントアウト解除） -->
+    <!-- 🔧 typed-signals フォールバック定義 (JavaScript Pure対応) -->
+    <script>
+    /**
+     * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
+     * typed-signals フォールバック実装
+     * @pixi/ui依存関係解決・JavaScript Pure準拠
+     * 📋 V8_MIGRATION: PixiJS v8では依存関係が変更される可能性
+     */
+    (function() {
+        'use strict';
+        
+        // typed-signals が未定義の場合のフォールバック
+        if (typeof window.typedSignals === 'undefined') {
+            console.log('🆘 typed-signals フォールバック適用開始');
+            
+            // Signal クラスのフォールバック実装
+            function Signal() {
+                this.listeners = [];
+                this.active = true;
+            }
+            
+            Signal.prototype.add = function(listener, context) {
+                if (typeof listener !== 'function') return null;
+                
+                var connection = {
+                    listener: listener,
+                    context: context || null,
+                    detach: function() {
+                        var index = this.signal.listeners.indexOf(this);
+                        if (index >= 0) {
+                            this.signal.listeners.splice(index, 1);
+                        }
+                    },
+                    signal: this
+                };
+                
+                this.listeners.push(connection);
+                return connection;
+            };
+            
+            Signal.prototype.remove = function(listener, context) {
+                this.listeners = this.listeners.filter(function(connection) {
+                    return !(connection.listener === listener && 
+                             connection.context === (context || null));
+                });
+            };
+            
+            Signal.prototype.dispatch = function() {
+                if (!this.active) return;
+                
+                var args = Array.prototype.slice.call(arguments);
+                var listeners = this.listeners.slice(); // コピーして安全に反復
+                
+                for (var i = 0; i < listeners.length; i++) {
+                    var connection = listeners[i];
+                    try {
+                        if (connection.context) {
+                            connection.listener.apply(connection.context, args);
+                        } else {
+                            connection.listener.apply(null, args);
+                        }
+                    } catch (error) {
+                        console.error('🚨 Signal dispatch error:', error);
+                    }
+                }
+            };
+            
+            Signal.prototype.removeAll = function() {
+                this.listeners = [];
+            };
+            
+            // グローバルに公開
+            window.typedSignals = {
+                Signal: Signal,
+                _fallback: true // フォールバックであることを示す
+            };
+            
+            console.log('✅ typed-signals フォールバック適用完了');
+        } else {
+            console.log('✅ typed-signals 既存ライブラリ検出');
+        }
+    })();
+    </script>
     
-    <!-- @pixi/ui: UIコンポーネント -->
-    <script src="./node_modules/@pixi/ui/dist/pixi-ui.js"></script>
+    <!-- 🔧 @pixi拡張ライブラリ安全ロード -->
     
-    <!-- @pixi/layers: レイヤー機能 -->
-    <script src="./node_modules/@pixi/layers/dist/pixi-layers.js"></script>
+    <!-- @pixi/ui: UIコンポーネント (安全ロード) -->
+    <script>
+    (function() {
+        // 存在確認後の安全ロード
+        var script = document.createElement('script');
+        script.src = './node_modules/@pixi/ui/dist/pixi-ui.js';
+        script.onerror = function() {
+            console.warn('⚠️ @pixi/ui 読み込み失敗 - 独自UI使用');
+        };
+        script.onload = function() {
+            console.log('✅ @pixi/ui 読み込み成功');
+        };
+        document.head.appendChild(script);
+    })();
+    </script>
     
-    <!-- @pixi/gif: GIF機能 -->
-    <script src="./node_modules/@pixi/gif/dist/pixi-gif.js"></script>
+    <!-- @pixi/layers: レイヤー機能 (安全ロード) -->
+    <script>
+    (function() {
+        var script = document.createElement('script');
+        script.src = './node_modules/@pixi/layers/dist/pixi-layers.js';
+        script.onerror = function() {
+            console.warn('⚠️ @pixi/layers 読み込み失敗 - 基本コンテナ使用');
+        };
+        script.onload = function() {
+            console.log('✅ @pixi/layers 読み込み成功');
+        };
+        document.head.appendChild(script);
+    })();
+    </script>
     
-    <!-- ユーティリティライブラリ群 -->
+    <!-- @pixi/gif: GIF機能 (安全ロード) -->
+    <script>
+    (function() {
+        var script = document.createElement('script');
+        script.src = './node_modules/@pixi/gif/dist/pixi-gif.js';
+        script.onerror = function() {
+            console.warn('⚠️ @pixi/gif 読み込み失敗 - GIF機能無効');
+        };
+        script.onload = function() {
+            console.log('✅ @pixi/gif 読み込み成功');
+        };
+        document.head.appendChild(script);
+    })();
+    </script>
     
     <!-- GSAP: アニメーション -->
     <script src="./node_modules/gsap/dist/gsap.min.js"></script>
