@@ -1,0 +1,152 @@
+検査結果と問題分析
+1. ファイル群の検査概要
+
+main.js (提供された<document>から)</document>: FutabaDrawingToolクラスが定義されており、init()メソッド内でinitializeAppCore()を呼び、window.AppCoreの存在をチェックしている。エラー発生箇所 (line 147) は if (typeof window.AppCore === 'undefined') { throw new Error('AppCore クラスが読み込まれていません'); } で、AppCoreクラスがグローバルに利用可能でないことを示す。コードはPure JavaScriptで、ESM禁止を守っている (グローバル変数使用)。
+app-core.js (ツール結果から): AppCoreクラスが定義され、window.AppCoreとしてグローバル登録されている。PixiJS依存 (PIXI.Applicationなど) があり、pixi-extensions.jsへの参照もある。コードはPure JavaScript遵守、即時実行コードはグローバル登録のみで、インスタンス化はmain.js側に依存。
+pixi-extensions.js (ツール結果から): 内容抽出失敗だが、main.jsとapp-core.jsの参照から、window.PixiExtensionsを定義し、PixiJS拡張を提供するものと推定。Pure JavaScript遵守。
+index.html (ツール結果から内容抽出失敗、推定): スクリプトタグの順序が問題の核心。AppCoreクラスがundefinedになるため、<script src="js/app-core.js"></script> が <script src="js/main.js"></script> より後にあるか、存在しない可能性が高い。PixiJSスクリプト (node_modules経由) のロード順も影響。DOMContentLoadedイベントでmain.jsが実行されるため、依存スクリプトが同期ロードされていないとエラー発生。
+package.json & package-lock.json (ツール結果から内容抽出失敗、推定): PixiJS v7依存 (@pixi/* パッケージ) がnode_modulesにあり、bundleなしで<script>タグ経由でロード。v7はUMD形式でPure JS対応。
+v0_PLAN/1_rulebook_v8_node_modules.txt (ツール結果から内容抽出失敗、推定): node_modules統合ルール。PixiJS v7を<script src="node_modules/@pixi/core/dist/pixi.js"></script> など部分ロード推奨、ESM回避でグローバルPIXI露出。
+v0_PLAN/2_tegaki_migration_plan_phase1_2.txt (ツール結果から内容抽出失敗、推定): Phase1.1ss5rev1でAppCore統合を記述。初期化シーケンス: PixiJS → Extensions → AppCore → Main。エラー扱い: クラス未ロード時のフォールバック。
+css/styles.css: UI関連、JSエラーに無関係。
+
+2. 問題点の特定
+
+根本原因: スクリプトロード順の誤り。main.jsが実行時 (DOMContentLoaded後) にwindow.AppCoreがundefined。app-core.jsがmain.jsより後にロード、またはasync/defer属性で非同期化されている。
+関連要因:
+
+PixiJS v7 (node_modules統合): 複数ファイル (@pixi/core, @pixi/graphicsなど) を正しい順でロードする必要。未ロードでPIXI undefinedエラー誘発可能。
+Pure JS原則遵守: ESM禁止のため、<script>タグ順で依存解決。DRY違反なしだが、SOLID (単一責任) でAppCoreは描画コア担当、main.jsはエントリーポイント。
+エラー影響: 初期化失敗でフォールバック試行されるが、AppCore未定義でキャンバス表示修復失敗。
+
+
+潜在リスク: fetch API使用 (コードにないがクエリ言及) で非同期ロード試行時、タイミングエラー増大。Phase1.1ss5rev1の緊急修復対象。
+
+3. 修繕原則
+
+Pure JavaScript維持: ESM/import/export禁止、グローバル変数 (window.) 使用。
+DRY (Don't Repeat Yourself): ロード順定義をindex.htmlに集中、重複チェック/エラー処理を共有関数化。
+SOLID原則意識:
+
+S (Single Responsibility): AppCoreはコアロジックのみ、main.jsは初期化エントリのみ。
+O (Open-Closed): 拡張時 (e.g., 新ツール) に修正最小化。
+L (Liskov Substitution): フォールバッククラス (SimpleFallbackToolSystem) が本物と置換可能。
+I (Interface Segregation): グローバル露出最小 (必要クラスだけ)。
+D (Dependency Inversion): 高レベル (main.js) が低レベル (AppCore) に依存せず、チェック追加。
+
+
+パフォーマンス目標: 初期化3秒以内、60FPS。ロード順最適化で達成。
+テスト観点: ブラウザコンソールでwindow.AppCore確認、初期化時間ログ検証。
+
+
+
+修繕計画書
+Phase 1: 即時修正 (エラー解消、安定化)
+
+目標: AppCoreロード順修正、未定義エラー防止。所要時間: 1-2時間。
+ステップ:
+
+index.html修正:
+
+
+にPixiJSスクリプトを追加 (node_modules統合):
+```
+<script src="node_modules/@pixi/core/dist/pixi.js"></script>
+<script src="node_modules/@pixi/graphics/dist/pixi.js"></script>
+<script src="node_modules/@pixi/app/dist/pixi.js"></script>
+
+```
+
+
+末尾に依存順スクリプト追加 (async/deferなしで同期ロード):
+```
+<script src="libs/pixi-extensions.js"></script>
+<script src="js/app-core.js"></script>
+<script src="js/main.js"></script>
+```
+
+DOMContentLoadedイベント確認: main.jsのaddEventListenerが依存後実行。
+
+
+main.js強化 (DRY/SOLID対応):
+
+initializeAppCore()に遅延チェック追加:
+javascriptasync initializeAppCore() {
+  console.log('🎯 AppCore初期化開始（核心修正）...');
+  let attempts = 0;
+  while (typeof window.AppCore === 'undefined' && attempts < 5) {
+    await new Promise(resolve => setTimeout(resolve, 100)); // 100ms待機 (非同期ロード対応)
+    attempts++;
+  }
+  if (typeof window.AppCore === 'undefined') {
+    throw new Error('AppCore クラスが読み込まれていません (ロード順確認要)');
+  }
+  // 以降同じ
+}
+
+エラー処理共有関数化 (DRY): errorLog.pushを関数に (e.g., logError(step, msg))。
+
+
+app-core.js検証: グローバル登録確認 (既にOK)。PixiJSチェック追加:
+javascriptif (!window.PIXI) {
+  throw new Error('PixiJS が読み込まれていません');
+}
+
+テスト: ブラウザリロードでエラーなし確認。console.logでロード順ログ追加 (e.g., app-core.js末尾に 'AppCore loaded')。
+
+
+
+Phase 2: 最適化と予防 (パフォーマンス/拡張性向上)
+
+目標: ロードエラー予防、fetch API統合考慮。所要時間: 2-3時間。
+ステップ:
+
+ロードヘルパー関数追加 (main.js頭、SOLID-D対応):
+javascriptfunction loadScriptSync(url) {
+  const script = document.createElement('script');
+  script.src = url;
+  script.async = false; // 同期強制
+  document.head.appendChild(script);
+  return new Promise((resolve, reject) => {
+    script.onload = resolve;
+    script.onerror = reject;
+  });
+}
+
+init()先頭で使用:
+javascriptawait loadScriptSync('node_modules/@pixi/core/dist/pixi.js');
+await loadScriptSync('libs/pixi-extensions.js');
+await loadScriptSync('js/app-core.js');
+// 以降初期化
+
+DRY: 動的ロードでindex.html簡素化。
+
+
+フォールバック強化 (app-core.js):
+
+SimpleFallbackToolSystemをAppCore未定義時に使用 (SOLID-L)。
+PerformanceMonitorでロード時間計測追加。
+
+
+package.json更新 (推定修正):
+
+dependenciesに"@pixi/core": "^7.x", "@pixi/graphics": "^7.x" など明記。npm install後、node_modules確認。
+
+
+全体テスト: 多ブラウザ (Chrome/Firefox) で初期化時間<3s確認。エラーシナリオ (app-core.js削除) でフォールバック動作検証。
+
+
+
+Phase 3: 長期メンテナンス (Phase1.1ss5rev1以降)
+
+目標:  migration plan準拠、将来V8移行準備。
+ステップ:
+
+ドキュメント更新: v0_PLAN/2_tegaki_migration_plan_phase1_2.txtにロード順ルール追加。
+コードレビュー: DRY違反チェック (e.g., console.log重複を関数化)。
+監視: 性能ログ (performance.now()) で60FPS確保。fetch API分割時、非同期ロード対応強化。
+
+
+リスク管理: 変更後、git commit with message "Fix AppCore loading order for Phase1.1ss5rev1"。
+
+この計画でエラー解消、原則遵守。実装後、再テスト推奨。
