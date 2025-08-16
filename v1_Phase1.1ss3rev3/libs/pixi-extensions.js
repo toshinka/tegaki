@@ -1,22 +1,22 @@
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
- * PixiJS拡張ライブラリ統合システム - エラー修繕版
+ * PixiJS拡張ライブラリ統合システム - Lodashエラー修繕版
  * 
- * 🎯 AI_WORK_SCOPE: PixiJS拡張ライブラリ検出・統合・互換性レイヤー・エラー修繕
+ * 🎯 AI_WORK_SCOPE: PixiJS拡張ライブラリ検出・統合・互換性レイヤー・Lodashエラー修繕
  * 🎯 DEPENDENCIES: PixiJS v7, typedSignals, tweedle.js, @pixi/ui, @pixi/layers, @pixi/gif, GSAP, Lodash, Hammer.js
  * 🎯 NODE_MODULES: pixi.js@^7.4.3, @pixi/ui@^1.2.4, @pixi/layers@^2.1.0, @pixi/gif@^2.1.1
- * 🎯 PIXI_EXTENSIONS: 全統合機能・エラーハンドリング強化
+ * 🎯 PIXI_EXTENSIONS: 全統合機能・Lodashエラー修繕強化
  * 🎯 ISOLATION_TEST: 可能（依存関係確認・エラー耐性）
  * 🎯 SPLIT_THRESHOLD: 500行（エラーハンドリング含む統合性重視）
- * 📋 PHASE_TARGET: Phase1 エラー修繕版
+ * 📋 PHASE_TARGET: Phase1 Lodashエラー修繕版
  * 📋 V8_MIGRATION: Application.init()対応予定・エラーハンドリング継承
  */
 
-console.log('🔧 PixiJS拡張ライブラリ統合システム エラー修繕版 読み込み開始...');
+console.log('🔧 PixiJS拡張ライブラリ統合システム Lodashエラー修繕版 読み込み開始...');
 
 /**
- * PixiJS拡張ライブラリ統合管理システム - エラー修繕版
- * node_modules統合・CORS制限回避・エラー耐性強化対応
+ * PixiJS拡張ライブラリ統合管理システム - Lodashエラー修繕版
+ * node_modules統合・CORS制限回避・Lodashエラー修繕対応
  */
 class PixiExtensionsManager {
     constructor() {
@@ -29,7 +29,7 @@ class PixiExtensionsManager {
             warnings: []
         };
         
-        console.log('🎨 PixiExtensionsManager 構築開始... エラー修繕版');
+        console.log('🎨 PixiExtensionsManager 構築開始... Lodashエラー修繕版');
         
         // エラーハンドリング強化
         this.safeMode = true;
@@ -37,10 +37,10 @@ class PixiExtensionsManager {
     }
     
     /**
-     * 拡張ライブラリ統合初期化 - エラー修繕版
+     * 拡張ライブラリ統合初期化 - Lodashエラー修繕版
      */
     async initialize() {
-        console.group('🎨 PixiJS拡張ライブラリ統合初期化 エラー修繕版');
+        console.group('🎨 PixiJS拡張ライブラリ統合初期化 Lodashエラー修繕版');
         
         try {
             // PixiJS本体検証（必須）
@@ -51,13 +51,13 @@ class PixiExtensionsManager {
             await this.integrateLayersLibrary();
             await this.integrateGIFLibrary();
             await this.integrateTweedleLibrary();
-            await this.integrateUtilityLibraries();
+            await this.integrateUtilityLibraries(); // 🔧 Lodash修繕対象
             
             // 統計更新
             this.updateStats();
             
             this.initialized = true;
-            console.log('✅ PixiJS拡張ライブラリ統合完了 エラー修繕版');
+            console.log('✅ PixiJS拡張ライブラリ統合完了 Lodashエラー修繕版');
             console.log(`📊 統計: ${this.stats.loaded}/${this.stats.total} (${this.stats.coverage}%)`);
             
             // 警告表示
@@ -294,7 +294,7 @@ class PixiExtensionsManager {
     }
     
     /**
-     * ユーティリティライブラリ統合 - エラー修繕版
+     * ユーティリティライブラリ統合 - 🔧 Lodashエラー修繕版
      */
     async integrateUtilityLibraries() {
         console.log('🔧 ユーティリティライブラリ統合中...');
@@ -321,22 +321,64 @@ class PixiExtensionsManager {
             this.stats.errors.push(`GSAP: ${error.message}`);
         }
         
-        // Lodash統合
+        // 🔧 Lodash統合 - エラー修繕強化版
         this.stats.total++;
         try {
-            if (window._) {
-                this.extensions.set('lodash', {
-                    available: true,
-                    _: window._,
-                    source: 'node_modules'
-                });
-                this.stats.loaded++;
-                console.log('🔧 Lodash統合完了 - ユーティリティ機能利用可能');
-            } else {
-                this.extensions.set('lodash', { available: false, reason: 'ライブラリ未検出' });
-                this.stats.warnings.push('Lodash 未検出 - 基本JavaScript使用');
-                console.warn('⚠️ Lodash 未検出 - 基本JavaScript使用');
+            console.log('🔍 Lodash検出開始...');
+            
+            // 🔧 複数検出パターン対応・機能確認強化
+            let lodashLib = null;
+            
+            // パターン1: window._ 標準検出
+            if (window._ && typeof window._.isArray === 'function' && typeof window._.chunk === 'function') {
+                lodashLib = window._;
+                console.log('✅ Lodash (window._) 検出・機能確認済み');
             }
+            // パターン2: window.lodash 検出
+            else if (window.lodash && typeof window.lodash.isArray === 'function') {
+                lodashLib = window.lodash;
+                console.log('✅ Lodash (window.lodash) 検出');
+            }
+            // パターン3: 遅延読み込み検証
+            else {
+                console.log('🔍 Lodash即座検出失敗 - 遅延確認中...');
+                const delayedDetection = await this.retryLodashDetection();
+                if (delayedDetection) {
+                    lodashLib = window._;
+                    console.log('✅ Lodash 遅延検出成功');
+                }
+            }
+            
+            // 🔧 Lodash統合処理
+            if (lodashLib) {
+                // 🔧 基本機能確認
+                const requiredFunctions = ['isArray', 'chunk', 'debounce', 'throttle', 'cloneDeep'];
+                const missingFunctions = requiredFunctions.filter(func => typeof lodashLib[func] !== 'function');
+                
+                if (missingFunctions.length === 0) {
+                    this.extensions.set('lodash', {
+                        available: true,
+                        _: lodashLib,
+                        source: 'node_modules',
+                        version: lodashLib.VERSION || '4.17.21',
+                        functions: requiredFunctions.length
+                    });
+                    this.stats.loaded++;
+                    console.log('🔧 Lodash統合完了 - ユーティリティ機能利用可能');
+                    console.log(`📊 Lodash機能確認: ${requiredFunctions.length}個の主要関数利用可能`);
+                } else {
+                    throw new Error(`Lodash必須機能不足: ${missingFunctions.join(', ')}`);
+                }
+            } else {
+                this.extensions.set('lodash', { 
+                    available: false, 
+                    reason: 'ライブラリ未検出',
+                    fallback: 'native JavaScript'
+                });
+                this.stats.warnings.push('Lodash 未検出 - 基本JavaScript使用');
+                console.warn('⚠️ Lodash 未検出 - 基本JavaScript使用（フォールバック動作）');
+            }
+            
         } catch (error) {
             console.error('❌ Lodash統合エラー:', error);
             this.extensions.set('lodash', { available: false, error: error.message });
@@ -364,6 +406,29 @@ class PixiExtensionsManager {
             this.extensions.set('hammer', { available: false, error: error.message });
             this.stats.errors.push(`Hammer.js: ${error.message}`);
         }
+    }
+    
+    /**
+     * 🔧 新規追加: Lodash遅延検出メソッド
+     */
+    async retryLodashDetection(maxRetries = 5, delay = 200) {
+        for (let i = 0; i < maxRetries; i++) {
+            console.log(`🔍 Lodash遅延検出試行 ${i + 1}/${maxRetries}`);
+            
+            // 遅延待機
+            await new Promise(resolve => setTimeout(resolve, delay));
+            
+            // 詳細確認
+            if (window._ && typeof window._.isArray === 'function' && typeof window._.chunk === 'function') {
+                console.log(`✅ Lodash遅延検出成功 (試行${i + 1})`);
+                return true;
+            }
+            
+            // デバッグ情報
+            console.log(`🔍 試行${i + 1}: window._ = ${typeof window._}, _.isArray = ${window._ ? typeof window._.isArray : 'N/A'}`);
+        }
+        console.warn(`⚠️ Lodash遅延検出失敗 (${maxRetries}回試行)`);
+        return false;
     }
     
     /**
@@ -400,14 +465,24 @@ class PixiExtensionsManager {
     }
     
     /**
-     * 統計情報更新
+     * 🔧 修正: 統計情報更新 - 精度向上版
      */
     updateStats() {
         const availableCount = Array.from(this.extensions.values())
-            .filter(ext => ext.available).length;
+            .filter(ext => ext.available === true).length;
         
+        // 🔧 統計精度向上
         this.stats.loaded = availableCount + 1; // +1 for PIXI core
+        this.stats.total = this.extensions.size + 1; // +1 for PIXI core (正確な総数)
         this.stats.coverage = Math.round((this.stats.loaded / this.stats.total) * 100);
+        
+        // 🔧 詳細統計ログ
+        console.log(`📊 ライブラリ統計更新: ${this.stats.loaded}/${this.stats.total} (${this.stats.coverage}%)`);
+        
+        const availableLibs = Array.from(this.extensions.entries())
+            .filter(([_, ext]) => ext.available === true)
+            .map(([name, _]) => name);
+        console.log(`📊 利用可能ライブラリ: [${availableLibs.join(', ')}]`);
     }
     
     /**
@@ -547,6 +622,60 @@ class PixiExtensionsManager {
     }
     
     /**
+     * 🔧 新規追加: Lodash機能ヘルパー
+     */
+    useLodash(fallbackFunc) {
+        if (this.hasFeature('lodash')) {
+            const _ = this.getComponent('lodash', '_');
+            if (_) {
+                console.log('🔧 Lodash使用');
+                return _;
+            }
+        }
+        
+        console.log('🆘 Lodashフォールバック使用');
+        return fallbackFunc || this.createLodashFallback();
+    }
+    
+    /**
+     * 🔧 新規追加: Lodash基本機能フォールバック
+     */
+    createLodashFallback() {
+        return {
+            isArray: Array.isArray,
+            chunk: (array, size) => {
+                const chunks = [];
+                for (let i = 0; i < array.length; i += size) {
+                    chunks.push(array.slice(i, i + size));
+                }
+                return chunks;
+            },
+            debounce: (func, wait) => {
+                let timeout;
+                return function executedFunction(...args) {
+                    const later = () => {
+                        clearTimeout(timeout);
+                        func(...args);
+                    };
+                    clearTimeout(timeout);
+                    timeout = setTimeout(later, wait);
+                };
+            },
+            throttle: (func, limit) => {
+                let inThrottle;
+                return function(...args) {
+                    if (!inThrottle) {
+                        func.apply(this, args);
+                        inThrottle = true;
+                        setTimeout(() => inThrottle = false, limit);
+                    }
+                };
+            },
+            cloneDeep: (obj) => JSON.parse(JSON.stringify(obj))
+        };
+    }
+    
+    /**
      * 統計情報取得 - 改良版
      */
     getStats() {
@@ -581,8 +710,10 @@ class PixiExtensionsManager {
                 error: extension.error || null,
                 reason: extension.reason || null,
                 fallback: extension.fallback || false,
+                version: extension.version || null,
+                functions: extension.functions || null,
                 components: Object.keys(extension).filter(key => 
-                    !['available', 'source', 'error', 'reason', 'fallback', 'library'].includes(key)
+                    !['available', 'source', 'error', 'reason', 'fallback', 'library', 'version', 'functions'].includes(key)
                 )
             };
         } catch (error) {
@@ -647,6 +778,16 @@ class PixiExtensionsManager {
                 }
             }
             
+            // 🔧 Lodash専用チェック追加
+            if (!this.hasFeature('lodash')) {
+                const lodashDetails = this.getLibraryDetails('lodash');
+                if (lodashDetails?.error) {
+                    issues.push(`Lodash エラー: ${lodashDetails.error}`);
+                } else {
+                    recommendations.push('Lodash の導入を推奨 - 高性能ユーティリティ機能が利用可能になります');
+                }
+            }
+            
         } catch (error) {
             issues.push(`互換性チェックエラー: ${error.message}`);
         }
@@ -661,7 +802,7 @@ class PixiExtensionsManager {
 }
 
 // ==== グローバル公開 ====
-console.log('📦 PixiJS拡張機能グローバル登録 エラー修繕版...');
+console.log('📦 PixiJS拡張機能グローバル登録 Lodashエラー修繕版...');
 
 // インスタンス作成・グローバル公開
 window.PixiExtensions = new PixiExtensionsManager();
@@ -676,7 +817,7 @@ if (typeof window !== 'undefined') {
             
             // 自動テスト実行
             setTimeout(() => {
-                console.group('🧪 PixiJS拡張機能 自動テスト エラー修繕版');
+                console.group('🧪 PixiJS拡張機能 自動テスト Lodashエラー修繕版');
                 
                 try {
                     // 統計取得テスト
@@ -690,11 +831,23 @@ if (typeof window !== 'undefined') {
                         console.log(`${available ? '✅' : '❌'} ${feature}機能: ${available ? '利用可能' : '無効'}`);
                     });
                     
+                    // 🔧 Lodash専用テスト追加
+                    if (window.PixiExtensions.hasFeature('lodash')) {
+                        const _ = window.PixiExtensions.getComponent('lodash', '_');
+                        if (_) {
+                            console.log('🔧 Lodash機能テスト:', {
+                                isArray: typeof _.isArray,
+                                chunk: typeof _.chunk,
+                                version: _.VERSION
+                            });
+                        }
+                    }
+                    
                     // 互換性チェックテスト
                     const compatibility = window.PixiExtensions.checkCompatibility();
                     console.log('🔍 互換性チェック:', compatibility);
                     
-                    console.log('🎉 PixiJS拡張機能テスト完了 エラー修繕版');
+                    console.log('🎉 PixiJS拡張機能テスト完了 Lodashエラー修繕版');
                 } catch (error) {
                     console.error('❌ テストエラー:', error);
                 }
@@ -709,13 +862,16 @@ if (typeof window !== 'undefined') {
 }
 
 // ==== Phase1完了・Phase2準備 ====
-console.log('🎉 Phase1: PixiJS拡張統合基盤構築完了 エラー修繕版');
+console.log('🎉 Phase1: PixiJS拡張統合基盤構築完了 Lodashエラー修繕版');
+console.log('🔧 Lodash修繕: 遅延検出・機能確認・フォールバック強化');
 console.log('🏗️ Phase2: UI統合・描画機能強化準備完了');
 console.log('📋 次のステップ: app-core.js・main.js の作成・修正');
-console.log('💡 使用方法例（エラー修繕版）:');
+console.log('💡 使用方法例（Lodashエラー修繕版）:');
 console.log('  await window.PixiExtensions.initialize();');
 console.log('  const hasUI = window.PixiExtensions.hasFeature("ui");');
+console.log('  const hasLodash = window.PixiExtensions.hasFeature("lodash");');
+console.log('  const _ = window.PixiExtensions.useLodash(); // 自動フォールバック');
 console.log('  const button = window.PixiExtensions.createAdvancedButton({text: "テスト"});');
 console.log('  const layer = window.PixiExtensions.createAdvancedLayer({zIndex: 1});');
 console.log('  const stats = window.PixiExtensions.getStats();');
-console.log('🔧 エラー修繕機能: フォールバックモード・エラーハンドリング強化・詳細ログ');
+console.log('🔧 Lodashエラー修繕機能: 遅延検出・機能確認・フォールバック・統計精度向上');
