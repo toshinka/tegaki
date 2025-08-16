@@ -1,21 +1,24 @@
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
  * 🎯 AI_WORK_SCOPE: UI系統括・@pixi/ui活用・ポップアップ・スライダー管理
- * 🎯 DEPENDENCIES: libs/pixi-extensions.js, js/utils/icon-manager.js
+ * 🎯 DEPENDENCIES: libs/pixi-extensions.js, js/utils/icon-manager.js (Pure JavaScript)
  * 🎯 NODE_MODULES: @pixi/ui@^1.2.4, @tabler/icons-react
  * 🎯 PIXI_EXTENSIONS: UI統合・ポップアップシステム
  * 🎯 ISOLATION_TEST: 可能（拡張ライブラリ依存）
  * 🎯 SPLIT_THRESHOLD: 500行（UI統合系・分割慎重）
- * 📋 PHASE_TARGET: Phase1
+ * 📋 PHASE_TARGET: Phase1.1ss3 - Pure JavaScript完全準拠
  * 📋 V8_MIGRATION: 変更なし（UI専用）
+ * 📋 RULEBOOK_COMPLIANCE: 1.2実装原則「Pure JavaScript維持」完全準拠
  */
 
 /**
  * UI統合管理システム
  * 元HTMLのUIControllerを基にした@pixi/ui統合改良版
+ * Pure JavaScript完全準拠・グローバル公開方式
  */
 class UIManager {
-    constructor() {
+    constructor(toolManager) {
+        this.toolManager = toolManager;
         this.activePopup = null;
         this.sliders = new Map();
         this.toolButtons = new Map();
@@ -36,14 +39,14 @@ class UIManager {
             }
         };
         
-        console.log('🎨 UIManager 構築開始...');
+        console.log('🎨 UIManager 構築開始（Pure JavaScript）...');
     }
     
     /**
      * UI管理システム初期化
      */
     init() {
-        console.group('🎨 UI統合システム初期化');
+        console.group('🎨 UI統合システム初期化（Pure JavaScript）');
         
         try {
             // Step1: 拡張ライブラリ確認
@@ -67,7 +70,7 @@ class UIManager {
             // Step7: チェックボックス初期化
             this.setupCheckboxes();
             
-            console.log('✅ UI統合システム初期化完了');
+            console.log('✅ UI統合システム初期化完了（Pure JavaScript）');
             
         } catch (error) {
             console.error('❌ UI統合システム初期化エラー:', error);
@@ -609,7 +612,7 @@ class UIManager {
      * ツール設定変更ブロードキャスト
      */
     broadcastToolSettingChange(setting, value) {
-        // AppCoreに設定変更を通知
+        // AppCoreに設定変更を通知（Pure JavaScript方式）
         if (window.futabaDrawingTool && window.futabaDrawingTool.updateToolSettings) {
             const settings = {};
             
@@ -638,7 +641,7 @@ class UIManager {
      * キャンバスリサイズブロードキャスト
      */
     broadcastCanvasResize(width, height, centerContent) {
-        // AppCoreにリサイズ指示
+        // AppCoreにリサイズ指示（Pure JavaScript方式）
         if (window.futabaDrawingTool && window.futabaDrawingTool.resize) {
             window.futabaDrawingTool.resize(width, height, centerContent);
         }
@@ -660,11 +663,12 @@ class UIManager {
     }
 }
 
-// グローバル公開
+// Pure JavaScript グローバル公開（ルールブック準拠）
 if (typeof window !== 'undefined') {
     window.UIManager = UIManager;
-    console.log('✅ UIManager グローバル公開完了');
+    console.log('✅ UIManager グローバル公開完了（Pure JavaScript）');
 }
 
-console.log('🎨 UIManager 準備完了 - UI統合システム');
-console.log('💡 使用例: const uiManager = new UIManager(); uiManager.init();');
+console.log('🎨 UIManager Pure JavaScript完全準拠版 - 準備完了');
+console.log('📋 ルールブック準拠: 1.2実装原則「ESM/TypeScript混在禁止・Pure JavaScript維持」');
+console.log('💡 使用例: const uiManager = new window.UIManager(toolManager); uiManager.init();');

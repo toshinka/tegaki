@@ -1,61 +1,33 @@
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
- * 🎯 AI_WORK_SCOPE: ツール系統括・描画ツール切り替え・設定管理
- * 🎯 DEPENDENCIES: js/tools/pen-tool.js, js/tools/eraser-tool.js
- * 🎯 NODE_MODULES: pixi.js@^7.4.3, lodash（利用可能時）
- * 🎯 PIXI_EXTENSIONS: 描画機能・Graphics統合
- * 🎯 ISOLATION_TEST: 可能（ツール依存）
- * 🎯 SPLIT_THRESHOLD: 400行（ツール統括・分割は慎重）
- * 📋 PHASE_TARGET: Phase1
- * 📋 V8_MIGRATION: 変更なし（ツール管理専用）
+ * 🎯 AI_WORK_SCOPE: ツール系統括・描画制御・設定管理
+ * 🎯 DEPENDENCIES: js/managers/canvas-manager.js (Pure JavaScript)
+ * 🎯 NODE_MODULES: pixi.js@^7.4.3
+ * 🎯 PIXI_EXTENSIONS: 描画ツール統合
+ * 🎯 ISOLATION_TEST: 可能（ツール単体機能）
+ * 🎯 SPLIT_THRESHOLD: 400行（ツール制御・分割慎重）
+ * 📋 PHASE_TARGET: Phase1.1ss3 - Pure JavaScript完全準拠
+ * 📋 V8_MIGRATION: 変更なし（描画ロジック専用）
+ * 📋 RULEBOOK_COMPLIANCE: 1.2実装原則「Pure JavaScript維持」完全準拠
  */
 
 /**
- * ツール統合管理システム
+ * ツール管理システム
  * 元HTMLのToolSystemを基にした改良版
+ * Pure JavaScript完全準拠・グローバル公開方式
  */
 class ToolManager {
     constructor() {
         this.currentTool = 'pen';
-        this.tools = new Map();
+        this.canvasManager = null;
         this.isDrawing = false;
         this.currentPath = null;
         this.lastPoint = null;
         
-        // グローバル描画設定（全ツール共通）
+        // グローバル設定（元HTML互換）
         this.globalSettings = {
             brushSize: 16.0,
-            brushColor: 0x800000, // ふたばマルーン
-            opacity: 0.85,/**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
- * 🎯 AI_WORK_SCOPE: ツール系統括・描画ツール切り替え・設定管理
- * 🎯 DEPENDENCIES: js/tools/pen-tool.js, js/tools/eraser-tool.js
- * 🎯 NODE_MODULES: pixi.js@^7.4.3, lodash（利用可能時）
- * 🎯 PIXI_EXTENSIONS: 描画機能・Graphics統合
- * 🎯 ISOLATION_TEST: 可能（ツール依存）
- * 🎯 SPLIT_THRESHOLD: 400行（ツール統括・分割は慎重）
- * 📋 PHASE_TARGET: Phase1
- * 📋 V8_MIGRATION: 変更なし（ツール管理専用）
- */
-
-/**
- * ツール統合管理システム
- * 元HTMLのToolSystemを基にした改良版
- * DRY原則: 共通設定を統一管理
- * SOLID原則: 単一責任 - ツール管理のみ
- */
-export class ToolManager {
-    constructor() {
-        this.currentTool = 'pen';
-        this.tools = new Map();
-        this.isDrawing = false;
-        this.currentPath = null;
-        this.lastPoint = null;
-        
-        // グローバル描画設定（全ツール共通）
-        this.globalSettings = {
-            brushSize: 16.0,
-            brushColor: 0x800000, // ふたばマルーン
+            brushColor: 0x800000,
             opacity: 0.85,
             pressure: 0.5,
             smoothing: 0.3,
@@ -64,155 +36,51 @@ export class ToolManager {
             gpuAcceleration: true
         };
         
-        console.log('🔧 ToolManager 構築開始...');
+        // 登録ツール管理
+        this.registeredTools = new Map();
+        
+        console.log('🎨 ToolManager 構築開始（Pure JavaScript）...');
     }
     
     /**
      * ツール管理システム初期化
-     * @param {DrawingEngine} drawingEngine - 描画エンジンインスタンス
+     * @param {CanvasManager} canvasManager - キャンバス管理システム
      */
-    init(drawingEngine) {
-        this.drawingEngine = drawingEngine;
-        this.registerDefaultTools();
-        console.log('✅ ToolManager 初期化完了 - 登録ツール:', Array.from(this.tools.keys()));
-    }
-    
-    /**
-     * デフォルトツール登録
-     * 元HTMLのペン・消しゴムツールを統合管理
-     */
-    registerDefaultTools() {
-        // ペンツール登録
-        this.registerTool('pen', {
-            name: 'ベクターペン',
-            icon: 'pen',
-            type: 'drawing',
-            settings: {
-                ...this.globalSettings,
-                blendMode: 'normal'
-            }
-        });
+    init(canvasManager) {
+        if (!canvasManager) {
+            throw new Error('CanvasManager が必要です');
+        }
         
-        // 消しゴムツール登録
-        this.registerTool('eraser', {
-            name: '消しゴム', 
-            icon: 'eraser',
-            type: 'erasing',
-            settings: {
-                ...this.globalSettings,
-                blendMode: 'erase',
-                color: this.drawingEngine?.backgroundColor || 0xf0e0d6
-            }
-        });
+        this.canvasManager = canvasManager;
+        
+        console.log('✅ ToolManager初期化完了（Pure JavaScript）');
+        return this;
     }
     
     /**
      * ツール登録
-     * @param {string} toolId - ツールID
-     * @param {Object} toolConfig - ツール設定
+     * @param {string} name - ツール名
+     * @param {Object} toolInstance - ツールインスタンス
      */
-    registerTool(toolId, toolConfig) {
-        this.tools.set(toolId, toolConfig);
-        console.log(`🔧 ツール登録: ${toolId} - ${toolConfig.name}`);
+    registerTool(name, toolInstance) {
+        this.registeredTools.set(name, toolInstance);
+        console.log(`🔧 ツール登録: ${name}`);
     }
     
     /**
-     * アクティブツール設定
-     * @param {string} toolId - 設定するツールID
+     * ツール設定
+     * @param {string} tool - ツール名
      */
-    setTool(toolId) {
-        if (!this.tools.has(toolId)) {
-            console.warn(`⚠️ 未知のツール: ${toolId}`);
+    setTool(tool) {
+        if (!this.registeredTools.has(tool)) {
+            console.warn(`⚠️ 未登録ツール: ${tool}`);
             return false;
         }
         
-        this.currentTool = toolId;
-        console.log(`🎯 ツール切り替え: ${this.tools.get(toolId).name}`);
+        this.currentTool = tool;
+        console.log(`🎯 ツール変更: ${tool}`);
         return true;
     }
-    
-    /**
-     * 現在のツール取得
-     */
-    getCurrentTool() {
-        return this.tools.get(this.currentTool);
-    }
-    
-    /**
-     * 現在のツール名取得
-     */
-    getCurrentToolName() {
-        const tool = this.getCurrentTool();
-        return tool ? tool.name : 'Unknown';
-    }
-    
-    // === 描画設定管理（DRY原則） ===
-    
-    /**
-     * ブラシサイズ設定
-     * @param {number} size - ブラシサイズ (0.1 - 100)
-     */
-    setBrushSize(size) {
-        this.globalSettings.brushSize = Math.max(0.1, Math.min(100, Math.round(size * 10) / 10));
-    }
-    
-    /**
-     * 不透明度設定
-     * @param {number} opacity - 不透明度 (0.0 - 1.0)
-     */
-    setOpacity(opacity) {
-        this.globalSettings.opacity = Math.max(0, Math.min(1, Math.round(opacity * 1000) / 1000));
-    }
-    
-    /**
-     * 筆圧設定
-     * @param {number} pressure - 筆圧 (0.0 - 1.0)
-     */
-    setPressure(pressure) {
-        this.globalSettings.pressure = Math.max(0, Math.min(1, Math.round(pressure * 1000) / 1000));
-    }
-    
-    /**
-     * 線補正設定
-     * @param {number} smoothing - 線補正 (0.0 - 1.0)
-     */
-    setSmoothing(smoothing) {
-        this.globalSettings.smoothing = Math.max(0, Math.min(1, Math.round(smoothing * 1000) / 1000));
-    }
-    
-    /**
-     * 色設定
-     * @param {number} color - PIXI.js色コード
-     */
-    setBrushColor(color) {
-        this.globalSettings.brushColor = color;
-    }
-    
-    /**
-     * 筆圧感度切り替え
-     * @param {boolean} enabled - 有効/無効
-     */
-    setPressureSensitivity(enabled) {
-        this.globalSettings.pressureSensitivity = enabled;
-    }
-    
-    /**
-     * エッジスムージング切り替え
-     * @param {boolean} enabled - 有効/無効
-     */
-    setEdgeSmoothing(enabled) {
-        this.globalSettings.edgeSmoothing = enabled;
-    }
-    
-    /**
-     * GPU加速切り替え
-     * @param {boolean} enabled - 有効/無効
-     */
-    setGPUAcceleration(enabled) {
-        this.globalSettings.gpuAcceleration = enabled;
-    }
-    
-    // === 描画処理統合（元HTMLのDrawingEngine統合） ===
     
     /**
      * 描画開始
@@ -220,22 +88,30 @@ export class ToolManager {
      * @param {number} y - Y座標
      */
     startDrawing(x, y) {
-        if (!this.drawingEngine) {
-            console.warn('⚠️ DrawingEngine未設定');
+        if (!this.canvasManager) {
+            console.warn('⚠️ CanvasManager 未初期化');
             return;
         }
         
         this.isDrawing = true;
         this.lastPoint = { x, y };
         
-        const tool = this.getCurrentTool();
-        if (!tool) {
-            console.warn('⚠️ 無効なツール');
-            return;
+        // 現在のツールで描画開始
+        const currentToolInstance = this.registeredTools.get(this.currentTool);
+        if (currentToolInstance && currentToolInstance.startDrawing) {
+            currentToolInstance.startDrawing(x, y);
+        } else {
+            // フォールバック: 直接キャンバスに描画
+            this.currentPath = this.canvasManager.createPath(
+                x, y, 
+                this.globalSettings.brushSize,
+                this.globalSettings.brushColor,
+                this.globalSettings.opacity,
+                this.currentTool
+            );
         }
         
-        // 元HTMLのcreatePathロジック統合
-        this.currentPath = this.createPath(x, y, tool);
+        console.log(`✏️ 描画開始: ${this.currentTool} at (${Math.round(x)}, ${Math.round(y)})`);
     }
     
     /**
@@ -244,10 +120,19 @@ export class ToolManager {
      * @param {number} y - Y座標
      */
     continueDrawing(x, y) {
-        if (!this.isDrawing || !this.currentPath) return;
+        if (!this.isDrawing || !this.canvasManager) return;
         
-        // 元HTMLのdrawLineロジック統合
-        this.drawLine(this.currentPath, x, y);
+        // 現在のツールで描画継続
+        const currentToolInstance = this.registeredTools.get(this.currentTool);
+        if (currentToolInstance && currentToolInstance.continueDrawing) {
+            currentToolInstance.continueDrawing(x, y);
+        } else {
+            // フォールバック: 直接キャンバスに描画
+            if (this.currentPath) {
+                this.canvasManager.drawLine(this.currentPath, x, y);
+            }
+        }
+        
         this.lastPoint = { x, y };
     }
     
@@ -255,467 +140,246 @@ export class ToolManager {
      * 描画終了
      */
     stopDrawing() {
-        if (this.currentPath) {
-            this.currentPath.isComplete = true;
-        }
-        this.isDrawing = false;
-        this.currentPath = null;
-        this.lastPoint = null;
-    }
-    
-    /**
-     * パス作成（元HTMLのDrawingEngine.createPath統合）
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     * @param {Object} tool - ツール設定
-     */
-    createPath(x, y, tool) {
-        const path = {
-            id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            graphics: new PIXI.Graphics(),
-            points: [],
-            color: tool.type === 'erasing' ? 
-                this.drawingEngine.backgroundColor : 
-                this.globalSettings.brushColor,
-            size: this.globalSettings.brushSize,
-            opacity: tool.type === 'erasing' ? 1.0 : this.globalSettings.opacity,
-            tool: this.currentTool,
-            isComplete: false
-        };
+        if (!this.isDrawing) return;
         
-        // 初回描画: 円形ブラシで点を描画（元HTML方式）
-        path.graphics.beginFill(path.color, path.opacity);
-        path.graphics.drawCircle(x, y, path.size / 2);
-        path.graphics.endFill();
-        
-        path.points.push({ x, y, size: path.size });
-        
-        // v8移行準備: Graphics API変更対応
-        // v8: path.graphics.circle(x, y, path.size / 2).fill(path.color, path.opacity);
-        
-        this.drawingEngine.drawingContainer.addChild(path.graphics);
-        this.drawingEngine.paths.push(path);
-        return path;
-    }
-    
-    /**
-     * 線描画（元HTMLのDrawingEngine.drawLine統合）
-     * @param {Object} path - パスオブジェクト
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     */
-    drawLine(path, x, y) {
-        if (!path || path.points.length === 0) return;
-        
-        const lastPoint = path.points[path.points.length - 1];
-        const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
-        
-        // 最小距離フィルタ（元HTML同様）
-        if (distance < 1.5) return;
-        
-        // 連続する円形で線を描画（元HTML方式）
-        const steps = Math.max(1, Math.ceil(distance / 1.5));
-        for (let i = 1; i <= steps; i++) {
-            const t = i / steps;
-            const px = lastPoint.x + (x - lastPoint.x) * t;
-            const py = lastPoint.y + (y - lastPoint.y) * t;
-            
-            path.graphics.beginFill(path.color, path.opacity);
-            path.graphics.drawCircle(px, py, path.size / 2);
-            path.graphics.endFill();
-            
-            // v8移行準備: Graphics API変更対応
-            // v8: path.graphics.circle(px, py, path.size / 2).fill(path.color, path.opacity);
+        // 現在のツールで描画終了
+        const currentToolInstance = this.registeredTools.get(this.currentTool);
+        if (currentToolInstance && currentToolInstance.stopDrawing) {
+            currentToolInstance.stopDrawing();
+        } else {
+            // フォールバック処理
+            if (this.currentPath) {
+                this.currentPath.isComplete = true;
+            }
         }
         
-        path.points.push({ x, y, size: path.size });
-    }
-    
-    // === 状態取得メソッド ===
-    
-    /**
-     * 全設定取得
-     */
-    getAllSettings() {
-        return { ...this.globalSettings };
-    }
-    
-    /**
-     * 登録ツールリスト取得
-     */
-    getRegisteredTools() {
-        return Array.from(this.tools.entries()).map(([id, config]) => ({
-            id,
-            name: config.name,
-            icon: config.icon,
-            type: config.type
-        }));
-    }
-    
-    /**
-     * 描画状態取得
-     */
-    getDrawingState() {
-        return {
-            isDrawing: this.isDrawing,
-            currentTool: this.currentTool,
-            pathCount: this.drawingEngine?.paths?.length || 0
-        };
-    }
-}
-
-// デフォルトエクスポート（互換性確保）
-export default ToolManager;/**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
- * 🎯 AI_WORK_SCOPE: ツール系統括・描画ツール切り替え・設定管理
- * 🎯 DEPENDENCIES: js/tools/pen-tool.js, js/tools/eraser-tool.js
- * 🎯 NODE_MODULES: pixi.js@^7.4.3, lodash（利用可能時）
- * 🎯 PIXI_EXTENSIONS: 描画機能・Graphics統合
- * 🎯 ISOLATION_TEST: 可能（ツール依存）
- * 🎯 SPLIT_THRESHOLD: 400行（ツール統括・分割は慎重）
- * 📋 PHASE_TARGET: Phase1
- * 📋 V8_MIGRATION: 変更なし（ツール管理専用）
- */
-
-/**
- * ツール統合管理システム
- * 元HTMLのToolSystemを基にした改良版
- * DRY原則: 共通設定を統一管理
- * SOLID原則: 単一責任 - ツール管理のみ
- */
-export class ToolManager {
-    constructor() {
-        this.currentTool = 'pen';
-        this.tools = new Map();
         this.isDrawing = false;
         this.currentPath = null;
         this.lastPoint = null;
         
-        // グローバル描画設定（全ツール共通）
-        this.globalSettings = {
-            brushSize: 16.0,
-            brushColor: 0x800000, // ふたばマルーン
-            opacity: 0.85,
-            pressure: 0.5,
-            smoothing: 0.3,
-            pressureSensitivity: true,
-            edgeSmoothing: true,
-            gpuAcceleration: true
-        };
-        
-        console.log('🔧 ToolManager 構築開始...');
+        console.log(`✏️ 描画終了: ${this.currentTool}`);
     }
-    
-    /**
-     * ツール管理システム初期化
-     * @param {DrawingEngine} drawingEngine - 描画エンジンインスタンス
-     */
-    init(drawingEngine) {
-        this.drawingEngine = drawingEngine;
-        this.registerDefaultTools();
-        console.log('✅ ToolManager 初期化完了 - 登録ツール:', Array.from(this.tools.keys()));
-    }
-    
-    /**
-     * デフォルトツール登録
-     * 元HTMLのペン・消しゴムツールを統合管理
-     */
-    registerDefaultTools() {
-        // ペンツール登録
-        this.registerTool('pen', {
-            name: 'ベクターペン',
-            icon: 'pen',
-            type: 'drawing',
-            settings: {
-                ...this.globalSettings,
-                blendMode: 'normal'
-            }
-        });
-        
-        // 消しゴムツール登録
-        this.registerTool('eraser', {
-            name: '消しゴム', 
-            icon: 'eraser',
-            type: 'erasing',
-            settings: {
-                ...this.globalSettings,
-                blendMode: 'erase',
-                color: this.drawingEngine?.backgroundColor || 0xf0e0d6
-            }
-        });
-    }
-    
-    /**
-     * ツール登録
-     * @param {string} toolId - ツールID
-     * @param {Object} toolConfig - ツール設定
-     */
-    registerTool(toolId, toolConfig) {
-        this.tools.set(toolId, toolConfig);
-        console.log(`🔧 ツール登録: ${toolId} - ${toolConfig.name}`);
-    }
-    
-    /**
-     * アクティブツール設定
-     * @param {string} toolId - 設定するツールID
-     */
-    setTool(toolId) {
-        if (!this.tools.has(toolId)) {
-            console.warn(`⚠️ 未知のツール: ${toolId}`);
-            return false;
-        }
-        
-        this.currentTool = toolId;
-        console.log(`🎯 ツール切り替え: ${this.tools.get(toolId).name}`);
-        return true;
-    }
-    
-    /**
-     * 現在のツール取得
-     */
-    getCurrentTool() {
-        return this.tools.get(this.currentTool);
-    }
-    
-    /**
-     * 現在のツール名取得
-     */
-    getCurrentToolName() {
-        const tool = this.getCurrentTool();
-        return tool ? tool.name : 'Unknown';
-    }
-    
-    // === 描画設定管理（DRY原則） ===
     
     /**
      * ブラシサイズ設定
-     * @param {number} size - ブラシサイズ (0.1 - 100)
+     * @param {number} size - ブラシサイズ
      */
     setBrushSize(size) {
         this.globalSettings.brushSize = Math.max(0.1, Math.min(100, Math.round(size * 10) / 10));
+        console.log(`🖌️ ブラシサイズ: ${this.globalSettings.brushSize}px`);
     }
     
     /**
      * 不透明度設定
-     * @param {number} opacity - 不透明度 (0.0 - 1.0)
+     * @param {number} opacity - 不透明度（0-1）
      */
     setOpacity(opacity) {
         this.globalSettings.opacity = Math.max(0, Math.min(1, Math.round(opacity * 1000) / 1000));
+        console.log(`🌫️ 不透明度: ${Math.round(this.globalSettings.opacity * 100)}%`);
     }
     
     /**
      * 筆圧設定
-     * @param {number} pressure - 筆圧 (0.0 - 1.0)
+     * @param {number} pressure - 筆圧（0-1）
      */
     setPressure(pressure) {
         this.globalSettings.pressure = Math.max(0, Math.min(1, Math.round(pressure * 1000) / 1000));
+        console.log(`✍️ 筆圧: ${Math.round(this.globalSettings.pressure * 100)}%`);
     }
     
     /**
      * 線補正設定
-     * @param {number} smoothing - 線補正 (0.0 - 1.0)
+     * @param {number} smoothing - 線補正（0-1）
      */
     setSmoothing(smoothing) {
         this.globalSettings.smoothing = Math.max(0, Math.min(1, Math.round(smoothing * 1000) / 1000));
+        console.log(`📏 線補正: ${Math.round(this.globalSettings.smoothing * 100)}%`);
     }
     
     /**
-     * 色設定
-     * @param {number} color - PIXI.js色コード
+     * グローバル設定更新
+     * @param {Object} settings - 設定オブジェクト
      */
-    setBrushColor(color) {
-        this.globalSettings.brushColor = color;
-    }
-    
-    /**
-     * 筆圧感度切り替え
-     * @param {boolean} enabled - 有効/無効
-     */
-    setPressureSensitivity(enabled) {
-        this.globalSettings.pressureSensitivity = enabled;
-    }
-    
-    /**
-     * エッジスムージング切り替え
-     * @param {boolean} enabled - 有効/無効
-     */
-    setEdgeSmoothing(enabled) {
-        this.globalSettings.edgeSmoothing = enabled;
-    }
-    
-    /**
-     * GPU加速切り替え
-     * @param {boolean} enabled - 有効/無効
-     */
-    setGPUAcceleration(enabled) {
-        this.globalSettings.gpuAcceleration = enabled;
-    }
-    
-    // === 描画処理統合（元HTMLのDrawingEngine統合） ===
-    
-    /**
-     * 描画開始
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     */
-    startDrawing(x, y) {
-        if (!this.drawingEngine) {
-            console.warn('⚠️ DrawingEngine未設定');
-            return;
+    updateGlobalSettings(settings) {
+        if (settings.brushSize !== undefined) {
+            this.setBrushSize(settings.brushSize);
         }
         
-        this.isDrawing = true;
-        this.lastPoint = { x, y };
-        
-        const tool = this.getCurrentTool();
-        if (!tool) {
-            console.warn('⚠️ 無効なツール');
-            return;
+        if (settings.opacity !== undefined) {
+            this.setOpacity(settings.opacity);
         }
         
-        // 元HTMLのcreatePathロジック統合
-        this.currentPath = this.createPath(x, y, tool);
-    }
-    
-    /**
-     * 描画継続
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     */
-    continueDrawing(x, y) {
-        if (!this.isDrawing || !this.currentPath) return;
-        
-        // 元HTMLのdrawLineロジック統合
-        this.drawLine(this.currentPath, x, y);
-        this.lastPoint = { x, y };
-    }
-    
-    /**
-     * 描画終了
-     */
-    stopDrawing() {
-        if (this.currentPath) {
-            this.currentPath.isComplete = true;
-        }
-        this.isDrawing = false;
-        this.currentPath = null;
-        this.lastPoint = null;
-    }
-    
-    /**
-     * パス作成（元HTMLのDrawingEngine.createPath統合）
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     * @param {Object} tool - ツール設定
-     */
-    createPath(x, y, tool) {
-        const path = {
-            id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            graphics: new PIXI.Graphics(),
-            points: [],
-            color: tool.type === 'erasing' ? 
-                this.drawingEngine.backgroundColor : 
-                this.globalSettings.brushColor,
-            size: this.globalSettings.brushSize,
-            opacity: tool.type === 'erasing' ? 1.0 : this.globalSettings.opacity,
-            tool: this.currentTool,
-            isComplete: false
-        };
-        
-        // 初回描画: 円形ブラシで点を描画（元HTML方式）
-        path.graphics.beginFill(path.color, path.opacity);
-        path.graphics.drawCircle(x, y, path.size / 2);
-        path.graphics.endFill();
-        
-        path.points.push({ x, y, size: path.size });
-        
-        // v8移行準備: Graphics API変更対応
-        // v8: path.graphics.circle(x, y, path.size / 2).fill(path.color, path.opacity);
-        
-        this.drawingEngine.drawingContainer.addChild(path.graphics);
-        this.drawingEngine.paths.push(path);
-        return path;
-    }
-    
-    /**
-     * 線描画（元HTMLのDrawingEngine.drawLine統合）
-     * @param {Object} path - パスオブジェクト
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     */
-    drawLine(path, x, y) {
-        if (!path || path.points.length === 0) return;
-        
-        const lastPoint = path.points[path.points.length - 1];
-        const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
-        
-        // 最小距離フィルタ（元HTML同様）
-        if (distance < 1.5) return;
-        
-        // 連続する円形で線を描画（元HTML方式）
-        const steps = Math.max(1, Math.ceil(distance / 1.5));
-        for (let i = 1; i <= steps; i++) {
-            const t = i / steps;
-            const px = lastPoint.x + (x - lastPoint.x) * t;
-            const py = lastPoint.y + (y - lastPoint.y) * t;
-            
-            path.graphics.beginFill(path.color, path.opacity);
-            path.graphics.drawCircle(px, py, path.size / 2);
-            path.graphics.endFill();
-            
-            // v8移行準備: Graphics API変更対応
-            // v8: path.graphics.circle(px, py, path.size / 2).fill(path.color, path.opacity);
+        if (settings.pressure !== undefined) {
+            this.setPressure(settings.pressure);
         }
         
-        path.points.push({ x, y, size: path.size });
-    }
-    
-    // === 状態取得メソッド ===
-    
-    /**
-     * 全設定取得
-     */
-    getAllSettings() {
-        return { ...this.globalSettings };
-    }
-    
-    /**
-     * 登録ツールリスト取得
-     */
-    getRegisteredTools() {
-        return Array.from(this.tools.entries()).map(([id, config]) => ({
-            id,
-            name: config.name,
-            icon: config.icon,
-            type: config.type
-        }));
+        if (settings.smoothing !== undefined) {
+            this.setSmoothing(settings.smoothing);
+        }
+        
+        if (settings.pressureSensitivity !== undefined) {
+            this.globalSettings.pressureSensitivity = settings.pressureSensitivity;
+            console.log(`📱 筆圧感度: ${settings.pressureSensitivity ? 'ON' : 'OFF'}`);
+        }
+        
+        if (settings.edgeSmoothing !== undefined) {
+            this.globalSettings.edgeSmoothing = settings.edgeSmoothing;
+            console.log(`✨ エッジスムージング: ${settings.edgeSmoothing ? 'ON' : 'OFF'}`);
+        }
+        
+        if (settings.gpuAcceleration !== undefined) {
+            this.globalSettings.gpuAcceleration = settings.gpuAcceleration;
+            console.log(`🚀 GPU加速: ${settings.gpuAcceleration ? 'ON' : 'OFF'}`);
+        }
+        
+        // 現在のツールに設定変更を通知
+        const currentToolInstance = this.registeredTools.get(this.currentTool);
+        if (currentToolInstance && currentToolInstance.updateSettings) {
+            currentToolInstance.updateSettings(this.globalSettings);
+        }
     }
     
     /**
      * 描画状態取得
+     * @returns {Object} 描画状態
      */
     getDrawingState() {
         return {
-            isDrawing: this.isDrawing,
             currentTool: this.currentTool,
-            pathCount: this.drawingEngine?.paths?.length || 0
+            isDrawing: this.isDrawing,
+            globalSettings: { ...this.globalSettings },
+            registeredTools: Array.from(this.registeredTools.keys()),
+            currentPath: this.currentPath ? this.currentPath.id : null,
+            lastPoint: this.lastPoint ? { ...this.lastPoint } : null
         };
-    }
-}
-
-// デフォルトエクスポート（互換性確保）
-export default ToolManager;
-            pressure: 0.5,
-            smoothing: 0.3,
-            pressureSensitivity: true,
-            edgeSmoothing: true,
-            gpuAcceleration: true
-        };
-        
-        console.log('🔧 ToolManager 構築開始...');
     }
     
     /**
-     * ツール管理システム初期化
+     * アンドゥ実行
+     * @returns {boolean} アンドゥ成功フラグ
      */
-    init(drawingEngine) {
+    undo() {
+        if (!this.canvasManager) return false;
+        
+        const success = this.canvasManager.undo();
+        if (success) {
+            console.log('↶ アンドゥ実行');
+        }
+        return success;
+    }
+    
+    /**
+     * キャンバスクリア
+     */
+    clear() {
+        if (!this.canvasManager) return;
+        
+        this.canvasManager.clear();
+        console.log('🧹 キャンバスクリア');
+    }
+    
+    /**
+     * ツール統計取得
+     * @returns {Object} ツール統計
+     */
+    getToolStats() {
+        const stats = {
+            currentTool: this.currentTool,
+            registeredToolsCount: this.registeredTools.size,
+            isDrawing: this.isDrawing,
+            globalSettings: { ...this.globalSettings }
+        };
+        
+        // キャンバス統計追加
+        if (this.canvasManager) {
+            stats.canvasStats = this.canvasManager.getStats();
+        }
+        
+        return stats;
+    }
+    
+    /**
+     * ツール切り替え可能性チェック
+     * @param {string} tool - ツール名
+     * @returns {boolean} 切り替え可能フラグ
+     */
+    canSwitchTo(tool) {
+        if (this.isDrawing) {
+            console.warn('⚠️ 描画中はツール変更できません');
+            return false;
+        }
+        
+        if (!this.registeredTools.has(tool)) {
+            console.warn(`⚠️ 未登録ツール: ${tool}`);
+            return false;
+        }
+        
+        return true;
+    }
+    
+    /**
+     * 安全なツール切り替え
+     * @param {string} tool - ツール名
+     * @returns {boolean} 切り替え成功フラグ
+     */
+    safeSwitchTool(tool) {
+        if (!this.canSwitchTo(tool)) return false;
+        
+        // 描画中の場合は強制終了
+        if (this.isDrawing) {
+            this.stopDrawing();
+        }
+        
+        return this.setTool(tool);
+    }
+    
+    /**
+     * デバッグ情報出力
+     */
+    debugInfo() {
+        const state = this.getDrawingState();
+        const stats = this.getToolStats();
+        
+        console.group('🔧 ToolManager デバッグ情報');
+        console.log('📊 状態:', state);
+        console.log('📈 統計:', stats);
+        console.groupEnd();
+        
+        return { state, stats };
+    }
+    
+    /**
+     * 破棄処理
+     */
+    destroy() {
+        try {
+            // 描画中の場合は終了
+            if (this.isDrawing) {
+                this.stopDrawing();
+            }
+            
+            // 登録ツールクリア
+            this.registeredTools.clear();
+            
+            // 参照クリア
+            this.canvasManager = null;
+            this.currentPath = null;
+            this.lastPoint = null;
+            
+            console.log('🗑️ ToolManager 破棄完了');
+            
+        } catch (error) {
+            console.error('❌ ToolManager 破棄エラー:', error);
+        }
+    }
+}
+
+// Pure JavaScript グローバル公開（ルールブック準拠）
+if (typeof window !== 'undefined') {
+    window.ToolManager = ToolManager;
+    console.log('✅ ToolManager グローバル公開完了（Pure JavaScript）');
+}
+
+console.log('🔧 ToolManager Pure JavaScript完全準拠版 - 準備完了');
+console.log('📋 ルールブック準拠: 1.2実装原則「ESM/TypeScript混在禁止・Pure JavaScript維持」');
+console.log('💡 使用例: const toolManager = new window.ToolManager(); toolManager.init(canvasManager);');

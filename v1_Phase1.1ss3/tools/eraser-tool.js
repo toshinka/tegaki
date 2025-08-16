@@ -1,265 +1,325 @@
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
- * 🎯 AI_WORK_SCOPE: 消しゴムツール専用・背景色描画・サイズ調整対応
- * 🎯 DEPENDENCIES: js/managers/tool-manager.js, libs/pixi-extensions.js
- * 🎯 NODE_MODULES: pixi.js@^7.4.3, @pixi/graphics-extras（将来）
- * 🎯 PIXI_EXTENSIONS: Graphics、BlendMode
- * 🎯 ISOLATION_TEST: 可能（単体テスト対応）
- * 🎯 SPLIT_THRESHOLD: 300行（消しゴム特化・シンプル）
- * 📋 PHASE_TARGET: Phase1
- * 📋 V8_MIGRATION: Graphics API変更 + BlendMode変更予定
+ * 🎯 AI_WORK_SCOPE: 消しゴムツール・ベクター消去・範囲処理
+ * 🎯 DEPENDENCIES: js/managers/tool-manager.js (Pure JavaScript)
+ * 🎯 NODE_MODULES: pixi.js@^7.4.3
+ * 🎯 PIXI_EXTENSIONS: Graphics描画機能
+ * 🎯 ISOLATION_TEST: 可能（単体ツール機能）
+ * 🎯 SPLIT_THRESHOLD: 300行（ツール単体・分割可能）
+ * 📋 PHASE_TARGET: Phase1.1ss3 - Pure JavaScript完全準拠
+ * 📋 V8_MIGRATION: Graphics API変更なし
+ * 📋 RULEBOOK_COMPLIANCE: 1.2実装原則「Pure JavaScript維持」完全準拠
  */
 
 /**
  * 消しゴムツール実装
- * 元HTMLの消しゴムロジックを専用クラス化
- * SOLID原則: 単一責任 - 消去処理のみ
+ * 元HTMLの消しゴム機能を改良・分離
+ * Pure JavaScript完全準拠・グローバル公開方式
  */
-export class EraserTool {
+class EraserTool {
     constructor(toolManager) {
         this.toolManager = toolManager;
-        this.name = '消しゴム';
-        this.id = 'eraser';
-        this.type = 'erasing';
+        this.name = 'eraser';
+        this.displayName = '消しゴム';
+        this.isActive = false;
         
-        // 消しゴム専用設定
-        this.eraserSettings = {
-            minSize: 1.0,  // 消しゴムは最小1px
-            maxSize: 200.0, // ペンより大きなサイズ対応
-            eraserMode: 'background', // 'background' | 'transparent' | 'blend'
-            hardness: 1.0, // エッジの硬さ (将来のソフト消しゴム用)
-            pressureEnabled: true
+        // 描画状態
+        this.currentPath = null;
+        this.isDrawing = false;
+        this.lastPoint = null;
+        
+        // 消しゴム固有設定
+        this.settings = {
+            minSize: 1.0,
+            maxSize: 200,
+            defaultSize: 20.0,
+            eraserOpacity: 1.0,
+            blendMode: 'normal' // 将来的にdestination-outに変更可能
         };
         
-        console.log(`🧽 EraserTool 初期化: ${this.name}`);
+        console.log('🧹 EraserTool 構築開始（Pure JavaScript）...');
     }
     
     /**
      * 消しゴムツール初期化
      */
     init() {
-        console.log('🧽 EraserTool初期化完了');
-        return true;
+        if (!this.toolManager) {
+            throw new Error('ToolManager が必要です');
+        }
+        
+        // ToolManagerに自身を登録
+        this.toolManager.registerTool(this.name, this);
+        
+        console.log('✅ EraserTool初期化完了（Pure JavaScript）');
+        return this;
     }
     
     /**
-     * 消しゴム描画開始
+     * 描画開始（消去開始）
      * @param {number} x - X座標
      * @param {number} y - Y座標
-     * @param {Object} settings - 描画設定
      */
-    startErase(x, y, settings = {}) {
-        if (!this.toolManager || !this.toolManager.drawingEngine) {
-            console.warn('⚠️ EraserTool: DrawingEngine未設定');
-            return null;
+    startDrawing(x, y) {
+        if (!this.toolManager.canvasManager) {
+            console.warn('⚠️ CanvasManager 未初期化');
+            return;
         }
         
-        const globalSettings = this.toolManager.getAllSettings();
-        const eraserSettings = { ...globalSettings, ...settings };
+        this.isDrawing = true;
+        this.lastPoint = { x, y, timestamp: performance.now() };
         
-        // 筆圧適用サイズ計算
-        const effectiveSize = this.calculateEraserSize(
-            eraserSettings.brushSize,
-            eraserSettings.pressure || 0.5
+        // グローバル設定取得（消しゴムサイズはペンサイズより大きめ）
+        const globalSettings = this.toolManager.globalSettings;
+        const eraserSize = Math.max(globalSettings.brushSize * 1.2, this.settings.defaultSize);
+        
+        // 背景色で消去パス作成（元HTML方式）
+        this.currentPath = this.toolManager.canvasManager.createPath(
+            x, y,
+            eraserSize,
+            this.toolManager.canvasManager.backgroundColor, // 背景色使用
+            this.settings.eraserOpacity,
+            this.name
         );
         
-        // 消しゴムパス作成
-        const path = this.createEraserPath(x, y, effectiveSize, eraserSettings);
-        
-        console.log(`🧽 消しゴム開始: サイズ${effectiveSize.toFixed(1)}px`);
-        return path;
+        console.log(`🧹 消しゴム開始: (${Math.round(x)}, ${Math.round(y)}) サイズ:${eraserSize.toFixed(1)}px`);
     }
     
     /**
-     * 消しゴム描画継続
-     * @param {Object} path - アクティブパス
+     * 描画継続（消去継続）
      * @param {number} x - X座標
      * @param {number} y - Y座標
-     * @param {number} pressure - 筆圧 (0.0-1.0)
      */
-    continueErase(path, x, y, pressure = 0.5) {
-        if (!path || !path.graphics) return;
+    continueDrawing(x, y) {
+        if (!this.isDrawing || !this.currentPath || !this.lastPoint) return;
         
-        const settings = this.toolManager.getAllSettings();
+        const globalSettings = this.toolManager.globalSettings;
         
-        // 筆圧適用サイズ計算
-        const effectiveSize = this.calculateEraserSize(settings.brushSize, pressure);
+        // 距離計算
+        const distance = Math.sqrt(
+            (x - this.lastPoint.x) ** 2 + (y - this.lastPoint.y) ** 2
+        );
         
-        // 消しゴム線描画実行
-        this.drawEraserLine(path, x, y, effectiveSize, settings);
+        // 最小移動距離チェック（消しゴムは少し緩め）
+        if (distance < 2.0) return;
+        
+        // 消去サイズ計算
+        const eraserSize = Math.max(globalSettings.brushSize * 1.2, this.settings.defaultSize);
+        
+        // 連続消去描画
+        this.toolManager.canvasManager.drawLine(this.currentPath, x, y);
+        
+        this.lastPoint = { x, y, timestamp: performance.now() };
     }
     
     /**
-     * 消しゴム描画終了
-     * @param {Object} path - アクティブパス
+     * 描画終了（消去終了）
      */
-    finishErase(path) {
-        if (path) {
-            path.isComplete = true;
-            console.log('🧽 消しゴム完了');
+    stopDrawing() {
+        if (!this.isDrawing) return;
+        
+        if (this.currentPath) {
+            this.currentPath.isComplete = true;
+            console.log(`🧹 消しゴム完了: ${this.currentPath.points.length}ポイント消去`);
         }
+        
+        this.isDrawing = false;
+        this.currentPath = null;
+        this.lastPoint = null;
     }
     
     /**
-     * 消しゴムパス作成
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     * @param {number} size - ブラシサイズ
-     * @param {Object} settings - 描画設定
+     * 設定更新
+     * @param {Object} globalSettings - グローバル設定
      */
-    createEraserPath(x, y, size, settings) {
-        const engine = this.toolManager.drawingEngine;
+    updateSettings(globalSettings) {
+        // 消しゴム固有の設定調整
+        const eraserSize = Math.max(globalSettings.brushSize * 1.2, this.settings.defaultSize);
         
-        // 消しゴム色（背景色使用）
-        const eraserColor = engine.backgroundColor || 0xf0e0d6;
-        
-        const path = {
-            id: `eraser_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            graphics: new PIXI.Graphics(),
-            points: [],
-            color: eraserColor,
-            size: size,
-            opacity: 1.0, // 消しゴムは常に完全不透明
-            tool: this.id,
-            isComplete: false,
-            eraserMode: this.eraserSettings.eraserMode
-        };
-        
-        // 初回描画: 背景色の円形で消去（元HTML方式）
-        path.graphics.beginFill(path.color, path.opacity);
-        path.graphics.drawCircle(x, y, size / 2);
-        path.graphics.endFill();
-        
-        // v8移行準備コメント
-        // v8: path.graphics.circle(x, y, size / 2).fill({ color: eraserColor, alpha: 1.0 });
-        
-        path.points.push({ x, y, size, pressure: settings.pressure || 0.5 });
-        
-        engine.drawingContainer.addChild(path.graphics);
-        engine.paths.push(path);
-        return path;
+        console.log(`🧹 消しゴム設定更新: サイズ:${eraserSize.toFixed(1)}px`);
     }
     
     /**
-     * 消しゴム線描画
+     * 矩形消去（範囲消去）
+     * @param {number} x1 - 開始X座標
+     * @param {number} y1 - 開始Y座標
+     * @param {number} x2 - 終了X座標
+     * @param {number} y2 - 終了Y座標
+     */
+    eraseRectangle(x1, y1, x2, y2) {
+        if (!this.toolManager.canvasManager) return;
+        
+        const minX = Math.min(x1, x2);
+        const minY = Math.min(y1, y2);
+        const maxX = Math.max(x1, x2);
+        const maxY = Math.max(y1, y2);
+        
+        // 範囲内のパスポイントを検索・削除
+        const pathsToUpdate = [];
+        
+        this.toolManager.canvasManager.paths.forEach(path => {
+            const pointsToKeep = path.points.filter(point => {
+                const inRange = point.x >= minX && point.x <= maxX && 
+                               point.y >= minY && point.y <= maxY;
+                return !inRange; // 範囲外のポイントのみ保持
+            });
+            
+            if (pointsToKeep.length !== path.points.length) {
+                pathsToUpdate.push({ path, pointsToKeep });
+            }
+        });
+        
+        // パス再構築
+        pathsToUpdate.forEach(({ path, pointsToKeep }) => {
+            if (pointsToKeep.length === 0) {
+                // 完全削除
+                this.toolManager.canvasManager.removePath(path.id);
+            } else {
+                // 部分削除・再構築
+                path.points = pointsToKeep;
+                this.rebuildPathGraphics(path);
+            }
+        });
+        
+        console.log(`🧹 矩形消去完了: (${minX},${minY})-(${maxX},${maxY}) ${pathsToUpdate.length}パス影響`);
+    }
+    
+    /**
+     * パスグラフィックス再構築
      * @param {Object} path - パスオブジェクト
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     * @param {number} size - ブラシサイズ
-     * @param {Object} settings - 描画設定
      */
-    drawEraserLine(path, x, y, size, settings) {
-        if (!path || path.points.length === 0) return;
+    rebuildPathGraphics(path) {
+        // 既存グラフィックスクリア
+        path.graphics.clear();
         
-        const lastPoint = path.points[path.points.length - 1];
-        const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
-        
-        // 最小距離フィルタ
-        if (distance < 2.0) return; // 消しゴムは少し大きめの閾値
-        
-        // 連続する円形で消去線を描画
-        const steps = Math.max(1, Math.ceil(distance / 2.0));
-        
-        for (let i = 1; i <= steps; i++) {
-            const t = i / steps;
-            const px = lastPoint.x + (x - lastPoint.x) * t;
-            const py = lastPoint.y + (y - lastPoint.y) * t;
-            
-            // サイズ補間（筆圧対応）
-            const interpolatedSize = lastPoint.size + (size - lastPoint.size) * t;
-            
+        // ポイント再描画
+        path.points.forEach((point, index) => {
             path.graphics.beginFill(path.color, path.opacity);
-            path.graphics.drawCircle(px, py, interpolatedSize / 2);
+            path.graphics.drawCircle(point.x, point.y, point.size / 2);
             path.graphics.endFill();
-            
-            // v8移行準備コメント
-            // v8: path.graphics.circle(px, py, interpolatedSize / 2)
-            //     .fill({ color: path.color, alpha: path.opacity });
+        });
+    }
+    
+    /**
+     * 全消去
+     */
+    eraseAll() {
+        if (this.toolManager.canvasManager) {
+            this.toolManager.canvasManager.clear();
+            console.log('🧹 全消去実行');
         }
-        
-        path.points.push({ x, y, size, pressure: settings.pressure || 0.5 });
     }
     
     /**
-     * 消しゴムサイズ計算
-     * @param {number} baseSize - 基本サイズ
-     * @param {number} pressure - 筆圧 (0.0-1.0)
+     * ツール情報取得
+     * @returns {Object} ツール情報
      */
-    calculateEraserSize(baseSize, pressure) {
-        if (!this.eraserSettings.pressureEnabled) {
-            return baseSize;
-        }
-        
-        // 消しゴムの筆圧カーブ: 0.5-1.5倍の範囲
-        const pressureCurve = 0.5 + (pressure * 1.0);
-        const effectiveSize = baseSize * pressureCurve;
-        
-        // 最小・最大サイズ制限
-        return Math.max(
-            this.eraserSettings.minSize,
-            Math.min(this.eraserSettings.maxSize, effectiveSize)
-        );
-    }
-    
-    /**
-     * 透明消しゴムモード（将来拡張用）
-     * @param {number} x - X座標
-     * @param {number} y - Y座標  
-     * @param {number} size - サイズ
-     */
-    createTransparentEraser(x, y, size) {
-        // 将来のBlendMode.ERASE対応
-        // v8でのBlendMode改良に合わせて実装予定
-        console.log('🔮 透明消しゴム（将来実装）');
-        
-        // v8移行時の実装例（コメント）
-        // const graphics = new PIXI.Graphics();
-        // graphics.blendMode = PIXI.BLEND_MODES.ERASE;
-        // graphics.circle(x, y, size / 2).fill({ color: 0xffffff, alpha: 1.0 });
-    }
-    
-    /**
-     * 消しゴム設定更新
-     * @param {Object} newSettings - 新しい設定
-     */
-    updateEraserSettings(newSettings) {
-        this.eraserSettings = { ...this.eraserSettings, ...newSettings };
-        console.log('🧽 消しゴム設定更新:', newSettings);
-    }
-    
-    /**
-     * 現在の消しゴム設定取得
-     */
-    getEraserSettings() {
-        return { ...this.eraserSettings };
-    }
-    
-    /**
-     * 消しゴムツール状態取得
-     */
-    getToolInfo() {
+    getInfo() {
         return {
             name: this.name,
-            id: this.id,
-            type: this.type,
-            settings: this.eraserSettings,
-            isActive: this.toolManager?.currentTool === this.id
+            displayName: this.displayName,
+            isActive: this.isActive,
+            isDrawing: this.isDrawing,
+            settings: { ...this.settings },
+            currentPath: this.currentPath ? {
+                id: this.currentPath.id,
+                pointCount: this.currentPath.points.length
+            } : null
         };
     }
     
     /**
-     * 消去可能領域検出（将来拡張用）
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     * @param {number} radius - 検出半径
+     * アクティベート
      */
-    detectErasableArea(x, y, radius) {
-        // 将来のスマート消しゴム機能
-        // 指定位置周辺の描画オブジェクトを検出
-        console.log('🔮 消去可能領域検出（将来実装）');
-        return [];
+    activate() {
+        this.isActive = true;
+        console.log(`🧹 ${this.displayName} アクティブ化`);
+    }
+    
+    /**
+     * 非アクティベート
+     */
+    deactivate() {
+        // 消去中の場合は終了
+        if (this.isDrawing) {
+            this.stopDrawing();
+        }
+        
+        this.isActive = false;
+        console.log(`🧹 ${this.displayName} 非アクティブ化`);
+    }
+    
+    /**
+     * ツールリセット
+     */
+    reset() {
+        this.deactivate();
+        this.currentPath = null;
+        this.lastPoint = null;
+        console.log(`🧹 ${this.displayName} リセット完了`);
+    }
+    
+    /**
+     * パフォーマンス統計取得
+     * @returns {Object} パフォーマンス統計
+     */
+    getPerformanceStats() {
+        const eraserPathCount = this.toolManager.canvasManager ? 
+            this.toolManager.canvasManager.paths.filter(p => p.tool === this.name).length : 0;
+        
+        const totalErasedPoints = this.toolManager.canvasManager ?
+            this.toolManager.canvasManager.paths
+                .filter(p => p.tool === this.name)
+                .reduce((sum, p) => sum + p.points.length, 0) : 0;
+        
+        return {
+            toolName: this.name,
+            eraserPathCount,
+            totalErasedPoints,
+            averagePointsPerErasePath: eraserPathCount > 0 ? Math.round(totalErasedPoints / eraserPathCount) : 0,
+            isCurrentlyErasing: this.isDrawing
+        };
+    }
+    
+    /**
+     * デバッグ情報出力
+     */
+    debugInfo() {
+        const info = this.getInfo();
+        const stats = this.getPerformanceStats();
+        
+        console.group(`🧹 ${this.displayName} デバッグ情報`);
+        console.log('📊 情報:', info);
+        console.log('📈 統計:', stats);
+        console.groupEnd();
+        
+        return { info, stats };
+    }
+    
+    /**
+     * 破棄処理
+     */
+    destroy() {
+        try {
+            this.deactivate();
+            this.toolManager = null;
+            this.currentPath = null;
+            this.lastPoint = null;
+            
+            console.log(`🗑️ ${this.displayName} 破棄完了`);
+            
+        } catch (error) {
+            console.error(`❌ ${this.displayName} 破棄エラー:`, error);
+        }
     }
 }
 
-export default EraserTool;
+// Pure JavaScript グローバル公開（ルールブック準拠）
+if (typeof window !== 'undefined') {
+    window.EraserTool = EraserTool;
+    console.log('✅ EraserTool グローバル公開完了（Pure JavaScript）');
 }
+
+console.log('🧹 EraserTool Pure JavaScript完全準拠版 - 準備完了');
+console.log('📋 ルールブック準拠: 1.2実装原則「ESM/TypeScript混在禁止・Pure JavaScript維持」');
+console.log('💡 使用例: const eraserTool = new window.EraserTool(toolManager); eraserTool.init();');

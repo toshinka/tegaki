@@ -1,502 +1,467 @@
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
- * 🎯 AI_WORK_SCOPE: PixiJS Application管理・基盤システム提供・拡張機能統合
- * 🎯 DEPENDENCIES: libs/pixi-extensions.js, js/utils/coordinates.js, js/utils/performance.js
- * 🎯 NODE_MODULES: pixi.js@^7.4.3, @pixi/ui, @pixi/layers, @pixi/gif
- * 🎯 PIXI_EXTENSIONS: Application基盤・レイヤーシステム・UI統合
- * 🎯 ISOLATION_TEST: 可能（PixiExtensions依存）
- * 🎯 SPLIT_THRESHOLD: 400行（基盤システム・分割は慎重に）
- * 📋 PHASE_TARGET: Phase1
- * 📋 V8_MIGRATION: new PIXI.Application() → await PIXI.Application.init()
+ * 🎯 AI_WORK_SCOPE: PixiJS基盤管理・拡張ライブラリ統合
+ * 🎯 DEPENDENCIES: libs/pixi-extensions.js (Pure JavaScript)
+ * 🎯 NODE_MODULES: pixi.js@^7.4.3
+ * 🎯 PIXI_EXTENSIONS: 基盤システム・拡張統合
+ * 🎯 ISOLATION_TEST: 可能（基盤機能単体）
+ * 🎯 SPLIT_THRESHOLD: 300行（基盤システム・分割慎重）
+ * 📋 PHASE_TARGET: Phase1.1ss3 - Pure JavaScript完全準拠
+ * 📋 V8_MIGRATION: Application.init() 対応予定
+ * 📋 RULEBOOK_COMPLIANCE: 1.2実装原則「Pure JavaScript維持」完全準拠
  */
 
 /**
- * PixiJS基盤システム - アプリケーションコア
- * 元HTMLのDrawingEngineを基にした改良版
+ * アプリケーション基盤システム
+ * PixiJS Application管理・拡張ライブラリ統合基盤
+ * Pure JavaScript完全準拠・グローバル公開方式
  */
 class AppCore {
     constructor() {
-        this.app = null;
-        this.drawingContainer = null;
-        this.uiContainer = null;
-        this.paths = [];
-        this.currentTool = 'pen';
-        this.isDrawing = false;
+        this.version = '1.0-Phase1.1ss3-PureJS';
+        this.isInitialized = false;
+        this.startTime = performance.now();
         
-        // 描画設定（元HTML互換）
-        this.canvasWidth = 400;
-        this.canvasHeight = 400;
-        this.backgroundColor = 0xf0e0d6; // ふたばクリーム
+        // 基盤システム状態
+        this.pixiExtensions = null;
+        this.extensionStats = null;
+        this.compatibilityIssues = [];
         
-        // ツールシステム設定
-        this.toolSystem = {
-            brushSize: 16.0,
-            brushColor: 0x800000, // ふたばマルーン
-            opacity: 0.85,
-            pressure: 0.5,
-            smoothing: 0.3
-        };
-        
-        console.log('🎯 AppCore 構築開始...');
+        console.log('🎨 AppCore 構築開始（Pure JavaScript）...');
     }
     
     /**
-     * アプリケーションコア初期化
+     * 基盤システム初期化
      */
     async init() {
-        console.group('🎯 PixiJS基盤システム初期化');
-        
         try {
-            // Step1: PixiJS Application作成
-            await this.createPixiApplication();
+            console.log('🔧 AppCore基盤システム初期化開始...');
             
-            // Step2: 拡張機能統合
-            this.integrateExtensions();
+            // Step 1: PixiJS基本検証
+            this.validatePixiJS();
             
-            // Step3: コンテナ構造構築
-            this.setupContainers();
+            // Step 2: 拡張ライブラリ統合確認
+            await this.initializeExtensions();
             
-            // Step4: 基本システム初期化
-            this.setupBasicSystems();
+            // Step 3: 互換性検証
+            this.validateCompatibility();
             
-            // Step5: UI統合準備
-            this.prepareUIIntegration();
+            // Step 4: 基盤システム準備完了
+            this.setupFoundation();
             
-            console.log('✅ PixiJS基盤システム初期化完了');
+            this.isInitialized = true;
+            const initTime = performance.now() - this.startTime;
+            
+            console.log('✅ AppCore基盤システム初期化完了！');
+            console.log(`⏱️ 初期化時間: ${initTime.toFixed(2)}ms`);
+            console.log('📊 拡張ライブラリ統合状況:', this.extensionStats);
+            
+            if (this.compatibilityIssues.length > 0) {
+                console.warn('⚠️ 互換性の問題:', this.compatibilityIssues);
+            }
+            
+            return this;
             
         } catch (error) {
-            console.error('❌ PixiJS基盤システム初期化エラー:', error);
+            console.error('❌ AppCore基盤システム初期化エラー:', error);
             throw error;
-        } finally {
-            console.groupEnd();
         }
-        
-        return this;
     }
     
     /**
-     * PixiJS Application作成
+     * PixiJS基本検証
      */
-    async createPixiApplication() {
-        console.log('🖼️ PixiJS Application作成中...');
+    validatePixiJS() {
+        if (!window.PIXI) {
+            throw new Error('PixiJS が読み込まれていません');
+        }
         
-        const appOptions = {
-            width: this.canvasWidth,
-            height: this.canvasHeight,
-            backgroundColor: this.backgroundColor,
-            antialias: true,
-            resolution: 1, // 元HTML互換: 固定値
-            autoDensity: false // 元HTML互換: 無効化
+        const requiredVersion = '7.0.0';
+        const currentVersion = PIXI.VERSION;
+        
+        console.log(`✅ PixiJS v${currentVersion} 検出`);
+        
+        // バージョンチェック
+        const [major] = currentVersion.split('.').map(Number);
+        if (major < 7) {
+            this.compatibilityIssues.push(`PixiJS v7以上が必要です (現在: v${currentVersion})`);
+        }
+        
+        // 必須機能チェック
+        const requiredFeatures = ['Application', 'Graphics', 'Container', 'Renderer'];
+        requiredFeatures.forEach(feature => {
+            if (!PIXI[feature]) {
+                throw new Error(`必須機能が不足しています: PIXI.${feature}`);
+            }
+        });
+        
+        console.log('✅ PixiJS基本検証完了');
+    }
+    
+    /**
+     * 拡張ライブラリ統合初期化
+     */
+    async initializeExtensions() {
+        // PixiExtensions確認
+        if (!window.PixiExtensions) {
+            throw new Error('PixiExtensions 統合システムが読み込まれていません');
+        }
+        
+        this.pixiExtensions = window.PixiExtensions;
+        
+        // まだ初期化されていない場合は初期化
+        if (!this.pixiExtensions.initialized) {
+            await this.pixiExtensions.initialize();
+        }
+        
+        // 統計情報取得
+        this.extensionStats = this.pixiExtensions.getStats();
+        
+        console.log('✅ 拡張ライブラリ統合初期化完了');
+        console.log(`📦 利用可能ライブラリ: ${this.extensionStats.available}/${this.extensionStats.total}`);
+        console.log(`📋 ライブラリリスト: ${this.extensionStats.libraries.join(', ')}`);
+    }
+    
+    /**
+     * 互換性検証
+     */
+    validateCompatibility() {
+        const issues = [];
+        
+        // ブラウザ互換性チェック
+        if (!window.requestAnimationFrame) {
+            issues.push('requestAnimationFrame が利用できません');
+        }
+        
+        if (!window.performance) {
+            issues.push('Performance API が利用できません');
+        }
+        
+        // Canvas/WebGL サポートチェック
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        if (!gl) {
+            issues.push('WebGL が利用できません - Canvas fallback使用');
+        }
+        
+        // 必須DOM APIチェック
+        const requiredAPIs = ['addEventListener', 'querySelector', 'createElement'];
+        requiredAPIs.forEach(api => {
+            if (!document[api]) {
+                issues.push(`DOM API が不足しています: ${api}`);
+            }
+        });
+        
+        // タッチ対応チェック
+        const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        if (!hasTouch) {
+            console.log('📱 タッチデバイスではありません - マウス操作のみ');
+        }
+        
+        this.compatibilityIssues = issues;
+        
+        if (issues.length === 0) {
+            console.log('✅ 互換性検証: 問題なし');
+        } else {
+            console.warn('⚠️ 互換性の問題が見つかりました:', issues);
+        }
+    }
+    
+    /**
+     * 基盤システム準備
+     */
+    setupFoundation() {
+        // グローバル設定
+        if (window.PIXI) {
+            // アンチエイリアス有効化
+            PIXI.settings.ROUND_PIXELS = true;
+            
+            // 解像度設定
+            PIXI.settings.RESOLUTION = window.devicePixelRatio || 1;
+            
+            // スケールモード設定（シャープな描画）
+            PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.NEAREST;
+            
+            console.log('⚙️ PixiJS基盤設定完了');
+        }
+        
+        // パフォーマンスタイマー開始
+        this.startPerformanceMonitoring();
+        
+        // グローバルエラーハンドリング
+        this.setupErrorHandling();
+        
+        console.log('✅ 基盤システム準備完了');
+    }
+    
+    /**
+     * パフォーマンス監視開始
+     */
+    startPerformanceMonitoring() {
+        this.performanceData = {
+            startTime: this.startTime,
+            frameCount: 0,
+            lastTime: performance.now(),
+            averageFPS: 0
         };
         
-        // 📋 V8_MIGRATION: v8移行時の変更予定
-        if (PIXI.VERSION.startsWith('7')) {
-            // v7 方式
-            this.app = new PIXI.Application(appOptions);
-            console.log('✅ PixiJS v7 Application作成完了');
-        } else {
-            // v8 方式（Phase4で実装予定）
-            // this.app = await PIXI.Application.init(appOptions);
-            // console.log('✅ PixiJS v8 Application作成完了');
-            console.error('❌ PixiJS v8は Phase4 で対応予定');
-        }
-        
-        // DOM統合
-        const canvasElement = document.getElementById('drawing-canvas');
-        if (canvasElement) {
-            canvasElement.appendChild(this.app.view);
-            console.log('✅ キャンバスDOM統合完了');
-        } else {
-            throw new Error('drawing-canvas 要素が見つかりません');
-        }
-        
-        // Canvas情報更新
-        this.updateCanvasInfo();
-    }
-    
-    /**
-     * 拡張機能統合
-     */
-    integrateExtensions() {
-        console.log('🔧 拡張機能統合中...');
-        
-        if (!window.PixiExtensions) {
-            console.warn('⚠️ PixiExtensions が利用できません');
-            return;
-        }
-        
-        // レイヤーシステム統合
-        if (window.PixiExtensions.hasFeature('layers')) {
-            this.setupAdvancedLayers();
-            console.log('📝 @pixi/layers 統合完了');
-        } else {
-            console.log('📝 基本コンテナ使用（レイヤーなし）');
-        }
-        
-        // UI拡張統合
-        if (window.PixiExtensions.hasFeature('ui')) {
-            console.log('🎨 @pixi/ui 統合準備完了');
-        }
-        
-        // GSAP統合
-        if (window.PixiExtensions.hasFeature('gsap')) {
-            console.log('🎭 GSAP 統合準備完了');
-        }
-    }
-    
-    /**
-     * 高度なレイヤーシステム設定
-     */
-    setupAdvancedLayers() {
-        try {
-            // @pixi/layers使用
-            const backgroundLayer = window.PixiExtensions.createAdvancedLayer({
-                zIndex: 0,
-                sorted: true
-            });
-            backgroundLayer.name = 'background';
-            
-            const drawingLayer = window.PixiExtensions.createAdvancedLayer({
-                zIndex: 1,
-                sorted: true
-            });
-            drawingLayer.name = 'drawing';
-            
-            const uiLayer = window.PixiExtensions.createAdvancedLayer({
-                zIndex: 2,
-                sorted: true
-            });
-            uiLayer.name = 'ui';
-            
-            this.app.stage.addChild(backgroundLayer);
-            this.app.stage.addChild(drawingLayer);
-            this.app.stage.addChild(uiLayer);
-            
-            this.drawingContainer = drawingLayer;
-            this.uiContainer = uiLayer;
-            
-        } catch (error) {
-            console.warn('⚠️ 高度レイヤー設定失敗、基本コンテナに切り替え:', error);
-            this.setupBasicContainers();
-        }
-    }
-    
-    /**
-     * コンテナ構造構築
-     */
-    setupContainers() {
-        if (!this.drawingContainer) {
-            this.setupBasicContainers();
-        }
-        
-        // インタラクティブ設定
-        this.app.stage.interactive = true;
-        this.app.stage.hitArea = new PIXI.Rectangle(0, 0, this.canvasWidth, this.canvasHeight);
-        
-        console.log('📦 コンテナ構造構築完了');
-    }
-    
-    /**
-     * 基本コンテナ設定（フォールバック）
-     */
-    setupBasicContainers() {
-        this.drawingContainer = new PIXI.Container();
-        this.drawingContainer.name = 'drawing';
-        this.drawingContainer.sortableChildren = true;
-        
-        this.uiContainer = new PIXI.Container();
-        this.uiContainer.name = 'ui';
-        this.uiContainer.sortableChildren = true;
-        
-        this.app.stage.addChild(this.drawingContainer);
-        this.app.stage.addChild(this.uiContainer);
-        
-        console.log('📦 基本コンテナ設定完了（フォールバック）');
-    }
-    
-    /**
-     * 基本システム初期化
-     */
-    setupBasicSystems() {
-        // イベントシステム初期化
-        this.setupEventSystem();
-        
-        // パフォーマンス監視初期化
-        this.setupPerformanceMonitoring();
-        
-        // 座標系初期化
-        this.setupCoordinateSystem();
-        
-        console.log('⚙️ 基本システム初期化完了');
-    }
-    
-    /**
-     * イベントシステム設定
-     */
-    setupEventSystem() {
-        // 元HTMLのイベント処理を統合
-        this.app.stage.on('pointerdown', (event) => this.handlePointerDown(event));
-        this.app.stage.on('pointermove', (event) => this.handlePointerMove(event));
-        this.app.stage.on('pointerup', (event) => this.handlePointerUp(event));
-        this.app.stage.on('pointerupoutside', (event) => this.handlePointerUp(event));
-        
-        console.log('🖱️ イベントシステム設定完了');
-    }
-    
-    /**
-     * パフォーマンス監視設定
-     */
-    setupPerformanceMonitoring() {
-        // FPS監視
-        let frameCount = 0;
-        let lastTime = performance.now();
-        
-        const updateFPS = () => {
-            frameCount++;
+        const updatePerformance = () => {
+            this.performanceData.frameCount++;
             const currentTime = performance.now();
             
-            if (currentTime - lastTime >= 1000) {
-                const fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
-                const fpsElement = document.getElementById('fps');
-                if (fpsElement) {
-                    fpsElement.textContent = fps;
-                }
+            if (currentTime - this.performanceData.lastTime >= 1000) {
+                this.performanceData.averageFPS = Math.round(
+                    (this.performanceData.frameCount * 1000) / 
+                    (currentTime - this.performanceData.lastTime)
+                );
                 
-                frameCount = 0;
-                lastTime = currentTime;
+                this.performanceData.frameCount = 0;
+                this.performanceData.lastTime = currentTime;
             }
             
-            requestAnimationFrame(updateFPS);
+            requestAnimationFrame(updatePerformance);
         };
         
-        updateFPS();
-        console.log('📊 パフォーマンス監視設定完了');
+        updatePerformance();
+        console.log('📊 パフォーマンス監視開始');
     }
     
     /**
-     * 座標系設定
+     * エラーハンドリング設定
      */
-    setupCoordinateSystem() {
-        // 座標変換ヘルパー（元HTML互換）
-        this.getLocalPointerPosition = (event) => {
-            const rect = this.app.view.getBoundingClientRect();
-            const originalEvent = event.data.originalEvent;
-            const x = (originalEvent.clientX - rect.left) * (this.canvasWidth / rect.width);
-            const y = (originalEvent.clientY - rect.top) * (this.canvasHeight / rect.height);
-            return { x, y };
-        };
-        
-        console.log('📐 座標系設定完了');
-    }
-    
-    /**
-     * UI統合準備
-     */
-    prepareUIIntegration() {
-        // 将来のUI統合用のフック
-        this.uiHooks = {
-            onToolChange: [],
-            onBrushSizeChange: [],
-            onOpacityChange: []
-        };
-        
-        console.log('🎨 UI統合準備完了');
-    }
-    
-    /**
-     * 描画パス作成（元HTML互換）
-     */
-    createPath(x, y, size, color, opacity, tool = 'pen') {
-        const path = {
-            id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            graphics: new PIXI.Graphics(),
-            points: [],
-            color: tool === 'eraser' ? this.backgroundColor : color,
-            size: size,
-            opacity: tool === 'eraser' ? 1.0 : opacity,
-            tool: tool,
-            isComplete: false
-        };
-        
-        // 初回描画: 円形ブラシ（元HTML互換）
-        path.graphics.beginFill(path.color, path.opacity);
-        path.graphics.drawCircle(x, y, size / 2);
-        path.graphics.endFill();
-        
-        path.points.push({ x, y, size });
-        
-        this.drawingContainer.addChild(path.graphics);
-        this.paths.push(path);
-        return path;
-    }
-    
-    /**
-     * 線描画（元HTML互換）
-     */
-    drawLine(path, x, y) {
-        if (!path || path.points.length === 0) return;
-        
-        const lastPoint = path.points[path.points.length - 1];
-        const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
-        
-        // 最小距離フィルタ
-        if (distance < 1.5) return;
-        
-        // 連続する円形で線を描画（元HTML互換）
-        const steps = Math.max(1, Math.ceil(distance / 1.5));
-        for (let i = 1; i <= steps; i++) {
-            const t = i / steps;
-            const px = lastPoint.x + (x - lastPoint.x) * t;
-            const py = lastPoint.y + (y - lastPoint.y) * t;
-            
-            path.graphics.beginFill(path.color, path.opacity);
-            path.graphics.drawCircle(px, py, path.size / 2);
-            path.graphics.endFill();
+    setupErrorHandling() {
+        // PixiJS エラーハンドリング
+        if (window.PIXI && PIXI.utils) {
+            const originalEmit = PIXI.utils.EventEmitter.prototype.emit;
+            PIXI.utils.EventEmitter.prototype.emit = function(event, ...args) {
+                try {
+                    return originalEmit.call(this, event, ...args);
+                } catch (error) {
+                    console.error('PixiJS イベントエラー:', error);
+                    return false;
+                }
+            };
         }
         
-        path.points.push({ x, y, size: path.size });
-    }
-    
-    /**
-     * ポインター押下処理
-     */
-    handlePointerDown(event) {
-        const point = this.getLocalPointerPosition(event);
-        
-        this.isDrawing = true;
-        this.currentPath = this.createPath(
-            point.x, point.y, 
-            this.toolSystem.brushSize, 
-            this.toolSystem.brushColor, 
-            this.toolSystem.opacity, 
-            this.currentTool
-        );
-    }
-    
-    /**
-     * ポインター移動処理
-     */
-    handlePointerMove(event) {
-        const point = this.getLocalPointerPosition(event);
-        
-        // 座標表示更新
-        const coordsElement = document.getElementById('coordinates');
-        if (coordsElement) {
-            coordsElement.textContent = `x: ${Math.round(point.x)}, y: ${Math.round(point.y)}`;
-        }
-        
-        // 描画処理
-        if (this.isDrawing && this.currentPath) {
-            this.drawLine(this.currentPath, point.x, point.y);
-            
-            // 筆圧モニター更新
-            const pressureElement = document.getElementById('pressure-monitor');
-            if (pressureElement) {
-                const pressure = Math.min(100, this.toolSystem.pressure * 100 + Math.random() * 20);
-                pressureElement.textContent = pressure.toFixed(1) + '%';
-            }
-        }
-    }
-    
-    /**
-     * ポインター離上処理
-     */
-    handlePointerUp(event) {
-        if (this.currentPath) {
-            this.currentPath.isComplete = true;
-        }
-        
-        this.isDrawing = false;
-        this.currentPath = null;
-        
-        // 筆圧モニターリセット
-        const pressureElement = document.getElementById('pressure-monitor');
-        if (pressureElement) {
-            pressureElement.textContent = '0.0%';
-        }
-    }
-    
-    /**
-     * キャンバスリサイズ
-     */
-    resize(newWidth, newHeight, centerContent = false) {
-        const oldWidth = this.canvasWidth;
-        const oldHeight = this.canvasHeight;
-        
-        this.canvasWidth = newWidth;
-        this.canvasHeight = newHeight;
-        
-        // PixiJS Application リサイズ
-        this.app.renderer.resize(newWidth, newHeight);
-        this.app.stage.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
-        
-        // コンテンツ中央寄せ
-        if (centerContent && this.paths.length > 0) {
-            const offsetX = (newWidth - oldWidth) / 2;
-            const offsetY = (newHeight - oldHeight) / 2;
-            
-            this.paths.forEach(path => {
-                path.graphics.x += offsetX;
-                path.graphics.y += offsetY;
+        // グローバルエラーハンドリング
+        window.addEventListener('error', (event) => {
+            console.error('グローバルエラー:', {
+                message: event.message,
+                filename: event.filename,
+                lineno: event.lineno,
+                colno: event.colno,
+                error: event.error
             });
+        });
+        
+        window.addEventListener('unhandledrejection', (event) => {
+            console.error('未処理Promise拒否:', event.reason);
+        });
+        
+        console.log('🛡️ エラーハンドリング設定完了');
+    }
+    
+    /**
+     * システム状態取得
+     * @returns {Object} システム状態
+     */
+    getSystemState() {
+        return {
+            version: this.version,
+            isInitialized: this.isInitialized,
+            initTime: performance.now() - this.startTime,
+            extensionStats: this.extensionStats,
+            compatibilityIssues: [...this.compatibilityIssues],
+            performanceData: { ...this.performanceData },
+            pixiVersion: window.PIXI ? PIXI.VERSION : null,
+            browserInfo: {
+                userAgent: navigator.userAgent,
+                platform: navigator.platform,
+                language: navigator.language,
+                cookieEnabled: navigator.cookieEnabled
+            }
+        };
+    }
+    
+    /**
+     * 拡張機能チェック
+     * @param {string} feature - 機能名
+     * @returns {boolean} 利用可能フラグ
+     */
+    hasFeature(feature) {
+        return this.pixiExtensions ? this.pixiExtensions.hasFeature(feature) : false;
+    }
+    
+    /**
+     * コンポーネント取得
+     * @param {string} library - ライブラリ名
+     * @param {string} component - コンポーネント名
+     * @returns {*} コンポーネント
+     */
+    getComponent(library, component) {
+        return this.pixiExtensions ? 
+            this.pixiExtensions.getComponent(library, component) : null;
+    }
+    
+    /**
+     * メモリ使用量推定
+     * @returns {Object} メモリ情報
+     */
+    getMemoryInfo() {
+        const info = {
+            estimated: 'N/A',
+            jsHeapSizeLimit: 'N/A',
+            totalJSHeapSize: 'N/A',
+            usedJSHeapSize: 'N/A'
+        };
+        
+        // Chrome/Edge のメモリ情報
+        if (window.performance && window.performance.memory) {
+            const memory = window.performance.memory;
+            info.jsHeapSizeLimit = this.formatBytes(memory.jsHeapSizeLimit);
+            info.totalJSHeapSize = this.formatBytes(memory.totalJSHeapSize);
+            info.usedJSHeapSize = this.formatBytes(memory.usedJSHeapSize);
         }
         
-        this.updateCanvasInfo();
-        console.log(`📏 キャンバスリサイズ: ${newWidth}×${newHeight}px`);
+        return info;
     }
     
     /**
-     * キャンバス情報更新
+     * バイト数フォーマット
+     * @param {number} bytes - バイト数
+     * @returns {string} フォーマット済み文字列
      */
-    updateCanvasInfo() {
-        const canvasInfoElement = document.getElementById('canvas-info');
-        if (canvasInfoElement) {
-            canvasInfoElement.textContent = `${this.canvasWidth}×${this.canvasHeight}px`;
+    formatBytes(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    
+    /**
+     * システム診断実行
+     * @returns {Object} 診断結果
+     */
+    runDiagnostics() {
+        const diagnostics = {
+            timestamp: new Date().toISOString(),
+            systemState: this.getSystemState(),
+            memoryInfo: this.getMemoryInfo(),
+            pixiCapabilities: {},
+            recommendations: []
+        };
+        
+        // PixiJS 機能診断
+        if (window.PIXI) {
+            diagnostics.pixiCapabilities = {
+                webglSupport: !!PIXI.utils.isWebGLSupported(),
+                maxTextureSize: PIXI.settings.RENDER_OPTIONS ? 
+                    PIXI.settings.RENDER_OPTIONS.maxTextureSize : 'Unknown',
+                renderer: PIXI.autoDetectRenderer ? 'Auto-detect available' : 'Manual setup required'
+            };
+        }
+        
+        // 推奨事項生成
+        if (this.compatibilityIssues.length > 0) {
+            diagnostics.recommendations.push('互換性問題の解決が推奨されます');
+        }
+        
+        if (this.performanceData.averageFPS < 30) {
+            diagnostics.recommendations.push('パフォーマンス最適化が推奨されます');
+        }
+        
+        if (!this.hasFeature('ui')) {
+            diagnostics.recommendations.push('@pixi/ui ライブラリの追加で機能向上可能');
+        }
+        
+        return diagnostics;
+    }
+    
+    /**
+     * v8移行準備チェック
+     * @returns {Object} 移行準備状況
+     */
+    checkV8MigrationReadiness() {
+        const readiness = {
+            compatible: true,
+            issues: [],
+            suggestions: []
+        };
+        
+        // v7 API使用箇所チェック
+        if (window.PIXI) {
+            const version = PIXI.VERSION;
+            const [major] = version.split('.').map(Number);
+            
+            if (major >= 8) {
+                readiness.suggestions.push('PixiJS v8が検出されました - 新API活用可能');
+            } else {
+                readiness.suggestions.push('PixiJS v8移行準備: Application.init() 対応予定');
+            }
+        }
+        
+        return readiness;
+    }
+    
+    /**
+     * デバッグ情報出力
+     */
+    debugInfo() {
+        const systemState = this.getSystemState();
+        const diagnostics = this.runDiagnostics();
+        const v8Readiness = this.checkV8MigrationReadiness();
+        
+        console.group('🎨 AppCore デバッグ情報');
+        console.log('📊 システム状態:', systemState);
+        console.log('🔍 診断結果:', diagnostics);
+        console.log('🚀 v8移行準備:', v8Readiness);
+        console.groupEnd();
+        
+        return { systemState, diagnostics, v8Readiness };
+    }
+    
+    /**
+     * 基盤システムリセット
+     */
+    reset() {
+        try {
+            this.performanceData = null;
+            this.extensionStats = null;
+            this.compatibilityIssues = [];
+            this.isInitialized = false;
+            
+            console.log('🔄 AppCore基盤システムリセット完了');
+            
+        } catch (error) {
+            console.error('❌ AppCore リセットエラー:', error);
         }
     }
     
     /**
-     * キャンバスクリア
+     * 破棄処理
      */
-    clear() {
-        this.paths.forEach(path => {
-            this.drawingContainer.removeChild(path.graphics);
-            path.graphics.destroy();
-        });
-        this.paths = [];
-        console.log('🧹 キャンバスクリア完了');
-    }
-    
-    /**
-     * ツール設定更新
-     */
-    updateToolSettings(settings) {
-        Object.assign(this.toolSystem, settings);
-        console.log('🔧 ツール設定更新:', settings);
-    }
-    
-    /**
-     * アプリケーション状態取得
-     */
-    getStatus() {
-        return {
-            initialized: !!this.app,
-            canvasSize: { width: this.canvasWidth, height: this.canvasHeight },
-            currentTool: this.currentTool,
-            pathCount: this.paths.length,
-            isDrawing: this.isDrawing,
-            toolSettings: { ...this.toolSystem },
-            pixiVersion: PIXI.VERSION,
-            extensions: window.PixiExtensions ? window.PixiExtensions.getStats() : null
-        };
+    destroy() {
+        try {
+            this.reset();
+            this.pixiExtensions = null;
+            
+            console.log('🗑️ AppCore 破棄完了');
+            
+        } catch (error) {
+            console.error('❌ AppCore 破棄エラー:', error);
+        }
     }
 }
 
-// グローバル公開（main.jsからアクセス可能）
+// Pure JavaScript グローバル公開（ルールブック準拠）
 if (typeof window !== 'undefined') {
     window.AppCore = AppCore;
-    console.log('✅ AppCore グローバル公開完了');
+    console.log('✅ AppCore グローバル公開完了（Pure JavaScript）');
 }
 
-console.log('🎯 AppCore 準備完了 - PixiJS基盤システム');
-console.log('💡 使用例: const appCore = new AppCore(); await appCore.init();');
+console.log('🎨 AppCore Pure JavaScript完全準拠版 - 準備完了');
+console.log('📋 ルールブック準拠: 1.2実装原則「ESM/TypeScript混在禁止・Pure JavaScript維持」');
+console.log('💡 使用例: const appCore = new window.AppCore(); await appCore.init();');

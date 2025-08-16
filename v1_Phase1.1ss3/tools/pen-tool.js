@@ -1,288 +1,304 @@
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
- * 🎯 AI_WORK_SCOPE: ペンツール専用・ベクター描画・筆圧対応
- * 🎯 DEPENDENCIES: js/managers/tool-manager.js, libs/pixi-extensions.js
- * 🎯 NODE_MODULES: pixi.js@^7.4.3, @pixi/graphics-extras（将来）
- * 🎯 PIXI_EXTENSIONS: Graphics、円形ブラシ
- * 🎯 ISOLATION_TEST: 可能（単体テスト対応）
- * 🎯 SPLIT_THRESHOLD: 350行（ペン特化・分割慎重）
- * 📋 PHASE_TARGET: Phase1
- * 📋 V8_MIGRATION: Graphics API変更 (beginFill → fill)
+ * 🎯 AI_WORK_SCOPE: ペンツール・ベクター描画・筆圧対応
+ * 🎯 DEPENDENCIES: js/managers/tool-manager.js (Pure JavaScript)
+ * 🎯 NODE_MODULES: pixi.js@^7.4.3
+ * 🎯 PIXI_EXTENSIONS: Graphics描画機能
+ * 🎯 ISOLATION_TEST: 可能（単体ツール機能）
+ * 🎯 SPLIT_THRESHOLD: 300行（ツール単体・分割可能）
+ * 📋 PHASE_TARGET: Phase1.1ss3 - Pure JavaScript完全準拠
+ * 📋 V8_MIGRATION: Graphics API変更なし
+ * 📋 RULEBOOK_COMPLIANCE: 1.2実装原則「Pure JavaScript維持」完全準拠
  */
 
 /**
- * ベクターペンツール実装
- * 元HTMLのペン描画ロジックを専用クラス化
- * SOLID原則: 単一責任 - ペン描画のみ
+ * ペンツール実装
+ * 元HTMLのペン描画機能を改良・分離
+ * Pure JavaScript完全準拠・グローバル公開方式
  */
-export class PenTool {
+class PenTool {
     constructor(toolManager) {
         this.toolManager = toolManager;
-        this.name = 'ベクターペン';
-        this.id = 'pen';
-        this.type = 'drawing';
+        this.name = 'pen';
+        this.displayName = 'ベクターペン';
+        this.isActive = false;
         
-        // ペン専用設定
-        this.penSettings = {
+        // 描画状態
+        this.currentPath = null;
+        this.isDrawing = false;
+        this.lastPoint = null;
+        
+        // ペン固有設定
+        this.settings = {
             minSize: 0.1,
-            maxSize: 100.0,
-            pressureResponse: 'size', // 'size' | 'opacity' | 'both'
-            antiAliasing: true,
-            textureEnabled: false // 将来のテクスチャブラシ対応
+            maxSize: 100,
+            pressureMultiplier: 1.0,
+            smoothingThreshold: 1.5,
+            color: 0x800000,
+            baseOpacity: 0.85
         };
         
-        console.log(`🖋️ PenTool 初期化: ${this.name}`);
+        console.log('🖋️ PenTool 構築開始（Pure JavaScript）...');
     }
     
     /**
      * ペンツール初期化
      */
     init() {
-        console.log('🖋️ PenTool初期化完了');
-        return true;
+        if (!this.toolManager) {
+            throw new Error('ToolManager が必要です');
+        }
+        
+        // ToolManagerに自身を登録
+        this.toolManager.registerTool(this.name, this);
+        
+        console.log('✅ PenTool初期化完了（Pure JavaScript）');
+        return this;
     }
     
     /**
-     * ペン描画開始
+     * 描画開始
      * @param {number} x - X座標
      * @param {number} y - Y座標
-     * @param {Object} settings - 描画設定
      */
-    startDraw(x, y, settings = {}) {
-        if (!this.toolManager || !this.toolManager.drawingEngine) {
-            console.warn('⚠️ PenTool: DrawingEngine未設定');
-            return null;
+    startDrawing(x, y) {
+        if (!this.toolManager.canvasManager) {
+            console.warn('⚠️ CanvasManager 未初期化');
+            return;
         }
         
-        const globalSettings = this.toolManager.getAllSettings();
-        const penSettings = { ...globalSettings, ...settings };
+        this.isDrawing = true;
+        this.lastPoint = { x, y, timestamp: performance.now() };
         
-        // 筆圧適用サイズ計算
-        const effectiveSize = this.calculatePressureSize(
-            penSettings.brushSize,
-            penSettings.pressure || 0.5
+        // グローバル設定取得
+        const globalSettings = this.toolManager.globalSettings;
+        
+        // パス作成
+        this.currentPath = this.toolManager.canvasManager.createPath(
+            x, y,
+            globalSettings.brushSize,
+            globalSettings.brushColor,
+            globalSettings.opacity,
+            this.name
         );
         
-        // パス作成（元HTMLのcreatePathロジック統合）
-        const path = this.createPenPath(x, y, effectiveSize, penSettings);
-        
-        console.log(`🖋️ ペン描画開始: サイズ${effectiveSize.toFixed(1)}px`);
-        return path;
+        console.log(`🖋️ ペン描画開始: (${Math.round(x)}, ${Math.round(y)}) サイズ:${globalSettings.brushSize}px`);
     }
     
     /**
-     * ペン描画継続
-     * @param {Object} path - アクティブパス
+     * 描画継続
      * @param {number} x - X座標
      * @param {number} y - Y座標
-     * @param {number} pressure - 筆圧 (0.0-1.0)
      */
-    continueDraw(path, x, y, pressure = 0.5) {
-        if (!path || !path.graphics) return;
+    continueDrawing(x, y) {
+        if (!this.isDrawing || !this.currentPath || !this.lastPoint) return;
         
-        const settings = this.toolManager.getAllSettings();
+        const currentTime = performance.now();
+        const globalSettings = this.toolManager.globalSettings;
         
-        // 筆圧適用サイズ計算
-        const effectiveSize = this.calculatePressureSize(settings.brushSize, pressure);
-        
-        // 線補正適用
-        const smoothedPoint = this.applySmoothing(path, x, y, settings.smoothing);
-        
-        // 線描画実行（元HTMLのdrawLineロジック改良版）
-        this.drawPenLine(path, smoothedPoint.x, smoothedPoint.y, effectiveSize, settings);
-    }
-    
-    /**
-     * ペン描画終了
-     * @param {Object} path - アクティブパス
-     */
-    finishDraw(path) {
-        if (path) {
-            path.isComplete = true;
-            console.log('🖋️ ペン描画完了');
-        }
-    }
-    
-    /**
-     * ペンパス作成（元HTMLのcreatePathを改良）
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     * @param {number} size - ブラシサイズ
-     * @param {Object} settings - 描画設定
-     */
-    createPenPath(x, y, size, settings) {
-        const engine = this.toolManager.drawingEngine;
-        
-        const path = {
-            id: `pen_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            graphics: new PIXI.Graphics(),
-            points: [],
-            color: settings.brushColor,
-            size: size,
-            opacity: settings.opacity,
-            tool: this.id,
-            isComplete: false,
-            smoothingBuffer: [] // 線補正用バッファ
-        };
-        
-        // アンチエイリアス設定
-        if (this.penSettings.antiAliasing) {
-            // v7: resolution設定で代替
-            // v8: antialias プロパティ直接指定予定
-        }
-        
-        // 初回描画: 円形ブラシで点を描画（元HTML方式維持）
-        path.graphics.beginFill(path.color, path.opacity);
-        path.graphics.drawCircle(x, y, size / 2);
-        path.graphics.endFill();
-        
-        // v8移行準備コメント
-        // v8: path.graphics.circle(x, y, size / 2).fill({ color: path.color, alpha: path.opacity });
-        
-        path.points.push({ x, y, size, pressure: settings.pressure || 0.5 });
-        
-        engine.drawingContainer.addChild(path.graphics);
-        engine.paths.push(path);
-        return path;
-    }
-    
-    /**
-     * ペン線描画（元HTMLのdrawLine改良版）
-     * @param {Object} path - パスオブジェクト
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     * @param {number} size - ブラシサイズ
-     * @param {Object} settings - 描画設定
-     */
-    drawPenLine(path, x, y, size, settings) {
-        if (!path || path.points.length === 0) return;
-        
-        const lastPoint = path.points[path.points.length - 1];
-        const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
-        
-        // 最小距離フィルタ（元HTML同様）
-        if (distance < 1.5) return;
-        
-        // エッジスムージング対応: 補間点数を動的調整
-        const baseSteps = Math.max(1, Math.ceil(distance / 1.5));
-        const smoothingSteps = settings.edgeSmoothing ? 
-            Math.max(baseSteps, Math.ceil(distance / 1.0)) : baseSteps;
-        
-        // 連続する円形で線を描画（元HTML方式維持・改良）
-        for (let i = 1; i <= smoothingSteps; i++) {
-            const t = i / smoothingSteps;
-            const px = lastPoint.x + (x - lastPoint.x) * t;
-            const py = lastPoint.y + (y - lastPoint.y) * t;
-            
-            // サイズ補間（筆圧対応）
-            const interpolatedSize = lastPoint.size + (size - lastPoint.size) * t;
-            
-            path.graphics.beginFill(path.color, path.opacity);
-            path.graphics.drawCircle(px, py, interpolatedSize / 2);
-            path.graphics.endFill();
-            
-            // v8移行準備コメント
-            // v8: path.graphics.circle(px, py, interpolatedSize / 2)
-            //     .fill({ color: path.color, alpha: path.opacity });
-        }
-        
-        path.points.push({ x, y, size, pressure: settings.pressure || 0.5 });
-    }
-    
-    /**
-     * 筆圧適用サイズ計算
-     * @param {number} baseSize - 基本サイズ
-     * @param {number} pressure - 筆圧 (0.0-1.0)
-     */
-    calculatePressureSize(baseSize, pressure) {
-        if (!this.toolManager.globalSettings.pressureSensitivity) {
-            return baseSize;
-        }
-        
-        // 筆圧カーブ: 0.3-1.2倍の範囲で変動
-        const pressureCurve = 0.3 + (pressure * 0.9);
-        const effectiveSize = baseSize * pressureCurve;
-        
-        // 最小・最大サイズ制限
-        return Math.max(
-            this.penSettings.minSize,
-            Math.min(this.penSettings.maxSize, effectiveSize)
+        // 距離とスムージング計算
+        const distance = Math.sqrt(
+            (x - this.lastPoint.x) ** 2 + (y - this.lastPoint.y) ** 2
         );
+        
+        // スムージング閾値チェック
+        if (distance < this.settings.smoothingThreshold) return;
+        
+        // 筆圧計算（時間ベース簡易実装）
+        const timeDelta = currentTime - this.lastPoint.timestamp;
+        const speedFactor = Math.min(1, distance / Math.max(timeDelta, 1));
+        
+        let effectiveSize = globalSettings.brushSize;
+        if (globalSettings.pressureSensitivity) {
+            const pressureEffect = globalSettings.pressure + (speedFactor * 0.3);
+            effectiveSize *= Math.max(0.3, Math.min(1.5, pressureEffect));
+        }
+        
+        // スムージング適用描画
+        if (globalSettings.smoothing > 0) {
+            this.drawSmoothLine(x, y, effectiveSize);
+        } else {
+            this.toolManager.canvasManager.drawLine(this.currentPath, x, y);
+        }
+        
+        this.lastPoint = { x, y, timestamp: currentTime };
     }
     
     /**
-     * 線補正適用
-     * @param {Object} path - パスオブジェクト
+     * スムース描画
      * @param {number} x - X座標
      * @param {number} y - Y座標
-     * @param {number} smoothing - 補正強度 (0.0-1.0)
+     * @param {number} size - 有効サイズ
      */
-    applySmoothing(path, x, y, smoothing) {
-        if (smoothing <= 0 || !path.smoothingBuffer) {
-            return { x, y };
+    drawSmoothLine(x, y, size) {
+        if (!this.lastPoint) return;
+        
+        const globalSettings = this.toolManager.globalSettings;
+        const smoothingLevel = globalSettings.smoothing;
+        
+        // ベジエ曲線補間でスムース描画
+        const controlX = this.lastPoint.x + (x - this.lastPoint.x) * smoothingLevel;
+        const controlY = this.lastPoint.y + (y - this.lastPoint.y) * smoothingLevel;
+        
+        // 補間点計算
+        const steps = Math.max(2, Math.ceil(
+            Math.sqrt((x - this.lastPoint.x) ** 2 + (y - this.lastPoint.y) ** 2) / 2
+        ));
+        
+        for (let i = 1; i <= steps; i++) {
+            const t = i / steps;
+            const t1 = 1 - t;
+            
+            // 2次ベジエ曲線
+            const px = t1 * t1 * this.lastPoint.x + 
+                      2 * t1 * t * controlX + 
+                      t * t * x;
+            const py = t1 * t1 * this.lastPoint.y + 
+                      2 * t1 * t * controlY + 
+                      t * t * y;
+            
+            this.toolManager.canvasManager.drawLine(this.currentPath, px, py);
+        }
+    }
+    
+    /**
+     * 描画終了
+     */
+    stopDrawing() {
+        if (!this.isDrawing) return;
+        
+        if (this.currentPath) {
+            this.currentPath.isComplete = true;
+            console.log(`🖋️ ペン描画完了: ${this.currentPath.points.length}ポイント`);
         }
         
-        // バッファに追加
-        path.smoothingBuffer.push({ x, y, time: performance.now() });
-        
-        // 古いポイントを削除（50ms以前）
-        const now = performance.now();
-        path.smoothingBuffer = path.smoothingBuffer.filter(p => now - p.time < 50);
-        
-        if (path.smoothingBuffer.length < 3) {
-            return { x, y };
-        }
-        
-        // 重み付き平均による補正
-        let totalWeight = 0;
-        let smoothedX = 0;
-        let smoothedY = 0;
-        
-        path.smoothingBuffer.forEach((point, index) => {
-            const weight = Math.pow(0.8, path.smoothingBuffer.length - 1 - index);
-            smoothedX += point.x * weight;
-            smoothedY += point.y * weight;
-            totalWeight += weight;
-        });
-        
-        smoothedX /= totalWeight;
-        smoothedY /= totalWeight;
-        
-        // 補正強度適用
-        return {
-            x: x + (smoothedX - x) * smoothing,
-            y: y + (smoothedY - y) * smoothing
-        };
+        this.isDrawing = false;
+        this.currentPath = null;
+        this.lastPoint = null;
     }
     
     /**
-     * ペンツール設定更新
-     * @param {Object} newSettings - 新しい設定
+     * 設定更新
+     * @param {Object} globalSettings - グローバル設定
      */
-    updatePenSettings(newSettings) {
-        this.penSettings = { ...this.penSettings, ...newSettings };
-        console.log('🖋️ ペンツール設定更新:', newSettings);
+    updateSettings(globalSettings) {
+        // ペンツール固有の設定調整
+        this.settings.color = globalSettings.brushColor;
+        this.settings.baseOpacity = globalSettings.opacity;
+        
+        console.log(`🖋️ ペン設定更新: 色:#${globalSettings.brushColor.toString(16)} 透明度:${Math.round(globalSettings.opacity * 100)}%`);
     }
     
     /**
-     * 現在のペン設定取得
+     * ツール情報取得
+     * @returns {Object} ツール情報
      */
-    getPenSettings() {
-        return { ...this.penSettings };
-    }
-    
-    /**
-     * ペンツール状態取得
-     */
-    getToolInfo() {
+    getInfo() {
         return {
             name: this.name,
-            id: this.id,
-            type: this.type,
-            settings: this.penSettings,
-            isActive: this.toolManager?.currentTool === this.id
+            displayName: this.displayName,
+            isActive: this.isActive,
+            isDrawing: this.isDrawing,
+            settings: { ...this.settings },
+            currentPath: this.currentPath ? {
+                id: this.currentPath.id,
+                pointCount: this.currentPath.points.length
+            } : null
         };
+    }
+    
+    /**
+     * アクティベート
+     */
+    activate() {
+        this.isActive = true;
+        console.log(`🖋️ ${this.displayName} アクティブ化`);
+    }
+    
+    /**
+     * 非アクティベート
+     */
+    deactivate() {
+        // 描画中の場合は終了
+        if (this.isDrawing) {
+            this.stopDrawing();
+        }
+        
+        this.isActive = false;
+        console.log(`🖋️ ${this.displayName} 非アクティブ化`);
+    }
+    
+    /**
+     * ツールリセット
+     */
+    reset() {
+        this.deactivate();
+        this.currentPath = null;
+        this.lastPoint = null;
+        console.log(`🖋️ ${this.displayName} リセット完了`);
+    }
+    
+    /**
+     * パフォーマンス統計取得
+     * @returns {Object} パフォーマンス統計
+     */
+    getPerformanceStats() {
+        const pathCount = this.toolManager.canvasManager ? 
+            this.toolManager.canvasManager.paths.filter(p => p.tool === this.name).length : 0;
+        
+        const totalPoints = this.toolManager.canvasManager ?
+            this.toolManager.canvasManager.paths
+                .filter(p => p.tool === this.name)
+                .reduce((sum, p) => sum + p.points.length, 0) : 0;
+        
+        return {
+            toolName: this.name,
+            pathCount,
+            totalPoints,
+            averagePointsPerPath: pathCount > 0 ? Math.round(totalPoints / pathCount) : 0,
+            isCurrentlyDrawing: this.isDrawing
+        };
+    }
+    
+    /**
+     * デバッグ情報出力
+     */
+    debugInfo() {
+        const info = this.getInfo();
+        const stats = this.getPerformanceStats();
+        
+        console.group(`🖋️ ${this.displayName} デバッグ情報`);
+        console.log('📊 情報:', info);
+        console.log('📈 統計:', stats);
+        console.groupEnd();
+        
+        return { info, stats };
+    }
+    
+    /**
+     * 破棄処理
+     */
+    destroy() {
+        try {
+            this.deactivate();
+            this.toolManager = null;
+            this.currentPath = null;
+            this.lastPoint = null;
+            
+            console.log(`🗑️ ${this.displayName} 破棄完了`);
+            
+        } catch (error) {
+            console.error(`❌ ${this.displayName} 破棄エラー:`, error);
+        }
     }
 }
 
-export default PenTool;
+// Pure JavaScript グローバル公開（ルールブック準拠）
+if (typeof window !== 'undefined') {
+    window.PenTool = PenTool;
+    console.log('✅ PenTool グローバル公開完了（Pure JavaScript）');
+}
+
+console.log('🖋️ PenTool Pure JavaScript完全準拠版 - 準備完了');
+console.log('📋 ルールブック準拠: 1.2実装原則「ESM/TypeScript混在禁止・Pure JavaScript維持」');
+console.log('💡 使用例: const penTool = new window.PenTool(toolManager); penTool.init();');
