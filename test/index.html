@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0</title>
+    
+    <!-- CSS分離 -->
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="tool-button disabled" id="download-tool" title="ダウンロード">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7,10 12,15 17,10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+            </div>
+            
+            <div class="tool-button" id="resize-tool" data-popup="resize-settings" title="リサイズ">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <path d="M8 12h8"/>
+                    <path d="M12 8v8"/>
+                </svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+                   
+            <div class="tool-button disabled" id="palette-tool" title="カラーパレット">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="13.5" cy="6.5" r=".5"/>
+                    <circle cx="17.5" cy="10.5" r=".5"/>
+                    <circle cx="8.5" cy="7.5" r=".5"/>
+                    <circle cx="6.5" cy="12.5" r=".5"/>
+                    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
+                </svg>
+            </div>
+     
+            <div class="tool-button active" id="pen-tool" data-popup="pen-settings" title="ベクターペン">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 21v-4a4 4 0 1 1 4 4h-4"/>
+                    <path d="M21 3a16 16 0 0 0 -12.8 10.2"/>
+                    <path d="M21 3a16 16 0 0 1 -10.2 12.8"/>
+                    <path d="M10.6 9a9 9 0 0 1 4.4 4.4"/>
+                </svg>
+            </div>
+            
+            <div class="tool-button" id="eraser-tool" title="消しゴム">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 20h-10.5l-4.21-4.3a1 1 0 0 1 0-1.41l10-10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41L11.5 20"/>
+                    <path d="M18 13.3l-6.3-6.3"/>
+                </svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <div class="tool-button disabled" id="fill-tool" title="塗りつぶし">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 11H5m14 0a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2m14 0V9a2 2 0 0 0-2-2M5 11V9a2 2 0 0 1 2-2m0 0V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2M7 7h10"/>
+                </svg>
+            </div>
+            
+            <div class="tool-button disabled" id="select-tool" title="範囲選択">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="4" y="4" width="16" height="16" rx="2" ry="2"/>
+                    <path d="M9 9h6v6H9z"/>
+                </svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <div class="tool-button disabled" id="settings-tool" title="設定">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+            </div>
+        </div>
+        
+        <div class="canvas-area">
+            <div class="canvas-container">
+                <div id="drawing-canvas"></div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="popup-panel pen-settings draggable" id="pen-settings" style="left: 60px; top: 100px;">
+        <div class="popup-title">ベクターペンツール設定</div>
+        
+        <div class="setting-group">
+            <div class="size-presets" id="size-presets">
+                <div class="size-preset-item" data-size="1">
+                    <div class="size-preview-circle" style="width: 0.5px; height: 0.5px; background: #800000;"></div>
+                    <div class="size-preview-label">1</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="2">
+                    <div class="size-preview-circle" style="width: 2px; height: 2px; background: #800000;"></div>
+                    <div class="size-preview-label">2</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="4">
+                    <div class="size-preview-circle" style="width: 4px; height: 4px; background: #800000;"></div>
+                    <div class="size-preview-label">4</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="8">
+                    <div class="size-preview-circle" style="width: 8px; height: 8px; background: #800000;"></div>
+                    <div class="size-preview-label">8</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item active" data-size="16">
+                    <div class="size-preview-circle" style="width: 16px; height: 16px; background: #800000;"></div>
+                    <div class="size-preview-label">16</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="32">
+                    <div class="size-preview-circle" style="width: 20px; height: 20px; background: #800000;"></div>
+                    <div class="size-preview-label">32</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">サイズ</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-size-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-size-decrease">-1</div>
+                <div class="slider-button small" id="pen-size-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-size-slider">
+                        <div class="slider-track" id="pen-size-track"></div>
+                        <div class="slider-handle" id="pen-size-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-size-value">16.0px</div>
+                </div>
+                <div class="slider-button small" id="pen-size-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-size-increase">+1</div>
+                <div class="slider-button small" id="pen-size-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">不透明度</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-opacity-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-opacity-decrease">-1</div>
+                <div class="slider-button small" id="pen-opacity-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-opacity-slider">
+                        <div class="slider-track" id="pen-opacity-track"></div>
+                        <div class="slider-handle" id="pen-opacity-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-opacity-value">85.0%</div>
+                </div>
+                <div class="slider-button small" id="pen-opacity-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-opacity-increase">+1</div>
+                <div class="slider-button small" id="pen-opacity-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">筆圧</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-pressure-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-pressure-decrease">-1</div>
+                <div class="slider-button small" id="pen-pressure-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-pressure-slider">
+                        <div class="slider-track" id="pen-pressure-track"></div>
+                        <div class="slider-handle" id="pen-pressure-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-pressure-value">50.0%</div>
+                </div>
+                <div class="slider-button small" id="pen-pressure-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-pressure-increase">+1</div>
+                <div class="slider-button small" id="pen-pressure-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">線補正</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-smoothing-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-smoothing-decrease">-1</div>
+                <div class="slider-button small" id="pen-smoothing-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-smoothing-slider">
+                        <div class="slider-track" id="pen-smoothing-track"></div>
+                        <div class="slider-handle" id="pen-smoothing-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-smoothing-value">30.0%</div>
+                </div>
+                <div class="slider-button small" id="pen-smoothing-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-smoothing-increase">+1</div>
+                <div class="slider-button small" id="pen-smoothing-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="pressure-sensitivity"></div>
+                    <div class="checkbox-label">筆圧感度 (120Hz対応)</div>
+                </div>
+            </div>
+            
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="edge-smoothing"></div>
+                    <div class="checkbox-label">エッジスムージング</div>
+                </div>
+            </div>
+            
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="gpu-acceleration"></div>
+                    <div class="checkbox-label">GPU加速</div>
+                </div>
+                <div class="checkbox-status">遅延: 0.6ms</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="popup-panel resize-settings draggable" id="resize-settings" style="left: 60px; top: 150px;">
+        <div class="popup-title">キャンバスリサイズ</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">キャンバスサイズ</div>
+            <div class="size-input-group">
+                <div class="size-input-field">
+                    <input type="number" class="size-input" id="canvas-width" min="100" max="4096" value="400">
+                </div>
+                <div class="size-multiply">×</div>
+                <div class="size-input-field">
+                    <input type="number" class="size-input" id="canvas-height" min="100" max="4096" value="400">
+                </div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">プリセット</div>
+            <div class="resize-buttons">
+                <div class="resize-button" data-size="400,400">400×400</div>
+                <div class="resize-button" data-size="600,600">600×600</div>
+                <div class="resize-button" data-size="800,600">800×600</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="resize-buttons">
+                <div class="resize-button" id="apply-resize">適用</div>
+                <div class="resize-button primary" id="apply-resize-center">適用して中央寄せ</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
+            <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
+            <div class="status-item">Color: <span id="current-color">#800000</span></div>
+            <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
+            <div class="status-item">筆圧: <span id="pressure-monitor">0.0%</span></div>
+        </div>
+        
+        <div class="status-group">
+            <div class="status-item">FPS: <span id="fps">60</span></div>
+            <div class="status-item">GPU: <span id="gpu-usage">45%</span></div>
+            <div class="status-item">Memory: <span id="memory-usage">1.2GB</span></div>
+        </div>
+    </div>
+
+    <!-- ========================================= -->
+    <!-- 🔧 修正版: ライブラリ読み込み順序最適化 -->
+    <!-- ========================================= -->
+    
+    <!-- PixiJS v7 本体 - CDN版（安定版） -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
+    
+    <!-- 🚨 重要: 依存関係解決のため、typedSignals を先に読み込み -->
+    <script>
+        // typedSignals ポリフィル - @pixi/ui用
+        if (typeof window.typedSignals === 'undefined') {
+            window.typedSignals = {
+                Signal: class {
+                    constructor() {
+                        this.listeners = [];
+                    }
+                    connect(listener) {
+                        this.listeners.push(listener);
+                    }
+                    emit(...args) {
+                        this.listeners.forEach(listener => listener(...args));
+                    }
+                    disconnect(listener) {
+                        const index = this.listeners.indexOf(listener);
+                        if (index > -1) this.listeners.splice(index, 1);
+                    }
+                    disconnectAll() {
+                        this.listeners = [];
+                    }
+                }
+            };
+        }
+    </script>
+    
+    <!-- GSAP: アニメーション - CDN版 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    
+    <!-- Lodash: ユーティリティ - CDN版 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    
+    <!-- Hammer.js: タッチジェスチャー - CDN版 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    
+    <!-- 🔧 修正版: tweedle.js ブラウザ対応版 -->
+    <script>
+        // tweedle.js ブラウザ対応ポリフィル
+        (function() {
+            // CommonJS exports を window に変換
+            if (typeof window.exports === 'undefined') {
+                window.exports = {};
+            }
+            
+            // NOW 関数をブラウザ対応で定義
+            window.exports.NOW = function() {
+                if (performance && performance.now) {
+                    return performance.now();
+                }
+                return Date.now();
+            };
+        })();
+    </script>
+    <!-- node_modules/tweedle.js の内容をここに含める -->
+    <script src="./node_modules/tweedle.js/dist/tweedle.js"></script>
+    
+    <!-- 🔧 修正版: @pixi/ui 読み込み前に依存関係確認 -->
+    <script>
+        // @pixi/ui 依存関係確認・修正
+        if (typeof PIXI !== 'undefined' && typeof window.typedSignals !== 'undefined') {
+            // PIXI.ui 名前空間準備
+            if (!PIXI.ui) PIXI.ui = {};
+            
+            // tweedle.js をグローバルに公開
+            if (window.exports && window.exports.Tween) {
+                window.tweedle_js = window.exports;
+            }
+            
+            console.log('✅ @pixi/ui 依存関係準備完了');
+        } else {
+            console.warn('⚠️ @pixi/ui 依存関係不足 - スキップ');
+        }
+    </script>
+    
+    <!-- @pixi/ui: UIコンポーネント -->
+    <script src="./node_modules/@pixi/ui/dist/pixi-ui.js"></script>
+    
+    <!-- @pixi/layers: レイヤー機能（存在する場合） -->
+    <script>
+        // レイヤー機能用スクリプト
+        (function() {
+            try {
+                const script = document.createElement('script');
+                script.src = './node_modules/@pixi/layers/dist/pixi-layers.js';
+                script.onerror = () => console.log('⚠️ @pixi/layers 未検出 - スキップ');
+                document.head.appendChild(script);
+            } catch (e) {
+                console.log('⚠️ @pixi/layers 読み込みエラー - スキップ');
+            }
+        })();
+    </script>
+    
+    <!-- @pixi/gif: GIF機能（存在する場合） -->
+    <script>
+        // GIF機能用スクリプト
+        (function() {
+            try {
+                const script = document.createElement('script');
+                script.src = './node_modules/@pixi/gif/dist/pixi-gif.js';
+                script.onerror = () => console.log('⚠️ @pixi/gif 未検出 - スキップ');
+                document.head.appendChild(script);
+            } catch (e) {
+                console.log('⚠️ @pixi/gif 読み込みエラー - スキップ');
+            }
+        })();
+    </script>
+    
+    <!-- 🔧 修正版: pixi-extensions.js 読み込み -->
+    <script src="libs/pixi-extensions.js"></script>
+    
+    <!-- アプリケーション本体 -->
+    <script src="js/main.js"></script>
+</body>
+</html>
