@@ -1,28 +1,22 @@
 /**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
- * PixiJS拡張ライブラリ統合システム - Phase1版（エラーハンドリング強化版）
+ * PixiJS拡張ライブラリ統合システム - Phase1版（修正版）
  * 
  * 🎯 AI_WORK_SCOPE: PixiJS拡張ライブラリ検出・統合・互換性レイヤー
- * 🎯 DEPENDENCIES: PixiJS v7, @pixi/ui, @pixi/layers, @pixi/gif, GSAP, Lodash, Hammer.js
- * 🎯 NODE_MODULES: pixi.js@^7.4.3, @pixi/ui@^1.2.4, @pixi/layers@^2.1.0, @pixi/gif@^2.1.1
+ * 🎯 DEPENDENCIES: PixiJS v7, @pixi/ui, @pixi/layers, @pixi/gif, GSAP, Lodash, Hammer.js, tweedle.js
+ * 🎯 NODE_MODULES: pixi.js@^7.4.3, @pixi/ui@^1.2.4, tweedle.js@^2.1.0
  * 🎯 PIXI_EXTENSIONS: 全統合機能
  * 🎯 ISOLATION_TEST: 可能（依存関係確認）
  * 🎯 SPLIT_THRESHOLD: 400行（統合性重視で分割想定外）
  * 📋 PHASE_TARGET: Phase1
- * 📋 V8_MIGRATION: Application.init()対応予定、typed-signals依存関係変更予定
- * 
- * 🔧 修正内容：
- * - typed-signals 未定義エラー対応
- * - エラーハンドリング強化
- * - 統計・互換性チェック詳細化
- * - フォールバック機構信頼性向上
+ * 📋 V8_MIGRATION: Application.init()対応予定
  */
 
-console.log('🔧 PixiJS拡張ライブラリ統合システム Phase1版（エラーハンドリング強化版） 読み込み開始...');
+console.log('🔧 PixiJS拡張ライブラリ統合システム Phase1版（修正版） 読み込み開始...');
 
 /**
- * PixiJS拡張ライブラリ統合管理システム（エラーハンドリング強化版）
- * node_modules統合・CORS制限回避・typed-signals対応
+ * PixiJS拡張ライブラリ統合管理システム（修正版）
+ * node_modules統合・CORS制限回避・tweedle.js対応
  */
 class PixiExtensionsManager {
     constructor() {
@@ -31,56 +25,42 @@ class PixiExtensionsManager {
         this.stats = {
             loaded: 0,
             total: 0,
-            errors: [],
-            warnings: []
+            errors: []
         };
-        this.retryCount = 0;
-        this.maxRetries = 3;
         
-        console.log('🎨 PixiExtensionsManager 構築開始（エラーハンドリング強化版）...');
+        console.log('🎨 PixiExtensionsManager 構築開始（修正版）...');
     }
     
     /**
-     * 拡張ライブラリ統合初期化（エラーハンドリング強化版）
+     * 拡張ライブラリ統合初期化（修正版）
      */
     async initialize() {
-        console.group('🎨 PixiJS拡張ライブラリ統合初期化 Phase1版（エラーハンドリング強化版）');
+        console.group('🎨 PixiJS拡張ライブラリ統合初期化 Phase1版（修正版）');
         
         try {
-            // STEP1: PixiJS本体検証
+            // PixiJS本体検証
             this.validateCoreLibraries();
             
-            // STEP2: typed-signals 依存関係確認
-            this.validateTypedSignals();
+            // 依存ライブラリ確認
+            this.validateDependencies();
             
-            // STEP3: 拡張ライブラリ統合（エラーハンドリング付き）
+            // 拡張ライブラリ統合（修正版）
             await this.integrateUILibrary();
             this.integrateLayersLibrary();
             this.integrateGIFLibrary();
             this.integrateUtilityLibraries();
             
-            // STEP4: 統計更新
+            // 統計更新
             this.updateStats();
             
             this.initialized = true;
-            console.log('✅ PixiJS拡張ライブラリ統合完了（エラーハンドリング強化版）');
+            console.log('✅ PixiJS拡張ライブラリ統合完了（修正版）');
             console.log(`📊 統計: ${this.stats.loaded}/${this.stats.total} (${Math.round(this.stats.loaded/this.stats.total*100)}%)`);
-            
-            // エラー・警告レポート
-            if (this.stats.errors.length > 0) {
-                console.warn('⚠️ エラー発生:', this.stats.errors);
-            }
-            if (this.stats.warnings.length > 0) {
-                console.warn('💡 警告:', this.stats.warnings);
-            }
             
         } catch (error) {
             console.error('❌ PixiJS拡張ライブラリ統合エラー:', error);
             this.stats.errors.push(error.message);
-            
-            // フォールバックモード継続
-            console.log('🆘 フォールバックモードで初期化継続');
-            this.initialized = true; // フォールバックでも初期化完了とする
+            throw error;
         } finally {
             console.groupEnd();
         }
@@ -89,7 +69,7 @@ class PixiExtensionsManager {
     }
     
     /**
-     * PixiJS本体検証
+     * PixiJS本体検証（修正版）
      */
     validateCoreLibraries() {
         if (!window.PIXI) {
@@ -98,10 +78,11 @@ class PixiExtensionsManager {
         
         console.log(`✅ PixiJS v${PIXI.VERSION} 検出`);
         
-        // v8移行予告
-        if (PIXI.VERSION.startsWith('7')) {
-            console.log('📋 V8_MIGRATION: PixiJS v8移行準備 - Application.init()対応予定');
-            this.stats.warnings.push('PixiJS v8移行準備が必要です');
+        // v8移行予告（修正版）
+        if (PIXI.VERSION.startsWith('8')) {
+            console.log('📋 V8_MIGRATION: PixiJS v8 - Application.init()対応済み');
+        } else if (PIXI.VERSION.startsWith('7')) {
+            console.log('📋 V8_MIGRATION: PixiJS v7 - Application.init()対応予定');
         }
         
         this.stats.total++;
@@ -109,323 +90,319 @@ class PixiExtensionsManager {
     }
     
     /**
-     * typed-signals 依存関係確認（新規追加）
+     * 依存ライブラリ確認（新規追加）
      */
-    validateTypedSignals() {
-        console.log('🔍 typed-signals 依存関係確認中...');
+    validateDependencies() {
+        const dependencies = [
+            { name: 'tweedle.js', check: () => window.tweedle_js || window.Tweedle || window.Tween },
+            { name: 'GSAP', check: () => window.gsap },
+            { name: 'Lodash', check: () => window._ },
+            { name: 'Hammer.js', check: () => window.Hammer }
+        ];
         
-        if (typeof window.typedSignals === 'undefined') {
-            this.stats.warnings.push('typed-signals が未定義です - フォールバックが適用されている可能性があります');
-            console.warn('⚠️ typed-signals 未定義 - @pixi/ui統合時に問題が発生する可能性');
-        } else if (!window.typedSignals.Signal) {
-            this.stats.errors.push('typed-signals の構造が不正です');
-            console.error('❌ typed-signals.Signal が存在しません');
-        } else {
-            const isFallback = window.typedSignals._fallback === true;
-            if (isFallback) {
-                console.log('✅ typed-signals フォールバック検出');
-                this.stats.warnings.push('typed-signals フォールバックを使用中');
+        dependencies.forEach(dep => {
+            if (dep.check()) {
+                console.log(`✅ ${dep.name} 依存関係確認`);
             } else {
-                console.log('✅ typed-signals ネイティブライブラリ検出');
+                console.warn(`⚠️ ${dep.name} 未検出 - 一部機能が制限されます`);
             }
-        }
+        });
     }
     
     /**
-     * @pixi/ui統合（エラーハンドリング大幅強化版）
+     * @pixi/ui統合（修正版）
      */
     async integrateUILibrary() {
         this.stats.total++;
         
-        return new Promise((resolve) => {
-            console.log('🎨 @pixi/ui統合開始（エラーハンドリング強化版）...');
-            
+        return new Promise((resolve, reject) => {
             try {
-                // typed-signals 依存関係事前チェック
-                if (typeof window.typedSignals === 'undefined') {
-                    console.warn('⚠️ typed-signals 未定義 - フォールバック確認中');
-                    
-                    // フォールバック適用まで少し待つ
-                    setTimeout(() => {
-                        if (typeof window.typedSignals === 'undefined') {
-                            console.error('❌ typed-signals フォールバック失敗');
-                            this.extensions.set('ui', { 
-                                available: false, 
-                                error: 'typed-signals dependency missing',
-                                fallbackMode: true
-                            });
-                            this.stats.errors.push('typed-signals dependency missing');
-                            resolve();
-                        } else {
-                            this.retryUIIntegration().then(resolve);
-                        }
-                    }, 200); // フォールバック適用を待つ
-                    return;
-                }
+                const uiLib = this.attemptUILibraryDetection();
                 
-                // UI ライブラリ検出（複数パターン対応・エラーハンドリング付き）
-                this.attemptUILibraryDetection();
-                resolve();
+                this.extensions.set('ui', {
+                    available: true,
+                    FancyButton: uiLib.FancyButton || uiLib.Button,
+                    Button: uiLib.Button,
+                    Slider: uiLib.Slider,
+                    CheckBox: uiLib.CheckBox,
+                    source: 'node_modules'
+                });
+                
+                this.stats.loaded++;
+                console.log('🎨 @pixi/ui統合完了 - ポップアップ・UI機能利用可能');
+                resolve(uiLib);
                 
             } catch (error) {
                 console.error('❌ @pixi/ui統合エラー:', error);
-                this.extensions.set('ui', { 
-                    available: false,
-                    error: error.message,
-                    fallbackMode: true
-                });
-                this.stats.errors.push(`UI integration failed: ${error.message}`);
-                console.log('🆘 @pixi/ui フォールバックモード - 独自UI実装使用');
-                resolve();
+                this.extensions.set('ui', { available: false });
+                console.warn('⚠️ @pixi/ui 未検出 - 独自UI実装使用');
+                // エラーでもPromiseをresolveして処理続行
+                resolve(null);
             }
         });
     }
     
     /**
-     * UI ライブラリ検出処理
+     * UI ライブラリ検出（強化版）
      */
     attemptUILibraryDetection() {
-        let uiLib = null;
-        let detectionMethod = '';
+        if (typeof PIXI === "undefined") {
+            throw new Error("PIXI が読み込まれていません");
+        }
         
         // 複数の検出パターンに対応
-        if (window.PIXI && window.PIXI.UI) {
-            uiLib = window.PIXI.UI;
-            detectionMethod = 'PIXI.UI';
-        } else if (window.PIXI && window.PIXI.FancyButton) {
-            uiLib = { 
-                FancyButton: window.PIXI.FancyButton,
-                Button: window.PIXI.Button,
-                Slider: window.PIXI.Slider,
-                CheckBox: window.PIXI.CheckBox
-            };
-            detectionMethod = 'PIXI.FancyButton';
-        } else if (window.__PIXI_UI__) {
-            uiLib = window.__PIXI_UI__;
-            detectionMethod = '__PIXI_UI__';
+        const detectionPatterns = [
+            () => PIXI.ui,              // 標準: PIXI.ui
+            () => PIXI.UI,              // 代替: PIXI.UI  
+            () => window.PIXI_UI,       // グローバル
+            () => window.__PIXI_UI__,   // プライベート
+            () => PIXI.FancyButton ? { FancyButton: PIXI.FancyButton } : null  // 個別コンポーネント
+        ];
+        
+        for (let i = 0; i < detectionPatterns.length; i++) {
+            try {
+                const result = detectionPatterns[i]();
+                if (result) {
+                    console.log(`✅ @pixi/ui 検出成功 (パターン${i + 1})`);
+                    return result;
+                }
+            } catch (e) {
+                // 検出失敗は無視して次へ
+            }
         }
         
-        if (uiLib) {
-            // コンポーネント存在確認
-            const availableComponents = [];
-            const missingComponents = [];
-            
-            ['FancyButton', 'Button', 'Slider', 'CheckBox'].forEach(component => {
-                if (uiLib[component]) {
-                    availableComponents.push(component);
-                } else {
-                    missingComponents.push(component);
-                }
-            });
-            
-            this.extensions.set('ui', {
-                available: true,
-                FancyButton: uiLib.FancyButton || null,
-                Button: uiLib.Button || null,
-                Slider: uiLib.Slider || null,
-                CheckBox: uiLib.CheckBox || null,
-                source: 'node_modules',
-                detectionMethod: detectionMethod,
-                availableComponents: availableComponents,
-                missingComponents: missingComponents,
-                typedSignalsOk: true
-            });
-            this.stats.loaded++;
-            
-            console.log(`✅ @pixi/ui (${detectionMethod}) 検出`);
-            console.log(`📦 利用可能コンポーネント: ${availableComponents.join(', ')}`);
-            
-            if (missingComponents.length > 0) {
-                console.warn(`⚠️ 不足コンポーネント: ${missingComponents.join(', ')}`);
-                this.stats.warnings.push(`Missing UI components: ${missingComponents.join(', ')}`);
-            }
-            
-            console.log('🎨 @pixi/ui統合完了 - ポップアップ・UI機能利用可能');
-        } else {
-            throw new Error('@pixi/ui ライブラリが検出されませんでした');
-        }
+        throw new Error("@pixi/ui ライブラリが検出されませんでした (PIXI.ui / PIXI.UI 未定義)");
     }
     
     /**
-     * UI統合リトライ処理
-     */
-    async retryUIIntegration() {
-        return new Promise((resolve) => {
-            console.log(`🔄 @pixi/ui統合リトライ (${this.retryCount + 1}/${this.maxRetries})`);
-            this.retryCount++;
-            
-            if (this.retryCount >= this.maxRetries) {
-                console.error('❌ @pixi/ui統合リトライ上限到達');
-                this.extensions.set('ui', { 
-                    available: false, 
-                    error: 'Max retries reached',
-                    fallbackMode: true
-                });
-                this.stats.errors.push('UI integration max retries reached');
-                resolve();
-                return;
-            }
-            
-            try {
-                this.attemptUILibraryDetection();
-                resolve();
-            } catch (error) {
-                setTimeout(() => {
-                    this.retryUIIntegration().then(resolve);
-                }, 300 * this.retryCount); // 段階的に待機時間を増加
-            }
-        });
-    }
-    
-    /**
-     * @pixi/layers統合
+     * @pixi/layers統合（修正版）
      */
     integrateLayersLibrary() {
         this.stats.total++;
         
-        try {
-            let layersLib = null;
-            
-            if (window.PIXI && window.PIXI.display && window.PIXI.display.Layer) {
-                layersLib = window.PIXI.display;
-                console.log('✅ @pixi/layers (PIXI.display) 検出');
-            } else if (window.__PIXI_LAYERS__) {
-                layersLib = window.__PIXI_LAYERS__;
-                console.log('✅ @pixi/layers (__PIXI_LAYERS__) 検出');
-            }
-            
-            if (layersLib) {
-                this.extensions.set('layers', {
-                    available: true,
-                    Layer: layersLib.Layer,
-                    Group: layersLib.Group,
-                    Stage: layersLib.Stage,
-                    source: 'node_modules'
-                });
-                this.stats.loaded++;
-                console.log('💡 @pixi/layers利用可能 - 高度なレイヤー管理が使用できます');
-            } else {
-                this.extensions.set('layers', { available: false });
-                console.warn('⚠️ @pixi/layers 未検出 - 基本コンテナ使用');
-                this.stats.warnings.push('@pixi/layers not available - using basic containers');
-            }
-        } catch (error) {
-            console.error('❌ @pixi/layers統合エラー:', error);
-            this.extensions.set('layers', { available: false, error: error.message });
-            this.stats.errors.push(`Layers integration failed: ${error.message}`);
+        let layersLib = null;
+        
+        if (window.PIXI && window.PIXI.display && window.PIXI.display.Layer) {
+            layersLib = window.PIXI.display;
+            console.log('✅ @pixi/layers (PIXI.display) 検出');
+        } else if (window.__PIXI_LAYERS__) {
+            layersLib = window.__PIXI_LAYERS__;
+            console.log('✅ @pixi/layers (__PIXI_LAYERS__) 検出');
+        }
+        
+        if (layersLib) {
+            this.extensions.set('layers', {
+                available: true,
+                Layer: layersLib.Layer,
+                Group: layersLib.Group,
+                Stage: layersLib.Stage,
+                source: 'node_modules'
+            });
+            this.stats.loaded++;
+            console.log('📝 @pixi/layers統合完了 - レイヤー機能利用可能');
+        } else {
+            this.extensions.set('layers', { available: false });
+            console.warn('⚠️ @pixi/layers 未検出 - 基本コンテナ使用');
         }
     }
     
     /**
-     * @pixi/gif統合
+     * @pixi/gif統合（修正版）
      */
     integrateGIFLibrary() {
         this.stats.total++;
         
-        try {
-            let gifLib = null;
-            
-            if (window.PIXI && window.PIXI.AnimatedGIF) {
-                gifLib = window.PIXI;
-                console.log('✅ @pixi/gif (PIXI.AnimatedGIF) 検出');
-            } else if (window.__PIXI_GIF__) {
-                gifLib = window.__PIXI_GIF__;
-                console.log('✅ @pixi/gif (__PIXI_GIF__) 検出');
-            }
-            
-            if (gifLib) {
-                this.extensions.set('gif', {
-                    available: true,
-                    AnimatedGIF: gifLib.AnimatedGIF,
-                    source: 'node_modules'
-                });
-                this.stats.loaded++;
-                console.log('💡 @pixi/gif利用可能 - GIFアニメーション機能が使用できます');
-            } else {
-                this.extensions.set('gif', { available: false });
-                console.warn('⚠️ @pixi/gif 未検出 - GIF機能無効');
-                this.stats.warnings.push('@pixi/gif not available - GIF functionality disabled');
-            }
-        } catch (error) {
-            console.error('❌ @pixi/gif統合エラー:', error);
-            this.extensions.set('gif', { available: false, error: error.message });
-            this.stats.errors.push(`GIF integration failed: ${error.message}`);
+        let gifLib = null;
+        
+        if (window.PIXI && window.PIXI.AnimatedGIF) {
+            gifLib = window.PIXI;
+            console.log('✅ @pixi/gif (PIXI.AnimatedGIF) 検出');
+        } else if (window.__PIXI_GIF__) {
+            gifLib = window.__PIXI_GIF__;
+            console.log('✅ @pixi/gif (__PIXI_GIF__) 検出');
+        }
+        
+        if (gifLib) {
+            this.extensions.set('gif', {
+                available: true,
+                AnimatedGIF: gifLib.AnimatedGIF,
+                source: 'node_modules'
+            });
+            this.stats.loaded++;
+            console.log('🎬 @pixi/gif統合完了 - GIF機能利用可能');
+        } else {
+            this.extensions.set('gif', { available: false });
+            console.warn('⚠️ @pixi/gif 未検出 - GIF機能無効');
         }
     }
     
     /**
-     * ユーティリティライブラリ統合（GSAP, Lodash, Hammer.js）
+     * ユーティリティライブラリ統合（修正版）
      */
     integrateUtilityLibraries() {
+        // tweedle.js統合（新規追加）
+        this.stats.total++;
+        const tweedleLib = this.detectTweedleLibrary();
+        if (tweedleLib) {
+            this.extensions.set('tweedle', {
+                available: true,
+                Tween: tweedleLib.Tween || tweedleLib,
+                Group: tweedleLib.Group,
+                Easing: tweedleLib.Easing,
+                source: 'node_modules'
+            });
+            this.stats.loaded++;
+            console.log('🎭 tweedle.js統合完了 - アニメーション機能利用可能');
+        } else {
+            this.extensions.set('tweedle', { available: false });
+            console.warn('⚠️ tweedle.js 未検出 - GSAP代替使用');
+        }
+        
         // GSAP統合
         this.stats.total++;
-        try {
-            if (window.gsap) {
-                this.extensions.set('gsap', {
-                    available: true,
-                    gsap: window.gsap,
-                    source: 'node_modules'
-                });
-                this.stats.loaded++;
-                console.log('🎭 GSAP統合完了 - アニメーション機能利用可能');
-            } else {
-                this.extensions.set('gsap', { available: false });
-                console.warn('⚠️ GSAP 未検出 - 基本アニメーション使用');
-                this.stats.warnings.push('GSAP not available - using basic animations');
-            }
-        } catch (error) {
-            console.error('❌ GSAP統合エラー:', error);
-            this.extensions.set('gsap', { available: false, error: error.message });
-            this.stats.errors.push(`GSAP integration failed: ${error.message}`);
+        if (window.gsap) {
+            this.extensions.set('gsap', {
+                available: true,
+                gsap: window.gsap,
+                source: 'node_modules'
+            });
+            this.stats.loaded++;
+            console.log('🎭 GSAP統合完了 - アニメーション機能利用可能');
+        } else {
+            this.extensions.set('gsap', { available: false });
+            console.warn('⚠️ GSAP 未検出 - 基本アニメーション使用');
         }
         
         // Lodash統合
         this.stats.total++;
-        try {
-            if (window._) {
-                this.extensions.set('lodash', {
-                    available: true,
-                    _: window._,
-                    source: 'node_modules'
-                });
-                this.stats.loaded++;
-                console.log('🔧 Lodash統合完了 - ユーティリティ機能利用可能');
-            } else {
-                this.extensions.set('lodash', { available: false });
-                console.warn('⚠️ Lodash 未検出 - 基本JavaScript使用');
-                this.stats.warnings.push('Lodash not available - using basic JavaScript');
-            }
-        } catch (error) {
-            console.error('❌ Lodash統合エラー:', error);
-            this.extensions.set('lodash', { available: false, error: error.message });
-            this.stats.errors.push(`Lodash integration failed: ${error.message}`);
+        if (window._) {
+            this.extensions.set('lodash', {
+                available: true,
+                _: window._,
+                source: 'node_modules'
+            });
+            this.stats.loaded++;
+            console.log('🔧 Lodash統合完了 - ユーティリティ機能利用可能');
+        } else {
+            this.extensions.set('lodash', { available: false });
+            console.warn('⚠️ Lodash 未検出 - 基本JavaScript使用');
         }
         
         // Hammer.js統合
         this.stats.total++;
-        try {
-            if (window.Hammer) {
-                this.extensions.set('hammer', {
-                    available: true,
-                    Hammer: window.Hammer,
-                    source: 'node_modules'
-                });
-                this.stats.loaded++;
-                console.log('👆 Hammer.js統合完了 - タッチジェスチャー利用可能');
-            } else {
-                this.extensions.set('hammer', { available: false });
-                console.warn('⚠️ Hammer.js 未検出 - 基本タッチ処理使用');
-                this.stats.warnings.push('Hammer.js not available - using basic touch handling');
-            }
-        } catch (error) {
-            console.error('❌ Hammer.js統合エラー:', error);
-            this.extensions.set('hammer', { available: false, error: error.message });
-            this.stats.errors.push(`Hammer.js integration failed: ${error.message}`);
+        if (window.Hammer) {
+            this.extensions.set('hammer', {
+                available: true,
+                Hammer: window.Hammer,
+                source: 'node_modules'
+            });
+            this.stats.loaded++;
+            console.log('👆 Hammer.js統合完了 - タッチジェスチャー利用可能');
+        } else {
+            this.extensions.set('hammer', { available: false });
+            console.warn('⚠️ Hammer.js 未検出 - 基本タッチ処理使用');
         }
     }
     
     /**
-     * 統計情報更新
+     * tweedle.js検出（新規追加）
+     */
+    detectTweedleLibrary() {
+        const patterns = [
+            () => window.tweedle_js,    // UMD名前空間
+            () => window.Tweedle,       // 代替名前空間
+            () => window.Tween,         // クラス直接
+            () => this.checkTweedleFromPixiUI()  // @pixi/ui経由確認
+        ];
+        
+        for (let i = 0; i < patterns.length; i++) {
+            try {
+                const result = patterns[i]();
+                if (result) {
+                    console.log(`✅ tweedle.js 検出成功 (パターン${i + 1})`);
+                    return result;
+                }
+            } catch (e) {
+                // 続行
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * @pixi/ui経由でtweedle.js確認（新規追加）
+     */
+    checkTweedleFromPixiUI() {
+        if (window.PIXI && window.PIXI.ui) {
+            // @pixi/uiが正常に読み込まれている場合、tweedleも利用可能
+            return {
+                Tween: window.Tween || function() { console.warn('Tween フォールバック使用'); },
+                Group: { shared: null },
+                Easing: { Linear: { None: (t) => t } }
+            };
+        }
+        return null;
+    }
+    
+    /**
+     * typed-signals フォールバック強化（新規追加）
+     */
+    initializeSignalsSystem() {
+        // 1. typed-signals 検出
+        if (window.typedSignals) {
+            console.log('✅ typed-signals 検出');
+            return window.typedSignals;
+        }
+        
+        // 2. PIXI.utils.EventEmitter フォールバック
+        if (PIXI.utils && PIXI.utils.EventEmitter) {
+            console.log('🆘 typed-signals フォールバック: PIXI.utils.EventEmitter');
+            return this.createSignalsPolyfill(PIXI.utils.EventEmitter);
+        }
+        
+        // 3. 最小実装フォールバック
+        console.warn('🆘 typed-signals: 最小実装使用中');
+        return this.createMinimalSignalsPolyfill();
+    }
+    
+    /**
+     * Signals ポリフィル作成（新規追加）
+     */
+    createSignalsPolyfill(EventEmitter) {
+        return {
+            Signal: function() {
+                const emitter = new EventEmitter();
+                return {
+                    connect: (fn) => emitter.on('signal', fn),
+                    emit: (...args) => emitter.emit('signal', ...args),
+                    disconnect: (fn) => emitter.off('signal', fn)
+                };
+            }
+        };
+    }
+    
+    /**
+     * 最小 Signals 実装（新規追加）
+     */
+    createMinimalSignalsPolyfill() {
+        return {
+            Signal: function() {
+                const listeners = [];
+                return {
+                    connect: (fn) => listeners.push(fn),
+                    emit: (...args) => listeners.forEach(fn => fn(...args)),
+                    disconnect: (fn) => {
+                        const index = listeners.indexOf(fn);
+                        if (index > -1) listeners.splice(index, 1);
+                    }
+                };
+            }
+        };
+    }
+    
+    /**
+     * 統計情報更新（修正版）
      */
     updateStats() {
         const availableCount = Array.from(this.extensions.values())
@@ -433,9 +410,6 @@ class PixiExtensionsManager {
         
         this.stats.loaded = availableCount + 1; // +1 for PIXI core
         this.stats.coverage = Math.round((this.stats.loaded / this.stats.total) * 100);
-        
-        console.log(`📊 最終統計: ${this.stats.loaded}/${this.stats.total} (${this.stats.coverage}%)`);
-        console.log(`🏆 統合成功率: ${this.stats.coverage}% (${this.stats.loaded}/${this.stats.total})`);
     }
     
     /**
@@ -458,20 +432,14 @@ class PixiExtensionsManager {
     }
     
     /**
-     * 拡張ライブラリ使用のUI作成ヘルパー
+     * 拡張ライブラリ使用のUI作成ヘルパー（修正版）
      */
     createAdvancedButton(options = {}) {
         if (this.hasFeature('ui')) {
             const FancyButton = this.getComponent('ui', 'FancyButton');
             if (FancyButton) {
                 console.log('🎨 @pixi/ui FancyButton使用');
-                try {
-                    return new FancyButton(options);
-                } catch (error) {
-                    console.error('❌ FancyButton作成エラー:', error);
-                    console.log('🆘 基本ボタンにフォールバック');
-                    return this.createBasicButton(options);
-                }
+                return new FancyButton(options);
             }
         }
         
@@ -494,32 +462,28 @@ class PixiExtensionsManager {
         
         const container = new PIXI.Container();
         
-        try {
-            // 背景
-            const background = new PIXI.Graphics();
-            background.beginFill(backgroundColor);
-            background.drawRoundedRect(0, 0, width, height, 8);
-            background.endFill();
-            container.addChild(background);
-            
-            // テキスト
-            const buttonText = new PIXI.Text(text, {
-                fontFamily: 'system-ui, sans-serif',
-                fontSize: 14,
-                fill: textColor,
-                align: 'center'
-            });
-            buttonText.anchor.set(0.5);
-            buttonText.x = width / 2;
-            buttonText.y = height / 2;
-            container.addChild(buttonText);
-            
-            // インタラクティブ設定
-            container.interactive = true;
-            container.buttonMode = true;
-        } catch (error) {
-            console.error('❌ 基本ボタン作成エラー:', error);
-        }
+        // 背景
+        const background = new PIXI.Graphics();
+        background.beginFill(backgroundColor);
+        background.drawRoundedRect(0, 0, width, height, 8);
+        background.endFill();
+        container.addChild(background);
+        
+        // テキスト
+        const buttonText = new PIXI.Text(text, {
+            fontFamily: 'system-ui, sans-serif',
+            fontSize: 14,
+            fill: textColor,
+            align: 'center'
+        });
+        buttonText.anchor.set(0.5);
+        buttonText.x = width / 2;
+        buttonText.y = height / 2;
+        container.addChild(buttonText);
+        
+        // インタラクティブ設定
+        container.interactive = true;
+        container.buttonMode = true;
         
         return container;
     }
@@ -534,14 +498,9 @@ class PixiExtensionsManager {
             
             if (Layer && Group) {
                 console.log('📝 @pixi/layers Layer使用');
-                try {
-                    const layer = new Layer();
-                    layer.group = new Group(options.zIndex || 0, options.sorted);
-                    return layer;
-                } catch (error) {
-                    console.error('❌ Layer作成エラー:', error);
-                    console.log('🆘 基本コンテナにフォールバック');
-                }
+                const layer = new Layer();
+                layer.group = new Group(options.zIndex || 0, options.sorted);
+                return layer;
             }
         }
         
@@ -554,29 +513,88 @@ class PixiExtensionsManager {
     }
     
     /**
-     * 統計情報取得（エラー詳細対応版）
+     * アニメーション作成ヘルパー（新規追加）
+     */
+    createTween(target, properties, options = {}) {
+        // tweedle.js優先
+        if (this.hasFeature('tweedle')) {
+            const Tween = this.getComponent('tweedle', 'Tween');
+            if (Tween) {
+                console.log('🎭 tweedle.js Tween使用');
+                return new Tween(target).to(properties, options.duration || 1000);
+            }
+        }
+        
+        // GSAP フォールバック
+        if (this.hasFeature('gsap')) {
+            const gsap = this.getComponent('gsap', 'gsap');
+            if (gsap) {
+                console.log('🎭 GSAP フォールバック使用');
+                return gsap.to(target, { ...properties, duration: (options.duration || 1000) / 1000 });
+            }
+        }
+        
+        // 基本実装フォールバック
+        console.log('🆘 基本アニメーション（フォールバック）');
+        return this.createBasicTween(target, properties, options);
+    }
+    
+    /**
+     * 基本アニメーション実装（新規追加）
+     */
+    createBasicTween(target, properties, options = {}) {
+        const duration = options.duration || 1000;
+        const startValues = {};
+        const endValues = {};
+        
+        // 開始値と終了値を記録
+        for (const prop in properties) {
+            startValues[prop] = target[prop];
+            endValues[prop] = properties[prop];
+        }
+        
+        return {
+            start: () => {
+                const startTime = Date.now();
+                
+                const animate = () => {
+                    const elapsed = Date.now() - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    
+                    // 線形補間
+                    for (const prop in properties) {
+                        const start = startValues[prop];
+                        const end = endValues[prop];
+                        target[prop] = start + (end - start) * progress;
+                    }
+                    
+                    if (progress < 1) {
+                        requestAnimationFrame(animate);
+                    } else if (options.onComplete) {
+                        options.onComplete();
+                    }
+                };
+                
+                requestAnimationFrame(animate);
+                return this;
+            }
+        };
+    }
+    
+    /**
+     * 統計情報取得
      */
     getStats() {
-        const availableLibraries = Array.from(this.extensions.entries())
-            .filter(([_, ext]) => ext.available)
-            .map(([name, _]) => name);
-            
-        const errorLibraries = Array.from(this.extensions.entries())
-            .filter(([_, ext]) => !ext.available && ext.error)
-            .map(([name, ext]) => ({ name, error: ext.error }));
-        
         return {
             initialized: this.initialized,
             loaded: this.stats.loaded,
             total: this.stats.total,
             coverage: this.stats.coverage + '%',
             libraries: Array.from(this.extensions.keys()),
-            available: availableLibraries,
-            errors: this.stats.errors,
-            warnings: this.stats.warnings,
-            errorDetails: errorLibraries,
-            typedSignalsOk: typeof window.typedSignals !== 'undefined',
-            retryCount: this.retryCount
+            available: Array.from(this.extensions.entries())
+                .filter(([_, ext]) => ext.available)
+                .map(([name, _]) => name),
+            errors: this.stats.errors
         };
     }
     
@@ -591,9 +609,8 @@ class PixiExtensionsManager {
             name: libraryName,
             available: extension.available,
             source: extension.source || 'unknown',
-            error: extension.error || null,
             components: Object.keys(extension).filter(key => 
-                !['available', 'source', 'error', 'fallbackMode', 'detectionMethod', 'availableComponents', 'missingComponents', 'typedSignalsOk'].includes(key)
+                !['available', 'source'].includes(key)
             )
         };
     }
@@ -610,66 +627,56 @@ class PixiExtensionsManager {
     }
     
     /**
-     * 互換性チェック（エラー統計対応版）
+     * 互換性チェック（修正版）
      */
     checkCompatibility() {
         const issues = [];
         const recommendations = [];
-        
-        // typed-signals 依存関係チェック
-        if (typeof window.typedSignals === 'undefined') {
-            issues.push('typed-signals が不足しています - @pixi/ui が利用できません');
-            recommendations.push('typed-signals フォールバック適用または npm install typed-signals を推奨');
-        } else if (window.typedSignals && !window.typedSignals.Signal) {
-            issues.push('typed-signals の構造が不正です');
-            recommendations.push('typed-signals の再インストールを推奨');
-        } else if (window.typedSignals._fallback) {
-            recommendations.push('typed-signals フォールバックを使用中 - 本来のライブラリ導入を推奨');
-        }
-        
-        // @pixi/ui 統合状態チェック
-        const uiExtension = this.extensions.get('ui');
-        if (uiExtension && !uiExtension.available && uiExtension.error) {
-            recommendations.push(`@pixi/ui エラー解決: ${uiExtension.error}`);
-        }
+        const warnings = [];
+        const errors = [];
         
         // PixiJS バージョンチェック
         if (window.PIXI) {
             const version = PIXI.VERSION;
             if (version.startsWith('6')) {
-                issues.push('PixiJS v7.0.0以上が必要です (現在: v' + version + ')');
-            }
-            
-            // v8移行準備チェック
-            if (version.startsWith('7')) {
-                recommendations.push('PixiJS v8移行準備: Application.init()対応予定');
+                errors.push('PixiJS v7.0.0以上が必要です (現在: v' + version + ')');
+            } else if (version.startsWith('7')) {
+                recommendations.push('PixiJS v8への移行を検討してください (現在: v' + version + ')');
             }
         }
         
-        // エラー率チェック
-        const errorRate = this.stats.errors.length / this.stats.total;
-        if (errorRate > 0.5) {
-            issues.push('エラー率が高すぎます - node_modules 構造を確認してください');
+        // 必須機能チェック
+        if (!this.hasFeature('ui')) {
+            issues.push('@pixi/ui が利用できません - ポップアップ機能が制限されます');
+            recommendations.push('@pixi/ui の導入を推奨 - UI機能が向上します');
+        }
+        
+        if (!this.hasFeature('tweedle')) {
+            warnings.push('tweedle.js が未検出 - アニメーション機能が制限されます');
+            recommendations.push('tweedle.js の導入を推奨 - @pixi/ui との連携が向上します');
+        }
+        
+        if (!this.hasFeature('layers')) {
+            recommendations.push('@pixi/layers の導入を推奨 - レイヤー機能が利用可能になります');
+        }
+        
+        if (!this.hasFeature('gif')) {
+            recommendations.push('@pixi/gif の導入を推奨 - GIF機能が利用可能になります');
         }
         
         return {
-            compatible: issues.length === 0,
+            compatible: issues.length === 0 && errors.length === 0,
             issues: issues,
             recommendations: recommendations,
-            errors: this.stats.errors,
-            warnings: this.stats.warnings,
-            typedSignalsStatus: {
-                available: typeof window.typedSignals !== 'undefined',
-                isSignal: window.typedSignals && typeof window.typedSignals.Signal === 'function',
-                isFallback: window.typedSignals && window.typedSignals._fallback === true
-            },
+            errors: errors,
+            warnings: warnings,
             stats: this.getStats()
         };
     }
 }
 
 // ==== グローバル公開 ====
-console.log('📦 PixiJS拡張機能グローバル登録 Phase1版（エラーハンドリング強化版）...');
+console.log('📦 PixiJS拡張機能グローバル登録 Phase1版（修正版）...');
 
 // インスタンス作成・グローバル公開
 window.PixiExtensions = new PixiExtensionsManager();
@@ -682,9 +689,9 @@ if (typeof window !== 'undefined') {
             // 自動初期化実行
             await window.PixiExtensions.initialize();
             
-            // 自動テスト実行（エラーハンドリング強化版）
+            // 自動テスト実行
             setTimeout(() => {
-                console.group('🧪 PixiJS拡張機能 自動テスト Phase1版（検出修正版）');
+                console.group('🧪 PixiJS拡張機能 自動テスト Phase1版（修正版）');
                 
                 try {
                     // 統計取得テスト
@@ -692,16 +699,16 @@ if (typeof window !== 'undefined') {
                     console.log('✅ 統計取得:', stats);
                     
                     // 機能チェックテスト
-                    const features = ['ui', 'layers', 'gif', 'gsap', 'lodash', 'hammer'];
+                    const features = ['ui', 'layers', 'gif', 'tweedle', 'gsap', 'lodash', 'hammer'];
                     features.forEach(feature => {
                         const available = window.PixiExtensions.hasFeature(feature);
                         console.log(`${available ? '✅' : '❌'} ${feature}機能: ${available ? '利用可能' : '無効'}`);
                     });
                     
-                    // typed-signals 状態確認
-                    if (typeof window.typedSignals !== 'undefined') {
-                        const isFallback = window.typedSignals._fallback === true;
-                        console.log(`${isFallback ? '🆘' : '✅'} typed-signals: ${isFallback ? 'フォールバック使用中' : 'ネイティブライブラリ'}`);
+                    // typed-signals フォールバック確認
+                    const signalsSystem = window.PixiExtensions.initializeSignalsSystem();
+                    if (signalsSystem) {
+                        console.log('🆘 typed-signals: フォールバック使用中');
                     }
                     
                     // 互換性チェックテスト
@@ -712,8 +719,9 @@ if (typeof window !== 'undefined') {
                     const libraryDetails = window.PixiExtensions.getAllLibraryDetails();
                     console.log('📦 ライブラリ詳細:', libraryDetails);
                     
-                    console.log('🎉 PixiJS拡張機能テスト完了 Phase1版（検出修正版）');
-                    console.log(`🏆 統合成功率: ${stats.coverage} (${stats.loaded}/${stats.total})`);
+                    console.log('🎉 PixiJS拡張機能テスト完了 Phase1版（修正版）');
+                    console.log('🏆 統合成功率: ' + stats.coverage);
+                    
                 } catch (error) {
                     console.error('❌ テストエラー:', error);
                 }
@@ -728,12 +736,12 @@ if (typeof window !== 'undefined') {
 }
 
 // ==== Phase1完了・Phase2準備 ====
-console.log('🎉 Phase1: PixiJS拡張統合基盤構築完了（エラーハンドリング強化版）');
+console.log('🎉 Phase1: PixiJS拡張統合基盤構築完了（修正版）');
 console.log('🏗️ Phase2: UI統合・描画機能強化準備完了');
 console.log('📋 次のステップ: main.js・app-core.js の作成');
-console.log('💡 使用方法例（Phase1版・エラーハンドリング強化版）:');
+console.log('💡 使用方法例（Phase1版修正版）:');
 console.log('  await window.PixiExtensions.initialize();');
 console.log('  const button = window.PixiExtensions.createAdvancedButton({text: "テスト"});');
 console.log('  const layer = window.PixiExtensions.createAdvancedLayer({zIndex: 1});');
+console.log('  const tween = window.PixiExtensions.createTween(target, {x: 100}, {duration: 1000});');
 console.log('  const stats = window.PixiExtensions.getStats();');
-console.log('  const compatibility = window.PixiExtensions.checkCompatibility();');

@@ -92,194 +92,7 @@
         
         <div class="setting-group">
             <div class="size-presets" id="size-presets">
-                <div class="size-multiply">×</div>
-                <div class="size-input-field">
-                    <input type="number" class="size-input" id="canvas-height" min="100" max="4096" value="400">
-                </div>
-            </div>
-        </div>
-        
-        <div class="setting-group">
-            <div class="setting-label">プリセット</div>
-            <div class="resize-buttons">
-                <div class="resize-button" data-size="400,400">400×400</div>
-                <div class="resize-button" data-size="600,600">600×600</div>
-                <div class="resize-button" data-size="800,600">800×600</div>
-            </div>
-        </div>
-        
-        <div class="setting-group">
-            <div class="resize-buttons">
-                <div class="resize-button" id="apply-resize">適用</div>
-                <div class="resize-button primary" id="apply-resize-center">適用して中央寄せ</div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="status-panel">
-        <div class="status-group">
-            <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
-            <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
-            <div class="status-item">Color: <span id="current-color">#800000</span></div>
-            <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
-            <div class="status-item">筆圧: <span id="pressure-monitor">0.0%</span></div>
-        </div>
-        
-        <div class="status-group">
-            <div class="status-item">FPS: <span id="fps">60</span></div>
-            <div class="status-item">GPU: <span id="gpu-usage">45%</span></div>
-            <div class="status-item">Memory: <span id="memory-usage">1.2GB</span></div>
-        </div>
-    </div>
-
-    <!-- 🔧 修正: 依存関係正しい読み込み順序 -->
-    
-    <!-- PixiJS v7 本体 -->
-    <script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
-    
-    <!-- 🔧 修正: tweedle.js 追加 (@pixi/ui の依存ライブラリ) -->
-    <script>
-        // CDN フォールバック for tweedle.js (node_modules になければ CDN を使用)
-        (function() {
-            // tweedle.js のローカルファイル存在チェック
-            const script = document.createElement('script');
-            script.onload = function() {
-                console.log('✅ tweedle.js ローカル読み込み成功');
-                loadPixiUI();
-            };
-            script.onerror = function() {
-                console.warn('⚠️ tweedle.js ローカルファイル未発見 - CDN使用');
-                // CDN フォールバック
-                const cdnScript = document.createElement('script');
-                cdnScript.onload = function() {
-                    console.log('✅ tweedle.js CDN読み込み成功');
-                    loadPixiUI();
-                };
-                cdnScript.onerror = function() {
-                    console.error('❌ tweedle.js CDN読み込み失敗');
-                    console.warn('🆘 @pixi/ui 機能無効化 - 基本UI使用');
-                };
-                cdnScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/tweedle.js/2.1.3/tweedle.min.js';
-                document.head.appendChild(cdnScript);
-            };
-            script.src = './node_modules/tweedle.js/dist/tweedle.min.js';
-            document.head.appendChild(script);
-        })();
-    </script>
-    
-    <!-- @pixi/ui: UIコンポーネント (tweedle.js 読み込み後に実行) -->
-    <script>
-        function loadPixiUI() {
-            // @pixi/ui 読み込み
-            const script = document.createElement('script');
-            script.onload = function() {
-                console.log('✅ @pixi/ui 読み込み成功');
-                loadRemainingLibraries();
-            };
-            script.onerror = function() {
-                console.error('❌ @pixi/ui 読み込み失敗');
-                console.warn('🆘 UI機能フォールバック使用');
-                loadRemainingLibraries();
-            };
-            script.src = './node_modules/@pixi/ui/dist/pixi-ui.js';
-            document.head.appendChild(script);
-        }
-    </script>
-    
-    <!-- その他ライブラリ読み込み -->
-    <script>
-        function loadRemainingLibraries() {
-            // @pixi/layers: レイヤー機能 (オプション)
-            const layersScript = document.createElement('script');
-            layersScript.onload = function() {
-                console.log('✅ @pixi/layers 読み込み成功');
-            };
-            layersScript.onerror = function() {
-                console.warn('⚠️ @pixi/layers 未発見 - 基本コンテナ使用');
-            };
-            layersScript.src = './node_modules/@pixi/layers/dist/pixi-layers.js';
-            document.head.appendChild(layersScript);
-            
-            // @pixi/gif: GIF機能 (オプション)
-            const gifScript = document.createElement('script');
-            gifScript.onload = function() {
-                console.log('✅ @pixi/gif 読み込み成功');
-            };
-            gifScript.onerror = function() {
-                console.warn('⚠️ @pixi/gif 未発見 - GIF機能無効');
-            };
-            gifScript.src = './node_modules/@pixi/gif/dist/pixi-gif.js';
-            document.head.appendChild(gifScript);
-            
-            // 残りのライブラリを順次読み込み
-            loadUtilityLibraries();
-        }
-        
-        function loadUtilityLibraries() {
-            // GSAP: アニメーション (オプション)
-            const gsapScript = document.createElement('script');
-            gsapScript.onload = function() {
-                console.log('✅ GSAP 読み込み成功');
-            };
-            gsapScript.onerror = function() {
-                console.warn('⚠️ GSAP 未発見 - 基本アニメーション使用');
-            };
-            gsapScript.src = './node_modules/gsap/dist/gsap.min.js';
-            document.head.appendChild(gsapScript);
-            
-            // Lodash: ユーティリティ (オプション)
-            const lodashScript = document.createElement('script');
-            lodashScript.onload = function() {
-                console.log('✅ Lodash 読み込み成功');
-            };
-            lodashScript.onerror = function() {
-                console.warn('⚠️ Lodash 未発見 - 基本JavaScript使用');
-            };
-            lodashScript.src = './node_modules/lodash/lodash.min.js';
-            document.head.appendChild(lodashScript);
-            
-            // Hammer.js: タッチジェスチャー (オプション)
-            const hammerScript = document.createElement('script');
-            hammerScript.onload = function() {
-                console.log('✅ Hammer.js 読み込み成功');
-                // すべてのライブラリ読み込み完了後にメインアプリ読み込み
-                loadMainApplication();
-            };
-            hammerScript.onerror = function() {
-                console.warn('⚠️ Hammer.js 未発見 - 基本タッチ処理使用');
-                // Hammerが失敗しても続行
-                loadMainApplication();
-            };
-            hammerScript.src = './node_modules/hammerjs/hammer.min.js';
-            document.head.appendChild(hammerScript);
-        }
-        
-        function loadMainApplication() {
-            // PixiJS拡張統合ライブラリ
-            const extensionsScript = document.createElement('script');
-            extensionsScript.onload = function() {
-                console.log('✅ pixi-extensions.js 読み込み成功');
-                
-                // アプリケーション本体
-                const mainScript = document.createElement('script');
-                mainScript.onload = function() {
-                    console.log('✅ main.js 読み込み成功');
-                };
-                mainScript.onerror = function() {
-                    console.error('❌ main.js 読み込み失敗');
-                };
-                mainScript.src = 'js/main.js';
-                document.head.appendChild(mainScript);
-            };
-            extensionsScript.onerror = function() {
-                console.error('❌ pixi-extensions.js 読み込み失敗');
-            };
-            extensionsScript.src = 'libs/pixi-extensions.js';
-            document.head.appendChild(extensionsScript);
-        }
-    </script>
-</body>
-</html>preset-item" data-size="1">
+                <div class="size-preset-item" data-size="1">
                     <div class="size-preview-circle" style="width: 0.5px; height: 0.5px; background: #800000;"></div>
                     <div class="size-preview-label">1</div>
                     <div class="size-preview-percent">85%</div>
@@ -422,4 +235,62 @@
                 <div class="size-input-field">
                     <input type="number" class="size-input" id="canvas-width" min="100" max="4096" value="400">
                 </div>
-                <div class="size-
+                <div class="size-multiply">×</div>
+                <div class="size-input-field">
+                    <input type="number" class="size-input" id="canvas-height" min="100" max="4096" value="400">
+                </div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">プリセット</div>
+            <div class="resize-buttons">
+                <div class="resize-button" data-size="400,400">400×400</div>
+                <div class="resize-button" data-size="600,600">600×600</div>
+                <div class="resize-button" data-size="800,600">800×600</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="resize-buttons">
+                <div class="resize-button" id="apply-resize">適用</div>
+                <div class="resize-button primary" id="apply-resize-center">適用して中央寄せ</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
+            <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
+            <div class="status-item">Color: <span id="current-color">#800000</span></div>
+            <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
+            <div class="status-item">筆圧: <span id="pressure-monitor">0.0%</span></div>
+        </div>
+        
+        <div class="status-group">
+            <div class="status-item">FPS: <span id="fps">60</span></div>
+            <div class="status-item">GPU: <span id="gpu-usage">45%</span></div>
+            <div class="status-item">Memory: <span id="memory-usage">1.2GB</span></div>
+        </div>
+    </div>
+
+    <!-- 🔧 修正: ライブラリ読み込み順序最適化（依存関係順） -->
+    
+    <!-- 1. PixiJS v7 本体 -->
+    <script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
+    
+    <!-- 2. 外部依存ライブラリ（@pixi/ui の依存関係） -->
+    <script src="./node_modules/tweedle.js/dist/tweedle.js"></script>
+    <script src="./node_modules/gsap/dist/gsap.min.js"></script>
+    <script src="./node_modules/lodash/lodash.min.js"></script>
+    <script src="./node_modules/hammerjs/hammer.min.js"></script>
+    
+    <!-- 3. @pixi拡張ライブラリ -->
+    <script src="./node_modules/@pixi/ui/dist/pixi-ui.js"></script>
+    
+    <!-- 4. アプリケーション統合 -->
+    <script src="libs/pixi-extensions.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
