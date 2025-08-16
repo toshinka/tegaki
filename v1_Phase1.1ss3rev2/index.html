@@ -275,52 +275,101 @@
         </div>
     </div>
 
-    <!-- 🔧 ライブラリ読み込み修繕版 - 正しい読み込み順序・パス修正 -->
+    <!-- 🔧 修正版ライブラリ読み込み: 依存関係順序解決 -->
     
-    <!-- PixiJS v7 本体（CDN使用で安定性確保） -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
+    <!-- 1. PixiJS v7 本体（最優先） -->
+    <script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
     
-    <!-- 🔧 修正: @pixi/ui - UIコンポーネント -->
+    <!-- 2. typedSignals 依存解決（@pixi/ui用） -->
+    <script>
+        // typedSignals polyfill for @pixi/ui
+        if (typeof window !== 'undefined' && !window.typedSignals) {
+            window.typedSignals = {
+                Signal: class {
+                    constructor() {
+                        this._bindings = [];
+                    }
+                    connect(listener, thisArg) {
+                        this._bindings.push({ listener, thisArg });
+                        return {
+                            disconnect: () => {
+                                const index = this._bindings.findIndex(b => b.listener === listener);
+                                if (index !== -1) this._bindings.splice(index, 1);
+                            }
+                        };
+                    }
+                    emit(...args) {
+                        this._bindings.forEach(binding => {
+                            if (binding.thisArg) {
+                                binding.listener.call(binding.thisArg, ...args);
+                            } else {
+                                binding.listener(...args);
+                            }
+                        });
+                    }
+                    disconnectAll() {
+                        this._bindings.length = 0;
+                    }
+                }
+            };
+            console.log('✅ typedSignals polyfill created for @pixi/ui');
+        }
+    </script>
+    
+    <!-- 3. CommonJS exports polyfill（tweedle.js用） -->
+    <script>
+        // CommonJS exports polyfill for tweedle.js
+        if (typeof window !== 'undefined' && !window.exports) {
+            window.exports = {};
+            window.module = { exports: window.exports };
+            console.log('✅ CommonJS exports polyfill created for tweedle.js');
+        }
+    </script>
+    
+    <!-- 4. Tweedle.js (exports polyfill後) -->
+    <script src="./node_modules/tweedle.js/dist/tweedle.js"></script>
+    <script>
+        // Tweedle.jsをグローバルに公開
+        if (typeof window !== 'undefined' && window.exports) {
+            window.tweedle_js = window.exports;
+            console.log('✅ Tweedle.js globally exposed');
+        }
+    </script>
+    
+    <!-- 5. @pixi/ui (typedSignals polyfill後) -->
     <script src="./node_modules/@pixi/ui/dist/pixi-ui.js"></script>
     
-    <!-- 🔧 修正: @pixi/layers - レイヤー機能 -->
+    <!-- 6. @pixi/layers -->
     <script src="./node_modules/@pixi/layers/dist/pixi-layers.js"></script>
     
-    <!-- 🔧 修正: @pixi/gif - GIF機能 -->
+    <!-- 7. @pixi/gif -->
     <script src="./node_modules/@pixi/gif/dist/pixi-gif.js"></script>
     
-    <!-- GSAP: アニメーション -->
+    <!-- 8. GSAP -->
     <script src="./node_modules/gsap/dist/gsap.min.js"></script>
     
-    <!-- Lodash: ユーティリティ -->
+    <!-- 9. Lodash -->
     <script src="./node_modules/lodash/lodash.min.js"></script>
     
-    <!-- Hammer.js: タッチジェスチャー -->
+    <!-- 10. Hammer.js -->
     <script src="./node_modules/hammerjs/hammer.min.js"></script>
     
-    <!-- Tweedle.js: 軽量アニメーション -->
-    <script src="./node_modules/tweedle.js/dist/tweedle.js"></script>
-    
-    <!-- PixiJS拡張統合ライブラリ（修繕版） -->
+    <!-- 11. PixiJS拡張統合ライブラリ -->
     <script src="libs/pixi-extensions.js"></script>
     
-    <!-- AppCore基盤システム -->
+    <!-- 12. アプリケーション本体 -->
     <script src="js/app-core.js"></script>
-    
-    <!-- アプリケーション本体 -->
     <script src="js/main.js"></script>
     
-    <!-- 🔧 デバッグ用スクリプト（開発時のみ） -->
+    <!-- 13. エラー修繕確認 -->
     <script>
-        // コンソールでライブラリ読み込み状況を確認
-        console.log('🔍 ライブラリ読み込み状況確認:');
-        console.log('PIXI:', typeof PIXI !== 'undefined' ? '✅ 読み込み済み' : '❌ 未読み込み');
-        console.log('PIXI.layers:', typeof PIXI?.layers !== 'undefined' ? '✅ 読み込み済み' : '❌ 未読み込み');
-        console.log('PIXI.gif:', typeof PIXI?.gif !== 'undefined' ? '✅ 読み込み済み' : '❌ 未読み込み');
-        console.log('GSAP:', typeof gsap !== 'undefined' ? '✅ 読み込み済み' : '❌ 未読み込み');
-        console.log('Lodash:', typeof _ !== 'undefined' ? '✅ 読み込み済み' : '❌ 未読み込み');
-        console.log('Hammer:', typeof Hammer !== 'undefined' ? '✅ 読み込み済み' : '❌ 未読み込み');
-        console.log('Tweedle:', typeof TWEEDLE !== 'undefined' ? '✅ 読み込み済み' : '❌ 未読み込み');
+        console.group('🔧 エラー修繕確認');
+        console.log('✅ PixiJS:', typeof window.PIXI !== 'undefined' ? '読み込み済み' : '❌ 未読み込み');
+        console.log('✅ typedSignals:', typeof window.typedSignals !== 'undefined' ? '利用可能' : '❌ 未定義');
+        console.log('✅ exports:', typeof window.exports !== 'undefined' ? '利用可能' : '❌ 未定義');
+        console.log('✅ tweedle_js:', typeof window.tweedle_js !== 'undefined' ? '利用可能' : '❌ 未定義');
+        console.log('✅ PIXI.UI:', window.PIXI && window.PIXI.ui ? '利用可能' : '❌ 未定義');
+        console.groupEnd();
     </script>
 </body>
 </html>
