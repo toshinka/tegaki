@@ -857,7 +857,7 @@ class ExtensionUsagePattern {
     
     // パターン1: 条件付き使用
     createUI() {
-        if (this.extensions.hasFeature('ui')) {
+        if (this.extensions.hasFeature('ui')) {chrome://vivaldi-webui/startpage?section=Speed-dials&background-color=#f7f7f7
             // @pixi/ui使用
             return this.createPixiUIComponents();
         } else {
