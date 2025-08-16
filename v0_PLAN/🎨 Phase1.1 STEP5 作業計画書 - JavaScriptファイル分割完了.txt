@@ -1,0 +1,498 @@
+# 🎨 Phase1.1 STEP5 作業計画書 - JavaScriptファイル分割完了
+
+## 📋 現状分析（Phase1.1 STEP3-4完了状況）
+
+### ✅ 完了事項
+- **STEP1-2**: ディレクトリ構成・package.json・node_modules統合 ✅
+- **STEP3**: HTML分離・CSS分離・基本構造 ✅  
+- **STEP4**: libs/pixi-extensions.js・js/main.js分離 ✅
+
+### 📊 ファイル構成現状
+```
+v1_Phase1.1ss3rev5/
+├── index.html                    ✅ node_modules統合完了
+├── package.json                  ✅ 依存関係管理
+├── css/styles.css               ✅ スタイル分離完了
+├── libs/pixi-extensions.js      ✅ 拡張統合基盤
+├── js/
+│   ├── main.js                  ✅ エントリーポイント・AppCore統合
+│   ├── app-core.js              ✅ PixiJS基盤
+│   ├── managers/                ✅ Manager層（3ファイル）
+│   ├── tools/                   ✅ ツール層（2ファイル）
+│   └── utils/                   ✅ ユーティリティ層（3ファイル）
+└── node_modules/                ✅ ローカル依存関係
+```
+
+### 🎯 STEP5 目標: JavaScript機能分割完了・AI分業基盤確立
+
+---
+
+## 📝 STEP5 作業内容
+
+### 5.1 Manager層機能分割（Priority: 高）
+
+#### 5.1.1 js/managers/ui-manager.js 機能拡張
+**現状**: 基本UI管理のみ  
+**目標**: 完全なUI統括管理・ポップアップシステム・イベント管理
+
+```javascript
+/**
+ * 🎯 AI_WORK_SCOPE: UI統括管理・ポップアップシステム・スライダー統合
+ * 🎯 DEPENDENCIES: libs/pixi-extensions.js, js/app-core.js
+ * 🎯 NODE_MODULES: @pixi/ui（利用可能時）
+ * 🎯 PIXI_EXTENSIONS: ui, gsap（アニメーション用）
+ * 🎯 ISOLATION_TEST: ✅ 単体テスト可能
+ * 🎯 SPLIT_THRESHOLD: 400行超過時 → ui-components.js分割
+ */
+
+class UIManager {
+    constructor(appCore) {
+        // ✅ 実装: 完全なポップアップシステム
+        // ✅ 実装: スライダーコンポーネント統合
+        // ✅ 実装: ドラッグ&ドロップポップアップ
+        // 🔄 追加: @pixi/ui統合（利用可能時）
+        // 🔄 追加: アニメーション効果（GSAP活用）
+    }
+    
+    // 新機能追加予定:
+    // - createAdvancedSlider() - 高度なスライダー
+    // - setupPopupAnimations() - ポップアップアニメーション
+    // - manageResponsiveLayout() - レスポンシブ対応
+}
+```
+
+#### 5.1.2 js/managers/tool-manager.js 機能拡張
+**現状**: 基本ツール切り替えのみ  
+**目標**: 完全なツールシステム・設定管理・ツール統合
+
+```javascript
+/**
+ * 🎯 AI_WORK_SCOPE: ツール統括管理・設定同期・ツール切り替えシステム
+ * 🎯 DEPENDENCIES: libs/pixi-extensions.js, js/app-core.js, tools/*.js
+ * 🎯 NODE_MODULES: lodash（設定管理最適化）
+ * 🎯 PIXI_EXTENSIONS: lodash
+ * 🎯 ISOLATION_TEST: ✅ 単体テスト可能（tools/依存）
+ * 🎯 SPLIT_THRESHOLD: 400行超過時 → tool-settings.js分割
+ */
+
+class ToolManager {
+    constructor(appCore) {
+        // ✅ 実装: 基本ツール切り替え
+        // 🔄 追加: ツール設定の永続化
+        // 🔄 追加: ツール間設定共有
+        // 🔄 追加: カスタムツール対応
+        // 🔄 追加: ショートカット統合
+    }
+    
+    // 新機能追加予定:
+    // - saveToolPresets() - プリセット保存
+    // - synchronizeToolSettings() - 設定同期
+    // - registerCustomTool() - カスタムツール登録
+}
+```
+
+#### 5.1.3 js/managers/canvas-manager.js 機能拡張
+**現状**: 基本キャンバス管理のみ  
+**目標**: 高度なキャンバス制御・変形・ズーム・パン
+
+```javascript
+/**
+ * 🎯 AI_WORK_SCOPE: キャンバス統括管理・変形制御・ズーム/パン統合
+ * 🎯 DEPENDENCIES: libs/pixi-extensions.js, js/app-core.js, js/utils/coordinates.js
+ * 🎯 NODE_MODULES: hammerjs（タッチ操作）, gsap（スムーズアニメーション）
+ * 🎯 PIXI_EXTENSIONS: hammer, gsap
+ * 🎯 ISOLATION_TEST: ✅ 単体テスト可能
+ * 🎯 SPLIT_THRESHOLD: 400行超過時 → canvas-transform.js分割
+ */
+
+class CanvasManager {
+    constructor(appCore) {
+        // ✅ 実装: 基本キャンバス制御
+        // 🔄 追加: スムーズズーム・パン
+        // 🔄 追加: タッチジェスチャー対応
+        // 🔄 追加: キャンバス境界制限
+        // 🔄 追加: グリッド・ガイド表示
+    }
+    
+    // 新機能追加予定:
+    // - setupGestureControls() - ジェスチャー制御
+    // - createViewportSystem() - ビューポート管理
+    // - addGridOverlay() - グリッド表示
+}
+```
+
+### 5.2 Tools層完全実装（Priority: 高）
+
+#### 5.2.1 js/tools/pen-tool.js 高度化
+**現状**: 基本ベクター描画のみ  
+**目標**: プロ級ペンツール・筆圧対応・設定統合
+
+```javascript
+/**
+ * 🎯 AI_WORK_SCOPE: ベクターペン高度化・筆圧対応・線補正・設定統合
+ * 🎯 DEPENDENCIES: js/managers/tool-manager.js, js/utils/coordinates.js
+ * 🎯 NODE_MODULES: lodash（線補正最適化）
+ * 🎯 PIXI_EXTENSIONS: lodash
+ * 🎯 ISOLATION_TEST: ✅ 単体テスト可能
+ * 🎯 SPLIT_THRESHOLD: 300行超過時 → pen-settings.js分割
+ * 📋 V8_MIGRATION: Graphics API変更対応・WebGPU最適化準備
+ */
+
+class PenTool {
+    constructor(toolManager) {
+        // ✅ 実装: 基本ベクター描画
+        // 🔄 追加: 筆圧感度120Hz対応
+        // 🔄 追加: 高度な線補正アルゴリズム
+        // 🔄 追加: エッジスムージング
+        // 🔄 追加: GPU加速描画準備（v8移行用）
+    }
+    
+    // 新機能追加予定:
+    // - implementPressureSensitivity() - 筆圧システム
+    // - optimizeStrokeSmoothing() - 線補正最適化
+    // - prepareGPUAcceleration() - GPU加速準備
+}
+```
+
+#### 5.2.2 js/tools/eraser-tool.js 高度化
+**現状**: 基本消去機能のみ  
+**目標**: 高度な消去システム・範囲指定・消去モード
+
+```javascript
+/**
+ * 🎯 AI_WORK_SCOPE: 消しゴム高度化・範囲消去・消去モード・アルファ合成
+ * 🎯 DEPENDENCIES: js/managers/tool-manager.js, js/utils/coordinates.js
+ * 🎯 NODE_MODULES: lodash（効率的な範囲計算）
+ * 🎯 PIXI_EXTENSIONS: lodash
+ * 🎯 ISOLATION_TEST: ✅ 単体テスト可能
+ * 🎯 SPLIT_THRESHOLD: 300行超過時 → eraser-modes.js分割
+ * 📋 V8_MIGRATION: BlendMode API変更対応
+ */
+
+class EraserTool {
+    constructor(toolManager) {
+        // ✅ 実装: 基本消去機能
+        // 🔄 追加: 範囲指定消去
+        // 🔄 追加: 消去モード（完全消去・透明化・ブレンド）
+        // 🔄 追加: 消去プレビュー
+        // 🔄 追加: アンドゥ対応強化
+    }
+    
+    // 新機能追加予定:
+    // - implementRangeErasing() - 範囲消去
+    // - createEraserModes() - 消去モード
+    // - addEraserPreview() - プレビュー機能
+}
+```
+
+### 5.3 Utils層機能強化（Priority: 中）
+
+#### 5.3.1 js/utils/performance.js 監視強化
+**現状**: 基本パフォーマンス監視  
+**目標**: 詳細な性能監視・メモリ管理・GPU監視
+
+```javascript
+/**
+ * 🎯 AI_WORK_SCOPE: パフォーマンス監視強化・メモリ管理・FPS監視・GPU使用率
+ * 🎯 DEPENDENCIES: js/app-core.js
+ * 🎯 NODE_MODULES: なし（Pure JavaScript）
+ * 🎯 PIXI_EXTENSIONS: なし
+ * 🎯 ISOLATION_TEST: ✅ 単体テスト可能
+ * 🎯 SPLIT_THRESHOLD: 200行以下維持
+ * 📋 V8_MIGRATION: Performance API強化・WebGPU監視追加
+ */
+
+class PerformanceMonitor {
+    constructor() {
+        // ✅ 実装: 基本FPS監視
+        // 🔄 追加: メモリ使用量監視
+        // 🔄 追加: GPU使用率推定
+        // 🔄 追加: 描画コマンド数カウント
+        // 🔄 追加: パフォーマンス警告システム
+    }
+    
+    // 新機能追加予定:
+    // - monitorMemoryUsage() - メモリ監視
+    // - estimateGPUUsage() - GPU使用率推定
+    // - trackRenderCalls() - 描画コール追跡
+}
+```
+
+#### 5.3.2 js/utils/icon-manager.js 機能拡張
+**現状**: 基本アイコン管理  
+**目標**: 動的アイコン読み込み・アイコンテーマ・カスタマイズ
+
+```javascript
+/**
+ * 🎯 AI_WORK_SCOPE: アイコン管理・動的読み込み・テーマ対応・カスタマイズ
+ * 🎯 DEPENDENCIES: なし（独立ユーティリティ）
+ * 🎯 NODE_MODULES: @tabler/icons-react（計画追加）
+ * 🎯 PIXI_EXTENSIONS: なし
+ * 🎯 ISOLATION_TEST: ✅ 完全独立テスト可能
+ * 🎯 SPLIT_THRESHOLD: 150行以下維持
+ * 📋 V8_MIGRATION: SVG最適化・WebGPUテクスチャ対応
+ */
+
+class IconManager {
+    constructor() {
+        // ✅ 実装: 基本SVGアイコン管理
+        // 🔄 追加: @tabler/icons-react統合
+        // 🔄 追加: アイコンテーマシステム
+        // 🔄 追加: 動的アイコン置換
+        // 🔄 追加: カスタムアイコン対応
+    }
+    
+    // 新機能追加予定:
+    // - loadTablerIcons() - Tabler Icons統合
+    // - createIconThemes() - テーマシステム
+    // - registerCustomIcons() - カスタムアイコン
+}
+```
+
+### 5.4 新Manager追加（Priority: 中）
+
+#### 5.4.1 js/managers/memory-manager.js 新規作成
+**目標**: 非破壊履歴管理・メモリ最適化・アンドゥ・リドゥシステム
+
+```javascript
+/**
+ * 🎯 AI_WORK_SCOPE: 非破壊履歴管理・アンドゥ/リドゥ・メモリ最適化
+ * 🎯 DEPENDENCIES: js/app-core.js
+ * 🎯 NODE_MODULES: lodash（履歴管理最適化）
+ * 🎯 PIXI_EXTENSIONS: lodash
+ * 🎯 ISOLATION_TEST: ✅ 単体テスト可能
+ * 🎯 SPLIT_THRESHOLD: 400行超過時 → memory-optimization.js分割
+ * 📋 V8_MIGRATION: WebGPU Buffer管理・メモリプール最適化
+ */
+
+class MemoryManager {
+    constructor(appCore) {
+        this.appCore = appCore;
+        this.history = [];
+        this.historyIndex = -1;
+        this.maxHistorySize = 50;
+        
+        // ✅ 実装予定: 履歴システム
+        // ✅ 実装予定: メモリ最適化
+        // ✅ 実装予定: ガベージコレクション
+        // ✅ 実装予定: 非破壊変形記録
+    }
+    
+    // 主要メソッド:
+    // - recordAction(action) - アクション記録
+    // - undo() - アンドゥ
+    // - redo() - リドゥ
+    // - optimizeMemory() - メモリ最適化
+    // - cleanupHistory() - 履歴クリーンアップ
+}
+```
+
+#### 5.4.2 js/managers/settings-manager.js 新規作成
+**目標**: 設定統括管理・永続化・プリセット・エクスポート/インポート
+
+```javascript
+/**
+ * 🎯 AI_WORK_SCOPE: 設定統括管理・永続化・プリセット・インポート/エクスポート
+ * 🎯 DEPENDENCIES: js/app-core.js, js/managers/tool-manager.js
+ * 🎯 NODE_MODULES: lodash（設定構造最適化）
+ * 🎯 PIXI_EXTENSIONS: lodash
+ * 🎯 ISOLATION_TEST: ✅ 単体テスト可能
+ * 🎯 SPLIT_THRESHOLD: 350行超過時 → settings-presets.js分割
+ * 📋 V8_MIGRATION: WebStorage API強化・設定同期改善
+ */
+
+class SettingsManager {
+    constructor(appCore) {
+        this.appCore = appCore;
+        this.settings = {};
+        this.presets = [];
+        
+        // ✅ 実装予定: 設定永続化
+        // ✅ 実装予定: プリセットシステム
+        // ✅ 実装予定: 設定同期
+        // ✅ 実装予定: エクスポート/インポート
+    }
+    
+    // 主要メソッド:
+    // - saveSettings() - 設定保存
+    // - loadSettings() - 設定読み込み
+    // - createPreset(name) - プリセット作成
+    // - exportSettings() - 設定エクスポート
+    // - importSettings(data) - 設定インポート
+}
+```
+
+### 5.5 AI分業基盤確立（Priority: 最高）
+
+#### 5.5.1 分業パターン標準化
+
+**パターンA: ツール改修**
+```javascript
+// 必要ファイル（5ファイル以下）:
+files: [
+    'libs/pixi-extensions.js',        // 拡張統合基盤
+    'js/app-core.js',                 // PixiJS基盤
+    'js/managers/tool-manager.js',    // ツール統括
+    'js/tools/pen-tool.js',           // ペン（改修対象）
+    'js/utils/coordinates.js'         // 座標変換（依存）
+]
+```
+
+**パターンB: UI改修**
+```javascript
+// 必要ファイル（4ファイル以下）:
+files: [
+    'libs/pixi-extensions.js',        // 拡張統合基盤
+    'js/app-core.js',                 // PixiJS基盤
+    'js/managers/ui-manager.js',      // UI統括（改修対象）
+    'js/utils/performance.js'         // パフォーマンス監視（依存）
+]
+```
+
+**パターンC: Manager改修**
+```javascript
+// 必要ファイル（3ファイル以下）:
+files: [
+    'libs/pixi-extensions.js',        // 拡張統合基盤
+    'js/app-core.js',                 // PixiJS基盤
+    'js/managers/canvas-manager.js'   // キャンバス（改修対象）
+]
+```
+
+#### 5.5.2 分業識別システム強化
+
+各ファイルに詳細な分業情報を埋め込み:
+
+```javascript
+/**
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
+ * 
+ * 🎯 AI_WORK_SCOPE: [具体的機能範囲]
+ * 🎯 DEPENDENCIES: [必要ファイルリスト - 5ファイル以下推奨]
+ * 🎯 NODE_MODULES: [使用node_modulesライブラリ]
+ * 🎯 PIXI_EXTENSIONS: [使用拡張機能]
+ * 🎯 ISOLATION_TEST: [単体テスト可否 - ✅/❌]
+ * 🎯 SPLIT_THRESHOLD: [分割基準行数 - 分割先ファイル名]
+ * 
+ * 📋 PHASE_TARGET: Phase1.1ss5
+ * 📋 V8_MIGRATION: [v8移行時の対応内容]
+ * 📋 PERFORMANCE_TARGET: [性能目標]
+ * 📋 DRY_COMPLIANCE: [重複コード排除状況]
+ * 📋 SOLID_COMPLIANCE: [SOLID原則遵守状況]
+ */
+```
+
+---
+
+## 📅 STEP5 実装スケジュール
+
+### Week 1: Manager層機能拡張
+- **Day 1-2**: ui-manager.js 機能拡張
+- **Day 3-4**: tool-manager.js 機能拡張  
+- **Day 5-7**: canvas-manager.js 機能拡張
+
+### Week 2: Tools層高度化
+- **Day 1-3**: pen-tool.js 高度化
+- **Day 4-6**: eraser-tool.js 高度化
+- **Day 7**: Tools層統合テスト
+
+### Week 3: 新Manager・Utils強化
+- **Day 1-3**: memory-manager.js 新規作成
+- **Day 4-5**: settings-manager.js 新規作成
+- **Day 6-7**: Utils層機能強化
+
+### Week 4: AI分業基盤・品質保証
+- **Day 1-3**: AI分業基盤確立・テスト
+- **Day 4-5**: 品質保証・統合テスト
+- **Day 6-7**: PixiJSv8化準備・コメント仕込み
+
+---
+
+## 📊 品質基準・完了条件
+
+### ✅ 機能完成度
+- [ ] 全Manager（5個）の400行以下遵守
+- [ ] 全Tools（2個）の300行以下遵守
+- [ ] 全Utils（3個）の200行以下遵守
+- [ ] AI分業パターン3種類確立
+- [ ] 拡張ライブラリ活用率80%以上
+
+### ✅ AI分業効率
+- [ ] 改修時必要ファイル数5個以下
+- [ ] 単体テスト可能率100%
+- [ ] 循環依存0件維持
+- [ ] DRY原則遵守100%
+- [ ] SOLID原則遵守90%以上
+
+### ✅ 性能基準
+- [ ] 初期化時間3秒以内
+- [ ] 描画60FPS安定
+- [ ] メモリ使用量2GB以下
+- [ ] GPU使用率70%以下
+- [ ] 応答性1フレーム以下
+
+### ✅ v8移行準備
+- [ ] v8互換コメント100%
+- [ ] WebGPU準備コメント
+- [ ] 120FPS準備コメント
+- [ ] API変更箇所マーク
+- [ ] 移行計画文書化
+
+---
+
+## 🚀 即座実装開始項目
+
+### 最優先（今すぐ開始可能）
+
+1. **js/managers/ui-manager.js 機能拡張**
+   - ポップアップシステム完成
+   - スライダー統合強化
+   - @pixi/ui統合準備
+
+2. **js/managers/memory-manager.js 新規作成**
+   - アンドゥ・リドゥシステム
+   - 非破壊履歴管理
+   - メモリ最適化
+
+3. **AI分業識別システム強化**
+   - 全ファイルにヘッダー追加
+   - 依存関係明確化
+   - テスト可否明記
+
+### 次優先（今週中）
+
+1. **js/tools/pen-tool.js 高度化**
+   - 筆圧対応システム
+   - 線補正アルゴリズム
+   - GPU加速準備
+
+2. **js/managers/tool-manager.js 機能拡張**
+   - ツール設定永続化
+   - プリセットシステム
+   - ショートカット統合
+
+---
+
+## 💡 実装ヒント・注意点
+
+### DRY原則遵守
+- 共通処理はUtils層に集約
+- Managerの重複コード排除
+- 拡張ライブラリ活用で車輪の再発明回避
+
+### SOLID原則遵守
+- 単一責任原則: 1ファイル1機能
+- 開放閉鎖原則: 拡張可能設計
+- 依存性逆転: インターフェース経由
+
+### PixiJSv8準備
+- 変更予定箇所にコメント
+- WebGPU対応準備
+- 120FPS対応準備
+
+### AI分業最適化
+- 必要ファイル最小化
+- 依存関係単純化
+- 単体テスト可能設計
+
+これでPhase1.1 STEP5の完全な作業計画が整いました。どの項目から着手しますか？
