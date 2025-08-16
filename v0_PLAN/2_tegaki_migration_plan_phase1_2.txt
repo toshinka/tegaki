@@ -58,12 +58,12 @@ hammerjs@^2.0.8
 </head>
 <body>
     <!-- node_modules統合・ローカル読み込み -->
-    <script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
-    <script src="./node_modules/@pixi/ui/dist/ui.min.js"></script>
-    <script src="./node_modules/@pixi/layers/dist/layers.min.js"></script>
-    <script src="./node_modules/@pixi/gif/dist/gif.min.js"></script>
-    <script src="./node_modules/gsap/dist/gsap.min.js"></script>
-    <script src="./node_modules/lodash/lodash.min.js"></script>
+    <script src="./node_modules/pixi.js/dist/pixi.js"></script>
+    <script src="./node_modules/@pixi/ui/dist/pixi-ui.js"></script>
+    <script src="./node_modules/@pixi/layers/dist/pixi-layers.js"></script>
+    <script src="./node_modules/@pixi/gif/dist/pixi-gif.js"></script>
+    <script src="./node_modules/gsap/dist/gsap.js"></script>
+    <script src="./node_modules/lodash/lodash.js"></script>
     <script src="./node_modules/hammerjs/hammer.min.js"></script>
     
     <!-- PixiJS拡張統合ライブラリ -->
