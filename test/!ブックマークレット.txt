@@ -9,5 +9,5 @@ https://toshinka.github.io/tegaki/
 https://github.com/toshinka/tegaki/blob/main/
 @toshinka/tegaki/files/
 
-javascript:(d=>{d=d.body.appendChild(d.createElement('script'));d.src=`https://toshinka.github.io/tegaki/test/t3start.js?${parseInt(Date.now()/36e+5)*36e+5}`})(document)
+javascript:(d=>{d=d.body.appendChild(d.createElement('script'));d.src=`https://toshinka.github.io/tegaki/test/t3st.js?${parseInt(Date.now()/36e+5)*36e+5}`})(document)
 
