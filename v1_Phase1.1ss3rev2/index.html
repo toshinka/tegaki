@@ -275,22 +275,125 @@
         </div>
     </div>
 
-    <!-- 🔧 修正: ライブラリ読み込み順序最適化（依存関係順） -->
+    <!-- ========================================= -->
+    <!-- 🔧 修正版: ライブラリ読み込み順序最適化 -->
+    <!-- ========================================= -->
     
-    <!-- 1. PixiJS v7 本体 -->
-    <script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
+    <!-- PixiJS v7 本体 - CDN版（安定版） -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
     
-    <!-- 2. 外部依存ライブラリ（@pixi/ui の依存関係） -->
+    <!-- 🚨 重要: 依存関係解決のため、typedSignals を先に読み込み -->
+    <script>
+        // typedSignals ポリフィル - @pixi/ui用
+        if (typeof window.typedSignals === 'undefined') {
+            window.typedSignals = {
+                Signal: class {
+                    constructor() {
+                        this.listeners = [];
+                    }
+                    connect(listener) {
+                        this.listeners.push(listener);
+                    }
+                    emit(...args) {
+                        this.listeners.forEach(listener => listener(...args));
+                    }
+                    disconnect(listener) {
+                        const index = this.listeners.indexOf(listener);
+                        if (index > -1) this.listeners.splice(index, 1);
+                    }
+                    disconnectAll() {
+                        this.listeners = [];
+                    }
+                }
+            };
+        }
+    </script>
+    
+    <!-- GSAP: アニメーション - CDN版 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    
+    <!-- Lodash: ユーティリティ - CDN版 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    
+    <!-- Hammer.js: タッチジェスチャー - CDN版 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    
+    <!-- 🔧 修正版: tweedle.js ブラウザ対応版 -->
+    <script>
+        // tweedle.js ブラウザ対応ポリフィル
+        (function() {
+            // CommonJS exports を window に変換
+            if (typeof window.exports === 'undefined') {
+                window.exports = {};
+            }
+            
+            // NOW 関数をブラウザ対応で定義
+            window.exports.NOW = function() {
+                if (performance && performance.now) {
+                    return performance.now();
+                }
+                return Date.now();
+            };
+        })();
+    </script>
+    <!-- node_modules/tweedle.js の内容をここに含める -->
     <script src="./node_modules/tweedle.js/dist/tweedle.js"></script>
-    <script src="./node_modules/gsap/dist/gsap.min.js"></script>
-    <script src="./node_modules/lodash/lodash.min.js"></script>
-    <script src="./node_modules/hammerjs/hammer.min.js"></script>
     
-    <!-- 3. @pixi拡張ライブラリ -->
+    <!-- 🔧 修正版: @pixi/ui 読み込み前に依存関係確認 -->
+    <script>
+        // @pixi/ui 依存関係確認・修正
+        if (typeof PIXI !== 'undefined' && typeof window.typedSignals !== 'undefined') {
+            // PIXI.ui 名前空間準備
+            if (!PIXI.ui) PIXI.ui = {};
+            
+            // tweedle.js をグローバルに公開
+            if (window.exports && window.exports.Tween) {
+                window.tweedle_js = window.exports;
+            }
+            
+            console.log('✅ @pixi/ui 依存関係準備完了');
+        } else {
+            console.warn('⚠️ @pixi/ui 依存関係不足 - スキップ');
+        }
+    </script>
+    
+    <!-- @pixi/ui: UIコンポーネント -->
     <script src="./node_modules/@pixi/ui/dist/pixi-ui.js"></script>
     
-    <!-- 4. アプリケーション統合 -->
+    <!-- @pixi/layers: レイヤー機能（存在する場合） -->
+    <script>
+        // レイヤー機能用スクリプト
+        (function() {
+            try {
+                const script = document.createElement('script');
+                script.src = './node_modules/@pixi/layers/dist/pixi-layers.js';
+                script.onerror = () => console.log('⚠️ @pixi/layers 未検出 - スキップ');
+                document.head.appendChild(script);
+            } catch (e) {
+                console.log('⚠️ @pixi/layers 読み込みエラー - スキップ');
+            }
+        })();
+    </script>
+    
+    <!-- @pixi/gif: GIF機能（存在する場合） -->
+    <script>
+        // GIF機能用スクリプト
+        (function() {
+            try {
+                const script = document.createElement('script');
+                script.src = './node_modules/@pixi/gif/dist/pixi-gif.js';
+                script.onerror = () => console.log('⚠️ @pixi/gif 未検出 - スキップ');
+                document.head.appendChild(script);
+            } catch (e) {
+                console.log('⚠️ @pixi/gif 読み込みエラー - スキップ');
+            }
+        })();
+    </script>
+    
+    <!-- 🔧 修正版: pixi-extensions.js 読み込み -->
     <script src="libs/pixi-extensions.js"></script>
+    
+    <!-- アプリケーション本体 -->
     <script src="js/main.js"></script>
 </body>
 </html>
