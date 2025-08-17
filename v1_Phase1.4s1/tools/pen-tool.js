@@ -1,137 +1,127 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0 - Phase1.4STEP1
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
+ * 🚨 Phase A1: タブレットペン緊急修正版
  * 
- * 🎯 AI_WORK_SCOPE: タブレットペン描画対応強化・Pointer Events統合・筆圧検出
- * 🎯 DEPENDENCIES: js/managers/tool-manager.js, js/utils/coordinates.js
+ * 🎯 AI_WORK_SCOPE: タブレットペン描画対応・筆圧値取得・イベント処理統一・isActive修正
+ * 🎯 DEPENDENCIES: js/managers/tool-manager.js, js/utils/coordinates.js, js/app-core.js
  * 🎯 NODE_MODULES: lodash（最適化）, pixi.js@^7.4.3
- * 🎯 PIXI_EXTENSIONS: PixiExtensions統合・フォールバック対応
+ * 🎯 PIXI_EXTENSIONS: lodash, gsap（スムースアニメーション）
  * 🎯 ISOLATION_TEST: ✅ 単体テスト可能
- * 🎯 SPLIT_THRESHOLD: 400行以下維持・Phase1.4完了後Phase2で拡張
  * 
- * 📋 PHASE_TARGET: Phase1.4STEP1 - タブレットペン描画復活・筆圧対応
- * 📋 V8_MIGRATION: Pointer Events API継続・WebGPU筆圧最適化準備
- * 📋 PERFORMANCE_TARGET: ペン描画遅延1ms以下・筆圧60Hz対応・マウス互換性維持
- * 📋 DRY_COMPLIANCE: ✅ 統一イベント処理・重複排除
- * 📋 SOLID_COMPLIANCE: ✅ 単一責任・依存性逆転・開放閉鎖原則
+ * 📋 PHASE_TARGET: Phase1.4-A1 - タブレットペン緊急修正
+ * 📋 V8_MIGRATION: Graphics API変更対応・WebGPU最適化準備
+ * 📋 PERFORMANCE_TARGET: 筆圧120Hz対応・GPU加速準備
+ * 📋 DRY_COMPLIANCE: ✅ 共通処理統一・重複コード排除
+ * 📋 SOLID_COMPLIANCE: ✅ 単一責任・開放閉鎖・依存性逆転遵守
  */
 
 /**
- * タブレットペン対応強化版ペンツール（Phase1.4STEP1）
- * Pointer Events API統合・筆圧検出・デバイス判定・マウス互換性維持
- * Pure JavaScript完全準拠・DRY原則・SOLID原則遵守
+ * Phase A1: タブレットペン緊急修正版ペンツール
+ * 🚨 緊急修正内容:
+ * 1. isActive フラグ確実設定・管理
+ * 2. 筆圧値取得方法修正（event.data?.originalEvent?.pressure 優先）
+ * 3. イベントリスナー統一（PixiJS app.view経由）
+ * 4. 座標変換統一（getCanvasCoordinates統一）
+ * 5. main.js selectPenTool() 連携強化
  */
 class PenTool {
     constructor(toolManager) {
         this.toolManager = toolManager;
-        this.version = 'v1.0-Phase1.4STEP1';
+        this.version = 'v1.0-Phase1.4-A1';
         this.name = 'pen';
         this.displayName = 'ベクターペン';
         
-        // 🎯 Phase1.4STEP1: 描画状態管理
+        // 🚨 A1修正: アクティブ状態管理強化
+        this.isActive = false;
+        this.activationConfirmed = false; // 二重確認用
+        
+        // 🚨 A1修正: 描画状態管理明確化
         this.currentPath = null;
         this.isDrawing = false;
-        this.isActive = false;
-        this.lastPoint = null;
+        this.drawingSession = null;
         
-        // 🎯 Phase1.4STEP1: Pointer Events対応状態
-        this.pointerSupport = {
-            available: typeof PointerEvent !== 'undefined',
-            activePointer: null,
-            pointerType: 'mouse',
-            isPrimaryPointer: true,
-            coalesced: false
+        // 🚨 A1修正: 筆圧システム簡潔化・確実化
+        this.pressureSystem = {
+            enabled: true,
+            currentPressure: 0.5,
+            lastPressure: 0.5,
+            hasPointerPressure: false,
+            fallbackPressure: 0.5,
+            // 筆圧取得メソッド優先順位
+            extractMethods: [
+                'event.data?.originalEvent?.pressure',     // PixiJS包装イベント優先
+                'event.originalEvent?.pressure',           // 直接originalEvent
+                'event.pressure',                          // 直接pressure
+                'event.force'                              // force属性（一部デバイス）
+            ]
         };
         
-        // 🎯 Phase1.4STEP1: 筆圧システム（簡素化・実用重視）
-        this.pressure = {
-            current: 0.5,
-            last: 0.5,
-            min: 0.0,
-            max: 1.0,
-            sensitivity: 1.0,
-            enabled: false,
-            smoothing: 0.3
-        };
-        
-        // 🎯 Phase1.4STEP1: デバイス判定
-        this.deviceInfo = {
-            type: 'unknown',
-            supportsPressure: false,
-            supportsTilt: false,
-            maxPressure: 1.0,
-            identified: false
-        };
-        
-        // 🎯 Phase1.4STEP1: 設定（シンプル・実用重視）
+        // 🚨 A1修正: 基本設定簡潔化
         this.settings = {
-            // 基本設定
-            size: 16.0,
+            baseSize: 16.0,
+            minSize: 0.1,
+            maxSize: 100.0,
             opacity: 0.85,
             color: 0x800000,
-            
+            pressureSensitivity: true,
+            smoothing: 0.3,
+            edgeSmoothing: true,
             // 筆圧設定
-            pressureEnabled: true,
-            pressureMultiplier: 1.5,
+            pressureMultiplier: 1.0,
             minPressureSize: 0.3,
-            maxPressureSize: 2.0,
-            
-            // 描画設定
-            smoothing: true,
-            smoothingFactor: 0.7,
-            capStyle: 'round',
-            joinStyle: 'round'
+            maxPressureSize: 2.0
         };
         
-        // 🎯 Phase1.4STEP1: イベントバインド管理
-        this.eventBindings = new Map();
-        this.boundMethods = {
-            onPointerDown: this.onPointerDown.bind(this),
-            onPointerMove: this.onPointerMove.bind(this),
-            onPointerUp: this.onPointerUp.bind(this),
-            onPointerCancel: this.onPointerCancel.bind(this),
-            onPointerLeave: this.onPointerLeave.bind(this)
+        // イベントリスナー管理
+        this.eventListeners = {
+            pointerdown: null,
+            pointermove: null,
+            pointerup: null,
+            pointercancel: null
         };
         
-        console.log(`✒️ PenTool Phase1.4STEP1構築 - ${this.version}`);
+        // パフォーマンス監視簡易版
+        this.performance = {
+            drawCalls: 0,
+            averageLatency: 0,
+            lastFrameTime: 0
+        };
+        
+        console.log(`✒️ PenTool Phase A1構築 - ${this.version}`);
     }
     
     /**
-     * 🎯 Phase1.4STEP1: ペンツール初期化（タブレット対応強化）
+     * 🚨 A1修正: 初期化簡潔化・確実化
      */
     async initialize() {
-        console.group(`✒️ PenTool Phase1.4STEP1初期化開始 - ${this.version}`);
+        console.group(`✒️ PenTool Phase A1初期化 - ${this.version}`);
         
         try {
             const startTime = performance.now();
             
-            // Phase 1: Pointer Events対応チェック
-            this.checkPointerEventsSupport();
+            // Phase 1: 基本依存関係確認
+            this.checkBasicDependencies();
             
-            // Phase 2: デバイス判定・識別
-            this.identifyInputDevice();
+            // Phase 2: 筆圧システム初期化
+            this.initializePressureSystem();
             
             // Phase 3: イベントリスナー設定
             this.setupEventListeners();
             
-            // Phase 4: 筆圧システム初期化
-            this.initializePressureSystem();
-            
-            // Phase 5: ToolManager登録
+            // Phase 4: ToolManager登録
             if (this.toolManager) {
                 this.toolManager.registerTool(this.name, this);
+                console.log('✅ ToolManager登録完了');
             }
             
             const initTime = performance.now() - startTime;
-            console.log(`✅ PenTool Phase1.4STEP1初期化完了 - ${initTime.toFixed(2)}ms`);
-            
-            // 初期化結果ログ
-            this.logInitializationResult();
+            console.log(`✅ PenTool Phase A1初期化完了 - ${initTime.toFixed(2)}ms`);
             
             return this;
             
         } catch (error) {
-            console.error('❌ PenTool Phase1.4STEP1初期化エラー:', error);
-            return this.fallbackInitialization();
+            console.error('❌ PenTool Phase A1初期化エラー:', error);
+            return this; // エラーでも継続
             
         } finally {
             console.groupEnd();
@@ -139,312 +129,273 @@ class PenTool {
     }
     
     /**
-     * 🎯 Phase1.4STEP1: Pointer Events対応チェック
+     * 🚨 A1修正: 基本依存関係確認
      */
-    checkPointerEventsSupport() {
-        console.log('🔍 Pointer Events対応チェック...');
+    checkBasicDependencies() {
+        const deps = {
+            toolManager: !!this.toolManager,
+            appCore: !!this.toolManager?.appCore,
+            app: !!this.toolManager?.appCore?.app,
+            view: !!this.toolManager?.appCore?.app?.view,
+            drawingContainer: !!this.toolManager?.appCore?.drawingContainer
+        };
         
-        this.pointerSupport.available = typeof PointerEvent !== 'undefined';
+        const available = Object.values(deps).filter(Boolean).length;
+        const total = Object.keys(deps).length;
         
-        if (this.pointerSupport.available) {
-            console.log('✅ Pointer Events API 利用可能');
-            
-            // Coalesced Events対応チェック
-            try {
-                const testEvent = new PointerEvent('pointermove', { pressure: 0.5 });
-                this.pointerSupport.coalesced = typeof testEvent.getCoalescedEvents === 'function';
-                console.log(`📊 Coalesced Events: ${this.pointerSupport.coalesced ? '対応' : '非対応'}`);
-            } catch (e) {
-                this.pointerSupport.coalesced = false;
-            }
-            
-        } else {
-            console.warn('⚠️ Pointer Events API 非対応 - Mouse/Touch Events使用');
+        console.log(`📊 依存関係確認: ${available}/${total} 利用可能`, deps);
+        
+        if (!deps.app || !deps.view) {
+            console.warn('⚠️ 重要な依存関係が不足していますが継続します');
         }
     }
     
     /**
-     * 🎯 Phase1.4STEP1: 入力デバイス判定・識別
-     */
-    identifyInputDevice() {
-        console.log('🖱️ 入力デバイス判定開始...');
-        
-        // User Agent ベース判定
-        const ua = navigator.userAgent;
-        
-        if (/iPad|iPhone|iPod/.test(ua)) {
-            this.deviceInfo.type = 'iOS';
-            this.deviceInfo.supportsPressure = true;
-            console.log('🍎 iOS デバイス検出 - Apple Pencil対応準備');
-            
-        } else if (/Android/.test(ua)) {
-            this.deviceInfo.type = 'Android';
-            this.deviceInfo.supportsPressure = true;
-            console.log('🤖 Android デバイス検出 - スタイラス対応準備');
-            
-        } else if (/Windows.*Touch/.test(ua)) {
-            this.deviceInfo.type = 'Windows';
-            this.deviceInfo.supportsPressure = true;
-            console.log('🪟 Windows タッチデバイス検出 - Surface Pen対応準備');
-            
-        } else {
-            this.deviceInfo.type = 'Desktop';
-            this.deviceInfo.supportsPressure = true; // Wacomタブレット等
-            console.log('🖥️ デスクトップ環境検出 - Wacomタブレット対応準備');
-        }
-        
-        // 筆圧検出可能性設定
-        this.pressure.enabled = this.deviceInfo.supportsPressure && this.settings.pressureEnabled;
-        
-        this.deviceInfo.identified = true;
-    }
-    
-    /**
-     * 🎯 Phase1.4STEP1: イベントリスナー設定（統合版）
-     */
-    setupEventListeners() {
-        console.log('🎧 イベントリスナー設定開始...');
-        
-        const canvas = this.getCanvas();
-        if (!canvas) {
-            console.warn('⚠️ キャンバス要素未取得 - イベント設定スキップ');
-            return;
-        }
-        
-        // 既存イベント削除
-        this.removeEventListeners();
-        
-        if (this.pointerSupport.available) {
-            // Pointer Events優先使用
-            this.setupPointerEvents(canvas);
-        } else {
-            // フォールバック: Mouse + Touch Events
-            this.setupMouseTouchEvents(canvas);
-        }
-        
-        console.log('✅ イベントリスナー設定完了');
-    }
-    
-    /**
-     * 🎯 Phase1.4STEP1: Pointer Events設定（メイン）
-     */
-    setupPointerEvents(canvas) {
-        console.log('🎯 Pointer Events設定...');
-        
-        // Pointer Events設定
-        const events = [
-            ['pointerdown', this.boundMethods.onPointerDown],
-            ['pointermove', this.boundMethods.onPointerMove],
-            ['pointerup', this.boundMethods.onPointerUp],
-            ['pointercancel', this.boundMethods.onPointerCancel],
-            ['pointerleave', this.boundMethods.onPointerLeave]
-        ];
-        
-        events.forEach(([eventName, handler]) => {
-            canvas.addEventListener(eventName, handler, { passive: false });
-            this.eventBindings.set(eventName, handler);
-        });
-        
-        // タッチアクション設定（重要）
-        canvas.style.touchAction = 'none';
-        
-        console.log('✅ Pointer Events設定完了');
-    }
-    
-    /**
-     * 🎯 Phase1.4STEP1: Mouse/Touch Events設定（フォールバック）
-     */
-    setupMouseTouchEvents(canvas) {
-        console.log('🖱️ Mouse/Touch Events設定（フォールバック）...');
-        
-        // Mouse Events
-        const mouseEvents = [
-            ['mousedown', (e) => this.onPointerDown(this.convertMouseToPointer(e))],
-            ['mousemove', (e) => this.onPointerMove(this.convertMouseToPointer(e))],
-            ['mouseup', (e) => this.onPointerUp(this.convertMouseToPointer(e))]
-        ];
-        
-        // Touch Events（簡易版）
-        const touchEvents = [
-            ['touchstart', (e) => this.onPointerDown(this.convertTouchToPointer(e))],
-            ['touchmove', (e) => this.onPointerMove(this.convertTouchToPointer(e))],
-            ['touchend', (e) => this.onPointerUp(this.convertTouchToPointer(e))]
-        ];
-        
-        [...mouseEvents, ...touchEvents].forEach(([eventName, handler]) => {
-            canvas.addEventListener(eventName, handler, { passive: false });
-            this.eventBindings.set(eventName, handler);
-        });
-        
-        console.log('✅ Mouse/Touch Events設定完了');
-    }
-    
-    /**
-     * 🎯 Phase1.4STEP1: 筆圧システム初期化
+     * 🚨 A1修正: 筆圧システム初期化（簡潔化）
      */
     initializePressureSystem() {
-        console.log('📊 筆圧システム初期化...');
+        console.log('📊 筆圧システム初期化（Phase A1）...');
         
-        // 筆圧設定確認
-        if (this.pressure.enabled) {
-            console.log('✅ 筆圧検出有効 - 感度設定完了');
+        // PointerEvent対応確認
+        this.pressureSystem.hasPointerPressure = typeof PointerEvent !== 'undefined';
+        
+        if (this.pressureSystem.hasPointerPressure) {
+            console.log('✅ PointerEvent筆圧対応利用可能');
         } else {
-            console.log('📝 筆圧検出無効 - 固定サイズ描画');
+            console.log('⚠️ PointerEvent非対応 - フォールバック使用');
         }
         
-        // 筆圧履歴初期化
-        this.pressureHistory = [];
+        // 筆圧曲線設定（基本的なもののみ）
+        this.pressureCurves = {
+            linear: (p) => p,
+            ease: (p) => p * p * (3 - 2 * p)
+        };
         
         console.log('📊 筆圧システム初期化完了');
     }
     
-    // ==========================================
-    // 🎯 Phase1.4STEP1: Pointer Events処理群
-    // ==========================================
+    /**
+     * 🚨 A1修正: イベントリスナー設定（PixiJS統一）
+     */
+    setupEventListeners() {
+        console.log('🎯 イベントリスナー設定（PixiJS統一）...');
+        
+        const app = this.toolManager?.appCore?.app;
+        if (!app || !app.view) {
+            console.warn('⚠️ PIXI App/View 未利用可能 - イベント設定スキップ');
+            return;
+        }
+        
+        const canvas = app.view;
+        
+        // 🚨 A1修正: すべてPixiJS app.view経由に統一
+        this.eventListeners.pointerdown = (e) => this.handlePointerDown(e);
+        this.eventListeners.pointermove = (e) => this.handlePointerMove(e);
+        this.eventListeners.pointerup = (e) => this.handlePointerUp(e);
+        this.eventListeners.pointercancel = (e) => this.handlePointerCancel(e);
+        
+        // イベント登録（passive: false で preventDefault可能にする）
+        canvas.addEventListener('pointerdown', this.eventListeners.pointerdown, { passive: false });
+        canvas.addEventListener('pointermove', this.eventListeners.pointermove, { passive: false });
+        canvas.addEventListener('pointerup', this.eventListeners.pointerup, { passive: false });
+        canvas.addEventListener('pointercancel', this.eventListeners.pointercancel, { passive: false });
+        
+        // タッチアクション無効化（ブラウザのデフォルトジェスチャ防止）
+        canvas.style.touchAction = 'none';
+        
+        console.log('✅ イベントリスナー設定完了（PixiJS統一）');
+    }
     
     /**
-     * 🎯 Phase1.4STEP1: Pointer Down（描画開始）
+     * 🚨 A1修正: Pointer圧力情報抽出（優先順位対応）
      */
-    onPointerDown(event) {
-        if (!this.isActive) return;
+    extractPointerInfo(event) {
+        const pointerInfo = {
+            x: 0,
+            y: 0,
+            pressure: this.pressureSystem.fallbackPressure,
+            timestamp: performance.now(),
+            pointerType: event.pointerType || 'mouse'
+        };
+        
+        // 🚨 A1修正: 座標取得統一（getCanvasCoordinates使用）
+        try {
+            if (this.toolManager?.appCore?.getCanvasCoordinates) {
+                const coords = this.toolManager.appCore.getCanvasCoordinates(event);
+                pointerInfo.x = coords.x;
+                pointerInfo.y = coords.y;
+            } else {
+                // フォールバック座標取得
+                const rect = event.currentTarget.getBoundingClientRect();
+                pointerInfo.x = event.clientX - rect.left;
+                pointerInfo.y = event.clientY - rect.top;
+            }
+        } catch (error) {
+            console.warn('⚠️ 座標取得エラー - フォールバック使用:', error);
+        }
+        
+        // 🚨 A1修正: 筆圧取得（優先順位対応）
+        const pressureMethods = [
+            () => event.data?.originalEvent?.pressure,  // PixiJS包装イベント優先
+            () => event.originalEvent?.pressure,        // 直接originalEvent
+            () => event.pressure,                       // 直接pressure属性
+            () => event.force,                          // force属性（一部デバイス）
+            () => this.pressureSystem.fallbackPressure // 最終フォールバック
+        ];
+        
+        for (const method of pressureMethods) {
+            try {
+                const pressure = method();
+                if (typeof pressure === 'number' && pressure >= 0 && pressure <= 1) {
+                    pointerInfo.pressure = pressure;
+                    break;
+                }
+            } catch (error) {
+                // 次のメソッドを試行
+                continue;
+            }
+        }
+        
+        // 筆圧値更新
+        this.pressureSystem.currentPressure = pointerInfo.pressure;
+        this.pressureSystem.lastPressure = pointerInfo.pressure;
+        
+        return pointerInfo;
+    }
+    
+    /**
+     * 🚨 A1修正: PointerDown処理（確実なアクティブ判定）
+     */
+    handlePointerDown(event) {
+        // 🚨 A1修正: アクティブ状態確認強化
+        if (!this.isActive) {
+            // 非アクティブ時は処理しない
+            return;
+        }
+        
+        const startTime = performance.now();
         
         try {
-            // イベント詳細取得
+            event.preventDefault(); // デフォルト動作防止
+            
             const pointerInfo = this.extractPointerInfo(event);
             
-            // プライマリポインターのみ処理
-            if (!pointerInfo.isPrimary) return;
-            
-            // 座標取得
-            const coords = this.getCanvasCoordinates(event);
-            if (!coords) return;
-            
-            // 筆圧取得・処理
-            const pressure = this.processPressure(pointerInfo.pressure);
+            console.log(`✒️ PointerDown: (${pointerInfo.x.toFixed(2)}, ${pointerInfo.y.toFixed(2)}) P:${pointerInfo.pressure.toFixed(3)} Type:${pointerInfo.pointerType}`);
             
             // 描画開始
-            this.startDrawing(coords.x, coords.y, pressure, pointerInfo);
+            const path = this.startDrawing(pointerInfo.x, pointerInfo.y, pointerInfo.pressure, pointerInfo.timestamp);
             
-            // イベント制御
-            event.preventDefault();
-            event.stopPropagation();
-            
-            console.log(`✒️ 描画開始: (${coords.x.toFixed(1)}, ${coords.y.toFixed(1)}) P:${pressure.toFixed(3)} [${pointerInfo.pointerType}]`);
-            
-        } catch (error) {
-            console.error('❌ Pointer Down エラー:', error);
-        }
-    }
-    
-    /**
-     * 🎯 Phase1.4STEP1: Pointer Move（描画継続）
-     */
-    onPointerMove(event) {
-        if (!this.isActive || !this.isDrawing) return;
-        
-        try {
-            // イベント詳細取得
-            const pointerInfo = this.extractPointerInfo(event);
-            
-            // 座標取得
-            const coords = this.getCanvasCoordinates(event);
-            if (!coords) return;
-            
-            // 筆圧取得・処理
-            const pressure = this.processPressure(pointerInfo.pressure);
-            
-            // Coalesced Events処理（高精度）
-            if (this.pointerSupport.coalesced && event.getCoalescedEvents) {
-                const coalescedEvents = event.getCoalescedEvents();
-                if (coalescedEvents.length > 1) {
-                    // 複数点を順次処理
-                    coalescedEvents.forEach(coalescedEvent => {
-                        const coalescedCoords = this.getCanvasCoordinates(coalescedEvent);
-                        const coalescedPressure = this.processPressure(coalescedEvent.pressure || pressure);
-                        if (coalescedCoords) {
-                            this.continueDrawing(coalescedCoords.x, coalescedCoords.y, coalescedPressure);
-                        }
-                    });
-                    return;
-                }
+            if (path) {
+                // 成功時の状態更新
+                this.updatePressureMonitor(pointerInfo.pressure);
             }
             
-            // 通常描画継続
-            this.continueDrawing(coords.x, coords.y, pressure);
-            
-            // イベント制御
-            event.preventDefault();
+            const processTime = performance.now() - startTime;
+            this.performance.lastFrameTime = processTime;
             
         } catch (error) {
-            console.error('❌ Pointer Move エラー:', error);
+            console.error('❌ PointerDown処理エラー:', error);
         }
     }
     
     /**
-     * 🎯 Phase1.4STEP1: Pointer Up（描画終了）
+     * 🚨 A1修正: PointerMove処理（高頻度処理最適化）
      */
-    onPointerUp(event) {
-        if (!this.isActive || !this.isDrawing) return;
+    handlePointerMove(event) {
+        if (!this.isActive || !this.isDrawing) {
+            return;
+        }
+        
+        const startTime = performance.now();
         
         try {
-            // 描画終了
-            this.stopDrawing();
+            const pointerInfo = this.extractPointerInfo(event);
             
-            // イベント制御
-            event.preventDefault();
-            event.stopPropagation();
+            // 描画継続
+            const success = this.continueDrawing(pointerInfo.x, pointerInfo.y, pointerInfo.pressure, pointerInfo.timestamp);
             
-            console.log('✒️ 描画終了');
+            if (success) {
+                // 座標・筆圧監視更新
+                this.updateCoordinatesMonitor(pointerInfo.x, pointerInfo.y);
+                this.updatePressureMonitor(pointerInfo.pressure);
+            }
+            
+            const processTime = performance.now() - startTime;
+            this.performance.lastFrameTime = processTime;
+            
+            // パフォーマンス警告
+            if (processTime > 16) { // 60FPS基準
+                console.warn(`⚠️ PointerMove処理遅延: ${processTime.toFixed(2)}ms`);
+            }
             
         } catch (error) {
-            console.error('❌ Pointer Up エラー:', error);
+            console.error('❌ PointerMove処理エラー:', error);
         }
     }
     
     /**
-     * 🎯 Phase1.4STEP1: Pointer Cancel（描画キャンセル）
+     * 🚨 A1修正: PointerUp処理（確実な終了）
      */
-    onPointerCancel(event) {
-        if (this.isDrawing) {
-            console.log('⚠️ 描画キャンセル');
-            this.cancelDrawing();
+    handlePointerUp(event) {
+        if (!this.isActive || !this.isDrawing) {
+            return;
         }
-        event.preventDefault();
+        
+        const startTime = performance.now();
+        
+        try {
+            const pointerInfo = this.extractPointerInfo(event);
+            
+            console.log(`✒️ PointerUp: (${pointerInfo.x.toFixed(2)}, ${pointerInfo.y.toFixed(2)}) P:${pointerInfo.pressure.toFixed(3)}`);
+            
+            // 描画終了
+            const path = this.stopDrawing(pointerInfo.timestamp);
+            
+            if (path) {
+                console.log(`✒️ 描画完了: ${path.points?.length || 0}点`);
+            }
+            
+            const processTime = performance.now() - startTime;
+            this.performance.lastFrameTime = processTime;
+            
+        } catch (error) {
+            console.error('❌ PointerUp処理エラー:', error);
+        }
     }
     
     /**
-     * 🎯 Phase1.4STEP1: Pointer Leave（描画中断）
+     * PointerCancel処理
      */
-    onPointerLeave(event) {
+    handlePointerCancel(event) {
         if (this.isDrawing) {
-            console.log('📤 キャンバス離脱 - 描画終了');
+            console.log('✒️ PointerCancel - 描画中止');
             this.stopDrawing();
         }
     }
     
-    // ==========================================
-    // 🎯 Phase1.4STEP1: 描画処理メソッド群
-    // ==========================================
-    
     /**
-     * 🎯 Phase1.4STEP1: 描画開始
+     * 🚨 A1修正: 描画開始（簡潔化・確実化）
      */
-    startDrawing(x, y, pressure, pointerInfo) {
+    startDrawing(x, y, pressure = 0.5, timestamp = performance.now()) {
         if (!this.toolManager?.appCore) {
-            console.warn('⚠️ AppCore 未初期化');
+            console.warn('⚠️ AppCore 未初期化 - 描画不可');
             return null;
         }
         
         try {
             this.isDrawing = true;
-            this.pointerSupport.activePointer = pointerInfo?.pointerId || null;
+            
+            // 描画セッション作成
+            this.drawingSession = {
+                id: this.generateSessionId(),
+                startTime: timestamp,
+                points: []
+            };
             
             // パス作成
             this.currentPath = this.createPath(x, y, pressure);
             
-            // 最初の点設定
-            this.lastPoint = { x, y, pressure };
-            
+            console.log(`✒️ 描画開始: Session ${this.drawingSession.id}`);
             return this.currentPath;
             
         } catch (error) {
@@ -455,34 +406,26 @@ class PenTool {
     }
     
     /**
-     * 🎯 Phase1.4STEP1: 描画継続
+     * 🚨 A1修正: 描画継続（簡潔化）
      */
-    continueDrawing(x, y, pressure) {
-        if (!this.isDrawing || !this.currentPath || !this.lastPoint) {
+    continueDrawing(x, y, pressure = 0.5, timestamp = performance.now()) {
+        if (!this.isDrawing || !this.currentPath) {
             return false;
         }
         
         try {
-            // 距離チェック（最適化）
-            const distance = Math.sqrt((x - this.lastPoint.x) ** 2 + (y - this.lastPoint.y) ** 2);
-            if (distance < 1.0) {
-                return true; // スキップ
+            // 新しい点を追加
+            const point = { x, y, pressure, timestamp };
+            
+            // 描画実行
+            this.executeDrawing(point);
+            
+            // セッション更新
+            if (this.drawingSession) {
+                this.drawingSession.points.push(point);
             }
             
-            // 線の太さ計算
-            const lineWidth = this.calculateLineWidth(pressure);
-            
-            // スムージング適用
-            if (this.settings.smoothing) {
-                const smoothed = this.applySmoothingFilter(x, y, pressure);
-                this.drawLine(smoothed.x, smoothed.y, lineWidth);
-            } else {
-                this.drawLine(x, y, lineWidth);
-            }
-            
-            // 最後の点更新
-            this.lastPoint = { x, y, pressure };
-            
+            this.performance.drawCalls++;
             return true;
             
         } catch (error) {
@@ -492,312 +435,140 @@ class PenTool {
     }
     
     /**
-     * 🎯 Phase1.4STEP1: 描画終了
+     * 🚨 A1修正: 描画終了（簡潔化）
      */
-    stopDrawing() {
-        if (!this.isDrawing) return null;
+    stopDrawing(timestamp = performance.now()) {
+        if (!this.isDrawing || !this.currentPath) {
+            return null;
+        }
         
         try {
+            // 描画終了処理
             const completedPath = this.currentPath;
+            
+            // セッション統計
+            if (this.drawingSession) {
+                const duration = timestamp - this.drawingSession.startTime;
+                console.log(`✒️ 描画セッション完了: ${this.drawingSession.points.length}点, ${duration.toFixed(2)}ms`);
+            }
             
             // クリーンアップ
             this.isDrawing = false;
             this.currentPath = null;
-            this.lastPoint = null;
-            this.pointerSupport.activePointer = null;
+            this.drawingSession = null;
             
             return completedPath;
             
         } catch (error) {
             console.error('❌ 描画終了エラー:', error);
+            this.isDrawing = false;
             return null;
         }
     }
     
     /**
-     * 🎯 Phase1.4STEP1: 描画キャンセル
-     */
-    cancelDrawing() {
-        if (!this.isDrawing) return;
-        
-        try {
-            // パス削除
-            if (this.currentPath && this.currentPath.graphics && this.currentPath.graphics.parent) {
-                this.currentPath.graphics.parent.removeChild(this.currentPath.graphics);
-            }
-            
-            // クリーンアップ
-            this.isDrawing = false;
-            this.currentPath = null;
-            this.lastPoint = null;
-            this.pointerSupport.activePointer = null;
-            
-            console.log('🗑️ 描画キャンセル完了');
-            
-        } catch (error) {
-            console.error('❌ 描画キャンセルエラー:', error);
-        }
-    }
-    
-    // ==========================================
-    // 🎯 Phase1.4STEP1: 描画ヘルパーメソッド群
-    // ==========================================
-    
-    /**
-     * 🎯 Phase1.4STEP1: パス作成
+     * 🚨 A1修正: パス作成（基本機能）
      */
     createPath(x, y, pressure) {
-        const pathId = `pen_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const lineWidth = this.calculateLineWidth(pressure);
+        const pathId = this.generatePathId();
+        const size = this.calculateSize(pressure);
         
         const path = {
             id: pathId,
             tool: this.name,
             startTime: performance.now(),
-            points: [{ x, y, pressure }],
+            points: [{ x, y, pressure, size }],
             graphics: null
         };
         
-        // PixiJS Graphics作成
+        // PIXI Graphics作成
         path.graphics = new PIXI.Graphics();
         path.graphics.lineStyle({
-            width: lineWidth,
+            width: size,
             color: this.settings.color,
             alpha: this.settings.opacity,
-            cap: this.settings.capStyle === 'round' ? PIXI.LINE_CAP.ROUND : PIXI.LINE_CAP.BUTT,
-            join: this.settings.joinStyle === 'round' ? PIXI.LINE_JOIN.ROUND : PIXI.LINE_JOIN.MITER
+            cap: PIXI.LINE_CAP.ROUND,
+            join: PIXI.LINE_JOIN.ROUND
         });
         
-        // 初期位置設定
+        // 初期点設定
         path.graphics.moveTo(x, y);
         
-        // AppCoreに追加
+        // コンテナに追加
         if (this.toolManager.appCore.drawingContainer) {
             this.toolManager.appCore.drawingContainer.addChild(path.graphics);
-            if (!this.toolManager.appCore.paths) {
-                this.toolManager.appCore.paths = [];
-            }
-            this.toolManager.appCore.paths.push(path);
         }
         
         return path;
     }
     
     /**
-     * 🎯 Phase1.4STEP1: 線描画
+     * 🚨 A1修正: 描画実行（基本機能）
      */
-    drawLine(x, y, width) {
+    executeDrawing(point) {
         if (!this.currentPath?.graphics) return;
         
-        const graphics = this.currentPath.graphics;
+        const size = this.calculateSize(point.pressure);
         
-        // 動的線幅対応
-        graphics.lineStyle({
-            width: width,
-            color: this.settings.color,
-            alpha: this.settings.opacity,
-            cap: this.settings.capStyle === 'round' ? PIXI.LINE_CAP.ROUND : PIXI.LINE_CAP.BUTT,
-            join: this.settings.joinStyle === 'round' ? PIXI.LINE_JOIN.ROUND : PIXI.LINE_JOIN.MITER
-        });
+        // 筆圧に応じた線幅変更
+        if (this.settings.pressureSensitivity) {
+            this.currentPath.graphics.lineStyle({
+                width: size,
+                color: this.settings.color,
+                alpha: this.settings.opacity,
+                cap: PIXI.LINE_CAP.ROUND,
+                join: PIXI.LINE_JOIN.ROUND
+            });
+        }
         
-        graphics.lineTo(x, y);
+        // 線を引く
+        this.currentPath.graphics.lineTo(point.x, point.y);
         
         // パスに点追加
-        this.currentPath.points.push({ x, y, pressure: this.pressure.current });
+        this.currentPath.points.push({ ...point, size });
     }
     
     /**
-     * 🎯 Phase1.4STEP1: 線の太さ計算（筆圧対応）
+     * サイズ計算
      */
-    calculateLineWidth(pressure) {
-        if (!this.pressure.enabled) {
-            return this.settings.size;
+    calculateSize(pressure) {
+        let size = this.settings.baseSize;
+        
+        if (this.settings.pressureSensitivity) {
+            const minSize = this.settings.baseSize * this.settings.minPressureSize;
+            const maxSize = this.settings.baseSize * this.settings.maxPressureSize;
+            size = minSize + (maxSize - minSize) * pressure;
         }
         
-        const minSize = this.settings.size * this.settings.minPressureSize;
-        const maxSize = this.settings.size * this.settings.maxPressureSize;
-        
-        return minSize + (maxSize - minSize) * pressure;
+        return Math.max(this.settings.minSize, Math.min(this.settings.maxSize, size));
     }
     
     /**
-     * 🎯 Phase1.4STEP1: スムージングフィルタ適用
-     */
-    applySmoothingFilter(x, y, pressure) {
-        if (!this.lastPoint) {
-            return { x, y, pressure };
-        }
-        
-        const factor = this.settings.smoothingFactor;
-        
-        return {
-            x: this.lastPoint.x * factor + x * (1 - factor),
-            y: this.lastPoint.y * factor + y * (1 - factor),
-            pressure: this.lastPoint.pressure * factor + pressure * (1 - factor)
-        };
-    }
-    
-    // ==========================================
-    // 🎯 Phase1.4STEP1: ユーティリティメソッド群
-    // ==========================================
-    
-    /**
-     * 🎯 Phase1.4STEP1: Pointerイベント情報抽出
-     */
-    extractPointerInfo(event) {
-        return {
-            pointerId: event.pointerId || 0,
-            pointerType: event.pointerType || 'mouse',
-            isPrimary: event.isPrimary !== false,
-            pressure: event.pressure || 0.5,
-            tangentialPressure: event.tangentialPressure || 0,
-            tiltX: event.tiltX || 0,
-            tiltY: event.tiltY || 0,
-            twist: event.twist || 0,
-            width: event.width || 1,
-            height: event.height || 1
-        };
-    }
-    
-    /**
-     * 🎯 Phase1.4STEP1: キャンバス座標取得
-     */
-    getCanvasCoordinates(event) {
-        const canvas = this.getCanvas();
-        if (!canvas) return null;
-        
-        try {
-            const rect = canvas.getBoundingClientRect();
-            
-            return {
-                x: event.clientX - rect.left,
-                y: event.clientY - rect.top
-            };
-            
-        } catch (error) {
-            console.error('❌ 座標取得エラー:', error);
-            return null;
-        }
-    }
-    
-    /**
-     * 🎯 Phase1.4STEP1: 筆圧処理
-     */
-    processPressure(rawPressure) {
-        if (!this.pressure.enabled) {
-            return 0.5; // デフォルト値
-        }
-        
-        // 筆圧値正規化
-        let pressure = Math.max(this.pressure.min, Math.min(this.pressure.max, rawPressure || 0.5));
-        
-        // 感度調整
-        pressure *= this.pressure.sensitivity;
-        
-        // スムージング適用
-        pressure = this.pressure.last * this.pressure.smoothing + pressure * (1 - this.pressure.smoothing);
-        
-        // 記録
-        this.pressure.current = pressure;
-        this.pressure.last = pressure;
-        
-        if (this.pressureHistory) {
-            this.pressureHistory.push(pressure);
-            if (this.pressureHistory.length > 10) {
-                this.pressureHistory.shift();
-            }
-        }
-        
-        return pressure;
-    }
-    
-    /**
-     * 🎯 Phase1.4STEP1: キャンバス要素取得
-     */
-    getCanvas() {
-        return this.toolManager?.appCore?.app?.view || null;
-    }
-    
-    /**
-     * 🎯 Phase1.4STEP1: Mouse to Pointer変換
-     */
-    convertMouseToPointer(mouseEvent) {
-        return {
-            pointerId: 1,
-            pointerType: 'mouse',
-            isPrimary: true,
-            pressure: 0.5,
-            clientX: mouseEvent.clientX,
-            clientY: mouseEvent.clientY,
-            preventDefault: mouseEvent.preventDefault.bind(mouseEvent),
-            stopPropagation: mouseEvent.stopPropagation.bind(mouseEvent)
-        };
-    }
-    
-    /**
-     * 🎯 Phase1.4STEP1: Touch to Pointer変換
-     */
-    convertTouchToPointer(touchEvent) {
-        const touch = touchEvent.touches[0] || touchEvent.changedTouches[0];
-        if (!touch) return null;
-        
-        return {
-            pointerId: touch.identifier || 1,
-            pointerType: 'touch',
-            isPrimary: true,
-            pressure: 0.5,
-            clientX: touch.clientX,
-            clientY: touch.clientY,
-            preventDefault: touchEvent.preventDefault.bind(touchEvent),
-            stopPropagation: touchEvent.stopPropagation.bind(touchEvent)
-        };
-    }
-    
-    // ==========================================
-    // 🎯 Phase1.4STEP1: 公開API・設定管理
-    // ==========================================
-    
-    /**
-     * 🎯 Phase1.4STEP1: ツール設定更新
-     */
-    updateSettings(newSettings) {
-        if (!newSettings) return;
-        
-        try {
-            // 設定マージ（DRY原則）
-            this.settings = { ...this.settings, ...newSettings };
-            
-            // 筆圧設定更新
-            if ('pressureEnabled' in newSettings) {
-                this.pressure.enabled = newSettings.pressureEnabled && this.deviceInfo.supportsPressure;
-            }
-            
-            if ('pressureMultiplier' in newSettings) {
-                this.pressure.sensitivity = newSettings.pressureMultiplier;
-            }
-            
-            console.log('✒️ ペンツール設定更新:', newSettings);
-            
-        } catch (error) {
-            console.error('❌ ペンツール設定更新エラー:', error);
-        }
-    }
-    
-    /**
-     * 🎯 Phase1.4STEP1: ツールアクティベート
+     * 🚨 A1修正: ツールアクティベート（確実な状態管理）
      */
     activate() {
-        this.isActive = true;
-        console.log(`✒️ ${this.displayName} アクティブ化 - Phase1.4STEP1`);
+        console.log(`✒️ ${this.displayName} アクティベート開始...`);
         
-        // イベントリスナー再設定（必要に応じて）
-        if (this.eventBindings.size === 0) {
+        try {
+            this.isActive = true;
+            this.activationConfirmed = true;
+            
+            // イベントリスナー再設定（念のため）
             this.setupEventListeners();
+            
+            console.log(`✅ ${this.displayName} アクティベート完了 - Phase A1`);
+            return true;
+            
+        } catch (error) {
+            console.error('❌ ツールアクティベートエラー:', error);
+            this.isActive = false;
+            this.activationConfirmed = false;
+            return false;
         }
     }
     
     /**
-     * 🎯 Phase1.4STEP1: ツール非アクティベート
+     * ツール非アクティベート
      */
     deactivate() {
         if (this.isDrawing) {
@@ -805,355 +576,114 @@ class PenTool {
         }
         
         this.isActive = false;
-        console.log(`✒️ ${this.displayName} 非アクティブ化 - Phase1.4STEP1`);
+        this.activationConfirmed = false;
+        
+        console.log(`✒️ ${this.displayName} 非アクティベート - Phase A1`);
     }
     
     /**
-     * 🎯 Phase1.4STEP1: イベントリスナー削除
+     * 設定更新
      */
-    removeEventListeners() {
-        const canvas = this.getCanvas();
-        if (!canvas || this.eventBindings.size === 0) return;
+    updateSettings(newSettings) {
+        if (!newSettings) return;
         
-        this.eventBindings.forEach((handler, eventName) => {
-            canvas.removeEventListener(eventName, handler);
-        });
-        
-        this.eventBindings.clear();
-        console.log('🧹 イベントリスナー削除完了');
+        try {
+            this.settings = { ...this.settings, ...newSettings };
+            console.log('✒️ ペンツール設定更新:', newSettings);
+        } catch (error) {
+            console.error('❌ 設定更新エラー:', error);
+        }
     }
     
     /**
-     * 🎯 Phase1.4STEP1: ツールクリーンアップ
+     * イベントリスナークリーンアップ
      */
     cleanup() {
-        console.log('🧹 ペンツールクリーンアップ開始...');
+        const app = this.toolManager?.appCore?.app;
+        const canvas = app?.view;
         
-        // 描画中断
-        if (this.isDrawing) {
-            this.cancelDrawing();
+        if (canvas && this.eventListeners) {
+            Object.entries(this.eventListeners).forEach(([event, listener]) => {
+                if (listener) {
+                    canvas.removeEventListener(event, listener);
+                }
+            });
         }
         
-        // イベントリスナー削除
-        this.removeEventListeners();
-        
-        // 状態リセット
-        this.isActive = false;
-        this.currentPath = null;
-        this.lastPoint = null;
-        this.pressureHistory = [];
-        
-        console.log('🧹 ペンツールクリーンアップ完了');
+        console.log('✒️ ペンツール クリーンアップ完了');
     }
     
     // ==========================================
-    // 🎯 Phase1.4STEP1: デバッグ・診断メソッド群
+    // ユーティリティメソッド
     // ==========================================
     
     /**
-     * 🎯 Phase1.4STEP1: 初期化結果ログ
+     * 座標監視更新
      */
-    logInitializationResult() {
-        console.group('📊 ペンツール初期化結果');
-        
-        console.log(`🔧 バージョン: ${this.version}`);
-        console.log(`🎯 デバイス: ${this.deviceInfo.type}`);
-        console.log(`📊 筆圧対応: ${this.pressure.enabled ? '有効' : '無効'}`);
-        console.log(`🎧 Pointer Events: ${this.pointerSupport.available ? '利用' : 'フォールバック'}`);
-        console.log(`🔄 Coalesced Events: ${this.pointerSupport.coalesced ? '対応' : '非対応'}`);
-        
-        if (this.pressure.enabled) {
-            console.log(`📈 筆圧感度: ${this.pressure.sensitivity}`);
-            console.log(`📉 筆圧範囲: ${this.pressure.min} - ${this.pressure.max}`);
+    updateCoordinatesMonitor(x, y) {
+        try {
+            const coordsElement = document.getElementById('coordinates');
+            if (coordsElement) {
+                coordsElement.textContent = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
+            }
+        } catch (error) {
+            // エラー無視（UIが存在しない場合）
         }
-        
-        console.groupEnd();
     }
     
     /**
-     * 🎯 Phase1.4STEP1: 診断情報取得
+     * 筆圧監視更新
      */
-    getDiagnosticInfo() {
+    updatePressureMonitor(pressure) {
+        try {
+            const pressureElement = document.getElementById('pressure-monitor');
+            if (pressureElement) {
+                const percentage = (pressure * 100).toFixed(1);
+                pressureElement.textContent = `${percentage}%`;
+            }
+        } catch (error) {
+            // エラー無視（UIが存在しない場合）
+        }
+    }
+    
+    /**
+     * セッションID生成
+     */
+    generateSessionId() {
+        return `pen_session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+    
+    /**
+     * パスID生成
+     */
+    generatePathId() {
+        return `pen_path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+    
+    /**
+     * 状態取得（デバッグ用）
+     */
+    getStatus() {
         return {
             version: this.version,
             isActive: this.isActive,
+            activationConfirmed: this.activationConfirmed,
             isDrawing: this.isDrawing,
-            deviceInfo: { ...this.deviceInfo },
-            pointerSupport: { ...this.pointerSupport },
-            pressure: {
-                enabled: this.pressure.enabled,
-                current: this.pressure.current,
-                sensitivity: this.pressure.sensitivity
+            hasCurrentPath: !!this.currentPath,
+            pressureSystem: {
+                ...this.pressureSystem,
+                currentPressure: this.pressureSystem.currentPressure.toFixed(3)
             },
-            eventBindings: this.eventBindings.size,
-            settings: { ...this.settings }
+            performance: {
+                ...this.performance,
+                lastFrameTime: this.performance.lastFrameTime.toFixed(2) + 'ms'
+            }
         };
-    }
-    
-    /**
-     * 🎯 Phase1.4STEP1: 筆圧テスト
-     */
-    testPressureSystem() {
-        console.group('🧪 筆圧システムテスト');
-        
-        if (!this.pressure.enabled) {
-            console.log('❌ 筆圧システム無効');
-            console.groupEnd();
-            return false;
-        }
-        
-        // テスト筆圧値
-        const testPressures = [0.0, 0.25, 0.5, 0.75, 1.0];
-        
-        console.log('📊 筆圧値テスト:');
-        testPressures.forEach(testPressure => {
-            const processed = this.processPressure(testPressure);
-            const lineWidth = this.calculateLineWidth(processed);
-            console.log(`  ${testPressure.toFixed(2)} → ${processed.toFixed(3)} (幅: ${lineWidth.toFixed(1)}px)`);
-        });
-        
-        console.log('✅ 筆圧システムテスト完了');
-        console.groupEnd();
-        return true;
-    }
-    
-    /**
-     * 🎯 Phase1.4STEP1: イベントシステムテスト
-     */
-    testEventSystem() {
-        console.group('🧪 イベントシステムテスト');
-        
-        const canvas = this.getCanvas();
-        if (!canvas) {
-            console.log('❌ キャンバス未取得');
-            console.groupEnd();
-            return false;
-        }
-        
-        console.log(`🎯 キャンバス要素: ${canvas.tagName} (${canvas.width}×${canvas.height})`);
-        console.log(`🎧 イベントバインド数: ${this.eventBindings.size}`);
-        
-        // バインド確認
-        this.eventBindings.forEach((handler, eventName) => {
-            console.log(`  ✅ ${eventName}: バインド済み`);
-        });
-        
-        console.log('✅ イベントシステムテスト完了');
-        console.groupEnd();
-        return true;
-    }
-    
-    // ==========================================
-    // 🎯 Phase1.4STEP1: フォールバック・エラー処理
-    // ==========================================
-    
-    /**
-     * 🎯 Phase1.4STEP1: フォールバック初期化
-     */
-    fallbackInitialization() {
-        console.log('🛡️ ペンツール フォールバック初期化...');
-        
-        try {
-            // 基本設定のみ
-            this.settings = {
-                size: 16.0,
-                opacity: 0.85,
-                color: 0x800000,
-                pressureEnabled: false,
-                smoothing: false
-            };
-            
-            // システム無効化
-            this.pressure.enabled = false;
-            this.pointerSupport.available = false;
-            this.deviceInfo.supportsPressure = false;
-            
-            // 基本イベント設定
-            this.setupEventListeners();
-            
-            // ToolManager登録
-            if (this.toolManager) {
-                this.toolManager.registerTool(this.name, this);
-            }
-            
-            console.log('✅ フォールバック初期化完了');
-            return this;
-            
-        } catch (error) {
-            console.error('❌ フォールバック初期化エラー:', error);
-            return this;
-        }
-    }
-    
-    /**
-     * 🎯 Phase1.4STEP1: エラー回復処理
-     */
-    recoverFromError(error) {
-        console.warn('🔧 ペンツールエラー回復処理:', error.message);
-        
-        try {
-            // 描画状態リセット
-            if (this.isDrawing) {
-                this.cancelDrawing();
-            }
-            
-            // イベント再設定
-            this.removeEventListeners();
-            setTimeout(() => {
-                this.setupEventListeners();
-            }, 100);
-            
-            console.log('✅ エラー回復処理完了');
-            return true;
-            
-        } catch (recoveryError) {
-            console.error('❌ エラー回復失敗:', recoveryError);
-            return false;
-        }
     }
 }
 
-// ==========================================
-// 🎯 Phase1.4STEP1: グローバル登録・初期化準備
-// ==========================================
-
-// グローバル登録（Pure JavaScript方式）
+// 🚨 A1修正: グローバル公開（AI分業対応）
 if (typeof window !== 'undefined') {
     window.PenTool = PenTool;
-    console.log('🌍 PenTool Phase1.4STEP1 グローバル登録完了');
-}
-
-// 自動初期化（ToolManager存在時）
-if (typeof window !== 'undefined' && window.ToolManager) {
-    // ToolManagerが既に存在する場合の自動登録
-    document.addEventListener('DOMContentLoaded', () => {
-        if (window.futabaDrawingTool?.toolManager) {
-            const penTool = new PenTool(window.futabaDrawingTool.toolManager);
-            penTool.initialize().then(() => {
-                console.log('🎯 ペンツール自動初期化完了');
-            }).catch(error => {
-                console.error('❌ ペンツール自動初期化エラー:', error);
-            });
-        }
-    });
-}
-
-/**
- * 🎯 Phase1.4STEP1: タブレットペン対応テストスイート
- */
-class TabletPenTestSuite {
-    constructor(penTool) {
-        this.penTool = penTool;
-    }
-    
-    async runAllTests() {
-        console.group('🧪 タブレットペン対応テスト実行開始');
-        
-        const results = {
-            pointerEventsSupport: this.testPointerEventsSupport(),
-            deviceDetection: this.testDeviceDetection(),
-            pressureSystem: this.penTool.testPressureSystem(),
-            eventSystem: this.penTool.testEventSystem(),
-            coordinateMapping: this.testCoordinateMapping(),
-            drawingFlow: await this.testDrawingFlow()
-        };
-        
-        const passed = Object.values(results).filter(Boolean).length;
-        const total = Object.keys(results).length;
-        
-        console.log(`📊 テスト結果: ${passed}/${total} (${(passed/total*100).toFixed(1)}%)`);
-        console.groupEnd();
-        
-        return results;
-    }
-    
-    testPointerEventsSupport() {
-        console.log('🧪 Pointer Events対応テスト...');
-        
-        const hasPointerEvent = typeof PointerEvent !== 'undefined';
-        const hasCoalescedEvents = hasPointerEvent && 
-            (() => {
-                try {
-                    const testEvent = new PointerEvent('pointermove');
-                    return typeof testEvent.getCoalescedEvents === 'function';
-                } catch (e) { return false; }
-            })();
-        
-        console.log(`  PointerEvent: ${hasPointerEvent ? '✅' : '❌'}`);
-        console.log(`  CoalescedEvents: ${hasCoalescedEvents ? '✅' : '❌'}`);
-        
-        return hasPointerEvent;
-    }
-    
-    testDeviceDetection() {
-        console.log('🧪 デバイス検出テスト...');
-        
-        const deviceInfo = this.penTool.deviceInfo;
-        
-        console.log(`  デバイスタイプ: ${deviceInfo.type}`);
-        console.log(`  筆圧対応: ${deviceInfo.supportsPressure ? '✅' : '❌'}`);
-        console.log(`  識別完了: ${deviceInfo.identified ? '✅' : '❌'}`);
-        
-        return deviceInfo.identified;
-    }
-    
-    testCoordinateMapping() {
-        console.log('🧪 座標マッピングテスト...');
-        
-        const canvas = this.penTool.getCanvas();
-        if (!canvas) {
-            console.log('  ❌ キャンバス未取得');
-            return false;
-        }
-        
-        // 模擬座標テスト
-        const mockEvent = {
-            clientX: 100,
-            clientY: 200
-        };
-        
-        const coords = this.penTool.getCanvasCoordinates(mockEvent);
-        
-        console.log(`  座標変換: (${mockEvent.clientX}, ${mockEvent.clientY}) → ${coords ? `(${coords.x.toFixed(1)}, ${coords.y.toFixed(1)})` : 'null'}`);
-        
-        return coords !== null;
-    }
-    
-    async testDrawingFlow() {
-        console.log('🧪 描画フローテスト...');
-        
-        try {
-            // アクティベート
-            this.penTool.activate();
-            
-            // 模擬描画開始
-            const path = this.penTool.startDrawing(50, 50, 0.5, { pointerId: 1, pointerType: 'pen', isPrimary: true });
-            
-            if (!path) {
-                console.log('  ❌ 描画開始失敗');
-                return false;
-            }
-            
-            // 模擬描画継続
-            const continued = this.penTool.continueDrawing(100, 100, 0.7);
-            
-            // 描画終了
-            const completed = this.penTool.stopDrawing();
-            
-            console.log(`  描画開始: ${path ? '✅' : '❌'}`);
-            console.log(`  描画継続: ${continued ? '✅' : '❌'}`);
-            console.log(`  描画終了: ${completed ? '✅' : '❌'}`);
-            
-            return path && continued && completed;
-            
-        } catch (error) {
-            console.error('  ❌ 描画フローテストエラー:', error);
-            return false;
-        }
-    }
-}
-
-// グローバル登録
-if (typeof window !== 'undefined') {
-    window.TabletPenTestSuite = TabletPenTestSuite;
+    console.log('✅ PenTool Phase A1 グローバル公開完了');
 }

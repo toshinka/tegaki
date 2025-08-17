@@ -1,0 +1,212 @@
+# 🎨 ふたば☆ちゃんねる風お絵描きツール Phase1.4 改修計画書
+## タブレットペン対応・popup-manager・slider-manager実装
+
+---
+
+## 🚨 緊急課題と根本原因
+
+### 診断結果（GROK4分析ベース）
+1. **タブレットペン描画不可**: `pen-tool.js` の `isActive` が常に `false`
+2. **筆圧値非取得**: `event.pressure` ではなく `event.data?.originalEvent?.pressure` が必要
+3. **イベント処理競合**: DOM直付けとPixiJS両方のイベントリスナー
+4. **UI管理不備**: popup-manager.js と slider-manager.js が未実装
+
+### 技術的問題点
+- PenTool のイベントリスナーがDOM直付け、PixiJS側と別経路
+- main.js でペンツール選択時に `isActive = true` 設定なし
+- 座標変換が `getCanvasCoordinates()` 経由で不統一
+
+---
+
+## 🎯 Phase A: 緊急修正（2-3日）
+
+### A1. タブレットペン即効修正
+
+**対象ファイル**: `tools/pen-tool.js`
+**参考ファイル**: 診断書の修正内容
+
+**修正内容**:
+1. `activate()` メソッドで `this.isActive = true` を確実に設定
+2. `extractPointerInfo()` で筆圧値参照を `event.data?.originalEvent?.pressure` 優先に変更
+3. `setupEventListeners()` をPixiJS app.view経由に統一
+
+**対象ファイル**: `js/main.js`
+**参考ファイル**: なし（単純なフラグ設定）
+
+**修正内容**:
+1. `selectPenTool()` メソッドで取得したPenToolの `isActive = true` を強制設定
+2. `activate()` メソッドも呼び出し
+
+### A2. popup-manager.js 新規実装
+
+**作成ファイル**: `managers/popup-manager.js`
+**参考ファイル**: `index.html`（既存ポップアップHTML構造）
+
+**実装要件**:
+- 既存の `.popup-panel` 要素を自動検出・管理
+- ドラッグ機能（`.popup-title` をハンドルに使用）
+- Escapeキーで全ポップアップ閉じる
+- 排他制御（1つ表示時に他を自動非表示）
+- Z-index管理で重なり順制御
+
+### A3. slider-manager.js 新規実装
+
+**作成ファイル**: `managers/slider-manager.js`
+**参考ファイル**: `index.html`（既存スライダーHTML構造）
+
+**実装要件**:
+- `pen-size`, `pen-opacity`, `pen-pressure`, `pen-smoothing` スライダー管理
+- 増減ボタン（`-decrease-small`, `-decrease`, `-decrease-large` など）対応
+- プリセットサイズボタン（`.size-preset-item`）連携
+- リアルタイム値更新とUI反映
+- コールバック機能でツール設定連携
+
+---
+
+## 🔧 Phase B: 構造最適化（1週間）
+
+### B1. イベント処理統一
+
+**対象ファイル**: `js/app-core.js`
+**参考ファイル**: `tools/pen-tool.js`（現在の描画処理）
+
+**修正内容**:
+1. `handlePointerDown` で統一座標変換・筆圧抽出
+2. currentTool への処理委譲パターン実装
+3. 座標変換メソッドの統一（PixiJS InteractionEvent対応）
+
+### B2. UI管理システム統合
+
+**対象ファイル**: `managers/ui-manager.js`
+**参考ファイル**: Phase A で作成した popup-manager.js, slider-manager.js
+
+**修正内容**:
+1. PopupManager, SliderManager のインスタンス管理
+2. ツール選択時の自動ポップアップ表示
+3. スライダー値変更時のツール設定自動更新
+4. `closeAllPopups()` の統合版実装
+
+---
+
+## 🚀 Phase C: 機能強化（1週間）
+
+### C1. 筆圧システム高精度化
+
+**対象ファイル**: `tools/pen-tool.js`
+**参考ファイル**: なし（内部ロジック強化）
+
+**強化内容**:
+1. 120Hz筆圧サンプリング対応
+2. 筆圧補間・予測アルゴリズム
+3. デッドゾーン処理・感度調整
+4. 統計情報・パフォーマンス監視
+
+### C2. PixiJS v8 移行準備
+
+**作成ファイル**: `libs/pixi-v8-migration.js`
+**参考ファイル**: 既存 `libs/pixi-extensions.js`
+
+**準備内容**:
+1. Application.init() 非同期対応
+2. backgroundColor → background 設定変換
+3. Graphics API変更への互換性レイヤー
+4. イベント名変更への対応
+
+---
+
+## 📋 作業手順・ファイル一覧
+
+### Phase A 作業リスト
+
+| 順序 | 作業内容 | 対象ファイル | 所要時間 | 優先度 |
+|------|----------|--------------|----------|--------|
+| 1 | ペンツール有効化修正 | `tools/pen-tool.js` | 30分 | 🚨最高 |
+| 2 | メイン初期化修正 | `js/main.js` | 15分 | 🚨最高 |
+| 3 | popup-manager実装 | `managers/popup-manager.js` | 3時間 | 🔴高 |
+| 4 | slider-manager実装 | `managers/slider-manager.js` | 4時間 | 🔴高 |
+| 5 | HTML読み込み追加 | `index.html` | 5分 | 🟡中 |
+
+### Phase B 作業リスト
+
+| 順序 | 作業内容 | 対象ファイル | 所要時間 | 優先度 |
+|------|----------|--------------|----------|--------|
+| 1 | イベント処理統一 | `js/app-core.js` | 2時間 | 🔴高 |
+| 2 | UI管理統合 | `managers/ui-manager.js` | 3時間 | 🔴高 |
+| 3 | ツール連携強化 | `managers/tool-manager.js` | 1時間 | 🟡中 |
+
+### Phase C 作業リスト
+
+| 順序 | 作業内容 | 対象ファイル | 所要時間 | 優先度 |
+|------|----------|--------------|----------|--------|
+| 1 | 筆圧システム強化 | `tools/pen-tool.js` | 6時間 | 🟡中 |
+| 2 | v8移行準備実装 | `libs/pixi-v8-migration.js` | 4時間 | 🟢低 |
+
+---
+
+## 🧪 テスト・検証方法
+
+### Phase A 検証項目
+1. **タブレットペン描画**: スタイラスでキャンバス描画可能
+2. **筆圧値表示**: ステータスバーで筆圧%が実際の値表示
+3. **ポップアップ動作**: ドラッグ・Escape・排他制御
+4. **スライダー動作**: 値変更・プリセット・増減ボタン
+
+### Phase B 検証項目
+1. **イベント統一**: マウス・ペン両方で同一座標・筆圧取得
+2. **UI統合**: ツール選択でポップアップ自動表示
+3. **設定連携**: スライダー変更でツール設定即反映
+
+### Phase C 検証項目
+1. **高精度筆圧**: 120Hzサンプリング・スムージング
+2. **v8互換性**: バージョン判定・API変換
+
+---
+
+## 💡 Claude向け実装ガイド
+
+### 推奨実装アプローチ
+1. **Phase A優先**: 即効性のある修正から開始
+2. **既存コード活用**: HTMLの構造やクラス名をそのまま利用
+3. **エラーハンドリング**: try-catch でフォールバック実装
+4. **DRY原則**: 共通処理は関数化して重複排除
+
+### ファイル間依存関係
+```
+index.html (スクリプト読み込み順序重要)
+├── libs/pixi-extensions.js
+├── js/app-core.js
+├── js/main.js
+├── managers/ui-manager.js
+├── managers/popup-manager.js (新規)
+├── managers/slider-manager.js (新規)
+└── tools/pen-tool.js
+```
+
+### 実装時の注意点
+- **Pure JavaScript**: ESM/import禁止、グローバル変数使用
+- **既存HTML活用**: IDやクラス名は変更せずそのまま使用
+- **段階的実装**: Phase A → B → C の順序で実装
+- **後方互換性**: 既存機能を破壊しない修正
+
+---
+
+## 🎯 期待される成果
+
+### Phase A完了時
+- ✅ タブレットペンでキャンバス描画可能
+- ✅ 筆圧値がリアルタイム表示
+- ✅ ポップアップが統一管理
+- ✅ スライダーが滑らかに動作
+
+### Phase B完了時
+- ✅ マウス・ペン操作が完全統一
+- ✅ ツール選択が自動化
+- ✅ 設定変更が即座反映
+
+### Phase C完了時
+- ✅ プロ級筆圧感度実現
+- ✅ PixiJS v8移行準備完了
+
+---
+
+この計画書に沿って段階的に実装すれば、確実にタブレットペン対応と高度なUI管理システムが完成します。Claudeの実装力を信頼して、簡潔な指針で効率的に作業を進めましょう！
