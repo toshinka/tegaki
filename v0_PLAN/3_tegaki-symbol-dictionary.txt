@@ -1,0 +1,990 @@
+# 🎨 ふたば☆お絵描きツール - シンボル辞典・API定義書 v1.0
+
+> **作成目的**: AI協働開発での効率化・誤読防止・メンテナンス性向上  
+> **対象Phase**: Phase1.4s1rev1（依存関係解決版）  
+> **最終更新**: 2025年8月17日
+
+## 📋 概要
+
+このシンボル辞典は、ふたば☆お絵描きツールの全クラス・関数・設定値を網羅した技術リファレンスです。AIによるコード修正時の勘違いや依存関係エラーを防止し、効率的な開発を支援します。
+
+---
+
+## 🎯 グローバル変数・エントリーポイント
+
+### 🌐 window オブジェクト（グローバル名前空間）
+
+```javascript
+// 📍 メインアプリケーション
+window.futabaDrawingTool          // FutabaDrawingTool インスタンス（main.js）
+window.appCoreInstance           // AppCore インスタンス（app-core.js）
+
+// 📍 クラス定義（Pure JavaScript）
+window.FutabaDrawingTool         // メインアプリケーションクラス
+window.AppCore                   // PixiJS基盤管理クラス
+window.DrawingToolSystem         // 描画ツールシステム
+window.SimpleFallbackToolSystem  // フォールバック描画システム
+window.UIController              // UI制御システム
+window.PerformanceMonitor        // パフォーマンス監視
+window.DebugUtils                // デバッグユーティリティ
+
+// 📍 拡張システム
+window.PixiExtensions           // 拡張ライブラリ統合管理
+window.APP_INIT_MONITOR         // 依存関係監視システム
+
+// 📍 デバッグ関数
+window.getAppState()            // アプリケーション状態取得
+window.startDebugMode()         // デバッグモード開始
+window.debugAppCore()           // AppCore デバッグ
+window.debugFutaba              // デバッグユーティリティオブジェクト
+```
+
+---
+
+## 🏗️ メインクラス定義
+
+### 🎨 FutabaDrawingTool（main.js）
+
+**責務**: アプリケーション全体の初期化・エラー処理・依存関係管理
+
+```javascript
+class FutabaDrawingTool {
+    constructor()
+    
+    // 🎯 コア機能
+    async init()                    // アプリケーション初期化
+    async validateDependencies()    // 依存関係確認
+    async initializeAppCore()       // AppCore統合
+    
+    // 🔧 初期化ステップ
+    performPreInitializationChecks()    // DOM要素確認
+    initializeExtensions()              // 拡張ライブラリ初期化
+    setupUIIntegration()                // UI統合
+    finalizeInitialization()            // 最終確認
+    
+    // 🛡️ エラー処理
+    async attemptFallbackInitialization(error)  // フォールバック初期化
+    showErrorMessage(error)                      // エラー表示
+    showRecoveryMessage(originalError)           // 回復メッセージ
+    showCriticalErrorMessage(originalError, fallbackError)  // 致命的エラー
+    
+    // 📊 状態管理
+    getAppState()                   // 詳細状態取得
+    startDebugMode()               // デバッグモード開始
+    
+    // ⚙️ 設定値（config プロパティ）
+    config.maxInitTime             // 5000ms - 最大初期化時間
+    config.retryAttempts           // 3 - リトライ回数
+    config.retryDelay              // 200ms - リトライ間隔
+    config.requiredDependencies    // ['PIXI', 'PixiExtensions', 'AppCore']
+    
+    // 🏷️ 状態プロパティ
+    isInitialized                  // boolean - 初期化完了フラグ
+    appCore                        // AppCore インスタンス
+    initializationSteps            // Array - 完了した初期化ステップ
+    errorLog                       // Array - エラーログ配列
+}
+```
+
+### 🎮 AppCore（app-core.js）
+
+**責務**: PixiJS基盤管理・描画エンジン・ツールシステム統合
+
+```javascript
+class AppCore {
+    constructor()
+    
+    // 🚀 初期化システム
+    async initialize()                      // メイン初期化
+    async executeInitializationSequence()  // 初期化シーケンス実行
+    async verifyDOMElements()              // DOM要素確認
+    async checkExtensions()                // 拡張機能確認
+    async initializePixiApp()              // PixiJS Application初期化
+    initializeContainers()                 // コンテナ初期化
+    initializeToolSystem()                 // ツールシステム初期化
+    initializeUI()                         // UI制御初期化
+    setupEventListeners()                  // イベントリスナー設定
+    
+    // 🎨 PixiJS管理
+    createPixiAppConfig()                  // Application設定作成
+    isPixiV8()                            // PixiJS v8判定
+    initializePixiAppV8(config)           // v8用初期化（将来）
+    initializePixiAppV7(config)           // v7用初期化（現在）
+    attachPixiAppToDOM()                  // DOM接続
+    configureCanvasStyles()               // キャンバススタイル
+    
+    // 🖱️ イベントハンドラ
+    handlePointerDown(event)              // ポインターダウン
+    handlePointerMove(event)              // ポインター移動
+    handlePointerUp(event)                // ポインターアップ
+    handleResize()                        // リサイズ処理
+    
+    // 📐 キャンバス制御
+    resize(newWidth, newHeight, centerContent)  // キャンバスリサイズ
+    updateCanvasStatusDisplay()                 // ステータス表示更新
+    getLocalPointerPosition(event)              // ローカル座標取得
+    
+    // 🔧 設定値アクセサ
+    get canvasWidth()                     // キャンバス幅取得
+    set canvasWidth(value)                // キャンバス幅設定
+    get canvasHeight()                    // キャンバス高さ取得
+    set canvasHeight(value)               // キャンバス高さ設定
+    get backgroundColor()                 // 背景色取得
+    set backgroundColor(value)            // 背景色設定
+    
+    // ⚙️ 設定値（config プロパティ）
+    config.canvas.width                   // 400 - デフォルト幅
+    config.canvas.height                  // 400 - デフォルト高さ
+    config.canvas.backgroundColor         // 0xf0e0d6 - 背景色
+    config.canvas.maxWidth                // 4096 - 最大幅
+    config.canvas.maxHeight              // 4096 - 最大高さ
+    config.performance.targetFPS         // 60 - 目標FPS
+    config.performance.maxInitTime       // 3000ms - 最大初期化時間
+    config.pixiApp.antialias             // true - アンチエイリアス
+    config.pixiApp.resolution            // 1 - 解像度
+    config.pixiApp.autoDensity           // false - 自動密度
+    
+    // 🏷️ 主要プロパティ
+    app                                  // PIXI.Application インスタンス
+    drawingContainer                     // PIXI.Container - 描画レイヤー
+    uiContainer                          // PIXI.Container - UIレイヤー
+    paths                               // Array - 描画パス配列
+    toolSystem                          // DrawingToolSystem インスタンス
+    uiController                        // UIController インスタンス
+    performanceMonitor                  // PerformanceMonitor インスタンス
+    extensionsAvailable                 // boolean - 拡張機能利用可能性
+    fallbackMode                        // boolean - フォールバックモード
+}
+```
+
+### ✏️ DrawingToolSystem（app-core.js内）
+
+**責務**: 描画ツール管理・ブラシ制御・描画処理
+
+```javascript
+class DrawingToolSystem {
+    constructor(appCore)
+    
+    // 🎨 描画制御
+    startDrawing(x, y)                   // 描画開始
+    continueDrawing(x, y)                // 描画継続
+    stopDrawing()                        // 描画終了
+    
+    // 🔧 ツール管理
+    setTool(tool)                        // ツール設定
+    setBrushSize(size)                   // ブラシサイズ設定
+    setOpacity(opacity)                  // 不透明度設定
+    setPressure(pressure)                // 筆圧設定
+    setSmoothing(smoothing)              // 線補正設定
+    
+    // 🖌️ パス作成
+    createPenPath(x, y)                  // ペンパス作成
+    createEraserPath(x, y)               // 消しゴムパス作成
+    drawLine(path, x1, y1, x2, y2)       // 線描画
+    drawInitialPoint(path, x, y)         // 初期点描画
+    
+    // 🔢 ユーティリティ
+    calculateDistance(x1, y1, x2, y2)    // 距離計算
+    updatePressureMonitor()              // 筆圧モニター更新
+    generatePathInfo(tool, x, y)         // パス基本情報生成
+    
+    // ⚙️ 設定値（config プロパティ）
+    config.brush.size                    // 16.0 - ブラシサイズ
+    config.brush.color                   // 0x800000 - ブラシ色
+    config.brush.opacity                 // 0.85 - 不透明度
+    config.brush.minSize                 // 0.1 - 最小サイズ
+    config.brush.maxSize                 // 100.0 - 最大サイズ
+    config.drawing.pressure              // 0.5 - 筆圧
+    config.drawing.smoothing             // 0.3 - 線補正
+    config.drawing.minDistance           // 1.5 - 最小描画距離
+    
+    // 🔧 設定値アクセサ
+    get brushSize()                      // ブラシサイズ取得
+    set brushSize(value)                 // ブラシサイズ設定
+    get brushColor()                     // ブラシ色取得
+    set brushColor(value)                // ブラシ色設定
+    get opacity()                        // 不透明度取得
+    set opacity(value)                   // 不透明度設定
+    get pressure()                       // 筆圧取得
+    set pressure(value)                  // 筆圧設定
+    get smoothing()                      // 線補正取得
+    set smoothing(value)                 // 線補正設定
+    
+    // 🏷️ 主要プロパティ
+    appCore                             // AppCore インスタンス参照
+    currentTool                         // string - 現在のツール名
+    isDrawing                           // boolean - 描画中フラグ
+    currentPath                         // Object - 現在のパスオブジェクト
+    lastPoint                           // Object - 最後の描画点
+    extensionsAvailable                 // boolean - 拡張機能利用可能性
+}
+```
+
+### 🎛️ UIController（app-core.js内）
+
+**責務**: UI制御・スライダー・ポップアップ・ツールボタン管理
+
+```javascript
+class UIController {
+    constructor(toolSystem)
+    
+    // 🚀 初期化
+    init()                              // UI制御システム初期化
+    setupToolButtons()                  // ツールボタン設定
+    setupPopups()                       // ポップアップ設定
+    setupSliders()                      // スライダー設定
+    setupPresets()                      // プリセット設定
+    setupResize()                       // リサイズ設定
+    setupCheckboxes()                   // チェックボックス設定
+    
+    // 🔘 ツール制御
+    handleToolClick(button)             // ツールボタンクリック処理
+    setTool(tool)                       // ツール設定
+    togglePopup(popupId)                // ポップアップ表示切替
+    
+    // 🎚️ スライダー制御
+    createSlider(sliderId, min, max, initial, callback)  // スライダー作成
+    setupSliderButtons()                                 // スライダー調整ボタン
+    adjustSliderValue(sliderId, delta)                   // スライダー値調整
+    updateSliderValue(sliderId, value)                   // スライダー値更新
+    
+    // 🎨 UI更新
+    updateSizePresets()                 // サイズプリセット更新
+    closeAllPopups()                    // 全ポップアップ閉じる
+    getUIState()                        // UI状態取得
+    
+    // ⚙️ 設定値（config プロパティ）
+    config.slider.updateThrottle        // 16ms - スライダー更新間隔
+    config.slider.precision.size        // 1 - サイズ精度
+    config.slider.precision.percentage  // 1 - パーセンテージ精度
+    config.popup.animationDuration      // 300ms - ポップアップアニメーション
+    
+    // 🏷️ 主要プロパティ
+    toolSystem                          // DrawingToolSystem インスタンス参照
+    activePopup                         // Element - アクティブポップアップ
+    sliders                            // Map - スライダー管理マップ
+}
+```
+
+### 📊 PerformanceMonitor（app-core.js内）
+
+**責務**: FPS監視・メモリ使用量監視・パフォーマンス警告
+
+```javascript
+class PerformanceMonitor {
+    constructor(config)
+    
+    // 🚀 監視制御
+    start()                            // 監視開始
+    stop()                             // 監視停止
+    startFPSMonitoring()               // FPS監視開始
+    startMemoryMonitoring()            // メモリ監視開始
+    
+    // 📈 メトリクス更新
+    updateFPSMetrics(fps)              // FPS指標更新
+    displayFPS(fps)                    // FPS表示
+    notifyCallbacks(type, value)       // コールバック通知
+    
+    // 📊 統計・警告
+    getStats()                         // 統計情報取得
+    checkPerformanceWarnings()         // パフォーマンス警告チェック
+    onUpdate(callback)                 // 更新コールバック登録
+    
+    // ⚙️ 設定値（config プロパティ）
+    config.targetFPS                   // 60 - 目標FPS
+    config.updateInterval              // 1000ms - 更新間隔
+    config.memoryCheckInterval         // 5000ms - メモリチェック間隔
+    
+    // 📊 メトリクス（metrics プロパティ）
+    metrics.frameCount                 // フレーム数
+    metrics.lastTime                   // 最終更新時間
+    metrics.currentFPS                 // 現在のFPS
+    metrics.averageFPS                 // 平均FPS
+    metrics.minFPS                     // 最小FPS
+    metrics.maxFPS                     // 最大FPS
+    metrics.memoryUsage                // メモリ使用量（MB）
+    
+    // 🏷️ 状態プロパティ
+    isRunning                          // boolean - 監視実行中フラグ
+    updateCallbacks                    // Set - 更新コールバック群
+}
+```
+
+---
+
+## 🔧 ユーティリティ・ヘルパークラス
+
+### 🛡️ SimpleFallbackToolSystem
+
+**責務**: 拡張機能利用不可時の基本描画機能提供
+
+```javascript
+class SimpleFallbackToolSystem extends DrawingToolSystem {
+    constructor(appCore)
+    initializeDrawingEngine()          // フォールバック描画エンジン初期化
+}
+```
+
+### 🔍 DebugUtils
+
+**責務**: デバッグ情報取得・検証・ログ出力
+
+```javascript
+class DebugUtils {
+    static logAppCoreState(appCore)           // AppCore状態ログ出力
+    static validatePixiObjects(appCore)       // PixiJS オブジェクト検証
+    static measureInitTime(startTime, endTime)  // 初期化時間測定
+    static checkExtensionAvailability()       // 拡張機能利用可能性確認
+}
+```
+
+---
+
+## 🌐 依存関係監視システム
+
+### 📍 APP_INIT_MONITOR（window.APP_INIT_MONITOR）
+
+**責務**: 依存関係確認・初期化状態監視・エラー診断
+
+```javascript
+window.APP_INIT_MONITOR = {
+    // 📊 依存関係状態
+    dependencies: {
+        PIXI: false,                   // PixiJS 読み込み状態
+        PixiExtensions: false,         // pixi-extensions.js 状態
+        AppCore: false,                // app-core.js 状態
+        main: false                    // main.js 状態
+    },
+    
+    // 🔍 確認メソッド
+    checkDependency(name)              // 単一依存関係確認
+    checkAllDependencies()             // 全依存関係確認
+    diagnoseError(error)               // エラー診断
+    
+    // 📊 監視データ
+    startTime                          // 監視開始時間
+}
+```
+
+---
+
+## 📐 DOM要素 ID リファレンス
+
+### 🎨 メインUI要素
+
+```html
+<!-- キャンバス領域 -->
+<div id="drawing-canvas">              <!-- PixiJS キャンバス挿入先 -->
+
+<!-- ツールボタン -->
+<div id="download-tool">               <!-- ダウンロードツール（disabled） -->
+<div id="resize-tool">                 <!-- リサイズツール -->
+<div id="palette-tool">                <!-- カラーパレット（disabled） -->
+<div id="pen-tool">                    <!-- ペンツール（active） -->
+<div id="eraser-tool">                 <!-- 消しゴムツール -->
+<div id="fill-tool">                   <!-- 塗りつぶしツール（disabled） -->
+<div id="select-tool">                 <!-- 選択ツール（disabled） -->
+<div id="settings-tool">               <!-- 設定ツール（disabled） -->
+
+<!-- ポップアップパネル -->
+<div id="pen-settings">                <!-- ペン設定パネル -->
+<div id="resize-settings">             <!-- リサイズ設定パネル -->
+```
+
+### 🎚️ スライダー・入力要素
+
+```html
+<!-- ペンツール設定スライダー -->
+<div id="pen-size-slider">             <!-- サイズスライダー本体 -->
+<div id="pen-size-track">              <!-- サイズスライダートラック -->
+<div id="pen-size-handle">             <!-- サイズスライダーハンドル -->
+<div id="pen-size-value">              <!-- サイズ値表示 -->
+
+<div id="pen-opacity-slider">          <!-- 不透明度スライダー -->
+<div id="pen-pressure-slider">         <!-- 筆圧スライダー -->
+<div id="pen-smoothing-slider">        <!-- 線補正スライダー -->
+
+<!-- スライダー調整ボタン -->
+<div id="pen-size-decrease-small">     <!-- サイズ -0.1 ボタン -->
+<div id="pen-size-decrease">           <!-- サイズ -1 ボタン -->
+<div id="pen-size-decrease-large">     <!-- サイズ -10 ボタン -->
+<div id="pen-size-increase-small">     <!-- サイズ +0.1 ボタン -->
+<div id="pen-size-increase">           <!-- サイズ +1 ボタン -->
+<div id="pen-size-increase-large">     <!-- サイズ +10 ボタン -->
+
+<!-- リサイズ入力 -->
+<input id="canvas-width">              <!-- キャンバス幅入力 -->
+<input id="canvas-height">             <!-- キャンバス高さ入力 -->
+<div id="apply-resize">                <!-- リサイズ適用ボタン -->
+<div id="apply-resize-center">         <!-- リサイズ・中央寄せボタン -->
+
+<!-- チェックボックス -->
+<div id="pressure-sensitivity">        <!-- 筆圧感度チェック -->
+<div id="edge-smoothing">              <!-- エッジスムージングチェック -->
+<div id="gpu-acceleration">            <!-- GPU加速チェック -->
+```
+
+### 📊 ステータス表示要素
+
+```html
+<!-- ステータスパネル情報 -->
+<span id="canvas-info">                <!-- キャンバス情報表示 -->
+<span id="current-tool">               <!-- 現在ツール表示 -->
+<span id="current-color">              <!-- 現在色表示 -->
+<span id="coordinates">                <!-- 座標表示 -->
+<span id="pressure-monitor">           <!-- 筆圧モニター -->
+<span id="fps">                        <!-- FPS表示 -->
+<span id="gpu-usage">                  <!-- GPU使用率表示 -->
+<span id="memory-usage">               <!-- メモリ使用量表示 -->
+```
+
+---
+
+## 🎨 CSS クラス・セレクタリファレンス
+
+### 🏗️ 基本レイアウト
+
+```css
+.main-layout                           /* メインレイアウトコンテナ */
+.sidebar                              /* サイドバー */
+.canvas-area                          /* キャンバス領域 */
+.canvas-container                     /* キャンバスコンテナ */
+```
+
+### 🔘 ツール・UI要素
+
+```css
+.tool-button                          /* ツールボタン基本 */
+.tool-button.active                   /* アクティブツール */
+.tool-button.disabled                 /* 無効ツール */
+.tool-separator                       /* ツール区切り線 */
+
+.popup-panel                          /* ポップアップパネル */
+.popup-panel.show                     /* 表示中ポップアップ */
+.popup-title                          /* ポップアップタイトル */
+.draggable                           /* ドラッグ可能要素 */
+```
+
+### 🎚️ 設定・コントロール
+
+```css
+.setting-group                        /* 設定グループ */
+.setting-label                        /* 設定ラベル */
+.slider-controls                      /* スライダー制御群 */
+.slider-container                     /* スライダーコンテナ */
+.slider                              /* スライダー本体 */
+.slider-track                        /* スライダートラック */
+.slider-handle                       /* スライダーハンドル */
+.slider-value                        /* スライダー値表示 */
+.slider-button                       /* スライダー調整ボタン */
+.slider-button.small                 /* 小さいボタン */
+
+.size-presets                        /* サイズプリセット群 */
+.size-preset-item                    /* プリセット項目 */
+.size-preset-item.active             /* アクティブプリセット */
+.size-preview-circle                 /* プリセット円プレビュー */
+.size-preview-label                  /* プリセットラベル */
+.size-preview-percent                /* プリセット%表示 */
+
+.checkbox-container                   /* チェックボックスコンテナ */
+.checkbox                            /* チェックボックス */
+.checkbox.checked                    /* チェック済み */
+.checkbox-label                      /* チェックボックスラベル */
+.checkbox-status                     /* チェックボックス状態 */
+```
+
+### 📊 ステータス・表示
+
+```css
+.status-panel                        /* ステータスパネル */
+.status-group                        /* ステータスグループ */
+.status-item                         /* ステータス項目 */
+```
+
+---
+
+## ⚙️ 設定値・定数一覧
+
+### 🎨 デフォルト設定値
+
+```javascript
+// キャンバス設定
+DEFAULT_CANVAS_WIDTH = 400           // デフォルト幅
+DEFAULT_CANVAS_HEIGHT = 400          // デフォルト高さ
+DEFAULT_BACKGROUND_COLOR = 0xf0e0d6  // ふたば背景色
+MAX_CANVAS_SIZE = 4096               // 最大キャンバスサイズ
+
+// ブラシ設定
+DEFAULT_BRUSH_SIZE = 16.0            // デフォルトブラシサイズ
+DEFAULT_BRUSH_COLOR = 0x800000       // ふたばマルーン
+DEFAULT_OPACITY = 0.85               // デフォルト不透明度
+DEFAULT_PRESSURE = 0.5               // デフォルト筆圧
+DEFAULT_SMOOTHING = 0.3              // デフォルト線補正
+MIN_BRUSH_SIZE = 0.1                 // 最小ブラシサイズ
+MAX_BRUSH_SIZE = 100.0               // 最大ブラシサイズ
+
+// パフォーマンス設定
+TARGET_FPS = 60                      // 目標FPS
+MAX_INIT_TIME = 5000                // 最大初期化時間（ms）
+RETRY_ATTEMPTS = 3                   // リトライ回数
+RETRY_DELAY = 200                   // リトライ間隔（ms）
+COORDINATE_UPDATE_THROTTLE = 16      // 座標更新間隔（約60FPS）
+
+// UI設定
+SLIDER_UPDATE_THROTTLE = 16          // スライダー更新間隔（ms）
+POPUP_ANIMATION_DURATION = 300       // ポップアップアニメーション時間
+```
+
+### 🎨 ふたば☆ちゃんねるカラーパレット
+
+```css
+--futaba-maroon: #800000            /* メインカラー */
+--futaba-light-maroon: #aa5a56      /* アクセントカラー */
+--futaba-medium: #cf9c97            /* UI要素 */
+--futaba-light-medium: #e9c2ba      /* 境界線 */
+--futaba-cream: #f0e0d6             /* キャンバス背景 */
+--futaba-background: #ffffee        /* アプリ背景 */
+```
+
+---
+
+## 🔗 依存関係マップ
+
+### 📁 ファイル依存関係
+
+```mermaid
+graph TD
+    A[index.html] --> B[libs/pixi-extensions.js]
+    A --> C[js/app-core.js]
+    A --> D[js/main.js]
+    
+    B --> E[PIXI.js CDN]
+    B --> F[各種拡張ライブラリ]
+    
+    D --> C
+    D --> G[window.AppCore]
+    D --> H[window.PixiExtensions]
+    
+    C --> I[DrawingToolSystem]
+    C --> J[UIController]
+    C --> K[PerformanceMonitor]
+```
+
+### 🏗️ クラス依存関係
+
+```
+FutabaDrawingTool (main.js)
+├── AppCore (app-core.js)
+│   ├── DrawingToolSystem
+│   ├── UIController
+│   ├── PerformanceMonitor
+│   └── PIXI.Application
+├── PixiExtensions (libs/pixi-extensions.js)
+├── APP_INIT_MONITOR (window object)
+└── DOM Elements (index.html)
+
+DrawingToolSystem
+├── AppCore (参照)
+├── PIXI.Graphics (パス作成)
+└── DOM Elements (筆圧表示等)
+
+UIController
+├── DrawingToolSystem (参照)
+├── DOM Elements (スライダー、ボタン等)
+└── Map<string, Object> (スライダー管理)
+
+PerformanceMonitor
+├── performance API
+├── requestAnimationFrame
+└── DOM Elements (FPS、メモリ表示)
+```
+
+### 🔄 初期化シーケンス
+
+```
+1. DOMContentLoaded
+   └── FutabaDrawingTool.init()
+       ├── validateDependencies()
+       │   ├── PIXI 確認
+       │   ├── PixiExtensions 確認
+       │   └── AppCore 確認
+       ├── performPreInitializationChecks()
+       ├── initializeExtensions()
+       ├── initializeAppCore()
+       │   ├── AppCore.initialize()
+       │   │   ├── verifyDOMElements()
+       │   │   ├── checkExtensions()
+       │   │   ├── initializePixiApp()
+       │   │   ├── initializeContainers()
+       │   │   ├── initializeToolSystem()
+       │   │   ├── initializeUI()
+       │   │   └── setupEventListeners()
+       │   └── validate initialization
+       └── finalizeInitialization()
+```
+
+---
+
+## 🎯 イベントシステム
+
+### 🖱️ ポインターイベント（PixiJS Stage）
+
+```javascript
+// 描画イベント（AppCore.setupEventListeners()で設定）
+app.stage.on('pointerdown', handlePointerDown)     // 描画開始
+app.stage.on('pointermove', handlePointerMove)     // 描画継続・座標更新
+app.stage.on('pointerup', handlePointerUp)         // 描画終了
+app.stage.on('pointerupoutside', handlePointerUp)  // 画面外での描画終了
+```
+
+### ⌨️ キーボードショートカット
+
+```javascript
+// FutabaDrawingTool.setupKeyboardShortcuts()で設定
+document.addEventListener('keydown', handler)
+
+// ショートカット一覧
+'Escape'  → closeAllPopups()        // 全ポップアップ閉じる
+'KeyP'    → selectPenTool()         // ペンツール選択
+'KeyE'    → selectEraserTool()      // 消しゴムツール選択
+
+// 注意: INPUT/TEXTAREA要素内では無効
+```
+
+### 🖱️ DOM イベント（UIController）
+
+```javascript
+// ツールボタンクリック
+document.querySelectorAll('.tool-button').forEach(btn => {
+    btn.addEventListener('click', handleToolClick)
+})
+
+// スライダー操作
+container.addEventListener('mousedown', startSliderDrag)
+document.addEventListener('mousemove', updateSliderDrag)
+document.addEventListener('mouseup', endSliderDrag)
+
+// リサイズボタン
+document.getElementById('apply-resize').addEventListener('click', applyCanvasResize)
+document.getElementById('apply-resize-center').addEventListener('click', applyCanvasResizeCenter)
+
+// プリセットボタン
+document.querySelectorAll('.size-preset-item').forEach(preset => {
+    preset.addEventListener('click', selectPreset)
+})
+
+// チェックボックス
+document.querySelectorAll('.checkbox').forEach(checkbox => {
+    checkbox.addEventListener('click', toggleCheckbox)
+})
+```
+
+---
+
+## 🛠️ エラーハンドリング
+
+### 🚨 エラータイプ分類
+
+```javascript
+// 依存関係エラー
+"AppCore クラスが読み込まれていません"           // app-core.js 読み込み失敗
+"必須依存関係が不足: PIXI, PixiExtensions"     // 基本ライブラリ不足
+"PixiJS Application が初期化されていません"      // PixiJS初期化失敗
+
+// DOM関連エラー
+"drawing-canvas 要素が見つかりません"           // キャンバス要素不足
+"PixiJS キャンバスのDOM接続に失敗"              // DOM接続失敗
+"キャンバス表示確認失敗"                       // 表示確認失敗
+
+// 設定エラー
+"無効なキャンバスサイズが入力されました"         // サイズ入力値エラー
+"キャンバスサイズが制限を超えています"           // サイズ制限エラー
+"リサイズ入力要素が見つかりません"              // UI要素不足
+
+// ツールシステムエラー
+"ToolSystem が初期化されていません"            // ツールシステム未初期化
+"描画開始エラー" / "描画継続エラー"              // 描画処理エラー
+```
+
+### 🛡️ フォールバック機能
+
+```javascript
+// AppCore.initializeFallbackMode()
+if (初期化エラー) {
+    // 最小限のPixiJSアプリケーション作成
+    createMinimalPixiApp()
+    
+    // 簡易ツールシステム使用
+    toolSystem = new SimpleFallbackToolSystem(this)
+    
+    // 基本コンテナのみ初期化
+    initializeContainers()
+}
+
+// PixiExtensions フォールバック
+if (!window.PixiExtensions.initialized) {
+    // 基本機能のみで動作
+    this.fallbackMode = true
+    console.warn('⚠️ 拡張機能未初期化 - フォールバックモード有効')
+}
+```
+
+### 📊 エラー表示システム
+
+```javascript
+// showErrorMessage(error) - 右上エラー表示
+// showRecoveryMessage(originalError) - 左下回復メッセージ
+// showCriticalErrorMessage(...) - 画面全体エラー
+
+// エラー表示要素の自動生成
+errorDiv.style.cssText = `
+    position: fixed;
+    top: 20px; right: 20px;
+    background: #800000;
+    color: white;
+    ...
+`
+
+// 自動削除（10秒後）
+setTimeout(() => errorDiv.remove(), 10000)
+```
+
+---
+
+## 🔍 デバッグ・検証システム
+
+### 🛠️ デバッグ関数群
+
+```javascript
+// グローバルデバッグ関数
+window.getAppState()                    // アプリケーション状態取得
+window.startDebugMode()                 // デバッグモード開始
+window.debugAppCore()                   // AppCore デバッグ
+window.debugFutaba.getState()           // 詳細状態取得
+window.debugFutaba.checkDependencies()  // 依存関係確認
+window.debugFutaba.testAppCore()        // AppCore テスト
+window.debugFutaba.reinitialize()       // 再初期化
+
+// APP_INIT_MONITOR デバッグ
+window.APP_INIT_MONITOR.checkAllDependencies()  // 依存関係状況
+window.APP_INIT_MONITOR.diagnoseError(error)    // エラー診断
+```
+
+### 📊 状態確認API
+
+```javascript
+// FutabaDrawingTool.getAppState() 返り値構造
+{
+    version: "v1.0-Phase1.1ss5rev1-依存関係解決版",
+    isInitialized: boolean,
+    initializationSteps: Array,
+    errorLog: Array,
+    dependencies: {
+        PIXI: boolean,
+        PixiExtensions: boolean,
+        AppCore: boolean,
+        pixiVersion: string
+    },
+    appCore: {
+        hasPixiApp: boolean,
+        hasDrawingContainer: boolean,
+        hasToolSystem: boolean,
+        canvasSize: string,
+        pathCount: number,
+        currentTool: string,
+        fallbackMode: boolean
+    },
+    performance: {
+        initTime: number,
+        memoryUsage: string,
+        isHighPerformance: boolean
+    }
+}
+
+// AppCore.getState() 返り値構造
+{
+    state: Object,          // 初期化状態
+    config: Object,         // 設定値
+    components: Object,     // コンポーネント存在確認
+    canvas: Object,         // キャンバス情報
+    flags: Object          // フラグ類
+}
+```
+
+### 🔍 検証・テスト関数
+
+```javascript
+// DebugUtils.validatePixiObjects(appCore)
+// 戻り値: boolean（全てのPixiJSオブジェクトが正常）
+
+// DebugUtils.checkExtensionAvailability()
+// 戻り値: 拡張機能・ブラウザ機能の利用可能性詳細
+
+// PerformanceMonitor.checkPerformanceWarnings()
+// 戻り値: パフォーマンス警告配列
+
+// UIController.getUIState()
+// 戻り値: UI状態詳細（アクティブポップアップ、スライダー状態等）
+```
+
+---
+
+## 📚 よく使う操作パターン
+
+### 🎨 描画ツール切り替え
+
+```javascript
+// プログラマティック切り替え
+window.futabaDrawingTool.selectPenTool()     // ペンツール選択
+window.futabaDrawingTool.selectEraserTool()  // 消しゴム選択
+
+// UIController経由
+appCore.uiController.setTool('pen')          // ペン
+appCore.uiController.setTool('eraser')       // 消しゴム
+```
+
+### 📐 キャンバスリサイズ
+
+```javascript
+// 基本リサイズ
+appCore.resize(800, 600, false)              // 800x600、中央寄せなし
+appCore.resize(800, 600, true)               // 800x600、中央寄せあり
+
+// UI経由リサイズ
+document.getElementById('canvas-width').value = 800
+document.getElementById('canvas-height').value = 600
+document.getElementById('apply-resize').click()
+```
+
+### 🎚️ ブラシ設定変更
+
+```javascript
+// ToolSystem経由
+appCore.toolSystem.setBrushSize(24.0)        // サイズ変更
+appCore.toolSystem.setOpacity(0.7)           // 不透明度変更
+appCore.toolSystem.setPressure(0.8)          // 筆圧変更
+appCore.toolSystem.setSmoothing(0.5)         // 線補正変更
+
+// UIController経由（スライダー更新も含む）
+appCore.uiController.updateSliderValue('pen-size-slider', 24.0)
+appCore.uiController.updateSliderValue('pen-opacity-slider', 70.0)
+```
+
+### 🔒 ポップアップ制御
+
+```javascript
+// 特定ポップアップ表示切替
+appCore.uiController.togglePopup('pen-settings')
+appCore.uiController.togglePopup('resize-settings')
+
+// 全ポップアップ閉じる
+appCore.uiController.closeAllPopups()
+window.futabaDrawingTool.closeAllPopups()    // フォールバック付き
+```
+
+---
+
+## ⚠️ 重要な注意事項
+
+### 🚫 避けるべき操作
+
+```javascript
+// ❌ 直接DOM操作（UIController を経由すること）
+document.getElementById('pen-tool').click()
+
+// ❌ 依存関係確認なしでの拡張機能使用
+new PIXI.UI.Button()  // PixiExtensions.hasFeature('ui') で確認すること
+
+// ❌ 初期化前のAppCore操作
+appCore.resize(800, 600)  // isInitialized 確認が必要
+
+// ❌ エラーハンドリングなしでの描画操作
+appCore.toolSystem.startDrawing(x, y)  // try-catch で囲むこと
+```
+
+### ✅ 推奨パターン
+
+```javascript
+// ✅ 存在確認後の操作
+if (window.futabaDrawingTool && window.futabaDrawingTool.isInitialized) {
+    // 操作実行
+}
+
+// ✅ 拡張機能の安全な使用
+if (window.PixiExtensions.hasFeature('ui')) {
+    const Button = window.PixiExtensions.getComponent('ui', 'Button')
+    // Button 使用
+}
+
+// ✅ エラーハンドリング付き操作
+try {
+    appCore.toolSystem.setBrushSize(newSize)
+    appCore.uiController.updateSizePresets()
+} catch (error) {
+    console.error('ブラシサイズ設定エラー:', error)
+}
+```
+
+### 🔧 トラブルシューティング
+
+```javascript
+// 初期化失敗時の確認手順
+1. window.APP_INIT_MONITOR.checkAllDependencies()  // 依存関係確認
+2. window.getAppState()                            // アプリ状態確認
+3. console.log で各ステップの完了状況確認
+4. ブラウザのDevToolsでネットワークエラー確認
+
+// 描画不具合時の確認
+1. appCore.app?.view が DOM に接続されているか
+2. drawingContainer が存在するか
+3. toolSystem が正常初期化されているか
+4. エラーログ (futabaDrawingTool.errorLog) 確認
+
+// UI操作不具合時の確認
+1. uiController.getUIState() でUI状態確認
+2. 対象DOM要素の存在確認
+3. イベントリスナーの設定状況確認
+```
+
+---
+
+## 📋 チェックリスト
+
+### 🚀 初期化完了確認
+
+- [ ] `window.futabaDrawingTool.isInitialized === true`
+- [ ] `appCore.app` が存在し、DOM に接続されている
+- [ ] `appCore.drawingContainer` が存在する
+- [ ] `appCore.toolSystem` が存在する
+- [ ] `appCore.uiController` が存在する
+- [ ] キャンバス上でマウス操作できる
+- [ ] ペンツールで描画できる
+
+### 🔧 機能確認
+
+- [ ] ツール切り替えが正常動作
+- [ ] スライダー操作でブラシサイズが変更される
+- [ ] ポップアップの表示・非表示が正常
+- [ ] キャンバスリサイズが正常動作
+- [ ] 座標・FPS・メモリ表示が更新される
+- [ ] エラー時にフォールバック機能が動作
+
+### 🐛 デバッグ準備
+
+- [ ] `window.getAppState()` でアプリ状態取得可能
+- [ ] `window.startDebugMode()` でデバッグ情報表示可能
+- [ ] ブラウザのDevToolsでエラー確認可能
+- [ ] 依存関係確認機能が動作
+- [ ] パフォーマンス監視が動作
+
+---
+
+## 🔄 バージョン履歴
+
+- **v1.0-Phase1.4s1rev1**: 初版作成（依存関係解決版対応）
+- 作成日: 2025年8月17日
+- 対応コードベース: `v1_Phase1.4s1rev1`
+
+---
+
+*🎨 このシンボル辞典は、ふたば☆お絵描きツールの全体構造を把握し、AI協働開発での効率化を図るために作成されました。コード修正時は必ずこの辞典を参照し、依存関係や設定値の確認を行ってください。*
