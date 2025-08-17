@@ -54,460 +54,6 @@ class ErrorManager {
     }
     
     /**
-     * メモリ復旧
-     */
-    recoverMemory(errorInfo) {
-        console.log('🛡️ メモリ自動復旧試行...');
-        
-        // ガベージコレクション強制実行
-        if (window.gc) {
-            window.gc();
-        }
-        
-        // 不要なエラーログクリア
-        if (this.errorLog.length > 100) {
-            this.errorLog = this.errorLog.slice(-50);
-        }
-    }
-    
-    /**
-     * UI復旧
-     */
-    recoverUI(errorInfo) {
-        console.log('🛡️ UI自動復旧試行...');
-        
-        // ポップアップリセット
-        document.querySelectorAll('.popup-panel').forEach(popup => {
-            popup.classList.remove('show');
-        });
-        
-        // エラー要素クリーンアップ
-        const oldErrors = document.querySelectorAll('.futaba-error');
-        if (oldErrors.length > 5) {
-            Array.from(oldErrors).slice(0, -3).forEach(el => el.remove());
-        }
-    }
-    
-    /**
-     * 診断推奨事項取得
-     */
-    getDiagnosisRecommendations(errorInfo) {
-        const recommendations = [];
-        
-        // エラータイプ別推奨事項
-        const typeRecommendations = {
-            'dependency': [
-                'ブラウザのコンソール（F12）でネットワークエラーを確認',
-                'ページの再読み込みを試行',
-                'CDNの接続状況を確認'
-            ],
-            'initialization': [
-                'js/app-core.js の読み込み状況を確認',
-                'スクリプトの読み込み順序を確認',
-                'ブラウザの開発者ツールでエラーを詳細確認'
-            ],
-            'api': [
-                'API呼び出しパラメータを確認',
-                '必要な初期化が完了しているか確認'
-            ],
-            'validation': [
-                '入力値の形式・範囲を確認',
-                '必須項目が入力されているか確認'
-            ]
-        };
-        
-        // エラーメッセージ別推奨事項
-        const messageRecommendations = {
-            'AppCore': [
-                'AppCore クラスの読み込みを確認',
-                'js/app-core.js ファイルの存在を確認'
-            ],
-            'PIXI': [
-                'PixiJS ライブラリの読み込みを確認',
-                'CDN接続またはnode_modules確認'
-            ],
-            'undefined': [
-                '変数や関数の定義を確認',
-                'スクリプトの読み込み順序を確認'
-            ]
-        };
-        
-        // タイプ別推奨事項追加
-        if (typeRecommendations[errorInfo.type]) {
-            recommendations.push(...typeRecommendations[errorInfo.type]);
-        }
-        
-        // メッセージ別推奨事項追加
-        Object.keys(messageRecommendations).forEach(keyword => {
-            if (errorInfo.message.includes(keyword)) {
-                recommendations.push(...messageRecommendations[keyword]);
-            }
-        });
-        
-        // 一般的な推奨事項
-        if (recommendations.length === 0) {
-            recommendations.push(
-                'ブラウザコンソールで詳細エラーを確認',
-                'ページの再読み込みを試行'
-            );
-        }
-        
-        return [...new Set(recommendations)]; // 重複除去
-    }
-    
-    // ===========================================
-    // 🔧 ユーティリティ・ヘルパー関数群
-    // ===========================================
-    
-    /**
-     * エラータイプ検証
-     */
-    validateErrorType(type) {
-        return Object.values(this.errorTypes).includes(type) ? type : 'runtime';
-    }
-    
-    /**
-     * 重要度表示名取得
-     */
-    getSeverityDisplayName(severity) {
-        const displayNames = {
-            'info': '情報',
-            'warning': '警告',
-            'error': 'エラー',
-            'critical': '致命的エラー'
-        };
-        return displayNames[severity] || 'エラー';
-    }
-    
-    /**
-     * HTMLエスケープ（XSS対策）
-     */
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = String(text);
-        return div.innerHTML;
-    }
-    
-    /**
-     * エラーID生成
-     */
-    generateErrorId() {
-        return 'err_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    }
-    
-    /**
-     * フォールバックエラー表示（ErrorManager自体でエラーの場合）
-     */
-    fallbackErrorDisplay(originalError, handlingError) {
-        const div = document.createElement('div');
-        div.style.cssText = `
-            position: fixed; top: 10px; right: 10px; background: #800000; color: white;
-            padding: 12px; border-radius: 4px; z-index: 99999; font-family: monospace;
-            font-size: 12px; max-width: 300px;
-        `;
-        
-        div.innerHTML = `
-            <div>💀 ErrorManager Error</div>
-            <div style="font-size: 10px; margin-top: 4px;">
-                Original: ${String(originalError).substring(0, 50)}<br>
-                Handling: ${String(handlingError).substring(0, 50)}
-            </div>
-            <button onclick="this.parentNode.remove()" 
-                    style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 4px 8px; margin-top: 8px; cursor: pointer;">
-                Close
-            </button>
-        `;
-        
-        document.body.appendChild(div);
-        
-        // 自動削除
-        setTimeout(() => div.remove(), 10000);
-    }
-    
-    // ===========================================
-    // 🔧 グローバルエラーハンドラ設定
-    // ===========================================
-    
-    /**
-     * グローバルエラーハンドラ設定
-     */
-    setupGlobalErrorHandler() {
-        // JavaScript エラー
-        window.addEventListener('error', (event) => {
-            this.handleError(
-                event.error || new Error(event.message),
-                'runtime',
-                `${event.filename}:${event.lineno}:${event.colno}`
-            );
-        });
-        
-        // Promise rejection エラー
-        window.addEventListener('unhandledrejection', (event) => {
-            this.handleError(
-                event.reason,
-                'runtime',
-                'Unhandled Promise Rejection'
-            );
-        });
-        
-        console.log('✅ グローバルエラーハンドラ設定完了');
-    }
-    
-    /**
-     * エラースタイル設定
-     */
-    setupErrorStyles() {
-        if (!document.getElementById('futaba-error-styles')) {
-            const style = document.createElement('style');
-            style.id = 'futaba-error-styles';
-            style.textContent = `
-                @keyframes futabaSlideIn {
-                    from { 
-                        transform: translateX(100%); 
-                        opacity: 0; 
-                    }
-                    to { 
-                        transform: translateX(0); 
-                        opacity: 1; 
-                    }
-                }
-                
-                .futaba-error {
-                    transition: all 0.3s ease;
-                }
-                
-                .futaba-error:hover {
-                    transform: scale(1.02);
-                }
-                
-                .futaba-error .error-btn {
-                    transition: all 0.2s ease;
-                }
-                
-                .futaba-error .error-btn:hover {
-                    transform: translateY(-1px);
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                }
-            `;
-            document.head.appendChild(style);
-        }
-    }
-    
-    /**
-     * 復旧システム設定
-     */
-    setupRecoverySystem() {
-        // 定期的なヘルスチェック
-        setInterval(() => {
-            this.performHealthCheck();
-        }, 30000); // 30秒間隔
-        
-        console.log('✅ 復旧システム設定完了');
-    }
-    
-    /**
-     * パフォーマンス監視設定
-     */
-    setupPerformanceMonitoring() {
-        // メモリ使用量監視
-        if (performance.memory) {
-            setInterval(() => {
-                const memoryUsage = performance.memory.usedJSHeapSize / 1024 / 1024;
-                const memoryLimit = performance.memory.jsHeapSizeLimit / 1024 / 1024;
-                
-                if (memoryUsage > memoryLimit * 0.8) {
-                    this.handleError(
-                        new Error(`メモリ使用量が80%を超過: ${memoryUsage.toFixed(1)}MB / ${memoryLimit.toFixed(1)}MB`),
-                        'memory',
-                        'Memory Monitor',
-                        { severity: 'warning' }
-                    );
-                }
-            }, 60000); // 1分間隔
-        }
-        
-        console.log('✅ パフォーマンス監視設定完了');
-    }
-    
-    /**
-     * ヘルスチェック実行
-     */
-    performHealthCheck() {
-        const issues = [];
-        
-        // DOM要素チェック
-        const requiredElements = ['drawing-canvas', 'pen-tool'];
-        requiredElements.forEach(id => {
-            if (!document.getElementById(id)) {
-                issues.push(`必要なDOM要素が見つかりません: ${id}`);
-            }
-        });
-        
-        // グローバル変数チェック
-        if (!window.PIXI) issues.push('PIXI が未定義です');
-        if (!window.futabaDrawingTool) issues.push('futabaDrawingTool が未定義です');
-        
-        // エラー蓄積チェック
-        if (this.errorLog.length > 50) {
-            issues.push(`エラーログが蓄積されています: ${this.errorLog.length}件`);
-        }
-        
-        // 問題がある場合の対処
-        if (issues.length > 0) {
-            console.warn('⚠️ ヘルスチェックで問題検出:', issues);
-            
-            // 自動復旧試行
-            if (issues.length >= 3) {
-                this.handleError(
-                    new Error('複数のヘルスチェック項目で問題が検出されました'),
-                    'runtime',
-                    'Health Check',
-                    { severity: 'warning', autoRetry: true }
-                );
-            }
-        }
-    }
-    
-    // ===========================================
-    // 🔧 エラーリスナー・イベント管理
-    // ===========================================
-    
-    /**
-     * エラーリスナー登録
-     */
-    onError(type, callback) {
-        if (!this.errorListeners.has(type)) {
-            this.errorListeners.set(type, []);
-        }
-        
-        this.errorListeners.get(type).push(callback);
-        console.log(`✅ エラーリスナー登録: ${type}`);
-    }
-    
-    /**
-     * エラー通知送信
-     */
-    notifyErrorListeners(errorInfo) {
-        // 特定タイプのリスナー
-        if (this.errorListeners.has(errorInfo.type)) {
-            this.errorListeners.get(errorInfo.type).forEach(callback => {
-                try {
-                    callback(errorInfo);
-                } catch (error) {
-                    console.error('エラーリスナーでエラー:', error);
-                }
-            });
-        }
-        
-        // 全体リスナー
-        if (this.errorListeners.has('*')) {
-            this.errorListeners.get('*').forEach(callback => {
-                try {
-                    callback(errorInfo);
-                } catch (error) {
-                    console.error('全体エラーリスナーでエラー:', error);
-                }
-            });
-        }
-    }
-    
-    // ===========================================
-    // 🔧 ログ出力関数群（DRY原則適用）
-    // ===========================================
-    
-    logError(message, data = null) {
-        console.error(message, data || '');
-    }
-    
-    logWarning(message, data = null) {
-        console.warn(message, data || '');
-    }
-    
-    logInfo(message, data = null) {
-        console.log(message, data || '');
-    }
-    
-    // ===========================================
-    // 📊 エラー統計・デバッグ情報
-    // ===========================================
-    
-    /**
-     * エラー統計取得
-     */
-    getErrorStats() {
-        const stats = {
-            total: this.errorLog.length,
-            byType: {},
-            bySeverity: {},
-            recent: this.errorLog.slice(-10),
-            oldestTimestamp: this.errorLog.length > 0 ? this.errorLog[0].timestamp : null,
-            newestTimestamp: this.errorLog.length > 0 ? this.errorLog[this.errorLog.length - 1].timestamp : null
-        };
-        
-        // タイプ別統計
-        this.errorLog.forEach(error => {
-            stats.byType[error.type] = (stats.byType[error.type] || 0) + 1;
-            stats.bySeverity[error.severity] = (stats.bySeverity[error.severity] || 0) + 1;
-        });
-        
-        return stats;
-    }
-    
-    /**
-     * デバッグ情報取得
-     */
-    getDebugInfo() {
-        return {
-            version: this.version,
-            initialized: this.initialized,
-            errorStats: this.getErrorStats(),
-            activeErrors: this.errorElements.size,
-            listeners: Array.from(this.errorListeners.keys()),
-            theme: this.theme,
-            errorTypes: this.errorTypes,
-            severityLevels: Object.keys(this.severityLevels)
-        };
-    }
-    
-    /**
-     * エラーログエクスポート
-     */
-    exportErrorLog() {
-        return {
-            version: this.version,
-            exportTime: new Date().toISOString(),
-            errors: this.errorLog,
-            stats: this.getErrorStats(),
-            userAgent: navigator.userAgent,
-            url: window.location.href
-        };
-    }
-    
-    /**
-     * エラーログクリア
-     */
-    clearErrorLog() {
-        const count = this.errorLog.length;
-        this.errorLog = [];
-        this.dismissAllErrors();
-        
-        console.log(`✅ エラーログクリア完了: ${count}件削除`);
-        return count;
-    }
-}
-
-// グローバル公開
-window.ErrorManager = ErrorManager;
-
-// 使用例とテスト
-console.log('📋 ErrorManager 使用例:');
-console.log('  const errorManager = new ErrorManager();');
-console.log('  errorManager.initialize();');
-console.log('  errorManager.handleError(new Error("テストエラー"), "runtime", "テストコンテキスト")');
-console.log('  errorManager.handleError("警告メッセージ", "validation", "", { severity: "warning" })');
-console.log('  errorManager.onError("api", (errorInfo) => { console.log("API エラー:", errorInfo); })');
-console.log('  errorManager.getErrorStats()  // エラー統計取得');
-console.log('🚨 ふたば☆お絵描きツール v1.5 - ErrorManager実装完了');
      * ErrorManager初期化
      */
     initialize() {
@@ -1087,3 +633,457 @@ console.log('🚨 ふたば☆お絵描きツール v1.5 - ErrorManager実装完
     }
     
     /**
+     * メモリ復旧
+     */
+    recoverMemory(errorInfo) {
+        console.log('🛡️ メモリ自動復旧試行...');
+        
+        // ガベージコレクション強制実行
+        if (window.gc) {
+            window.gc();
+        }
+        
+        // 不要なエラーログクリア
+        if (this.errorLog.length > 100) {
+            this.errorLog = this.errorLog.slice(-50);
+        }
+    }
+    
+    /**
+     * UI復旧
+     */
+    recoverUI(errorInfo) {
+        console.log('🛡️ UI自動復旧試行...');
+        
+        // ポップアップリセット
+        document.querySelectorAll('.popup-panel').forEach(popup => {
+            popup.classList.remove('show');
+        });
+        
+        // エラー要素クリーンアップ
+        const oldErrors = document.querySelectorAll('.futaba-error');
+        if (oldErrors.length > 5) {
+            Array.from(oldErrors).slice(0, -3).forEach(el => el.remove());
+        }
+    }
+    
+    /**
+     * 診断推奨事項取得
+     */
+    getDiagnosisRecommendations(errorInfo) {
+        const recommendations = [];
+        
+        // エラータイプ別推奨事項
+        const typeRecommendations = {
+            'dependency': [
+                'ブラウザのコンソール（F12）でネットワークエラーを確認',
+                'ページの再読み込みを試行',
+                'CDNの接続状況を確認'
+            ],
+            'initialization': [
+                'js/app-core.js の読み込み状況を確認',
+                'スクリプトの読み込み順序を確認',
+                'ブラウザの開発者ツールでエラーを詳細確認'
+            ],
+            'api': [
+                'API呼び出しパラメータを確認',
+                '必要な初期化が完了しているか確認'
+            ],
+            'validation': [
+                '入力値の形式・範囲を確認',
+                '必須項目が入力されているか確認'
+            ]
+        };
+        
+        // エラーメッセージ別推奨事項
+        const messageRecommendations = {
+            'AppCore': [
+                'AppCore クラスの読み込みを確認',
+                'js/app-core.js ファイルの存在を確認'
+            ],
+            'PIXI': [
+                'PixiJS ライブラリの読み込みを確認',
+                'CDN接続またはnode_modules確認'
+            ],
+            'undefined': [
+                '変数や関数の定義を確認',
+                'スクリプトの読み込み順序を確認'
+            ]
+        };
+        
+        // タイプ別推奨事項追加
+        if (typeRecommendations[errorInfo.type]) {
+            recommendations.push(...typeRecommendations[errorInfo.type]);
+        }
+        
+        // メッセージ別推奨事項追加
+        Object.keys(messageRecommendations).forEach(keyword => {
+            if (errorInfo.message.includes(keyword)) {
+                recommendations.push(...messageRecommendations[keyword]);
+            }
+        });
+        
+        // 一般的な推奨事項
+        if (recommendations.length === 0) {
+            recommendations.push(
+                'ブラウザコンソールで詳細エラーを確認',
+                'ページの再読み込みを試行'
+            );
+        }
+        
+        return [...new Set(recommendations)]; // 重複除去
+    }
+    
+    // ===========================================
+    // 🔧 ユーティリティ・ヘルパー関数群
+    // ===========================================
+    
+    /**
+     * エラータイプ検証
+     */
+    validateErrorType(type) {
+        return Object.values(this.errorTypes).includes(type) ? type : 'runtime';
+    }
+    
+    /**
+     * 重要度表示名取得
+     */
+    getSeverityDisplayName(severity) {
+        const displayNames = {
+            'info': '情報',
+            'warning': '警告',
+            'error': 'エラー',
+            'critical': '致命的エラー'
+        };
+        return displayNames[severity] || 'エラー';
+    }
+    
+    /**
+     * HTMLエスケープ（XSS対策）
+     */
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = String(text);
+        return div.innerHTML;
+    }
+    
+    /**
+     * エラーID生成
+     */
+    generateErrorId() {
+        return 'err_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
+    
+    /**
+     * フォールバックエラー表示（ErrorManager自体でエラーの場合）
+     */
+    fallbackErrorDisplay(originalError, handlingError) {
+        const div = document.createElement('div');
+        div.style.cssText = `
+            position: fixed; top: 10px; right: 10px; background: #800000; color: white;
+            padding: 12px; border-radius: 4px; z-index: 99999; font-family: monospace;
+            font-size: 12px; max-width: 300px;
+        `;
+        
+        div.innerHTML = `
+            <div>💀 ErrorManager Error</div>
+            <div style="font-size: 10px; margin-top: 4px;">
+                Original: ${String(originalError).substring(0, 50)}<br>
+                Handling: ${String(handlingError).substring(0, 50)}
+            </div>
+            <button onclick="this.parentNode.remove()" 
+                    style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 4px 8px; margin-top: 8px; cursor: pointer;">
+                Close
+            </button>
+        `;
+        
+        document.body.appendChild(div);
+        
+        // 自動削除
+        setTimeout(() => div.remove(), 10000);
+    }
+    
+    // ===========================================
+    // 🔧 グローバルエラーハンドラ設定
+    // ===========================================
+    
+    /**
+     * グローバルエラーハンドラ設定
+     */
+    setupGlobalErrorHandler() {
+        // JavaScript エラー
+        window.addEventListener('error', (event) => {
+            this.handleError(
+                event.error || new Error(event.message),
+                'runtime',
+                `${event.filename}:${event.lineno}:${event.colno}`
+            );
+        });
+        
+        // Promise rejection エラー
+        window.addEventListener('unhandledrejection', (event) => {
+            this.handleError(
+                event.reason,
+                'runtime',
+                'Unhandled Promise Rejection'
+            );
+        });
+        
+        console.log('✅ グローバルエラーハンドラ設定完了');
+    }
+    
+    /**
+     * エラースタイル設定
+     */
+    setupErrorStyles() {
+        if (!document.getElementById('futaba-error-styles')) {
+            const style = document.createElement('style');
+            style.id = 'futaba-error-styles';
+            style.textContent = `
+                @keyframes futabaSlideIn {
+                    from { 
+                        transform: translateX(100%); 
+                        opacity: 0; 
+                    }
+                    to { 
+                        transform: translateX(0); 
+                        opacity: 1; 
+                    }
+                }
+                
+                .futaba-error {
+                    transition: all 0.3s ease;
+                }
+                
+                .futaba-error:hover {
+                    transform: scale(1.02);
+                }
+                
+                .futaba-error .error-btn {
+                    transition: all 0.2s ease;
+                }
+                
+                .futaba-error .error-btn:hover {
+                    transform: translateY(-1px);
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    }
+    
+    /**
+     * 復旧システム設定
+     */
+    setupRecoverySystem() {
+        // 定期的なヘルスチェック
+        setInterval(() => {
+            this.performHealthCheck();
+        }, 30000); // 30秒間隔
+        
+        console.log('✅ 復旧システム設定完了');
+    }
+    
+    /**
+     * パフォーマンス監視設定
+     */
+    setupPerformanceMonitoring() {
+        // メモリ使用量監視
+        if (performance.memory) {
+            setInterval(() => {
+                const memoryUsage = performance.memory.usedJSHeapSize / 1024 / 1024;
+                const memoryLimit = performance.memory.jsHeapSizeLimit / 1024 / 1024;
+                
+                if (memoryUsage > memoryLimit * 0.8) {
+                    this.handleError(
+                        new Error(`メモリ使用量が80%を超過: ${memoryUsage.toFixed(1)}MB / ${memoryLimit.toFixed(1)}MB`),
+                        'memory',
+                        'Memory Monitor',
+                        { severity: 'warning' }
+                    );
+                }
+            }, 60000); // 1分間隔
+        }
+        
+        console.log('✅ パフォーマンス監視設定完了');
+    }
+    
+    /**
+     * ヘルスチェック実行
+     */
+    performHealthCheck() {
+        const issues = [];
+        
+        // DOM要素チェック
+        const requiredElements = ['drawing-canvas', 'pen-tool'];
+        requiredElements.forEach(id => {
+            if (!document.getElementById(id)) {
+                issues.push(`必要なDOM要素が見つかりません: ${id}`);
+            }
+        });
+        
+        // グローバル変数チェック
+        if (!window.PIXI) issues.push('PIXI が未定義です');
+        if (!window.futabaDrawingTool) issues.push('futabaDrawingTool が未定義です');
+        
+        // エラー蓄積チェック
+        if (this.errorLog.length > 50) {
+            issues.push(`エラーログが蓄積されています: ${this.errorLog.length}件`);
+        }
+        
+        // 問題がある場合の対処
+        if (issues.length > 0) {
+            console.warn('⚠️ ヘルスチェックで問題検出:', issues);
+            
+            // 自動復旧試行
+            if (issues.length >= 3) {
+                this.handleError(
+                    new Error('複数のヘルスチェック項目で問題が検出されました'),
+                    'runtime',
+                    'Health Check',
+                    { severity: 'warning', autoRetry: true }
+                );
+            }
+        }
+    }
+    
+    // ===========================================
+    // 🔧 エラーリスナー・イベント管理
+    // ===========================================
+    
+    /**
+     * エラーリスナー登録
+     */
+    onError(type, callback) {
+        if (!this.errorListeners.has(type)) {
+            this.errorListeners.set(type, []);
+        }
+        
+        this.errorListeners.get(type).push(callback);
+        console.log(`✅ エラーリスナー登録: ${type}`);
+    }
+    
+    /**
+     * エラー通知送信
+     */
+    notifyErrorListeners(errorInfo) {
+        // 特定タイプのリスナー
+        if (this.errorListeners.has(errorInfo.type)) {
+            this.errorListeners.get(errorInfo.type).forEach(callback => {
+                try {
+                    callback(errorInfo);
+                } catch (error) {
+                    console.error('エラーリスナーでエラー:', error);
+                }
+            });
+        }
+        
+        // 全体リスナー
+        if (this.errorListeners.has('*')) {
+            this.errorListeners.get('*').forEach(callback => {
+                try {
+                    callback(errorInfo);
+                } catch (error) {
+                    console.error('全体エラーリスナーでエラー:', error);
+                }
+            });
+        }
+    }
+    
+    // ===========================================
+    // 🔧 ログ出力関数群（DRY原則適用）
+    // ===========================================
+    
+    logError(message, data = null) {
+        console.error(message, data || '');
+    }
+    
+    logWarning(message, data = null) {
+        console.warn(message, data || '');
+    }
+    
+    logInfo(message, data = null) {
+        console.log(message, data || '');
+    }
+    
+    // ===========================================
+    // 📊 エラー統計・デバッグ情報
+    // ===========================================
+    
+    /**
+     * エラー統計取得
+     */
+    getErrorStats() {
+        const stats = {
+            total: this.errorLog.length,
+            byType: {},
+            bySeverity: {},
+            recent: this.errorLog.slice(-10),
+            oldestTimestamp: this.errorLog.length > 0 ? this.errorLog[0].timestamp : null,
+            newestTimestamp: this.errorLog.length > 0 ? this.errorLog[this.errorLog.length - 1].timestamp : null
+        };
+        
+        // タイプ別統計
+        this.errorLog.forEach(error => {
+            stats.byType[error.type] = (stats.byType[error.type] || 0) + 1;
+            stats.bySeverity[error.severity] = (stats.bySeverity[error.severity] || 0) + 1;
+        });
+        
+        return stats;
+    }
+    
+    /**
+     * デバッグ情報取得
+     */
+    getDebugInfo() {
+        return {
+            version: this.version,
+            initialized: this.initialized,
+            errorStats: this.getErrorStats(),
+            activeErrors: this.errorElements.size,
+            listeners: Array.from(this.errorListeners.keys()),
+            theme: this.theme,
+            errorTypes: this.errorTypes,
+            severityLevels: Object.keys(this.severityLevels)
+        };
+    }
+    
+    /**
+     * エラーログエクスポート
+     */
+    exportErrorLog() {
+        return {
+            version: this.version,
+            exportTime: new Date().toISOString(),
+            errors: this.errorLog,
+            stats: this.getErrorStats(),
+            userAgent: navigator.userAgent,
+            url: window.location.href
+        };
+    }
+    
+    /**
+     * エラーログクリア
+     */
+    clearErrorLog() {
+        const count = this.errorLog.length;
+        this.errorLog = [];
+        this.dismissAllErrors();
+        
+        console.log(`✅ エラーログクリア完了: ${count}件削除`);
+        return count;
+    }
+}
+
+// グローバル公開
+window.ErrorManager = ErrorManager;
+
+// 使用例とテスト
+console.log('📋 ErrorManager 使用例:');
+console.log('  const errorManager = new ErrorManager();');
+console.log('  errorManager.initialize();');
+console.log('  errorManager.handleError(new Error("テストエラー"), "runtime", "テストコンテキスト")');
+console.log('  errorManager.handleError("警告メッセージ", "validation", "", { severity: "warning" })');
+console.log('  errorManager.onError("api", (errorInfo) => { console.log("API エラー:", errorInfo); })');
+console.log('  errorManager.getErrorStats()  // エラー統計取得');
+console.log('🚨 ふたば☆お絵描きツール v1.5 - ErrorManager実装完了');
