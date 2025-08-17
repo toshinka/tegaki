@@ -1,0 +1,804 @@
+# 🎨 ふたば☆お絵描きツール - シンボル辞典・API定義書 v2.0
+
+> **作成目的**: Phase1.5統合改修後の統一API・Manager定義・AI協働効率化  
+> **対象バージョン**: v1.5-Phase1.5統合改修完了版  
+> **最終更新**: 2025年8月18日
+
+## 📋 概要
+
+Phase1.5統合改修により実現された統一管理システムの全API・クラス・設定値を定義します。重複API排除・統一アクセスパターン確立により、AI協働開発での混乱を完全に排除します。
+
+---
+
+## 🌟 統一APIアクセス（Phase1.5改修の核心）
+
+### 🎯 window.futaba - 統一APIGateway
+
+**すべての外部アクセスはこの単一インターフェース経由**
+
+```javascript
+// 📍 統一API - これらのみ使用
+window.futaba.getState()              // アプリケーション状態取得
+window.futaba.selectTool(toolName)    // ツール選択 ('pen'|'eraser')
+window.futaba.setBrushSize(size)      // ブラシサイズ設定
+window.futaba.resizeCanvas(w, h)      // キャンバスリサイズ
+window.futaba.diagnose()              // システム診断
+
+// 📍 廃止予定API（後方互換性のみ）
+window.getAppState()                  // → window.futaba.getState() 使用
+window.futabaDrawingTool.selectPenTool()  // → window.futaba.selectTool('pen')
+```
+
+### 🔧 統合管理システムアクセス
+
+```javascript
+// 📍 設定統一管理
+window.configManager.get('canvas.defaultWidth')      // 設定値取得
+window.configManager.set('brush.defaultSize', 24.0)  // 設定値更新
+window.configManager.getSection('brush')             // セクション取得
+
+// 📍 エラー統一管理
+window.errorManager.handleError(error, type, context)  // エラー処理統一
+window.errorManager.getErrorStats()                    // エラー統計取得
+
+// 📍 初期化統一管理
+window.initializationManager.getInitializationStatus() // 初期化状況確認
+
+// 📍 デバッグ統一アクセス
+window.debugFutaba.getPhase15Status()    // Phase1.5統合状況
+window.debugFutaba.displayBenefits()     // 改修効果表示
+```
+
+---
+
+## 🏗️ 統合改修版クラス定義
+
+### 🎨 FutabaDrawingTool（v1.5統合改修版）
+
+**Phase1.5統合改修の中核クラス - 全Managerを統合管理**
+
+```javascript
+class FutabaDrawingTool {
+    // 🎯 統合改修版プロパティ
+    configManager              // ConfigManager インスタンス
+    errorManager               // ErrorManager インスタンス  
+    initializationManager      // InitializationManager インスタンス
+    apiGateway                 // APIGateway インスタンス
+    appCore                    // AppCore インスタンス（従来維持）
+    
+    // 🚀 統合改修版メソッド
+    async init()                           // Phase1.5統合初期化
+    async initializeConfigManager()        // 設定値一元化
+    async initializeErrorManager()         // エラーハンドリング統一
+    async initializeInitializationManager() // 初期化簡素化
+    async initializeAPIGateway()           // API統一
+    finalizePhase15Integration()           // 統合完了処理
+    
+    // 📊 改修効果確認
+    displayPhase15Benefits()               // 改修効果レポート表示
+    calculatePhase15Benefits()             // 改修効果数値化
+    getPhase15IntegrationStatus()          // 統合状況取得
+    
+    // 🛡️ 緊急復旧システム
+    async attemptPhase15EmergencyRecovery(error)  // 緊急復旧
+    showPhase15ErrorMessage(error)                // エラー表示
+    
+    // 📈 診断・デバッグ
+    getSystemDiagnosis()                   // 統合システム診断
+    getAppState()                          // 詳細状態取得（改修版）
+}
+```
+
+### 🔧 ConfigManager（設定値一元化）
+
+**全設定値のSingle Source of Truth**
+
+```javascript
+class ConfigManager {
+    // 🎯 設定構造（一元化済み）
+    config = {
+        canvas: {
+            defaultWidth: 400,           // キャンバス幅統一値
+            defaultHeight: 400,          // キャンバス高さ統一値
+            backgroundColor: 0xf0e0d6,   // ふたば背景色統一値
+            maxWidth: 4096, maxHeight: 4096
+        },
+        brush: {
+            defaultSize: 16.0,           // ブラシサイズ統一値  
+            defaultColor: 0x800000,      // ふたばマルーン統一値
+            defaultOpacity: 0.85,        // 不透明度統一値
+            presetSizes: [1,2,4,8,16,32] // プリセット統一配列
+        },
+        ui: {
+            sliderUpdateThrottle: 16,    // 60FPS統一値
+            colors: { /* ふたば☆統一カラー */ }
+        },
+        performance: {
+            targetFPS: 60,               // 目標FPS統一値
+            maxInitTime: 5000            // 最大初期化時間統一値
+        }
+    }
+    
+    // 🔍 統一アクセスメソッド
+    get(path)                            // 'canvas.defaultWidth' 形式
+    set(path, value, notify=true)        // 統一設定変更
+    getSection(section)                  // 'canvas'/'brush' セクション取得
+    updateMultiple(updates)              // 一括設定更新
+    
+    // 📢 変更監視
+    onChange(path, callback)             // 設定変更監視登録
+    
+    // 🔧 管理機能
+    reset(section=null)                  // 設定リセット
+    export() / import(data)              // 設定エクスポート・インポート
+    countSettings()                      // 設定項目数取得
+}
+```
+
+### 🚨 ErrorManager（エラーハンドリング統一）
+
+**全エラー処理のSingle Point of Control**
+
+```javascript
+class ErrorManager {
+    // 🎯 統一エラー処理
+    handleError(error, type='runtime', context='', options={})  // 統一エラー処理
+    
+    // 🏷️ エラータイプ統一定義
+    errorTypes = {
+        DEPENDENCY: 'dependency',        // 依存関係エラー
+        INITIALIZATION: 'initialization', // 初期化エラー  
+        RUNTIME: 'runtime',             // 実行時エラー
+        UI: 'ui',                       // UI関連エラー
+        API: 'api'                      // API呼び出しエラー
+    }
+    
+    // 📊 重要度統一管理
+    severityLevels = {
+        INFO: { level: 0, icon: 'ℹ️' },
+        WARNING: { level: 1, icon: '⚠️' },  
+        ERROR: { level: 2, icon: '❌' },
+        CRITICAL: { level: 3, icon: '💀' }
+    }
+    
+    // 📈 統計・管理
+    getErrorStats()                      // エラー統計取得
+    getDebugInfo()                       // デバッグ情報取得
+    clearErrorLog()                      // エラーログクリア
+    onError(type, callback)              // エラーリスナー登録
+}
+```
+
+### 🚀 InitializationManager（初期化統一管理）
+
+**宣言的・依存関係解決型初期化システム**
+
+```javascript
+class InitializationManager {
+    // 🎯 初期化ステップ管理（宣言的）
+    registerStep(name, dependencies, handler, options)  // ステップ登録
+    async execute()                                      // 依存関係解決実行
+    
+    // 📊 初期化状況
+    getInitializationStatus() {
+        return {
+            currentStep: string,         // 現在実行中ステップ
+            completedSteps: Array,       // 完了ステップ一覧
+            failedSteps: Array,          // 失敗ステップ一覧  
+            progress: number,            // 進捗率 (0-100)
+            totalSteps: number           // 総ステップ数
+        }
+    }
+    
+    // 🔧 個別初期化ステップ（デフォルト8ステップ）
+    validateBrowserEnvironment()         // ブラウザ環境確認
+    loadExternalDependencies()           // 外部依存関係読み込み
+    initializePixiExtensions()           // PixiJS拡張初期化
+    initializeConfigManager()            // ConfigManager初期化
+    initializeErrorManager()             // ErrorManager初期化
+    initializeAppCore()                  // AppCore初期化  
+    initializeUIComponents()             // UI初期化
+    performFinalValidation()             // 最終検証
+}
+```
+
+### 🌐 APIGateway（統一API提供）
+
+**外部アクセス統一インターフェース**
+
+```javascript
+class APIGateway {
+    // 🎨 ツール制御統一API
+    selectTool(toolName)                 // ツール選択統一処理
+    setBrushSize(size)                   // ブラシサイズ統一更新
+    
+    // 📐 キャンバス制御統一API  
+    resizeCanvas(width, height, centerContent=false)  // リサイズ統一処理
+    
+    // 📊 状態取得統一API
+    getState()                           // アプリケーション状態統一取得
+    
+    // 🔍 診断統一API
+    diagnose() {
+        return {
+            dependencies: Object,        // 依存関係状況
+            performance: Object,         // パフォーマンス状況
+            errors: Object,              // エラー状況
+            integration: Object          // 統合状況
+        }
+    }
+}
+```
+
+---
+
+## 🎯 統一設定値定義（ConfigManager管理）
+
+### 🖼️ キャンバス設定（config.canvas）
+```javascript
+defaultWidth: 400                // デフォルト幅（統一値）
+defaultHeight: 400               // デフォルト高さ（統一値）  
+backgroundColor: 0xf0e0d6        // ふたば背景色（統一値）
+backgroundHex: '#f0e0d6'         // CSS用16進色（統一値）
+maxWidth: 4096                   // 最大幅制限
+maxHeight: 4096                  // 最大高さ制限
+```
+
+### 🖌️ ブラシ設定（config.brush）
+```javascript
+defaultSize: 16.0                // デフォルトサイズ（統一値）
+defaultColor: 0x800000           // ふたばマルーン（統一値）
+defaultColorHex: '#800000'       // CSS用マルーン（統一値）
+defaultOpacity: 0.85             // デフォルト不透明度（統一値）
+presetSizes: [1,2,4,8,16,32]     // プリセットサイズ配列（統一値）
+defaultPresetIndex: 4            // デフォルトプリセット位置
+```
+
+### 🎨 UIカラー設定（config.ui.colors）
+```javascript
+primary: '#800000'               // プライマリカラー（統一値）
+secondary: '#aa5a56'             // セカンダリカラー（統一値） 
+accent: '#cf9c97'                // アクセントカラー（統一値）
+background: '#ffffee'            // アプリ背景（統一値）
+canvas: '#f0e0d6'                // キャンバス背景（統一値）
+```
+
+### ⚡ パフォーマンス設定（config.performance）
+```javascript
+targetFPS: 60                    // 目標FPS（統一値）
+maxInitTime: 5000                // 最大初期化時間ms（統一値）
+retryAttempts: 3                 // リトライ回数（統一値）
+retryDelay: 200                  // リトライ間隔ms（統一値）
+memoryCheckInterval: 5000        // メモリチェック間隔ms（統一値）
+```
+
+---
+
+## 🔧 従来クラス（AppCore系統）
+
+### 🎮 AppCore（PixiJS基盤管理）
+
+**PixiJS Application・描画エンジン管理**
+
+```javascript
+class AppCore {
+    // 🚀 初期化システム（統合改修版で簡素化済み）
+    async initialize()                   // メイン初期化（InitializationManager管理）
+    
+    // 🎨 PixiJS管理
+    app                                 // PIXI.Application インスタンス
+    drawingContainer                    // PIXI.Container - 描画レイヤー
+    uiContainer                         // PIXI.Container - UIレイヤー
+    
+    // 🖱️ イベントハンドラ
+    handlePointerDown(event)            // ポインターダウン→描画開始
+    handlePointerMove(event)            // ポインター移動→描画継続・座標更新
+    handlePointerUp(event)              // ポインターアップ→描画終了
+    
+    // 📐 キャンバス制御
+    resize(newWidth, newHeight, centerContent) // リサイズ処理
+    
+    // 🔧 設定値アクセサ（ConfigManager統合済み）
+    get canvasWidth()                   // configManager.get('canvas.defaultWidth')
+    get canvasHeight()                  // configManager.get('canvas.defaultHeight')
+    
+    // 🏷️ システム統合
+    toolSystem                          // DrawingToolSystem インスタンス
+    uiController                        // UIController インスタンス
+    performanceMonitor                  // PerformanceMonitor インスタンス
+}
+```
+
+### ✏️ DrawingToolSystem（描画ツール管理）
+
+**ブラシ制御・描画処理**
+
+```javascript
+class DrawingToolSystem {
+    // 🎨 描画制御
+    startDrawing(x, y)                  // 描画開始
+    continueDrawing(x, y)               // 描画継続
+    stopDrawing()                       // 描画終了
+    
+    // 🔧 ツール管理（ConfigManager統合済み）
+    setTool(tool)                       // ツール設定
+    setBrushSize(size)                  // configManager経由でブラシサイズ設定
+    setOpacity(opacity)                 // configManager経由で不透明度設定
+    
+    // 🖌️ パス作成
+    createPenPath(x, y)                 // ペンパス作成
+    createEraserPath(x, y)              // 消しゴムパス作成
+    
+    // 🔧 設定値アクセサ（ConfigManager統合）
+    get brushSize()                     // configManager.get('brush.defaultSize')
+    get brushColor()                    // configManager.get('brush.defaultColor')  
+    
+    // 🏷️ 状態管理
+    currentTool                         // string - 現在のツール名
+    isDrawing                           // boolean - 描画中フラグ
+    currentPath                         // Object - 現在のパスオブジェクト
+}
+```
+
+### 🎛️ UIController（UI制御管理）
+
+**スライダー・ポップアップ・ツールボタン管理**
+
+```javascript
+class UIController {
+    // 🚀 初期化（ConfigManager統合済み）
+    init()                              // UI制御システム初期化
+    setupToolButtons()                  // ツールボタン設定
+    setupSliders()                      // スライダー設定（ConfigManager連携）
+    
+    // 🔘 ツール制御（APIGateway統合済み）
+    setTool(tool)                       // ツール設定（APIGateway経由推奨）
+    
+    // 🎚️ スライダー制御（ConfigManager統合）
+    updateSliderValue(sliderId, value)  // スライダー値更新→ConfigManager連携
+    
+    // 🎨 UI更新（ConfigManager監視）  
+    updateSizePresets()                 // configManager変更時の自動更新
+    
+    // 📊 ポップアップ制御
+    togglePopup(popupId)                // ポップアップ表示切替
+    closeAllPopups()                    // 全ポップアップ閉じる
+}
+```
+
+---
+
+## 📐 DOM要素統合定義
+
+### 🎨 メインUI要素
+
+```html
+<!-- キャンバス領域 -->
+<div id="drawing-canvas">              <!-- PixiJS キャンバス挿入先 -->
+
+<!-- 統合ツールボタン -->
+<div id="pen-tool">                    <!-- ペンツール（APIGateway連携） -->
+<div id="eraser-tool">                 <!-- 消しゴムツール（APIGateway連携） -->
+<div id="resize-tool">                 <!-- リサイズツール -->
+
+<!-- 統合ポップアップパネル -->
+<div id="pen-settings">                <!-- ペン設定（ConfigManager連携） -->
+<div id="resize-settings">             <!-- リサイズ設定（ConfigManager連携） -->
+```
+
+### 🎚️ 統合スライダー・入力要素
+
+```html
+<!-- ConfigManager統合スライダー -->
+<div id="pen-size-slider">             <!-- サイズ→configManager.brush.defaultSize -->
+<div id="pen-opacity-slider">          <!-- 不透明度→configManager.brush.defaultOpacity -->
+<div id="pen-pressure-slider">         <!-- 筆圧→configManager.brush.defaultPressure -->
+
+<!-- ConfigManager統合入力 -->
+<input id="canvas-width">              <!-- 幅→configManager.canvas.defaultWidth -->
+<input id="canvas-height">             <!-- 高さ→configManager.canvas.defaultHeight -->
+
+<!-- ConfigManager統合プリセット -->
+<div class="size-preset-item" data-size="16">  <!-- configManager.brush.presetSizes -->
+```
+
+---
+
+## 🎨 統合CSS定義
+
+### 🔘 統合ツール・UI要素
+
+```css
+.tool-button                          /* ツールボタン基本（統一デザイン） */
+.tool-button.active                   /* アクティブツール（統一カラー） */
+.popup-panel                          /* ポップアップ（統一アニメーション） */
+.slider                              /* スライダー（統一操作感） */
+.size-preset-item.active             /* アクティブプリセット（統一表示） */
+```
+
+### 🎨 ふたば☆統一カラー（ConfigManager管理）
+
+```css
+:root {
+  --futaba-primary: var(--config-ui-colors-primary);      /* #800000 */
+  --futaba-secondary: var(--config-ui-colors-secondary);  /* #aa5a56 */
+  --futaba-accent: var(--config-ui-colors-accent);        /* #cf9c97 */
+  --futaba-background: var(--config-ui-colors-background); /* #ffffee */
+  --futaba-canvas: var(--config-ui-colors-canvas);        /* #f0e0d6 */
+}
+```
+
+---
+
+## 🔗 統合依存関係マップ
+
+### 📁 Phase1.5統合改修版ファイル依存関係
+
+```mermaid
+graph TD
+    A[index.html] --> B[libs/pixi-extensions.js]
+    A --> C[managers/config-manager.js]
+    A --> D[managers/error-manager.js]
+    A --> E[managers/initialization-manager.js]
+    A --> F[js/api-gateway.js]
+    A --> G[js/app-core.js]
+    A --> H[js/main.js - 統合改修版]
+    
+    H --> C
+    H --> D  
+    H --> E
+    H --> F
+    H --> G
+    
+    E --> C
+    E --> D
+    F --> H
+```
+
+### 🏗️ 統合改修版クラス依存関係
+
+```
+FutabaDrawingTool (統合改修版)
+├── ConfigManager (設定統一管理)
+├── ErrorManager (エラー統一管理)
+├── InitializationManager (初期化統一管理)
+│   ├── ConfigManager (依存)
+│   └── ErrorManager (依存)
+├── APIGateway (API統一提供)
+│   └── FutabaDrawingTool (参照)
+└── AppCore (従来維持)
+    ├── DrawingToolSystem
+    ├── UIController  
+    └── PerformanceMonitor
+```
+
+### 🔄 Phase1.5統合初期化シーケンス
+
+```
+1. DOMContentLoaded
+   └── AppInitializer.initialize()
+       └── FutabaDrawingTool.init() [統合改修版]
+           ├── initializeConfigManager()      // 設定値一元化
+           ├── initializeErrorManager()       // エラー統一化
+           ├── initializeInitializationManager() // 初期化統一化
+           ├── executeUnifiedInitialization()  // 依存関係解決実行
+           │   ├── validate-environment
+           │   ├── load-dependencies
+           │   ├── initialize-extensions
+           │   ├── initialize-config
+           │   ├── initialize-error-manager
+           │   ├── initialize-app-core
+           │   ├── initialize-ui
+           │   └── final-validation
+           ├── initializeAPIGateway()         // API統一化
+           └── finalizePhase15Integration()   // 統合完了処理
+```
+
+---
+
+## 🎯 統合イベントシステム
+
+### 📢 ConfigManager統合イベント
+
+```javascript
+// 設定変更イベント（統一処理）
+configManager.onChange('brush.defaultSize', (path, newVal, oldVal) => {
+    // ツールシステム更新
+    toolSystem.setBrushSize(newVal);
+    // UI更新
+    uiController.updateSliderValue('pen-size-slider', newVal);
+    // プリセット更新
+    uiController.updateSizePresets();
+});
+
+// セクション変更監視
+configManager.onChange('canvas.*', (path, newVal, oldVal) => {
+    // キャンバス関連設定変更時の統一処理
+});
+```
+
+### 🚨 ErrorManager統合イベント
+
+```javascript
+// エラータイプ別リスナー（統一処理）
+errorManager.onError('initialization', (errorInfo) => {
+    // 初期化エラー専用処理
+});
+
+errorManager.onError('*', (errorInfo) => {
+    // 全エラー統一ログ処理
+});
+```
+
+### 🚀 InitializationManager進捗イベント
+
+```javascript
+// 初期化進捗監視（統一処理）
+document.addEventListener('initializationProgress', (event) => {
+    const { step, status, progress } = event.detail;
+    console.log(`初期化: ${step} - ${status} (${progress}%)`);
+});
+```
+
+---
+
+## 🛠️ 統合エラーハンドリング定義
+
+### 🚨 Phase1.5統合エラータイプ
+
+```javascript
+// ConfigManager関連エラー
+"ConfigManager クラスが読み込まれていません"     // 依存関係エラー
+"設定値検証に失敗しました"                      // バリデーションエラー
+"設定パス '{path}' が見つかりません"            // パスエラー
+
+// ErrorManager関連エラー  
+"ErrorManager クラスが読み込まれていません"     // 依存関係エラー
+"ErrorManager初期化に失敗しました"             // 初期化エラー
+
+// InitializationManager関連エラー
+"InitializationManager クラスが読み込まれていません" // 依存関係エラー
+"初期化ステップ '{name}' で失敗"               // ステップ実行エラー
+"循環依存を検出: {stepName}"                  // 依存関係エラー
+
+// APIGateway関連エラー
+"APIGateway クラスが読み込まれていません"       // 依存関係エラー
+"統一API機能が利用できません"                  // 機能制限エラー
+```
+
+### 🛡️ 統合フォールバック機能
+
+```javascript
+// ConfigManager フォールバック
+if (!this.configManager) {
+    this.configManager = this.createFallbackConfigManager();
+    // 基本的なget/set機能のみ提供
+}
+
+// ErrorManager フォールバック  
+if (!this.errorManager) {
+    this.errorManager = this.createFallbackErrorManager();
+    // console.error + alert による基本エラー表示
+}
+
+// APIGateway フォールバック
+if (!this.apiGateway) {
+    this.setupBasicAPI();
+    // window.futaba に基本API関数直接設定
+}
+```
+
+---
+
+## 🔍 統合デバッグ・検証システム
+
+### 🛠️ Phase1.5統合デバッグ関数
+
+```javascript
+// 統一デバッグアクセス
+window.debugFutaba.getPhase15Status()          // 統合状況確認
+window.debugFutaba.displayBenefits()           // 改修効果表示
+window.debugFutaba.getSystemDiagnosis()        // システム診断
+
+// 個別Manager診断
+window.configManager?.getDebugInfo()           // 設定管理診断
+window.errorManager?.getDebugInfo()            // エラー管理診断
+window.initializationManager?.getDebugInfo()   // 初期化管理診断
+
+// 統合診断情報
+window.PHASE15_DEBUG                           // Phase1.5統合デバッグ情報
+```
+
+### 📊 統合状態確認API
+
+```javascript
+// window.futaba.getState() 統合改修版返り値
+{
+    success: true,
+    initialized: boolean,
+    version: "v1.5-統合改修完了版",
+    phase: "Phase1.5統合改修版",
+    
+    // 統合管理システム状況
+    managers: {
+        config: boolean,        // ConfigManager利用可能性
+        error: boolean,         // ErrorManager利用可能性  
+        initialization: boolean, // InitializationManager利用可能性
+        apiGateway: boolean     // APIGateway利用可能性
+    },
+    
+    // 統合設定情報
+    settings: {
+        canvasSize: string,     // configManager.get()経由
+        brushSize: number,      // configManager.get()経由
+        currentTool: string     // configManager.get()経由
+    },
+    
+    // AppCore情報（従来維持）
+    appCore: {
+        initialized: boolean,
+        canvasSize: string,
+        renderer: string
+    }
+}
+
+// window.futaba.diagnose() 統合診断返り値
+{
+    version: "v1.5-統合改修完了版",
+    phase: "Phase1.5統合改修版",
+    
+    // 統合管理システム診断
+    managers: {
+        configManager: { available: boolean, settings: number },
+        errorManager: { available: boolean, errors: number },
+        initializationManager: { available: boolean, status: object },
+        apiGateway: { available: boolean, type: string }
+    },
+    
+    // 統合効果測定
+    integration: {
+        設定値統一率: "100%",
+        API重複削減率: "75%", 
+        エラー処理統一率: "100%",
+        AI開発効率: "3-5倍向上"
+    }
+}
+```
+
+---
+
+## 📚 Phase1.5統合操作パターン
+
+### 🎨 統一ツール操作
+
+```javascript
+// ✅ 推奨: APIGateway統一アクセス
+window.futaba.selectTool('pen')        // ペンツール選択
+window.futaba.selectTool('eraser')     // 消しゴムツール選択
+window.futaba.setBrushSize(24.0)       // ブラシサイズ統一変更
+
+// ❌ 非推奨: 直接アクセス（後方互換のみ）
+window.futabaDrawingTool.selectPenTool()
+appCore.toolSystem.setBrushSize(24.0)
+```
+
+### 📐 統一設定変更
+
+```javascript
+// ✅ 推奨: ConfigManager統一アクセス
+configManager.set('brush.defaultSize', 24.0)      // 設定変更
+configManager.set('canvas.defaultWidth', 800)     // キャンバス幅変更
+const brushConfig = configManager.getSection('brush') // セクション取得
+
+// 自動連携: UIController・ToolSystemに自動反映される
+```
+
+### 🔒 統一ポップアップ制御
+
+```javascript
+// ✅ 推奨: UIController経由（統一処理）
+appCore.uiController.togglePopup('pen-settings')   // ペン設定表示切替
+appCore.uiController.closeAllPopups()              // 全ポップアップ閉じる
+
+// APIGateway経由での統一制御（将来実装予定）
+// window.futaba.toggleSettings('pen')
+```
+
+---
+
+## ⚠️ Phase1.5統合改修重要事項
+
+### 🚫 Phase1.5後の避けるべき操作
+
+```javascript
+// ❌ ハードコード値使用禁止
+const width = 400;  // 設定値は configManager.get('canvas.defaultWidth')
+
+// ❌ 独自エラー処理禁止
+console.error('エラー発生');  // errorManager.handleError() 使用
+
+// ❌ 直接内部API呼び出し禁止  
+appCore.toolSystem.setBrushSize(24);  // window.futaba.setBrushSize() 使用
+
+// ❌ 複数アクセス方法の併用禁止
+window.getAppState()                  // window.futaba.getState() に統一
+window.futabaDrawingTool.getState()   // 同上
+```
+
+### ✅ Phase1.5統合改修推奨パターン
+
+```javascript
+// ✅ 統一API使用
+window.futaba.*(...)                  // 外部アクセス統一
+
+// ✅ 統一設定管理
+configManager.get/set(...)            // 設定アクセス統一
+
+// ✅ 統一エラー処理  
+errorManager.handleError(...)         // エラー処理統一
+
+// ✅ 存在確認パターン
+if (window.futaba && window.configManager) {
+    // 統合システム利用可能
+}
+```
+
+### 🔧 Phase1.5統合トラブルシューティング
+
+```javascript
+// 統合システム確認手順
+1. window.debugFutaba.getPhase15Status()       // 統合状況確認
+2. window.futaba.diagnose()                    // 統合診断実行
+3. window.PHASE15_DEBUG                        // デバッグ情報確認
+4. ブラウザDevToolsでManager読み込み状況確認
+
+// 設定値問題時の確認
+1. configManager?.getDebugInfo()               // 設定管理状況
+2. configManager?.get('問題の設定パス')         // 設定値直接確認
+3. 設定変更リスナー動作確認
+
+// エラー処理問題時の確認  
+1. errorManager?.getErrorStats()               // エラー統計確認
+2. errorManager?.getDebugInfo()                // エラー管理状況
+3. ブラウザコンソールでエラーハンドラー確認
+```
+
+---
+
+## 📋 Phase1.5統合チェックリスト
+
+### 🚀 統合システム確認
+
+- [ ] `window.futaba` が存在し、統一API利用可能
+- [ ] `window.configManager` が存在し、設定統一管理可能
+- [ ] `window.errorManager` が存在し、エラー統一処理可能
+- [ ] `window.initializationManager` が存在し、初期化管理可能
+- [ ] 後方互換API（deprecation warning付き）が動作
+
+### 🔧 統合機能確認
+
+- [ ] `futaba.selectTool()` でツール切り替え可能
+- [ ] `futaba.setBrushSize()` でサイズ変更可能（UI連携）
+- [ ] `configManager.set()` で設定変更可能（自動反映）
+- [ ] `errorManager.handleError()` で統一エラー表示
+- [ ] フォールバック機能が正常動作
+
+### 🐛 統合デバッグ確認
+
+- [ ] `futaba.getState()` で統合状況取得可能
+- [ ] `futaba.diagnose()` で統合診断可能
+- [ ] `debugFutaba.displayBenefits()` で改修効果表示可能
+- [ ] Manager個別デバッグ情報取得可能
+
+---
+
+## 🔄 バージョン履歴
+
+- **v2.0-Phase1.5**: Phase1.5統合改修対応・統一管理システム定義・重複API排除
+- 作成日: 2025年8月18日
+- 対応コードベース: `v1.5-Phase1.5統合改修完了版`
+- 前版との差分: ConfigManager・ErrorManager・InitializationManager・APIGateway統合
+
+---
+
+*🎨 このシンボル辞典v2.0は、Phase1.5統合改修により実現された統一管理システムの完全な技術リファレンスです。AI協働開発時は必ず統一API（window.futaba）を使用し、重複したアクセス方法は避けてください。*

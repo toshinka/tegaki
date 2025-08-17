@@ -1,0 +1,321 @@
+# JavaScript + PixiJS v7→v8 Rulebook v4.0 - Phase1.5統合改修対応版
+
+## 1. 基本理念（恒久的指針）
+
+### 1.1 核心方針
+- **統一管理原則**: Single Source of Truth - 設定値・状態・APIアクセスの完全統一化
+- **DRY・SOLID遵守**: 重複コード排除・単一責任原則・責務分離の徹底
+- **AI協働最適化**: 混乱要因排除・予測可能な命名・統一されたアクセスパターン
+- **段階的品質向上**: v7完成→v8移行の安定的発展戦略
+- **非破壊的変形**: ベクターベース変形によるアニメ制作品質確保
+
+### 1.2 統合改修原則（Phase1.5準拠）
+- **設定値統一**: 全設定値はConfigManager経由でのみアクセス
+- **エラー処理統一**: 全エラーはErrorManager経由で統一処理
+- **初期化統一**: InitializationManager による宣言的・依存関係解決型初期化
+- **API統一**: 外部アクセスはAPIGateway (window.futaba) 経由に統一
+
+### 1.3 実装原則（恒久的）
+- **Pure JavaScript**: ESM/TypeScript混在禁止・グローバル変数活用
+- **500行制限**: 超過時は責務分離による分割・依存関係最小化
+- **後方互換性**: 改修後も既存APIを段階的移行で維持
+- **予測可能性**: 命名規則統一・アクセスパターン一貫性
+
+---
+
+## 2. ファイル構成規約（恒久的）
+
+### 2.1 基本構成原則
+```
+🎨 tegaki/
+├─ index.html                     // 単一エントリーポイント
+├─ package.json / package-lock.json  // 依存関係管理
+├─ node_modules/                  // ローカル依存関係
+├─ css/styles.css                 // 統一スタイル定義
+├─ libs/pixi-extensions.js        // 拡張統合基盤
+├─ js/main.js                     // 統合改修版アプリケーション初期化
+├─ js/app-core.js                 // PixiJS基盤管理
+├─ js/api-gateway.js              // 統一API提供
+├─ managers/                      // 統括管理層
+├─ js/utils/                      // 共通ユーティリティ
+├─ js/ui/                         // UI専用コンポーネント
+├─ js/tools/                      // 描画ツール群
+└─ js/layers/                     // レイヤーシステム（Phase2+）
+```
+
+### 2.2 責務分離原則
+- **libs/**: 外部ライブラリ統合・互換性レイヤー・フォールバック
+- **js/main.js**: 統合改修版初期化・Manager統合・緊急復旧
+- **managers/**: 機能統括・状態管理・設定管理・エラー管理
+- **js/tools/**: 単一ツール実装・Pure描画ロジック
+- **js/ui/**: UI専用・表示制御・ユーザー操作
+- **js/utils/**: 共通処理・ヘルパー・座標変換
+
+### 2.3 命名規約（統一原則）
+```javascript
+// クラス: PascalCase
+class ConfigManager {}
+class APIGateway {}
+
+// インスタンス: camelCase
+const configManager = new ConfigManager()
+const apiGateway = new APIGateway()
+
+// グローバル統一アクセス
+window.futaba           // APIGateway統一アクセス
+window.configManager    // 設定統一管理
+window.errorManager     // エラー統一管理
+
+// 設定値アクセス: ドット記法
+config.get('canvas.defaultWidth')
+config.get('brush.defaultSize')
+```
+
+---
+
+## 3. 統合管理システム規約（Phase1.5準拠）
+
+### 3.1 ConfigManager規約
+```javascript
+// 設定値は必ずConfigManager経由
+❌ const width = 400;  // ハードコード禁止
+✅ const width = configManager.get('canvas.defaultWidth');
+
+// 設定変更は統一メソッド使用
+❌ appCore.canvasWidth = 800;  // 直接変更禁止
+✅ configManager.set('canvas.defaultWidth', 800);
+
+// セクション単位アクセス活用
+const brushConfig = configManager.getSection('brush');
+```
+
+### 3.2 ErrorManager規約
+```javascript
+// エラー処理は必ず統一ハンドラー使用
+❌ console.error('エラー発生');        // 直接ログ禁止
+❌ alert('エラー: ' + message);       // 独自表示禁止
+✅ errorManager.handleError(error, 'runtime', 'コンテキスト');
+
+// 重要度指定で適切な表示制御
+errorManager.handleError(error, 'initialization', '', { severity: 'critical' });
+errorManager.handleError(warning, 'ui', '', { severity: 'warning' });
+```
+
+### 3.3 APIGateway規約
+```javascript
+// 外部アクセスは必ずAPIGateway経由
+❌ window.futabaDrawingTool.selectPenTool();     // 直接アクセス禁止
+❌ appCore.toolSystem.setBrushSize(24);         // 内部API直接禁止
+✅ window.futaba.selectTool('pen');             // 統一API使用
+✅ window.futaba.setBrushSize(24);              // 統一API使用
+
+// APIGateway推奨使用パターン
+window.futaba.getState()         // 状態取得統一
+window.futaba.selectTool(name)   // ツール切り替え統一
+window.futaba.setBrushSize(size) // 設定変更統一
+window.futaba.diagnose()         // 診断機能統一
+```
+
+---
+
+## 4. 品質保証規約（恒久的）
+
+### 4.1 DRY原則遵守
+```javascript
+// 重複排除例
+❌ 複数箇所で同じ設定値定義
+index.html: value="400"
+AppCore: defaultWidth: 400
+ToolSystem: canvasWidth: 400
+
+✅ 統一設定値管理
+configManager.config.canvas.defaultWidth: 400
+全箇所でconfigManager.get('canvas.defaultWidth')使用
+```
+
+### 4.2 SOLID原則適用
+- **S (Single Responsibility)**: 各Manager は単一責務に特化
+- **O (Open/Closed)**: 新機能は既存コード変更なしで追加
+- **L (Liskov Substitution)**: フォールバック機能は基本機能と置換可能
+- **I (Interface Segregation)**: 不要な依存関係を持たない
+- **D (Dependency Inversion)**: 具象ではなく抽象に依存
+
+### 4.3 非破壊品質保証
+```javascript
+// ベクター保持原則
+✅ layer.transform.setFromMatrix(transform);  // 非破壊変形
+❌ layer.toCanvas() → rasterize;              // 品質劣化
+
+// 履歴管理原則
+✅ MemoryManager.record('action', {...});     // 復元可能履歴
+✅ 完全なアンドゥ・リドゥ実装
+```
+
+---
+
+## 5. PixiJS v8移行規約
+
+### 5.1 互換性原則
+```javascript
+// v7/v8 両対応パターン
+class PixiApplicationFactory {
+    static async create(options) {
+        if (PIXI.VERSION.startsWith('7')) {
+            return new PIXI.Application(options);
+        } else {
+            return await PIXI.Application.init(options);
+        }
+    }
+}
+```
+
+### 5.2 移行準備規約
+- **設定フラグ**: `config.v8Migration.enabled` で制御
+- **互換性レイヤー**: 既存API維持しつつv8準備
+- **段階的移行**: 破壊的変更なしでの順次対応
+
+---
+
+## 6. パフォーマンス規約（恒久的）
+
+### 6.1 監視義務
+```javascript
+// 必須監視項目
+- FPS監視: 60FPS維持確認
+- メモリ監視: 肥大化防止
+- 初期化時間監視: 5秒以内完了
+- エラー率監視: 異常増加検知
+```
+
+### 6.2 最適化原則
+- **レンダリング**: バッチ処理・オクルージョンカリング活用
+- **メモリ**: 定期的ガベージコレクション・不要オブジェクト解放
+- **イベント**: 過度なリスナー設定回避・適切なスロットリング
+
+---
+
+## 7. AI協働開発規約（恒久的）
+
+### 7.1 混乱防止原則
+```javascript
+// 明確な単一アクセス方法
+❌ getState() / getAppState() / debugFutaba.getState()  // 複数存在禁止
+✅ window.futaba.getState()                            // 単一明確
+
+// 予測可能な命名
+✅ selectTool() / setBrushSize() / resizeCanvas()      // 動詞+目的語
+✅ get() / set() / getSection()                       // 統一動詞使用
+```
+
+### 7.2 保守性向上
+- **単一責任**: 1クラス=1責務で混乱回避
+- **依存関係最小**: 循環依存・過度な結合回避
+- **テスタビリティ**: 単体テスト可能な構造維持
+
+---
+
+## 8. セキュリティ・安定性規約
+
+### 8.1 エラーハンドリング義務
+```javascript
+// 必須パターン
+✅ try-catch でエラー捕捉
+✅ errorManager.handleError() で統一処理
+✅ フォールバック機能実装
+✅ ユーザーフレンドリーなエラー表示
+```
+
+### 8.2 入力値検証
+```javascript
+// 設定値検証必須
+✅ configManager バリデーションルール設定
+✅ 範囲外値の自動補正
+✅ 型安全性確保（Pure JavaScriptでも）
+```
+
+---
+
+## 9. 禁止事項（恒久的）
+
+### 9.1 基本禁止事項
+- **ESM混在**: `import/export`・`type="module"` 使用禁止
+- **CDN依存**: node_modules利用可能時のCDN迂回禁止
+- **循環依存**: ファイル間・クラス間循環依存禁止
+- **重複定義**: 同じ機能・値の複数箇所定義禁止
+
+### 9.2 統合改修後禁止事項
+- **直接設定変更**: ConfigManager経由以外での設定変更禁止
+- **独自エラー処理**: ErrorManager経由以外でのエラー表示禁止
+- **APIバイパス**: APIGateway迂回での内部API直接呼出し禁止
+- **ハードコード値**: 設定値のハードコード埋め込み禁止
+
+---
+
+## 10. コミュニティ・エコシステム活用規約
+
+### 10.1 外部ライブラリ活用
+```javascript
+// @pixiエコシステム積極活用
+✅ @pixi/ui: UIコンポーネント
+✅ @pixi/layers: レイヤーシステム
+✅ @pixi/gif: アニメーション機能
+
+// 補助ライブラリ活用
+✅ GSAP: 高品質アニメーション
+✅ Lodash: ユーティリティ関数
+✅ Hammer.js: タッチジェスチャー
+```
+
+### 10.2 車輪の再発明回避
+- **既存ソリューション**: 実績ある外部ライブラリ優先採用
+- **カスタム実装**: 必要最小限に留める
+- **メンテナンス**: コミュニティサポート考慮
+
+---
+
+## 11. バージョン管理・継続改善規約
+
+### 11.1 段階的改善原則
+- **Phase方式**: 大きな変更は段階的実装
+- **後方互換**: 既存機能への影響最小化
+- **フィードバック**: 実装後の効果測定・改善
+
+### 11.2 文書化義務
+- **変更理由**: なぜその改修が必要だったか記録
+- **影響範囲**: どのファイル・機能に影響するか明記
+- **移行手順**: 既存コードから新方式への移行方法提供
+
+---
+
+## 12. 将来展望・発展指針
+
+### 12.1 技術発展への対応
+- **PixiJS v8**: WebGPU・120FPS・新API対応
+- **ブラウザ進化**: 新機能積極採用・古いブラウザサポート段階的廃止
+- **デバイス多様化**: タッチ・ペン・VR等新デバイス対応
+
+### 12.2 品質向上継続
+- **パフォーマンス**: 常に最高水準を目指す
+- **ユーザビリティ**: 直感的・使いやすいインターフェース
+- **安定性**: エラーのない安定動作
+
+---
+
+## 13. AI協働開発成功パターン
+
+### 13.1 効率的な協働方針
+- **明確な仕様**: 曖昧さのない要求定義
+- **段階的実装**: 小さな単位での反復開発
+- **即座のフィードバック**: 問題発見時の迅速な修正
+
+### 13.2 品質保証方針
+- **規約遵守**: 本Rulebookの厳格な適用
+- **テスト重視**: 動作確認・品質検証の徹底
+- **継続改善**: 問題発見時の根本原因解決
+
+---
+
+*📋 JavaScript + PixiJS v7→v8 Rulebook v4.0 - Phase1.5統合改修対応版*  
+*策定日: 2025年8月18日*  
+*適用範囲: ふたば☆お絵描きツール全バージョン*  
+*基本理念: 統一管理・DRY/SOLID遵守・AI協働最適化・段階的品質向上*
