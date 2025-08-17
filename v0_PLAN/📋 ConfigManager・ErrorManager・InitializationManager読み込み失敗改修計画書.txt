@@ -1,0 +1,207 @@
+# 📋 ConfigManager・ErrorManager・InitializationManager読み込み失敗改修計画書
+
+## 🚨 現在のエラー分析
+
+### 発生エラー
+```
+❌ ConfigManager初期化失敗: Error: ConfigManager クラスが読み込まれていません
+❌ ErrorManager初期化失敗: Error: ErrorManager クラスが読み込まれていません
+❌ InitializationManager初期化失敗: Error: InitializationManager クラスが読み込まれていません
+❌ 統合初期化実行失敗: TypeError: Cannot set properties of undefined (setting 'progressCallback')
+```
+
+### 🔍 根本原因
+1. **Manager クラス未読み込み**: ConfigManager、ErrorManager、InitializationManager の各クラスが `undefined` 状態
+2. **統合改修不完全**: Phase1.1～1.3の実装で Manager 関連ファイルの読み込みが抜けている
+3. **初期化順序問題**: Manager クラス読み込み前に初期化メソッドが呼び出されている
+
+### 🎯 影響範囲
+- アプリケーション初期化失敗
+- 設定管理システム不動作
+- エラーハンドリング不動作
+- 統合初期化システム不動作
+
+---
+
+## 🛠️ 改修戦略
+
+### Phase 1: 緊急修正（即座対応）
+1. **Manager クラス読み込み追加**: index.html にスクリプトタグ追加
+2. **依存関係順序修正**: 正しい読み込み順序に修正
+3. **初期化処理修正**: Manager 存在確認ロジック追加
+
+### Phase 2: 統合システム修正
+1. **main.js 修正**: Manager 初期化ロジック強化
+2. **フォールバック実装**: Manager 未読み込み時の代替処理
+3. **エラー処理強化**: より詳細な診断機能追加
+
+### Phase 3: 品質保証
+1. **依存関係確認システム**: 動的読み込み確認
+2. **初期化監視強化**: Manager 読み込み状態監視
+3. **デバッグ機能追加**: 診断・トラブルシューティング機能
+
+---
+
+## 📁 必要ファイル一覧
+
+### 1. 必須 Manager ファイル
+- `managers/config-manager.js` ✅ (確認済み)
+- `managers/error-manager.js` ✅ (確認済み)
+- `managers/initialization-manager.js` ✅ (確認済み)
+
+### 2. 修正対象ファイル
+- `index.html` (スクリプト読み込み追加)
+- `js/main.js` (Manager 初期化ロジック修正)
+
+---
+
+## 🔧 具体的修正内容
+
+### 1. index.html 修正
+```html
+<!-- Manager クラス群読み込み追加（app-core.js の直前） -->
+<script src="managers/config-manager.js"></script>
+<script src="managers/error-manager.js"></script>
+<script src="managers/initialization-manager.js"></script>
+<script src="managers/ui-manager.js"></script>
+<script src="managers/tool-manager.js"></script>
+<script src="managers/canvas-manager.js"></script>
+<script src="managers/memory-manager.js"></script>
+<script src="managers/settings-manager.js"></script>
+```
+
+### 2. main.js 修正ポイント
+```javascript
+// Manager 存在確認強化
+validateManagerAvailability() {
+    const managers = ['ConfigManager', 'ErrorManager', 'InitializationManager'];
+    const missing = managers.filter(mgr => typeof window[mgr] === 'undefined');
+    if (missing.length > 0) {
+        throw new Error(`必須Manager未読み込み: ${missing.join(', ')}`);
+    }
+}
+
+// 初期化メソッド修正
+async initializeConfigManager() {
+    if (typeof window.ConfigManager === 'undefined') {
+        throw new Error('ConfigManager クラスが読み込まれていません');
+    }
+    this.configManager = new window.ConfigManager();
+    // 以下初期化処理...
+}
+```
+
+---
+
+## 🎯 実装優先順位
+
+### 🚨 緊急度: 高
+1. **Manager クラス読み込み**: index.html 修正 (5分)
+2. **初期化エラー修正**: main.js の Manager 初期化ロジック (10分)
+
+### ⚡ 緊急度: 中
+3. **フォールバック実装**: Manager 未読み込み時の代替処理 (15分)
+4. **エラー診断強化**: より詳細な依存関係確認 (10分)
+
+### 🔧 緊急度: 低
+5. **監視システム強化**: 動的読み込み監視 (20分)
+6. **デバッグ機能追加**: トラブルシューティング機能 (15分)
+
+---
+
+## 🧪 テスト計画
+
+### 1. 基本動作テスト
+- [ ] ConfigManager インスタンス作成成功
+- [ ] ErrorManager インスタンス作成成功  
+- [ ] InitializationManager インスタンス作成成功
+- [ ] 統合初期化実行成功
+
+### 2. エラーケーステスト
+- [ ] Manager ファイル未読み込み時の適切なエラー表示
+- [ ] 部分的読み込み失敗時のフォールバック動作
+- [ ] ネットワークエラー時の復旧処理
+
+### 3. 統合テスト
+- [ ] アプリケーション完全初期化成功
+- [ ] 各 Manager 連携動作確認
+- [ ] UI との統合動作確認
+
+---
+
+## 📊 成功指標
+
+### Phase 1 完了条件
+- ✅ 全 Manager クラスの読み込み成功
+- ✅ ConfigManager, ErrorManager, InitializationManager の初期化成功
+- ✅ 統合初期化エラーの解消
+
+### Phase 2 完了条件
+- ✅ フォールバック機能動作確認
+- ✅ エラー診断機能動作確認
+- ✅ 安定したアプリケーション起動
+
+### Phase 3 完了条件
+- ✅ 監視システム動作確認
+- ✅ デバッグ機能動作確認
+- ✅ 総合品質テスト合格
+
+---
+
+## ⚠️ 注意事項
+
+### DRY・SOLID原則遵守
+- **DRY**: Manager 初期化ロジックの重複排除
+- **Single Responsibility**: 各 Manager の単一責任維持
+- **Dependency Inversion**: 抽象への依存、具象への依存回避
+
+### PixiJS v8 移行対応
+- Manager クラスでも v8 準備コメント追加
+- 非破壊的変更による段階的移行準備
+
+### Pure JavaScript 維持
+- ESM/TypeScript 混在禁止
+- `import/export` 使用禁止
+- グローバル変数活用継続
+
+---
+
+## 📅 実装スケジュール
+
+### 即座実行（5-10分）
+1. index.html Manager スクリプト読み込み追加
+2. main.js Manager 存在確認ロジック追加
+
+### 短期実装（15-30分）
+3. Manager 初期化メソッド修正
+4. フォールバック処理実装
+
+### 中期実装（30-60分）
+5. エラー診断機能強化
+6. 監視・デバッグシステム実装
+
+---
+
+## 🎯 期待効果
+
+### 直接効果
+- ✅ アプリケーション起動エラーの完全解消
+- ✅ 設定管理システムの正常動作
+- ✅ エラーハンドリングシステムの正常動作
+
+### 間接効果
+- ✅ 開発効率の大幅向上
+- ✅ デバッグ作業の効率化
+- ✅ 今後の機能追加時の安定性向上
+
+### 長期効果
+- ✅ Phase 2+ への円滑な移行準備
+- ✅ PixiJS v8 移行時の基盤安定性
+- ✅ コードメンテナンス性の向上
+
+---
+
+*📋 改修計画書 v1.0*  
+*作成日: 2025年8月18日*  
+*対象: Phase1.1～1.3 Manager読み込み失敗問題*  
+*基本方針: 緊急修正 → 段階改善 → 品質保証*
