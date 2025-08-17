@@ -874,7 +874,7 @@ class SettingsManager {
                 version: this.version,
                 timestamp: Date.now(),
                 settings: this.lodashAvailable ? 
-                    window._.cloneDeep(this.settings) : JSON.parse(JSON.stringify(this.settings/**
+                    window._.cloneDeep(this.settings) : JSON.parse JSON.stringify(this.settings)/**
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
  * 
  * 🎯 AI_WORK_SCOPE: 設定統括管理・永続化・プリセット・インポート/エクスポート・同期システム
