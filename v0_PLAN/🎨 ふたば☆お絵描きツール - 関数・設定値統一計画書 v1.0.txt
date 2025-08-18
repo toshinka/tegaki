@@ -1,0 +1,833 @@
+# 🎨 ふたば☆お絵描きツール - 関数・設定値統一計画書 v1.0
+
+> **作成目的**: v1_Phase1.1ss5rev1からv1_Phase1.1ss5rev1対応への整合性確保  
+> **対象範囲**: 重複関数の統一・設定値の一元化・命名規則の統一  
+> **適用原則**: DRY（Don't Repeat Yourself）・SOLID原則に基づく重複排除  
+> **最終更新**: 2025年8月18日
+
+---
+
+## 📋 概要・背景
+
+v1_Phase1.1ss5rev1では、2_tegaki-symbol-dictionary.txtに記載された情報と実際の実装に乖離が生じています。この計画書では、実装ベースでの統一を図り、AI協働開発での混乱を防止します。
+
+### 🎯 統一方針
+1. **実装優先**: 現在の動作するコードを基準とする
+2. **重複排除**: 同一機能の重複実装を統合
+3. **命名統一**: 一貫した命名規則の適用
+4. **設定集約**: 設定値の一元管理
+5. **依存関係整理**: クラス間依存の最適化
+
+---
+
+## 🔧 重複関数・機能の統一
+
+### 1. 初期化関数の統一
+
+#### 📍 現状の問題
+```javascript
+// 重複している初期化関数
+FutabaDrawingTool.init()                    // main.js
+AppCore.initialize()                        // app-core.js
+DrawingToolSystem.initializeDrawingEngine() // app-core.js内
+UIController.init()                         // app-core.js内
+PerformanceMonitor.start()                  // app-core.js内
+```
+
+#### ✅ 統一後の構造
+```javascript
+// 統一初期化パターン
+interface InitializableComponent {
+    async initialize(): Promise<void>
+    isInitialized: boolean
+    getInitializationStatus(): Object
+}
+
+// 実装例
+class AppCore {
+    async initialize() {
+        await this.initializePixiApp();      // PixiJS初期化
+        await this.initializeContainers();   // コンテナ初期化  
+        await this.initializeSubsystems();   // サブシステム初期化
+        this.verifyInitialization();         // 初期化確認
+    }
+    
+    private async initializeSubsystems() {
+        // ツールシステム初期化
+        this.toolSystem = new DrawingToolSystem(this);
+        await this.toolSystem.initialize();
+        
+        // UI制御初期化
+        this.uiController = new UIController(this.toolSystem);
+        await this.uiController.initialize();
+        
+        // パフォーマンス監視初期化
+        this.performanceMonitor = new PerformanceMonitor();
+        await this.performanceMonitor.initialize();
+    }
+}
+```
+
+### 2. エラーハンドリングの統一
+
+#### 📍 現状の問題
+```javascript
+// 散在しているエラー表示関数
+FutabaDrawingTool.showErrorMessage()         // main.js
+FutabaDrawingTool.showRecoveryMessage()      // main.js  
+FutabaDrawingTool.showCriticalErrorMessage() // main.js
+AppCore.displayCriticalError()               // app-core.js
+```
+
+#### ✅ 統一後の構造
+```javascript
+// 統一エラーハンドリングシステム
+class ErrorManager {
+    static showError(type, error, options = {}) {
+        switch(type) {
+            case 'warning':
+                this.showWarningMessage(error, options);
+                break;
+            case 'error':
+                this.showErrorMessage(error, options);
+                break;
+            case 'critical':
+                this.showCriticalError(error, options);
+                break;
+            case 'recovery':
+                this.showRecoveryMessage(error, options);
+                break;
+        }
+    }
+    
+    static showErrorMessage(error, { position = 'top-right', duration = 10000 } = {}) {
+        // 統一されたエラー表示ロジック
+    }
+    
+    static showCriticalError(error, { showReload = true, showDebug = true } = {}) {
+        // 統一された致命的エラー表示ロジック
+    }
+}
+
+// 使用例
+try {
+    await this.initialize();
+} catch (error) {
+    ErrorManager.showError('error', error, { duration: 15000 });
+}
+```
+
+### 3. 状態管理の統一
+
+#### 📍 現状の問題
+```javascript
+// 分散している状態取得関数
+FutabaDrawingTool.getAppState()              // main.js
+AppCore.displayInitializationSummary()      // app-core.js
+UIController.getUIState()                    // 実装未確認
+```
+
+#### ✅ 統一後の構造
+```javascript
+// 統一状態管理システム
+class StateManager {
+    static getApplicationState() {
+        return {
+            core: this.getCoreState(),
+            ui: this.getUIState(),
+            drawing: this.getDrawingState(),
+            performance: this.getPerformanceState(),
+            errors: this.getErrorState()
+        };
+    }
+    
+    static getCoreState() {
+        const app = window.futabaDrawingTool;
+        return {
+            version: app?.version,
+            isInitialized: app?.isInitialized,
+            initializationSteps: app?.initializationSteps,
+            hasPixiApp: !!app?.appCore?.app,
+            canvasSize: app?.appCore ? `${app.appCore.canvasWidth}×${app.appCore.canvasHeight}` : 'unknown'
+        };
+    }
+    
+    static getDrawingState() {
+        const toolSystem = window.futabaDrawingTool?.appCore?.toolSystem;
+        return {
+            currentTool: toolSystem?.currentTool,
+            brushSize: toolSystem?.brushSize,
+            brushColor: toolSystem?.brushColor,
+            opacity: toolSystem?.opacity,
+            pathCount: window.futabaDrawingTool?.appCore?.paths?.length || 0
+        };
+    }
+}
+
+// デバッグ関数統一
+window.getAppState = () => StateManager.getApplicationState();
+window.getDrawingState = () => StateManager.getDrawingState();
+window.getCoreState = () => StateManager.getCoreState();
+```
+
+---
+
+## ⚙️ 設定値の一元化
+
+### 1. 設定値統一構造
+
+#### 📍 現状の問題
+```javascript
+// 分散している設定値
+AppCore: { canvasWidth: 400, canvasHeight: 400, backgroundColor: 0xf0e0d6 }
+DrawingToolSystem: { brushSize: 16.0, brushColor: 0x800000, opacity: 0.85 }
+// 設定値がクラス内に散在
+```
+
+#### ✅ 統一後の構造
+```javascript
+// 統一設定管理システム
+class ConfigManager {
+    static defaultConfig = {
+        // キャンバス設定
+        canvas: {
+            width: 400,
+            height: 400,
+            maxWidth: 4096,
+            maxHeight: 4096,
+            backgroundColor: 0xf0e0d6,
+            backgroundColorHex: '#f0e0d6'
+        },
+        
+        // PixiJS設定
+        pixi: {
+            antialias: true,
+            resolution: 1,
+            autoDensity: false,
+            cursor: 'crosshair'
+        },
+        
+        // 描画ツール設定
+        drawing: {
+            pen: {
+                defaultSize: 16.0,
+                minSize: 0.1,
+                maxSize: 100.0,
+                defaultColor: 0x800000,
+                defaultColorHex: '#800000',
+                defaultOpacity: 0.85,
+                defaultPressure: 0.5,
+                defaultSmoothing: 0.3,
+                minDistance: 1.5
+            },
+            eraser: {
+                defaultSize: 16.0,
+                opacity: 1.0
+            }
+        },
+        
+        // UI設定
+        ui: {
+            slider: {
+                updateThrottle: 16,
+                precision: {
+                    size: 1,
+                    percentage: 1
+                }
+            },
+            popup: {
+                animationDuration: 300
+            },
+            keyboard: {
+                shortcuts: {
+                    'Escape': 'closeAllPopups',
+                    'KeyP': 'selectPenTool', 
+                    'KeyE': 'selectEraserTool'
+                }
+            }
+        },
+        
+        // パフォーマンス設定
+        performance: {
+            targetFPS: 60,
+            updateInterval: 1000,
+            memoryCheckInterval: 5000
+        },
+        
+        // エラー設定
+        error: {
+            displayDuration: 10000,
+            maxRetries: 3,
+            retryDelay: 200
+        },
+        
+        // ふたばカラーパレット
+        colors: {
+            futabaMaroon: 0x800000,
+            futabaLightMaroon: 0xaa5a56,
+            futabaMedium: 0xcf9c97,
+            futabaLightMedium: 0xe9c2ba,
+            futabaCream: 0xf0e0d6,
+            futabaBackground: 0xffffee
+        }
+    };
+    
+    static get(path) {
+        return this.getNestedValue(this.defaultConfig, path);
+    }
+    
+    static getNestedValue(obj, path) {
+        return path.split('.').reduce((current, key) => current?.[key], obj);
+    }
+}
+
+// 使用例
+const canvasConfig = ConfigManager.get('canvas');
+const penConfig = ConfigManager.get('drawing.pen');
+const futabaColors = ConfigManager.get('colors');
+```
+
+### 2. 設定値アクセサの統一
+
+#### ✅ 統一アクセサパターン
+```javascript
+// 各クラスでの設定値利用パターン
+class AppCore {
+    constructor() {
+        // 設定値を一元取得
+        this.config = {
+            canvas: ConfigManager.get('canvas'),
+            pixi: ConfigManager.get('pixi'),
+            performance: ConfigManager.get('performance')
+        };
+        
+        // 初期値設定
+        this.canvasWidth = this.config.canvas.width;
+        this.canvasHeight = this.config.canvas.height;
+        this.backgroundColor = this.config.canvas.backgroundColor;
+    }
+}
+
+class DrawingToolSystem {
+    constructor(appCore) {
+        this.appCore = appCore;
+        
+        // 設定値を一元取得
+        this.config = {
+            pen: ConfigManager.get('drawing.pen'),
+            eraser: ConfigManager.get('drawing.eraser')
+        };
+        
+        // 初期値設定
+        this.brushSize = this.config.pen.defaultSize;
+        this.brushColor = this.config.pen.defaultColor;
+        this.opacity = this.config.pen.defaultOpacity;
+        this.pressure = this.config.pen.defaultPressure;
+        this.smoothing = this.config.pen.defaultSmoothing;
+    }
+}
+```
+
+---
+
+## 🏷️ 命名規則の統一
+
+### 1. クラス命名規則
+
+#### ✅ 統一規則
+```javascript
+// メインクラス: PascalCase
+class FutabaDrawingTool        // ✅ アプリケーションメイン
+class AppCore                  // ✅ アプリケーションコア
+class DrawingToolSystem        // ✅ 描画ツールシステム
+class UIController             // ✅ UI制御システム
+class PerformanceMonitor       // ✅ パフォーマンス監視
+class ConfigManager            // ✅ 設定管理
+class StateManager             // ✅ 状態管理
+class ErrorManager             // ✅ エラー管理
+
+// サブシステム: PascalCase + System/Manager/Controller
+class SimpleFallbackToolSystem // ✅ フォールバック描画システム
+class PixiExtensionsManager    // ✅ 拡張ライブラリ管理（既存）
+```
+
+### 2. 関数命名規則
+
+#### ✅ 統一規則
+```javascript
+// 初期化関数: initialize + 対象
+async initialize()              // メイン初期化
+async initializePixiApp()       // PixiJS初期化
+async initializeContainers()    // コンテナ初期化
+async initializeSubsystems()    // サブシステム初期化
+
+// 状態取得関数: get + 対象 + State/Info/Status
+getAppState()                   // アプリケーション状態
+getCoreState()                  // コア状態
+getDrawingState()               // 描画状態
+getInitializationStatus()       // 初期化状態
+
+// 設定関数: set + 対象
+setTool(tool)                   // ツール設定
+setBrushSize(size)              // ブラシサイズ設定
+setOpacity(opacity)             // 不透明度設定
+
+// 操作関数: 動詞 + 対象
+startDrawing(x, y)              // 描画開始
+stopDrawing()                   // 描画終了
+togglePopup(popupId)            // ポップアップ切替
+closeAllPopups()                // 全ポップアップ閉じる
+
+// 作成関数: create + 対象
+createPenPath(x, y)             // ペンパス作成
+createEraserPath(x, y)          // 消しゴムパス作成
+createSlider(...)               // スライダー作成
+
+// 表示関数: show/display + 対象
+showErrorMessage(error)         // エラーメッセージ表示
+displayInitializationSummary() // 初期化サマリー表示
+
+// 確認・検証関数: verify/check + 対象
+verifyDOMElements()             // DOM要素確認
+verifyInitialization()          // 初期化確認
+checkExtensions()               // 拡張機能確認
+```
+
+### 3. 変数・プロパティ命名規則
+
+#### ✅ 統一規則
+```javascript
+// ブール値: is/has + 形容詞
+isInitialized                   // 初期化済み
+isDrawing                       // 描画中
+hasPixiApp                      // PixiJSアプリ存在
+extensionsAvailable             // 拡張機能利用可能
+
+// コンフィグ: config
+this.config                     // 設定オブジェクト
+canvasConfig                    // キャンバス設定
+drawingConfig                   // 描画設定
+
+// インスタンス: 名前 + クラス名（省略形）
+appCore                         // AppCore インスタンス
+toolSystem                      // DrawingToolSystem インスタンス  
+uiController                    // UIController インスタンス
+performanceMonitor              // PerformanceMonitor インスタンス
+
+// コンテナ・要素: 用途 + Container/Element
+drawingContainer                // 描画コンテナ
+uiContainer                     // UIコンテナ
+canvasElement                   // キャンバス要素
+
+// 配列・リスト: 複数形
+paths                          // パス配列
+initializationSteps            // 初期化ステップ配列
+errorLog                       // エラーログ配列
+```
+
+---
+
+## 🔗 依存関係の最適化
+
+### 1. 依存関係階層の統一
+
+#### ✅ 統一後の依存関係構造
+```
+Level 1: 基盤・ユーティリティ
+├── ConfigManager (設定管理)
+├── StateManager (状態管理)
+├── ErrorManager (エラー管理)
+└── PixiExtensionsManager (拡張ライブラリ管理)
+
+Level 2: コアシステム
+├── AppCore (PixiJS基盤)
+│   ├── 依存: ConfigManager, ErrorManager
+│   └── 管理: PIXI.Application, Containers
+└── DrawingToolSystem (描画システム)
+    ├── 依存: AppCore, ConfigManager
+    └── 管理: 描画ロジック, パス管理
+
+Level 3: UI・制御システム
+├── UIController (UI制御)
+│   ├── 依存: DrawingToolSystem, ConfigManager
+│   └── 管理: スライダー, ポップアップ, ツールボタン
+└── PerformanceMonitor (パフォーマンス監視)
+    ├── 依存: ConfigManager
+    └── 管理: FPS監視, メモリ監視
+
+Level 4: アプリケーション統括
+└── FutabaDrawingTool (アプリケーション統括)
+    ├── 依存: AppCore, StateManager, ErrorManager
+    ├── 管理: 初期化フロー, キーボードショートカット
+    └── 統括: 全システムの協調
+```
+
+### 2. 循環依存の排除
+
+#### 📍 現状の問題
+```javascript
+// 潜在的循環依存
+AppCore → DrawingToolSystem → AppCore (参照)
+UIController → DrawingToolSystem → UIController (イベント)
+```
+
+#### ✅ 解決後の構造
+```javascript
+// イベント駆動アーキテクチャによる循環依存排除
+class EventBus {
+    static events = new Map();
+    
+    static emit(eventType, data) {
+        const listeners = this.events.get(eventType) || [];
+        listeners.forEach(callback => callback(data));
+    }
+    
+    static on(eventType, callback) {
+        if (!this.events.has(eventType)) {
+            this.events.set(eventType, []);
+        }
+        this.events.get(eventType).push(callback);
+    }
+    
+    static off(eventType, callback) {
+        const listeners = this.events.get(eventType) || [];
+        this.events.set(eventType, listeners.filter(cb => cb !== callback));
+    }
+}
+
+// 使用例：循環依存の排除
+class DrawingToolSystem {
+    setBrushSize(size) {
+        this.brushSize = size;
+        // 直接UIControllerを呼ばずにイベント発行
+        EventBus.emit('brushSizeChanged', { size });
+    }
+}
+
+class UIController {
+    init() {
+        // イベント監視でUI更新
+        EventBus.on('brushSizeChanged', ({ size }) => {
+            this.updateSizePresets();
+            this.updateSliderValue('pen-size-slider', size);
+        });
+    }
+}
+```
+
+---
+
+## 📁 ファイル構成の最適化
+
+### 1. 現在のファイル構成の問題点
+
+```
+v1_Phase1.1ss5rev1/
+├── index.html                    // ✅ 問題なし
+├── css/styles.css               // ✅ 問題なし  
+├── libs/pixi-extensions.js      // ✅ 問題なし
+├── js/main.js                   // ❌ 長すぎる（500行超過）
+└── js/app-core.js               // ❌ 巨大すぎる（1000行超過）
+    ├── AppCore                  // 300行程度
+    ├── DrawingToolSystem        // 200行程度
+    ├── UIController             // 400行程度
+    ├── PerformanceMonitor       // 50行程度
+    └── SimpleFallbackToolSystem // 30行程度
+```
+
+### 2. 最適化後のファイル構成
+
+```
+v1_Phase1.1ss5rev1_optimized/
+├── index.html
+├── css/styles.css
+├── libs/
+│   └── pixi-extensions.js
+├── js/
+│   ├── main.js                  // FutabaDrawingTool のみ（200行以下）
+│   ├── app-core.js              // AppCore のみ（300行以下）
+│   └── utils/
+│       ├── config-manager.js    // ConfigManager（150行以下）
+│       ├── state-manager.js     // StateManager（100行以下）
+│       ├── error-manager.js     // ErrorManager（200行以下）
+│       └── event-bus.js         // EventBus（100行以下）
+├── systems/
+│   ├── drawing-tool-system.js   // DrawingToolSystem（200行以下）
+│   ├── ui-controller.js         // UIController（400行以下）
+│   └── performance-monitor.js   // PerformanceMonitor（100行以下）
+└── tools/
+    ├── pen-tool.js              // 将来分離予定
+    └── eraser-tool.js           // 将来分離予定
+```
+
+### 3. 段階的移行計画
+
+#### Phase 1: ユーティリティ分離
+1. `ConfigManager` を `js/utils/config-manager.js` に分離
+2. `StateManager` を `js/utils/state-manager.js` に分離  
+3. `ErrorManager` を `js/utils/error-manager.js` に分離
+
+#### Phase 2: システム分離
+1. `DrawingToolSystem` を `systems/drawing-tool-system.js` に分離
+2. `UIController` を `systems/ui-controller.js` に分離
+3. `PerformanceMonitor` を `systems/performance-monitor.js` に分離
+
+#### Phase 3: メインファイル最適化
+1. `main.js` を `FutabaDrawingTool` のみに縮小
+2. `app-core.js` を `AppCore` のみに縮小
+
+---
+
+## 🎯 実装タスクリスト
+
+### 優先度 High（即座に実装）
+
+#### 1. 設定値一元化
+- [ ] `ConfigManager` クラス作成
+- [ ] 全クラスでの設定値利用を `ConfigManager.get()` に統一
+- [ ] ハードコードされた設定値の排除
+
+#### 2. エラーハンドリング統一
+- [ ] `ErrorManager` クラス作成
+- [ ] 既存のエラー表示関数を `ErrorManager` に統合
+- [ ] 全クラスでのエラー処理を `ErrorManager` 経由に変更
+
+#### 3. 状態管理統一
+- [ ] `StateManager` クラス作成
+- [ ] `window.getAppState()` を `StateManager.getApplicationState()` に移行
+- [ ] デバッグ関数の統一
+
+### 優先度 Medium（段階的実装）
+
+#### 4. 命名規則統一
+- [ ] 関数名の統一（特に初期化関数）
+- [ ] 変数名の統一（特にブール値）
+- [ ] 一貫した命名規則の適用
+
+#### 5. 依存関係最適化
+- [ ] `EventBus` クラス作成
+- [ ] 循環依存の特定と解決
+- [ ] 依存関係の明確化
+
+#### 6. 重複関数統合
+- [ ] 初期化関数の統合
+- [ ] UI更新関数の統合
+- [ ] 描画関数の重複排除
+
+### 優先度 Low（将来実装）
+
+#### 7. ファイル分離
+- [ ] ユーティリティクラスの分離
+- [ ] システムクラスの分離
+- [ ] メインファイルの最適化
+
+---
+
+## 🔧 移行時の注意事項
+
+### 1. 後方互換性の維持
+
+```javascript
+// 既存の関数は互換性のため残しつつ、新システムに移譲
+class FutabaDrawingTool {
+    // 既存関数（互換性維持）
+    getAppState() {
+        console.warn('getAppState() is deprecated. Use StateManager.getApplicationState()');
+        return StateManager.getApplicationState();
+    }
+    
+    showErrorMessage(error) {
+        console.warn('showErrorMessage() is deprecated. Use ErrorManager.showError()');
+        return ErrorManager.showError('error', error);
+    }
+    
+    // 新システム移譲
+    getState() {
+        return StateManager.getApplicationState();
+    }
+    
+    showError(type, error, options) {
+        return ErrorManager.showError(type, error, options);
+    }
+}
+```
+
+### 2. 段階的移行戦略
+
+```javascript
+// Phase 1: 新システム導入（既存システムと並行稼働）
+// Phase 2: 新システムへの移行（警告付きで既存システム利用）
+// Phase 3: 旧システム削除（新システムのみ利用）
+
+// 移行フラグによる制御
+class MigrationManager {
+    static migrationFlags = {
+        useConfigManager: true,        // 設定管理の新システム利用
+        useErrorManager: true,         // エラー管理の新システム利用  
+        useStateManager: true,         // 状態管理の新システム利用
+        useEventBus: false,           // イベントバス（将来実装）
+        removeDeprecated: false       // 非推奨関数の削除（最終段階）
+    };
+    
+    static isEnabled(feature) {
+        return this.migrationFlags[feature] || false;
+    }
+}
+```
+
+### 3. テスト・検証方法
+
+```javascript
+// 統一後の動作確認用テストスイート
+class UnificationTests {
+    static runAllTests() {
+        console.log('🧪 統一化テスト開始...');
+        
+        this.testConfigManager();
+        this.testErrorManager();
+        this.testStateManager();
+        this.testNamingConventions();
+        this.testDependencyStructure();
+        
+        console.log('✅ 統一化テスト完了');
+    }
+    
+    static testConfigManager() {
+        console.log('📝 ConfigManager テスト...');
+        
+        // 設定値取得テスト
+        const canvasConfig = ConfigManager.get('canvas');
+        console.assert(canvasConfig.width === 400, 'Canvas width should be 400');
+        console.assert(canvasConfig.height === 400, 'Canvas height should be 400');
+        
+        const penConfig = ConfigManager.get('drawing.pen');
+        console.assert(penConfig.defaultSize === 16.0, 'Pen default size should be 16.0');
+        
+        console.log('✅ ConfigManager テスト完了');
+    }
+    
+    static testStateManager() {
+        console.log('📊 StateManager テスト...');
+        
+        const appState = StateManager.getApplicationState();
+        console.assert(typeof appState === 'object', 'App state should be object');
+        console.assert('core' in appState, 'App state should have core property');
+        console.assert('ui' in appState, 'App state should have ui property');
+        
+        console.log('✅ StateManager テスト完了');
+    }
+    
+    static testErrorManager() {
+        console.log('🚨 ErrorManager テスト...');
+        
+        // エラー表示テスト（実際には表示しない）
+        try {
+            ErrorManager.showError('warning', new Error('Test warning'), { test: true });
+            console.log('✅ Warning error handled');
+        } catch (e) {
+            console.error('❌ Warning error failed:', e);
+        }
+        
+        console.log('✅ ErrorManager テスト完了');
+    }
+}
+
+// デバッグ用にグローバル公開
+window.runUnificationTests = () => UnificationTests.runAllTests();
+```
+
+---
+
+## 📊 統一による効果測定
+
+### 1. 定量的効果
+
+```javascript
+// 統一前後の比較指標
+const unificationMetrics = {
+    before: {
+        totalLines: 1500,               // 総行数
+        duplicatedFunctions: 12,        // 重複関数数
+        configurationPoints: 25,        // 設定箇所数
+        errorHandlingPoints: 8,         // エラー処理箇所数
+        circularDependencies: 3,        // 循環依存数
+        maintainabilityIndex: 65        // 保守性指数
+    },
+    after: {
+        totalLines: 1200,               // 20%削減目標
+        duplicatedFunctions: 0,         // 完全排除目標
+        configurationPoints: 1,         // ConfigManager一元化
+        errorHandlingPoints: 1,         // ErrorManager一元化
+        circularDependencies: 0,        // 完全排除目標
+        maintainabilityIndex: 85        // 20%向上目標
+    }
+};
+```
+
+### 2. 定性的効果
+
+- **AI協働開発効率向上**: 一貫した命名規則により、AI誤読・誤実装リスク削減
+- **保守性向上**: 設定値一元化により、設定変更時の影響範囲を限定
+- **バグ発生率低減**: 重複関数排除により、修正漏れリスク削減
+- **新機能開発効率向上**: 統一されたアーキテクチャによる開発パターン確立
+- **コードレビュー効率向上**: 一貫した構造による理解・確認時間短縮
+
+---
+
+## 🎯 統一完了の判定基準
+
+### 1. 技術的判定基準
+
+- [ ] `ConfigManager` 経由で全設定値にアクセス可能
+- [ ] `ErrorManager` 経由で全エラー処理を実行  
+- [ ] `StateManager` 経由で全状態情報を取得可能
+- [ ] 重複関数が0個
+- [ ] 循環依存が0個
+- [ ] 命名規則100%準拠
+- [ ] 全ファイルが500行以下
+
+### 2. 機能的判定基準
+
+- [ ] 既存の全機能が正常動作
+- [ ] パフォーマンス劣化なし（初期化時間3秒以内維持）
+- [ ] エラー表示・回復機能が正常動作
+- [ ] デバッグ機能が強化されている
+- [ ] 新しいStateManager/ConfigManager経由でのアクセスが可能
+
+### 3. 開発効率判定基準
+
+- [ ] AIによる修正時の誤読率20%削減
+- [ ] 設定値変更時の作業時間50%削減
+- [ ] 新機能追加時の学習時間30%削減
+- [ ] コードレビュー時間30%削減
+
+---
+
+## 📅 実装スケジュール
+
+### Week 1: 基盤システム構築
+- Day 1-2: `ConfigManager` 実装・テスト
+- Day 3-4: `ErrorManager` 実装・テスト
+- Day 5-7: `StateManager` 実装・テスト
+
+### Week 2: 既存システム統合
+- Day 1-3: 既存クラスでの新システム利用開始
+- Day 4-5: 重複関数の特定・統合
+- Day 6-7: 命名規則統一・適用
+
+### Week 3: 最適化・検証
+- Day 1-2: 循環依存解決・`EventBus` 実装
+- Day 3-4: 統合テスト・パフォーマンス検証
+- Day 5-7: ドキュメント更新・完了判定
+
+---
+
+## 🔚 結論
+
+本統一計画書に従った実装により、ふたば☆お絵描きツールの保守性・拡張性・開発効率が大幅に向上します。特にAI協働開発における誤読・誤実装リスクの削減効果は、プロジェクトの長期的成功に寄与すると期待されます。
+
+統一作業は段階的に実施し、既存機能の動作を保証しながら進めることで、安全かつ確実な移行を実現します。
+
+---
+
+*🎨 この統一計画書は、v1_Phase1.1ss5rev1の実装状況に基づいて作成されました。実装時は、必ず動作確認を行いながら段階的に進めてください。*
