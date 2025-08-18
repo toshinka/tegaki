@@ -57,6 +57,65 @@ Level 3: アプリケーション統括
     ├── 管理: 初期化フロー, キーボードショートカット
     └── 統括: 全システムの協調
 ```
+###  基本構成（ローカル依存対応）
+```
+🎨 tegaki/
+├─ index.html                     // ローカルライブラリ統合・エントリーポイント
+├─ package.json                   // npm依存関係管理
+├─ package-lock.json              // バージョン固定
+├─ node_modules/                  // ローカルライブラリ格納
+│  ├─ pixi.js/
+│  ├─ @pixi/ui/
+│  ├─ @pixi/layers/
+│  ├─ @pixi/gif/
+│  ├─ @tabler/icons-react        // 計画に無いがアイコン用に新取得
+│  ├─ gsap/
+│  ├─ lodash/
+│  └─ hammerjs/
+├─ css/
+│  └─ styles.css                  // ふたば☆ちゃんねる風スタイル
+├─ libs/                          // 拡張ライブラリ統合層
+│  └─ pixi-extensions.js         // PixiJS初期化・拡張統合基盤
+├─ js/
+│  ├─ main.js                     // アプリケーション初期化
+│  ├─ app-core.js                 // PixiJS初期化・基盤管理
+│  ├─ managers/                   // 統括管理層
+│  │  ├─ ui-manager.js           // UI系統括
+│  │  ├─ tool-manager.js         // ツール系統括
+│  │  ├─ canvas-manager.js       // キャンバス制御
+│  │  ├─ memory-manager.js       // 非破壊メモリ管理
+│  │  └─ settings-manager.js     // 設定統括
+│  │  └─ config-manager.js       // 緊急新設：設定値一元化
+│  ├─ tools/                     // 描画ツール群（AI分業対応）
+│  │  ├─ pen-tool.js            // ペンツール
+│  │  ├─ eraser-tool.js         // 消しゴムツール
+│  │  ├─ bucket-tool.js         // バケツツール
+│  │  └─ selection-tool.js      // 選択ツール
+│  ├─ ui/                        // UI コンポーネント群
+│  │  ├─ popup-manager.js       // ポップアップ
+│  │  ├─ slider-manager.js      // スライダー
+│  │  ├─ status-display.js      // ステータス表示
+│  │  └─ preset-panel.js        // プリセットパネル
+│  ├─ layers/                    // レイヤーシステム
+│  │  ├─ layer-manager.js       // レイヤー管理
+│  │  └─ layer-ui.js           // レイヤーパネルUI
+│  ├─ transform/                 // 非破壊変形システム
+│  │  ├─ vector-transform.js    // ベクター変形
+│  │  └─ canvas-transform.js    // キャンバス変形
+│  ├─ animation/                 // アニメーション機能（Phase3）
+│  │  ├─ gif-manager.js         // GIFアニメ
+│  │  └─ timeline-ui.js         // タイムライン
+│  ├─ utils/                     // 共通ユーティリティ
+│  │  ├─ coordinates.js         // 座標変換
+│  │  ├─ performance.js         // パフォーマンス監視
+│  │  └─ debug.js              // デバッグ支援
+│  │  └─ icon-manager.js         // Phase1.1新規 @tabler/icons-react対応アイコンシステム
+│  └─ migration/                 // v8移行準備（Phase4）
+     ├─ v8-compatibility.js     // 互換性レイヤー
+     └─ webgpu-preparation.js   // WebGPU準備
+└─ assets/                      // 静的リソース
+   └─ icons/                    // SVGアイコン
+```
 
 ### 2.2 統一システム相互作用パターン
 ```javascript
