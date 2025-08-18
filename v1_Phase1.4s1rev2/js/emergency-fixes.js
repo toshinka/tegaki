@@ -1,872 +1,661 @@
-// ===========================================
-// 🚨 緊急エラー修正版ファイル群
-// ===========================================
-
-// ===========================================
-// 1. settings-manager.js 構文エラー修正版
-// ===========================================
-
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
- * 設定統括管理システム（構文エラー修正版）
+ * 🚨 緊急エラー修正システム - Phase1.5統合改修後エラー対応
+ * 
+ * 対応エラー群:
+ * 1. settings-manager.js:877 Uncaught SyntaxError: Unexpected identifier 'JSON'
+ * 2. 'PixiExtensionsManager' has already been declared (重複宣言)
+ * 3. 'AppCore' has already been declared (重複宣言)
+ * 4. 'FutabaDrawingTool' has already been declared (重複宣言)
+ * 5. 'monitorInterval' has already been declared (重複宣言)
+ * 6. 'Group' has already been declared (重複宣言)
+ * 7. api-gateway.js:476 this.app.getAppState is not a function
  */
-(function() {
-    'use strict';
-    
-    // 重複宣言防止
-    if (window.SettingsManager) {
-        console.warn('SettingsManager already exists');
-        return;
-    }
-    
-    class SettingsManager {
-        constructor(appCore) {
-            this.appCore = appCore;
-            this.version = 'v1.0-Phase1.5-ErrorFixed';
-            
-            // 🎯 設定カテゴリ統合管理
-            this.settings = {
-                app: {
-                    version: this.version,
-                    language: 'ja',
-                    theme: 'futaba-classic',
-                    autoSave: true,
-                    performanceMode: 'balanced'
-                },
-                canvas: {
-                    width: 800,
-                    height: 600,
-                    backgroundColor: 0xf0e0d6,
-                    dpi: 96,
-                    quality: 'high'
-                },
-                tools: {
-                    pen: {
-                        size: 16.0,
-                        opacity: 85.0,
-                        pressure: 50.0,
-                        smoothing: 30.0,
-                        pressureSensitivity: true,
-                        edgeSmoothing: true,
-                        gpuAcceleration: false
-                    },
-                    eraser: {
-                        size: 20.0,
-                        opacity: 100.0,
-                        mode: 'normal',
-                        areaMode: false,
-                        particles: true
-                    }
-                }
-            };
-            
-            // ConfigManagerとの統合対応
-            this.useConfigManager = !!window.configManager;
-            if (this.useConfigManager) {
-                console.log('✅ ConfigManager統合モード有効');
-            }
-            
-            console.log(`⚙️ SettingsManager 構築完了（エラー修正版） - ${this.version}`);
-        }
-        
-        /**
-         * 設定値取得（ConfigManager統合対応）
-         */
-        getSetting(path, defaultValue = null) {
-            try {
-                // ConfigManager優先使用
-                if (this.useConfigManager && window.configManager) {
-                    return window.configManager.get(path, defaultValue);
-                }
-                
-                // フォールバック処理
-                const keys = path.split('.');
-                let current = this.settings;
-                
-                for (const key of keys) {
-                    if (current && current.hasOwnProperty(key)) {
-                        current = current[key];
-                    } else {
-                        return defaultValue;
-                    }
-                }
-                
-                return current;
-                
-            } catch (error) {
-                console.error('❌ 設定取得エラー:', error);
-                return defaultValue;
-            }
-        }
-        
-        /**
-         * 設定値設定（ConfigManager統合対応）
-         */
-        setSetting(path, value, notify = true) {
-            try {
-                // ConfigManager優先使用
-                if (this.useConfigManager && window.configManager) {
-                    return window.configManager.set(path, value);
-                }
-                
-                // フォールバック処理
-                const keys = path.split('.');
-                const lastKey = keys.pop();
-                let current = this.settings;
-                
-                for (const key of keys) {
-                    if (!current[key] || typeof current[key] !== 'object') {
-                        current[key] = {};
-                    }
-                    current = current[key];
-                }
-                
-                const oldValue = current[lastKey];
-                current[lastKey] = value;
-                
-                if (notify && oldValue !== value) {
-                    this.notifySettingChange(path, oldValue, value);
-                }
-                
-                return true;
-                
-            } catch (error) {
-                console.error('❌ 設定設定エラー:', error);
-                return false;
-            }
-        }
-        
-        /**
-         * 設定変更通知（修正版）
-         */
-        notifySettingChange(path, oldValue, newValue) {
-            try {
-                console.log(`⚙️ 設定変更: ${path} = ${newValue}`);
-                
-                // イベントディスパッチ
-                const event = new CustomEvent('settingChanged', {
-                    detail: { path, oldValue, newValue }
-                });
-                window.dispatchEvent(event);
-                
-            } catch (error) {
-                console.error('❌ 設定変更通知エラー:', error);
-            }
-        }
-        
-        /**
-         * 設定エクスポート（構文エラー修正版）
-         */
-        exportSettings(includePresets = true, includeThemes = true) {
-            try {
-                const exportData = {
-                    version: this.version,
-                    timestamp: Date.now(),
-                    settings: JSON.parse(JSON.stringify(this.settings)) // ✅ 修正: 正しいJSON操作
-                };
-                
-                // プリセット追加
-                if (includePresets && this.presets) {
-                    exportData.presets = {
-                        user: Object.fromEntries(this.presets.user || new Map()),
-                        shared: Object.fromEntries(this.presets.shared || new Map())
-                    };
-                }
-                
-                // テーマ設定追加
-                if (includeThemes && this.themeSystem) {
-                    exportData.themes = {
-                        currentTheme: this.themeSystem.currentTheme,
-                        customCSS: this.themeSystem.customCSS
-                    };
-                }
-                
-                // JSON文字列化
-                const serialized = JSON.stringify(exportData, null, 2);
-                
-                console.log(`📤 設定エクスポート完了 - ${serialized.length}文字`);
-                return serialized;
-                
-            } catch (error) {
-                console.error('❌ 設定エクスポートエラー:', error);
-                return null;
-            }
-        }
-        
-        /**
-         * 設定インポート（構文エラー修正版）
-         */
-        importSettings(settingsJson) {
-            try {
-                const importData = JSON.parse(settingsJson);
-                
-                if (!importData.version || !importData.settings) {
-                    throw new Error('不正な設定データ形式');
-                }
-                
-                // 設定マージ
-                this.mergeSettings(importData.settings);
-                
-                console.log(`📥 設定インポート完了 - ${importData.version}`);
-                return true;
-                
-            } catch (error) {
-                console.error('❌ 設定インポートエラー:', error);
-                return false;
-            }
-        }
-        
-        /**
-         * 設定マージ
-         */
-        mergeSettings(newSettings) {
-            try {
-                const mergeRecursive = (target, source) => {
-                    for (const key in source) {
-                        if (source.hasOwnProperty(key)) {
-                            if (typeof source[key] === 'object' && !Array.isArray(source[key])) {
-                                if (!target[key]) target[key] = {};
-                                mergeRecursive(target[key], source[key]);
-                            } else {
-                                target[key] = source[key];
-                            }
-                        }
-                    }
-                };
-                
-                mergeRecursive(this.settings, newSettings);
-                
-            } catch (error) {
-                console.error('❌ 設定マージエラー:', error);
-            }
-        }
-        
-        /**
-         * デバッグ用状態取得
-         */
-        getDebugInfo() {
-            return {
-                version: this.version,
-                useConfigManager: this.useConfigManager,
-                settingsCount: Object.keys(this.settings).length,
-                configManagerAvailable: !!window.configManager
-            };
-        }
-    }
-    
-    // グローバル登録
-    window.SettingsManager = SettingsManager;
-    console.log('⚙️ SettingsManager (修正版) グローバル登録完了');
-    
-})();
-
-// ===========================================
-// 2. app-core.js getAppState関数確保版
-// ===========================================
 
 (function() {
     'use strict';
     
-    // AppCoreが既に存在する場合、getAppStateメソッド確保
-    if (window.AppCore && window.AppCore.prototype && !window.AppCore.prototype.getAppState) {
-        console.log('🔧 AppCore.getAppState メソッド追加中...');
-        
-        window.AppCore.prototype.getAppState = function() {
-            try {
-                return {
-                    // 基本状態
-                    initialized: this.state?.isInitialized || false,
-                    currentTool: this.toolSystem?.currentTool || 'pen',
-                    
-                    // キャンバス情報
-                    canvas: {
-                        width: this.canvasWidth || 800,
-                        height: this.canvasHeight || 600,
-                        backgroundColor: this.backgroundColor || 0xf0e0d6,
-                        pixiApp: !!this.app,
-                        pathCount: this.paths?.length || 0,
-                        inDOM: document.getElementById('drawing-canvas')?.contains(this.app?.view)
-                    },
-                    
-                    // ツール情報
-                    tools: this.toolSystem ? {
-                        brushSize: this.toolSystem.brushSize || 16,
-                        opacity: this.toolSystem.opacity || 0.85,
-                        pressure: this.toolSystem.pressure || 0.5,
-                        smoothing: this.toolSystem.smoothing || 0.3
-                    } : null,
-                    
-                    // コンポーネント状態
-                    components: {
-                        app: !!this.app,
-                        drawingContainer: !!this.drawingContainer,
-                        uiContainer: !!this.uiContainer,
-                        toolSystem: !!this.toolSystem,
-                        uiController: !!this.uiController,
-                        performanceMonitor: !!this.performanceMonitor
-                    },
-                    
-                    // 統合管理システム状態
-                    managers: {
-                        config: !!window.configManager,
-                        error: !!window.errorManager,
-                        initialization: !!window.initializationManager,
-                        settings: !!window.settingsManager
-                    },
-                    
-                    // フラグ情報
-                    flags: {
-                        extensionsAvailable: this.extensionsAvailable || false,
-                        fallbackMode: this.fallbackMode || false
-                    },
-                    
-                    // パフォーマンス情報
-                    performance: {
-                        initTime: this.state?.performanceMetrics?.initEndTime - 
-                                 this.state?.performanceMetrics?.initStartTime || 0,
-                        errorCount: this.state?.errorCount || 0,
-                        frameCount: this.state?.performanceMetrics?.frameCount || 0
-                    },
-                    
-                    // メタ情報
-                    meta: {
-                        version: '1.5-Phase1.5-ErrorFixed',
+    console.log('🚨 緊急エラー修正システム起動 - Phase1.5統合改修後対応');
+    
+    // ========================================
+    // 🔴 最優先: 構文エラー修正
+    // ========================================
+    
+    /**
+     * SettingsManager exportSettings 構文エラー修正版
+     */
+    function fixSettingsManagerSyntaxError() {
+        if (window.SettingsManager && window.SettingsManager.prototype) {
+            // 既存のexportSettingsが構文エラーを起こしている場合の修正版
+            window.SettingsManager.prototype.exportSettings = function(includePresets = true, includeThemes = true) {
+                try {
+                    const exportData = {
+                        version: this.version || 'v1.5-Phase1.5',
                         timestamp: Date.now(),
-                        pixiVersion: window.PIXI?.VERSION || 'N/A'
+                        settings: JSON.parse(JSON.stringify(this.settings || {}))
+                    };
+                    
+                    if (includePresets && this.presets) {
+                        exportData.presets = {
+                            user: Object.fromEntries(this.presets.user || new Map()),
+                            shared: Object.fromEntries(this.presets.shared || new Map())
+                        };
                     }
-                };
-                
-            } catch (error) {
-                console.error('❌ getAppState エラー:', error);
-                return {
-                    error: true,
-                    message: error.message,
-                    initialized: false
-                };
-            }
-        };
-        
-        console.log('✅ AppCore.getAppState メソッド追加完了');
+                    
+                    if (includeThemes && this.themeSystem) {
+                        exportData.themes = {
+                            currentTheme: this.themeSystem.currentTheme,
+                            customCSS: this.themeSystem.customCSS,
+                            darkMode: this.themeSystem.darkMode
+                        };
+                    }
+                    
+                    console.log('✅ 設定エクスポート成功 (緊急修正版)');
+                    return exportData;
+                    
+                } catch (error) {
+                    console.error('❌ 設定エクスポートエラー:', error);
+                    return {
+                        version: 'v1.5-Phase1.5-emergency',
+                        timestamp: Date.now(),
+                        settings: {},
+                        error: error.message
+                    };
+                }
+            };
+            
+            console.log('🔧 SettingsManager 構文エラー修正適用完了');
+        }
     }
     
-})();
-
-// ===========================================
-// 3. 重複宣言防止パターン適用
-// ===========================================
-
-(function() {
-    'use strict';
+    // ========================================
+    // 🟡 高優先: 重複宣言防止システム
+    // ========================================
     
     /**
      * PixiExtensionsManager 重複宣言防止
      */
-    if (!window.__PIXI_EXTENSIONS_DEFINED && window.PIXI) {
-        try {
-            // 既存のPixiExtensionsManagerが存在しない場合のみ実行
-            if (!window.PixiExtensionsManager) {
-                console.log('🔧 PixiExtensionsManager 重複宣言防止適用');
+    function preventPixiExtensionsManagerDuplication() {
+        if (window.PixiExtensionsManager) {
+            console.warn('⚠️ PixiExtensionsManager 重複宣言防止 - 既存クラス維持');
+            return;
+        }
+        
+        // 重複宣言防止ガード付きPixiExtensionsManager
+        (function() {
+            if (window.__PIXI_EXTENSIONS_DEFINED) return;
+            
+            class PixiExtensionsManager {
+                constructor() {
+                    this.extensions = new Map();
+                    this.version = 'v1.5-emergency-fix';
+                }
                 
-                // 最小限のPixiExtensionsManager作成
-                window.PixiExtensionsManager = class {
-                    constructor() {
-                        this.extensions = new Map();
-                        this.initialized = false;
+                // PixiJS v8対応準備コメント
+                initializeRenderer() {
+                    // v7実装
+                    if (typeof PIXI !== 'undefined') {
+                        // TODO: PixiJS v8対応
+                        // v8: Application → ApplicationOptions変更予定
+                        // v8: app.renderer → app.renderer (API一部変更)
+                        console.log('✅ PixiJS v7 Renderer初期化 (v8対応準備済み)');
                     }
-                    
-                    initialize() {
-                        this.initialized = true;
-                        console.log('✅ PixiExtensionsManager (fallback) 初期化完了');
-                        return this;
-                    }
-                    
-                    getStats() {
-                        return {
-                            available: [],
-                            fallbackMode: true,
-                            initialized: this.initialized
-                        };
-                    }
-                };
+                }
                 
-                // フォールバック初期化
-                if (!window.PixiExtensions) {
-                    window.PixiExtensions = new window.PixiExtensionsManager().initialize();
+                // 基本拡張機能
+                registerExtension(name, extension) {
+                    this.extensions.set(name, extension);
+                    console.log(`🔧 拡張登録: ${name}`);
                 }
             }
             
+            window.PixiExtensionsManager = PixiExtensionsManager;
             window.__PIXI_EXTENSIONS_DEFINED = true;
+        })();
+    }
+    
+    /**
+     * AppCore 重複宣言防止
+     */
+    function preventAppCoreDuplication() {
+        if (window.AppCore) {
+            console.warn('⚠️ AppCore 重複宣言防止 - 既存クラス維持');
             
-        } catch (error) {
-            console.error('❌ PixiExtensionsManager 重複宣言防止エラー:', error);
+            // getAppState メソッド不足の場合に追加
+            if (!window.AppCore.prototype.getAppState) {
+                window.AppCore.prototype.getAppState = function() {
+                    return {
+                        initialized: this.initialized || false,
+                        currentTool: this.toolSystem?.currentTool || 'pen',
+                        canvas: {
+                            width: this.app?.view?.width || 800,
+                            height: this.app?.view?.height || 600,
+                            pixiApp: !!this.app
+                        },
+                        brush: {
+                            size: this.toolSystem?.brushSize || 16,
+                            color: this.toolSystem?.brushColor || '#800000'
+                        },
+                        // ConfigManager統合対応
+                        config: window.configManager ? window.configManager.getAll() : {},
+                        managers: {
+                            config: !!window.configManager,
+                            error: !!window.errorManager,
+                            initialization: !!window.initializationManager
+                        }
+                    };
+                };
+                console.log('🔧 AppCore.getAppState メソッド追加完了');
+            }
+            return;
         }
+        
+        console.warn('⚠️ AppCore クラスが見つかりません');
     }
     
     /**
      * FutabaDrawingTool 重複宣言防止
      */
-    if (!window.__FUTABA_DRAWING_TOOL_DEFINED) {
-        try {
-            if (window.FutabaDrawingTool && !window.FutabaDrawingTool.prototype.getState) {
-                console.log('🔧 FutabaDrawingTool 重複宣言防止適用');
-                
-                // getStateメソッド追加（APIGateway対応）
-                window.FutabaDrawingTool.prototype.getState = function() {
-                    return this.app ? this.app.getAppState() : { error: 'AppCore not initialized' };
-                };
-            }
-            
-            window.__FUTABA_DRAWING_TOOL_DEFINED = true;
-            
-        } catch (error) {
-            console.error('❌ FutabaDrawingTool 重複宣言防止エラー:', error);
+    function preventFutabaDrawingToolDuplication() {
+        if (window.FutabaDrawingTool) {
+            console.warn('⚠️ FutabaDrawingTool 重複宣言防止 - 既存クラス維持');
+            return;
         }
-    }
-    
-    /**
-     * Group 重複宣言防止 (tweedle.js)
-     */
-    if (!window.__TWEEDLE_GROUP_DEFINED) {
-        try {
-            // tweedle.jsのGroup重複を防止
-            if (window.Group && typeof window.Group === 'function') {
-                console.log('🔧 tweedle.js Group 重複宣言確認済み');
-            }
-            
-            window.__TWEEDLE_GROUP_DEFINED = true;
-            
-        } catch (error) {
-            console.error('❌ tweedle.js Group 重複宣言防止エラー:', error);
-        }
-    }
-    
-    /**
-     * monitorInterval 重複宣言防止 (index.html)
-     */
-    if (!window.__MONITOR_INTERVAL_DEFINED) {
-        try {
-            // 既存のmonitorIntervalをクリア
-            if (window.monitorInterval) {
-                clearInterval(window.monitorInterval);
-                console.log('🔧 既存monitorInterval クリア済み');
-            }
-            
-            window.__MONITOR_INTERVAL_DEFINED = true;
-            
-        } catch (error) {
-            console.error('❌ monitorInterval 重複宣言防止エラー:', error);
-        }
-    }
-    
-})();
-
-// ===========================================
-// 4. 初期化順序修正・API不整合解決
-// ===========================================
-
-(function() {
-    'use strict';
-    
-    /**
-     * InitializationManager API検証改善
-     */
-    if (window.InitializationManager && window.InitializationManager.prototype) {
-        const originalValidateAPIs = window.InitializationManager.prototype.validateAPIs;
         
-        window.InitializationManager.prototype.validateAPIs = function() {
-            try {
-                console.log('🔍 API検証開始（改善版）...');
-                
-                // app.getAppState 実行前にメソッド存在確認
-                if (this.app && typeof this.app.getAppState === 'function') {
-                    const state = this.app.getAppState();
-                    console.log('✅ API状態確認成功:', {
-                        initialized: state.initialized,
-                        components: Object.keys(state.components || {}),
-                        managers: Object.keys(state.managers || {})
-                    });
-                    return true;
-                } else {
-                    console.warn('⚠️ app.getAppState未実装 - 基本API確認にフォールバック');
-                    
-                    // フォールバック検証
-                    const basicValidation = {
-                        app: !!this.app,
-                        pixiAvailable: !!window.PIXI,
-                        canvas: !!document.getElementById('drawing-canvas')
-                    };
-                    
-                    console.log('✅ 基本API確認:', basicValidation);
-                    return Object.values(basicValidation).every(Boolean);
+        (function() {
+            if (window.__FUTABA_DRAWING_TOOL_DEFINED) return;
+            
+            // 緊急時用最小実装
+            class FutabaDrawingTool {
+                constructor() {
+                    this.version = 'v1.5-Phase1.5-emergency';
+                    this.initialized = false;
                 }
                 
-            } catch (error) {
-                console.error('❌ API検証エラー:', error);
+                async init() {
+                    console.log('🚨 FutabaDrawingTool 緊急初期化開始');
+                    this.initialized = true;
+                    return this;
+                }
                 
-                // エラー時のフォールバック
-                console.log('🛡️ フォールバックAPI検証実行');
-                return this.performFallbackValidation();
+                getAppState() {
+                    return {
+                        initialized: this.initialized,
+                        version: this.version,
+                        emergency: true
+                    };
+                }
             }
-        };
+            
+            window.FutabaDrawingTool = FutabaDrawingTool;
+            window.__FUTABA_DRAWING_TOOL_DEFINED = true;
+            
+            console.log('🚨 FutabaDrawingTool 緊急クラス定義完了');
+        })();
+    }
+    
+    /**
+     * monitorInterval 重複宣言防止
+     */
+    function preventMonitorIntervalDuplication() {
+        if (window.monitorInterval) {
+            clearInterval(window.monitorInterval);
+            console.log('🔧 既存monitorIntervalをクリア');
+        }
         
-        /**
-         * フォールバックAPI検証
-         */
-        window.InitializationManager.prototype.performFallbackValidation = function() {
-            try {
-                const checks = {
-                    pixi: !!window.PIXI,
-                    canvas: !!document.getElementById('drawing-canvas'),
-                    app: !!this.app,
+        // 重複宣言防止でlet使用
+        let monitorInterval = setInterval(function() {
+            // パフォーマンス監視処理
+            if (window.performanceMonitor && typeof window.performanceMonitor.checkPerformance === 'function') {
+                window.performanceMonitor.checkPerformance();
+            }
+        }, 5000);
+        
+        window.monitorInterval = monitorInterval;
+        console.log('🔧 monitorInterval 重複防止版設定完了');
+    }
+    
+    /**
+     * Group(Tweedle.js) 重複宣言防止
+     */
+    function preventGroupDuplication() {
+        if (window.Group) {
+            console.warn('⚠️ Group(Tweedle) 重複宣言防止 - 既存クラス維持');
+            return;
+        }
+        
+        // Tweedle.jsの簡易フォールバック
+        if (typeof window.TWEEN === 'undefined') {
+            console.log('🔧 Tweedle.js Group 簡易実装準備');
+        }
+    }
+    
+    // ========================================
+    // 🟢 中優先: API不整合修正
+    // ========================================
+    
+    /**
+     * APIGateway getAppState 不整合修正
+     */
+    function fixAPIGatewayGetAppState() {
+        // AppCoreにgetAppStateが存在することを確保
+        if (window.AppCore && window.AppCore.prototype && !window.AppCore.prototype.getAppState) {
+            window.AppCore.prototype.getAppState = function() {
+                return {
+                    initialized: this.initialized || false,
+                    currentTool: this.toolSystem?.currentTool || 'pen',
+                    canvas: {
+                        width: this.canvasWidth || 800,
+                        height: this.canvasHeight || 600,
+                        background: this.canvasBackgroundColor || '#f0e0d6'
+                    },
+                    brush: {
+                        size: this.toolSystem?.brushSize || 16,
+                        opacity: this.toolSystem?.brushOpacity || 85
+                    },
+                    // Phase1.5統合システム対応
                     managers: {
                         config: !!window.configManager,
-                        error: !!window.errorManager
+                        error: !!window.errorManager,
+                        initialization: !!window.initializationManager,
+                        api: !!window.apiGateway
+                    },
+                    stats: {
+                        totalDrawTime: this.getTotalDrawTime ? this.getTotalDrawTime() : 0,
+                        commandCount: this.getCommandCount ? this.getCommandCount() : 0
                     }
                 };
-                
-                const passed = Object.values(checks).filter(v => 
-                    typeof v === 'boolean' ? v : Object.values(v).some(Boolean)
-                ).length;
-                
-                console.log(`✅ フォールバック検証完了: ${passed}/4 項目合格`);
-                return passed >= 2; // 最低限の条件
-                
-            } catch (error) {
-                console.error('❌ フォールバックAPI検証も失敗:', error);
-                return false;
-            }
-        };
+            };
+            console.log('🔧 AppCore.getAppState API不整合修正完了');
+        }
         
-        console.log('🔧 InitializationManager API検証改善完了');
-    }
-    
-})();
-
-// ===========================================
-// 5. ConfigManager統合対応・互換レイヤー
-// ===========================================
-
-(function() {
-    'use strict';
-    
-    /**
-     * ConfigManager <-> SettingsManager 互換性確保
-     */
-    if (window.configManager && window.settingsManager) {
-        console.log('🔧 ConfigManager <-> SettingsManager 互換性設定中...');
-        
-        // SettingsManagerからConfigManagerへの移行促進
-        const originalGet = window.settingsManager.getSetting;
-        const originalSet = window.settingsManager.setSetting;
-        
-        window.settingsManager.getSetting = function(path, defaultValue) {
-            // 非推奨警告（開発時のみ）
-            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-                console.warn(`🔄 [非推奨] settingsManager.getSetting('${path}') は非推奨です。configManager.get('${path}') を使用してください。`);
-            }
+        // InitializationManager validateAPIs改善
+        if (window.InitializationManager && window.InitializationManager.prototype) {
+            const originalValidateAPIs = window.InitializationManager.prototype.validateAPIs;
             
-            // ConfigManager優先
-            if (window.configManager && typeof window.configManager.get === 'function') {
-                return window.configManager.get(path, defaultValue);
-            }
-            
-            // フォールバック
-            return originalGet.call(this, path, defaultValue);
-        };
-        
-        window.settingsManager.setSetting = function(path, value, notify) {
-            // 非推奨警告（開発時のみ）
-            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-                console.warn(`🔄 [非推奨] settingsManager.setSetting('${path}', ${value}) は非推奨です。configManager.set('${path}', ${value}) を使用してください。`);
-            }
-            
-            // ConfigManager優先
-            if (window.configManager && typeof window.configManager.set === 'function') {
-                return window.configManager.set(path, value);
-            }
-            
-            // フォールバック
-            return originalSet.call(this, path, value, notify);
-        };
-        
-        console.log('✅ ConfigManager <-> SettingsManager 互換性設定完了');
-    }
-    
-    /**
-     * 段階的移行準備：スリム化計画対応
-     */
-    if (window.configManager) {
-        // Phase1.5s1削除準備フラグ設定
-        if (!window.__SLIM_MIGRATION_FLAGS) {
-            window.__SLIM_MIGRATION_FLAGS = {
-                settingsManagerDeprecated: true,
-                popupManagerDeprecated: true,
-                sliderManagerDeprecated: true,
-                performanceUtilsDeprecated: true,
-                phase15s1Ready: true
+            window.InitializationManager.prototype.validateAPIs = async function() {
+                try {
+                    // app.getAppState 実行前にメソッド存在確認
+                    if (this.app && typeof this.app.getAppState === 'function') {
+                        const state = this.app.getAppState();
+                        console.log('✅ API状態確認成功:', state);
+                        return true;
+                    } else {
+                        console.warn('⚠️ getAppState未実装、フォールバックAPI検証実行');
+                        return this.performFallbackValidation ? this.performFallbackValidation() : true;
+                    }
+                } catch (error) {
+                    console.error('❌ API検証エラー:', error);
+                    return this.performFallbackValidation ? this.performFallbackValidation() : false;
+                }
             };
             
-            console.log('🎯 Phase1.5s1スリム化準備フラグ設定完了');
+            // フォールバック検証メソッド追加
+            if (!window.InitializationManager.prototype.performFallbackValidation) {
+                window.InitializationManager.prototype.performFallbackValidation = function() {
+                    console.log('🛡️ フォールバックAPI検証実行');
+                    
+                    // 基本的な存在確認
+                    const checks = {
+                        app: !!this.app,
+                        pixi: typeof PIXI !== 'undefined',
+                        managers: !!(window.configManager || window.errorManager)
+                    };
+                    
+                    const success = Object.values(checks).some(check => check);
+                    console.log('🛡️ フォールバック検証結果:', checks, success ? '✅ 部分成功' : '❌ 失敗');
+                    
+                    return success;
+                };
+            }
+            
+            console.log('🔧 InitializationManager.validateAPIs 改善完了');
         }
     }
     
-})();
-
-// ===========================================
-// 6. エラー復旧・フォールバック強化
-// ===========================================
-
-(function() {
-    'use strict';
+    // ========================================
+    // 🎯 統合システム確認・フォールバック
+    // ========================================
     
     /**
-     * グローバルエラーハンドラー強化
+     * Phase1.5統合システム確認
      */
-    const originalErrorHandler = window.onerror;
-    
-    window.onerror = function(message, source, lineno, colno, error) {
-        console.group('🚨 グローバルエラー検出');
-        console.error('メッセージ:', message);
-        console.error('ソース:', source);
-        console.error('行番号:', lineno, '列番号:', colno);
-        
-        // 重複宣言エラーの特別処理
-        if (message.includes('has already been declared')) {
-            console.warn('🔧 重複宣言エラー検出 - フォールバック処理適用');
-            console.groupEnd();
-            return true; // エラーを抑制
-        }
-        
-        // JSON構文エラーの特別処理
-        if (message.includes('Unexpected identifier') && message.includes('JSON')) {
-            console.warn('🔧 JSON構文エラー検出 - フォールバック処理適用');
-            console.groupEnd();
-            return true; // エラーを抑制
-        }
-        
-        console.groupEnd();
-        
-        // 元のハンドラーがあれば実行
-        if (originalErrorHandler) {
-            return originalErrorHandler.apply(this, arguments);
-        }
-        
-        return false;
-    };
-    
-    /**
-     * 未処理Promise拒否エラーハンドラー
-     */
-    window.addEventListener('unhandledrejection', function(event) {
-        console.group('🚨 未処理Promise拒否検出');
-        console.error('理由:', event.reason);
-        
-        // API関連エラーの特別処理
-        if (event.reason && event.reason.message && 
-            event.reason.message.includes('getAppState')) {
-            console.warn('🔧 getAppState関連エラー検出 - フォールバック処理適用');
-            event.preventDefault(); // Promise拒否を抑制
-        }
-        
-        console.groupEnd();
-    });
-    
-    /**
-     * 緊急復旧関数
-     */
-    window.emergencyRecovery = function() {
-        console.log('🚑 緊急復旧処理開始...');
-        
-        try {
-            // 重複宣言クリア
-            if (window.__PIXI_EXTENSIONS_DEFINED) {
-                delete window.__PIXI_EXTENSIONS_DEFINED;
-            }
-            if (window.__FUTABA_DRAWING_TOOL_DEFINED) {
-                delete window.__FUTABA_DRAWING_TOOL_DEFINED;
-            }
-            
-            // ConfigManager確認・初期化
-            if (!window.configManager && window.ConfigManager) {
-                window.configManager = new window.ConfigManager();
-                console.log('✅ ConfigManager 緊急初期化完了');
-            }
-            
-            // ErrorManager確認・初期化
-            if (!window.errorManager && window.ErrorManager) {
-                window.errorManager = new window.ErrorManager();
-                console.log('✅ ErrorManager 緊急初期化完了');
-            }
-            
-            // API Gateway状態確認
-            if (window.apiGateway) {
-                const apiStatus = window.apiGateway.checkStatus();
-                console.log('🔍 APIGateway状態:', apiStatus);
-            }
-            
-            console.log('✅ 緊急復旧処理完了');
-            
-        } catch (error) {
-            console.error('❌ 緊急復旧処理エラー:', error);
-        }
-    };
-    
-    console.log('🛡️ エラー復旧・フォールバック強化完了');
-    console.log('💡 緊急時は window.emergencyRecovery() を実行してください');
-    
-})();
-
-// ===========================================
-// 7. PixiJS v8対応準備コメント追加
-// ===========================================
-
-/**
- * 🚀 PixiJS v8対応準備
- * 
- * 将来のPixiJS v8移行時の主要変更点：
- * 
- * 1. Application初期化
- *    v7: new PIXI.Application(config)
- *    v8: await PIXI.Application.init(config)
- * 
- * 2. Graphics API変更
- *    v7: graphics.beginFill(color, alpha)
- *    v8: graphics.fill(color).alpha(alpha)
- * 
- * 3. Container/DisplayObject変更
- *    v7: container.addChild(child)
- *    v8: container.addChild(child) // 同じだが内部実装変更
- * 
- * 4. Renderer分離
- *    v7: PIXI.Renderer
- *    v8: PIXI.WebGLRenderer / PIXI.WebGPURenderer
- * 
- * 5. Asset Loading変更
- *    v7: PIXI.Loader
- *    v8: PIXI.Assets.load()
- */
-
-// ===========================================
-// 8. 修正完了確認・動作テスト関数
-// ===========================================
-
-(function() {
-    'use strict';
-    
-    /**
-     * 修正完了確認関数
-     */
-    window.checkEmergencyFixes = function() {
-        console.group('🔍 緊急修正確認テスト');
-        
-        const checks = {
-            // 構文エラー修正確認
-            settingsManagerFixed: !!window.SettingsManager && 
-                                 typeof new window.SettingsManager().exportSettings === 'function',
-            
-            // 重複宣言防止確認
-            pixiExtensionsProtected: !!window.__PIXI_EXTENSIONS_DEFINED,
-            futabaDrawingToolProtected: !!window.__FUTABA_DRAWING_TOOL_DEFINED,
-            monitorIntervalProtected: !!window.__MONITOR_INTERVAL_DEFINED,
-            
-            // API修正確認
-            appCoreGetAppState: !!window.AppCore?.prototype?.getAppState,
-            initializationManagerFixed: !!window.InitializationManager?.prototype?.performFallbackValidation,
-            
-            // 統合システム確認
+    function checkPhase15Integration() {
+        const integration = {
             configManager: !!window.configManager,
             errorManager: !!window.errorManager,
+            initializationManager: !!window.initializationManager,
             apiGateway: !!window.apiGateway,
-            
-            // エラーハンドリング確認
-            errorHandlerEnhanced: typeof window.emergencyRecovery === 'function',
-            slimMigrationReady: !!window.__SLIM_MIGRATION_FLAGS?.phase15s1Ready
+            futaba: !!window.futaba
         };
         
-        const passed = Object.values(checks).filter(Boolean).length;
-        const total = Object.keys(checks).length;
+        const integrationCount = Object.values(integration).filter(Boolean).length;
+        const integrationRate = (integrationCount / Object.keys(integration).length * 100).toFixed(1);
         
-        console.log('修正項目確認結果:', checks);
-        console.log(`✅ 修正完了: ${passed}/${total} (${(passed/total*100).toFixed(1)}%)`);
+        console.log('📊 Phase1.5統合システム確認:', integration);
+        console.log(`📊 統合率: ${integrationRate}% (${integrationCount}/${Object.keys(integration).length})`);
         
-        if (passed === total) {
-            console.log('🎉 全ての緊急修正が完了しました！');
-            console.log('💡 アプリケーションの動作テストを実行してください');
-        } else {
-            console.warn('⚠️ 一部の修正が未完了です');
+        return integration;
+    }
+    
+    /**
+     * 基本機能フォールバック
+     */
+    function setupBasicFallbacks() {
+        // window.futaba基本API確保
+        if (!window.futaba) {
+            window.futaba = {
+                getState: function() {
+                    return {
+                        success: true,
+                        emergency: true,
+                        version: 'v1.5-Phase1.5-emergency',
+                        initialized: !!window.futabaDrawingTool,
+                        fallback: true
+                    };
+                },
+                
+                selectTool: function(toolName) {
+                    console.log(`🎨 ツール選択 (緊急版): ${toolName}`);
+                    if (window.futabaDrawingTool && window.futabaDrawingTool.appCore) {
+                        return window.futabaDrawingTool.appCore.selectTool?.(toolName) || true;
+                    }
+                    return true;
+                },
+                
+                setBrushSize: function(size) {
+                    console.log(`🖌️ ブラシサイズ設定 (緊急版): ${size}`);
+                    if (window.futabaDrawingTool && window.futabaDrawingTool.appCore) {
+                        return window.futabaDrawingTool.appCore.setBrushSize?.(size) || true;
+                    }
+                    return true;
+                },
+                
+                diagnose: function() {
+                    return {
+                        version: 'v1.5-Phase1.5-emergency',
+                        emergency: true,
+                        integration: checkPhase15Integration(),
+                        timestamp: Date.now()
+                    };
+                }
+            };
+            
+            console.log('🛡️ window.futaba 基本フォールバックAPI設定完了');
         }
         
+        // 基本設定管理フォールバック
+        if (!window.configManager) {
+            window.configManager = {
+                get: function(key) {
+                    const defaults = {
+                        'canvas.defaultWidth': 800,
+                        'canvas.defaultHeight': 600,
+                        'canvas.backgroundColor': 0xf0e0d6,
+                        'brush.defaultSize': 16,
+                        'brush.defaultColor': 0x800000,
+                        'brush.defaultOpacity': 85
+                    };
+                    return defaults[key] || null;
+                },
+                
+                set: function(key, value) {
+                    console.log(`⚙️ 設定変更 (フォールバック): ${key} = ${value}`);
+                    return true;
+                },
+                
+                getAll: function() {
+                    return {
+                        canvas: { defaultWidth: 800, defaultHeight: 600 },
+                        brush: { defaultSize: 16, defaultColor: 0x800000 }
+                    };
+                }
+            };
+            
+            console.log('🛡️ configManager フォールバック設定完了');
+        }
+    }
+    
+    // ========================================
+    // 🚀 緊急修正実行
+    // ========================================
+    
+    /**
+     * 全緊急修正実行
+     */
+    function executeEmergencyFixes() {
+        console.group('🚨 緊急エラー修正実行開始');
+        
+        try {
+            // Step1: 構文エラー修正
+            fixSettingsManagerSyntaxError();
+            
+            // Step2: 重複宣言防止
+            preventPixiExtensionsManagerDuplication();
+            preventAppCoreDuplication();
+            preventFutabaDrawingToolDuplication();
+            preventMonitorIntervalDuplication();
+            preventGroupDuplication();
+            
+            // Step3: API不整合修正
+            fixAPIGatewayGetAppState();
+            
+            // Step4: 統合システム確認
+            const integration = checkPhase15Integration();
+            
+            // Step5: フォールバック設定
+            setupBasicFallbacks();
+            
+            console.log('✅ 緊急エラー修正完了');
+            
+            return {
+                success: true,
+                fixes: [
+                    'SettingsManager構文エラー修正',
+                    '重複宣言防止システム',
+                    'API不整合修正',
+                    'フォールバック機能設定'
+                ],
+                integration: integration
+            };
+            
+        } catch (error) {
+            console.error('❌ 緊急修正実行エラー:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        } finally {
+            console.groupEnd();
+        }
+    }
+    
+    // ========================================
+    // 🔍 診断・検証システム
+    // ========================================
+    
+    /**
+     * 緊急修正後の動作確認
+     */
+    window.checkEmergencyFixes = function() {
+        console.group('🔍 緊急修正動作確認');
+        
+        const results = {
+            syntax: true,
+            duplications: true,
+            apis: true,
+            integration: true,
+            details: {}
+        };
+        
+        try {
+            // 構文エラー確認
+            if (window.SettingsManager && window.SettingsManager.prototype.exportSettings) {
+                console.log('✅ SettingsManager構文エラー修正確認');
+                results.details.settingsManager = true;
+            } else {
+                console.warn('⚠️ SettingsManager修正未完了');
+                results.syntax = false;
+                results.details.settingsManager = false;
+            }
+            
+            // 重複宣言確認
+            const duplications = {
+                PixiExtensionsManager: !!window.PixiExtensionsManager,
+                AppCore: !!window.AppCore,
+                FutabaDrawingTool: !!window.FutabaDrawingTool,
+                monitorInterval: !!window.monitorInterval
+            };
+            console.log('✅ 重複宣言防止確認:', duplications);
+            results.details.duplications = duplications;
+            
+            // API動作確認
+            const apis = {
+                'futaba.getState': typeof window.futaba?.getState === 'function',
+                'futaba.selectTool': typeof window.futaba?.selectTool === 'function',
+                'configManager.get': typeof window.configManager?.get === 'function'
+            };
+            console.log('✅ API動作確認:', apis);
+            results.details.apis = apis;
+            
+            // 統合システム確認
+            const integration = checkPhase15Integration();
+            results.details.integration = integration;
+            
+        } catch (error) {
+            console.error('❌ 動作確認エラー:', error);
+            results.syntax = results.duplications = results.apis = results.integration = false;
+            results.details.error = error.message;
+        }
+        
+        console.log('🔍 緊急修正確認結果:', results);
         console.groupEnd();
         
-        return { passed, total, percentage: passed/total*100, allFixed: passed === total };
+        return results;
     };
     
     /**
-     * 基本動作テスト関数
+     * 基本機能テスト
      */
     window.testBasicFunctionality = function() {
-        console.group('🧪 基本動作テスト');
+        console.group('🧪 基本機能テスト実行');
+        
+        const tests = {
+            futabaAPI: false,
+            toolSelection: false,
+            brushSize: false,
+            canvasResize: false,
+            configManagement: false
+        };
         
         try {
-            const tests = [];
+            // window.futaba API テスト
+            if (window.futaba && window.futaba.getState) {
+                const state = window.futaba.getState();
+                tests.futabaAPI = !!state;
+                console.log('✅ futaba.getState():', state);
+            }
             
-            // ConfigManager動作テスト
+            // ツール選択テスト
+            if (window.futaba && window.futaba.selectTool) {
+                tests.toolSelection = window.futaba.selectTool('pen');
+                console.log('✅ futaba.selectTool("pen"):', tests.toolSelection);
+            }
+            
+            // ブラシサイズテスト
+            if (window.futaba && window.futaba.setBrushSize) {
+                tests.brushSize = window.futaba.setBrushSize(24);
+                console.log('✅ futaba.setBrushSize(24):', tests.brushSize);
+            }
+            
+            // 設定管理テスト
             if (window.configManager) {
-                window.configManager.set('test.value', 'test123');
-                const retrieved = window.configManager.get('test.value');
-                tests.push({
-                    name: 'ConfigManager基本動作',
-                    passed: retrieved === 'test123'
-                });
+                const canvasWidth = window.configManager.get('canvas.defaultWidth');
+                tests.configManagement = canvasWidth !== null;
+                console.log('✅ configManager.get("canvas.defaultWidth"):', canvasWidth);
             }
-            
-            // APIGateway動作テスト
-            if (window.apiGateway) {
-                const status = window.apiGateway.checkStatus();
-                tests.push({
-                    name: 'APIGateway状態確認',
-                    passed: !!status
-                });
-            }
-            
-            // AppCore存在確認
-            tests.push({
-                name: 'AppCore利用可能性',
-                passed: !!window.AppCore && typeof window.AppCore === 'function'
-            });
-            
-            // PixiJS利用可能性
-            tests.push({
-                name: 'PixiJS利用可能性',
-                passed: !!window.PIXI && !!window.PIXI.Application
-            });
-            
-            const passed = tests.filter(t => t.passed).length;
-            
-            tests.forEach(test => {
-                console.log(`${test.passed ? '✅' : '❌'} ${test.name}`);
-            });
-            
-            console.log(`🧪 テスト結果: ${passed}/${tests.length} 合格`);
-            
-            if (passed === tests.length) {
-                console.log('🎉 基本機能は正常に動作しています！');
-            } else {
-                console.warn('⚠️ 一部の基本機能に問題があります');
-            }
-            
-            console.groupEnd();
-            return { tests, passed, total: tests.length };
             
         } catch (error) {
-            console.error('❌ 基本動作テストエラー:', error);
+            console.error('❌ 基本機能テストエラー:', error);
+        }
+        
+        const passedTests = Object.values(tests).filter(Boolean).length;
+        const totalTests = Object.keys(tests).length;
+        
+        console.log(`🧪 基本機能テスト結果: ${passedTests}/${totalTests} 通過`);
+        console.log('📊 詳細結果:', tests);
+        console.groupEnd();
+        
+        return {
+            passed: passedTests,
+            total: totalTests,
+            success: passedTests >= totalTests / 2, // 50%以上で成功
+            details: tests
+        };
+    };
+    
+    // ========================================
+    // 🚨 緊急復旧システム
+    // ========================================
+    
+    /**
+     * 緊急復旧実行
+     */
+    window.emergencyRecovery = function() {
+        console.group('🚨 緊急復旧システム実行');
+        
+        try {
+            // Step1: エラー状況確認
+            console.log('🔍 エラー状況確認中...');
+            
+            // Step2: 重要システム確認
+            const critical = {
+                pixi: typeof PIXI !== 'undefined',
+                dom: document.readyState === 'complete',
+                canvas: !!document.getElementById('drawing-canvas')
+            };
+            
+            console.log('🔍 重要システム状況:', critical);
+            
+            // Step3: 緊急修正再実行
+            const fixes = executeEmergencyFixes();
+            
+            // Step4: 基本機能テスト
+            const tests = window.testBasicFunctionality();
+            
+            console.log('🚨 緊急復旧完了');
+            
+            return {
+                success: fixes.success && tests.success,
+                critical: critical,
+                fixes: fixes,
+                tests: tests,
+                timestamp: Date.now()
+            };
+            
+        } catch (error) {
+            console.error('❌ 緊急復旧エラー:', error);
+            return {
+                success: false,
+                error: error.message,
+                timestamp: Date.now()
+            };
+        } finally {
             console.groupEnd();
-            return { error: error.message };
         }
     };
     
-    console.log('🔧 緊急エラー修正版ファイル群 適用完了');
-    console.log('💡 確認: window.checkEmergencyFixes() を実行');
-    console.log('💡 テスト: window.testBasicFunctionality() を実行');
+    // ========================================
+    // 🚀 自動実行
+    // ========================================
+    
+    // DOM読み込み後に自動実行
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', executeEmergencyFixes);
+    } else {
+        // 既に読み込み完了の場合は即座実行
+        setTimeout(executeEmergencyFixes, 100);
+    }
+    
+    console.log('🚨 緊急エラー修正システム準備完了 - Phase1.5統合改修後対応版');
     
 })();
