@@ -1,639 +1,380 @@
-# 🎨 ふたば☆お絵描きツール - シンボル辞典・API定義書 v2.0 - 統一システム対応版
+# 🎨 ふたば☆お絵描きツール - シンボル辞典 v9 Phase1
 
-> **作成目的**: AI協働開発での効率化・誤読防止・統一システム活用  
-> **対象Phase**: Phase1.1ss5rev2（統一システム統合版）  
-> **最終更新**: 2025年8月18日
-
-## 📋 概要
-
-このシンボル辞典は、統一システム（ConfigManager・ErrorManager・StateManager・EventBus）を含む、ふたば☆お絵描きツールの全クラス・関数・設定値を網羅した技術リファレンスです。統一システムによる重複排除・循環依存解決・AI協働開発の効率化を支援します。
+> **最終更新**: 2025年8月18日  
+> **統一計画書**: v1.0 対応完了版  
+> **対象フェーズ**: Phase1 - 統一システム基盤
 
 ---
 
-## 🌟 統一システム（新規・最重要）
+## 📋 統一システムクラス
 
-### ⚙️ ConfigManager（設定統一システム）
-
-**責務**: 全設定値の一元管理・DRY原則準拠・重複コード排除
+### ConfigManager
+**ファイル**: `js/utils/config-manager.js`  
+**責任**: 設定値一元管理・デフォルト値定義  
+**依存**: なし  
 
 ```javascript
-class ConfigManager {
-    // 📊 主要API
-    static get(path)                    // ドット記法で設定取得
-    static set(path, value)             // 設定値変更
-    static getCanvasConfig()            // キャンバス設定取得
-    static getPixiConfig()              // PixiJS設定取得
-    static getDrawingConfig(tool)       // 描画ツール設定取得（'pen', 'eraser'）
-    static getColors()                  // ふたばカラーパレット取得
-    static getPerformanceConfig()       // パフォーマンス設定取得
-    static getErrorConfig()             // エラー設定取得
-    static getUIConfig()                // UI設定取得
-    static getV8Config()                // v8移行設定取得
-    static validate(path, value)        // 設定値妥当性確認
-    static getDebugInfo()               // デバッグ情報取得
-    
-    // 🎨 統一設定値（主要項目）
-    defaultConfig.canvas.width                    // 400 - デフォルト幅
-    defaultConfig.canvas.height                   // 400 - デフォルト高さ
-    defaultConfig.canvas.backgroundColor          // 0xf0e0d6 - ふたば背景色
-    defaultConfig.drawing.pen.defaultSize        // 16.0 - ペンサイズ
-    defaultConfig.drawing.pen.defaultColor       // 0x800000 - ふたばマルーン
-    defaultConfig.drawing.pen.defaultOpacity     // 0.85 - 不透明度
-    defaultConfig.performance.targetFPS          // 60 - 目標FPS
-    defaultConfig.error.displayDuration          // 10000 - エラー表示時間（ms）
-    defaultConfig.colors.futabaMaroon            // 0x800000 - メインカラー
-    defaultConfig.v8Migration.enabled            // false - v8移行フラグ
-}
+// メソッド
+ConfigManager.get(path)                    // 設定値取得
+ConfigManager.has(path)                    // 設定値存在確認
+ConfigManager.getNestedValue(obj, path)    // ネスト値取得
+ConfigManager.getCanvasConfig()            // キャンバス設定取得
+ConfigManager.getDrawingConfig(tool)       // 描画ツール設定取得
+ConfigManager.getColors()                  // ふたばカラーパレット取得
 
-// グローバルショートカット
-window.ConfigManager                  // ConfigManager クラス
-window.getConfig(path)               // 設定値取得
-window.setConfig(path, value)        // 設定値設定
-window.getConfigDebug()              // デバッグ情報取得
+// 設定構造
+defaultConfig = {
+    canvas: { width, height, backgroundColor },
+    drawing: { pen, eraser },
+    ui: { slider, popup, keyboard },
+    performance: { targetFPS, updateInterval },
+    colors: { futabaMaroon, futabaCream, ... }
+}
 ```
 
-### 🛡️ ErrorManager（エラー統一システム）
-
-**責務**: エラー処理・表示・ログの統一・重複エラー関数排除
+### ErrorManager
+**ファイル**: `js/utils/error-manager.js`  
+**責任**: エラー表示統一・エラーレベル管理  
+**依存**: ConfigManager  
 
 ```javascript
-class ErrorManager {
-    // 📊 主要API
-    static showError(type, error, options)       // 統一エラー表示
-    static showWarningMessage(msg, opts)         // 警告表示
-    static showErrorMessage(msg, opts)           // エラー表示
-    static showRecoveryMessage(msg, opts)        // 回復メッセージ表示
-    static showCriticalError(msg, opts)          // 致命的エラー表示
-    static getErrorLog(type)                     // エラーログ取得
-    static clearErrorLog()                       // エラーログクリア
-    static getErrorStats()                       // エラー統計取得
-    static showDebugInfo()                       // デバッグ情報表示
-    
-    // 🚨 エラータイプ（統一版）
-    'warning'   → 警告（右上・7秒表示・黄色系）
-    'error'     → エラー（右上・10秒表示・赤色・再読み込みボタン）
-    'critical'  → 致命的エラー（画面全体・手動終了・詳細情報）
-    'recovery'  → 回復メッセージ（左下・8秒表示・フォールバック通知）
-    
-    // 📋 エラーログ構造
-    errorLog[].id                    // エラーID
-    errorLog[].type                  // エラータイプ
-    errorLog[].message               // メッセージ
-    errorLog[].timestamp             // タイムスタンプ
-    errorLog[].time                  // 表示用時刻
-}
+// メソッド
+ErrorManager.showError(type, error, options)     // エラー表示統一
+ErrorManager.showWarningMessage(error, options)  // 警告表示
+ErrorManager.showCriticalError(error, options)   // 致命的エラー
+ErrorManager.showRecoveryMessage(error, options) // 回復メッセージ
+ErrorManager.hasErrors()                         // エラー存在確認
+ErrorManager.getErrorLog()                       // エラーログ取得
 
-// グローバルショートカット
-window.ErrorManager                  // ErrorManager クラス
-window.showError(type, msg, opts)    // エラー表示
-window.getErrorLog()                 // エラーログ取得
-window.clearErrorLog()               // ログクリア
-window.getErrorStats()               // 統計取得
+// エラータイプ
+'warning'   // 警告レベル
+'error'     // エラーレベル  
+'critical'  // 致命的レベル
+'recovery'  // 回復レベル
 ```
 
-### 📊 StateManager（状態統一システム）
-
-**責務**: 状態取得・監視・デバッグ支援の統一・重複状態関数排除
+### StateManager
+**ファイル**: `js/utils/state-manager.js`  
+**責任**: 状態情報統一取得・デバッグ情報構造化  
+**依存**: なし  
 
 ```javascript
-class StateManager {
-    // 📊 主要API
-    static getApplicationState()         // 完全な状態情報取得（統一版）
-    static getCoreState()               // コアシステム状態
-    static getUIState()                 // UI状態
-    static getDrawingState()            // 描画状態
-    static getPerformanceState()        // パフォーマンス状態
-    static getErrorState()              // エラー状態
-    static getConfigState()             // 設定状態
-    static getDebugState()              // デバッグ状態
-    static getQuickState()              // 簡易状態（デバッグ用）
-    static healthCheck()                // 健全性チェック
-    static compareState(prevState)      // 状態比較
-    static getDOMElementsState()        // DOM要素状態
-    
-    // 📋 完全状態構造（getApplicationState()戻り値）
-    {
-        core: {
-            version, isInitialized, hasAppCore, hasPixiApp,
-            canvasSize, fallbackMode, extensionsAvailable, ...
-        },
-        ui: {
-            activeTool, activePopups, sliders, statusElements,
-            totalToolButtons, enabledToolButtons, ...
-        },
-        drawing: {
-            currentTool, isDrawing, brushSize, brushColor,
-            opacity, pressure, pathCount, currentPath, ...
-        },
-        performance: {
-            currentFPS, averageFPS, initTime, memoryUsage,
-            isHighPerformance, frameCount, ...
-        },
-        errors: {
-            appErrorLog, managerErrorLog, totalErrors,
-            errorStats, lastError, ...
-        },
-        config: {
-            hasConfigManager, debugInfo, canvasConfig,
-            drawingConfig, colors, v8Ready, ...
-        },
-        debug: {
-            pixiVersion, browserInfo, stateManagerStats,
-            domElements, extensionsInitialized, ...
-        }
-    }
-}
+// メソッド
+StateManager.getApplicationState()    // アプリケーション状態
+StateManager.getCoreState()           // コア状態
+StateManager.getUIState()             // UI状態
+StateManager.getDrawingState()        // 描画状態
+StateManager.getPerformanceState()    // パフォーマンス状態
+StateManager.getErrorState()          // エラー状態
+StateManager.healthCheck()            // 健全性チェック
 
-// 旧関数互換性維持（非推奨警告付き）
-window.getAppState()                 // StateManager.getApplicationState()
-// グローバルショートカット（推奨）
-window.StateManager                  // StateManager クラス
-window.getState()                    // 完全状態取得
-window.getQuickState()               // 簡易状態取得
-window.getCoreState()                // コア状態取得
-window.getDrawingState()             // 描画状態取得
-window.healthCheck()                 // 健全性チェック
+// グローバルデバッグ関数
+window.getState()     // StateManager.getApplicationState()
+window.getCoreState()    // StateManager.getCoreState()
+window.getDrawingState() // StateManager.getDrawingState()
 ```
 
-### 📡 EventBus（イベント統一システム）
-
-**責務**: イベント駆動アーキテクチャ・循環依存排除・疎結合実現
+### EventBus
+**ファイル**: `js/utils/event-bus.js`  
+**責任**: イベント駆動・循環依存排除  
+**依存**: なし  
 
 ```javascript
-class EventBus {
-    // 📊 主要API
-    static emit(eventType, data)         // イベント発行
-    static on(eventType, callback)       // イベントリスナー登録
-    static off(eventType, callback)      // イベントリスナー削除
-    static offAll(eventType)             // 特定タイプ全削除
-    static clear()                       // 全イベントクリア
-    static once(eventType, callback)     // 一度のみリスナー
-    static getStats()                    // イベント統計取得
-    static getListeners(eventType)       // リスナー一覧取得
-    static debug()                       // デバッグ情報表示
-    
-    // 📡 標準イベントタイプ（EventBus.Events）
-    BRUSH_SIZE_CHANGED: 'brushSizeChanged'         // ブラシサイズ変更
-    BRUSH_COLOR_CHANGED: 'brushColorChanged'       // ブラシ色変更
-    OPACITY_CHANGED: 'opacityChanged'              // 不透明度変更
-    PRESSURE_CHANGED: 'pressureChanged'            // 筆圧変更
-    SMOOTHING_CHANGED: 'smoothingChanged'          // 線補正変更
-    TOOL_CHANGED: 'toolChanged'                    // ツール変更
-    DRAWING_STARTED: 'drawingStarted'              // 描画開始
-    DRAWING_CONTINUED: 'drawingContinued'          // 描画継続
-    DRAWING_ENDED: 'drawingEnded'                  // 描画終了
-    PATH_CREATED: 'pathCreated'                    // パス作成
-    POPUP_OPENED: 'popupOpened'                    // ポップアップ表示
-    POPUP_CLOSED: 'popupClosed'                    // ポップアップ非表示
-    SLIDER_CHANGED: 'sliderChanged'                // スライダー変更
-    PRESET_SELECTED: 'presetSelected'              // プリセット選択
-    CANVAS_RESIZED: 'canvasResized'                // キャンバスリサイズ
-    CANVAS_CLEARED: 'canvasCleared'                // キャンバスクリア
-    INITIALIZATION_COMPLETED: 'initializationCompleted'  // 初期化完了
-    ERROR_OCCURRED: 'errorOccurred'                // エラー発生
-    PERFORMANCE_WARNING: 'performanceWarning'     // パフォーマンス警告
-    
-    // 📊 統計情報
-    stats.emitted                        // 発行回数
-    stats.listeners                      // リスナー数
-    stats.types                          // イベントタイプ集合
-}
+// メソッド
+EventBus.emit(eventType, data)      // イベント発行
+EventBus.on(eventType, callback)    // イベント監視
+EventBus.off(eventType, callback)   // イベント解除
 
-// グローバルショートカット
-window.EventBus                      // EventBus クラス
-window.emitEvent(type, data)         // イベント発行
-window.getEventStats()               // 統計取得
-window.debugEventBus()               // デバッグ表示
+// イベントタイプ例
+'brushSizeChanged'    // ブラシサイズ変更
+'toolChanged'         // ツール変更
+'canvasResized'       // キャンバスリサイズ
+'uiStateChanged'      // UI状態変更
 ```
 
 ---
 
-## 🎯 グローバル変数・エントリーポイント（統一システム統合版）
+## 🏗️ コアシステムクラス
 
-### 🌐 window オブジェクト（グローバル名前空間）
+### FutabaDrawingTool
+**ファイル**: `js/main.js`  
+**責任**: アプリケーション統括・初期化フロー  
+**依存**: AppCore, StateManager, ErrorManager  
 
 ```javascript
-// 📍 統一システム（最重要・新規）
-window.ConfigManager                  // 設定統一システム
-window.ErrorManager                   // エラー統一システム
-window.StateManager                   // 状態統一システム
-window.EventBus                       // イベント統一システム
+// プロパティ
+version                    // バージョン情報
+isInitialized             // 初期化状態
+initializationSteps       // 初期化ステップ
+appCore                   // AppCoreインスタンス
 
-// 📍 メインアプリケーション
-window.futabaDrawingTool             // FutabaDrawingTool インスタンス（main.js）
-window.appCoreInstance               // AppCore インスタンス（app-core.js）
+// メソッド
+async initialize()                    // メイン初期化
+verifyDOMElements()                   // DOM要素確認
+setupKeyboardShortcuts()              // キーボード設定
+```
 
-// 📍 クラス定義（Pure JavaScript）
-window.FutabaDrawingTool             // メインアプリケーションクラス
-window.AppCore                       // PixiJS基盤管理クラス
-window.DrawingToolSystem             // 描画ツールシステム
-window.SimpleFallbackToolSystem      // フォールバック描画システム
-window.UIController                  // UI制御システム
-window.PerformanceMonitor            // パフォーマンス監視
+### AppCore
+**ファイル**: `js/app-core.js`  
+**責任**: PixiJS基盤・キャンバス基盤  
+**依存**: ConfigManager, ErrorManager  
 
-// 📍 拡張システム
-window.PixiExtensions               // 拡張ライブラリ統合管理
-window.APP_INIT_MONITOR             // 依存関係監視システム
+```javascript
+// プロパティ
+app                       // PIXI.Application
+config                    // 設定オブジェクト
+canvasWidth              // キャンバス幅
+canvasHeight             // キャンバス高さ
+backgroundColor          // 背景色
+drawingContainer         // 描画コンテナ
+uiContainer              // UIコンテナ
 
-// 📍 統一システム用デバッグ関数（推奨）
-window.getConfig(path)              // ConfigManager.get() エイリアス
-window.setConfig(path, value)       // ConfigManager.set() エイリアス
-window.showError(type, msg, opts)   // ErrorManager.showError() エイリアス
-window.getErrorLog()                // ErrorManager.getErrorLog() エイリアス
-window.getState()                   // StateManager.getApplicationState() エイリアス
-window.getQuickState()              // StateManager.getQuickState() エイリアス
-window.healthCheck()                // StateManager.healthCheck() エイリアス
-window.emitEvent(type, data)        // EventBus.emit() エイリアス
-window.getEventStats()              // EventBus.getStats() エイリアス
-
-// 📍 旧デバッグ関数（互換性維持・非推奨）
-window.getAppState()                // → StateManager.getApplicationState()
-window.startDebugMode()             // デバッグモード開始
-window.debugAppCore()               // AppCore デバッグ
-window.debugFutaba                  // デバッグユーティリティオブジェクト
+// メソッド
+async initialize()                    // メイン初期化
+async initializePixiApp()             // PixiJS初期化
+async initializeContainers()          // コンテナ初期化
+async initializeSubsystems()          // サブシステム初期化
+verifyInitialization()                // 初期化確認
 ```
 
 ---
 
-## 🏗️ メインクラス定義（統一システム対応版）
+## 🎛️ 管理システムクラス
 
-### 🎨 FutabaDrawingTool（main.js）
-
-**責務**: アプリケーション全体の初期化・統一システム統合・依存関係管理
+### UIManager
+**ファイル**: `managers/ui-manager.js`  
+**責任**: UI全体制御・ポップアップ管理  
+**依存**: ConfigManager, EventBus, PopupManager, SliderManager  
 
 ```javascript
-class FutabaDrawingTool {
-    constructor()
-    
-    // 🎯 コア機能（統一システム対応）
-    async init()                        // アプリケーション初期化（統一システム統合）
-    async validateUnifiedSystems()      // 統一システム確認（新規）
-    async validateDependencies()        // 依存関係確認
-    async initializeAppCore()           // AppCore統合
-    
-    // 🔧 初期化ステップ
-    performPreInitializationChecks()    // DOM要素確認
-    initializeExtensions()              // 拡張ライブラリ初期化
-    setupUIIntegration()                // UI統合
-    finalizeInitialization()            // 最終確認
-    
-    // 🛡️ エラー処理（統一システム活用）
-    async attemptFallbackInitialization(error)  // フォールバック初期化
-    // 注意: 以下は非推奨（ErrorManager使用推奨）
-    showErrorMessage(error)                      // → ErrorManager.showError('error', error)
-    showRecoveryMessage(originalError)           // → ErrorManager.showError('recovery', error)
-    showCriticalErrorMessage(error)              // → ErrorManager.showError('critical', error)
-    
-    // 📊 状態管理（統一システム活用）
-    getAppState()                       // → StateManager.getApplicationState()（非推奨）
-    startDebugMode()                   // デバッグモード開始
-    
-    // ⚙️ 設定値（統一システム移行済み）
-    // 注意: 直接参照非推奨 → ConfigManager.get() 使用
-    config.maxInitTime             // → ConfigManager.get('performance.maxInitTime')
-    config.retryAttempts           // → ConfigManager.get('performance.retryAttempts')
-    config.retryDelay              // → ConfigManager.get('performance.retryDelay')
-    config.requiredDependencies    // ['PIXI', 'PixiExtensions', 'AppCore']
-    
-    // 🏷️ 状態プロパティ
-    isInitialized                  // boolean - 初期化完了フラグ
-    appCore                        // AppCore インスタンス
-    initializationSteps            // Array - 完了した初期化ステップ
-    errorLog                       // Array - エラーログ配列（非推奨）
-}
+// メソッド
+async initialize()                    // UI初期化
+updateToolUI(tool)                   // ツールUI更新
+updateBrushSizeUI(size)              // ブラシサイズUI更新
+updateOpacityUI(opacity)             // 不透明度UI更新
+togglePopup(popupId)                 // ポップアップ切替
+closeAllPopups()                     // 全ポップアップ閉じる
 ```
 
-### 🎮 AppCore（app-core.js）
-
-**責務**: PixiJS基盤管理・統一システム活用・描画エンジン・ツールシステム統合
+### ToolManager
+**ファイル**: `managers/tool-manager.js`  
+**責任**: ツール管理・ツール切り替え  
+**依存**: ConfigManager, EventBus, PenTool, EraserTool  
 
 ```javascript
-class AppCore {
-    constructor()
-    
-    // 🚀 初期化システム（統一システム対応）
-    async initialize()                      // メイン初期化（統一システム統合）
-    async executeInitializationSequence()  // 初期化シーケンス実行
-    async verifyDOMElements()              // DOM要素確認
-    async checkExtensions()                // 拡張機能確認
-    async initializePixiApp()              // PixiJS Application初期化
-    initializeContainers()                 // コンテナ初期化
-    initializeToolSystem()                 // ツールシステム初期化
-    initializeUI()                         // UI制御初期化
-    setupEventListeners()                  // イベントリスナー設定
-    
-    // 🎨 PixiJS管理（統一システム設定活用）
-    createPixiAppConfig()                  // Application設定作成（ConfigManager活用）
-    isPixiV8()                            // PixiJS v8判定
-    initializePixiAppV8(config)           // v8用初期化（将来）
-    initializePixiAppV7(config)           // v7用初期化（現在）
-    attachPixiAppToDOM()                  // DOM接続
-    configureCanvasStyles()               // キャンバススタイル
-    
-    // 🖱️ イベントハンドラ（EventBus連携）
-    handlePointerDown(event)              // ポインターダウン → EventBus発行
-    handlePointerMove(event)              // ポインター移動 → EventBus発行
-    handlePointerUp(event)                // ポインターアップ → EventBus発行
-    handleResize()                        // リサイズ処理 → EventBus発行
-    
-    // 📐 キャンバス制御（統一システム活用）
-    resize(newWidth, newHeight, centerContent)  // キャンバスリサイズ
-    updateCanvasStatusDisplay()                 // ステータス表示更新
-    getLocalPointerPosition(event)              // ローカル座標取得
-    
-    // 🔧 設定値アクセサ（統一システム対応）
-    get canvasWidth()                     // ConfigManager.get('canvas.width')
-    set canvasWidth(value)                // ConfigManager.set('canvas.width', value)
-    get canvasHeight()                    // ConfigManager.get('canvas.height')
-    set canvasHeight(value)               // ConfigManager.set('canvas.height', value)
-    get backgroundColor()                 // ConfigManager.get('canvas.backgroundColor')
-    set backgroundColor(value)            // ConfigManager.set('canvas.backgroundColor', value)
-    
-    // ⚙️ 設定値（統一システム移行済み・直接参照非推奨）
-    // 使用方法: ConfigManager.getCanvasConfig(), ConfigManager.getPixiConfig()等
-    
-    // 🏷️ 主要プロパティ
-    app                                  // PIXI.Application インスタンス
-    drawingContainer                     // PIXI.Container - 描画レイヤー
-    uiContainer                          // PIXI.Container - UIレイヤー
-    paths                               // Array - 描画パス配列
-    toolSystem                          // DrawingToolSystem インスタンス
-    uiController                        // UIController インスタンス
-    performanceMonitor                  // PerformanceMonitor インスタンス
-    extensionsAvailable                 // boolean - 拡張機能利用可能性
-    fallbackMode                        // boolean - フォールバックモード
-}
+// プロパティ
+currentTool              // 現在ツール
+availableTools           // 利用可能ツール
+toolInstances            // ツールインスタンス
+
+// メソッド
+async initialize()                    // ツール初期化
+setTool(toolName)                    // ツール設定
+getCurrentTool()                     // 現在ツール取得
+getToolSettings(toolName)            // ツール設定取得
 ```
 
-### ✏️ DrawingToolSystem（app-core.js内）
-
-**責務**: 描画ツール管理・統一システム活用・EventBus連携・ブラシ制御
+### CanvasManager
+**ファイル**: `managers/canvas-manager.js`  
+**責任**: キャンバス操作・レンダリング制御  
+**依存**: AppCore, ConfigManager, EventBus  
 
 ```javascript
-class DrawingToolSystem {
-    constructor(appCore)
-    
-    // 🎨 描画制御（EventBus連携）
-    startDrawing(x, y)                   // 描画開始 → EventBus.emit(DRAWING_STARTED)
-    continueDrawing(x, y)                // 描画継続 → EventBus.emit(DRAWING_CONTINUED)
-    stopDrawing()                        // 描画終了 → EventBus.emit(DRAWING_ENDED)
-    
-    // 🔧 ツール管理（EventBus連携）
-    setTool(tool)                        // ツール設定 → EventBus.emit(TOOL_CHANGED)
-    setBrushSize(size)                   // ブラシサイズ設定 → EventBus.emit(BRUSH_SIZE_CHANGED)
-    setOpacity(opacity)                  // 不透明度設定 → EventBus.emit(OPACITY_CHANGED)
-    setPressure(pressure)                // 筆圧設定 → EventBus.emit(PRESSURE_CHANGED)
-    setSmoothing(smoothing)              // 線補正設定 → EventBus.emit(SMOOTHING_CHANGED)
-    
-    // 🖌️ パス作成（統一システム活用）
-    createPenPath(x, y)                  // ペンパス作成
-    createEraserPath(x, y)               // 消しゴムパス作成
-    drawLine(path, x1, y1, x2, y2)       // 線描画
-    drawInitialPoint(path, x, y)         // 初期点描画
-    
-    // 🔢 ユーティリティ
-    calculateDistance(x1, y1, x2, y2)    // 距離計算
-    updatePressureMonitor()              // 筆圧モニター更新
-    generatePathInfo(tool, x, y)         // パス基本情報生成
-    
-    // ⚙️ 設定値（統一システム移行済み・直接参照非推奨）
-    // 推奨: ConfigManager.getDrawingConfig('pen'), ConfigManager.getDrawingConfig('eraser')
-    
-    // 🔧 設定値アクセサ（統一システム対応）
-    get brushSize()                      // ConfigManager.get('drawing.pen.defaultSize')
-    set brushSize(value)                 // ConfigManager.set + EventBus.emit
-    get brushColor()                     // ConfigManager.get('drawing.pen.defaultColor')
-    set brushColor(value)                // ConfigManager.set + EventBus.emit
-    get opacity()                        // ConfigManager.get('drawing.pen.defaultOpacity')
-    set opacity(value)                   // ConfigManager.set + EventBus.emit
-    get pressure()                       // ConfigManager.get('drawing.pen.defaultPressure')
-    set pressure(value)                  // ConfigManager.set + EventBus.emit
-    get smoothing()                      // ConfigManager.get('drawing.pen.defaultSmoothing')
-    set smoothing(value)                 // ConfigManager.set + EventBus.emit
-    
-    // 🏷️ 主要プロパティ
-    appCore                             // AppCore インスタンス参照
-    currentTool                         // string - 現在のツール名
-    isDrawing                           // boolean - 描画中フラグ
-    currentPath                         // Object - 現在のパスオブジェクト
-    lastPoint                           // Object - 最後の描画点
-    extensionsAvailable                 // boolean - 拡張機能利用可能性
-}
+// メソッド
+async initialize()                    // キャンバス初期化
+resize(width, height)                // サイズ変更
+clear()                              // キャンバスクリア
+exportCanvas(format)                 // キャンバス出力
+getCanvasData()                      // キャンバスデータ取得
 ```
 
-### 🎛️ UIController（app-core.js内）
-
-**責務**: UI制御・EventBus連携・統一システム活用・スライダー・ポップアップ管理
+### MemoryManager
+**ファイル**: `managers/memory-manager.js`  
+**責任**: メモリ管理・パフォーマンス最適化  
+**依存**: ConfigManager, PerformanceUtils  
 
 ```javascript
-class UIController {
-    constructor(toolSystem)
-    
-    // 🚀 初期化（EventBus連携）
-    init()                              // UI制御システム初期化（EventBusリスナー登録）
-    setupToolButtons()                  // ツールボタン設定
-    setupPopups()                       // ポップアップ設定
-    setupSliders()                      // スライダー設定
-    setupPresets()                      // プリセット設定
-    setupResize()                       // リサイズ設定
-    setupCheckboxes()                   // チェックボックス設定
-    setupEventBusListeners()            // EventBusリスナー設定（新規）
-    
-    // 🔘 ツール制御（EventBus連携）
-    handleToolClick(button)             // ツールボタンクリック処理
-    setTool(tool)                       // ツール設定 → EventBus経由でToolSystem連携
-    togglePopup(popupId)                // ポップアップ表示切替 → EventBus発行
-    
-    // 🎚️ スライダー制御（EventBus連携）
-    createSlider(sliderId, min, max, initial, callback)  // スライダー作成
-    setupSliderButtons()                                 // スライダー調整ボタン
-    adjustSliderValue(sliderId, delta)                   // スライダー値調整 → EventBus発行
-    updateSliderValue(sliderId, value)                   // スライダー値更新
-    
-    // 🎨 UI更新（EventBusリスナー）
-    updateSizePresets()                 // サイズプリセット更新（EventBusから呼出）
-    updateSliderDisplay(eventData)      // スライダー表示更新（EventBusリスナー）
-    updateToolDisplay(eventData)        // ツール表示更新（EventBusリスナー）
-    closeAllPopups()                    // 全ポップアップ閉じる
-    getUIState()                        // UI状態取得（非推奨 → StateManager使用）
-    
-    // ⚙️ 設定値（統一システム移行済み）
-    // 推奨: ConfigManager.getUIConfig()
-    
-    // 🏷️ 主要プロパティ
-    toolSystem                          // DrawingToolSystem インスタンス参照
-    activePopup                         // Element - アクティブポップアップ
-    sliders                            // Map - スライダー管理マップ
-    eventUnsubscribers                 // Array - EventBus登録解除関数（新規）
-}
+// メソッド
+async initialize()                    // メモリ管理初期化
+startMonitoring()                    // 監視開始
+stopMonitoring()                     // 監視停止
+getMemoryUsage()                     // メモリ使用量取得
+forceGarbageCollection()             // 強制GC
 ```
 
-### 📊 PerformanceMonitor（app-core.js内）
-
-**責務**: FPS監視・メモリ監視・統一システム活用・EventBus連携・パフォーマンス警告
+### SettingsManager
+**ファイル**: `managers/settings-manager.js`  
+**責任**: 動的設定変更・設定保存  
+**依存**: ConfigManager  
 
 ```javascript
-class PerformanceMonitor {
-    constructor(config)
-    
-    // 🚀 監視制御（EventBus連携）
-    start()                            // 監視開始
-    stop()                             // 監視停止
-    startFPSMonitoring()               // FPS監視開始
-    startMemoryMonitoring()            // メモリ監視開始
-    
-    // 📈 メトリクス更新（EventBus発行）
-    updateFPSMetrics(fps)              // FPS指標更新
-    displayFPS(fps)                    // FPS表示
-    notifyCallbacks(type, value)       // コールバック通知
-    checkPerformanceWarnings()         // パフォーマンス警告チェック → EventBus発行
-    
-    // 📊 統計・警告（統一システム活用）
-    getStats()                         // 統計情報取得（非推奨 → StateManager使用）
-    onUpdate(callback)                 // 更新コールバック登録
-    
-    // ⚙️ 設定値（統一システム移行済み）
-    // 推奨: ConfigManager.getPerformanceConfig()
-    
-    // 📊 メトリクス（metrics プロパティ）
-    metrics.frameCount                 // フレーム数
-    metrics.lastTime                   // 最終更新時間
-    metrics.currentFPS                 // 現在のFPS
-    metrics.averageFPS                 // 平均FPS
-    metrics.minFPS                     // 最小FPS
-    metrics.maxFPS                     // 最大FPS
-    metrics.memoryUsage                // メモリ使用量（MB）
-    
-    // 🏷️ 状態プロパティ
-    isRunning                          // boolean - 監視実行中フラグ
-    updateCallbacks                    // Set - 更新コールバック群
-}
+// メソッド
+async initialize()                    // 設定管理初期化
+updateSetting(path, value)           // 設定更新
+resetSettings()                      // 設定リセット
+exportSettings()                     // 設定出力
+importSettings(settings)             // 設定取り込み
 ```
 
 ---
 
-## 🔧 統一システム活用パターン（実装例）
+## 🎨 ツールクラス
 
-### 🎯 循環依存排除パターン（EventBus活用）
+### PenTool
+**ファイル**: `tools/pen-tool.js`  
+**責任**: ペン描画・筆圧・スムージング  
+**依存**: CanvasManager, ConfigManager, EventBus  
 
 ```javascript
-// ❌ 旧方式: 循環依存あり
-DrawingToolSystem.setBrushSize(size) → UIController.updateSlider(size)
-UIController.handleSliderChange(size) → DrawingToolSystem.setBrushSize(size)
+// プロパティ
+isActive                 // アクティブ状態
+brushSize               // ブラシサイズ
+brushColor              // ブラシ色
+opacity                 // 不透明度
+pressure                // 筆圧
+smoothing               // スムージング
 
-// ✅ 新方式: EventBus活用で循環依存排除
-// DrawingToolSystem側
-setBrushSize(size) {
-    this.brushSize = size;
-    EventBus.emit(EventBus.Events.BRUSH_SIZE_CHANGED, { size, tool: this.currentTool });
-}
-
-// UIController側
-init() {
-    EventBus.on(EventBus.Events.BRUSH_SIZE_CHANGED, (data) => {
-        this.updateSizePresets();
-        this.updateSliderValue('pen-size-slider', data.size);
-    });
-}
+// メソッド
+async initialize()                    // ペンツール初期化
+activate()                           // ツールアクティブ化
+deactivate()                         // ツール非アクティブ化
+startDrawing(x, y)                   // 描画開始
+continueDrawing(x, y, pressure)      // 描画継続
+stopDrawing()                        // 描画終了
+setBrushSize(size)                   // ブラシサイズ設定
+setBrushColor(color)                 // ブラシ色設定
 ```
 
-### 🎨 統一設定値活用パターン
+### EraserTool
+**ファイル**: `tools/eraser-tool.js`  
+**責任**: 消しゴム・消去処理  
+**依存**: CanvasManager, ConfigManager, EventBus  
 
 ```javascript
-// ❌ 旧方式: ハードコード・重複
-const brushSize = 16.0;
-const backgroundColor = 0xf0e0d6;
-const targetFPS = 60;
+// プロパティ
+isActive                 // アクティブ状態
+eraserSize              // 消しゴムサイズ
+opacity                 // 不透明度
 
-// ✅ 新方式: ConfigManager活用
-const brushSize = ConfigManager.get('drawing.pen.defaultSize');        // 16.0
-const backgroundColor = ConfigManager.get('canvas.backgroundColor');   // 0xf0e0d6
-const targetFPS = ConfigManager.get('performance.targetFPS');         // 60
-
-// 複数設定取得
-const penConfig = ConfigManager.getDrawingConfig('pen');
-const canvasConfig = ConfigManager.getCanvasConfig();
-const colors = ConfigManager.getColors();
-```
-
-### 🛡️ 統一エラー処理パターン
-
-```javascript
-// ❌ 旧方式: 重複エラー処理
-try {
-    operation();
-} catch (error) {
-    console.error(error);
-    alert('エラーが発生しました');
-}
-
-// ✅ 新方式: ErrorManager活用
-try {
-    operation();
-} catch (error) {
-    ErrorManager.showError('error', error, { 
-        duration: 15000,
-        additionalInfo: '操作コンテキスト情報'
-    });
-    EventBus.emit(EventBus.Events.ERROR_OCCURRED, error);
-}
-```
-
-### 📊 統一状態管理パターン
-
-```javascript
-// ❌ 旧方式: 分散状態取得
-function getDebugInfo() {
-    return {
-        tool: this.currentTool,
-        size: this.brushSize,
-        fps: this.performanceMonitor.currentFPS
-    };
-}
-
-// ✅ 新方式: StateManager活用
-function getDebugInfo() {
-    return StateManager.getQuickState();  // 統一された簡易状態
-}
-
-function getFullDebugInfo() {
-    return StateManager.getApplicationState();  // 完全な状態情報
-}
-
-function checkHealth() {
-    return StateManager.healthCheck();  // 健全性チェック
-}
+// メソッド
+async initialize()                    // 消しゴムツール初期化
+activate()                           // ツールアクティブ化
+deactivate()                         // ツール非アクティブ化
+startErasing(x, y)                   // 消去開始
+continueErasing(x, y)                // 消去継続
+stopErasing()                        // 消去終了
+setEraserSize(size)                  // 消しゴムサイズ設定
 ```
 
 ---
 
-## 📐 DOM要素 ID リファレンス（統一システム対応）
+## 🎚️ UI部品クラス
 
-### 🎨 メインUI要素
+### PopupManager
+**ファイル**: `js/ui/popup-manager.js`  
+**責任**: ポップアップ表示・アニメーション  
+**依存**: ConfigManager, EventBus  
 
+```javascript
+// メソッド
+async initialize()                    // ポップアップ管理初期化
+showPopup(popupId, options)          // ポップアップ表示
+hidePopup(popupId, options)          // ポップアップ非表示
+togglePopup(popupId)                 // ポップアップ切替
+closeAllPopups()                     // 全ポップアップ閉じる
+isPopupVisible(popupId)              // 表示状態確認
+```
+
+### SliderManager
+**ファイル**: `js/ui/slider-manager.js`  
+**責任**: スライダー制御・値更新  
+**依存**: ConfigManager, EventBus  
+
+```javascript
+// メソッド
+async initialize()                    // スライダー管理初期化
+createSlider(sliderId, config)       // スライダー作成
+updateSliderValue(sliderId, value)   // スライダー値更新
+getSliderValue(sliderId)             // スライダー値取得
+setSliderRange(sliderId, min, max)   // スライダー範囲設定
+onSliderChange(sliderId, callback)   // 変更コールバック登録
+```
+
+---
+
+## 🔧 ユーティリティクラス
+
+### CoordinateUtils
+**ファイル**: `js/utils/coordinates.js`  
+**責任**: 座標計算・変換  
+**依存**: なし  
+
+```javascript
+// メソッド
+convertScreenToCanvas(x, y)          // スクリーン→キャンバス座標変換
+convertCanvasToScreen(x, y)          // キャンバス→スクリーン座標変換
+calculateDistance(x1, y1, x2, y2)    // 2点間距離計算
+normalizeCoordinates(x, y, bounds)   // 座標正規化
+clampCoordinates(x, y, bounds)       // 座標制限
+```
+
+### PerformanceUtils
+**ファイル**: `js/utils/performance.js`  
+**責任**: パフォーマンス計測・監視  
+**依存**: ConfigManager  
+
+```javascript
+// メソッド
+startFPSMonitoring()                 // FPS監視開始
+stopFPSMonitoring()                  // FPS監視停止
+getCurrentFPS()                      // 現在FPS取得
+getAverageFPS()                      // 平均FPS取得
+getMemoryUsage()                     // メモリ使用量取得
+logPerformanceMetrics()              // パフォーマンス指標ログ出力
+```
+
+### IconManager
+**ファイル**: `js/utils/icon-manager.js`  
+**責任**: アイコン管理・SVG制御  
+**依存**: ConfigManager  
+
+```javascript
+// メソッド
+async initialize()                    // アイコン管理初期化
+loadIcon(iconName)                   // アイコン読み込み
+createSVGIcon(iconData)              // SVGアイコン作成
+updateIconColor(iconElement, color)   // アイコン色変更
+getIconElement(iconName)             // アイコン要素取得
+registerIcon(iconName, iconData)     // アイコン登録
+```
+
+---
+
+## 📐 DOM要素 ID リファレンス
+
+### メインUI要素
 ```html
 <!-- キャンバス領域 -->
 <div id="drawing-canvas">              <!-- PixiJS キャンバス挿入先 -->
 
-<!-- ツールボタン（EventBus連携） -->
-<div id="download-tool">               <!-- ダウンロードツール（disabled） -->
+<!-- ツールボタン -->
+<div id="download-tool">               <!-- ダウンロードツール -->
 <div id="resize-tool">                 <!-- リサイズツール -->
-<div id="palette-tool">                <!-- カラーパレット（disabled） -->
-<div id="pen-tool">                    <!-- ペンツール（active） -->
+<div id="palette-tool">                <!-- カラーパレット -->
+<div id="pen-tool">                    <!-- ペンツール -->
 <div id="eraser-tool">                 <!-- 消しゴムツール -->
-<div id="fill-tool">                   <!-- 塗りつぶしツール（disabled） -->
-<div id="select-tool">                 <!-- 選択ツール（disabled） -->
-<div id="settings-tool">               <!-- 設定ツール（disabled） -->
+<div id="fill-tool">                   <!-- 塗りつぶしツール -->
+<div id="select-tool">                 <!-- 選択ツール -->
+<div id="settings-tool">               <!-- 設定ツール -->
 
-<!-- ポップアップパネル（EventBus連携） -->
+<!-- ポップアップパネル -->
 <div id="pen-settings">                <!-- ペン設定パネル -->
 <div id="resize-settings">             <!-- リサイズ設定パネル -->
 ```
 
-### 🎚️ スライダー・入力要素（EventBus連携）
-
+### スライダー・入力要素
 ```html
-<!-- ペンツール設定スライダー（EventBus連携） -->
+<!-- ペンツール設定スライダー -->
 <div id="pen-size-slider">             <!-- サイズスライダー本体 -->
 <div id="pen-size-track">              <!-- サイズスライダートラック -->
 <div id="pen-size-handle">             <!-- サイズスライダーハンドル -->
@@ -643,7 +384,7 @@ function checkHealth() {
 <div id="pen-pressure-slider">         <!-- 筆圧スライダー -->
 <div id="pen-smoothing-slider">        <!-- 線補正スライダー -->
 
-<!-- スライダー調整ボタン（EventBus連携） -->
+<!-- スライダー調整ボタン -->
 <div id="pen-size-decrease-small">     <!-- サイズ -0.1 ボタン -->
 <div id="pen-size-decrease">           <!-- サイズ -1 ボタン -->
 <div id="pen-size-decrease-large">     <!-- サイズ -10 ボタン -->
@@ -651,22 +392,21 @@ function checkHealth() {
 <div id="pen-size-increase">           <!-- サイズ +1 ボタン -->
 <div id="pen-size-increase-large">     <!-- サイズ +10 ボタン -->
 
-<!-- リサイズ入力（ConfigManager連携） -->
+<!-- リサイズ入力 -->
 <input id="canvas-width">              <!-- キャンバス幅入力 -->
 <input id="canvas-height">             <!-- キャンバス高さ入力 -->
 <div id="apply-resize">                <!-- リサイズ適用ボタン -->
 <div id="apply-resize-center">         <!-- リサイズ・中央寄せボタン -->
 
-<!-- チェックボックス（ConfigManager連携） -->
+<!-- チェックボックス -->
 <div id="pressure-sensitivity">        <!-- 筆圧感度チェック -->
 <div id="edge-smoothing">              <!-- エッジスムージングチェック -->
 <div id="gpu-acceleration">            <!-- GPU加速チェック -->
 ```
 
-### 📊 ステータス表示要素（StateManager連携）
-
+### ステータス表示要素
 ```html
-<!-- ステータスパネル情報（StateManager経由で更新） -->
+<!-- ステータスパネル情報 -->
 <span id="canvas-info">                <!-- キャンバス情報表示 -->
 <span id="current-tool">               <!-- 現在ツール表示 -->
 <span id="current-color">              <!-- 現在色表示 -->
@@ -679,10 +419,9 @@ function checkHealth() {
 
 ---
 
-## ⚙️ 統一設定値・定数一覧（ConfigManager管理）
+## ⚙️ 統一設定値・定数一覧
 
-### 🎨 統一設定値（ConfigManager.defaultConfig）
-
+### 統一設定値（ConfigManager.defaultConfig）
 ```javascript
 // キャンバス設定（canvas.*）
 canvas.width: 400                      // デフォルト幅
@@ -720,15 +459,9 @@ performance.retryDelay: 200            // リトライ間隔（ms）
 error.displayDuration: 10000           // エラー表示時間（ms）
 error.maxRetries: 3                    // 最大リトライ数
 error.showDebugInfo: true              // デバッグ情報表示
-
-// v8移行設定（v8Migration.*）
-v8Migration.enabled: false             // v8移行フラグ
-v8Migration.useWebGPU: false           // WebGPU使用予定
-v8Migration.maxFPS: 120               // v8では120FPS対応予定
 ```
 
-### 🎨 ふたば☆ちゃんねるカラーパレット（colors.*）
-
+### ふたば☆ちゃんねるカラーパレット（colors.*）
 ```javascript
 // 統一カラーパレット（ConfigManager.get('colors')）
 colors.futabaMaroon: 0x800000          // メインカラー
@@ -749,248 +482,9 @@ colors.futabaBackgroundHex: '#ffffee'  // アプリ背景（Hex）
 
 ---
 
-## 🔗 依存関係マップ（統一システム対応）
+## 🔍 デバッグ・検証システム
 
-### 📁 ファイル依存関係（統一システム統合）
-
-```mermaid
-graph TD
-    A[index.html] --> B[統一システム群]
-    B --> C[js/utils/config-manager.js]
-    B --> D[js/utils/error-manager.js]
-    B --> E[js/utils/state-manager.js]
-    B --> F[js/utils/event-bus.js]
-    
-    A --> G[libs/pixi-extensions.js]
-    A --> H[js/app-core.js]
-    A --> I[js/main.js]
-    
-    D --> C  // ErrorManager → ConfigManager
-    E --> C  // StateManager → ConfigManager
-    
-    I --> B  // main.js → 統一システム
-    H --> B  // app-core.js → 統一システム
-    
-    G --> J[PIXI.js CDN]
-    G --> K[各種拡張ライブラリ]
-```
-
-### 🏗️ クラス依存関係（統一システム統合）
-
-```
-Level 0: 統一基盤システム（循環依存なし）
-├── ConfigManager (独立)
-├── ErrorManager (ConfigManager依存)
-├── StateManager (ConfigManager依存)  
-└── EventBus (独立)
-
-Level 1: アプリケーション統括
-└── FutabaDrawingTool (main.js)
-    ├── 統一システム全依存
-    ├── AppCore
-    └── DOM Elements
-
-Level 2: コアシステム
-└── AppCore (app-core.js)
-    ├── 統一システム活用
-    ├── DrawingToolSystem
-    ├── UIController
-    ├── PerformanceMonitor
-    └── PIXI.Application
-
-Level 3: 機能システム（EventBus連携）
-├── DrawingToolSystem
-│   ├── 統一システム活用
-│   ├── AppCore参照
-│   └── EventBus発行
-├── UIController
-│   ├── 統一システム活用
-│   ├── EventBusリスナー
-│   └── DOM Elements
-└── PerformanceMonitor
-    ├── 統一システム活用
-    └── EventBus発行
-```
-
-### 🔄 統一システム初期化シーケンス
-
-```
-1. DOMContentLoaded
-   ├── 統一システム読み込み確認
-   │   ├── ConfigManager
-   │   ├── ErrorManager
-   │   ├── StateManager  
-   │   └── EventBus
-   └── FutabaDrawingTool.init()
-       ├── validateUnifiedSystems()        // 統一システム確認
-       ├── performPreInitializationChecks()
-       ├── initializeExtensions()
-       ├── initializeAppCore()
-       │   ├── AppCore.initialize()
-       │   │   ├── 設定値 ← ConfigManager
-       │   │   ├── エラー処理 ← ErrorManager
-       │   │   ├── 状態監視 ← StateManager
-       │   │   ├── イベント連携 ← EventBus
-       │   │   ├── initializePixiApp()
-       │   │   ├── initializeToolSystem()
-       │   │   └── initializeUI()
-       │   └── EventBus.emit(INITIALIZATION_COMPLETED)
-       └── finalizeInitialization()
-```
-
----
-
-## 🎯 統一システムイベントシステム（EventBus詳細）
-
-### 📡 標準イベント一覧（EventBus.Events）
-
-```javascript
-// 描画ツール関連
-EventBus.Events.BRUSH_SIZE_CHANGED     // ブラシサイズ変更
-EventBus.Events.BRUSH_COLOR_CHANGED    // ブラシ色変更  
-EventBus.Events.OPACITY_CHANGED        // 不透明度変更
-EventBus.Events.PRESSURE_CHANGED       // 筆圧変更
-EventBus.Events.SMOOTHING_CHANGED      // 線補正変更
-EventBus.Events.TOOL_CHANGED           // ツール変更
-
-// 描画動作
-EventBus.Events.DRAWING_STARTED        // 描画開始
-EventBus.Events.DRAWING_CONTINUED      // 描画継続
-EventBus.Events.DRAWING_ENDED          // 描画終了
-EventBus.Events.PATH_CREATED           // パス作成
-
-// UI関連
-EventBus.Events.POPUP_OPENED           // ポップアップ表示
-EventBus.Events.POPUP_CLOSED           // ポップアップ非表示
-EventBus.Events.SLIDER_CHANGED         // スライダー変更
-EventBus.Events.PRESET_SELECTED        // プリセット選択
-
-// キャンバス関連
-EventBus.Events.CANVAS_RESIZED         // キャンバスリサイズ
-EventBus.Events.CANVAS_CLEARED         // キャンバスクリア
-
-// システム関連
-EventBus.Events.INITIALIZATION_COMPLETED    // 初期化完了
-EventBus.Events.ERROR_OCCURRED              // エラー発生
-EventBus.Events.PERFORMANCE_WARNING         // パフォーマンス警告
-```
-
-### 🔄 EventBus活用例（循環依存排除）
-
-```javascript
-// DrawingToolSystem → UIController（循環依存なし）
-class DrawingToolSystem {
-    setBrushSize(size) {
-        // 妥当性確認
-        if (!ConfigManager.validate('drawing.pen.defaultSize', size)) {
-            ErrorManager.showError('warning', `無効なサイズ: ${size}`);
-            return;
-        }
-        
-        this.brushSize = size;
-        
-        // イベント発行（循環依存なし）
-        EventBus.emit(EventBus.Events.BRUSH_SIZE_CHANGED, {
-            size,
-            tool: this.currentTool,
-            timestamp: Date.now()
-        });
-    }
-}
-
-class UIController {
-    init() {
-        // イベントリスナー登録（循環依存なし）
-        this.eventUnsubscribers = [
-            EventBus.on(EventBus.Events.BRUSH_SIZE_CHANGED, (data) => {
-                this.updateSliderValue('pen-size-slider', data.size);
-                this.updateSizePresets();
-            }),
-            
-            EventBus.on(EventBus.Events.TOOL_CHANGED, (data) => {
-                this.updateToolDisplay(data.tool);
-                this.updateActiveToolButton(data.tool);
-            })
-        ];
-    }
-    
-    destroy() {
-        // リスナー解除（メモリリーク防止）
-        this.eventUnsubscribers.forEach(unsubscribe => unsubscribe());
-    }
-}
-```
-
----
-
-## 🛠️ エラーハンドリング（統一システム対応）
-
-### 🚨 統一エラータイプ分類（ErrorManager）
-
-```javascript
-// 統一エラータイプ
-'warning'   → 警告（右上・7秒・黄色系・継続可能）
-'error'     → エラー（右上・10秒・赤色・再読み込みボタン）
-'critical'  → 致命的エラー（画面全体・手動終了・詳細情報）
-'recovery'  → 回復メッセージ（左下・8秒・緑系・フォールバック通知）
-
-// 統一エラー表示例
-ErrorManager.showError('warning', '設定値が範囲外です', { duration: 5000 });
-ErrorManager.showError('error', new Error('描画処理失敗'), { showReload: true });
-ErrorManager.showError('critical', '初期化失敗', { showDebug: true });
-ErrorManager.showError('recovery', 'フォールバックモード有効', { position: 'bottom-left' });
-```
-
-### 🛡️ 統一エラー処理パターン
-
-```javascript
-// 統一エラー処理 + EventBus連携
-class DrawingToolSystem {
-    startDrawing(x, y) {
-        try {
-            // 前提条件確認
-            if (!this.appCore || !this.appCore.app) {
-                throw new Error('AppCore未初期化');
-            }
-            
-            // 描画処理
-            this.currentPath = this.createPenPath(x, y);
-            this.isDrawing = true;
-            
-            // 成功イベント発行
-            EventBus.emit(EventBus.Events.DRAWING_STARTED, {
-                tool: this.currentTool,
-                position: { x, y },
-                pathId: this.currentPath.id
-            });
-            
-        } catch (error) {
-            // 統一エラー処理
-            ErrorManager.showError('error', error, {
-                additionalInfo: `描画開始失敗: ツール=${this.currentTool}, 座標=(${x}, ${y})`
-            });
-            
-            // エラーイベント発行
-            EventBus.emit(EventBus.Events.ERROR_OCCURRED, {
-                type: 'drawing_start_error',
-                error,
-                context: { tool: this.currentTool, position: { x, y } }
-            });
-            
-            // 状態リセット
-            this.isDrawing = false;
-            this.currentPath = null;
-        }
-    }
-}
-```
-
----
-
-## 🔍 デバッグ・検証システム（統一システム対応）
-
-### 🛠️ 統一デバッグ関数群
-
+### 統一デバッグ関数群
 ```javascript
 // 統一システム用デバッグ関数（推奨）
 window.getConfig(path)                 // ConfigManager.get() エイリアス
@@ -998,608 +492,17 @@ window.setConfig(path, value)          // ConfigManager.set() エイリアス
 window.getConfigDebug()                // ConfigManager.getDebugInfo() エイリアス
 window.showError(type, msg, opts)      // ErrorManager.showError() エイリアス
 window.getErrorLog()                   // ErrorManager.getErrorLog() エイリアス
-window.getErrorStats()                 // ErrorManager.getErrorStats() エイリアス
 window.getState()                      // StateManager.getApplicationState() エイリアス
 window.getQuickState()                 // StateManager.getQuickState() エイリアス
 window.healthCheck()                   // StateManager.healthCheck() エイリアス
 window.emitEvent(type, data)           // EventBus.emit() エイリアス
-window.getEventStats()                 // EventBus.getStats() エイリアス
-window.debugEventBus()                 // EventBus.debug() エイリアス
 
 // 統一システムテスト
 window.testUnifiedSystems()            // 統一システム動作確認テスト
 window.getUnifiedMetrics()             // 統一システムメトリクス取得
 window.checkUnifiedHealth()            // 統一システム健全性チェック
-
-// 旧デバッグ関数（互換性維持・非推奨警告付き）
-window.getAppState()                   // → StateManager.getApplicationState()（非推奨）
-window.startDebugMode()                // デバッグモード開始
-window.debugAppCore()                  // AppCore デバッグ
-window.debugFutaba.getState()          // 詳細状態取得（非推奨）
-```
-
-### 📊 統一状態確認API（StateManager詳細）
-
-```javascript
-// StateManager.getApplicationState() 返り値構造（完全版）
-{
-    // コアシステム状態
-    core: {
-        version: "v1.0-Phase1.1ss5rev2-統一システム版",
-        isInitialized: boolean,
-        hasAppCore: boolean,
-        hasPixiApp: boolean,
-        hasDrawingContainer: boolean,
-        hasUIContainer: boolean,
-        hasToolSystem: boolean,
-        hasUIController: boolean,
-        hasPerformanceMonitor: boolean,
-        canvasSize: string,              // "400×400"
-        canvasElement: boolean,
-        fallbackMode: boolean,
-        extensionsAvailable: boolean
-    },
-    
-    // UI状態
-    ui: {
-        activeTool: string,              // "pen", "eraser"等
-        activePopups: string[],          // ["pen-settings"]等
-        sliders: {                       // スライダー現在値
-            "pen-size": string,
-            "pen-opacity": string,
-            "pen-pressure": string,
-            "pen-smoothing": string
-        },
-        statusElements: {                // ステータス表示内容
-            "canvas-info": string,
-            "current-tool": string,
-            "coordinates": string,
-            "fps": string,
-            "memory-usage": string
-        },
-        hasUIController: boolean,
-        totalToolButtons: number,
-        enabledToolButtons: number,
-        totalPopups: number
-    },
-    
-    // 描画状態
-    drawing: {
-        hasToolSystem: boolean,
-        currentTool: string,             // "pen", "eraser"等
-        isDrawing: boolean,
-        brushSize: number,
-        brushColor: number,              // 0x800000等
-        brushColorHex: string,           // "#800000"等
-        opacity: number,                 // 0.85等
-        pressure: number,                // 0.5等
-        smoothing: number,               // 0.3等
-        pathCount: number,
-        lastPoint: {x, y} | null,
-        currentPath: boolean,
-        minDistance: number,
-        extensionsAvailable: boolean
-    },
-    
-    // パフォーマンス状態
-    performance: {
-        hasPerformanceMonitor: boolean,
-        isMonitoring: boolean,
-        currentFPS: number,
-        averageFPS: number,
-        minFPS: number,
-        maxFPS: number,
-        initTime: number,               // ms
-        memoryUsage: {                  // performance.memory
-            used: number,               // MB
-            total: number,              // MB
-            limit: number               // MB
-        },
-        frameCount: number,
-        updateCallbacks: number,
-        isHighPerformance: boolean
-    },
-    
-    // エラー状態
-    errors: {
-        hasErrorManager: boolean,
-        appErrorLog: Array,             // 旧エラーログ
-        managerErrorLog: Array,         // 統一エラーログ
-        totalAppErrors: number,
-        totalManagerErrors: number,
-        errorStats: {                   // ErrorManager統計
-            total: number,
-            byType: Object,
-            recent: Array,
-            oldestError: string,
-            newestError: string
-        },
-        lastError: Object | null
-    },
-    
-    // 設定状態
-    config: {
-        hasConfigManager: boolean,
-        debugInfo: {                    // ConfigManager情報
-            version: string,
-            totalSettings: number,
-            settingsPaths: Array,
-            colors: Array,
-            v8Ready: boolean
-        },
-        canvasConfig: Object,           // キャンバス設定
-        drawingConfig: Object,          // 描画設定
-        performanceConfig: Object,      // パフォーマンス設定
-        colors: Object,                 // カラーパレット
-        v8Ready: boolean
-    },
-    
-    // デバッグ状態
-    debug: {
-        pixiVersion: string,            // "7.4.2"等
-        pixiExtensions: boolean,
-        extensionsInitialized: boolean,
-        extensionStats: {
-            total: number,
-            available: number,
-            libraries: Array
-        },
-        gsapAvailable: boolean,
-        lodashAvailable: boolean,
-        hammerAvailable: boolean,
-        stateManagerStats: {
-            requests: number,           // 状態取得回数
-            uptime: number,             // 稼働時間（ms）
-            lastUpdate: number          // 最終更新時刻
-        },
-        domElements: {
-            required: number,           // 必要要素数
-            found: number,             // 発見要素数
-            missing: Array,            // 不足要素一覧
-            elements: Object,          // 要素詳細状態
-            completeness: number       // 完全性（%）
-        },
-        browserInfo: {
-            userAgent: string,
-            language: string,
-            platform: string,
-            screenSize: string,        // "1920×1080"
-            windowSize: string         // "800×600"
-        }
-    }
-}
-```
-
-### 🔍 統一システム検証・テスト
-
-```javascript
-// 統一システムテストスイート
-class UnifiedSystemTests {
-    static runAllTests() {
-        const results = [
-            this.testConfigManager(),
-            this.testErrorManager(), 
-            this.testStateManager(),
-            this.testEventBus(),
-            this.testIntegration()
-        ];
-        
-        const passed = results.filter(r => r.passed).length;
-        console.log(`✅ 統一システムテスト: ${passed}/${results.length}通過`);
-        return results;
-    }
-    
-    static testConfigManager() {
-        try {
-            // 設定値取得テスト
-            const canvasWidth = ConfigManager.get('canvas.width');
-            const penSize = ConfigManager.get('drawing.pen.defaultSize');
-            const colors = ConfigManager.getColors();
-            
-            console.assert(canvasWidth === 400, 'Canvas width test');
-            console.assert(penSize === 16.0, 'Pen size test');
-            console.assert(colors.futabaMaroon === 0x800000, 'Color test');
-            
-            // 妥当性確認テスト
-            const validSize = ConfigManager.validate('drawing.pen.defaultSize', 20.0);
-            const invalidSize = ConfigManager.validate('drawing.pen.defaultSize', 200.0);
-            
-            console.assert(validSize === true, 'Valid size test');
-            console.assert(invalidSize === false, 'Invalid size test');
-            
-            return { system: 'ConfigManager', passed: true };
-        } catch (error) {
-            console.error('ConfigManager テスト失敗:', error);
-            return { system: 'ConfigManager', passed: false, error };
-        }
-    }
-    
-    static testErrorManager() {
-        try {
-            // エラー表示テスト（テストモード）
-            ErrorManager.showError('warning', 'テスト警告', { test: true });
-            ErrorManager.showError('error', 'テストエラー', { test: true });
-            
-            // ログテスト
-            const logBefore = ErrorManager.getErrorLog().length;
-            ErrorManager.logError('test', 'ログテスト', {});
-            const logAfter = ErrorManager.getErrorLog().length;
-            
-            console.assert(logAfter === logBefore + 1, 'Error log test');
-            
-            // 統計テスト
-            const stats = ErrorManager.getErrorStats();
-            console.assert(typeof stats.total === 'number', 'Error stats test');
-            
-            return { system: 'ErrorManager', passed: true };
-        } catch (error) {
-            console.error('ErrorManager テスト失敗:', error);
-            return { system: 'ErrorManager', passed: false, error };
-        }
-    }
-    
-    static testStateManager() {
-        try {
-            // 状態取得テスト
-            const appState = StateManager.getApplicationState();
-            const quickState = StateManager.getQuickState();
-            const coreState = StateManager.getCoreState();
-            
-            console.assert(typeof appState === 'object', 'Application state test');
-            console.assert(typeof quickState === 'object', 'Quick state test');
-            console.assert(typeof coreState === 'object', 'Core state test');
-            console.assert('core' in appState, 'State structure test');
-            console.assert('ui' in appState, 'UI state test');
-            console.assert('drawing' in appState, 'Drawing state test');
-            
-            // 健全性チェックテスト
-            const health = StateManager.healthCheck();
-            console.assert(typeof health.healthy === 'boolean', 'Health check test');
-            console.assert(Array.isArray(health.issues), 'Health issues test');
-            
-            return { system: 'StateManager', passed: true };
-        } catch (error) {
-            console.error('StateManager テスト失敗:', error);
-            return { system: 'StateManager', passed: false, error };
-        }
-    }
-    
-    static testEventBus() {
-        try {
-            let received = false;
-            let receivedData = null;
-            
-            // リスナー登録テスト
-            const unsubscribe = EventBus.on('test-event', (data) => {
-                received = true;
-                receivedData = data;
-            });
-            
-            // イベント発行テスト
-            EventBus.emit('test-event', { test: 'data' });
-            
-            console.assert(received === true, 'Event received test');
-            console.assert(receivedData.test === 'data', 'Event data test');
-            
-            // 統計テスト
-            const stats = EventBus.getStats();
-            console.assert(stats.totalEmitted > 0, 'Event stats test');
-            console.assert(stats.totalListeners > 0, 'Listener stats test');
-            
-            // クリーンアップ
-            unsubscribe();
-            
-            return { system: 'EventBus', passed: true };
-        } catch (error) {
-            console.error('EventBus テスト失敗:', error);
-            return { system: 'EventBus', passed: false, error };
-        }
-    }
-    
-    static testIntegration() {
-        try {
-            // 統一システム間連携テスト
-            // ConfigManager → ErrorManager
-            const errorConfig = ConfigManager.getErrorConfig();
-            console.assert(typeof errorConfig.displayDuration === 'number', 'Config-Error integration');
-            
-            // StateManager → ConfigManager
-            const configState = StateManager.getConfigState();
-            console.assert(configState.hasConfigManager === true, 'State-Config integration');
-            
-            // EventBus → ErrorManager（エラー発生イベント）
-            let errorEventReceived = false;
-            const unsubscribe = EventBus.on(EventBus.Events.ERROR_OCCURRED, () => {
-                errorEventReceived = true;
-            });
-            
-            EventBus.emit(EventBus.Events.ERROR_OCCURRED, { test: true });
-            console.assert(errorEventReceived === true, 'EventBus-Error integration');
-            
-            unsubscribe();
-            
-            return { system: 'Integration', passed: true };
-        } catch (error) {
-            console.error('統合テスト失敗:', error);
-            return { system: 'Integration', passed: false, error };
-        }
-    }
-}
 ```
 
 ---
 
-## 📚 よく使う操作パターン（統一システム対応）
-
-### 🎨 描画ツール切り替え（EventBus活用）
-
-```javascript
-// プログラマティック切り替え（EventBus経由）
-window.futabaDrawingTool.selectPenTool()     // ペンツール選択
-window.futabaDrawingTool.selectEraserTool()  // 消しゴム選択
-
-// EventBus直接活用
-EventBus.emit(EventBus.Events.TOOL_CHANGED, { tool: 'pen' });
-EventBus.emit(EventBus.Events.TOOL_CHANGED, { tool: 'eraser' });
-
-// UIController経由（非推奨）
-appCore.uiController.setTool('pen')          // ペン
-appCore.uiController.setTool('eraser')       // 消しゴム
-```
-
-### 📐 キャンバスリサイズ（ConfigManager + EventBus）
-
-```javascript
-// 統一システム活用リサイズ
-function resizeCanvasUnified(width, height, centerContent = false) {
-    try {
-        // 妥当性確認（ConfigManager）
-        if (!ConfigManager.validate('canvas.width', width) || 
-            !ConfigManager.validate('canvas.height', height)) {
-            ErrorManager.showError('warning', `無効なサイズ: ${width}×${height}`);
-            return;
-        }
-        
-        // 設定値更新（ConfigManager）
-        ConfigManager.set('canvas.width', width);
-        ConfigManager.set('canvas.height', height);
-        
-        // リサイズ実行
-        appCore.resize(width, height, centerContent);
-        
-        // イベント発行（EventBus）
-        EventBus.emit(EventBus.Events.CANVAS_RESIZED, {
-            width, height, centerContent,
-            timestamp: Date.now()
-        });
-        
-    } catch (error) {
-        ErrorManager.showError('error', error, {
-            additionalInfo: `リサイズ失敗: ${width}×${height}`
-        });
-    }
-}
-
-// 使用例
-resizeCanvasUnified(800, 600, true);        // 800×600、中央寄せあり
-```
-
-### 🎚️ ブラシ設定変更（統一システム活用）
-
-```javascript
-// 統一システム活用ブラシ設定
-function setBrushSettingsUnified(settings) {
-    const { size, opacity, pressure, smoothing, color } = settings;
-    
-    try {
-        // ToolSystem経由（EventBus自動発行）
-        if (size !== undefined) {
-            appCore.toolSystem.setBrushSize(size);
-        }
-        if (opacity !== undefined) {
-            appCore.toolSystem.setOpacity(opacity);
-        }
-        if (pressure !== undefined) {
-            appCore.toolSystem.setPressure(pressure);
-        }
-        if (smoothing !== undefined) {
-            appCore.toolSystem.setSmoothing(smoothing);
-        }
-        if (color !== undefined) {
-            appCore.toolSystem.setBrushColor(color);
-        }
-        
-    } catch (error) {
-        ErrorManager.showError('error', error, {
-            additionalInfo: 'ブラシ設定変更失敗'
-        });
-    }
-}
-
-// 使用例
-setBrushSettingsUnified({
-    size: 24.0,
-    opacity: 0.7,
-    pressure: 0.8,
-    color: 0x800000
-});
-```
-
-### 🔒 ポップアップ制御（EventBus活用）
-
-```javascript
-// 統一ポップアップ制御
-function togglePopupUnified(popupId) {
-    try {
-        // UI制御（EventBus自動発行）
-        appCore.uiController.togglePopup(popupId);
-        
-    } catch (error) {
-        ErrorManager.showError('warning', error, {
-            additionalInfo: `ポップアップ制御失敗: ${popupId}`
-        });
-    }
-}
-
-// EventBusリスナーでの制御
-EventBus.on(EventBus.Events.POPUP_OPENED, (data) => {
-    console.log(`ポップアップ表示: ${data.popupId}`);
-    StateManager.getUIState(); // 状態更新
-});
-
-// 使用例
-togglePopupUnified('pen-settings');         // ペン設定
-togglePopupUnified('resize-settings');      // リサイズ設定
-appCore.uiController.closeAllPopups();      // 全閉じる
-```
-
----
-
-## ⚠️ 重要な注意事項（統一システム対応）
-
-### 🚫 避けるべき操作（統一システム版）
-
-```javascript
-// ❌ 統一システム迂回（禁止）
-const brushSize = 16.0;                     // ConfigManager.get('drawing.pen.defaultSize') を使用
-const backgroundColor = 0xf0e0d6;           // ConfigManager.get('canvas.backgroundColor') を使用
-
-// ❌ 独自エラー処理（禁止）
-alert('エラーが発生しました');                // ErrorManager.showError() を使用
-console.error('問題発生');                   // ErrorManager.showError() を使用
-
-// ❌ 直接クラス通信（循環依存発生）
-uiController.updateSlider(newSize);         // EventBus.emit() を使用
-toolSystem.notifyUI(data);                  // EventBus.emit() を使用
-
-// ❌ 独自状態取得（重複処理）
-const state = {                             // StateManager.getDrawingState() を使用
-    tool: this.currentTool,
-    size: this.brushSize
-};
-
-// ❌ 依存関係確認なしでの統一システム使用
-ConfigManager.get('canvas.width')           // window.ConfigManager 存在確認が必要
-ErrorManager.showError('error', error)      // window.ErrorManager 存在確認が必要
-```
-
-### ✅ 推奨パターン（統一システム版）
-
-```javascript
-// ✅ 統一システム存在確認後の操作
-if (window.ConfigManager) {
-    const canvasWidth = ConfigManager.get('canvas.width');
-}
-
-// ✅ 統一システム活用パターン
-if (window.ErrorManager && window.EventBus) {
-    try {
-        operation();
-    } catch (error) {
-        ErrorManager.showError('error', error);
-        EventBus.emit(EventBus.Events.ERROR_OCCURRED, error);
-    }
-}
-
-// ✅ EventBus活用による循環依存排除
-// 送信側
-EventBus.emit(EventBus.Events.BRUSH_SIZE_CHANGED, { size });
-// 受信側
-EventBus.on(EventBus.Events.BRUSH_SIZE_CHANGED, (data) => {
-    this.updateUI(data.size);
-});
-
-// ✅ 統一システムの安全な活用
-function safeConfigGet(path, fallback = null) {
-    return window.ConfigManager ? ConfigManager.get(path) : fallback;
-}
-
-function safeErrorShow(type, error) {
-    if (window.ErrorManager) {
-        ErrorManager.showError(type, error);
-    } else {
-        console.error(`[${type}]`, error);
-    }
-}
-```
-
-### 🔧 トラブルシューティング（統一システム版）
-
-```javascript
-// 統一システム初期化失敗時の確認手順
-1. window.testUnifiedSystems()                    // 統一システムテスト実行
-2. window.checkUnifiedHealth()                    // 統一システム健全性確認
-3. window.getUnifiedMetrics()                     // 統一システムメトリクス確認
-4. window.getState()                              // 全体状態確認
-5. console.log でindex.html読み込み順序確認
-
-// 設定値関連不具合時の確認
-1. ConfigManager.getDebugInfo()                   // 設定システム状況確認
-2. ConfigManager.get(path)                        // 対象設定値存在確認
-3. ConfigManager.validate(path, value)            // 設定値妥当性確認
-
-// エラー処理不具合時の確認
-1. ErrorManager.getErrorStats()                   // エラー統計確認
-2. ErrorManager.getErrorLog()                     // エラーログ確認
-3. ErrorManager.showDebugInfo()                   // エラーシステム詳細
-
-// イベント通信不具合時の確認
-1. EventBus.getStats()                           // イベント統計確認
-2. EventBus.getListeners(eventType)              // リスナー一覧確認
-3. EventBus.debug()                              // EventBusデバッグ情報
-
-// 状態管理不具合時の確認
-1. StateManager.healthCheck()                     // アプリケーション健全性
-2. StateManager.getQuickState()                   // 簡易状態確認
-3. StateManager.getApplicationState()             // 完全状態確認
-```
-
----
-
-## 📋 チェックリスト（統一システム対応）
-
-### 🚀 統一システム初期化完了確認
-
-- [ ] `window.ConfigManager` が存在する
-- [ ] `window.ErrorManager` が存在する  
-- [ ] `window.StateManager` が存在する
-- [ ] `window.EventBus` が存在する
-- [ ] `window.testUnifiedSystems()` でテスト通過
-- [ ] `window.checkUnifiedHealth()` で健全性確認
-- [ ] 設定値が `ConfigManager.get()` で取得可能
-- [ ] エラー表示が `ErrorManager.showError()` で動作
-
-### 🔧 アプリケーション機能確認（統一システム版）
-
-- [ ] `window.futabaDrawingTool.isInitialized === true`
-- [ ] `appCore.app` が存在し、DOM に接続されている
-- [ ] `StateManager.getCoreState().hasPixiApp === true`
-- [ ] `StateManager.getUIState().activeTool` が取得可能
-- [ ] `StateManager.getDrawingState().pathCount` が取得可能
-- [ ] EventBus経由でツール切り替えが動作
-- [ ] ConfigManager経由で設定値変更が反映
-
-### 🐛 デバッグ準備（統一システム版）
-
-- [ ] `window.getState()` でアプリ状態取得可能
-- [ ] `window.getQuickState()` で簡易状態取得可能
-- [ ] `window.healthCheck()` で健全性チェック可能
-- [ ] `window.getConfig('canvas.width')` で設定値取得可能
-- [ ] `window.showError('warning', 'テスト')` でエラー表示可能
-- [ ] `window.emitEvent('test', {})` でイベント発行可能
-- [ ] `window.getEventStats()` でイベント統計取得可能
-- [ ] ブラウザのDevToolsでEventBusリスナー確認可能
-
----
-
-## 🔄 バージョン履歴
-
-- **v2.0-Phase1.1ss5rev2**: 統一システム対応版作成（統一システム統合）
-- **v1.0-Phase1.4s1rev1**: 初版作成（依存関係解決版対応）
-- 作成日: 2025年8月18日
-- 対応コードベース: `v1_Phase1.1ss5rev2`
-- 統一システム: ConfigManager・ErrorManager・StateManager・EventBus
-
----
-
-*🎨 このシンボル辞典は、統一システムを含むふたば☆お絵描きツールの全体構造を把握し、AI協働開発での効率化・循環依存排除・重複コード排除を図るために作成されました。コード修正時は必ずこの辞典を参照し、統一システムの活用・依存関係や設定値の確認を行ってください。*
+*🎨 このシンボル辞典は、ふたば☆お絵描きツール Phase1の統一システムを含む全体構造を把握し、AI協働開発での効率化を図るために作成されました。コード修正時は必ずこの辞典を参照し、統一システムの活用・依存関係や設定値の確認を行ってください。*
