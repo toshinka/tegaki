@@ -8,6 +8,7 @@
  * 📋 PHASE_TARGET: Phase1統一化完了版
  * 📋 V8_MIGRATION: ConfigManager経由でv8対応準備済み
  * 🚨 Task 1-A-1: 統一システム依存性確認・設定値統一・エラー処理統一・状態管理統一・旧関数移譲
+ * 🔧 FIX: AppCore依存関係確認強化・詳細エラーログ追加・フォールバック処理改善
  */
 
 /**
@@ -174,10 +175,10 @@ class FutabaDrawingTool {
     }
     
     /**
-     * 基本依存関係確認（ConfigManager統合版）
+     * 🔧 基本依存関係確認（ConfigManager統合版・強化版）
      */
     async validateBasicDependencies() {
-        console.log('🔍 基本依存関係確認（統合版）...');
+        console.log('🔍 基本依存関係確認（統合版・強化版）...');
         
         // 🚨 Task 1-A-1: ConfigManager経由での依存関係リスト取得
         const requiredLibraries = window.ConfigManager.get('dependencies') || [
@@ -186,35 +187,106 @@ class FutabaDrawingTool {
         
         const missing = [];
         const available = {};
+        const detailedInfo = {};
         
-        // 基本ライブラリ確認
+        // 基本ライブラリ確認（詳細版）
         if (!window.PIXI) {
             missing.push('PixiJS');
+            detailedInfo.PIXI = 'ライブラリ未読み込み';
         } else {
             available.PIXI = window.PIXI.VERSION;
+            detailedInfo.PIXI = `バージョン: ${window.PIXI.VERSION}`;
+            console.log(`✅ PixiJS: ${window.PIXI.VERSION}`);
         }
         
-        // AppCore確認
+        // 🔧 AppCore確認（詳細版）
         if (!window.AppCore) {
             missing.push('AppCore');
+            detailedInfo.AppCore = 'クラス未定義 - js/app-core.js読み込み失敗の可能性';
+            
+            // 🔧 AppCore読み込み失敗の詳細分析
+            console.error('💀 AppCore詳細分析:');
+            console.error('- window.AppCore:', typeof window.AppCore);
+            console.error('- グローバルオブジェクト確認:', Object.keys(window).filter(key => key.includes('App')));
+            
+            // script要素確認
+            const appCoreScript = Array.from(document.scripts).find(script => 
+                script.src && script.src.includes('app-core.js')
+            );
+            if (appCoreScript) {
+                console.error('- app-core.js スクリプト要素:', {
+                    src: appCoreScript.src,
+                    loaded: appCoreScript.readyState,
+                    error: appCoreScript.onerror
+                });
+            } else {
+                console.error('- app-core.js スクリプト要素が見つかりません');
+            }
+            
         } else {
             available.AppCore = 'OK';
+            detailedInfo.AppCore = `クラス定義確認済み: ${typeof window.AppCore}`;
+            console.log(`✅ AppCore: クラス利用可能`);
+            
+            // AppCore関連クラス確認
+            const relatedClasses = ['DrawingToolSystem', 'UIController', 'PerformanceMonitor'];
+            relatedClasses.forEach(className => {
+                if (window[className]) {
+                    console.log(`✅ ${className}: 利用可能`);
+                    available[className] = 'OK';
+                } else {
+                    console.warn(`⚠️ ${className}: 未定義`);
+                }
+            });
         }
         
-        // DOM要素確認
+        // DOM要素確認（詳細版）
         const requiredElements = ['drawing-canvas', 'pen-tool', 'pen-settings'];
-        const missingElements = requiredElements.filter(id => !document.getElementById(id));
+        const missingElements = [];
+        const availableElements = {};
+        
+        requiredElements.forEach(id => {
+            const element = document.getElementById(id);
+            if (!element) {
+                missingElements.push(id);
+            } else {
+                availableElements[id] = {
+                    tagName: element.tagName,
+                    className: element.className,
+                    visible: element.offsetParent !== null
+                };
+            }
+        });
         
         if (missingElements.length > 0) {
             console.warn('⚠️ 不足DOM要素:', missingElements);
+            detailedInfo.DOM = `不足要素: ${missingElements.join(', ')}`;
+        } else {
+            console.log('✅ 必須DOM要素: 全て存在');
+            detailedInfo.DOM = '全必須要素存在';
         }
         
+        // 🔧 詳細情報ログ出力
+        console.log('🔍 依存関係詳細情報:', detailedInfo);
+        
         if (missing.length > 0) {
-            throw new Error(`必須依存関係不足: ${missing.join(', ')}`);
+            const errorMessage = `必須依存関係不足: ${missing.join(', ')}`;
+            const errorDetails = {
+                missing,
+                available,
+                detailedInfo,
+                missingElements,
+                availableElements
+            };
+            
+            console.error('💀 依存関係エラー詳細:', errorDetails);
+            throw new Error(errorMessage);
         }
         
         console.log('✅ 基本依存関係確認完了:', available);
         this.initializationSteps.push('basic-dependencies');
+        
+        return { available, missing, detailedInfo };
     }
     
     /**
@@ -245,46 +317,76 @@ class FutabaDrawingTool {
     }
     
     /**
-     * AppCore初期化（統一版）
+     * 🔧 AppCore初期化（統一版・強化版）
      */
     async initializeAppCore() {
-        console.log('🎯 AppCore統一初期化...');
+        console.log('🎯 AppCore統一初期化（強化版）...');
         
+        // 🔧 AppCore存在確認（詳細版）
         if (!window.AppCore) {
-            throw new Error('AppCore クラスが利用できません');
+            const errorMessage = 'AppCore クラスが利用できません';
+            const diagnosticInfo = {
+                windowAppCore: typeof window.AppCore,
+                globalCheck: Object.keys(window).filter(key => key.toLowerCase().includes('app')),
+                scriptTags: Array.from(document.scripts).map(script => ({
+                    src: script.src,
+                    readyState: script.readyState
+                })).filter(info => info.src.includes('app-core')),
+                timestamp: Date.now()
+            };
+            
+            console.error('💀 AppCore診断情報:', diagnosticInfo);
+            throw new Error(errorMessage);
         }
         
         try {
-            // AppCore作成
+            // AppCore作成（詳細ログ付き）
+            console.log('🔧 AppCore インスタンス作成中...');
             this.appCore = new window.AppCore();
-            console.log('✅ AppCore インスタンス作成');
+            console.log('✅ AppCore インスタンス作成成功');
             
-            // AppCore初期化実行
+            // AppCore初期化実行（詳細ログ付き）
+            console.log('🔧 AppCore 初期化実行中...');
             await this.appCore.initialize();
-            console.log('✅ AppCore 初期化完了');
+            console.log('✅ AppCore 初期化実行完了');
             
-            // 🚨 Task 1-A-1: StateManager経由での状態確認
+            // 🚨 Task 1-A-1: StateManager経由での状態確認（詳細版）
             const status = this.validateAppCoreStatus();
             if (!status.valid) {
-                throw new Error(`AppCore状態異常: ${status.issues.join(', ')}`);
+                const errorMessage = `AppCore状態異常: ${status.issues.join(', ')}`;
+                console.error('💀 AppCore状態確認失敗:', status);
+                throw new Error(errorMessage);
             }
             
-            console.log('✅ AppCore状態確認完了');
+            console.log('✅ AppCore状態確認完了:', status);
             this.initializationSteps.push('app-core');
             
         } catch (error) {
             console.error('💀 AppCore初期化エラー:', error);
             
-            // 🚨 Task 1-A-1: ErrorManager経由でのエラー情報提供
+            // 🚨 Task 1-A-1: ErrorManager経由でのエラー情報提供（詳細版）
             const errorInfo = {
                 message: error.message,
                 stack: error.stack,
                 appCoreExists: !!window.AppCore,
+                appCoreType: typeof window.AppCore,
                 pixiExists: !!window.PIXI,
-                canvasExists: !!document.getElementById('drawing-canvas')
+                pixiVersion: window.PIXI?.VERSION,
+                canvasExists: !!document.getElementById('drawing-canvas'),
+                canvasElement: document.getElementById('drawing-canvas'),
+                timestamp: Date.now(),
+                initializationSteps: this.initializationSteps
             };
             
             console.error('🔍 AppCore初期化エラー詳細:', errorInfo);
+            
+            // ErrorManager経由でのエラー表示
+            window.ErrorManager.showError('error', error.message, {
+                additionalInfo: `AppCore初期化失敗 - Step: ${this.initializationSteps.join(' → ')}`,
+                showReload: true,
+                showDebug: true
+            });
+            
             throw error;
         }
     }
@@ -308,7 +410,16 @@ class FutabaDrawingTool {
         
         return {
             valid: issues.length === 0,
-            issues
+            issues,
+            appCoreInfo: {
+                hasApp: !!this.appCore.app,
+                hasDrawingContainer: !!this.appCore.drawingContainer,
+                hasToolSystem: !!this.appCore.toolSystem,
+                hasUIController: !!this.appCore.uiController,
+                isInitializing: this.appCore.isInitializing,
+                initializationComplete: this.appCore.initializationComplete,
+                fallbackMode: this.appCore.fallbackMode
+            }
         };
     }
     
@@ -539,442 +650,4 @@ class FutabaDrawingTool {
                     version: this.version,
                     initTime,
                     components: this.getComponentStatus(),
-                    task: 'Task 1-A-1 完了'
-                });
-            }, 100);
-        }
-    }
-    
-    /**
-     * 🚨 Task 1-A-1: 初期化エラーハンドリング（ErrorManager統一版）
-     */
-    handleInitializationError(error) {
-        window.ErrorManager.showError('error', error, { 
-            showReload: true,
-            additionalInfo: `初期化ステップ: ${this.initializationSteps.join(' → ')}`
-        });
-    }
-    
-    /**
-     * 🚨 Task 1-A-1: キャンバスリサイズ適用（ConfigManager統合版）
-     */
-    applyCanvasResize(centerContent) {
-        const widthInput = document.getElementById('canvas-width');
-        const heightInput = document.getElementById('canvas-height');
-        
-        if (!widthInput || !heightInput || !this.appCore) {
-            window.ErrorManager.showError('warning', 'リサイズに必要な要素が見つかりません');
-            return;
-        }
-        
-        const width = parseInt(widthInput.value);
-        const height = parseInt(heightInput.value);
-        
-        // 🚨 Task 1-A-1: ConfigManager経由での妥当性確認
-        const canvasConfig = window.ConfigManager.getCanvasConfig();
-        const isValid = width >= canvasConfig.minWidth && 
-                       height >= canvasConfig.minHeight &&
-                       width <= canvasConfig.maxWidth &&
-                       height <= canvasConfig.maxHeight;
-        
-        if (!isValid) {
-            window.ErrorManager.showError('warning', 
-                `無効なキャンバスサイズ: ${width}×${height}px`);
-            return;
-        }
-        
-        try {
-            this.appCore.resize(width, height, centerContent);
-            this.updateCanvasInfo();
-            this.closeAllPopups();
-            
-            // EventBus経由でのイベント発行
-            if (window.EventBus) {
-                window.EventBus.safeEmit(window.EventBus.Events.CANVAS_RESIZED, {
-                    width, height, centerContent
-                });
-            }
-            
-            console.log(`✅ キャンバスリサイズ: ${width}×${height}px (中央寄せ: ${centerContent})`);
-            
-        } catch (error) {
-            window.ErrorManager.showError('error', 
-                `キャンバスリサイズ失敗: ${error.message}`);
-        }
-    }
-    
-    /**
-     * キャンバス情報更新
-     */
-    updateCanvasInfo() {
-        const canvasInfo = document.getElementById('canvas-info');
-        if (canvasInfo && this.appCore) {
-            canvasInfo.textContent = `${this.appCore.canvasWidth}×${this.appCore.canvasHeight}px`;
-        }
-    }
-    
-    /**
-     * ツール状態更新
-     */
-    updateToolStatus(tool) {
-        const currentToolElement = document.getElementById('current-tool');
-        if (!currentToolElement) return;
-        
-        const toolNames = {
-            pen: 'ベクターペン',
-            eraser: '消しゴム',
-            fill: '塗りつぶし',
-            select: '選択'
-        };
-        
-        currentToolElement.textContent = toolNames[tool] || tool;
-    }
-    
-    /**
-     * ペンツール選択（EventBus統合版）
-     */
-    selectPenTool() {
-        if (!this.appCore?.toolSystem) return;
-        
-        try {
-            this.appCore.toolSystem.setTool('pen');
-            
-            // UI更新
-            document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
-            const penButton = document.getElementById('pen-tool');
-            if (penButton) penButton.classList.add('active');
-            
-            this.updateToolStatus('pen');
-            
-            // EventBus経由でのイベント発行
-            if (window.EventBus && !this.isInitializing) {
-                window.EventBus.safeEmit(window.EventBus.Events.TOOL_CHANGED, { tool: 'pen' });
-            }
-            
-            console.log('🖊️ ペンツール選択');
-        } catch (error) {
-            console.error('💀 ペンツール選択エラー:', error);
-        }
-    }
-    
-    /**
-     * 消しゴムツール選択（EventBus統合版）
-     */
-    selectEraserTool() {
-        if (!this.appCore?.toolSystem) return;
-        
-        try {
-            this.appCore.toolSystem.setTool('eraser');
-            
-            // UI更新
-            document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
-            const eraserButton = document.getElementById('eraser-tool');
-            if (eraserButton) eraserButton.classList.add('active');
-            
-            this.updateToolStatus('eraser');
-            
-            // EventBus経由でのイベント発行
-            if (window.EventBus && !this.isInitializing) {
-                window.EventBus.safeEmit(window.EventBus.Events.TOOL_CHANGED, { tool: 'eraser' });
-            }
-            
-            console.log('🧽 消しゴムツール選択');
-        } catch (error) {
-            console.error('💀 消しゴムツール選択エラー:', error);
-        }
-    }
-    
-    /**
-     * 全ポップアップ閉じる（統一版）
-     */
-    closeAllPopups() {
-        try {
-            if (this.appCore?.uiController) {
-                this.appCore.uiController.closeAllPopups();
-            } else {
-                // フォールバック
-                document.querySelectorAll('.popup-panel').forEach(popup => {
-                    popup.classList.remove('show');
-                });
-            }
-            
-            // EventBus経由でのイベント発行
-            if (window.EventBus && !this.isInitializing) {
-                window.EventBus.safeEmit(window.EventBus.Events.POPUP_CLOSED, { all: true });
-            }
-            
-            console.log('🔒 全ポップアップ閉じる');
-        } catch (error) {
-            console.error('💀 ポップアップクローズエラー:', error);
-        }
-    }
-    
-    /**
-     * フォールバック初期化（ConfigManager統合版）
-     */
-    async attemptFallbackInitialization(originalError) {
-        console.log('🛡️ フォールバック初期化試行（統合版）...');
-        
-        try {
-            // 🚨 Task 1-A-1: ConfigManager経由での最小限設定取得
-            const canvasConfig = window.ConfigManager.getCanvasConfig();
-            
-            const app = new PIXI.Application({
-                width: canvasConfig.width,
-                height: canvasConfig.height,
-                backgroundColor: canvasConfig.backgroundColor,
-                antialias: true
-            });
-            
-            const canvasContainer = document.getElementById('drawing-canvas');
-            if (canvasContainer) {
-                canvasContainer.appendChild(app.view);
-            }
-            
-            console.log('✅ フォールバック初期化完了');
-            
-            // 🚨 Task 1-A-1: ErrorManager経由での回復メッセージ表示
-            window.ErrorManager.showError('recovery', 
-                '基本描画機能は利用可能です。一部の高度な機能が制限されています。');
-            
-        } catch (fallbackError) {
-            console.error('💀 フォールバック初期化も失敗:', fallbackError);
-            
-            // 最終フォールバック：ErrorManager経由での致命的エラー表示
-            if (window.ErrorManager) {
-                window.ErrorManager.showCriticalError(originalError.message, {
-                    additionalInfo: fallbackError.message,
-                    showDebug: true
-                });
-            } else {
-                this.displayEmergencyError(originalError, fallbackError);
-            }
-        }
-    }
-    
-    /**
-     * 緊急エラー表示（ErrorManager未使用版）
-     * @param {Error} originalError - 元のエラー
-     * @param {Error} fallbackError - フォールバックエラー
-     */
-    displayEmergencyError(originalError, fallbackError) {
-        document.body.innerHTML = `
-            <div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#ffffee;font-family:system-ui,sans-serif;">
-                <div style="text-align:center;color:#800000;background:#f0e0d6;padding:32px;border:3px solid #cf9c97;border-radius:16px;max-width:500px;">
-                    <h2 style="margin:0 0 16px 0;">🎨 ふたば☆お絵描きツール</h2>
-                    <p style="margin:0 0 16px 0;">Task 1-A-1統一システムの初期化に失敗しました。</p>
-                    <details style="margin:16px 0;text-align:left;">
-                        <summary style="cursor:pointer;font-weight:600;">エラー詳細</summary>
-                        <div style="background:#ffffee;padding:12px;border-radius:8px;margin:8px 0;font-family:monospace;font-size:12px;">
-                            <div><strong>初期化エラー:</strong> ${originalError.message}</div>
-                            <div><strong>フォールバックエラー:</strong> ${fallbackError.message}</div>
-                            <div><strong>時刻:</strong> ${new Date().toLocaleString()}</div>
-                            <div><strong>Task:</strong> 1-A-1 統一システム完全統合</div>
-                        </div>
-                    </details>
-                    <button onclick="location.reload()" 
-                            style="background:#800000;color:white;border:none;padding:12px 24px;border-radius:8px;cursor:pointer;font-weight:600;">
-                        🔄 再読み込み
-                    </button>
-                </div>
-            </div>
-        `;
-    }
-    
-    /**
-     * 🚨 Task 1-A-1: 初期化サマリー表示（StateManager統合版）
-     */
-    displayInitializationSummary() {
-        console.log('📋 統一初期化サマリー（Task 1-A-1）:');
-        console.log(`  ✅ 完了ステップ: ${this.initializationSteps.join(' → ')}`);
-        console.log(`  ⏱️ 初期化時間: ${(performance.now() - this.startTime).toFixed(2)}ms`);
-        
-        // 統一システム状態（StateManager経由で取得可能）
-        const applicationState = window.StateManager.getApplicationState();
-        console.log('  🔧 統一システム状態:', applicationState.config);
-        
-        // AppCore状態
-        if (this.appCore) {
-            const appCoreStatus = this.validateAppCoreStatus();
-            console.log('  🎨 AppCore状態:', appCoreStatus.valid ? '正常' : `異常: ${appCoreStatus.issues.join(', ')}`);
-        }
-        
-        // EventBus統計
-        if (window.EventBus) {
-            console.log('  📡 EventBus:', window.EventBus.getStats());
-        }
-        
-        // エラー状況（ErrorManager経由）
-        const errorStats = window.ErrorManager.getErrorStats();
-        if (errorStats.total > 0) {
-            console.log(`  ⚠️ エラー: ${errorStats.total}件`);
-        }
-        
-        console.log('  🎯 Task 1-A-1: 統一システム完全統合・DRY・SOLID原則準拠完了');
-    }
-    
-    /**
-     * 🚨 Task 1-A-1: コンポーネント状態取得（統一版）
-     */
-    getComponentStatus() {
-        return {
-            // 統一システム状態
-            configManager: !!window.ConfigManager,
-            errorManager: !!window.ErrorManager,
-            stateManager: !!window.StateManager,
-            eventBus: !!window.EventBus,
-            
-            // アプリケーション状態
-            appCore: !!this.appCore,
-            pixiExtensions: !!window.PixiExtensions,
-            initialized: this.isInitialized,
-            isInitializing: this.isInitializing,
-            
-            // Task 1-A-1 固有情報
-            task: 'Task 1-A-1',
-            unifiedSystemsIntegrated: true,
-            dryPrincipleCompliant: true,
-            solidPrincipleCompliant: true,
-            legacyFunctionsMigrated: true
-        };
-    }
-    
-    /**
-     * 🚨 Task 1-A-1: アプリケーション状態取得（StateManager統合版）
-     */
-    getAppState() {
-        // StateManager が利用可能な場合は統一状態を返す
-        if (window.StateManager) {
-            return window.StateManager.getApplicationState();
-        }
-        
-        // フォールバック状態（互換性維持）
-        return {
-            version: this.version,
-            task: 'Task 1-A-1',
-            isInitialized: this.isInitialized,
-            isInitializing: this.isInitializing,
-            initializationSteps: this.initializationSteps,
-            components: this.getComponentStatus(),
-            performance: {
-                initTime: performance.now() - this.startTime
-            },
-            unifiedSystems: {
-                integrated: true,
-                dryCompliant: true,
-                solidCompliant: true
-            }
-        };
-    }
-    
-    /**
-     * 🚨 Task 1-A-1: デバッグモード開始（統一システム統合版）
-     */
-    startDebugMode() {
-        console.log('🔍 統一デバッグモード開始（Task 1-A-1 統合版）');
-        
-        try {
-            // 各統一システムのデバッグ情報表示
-            const debugInfo = {
-                task: 'Task 1-A-1',
-                version: this.version
-            };
-            
-            if (window.ConfigManager) {
-                debugInfo.config = window.ConfigManager.getDebugInfo();
-                console.log('ConfigManager:', debugInfo.config);
-            }
-            
-            if (window.ErrorManager) {
-                debugInfo.errors = window.ErrorManager.getErrorStats();
-                window.ErrorManager.showDebugInfo();
-            }
-            
-            if (window.StateManager) {
-                debugInfo.state = window.StateManager.healthCheck();
-                console.log('StateManager:', debugInfo.state);
-            }
-            
-            if (window.EventBus) {
-                debugInfo.events = window.EventBus.getStats();
-                window.EventBus.debug();
-            }
-            
-            debugInfo.app = this.getAppState();
-            console.log('AppState:', debugInfo.app);
-            
-            // Task 1-A-1 統合状況レポート
-            console.log('🎯 Task 1-A-1 統合状況:');
-            console.log('  ✅ 統一システム依存性確認: 完了');
-            console.log('  ✅ 設定値ConfigManager統合: 完了');
-            console.log('  ✅ エラー処理ErrorManager統一: 完了');
-            console.log('  ✅ 状態管理StateManager統一: 完了');
-            console.log('  ✅ 旧関数の統一システム移譲: 完了');
-            console.log('  ✅ DRY原則準拠: 完了');
-            console.log('  ✅ SOLID原則準拠: 完了');
-            
-            return debugInfo;
-            
-        } catch (error) {
-            console.error('💀 デバッグモード開始エラー:', error);
-            return { error: error.message, task: 'Task 1-A-1' };
-        }
-    }
-}
-
-/**
- * 🚨 Task 1-A-1: 統一アプリケーション起動（完全統合版）
- */
-window.addEventListener('DOMContentLoaded', async () => {
-    try {
-        console.log('🎨 ふたば☆ちゃんねる風ベクターお絵描きツール');
-        console.log('🔧 Task 1-A-1: 統一システム完全統合版');
-        console.log('📋 統一システム: ConfigManager + ErrorManager + StateManager + EventBus');
-        console.log('🎯 設計原則: DRY・SOLID原則完全準拠');
-        console.log('🚀 統一アプリケーション起動開始...');
-        
-        const app = new FutabaDrawingTool();
-        await app.initialize();
-        
-        console.log('🎉 Task 1-A-1 統一アプリケーション起動完了！');
-        console.log('💡 操作方法:');
-        console.log('  - キャンバス上でドラッグして描画');
-        console.log('  - P キー: ペンツール / E キー: 消しゴム / Escape: ポップアップ閉じる');
-        console.log('🔍 デバッグ: window.startDebugMode() で統一システム詳細情報表示');
-        console.log('📊 状態確認: window.StateManager.getApplicationState() で全状態取得');
-        console.log('⚙️ 設定確認: window.ConfigManager.getDebugInfo() で設定情報表示');
-        console.log('🚨 エラー確認: window.ErrorManager.getErrorStats() でエラー統計表示');
-        console.log('📡 イベント確認: window.EventBus.getStats() でイベント統計表示');
-        
-    } catch (error) {
-        console.error('💀 Task 1-A-1 統一アプリケーション起動失敗:', error);
-        
-        // ErrorManager が利用可能な場合は統一エラー処理
-        if (window.ErrorManager) {
-            window.ErrorManager.showCriticalError(error.message, {
-                showDebug: true,
-                additionalInfo: 'Task 1-A-1 メインアプリケーション起動時のエラー'
-            });
-        } else {
-            // ErrorManager未初期化時のフォールバック表示
-            document.body.innerHTML = `
-                <div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#ffffee;font-family:system-ui,sans-serif;">
-                    <div style="text-align:center;color:#800000;background:#f0e0d6;padding:32px;border:3px solid #cf9c97;border-radius:16px;max-width:500px;">
-                        <h2 style="margin:0 0 16px 0;">🎨 ふたば☆お絵描きツール</h2>
-                        <p style="margin:0 0 16px 0;">Task 1-A-1 統一システムの初期化に失敗しました。</p>
-                        <div style="background:#ffffee;padding:12px;border-radius:8px;margin:16px 0;font-family:monospace;font-size:12px;text-align:left;">
-                            <strong>エラー:</strong> ${error.message}<br>
-                            <strong>時刻:</strong> ${new Date().toLocaleString()}<br>
-                            <strong>Task:</strong> 1-A-1 統一システム完全統合<br>
-                            <strong>バージョン:</strong> v1.0-Phase1-Unified-Task1A1
-                        </div>
-                        <button onclick="location.reload()" 
-                                style="background:#800000;color:white;border:none;padding:12px 24px;border-radius:8px;cursor:pointer;font-weight:600;">
-                            🔄 再読み込み
-                        </button>
-                    </div>
-                </div>
-            `;
-        }
-    }
-});
+                    task: 'Task 1-A-1 完了

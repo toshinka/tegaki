@@ -1,525 +1,5 @@
-/**
-     * 🚨 統一システム統合: ポップアップ切り替え（EventBus版）
-     */
-    togglePopup(popupId) {
-        const popup = document.getElementById(popupId);
-        if (!popup) {
-            console.warn(`⚠️ ポップアップ要素が見つかりません: ${popupId}`);
-            
-            // 🚨 統一システム統合: ErrorManager警告表示
-            window.ErrorManager.showError('warning', 
-                `ポップアップ要素が見つかりません: ${popupId}`, {
-                showDebug: false
-            });
-            return;
-        }
-        
-        // 他のポップアップを閉じる
-        if (this.activePopup && this.activePopup !== popup) {
-            this.activePopup.classList.remove('show');
-        }
-        
-        // 現在のポップアップの表示状態を切り替え
-        const isVisible = popup.classList.contains('show');
-        popup.classList.toggle('show', !isVisible);
-        
-        this.activePopup = isVisible ? null : popup;
-        
-        // 🚨 統一システム統合: EventBus経由でのポップアップ状態変更通知
-        window.EventBus.emit('ui.popupToggled', {
-            popupId,
-            visible: !isVisible,
-            timestamp: Date.now()
-        });
-        
-        console.log(`🪟 ポップアップ${isVisible ? '非表示' : '表示'}: ${popupId}`);
-    }
-
-    setupSliders() {
-        this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value) => {
-            if (this.toolSystem) {
-                this.toolSystem.setBrushSize(value);
-            }
-            this.updateSizePresets();
-            return value.toFixed(1) + 'px';
-        });
-        
-        this.createSlider('pen-opacity-slider', 0, 100, 85.0, (value) => {
-            if (this.toolSystem) {
-                this.toolSystem.setOpacity(value / 100);
-            }
-            this.updateSizePresets();
-            return value.toFixed(1) + '%';
-        });
-        
-        this.createSlider('pen-pressure-slider', 0, 100, 50.0, (value) => {
-            if (this.toolSystem) {
-                this.toolSystem.setPressure(value / 100);
-            }
-            return value.toFixed(1) + '%';
-        });
-        
-        this.createSlider('pen-smoothing-slider', 0, 100, 30.0, (value) => {
-            if (this.toolSystem) {
-                this.toolSystem.setSmoothing(value / 100);
-            }
-            return value.toFixed(1) + '%';
-        });
-        
-        this.setupSliderButtons();
-    }
-    
-    createSlider(sliderId, min, max, initial, callback) {
-        const container = document.getElementById(sliderId);
-        if (!container) {
-            console.warn(`⚠️ スライダー要素が見つかりません: ${sliderId}`);
-            return;
-        }
-        
-        const track = container.querySelector('.slider-track');
-        const handle = container.querySelector('.slider-handle');
-        const valueDisplay = container.parentNode.querySelector('.slider-value');
-        
-        if (!track || !handle || !valueDisplay) {
-            console.warn(`⚠️ スライダー部品が不完全: ${sliderId}`);
-            return;
-        }
-        
-        // 🚨 統一システム統合: ConfigManager経由でのスライダー設定取得
-        const sliderConfig = this.uiConfig.slider;
-        
-        const sliderData = {
-            value: initial,
-            min, max, callback,
-            track, handle, valueDisplay,
-            isDragging: false,
-            updateThrottle: sliderConfig.updateThrottle
-        };
-        
-        this.sliders.set(sliderId, sliderData);
-        
-        const updateSlider = (value) => {
-            sliderData.value = Math.max(min, Math.min(max, value));
-            const percentage = ((sliderData.value - min) / (max - min)) * 100;
-            
-            track.style.width = percentage + '%';
-            handle.style.left = percentage + '%';
-            valueDisplay.textContent = callback(sliderData.value);
-        };
-        
-        const getValueFromPosition = (clientX) => {
-            const rect = container.getBoundingClientRect();
-            const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-            return min + (percentage * (max - min));
-        };
-        
-        // マウスイベント設定
-        container.addEventListener('mousedown', (e) => {
-            sliderData.isDragging = true;
-            updateSlider(getValueFromPosition(e.clientX));
-            e.preventDefault();
-        });
-        
-        document.addEventListener('mousemove', (e) => {
-            if (sliderData.isDragging) {
-                updateSlider(getValueFromPosition(e.clientX));
-            }
-        });
-        
-        document.addEventListener('mouseup', () => {
-            sliderData.isDragging = false;
-        });
-        
-        // タッチイベント設定（モバイル対応）
-        container.addEventListener('touchstart', (e) => {
-            if (e.touches.length === 1) {
-                sliderData.isDragging = true;
-                updateSlider(getValueFromPosition(e.touches[0].clientX));
-                e.preventDefault();
-            }
-        });
-        
-        document.addEventListener('touchmove', (e) => {
-            if (sliderData.isDragging && e.touches.length === 1) {
-                updateSlider(getValueFromPosition(e.touches[0].clientX));
-                e.preventDefault();
-            }
-        });
-        
-        document.addEventListener('touchend', () => {
-            sliderData.isDragging = false;
-        });
-        
-        // 初期値設定
-        updateSlider(initial);
-        
-        console.log(`✅ スライダー設定完了: ${sliderId}`);
-    }
-    
-    setupSliderButtons() {
-        // 🚨 統一システム統合: ConfigManager経由でのスライダー精度設定取得
-        const precision = this.uiConfig.slider.precision;
-        
-        // スライダー調整ボタンの設定
-        const adjustValue = (sliderId, delta) => {
-            const slider = this.sliders.get(sliderId);
-            if (slider) {
-                const newValue = slider.value + delta;
-                const clampedValue = Math.max(slider.min, Math.min(slider.max, newValue));
-                slider.value = clampedValue;
-                
-                const percentage = ((clampedValue - slider.min) / (slider.max - slider.min)) * 100;
-                slider.track.style.width = percentage + '%';
-                slider.handle.style.left = percentage + '%';
-                slider.valueDisplay.textContent = slider.callback(clampedValue);
-            }
-        };
-        
-        // ペンサイズ調整ボタン
-        const sizeButtons = [
-            { id: 'pen-size-decrease-small', delta: -0.1 },
-            { id: 'pen-size-decrease', delta: -1 },
-            { id: 'pen-size-decrease-large', delta: -10 },
-            { id: 'pen-size-increase-small', delta: 0.1 },
-            { id: 'pen-size-increase', delta: 1 },
-            { id: 'pen-size-increase-large', delta: 10 }
-        ];
-        
-        sizeButtons.forEach(config => {
-            const button = document.getElementById(config.id);
-            if (button) {
-                button.addEventListener('click', () => {
-                    adjustValue('pen-size-slider', config.delta);
-                    this.updateSizePresets();
-                });
-            }
-        });
-        
-        // 不透明度調整ボタン
-        const opacityButtons = [
-            { id: 'pen-opacity-decrease-small', delta: -0.1 },
-            { id: 'pen-opacity-decrease', delta: -1 },
-            { id: 'pen-opacity-decrease-large', delta: -10 },
-            { id: 'pen-opacity-increase-small', delta: 0.1 },
-            { id: 'pen-opacity-increase', delta: 1 },
-            { id: 'pen-opacity-increase-large', delta: 10 }
-        ];
-        
-        opacityButtons.forEach(config => {
-            const button = document.getElementById(config.id);
-            if (button) {
-                button.addEventListener('click', () => {
-                    adjustValue('pen-opacity-slider', config.delta);
-                    this.updateSizePresets();
-                });
-            }
-        });
-    }
-    
-    setupPresets() {
-        document.querySelectorAll('.size-preset-item').forEach(preset => {
-            preset.addEventListener('click', () => {
-                const size = parseFloat(preset.getAttribute('data-size'));
-                if (!isNaN(size) && this.toolSystem) {
-                    this.toolSystem.setBrushSize(size);
-                    this.updateSliderValue('pen-size-slider', size);
-                    this.updateSizePresets();
-                }
-            });
-        });
-    }
-    
-    setupResize() {
-        document.querySelectorAll('.resize-button[data-size]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const sizeData = btn.getAttribute('data-size');
-                if (sizeData) {
-                    const [width, height] = sizeData.split(',').map(Number);
-                    const widthInput = document.getElementById('canvas-width');
-                    const heightInput = document.getElementById('canvas-height');
-                    if (widthInput && heightInput && !isNaN(width) && !isNaN(height)) {
-                        widthInput.value = width;
-                        heightInput.value = height;
-                    }
-                }
-            });
-        });
-    }
-    
-    setupCheckboxes() {
-        document.querySelectorAll('.checkbox').forEach(checkbox => {
-            checkbox.addEventListener('click', () => {
-                checkbox.classList.toggle('checked');
-            });
-        });
-    }
-    
-    updateSliderValue(sliderId, value) {
-        const slider = this.sliders.get(sliderId);
-        if (slider) {
-            slider.value = value;
-            const percentage = ((value - slider.min) / (slider.max - slider.min)) * 100;
-            slider.track.style.width = percentage + '%';
-            slider.handle.style.left = percentage + '%';
-            slider.valueDisplay.textContent = slider.callback(value);
-        }
-    }
-    
-    updateSizePresets() {
-        if (!this.toolSystem) return;
-        
-        const currentSize = this.toolSystem.brushSize;
-        const currentOpacity = Math.round(this.toolSystem.opacity * 100);
-        
-        document.querySelectorAll('.size-preset-item').forEach(preset => {
-            const presetSize = parseFloat(preset.getAttribute('data-size'));
-            if (isNaN(presetSize)) return;
-            
-            const circle = preset.querySelector('.size-preview-circle');
-            const label = preset.querySelector('.size-preview-label');
-            const percent = preset.querySelector('.size-preview-percent');
-            
-            if (!circle || !label || !percent) return;
-            
-            // アクティブ状態の更新
-            const isActive = Math.abs(presetSize - currentSize) < 0.1;
-            preset.classList.toggle('active', isActive);
-            
-            // 円のサイズ更新
-            let circleSize;
-            if (isActive) {
-                circleSize = Math.max(0.5, Math.min(20, (currentSize / 100) * 19.5 + 0.5));
-            } else {
-                circleSize = Math.max(0.5, Math.min(20, (presetSize / 100) * 19.5 + 0.5));
-            }
-            
-            circle.style.width = circleSize + 'px';
-            circle.style.height = circleSize + 'px';
-            circle.style.opacity = this.toolSystem.opacity;
-            
-            // ラベル更新
-            if (isActive) {
-                label.textContent = currentSize.toFixed(1);
-            } else {
-                label.textContent = presetSize.toString();
-            }
-            
-            percent.textContent = currentOpacity + '%';
-        });
-    }
-    
-    closeAllPopups() {
-        document.querySelectorAll('.popup-panel').forEach(popup => {
-            popup.classList.remove('show');
-        });
-        this.activePopup = null;
-        
-        // 🚨 統一システム統合: EventBus経由でのポップアップ全閉じ通知
-        window.EventBus.emit('ui.allPopupsClosed', {
-            timestamp: Date.now()
-        });
-        
-        console.log('🔒 全ポップアップ閉じる（統一システム版）');
-    }
-}
-
-/**
- * 🚨 統一システム統合: 最小限UIコントローラー（統一システム版）
- */
-class MinimalUIController {
-    constructor(toolSystem) {
-        this.toolSystem = toolSystem;
-        this.activePopup = null;
-        console.log('🛡️ MinimalUIController 初期化完了（統一システム統合版）');
-    }
-    
-    initialize() {
-        console.log('🛡️ 最小限UI制御初期化中（統一システム版）...');
-        
-        try {
-            // 最低限のツールボタン設定のみ
-            document.querySelectorAll('.tool-button').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    if (btn.id === 'pen-tool' && this.toolSystem) {
-                        this.toolSystem.setTool('pen');
-                        this.updateToolStatus('pen');
-                    } else if (btn.id === 'eraser-tool' && this.toolSystem) {
-                        this.toolSystem.setTool('eraser');
-                        this.updateToolStatus('eraser');
-                    }
-                });
-            });
-            
-            console.log('✅ 最小限UI制御初期化完了（統一システム版）');
-            
-        } catch (error) {
-            console.error('💀 最小限UI制御初期化エラー:', error);
-            
-            // 🚨 統一システム統合: ErrorManager警告表示
-            window.ErrorManager.showError('warning', 
-                `最小限UI制御初期化に失敗しました: ${error.message}`, {
-                showDebug: false
-            });
-        }
-    }
-    
-    updateToolStatus(tool) {
-        // ツールボタンのアクティブ状態更新
-        document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
-        const toolButton = document.getElementById(tool + '-tool');
-        if (toolButton) {
-            toolButton.classList.add('active');
-        }
-        
-        // ツール名表示更新
-        const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
-        const currentToolElement = document.getElementById('current-tool');
-        if (currentToolElement) {
-            currentToolElement.textContent = toolNames[tool] || tool;
-        }
-        
-        // 🚨 統一システム統合: EventBus経由でのツール状態更新通知
-        window.EventBus.emit('ui.toolStatusUpdated', {
-            tool,
-            timestamp: Date.now()
-        });
-    }
-    
-    closeAllPopups() {
-        document.querySelectorAll('.popup-panel').forEach(popup => {
-            popup.classList.remove('show');
-        });
-        this.activePopup = null;
-        console.log('🔒 全ポップアップ閉じる（最小限・統一システム版）');
-    }
-}
-
-/**
- * 🚨 統一システム統合: パフォーマンス監視システム（ConfigManager版）
- */
-class PerformanceMonitor {
-    constructor(performanceConfig = null) {
-        // 🚨 統一システム統合: ConfigManager経由での設定取得
-        this.config = performanceConfig || window.ConfigManager.getPerformanceConfig();
-        
-        this.frameCount = 0;
-        this.lastTime = performance.now();
-        this.isRunning = false;
-        this.metrics = {
-            currentFPS: 0,
-            averageFPS: 0,
-            minFPS: Infinity,
-            maxFPS: 0,
-            frameCount: 0
-        };
-        this.updateCallbacks = new Set();
-    }
-    
-    start() {
-        if (this.isRunning) return;
-        
-        console.log('📊 パフォーマンス監視開始（統一システム統合版）');
-        this.isRunning = true;
-        
-        const update = () => {
-            if (!this.isRunning) return;
-            
-            this.frameCount++;
-            this.metrics.frameCount++;
-            const currentTime = performance.now();
-            
-            // 🚨 統一システム統合: ConfigManager経由での更新間隔取得
-            if (currentTime - this.lastTime >= this.config.updateInterval) {
-                const fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastTime));
-                
-                this.metrics.currentFPS = fps;
-                this.metrics.averageFPS = Math.round((this.metrics.averageFPS + fps) / 2);
-                this.metrics.minFPS = Math.min(this.metrics.minFPS, fps);
-                this.metrics.maxFPS = Math.max(this.metrics.maxFPS, fps);
-                
-                // FPS表示更新
-                const fpsElement = document.getElementById('fps');
-                if (fpsElement) {
-                    fpsElement.textContent = fps;
-                }
-                
-                // 🚨 統一システム統合: ConfigManager経由での目標FPS取得
-                if (fps < this.config.targetFPS / 2) {
-                    console.warn(`⚠️ 低FPS検出: ${fps}fps (目標: ${this.config.targetFPS}fps)`);
-                }
-                
-                // 🚨 統一システム統合: EventBus経由でのFPS更新通知
-                window.EventBus.emit('performance.fpsUpdated', {
-                    fps,
-                    averageFPS: this.metrics.averageFPS,
-                    timestamp: Date.now()
-                });
-                
-                // 更新コールバック実行
-                this.updateCallbacks.forEach(callback => {
-                    try {
-                        callback(this.metrics);
-                    } catch (error) {
-                        console.error('パフォーマンス監視コールバックエラー:', error);
-                    }
-                });
-                
-                this.frameCount = 0;
-                this.lastTime = currentTime;
-            }
-            
-            requestAnimationFrame(update);
-        };
-        
-        update();
-    }
-    
-    stop() {
-        console.log('📊 パフォーマンス監視停止（統一システム版）');
-        this.isRunning = false;
-        
-        // 🚨 統一システム統合: EventBus経由での監視停止通知
-        window.EventBus.emit('performance.monitoringStopped', {
-            finalMetrics: this.metrics,
-            timestamp: Date.now()
-        });
-    }
-    
-    getStats() {
-        return {
-            isRunning: this.isRunning,
-            metrics: { ...this.metrics },
-            config: { ...this.config },
-            lastTime: this.lastTime,
-            frameCount: this.frameCount,
-            updateCallbacks: this.updateCallbacks.size
-        };
-    }
-    
-    addUpdateCallback(callback) {
-        this.updateCallbacks.add(callback);
-    }
-    
-    removeUpdateCallback(callback) {
-        this.updateCallbacks.delete(callback);
-    }
-}
-
-// グローバル登録
-if (typeof window !== 'undefined') {
-    window.AppCore = AppCore;
-    window.DrawingToolSystem = DrawingToolSystem;
-    window.SimpleFallbackToolSystem = SimpleFallbackToolSystem;
-    window.UIController = UIController;
-    window.MinimalUIController = MinimalUIController;
-    window.PerformanceMonitor = PerformanceMonitor;
-    
-    console.log('🎨 AppCore関連クラス グローバル登録完了（統一システム統合版）');
-    console.log('🛡️ フォールバック機能・循環参照防止機能追加済み');
-    console.log('🚨 統一システム統合完了: ConfigManager・ErrorManager・EventBus統合済み');
-    console.log('✅ Task 1-A-2完了: StateManager.set削除・内部状態管理移行完了');
-}/**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0（統一システム統合版）
+/** 
+* 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0（統一システム統合版）
  * 🎯 アプリケーションコア（Task 1-A-2完了版）
  * 
  * 🚨 統一システム統合内容:
@@ -539,6 +19,7 @@ if (typeof window !== 'undefined') {
  * 📋 PHASE_TARGET: Phase1
  * 📋 V8_MIGRATION: Application・Graphics・Container API変更対応予定
  * 📋 PERFORMANCE_TARGET: 60FPS安定描画・3秒以内初期化
+ * 🔧 FIX: 構文エラー修正・クラス構造修正・統一システム統合改善
  */
 
 class AppCore {
@@ -584,14 +65,14 @@ class AppCore {
             { name: 'EventBus', instance: window.EventBus }
         ];
         
-        const missingeSystems = requiredSystems.filter(sys => !sys.instance);
+        const missingSystems = requiredSystems.filter(sys => !sys.instance);
         
-        if (missingeSystems.length > 0) {
-            const missingNames = missingeSystems.map(sys => sys.name).join(', ');
+        if (missingSystems.length > 0) {
+            const missingNames = missingSystems.map(sys => sys.name).join(', ');
             console.error(`💀 統一システム依存性エラー: ${missingNames} が利用できません`);
             
             // フォールバック用の最低限システム作成
-            this.createFallbackSystems(missingeSystems);
+            this.createFallbackSystems(missingSystems);
         } else {
             console.log('✅ 統一システム依存性確認完了');
         }
@@ -692,7 +173,7 @@ class AppCore {
             this.initializationComplete = true;
             
             // 🚨 統一システム統合: EventBus経由での初期化完了通知
-            window.EventBus.emit('appCore.initialized', {
+            window.EventBus.safeEmit('appCore.initialized', {
                 success: true,
                 components: this.getInitializationStats()
             });
@@ -715,7 +196,7 @@ class AppCore {
             this.lastError = error.message;
             
             // 🚨 統一システム統合: EventBus経由での初期化失敗通知
-            window.EventBus.emit('appCore.initializationFailed', {
+            window.EventBus.safeEmit('appCore.initializationFailed', {
                 error: error.message,
                 stack: error.stack
             });
@@ -905,6 +386,7 @@ class AppCore {
             
             // 最小限のUIコントローラー作成
             this.uiController = new MinimalUIController(this.toolSystem);
+            this.uiController.initialize();
             
             // 🚨 統一システム統合: 縮退UI状態記録
             this.uiControllerInitialized = true;
@@ -933,7 +415,7 @@ class AppCore {
         document.addEventListener('keydown', (e) => {
             if (keyboardShortcuts[e.code]) {
                 const action = keyboardShortcuts[e.code];
-                window.EventBus.emit('keyboard.shortcut', { action, key: e.code });
+                window.EventBus.safeEmit('keyboard.shortcut', { action, key: e.code });
             }
         });
         
@@ -1134,7 +616,7 @@ class AppCore {
             });
             
             // 🚨 統一システム統合: EventBus経由でのフォールバック通知
-            window.EventBus.emit('appCore.fallbackMode', {
+            window.EventBus.safeEmit('appCore.fallbackMode', {
                 reason: error.message,
                 fallbackSystems: ['SimpleFallbackToolSystem']
             });
@@ -1162,7 +644,7 @@ class AppCore {
         
         // 🚨 統一システム統合: EventBus経由でのイベント発行（安全版）
         if (this.initializationComplete) {
-            window.EventBus.emit('drawing.started', {
+            window.EventBus.safeEmit('drawing.started', {
                 x: point.x,
                 y: point.y,
                 tool: this.toolSystem.currentTool,
@@ -1190,7 +672,7 @@ class AppCore {
         
         // 🚨 統一システム統合: EventBus経由でのイベント発行（描画中のみ）
         if (this.initializationComplete && this.toolSystem.isDrawing) {
-            window.EventBus.emit('drawing.continued', {
+            window.EventBus.safeEmit('drawing.continued', {
                 x: point.x,
                 y: point.y,
                 timestamp: Date.now()
@@ -1213,7 +695,7 @@ class AppCore {
         
         // 🚨 統一システム統合: EventBus経由でのイベント発行（安全版）
         if (this.initializationComplete) {
-            window.EventBus.emit('drawing.ended', {
+            window.EventBus.safeEmit('drawing.ended', {
                 pathCount: this.paths.length,
                 timestamp: Date.now()
             });
@@ -1233,7 +715,7 @@ class AppCore {
         
         // 🚨 統一システム統合: EventBus経由でのリサイズ通知
         if (this.initializationComplete) {
-            window.EventBus.emit('window.resized', {
+            window.EventBus.safeEmit('window.resized', {
                 timestamp: Date.now()
             });
         }
@@ -1315,7 +797,7 @@ class AppCore {
         
         // 🚨 統一システム統合: EventBus経由でのイベント発行（安全版）
         if (this.initializationComplete) {
-            window.EventBus.emit('canvas.resized', {
+            window.EventBus.safeEmit('canvas.resized', {
                 width: validWidth,
                 height: validHeight,
                 previousWidth: oldWidth,
@@ -1354,7 +836,7 @@ class AppCore {
             console.log('🖊️ ペンツールでキャンバス上をドラッグして描画テスト可能');
             
             // 🚨 統一システム統合: EventBus経由での成功通知
-            window.EventBus.emit('canvas.displaySuccess', {
+            window.EventBus.safeEmit('canvas.displaySuccess', {
                 width: this.canvasWidth,
                 height: this.canvasHeight,
                 unifiedSystems: this.verifyUnifiedSystems()
@@ -1363,218 +845,376 @@ class AppCore {
     }
 }
 
+setupSliderButtons() {
+        // 🚨 統一システム統合: ConfigManager経由でのスライダー精度設定取得
+        const precision = this.uiConfig.slider.precision;
+        
+        // スライダー調整ボタンの設定
+        const adjustValue = (sliderId, delta) => {
+            const slider = this.sliders.get(sliderId);
+            if (slider) {
+                const newValue = slider.value + delta;
+                const clampedValue = Math.max(slider.min, Math.min(slider.max, newValue));
+                slider.value = clampedValue;
+                
+                const percentage = ((clampedValue - slider.min) / (slider.max - slider.min)) * 100;
+                slider.track.style.width = percentage + '%';
+                slider.handle.style.left = percentage + '%';
+                slider.valueDisplay.textContent = slider.callback(clampedValue);
+            }
+        };
+        
+        // ペンサイズ調整ボタン
+        const sizeButtons = [
+            { id: 'pen-size-decrease-small', delta: -0.1 },
+            { id: 'pen-size-decrease', delta: -1 },
+            { id: 'pen-size-decrease-large', delta: -10 },
+            { id: 'pen-size-increase-small', delta: 0.1 },
+            { id: 'pen-size-increase', delta: 1 },
+            { id: 'pen-size-increase-large', delta: 10 }
+        ];
+        
+        sizeButtons.forEach(config => {
+            const button = document.getElementById(config.id);
+            if (button) {
+                button.addEventListener('click', () => {
+                    adjustValue('pen-size-slider', config.delta);
+                    this.updateSizePresets();
+                });
+            }
+        });
+        
+        // 不透明度調整ボタン
+        const opacityButtons = [
+            { id: 'pen-opacity-decrease-small', delta: -0.1 },
+            { id: 'pen-opacity-decrease', delta: -1 },
+            { id: 'pen-opacity-decrease-large', delta: -10 },
+            { id: 'pen-opacity-increase-small', delta: 0.1 },
+            { id: 'pen-opacity-increase', delta: 1 },
+            { id: 'pen-opacity-increase-large', delta: 10 }
+        ];
+        
+        opacityButtons.forEach(config => {
+            const button = document.getElementById(config.id);
+            if (button) {
+                button.addEventListener('click', () => {
+                    adjustValue('pen-opacity-slider', config.delta);
+                    this.updateSizePresets();
+                });
+            }
+        });
+    }
+    
+    setupPresets() {
+        document.querySelectorAll('.size-preset-item').forEach(preset => {
+            preset.addEventListener('click', () => {
+                const size = parseFloat(preset.getAttribute('data-size'));
+                if (!isNaN(size) && this.toolSystem) {
+                    this.toolSystem.setBrushSize(size);
+                    this.updateSliderValue('pen-size-slider', size);
+                    this.updateSizePresets();
+                }
+            });
+        });
+    }
+    
+    setupResize() {
+        document.querySelectorAll('.resize-button[data-size]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const sizeData = btn.getAttribute('data-size');
+                if (sizeData) {
+                    const [width, height] = sizeData.split(',').map(Number);
+                    const widthInput = document.getElementById('canvas-width');
+                    const heightInput = document.getElementById('canvas-height');
+                    if (widthInput && heightInput && !isNaN(width) && !isNaN(height)) {
+                        widthInput.value = width;
+                        heightInput.value = height;
+                    }
+                }
+            });
+        });
+    }
+    
+    setupCheckboxes() {
+        document.querySelectorAll('.checkbox').forEach(checkbox => {
+            checkbox.addEventListener('click', () => {
+                checkbox.classList.toggle('checked');
+            });
+        });
+    }
+    
+    updateSliderValue(sliderId, value) {
+        const slider = this.sliders.get(sliderId);
+        if (slider) {
+            slider.value = value;
+            const percentage = ((value - slider.min) / (slider.max - slider.min)) * 100;
+            slider.track.style.width = percentage + '%';
+            slider.handle.style.left = percentage + '%';
+            slider.valueDisplay.textContent = slider.callback(value);
+        }
+    }
+    
+    updateSizePresets() {
+        if (!this.toolSystem) return;
+        
+        const currentSize = this.toolSystem.brushSize;
+        const currentOpacity = Math.round(this.toolSystem.opacity * 100);
+        
+        document.querySelectorAll('.size-preset-item').forEach(preset => {
+            const presetSize = parseFloat(preset.getAttribute('data-size'));
+            if (isNaN(presetSize)) return;
+            
+            const circle = preset.querySelector('.size-preview-circle');
+            const label = preset.querySelector('.size-preview-label');
+            const percent = preset.querySelector('.size-preview-percent');
+            
+            if (!circle || !label || !percent) return;
+            
+            // アクティブ状態の更新
+            const isActive = Math.abs(presetSize - currentSize) < 0.1;
+            preset.classList.toggle('active', isActive);
+            
+            // 円のサイズ更新
+            let circleSize;
+            if (isActive) {
+                circleSize = Math.max(0.5, Math.min(20, (currentSize / 100) * 19.5 + 0.5));
+            } else {
+                circleSize = Math.max(0.5, Math.min(20, (presetSize / 100) * 19.5 + 0.5));
+            }
+            
+            circle.style.width = circleSize + 'px';
+            circle.style.height = circleSize + 'px';
+            circle.style.opacity = this.toolSystem.opacity;
+            
+            // ラベル更新
+            if (isActive) {
+                label.textContent = currentSize.toFixed(1);
+            } else {
+                label.textContent = presetSize.toString();
+            }
+            
+            percent.textContent = currentOpacity + '%';
+        });
+    }
+    
+    closeAllPopups() {
+        document.querySelectorAll('.popup-panel').forEach(popup => {
+            popup.classList.remove('show');
+        });
+        this.activePopup = null;
+        
+        // 🚨 統一システム統合: EventBus経由でのポップアップ全閉じ通知
+        window.EventBus.safeEmit('ui.allPopupsClosed', {
+            timestamp: Date.now()
+        });
+        
+        console.log('🔒 全ポップアップ閉じる（統一システム版）');
+    }
+}
+
 /**
+ * 🚨 統一システム統合: 最小限UIコントローラー（統一システム版）
+ */
+class MinimalUIController {
+    constructor(toolSystem) {
+        this.toolSystem = toolSystem;
+        this.activePopup = null;
+        console.log('🛡️ MinimalUIController 初期化完了（統一システム統合版）');
+    }
+    
+    initialize() {
+        console.log('🛡️ 最小限UI制御初期化中（統一システム版）...');
+        
+        try {
+            // 最低限のツールボタン設定のみ
+            document.querySelectorAll('.tool-button').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    if (btn.id === 'pen-tool' && this.toolSystem) {
+                        this.toolSystem.setTool('pen');
+                        this.updateToolStatus('pen');
+                    } else if (btn.id === 'eraser-tool' && this.toolSystem) {
+                        this.toolSystem.setTool('eraser');
+                        this.updateToolStatus('eraser');
+                    }
+                });
+            });
+            
+            console.log('✅ 最小限UI制御初期化完了（統一システム版）');
+            
+        } catch (error) {
+            console.error('💀 最小限UI制御初期化エラー:', error);
+            
+            // 🚨 統一システム統合: ErrorManager警告表示
+            window.ErrorManager.showError('warning', 
+                `最小限UI制御初期化に失敗しました: ${error.message}`, {
+                showDebug: false
+            });
+        }
+    }
+    
+    updateToolStatus(tool) {
+        // ツールボタンのアクティブ状態更新
+        document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
+        const toolButton = document.getElementById(tool + '-tool');
+        if (toolButton) {
+            toolButton.classList.add('active');
+        }
+        
+        // ツール名表示更新
+        const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
+        const currentToolElement = document.getElementById('current-tool');
+        if (currentToolElement) {
+            currentToolElement.textContent = toolNames[tool] || tool;
+        }
+        
+        // 🚨 統一システム統合: EventBus経由でのツール状態更新通知
+        window.EventBus.safeEmit('ui.toolStatusUpdated', {
+            tool,
+            timestamp: Date.now()
+        });
+    }
+    
+    closeAllPopups() {
+        document.querySelectorAll('.popup-panel').forEach(popup => {
+            popup.classList.remove('show');
+        });
+        this.activePopup = null;
+        console.log('🔒 全ポップアップ閉じる（最小限・統一システム版）');
+    }
+}
+
+/**
+ * 🚨 統一システム統合: パフォーマンス監視システム（ConfigManager版）
+ */
+class PerformanceMonitor {
+    constructor(performanceConfig = null) {
+        // 🚨 統一システム統合: ConfigManager経由での設定取得
+        this.config = performanceConfig || window.ConfigManager.getPerformanceConfig();
+        
+        this.frameCount = 0;
+        this.lastTime = performance.now();
+        this.isRunning = false;
+        this.metrics = {
+            currentFPS: 0,
+            averageFPS: 0,
+            minFPS: Infinity,
+            maxFPS: 0,
+            frameCount: 0
+        };
+        this.updateCallbacks = new Set();
+    }
+    
+    start() {
+        if (this.isRunning) return;
+        
+        console.log('📊 パフォーマンス監視開始（統一システム統合版）');
+        this.isRunning = true;
+        
+        const update = () => {
+            if (!this.isRunning) return;
+            
+            this.frameCount++;
+            this.metrics.frameCount++;
+            const currentTime = performance.now();
+            
+            // 🚨 統一システム統合: ConfigManager経由での更新間隔取得
+            if (currentTime - this.lastTime >= this.config.updateInterval) {
+                const fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastTime));
+                
+                this.metrics.currentFPS = fps;
+                this.metrics.averageFPS = Math.round((this.metrics.averageFPS + fps) / 2);
+                this.metrics.minFPS = Math.min(this.metrics.minFPS, fps);
+                this.metrics.maxFPS = Math.max(this.metrics.maxFPS, fps);
+                
+                // FPS表示更新
+                const fpsElement = document.getElementById('fps');
+                if (fpsElement) {
+                    fpsElement.textContent = fps;
+                }
+                
+                // 🚨 統一システム統合: ConfigManager経由での目標FPS取得
+                if (fps < this.config.targetFPS / 2) {
+                    console.warn(`⚠️ 低FPS検出: ${fps}fps (目標: ${this.config.targetFPS}fps)`);
+                }
+                
+                // 🚨 統一システム統合: EventBus経由でのFPS更新通知
+                window.EventBus.safeEmit('performance.fpsUpdated', {
+                    fps,
+                    averageFPS: this.metrics.averageFPS,
+                    timestamp: Date.now()
+                });
+                
+                // 更新コールバック実行
+                this.updateCallbacks.forEach(callback => {
+                    try {
+                        callback(this.metrics);
+                    } catch (error) {
+                        console.error('パフォーマンス監視コールバックエラー:', error);
+                    }
+                });
+                
+                this.frameCount = 0;
+                this.lastTime = currentTime;
+            }
+            
+            requestAnimationFrame(update);
+        };
+        
+        update();
+    }
+    
+    stop() {
+        console.log('📊 パフォーマンス監視停止（統一システム版）');
+        this.isRunning = false;
+        
+        // 🚨 統一システム統合: EventBus経由での監視停止通知
+        window.EventBus.safeEmit('performance.monitoringStopped', {
+            finalMetrics: this.metrics,
+            timestamp: Date.now()
+        });
+    }
+    
+    getStats() {
+        return {
+            isRunning: this.isRunning,
+            metrics: { ...this.metrics },
+            config: { ...this.config },
+            lastTime: this.lastTime,
+            frameCount: this.frameCount,
+            updateCallbacks: this.updateCallbacks.size
+        };
+    }
+    
+    addUpdateCallback(callback) {
+        this.updateCallbacks.add(callback);
+    }
+    
+    removeUpdateCallback(callback) {
+        this.updateCallbacks.delete(callback);
+    }
+}
+
+// グローバル登録
+if (typeof window !== 'undefined') {
+    window.AppCore = AppCore;
+    window.DrawingToolSystem = DrawingToolSystem;
+    window.SimpleFallbackToolSystem = SimpleFallbackToolSystem;
+    window.UIController = UIController;
+    window.MinimalUIController = MinimalUIController;
+    window.PerformanceMonitor = PerformanceMonitor;
+    
+    console.log('🎨 AppCore関連クラス グローバル登録完了（統一システム統合版）');
+    console.log('🛡️ フォールバック機能・循環参照防止機能追加済み');
+    console.log('🚨 統一システム統合完了: ConfigManager・ErrorManager・EventBus統合済み');
+    console.log('✅ Task 1-A-2完了: StateManager.set削除・内部状態管理移行完了');
+    console.log('🔧 構文エラー修正・クラス構造修正・統一システム統合改善完了');
+}/**
  * 🚨 統一システム統合: 描画ツールシステム（ConfigManager・EventBus版）
  */
 class DrawingToolSystem {
     constructor(appCore) {
         this.appCore = appCore;
         this.currentTool = 'pen';
-        this.isDrawing = false;
-        this.currentPath = null;
-        this.lastPoint = null;
-        
-        // 🚨 統一システム統合: ConfigManager経由でのツール設定取得
-        const penConfig = window.ConfigManager.getDrawingConfig('pen');
-        this.brushSize = penConfig.defaultSize;
-        this.brushColor = penConfig.defaultColor;
-        this.opacity = penConfig.defaultOpacity;
-        this.pressure = penConfig.defaultPressure;
-        this.smoothing = penConfig.defaultSmoothing;
-        this.minDistance = penConfig.minDistance;
-        
-        // 拡張機能フラグ
-        this.extensionsAvailable = appCore.extensionsAvailable;
-        
-        console.log('🔧 DrawingToolSystem 初期化完了（統一システム統合版）');
-        
-        // 🚨 統一システム統合: ツールシステム状態記録
-        this.initialized = true;
-    }
-    
-    /**
-     * 描画エンジン初期化
-     */
-    initializeDrawingEngine() {
-        console.log('🖊️ 描画エンジン初期化中...');
-        
-        // 基本描画機能は常に利用可能
-        console.log('✅ 基本描画エンジン初期化完了');
-        
-        // 🚨 統一システム統合: 描画エンジン状態記録
-        this.drawingEngineInitialized = true;
-    }
-    
-    /**
-     * 🚨 統一システム統合: ツール設定（EventBus・ConfigManager版）
-     */
-    setTool(tool) {
-        const previousTool = this.currentTool;
-        this.currentTool = tool;
-        
-        // 🚨 統一システム統合: ツール状態更新
-        this.previousTool = previousTool;
-        
-        // 🚨 統一システム統合: EventBus経由でのイベント発行（安全版）
-        if (this.appCore.initializationComplete) {
-            window.EventBus.emit('tool.changed', { 
-                tool,
-                previousTool,
-                timestamp: Date.now()
-            });
-        }
-        
-        console.log(`🔧 ツール変更: ${previousTool} → ${tool}`);
-    }
-    
-    /**
-     * 🚨 統一システム統合: ブラシサイズ設定（ConfigManager・EventBus版）
-     */
-    setBrushSize(size) {
-        const penConfig = window.ConfigManager.getDrawingConfig('pen');
-        const oldSize = this.brushSize;
-        
-        // 🚨 統一システム統合: ConfigManager経由での妥当性確認
-        this.brushSize = Math.max(penConfig.minSize, Math.min(penConfig.maxSize, Math.round(size * 10) / 10));
-        
-        // 🚨 統一システム統合: ブラシサイズ更新
-        this.previousBrushSize = oldSize;
-        
-        // 🚨 統一システム統合: EventBus経由でのイベント発行（初期化完了後のみ）
-        if (this.appCore.initializationComplete) {
-            window.EventBus.emit('brush.sizeChanged', {
-                size: this.brushSize,
-                previousSize: oldSize,
-                timestamp: Date.now()
-            });
-        }
-    }
-    
-    /**
-     * 🚨 統一システム統合: 不透明度設定（EventBus版）
-     */
-    setOpacity(opacity) {
-        const oldOpacity = this.opacity;
-        this.opacity = Math.max(0, Math.min(1, Math.round(opacity * 1000) / 1000));
-        
-        // 🚨 統一システム統合: 不透明度更新
-        this.previousOpacity = oldOpacity;
-        
-        // 🚨 統一システム統合: EventBus経由でのイベント発行（安全版）
-        if (this.appCore.initializationComplete) {
-            window.EventBus.emit('brush.opacityChanged', {
-                opacity: this.opacity,
-                previousOpacity: oldOpacity,
-                timestamp: Date.now()
-            });
-        }
-    }
-    
-    /**
-     * 🚨 統一システム統合: 筆圧設定（EventBus版）
-     */
-    setPressure(pressure) {
-        const oldPressure = this.pressure;
-        this.pressure = Math.max(0, Math.min(1, Math.round(pressure * 1000) / 1000));
-        
-        // 🚨 統一システム統合: 筆圧更新
-        this.previousPressure = oldPressure;
-        
-        // 🚨 統一システム統合: EventBus経由でのイベント発行（安全版）
-        if (this.appCore.initializationComplete) {
-            window.EventBus.emit('brush.pressureChanged', {
-                pressure: this.pressure,
-                previousPressure: oldPressure,
-                timestamp: Date.now()
-            });
-        }
-    }
-    
-    /**
-     * スムージング設定
-     */
-    setSmoothing(smoothing) {
-        this.smoothing = Math.max(0, Math.min(1, Math.round(smoothing * 1000) / 1000));
-        
-        // 🚨 統一システム統合: スムージング更新
-        this.previousSmoothing = this.smoothing;
-    }
-    
-    /**
-     * 🚨 統一システム統合: 描画開始（ConfigManager版）
-     */
-    startDrawing(x, y) {
-        this.isDrawing = true;
-        this.lastPoint = { x, y };
-        
-        // 現在のツールに応じた描画開始
-        if (this.currentTool === 'pen') {
-            this.currentPath = this.createPenPath(x, y);
-        } else if (this.currentTool === 'eraser') {
-            this.currentPath = this.createEraserPath(x, y);
-        }
-        
-        // 筆圧モニター更新
-        if (document.getElementById('pressure-monitor')) {
-            const pressure = this.pressure * 100 + Math.random() * 10;
-            document.getElementById('pressure-monitor').textContent = `${pressure.toFixed(1)}%`;
-        }
-        
-        // 🚨 統一システム統合: 描画状態更新
-        this.drawingStarted = true;
-        this.currentPathId = this.currentPath?.id;
-        
-        console.log(`🖊️ 描画開始 (${this.currentTool}): (${x.toFixed(1)}, ${y.toFixed(1)}), サイズ: ${this.brushSize}`);
-    }
-    
-    /**
-     * 🚨 統一システム統合: 描画継続（ConfigManager版）
-     */
-    continueDrawing(x, y) {
-        if (!this.isDrawing || !this.currentPath || !this.lastPoint) return;
-        
-        const distance = Math.sqrt((x - this.lastPoint.x) ** 2 + (y - this.lastPoint.y) ** 2);
-        
-        // 🚨 統一システム統合: ConfigManager経由での最小距離フィルタ
-        if (distance < this.minDistance) return;
-        
-        // 線の描画（元HTML版と同じ実装）
-        this.drawLine(this.currentPath, this.lastPoint.x, this.lastPoint.y, x, y);
-        this.lastPoint = { x, y };
-        
-        // 筆圧モニター更新
-        if (document.getElementById('pressure-monitor')) {
-            const pressure = this.pressure * 100 + Math.random() * 15;
-            document.getElementById('pressure-monitor').textContent = `${pressure.toFixed(1)}%`;
-        }
-    }
-    
-    /**
-     * 🚨 統一システム統合: 描画終了（EventBus版）
-     */
-    stopDrawing() {
-        if (this.currentPath) {
-            this.currentPath.isComplete = true;
-            this.appCore.paths.push(this.currentPath);
-            
-            // 🚨 統一システム統合: EventBus経由でのパス作成通知（安全版）
-            if (this.appCore.initializationComplete) {
-                window.EventBus.emit('path.created', {
-                    pathId: this.currentPath.id,
-                    pointCount: this.currentPath.points.length,
-                    tool: this.currentPath.tool,
-                    timestamp: Date.now()
-                });
-            }
-            
-            console.log(`🖊️ 描画完了: ${this.currentPath.points.length}ポイント`);
-        }
-        
-        // 🚨 統一システム統合: 描画状態更新
-        this.drawingStarted = false;
-        this.currentPathId = null;
-        this.totalPaths = this.appCore.paths.length;
-        
         this.isDrawing = false;
         this.currentPath = null;
         this.lastPoint = null;
@@ -1753,7 +1393,7 @@ class UIController {
                     this.closeAllPopups();
                     
                     // 🚨 統一システム統合: EventBus経由でのショートカット通知
-                    window.EventBus.emit('keyboard.shortcutUsed', {
+                    window.EventBus.safeEmit('keyboard.shortcutUsed', {
                         key: 'Escape',
                         action: 'closePopups'
                     });
@@ -1802,7 +1442,7 @@ class UIController {
         }
         
         // 🚨 統一システム統合: EventBus経由でのツールクリック通知
-        window.EventBus.emit('ui.toolButtonClicked', {
+        window.EventBus.safeEmit('ui.toolButtonClicked', {
             toolId,
             popupId,
             timestamp: Date.now()
@@ -1827,4 +1467,364 @@ class UIController {
     }
     
     /**
-     * 🚨 統一システム統合: ポップアップ切り替え（StateManager・
+     * 🚨 統一システム統合: ポップアップ切り替え（EventBus版）
+     */
+    togglePopup(popupId) {
+        const popup = document.getElementById(popupId);
+        if (!popup) {
+            console.warn(`⚠️ ポップアップ要素が見つかりません: ${popupId}`);
+            
+            // 🚨 統一システム統合: ErrorManager警告表示
+            window.ErrorManager.showError('warning', 
+                `ポップアップ要素が見つかりません: ${popupId}`, {
+                showDebug: false
+            });
+            return;
+        }
+        
+        // 他のポップアップを閉じる
+        if (this.activePopup && this.activePopup !== popup) {
+            this.activePopup.classList.remove('show');
+        }
+        
+        // 現在のポップアップの表示状態を切り替え
+        const isVisible = popup.classList.contains('show');
+        popup.classList.toggle('show', !isVisible);
+        
+        this.activePopup = isVisible ? null : popup;
+        
+        // 🚨 統一システム統合: EventBus経由でのポップアップ状態変更通知
+        window.EventBus.safeEmit('ui.popupToggled', {
+            popupId,
+            visible: !isVisible,
+            timestamp: Date.now()
+        });
+        
+        console.log(`🪟 ポップアップ${isVisible ? '非表示' : '表示'}: ${popupId}`);
+    }
+
+    setupSliders() {
+        this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value) => {
+            if (this.toolSystem) {
+                this.toolSystem.setBrushSize(value);
+            }
+            this.updateSizePresets();
+            return value.toFixed(1) + 'px';
+        });
+        
+        this.createSlider('pen-opacity-slider', 0, 100, 85.0, (value) => {
+            if (this.toolSystem) {
+                this.toolSystem.setOpacity(value / 100);
+            }
+            this.updateSizePresets();
+            return value.toFixed(1) + '%';
+        });
+        
+        this.createSlider('pen-pressure-slider', 0, 100, 50.0, (value) => {
+            if (this.toolSystem) {
+                this.toolSystem.setPressure(value / 100);
+            }
+            return value.toFixed(1) + '%';
+        });
+        
+        this.createSlider('pen-smoothing-slider', 0, 100, 30.0, (value) => {
+            if (this.toolSystem) {
+                this.toolSystem.setSmoothing(value / 100);
+            }
+            return value.toFixed(1) + '%';
+        });
+        
+        this.setupSliderButtons();
+    }
+    
+    createSlider(sliderId, min, max, initial, callback) {
+        const container = document.getElementById(sliderId);
+        if (!container) {
+            console.warn(`⚠️ スライダー要素が見つかりません: ${sliderId}`);
+            return;
+        }
+        
+        const track = container.querySelector('.slider-track');
+        const handle = container.querySelector('.slider-handle');
+        const valueDisplay = container.parentNode.querySelector('.slider-value');
+        
+        if (!track || !handle || !valueDisplay) {
+            console.warn(`⚠️ スライダー部品が不完全: ${sliderId}`);
+            return;
+        }
+        
+        // 🚨 統一システム統合: ConfigManager経由でのスライダー設定取得
+        const sliderConfig = this.uiConfig.slider;
+        
+        const sliderData = {
+            value: initial,
+            min, max, callback,
+            track, handle, valueDisplay,
+            isDragging: false,
+            updateThrottle: sliderConfig.updateThrottle
+        };
+        
+        this.sliders.set(sliderId, sliderData);
+        
+        const updateSlider = (value) => {
+            sliderData.value = Math.max(min, Math.min(max, value));
+            const percentage = ((sliderData.value - min) / (max - min)) * 100;
+            
+            track.style.width = percentage + '%';
+            handle.style.left = percentage + '%';
+            valueDisplay.textContent = callback(sliderData.value);
+        };
+        
+        const getValueFromPosition = (clientX) => {
+            const rect = container.getBoundingClientRect();
+            const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            return min + (percentage * (max - min));
+        };
+        
+        // マウスイベント設定
+        container.addEventListener('mousedown', (e) => {
+            sliderData.isDragging = true;
+            updateSlider(getValueFromPosition(e.clientX));
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (sliderData.isDragging) {
+                updateSlider(getValueFromPosition(e.clientX));
+            }
+        });
+        
+        document.addEventListener('mouseup', () => {
+            sliderData.isDragging = false;
+        });
+        
+        // タッチイベント設定（モバイル対応）
+        container.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                sliderData.isDragging = true;
+                updateSlider(getValueFromPosition(e.touches[0].clientX));
+                e.preventDefault();
+            }
+        });
+        
+        document.addEventListener('touchmove', (e) => {
+            if (sliderData.isDragging && e.touches.length === 1) {
+                updateSlider(getValueFromPosition(e.touches[0].clientX));
+                e.preventDefault();
+            }
+        });
+        
+        document.addEventListener('touchend', () => {
+            sliderData.isDragging = false;
+        });
+        
+        // 初期値設定
+        updateSlider(initial);
+        
+        console.log(`✅ スライダー設定完了: ${sliderId}`);
+    }.lastPoint = null;
+        
+        // 🚨 統一システム統合: ConfigManager経由でのツール設定取得
+        const penConfig = window.ConfigManager.getDrawingConfig('pen');
+        this.brushSize = penConfig.defaultSize;
+        this.brushColor = penConfig.defaultColor;
+        this.opacity = penConfig.defaultOpacity;
+        this.pressure = penConfig.defaultPressure;
+        this.smoothing = penConfig.defaultSmoothing;
+        this.minDistance = penConfig.minDistance;
+        
+        // 拡張機能フラグ
+        this.extensionsAvailable = appCore.extensionsAvailable;
+        
+        console.log('🔧 DrawingToolSystem 初期化完了（統一システム統合版）');
+        
+        // 🚨 統一システム統合: ツールシステム状態記録
+        this.initialized = true;
+    }
+    
+    /**
+     * 描画エンジン初期化
+     */
+    initializeDrawingEngine() {
+        console.log('🖊️ 描画エンジン初期化中...');
+        
+        // 基本描画機能は常に利用可能
+        console.log('✅ 基本描画エンジン初期化完了');
+        
+        // 🚨 統一システム統合: 描画エンジン状態記録
+        this.drawingEngineInitialized = true;
+    }
+    
+    /**
+     * 🚨 統一システム統合: ツール設定（EventBus・ConfigManager版）
+     */
+    setTool(tool) {
+        const previousTool = this.currentTool;
+        this.currentTool = tool;
+        
+        // 🚨 統一システム統合: ツール状態更新
+        this.previousTool = previousTool;
+        
+        // 🚨 統一システム統合: EventBus経由でのイベント発行（安全版）
+        if (this.appCore.initializationComplete) {
+            window.EventBus.safeEmit('tool.changed', { 
+                tool,
+                previousTool,
+                timestamp: Date.now()
+            });
+        }
+        
+        console.log(`🔧 ツール変更: ${previousTool} → ${tool}`);
+    }
+    
+    /**
+     * 🚨 統一システム統合: ブラシサイズ設定（ConfigManager・EventBus版）
+     */
+    setBrushSize(size) {
+        const penConfig = window.ConfigManager.getDrawingConfig('pen');
+        const oldSize = this.brushSize;
+        
+        // 🚨 統一システム統合: ConfigManager経由での妥当性確認
+        this.brushSize = Math.max(penConfig.minSize, Math.min(penConfig.maxSize, Math.round(size * 10) / 10));
+        
+        // 🚨 統一システム統合: ブラシサイズ更新
+        this.previousBrushSize = oldSize;
+        
+        // 🚨 統一システム統合: EventBus経由でのイベント発行（初期化完了後のみ）
+        if (this.appCore.initializationComplete) {
+            window.EventBus.safeEmit('brush.sizeChanged', {
+                size: this.brushSize,
+                previousSize: oldSize,
+                timestamp: Date.now()
+            });
+        }
+    }
+    
+    /**
+     * 🚨 統一システム統合: 不透明度設定（EventBus版）
+     */
+    setOpacity(opacity) {
+        const oldOpacity = this.opacity;
+        this.opacity = Math.max(0, Math.min(1, Math.round(opacity * 1000) / 1000));
+        
+        // 🚨 統一システム統合: 不透明度更新
+        this.previousOpacity = oldOpacity;
+        
+        // 🚨 統一システム統合: EventBus経由でのイベント発行（安全版）
+        if (this.appCore.initializationComplete) {
+            window.EventBus.safeEmit('brush.opacityChanged', {
+                opacity: this.opacity,
+                previousOpacity: oldOpacity,
+                timestamp: Date.now()
+            });
+        }
+    }
+    
+    /**
+     * 🚨 統一システム統合: 筆圧設定（EventBus版）
+     */
+    setPressure(pressure) {
+        const oldPressure = this.pressure;
+        this.pressure = Math.max(0, Math.min(1, Math.round(pressure * 1000) / 1000));
+        
+        // 🚨 統一システム統合: 筆圧更新
+        this.previousPressure = oldPressure;
+        
+        // 🚨 統一システム統合: EventBus経由でのイベント発行（安全版）
+        if (this.appCore.initializationComplete) {
+            window.EventBus.safeEmit('brush.pressureChanged', {
+                pressure: this.pressure,
+                previousPressure: oldPressure,
+                timestamp: Date.now()
+            });
+        }
+    }
+    
+    /**
+     * スムージング設定
+     */
+    setSmoothing(smoothing) {
+        this.smoothing = Math.max(0, Math.min(1, Math.round(smoothing * 1000) / 1000));
+        
+        // 🚨 統一システム統合: スムージング更新
+        this.previousSmoothing = this.smoothing;
+    }
+    
+    /**
+     * 🚨 統一システム統合: 描画開始（ConfigManager版）
+     */
+    startDrawing(x, y) {
+        this.isDrawing = true;
+        this.lastPoint = { x, y };
+        
+        // 現在のツールに応じた描画開始
+        if (this.currentTool === 'pen') {
+            this.currentPath = this.createPenPath(x, y);
+        } else if (this.currentTool === 'eraser') {
+            this.currentPath = this.createEraserPath(x, y);
+        }
+        
+        // 筆圧モニター更新
+        if (document.getElementById('pressure-monitor')) {
+            const pressure = this.pressure * 100 + Math.random() * 10;
+            document.getElementById('pressure-monitor').textContent = `${pressure.toFixed(1)}%`;
+        }
+        
+        // 🚨 統一システム統合: 描画状態更新
+        this.drawingStarted = true;
+        this.currentPathId = this.currentPath?.id;
+        
+        console.log(`🖊️ 描画開始 (${this.currentTool}): (${x.toFixed(1)}, ${y.toFixed(1)}), サイズ: ${this.brushSize}`);
+    }
+    
+    /**
+     * 🚨 統一システム統合: 描画継続（ConfigManager版）
+     */
+    continueDrawing(x, y) {
+        if (!this.isDrawing || !this.currentPath || !this.lastPoint) return;
+        
+        const distance = Math.sqrt((x - this.lastPoint.x) ** 2 + (y - this.lastPoint.y) ** 2);
+        
+        // 🚨 統一システム統合: ConfigManager経由での最小距離フィルタ
+        if (distance < this.minDistance) return;
+        
+        // 線の描画（元HTML版と同じ実装）
+        this.drawLine(this.currentPath, this.lastPoint.x, this.lastPoint.y, x, y);
+        this.lastPoint = { x, y };
+        
+        // 筆圧モニター更新
+        if (document.getElementById('pressure-monitor')) {
+            const pressure = this.pressure * 100 + Math.random() * 15;
+            document.getElementById('pressure-monitor').textContent = `${pressure.toFixed(1)}%`;
+        }
+    }
+
+    /**
+     * 🚨 統一システム統合: 描画終了（EventBus版）
+     */
+    stopDrawing() {
+        if (this.currentPath) {
+            this.currentPath.isComplete = true;
+            this.appCore.paths.push(this.currentPath);
+            
+            // 🚨 統一システム統合: EventBus経由でのパス作成通知（安全版）
+            if (this.appCore.initializationComplete) {
+                window.EventBus.safeEmit('path.created', {
+                    pathId: this.currentPath.id,
+                    pointCount: this.currentPath.points.length,
+                    tool: this.currentPath.tool,
+                    timestamp: Date.now()
+                });
+            }
+            
+            console.log(`🖊️ 描画完了: ${this.currentPath.points.length}ポイント`);
+        }
+        
+        // 🚨 統一システム統合: 描画状態更新
+        this.drawingStarted = false;
+        this.currentPathId = null;
+        this.totalPaths = this.appCore.paths.length;
+        
+        this.isDrawing = false;
+        this.currentPath = null;
+        this/**
