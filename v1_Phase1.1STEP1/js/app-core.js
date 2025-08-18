@@ -6,6 +6,7 @@
  * - EventBus統合によるイベント発行制御
  * - ErrorManager統一エラー処理対応
  * - UIController初期化順序最適化
+ * - setupPopups メソッド追加（エラー解消）
  * - 循環参照防止対応
  * 
  * 🎯 AI_WORK_SCOPE: PixiJSアプリケーション基盤・描画エンジン・ツールシステム
@@ -189,7 +190,7 @@ class AppCore {
             throw new Error('drawing-canvas 要素が見つかりません');
         }
         
-        // アプリケーションビューを追加
+        // TODO: PixiJS v8 - this.app.view → this.app.canvas
         canvasElement.appendChild(this.app.view);
         
         // 🔧 修復: DOM接続確認
@@ -384,6 +385,7 @@ class AppCore {
                 
                 const canvasElement = document.getElementById('drawing-canvas');
                 if (canvasElement) {
+                    // TODO: PixiJS v8 - this.app.view → this.app.canvas
                     canvasElement.appendChild(this.app.view);
                     console.log('✅ フォールバックPixiJSアプリケーション作成完了');
                 }
@@ -800,7 +802,7 @@ class DrawingToolSystem {
             isComplete: false
         };
         
-        // 初回点描画（元HTML版と同じ円形ブラシ）
+        // TODO: PixiJS v8 - Graphics.beginFill → Graphics.fill
         path.graphics.beginFill(path.color, path.opacity);
         path.graphics.drawCircle(x, y, path.size / 2);
         path.graphics.endFill();
@@ -824,7 +826,7 @@ class DrawingToolSystem {
             isComplete: false
         };
         
-        // 初回点描画
+        // TODO: PixiJS v8 - Graphics.beginFill → Graphics.fill
         path.graphics.beginFill(path.color, path.opacity);
         path.graphics.drawCircle(x, y, path.size / 2);
         path.graphics.endFill();
@@ -846,6 +848,7 @@ class DrawingToolSystem {
             const px = x1 + (x2 - x1) * t;
             const py = y1 + (y2 - y1) * t;
             
+            // TODO: PixiJS v8 - Graphics.beginFill → Graphics.fill
             path.graphics.beginFill(path.color, path.opacity);
             path.graphics.drawCircle(px, py, path.size / 2);
             path.graphics.endFill();
@@ -871,7 +874,7 @@ class SimpleFallbackToolSystem extends DrawingToolSystem {
 }
 
 /**
- * UI制御システム（修正版）
+ * UI制御システム（修正版 - setupPopups メソッド追加）
  */
 class UIController {
     constructor(toolSystem) {
@@ -881,14 +884,14 @@ class UIController {
     }
     
     /**
-     * 初期化（修正版：メソッド名統一）
+     * 初期化（修正版：setupPopups メソッド追加済み）
      */
     initialize() {
         console.log('🎨 UI制御システム初期化中（修正版）...');
         
         try {
             this.setupToolButtons();
-            this.setupPopups();
+            this.setupPopups(); // 🚨 修正: setupPopups メソッド追加
             this.setupSliders();
             this.setupPresets();
             this.setupResize();
@@ -898,6 +901,57 @@ class UIController {
             console.log('✅ UI制御システム初期化完了（修正版）');
         } catch (error) {
             console.error('💀 UI制御システム初期化エラー:', error);
+            
+            // 🚨 修正: ErrorManager統一エラー処理
+            if (window.ErrorManager) {
+                if (typeof window.ErrorManager.safeError === 'function') {
+                    window.ErrorManager.safeError(`UI初期化エラー: ${error.message}`, 'error');
+                } else {
+                    window.ErrorManager.showError('error', error, {
+                        additionalInfo: 'UIController初期化失敗'
+                    });
+                }
+            }
+            
+            throw error;
+        }
+    }
+    
+    /**
+     * 🚨 修正: setupPopups メソッド実装
+     */
+    setupPopups() {
+        console.log('🪟 ポップアップシステム設定中...');
+        
+        try {
+            // data-popup属性を持つ要素にクリックリスナー設定
+            document.querySelectorAll('[data-popup]').forEach(trigger => {
+                trigger.addEventListener('click', (e) => {
+                    const popupId = e.target.getAttribute('data-popup');
+                    if (popupId) {
+                        this.togglePopup(popupId);
+                    }
+                });
+            });
+            
+            // ポップアップ外クリックで閉じる機能
+            document.addEventListener('click', (e) => {
+                // ポップアップ内部またはトリガー要素以外をクリックした場合
+                if (!e.target.closest('.popup-panel') && !e.target.closest('[data-popup]')) {
+                    this.closeAllPopups();
+                }
+            });
+            
+            // Escapeキーでポップアップを閉じる
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && this.activePopup) {
+                    this.closeAllPopups();
+                }
+            });
+            
+            console.log('✅ ポップアップシステム設定完了');
+        } catch (error) {
+            console.error('💀 ポップアップ設定エラー:', error);
             throw error;
         }
     }
@@ -945,18 +999,26 @@ class UIController {
     
     togglePopup(popupId) {
         const popup = document.getElementById(popupId);
-        if (!popup) return;
+        if (!popup) {
+            console.warn(`⚠️ ポップアップ要素が見つかりません: ${popupId}`);
+            return;
+        }
         
+        // 他のポップアップを閉じる
         if (this.activePopup && this.activePopup !== popup) {
             this.activePopup.classList.remove('show');
         }
         
+        // 現在のポップアップの表示状態を切り替え
         const isVisible = popup.classList.contains('show');
         popup.classList.toggle('show', !isVisible);
+        
         this.activePopup = isVisible ? null : popup;
+        
+        console.log(`🪟 ポップアップ${isVisible ? '非表示' : '表示'}: ${popupId}`);
     }
-    
-    setupSliders() {
+
+setupSliders() {
         this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value) => {
             if (this.toolSystem) {
                 this.toolSystem.setBrushSize(value);
@@ -992,13 +1054,19 @@ class UIController {
     
     createSlider(sliderId, min, max, initial, callback) {
         const container = document.getElementById(sliderId);
-        if (!container) return;
+        if (!container) {
+            console.warn(`⚠️ スライダー要素が見つかりません: ${sliderId}`);
+            return;
+        }
         
         const track = container.querySelector('.slider-track');
         const handle = container.querySelector('.slider-handle');
         const valueDisplay = container.parentNode.querySelector('.slider-value');
         
-        if (!track || !handle || !valueDisplay) return;
+        if (!track || !handle || !valueDisplay) {
+            console.warn(`⚠️ スライダー部品が不完全: ${sliderId}`);
+            return;
+        }
         
         const sliderData = {
             value: initial,
@@ -1020,10 +1088,11 @@ class UIController {
         
         const getValueFromPosition = (clientX) => {
             const rect = container.getBoundingClientRect();
-            const percentage = (clientX - rect.left) / rect.width;
+            const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
             return min + (percentage * (max - min));
         };
         
+        // マウスイベント設定
         container.addEventListener('mousedown', (e) => {
             sliderData.isDragging = true;
             updateSlider(getValueFromPosition(e.clientX));
@@ -1040,7 +1109,30 @@ class UIController {
             sliderData.isDragging = false;
         });
         
+        // タッチイベント設定（モバイル対応）
+        container.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                sliderData.isDragging = true;
+                updateSlider(getValueFromPosition(e.touches[0].clientX));
+                e.preventDefault();
+            }
+        });
+        
+        document.addEventListener('touchmove', (e) => {
+            if (sliderData.isDragging && e.touches.length === 1) {
+                updateSlider(getValueFromPosition(e.touches[0].clientX));
+                e.preventDefault();
+            }
+        });
+        
+        document.addEventListener('touchend', () => {
+            sliderData.isDragging = false;
+        });
+        
+        // 初期値設定
         updateSlider(initial);
+        
+        console.log(`✅ スライダー設定完了: ${sliderId}`);
     }
     
     setupSliderButtons() {
@@ -1104,11 +1196,11 @@ class UIController {
         document.querySelectorAll('.size-preset-item').forEach(preset => {
             preset.addEventListener('click', () => {
                 const size = parseFloat(preset.getAttribute('data-size'));
-                if (this.toolSystem) {
+                if (!isNaN(size) && this.toolSystem) {
                     this.toolSystem.setBrushSize(size);
+                    this.updateSliderValue('pen-size-slider', size);
+                    this.updateSizePresets();
                 }
-                this.updateSliderValue('pen-size-slider', size);
-                this.updateSizePresets();
             });
         });
     }
@@ -1116,11 +1208,16 @@ class UIController {
     setupResize() {
         document.querySelectorAll('.resize-button[data-size]').forEach(btn => {
             btn.addEventListener('click', () => {
-                const [width, height] = btn.getAttribute('data-size').split(',').map(Number);
-                const widthInput = document.getElementById('canvas-width');
-                const heightInput = document.getElementById('canvas-height');
-                if (widthInput) widthInput.value = width;
-                if (heightInput) heightInput.value = height;
+                const sizeData = btn.getAttribute('data-size');
+                if (sizeData) {
+                    const [width, height] = sizeData.split(',').map(Number);
+                    const widthInput = document.getElementById('canvas-width');
+                    const heightInput = document.getElementById('canvas-height');
+                    if (widthInput && heightInput && !isNaN(width) && !isNaN(height)) {
+                        widthInput.value = width;
+                        heightInput.value = height;
+                    }
+                }
             });
         });
     }
@@ -1152,6 +1249,8 @@ class UIController {
         
         document.querySelectorAll('.size-preset-item').forEach(preset => {
             const presetSize = parseFloat(preset.getAttribute('data-size'));
+            if (isNaN(presetSize)) return;
+            
             const circle = preset.querySelector('.size-preview-circle');
             const label = preset.querySelector('.size-preview-label');
             const percent = preset.querySelector('.size-preview-percent');
@@ -1190,6 +1289,7 @@ class UIController {
             popup.classList.remove('show');
         });
         this.activePopup = null;
+        console.log('🔒 全ポップアップ閉じる');
     }
 }
 
@@ -1212,8 +1312,10 @@ class MinimalUIController {
                 btn.addEventListener('click', (e) => {
                     if (btn.id === 'pen-tool' && this.toolSystem) {
                         this.toolSystem.setTool('pen');
+                        this.updateToolStatus('pen');
                     } else if (btn.id === 'eraser-tool' && this.toolSystem) {
                         this.toolSystem.setTool('eraser');
+                        this.updateToolStatus('eraser');
                     }
                 });
             });
@@ -1224,11 +1326,28 @@ class MinimalUIController {
         }
     }
     
+    updateToolStatus(tool) {
+        // ツールボタンのアクティブ状態更新
+        document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
+        const toolButton = document.getElementById(tool + '-tool');
+        if (toolButton) {
+            toolButton.classList.add('active');
+        }
+        
+        // ツール名表示更新
+        const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
+        const currentToolElement = document.getElementById('current-tool');
+        if (currentToolElement) {
+            currentToolElement.textContent = toolNames[tool] || tool;
+        }
+    }
+    
     closeAllPopups() {
         document.querySelectorAll('.popup-panel').forEach(popup => {
             popup.classList.remove('show');
         });
         this.activePopup = null;
+        console.log('🔒 全ポップアップ閉じる（最小限）');
     }
 }
 
@@ -1239,20 +1358,34 @@ class PerformanceMonitor {
     constructor() {
         this.frameCount = 0;
         this.lastTime = performance.now();
+        this.isRunning = false;
     }
     
     start() {
+        if (this.isRunning) return;
+        
         console.log('📊 パフォーマンス監視開始');
+        this.isRunning = true;
         
         const update = () => {
+            if (!this.isRunning) return;
+            
             this.frameCount++;
             const currentTime = performance.now();
             
+            // 1秒ごとにFPS更新
             if (currentTime - this.lastTime >= 1000) {
                 const fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastTime));
                 
-                if (document.getElementById('fps')) {
-                    document.getElementById('fps').textContent = fps;
+                // FPS表示更新
+                const fpsElement = document.getElementById('fps');
+                if (fpsElement) {
+                    fpsElement.textContent = fps;
+                }
+                
+                // パフォーマンス警告
+                if (fps < 30) {
+                    console.warn(`⚠️ 低FPS検出: ${fps}fps`);
                 }
                 
                 this.frameCount = 0;
@@ -1263,6 +1396,19 @@ class PerformanceMonitor {
         };
         
         update();
+    }
+    
+    stop() {
+        console.log('📊 パフォーマンス監視停止');
+        this.isRunning = false;
+    }
+    
+    getStats() {
+        return {
+            isRunning: this.isRunning,
+            lastTime: this.lastTime,
+            frameCount: this.frameCount
+        };
     }
 }
 
@@ -1277,4 +1423,5 @@ if (typeof window !== 'undefined') {
     
     console.log('🎨 AppCore関連クラス グローバル登録完了（統一システム対応修正版）');
     console.log('🛡️ フォールバック機能・循環参照防止機能追加済み');
+    console.log('🚨 修正適用済み: setupPopups メソッド追加・エラーハンドリング強化');
 }

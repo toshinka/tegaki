@@ -562,17 +562,17 @@ v1_Phase1.1ss5rev1_optimized/
 
 ### 3. 段階的移行計画
 
-#### Phase 1: ユーティリティ分離
+#### STEP 1: ユーティリティ分離
 1. `ConfigManager` を `js/utils/config-manager.js` に分離
 2. `StateManager` を `js/utils/state-manager.js` に分離  
 3. `ErrorManager` を `js/utils/error-manager.js` に分離
 
-#### Phase 2: システム分離
+#### STEP 2: システム分離
 1. `DrawingToolSystem` を `systems/drawing-tool-system.js` に分離
 2. `UIController` を `systems/ui-controller.js` に分離
 3. `PerformanceMonitor` を `systems/performance-monitor.js` に分離
 
-#### Phase 3: メインファイル最適化
+#### STEP 3: メインファイル最適化
 1. `main.js` を `FutabaDrawingTool` のみに縮小
 2. `app-core.js` を `AppCore` のみに縮小
 
@@ -655,9 +655,9 @@ class FutabaDrawingTool {
 ### 2. 段階的移行戦略
 
 ```javascript
-// Phase 1: 新システム導入（既存システムと並行稼働）
-// Phase 2: 新システムへの移行（警告付きで既存システム利用）
-// Phase 3: 旧システム削除（新システムのみ利用）
+// STEP 1: 新システム導入（既存システムと並行稼働）
+// STEP 2: 新システムへの移行（警告付きで既存システム利用）
+// STEP 3: 旧システム削除（新システムのみ利用）
 
 // 移行フラグによる制御
 class MigrationManager {
