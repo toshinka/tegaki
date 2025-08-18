@@ -275,32 +275,308 @@
         </div>
     </div>
 
-    <!-- node_modules統合: ローカル依存ライブラリ読み込み -->
-    <!-- PixiJS v7 本体 -->
-    <script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
+    <!-- =============================================== -->
+    <!-- 🎯 修正版: 依存関係解決・PixiJSv8対応スクリプト読み込み -->
+    <!-- =============================================== -->
     
-    <!-- @pixi/ui: UIコンポーネント -->
-    <script src="./node_modules/@pixi/ui/dist/ui.min.js"></script>
+    <!-- PixiJS v7 本体 - CDN版（安定版・v8移行準備）-->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
     
-    <!-- @pixi/layers: レイヤー機能 -->
-    <script src="./node_modules/@pixi/layers/dist/layers.min.js"></script>
+    <!-- 🔧 v8移行準備: Application.init() 対応ポリフィル -->
+    <script>
+        // PixiJS v8 Application.init() ポリフィル - 将来移行用
+        if (typeof PIXI !== 'undefined' && PIXI.Application) {
+            const OriginalApplication = PIXI.Application;
+            
+            // v8 Application.init() メソッド追加（互換性レイヤー）
+            if (!OriginalApplication.prototype.init && !OriginalApplication.init) {
+                // v8風 static init method
+                OriginalApplication.init = function(options) {
+                    return new Promise((resolve) => {
+                        const app = new OriginalApplication(options);
+                        // v8 では非同期初期化、v7 では同期なので即座に resolve
+                        setTimeout(() => resolve(app), 0);
+                    });
+                };
+                
+                // v8風 instance init method
+                OriginalApplication.prototype.init = function(options) {
+                    return Promise.resolve(this);
+                };
+                
+                console.log('✅ PixiJS v8 Application.init() ポリフィル適用完了');
+            }
+        }
+    </script>
     
-    <!-- @pixi/gif: GIF機能 -->
-    <script src="./node_modules/@pixi/gif/dist/gif.min.js"></script>
+    <!-- 依存関係準備: typedSignals・tweedle.js ポリフィル -->
+    <script>
+        // typedSignals ポリフィル - @pixi/ui用
+        if (typeof window.typedSignals === 'undefined') {
+            window.typedSignals = {
+                Signal: class {
+                    constructor() {
+                        this.listeners = [];
+                    }
+                    connect(listener) {
+                        this.listeners.push(listener);
+                        return { disconnect: () => this.disconnect(listener) };
+                    }
+                    emit(...args) {
+                        this.listeners.forEach(listener => {
+                            try {
+                                listener(...args);
+                            } catch (error) {
+                                console.error('Signal listener error:', error);
+                            }
+                        });
+                    }
+                    disconnect(listener) {
+                        const index = this.listeners.indexOf(listener);
+                        if (index > -1) this.listeners.splice(index, 1);
+                    }
+                    disconnectAll() {
+                        this.listeners = [];
+                    }
+                }
+            };
+        }
+        
+        // tweedle.js ブラウザ対応ポリフィル
+        if (typeof window.exports === 'undefined') {
+            window.exports = {};
+            
+            // NOW 関数をブラウザ対応で定義
+            window.exports.NOW = function() {
+                return (performance && performance.now) ? performance.now() : Date.now();
+            };
+        }
+    </script>
     
-    <!-- GSAP: アニメーション -->
-    <script src="./node_modules/gsap/dist/gsap.min.js"></script>
+    <!-- 外部ライブラリ: GSAP, Lodash, Hammer.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
     
-    <!-- Lodash: ユーティリティ -->
-    <script src="./node_modules/lodash/lodash.min.js"></script>
+    <!-- node_modules統合: tweedle.js -->
+    <script>
+        // tweedle.js 動的読み込み（エラー耐性）
+        (function() {
+            try {
+                const script = document.createElement('script');
+                script.src = './node_modules/tweedle.js/dist/tweedle.js';
+                script.onload = () => {
+                    if (window.exports && window.exports.Tween) {
+                        window.tweedle_js = window.exports;
+                        console.log('✅ tweedle.js 読み込み完了');
+                    }
+                };
+                script.onerror = () => console.log('⚠️ tweedle.js 未検出 - スキップ');
+                document.head.appendChild(script);
+            } catch (e) {
+                console.log('⚠️ tweedle.js 読み込みエラー - スキップ');
+            }
+        })();
+    </script>
     
-    <!-- Hammer.js: タッチジェスチャー -->
-    <script src="./node_modules/hammerjs/hammer.min.js"></script>
+    <!-- node_modules統合: @pixi/ui（エラー耐性強化）-->
+    <script>
+        // @pixi/ui 依存関係確認・動的読み込み
+        (function() {
+            if (typeof PIXI !== 'undefined' && typeof window.typedSignals !== 'undefined') {
+                if (!PIXI.ui) PIXI.ui = {};
+                
+                try {
+                    const script = document.createElement('script');
+                    script.src = './node_modules/@pixi/ui/dist/pixi-ui.js';
+                    script.onload = () => console.log('✅ @pixi/ui 読み込み完了');
+                    script.onerror = () => console.log('⚠️ @pixi/ui 未検出 - 基本UI使用');
+                    document.head.appendChild(script);
+                } catch (e) {
+                    console.log('⚠️ @pixi/ui 読み込みエラー - 基本UI使用');
+                }
+            } else {
+                console.warn('⚠️ @pixi/ui 依存関係不足 - スキップ');
+            }
+        })();
+    </script>
     
-    <!-- PixiJS拡張統合ライブラリ -->
+    <!-- node_modules統合: @pixi/layers -->
+    <script>
+        (function() {
+            try {
+                const script = document.createElement('script');
+                script.src = './node_modules/@pixi/layers/dist/pixi-layers.js';
+                script.onload = () => console.log('✅ @pixi/layers 読み込み完了');
+                script.onerror = () => console.log('⚠️ @pixi/layers 未検出 - 基本コンテナ使用');
+                document.head.appendChild(script);
+            } catch (e) {
+                console.log('⚠️ @pixi/layers 読み込みエラー - 基本コンテナ使用');
+            }
+        })();
+    </script>
+    
+    <!-- node_modules統合: @pixi/gif -->
+    <script>
+        (function() {
+            try {
+                const script = document.createElement('script');
+                script.src = './node_modules/@pixi/gif/dist/pixi-gif.js';
+                script.onload = () => console.log('✅ @pixi/gif 読み込み完了');
+                script.onerror = () => console.log('⚠️ @pixi/gif 未検出 - GIF機能無効');
+                document.head.appendChild(script);
+            } catch (e) {
+                console.log('⚠️ @pixi/gif 読み込みエラー - GIF機能無効');
+            }
+        })();
+    </script>
+    
+    <!-- 🎯 核心修正: 依存関係順序の確実な実装 -->
+    <!-- Step 1: pixi-extensions.js（PixiJS拡張統合）-->
     <script src="libs/pixi-extensions.js"></script>
     
-    <!-- アプリケーション本体 -->
+    <!-- Step 2: app-core.js（AppCore クラス定義）- 🚨 これが欠けていた！ -->
+    <script src="js/app-core.js"></script>
+    
+    <!-- Step 3: main.js（エントリーポイント）- DOMContentLoaded で AppCore を参照 -->
     <script src="js/main.js"></script>
+    
+    <!-- 🔧 初期化監視・デバッグ用スクリプト -->
+    <script>
+        // アプリケーション初期化状態監視（DRY原則）
+        window.APP_INIT_MONITOR = {
+            startTime: performance.now(),
+            dependencies: {
+                PIXI: false,
+                PixiExtensions: false,
+                AppCore: false,
+                main: false
+            },
+            
+            // 依存関係チェック（SOLID - Single Responsibility）
+            checkDependency: function(name) {
+                const checks = {
+                    PIXI: () => typeof window.PIXI !== 'undefined',
+                    PixiExtensions: () => typeof window.PixiExtensions !== 'undefined',
+                    AppCore: () => typeof window.AppCore !== 'undefined',
+                    main: () => typeof window.futabaDrawingTool !== 'undefined'
+                };
+                
+                const result = checks[name] ? checks[name]() : false;
+                this.dependencies[name] = result;
+                
+                if (result) {
+                    console.log(`✅ ${name} 依存関係確認完了`);
+                } else {
+                    console.warn(`⚠️ ${name} 依存関係未解決`);
+                }
+                
+                return result;
+            },
+            
+            // 全体状態確認
+            checkAllDependencies: function() {
+                Object.keys(this.dependencies).forEach(dep => this.checkDependency(dep));
+                
+                const resolved = Object.values(this.dependencies).filter(Boolean).length;
+                const total = Object.keys(this.dependencies).length;
+                const initTime = performance.now() - this.startTime;
+                
+                console.log(`📊 依存関係解決状況: ${resolved}/${total} (${(resolved/total*100).toFixed(1)}%)`);
+                console.log(`⏱️ 初期化経過時間: ${initTime.toFixed(2)}ms`);
+                
+                if (resolved === total) {
+                    console.log('🎉 全依存関係解決完了！');
+                }
+                
+                return { resolved, total, percentage: resolved/total*100, initTime };
+            },
+            
+            // エラー診断（SOLID - Open-Closed Principle）
+            diagnoseError: function(error) {
+                console.group('🔍 依存関係エラー診断');
+                
+                const diagnosis = {
+                    error: error.message || error,
+                    dependencies: this.dependencies,
+                    recommendations: []
+                };
+                
+                // エラーパターン別診断
+                if (error.message?.includes('AppCore')) {
+                    if (!this.dependencies.PIXI) {
+                        diagnosis.recommendations.push('PixiJS の読み込み確認が必要');
+                    }
+                    if (!this.dependencies.AppCore) {
+                        diagnosis.recommendations.push('app-core.js の読み込み確認が必要（最重要）');
+                    }
+                    if (!this.dependencies.PixiExtensions) {
+                        diagnosis.recommendations.push('pixi-extensions.js の読み込み確認が必要');
+                    }
+                }
+                
+                console.log('🔍 診断結果:', diagnosis);
+                console.groupEnd();
+                
+                return diagnosis;
+            }
+        };
+        
+        // 定期監視（初期化完了まで）
+        const monitorInterval = setInterval(() => {
+            const status = window.APP_INIT_MONITOR.checkAllDependencies();
+            
+            // 完了時または5秒経過で監視停止
+            if (status.resolved === status.total || status.initTime > 5000) {
+                clearInterval(monitorInterval);
+                
+                if (status.resolved === status.total) {
+                    console.log('🎯 依存関係監視完了 - アプリケーション準備完了');
+                } else {
+                    console.warn('⚠️ 依存関係監視タイムアウト - 一部未解決');
+                }
+            }
+        }, 500);
+        
+        // グローバルエラーハンドラ（依存関係診断付き）
+        window.addEventListener('error', (event) => {
+            if (event.error?.message?.includes('AppCore') || 
+                event.error?.message?.includes('PIXI') ||
+                event.error?.message?.includes('undefined')) {
+                
+                console.error('🚨 依存関係関連エラー検出:', event.error);
+                window.APP_INIT_MONITOR.diagnoseError(event.error);
+            }
+        });
+        
+        console.log('🎯 アプリケーション初期化監視開始（依存関係診断機能付き）');
+    </script>
+    
+    <!-- 🔧 PixiJS v8 移行準備: 設定変更対応 -->
+    <script>
+        // v8 移行時の設定変更対応（コメントアウト - 将来使用）
+        /*
+        // PixiJS v8 移行時の変更点対応
+        if (typeof PIXI !== 'undefined' && PIXI.VERSION?.startsWith('8')) {
+            console.log('🚀 PixiJS v8 検出 - 新しいApplication API使用');
+            
+            // v8 では Application.init() が非同期になる
+            // 現在のコードでは new PIXI.Application() を使用しているが、
+            // v8 移行時は以下のように変更予定：
+            
+            // OLD (v7): const app = new PIXI.Application(options);
+            // NEW (v8): const app = await PIXI.Application.init(options);
+            
+            // WebGPU対応設定も追加予定
+            window.PIXI_V8_CONFIG = {
+                preference: 'webgl', // or 'webgpu' when ready
+                powerPreference: 'high-performance'
+            };
+        } else {
+            console.log('📋 PixiJS v7 使用中 - v8移行準備済み');
+        }
+        */
+    </script>
+
 </body>
 </html>
