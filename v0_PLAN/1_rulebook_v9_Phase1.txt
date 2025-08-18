@@ -1,0 +1,542 @@
+# 🎨 JavaScript + PixiJS v7 Rulebook v9 Phase1 - 統一システム完全統合版
+
+## 1. 基本理念（統一システム完全統合）
+
+### 1.1 核心方針
+- **統一システム基盤**: ConfigManager・ErrorManager・StateManager・EventBusによる完全統合アーキテクチャ
+- **重複排除徹底**: DRY・SOLID原則による重複コード・重複関数の完全排除
+- **循環依存完全排除**: EventBus疎結合設計による依存関係最適化
+- **AI協働開発最適化**: 統一システムによる効率的開発・保守・拡張
+
+### 1.2 実装原則
+- **JavaScript Pure**: ESM/TypeScript混在禁止・Pure JavaScript維持
+- **統一システム必須**: 全設定・エラー・状態・通信の統一システム経由
+- **500行ファイル制限**: 統一システム分離による機能別最適化
+- **責任分界明確**: Manager・Systemレベルの明確なInterface統一
+
+### 1.3 Phase戦略
+- **Phase1**: 統一システム基盤完成（Task 1-C完了）
+- **Phase2**: レイヤーシステム・高度描画機能
+- **Phase3**: アニメーション・GIF・高性能化
+- **Phase4**: PixiJS v8移行・WebGPU・120FPS
+
+---
+
+## 2. 統一システムアーキテクチャ
+
+### 2.1 統一システム階層
+```
+Level 0: 統一基盤（循環依存なし）
+├── ConfigManager (設定統一・依存なし)
+├── ErrorManager (エラー統一・ConfigManager依存)
+├── StateManager (状態統一・ConfigManager依存)  
+└── EventBus (通信統一・依存なし)
+
+Level 1: コアシステム
+└── AppCore (PixiJS基盤・統一システム依存)
+
+Level 2: アプリケーション
+└── FutabaDrawingTool (統括・統一システム完全活用)
+```
+
+### 2.2 統一パターン（必須遵守）
+```javascript
+// 設定値アクセス（ConfigManager必須）
+const value = ConfigManager.get('path.to.setting');
+const canvasConfig = ConfigManager.getCanvasConfig();
+
+// エラー処理（ErrorManager必須）
+ErrorManager.showError('error', message, options);
+ErrorManager.showCriticalError(message, options);
+
+// 状態確認（StateManager必須）  
+const state = StateManager.getApplicationState();
+const health = StateManager.healthCheck();
+
+// 通信（EventBus必須）
+EventBus.safeEmit('event.type', data);
+EventBus.on('event.type', callback);
+```
+
+---
+
+## 3. ファイル構成（Phase2レイヤー対応）
+
+### 3.1 完成構成
+```
+🎨 tegaki/
+├── index.html                    // 統一システム読み込み順序
+├── package.json                  // node_modules依存管理
+├── css/styles.css                // ふたば☆ちゃんねる風統一スタイル
+├── js/
+│   ├── main.js                   // アプリケーション統括（統一システム完全活用）
+│   ├── app-core.js               // PixiJS基盤（統一システム依存）
+│   ├── utils/                    // 統一システム群（完成）
+│   │   ├── config-manager.js     // 設定統一システム
+│   │   ├── error-manager.js      // エラー統一システム  
+│   │   ├── state-manager.js      // 状態統一システム
+│   │   ├── event-bus.js          // イベント統一システム
+│   │   └── [その他ユーティリティ]
+│   ├── managers/                 // 管理システム層（統一システム活用）
+│   ├── tools/                    // 描画ツール群（統一システム活用）
+│   ├── ui/                      // UI部品層（統一システム活用）
+│   └── layers/                  // Phase2: レイヤーシステム群
+│       ├── layer-manager.js     // レイヤー統括管理
+│       ├── layer-renderer.js    // レイヤー描画エンジン
+│       ├── blend-modes.js       // ブレンドモード実装
+│       └── layer-ui.js          // レイヤーUI制御
+└── assets/                      // 静的リソース
+```
+
+### 3.2 読み込み順序（統一システム最優先）
+```html
+<!-- 1. 外部ライブラリ -->
+<script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
+
+<!-- 2. 統一基盤システム（依存順） -->
+<script src="js/utils/config-manager.js"></script>
+<script src="js/utils/error-manager.js"></script>
+<script src="js/utils/event-bus.js"></script>
+<script src="js/utils/state-manager.js"></script>
+
+<!-- 3. コア・アプリケーション -->
+<script src="js/app-core.js"></script>
+<script src="js/main.js"></script>
+```
+
+---
+
+## 4. 統一システム完全活用ルール
+
+### 4.1 ConfigManager活用（設定統一）
+```javascript
+✅ 必須パターン:
+const value = ConfigManager.get('category.setting');
+const config = ConfigManager.getCanvasConfig();
+
+❌ 禁止パターン:
+const value = 16.0;  // ハードコード禁止
+const config = { width: 400 };  // 独自設定禁止
+```
+
+### 4.2 ErrorManager活用（エラー統一）
+```javascript
+✅ 必須パターン:
+try {
+    operation();
+} catch (error) {
+    ErrorManager.showError('error', error.message, options);
+}
+
+❌ 禁止パターン:
+console.error(error);  // 独自エラー処理禁止
+alert('エラー');       // 独自エラー表示禁止
+```
+
+### 4.3 StateManager活用（状態統一）
+```javascript
+✅ 必須パターン:
+const appState = StateManager.getApplicationState();
+const isHealthy = StateManager.healthCheck().healthy;
+
+❌ 禁止パターン:
+const state = { tool: this.currentTool };  // 独自状態管理禁止
+```
+
+### 4.4 EventBus活用（通信統一）
+```javascript
+✅ 必須パターン（疎結合）:
+EventBus.safeEmit('tool.changed', { tool: 'pen' });
+EventBus.on('tool.changed', this.handleToolChange);
+
+❌ 禁止パターン（直接通信・循環依存）:
+uiController.updateTool('pen');  // 直接呼び出し禁止
+```
+
+---
+
+## 5. Phase2レイヤーシステム設計
+
+### 5.1 レイヤーアーキテクチャ（先取り）
+```javascript
+// レイヤー管理統一システム統合
+class LayerManager {
+    constructor() {
+        this.config = ConfigManager.getLayerConfig();
+        this.layers = new Map();
+        this.activeLayer = null;
+    }
+    
+    createLayer(options) {
+        try {
+            const layer = new Layer(options, this.config);
+            this.layers.set(layer.id, layer);
+            
+            EventBus.safeEmit('layer.created', { 
+                layerId: layer.id, 
+                options 
+            });
+            
+            return layer;
+        } catch (error) {
+            ErrorManager.showError('error', `レイヤー作成失敗: ${error.message}`);
+        }
+    }
+    
+    getLayerState() {
+        return {
+            total: this.layers.size,
+            active: this.activeLayer?.id,
+            visible: Array.from(this.layers.values())
+                        .filter(layer => layer.visible)
+                        .length
+        };
+    }
+}
+```
+
+### 5.2 レイヤー統一システム統合
+```javascript
+// 統一システム完全活用レイヤーシステム
+ConfigManager.defaultConfig.layers = {
+    maxLayers: 20,
+    defaultOpacity: 1.0,
+    defaultBlendMode: 'normal',
+    previewEnabled: true
+};
+
+EventBus.LayerEvents = {
+    LAYER_CREATED: 'layer.created',
+    LAYER_DELETED: 'layer.deleted',
+    LAYER_SELECTED: 'layer.selected',
+    BLEND_MODE_CHANGED: 'blendMode.changed'
+};
+
+// StateManager レイヤー状態統合
+StateManager.getLayerState = function() {
+    return window.layerManager ? 
+           window.layerManager.getLayerState() : 
+           { total: 0, active: null, visible: 0 };
+};
+```
+
+---
+
+## 6. AI協働開発ルール（統一システム版）
+
+### 6.1 開発者情報埋め込み（標準化）
+```javascript
+/**
+ * 🎨 ふたば☆お絵描きツール v1.0 Phase1
+ * 🎯 SCOPE: [ファイル機能]
+ * 🎯 DEPENDENCIES: [必要統一システム]
+ * 🎯 UNIFIED: ConfigManager,ErrorManager,StateManager,EventBus
+ * 🎯 ISOLATION: [単体テスト可否]
+ * 📋 PHASE: Phase1/Phase2
+ */
+```
+
+### 6.2 統一システム分業パターン
+```javascript
+// 統一システム改修（最小構成）
+統一システム改修時:
+  必要ファイル: ['js/utils/[target-system].js']
+  依存確認: ConfigManager → ErrorManager・StateManager
+
+// アプリケーション改修（標準構成）
+機能改修時:
+  基盤: ['js/utils/*.js'] (統一システム群)
+  コア: ['js/app-core.js', 'js/main.js']
+  対象: [改修ターゲットファイル群]
+```
+
+### 6.3 統一システム責任分界
+- **js/utils/**: 統一基盤・循環依存なし・完全独立
+- **js/**: アプリケーション統括・統一システム完全依存
+- **managers/**: 機能管理・統一システム活用・レガシー互換
+- **tools/**: 描画機能・統一システム依存・Pure描画ロジック
+- **ui/**: UI専用・統一システム活用・表示制御
+- **layers/**: Phase2レイヤー・統一システム統合
+
+---
+
+## 7. 品質保証ルール
+
+### 7.1 統一システム品質指標
+```javascript
+// 統一システム活用率測定
+品質指標 = {
+    configUnification: 100%,      // 設定値統一率
+    errorUnification: 100%,       // エラー処理統一率
+    stateUnification: 100%,       // 状態管理統一率
+    eventUnification: 100%,       // 通信統一率
+    duplicateElimination: 100%,   // 重複排除率
+    circularDependency: 0%        // 循環依存率（0%目標）
+};
+
+// デバッグ確認コマンド
+window.testUnifiedSystems()       // 統一システム動作確認
+window.checkUnifiedHealth()       // 健全性総合チェック
+window.getUnifiedMetrics()        // 統一システムメトリクス
+```
+
+### 7.2 コード品質チェックリスト
+```javascript
+✅ 各ファイル改修時の必須確認:
+1. 統一システム依存性確認
+   - ConfigManager存在・API確認
+   - ErrorManager存在・API確認
+   - StateManager存在・API確認
+   - EventBus存在・API確認
+
+2. 重複排除確認
+   - ハードコード値 → ConfigManager.get()
+   - 独自エラー処理 → ErrorManager.showError()
+   - 独自状態取得 → StateManager経由
+   - 直接通信 → EventBus.safeEmit()
+
+3. DRY・SOLID原則確認
+   - 重複コードなし
+   - 単一責任原則遵守
+   - 依存性逆転（統一システム経由）
+```
+
+### 7.3 パフォーマンス品質基準
+```javascript
+📏 必須パフォーマンス指標:
+- 初期化時間: 3秒以内（目標: 2秒以内）
+- FPS維持: 60FPS（描画中も維持）
+- 統一システム応答: 16ms以内（60FPS維持）
+- ファイルサイズ: 500行以内（統一システム分離効果）
+- メモリ使用量: 初期100MB以内
+```
+
+---
+
+## 8. 禁止事項（統一システム強化）
+
+### 8.1 統一システム迂回禁止
+```javascript
+❌ 統一システム迂回パターン（絶対禁止）:
+- const value = 16.0;                    // ConfigManager.get()使用必須
+- console.error(error);                  // ErrorManager.showError()使用必須  
+- const state = { tool: 'pen' };         // StateManager経由使用必須
+- uiController.update();                 // EventBus経由通信必須
+
+❌ 重複作成禁止:
+- 独自設定値定義                          // ConfigManager統一使用
+- 独自エラー表示                          // ErrorManager統一使用
+- 独自状態管理                            // StateManager統一使用
+- 直接クラス通信                          // EventBus疎結合必須
+```
+
+### 8.2 基本禁止事項
+```javascript
+❌ 技術制約:
+- ESM/TypeScript混在                     // Pure JavaScript維持
+- import/export使用                      // グローバル参照のみ
+- CDN依存（node_modules利用可能分）       // ローカル依存優先
+
+❌ 設計制約:
+- 循環依存作成                           // EventBus疎結合必須
+- 500行超過ファイル                      // 機能分離必須
+- ラスター変換                           // ベクター維持必須
+```
+
+---
+
+## 9. デバッグ・診断システム
+
+### 9.1 統一デバッグコマンド
+```javascript
+// 基本診断コマンド
+window.startDebugMode()                  // 統一デバッグ（DRY・SOLID準拠）
+window.testUnifiedSystems()              // 統一システム動作確認
+window.checkUnifiedHealth()              // 健全性チェック
+
+// システム別詳細診断
+window.ConfigManager.getDebugInfo()      // 設定詳細情報
+window.ErrorManager.getErrorStats()     // エラー統計
+window.StateManager.healthCheck()       // 状態健全性
+window.EventBus.getStats()              // イベント統計
+
+// アプリケーション診断
+window.getState()                        // 全状態取得
+window.getUnifiedMetrics()               // 統一システムメトリクス
+```
+
+### 9.2 トラブルシューティング
+```javascript
+🔍 問題診断手順:
+1. window.testUnifiedSystems() 実行
+   → 統一システム基盤確認
+   
+2. window.checkUnifiedHealth() 実行  
+   → アプリケーション健全性確認
+   
+3. window.startDebugMode() 実行
+   → 詳細状態・メトリクス確認
+   
+4. 個別システム診断実行
+   → 問題箇所特定
+
+🚨 よくある問題・解決法:
+- 統一システム未読み込み → index.html読み込み順序確認
+- 循環依存エラー → EventBus使用・直接通信排除確認
+- 設定値undefined → ConfigManager.get()使用確認
+- エラー表示されない → ErrorManager.showError()使用確認
+```
+
+---
+
+## 10. Phase2移行準備（レイヤーシステム）
+
+### 10.1 レイヤーシステム統一設計
+```javascript
+// Phase2統一システム拡張予定
+ConfigManager.defaultConfig.layers = {
+    maxLayers: 20,
+    defaultOpacity: 1.0,
+    blendModes: ['normal', 'multiply', 'screen', 'overlay'],
+    thumbnailSize: 64,
+    previewEnabled: true
+};
+
+ErrorManager.layerErrorTypes = {
+    'layer-limit': 'レイヤー上限エラー',
+    'blend-error': 'ブレンドモードエラー',
+    'layer-render': 'レイヤー描画エラー'
+};
+
+EventBus.LayerEvents = {
+    LAYER_CREATED: 'layer.created',
+    LAYER_SELECTED: 'layer.selected',
+    LAYER_VISIBILITY_CHANGED: 'layer.visibilityChanged',
+    BLEND_MODE_CHANGED: 'layer.blendModeChanged'
+};
+```
+
+### 10.2 レイヤーUI統一システム統合
+```javascript
+// レイヤーUI統一システム活用設計
+class LayerUI {
+    constructor() {
+        this.config = ConfigManager.getLayerConfig();
+        this.setupEventListeners();
+    }
+    
+    setupEventListeners() {
+        EventBus.on(EventBus.LayerEvents.LAYER_CREATED, (data) => {
+            this.addLayerToUI(data.layerId, data.options);
+        });
+        
+        EventBus.on(EventBus.LayerEvents.LAYER_SELECTED, (data) => {
+            this.updateActiveLayerUI(data.layerId);
+        });
+    }
+    
+    addLayerToUI(layerId, options) {
+        try {
+            // レイヤーUI要素作成・追加
+            const layerElement = this.createLayerElement(layerId, options);
+            this.layerContainer.appendChild(layerElement);
+            
+            // 統一システム連携
+            EventBus.safeEmit('layerUI.added', { layerId, element: layerElement });
+            
+        } catch (error) {
+            ErrorManager.showError('layer-render', 
+                `レイヤーUI作成失敗: ${error.message}`, 
+                { layerId, options }
+            );
+        }
+    }
+}
+```
+
+---
+
+## 11. 品質維持・継続改善
+
+### 11.1 統一システム品質監視
+```javascript
+// 品質監視メトリクス
+class QualityMonitor {
+    static getQualityMetrics() {
+        return {
+            unifiedSystemUsage: {
+                config: this.getConfigUsageRate(),      // 100%目標
+                error: this.getErrorUsageRate(),        // 100%目標  
+                state: this.getStateUsageRate(),        // 100%目標
+                event: this.getEventUsageRate()         // 100%目標
+            },
+            codeQuality: {
+                duplicateCode: 0,                       // 0%維持
+                circularDependency: 0,                  // 0%維持
+                fileSize: this.getAverageFileSize(),    // 500行以内
+                testCoverage: this.getTestCoverage()    // 80%以上
+            },
+            performance: {
+                initTime: this.getInitTime(),           // 3秒以内
+                fps: this.getCurrentFPS(),              // 60FPS維持
+                memoryUsage: this.getMemoryUsage()      // 100MB以内
+            }
+        };
+    }
+}
+```
+
+### 11.2 AI協働効率測定
+```javascript
+// AI協働開発効率指標
+効率向上指標 = {
+    settingsChange: '90%短縮',    // 設定変更効率（統一システム効果）
+    errorHandling: '80%短縮',     // エラー対応効率（統一エラーシステム）
+    stateDebugging: '85%短縮',    // 状態確認効率（統一状態システム）
+    featureDevelopment: '70%短縮', // 新機能開発効率（統一アーキテクチャ）
+    maintenanceTime: '60%短縮',   // 保守作業効率（責任分界明確化）
+    codeUnderstanding: '75%向上'  // コード理解効率（統一パターン）
+};
+```
+
+---
+
+## 12. バージョン管理戦略
+
+### 12.1 Phase進行管理
+```javascript
+// Phase完了条件
+Phase1完了条件 = {
+    unifiedSystemIntegration: 100%,   // 統一システム完全統合
+    duplicateElimination: 100%,       // 重複排除完了
+    circularDependencyResolution: 100%, // 循環依存解決
+    qualityMetricsSatisfied: 100%,    // 品質指標達成
+    documentationUpdated: 100%        // ドキュメント更新完了
+};
+
+Phase2開始条件 = {
+    phase1Completion: true,           // Phase1完了
+    layerSystemDesign: true,          // レイヤーシステム設計完了  
+    unifiedSystemReady: true,         // 統一システムPhase2対応
+    performanceBaseline: true         // パフォーマンス基準達成
+};
+```
+
+### 12.2 品質継続改善
+```javascript
+// 継続改善サイクル
+改善サイクル = {
+    品質測定: '週次統一システム品質チェック',
+    問題特定: '品質指標低下要因分析',
+    改善実装: '統一システム活用強化・最適化',
+    効果測定: 'AI協働開発効率向上確認',
+    次期計画: 'Phase進行・機能拡張計画'
+};
+```
+
+---
+
+*🎨 JavaScript + PixiJS v7 Rulebook v9 Phase1*  
+*最終更新: 2025年8月19日*  
+*対象: 統一システム完全統合・DRY・SOLID原則準拠・AI協働開発最適化*  
+*完了: Task 1-C統合テスト・品質保証・Phase2レイヤーシステム準備*
