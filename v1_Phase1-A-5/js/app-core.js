@@ -1,16 +1,16 @@
-/** 
-* 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0（統一システム統合版）
- * 🎯 アプリケーションコア（Task 1-A-2完了版）
+/**
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0（修正版）
+ * 🎯 アプリケーションコア（統一システム対応版）
  * 
- * 🚨 統一システム統合内容:
- * - ConfigManager統合によるハードコード設定値排除
+ * 🚨 修正内容:
+ * - EventBus統合によるイベント発行制御
  * - ErrorManager統一エラー処理対応
- * - StateManager統合による状態管理統一
- * - EventBus統合による疎結合通信
- * - 循環依存完全解決
+ * - UIController初期化順序最適化
+ * - setupPopups メソッド追加（エラー解消）
+ * - 循環参照防止対応
  * 
  * 🎯 AI_WORK_SCOPE: PixiJSアプリケーション基盤・描画エンジン・ツールシステム
- * 🎯 DEPENDENCIES: libs/pixi-extensions.js, PixiJS Core, 統一システム4種
+ * 🎯 DEPENDENCIES: libs/pixi-extensions.js, PixiJS Core, 統一システム
  * 🎯 NODE_MODULES: pixi.js（Graphics, Container, Application使用）
  * 🎯 PIXI_EXTENSIONS: 条件付き使用・フォールバック対応
  * 🎯 ISOLATION_TEST: ❌ PixiJS本体依存
@@ -19,7 +19,6 @@
  * 📋 PHASE_TARGET: Phase1
  * 📋 V8_MIGRATION: Application・Graphics・Container API変更対応予定
  * 📋 PERFORMANCE_TARGET: 60FPS安定描画・3秒以内初期化
- * 🔧 FIX: 構文エラー修正・クラス構造修正・統一システム統合改善
  */
 
 class AppCore {
@@ -30,10 +29,10 @@ class AppCore {
         this.paths = [];
         this.currentTool = 'pen';
         
-        // 🚨 統一システム統合: ConfigManager経由での設定値取得
-        this.canvasWidth = window.ConfigManager.get('canvas.width');
-        this.canvasHeight = window.ConfigManager.get('canvas.height');
-        this.backgroundColor = window.ConfigManager.get('canvas.backgroundColor');
+        // 設定
+        this.canvasWidth = 400;
+        this.canvasHeight = 400;
+        this.backgroundColor = 0xf0e0d6;
         
         // ツールシステム
         this.toolSystem = null;
@@ -44,98 +43,21 @@ class AppCore {
         this.extensionsAvailable = false;
         this.fallbackMode = false;
         
-        // 🚨 統一システム統合: 初期化状態管理
+        // 🚨 修正: 初期化状態管理
         this.isInitializing = false;
         this.initializationComplete = false;
         
-        console.log('🎨 AppCore インスタンス作成完了（統一システム統合版）');
-        
-        // 🚨 統一システム統合: 統一システム依存性確認
-        this.validateUnifiedSystems();
+        console.log('🎨 AppCore インスタンス作成完了（修正版）');
     }
     
     /**
-     * 🚨 統一システム統合: 統一システム依存性確認
-     */
-    validateUnifiedSystems() {
-        const requiredSystems = [
-            { name: 'ConfigManager', instance: window.ConfigManager },
-            { name: 'ErrorManager', instance: window.ErrorManager },
-            { name: 'StateManager', instance: window.StateManager },
-            { name: 'EventBus', instance: window.EventBus }
-        ];
-        
-        const missingSystems = requiredSystems.filter(sys => !sys.instance);
-        
-        if (missingSystems.length > 0) {
-            const missingNames = missingSystems.map(sys => sys.name).join(', ');
-            console.error(`💀 統一システム依存性エラー: ${missingNames} が利用できません`);
-            
-            // フォールバック用の最低限システム作成
-            this.createFallbackSystems(missingSystems);
-        } else {
-            console.log('✅ 統一システム依存性確認完了');
-        }
-    }
-    
-    /**
-     * フォールバック用統一システム作成
-     */
-    createFallbackSystems(missingSystems) {
-        missingSystems.forEach(sys => {
-            switch (sys.name) {
-                case 'ConfigManager':
-                    window.ConfigManager = { get: (path) => this.getFallbackConfig(path) };
-                    break;
-                case 'ErrorManager':
-                    window.ErrorManager = { 
-                        showError: (type, message) => console.error(`${type}: ${message}`) 
-                    };
-                    break;
-                case 'StateManager':
-                    window.StateManager = { 
-                        getApplicationState: () => ({ status: 'fallback' }) 
-                    };
-                    break;
-                case 'EventBus':
-                    window.EventBus = { 
-                        emit: () => {}, 
-                        on: () => {}, 
-                        safeEmit: () => {} 
-                    };
-                    break;
-            }
-        });
-        console.log('🛡️ フォールバック統一システム作成完了');
-    }
-    
-    /**
-     * フォールバック設定値取得
-     */
-    getFallbackConfig(path) {
-        const fallbackConfig = {
-            'canvas.width': 400,
-            'canvas.height': 400,
-            'canvas.backgroundColor': 0xf0e0d6,
-            'pixi.antialias': true,
-            'pixi.resolution': 1,
-            'pixi.autoDensity': false,
-            'drawing.pen.defaultSize': 16.0,
-            'drawing.pen.defaultOpacity': 0.85,
-            'performance.targetFPS': 60,
-            'performance.maxInitTime': 5000
-        };
-        return fallbackConfig[path];
-    }
-    
-    /**
-     * アプリケーション初期化（統一システム統合版）
+     * アプリケーション初期化（修正版）
      */
     async initialize() {
         try {
-            console.log('🚀 AppCore 初期化開始（統一システム統合版）...');
+            console.log('🚀 AppCore 初期化開始（統一システム対応版）...');
             
-            // 🚨 統一システム統合: 初期化状態管理
+            // 🚨 修正: 初期化状態フラグ設定
             this.isInitializing = true;
             
             // Step 1: DOM要素確認（最重要）
@@ -144,7 +66,7 @@ class AppCore {
             // Step 2: 拡張機能確認
             await this.checkExtensions();
             
-            // Step 3: PixiJS アプリケーション初期化（統一システム版）
+            // Step 3: PixiJS アプリケーション初期化（修復版）
             await this.initializePixiApp();
             
             // Step 4: コンテナ初期化
@@ -153,7 +75,7 @@ class AppCore {
             // Step 5: ツールシステム初期化
             this.initializeToolSystem();
             
-            // Step 6: UI制御初期化（統一システム版）
+            // Step 6: UI制御初期化（修正：イベント制御付き）
             await this.initializeUI();
             
             // Step 7: イベントリスナー設定
@@ -168,38 +90,23 @@ class AppCore {
             // Step 10: 初期化完了確認
             this.verifyInitialization();
             
-            // 🚨 統一システム統合: 初期化完了状態設定
+            // 🚨 修正: 初期化完了状態設定
             this.isInitializing = false;
             this.initializationComplete = true;
             
-            // 🚨 統一システム統合: EventBus経由での初期化完了通知
-            window.EventBus.safeEmit('appCore.initialized', {
-                success: true,
-                components: this.getInitializationStats()
-            });
-            
-            console.log('✅ AppCore 初期化完了（統一システム統合版）');
+            console.log('✅ AppCore 初期化完了（統一システム対応版）');
             this.displayInitializationSummary();
             
         } catch (error) {
             console.error('💀 AppCore統一版初期化エラー:', error);
             
-            // 🚨 統一システム統合: ErrorManager統一エラー処理
-            window.ErrorManager.showError('error', error.message, {
-                additionalInfo: 'AppCore初期化失敗（統一システム版）',
-                showReload: true,
-                errorDetails: error.stack
-            });
-            
-            // 🚨 統一システム統合: 初期化失敗状態設定
-            this.initializationFailed = true;
-            this.lastError = error.message;
-            
-            // 🚨 統一システム統合: EventBus経由での初期化失敗通知
-            window.EventBus.safeEmit('appCore.initializationFailed', {
-                error: error.message,
-                stack: error.stack
-            });
+            // 🚨 修正: 統一エラーハンドリング
+            if (window.ErrorManager) {
+                window.ErrorManager.showError('error', error, {
+                    additionalInfo: 'AppCore初期化失敗',
+                    showReload: true
+                });
+            }
             
             await this.initializeFallbackMode(error);
         }
@@ -254,32 +161,25 @@ class AppCore {
             console.warn('⚠️ 拡張機能未初期化 - フォールバックモード有効');
             this.fallbackMode = true;
         }
-        
-        // 🚨 統一システム統合: 拡張機能状態記録
-        this.extensionsAvailable = this.extensionsAvailable;
-        this.fallbackMode = this.fallbackMode;
     }
     
     /**
-     * 🔧 統一システム統合: PixiJS アプリケーション初期化（ConfigManager版）
+     * 🔧 修復: PixiJS アプリケーション初期化（完全修復版）
      */
     async initializePixiApp() {
-        console.log('🎮 PixiJS アプリケーション初期化中（ConfigManager統合版）...');
+        console.log('🎮 PixiJS アプリケーション初期化中（修復版）...');
         
-        // 🎯 統一システム統合: ConfigManager経由での設定値取得
-        const canvasConfig = window.ConfigManager.getCanvasConfig();
-        const pixiConfig = window.ConfigManager.getPixiConfig();
-        
+        // 🎯 修正: 元HTML版と完全同等の設定を使用
         const appConfig = {
-            width: canvasConfig.width,
-            height: canvasConfig.height,
-            backgroundColor: canvasConfig.backgroundColor,
-            antialias: pixiConfig.antialias,
-            resolution: pixiConfig.resolution,
-            autoDensity: pixiConfig.autoDensity
+            width: this.canvasWidth,
+            height: this.canvasHeight,
+            backgroundColor: this.backgroundColor,
+            antialias: true,
+            resolution: 1, // 🔧 修正: 元版と同じく固定値1
+            autoDensity: false // 🔧 修正: 元版と同じく無効化
         };
         
-        console.log('🔧 PixiJS Application設定（ConfigManager版）:', appConfig);
+        console.log('🔧 PixiJS Application設定:', appConfig);
         
         // PixiJS アプリケーション作成
         this.app = new PIXI.Application(appConfig);
@@ -300,15 +200,11 @@ class AppCore {
             throw new Error('PixiJS キャンバスのDOM接続に失敗');
         }
         
-        // 🚨 統一システム統合: キャンバススタイル設定
+        // キャンバススタイル設定（元版と同等）
         this.app.view.style.display = 'block';
-        this.app.view.style.cursor = window.ConfigManager.get('pixi.cursor');
+        this.app.view.style.cursor = 'crosshair';
         
-        // 🚨 統一システム統合: アプリケーション状態記録
-        this.pixiAppInitialized = true;
-        this.domConnected = canvasElement.contains(this.app.view);
-        
-        console.log(`✅ PixiJS アプリケーション初期化完了 (${canvasConfig.width}x${canvasConfig.height})`);
+        console.log(`✅ PixiJS アプリケーション初期化完了 (${this.canvasWidth}x${this.canvasHeight})`);
         console.log(`📏 実際のキャンバスサイズ: ${this.app.view.width}x${this.app.view.height}`);
     }
     
@@ -328,13 +224,9 @@ class AppCore {
         this.uiContainer.name = 'ui-layer';
         this.app.stage.addChild(this.uiContainer);
         
-        // 🚨 統一システム統合: ConfigManager経由でのインタラクション設定
-        const canvasConfig = window.ConfigManager.getCanvasConfig();
+        // インタラクション設定
         this.app.stage.interactive = true;
-        this.app.stage.hitArea = new PIXI.Rectangle(0, 0, canvasConfig.width, canvasConfig.height);
-        
-        // 🚨 統一システム統合: コンテナ状態記録
-        this.containersInitialized = true;
+        this.app.stage.hitArea = new PIXI.Rectangle(0, 0, this.canvasWidth, this.canvasHeight);
         
         console.log('✅ コンテナ初期化完了');
     }
@@ -347,61 +239,47 @@ class AppCore {
         
         this.toolSystem = new DrawingToolSystem(this);
         
-        // 🚨 統一システム統合: ツールシステム状態記録
-        this.toolSystemInitialized = true;
-        
         console.log('✅ ツールシステム初期化完了');
     }
     
     /**
-     * 🚨 統一システム統合: UI制御初期化（ErrorManager版）
+     * UI制御初期化（修正版：イベント制御付き）
      */
     async initializeUI() {
-        console.log('🎨 UI制御初期化中（統一システム統合版）...');
+        console.log('🎨 UI制御初期化中（修正版）...');
         
         try {
             this.uiController = new UIController(this.toolSystem);
             
-            // 🚨 統一システム統合: 初期化中のイベント制御
+            // 🚨 修正: 初期化中のイベント制御
             if (this.isInitializing) {
                 console.log('🔒 初期化中のためイベント発行を制御');
             }
             
             this.uiController.initialize();
             
-            // 🚨 統一システム統合: UI状態記録
-            this.uiControllerInitialized = true;
-            this.uiControllerType = 'full';
-            
             console.log('✅ UI制御初期化完了');
-            
         } catch (error) {
             console.error('💀 UI制御初期化エラー:', error);
             
-            // 🚨 統一システム統合: ErrorManager統一エラー処理
-            window.ErrorManager.showError('warning', 
-                `UI制御初期化に失敗しました: ${error.message}`, {
-                showDebug: false
-            });
+            // 🚨 修正: UIController初期化失敗時のフォールバック
+            if (window.ErrorManager) {
+                window.ErrorManager.showError('warning', 
+                    `UI制御初期化に失敗しました: ${error.message}`);
+            }
             
             // 最小限のUIコントローラー作成
             this.uiController = new MinimalUIController(this.toolSystem);
-            this.uiController.initialize();
-            
-            // 🚨 統一システム統合: 縮退UI状態記録
-            this.uiControllerInitialized = true;
-            this.uiControllerType = 'minimal';
-            this.uiControllerError = error.message;
         }
     }
     
     /**
-     * 🚨 統一システム統合: イベントリスナー設定（EventBus版）
+     * イベントリスナー設定
      */
     setupEventListeners() {
-        console.log('🎧 イベントリスナー設定中（EventBus統合版）...');
+        console.log('🎧 イベントリスナー設定中...');
         
-        // 描画イベント（統一システム統合版）
+        // 描画イベント
         this.app.stage.on('pointerdown', this.handlePointerDown.bind(this));
         this.app.stage.on('pointermove', this.handlePointerMove.bind(this));
         this.app.stage.on('pointerup', this.handlePointerUp.bind(this));
@@ -410,36 +288,7 @@ class AppCore {
         // リサイズイベント
         window.addEventListener('resize', this.handleResize.bind(this));
         
-        // 🚨 統一システム統合: EventBus経由でのキーボードショートカット設定
-        const keyboardShortcuts = window.ConfigManager.get('ui.keyboard.shortcuts');
-        document.addEventListener('keydown', (e) => {
-            if (keyboardShortcuts[e.code]) {
-                const action = keyboardShortcuts[e.code];
-                window.EventBus.safeEmit('keyboard.shortcut', { action, key: e.code });
-            }
-        });
-        
-        // 🚨 統一システム統合: EventBusリスナー設定
-        window.EventBus.on('tool.changed', this.handleToolChanged.bind(this));
-        window.EventBus.on('canvas.resize', this.handleCanvasResize.bind(this));
-        
-        console.log('✅ イベントリスナー設定完了（EventBus統合版）');
-    }
-    
-    /**
-     * 🚨 統一システム統合: EventBusリスナー - ツール変更
-     */
-    handleToolChanged(data) {
-        console.log(`🔧 ツール変更検出: ${data.previousTool} → ${data.tool}`);
-        this.currentTool = data.tool;
-    }
-    
-    /**
-     * 🚨 統一システム統合: EventBusリスナー - キャンバスリサイズ
-     */
-    handleCanvasResize(data) {
-        console.log(`📐 キャンバスリサイズ検出: ${data.width}x${data.height}`);
-        this.resize(data.width, data.height, data.centerContent);
+        console.log('✅ イベントリスナー設定完了');
     }
     
     /**
@@ -457,38 +306,26 @@ class AppCore {
     }
     
     /**
-     * 🚨 統一システム統合: パフォーマンス監視開始（ConfigManager版）
+     * パフォーマンス監視開始
      */
     startPerformanceMonitoring() {
         console.log('📊 パフォーマンス監視開始...');
         
         try {
-            // 🚨 統一システム統合: ConfigManager経由でのパフォーマンス設定取得
-            const performanceConfig = window.ConfigManager.getPerformanceConfig();
-            this.performanceMonitor = new PerformanceMonitor(performanceConfig);
+            this.performanceMonitor = new PerformanceMonitor();
             this.performanceMonitor.start();
-            
-            // 🚨 統一システム統合: パフォーマンス監視状態記録
-            this.performanceMonitorInitialized = true;
-            this.performanceTargetFPS = performanceConfig.targetFPS;
             
             console.log('✅ パフォーマンス監視開始完了');
         } catch (error) {
             console.warn('⚠️ パフォーマンス監視開始失敗:', error);
-            
-            // 🚨 統一システム統合: ErrorManager警告表示
-            window.ErrorManager.showError('warning', 
-                `パフォーマンス監視の開始に失敗しました: ${error.message}`, {
-                showDebug: false
-            });
         }
     }
     
     /**
-     * 🔧 統一システム統合: 初期化完了確認（StateManager版）
+     * 🔧 修復: 初期化完了確認
      */
     verifyInitialization() {
-        console.log('🔍 初期化完了確認中（統一システム統合版）...');
+        console.log('🔍 初期化完了確認中...');
         
         const verificationResults = {
             pixiApp: !!this.app,
@@ -498,8 +335,7 @@ class AppCore {
             toolSystem: !!this.toolSystem,
             uiController: !!this.uiController,
             performanceMonitor: !!this.performanceMonitor,
-            stageInteractive: this.app?.stage?.interactive,
-            unifiedSystems: this.verifyUnifiedSystems()
+            stageInteractive: this.app?.stage?.interactive
         };
         
         const totalChecks = Object.keys(verificationResults).length;
@@ -508,25 +344,11 @@ class AppCore {
         console.log('🔍 初期化検証結果:', verificationResults);
         console.log(`✅ 検証完了: ${passedChecks}/${totalChecks} (${(passedChecks/totalChecks*100).toFixed(1)}%)`);
         
-        // 🚨 統一システム統合: 検証結果記録
-        this.initializationVerification = {
-            results: verificationResults,
-            passedChecks,
-            totalChecks,
-            successRate: (passedChecks/totalChecks*100).toFixed(1)
-        };
-        
         if (passedChecks < totalChecks) {
             const failedChecks = Object.entries(verificationResults)
                 .filter(([key, value]) => !value)
                 .map(([key, value]) => key);
             console.warn('⚠️ 初期化未完了項目:', failedChecks);
-            
-            // 🚨 統一システム統合: ErrorManager警告表示
-            window.ErrorManager.showError('warning', 
-                `初期化未完了項目があります: ${failedChecks.join(', ')}`, {
-                showDebug: true
-            });
         }
         
         // 🎯 キャンバス表示の最終確認
@@ -542,54 +364,24 @@ class AppCore {
     }
     
     /**
-     * 🚨 統一システム統合: 統一システム検証
-     */
-    verifyUnifiedSystems() {
-        const systems = ['ConfigManager', 'ErrorManager', 'StateManager', 'EventBus'];
-        return systems.every(system => !!window[system]);
-    }
-    
-    /**
-     * 🚨 統一システム統合: 初期化統計取得
-     */
-    getInitializationStats() {
-        return {
-            pixiApp: !!this.app,
-            drawingContainer: !!this.drawingContainer,
-            toolSystem: !!this.toolSystem,
-            uiController: !!this.uiController,
-            performanceMonitor: !!this.performanceMonitor,
-            extensionsAvailable: this.extensionsAvailable,
-            fallbackMode: this.fallbackMode,
-            unifiedSystemsActive: this.verifyUnifiedSystems()
-        };
-    }
-    
-    /**
-     * 🚨 統一システム統合: フォールバックモード初期化（統一システム版）
+     * フォールバックモード初期化（修正版）
      */
     async initializeFallbackMode(error) {
-        console.log('🛡️ フォールバックモード初期化中（統一システム版）...');
+        console.log('🛡️ フォールバックモード初期化中...');
         this.fallbackMode = true;
-        
-        // 🚨 統一システム統合: フォールバック状態記録
-        this.fallbackModeActive = true;
-        this.fallbackReason = error.message;
         
         try {
             // 最低限のPixiJSアプリケーション初期化
             if (!this.app) {
-                // 🔧 統一システム統合: ConfigManager経由での最小設定取得
-                const fallbackConfig = {
-                    width: window.ConfigManager.get('canvas.width') || 400,
-                    height: window.ConfigManager.get('canvas.height') || 400,
-                    backgroundColor: window.ConfigManager.get('canvas.backgroundColor') || 0xf0e0d6,
-                    antialias: window.ConfigManager.get('pixi.antialias') || true,
-                    resolution: window.ConfigManager.get('pixi.resolution') || 1,
-                    autoDensity: window.ConfigManager.get('pixi.autoDensity') || false
-                };
-                
-                this.app = new PIXI.Application(fallbackConfig);
+                // 🔧 修正: 超シンプル設定でPixiJS Application作成
+                this.app = new PIXI.Application({
+                    width: 400,
+                    height: 400,
+                    backgroundColor: 0xf0e0d6,
+                    antialias: true,
+                    resolution: 1,
+                    autoDensity: false
+                });
                 
                 const canvasElement = document.getElementById('drawing-canvas');
                 if (canvasElement) {
@@ -608,33 +400,28 @@ class AppCore {
             
             console.log('✅ フォールバックモード初期化完了');
             
-            // 🚨 統一システム統合: ErrorManager回復メッセージ表示
-            window.ErrorManager.showError('recovery', 
-                '基本描画機能は利用可能です。一部の高度な機能が制限されています。', {
-                showDebug: false,
-                additionalInfo: 'フォールバックモードで動作中'
-            });
-            
-            // 🚨 統一システム統合: EventBus経由でのフォールバック通知
-            window.EventBus.safeEmit('appCore.fallbackMode', {
-                reason: error.message,
-                fallbackSystems: ['SimpleFallbackToolSystem']
-            });
+            // 回復メッセージ表示（統一システム使用）
+            if (window.ErrorManager) {
+                window.ErrorManager.showError('recovery', 
+                    '基本描画機能は利用可能です。一部の高度な機能が制限されています。');
+            }
             
         } catch (fallbackError) {
             console.error('💀 フォールバックモード初期化も失敗:', fallbackError);
             
-            // 🚨 統一システム統合: ErrorManager致命的エラー表示
-            window.ErrorManager.showError('critical', error.message, {
-                additionalInfo: fallbackError.message,
-                showDebug: true,
-                showReload: true
-            });
+            if (window.ErrorManager) {
+                window.ErrorManager.showError('critical', error.message, {
+                    additionalInfo: fallbackError.message,
+                    showDebug: true
+                });
+            } else {
+                this.displayCriticalError(fallbackError);
+            }
         }
     }
     
     /**
-     * 🚨 統一システム統合: イベントハンドラ: ポインターダウン（EventBus版）
+     * イベントハンドラ: ポインターダウン
      */
     handlePointerDown(event) {
         if (!this.toolSystem) return;
@@ -642,13 +429,12 @@ class AppCore {
         const point = this.getLocalPointerPosition(event);
         this.toolSystem.startDrawing(point.x, point.y);
         
-        // 🚨 統一システム統合: EventBus経由でのイベント発行（安全版）
-        if (this.initializationComplete) {
-            window.EventBus.safeEmit('drawing.started', {
+        // 🚨 修正: EventBus経由でのイベント発行（安全版）
+        if (window.EventBus && this.initializationComplete) {
+            window.EventBus.safeEmit(window.EventBus.Events.DRAWING_STARTED, {
                 x: point.x,
                 y: point.y,
-                tool: this.toolSystem.currentTool,
-                timestamp: Date.now()
+                tool: this.toolSystem.currentTool
             });
         }
         
@@ -656,7 +442,7 @@ class AppCore {
     }
     
     /**
-     * 🚨 統一システム統合: イベントハンドラ: ポインター移動（EventBus版）
+     * イベントハンドラ: ポインター移動
      */
     handlePointerMove(event) {
         const point = this.getLocalPointerPosition(event);
@@ -670,18 +456,17 @@ class AppCore {
         if (!this.toolSystem) return;
         this.toolSystem.continueDrawing(point.x, point.y);
         
-        // 🚨 統一システム統合: EventBus経由でのイベント発行（描画中のみ）
-        if (this.initializationComplete && this.toolSystem.isDrawing) {
-            window.EventBus.safeEmit('drawing.continued', {
+        // 🚨 修正: EventBus経由でのイベント発行（描画中のみ）
+        if (window.EventBus && this.initializationComplete && this.toolSystem.isDrawing) {
+            window.EventBus.safeEmit(window.EventBus.Events.DRAWING_CONTINUED, {
                 x: point.x,
-                y: point.y,
-                timestamp: Date.now()
+                y: point.y
             });
         }
     }
     
     /**
-     * 🚨 統一システム統合: イベントハンドラ: ポインターアップ（EventBus版）
+     * イベントハンドラ: ポインターアップ
      */
     handlePointerUp(event) {
         if (!this.toolSystem) return;
@@ -693,11 +478,10 @@ class AppCore {
             document.getElementById('pressure-monitor').textContent = '0.0%';
         }
         
-        // 🚨 統一システム統合: EventBus経由でのイベント発行（安全版）
-        if (this.initializationComplete) {
-            window.EventBus.safeEmit('drawing.ended', {
-                pathCount: this.paths.length,
-                timestamp: Date.now()
+        // 🚨 修正: EventBus経由でのイベント発行（安全版）
+        if (window.EventBus && this.initializationComplete) {
+            window.EventBus.safeEmit(window.EventBus.Events.DRAWING_ENDED, {
+                pathCount: this.paths.length
             });
         }
         
@@ -712,13 +496,6 @@ class AppCore {
         
         // リサイズ処理（必要に応じて実装）
         console.log('🔄 ウィンドウリサイズ検出');
-        
-        // 🚨 統一システム統合: EventBus経由でのリサイズ通知
-        if (this.initializationComplete) {
-            window.EventBus.safeEmit('window.resized', {
-                timestamp: Date.now()
-            });
-        }
     }
     
     /**
@@ -745,7 +522,7 @@ class AppCore {
     }
     
     /**
-     * 🚨 統一システム統合: キャンバスリサイズ（ConfigManager・EventBus版）
+     * キャンバスリサイズ（修正版）
      */
     resize(newWidth, newHeight, centerContent = false) {
         if (!this.app) return;
@@ -753,30 +530,17 @@ class AppCore {
         const oldWidth = this.canvasWidth;
         const oldHeight = this.canvasHeight;
         
-        // 🚨 統一システム統合: ConfigManager経由での設定値妥当性確認
-        const canvasConfig = window.ConfigManager.getCanvasConfig();
-        const validWidth = Math.max(canvasConfig.minWidth, Math.min(canvasConfig.maxWidth, newWidth));
-        const validHeight = Math.max(canvasConfig.minHeight, Math.min(canvasConfig.maxHeight, newHeight));
-        
-        if (validWidth !== newWidth || validHeight !== newHeight) {
-            // 🚨 統一システム統合: ErrorManager警告表示
-            window.ErrorManager.showError('warning', 
-                `キャンバスサイズが制限範囲外です。${validWidth}x${validHeight}に調整されました。`, {
-                showDebug: false
-            });
-        }
-        
-        this.canvasWidth = validWidth;
-        this.canvasHeight = validHeight;
+        this.canvasWidth = newWidth;
+        this.canvasHeight = newHeight;
         
         // アプリケーションリサイズ
-        this.app.renderer.resize(validWidth, validHeight);
-        this.app.stage.hitArea = new PIXI.Rectangle(0, 0, validWidth, validHeight);
+        this.app.renderer.resize(newWidth, newHeight);
+        this.app.stage.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
         
         // コンテンツ中央寄せ
         if (centerContent && this.drawingContainer && this.paths.length > 0) {
-            const offsetX = (validWidth - oldWidth) / 2;
-            const offsetY = (validHeight - oldHeight) / 2;
+            const offsetX = (newWidth - oldWidth) / 2;
+            const offsetY = (newHeight - oldHeight) / 2;
             
             this.drawingContainer.x += offsetX;
             this.drawingContainer.y += offsetY;
@@ -784,71 +548,594 @@ class AppCore {
         
         // ステータス更新
         if (document.getElementById('canvas-info')) {
-            document.getElementById('canvas-info').textContent = `${validWidth}×${validHeight}px`;
+            document.getElementById('canvas-info').textContent = `${newWidth}×${newHeight}px`;
         }
         
-        // 🚨 統一システム統合: 新サイズ記録
-        this.canvasSize = {
-            width: validWidth,
-            height: validHeight,
-            previousWidth: oldWidth,
-            previousHeight: oldHeight
-        };
-        
-        // 🚨 統一システム統合: EventBus経由でのイベント発行（安全版）
-        if (this.initializationComplete) {
-            window.EventBus.safeEmit('canvas.resized', {
-                width: validWidth,
-                height: validHeight,
-                previousWidth: oldWidth,
-                previousHeight: oldHeight,
-                centerContent,
-                timestamp: Date.now()
+        // 🚨 修正: EventBus経由でのイベント発行（安全版）
+        if (window.EventBus && this.initializationComplete) {
+            window.EventBus.safeEmit(window.EventBus.Events.CANVAS_RESIZED, {
+                width: newWidth,
+                height: newHeight,
+                centerContent
             });
         }
         
-        console.log(`📐 キャンバスリサイズ: ${validWidth}x${validHeight}`);
+        console.log(`📐 キャンバスリサイズ: ${newWidth}x${newHeight}`);
     }
     
     /**
-     * 🚨 統一システム統合: 初期化サマリー表示（StateManager版）
+     * 初期化サマリー表示
      */
     displayInitializationSummary() {
-        const summary = this.getInitializationStats();
+        const summary = {
+            pixiApp: !!this.app,
+            canvasInDOM: document.getElementById('drawing-canvas')?.contains(this.app?.view),
+            drawingContainer: !!this.drawingContainer,
+            toolSystem: !!this.toolSystem,
+            uiController: !!this.uiController,
+            performanceMonitor: !!this.performanceMonitor,
+            extensionsAvailable: this.extensionsAvailable,
+            fallbackMode: this.fallbackMode
+        };
         
-        console.log('📋 初期化サマリー（統一システム統合版）:', summary);
+        console.log('📋 初期化サマリー:', summary);
         
         const initComponents = Object.values(summary).filter(Boolean).length;
         const totalComponents = Object.keys(summary).length;
         
         console.log(`✅ 初期化完了率: ${initComponents}/${totalComponents} (${(initComponents/totalComponents*100).toFixed(1)}%)`);
         
-        // 🚨 統一システム統合: サマリー記録
-        this.initializationSummary = {
-            summary,
-            completionRate: (initComponents/totalComponents*100).toFixed(1),
-            timestamp: Date.now()
-        };
-        
         // 🎯 キャンバス表示修復成功メッセージ
-        if (summary.pixiApp && document.getElementById('drawing-canvas')?.contains(this.app?.view)) {
-            console.log('🎉 キャンバス表示修復完全成功！（統一システム統合版）');
+        if (summary.canvasInDOM) {
+            console.log('🎉 キャンバス表示修復完全成功！');
             console.log('🖊️ ペンツールでキャンバス上をドラッグして描画テスト可能');
-            
-            // 🚨 統一システム統合: EventBus経由での成功通知
-            window.EventBus.safeEmit('canvas.displaySuccess', {
-                width: this.canvasWidth,
-                height: this.canvasHeight,
-                unifiedSystems: this.verifyUnifiedSystems()
-            });
         }
+    }
+    
+    /**
+     * 致命的エラー表示（フォールバック用）
+     */
+    displayCriticalError(error) {
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #800000;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 9999;
+            font-family: monospace;
+            max-width: 400px;
+        `;
+        errorDiv.innerHTML = `
+            <h3>🚫 致命的エラー</h3>
+            <p style="margin: 10px 0;">AppCore初期化に失敗しました</p>
+            <details style="margin: 10px 0; text-align: left;">
+                <summary style="cursor: pointer;">エラー詳細</summary>
+                <pre style="margin: 5px 0; font-size: 10px; overflow: auto; max-height: 100px;">${error.message}</pre>
+            </details>
+            <button onclick="location.reload()" style="margin-top: 10px; padding: 8px 15px; background: white; color: #800000; border: none; border-radius: 5px; cursor: pointer;">再読み込み</button>
+        `;
+        document.body.appendChild(errorDiv);
     }
 }
 
-setupSliderButtons() {
-        // 🚨 統一システム統合: ConfigManager経由でのスライダー精度設定取得
-        const precision = this.uiConfig.slider.precision;
+/**
+ * 描画ツールシステム（修正版）
+ */
+class DrawingToolSystem {
+    constructor(appCore) {
+        this.appCore = appCore;
+        this.currentTool = 'pen';
+        this.isDrawing = false;
+        this.currentPath = null;
+        this.lastPoint = null;
         
+        // ツール設定
+        this.brushSize = 16.0;
+        this.brushColor = 0x800000;
+        this.opacity = 0.85;
+        this.pressure = 0.5;
+        this.smoothing = 0.3;
+        
+        // 拡張機能フラグ
+        this.extensionsAvailable = appCore.extensionsAvailable;
+        
+        console.log('🔧 DrawingToolSystem 初期化完了（修正版）');
+    }
+    
+    /**
+     * 描画エンジン初期化
+     */
+    initializeDrawingEngine() {
+        console.log('🖊️ 描画エンジン初期化中...');
+        
+        // 基本描画機能は常に利用可能
+        console.log('✅ 基本描画エンジン初期化完了');
+    }
+    
+    /**
+     * ツール設定（修正版：EventBus統合）
+     */
+    setTool(tool) {
+        this.currentTool = tool;
+        
+        // 🚨 修正: EventBus経由でのイベント発行（安全版）
+        if (window.EventBus && this.appCore.initializationComplete) {
+            window.EventBus.safeEmit(window.EventBus.Events.TOOL_CHANGED, { 
+                tool,
+                previousTool: this.currentTool
+            });
+        }
+        
+        console.log(`🔧 ツール変更: ${tool}`);
+    }
+    
+    setBrushSize(size) {
+        const oldSize = this.brushSize;
+        this.brushSize = Math.max(0.1, Math.min(100, Math.round(size * 10) / 10));
+        
+        // 🚨 修正: EventBus経由でのイベント発行（安全版・初期化完了後のみ）
+        if (window.EventBus && this.appCore.initializationComplete) {
+            window.EventBus.safeEmit(window.EventBus.Events.BRUSH_SIZE_CHANGED, {
+                size: this.brushSize,
+                previousSize: oldSize
+            });
+        }
+    }
+    
+    setOpacity(opacity) {
+        const oldOpacity = this.opacity;
+        this.opacity = Math.max(0, Math.min(1, Math.round(opacity * 1000) / 1000));
+        
+        // 🚨 修正: EventBus経由でのイベント発行（安全版）
+        if (window.EventBus && this.appCore.initializationComplete) {
+            window.EventBus.safeEmit(window.EventBus.Events.OPACITY_CHANGED, {
+                opacity: this.opacity,
+                previousOpacity: oldOpacity
+            });
+        }
+    }
+    
+    setPressure(pressure) {
+        const oldPressure = this.pressure;
+        this.pressure = Math.max(0, Math.min(1, Math.round(pressure * 1000) / 1000));
+        
+        // 🚨 修正: EventBus経由でのイベント発行（安全版）
+        if (window.EventBus && this.appCore.initializationComplete) {
+            window.EventBus.safeEmit(window.EventBus.Events.PRESSURE_CHANGED, {
+                pressure: this.pressure,
+                previousPressure: oldPressure
+            });
+        }
+    }
+    
+    setSmoothing(smoothing) {
+        this.smoothing = Math.max(0, Math.min(1, Math.round(smoothing * 1000) / 1000));
+    }
+    
+    /**
+     * 描画開始（修復版）
+     */
+    startDrawing(x, y) {
+        this.isDrawing = true;
+        this.lastPoint = { x, y };
+        
+        // 現在のツールに応じた描画開始
+        if (this.currentTool === 'pen') {
+            this.currentPath = this.createPenPath(x, y);
+        } else if (this.currentTool === 'eraser') {
+            this.currentPath = this.createEraserPath(x, y);
+        }
+        
+        // 筆圧モニター更新
+        if (document.getElementById('pressure-monitor')) {
+            const pressure = this.pressure * 100 + Math.random() * 10;
+            document.getElementById('pressure-monitor').textContent = `${pressure.toFixed(1)}%`;
+        }
+        
+        console.log(`🖊️ 描画開始 (${this.currentTool}): (${x.toFixed(1)}, ${y.toFixed(1)}), サイズ: ${this.brushSize}`);
+    }
+    
+    /**
+     * 描画継続（修復版）
+     */
+    continueDrawing(x, y) {
+        if (!this.isDrawing || !this.currentPath || !this.lastPoint) return;
+        
+        const distance = Math.sqrt((x - this.lastPoint.x) ** 2 + (y - this.lastPoint.y) ** 2);
+        
+        // 最小距離フィルタ
+        if (distance < 1.5) return;
+        
+        // 線の描画（元HTML版と同じ実装）
+        this.drawLine(this.currentPath, this.lastPoint.x, this.lastPoint.y, x, y);
+        this.lastPoint = { x, y };
+        
+        // 筆圧モニター更新
+        if (document.getElementById('pressure-monitor')) {
+            const pressure = this.pressure * 100 + Math.random() * 15;
+            document.getElementById('pressure-monitor').textContent = `${pressure.toFixed(1)}%`;
+        }
+    }
+    
+    /**
+     * 描画終了
+     */
+    stopDrawing() {
+        if (this.currentPath) {
+            this.currentPath.isComplete = true;
+            this.appCore.paths.push(this.currentPath);
+            console.log(`🖊️ 描画完了: ${this.currentPath.points.length}ポイント`);
+            
+            // 🚨 修正: EventBus経由でのイベント発行（安全版）
+            if (window.EventBus && this.appCore.initializationComplete) {
+                window.EventBus.safeEmit(window.EventBus.Events.PATH_CREATED, {
+                    pathId: this.currentPath.id,
+                    pointCount: this.currentPath.points.length,
+                    tool: this.currentPath.tool
+                });
+            }
+        }
+        
+        this.isDrawing = false;
+        this.currentPath = null;
+        this.lastPoint = null;
+    }
+    
+    /**
+     * ペンパス作成（元HTML版準拠）
+     */
+    createPenPath(x, y) {
+        const path = {
+            id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            graphics: new PIXI.Graphics(),
+            points: [{ x, y, size: this.brushSize }],
+            color: this.brushColor,
+            size: this.brushSize,
+            opacity: this.opacity,
+            tool: 'pen',
+            isComplete: false
+        };
+        
+        // TODO: PixiJS v8 - Graphics.beginFill → Graphics.fill
+        path.graphics.beginFill(path.color, path.opacity);
+        path.graphics.drawCircle(x, y, path.size / 2);
+        path.graphics.endFill();
+        
+        this.appCore.drawingContainer.addChild(path.graphics);
+        return path;
+    }
+    
+    /**
+     * 消しゴムパス作成
+     */
+    createEraserPath(x, y) {
+        const path = {
+            id: `eraser_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            graphics: new PIXI.Graphics(),
+            points: [{ x, y, size: this.brushSize }],
+            color: this.appCore.backgroundColor,
+            size: this.brushSize,
+            opacity: 1.0,
+            tool: 'eraser',
+            isComplete: false
+        };
+        
+        // TODO: PixiJS v8 - Graphics.beginFill → Graphics.fill
+        path.graphics.beginFill(path.color, path.opacity);
+        path.graphics.drawCircle(x, y, path.size / 2);
+        path.graphics.endFill();
+        
+        this.appCore.drawingContainer.addChild(path.graphics);
+        return path;
+    }
+    
+    /**
+     * 線描画（元HTML版準拠の円形ブラシ方式）
+     */
+    drawLine(path, x1, y1, x2, y2) {
+        const distance = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+        const steps = Math.max(1, Math.ceil(distance / 1.5));
+        
+        // 連続する円形で滑らかな線を描画
+        for (let i = 1; i <= steps; i++) {
+            const t = i / steps;
+            const px = x1 + (x2 - x1) * t;
+            const py = y1 + (y2 - y1) * t;
+            
+            // TODO: PixiJS v8 - Graphics.beginFill → Graphics.fill
+            path.graphics.beginFill(path.color, path.opacity);
+            path.graphics.drawCircle(px, py, path.size / 2);
+            path.graphics.endFill();
+        }
+        
+        path.points.push({ x: x2, y: y2, size: path.size });
+    }
+}
+
+/**
+ * 簡易フォールバックツールシステム
+ */
+class SimpleFallbackToolSystem extends DrawingToolSystem {
+    constructor(appCore) {
+        super(appCore);
+        console.log('🛡️ SimpleFallbackToolSystem 初期化完了');
+    }
+    
+    initializeDrawingEngine() {
+        console.log('🛡️ フォールバック描画エンジン初期化中...');
+        console.log('✅ フォールバック描画エンジン初期化完了');
+    }
+}
+
+/**
+ * UI制御システム（修正版 - setupPopups メソッド追加）
+ */
+class UIController {
+    constructor(toolSystem) {
+        this.toolSystem = toolSystem;
+        this.activePopup = null;
+        this.sliders = new Map();
+    }
+    
+    /**
+     * 初期化（修正版：setupPopups メソッド追加済み）
+     */
+    initialize() {
+        console.log('🎨 UI制御システム初期化中（修正版）...');
+        
+        try {
+            this.setupToolButtons();
+            this.setupPopups(); // 🚨 修正: setupPopups メソッド追加
+            this.setupSliders();
+            this.setupPresets();
+            this.setupResize();
+            this.setupCheckboxes();
+            this.updateSizePresets();
+            
+            console.log('✅ UI制御システム初期化完了（修正版）');
+        } catch (error) {
+            console.error('💀 UI制御システム初期化エラー:', error);
+            
+            // 🚨 修正: ErrorManager統一エラー処理
+            if (window.ErrorManager) {
+                if (typeof window.ErrorManager.safeError === 'function') {
+                    window.ErrorManager.safeError(`UI初期化エラー: ${error.message}`, 'error');
+                } else {
+                    window.ErrorManager.showError('error', error, {
+                        additionalInfo: 'UIController初期化失敗'
+                    });
+                }
+            }
+            
+            throw error;
+        }
+    }
+    
+    /**
+     * 🚨 修正: setupPopups メソッド実装
+     */
+    setupPopups() {
+        console.log('🪟 ポップアップシステム設定中...');
+        
+        try {
+            // data-popup属性を持つ要素にクリックリスナー設定
+            document.querySelectorAll('[data-popup]').forEach(trigger => {
+                trigger.addEventListener('click', (e) => {
+                    const popupId = e.target.getAttribute('data-popup');
+                    if (popupId) {
+                        this.togglePopup(popupId);
+                    }
+                });
+            });
+            
+            // ポップアップ外クリックで閉じる機能
+            document.addEventListener('click', (e) => {
+                // ポップアップ内部またはトリガー要素以外をクリックした場合
+                if (!e.target.closest('.popup-panel') && !e.target.closest('[data-popup]')) {
+                    this.closeAllPopups();
+                }
+            });
+            
+            // Escapeキーでポップアップを閉じる
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && this.activePopup) {
+                    this.closeAllPopups();
+                }
+            });
+            
+            console.log('✅ ポップアップシステム設定完了');
+        } catch (error) {
+            console.error('💀 ポップアップ設定エラー:', error);
+            throw error;
+        }
+    }
+    
+    setupToolButtons() {
+        document.querySelectorAll('.tool-button').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                if (btn.classList.contains('disabled')) return;
+                this.handleToolClick(e.currentTarget);
+            });
+        });
+    }
+    
+    handleToolClick(button) {
+        const toolId = button.id;
+        const popupId = button.getAttribute('data-popup');
+        
+        if (toolId === 'pen-tool') {
+            this.setTool('pen');
+        } else if (toolId === 'eraser-tool') {
+            this.setTool('eraser');
+        }
+        
+        if (popupId) {
+            this.togglePopup(popupId);
+        }
+    }
+    
+    setTool(tool) {
+        if (this.toolSystem) {
+            this.toolSystem.setTool(tool);
+        }
+        
+        document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
+        const toolButton = document.getElementById(tool + '-tool');
+        if (toolButton) {
+            toolButton.classList.add('active');
+        }
+        
+        const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
+        if (document.getElementById('current-tool')) {
+            document.getElementById('current-tool').textContent = toolNames[tool] || tool;
+        }
+    }
+    
+    togglePopup(popupId) {
+        const popup = document.getElementById(popupId);
+        if (!popup) {
+            console.warn(`⚠️ ポップアップ要素が見つかりません: ${popupId}`);
+            return;
+        }
+        
+        // 他のポップアップを閉じる
+        if (this.activePopup && this.activePopup !== popup) {
+            this.activePopup.classList.remove('show');
+        }
+        
+        // 現在のポップアップの表示状態を切り替え
+        const isVisible = popup.classList.contains('show');
+        popup.classList.toggle('show', !isVisible);
+        
+        this.activePopup = isVisible ? null : popup;
+        
+        console.log(`🪟 ポップアップ${isVisible ? '非表示' : '表示'}: ${popupId}`);
+    }
+
+setupSliders() {
+        this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value) => {
+            if (this.toolSystem) {
+                this.toolSystem.setBrushSize(value);
+            }
+            this.updateSizePresets();
+            return value.toFixed(1) + 'px';
+        });
+        
+        this.createSlider('pen-opacity-slider', 0, 100, 85.0, (value) => {
+            if (this.toolSystem) {
+                this.toolSystem.setOpacity(value / 100);
+            }
+            this.updateSizePresets();
+            return value.toFixed(1) + '%';
+        });
+        
+        this.createSlider('pen-pressure-slider', 0, 100, 50.0, (value) => {
+            if (this.toolSystem) {
+                this.toolSystem.setPressure(value / 100);
+            }
+            return value.toFixed(1) + '%';
+        });
+        
+        this.createSlider('pen-smoothing-slider', 0, 100, 30.0, (value) => {
+            if (this.toolSystem) {
+                this.toolSystem.setSmoothing(value / 100);
+            }
+            return value.toFixed(1) + '%';
+        });
+        
+        this.setupSliderButtons();
+    }
+    
+    createSlider(sliderId, min, max, initial, callback) {
+        const container = document.getElementById(sliderId);
+        if (!container) {
+            console.warn(`⚠️ スライダー要素が見つかりません: ${sliderId}`);
+            return;
+        }
+        
+        const track = container.querySelector('.slider-track');
+        const handle = container.querySelector('.slider-handle');
+        const valueDisplay = container.parentNode.querySelector('.slider-value');
+        
+        if (!track || !handle || !valueDisplay) {
+            console.warn(`⚠️ スライダー部品が不完全: ${sliderId}`);
+            return;
+        }
+        
+        const sliderData = {
+            value: initial,
+            min, max, callback,
+            track, handle, valueDisplay,
+            isDragging: false
+        };
+        
+        this.sliders.set(sliderId, sliderData);
+        
+        const updateSlider = (value) => {
+            sliderData.value = Math.max(min, Math.min(max, value));
+            const percentage = ((sliderData.value - min) / (max - min)) * 100;
+            
+            track.style.width = percentage + '%';
+            handle.style.left = percentage + '%';
+            valueDisplay.textContent = callback(sliderData.value);
+        };
+        
+        const getValueFromPosition = (clientX) => {
+            const rect = container.getBoundingClientRect();
+            const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            return min + (percentage * (max - min));
+        };
+        
+        // マウスイベント設定
+        container.addEventListener('mousedown', (e) => {
+            sliderData.isDragging = true;
+            updateSlider(getValueFromPosition(e.clientX));
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (sliderData.isDragging) {
+                updateSlider(getValueFromPosition(e.clientX));
+            }
+        });
+        
+        document.addEventListener('mouseup', () => {
+            sliderData.isDragging = false;
+        });
+        
+        // タッチイベント設定（モバイル対応）
+        container.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                sliderData.isDragging = true;
+                updateSlider(getValueFromPosition(e.touches[0].clientX));
+                e.preventDefault();
+            }
+        });
+        
+        document.addEventListener('touchmove', (e) => {
+            if (sliderData.isDragging && e.touches.length === 1) {
+                updateSlider(getValueFromPosition(e.touches[0].clientX));
+                e.preventDefault();
+            }
+        });
+        
+        document.addEventListener('touchend', () => {
+            sliderData.isDragging = false;
+        });
+        
+        // 初期値設定
+        updateSlider(initial);
+        
+        console.log(`✅ スライダー設定完了: ${sliderId}`);
+    }
+    
+    setupSliderButtons() {
         // スライダー調整ボタンの設定
         const adjustValue = (sliderId, delta) => {
             const slider = this.sliders.get(sliderId);
@@ -1002,28 +1289,22 @@ setupSliderButtons() {
             popup.classList.remove('show');
         });
         this.activePopup = null;
-        
-        // 🚨 統一システム統合: EventBus経由でのポップアップ全閉じ通知
-        window.EventBus.safeEmit('ui.allPopupsClosed', {
-            timestamp: Date.now()
-        });
-        
-        console.log('🔒 全ポップアップ閉じる（統一システム版）');
+        console.log('🔒 全ポップアップ閉じる');
     }
 }
 
 /**
- * 🚨 統一システム統合: 最小限UIコントローラー（統一システム版）
+ * 最小限UIコントローラー（フォールバック用）
  */
 class MinimalUIController {
     constructor(toolSystem) {
         this.toolSystem = toolSystem;
         this.activePopup = null;
-        console.log('🛡️ MinimalUIController 初期化完了（統一システム統合版）');
+        console.log('🛡️ MinimalUIController 初期化完了');
     }
     
     initialize() {
-        console.log('🛡️ 最小限UI制御初期化中（統一システム版）...');
+        console.log('🛡️ 最小限UI制御初期化中...');
         
         try {
             // 最低限のツールボタン設定のみ
@@ -1039,16 +1320,9 @@ class MinimalUIController {
                 });
             });
             
-            console.log('✅ 最小限UI制御初期化完了（統一システム版）');
-            
+            console.log('✅ 最小限UI制御初期化完了');
         } catch (error) {
             console.error('💀 最小限UI制御初期化エラー:', error);
-            
-            // 🚨 統一システム統合: ErrorManager警告表示
-            window.ErrorManager.showError('warning', 
-                `最小限UI制御初期化に失敗しました: ${error.message}`, {
-                showDebug: false
-            });
         }
     }
     
@@ -1066,12 +1340,6 @@ class MinimalUIController {
         if (currentToolElement) {
             currentToolElement.textContent = toolNames[tool] || tool;
         }
-        
-        // 🚨 統一システム統合: EventBus経由でのツール状態更新通知
-        window.EventBus.safeEmit('ui.toolStatusUpdated', {
-            tool,
-            timestamp: Date.now()
-        });
     }
     
     closeAllPopups() {
@@ -1079,52 +1347,35 @@ class MinimalUIController {
             popup.classList.remove('show');
         });
         this.activePopup = null;
-        console.log('🔒 全ポップアップ閉じる（最小限・統一システム版）');
+        console.log('🔒 全ポップアップ閉じる（最小限）');
     }
 }
 
 /**
- * 🚨 統一システム統合: パフォーマンス監視システム（ConfigManager版）
+ * パフォーマンス監視システム
  */
 class PerformanceMonitor {
-    constructor(performanceConfig = null) {
-        // 🚨 統一システム統合: ConfigManager経由での設定取得
-        this.config = performanceConfig || window.ConfigManager.getPerformanceConfig();
-        
+    constructor() {
         this.frameCount = 0;
         this.lastTime = performance.now();
         this.isRunning = false;
-        this.metrics = {
-            currentFPS: 0,
-            averageFPS: 0,
-            minFPS: Infinity,
-            maxFPS: 0,
-            frameCount: 0
-        };
-        this.updateCallbacks = new Set();
     }
     
     start() {
         if (this.isRunning) return;
         
-        console.log('📊 パフォーマンス監視開始（統一システム統合版）');
+        console.log('📊 パフォーマンス監視開始');
         this.isRunning = true;
         
         const update = () => {
             if (!this.isRunning) return;
             
             this.frameCount++;
-            this.metrics.frameCount++;
             const currentTime = performance.now();
             
-            // 🚨 統一システム統合: ConfigManager経由での更新間隔取得
-            if (currentTime - this.lastTime >= this.config.updateInterval) {
+            // 1秒ごとにFPS更新
+            if (currentTime - this.lastTime >= 1000) {
                 const fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastTime));
-                
-                this.metrics.currentFPS = fps;
-                this.metrics.averageFPS = Math.round((this.metrics.averageFPS + fps) / 2);
-                this.metrics.minFPS = Math.min(this.metrics.minFPS, fps);
-                this.metrics.maxFPS = Math.max(this.metrics.maxFPS, fps);
                 
                 // FPS表示更新
                 const fpsElement = document.getElementById('fps');
@@ -1132,26 +1383,10 @@ class PerformanceMonitor {
                     fpsElement.textContent = fps;
                 }
                 
-                // 🚨 統一システム統合: ConfigManager経由での目標FPS取得
-                if (fps < this.config.targetFPS / 2) {
-                    console.warn(`⚠️ 低FPS検出: ${fps}fps (目標: ${this.config.targetFPS}fps)`);
+                // パフォーマンス警告
+                if (fps < 30) {
+                    console.warn(`⚠️ 低FPS検出: ${fps}fps`);
                 }
-                
-                // 🚨 統一システム統合: EventBus経由でのFPS更新通知
-                window.EventBus.safeEmit('performance.fpsUpdated', {
-                    fps,
-                    averageFPS: this.metrics.averageFPS,
-                    timestamp: Date.now()
-                });
-                
-                // 更新コールバック実行
-                this.updateCallbacks.forEach(callback => {
-                    try {
-                        callback(this.metrics);
-                    } catch (error) {
-                        console.error('パフォーマンス監視コールバックエラー:', error);
-                    }
-                });
                 
                 this.frameCount = 0;
                 this.lastTime = currentTime;
@@ -1164,33 +1399,16 @@ class PerformanceMonitor {
     }
     
     stop() {
-        console.log('📊 パフォーマンス監視停止（統一システム版）');
+        console.log('📊 パフォーマンス監視停止');
         this.isRunning = false;
-        
-        // 🚨 統一システム統合: EventBus経由での監視停止通知
-        window.EventBus.safeEmit('performance.monitoringStopped', {
-            finalMetrics: this.metrics,
-            timestamp: Date.now()
-        });
     }
     
     getStats() {
         return {
             isRunning: this.isRunning,
-            metrics: { ...this.metrics },
-            config: { ...this.config },
             lastTime: this.lastTime,
-            frameCount: this.frameCount,
-            updateCallbacks: this.updateCallbacks.size
+            frameCount: this.frameCount
         };
-    }
-    
-    addUpdateCallback(callback) {
-        this.updateCallbacks.add(callback);
-    }
-    
-    removeUpdateCallback(callback) {
-        this.updateCallbacks.delete(callback);
     }
 }
 
@@ -1203,628 +1421,7 @@ if (typeof window !== 'undefined') {
     window.MinimalUIController = MinimalUIController;
     window.PerformanceMonitor = PerformanceMonitor;
     
-    console.log('🎨 AppCore関連クラス グローバル登録完了（統一システム統合版）');
+    console.log('🎨 AppCore関連クラス グローバル登録完了（統一システム対応修正版）');
     console.log('🛡️ フォールバック機能・循環参照防止機能追加済み');
-    console.log('🚨 統一システム統合完了: ConfigManager・ErrorManager・EventBus統合済み');
-    console.log('✅ Task 1-A-2完了: StateManager.set削除・内部状態管理移行完了');
-    console.log('🔧 構文エラー修正・クラス構造修正・統一システム統合改善完了');
-}/**
- * 🚨 統一システム統合: 描画ツールシステム（ConfigManager・EventBus版）
- */
-class DrawingToolSystem {
-    constructor(appCore) {
-        this.appCore = appCore;
-        this.currentTool = 'pen';
-        this.isDrawing = false;
-        this.currentPath = null;
-        this.lastPoint = null;
-    }
-    
-    /**
-     * 🚨 統一システム統合: ペンパス作成（ConfigManager版）
-     */
-    createPenPath(x, y) {
-        const path = {
-            id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            graphics: new PIXI.Graphics(),
-            points: [{ x, y, size: this.brushSize }],
-            color: this.brushColor,
-            size: this.brushSize,
-            opacity: this.opacity,
-            tool: 'pen',
-            isComplete: false
-        };
-        
-        // TODO: PixiJS v8 - Graphics.beginFill → Graphics.fill
-        path.graphics.beginFill(path.color, path.opacity);
-        path.graphics.drawCircle(x, y, path.size / 2);
-        path.graphics.endFill();
-        
-        this.appCore.drawingContainer.addChild(path.graphics);
-        return path;
-    }
-    
-    /**
-     * 🚨 統一システム統合: 消しゴムパス作成（ConfigManager版）
-     */
-    createEraserPath(x, y) {
-        const eraserConfig = window.ConfigManager.getDrawingConfig('eraser');
-        
-        const path = {
-            id: `eraser_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            graphics: new PIXI.Graphics(),
-            points: [{ x, y, size: this.brushSize }],
-            color: this.appCore.backgroundColor,
-            size: this.brushSize,
-            opacity: eraserConfig.opacity,
-            tool: 'eraser',
-            isComplete: false
-        };
-        
-        // TODO: PixiJS v8 - Graphics.beginFill → Graphics.fill
-        path.graphics.beginFill(path.color, path.opacity);
-        path.graphics.drawCircle(x, y, path.size / 2);
-        path.graphics.endFill();
-        
-        this.appCore.drawingContainer.addChild(path.graphics);
-        return path;
-    }
-    
-    /**
-     * 線描画（元HTML版準拠の円形ブラシ方式）
-     */
-    drawLine(path, x1, y1, x2, y2) {
-        const distance = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-        const steps = Math.max(1, Math.ceil(distance / 1.5));
-        
-        // 連続する円形で滑らかな線を描画
-        for (let i = 1; i <= steps; i++) {
-            const t = i / steps;
-            const px = x1 + (x2 - x1) * t;
-            const py = y1 + (y2 - y1) * t;
-            
-            // TODO: PixiJS v8 - Graphics.beginFill → Graphics.fill
-            path.graphics.beginFill(path.color, path.opacity);
-            path.graphics.drawCircle(px, py, path.size / 2);
-            path.graphics.endFill();
-        }
-        
-        path.points.push({ x: x2, y: y2, size: path.size });
-    }
+    console.log('🚨 修正適用済み: setupPopups メソッド追加・エラーハンドリング強化');
 }
-
-/**
- * 🚨 統一システム統合: 簡易フォールバックツールシステム（統一システム版）
- */
-class SimpleFallbackToolSystem extends DrawingToolSystem {
-    constructor(appCore) {
-        super(appCore);
-        console.log('🛡️ SimpleFallbackToolSystem 初期化完了（統一システム統合版）');
-        
-        // 🚨 統一システム統合: フォールバックツール状態記録
-        this.fallbackMode = true;
-    }
-    
-    initializeDrawingEngine() {
-        console.log('🛡️ フォールバック描画エンジン初期化中...');
-        console.log('✅ フォールバック描画エンジン初期化完了');
-        
-        // 🚨 統一システム統合: 状態記録
-        this.drawingEngineInitialized = true;
-        this.fallbackModeActive = true;
-    }
-}
-
-/**
- * 🚨 統一システム統合: UI制御システム（統一システム版）
- */
-class UIController {
-    constructor(toolSystem) {
-        this.toolSystem = toolSystem;
-        this.activePopup = null;
-        this.sliders = new Map();
-        
-        // 🚨 統一システム統合: ConfigManager経由でのUI設定取得
-        this.uiConfig = window.ConfigManager.getUIConfig();
-    }
-    
-    /**
-     * 🚨 統一システム統合: 初期化（ErrorManager版）
-     */
-    initialize() {
-        console.log('🎨 UI制御システム初期化中（統一システム統合版）...');
-        
-        try {
-            this.setupToolButtons();
-            this.setupPopups();
-            this.setupSliders();
-            this.setupPresets();
-            this.setupResize();
-            this.setupCheckboxes();
-            this.updateSizePresets();
-            
-            // 🚨 統一システム統合: UI初期化状態記録
-            this.initialized = true;
-            this.slidersCount = this.sliders.size;
-            
-            console.log('✅ UI制御システム初期化完了（統一システム統合版）');
-            
-        } catch (error) {
-            console.error('💀 UI制御システム初期化エラー:', error);
-            
-            // 🚨 統一システム統合: ErrorManager統一エラー処理
-            window.ErrorManager.showError('error', error.message, {
-                additionalInfo: 'UIController初期化失敗（統一システム版）',
-                showDebug: true
-            });
-            
-            throw error;
-        }
-    }
-    
-    /**
-     * 🚨 統一システム統合: ポップアップシステム設定（EventBus版）
-     */
-    setupPopups() {
-        console.log('🪟 ポップアップシステム設定中（EventBus統合版）...');
-        
-        try {
-            // data-popup属性を持つ要素にクリックリスナー設定
-            document.querySelectorAll('[data-popup]').forEach(trigger => {
-                trigger.addEventListener('click', (e) => {
-                    const popupId = e.target.getAttribute('data-popup');
-                    if (popupId) {
-                        this.togglePopup(popupId);
-                    }
-                });
-            });
-            
-            // ポップアップ外クリックで閉じる機能
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('.popup-panel') && !e.target.closest('[data-popup]')) {
-                    this.closeAllPopups();
-                }
-            });
-            
-            // 🚨 統一システム統合: ConfigManager経由でのキーボードショートカット設定
-            const shortcuts = this.uiConfig.keyboard.shortcuts;
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape' && this.activePopup) {
-                    this.closeAllPopups();
-                    
-                    // 🚨 統一システム統合: EventBus経由でのショートカット通知
-                    window.EventBus.safeEmit('keyboard.shortcutUsed', {
-                        key: 'Escape',
-                        action: 'closePopups'
-                    });
-                }
-            });
-            
-            console.log('✅ ポップアップシステム設定完了（EventBus統合版）');
-            
-        } catch (error) {
-            console.error('💀 ポップアップ設定エラー:', error);
-            
-            // 🚨 統一システム統合: ErrorManager警告表示
-            window.ErrorManager.showError('warning', 
-                `ポップアップシステム設定に失敗しました: ${error.message}`, {
-                showDebug: false
-            });
-            
-            throw error;
-        }
-    }
-    
-    setupToolButtons() {
-        document.querySelectorAll('.tool-button').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                if (btn.classList.contains('disabled')) return;
-                this.handleToolClick(e.currentTarget);
-            });
-        });
-    }
-    
-    /**
-     * 🚨 統一システム統合: ツールクリック処理（EventBus版）
-     */
-    handleToolClick(button) {
-        const toolId = button.id;
-        const popupId = button.getAttribute('data-popup');
-        
-        if (toolId === 'pen-tool') {
-            this.setTool('pen');
-        } else if (toolId === 'eraser-tool') {
-            this.setTool('eraser');
-        }
-        
-        if (popupId) {
-            this.togglePopup(popupId);
-        }
-        
-        // 🚨 統一システム統合: EventBus経由でのツールクリック通知
-        window.EventBus.safeEmit('ui.toolButtonClicked', {
-            toolId,
-            popupId,
-            timestamp: Date.now()
-        });
-    }
-    
-    setTool(tool) {
-        if (this.toolSystem) {
-            this.toolSystem.setTool(tool);
-        }
-        
-        document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
-        const toolButton = document.getElementById(tool + '-tool');
-        if (toolButton) {
-            toolButton.classList.add('active');
-        }
-        
-        const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
-        if (document.getElementById('current-tool')) {
-            document.getElementById('current-tool').textContent = toolNames[tool] || tool;
-        }
-    }
-    
-    /**
-     * 🚨 統一システム統合: ポップアップ切り替え（EventBus版）
-     */
-    togglePopup(popupId) {
-        const popup = document.getElementById(popupId);
-        if (!popup) {
-            console.warn(`⚠️ ポップアップ要素が見つかりません: ${popupId}`);
-            
-            // 🚨 統一システム統合: ErrorManager警告表示
-            window.ErrorManager.showError('warning', 
-                `ポップアップ要素が見つかりません: ${popupId}`, {
-                showDebug: false
-            });
-            return;
-        }
-        
-        // 他のポップアップを閉じる
-        if (this.activePopup && this.activePopup !== popup) {
-            this.activePopup.classList.remove('show');
-        }
-        
-        // 現在のポップアップの表示状態を切り替え
-        const isVisible = popup.classList.contains('show');
-        popup.classList.toggle('show', !isVisible);
-        
-        this.activePopup = isVisible ? null : popup;
-        
-        // 🚨 統一システム統合: EventBus経由でのポップアップ状態変更通知
-        window.EventBus.safeEmit('ui.popupToggled', {
-            popupId,
-            visible: !isVisible,
-            timestamp: Date.now()
-        });
-        
-        console.log(`🪟 ポップアップ${isVisible ? '非表示' : '表示'}: ${popupId}`);
-    }
-
-    setupSliders() {
-        this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value) => {
-            if (this.toolSystem) {
-                this.toolSystem.setBrushSize(value);
-            }
-            this.updateSizePresets();
-            return value.toFixed(1) + 'px';
-        });
-        
-        this.createSlider('pen-opacity-slider', 0, 100, 85.0, (value) => {
-            if (this.toolSystem) {
-                this.toolSystem.setOpacity(value / 100);
-            }
-            this.updateSizePresets();
-            return value.toFixed(1) + '%';
-        });
-        
-        this.createSlider('pen-pressure-slider', 0, 100, 50.0, (value) => {
-            if (this.toolSystem) {
-                this.toolSystem.setPressure(value / 100);
-            }
-            return value.toFixed(1) + '%';
-        });
-        
-        this.createSlider('pen-smoothing-slider', 0, 100, 30.0, (value) => {
-            if (this.toolSystem) {
-                this.toolSystem.setSmoothing(value / 100);
-            }
-            return value.toFixed(1) + '%';
-        });
-        
-        this.setupSliderButtons();
-    }
-    
-    createSlider(sliderId, min, max, initial, callback) {
-        const container = document.getElementById(sliderId);
-        if (!container) {
-            console.warn(`⚠️ スライダー要素が見つかりません: ${sliderId}`);
-            return;
-        }
-        
-        const track = container.querySelector('.slider-track');
-        const handle = container.querySelector('.slider-handle');
-        const valueDisplay = container.parentNode.querySelector('.slider-value');
-        
-        if (!track || !handle || !valueDisplay) {
-            console.warn(`⚠️ スライダー部品が不完全: ${sliderId}`);
-            return;
-        }
-        
-        // 🚨 統一システム統合: ConfigManager経由でのスライダー設定取得
-        const sliderConfig = this.uiConfig.slider;
-        
-        const sliderData = {
-            value: initial,
-            min, max, callback,
-            track, handle, valueDisplay,
-            isDragging: false,
-            updateThrottle: sliderConfig.updateThrottle
-        };
-        
-        this.sliders.set(sliderId, sliderData);
-        
-        const updateSlider = (value) => {
-            sliderData.value = Math.max(min, Math.min(max, value));
-            const percentage = ((sliderData.value - min) / (max - min)) * 100;
-            
-            track.style.width = percentage + '%';
-            handle.style.left = percentage + '%';
-            valueDisplay.textContent = callback(sliderData.value);
-        };
-        
-        const getValueFromPosition = (clientX) => {
-            const rect = container.getBoundingClientRect();
-            const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-            return min + (percentage * (max - min));
-        };
-        
-        // マウスイベント設定
-        container.addEventListener('mousedown', (e) => {
-            sliderData.isDragging = true;
-            updateSlider(getValueFromPosition(e.clientX));
-            e.preventDefault();
-        });
-        
-        document.addEventListener('mousemove', (e) => {
-            if (sliderData.isDragging) {
-                updateSlider(getValueFromPosition(e.clientX));
-            }
-        });
-        
-        document.addEventListener('mouseup', () => {
-            sliderData.isDragging = false;
-        });
-        
-        // タッチイベント設定（モバイル対応）
-        container.addEventListener('touchstart', (e) => {
-            if (e.touches.length === 1) {
-                sliderData.isDragging = true;
-                updateSlider(getValueFromPosition(e.touches[0].clientX));
-                e.preventDefault();
-            }
-        });
-        
-        document.addEventListener('touchmove', (e) => {
-            if (sliderData.isDragging && e.touches.length === 1) {
-                updateSlider(getValueFromPosition(e.touches[0].clientX));
-                e.preventDefault();
-            }
-        });
-        
-        document.addEventListener('touchend', () => {
-            sliderData.isDragging = false;
-        });
-        
-        // 初期値設定
-        updateSlider(initial);
-        
-        console.log(`✅ スライダー設定完了: ${sliderId}`);
-    }.lastPoint = null;
-        
-        // 🚨 統一システム統合: ConfigManager経由でのツール設定取得
-        const penConfig = window.ConfigManager.getDrawingConfig('pen');
-        this.brushSize = penConfig.defaultSize;
-        this.brushColor = penConfig.defaultColor;
-        this.opacity = penConfig.defaultOpacity;
-        this.pressure = penConfig.defaultPressure;
-        this.smoothing = penConfig.defaultSmoothing;
-        this.minDistance = penConfig.minDistance;
-        
-        // 拡張機能フラグ
-        this.extensionsAvailable = appCore.extensionsAvailable;
-        
-        console.log('🔧 DrawingToolSystem 初期化完了（統一システム統合版）');
-        
-        // 🚨 統一システム統合: ツールシステム状態記録
-        this.initialized = true;
-    }
-    
-    /**
-     * 描画エンジン初期化
-     */
-    initializeDrawingEngine() {
-        console.log('🖊️ 描画エンジン初期化中...');
-        
-        // 基本描画機能は常に利用可能
-        console.log('✅ 基本描画エンジン初期化完了');
-        
-        // 🚨 統一システム統合: 描画エンジン状態記録
-        this.drawingEngineInitialized = true;
-    }
-    
-    /**
-     * 🚨 統一システム統合: ツール設定（EventBus・ConfigManager版）
-     */
-    setTool(tool) {
-        const previousTool = this.currentTool;
-        this.currentTool = tool;
-        
-        // 🚨 統一システム統合: ツール状態更新
-        this.previousTool = previousTool;
-        
-        // 🚨 統一システム統合: EventBus経由でのイベント発行（安全版）
-        if (this.appCore.initializationComplete) {
-            window.EventBus.safeEmit('tool.changed', { 
-                tool,
-                previousTool,
-                timestamp: Date.now()
-            });
-        }
-        
-        console.log(`🔧 ツール変更: ${previousTool} → ${tool}`);
-    }
-    
-    /**
-     * 🚨 統一システム統合: ブラシサイズ設定（ConfigManager・EventBus版）
-     */
-    setBrushSize(size) {
-        const penConfig = window.ConfigManager.getDrawingConfig('pen');
-        const oldSize = this.brushSize;
-        
-        // 🚨 統一システム統合: ConfigManager経由での妥当性確認
-        this.brushSize = Math.max(penConfig.minSize, Math.min(penConfig.maxSize, Math.round(size * 10) / 10));
-        
-        // 🚨 統一システム統合: ブラシサイズ更新
-        this.previousBrushSize = oldSize;
-        
-        // 🚨 統一システム統合: EventBus経由でのイベント発行（初期化完了後のみ）
-        if (this.appCore.initializationComplete) {
-            window.EventBus.safeEmit('brush.sizeChanged', {
-                size: this.brushSize,
-                previousSize: oldSize,
-                timestamp: Date.now()
-            });
-        }
-    }
-    
-    /**
-     * 🚨 統一システム統合: 不透明度設定（EventBus版）
-     */
-    setOpacity(opacity) {
-        const oldOpacity = this.opacity;
-        this.opacity = Math.max(0, Math.min(1, Math.round(opacity * 1000) / 1000));
-        
-        // 🚨 統一システム統合: 不透明度更新
-        this.previousOpacity = oldOpacity;
-        
-        // 🚨 統一システム統合: EventBus経由でのイベント発行（安全版）
-        if (this.appCore.initializationComplete) {
-            window.EventBus.safeEmit('brush.opacityChanged', {
-                opacity: this.opacity,
-                previousOpacity: oldOpacity,
-                timestamp: Date.now()
-            });
-        }
-    }
-    
-    /**
-     * 🚨 統一システム統合: 筆圧設定（EventBus版）
-     */
-    setPressure(pressure) {
-        const oldPressure = this.pressure;
-        this.pressure = Math.max(0, Math.min(1, Math.round(pressure * 1000) / 1000));
-        
-        // 🚨 統一システム統合: 筆圧更新
-        this.previousPressure = oldPressure;
-        
-        // 🚨 統一システム統合: EventBus経由でのイベント発行（安全版）
-        if (this.appCore.initializationComplete) {
-            window.EventBus.safeEmit('brush.pressureChanged', {
-                pressure: this.pressure,
-                previousPressure: oldPressure,
-                timestamp: Date.now()
-            });
-        }
-    }
-    
-    /**
-     * スムージング設定
-     */
-    setSmoothing(smoothing) {
-        this.smoothing = Math.max(0, Math.min(1, Math.round(smoothing * 1000) / 1000));
-        
-        // 🚨 統一システム統合: スムージング更新
-        this.previousSmoothing = this.smoothing;
-    }
-    
-    /**
-     * 🚨 統一システム統合: 描画開始（ConfigManager版）
-     */
-    startDrawing(x, y) {
-        this.isDrawing = true;
-        this.lastPoint = { x, y };
-        
-        // 現在のツールに応じた描画開始
-        if (this.currentTool === 'pen') {
-            this.currentPath = this.createPenPath(x, y);
-        } else if (this.currentTool === 'eraser') {
-            this.currentPath = this.createEraserPath(x, y);
-        }
-        
-        // 筆圧モニター更新
-        if (document.getElementById('pressure-monitor')) {
-            const pressure = this.pressure * 100 + Math.random() * 10;
-            document.getElementById('pressure-monitor').textContent = `${pressure.toFixed(1)}%`;
-        }
-        
-        // 🚨 統一システム統合: 描画状態更新
-        this.drawingStarted = true;
-        this.currentPathId = this.currentPath?.id;
-        
-        console.log(`🖊️ 描画開始 (${this.currentTool}): (${x.toFixed(1)}, ${y.toFixed(1)}), サイズ: ${this.brushSize}`);
-    }
-    
-    /**
-     * 🚨 統一システム統合: 描画継続（ConfigManager版）
-     */
-    continueDrawing(x, y) {
-        if (!this.isDrawing || !this.currentPath || !this.lastPoint) return;
-        
-        const distance = Math.sqrt((x - this.lastPoint.x) ** 2 + (y - this.lastPoint.y) ** 2);
-        
-        // 🚨 統一システム統合: ConfigManager経由での最小距離フィルタ
-        if (distance < this.minDistance) return;
-        
-        // 線の描画（元HTML版と同じ実装）
-        this.drawLine(this.currentPath, this.lastPoint.x, this.lastPoint.y, x, y);
-        this.lastPoint = { x, y };
-        
-        // 筆圧モニター更新
-        if (document.getElementById('pressure-monitor')) {
-            const pressure = this.pressure * 100 + Math.random() * 15;
-            document.getElementById('pressure-monitor').textContent = `${pressure.toFixed(1)}%`;
-        }
-    }
-
-    /**
-     * 🚨 統一システム統合: 描画終了（EventBus版）
-     */
-    stopDrawing() {
-        if (this.currentPath) {
-            this.currentPath.isComplete = true;
-            this.appCore.paths.push(this.currentPath);
-            
-            // 🚨 統一システム統合: EventBus経由でのパス作成通知（安全版）
-            if (this.appCore.initializationComplete) {
-                window.EventBus.safeEmit('path.created', {
-                    pathId: this.currentPath.id,
-                    pointCount: this.currentPath.points.length,
-                    tool: this.currentPath.tool,
-                    timestamp: Date.now()
-                });
-            }
-            
-            console.log(`🖊️ 描画完了: ${this.currentPath.points.length}ポイント`);
-        }
-        
-        // 🚨 統一システム統合: 描画状態更新
-        this.drawingStarted = false;
-        this.currentPathId = null;
-        this.totalPaths = this.appCore.paths.length;
-        
-        this.isDrawing = false;
-        this.currentPath = null;
-        this/**
