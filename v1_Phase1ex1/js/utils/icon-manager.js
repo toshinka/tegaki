@@ -727,9 +727,9 @@ class IconManager {
             'layer': 'layers',
             'layers-tool': 'layers',
             
-            'gif-animation': 'gif',
-            'gif-tool': 'gif',
-            'animation': 'gif',
+            'gif-animation': 'clapperboard',
+            'gif-tool': 'clapperboard',
+            'animation': 'clapperboard',
             
             'video': 'movie',
             'film-strip': 'film'
@@ -783,7 +783,7 @@ class IconManager {
                 'download-tool': 'download',
                 'resize-tool': 'resize',
                 'layers-tool': 'layers',      // Phase1後期新規
-                'gif-tool': 'gif',            // Phase1後期新規
+                'gif-tool': 'clapperboard',            // Phase1後期新規
                 'settings-tool': 'settings'
             };
             
