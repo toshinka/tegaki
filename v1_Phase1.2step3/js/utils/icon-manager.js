@@ -74,512 +74,6 @@ class IconManager {
     }
     
     /**
-     * StateManager連携設定
-     */
-    setupStateManagerIntegration() {
-        // アイコン状態更新関数を登録
-        StateManager.registerComponent('iconManager', () => ({
-            initialized: this.initialized,
-            version: this.version,
-            iconCount: this.getTotalIconCount(),
-            cacheStats: this.getCacheStats(),
-            theme: this.themes.current,
-            tablerAvailable: this.tabler.available
-        }));
-    }
-    
-    /**
-     * ConfigManager連携設定
-     */
-    setupConfigManagerIntegration() {
-        // 設定変更監視
-        if (ConfigManager.onChange) {
-            ConfigManager.onChange('icons', (newConfig) => {
-                this.config = { ...this.config, ...newConfig };
-                this.applyConfigChanges();
-            });
-        }
-    }
-    
-    // ==========================================
-    // 🎯 アイコン取得システム（Phase1後期改良版）
-    // ==========================================
-    
-    /**
-     * アイコン取得（Phase1後期改良版・統一システム完全活用）
-     */
-    getIcon(name, options = {}) {
-        try {
-            const startTime = performance.now();
-            
-            // キャッシュチェック
-            const cacheKey = this.generateCacheKey(name, options);
-            if (this.cache.rendered.has(cacheKey)) {
-                this.cache.hitCount++;
-                return this.cache.rendered.get(cacheKey);
-            }
-            
-            this.cache.missCount++;
-            
-            // アイコン検索（優先順位：専用 → @tabler → フォールバック）
-            let svg = this.findIconWithPriority(name);
-            
-            if (!svg) {
-                // ErrorManager連携
-                ErrorManager.showError('icon-not-found', 
-                    'アイコンが見つかりません: ' + name, 
-                    { iconName: name, options: options }
-                );
-                svg = this.generateEmergencyIcon(name);
-            }
-            
-            // オプション・テーマ適用
-            svg = this.processIconSvg(svg, options);
-            
-            // キャッシュ保存
-            this.cacheRenderedIcon(cacheKey, svg);
-            
-            const renderTime = performance.now() - startTime;
-            if (renderTime > 5) {
-                console.log('🐌 アイコン描画時間: ' + name + ' - ' + renderTime.toFixed(2) + 'ms');
-            }
-            
-            return svg;
-            
-        } catch (error) {
-            // ErrorManager統合エラー処理
-            ErrorManager.showError('icon-render', 
-                'アイコン描画エラー: ' + name + ' - ' + error.message, 
-                { iconName: name, options: options, error: error }
-            );
-            
-            return this.generateEmergencyIcon(name);
-        }
-    }
-    
-    /**
-     * 優先順位付きアイコン検索
-     */
-    findIconWithPriority(name) {
-        // 1. 専用アイコン（Phase1後期改良版）
-        if (this.specializedIcons[name]) {
-            return this.specializedIcons[name];
-        }
-        
-        // 2. 直接登録アイコン
-        if (this.icons.has(name)) {
-            return this.icons.get(name);
-        }
-        
-        // 3. カスタムアイコン
-        if (this.customIcons.has(name)) {
-            return this.customIcons.get(name);
-        }
-        
-        // 4. @tabler/icons（利用可能時）
-        if (this.tabler.available) {
-            const tablerSvg = this.getTablerIcon(name);
-            if (tablerSvg) {
-                return tablerSvg;
-            }
-        }
-        
-        // 5. エイリアス検索
-        const aliasedName = this.resolveAlias(name);
-        if (aliasedName && aliasedName !== name) {
-            return this.findIconWithPriority(aliasedName);
-        }
-        
-        return null;
-    }
-    
-    /**
-     * @tabler/iconsアイコン取得（改良版）
-     */
-    async getTablerIcon(name) {
-        try {
-            // マッピング確認
-            const tablerName = this.tabler.iconCache.get(name) || name;
-            const url = this.tabler.basePath + tablerName + '.svg';
-            
-            // 既にキャッシュされている場合
-            if (this.tablerIcons.has(tablerName)) {
-                return this.tablerIcons.get(tablerName);
-            }
-            
-            // SVGフェッチ（非同期だが、フォールバックありのため問題なし）
-            fetch(url)
-                .then(response => response.text())
-                .then(svgContent => {
-                    if (svgContent.includes('<svg')) {
-                        this.tablerIcons.set(tablerName, svgContent);
-                        this.tabler.loadedCount++;
-                    }
-                })
-                .catch(error => {
-                    console.log('⚠️ @tabler/icon読み込み失敗: ' + tablerName);
-                });
-            
-            // 同期的にはnullを返す（フォールバック使用）
-            return null;
-            
-        } catch (error) {
-            return null;
-        }
-    }
-    
-    /**
-     * アイコンエイリアス解決（Phase1後期拡張）
-     */
-    resolveAlias(name) {
-        const aliases = {
-            // 基本ツール
-            'fill': 'bucket',
-            'fill-tool': 'bucket',
-            'paint': 'bucket',
-            'paint-bucket': 'bucket',
-            
-            'select': 'selection',
-            'select-tool': 'selection',
-            'selection-dashed': 'selection',
-            
-            'pencil': 'pen',
-            'pen-tool': 'pen',
-            'draw': 'pen',
-            
-            'eraser-tool': 'eraser',
-            'erase': 'eraser',
-            
-            // Phase1後期新規
-            'layer': 'layers',
-            'layers-tool': 'layers',
-            
-            'gif-animation': 'clapperboard',
-            'gif-tool': 'clapperboard',
-            'animation': 'clapperboard',
-            
-            'video': 'movie',
-            'film-strip': 'film'
-        };
-        
-        return aliases[name] || name;
-    }
-    
-    /**
-     * SVG処理（オプション・テーマ適用）
-     */
-    processIconSvg(svg, options) {
-        let processedSvg = svg;
-        
-        // サイズ適用
-        if (options.size) {
-            processedSvg = this.applySizeToSvg(processedSvg, options.size);
-        }
-        
-        // 色適用
-        if (options.color) {
-            processedSvg = this.applyColorToSvg(processedSvg, options.color);
-        }
-        
-        // テーマ適用
-        processedSvg = this.applyThemeToSvg(processedSvg, options.iconName);
-        
-        // アニメーション適用
-        if (options.animated && this.config.animationsEnabled) {
-            processedSvg = this.addAnimationToSvg(processedSvg, options.animation);
-        }
-        
-        return processedSvg;
-    }
-    
-    // ==========================================
-    // 🎯 UI統合システム（Phase1後期改良版）
-    // ==========================================
-    
-    /**
-     * ツールボタンアイコン一括更新（Phase1後期改良版）
-     */
-    updateToolButtonIcons(theme = null) {
-        try {
-            const iconMapping = {
-                'pen-tool': 'pen',
-                'eraser-tool': 'eraser',
-                'fill-tool': 'bucket',        // Phase1後期: 改良バケツ
-                'select-tool': 'select',      // Phase1後期: 改良選択範囲
-                'palette-tool': 'palette',
-                'download-tool': 'download',
-                'resize-tool': 'resize',
-                'layers-tool': 'layers',      // Phase1後期新規
-                'gif-tool': 'clapperboard',   // Phase1後期新規
-                'settings-tool': 'settings'
-            };
-            
-            let successCount = 0;
-            const options = {};
-            
-            // テーマ適用
-            if (theme && this.themes.available.has(theme)) {
-                const themeData = this.themes.available.get(theme);
-                options.color = themeData.primary;
-                options.size = this.config.iconSizes.medium;
-            }
-            
-            Object.entries(iconMapping).forEach(([elementId, iconName]) => {
-                const element = document.getElementById(elementId);
-                if (element) {
-                    const iconSvg = this.getIcon(iconName, { ...options, iconName: iconName });
-                    if (iconSvg && this.setElementIcon(element, iconSvg)) {
-                        successCount++;
-                    }
-                }
-            });
-            
-            // EventBus通知
-            EventBus.safeEmit('icons.updated', {
-                updated: successCount,
-                total: Object.keys(iconMapping).length,
-                theme: theme || this.themes.current
-            });
-            
-            console.log('✅ ツールボタンアイコン更新完了: ' + successCount + '個');
-            return successCount;
-            
-        } catch (error) {
-            ErrorManager.showError('icon-update', 
-                'アイコン更新エラー: ' + error.message, 
-                { theme: theme, error: error }
-            );
-            return 0;
-        }
-    }
-    
-    /**
-     * 要素にアイコン設定
-     */
-    setElementIcon(element, iconSvg) {
-        if (!element || !iconSvg) return false;
-        
-        try {
-            // スムーズ置換アニメーション
-            if (this.config.animationsEnabled && element.innerHTML) {
-                element.style.transition = 'opacity 0.15s ease';
-                element.style.opacity = '0';
-                
-                setTimeout(() => {
-                    element.innerHTML = iconSvg;
-                    element.style.opacity = '1';
-                    this.addElementEvents(element);
-                }, 75);
-            } else {
-                element.innerHTML = iconSvg;
-                this.addElementEvents(element);
-            }
-            
-            return true;
-            
-        } catch (error) {
-            ErrorManager.showError('icon-element', 
-                '要素アイコン設定エラー: ' + error.message, 
-                { element: element, error: error }
-            );
-            return false;
-        }
-    }
-    
-    // ==========================================
-    // 🎯 ユーティリティ・ヘルパー関数
-    // ==========================================
-    
-    /**
-     * 基本アイコン生成関数群
-     */
-    createBasicPenIcon() {
-        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21v-4a4 4 0 1 1 4 4h-4"/><path d="M21 3a16 16 0 0 0 -12.8 10.2"/><path d="M21 3a16 16 0 0 1 -10.2 12.8"/><path d="M10.6 9a9 9 0 0 1 4.4 4.4"/></svg>';
-    }
-    
-    createBasicEraserIcon() {
-        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20h-10.5l-4.21-4.3a1 1 0 0 1 0-1.41l10-10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41Z"/><path d="M9 9l4 4"/></svg>';
-    }
-    
-    createBasicPaletteIcon() {
-        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>';
-    }
-    
-    createBasicDownloadIcon() {
-        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
-    }
-    
-    createBasicResizeIcon() {
-        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16,3 21,3 21,8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21,16 21,21 16,21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>';
-    }
-    
-    createBasicSettingsIcon() {
-        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>';
-    }
-    
-    /**
-     * 緊急アイコン生成
-     */
-    generateEmergencyIcon(name) {
-        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
-               '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>' +
-               '<text x="12" y="12" text-anchor="middle" font-size="8" fill="currentColor">' + (name.substring(0, 3).toUpperCase()) + '</text>' +
-               '</svg>';
-    }
-    
-    /**
-     * キャッシュキー生成
-     */
-    generateCacheKey(name, options) {
-        const optionsStr = JSON.stringify(options || {});
-        return name + '|' + optionsStr;
-    }
-    
-    /**
-     * キャッシュ保存
-     */
-    cacheRenderedIcon(cacheKey, svg) {
-        if (this.cache.rendered.size >= this.cache.maxSize) {
-            // LRU削除
-            const firstKey = this.cache.rendered.keys().next().value;
-            this.cache.rendered.delete(firstKey);
-        }
-        
-        this.cache.rendered.set(cacheKey, svg);
-    }
-    
-    /**
-     * テーマ設定
-     */
-    setTheme(themeName) {
-        if (this.themes.available.has(themeName)) {
-            this.themes.current = themeName;
-            EventBus.safeEmit('theme.applied', { theme: themeName });
-            console.log('🎨 テーマ変更: ' + themeName);
-        }
-    }
-    
-    /**
-     * キャッシュクリア
-     */
-    clearCache() {
-        this.cache.rendered.clear();
-        this.cache.hitCount = 0;
-        this.cache.missCount = 0;
-        console.log('🗑️ アイコンキャッシュクリア完了');
-    }
-    
-    /**
-     * 要素イベント追加
-     */
-    addElementEvents(element) {
-        // 基本的なホバー効果
-        if (this.config.animationsEnabled) {
-            element.addEventListener('mouseenter', () => {
-                element.style.opacity = '0.7';
-            });
-            
-            element.addEventListener('mouseleave', () => {
-                element.style.opacity = '1';
-            });
-        }
-    }
-    
-    /**
-     * SVGサイズ適用
-     */
-    applySizeToSvg(svg, size) {
-        return svg.replace(/<svg([^>]+)>/i, '<svg$1 width="' + size + '" height="' + size + '">');
-    }
-    
-    /**
-     * SVG色適用
-     */
-    applyColorToSvg(svg, color) {
-        return svg.replace(/stroke="currentColor"/g, 'stroke="' + color + '"')
-                  .replace(/fill="currentColor"/g, 'fill="' + color + '"');
-    }
-    
-    /**
-     * SVGテーマ適用
-     */
-    applyThemeToSvg(svg, iconName) {
-        const theme = this.themes.available.get(this.themes.current);
-        if (theme && theme.primary) {
-            return this.applyColorToSvg(svg, theme.primary);
-        }
-        return svg;
-    }
-    
-    /**
-     * SVGアニメーション追加
-     */
-    addAnimationToSvg(svg, animationType) {
-        // 基本的なアニメーション効果
-        if (animationType === 'pulse') {
-            return svg.replace('</svg>', '<animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite"/></svg>');
-        }
-        return svg;
-    }
-    
-    /**
-     * 設定変更適用
-     */
-    applyConfigChanges() {
-        // キャッシュサイズ更新
-        this.cache.maxSize = this.config.cacheSize || 200;
-        
-        // テーマ更新
-        this.themes.current = this.config.defaultTheme || 'futaba';
-        
-        console.log('⚙️ アイコン設定変更適用完了');
-    }
-    
-    /**
-     * フォールバック初期化
-     */
-    fallbackInitialize() {
-        console.log('🛡️ アイコンシステム フォールバック初期化中...');
-        
-        try {
-            // 最低限のアイコンのみ作成
-            this.createFallbackIcons();
-            this.initialized = true;
-            
-            ErrorManager.showError('recovery', 'アイコンシステムをフォールバックモードで初期化しました');
-            
-        } catch (error) {
-            console.error('💀 フォールバック初期化失敗:', error);
-            ErrorManager.showCriticalError('アイコンシステムの初期化に完全に失敗しました');
-        }
-    }
-    
-    /**
-     * 総アイコン数取得
-     */
-    getTotalIconCount() {
-        return this.icons.size + this.customIcons.size + this.tablerIcons.size;
-    }
-    
-    /**
-     * キャッシュ統計取得
-     */
-    getCacheStats() {
-        return {
-            size: this.cache.rendered.size,
-            maxSize: this.cache.maxSize,
-            hitCount: this.cache.hitCount,
-            missCount: this.cache.missCount,
-            hitRate: this.cache.hitCount > 0 ? (this.cache.hitCount / (this.cache.hitCount + this.cache.missCount) * 100).toFixed(1) + '%' : '0%'
-        };
-    }
-}
-
-// グローバル公開
-if (typeof window !== 'undefined') {
-    window.IconManager = IconManager;
-    console.log('✅ IconManager グローバル公開完了');
-}
      * 🎯 統一システム依存性確認（DRY・SOLID原則）
      */
     validateUnifiedSystems() {
@@ -667,7 +161,7 @@ if (typeof window !== 'undefined') {
             // ErrorManager統合
             ErrorManager.showError('icon-system', 
                 'IconManager初期化エラー: ' + error.message, 
-                { error: error, version: this.version }
+                { error, version: this.version }
             );
             
             // フォールバック初期化
@@ -777,14 +271,6 @@ if (typeof window !== 'undefined') {
         });
         
         console.log('📋 @tabler/icons マッピング: ' + Object.keys(iconMappings).length + '個設定');
-    }
-    
-    /**
-     * フォールバックアイコン準備
-     */
-    prepareFallbackIcons() {
-        // 基本フォールバックアイコン作成
-        this.createFallbackIcons();
     }
     
     /**
@@ -1007,7 +493,7 @@ if (typeof window !== 'undefined') {
             // ErrorManager連携
             ErrorManager.showError('icon-missing', 
                 '一部アイコンが不足していたため代替アイコンを使用します: ' + missing.join(', '),
-                { missing: missing, fallbackGenerated: true }
+                { missing, fallbackGenerated: true }
             );
         }
         
@@ -1053,3 +539,522 @@ if (typeof window !== 'undefined') {
     }
     
     /**
+     * StateManager連携設定
+     */
+    setupStateManagerIntegration() {
+        // アイコン状態更新関数を登録
+        if (StateManager.registerComponent) {
+            StateManager.registerComponent('iconManager', () => ({
+                initialized: this.initialized,
+                version: this.version,
+                iconCount: this.getTotalIconCount(),
+                cacheStats: this.getCacheStats(),
+                theme: this.themes.current,
+                tablerAvailable: this.tabler.available
+            }));
+        }
+    }
+    
+    /**
+     * ConfigManager連携設定
+     */
+    setupConfigManagerIntegration() {
+        // 設定変更監視
+        if (ConfigManager.onChange) {
+            ConfigManager.onChange('icons', (newConfig) => {
+                this.config = Object.assign({}, this.config, newConfig);
+                this.applyConfigChanges();
+            });
+        }
+    }
+    
+    // ==========================================
+    // 🎯 アイコン取得システム（Phase1後期改良版）
+    // ==========================================
+    
+    /**
+     * アイコン取得（Phase1後期改良版・統一システム完全活用）
+     */
+    getIcon(name, options = {}) {
+        try {
+            const startTime = performance.now();
+            
+            // キャッシュチェック
+            const cacheKey = this.generateCacheKey(name, options);
+            if (this.cache.rendered.has(cacheKey)) {
+                this.cache.hitCount++;
+                return this.cache.rendered.get(cacheKey);
+            }
+            
+            this.cache.missCount++;
+            
+            // アイコン検索（優先順位：専用 → @tabler → フォールバック）
+            let svg = this.findIconWithPriority(name);
+            
+            if (!svg) {
+                // ErrorManager連携
+                ErrorManager.showError('icon-not-found', 
+                    'アイコンが見つかりません: ' + name, 
+                    { iconName: name, options }
+                );
+                svg = this.generateEmergencyIcon(name);
+            }
+            
+            // オプション・テーマ適用
+            svg = this.processIconSvg(svg, options);
+            
+            // キャッシュ保存
+            this.cacheRenderedIcon(cacheKey, svg);
+            
+            const renderTime = performance.now() - startTime;
+            if (renderTime > 5) {
+                console.log('🐌 アイコン描画時間: ' + name + ' - ' + renderTime.toFixed(2) + 'ms');
+            }
+            
+            return svg;
+            
+        } catch (error) {
+            // ErrorManager統合エラー処理
+            ErrorManager.showError('icon-render', 
+                'アイコン描画エラー: ' + name + ' - ' + error.message, 
+                { iconName: name, options, error }
+            );
+            
+            return this.generateEmergencyIcon(name);
+        }
+    }
+    
+    /**
+     * 優先順位付きアイコン検索
+     */
+    findIconWithPriority(name) {
+        // 1. 専用アイコン（Phase1後期改良版）
+        if (this.specializedIcons[name]) {
+            return this.specializedIcons[name];
+        }
+        
+        // 2. 直接登録アイコン
+        if (this.icons.has(name)) {
+            return this.icons.get(name);
+        }
+        
+        // 3. カスタムアイコン
+        if (this.customIcons.has(name)) {
+            return this.customIcons.get(name);
+        }
+        
+        // 4. @tabler/icons（利用可能時）
+        if (this.tabler.available) {
+            const tablerSvg = this.getTablerIcon(name);
+            if (tablerSvg) {
+                return tablerSvg;
+            }
+        }
+        
+        // 5. エイリアス検索
+        const aliasedName = this.resolveAlias(name);
+        if (aliasedName && aliasedName !== name) {
+            return this.findIconWithPriority(aliasedName);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * @tabler/iconsアイコン取得（改良版）
+     */
+    async getTablerIcon(name) {
+        try {
+            // マッピング確認
+            const tablerName = this.tabler.iconCache.get(name) || name;
+            const url = this.tabler.basePath + tablerName + '.svg';
+            
+            // 既にキャッシュされている場合
+            if (this.tablerIcons.has(tablerName)) {
+                return this.tablerIcons.get(tablerName);
+            }
+            
+            // SVGフェッチ（非同期だが、フォールバックありのため問題なし）
+            fetch(url)
+                .then(response => response.text())
+                .then(svgContent => {
+                    if (svgContent.includes('<svg')) {
+                        this.tablerIcons.set(tablerName, svgContent);
+                        this.tabler.loadedCount++;
+                    }
+                })
+                .catch(error => {
+                    console.log('⚠️ @tabler/icon読み込み失敗: ' + tablerName);
+                });
+            
+            // 同期的にはnullを返す（フォールバック使用）
+            return null;
+            
+        } catch (error) {
+            return null;
+        }
+    }
+    
+    /**
+     * アイコンエイリアス解決（Phase1後期拡張）
+     */
+    resolveAlias(name) {
+        const aliases = {
+            // 基本ツール
+            'fill': 'bucket',
+            'fill-tool': 'bucket',
+            'paint': 'bucket',
+            'paint-bucket': 'bucket',
+            
+            'select': 'selection',
+            'select-tool': 'selection',
+            'selection-dashed': 'selection',
+            
+            'pencil': 'pen',
+            'pen-tool': 'pen',
+            'draw': 'pen',
+            
+            'eraser-tool': 'eraser',
+            'erase': 'eraser',
+            
+            // Phase1後期新規
+            'layer': 'layers',
+            'layers-tool': 'layers',
+            
+            'gif-animation': 'clapperboard',
+            'gif-tool': 'clapperboard',
+            'animation': 'clapperboard',
+            
+            'video': 'movie',
+            'film-strip': 'film'
+        };
+        
+        return aliases[name] || name;
+    }
+    
+    /**
+     * SVG処理（オプション・テーマ適用）
+     */
+    processIconSvg(svg, options) {
+        let processedSvg = svg;
+        
+        // サイズ適用
+        if (options.size) {
+            processedSvg = this.applySizeToSvg(processedSvg, options.size);
+        }
+        
+        // 色適用
+        if (options.color) {
+            processedSvg = this.applyColorToSvg(processedSvg, options.color);
+        }
+        
+        // テーマ適用
+        processedSvg = this.applyThemeToSvg(processedSvg, options.iconName);
+        
+        // アニメーション適用
+        if (options.animated && this.config.animationsEnabled) {
+            processedSvg = this.addAnimationToSvg(processedSvg, options.animation);
+        }
+        
+        return processedSvg;
+    }
+    
+    // ==========================================
+    // 🎯 UI統合システム（Phase1後期改良版）
+    // ==========================================
+    
+    /**
+     * ツールボタンアイコン一括更新（Phase1後期改良版）
+     */
+    updateToolButtonIcons(theme = null) {
+        try {
+            const iconMapping = {
+                'pen-tool': 'pen',
+                'eraser-tool': 'eraser',
+                'fill-tool': 'bucket',        // Phase1後期: 改良バケツ
+                'select-tool': 'select',      // Phase1後期: 改良選択範囲
+                'palette-tool': 'palette',
+                'download-tool': 'download',
+                'resize-tool': 'resize',
+                'layers-tool': 'layers',      // Phase1後期新規
+                'gif-tool': 'clapperboard',            // Phase1後期新規
+                'settings-tool': 'settings'
+            };
+            
+            let successCount = 0;
+            const options = {};
+            
+            // テーマ適用
+            if (theme && this.themes.available.has(theme)) {
+                const themeData = this.themes.available.get(theme);
+                options.color = themeData.primary;
+                options.size = this.config.iconSizes.medium;
+            }
+            
+            Object.entries(iconMapping).forEach(([elementId, iconName]) => {
+                const element = document.getElementById(elementId);
+                if (element) {
+                    const iconSvg = this.getIcon(iconName, Object.assign({}, options, { iconName }));
+                    if (iconSvg && this.setElementIcon(element, iconSvg)) {
+                        successCount++;
+                    }
+                }
+            });
+            
+            // EventBus通知
+            EventBus.safeEmit('icons.updated', {
+                updated: successCount,
+                total: Object.keys(iconMapping).length,
+                theme: theme || this.themes.current
+            });
+            
+            console.log('✅ ツールボタンアイコン更新完了: ' + successCount + '個');
+            return successCount;
+            
+        } catch (error) {
+            ErrorManager.showError('icon-update', 
+                'アイコン更新エラー: ' + error.message, 
+                { theme, error }
+            );
+            return 0;
+        }
+    }
+    
+    /**
+     * 要素にアイコン設定
+     */
+    setElementIcon(element, iconSvg) {
+        if (!element || !iconSvg) return false;
+        
+        try {
+            // スムーズ置換アニメーション
+            if (this.config.animationsEnabled && element.innerHTML) {
+                element.style.transition = 'opacity 0.15s ease';
+                element.style.opacity = '0';
+                
+                setTimeout(() => {
+                    element.innerHTML = iconSvg;
+                    element.style.opacity = '1';
+                    this.addElementEvents(element);
+                }, 75);
+            } else {
+                element.innerHTML = iconSvg;
+                this.addElementEvents(element);
+            }
+            
+            return true;
+            
+        } catch (error) {
+            ErrorManager.showError('icon-element', 
+                '要素アイコン設定エラー: ' + error.message, 
+                { element, error }
+            );
+            return false;
+        }
+    }
+    
+    // ==========================================
+    // 🎯 ユーティリティ・ヘルパー関数
+    // ==========================================
+    
+    /**
+     * 基本アイコン生成関数群
+     */
+    createBasicPenIcon() {
+        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21v-4a4 4 0 1 1 4 4h-4"/><path d="M21 3a16 16 0 0 0 -12.8 10.2"/><path d="M21 3a16 16 0 0 1 -10.2 12.8"/><path d="M10.6 9a9 9 0 0 1 4.4 4.4"/></svg>';
+    }
+    
+    createBasicEraserIcon() {
+        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20h-10.5l-4.21-4.3a1 1 0 0 1 0-1.41l10-10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41l-6.2 6.3"/><path d="m9 9 4 4"/></svg>';
+    }
+    
+    createBasicPaletteIcon() {
+        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21a9 9 0 0 1 0-18c5 0 9 4 9 9a4.5 4.5 0 0 1-4.5 4.5c-1.21 0-2.5-.07-3.5-.93a4.5 4.5 0 0 1-1-4.57"/><circle cx="7.5" cy="10.5" r="1.5"/><circle cx="12" cy="7.5" r="1.5"/><circle cx="16.5" cy="10.5" r="1.5"/></svg>';
+    }
+    
+    createBasicDownloadIcon() {
+        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+    }
+    
+    createBasicResizeIcon() {
+        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="5,9 2,12 5,15"/><polyline points="9,5 12,2 15,5"/><polyline points="15,19 12,22 9,19"/><polyline points="19,9 22,12 19,15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>';
+    }
+    
+    createBasicSettingsIcon() {
+        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="m9 12 2 2 4-4"/></svg>';
+    }
+    
+    /**
+     * 緊急アイコン生成
+     */
+    generateEmergencyIcon(name) {
+        const firstLetter = name.charAt(0).toUpperCase();
+        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+            '<rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="2 2"/>' +
+            '<text x="12" y="14" text-anchor="middle" font-size="10" fill="currentColor">' + firstLetter + '</text>' +
+            '</svg>';
+    }
+    
+    /**
+     * キャッシュキー生成
+     */
+    generateCacheKey(name, options) {
+        const optionsStr = JSON.stringify(options);
+        return name + '_' + btoa(optionsStr).substring(0, 8);
+    }
+    
+    /**
+     * キャッシュ保存
+     */
+    cacheRenderedIcon(cacheKey, svg) {
+        if (this.cache.rendered.size >= this.cache.maxSize) {
+            // 最古のキーを削除
+            const firstKey = this.cache.rendered.keys().next().value;
+            this.cache.rendered.delete(firstKey);
+        }
+        
+        this.cache.rendered.set(cacheKey, svg);
+    }
+    
+    /**
+     * キャッシュクリア
+     */
+    clearCache() {
+        this.cache.rendered.clear();
+        this.cache.hitCount = 0;
+        this.cache.missCount = 0;
+        
+        EventBus.safeEmit('icons.cache.cleared', {
+            manager: 'IconManager',
+            timestamp: Date.now()
+        });
+        
+        console.log('🗑️ IconManager キャッシュクリア完了');
+    }
+    
+    /**
+     * 統計情報取得
+     */
+    getTotalIconCount() {
+        return this.icons.size + this.customIcons.size + this.tablerIcons.size;
+    }
+    
+    /**
+     * キャッシュ統計取得
+     */
+    getCacheStats() {
+        const total = this.cache.hitCount + this.cache.missCount;
+        const hitRate = total > 0 ? (this.cache.hitCount / total * 100).toFixed(1) : 0;
+        
+        return {
+            size: this.cache.rendered.size,
+            maxSize: this.cache.maxSize,
+            hitCount: this.cache.hitCount,
+            missCount: this.cache.missCount,
+            hitRate: hitRate + '%'
+        };
+    }
+    
+    /**
+     * 要素イベント追加
+     */
+    addElementEvents(element) {
+        // ツールヒント等のイベント処理
+        if (element && this.config.enableTooltips) {
+            element.addEventListener('mouseenter', (e) => {
+                // ツールヒント表示ロジック
+            });
+            
+            element.addEventListener('mouseleave', (e) => {
+                // ツールヒント非表示ロジック
+            });
+        }
+    }
+    
+    /**
+     * フォールバック初期化
+     */
+    fallbackInitialize() {
+        console.log('🛡️ IconManager フォールバック初期化開始');
+        
+        this.initialized = true;
+        this.createFallbackIcons();
+        
+        // 最小限のアイコンセット作成
+        const minimumIcons = ['pen', 'eraser', 'bucket', 'select', 'settings'];
+        minimumIcons.forEach(iconName => {
+            if (!this.icons.has(iconName)) {
+                this.icons.set(iconName, this.generateEmergencyIcon(iconName));
+            }
+        });
+        
+        console.log('✅ IconManager フォールバック初期化完了');
+    }
+    
+    /**
+     * テーマ設定
+     */
+    setTheme(themeName) {
+        if (this.themes.available.has(themeName)) {
+            this.themes.current = themeName;
+            this.clearCache(); // テーマ変更時はキャッシュクリア
+            
+            EventBus.safeEmit('icons.theme.changed', {
+                newTheme: themeName,
+                manager: 'IconManager'
+            });
+            
+            console.log('🎨 IconManager テーマ変更: ' + themeName);
+        }
+    }
+    
+    /**
+     * SVGサイズ適用
+     */
+    applySizeToSvg(svg, size) {
+        return svg.replace(/viewBox="[^"]*"/, 'viewBox="0 0 24 24" width="' + size + '" height="' + size + '"');
+    }
+    
+    /**
+     * SVG色適用
+     */
+    applyColorToSvg(svg, color) {
+        return svg.replace(/stroke="currentColor"/g, 'stroke="' + color + '"')
+                  .replace(/fill="currentColor"/g, 'fill="' + color + '"');
+    }
+    
+    /**
+     * SVGテーマ適用
+     */
+    applyThemeToSvg(svg, iconName) {
+        const currentTheme = this.themes.available.get(this.themes.current);
+        if (currentTheme && iconName) {
+            // テーマ固有の色適用ロジック
+        }
+        return svg;
+    }
+    
+    /**
+     * SVGアニメーション追加
+     */
+    addAnimationToSvg(svg, animationType) {
+        // アニメーション追加ロジック
+        return svg;
+    }
+    
+    /**
+     * 設定変更適用
+     */
+    applyConfigChanges() {
+        this.clearCache();
+        this.updateToolButtonIcons();
+        
+        console.log('⚙️ IconManager 設定変更適用完了');
+    }
+}
+
+// グローバル公開
+if (typeof window !== 'undefined') {
+    window.IconManager = IconManager;
+    console.log('✅ IconManager グローバル公開完了');
+}

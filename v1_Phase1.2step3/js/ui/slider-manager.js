@@ -20,6 +20,300 @@ class SliderManager {
         this.callbacks = { onChange: new Map() };
         this.throttleTimers = new Map();
         
+        console.log('🎚️ SliderManager 構築完了（DRY・SOLID準拠版）');
+    }
+    
+    /**
+     * 🚨 統一システム依存性確認（必須前提条件）
+     */
+    validateUnifiedSystems() {
+        const requiredSystems = ['ConfigManager', 'ErrorManager', 'EventBus'];
+        const missing = requiredSystems.filter(sys => !window[sys]);
+        
+        if (missing.length > 0) {
+            throw new Error('SliderManager統一システム依存性エラー: ' + missing.join(', '));
+        }
+        
+        console.log('✅ SliderManager統一システム依存性確認完了');
+    }
+    
+    /**
+     * 🚨 重複排除: ConfigManager統一設定読み込み
+     */
+    initializeConfig() {
+        const drawingConfig = window.ConfigManager.getDrawingConfig();
+        const uiConfig = window.ConfigManager.getUIConfig();
+        
+        this.sliderConfigs = {
+            'pen-size': {
+                min: drawingConfig.pen.minSize,
+                max: drawingConfig.pen.maxSize,
+                default: drawingConfig.pen.defaultSize,
+                step: 0.1,
+                precision: 1,
+                unit: 'px',
+                increments: { small: 0.1, medium: 1, large: 10 }
+            },
+            'pen-opacity': {
+                min: 0.0,
+                max: 100.0,
+                default: drawingConfig.pen.defaultOpacity * 100,
+                step: 0.1,
+                precision: 1,
+                unit: '%',
+                valueMultiplier: 0.01,
+                increments: { small: 0.1, medium: 1, large: 10 }
+            },
+            'pen-pressure': {
+                min: 0.0,
+                max: 100.0,
+                default: drawingConfig.pen.defaultPressure * 100,
+                step: 0.1,
+                precision: 1,
+                unit: '%',
+                valueMultiplier: 0.01,
+                increments: { small: 0.1, medium: 1, large: 10 }
+            },
+            'pen-smoothing': {
+                min: 0.0,
+                max: 100.0,
+                default: drawingConfig.pen.defaultSmoothing * 100,
+                step: 0.1,
+                precision: 1,
+                unit: '%',
+                valueMultiplier: 0.01,
+                increments: { small: 0.1, medium: 1, large: 10 }
+            }
+        };
+        
+        this.uiConfig = {
+            updateThrottle: uiConfig.slider ? uiConfig.slider.updateThrottle || 16 : 16,
+            enableKeyboard: uiConfig.slider ? uiConfig.slider.enableKeyboard || true : true,
+            enableWheel: uiConfig.slider ? uiConfig.slider.enableWheel || true : true,
+            enablePresets: uiConfig.slider ? uiConfig.slider.enablePresets || true : true
+        };
+    }
+    
+    /**
+     * 🚨 重複排除: 統一初期化
+     */
+    initialize() {
+        console.log('🎚️ SliderManager 統一初期化開始（DRY・SOLID準拠版）');
+        
+        try {
+            this.discoverSliders();
+            this.setupIncrementButtons();
+            this.discoverPresets();
+            
+            if (this.uiConfig.enableKeyboard) {
+                this.setupKeyboardShortcuts();
+            }
+            
+            this.setupInitialValues();
+            this.setupEventBusIntegration();
+            
+            window.EventBus.safeEmit('slider.manager.initialized', {
+                sliderCount: this.sliders.size,
+                version: this.version
+            });
+            
+            console.log('✅ SliderManager統一初期化完了: ' + this.sliders.size + '個のスライダー');
+            return this;
+            
+        } catch (error) {
+            window.ErrorManager.showError('error', 'SliderManager初期化エラー: ' + error.message);
+            return false;
+        }
+    }
+    
+    /**
+     * 既存スライダー自動検出
+     */
+    discoverSliders() {
+        console.log('🔍 既存スライダー自動検出開始...');
+        
+        let discoveredCount = 0;
+        
+        Object.keys(this.sliderConfigs).forEach(sliderId => {
+            try {
+                const sliderElement = document.getElementById(sliderId + '-slider');
+                if (!sliderElement) {
+                    console.warn('⚠️ スライダー要素未検出: ' + sliderId);
+                    return;
+                }
+                
+                const trackElement = sliderElement.querySelector('.slider-track');
+                const handleElement = sliderElement.querySelector('.slider-handle');
+                const valueElement = sliderElement.parentNode.querySelector('.slider-value');
+                
+                const config = this.sliderConfigs[sliderId];
+                const sliderInfo = this.createSliderInfo(sliderId, sliderElement, trackElement, handleElement, valueElement, config);
+                
+                this.sliders.set(sliderId, sliderInfo);
+                this.setupSliderEvents(sliderId);
+                
+                discoveredCount++;
+                
+            } catch (error) {
+                window.ErrorManager.showError('warning', 'スライダー検出エラー ' + sliderId + ': ' + error.message);
+            }
+        });
+        
+        console.log('✅ スライダー自動検出完了: ' + discoveredCount + '個');
+        
+        window.EventBus.safeEmit('slider.discovery.completed', {
+            discoveredCount,
+            sliderIds: Array.from(this.sliders.keys())
+        });
+    }
+    
+    /**
+     * スライダー情報作成
+     */
+    createSliderInfo(sliderId, sliderElement, trackElement, handleElement, valueElement, config) {
+        const currentValue = config.default;
+        
+        return {
+            id: sliderId,
+            config: Object.assign({}, config),
+            elements: {
+                slider: sliderElement,
+                track: trackElement,
+                handle: handleElement,
+                value: valueElement
+            },
+            state: {
+                currentValue: currentValue,
+                displayValue: this.formatDisplayValue(currentValue, config),
+                isDragging: false,
+                lastUpdateTime: 0
+            }
+        };
+    }
+    
+    /**
+     * 🚨 重複排除: スライダーイベント設定
+     */
+    setupSliderEvents(sliderId) {
+        const sliderInfo = this.sliders.get(sliderId);
+        if (!sliderInfo || !sliderInfo.elements.slider) return;
+        
+        const slider = sliderInfo.elements.slider;
+        const handle = sliderInfo.elements.handle;
+        
+        // マウスダウン（ドラッグ開始）
+        const mousedownHandler = (event) => {
+            event.preventDefault();
+            sliderInfo.state.isDragging = true;
+            
+            this.updateSliderFromEvent(sliderId, event);
+            
+            if (handle) {
+                handle.classList.add('dragging');
+            }
+            
+            document.body.style.userSelect = 'none';
+            window.EventBus.safeEmit('slider.drag.started', { sliderId });
+        };
+        
+        // マウス移動（ドラッグ中）
+        const mousemoveHandler = (event) => {
+            if (!sliderInfo.state.isDragging) return;
+            this.updateSliderFromEvent(sliderId, event);
+        };
+        
+        // マウスアップ（ドラッグ終了）
+        const mouseupHandler = (event) => {
+            if (sliderInfo.state.isDragging) {
+                sliderInfo.state.isDragging = false;
+                
+                if (handle) {
+                    handle.classList.remove('dragging');
+                }
+                
+                document.body.style.userSelect = '';
+                this.finalizeSliderValue(sliderId);
+                
+                window.EventBus.safeEmit('slider.drag.ended', { 
+                    sliderId, 
+                    value: this.getSliderValue(sliderId) 
+                });
+            }
+        };
+        
+        // ホイールイベント（微調整）
+        const wheelHandler = (event) => {
+            if (!this.uiConfig.enableWheel) return;
+            
+            event.preventDefault();
+            
+            const config = sliderInfo.config;
+            const delta = event.deltaY > 0 ? -config.step : config.step;
+            
+            this.adjustSliderValue(sliderId, delta);
+        };
+        
+        // イベント登録
+        slider.addEventListener('mousedown', mousedownHandler);
+        document.addEventListener('mousemove', mousemoveHandler);
+        document.addEventListener('mouseup', mouseupHandler);
+        
+        if (this.uiConfig.enableWheel) {
+            slider.addEventListener('wheel', wheelHandler, { passive: false });
+        }
+        
+        console.log('✅ スライダーイベント設定: ' + sliderId);
+    }
+    
+    /**
+     * 🚨 重複排除: 増減ボタン検出・設定
+     */
+    setupIncrementButtons() {
+        console.log('🔍 増減ボタン検出・設定開始...');
+        
+        let buttonCount = 0;
+        
+        this.sliders.forEach((sliderInfo, sliderId) => {
+            const config = sliderInfo.config;
+            const increments = config.increments;
+            
+            Object.entries(increments).forEach(([incrementType, incrementValue]) => {
+                // 減少ボタン
+                const decreaseButton = document.getElementById(sliderId + '-decrease-' + incrementType);
+                if (decreaseButton) {
+                    const decreaseHandler = () => {
+                        this.adjustSliderValue(sliderId, -incrementValue);
+                        
+                        window.EventBus.safeEmit('slider.button.clicked', {
+                            sliderId,
+                            action: 'decrease',
+                            increment: incrementType,
+                            value: this.getSliderValue(sliderId)
+                        });
+                    };
+                    decreaseButton.addEventListener('click', decreaseHandler);
+                    buttonCount++;
+                }
+                
+                // 増加ボタン
+                const increaseButton = document.getElementById(sliderId + '-increase-' + incrementType);
+                if (increaseButton) {
+                    const increaseHandler = () => {
+                        this.adjustSliderValue(sliderId, incrementValue);
+                        
+                        window.EventBus.safeEmit('slider.button.clicked', {
+                            sliderId,
+                            action: 'increase',
+                            increment: incrementType,
+                            value: this.getSliderValue(sliderId)
+                        });
+                    };
+                    increaseButton.addEventListener('click', increaseHandler);
+                    buttonCount++;
+                }
+            });
+        });
+        
         console.log('✅ 増減ボタン設定完了: ' + buttonCount + '個');
     }
     
@@ -169,7 +463,7 @@ class SliderManager {
             // EventBus統合: スライダー値変更イベント
             if (triggerCallback) {
                 window.EventBus.safeEmit('slider.value.changed', {
-                    sliderId: sliderId,
+                    sliderId,
                     value: this.getSliderValue(sliderId, true),
                     displayValue: constrainedValue
                 });
@@ -223,7 +517,7 @@ class SliderManager {
         
         if (result) {
             window.EventBus.safeEmit('preset.applied', {
-                sliderId: sliderId,
+                sliderId,
                 presetValue: value,
                 finalValue: this.getSliderValue(sliderId)
             });
@@ -305,7 +599,9 @@ class SliderManager {
         const sliderInfo = this.sliders.get(sliderId);
         if (!sliderInfo) return;
         
-        const { track, handle, value } = sliderInfo.elements;
+        const track = sliderInfo.elements.track;
+        const handle = sliderInfo.elements.handle;
+        const value = sliderInfo.elements.value;
         const config = sliderInfo.config;
         const currentValue = sliderInfo.state.currentValue;
         
@@ -365,7 +661,7 @@ class SliderManager {
         callbacks.forEach(callback => {
             try {
                 callback({
-                    sliderId: sliderId,
+                    sliderId,
                     value: internalValue,
                     displayValue: value,
                     timestamp: performance.now()
@@ -416,7 +712,7 @@ class SliderManager {
         
         try {
             // 設定マージ
-            sliderInfo.config = { ...sliderInfo.config, ...newConfig };
+            sliderInfo.config = Object.assign({}, sliderInfo.config, newConfig);
             
             // ConfigManagerへの保存
             if (window.ConfigManager) {
@@ -431,7 +727,7 @@ class SliderManager {
             // UI更新
             this.updateSliderUI(sliderId);
             
-            window.EventBus.safeEmit('slider.config.updated', { sliderId: sliderId, newConfig: newConfig });
+            window.EventBus.safeEmit('slider.config.updated', { sliderId, newConfig });
             
             console.log('🎚️ スライダー設定更新: ' + sliderId, newConfig);
             return true;
@@ -501,10 +797,10 @@ class SliderManager {
         const healthy = warnings.length === 0;
         
         return {
-            healthy: healthy,
-            stats: stats,
-            warnings: warnings,
-            recommendations: recommendations,
+            healthy,
+            stats,
+            warnings,
+            recommendations,
             timestamp: Date.now()
         };
     }
@@ -529,9 +825,9 @@ class SliderManager {
             total: totalSliders,
             active: activeSliders,
             callbacks: totalCallbacks,
-            lastUpdate: Math.max(...Array.from(this.sliders.values())
+            lastUpdate: Math.max.apply(Math, Array.from(this.sliders.values())
                 .map(info => info.state.lastUpdateTime)),
-            config: { ...this.uiConfig }
+            config: Object.assign({}, this.uiConfig)
         };
     }
     
@@ -589,299 +885,4 @@ if (typeof window !== 'undefined') {
     console.log('💡 使用例: const sm = new SliderManager(); sm.initialize();');
     console.log('🔧 デバッグ: window.testSliderManager() で動作確認');
     console.log('📊 値確認: window.getAllSliderValues() でスライダー値一覧取得');
-}🎚️ SliderManager 構築完了（DRY・SOLID準拠版）');
-    }
-    
-    /**
-     * 🚨 統一システム依存性確認（必須前提条件）
-     */
-    validateUnifiedSystems() {
-        const requiredSystems = ['ConfigManager', 'ErrorManager', 'EventBus'];
-        const missing = requiredSystems.filter(sys => !window[sys]);
-        
-        if (missing.length > 0) {
-            throw new Error('SliderManager統一システム依存性エラー: ' + missing.join(', '));
-        }
-        
-        console.log('✅ SliderManager統一システム依存性確認完了');
-    }
-    
-    /**
-     * 🚨 重複排除: ConfigManager統一設定読み込み
-     */
-    initializeConfig() {
-        const drawingConfig = window.ConfigManager.getDrawingConfig();
-        const uiConfig = window.ConfigManager.getUIConfig();
-        
-        this.sliderConfigs = {
-            'pen-size': {
-                min: drawingConfig.pen.minSize,
-                max: drawingConfig.pen.maxSize,
-                default: drawingConfig.pen.defaultSize,
-                step: 0.1,
-                precision: 1,
-                unit: 'px',
-                increments: { small: 0.1, medium: 1, large: 10 }
-            },
-            'pen-opacity': {
-                min: 0.0,
-                max: 100.0,
-                default: drawingConfig.pen.defaultOpacity * 100,
-                step: 0.1,
-                precision: 1,
-                unit: '%',
-                valueMultiplier: 0.01,
-                increments: { small: 0.1, medium: 1, large: 10 }
-            },
-            'pen-pressure': {
-                min: 0.0,
-                max: 100.0,
-                default: drawingConfig.pen.defaultPressure * 100,
-                step: 0.1,
-                precision: 1,
-                unit: '%',
-                valueMultiplier: 0.01,
-                increments: { small: 0.1, medium: 1, large: 10 }
-            },
-            'pen-smoothing': {
-                min: 0.0,
-                max: 100.0,
-                default: drawingConfig.pen.defaultSmoothing * 100,
-                step: 0.1,
-                precision: 1,
-                unit: '%',
-                valueMultiplier: 0.01,
-                increments: { small: 0.1, medium: 1, large: 10 }
-            }
-        };
-        
-        this.uiConfig = {
-            updateThrottle: uiConfig.slider?.updateThrottle || 16,
-            enableKeyboard: uiConfig.slider?.enableKeyboard || true,
-            enableWheel: uiConfig.slider?.enableWheel || true,
-            enablePresets: uiConfig.slider?.enablePresets || true
-        };
-    }
-    
-    /**
-     * 🚨 重複排除: 統一初期化
-     */
-    initialize() {
-        console.log('🎚️ SliderManager 統一初期化開始（DRY・SOLID準拠版）');
-        
-        try {
-            this.discoverSliders();
-            this.setupIncrementButtons();
-            this.discoverPresets();
-            
-            if (this.uiConfig.enableKeyboard) {
-                this.setupKeyboardShortcuts();
-            }
-            
-            this.setupInitialValues();
-            this.setupEventBusIntegration();
-            
-            window.EventBus.safeEmit('slider.manager.initialized', {
-                sliderCount: this.sliders.size,
-                version: this.version
-            });
-            
-            console.log('✅ SliderManager統一初期化完了: ' + this.sliders.size + '個のスライダー');
-            return this;
-            
-        } catch (error) {
-            window.ErrorManager.showError('error', 'SliderManager初期化エラー: ' + error.message, {
-                showReload: true
-            });
-            return this;
-        }
-    }
-    
-    /**
-     * 既存スライダー自動検出
-     */
-    discoverSliders() {
-        console.log('🔍 既存スライダー自動検出開始...');
-        
-        let discoveredCount = 0;
-        
-        Object.keys(this.sliderConfigs).forEach(sliderId => {
-            try {
-                const sliderElement = document.getElementById(sliderId + '-slider');
-                if (!sliderElement) {
-                    console.warn('⚠️ スライダー要素未検出: ' + sliderId);
-                    return;
-                }
-                
-                const trackElement = sliderElement.querySelector('.slider-track');
-                const handleElement = sliderElement.querySelector('.slider-handle');
-                const valueElement = sliderElement.parentNode.querySelector('.slider-value');
-                
-                const config = this.sliderConfigs[sliderId];
-                const sliderInfo = this.createSliderInfo(sliderId, sliderElement, trackElement, handleElement, valueElement, config);
-                
-                this.sliders.set(sliderId, sliderInfo);
-                this.setupSliderEvents(sliderId);
-                
-                discoveredCount++;
-                
-            } catch (error) {
-                window.ErrorManager.showError('warning', 'スライダー検出エラー ' + sliderId + ': ' + error.message);
-            }
-        });
-        
-        console.log('✅ スライダー自動検出完了: ' + discoveredCount + '個');
-        
-        window.EventBus.safeEmit('slider.discovery.completed', {
-            discoveredCount: discoveredCount,
-            sliderIds: Array.from(this.sliders.keys())
-        });
-    }
-    
-    /**
-     * スライダー情報作成
-     */
-    createSliderInfo(sliderId, sliderElement, trackElement, handleElement, valueElement, config) {
-        const currentValue = config.default;
-        
-        return {
-            id: sliderId,
-            config: { ...config },
-            elements: {
-                slider: sliderElement,
-                track: trackElement,
-                handle: handleElement,
-                value: valueElement
-            },
-            state: {
-                currentValue: currentValue,
-                displayValue: this.formatDisplayValue(currentValue, config),
-                isDragging: false,
-                lastUpdateTime: 0
-            }
-        };
-    }
-    
-    /**
-     * 🚨 重複排除: スライダーイベント設定
-     */
-    setupSliderEvents(sliderId) {
-        const sliderInfo = this.sliders.get(sliderId);
-        if (!sliderInfo || !sliderInfo.elements.slider) return;
-        
-        const { slider, handle } = sliderInfo.elements;
-        
-        // マウスダウン（ドラッグ開始）
-        const mousedownHandler = (event) => {
-            event.preventDefault();
-            sliderInfo.state.isDragging = true;
-            
-            this.updateSliderFromEvent(sliderId, event);
-            
-            if (handle) {
-                handle.classList.add('dragging');
-            }
-            
-            document.body.style.userSelect = 'none';
-            window.EventBus.safeEmit('slider.drag.started', { sliderId: sliderId });
-        };
-        
-        // マウス移動（ドラッグ中）
-        const mousemoveHandler = (event) => {
-            if (!sliderInfo.state.isDragging) return;
-            this.updateSliderFromEvent(sliderId, event);
-        };
-        
-        // マウスアップ（ドラッグ終了）
-        const mouseupHandler = (event) => {
-            if (sliderInfo.state.isDragging) {
-                sliderInfo.state.isDragging = false;
-                
-                if (handle) {
-                    handle.classList.remove('dragging');
-                }
-                
-                document.body.style.userSelect = '';
-                this.finalizeSliderValue(sliderId);
-                
-                window.EventBus.safeEmit('slider.drag.ended', { 
-                    sliderId: sliderId, 
-                    value: this.getSliderValue(sliderId) 
-                });
-            }
-        };
-        
-        // ホイールイベント（微調整）
-        const wheelHandler = (event) => {
-            if (!this.uiConfig.enableWheel) return;
-            
-            event.preventDefault();
-            
-            const config = sliderInfo.config;
-            const delta = event.deltaY > 0 ? -config.step : config.step;
-            
-            this.adjustSliderValue(sliderId, delta);
-        };
-        
-        // イベント登録
-        slider.addEventListener('mousedown', mousedownHandler);
-        document.addEventListener('mousemove', mousemoveHandler);
-        document.addEventListener('mouseup', mouseupHandler);
-        
-        if (this.uiConfig.enableWheel) {
-            slider.addEventListener('wheel', wheelHandler, { passive: false });
-        }
-        
-        console.log('✅ スライダーイベント設定: ' + sliderId);
-    }
-    
-    /**
-     * 🚨 重複排除: 増減ボタン検出・設定
-     */
-    setupIncrementButtons() {
-        console.log('🔍 増減ボタン検出・設定開始...');
-        
-        let buttonCount = 0;
-        
-        this.sliders.forEach((sliderInfo, sliderId) => {
-            const config = sliderInfo.config;
-            const increments = config.increments;
-            
-            Object.entries(increments).forEach(([incrementType, incrementValue]) => {
-                // 減少ボタン
-                const decreaseButton = document.getElementById(sliderId + '-decrease-' + incrementType);
-                if (decreaseButton) {
-                    const decreaseHandler = () => {
-                        this.adjustSliderValue(sliderId, -incrementValue);
-                        
-                        window.EventBus.safeEmit('slider.button.clicked', {
-                            sliderId: sliderId,
-                            action: 'decrease',
-                            increment: incrementType,
-                            value: this.getSliderValue(sliderId)
-                        });
-                    };
-                    decreaseButton.addEventListener('click', decreaseHandler);
-                    buttonCount++;
-                }
-                
-                // 増加ボタン
-                const increaseButton = document.getElementById(sliderId + '-increase-' + incrementType);
-                if (increaseButton) {
-                    const increaseHandler = () => {
-                        this.adjustSliderValue(sliderId, incrementValue);
-                        
-                        window.EventBus.safeEmit('slider.button.clicked', {
-                            sliderId: sliderId,
-                            action: 'increase',
-                            increment: incrementType,
-                            value: this.getSliderValue(sliderId)
-                        });
-                    };
-                    increaseButton.addEventListener('click', increaseHandler);
-                    buttonCount++;
-                }
-            });
-        });
-        
-        console.log('
+}
