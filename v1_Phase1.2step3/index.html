@@ -478,22 +478,44 @@
     </script>
     
     <!-- ========================================= -->
-    <!-- 🎯 統一システム読み込み（順序重要） -->
+    <!-- 🎯 統一システム読み込み（依存関係順序修正版） -->
     <!-- ========================================= -->
     
-    <!-- Step 1: 基盤ユーティリティ -->
+    <!-- PHASE 1: 基盤ユーティリティ（依存なし） -->
     <script src="js/utils/config-manager.js"></script>
     <script src="js/utils/error-manager.js"></script>
     <script src="js/utils/state-manager.js"></script>
     <script src="js/utils/event-bus.js"></script>
     
-    <!-- Step 2: PixiJS拡張統合 -->
+    <!-- PHASE 2: 座標・境界システム（基盤システム依存） -->
+    <script src="js/utils/coordinate-manager.js"></script>
+    <script src="js/utils/coordinates.js"></script>
+    <script src="managers/boundary-manager.js"></script>
+    
+    <!-- PHASE 3: 追加ユーティリティ -->
+    <script src="js/utils/performance.js"></script>
+    <script src="js/utils/icon-manager.js"></script>
+    
+    <!-- PHASE 4: UI・管理システム -->
+    <script src="js/ui/popup-manager.js"></script>
+    <script src="js/ui/slider-manager.js"></script>
+    <script src="managers/ui-manager.js"></script>
+    <script src="managers/tool-manager.js"></script>
+    <script src="managers/canvas-manager.js"></script>
+    <script src="managers/memory-manager.js"></script>
+    <script src="managers/settings-manager.js"></script>
+    
+    <!-- PHASE 5: ツール実装 -->
+    <script src="tools/pen-tool.js"></script>
+    <script src="tools/eraser-tool.js"></script>
+    
+    <!-- PHASE 6: PixiJS拡張統合 -->
     <script src="libs/pixi-extensions.js"></script>
     
-    <!-- Step 3: コアシステム -->
+    <!-- PHASE 7: コアシステム（全依存関係完了後） -->
     <script src="js/app-core.js"></script>
     
-    <!-- Step 4: メインアプリケーション -->
+    <!-- PHASE 8: メインアプリケーション（最終段階） -->
     <script src="js/main.js"></script>
     
     <!-- ========================================= -->
@@ -501,6 +523,14 @@
     <!-- ========================================= -->
     
     <script>
+        // スクリプト読み込み確認（デバッグ用）
+        console.log('🔧 依存関係確認:');
+        console.log('  ✅ PHASE 1 基盤:', !!window.ConfigManager, !!window.ErrorManager, !!window.StateManager, !!window.EventBus);
+        console.log('  ✅ PHASE 2 座標:', !!window.CoordinateManager, !!window.BoundaryManager);
+        console.log('  ✅ PHASE 4 管理:', !!window.UIManager, !!window.ToolManager);
+        console.log('  ✅ PHASE 5 ツール:', !!window.PenTool, !!window.EraserTool);
+        console.log('  ✅ PHASE 7 コア:', !!window.AppCore);
+        
         // 起動完了後の処理
         window.addEventListener('load', () => {
             console.log('🎉 統一版 HTML + JavaScript 読み込み完了');
@@ -509,6 +539,8 @@
             console.log(`  - ErrorManager: ${!!window.ErrorManager}`);
             console.log(`  - StateManager: ${!!window.StateManager}`);
             console.log(`  - EventBus: ${!!window.EventBus}`);
+            console.log(`  - CoordinateManager: ${!!window.CoordinateManager}`);
+            console.log(`  - BoundaryManager: ${!!window.BoundaryManager}`);
             console.log(`  - PixiExtensions: ${!!window.PixiExtensions}`);
             console.log(`  - AppCore: ${!!window.AppCore}`);
             
