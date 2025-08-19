@@ -173,7 +173,7 @@ class UIManager {
      * 🎯 統一設定値取得・適用
      */
     loadConfigurationFromUnifiedSystem() {
-        console.log(⚙️ 統一設定値取得開始...');
+        console.log('⚙️ 統一設定値取得開始...');
         
         try {
             // UI設定取得
@@ -497,10 +497,35 @@ class UIManager {
         });
         
         document.addEventListener('mouseup', () => {
-            if (isDragging) {
-                isDragging = false;
-                popup.classList.remove('dragging');
+            sliderData.isDragging = false;
+        });
+        
+        // タッチイベント
+        container.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                sliderData.isDragging = true;
+                updateSlider(getValueFromPosition(e.touches[0].clientX));
+                e.preventDefault();
             }
+        });
+        
+        document.addEventListener('touchmove', (e) => {
+            if (sliderData.isDragging && e.touches.length === 1) {
+                updateSlider(getValueFromPosition(e.touches[0].clientX));
+                e.preventDefault();
+            }
+        });
+        
+        document.addEventListener('touchend', () => {
+            sliderData.isDragging = false;
+        });
+        
+        // ホイールイベント（微調整）
+        container.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -0.1 : 0.1;
+            const newValue = sliderData.value + delta;
+            updateSlider(newValue);
         });
     }
     
@@ -593,7 +618,6 @@ class UIManager {
     adjustToolSetting(setting, delta) {
         try {
             let sliderId;
-            let currentValue;
             let configKey;
             
             switch (setting) {
@@ -640,21 +664,6 @@ class UIManager {
     }
     
     /**
-     * ポップアップ位置調整
-     */
-    adjustPopupPosition(popup) {
-        const rect = popup.getBoundingClientRect();
-        const maxX = window.innerWidth - popup.offsetWidth;
-        const maxY = window.innerHeight - popup.offsetHeight;
-        
-        let x = Math.max(0, Math.min(parseInt(popup.style.left || 0), maxX));
-        let y = Math.max(0, Math.min(parseInt(popup.style.top || 0), maxY));
-        
-        popup.style.left = x + 'px';
-        popup.style.top = y + 'px';
-    }
-    
-    /**
      * パフォーマンス監視開始
      */
     startPerformanceMonitoring() {
@@ -690,239 +699,6 @@ class UIManager {
     }
     
     // ==========================================
-    // 🎯 公開API・状態取得メソッド群
-    // ==========================================
-    
-    /**
-     * UI状態取得（統一システム版）
-     */
-    getStatus() {
-        return {
-            version: this.version,
-            unifiedSystems: {
-                configManager: !!this.configManager,
-                errorManager: !!this.errorManager,
-                stateManager: !!this.stateManager,
-                eventBus: !!this.eventBus
-            },
-            ui: {
-                activePopup: this.activePopup?.id || null,
-                visiblePopups: Array.from(this.popups.entries())
-                    .filter(([id, data]) => data.visible)
-                    .map(([id]) => id),
-                sliderCount: this.sliders.size,
-                toolButtonCount: this.toolButtons.size
-            },
-            settings: {
-                toolSettings: { ...this.toolSettings },
-                uiSettings: { ...this.uiSettings }
-            },
-            performance: {
-                ...this.performanceMetrics,
-                memoryUsage: performance.memory ? 
-                    Math.round(performance.memory.usedJSHeapSize / 1024 / 1024) + 'MB' : 'N/A'
-            }
-        };
-    }
-    
-    /**
-     * デバッグ情報取得
-     */
-    getDebugInfo() {
-        const status = this.getStatus();
-        
-        console.group('🎨 UIManager 統一システム統合版 デバッグ情報');
-        console.log('📋 バージョン:', status.version);
-        console.log('🔧 統一システム:', status.unifiedSystems);
-        console.log('🎨 UI状態:', status.ui);
-        console.log('⚙️ 設定:', status.settings);
-        console.log('📊 パフォーマンス:', status.performance);
-        console.groupEnd();
-        
-        return status;
-    }
-    
-    /**
-     * 設定エクスポート
-     */
-    exportSettings() {
-        const settings = {
-            version: this.version,
-            toolSettings: { ...this.toolSettings },
-            uiSettings: { ...this.uiSettings },
-            popupPositions: {},
-            timestamp: Date.now()
-        };
-        
-        // ポップアップ位置保存
-        this.popups.forEach((popupData, popupId) => {
-            const popup = popupData.element;
-            settings.popupPositions[popupId] = {
-                left: popup.style.left,
-                top: popup.style.top
-            };
-        });
-        
-        return settings;
-    }
-    
-    /**
-     * 設定インポート
-     */
-    importSettings(settings) {
-        if (settings.version !== this.version) {
-            console.warn('⚠️ 設定バージョンが異なります:', settings.version, '!=', this.version);
-        }
-        
-        try {
-            // ツール設定適用
-            if (settings.toolSettings) {
-                Object.entries(settings.toolSettings).forEach(([tool, toolConfig]) => {
-                    Object.entries(toolConfig).forEach(([key, value]) => {
-                        const configKey = this.configKeys.tools[tool]?.[key];
-                        if (configKey && this.configManager) {
-                            this.configManager.set(configKey, value);
-                        }
-                    });
-                });
-            }
-            
-            // UI設定適用
-            if (settings.uiSettings) {
-                Object.entries(settings.uiSettings).forEach(([key, value]) => {
-                    const configKey = this.configKeys.ui[key];
-                    if (configKey && this.configManager) {
-                        this.configManager.set(configKey, value);
-                    }
-                });
-            }
-            
-            // ポップアップ位置適用
-            if (settings.popupPositions) {
-                Object.entries(settings.popupPositions).forEach(([popupId, position]) => {
-                    const popupData = this.popups.get(popupId);
-                    if (popupData) {
-                        popupData.element.style.left = position.left;
-                        popupData.element.style.top = position.top;
-                    }
-                });
-            }
-            
-            console.log('✅ UI設定インポート完了');
-            
-        } catch (error) {
-            this.errorManager.showError('UI設定インポート失敗', error, 'UIManager.importSettings');
-        }
-    }
-    
-    /**
-     * フォールバック初期化
-     */
-    async fallbackInitialization() {
-        console.log('🛡️ UIManager フォールバック初期化...');
-        
-        try {
-            // 基本機能のみ初期化（統一システム無し）
-            this.setupToolButtons();
-            this.setupPopupSystem();
-            
-            // デフォルト設定使用
-            this.toolSettings = {
-                pen: { size: 16.0, opacity: 85.0, pressure: 50.0, smoothing: 30.0 },
-                eraser: { size: 20.0, opacity: 100.0, mode: 'normal' }
-            };
-            
-            console.log('✅ フォールバック初期化完了');
-            
-        } catch (error) {
-            console.error('❌ フォールバック初期化も失敗:', error);
-        }
-    }
-    
-    /**
-     * 統一システム健全性チェック
-     */
-    checkUnifiedSystemHealth() {
-        const health = {
-            configManager: !!this.configManager && typeof this.configManager.get === 'function',
-            errorManager: !!this.errorManager && typeof this.errorManager.showError === 'function',
-            stateManager: !!this.stateManager && typeof this.stateManager.updateSystemState === 'function',
-            eventBus: !!this.eventBus && typeof this.eventBus.emit === 'function'
-        };
-        
-        const allHealthy = Object.values(health).every(Boolean);
-        
-        console.log('🏥 統一システム健全性チェック:', health);
-        
-        if (!allHealthy) {
-            console.warn('⚠️ 一部の統一システムに問題があります');
-        }
-        
-        return { health, allHealthy };
-    }
-    
-    /**
-     * 破棄処理
-     */
-    destroy() {
-        try {
-            console.log('🗑️ UIManager破棄開始...');
-            
-            // EventBusリスナー解除
-            if (this.eventBus) {
-                this.eventBus.off('tool:changed');
-                this.eventBus.off('config:changed');
-                this.eventBus.off('state:changed');
-                this.eventBus.off('app:resize');
-            }
-            
-            // Map要素クリア
-            this.popups.clear();
-            this.sliders.clear();
-            this.toolButtons.clear();
-            
-            // 参照クリア
-            this.configManager = null;
-            this.errorManager = null;
-            this.stateManager = null;
-            this.eventBus = null;
-            this.appCore = null;
-            
-            console.log('✅ UIManager破棄完了');
-            
-        } catch (error) {
-            console.error('❌ UIManager破棄エラー:', error);
-        }
-    }
-}
-
-// ==========================================
-// 🎯 Pure JavaScript グローバル公開
-// ==========================================
-
-if (typeof window !== 'undefined') {
-    window.UIManager = UIManager;
-    console.log('✅ UIManager 統一システム統合版 グローバル公開完了（Pure JavaScript）');
-}
-
-console.log('🎨 UIManager Phase1.1ss5 統一システム統合版 - 準備完了');
-console.log('📋 統一システム統合完了: ConfigManager・ErrorManager・StateManager・EventBus');
-console.log('🎯 AI分業対応: 依存関係明確化・疎結合設計・統一設定管理');
-console.log('🔄 V8移行準備: WebGPU対応準備・120FPS対応・GPU加速準備');
-console.log('💡 使用例: const uiManager = new window.UIManager(appCore); await uiManager.init();'); () => {
-            sliderData.isDragging = false;
-        });
-        
-        // ホイールイベント（微調整）
-        container.addEventListener('wheel', (e) => {
-            e.preventDefault();
-            const delta = e.deltaY > 0 ? -0.1 : 0.1;
-            const newValue = sliderData.value + delta;
-            updateSlider(newValue);
-        });
-    }
-    
-    // ==========================================
     // 🎯 EventBusイベントハンドラー群
     // ==========================================
     
@@ -949,180 +725,3 @@ console.log('💡 使用例: const uiManager = new window.UIManager(appCore); aw
             }
             
             console.log(`🚌 EventBus: ツール変更受信 - ${tool}`);
-            
-        } catch (error) {
-            this.errorManager.showError('EventBusツール変更処理失敗', error, 'UIManager.handleToolChangeFromEventBus');
-        }
-    }
-    
-    /**
-     * EventBus: 設定変更イベント処理
-     */
-    handleConfigChangeFromEventBus(key, value) {
-        try {
-            // UI関連設定の場合のみ処理
-            if (key.startsWith('ui.') || key.startsWith('tools.')) {
-                // スライダー値更新
-                this.updateSliderFromConfig(key, value);
-                
-                console.log(`🚌 EventBus: 設定変更受信 - ${key}: ${value}`);
-            }
-            
-        } catch (error) {
-            this.errorManager.showError('EventBus設定変更処理失敗', error, 'UIManager.handleConfigChangeFromEventBus');
-        }
-    }
-    
-    /**
-     * EventBus: 状態変更イベント処理
-     */
-    handleStateChangeFromEventBus(system, state) {
-        try {
-            if (system === 'appCore' && state === 'initialized') {
-                // AppCore初期化完了時の処理
-                console.log('🚌 EventBus: AppCore初期化完了受信');
-            }
-            
-        } catch (error) {
-            this.errorManager.showError('EventBus状態変更処理失敗', error, 'UIManager.handleStateChangeFromEventBus');
-        }
-    }
-    
-    /**
-     * EventBus: アプリリサイズイベント処理
-     */
-    handleAppResizeFromEventBus(width, height) {
-        try {
-            // レスポンシブ処理
-            this.handleResponsiveResize();
-            
-            console.log(`🚌 EventBus: アプリリサイズ受信 - ${width}×${height}`);
-            
-        } catch (error) {
-            this.errorManager.showError('EventBusリサイズ処理失敗', error, 'UIManager.handleAppResizeFromEventBus');
-        }
-    }
-    
-    // ==========================================
-    // 🎯 ユーティリティメソッド群
-    // ==========================================
-    
-    /**
-     * 設定からスライダー値更新
-     */
-    updateSliderFromConfig(key, value) {
-        // キーからスライダーIDを逆引き
-        const sliderMapping = {
-            [this.configKeys.tools.pen.size]: 'pen-size-slider',
-            [this.configKeys.tools.pen.opacity]: 'pen-opacity-slider',
-            [this.configKeys.tools.pen.pressure]: 'pen-pressure-slider',
-            [this.configKeys.tools.pen.smoothing]: 'pen-smoothing-slider'
-        };
-        
-        const sliderId = sliderMapping[key];
-        if (sliderId) {
-            const sliderData = this.sliders.get(sliderId);
-            if (sliderData && sliderData.value !== value) {
-                sliderData.value = value;
-                const percentage = ((value - sliderData.min) / (sliderData.max - sliderData.min)) * 100;
-                
-                if (sliderData.track) sliderData.track.style.width = percentage + '%';
-                if (sliderData.handle) sliderData.handle.style.left = percentage + '%';
-                if (sliderData.valueDisplay) {
-                    sliderData.valueDisplay.textContent = value.toFixed(sliderData.precision) + sliderData.unit;
-                }
-            }
-        }
-    }
-    
-    /**
-     * ポップアップ表示切り替え
-     */
-    togglePopup(popupId) {
-        const popup = document.getElementById(popupId);
-        if (!popup) return;
-        
-        if (this.activePopup && this.activePopup !== popup) {
-            this.activePopup.classList.remove('show');
-        }
-        
-        const isVisible = popup.classList.contains('show');
-        popup.classList.toggle('show', !isVisible);
-        this.activePopup = isVisible ? null : popup;
-        
-        // EventBus通知
-        this.eventBus.emit('ui:popup:toggled', {
-            popupId,
-            visible: !isVisible,
-            timestamp: Date.now()
-        });
-    }
-    
-    /**
-     * 全ポップアップを閉じる
-     */
-    closeAllPopups() {
-        document.querySelectorAll('.popup-panel').forEach(popup => {
-            popup.classList.remove('show');
-        });
-        this.activePopup = null;
-        
-        // EventBus通知
-        this.eventBus.emit('ui:popups:closed', {
-            timestamp: Date.now()
-        });
-    }
-    
-    /**
-     * ツール状態更新
-     */
-    updateToolStatus(tool) {
-        const toolNames = { 
-            pen: 'ベクターペン', 
-            eraser: '消しゴム',
-            fill: '塗りつぶし',
-            select: '範囲選択'
-        };
-        
-        const toolNameElement = document.getElementById('current-tool');
-        if (toolNameElement) {
-            toolNameElement.textContent = toolNames[tool] || tool;
-        }
-    }
-    
-    /**
-     * ドラッグ可能化
-     */
-    makeDraggable(popup) {
-        let isDragging = false;
-        let dragOffset = { x: 0, y: 0 };
-        
-        popup.addEventListener('mousedown', (e) => {
-            if (e.target === popup || e.target.closest('.popup-title')) {
-                isDragging = true;
-                popup.classList.add('dragging');
-                
-                const rect = popup.getBoundingClientRect();
-                dragOffset.x = e.clientX - rect.left;
-                dragOffset.y = e.clientY - rect.top;
-                e.preventDefault();
-            }
-        });
-        
-        document.addEventListener('mousemove', (e) => {
-            if (isDragging) {
-                const x = Math.max(0, Math.min(
-                    e.clientX - dragOffset.x, 
-                    window.innerWidth - popup.offsetWidth
-                ));
-                const y = Math.max(0, Math.min(
-                    e.clientY - dragOffset.y, 
-                    window.innerHeight - popup.offsetHeight
-                ));
-                
-                popup.style.left = x + 'px';
-                popup.style.top = y + 'px';
-            }
-        });
-        
-        document.addEventListener('mouseup',

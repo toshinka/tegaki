@@ -1,0 +1,41 @@
+# 🎨 シンボル辞典  緊急構文修正・統一システム完全統合版
+
+## 🚨 緊急対応概要
+
+### 修正対象エラー群
+```javascript
+🔧 緊急修正対象:
+icon-manager.js:874    Uncaught SyntaxError: Unexpected end of input
+popup-manager.js:436   Uncaught SyntaxError: Unexpected token '.'
+slider-manager.js:538  Uncaught SyntaxError: Illegal return statement
+ui-manager.js:727      Uncaught SyntaxError: Unexpected end of input
+canvas-manager.js:23   Uncaught SyntaxError: Unexpected token '{'
+memory-manager.js:13   Uncaught SyntaxError: Unexpected token '}'
+settings-manager.js:877 Uncaught SyntaxError: missing ) after argument list
+
+🔧 統一システムエラー:
+this.stateManager.updateSystemState is not a function
+AppCore状態異常: ToolSystem未初期化, UIController未初期化
+```
+
+---
+
+## 📋 統一システムAPI仕様（確定版）
+
+### ConfigManager（確定API）
+```javascript
+// 基本設定取得
+ConfigManager.get(path)                    // 任意パス設定値取得
+ConfigManager.set(path, value)             // 設定値変更
+
+// 専用設定取得
+ConfigManager.getCanvasConfig()            // キャンバス設定一括取得
+ConfigManager.getPixiConfig()              // PixiJS設定一括取得  
+ConfigManager.getUIConfig()                // UI設定一括取得
+ConfigManager.getPerformanceConfig()       // パフォーマンス設定取得
+
+// デバッグ・診断
+ConfigManager.getDebugInfo()               // 設定詳細情報
+ConfigManager.validateConfig()             // 設定値妥当性確認
+
+// 使用例

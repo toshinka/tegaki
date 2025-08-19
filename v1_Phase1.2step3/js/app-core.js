@@ -1,8 +1,9 @@
 /**
- * 🎨 AppCoreシステム（分割最適化版）
+ * 🎨 AppCoreシステム（分割最適化版・修正版）
  * 🎯 AI_WORK_SCOPE: PixiJSアプリケーション基盤・システム統合・初期化制御
  * 🎯 DEPENDENCIES: 統一システム4種、BoundaryManager、CoordinateManager
  * 🎯 SPLIT_RESULT: 650行 → 350行（46%削減）
+ * 🚨 BUGFIX: CoordinateManager初期化順序修正、メソッド名統一
  */
 
 class AppCore {
@@ -26,7 +27,7 @@ class AppCore {
         this.initializationComplete = false;
         this.initializationFailed = false;
         
-        console.log('🎨 AppCore インスタンス作成完了（分割最適化版）');
+        console.log('🎨 AppCore インスタンス作成完了（分割最適化版・修正版）');
     }
     
     /**
@@ -44,13 +45,13 @@ class AppCore {
      * 設定初期化
      */
     initializeConfig() {
-        const canvasConfig = ConfigManager.getCanvasConfig();
+        const canvasConfig = window.ConfigManager.getCanvasConfig();
         this.canvasWidth = canvasConfig.width;
         this.canvasHeight = canvasConfig.height;
         this.backgroundColor = canvasConfig.backgroundColor;
         
         // 境界描画設定追加
-        this.boundaryConfig = ConfigManager.get('canvas.boundary') || {
+        this.boundaryConfig = window.ConfigManager.get('canvas.boundary') || {
             enabled: true,
             margin: 20,
             trackingEnabled: true
@@ -58,11 +59,11 @@ class AppCore {
     }
     
     /**
-     * アプリケーション初期化（分割最適化版）
+     * アプリケーション初期化（分割最適化版・修正版）
      */
     async initialize() {
         try {
-            console.log('🚀 AppCore 初期化開始（分割最適化版）...');
+            console.log('🚀 AppCore 初期化開始（分割最適化版・修正版）...');
             this.isInitializing = true;
             
             // 段階的初期化
@@ -79,49 +80,96 @@ class AppCore {
     }
     
     /**
-     * 基盤システム初期化
+     * 基盤システム初期化（修正版）
      */
     async initializeBasicSystems() {
-        console.log('🔧 基盤システム初期化中...');
+        console.log('🔧 基盤システム初期化中（修正版）...');
         
         // DOM確認
         await this.verifyDOMElements();
         
-        // 座標管理システム初期化
-        this.coordinateManager = new CoordinateManager();
-        
-        // PixiJSアプリケーション初期化
+        // PixiJSアプリケーション初期化（座標管理より先に実行）
         await this.initializePixiApp();
         
         // コンテナ初期化
         this.initializeContainers();
         
-        console.log('✅ 基盤システム初期化完了');
+        // 座標管理システム初期化（PixiJSアプリ作成後に実行）
+        if (window.CoordinateManager) {
+            this.coordinateManager = new window.CoordinateManager();
+            console.log('✅ CoordinateManager 初期化完了');
+        } else {
+            console.warn('⚠️ CoordinateManager が利用できません - 基本座標処理のみ');
+            // フォールバック座標処理を使用
+            this.coordinateManager = this.createFallbackCoordinateManager();
+        }
+        
+        console.log('✅ 基盤システム初期化完了（修正版）');
     }
     
     /**
-     * 管理システム初期化
+     * 管理システム初期化（修正版）
      */
     async initializeManagers() {
-        console.log('🔧 管理システム初期化中...');
+        console.log('🔧 管理システム初期化中（修正版）...');
         
         // 境界管理システム初期化
-        this.boundaryManager = new BoundaryManager();
-        this.boundaryManager.initialize(this.app.view, this.coordinateManager);
+        if (window.BoundaryManager && this.coordinateManager) {
+            try {
+                this.boundaryManager = new window.BoundaryManager();
+                this.boundaryManager.initialize(this.app.view, this.coordinateManager);
+                console.log('✅ BoundaryManager 初期化完了');
+            } catch (error) {
+                console.warn('⚠️ BoundaryManager 初期化失敗:', error.message);
+                this.boundaryManager = null;
+            }
+        } else {
+            console.warn('⚠️ BoundaryManager または CoordinateManager が利用できません');
+        }
         
-        // ツールマネージャー初期化（既存システム活用）
+        // ツールマネージャー初期化（メソッド名統一）
         if (window.ToolManager) {
-            this.toolManager = new ToolManager(this);
-            this.toolManager.initialize();
+            try {
+                this.toolManager = new window.ToolManager();
+                // メソッド名を統一して呼び出し
+                if (typeof this.toolManager.init === 'function') {
+                    await this.toolManager.init(this);
+                } else if (typeof this.toolManager.initialize === 'function') {
+                    await this.toolManager.initialize(this);
+                } else {
+                    console.warn('⚠️ ToolManager に init または initialize メソッドが見つかりません');
+                }
+                console.log('✅ ToolManager 初期化完了');
+            } catch (error) {
+                console.warn('⚠️ ToolManager 初期化失敗:', error.message);
+                this.toolManager = null;
+            }
+        } else {
+            console.warn('⚠️ ToolManager が利用できません');
         }
         
-        // UIマネージャー初期化（既存システム活用）
+        // UIマネージャー初期化（メソッド名統一）
         if (window.UIManager) {
-            this.uiManager = new UIManager();
-            this.uiManager.initialize();
+            try {
+                this.uiManager = new window.UIManager(this);
+                // メソッド名を統一して呼び出し
+                if (typeof this.uiManager.init === 'function') {
+                    await this.uiManager.init();
+                } else if (typeof this.uiManager.initialize === 'function') {
+                    await this.uiManager.initialize();
+                } else {
+                    console.warn('⚠️ UIManager に init または initialize メソッドが見つかりません');
+                }
+                console.log('✅ UIManager 初期化完了');
+            } catch (error) {
+                console.warn('⚠️ UIManager 初期化失敗:', error.message);
+                this.uiManager = null;
+            }
+        } else {
+            console.warn('⚠️ UIManager が利用できません');
         }
         
-        console.log('✅ 管理システム初期化完了');
+        console.log('✅ 管理システム初期化完了（修正版）');
     }
     
     /**
@@ -140,6 +188,36 @@ class AppCore {
         this.verifyInitialization();
         
         console.log('✅ アプリケーション初期化完了');
+    }
+    
+    /**
+     * フォールバック座標管理システム作成
+     */
+    createFallbackCoordinateManager() {
+        return {
+            extractPointerCoordinates: (event, rect, app) => {
+                const originalEvent = event.data?.originalEvent || event.originalEvent || event;
+                const clientX = originalEvent.clientX || originalEvent.pageX || 0;
+                const clientY = originalEvent.clientY || originalEvent.pageY || 0;
+                
+                const canvasX = Math.max(0, Math.min(this.canvasWidth, 
+                    (clientX - rect.left) * (this.canvasWidth / rect.width)));
+                const canvasY = Math.max(0, Math.min(this.canvasHeight, 
+                    (clientY - rect.top) * (this.canvasHeight / rect.height)));
+                
+                return {
+                    canvas: { x: canvasX, y: canvasY },
+                    screen: { x: clientX, y: clientY },
+                    pressure: originalEvent.pressure || 0.5
+                };
+            },
+            
+            canvasToPixi: (x, y, app) => ({ x, y }),
+            pixiToCanvas: (x, y, app) => ({ x, y }),
+            updateCanvasSize: (width, height) => {
+                console.log(`📐 フォールバック座標管理: キャンバスサイズ更新 ${width}x${height}`);
+            }
+        };
     }
     
     /**
@@ -163,8 +241,8 @@ class AppCore {
      * PixiJSアプリケーション初期化
      */
     async initializePixiApp() {
-        const canvasConfig = ConfigManager.getCanvasConfig();
-        const pixiConfig = ConfigManager.getPixiConfig();
+        const canvasConfig = window.ConfigManager.getCanvasConfig();
+        const pixiConfig = window.ConfigManager.getPixiConfig();
         
         this.app = new PIXI.Application({
             width: canvasConfig.width,
@@ -217,7 +295,7 @@ class AppCore {
         console.log('🎯 PixiJS境界システム統合初期化中...');
         
         // 拡張ヒットエリア設定
-        const margin = this.boundaryManager.boundaryMargin;
+        const margin = this.boundaryManager.boundaryMargin || 20;
         this.app.stage.hitArea = new PIXI.Rectangle(
             -margin,
             -margin,
@@ -240,19 +318,19 @@ class AppCore {
      */
     setupPixiBoundaryEvents() {
         // 境界越えイベント統合
-        EventBus.on('boundary.cross.in', (data) => {
+        window.EventBus.on('boundary.cross.in', (data) => {
             this.handlePixiBoundaryCross(data);
         });
         
         // PixiJSネイティブイベント拡張
         this.app.stage.on('pointerenter', (event) => {
             console.log('🎯 PixiJS ポインター エンター');
-            EventBus.safeEmit('pixi.pointer.enter', { event });
+            window.EventBus.safeEmit('pixi.pointer.enter', { event });
         });
         
         this.app.stage.on('pointerleave', (event) => {
             console.log('🎯 PixiJS ポインター リーブ');
-            EventBus.safeEmit('pixi.pointer.leave', { event });
+            window.EventBus.safeEmit('pixi.pointer.leave', { event });
         });
     }
     
@@ -287,7 +365,7 @@ class AppCore {
             console.log(`🎯 PixiJS境界越え処理完了: (${pixiCoords.x.toFixed(1)}, ${pixiCoords.y.toFixed(1)})`);
             
         } catch (error) {
-            ErrorManager.showError('pixi-boundary', 
+            window.ErrorManager.showError('pixi-boundary', 
                 `PixiJS境界越え処理エラー: ${error.message}`, 
                 data
             );
@@ -305,13 +383,13 @@ class AppCore {
         this.app.stage.on('pointerupoutside', this.handlePointerUp.bind(this));
         
         // 境界越えイベント（BoundaryManager統合）
-        EventBus.on('boundary.cross.in', this.handleBoundaryCrossIn.bind(this));
+        window.EventBus.on('boundary.cross.in', this.handleBoundaryCrossIn.bind(this));
         
         // ウィンドウイベント
         window.addEventListener('resize', this.handleResize.bind(this));
         
         // ツールイベント
-        EventBus.on('tool.changed', this.handleToolChanged.bind(this));
+        window.EventBus.on('tool.changed', this.handleToolChanged.bind(this));
         
         console.log('✅ イベントリスナー設定完了（分割最適化版）');
     }
@@ -343,7 +421,7 @@ class AppCore {
             console.log(`🎯 境界越え描画開始: (${data.position.x.toFixed(1)}, ${data.position.y.toFixed(1)})`);
             
         } catch (error) {
-            ErrorManager.showError('boundary-drawing', 
+            window.ErrorManager.showError('boundary-drawing', 
                 `境界越え描画エラー: ${error.message}`, 
                 data
             );
@@ -368,14 +446,14 @@ class AppCore {
                 currentTool.startDrawing(coords.canvas.x, coords.canvas.y, coords.pressure);
             }
             
-            EventBus.safeEmit('drawing.started', {
+            window.EventBus.safeEmit('drawing.started', {
                 position: coords.canvas,
                 pressure: coords.pressure,
                 tool: this.toolManager.getCurrentTool?.() || 'unknown'
             });
             
         } catch (error) {
-            ErrorManager.showError('pointer-down', 
+            window.ErrorManager.showError('pointer-down', 
                 `ポインターダウンエラー: ${error.message}`, 
                 { event: event.type }
             );
@@ -420,12 +498,12 @@ class AppCore {
                 currentTool.stopDrawing();
             }
             
-            EventBus.safeEmit('drawing.ended', {
+            window.EventBus.safeEmit('drawing.ended', {
                 timestamp: Date.now()
             });
             
         } catch (error) {
-            ErrorManager.showError('pointer-up', 
+            window.ErrorManager.showError('pointer-up', 
                 `ポインターアップエラー: ${error.message}`, 
                 { event: event.type }
             );
@@ -454,7 +532,7 @@ class AppCore {
         if (!this.app) return;
         
         console.log('🔄 ウィンドウリサイズ検出');
-        EventBus.safeEmit('window.resized', {
+        window.EventBus.safeEmit('window.resized', {
             timestamp: Date.now()
         });
     }
@@ -473,13 +551,13 @@ class AppCore {
         this.isInitializing = false;
         this.initializationComplete = true;
         
-        EventBus.safeEmit('appCore.initialized', {
+        window.EventBus.safeEmit('appCore.initialized', {
             success: true,
             components: this.getInitializationStats(),
             timestamp: Date.now()
         });
         
-        console.log('✅ AppCore 初期化完了（分割最適化版）');
+        console.log('✅ AppCore 初期化完了（分割最適化版・修正版）');
     }
     
     /**
@@ -491,7 +569,7 @@ class AppCore {
         this.initializationFailed = true;
         this.isInitializing = false;
         
-        ErrorManager.showError('error', error.message, {
+        window.ErrorManager.showError('error', error.message, {
             additionalInfo: 'AppCore初期化失敗',
             showReload: true
         });
@@ -501,14 +579,14 @@ class AppCore {
     }
     
     /**
-     * 初期化検証
+     * 初期化検証（修正版）
      */
     verifyInitialization() {
         const verification = {
             pixiApp: !!this.app,
             drawingContainer: !!this.drawingContainer,
-            boundaryManager: !!this.boundaryManager,
             coordinateManager: !!this.coordinateManager,
+            boundaryManager: !!this.boundaryManager,
             toolManager: !!this.toolManager,
             uiManager: !!this.uiManager
         };
@@ -523,7 +601,14 @@ class AppCore {
                 .filter(([key, value]) => !value)
                 .map(([key]) => key);
             
-            ErrorManager.showError('warning', `初期化未完了: ${failed.join(', ')}`);
+            console.warn(`⚠️ 初期化未完了項目: ${failed.join(', ')}`);
+            
+            // 致命的でない場合は警告レベル
+            if (passCount >= 3) { // pixiApp, drawingContainer, coordinateManager の最低3つがあれば動作可能
+                window.ErrorManager.showError('warning', `一部機能が制限されています: ${failed.join(', ')}`);
+            } else {
+                throw new Error(`AppCore状態異常: ${failed.join(', ')}`);
+            }
         }
     }
     
@@ -534,8 +619,8 @@ class AppCore {
         return {
             pixiApp: !!this.app,
             drawingContainer: !!this.drawingContainer,
-            boundaryManager: !!this.boundaryManager,
             coordinateManager: !!this.coordinateManager,
+            boundaryManager: !!this.boundaryManager,
             toolManager: !!this.toolManager,
             uiManager: !!this.uiManager,
             initializationComplete: this.initializationComplete,
@@ -553,9 +638,9 @@ class AppCore {
             // 最低限のPixiJSアプリケーション作成
             if (!this.app) {
                 const fallbackConfig = {
-                    width: ConfigManager.get('canvas.width') || 400,
-                    height: ConfigManager.get('canvas.height') || 400,
-                    backgroundColor: ConfigManager.get('canvas.backgroundColor') || 0xf0e0d6
+                    width: window.ConfigManager.get('canvas.width') || 400,
+                    height: window.ConfigManager.get('canvas.height') || 400,
+                    backgroundColor: window.ConfigManager.get('canvas.backgroundColor') || 0xf0e0d6
                 };
                 
                 this.app = new PIXI.Application(fallbackConfig);
@@ -570,7 +655,12 @@ class AppCore {
                 this.initializeContainers();
             }
             
-            ErrorManager.showError('recovery', '基本描画機能は利用可能です', {
+            // フォールバック座標管理システム
+            if (!this.coordinateManager) {
+                this.coordinateManager = this.createFallbackCoordinateManager();
+            }
+            
+            window.ErrorManager.showError('recovery', '基本描画機能は利用可能です', {
                 additionalInfo: 'フォールバックモードで動作中'
             });
             
@@ -578,7 +668,7 @@ class AppCore {
             
         } catch (fallbackError) {
             console.error('💀 フォールバックモード初期化失敗:', fallbackError);
-            ErrorManager.showCriticalError(originalError.message, {
+            window.ErrorManager.showCriticalError(originalError.message, {
                 additionalInfo: `フォールバック失敗: ${fallbackError.message}`
             });
         }
@@ -598,7 +688,7 @@ class AppCore {
             const oldHeight = this.canvasHeight;
             
             // ConfigManager経由での妥当性確認
-            const canvasConfig = ConfigManager.getCanvasConfig();
+            const canvasConfig = window.ConfigManager.getCanvasConfig();
             const validWidth = Math.max(canvasConfig.minWidth || 100, Math.min(canvasConfig.maxWidth || 2000, newWidth));
             const validHeight = Math.max(canvasConfig.minHeight || 100, Math.min(canvasConfig.maxHeight || 2000, newHeight));
             
@@ -615,11 +705,11 @@ class AppCore {
             this.app.stage.hitArea = new PIXI.Rectangle(0, 0, validWidth, validHeight);
             
             // 境界管理システム更新
-            if (this.boundaryManager) {
+            if (this.boundaryManager && typeof this.boundaryManager.createExpandedHitArea === 'function') {
                 this.boundaryManager.createExpandedHitArea();
             }
             
-            EventBus.safeEmit('canvas.resized', {
+            window.EventBus.safeEmit('canvas.resized', {
                 width: validWidth,
                 height: validHeight,
                 previousWidth: oldWidth,
@@ -630,7 +720,7 @@ class AppCore {
             console.log(`📐 キャンバスリサイズ: ${validWidth}x${validHeight}`);
             
         } catch (error) {
-            ErrorManager.showError('canvas-resize', 
+            window.ErrorManager.showError('canvas-resize', 
                 `キャンバスリサイズエラー: ${error.message}`, 
                 { newWidth, newHeight }
             );
@@ -642,8 +732,10 @@ class AppCore {
      */
     destroy() {
         try {
+            console.log('🗑️ AppCore 破棄開始...');
+            
             // 境界管理システム破棄
-            if (this.boundaryManager) {
+            if (this.boundaryManager && typeof this.boundaryManager.destroy === 'function') {
                 this.boundaryManager.destroy();
                 this.boundaryManager = null;
             }
@@ -671,10 +763,10 @@ class AppCore {
             this.uiContainer = null;
             this.coordinateManager = null;
             
-            console.log('🎨 AppCore 破棄完了');
+            console.log('✅ AppCore 破棄完了');
             
         } catch (error) {
-            ErrorManager.showError('app-destroy', 
+            window.ErrorManager.showError('app-destroy', 
                 `AppCore破棄エラー: ${error.message}`
             );
         }
@@ -684,5 +776,5 @@ class AppCore {
 // グローバル登録
 if (typeof window !== 'undefined') {
     window.AppCore = AppCore;
-    console.log('🎨 AppCore グローバル登録完了（分割最適化版）');
+    console.log('🎨 AppCore グローバル登録完了（分割最適化版・修正版）');
 }
