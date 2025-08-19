@@ -1,17 +1,17 @@
 /**
- * 🎨 ふたば☆お絵描きツール - 統一状態管理システム (修正版)
- * 🎯 AI_WORK_SCOPE: 状態取得統一・デバッグ支援・監視機能
+ * 🎨 ふたば☆お絵描きツール - 統一状態管理システム（API拡張版）
+ * 🎯 AI_WORK_SCOPE: 状態取得統一・デバッグ支援・監視機能・コンポーネント状態管理
  * 🎯 DEPENDENCIES: ConfigManager (設定値参照用)
  * 🎯 PIXI_EXTENSIONS: 使用しない
  * 🎯 ISOLATION_TEST: 可能
  * 🎯 SPLIT_THRESHOLD: 200行以下維持
  * 📋 PHASE_TARGET: Phase1統一化
  * 📋 V8_MIGRATION: v8状態監視対応準備済み
- * 🔧 EMERGENCY_FIX: updateSystemState → updateComponentState API統一
+ * 🔧 API拡張: updateComponentState メソッド追加
  */
 
 /**
- * 統一状態管理システム (修正版)
+ * 統一状態管理システム
  * すべての状態取得を統一し、デバッグを支援
  */
 class StateManager {
@@ -21,64 +21,81 @@ class StateManager {
     static monitoring = {
         startTime: performance.now(),
         stateRequests: 0,
-        lastUpdate: null,
-        componentStates: new Map()
+        lastUpdate: null
     };
     
     /**
-     * 🔧 修正版: コンポーネント状態更新 (統一API)
+     * コンポーネント状態管理（新規追加）
+     */
+    static componentStates = new Map();
+    
+    /**
+     * 🔧 コンポーネント状態更新（統一API）
      * @param {string} component - コンポーネント名
-     * @param {string} state - 状態名
+     * @param {string} state - 状態
      * @param {Object} data - 状態データ
      */
     static updateComponentState(component, state, data = {}) {
         try {
+            if (typeof component !== 'string' || typeof state !== 'string') {
+                throw new Error('component と state は文字列である必要があります');
+            }
+            
             const timestamp = Date.now();
             const stateEntry = {
                 component,
                 state,
                 data,
-                timestamp
+                timestamp,
+                id: `${component}-${state}-${timestamp}`
             };
             
-            // コンポーネント状態を保存
-            if (!this.monitoring.componentStates.has(component)) {
-                this.monitoring.componentStates.set(component, new Map());
-            }
+            // コンポーネント状態保存
+            this.componentStates.set(component, stateEntry);
             
-            this.monitoring.componentStates.get(component).set(state, stateEntry);
-            this.monitoring.lastUpdate = timestamp;
-            
-            console.log(`🔄 状態更新: ${component}.${state}`, data);
-            
-            // EventBus経由で通知（利用可能な場合）
+            // EventBusに通知（存在する場合）
             if (window.EventBus && typeof window.EventBus.safeEmit === 'function') {
-                window.EventBus.safeEmit('state:component:updated', {
-                    component,
-                    state,
-                    data,
-                    timestamp
-                });
+                window.EventBus.safeEmit('component.state.updated', stateEntry);
             }
+            
+            console.log(`🔧 コンポーネント状態更新: ${component} → ${state}`, data);
             
             return true;
             
         } catch (error) {
-            console.error('❌ コンポーネント状態更新失敗:', error);
+            console.error('StateManager.updateComponentState エラー:', error.message);
+            
+            // ErrorManager に通知（存在する場合）
+            if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
+                window.ErrorManager.showError('state-update', 
+                    `コンポーネント状態更新エラー: ${error.message}`, 
+                    { component, state, data }
+                );
+            }
+            
             return false;
         }
     }
     
     /**
-     * 🔧 後方互換性: updateSystemState (非推奨だが互換性維持)
-     * @param {string} system - システム名
-     * @param {string} state - 状態名
-     * @param {Object} data - 状態データ
-     * @deprecated updateComponentState を使用してください
+     * 🔧 コンポーネント状態取得
+     * @param {string} component - コンポーネント名
+     * @returns {Object|null} コンポーネント状態
      */
-    static updateSystemState(system, state, data = {}) {
-        console.warn('⚠️ updateSystemState は非推奨です。updateComponentState を使用してください。');
-        return this.updateComponentState(system, state, data);
+    static getComponentState(component) {
+        return this.componentStates.get(component) || null;
+    }
+    
+    /**
+     * 🔧 全コンポーネント状態取得
+     * @returns {Object} 全コンポーネント状態
+     */
+    static getAllComponentStates() {
+        const states = {};
+        this.componentStates.forEach((value, key) => {
+            states[key] = value;
+        });
+        return states;
     }
     
     /**
@@ -97,42 +114,8 @@ class StateManager {
             errors: this.getErrorState(),
             config: this.getConfigState(),
             debug: this.getDebugState(),
-            components: this.getComponentStates()
+            components: this.getAllComponentStates() // 新規追加
         };
-    }
-    
-    /**
-     * 🔧 新機能: コンポーネント状態一覧取得
-     * @returns {Object} コンポーネント状態一覧
-     */
-    static getComponentStates() {
-        const componentStates = {};
-        
-        this.monitoring.componentStates.forEach((states, component) => {
-            componentStates[component] = {};
-            states.forEach((stateEntry, stateName) => {
-                componentStates[component][stateName] = stateEntry;
-            });
-        });
-        
-        return componentStates;
-    }
-    
-    /**
-     * 特定コンポーネントの状態取得
-     * @param {string} component - コンポーネント名
-     * @returns {Object|null} コンポーネント状態
-     */
-    static getComponentState(component) {
-        const states = this.monitoring.componentStates.get(component);
-        if (!states) return null;
-        
-        const componentState = {};
-        states.forEach((stateEntry, stateName) => {
-            componentState[stateName] = stateEntry;
-        });
-        
-        return componentState;
     }
     
     /**
@@ -151,8 +134,11 @@ class StateManager {
             hasPixiApp: !!appCore?.app,
             hasDrawingContainer: !!appCore?.drawingContainer,
             hasUIContainer: !!appCore?.uiContainer,
+            // 新旧両方のプロパティ名に対応
             hasToolSystem: !!appCore?.toolSystem,
+            hasToolManager: !!appCore?.toolManager,
             hasUIController: !!appCore?.uiController,
+            hasUIManager: !!appCore?.uiManager,
             hasPerformanceMonitor: !!appCore?.performanceMonitor,
             canvasSize: appCore ? `${appCore.canvasWidth}×${appCore.canvasHeight}` : 'unknown',
             canvasElement: !!document.getElementById('drawing-canvas'),
@@ -166,7 +152,9 @@ class StateManager {
      * @returns {Object} UI状態
      */
     static getUIState() {
-        const uiController = window.futabaDrawingTool?.appCore?.uiController;
+        // 新旧両方のプロパティ名に対応
+        const uiController = window.futabaDrawingTool?.appCore?.uiController || 
+                           window.futabaDrawingTool?.appCore?.uiManager;
         
         // アクティブツール検出
         const activeToolButton = document.querySelector('.tool-button.active');
@@ -212,7 +200,9 @@ class StateManager {
      * @returns {Object} 描画状態
      */
     static getDrawingState() {
-        const toolSystem = window.futabaDrawingTool?.appCore?.toolSystem;
+        // 新旧両方のプロパティ名に対応
+        const toolSystem = window.futabaDrawingTool?.appCore?.toolSystem || 
+                          window.futabaDrawingTool?.appCore?.toolManager;
         const appCore = window.futabaDrawingTool?.appCore;
         
         return {
@@ -322,7 +312,7 @@ class StateManager {
                 requests: this.monitoring.stateRequests,
                 uptime: Math.round(performance.now() - this.monitoring.startTime),
                 lastUpdate: this.monitoring.lastUpdate,
-                componentCount: this.monitoring.componentStates.size
+                componentStates: this.componentStates.size
             },
             domElements: this.getDOMElementsState(),
             browserInfo: {
@@ -386,7 +376,7 @@ class StateManager {
             fps: performance.currentFPS,
             initTime: performance.initTime + 'ms',
             errors: this.getErrorState().totalAppErrors,
-            componentCount: this.monitoring.componentStates.size
+            componentStates: this.componentStates.size
         };
     }
     
@@ -433,7 +423,7 @@ class StateManager {
     }
     
     /**
-     * 健全性チェック
+     * 健全性チェック（強化版）
      * @returns {Object} チェック結果
      */
     static healthCheck() {
@@ -448,6 +438,15 @@ class StateManager {
         
         if (!state.core.hasPixiApp) {
             issues.push('PixiJS Applicationが未初期化');
+        }
+        
+        // 新旧両方のプロパティ名をチェック
+        if (!state.core.hasToolSystem && !state.core.hasToolManager) {
+            issues.push('ツールシステムが未初期化');
+        }
+        
+        if (!state.core.hasUIController && !state.core.hasUIManager) {
+            issues.push('UIコントローラーが未初期化');
         }
         
         // UI状態チェック
@@ -473,13 +472,46 @@ class StateManager {
             warnings.push(`エラーが発生: ${state.errors.totalAppErrors}件`);
         }
         
+        // コンポーネント状態チェック
+        const componentCount = Object.keys(state.components).length;
+        if (componentCount === 0) {
+            warnings.push('コンポーネント状態が記録されていません');
+        }
+        
         return {
             healthy: issues.length === 0,
             issues,
             warnings,
             score: Math.max(0, 100 - issues.length * 20 - warnings.length * 5),
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            componentStates: componentCount
         };
+    }
+    
+    /**
+     * 🔧 統計情報取得
+     * @returns {Object} 統計情報
+     */
+    static getStats() {
+        return {
+            monitoring: { ...this.monitoring },
+            componentStates: this.componentStates.size,
+            uptime: Math.round(performance.now() - this.monitoring.startTime),
+            requestsPerMinute: Math.round((this.monitoring.stateRequests / (performance.now() - this.monitoring.startTime)) * 60000)
+        };
+    }
+    
+    /**
+     * 🔧 状態リセット
+     */
+    static resetComponentStates() {
+        const count = this.componentStates.size;
+        this.componentStates.clear();
+        console.log(`🔧 コンポーネント状態リセット: ${count}件削除`);
+        
+        if (window.EventBus && typeof window.EventBus.safeEmit === 'function') {
+            window.EventBus.safeEmit('component.states.reset', { count });
+        }
     }
 }
 
@@ -499,6 +531,6 @@ window.getCoreState = () => StateManager.getCoreState();
 window.getDrawingState = () => StateManager.getDrawingState();
 window.healthCheck = () => StateManager.healthCheck();
 
-console.log('✅ StateManager 修正版初期化完了');
-console.log('🔧 API統一: updateComponentState() 統一・updateSystemState() 後方互換性維持');
-console.log('💡 使用例: StateManager.updateComponentState("toolManager", "initialized", data);');
+console.log('✅ StateManager 初期化完了（API拡張版）');
+console.log('💡 使用例: StateManager.getApplicationState() または window.getState()');
+console.log('🔧 新機能: StateManager.updateComponentState(component, state, data)');

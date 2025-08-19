@@ -120,16 +120,20 @@ class FutabaDrawingTool {
     }
     
     /**
-     * AppCore状態確認
+     * AppCore状態確認 - 修正版（新しいプロパティ名に対応）
      */
     validateAppCoreStatus() {
         const issues = [];
         
-        if (!this.appCore) issues.push('AppCoreインスタンス未作成');
-        if (!this.appCore.app) issues.push('PixiJS Application未初期化');
-        if (!this.appCore.drawingContainer) issues.push('DrawingContainer未初期化');
-        if (!this.appCore.toolSystem) issues.push('ToolSystem未初期化');
-        if (!this.appCore.uiController) issues.push('UIController未初期化');
+        if (!this.appCore) {
+            issues.push('AppCoreインスタンス未作成');
+        } else {
+            // 新しいプロパティ名に対応
+            if (!this.appCore.app) issues.push('PixiJS Application未初期化');
+            if (!this.appCore.drawingContainer) issues.push('DrawingContainer未初期化');
+            if (!this.appCore.toolManager) issues.push('ToolManager未初期化');
+            if (!this.appCore.uiManager) issues.push('UIManager未初期化');
+        }
         
         return { valid: issues.length === 0, issues };
     }
@@ -325,9 +329,10 @@ class FutabaDrawingTool {
      * ペンツール選択
      */
     selectPenTool() {
-        if (!this.appCore?.toolSystem) return;
+        // toolManagerプロパティに修正
+        if (!this.appCore?.toolManager) return;
         
-        this.appCore.toolSystem.setTool('pen');
+        this.appCore.toolManager.setTool('pen');
         this.updateToolUI('pen');
         this.updateToolStatus('pen');
         
@@ -338,9 +343,10 @@ class FutabaDrawingTool {
      * 消しゴムツール選択
      */
     selectEraserTool() {
-        if (!this.appCore?.toolSystem) return;
+        // toolManagerプロパティに修正
+        if (!this.appCore?.toolManager) return;
         
-        this.appCore.toolSystem.setTool('eraser');
+        this.appCore.toolManager.setTool('eraser');
         this.updateToolUI('eraser');
         this.updateToolStatus('eraser');
         
@@ -360,8 +366,9 @@ class FutabaDrawingTool {
      * 全ポップアップ閉じる
      */
     closeAllPopups() {
-        if (this.appCore?.uiController) {
-            this.appCore.uiController.closeAllPopups();
+        // uiManagerプロパティに修正
+        if (this.appCore?.uiManager) {
+            this.appCore.uiManager.closeAllPopups();
         } else {
             document.querySelectorAll('.popup-panel').forEach(popup => {
                 popup.classList.remove('show');
@@ -386,7 +393,10 @@ class FutabaDrawingTool {
             unifiedSystemsIntegrated: true,
             dryPrincipleCompliant: true,
             solidPrincipleCompliant: true,
-            legacyFunctionsRemoved: true
+            legacyFunctionsRemoved: true,
+            // 新しいプロパティ名に対応
+            toolManager: !!this.appCore?.toolManager,
+            uiManager: !!this.appCore?.uiManager
         };
     }
     
@@ -411,6 +421,7 @@ class FutabaDrawingTool {
         console.log('  ✅ DRY原則準拠: 完了');
         console.log('  ✅ SOLID原則準拠: 完了');
         console.log('  ✅ コード肥大化解決: 完了');
+        console.log('  ✅ プロパティ名統一: 完了');
         
         return debugInfo;
     }
