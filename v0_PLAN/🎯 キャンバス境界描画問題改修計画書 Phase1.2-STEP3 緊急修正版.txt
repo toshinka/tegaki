@@ -1,0 +1,431 @@
+# 🎯 キャンバス境界描画問題改修計画書 Phase1.2-STEP3 緊急修正版
+
+## 🚨 緊急問題分析
+
+### 現在のエラー状況
+- **エラー**: `app-core.js:90 Uncaught SyntaxError: Unexpected token '{'`
+- **影響**: AppCore初期化完全停止・アプリケーション起動不能
+- **原因**: app-core.js 90行目付近のJavaScript構文エラー
+- **緊急度**: 最高（アプリケーション完全停止）
+
+### エラー原因詳細分析
+```javascript
+問題箇所特定:
+📍 app-core.js:90付近 - 波括弧構文エラー
+📍 JavaScript Pure実装原則違反の可能性
+📍 ESM import/export混在の疑い
+📍 オブジェクト定義・分割代入構文の問題
+
+技術制約違反チェック:
+❌ ESM禁止: import/export使用禁止
+❌ Pure JavaScript: TypeScript混在禁止  
+❌ 波括弧構文: 分割代入・オブジェクト展開注意
+```
+
+### コード肥大化・分離検討
+```javascript
+現在のapp-core.js状況:
+📏 行数: ~800行（制限値300行の2.7倍）
+📊 責任範囲: PixiJS管理 + 境界システム + 座標変換 + デバッグ
+📈 将来予測: Phase2レイヤー機能追加でさらに肥大化
+
+分離候補:
+🔄 BoundaryEventHandler → boundary-manager.js
+🔄 CoordinateSystem → coordinate-manager.js  
+🔄 DebugSystem → debug-manager.js
+🔄 AppCore → 純粋PixiJS管理のみに縮小
+```
+
+---
+
+## 🔧 緊急修正戦略
+
+### STEP1: 構文エラー緊急修正
+**対象**: `app-core.js`
+**時間**: 30分
+**優先度**: 緊急最高
+
+```javascript
+修正方針:
+1. 90行目付近の構文エラー特定・修正
+2. ESM構文完全除去確認
+3. 波括弧構文の安全化
+4. JavaScript Pure実装原則準拠確認
+
+具体的修正内容:
+❌ 分割代入: const { x, y } = point; 
+✅ 通常代入: const x = point.x; const y = point.y;
+
+❌ オブジェクト展開: return { ...config, enabled: true };
+✅ Object.assign: return Object.assign({}, config, { enabled: true });
+
+❌ import/export: export class AppCore
+✅ 直接定義: class AppCore
+```
+
+### STEP2: 責任分離設計
+**対象**: 境界システム分離
+**時間**: 2時間  
+**優先度**: 高
+
+```javascript
+分離戦略: Option C（段階的分離）
+理由: 緊急修正 + 将来拡張性確保
+
+Phase1.2-STEP3修正版:
+├── app-core.js (200行以下)
+│   ├── PixiJS Application管理
+│   ├── 基本Stage設定
+│   └── 最小限境界統合
+├── boundary-manager.js (新規作成)
+│   ├── BoundaryEventHandler
+│   ├── 境界越え検出・処理
+│   └── EventBus統合
+└── coordinate-manager.js (新規作成)
+    ├── 座標変換システム
+    ├── キャンバス⇔PixiJS変換
+    └── グローバル座標対応
+```
+
+### STEP3: 統一システム完全統合
+**対象**: 分離ファイル統一システム活用
+**時間**: 1時間
+**優先度**: 高
+
+```javascript
+統一システム活用:
+✅ ConfigManager: 境界設定・座標設定
+✅ ErrorManager: 境界エラー・座標エラー  
+✅ EventBus: 境界イベント・座標イベント
+✅ StateManager: 境界状態・座標状態
+
+分離ファイル統一原則:
+1. DRY: 重複コード完全排除
+2. SOLID: 単一責任・開放閉鎖原則
+3. 統一インターフェース: ConfigManager経由設定
+4. エラーハンドリング統一: ErrorManager経由
+```
+
+---
+
+## 🛠️ 実装詳細計画
+
+### AppCore縮小版設計
+```javascript
+// app-core.js (縮小版 - 200行以下)
+class AppCore {
+    constructor() {
+        this.app = null;
+        this.width = 800;
+        this.height = 600;
+        this.isInitialized = false;
+        
+        // 境界システムは外部委譲
+        this.boundaryManager = null;
+        this.coordinateManager = null;
+    }
+    
+    async initialize(options = {}) {
+        // 基本PixiJS初期化のみ
+        await this.createPixiApplication(options);
+        this.setupBasicConfiguration();
+        this.initializeDrawingStage();
+        
+        // 外部システム統合
+        this.integrateBoundarySystem();
+        this.integrateCoordinateSystem();
+        
+        this.isInitialized = true;
+        return true;
+    }
+    
+    integrateBoundarySystem() {
+        if (window.BoundaryManager) {
+            this.boundaryManager = new window.BoundaryManager(this);
+            this.boundaryManager.initialize();
+        }
+    }
+    
+    integrateCoordinateSystem() {
+        if (window.CoordinateManager) {
+            this.coordinateManager = new window.CoordinateManager(this);
+            this.coordinateManager.initialize();
+        }
+    }
+    
+    // PixiJS管理機能のみ
+    // 境界・座標機能は削除
+}
+```
+
+### BoundaryManager設計
+```javascript
+// boundary-manager.js (新規)
+class BoundaryManager {
+    constructor(appCore) {
+        this.appCore = appCore;
+        this.config = window.ConfigManager.get('canvas.boundary');
+        this.isTrackingOutside = false;
+        this.boundaryMargin = 20;
+    }
+    
+    initialize() {
+        this.setupGlobalTracking();
+        this.setupPixiJSIntegration();
+        this.setupEventBusIntegration();
+        
+        window.EventBus.safeEmit('boundary.manager.initialized', {
+            timestamp: Date.now()
+        });
+    }
+    
+    setupGlobalTracking() {
+        document.addEventListener('pointerdown', this.handleGlobalPointerDown.bind(this));
+        document.addEventListener('pointermove', this.handleGlobalPointerMove.bind(this));
+        document.addEventListener('pointerup', this.handleGlobalPointerUp.bind(this));
+    }
+    
+    handleBoundaryCrossIn(event, canvasRect) {
+        // 境界越え処理実装
+        const canvasX = event.clientX - canvasRect.left;
+        const canvasY = event.clientY - canvasRect.top;
+        
+        window.EventBus.safeEmit('boundary.cross.in', {
+            position: { x: canvasX, y: canvasY },
+            pressure: event.pressure || 0.5,
+            pointerId: event.pointerId
+        });
+    }
+}
+```
+
+### CoordinateManager設計
+```javascript
+// coordinate-manager.js (新規)
+class CoordinateManager {
+    constructor(appCore) {
+        this.appCore = appCore;
+        this.config = window.ConfigManager.get('canvas.coordinates');
+        this.transformCache = new Map();
+    }
+    
+    initialize() {
+        this.setupTransformationSystem();
+        this.setupCaching();
+        
+        window.EventBus.safeEmit('coordinate.manager.initialized', {
+            timestamp: Date.now()
+        });
+    }
+    
+    canvasToPixi(x, y) {
+        const cacheKey = `${x}-${y}`;
+        if (this.transformCache.has(cacheKey)) {
+            return this.transformCache.get(cacheKey);
+        }
+        
+        const result = { x, y }; // 基本変換
+        this.transformCache.set(cacheKey, result);
+        return result;
+    }
+    
+    globalToCanvas(globalX, globalY) {
+        const canvas = this.appCore.getCanvas();
+        if (!canvas) return { x: globalX, y: globalY };
+        
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: globalX - rect.left,
+            y: globalY - rect.top
+        };
+    }
+}
+```
+
+---
+
+## 📊 実装効果・メトリクス
+
+### コード行数削減効果
+```javascript
+修正前:
+- app-core.js: ~800行
+
+修正後:
+- app-core.js: ~200行 (75%削減)
+- boundary-manager.js: ~300行
+- coordinate-manager.js: ~150行
+- 合計: ~650行 (19%削減)
+
+保守性向上:
+✅ 単一責任原則: 各クラス明確な役割
+✅ 開放閉鎖原則: 機能追加時の影響範囲限定
+✅ 依存性逆転: 統一システム経由の疎結合
+✅ テスタビリティ: 個別機能の単体テスト可能
+```
+
+### パフォーマンス向上
+```javascript
+期待効果:
+- 初期化時間: 10-15%短縮
+- メモリ使用量: 分離によるGC効率向上
+- 境界検出: キャッシュ機能による高速化
+- 座標変換: 変換結果キャッシュによる高速化
+```
+
+### 将来拡張性
+```javascript
+Phase2対応準備:
+🔄 LayerManager追加時: app-core.js無変更
+🔄 FilterManager追加時: 座標変換システム再利用
+🔄 AnimationManager追加時: EventBus統合パターン再利用
+🔄 TouchGesture拡張: BoundaryManager拡張のみ
+```
+
+---
+
+## 🚀 実装スケジュール
+
+### 緊急修正フェーズ (合計: 3.5時間)
+```javascript
+STEP1: 構文エラー修正 (30分)
+⚡ app-core.js構文エラー特定・修正
+⚡ JavaScript Pure実装原則準拠確認
+⚡ 最小限動作確保
+
+STEP2: 責任分離実装 (2時間)
+🔄 boundary-manager.js作成・移行
+🔄 coordinate-manager.js作成・移行  
+🔄 app-core.js縮小・統合
+
+STEP3: 統一システム完全統合 (1時間)
+✅ 分離ファイルConfigManager活用
+✅ 分離ファイルErrorManager統合
+✅ EventBus完全統合・テスト
+
+品質保証・テスト (30分)
+🧪 境界描画機能テスト
+🧪 座標変換精度テスト
+🧪 パフォーマンステスト
+```
+
+### 完了条件・成功指標
+```javascript
+✅ 機能要件:
+- アプリケーション正常起動
+- 境界描画100%動作
+- 座標変換精度維持
+- マルチポインター対応
+
+✅ 品質要件:
+- JavaScript Pure実装原則準拠
+- DRY・SOLID原則完全準拠
+- エラーハンドリング統一
+- 統一システム100%活用
+
+✅ 保守性要件:
+- app-core.js 200行以下
+- 単一責任原則準拠
+- Phase2拡張準備完了
+- ドキュメント・診断更新
+```
+
+---
+
+## 🔍 診断・テストシステム
+
+### 境界システム診断拡張
+```javascript
+// 分離システム診断コマンド
+window.diagnoseBoundarySystem = function() {
+    return {
+        appCore: window.diagnoseAppCoreBoundary(),
+        boundaryManager: window.boundaryManager?.diagnose() || null,
+        coordinateManager: window.coordinateManager?.diagnose() || null,
+        integration: {
+            eventBus: window.EventBus.getStats(),
+            configManager: window.ConfigManager.getDebugInfo(),
+            errorManager: window.ErrorManager.getErrorStats()
+        }
+    };
+};
+
+// 統合システムテスト
+window.testBoundarySystemIntegration = function() {
+    const tests = [
+        () => window.appCore?.isReady(),
+        () => window.boundaryManager?.isReady(),
+        () => window.coordinateManager?.isReady(),
+        () => window.testAppCoreBoundaryIntegration(),
+    ];
+    
+    return tests.map((test, i) => ({
+        test: i + 1,
+        passed: test()
+    }));
+};
+```
+
+### トラブルシューティング
+```javascript
+🚨 よくある問題・解決法:
+
+構文エラー問題:
+🔧 app-core.js:90エラー
+   → JavaScript Pure実装確認
+   → ESM構文除去確認
+   → 波括弧構文安全化
+
+境界描画問題:
+🔧 boundary-manager.js読み込み確認
+🔧 EventBus統合確認
+🔧 ConfigManager設定確認
+
+座標変換問題:
+🔧 coordinate-manager.js読み込み確認
+🔧 キャッシュクリア: coordinateManager.clearCache()
+🔧 変換精度確認: coordinateManager.testAccuracy()
+```
+
+---
+
+## 📝 開発ガイド・AI協働時注意点
+
+### 実装時の重要原則
+```javascript
+🤖 AI実装時必須事項:
+1. JavaScript Pure: import/export完全禁止
+2. 波括弧構文: 分割代入・展開演算子注意
+3. 統一システム: ConfigManager経由設定必須
+4. DRY原則: 重複コード完全排除
+5. SOLID原則: 単一責任・疎結合設計
+
+🔍 構文チェックリスト:
+❌ const { x } = obj; → ✅ const x = obj.x;
+❌ { ...config } → ✅ Object.assign({}, config)
+❌ import/export → ✅ 直接定義・グローバル参照
+❌ class { method() {} } → ✅ 完全括弧確認
+```
+
+### ファイル分離時の統合パターン
+```javascript
+統一システム活用パターン:
+📋 設定: window.ConfigManager.get('system.subsystem.key')
+📋 エラー: window.ErrorManager.showError(type, message, data)
+📋 イベント: window.EventBus.safeEmit(event, data)
+📋 状態: window.StateManager.updateState(key, value)
+
+依存関係パターン:
+🔄 BoundaryManager → AppCore参照
+🔄 CoordinateManager → AppCore参照
+🔄 AppCore → Manager統合（参照のみ）
+🔄 すべて → 統一システム依存
+```
+
+---
+
+*🎯 キャンバス境界描画問題改修計画書 Phase1.2-STEP3 緊急修正版*  
+*作成日: 2025年8月19日*  
+*対象: 構文エラー修正・責任分離・統一システム完全統合*  
+*効果: アプリケーション安定化・保守性向上・将来拡張準備*  
+*原則: JavaScript Pure・DRY・SOLID完全準拠*
