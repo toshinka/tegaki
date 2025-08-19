@@ -1,921 +1,789 @@
 /**
- * 🎨 Phase1.2-STEP3: キャンバスリサイズ機能拡張
- * 🎯 既存canvas-manager.jsへの追加実装
+ * 🎯 Phase1.2-STEP1: Canvas Manager境界イベント処理システム拡張
+ * 🎨 ふたば☆お絵描きツール - 境界越え描画対応
  * 
- * 🎯 AI_WORK_SCOPE: リサイズ機能有効化・中央寄せ・履歴管理・UI統合
- * 🎯 DEPENDENCIES: managers/canvas-manager.js, managers/memory-manager.js
- * 🎯 NODE_MODULES: pixi.js（Application）, gsap（アニメーション）
- * 🎯 車輪の再発明回避: PIXI Application.resize()・GSAP・Memory Manager活用
- */
-
-/**
- * Canvas Manager リサイズ機能拡張
- * 既存のcanvas-manager.jsに追加するメソッド群
+ * 🎯 SCOPE: キャンバス境界外からの描画開始対応
+ * 🎯 DEPENDENCIES: ConfigManager, ErrorManager, EventBus, StateManager
+ * 🎯 UNIFIED: 統一システム100%活用・DRY・SOLID原則準拠
+ * 🎯 ISOLATION: 既存機能非回帰・境界処理独立性確保
+ * 📋 PHASE: Phase1.2-STEP1
  */
 
 // ==========================================
-// 🎯 Phase1.2-STEP3: リサイズシステム拡張
+// 🎯 STEP1: 境界イベント処理システム
 // ==========================================
 
 /**
- * リサイズ機能初期化（既存initialize()に追加）
+ * 境界イベント処理クラス
+ * キャンバス外からの描画開始を検出・処理
  */
-initializeResizeSystem() {
-    console.log('📏 リサイズシステム初期化開始...');
-    
-    // リサイズ履歴管理
-    this.resizeHistory = {
-        entries: [],
-        maxEntries: 20,
-        currentIndex: -1
-    };
-    
-    // リサイズ設定
-    this.resizeSettings = {
-        enabled: true,
-        preserveContent: true,
-        centerContent: true,
-        animationDuration: 0.3,
-        constrainProportions: false,
-        minSize: { width: 100, height: 100 },
-        maxSize: { width: 4096, height: 4096 }
-    };
-    
-    // UI要素取得・有効化
-    this.setupResizeUI();
-    
-    // リサイズイベントハンドラー設定
-    this.setupResizeEventHandlers();
-    
-    console.log('✅ リサイズシステム初期化完了');
-}
-
-/**
- * リサイズUI要素セットアップ
- */
-setupResizeUI() {
-    // リサイズツールボタン有効化
-    const resizeTool = document.getElementById('resize-tool');
-    if (resizeTool) {
-        resizeTool.classList.remove('disabled');
-        resizeTool.style.opacity = '1';
-        resizeTool.style.cursor = 'pointer';
-    }
-    
-    // リサイズパネル要素取得
-    this.resizeUI = {
-        panel: document.getElementById('resize-settings'),
-        widthInput: document.getElementById('canvas-width'),
-        heightInput: document.getElementById('canvas-height'),
-        applyButton: document.getElementById('apply-resize'),
-        applyCenterButton: document.getElementById('apply-resize-center'),
-        presetButtons: document.querySelectorAll('.resize-button[data-size]'),
-        statusDisplay: document.getElementById('canvas-info')
-    };
-    
-    // 現在サイズを入力欄に反映
-    this.updateResizeUI();
-    
-    console.log('🎛️ リサイズUI要素セットアップ完了');
-}
-
-/**
- * リサイズイベントハンドラー設定
- */
-setupResizeEventHandlers() {
-    const ui = this.resizeUI;
-    
-    // 適用ボタン
-    if (ui.applyButton) {
-        ui.applyButton.addEventListener('click', () => {
-            this.applyResize(false);
-        });
-    }
-    
-    // 中央寄せ適用ボタン
-    if (ui.applyCenterButton) {
-        ui.applyCenterButton.addEventListener('click', () => {
-            this.applyResize(true);
-        });
-    }
-    
-    // プリセットボタン
-    ui.presetButtons?.forEach(button => {
-        button.addEventListener('click', (event) => {
-            const sizeData = event.target.dataset.size;
-            if (sizeData) {
-                const [width, height] = sizeData.split(',').map(Number);
-                this.setResizePreset(width, height);
-            }
-        });
-    });
-    
-    // 入力欄の変更監視
-    if (ui.widthInput) {
-        ui.widthInput.addEventListener('input', () => {
-            this.validateResizeInput();
-        });
-    }
-    
-    if (ui.heightInput) {
-        ui.heightInput.addEventListener('input', () => {
-            this.validateResizeInput();
-        });
-    }
-    
-    // キーボードショートカット
-    document.addEventListener('keydown', (event) => {
-        this.handleResizeKeyboard(event);
-    });
-    
-    console.log('⌨️ リサイズイベントハンドラー設定完了');
-}
-
-/**
- * リサイズ実行（メイン機能）
- */
-applyResize(centerContent = false) {
-    if (!this.resizeSettings.enabled) {
-        console.warn('⚠️ リサイズ機能が無効化されています');
-        return false;
-    }
-    
-    const ui = this.resizeUI;
-    const newWidth = parseInt(ui.widthInput.value);
-    const newHeight = parseInt(ui.heightInput.value);
-    
-    // バリデーション
-    if (!this.validateResizeValues(newWidth, newHeight)) {
-        this.showResizeError('無効なサイズが指定されました');
-        return false;
-    }
-    
-    // 現在サイズと同じ場合はスキップ
-    if (newWidth === this.width && newHeight === this.height) {
-        console.log('📏 サイズ変更なし - スキップ');
-        return true;
-    }
-    
-    console.log(`📏 リサイズ実行開始: ${this.width}×${this.height} → ${newWidth}×${newHeight}`);
-    
-    try {
-        // 履歴保存
-        this.saveResizeToHistory();
+class BoundaryEventHandler {
+    constructor(canvasManager) {
+        this.canvas = canvasManager;
+        this.validateUnifiedSystems();
         
-        // リサイズ実行
-        const success = this.executeResize(newWidth, newHeight, centerContent);
+        // 統一システム設定取得
+        this.config = this.getUnifiedConfig();
         
-        if (success) {
-            // UI更新
-            this.updateResizeUI();
+        // 境界追跡状態
+        this.isTrackingOutside = false;
+        this.outsidePointers = new Map(); // Multi-pointer support
+        this.boundaryStats = {
+            detections: 0,
+            crossIns: 0,
+            errors: 0,
+            averageDelay: 0
+        };
+        
+        console.log('🎯 BoundaryEventHandler初期化完了');
+    }
+    
+    /**
+     * 統一システム依存性検証
+     */
+    validateUnifiedSystems() {
+        const required = ['ConfigManager', 'ErrorManager', 'StateManager', 'EventBus'];
+        const missing = required.filter(sys => !window[sys]);
+        
+        if (missing.length > 0) {
+            throw new Error(`境界システム: 統一システム依存不足: ${missing.join(', ')}`);
+        }
+        
+        console.log('✅ 統一システム依存性確認完了');
+    }
+    
+    /**
+     * 統一設定取得・デフォルト値設定
+     */
+    getUnifiedConfig() {
+        // ConfigManager統一設定
+        const config = {
+            enabled: window.ConfigManager.get('canvas.boundary.enabled') ?? true,
+            margin: window.ConfigManager.get('canvas.boundary.margin') ?? 20,
+            trackingEnabled: window.ConfigManager.get('canvas.boundary.trackingEnabled') ?? true,
+            crossInDelay: window.ConfigManager.get('canvas.boundary.crossInDelay') ?? 0,
+            supportedPointers: window.ConfigManager.get('canvas.boundary.supportedPointers') ?? 
+                              ['mouse', 'pen', 'touch'],
+            debugging: window.ConfigManager.get('canvas.boundary.debugging') ?? false
+        };
+        
+        // デフォルト設定がない場合は設定
+        if (!window.ConfigManager.get('canvas.boundary')) {
+            window.ConfigManager.set('canvas.boundary', {
+                enabled: true,
+                margin: 20,
+                trackingEnabled: true,
+                crossInDelay: 0,
+                supportedPointers: ['mouse', 'pen', 'touch'],
+                debugging: false
+            });
+        }
+        
+        return config;
+    }
+    
+    /**
+     * 境界追跡システム初期化
+     */
+    initializeBoundaryTracking() {
+        if (!this.config.enabled || !this.config.trackingEnabled) {
+            console.log('⚠️ 境界追跡システム無効化');
+            return false;
+        }
+        
+        try {
+            // グローバルPointerEvent監視
+            this.setupGlobalPointerTracking();
             
-            // イベント発火
-            this.dispatchEvent('resize-complete', {
-                oldWidth: this.width,
-                oldHeight: this.height,
-                newWidth,
-                newHeight,
-                centerContent
+            // 拡張ヒットエリア作成
+            this.createExpandedHitArea();
+            
+            // EventBus境界イベント統合
+            this.setupEventBusIntegration();
+            
+            // デバッグモード
+            if (this.config.debugging) {
+                this.enableDebugMode();
+            }
+            
+            console.log('✅ 境界追跡システム初期化完了');
+            
+            // StateManager状態更新
+            window.StateManager.updateState('boundary.tracking', {
+                enabled: true,
+                margin: this.config.margin,
+                pointers: this.outsidePointers.size
             });
             
-            console.log(`✅ リサイズ完了: ${newWidth}×${newHeight}`);
-        }
-        
-        return success;
-        
-    } catch (error) {
-        console.error('❌ リサイズ実行エラー:', error);
-        this.showResizeError(`リサイズに失敗しました: ${error.message}`);
-        return false;
-    }
-}
-
-/**
- * リサイズ実行（コア処理）
- */
-executeResize(newWidth, newHeight, centerContent) {
-    const oldWidth = this.width;
-    const oldHeight = this.height;
-    
-    // コンテンツの現在位置記録（中央寄せ用）
-    const contentBounds = centerContent ? this.getContentBounds() : null;
-    
-    // PixiJS Applicationリサイズ
-    // 📋 V8_MIGRATION: app.resize()に変更予定
-    this.app.renderer.resize(newWidth, newHeight);
-    
-    // キャンバス要素のサイズ更新
-    if (this.canvasElement) {
-        this.canvasElement.style.width = newWidth + 'px';
-        this.canvasElement.style.height = newHeight + 'px';
-    }
-    
-    // 内部サイズ更新
-    this.width = newWidth;
-    this.height = newHeight;
-    
-    // ヒットエリア更新
-    if (this.app.stage) {
-        this.app.stage.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
-    }
-    
-    // ビューポート境界更新
-    this.updateViewportBounds();
-    
-    // 背景更新
-    this.updateBackground();
-    
-    // グリッド更新
-    if (this.grid && this.grid.visible) {
-        this.updateGrid();
-    }
-    
-    // コンテンツ中央寄せ
-    if (centerContent && contentBounds) {
-        this.centerExistingContent(contentBounds, oldWidth, oldHeight, newWidth, newHeight);
-    }
-    
-    // CSS更新
-    this.updateCanvasCSS(newWidth, newHeight);
-    
-    return true;
-}
-
-/**
- * 既存コンテンツ中央寄せ
- */
-centerExistingContent(contentBounds, oldWidth, oldHeight, newWidth, newHeight) {
-    if (!contentBounds || this.paths.length === 0) {
-        return;
-    }
-    
-    // オフセット計算
-    const offsetX = (newWidth - oldWidth) / 2;
-    const offsetY = (newHeight - oldHeight) / 2;
-    
-    console.log(`🎯 コンテンツ中央寄せ: オフセット(${offsetX}, ${offsetY})`);
-    
-    // 全レイヤーを移動
-    Object.values(this.layers).forEach(layer => {
-        if (layer && layer.position) {
-            // GSAPアニメーション（利用可能時）
-            if (this.extensions.gsapAvailable && this.resizeSettings.animationDuration > 0) {
-                gsap.to(layer.position, {
-                    duration: this.resizeSettings.animationDuration,
-                    x: layer.position.x + offsetX,
-                    y: layer.position.y + offsetY,
-                    ease: "power2.out"
-                });
-            } else {
-                // 即座に移動
-                layer.position.x += offsetX;
-                layer.position.y += offsetY;
-            }
-        }
-    });
-    
-    // パス座標更新
-    this.paths.forEach(path => {
-        if (path.points && Array.isArray(path.points)) {
-            path.points.forEach(point => {
-                point.x += offsetX;
-                point.y += offsetY;
-            });
-        }
-        
-        // グラフィクス位置更新
-        if (path.graphics) {
-            path.graphics.x += offsetX;
-            path.graphics.y += offsetY;
-        }
-    });
-}
-
-/**
- * コンテンツ境界取得
- */
-getContentBounds() {
-    if (this.paths.length === 0) {
-        return null;
-    }
-    
-    let minX = Infinity, minY = Infinity;
-    let maxX = -Infinity, maxY = -Infinity;
-    
-    this.paths.forEach(path => {
-        if (path.points && path.points.length > 0) {
-            path.points.forEach(point => {
-                minX = Math.min(minX, point.x);
-                minY = Math.min(minY, point.y);
-                maxX = Math.max(maxX, point.x);
-                maxY = Math.max(maxY, point.y);
-            });
-        }
-    });
-    
-    if (minX === Infinity) {
-        return null;
-    }
-    
-    return {
-        x: minX,
-        y: minY,
-        width: maxX - minX,
-        height: maxY - minY
-    };
-}
-
-/**
- * ビューポート境界更新
- */
-updateViewportBounds() {
-    if (this.viewport && this.viewport.bounds) {
-        this.viewport.bounds = new PIXI.Rectangle(
-            -this.width,
-            -this.height,
-            this.width * 3,
-            this.height * 3
-        );
-    }
-}
-
-/**
- * キャンバスCSS更新
- */
-updateCanvasCSS(width, height) {
-    const container = this.canvasElement?.parentElement;
-    if (!container) return;
-    
-    // Phase1.2対応: データ属性更新
-    container.setAttribute('data-dimensions', `${width}×${height}`);
-    
-    // 測定モード時の表示更新
-    if (container.classList.contains('measurement-mode')) {
-        container.style.setProperty('--canvas-width', `${width}px`);
-        container.style.setProperty('--canvas-height', `${height}px`);
-    }
-}
-
-/**
- * リサイズ値バリデーション
- */
-validateResizeValues(width, height) {
-    const settings = this.resizeSettings;
-    
-    // 数値チェック
-    if (!Number.isInteger(width) || !Number.isInteger(height)) {
-        return false;
-    }
-    
-    // 範囲チェック
-    if (width < settings.minSize.width || width > settings.maxSize.width) {
-        return false;
-    }
-    
-    if (height < settings.minSize.height || height > settings.maxSize.height) {
-        return false;
-    }
-    
-    // 比率制約チェック（有効時）
-    if (settings.constrainProportions) {
-        const currentRatio = this.width / this.height;
-        const newRatio = width / height;
-        const tolerance = 0.01;
-        
-        if (Math.abs(currentRatio - newRatio) > tolerance) {
+            return true;
+            
+        } catch (error) {
+            window.ErrorManager.showError('boundary-system', 
+                `境界追跡初期化失敗: ${error.message}`, 
+                { config: this.config }
+            );
             return false;
         }
     }
     
-    return true;
-}
-
-/**
- * 入力値バリデーション（リアルタイム）
- */
-validateResizeInput() {
-    const ui = this.resizeUI;
-    const width = parseInt(ui.widthInput.value);
-    const height = parseInt(ui.heightInput.value);
-    
-    const isValid = this.validateResizeValues(width, height);
-    
-    // UI状態更新
-    ui.applyButton.disabled = !isValid;
-    ui.applyCenterButton.disabled = !isValid;
-    
-    // 視覚的フィードバック
-    const inputs = [ui.widthInput, ui.heightInput];
-    inputs.forEach(input => {
-        if (isValid) {
-            input.style.borderColor = 'var(--futaba-light-medium)';
-        } else {
-            input.style.borderColor = 'var(--futaba-maroon)';
-        }
-    });
-    
-    return isValid;
-}
-
-/**
- * プリセットサイズ設定
- */
-setResizePreset(width, height) {
-    const ui = this.resizeUI;
-    
-    ui.widthInput.value = width;
-    ui.heightInput.value = height;
-    
-    // バリデーション実行
-    this.validateResizeInput();
-    
-    console.log(`📐 プリセット設定: ${width}×${height}`);
-}
-
-/**
- * リサイズUI更新
- */
-updateResizeUI() {
-    const ui = this.resizeUI;
-    
-    // 入力欄更新
-    if (ui.widthInput) ui.widthInput.value = this.width;
-    if (ui.heightInput) ui.heightInput.value = this.height;
-    
-    // ステータス表示更新
-    if (ui.statusDisplay) {
-        ui.statusDisplay.textContent = `${this.width}×${this.height}px`;
-    }
-    
-    // プリセットボタンの選択状態更新
-    this.updatePresetSelection();
-}
-
-/**
- * プリセット選択状態更新
- */
-updatePresetSelection() {
-    const ui = this.resizeUI;
-    const currentSize = `${this.width},${this.height}`;
-    
-    ui.presetButtons?.forEach(button => {
-        if (button.dataset.size === currentSize) {
-            button.classList.add('active');
-        } else {
-            button.classList.remove('active');
-        }
-    });
-}
-
-/**
- * リサイズエラー表示
- */
-showResizeError(message) {
-    // 簡易エラー表示（後でUI Managerと統合予定）
-    console.error(`❌ リサイズエラー: ${message}`);
-    
-    // TODO: Phase1.3でUI Manager統合時に改善
-    alert(`リサイズエラー: ${message}`);
-}
-
-// ==========================================
-// 🎯 Phase1.2-STEP3: 履歴管理システム
-// ==========================================
-
-/**
- * リサイズ履歴保存
- */
-saveResizeToHistory() {
-    const historyEntry = {
-        timestamp: Date.now(),
-        width: this.width,
-        height: this.height,
-        contentBounds: this.getContentBounds()
-    };
-    
-    const history = this.resizeHistory;
-    
-    // 現在位置以降の履歴削除（分岐）
-    if (history.currentIndex < history.entries.length - 1) {
-        history.entries = history.entries.slice(0, history.currentIndex + 1);
-    }
-    
-    // 新しい履歴追加
-    history.entries.push(historyEntry);
-    history.currentIndex = history.entries.length - 1;
-    
-    // 履歴サイズ制限
-    if (history.entries.length > history.maxEntries) {
-        history.entries.shift();
-        history.currentIndex--;
-    }
-    
-    // Memory Manager連携
-    if (window.MemoryManager) {
-        window.MemoryManager.record('canvas-resize', historyEntry);
-    }
-    
-    console.log(`💾 リサイズ履歴保存: ${historyEntry.width}×${historyEntry.height}`);
-}
-
-/**
- * リサイズアンドゥ
- */
-undoResize() {
-    const history = this.resizeHistory;
-    
-    if (history.currentIndex <= 0) {
-        console.warn('⚠️ アンドゥ可能なリサイズ履歴がありません');
-        return false;
-    }
-    
-    history.currentIndex--;
-    const targetEntry = history.entries[history.currentIndex];
-    
-    console.log(`↩️ リサイズアンドゥ: ${targetEntry.width}×${targetEntry.height}`);
-    
-    // 履歴からリサイズ実行
-    return this.restoreFromHistory(targetEntry);
-}
-
-/**
- * リサイズリドゥ
- */
-redoResize() {
-    const history = this.resizeHistory;
-    
-    if (history.currentIndex >= history.entries.length - 1) {
-        console.warn('⚠️ リドゥ可能なリサイズ履歴がありません');
-        return false;
-    }
-    
-    history.currentIndex++;
-    const targetEntry = history.entries[history.currentIndex];
-    
-    console.log(`↪️ リサイズリドゥ: ${targetEntry.width}×${targetEntry.height}`);
-    
-    // 履歴からリサイズ実行
-    return this.restoreFromHistory(targetEntry);
-}
-
-/**
- * 履歴からリサイズ復元
- */
-restoreFromHistory(historyEntry) {
-    try {
-        // 履歴保存を一時無効化
-        const originalEnabled = this.resizeSettings.enabled;
-        this.resizeSettings.enabled = false;
+    /**
+     * グローバルPointer追跡セットアップ
+     */
+    setupGlobalPointerTracking() {
+        // Document全体でPointerEvent監視
+        document.addEventListener('pointerdown', this.handleGlobalPointerDown.bind(this), {
+            passive: false,
+            capture: true
+        });
         
-        // リサイズ実行
-        const success = this.executeResize(historyEntry.width, historyEntry.height, false);
+        document.addEventListener('pointermove', this.handleGlobalPointerMove.bind(this), {
+            passive: false,
+            capture: true
+        });
         
-        if (success) {
-            // UI更新
-            this.updateResizeUI();
-            
-            // イベント発火
-            this.dispatchEvent('resize-history-restore', {
-                width: historyEntry.width,
-                height: historyEntry.height,
-                timestamp: historyEntry.timestamp
-            });
+        document.addEventListener('pointerup', this.handleGlobalPointerUp.bind(this), {
+            passive: false,
+            capture: true
+        });
+        
+        // Pointer Cancel対応
+        document.addEventListener('pointercancel', this.handleGlobalPointerCancel.bind(this), {
+            passive: false,
+            capture: true
+        });
+        
+        console.log('🌐 グローバルPointer追跡設定完了');
+    }
+    
+    /**
+     * 拡張ヒットエリア作成
+     */
+    createExpandedHitArea() {
+        if (!this.canvas.app || !this.canvas.app.stage) {
+            console.warn('⚠️ PixiJS Stageが利用できません');
+            return null;
         }
         
-        // 履歴保存を再有効化
-        this.resizeSettings.enabled = originalEnabled;
+        // 境界マージン付きヒットエリア
+        const margin = this.config.margin;
+        const expandedHitArea = new PIXI.Rectangle(
+            -margin,
+            -margin,
+            this.canvas.width + margin * 2,
+            this.canvas.height + margin * 2
+        );
         
-        return success;
+        // Stage設定更新
+        this.canvas.app.stage.hitArea = expandedHitArea;
+        this.canvas.app.stage.interactive = true;
         
-    } catch (error) {
-        console.error('❌ 履歴復元エラー:', error);
-        return false;
-    }
-}
-
-/**
- * 履歴クリア
- */
-clearResizeHistory() {
-    this.resizeHistory.entries = [];
-    this.resizeHistory.currentIndex = -1;
-    
-    console.log('🗑️ リサイズ履歴クリア');
-}
-
-// ==========================================
-// 🎯 Phase1.2-STEP3: キーボードショートカット
-// ==========================================
-
-/**
- * リサイズキーボードハンドラー
- */
-handleResizeKeyboard(event) {
-    // Ctrl/Cmd + R: リサイズパネル表示切り替え
-    if ((event.ctrlKey || event.metaKey) && event.key === 'r') {
-        event.preventDefault();
-        this.toggleResizePanel();
-        return;
+        console.log(`📏 拡張ヒットエリア作成: マージン${margin}px`);
+        
+        return expandedHitArea;
     }
     
-    // リサイズパネル表示中のショートカット
-    if (this.resizeUI.panel?.style.display !== 'none') {
-        // Ctrl/Cmd + Z: リサイズアンドゥ
-        if ((event.ctrlKey || event.metaKey) && event.key === 'z' && !event.shiftKey) {
-            event.preventDefault();
-            this.undoResize();
-            return;
+    /**
+     * EventBus統合セットアップ
+     */
+    setupEventBusIntegration() {
+        // 境界イベント定義（統一システム準拠）
+        if (!window.EventBus.BoundaryEvents) {
+            window.EventBus.BoundaryEvents = {
+                OUTSIDE_START: 'boundary.outside.start',
+                CROSS_IN: 'boundary.cross.in',
+                CROSS_OUT: 'boundary.cross.out',
+                DRAWING_STARTED: 'boundary.drawing.started',
+                TRACKING_STATE: 'boundary.tracking.state'
+            };
         }
         
-        // Ctrl/Cmd + Shift + Z: リサイズリドゥ
-        if ((event.ctrlKey || event.metaKey) && event.key === 'z' && event.shiftKey) {
-            event.preventDefault();
-            this.redoResize();
-            return;
-        }
+        // 境界イベント監視
+        window.EventBus.on(window.EventBus.BoundaryEvents.CROSS_IN, (data) => {
+            this.handleBoundaryCrossInEvent(data);
+        });
         
-        // Enter: 適用
-        if (event.key === 'Enter') {
-            event.preventDefault();
-            this.applyResize(event.shiftKey);
-            return;
-        }
-        
-        // Escape: パネル閉じる
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            this.hideResizePanel();
-            return;
-        }
-    }
-}
-
-/**
- * リサイズパネル表示切り替え
- */
-toggleResizePanel() {
-    const panel = this.resizeUI.panel;
-    if (!panel) return;
-    
-    if (panel.style.display === 'none' || !panel.classList.contains('show')) {
-        this.showResizePanel();
-    } else {
-        this.hideResizePanel();
-    }
-}
-
-/**
- * リサイズパネル表示
- */
-showResizePanel() {
-    const panel = this.resizeUI.panel;
-    if (!panel) return;
-    
-    panel.style.display = 'block';
-    panel.classList.add('show');
-    
-    // 入力フォーカス
-    this.resizeUI.widthInput?.focus();
-    
-    console.log('📐 リサイズパネル表示');
-}
-
-/**
- * リサイズパネル非表示
- */
-hideResizePanel() {
-    const panel = this.resizeUI.panel;
-    if (!panel) return;
-    
-    panel.classList.remove('show');
-    setTimeout(() => {
-        panel.style.display = 'none';
-    }, 300); // アニメーション時間
-    
-    console.log('📐 リサイズパネル非表示');
-}
-
-// ==========================================
-// 🎯 Phase1.2-STEP3: 高度リサイズ機能
-// ==========================================
-
-/**
- * 比例リサイズ（縦横比維持）
- */
-resizeProportional(newWidth = null, newHeight = null) {
-    const currentRatio = this.width / this.height;
-    
-    if (newWidth && !newHeight) {
-        // 幅指定：高さを自動計算
-        newHeight = Math.round(newWidth / currentRatio);
-    } else if (newHeight && !newWidth) {
-        // 高さ指定：幅を自動計算
-        newWidth = Math.round(newHeight * currentRatio);
-    } else if (!newWidth && !newHeight) {
-        console.warn('⚠️ 比例リサイズ: サイズが指定されていません');
-        return false;
+        console.log('📡 EventBus境界イベント統合完了');
     }
     
-    // UI更新
-    this.resizeUI.widthInput.value = newWidth;
-    this.resizeUI.heightInput.value = newHeight;
+    // ==========================================
+    // 🎯 グローバルPointerEvent処理
+    // ==========================================
     
-    // リサイズ実行
-    return this.applyResize(true);
-}
-
-/**
- * スマートリサイズ（コンテンツに合わせる）
- */
-resizeToContent(padding = 50) {
-    const bounds = this.getContentBounds();
-    
-    if (!bounds) {
-        console.warn('⚠️ スマートリサイズ: コンテンツが見つかりません');
-        return false;
-    }
-    
-    const newWidth = Math.ceil(bounds.width + padding * 2);
-    const newHeight = Math.ceil(bounds.height + padding * 2);
-    
-    console.log(`🎯 スマートリサイズ: コンテンツサイズ ${bounds.width}×${bounds.height} → ${newWidth}×${newHeight}`);
-    
-    // UI更新
-    this.resizeUI.widthInput.value = newWidth;
-    this.resizeUI.heightInput.value = newHeight;
-    
-    // リサイズ実行（中央寄せ）
-    return this.applyResize(true);
-}
-
-/**
- * バッチリサイズ（複数サイズ）
- */
-async batchResize(sizes, centerContent = true) {
-    const results = [];
-    
-    for (const size of sizes) {
-        const [width, height] = size;
-        
-        console.log(`📦 バッチリサイズ: ${width}×${height}`);
-        
+    /**
+     * グローバルPointerDownハンドラー
+     */
+    handleGlobalPointerDown(event) {
         try {
-            // UI更新
-            this.resizeUI.widthInput.value = width;
-            this.resizeUI.heightInput.value = height;
+            const canvasRect = this.getCanvasRect();
+            if (!canvasRect) return;
             
-            // リサイズ実行
-            const success = await this.applyResize(centerContent);
+            const isInsideCanvas = this.isPointInCanvas(event.clientX, event.clientY, canvasRect);
             
-            results.push({
-                size: [width, height],
-                success,
-                timestamp: Date.now()
-            });
-            
-            // 短時間待機（処理負荷軽減）
-            await new Promise(resolve => setTimeout(resolve, 100));
+            if (!isInsideCanvas && this.isPointerTypeSupported(event.pointerType)) {
+                // キャンバス外でのPointerDown検出
+                this.handleOutsidePointerStart(event, canvasRect);
+            }
             
         } catch (error) {
-            results.push({
-                size: [width, height],
-                success: false,
-                error: error.message,
+            window.ErrorManager.showError('boundary-tracking', 
+                `PointerDown処理エラー: ${error.message}`, 
+                { pointerId: event.pointerId, pointerType: event.pointerType }
+            );
+        }
+    }
+    
+    /**
+     * グローバルPointerMoveハンドラー
+     */
+    handleGlobalPointerMove(event) {
+        if (!this.isTrackingOutside) return;
+        
+        try {
+            const outsidePointer = this.outsidePointers.get(event.pointerId);
+            if (!outsidePointer) return;
+            
+            const canvasRect = this.getCanvasRect();
+            if (!canvasRect) return;
+            
+            const isInsideCanvas = this.isPointInCanvas(event.clientX, event.clientY, canvasRect);
+            
+            if (isInsideCanvas) {
+                // 境界越え検出（キャンバス外→内）
+                this.handleBoundaryCrossIn(event, canvasRect, outsidePointer);
+            } else {
+                // キャンバス外でのMove継続
+                this.updateOutsidePointer(event, outsidePointer);
+            }
+            
+        } catch (error) {
+            window.ErrorManager.showError('boundary-tracking', 
+                `PointerMove処理エラー: ${error.message}`, 
+                { pointerId: event.pointerId }
+            );
+        }
+    }
+    
+    /**
+     * グローバルPointerUpハンドラー
+     */
+    handleGlobalPointerUp(event) {
+        try {
+            const outsidePointer = this.outsidePointers.get(event.pointerId);
+            if (outsidePointer) {
+                this.cleanupOutsidePointer(event.pointerId);
+            }
+            
+        } catch (error) {
+            window.ErrorManager.showError('boundary-tracking', 
+                `PointerUp処理エラー: ${error.message}`, 
+                { pointerId: event.pointerId }
+            );
+        }
+    }
+    
+    /**
+     * グローバルPointerCancelハンドラー
+     */
+    handleGlobalPointerCancel(event) {
+        try {
+            this.cleanupOutsidePointer(event.pointerId);
+            
+        } catch (error) {
+            window.ErrorManager.showError('boundary-tracking', 
+                `PointerCancel処理エラー: ${error.message}`, 
+                { pointerId: event.pointerId }
+            );
+        }
+    }
+    
+    // ==========================================
+    // 🎯 境界処理コアロジック
+    // ==========================================
+    
+    /**
+     * キャンバス外Pointer開始処理
+     */
+    handleOutsidePointerStart(event, canvasRect) {
+        const startTime = performance.now();
+        
+        // 外部Pointer情報記録
+        const outsidePointer = {
+            id: event.pointerId,
+            type: event.pointerType,
+            startX: event.clientX,
+            startY: event.clientY,
+            currentX: event.clientX,
+            currentY: event.clientY,
+            pressure: event.pressure || 0.5,
+            startTime,
+            tool: this.canvas.toolManager?.currentTool || null,
+            canvasRect: { ...canvasRect }
+        };
+        
+        this.outsidePointers.set(event.pointerId, outsidePointer);
+        this.isTrackingOutside = true;
+        
+        // 統計更新
+        this.boundaryStats.detections++;
+        
+        // EventBus通知
+        window.EventBus.safeEmit(window.EventBus.BoundaryEvents.OUTSIDE_START, {
+            pointer: outsidePointer,
+            canvasRect,
+            stats: { ...this.boundaryStats }
+        });
+        
+        // StateManager状態更新
+        window.StateManager.updateState('boundary.tracking', {
+            active: true,
+            pointers: this.outsidePointers.size,
+            lastDetection: Date.now()
+        });
+        
+        if (this.config.debugging) {
+            console.log(`🎯 キャンバス外Pointer検出: ${event.pointerType} (${event.pointerId}) at (${event.clientX}, ${event.clientY})`);
+        }
+    }
+    
+    /**
+     * 境界越え処理（キャンバス外→内）
+     */
+    handleBoundaryCrossIn(event, canvasRect, outsidePointer) {
+        const crossInTime = performance.now();
+        const delay = crossInTime - outsidePointer.startTime;
+        
+        // キャンバス座標変換
+        const canvasX = event.clientX - canvasRect.left;
+        const canvasY = event.clientY - canvasRect.top;
+        
+        // 境界越えデータ
+        const crossInData = {
+            pointerId: event.pointerId,
+            pointerType: event.pointerType,
+            tool: outsidePointer.tool,
+            position: { x: canvasX, y: canvasY },
+            pressure: event.pressure || outsidePointer.pressure,
+            delay,
+            fromOutside: true,
+            outsideStart: { 
+                x: outsidePointer.startX, 
+                y: outsidePointer.startY 
+            },
+            timestamp: crossInTime
+        };
+        
+        // 統計更新
+        this.boundaryStats.crossIns++;
+        this.boundaryStats.averageDelay = 
+            (this.boundaryStats.averageDelay * (this.boundaryStats.crossIns - 1) + delay) / 
+            this.boundaryStats.crossIns;
+        
+        // EventBus境界越え通知
+        window.EventBus.safeEmit(window.EventBus.BoundaryEvents.CROSS_IN, crossInData);
+        
+        // 描画ツール直接通知（高速パス）
+        if (outsidePointer.tool && typeof outsidePointer.tool.handleBoundaryCrossIn === 'function') {
+            try {
+                outsidePointer.tool.handleBoundaryCrossIn(canvasX, canvasY, {
+                    ...event,
+                    pressure: crossInData.pressure,
+                    fromBoundary: true
+                });
+            } catch (error) {
+                window.ErrorManager.showError('boundary-drawing', 
+                    `ツール境界越え処理エラー: ${error.message}`, 
+                    { tool: outsidePointer.tool.name, crossInData }
+                );
+            }
+        }
+        
+        // StateManager状態更新
+        window.StateManager.updateState('boundary.crossIn', {
+            position: { x: canvasX, y: canvasY },
+            tool: outsidePointer.tool?.name || 'unknown',
+            delay,
+            timestamp: crossInTime
+        });
+        
+        // PointerCleanup
+        this.cleanupOutsidePointer(event.pointerId);
+        
+        if (this.config.debugging) {
+            console.log(`🎯 境界越え検出: ${event.pointerType} → キャンバス内(${canvasX.toFixed(1)}, ${canvasY.toFixed(1)}) 遅延:${delay.toFixed(1)}ms`);
+        }
+    }
+    
+    /**
+     * キャンバス外Pointer更新
+     */
+    updateOutsidePointer(event, outsidePointer) {
+        outsidePointer.currentX = event.clientX;
+        outsidePointer.currentY = event.clientY;
+        outsidePointer.pressure = event.pressure || outsidePointer.pressure;
+    }
+    
+    /**
+     * キャンバス外Pointerクリーンアップ
+     */
+    cleanupOutsidePointer(pointerId) {
+        if (this.outsidePointers.delete(pointerId)) {
+            // 追跡状態更新
+            this.isTrackingOutside = this.outsidePointers.size > 0;
+            
+            // StateManager状態更新
+            window.StateManager.updateState('boundary.tracking', {
+                active: this.isTrackingOutside,
+                pointers: this.outsidePointers.size
+            });
+            
+            if (this.config.debugging) {
+                console.log(`🧹 外部Pointerクリーンアップ: ${pointerId}, 残り:${this.outsidePointers.size}`);
+            }
+        }
+    }
+    
+    // ==========================================
+    // 🎯 ユーティリティ・検証メソッド
+    // ==========================================
+    
+    /**
+     * キャンバス領域取得
+     */
+    getCanvasRect() {
+        if (!this.canvas.canvasElement) {
+            console.warn('⚠️ キャンバス要素が見つかりません');
+            return null;
+        }
+        
+        return this.canvas.canvasElement.getBoundingClientRect();
+    }
+    
+    /**
+     * ポイントがキャンバス内かチェック
+     */
+    isPointInCanvas(clientX, clientY, canvasRect) {
+        return clientX >= canvasRect.left && 
+               clientX <= canvasRect.right && 
+               clientY >= canvasRect.top && 
+               clientY <= canvasRect.bottom;
+    }
+    
+    /**
+     * サポートPointerTypeチェック
+     */
+    isPointerTypeSupported(pointerType) {
+        return this.config.supportedPointers.includes(pointerType);
+    }
+    
+    /**
+     * EventBus境界越えイベント処理
+     */
+    handleBoundaryCrossInEvent(data) {
+        // EventBus経由の境界越えイベント後処理
+        window.EventBus.safeEmit(window.EventBus.BoundaryEvents.DRAWING_STARTED, {
+            tool: data.tool?.name || 'unknown',
+            position: data.position,
+            pressure: data.pressure,
+            fromBoundary: true,
+            timestamp: Date.now()
+        });
+        
+        if (this.config.debugging) {
+            console.log('📡 EventBus境界越えイベント処理:', data);
+        }
+    }
+    
+    // ==========================================
+    // 🎯 デバッグ・診断システム
+    // ==========================================
+    
+    /**
+     * デバッグモード有効化
+     */
+    enableDebugMode() {
+        // 境界可視化
+        this.createDebugVisualizer();
+        
+        // 詳細ログ有効化
+        this.debugLogging = true;
+        
+        console.log('🔍 境界システムデバッグモード有効');
+    }
+    
+    /**
+     * デバッグ境界可視化
+     */
+    createDebugVisualizer() {
+        if (!this.canvas.app) return;
+        
+        // デバッグ境界表示
+        const debugGraphics = new PIXI.Graphics();
+        debugGraphics.lineStyle(2, 0xFF0000, 0.5);
+        debugGraphics.drawRect(
+            -this.config.margin, 
+            -this.config.margin, 
+            this.canvas.width + this.config.margin * 2, 
+            this.canvas.height + this.config.margin * 2
+        );
+        
+        this.canvas.app.stage.addChild(debugGraphics);
+        this.debugBoundary = debugGraphics;
+        
+        console.log('🎯 境界デバッグ可視化有効');
+    }
+    
+    /**
+     * 境界システム統計取得
+     */
+    getStats() {
+        return {
+            ...this.boundaryStats,
+            tracking: {
+                active: this.isTrackingOutside,
+                pointers: this.outsidePointers.size,
+                config: { ...this.config }
+            },
+            performance: {
+                averageDelay: this.boundaryStats.averageDelay,
+                successRate: this.boundaryStats.crossIns / Math.max(this.boundaryStats.detections, 1),
+                errorRate: this.boundaryStats.errors / Math.max(this.boundaryStats.detections, 1)
+            }
+        };
+    }
+    
+    /**
+     * 境界システム診断実行
+     */
+    runDiagnosis() {
+        console.group('🔍 境界システム診断');
+        
+        const diagnosis = {
+            system: {
+                enabled: this.config.enabled,
+                tracking: this.config.trackingEnabled,
+                margin: this.config.margin,
+                supportedPointers: this.config.supportedPointers
+            },
+            runtime: {
+                initialized: !!this.outsidePointers,
+                tracking: this.isTrackingOutside,
+                activePointers: this.outsidePointers.size,
+                canvasElement: !!this.canvas.canvasElement
+            },
+            integration: {
+                configManager: !!window.ConfigManager,
+                errorManager: !!window.ErrorManager,
+                eventBus: !!window.EventBus,
+                stateManager: !!window.StateManager,
+                pixiApp: !!this.canvas.app
+            },
+            performance: this.getStats().performance
+        };
+        
+        console.log('📊 診断結果:', diagnosis);
+        
+        // 問題検出
+        const issues = [];
+        
+        if (!diagnosis.system.enabled) {
+            issues.push('境界システムが無効化されています');
+        }
+        
+        if (!diagnosis.runtime.canvasElement) {
+            issues.push('キャンバス要素が見つかりません');
+        }
+        
+        if (!diagnosis.integration.eventBus) {
+            issues.push('EventBus統合が不完全です');
+        }
+        
+        if (diagnosis.performance.errorRate > 0.1) {
+            issues.push('エラー率が高すぎます（10%超）');
+        }
+        
+        if (issues.length > 0) {
+            console.warn('⚠️ 検出された問題:', issues);
+        } else {
+            console.log('✅ 境界システム正常動作中');
+        }
+        
+        console.groupEnd();
+        
+        return diagnosis;
+    }
+    
+    // ==========================================
+    // 🎯 設定・制御メソッド
+    // ==========================================
+    
+    /**
+     * 境界システム有効/無効切り替え
+     */
+    toggle() {
+        this.config.enabled = !this.config.enabled;
+        window.ConfigManager.set('canvas.boundary.enabled', this.config.enabled);
+        
+        console.log(`🎯 境界システム${this.config.enabled ? '有効化' : '無効化'}`);
+        
+        return this.config.enabled;
+    }
+    
+    /**
+     * 境界マージン設定
+     */
+    setMargin(margin) {
+        if (margin < 0 || margin > 100) {
+            window.ErrorManager.showError('boundary-config', 
+                '境界マージンは0-100の範囲で設定してください', 
+                { margin }
+            );
+            return false;
+        }
+        
+        this.config.margin = margin;
+        window.ConfigManager.set('canvas.boundary.margin', margin);
+        
+        // ヒットエリア再作成
+        this.createExpandedHitArea();
+        
+        console.log(`📏 境界マージン更新: ${margin}px`);
+        
+        return true;
+    }
+    
+    /**
+     * 境界システム終了処理
+     */
+    destroy() {
+        // イベントリスナー削除
+        document.removeEventListener('pointerdown', this.handleGlobalPointerDown);
+        document.removeEventListener('pointermove', this.handleGlobalPointerMove);
+        document.removeEventListener('pointerup', this.handleGlobalPointerUp);
+        document.removeEventListener('pointercancel', this.handleGlobalPointerCancel);
+        
+        // 追跡状態クリア
+        this.outsidePointers.clear();
+        this.isTrackingOutside = false;
+        
+        // デバッグ要素削除
+        if (this.debugBoundary && this.canvas.app) {
+            this.canvas.app.stage.removeChild(this.debugBoundary);
+        }
+        
+        console.log('🗑️ 境界システム終了処理完了');
+    }
+}
+
+// ==========================================
+// 🎯 Canvas Manager統合メソッド
+// ==========================================
+
+/**
+ * Canvas Managerの既存initializeメソッドに追加する境界システム初期化
+ */
+function initializeBoundarySystem() {
+    console.log('🎯 境界システム初期化開始...');
+    
+    try {
+        // BoundaryEventHandlerインスタンス作成
+        this.boundaryEventHandler = new BoundaryEventHandler(this);
+        
+        // 境界追跡システム開始
+        const success = this.boundaryEventHandler.initializeBoundaryTracking();
+        
+        if (success) {
+            console.log('✅ 境界システム初期化完了');
+            
+            // EventBus通知
+            window.EventBus.safeEmit('canvas.boundary.initialized', {
+                margin: this.boundaryEventHandler.config.margin,
+                tracking: this.boundaryEventHandler.config.trackingEnabled,
                 timestamp: Date.now()
             });
+            
+            return true;
+        } else {
+            console.warn('⚠️ 境界システム初期化に失敗しました');
+            return false;
         }
+        
+    } catch (error) {
+        window.ErrorManager.showError('boundary-system', 
+            `境界システム初期化エラー: ${error.message}`, 
+            { canvasManager: this.constructor.name }
+        );
+        return false;
     }
-    
-    console.log(`📦 バッチリサイズ完了: ${results.filter(r => r.success).length}/${results.length}`);
-    
-    return results;
+}
+
+/**
+ * Canvas Managerのリサイズ時に呼び出す境界システム更新
+ */
+function updateBoundarySystemOnResize() {
+    if (this.boundaryEventHandler) {
+        // 拡張ヒットエリア再作成
+        this.boundaryEventHandler.createExpandedHitArea();
+        
+        console.log('📏 境界システム: リサイズ対応完了');
+    }
 }
 
 // ==========================================
-// 🎯 Phase1.2-STEP3: 統計・診断システム
+// 🎯 診断・テストコマンド（グローバル公開）
 // ==========================================
 
 /**
- * リサイズ統計取得
+ * 境界描画システム診断コマンド
  */
-getResizeStats() {
-    return {
-        current: {
-            width: this.width,
-            height: this.height,
-            aspectRatio: this.width / this.height,
-            area: this.width * this.height
-        },
-        history: {
-            entries: this.resizeHistory.entries.length,
-            currentIndex: this.resizeHistory.currentIndex,
-            canUndo: this.resizeHistory.currentIndex > 0,
-            canRedo: this.resizeHistory.currentIndex < this.resizeHistory.entries.length - 1
-        },
-        settings: {
-            enabled: this.resizeSettings.enabled,
-            preserveContent: this.resizeSettings.preserveContent,
-            centerContent: this.resizeSettings.centerContent,
-            constrainProportions: this.resizeSettings.constrainProportions
-        },
-        content: {
-            bounds: this.getContentBounds(),
-            pathCount: this.paths?.length || 0
-        }
-    };
-}
+window.diagnoseBoundaryDrawing = function() {
+    const canvas = window.canvasManager || window.futabaDrawingTool?.canvasManager;
+    
+    if (!canvas || !canvas.boundaryEventHandler) {
+        return {
+            error: '境界システムが初期化されていません',
+            canvasManager: !!canvas,
+            boundaryHandler: !!canvas?.boundaryEventHandler
+        };
+    }
+    
+    return canvas.boundaryEventHandler.runDiagnosis();
+};
 
 /**
- * Phase1.2-STEP3診断実行
+ * 境界描画テスト実行コマンド
  */
-runResizeDiagnosis() {
-    console.group('🔍 Phase1.2-STEP3 リサイズシステム診断');
+window.testBoundaryDrawing = async function() {
+    const canvas = window.canvasManager || window.futabaDrawingTool?.canvasManager;
     
-    const stats = this.getResizeStats();
-    
-    // 機能テスト
-    const functionTests = {
-        uiEnabled: !document.getElementById('resize-tool')?.classList.contains('disabled'),
-        inputValidation: this.validateResizeValues(800, 600),
-        historySystem: this.resizeHistory.entries.length >= 0,
-        keyboardShortcuts: true, // 実装済み
-        contentBounds: !!this.getContentBounds || this.paths?.length === 0
-    };
-    
-    // 診断結果
-    const diagnosis = {
-        stats,
-        functionTests,
-        compliance: {
-            resizeEnabled: functionTests.uiEnabled,
-            historyManagement: functionTests.historySystem,
-            contentPreservation: this.resizeSettings.preserveContent,
-            centeringSupport: this.resizeSettings.centerContent
-        }
-    };
-    
-    console.log('📊 診断結果:', diagnosis);
-    
-    // 推奨事項
-    const recommendations = [];
-    
-    if (!functionTests.uiEnabled) {
-        recommendations.push('リサイズツールの有効化が必要');
+    if (!canvas || !canvas.boundaryEventHandler) {
+        console.error('❌ 境界システムが利用できません');
+        return false;
     }
     
-    if (!functionTests.historySystem) {
-        recommendations.push('履歴システムの初期化が必要');
-    }
-    
-    if (!this.resizeSettings.preserveContent) {
-        recommendations.push('コンテンツ保持の有効化を推奨');
-    }
-    
-    if (recommendations.length > 0) {
-        console.warn('⚠️ 推奨事項:', recommendations);
-    } else {
-        console.log('✅ Phase1.2-STEP3 要件を満たしています');
-    }
-    
-    console.groupEnd();
-    
-    return diagnosis;
-}
-
-/**
- * リサイズテスト実行
- */
-async runResizeTests() {
-    console.group('🧪 Phase1.2-STEP3 リサイズテスト');
-    
-    const originalSize = { width: this.width, height: this.height };
+    console.group('🧪 境界描画テスト実行');
     
     const tests = [
         {
-            name: '基本リサイズ',
-            test: () => this.executeResize(600, 400, false)
+            name: '境界システム初期化',
+            test: () => !!canvas.boundaryEventHandler.outsidePointers
         },
         {
-            name: '中央寄せリサイズ',
-            test: () => this.executeResize(800, 600, true)
+            name: 'グローバルイベント監視',
+            test: () => canvas.boundaryEventHandler.config.trackingEnabled
         },
         {
-            name: '履歴保存',
-            test: () => {
-                this.saveResizeToHistory();
-                return this.resizeHistory.entries.length > 0;
-            }
+            name: '統一システム統合',
+            test: () => window.ConfigManager && window.ErrorManager && 
+                        window.EventBus && window.StateManager
         },
         {
-            name: 'バリデーション',
-            test: () => this.validateResizeValues(1024, 768)
+            name: 'PixiJS拡張ヒットエリア',
+            test: () => !!canvas.app?.stage?.hitArea
         },
         {
-            name: 'UI更新',
-            test: () => {
-                this.updateResizeUI();
-                return this.resizeUI.widthInput.value == this.width;
-            }
+            name: '境界設定妥当性',
+            test: () => canvas.boundaryEventHandler.config.margin > 0 && 
+                        canvas.boundaryEventHandler.config.margin < 100
         }
     ];
     
@@ -923,7 +791,7 @@ async runResizeTests() {
     
     for (const testCase of tests) {
         try {
-            const result = await testCase.test();
+            const result = testCase.test();
             const passed = !!result;
             
             console.log(`${passed ? '✅' : '❌'} ${testCase.name}: ${passed ? 'PASS' : 'FAIL'}`);
@@ -933,76 +801,45 @@ async runResizeTests() {
         } catch (error) {
             console.log(`❌ ${testCase.name}: FAIL (${error.message})`);
         }
-        
-        // テスト間の間隔
-        await new Promise(resolve => setTimeout(resolve, 50));
     }
     
-    // 元サイズに復元
-    await this.executeResize(originalSize.width, originalSize.height, false);
-    
+    const success = passCount === tests.length;
     console.log(`📊 テスト結果: ${passCount}/${tests.length} パス`);
     
-    const success = passCount === tests.length;
     if (success) {
-        console.log('✅ 全テスト合格 - Phase1.2-STEP3 完了');
+        console.log('✅ Phase1.2-STEP1 境界システム実装完了');
     } else {
-        console.warn('⚠️ 一部テスト失敗');
+        console.warn('⚠️ 一部テスト失敗 - 実装確認が必要');
     }
     
     console.groupEnd();
     
     return success;
-}
+};
 
 // ==========================================
-// 🎯 Phase1.2-STEP3: 統合・公開メソッド
+// 🎯 実装完了ログ・使用方法
 // ==========================================
 
-/**
- * リサイズシステム状態取得
- */
-getResizeSystemState() {
-    return {
-        enabled: this.resizeSettings.enabled,
-        currentSize: { width: this.width, height: this.height },
-        hasContent: this.paths?.length > 0,
-        historyLength: this.resizeHistory.entries.length,
-        canUndo: this.resizeHistory.currentIndex > 0,
-        canRedo: this.resizeHistory.currentIndex < this.resizeHistory.entries.length - 1
-    };
-}
-
-/**
- * リサイズ設定更新
- */
-updateResizeSettings(newSettings) {
-    Object.assign(this.resizeSettings, newSettings);
-    console.log('⚙️ リサイズ設定更新:', newSettings);
-}
-
-/**
- * 📋 Phase1.2-STEP3 実装完了ログ
- */
-console.log('📏 Phase1.2-STEP3 リサイズ機能拡張完了');
+console.log('🎯 Phase1.2-STEP1 境界イベント処理システム実装完了');
 console.log('✅ 実装項目:');
-console.log('  - リサイズ機能有効化・UI統合');
-console.log('  - 中央寄せ・コンテンツ保持');
-console.log('  - 履歴管理・アンドゥ/リドゥ');
-console.log('  - キーボードショートカット');
-console.log('  - バリデーション・エラーハンドリング');
-console.log('  - 高度機能: 比例・スマート・バッチリサイズ');
-console.log('  - 統計・診断・テストシステム');
+console.log('  - BoundaryEventHandlerクラス: 境界越え検出・処理');
+console.log('  - グローバルPointerEvent監視: document全体追跡');
+console.log('  - 統一システム100%統合: Config/Error/State/EventBus');
+console.log('  - 拡張ヒットエリア: PixiJS境界マージン対応');
+console.log('  - マルチPointer対応: Map利用複数同時追跡');
+console.log('  - デバッグ・診断システム: 可視化・統計・テスト');
 
 /**
- * 📋 Phase1.2-STEP3 使用方法:
+ * 📋 Canvas Managerへの統合方法:
  * 
- * // 既存のcanvas-manager.jsのinitialize()メソッド内に追加:
- * this.initializeResizeSystem();
+ * // canvas-manager.jsのinitialize()メソッド内に追加:
+ * this.initializeBoundarySystem = initializeBoundarySystem.bind(this);
+ * this.updateBoundarySystemOnResize = updateBoundarySystemOnResize.bind(this);
+ * this.initializeBoundarySystem();
  * 
- * // 使用例:
- * canvasManager.applyResize(true);           // 中央寄せリサイズ
- * canvasManager.undoResize();                // リサイズアンドゥ
- * canvasManager.resizeToContent(50);         // コンテンツに合わせる
- * canvasManager.resizeProportional(1024);   // 比例リサイズ
+ * // resize時に呼び出し:
+ * if (this.updateBoundarySystemOnResize) {
+ *     this.updateBoundarySystemOnResize();
+ * }
  */
