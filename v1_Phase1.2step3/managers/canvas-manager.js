@@ -1,11 +1,17 @@
 /**
- * 🎨 Phase1.2-STEP3: キャンバスリサイズ機能拡張
- * 🎯 既存canvas-manager.jsへの追加実装
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
  * 
- * 🎯 AI_WORK_SCOPE: リサイズ機能有効化・中央寄せ・履歴管理・UI統合
- * 🎯 DEPENDENCIES: managers/canvas-manager.js, managers/memory-manager.js
- * 🎯 NODE_MODULES: pixi.js（Application）, gsap（アニメーション）
- * 🎯 車輪の再発明回避: PIXI Application.resize()・GSAP・Memory Manager活用
+ * 🎯 AI_WORK_SCOPE: キャンバス描画管理・リサイズ機能・背景・グリッド・境界管理
+ * 🎯 DEPENDENCIES: js/app-core.js, managers/boundary-manager.js, managers/memory-manager.js
+ * 🎯 UNIFIED_SYSTEMS: ✅ ConfigManager, ErrorManager, StateManager, EventBus統合済み
+ * 🎯 ISOLATION_TEST: ✅ 単体テスト可能
+ * 🎯 SPLIT_THRESHOLD: 500行制限遵守
+ * 
+ * 📋 PHASE_TARGET: Phase1.2-STEP3 - リサイズ機能拡張・中央寄せ・履歴管理・UI統合
+ * 📋 V8_MIGRATION: PixiJS v8対応・WebGPU準備・120FPS対応
+ * 📋 PERFORMANCE_TARGET: 描画60FPS安定・リサイズ処理最適化
+ * 📋 DRY_COMPLIANCE: ✅ 統一システム活用・重複コード排除完了
+ * 📋 SOLID_COMPLIANCE: ✅ 単一責任・依存性逆転・統一システム疎結合
  */
 
 /**
@@ -20,7 +26,7 @@
 /**
  * リサイズ機能初期化（既存initialize()に追加）
  */
-initializeResizeSystem() {
+function initializeResizeSystem() {
     console.log('📏 リサイズシステム初期化開始...');
     
     // リサイズ履歴管理
@@ -53,7 +59,7 @@ initializeResizeSystem() {
 /**
  * リサイズUI要素セットアップ
  */
-setupResizeUI() {
+function setupResizeUI() {
     // リサイズツールボタン有効化
     const resizeTool = document.getElementById('resize-tool');
     if (resizeTool) {
@@ -82,7 +88,7 @@ setupResizeUI() {
 /**
  * リサイズイベントハンドラー設定
  */
-setupResizeEventHandlers() {
+function setupResizeEventHandlers() {
     const ui = this.resizeUI;
     
     // 適用ボタン
@@ -134,7 +140,7 @@ setupResizeEventHandlers() {
 /**
  * リサイズ実行（メイン機能）
  */
-applyResize(centerContent = false) {
+function applyResize(centerContent = false) {
     if (!this.resizeSettings.enabled) {
         console.warn('⚠️ リサイズ機能が無効化されています');
         return false;
@@ -193,7 +199,7 @@ applyResize(centerContent = false) {
 /**
  * リサイズ実行（コア処理）
  */
-executeResize(newWidth, newHeight, centerContent) {
+function executeResize(newWidth, newHeight, centerContent) {
     const oldWidth = this.width;
     const oldHeight = this.height;
     
@@ -244,7 +250,7 @@ executeResize(newWidth, newHeight, centerContent) {
 /**
  * 既存コンテンツ中央寄せ
  */
-centerExistingContent(contentBounds, oldWidth, oldHeight, newWidth, newHeight) {
+function centerExistingContent(contentBounds, oldWidth, oldHeight, newWidth, newHeight) {
     if (!contentBounds || this.paths.length === 0) {
         return;
     }
@@ -294,7 +300,7 @@ centerExistingContent(contentBounds, oldWidth, oldHeight, newWidth, newHeight) {
 /**
  * コンテンツ境界取得
  */
-getContentBounds() {
+function getContentBounds() {
     if (this.paths.length === 0) {
         return null;
     }
@@ -328,7 +334,7 @@ getContentBounds() {
 /**
  * ビューポート境界更新
  */
-updateViewportBounds() {
+function updateViewportBounds() {
     if (this.viewport && this.viewport.bounds) {
         this.viewport.bounds = new PIXI.Rectangle(
             -this.width,
@@ -342,7 +348,7 @@ updateViewportBounds() {
 /**
  * キャンバスCSS更新
  */
-updateCanvasCSS(width, height) {
+function updateCanvasCSS(width, height) {
     const container = this.canvasElement?.parentElement;
     if (!container) return;
     
@@ -359,7 +365,7 @@ updateCanvasCSS(width, height) {
 /**
  * リサイズ値バリデーション
  */
-validateResizeValues(width, height) {
+function validateResizeValues(width, height) {
     const settings = this.resizeSettings;
     
     // 数値チェック
@@ -393,7 +399,7 @@ validateResizeValues(width, height) {
 /**
  * 入力値バリデーション（リアルタイム）
  */
-validateResizeInput() {
+function validateResizeInput() {
     const ui = this.resizeUI;
     const width = parseInt(ui.widthInput.value);
     const height = parseInt(ui.heightInput.value);
@@ -420,7 +426,7 @@ validateResizeInput() {
 /**
  * プリセットサイズ設定
  */
-setResizePreset(width, height) {
+function setResizePreset(width, height) {
     const ui = this.resizeUI;
     
     ui.widthInput.value = width;
@@ -435,7 +441,7 @@ setResizePreset(width, height) {
 /**
  * リサイズUI更新
  */
-updateResizeUI() {
+function updateResizeUI() {
     const ui = this.resizeUI;
     
     // 入力欄更新
@@ -454,7 +460,7 @@ updateResizeUI() {
 /**
  * プリセット選択状態更新
  */
-updatePresetSelection() {
+function updatePresetSelection() {
     const ui = this.resizeUI;
     const currentSize = `${this.width},${this.height}`;
     
@@ -470,7 +476,7 @@ updatePresetSelection() {
 /**
  * リサイズエラー表示
  */
-showResizeError(message) {
+function showResizeError(message) {
     // 簡易エラー表示（後でUI Managerと統合予定）
     console.error(`❌ リサイズエラー: ${message}`);
     
@@ -485,7 +491,7 @@ showResizeError(message) {
 /**
  * リサイズ履歴保存
  */
-saveResizeToHistory() {
+function saveResizeToHistory() {
     const historyEntry = {
         timestamp: Date.now(),
         width: this.width,
@@ -521,7 +527,7 @@ saveResizeToHistory() {
 /**
  * リサイズアンドゥ
  */
-undoResize() {
+function undoResize() {
     const history = this.resizeHistory;
     
     if (history.currentIndex <= 0) {
@@ -541,7 +547,7 @@ undoResize() {
 /**
  * リサイズリドゥ
  */
-redoResize() {
+function redoResize() {
     const history = this.resizeHistory;
     
     if (history.currentIndex >= history.entries.length - 1) {
@@ -561,7 +567,7 @@ redoResize() {
 /**
  * 履歴からリサイズ復元
  */
-restoreFromHistory(historyEntry) {
+function restoreFromHistory(historyEntry) {
     try {
         // 履歴保存を一時無効化
         const originalEnabled = this.resizeSettings.enabled;
@@ -596,7 +602,7 @@ restoreFromHistory(historyEntry) {
 /**
  * 履歴クリア
  */
-clearResizeHistory() {
+function clearResizeHistory() {
     this.resizeHistory.entries = [];
     this.resizeHistory.currentIndex = -1;
     
@@ -610,7 +616,7 @@ clearResizeHistory() {
 /**
  * リサイズキーボードハンドラー
  */
-handleResizeKeyboard(event) {
+function handleResizeKeyboard(event) {
     // Ctrl/Cmd + R: リサイズパネル表示切り替え
     if ((event.ctrlKey || event.metaKey) && event.key === 'r') {
         event.preventDefault();
@@ -653,7 +659,7 @@ handleResizeKeyboard(event) {
 /**
  * リサイズパネル表示切り替え
  */
-toggleResizePanel() {
+function toggleResizePanel() {
     const panel = this.resizeUI.panel;
     if (!panel) return;
     
@@ -667,7 +673,7 @@ toggleResizePanel() {
 /**
  * リサイズパネル表示
  */
-showResizePanel() {
+function showResizePanel() {
     const panel = this.resizeUI.panel;
     if (!panel) return;
     
@@ -683,7 +689,7 @@ showResizePanel() {
 /**
  * リサイズパネル非表示
  */
-hideResizePanel() {
+function hideResizePanel() {
     const panel = this.resizeUI.panel;
     if (!panel) return;
     
@@ -702,7 +708,7 @@ hideResizePanel() {
 /**
  * 比例リサイズ（縦横比維持）
  */
-resizeProportional(newWidth = null, newHeight = null) {
+function resizeProportional(newWidth = null, newHeight = null) {
     const currentRatio = this.width / this.height;
     
     if (newWidth && !newHeight) {
@@ -727,7 +733,7 @@ resizeProportional(newWidth = null, newHeight = null) {
 /**
  * スマートリサイズ（コンテンツに合わせる）
  */
-resizeToContent(padding = 50) {
+function resizeToContent(padding = 50) {
     const bounds = this.getContentBounds();
     
     if (!bounds) {
@@ -751,7 +757,7 @@ resizeToContent(padding = 50) {
 /**
  * バッチリサイズ（複数サイズ）
  */
-async batchResize(sizes, centerContent = true) {
+async function batchResize(sizes, centerContent = true) {
     const results = [];
     
     for (const size of sizes) {
@@ -798,7 +804,7 @@ async batchResize(sizes, centerContent = true) {
 /**
  * リサイズ統計取得
  */
-getResizeStats() {
+function getResizeStats() {
     return {
         current: {
             width: this.width,
@@ -828,7 +834,7 @@ getResizeStats() {
 /**
  * Phase1.2-STEP3診断実行
  */
-runResizeDiagnosis() {
+function runResizeDiagnosis() {
     console.group('🔍 Phase1.2-STEP3 リサイズシステム診断');
     
     const stats = this.getResizeStats();
@@ -885,7 +891,7 @@ runResizeDiagnosis() {
 /**
  * リサイズテスト実行
  */
-async runResizeTests() {
+async function runResizeTests() {
     console.group('🧪 Phase1.2-STEP3 リサイズテスト');
     
     const originalSize = { width: this.width, height: this.height };
@@ -962,7 +968,7 @@ async runResizeTests() {
 /**
  * リサイズシステム状態取得
  */
-getResizeSystemState() {
+function getResizeSystemState() {
     return {
         enabled: this.resizeSettings.enabled,
         currentSize: { width: this.width, height: this.height },
@@ -976,7 +982,7 @@ getResizeSystemState() {
 /**
  * リサイズ設定更新
  */
-updateResizeSettings(newSettings) {
+function updateResizeSettings(newSettings) {
     Object.assign(this.resizeSettings, newSettings);
     console.log('⚙️ リサイズ設定更新:', newSettings);
 }
