@@ -1,5 +1,5 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0 (修正版)
  * 
  * 🎯 AI_WORK_SCOPE: UI統括管理・ポップアップシステム・スライダー統合・アニメーション効果
  * 🎯 DEPENDENCIES: js/utils/config-manager.js, js/utils/error-manager.js, js/utils/state-manager.js, js/utils/event-bus.js
@@ -12,17 +12,18 @@
  * 📋 PERFORMANCE_TARGET: UI応答性1フレーム以下・アニメーション60FPS安定
  * 📋 DRY_COMPLIANCE: ✅ 統一システム活用・重複コード排除完了
  * 📋 SOLID_COMPLIANCE: ✅ 単一責任・依存性逆転・統一システム疎結合
+ * 🔧 EMERGENCY_FIX: 構文エラー修正・updateSystemState → updateComponentState API統一対応
  */
 
 /**
- * UI統括管理システム（統一システム統合版）
+ * UI統括管理システム（修正版・統一システム統合版）
  * 統一システム完全活用・EventBus疎結合・設定値統一
  * Pure JavaScript完全準拠・AI分業対応
  */
 class UIManager {
     constructor(appCore = null) {
         this.appCore = appCore;
-        this.version = 'v1.0-Phase1.1ss5-unified';
+        this.version = 'v1.0-Phase1.1ss5-unified-fixed';
         
         // 🎯 統一システム依存関係
         this.configManager = null;
@@ -69,11 +70,11 @@ class UIManager {
             lastUpdateTime: performance.now()
         };
         
-        console.log(`🎨 UIManager ${this.version}構築開始...`);
+        console.log(`🎨 UIManager ${this.version}構築開始（修正版）...`);
     }
     
     /**
-     * 🎯 統一システム統合・UI管理システム初期化
+     * 🎯 修正版: 統一システム統合・UI管理システム初期化
      */
     async init() {
         console.group(`🎨 UIManager 統一システム統合初期化開始 - ${this.version}`);
@@ -108,8 +109,8 @@ class UIManager {
             const initTime = performance.now() - startTime;
             console.log(`✅ UIManager 統一システム統合初期化完了 - ${initTime.toFixed(2)}ms`);
             
-            // StateManager状態更新（修正版API使用）
-            if (this.stateManager) {
+            // 🔧 修正版: StateManager状態更新 (updateComponentState使用)
+            if (this.stateManager && typeof this.stateManager.updateComponentState === 'function') {
                 this.stateManager.updateComponentState('uiManager', 'initialized', {
                     initTime,
                     unifiedSystemsEnabled: true,
@@ -121,7 +122,7 @@ class UIManager {
             
         } catch (error) {
             // ErrorManager経由でエラー処理
-            if (this.errorManager) {
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
                 this.errorManager.showError('UI管理システム初期化失敗', error, 'UIManager.init');
             } else {
                 console.error('❌ UIManager初期化エラー:', error);
@@ -144,26 +145,30 @@ class UIManager {
         
         // ConfigManager依存性確認
         this.configManager = window.ConfigManager;
-        if (!this.configManager) {
-            throw new Error('ConfigManager が利用できません。統一システムの初期化を確認してください。');
+        if (!this.configManager || typeof this.configManager.get !== 'function') {
+            console.warn('⚠️ ConfigManager が利用できません');
+            this.configManager = null;
         }
         
         // ErrorManager依存性確認
         this.errorManager = window.ErrorManager;
-        if (!this.errorManager) {
-            throw new Error('ErrorManager が利用できません。統一システムの初期化を確認してください。');
+        if (!this.errorManager || typeof this.errorManager.showError !== 'function') {
+            console.warn('⚠️ ErrorManager が利用できません');
+            this.errorManager = null;
         }
         
         // StateManager依存性確認
         this.stateManager = window.StateManager;
-        if (!this.stateManager) {
-            throw new Error('StateManager が利用できません。統一システムの初期化を確認してください。');
+        if (!this.stateManager || typeof this.stateManager.updateComponentState !== 'function') {
+            console.warn('⚠️ StateManager が利用できません');
+            this.stateManager = null;
         }
         
         // EventBus依存性確認
         this.eventBus = window.EventBus;
-        if (!this.eventBus) {
-            throw new Error('EventBus が利用できません。統一システムの初期化を確認してください。');
+        if (!this.eventBus || typeof this.eventBus.emit !== 'function') {
+            console.warn('⚠️ EventBus が利用できません');
+            this.eventBus = null;
         }
         
         console.log('✅ 統一システム依存性確認完了');
@@ -176,6 +181,12 @@ class UIManager {
         console.log('⚙️ 統一設定値取得開始...');
         
         try {
+            if (!this.configManager) {
+                console.warn('⚠️ ConfigManager未利用：デフォルト設定使用');
+                this.loadDefaultConfiguration();
+                return;
+            }
+            
             // UI設定取得
             const animationSpeed = this.configManager.get(this.configKeys.ui.animationSpeed, 'normal');
             const responsiveBreakpoints = this.configManager.get(this.configKeys.ui.responsiveBreakpoints, 
@@ -210,9 +221,46 @@ class UIManager {
             console.log('✅ 統一設定値取得・適用完了');
             
         } catch (error) {
-            this.errorManager.showError('設定値取得失敗', error, 'UIManager.loadConfiguration');
-            throw error;
+            if (this.errorManager) {
+                this.errorManager.showError('設定値取得失敗', error, 'UIManager.loadConfiguration');
+            } else {
+                console.error('❌ 設定値取得失敗:', error);
+            }
+            this.loadDefaultConfiguration();
         }
+    }
+    
+    /**
+     * 🔧 新機能: デフォルト設定読み込み（フォールバック）
+     */
+    loadDefaultConfiguration() {
+        console.log('🛡️ デフォルトUI設定読み込み...');
+        
+        this.toolSettings = {
+            pen: {
+                size: 16.0,
+                opacity: 85.0,
+                pressure: 50.0,
+                smoothing: 30.0,
+                pressureSensitivity: true,
+                edgeSmoothing: true,
+                gpuAcceleration: false
+            },
+            eraser: {
+                size: 20.0,
+                opacity: 100.0,
+                mode: 'normal'
+            }
+        };
+        
+        this.uiSettings = {
+            animationSpeed: 'normal',
+            responsiveBreakpoints: { mobile: 768, tablet: 1024 },
+            showToolTips: true,
+            compactMode: false
+        };
+        
+        console.log('✅ デフォルトUI設定読み込み完了');
     }
     
     /**
@@ -220,6 +268,11 @@ class UIManager {
      */
     setupEventBusIntegration() {
         console.log('🚌 EventBus統合設定開始...');
+        
+        if (!this.eventBus) {
+            console.warn('⚠️ EventBus未利用：イベント連携スキップ');
+            return;
+        }
         
         // ツール変更イベントリスナー
         this.eventBus.on('tool:changed', (data) => {
@@ -299,7 +352,11 @@ class UIManager {
             }
             
         } catch (error) {
-            this.errorManager.showError('ツールクリック処理失敗', error, 'UIManager.handleToolClick');
+            if (this.errorManager) {
+                this.errorManager.showError('ツールクリック処理失敗', error, 'UIManager.handleToolClick');
+            } else {
+                console.error('❌ ツールクリック処理失敗:', error);
+            }
         }
     }
     
@@ -322,11 +379,13 @@ class UIManager {
         }
         
         // EventBus経由で通知（疎結合）
-        this.eventBus.emit('ui:tool:activated', {
-            tool,
-            timestamp: Date.now(),
-            source: 'UIManager'
-        });
+        if (this.eventBus && typeof this.eventBus.emit === 'function') {
+            this.eventBus.emit('ui:tool:activated', {
+                tool,
+                timestamp: Date.now(),
+                source: 'UIManager'
+            });
+        }
         
         // ステータス表示更新
         this.updateToolStatus(tool);
@@ -449,12 +508,12 @@ class UIManager {
             }
             
             // ConfigManager経由で設定保存
-            if (config.configKey && this.configManager) {
+            if (config.configKey && this.configManager && typeof this.configManager.set === 'function') {
                 this.configManager.set(config.configKey, sliderData.value);
             }
             
             // EventBus経由で変更通知
-            if (config.eventName && this.eventBus) {
+            if (config.eventName && this.eventBus && typeof this.eventBus.emit === 'function') {
                 this.eventBus.emit(config.eventName, {
                     value: sliderData.value,
                     percentage,
@@ -538,7 +597,11 @@ class UIManager {
             console.log(`🚌 EventBus: ツール変更受信 - ${tool}`);
             
         } catch (error) {
-            this.errorManager.showError('EventBusツール変更処理失敗', error, 'UIManager.handleToolChangeFromEventBus');
+            if (this.errorManager) {
+                this.errorManager.showError('EventBusツール変更処理失敗', error, 'UIManager.handleToolChangeFromEventBus');
+            } else {
+                console.error('❌ EventBusツール変更処理失敗:', error);
+            }
         }
     }
     
@@ -556,7 +619,11 @@ class UIManager {
             }
             
         } catch (error) {
-            this.errorManager.showError('EventBus設定変更処理失敗', error, 'UIManager.handleConfigChangeFromEventBus');
+            if (this.errorManager) {
+                this.errorManager.showError('EventBus設定変更処理失敗', error, 'UIManager.handleConfigChangeFromEventBus');
+            } else {
+                console.error('❌ EventBus設定変更処理失敗:', error);
+            }
         }
     }
     
@@ -571,7 +638,11 @@ class UIManager {
             }
             
         } catch (error) {
-            this.errorManager.showError('EventBus状態変更処理失敗', error, 'UIManager.handleStateChangeFromEventBus');
+            if (this.errorManager) {
+                this.errorManager.showError('EventBus状態変更処理失敗', error, 'UIManager.handleStateChangeFromEventBus');
+            } else {
+                console.error('❌ EventBus状態変更処理失敗:', error);
+            }
         }
     }
     
@@ -586,12 +657,16 @@ class UIManager {
             console.log(`🚌 EventBus: アプリリサイズ受信 - ${width}×${height}`);
             
         } catch (error) {
-            this.errorManager.showError('EventBusリサイズ処理失敗', error, 'UIManager.handleAppResizeFromEventBus');
+            if (this.errorManager) {
+                this.errorManager.showError('EventBusリサイズ処理失敗', error, 'UIManager.handleAppResizeFromEventBus');
+            } else {
+                console.error('❌ EventBusリサイズ処理失敗:', error);
+            }
         }
     }
     
     // ==========================================
-    // 🎯 レスポンシブ・入力システム
+    // 🎯 レスポンシブ・入力統合設定
     // ==========================================
     
     /**
@@ -620,12 +695,14 @@ class UIManager {
     }
     
     /**
-     * レスポンシブリサイズ処理
+     * 🔧 修正版: レスポンシブリサイズ処理 (uiSettings依存性確認強化)
      */
     handleResponsiveResize() {
         try {
             const width = window.innerWidth;
-            const breakpoints = this.uiSettings.responsiveBreakpoints;
+            
+            // 🔧 修正版: uiSettings.responsiveBreakpoints安全確認
+            const breakpoints = this.uiSettings?.responsiveBreakpoints || { mobile: 768, tablet: 1024 };
             
             document.body.classList.toggle('mobile', width < breakpoints.mobile);
             document.body.classList.toggle('tablet', 
@@ -637,15 +714,21 @@ class UIManager {
             });
             
             // EventBus通知
-            this.eventBus.emit('ui:responsive:updated', {
-                width,
-                isMobile: width < breakpoints.mobile,
-                isTablet: width >= breakpoints.mobile && width < breakpoints.tablet,
-                timestamp: Date.now()
-            });
+            if (this.eventBus && typeof this.eventBus.emit === 'function') {
+                this.eventBus.emit('ui:responsive:updated', {
+                    width,
+                    isMobile: width < breakpoints.mobile,
+                    isTablet: width >= breakpoints.mobile && width < breakpoints.tablet,
+                    timestamp: Date.now()
+                });
+            }
             
         } catch (error) {
-            this.errorManager.showError('レスポンシブリサイズ処理失敗', error, 'UIManager.handleResponsiveResize');
+            if (this.errorManager) {
+                this.errorManager.showError('レスポンシブリサイズ処理失敗', error, 'UIManager.handleResponsiveResize');
+            } else {
+                console.error('❌ レスポンシブリサイズ処理失敗:', error);
+            }
         }
     }
     
@@ -678,50 +761,12 @@ class UIManager {
     }
     
     /**
-     * パフォーマンス監視開始
-     */
-    startPerformanceMonitoring() {
-        console.log('📊 UIパフォーマンス監視開始...');
-        
-        const monitorLoop = () => {
-            const now = performance.now();
-            const deltaTime = now - this.performanceMetrics.lastUpdateTime;
-            
-            this.performanceMetrics.animationFrames++;
-            this.performanceMetrics.uiUpdateTime = deltaTime;
-            this.performanceMetrics.lastUpdateTime = now;
-            
-            requestAnimationFrame(monitorLoop);
-        };
-        
-        requestAnimationFrame(monitorLoop);
-        
-        // 定期的な統計出力
-        setInterval(() => {
-            const fps = Math.round(this.performanceMetrics.animationFrames * 1000 / 5000);
-            this.performanceMetrics.animationFrames = 0;
-            
-            // StateManager経由でパフォーマンス情報更新（修正版API使用）
-            if (this.stateManager) {
-                this.stateManager.updateComponentState('uiManager', 'performance', {
-                    fps,
-                    updateTime: this.performanceMetrics.uiUpdateTime,
-                    timestamp: Date.now()
-                });
-            }
-        }, 5000);
-    }
-    
-    // ==========================================
-    // 🎯 ユーティリティメソッド群
-    // ==========================================
-    
-    /**
      * ツール設定調整
      */
     adjustToolSetting(setting, delta) {
         try {
             let sliderId;
+            let currentValue;
             let configKey;
             
             switch (setting) {
@@ -754,18 +799,81 @@ class UIManager {
             }
             
             // 統一システム経由で保存・通知
-            this.configManager.set(configKey, newValue);
-            this.eventBus.emit(`tool:pen:${setting}:changed`, {
-                value: newValue,
-                delta,
-                timestamp: Date.now(),
-                source: 'keyboard'
-            });
+            if (this.configManager && typeof this.configManager.set === 'function') {
+                this.configManager.set(configKey, newValue);
+            }
+            
+            if (this.eventBus && typeof this.eventBus.emit === 'function') {
+                this.eventBus.emit(`tool:pen:${setting}:changed`, {
+                    value: newValue,
+                    delta,
+                    timestamp: Date.now(),
+                    source: 'keyboard'
+                });
+            }
             
         } catch (error) {
-            this.errorManager.showError('ツール設定調整失敗', error, 'UIManager.adjustToolSetting');
+            if (this.errorManager) {
+                this.errorManager.showError('ツール設定調整失敗', error, 'UIManager.adjustToolSetting');
+            } else {
+                console.error('❌ ツール設定調整失敗:', error);
+            }
         }
     }
+    
+    /**
+     * ポップアップ位置調整
+     */
+    adjustPopupPosition(popup) {
+        const rect = popup.getBoundingClientRect();
+        const maxX = window.innerWidth - popup.offsetWidth;
+        const maxY = window.innerHeight - popup.offsetHeight;
+        
+        let x = Math.max(0, Math.min(parseInt(popup.style.left || 0), maxX));
+        let y = Math.max(0, Math.min(parseInt(popup.style.top || 0), maxY));
+        
+        popup.style.left = x + 'px';
+        popup.style.top = y + 'px';
+    }
+    
+    /**
+     * パフォーマンス監視開始
+     */
+    startPerformanceMonitoring() {
+        console.log('📊 UIパフォーマンス監視開始...');
+        
+        const monitorLoop = () => {
+            const now = performance.now();
+            const deltaTime = now - this.performanceMetrics.lastUpdateTime;
+            
+            this.performanceMetrics.animationFrames++;
+            this.performanceMetrics.uiUpdateTime = deltaTime;
+            this.performanceMetrics.lastUpdateTime = now;
+            
+            requestAnimationFrame(monitorLoop);
+        };
+        
+        requestAnimationFrame(monitorLoop);
+        
+        // 定期的な統計出力
+        setInterval(() => {
+            const fps = Math.round(this.performanceMetrics.animationFrames * 1000 / 5000);
+            this.performanceMetrics.animationFrames = 0;
+            
+            // 🔧 修正版: StateManager経由でパフォーマンス情報更新 (updateComponentState使用)
+            if (this.stateManager && typeof this.stateManager.updateComponentState === 'function') {
+                this.stateManager.updateComponentState('uiManager', 'performance', {
+                    fps,
+                    updateTime: this.performanceMetrics.uiUpdateTime,
+                    timestamp: Date.now()
+                });
+            }
+        }, 5000);
+    }
+    
+    // ==========================================
+    // 🎯 ユーティリティメソッド群
+    // ==========================================
     
     /**
      * 設定からスライダー値更新
@@ -811,11 +919,13 @@ class UIManager {
         this.activePopup = isVisible ? null : popup;
         
         // EventBus通知
-        this.eventBus.emit('ui:popup:toggled', {
-            popupId,
-            visible: !isVisible,
-            timestamp: Date.now()
-        });
+        if (this.eventBus && typeof this.eventBus.emit === 'function') {
+            this.eventBus.emit('ui:popup:toggled', {
+                popupId,
+                visible: !isVisible,
+                timestamp: Date.now()
+            });
+        }
     }
     
     /**
@@ -828,9 +938,11 @@ class UIManager {
         this.activePopup = null;
         
         // EventBus通知
-        this.eventBus.emit('ui:popups:closed', {
-            timestamp: Date.now()
-        });
+        if (this.eventBus && typeof this.eventBus.emit === 'function') {
+            this.eventBus.emit('ui:popups:closed', {
+                timestamp: Date.now()
+            });
+        }
     }
     
     /**
@@ -848,21 +960,6 @@ class UIManager {
         if (toolNameElement) {
             toolNameElement.textContent = toolNames[tool] || tool;
         }
-    }
-    
-    /**
-     * ポップアップ位置調整
-     */
-    adjustPopupPosition(popup) {
-        const rect = popup.getBoundingClientRect();
-        const maxX = window.innerWidth - popup.offsetWidth;
-        const maxY = window.innerHeight - popup.offsetHeight;
-        
-        let x = Math.max(0, Math.min(parseInt(popup.style.left || 0), maxX));
-        let y = Math.max(0, Math.min(parseInt(popup.style.top || 0), maxY));
-        
-        popup.style.left = x + 'px';
-        popup.style.top = y + 'px';
     }
     
     /**
@@ -950,7 +1047,7 @@ class UIManager {
     getDebugInfo() {
         const status = this.getStatus();
         
-        console.group('🎨 UIManager 統一システム統合版 デバッグ情報');
+        console.group('🎨 UIManager 修正版統一システム統合版 デバッグ情報');
         console.log('📋 バージョン:', status.version);
         console.log('🔧 統一システム:', status.unifiedSystems);
         console.log('🎨 UI状態:', status.ui);
@@ -999,7 +1096,7 @@ class UIManager {
                 Object.entries(settings.toolSettings).forEach(([tool, toolConfig]) => {
                     Object.entries(toolConfig).forEach(([key, value]) => {
                         const configKey = this.configKeys.tools[tool]?.[key];
-                        if (configKey && this.configManager) {
+                        if (configKey && this.configManager && typeof this.configManager.set === 'function') {
                             this.configManager.set(configKey, value);
                         }
                     });
@@ -1010,7 +1107,7 @@ class UIManager {
             if (settings.uiSettings) {
                 Object.entries(settings.uiSettings).forEach(([key, value]) => {
                     const configKey = this.configKeys.ui[key];
-                    if (configKey && this.configManager) {
+                    if (configKey && this.configManager && typeof this.configManager.set === 'function') {
                         this.configManager.set(configKey, value);
                     }
                 });
@@ -1030,7 +1127,11 @@ class UIManager {
             console.log('✅ UI設定インポート完了');
             
         } catch (error) {
-            this.errorManager.showError('UI設定インポート失敗', error, 'UIManager.importSettings');
+            if (this.errorManager) {
+                this.errorManager.showError('UI設定インポート失敗', error, 'UIManager.importSettings');
+            } else {
+                console.error('❌ UI設定インポート失敗:', error);
+            }
         }
     }
     
@@ -1046,10 +1147,7 @@ class UIManager {
             this.setupPopupSystem();
             
             // デフォルト設定使用
-            this.toolSettings = {
-                pen: { size: 16.0, opacity: 85.0, pressure: 50.0, smoothing: 30.0 },
-                eraser: { size: 20.0, opacity: 100.0, mode: 'normal' }
-            };
+            this.loadDefaultConfiguration();
             
             console.log('✅ フォールバック初期化完了');
             
@@ -1088,7 +1186,7 @@ class UIManager {
             console.log('🗑️ UIManager破棄開始...');
             
             // EventBusリスナー解除
-            if (this.eventBus) {
+            if (this.eventBus && typeof this.eventBus.off === 'function') {
                 this.eventBus.off('tool:changed');
                 this.eventBus.off('config:changed');
                 this.eventBus.off('state:changed');
@@ -1121,11 +1219,13 @@ class UIManager {
 
 if (typeof window !== 'undefined') {
     window.UIManager = UIManager;
-    console.log('✅ UIManager 統一システム統合版 グローバル公開完了（Pure JavaScript）');
+    console.log('✅ UIManager 修正版統一システム統合版 グローバル公開完了（Pure JavaScript）');
 }
 
-console.log('🎨 UIManager Phase1.1ss5 統一システム統合版 - 準備完了');
+console.log('🎨 UIManager Phase1.1ss5 修正版統一システム統合版 - 準備完了');
 console.log('📋 統一システム統合完了: ConfigManager・ErrorManager・StateManager・EventBus');
+console.log('🔧 緊急修正完了: 構文エラー修正・updateSystemState → updateComponentState API統一');
+console.log('🛡️ フォールバック強化: 統一システム未利用時の安全動作保証');
 console.log('🎯 AI分業対応: 依存関係明確化・疎結合設計・統一設定管理');
 console.log('🔄 V8移行準備: WebGPU対応準備・120FPS対応・GPU加速準備');
 console.log('💡 使用例: const uiManager = new window.UIManager(appCore); await uiManager.init();');

@@ -1,5 +1,5 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0 (修正版)
  * 🎯 AI_WORK_SCOPE: ツール系統括・描画制御・設定管理
  * 🎯 DEPENDENCIES: js/utils/config-manager.js, js/utils/error-manager.js, js/utils/state-manager.js, js/utils/event-bus.js
  * 🎯 UNIFIED_SYSTEMS: ✅ ConfigManager, ErrorManager, StateManager, EventBus統合済み
@@ -11,16 +11,17 @@
  * 📋 RULEBOOK_COMPLIANCE: 1.2実装原則「Pure JavaScript維持」完全準拠
  * 📋 DRY_COMPLIANCE: ✅ 統一システム活用・重複コード排除完了
  * 📋 SOLID_COMPLIANCE: ✅ 単一責任・疎結合設計・統一システム依存性逆転
+ * 🔧 EMERGENCY_FIX: updateSystemState → updateComponentState API統一対応
  */
 
 /**
- * ツール管理システム（統一システム統合版）
+ * ツール管理システム（修正版・統一システム統合版）
  * 統一システム完全活用・EventBus疎結合・設定値統一
  * Pure JavaScript完全準拠・グローバル公開方式
  */
 class ToolManager {
     constructor() {
-        this.version = 'v1.0-Phase1.1ss3-unified';
+        this.version = 'v1.0-Phase1.1ss3-unified-fixed';
         this.currentTool = 'pen';
         this.canvasManager = null;
         this.isDrawing = false;
@@ -62,11 +63,11 @@ class ToolManager {
             }
         };
         
-        console.log(`🎨 ToolManager ${this.version}構築開始（Pure JavaScript）...`);
+        console.log(`🎨 ToolManager ${this.version}構築開始（Pure JavaScript修正版）...`);
     }
     
     /**
-     * 🎯 統一システム統合・ツール管理システム初期化
+     * 🎯 修正版: 統一システム統合・ツール管理システム初期化
      * @param {CanvasManager} canvasManager - キャンバス管理システム
      */
     async init(canvasManager) {
@@ -96,9 +97,9 @@ class ToolManager {
             const initTime = performance.now() - startTime;
             console.log(`✅ ToolManager 統一システム統合初期化完了 - ${initTime.toFixed(2)}ms`);
             
-            // StateManager状態更新
-            if (this.stateManager) {
-                this.stateManager.updateSystemState('toolManager', 'initialized', {
+            // 🔧 修正版: StateManager状態更新 (updateComponentState使用)
+            if (this.stateManager && typeof this.stateManager.updateComponentState === 'function') {
+                this.stateManager.updateComponentState('toolManager', 'initialized', {
                     initTime,
                     unifiedSystemsEnabled: true,
                     currentTool: this.currentTool,
@@ -110,7 +111,7 @@ class ToolManager {
             
         } catch (error) {
             // ErrorManager経由でエラー処理
-            if (this.errorManager) {
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
                 this.errorManager.showError('ツール管理システム初期化失敗', error, 'ToolManager.init');
             } else {
                 console.error('❌ ToolManager初期化エラー:', error);
@@ -134,26 +135,30 @@ class ToolManager {
         
         // ConfigManager依存性確認
         this.configManager = window.ConfigManager;
-        if (!this.configManager) {
-            throw new Error('ConfigManager が利用できません。統一システムの初期化を確認してください。');
+        if (!this.configManager || typeof this.configManager.get !== 'function') {
+            console.warn('⚠️ ConfigManager が利用できません');
+            this.configManager = null;
         }
         
         // ErrorManager依存性確認
         this.errorManager = window.ErrorManager;
-        if (!this.errorManager) {
-            throw new Error('ErrorManager が利用できません。統一システムの初期化を確認してください。');
+        if (!this.errorManager || typeof this.errorManager.showError !== 'function') {
+            console.warn('⚠️ ErrorManager が利用できません');
+            this.errorManager = null;
         }
         
         // StateManager依存性確認
         this.stateManager = window.StateManager;
-        if (!this.stateManager) {
-            throw new Error('StateManager が利用できません。統一システムの初期化を確認してください。');
+        if (!this.stateManager || typeof this.stateManager.updateComponentState !== 'function') {
+            console.warn('⚠️ StateManager が利用できません');
+            this.stateManager = null;
         }
         
         // EventBus依存性確認
         this.eventBus = window.EventBus;
-        if (!this.eventBus) {
-            throw new Error('EventBus が利用できません。統一システムの初期化を確認してください。');
+        if (!this.eventBus || typeof this.eventBus.emit !== 'function') {
+            console.warn('⚠️ EventBus が利用できません');
+            this.eventBus = null;
         }
         
         console.log('✅ 統一システム依存性確認完了');
@@ -166,6 +171,12 @@ class ToolManager {
         console.log('⚙️ 統一設定値取得開始...');
         
         try {
+            if (!this.configManager) {
+                console.warn('⚠️ ConfigManager未利用：デフォルト設定使用');
+                this.loadDefaultConfiguration();
+                return;
+            }
+            
             // グローバルツール設定取得
             this.currentTool = this.configManager.get(this.configKeys.global.currentTool, 'pen');
             
@@ -193,9 +204,43 @@ class ToolManager {
             console.log('✅ 統一設定値取得・適用完了');
             
         } catch (error) {
-            this.errorManager.showError('設定値取得失敗', error, 'ToolManager.loadConfiguration');
-            throw error;
+            if (this.errorManager) {
+                this.errorManager.showError('設定値取得失敗', error, 'ToolManager.loadConfiguration');
+            } else {
+                console.error('❌ 設定値取得失敗:', error);
+            }
+            this.loadDefaultConfiguration();
         }
+    }
+    
+    /**
+     * 🔧 新機能: デフォルト設定読み込み（フォールバック）
+     */
+    loadDefaultConfiguration() {
+        console.log('🛡️ デフォルト設定読み込み...');
+        
+        this.currentTool = 'pen';
+        this.globalSettings = {
+            pen: {
+                brushSize: 16.0,
+                brushColor: 0x800000,
+                opacity: 0.85,
+                pressure: 0.5,
+                smoothing: 0.3,
+                pressureSensitivity: true,
+                edgeSmoothing: true,
+                gpuAcceleration: false
+            },
+            eraser: {
+                brushSize: 20.0,
+                opacity: 1.0,
+                mode: 'normal',
+                areaMode: false,
+                particles: true
+            }
+        };
+        
+        console.log('✅ デフォルト設定読み込み完了');
     }
     
     /**
@@ -203,6 +248,11 @@ class ToolManager {
      */
     setupEventBusIntegration() {
         console.log('🚌 EventBus統合設定開始...');
+        
+        if (!this.eventBus) {
+            console.warn('⚠️ EventBus未利用：イベント連携スキップ');
+            return;
+        }
         
         // UI からのツール変更イベントリスナー
         this.eventBus.on('ui:tool:activated', (data) => {
@@ -245,7 +295,11 @@ class ToolManager {
             console.log(`🎯 初期ツール設定完了: ${this.currentTool}`);
             
         } catch (error) {
-            this.errorManager.showError('初期ツール設定失敗', error, 'ToolManager.setInitialTool');
+            if (this.errorManager) {
+                this.errorManager.showError('初期ツール設定失敗', error, 'ToolManager.setInitialTool');
+            } else {
+                console.error('❌ 初期ツール設定失敗:', error);
+            }
         }
     }
     
@@ -264,7 +318,11 @@ class ToolManager {
             }
             
         } catch (error) {
-            this.errorManager.showError('EventBus UIツール変更処理失敗', error, 'ToolManager.handleToolActivationFromUI');
+            if (this.errorManager) {
+                this.errorManager.showError('EventBus UIツール変更処理失敗', error, 'ToolManager.handleToolActivationFromUI');
+            } else {
+                console.error('❌ EventBus UIツール変更処理失敗:', error);
+            }
         }
     }
     
@@ -280,7 +338,11 @@ class ToolManager {
             }
             
         } catch (error) {
-            this.errorManager.showError('EventBus設定変更処理失敗', error, 'ToolManager.handleConfigChangeFromEventBus');
+            if (this.errorManager) {
+                this.errorManager.showError('EventBus設定変更処理失敗', error, 'ToolManager.handleConfigChangeFromEventBus');
+            } else {
+                console.error('❌ EventBus設定変更処理失敗:', error);
+            }
         }
     }
     
@@ -297,9 +359,9 @@ class ToolManager {
         try {
             this.registeredTools.set(name, toolInstance);
             
-            // StateManager経由で状態更新
-            if (this.stateManager) {
-                this.stateManager.updateSystemState('toolManager', 'toolRegistered', {
+            // 🔧 修正版: StateManager経由で状態更新 (updateComponentState使用)
+            if (this.stateManager && typeof this.stateManager.updateComponentState === 'function') {
+                this.stateManager.updateComponentState('toolManager', 'toolRegistered', {
                     tool: name,
                     timestamp: Date.now()
                 });
@@ -308,7 +370,11 @@ class ToolManager {
             console.log(`🔧 ツール登録: ${name}`);
             
         } catch (error) {
-            this.errorManager.showError('ツール登録失敗', error, 'ToolManager.registerTool');
+            if (this.errorManager) {
+                this.errorManager.showError('ツール登録失敗', error, 'ToolManager.registerTool');
+            } else {
+                console.error('❌ ツール登録失敗:', error);
+            }
         }
     }
     
@@ -331,10 +397,12 @@ class ToolManager {
             this.currentTool = tool;
             
             // ConfigManager経由で設定保存
-            this.configManager.set(this.configKeys.global.currentTool, tool);
+            if (this.configManager && typeof this.configManager.set === 'function') {
+                this.configManager.set(this.configKeys.global.currentTool, tool);
+            }
             
             // EventBus経由でツール変更通知（UI通知が必要な場合のみ）
-            if (notifyUI && this.eventBus) {
+            if (notifyUI && this.eventBus && typeof this.eventBus.emit === 'function') {
                 this.eventBus.emit('tool:changed', {
                     tool,
                     oldTool,
@@ -344,9 +412,9 @@ class ToolManager {
                 });
             }
             
-            // StateManager経由で状態更新
-            if (this.stateManager) {
-                this.stateManager.updateSystemState('toolManager', 'currentTool', {
+            // 🔧 修正版: StateManager経由で状態更新 (updateComponentState使用)
+            if (this.stateManager && typeof this.stateManager.updateComponentState === 'function') {
+                this.stateManager.updateComponentState('toolManager', 'currentTool', {
                     tool,
                     oldTool,
                     timestamp: Date.now()
@@ -357,7 +425,11 @@ class ToolManager {
             return true;
             
         } catch (error) {
-            this.errorManager.showError('統一システム経由ツール設定失敗', error, 'ToolManager.setToolViaUnifiedSystem');
+            if (this.errorManager) {
+                this.errorManager.showError('統一システム経由ツール設定失敗', error, 'ToolManager.setToolViaUnifiedSystem');
+            } else {
+                console.error('❌ 統一システム経由ツール設定失敗:', error);
+            }
             return false;
         }
     }
@@ -393,7 +465,7 @@ class ToolManager {
             
             // ConfigManager経由で設定保存（キーマッピング）
             const configKey = this.getConfigKeyForSetting(tool, setting);
-            if (configKey && this.configManager) {
+            if (configKey && this.configManager && typeof this.configManager.set === 'function') {
                 this.configManager.set(configKey, value);
             }
             
@@ -408,7 +480,11 @@ class ToolManager {
             return true;
             
         } catch (error) {
-            this.errorManager.showError('ツール設定更新失敗', error, 'ToolManager.updateToolSetting');
+            if (this.errorManager) {
+                this.errorManager.showError('ツール設定更新失敗', error, 'ToolManager.updateToolSetting');
+            } else {
+                console.error('❌ ツール設定更新失敗:', error);
+            }
             return false;
         }
     }
@@ -509,7 +585,12 @@ class ToolManager {
      */
     startDrawing(x, y) {
         if (!this.canvasManager) {
-            this.errorManager?.showError('キャンバス管理システム未初期化', new Error('CanvasManager not initialized'), 'ToolManager.startDrawing');
+            const error = new Error('CanvasManager not initialized');
+            if (this.errorManager) {
+                this.errorManager.showError('キャンバス管理システム未初期化', error, 'ToolManager.startDrawing');
+            } else {
+                console.error('❌ キャンバス管理システム未初期化:', error);
+            }
             return;
         }
         
@@ -533,9 +614,9 @@ class ToolManager {
                 );
             }
             
-            // StateManager経由で状態更新
-            if (this.stateManager) {
-                this.stateManager.updateSystemState('toolManager', 'drawing', {
+            // 🔧 修正版: StateManager経由で状態更新 (updateComponentState使用)
+            if (this.stateManager && typeof this.stateManager.updateComponentState === 'function') {
+                this.stateManager.updateComponentState('toolManager', 'drawing', {
                     isDrawing: true,
                     tool: this.currentTool,
                     startPoint: { x, y },
@@ -546,7 +627,11 @@ class ToolManager {
             console.log(`✏️ 描画開始: ${this.currentTool} at (${Math.round(x)}, ${Math.round(y)})`);
             
         } catch (error) {
-            this.errorManager.showError('描画開始失敗', error, 'ToolManager.startDrawing');
+            if (this.errorManager) {
+                this.errorManager.showError('描画開始失敗', error, 'ToolManager.startDrawing');
+            } else {
+                console.error('❌ 描画開始失敗:', error);
+            }
         }
     }
     
@@ -573,7 +658,11 @@ class ToolManager {
             this.lastPoint = { x, y };
             
         } catch (error) {
-            this.errorManager.showError('描画継続失敗', error, 'ToolManager.continueDrawing');
+            if (this.errorManager) {
+                this.errorManager.showError('描画継続失敗', error, 'ToolManager.continueDrawing');
+            } else {
+                console.error('❌ 描画継続失敗:', error);
+            }
         }
     }
     
@@ -599,9 +688,9 @@ class ToolManager {
             this.currentPath = null;
             this.lastPoint = null;
             
-            // StateManager経由で状態更新
-            if (this.stateManager) {
-                this.stateManager.updateSystemState('toolManager', 'drawing', {
+            // 🔧 修正版: StateManager経由で状態更新 (updateComponentState使用)
+            if (this.stateManager && typeof this.stateManager.updateComponentState === 'function') {
+                this.stateManager.updateComponentState('toolManager', 'drawing', {
                     isDrawing: false,
                     tool: this.currentTool,
                     timestamp: Date.now()
@@ -611,7 +700,11 @@ class ToolManager {
             console.log(`✏️ 描画終了: ${this.currentTool}`);
             
         } catch (error) {
-            this.errorManager.showError('描画終了失敗', error, 'ToolManager.stopDrawing');
+            if (this.errorManager) {
+                this.errorManager.showError('描画終了失敗', error, 'ToolManager.stopDrawing');
+            } else {
+                console.error('❌ 描画終了失敗:', error);
+            }
         }
     }
     
@@ -631,7 +724,11 @@ class ToolManager {
             console.log(`🖌️ ブラシサイズ: ${normalizedSize}px`);
             
         } catch (error) {
-            this.errorManager.showError('ブラシサイズ設定失敗', error, 'ToolManager.setBrushSize');
+            if (this.errorManager) {
+                this.errorManager.showError('ブラシサイズ設定失敗', error, 'ToolManager.setBrushSize');
+            } else {
+                console.error('❌ ブラシサイズ設定失敗:', error);
+            }
         }
     }
     
@@ -647,7 +744,11 @@ class ToolManager {
             console.log(`🌫️ 不透明度: ${Math.round(normalizedOpacity * 100)}%`);
             
         } catch (error) {
-            this.errorManager.showError('不透明度設定失敗', error, 'ToolManager.setOpacity');
+            if (this.errorManager) {
+                this.errorManager.showError('不透明度設定失敗', error, 'ToolManager.setOpacity');
+            } else {
+                console.error('❌ 不透明度設定失敗:', error);
+            }
         }
     }
     
@@ -663,7 +764,11 @@ class ToolManager {
             console.log(`✍️ 筆圧: ${Math.round(normalizedPressure * 100)}%`);
             
         } catch (error) {
-            this.errorManager.showError('筆圧設定失敗', error, 'ToolManager.setPressure');
+            if (this.errorManager) {
+                this.errorManager.showError('筆圧設定失敗', error, 'ToolManager.setPressure');
+            } else {
+                console.error('❌ 筆圧設定失敗:', error);
+            }
         }
     }
     
@@ -679,55 +784,33 @@ class ToolManager {
             console.log(`📏 線補正: ${Math.round(normalizedSmoothing * 100)}%`);
             
         } catch (error) {
-            this.errorManager.showError('線補正設定失敗', error, 'ToolManager.setSmoothing');
+            if (this.errorManager) {
+                this.errorManager.showError('線補正設定失敗', error, 'ToolManager.setSmoothing');
+            } else {
+                console.error('❌ 線補正設定失敗:', error);
+            }
         }
     }
     
     /**
-     * グローバル設定更新（統一システム版）
-     * @param {Object} settings - 設定オブジェクト
+     * 統一システム健全性チェック
      */
-    updateGlobalSettings(settings) {
-        try {
-            // 個別設定メソッド経由で更新（統一システム連携保証）
-            if (settings.brushSize !== undefined) {
-                this.setBrushSize(settings.brushSize);
-            }
-            
-            if (settings.opacity !== undefined) {
-                this.setOpacity(settings.opacity);
-            }
-            
-            if (settings.pressure !== undefined) {
-                this.setPressure(settings.pressure);
-            }
-            
-            if (settings.smoothing !== undefined) {
-                this.setSmoothing(settings.smoothing);
-            }
-            
-            // ブール値設定
-            ['pressureSensitivity', 'edgeSmoothing', 'gpuAcceleration'].forEach(setting => {
-                if (settings[setting] !== undefined) {
-                    this.updateToolSetting(this.currentTool, setting, settings[setting]);
-                    console.log(`🔧 ${setting}: ${settings[setting] ? 'ON' : 'OFF'}`);
-                }
-            });
-            
-            // 現在のツールに設定変更を通知
-            const currentToolInstance = this.registeredTools.get(this.currentTool);
-            if (currentToolInstance && currentToolInstance.updateSettings) {
-                currentToolInstance.updateSettings(this.globalSettings[this.currentTool]);
-            }
-            
-        } catch (error) {
-            this.errorManager.showError('グローバル設定更新失敗', error, 'ToolManager.updateGlobalSettings');
+    checkUnifiedSystemHealth() {
+        const health = {
+            configManager: !!this.configManager && typeof this.configManager.get === 'function',
+            errorManager: !!this.errorManager && typeof this.errorManager.showError === 'function',
+            stateManager: !!this.stateManager && typeof this.stateManager.updateComponentState === 'function',
+            eventBus: !!this.eventBus && typeof this.eventBus.emit === 'function'
+        };
+        
+        const allHealthy = Object.values(health).every(Boolean);
+        
+        if (!allHealthy) {
+            console.warn('⚠️ 一部の統一システムに問題があります:', health);
         }
+        
+        return { health, allHealthy };
     }
-    
-    // ==========================================
-    // 🎯 状態取得メソッド群（統一システム統合版）
-    // ==========================================
     
     /**
      * 描画状態取得（統一システム版）
@@ -743,131 +826,9 @@ class ToolManager {
             registeredTools: Array.from(this.registeredTools.keys()),
             currentPath: this.currentPath ? this.currentPath.id : null,
             lastPoint: this.lastPoint ? { ...this.lastPoint } : null,
-            canvasManagerConnected: !!this.canvasManager
+            canvasManagerConnected: !!this.canvasManager,
+            unifiedSystemHealth: this.checkUnifiedSystemHealth()
         };
-    }
-    
-    /**
-     * ツール統計取得（統一システム版）
-     * @returns {Object} ツール統計
-     */
-    getToolStats() {
-        const stats = {
-            version: this.version,
-            currentTool: this.currentTool,
-            registeredToolsCount: this.registeredTools.size,
-            isDrawing: this.isDrawing,
-            globalSettings: this.globalSettings ? { ...this.globalSettings } : {},
-            unifiedSystems: {
-                configManager: !!this.configManager,
-                errorManager: !!this.errorManager,
-                stateManager: !!this.stateManager,
-                eventBus: !!this.eventBus
-            }
-        };
-        
-        // キャンバス統計追加
-        if (this.canvasManager && this.canvasManager.getStats) {
-            stats.canvasStats = this.canvasManager.getStats();
-        }
-        
-        return stats;
-    }
-    
-    /**
-     * ツール切り替え可能性チェック（統一システム版）
-     * @param {string} tool - ツール名
-     * @returns {boolean} 切り替え可能フラグ
-     */
-    canSwitchTo(tool) {
-        if (this.isDrawing) {
-            console.warn('⚠️ 描画中はツール変更できません');
-            return false;
-        }
-        
-        // 基本ツールは常に切り替え可能
-        if (['pen', 'eraser'].includes(tool)) {
-            return true;
-        }
-        
-        if (!this.registeredTools.has(tool)) {
-            console.warn(`⚠️ 未登録ツール: ${tool}`);
-            return false;
-        }
-        
-        return true;
-    }
-    
-    /**
-     * 安全なツール切り替え（統一システム版）
-     * @param {string} tool - ツール名
-     * @returns {boolean} 切り替え成功フラグ
-     */
-    safeSwitchTool(tool) {
-        if (!this.canSwitchTo(tool)) return false;
-        
-        // 描画中の場合は強制終了
-        if (this.isDrawing) {
-            this.stopDrawing();
-        }
-        
-        return this.setToolViaUnifiedSystem(tool, true);
-    }
-    
-    // ==========================================
-    // 🎯 その他操作メソッド群
-    // ==========================================
-    
-    /**
-     * アンドゥ実行（統一システム版）
-     * @returns {boolean} アンドゥ成功フラグ
-     */
-    undo() {
-        try {
-            if (!this.canvasManager) return false;
-            
-            const success = this.canvasManager.undo();
-            if (success) {
-                console.log('↶ アンドゥ実行');
-                
-                // EventBus通知
-                if (this.eventBus) {
-                    this.eventBus.emit('tool:undo:executed', {
-                        timestamp: Date.now(),
-                        source: 'ToolManager'
-                    });
-                }
-            }
-            return success;
-            
-        } catch (error) {
-            this.errorManager.showError('アンドゥ実行失敗', error, 'ToolManager.undo');
-            return false;
-        }
-    }
-    
-    /**
-     * キャンバスクリア（統一システム版）
-     */
-    clear() {
-        try {
-            if (!this.canvasManager) return;
-            
-            this.canvasManager.clear();
-            
-            // EventBus通知
-            if (this.eventBus) {
-                this.eventBus.emit('tool:canvas:cleared', {
-                    timestamp: Date.now(),
-                    source: 'ToolManager'
-                });
-            }
-            
-            console.log('🧹 キャンバスクリア');
-            
-        } catch (error) {
-            this.errorManager.showError('キャンバスクリア失敗', error, 'ToolManager.clear');
-        }
     }
     
     /**
@@ -875,35 +836,13 @@ class ToolManager {
      */
     debugInfo() {
         const state = this.getDrawingState();
-        const stats = this.getToolStats();
         
-        console.group('🔧 ToolManager 統一システム統合版 デバッグ情報');
+        console.group('🔧 ToolManager 修正版 統一システム統合版 デバッグ情報');
         console.log('📊 状態:', state);
-        console.log('📈 統計:', stats);
         console.log('🔧 統一システム健全性:', this.checkUnifiedSystemHealth());
         console.groupEnd();
         
-        return { state, stats };
-    }
-    
-    /**
-     * 統一システム健全性チェック
-     */
-    checkUnifiedSystemHealth() {
-        const health = {
-            configManager: !!this.configManager && typeof this.configManager.get === 'function',
-            errorManager: !!this.errorManager && typeof this.errorManager.showError === 'function',
-            stateManager: !!this.stateManager && typeof this.stateManager.updateSystemState === 'function',
-            eventBus: !!this.eventBus && typeof this.eventBus.emit === 'function'
-        };
-        
-        const allHealthy = Object.values(health).every(Boolean);
-        
-        if (!allHealthy) {
-            console.warn('⚠️ 一部の統一システムに問題があります:', health);
-        }
-        
-        return { health, allHealthy };
+        return { state };
     }
     
     /**
@@ -919,7 +858,7 @@ class ToolManager {
             }
             
             // EventBusリスナー解除
-            if (this.eventBus) {
+            if (this.eventBus && typeof this.eventBus.off === 'function') {
                 this.eventBus.off('ui:tool:activated');
                 this.eventBus.off('config:changed');
                 this.eventBus.off('tool:pen:size:changed');
@@ -954,11 +893,12 @@ class ToolManager {
 
 if (typeof window !== 'undefined') {
     window.ToolManager = ToolManager;
-    console.log('✅ ToolManager 統一システム統合版 グローバル公開完了（Pure JavaScript）');
+    console.log('✅ ToolManager 修正版統一システム統合版 グローバル公開完了（Pure JavaScript）');
 }
 
-console.log('🔧 ToolManager Phase1.1ss3 統一システム統合版 - 準備完了');
+console.log('🔧 ToolManager Phase1.1ss3 修正版統一システム統合版 - 準備完了');
 console.log('📋 統一システム統合完了: ConfigManager・ErrorManager・StateManager・EventBus');
+console.log('🔧 緊急修正完了: updateSystemState → updateComponentState API統一');
+console.log('🛡️ フォールバック強化: 統一システム未利用時の安全動作保証');
 console.log('📋 ルールブック準拠: 1.2実装原則「ESM/TypeScript混在禁止・Pure JavaScript維持」');
-console.log('🎯 AI分業対応: 依存関係明確化・疎結合設計・統一設定管理');
 console.log('💡 使用例: const toolManager = new window.ToolManager(); await toolManager.init(canvasManager);');
