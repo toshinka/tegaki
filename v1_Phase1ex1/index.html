@@ -61,20 +61,45 @@
             
             <div class="tool-separator"></div>
             
+            <!-- 塗りつぶし - バケツアイコンに変更 -->
             <div class="tool-button disabled" id="fill-tool" title="塗りつぶし">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M19 11H5m14 0a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2m14 0V9a2 2 0 0 0-2-2M5 11V9a2 2 0 0 1 2-2m0 0V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2M7 7h10"/>
+                    <path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/>
+                    <path d="m5 2 5 5"/>
+                    <circle cx="2" cy="13" r="2"/>
                 </svg>
             </div>
             
+            <!-- 選択範囲 - 破線四角アイコンに変更 -->
             <div class="tool-button disabled" id="select-tool" title="範囲選択">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="4" y="4" width="16" height="16" rx="2" ry="2"/>
-                    <path d="M9 9h6v6H9z"/>
+                    <rect x="4" y="4" width="16" height="16" stroke-dasharray="4 2" fill="none"/>
+                    <rect x="3" y="3" width="2" height="2" fill="currentColor"/>
+                    <rect x="19" y="3" width="2" height="2" fill="currentColor"/>
+                    <rect x="3" y="19" width="2" height="2" fill="currentColor"/>
+                    <rect x="19" y="19" width="2" height="2" fill="currentColor"/>
                 </svg>
             </div>
             
             <div class="tool-separator"></div>
+            
+            <!-- レイヤー - 新規追加（設定の上） -->
+            <div class="tool-button disabled" id="layers-tool" title="レイヤー">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
+                    <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/>
+                    <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>
+                </svg>
+            </div>
+            
+            <!-- GIFアニメ - 新規追加（設定の上） -->
+            <div class="tool-button disabled" id="gif-tool" title="GIFアニメーション">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                    <path d="M2 2v20l6-6 6 6 6-6"/>
+                    <path d="m7 8 5 8 5-8"/>
+                </svg>
+            </div>
             
             <div class="tool-button disabled" id="settings-tool" title="設定">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -275,6 +300,74 @@
         </div>
     </div>
     
+    <!-- レイヤー設定パネル（新規追加） -->
+    <div class="popup-panel layers-settings draggable" id="layers-settings" style="left: 60px; top: 200px; display: none;">
+        <div class="popup-title">レイヤー管理</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">レイヤー一覧</div>
+            <div class="layers-list" id="layers-list">
+                <div class="layer-item active">
+                    <div class="layer-preview"></div>
+                    <div class="layer-info">
+                        <div class="layer-name">背景レイヤー</div>
+                        <div class="layer-opacity">100%</div>
+                    </div>
+                    <div class="layer-controls">
+                        <div class="layer-visible">👁</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="resize-buttons">
+                <div class="resize-button" id="add-layer">新規レイヤー</div>
+                <div class="resize-button" id="duplicate-layer">複製</div>
+                <div class="resize-button" id="delete-layer">削除</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- GIF設定パネル（新規追加） -->
+    <div class="popup-panel gif-settings draggable" id="gif-settings" style="left: 60px; top: 250px; display: none;">
+        <div class="popup-title">GIFアニメーション</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">フレーム設定</div>
+            <div class="size-input-group">
+                <div class="size-input-field">
+                    <label>フレーム数:</label>
+                    <input type="number" class="size-input" id="gif-frames" min="2" max="60" value="10">
+                </div>
+                <div class="size-input-field">
+                    <label>FPS:</label>
+                    <input type="number" class="size-input" id="gif-fps" min="1" max="30" value="8">
+                </div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">品質設定</div>
+            <div class="slider-controls">
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="gif-quality-slider">
+                        <div class="slider-track" id="gif-quality-track"></div>
+                        <div class="slider-handle" id="gif-quality-handle"></div>
+                    </div>
+                    <div class="slider-value" id="gif-quality-value">80%</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="resize-buttons">
+                <div class="resize-button" id="gif-preview">プレビュー</div>
+                <div class="resize-button primary" id="gif-export">エクスポート</div>
+            </div>
+        </div>
+    </div>
+    
     <!-- ========================================= -->
     <!-- 📊 ステータスパネル -->
     <!-- ========================================= -->
@@ -292,6 +385,7 @@
             <div class="status-item">FPS: <span id="fps">60</span></div>
             <div class="status-item">GPU: <span id="gpu-usage">45%</span></div>
             <div class="status-item">Memory: <span id="memory-usage">1.2GB</span></div>
+            <div class="status-item">Layers: <span id="layer-count">1</span></div>
         </div>
     </div>
 
@@ -421,10 +515,36 @@
                 console.log(`📡 標準イベント: ${Object.keys(window.EventBus.Events).length}個`);
             }
             
+            // Phase1後期改修: アイコン更新処理
+            if (window.IconManager && window.iconManager) {
+                console.log('🎨 アイコンシステム更新開始...');
+                
+                // ツールボタンアイコン更新
+                const updateResult = window.iconManager.updateToolButtonIcons();
+                console.log(`✅ アイコン更新完了: ${updateResult}個更新`);
+                
+                // 新規ツールボタンのイベント登録
+                ['layers-tool', 'gif-tool'].forEach(toolId => {
+                    const element = document.getElementById(toolId);
+                    if (element) {
+                        element.addEventListener('click', function() {
+                            const panelId = toolId.replace('-tool', '-settings');
+                            const panel = document.getElementById(panelId);
+                            if (panel) {
+                                const isVisible = panel.style.display !== 'none';
+                                panel.style.display = isVisible ? 'none' : 'block';
+                                console.log(`📋 ${panelId} パネル ${isVisible ? '非表示' : '表示'}`);
+                            }
+                        });
+                    }
+                });
+            }
+            
             console.log('💡 デバッグコマンド:');
             console.log('  - window.getState() : 全状態取得');
             console.log('  - window.healthCheck() : 健全性チェック');
             console.log('  - window.startDebugMode() : デバッグモード開始');
+            console.log('  - window.iconManager.debug() : アイコンシステム診断');
         });
     </script>
 </body>

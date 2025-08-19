@@ -1,0 +1,263 @@
+# Phase1後期改修計画書 - サイドバーアイコン改善とレイヤー/GIF機能追加
+
+## 🎯 改修概要
+
+### 現状問題分析
+1. **@tabler/icons問題**: 現在`@tabler/icons-react`を使用しているがPure JavaScript環境では直接利用不可
+2. **アイコン不統一**: サイドバーのアイコンがSVG直書きで統一性に欠ける
+3. **機能アイコン不足**: レイヤー・GIF機能のアイコンが設定の上にない
+
+### 目標達成状況
+- DRY・SOLID原則の維持
+- Pure JavaScript環境での@tabler/icons活用
+- 新機能追加（レイヤー・GIF）
+- 視覚的統一性の向上
+
+---
+
+## 📋 改修作業項目
+
+### 1. アイコンライブラリ変更
+- **対象**: `@tabler/icons-react` → `@tabler/icons` 変更
+- **理由**: Pure JavaScriptでSVG直接利用可能
+- **作業**: package.json依存関係変更
+
+### 2. アイコン統一化
+- **塗りつぶしアイコン**: bucket（バケツ）に変更
+- **選択範囲アイコン**: 四角破線のselect系アイコンに変更
+- **既存SVG**: @tabler/iconsのSVGに置換
+
+### 3. 新機能アイコン追加
+- **レイヤーアイコン**: settings上部に追加（layers系）
+- **GIFアニメアイコン**: 動画系アイコン（movie/film/clapperboard系）
+
+### 4. アイコン管理システム構築
+- **IconManager拡張**: @tabler/icons対応
+- **統一アクセス**: ConfigManagerと連携
+- **動的読み込み**: 必要時のみSVG取得
+
+---
+
+## 🔧 技術実装方針
+
+### アイコンライブラリ統合方式
+```javascript
+// @tabler/icons Pure JavaScript活用パターン
+class TablerIconManager {
+    constructor() {
+        this.iconCache = new Map();
+        this.baseUrl = './node_modules/@tabler/icons/icons/';
+    }
+    
+    async getIcon(iconName) {
+        if (this.iconCache.has(iconName)) {
+            return this.iconCache.get(iconName);
+        }
+        
+        try {
+            const response = await fetch(`${this.baseUrl}${iconName}.svg`);
+            const svgText = await response.text();
+            this.iconCache.set(iconName, svgText);
+            return svgText;
+        } catch (error) {
+            ErrorManager.showError('icon-load', 
+                `アイコン読み込み失敗: ${iconName}`, { iconName });
+            return null;
+        }
+    }
+}
+```
+
+### アイコンマッピング定義
+```javascript
+// 統一アイコンマッピング（ConfigManager統合）
+const ICON_MAPPING = {
+    download: 'download',
+    resize: 'resize',
+    palette: 'palette',
+    pen: 'pencil',
+    eraser: 'eraser',
+    fill: 'bucket',        // 変更: paint-bucket → bucket
+    select: 'select',      // 変更: 破線四角系
+    layers: 'layers',      // 新規: レイヤー
+    gif: 'movie',          // 新規: GIFアニメ（movie/film系）
+    settings: 'settings'
+};
+```
+
+### UIレイアウト変更
+```javascript
+// サイドバーレイアウト順序（設定上にレイヤー・GIF追加）
+const SIDEBAR_LAYOUT = [
+    'download',
+    'resize', 
+    'separator',
+    'palette',
+    'pen',
+    'eraser',
+    'separator',
+    'fill',
+    'select',
+    'separator',
+    'layers',      // 新規追加
+    'gif',         // 新規追加  
+    'settings'
+];
+```
+
+---
+
+## 📝 実装手順
+
+### Step 1: 依存関係更新
+1. **package.json修正**
+   ```json
+   {
+     "dependencies": {
+       "@tabler/icons": "^3.34.1",  // React版から変更
+       // その他は既存のまま
+     }
+   }
+   ```
+
+2. **npm install実行** (プロジェクト環境で)
+
+### Step 2: IconManager拡張
+1. **js/utils/icon-manager.js修正**
+   - TablerIconManager追加
+   - 既存機能との統合
+   - ConfigManager連携強化
+
+### Step 3: HTML側アイコン置換
+1. **index.html修正**
+   - 塗りつぶしアイコン → bucket
+   - 選択範囲アイコン → select (破線四角)
+   - レイヤー・GIF追加
+
+### Step 4: 統一システム連携
+1. **ConfigManager拡張**
+   - アイコン設定統一
+   - テーマ対応準備
+
+2. **EventBus拡張**  
+   - アイコン変更イベント
+   - 動的更新対応
+
+### Step 5: テスト・品質確認
+1. **アイコン表示確認**
+2. **統一システム連携確認**
+3. **パフォーマンス確認**
+
+---
+
+## 🎨 具体的アイコン選択
+
+### @tabler/iconsからの選択候補
+
+#### 塗りつぶし（fill-tool）
+- **第1候補**: `bucket` - シンプルなバケツ
+- **第2候補**: `paint-bucket` - ペイントバケツ
+- **第3候補**: `color-swatch` - カラーパレット風
+
+#### 選択範囲（select-tool）
+- **第1候補**: `select` - 破線の選択範囲
+- **第2候補**: `rectangle-dashed` - 破線四角
+- **第3候補**: `selection` - 選択範囲アイコン
+
+#### レイヤー（layers）
+- **第1候補**: `layers` - レイヤーアイコン
+- **第2候補**: `stack` - スタック
+- **第3候補**: `layout-layers` - レイアウトレイヤー
+
+#### GIF（gif）
+- **第1候補**: `movie` - 映画アイコン
+- **第2候補**: `film` - フィルムストリップ
+- **第3候補**: `clapperboard` - カチンコ
+- **第4候補**: `video` - ビデオアイコン
+
+---
+
+## 🔍 品質保証項目
+
+### 統一システム準拠確認
+- [ ] ConfigManagerでアイコン設定統一
+- [ ] ErrorManagerでアイコン読み込みエラー処理
+- [ ] EventBusでアイコン変更通知
+- [ ] StateManagerでアイコン状態管理
+
+### DRY・SOLID原則確認
+- [ ] アイコンSVG重複排除
+- [ ] IconManager単一責任
+- [ ] 依存性逆転（統一システム経由）
+- [ ] インターフェース分離
+
+### パフォーマンス確認
+- [ ] アイコンキャッシュ機能
+- [ ] 遅延読み込み対応
+- [ ] メモリ使用量チェック
+- [ ] 初期化時間影響なし
+
+---
+
+## 📊 成果測定指標
+
+### 開発効率向上
+- アイコン変更作業時間: 90%短縮（統一システム効果）
+- 新アイコン追加時間: 80%短縮（管理システム効果）
+- デバッグ時間: 70%短縮（統一エラー処理効果）
+
+### コード品質向上
+- SVG重複数: 0個（DRY原則完全遵守）
+- アイコン関連循環依存: 0個（EventBus活用）
+- 設定ハードコード: 0個（ConfigManager完全活用）
+
+### ユーザー体験向上
+- アイコン統一性: 100%（@tabler/icons統一）
+- 機能発見性: 向上（レイヤー・GIF追加）
+- 視覚的一貫性: 向上（デザインシステム統一）
+
+---
+
+## 🚀 実装完了後の効果
+
+### 短期効果
+1. **視覚的統一性**: @tabler/iconsによる一貫したデザイン
+2. **機能充実**: レイヤー・GIF機能のUI準備完了
+3. **保守性向上**: 統一システムによるアイコン管理
+
+### 中期効果  
+1. **Phase2準備**: レイヤーシステムのUI基盤完成
+2. **拡張容易性**: 新機能アイコン追加の効率化
+3. **テーマ対応**: アイコンカラー・スタイル統一基盤
+
+### 長期効果
+1. **AI協働効率**: 統一システムによるアイコン関連作業効率化
+2. **スケーラビリティ**: アイコンシステムの拡張性確保
+3. **品質維持**: DRY・SOLID原則によるコード品質維持
+
+---
+
+## 💡 注意事項・制約
+
+### 技術制約
+- Pure JavaScript環境維持（ESM禁止）
+- PixiJS v7との互換性維持
+- 500行ファイル制限遵守
+
+### 統一システム制約
+- ConfigManagerによる設定値統一必須
+- ErrorManagerによるエラー処理統一必須
+- EventBusによる通信統一必須
+- StateManagerによる状態管理統一必須
+
+### パフォーマンス制約
+- 初期化時間3秒以内維持
+- FPS60維持
+- メモリ使用量100MB以内維持
+
+---
+
+*📋 Phase1後期改修計画書*  
+*作成日: 2025年8月19日*  
+*対象: サイドバーアイコン改善・レイヤー/GIF機能UI追加*  
+*方針: DRY・SOLID原則遵守・統一システム完全活用・AI協働効率化*
