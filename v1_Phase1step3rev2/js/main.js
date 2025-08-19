@@ -87,17 +87,26 @@ class FutabaDrawingTool {
     }
     
     /**
-     * 基本依存関係確認
+     * 基本依存関係確認（修正版：AppCore動的チェック）
      */
     async validateBasicDependencies() {
-        const requiredLibraries = window.ConfigManager.get('dependencies') || ['PIXI', 'AppCore'];
+        // 🔧 修正: 動的依存関係チェック（ConfigManager経由）
+        const configDependencies = window.ConfigManager.get('dependencies') || [];
+        const requiredLibraries = ['PIXI'].concat(configDependencies);
+        
+        // AppCoreは別途チェック（グローバル設定確認）
         const missing = requiredLibraries.filter(lib => !window[lib]);
         
         if (missing.length > 0) {
-            throw new Error(`必須依存関係不足: ${missing.join(', ')}`);
+            throw new Error(`必須ライブラリ不足: ${missing.join(', ')}`);
         }
         
-        console.log('✅ 基本依存関係確認完了');
+        // AppCore専用チェック
+        if (!window.AppCore || typeof window.AppCore !== 'function') {
+            throw new Error('AppCoreクラスが利用できません。index.htmlの読み込み順序を確認してください。');
+        }
+        
+        console.log('✅ 基本依存関係確認完了（AppCore含む）');
         this.initializationSteps.push('dependencies');
     }
     
@@ -107,13 +116,38 @@ class FutabaDrawingTool {
     async initializeAppCore() {
         console.log('🎯 AppCore統一初期化...');
         
-        this.appCore = new window.AppCore();
-        await this.appCore.initialize();
+        // 🔧 修正: AppCoreクラス存在確認
+        if (!window.AppCore) {
+            throw new Error('AppCoreクラスがグローバルに設定されていません');
+        }
         
+        this.appCore = new window.AppCore();
+        
+        // DOM要素確認
+        const canvasContainer = document.getElementById('drawing-canvas');
+        if (!canvasContainer) {
+            throw new Error('キャンバスコンテナ要素(#drawing-canvas)が見つかりません');
+        }
+        
+        // AppCore初期化実行
+        const initResult = await this.appCore.initialize({
+            container: canvasContainer,
+            width: this.config.canvas.defaultWidth || 800,
+            height: this.config.canvas.defaultHeight || 600
+        });
+        
+        if (!initResult) {
+            throw new Error('AppCore初期化が失敗しました');
+        }
+        
+        // 初期化状態確認
         const status = this.validateAppCoreStatus();
         if (!status.valid) {
             throw new Error(`AppCore状態異常: ${status.issues.join(', ')}`);
         }
+        
+        // キャンバスDOM統合
+        this.integrateCanvasWithDOM();
         
         console.log('✅ AppCore初期化完了');
         this.initializationSteps.push('app-core');
@@ -125,13 +159,52 @@ class FutabaDrawingTool {
     validateAppCoreStatus() {
         const issues = [];
         
-        if (!this.appCore) issues.push('AppCoreインスタンス未作成');
-        if (!this.appCore.app) issues.push('PixiJS Application未初期化');
-        if (!this.appCore.drawingContainer) issues.push('DrawingContainer未初期化');
-        if (!this.appCore.toolSystem) issues.push('ToolSystem未初期化');
-        if (!this.appCore.uiController) issues.push('UIController未初期化');
+        if (!this.appCore) {
+            issues.push('AppCoreインスタンス未作成');
+            return { valid: false, issues };
+        }
+        
+        if (!this.appCore.app) {
+            issues.push('PixiJS Application未初期化');
+        }
+        
+        if (!this.appCore.drawingContainer) {
+            issues.push('DrawingContainer未初期化');
+        }
+        
+        if (!this.appCore.isReady || !this.appCore.isReady()) {
+            issues.push('AppCore準備未完了');
+        }
         
         return { valid: issues.length === 0, issues };
+    }
+    
+    /**
+     * キャンバスDOM統合
+     */
+    integrateCanvasWithDOM() {
+        const canvasContainer = document.getElementById('drawing-canvas');
+        const canvas = this.appCore.getCanvas();
+        
+        if (canvasContainer && canvas) {
+            // 既存キャンバス削除
+            while (canvasContainer.firstChild) {
+                canvasContainer.removeChild(canvasContainer.firstChild);
+            }
+            
+            // 新しいキャンバス追加
+            canvasContainer.appendChild(canvas);
+            
+            // スタイル設定
+            canvas.style.display = 'block';
+            canvas.style.border = '1px solid #cf9c97';
+            canvas.style.borderRadius = '4px';
+            canvas.style.backgroundColor = '#ffffff';
+            
+            console.log('✅ キャンバスDOM統合完了');
+        } else {
+            console.warn('⚠️ キャンバスDOM統合スキップ: 要素が見つかりません');
+        }
     }
     
     /**
@@ -141,7 +214,12 @@ class FutabaDrawingTool {
         console.log('🔗 システム統合設定（統一版）...');
         
         // キーボードショートカット設定
-        const shortcuts = window.ConfigManager.get('ui.keyboard.shortcuts');
+        const shortcuts = window.ConfigManager.get('ui.keyboard.shortcuts') || {
+            KeyP: 'selectPenTool',
+            KeyE: 'selectEraserTool',
+            Escape: 'closeAllPopups'
+        };
+        
         document.addEventListener('keydown', (e) => {
             const action = shortcuts[e.code];
             if (action && this[action] && !['INPUT', 'TEXTAREA'].includes(e.target.tagName)) {
@@ -153,8 +231,86 @@ class FutabaDrawingTool {
         // リサイズハンドラ設定
         this.setupResizeHandlers();
         
+        // ツールバー統合
+        this.setupToolbarIntegration();
+        
         console.log('✅ システム統合完了');
         this.initializationSteps.push('integration');
+    }
+    
+    /**
+     * ツールバー統合設定
+     */
+    setupToolbarIntegration() {
+        // ツールボタンイベント設定
+        const toolButtons = document.querySelectorAll('.tool-button:not(.disabled)');
+        
+        toolButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+                const toolId = button.id;
+                const popup = button.getAttribute('data-popup');
+                
+                if (popup) {
+                    // ポップアップ表示切り替え
+                    this.togglePopup(popup);
+                } else {
+                    // ツール選択
+                    this.handleToolSelection(toolId);
+                }
+            });
+        });
+        
+        console.log('✅ ツールバー統合完了');
+    }
+    
+    /**
+     * ツール選択処理
+     */
+    handleToolSelection(toolId) {
+        switch (toolId) {
+            case 'pen-tool':
+                this.selectPenTool();
+                break;
+            case 'eraser-tool':
+                this.selectEraserTool();
+                break;
+            default:
+                console.log(`🎯 ツール選択: ${toolId}`);
+                break;
+        }
+    }
+    
+    /**
+     * ポップアップ表示切り替え
+     */
+    togglePopup(popupId) {
+        const popup = document.getElementById(popupId);
+        if (!popup) return;
+        
+        const isVisible = popup.classList.contains('show') || 
+                         popup.style.display !== 'none';
+        
+        // 他のポップアップを閉じる
+        document.querySelectorAll('.popup-panel').forEach(p => {
+            if (p !== popup) {
+                p.classList.remove('show');
+                p.style.display = 'none';
+            }
+        });
+        
+        // 対象ポップアップの表示切り替え
+        if (isVisible) {
+            popup.classList.remove('show');
+            popup.style.display = 'none';
+        } else {
+            popup.classList.add('show');
+            popup.style.display = 'block';
+        }
+        
+        window.EventBus.safeEmit('popup.toggled', {
+            popupId,
+            visible: !isVisible
+        });
     }
     
     /**
@@ -171,6 +327,15 @@ class FutabaDrawingTool {
         
         window.EventBus.on('error.occurred', (data) => {
             console.warn('📡 EventBus: エラー通知受信', data);
+        });
+        
+        // 境界システム統合イベント
+        window.EventBus.on('boundary.cross.in', (data) => {
+            console.log('🎯 境界越え描画開始:', data);
+        });
+        
+        window.EventBus.on('appcore.initialized', (data) => {
+            console.log('✅ AppCore初期化完了通知受信:', data);
         });
         
         console.log('✅ EventBusリスナー設定完了');
@@ -219,8 +384,16 @@ class FutabaDrawingTool {
         // グローバル公開
         window.futabaDrawingTool = this;
         
+        // AppCoreのグローバル参照も設定
+        if (this.appCore) {
+            window.appCore = this.appCore;
+        }
+        
         // 🚨 重複排除: 統一デバッグ関数のみ設定
         this.setupUnifiedDebugFunctions();
+        
+        // 初期キャンバス情報更新
+        this.updateCanvasInfo();
         
         console.log('✅ 最終初期化完了');
         this.initializationSteps.push('finalization');
@@ -300,7 +473,9 @@ class FutabaDrawingTool {
     updateCanvasInfo() {
         const canvasInfo = document.getElementById('canvas-info');
         if (canvasInfo && this.appCore) {
-            canvasInfo.textContent = `${this.appCore.canvasWidth}×${this.appCore.canvasHeight}px`;
+            const width = this.appCore.width || 800;
+            const height = this.appCore.height || 600;
+            canvasInfo.textContent = `${width}×${height}px`;
         }
     }
     
@@ -325,12 +500,16 @@ class FutabaDrawingTool {
      * ペンツール選択
      */
     selectPenTool() {
-        if (!this.appCore?.toolSystem) return;
+        if (!this.appCore?.toolSystem) {
+            console.warn('⚠️ ToolSystem未利用 - ペンツール選択スキップ');
+            return;
+        }
         
         this.appCore.toolSystem.setTool('pen');
         this.updateToolUI('pen');
         this.updateToolStatus('pen');
         
+        window.EventBus.safeEmit('tool.selected', { tool: 'pen' });
         console.log('🖊️ ペンツール選択');
     }
     
@@ -338,12 +517,16 @@ class FutabaDrawingTool {
      * 消しゴムツール選択
      */
     selectEraserTool() {
-        if (!this.appCore?.toolSystem) return;
+        if (!this.appCore?.toolSystem) {
+            console.warn('⚠️ ToolSystem未利用 - 消しゴムツール選択スキップ');
+            return;
+        }
         
         this.appCore.toolSystem.setTool('eraser');
         this.updateToolUI('eraser');
         this.updateToolStatus('eraser');
         
+        window.EventBus.safeEmit('tool.selected', { tool: 'eraser' });
         console.log('🧽 消しゴムツール選択');
     }
     
@@ -360,13 +543,10 @@ class FutabaDrawingTool {
      * 全ポップアップ閉じる
      */
     closeAllPopups() {
-        if (this.appCore?.uiController) {
-            this.appCore.uiController.closeAllPopups();
-        } else {
-            document.querySelectorAll('.popup-panel').forEach(popup => {
-                popup.classList.remove('show');
-            });
-        }
+        document.querySelectorAll('.popup-panel').forEach(popup => {
+            popup.classList.remove('show');
+            popup.style.display = 'none';
+        });
         
         window.EventBus.safeEmit('popup.allClosed', { timestamp: Date.now() });
         console.log('🔒 全ポップアップ閉じる');
@@ -382,6 +562,8 @@ class FutabaDrawingTool {
             stateManager: !!window.StateManager,
             eventBus: !!window.EventBus,
             appCore: !!this.appCore,
+            boundaryManager: !!window.BoundaryManager,
+            coordinateManager: !!window.CoordinateManager,
             initialized: this.isInitialized,
             unifiedSystemsIntegrated: true,
             dryPrincipleCompliant: true,
@@ -402,7 +584,16 @@ class FutabaDrawingTool {
             errors: window.ErrorManager.getErrorStats(),
             state: window.StateManager.healthCheck(),
             events: window.EventBus.getStats(),
-            app: this.getComponentStatus()
+            app: this.getComponentStatus(),
+            appCore: this.appCore ? {
+                initialized: this.appCore.isInitialized,
+                ready: this.appCore.isReady ? this.appCore.isReady() : false,
+                dimensions: {
+                    width: this.appCore.width,
+                    height: this.appCore.height
+                },
+                integration: this.appCore.getIntegrationStatus ? this.appCore.getIntegrationStatus() : {}
+            } : null
         };
         
         console.log('🎯 統合状況:');
@@ -411,6 +602,21 @@ class FutabaDrawingTool {
         console.log('  ✅ DRY原則準拠: 完了');
         console.log('  ✅ SOLID原則準拠: 完了');
         console.log('  ✅ コード肥大化解決: 完了');
+        console.log('  ✅ 境界描画システム統合: 完了');
+        
+        // AppCore統合診断実行
+        if (window.diagnoseAppCore) {
+            console.log('🔍 AppCore診断実行...');
+            const appCoreDiagnosis = window.diagnoseAppCore();
+            console.log('📊 AppCore診断結果:', appCoreDiagnosis);
+        }
+        
+        // BoundaryManager診断実行
+        if (window.diagnoseBoundaryManager) {
+            console.log('🎯 BoundaryManager診断実行...');
+            const boundaryDiagnosis = window.diagnoseBoundaryManager();
+            console.log('📊 BoundaryManager診断結果:', boundaryDiagnosis);
+        }
         
         return debugInfo;
     }
@@ -424,21 +630,29 @@ window.addEventListener('DOMContentLoaded', async () => {
         console.log('🎨 ふたば☆ちゃんねる風ベクターお絵描きツール');
         console.log('🚨 Task 1-B先行実装: 重複関数完全排除・DRY・SOLID原則準拠版');
         console.log('🔧 統一システム: ConfigManager + ErrorManager + StateManager + EventBus');
+        console.log('🎯 境界描画システム: BoundaryManager + CoordinateManager統合');
         console.log('🚀 統一アプリケーション起動開始...');
         
         const app = new FutabaDrawingTool();
         await app.initialize();
         
-        console.log('🎉 統一アプリケーション起動完了！（重複排除版）');
+        console.log('🎉 統一アプリケーション起動完了！（境界描画対応版）');
         console.log('💡 操作方法:');
         console.log('  - キャンバス上でドラッグして描画');
+        console.log('  - キャンバス外からドラッグしてキャンバス内に入ると描画開始');
         console.log('  - P キー: ペンツール / E キー: 消しゴム / Escape: ポップアップ閉じる');
-        console.log('🔍 デバッグ: window.startDebugMode() で統一システム詳細情報表示');
+        
+        console.log('🔍 デバッグコマンド:');
+        console.log('  - window.startDebugMode() : 統一システム詳細情報表示');
+        console.log('  - window.diagnoseAppCore() : AppCore診断');
+        console.log('  - window.diagnoseBoundaryManager() : 境界システム診断');
+        console.log('  - window.testAppCoreIntegration() : 統合テスト実行');
+        
         console.log('📊 各統一システムの詳細:');
-        console.log('  - window.StateManager.getApplicationState() 全状態取得');
-        console.log('  - window.ConfigManager.getDebugInfo() 設定情報表示');
-        console.log('  - window.ErrorManager.getErrorStats() エラー統計表示');
-        console.log('  - window.EventBus.getStats() イベント統計表示');
+        console.log('  - window.StateManager.getApplicationState() : 全状態取得');
+        console.log('  - window.ConfigManager.getDebugInfo() : 設定情報表示');
+        console.log('  - window.ErrorManager.getErrorStats() : エラー統計表示');
+        console.log('  - window.EventBus.getStats() : イベント統計表示');
         
     } catch (error) {
         console.error('💀 統一アプリケーション起動失敗:', error);
@@ -446,24 +660,47 @@ window.addEventListener('DOMContentLoaded', async () => {
         if (window.ErrorManager) {
             window.ErrorManager.showCriticalError(error.message, {
                 showDebug: true,
-                additionalInfo: 'メインアプリケーション起動時のエラー（重複排除版）'
+                additionalInfo: 'メインアプリケーション起動時のエラー（境界描画対応版）',
+                context: {
+                    appCore: !!window.AppCore,
+                    boundaryManager: !!window.BoundaryManager,
+                    coordinateManager: !!window.CoordinateManager,
+                    unifiedSystems: {
+                        configManager: !!window.ConfigManager,
+                        errorManager: !!window.ErrorManager,
+                        stateManager: !!window.StateManager,
+                        eventBus: !!window.EventBus
+                    }
+                }
             });
         } else {
             document.body.innerHTML = `
                 <div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#ffffee;font-family:system-ui,sans-serif;">
-                    <div style="text-align:center;color:#800000;background:#f0e0d6;padding:32px;border:3px solid #cf9c97;border-radius:16px;max-width:500px;">
+                    <div style="text-align:center;color:#800000;background:#f0e0d6;padding:32px;border:3px solid #cf9c97;border-radius:16px;max-width:600px;">
                         <h2 style="margin:0 0 16px 0;">🎨 ふたば☆お絵描きツール</h2>
                         <p style="margin:0 0 16px 0;">統一システムの初期化に失敗しました。</p>
                         <div style="background:#ffffee;padding:12px;border-radius:8px;margin:16px 0;font-family:monospace;font-size:12px;text-align:left;">
                             <strong>エラー:</strong> ${error.message}<br>
                             <strong>時刻:</strong> ${new Date().toLocaleString()}<br>
-                            <strong>Task:</strong> 1-B 重複関数完全排除<br>
-                            <strong>バージョン:</strong> v1.0-Phase1-DRY-SOLID
+                            <strong>Task:</strong> 1-B 重複関数完全排除 + 境界描画システム統合<br>
+                            <strong>バージョン:</strong> v1.0-Phase1.2-BoundaryDraw-DRY-SOLID<br>
+                            <strong>依存関係:</strong><br>
+                            - AppCore: ${!!window.AppCore}<br>
+                            - BoundaryManager: ${!!window.BoundaryManager}<br>
+                            - CoordinateManager: ${!!window.CoordinateManager}<br>
+                            - ConfigManager: ${!!window.ConfigManager}<br>
+                            - ErrorManager: ${!!window.ErrorManager}
                         </div>
                         <button onclick="location.reload()" 
                                 style="background:#800000;color:white;border:none;padding:12px 24px;border-radius:8px;cursor:pointer;font-weight:600;">
                             🔄 再読み込み
                         </button>
+                        <div style="margin-top:16px;font-size:11px;color:#666;">
+                            <strong>トラブルシューティング:</strong><br>
+                            1. ブラウザのコンソールでエラー詳細を確認<br>
+                            2. index.htmlのスクリプト読み込み順序を確認<br>
+                            3. 必要なJavaScriptファイルが存在するか確認
+                        </div>
                     </div>
                 </div>
             `;

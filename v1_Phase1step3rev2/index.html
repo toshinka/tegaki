@@ -92,19 +92,19 @@
                 </svg>
             </div>
             
-<div class="tool-button disabled" id="gif-tool" title="GIFアニメーション">
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-      <rect x="4" y="4" width="16" height="16" rx="2" />
-      <line x1="8" y1="4" x2="8" y2="20" />
-      <line x1="16" y1="4" x2="16" y2="20" />
-      <line x1="4" y1="8" x2="8" y2="8" />
-      <line x1="4" y1="16" x2="8" y2="16" />
-      <line x1="4" y1="12" x2="20" y2="12" />
-      <line x1="16" y1="8" x2="20" y2="8" />
-      <line x1="16" y1="16" x2="20" y2="16" />
-    </svg>
-</div>
+            <div class="tool-button disabled" id="gif-tool" title="GIFアニメーション">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                  <rect x="4" y="4" width="16" height="16" rx="2" />
+                  <line x1="8" y1="4" x2="8" y2="20" />
+                  <line x1="16" y1="4" x2="16" y2="20" />
+                  <line x1="4" y1="8" x2="8" y2="8" />
+                  <line x1="4" y1="16" x2="8" y2="16" />
+                  <line x1="4" y1="12" x2="20" y2="12" />
+                  <line x1="16" y1="8" x2="20" y2="8" />
+                  <line x1="16" y1="16" x2="20" y2="16" />
+                </svg>
+            </div>
             
             <div class="tool-button disabled" id="settings-tool" title="設定">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -478,7 +478,7 @@
     </script>
     
     <!-- ========================================= -->
-    <!-- 🎯 統一システム読み込み（順序重要） -->
+    <!-- 🎯 統一システム読み込み（順序重要・依存関係解決版） -->
     <!-- ========================================= -->
     
     <!-- Step 1: 基盤ユーティリティ -->
@@ -490,10 +490,42 @@
     <!-- Step 2: PixiJS拡張統合 -->
     <script src="libs/pixi-extensions.js"></script>
     
-    <!-- Step 3: コアシステム -->
+    <!-- Step 3: コアシステム（グローバル設定付き） -->
     <script src="js/app-core.js"></script>
+    <script>
+        // 🔧 AppCore グローバル設定（必須依存関係解決）
+        if (typeof AppCore !== 'undefined') {
+            window.AppCore = AppCore;
+            console.log('✅ AppCore グローバル設定完了');
+        } else {
+            console.error('❌ AppCore クラスが見つかりません');
+        }
+    </script>
     
-    <!-- Step 4: メインアプリケーション -->
+    <!-- Step 4: 境界・座標マネージャー（外部システム） -->
+    <script src="js/boundary-manager.js"></script>
+    <script>
+        // 🎯 BoundaryManager グローバル設定
+        if (typeof BoundaryManager !== 'undefined') {
+            window.BoundaryManager = BoundaryManager;
+            console.log('✅ BoundaryManager グローバル設定完了');
+        } else {
+            console.warn('⚠️ BoundaryManager クラスが見つかりません - オプション機能');
+        }
+    </script>
+    
+    <script src="js/coordinate-manager.js"></script>
+    <script>
+        // 📍 CoordinateManager グローバル設定
+        if (typeof CoordinateManager !== 'undefined') {
+            window.CoordinateManager = CoordinateManager;
+            console.log('✅ CoordinateManager グローバル設定完了');
+        } else {
+            console.warn('⚠️ CoordinateManager クラスが見つかりません - オプション機能');
+        }
+    </script>
+    
+    <!-- Step 5: メインアプリケーション -->
     <script src="js/main.js"></script>
     
     <!-- ========================================= -->
@@ -503,7 +535,7 @@
     <script>
         // 起動完了後の処理
         window.addEventListener('load', () => {
-            console.log('🎉 統一版 HTML + JavaScript 読み込み完了');
+            console.log('🎉 統一版 HTML + JavaScript 読み込み完了（依存関係解決版）');
             console.log('🔧 統一システム状況:');
             console.log(`  - ConfigManager: ${!!window.ConfigManager}`);
             console.log(`  - ErrorManager: ${!!window.ErrorManager}`);
@@ -511,6 +543,8 @@
             console.log(`  - EventBus: ${!!window.EventBus}`);
             console.log(`  - PixiExtensions: ${!!window.PixiExtensions}`);
             console.log(`  - AppCore: ${!!window.AppCore}`);
+            console.log(`  - BoundaryManager: ${!!window.BoundaryManager}`);
+            console.log(`  - CoordinateManager: ${!!window.CoordinateManager}`);
             
             if (window.ConfigManager) {
                 console.log(`📊 設定項目: ${window.ConfigManager.getDebugInfo().totalSettings}個`);
@@ -549,7 +583,19 @@
             console.log('  - window.getState() : 全状態取得');
             console.log('  - window.healthCheck() : 健全性チェック');
             console.log('  - window.startDebugMode() : デバッグモード開始');
-            console.log('  - window.iconManager.debug() : アイコンシステム診断');
+            console.log('  - window.diagnoseAppCore() : AppCore診断');
+            console.log('  - window.diagnoseBoundaryManager() : 境界システム診断');
+            console.log('  - window.testAppCoreIntegration() : 統合テスト実行');
+            
+            // 🚨 依存関係最終確認
+            const requiredSystems = ['PIXI', 'ConfigManager', 'ErrorManager', 'StateManager', 'EventBus', 'AppCore'];
+            const missingDeps = requiredSystems.filter(sys => !window[sys]);
+            
+            if (missingDeps.length === 0) {
+                console.log('✅ 全依存関係確認完了 - アプリケーション起動準備完了');
+            } else {
+                console.warn('⚠️ 不足依存関係:', missingDeps.join(', '));
+            }
         });
     </script>
 </body>
