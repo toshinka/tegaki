@@ -7,7 +7,6 @@
  * 🎯 SPLIT_THRESHOLD: 200行以下維持
  * 📋 PHASE_TARGET: Phase1統一化
  * 📋 V8_MIGRATION: v8状態監視対応準備済み
- * 🚨 API修正: updateComponentState、getApplicationState、healthCheckメソッド追加
  */
 
 /**
@@ -22,63 +21,69 @@ class StateManager {
         startTime: performance.now(),
         stateRequests: 0,
         lastUpdate: null,
-        components: new Map()
+        components: new Map() // ✅ コンポーネント状態管理
     };
     
     /**
-     * 🚨 API修正: コンポーネント状態更新（updateSystemState → updateComponentState）
+     * ✅ 統一API: コンポーネント状態更新
      * @param {string} component - コンポーネント名
      * @param {string} state - 状態
-     * @param {Object} data - 状態データ
+     * @param {Object} data - データ
      */
-    static updateComponentState(component, state, data = {}) {
+    static updateComponentState(component, state, data) {
         try {
             const timestamp = Date.now();
-            const componentState = {
-                state: state,
-                data: data,
-                timestamp: timestamp,
-                lastUpdated: timestamp
+            const stateData = {
+                component,
+                state,
+                data,
+                timestamp,
+                version: '1.0'
             };
             
-            this.monitoring.components.set(component, componentState);
+            // 状態を保存
+            this.monitoring.components.set(component, stateData);
+            this.monitoring.lastUpdate = timestamp;
             
-            console.log('📊 StateManager: ' + component + ' 状態更新 → ' + state);
+            console.log('📊 コンポーネント状態更新:', component, '->', state);
             
-            // EventBus通知（利用可能時）
-            if (window.EventBus && typeof window.EventBus.safeEmit === 'function') {
-                window.EventBus.safeEmit('state.component.updated', {
-                    component,
-                    state,
-                    data,
-                    timestamp
-                });
+            // イベント通知
+            if (window.EventBus) {
+                window.EventBus.safeEmit('state.component.updated', stateData);
             }
             
             return true;
             
         } catch (error) {
-            console.error('❌ StateManager.updateComponentState エラー:', error.message);
+            console.error('❌ コンポーネント状態更新エラー:', error);
+            
+            // エラー管理システム連携
+            if (window.ErrorManager) {
+                window.ErrorManager.showError('state-error', 'コンポーネント状態更新失敗: ' + error.message);
+            }
+            
             return false;
         }
     }
     
     /**
-     * コンポーネント状態取得
+     * ✅ 統一API: 特定コンポーネント状態取得
      * @param {string} component - コンポーネント名
-     * @returns {Object} コンポーネント状態
+     * @returns {Object|null} 状態データ
      */
     static getComponentState(component) {
-        return this.monitoring.components.get(component) || {
-            state: 'unknown',
-            data: {},
-            timestamp: null,
-            lastUpdated: null
-        };
+        try {
+            this.monitoring.stateRequests++;
+            return this.monitoring.components.get(component) || null;
+            
+        } catch (error) {
+            console.error('❌ コンポーネント状態取得エラー:', error);
+            return null;
+        }
     }
     
     /**
-     * アプリケーション全体状態取得（統一版）
+     * ✅ 統一API: アプリケーション全体状態取得（統一版）
      * @returns {Object} 完全な状態情報
      */
     static getApplicationState() {
@@ -93,20 +98,26 @@ class StateManager {
             errors: this.getErrorState(),
             config: this.getConfigState(),
             debug: this.getDebugState(),
-            components: this.getComponentStates()
+            components: this.getAllComponentStates() // ✅ コンポーネント状態追加
         };
     }
     
     /**
-     * 全コンポーネント状態取得
+     * ✅ 統一API: 全コンポーネント状態取得
      * @returns {Object} 全コンポーネント状態
      */
-    static getComponentStates() {
-        const components = {};
-        this.monitoring.components.forEach((state, component) => {
-            components[component] = state;
+    static getAllComponentStates() {
+        const states = {};
+        
+        this.monitoring.components.forEach((stateData, component) => {
+            states[component] = stateData;
         });
-        return components;
+        
+        return {
+            total: this.monitoring.components.size,
+            states: states,
+            lastUpdate: this.monitoring.lastUpdate
+        };
     }
     
     /**
@@ -118,9 +129,9 @@ class StateManager {
         const appCore = app ? app.appCore : null;
         
         return {
-            version: app ? app.version || 'unknown' : 'unknown',
-            isInitialized: app ? app.isInitialized || false : false,
-            initializationSteps: app ? app.initializationSteps || [] : [],
+            version: app ? app.version : 'unknown',
+            isInitialized: app ? app.isInitialized : false,
+            initializationSteps: app ? app.initializationSteps : [],
             hasAppCore: !!appCore,
             hasPixiApp: !!(appCore && appCore.app),
             hasDrawingContainer: !!(appCore && appCore.drawingContainer),
@@ -128,10 +139,10 @@ class StateManager {
             hasToolSystem: !!(appCore && appCore.toolSystem),
             hasUIController: !!(appCore && appCore.uiController),
             hasPerformanceMonitor: !!(appCore && appCore.performanceMonitor),
-            canvasSize: appCore ? (appCore.canvasWidth + '×' + appCore.canvasHeight) : 'unknown',
+            canvasSize: appCore ? appCore.canvasWidth + '×' + appCore.canvasHeight : 'unknown',
             canvasElement: !!document.getElementById('drawing-canvas'),
-            fallbackMode: appCore ? appCore.fallbackMode || false : false,
-            extensionsAvailable: appCore ? appCore.extensionsAvailable || false : false
+            fallbackMode: appCore ? appCore.fallbackMode : false,
+            extensionsAvailable: appCore ? appCore.extensionsAvailable : false
         };
     }
     
@@ -141,7 +152,7 @@ class StateManager {
      */
     static getUIState() {
         const uiController = window.futabaDrawingTool && window.futabaDrawingTool.appCore ? 
-                           window.futabaDrawingTool.appCore.uiController : null;
+                            window.futabaDrawingTool.appCore.uiController : null;
         
         // アクティブツール検出
         const activeToolButton = document.querySelector('.tool-button.active');
@@ -190,25 +201,24 @@ class StateManager {
     static getDrawingState() {
         const toolSystem = window.futabaDrawingTool && window.futabaDrawingTool.appCore ? 
                           window.futabaDrawingTool.appCore.toolSystem : null;
-        const appCore = window.futabaDrawingTool && window.futabaDrawingTool.appCore ? 
-                       window.futabaDrawingTool.appCore : null;
+        const appCore = window.futabaDrawingTool ? window.futabaDrawingTool.appCore : null;
         
         return {
             hasToolSystem: !!toolSystem,
-            currentTool: toolSystem ? toolSystem.currentTool || 'unknown' : 'unknown',
-            isDrawing: toolSystem ? toolSystem.isDrawing || false : false,
-            brushSize: toolSystem ? toolSystem.brushSize || 0 : 0,
-            brushColor: toolSystem ? toolSystem.brushColor || 0 : 0,
+            currentTool: toolSystem ? toolSystem.currentTool : 'unknown',
+            isDrawing: toolSystem ? toolSystem.isDrawing : false,
+            brushSize: toolSystem ? toolSystem.brushSize : 0,
+            brushColor: toolSystem ? toolSystem.brushColor : 0,
             brushColorHex: toolSystem && toolSystem.brushColor ? 
                           '#' + toolSystem.brushColor.toString(16).padStart(6, '0') : 'unknown',
-            opacity: toolSystem ? toolSystem.opacity || 0 : 0,
-            pressure: toolSystem ? toolSystem.pressure || 0 : 0,
-            smoothing: toolSystem ? toolSystem.smoothing || 0 : 0,
-            pathCount: appCore && appCore.paths ? appCore.paths.length || 0 : 0,
-            lastPoint: toolSystem ? toolSystem.lastPoint || null : null,
+            opacity: toolSystem ? toolSystem.opacity : 0,
+            pressure: toolSystem ? toolSystem.pressure : 0,
+            smoothing: toolSystem ? toolSystem.smoothing : 0,
+            pathCount: appCore && appCore.paths ? appCore.paths.length : 0,
+            lastPoint: toolSystem ? toolSystem.lastPoint : null,
             currentPath: !!(toolSystem && toolSystem.currentPath),
-            minDistance: toolSystem ? toolSystem.minDistance || 0 : 0,
-            extensionsAvailable: toolSystem ? toolSystem.extensionsAvailable || false : false
+            minDistance: toolSystem ? toolSystem.minDistance : 0,
+            extensionsAvailable: toolSystem ? toolSystem.extensionsAvailable : false
         };
     }
     
@@ -221,7 +231,7 @@ class StateManager {
                                   window.futabaDrawingTool.appCore.performanceMonitor : null;
         const app = window.futabaDrawingTool;
         
-        const initTime = app ? performance.now() - app.startTime : 0;
+        const initTime = app && app.startTime ? performance.now() - app.startTime : 0;
         const memoryInfo = performance.memory ? {
             used: Math.round(performance.memory.usedJSHeapSize / 1024 / 1024),
             total: Math.round(performance.memory.totalJSHeapSize / 1024 / 1024),
@@ -230,16 +240,16 @@ class StateManager {
         
         return {
             hasPerformanceMonitor: !!performanceMonitor,
-            isMonitoring: performanceMonitor ? performanceMonitor.isRunning || false : false,
-            currentFPS: performanceMonitor && performanceMonitor.metrics ? performanceMonitor.metrics.currentFPS || 0 : 0,
-            averageFPS: performanceMonitor && performanceMonitor.metrics ? performanceMonitor.metrics.averageFPS || 0 : 0,
-            minFPS: performanceMonitor && performanceMonitor.metrics ? performanceMonitor.metrics.minFPS || 0 : 0,
-            maxFPS: performanceMonitor && performanceMonitor.metrics ? performanceMonitor.metrics.maxFPS || 0 : 0,
+            isMonitoring: performanceMonitor ? performanceMonitor.isRunning : false,
+            currentFPS: performanceMonitor && performanceMonitor.metrics ? performanceMonitor.metrics.currentFPS : 0,
+            averageFPS: performanceMonitor && performanceMonitor.metrics ? performanceMonitor.metrics.averageFPS : 0,
+            minFPS: performanceMonitor && performanceMonitor.metrics ? performanceMonitor.metrics.minFPS : 0,
+            maxFPS: performanceMonitor && performanceMonitor.metrics ? performanceMonitor.metrics.maxFPS : 0,
             initTime: Math.round(initTime),
             memoryUsage: memoryInfo,
-            frameCount: performanceMonitor && performanceMonitor.metrics ? performanceMonitor.metrics.frameCount || 0 : 0,
-            updateCallbacks: performanceMonitor && performanceMonitor.updateCallbacks ? performanceMonitor.updateCallbacks.size || 0 : 0,
-            isHighPerformance: initTime < 3000 && (performanceMonitor && performanceMonitor.metrics ? performanceMonitor.metrics.currentFPS || 0 : 0) >= 50
+            frameCount: performanceMonitor && performanceMonitor.metrics ? performanceMonitor.metrics.frameCount : 0,
+            updateCallbacks: performanceMonitor && performanceMonitor.updateCallbacks ? performanceMonitor.updateCallbacks.size : 0,
+            isHighPerformance: initTime < 3000 && (performanceMonitor && performanceMonitor.metrics ? performanceMonitor.metrics.currentFPS : 0) >= 50
         };
     }
     
@@ -254,11 +264,11 @@ class StateManager {
         return {
             hasErrorManager: !!errorManager,
             appErrorLog: app && app.errorLog ? app.errorLog : [],
-            managerErrorLog: errorManager && typeof errorManager.getErrorLog === 'function' ? errorManager.getErrorLog() : [],
-            totalAppErrors: app && app.errorLog ? app.errorLog.length || 0 : 0,
-            totalManagerErrors: errorManager && typeof errorManager.getErrorLog === 'function' ? errorManager.getErrorLog().length : 0,
-            errorStats: errorManager && typeof errorManager.getErrorStats === 'function' ? errorManager.getErrorStats() : null,
-            lastError: app && app.errorLog && app.errorLog.length > 0 ? app.errorLog.slice(-1)[0] : null
+            managerErrorLog: errorManager ? errorManager.getErrorLog() : [],
+            totalAppErrors: app && app.errorLog ? app.errorLog.length : 0,
+            totalManagerErrors: errorManager ? errorManager.getErrorLog().length : 0,
+            errorStats: errorManager ? errorManager.getErrorStats() : null,
+            lastError: app && app.errorLog ? app.errorLog.slice(-1)[0] : null
         };
     }
     
@@ -275,12 +285,12 @@ class StateManager {
         
         return {
             hasConfigManager: true,
-            debugInfo: typeof configManager.getDebugInfo === 'function' ? configManager.getDebugInfo() : null,
-            canvasConfig: typeof configManager.getCanvasConfig === 'function' ? configManager.getCanvasConfig() : null,
-            drawingConfig: typeof configManager.getDrawingConfig === 'function' ? configManager.getDrawingConfig() : null,
-            performanceConfig: typeof configManager.getPerformanceConfig === 'function' ? configManager.getPerformanceConfig() : null,
-            colors: typeof configManager.getColors === 'function' ? configManager.getColors() : null,
-            v8Ready: typeof configManager.get === 'function' ? configManager.get('v8Migration.enabled') : false
+            debugInfo: configManager.getDebugInfo(),
+            canvasConfig: configManager.getCanvasConfig(),
+            drawingConfig: configManager.getDrawingConfig(),
+            performanceConfig: configManager.getPerformanceConfig(),
+            colors: configManager.getColors(),
+            v8Ready: configManager.get('v8Migration.enabled')
         };
     }
     
@@ -290,11 +300,10 @@ class StateManager {
      */
     static getDebugState() {
         return {
-            pixiVersion: window.PIXI && window.PIXI.VERSION ? window.PIXI.VERSION : 'not loaded',
+            pixiVersion: window.PIXI ? window.PIXI.VERSION : 'not loaded',
             pixiExtensions: !!window.PixiExtensions,
-            extensionsInitialized: window.PixiExtensions ? window.PixiExtensions.initialized || false : false,
-            extensionStats: window.PixiExtensions && typeof window.PixiExtensions.getStats === 'function' ? 
-                           window.PixiExtensions.getStats() : null,
+            extensionsInitialized: window.PixiExtensions ? window.PixiExtensions.initialized : false,
+            extensionStats: window.PixiExtensions && window.PixiExtensions.getStats ? window.PixiExtensions.getStats() : null,
             gsapAvailable: !!window.gsap,
             lodashAvailable: !!window._,
             hammerAvailable: !!window.Hammer,
@@ -302,7 +311,7 @@ class StateManager {
                 requests: this.monitoring.stateRequests,
                 uptime: Math.round(performance.now() - this.monitoring.startTime),
                 lastUpdate: this.monitoring.lastUpdate,
-                componentCount: this.monitoring.components.size
+                components: this.monitoring.components.size // ✅ コンポーネント数追加
             },
             domElements: this.getDOMElementsState(),
             browserInfo: {
@@ -366,7 +375,7 @@ class StateManager {
             fps: performance.currentFPS,
             initTime: performance.initTime + 'ms',
             errors: this.getErrorState().totalAppErrors,
-            components: this.monitoring.components.size
+            components: this.monitoring.components.size // ✅ コンポーネント数追加
         };
     }
     
@@ -413,7 +422,7 @@ class StateManager {
     }
     
     /**
-     * 🚨 API修正: 健全性チェック
+     * ✅ 統一API: 健全性チェック
      * @returns {Object} チェック結果
      */
     static healthCheck() {
@@ -453,17 +462,12 @@ class StateManager {
             warnings.push('エラーが発生: ' + state.errors.totalAppErrors + '件');
         }
         
-        // 統一システム依存性チェック
-        if (!window.ConfigManager) {
-            issues.push('ConfigManager未初期化');
-        }
-        
-        if (!window.ErrorManager) {
-            issues.push('ErrorManager未初期化');
-        }
-        
-        if (!window.EventBus) {
-            issues.push('EventBus未初期化');
+        // ✅ コンポーネント状態チェック
+        const componentStates = state.components.states;
+        for (const [component, componentData] of Object.entries(componentStates)) {
+            if (componentData.state === 'error' || componentData.state === 'failed') {
+                issues.push('コンポーネントエラー: ' + component);
+            }
         }
         
         return {
@@ -472,65 +476,85 @@ class StateManager {
             warnings,
             score: Math.max(0, 100 - issues.length * 20 - warnings.length * 5),
             timestamp: Date.now(),
-            componentStates: this.getComponentStates()
+            components: {
+                total: state.components.total,
+                initialized: Object.values(componentStates).filter(c => c.state === 'initialized').length,
+                failed: Object.values(componentStates).filter(c => c.state === 'failed' || c.state === 'error').length
+            }
         };
     }
     
     /**
-     * コンポーネント登録（オプション）
-     * @param {string} componentName - コンポーネント名
-     * @param {Function} stateProvider - 状態提供関数
+     * ✅ 統一API: コンポーネント状態リセット
+     * @param {string} component - コンポーネント名
      */
-    static registerComponent(componentName, stateProvider) {
-        if (typeof stateProvider === 'function') {
-            try {
-                const state = stateProvider();
-                this.updateComponentState(componentName, 'registered', state);
-                console.log('📋 StateManager: コンポーネント登録 → ' + componentName);
-            } catch (error) {
-                console.warn('⚠️ StateManager: コンポーネント登録失敗 → ' + componentName, error.message);
+    static resetComponentState(component) {
+        try {
+            if (this.monitoring.components.has(component)) {
+                this.monitoring.components.delete(component);
+                console.log('🔄 コンポーネント状態リセット:', component);
+                
+                // イベント通知
+                if (window.EventBus) {
+                    window.EventBus.safeEmit('state.component.reset', { component, timestamp: Date.now() });
+                }
+                
+                return true;
             }
+            return false;
+            
+        } catch (error) {
+            console.error('❌ コンポーネント状態リセットエラー:', error);
+            return false;
         }
     }
     
     /**
-     * コンポーネント登録解除
-     * @param {string} componentName - コンポーネント名
+     * ✅ 統一API: 全コンポーネント状態クリア
      */
-    static unregisterComponent(componentName) {
-        if (this.monitoring.components.has(componentName)) {
-            this.monitoring.components.delete(componentName);
-            console.log('📋 StateManager: コンポーネント登録解除 → ' + componentName);
+    static clearAllComponentStates() {
+        try {
+            const count = this.monitoring.components.size;
+            this.monitoring.components.clear();
+            
+            console.log('🗑️ 全コンポーネント状態クリア:', count + '件');
+            
+            // イベント通知
+            if (window.EventBus) {
+                window.EventBus.safeEmit('state.all.cleared', { count, timestamp: Date.now() });
+            }
+            
+            return count;
+            
+        } catch (error) {
+            console.error('❌ 全コンポーネント状態クリアエラー:', error);
+            return 0;
         }
     }
     
     /**
-     * 統計情報取得
-     * @returns {Object} StateManager統計
+     * ✅ デバッグ統計取得
+     * @returns {Object} 統計情報
      */
     static getStats() {
         return {
-            uptime: Math.round(performance.now() - this.monitoring.startTime),
-            requests: this.monitoring.stateRequests,
-            lastUpdate: this.monitoring.lastUpdate,
-            componentCount: this.monitoring.components.size,
-            components: Array.from(this.monitoring.components.keys())
+            monitoring: {
+                uptime: Math.round(performance.now() - this.monitoring.startTime),
+                stateRequests: this.monitoring.stateRequests,
+                lastUpdate: this.monitoring.lastUpdate,
+                componentsTracked: this.monitoring.components.size
+            },
+            components: this.getAllComponentStates(),
+            health: this.healthCheck(),
+            timestamp: Date.now()
         };
-    }
-    
-    /**
-     * 状態リセット（デバッグ用）
-     */
-    static reset() {
-        this.monitoring.components.clear();
-        this.monitoring.stateRequests = 0;
-        this.monitoring.lastUpdate = null;
-        console.log('🔄 StateManager: 状態リセット完了');
     }
 }
 
-// グローバル公開
-window.StateManager = StateManager;
+// ✅ グローバル公開（統一システム）
+if (typeof window !== 'undefined') {
+    window.StateManager = StateManager;
+}
 
 // 旧関数との互換性維持（統一移行のため）
 window.getAppState = () => {
@@ -545,38 +569,61 @@ window.getCoreState = () => StateManager.getCoreState();
 window.getDrawingState = () => StateManager.getDrawingState();
 window.healthCheck = () => StateManager.healthCheck();
 
-// 新API確認用デバッグ関数
-window.testStateManagerAPI = () => {
-    console.group('🧪 StateManager API テスト');
+// ✅ 統一システムデバッグコマンド
+window.checkUnifiedSystemsHealth = () => {
+    console.group('🏥 統一システム健全性チェック');
     
-    try {
-        // updateComponentState テスト
-        StateManager.updateComponentState('testComponent', 'testing', { test: true });
-        console.log('✅ updateComponentState: OK');
-        
-        // getApplicationState テスト
-        const appState = StateManager.getApplicationState();
-        console.log('✅ getApplicationState: OK', appState.components);
-        
-        // healthCheck テスト
-        const health = StateManager.healthCheck();
-        console.log('✅ healthCheck: OK', health.healthy ? '健全' : '問題あり');
-        
-        // getComponentState テスト
-        const componentState = StateManager.getComponentState('testComponent');
-        console.log('✅ getComponentState: OK', componentState);
-        
-        return { success: true, message: '全API正常動作' };
-        
-    } catch (error) {
-        console.error('❌ API テスト失敗:', error.message);
-        return { success: false, error: error.message };
-        
-    } finally {
-        console.groupEnd();
-    }
+    const systems = ['ConfigManager', 'ErrorManager', 'StateManager', 'EventBus'];
+    const health = {};
+    
+    systems.forEach(system => {
+        const systemObj = window[system];
+        health[system] = {
+            exists: !!systemObj,
+            methods: systemObj ? Object.getOwnPropertyNames(systemObj.prototype || systemObj) : [],
+            functional: testSystemBasicFunction(system)
+        };
+    });
+    
+    const allHealthy = systems.every(sys => health[sys].exists && health[sys].functional);
+    
+    console.log('📊 システム健全性:', allHealthy ? '✅ 正常' : '❌ 問題あり');
+    console.log('📋 詳細:', health);
+    console.groupEnd();
+    
+    return {
+        allHealthy,
+        systems: health,
+        timestamp: Date.now()
+    };
 };
 
-console.log('✅ StateManager API修正版 初期化完了');
+// システム基本機能テスト
+function testSystemBasicFunction(systemName) {
+    try {
+        const system = window[systemName];
+        if (!system) return false;
+        
+        switch (systemName) {
+            case 'ConfigManager':
+                return typeof system.get === 'function';
+            case 'ErrorManager':
+                return typeof system.showError === 'function';
+            case 'StateManager':
+                return typeof system.updateComponentState === 'function' &&
+                       typeof system.getApplicationState === 'function' &&
+                       typeof system.healthCheck === 'function';
+            case 'EventBus':
+                return typeof system.safeEmit === 'function';
+            default:
+                return true;
+        }
+    } catch (error) {
+        return false;
+    }
+}
+
+console.log('✅ StateManager 統一API版 初期化完了');
+console.log('💡 使用例: StateManager.updateComponentState("toolManager", "initialized", data)');
 console.log('💡 使用例: StateManager.getApplicationState() または window.getState()');
-console.log('🔧 API確認: window.testStateManagerAPI() で新API動作確認');
+console.log('💡 使用例: window.checkUnifiedSystemsHealth() で統一システム確認');

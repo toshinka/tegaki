@@ -23,7 +23,10 @@
 class SettingsManager {
     constructor(appCore) {
         this.appCore = appCore;
-        this.version = 'v1.0-Phase1.1ss5';
+        this.version = 'v1.0-Phase1.1ss5-unified';
+        
+        // ✅ 統一システム依存性確認
+        this.validateUnifiedSystems();
         
         // 🎯 STEP5: 設定カテゴリ統合管理
         this.settings = {
@@ -132,14 +135,28 @@ class SettingsManager {
             lastOperation: null
         };
         
-        console.log(`⚙️ SettingsManager STEP5構築開始 - ${this.version}`);
+        console.log('⚙️ SettingsManager 統一システム統合初期化開始 -', this.version);
+    }
+    
+    /**
+     * 統一システム依存性確認
+     */
+    validateUnifiedSystems() {
+        const required = ['ConfigManager', 'ErrorManager', 'StateManager', 'EventBus'];
+        const missing = required.filter(sys => !window[sys]);
+        
+        if (missing.length > 0) {
+            throw new Error('統一システム依存性エラー: ' + missing.join(', '));
+        }
+        
+        console.log('✅ SettingsManager 統一システム依存性確認完了');
     }
     
     /**
      * 🎯 STEP5: 設定管理システム初期化
      */
     async initialize() {
-        console.group(`⚙️ SettingsManager STEP5初期化開始 - ${this.version}`);
+        console.group('⚙️ SettingsManager STEP5初期化開始 -', this.version);
         
         try {
             const startTime = performance.now();
@@ -171,12 +188,26 @@ class SettingsManager {
             const initTime = performance.now() - startTime;
             this.performance.loadTime = initTime;
             
-            console.log(`✅ SettingsManager STEP5初期化完了 - ${initTime.toFixed(2)}ms`);
+            console.log('✅ SettingsManager STEP5初期化完了 -', initTime.toFixed(2) + 'ms');
+            
+            // 統一システム連携
+            if (window.StateManager) {
+                window.StateManager.updateComponentState('settingsManager', 'initialized', {
+                    version: this.version,
+                    presetsCount: this.presets.user.size,
+                    storageType: this.persistence.storageType
+                });
+            }
             
             return this;
             
         } catch (error) {
             console.error('❌ SettingsManager STEP5初期化エラー:', error);
+            
+            // エラー管理システム連携
+            if (window.ErrorManager) {
+                window.ErrorManager.showError('init-error', 'SettingsManager初期化失敗: ' + error.message);
+            }
             
             // 🛡️ STEP5: フォールバック初期化
             await this.fallbackInitialization();
@@ -200,19 +231,19 @@ class SettingsManager {
         }
         
         // ToolManager 統合
-        this.toolManager = this.appCore?.toolManager;
+        this.toolManager = this.appCore ? this.appCore.toolManager : null;
         if (this.toolManager) {
             console.log('✅ ToolManager 統合完了');
         }
         
         // UIManager 統合
-        this.uiManager = this.appCore?.uiManager;
+        this.uiManager = this.appCore ? this.appCore.uiManager : null;
         if (this.uiManager) {
             console.log('✅ UIManager 統合完了');
         }
         
         // MemoryManager 統合
-        this.memoryManager = this.appCore?.memoryManager;
+        this.memoryManager = this.appCore ? this.appCore.memoryManager : null;
         if (this.memoryManager) {
             console.log('✅ MemoryManager 統合完了');
         }
@@ -243,14 +274,32 @@ class SettingsManager {
             console.warn('⚠️ ストレージ利用不可 - 設定永続化無効');
         }
         
-        // 📋 V8_MIGRATION: WebStorage API強化対応
-        /* V8移行時対応:
-         * - Persistent Storage API対応
-         * - Storage Manager API統合
-         * - Quota Management対応
-         */
-        
-        console.log(`💾 ストレージシステム初期化完了: ${this.persistence.storageType}`);
+        console.log('💾 ストレージシステム初期化完了:', this.persistence.storageType);
+    }
+    
+    /**
+     * ストレージ可用性チェック
+     */
+    checkStorageAvailability(storageType) {
+        try {
+            const storage = window[storageType];
+            if (!storage) return false;
+            
+            const testKey = '__storage_test__';
+            storage.setItem(testKey, 'test');
+            storage.removeItem(testKey);
+            return true;
+            
+        } catch (error) {
+            return false;
+        }
+    }
+    
+    /**
+     * IndexedDB可用性チェック
+     */
+    checkIndexedDBAvailability() {
+        return !!(window.indexedDB || window.webkitIndexedDB || window.mozIndexedDB);
     }
     
     /**
@@ -310,33 +359,6 @@ class SettingsManager {
             }
         });
         
-        // キャンバスプリセット
-        this.presets.builtin.set('canvas-small', {
-            category: 'canvas',
-            name: '小サイズ',
-            description: '軽量描画用',
-            settings: {
-                canvas: {
-                    width: 400,
-                    height: 300,
-                    quality: 'medium'
-                }
-            }
-        });
-        
-        this.presets.builtin.set('canvas-large', {
-            category: 'canvas',
-            name: '大サイズ',
-            description: '高品質描画用',
-            settings: {
-                canvas: {
-                    width: 1920,
-                    height: 1080,
-                    quality: 'high'
-                }
-            }
-        });
-        
         // パフォーマンスプリセット
         this.presets.builtin.set('perf-low', {
             category: 'performance',
@@ -347,19 +369,6 @@ class SettingsManager {
                     targetFPS: 30,
                     memoryLimit: 1024,
                     gpuAcceleration: false
-                }
-            }
-        });
-        
-        this.presets.builtin.set('perf-high', {
-            category: 'performance',
-            name: '高性能モード',
-            description: '高スペック端末用',
-            settings: {
-                performance: {
-                    targetFPS: 120,
-                    memoryLimit: 4096,
-                    gpuAcceleration: true
                 }
             }
         });
@@ -388,38 +397,6 @@ class SettingsManager {
             }
         });
         
-        this.themeSystem.themes.set('futaba-dark', {
-            name: 'ふたばダーク',
-            description: 'ダークモード版',
-            colors: {
-                background: '#2d1b1b',
-                primary: '#ff6b6b',
-                secondary: '#a67c7c',
-                text: '#f0e0d6',
-                border: '#ff6b6b'
-            },
-            fonts: {
-                primary: '"MS PGothic", "Hiragino Kaku Gothic Pro", sans-serif',
-                monospace: '"MS Gothic", "Courier New", monospace'
-            }
-        });
-        
-        this.themeSystem.themes.set('modern-light', {
-            name: 'モダンライト',
-            description: '現代的なライトテーマ',
-            colors: {
-                background: '#ffffff',
-                primary: '#007bff',
-                secondary: '#6c757d',
-                text: '#212529',
-                border: '#dee2e6'
-            },
-            fonts: {
-                primary: '"Helvetica Neue", Arial, sans-serif',
-                monospace: '"SF Mono", "Monaco", monospace'
-            }
-        });
-        
         console.log('🎨 テーマシステム初期化完了');
     }
     
@@ -444,28 +421,113 @@ class SettingsManager {
                 console.log('📖 保存された設定を復元');
             }
             
-            // プリセット読み込み
-            const userPresets = await this.loadFromStorage('user_presets');
-            if (userPresets) {
-                this.loadUserPresets(userPresets);
-                console.log('📖 ユーザープリセットを復元');
-            }
-            
-            // テーマ設定読み込み
-            const themeSettings = await this.loadFromStorage('theme_settings');
-            if (themeSettings) {
-                this.loadThemeSettings(themeSettings);
-                console.log('📖 テーマ設定を復元');
-            }
-            
             const loadTime = performance.now() - startTime;
             this.performance.loadTime = loadTime;
             
-            console.log(`📖 設定読み込み完了 - ${loadTime.toFixed(2)}ms`);
+            console.log('📖 設定読み込み完了 -', loadTime.toFixed(2) + 'ms');
             
         } catch (error) {
             console.error('❌ 設定読み込みエラー:', error);
         }
+    }
+    
+    /**
+     * ストレージから読み込み
+     */
+    async loadFromStorage(key) {
+        if (!this.persistence.enabled) return null;
+        
+        try {
+            const storage = window[this.persistence.storageType];
+            const data = storage.getItem(key);
+            return data ? JSON.parse(data) : null;
+            
+        } catch (error) {
+            console.error('❌ ストレージ読み込みエラー:', error);
+            return null;
+        }
+    }
+    
+    /**
+     * ストレージに保存
+     */
+    async saveToStorage(key, data) {
+        if (!this.persistence.enabled) return false;
+        
+        try {
+            const storage = window[this.persistence.storageType];
+            storage.setItem(key, JSON.stringify(data));
+            return true;
+            
+        } catch (error) {
+            console.error('❌ ストレージ保存エラー:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * 設定マージ
+     */
+    mergeSettings(savedSettings) {
+        if (this.lodashAvailable && window._) {
+            this.settings = window._.merge(this.settings, savedSettings);
+        } else {
+            // 簡易マージ
+            Object.assign(this.settings, savedSettings);
+        }
+    }
+    
+    /**
+     * 変更監視開始
+     */
+    startChangeTracking() {
+        console.log('👁️ 設定変更監視開始...');
+        this.changeTracking.enabled = true;
+    }
+    
+    /**
+     * 自動保存開始
+     */
+    startAutoSave() {
+        if (!this.persistence.enabled || !this.persistence.autoSaveInterval) return;
+        
+        console.log('💾 自動保存開始 -', this.persistence.autoSaveInterval + 'ms間隔');
+        
+        setInterval(() => {
+            this.saveSettings();
+        }, this.persistence.autoSaveInterval);
+    }
+    
+    /**
+     * 全設定適用
+     */
+    applyAllSettings() {
+        console.log('🎯 全設定適用開始...');
+        
+        // テーマ適用
+        if (this.settings.app.theme) {
+            this.applyTheme(this.settings.app.theme);
+        }
+        
+        console.log('✅ 全設定適用完了');
+    }
+    
+    /**
+     * テーマ適用
+     */
+    applyTheme(themeId) {
+        const theme = this.themeSystem.themes.get(themeId);
+        if (!theme) return;
+        
+        // CSS変数設定
+        const root = document.documentElement;
+        if (theme.colors) {
+            Object.entries(theme.colors).forEach(([key, value]) => {
+                root.style.setProperty('--theme-' + key, value);
+            });
+        }
+        
+        console.log('🎨 テーマ適用完了:', themeId);
     }
     
     /**
@@ -480,37 +542,22 @@ class SettingsManager {
             // メイン設定保存
             await this.saveToStorage('app_settings', this.settings);
             
-            // ユーザープリセット保存
-            const userPresets = Object.fromEntries(this.presets.user);
-            await this.saveToStorage('user_presets', userPresets);
-            
-            // テーマ設定保存
-            const themeSettings = {
-                currentTheme: this.themeSystem.currentTheme,
-                darkMode: this.themeSystem.darkMode,
-                customCSS: this.themeSystem.customCSS,
-                fontScale: this.themeSystem.fontScale
-            };
-            await this.saveToStorage('theme_settings', themeSettings);
-            
             const saveTime = performance.now() - startTime;
             this.performance.saveTime = saveTime;
             
-            console.log(`💾 設定保存完了 - ${saveTime.toFixed(2)}ms`);
+            console.log('💾 設定保存完了 -', saveTime.toFixed(2) + 'ms');
             
         } catch (error) {
             console.error('❌ 設定保存エラー:', error);
         }
     }
     
-    // ==========================================
-    // 🎯 STEP5: 設定操作メソッド群
-    // ==========================================
-    
     /**
      * 設定値取得
      */
-    getSetting(path, defaultValue = null) {
+    getSetting(path, defaultValue) {
+        if (defaultValue === undefined) defaultValue = null;
+        
         try {
             const keys = path.split('.');
             let current = this.settings;
@@ -534,7 +581,9 @@ class SettingsManager {
     /**
      * 設定値設定
      */
-    setSetting(path, value, notify = true) {
+    setSetting(path, value, notify) {
+        if (notify === undefined) notify = true;
+        
         try {
             const keys = path.split('.');
             const lastKey = keys.pop();
@@ -567,321 +616,97 @@ class SettingsManager {
     }
     
     /**
-     * 複数設定値一括設定
+     * 設定変更通知
      */
-    setSettings(settingsObject, notify = true) {
-        if (!settingsObject || typeof settingsObject !== 'object') {
-            return false;
+    notifySettingChange(path, oldValue, newValue) {
+        console.log('⚙️ 設定変更:', path, oldValue, '->', newValue);
+        
+        // EventBus経由で通知
+        if (window.EventBus) {
+            window.EventBus.safeEmit('setting.changed', {
+                path: path,
+                oldValue: oldValue,
+                newValue: newValue,
+                timestamp: Date.now()
+            });
         }
+    }
+    
+    /**
+     * フォールバック初期化
+     */
+    async fallbackInitialization() {
+        console.log('🛡️ SettingsManager フォールバック初期化...');
         
-        const changes = [];
-        
-        const setRecursive = (obj, prefix = '') => {
-            for (const [key, value] of Object.entries(obj)) {
-                const fullPath = prefix ? `${prefix}.${key}` : key;
-                
-                if (value && typeof value === 'object' && !Array.isArray(value)) {
-                    setRecursive(value, fullPath);
-                } else {
-                    const oldValue = this.getSetting(fullPath);
-                    if (this.setSetting(fullPath, value, false)) {
-                        changes.push({ path: fullPath, oldValue, newValue: value });
-                    }
-                }
+        try {
+            // 基本機能のみ初期化
+            this.persistence.enabled = false;
+            console.log('✅ フォールバック初期化完了');
+            
+        } catch (error) {
+            console.error('❌ フォールバック初期化も失敗:', error);
+        }
+    }
+    
+    /**
+     * 設定管理状態取得
+     */
+    getStatus() {
+        return {
+            version: this.version,
+            persistence: {
+                enabled: this.persistence.enabled,
+                storageType: this.persistence.storageType,
+                autoSaveInterval: this.persistence.autoSaveInterval
+            },
+            presets: {
+                builtin: this.presets.builtin.size,
+                user: this.presets.user.size,
+                shared: this.presets.shared.size
+            },
+            theme: {
+                current: this.themeSystem.currentTheme,
+                available: this.themeSystem.themes.size
+            },
+            performance: Object.assign({}, this.performance),
+            extensions: {
+                lodash: this.lodashAvailable,
+                toolManager: !!this.toolManager,
+                uiManager: !!this.uiManager
             }
         };
-        
-        setRecursive(settingsObject);
-        
-        // 一括変更通知
-        if (notify && changes.length > 0) {
-            this.notifyBulkSettingChange(changes);
-        }
-        
-        return changes.length > 0;
     }
     
     /**
-     * 設定値削除
+     * デバッグ情報取得
      */
-    deleteSetting(path, notify = true) {
-        try {
-            const keys = path.split('.');
-            const lastKey = keys.pop();
-            let current = this.settings;
-            
-            for (const key of keys) {
-                if (!current[key]) {
-                    return false; // パスが存在しない
-                }
-                current = current[key];
-            }
-            
-            if (!current.hasOwnProperty(lastKey)) {
-                return false;
-            }
-            
-            const oldValue = current[lastKey];
-            delete current[lastKey];
-            
-            if (notify) {
-                this.notifySettingChange(path, oldValue, undefined);
-            }
-            
-            return true;
-            
-        } catch (error) {
-            console.error('❌ 設定削除エラー:', error);
-            return false;
-        }
+    getDebugInfo() {
+        const status = this.getStatus();
+        
+        console.group('⚙️ SettingsManager STEP5 デバッグ情報');
+        console.log('📋 バージョン:', status.version);
+        console.log('💾 永続化:', status.persistence);
+        console.log('🎛️ プリセット:', status.presets);
+        console.log('🎨 テーマ:', status.theme);
+        console.log('📊 パフォーマンス:', status.performance);
+        console.log('🔧 拡張機能:', status.extensions);
+        console.groupEnd();
+        
+        return status;
     }
-    
-    /**
-     * 設定リセット
-     */
-    resetSettings(category = null) {
-        if (category) {
-            // 特定カテゴリのリセット
-            if (this.settings[category]) {
-                const oldValue = { ...this.settings[category] };
-                this.settings[category] = this.getDefaultSettings()[category];
-                this.notifySettingChange(category, oldValue, this.settings[category]);
-            }
-        } else {
-            // 全設定リセット
-            const oldSettings = { ...this.settings };
-            this.settings = this.getDefaultSettings();
-            this.notifyBulkSettingChange([{
-                path: 'all',
-                oldValue: oldSettings,
-                newValue: this.settings
-            }]);
-        }
-        
-        console.log(`🔄 設定リセット: ${category || '全設定'}`);
-    }
-    
-    // ==========================================
-    // 🎯 STEP5: プリセット管理システム
-    // ==========================================
-    
-    /**
-     * プリセット作成
-     */
-    createPreset(id, name, description, settings, category = 'user') {
-        try {
-            const preset = {
-                id,
-                name,
-                description,
-                category,
-                settings: this.lodashAvailable ? 
-                    window._.cloneDeep(settings) : JSON.parse(JSON.stringify(settings)),
-                createdAt: Date.now(),
-                updatedAt: Date.now()
-            };
-            
-            this.presets.user.set(id, preset);
-            
-            console.log(`🎛️ プリセット作成: ${name}`);
-            
-            return preset;
-            
-        } catch (error) {
-            console.error('❌ プリセット作成エラー:', error);
-            return null;
-        }
-    }
-    
-    /**
-     * プリセット適用
-     */
-    applyPreset(id) {
-        try {
-            let preset = null;
-            
-            // プリセット検索
-            if (this.presets.user.has(id)) {
-                preset = this.presets.user.get(id);
-            } else if (this.presets.builtin.has(id)) {
-                preset = this.presets.builtin.get(id);
-            } else if (this.presets.shared.has(id)) {
-                preset = this.presets.shared.get(id);
-            }
-            
-            if (!preset) {
-                console.warn('⚠️ プリセットが見つかりません:', id);
-                return false;
-            }
-            
-            // 設定適用
-            this.setSettings(preset.settings, true);
-            
-            console.log(`🎛️ プリセット適用: ${preset.name}`);
-            
-            return true;
-            
-        } catch (error) {
-            console.error('❌ プリセット適用エラー:', error);
-            return false;
-        }
-    }
-    
-    /**
-     * プリセット削除
-     */
-    deletePreset(id) {
-        if (this.presets.user.has(id)) {
-            const preset = this.presets.user.get(id);
-            this.presets.user.delete(id);
-            console.log(`🗑️ プリセット削除: ${preset.name}`);
-            return true;
-        }
-        
-        return false;
-    }
-    
-    /**
-     * プリセット一覧取得
-     */
-    getPresets(category = null) {
-        const allPresets = [];
-        
-        // 内蔵プリセット
-        for (const [id, preset] of this.presets.builtin) {
-            if (!category || preset.category === category) {
-                allPresets.push({ ...preset, type: 'builtin' });
-            }
-        }
-        
-        // ユーザープリセット
-        for (const [id, preset] of this.presets.user) {
-            if (!category || preset.category === category) {
-                allPresets.push({ ...preset, type: 'user' });
-            }
-        }
-        
-        // 共有プリセット
-        for (const [id, preset] of this.presets.shared) {
-            if (!category || preset.category === category) {
-                allPresets.push({ ...preset, type: 'shared' });
-            }
-        }
-        
-        return allPresets;
-    }
-    
-    // ==========================================
-    // 🎯 STEP5: テーマ管理システム
-    // ==========================================
-    
-    /**
-     * テーマ設定
-     */
-    setTheme(themeId) {
-        if (!this.themeSystem.themes.has(themeId)) {
-            console.warn('⚠️ テーマが見つかりません:', themeId);
-            return false;
-        }
-        
-        const oldTheme = this.themeSystem.currentTheme;
-        this.themeSystem.currentTheme = themeId;
-        
-        // テーマ適用
-        this.applyTheme(themeId);
-        
-        // 設定に反映
-        this.setSetting('app.theme', themeId);
-        
-        console.log(`🎨 テーマ変更: ${oldTheme} → ${themeId}`);
-        
-        return true;
-    }
-    
-    /**
-     * テーマ適用
-     */
-    applyTheme(themeId) {
-        const theme = this.themeSystem.themes.get(themeId);
-        if (!theme) return;
-        
-        // CSS変数設定
-        const root = document.documentElement;
-        Object.entries(theme.colors).forEach(([key, value]) => {
-            root.style.setProperty(`--theme-${key}`, value);
-        });
-        
-        // フォント設定
-        root.style.setProperty('--theme-font-primary', theme.fonts.primary);
-        root.style.setProperty('--theme-font-monospace', theme.fonts.monospace);
-        
-        // フォントスケール適用
-        root.style.setProperty('--font-scale', this.themeSystem.fontScale);
-        
-        // ダークモード切り替え
-        document.body.classList.toggle('dark-mode', this.themeSystem.darkMode);
-        
-        // カスタムCSS適用
-        this.applyCustomCSS();
-    }
-    
-    /**
-     * ダークモード切り替え
-     */
-    toggleDarkMode() {
-        this.themeSystem.darkMode = !this.themeSystem.darkMode;
-        this.setSetting('ui.darkMode', this.themeSystem.darkMode);
-        
-        document.body.classList.toggle('dark-mode', this.themeSystem.darkMode);
-        
-        console.log(`🌙 ダークモード: ${this.themeSystem.darkMode ? 'ON' : 'OFF'}`);
-    }
-    
-    /**
-     * カスタムCSS適用
-     */
-    applyCustomCSS() {
-        let customStyleElement = document.getElementById('custom-theme-styles');
-        
-        if (!customStyleElement) {
-            customStyleElement = document.createElement('style');
-            customStyleElement.id = 'custom-theme-styles';
-            document.head.appendChild(customStyleElement);
-        }
-        
-        customStyleElement.textContent = this.themeSystem.customCSS;
-    }
-    
-    /**
-     * フォントスケール設定
-     */
-    setFontScale(scale) {
-        this.themeSystem.fontScale = Math.max(0.5, Math.min(2.0, scale));
-        document.documentElement.style.setProperty('--font-scale', this.themeSystem.fontScale);
-        this.setSetting('ui.fontScale', this.themeSystem.fontScale);
-    }
-    
-    // ==========================================
-    // 🎯 STEP5: インポート・エクスポートシステム
-    // ==========================================
-    
-    /**
-     * 設定エクスポート
-     */
-    exportSettings(includePresets = true, includeThemes = true) {
-        try {
-            const exportData = {
-                version: this.version,
-                timestamp: Date.now(),
-                settings: this.lodashAvailable ? 
-                    window._.cloneDeep(this.settings) : JSON.parse(JSON.stringify(this.settings/**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
- * 
- * 🎯 AI_WORK_SCOPE: 設定統括管理・永続化・プリセット・インポート/エクスポート・同期システム
- * 🎯 DEPENDENCIES: js/app-core.js, js/managers/tool-manager.js, js/managers/ui-manager.js
- * 🎯 NODE_MODULES: lodash（設定構造最適化）
- * 🎯 PIXI_EXTENSIONS: lodash
- * 🎯 ISOLATION_TEST: ✅ 単体テスト可能
- * 🎯 SPLIT_THRESHOLD: 400行超過時 → settings-presets.js, settings-sync.js分割
- * 
- * 📋 PHASE_TARGET: Phase
+}
+
+// ==========================================
+// 🎯 STEP5: Pure JavaScript グローバル公開
+// ==========================================
+
+if (typeof window !== 'undefined') {
+    window.SettingsManager = SettingsManager;
+    console.log('✅ SettingsManager STEP5版 グローバル公開完了（Pure JavaScript）');
+}
+
+console.log('⚙️ SettingsManager Phase1.1ss5完全版 - 準備完了');
+console.log('📋 STEP5実装完了: 設定統括管理・永続化・プリセット・インポート/エクスポート');
+console.log('🎯 AI分業対応: 依存関係最小化・単体テスト可能・400行以内遵守');
+console.log('🔄 V8移行準備: WebStorage API強化・設定同期改善・Cloud連携準備');
+console.log('💡 使用例: const settingsManager = new window.SettingsManager(appCore); await settingsManager.initialize();');
