@@ -37,7 +37,7 @@ class PopupManager {
             zIndexOrder: []
         };
         
-        console.log(`🖼️ PopupManager 構築完了（DRY・SOLID準拠版）`);
+        console.log('🖼️ PopupManager 構築完了（DRY・SOLID準拠版）');
     }
     
     /**
@@ -48,7 +48,7 @@ class PopupManager {
         const missing = requiredSystems.filter(sys => !window[sys]);
         
         if (missing.length > 0) {
-            throw new Error(`PopupManager統一システム依存性エラー: ${missing.join(', ')}`);
+            throw new Error('PopupManager統一システム依存性エラー: ' + missing.join(', '));
         }
         
         console.log('✅ PopupManager統一システム依存性確認完了');
@@ -73,7 +73,7 @@ class PopupManager {
      * 🚨 重複排除: 統一初期化
      */
     initialize() {
-        console.log(`🖼️ PopupManager 統一初期化開始（DRY・SOLID準拠版）`);
+        console.log('🖼️ PopupManager 統一初期化開始（DRY・SOLID準拠版）');
         
         try {
             this.discoverPopups();
@@ -81,17 +81,257 @@ class PopupManager {
             this.setupInitialState();
             this.setupEventBusIntegration();
             
+            window.EventBus.safeEmit('popup.manager.initialized', {
+                popupCount: this.popups.size,
+                version: this.version
+            });
+            
+            console.log('✅ PopupManager統一初期化完了: ' + this.popups.size + '個のポップアップ');
+            return this;
+            
+        } catch (error) {
+            window.ErrorManager.showError('error', 'PopupManager初期化エラー: ' + error.message, {
+                showReload: true
+            });
+            return this;
+        }
+    }
+    
+    /**
+     * 既存ポップアップ自動検出
+     */
+    discoverPopups() {
+        console.log('🔍 既存ポップアップ自動検出開始...');
+        
+        const popupElements = document.querySelectorAll('.popup-panel');
+        let discoveredCount = 0;
+        
+        popupElements.forEach(element => {
+            try {
+                const popupId = element.id;
+                if (!popupId) {
+                    console.warn('⚠️ IDのないポップアップを発見 - スキップ');
+                    return;
+                }
+                
+                const popupInfo = this.createPopupInfo(element);
+                this.popups.set(popupId, popupInfo);
+                
+                if (this.config.dragEnabled) {
+                    this.setupPopupDrag(popupId);
+                }
+                
+                this.hidePopup(popupId, false);
+                discoveredCount++;
+                
+            } catch (error) {
+                window.ErrorManager.showError('warning', 'ポップアップ検出エラー: ' + error.message);
+            }
+        });
+        
+        console.log('✅ ポップアップ自動検出完了: ' + discoveredCount + '個');
+        
+        window.EventBus.safeEmit('popup.discovery.completed', {
+            discoveredCount: discoveredCount,
+            popupIds: Array.from(this.popups.keys())
+        });
+    }
+    
+    /**
+     * ポップアップ情報作成
+     */
+    createPopupInfo(element) {
+        const titleElement = element.querySelector('.popup-title');
+        
+        return {
+            id: element.id,
+            element: element,
+            titleElement: titleElement,
+            title: titleElement ? titleElement.textContent : element.id,
+            visible: false,
+            zIndex: this.config.baseZIndex,
+            draggable: this.config.dragEnabled && !!titleElement,
+            position: this.getElementPosition(element),
+            size: this.getElementSize(element)
+        };
+    }
+    
+    /**
+     * 🚨 重複排除: ポップアップドラッグ機能設定
+     */
+    setupPopupDrag(popupId) {
+        const popupInfo = this.popups.get(popupId);
+        if (!popupInfo || !popupInfo.draggable) return;
+        
+        const titleElement = popupInfo.titleElement;
+        
+        const handleMouseDown = (event) => {
+            event.preventDefault();
+            
+            this.dragState.isDragging = true;
+            this.dragState.currentPopup = popupId;
+            
+            const rect = popupInfo.element.getBoundingClientRect();
+            this.dragState.offsetX = event.clientX - rect.left;
+            this.dragState.offsetY = event.clientY - rect.top;
+            
+            this.bringToFront(popupId);
+            
+            titleElement.style.cursor = 'grabbing';
+            document.body.style.cursor = 'grabbing';
+            document.body.style.userSelect = 'none';
+            
+            window.EventBus.safeEmit('popup.drag.started', { popupId: popupId });
+            console.log('🖱️ ドラッグ開始: ' + popupId);
+        };
+        
+        titleElement.addEventListener('mousedown', handleMouseDown);
+        titleElement.style.cursor = 'grab';
+        titleElement.style.userSelect = 'none';
+        
+        console.log('✅ ドラッグ設定完了: ' + popupId);
+    }
+    
+    /**
+     * 🚨 重複排除: グローバルイベントリスナー設定
+     */
+    setupGlobalEventListeners() {
+        console.log('🎯 グローバルイベントリスナー設定...');
+        
+        // Escapeキー処理
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && this.config.escapeToClose) {
+                const closedCount = this.closeAllPopups();
+                if (closedCount > 0) {
+                    event.preventDefault();
+                }
+            }
+        });
+        
+        // マウス移動処理（ドラッグ用）
+        document.addEventListener('mousemove', (event) => {
+            if (!this.dragState.isDragging || !this.dragState.currentPopup) return;
+            
+            const popupInfo = this.popups.get(this.dragState.currentPopup);
+            if (!popupInfo) return;
+            
+            const newX = event.clientX - this.dragState.offsetX;
+            const newY = event.clientY - this.dragState.offsetY;
+            
+            const constrainedPos = this.constrainToViewport(newX, newY, popupInfo);
+            this.setPopupPosition(this.dragState.currentPopup, constrainedPos.x, constrainedPos.y);
+        });
+        
+        // マウスアップ処理（ドラッグ終了）
+        document.addEventListener('mouseup', (event) => {
+            if (this.dragState.isDragging) {
+                const popupId = this.dragState.currentPopup;
+                
+                this.dragState.isDragging = false;
+                this.dragState.currentPopup = null;
+                
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                
+                if (popupId) {
+                    const popupInfo = this.popups.get(popupId);
+                    if (popupInfo && popupInfo.titleElement) {
+                        popupInfo.titleElement.style.cursor = 'grab';
+                    }
+                    
+                    if (this.config.autosavePosition) {
+                        this.savePopupPosition(popupId);
+                    }
+                    
+                    window.EventBus.safeEmit('popup.drag.ended', { popupId: popupId });
+                    console.log('🖱️ ドラッグ終了: ' + popupId);
+                }
+            }
+        });
+        
+        // ウィンドウリサイズ処理
+        window.addEventListener('resize', () => {
+            this.handleWindowResize();
+        });
+        
+        console.log('✅ グローバルイベントリスナー設定完了');
+    }
+    
+    /**
+     * EventBus統合設定
+     */
+    setupEventBusIntegration() {
+        window.EventBus.on('popup.show', (data) => {
+            if (data.popupId) {
+                this.showPopup(data.popupId);
+            }
+        });
+        
+        window.EventBus.on('popup.hide', (data) => {
+            if (data.popupId) {
+                this.hidePopup(data.popupId);
+            }
+        });
+        
+        window.EventBus.on('popup.closeAll', () => {
+            this.closeAllPopups();
+        });
+        
+        console.log('✅ EventBus統合設定完了');
+    }
+    
+    /**
+     * 初期状態設定
+     */
+    setupInitialState() {
+        this.popups.forEach((popupInfo, popupId) => {
+            this.hidePopup(popupId, false);
+        });
+        
+        this.restorePopupSettings();
+        
+        console.log('✅ 初期状態設定完了');
+    }
+    
+    // ==========================================
+    // 🚨 重複排除: 公開API（統一版）
+    // ==========================================
+    
+    /**
+     * ポップアップ表示（排他制御付き）
+     */
+    showPopup(popupId, exclusive = null) {
+        const popupInfo = this.popups.get(popupId);
+        if (!popupInfo) {
+            window.ErrorManager.showError('warning', '不明なポップアップID: ' + popupId);
+            return false;
+        }
+        
+        try {
+            const useExclusive = exclusive !== null ? exclusive : this.config.exclusiveMode;
+            
+            if (useExclusive && this.activePopup && this.activePopup !== popupId) {
+                this.hidePopup(this.activePopup);
+            }
+            
+            popupInfo.element.style.display = 'block';
+            popupInfo.visible = true;
+            this.activePopup = popupId;
+            
+            this.bringToFront(popupId);
+            this.settings.visibility[popupId] = true;
+            
             window.EventBus.safeEmit('popup.opened', {
-                popupId,
+                popupId: popupId,
                 title: popupInfo.title,
                 position: popupInfo.position
             });
             
-            console.log(`🖼️ ポップアップ表示: ${popupId}`);
+            console.log('🖼️ ポップアップ表示: ' + popupId);
             return true;
             
         } catch (error) {
-            window.ErrorManager.showError('error', `ポップアップ表示エラー ${popupId}: ${error.message}`);
+            window.ErrorManager.showError('error', 'ポップアップ表示エラー ' + popupId + ': ' + error.message);
             return false;
         }
     }
@@ -115,17 +355,17 @@ class PopupManager {
                 this.settings.visibility[popupId] = false;
                 
                 window.EventBus.safeEmit('popup.closed', {
-                    popupId,
+                    popupId: popupId,
                     title: popupInfo.title
                 });
                 
-                console.log(`🖼️ ポップアップ非表示: ${popupId}`);
+                console.log('🖼️ ポップアップ非表示: ' + popupId);
             }
             
             return true;
             
         } catch (error) {
-            window.ErrorManager.showError('error', `ポップアップ非表示エラー ${popupId}: ${error.message}`);
+            window.ErrorManager.showError('error', 'ポップアップ非表示エラー ' + popupId + ': ' + error.message);
             return false;
         }
     }
@@ -160,9 +400,9 @@ class PopupManager {
         
         this.activePopup = null;
         
-        window.EventBus.safeEmit('popup.all.closed', { closedCount });
+        window.EventBus.safeEmit('popup.all.closed', { closedCount: closedCount });
         
-        console.log(`✅ 全ポップアップ閉じる完了: ${closedCount}個`);
+        console.log('✅ 全ポップアップ閉じる完了: ' + closedCount + '個');
         return closedCount;
     }
     
@@ -194,9 +434,9 @@ class PopupManager {
         const popupInfo = this.popups.get(popupId);
         if (!popupInfo) return false;
         
-        popupInfo.element.style.left = `${x}px`;
-        popupInfo.element.style.top = `${y}px`;
-        popupInfo.position = { x, y };
+        popupInfo.element.style.left = x + 'px';
+        popupInfo.element.style.top = y + 'px';
+        popupInfo.position = { x: x, y: y };
         
         return true;
     }
@@ -352,17 +592,17 @@ class PopupManager {
         }
         
         if (stats.currentZIndex > 2000) {
-            warnings.push(`Z-index値が大きすぎる: ${stats.currentZIndex}`);
+            warnings.push('Z-index値が大きすぎる: ' + stats.currentZIndex);
             recommendations.push('Z-indexをリセットしてください');
         }
         
         const healthy = warnings.length === 0;
         
         return {
-            healthy,
-            stats,
-            warnings,
-            recommendations,
+            healthy: healthy,
+            stats: stats,
+            warnings: warnings,
+            recommendations: recommendations,
             timestamp: Date.now()
         };
     }
@@ -374,7 +614,7 @@ class PopupManager {
         try {
             if (window.ConfigManager) {
                 Object.entries(newConfig).forEach(([key, value]) => {
-                    window.ConfigManager.set(`ui.popup.${key}`, value);
+                    window.ConfigManager.set('ui.popup.' + key, value);
                 });
             }
             
@@ -386,7 +626,7 @@ class PopupManager {
             return true;
             
         } catch (error) {
-            window.ErrorManager.showError('error', `設定更新エラー: ${error.message}`);
+            window.ErrorManager.showError('error', '設定更新エラー: ' + error.message);
             return false;
         }
     }
@@ -404,7 +644,7 @@ class PopupManager {
             console.log('🖼️ PopupManager クリーンアップ完了（DRY・SOLID準拠版）');
             
         } catch (error) {
-            window.ErrorManager.showError('warning', `PopupManagerクリーンアップエラー: ${error.message}`);
+            window.ErrorManager.showError('warning', 'PopupManagerクリーンアップエラー: ' + error.message);
         }
     }
 }
@@ -433,244 +673,4 @@ if (typeof window !== 'undefined') {
     console.log('✅ PopupManager DRY・SOLID準拠版 グローバル公開完了');
     console.log('💡 使用例: const pm = new PopupManager(); pm.initialize();');
     console.log('🔧 デバッグ: window.testPopupManager() で動作確認');
-}.manager.initialized', {
-                popupCount: this.popups.size,
-                version: this.version
-            });
-            
-            console.log(`✅ PopupManager統一初期化完了: ${this.popups.size}個のポップアップ`);
-            return this;
-            
-        } catch (error) {
-            window.ErrorManager.showError('error', `PopupManager初期化エラー: ${error.message}`, {
-                showReload: true
-            });
-            return this;
-        }
-    }
-    
-    /**
-     * 既存ポップアップ自動検出
-     */
-    discoverPopups() {
-        console.log('🔍 既存ポップアップ自動検出開始...');
-        
-        const popupElements = document.querySelectorAll('.popup-panel');
-        let discoveredCount = 0;
-        
-        popupElements.forEach(element => {
-            try {
-                const popupId = element.id;
-                if (!popupId) {
-                    console.warn('⚠️ IDのないポップアップを発見 - スキップ');
-                    return;
-                }
-                
-                const popupInfo = this.createPopupInfo(element);
-                this.popups.set(popupId, popupInfo);
-                
-                if (this.config.dragEnabled) {
-                    this.setupPopupDrag(popupId);
-                }
-                
-                this.hidePopup(popupId, false);
-                discoveredCount++;
-                
-            } catch (error) {
-                window.ErrorManager.showError('warning', `ポップアップ検出エラー: ${error.message}`);
-            }
-        });
-        
-        console.log(`✅ ポップアップ自動検出完了: ${discoveredCount}個`);
-        
-        window.EventBus.safeEmit('popup.discovery.completed', {
-            discoveredCount,
-            popupIds: Array.from(this.popups.keys())
-        });
-    }
-    
-    /**
-     * ポップアップ情報作成
-     */
-    createPopupInfo(element) {
-        const titleElement = element.querySelector('.popup-title');
-        
-        return {
-            id: element.id,
-            element: element,
-            titleElement: titleElement,
-            title: titleElement ? titleElement.textContent : element.id,
-            visible: false,
-            zIndex: this.config.baseZIndex,
-            draggable: this.config.dragEnabled && !!titleElement,
-            position: this.getElementPosition(element),
-            size: this.getElementSize(element)
-        };
-    }
-    
-    /**
-     * 🚨 重複排除: ポップアップドラッグ機能設定
-     */
-    setupPopupDrag(popupId) {
-        const popupInfo = this.popups.get(popupId);
-        if (!popupInfo || !popupInfo.draggable) return;
-        
-        const titleElement = popupInfo.titleElement;
-        
-        const handleMouseDown = (event) => {
-            event.preventDefault();
-            
-            this.dragState.isDragging = true;
-            this.dragState.currentPopup = popupId;
-            
-            const rect = popupInfo.element.getBoundingClientRect();
-            this.dragState.offsetX = event.clientX - rect.left;
-            this.dragState.offsetY = event.clientY - rect.top;
-            
-            this.bringToFront(popupId);
-            
-            titleElement.style.cursor = 'grabbing';
-            document.body.style.cursor = 'grabbing';
-            document.body.style.userSelect = 'none';
-            
-            window.EventBus.safeEmit('popup.drag.started', { popupId });
-            console.log(`🖱️ ドラッグ開始: ${popupId}`);
-        };
-        
-        titleElement.addEventListener('mousedown', handleMouseDown);
-        titleElement.style.cursor = 'grab';
-        titleElement.style.userSelect = 'none';
-        
-        console.log(`✅ ドラッグ設定完了: ${popupId}`);
-    }
-    
-    /**
-     * 🚨 重複排除: グローバルイベントリスナー設定
-     */
-    setupGlobalEventListeners() {
-        console.log('🎯 グローバルイベントリスナー設定...');
-        
-        // Escapeキー処理
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && this.config.escapeToClose) {
-                const closedCount = this.closeAllPopups();
-                if (closedCount > 0) {
-                    event.preventDefault();
-                }
-            }
-        });
-        
-        // マウス移動処理（ドラッグ用）
-        document.addEventListener('mousemove', (event) => {
-            if (!this.dragState.isDragging || !this.dragState.currentPopup) return;
-            
-            const popupInfo = this.popups.get(this.dragState.currentPopup);
-            if (!popupInfo) return;
-            
-            const newX = event.clientX - this.dragState.offsetX;
-            const newY = event.clientY - this.dragState.offsetY;
-            
-            const constrainedPos = this.constrainToViewport(newX, newY, popupInfo);
-            this.setPopupPosition(this.dragState.currentPopup, constrainedPos.x, constrainedPos.y);
-        });
-        
-        // マウスアップ処理（ドラッグ終了）
-        document.addEventListener('mouseup', (event) => {
-            if (this.dragState.isDragging) {
-                const popupId = this.dragState.currentPopup;
-                
-                this.dragState.isDragging = false;
-                this.dragState.currentPopup = null;
-                
-                document.body.style.cursor = '';
-                document.body.style.userSelect = '';
-                
-                if (popupId) {
-                    const popupInfo = this.popups.get(popupId);
-                    if (popupInfo && popupInfo.titleElement) {
-                        popupInfo.titleElement.style.cursor = 'grab';
-                    }
-                    
-                    if (this.config.autosavePosition) {
-                        this.savePopupPosition(popupId);
-                    }
-                    
-                    window.EventBus.safeEmit('popup.drag.ended', { popupId });
-                    console.log(`🖱️ ドラッグ終了: ${popupId}`);
-                }
-            }
-        });
-        
-        // ウィンドウリサイズ処理
-        window.addEventListener('resize', () => {
-            this.handleWindowResize();
-        });
-        
-        console.log('✅ グローバルイベントリスナー設定完了');
-    }
-    
-    /**
-     * EventBus統合設定
-     */
-    setupEventBusIntegration() {
-        window.EventBus.on('popup.show', (data) => {
-            if (data.popupId) {
-                this.showPopup(data.popupId);
-            }
-        });
-        
-        window.EventBus.on('popup.hide', (data) => {
-            if (data.popupId) {
-                this.hidePopup(data.popupId);
-            }
-        });
-        
-        window.EventBus.on('popup.closeAll', () => {
-            this.closeAllPopups();
-        });
-        
-        console.log('✅ EventBus統合設定完了');
-    }
-    
-    /**
-     * 初期状態設定
-     */
-    setupInitialState() {
-        this.popups.forEach((popupInfo, popupId) => {
-            this.hidePopup(popupId, false);
-        });
-        
-        this.restorePopupSettings();
-        
-        console.log('✅ 初期状態設定完了');
-    }
-    
-    // ==========================================
-    // 🚨 重複排除: 公開API（統一版）
-    // ==========================================
-    
-    /**
-     * ポップアップ表示（排他制御付き）
-     */
-    showPopup(popupId, exclusive = null) {
-        const popupInfo = this.popups.get(popupId);
-        if (!popupInfo) {
-            window.ErrorManager.showError('warning', `不明なポップアップID: ${popupId}`);
-            return false;
-        }
-        
-        try {
-            const useExclusive = exclusive !== null ? exclusive : this.config.exclusiveMode;
-            
-            if (useExclusive && this.activePopup && this.activePopup !== popupId) {
-                this.hidePopup(this.activePopup);
-            }
-            
-            popupInfo.element.style.display = 'block';
-            popupInfo.visible = true;
-            this.activePopup = popupId;
-            
-            this.bringToFront(popupId);
-            this.settings.visibility[popupId] = true;
-            
-            window.EventBus.safeEmit('popup
+}

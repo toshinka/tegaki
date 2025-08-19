@@ -30,6 +30,10 @@ settings-manager.js修正: Uncaught SyntaxError: missing ) after argument list
 構文完整性確保: 括弧・引用符・文字列リテラルの完全一致
 Pure JavaScript準拠: ESM禁止・グローバル参照のみ
 統一システム依存確認: ConfigManager/ErrorManager/StateManager/EventBus依存性
+文字列リテラル: 絵文字・特殊文字は '⚙️' 形式必須
+括弧対応: { }, ( ), [ ] の完全一致確認
+return文: 関数内でのみ使用可能
+Pure JavaScript: ESM禁止・window.ClassName形式統一
 
 Phase 2: 統一システムAPI整合性修正（優先度: 🔥 高）
 問題: this.stateManager.updateSystemState is not a function
