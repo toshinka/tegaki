@@ -1,0 +1,237 @@
+# 🚨 StateManager.updateState不存在エラー - 根本原因分析・修正計画書
+
+## 📋 問題概要・根本原因分析
+
+### 🔍 エラー詳細
+```javascript
+❌ エラー: TypeError: window.StateManager.updateState is not a function
+📍 発生箇所: app-core.js:255 - AppCore.setupUnifiedSystemsIntegration()
+🎯 呼び出し: window.StateManager.updateState('appcore.initialized', true);
+```
+
+### 🔍 根本原因特定
+
+**実際のStateManagerの実装を確認した結果:**
+
+1. **StateManagerは状態取得専用クラス**
+   - `getApplicationState()`, `getCoreState()`, `getUIState()` etc.
+   - **状態更新機能は実装されていない**
+
+2. **設計思想の不整合**
+   - StateManager = 状態読み取り専用
+   - AppCoreは状態更新機能を期待
+   - インターフェース契約の不一致
+
+3. **統一システムの設計課題**
+   - 状態管理の責任範囲が不明確
+   - 更新機能と取得機能の分離不足
+
+## 🎯 修正戦略分析
+
+### Option A: モグラ叩き的修正（推奨しない）
+```javascript
+// 単純にupdateState呼び出しを削除・コメントアウト
+// window.StateManager.updateState('appcore.initialized', true); // 削除
+
+❌ 問題:
+- 根本的な設計問題を解決しない
+- 他の箇所でも同様のエラーが発生する可能性
+- 状態管理の一貫性が失われる
+```
+
+### Option B: StateManagerへの更新機能追加（中間解）
+```javascript
+// StateManager.updateState()メソッドを追加実装
+
+✅ メリット:
+- インターフェース統一
+- 既存コードの互換性維持
+
+❌ デメリット:
+- StateManagerの責任範囲拡大
+- 単一責任原則違反の可能性
+```
+
+### Option C: 状態管理システム設計見直し（推奨）
+```javascript
+// 責任分離による設計修正:
+// StateManager: 状態取得専用（現状維持）
+// AppCore: 内部状態管理（updateState削除）
+// EventBus: 状態変更通知（既存活用）
+
+✅ メリット:
+- 単一責任原則準拠
+- 設計思想の一貫性
+- 拡張性・保守性向上
+
+❌ デメリット:
+- 修正範囲がやや広い
+```
+
+## 🔧 推奨修正計画：Option C（設計見直し版）
+
+### 修正方針
+1. **StateManagerは状態取得専用として維持**
+2. **AppCoreは内部状態管理に集中**
+3. **EventBusで状態変更通知**
+4. **統一システムの責任範囲明確化**
+
+### 具体的修正内容
+
+#### 1. AppCore修正版
+```javascript
+// setupUnifiedSystemsIntegration() 修正
+setupUnifiedSystemsIntegration() {
+    // ConfigManager設定
+    if (window.ConfigManager) {
+        this.config = window.ConfigManager.getAppCoreConfig();
+    }
+    
+    // EventBusリスナー設定
+    if (window.EventBus) {
+        window.EventBus.on('canvas.resize', this.handleCanvasResize.bind(this));
+        window.EventBus.on('appcore.destroy', this.destroy.bind(this));
+    }
+    
+    // ❌ 削除: StateManager.updateState呼び出し
+    // ✅ 代替: EventBusで状態変更通知
+    this.safeEmitEvent('appcore.state.changed', {
+        initialized: true,
+        dimensions: { width: this.width, height: this.height }
+    });
+}
+```
+
+#### 2. 状態変更通知パターン統一
+```javascript
+// AppCore内での状態変更時
+this.safeEmitEvent('appcore.state.changed', {
+    property: 'dimensions',
+    value: { width: newWidth, height: newHeight },
+    timestamp: Date.now()
+});
+
+// 他のコンポーネントでの状態変更監視
+window.EventBus.on('appcore.state.changed', (data) => {
+    console.log('AppCore状態変更:', data);
+    // 必要に応じて処理
+});
+```
+
+#### 3. StateManager機能拡張（最小限）
+```javascript
+// StateManager.js - 状態変更イベントの記録機能追加
+class StateManager {
+    static stateChangeHistory = [];
+    
+    // 状態変更履歴記録（EventBusリスナー）
+    static recordStateChange(eventName, data) {
+        this.stateChangeHistory.push({
+            event: eventName,
+            data: data,
+            timestamp: Date.now()
+        });
+        
+        // 履歴サイズ制限
+        if (this.stateChangeHistory.length > 100) {
+            this.stateChangeHistory.shift();
+        }
+    }
+    
+    // 状態変更履歴取得
+    static getStateChangeHistory() {
+        return this.stateChangeHistory;
+    }
+}
+
+// EventBusリスナー設定
+window.EventBus.on('appcore.state.changed', (data) => {
+    StateManager.recordStateChange('appcore.state.changed', data);
+});
+```
+
+## 🚀 実装計画
+
+### Phase 1: 緊急修正（30分）
+1. AppCore内の`updateState`呼び出し削除
+2. EventBusによる状態通知への置き換え
+3. 動作確認・エラー解消確認
+
+### Phase 2: 設計統一化（1時間）
+1. 状態管理パターンの統一化
+2. StateManager機能拡張（最小限）
+3. 他コンポーネントでの同様問題の修正
+
+### Phase 3: 品質保証（30分）
+1. 統合テスト実行
+2. 状態管理動作確認
+3. パフォーマンス検証
+
+## 🎯 修正効果予測
+
+### 技術効果
+```javascript
+✅ エラー解消: updateState不存在エラー完全解決
+✅ 設計統一: 状態管理の責任範囲明確化
+✅ 拡張性向上: EventBusパターンによる疎結合
+✅ 保守性向上: 単一責任原則準拠
+```
+
+### パフォーマンス効果
+```javascript
+⚡ 初期化速度: updateState削除により若干高速化
+📊 メモリ使用量: 状態変更履歴による微増（最大100件制限）
+🔄 イベント処理: EventBusパターンによる統一化
+```
+
+## 🔍 他への影響調査
+
+### 同様のエラー発生可能性
+```javascript
+検索対象: "StateManager.updateState" または ".updateState("
+
+予想される発生箇所:
+1. main.js内での状態更新処理
+2. 各Manager内での統一システム呼び出し
+3. ツール選択時の状態更新処理
+
+対策: 一括検索・置換による修正
+```
+
+### 依存関係への影響
+```javascript
+✅ 影響なし: ConfigManager（設定取得のみ）
+✅ 影響なし: ErrorManager（エラー管理のみ）
+✅ 影響なし: EventBus（イベント処理強化）
+⚠️ 要確認: StateManager依存コンポーネント
+```
+
+## 📊 リスク評価
+
+### 低リスク要因
+- 修正範囲が明確で限定的
+- 既存の動作に大きな影響なし
+- EventBusパターンは既に実装済み
+
+### 注意事項
+- 他のupdateState呼び出し箇所の確認必要
+- 状態管理の一貫性維持が重要
+- テスト範囲の拡大が必要
+
+## 🎯 結論・推奨アクション
+
+**推奨: Option C（設計見直し版）による修正**
+
+### 理由
+1. **根本的解決**: 設計思想の不整合を解消
+2. **将来の安定性**: 同様のエラーを予防
+3. **コード品質向上**: DRY・SOLID原則準拠
+4. **保守性向上**: 責任範囲の明確化
+
+### 次のステップ
+1. 緊急修正実装（AppCore修正）
+2. 全プロジェクト内でupdateState検索・置換
+3. 統合テスト実行・動作確認
+4. ドキュメント更新（状態管理ガイドライン）
+
+*この修正により、境界描画システムの基盤が安定し、Phase1.2の完了に向けた準備が整います。*

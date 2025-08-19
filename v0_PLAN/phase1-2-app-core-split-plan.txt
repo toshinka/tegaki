@@ -1,0 +1,2260 @@
+# 🏗️ app-core.js分割計画＋キャンバス境界描画改修統合計画書 Phase1.2
+
+## 📋 統合計画概要
+
+### 🎯 統合目標
+- **肥大化解決**: app-core.js分割による責任分界明確化
+- **先行基盤整備**: boundary-manager.js・coordinate-manager.js先行実装
+- **境界描画問題解決**: キャンバス境界越え描画対応
+- **統一システム完全活用**: DRY・SOLID原則準拠の分割設計
+
+### 🚨 分割対象問題・影響範囲
+```javascript
+現在のapp-core.js課題:
+📊 ファイルサイズ: 650行超過（500行制限違反）
+🔄 責任範囲: 7つの責任が混在（単一責任原則違反）
+🎯 境界処理: 境界イベント処理が未分離（今回修正対象）
+📐 座標変換: 座標処理ロジックが分散（今回分離対象）
+🔧 初期化処理: 複数システム初期化が混在
+⚡ パフォーマンス: 監視機能が本体に混在
+🎨 UI制御: UI処理が本体に依存
+```
+
+---
+
+## 🔄 Phase1.2-PRE: app-core.js分割実装（先行作業）
+
+### STEP1: boundary-manager.js実装（優先度：最高）
+**対象**: キャンバス境界処理専用システム
+**期間**: 1日
+**目的**: 境界描画問題修復の基盤構築
+
+```javascript
+// managers/boundary-manager.js（新規作成）
+/**
+ * 🎯 キャンバス境界管理システム
+ * 🎯 AI_WORK_SCOPE: 境界越えイベント処理・境界判定・境界描画制御
+ * 🎯 DEPENDENCIES: ConfigManager, ErrorManager, EventBus, coordinate-manager.js
+ * 🎯 UNIFIED: ConfigManager(境界設定), ErrorManager(境界エラー), EventBus(境界イベント)
+ * 🎯 ISOLATION_TEST: ✅ 単体テスト可能
+ */
+
+class BoundaryManager {
+    constructor() {
+        this.validateUnifiedSystems();
+        this.config = ConfigManager.get('canvas.boundary');
+        this.coordinateManager = null; // 後で依存注入
+        
+        // 境界追跡状態
+        this.isTrackingOutside = false;
+        this.outsidePointer = null;
+        this.boundaryMargin = this.config.margin || 20;
+        this.expandedHitArea = null;
+        
+        console.log('🎯 BoundaryManager 初期化完了（統一システム統合版）');
+    }
+    
+    validateUnifiedSystems() {
+        const required = ['ConfigManager', 'ErrorManager', 'EventBus'];
+        const missing = required.filter(sys => !window[sys]);
+        if (missing.length > 0) {
+            throw new Error(`BoundaryManager: 統一システム依存不足: ${missing.join(', ')}`);
+        }
+    }
+    
+    /**
+     * 🎯 境界管理システム初期化
+     */
+    initialize(canvasElement, coordinateManager) {
+        try {
+            this.coordinateManager = coordinateManager;
+            this.canvasElement = canvasElement;
+            
+            // 境界追跡システム設定
+            this.initializeBoundaryTracking();
+            
+            // 拡張ヒットエリア作成
+            this.createExpandedHitArea();
+            
+            console.log('✅ BoundaryManager 初期化完了');
+            
+            EventBus.safeEmit('boundary.manager.initialized', {
+                margin: this.boundaryMargin,
+                config: this.config
+            });
+            
+        } catch (error) {
+            ErrorManager.showError('boundary-init', 
+                `境界管理初期化失敗: ${error.message}`, 
+                { config: this.config }
+            );
+            throw error;
+        }
+    }
+    
+    /**
+     * 🎯 グローバル境界追跡システム
+     */
+    initializeBoundaryTracking() {
+        // document全体でPointerイベント監視
+        document.addEventListener('pointerdown', this.handleGlobalPointerDown.bind(this));
+        document.addEventListener('pointermove', this.handleGlobalPointerMove.bind(this));
+        document.addEventListener('pointerup', this.handleGlobalPointerUp.bind(this));
+        
+        console.log('✅ グローバル境界追跡システム開始');
+    }
+    
+    /**
+     * 🎯 拡張ヒットエリア作成
+     */
+    createExpandedHitArea() {
+        if (!this.canvasElement) return null;
+        
+        const rect = this.canvasElement.getBoundingClientRect();
+        this.expandedHitArea = {
+            left: rect.left - this.boundaryMargin,
+            top: rect.top - this.boundaryMargin,
+            right: rect.right + this.boundaryMargin,
+            bottom: rect.bottom + this.boundaryMargin
+        };
+        
+        return this.expandedHitArea;
+    }
+    
+    /**
+     * 🎯 グローバルポインターダウン処理
+     */
+    handleGlobalPointerDown(event) {
+        try {
+            const canvasRect = this.canvasElement.getBoundingClientRect();
+            const isInsideCanvas = this.isPointInCanvas(event.clientX, event.clientY, canvasRect);
+            
+            if (!isInsideCanvas) {
+                // キャンバス外ポインター検出
+                this.isTrackingOutside = true;
+                this.outsidePointer = {
+                    id: event.pointerId,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    timestamp: Date.now()
+                };
+                
+                EventBus.safeEmit('boundary.outside.start', {
+                    pointer: this.outsidePointer,
+                    canvasRect
+                });
+                
+                console.log(`🎯 境界外ポインター検出: (${event.clientX}, ${event.clientY})`);
+            }
+            
+        } catch (error) {
+            ErrorManager.showError('boundary-tracking', 
+                `境界追跡エラー: ${error.message}`, 
+                { event: event.type, pointerId: event.pointerId }
+            );
+        }
+    }
+    
+    /**
+     * 🎯 グローバルポインター移動処理
+     */
+    handleGlobalPointerMove(event) {
+        if (!this.isTrackingOutside || event.pointerId !== this.outsidePointer?.id) {
+            return;
+        }
+        
+        try {
+            const canvasRect = this.canvasElement.getBoundingClientRect();
+            const isInsideCanvas = this.isPointInCanvas(event.clientX, event.clientY, canvasRect);
+            
+            if (isInsideCanvas) {
+                // 境界越えイン検出
+                this.handleBoundaryCrossIn(event, canvasRect);
+            }
+            
+        } catch (error) {
+            ErrorManager.showError('boundary-cross', 
+                `境界越え処理エラー: ${error.message}`, 
+                { event: event.type, pointerId: event.pointerId }
+            );
+        }
+    }
+    
+    /**
+     * 🎯 境界越えイン処理（核心機能）
+     */
+    handleBoundaryCrossIn(event, canvasRect) {
+        if (!this.coordinateManager) {
+            console.warn('⚠️ CoordinateManager が利用できません');
+            return;
+        }
+        
+        // キャンバス座標変換
+        const canvasCoords = this.coordinateManager.screenToCanvas(
+            event.clientX, event.clientY, canvasRect
+        );
+        
+        // 境界越え描画開始イベント発火
+        EventBus.safeEmit('boundary.cross.in', {
+            position: canvasCoords,
+            pressure: event.pressure || 0.5,
+            pointerId: event.pointerId,
+            originalEvent: event,
+            fromOutside: true
+        });
+        
+        console.log(`🎯 境界越えイン: (${canvasCoords.x.toFixed(1)}, ${canvasCoords.y.toFixed(1)})`);
+        
+        // 追跡状態リセット
+        this.isTrackingOutside = false;
+        this.outsidePointer = null;
+    }
+    
+    /**
+     * 🎯 グローバルポインターアップ処理
+     */
+    handleGlobalPointerUp(event) {
+        if (this.isTrackingOutside && event.pointerId === this.outsidePointer?.id) {
+            // 境界外で終了
+            this.isTrackingOutside = false;
+            this.outsidePointer = null;
+            
+            EventBus.safeEmit('boundary.outside.end', {
+                pointerId: event.pointerId
+            });
+        }
+    }
+    
+    /**
+     * 🎯 点がキャンバス内かチェック
+     */
+    isPointInCanvas(clientX, clientY, canvasRect) {
+        return clientX >= canvasRect.left && 
+               clientX <= canvasRect.right && 
+               clientY >= canvasRect.top && 
+               clientY <= canvasRect.bottom;
+    }
+    
+    /**
+     * 🎯 境界状態取得（診断・デバッグ用）
+     */
+    getBoundaryState() {
+        return {
+            isTrackingOutside: this.isTrackingOutside,
+            outsidePointer: this.outsidePointer,
+            boundaryMargin: this.boundaryMargin,
+            expandedHitArea: this.expandedHitArea,
+            config: this.config
+        };
+    }
+    
+    /**
+     * 🎯 境界管理システム破棄
+     */
+    destroy() {
+        document.removeEventListener('pointerdown', this.handleGlobalPointerDown.bind(this));
+        document.removeEventListener('pointermove', this.handleGlobalPointerMove.bind(this));
+        document.removeEventListener('pointerup', this.handleGlobalPointerUp.bind(this));
+        
+        this.isTrackingOutside = false;
+        this.outsidePointer = null;
+        
+        console.log('🎯 BoundaryManager 破棄完了');
+    }
+}
+
+// グローバル登録
+if (typeof window !== 'undefined') {
+    window.BoundaryManager = BoundaryManager;
+    console.log('🎯 BoundaryManager グローバル登録完了');
+}
+```
+
+### STEP2: coordinate-manager.js実装（優先度：高）
+**対象**: 座標変換処理専用システム
+**期間**: 0.5日
+**目的**: 座標処理ロジックの統一・分離
+
+```javascript
+// js/utils/coordinate-manager.js（新規作成）
+/**
+ * 📐 座標変換管理システム
+ * 🎯 AI_WORK_SCOPE: スクリーン座標・キャンバス座標・PixiJS座標変換
+ * 🎯 DEPENDENCIES: ConfigManager, ErrorManager
+ * 🎯 UNIFIED: ConfigManager(キャンバス設定), ErrorManager(座標エラー)
+ * 🎯 ISOLATION_TEST: ✅ 単体テスト可能・数学的確定処理
+ */
+
+class CoordinateManager {
+    constructor() {
+        this.validateUnifiedSystems();
+        this.canvasConfig = ConfigManager.getCanvasConfig();
+        
+        // 座標変換基準
+        this.canvasWidth = this.canvasConfig.width;
+        this.canvasHeight = this.canvasConfig.height;
+        
+        console.log('📐 CoordinateManager 初期化完了（統一システム統合版）');
+    }
+    
+    validateUnifiedSystems() {
+        const required = ['ConfigManager', 'ErrorManager'];
+        const missing = required.filter(sys => !window[sys]);
+        if (missing.length > 0) {
+            throw new Error(`CoordinateManager: 統一システム依存不足: ${missing.join(', ')}`);
+        }
+    }
+    
+    /**
+     * 📐 スクリーン座標 → キャンバス座標変換
+     */
+    screenToCanvas(screenX, screenY, canvasRect) {
+        try {
+            if (!canvasRect) {
+                throw new Error('canvasRect が必要です');
+            }
+            
+            // スケール比率計算
+            const scaleX = this.canvasWidth / canvasRect.width;
+            const scaleY = this.canvasHeight / canvasRect.height;
+            
+            // 変換実行
+            const canvasX = (screenX - canvasRect.left) * scaleX;
+            const canvasY = (screenY - canvasRect.top) * scaleY;
+            
+            // 境界クランプ
+            const clampedX = Math.max(0, Math.min(this.canvasWidth, canvasX));
+            const clampedY = Math.max(0, Math.min(this.canvasHeight, canvasY));
+            
+            return { x: clampedX, y: clampedY };
+            
+        } catch (error) {
+            ErrorManager.showError('coordinate-convert', 
+                `座標変換エラー: ${error.message}`, 
+                { screenX, screenY, canvasRect }
+            );
+            return { x: 0, y: 0 };
+        }
+    }
+    
+    /**
+     * 📐 キャンバス座標 → PixiJS座標変換
+     */
+    canvasToPixi(canvasX, canvasY, pixiApp) {
+        try {
+            if (!pixiApp?.stage) {
+                throw new Error('有効なPixiJSアプリが必要です');
+            }
+            
+            const globalPoint = new PIXI.Point(canvasX, canvasY);
+            const localPoint = pixiApp.stage.toLocal(globalPoint);
+            
+            return { x: localPoint.x, y: localPoint.y };
+            
+        } catch (error) {
+            ErrorManager.showError('coordinate-pixi', 
+                `PixiJS座標変換エラー: ${error.message}`, 
+                { canvasX, canvasY }
+            );
+            return { x: canvasX, y: canvasY }; // フォールバック
+        }
+    }
+    
+    /**
+     * 📐 スクリーン座標 → PixiJS座標変換（直接変換）
+     */
+    screenToPixi(screenX, screenY, canvasRect, pixiApp) {
+        const canvasCoords = this.screenToCanvas(screenX, screenY, canvasRect);
+        return this.canvasToPixi(canvasCoords.x, canvasCoords.y, pixiApp);
+    }
+    
+    /**
+     * 📐 PointerEvent → 座標情報抽出（統一処理）
+     */
+    extractPointerCoordinates(event, canvasRect, pixiApp = null) {
+        try {
+            const originalEvent = event.data?.originalEvent || event.originalEvent || event;
+            
+            const screenX = originalEvent.clientX || originalEvent.pageX || 0;
+            const screenY = originalEvent.clientY || originalEvent.pageY || 0;
+            
+            const canvasCoords = this.screenToCanvas(screenX, screenY, canvasRect);
+            
+            const result = {
+                screen: { x: screenX, y: screenY },
+                canvas: canvasCoords,
+                pressure: event.pressure || originalEvent.pressure || 0.5
+            };
+            
+            if (pixiApp) {
+                result.pixi = this.canvasToPixi(canvasCoords.x, canvasCoords.y, pixiApp);
+            }
+            
+            return result;
+            
+        } catch (error) {
+            ErrorManager.showError('coordinate-extract', 
+                `座標抽出エラー: ${error.message}`, 
+                { event: event.type }
+            );
+            return {
+                screen: { x: 0, y: 0 },
+                canvas: { x: 0, y: 0 },
+                pressure: 0.5
+            };
+        }
+    }
+    
+    /**
+     * 📐 距離計算
+     */
+    calculateDistance(point1, point2) {
+        const dx = point2.x - point1.x;
+        const dy = point2.y - point1.y;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+    
+    /**
+     * 📐 点が範囲内かチェック
+     */
+    isPointInBounds(point, bounds) {
+        return point.x >= bounds.left && 
+               point.x <= bounds.right && 
+               point.y >= bounds.top && 
+               point.y <= bounds.bottom;
+    }
+    
+    /**
+     * 📐 座標系設定更新（キャンバスリサイズ時）
+     */
+    updateCanvasSize(width, height) {
+        this.canvasWidth = width;
+        this.canvasHeight = height;
+        
+        console.log(`📐 座標系更新: ${width}x${height}`);
+    }
+    
+    /**
+     * 📐 座標管理状態取得（診断用）
+     */
+    getCoordinateState() {
+        return {
+            canvasWidth: this.canvasWidth,
+            canvasHeight: this.canvasHeight,
+            config: this.canvasConfig
+        };
+    }
+}
+
+// グローバル登録
+if (typeof window !== 'undefined') {
+    window.CoordinateManager = CoordinateManager;
+    console.log('📐 CoordinateManager グローバル登録完了');
+}
+```
+
+### STEP3: app-core.js分割実行（優先度：中）
+**対象**: 残りの責任分離・ファイルサイズ最適化
+**期間**: 1日
+
+```javascript
+// js/app-core.js（リファクタリング版・500行以下）
+/**
+ * 🎨 AppCoreシステム（分割最適化版）
+ * 🎯 AI_WORK_SCOPE: PixiJSアプリケーション基盤・システム統合・初期化制御
+ * 🎯 DEPENDENCIES: 統一システム4種、BoundaryManager、CoordinateManager
+ * 🎯 SPLIT_RESULT: 650行 → 350行（46%削減）
+ */
+
+class AppCore {
+    constructor() {
+        this.validateUnifiedSystems();
+        this.initializeConfig();
+        
+        // 基本プロパティ
+        this.app = null;
+        this.drawingContainer = null;
+        this.uiContainer = null;
+        
+        // 分離された管理システム
+        this.boundaryManager = null;
+        this.coordinateManager = null;
+        this.toolSystem = null;
+        this.uiController = null;
+        
+        // 状態管理
+        this.isInitializing = false;
+        this.initializationComplete = false;
+        
+        console.log('🎨 AppCore インスタンス作成完了（分割最適化版）');
+    }
+    
+    /**
+     * 統一システム依存性確認
+     */
+    validateUnifiedSystems() {
+        const required = ['ConfigManager', 'ErrorManager', 'StateManager', 'EventBus'];
+        const missing = required.filter(sys => !window[sys]);
+        if (missing.length > 0) {
+            throw new Error(`AppCore: 統一システム依存性エラー: ${missing.join(', ')}`);
+        }
+    }
+    
+    /**
+     * 設定初期化
+     */
+    initializeConfig() {
+        const canvasConfig = ConfigManager.getCanvasConfig();
+        this.canvasWidth = canvasConfig.width;
+        this.canvasHeight = canvasConfig.height;
+        this.backgroundColor = canvasConfig.backgroundColor;
+    }
+    
+    /**
+     * アプリケーション初期化（分割最適化版）
+     */
+    async initialize() {
+        try {
+            console.log('🚀 AppCore 初期化開始（分割最適化版）...');
+            this.isInitializing = true;
+            
+            // 基盤システム初期化
+            await this.initializeBasicSystems();
+            
+            // 管理システム初期化
+            await this.initializeManagers();
+            
+            // アプリケーション初期化
+            await this.initializeApplication();
+            
+            // 完了処理
+            this.completeInitialization();
+            
+        } catch (error) {
+            await this.handleInitializationError(error);
+        }
+    }
+    
+    /**
+     * 基盤システム初期化
+     */
+    async initializeBasicSystems() {
+        // DOM確認
+        await this.verifyDOMElements();
+        
+        // 座標管理システム初期化
+        this.coordinateManager = new CoordinateManager();
+        
+        // PixiJSアプリケーション初期化
+        await this.initializePixiApp();
+        
+        // コンテナ初期化
+        this.initializeContainers();
+        
+        console.log('✅ 基盤システム初期化完了');
+    }
+    
+    /**
+     * 管理システム初期化
+     */
+    async initializeManagers() {
+        // 境界管理システム初期化
+        this.boundaryManager = new BoundaryManager();
+        this.boundaryManager.initialize(this.app.view, this.coordinateManager);
+        
+        // ツールシステム初期化
+        this.toolSystem = new DrawingToolSystem(this);
+        
+        console.log('✅ 管理システム初期化完了');
+    }
+    
+    /**
+     * アプリケーション初期化
+     */
+    async initializeApplication() {
+        // UI制御初期化
+        await this.initializeUI();
+        
+        // イベントリスナー設定
+        this.setupEventListeners();
+        
+        // 初期化検証
+        this.verifyInitialization();
+        
+        console.log('✅ アプリケーション初期化完了');
+    }
+    
+    /**
+     * DOM要素確認
+     */
+    async verifyDOMElements() {
+        const canvasElement = document.getElementById('drawing-canvas');
+        if (!canvasElement) {
+            throw new Error('drawing-canvas 要素が見つかりません');
+        }
+        
+        // キャンバス要素クリア
+        while (canvasElement.firstChild) {
+            canvasElement.removeChild(canvasElement.firstChild);
+        }
+    }
+    
+    /**
+     * PixiJSアプリケーション初期化
+     */
+    async initializePixiApp() {
+        const canvasConfig = ConfigManager.getCanvasConfig();
+        const pixiConfig = ConfigManager.getPixiConfig();
+        
+        this.app = new PIXI.Application({
+            width: canvasConfig.width,
+            height: canvasConfig.height,
+            backgroundColor: canvasConfig.backgroundColor,
+            antialias: pixiConfig.antialias,
+            resolution: pixiConfig.resolution
+        });
+        
+        const canvasElement = document.getElementById('drawing-canvas');
+        canvasElement.appendChild(this.app.view);
+        
+        this.app.view.style.cursor = pixiConfig.cursor;
+    }
+    
+    /**
+     * コンテナ初期化
+     */
+    initializeContainers() {
+        this.drawingContainer = new PIXI.Container();
+        this.drawingContainer.name = 'drawing-layer';
+        this.app.stage.addChild(this.drawingContainer);
+        
+        this.uiContainer = new PIXI.Container();
+        this.uiContainer.name = 'ui-layer';
+        this.app.stage.addChild(this.uiContainer);
+        
+        // インタラクティブ設定
+        const canvasConfig = ConfigManager.getCanvasConfig();
+        this.app.stage.interactive = true;
+        this.app.stage.hitArea = new PIXI.Rectangle(0, 0, canvasConfig.width, canvasConfig.height);
+    }
+    
+    /**
+     * UI制御初期化
+     */
+    async initializeUI() {
+        try {
+            this.uiController = new UIController(this.toolSystem);
+            this.uiController.initialize();
+        } catch (error) {
+            ErrorManager.showError('warning', `UI制御初期化失敗: ${error.message}`);
+            this.uiController = new MinimalUIController(this.toolSystem);
+        }
+    }
+    
+    /**
+     * イベントリスナー設定（分割最適化版）
+     */
+    setupEventListeners() {
+        // PixiJS描画イベント
+        this.app.stage.on('pointerdown', this.handlePointerDown.bind(this));
+        this.app.stage.on('pointermove', this.handlePointerMove.bind(this));
+        this.app.stage.on('pointerup', this.handlePointerUp.bind(this));
+        
+        // 境界越えイベント（BoundaryManager統合）
+        EventBus.on('boundary.cross.in', this.handleBoundaryCrossIn.bind(this));
+        
+        // ウィンドウイベント
+        window.addEventListener('resize', this.handleResize.bind(this));
+        
+        // ツールイベント
+        EventBus.on('tool.changed', this.handleToolChanged.bind(this));
+        
+        console.log('✅ イベントリスナー設定完了（分割最適化版）');
+    }
+    
+    /**
+     * 境界越え描画開始処理（新規追加）
+     */
+    handleBoundaryCrossIn(data) {
+        if (!this.toolSystem) return;
+        
+        try {
+            // ツールシステムに境界越え描画開始を通知
+            this.toolSystem.startBoundaryDrawing(data.position.x, data.position.y, data.pressure);
+            
+            console.log(`🎯 境界越え描画開始: (${data.position.x.toFixed(1)}, ${data.position.y.toFixed(1)})`);
+            
+        } catch (error) {
+            ErrorManager.showError('boundary-drawing', 
+                `境界越え描画エラー: ${error.message}`, 
+                data
+            );
+        }
+    }
+    
+    /**
+     * ポインターダウンハンドラー（座標管理統合版）
+     */
+    handlePointerDown(event) {
+        if (!this.toolSystem || !this.coordinateManager) return;
+        
+        const coords = this.coordinateManager.extractPointerCoordinates(
+            event, 
+            this.app.view.getBoundingClientRect(), 
+            this.app
+        );
+        
+        this.toolSystem.startDrawing(coords.canvas.x, coords.canvas.y, coords.pressure);
+        
+        EventBus.safeEmit('drawing.started', {
+            position: coords.canvas,
+            pressure: coords.pressure,
+            tool: this.toolSystem.currentTool
+        });
+    }
+    
+    /**
+     * ポインター移動ハンドラー（座標管理統合版）
+     */
+    handlePointerMove(event) {
+        if (!this.coordinateManager) return;
+        
+        const coords = this.coordinateManager.extractPointerCoordinates(
+            event, 
+            this.app.view.getBoundingClientRect()
+        );
+        
+        // 座標表示更新
+        const coordinatesElement = document.getElementById('coordinates');
+        if (coordinatesElement) {
+            coordinatesElement.textContent = `x: ${Math.round(coords.canvas.x)}, y: ${Math.round(coords.canvas.y)}`;
+        }
+        
+        if (this.toolSystem) {
+            this.toolSystem.continueDrawing(coords.canvas.x, coords.canvas.y);
+        }
+    }
+    
+    /**
+     * ポインターアップハンドラー
+     */
+    handlePointerUp(event) {
+        if (!this.toolSystem) return;
+        
+        this.toolSystem.stopDrawing();
+        
+        EventBus.safeEmit('drawing.ended');
+    }
+    
+    /**
+     * リサイズハンドラー
+     */
+    handleResize() {
+        if (!this.app) return;
+        console.log('🔄 ウィンドウリサイズ検出');
+        EventBus.safeEmit('window.resized');
+    }
+    
+    /**
+     * ツール変更ハンドラー
+     */
+    handleToolChanged(data) {
+        console.log(`🔧 ツール変更: ${data.previousTool} → ${data.tool}`);
+    }
+    
+    /**
+     * 初期化完了処理
+     */
+    completeInitialization() {
+        this.isInitializing = false;
+        this.initializationComplete = true;
+        
+        EventBus.safeEmit('appCore.initialized', {
+            success: true,
+            components: this.getInitializationStats()
+        });
+        
+        console.log('✅ AppCore 初期化完了（分割最適化版）');
+    }
+    
+    /**
+     * 初期化エラー処理
+     */
+    async handleInitializationError(error) {
+        console.error('💀 AppCore初期化エラー:', error);
+        
+        ErrorManager.showError('error', error.message, {
+            additionalInfo: 'AppCore初期化失敗',
+            showReload: true
+        });
+        
+        this.initializationFailed = true;
+        await this.initializeFallbackMode(error);
+    }
+    
+    /**
+     * 初期化検証
+     */
+    verifyInitialization() {
+        const verification = {
+            pixiApp: !!this.app,
+            drawingContainer: !!this.drawingContainer,
+            toolSystem: !!this.toolSystem,
+            boundaryManager: !!this.boundaryManager,
+            coordinateManager: !!this.coordinateManager,
+            uiController: !!this.uiController
+        };
+        
+        const passCount = Object.values(verification).filter(Boolean).length;
+        const totalCount = Object.keys(verification).length;
+        
+        console.log(`✅ 初期化検証: ${passCount}/${totalCount} (${(passCount/totalCount*100).toFixed(1)}%)`);
+        
+        if (passCount < totalCount) {
+            const failed = Object.entries(verification)
+                .filter(([key, value]) => !value)
+                .map(([key, value]) => key);
+            
+            ErrorManager.showError('warning', `初期化未完了: ${failed.join(', ')}`);
+        }
+    }
+    
+    /**
+     * 初期化統計取得
+     */
+    getInitializationStats() {
+        return {
+            pixiApp: !!this.app,
+            drawingContainer: !!this.drawingContainer,
+            toolSystem: !!this.toolSystem,
+            boundaryManager: !!this.boundaryManager,
+            coordinateManager: !!this.coordinateManager,
+            uiController: !!this.uiController,
+            initializationComplete: this.initializationComplete
+        };
+    }
+    
+    /**
+     * フォールバックモード初期化
+     */
+    async initializeFallbackMode(error) {
+        console.log('🛡️ フォールバックモード初期化中...');
+        
+        try {
+            if (!this.app) {
+                const fallbackConfig = {
+                    width: ConfigManager.get('canvas.width') || 400,
+                    height: ConfigManager.get('canvas.height') || 400,
+                    backgroundColor: ConfigManager.get('canvas.backgroundColor') || 0xf0e0d6
+                };
+                
+                this.app = new PIXI.Application(fallbackConfig);
+                document.getElementById('drawing-canvas').appendChild(this.app.view);
+            }
+            
+            if (!this.drawingContainer) {
+                this.initializeContainers();
+            }
+            
+            this.toolSystem = new SimpleFallbackToolSystem(this);
+            
+            ErrorManager.showError('recovery', '基本描画機能は利用可能です');
+            
+        } catch (fallbackError) {
+            ErrorManager.showCriticalError(error.message, {
+                additionalInfo: fallbackError.message
+            });
+        }
+    }
+    
+    /**
+     * キャンバスリサイズ（座標管理統合版）
+     */
+    resize(newWidth, newHeight, centerContent = false) {
+        if (!this.app) return;
+        
+        const oldWidth = this.canvasWidth;
+        const oldHeight = this.canvasHeight;
+        
+        // ConfigManager経由での妥当性確認
+        const canvasConfig = ConfigManager.getCanvasConfig();
+        const validWidth = Math.max(canvasConfig.minWidth, Math.min(canvasConfig.maxWidth, newWidth));
+        const validHeight = Math.max(canvasConfig.minHeight, Math.min(canvasConfig.maxHeight, newHeight));
+        
+        this.canvasWidth = validWidth;
+        this.canvasHeight = validHeight;
+        
+        // 座標管理システム更新
+        if (this.coordinateManager) {
+            this.coordinateManager.updateCanvasSize(validWidth, validHeight);
+        }
+        
+        // アプリケーションリサイズ
+        this.app.renderer.resize(validWidth, validHeight);
+        this.app.stage.hitArea = new PIXI.Rectangle(0, 0, validWidth, validHeight);
+        
+        EventBus.safeEmit('canvas.resized', {
+            width: validWidth,
+            height: validHeight,
+            previousWidth: oldWidth,
+            previousHeight: oldHeight
+        });
+        
+        console.log(`📐 キャンバスリサイズ: ${validWidth}x${validHeight}`);
+    }
+    
+    /**
+     * システム破棄
+     */
+    destroy() {
+        if (this.boundaryManager) {
+            this.boundaryManager.destroy();
+        }
+        
+        if (this.app) {
+            this.app.destroy(true);
+        }
+        
+        console.log('🎨 AppCore 破棄完了');
+    }
+}
+```
+
+---
+
+## 🔄 Phase1.2-MAIN: キャンバス境界描画改修実装
+
+### STEP4: 描画ツール境界対応拡張（優先度：最高）
+**対象**: pen-tool.js・eraser-tool.js境界越え描画対応
+**期間**: 1日
+
+```javascript
+// tools/pen-tool.js（境界対応拡張版）
+/**
+ * 🖊️ ペンツール（境界対応統合版）
+ * 🎯 BOUNDARY_SUPPORT: 境界越え描画開始・継続描画統合
+ * 🎯 DEPENDENCIES: ConfigManager, ErrorManager, EventBus, BoundaryManager
+ */
+
+class PenTool {
+    constructor(toolManager) {
+        this.toolManager = toolManager;
+        this.name = 'pen';
+        this.isActive = false;
+        this.isDrawing = false;
+        this.currentStroke = null;
+        
+        // ConfigManager統合設定
+        this.config = ConfigManager.getDrawingConfig('pen');
+        this.boundaryConfig = ConfigManager.get('canvas.boundary');
+        
+        // 境界対応プロパティ
+        this.supportsBoundaryDrawing = true;
+        this.fromBoundary = false;
+        
+        console.log('🖊️ PenTool 初期化完了（境界対応統合版）');
+    }
+    
+    /**
+     * 🎯 境界越え描画開始処理（新規実装）
+     */
+    handleBoundaryCrossIn(x, y, pointerEvent) {
+        if (!this.isActive) return;
+        
+        try {
+            console.log(`🎯 ペンツール境界越え描画開始: (${x.toFixed(1)}, ${y.toFixed(1)})`);
+            
+            const pressure = pointerEvent.pressure || 0.5;
+            
+            // 境界越え専用描画開始
+            this.startBoundaryDrawing(x, y, pressure);
+            
+            // EventBus通知
+            EventBus.safeEmit('pen.boundary.drawing.started', {
+                position: { x, y },
+                pressure,
+                fromOutside: true,
+                strokeId: this.currentStroke?.id
+            });
+            
+        } catch (error) {
+            ErrorManager.showError('boundary-drawing', 
+                `ペン境界越え描画エラー: ${error.message}`, 
+                { tool: this.name, position: { x, y } }
+            );
+        }
+    }
+    
+    /**
+     * 🎯 境界越え描画開始（通常startDrawingをバイパス）
+     */
+    startBoundaryDrawing(x, y, pressure) {
+        // 境界チェックをバイパスして直接描画開始
+        this.isDrawing = true;
+        this.fromBoundary = true;
+        
+        this.currentStroke = {
+            id: this.generateStrokeId(),
+            tool: this.name,
+            points: [{ x, y, pressure, timestamp: Date.now() }],
+            fromBoundary: true,
+            graphics: new PIXI.Graphics()
+        };
+        
+        // 描画グラフィクス初期化
+        this.initializeStrokeGraphics();
+        
+        // 最初のポイント描画
+        this.addStrokePoint(x, y, pressure);
+        
+        // ツールマネージャーのdrawingContainer追加
+        if (this.toolManager?.appCore?.drawingContainer) {
+            this.toolManager.appCore.drawingContainer.addChild(this.currentStroke.graphics);
+        }
+        
+        console.log(`🖊️ 境界越え描画セッション開始: ${this.currentStroke.id}`);
+    }
+    
+    /**
+     * 通常描画開始（既存処理・境界判定あり）
+     */
+    startDrawing(x, y, pressure = 0.5) {
+        if (this.isDrawing) return;
+        
+        // キャンバス境界内チェック（通常描画時のみ）
+        if (!this.isPointInCanvas(x, y)) {
+            console.log('⚠️ キャンバス境界外描画開始は無視（通常モード）');
+            return;
+        }
+        
+        this.isDrawing = true;
+        this.fromBoundary = false;
+        
+        this.currentStroke = {
+            id: this.generateStrokeId(),
+            tool: this.name,
+            points: [{ x, y, pressure, timestamp: Date.now() }],
+            fromBoundary: false,
+            graphics: new PIXI.Graphics()
+        };
+        
+        this.initializeStrokeGraphics();
+        this.addStrokePoint(x, y, pressure);
+        
+        if (this.toolManager?.appCore?.drawingContainer) {
+            this.toolManager.appCore.drawingContainer.addChild(this.currentStroke.graphics);
+        }
+        
+        console.log(`🖊️ 通常描画開始: (${x.toFixed(1)}, ${y.toFixed(1)})`);
+    }
+    
+    /**
+     * 描画継続（境界・通常共通処理）
+     */
+    continueDrawing(x, y, pressure = 0.5) {
+        if (!this.isDrawing || !this.currentStroke) return;
+        
+        const lastPoint = this.getLastPoint();
+        if (!lastPoint) return;
+        
+        // 最小距離チェック
+        const distance = this.calculateDistance(lastPoint, { x, y });
+        if (distance < this.config.minDistance) return;
+        
+        // ポイント追加
+        this.addStrokePoint(x, y, pressure);
+        
+        // 線描画
+        this.drawLineBetweenPoints(lastPoint, { x, y, pressure });
+    }
+    
+    /**
+     * 描画終了
+     */
+    stopDrawing() {
+        if (!this.isDrawing || !this.currentStroke) return;
+        
+        // ストローク完了
+        this.currentStroke.isComplete = true;
+        this.currentStroke.endTime = Date.now();
+        
+        // EventBus通知
+        EventBus.safeEmit('pen.drawing.completed', {
+            strokeId: this.currentStroke.id,
+            pointCount: this.currentStroke.points.length,
+            fromBoundary: this.fromBoundary,
+            duration: this.currentStroke.endTime - this.currentStroke.points[0].timestamp
+        });
+        
+        console.log(`🖊️ 描画終了: ${this.currentStroke.points.length}ポイント ${this.fromBoundary ? '(境界越え)' : '(通常)'}`);
+        
+        // 状態リセット
+        this.isDrawing = false;
+        this.fromBoundary = false;
+        this.currentStroke = null;
+    }
+    
+    /**
+     * ストロークグラフィクス初期化
+     */
+    initializeStrokeGraphics() {
+        if (!this.currentStroke) return;
+        
+        const graphics = this.currentStroke.graphics;
+        graphics.clear();
+        
+        // ペン設定適用
+        graphics.lineStyle(this.config.defaultSize, this.config.defaultColor, this.config.defaultOpacity);
+    }
+    
+    /**
+     * ストロークポイント追加
+     */
+    addStrokePoint(x, y, pressure) {
+        if (!this.currentStroke) return;
+        
+        this.currentStroke.points.push({
+            x, y, pressure,
+            timestamp: Date.now()
+        });
+    }
+    
+    /**
+     * ポイント間線描画
+     */
+    drawLineBetweenPoints(startPoint, endPoint) {
+        if (!this.currentStroke?.graphics) return;
+        
+        const graphics = this.currentStroke.graphics;
+        
+        // スムージング適用
+        if (this.config.smoothingEnabled) {
+            this.drawSmoothLine(graphics, startPoint, endPoint);
+        } else {
+            graphics.moveTo(startPoint.x, startPoint.y);
+            graphics.lineTo(endPoint.x, endPoint.y);
+        }
+    }
+    
+    /**
+     * スムース線描画
+     */
+    drawSmoothLine(graphics, start, end) {
+        const midX = (start.x + end.x) / 2;
+        const midY = (start.y + end.y) / 2;
+        
+        graphics.moveTo(start.x, start.y);
+        graphics.quadraticCurveTo(start.x, start.y, midX, midY);
+        graphics.quadraticCurveTo(midX, midY, end.x, end.y);
+    }
+    
+    /**
+     * ユーティリティメソッド
+     */
+    generateStrokeId() {
+        return `pen-stroke-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    }
+    
+    getLastPoint() {
+        return this.currentStroke?.points[this.currentStroke.points.length - 1] || null;
+    }
+    
+    calculateDistance(point1, point2) {
+        const dx = point2.x - point1.x;
+        const dy = point2.y - point1.y;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+    
+    isPointInCanvas(x, y) {
+        const canvasConfig = ConfigManager.getCanvasConfig();
+        return x >= 0 && x <= canvasConfig.width && y >= 0 && y <= canvasConfig.height;
+    }
+    
+    /**
+     * ツール状態取得（診断用）
+     */
+    getToolState() {
+        return {
+            name: this.name,
+            isActive: this.isActive,
+            isDrawing: this.isDrawing,
+            supportsBoundaryDrawing: this.supportsBoundaryDrawing,
+            currentStroke: this.currentStroke ? {
+                id: this.currentStroke.id,
+                pointCount: this.currentStroke.points.length,
+                fromBoundary: this.currentStroke.fromBoundary
+            } : null,
+            config: this.config
+        };
+    }
+}
+```
+
+### STEP5: PixiJS統合拡張（優先度：中）
+**対象**: app-core.jsのPixiJSイベントシステム境界対応拡張
+**期間**: 0.5日
+
+```javascript
+// app-core.js への追加拡張（PixiJS境界システム統合）
+
+/**
+ * PixiJS境界システム統合初期化
+ */
+initializePixiBoundarySystem() {
+    if (!this.app || !this.boundaryManager) return;
+    
+    console.log('🎯 PixiJS境界システム統合初期化中...');
+    
+    // 拡張ヒットエリア設定
+    const margin = this.boundaryManager.boundaryMargin;
+    const canvasConfig = ConfigManager.getCanvasConfig();
+    
+    this.app.stage.hitArea = new PIXI.Rectangle(
+        -margin,
+        -margin,
+        canvasConfig.width + margin * 2,
+        canvasConfig.height + margin * 2
+    );
+    
+    // インタラクティブ強化
+    this.app.stage.interactive = true;
+    this.app.stage.interactiveChildren = true;
+    
+    // 境界統合イベント設定
+    this.setupPixiBoundaryEvents();
+    
+    console.log('✅ PixiJS境界システム統合完了');
+}
+
+/**
+ * PixiJS境界イベント設定
+ */
+setupPixiBoundaryEvents() {
+    // 境界越えイベント統合
+    EventBus.on('boundary.cross.in', (data) => {
+        this.handlePixiBoundaryCross(data);
+    });
+    
+    // PixiJSネイティブイベント拡張
+    this.app.stage.on('pointerenter', (event) => {
+        console.log('🎯 PixiJS ポインター エンター');
+        EventBus.safeEmit('pixi.pointer.enter', { event });
+    });
+    
+    this.app.stage.on('pointerleave', (event) => {
+        console.log('🎯 PixiJS ポインター リーブ');
+        EventBus.safeEmit('pixi.pointer.leave', { event });
+    });
+}
+
+/**
+ * PixiJS境界越え処理
+ */
+handlePixiBoundaryCross(data) {
+    if (!this.coordinateManager) return;
+    
+    try {
+        // PixiJS座標系変換
+        const pixiCoords = this.coordinateManager.canvasToPixi(
+            data.position.x, 
+            data.position.y, 
+            this.app
+        );
+        
+        // アクティブツールに境界越え通知
+        if (this.toolSystem?.currentTool && this.toolSystem.currentTool.handleBoundaryCrossIn) {
+            this.toolSystem.currentTool.handleBoundaryCrossIn(
+                pixiCoords.x, 
+                pixiCoords.y, 
+                {
+                    pressure: data.pressure,
+                    pointerId: data.pointerId,
+                    originalEvent: data.originalEvent
+                }
+            );
+        }
+        
+        console.log(`🎯 PixiJS境界越え処理完了: (${pixiCoords.x.toFixed(1)}, ${pixiCoords.y.toFixed(1)})`);
+        
+    } catch (error) {
+        ErrorManager.showError('pixi-boundary', 
+            `PixiJS境界越え処理エラー: ${error.message}`, 
+            data
+        );
+    }
+}
+```
+
+---
+
+## 📊 統一システム設定・辞典更新
+
+### ConfigManager設定拡張
+```javascript
+// js/utils/config-manager.js への追加設定
+
+// 境界描画システム設定
+ConfigManager.defaultConfig.canvas.boundary = {
+    enabled: true,                      // 境界越え描画有効
+    margin: 20,                         // 境界マージン(px)
+    trackingEnabled: true,              // グローバル追跡有効
+    crossInDelay: 0,                   // 境界越え遅延(ms)
+    supportedPointers: ['mouse', 'pen', 'touch'], // サポート入力デバイス
+    debugging: false                    // 境界デバッグモード
+};
+
+// ペンツール境界設定
+ConfigManager.defaultConfig.tools.pen.boundary = {
+    enabled: true,                      // ペン境界対応有効
+    continuousDrawing: true,            // 境界越え連続描画
+    pressureInterpolation: true,        // 筆圧補間有効
+    smoothingEnabled: true,             // 境界越えスムージング
+    minDistance: 1.0                   // 境界越え最小距離
+};
+
+// 消しゴムツール境界設定
+ConfigManager.defaultConfig.tools.eraser.boundary = {
+    enabled: true,                      // 消しゴム境界対応有効
+    continuousErasing: true,            // 境界越え連続消去
+    pressureInterpolation: false,       // 筆圧補間（消しゴムは無効）
+    smoothingEnabled: false,            // スムージング（消しゴムは無効）
+    minDistance: 0.5                   // 境界越え最小距離
+};
+
+// 座標管理設定
+ConfigManager.defaultConfig.coordinate = {
+    precision: 2,                       // 座標精度（小数点桁数）
+    boundaryClamp: true,               // 境界クランプ有効
+    scaleCompensation: true,           // スケール補償有効
+    touchScaling: 1.0,                 // タッチスケール係数
+    debugging: false                   // 座標デバッグモード
+};
+```
+
+### ErrorManager境界エラー定義拡張
+```javascript
+// js/utils/error-manager.js への追加エラータイプ
+
+// 境界関連エラー定義
+ErrorManager.boundaryErrorTypes = {
+    'boundary-init': '境界管理初期化エラー',
+    'boundary-tracking': '境界追跡エラー',
+    'boundary-cross': '境界越え処理エラー',
+    'boundary-drawing': '境界描画エラー',
+    'coordinate-convert': '座標変換エラー',
+    'coordinate-extract': '座標抽出エラー',
+    'coordinate-pixi': 'PixiJS座標変換エラー',
+    'pixi-boundary': 'PixiJS境界処理エラー'
+};
+```
+
+### EventBus境界イベント定義拡張
+```javascript
+// js/utils/event-bus.js への追加イベント定義
+
+// 境界イベント統一定義
+EventBus.BoundaryEvents = {
+    // 境界追跡イベント
+    OUTSIDE_START: 'boundary.outside.start',           // 境界外開始
+    OUTSIDE_END: 'boundary.outside.end',               // 境界外終了
+    CROSS_IN: 'boundary.cross.in',                     // 境界越えイン
+    CROSS_OUT: 'boundary.cross.out',                   // 境界越えアウト
+    
+    // 境界描画イベント
+    DRAWING_STARTED: 'boundary.drawing.started',       // 境界描画開始
+    DRAWING_CONTINUED: 'boundary.drawing.continued',   // 境界描画継続
+    DRAWING_ENDED: 'boundary.drawing.ended',           // 境界描画終了
+    
+    // システムイベント
+    MANAGER_INITIALIZED: 'boundary.manager.initialized', // マネージャー初期化
+    TRACKING_STATE: 'boundary.tracking.state'          // 追跡状態変更
+};
+
+// 座標管理イベント
+EventBus.CoordinateEvents = {
+    CANVAS_RESIZED: 'coordinate.canvas.resized',       // キャンバスリサイズ
+    SCALE_CHANGED: 'coordinate.scale.changed',         // スケール変更
+    PRECISION_UPDATED: 'coordinate.precision.updated'  // 精度更新
+};
+
+// PixiJS統合イベント
+EventBus.PixiEvents = {
+    POINTER_ENTER: 'pixi.pointer.enter',               // PointerEnter
+    POINTER_LEAVE: 'pixi.pointer.leave',               // PointerLeave
+    BOUNDARY_INTEGRATED: 'pixi.boundary.integrated'    // 境界統合完了
+};
+```
+
+---
+
+## 🔧 実装品質保証・テストシステム
+
+### 境界描画統合テストスイート
+```javascript
+// tests/boundary-drawing-test.js（新規作成）
+/**
+ * 🧪 境界描画統合テストスイート
+ * 🎯 TEST_SCOPE: BoundaryManager, CoordinateManager, PenTool境界対応
+ */
+
+class BoundaryDrawingTestSuite {
+    constructor() {
+        this.testResults = [];
+        this.boundaryManager = null;
+        this.coordinateManager = null;
+        this.penTool = null;
+    }
+    
+    /**
+     * 全テスト実行
+     */
+    async runAllTests() {
+        console.log('🧪 境界描画統合テスト開始...');
+        
+        try {
+            await this.setupTestEnvironment();
+            
+            const tests = [
+                this.testBoundaryManagerInitialization,
+                this.testCoordinateManagerAccuracy,
+                this.testOutsidePointerDetection,
+                this.testBoundaryCrossInDetection,
+                this.testPenToolBoundaryDrawing,
+                this.testContinuousDrawingAcrossBoundary,
+                this.testMultiPointerSupport,
+                this.testPressurePreservation,
+                this.testEventBusIntegration,
+                this.testPerformanceMetrics
+            ];
+            
+            for (const test of tests) {
+                try {
+                    const result = await test.call(this);
+                    this.testResults.push({
+                        name: test.name,
+                        passed: result,
+                        timestamp: Date.now()
+                    });
+                } catch (error) {
+                    console.error(`❌ テスト失敗: ${test.name}`, error);
+                    this.testResults.push({
+                        name: test.name,
+                        passed: false,
+                        error: error.message,
+                        timestamp: Date.now()
+                    });
+                }
+            }
+            
+            return this.generateTestReport();
+            
+        } catch (error) {
+            console.error('💀 テスト環境構築失敗:', error);
+            return { success: false, error: error.message };
+        }
+    }
+    
+    /**
+     * テスト環境構築
+     */
+    async setupTestEnvironment() {
+        // モック要素作成
+        const mockCanvas = document.createElement('canvas');
+        mockCanvas.id = 'test-drawing-canvas';
+        mockCanvas.width = 400;
+        mockCanvas.height = 400;
+        document.body.appendChild(mockCanvas);
+        
+        // テスト用システム初期化
+        this.coordinateManager = new CoordinateManager();
+        this.boundaryManager = new BoundaryManager();
+        await this.boundaryManager.initialize(mockCanvas, this.coordinateManager);
+        
+        // テスト用ツール初期化
+        const mockToolManager = { appCore: { drawingContainer: new PIXI.Container() } };
+        this.penTool = new PenTool(mockToolManager);
+        this.penTool.isActive = true;
+        
+        console.log('✅ テスト環境構築完了');
+    }
+    
+    /**
+     * BoundaryManager初期化テスト
+     */
+    async testBoundaryManagerInitialization() {
+        const state = this.boundaryManager.getBoundaryState();
+        
+        const checks = [
+            state.boundaryMargin > 0,
+            state.config !== null,
+            typeof state.isTrackingOutside === 'boolean',
+            state.expandedHitArea !== null
+        ];
+        
+        return checks.every(Boolean);
+    }
+    
+    /**
+     * CoordinateManager精度テスト
+     */
+    async testCoordinateManagerAccuracy() {
+        const testCases = [
+            { screen: { x: 100, y: 100 }, expected: { x: 100, y: 100 } },
+            { screen: { x: 0, y: 0 }, expected: { x: 0, y: 0 } },
+            { screen: { x: 400, y: 400 }, expected: { x: 400, y: 400 } }
+        ];
+        
+        const mockRect = { left: 0, top: 0, width: 400, height: 400 };
+        
+        for (const testCase of testCases) {
+            const result = this.coordinateManager.screenToCanvas(
+                testCase.screen.x, 
+                testCase.screen.y, 
+                mockRect
+            );
+            
+            const accuracy = Math.abs(result.x - testCase.expected.x) < 0.1 && 
+                           Math.abs(result.y - testCase.expected.y) < 0.1;
+            
+            if (!accuracy) return false;
+        }
+        
+        return true;
+    }
+    
+    /**
+     * 境界外ポインター検出テスト
+     */
+    async testOutsidePointerDetection() {
+        // 境界外PointerEventシミュレーション
+        const mockEvent = new PointerEvent('pointerdown', {
+            clientX: -50,  // キャンバス境界外
+            clientY: 100,
+            pointerId: 1,
+            bubbles: true
+        });
+        
+        // イベント発火前の状態確認
+        const stateBefore = this.boundaryManager.getBoundaryState();
+        
+        // イベント発火
+        this.boundaryManager.handleGlobalPointerDown(mockEvent);
+        
+        // イベント発火後の状態確認
+        const stateAfter = this.boundaryManager.getBoundaryState();
+        
+        return !stateBefore.isTrackingOutside && 
+               stateAfter.isTrackingOutside && 
+               stateAfter.outsidePointer?.id === 1;
+    }
+    
+    /**
+     * 境界越えイン検出テスト
+     */
+    async testBoundaryCrossInDetection() {
+        let boundaryCrossDetected = false;
+        
+        // EventBusリスナー設定
+        EventBus.on('boundary.cross.in', (data) => {
+            boundaryCrossDetected = true;
+        });
+        
+        // 境界外→境界内移動シミュレーション
+        const outsideEvent = new PointerEvent('pointerdown', {
+            clientX: -10, clientY: 100, pointerId: 2
+        });
+        
+        const insideEvent = new PointerEvent('pointermove', {
+            clientX: 50, clientY: 100, pointerId: 2
+        });
+        
+        // 境界外ポインターダウン
+        this.boundaryManager.handleGlobalPointerDown(outsideEvent);
+        
+        // 境界内移動
+        this.boundaryManager.handleGlobalPointerMove(insideEvent);
+        
+        return boundaryCrossDetected;
+    }
+    
+    /**
+     * ペンツール境界描画テスト
+     */
+    async testPenToolBoundaryDrawing() {
+        const startX = 50;
+        const startY = 50;
+        const pressure = 0.7;
+        
+        // 境界越え描画開始
+        this.penTool.handleBoundaryCrossIn(startX, startY, { pressure });
+        
+        // 状態確認
+        const toolState = this.penTool.getToolState();
+        
+        const checks = [
+            toolState.isDrawing,
+            toolState.currentStroke !== null,
+            toolState.currentStroke.fromBoundary,
+            toolState.currentStroke.pointCount >= 1
+        ];
+        
+        return checks.every(Boolean);
+    }
+    
+    /**
+     * 境界越え連続描画テスト
+     */
+    async testContinuousDrawingAcrossBoundary() {
+        // 境界越え描画開始
+        this.penTool.handleBoundaryCrossIn(10, 10, { pressure: 0.5 });
+        
+        const initialPointCount = this.penTool.currentStroke?.points.length || 0;
+        
+        // 連続描画
+        this.penTool.continueDrawing(20, 20, 0.6);
+        this.penTool.continueDrawing(30, 30, 0.7);
+        this.penTool.continueDrawing(40, 40, 0.8);
+        
+        const finalPointCount = this.penTool.currentStroke?.points.length || 0;
+        
+        return finalPointCount > initialPointCount && finalPointCount >= 4;
+    }
+    
+    /**
+     * マルチポインター対応テスト
+     */
+    async testMultiPointerSupport() {
+        // 複数ポインターイベントシミュレーション
+        const pointer1 = new PointerEvent('pointerdown', {
+            clientX: -20, clientY: 100, pointerId: 10
+        });
+        
+        const pointer2 = new PointerEvent('pointerdown', {
+            clientX: -30, clientY: 200, pointerId: 11
+        });
+        
+        // 同時境界外検出
+        this.boundaryManager.handleGlobalPointerDown(pointer1);
+        const state1 = this.boundaryManager.getBoundaryState();
+        
+        this.boundaryManager.handleGlobalPointerDown(pointer2);
+        const state2 = this.boundaryManager.getBoundaryState();
+        
+        // 最新ポインターのみ追跡されているかチェック
+        return state1.isTrackingOutside && 
+               state2.isTrackingOutside && 
+               state2.outsidePointer?.id === 11;
+    }
+    
+    /**
+     * 筆圧保持テスト
+     */
+    async testPressurePreservation() {
+        const testPressure = 0.85;
+        
+        // 筆圧付き境界越え描画
+        this.penTool.handleBoundaryCrossIn(25, 25, { pressure: testPressure });
+        
+        const firstPoint = this.penTool.currentStroke?.points[0];
+        
+        return firstPoint && Math.abs(firstPoint.pressure - testPressure) < 0.01;
+    }
+    
+    /**
+     * EventBus統合テスト
+     */
+    async testEventBusIntegration() {
+        const eventsReceived = [];
+        
+        // 各種イベントリスナー設定
+        const eventTypes = [
+            'boundary.outside.start',
+            'boundary.cross.in',
+            'pen.boundary.drawing.started',
+            'pen.drawing.completed'
+        ];
+        
+        eventTypes.forEach(eventType => {
+            EventBus.on(eventType, (data) => {
+                eventsReceived.push(eventType);
+            });
+        });
+        
+        // 境界描画シナリオ実行
+        const outsideEvent = new PointerEvent('pointerdown', {
+            clientX: -15, clientY: 150, pointerId: 20
+        });
+        
+        const insideEvent = new PointerEvent('pointermove', {
+            clientX: 75, clientY: 150, pointerId: 20
+        });
+        
+        // イベントシーケンス実行
+        this.boundaryManager.handleGlobalPointerDown(outsideEvent);
+        this.boundaryManager.handleGlobalPointerMove(insideEvent);
+        this.penTool.stopDrawing();
+        
+        // 少し待機してイベント処理完了を待つ
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        return eventsReceived.length >= 3;  // 主要イベントが発火されているか
+    }
+    
+    /**
+     * パフォーマンスメトリクステスト
+     */
+    async testPerformanceMetrics() {
+        const iterations = 100;
+        const startTime = performance.now();
+        
+        // 大量境界検出処理
+        for (let i = 0; i < iterations; i++) {
+            const mockEvent = new PointerEvent('pointerdown', {
+                clientX: -Math.random() * 50,
+                clientY: Math.random() * 400,
+                pointerId: i
+            });
+            
+            this.boundaryManager.handleGlobalPointerDown(mockEvent);
+        }
+        
+        const endTime = performance.now();
+        const averageTime = (endTime - startTime) / iterations;
+        
+        // 平均5ms以下ならパフォーマンス合格
+        return averageTime < 5.0;
+    }
+    
+    /**
+     * テストレポート生成
+     */
+    generateTestReport() {
+        const passed = this.testResults.filter(r => r.passed).length;
+        const total = this.testResults.length;
+        const passRate = (passed / total * 100).toFixed(1);
+        
+        const report = {
+            success: passed === total,
+            passRate: `${passed}/${total} (${passRate}%)`,
+            results: this.testResults,
+            summary: {
+                boundaryManager: this.testResults.filter(r => r.name.includes('BoundaryManager')).every(r => r.passed),
+                coordinateManager: this.testResults.filter(r => r.name.includes('CoordinateManager')).every(r => r.passed),
+                penTool: this.testResults.filter(r => r.name.includes('PenTool')).every(r => r.passed),
+                integration: this.testResults.filter(r => r.name.includes('Integration')).every(r => r.passed),
+                performance: this.testResults.filter(r => r.name.includes('Performance')).every(r => r.passed)
+            },
+            timestamp: new Date().toISOString()
+        };
+        
+        console.log('🧪 境界描画統合テスト完了:', report);
+        return report;
+    }
+    
+    /**
+     * テスト環境クリーンアップ
+     */
+    cleanup() {
+        const testCanvas = document.getElementById('test-drawing-canvas');
+        if (testCanvas) {
+            testCanvas.remove();
+        }
+        
+        if (this.boundaryManager) {
+            this.boundaryManager.destroy();
+        }
+        
+        console.log('🧹 テスト環境クリーンアップ完了');
+    }
+}
+
+// グローバル登録
+if (typeof window !== 'undefined') {
+    window.BoundaryDrawingTestSuite = BoundaryDrawingTestSuite;
+    
+    // テスト実行関数
+    window.testBoundaryDrawing = async function() {
+        const testSuite = new BoundaryDrawingTestSuite();
+        try {
+            return await testSuite.runAllTests();
+        } finally {
+            testSuite.cleanup();
+        }
+    };
+    
+    console.log('🧪 BoundaryDrawingTestSuite グローバル登録完了');
+}
+```
+
+### パフォーマンス指標・監視システム
+```javascript
+// js/utils/boundary-performance-monitor.js（新規作成）
+/**
+ * 📊 境界描画パフォーマンス監視
+ * 🎯 PERFORMANCE_TARGETS: 境界検出5ms以内・描画開始16ms以内・60FPS維持
+ */
+
+class BoundaryPerformanceMonitor {
+    constructor() {
+        this.metrics = {
+            boundaryDetection: { times: [], average: 0, max: 0, min: Infinity },
+            crossInProcessing: { times: [], average: 0, max: 0, min: Infinity },
+            drawingStart: { times: [], average: 0, max: 0, min: Infinity },
+            coordinateConversion: { times: [], average: 0, max: 0, min: Infinity },
+            memoryUsage: { samples: [], average: 0, peak: 0 }
+        };
+        
+        this.targets = {
+            boundaryDetection: 5.0,      // 5ms以内
+            crossInProcessing: 8.0,      // 8ms以内
+            drawingStart: 16.0,          // 16ms以内（60FPS維持）
+            coordinateConversion: 2.0,   // 2ms以内
+            memoryUsage: 10 * 1024 * 1024 // 10MB以内
+        };
+        
+        this.isMonitoring = false;
+        this.startTime = null;
+    }
+    
+    /**
+     * 監視開始
+     */
+    startMonitoring() {
+        if (this.isMonitoring) return;
+        
+        this.isMonitoring = true;
+        
+        // EventBusリスナー設定
+        EventBus.on('boundary.outside.start', () => {
+            this.startTimer('boundaryDetection');
+        });
+        
+        EventBus.on('boundary.cross.in', () => {
+            this.endTimer('boundaryDetection');
+            this.startTimer('crossInProcessing');
+        });
+        
+        EventBus.on('pen.boundary.drawing.started', () => {
+            this.endTimer('crossInProcessing');
+            this.endTimer('drawingStart');
+        });
+        
+        // メモリ監視
+        this.startMemoryMonitoring();
+        
+        console.log('📊 境界描画パフォーマンス監視開始');
+    }
+    
+    /**
+     * タイマー開始
+     */
+    startTimer(metric) {
+        this.startTimes = this.startTimes || {};
+        this.startTimes[metric] = performance.now();
+    }
+    
+    /**
+     * タイマー終了・記録
+     */
+    endTimer(metric) {
+        if (!this.startTimes || !this.startTimes[metric]) return;
+        
+        const duration = performance.now() - this.startTimes[metric];
+        this.recordMetric(metric, duration);
+        
+        delete this.startTimes[metric];
+    }
+    
+    /**
+     * メトリクス記録
+     */
+    recordMetric(metric, value) {
+        const metricData = this.metrics[metric];
+        if (!metricData) return;
+        
+        metricData.times.push(value);
+        metricData.max = Math.max(metricData.max, value);
+        metricData.min = Math.min(metricData.min, value);
+        
+        // 最新100件の平均を計算
+        const recentTimes = metricData.times.slice(-100);
+        metricData.average = recentTimes.reduce((sum, time) => sum + time, 0) / recentTimes.length;
+        
+        // 目標値チェック
+        const target = this.targets[metric];
+        if (value > target) {
+            console.warn(`⚠️ パフォーマンス目標超過: ${metric} ${value.toFixed(2)}ms (目標: ${target}ms)`);
+        }
+    }
+    
+    /**
+     * メモリ監視開始
+     */
+    startMemoryMonitoring() {
+        const sampleMemory = () => {
+            if (!this.isMonitoring) return;
+            
+            if (performance.memory) {
+                const used = performance.memory.usedJSHeapSize;
+                this.metrics.memoryUsage.samples.push(used);
+                this.metrics.memoryUsage.peak = Math.max(this.metrics.memoryUsage.peak, used);
+                
+                // 最新20件の平均
+                const recentSamples = this.metrics.memoryUsage.samples.slice(-20);
+                this.metrics.memoryUsage.average = recentSamples.reduce((sum, sample) => sum + sample, 0) / recentSamples.length;
+            }
+            
+            setTimeout(sampleMemory, 1000); // 1秒間隔
+        };
+        
+        sampleMemory();
+    }
+    
+    /**
+     * パフォーマンスレポート取得
+     */
+    getPerformanceReport() {
+        const report = {
+            timestamp: new Date().toISOString(),
+            targets: this.targets,
+            metrics: {},
+            compliance: {},
+            overall: { compliant: true, issues: [] }
+        };
+        
+        // 各メトリクスの報告
+        Object.keys(this.metrics).forEach(key => {
+            const metric = this.metrics[key];
+            const target = this.targets[key];
+            
+            if (key === 'memoryUsage') {
+                report.metrics[key] = {
+                    average: (metric.average / 1024 / 1024).toFixed(2) + 'MB',
+                    peak: (metric.peak / 1024 / 1024).toFixed(2) + 'MB',
+                    samples: metric.samples.length
+                };
+                
+                report.compliance[key] = metric.average <= target;
+                if (metric.average > target) {
+                    report.overall.compliant = false;
+                    report.overall.issues.push(`メモリ使用量超過: ${(metric.average / 1024 / 1024).toFixed(2)}MB`);
+                }
+            } else {
+                report.metrics[key] = {
+                    average: metric.average.toFixed(2) + 'ms',
+                    min: metric.min.toFixed(2) + 'ms',
+                    max: metric.max.toFixed(2) + 'ms',
+                    samples: metric.times.length
+                };
+                
+                report.compliance[key] = metric.average <= target;
+                if (metric.average > target) {
+                    report.overall.compliant = false;
+                    report.overall.issues.push(`${key}処理時間超過: ${metric.average.toFixed(2)}ms`);
+                }
+            }
+        });
+        
+        return report;
+    }
+    
+    /**
+     * 監視停止
+     */
+    stopMonitoring() {
+        this.isMonitoring = false;
+        console.log('📊 境界描画パフォーマンス監視停止');
+    }
+}
+
+// グローバル登録
+if (typeof window !== 'undefined') {
+    window.BoundaryPerformanceMonitor = BoundaryPerformanceMonitor;
+    
+    // 診断関数
+    window.getBoundaryPerformance = function() {
+        if (!window.boundaryPerformanceMonitor) {
+            window.boundaryPerformanceMonitor = new BoundaryPerformanceMonitor();
+            window.boundaryPerformanceMonitor.startMonitoring();
+            return "パフォーマンス監視を開始しました。しばらく境界描画をテストしてから再度実行してください。";
+        }
+        
+        return window.boundaryPerformanceMonitor.getPerformanceReport();
+    };
+    
+    console.log('📊 BoundaryPerformanceMonitor グローバル登録完了');
+}
+```
+
+---
+
+## 📝 統一システム更新（ルールブック・辞典）
+
+### 1_rulebook_v9_Phase1.txt 更新版
+```markdown
+# 📝 ルールブック追加項目（Phase1.2対応）
+
+## 6. app-core.js分割ルール（新規追加）
+
+### 6.1 分割方針
+- **責任分界原則**: 1ファイル1責任・500行以下厳守
+- **境界専用分離**: boundary-manager.js・coordinate-manager.js先行分離
+- **統一システム活用**: 全分割ファイルで統一システム必須使用
+- **依存性最小化**: 循環依存完全排除・EventBus疎結合
+
+### 6.2 必須分割ファイル
+```javascript
+// 境界管理（最優先）
+managers/boundary-manager.js        // 境界越えイベント処理専用
+js/utils/coordinate-manager.js      // 座標変換処理専用
+
+// コア機能分割
+js/app-core.js                     // PixiJS基盤・システム統合のみ（350行以下）
+managers/drawing-tool-system.js    // 描画ツールシステム専用
+managers/ui-controller.js          // UI制御システム専用
+js/utils/performance-monitor.js    // パフォーマンス監視専用
+```
+
+### 6.3 境界描画対応ルール
+```javascript
+✅ 必須実装パターン:
+// 境界越え描画開始
+handleBoundaryCrossIn(x, y, event) {
+    if (!this.isActive) return;
+    this.startBoundaryDrawing(x, y, event.pressure || 0.5);
+    EventBus.safeEmit('tool.boundary.drawing.started', { x, y });
+}
+
+// 通常描画開始（境界チェック含む）
+startDrawing(x, y, pressure) {
+    if (!this.isPointInCanvas(x, y)) return; // 境界外拒否
+    // 通常描画処理...
+}
+
+❌ 禁止パターン:
+// 境界処理の重複実装
+if (isOutside) { /* 重複ロジック */ }  // → BoundaryManager使用必須
+
+// ハードコード座標処理
+const canvasX = screenX * 0.5;        // → CoordinateManager使用必須
+```
+
+## 7. AI分業開発パターン（境界対応版）
+
+### 7.1 境界描画改修パターン
+```javascript
+🎯 必要ファイル（境界描画改修時）:
+基盤: ['managers/boundary-manager.js', 'js/utils/coordinate-manager.js']
+統一: ['js/utils/config-manager.js', 'js/utils/error-manager.js', 'js/utils/event-bus.js']
+対象: ['tools/pen-tool.js', 'tools/eraser-tool.js']
+
+🎯 除外可能: ['ui/*.js', 'managers/ui-*.js', 'tests/*.js']
+```
+
+### 7.2 分割改修パターン
+```javascript
+🎯 必要ファイル（app-core.js分割時）:
+分割前: ['js/app-core.js']  // 650行（分割対象）
+統一: ['js/utils/*.js']     // 統一システム全体
+分割後: ['js/app-core.js', 'managers/boundary-manager.js', 'js/utils/coordinate-manager.js']
+```
+```
+
+### 2_symbol-dictionary_v9_Phase1.txt 更新版
+```markdown
+# 📝 シンボル辞典追加項目（Phase1.2対応）
+
+## 🆕 新規追加システム
+
+### BoundaryManager（境界管理システム）
+```javascript
+// 基本初期化
+const boundaryManager = new BoundaryManager();
+boundaryManager.initialize(canvasElement, coordinateManager);
+
+// 境界状態確認
+const state = boundaryManager.getBoundaryState();
+console.log(`境界追跡中: ${state.isTrackingOutside}`);
+
+// 診断コマンド
+window.boundaryManager.getBoundaryState()  // 境界管理状態
+window.testBoundaryDrawing()               // 境界描画テスト実行
+```
+
+### CoordinateManager（座標管理システム）
+```javascript
+// 座標変換
+const coordinateManager = new CoordinateManager();
+const canvasCoords = coordinateManager.screenToCanvas(screenX, screenY, canvasRect);
+const pixiCoords = coordinateManager.canvasToPixi(canvasX, canvasY, pixiApp);
+
+// PointerEvent座標抽出
+const coords = coordinateManager.extractPointerCoordinates(event, canvasRect, pixiApp);
+console.log(`Canvas: (${coords.canvas.x}, ${coords.canvas.y}), Pressure: ${coords.pressure}`);
+
+// 診断コマンド
+window.coordinateManager.getCoordinateState()  // 座標管理状態
+```
+
+### 境界対応ツール拡張
+```javascript
+// ペンツール境界対応
+const penTool = new PenTool(toolManager);
+penTool.handleBoundaryCrossIn(x, y, event);      // 境界越え描画開始
+penTool.startBoundaryDrawing(x, y, pressure);    // 境界チェックバイパス描画
+
+// ツール状態確認
+const toolState = penTool.getToolState();
+console.log(`境界描画中: ${toolState.currentStroke?.fromBoundary}`);
+```
+
+## 🔧 新規EventBus定義
+```javascript
+// 境界イベント
+EventBus.safeEmit('boundary.outside.start', data);    // 境界外開始
+EventBus.safeEmit('boundary.cross.in', data);         // 境界越えイン
+EventBus.safeEmit('boundary.drawing.started', data);  // 境界描画開始
+
+// 座標イベント  
+EventBus.safeEmit('coordinate.canvas.resized', data); // キャンバスリサイズ
+
+// PixiJS統合イベント
+EventBus.safeEmit('pixi.boundary.integrated', data);  // PixiJS境界統合
+```
+
+## 🧪 新規デバッグコマンド
+```javascript
+// 境界描画テスト・診断
+window.testBoundaryDrawing()                    // 境界描画統合テスト実行
+window.getBoundaryPerformance()                 // 境界描画パフォーマンス取得
+window.boundaryManager.getBoundaryState()       // 境界管理状態詳細
+
+// 座標管理診断
+window.coordinateManager.getCoordinateState()   // 座標管理状態
+```
+
+## 📊 新規設定項目（ConfigManager）
+```javascript
+// 境界設定
+ConfigManager.get('canvas.boundary.enabled')           // 境界描画有効
+ConfigManager.get('canvas.boundary.margin')            // 境界マージン
+ConfigManager.get('tools.pen.boundary.enabled')        // ペン境界対応有効
+
+// 座標設定
+ConfigManager.get('coordinate.precision')              // 座標精度
+ConfigManager.get('coordinate.boundaryClamp')          // 境界クランプ有効
+```
+
+## 🚨 新規エラータイプ（ErrorManager）
+```javascript
+// 境界関連エラー
+ErrorManager.showError('boundary-init', message);      // 境界初期化エラー
+ErrorManager.showError('boundary-tracking', message);  // 境界追跡エラー
+ErrorManager.showError('coordinate-convert', message); // 座標変換エラー
+ErrorManager.showError('pixi-boundary', message);      // PixiJS境界エラー
+```
+```
+
+---
+
+## 🚀 実装スケジュール・マイルストーン
+
+### Phase1.2-PRE実装順序（3日間）
+```javascript
+Day 1: 基盤分割
+✅ STEP1: boundary-manager.js実装（6時間）
+✅ STEP2: coordinate-manager.js実装（3時間）
+✅ STEP3: app-core.js分割実行（3時間）
+
+Day 2: 境界描画機能
+✅ STEP4: 描画ツール境界対応拡張（6時間）
+✅ STEP5: PixiJS統合拡張（3時間）
+✅ テスト・統合確認（3時間）
+
+Day 3: 品質保証・文書更新
+✅ 統合テストスイート実行・修正（4時間）
+✅ パフォーマンス監視・最適化（2時間）
+✅ ルールブック・辞典更新（2時間）
+✅ 完了確認・リリース準備（4時間）
+```
+
+### 完了基準・品質指標
+```javascript
+✅ 分割完了基準:
+- app-core.js: 650行 → 350行以下（46%削減達成）
+- boundary-manager.js: 300行以下・単体テスト可能
+- coordinate-manager.js: 200行以下・数学的確定処理
+
+✅ 境界描画完了基準:
+- 境界越え描画: 100%動作（PointerEvent完全対応）
+- 境界検出遅延: 5ms以内達成
+- 描画開始遅延: 16ms以内達成（60FPS維持）
+- マルチポインター対応: 完全実装
+
+✅ 品質保証基準:
+- 統合テストスイート: 全項目PASS（10/10テスト）
+- パフォーマンス指標: 全項目達成（境界・座標・描画）
+- 統一システム使用率: 100%（ConfigManager/ErrorManager/EventBus）
+- DRY・SOLID原則: 100%準拠（重複0・単一責任）
+```
+
+### Phase2移行準備状況
+```javascript
+✅ レイヤーシステム基盤準備:
+- 境界管理システム: レイヤー境界対応準備完了
+- 座標管理システム: マルチレイヤー座標変換対応準備完了
+- 描画ツールシステム: レイヤー描画統合準備完了
+
+✅ 統一システム拡張準備:
+- ConfigManager: レイヤー設定枠組み準備完了
+- ErrorManager: レイヤー関連エラー定義準備完了
+- EventBus: レイヤーイベント枠組み準備完了
+```
+
+---
+
+## 💡 実装ガイド・開発者向け
+
+### AI協働時の注意点（Phase1.2版）
+```javascript
+🤖 分割改修時の統一システム必須活用:
+1. 新規分割ファイル作成時
+   - ConfigManager.get()で設定取得必須
+   - ErrorManager.showError()でエラー処理必須
+   - EventBus.safeEmit()でイベント通信必須
+
+2. 境界描画改修時
+   - BoundaryManager経由での境界処理必須
+   - CoordinateManager経由での座標変換必須
+   - ハードコード・重複実装完全禁止
+
+🔍 品質チェック自動化:
+1. 実装前: window.testUnifiedSystems()
+2. 実装中: window.testBoundaryDrawing()
+3. 実装後: window.getBoundaryPerformance()
+```
+
+### トラブルシューティング（Phase1.2版）
+```javascript
+🚨 よくある問題・解決法:
+
+🔧 境界越え描画されない:
+- BoundaryManager初期化確認: boundaryManager.getBoundaryState()
+- EventBusリスナー確認: 'boundary.cross.in'イベント受信確認
+- ツール境界対応確認: penTool.supportsBoundaryDrawing
+
+🔧 座標変換が不正確:
+- CoordinateManager状態確認: coordinateManager.getCoordinateState()
+- canvasRectパラメータ確認: getBoundingClientRect()結果
+- スケール補償確認: coordinate.scaleCompensation設定
+
+🔧 app-core.js分割後の動作不良:
+- 依存関係確認: 分割ファイルの読み込み順序
+- 統一システム確認: 全分割ファイルで統一システム使用
+- EventBus疎結合確認: 直接参照→EventBus経由変更
+```
+
+---
+
+*🏗️ app-core.js分割計画＋キャンバス境界描画改修統合計画書 Phase1.2*  
+*作成日: 2025年8月19日*  
