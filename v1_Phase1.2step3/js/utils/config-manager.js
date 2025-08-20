@@ -18,6 +18,22 @@ class ConfigManager {
      * デフォルト設定値（統一版）
      */
     static defaultConfig = {
+        // アプリケーション基本設定
+        app: {
+            version: 'v1.0-Phase1-unified',
+            name: 'ふたば☆お絵描きツール',
+            description: '統一システム完全統合版',
+            buildDate: '2025-08-20'
+        },
+        
+        // 依存関係設定
+        dependencies: {
+            required: ['PIXI', 'AppCore'],
+            unified: ['ConfigManager', 'ErrorManager', 'StateManager', 'EventBus'],
+            optional: ['BoundaryManager', 'CoordinateManager'],
+            external: ['pixi.js']
+        },
+        
         // キャンバス設定
         canvas: {
             width: 400,
@@ -27,7 +43,14 @@ class ConfigManager {
             minWidth: 100,
             minHeight: 100,
             backgroundColor: 0xf0e0d6,
-            backgroundColorHex: '#f0e0d6'
+            backgroundColorHex: '#f0e0d6',
+            // 境界設定追加
+            boundary: {
+                enabled: true,
+                margin: 20,
+                trackingEnabled: true,
+                visualizeEnabled: false
+            }
         },
         
         // PixiJS設定
@@ -38,7 +61,31 @@ class ConfigManager {
             cursor: 'crosshair'
         },
         
-        // 描画ツール設定
+        // ツール設定
+        tools: {
+            defaultTool: 'pen',
+            availableTools: ['pen', 'eraser'],
+            toolSettings: {
+                pen: {
+                    defaultSize: 16.0,
+                    minSize: 0.1,
+                    maxSize: 100.0,
+                    defaultColor: 0x800000,
+                    defaultColorHex: '#800000',
+                    defaultOpacity: 0.85,
+                    defaultPressure: 0.5,
+                    defaultSmoothing: 0.3,
+                    minDistance: 1.5
+                },
+                eraser: {
+                    defaultSize: 16.0,
+                    opacity: 1.0,
+                    blendMode: 'erase'
+                }
+            }
+        },
+        
+        // 描画ツール設定（レガシー互換）
         drawing: {
             pen: {
                 defaultSize: 16.0,
@@ -136,7 +183,14 @@ class ConfigManager {
             return this.defaultConfig;
         }
         
-        return this.getNestedValue(this.defaultConfig, path);
+        const value = this.getNestedValue(this.defaultConfig, path);
+        
+        // デバッグ用：見つからない設定パスを警告
+        if (value === undefined) {
+            console.warn(`⚠️ ConfigManager.get: 設定パス '${path}' が見つかりません`);
+        }
+        
+        return value;
     }
     
     /**
@@ -190,12 +244,37 @@ class ConfigManager {
     }
     
     /**
-     * 描画ツール設定取得
+     * ツール設定取得（新規）
+     * @param {string} tool - ツール名（'pen', 'eraser'等）
+     * @returns {Object} ツール設定
+     */
+    static getToolConfig(tool = 'pen') {
+        return this.get(`tools.toolSettings.${tool}`) || this.get(`drawing.${tool}`);
+    }
+    
+    /**
+     * 描画ツール設定取得（レガシー互換）
      * @param {string} tool - ツール名（'pen', 'eraser'等）
      * @returns {Object} ツール設定
      */
     static getDrawingConfig(tool = 'pen') {
         return this.get(`drawing.${tool}`);
+    }
+    
+    /**
+     * デフォルトツール取得
+     * @returns {string} デフォルトツール名
+     */
+    static getDefaultTool() {
+        return this.get('tools.defaultTool') || 'pen';
+    }
+    
+    /**
+     * 利用可能ツール一覧取得
+     * @returns {Array} ツール名配列
+     */
+    static getAvailableTools() {
+        return this.get('tools.availableTools') || ['pen', 'eraser'];
     }
     
     /**
@@ -231,6 +310,22 @@ class ConfigManager {
     }
     
     /**
+     * アプリケーション情報取得
+     * @returns {Object} アプリ情報
+     */
+    static getAppInfo() {
+        return this.get('app');
+    }
+    
+    /**
+     * 依存関係情報取得
+     * @returns {Object} 依存関係情報
+     */
+    static getDependencies() {
+        return this.get('dependencies');
+    }
+    
+    /**
      * v8移行設定取得
      * @returns {Object} v8移行設定
      */
@@ -253,6 +348,7 @@ class ConfigManager {
                        value <= this.get('canvas.maxWidth');
                        
             case 'drawing.pen.defaultSize':
+            case 'tools.toolSettings.pen.defaultSize':
                 return typeof value === 'number' && 
                        value >= this.get('drawing.pen.minSize') && 
                        value <= this.get('drawing.pen.maxSize');
@@ -273,10 +369,13 @@ class ConfigManager {
      */
     static getDebugInfo() {
         return {
-            version: 'v1.0-unified',
+            version: this.get('app.version'),
             totalSettings: this.countSettings(this.defaultConfig),
             settingsPaths: this.getAllPaths(this.defaultConfig),
             colors: Object.keys(this.get('colors')),
+            dependencies: this.get('dependencies'),
+            defaultTool: this.getDefaultTool(),
+            availableTools: this.getAvailableTools(),
             v8Ready: this.get('v8Migration.enabled')
         };
     }
@@ -326,6 +425,8 @@ window.getConfig = (path) => ConfigManager.get(path);
 window.setConfig = (path, value) => ConfigManager.set(path, value);
 window.getConfigDebug = () => ConfigManager.getDebugInfo();
 
-console.log('✅ ConfigManager 初期化完了');
+console.log('✅ ConfigManager 初期化完了（修正版）');
 console.log(`📊 設定項目数: ${ConfigManager.getDebugInfo().totalSettings}個`);
+console.log(`🎯 アプリケーション: ${ConfigManager.get('app.name')} ${ConfigManager.get('app.version')}`);
+console.log(`🔧 デフォルトツール: ${ConfigManager.getDefaultTool()}`);
 console.log('💡 使用例: ConfigManager.get("canvas.width") または window.getConfig("canvas.width")');
