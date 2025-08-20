@@ -1,15 +1,18 @@
 /**
- * 🎯 キャンバス境界管理システム
+ * 🎯 キャンバス境界管理システム（ConfigManager参照修正版）
  * 🎯 AI_WORK_SCOPE: 境界越えイベント処理・境界判定・境界描画制御
  * 🎯 DEPENDENCIES: ConfigManager, ErrorManager, EventBus, coordinate-manager.js
  * 🎯 UNIFIED: ConfigManager(境界設定), ErrorManager(境界エラー), EventBus(境界イベント)
  * 🎯 ISOLATION_TEST: ✅ 単体テスト可能
+ * 🔧 CONFIG_FIX: ConfigManager静的参照をインスタンス参照に修正
  */
 
 class BoundaryManager {
     constructor() {
         this.validateUnifiedSystems();
-        this.config = ConfigManager.get('canvas.boundary') || this.getDefaultBoundaryConfig();
+        
+        // 🔧 CONFIG_FIX: ConfigManagerのインスタンス参照を使用
+        this.config = this.configManager.get('canvas.boundary') || this.getDefaultBoundaryConfig();
         this.coordinateManager = null; // 後で依存注入
         
         // 境界追跡状態
@@ -25,11 +28,11 @@ class BoundaryManager {
             pointerUp: this.handleGlobalPointerUp.bind(this)
         };
         
-        console.log('🎯 BoundaryManager 初期化完了（統一システム統合版）');
+        console.log('🎯 BoundaryManager 初期化完了（ConfigManager修正版）');
     }
     
     /**
-     * 統一システム依存性確認
+     * 🔧 CONFIG_FIX: 統一システム依存性確認（インスタンス参照版）
      */
     validateUnifiedSystems() {
         const required = ['ConfigManager', 'ErrorManager', 'EventBus'];
@@ -37,6 +40,13 @@ class BoundaryManager {
         if (missing.length > 0) {
             throw new Error(`BoundaryManager: 統一システム依存不足: ${missing.join(', ')}`);
         }
+        
+        // 🔧 CONFIG_FIX: 統一システムへのインスタンス参照を確立
+        this.configManager = window.ConfigManager;
+        this.errorManager = window.ErrorManager;
+        this.eventBus = window.EventBus;
+        
+        console.log('✅ BoundaryManager: 統一システム依存性確認完了');
     }
     
     /**
@@ -73,16 +83,29 @@ class BoundaryManager {
             
             console.log('✅ BoundaryManager 初期化完了');
             
-            EventBus.safeEmit('boundary.manager.initialized', {
-                margin: this.boundaryMargin,
-                config: this.config
-            });
+            // 🔧 CONFIG_FIX: EventBusインスタンス参照使用
+            if (this.eventBus && typeof this.eventBus.emit === 'function') {
+                this.eventBus.emit('boundary.manager.initialized', {
+                    margin: this.boundaryMargin,
+                    config: this.config
+                });
+            } else if (this.eventBus && typeof this.eventBus.safeEmit === 'function') {
+                this.eventBus.safeEmit('boundary.manager.initialized', {
+                    margin: this.boundaryMargin,
+                    config: this.config
+                });
+            }
             
         } catch (error) {
-            ErrorManager.showError('boundary-init', 
-                `境界管理初期化失敗: ${error.message}`, 
-                { config: this.config }
-            );
+            // 🔧 CONFIG_FIX: ErrorManagerインスタンス参照使用
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('boundary-init', 
+                    `境界管理初期化失敗: ${error.message}`, 
+                    { config: this.config }
+                );
+            } else {
+                console.error('❌ 境界管理初期化失敗:', error.message);
+            }
             throw error;
         }
     }
@@ -146,10 +169,18 @@ class BoundaryManager {
                     type: event.pointerType || 'unknown'
                 };
                 
-                EventBus.safeEmit('boundary.outside.start', {
-                    pointer: this.outsidePointer,
-                    canvasRect
-                });
+                // 🔧 CONFIG_FIX: EventBusインスタンス参照使用
+                if (this.eventBus && typeof this.eventBus.emit === 'function') {
+                    this.eventBus.emit('boundary.outside.start', {
+                        pointer: this.outsidePointer,
+                        canvasRect
+                    });
+                } else if (this.eventBus && typeof this.eventBus.safeEmit === 'function') {
+                    this.eventBus.safeEmit('boundary.outside.start', {
+                        pointer: this.outsidePointer,
+                        canvasRect
+                    });
+                }
                 
                 if (this.config.debugging) {
                     console.log(`🎯 境界外ポインター検出: (${event.clientX}, ${event.clientY})`);
@@ -157,10 +188,15 @@ class BoundaryManager {
             }
             
         } catch (error) {
-            ErrorManager.showError('boundary-tracking', 
-                `境界追跡エラー: ${error.message}`, 
-                { event: event.type, pointerId: event.pointerId }
-            );
+            // 🔧 CONFIG_FIX: ErrorManagerインスタンス参照使用
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('boundary-tracking', 
+                    `境界追跡エラー: ${error.message}`, 
+                    { event: event.type, pointerId: event.pointerId }
+                );
+            } else {
+                console.error('❌ 境界追跡エラー:', error.message);
+            }
         }
     }
     
@@ -184,10 +220,15 @@ class BoundaryManager {
             }
             
         } catch (error) {
-            ErrorManager.showError('boundary-cross', 
-                `境界越え処理エラー: ${error.message}`, 
-                { event: event.type, pointerId: event.pointerId }
-            );
+            // 🔧 CONFIG_FIX: ErrorManagerインスタンス参照使用
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('boundary-cross', 
+                    `境界越え処理エラー: ${error.message}`, 
+                    { event: event.type, pointerId: event.pointerId }
+                );
+            } else {
+                console.error('❌ 境界越え処理エラー:', error.message);
+            }
         }
     }
     
@@ -207,15 +248,28 @@ class BoundaryManager {
             );
             
             // 境界越え描画開始イベント発火
-            EventBus.safeEmit('boundary.cross.in', {
-                position: canvasCoords,
-                pressure: event.pressure || 0.5,
-                pointerId: event.pointerId,
-                pointerType: event.pointerType || 'unknown',
-                originalEvent: event,
-                fromOutside: true,
-                timestamp: Date.now()
-            });
+            // 🔧 CONFIG_FIX: EventBusインスタンス参照使用
+            if (this.eventBus && typeof this.eventBus.emit === 'function') {
+                this.eventBus.emit('boundary.cross.in', {
+                    position: canvasCoords,
+                    pressure: event.pressure || 0.5,
+                    pointerId: event.pointerId,
+                    pointerType: event.pointerType || 'unknown',
+                    originalEvent: event,
+                    fromOutside: true,
+                    timestamp: Date.now()
+                });
+            } else if (this.eventBus && typeof this.eventBus.safeEmit === 'function') {
+                this.eventBus.safeEmit('boundary.cross.in', {
+                    position: canvasCoords,
+                    pressure: event.pressure || 0.5,
+                    pointerId: event.pointerId,
+                    pointerType: event.pointerType || 'unknown',
+                    originalEvent: event,
+                    fromOutside: true,
+                    timestamp: Date.now()
+                });
+            }
             
             console.log(`🎯 境界越えイン: (${canvasCoords.x.toFixed(1)}, ${canvasCoords.y.toFixed(1)})`);
             
@@ -224,10 +278,15 @@ class BoundaryManager {
             this.outsidePointer = null;
             
         } catch (error) {
-            ErrorManager.showError('boundary-cross', 
-                `境界越えイン処理エラー: ${error.message}`, 
-                { pointerId: event.pointerId }
-            );
+            // 🔧 CONFIG_FIX: ErrorManagerインスタンス参照使用
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('boundary-cross', 
+                    `境界越えイン処理エラー: ${error.message}`, 
+                    { pointerId: event.pointerId }
+                );
+            } else {
+                console.error('❌ 境界越えイン処理エラー:', error.message);
+            }
         }
     }
     
@@ -240,10 +299,18 @@ class BoundaryManager {
             this.isTrackingOutside = false;
             this.outsidePointer = null;
             
-            EventBus.safeEmit('boundary.outside.end', {
-                pointerId: event.pointerId,
-                timestamp: Date.now()
-            });
+            // 🔧 CONFIG_FIX: EventBusインスタンス参照使用
+            if (this.eventBus && typeof this.eventBus.emit === 'function') {
+                this.eventBus.emit('boundary.outside.end', {
+                    pointerId: event.pointerId,
+                    timestamp: Date.now()
+                });
+            } else if (this.eventBus && typeof this.eventBus.safeEmit === 'function') {
+                this.eventBus.safeEmit('boundary.outside.end', {
+                    pointerId: event.pointerId,
+                    timestamp: Date.now()
+                });
+            }
             
             if (this.config.debugging) {
                 console.log(`🎯 境界外ポインターアップ: ${event.pointerId}`);
@@ -287,6 +354,9 @@ class BoundaryManager {
             config: this.config,
             canvasElement: !!this.canvasElement,
             coordinateManager: !!this.coordinateManager,
+            configManager: !!this.configManager,
+            errorManager: !!this.errorManager,
+            eventBus: !!this.eventBus,
             isInitialized: !!(this.canvasElement && this.coordinateManager)
         };
     }
@@ -302,17 +372,51 @@ class BoundaryManager {
             // 拡張ヒットエリア再計算
             this.createExpandedHitArea();
             
-            EventBus.safeEmit('boundary.config.updated', {
-                config: this.config
-            });
+            // 🔧 CONFIG_FIX: EventBusインスタンス参照使用
+            if (this.eventBus && typeof this.eventBus.emit === 'function') {
+                this.eventBus.emit('boundary.config.updated', {
+                    config: this.config
+                });
+            } else if (this.eventBus && typeof this.eventBus.safeEmit === 'function') {
+                this.eventBus.safeEmit('boundary.config.updated', {
+                    config: this.config
+                });
+            }
             
             console.log('🎯 境界設定更新完了:', this.config);
             
         } catch (error) {
-            ErrorManager.showError('boundary-config', 
-                `境界設定更新エラー: ${error.message}`, 
-                { config: newConfig }
-            );
+            // 🔧 CONFIG_FIX: ErrorManagerインスタンス参照使用
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('boundary-config', 
+                    `境界設定更新エラー: ${error.message}`, 
+                    { config: newConfig }
+                );
+            } else {
+                console.error('❌ 境界設定更新エラー:', error.message);
+            }
+        }
+    }
+    
+    /**
+     * 🔧 ADDED: 設定再読み込み（ConfigManager更新対応）
+     */
+    reloadConfig() {
+        try {
+            console.log('🔄 BoundaryManager設定再読み込み中...');
+            
+            // ConfigManagerから最新設定を取得
+            this.config = this.configManager.get('canvas.boundary') || this.getDefaultBoundaryConfig();
+            this.boundaryMargin = this.config.margin || 20;
+            
+            // 拡張ヒットエリア再計算
+            this.createExpandedHitArea();
+            
+            console.log('✅ BoundaryManager設定再読み込み完了');
+            return true;
+        } catch (error) {
+            console.error('❌ BoundaryManager設定再読み込み失敗:', error.message);
+            return false;
         }
     }
     
@@ -335,20 +439,57 @@ class BoundaryManager {
             this.coordinateManager = null;
             this.expandedHitArea = null;
             
-            EventBus.safeEmit('boundary.manager.destroyed');
+            // 🔧 CONFIG_FIX: EventBusインスタンス参照使用
+            if (this.eventBus && typeof this.eventBus.emit === 'function') {
+                this.eventBus.emit('boundary.manager.destroyed');
+            } else if (this.eventBus && typeof this.eventBus.safeEmit === 'function') {
+                this.eventBus.safeEmit('boundary.manager.destroyed');
+            }
             
             console.log('🎯 BoundaryManager 破棄完了');
             
         } catch (error) {
-            ErrorManager.showError('boundary-destroy', 
-                `境界管理破棄エラー: ${error.message}`
-            );
+            // 🔧 CONFIG_FIX: ErrorManagerインスタンス参照使用
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('boundary-destroy', 
+                    `境界管理破棄エラー: ${error.message}`
+                );
+            } else {
+                console.error('❌ 境界管理破棄エラー:', error.message);
+            }
         }
+    }
+    
+    /**
+     * 🔧 ADDED: デバッグ情報出力
+     */
+    debugBoundarySystem() {
+        console.group('🎯 BoundaryManager デバッグ情報');
+        console.log('境界追跡状態:', {
+            isTrackingOutside: this.isTrackingOutside,
+            outsidePointer: this.outsidePointer,
+            boundaryMargin: this.boundaryMargin
+        });
+        console.log('統一システム状態:', {
+            configManager: !!this.configManager,
+            errorManager: !!this.errorManager,
+            eventBus: !!this.eventBus
+        });
+        console.log('初期化状態:', {
+            canvasElement: !!this.canvasElement,
+            coordinateManager: !!this.coordinateManager,
+            expandedHitArea: !!this.expandedHitArea
+        });
+        console.log('設定詳細:', this.config);
+        console.groupEnd();
     }
 }
 
 // グローバル登録
 if (typeof window !== 'undefined') {
+    if (window.BoundaryManager) {
+        console.warn('⚠️ BoundaryManager was already defined - replacing...');
+    }
     window.BoundaryManager = BoundaryManager;
-    console.log('🎯 BoundaryManager グローバル登録完了');
+    console.log('🎯 BoundaryManager グローバル登録完了（ConfigManager修正版）');
 }

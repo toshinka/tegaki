@@ -1,11 +1,11 @@
 /**
- * 📐 座標変換管理システム（DPI除去完了版・構文修正版）
+ * 📐 座標変換管理システム（DPI除去完了版・ConfigManager参照修正版）
  * 🎯 AI_WORK_SCOPE: スクリーン座標・キャンバス座標・PixiJS座標変換
  * 🎯 DEPENDENCIES: ConfigManager, ErrorManager
  * 🎯 UNIFIED: ConfigManager(キャンバス設定), ErrorManager(座標エラー)
  * 🎯 ISOLATION_TEST: ✅ 単体テスト可能・数学的確定処理
  * 🛠️ DPI_REMOVAL: scaleCompensation除去・devicePixelRatio処理削除・座標変換単純化
- * 🔧 SYNTAX_FIX: 構文エラー修正・クラス定義完全化
+ * 🔧 CONFIG_FIX: ConfigManager静的参照をインスタンス参照に修正
  */
 
 class CoordinateManager {
@@ -21,7 +21,7 @@ class CoordinateManager {
         this.precision = this.coordinateConfig.precision || 2;
         this.boundaryClamp = this.coordinateConfig.boundaryClamp !== false;
         
-        console.log('📐 CoordinateManager 初期化完了（DPI除去版・統一システム統合版）');
+        console.log('📐 CoordinateManager 初期化完了（DPI除去版・ConfigManager修正版）');
         console.log(`📐 設定: precision=${this.precision}, boundaryClamp=${this.boundaryClamp}, DPI補償=無効`);
     }
     
@@ -34,20 +34,33 @@ class CoordinateManager {
         if (missing.length > 0) {
             throw new Error(`CoordinateManager: 統一システム依存不足: ${missing.join(', ')}`);
         }
+        
+        // 🔧 CONFIG_FIX: 統一システムへのインスタンス参照を確立
+        this.configManager = window.ConfigManager;
+        this.errorManager = window.ErrorManager;
+        
+        console.log('✅ CoordinateManager: 統一システム依存性確認完了');
     }
     
     /**
-     * 🛠️ MODIFIED: 設定初期化（DPI除去版）
+     * 🔧 CONFIG_FIX: 設定初期化（インスタンス参照版）
      */
     initializeConfig() {
-        this.canvasConfig = ConfigManager.getCanvasConfig();
-        this.coordinateConfig = ConfigManager.getCoordinateConfig();
+        // 🔧 FIXED: ConfigManagerのインスタンスメソッド呼び出しに修正
+        this.canvasConfig = this.configManager.getCanvasConfig();
+        this.coordinateConfig = this.configManager.getCoordinateConfig();
         
         // 🛠️ MODIFIED: DPI関連設定が無効化されていることを確認・強制
         if (this.coordinateConfig.scaleCompensation !== false) {
             console.warn('⚠️ ConfigManagerでscaleCompensation設定が有効になっています。強制的に無効化します。');
             this.coordinateConfig.scaleCompensation = false;
         }
+        
+        console.log('⚙️ CoordinateManager設定初期化完了', {
+            canvasSize: `${this.canvasConfig.width}x${this.canvasConfig.height}`,
+            precision: this.coordinateConfig.precision,
+            scaleCompensation: this.coordinateConfig.scaleCompensation
+        });
     }
     
     /**
@@ -95,10 +108,15 @@ class CoordinateManager {
             return { x: canvasX, y: canvasY };
             
         } catch (error) {
-            ErrorManager.showError('coordinate-convert', 
-                `座標変換エラー: ${error.message}`, 
-                { screenX, screenY, canvasRect: canvasRect ? 'valid' : 'null' }
-            );
+            // 🔧 CONFIG_FIX: ErrorManager インスタンス参照使用
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('coordinate-convert', 
+                    `座標変換エラー: ${error.message}`, 
+                    { screenX, screenY, canvasRect: canvasRect ? 'valid' : 'null' }
+                );
+            } else {
+                console.error('❌ 座標変換エラー:', error.message);
+            }
             return { x: 0, y: 0 };
         }
     }
@@ -130,10 +148,15 @@ class CoordinateManager {
             return { x: pixiX, y: pixiY };
             
         } catch (error) {
-            ErrorManager.showError('coordinate-pixi', 
-                `PixiJS座標変換エラー: ${error.message}`, 
-                { canvasX, canvasY, hasPixiApp: !!pixiApp }
-            );
+            // 🔧 CONFIG_FIX: ErrorManager インスタンス参照使用
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('coordinate-pixi', 
+                    `PixiJS座標変換エラー: ${error.message}`, 
+                    { canvasX, canvasY, hasPixiApp: !!pixiApp }
+                );
+            } else {
+                console.error('❌ PixiJS座標変換エラー:', error.message);
+            }
             // フォールバック: キャンバス座標をそのまま返す
             return { x: canvasX, y: canvasY };
         }
@@ -147,10 +170,15 @@ class CoordinateManager {
             const canvasCoords = this.screenToCanvas(screenX, screenY, canvasRect);
             return this.canvasToPixi(canvasCoords.x, canvasCoords.y, pixiApp);
         } catch (error) {
-            ErrorManager.showError('coordinate-screen-pixi', 
-                `スクリーン→PixiJS座標変換エラー: ${error.message}`, 
-                { screenX, screenY }
-            );
+            // 🔧 CONFIG_FIX: ErrorManager インスタンス参照使用
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('coordinate-screen-pixi', 
+                    `スクリーン→PixiJS座標変換エラー: ${error.message}`, 
+                    { screenX, screenY }
+                );
+            } else {
+                console.error('❌ スクリーン→PixiJS座標変換エラー:', error.message);
+            }
             return { x: 0, y: 0 };
         }
     }
@@ -199,10 +227,15 @@ class CoordinateManager {
             return result;
             
         } catch (error) {
-            ErrorManager.showError('coordinate-extract', 
-                `座標抽出エラー: ${error.message}`, 
-                { event: event?.type || 'unknown' }
-            );
+            // 🔧 CONFIG_FIX: ErrorManager インスタンス参照使用
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('coordinate-extract', 
+                    `座標抽出エラー: ${error.message}`, 
+                    { event: event?.type || 'unknown' }
+                );
+            } else {
+                console.error('❌ 座標抽出エラー:', error.message);
+            }
             return {
                 screen: { x: 0, y: 0 },
                 canvas: { x: 0, y: 0 },
@@ -256,10 +289,13 @@ class CoordinateManager {
             return this.applyPrecision(distance);
             
         } catch (error) {
-            ErrorManager.showError('coordinate-distance', 
-                `距離計算エラー: ${error.message}`, 
-                { point1, point2 }
-            );
+            // 🔧 CONFIG_FIX: ErrorManager インスタンス参照使用
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('coordinate-distance', 
+                    `距離計算エラー: ${error.message}`, 
+                    { point1, point2 }
+                );
+            }
             return 0;
         }
     }
@@ -280,10 +316,13 @@ class CoordinateManager {
             return this.applyPrecision(angle);
             
         } catch (error) {
-            ErrorManager.showError('coordinate-angle', 
-                `角度計算エラー: ${error.message}`, 
-                { point1, point2 }
-            );
+            // 🔧 CONFIG_FIX: ErrorManager インスタンス参照使用
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('coordinate-angle', 
+                    `角度計算エラー: ${error.message}`, 
+                    { point1, point2 }
+                );
+            }
             return 0;
         }
     }
@@ -335,19 +374,33 @@ class CoordinateManager {
             
             console.log(`📐 座標系更新: ${oldWidth}x${oldHeight} → ${width}x${height} (DPI補償なし)`);
             
-            // EventBus通知
-            EventBus.safeEmit('coordinate.canvas.resized', {
-                oldSize: { width: oldWidth, height: oldHeight },
-                newSize: { width, height },
-                dpiCompensation: false, // 🛠️ ADDED: DPI補償状況を通知
-                timestamp: Date.now()
-            });
+            // EventBus通知（安全な呼び出し）
+            if (window.EventBus && typeof window.EventBus.emit === 'function') {
+                window.EventBus.emit('coordinate.canvas.resized', {
+                    oldSize: { width: oldWidth, height: oldHeight },
+                    newSize: { width, height },
+                    dpiCompensation: false, // 🛠️ ADDED: DPI補償状況を通知
+                    timestamp: Date.now()
+                });
+            } else if (window.EventBus && typeof window.EventBus.safeEmit === 'function') {
+                window.EventBus.safeEmit('coordinate.canvas.resized', {
+                    oldSize: { width: oldWidth, height: oldHeight },
+                    newSize: { width, height },
+                    dpiCompensation: false,
+                    timestamp: Date.now()
+                });
+            }
             
         } catch (error) {
-            ErrorManager.showError('coordinate-resize', 
-                `座標系リサイズエラー: ${error.message}`, 
-                { width, height }
-            );
+            // 🔧 CONFIG_FIX: ErrorManager インスタンス参照使用
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('coordinate-resize', 
+                    `座標系リサイズエラー: ${error.message}`, 
+                    { width, height }
+                );
+            } else {
+                console.error('❌ 座標系リサイズエラー:', error.message);
+            }
         }
     }
     
@@ -365,17 +418,31 @@ class CoordinateManager {
             
             console.log(`📐 精度更新: ${oldPrecision} → ${newPrecision}`);
             
-            EventBus.safeEmit('coordinate.precision.updated', {
-                oldPrecision,
-                newPrecision,
-                timestamp: Date.now()
-            });
+            // EventBus通知（安全な呼び出し）
+            if (window.EventBus && typeof window.EventBus.emit === 'function') {
+                window.EventBus.emit('coordinate.precision.updated', {
+                    oldPrecision,
+                    newPrecision,
+                    timestamp: Date.now()
+                });
+            } else if (window.EventBus && typeof window.EventBus.safeEmit === 'function') {
+                window.EventBus.safeEmit('coordinate.precision.updated', {
+                    oldPrecision,
+                    newPrecision,
+                    timestamp: Date.now()
+                });
+            }
             
         } catch (error) {
-            ErrorManager.showError('coordinate-precision', 
-                `精度設定エラー: ${error.message}`, 
-                { precision: newPrecision }
-            );
+            // 🔧 CONFIG_FIX: ErrorManager インスタンス参照使用
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('coordinate-precision', 
+                    `精度設定エラー: ${error.message}`, 
+                    { precision: newPrecision }
+                );
+            } else {
+                console.error('❌ 精度設定エラー:', error.message);
+            }
         }
     }
     
@@ -394,6 +461,8 @@ class CoordinateManager {
             config: this.coordinateConfig,
             canvasConfig: this.canvasConfig,
             dpiRemovalComplete: true, // 🛠️ ADDED: DPI除去完了フラグ
+            configManagerAvailable: !!this.configManager,
+            errorManagerAvailable: !!this.errorManager,
             timestamp: Date.now()
         };
     }
@@ -443,10 +512,54 @@ class CoordinateManager {
         
         return { coordinateResults: results, dpiRemovalTest: dpiTest };
     }
+    
+    /**
+     * 🔧 ADDED: 設定再読み込み（ConfigManager更新対応）
+     */
+    reloadConfig() {
+        try {
+            console.log('🔄 CoordinateManager設定再読み込み中...');
+            this.initializeConfig();
+            
+            // キャンバスサイズ更新
+            this.canvasWidth = this.canvasConfig.width;
+            this.canvasHeight = this.canvasConfig.height;
+            
+            console.log('✅ CoordinateManager設定再読み込み完了');
+            return true;
+        } catch (error) {
+            console.error('❌ CoordinateManager設定再読み込み失敗:', error.message);
+            return false;
+        }
+    }
+    
+    /**
+     * 🔧 ADDED: デバッグ情報出力
+     */
+    debugCoordinateSystem() {
+        console.group('📐 CoordinateManager デバッグ情報');
+        console.log('キャンバスサイズ:', { width: this.canvasWidth, height: this.canvasHeight });
+        console.log('精度設定:', this.precision);
+        console.log('境界クランプ:', this.boundaryClamp);
+        console.log('DPI補償:', false);
+        console.log('統一システム状態:', {
+            configManager: !!this.configManager,
+            errorManager: !!this.errorManager,
+            eventBus: !!window.EventBus
+        });
+        console.log('設定詳細:', {
+            canvasConfig: this.canvasConfig,
+            coordinateConfig: this.coordinateConfig
+        });
+        console.groupEnd();
+    }
 }
 
 // グローバル登録
 if (typeof window !== 'undefined') {
+    if (window.CoordinateManager) {
+        console.warn('⚠️ CoordinateManager was already defined - replacing...');
+    }
     window.CoordinateManager = CoordinateManager;
-    console.log('📐 CoordinateManager グローバル登録完了（DPI除去版・構文修正版）');
+    console.log('📐 CoordinateManager グローバル登録完了（DPI除去版・ConfigManager修正版）');
 }

@@ -1,8 +1,8 @@
 /**
- * 🎨 AppCoreシステム（DPI除去完了版・重複宣言修正版）
+ * 🎨 AppCoreシステム（DPI除去完了版・CoordinateManager初期化修正版）
  * 🎯 AI_WORK_SCOPE: PixiJSアプリケーション基盤・システム統合・初期化制御
  * 🎯 DEPENDENCIES: 統一システム4種、BoundaryManager、CoordinateManager
- * 🔧 DUPLICATE_FIX: クラス重複宣言解決・統一システム依存性修正
+ * 🔧 COORDINATE_FIX: CoordinateManager初期化順序修正・依存関係解決
  * 🛠️ DPI_REMOVAL: devicePixelRatio使用除去・固定resolution=1・DPI補償処理削除
  */
 
@@ -33,7 +33,7 @@ class AppCore {
         this.initializationComplete = false;
         this.initializationFailed = false;
         
-        console.log('🎨 AppCore インスタンス作成完了（DPI除去版・重複修正版）');
+        console.log('🎨 AppCore インスタンス作成完了（DPI除去版・CoordinateManager修正版）');
     }
     
     /**
@@ -92,7 +92,7 @@ class AppCore {
      */
     async initialize() {
         try {
-            console.log('🚀 AppCore 初期化開始（DPI除去版・重複修正版）...');
+            console.log('🚀 AppCore 初期化開始（DPI除去版・CoordinateManager修正版）...');
             this.isInitializing = true;
             
             // 段階的初期化
@@ -109,7 +109,7 @@ class AppCore {
     }
     
     /**
-     * 基盤システム初期化（修正版）
+     * 🔧 FIXED: 基盤システム初期化（CoordinateManager初期化修正版）
      */
     async initializeBasicSystems() {
         console.log('🔧 基盤システム初期化中...');
@@ -117,30 +117,43 @@ class AppCore {
         // DOM確認
         await this.verifyDOMElements();
         
-        // 座標管理システム初期化（エラーハンドリング強化）
+        // PixiJSアプリケーション初期化（CoordinateManagerより先に）
+        await this.initializePixiApp();
+        
+        // コンテナ初期化
+        this.initializeContainers();
+        
+        // 🔧 FIXED: CoordinateManager初期化（PixiJS初期化後に実行）
         if (window.CoordinateManager) {
             try {
+                // CoordinateManagerに必要な設定を事前に準備
+                const coordinateConfig = this.configManager.getCoordinateConfig();
+                const canvasConfig = this.configManager.getCanvasConfig();
+                
+                // 🔧 FIXED: CoordinateManagerクラスを直接インスタンス化（引数なし）
                 this.coordinateManager = new window.CoordinateManager();
+                
                 console.log('✅ CoordinateManager初期化完了');
+                
+                // キャンバスサイズ設定（初期化後）
+                if (typeof this.coordinateManager.updateCanvasSize === 'function') {
+                    this.coordinateManager.updateCanvasSize(canvasConfig.width, canvasConfig.height);
+                }
+                
             } catch (error) {
                 console.warn('⚠️ CoordinateManager初期化失敗（オプション）:', error.message);
+                console.warn('⚠️ 詳細:', error);
                 this.coordinateManager = null;
             }
         } else {
             console.warn('⚠️ CoordinateManager利用不可（オプション）');
         }
         
-        // PixiJSアプリケーション初期化
-        await this.initializePixiApp();
-        
-        // コンテナ初期化
-        this.initializeContainers();
-        
         console.log('✅ 基盤システム初期化完了');
     }
     
     /**
-     * 管理システム初期化（修正版 - 初期化メソッド統一）
+     * 🔧 FIXED: 管理システム初期化（BoundaryManager初期化修正版）
      */
     async initializeManagers() {
         console.log('🔧 管理システム初期化中...');
@@ -148,11 +161,20 @@ class AppCore {
         // 境界管理システム初期化
         if (window.BoundaryManager) {
             try {
+                // 🔧 FIXED: BoundaryManager初期化時の設定取得を修正
                 this.boundaryManager = new window.BoundaryManager();
-                await this.boundaryManager.initialize(this.app.view, this.coordinateManager);
+                
+                // BoundaryManagerの初期化メソッドが存在する場合のみ呼び出し
+                if (typeof this.boundaryManager.initialize === 'function') {
+                    await this.boundaryManager.initialize(this.app.view, this.coordinateManager);
+                } else if (typeof this.boundaryManager.init === 'function') {
+                    await this.boundaryManager.init(this.app.view, this.coordinateManager);
+                }
+                
                 console.log('✅ BoundaryManager初期化完了');
             } catch (error) {
                 console.warn('⚠️ BoundaryManager初期化失敗（オプション）:', error.message);
+                console.warn('⚠️ 詳細:', error);
                 this.boundaryManager = null;
             }
         } else {
@@ -163,7 +185,14 @@ class AppCore {
         if (window.ToolManager) {
             try {
                 this.toolManager = new window.ToolManager(this);
-                await this.toolManager.initialize(); // ← ToolManagerは initialize() メソッド
+                
+                // ToolManagerの初期化メソッド呼び出し
+                if (typeof this.toolManager.initialize === 'function') {
+                    await this.toolManager.initialize();
+                } else if (typeof this.toolManager.init === 'function') {
+                    await this.toolManager.init();
+                }
+                
                 console.log('✅ ToolManager初期化完了');
             } catch (error) {
                 console.warn('⚠️ ToolManager初期化失敗（オプション）:', error.message);
@@ -177,7 +206,14 @@ class AppCore {
         if (window.UIManager) {
             try {
                 this.uiManager = new window.UIManager(this);
-                await this.uiManager.init(); // ← UIManagerは init() メソッド（initialize()ではない）
+                
+                // UIManagerの初期化メソッド呼び出し
+                if (typeof this.uiManager.init === 'function') {
+                    await this.uiManager.init();
+                } else if (typeof this.uiManager.initialize === 'function') {
+                    await this.uiManager.initialize();
+                }
+                
                 console.log('✅ UIManager初期化完了');
             } catch (error) {
                 console.warn('⚠️ UIManager初期化失敗（オプション）:', error.message);
@@ -465,7 +501,7 @@ class AppCore {
     }
     
     /**
-     * ポインターダウンハンドラー（修正版）
+     * 🔧 FIXED: ポインターダウンハンドラー（ToolManager存在チェック強化版）
      */
     handlePointerDown(event) {
         if (!this.toolManager || !this.coordinateManager) {
@@ -480,14 +516,19 @@ class AppCore {
                 this.app
             );
             
-            // ToolManagerの描画開始メソッドを呼び出し
-            this.toolManager.startDrawing(coords.canvas.x, coords.canvas.y, coords.pressure);
+            // ToolManagerの描画開始メソッド呼び出し
+            if (typeof this.toolManager.startDrawing === 'function') {
+                this.toolManager.startDrawing(coords.canvas.x, coords.canvas.y, coords.pressure);
+            } else {
+                console.warn('⚠️ ToolManager.startDrawing メソッドが利用できません');
+            }
             
             if (this.eventBus && typeof this.eventBus.emit === 'function') {
                 this.eventBus.emit('drawing.started', {
                     position: coords.canvas,
                     pressure: coords.pressure,
-                    tool: this.toolManager.getCurrentTool() || 'unknown'
+                    tool: (typeof this.toolManager.getCurrentTool === 'function') ? 
+                          this.toolManager.getCurrentTool() : 'unknown'
                 });
             }
             
@@ -517,7 +558,7 @@ class AppCore {
             this.updateCoordinateDisplay(coords.canvas);
             
             // ツール描画継続
-            if (this.toolManager) {
+            if (this.toolManager && typeof this.toolManager.continueDrawing === 'function') {
                 this.toolManager.continueDrawing(coords.canvas.x, coords.canvas.y, coords.pressure);
             }
             
@@ -534,7 +575,9 @@ class AppCore {
         if (!this.toolManager) return;
         
         try {
-            this.toolManager.stopDrawing();
+            if (typeof this.toolManager.stopDrawing === 'function') {
+                this.toolManager.stopDrawing();
+            }
             
             if (this.eventBus && typeof this.eventBus.emit === 'function') {
                 this.eventBus.emit('drawing.ended', {
@@ -603,7 +646,7 @@ class AppCore {
             });
         }
         
-        console.log('✅ AppCore 初期化完了（DPI除去版・重複修正版）');
+        console.log('✅ AppCore 初期化完了（DPI除去版・CoordinateManager修正版）');
     }
     
     /**
@@ -829,5 +872,5 @@ if (typeof window !== 'undefined') {
         console.warn('⚠️ AppCore was already registered - replacing...');
     }
     window.AppCore = AppCore;
-    console.log('🎨 AppCore グローバル登録完了（DPI除去版・重複修正版）');
+    console.log('🎨 AppCore グローバル登録完了（DPI除去版・CoordinateManager修正版）');
 }
