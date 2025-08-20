@@ -13,9 +13,10 @@
 - **JavaScript Pure**: ✅ ESM/TypeScript混在禁止・Pure JavaScript維持達成
 - **統一システム必須**: ✅ 全Manager・ToolがConfigManager等経由で動作
 - **500行ファイル制限**: ✅ 平均300行以下・最大管理下
-- **責任分界明確**: ✅ utils/・managers/・tools/・ui/の明確分離達成
+- **責任分界明確**: ✅ utils/・managers/・tools/・ui/の明確分離達成、多重座標実装しない
 - **重複排除徹底**: DRY・SOLID原則による重複コード・重複関数の完全排除
 - **ES2023構文使用OK、OffscreenCanvasや最新Canvas APIも使用OK、後方互換は意識しない
+
 
 ### 1.3 Phase現実（実装進捗）
 - **Phase1.4**: ✅ **完了** - 統一システム基盤・Manager群・描画機能基盤
