@@ -1,10 +1,9 @@
 /**
- * 📐 座標変換管理システム（座標ズレ修正版）
+ * 📐 座標変換管理システム（高DPI修正版）
  * 🎯 AI_WORK_SCOPE: スクリーン座標・キャンバス座標・PixiJS座標変換
  * 🎯 DEPENDENCIES: ConfigManager, ErrorManager
  * 🎯 UNIFIED: ConfigManager(キャンバス設定), ErrorManager(座標エラー)
- * 🎯 ISOLATION_TEST: ✅ 単体テスト可能・数学的確定処理
- * 🔧 DRAWING_FIX: 高DPI補償調整・座標ズレ修正・境界越え対応
+ * 🔧 HIGHDPI_FIX: devicePixelRatio補正無効化・座標変換単純化
  */
 
 class CoordinateManager {
@@ -20,12 +19,17 @@ class CoordinateManager {
         // 精度設定
         this.precision = this.coordinateConfig.precision || 2;
         this.boundaryClamp = this.coordinateConfig.boundaryClamp !== false;
-        this.scaleCompensation = this.coordinateConfig.scaleCompensation !== false;
         
-        // 🔧 高DPI制御フラグ（app-core.jsの高DPI無効化に連携）
-        this.enableHighDPI = this.coordinateConfig.enableHighDPI !== false;
+        // 🔧 高DPI修正: scaleCompensation を無効化
+        this.scaleCompensation = false; // devicePixelRatio補正を無効化
         
-        console.log('📐 CoordinateManager 初期化完了（座標ズレ修正版・統一システム統合）');
+        // 🔧 高DPI設定
+        this.highDPIMode = this.coordinateConfig.highDPIMode !== false;
+        this.forceSimpleCoordinates = this.coordinateConfig.forceSimpleCoordinates || false;
+        
+        console.log('📐 CoordinateManager 初期化完了（高DPI修正版）');
+        console.log(`🔧 scaleCompensation: ${this.scaleCompensation} (高DPI修正により無効化)`);
+        console.log(`📊 devicePixelRatio: ${window.devicePixelRatio || 1}`);
     }
     
     /**
@@ -40,22 +44,22 @@ class CoordinateManager {
     }
     
     /**
-     * デフォルト座標設定取得
+     * デフォルト座標設定取得（高DPI対応）
      */
     getDefaultCoordinateConfig() {
         return {
             precision: 2,
             boundaryClamp: true,
-            scaleCompensation: true,
+            scaleCompensation: false,     // 🔧 高DPI修正でデフォルト無効
+            highDPIMode: true,            // 🔧 高DPI対応モード
+            forceSimpleCoordinates: false,
             touchScaling: 1.0,
-            debugging: false,
-            enableHighDPI: false  // 🔧 デフォルトで高DPI無効化（ふたば☆ちゃんねる投稿用）
+            debugging: false
         };
     }
     
     /**
-     * 📐 スクリーン座標 → キャンバス座標変換（座標ズレ修正版）
-     * 🔧 DRAWING_FIX: 高DPI補償を条件付きで無効化
+     * 📐 スクリーン座標 → キャンバス座標変換（高DPI修正版）
      */
     screenToCanvas(screenX, screenY, canvasRect) {
         try {
@@ -67,6 +71,13 @@ class CoordinateManager {
                 throw new Error('screenX, screenY は数値である必要があります');
             }
             
+            // 🔧 高DPI修正: シンプルな座標変換
+            if (this.forceSimpleCoordinates) {
+                const canvasX = this.applyPrecision(screenX - canvasRect.left);
+                const canvasY = this.applyPrecision(screenY - canvasRect.top);
+                return this.clampCoordinates(canvasX, canvasY);
+            }
+            
             // スケール比率計算
             const scaleX = this.canvasWidth / canvasRect.width;
             const scaleY = this.canvasHeight / canvasRect.height;
@@ -75,152 +86,27 @@ class CoordinateManager {
             let canvasX = (screenX - canvasRect.left) * scaleX;
             let canvasY = (screenY - canvasRect.top) * scaleY;
             
-            // 🔧 高DPI補償処理修正（座標ズレ修正）
-            if (this.scaleCompensation) {
-                const devicePixelRatio = window.devicePixelRatio || 1;
-                
-                // 高DPI有効化フラグがtrueかつdevicePixelRatio !== 1の場合のみ補償実行
-                // app-core.jsでresolution=1固定のため、通常は補償をスキップ
-                if (devicePixelRatio !== 1 && this.enableHighDPI) {
-                    canvasX /= devicePixelRatio;
-                    canvasY /= devicePixelRatio;
-                    
-                    if (this.coordinateConfig.debugging) {
-                        console.log(`📐 高DPI補償実行: ratio=${devicePixelRatio}, 補償後座標(${canvasX}, ${canvasY})`);
-                    }
-                } else {
-                    if (this.coordinateConfig.debugging) {
-                        console.log(`📐 高DPI補償スキップ: ratio=${devicePixelRatio}, enableHighDPI=${this.enableHighDPI}`);
-                    }
-                }
-            }
-            
-            // 境界クランプ
-            if (this.boundaryClamp) {
-                canvasX = Math.max(0, Math.min(this.canvasWidth, canvasX));
-                canvasY = Math.max(0, Math.min(this.canvasHeight, canvasY));
-            }
+            // 🔧 高DPI修正: devicePixelRatio補正を削除
+            // 従来のコード（削除）:
+            // if (this.scaleCompensation) {
+            //     const devicePixelRatio = window.devicePixelRatio || 1;
+            //     if (devicePixelRatio !== 1) {
+            //         canvasX /= devicePixelRatio;
+            //         canvasY /= devicePixelRatio;
+            //     }
+            // }
             
             // 精度適用
             canvasX = this.applyPrecision(canvasX);
             canvasY = this.applyPrecision(canvasY);
             
-            if (this.coordinateConfig.debugging) {
-                console.log(`📐 座標変換（修正版）: screen(${screenX}, ${screenY}) → canvas(${canvasX}, ${canvasY})`);
-            }
-            
-            return { x: canvasX, y: canvasY };
-            
-        } catch (error) {
-            ErrorManager.showError('coordinate-convert', 
-                `座標変換エラー: ${error.message}`, 
-                { screenX, screenY, canvasRect: canvasRect ? 'valid' : 'null' }
-            );
-            return { x: 0, y: 0 };
-        }
-    }
-    
-    /**
-     * 📐 キャンバス座標 → PixiJS座標変換（修正版）
-     * 🔧 DRAWING_FIX: 高DPI無効化に対応したPixiJS座標変換
-     */
-    canvasToPixi(canvasX, canvasY, pixiApp) {
-        try {
-            if (!pixiApp?.stage) {
-                throw new Error('有効なPixiJSアプリが必要です');
-            }
-            
-            if (typeof canvasX !== 'number' || typeof canvasY !== 'number') {
-                throw new Error('canvasX, canvasY は数値である必要があります');
-            }
-            
-            // 🔧 高DPI無効化対応: resolution=1固定のため直接座標変換
-            // PIXI.Point を使用してグローバル座標からローカル座標に変換
-            const globalPoint = new PIXI.Point(canvasX, canvasY);
-            const localPoint = pixiApp.stage.toLocal(globalPoint);
-            
-            const pixiX = this.applyPrecision(localPoint.x);
-            const pixiY = this.applyPrecision(localPoint.y);
+            // 境界クランプ
+            const result = this.clampCoordinates(canvasX, canvasY);
             
             if (this.coordinateConfig.debugging) {
-                console.log(`📐 PixiJS座標変換（高DPI修正版）: canvas(${canvasX}, ${canvasY}) → pixi(${pixiX}, ${pixiY})`);
-            }
-            
-            return { x: pixiX, y: pixiY };
-            
-        } catch (error) {
-            ErrorManager.showError('coordinate-pixi', 
-                `PixiJS座標変換エラー: ${error.message}`, 
-                { canvasX, canvasY, hasPixiApp: !!pixiApp }
-            );
-            // フォールバック: キャンバス座標をそのまま返す
-            return { x: canvasX, y: canvasY };
-        }
-    }
-    
-    /**
-     * 📐 スクリーン座標 → PixiJS座標変換（直接変換・修正版）
-     * 🔧 DRAWING_FIX: 高DPI修正対応の直接変換
-     */
-    screenToPixi(screenX, screenY, canvasRect, pixiApp) {
-        try {
-            const canvasCoords = this.screenToCanvas(screenX, screenY, canvasRect);
-            return this.canvasToPixi(canvasCoords.x, canvasCoords.y, pixiApp);
-        } catch (error) {
-            ErrorManager.showError('coordinate-screen-pixi', 
-                `スクリーン→PixiJS座標変換エラー: ${error.message}`, 
-                { screenX, screenY }
-            );
-            return { x: 0, y: 0 };
-        }
-    }
-    
-    /**
-     * 📐 PointerEvent → 座標情報抽出（統一処理・修正版）
-     * 🔧 DRAWING_FIX: 境界越え描画対応・座標抽出強化
-     */
-    extractPointerCoordinates(event, canvasRect, pixiApp = null) {
-        try {
-            if (!event) {
-                throw new Error('event が必要です');
-            }
-            
-            // PointerEventからの座標取得（複数のケースに対応・強化版）
-            const originalEvent = event.data?.originalEvent || event.originalEvent || event;
-            
-            let screenX, screenY;
-            
-            // 🔧 座標抽出を強化（境界越え描画対応）
-            if (typeof originalEvent.clientX === 'number' && typeof originalEvent.clientY === 'number') {
-                screenX = originalEvent.clientX;
-                screenY = originalEvent.clientY;
-            } else if (typeof originalEvent.pageX === 'number' && typeof originalEvent.pageY === 'number') {
-                screenX = originalEvent.pageX;
-                screenY = originalEvent.pageY;
-            } else if (typeof event.global?.x === 'number' && typeof event.global?.y === 'number') {
-                // PixiJS イベントの場合
-                screenX = event.global.x;
-                screenY = event.global.y;
-            } else if (typeof event.x === 'number' && typeof event.y === 'number') {
-                // イベント直接座標
-                screenX = event.x;
-                screenY = event.y;
-            } else {
-                throw new Error('有効な座標情報が見つかりません');
-            }
-            
-            // 高DPI修正版座標変換実行
-            const canvasCoords = this.screenToCanvas(screenX, screenY, canvasRect);
-            
-            const result = {
-                screen: { x: screenX, y: screenY },
-                canvas: canvasCoords,
-                pressure: this.extractPressure(event, originalEvent)
-            };
-            
-            // PixiJS座標も必要な場合
-            if (pixiApp) {
-                result.pixi = this.canvasToPixi(canvasCoords.x, canvasCoords.y, pixiApp);
+                console.log(`📐 座標変換（高DPI修正版）: screen(${screenX}, ${screenY}) → canvas(${result.x}, ${result.y})`);
+                console.log(`📊 スケール: ${scaleX.toFixed(3)}, ${scaleY.toFixed(3)}`);
+                console.log(`📊 Rect: ${canvasRect.left}, ${canvasRect.top}, ${canvasRect.width}x${canvasRect.height}`);
             }
             
             return result;
@@ -240,12 +126,11 @@ class CoordinateManager {
     }
     
     /**
-     * 📐 イベントから筆圧抽出（強化版）
-     * 🔧 DRAWING_FIX: 筆圧抽出精度向上
+     * 📐 イベントから筆圧抽出
      */
     extractPressure(event, originalEvent) {
         try {
-            // 複数のソースから筆圧を取得（優先順位順）
+            // 複数のソースから筆圧を取得
             if (typeof event.pressure === 'number' && event.pressure >= 0 && event.pressure <= 1) {
                 return event.pressure;
             }
@@ -257,11 +142,6 @@ class CoordinateManager {
             // タッチイベントの場合のフォールバック
             if (originalEvent?.force && typeof originalEvent.force === 'number') {
                 return Math.min(1, Math.max(0, originalEvent.force));
-            }
-            
-            // PointerEventのforceプロパティ
-            if (typeof originalEvent?.webkitForce === 'number') {
-                return Math.min(1, Math.max(0, originalEvent.webkitForce));
             }
             
             // デフォルト筆圧
@@ -341,78 +221,6 @@ class CoordinateManager {
     }
     
     /**
-     * 📐 レイヤー境界計算（Phase2準備）
-     * 🆕 新規メソッド: レイヤーシステム対応
-     */
-    calculateLayerBounds(layerOptions = {}) {
-        try {
-            const { 
-                x = 0, 
-                y = 0, 
-                width = this.canvasWidth, 
-                height = this.canvasHeight,
-                padding = 0 
-            } = layerOptions;
-            
-            return {
-                left: this.applyPrecision(x - padding),
-                top: this.applyPrecision(y - padding),
-                right: this.applyPrecision(x + width + padding),
-                bottom: this.applyPrecision(y + height + padding),
-                width: width + padding * 2,
-                height: height + padding * 2
-            };
-            
-        } catch (error) {
-            ErrorManager.showError('coordinate-layer-bounds', 
-                `レイヤー境界計算エラー: ${error.message}`, 
-                { layerOptions }
-            );
-            return {
-                left: 0, top: 0,
-                right: this.canvasWidth, bottom: this.canvasHeight,
-                width: this.canvasWidth, height: this.canvasHeight
-            };
-        }
-    }
-    
-    /**
-     * 📐 変形による境界計算（Phase2準備）
-     * 🆕 新規メソッド: レイヤー変形対応
-     */
-    applyTransformToBounds(bounds, transform) {
-        try {
-            if (!bounds || !transform) {
-                throw new Error('有効な境界と変形が必要です');
-            }
-            
-            const { scale = 1, rotation = 0, translateX = 0, translateY = 0 } = transform;
-            
-            // 簡単な変形適用（Phase2で拡張予定）
-            const centerX = (bounds.left + bounds.right) / 2;
-            const centerY = (bounds.top + bounds.bottom) / 2;
-            const halfWidth = (bounds.width * scale) / 2;
-            const halfHeight = (bounds.height * scale) / 2;
-            
-            return {
-                left: this.applyPrecision(centerX - halfWidth + translateX),
-                top: this.applyPrecision(centerY - halfHeight + translateY),
-                right: this.applyPrecision(centerX + halfWidth + translateX),
-                bottom: this.applyPrecision(centerY + halfHeight + translateY),
-                width: bounds.width * scale,
-                height: bounds.height * scale
-            };
-            
-        } catch (error) {
-            ErrorManager.showError('coordinate-transform-bounds', 
-                `変形境界計算エラー: ${error.message}`, 
-                { bounds, transform }
-            );
-            return bounds; // フォールバック: 元の境界を返す
-        }
-    }
-    
-    /**
      * 📐 精度適用
      */
     applyPrecision(value) {
@@ -424,32 +232,7 @@ class CoordinateManager {
     }
     
     /**
-     * 📐 高DPI設定更新（修正版）
-     * 🔧 DRAWING_FIX: 高DPI制御フラグ更新
-     */
-    updateHighDPIEnabled(enabled) {
-        try {
-            const oldValue = this.enableHighDPI;
-            this.enableHighDPI = Boolean(enabled);
-            
-            console.log(`📐 高DPI設定更新: ${oldValue} → ${this.enableHighDPI}`);
-            
-            EventBus.safeEmit('coordinate.highdpi.updated', {
-                oldValue,
-                newValue: this.enableHighDPI,
-                timestamp: Date.now()
-            });
-            
-        } catch (error) {
-            ErrorManager.showError('coordinate-highdpi', 
-                `高DPI設定エラー: ${error.message}`, 
-                { enabled }
-            );
-        }
-    }
-    
-    /**
-     * 📐 座標系設定更新（キャンバスリサイズ時・修正版）
+     * 📐 座標系設定更新（キャンバスリサイズ時・高DPI対応）
      */
     updateCanvasSize(width, height) {
         try {
@@ -463,14 +246,19 @@ class CoordinateManager {
             this.canvasWidth = width;
             this.canvasHeight = height;
             
-            console.log(`📐 座標系更新（修正版）: ${oldWidth}x${oldHeight} → ${width}x${height}`);
+            console.log(`📐 座標系更新（高DPI修正版）: ${oldWidth}x${oldHeight} → ${width}x${height}`);
+            console.log(`🔧 scaleCompensation: ${this.scaleCompensation} (無効化済み)`);
             
             // EventBus通知
-            EventBus.safeEmit('coordinate.canvas.resized', {
-                oldSize: { width: oldWidth, height: oldHeight },
-                newSize: { width, height },
-                timestamp: Date.now()
-            });
+            if (window.EventBus && typeof window.EventBus.safeEmit === 'function') {
+                window.EventBus.safeEmit('coordinate.canvas.resized', {
+                    oldSize: { width: oldWidth, height: oldHeight },
+                    newSize: { width, height },
+                    highDPIMode: this.highDPIMode,
+                    scaleCompensation: this.scaleCompensation,
+                    timestamp: Date.now()
+                });
+            }
             
         } catch (error) {
             ErrorManager.showError('coordinate-resize', 
@@ -494,11 +282,13 @@ class CoordinateManager {
             
             console.log(`📐 精度更新: ${oldPrecision} → ${newPrecision}`);
             
-            EventBus.safeEmit('coordinate.precision.updated', {
-                oldPrecision,
-                newPrecision,
-                timestamp: Date.now()
-            });
+            if (window.EventBus && typeof window.EventBus.safeEmit === 'function') {
+                window.EventBus.safeEmit('coordinate.precision.updated', {
+                    oldPrecision,
+                    newPrecision,
+                    timestamp: Date.now()
+                });
+            }
             
         } catch (error) {
             ErrorManager.showError('coordinate-precision', 
@@ -509,7 +299,58 @@ class CoordinateManager {
     }
     
     /**
-     * 📐 座標管理状態取得（診断用・修正版）
+     * 🔧 高DPI設定更新
+     */
+    updateHighDPISettings(settings) {
+        try {
+            if (typeof settings !== 'object' || !settings) {
+                throw new Error('有効な設定オブジェクトが必要です');
+            }
+            
+            const oldSettings = {
+                scaleCompensation: this.scaleCompensation,
+                highDPIMode: this.highDPIMode,
+                forceSimpleCoordinates: this.forceSimpleCoordinates
+            };
+            
+            // 設定更新
+            if ('scaleCompensation' in settings) {
+                this.scaleCompensation = !!settings.scaleCompensation;
+            }
+            if ('highDPIMode' in settings) {
+                this.highDPIMode = !!settings.highDPIMode;
+            }
+            if ('forceSimpleCoordinates' in settings) {
+                this.forceSimpleCoordinates = !!settings.forceSimpleCoordinates;
+            }
+            
+            console.log('🔧 高DPI設定更新:', {
+                old: oldSettings,
+                new: {
+                    scaleCompensation: this.scaleCompensation,
+                    highDPIMode: this.highDPIMode,
+                    forceSimpleCoordinates: this.forceSimpleCoordinates
+                }
+            });
+            
+            if (window.EventBus && typeof window.EventBus.safeEmit === 'function') {
+                window.EventBus.safeEmit('coordinate.highdpi.updated', {
+                    oldSettings,
+                    newSettings: settings,
+                    timestamp: Date.now()
+                });
+            }
+            
+        } catch (error) {
+            ErrorManager.showError('coordinate-highdpi', 
+                `高DPI設定エラー: ${error.message}`, 
+                { settings }
+            );
+        }
+    }
+    
+    /**
+     * 📐 座標管理状態取得（高DPI診断情報含む）
      */
     getCoordinateState() {
         return {
@@ -518,7 +359,8 @@ class CoordinateManager {
             precision: this.precision,
             boundaryClamp: this.boundaryClamp,
             scaleCompensation: this.scaleCompensation,
-            enableHighDPI: this.enableHighDPI,  // 🔧 高DPI状態追加
+            highDPIMode: this.highDPIMode,
+            forceSimpleCoordinates: this.forceSimpleCoordinates,
             devicePixelRatio: window.devicePixelRatio || 1,
             config: this.coordinateConfig,
             canvasConfig: this.canvasConfig,
@@ -527,8 +369,7 @@ class CoordinateManager {
     }
     
     /**
-     * 📐 座標変換テスト実行（修正版）
-     * 🔧 DRAWING_FIX: 高DPI修正対応テスト
+     * 📐 座標変換テスト実行（高DPI対応版）
      */
     runCoordinateTest() {
         console.log('📐 座標変換テスト開始（高DPI修正版）...');
@@ -536,94 +377,266 @@ class CoordinateManager {
         const testCases = [
             { screen: { x: 0, y: 0 }, expected: 'origin' },
             { screen: { x: 100, y: 100 }, expected: 'mid-low' },
-            { screen: { x: this.canvasWidth/2, y: this.canvasHeight/2 }, expected: 'center' },
-            { screen: { x: this.canvasWidth, y: this.canvasHeight }, expected: 'bottom-right' }
+            { screen: { x: 200, y: 200 }, expected: 'center' },
+            { screen: { x: 400, y: 400 }, expected: 'bottom-right' }
         ];
         
-        const mockRect = { 
-            left: 0, 
-            top: 0, 
-            width: this.canvasWidth, 
-            height: this.canvasHeight 
-        };
+        // 🔧 高DPI環境での複数テストケース
+        const devicePixelRatio = window.devicePixelRatio || 1;
+        const mockRects = [
+            { 
+                name: '標準Rect',
+                rect: { left: 0, top: 0, width: this.canvasWidth, height: this.canvasHeight }
+            },
+            {
+                name: `高DPI Rect (DPR: ${devicePixelRatio})`,
+                rect: { 
+                    left: 0, 
+                    top: 0, 
+                    width: this.canvasWidth * devicePixelRatio, 
+                    height: this.canvasHeight * devicePixelRatio 
+                }
+            }
+        ];
         
         const results = [];
         
-        testCases.forEach((testCase, index) => {
-            const result = this.screenToCanvas(testCase.screen.x, testCase.screen.y, mockRect);
-            results.push({
-                index,
-                input: testCase.screen,
-                output: result,
-                expected: testCase.expected,
-                highDPI: this.enableHighDPI,
-                devicePixelRatio: window.devicePixelRatio || 1
+        mockRects.forEach(rectCase => {
+            console.log(`🧪 テスト実行: ${rectCase.name}`);
+            
+            testCases.forEach((testCase, index) => {
+                const result = this.screenToCanvas(testCase.screen.x, testCase.screen.y, rectCase.rect);
+                results.push({
+                    rectType: rectCase.name,
+                    testIndex: index,
+                    input: testCase.screen,
+                    output: result,
+                    expected: testCase.expected,
+                    isValid: result.x >= 0 && result.x <= this.canvasWidth && 
+                            result.y >= 0 && result.y <= this.canvasHeight
+                });
             });
         });
         
-        console.log('📐 座標変換テスト結果（高DPI修正版）:', results);
+        // 結果サマリー
+        const validResults = results.filter(r => r.isValid);
+        console.log(`📊 テスト結果: ${validResults.length}/${results.length} 成功 (${(validResults.length/results.length*100).toFixed(1)}%)`);
+        console.log('📐 座標変換テスト結果:', results);
         
-        // 高DPI設定確認
-        console.log(`📐 高DPI設定状況: enabled=${this.enableHighDPI}, devicePixelRatio=${window.devicePixelRatio || 1}`);
-        
-        return results;
+        return {
+            results,
+            summary: {
+                total: results.length,
+                valid: validResults.length,
+                successRate: (validResults.length/results.length*100).toFixed(1) + '%',
+                devicePixelRatio,
+                scaleCompensation: this.scaleCompensation,
+                highDPIMode: this.highDPIMode
+            }
+        };
     }
     
     /**
-     * 📐 境界越えテスト（新規追加）
-     * 🆕 DRAWING_FIX: 境界越え描画対応テスト
+     * 🔧 高DPI診断実行
      */
-    runBoundaryTest(boundaryMargin = 20) {
-        console.log('📐 境界越えテスト開始...');
+    runHighDPIDiagnostics() {
+        console.log('🔧 高DPI診断開始...');
         
-        const testCases = [
-            // キャンバス外の座標
-            { screen: { x: -10, y: 50 }, expected: '左境界越え' },
-            { screen: { x: this.canvasWidth + 10, y: 50 }, expected: '右境界越え' },
-            { screen: { x: 50, y: -10 }, expected: '上境界越え' },
-            { screen: { x: 50, y: this.canvasHeight + 10 }, expected: '下境界越え' },
-            // 境界マージン内
-            { screen: { x: -5, y: -5 }, expected: '左上境界マージン内' },
-            { screen: { x: this.canvasWidth + 5, y: this.canvasHeight + 5 }, expected: '右下境界マージン内' }
-        ];
-        
-        const mockRect = { 
-            left: -boundaryMargin, 
-            top: -boundaryMargin, 
-            width: this.canvasWidth + boundaryMargin * 2, 
-            height: this.canvasHeight + boundaryMargin * 2 
+        const diagnostics = {
+            environment: {
+                devicePixelRatio: window.devicePixelRatio || 1,
+                userAgent: navigator.userAgent,
+                platform: navigator.platform
+            },
+            coordinateManager: {
+                scaleCompensation: this.scaleCompensation,
+                highDPIMode: this.highDPIMode,
+                forceSimpleCoordinates: this.forceSimpleCoordinates,
+                canvasSize: { width: this.canvasWidth, height: this.canvasHeight }
+            },
+            testResults: this.runCoordinateTest()
         };
         
-        const results = [];
+        // Canvas要素の情報取得
+        const canvasElement = document.querySelector('#drawing-canvas canvas');
+        if (canvasElement) {
+            const computedStyle = getComputedStyle(canvasElement);
+            diagnostics.canvasElement = {
+                internalSize: { width: canvasElement.width, height: canvasElement.height },
+                displaySize: { width: computedStyle.width, height: computedStyle.height },
+                resolution: canvasElement.width / parseInt(computedStyle.width, 10)
+            };
+        }
         
-        testCases.forEach((testCase, index) => {
-            // 境界クランプを一時的に無効にしてテスト
-            const originalClamp = this.boundaryClamp;
-            this.boundaryClamp = false;
+        console.log('🔧 高DPI診断結果:', diagnostics);
+        return diagnostics;
+    }
+    
+    /**
+     * 🔧 緊急座標リセット（問題発生時用）
+     */
+    emergencyCoordinateReset() {
+        try {
+            console.log('🚨 緊急座標リセット実行...');
             
-            const result = this.screenToCanvas(testCase.screen.x, testCase.screen.y, mockRect);
+            // 設定を最も安全な状態にリセット
+            this.scaleCompensation = false;
+            this.highDPIMode = true;
+            this.forceSimpleCoordinates = true;
+            this.precision = 2;
+            this.boundaryClamp = true;
             
-            this.boundaryClamp = originalClamp;
+            console.log('✅ 緊急座標リセット完了');
             
-            results.push({
-                index,
-                input: testCase.screen,
-                output: result,
-                expected: testCase.expected,
-                inBounds: this.isPointInBounds(result, {
-                    left: 0, top: 0,
-                    right: this.canvasWidth, bottom: this.canvasHeight
-                })
-            });
-        });
-        
-        console.log('📐 境界越えテスト結果:', results);
-        return results;
+            if (window.EventBus && typeof window.EventBus.safeEmit === 'function') {
+                window.EventBus.safeEmit('coordinate.emergency.reset', {
+                    timestamp: Date.now(),
+                    newState: this.getCoordinateState()
+                });
+            }
+            
+        } catch (error) {
+            console.error('❌ 緊急座標リセット失敗:', error);
+        }
     }
 }
 
 // グローバル登録
 if (typeof window !== 'undefined') {
     window.CoordinateManager = CoordinateManager;
-    console.log('📐 CoordinateManager グローバル登録完了（座標ズレ修正版・高DPI対応）');
-}
+    console.log('📐 CoordinateManager グローバル登録完了（高DPI修正版）');
+} catch (error) {
+            ErrorManager.showError('coordinate-convert', 
+                `座標変換エラー: ${error.message}`, 
+                { screenX, screenY, canvasRect: canvasRect ? 'valid' : 'null' }
+            );
+            return { x: 0, y: 0 };
+        }
+    }
+    
+    /**
+     * 🔧 座標境界クランプ処理
+     */
+    clampCoordinates(canvasX, canvasY) {
+        if (this.boundaryClamp) {
+            canvasX = Math.max(0, Math.min(this.canvasWidth, canvasX));
+            canvasY = Math.max(0, Math.min(this.canvasHeight, canvasY));
+        }
+        return { x: canvasX, y: canvasY };
+    }
+    
+    /**
+     * 📐 キャンバス座標 → PixiJS座標変換（高DPI対応）
+     */
+    canvasToPixi(canvasX, canvasY, pixiApp) {
+        try {
+            if (!pixiApp?.stage) {
+                throw new Error('有効なPixiJSアプリが必要です');
+            }
+            
+            if (typeof canvasX !== 'number' || typeof canvasY !== 'number') {
+                throw new Error('canvasX, canvasY は数値である必要があります');
+            }
+            
+            // 🔧 高DPI修正: resolution=1 前提での単純変換
+            if (this.highDPIMode && pixiApp.renderer.resolution === 1) {
+                // resolution=1の場合、キャンバス座標とPixiJS座標は1:1
+                const pixiX = this.applyPrecision(canvasX);
+                const pixiY = this.applyPrecision(canvasY);
+                
+                if (this.coordinateConfig.debugging) {
+                    console.log(`📐 PixiJS座標変換（高DPI・単純）: canvas(${canvasX}, ${canvasY}) → pixi(${pixiX}, ${pixiY})`);
+                }
+                
+                return { x: pixiX, y: pixiY };
+            }
+            
+            // 従来のtoLocal変換（resolution≠1の場合のフォールバック）
+            const globalPoint = new PIXI.Point(canvasX, canvasY);
+            const localPoint = pixiApp.stage.toLocal(globalPoint);
+            
+            const pixiX = this.applyPrecision(localPoint.x);
+            const pixiY = this.applyPrecision(localPoint.y);
+            
+            if (this.coordinateConfig.debugging) {
+                console.log(`📐 PixiJS座標変換（toLocal）: canvas(${canvasX}, ${canvasY}) → pixi(${pixiX}, ${pixiY})`);
+                console.log(`📊 PixiJS Resolution: ${pixiApp.renderer.resolution}`);
+            }
+            
+            return { x: pixiX, y: pixiY };
+            
+        } catch (error) {
+            ErrorManager.showError('coordinate-pixi', 
+                `PixiJS座標変換エラー: ${error.message}`, 
+                { canvasX, canvasY, hasPixiApp: !!pixiApp, resolution: pixiApp?.renderer?.resolution }
+            );
+            // フォールバック: キャンバス座標をそのまま返す
+            return { x: canvasX, y: canvasY };
+        }
+    }
+    
+    /**
+     * 📐 スクリーン座標 → PixiJS座標変換（高DPI対応直接変換）
+     */
+    screenToPixi(screenX, screenY, canvasRect, pixiApp) {
+        try {
+            const canvasCoords = this.screenToCanvas(screenX, screenY, canvasRect);
+            return this.canvasToPixi(canvasCoords.x, canvasCoords.y, pixiApp);
+        } catch (error) {
+            ErrorManager.showError('coordinate-screen-pixi', 
+                `スクリーン→PixiJS座標変換エラー: ${error.message}`, 
+                { screenX, screenY }
+            );
+            return { x: 0, y: 0 };
+        }
+    }
+    
+    /**
+     * 📐 PointerEvent → 座標情報抽出（高DPI対応統一処理）
+     */
+    extractPointerCoordinates(event, canvasRect, pixiApp = null) {
+        try {
+            if (!event) {
+                throw new Error('event が必要です');
+            }
+            
+            // PointerEventからの座標取得（複数のケースに対応）
+            const originalEvent = event.data?.originalEvent || event.originalEvent || event;
+            
+            let screenX, screenY;
+            
+            if (typeof originalEvent.clientX === 'number' && typeof originalEvent.clientY === 'number') {
+                screenX = originalEvent.clientX;
+                screenY = originalEvent.clientY;
+            } else if (typeof originalEvent.pageX === 'number' && typeof originalEvent.pageY === 'number') {
+                screenX = originalEvent.pageX;
+                screenY = originalEvent.pageY;
+            } else if (typeof event.global?.x === 'number' && typeof event.global?.y === 'number') {
+                // PixiJS イベントの場合
+                screenX = event.global.x;
+                screenY = event.global.y;
+            } else {
+                throw new Error('有効な座標情報が見つかりません');
+            }
+            
+            // 🔧 高DPI修正版の座標変換を使用
+            const canvasCoords = this.screenToCanvas(screenX, screenY, canvasRect);
+            
+            const result = {
+                screen: { x: screenX, y: screenY },
+                canvas: canvasCoords,
+                pressure: this.extractPressure(event, originalEvent)
+            };
+            
+            // PixiJS座標も必要な場合
+            if (pixiApp) {
+                result.pixi = this.canvasToPixi(canvasCoords.x, canvasCoords.y, pixiApp);
+            }
+            
+            if (this.coordinateConfig.debugging) {
+                console.log(`📐 座標抽出（高DPI修正版）:`, result);
+            }
+            
+            return result;
+            
+        }

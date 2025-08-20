@@ -1,0 +1,92 @@
+/* 🔧 キャンバス高DPI修正用CSS */
+
+/* 描画キャンバスのサイズ強制固定 */
+#drawing-canvas {
+    width: 400px !important;
+    height: 400px !important;
+    max-width: 400px !important;
+    max-height: 400px !important;
+    min-width: 400px !important;
+    min-height: 400px !important;
+    overflow: hidden;
+}
+
+/* Canvas要素そのもののサイズ制御 */
+#drawing-canvas canvas {
+    width: 400px !important;
+    height: 400px !important;
+    max-width: 400px !important;
+    max-height: 400px !important;
+    min-width: 400px !important;
+    min-height: 400px !important;
+    
+    /* 高DPI環境での表示品質向上 */
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    image-rendering: pixelated;
+    
+    /* ボックスサイズ固定 */
+    box-sizing: border-box;
+    
+    /* レスポンシブ無効化 */
+    flex-shrink: 0;
+    flex-grow: 0;
+    
+    /* 位置固定 */
+    display: block;
+    margin: 0;
+    padding: 0;
+    
+    /* ドラッグ・選択無効化 */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    
+    -webkit-user-drag: none;
+    -khtml-user-drag: none;
+    -moz-user-drag: none;
+    -o-user-drag: none;
+    user-drag: none;
+    
+    /* タッチ操作最適化 */
+    touch-action: none;
+    -ms-touch-action: none;
+}
+
+/* 他ツールとの統一表示確保 */
+.tool-container, .tool-area {
+    width: 400px !important;
+    height: 400px !important;
+    max-width: 400px !important;
+    max-height: 400px !important;
+}
+
+/* 高DPI環境でのピクセル完全対応 */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    #drawing-canvas canvas {
+        /* 高DPI環境でもサイズ固定維持 */
+        width: 400px !important;
+        height: 400px !important;
+        
+        /* 高DPI描画品質向上 */
+        image-rendering: -webkit-optimize-contrast;
+    }
+}
+
+@media (-webkit-min-device-pixel-ratio: 3), (min-resolution: 288dpi) {
+    #drawing-canvas canvas {
+        /* 超高DPI環境でもサイズ固定維持 */
+        width: 400px !important;
+        height: 400px !important;
+    }
+}
+
+/* デバッグ用：境界線表示（開発時のみ） */
+.debug-canvas-size #drawing-canvas {
+    border: 2px solid red !important;
+}
+
+.debug-canvas-size #drawing-canvas canvas {
+    border: 1px solid blue !important;
+}
