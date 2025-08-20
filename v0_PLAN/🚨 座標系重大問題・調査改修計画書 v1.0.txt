@@ -138,53 +138,7 @@ handlePointerDown(event) {
 
 ---
 
-### **Phase3: テスト・検証システム**
 
-#### **STEP6: 座標デバッグシステム実装**
-**対象**: ブラウザコンソール実行  
-**作業時間**: 20分  
-
-```javascript
-// 座標フロー追跡システム
-window.debugCoordinateFlow = function(screenX, screenY) {
-    console.group('🔍 座標変換フロー追跡');
-    
-    const appCore = window.appCore;
-    const boundaryManager = appCore?.boundaryManager;
-    const coordinateManager = appCore?.coordinateManager;
-    
-    if (!appCore?.app?.view) {
-        console.error('❌ AppCore未初期化');
-        return;
-    }
-    
-    const canvasRect = appCore.app.view.getBoundingClientRect();
-    
-    // Step1: Screen → Canvas変換テスト
-    const canvasCoords = coordinateManager?.screenToCanvas(screenX, screenY, canvasRect);
-    console.log(`📐 Screen(${screenX}, ${screenY}) → Canvas(${canvasCoords?.x.toFixed(1)}, ${canvasCoords?.y.toFixed(1)})`);
-    
-    // Step2: 境界越えイベントシミュレート
-    window.EventBus?.safeEmit('boundary.cross.in', {
-        position: canvasCoords,
-        pressure: 0.8,
-        pointerId: 'test',
-        pointerType: 'mouse'
-    });
-    
-    // Step3: ツール登録状況確認
-    const toolManager = appCore?.toolManager;
-    console.log('🔧 登録ツール:', Array.from(toolManager?.registeredTools?.keys() || []));
-    console.log('🎯 現在のツール:', toolManager?.getCurrentTool());
-    
-    const currentToolInstance = toolManager?.registeredTools?.get(toolManager?.getCurrentTool());
-    console.log('🛠️ ツールインスタンス:', currentToolInstance?.name, !!currentToolInstance?.handleBoundaryCrossIn);
-    
-    console.groupEnd();
-};
-```
-
----
 
 ## 🚀 改修実行ToDoリスト
 
@@ -214,11 +168,11 @@ window.debugCoordinateFlow = function(screenX, screenY) {
 
 ### **🔧 段階的実行順序**
 
-1. **座標デバッグシステム先行実装**（デバッグ用）
-2. **AppCore座標変換修正**（根本原因除去）
-3. **ToolManagerツール登録修正**（描画有効化）
-4. **各ツール境界越えメソッド統一**（機能完成）
-5. **統合テスト実行**（品質確認）
+
+1. **AppCore座標変換修正**（根本原因除去）
+2. **ToolManagerツール登録修正**（描画有効化）
+3. **各ツール境界越えメソッド統一**（機能完成）
+4. **統合テスト実行**（品質確認）
 
 ---
 
@@ -242,50 +196,7 @@ window.debugCoordinateFlow = function(screenX, screenY) {
 
 ---
 
-## 🔬 緊急診断コマンド
 
-```javascript
-// 緊急座標系診断
-window.emergencyCoordinateDiagnosis = function() {
-    const appCore = window.appCore;
-    
-    console.group('🚨 緊急座標系診断');
-    console.log('AppCore:', !!appCore);
-    console.log('PixiJS App:', !!appCore?.app);
-    console.log('CoordinateManager:', !!appCore?.coordinateManager);
-    console.log('ToolManager:', !!appCore?.toolManager);
-    console.log('BoundaryManager:', !!appCore?.boundaryManager);
-    
-    // ツール登録診断
-    const toolManager = appCore?.toolManager;
-    if (toolManager) {
-        console.log('登録ツール数:', toolManager.registeredTools?.size || 0);
-        console.log('登録ツール一覧:', Array.from(toolManager.registeredTools?.keys() || []));
-        console.log('現在のツール:', toolManager.getCurrentTool());
-    }
-    
-    // 座標変換テスト
-    if (appCore?.coordinateManager && appCore?.app?.view) {
-        const rect = appCore.app.view.getBoundingClientRect();
-        const testResult = appCore.coordinateManager.screenToCanvas(100, 100, rect);
-        console.log('座標変換テスト Screen(100,100) → Canvas:', testResult);
-    }
-    
-    console.groupEnd();
-    
-    return {
-        appCoreReady: !!appCore,
-        coordinatesReady: !!appCore?.coordinateManager,
-        toolsRegistered: toolManager?.registeredTools?.size > 0,
-        canDraw: !!(appCore && appCore.toolManager && appCore.coordinateManager)
-    };
-};
-
-// 即座実行
-window.emergencyCoordinateDiagnosis();
-```
-
----
 
 ## 💡 AI協働実装ガイド
 
