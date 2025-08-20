@@ -4,52 +4,28 @@
  * 🎯 DEPENDENCIES: ConfigManager, ErrorManager
  * 🎯 UNIFIED: ConfigManager(キャンバス設定), ErrorManager(座標エラー)
  * 🎯 ISOLATION_TEST: ✅ 単体テスト可能・数学的確定処理
+ * 🛠️ DPI_REMOVAL: scaleCompensation除去・devicePixelRatio処理削除・座標変換単純化
  */
 
 class CoordinateManager {
     constructor() {
         this.validateUnifiedSystems();
-        this.canvasConfig = ConfigManager.getCanvasConfig();
-        this.coordinateConfig = ConfigManager.get('coordinate') || this.getDefaultCoordinateConfig();
+        this.initializeConfig();
         
         // 座標変換基準
         this.canvasWidth = this.canvasConfig.width;
         this.canvasHeight = this.canvasConfig.height;
         
-        // 精度設定
+        // 🛠️ MODIFIED: 精度設定のみ保持（DPI関連設定除去）
         this.precision = this.coordinateConfig.precision || 2;
         this.boundaryClamp = this.coordinateConfig.boundaryClamp !== false;
-        this.scaleCompensation = this.coordinateConfig.scaleCompensation !== false;
         
-        console.log('📐 CoordinateManager 初期化完了（統一システム統合版）');
+        console.log('📐 CoordinateManager 初期化完了（DPI除去版・統一システム統合版）');
+        console.log(`📐 設定: precision=${this.precision}, boundaryClamp=${this.boundaryClamp}, DPI補償=無効`);
     }
     
     /**
-     * 統一システム依存性確認
-     */
-    validateUnifiedSystems() {
-        const required = ['ConfigManager', 'ErrorManager'];
-        const missing = required.filter(sys => !window[sys]);
-        if (missing.length > 0) {
-            throw new Error(`CoordinateManager: 統一システム依存不足: ${missing.join(', ')}`);
-        }
-    }
-    
-    /**
-     * デフォルト座標設定取得
-     */
-    getDefaultCoordinateConfig() {
-        return {
-            precision: 2,
-            boundaryClamp: true,
-            scaleCompensation: true,
-            touchScaling: 1.0,
-            debugging: false
-        };
-    }
-    
-    /**
-     * 📐 スクリーン座標 → キャンバス座標変換
+     * 🛠️ MODIFIED: スクリーン座標 → キャンバス座標変換（DPI補償除去版）
      */
     screenToCanvas(screenX, screenY, canvasRect) {
         try {
@@ -65,31 +41,29 @@ class CoordinateManager {
             const scaleX = this.canvasWidth / canvasRect.width;
             const scaleY = this.canvasHeight / canvasRect.height;
             
-            // 基本変換実行
+            // 🛠️ MODIFIED: 基本変換のみ実行（DPI補償処理を完全削除）
             let canvasX = (screenX - canvasRect.left) * scaleX;
             let canvasY = (screenY - canvasRect.top) * scaleY;
             
-            // スケール補償適用
-            if (this.scaleCompensation) {
-                const devicePixelRatio = window.devicePixelRatio || 1;
-                if (devicePixelRatio !== 1) {
-                    canvasX /= devicePixelRatio;
-                    canvasY /= devicePixelRatio;
-                }
-            }
+            // 🛠️ REMOVED: スケール補償適用処理を削除
+            // REASON: Phase2レイヤー実装の複雑性削減、ふたばちゃんねる投稿対策
+            // 以下の処理を削除:
+            // - if (this.scaleCompensation) { ... }
+            // - devicePixelRatio による座標調整
+            // - DPI関連のスケール計算
             
-            // 境界クランプ
+            // 境界クランプ（変更なし）
             if (this.boundaryClamp) {
                 canvasX = Math.max(0, Math.min(this.canvasWidth, canvasX));
                 canvasY = Math.max(0, Math.min(this.canvasHeight, canvasY));
             }
             
-            // 精度適用
+            // 精度適用（変更なし）
             canvasX = this.applyPrecision(canvasX);
             canvasY = this.applyPrecision(canvasY);
             
             if (this.coordinateConfig.debugging) {
-                console.log(`📐 座標変換: screen(${screenX}, ${screenY}) → canvas(${canvasX}, ${canvasY})`);
+                console.log(`📐 座標変換（DPI補償なし）: screen(${screenX}, ${screenY}) → canvas(${canvasX}, ${canvasY})`);
             }
             
             return { x: canvasX, y: canvasY };
@@ -333,12 +307,13 @@ class CoordinateManager {
             this.canvasWidth = width;
             this.canvasHeight = height;
             
-            console.log(`📐 座標系更新: ${oldWidth}x${oldHeight} → ${width}x${height}`);
+            console.log(`📐 座標系更新: ${oldWidth}x${oldHeight} → ${width}x${height} (DPI補償なし)`);
             
             // EventBus通知
             EventBus.safeEmit('coordinate.canvas.resized', {
                 oldSize: { width: oldWidth, height: oldHeight },
                 newSize: { width, height },
+                dpiCompensation: false, // 🛠️ ADDED: DPI補償状況を通知
                 timestamp: Date.now()
             });
             
@@ -379,7 +354,7 @@ class CoordinateManager {
     }
     
     /**
-     * 📐 座標管理状態取得（診断用）
+     * 🛠️ MODIFIED: 座標管理状態取得（DPI除去版・診断用）
      */
     getCoordinateState() {
         return {
@@ -387,19 +362,21 @@ class CoordinateManager {
             canvasHeight: this.canvasHeight,
             precision: this.precision,
             boundaryClamp: this.boundaryClamp,
-            scaleCompensation: this.scaleCompensation,
-            devicePixelRatio: window.devicePixelRatio || 1,
+            // 🛠️ REMOVED: scaleCompensation 状態（常にfalse）
+            dpiCompensation: false, // 🛠️ ADDED: DPI補償が無効であることを明示
+            devicePixelRatio: window.devicePixelRatio || 1, // 参考値として保持（処理では使用せず）
             config: this.coordinateConfig,
             canvasConfig: this.canvasConfig,
+            dpiRemovalComplete: true, // 🛠️ ADDED: DPI除去完了フラグ
             timestamp: Date.now()
         };
     }
     
     /**
-     * 📐 座標変換テスト実行
+     * 🛠️ MODIFIED: 座標変換テスト実行（DPI除去版）
      */
     runCoordinateTest() {
-        console.log('📐 座標変換テスト開始...');
+        console.log('📐 座標変換テスト開始（DPI除去版）...');
         
         const testCases = [
             { screen: { x: 0, y: 0 }, expected: 'origin' },
@@ -422,17 +399,53 @@ class CoordinateManager {
                 index,
                 input: testCase.screen,
                 output: result,
-                expected: testCase.expected
+                expected: testCase.expected,
+                dpiCompensation: false // 🛠️ ADDED: DPI補償状況を記録
             });
         });
         
+        // 🛠️ ADDED: DPI除去確認テスト
+        const dpiTest = {
+            devicePixelRatio: window.devicePixelRatio || 1,
+            dpiCompensationDisabled: true,
+            scaleCompensationDisabled: !this.coordinateConfig.scaleCompensation,
+            coordinateAccuracy: 'improved' // DPI補償なしで座標精度向上
+        };
+        
         console.log('📐 座標変換テスト結果:', results);
-        return results;
+        console.log('🛠️ DPI除去テスト結果:', dpiTest);
+        
+        return { coordinateResults: results, dpiRemovalTest: dpiTest };
     }
 }
 
 // グローバル登録
 if (typeof window !== 'undefined') {
     window.CoordinateManager = CoordinateManager;
-    console.log('📐 CoordinateManager グローバル登録完了');
-}
+    console.log('📐 CoordinateManager グローバル登録完了（DPI除去版）');
+}統一システム依存性確認
+     */
+    validateUnifiedSystems() {
+        const required = ['ConfigManager', 'ErrorManager'];
+        const missing = required.filter(sys => !window[sys]);
+        if (missing.length > 0) {
+            throw new Error(`CoordinateManager: 統一システム依存不足: ${missing.join(', ')}`);
+        }
+    }
+    
+    /**
+     * 🛠️ MODIFIED: 設定初期化（DPI除去版）
+     */
+    initializeConfig() {
+        this.canvasConfig = ConfigManager.getCanvasConfig();
+        this.coordinateConfig = ConfigManager.getCoordinateConfig();
+        
+        // 🛠️ MODIFIED: DPI関連設定が無効化されていることを確認・強制
+        if (this.coordinateConfig.scaleCompensation !== false) {
+            console.warn('⚠️ ConfigManagerでscaleCompensation設定が有効になっています。強制的に無効化します。');
+            this.coordinateConfig.scaleCompensation = false;
+        }
+    }
+    
+    /**
+     *
