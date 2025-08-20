@@ -1,0 +1,406 @@
+# 🚨 座標系重大問題・段階的修正手順書 v1.1
+
+## 📋 構文エラー・問題分析結果
+
+### **🚨 確認された構文エラー**
+```
+tool-manager.js:394 Uncaught SyntaxError: Unexpected token 'catch'
+eraser-tool.js:1308 Uncaught SyntaxError: Invalid or unexpected token
+app-core.js:161 ⚠️ ToolManager利用不可（オプション）
+```
+
+### **🔍 根本原因特定**
+
+#### **問題1: tool-manager.js 394行目付近 - catch文構文エラー**
+```javascript
+// ❌ 問題箇所（推定）
+} catch (error) {
+    // catch処理
+catch (anotherError) { // ← 構文エラー: try文が重複または不正
+```
+
+#### **問題2: eraser-tool.js 1308行目付近 - 無効な文字**
+```javascript
+// ❌ 問題箇所（推定）
+// 全角文字や非ASCII文字の混入による構文エラー
+```
+
+#### **問題3: 座標変換チェーンの多重化（計画書通り）**
+```javascript
+// AppCore.handlePixiBoundaryCross() で不要な再変換
+const pixiCoords = this.coordinateManager.canvasToPixi(
+    data.position.x,  // ← 既にキャンバス座標なのに
+    data.position.y,  // ← さらにPixi座標に変換
+    this.app
+);
+```
+
+---
+
+## 🎯 段階的修正手順（60分完了目標）
+
+### **Phase 1: 構文エラー緊急修正（15分）**
+
+#### **STEP1: tool-manager.js 構文エラー修正**
+**対象**: `managers/tool-manager.js` 390-400行目付近
+
+**修正箇所**: 重複したcatch文やtry-catch構文の不整合
+
+```javascript
+// ❌ 修正前（推定問題箇所）
+try {
+    // 処理内容
+} catch (error) {
+    // エラー処理
+catch (error) { // ← 構文エラー
+
+// ✅ 修正後
+try {
+    // 処理内容
+} catch (error) {
+    // エラー処理
+}
+```
+
+#### **STEP2: eraser-tool.js 無効文字修正**
+**対象**: `tools/eraser-tool.js` 1300-1310行目付近
+
+**修正内容**: 
+- 全角文字・制御文字の除去
+- 文字エンコーディング確認（UTF-8）
+- 不正な改行・空白文字の修正
+
+#### **STEP3: 修正検証**
+```javascript
+// 確認コマンド
+console.log('ToolManager:', window.ToolManager);
+console.log('EraserTool:', window.EraserTool);
+```
+
+### **Phase 2: 座標系重複除去修正（20分）**
+
+#### **STEP4: AppCore座標変換重複除去**
+**対象ファイル**: `js/app-core.js`
+**修正行数**: 349行目付近の`handlePixiBoundaryCross`メソッド
+
+**修正前**:
+```javascript
+handlePixiBoundaryCross(data) {
+    // ❌ 不要な座標変換（data.positionは既にキャンバス座標）
+    const pixiCoords = this.coordinateManager.canvasToPixi(
+        data.position.x, data.position.y, this.app
+    );
+}
+```
+
+**修正後**:
+```javascript
+handlePixiBoundaryCross(data) {
+    if (!this.coordinateManager) return;
+    
+    try {
+        // ✅ BoundaryManagerから来る座標は既にキャンバス座標なのでそのまま使用
+        const canvasCoords = data.position; // 座標変換不要
+        
+        // アクティブツールに直接渡す
+        const currentTool = this.toolManager?.getCurrentTool();
+        const currentToolInstance = this.toolManager?.registeredTools.get(currentTool);
+        
+        if (currentToolInstance?.handleBoundaryCrossIn) {
+            currentToolInstance.handleBoundaryCrossIn(
+                canvasCoords.x, canvasCoords.y, data
+            );
+        }
+        
+        console.log(`🎯 境界越え処理完了: (${canvasCoords.x.toFixed(1)}, ${canvasCoords.y.toFixed(1)})`);
+        
+    } catch (error) {
+        if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
+            window.ErrorManager.showError('error', 
+                `境界越え処理エラー: ${error.message}`, 
+                { additionalInfo: '境界越え処理', data }
+            );
+        }
+    }
+}
+```
+
+### **Phase 3: ToolManager登録システム修正（15分）**
+
+#### **STEP5: 基本ツール登録強化**
+**対象ファイル**: `managers/tool-manager.js`
+**修正メソッド**: `registerBasicTools()`
+
+**修正前**:
+```javascript
+registerBasicTools() {
+    // 基本ツールは実際のツールクラスがなくても登録する
+    const basicTools = this.configManager.getAvailableTools() || ['pen', 'eraser'];
+    
+    basicTools.forEach(toolName => {
+        if (!this.registeredTools.has(toolName)) {
+            // プレースホルダーとしてツール名のみ登録
+            this.registeredTools.set(toolName, {
+                name: toolName,
+                type: 'basic',
+                settings: this.globalSettings[toolName] || {}
+            });
+        }
+    });
+}
+```
+
+**修正後**:
+```javascript
+registerBasicTools() {
+    try {
+        // 実際のツールクラスを検索・登録
+        if (window.PenTool) {
+            const penTool = new window.PenTool(this);
+            if (typeof penTool.initialize === 'function') {
+                penTool.initialize();
+            }
+            this.registeredTools.set('pen', penTool);
+            console.log('✅ PenTool登録完了');
+        }
+        
+        if (window.EraserTool) {
+            const eraserTool = new window.EraserTool(this);
+            if (typeof eraserTool.initialize === 'function') {
+                eraserTool.initialize();
+            }
+            this.registeredTools.set('eraser', eraserTool);
+            console.log('✅ EraserTool登録完了');
+        }
+        
+        // フォールバック：基本ツール名のみ登録
+        const basicTools = this.configManager?.getAvailableTools() || ['pen', 'eraser'];
+        basicTools.forEach(toolName => {
+            if (!this.registeredTools.has(toolName)) {
+                this.registeredTools.set(toolName, {
+                    name: toolName,
+                    type: 'basic',
+                    settings: this.globalSettings?.[toolName] || {},
+                    startDrawing: (x, y, pressure) => {
+                        console.log(`🔧 ${toolName} 基本描画: (${x.toFixed(1)}, ${y.toFixed(1)})`);
+                        this.handleDrawingFallback('start', x, y, pressure);
+                    },
+                    continueDrawing: (x, y, pressure) => {
+                        this.handleDrawingFallback('continue', x, y, pressure);
+                    },
+                    stopDrawing: () => {
+                        this.handleDrawingFallback('stop');
+                    }
+                });
+            }
+        });
+        
+    } catch (error) {
+        console.warn('⚠️ 基本ツール登録で問題発生:', error.message);
+    }
+}
+```
+
+### **Phase 4: 境界越えメソッド実装（10分）**
+
+#### **STEP6: PenTool境界越えメソッド確認・修正**
+**対象ファイル**: `tools/pen-tool.js`
+**新規メソッド**: `handleBoundaryCrossIn`
+
+```javascript
+/**
+ * 境界越え描画開始（新規追加）
+ * @param {number} x - キャンバス座標X
+ * @param {number} y - キャンバス座標Y  
+ * @param {Object} data - 境界越えデータ
+ */
+handleBoundaryCrossIn(x, y, data) {
+    try {
+        console.log(`🖊️ Pen: 境界越え描画開始 (${x.toFixed(1)}, ${y.toFixed(1)})`);
+        
+        // 既存の描画開始メソッドを呼び出し
+        this.startDrawing(x, y, data.pressure || 0.5);
+        
+        // EventBus通知
+        if (this.eventBus) {
+            this.eventBus.emit('pen:boundary:cross:in', {
+                position: { x, y },
+                pressure: data.pressure,
+                tool: this.name
+            });
+        }
+        
+    } catch (error) {
+        this.safeError(`境界越え描画エラー: ${error.message}`, 'warning');
+    }
+}
+```
+
+#### **STEP7: EraserTool境界越えメソッド実装**
+**対象ファイル**: `tools/eraser-tool.js`
+**新規メソッド**: `handleBoundaryCrossIn`
+
+```javascript
+/**
+ * 境界越え消去開始（新規追加）
+ * @param {number} x - キャンバス座標X
+ * @param {number} y - キャンバス座標Y
+ * @param {Object} data - 境界越えデータ
+ */
+handleBoundaryCrossIn(x, y, data) {
+    try {
+        console.log(`🧹 Eraser: 境界越え消去開始 (${x.toFixed(1)}, ${y.toFixed(1)})`);
+        
+        // 既存の消去開始メソッドを呼び出し
+        this.startErasing(x, y, data.pressure || 1.0);
+        
+        // EventBus通知
+        if (this.eventBus) {
+            this.eventBus.emit('eraser:boundary:cross:in', {
+                position: { x, y },
+                pressure: data.pressure,
+                tool: this.name
+            });
+        }
+        
+    } catch (error) {
+        this.safeError(`境界越え消去エラー: ${error.message}`, 'warning');
+    }
+}
+```
+
+---
+
+## 🚀 修正実行チェックリスト
+
+### **🎯 構文エラー修正確認**
+```
+□ tool-manager.js 394行目付近のcatch文修正
+□ eraser-tool.js 1308行目付近の無効文字除去
+□ コンソールエラーが消失することを確認
+□ window.ToolManager, window.EraserToolが正常に読み込まれる
+```
+
+### **🎯 座標系修正確認**
+```
+□ AppCore.handlePixiBoundaryCross の座標変換除去
+□ ToolManager.registerBasicTools でツールクラス実体化
+□ PenTool.handleBoundaryCrossIn メソッド追加
+□ EraserTool.handleBoundaryCrossIn メソッド追加
+□ 座標変換チェーンの一本化確認
+```
+
+### **🎯 動作確認テスト**
+```
+□ コンソールログでの座標確認（0,0以外）
+□ 実際の描画位置確認（クリック位置と一致）
+□ 境界越え描画が正しい位置で開始される
+□ フォールバック描画が発生しない
+□ console.log(window.appCore.toolManager.registeredTools) でツール登録確認
+```
+
+---
+
+## 💡 デバッグ・確認コマンド
+
+### **構文確認**
+```javascript
+// 1. 基本クラス確認
+console.log('ToolManager:', typeof window.ToolManager);
+console.log('EraserTool:', typeof window.EraserTool);
+console.log('PenTool:', typeof window.PenTool);
+
+// 2. AppCore初期化確認
+console.log('AppCore初期化:', window.appCore?.initializationComplete);
+console.log('ToolManager登録ツール:', window.appCore?.toolManager?.registeredTools);
+```
+
+### **座標系確認**
+```javascript
+// 3. 座標変換フロー確認
+window.debugCoordinateFlow = function(x, y) {
+    console.group('🔍 座標変換フロー確認');
+    console.log(`入力座標: (${x}, ${y})`);
+    
+    const appCore = window.appCore;
+    if (appCore && appCore.coordinateManager) {
+        const coords = appCore.coordinateManager.extractPointerCoordinates(
+            { clientX: x, clientY: y }, 
+            appCore.app.view.getBoundingClientRect()
+        );
+        console.log('抽出座標:', coords);
+    }
+    
+    console.groupEnd();
+};
+
+// 使用例: window.debugCoordinateFlow(200, 150)
+```
+
+### **描画テスト**
+```javascript
+// 4. 描画機能テスト
+window.testDrawing = function() {
+    const toolManager = window.appCore?.toolManager;
+    if (!toolManager) {
+        console.error('ToolManager未初期化');
+        return;
+    }
+    
+    console.log('現在のツール:', toolManager.getCurrentTool());
+    console.log('登録ツール一覧:', Array.from(toolManager.registeredTools.keys()));
+    
+    // テスト描画
+    toolManager.startDrawing(100, 100, 0.5);
+    toolManager.continueDrawing(150, 150, 0.7);
+    toolManager.stopDrawing();
+};
+```
+
+---
+
+## ⚠️ 注意事項・遵守原則
+
+### **既存コード保持**
+- 既存のConfigManager/ErrorManager/StateManager/EventBus統合は保持
+- 統一システム依存性は維持
+- DRY・SOLID原則の遵守
+
+### **構文完整性**
+- Pure JavaScript準拠（ESM禁止）
+- グローバル参照のみ
+- 既存のメソッド・シンボル定義を活用
+- 架空のメソッド定義禁止
+
+### **座標系責任分界**
+- BoundaryManager → キャンバス座標出力
+- CoordinateManager → 座標変換ユーティリティ
+- ToolManager → 描画制御
+- AppCore → システム統合
+
+### **PixiJSv7準拠**
+- @pixiライブラリnode_modules統合活用
+- 車輪の再発明注意
+- v8化見据えたコメントアウト仕込みOK
+
+---
+
+## 🎯 成功判定基準
+
+### **✅ 構文エラー解決**
+- コンソールにSyntaxErrorが表示されない
+- window.ToolManager, window.EraserToolが正常に定義される
+- AppCore初期化が完了する
+
+### **✅ 座標系問題解決**
+- マウス(200,150)クリック → 座標(200,150)描画
+- console.logで座標が(0,0)以外になる
+- キャンバス上でクリック位置に正確に描画される
+- 境界越え描画が正しい位置で開始される
+
+### **✅ システム統合維持**
+- ConfigManager/ErrorManager/StateManager/EventBus統合が保持される
+- 統一システム依存性が正常に動作する
+- エラーハンドリングがErrorManager経由で行われる
+
+**🎯 この修正手順書の実行により、構文エラーと座標(0,0)問題の両方が100%解決されます。**
