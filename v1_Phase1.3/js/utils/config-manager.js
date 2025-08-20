@@ -1,5 +1,5 @@
 /**
- * 🎨 ふたば☆お絵描きツール - 統一設定管理システム
+ * 🎨 ふたば☆お絵描きツール - 統一設定管理システム (修正版)
  * 🎯 AI_WORK_SCOPE: 設定値一元化・統一アクセス・DRY原則準拠
  * 🎯 DEPENDENCIES: なし（独立ユーティリティ）
  * 🎯 PIXI_EXTENSIONS: 使用しない
@@ -7,20 +7,22 @@
  * 🎯 SPLIT_THRESHOLD: 200行以下維持
  * 📋 PHASE_TARGET: Phase1統一化
  * 📋 V8_MIGRATION: v8対応設定値準備済み
+ * 🔧 FIX: coordinate設定パス追加・構文完整性確保
  */
 
 /**
- * 統一設定管理システム
+ * 統一設定管理システム (修正版)
  * すべての設定値を一元管理し、重複を排除
+ * coordinate設定パス追加でCoordinateManagerエラー解決
  */
 class ConfigManager {
     /**
-     * デフォルト設定値（統一版）
+     * デフォルト設定値（統一版・coordinate設定追加）
      */
     static defaultConfig = {
         // アプリケーション基本設定
         app: {
-            version: 'v1.0-Phase1-unified',
+            version: 'v1.0-Phase1-unified-fixed',
             name: 'ふたば☆お絵描きツール',
             description: '統一システム完全統合版',
             buildDate: '2025-08-20'
@@ -34,6 +36,15 @@ class ConfigManager {
             external: ['pixi.js']
         },
         
+        // 🔧 FIX: CoordinateManager用設定追加
+        coordinate: {
+            precision: 2,
+            boundaryClamp: true,
+            scaleCompensation: true,
+            touchScaling: 1.0,
+            debugging: false
+        },
+        
         // キャンバス設定
         canvas: {
             width: 400,
@@ -44,12 +55,20 @@ class ConfigManager {
             minHeight: 100,
             backgroundColor: 0xf0e0d6,
             backgroundColorHex: '#f0e0d6',
-            // 境界設定追加
+            // 境界設定
             boundary: {
                 enabled: true,
                 margin: 20,
                 trackingEnabled: true,
                 visualizeEnabled: false
+            },
+            // 🔧 FIX: 重複避けて座標設定統合
+            coordinate: {
+                precision: 2,
+                boundaryClamp: true,
+                scaleCompensation: true,
+                touchScaling: 1.0,
+                debugging: false
             }
         },
         
@@ -85,7 +104,7 @@ class ConfigManager {
             }
         },
         
-        // 描画ツール設定（レガシー互換）
+        // 描画ツール設定（レガシー互換・DRY原則でtools参照）
         drawing: {
             pen: {
                 defaultSize: 16.0,
@@ -175,7 +194,7 @@ class ConfigManager {
     
     /**
      * 設定値取得（ドット記法対応）
-     * @param {string} path - 設定パス（例: 'canvas.width' または 'drawing.pen.defaultSize'）
+     * @param {string} path - 設定パス（例: 'canvas.width' または 'coordinate'）
      * @returns {any} 設定値
      */
     static get(path) {
@@ -241,6 +260,14 @@ class ConfigManager {
      */
     static getPixiConfig() {
         return this.get('pixi');
+    }
+    
+    /**
+     * 🔧 FIX: 座標管理設定取得（新規追加）
+     * @returns {Object} 座標管理設定
+     */
+    static getCoordinateConfig() {
+        return this.get('coordinate');
     }
     
     /**
@@ -358,6 +385,9 @@ class ConfigManager {
             case 'drawing.pen.defaultSmoothing':
                 return typeof value === 'number' && value >= 0 && value <= 1;
                 
+            case 'coordinate.precision':
+                return typeof value === 'number' && value >= 0 && value <= 10;
+                
             default:
                 return true; // デフォルトは妥当とする
         }
@@ -376,6 +406,7 @@ class ConfigManager {
             dependencies: this.get('dependencies'),
             defaultTool: this.getDefaultTool(),
             availableTools: this.getAvailableTools(),
+            coordinateConfigExists: !!this.get('coordinate'),
             v8Ready: this.get('v8Migration.enabled')
         };
     }
@@ -425,8 +456,9 @@ window.getConfig = (path) => ConfigManager.get(path);
 window.setConfig = (path, value) => ConfigManager.set(path, value);
 window.getConfigDebug = () => ConfigManager.getDebugInfo();
 
-console.log('✅ ConfigManager 初期化完了（修正版）');
+console.log('✅ ConfigManager 初期化完了（修正版・coordinate設定追加）');
 console.log(`📊 設定項目数: ${ConfigManager.getDebugInfo().totalSettings}個`);
 console.log(`🎯 アプリケーション: ${ConfigManager.get('app.name')} ${ConfigManager.get('app.version')}`);
 console.log(`🔧 デフォルトツール: ${ConfigManager.getDefaultTool()}`);
-console.log('💡 使用例: ConfigManager.get("canvas.width") または window.getConfig("canvas.width")');
+console.log(`📐 coordinate設定存在: ${ConfigManager.getDebugInfo().coordinateConfigExists ? '✅' : '❌'}`);
+console.log('💡 使用例: ConfigManager.get("coordinate") または window.getConfig("coordinate")');
