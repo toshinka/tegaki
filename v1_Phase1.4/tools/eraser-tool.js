@@ -763,6 +763,45 @@ class EraserTool {
         console.log(`🧹 ${this.displayName} 非アクティブ化 - 統一システム版（座標系修正版）`);
     }
     
+// ============================================
+// 🎯 EraserToolクラス内に追加するメソッド
+// ============================================
+
+/**
+ * 境界越え消去開始（新規追加）
+ * @param {number} x - キャンバス座標X
+ * @param {number} y - キャンバス座標Y
+ * @param {Object} data - 境界越えデータ
+ */
+handleBoundaryCrossIn(x, y, data) {
+    try {
+        console.log(`🧹 Eraser: 境界越え消去開始 (${x.toFixed(1)}, ${y.toFixed(1)})`);
+        
+        // 既存の消去開始メソッドを呼び出し
+        const pressure = data.pressure || 1.0; // 消しゴムは通常フル圧力
+        const timestamp = performance.now();
+        
+        this.startErasing(x, y, pressure, timestamp);
+        
+        // EventBus通知
+        if (this.eventBus && typeof this.eventBus.emit === 'function') {
+            this.eventBus.emit('eraser:boundary:cross:in', {
+                position: { x, y },
+                pressure: pressure,
+                tool: this.name,
+                source: 'boundary-manager',
+                timestamp,
+                eraseMode: this.eraseMode?.type || 'normal'
+            });
+        }
+        
+        console.log(`✅ Eraser境界越え消去開始完了: P:${pressure.toFixed(3)}`);
+        
+    } catch (error) {
+        this.safeError(`境界越え消去エラー: ${error.message}`, 'warning');
+    }
+}
+
     // ==========================================
     // 🎯 継続する機能メソッド群（省略版）
     // ==========================================

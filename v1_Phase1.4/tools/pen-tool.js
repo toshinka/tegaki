@@ -909,6 +909,44 @@ class PenTool {
     
 }
 
+/ ============================================
+// 🎯 PenToolクラス内に追加するメソッド
+// ============================================
+
+/**
+ * 境界越え描画開始（新規追加）
+ * @param {number} x - キャンバス座標X
+ * @param {number} y - キャンバス座標Y  
+ * @param {Object} data - 境界越えデータ
+ */
+handleBoundaryCrossIn(x, y, data) {
+    try {
+        console.log(`🖊️ Pen: 境界越え描画開始 (${x.toFixed(1)}, ${y.toFixed(1)})`);
+        
+        // 既存の描画開始メソッドを呼び出し
+        const pressure = data.pressure || 0.5;
+        const timestamp = performance.now();
+        
+        this.startDrawing(x, y, pressure, timestamp);
+        
+        // EventBus通知
+        if (this.eventBus && typeof this.eventBus.emit === 'function') {
+            this.eventBus.emit('pen:boundary:cross:in', {
+                position: { x, y },
+                pressure: pressure,
+                tool: this.name,
+                source: 'boundary-manager',
+                timestamp
+            });
+        }
+        
+        console.log(`✅ Pen境界越え描画開始完了: P:${pressure.toFixed(3)}`);
+        
+    } catch (error) {
+        this.safeError(`境界越え描画エラー: ${error.message}`, 'warning');
+    }
+}
+
 // ==========================================
 // 🎯 Pure JavaScript グローバル公開
 // ==========================================
