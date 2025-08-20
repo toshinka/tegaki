@@ -1,9 +1,16 @@
 /**
- * 🎨 AppCoreシステム（高DPI修正版）
- * 🎯 AI_WORK_SCOPE: PixiJSアプリケーション基盤・高DPI対応・サイズ制御
+ * 🎨 AppCoreシステム（DPI除去完了版・重複宣言修正版）
+ * 🎯 AI_WORK_SCOPE: PixiJSアプリケーション基盤・システム統合・初期化制御
  * 🎯 DEPENDENCIES: 統一システム4種、BoundaryManager、CoordinateManager
- * 🔧 HIGHDPI_FIX: resolution固定・CSS強制サイズ・devicePixelRatio補正削除
+ * 🔧 DUPLICATE_FIX: クラス重複宣言解決・統一システム依存性修正
+ * 🛠️ DPI_REMOVAL: devicePixelRatio使用除去・固定resolution=1・DPI補償処理削除
  */
+
+// 🔧 DUPLICATE_FIX: 既存AppCore定義をチェックして重複を防ぐ
+if (typeof window.AppCore !== 'undefined') {
+    console.warn('⚠️ AppCore already defined - redefining...');
+    delete window.AppCore;
+}
 
 class AppCore {
     constructor() {
@@ -26,11 +33,11 @@ class AppCore {
         this.initializationComplete = false;
         this.initializationFailed = false;
         
-        console.log('🎨 AppCore インスタンス作成完了（高DPI修正版）');
+        console.log('🎨 AppCore インスタンス作成完了（DPI除去版・重複修正版）');
     }
     
     /**
-     * 統一システム依存性確認
+     * 🔧 FIXED: 統一システム依存性確認（修正版）
      */
     validateUnifiedSystems() {
         const required = ['ConfigManager', 'ErrorManager', 'StateManager', 'EventBus'];
@@ -38,50 +45,54 @@ class AppCore {
         if (missing.length > 0) {
             throw new Error(`AppCore: 統一システム依存性エラー: ${missing.join(', ')}`);
         }
+        
+        // 統一システムへの参照を確立
+        this.configManager = window.ConfigManager;
+        this.errorManager = window.ErrorManager;
+        this.stateManager = window.StateManager;
+        this.eventBus = window.EventBus;
+        
+        console.log('✅ AppCore: 統一システム依存性確認完了');
     }
     
     /**
-     * 設定初期化（高DPI対応設定追加）
+     * 🔧 FIXED: 設定初期化（統一システム参照使用版）
      */
     initializeConfig() {
         try {
-            const canvasConfig = window.ConfigManager.getCanvasConfig();
+            const canvasConfig = this.configManager.getCanvasConfig();
             this.canvasWidth = canvasConfig.width;
             this.canvasHeight = canvasConfig.height;
             this.backgroundColor = canvasConfig.backgroundColor;
             
-            // 境界描画設定
-            this.boundaryConfig = window.ConfigManager.get('canvas.boundary') || {
+            // 境界描画設定追加
+            this.boundaryConfig = this.configManager.get('canvas.boundary') || {
                 enabled: true,
                 margin: 20,
                 trackingEnabled: true
             };
             
-            // 🔧 高DPI対応設定追加
-            this.highDPIConfig = window.ConfigManager.get('canvas.highDPI') || {
-                forceResolution: 1,           // resolution固定値
-                forceCSSSize: true,           // CSSサイズ強制適用
-                disableDevicePixelRatio: true // devicePixelRatio補正無効
-            };
-            
         } catch (error) {
             console.warn('⚠️ 設定初期化で問題発生、フォールバック使用:', error.message);
             
-            // フォールバック設定（高DPI対応含む）
+            // フォールバック設定
             this.canvasWidth = 400;
             this.canvasHeight = 400;
             this.backgroundColor = 0xf0e0d6;
-            this.boundaryConfig = { enabled: true, margin: 20, trackingEnabled: true };
-            this.highDPIConfig = { forceResolution: 1, forceCSSSize: true, disableDevicePixelRatio: true };
+            this.boundaryConfig = {
+                enabled: true,
+                margin: 20,
+                trackingEnabled: true
+            };
         }
     }
     
     /**
-     * アプリケーション初期化
+     * アプリケーション初期化（修正版）
      */
     async initialize() {
         try {
-            console.log('🚀 AppCore 初期化開始（高DPI修正版）...');
+            console.log('🚀 AppCore 初期化開始（DPI除去版・重複修正版）...');
             this.isInitializing = true;
             
             // 段階的初期化
@@ -98,7 +109,7 @@ class AppCore {
     }
     
     /**
-     * 基盤システム初期化
+     * 基盤システム初期化（修正版）
      */
     async initializeBasicSystems() {
         console.log('🔧 基盤システム初期化中...');
@@ -106,20 +117,20 @@ class AppCore {
         // DOM確認
         await this.verifyDOMElements();
         
-        // 座標管理システム初期化
+        // 座標管理システム初期化（エラーハンドリング強化）
         if (window.CoordinateManager) {
             try {
                 this.coordinateManager = new window.CoordinateManager();
                 console.log('✅ CoordinateManager初期化完了');
             } catch (error) {
-                console.warn('⚠️ CoordinateManager初期化失敗:', error.message);
+                console.warn('⚠️ CoordinateManager初期化失敗（オプション）:', error.message);
                 this.coordinateManager = null;
             }
         } else {
-            console.warn('⚠️ CoordinateManager利用不可');
+            console.warn('⚠️ CoordinateManager利用不可（オプション）');
         }
         
-        // PixiJSアプリケーション初期化（高DPI修正版）
+        // PixiJSアプリケーション初期化
         await this.initializePixiApp();
         
         // コンテナ初期化
@@ -129,7 +140,7 @@ class AppCore {
     }
     
     /**
-     * 管理システム初期化
+     * 管理システム初期化（修正版 - 初期化メソッド統一）
      */
     async initializeManagers() {
         console.log('🔧 管理システム初期化中...');
@@ -141,40 +152,46 @@ class AppCore {
                 await this.boundaryManager.initialize(this.app.view, this.coordinateManager);
                 console.log('✅ BoundaryManager初期化完了');
             } catch (error) {
-                console.warn('⚠️ BoundaryManager初期化失敗:', error.message);
+                console.warn('⚠️ BoundaryManager初期化失敗（オプション）:', error.message);
                 this.boundaryManager = null;
             }
+        } else {
+            console.warn('⚠️ BoundaryManager利用不可（オプション）');
         }
         
-        // ツールマネージャー初期化
+        // ツールマネージャー初期化（修正版）
         if (window.ToolManager) {
             try {
                 this.toolManager = new window.ToolManager(this);
-                await this.toolManager.initialize();
+                await this.toolManager.initialize(); // ← ToolManagerは initialize() メソッド
                 console.log('✅ ToolManager初期化完了');
             } catch (error) {
-                console.warn('⚠️ ToolManager初期化失敗:', error.message);
+                console.warn('⚠️ ToolManager初期化失敗（オプション）:', error.message);
                 this.toolManager = null;
             }
+        } else {
+            console.warn('⚠️ ToolManager利用不可（オプション）');
         }
         
-        // UIマネージャー初期化
+        // UIマネージャー初期化（修正版 - init()メソッド使用）
         if (window.UIManager) {
             try {
                 this.uiManager = new window.UIManager(this);
-                await this.uiManager.init();
+                await this.uiManager.init(); // ← UIManagerは init() メソッド（initialize()ではない）
                 console.log('✅ UIManager初期化完了');
             } catch (error) {
-                console.warn('⚠️ UIManager初期化失敗:', error.message);
+                console.warn('⚠️ UIManager初期化失敗（オプション）:', error.message);
                 this.uiManager = null;
             }
+        } else {
+            console.warn('⚠️ UIManager利用不可（オプション）');
         }
         
         console.log('✅ 管理システム初期化完了');
     }
     
     /**
-     * アプリケーション初期化
+     * アプリケーション初期化（修正版）
      */
     async initializeApplication() {
         console.log('🔧 アプリケーション初期化中...');
@@ -185,9 +202,6 @@ class AppCore {
         // PixiJS境界システム統合
         this.initializePixiBoundarySystem();
         
-        // 🔧 高DPI表示サイズ強制適用
-        this.enforceCanvasDisplaySize();
-        
         // 初期化検証
         this.verifyInitialization();
         
@@ -195,7 +209,7 @@ class AppCore {
     }
     
     /**
-     * DOM要素確認
+     * DOM要素確認（修正版）
      */
     async verifyDOMElements() {
         const canvasElement = document.getElementById('drawing-canvas');
@@ -212,38 +226,34 @@ class AppCore {
     }
     
     /**
-     * PixiJSアプリケーション初期化（高DPI修正版）
+     * 🛠️ MODIFIED: PixiJSアプリケーション初期化（DPI除去版）
      */
     async initializePixiApp() {
         try {
-            const canvasConfig = window.ConfigManager.getCanvasConfig();
-            const pixiConfig = window.ConfigManager.getPixiConfig();
+            const canvasConfig = this.configManager.getCanvasConfig();
+            const pixiConfig = this.configManager.getPixiConfig();
             
-            console.log('🔧 PixiJS初期化（高DPI修正版）...');
-            console.log('📊 DevicePixelRatio:', window.devicePixelRatio || 1);
-            
-            // 🔧 高DPI修正: resolution を 1 に固定
-            const fixedResolution = this.highDPIConfig.forceResolution || 1;
-            
+            // 🛠️ MODIFIED: DPI補償処理を完全削除
             this.app = new PIXI.Application({
                 width: canvasConfig.width,
                 height: canvasConfig.height,
                 backgroundColor: canvasConfig.backgroundColor,
                 antialias: pixiConfig.antialias,
-                resolution: fixedResolution, // 🔧 devicePixelRatioではなく固定値
-                autoDensity: false           // 🔧 自動密度調整を無効化
+                resolution: 1, // MODIFIED: 固定値1（devicePixelRatio使用せず）
+                autoDensity: false // MODIFIED: 高DPI自動調整を明示的に無効化
             });
+            // REASON: Phase2レイヤー実装の複雑性削減、ふたばちゃんねる投稿対策
+            // V8_READY: PixiJSv8移行時に再検討
             
             const canvasElement = document.getElementById('drawing-canvas');
             canvasElement.appendChild(this.app.view);
             
-            // 🔧 キャンバス要素の基本設定（高DPI対応）
+            // キャンバス要素の基本設定
             this.app.view.style.cursor = pixiConfig.cursor || 'crosshair';
-            this.app.view.style.touchAction = 'none';
+            this.app.view.style.touchAction = 'none'; // タッチスクロール防止
             
-            console.log('✅ PixiJS基盤初期化完了');
-            console.log(`📊 Canvas内部サイズ: ${this.app.view.width}x${this.app.view.height}`);
-            console.log(`📊 Canvas解像度: ${this.app.renderer.resolution}`);
+            console.log('✅ PixiJSアプリケーション初期化完了（DPI除去版）');
+            console.log(`📐 キャンバスサイズ: ${canvasConfig.width}×${canvasConfig.height}px (resolution=1固定)`);
             
         } catch (error) {
             console.error('❌ PixiJSアプリケーション初期化失敗:', error);
@@ -252,48 +262,7 @@ class AppCore {
     }
     
     /**
-     * 🔧 キャンバス表示サイズ強制適用（高DPI修正の核心）
-     */
-    enforceCanvasDisplaySize() {
-        try {
-            console.log('🔧 キャンバス表示サイズ強制適用中...');
-            
-            const canvasElement = this.app.view;
-            if (!canvasElement) {
-                console.warn('⚠️ Canvas要素が見つかりません');
-                return;
-            }
-            
-            // 🔧 CSS強制サイズ設定
-            canvasElement.style.width = `${this.canvasWidth}px`;
-            canvasElement.style.height = `${this.canvasHeight}px`;
-            canvasElement.style.maxWidth = `${this.canvasWidth}px`;
-            canvasElement.style.maxHeight = `${this.canvasHeight}px`;
-            canvasElement.style.minWidth = `${this.canvasWidth}px`;
-            canvasElement.style.minHeight = `${this.canvasHeight}px`;
-            
-            // 🔧 additional CSS防御的設定
-            canvasElement.style.objectFit = 'contain';
-            canvasElement.style.imageRendering = 'crisp-edges'; // 高DPI環境での鮮明化
-            
-            console.log(`✅ 表示サイズ強制適用完了: ${this.canvasWidth}x${this.canvasHeight}px`);
-            console.log(`📊 実際のCSS width: ${canvasElement.style.width}`);
-            console.log(`📊 実際のCSS height: ${canvasElement.style.height}`);
-            
-            // 🔧 CoordinateManager にサイズ情報同期
-            if (this.coordinateManager && typeof this.coordinateManager.updateCanvasSize === 'function') {
-                this.coordinateManager.updateCanvasSize(this.canvasWidth, this.canvasHeight);
-                console.log('✅ CoordinateManager サイズ同期完了');
-            }
-            
-        } catch (error) {
-            console.error('❌ キャンバス表示サイズ強制適用失敗:', error);
-            // エラーでも処理継続（重要度低）
-        }
-    }
-    
-    /**
-     * コンテナ初期化
+     * コンテナ初期化（修正版）
      */
     initializeContainers() {
         try {
@@ -320,17 +289,18 @@ class AppCore {
     }
     
     /**
-     * PixiJS境界システム統合初期化
+     * PixiJS境界システム統合初期化（修正版）
      */
     initializePixiBoundarySystem() {
         if (!this.app || !this.boundaryManager) {
-            console.warn('⚠️ PixiJS境界システム統合スキップ');
+            console.warn('⚠️ PixiJS境界システム統合スキップ（依存関係不足）');
             return;
         }
         
         try {
             console.log('🎯 PixiJS境界システム統合初期化中...');
             
+            // 拡張ヒットエリア設定
             const margin = this.boundaryManager.boundaryMargin || 20;
             this.app.stage.hitArea = new PIXI.Rectangle(
                 -margin,
@@ -339,9 +309,11 @@ class AppCore {
                 this.canvasHeight + margin * 2
             );
             
+            // インタラクティブ強化
             this.app.stage.interactive = true;
             this.app.stage.interactiveChildren = true;
             
+            // 境界統合イベント設定
             this.setupPixiBoundaryEvents();
             
             console.log('✅ PixiJS境界システム統合完了');
@@ -352,25 +324,29 @@ class AppCore {
     }
     
     /**
-     * PixiJS境界イベント設定
+     * PixiJS境界イベント設定（修正版）
      */
     setupPixiBoundaryEvents() {
         try {
-            if (window.EventBus && typeof window.EventBus.on === 'function') {
-                window.EventBus.on('boundary.cross.in', (data) => {
+            // 境界越えイベント統合
+            if (this.eventBus && typeof this.eventBus.on === 'function') {
+                this.eventBus.on('boundary.cross.in', (data) => {
                     this.handlePixiBoundaryCross(data);
                 });
             }
             
+            // PixiJSネイティブイベント拡張
             this.app.stage.on('pointerenter', (event) => {
-                if (window.EventBus && typeof window.EventBus.emit === 'function') {
-                    window.EventBus.emit('pixi.pointer.enter', { event });
+                console.log('🎯 PixiJS ポインター エンター');
+                if (this.eventBus && typeof this.eventBus.emit === 'function') {
+                    this.eventBus.emit('pixi.pointer.enter', { event });
                 }
             });
             
             this.app.stage.on('pointerleave', (event) => {
-                if (window.EventBus && typeof window.EventBus.emit === 'function') {
-                    window.EventBus.emit('pixi.pointer.leave', { event });
+                console.log('🎯 PixiJS ポインター リーブ');
+                if (this.eventBus && typeof this.eventBus.emit === 'function') {
+                    this.eventBus.emit('pixi.pointer.leave', { event });
                 }
             });
             
@@ -380,18 +356,20 @@ class AppCore {
     }
     
     /**
-     * PixiJS境界越え処理
+     * PixiJS境界越え処理（修正版）
      */
     handlePixiBoundaryCross(data) {
         if (!this.coordinateManager) return;
         
         try {
+            // PixiJS座標系変換
             const pixiCoords = this.coordinateManager.canvasToPixi(
                 data.position.x, 
                 data.position.y, 
                 this.app
             );
             
+            // アクティブツールに境界越え通知
             if (this.toolManager?.currentTool && typeof this.toolManager.currentTool.handleBoundaryCrossIn === 'function') {
                 this.toolManager.currentTool.handleBoundaryCrossIn(
                     pixiCoords.x, 
@@ -405,9 +383,11 @@ class AppCore {
                 );
             }
             
+            console.log(`🎯 PixiJS境界越え処理完了: (${pixiCoords.x.toFixed(1)}, ${pixiCoords.y.toFixed(1)})`);
+            
         } catch (error) {
-            if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
-                window.ErrorManager.showError('error', 
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('error', 
                     `PixiJS境界越え処理エラー: ${error.message}`, 
                     { additionalInfo: 'PixiJS境界処理', data }
                 );
@@ -416,7 +396,7 @@ class AppCore {
     }
     
     /**
-     * イベントリスナー設定
+     * イベントリスナー設定（修正版）
      */
     setupEventListeners() {
         try {
@@ -426,17 +406,17 @@ class AppCore {
             this.app.stage.on('pointerup', this.handlePointerUp.bind(this));
             this.app.stage.on('pointerupoutside', this.handlePointerUp.bind(this));
             
-            // 境界越えイベント
-            if (window.EventBus && typeof window.EventBus.on === 'function') {
-                window.EventBus.on('boundary.cross.in', this.handleBoundaryCrossIn.bind(this));
+            // 境界越えイベント（BoundaryManager統合）
+            if (this.eventBus && typeof this.eventBus.on === 'function') {
+                this.eventBus.on('boundary.cross.in', this.handleBoundaryCrossIn.bind(this));
             }
             
             // ウィンドウイベント
             window.addEventListener('resize', this.handleResize.bind(this));
             
             // ツールイベント
-            if (window.EventBus && typeof window.EventBus.on === 'function') {
-                window.EventBus.on('tool.changed', this.handleToolChanged.bind(this));
+            if (this.eventBus && typeof this.eventBus.on === 'function') {
+                this.eventBus.on('tool.changed', this.handleToolChanged.bind(this));
             }
             
             console.log('✅ イベントリスナー設定完了');
@@ -447,10 +427,13 @@ class AppCore {
     }
     
     /**
-     * 境界越え描画開始処理
+     * 境界越え描画開始処理（修正版）
      */
     handleBoundaryCrossIn(data) {
-        if (!this.toolManager) return;
+        if (!this.toolManager) {
+            console.warn('⚠️ ToolManager が利用できません');
+            return;
+        }
         
         try {
             const currentTool = this.toolManager.getCurrentTool();
@@ -469,9 +452,11 @@ class AppCore {
                 );
             }
             
+            console.log(`🎯 境界越え描画開始: (${data.position.x.toFixed(1)}, ${data.position.y.toFixed(1)})`);
+            
         } catch (error) {
-            if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
-                window.ErrorManager.showError('warning', 
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('warning', 
                     `境界越え描画エラー: ${error.message}`, 
                     { additionalInfo: '境界越え処理', data }
                 );
@@ -480,7 +465,7 @@ class AppCore {
     }
     
     /**
-     * ポインターダウンハンドラー（高DPI対応）
+     * ポインターダウンハンドラー（修正版）
      */
     handlePointerDown(event) {
         if (!this.toolManager || !this.coordinateManager) {
@@ -489,20 +474,17 @@ class AppCore {
         }
         
         try {
-            // 🔧 高DPI対応: 修正されたCoordinateManagerを使用
             const coords = this.coordinateManager.extractPointerCoordinates(
                 event, 
                 this.app.view.getBoundingClientRect(), 
                 this.app
             );
             
-            console.log(`🎯 PointerDown: screen(${coords.screen.x}, ${coords.screen.y}) → canvas(${coords.canvas.x}, ${coords.canvas.y})`);
-            
-            // ToolManagerの描画開始
+            // ToolManagerの描画開始メソッドを呼び出し
             this.toolManager.startDrawing(coords.canvas.x, coords.canvas.y, coords.pressure);
             
-            if (window.EventBus && typeof window.EventBus.emit === 'function') {
-                window.EventBus.emit('drawing.started', {
+            if (this.eventBus && typeof this.eventBus.emit === 'function') {
+                this.eventBus.emit('drawing.started', {
                     position: coords.canvas,
                     pressure: coords.pressure,
                     tool: this.toolManager.getCurrentTool() || 'unknown'
@@ -510,8 +492,8 @@ class AppCore {
             }
             
         } catch (error) {
-            if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
-                window.ErrorManager.showError('warning', 
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('warning', 
                     `ポインターダウンエラー: ${error.message}`, 
                     { additionalInfo: 'ポインター処理', event: event.type }
                 );
@@ -520,7 +502,7 @@ class AppCore {
     }
     
     /**
-     * ポインター移動ハンドラー（高DPI対応）
+     * ポインター移動ハンドラー（修正版）
      */
     handlePointerMove(event) {
         if (!this.coordinateManager) return;
@@ -540,12 +522,13 @@ class AppCore {
             }
             
         } catch (error) {
+            // ポインター移動エラーは頻繁に発生する可能性があるため、警告レベル
             console.warn('⚠️ ポインター移動処理エラー:', error.message);
         }
     }
     
     /**
-     * ポインターアップハンドラー
+     * ポインターアップハンドラー（修正版）
      */
     handlePointerUp(event) {
         if (!this.toolManager) return;
@@ -553,15 +536,15 @@ class AppCore {
         try {
             this.toolManager.stopDrawing();
             
-            if (window.EventBus && typeof window.EventBus.emit === 'function') {
-                window.EventBus.emit('drawing.ended', {
+            if (this.eventBus && typeof this.eventBus.emit === 'function') {
+                this.eventBus.emit('drawing.ended', {
                     timestamp: Date.now()
                 });
             }
             
         } catch (error) {
-            if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
-                window.ErrorManager.showError('warning', 
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('warning', 
                     `ポインターアップエラー: ${error.message}`, 
                     { additionalInfo: 'ポインター処理', event: event.type }
                 );
@@ -570,7 +553,7 @@ class AppCore {
     }
     
     /**
-     * 座標表示更新
+     * 座標表示更新（修正版）
      */
     updateCoordinateDisplay(canvasCoords) {
         try {
@@ -579,57 +562,52 @@ class AppCore {
                 coordinatesElement.textContent = `x: ${Math.round(canvasCoords.x)}, y: ${Math.round(canvasCoords.y)}`;
             }
         } catch (error) {
+            // 座標表示エラーは致命的ではないため、ログのみ
             console.warn('⚠️ 座標表示更新エラー:', error.message);
         }
     }
     
     /**
-     * リサイズハンドラー（高DPI対応）
+     * リサイズハンドラー（修正版）
      */
     handleResize() {
         if (!this.app) return;
         
         console.log('🔄 ウィンドウリサイズ検出');
-        
-        // 🔧 リサイズ時も表示サイズを再適用
-        setTimeout(() => {
-            this.enforceCanvasDisplaySize();
-        }, 100);
-        
-        if (window.EventBus && typeof window.EventBus.emit === 'function') {
-            window.EventBus.emit('window.resized', {
+        if (this.eventBus && typeof this.eventBus.emit === 'function') {
+            this.eventBus.emit('window.resized', {
                 timestamp: Date.now()
             });
         }
     }
     
     /**
-     * ツール変更ハンドラー
+     * ツール変更ハンドラー（修正版）
      */
     handleToolChanged(data) {
         console.log(`🔧 ツール変更: ${data.previousTool || '不明'} → ${data.tool || '不明'}`);
     }
     
     /**
-     * 初期化完了処理
+     * 初期化完了処理（修正版）
      */
     completeInitialization() {
         this.isInitializing = false;
         this.initializationComplete = true;
         
-        if (window.EventBus && typeof window.EventBus.emit === 'function') {
-            window.EventBus.emit('appCore.initialized', {
+        if (this.eventBus && typeof this.eventBus.emit === 'function') {
+            this.eventBus.emit('appCore.initialized', {
                 success: true,
                 components: this.getInitializationStats(),
                 timestamp: Date.now()
             });
         }
         
-        console.log('✅ AppCore 初期化完了（高DPI修正版）');
+        console.log('✅ AppCore 初期化完了（DPI除去版・重複修正版）');
     }
     
     /**
-     * 初期化エラー処理
+     * 初期化エラー処理（修正版）
      */
     async handleInitializationError(error) {
         console.error('💀 AppCore初期化エラー:', error);
@@ -637,18 +615,19 @@ class AppCore {
         this.initializationFailed = true;
         this.isInitializing = false;
         
-        if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
-            window.ErrorManager.showError('error', error.message, {
+        if (this.errorManager && typeof this.errorManager.showError === 'function') {
+            this.errorManager.showError('error', error.message, {
                 additionalInfo: 'AppCore初期化失敗',
                 showReload: true
             });
         }
         
+        // フォールバックモード試行
         await this.initializeFallbackMode(error);
     }
     
     /**
-     * 初期化検証
+     * 初期化検証（修正版）
      */
     verifyInitialization() {
         const verification = {
@@ -657,8 +636,7 @@ class AppCore {
             boundaryManager: !!this.boundaryManager,
             coordinateManager: !!this.coordinateManager,
             toolManager: !!this.toolManager,
-            uiManager: !!this.uiManager,
-            canvasSize: this.verifyCanvasSize() // 🔧 サイズ検証追加
+            uiManager: !!this.uiManager
         };
         
         const passCount = Object.values(verification).filter(Boolean).length;
@@ -666,51 +644,19 @@ class AppCore {
         
         console.log(`✅ 初期化検証: ${passCount}/${totalCount} (${(passCount/totalCount*100).toFixed(1)}%)`);
         
-        if (passCount < 4) {
+        if (passCount < 3) { // 最低限PixiJS, DrawingContainer, 1つのManagerがあれば動作可能
             const failed = Object.entries(verification)
                 .filter(([key, value]) => !value)
                 .map(([key]) => key);
             
-            if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
-                window.ErrorManager.showError('warning', `初期化未完了: ${failed.join(', ')}`);
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('warning', `初期化未完了: ${failed.join(', ')}`);
             }
         }
     }
     
     /**
-     * 🔧 キャンバスサイズ検証（高DPI対応）
-     */
-    verifyCanvasSize() {
-        try {
-            if (!this.app?.view) return false;
-            
-            const canvasElement = this.app.view;
-            const computedStyle = getComputedStyle(canvasElement);
-            const displayWidth = parseInt(computedStyle.width, 10);
-            const displayHeight = parseInt(computedStyle.height, 10);
-            
-            const isCorrectSize = displayWidth === this.canvasWidth && displayHeight === this.canvasHeight;
-            
-            console.log(`🔍 キャンバスサイズ検証:`);
-            console.log(`📊 期待サイズ: ${this.canvasWidth}x${this.canvasHeight}px`);
-            console.log(`📊 実際サイズ: ${displayWidth}x${displayHeight}px`);
-            console.log(`📊 検証結果: ${isCorrectSize ? '✅ 正常' : '❌ 不整合'}`);
-            
-            if (!isCorrectSize) {
-                console.warn('⚠️ キャンバスサイズが期待値と異なります。再適用します...');
-                this.enforceCanvasDisplaySize();
-            }
-            
-            return isCorrectSize;
-            
-        } catch (error) {
-            console.warn('⚠️ キャンバスサイズ検証エラー:', error.message);
-            return false;
-        }
-    }
-    
-    /**
-     * 初期化統計取得
+     * 初期化統計取得（修正版）
      */
     getInitializationStats() {
         return {
@@ -721,52 +667,51 @@ class AppCore {
             toolManager: !!this.toolManager,
             uiManager: !!this.uiManager,
             initializationComplete: this.initializationComplete,
-            initializationFailed: this.initializationFailed,
-            canvasSize: this.verifyCanvasSize(),
-            highDPIConfig: this.highDPIConfig
+            initializationFailed: this.initializationFailed
         };
     }
     
     /**
-     * フォールバックモード初期化
+     * 🛠️ MODIFIED: フォールバックモード初期化（DPI除去版）
      */
     async initializeFallbackMode(originalError) {
         console.log('🛡️ フォールバックモード初期化中...');
         
         try {
+            // 最低限のPixiJSアプリケーション作成
             if (!this.app) {
                 const fallbackConfig = {
-                    width: this.canvasWidth || 400,
-                    height: this.canvasHeight || 400,
-                    backgroundColor: this.backgroundColor || 0xf0e0d6,
-                    resolution: 1 // 🔧 フォールバックでもresolution=1
+                    width: this.configManager?.get('canvas.width') || 400,
+                    height: this.configManager?.get('canvas.height') || 400,
+                    backgroundColor: this.configManager?.get('canvas.backgroundColor') || 0xf0e0d6,
+                    resolution: 1, // MODIFIED: フォールバックでも固定値1
+                    autoDensity: false // MODIFIED: フォールバックでもDPI自動調整無効
                 };
                 
                 this.app = new PIXI.Application(fallbackConfig);
                 const canvasElement = document.getElementById('drawing-canvas');
                 if (canvasElement) {
                     canvasElement.appendChild(this.app.view);
-                    // フォールバックでもサイズ強制適用
-                    this.enforceCanvasDisplaySize();
                 }
             }
             
+            // 最低限のコンテナ作成
             if (!this.drawingContainer) {
                 this.initializeContainers();
             }
             
-            if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
-                window.ErrorManager.showError('recovery', '基本描画機能は利用可能です', {
-                    additionalInfo: 'フォールバックモードで動作中'
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('recovery', '基本描画機能は利用可能です', {
+                    additionalInfo: 'フォールバックモードで動作中（DPI除去版）'
                 });
             }
             
-            console.log('✅ フォールバックモード初期化完了');
+            console.log('✅ フォールバックモード初期化完了（DPI除去版）');
             
         } catch (fallbackError) {
             console.error('💀 フォールバックモード初期化失敗:', fallbackError);
-            if (window.ErrorManager && typeof window.ErrorManager.showCriticalError === 'function') {
-                window.ErrorManager.showCriticalError(originalError.message, {
+            if (this.errorManager && typeof this.errorManager.showCriticalError === 'function') {
+                this.errorManager.showCriticalError(originalError.message, {
                     additionalInfo: `フォールバック失敗: ${fallbackError.message}`
                 });
             }
@@ -774,7 +719,7 @@ class AppCore {
     }
     
     /**
-     * キャンバスリサイズ（高DPI対応）
+     * 🛠️ MODIFIED: キャンバスリサイズ（DPI考慮除去版）
      */
     resize(newWidth, newHeight, centerContent = false) {
         if (!this.app) {
@@ -786,7 +731,8 @@ class AppCore {
             const oldWidth = this.canvasWidth;
             const oldHeight = this.canvasHeight;
             
-            const canvasConfig = window.ConfigManager.getCanvasConfig();
+            // ConfigManager経由での妥当性確認
+            const canvasConfig = this.configManager.getCanvasConfig();
             const validWidth = Math.max(canvasConfig.minWidth || 100, Math.min(canvasConfig.maxWidth || 2000, newWidth));
             const validHeight = Math.max(canvasConfig.minHeight || 100, Math.min(canvasConfig.maxHeight || 2000, newHeight));
             
@@ -798,20 +744,18 @@ class AppCore {
                 this.coordinateManager.updateCanvasSize(validWidth, validHeight);
             }
             
-            // アプリケーションリサイズ
+            // 🛠️ MODIFIED: アプリケーションリサイズ（DPI考慮なし）
             this.app.renderer.resize(validWidth, validHeight);
             this.app.stage.hitArea = new PIXI.Rectangle(0, 0, validWidth, validHeight);
-            
-            // 🔧 リサイズ後も表示サイズ強制適用
-            this.enforceCanvasDisplaySize();
+            // MODIFIED: resolution は常に1のため、DPI補償処理を削除
             
             // 境界管理システム更新
             if (this.boundaryManager && typeof this.boundaryManager.createExpandedHitArea === 'function') {
                 this.boundaryManager.createExpandedHitArea();
             }
             
-            if (window.EventBus && typeof window.EventBus.emit === 'function') {
-                window.EventBus.emit('canvas.resized', {
+            if (this.eventBus && typeof this.eventBus.emit === 'function') {
+                this.eventBus.emit('canvas.resized', {
                     width: validWidth,
                     height: validHeight,
                     previousWidth: oldWidth,
@@ -820,11 +764,11 @@ class AppCore {
                 });
             }
             
-            console.log(`📐 キャンバスリサイズ: ${validWidth}x${validHeight}`);
+            console.log(`📐 キャンバスリサイズ: ${validWidth}x${validHeight} (resolution=1固定)`);
             
         } catch (error) {
-            if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
-                window.ErrorManager.showError('error', 
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('error', 
                     `キャンバスリサイズエラー: ${error.message}`, 
                     { additionalInfo: 'キャンバスリサイズ', newWidth, newHeight }
                 );
@@ -833,35 +777,7 @@ class AppCore {
     }
     
     /**
-     * 🔧 高DPI診断情報取得（デバッグ用）
-     */
-    getHighDPIDiagnostics() {
-        try {
-            const canvasElement = this.app?.view;
-            const computedStyle = canvasElement ? getComputedStyle(canvasElement) : null;
-            
-            return {
-                devicePixelRatio: window.devicePixelRatio || 1,
-                pixiResolution: this.app?.renderer?.resolution || 'N/A',
-                canvasInternalSize: canvasElement ? { 
-                    width: canvasElement.width, 
-                    height: canvasElement.height 
-                } : 'N/A',
-                canvasDisplaySize: computedStyle ? {
-                    width: computedStyle.width,
-                    height: computedStyle.height
-                } : 'N/A',
-                expectedSize: { width: this.canvasWidth, height: this.canvasHeight },
-                highDPIConfig: this.highDPIConfig,
-                coordinateManagerState: this.coordinateManager?.getCoordinateState() || 'N/A'
-            };
-        } catch (error) {
-            return { error: error.message };
-        }
-    }
-    
-    /**
-     * システム破棄
+     * システム破棄（修正版）
      */
     destroy() {
         try {
@@ -897,8 +813,8 @@ class AppCore {
             console.log('🎨 AppCore 破棄完了');
             
         } catch (error) {
-            if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
-                window.ErrorManager.showError('warning', 
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('warning', 
                     `AppCore破棄エラー: ${error.message}`,
                     { additionalInfo: 'AppCore破棄処理' }
                 );
@@ -907,8 +823,11 @@ class AppCore {
     }
 }
 
-// グローバル登録
+// 🔧 DUPLICATE_FIX: グローバル登録（重複チェック付き）
 if (typeof window !== 'undefined') {
+    if (window.AppCore) {
+        console.warn('⚠️ AppCore was already registered - replacing...');
+    }
     window.AppCore = AppCore;
-    console.log('🎨 AppCore グローバル登録完了（高DPI修正版）');
+    console.log('🎨 AppCore グローバル登録完了（DPI除去版・重複修正版）');
 }

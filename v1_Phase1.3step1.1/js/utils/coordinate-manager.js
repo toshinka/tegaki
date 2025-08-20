@@ -1,10 +1,11 @@
 /**
- * 📐 座標変換管理システム
+ * 📐 座標変換管理システム（DPI除去完了版・構文修正版）
  * 🎯 AI_WORK_SCOPE: スクリーン座標・キャンバス座標・PixiJS座標変換
  * 🎯 DEPENDENCIES: ConfigManager, ErrorManager
  * 🎯 UNIFIED: ConfigManager(キャンバス設定), ErrorManager(座標エラー)
  * 🎯 ISOLATION_TEST: ✅ 単体テスト可能・数学的確定処理
  * 🛠️ DPI_REMOVAL: scaleCompensation除去・devicePixelRatio処理削除・座標変換単純化
+ * 🔧 SYNTAX_FIX: 構文エラー修正・クラス定義完全化
  */
 
 class CoordinateManager {
@@ -22,6 +23,31 @@ class CoordinateManager {
         
         console.log('📐 CoordinateManager 初期化完了（DPI除去版・統一システム統合版）');
         console.log(`📐 設定: precision=${this.precision}, boundaryClamp=${this.boundaryClamp}, DPI補償=無効`);
+    }
+    
+    /**
+     * 統一システム依存性確認（修正版）
+     */
+    validateUnifiedSystems() {
+        const required = ['ConfigManager', 'ErrorManager'];
+        const missing = required.filter(sys => !window[sys]);
+        if (missing.length > 0) {
+            throw new Error(`CoordinateManager: 統一システム依存不足: ${missing.join(', ')}`);
+        }
+    }
+    
+    /**
+     * 🛠️ MODIFIED: 設定初期化（DPI除去版）
+     */
+    initializeConfig() {
+        this.canvasConfig = ConfigManager.getCanvasConfig();
+        this.coordinateConfig = ConfigManager.getCoordinateConfig();
+        
+        // 🛠️ MODIFIED: DPI関連設定が無効化されていることを確認・強制
+        if (this.coordinateConfig.scaleCompensation !== false) {
+            console.warn('⚠️ ConfigManagerでscaleCompensation設定が有効になっています。強制的に無効化します。');
+            this.coordinateConfig.scaleCompensation = false;
+        }
     }
     
     /**
@@ -422,30 +448,5 @@ class CoordinateManager {
 // グローバル登録
 if (typeof window !== 'undefined') {
     window.CoordinateManager = CoordinateManager;
-    console.log('📐 CoordinateManager グローバル登録完了（DPI除去版）');
-}統一システム依存性確認
-     */
-    validateUnifiedSystems() {
-        const required = ['ConfigManager', 'ErrorManager'];
-        const missing = required.filter(sys => !window[sys]);
-        if (missing.length > 0) {
-            throw new Error(`CoordinateManager: 統一システム依存不足: ${missing.join(', ')}`);
-        }
-    }
-    
-    /**
-     * 🛠️ MODIFIED: 設定初期化（DPI除去版）
-     */
-    initializeConfig() {
-        this.canvasConfig = ConfigManager.getCanvasConfig();
-        this.coordinateConfig = ConfigManager.getCoordinateConfig();
-        
-        // 🛠️ MODIFIED: DPI関連設定が無効化されていることを確認・強制
-        if (this.coordinateConfig.scaleCompensation !== false) {
-            console.warn('⚠️ ConfigManagerでscaleCompensation設定が有効になっています。強制的に無効化します。');
-            this.coordinateConfig.scaleCompensation = false;
-        }
-    }
-    
-    /**
-     *
+    console.log('📐 CoordinateManager グローバル登録完了（DPI除去版・構文修正版）');
+}

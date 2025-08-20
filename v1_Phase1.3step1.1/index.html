@@ -395,11 +395,11 @@
     </div>
 
     <!-- ========================================= -->
-    <!-- 🔧 統一版スクリプト読み込み -->
+    <!-- 🔧 統一版スクリプト読み込み（修正版） -->
     <!-- ========================================= -->
     
-    <!-- PixiJS v7 本体 - node_modules版 -->
-    <script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
+    <!-- PixiJS v7 本体 - MODIFIED: 正しいnode_modules参照 -->
+    <script src="./node_modules/pixi.js/dist/pixi.js"></script>
     
     <!-- 依存関係ポリフィル（@pixi/ui用） -->
     <script>
@@ -533,7 +533,7 @@
         
         // 起動完了後の処理
         window.addEventListener('load', () => {
-            console.log('🎉 統一版 HTML + JavaScript 読み込み完了');
+            console.log('🎉 統一版 HTML + JavaScript 読み込み完了（修正版）');
             console.log('🔧 統一システム状況:');
             console.log(`  - ConfigManager: ${!!window.ConfigManager}`);
             console.log(`  - ErrorManager: ${!!window.ErrorManager}`);
