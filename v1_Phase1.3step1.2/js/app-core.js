@@ -1,8 +1,8 @@
 /**
- * 🎨 AppCoreシステム（DPI除去完了版・CoordinateManager初期化修正版）
+ * 🎨 AppCoreシステム（キャンバス倍加問題修正完全版）
  * 🎯 AI_WORK_SCOPE: PixiJSアプリケーション基盤・システム統合・初期化制御
  * 🎯 DEPENDENCIES: 統一システム4種、BoundaryManager、CoordinateManager
- * 🔧 COORDINATE_FIX: CoordinateManager初期化順序修正・依存関係解決
+ * 🚨 CANVAS_SIZE_FIX: キャンバス倍加問題の完全修正版
  * 🛠️ DPI_REMOVAL: devicePixelRatio使用除去・固定resolution=1・DPI補償処理削除
  */
 
@@ -33,11 +33,11 @@ class AppCore {
         this.initializationComplete = false;
         this.initializationFailed = false;
         
-        console.log('🎨 AppCore インスタンス作成完了（DPI除去版・CoordinateManager修正版）');
+        console.log('🎨 AppCore インスタンス作成完了（キャンバス倍加修正版）');
     }
     
     /**
-     * 🔧 FIXED: 統一システム依存性確認（修正版）
+     * 統一システム依存性確認（修正版）
      */
     validateUnifiedSystems() {
         const required = ['ConfigManager', 'ErrorManager', 'StateManager', 'EventBus'];
@@ -56,7 +56,7 @@ class AppCore {
     }
     
     /**
-     * 🔧 FIXED: 設定初期化（統一システム参照使用版）
+     * 設定初期化（統一システム参照使用版）
      */
     initializeConfig() {
         try {
@@ -92,7 +92,7 @@ class AppCore {
      */
     async initialize() {
         try {
-            console.log('🚀 AppCore 初期化開始（DPI除去版・CoordinateManager修正版）...');
+            console.log('🚀 AppCore 初期化開始（キャンバス倍加修正版）...');
             this.isInitializing = true;
             
             // 段階的初期化
@@ -109,7 +109,7 @@ class AppCore {
     }
     
     /**
-     * 🔧 FIXED: 基盤システム初期化（CoordinateManager初期化修正版）
+     * 基盤システム初期化（CoordinateManager初期化修正版）
      */
     async initializeBasicSystems() {
         console.log('🔧 基盤システム初期化中...');
@@ -123,14 +123,14 @@ class AppCore {
         // コンテナ初期化
         this.initializeContainers();
         
-        // 🔧 FIXED: CoordinateManager初期化（PixiJS初期化後に実行）
+        // CoordinateManager初期化（PixiJS初期化後に実行）
         if (window.CoordinateManager) {
             try {
                 // CoordinateManagerに必要な設定を事前に準備
                 const coordinateConfig = this.configManager.getCoordinateConfig();
                 const canvasConfig = this.configManager.getCanvasConfig();
                 
-                // 🔧 FIXED: CoordinateManagerクラスを直接インスタンス化（引数なし）
+                // CoordinateManagerクラスを直接インスタンス化（引数なし）
                 this.coordinateManager = new window.CoordinateManager();
                 
                 console.log('✅ CoordinateManager初期化完了');
@@ -153,7 +153,7 @@ class AppCore {
     }
     
     /**
-     * 🔧 FIXED: 管理システム初期化（BoundaryManager初期化修正版）
+     * 管理システム初期化（BoundaryManager初期化修正版）
      */
     async initializeManagers() {
         console.log('🔧 管理システム初期化中...');
@@ -161,7 +161,7 @@ class AppCore {
         // 境界管理システム初期化
         if (window.BoundaryManager) {
             try {
-                // 🔧 FIXED: BoundaryManager初期化時の設定取得を修正
+                // BoundaryManager初期化時の設定取得を修正
                 this.boundaryManager = new window.BoundaryManager();
                 
                 // BoundaryManagerの初期化メソッドが存在する場合のみ呼び出し
@@ -262,38 +262,162 @@ class AppCore {
     }
     
     /**
-     * 🛠️ MODIFIED: PixiJSアプリケーション初期化（DPI除去版）
+     * 🚨 修正版: PixiJSアプリケーション初期化（キャンバス倍加修正版）
      */
     async initializePixiApp() {
         try {
             const canvasConfig = this.configManager.getCanvasConfig();
             const pixiConfig = this.configManager.getPixiConfig();
             
-            // 🛠️ MODIFIED: DPI補償処理を完全削除
+            console.log('🚨 PixiJS初期化開始（キャンバス倍加修正版）', {
+                targetSize: `${canvasConfig.width}×${canvasConfig.height}`,
+                devicePixelRatio: window.devicePixelRatio || 1,
+                resolution: 1
+            });
+            
+            // 🚨 修正: PixiJS Application 作成（強制設定版）
             this.app = new PIXI.Application({
                 width: canvasConfig.width,
                 height: canvasConfig.height,
                 backgroundColor: canvasConfig.backgroundColor,
                 antialias: pixiConfig.antialias,
-                resolution: 1, // MODIFIED: 固定値1（devicePixelRatio使用せず）
-                autoDensity: false // MODIFIED: 高DPI自動調整を明示的に無効化
+                resolution: 1,              // 🚨 強制固定
+                autoDensity: false,         // 🚨 強制無効化
+                powerPreference: 'default', // 🚨 追加: GPU設定
+                hello: false                // 🚨 追加: PixiJSロゴ非表示
             });
-            // REASON: Phase2レイヤー実装の複雑性削減、ふたばちゃんねる投稿対策
-            // V8_READY: PixiJSv8移行時に再検討
             
             const canvasElement = document.getElementById('drawing-canvas');
             canvasElement.appendChild(this.app.view);
             
-            // キャンバス要素の基本設定
-            this.app.view.style.cursor = pixiConfig.cursor || 'crosshair';
-            this.app.view.style.touchAction = 'none'; // タッチスクロール防止
+            // 🚨 最重要修正: キャンバス要素の強制サイズ設定
+            const canvas = this.app.view;
             
-            console.log('✅ PixiJSアプリケーション初期化完了（DPI除去版）');
-            console.log(`📐 キャンバスサイズ: ${canvasConfig.width}×${canvasConfig.height}px (resolution=1固定)`);
+            // Canvas要素の実際のサイズを強制設定
+            canvas.width = canvasConfig.width;
+            canvas.height = canvasConfig.height;
+            
+            // CSSスタイルも強制設定
+            canvas.style.width = canvasConfig.width + 'px';
+            canvas.style.height = canvasConfig.height + 'px';
+            canvas.style.maxWidth = canvasConfig.width + 'px';
+            canvas.style.maxHeight = canvasConfig.height + 'px';
+            
+            // 🚨 追加修正: すべての変換をリセット
+            canvas.style.transform = 'none';
+            canvas.style.transformOrigin = 'top left';
+            canvas.style.zoom = '1';
+            canvas.style.scale = '1';
+            
+            // 🚨 追加修正: レンダリング設定
+            canvas.style.imageRendering = 'pixelated';
+            canvas.style.cursor = pixiConfig.cursor || 'crosshair';
+            canvas.style.touchAction = 'none';
+            canvas.style.userSelect = 'none';
+            canvas.style.display = 'block';
+            canvas.style.boxSizing = 'content-box';
+            
+            // 🚨 CSS変数に実際のサイズを設定
+            document.documentElement.style.setProperty('--canvas-width', canvasConfig.width + 'px');
+            document.documentElement.style.setProperty('--canvas-height', canvasConfig.height + 'px');
+            
+            // 🚨 PixiJS内部設定の強制確認・修正
+            if (this.app.renderer) {
+                // レンダラーの解像度を強制設定
+                this.app.renderer.resolution = 1;
+                
+                // レンダラーのサイズを強制設定
+                this.app.renderer.resize(canvasConfig.width, canvasConfig.height);
+                
+                console.log('🚨 PixiJS レンダラー設定確認:', {
+                    width: this.app.renderer.width,
+                    height: this.app.renderer.height,
+                    resolution: this.app.renderer.resolution,
+                    autoResize: this.app.renderer.autoResize
+                });
+            }
+            
+            // 🚨 サイズ検証とデバッグ情報
+            const actualRect = canvas.getBoundingClientRect();
+            console.log('🚨 キャンバス実際のサイズ確認:', {
+                canvas_width: canvas.width,
+                canvas_height: canvas.height,
+                style_width: canvas.style.width,
+                style_height: canvas.style.height,
+                client_width: canvas.clientWidth,
+                client_height: canvas.clientHeight,
+                bounding_rect: {
+                    width: actualRect.width,
+                    height: actualRect.height
+                }
+            });
+            
+            // 🚨 サイズ不一致の検出と警告
+            if (Math.abs(actualRect.width - canvasConfig.width) > 1 || 
+                Math.abs(actualRect.height - canvasConfig.height) > 1) {
+                console.error('🚨 キャンバスサイズ不一致検出!', {
+                    expected: `${canvasConfig.width}×${canvasConfig.height}`,
+                    actual: `${actualRect.width}×${actualRect.height}`,
+                    scale_factor: `${(actualRect.width / canvasConfig.width).toFixed(2)}×${(actualRect.height / canvasConfig.height).toFixed(2)}`
+                });
+                
+                // 🚨 緊急再修正実行
+                this.forceCanvasResize(canvasConfig.width, canvasConfig.height);
+            }
+            
+            console.log('✅ PixiJSアプリケーション初期化完了（キャンバス倍加修正版）');
+            console.log(`📐 キャンバス最終サイズ: ${canvasConfig.width}×${canvasConfig.height}px (resolution=1固定)`);
             
         } catch (error) {
             console.error('❌ PixiJSアプリケーション初期化失敗:', error);
             throw error;
+        }
+    }
+    
+    /**
+     * 🚨 新規追加: 緊急キャンバスリサイズ
+     */
+    forceCanvasResize(targetWidth, targetHeight) {
+        try {
+            console.log('🚨 緊急キャンバスリサイズ実行中...', `${targetWidth}×${targetHeight}`);
+            
+            const canvas = this.app.view;
+            
+            // すべてのサイズ設定を強制実行
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            canvas.style.width = targetWidth + 'px';
+            canvas.style.height = targetHeight + 'px';
+            canvas.style.maxWidth = targetWidth + 'px';
+            canvas.style.maxHeight = targetHeight + 'px';
+            canvas.style.minWidth = targetWidth + 'px';
+            canvas.style.minHeight = targetHeight + 'px';
+            
+            // 変換系プロパティを再度強制リセット
+            canvas.style.transform = 'none';
+            canvas.style.webkitTransform = 'none';
+            canvas.style.mozTransform = 'none';
+            canvas.style.msTransform = 'none';
+            canvas.style.oTransform = 'none';
+            canvas.style.zoom = '1';
+            canvas.style.scale = '1';
+            
+            // PixiJSレンダラーも再設定
+            if (this.app.renderer) {
+                this.app.renderer.resize(targetWidth, targetHeight);
+                this.app.renderer.resolution = 1;
+            }
+            
+            // 検証
+            const newRect = canvas.getBoundingClientRect();
+            console.log('🚨 緊急リサイズ後サイズ:', {
+                width: newRect.width,
+                height: newRect.height,
+                success: Math.abs(newRect.width - targetWidth) <= 1 && Math.abs(newRect.height - targetHeight) <= 1
+            });
+            
+        } catch (error) {
+            console.error('❌ 緊急キャンバスリサイズ失敗:', error);
         }
     }
     
@@ -501,7 +625,7 @@ class AppCore {
     }
     
     /**
-     * 🔧 FIXED: ポインターダウンハンドラー（ToolManager存在チェック強化版）
+     * ポインターダウンハンドラー（ToolManager存在チェック強化版）
      */
     handlePointerDown(event) {
         if (!this.toolManager || !this.coordinateManager) {
@@ -646,7 +770,7 @@ class AppCore {
             });
         }
         
-        console.log('✅ AppCore 初期化完了（DPI除去版・CoordinateManager修正版）');
+        console.log('✅ AppCore 初期化完了（キャンバス倍加修正版）');
     }
     
     /**
@@ -715,7 +839,7 @@ class AppCore {
     }
     
     /**
-     * 🛠️ MODIFIED: フォールバックモード初期化（DPI除去版）
+     * フォールバックモード初期化（キャンバス倍加修正版）
      */
     async initializeFallbackMode(originalError) {
         console.log('🛡️ フォールバックモード初期化中...');
@@ -727,14 +851,23 @@ class AppCore {
                     width: this.configManager?.get('canvas.width') || 400,
                     height: this.configManager?.get('canvas.height') || 400,
                     backgroundColor: this.configManager?.get('canvas.backgroundColor') || 0xf0e0d6,
-                    resolution: 1, // MODIFIED: フォールバックでも固定値1
-                    autoDensity: false // MODIFIED: フォールバックでもDPI自動調整無効
+                    resolution: 1, // フォールバックでも固定値1
+                    autoDensity: false // フォールバックでもDPI自動調整無効
                 };
                 
                 this.app = new PIXI.Application(fallbackConfig);
                 const canvasElement = document.getElementById('drawing-canvas');
                 if (canvasElement) {
                     canvasElement.appendChild(this.app.view);
+                    
+                    // フォールバックでもキャンバスサイズ強制設定
+                    const canvas = this.app.view;
+                    canvas.width = fallbackConfig.width;
+                    canvas.height = fallbackConfig.height;
+                    canvas.style.width = fallbackConfig.width + 'px';
+                    canvas.style.height = fallbackConfig.height + 'px';
+                    canvas.style.transform = 'none';
+                    canvas.style.zoom = '1';
                 }
             }
             
@@ -745,11 +878,11 @@ class AppCore {
             
             if (this.errorManager && typeof this.errorManager.showError === 'function') {
                 this.errorManager.showError('recovery', '基本描画機能は利用可能です', {
-                    additionalInfo: 'フォールバックモードで動作中（DPI除去版）'
+                    additionalInfo: 'フォールバックモードで動作中（キャンバス倍加修正版）'
                 });
             }
             
-            console.log('✅ フォールバックモード初期化完了（DPI除去版）');
+            console.log('✅ フォールバックモード初期化完了（キャンバス倍加修正版）');
             
         } catch (fallbackError) {
             console.error('💀 フォールバックモード初期化失敗:', fallbackError);
@@ -762,7 +895,7 @@ class AppCore {
     }
     
     /**
-     * 🛠️ MODIFIED: キャンバスリサイズ（DPI考慮除去版）
+     * 🚨 修正版: キャンバスリサイズ（DPI考慮除去版・倍加修正版）
      */
     resize(newWidth, newHeight, centerContent = false) {
         if (!this.app) {
@@ -787,10 +920,24 @@ class AppCore {
                 this.coordinateManager.updateCanvasSize(validWidth, validHeight);
             }
             
-            // 🛠️ MODIFIED: アプリケーションリサイズ（DPI考慮なし）
+            // 🚨 修正: アプリケーションリサイズ（キャンバス倍加修正版）
             this.app.renderer.resize(validWidth, validHeight);
             this.app.stage.hitArea = new PIXI.Rectangle(0, 0, validWidth, validHeight);
-            // MODIFIED: resolution は常に1のため、DPI補償処理を削除
+            
+            // 🚨 追加: キャンバス要素の強制サイズ再設定
+            const canvas = this.app.view;
+            canvas.width = validWidth;
+            canvas.height = validHeight;
+            canvas.style.width = validWidth + 'px';
+            canvas.style.height = validHeight + 'px';
+            canvas.style.maxWidth = validWidth + 'px';
+            canvas.style.maxHeight = validHeight + 'px';
+            canvas.style.transform = 'none';
+            canvas.style.zoom = '1';
+            
+            // CSS変数更新
+            document.documentElement.style.setProperty('--canvas-width', validWidth + 'px');
+            document.documentElement.style.setProperty('--canvas-height', validHeight + 'px');
             
             // 境界管理システム更新
             if (this.boundaryManager && typeof this.boundaryManager.createExpandedHitArea === 'function') {
@@ -807,7 +954,18 @@ class AppCore {
                 });
             }
             
-            console.log(`📐 キャンバスリサイズ: ${validWidth}x${validHeight} (resolution=1固定)`);
+            console.log(`📐 キャンバスリサイズ: ${validWidth}x${validHeight} (resolution=1固定・倍加修正済み)`);
+            
+            // 🚨 リサイズ後のサイズ検証
+            const newRect = canvas.getBoundingClientRect();
+            if (Math.abs(newRect.width - validWidth) > 1 || Math.abs(newRect.height - validHeight) > 1) {
+                console.warn('🚨 リサイズ後もサイズ不一致:', {
+                    expected: `${validWidth}×${validHeight}`,
+                    actual: `${newRect.width}×${newRect.height}`
+                });
+                // 再度強制修正
+                this.forceCanvasResize(validWidth, validHeight);
+            }
             
         } catch (error) {
             if (this.errorManager && typeof this.errorManager.showError === 'function') {
@@ -864,13 +1022,95 @@ class AppCore {
             }
         }
     }
+    
+    /**
+     * 🚨 新規追加: キャンバスサイズ診断
+     */
+    diagnoseCanvasSize() {
+        if (!this.app || !this.app.view) {
+            console.log('❌ PixiJSアプリが初期化されていません');
+            return null;
+        }
+        
+        const canvas = this.app.view;
+        const rect = canvas.getBoundingClientRect();
+        const canvasConfig = this.configManager.getCanvasConfig();
+        
+        const diagnosis = {
+            expected: {
+                width: canvasConfig.width,
+                height: canvasConfig.height
+            },
+            canvas_element: {
+                width: canvas.width,
+                height: canvas.height
+            },
+            css_style: {
+                width: canvas.style.width,
+                height: canvas.style.height,
+                transform: canvas.style.transform,
+                zoom: canvas.style.zoom
+            },
+            computed: {
+                clientWidth: canvas.clientWidth,
+                clientHeight: canvas.clientHeight,
+                boundingRect: {
+                    width: rect.width,
+                    height: rect.height
+                }
+            },
+            pixi_renderer: {
+                width: this.app.renderer.width,
+                height: this.app.renderer.height,
+                resolution: this.app.renderer.resolution
+            },
+            scale_factors: {
+                x: rect.width / canvasConfig.width,
+                y: rect.height / canvasConfig.height
+            },
+            is_correct: Math.abs(rect.width - canvasConfig.width) <= 1 && Math.abs(rect.height - canvasConfig.height) <= 1
+        };
+        
+        console.log('🔍 キャンバスサイズ診断結果:', diagnosis);
+        
+        if (!diagnosis.is_correct) {
+            console.error('🚨 キャンバスサイズ問題検出!', {
+                問題: 'サイズが一致しません',
+                期待値: `${diagnosis.expected.width}×${diagnosis.expected.height}`,
+                実際値: `${rect.width}×${rect.height}`,
+                倍率: `${diagnosis.scale_factors.x.toFixed(2)}×${diagnosis.scale_factors.y.toFixed(2)}`
+            });
+        }
+        
+        return diagnosis;
+    }
 }
 
-// 🔧 DUPLICATE_FIX: グローバル登録（重複チェック付き）
+// グローバル登録（重複チェック付き）
 if (typeof window !== 'undefined') {
     if (window.AppCore) {
         console.warn('⚠️ AppCore was already registered - replacing...');
     }
     window.AppCore = AppCore;
-    console.log('🎨 AppCore グローバル登録完了（DPI除去版・CoordinateManager修正版）');
+    console.log('🎨 AppCore グローバル登録完了（キャンバス倍加修正版）');
+    
+    // 🚨 デバッグ用グローバル関数追加
+    window.debugCanvasSize = function() {
+        if (window.appCore && typeof window.appCore.diagnoseCanvasSize === 'function') {
+            return window.appCore.diagnoseCanvasSize();
+        } else {
+            console.log('❌ AppCore インスタンスが見つかりません');
+            return null;
+        }
+    };
+    
+    window.fixCanvasSize = function() {
+        if (window.appCore && window.ConfigManager) {
+            const config = window.ConfigManager.getCanvasConfig();
+            if (typeof window.appCore.forceCanvasResize === 'function') {
+                window.appCore.forceCanvasResize(config.width, config.height);
+                console.log('🚨 キャンバスサイズ強制修正実行完了');
+            }
+        }
+    };
 }

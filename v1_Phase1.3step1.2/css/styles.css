@@ -2,6 +2,7 @@
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
  * CSS分離版 - 元HTMLからスタイル抽出
  * ふたば☆ちゃんねる風デザイン・配色完全維持
+ * 🚨 キャンバス倍加問題修正版
  */
 
 * {
@@ -27,6 +28,10 @@
     --futaba-ui: var(--futaba-medium);     /* @pixi/ui要素 */
     --futaba-tool: var(--futaba-maroon);   /* ツール系 */
     --futaba-layer: var(--futaba-light-medium); /* レイヤー系 */
+    
+    /* 🚨 キャンバスサイズ管理用CSS変数 */
+    --canvas-width: 400px;
+    --canvas-height: 400px;
 }
 
 body {
@@ -115,38 +120,118 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
+    padding: 20px;
 }
 
+/* 🚨 キャンバスコンテナ修正版 */
 .canvas-container {
     background: var(--futaba-cream);
-    
-    /* 🚨 修正: 角丸完全除去 */
-    border: 1px solid var(--futaba-maroon);         /* 境界線を薄く・明確に */
-    border-radius: 0;                               /* 真四角化 */
-    
-    /* 実作業向け境界線強化 */
+    border: 1px solid var(--futaba-maroon);
+    border-radius: 0;
     box-shadow: 
-        0 0 0 1px var(--futaba-light-medium) inset, /* 内側境界線 */
-        0 2px 8px rgba(128, 0, 0, 0.1);            /* 軽いドロップシャドウ */
-    
-    overflow: visible;                              /* 描画範囲制限解除 */
+        0 0 0 1px var(--futaba-light-medium) inset,
+        0 2px 8px rgba(128, 0, 0, 0.1);
+    overflow: visible;
     position: relative;
-    
-    /* 作業領域明示用 */
     outline: 1px solid var(--futaba-medium);
     outline-offset: -1px;
+    
+    /* 🚨 サイズ制御の明確化 */
+    width: fit-content;
+    height: fit-content;
+    
+    /* 🚨 すべての変換・拡大縮小を強制リセット */
+    transform: none !important;
+    zoom: 1 !important;
+    scale: 1 !important;
 }
 
-/* キャンバス内部も真四角 */
+/* 🚨 キャンバス要素の完全制御 */
 #drawing-canvas {
     display: block;
-    cursor: crosshair;
-    border-radius: 0;           /* 内部キャンバスも真四角 */
-    overflow: visible;          /* 描画エリア制限解除 */
+    position: relative;
     
-    /* 高精度描画対応 */
+    /* 🚨 サイズ制御 */
+    width: var(--canvas-width);
+    height: var(--canvas-height);
+    
+    /* 🚨 すべての変換をリセット */
+    transform: none !important;
+    zoom: 1 !important;
+    scale: 1 !important;
+    
+    /* レンダリング設定 */
     image-rendering: pixelated;
     image-rendering: crisp-edges;
+    cursor: crosshair;
+}
+
+/* 🚨 PixiJSキャンバス要素の強制制御 */
+#drawing-canvas canvas,
+canvas[data-engine="pixi"] {
+    display: block !important;
+    position: static !important;
+    
+    /* 🚨 サイズを確実に統一 */
+    width: var(--canvas-width) !important;
+    height: var(--canvas-height) !important;
+    max-width: var(--canvas-width) !important;
+    max-height: var(--canvas-height) !important;
+    
+    /* 🚨 すべての変換系プロパティを強制リセット */
+    transform: none !important;
+    -webkit-transform: none !important;
+    -moz-transform: none !important;
+    -ms-transform: none !important;
+    -o-transform: none !important;
+    
+    /* 🚨 拡大縮小系プロパティを強制リセット */
+    zoom: 1 !important;
+    scale: 1 !important;
+    -webkit-zoom: 1 !important;
+    
+    /* GPU加速関連をリセット */
+    will-change: auto !important;
+    transform-style: flat !important;
+    backface-visibility: visible !important;
+    
+    /* レンダリング設定 */
+    image-rendering: auto !important;
+    cursor: crosshair;
+    touch-action: none;
+    user-select: none;
+    
+    /* ボックスサイジング */
+    box-sizing: content-box !important;
+}
+
+/* 🚨 高DPI環境での強制リセット */
+@media (-webkit-min-device-pixel-ratio: 2),
+       (min--moz-device-pixel-ratio: 2),
+       (-o-min-device-pixel-ratio: 2/1),
+       (min-device-pixel-ratio: 2),
+       (min-resolution: 192dpi),
+       (min-resolution: 2dppx) {
+    
+    #drawing-canvas canvas {
+        transform: none !important;
+        zoom: 1 !important;
+        -webkit-transform: none !important;
+    }
+}
+
+/* 🚨 ブラウザ別対策 */
+@media screen and (-webkit-min-device-pixel-ratio: 0) {
+    #drawing-canvas canvas {
+        -webkit-transform: translateZ(0) scale(1) !important;
+        -webkit-backface-visibility: hidden !important;
+    }
+}
+
+@-moz-document url-prefix() {
+    #drawing-canvas canvas {
+        -moz-transform: scale(1) !important;
+    }
 }
 
 /* ==========================================
@@ -180,10 +265,6 @@ body {
     box-shadow: 0 0 0 1px var(--futaba-cream) inset;
 }
 
-/* ==========================================
- * 🎯 Phase1.2-STEP2: 角測定・精度表示
- * ========================================== */
-
 .canvas-container[data-precision="high"]::before {
     border-color: var(--futaba-maroon);
     opacity: 0.6;
@@ -195,11 +276,6 @@ body {
     border-style: dotted;
 }
 
-/* ==========================================
- * 🎯 Phase1.2-STEP2: 作業モード対応
- * ========================================== */
-
-/* 通常作業モード */
 .canvas-container.work-mode {
     border-width: 2px;
     box-shadow: 
@@ -207,12 +283,9 @@ body {
         0 4px 12px rgba(128, 0, 0, 0.15);
 }
 
-/* 精密作業モード */
 .canvas-container.precision-mode {
     border: 1px solid var(--futaba-maroon);
-    background: var(--futaba-background);  /* 背景を明るく */
-    
-    /* グリッド表示準備 */
+    background: var(--futaba-background);
     background-image: 
         linear-gradient(to right, var(--futaba-light-medium) 1px, transparent 1px),
         linear-gradient(to bottom, var(--futaba-light-medium) 1px, transparent 1px);
@@ -221,7 +294,6 @@ body {
     opacity: 0.05;
 }
 
-/* フルスクリーンモード対応 */
 .canvas-container.fullscreen-mode {
     border: none;
     box-shadow: none;
@@ -233,59 +305,20 @@ body {
     display: none;
 }
 
-/* ==========================================
- * 🎯 Phase1.2-STEP2: レスポンシブ・スケール対応
- * ========================================== */
-
-/* 高DPI対応 */
-@media (min-resolution: 2dppx) {
-    .canvas-container {
-        border-width: 0.5px;  /* 高DPIで境界線を細く */
-    }
-    
-    .canvas-container::before {
-        border-width: 1px;
-    }
-}
-
-/* タッチデバイス対応 */
-@media (pointer: coarse) {
-    .canvas-container {
-        border-width: 2px;    /* タッチで境界線を太く */
-    }
-    
-    #drawing-canvas {
-        touch-action: none;   /* タッチスクロール防止 */
-    }
-}
-
-/* ==========================================
- * 🎯 Phase1.2-STEP2: ズーム・変形対応
- * ========================================== */
-
-/* ズーム時の境界線調整 */
 .canvas-container[data-zoom-level="1"] {
-    /* 等倍表示 */
     border-width: 1px;
 }
 
 .canvas-container[data-zoom-level="2"] {
-    /* 2倍ズーム */
     border-width: 0.5px;
 }
 
 .canvas-container[data-zoom-level="high"] {
-    /* 高倍率ズーム */
     border: none;
     outline: 1px solid var(--futaba-maroon);
     outline-offset: 1px;
 }
 
-/* ==========================================
- * 🎯 Phase1.2-STEP2: デバッグ・開発支援
- * ========================================== */
-
-/* デバッグモード: 境界線強調 */
 .canvas-container.debug-mode {
     border: 2px solid #ff0000;
     background-color: rgba(255, 0, 0, 0.05);
@@ -301,7 +334,6 @@ body {
     opacity: 1;
 }
 
-/* 測定モード: 正確なピクセル境界 */
 .canvas-container.measurement-mode {
     border: 1px solid var(--futaba-maroon);
     background: var(--futaba-background);
@@ -321,11 +353,6 @@ body {
     border-radius: 4px 4px 0 0;
 }
 
-/* ==========================================
- * 🎯 Phase1.2-STEP2: アクセシビリティ対応
- * ========================================== */
-
-/* 高コントラストモード */
 @media (prefers-contrast: high) {
     .canvas-container {
         border: 2px solid #000000;
@@ -338,7 +365,6 @@ body {
     }
 }
 
-/* 動作軽減モード */
 @media (prefers-reduced-motion: reduce) {
     .canvas-container {
         transition: none;
@@ -350,11 +376,6 @@ body {
     }
 }
 
-/* ==========================================
- * 🎯 Phase1.2-STEP2: Phase1.3準備（非破壊変形対応）
- * ========================================== */
-
-/* 変形操作時の境界線 */
 .canvas-container.transforming {
     border-color: var(--futaba-light-maroon);
     box-shadow: 
@@ -363,7 +384,6 @@ body {
         0 4px 16px rgba(128, 0, 0, 0.3);
 }
 
-/* 変形プレビュー表示 */
 .canvas-container.transform-preview {
     outline: 2px dashed var(--futaba-maroon);
     outline-offset: 4px;
@@ -379,31 +399,19 @@ body {
     to { stroke-dashoffset: 16; }
 }
 
-/* ==========================================
- * 🎯 Phase1.2-STEP2: パフォーマンス最適化
- * ========================================== */
-
-/* GPU加速対応 */
 .canvas-container {
     will-change: transform;
-    transform: translateZ(0);  /* GPU レイヤー作成 */
+    transform: translateZ(0);
 }
 
-#drawing-canvas {
-    will-change: transform;
-    backface-visibility: hidden;
-}
-
-/* 描画最適化 */
 .canvas-container.optimized {
     contain: layout style paint;
     isolation: isolate;
 }
 
-#drawing-canvas {
-    display: block;
-    cursor: crosshair;
-}
+/* ==========================================
+ * ポップアップパネル系
+ * ========================================== */
 
 .popup-panel {
     position: fixed;
@@ -757,6 +765,21 @@ body {
 .popup-panel.dragging {
     cursor: grabbing;
     transform: scale(1.02);
+}
+
+/* 🚨 修正完了表示 */
+body::before {
+    content: "Canvas Scale Fix Applied";
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    background: rgba(0, 128, 0, 0.8);
+    color: white;
+    padding: 2px 6px;
+    font-size: 10px;
+    z-index: 10000;
+    pointer-events: none;
+    opacity: 0.7;
 }
 
 @media (max-width: 1200px) {
