@@ -1,9 +1,9 @@
 /**
- * 🎨 AppCoreシステム（分割最適化版・座標系重複除去修正版）
+ * 🎨 AppCoreシステム（高DPI修正版）
  * 🎯 AI_WORK_SCOPE: PixiJSアプリケーション基盤・システム統合・初期化制御
  * 🎯 DEPENDENCIES: 統一システム4種、BoundaryManager、CoordinateManager
  * 🎯 SPLIT_RESULT: 650行 → 350行（46%削減）
- * 🔧 COORDINATE_FIX: 座標変換重複除去・境界越え処理修正
+ * 🔧 DRAWING_FIX: 高DPI無効化・座標ズレ修正・境界越え描画対応
  */
 
 class AppCore {
@@ -15,7 +15,7 @@ class AppCore {
         this.app = null;
         this.drawingContainer = null;
         this.uiContainer = null;
-        this.paths = []; // 描画パス管理配列追加
+        this.paths = []; // 🆕 描画パス管理
         
         // 分離された管理システム
         this.boundaryManager = null;
@@ -28,7 +28,7 @@ class AppCore {
         this.initializationComplete = false;
         this.initializationFailed = false;
         
-        console.log('🎨 AppCore インスタンス作成完了（座標系重複除去修正版）');
+        console.log('🎨 AppCore インスタンス作成完了（高DPI修正版）');
     }
     
     /**
@@ -75,11 +75,11 @@ class AppCore {
     }
     
     /**
-     * アプリケーション初期化（分割最適化版・座標系修正版）
+     * アプリケーション初期化（分割最適化版・修正版）
      */
     async initialize() {
         try {
-            console.log('🚀 AppCore 初期化開始（座標系重複除去修正版）...');
+            console.log('🚀 AppCore 初期化開始（高DPI修正版）...');
             this.isInitializing = true;
             
             // 段階的初期化
@@ -150,7 +150,7 @@ class AppCore {
         if (window.ToolManager) {
             try {
                 this.toolManager = new window.ToolManager(this);
-                await this.toolManager.initialize(); // ← ToolManagerは initialize() メソッド
+                await this.toolManager.initialize();
                 console.log('✅ ToolManager初期化完了');
             } catch (error) {
                 console.warn('⚠️ ToolManager初期化失敗（オプション）:', error.message);
@@ -164,7 +164,7 @@ class AppCore {
         if (window.UIManager) {
             try {
                 this.uiManager = new window.UIManager(this);
-                await this.uiManager.init(); // ← UIManagerは init() メソッド（initialize()ではない）
+                await this.uiManager.init();
                 console.log('✅ UIManager初期化完了');
             } catch (error) {
                 console.warn('⚠️ UIManager初期化失敗（オプション）:', error.message);
@@ -213,7 +213,8 @@ class AppCore {
     }
     
     /**
-     * PixiJSアプリケーション初期化（修正版）
+     * PixiJSアプリケーション初期化（高DPI修正版）
+     * 🔧 DRAWING_FIX: 高DPI無効化でふたば☆ちゃんねる投稿サイズ確保
      */
     async initializePixiApp() {
         try {
@@ -225,17 +226,21 @@ class AppCore {
                 height: canvasConfig.height,
                 backgroundColor: canvasConfig.backgroundColor,
                 antialias: pixiConfig.antialias,
-                resolution: pixiConfig.resolution || window.devicePixelRatio || 1
+                resolution: 1  // 🔧 高DPI無効化（固定値）- ふたば☆ちゃんねる投稿用
+                // 旧コード: resolution: pixiConfig.resolution || window.devicePixelRatio || 1
+                // PixiJSv8対応時に WebGPU最適化と併用予定
             });
             
             const canvasElement = document.getElementById('drawing-canvas');
             canvasElement.appendChild(this.app.view);
             
-            // キャンバス要素の基本設定
+            // 🔧 キャンバス要素の明示的サイズ設定（高DPI対応）
+            this.app.view.style.width = `${canvasConfig.width}px`;
+            this.app.view.style.height = `${canvasConfig.height}px`;
             this.app.view.style.cursor = pixiConfig.cursor || 'crosshair';
             this.app.view.style.touchAction = 'none'; // タッチスクロール防止
             
-            console.log('✅ PixiJSアプリケーション初期化完了');
+            console.log(`✅ PixiJSアプリケーション初期化完了（高DPI無効化: resolution=1）`);
             
         } catch (error) {
             console.error('❌ PixiJSアプリケーション初期化失敗:', error);
@@ -258,7 +263,7 @@ class AppCore {
             this.uiContainer.name = 'ui-layer';
             this.app.stage.addChild(this.uiContainer);
             
-            // ステージのインタラクティブ設定
+            // ステージのインタラクティブ設定（高DPI修正対応）
             this.app.stage.interactive = true;
             this.app.stage.hitArea = new PIXI.Rectangle(0, 0, this.canvasWidth, this.canvasHeight);
             
@@ -271,7 +276,8 @@ class AppCore {
     }
     
     /**
-     * PixiJS境界システム統合初期化（修正版）
+     * PixiJS境界システム統合初期化（高DPI修正版）
+     * 🔧 DRAWING_FIX: 高DPI無効化に対応した境界設定
      */
     initializePixiBoundarySystem() {
         if (!this.app || !this.boundaryManager) {
@@ -280,10 +286,12 @@ class AppCore {
         }
         
         try {
-            console.log('🎯 PixiJS境界システム統合初期化中...');
+            console.log('🎯 PixiJS境界システム統合初期化中（高DPI修正版）...');
             
-            // 拡張ヒットエリア設定
+            // 高DPI無効化に対応した拡張ヒットエリア設定
             const margin = this.boundaryManager.boundaryMargin || 20;
+            
+            // resolution = 1 固定に対応した境界設定
             this.app.stage.hitArea = new PIXI.Rectangle(
                 -margin,
                 -margin,
@@ -298,7 +306,7 @@ class AppCore {
             // 境界統合イベント設定
             this.setupPixiBoundaryEvents();
             
-            console.log('✅ PixiJS境界システム統合完了');
+            console.log('✅ PixiJS境界システム統合完了（高DPI修正対応）');
             
         } catch (error) {
             console.warn('⚠️ PixiJS境界システム統合で問題発生:', error.message);
@@ -338,56 +346,46 @@ class AppCore {
     }
     
     /**
-     * PixiJS境界越え処理（座標系重複除去修正版）
+     * PixiJS境界越え処理（座標修正版）
+     * 🔧 DRAWING_FIX: 座標変換を高DPI無効化に対応
      */
     handlePixiBoundaryCross(data) {
+        if (!this.coordinateManager) return;
+        
         try {
-            console.log('🎯 境界越え処理開始（座標系重複除去修正版）');
+            // 高DPI修正に対応したPixiJS座標系変換
+            const pixiCoords = this.coordinateManager.canvasToPixi(
+                data.position.x, 
+                data.position.y, 
+                this.app
+            );
             
-            // ✅ BoundaryManagerから来る座標は既にキャンバス座標なのでそのまま使用
-            const canvasCoords = data.position; // 座標変換不要
-            
-            console.log(`🎯 境界越え座標（キャンバス座標）: (${canvasCoords.x.toFixed(1)}, ${canvasCoords.y.toFixed(1)})`);
-            
-            // アクティブツールに直接渡す
-            const currentTool = this.toolManager?.getCurrentTool();
-            const currentToolInstance = this.toolManager?.registeredTools?.get(currentTool);
-            
-            if (currentToolInstance?.handleBoundaryCrossIn) {
-                console.log(`🎯 ツール境界越えメソッド呼び出し: ${currentTool}`);
-                currentToolInstance.handleBoundaryCrossIn(
-                    canvasCoords.x, 
-                    canvasCoords.y, 
-                    {
-                        pressure: data.pressure || 0.5,
-                        pointerId: data.pointerId,
-                        originalEvent: data.originalEvent,
-                        pointerType: data.pointerType
-                    }
-                );
-            } else {
-                console.warn(`⚠️ ツール境界越えメソッドが利用できません: ${currentTool}`);
+            // アクティブツールに境界越え通知（新規メソッド対応）
+            if (this.toolManager?.currentTool) {
+                const currentToolInstance = this.toolManager.registeredTools?.get(this.toolManager.currentTool);
                 
-                // フォールバック: ToolManagerの描画開始メソッドを直接呼び出し
-                if (this.toolManager?.startDrawing) {
-                    this.toolManager.startDrawing(
-                        canvasCoords.x, 
-                        canvasCoords.y, 
-                        data.pressure || 0.5
+                if (currentToolInstance && typeof currentToolInstance.handleBoundaryCrossIn === 'function') {
+                    currentToolInstance.handleBoundaryCrossIn(
+                        pixiCoords.x, 
+                        pixiCoords.y, 
+                        {
+                            pressure: data.pressure,
+                            pointerId: data.pointerId,
+                            originalEvent: data.originalEvent,
+                            pointerType: data.pointerType
+                        }
                     );
                 }
             }
             
-            console.log(`🎯 境界越え処理完了: (${canvasCoords.x.toFixed(1)}, ${canvasCoords.y.toFixed(1)})`);
+            console.log(`🎯 PixiJS境界越え処理完了（高DPI修正版): (${pixiCoords.x.toFixed(1)}, ${pixiCoords.y.toFixed(1)})`);
             
         } catch (error) {
             if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
                 window.ErrorManager.showError('error', 
-                    `境界越え処理エラー: ${error.message}`, 
-                    { additionalInfo: '境界越え処理', data }
+                    `PixiJS境界越え処理エラー: ${error.message}`, 
+                    { additionalInfo: 'PixiJS境界処理（高DPI修正版）', data }
                 );
-            } else {
-                console.error('❌ 境界越え処理エラー:', error);
             }
         }
     }
@@ -424,7 +422,7 @@ class AppCore {
     }
     
     /**
-     * 境界越え描画開始処理（座標系修正版）
+     * 境界越え描画開始処理（修正版）
      */
     handleBoundaryCrossIn(data) {
         if (!this.toolManager) {
@@ -433,35 +431,23 @@ class AppCore {
         }
         
         try {
-            console.log('🎯 境界越え描画開始処理（座標系修正版）');
-            
-            // BoundaryManagerからの座標は既にキャンバス座標
-            const canvasCoords = data.position;
-            
             const currentTool = this.toolManager.getCurrentTool();
-            const currentToolInstance = this.toolManager.registeredTools.get(currentTool);
+            const currentToolInstance = this.toolManager.registeredTools?.get(currentTool);
             
             if (currentToolInstance && typeof currentToolInstance.handleBoundaryCrossIn === 'function') {
                 currentToolInstance.handleBoundaryCrossIn(
-                    canvasCoords.x, 
-                    canvasCoords.y, 
+                    data.position.x, 
+                    data.position.y, 
                     {
-                        pressure: data.pressure || 0.5,
+                        pressure: data.pressure,
                         pointerId: data.pointerId,
                         originalEvent: data.originalEvent,
                         pointerType: data.pointerType
                     }
                 );
-            } else {
-                // フォールバック: 通常の描画開始
-                this.toolManager.startDrawing(
-                    canvasCoords.x,
-                    canvasCoords.y,
-                    data.pressure || 0.5
-                );
             }
             
-            console.log(`🎯 境界越え描画開始: (${canvasCoords.x.toFixed(1)}, ${canvasCoords.y.toFixed(1)})`);
+            console.log(`🎯 境界越え描画開始: (${data.position.x.toFixed(1)}, ${data.position.y.toFixed(1)})`);
             
         } catch (error) {
             if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
@@ -474,7 +460,8 @@ class AppCore {
     }
     
     /**
-     * ポインターダウンハンドラー（座標系修正版）
+     * ポインターダウンハンドラー（座標修正版）
+     * 🔧 DRAWING_FIX: 高DPI無効化に対応した座標変換
      */
     handlePointerDown(event) {
         if (!this.toolManager || !this.coordinateManager) {
@@ -489,9 +476,7 @@ class AppCore {
                 this.app
             );
             
-            console.log(`🎯 ポインターダウン座標: Canvas(${coords.canvas.x.toFixed(1)}, ${coords.canvas.y.toFixed(1)})`);
-            
-            // ToolManagerの描画開始メソッドを呼び出し（キャンバス座標を使用）
+            // ToolManagerの描画開始メソッドを呼び出し
             this.toolManager.startDrawing(coords.canvas.x, coords.canvas.y, coords.pressure);
             
             if (window.EventBus && typeof window.EventBus.emit === 'function') {
@@ -506,14 +491,15 @@ class AppCore {
             if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
                 window.ErrorManager.showError('warning', 
                     `ポインターダウンエラー: ${error.message}`, 
-                    { additionalInfo: 'ポインター処理', event: event.type }
+                    { additionalInfo: 'ポインター処理（高DPI修正版）', event: event.type }
                 );
             }
         }
     }
     
     /**
-     * ポインター移動ハンドラー（修正版）
+     * ポインター移動ハンドラー（座標修正版）
+     * 🔧 DRAWING_FIX: 高DPI無効化に対応した座標変換
      */
     handlePointerMove(event) {
         if (!this.coordinateManager) return;
@@ -527,7 +513,7 @@ class AppCore {
             // 座標表示更新
             this.updateCoordinateDisplay(coords.canvas);
             
-            // ツール描画継続（キャンバス座標を使用）
+            // ツール描画継続
             if (this.toolManager) {
                 this.toolManager.continueDrawing(coords.canvas.x, coords.canvas.y, coords.pressure);
             }
@@ -614,7 +600,7 @@ class AppCore {
             });
         }
         
-        console.log('✅ AppCore 初期化完了（座標系重複除去修正版）');
+        console.log('✅ AppCore 初期化完了（高DPI修正版）');
     }
     
     /**
@@ -689,12 +675,13 @@ class AppCore {
         console.log('🛡️ フォールバックモード初期化中...');
         
         try {
-            // 最低限のPixiJSアプリケーション作成
+            // 最低限のPixiJSアプリケーション作成（高DPI無効化）
             if (!this.app) {
                 const fallbackConfig = {
                     width: window.ConfigManager?.get('canvas.width') || 400,
                     height: window.ConfigManager?.get('canvas.height') || 400,
-                    backgroundColor: window.ConfigManager?.get('canvas.backgroundColor') || 0xf0e0d6
+                    backgroundColor: window.ConfigManager?.get('canvas.backgroundColor') || 0xf0e0d6,
+                    resolution: 1  // 🔧 フォールバックも高DPI無効化
                 };
                 
                 this.app = new PIXI.Application(fallbackConfig);
@@ -709,14 +696,9 @@ class AppCore {
                 this.initializeContainers();
             }
             
-            // パス管理配列初期化
-            if (!this.paths) {
-                this.paths = [];
-            }
-            
             if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
                 window.ErrorManager.showError('recovery', '基本描画機能は利用可能です', {
-                    additionalInfo: 'フォールバックモードで動作中'
+                    additionalInfo: 'フォールバックモードで動作中（高DPI無効化）'
                 });
             }
             
@@ -733,7 +715,8 @@ class AppCore {
     }
     
     /**
-     * キャンバスリサイズ（修正版）
+     * キャンバスリサイズ（高DPI修正版）
+     * 🔧 DRAWING_FIX: 高DPI無効化に対応したリサイズ処理
      */
     resize(newWidth, newHeight, centerContent = false) {
         if (!this.app) {
@@ -758,9 +741,13 @@ class AppCore {
                 this.coordinateManager.updateCanvasSize(validWidth, validHeight);
             }
             
-            // アプリケーションリサイズ
+            // アプリケーションリサイズ（高DPI修正対応）
             this.app.renderer.resize(validWidth, validHeight);
             this.app.stage.hitArea = new PIXI.Rectangle(0, 0, validWidth, validHeight);
+            
+            // 🔧 キャンバス要素の明示的サイズ設定（高DPI対応）
+            this.app.view.style.width = `${validWidth}px`;
+            this.app.view.style.height = `${validHeight}px`;
             
             // 境界管理システム更新
             if (this.boundaryManager && typeof this.boundaryManager.createExpandedHitArea === 'function') {
@@ -777,13 +764,13 @@ class AppCore {
                 });
             }
             
-            console.log(`📐 キャンバスリサイズ: ${validWidth}x${validHeight}`);
+            console.log(`📐 キャンバスリサイズ（高DPI修正版）: ${validWidth}x${validHeight}`);
             
         } catch (error) {
             if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
                 window.ErrorManager.showError('error', 
                     `キャンバスリサイズエラー: ${error.message}`, 
-                    { additionalInfo: 'キャンバスリサイズ', newWidth, newHeight }
+                    { additionalInfo: 'キャンバスリサイズ（高DPI修正版）', newWidth, newHeight }
                 );
             }
         }
@@ -824,7 +811,7 @@ class AppCore {
             this.coordinateManager = null;
             this.paths = [];
             
-            console.log('🎨 AppCore 破棄完了');
+            console.log('🎨 AppCore 破棄完了（高DPI修正版）');
             
         } catch (error) {
             if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
@@ -840,5 +827,5 @@ class AppCore {
 // グローバル登録
 if (typeof window !== 'undefined') {
     window.AppCore = AppCore;
-    console.log('🎨 AppCore グローバル登録完了（座標系重複除去修正版・初期化メソッド統一）');
+    console.log('🎨 AppCore グローバル登録完了（高DPI修正版・座標ズレ修正）');
 }
