@@ -65,3 +65,27 @@
 - Rulebook → Symbol Dictionary (用語参照)
 - Rulebook → Migration Plan (方針に従う)
 - Migration Plan → Symbol Dictionary (用語統一)
+
+*************
+
+1.更新ポリシー
+
+「どの順で更新するか」
+
+「他文書に影響した場合のルール」
+
+2.粒度の境界線
+
+Rulebook＝抽象的
+
+Plan＝具体的
+
+Dictionary＝参照用
+
+3.例外ルール
+
+原則は禁止、例外的に許可（疑似コードなど）
+
+4.参照の書式ルール
+
+[→Dictionary: 用語名] のように統一
