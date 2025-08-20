@@ -5,16 +5,17 @@
  * 🎯 UNIFIED_SYSTEMS: ✅ ConfigManager, ErrorManager, StateManager, EventBus統合済み
  * 🎯 ISOLATION_TEST: ✅ 単体テスト可能（ツール単体機能）
  * 🎯 SPLIT_THRESHOLD: 500行制限遵守（ツール制御・分割慎重）
+ * 📋 PHASE_TARGET: Phase1.3修正版（StateManager API対応）
  */
 
 /**
- * ツール管理システム（統一システム統合版・修正版）
- * 統一システム完全活用・EventBus疎結合・設定値統一
+ * ツール管理システム（StateManager API修正版）
+ * updateSystemState対応・フォールバック機能強化
  * Pure JavaScript完全準拠・グローバル公開方式
  */
 class ToolManager {
     constructor(appCore = null) {
-        this.version = 'v1.0-Phase1.2step3-unified-fixed';
+        this.version = 'v1.0-Phase1.3-unified-fixed';
         this.appCore = appCore;
         
         // ツール管理の初期化順序修正
@@ -30,11 +31,11 @@ class ToolManager {
         this.stateManager = null;
         this.eventBus = null;
         
-        console.log(`🎨 ToolManager ${this.version} 構築開始（修正版）...`);
+        console.log(`🎨 ToolManager ${this.version} 構築開始（StateManager API修正版）...`);
     }
     
     /**
-     * 統一システム統合・ツール管理システム初期化（修正版）
+     * 統一システム統合・ツール管理システム初期化（StateManager API修正版）
      */
     async initialize() {
         console.group(`🎨 ToolManager 統一システム統合初期化開始 - ${this.version}`);
@@ -60,15 +61,13 @@ class ToolManager {
             const initTime = performance.now() - startTime;
             console.log(`✅ ToolManager 統一システム統合初期化完了 - ${initTime.toFixed(2)}ms`);
             
-            // StateManager状態更新
-            if (this.stateManager) {
-                this.stateManager.updateSystemState('toolManager', 'initialized', {
-                    initTime,
-                    unifiedSystemsEnabled: true,
-                    currentTool: this.currentTool,
-                    version: this.version
-                });
-            }
+            // StateManager状態更新（API修正版・フォールバック対応）
+            this.updateStateManagerSafely('toolManager', 'initialized', {
+                initTime,
+                unifiedSystemsEnabled: true,
+                currentTool: this.currentTool,
+                version: this.version
+            });
             
             return this;
             
@@ -83,10 +82,61 @@ class ToolManager {
     }
     
     /**
-     * 統一システム依存性確認・設定（修正版）
+     * StateManager安全更新（API修正版・フォールバック対応）
+     * @param {string} system - システム名
+     * @param {string} state - 状態名
+     * @param {Object} data - 状態データ
+     */
+    updateStateManagerSafely(system, state, data = {}) {
+        if (!this.stateManager) {
+            console.warn('⚠️ StateManager未接続のため状態更新をスキップ');
+            return false;
+        }
+        
+        try {
+            // 新API優先試行: updateSystemState
+            if (typeof this.stateManager.updateSystemState === 'function') {
+                const success = this.stateManager.updateSystemState(system, state, data);
+                if (success) {
+                    console.log(`🔧 StateManager.updateSystemState成功: ${system} → ${state}`);
+                    return true;
+                }
+            }
+            
+            // フォールバック1: updateComponentState
+            if (typeof this.stateManager.updateComponentState === 'function') {
+                const success = this.stateManager.updateComponentState(system, state, data);
+                if (success) {
+                    console.warn('🔄 StateManagerフォールバック: updateComponentState使用');
+                    return true;
+                }
+            }
+            
+            // フォールバック2: 警告のみ
+            console.warn('⚠️ StateManager API不整合: 状態更新方法が見つからない');
+            console.warn('⚠️ 利用可能メソッド:', Object.getOwnPropertyNames(this.stateManager.constructor));
+            
+            return false;
+            
+        } catch (error) {
+            console.error('❌ StateManager状態更新エラー:', error.message);
+            
+            if (this.errorManager && typeof this.errorManager.showError === 'function') {
+                this.errorManager.showError('warning', 
+                    `StateManager状態更新失敗: ${error.message}`, 
+                    { system, state, data }
+                );
+            }
+            
+            return false;
+        }
+    }
+    
+    /**
+     * 統一システム依存性確認・設定（API互換性チェック強化版）
      */
     validateAndSetupUnifiedSystems() {
-        console.log('🔧 統一システム依存性確認開始...');
+        console.log('🔧 統一システム依存性確認開始（API互換性チェック強化）...');
         
         // ConfigManager依存性確認
         this.configManager = window.ConfigManager;
@@ -100,10 +150,13 @@ class ToolManager {
             throw new Error('ErrorManager が利用できません。統一システムの初期化を確認してください。');
         }
         
-        // StateManager依存性確認（オプショナル）
+        // StateManager依存性確認（API互換性チェック付き）
         this.stateManager = window.StateManager;
         if (!this.stateManager) {
             console.warn('⚠️ StateManager が利用できません。状態管理は制限されます。');
+        } else {
+            // API互換性チェック
+            this.checkStateManagerAPICompatibility();
         }
         
         // EventBus依存性確認（オプショナル）
@@ -113,6 +166,64 @@ class ToolManager {
         }
         
         console.log('✅ 統一システム依存性確認完了');
+    }
+    
+    /**
+     * StateManager API互換性チェック（新規追加）
+     */
+    checkStateManagerAPICompatibility() {
+        const requiredMethods = [
+            'getApplicationState',
+            'updateComponentState'
+        ];
+        
+        const optionalMethods = [
+            'updateSystemState',
+            'getSystemState',
+            'getAllSystemStates'
+        ];
+        
+        const missing = [];
+        const available = [];
+        
+        // 必須メソッドチェック
+        requiredMethods.forEach(method => {
+            if (typeof this.stateManager[method] === 'function') {
+                available.push(method);
+            } else {
+                missing.push(method);
+            }
+        });
+        
+        // オプショナルメソッドチェック
+        const optionalAvailable = [];
+        const optionalMissing = [];
+        
+        optionalMethods.forEach(method => {
+            if (typeof this.stateManager[method] === 'function') {
+                optionalAvailable.push(method);
+            } else {
+                optionalMissing.push(method);
+            }
+        });
+        
+        console.log('🔧 StateManager API互換性チェック結果:');
+        console.log('  ✅ 利用可能な必須メソッド:', available);
+        console.log('  ✅ 利用可能なオプショナルメソッド:', optionalAvailable);
+        
+        if (missing.length > 0) {
+            console.error('  ❌ 不足する必須メソッド:', missing);
+            throw new Error(`StateManager必須メソッドが不足: ${missing.join(', ')}`);
+        }
+        
+        if (optionalMissing.length > 0) {
+            console.warn('  ⚠️ 不足するオプショナルメソッド:', optionalMissing);
+            console.warn('  ⚠️ フォールバック機能を使用します');
+        }
+        
+        // updateSystemState利用可能性を記録
+        this.hasUpdateSystemState = optionalAvailable.includes('updateSystemState');
+        console.log(`🔧 updateSystemState利用可能: ${this.hasUpdateSystemState}`);
     }
     
     /**
@@ -148,7 +259,340 @@ class ToolManager {
             
         } catch (error) {
             if (this.errorManager) {
-                this.errorManager.showError('error', '設定値取得失敗: ' + error.message);
+                this.errorManager.showError('warning', '描画開始失敗: ' + error.message);
+            }
+        }
+    }
+    
+    /**
+     * 描画継続
+     */
+    continueDrawing(x, y, pressure = 0.5) {
+        if (!this.isDrawing) return;
+        
+        try {
+            // 現在のツールで描画継続
+            const currentToolInstance = this.registeredTools.get(this.currentTool);
+            if (currentToolInstance && typeof currentToolInstance.continueDrawing === 'function') {
+                currentToolInstance.continueDrawing(x, y, pressure);
+            } else {
+                // フォールバック処理
+                this.handleDrawingFallback('continue', x, y, pressure);
+            }
+            
+            this.lastPoint = { x, y };
+            
+        } catch (error) {
+            if (this.errorManager) {
+                this.errorManager.showError('warning', '描画継続失敗: ' + error.message);
+            }
+        }
+    }
+    
+    /**
+     * 描画終了
+     */
+    stopDrawing() {
+        if (!this.isDrawing) return;
+        
+        try {
+            // 現在のツールで描画終了
+            const currentToolInstance = this.registeredTools.get(this.currentTool);
+            if (currentToolInstance && typeof currentToolInstance.stopDrawing === 'function') {
+                currentToolInstance.stopDrawing();
+            } else {
+                // フォールバック処理
+                this.handleDrawingFallback('stop');
+            }
+            
+            this.isDrawing = false;
+            this.currentPath = null;
+            this.lastPoint = null;
+            
+            // StateManager状態更新
+            this.updateStateManagerSafely('toolManager', 'drawing', {
+                isDrawing: false,
+                tool: this.currentTool,
+                timestamp: Date.now()
+            });
+            
+            console.log(`✏️ 描画終了: ${this.currentTool}`);
+            
+        } catch (error) {
+            if (this.errorManager) {
+                this.errorManager.showError('warning', '描画終了失敗: ' + error.message);
+            }
+        }
+    }
+    
+    /**
+     * 描画フォールバック処理
+     */
+    handleDrawingFallback(action, x, y, pressure) {
+        // AppCoreやCanvasManagerが利用可能な場合の基本描画処理
+        if (this.appCore) {
+            console.log(`🔧 描画フォールバック: ${action} - AppCore経由`);
+            // AppCore経由での基本描画処理
+            // 実際の描画ロジックは別途実装が必要
+        } else {
+            console.warn(`⚠️ 描画フォールバック: ${action} - 描画システム未接続`);
+        }
+    }
+    
+    // ==========================================
+    // 🎯 設定操作メソッド群
+    // ==========================================
+    
+    /**
+     * ブラシサイズ設定
+     */
+    setBrushSize(size) {
+        try {
+            const normalizedSize = Math.max(0.1, Math.min(100, Math.round(size * 10) / 10));
+            this.updateToolSetting(this.currentTool, 'brushSize', normalizedSize);
+            console.log(`🖌️ ブラシサイズ: ${normalizedSize}px`);
+            
+        } catch (error) {
+            if (this.errorManager) {
+                this.errorManager.showError('warning', 'ブラシサイズ設定失敗: ' + error.message);
+            }
+        }
+    }
+    
+    /**
+     * 不透明度設定
+     */
+    setOpacity(opacity) {
+        try {
+            const normalizedOpacity = Math.max(0, Math.min(1, Math.round(opacity * 1000) / 1000));
+            this.updateToolSetting(this.currentTool, 'opacity', normalizedOpacity);
+            console.log(`🌫️ 不透明度: ${Math.round(normalizedOpacity * 100)}%`);
+            
+        } catch (error) {
+            if (this.errorManager) {
+                this.errorManager.showError('warning', '不透明度設定失敗: ' + error.message);
+            }
+        }
+    }
+    
+    /**
+     * 筆圧設定
+     */
+    setPressure(pressure) {
+        try {
+            const normalizedPressure = Math.max(0, Math.min(1, Math.round(pressure * 1000) / 1000));
+            this.updateToolSetting(this.currentTool, 'pressure', normalizedPressure);
+            console.log(`✍️ 筆圧: ${Math.round(normalizedPressure * 100)}%`);
+            
+        } catch (error) {
+            if (this.errorManager) {
+                this.errorManager.showError('warning', '筆圧設定失敗: ' + error.message);
+            }
+        }
+    }
+    
+    /**
+     * 線補正設定
+     */
+    setSmoothing(smoothing) {
+        try {
+            const normalizedSmoothing = Math.max(0, Math.min(1, Math.round(smoothing * 1000) / 1000));
+            this.updateToolSetting(this.currentTool, 'smoothing', normalizedSmoothing);
+            console.log(`📏 線補正: ${Math.round(normalizedSmoothing * 100)}%`);
+            
+        } catch (error) {
+            if (this.errorManager) {
+                this.errorManager.showError('warning', '線補正設定失敗: ' + error.message);
+            }
+        }
+    }
+    
+    // ==========================================
+    // 🎯 状態取得メソッド群
+    // ==========================================
+    
+    /**
+     * 描画状態取得
+     */
+    getDrawingState() {
+        return {
+            version: this.version,
+            unifiedSystemsEnabled: true,
+            currentTool: this.currentTool,
+            isDrawing: this.isDrawing,
+            globalSettings: this.globalSettings ? { ...this.globalSettings } : {},
+            registeredTools: Array.from(this.registeredTools.keys()),
+            currentPath: this.currentPath ? this.currentPath.id : null,
+            lastPoint: this.lastPoint ? { ...this.lastPoint } : null,
+            appCoreConnected: !!this.appCore,
+            stateManagerAPICompatibility: {
+                hasUpdateSystemState: this.hasUpdateSystemState || false,
+                hasUpdateComponentState: this.stateManager ? (typeof this.stateManager.updateComponentState === 'function') : false
+            }
+        };
+    }
+    
+    /**
+     * ツール統計取得
+     */
+    getToolStats() {
+        const stats = {
+            version: this.version,
+            currentTool: this.currentTool,
+            registeredToolsCount: this.registeredTools.size,
+            isDrawing: this.isDrawing,
+            globalSettings: this.globalSettings ? { ...this.globalSettings } : {},
+            unifiedSystems: {
+                configManager: !!this.configManager,
+                errorManager: !!this.errorManager,
+                stateManager: !!this.stateManager,
+                eventBus: !!this.eventBus
+            },
+            stateManagerAPI: {
+                available: !!this.stateManager,
+                hasUpdateSystemState: this.hasUpdateSystemState || false
+            }
+        };
+        
+        return stats;
+    }
+    
+    /**
+     * ツール切り替え可能性チェック
+     */
+    canSwitchTo(tool) {
+        if (this.isDrawing) {
+            console.warn('⚠️ 描画中はツール変更できません');
+            return false;
+        }
+        
+        if (!this.isToolAvailable(tool)) {
+            console.warn(`⚠️ 利用できないツール: ${tool}`);
+            return false;
+        }
+        
+        return true;
+    }
+    
+    /**
+     * 安全なツール切り替え
+     */
+    safeSwitchTool(tool) {
+        if (!this.canSwitchTo(tool)) return false;
+        
+        // 描画中の場合は強制終了
+        if (this.isDrawing) {
+            this.stopDrawing();
+        }
+        
+        return this.setTool(tool);
+    }
+    
+    // ==========================================
+    // 🎯 その他操作メソッド群
+    // ==========================================
+    
+    /**
+     * デバッグ情報出力
+     */
+    debugInfo() {
+        const state = this.getDrawingState();
+        const stats = this.getToolStats();
+        
+        console.group('🔧 ToolManager デバッグ情報（StateManager API修正版）');
+        console.log('📊 状態:', state);
+        console.log('📈 統計:', stats);
+        console.log('🔧 統一システム健全性:', this.checkUnifiedSystemHealth());
+        console.groupEnd();
+        
+        return { state, stats };
+    }
+    
+    /**
+     * 統一システム健全性チェック（StateManager API対応）
+     */
+    checkUnifiedSystemHealth() {
+        const health = {
+            configManager: !!this.configManager && typeof this.configManager.get === 'function',
+            errorManager: !!this.errorManager && typeof this.errorManager.showError === 'function',
+            stateManager: !!this.stateManager && typeof this.stateManager.getApplicationState === 'function',
+            stateManagerAPI: {
+                updateSystemState: !!this.stateManager && typeof this.stateManager.updateSystemState === 'function',
+                updateComponentState: !!this.stateManager && typeof this.stateManager.updateComponentState === 'function'
+            },
+            eventBus: !!this.eventBus && typeof this.eventBus.safeEmit === 'function'
+        };
+        
+        const coreHealthy = health.configManager && health.errorManager && health.stateManager;
+        const apiHealthy = health.stateManagerAPI.updateSystemState || health.stateManagerAPI.updateComponentState;
+        const allHealthy = coreHealthy && apiHealthy;
+        
+        if (!allHealthy) {
+            console.warn('⚠️ 統一システムの健全性に問題があります:', health);
+        }
+        
+        return { health, coreHealthy, apiHealthy, allHealthy };
+    }
+    
+    /**
+     * 破棄処理
+     */
+    destroy() {
+        try {
+            console.log('🗑️ ToolManager破棄開始...');
+            
+            // 描画中の場合は終了
+            if (this.isDrawing) {
+                this.stopDrawing();
+            }
+            
+            // EventBusリスナー解除
+            if (this.eventBus) {
+                this.eventBus.off('ui:tool:activated');
+                this.eventBus.off('config:changed');
+                this.eventBus.off('tool:pen:size:changed');
+                this.eventBus.off('tool:pen:opacity:changed');
+            }
+            
+            // StateManager状態更新（破棄）
+            this.updateStateManagerSafely('toolManager', 'destroyed', {
+                timestamp: Date.now(),
+                version: this.version
+            });
+            
+            // 登録ツールクリア
+            this.registeredTools.clear();
+            
+            // 参照クリア
+            this.appCore = null;
+            this.currentPath = null;
+            this.lastPoint = null;
+            this.configManager = null;
+            this.errorManager = null;
+            this.stateManager = null;
+            this.eventBus = null;
+            
+            console.log('✅ ToolManager破棄完了');
+            
+        } catch (error) {
+            console.error('❌ ToolManager破棄エラー:', error);
+        }
+    }
+}
+
+// ==========================================
+// 🎯 Pure JavaScript グローバル公開
+// ==========================================
+
+if (typeof window !== 'undefined') {
+    window.ToolManager = ToolManager;
+    console.log('✅ ToolManager StateManager API修正版 グローバル公開完了（Pure JavaScript）');
+}
+
+console.log('🔧 ToolManager Phase1.3 StateManager API修正版 - 準備完了');
+console.log('📋 統一システム統合完了: ConfigManager・ErrorManager・StateManager・EventBus');
+console.log('📋 StateManager API修正: updateSystemState対応・フォールバック機能強化');
+console.log('💡 使用例: const toolManager = new window.ToolManager(appCore); await toolManager.initialize();');errorManager.showError('error', '設定値取得失敗: ' + error.message);
             }
             
             // フォールバック設定
@@ -293,7 +737,7 @@ class ToolManager {
     }
     
     /**
-     * 初期化エラー処理
+     * 初期化エラー処理（StateManager API対応）
      */
     handleInitializationError(error) {
         if (this.errorManager) {
@@ -324,6 +768,13 @@ class ToolManager {
                 }
             };
         }
+        
+        // StateManager状態更新（エラー状態）
+        this.updateStateManagerSafely('toolManager', 'error', {
+            error: error.message,
+            fallbackMode: true,
+            timestamp: Date.now()
+        });
         
         console.warn('⚠️ ToolManager フォールバックモードで動作');
     }
@@ -368,7 +819,7 @@ class ToolManager {
     }
     
     // ==========================================
-    // 🎯 ツール管理メソッド群（統一システム統合版）
+    // 🎯 ツール管理メソッド群（StateManager API対応版）
     // ==========================================
     
     /**
@@ -380,13 +831,11 @@ class ToolManager {
         try {
             this.registeredTools.set(name, toolInstance);
             
-            // StateManager経由で状態更新
-            if (this.stateManager) {
-                this.stateManager.updateSystemState('toolManager', 'toolRegistered', {
-                    tool: name,
-                    timestamp: Date.now()
-                });
-            }
+            // StateManager状態更新
+            this.updateStateManagerSafely('toolManager', 'toolRegistered', {
+                tool: name,
+                timestamp: Date.now()
+            });
             
             console.log(`🔧 ツール登録: ${name}`);
             
@@ -423,14 +872,12 @@ class ToolManager {
                 });
             }
             
-            // StateManager経由で状態更新
-            if (this.stateManager) {
-                this.stateManager.updateSystemState('toolManager', 'currentTool', {
-                    tool,
-                    oldTool,
-                    timestamp: Date.now()
-                });
-            }
+            // StateManager状態更新
+            this.updateStateManagerSafely('toolManager', 'currentTool', {
+                tool,
+                oldTool,
+                timestamp: Date.now()
+            });
             
             console.log(`🎯 ツール変更: ${oldTool} → ${tool}`);
             return true;
@@ -537,333 +984,16 @@ class ToolManager {
                 this.handleDrawingFallback('start', x, y, pressure);
             }
             
-            // StateManager経由で状態更新
-            if (this.stateManager) {
-                this.stateManager.updateSystemState('toolManager', 'drawing', {
-                    isDrawing: true,
-                    tool: this.currentTool,
-                    startPoint: { x, y },
-                    timestamp: Date.now()
-                });
-            }
+            // StateManager状態更新
+            this.updateStateManagerSafely('toolManager', 'drawing', {
+                isDrawing: true,
+                tool: this.currentTool,
+                startPoint: { x, y },
+                timestamp: Date.now()
+            });
             
             console.log(`✏️ 描画開始: ${this.currentTool} at (${Math.round(x)}, ${Math.round(y)})`);
             
         } catch (error) {
             if (this.errorManager) {
-                this.errorManager.showError('warning', '描画開始失敗: ' + error.message);
-            }
-        }
-    }
-    
-    /**
-     * 描画継続
-     */
-    continueDrawing(x, y, pressure = 0.5) {
-        if (!this.isDrawing) return;
-        
-        try {
-            // 現在のツールで描画継続
-            const currentToolInstance = this.registeredTools.get(this.currentTool);
-            if (currentToolInstance && typeof currentToolInstance.continueDrawing === 'function') {
-                currentToolInstance.continueDrawing(x, y, pressure);
-            } else {
-                // フォールバック処理
-                this.handleDrawingFallback('continue', x, y, pressure);
-            }
-            
-            this.lastPoint = { x, y };
-            
-        } catch (error) {
-            if (this.errorManager) {
-                this.errorManager.showError('warning', '描画継続失敗: ' + error.message);
-            }
-        }
-    }
-    
-    /**
-     * 描画終了
-     */
-    stopDrawing() {
-        if (!this.isDrawing) return;
-        
-        try {
-            // 現在のツールで描画終了
-            const currentToolInstance = this.registeredTools.get(this.currentTool);
-            if (currentToolInstance && typeof currentToolInstance.stopDrawing === 'function') {
-                currentToolInstance.stopDrawing();
-            } else {
-                // フォールバック処理
-                this.handleDrawingFallback('stop');
-            }
-            
-            this.isDrawing = false;
-            this.currentPath = null;
-            this.lastPoint = null;
-            
-            // StateManager経由で状態更新
-            if (this.stateManager) {
-                this.stateManager.updateSystemState('toolManager', 'drawing', {
-                    isDrawing: false,
-                    tool: this.currentTool,
-                    timestamp: Date.now()
-                });
-            }
-            
-            console.log(`✏️ 描画終了: ${this.currentTool}`);
-            
-        } catch (error) {
-            if (this.errorManager) {
-                this.errorManager.showError('warning', '描画終了失敗: ' + error.message);
-            }
-        }
-    }
-    
-    /**
-     * 描画フォールバック処理
-     */
-    handleDrawingFallback(action, x, y, pressure) {
-        // AppCoreやCanvasManagerが利用可能な場合の基本描画処理
-        if (this.appCore) {
-            console.log(`🔧 描画フォールバック: ${action} - AppCore経由`);
-            // AppCore経由での基本描画処理
-            // 実際の描画ロジックは別途実装が必要
-        } else {
-            console.warn(`⚠️ 描画フォールバック: ${action} - 描画システム未接続`);
-        }
-    }
-    
-    // ==========================================
-    // 🎯 設定操作メソッド群
-    // ==========================================
-    
-    /**
-     * ブラシサイズ設定
-     */
-    setBrushSize(size) {
-        try {
-            const normalizedSize = Math.max(0.1, Math.min(100, Math.round(size * 10) / 10));
-            this.updateToolSetting(this.currentTool, 'brushSize', normalizedSize);
-            console.log(`🖌️ ブラシサイズ: ${normalizedSize}px`);
-            
-        } catch (error) {
-            if (this.errorManager) {
-                this.errorManager.showError('warning', 'ブラシサイズ設定失敗: ' + error.message);
-            }
-        }
-    }
-    
-    /**
-     * 不透明度設定
-     */
-    setOpacity(opacity) {
-        try {
-            const normalizedOpacity = Math.max(0, Math.min(1, Math.round(opacity * 1000) / 1000));
-            this.updateToolSetting(this.currentTool, 'opacity', normalizedOpacity);
-            console.log(`🌫️ 不透明度: ${Math.round(normalizedOpacity * 100)}%`);
-            
-        } catch (error) {
-            if (this.errorManager) {
-                this.errorManager.showError('warning', '不透明度設定失敗: ' + error.message);
-            }
-        }
-    }
-    
-    /**
-     * 筆圧設定
-     */
-    setPressure(pressure) {
-        try {
-            const normalizedPressure = Math.max(0, Math.min(1, Math.round(pressure * 1000) / 1000));
-            this.updateToolSetting(this.currentTool, 'pressure', normalizedPressure);
-            console.log(`✍️ 筆圧: ${Math.round(normalizedPressure * 100)}%`);
-            
-        } catch (error) {
-            if (this.errorManager) {
-                this.errorManager.showError('warning', '筆圧設定失敗: ' + error.message);
-            }
-        }
-    }
-    
-    /**
-     * 線補正設定
-     */
-    setSmoothing(smoothing) {
-        try {
-            const normalizedSmoothing = Math.max(0, Math.min(1, Math.round(smoothing * 1000) / 1000));
-            this.updateToolSetting(this.currentTool, 'smoothing', normalizedSmoothing);
-            console.log(`📏 線補正: ${Math.round(normalizedSmoothing * 100)}%`);
-            
-        } catch (error) {
-            if (this.errorManager) {
-                this.errorManager.showError('warning', '線補正設定失敗: ' + error.message);
-            }
-        }
-    }
-    
-    // ==========================================
-    // 🎯 状態取得メソッド群
-    // ==========================================
-    
-    /**
-     * 描画状態取得
-     */
-    getDrawingState() {
-        return {
-            version: this.version,
-            unifiedSystemsEnabled: true,
-            currentTool: this.currentTool,
-            isDrawing: this.isDrawing,
-            globalSettings: this.globalSettings ? { ...this.globalSettings } : {},
-            registeredTools: Array.from(this.registeredTools.keys()),
-            currentPath: this.currentPath ? this.currentPath.id : null,
-            lastPoint: this.lastPoint ? { ...this.lastPoint } : null,
-            appCoreConnected: !!this.appCore
-        };
-    }
-    
-    /**
-     * ツール統計取得
-     */
-    getToolStats() {
-        const stats = {
-            version: this.version,
-            currentTool: this.currentTool,
-            registeredToolsCount: this.registeredTools.size,
-            isDrawing: this.isDrawing,
-            globalSettings: this.globalSettings ? { ...this.globalSettings } : {},
-            unifiedSystems: {
-                configManager: !!this.configManager,
-                errorManager: !!this.errorManager,
-                stateManager: !!this.stateManager,
-                eventBus: !!this.eventBus
-            }
-        };
-        
-        return stats;
-    }
-    
-    /**
-     * ツール切り替え可能性チェック
-     */
-    canSwitchTo(tool) {
-        if (this.isDrawing) {
-            console.warn('⚠️ 描画中はツール変更できません');
-            return false;
-        }
-        
-        if (!this.isToolAvailable(tool)) {
-            console.warn(`⚠️ 利用できないツール: ${tool}`);
-            return false;
-        }
-        
-        return true;
-    }
-    
-    /**
-     * 安全なツール切り替え
-     */
-    safeSwitchTool(tool) {
-        if (!this.canSwitchTo(tool)) return false;
-        
-        // 描画中の場合は強制終了
-        if (this.isDrawing) {
-            this.stopDrawing();
-        }
-        
-        return this.setTool(tool);
-    }
-    
-    // ==========================================
-    // 🎯 その他操作メソッド群
-    // ==========================================
-    
-    /**
-     * デバッグ情報出力
-     */
-    debugInfo() {
-        const state = this.getDrawingState();
-        const stats = this.getToolStats();
-        
-        console.group('🔧 ToolManager デバッグ情報（修正版）');
-        console.log('📊 状態:', state);
-        console.log('📈 統計:', stats);
-        console.log('🔧 統一システム健全性:', this.checkUnifiedSystemHealth());
-        console.groupEnd();
-        
-        return { state, stats };
-    }
-    
-    /**
-     * 統一システム健全性チェック
-     */
-    checkUnifiedSystemHealth() {
-        const health = {
-            configManager: !!this.configManager && typeof this.configManager.get === 'function',
-            errorManager: !!this.errorManager && typeof this.errorManager.showError === 'function',
-            stateManager: !!this.stateManager && typeof this.stateManager.updateSystemState === 'function',
-            eventBus: !!this.eventBus && typeof this.eventBus.safeEmit === 'function'
-        };
-        
-        const allHealthy = Object.values(health).every(Boolean);
-        
-        if (!allHealthy) {
-            console.warn('⚠️ 一部の統一システムに問題があります:', health);
-        }
-        
-        return { health, allHealthy };
-    }
-    
-    /**
-     * 破棄処理
-     */
-    destroy() {
-        try {
-            console.log('🗑️ ToolManager破棄開始...');
-            
-            // 描画中の場合は終了
-            if (this.isDrawing) {
-                this.stopDrawing();
-            }
-            
-            // EventBusリスナー解除
-            if (this.eventBus) {
-                this.eventBus.off('ui:tool:activated');
-                this.eventBus.off('config:changed');
-                this.eventBus.off('tool:pen:size:changed');
-                this.eventBus.off('tool:pen:opacity:changed');
-            }
-            
-            // 登録ツールクリア
-            this.registeredTools.clear();
-            
-            // 参照クリア
-            this.appCore = null;
-            this.currentPath = null;
-            this.lastPoint = null;
-            this.configManager = null;
-            this.errorManager = null;
-            this.stateManager = null;
-            this.eventBus = null;
-            
-            console.log('✅ ToolManager破棄完了');
-            
-        } catch (error) {
-            console.error('❌ ToolManager破棄エラー:', error);
-        }
-    }
-}
-
-// ==========================================
-// 🎯 Pure JavaScript グローバル公開
-// ==========================================
-
-if (typeof window !== 'undefined') {
-    window.ToolManager = ToolManager;
-    console.log('✅ ToolManager 修正版 グローバル公開完了（Pure JavaScript）');
-}
-
-console.log('🔧 ToolManager Phase1.2step3 修正版 - 準備完了');
-console.log('📋 統一システム統合完了: ConfigManager・ErrorManager・StateManager・EventBus');
-console.log('📋 初期化順序修正: デフォルトツール設定・フォールバック強化');
-console.log('💡 使用例: const toolManager = new window.ToolManager(appCore); await toolManager.initialize();');
+                this.

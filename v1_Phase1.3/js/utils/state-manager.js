@@ -1,18 +1,19 @@
 /**
- * 🎨 ふたば☆お絵描きツール - 統一状態管理システム（API拡張版）
- * 🎯 AI_WORK_SCOPE: 状態取得統一・デバッグ支援・監視機能・コンポーネント状態管理
+ * 🎨 ふたば☆お絵描きツール - 統一状態管理システム（API拡張版+SystemState対応）
+ * 🎯 AI_WORK_SCOPE: 状態取得統一・デバッグ支援・監視機能・コンポーネント状態管理・システム状態管理
  * 🎯 DEPENDENCIES: ConfigManager (設定値参照用)
  * 🎯 PIXI_EXTENSIONS: 使用しない
  * 🎯 ISOLATION_TEST: 可能
- * 🎯 SPLIT_THRESHOLD: 200行以下維持
- * 📋 PHASE_TARGET: Phase1統一化
+ * 🎯 SPLIT_THRESHOLD: 300行以下維持
+ * 📋 PHASE_TARGET: Phase1.3統一化（SystemState対応）
  * 📋 V8_MIGRATION: v8状態監視対応準備済み
- * 🔧 API拡張: updateComponentState メソッド追加
+ * 🔧 API拡張: updateComponentState + updateSystemState メソッド追加
  */
 
 /**
- * 統一状態管理システム
+ * 統一状態管理システム（SystemState対応版）
  * すべての状態取得を統一し、デバッグを支援
+ * ToolManager向けupdateSystemStateメソッド追加
  */
 class StateManager {
     /**
@@ -25,9 +26,14 @@ class StateManager {
     };
     
     /**
-     * コンポーネント状態管理（新規追加）
+     * コンポーネント状態管理
      */
     static componentStates = new Map();
+    
+    /**
+     * システム状態管理（新規追加）
+     */
+    static systemStates = new Map();
     
     /**
      * 🔧 コンポーネント状態更新（統一API）
@@ -78,12 +84,70 @@ class StateManager {
     }
     
     /**
+     * 🔧 システム状態更新（ToolManager向け新規API）
+     * @param {string} system - システム名 ('toolManager', 'canvasManager'等)
+     * @param {string} state - 状態名 ('initialized', 'drawing'等)
+     * @param {Object} data - 状態データ
+     * @returns {boolean} 成功フラグ
+     */
+    static updateSystemState(system, state, data = {}) {
+        try {
+            if (typeof system !== 'string' || typeof state !== 'string') {
+                throw new Error('system と state は文字列である必要があります');
+            }
+            
+            const timestamp = Date.now();
+            const stateEntry = {
+                system,
+                state,
+                data,
+                timestamp,
+                id: `${system}-${state}-${timestamp}`
+            };
+            
+            // システム状態保存
+            this.systemStates.set(system, stateEntry);
+            
+            // EventBusに通知（存在する場合）
+            if (window.EventBus && typeof window.EventBus.safeEmit === 'function') {
+                window.EventBus.safeEmit('system.state.updated', stateEntry);
+            }
+            
+            console.log(`🔧 システム状態更新: ${system} → ${state}`, data);
+            
+            return true;
+            
+        } catch (error) {
+            console.error('StateManager.updateSystemState エラー:', error.message);
+            
+            // ErrorManager に通知（存在する場合）
+            if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
+                window.ErrorManager.showError('state-update',
+                    `システム状態更新エラー: ${error.message}`,
+                    { system, state, data }
+                );
+            }
+            
+            return false;
+        }
+    }
+    
+    /**
      * 🔧 コンポーネント状態取得
      * @param {string} component - コンポーネント名
      * @returns {Object|null} コンポーネント状態
      */
     static getComponentState(component) {
         return this.componentStates.get(component) || null;
+    }
+    
+    /**
+     * 🔧 システム状態取得（新規追加）
+     * @param {string} system - システム名
+     * @returns {Object|null} システム状態
+     */
+    static getSystemState(system) {
+        return this.systemStates.get(system) || null;
     }
     
     /**
@@ -99,7 +163,19 @@ class StateManager {
     }
     
     /**
-     * アプリケーション全体状態取得（統一版）
+     * 🔧 全システム状態取得（新規追加）
+     * @returns {Object} 全システム状態
+     */
+    static getAllSystemStates() {
+        const states = {};
+        this.systemStates.forEach((value, key) => {
+            states[key] = value;
+        });
+        return states;
+    }
+    
+    /**
+     * アプリケーション全体状態取得（統一版・SystemState統合）
      * @returns {Object} 完全な状態情報
      */
     static getApplicationState() {
@@ -114,7 +190,8 @@ class StateManager {
             errors: this.getErrorState(),
             config: this.getConfigState(),
             debug: this.getDebugState(),
-            components: this.getAllComponentStates() // 新規追加
+            components: this.getAllComponentStates(), // 既存
+            systems: this.getAllSystemStates() // 新規追加
         };
     }
     
@@ -312,7 +389,8 @@ class StateManager {
                 requests: this.monitoring.stateRequests,
                 uptime: Math.round(performance.now() - this.monitoring.startTime),
                 lastUpdate: this.monitoring.lastUpdate,
-                componentStates: this.componentStates.size
+                componentStates: this.componentStates.size,
+                systemStates: this.systemStates.size // 新規追加
             },
             domElements: this.getDOMElementsState(),
             browserInfo: {
@@ -376,7 +454,8 @@ class StateManager {
             fps: performance.currentFPS,
             initTime: performance.initTime + 'ms',
             errors: this.getErrorState().totalAppErrors,
-            componentStates: this.componentStates.size
+            componentStates: this.componentStates.size,
+            systemStates: this.systemStates.size // 新規追加
         };
     }
     
@@ -478,39 +557,67 @@ class StateManager {
             warnings.push('コンポーネント状態が記録されていません');
         }
         
+        // システム状態チェック（新規追加）
+        const systemCount = Object.keys(state.systems).length;
+        if (systemCount === 0) {
+            warnings.push('システム状態が記録されていません');
+        }
+        
         return {
             healthy: issues.length === 0,
             issues,
             warnings,
             score: Math.max(0, 100 - issues.length * 20 - warnings.length * 5),
             timestamp: Date.now(),
-            componentStates: componentCount
+            componentStates: componentCount,
+            systemStates: systemCount // 新規追加
         };
     }
     
     /**
-     * 🔧 統計情報取得
+     * 🔧 統計情報取得（SystemState対応）
      * @returns {Object} 統計情報
      */
     static getStats() {
         return {
             monitoring: { ...this.monitoring },
             componentStates: this.componentStates.size,
+            systemStates: this.systemStates.size, // 新規追加
             uptime: Math.round(performance.now() - this.monitoring.startTime),
             requestsPerMinute: Math.round((this.monitoring.stateRequests / (performance.now() - this.monitoring.startTime)) * 60000)
         };
     }
     
     /**
-     * 🔧 状態リセット
+     * 🔧 状態リセット（SystemState対応）
      */
     static resetComponentStates() {
-        const count = this.componentStates.size;
+        const componentCount = this.componentStates.size;
+        const systemCount = this.systemStates.size;
+        
         this.componentStates.clear();
-        console.log(`🔧 コンポーネント状態リセット: ${count}件削除`);
+        this.systemStates.clear();
+        
+        console.log(`🔧 状態リセット完了: コンポーネント${componentCount}件、システム${systemCount}件削除`);
         
         if (window.EventBus && typeof window.EventBus.safeEmit === 'function') {
-            window.EventBus.safeEmit('component.states.reset', { count });
+            window.EventBus.safeEmit('all.states.reset', { 
+                componentCount, 
+                systemCount 
+            });
+        }
+    }
+    
+    /**
+     * 🔧 システム状態のみリセット（新規追加）
+     */
+    static resetSystemStates() {
+        const count = this.systemStates.size;
+        this.systemStates.clear();
+        console.log(`🔧 システム状態リセット: ${count}件削除`);
+        
+        if (window.EventBus && typeof window.EventBus.safeEmit === 'function') {
+            window.EventBus.safeEmit('system.states.reset', { count });
         }
     }
 }
@@ -531,6 +638,7 @@ window.getCoreState = () => StateManager.getCoreState();
 window.getDrawingState = () => StateManager.getDrawingState();
 window.healthCheck = () => StateManager.healthCheck();
 
-console.log('✅ StateManager 初期化完了（API拡張版）');
+console.log('✅ StateManager 初期化完了（SystemState対応版）');
 console.log('💡 使用例: StateManager.getApplicationState() または window.getState()');
 console.log('🔧 新機能: StateManager.updateComponentState(component, state, data)');
+console.log('🔧 新API: StateManager.updateSystemState(system, state, data)');
