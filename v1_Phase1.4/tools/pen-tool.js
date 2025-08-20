@@ -256,35 +256,42 @@ class PenTool {
     /**
      * 🎯 境界越え描画開始処理（Phase1.4 新機能）
      */
-    handleBoundaryCrossIn(x, y, eventData) {
-        if (!this.isActive) return;
+* 🎯 境界越え描画開始処理（座標系修正版）
+ * BoundaryManager → AppCore → PenTool 連携完了
+ * 座標変換問題修正: 境界越えイベントはすでにキャンバス座標で渡される
+ */
+handleBoundaryCrossIn(x, y, eventData) {
+    if (!this.isActive) return;
+    
+    try {
+        console.log(`🎯 境界越え描画開始: PenTool at (${x.toFixed(1)}, ${y.toFixed(1)})`);
         
-        try {
-            console.log(`🎯 境界越え描画開始: PenTool at (${x.toFixed(1)}, ${y.toFixed(1)})`);
-            
-            // 境界越え専用描画セッション開始
-            const pressure = eventData.pressure || 0.5;
-            const timestamp = eventData.timestamp || performance.now();
-            
-            // 既存のstartDrawingメソッドを呼び出し
-            const path = this.startDrawing(x, y, pressure, timestamp);
-            
-            // EventBus通知（境界越え専用）
-            this.emitEvent('BOUNDARY_DRAWING_STARTED', {
-                tool: this.name,
-                position: { x, y },
-                pressure,
-                sessionId: this.drawingSession?.id,
-                fromBoundary: true
-            });
-            
-            return path;
-            
-        } catch (error) {
-            this.safeError(`境界越え描画エラー: ${error.message}`, 'error');
-            return null;
-        }
+        // eventDataから必要な情報を抽出（境界越えイベントは既にキャンバス座標）
+        const pressure = eventData.pressure || 0.5;
+        const timestamp = eventData.timestamp || performance.now();
+        
+        // 座標系確認: BoundaryManagerが既にキャンバス座標に変換済み
+        // 追加の座標変換は不要（これが原因で右下→左上になっていた）
+        
+        // 既存のstartDrawingメソッドを直接呼び出し（座標変換なし）
+        const path = this.startDrawing(x, y, pressure, timestamp);
+        
+        // EventBus通知（境界越え専用）
+        this.emitEvent('BOUNDARY_DRAWING_STARTED', {
+            tool: this.name,
+            position: { x, y },
+            pressure,
+            sessionId: this.drawingSession?.id,
+            fromBoundary: true
+        });
+        
+        return path;
+        
+    } catch (error) {
+        this.safeError(`境界越え描画エラー: ${error.message}`, 'error');
+        return null;
     }
+}
     
     /**
      * 🎯 高度な描画開始（統一システム版）

@@ -63,6 +63,40 @@ class EraserTool {
         
         console.log(`🧹 EraserTool 統一システム版構築開始 - ${this.version}`);
     }
+// EraserToolクラスに以下のメソッドを追加
+
+/**
+ * 🎯 境界越え消去開始処理（新規実装）
+ * BoundaryManager → AppCore → EraserTool 連携完了
+ */
+handleBoundaryCrossIn(x, y, eventData) {
+    if (!this.isActive) return;
+    
+    try {
+        console.log(`🗑️ 境界越え消去開始: EraserTool at (${x.toFixed(1)}, ${y.toFixed(1)})`);
+        
+        const pressure = eventData.pressure || 1.0; // 消しゴムは通常フル圧力
+        const timestamp = eventData.timestamp || performance.now();
+        
+        // 既存のstartErasingメソッドを呼び出し
+        const erasePath = this.startErasing(x, y, pressure, timestamp);
+        
+        // EventBus通知（境界越え専用）
+        this.emitEvent('BOUNDARY_ERASING_STARTED', {
+            tool: this.name,
+            position: { x, y },
+            pressure,
+            sessionId: this.erasingSession?.id,
+            fromBoundary: true
+        });
+        
+        return erasePath;
+        
+    } catch (error) {
+        this.safeError(`境界越え消去エラー: ${error.message}`, 'error');
+        return null;
+    }
+}
     
     /**
      * 🔄 統一システムからの設定初期化
