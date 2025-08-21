@@ -1,29 +1,30 @@
 /**
- * 🎨 ふたば☆お絵描きツール - 統一設定管理システム Phase2準備拡張版
- * 🎯 AI_WORK_SCOPE: 設定値一元化・統一アクセス・DRY原則準拠・Phase2準備
+ * 🎨 ふたば☆お絵描きツール - 統一設定管理システム（座標統合拡張版）
+ * 🎯 AI_WORK_SCOPE: 設定値一元化・統一アクセス・DRY原則準拠
  * 🎯 DEPENDENCIES: なし（独立ユーティリティ）
  * 🎯 PIXI_EXTENSIONS: 使用しない
  * 🎯 ISOLATION_TEST: 可能
  * 🎯 SPLIT_THRESHOLD: 200行以下維持
- * 📋 PHASE_TARGET: Phase1.4→Phase2準備
+ * 📋 PHASE_TARGET: Phase1統一化
  * 📋 V8_MIGRATION: v8対応設定値準備済み
- * 🔄 COORDINATE_REFACTOR: 座標処理統合のためCoordinateManager設定拡張
+ * 🔄 COORDINATE_INTEGRATION: 座標統合設定追加・Phase2準備設定拡張
+ * 🆕 COORDINATE_FEATURE: CoordinateManager完全対応・統合設定
  */
 
 /**
- * 統一設定管理システム（Phase2準備拡張版）
+ * 統一設定管理システム（座標統合拡張版）
  * すべての設定値を一元管理し、重複を排除
  */
 class ConfigManager {
     /**
-     * デフォルト設定値（Phase2準備拡張統一版）
+     * デフォルト設定値（座標統合拡張版）
      */
     static defaultConfig = {
         // アプリケーション基本設定
         app: {
-            version: 'v1.0-Phase1.4-coordinate-unified',
+            version: 'v1.0-Phase1.4-coordinate-integrated',
             name: 'ふたば☆お絵描きツール',
-            description: '座標系統一完全統合版',
+            description: '座標統合完全版・Phase2準備済み',
             buildDate: '2025-08-21'
         },
         
@@ -31,46 +32,8 @@ class ConfigManager {
         dependencies: {
             required: ['PIXI', 'AppCore'],
             unified: ['ConfigManager', 'ErrorManager', 'StateManager', 'EventBus'],
-            coordinate: ['CoordinateManager'], // 🔄 座標系依存明確化
-            optional: ['BoundaryManager', 'MemoryManager'],
+            optional: ['BoundaryManager', 'CoordinateManager', 'MemoryManager'],
             external: ['pixi.js']
-        },
-        
-        // 🆕 座標系統一設定（Phase2準備）
-        coordinate: {
-            precision: 2,
-            boundaryClamp: true,
-            scaleCompensation: true,
-            touchScaling: 1.0,
-            debugging: false,
-            
-            // 🆕 Phase2レイヤー対応準備
-            layerTransform: {
-                enabled: true,              // レイヤー変形座標対応
-                cacheEnabled: true,         // 変形キャッシュ
-                precision: 3                // レイヤー座標精度
-            },
-            
-            // 🆕 パフォーマンス最適化
-            performance: {
-                batchProcessing: true,      // バッチ処理有効化
-                coordinateCache: true,      // 座標キャッシュ
-                continuousOptimization: true // 連続座標最適化
-            },
-            
-            // 🆕 統合設定
-            integration: {
-                managerCentralization: true, // Manager集中化
-                duplicateElimination: true,  // 重複排除
-                unifiedErrorHandling: true   // 統一エラー処理
-            },
-            
-            // 🆕 Legacy削除フラグ
-            migration: {
-                removeCoordinatesJs: true,   // coordinates.js削除フラグ
-                coordinateUtilsDeprecated: true, // CoordinateUtils非推奨
-                unifyCanvasCoordinates: true // Canvas座標処理統一
-            }
         },
         
         // キャンバス設定
@@ -83,14 +46,71 @@ class ConfigManager {
             minHeight: 100,
             backgroundColor: 0xf0e0d6,
             backgroundColorHex: '#f0e0d6',
-            // 境界設定追加
+            // 境界設定
             boundary: {
                 enabled: true,
                 margin: 20,
                 trackingEnabled: true,
                 visualizeEnabled: false,
-                // 🔄 座標処理統一
-                coordinateIntegration: true  // CoordinateManager統合使用
+                crossInDelay: 0,
+                supportedPointers: ['mouse', 'pen', 'touch'],
+                debugging: false
+            }
+        },
+        
+        // 🔄 座標管理システム設定（統合拡張版）
+        coordinate: {
+            precision: 2,
+            boundaryClamp: true,
+            scaleCompensation: true,
+            touchScaling: 1.0,
+            debugging: false,
+            
+            // 座標変換設定
+            screenToCanvas: {
+                enabled: true,
+                offsetCompensation: true
+            },
+            canvasToPixi: {
+                enabled: true,
+                scaleCompensation: true
+            },
+            
+            // 筆圧設定
+            pressure: {
+                enabled: true,
+                fallback: 0.5,
+                smoothing: 0.3
+            },
+            
+            // 距離・角度計算設定
+            calculations: {
+                distancePrecision: 2,
+                anglePrecision: 2,
+                minDistance: 1.0
+            },
+            
+            // 🆕 座標統合設定（Phase1.4追加）
+            integration: {
+                managerCentralization: true,    // Manager集中化
+                duplicateElimination: true,     // 重複排除
+                unifiedErrorHandling: true      // 統一エラー処理
+            },
+            
+            // 🆕 パフォーマンス最適化設定
+            performance: {
+                batchProcessing: true,          // バッチ処理有効化
+                coordinateCache: true,          // 座標キャッシュ
+                continuousOptimization: true,   // 連続座標最適化
+                cacheMaxSize: 1000             // キャッシュ最大サイズ
+            },
+            
+            // 🆕 Phase2レイヤー対応準備
+            layerTransform: {
+                enabled: true,                  // レイヤー変形座標対応
+                cacheEnabled: true,             // 変形キャッシュ
+                precision: 3,                   // レイヤー座標精度
+                supportedTransforms: ['translate', 'scale', 'rotate']
             }
         },
         
@@ -116,16 +136,12 @@ class ConfigManager {
                     defaultOpacity: 0.85,
                     defaultPressure: 0.5,
                     defaultSmoothing: 0.3,
-                    minDistance: 1.5,
-                    // 🔄 座標処理統一
-                    coordinateIntegration: true  // CoordinateManager統合使用
+                    minDistance: 1.5
                 },
                 eraser: {
                     defaultSize: 16.0,
                     opacity: 1.0,
-                    blendMode: 'erase',
-                    // 🔄 座標処理統一
-                    coordinateIntegration: true  // CoordinateManager統合使用
+                    blendMode: 'erase'
                 }
             }
         },
@@ -221,21 +237,25 @@ class ConfigManager {
     /**
      * 設定値取得（ドット記法対応）
      * @param {string} path - 設定パス（例: 'canvas.width' または 'drawing.pen.defaultSize'）
+     * @param {any} defaultValue - デフォルト値（オプション）
      * @returns {any} 設定値
      */
-    static get(path) {
+    static get(path, defaultValue = undefined) {
         if (!path) {
             return this.defaultConfig;
         }
         
         const value = this.getNestedValue(this.defaultConfig, path);
         
-        // デバッグ用：見つからない設定パスを警告
+        // 値が見つからない場合のデフォルト値処理
         if (value === undefined) {
+            if (defaultValue !== undefined) {
+                return defaultValue;
+            }
             console.warn(`⚠️ ConfigManager.get: 設定パス '${path}' が見つかりません`);
         }
         
-        return value;
+        return value !== undefined ? value : defaultValue;
     }
     
     /**
@@ -281,19 +301,52 @@ class ConfigManager {
     }
     
     /**
-     * 🆕 座標設定取得（新規API）
-     * @returns {Object} 座標設定
+     * PixiJS設定取得
+     * @returns {Object} PixiJS設定
+     */
+    static getPixiConfig() {
+        return this.get('pixi');
+    }
+    
+    /**
+     * 🔄 座標管理設定取得（統合拡張版）
+     * @returns {Object} 座標管理設定
      */
     static getCoordinateConfig() {
         return this.get('coordinate');
     }
     
     /**
-     * PixiJS設定取得
-     * @returns {Object} PixiJS設定
+     * 🆕 座標統合設定確認
+     * @returns {boolean} 座標統合が有効かどうか
      */
-    static getPixiConfig() {
-        return this.get('pixi');
+    static isCoordinateIntegrationEnabled() {
+        return this.get('coordinate.integration.managerCentralization', false);
+    }
+    
+    /**
+     * 🆕 重複排除設定確認
+     * @returns {boolean} 重複排除が有効かどうか
+     */
+    static isDuplicateEliminationEnabled() {
+        return this.get('coordinate.integration.duplicateElimination', false);
+    }
+    
+    /**
+     * 🆕 座標パフォーマンス設定確認
+     * @returns {boolean} パフォーマンス最適化が有効かどうか
+     */
+    static isCoordinatePerformanceEnabled() {
+        return this.get('coordinate.performance.coordinateCache', false) ||
+               this.get('coordinate.performance.batchProcessing', false);
+    }
+    
+    /**
+     * 🆕 Phase2レイヤー対応確認
+     * @returns {boolean} Phase2レイヤー対応準備ができているかどうか
+     */
+    static isPhase2LayerReady() {
+        return this.get('coordinate.layerTransform.enabled', false);
     }
     
     /**
@@ -387,39 +440,6 @@ class ConfigManager {
     }
     
     /**
-     * 🆕 座標統合設定確認
-     * @returns {boolean} 座標統合が有効かどうか
-     */
-    static isCoordinateIntegrationEnabled() {
-        return this.get('coordinate.integration.managerCentralization') === true;
-    }
-    
-    /**
-     * 🆕 重複排除設定確認
-     * @returns {boolean} 重複排除が有効かどうか
-     */
-    static isDuplicateEliminationEnabled() {
-        return this.get('coordinate.integration.duplicateElimination') === true;
-    }
-    
-    /**
-     * 🆕 Phase2準備状況確認
-     * @returns {Object} Phase2準備状況
-     */
-    static getPhase2ReadinessStatus() {
-        const coordinate = this.get('coordinate');
-        
-        return {
-            layerTransformReady: coordinate.layerTransform?.enabled === true,
-            performanceOptimized: coordinate.performance?.batchProcessing === true,
-            coordinateUnified: coordinate.integration?.managerCentralization === true,
-            duplicateEliminated: coordinate.integration?.duplicateElimination === true,
-            migrationComplete: coordinate.migration?.removeCoordinatesJs === true,
-            overallReadiness: 0.95 // 95%準備完了
-        };
-    }
-    
-    /**
      * 設定の妥当性確認
      * @param {string} path - 設定パス
      * @param {any} value - 確認する値
@@ -443,13 +463,29 @@ class ConfigManager {
             case 'drawing.pen.defaultPressure':
             case 'drawing.pen.defaultSmoothing':
                 return typeof value === 'number' && value >= 0 && value <= 1;
-            
-            // 🆕 座標設定妥当性確認
+                       
             case 'coordinate.precision':
                 return typeof value === 'number' && value >= 0 && value <= 10;
                 
+            case 'coordinate.touchScaling':
+                return typeof value === 'number' && value > 0 && value <= 5;
+                
+            case 'coordinate.boundaryClamp':
+            case 'coordinate.scaleCompensation':
+            case 'coordinate.debugging':
+            case 'coordinate.integration.managerCentralization':
+            case 'coordinate.integration.duplicateElimination':
+            case 'coordinate.integration.unifiedErrorHandling':
+            case 'coordinate.performance.batchProcessing':
+            case 'coordinate.performance.coordinateCache':
+            case 'coordinate.performance.continuousOptimization':
+            case 'coordinate.layerTransform.enabled':
+            case 'coordinate.layerTransform.cacheEnabled':
+                return typeof value === 'boolean';
+                
+            case 'coordinate.performance.cacheMaxSize':
             case 'coordinate.layerTransform.precision':
-                return typeof value === 'number' && value >= 1 && value <= 5;
+                return typeof value === 'number' && value > 0;
                 
             default:
                 return true; // デフォルトは妥当とする
@@ -457,13 +493,66 @@ class ConfigManager {
     }
     
     /**
-     * 開発用デバッグ情報取得（拡張版）
+     * 🔄 座標設定の妥当性確認（拡張版）
+     * @param {Object} coordinateConfig - 座標設定オブジェクト
+     * @returns {boolean} 妥当かどうか
+     */
+    static validateCoordinateConfig(coordinateConfig) {
+        if (!coordinateConfig || typeof coordinateConfig !== 'object') {
+            return false;
+        }
+        
+        const required = ['precision', 'boundaryClamp', 'scaleCompensation'];
+        const hasRequired = required.every(key => coordinateConfig.hasOwnProperty(key));
+        
+        // 🆕 統合設定の確認
+        if (coordinateConfig.integration) {
+            const integrationValid = typeof coordinateConfig.integration === 'object';
+            if (!integrationValid) return false;
+        }
+        
+        // 🆕 パフォーマンス設定の確認
+        if (coordinateConfig.performance) {
+            const performanceValid = typeof coordinateConfig.performance === 'object';
+            if (!performanceValid) return false;
+        }
+        
+        return hasRequired;
+    }
+    
+    /**
+     * 🆕 座標統合完全診断
+     * @returns {Object} 座標統合診断結果
+     */
+    static diagnoseCoordinateIntegration() {
+        const diagnosis = {
+            configurationValid: this.validateCoordinateConfig(this.getCoordinateConfig()),
+            integrationEnabled: this.isCoordinateIntegrationEnabled(),
+            duplicateEliminationEnabled: this.isDuplicateEliminationEnabled(),
+            performanceOptimized: this.isCoordinatePerformanceEnabled(),
+            phase2Ready: this.isPhase2LayerReady(),
+            coordinateManagerRequired: true,
+            unifiedSystemsRequired: ['ConfigManager', 'ErrorManager', 'EventBus']
+        };
+        
+        // 総合判定
+        const requirements = [
+            diagnosis.configurationValid,
+            diagnosis.integrationEnabled,
+            diagnosis.duplicateEliminationEnabled
+        ];
+        
+        diagnosis.overallReady = requirements.every(Boolean);
+        diagnosis.readinessScore = Math.round((requirements.filter(Boolean).length / requirements.length) * 100);
+        
+        return diagnosis;
+    }
+    
+    /**
+     * 開発用デバッグ情報取得（座標統合情報追加）
      * @returns {Object} デバッグ情報
      */
     static getDebugInfo() {
-        const coordinateConfig = this.get('coordinate');
-        const phase2Status = this.getPhase2ReadinessStatus();
-        
         return {
             version: this.get('app.version'),
             totalSettings: this.countSettings(this.defaultConfig),
@@ -473,14 +562,15 @@ class ConfigManager {
             defaultTool: this.getDefaultTool(),
             availableTools: this.getAvailableTools(),
             v8Ready: this.get('v8Migration.enabled'),
-            
-            // 🆕 座標系統合情報
+            // 🔄 座標統合デバッグ情報
+            coordinateConfig: this.getCoordinateConfig(),
             coordinateIntegration: {
                 enabled: this.isCoordinateIntegrationEnabled(),
                 duplicateElimination: this.isDuplicateEliminationEnabled(),
-                migrationFlags: coordinateConfig.migration,
-                phase2Status: phase2Status
-            }
+                performanceOptimized: this.isCoordinatePerformanceEnabled(),
+                phase2Ready: this.isPhase2LayerReady()
+            },
+            coordinateDiagnosis: this.diagnoseCoordinateIntegration()
         };
     }
     
@@ -524,28 +614,19 @@ class ConfigManager {
 // グローバル公開
 window.ConfigManager = ConfigManager;
 
-// デバッグ用グローバル関数（拡張版）
+// デバッグ用グローバル関数
 window.getConfig = (path) => ConfigManager.get(path);
 window.setConfig = (path, value) => ConfigManager.set(path, value);
 window.getConfigDebug = () => ConfigManager.getDebugInfo();
 
-// 🆕 座標統合確認用グローバル関数
-window.checkCoordinateIntegration = () => {
-    const integration = ConfigManager.isCoordinateIntegrationEnabled();
-    const elimination = ConfigManager.isDuplicateEliminationEnabled();
-    const phase2Status = ConfigManager.getPhase2ReadinessStatus();
-    
-    console.log('📐 座標統合設定確認:');
-    console.log('  - Manager集中化:', integration ? '✅' : '❌');
-    console.log('  - 重複排除:', elimination ? '✅' : '❌');
-    console.log('  - Phase2準備:', phase2Status.overallReadiness, '（95%以上推奨）');
-    
-    return { integration, elimination, phase2Status };
-};
-
-console.log('✅ ConfigManager Phase2準備拡張版 初期化完了');
+console.log('✅ ConfigManager 座標統合拡張版 初期化完了');
 console.log(`📊 設定項目数: ${ConfigManager.getDebugInfo().totalSettings}個`);
 console.log(`🎯 アプリケーション: ${ConfigManager.get('app.name')} ${ConfigManager.get('app.version')}`);
 console.log(`🔧 デフォルトツール: ${ConfigManager.getDefaultTool()}`);
-console.log('🔄 座標統合設定追加: coordinate.integration, coordinate.layerTransform, coordinate.performance');
-console.log('💡 使用例: ConfigManager.getCoordinateConfig() または window.checkCoordinateIntegration()');
+console.log('🔄 座標統合設定:');
+console.log(`  - 統合有効: ${ConfigManager.isCoordinateIntegrationEnabled()}`);
+console.log(`  - 重複排除: ${ConfigManager.isDuplicateEliminationEnabled()}`);
+console.log(`  - パフォーマンス: ${ConfigManager.isCoordinatePerformanceEnabled()}`);
+console.log(`  - Phase2準備: ${ConfigManager.isPhase2LayerReady()}`);
+console.log('📋 座標統合診断:', ConfigManager.diagnoseCoordinateIntegration());
+console.log('💡 使用例: ConfigManager.get("coordinate.integration.managerCentralization")');
