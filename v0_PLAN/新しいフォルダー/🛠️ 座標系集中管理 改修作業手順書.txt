@@ -1,0 +1,276 @@
+# 🛠️ 高DPI設定除去と座標系集中管理 改修作業手順書
+
+## 📋 改修概要
+
+### 改修目的
+1. **高DPI設定の除去**: レイヤー実装時の複雑性削減、ふたばちゃんねる投稿時のリサイズ対策
+2. **座標系の集中管理**: ファイル跨ぎの重複座標制御の排除、DRY・SOLID原則の徹底
+
+### 現状分析結果
+- `js/app-core.js`にて`devicePixelRatio`の使用を確認
+- `js/utils/coordinate-manager.js`にて`scaleCompensation`設定が存在
+- ConfigManager内で`resolution`設定が分散
+- 座標変換処理が複数箇所に分散している可能性
+
+## 🎯 Phase2移行前小規模改修計画
+
+### Task 1: 高DPI設定除去
+**改修対象**: `js/app-core.js`, `js/utils/config-manager.js`, `js/utils/coordinate-manager.js`
+
+### Task 2: 座標系集中管理
+**改修対象**: `js/utils/coordinate-manager.js`（主軸）, 他の座標参照ファイル
+
+---
+
+## 📝 Task 1: 高DPI設定除去作業手順
+
+### Step 1-1: ConfigManagerのDPI関連設定除去
+**ファイル**: `js/utils/config-manager.js`
+**作業内容**: PixiJS設定内の解像度設定を固定値に変更
+
+```javascript
+// 変更前:
+pixi: {
+    antialias: true,
+    resolution: 1,  // または window.devicePixelRatio
+    autoDensity: false,
+    cursor: 'crosshair'
+}
+
+// 変更後:
+pixi: {
+    antialias: true,
+    resolution: 1,  // 固定値1に統一
+    autoDensity: false, // 高DPI自動調整を無効化
+    cursor: 'crosshair'
+}
+```
+
+**参考メソッド・シンボル**:
+- `ConfigManager.defaultConfig.pixi`
+- `getPixiConfig()`
+
+### Step 1-2: AppCoreのDPI補償処理除去
+**ファイル**: `js/app-core.js`
+**作業内容**: PixiJS Application初期化時のDPI関連処理除去
+
+```javascript
+// 変更前（142行目付近）:
+this.app = new PIXI.Application({
+    width: canvasConfig.width,
+    height: canvasConfig.height,
+    backgroundColor: canvasConfig.backgroundColor,
+    antialias: pixiConfig.antialias,
+    resolution: pixiConfig.resolution || window.devicePixelRatio || 1  // ← この部分
+});
+
+// 変更後:
+this.app = new PIXI.Application({
+    width: canvasConfig.width,
+    height: canvasConfig.height,
+    backgroundColor: canvasConfig.backgroundColor,
+    antialias: pixiConfig.antialias,
+    resolution: 1  // 固定値1に統一、DPI補償なし
+});
+```
+
+**参考メソッド・シンボル**:
+- `AppCore.initializePixiApp()`
+- `ConfigManager.getPixiConfig()`
+
+### Step 1-3: CoordinateManagerのスケール補償除去
+**ファイル**: `js/utils/coordinate-manager.js`
+**作業内容**: スケール補償設定を無効化、関連処理を簡素化
+
+```javascript
+// 変更前（座標変換処理内、49行目付近）:
+// スケール補償適用
+if (this.scaleCompensation) {
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    if (devicePixelRatio !== 1) {
+        canvasX /= devicePixelRatio;
+        canvasY /= devicePixelRatio;
+    }
+}
+
+// 変更後:
+// スケール補償処理を完全削除
+// devicePixelRatio関連処理も削除
+```
+
+**参考メソッド・シンボル**:
+- `CoordinateManager.screenToCanvas()`
+- `ConfigManager.getCoordinateConfig()`
+
+### Step 1-4: ConfigManagerの座標設定更新
+**ファイル**: `js/utils/config-manager.js`
+**作業内容**: 座標設定内のスケール補償設定を無効化
+
+```javascript
+// 変更前:
+coordinate: {
+    precision: 2,
+    boundaryClamp: true,
+    scaleCompensation: true,  // ← falseに変更
+    touchScaling: 1.0,
+    debugging: false,
+    // ...
+}
+
+// 変更後:
+coordinate: {
+    precision: 2,
+    boundaryClamp: true,
+    scaleCompensation: false,  // DPI補償無効化
+    touchScaling: 1.0,
+    debugging: false,
+    // ...
+}
+```
+
+---
+
+## 📝 Task 2: 座標系集中管理作業手順
+
+### Step 2-1: 座標変換処理の重複確認
+**確認対象ファイル**:
+- `managers/canvas-manager.js`
+- `managers/tool-manager.js` 
+- `tools/pen-tool.js`
+- その他Manager系ファイル
+
+**確認内容**:
+- `screenToCanvas`類似処理の存在確認
+- 独自座標変換ロジックの存在確認
+- `getBoundingClientRect()`の直接使用確認
+
+### Step 2-2: 重複座標処理の統一化
+**作業方針**: 全ての座標変換を`CoordinateManager`経由に統一
+
+**変更パターン例**:
+```javascript
+// 変更前（他ファイルでの直接座標変換）:
+const rect = canvas.getBoundingClientRect();
+const x = event.clientX - rect.left;
+const y = event.clientY - rect.top;
+
+// 変更後（CoordinateManager経由）:
+const coords = this.coordinateManager.extractPointerCoordinates(
+    event, 
+    canvas.getBoundingClientRect()
+);
+const x = coords.canvas.x;
+const y = coords.canvas.y;
+```
+
+**参考メソッド・シンボル**:
+- `CoordinateManager.extractPointerCoordinates()`
+- `CoordinateManager.screenToCanvas()`
+
+### Step 2-3: CoordinateManagerの責任境界明確化
+**ファイル**: `js/utils/coordinate-manager.js`
+**作業内容**: メソッド責任の明確化、不要な複雑性の除去
+
+**責任分界**:
+- ✅ 座標変換（screen ↔ canvas ↔ pixi）
+- ✅ 筆圧抽出
+- ✅ 距離・角度計算
+- ❌ UI更新（他のManagerの責任）
+- ❌ 描画処理（ToolManagerの責任）
+
+### Step 2-4: 統一システム依存関係の確認
+**確認項目**:
+- ConfigManager依存の適切性
+- ErrorManager統合の確認
+- EventBus通知の適切性
+
+---
+
+## 🔍 改修後検証手順
+
+### 検証Step 1: 高DPI設定除去の確認
+```javascript
+// ブラウザコンソールで実行
+window.getConfig('pixi.resolution')  // → 1 である事を確認
+window.CoordinateManager.coordinateConfig.scaleCompensation  // → false である事を確認
+```
+
+### 検証Step 2: 座標変換精度テスト
+```javascript
+// CoordinateManagerの座標変換テスト実行
+window.CoordinateManager.runCoordinateTest()
+```
+
+### 検証Step 3: 描画動作確認
+1. キャンバス上でペン描画実行
+2. 座標表示の正確性確認
+3. 境界付近での描画動作確認
+
+### 検証Step 4: システム統合確認
+```javascript
+// 統一システムテスト実行
+window.testUnifiedSystems()
+window.checkUnifiedHealth()
+```
+
+---
+
+## 📚 参考情報
+
+### 重要なファイル・メソッド一覧
+- `ConfigManager.defaultConfig.pixi.resolution`
+- `ConfigManager.defaultConfig.coordinate.scaleCompensation`
+- `CoordinateManager.screenToCanvas()`
+- `CoordinateManager.extractPointerCoordinates()`
+- `AppCore.initializePixiApp()`
+
+### Phase2移行への影響
+- レイヤーシステム実装時の座標変換が単純化される
+- 変形機能実装時の複雑性が削減される
+- メモリ使用量の最適化が期待される
+
+### PixiJSv8移行への準備
+- 固定resolution=1により、v8移行時の変更箇所が明確になる
+- 新しいAPI（WebGPU等）との互換性が向上する
+
+---
+
+## ⚠️ 注意事項
+
+### 既存コード保持の原則
+- 動作中の他の機能に影響を与えない
+- 統一システム（ConfigManager/ErrorManager/StateManager/EventBus）の依存関係を維持
+- DRY・SOLID原則を遵守
+
+### 改修時の禁止事項
+- @pixiライブラリの車輪の再発明
+- Pure JavaScript以外の構文使用
+- ESM（ES Modules）の使用
+- 新規グローバル参照の作成
+
+### コメントアウト規則
+```javascript
+// MODIFIED: 高DPI設定除去のため resolution を固定値1に変更
+// REASON: Phase2レイヤー実装の複雑性削減、ふたばちゃんねる投稿対策
+// V8_READY: PixiJSv8移行時に再検討
+```
+
+---
+
+## 🎯 成果物
+
+### 改修完了時の期待効果
+1. **座標変換の単純化**: DPI補償処理の除去により処理が高速化
+2. **コード重複の排除**: 座標関連処理の`CoordinateManager`への集約
+3. **保守性の向上**: 座標系の責任境界が明確化
+4. **Phase2準備完了**: レイヤーシステム実装への基盤整備
+
+### 品質指標
+- 座標変換精度: ±1px以内の精度維持
+- パフォーマンス: 描画レスポンス性能の維持または向上
+- 統一システム統合率: 100%維持
+- コード重複率: 0%達成（座標関連）
+
+---
+
+*改修作業は上記手順に従って段階的に実施し、各Stepの完了後に検証を実行してください。*
