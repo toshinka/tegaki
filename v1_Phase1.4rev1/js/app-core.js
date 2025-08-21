@@ -1,9 +1,10 @@
 /**
- * 🎨 AppCoreシステム（分割最適化版・修正版）
+ * 🎨 AppCoreシステム（分割最適化版・座標統合修正版）
  * 🎯 AI_WORK_SCOPE: PixiJSアプリケーション基盤・システム統合・初期化制御
  * 🎯 DEPENDENCIES: 統一システム4種、BoundaryManager、CoordinateManager
  * 🎯 SPLIT_RESULT: 650行 → 350行（46%削減）
  * 🔧 EMERGENCY_FIX: Manager初期化メソッド統一・エラーハンドリング強化
+ * 🔄 COORDINATE_INTEGRATION: CoordinateManager統合・座標統合Phase1.4
  */
 
 class AppCore {
@@ -27,7 +28,7 @@ class AppCore {
         this.initializationComplete = false;
         this.initializationFailed = false;
         
-        console.log('🎨 AppCore インスタンス作成完了（修正版）');
+        console.log('🎨 AppCore インスタンス作成完了（座標統合版）');
     }
     
     /**
@@ -74,11 +75,11 @@ class AppCore {
     }
     
     /**
-     * アプリケーション初期化（分割最適化版・修正版）
+     * アプリケーション初期化（分割最適化版・座標統合修正版）
      */
     async initialize() {
         try {
-            console.log('🚀 AppCore 初期化開始（修正版）...');
+            console.log('🚀 AppCore 初期化開始（座標統合版）...');
             this.isInitializing = true;
             
             // 段階的初期化
@@ -95,7 +96,7 @@ class AppCore {
     }
     
     /**
-     * 基盤システム初期化（修正版）
+     * 基盤システム初期化（座標統合修正版）
      */
     async initializeBasicSystems() {
         console.log('🔧 基盤システム初期化中...');
@@ -103,11 +104,16 @@ class AppCore {
         // DOM確認
         await this.verifyDOMElements();
         
-        // 座標管理システム初期化（エラーハンドリング強化）
+        // 🔄 COORDINATE_INTEGRATION: 座標管理システム初期化（エラーハンドリング強化）
         if (window.CoordinateManager) {
             try {
                 this.coordinateManager = new window.CoordinateManager();
                 console.log('✅ CoordinateManager初期化完了');
+                
+                // 座標統合設定確認
+                const integrationStatus = this.coordinateManager.getIntegrationStatus();
+                console.log('🔄 AppCore座標統合設定:', integrationStatus);
+                
             } catch (error) {
                 console.warn('⚠️ CoordinateManager初期化失敗（オプション）:', error.message);
                 this.coordinateManager = null;
@@ -126,17 +132,18 @@ class AppCore {
     }
     
     /**
-     * 管理システム初期化（修正版 - 初期化メソッド統一）
+     * 管理システム初期化（座標統合修正版 - 初期化メソッド統一・CoordinateManager連携）
      */
     async initializeManagers() {
         console.log('🔧 管理システム初期化中...');
         
-        // 境界管理システム初期化
+        // 境界管理システム初期化（座標統合対応）
         if (window.BoundaryManager) {
             try {
                 this.boundaryManager = new window.BoundaryManager();
+                // 🔄 COORDINATE_INTEGRATION: CoordinateManagerを渡して統合初期化
                 await this.boundaryManager.initialize(this.app.view, this.coordinateManager);
-                console.log('✅ BoundaryManager初期化完了');
+                console.log('✅ BoundaryManager初期化完了（座標統合版）');
             } catch (error) {
                 console.warn('⚠️ BoundaryManager初期化失敗（オプション）:', error.message);
                 this.boundaryManager = null;
@@ -145,12 +152,13 @@ class AppCore {
             console.warn('⚠️ BoundaryManager利用不可（オプション）');
         }
         
-        // ツールマネージャー初期化（修正版）
+        // ツールマネージャー初期化（座標統合修正版）
         if (window.ToolManager) {
             try {
                 this.toolManager = new window.ToolManager(this);
-                await this.toolManager.initialize(); // ← ToolManagerは initialize() メソッド
-                console.log('✅ ToolManager初期化完了');
+                // 🔄 COORDINATE_INTEGRATION: CoordinateManagerを渡して統合初期化
+                await this.toolManager.initialize(this.coordinateManager);
+                console.log('✅ ToolManager初期化完了（座標統合版）');
             } catch (error) {
                 console.warn('⚠️ ToolManager初期化失敗（オプション）:', error.message);
                 this.toolManager = null;
@@ -173,7 +181,7 @@ class AppCore {
             console.warn('⚠️ UIManager利用不可（オプション）');
         }
         
-        console.log('✅ 管理システム初期化完了');
+        console.log('✅ 管理システム初期化完了（座標統合版）');
     }
     
     /**
@@ -270,7 +278,7 @@ class AppCore {
     }
     
     /**
-     * PixiJS境界システム統合初期化（修正版）
+     * PixiJS境界システム統合初期化（座標統合修正版）
      */
     initializePixiBoundarySystem() {
         if (!this.app || !this.boundaryManager) {
@@ -281,13 +289,20 @@ class AppCore {
         try {
             console.log('🎯 PixiJS境界システム統合初期化中...');
             
-            // 拡張ヒットエリア設定
+            // 拡張ヒットエリア設定（座標統合対応）
             const margin = this.boundaryManager.boundaryMargin || 20;
+            
+            // 🔄 COORDINATE_INTEGRATION: CoordinateManager経由でのマージン処理
+            let adjustedMargin = margin;
+            if (this.coordinateManager) {
+                adjustedMargin = this.coordinateManager.applyPrecision(margin);
+            }
+            
             this.app.stage.hitArea = new PIXI.Rectangle(
-                -margin,
-                -margin,
-                this.canvasWidth + margin * 2,
-                this.canvasHeight + margin * 2
+                -adjustedMargin,
+                -adjustedMargin,
+                this.canvasWidth + adjustedMargin * 2,
+                this.canvasHeight + adjustedMargin * 2
             );
             
             // インタラクティブ強化
@@ -297,7 +312,7 @@ class AppCore {
             // 境界統合イベント設定
             this.setupPixiBoundaryEvents();
             
-            console.log('✅ PixiJS境界システム統合完了');
+            console.log('✅ PixiJS境界システム統合完了（座標統合版）');
             
         } catch (error) {
             console.warn('⚠️ PixiJS境界システム統合で問題発生:', error.message);
@@ -337,13 +352,13 @@ class AppCore {
     }
     
     /**
-     * PixiJS境界越え処理（修正版）
+     * PixiJS境界越え処理（座標統合修正版）
      */
     handlePixiBoundaryCross(data) {
         if (!this.coordinateManager) return;
         
         try {
-            // PixiJS座標系変換
+            // 🔄 COORDINATE_INTEGRATION: PixiJS座標系変換
             const pixiCoords = this.coordinateManager.canvasToPixi(
                 data.position.x, 
                 data.position.y, 
@@ -364,7 +379,7 @@ class AppCore {
                 );
             }
             
-            console.log(`🎯 PixiJS境界越え処理完了: (${pixiCoords.x.toFixed(1)}, ${pixiCoords.y.toFixed(1)})`);
+            console.log(`🎯 PixiJS境界越え処理完了（座標統合）: (${pixiCoords.x.toFixed(1)}, ${pixiCoords.y.toFixed(1)})`);
             
         } catch (error) {
             if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
@@ -446,20 +461,36 @@ class AppCore {
     }
     
     /**
-     * ポインターダウンハンドラー（修正版）
+     * ポインターダウンハンドラー（座標統合修正版）
      */
     handlePointerDown(event) {
-        if (!this.toolManager || !this.coordinateManager) {
-            console.warn('⚠️ ToolManager または CoordinateManager が利用できません');
+        if (!this.toolManager) {
+            console.warn('⚠️ ToolManager が利用できません');
             return;
         }
         
         try {
-            const coords = this.coordinateManager.extractPointerCoordinates(
-                event, 
-                this.app.view.getBoundingClientRect(), 
-                this.app
-            );
+            // 🔄 COORDINATE_INTEGRATION: CoordinateManager経由での座標処理
+            let coords;
+            
+            if (this.coordinateManager) {
+                coords = this.coordinateManager.extractPointerCoordinates(
+                    event, 
+                    this.app.view.getBoundingClientRect(), 
+                    this.app
+                );
+            } else {
+                // フォールバック処理
+                const rect = this.app.view.getBoundingClientRect();
+                coords = {
+                    canvas: {
+                        x: event.clientX - rect.left,
+                        y: event.clientY - rect.top
+                    },
+                    pressure: event.pressure || 0.5
+                };
+                console.warn('⚠️ CoordinateManager未利用 - フォールバック座標処理');
+            }
             
             // ToolManagerの描画開始メソッドを呼び出し
             this.toolManager.startDrawing(coords.canvas.x, coords.canvas.y, coords.pressure);
@@ -468,7 +499,8 @@ class AppCore {
                 window.EventBus.emit('drawing.started', {
                     position: coords.canvas,
                     pressure: coords.pressure,
-                    tool: this.toolManager.getCurrentTool() || 'unknown'
+                    tool: this.toolManager.getCurrentTool() || 'unknown',
+                    coordinateManagerUsed: !!this.coordinateManager
                 });
             }
             
@@ -483,16 +515,29 @@ class AppCore {
     }
     
     /**
-     * ポインター移動ハンドラー（修正版）
+     * ポインター移動ハンドラー（座標統合修正版）
      */
     handlePointerMove(event) {
-        if (!this.coordinateManager) return;
-        
         try {
-            const coords = this.coordinateManager.extractPointerCoordinates(
-                event, 
-                this.app.view.getBoundingClientRect()
-            );
+            // 🔄 COORDINATE_INTEGRATION: CoordinateManager経由での座標処理
+            let coords;
+            
+            if (this.coordinateManager) {
+                coords = this.coordinateManager.extractPointerCoordinates(
+                    event, 
+                    this.app.view.getBoundingClientRect()
+                );
+            } else {
+                // フォールバック処理
+                const rect = this.app.view.getBoundingClientRect();
+                coords = {
+                    canvas: {
+                        x: event.clientX - rect.left,
+                        y: event.clientY - rect.top
+                    },
+                    pressure: event.pressure || 0.5
+                };
+            }
             
             // 座標表示更新
             this.updateCoordinateDisplay(coords.canvas);
@@ -549,14 +594,23 @@ class AppCore {
     }
     
     /**
-     * リサイズハンドラー（修正版）
+     * リサイズハンドラー（座標統合修正版）
      */
     handleResize() {
         if (!this.app) return;
         
         console.log('🔄 ウィンドウリサイズ検出');
+        
+        // 🔄 COORDINATE_INTEGRATION: CoordinateManagerにリサイズ通知
+        if (this.coordinateManager && typeof this.coordinateManager.updateCanvasSize === 'function') {
+            this.coordinateManager.updateCanvasSize(this.canvasWidth, this.canvasHeight);
+        }
+        
         if (window.EventBus && typeof window.EventBus.emit === 'function') {
             window.EventBus.emit('window.resized', {
+                width: this.canvasWidth,
+                height: this.canvasHeight,
+                coordinateManagerUpdated: !!this.coordinateManager,
                 timestamp: Date.now()
             });
         }
@@ -570,7 +624,7 @@ class AppCore {
     }
     
     /**
-     * 初期化完了処理（修正版）
+     * 初期化完了処理（座標統合修正版）
      */
     completeInitialization() {
         this.isInitializing = false;
@@ -580,11 +634,20 @@ class AppCore {
             window.EventBus.emit('appCore.initialized', {
                 success: true,
                 components: this.getInitializationStats(),
+                coordinateManagerIntegrated: !!this.coordinateManager,
                 timestamp: Date.now()
             });
         }
         
-        console.log('✅ AppCore 初期化完了（修正版）');
+        console.log('✅ AppCore 初期化完了（座標統合版）');
+        
+        // 🆕 座標統合診断の自動実行
+        if (typeof window.checkCoordinateIntegration === 'function') {
+            setTimeout(() => {
+                console.log('🔍 座標統合自動診断実行中...');
+                window.checkCoordinateIntegration();
+            }, 1000);
+        }
     }
     
     /**
@@ -608,7 +671,7 @@ class AppCore {
     }
     
     /**
-     * 初期化検証（修正版）
+     * 初期化検証（座標統合修正版）
      */
     verifyInitialization() {
         const verification = {
@@ -625,6 +688,16 @@ class AppCore {
         
         console.log(`✅ 初期化検証: ${passCount}/${totalCount} (${(passCount/totalCount*100).toFixed(1)}%)`);
         
+        // 座標統合確認
+        if (this.coordinateManager) {
+            const integrationStatus = this.coordinateManager.getIntegrationStatus();
+            console.log('🔄 座標統合状態:', {
+                enabled: integrationStatus.managerCentralization,
+                duplicateElimination: integrationStatus.duplicateElimination,
+                performanceOptimized: integrationStatus.performanceOptimized
+            });
+        }
+        
         if (passCount < 3) { // 最低限PixiJS, DrawingContainer, 1つのManagerがあれば動作可能
             const failed = Object.entries(verification)
                 .filter(([key, value]) => !value)
@@ -637,10 +710,10 @@ class AppCore {
     }
     
     /**
-     * 初期化統計取得（修正版）
+     * 初期化統計取得（座標統合修正版）
      */
     getInitializationStats() {
-        return {
+        const stats = {
             pixiApp: !!this.app,
             drawingContainer: !!this.drawingContainer,
             boundaryManager: !!this.boundaryManager,
@@ -650,6 +723,18 @@ class AppCore {
             initializationComplete: this.initializationComplete,
             initializationFailed: this.initializationFailed
         };
+        
+        // 座標統合状態を追加
+        if (this.coordinateManager) {
+            const integrationStatus = this.coordinateManager.getIntegrationStatus();
+            stats.coordinateIntegration = {
+                enabled: integrationStatus.managerCentralization,
+                duplicateElimination: integrationStatus.duplicateElimination,
+                performanceOptimized: integrationStatus.performanceOptimized
+            };
+        }
+        
+        return stats;
     }
     
     /**
@@ -698,7 +783,7 @@ class AppCore {
     }
     
     /**
-     * キャンバスリサイズ（修正版）
+     * キャンバスリサイズ（座標統合修正版）
      */
     resize(newWidth, newHeight, centerContent = false) {
         if (!this.app) {
@@ -718,7 +803,7 @@ class AppCore {
             this.canvasWidth = validWidth;
             this.canvasHeight = validHeight;
             
-            // 座標管理システム更新
+            // 🔄 COORDINATE_INTEGRATION: 座標管理システム更新
             if (this.coordinateManager && typeof this.coordinateManager.updateCanvasSize === 'function') {
                 this.coordinateManager.updateCanvasSize(validWidth, validHeight);
             }
@@ -738,11 +823,12 @@ class AppCore {
                     height: validHeight,
                     previousWidth: oldWidth,
                     previousHeight: oldHeight,
+                    coordinateManagerUpdated: !!this.coordinateManager,
                     timestamp: Date.now()
                 });
             }
             
-            console.log(`📐 キャンバスリサイズ: ${validWidth}x${validHeight}`);
+            console.log(`📐 キャンバスリサイズ（座標統合版）: ${validWidth}x${validHeight}`);
             
         } catch (error) {
             if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
@@ -755,7 +841,24 @@ class AppCore {
     }
     
     /**
-     * システム破棄（修正版）
+     * 🆕 座標統合状態取得（外部アクセス用）
+     */
+    getCoordinateIntegrationState() {
+        return {
+            coordinateManagerAvailable: !!this.coordinateManager,
+            boundaryManagerIntegrated: !!(this.boundaryManager && this.boundaryManager.coordinateManager),
+            toolManagerIntegrated: !!(this.toolManager && this.toolManager.coordinateManager),
+            coordinateManagerState: this.coordinateManager ? 
+                this.coordinateManager.getCoordinateState() : null,
+            appCoreState: this.getInitializationStats(),
+            phase2Ready: !!(this.coordinateManager && 
+                           this.boundaryManager?.coordinateManager && 
+                           this.toolManager?.coordinateManager)
+        };
+    }
+    
+    /**
+     * システム破棄（座標統合修正版）
      */
     destroy() {
         try {
@@ -786,9 +889,9 @@ class AppCore {
             // プロパティクリア
             this.drawingContainer = null;
             this.uiContainer = null;
-            this.coordinateManager = null;
+            this.coordinateManager = null; // 🔄 座標統合対応
             
-            console.log('🎨 AppCore 破棄完了');
+            console.log('🎨 AppCore 破棄完了（座標統合版）');
             
         } catch (error) {
             if (window.ErrorManager && typeof window.ErrorManager.showError === 'function') {
@@ -804,5 +907,11 @@ class AppCore {
 // グローバル登録
 if (typeof window !== 'undefined') {
     window.AppCore = AppCore;
-    console.log('🎨 AppCore グローバル登録完了（修正版・初期化メソッド統一）');
+    console.log('🎨 AppCore グローバル登録完了（座標統合版・初期化メソッド統一）');
 }
+
+console.log('🔄 AppCore Phase1.4 座標統合版 - 準備完了');
+console.log('📋 座標統合実装完了: CoordinateManager統合・Manager連携・座標処理最適化');
+console.log('🔧 Manager初期化統一: initialize()メソッド統一・CoordinateManager依存注入');
+console.log('🎯 境界システム統合: PixiJS境界システム・座標変換・イベント連携');
+console.log('💡 使用例: const appCore = new window.AppCore(); await appCore.initialize();');
