@@ -5,12 +5,12 @@
  * 🎯 UNIFIED_SYSTEMS: ✅ ConfigManager, ErrorManager, StateManager, EventBus統合済み
  * 🎯 ISOLATION_TEST: ✅ 単体テスト可能（ツール単体機能）
  * 🎯 SPLIT_THRESHOLD: 500行制限遵守（ツール制御・分割慎重）
- * 🔄 COORDINATE_INTEGRATION: CoordinateManager統合・座標統合Phase1.4
+ * 🔄 COORDINATE_INTEGRATION: CoordinateManager統合完了
  */
 
 /**
  * ツール管理システム（統一システム統合版・座標統合修正版）
- * 統一システム完全活用・EventBus疎結合・設定値統一・座標統合対応
+ * 統一システム完全活用・EventBus疎結合・設定値統一
  * Pure JavaScript完全準拠・グローバル公開方式
  */
 class ToolManager {
@@ -33,19 +33,14 @@ class ToolManager {
         
         // 🔄 COORDINATE_INTEGRATION: CoordinateManager統合
         this.coordinateManager = null;
-        this.coordinateIntegration = {
-            enabled: false,
-            duplicateElimination: false,
-            performanceOptimized: false
-        };
         
-        console.log(`🎨 ToolManager ${this.version} 構築開始（座標統合版）...`);
+        console.log(`🎨 ToolManager ${this.version} 構築開始（座標統合修正版）...`);
     }
     
     /**
-     * 統一システム統合・ツール管理システム初期化（座標統合版）
+     * 統一システム統合・ツール管理システム初期化（修正版）
      */
-    async initialize(coordinateManager = null) {
+    async initialize() {
         console.group(`🎨 ToolManager 統一システム統合初期化開始 - ${this.version}`);
         
         try {
@@ -54,8 +49,8 @@ class ToolManager {
             // Phase 1: 統一システム依存性確認・設定
             this.validateAndSetupUnifiedSystems();
             
-            // 🔄 COORDINATE_INTEGRATION: CoordinateManager統合
-            this.initializeCoordinateManagerIntegration(coordinateManager);
+            // 🔄 COORDINATE_INTEGRATION: CoordinateManager統合初期化
+            this.initializeCoordinateManagerIntegration();
             
             // Phase 2: デフォルトツール設定（初期化順序修正）
             this.initializeDefaultTool();
@@ -77,9 +72,9 @@ class ToolManager {
                 this.stateManager.updateComponentState('toolManager', 'initialized', {
                     initTime,
                     unifiedSystemsEnabled: true,
-                    coordinateManagerIntegrated: !!this.coordinateManager,
                     currentTool: this.currentTool,
-                    version: this.version
+                    version: this.version,
+                    coordinateManagerIntegrated: !!this.coordinateManager
                 });
             }
             
@@ -92,52 +87,6 @@ class ToolManager {
             
         } finally {
             console.groupEnd();
-        }
-    }
-    
-    /**
-     * 🔄 CoordinateManager統合初期化
-     */
-    initializeCoordinateManagerIntegration(coordinateManager = null) {
-        console.log('🔄 ToolManager座標統合初期化開始...');
-        
-        try {
-            // 外部から提供された場合はそれを使用
-            if (coordinateManager) {
-                this.coordinateManager = coordinateManager;
-                console.log('✅ ToolManager: 外部CoordinateManager統合完了');
-            }
-            // グローバルから取得を試行
-            else if (window.CoordinateManager) {
-                this.coordinateManager = new window.CoordinateManager();
-                console.log('✅ ToolManager: 新規CoordinateManager作成・統合完了');
-            }
-            // 利用できない場合の警告
-            else {
-                console.warn('⚠️ ToolManager: CoordinateManager利用不可 - フォールバック処理で継続');
-                this.coordinateManager = null;
-            }
-            
-            // 座標統合設定確認
-            if (this.coordinateManager) {
-                const integrationStatus = this.coordinateManager.getIntegrationStatus();
-                this.coordinateIntegration = {
-                    enabled: integrationStatus.managerCentralization,
-                    duplicateElimination: integrationStatus.duplicateElimination,
-                    performanceOptimized: integrationStatus.performanceOptimized
-                };
-                
-                if (!this.coordinateIntegration.enabled) {
-                    console.warn('⚠️ ToolManager: 座標統合が無効です。ConfigManagerで coordinate.integration.managerCentralization を有効化してください');
-                }
-                
-                console.log('🔄 ToolManager座標統合設定:', this.coordinateIntegration);
-            }
-            
-        } catch (error) {
-            console.warn('⚠️ CoordinateManager統合でエラー:', error.message);
-            this.coordinateManager = null;
-            this.coordinateIntegration.enabled = false;
         }
     }
     
@@ -172,6 +121,35 @@ class ToolManager {
         }
         
         console.log('✅ 統一システム依存性確認完了');
+    }
+    
+    /**
+     * 🆕 COORDINATE_FEATURE: CoordinateManager統合初期化
+     */
+    initializeCoordinateManagerIntegration() {
+        console.log('🔄 CoordinateManager統合初期化開始...');
+        
+        try {
+            // CoordinateManager利用可能性確認
+            if (window.CoordinateManager) {
+                this.coordinateManager = new window.CoordinateManager();
+                console.log('✅ ToolManager: CoordinateManager統合完了');
+                
+                // 座標統合設定確認
+                const integrationConfig = this.configManager.diagnoseCoordinateIntegration();
+                if (integrationConfig.overallReady) {
+                    console.log('✅ 座標統合設定準備完了');
+                } else {
+                    console.warn(`⚠️ 座標統合設定不完全: ${integrationConfig.readinessScore}%`);
+                }
+                
+            } else {
+                console.warn('⚠️ ToolManager: CoordinateManager利用不可');
+                // CoordinateManagerなしでも動作継続
+            }
+        } catch (error) {
+            console.warn('⚠️ CoordinateManager統合初期化失敗:', error.message);
+        }
     }
     
     /**
@@ -388,451 +366,7 @@ class ToolManager {
     }
     
     // ==========================================
-    // 🎯 設定操作メソッド群
-    // ==========================================
-    
-    /**
-     * ブラシサイズ設定
-     */
-    setBrushSize(size) {
-        try {
-            const normalizedSize = Math.max(0.1, Math.min(100, Math.round(size * 10) / 10));
-            this.updateToolSetting(this.currentTool, 'brushSize', normalizedSize);
-            console.log(`🖌️ ブラシサイズ: ${normalizedSize}px`);
-            
-        } catch (error) {
-            if (this.errorManager) {
-                this.errorManager.showError('warning', 'ブラシサイズ設定失敗: ' + error.message);
-            }
-        }
-    }
-    
-    /**
-     * 不透明度設定
-     */
-    setOpacity(opacity) {
-        try {
-            const normalizedOpacity = Math.max(0, Math.min(1, Math.round(opacity * 1000) / 1000));
-            this.updateToolSetting(this.currentTool, 'opacity', normalizedOpacity);
-            console.log(`🌫️ 不透明度: ${Math.round(normalizedOpacity * 100)}%`);
-            
-        } catch (error) {
-            if (this.errorManager) {
-                this.errorManager.showError('warning', '不透明度設定失敗: ' + error.message);
-            }
-        }
-    }
-    
-    /**
-     * 筆圧設定
-     */
-    setPressure(pressure) {
-        try {
-            const normalizedPressure = Math.max(0, Math.min(1, Math.round(pressure * 1000) / 1000));
-            this.updateToolSetting(this.currentTool, 'pressure', normalizedPressure);
-            console.log(`✍️ 筆圧: ${Math.round(normalizedPressure * 100)}%`);
-            
-        } catch (error) {
-            if (this.errorManager) {
-                this.errorManager.showError('warning', '筆圧設定失敗: ' + error.message);
-            }
-        }
-    }
-    
-    /**
-     * 線補正設定
-     */
-    setSmoothing(smoothing) {
-        try {
-            const normalizedSmoothing = Math.max(0, Math.min(1, Math.round(smoothing * 1000) / 1000));
-            this.updateToolSetting(this.currentTool, 'smoothing', normalizedSmoothing);
-            console.log(`📏 線補正: ${Math.round(normalizedSmoothing * 100)}%`);
-            
-        } catch (error) {
-            if (this.errorManager) {
-                this.errorManager.showError('warning', '線補正設定失敗: ' + error.message);
-            }
-        }
-    }
-    
-    // ==========================================
-    // 🎯 状態取得メソッド群
-    // ==========================================
-    
-    /**
-     * 描画状態取得（座標統合情報追加版）
-     */
-    getDrawingState() {
-        return {
-            version: this.version,
-            unifiedSystemsEnabled: true,
-            coordinateManagerIntegrated: !!this.coordinateManager,
-            coordinateIntegration: this.coordinateIntegration,
-            currentTool: this.currentTool,
-            isDrawing: this.isDrawing,
-            globalSettings: this.globalSettings ? { ...this.globalSettings } : {},
-            registeredTools: Array.from(this.registeredTools.keys()),
-            currentPath: this.currentPath ? this.currentPath.id : null,
-            lastPoint: this.lastPoint ? { ...this.lastPoint } : null,
-            appCoreConnected: !!this.appCore
-        };
-    }
-    
-    /**
-     * ツール統計取得
-     */
-    getToolStats() {
-        const stats = {
-            version: this.version,
-            currentTool: this.currentTool,
-            registeredToolsCount: this.registeredTools.size,
-            isDrawing: this.isDrawing,
-            globalSettings: this.globalSettings ? { ...this.globalSettings } : {},
-            unifiedSystems: {
-                configManager: !!this.configManager,
-                errorManager: !!this.errorManager,
-                stateManager: !!this.stateManager,
-                eventBus: !!this.eventBus,
-                coordinateManager: !!this.coordinateManager
-            },
-            coordinateIntegration: this.coordinateIntegration
-        };
-        
-        return stats;
-    }
-    
-    /**
-     * ツール切り替え可能性チェック
-     */
-    canSwitchTo(tool) {
-        if (this.isDrawing) {
-            console.warn('⚠️ 描画中はツール変更できません');
-            return false;
-        }
-        
-        if (!this.isToolAvailable(tool)) {
-            console.warn(`⚠️ 利用できないツール: ${tool}`);
-            return false;
-        }
-        
-        return true;
-    }
-    
-    /**
-     * 安全なツール切り替え
-     */
-    safeSwitchTool(tool) {
-        if (!this.canSwitchTo(tool)) return false;
-        
-        // 描画中の場合は強制終了
-        if (this.isDrawing) {
-            this.stopDrawing();
-        }
-        
-        return this.setTool(tool);
-    }
-    
-    // ==========================================
-    // 🎯 座標統合診断・テストメソッド群
-    // ==========================================
-    
-    /**
-     * 🆕 座標統合状態取得（外部アクセス用）
-     */
-    getCoordinateIntegrationState() {
-        return {
-            coordinateManagerAvailable: !!this.coordinateManager,
-            integrationEnabled: this.coordinateIntegration.enabled,
-            duplicateElimination: this.coordinateIntegration.duplicateElimination,
-            performanceOptimized: this.coordinateIntegration.performanceOptimized,
-            coordinateManagerState: this.coordinateManager ? 
-                this.coordinateManager.getCoordinateState() : null,
-            toolManagerState: this.getDrawingState(),
-            phase2Ready: !!(this.coordinateManager && 
-                           this.coordinateIntegration.enabled)
-        };
-    }
-    
-    /**
-     * 🆕 ツール座標統合診断
-     */
-    runToolCoordinateIntegrationDiagnosis() {
-        console.group('🔍 ToolManager座標統合診断');
-        
-        const state = this.getCoordinateIntegrationState();
-        
-        const diagnosis = {
-            toolManager: {
-                initialized: !!this.currentTool,
-                coordinateManagerAvailable: !!this.coordinateManager,
-                coordinateIntegrationEnabled: state.integrationEnabled
-            },
-            coordinateIntegration: {
-                managerCentralization: this.coordinateIntegration.enabled,
-                duplicateElimination: this.coordinateIntegration.duplicateElimination,
-                performanceOptimized: this.coordinateIntegration.performanceOptimized
-            },
-            functionality: {
-                drawingCoordinateProcessing: !!this.coordinateManager,
-                coordinateValidationEnabled: !!this.coordinateManager,
-                precisionSupported: !!this.coordinateManager,
-                distanceOptimizationEnabled: !!this.coordinateManager
-            }
-        };
-        
-        // 推奨事項生成
-        const recommendations = [];
-        
-        if (!diagnosis.toolManager.coordinateManagerAvailable) {
-            recommendations.push('CoordinateManagerの初期化・統合が必要です');
-        }
-        
-        if (!diagnosis.coordinateIntegration.managerCentralization) {
-            recommendations.push('座標統合設定の有効化が必要です (coordinate.integration.managerCentralization)');
-        }
-        
-        if (!diagnosis.functionality.drawingCoordinateProcessing) {
-            recommendations.push('描画処理でフォールバック処理が使用されています');
-        }
-        
-        // 診断結果表示
-        console.log('📊 ツール座標統合診断結果:', diagnosis);
-        
-        if (recommendations.length > 0) {
-            console.warn('⚠️ 推奨事項:', recommendations);
-        } else {
-            console.log('✅ ツール座標統合: 全ての要件を満たしています');
-        }
-        
-        console.groupEnd();
-        
-        return {
-            diagnosis,
-            recommendations,
-            overallStatus: recommendations.length === 0 ? 'optimal' : 'needs-improvement'
-        };
-    }
-    
-    /**
-     * 🆕 ツール座標統合テスト
-     */
-    async runToolCoordinateTests() {
-        console.group('🧪 ToolManager座標統合テスト');
-        
-        const tests = [
-            {
-                name: '座標統合状態取得',
-                test: () => {
-                    const state = this.getCoordinateIntegrationState();
-                    return state && typeof state.coordinateManagerAvailable === 'boolean';
-                }
-            },
-            {
-                name: 'CoordinateManager統合確認',
-                test: () => {
-                    return !!this.coordinateManager || 
-                           !this.coordinateIntegration.enabled;
-                }
-            },
-            {
-                name: '描画座標処理テスト',
-                test: () => {
-                    // 座標処理のテスト（実際の描画は行わない）
-                    try {
-                        const mockCoords = { x: 100, y: 100 };
-                        
-                        if (this.coordinateManager) {
-                            return this.coordinateManager.validateCoordinateIntegrity(mockCoords);
-                        } else {
-                            return true; // CoordinateManagerがなくてもOK
-                        }
-                    } catch (error) {
-                        console.warn('描画座標処理テストエラー:', error.message);
-                        return false;
-                    }
-                }
-            },
-            {
-                name: 'ツール状態整合性テスト',
-                test: () => {
-                    const state = this.getDrawingState();
-                    return state && 
-                           state.currentTool && 
-                           state.coordinateIntegration !== undefined;
-                }
-            }
-        ];
-        
-        let passCount = 0;
-        
-        for (const testCase of tests) {
-            try {
-                const result = testCase.test();
-                const passed = !!result;
-                
-                console.log(`${passed ? '✅' : '❌'} ${testCase.name}: ${passed ? 'PASS' : 'FAIL'}`);
-                
-                if (passed) passCount++;
-                
-            } catch (error) {
-                console.log(`❌ ${testCase.name}: FAIL (${error.message})`);
-            }
-            
-            // テスト間の間隔
-            await new Promise(resolve => setTimeout(resolve, 10));
-        }
-        
-        console.log(`📊 ツール座標統合テスト結果: ${passCount}/${tests.length} パス`);
-        
-        const success = passCount === tests.length;
-        if (success) {
-            console.log('✅ 全ツール座標統合テスト合格');
-        } else {
-            console.warn('⚠️ 一部ツール座標統合テスト失敗');
-        }
-        
-        console.groupEnd();
-        
-        return success;
-    }
-    
-    // ==========================================
-    // 🎯 その他操作メソッド群
-    // ==========================================
-    
-    /**
-     * デバッグ情報出力（座標統合情報追加版）
-     */
-    debugInfo() {
-        const state = this.getDrawingState();
-        const stats = this.getToolStats();
-        const coordinateState = this.getCoordinateIntegrationState();
-        
-        console.group('🔧 ToolManager デバッグ情報（座標統合版）');
-        console.log('📊 状態:', state);
-        console.log('📈 統計:', stats);
-        console.log('🔄 座標統合状態:', coordinateState);
-        console.log('🔧 統一システム健全性:', this.checkUnifiedSystemHealth());
-        console.groupEnd();
-        
-        return { state, stats, coordinateState };
-    }
-    
-    /**
-     * 統一システム健全性チェック（座標統合追加版）
-     */
-    checkUnifiedSystemHealth() {
-        const health = {
-            configManager: !!this.configManager && typeof this.configManager.get === 'function',
-            errorManager: !!this.errorManager && typeof this.errorManager.showError === 'function',
-            stateManager: !!this.stateManager && typeof this.stateManager.updateComponentState === 'function',
-            eventBus: !!this.eventBus && typeof this.eventBus.emit === 'function',
-            coordinateManager: !!this.coordinateManager && typeof this.coordinateManager.screenToCanvas === 'function'
-        };
-        
-        const allHealthy = Object.values(health).every(Boolean);
-        
-        if (!allHealthy) {
-            console.warn('⚠️ 一部の統一システムに問題があります:', health);
-        }
-        
-        return { health, allHealthy };
-    }
-    
-    /**
-     * ツール設定リセット
-     */
-    resetToolSettings(toolName = null) {
-        try {
-            const targetTool = toolName || this.currentTool;
-            
-            if (!this.globalSettings[targetTool]) {
-                console.warn(`⚠️ 未知のツール: ${targetTool}`);
-                return false;
-            }
-            
-            // デフォルト設定の再読み込み
-            this.globalSettings[targetTool] = this.loadToolConfig(targetTool);
-            
-            console.log(`🔄 ツール設定リセット: ${targetTool}`);
-            
-            // EventBus経由でリセット通知
-            if (this.eventBus) {
-                this.eventBus.emit('tool:settings:reset', {
-                    tool: targetTool,
-                    settings: this.globalSettings[targetTool],
-                    timestamp: Date.now()
-                });
-            }
-            
-            return true;
-            
-        } catch (error) {
-            if (this.errorManager) {
-                this.errorManager.showError('warning', 'ツール設定リセット失敗: ' + error.message);
-            }
-            return false;
-        }
-    }
-    
-    /**
-     * 破棄処理（座標統合対応版）
-     */
-    destroy() {
-        try {
-            console.log('🗑️ ToolManager破棄開始...');
-            
-            // 描画中の場合は終了
-            if (this.isDrawing) {
-                this.stopDrawing();
-            }
-            
-            // EventBusリスナー解除
-            if (this.eventBus && typeof this.eventBus.off === 'function') {
-                this.eventBus.off('ui:tool:activated');
-                this.eventBus.off('config:changed');
-                this.eventBus.off('tool:pen:size:changed');
-                this.eventBus.off('tool:pen:opacity:changed');
-            }
-            
-            // 登録ツールクリア
-            this.registeredTools.clear();
-            
-            // 参照クリア
-            this.appCore = null;
-            this.currentPath = null;
-            this.lastPoint = null;
-            this.configManager = null;
-            this.errorManager = null;
-            this.stateManager = null;
-            this.eventBus = null;
-            this.coordinateManager = null; // 🔄 座標統合対応
-            
-            console.log('✅ ToolManager破棄完了');
-            
-        } catch (error) {
-            console.error('❌ ToolManager破棄エラー:', error);
-        }
-    }
-}
-
-// ==========================================
-// 🎯 Pure JavaScript グローバル公開
-// ==========================================
-
-if (typeof window !== 'undefined') {
-    window.ToolManager = ToolManager;
-    console.log('✅ ToolManager 座標統合版 グローバル公開完了（Pure JavaScript）');
-}
-
-console.log('🔧 ToolManager Phase1.4 座標統合版 - 準備完了');
-console.log('📋 統一システム統合完了: ConfigManager・ErrorManager・StateManager・EventBus');
-console.log('🔄 座標統合実装完了: CoordinateManager統合・座標処理最適化・診断機能');
-console.log('📋 初期化順序修正: デフォルトツール設定・フォールバック強化');
-console.log('🔧 StateManager API統一: updateSystemState → updateComponentState 修正');
-console.log('💡 使用例: const toolManager = new window.ToolManager(appCore); await toolManager.initialize(coordinateManager);');
-console.log('🧪 座標統合診断: toolManager.runToolCoordinateIntegrationDiagnosis()');
-console.log('🧪 座標統合テスト: toolManager.runToolCoordinateTests()'); EventBusイベントハンドラー群
+    // 🎯 EventBusイベントハンドラー群
     // ==========================================
     
     /**
@@ -1020,44 +554,40 @@ console.log('🧪 座標統合テスト: toolManager.runToolCoordinateTests()');
     }
     
     // ==========================================
-    // 🎯 描画処理メソッド群（座標統合対応版）
+    // 🎯 描画処理メソッド群（座標統合対応）
     // ==========================================
     
     /**
-     * 描画開始（座標統合対応版）
+     * 描画開始（座標統合対応）
      */
     startDrawing(x, y, pressure = 0.5) {
         try {
-            // 🔄 COORDINATE_INTEGRATION: CoordinateManager経由での座標処理
-            let processedCoords = { x, y };
-            
-            if (this.coordinateManager && this.coordinateIntegration.enabled) {
+            // 🔄 COORDINATE_INTEGRATION: 座標統合処理
+            let coordinateData = { x, y };
+            if (this.coordinateManager) {
                 // 座標妥当性確認
-                if (this.coordinateManager.validateCoordinateIntegrity({ x, y })) {
-                    // 精度適用
-                    processedCoords = {
-                        x: this.coordinateManager.applyPrecision(x),
-                        y: this.coordinateManager.applyPrecision(y)
-                    };
-                    
-                    console.log(`✏️ 描画開始（座標統合）: ${this.currentTool} at (${processedCoords.x.toFixed(1)}, ${processedCoords.y.toFixed(1)})`);
-                } else {
-                    throw new Error('描画開始座標が無効です');
+                if (this.coordinateManager.validateCoordinateIntegrity && 
+                    !this.coordinateManager.validateCoordinateIntegrity(coordinateData)) {
+                    console.warn('⚠️ 不正な座標データ');
+                    return;
                 }
-            } else {
-                console.log(`✏️ 描画開始（フォールバック）: ${this.currentTool} at (${Math.round(x)}, ${Math.round(y)})`);
+                
+                // 座標変換が必要な場合
+                if (this.coordinateManager.transformCoordinatesForLayer) {
+                    coordinateData = this.coordinateManager.transformCoordinatesForLayer(coordinateData);
+                }
             }
             
             this.isDrawing = true;
-            this.lastPoint = processedCoords;
+            this.lastPoint = coordinateData;
             
             // 現在のツールで描画開始
             const currentToolInstance = this.registeredTools.get(this.currentTool);
             if (currentToolInstance && typeof currentToolInstance.startDrawing === 'function') {
-                currentToolInstance.startDrawing(processedCoords.x, processedCoords.y, pressure);
+                currentToolInstance.startDrawing(coordinateData.x, coordinateData.y, pressure);
             } else {
                 // フォールバック: AppCore経由で描画
-                this.handleDrawingFallback('start', processedCoords.x, processedCoords.y, pressure);
+                this.handleDrawingFallback('start', coordinateData.x, coordinateData.y, pressure);
             }
             
             // StateManager経由で状態更新 - 修正版：updateComponentState使用
@@ -1065,11 +595,12 @@ console.log('🧪 座標統合テスト: toolManager.runToolCoordinateTests()');
                 this.stateManager.updateComponentState('toolManager', 'drawing', {
                     isDrawing: true,
                     tool: this.currentTool,
-                    startPoint: processedCoords,
-                    coordinateManagerUsed: !!this.coordinateManager,
+                    startPoint: coordinateData,
                     timestamp: Date.now()
                 });
             }
+            
+            console.log(`✏️ 描画開始: ${this.currentTool} at (${Math.round(coordinateData.x)}, ${Math.round(coordinateData.y)})`);
             
         } catch (error) {
             if (this.errorManager) {
@@ -1079,49 +610,38 @@ console.log('🧪 座標統合テスト: toolManager.runToolCoordinateTests()');
     }
     
     /**
-     * 描画継続（座標統合対応版）
+     * 描画継続（座標統合対応）
      */
     continueDrawing(x, y, pressure = 0.5) {
         if (!this.isDrawing) return;
         
         try {
-            // 🔄 COORDINATE_INTEGRATION: CoordinateManager経由での座標処理
-            let processedCoords = { x, y };
-            
-            if (this.coordinateManager && this.coordinateIntegration.enabled) {
+            // 🔄 COORDINATE_INTEGRATION: 座標統合処理
+            let coordinateData = { x, y };
+            if (this.coordinateManager) {
                 // 座標妥当性確認
-                if (this.coordinateManager.validateCoordinateIntegrity({ x, y })) {
-                    // 精度適用
-                    processedCoords = {
-                        x: this.coordinateManager.applyPrecision(x),
-                        y: this.coordinateManager.applyPrecision(y)
-                    };
-                    
-                    // 距離計算で描画最適化
-                    const distance = this.coordinateManager.calculateDistance(
-                        this.lastPoint, processedCoords
-                    );
-                    
-                    if (distance < 1.0) {
-                        // 最小描画距離未満の場合は描画をスキップ
-                        return;
-                    }
-                } else {
-                    console.warn('⚠️ 描画継続座標が無効です - スキップ');
+                if (this.coordinateManager.validateCoordinateIntegrity && 
+                    !this.coordinateManager.validateCoordinateIntegrity(coordinateData)) {
+                    console.warn('⚠️ 不正な座標データ');
                     return;
+                }
+                
+                // 座標変換が必要な場合
+                if (this.coordinateManager.transformCoordinatesForLayer) {
+                    coordinateData = this.coordinateManager.transformCoordinatesForLayer(coordinateData);
                 }
             }
             
             // 現在のツールで描画継続
             const currentToolInstance = this.registeredTools.get(this.currentTool);
             if (currentToolInstance && typeof currentToolInstance.continueDrawing === 'function') {
-                currentToolInstance.continueDrawing(processedCoords.x, processedCoords.y, pressure);
+                currentToolInstance.continueDrawing(coordinateData.x, coordinateData.y, pressure);
             } else {
                 // フォールバック処理
-                this.handleDrawingFallback('continue', processedCoords.x, processedCoords.y, pressure);
+                this.handleDrawingFallback('continue', coordinateData.x, coordinateData.y, pressure);
             }
             
-            this.lastPoint = processedCoords;
+            this.lastPoint = coordinateData;
             
         } catch (error) {
             if (this.errorManager) {
@@ -1183,4 +703,423 @@ console.log('🧪 座標統合テスト: toolManager.runToolCoordinateTests()');
     }
     
     // ==========================================
-    // 🎯
+    // 🎯 設定操作メソッド群
+    // ==========================================
+    
+    /**
+     * ブラシサイズ設定
+     */
+    setBrushSize(size) {
+        try {
+            const normalizedSize = Math.max(0.1, Math.min(100, Math.round(size * 10) / 10));
+            this.updateToolSetting(this.currentTool, 'brushSize', normalizedSize);
+            console.log(`🖌️ ブラシサイズ: ${normalizedSize}px`);
+            
+        } catch (error) {
+            if (this.errorManager) {
+                this.errorManager.showError('warning', 'ブラシサイズ設定失敗: ' + error.message);
+            }
+        }
+    }
+    
+    /**
+     * 不透明度設定
+     */
+    setOpacity(opacity) {
+        try {
+            const normalizedOpacity = Math.max(0, Math.min(1, Math.round(opacity * 1000) / 1000));
+            this.updateToolSetting(this.currentTool, 'opacity', normalizedOpacity);
+            console.log(`🌫️ 不透明度: ${Math.round(normalizedOpacity * 100)}%`);
+            
+        } catch (error) {
+            if (this.errorManager) {
+                this.errorManager.showError('warning', '不透明度設定失敗: ' + error.message);
+            }
+        }
+    }
+    
+    /**
+     * 筆圧設定
+     */
+    setPressure(pressure) {
+        try {
+            const normalizedPressure = Math.max(0, Math.min(1, Math.round(pressure * 1000) / 1000));
+            this.updateToolSetting(this.currentTool, 'pressure', normalizedPressure);
+            console.log(`✍️ 筆圧: ${Math.round(normalizedPressure * 100)}%`);
+            
+        } catch (error) {
+            if (this.errorManager) {
+                this.errorManager.showError('warning', '筆圧設定失敗: ' + error.message);
+            }
+        }
+    }
+    
+    /**
+     * 線補正設定
+     */
+    setSmoothing(smoothing) {
+        try {
+            const normalizedSmoothing = Math.max(0, Math.min(1, Math.round(smoothing * 1000) / 1000));
+            this.updateToolSetting(this.currentTool, 'smoothing', normalizedSmoothing);
+            console.log(`📏 線補正: ${Math.round(normalizedSmoothing * 100)}%`);
+            
+        } catch (error) {
+            if (this.errorManager) {
+                this.errorManager.showError('warning', '線補正設定失敗: ' + error.message);
+            }
+        }
+    }
+    
+    // ==========================================
+    // 🎯 状態取得メソッド群（座標統合対応）
+    // ==========================================
+    
+    /**
+     * 描画状態取得（座標統合対応）
+     */
+    getDrawingState() {
+        return {
+            version: this.version,
+            unifiedSystemsEnabled: true,
+            coordinateManagerIntegrated: !!this.coordinateManager,
+            currentTool: this.currentTool,
+            isDrawing: this.isDrawing,
+            globalSettings: this.globalSettings ? { ...this.globalSettings } : {},
+            registeredTools: Array.from(this.registeredTools.keys()),
+            currentPath: this.currentPath ? this.currentPath.id : null,
+            lastPoint: this.lastPoint ? { ...this.lastPoint } : null,
+            appCoreConnected: !!this.appCore,
+            coordinateIntegration: this.coordinateManager ? this.coordinateManager.getIntegrationStatus() : null
+        };
+    }
+    
+    /**
+     * ツール統計取得（座標統合対応）
+     */
+    getToolStats() {
+        const stats = {
+            version: this.version,
+            currentTool: this.currentTool,
+            registeredToolsCount: this.registeredTools.size,
+            isDrawing: this.isDrawing,
+            globalSettings: this.globalSettings ? { ...this.globalSettings } : {},
+            unifiedSystems: {
+                configManager: !!this.configManager,
+                errorManager: !!this.errorManager,
+                stateManager: !!this.stateManager,
+                eventBus: !!this.eventBus,
+                coordinateManager: !!this.coordinateManager
+            },
+            coordinateIntegration: this.coordinateManager ? {
+                enabled: true,
+                status: this.coordinateManager.getIntegrationStatus ? this.coordinateManager.getIntegrationStatus() : 'unknown'
+            } : {
+                enabled: false,
+                status: 'not_available'
+            }
+        };
+        
+        return stats;
+    }
+    
+    /**
+     * ツール切り替え可能性チェック
+     */
+    canSwitchTo(tool) {
+        if (this.isDrawing) {
+            console.warn('⚠️ 描画中はツール変更できません');
+            return false;
+        }
+        
+        if (!this.isToolAvailable(tool)) {
+            console.warn(`⚠️ 利用できないツール: ${tool}`);
+            return false;
+        }
+        
+        return true;
+    }
+    
+    /**
+     * 安全なツール切り替え
+     */
+    safeSwitchTool(tool) {
+        if (!this.canSwitchTo(tool)) return false;
+        
+        // 描画中の場合は強制終了
+        if (this.isDrawing) {
+            this.stopDrawing();
+        }
+        
+        return this.setTool(tool);
+    }
+    
+    // ==========================================
+    // 🎯 座標統合メソッド群
+    // ==========================================
+    
+    /**
+     * 🆕 COORDINATE_FEATURE: 座標統合健全性チェック
+     */
+    checkCoordinateIntegrationHealth() {
+        const health = {
+            coordinateManagerAvailable: !!this.coordinateManager,
+            coordinateConfigValid: false,
+            integrationEnabled: false,
+            performanceOptimized: false
+        };
+        
+        if (this.configManager) {
+            const diagnosis = this.configManager.diagnoseCoordinateIntegration();
+            health.coordinateConfigValid = diagnosis.configurationValid;
+            health.integrationEnabled = diagnosis.integrationEnabled;
+            health.performanceOptimized = diagnosis.performanceOptimized;
+        }
+        
+        const overallHealth = Object.values(health).filter(Boolean).length / Object.keys(health).length;
+        
+        return {
+            ...health,
+            overallHealth: Math.round(overallHealth * 100),
+            recommendations: this.getCoordinateIntegrationRecommendations(health)
+        };
+    }
+    
+    /**
+     * 🆕 COORDINATE_FEATURE: 座標統合改善提案取得
+     */
+    getCoordinateIntegrationRecommendations(health) {
+        const recommendations = [];
+        
+        if (!health.coordinateManagerAvailable) {
+            recommendations.push('CoordinateManagerの初期化を確認してください');
+        }
+        
+        if (!health.coordinateConfigValid) {
+            recommendations.push('ConfigManagerの座標設定を確認してください');
+        }
+        
+        if (!health.integrationEnabled) {
+            recommendations.push('座標統合設定を有効化してください');
+        }
+        
+        if (!health.performanceOptimized) {
+            recommendations.push('座標パフォーマンス設定を有効化してください');
+        }
+        
+        return recommendations;
+    }
+    
+    /**
+     * 🆕 COORDINATE_FEATURE: 座標統合状態診断
+     */
+    diagnoseCoordinateIntegration() {
+        console.group('🔍 ToolManager 座標統合診断');
+        
+        const health = this.checkCoordinateIntegrationHealth();
+        const integrationStatus = this.coordinateManager ? this.coordinateManager.getIntegrationStatus() : null;
+        
+        console.log('📊 座標統合健全性:', `${health.overallHealth}%`);
+        console.log('🔧 CoordinateManager統合:', health.coordinateManagerAvailable ? '✅' : '❌');
+        console.log('⚙️ 座標設定妥当性:', health.coordinateConfigValid ? '✅' : '❌');
+        console.log('🔄 統合機能有効:', health.integrationEnabled ? '✅' : '❌');
+        console.log('⚡ パフォーマンス最適化:', health.performanceOptimized ? '✅' : '❌');
+        
+        if (integrationStatus) {
+            console.log('📋 統合状態詳細:', integrationStatus);
+        }
+        
+        if (health.recommendations.length > 0) {
+            console.log('💡 改善提案:', health.recommendations);
+        }
+        
+        console.groupEnd();
+        
+        return {
+            health,
+            integrationStatus,
+            timestamp: Date.now()
+        };
+    }
+    
+    // ==========================================
+    // 🎯 その他操作メソッド群（座標統合対応）
+    // ==========================================
+    
+    /**
+     * デバッグ情報出力（座標統合対応）
+     */
+    debugInfo() {
+        const state = this.getDrawingState();
+        const stats = this.getToolStats();
+        const coordinateHealth = this.checkCoordinateIntegrationHealth();
+        
+        console.group('🔧 ToolManager デバッグ情報（座標統合対応修正版）');
+        console.log('📊 状態:', state);
+        console.log('📈 統計:', stats);
+        console.log('🔧 統一システム健全性:', this.checkUnifiedSystemHealth());
+        console.log('🔄 座標統合健全性:', coordinateHealth);
+        console.groupEnd();
+        
+        return { state, stats, coordinateHealth };
+    }
+    
+    /**
+     * 統一システム健全性チェック（座標統合対応）
+     */
+    checkUnifiedSystemHealth() {
+        const health = {
+            configManager: !!this.configManager && typeof this.configManager.get === 'function',
+            errorManager: !!this.errorManager && typeof this.errorManager.showError === 'function',
+            stateManager: !!this.stateManager && typeof this.stateManager.updateComponentState === 'function',
+            eventBus: !!this.eventBus && typeof this.eventBus.emit === 'function',
+            coordinateManager: !!this.coordinateManager
+        };
+        
+        const allHealthy = Object.values(health).every(Boolean);
+        const healthScore = Object.values(health).filter(Boolean).length / Object.keys(health).length;
+        
+        if (!allHealthy) {
+            console.warn('⚠️ 一部のシステムに問題があります:', health);
+        }
+        
+        return { 
+            health, 
+            allHealthy, 
+            healthScore: Math.round(healthScore * 100),
+            coordinateIntegration: !!this.coordinateManager
+        };
+    }
+    
+    /**
+     * 🆕 COORDINATE_FEATURE: 座標統合テスト実行
+     */
+    runCoordinateIntegrationTest() {
+        console.group('🧪 ToolManager 座標統合テスト');
+        
+        const tests = [];
+        let passCount = 0;
+        
+        // Test 1: CoordinateManager利用可能性
+        const test1 = {
+            name: 'CoordinateManager利用可能性',
+            result: !!this.coordinateManager,
+            details: this.coordinateManager ? 'インスタンス化済み' : '利用不可'
+        };
+        tests.push(test1);
+        if (test1.result) passCount++;
+        
+        // Test 2: 座標妥当性確認機能
+        const test2 = {
+            name: '座標妥当性確認機能',
+            result: !!(this.coordinateManager && this.coordinateManager.validateCoordinateIntegrity),
+            details: test2.result ? '機能利用可能' : '機能なし'
+        };
+        tests.push(test2);
+        if (test2.result) passCount++;
+        
+        // Test 3: レイヤー変形座標機能
+        const test3 = {
+            name: 'レイヤー変形座標機能',
+            result: !!(this.coordinateManager && this.coordinateManager.transformCoordinatesForLayer),
+            details: test3.result ? '機能利用可能' : '機能なし'
+        };
+        tests.push(test3);
+        if (test3.result) passCount++;
+        
+        // Test 4: 統合状態取得機能
+        const test4 = {
+            name: '統合状態取得機能',
+            result: !!(this.coordinateManager && this.coordinateManager.getIntegrationStatus),
+            details: test4.result ? '機能利用可能' : '機能なし'
+        };
+        tests.push(test4);
+        if (test4.result) passCount++;
+        
+        // 結果表示
+        tests.forEach(test => {
+            console.log(`${test.result ? '✅' : '❌'} ${test.name}: ${test.details}`);
+        });
+        
+        const totalTests = tests.length;
+        const passRate = Math.round((passCount / totalTests) * 100);
+        
+        console.log(`📊 テスト結果: ${passCount}/${totalTests} PASS (${passRate}%)`);
+        
+        if (passRate === 100) {
+            console.log('🎉 すべてのテストに合格 - 座標統合完全対応');
+        } else if (passRate >= 75) {
+            console.log('✅ 座標統合基本対応完了 - 一部機能拡張必要');
+        } else {
+            console.warn('⚠️ 座標統合対応不足 - 修正が必要');
+        }
+        
+        console.groupEnd();
+        
+        return {
+            tests,
+            passCount,
+            totalTests,
+            passRate,
+            overallResult: passRate >= 75
+        };
+    }
+    
+    /**
+     * 破棄処理（座標統合対応）
+     */
+    destroy() {
+        try {
+            console.log('🗑️ ToolManager破棄開始...');
+            
+            // 描画中の場合は終了
+            if (this.isDrawing) {
+                this.stopDrawing();
+            }
+            
+            // EventBusリスナー解除
+            if (this.eventBus && typeof this.eventBus.off === 'function') {
+                this.eventBus.off('ui:tool:activated');
+                this.eventBus.off('config:changed');
+                this.eventBus.off('tool:pen:size:changed');
+                this.eventBus.off('tool:pen:opacity:changed');
+            }
+            
+            // 登録ツールクリア
+            this.registeredTools.clear();
+            
+            // 参照クリア
+            this.appCore = null;
+            this.currentPath = null;
+            this.lastPoint = null;
+            this.configManager = null;
+            this.errorManager = null;
+            this.stateManager = null;
+            this.eventBus = null;
+            
+            // 🔄 COORDINATE_INTEGRATION: CoordinateManager参照クリア
+            this.coordinateManager = null;
+            
+            console.log('✅ ToolManager破棄完了（座標統合対応）');
+            
+        } catch (error) {
+            console.error('❌ ToolManager破棄エラー:', error);
+        }
+    }
+}
+
+// ==========================================
+// 🎯 Pure JavaScript グローバル公開
+// ==========================================
+
+if (typeof window !== 'undefined') {
+    window.ToolManager = ToolManager;
+    console.log('✅ ToolManager 座標統合完全修正版 グローバル公開完了（Pure JavaScript）');
+}
+
+console.log('🔧 ToolManager Phase1.4 座標統合完全修正版 - 準備完了');
+console.log('📋 統一システム統合完了: ConfigManager・ErrorManager・StateManager・EventBus');
+console.log('🔄 座標統合機能: CoordinateManager統合・座標妥当性確認・レイヤー変形対応');
+console.log('📋 初期化順序修正: デフォルトツール設定・フォールバック強化');
+console.log('🔧 StateManager API統一: updateSystemState → updateComponentState 修正');
+console.log('🧪 座標統合テスト: runCoordinateIntegrationTest() 実装');
+console.log('💡 使用例: const toolManager = new window.ToolManager(appCore); await toolManager.initialize();');

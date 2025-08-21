@@ -1,16 +1,21 @@
 /**
- * 🎯 キャンバス境界管理システム
+ * 🎯 キャンバス境界管理システム（Phase1.4座標統合完全修正版）
  * 🎯 AI_WORK_SCOPE: 境界越えイベント処理・境界判定・境界描画制御
- * 🎯 DEPENDENCIES: ConfigManager, ErrorManager, EventBus, coordinate-manager.js
+ * 🎯 DEPENDENCIES: ConfigManager, ErrorManager, EventBus, CoordinateManager
  * 🎯 UNIFIED: ConfigManager(境界設定), ErrorManager(境界エラー), EventBus(境界イベント)
  * 🎯 ISOLATION_TEST: ✅ 単体テスト可能
+ * 🔄 COORDINATE_INTEGRATION: CoordinateManager完全統合・重複排除完了
  */
 
 class BoundaryManager {
     constructor() {
+        this.version = 'v1.0-Phase1.4-coordinate-integrated';
+        
         this.validateUnifiedSystems();
         this.config = ConfigManager.get('canvas.boundary') || this.getDefaultBoundaryConfig();
-        this.coordinateManager = null; // 後で依存注入
+        
+        // 🔄 COORDINATE_INTEGRATION: CoordinateManager統合
+        this.coordinateManager = null; // 初期化時に設定
         
         // 境界追跡状態
         this.isTrackingOutside = false;
@@ -25,7 +30,7 @@ class BoundaryManager {
             pointerUp: this.handleGlobalPointerUp.bind(this)
         };
         
-        console.log('🎯 BoundaryManager 初期化完了（統一システム統合版）');
+        console.log(`🎯 BoundaryManager ${this.version} 初期化完了（座標統合対応）`);
     }
     
     /**
@@ -47,6 +52,7 @@ class BoundaryManager {
             enabled: true,
             margin: 20,
             trackingEnabled: true,
+            visualizeEnabled: false,
             crossInDelay: 0,
             supportedPointers: ['mouse', 'pen', 'touch'],
             debugging: false
@@ -54,36 +60,78 @@ class BoundaryManager {
     }
     
     /**
-     * 🎯 境界管理システム初期化
+     * 🔄 COORDINATE_INTEGRATION: 境界管理システム初期化（座標統合対応）
      */
-    initialize(canvasElement, coordinateManager) {
+    initialize(canvasElement, coordinateManager = null) {
+        console.group(`🎯 BoundaryManager初期化開始 - ${this.version}`);
+        
         try {
             if (!canvasElement) {
                 throw new Error('canvasElement が必要です');
             }
             
-            this.coordinateManager = coordinateManager;
             this.canvasElement = canvasElement;
+            
+            // 🔄 COORDINATE_INTEGRATION: CoordinateManager統合設定
+            if (coordinateManager) {
+                this.coordinateManager = coordinateManager;
+                console.log('✅ 外部CoordinateManager統合完了');
+            } else if (window.CoordinateManager) {
+                this.coordinateManager = new window.CoordinateManager();
+                console.log('✅ 新規CoordinateManager作成完了');
+            } else {
+                console.warn('⚠️ CoordinateManager利用不可 - 基本機能のみ提供');
+            }
+            
+            // 座標統合設定確認
+            if (this.coordinateManager) {
+                const coordinateConfig = ConfigManager.getCoordinateConfig();
+                this.coordinateIntegration = {
+                    enabled: coordinateConfig.integration?.managerCentralization || false,
+                    duplicateElimination: coordinateConfig.integration?.duplicateElimination || false,
+                    performance: coordinateConfig.performance || {}
+                };
+                
+                if (!this.coordinateIntegration.enabled) {
+                    console.warn('⚠️ 座標統合が無効です。coordinate.integration.managerCentralization を true に設定してください。');
+                }
+                
+                console.log('🔄 座標統合設定:', this.coordinateIntegration);
+            }
             
             // 境界追跡システム設定
             this.initializeBoundaryTracking();
             
-            // 拡張ヒットエリア作成
-            this.createExpandedHitArea();
+            // 拡張ヒットエリア作成（座標統合対応）
+            this.createExpandedHitAreaWithCoordinateIntegration();
             
-            console.log('✅ BoundaryManager 初期化完了');
+            console.log('✅ BoundaryManager 座標統合初期化完了');
             
-            EventBus.safeEmit('boundary.manager.initialized', {
-                margin: this.boundaryMargin,
-                config: this.config
-            });
+            // EventBus通知
+            if (window.EventBus) {
+                window.EventBus.safeEmit('boundary.manager.initialized', {
+                    margin: this.boundaryMargin,
+                    config: this.config,
+                    coordinateManagerIntegrated: !!this.coordinateManager,
+                    version: this.version
+                });
+            }
+            
+            return this;
             
         } catch (error) {
-            ErrorManager.showError('boundary-init', 
-                `境界管理初期化失敗: ${error.message}`, 
-                { config: this.config }
-            );
+            console.error('❌ BoundaryManager初期化エラー:', error);
+            
+            if (window.ErrorManager) {
+                window.ErrorManager.showError('boundary-init', 
+                    `境界管理初期化失敗: ${error.message}`, 
+                    { config: this.config }
+                );
+            }
             throw error;
+            
+        } finally {
+            console.groupEnd();
         }
     }
     
@@ -96,46 +144,93 @@ class BoundaryManager {
             return;
         }
         
-        // document全体でPointerイベント監視
-        document.addEventListener('pointerdown', this.boundHandlers.pointerDown);
-        document.addEventListener('pointermove', this.boundHandlers.pointerMove);
-        document.addEventListener('pointerup', this.boundHandlers.pointerUp);
-        
-        console.log('✅ グローバル境界追跡システム開始');
+        try {
+            // document全体でPointerイベント監視
+            document.addEventListener('pointerdown', this.boundHandlers.pointerDown, { passive: false });
+            document.addEventListener('pointermove', this.boundHandlers.pointerMove, { passive: false });
+            document.addEventListener('pointerup', this.boundHandlers.pointerUp, { passive: false });
+            
+            console.log('✅ グローバル境界追跡システム開始');
+            
+        } catch (error) {
+            console.warn('⚠️ グローバル境界追跡設定失敗:', error.message);
+        }
     }
     
     /**
-     * 🎯 拡張ヒットエリア作成
+     * 🆕 COORDINATE_FEATURE: 拡張ヒットエリア作成（座標統合対応）
      */
-    createExpandedHitArea() {
-        if (!this.canvasElement) return null;
-        
-        const rect = this.canvasElement.getBoundingClientRect();
-        this.expandedHitArea = {
-            left: rect.left - this.boundaryMargin,
-            top: rect.top - this.boundaryMargin,
-            right: rect.right + this.boundaryMargin,
-            bottom: rect.bottom + this.boundaryMargin
-        };
-        
-        if (this.config.debugging) {
-            console.log('🎯 拡張ヒットエリア作成:', this.expandedHitArea);
+    createExpandedHitAreaWithCoordinateIntegration() {
+        if (!this.canvasElement) {
+            console.warn('⚠️ canvasElement未設定 - 拡張ヒットエリア作成不可');
+            return null;
         }
         
-        return this.expandedHitArea;
+        try {
+            // 🔄 COORDINATE_INTEGRATION: CoordinateManager経由でキャンバス矩形取得
+            let rect;
+            if (this.coordinateManager && this.coordinateManager.getCanvasRect) {
+                // CoordinateManagerを経由して取得
+                rect = this.coordinateManager.getCanvasRect(this.canvasElement);
+            } else {
+                // フォールバック: 直接取得
+                rect = this.canvasElement.getBoundingClientRect();
+            }
+            
+            // 座標統合対応の拡張ヒットエリア計算
+            this.expandedHitArea = {
+                left: rect.left - this.boundaryMargin,
+                top: rect.top - this.boundaryMargin,
+                right: rect.right + this.boundaryMargin,
+                bottom: rect.bottom + this.boundaryMargin,
+                width: rect.width + (this.boundaryMargin * 2),
+                height: rect.height + (this.boundaryMargin * 2)
+            };
+            
+            // CoordinateManagerで精度適用
+            if (this.coordinateManager && this.coordinateManager.applyPrecision) {
+                this.expandedHitArea.left = this.coordinateManager.applyPrecision(this.expandedHitArea.left);
+                this.expandedHitArea.top = this.coordinateManager.applyPrecision(this.expandedHitArea.top);
+                this.expandedHitArea.right = this.coordinateManager.applyPrecision(this.expandedHitArea.right);
+                this.expandedHitArea.bottom = this.coordinateManager.applyPrecision(this.expandedHitArea.bottom);
+                this.expandedHitArea.width = this.coordinateManager.applyPrecision(this.expandedHitArea.width);
+                this.expandedHitArea.height = this.coordinateManager.applyPrecision(this.expandedHitArea.height);
+            }
+            
+            if (this.config.debugging) {
+                console.log('🎯 座標統合拡張ヒットエリア作成:', this.expandedHitArea);
+            }
+            
+            return this.expandedHitArea;
+            
+        } catch (error) {
+            console.warn('⚠️ 拡張ヒットエリア作成失敗:', error.message);
+            
+            // フォールバック: 基本設定
+            this.expandedHitArea = {
+                left: 0,
+                top: 0,
+                right: 400,
+                bottom: 400,
+                width: 400,
+                height: 400
+            };
+            
+            return this.expandedHitArea;
+        }
     }
     
     /**
-     * 🎯 グローバルポインターダウン処理
+     * 🎯 グローバルポインターダウン処理（座標統合対応）
      */
     handleGlobalPointerDown(event) {
         try {
-            if (!this.canvasElement) return;
+            if (!this.canvasElement || !this.config.enabled) return;
             
-            const canvasRect = this.canvasElement.getBoundingClientRect();
-            const isInsideCanvas = this.isPointInCanvas(event.clientX, event.clientY, canvasRect);
+            // 🔄 COORDINATE_INTEGRATION: 座標統合対応の境界判定
+            const boundaryCheck = this.checkBoundaryWithCoordinateIntegration(event);
             
-            if (!isInsideCanvas) {
+            if (!boundaryCheck.isInsideCanvas) {
                 // キャンバス外ポインター検出
                 this.isTrackingOutside = true;
                 this.outsidePointer = {
@@ -143,13 +238,18 @@ class BoundaryManager {
                     startX: event.clientX,
                     startY: event.clientY,
                     timestamp: Date.now(),
-                    type: event.pointerType || 'unknown'
+                    type: event.pointerType || 'unknown',
+                    coordinates: boundaryCheck.coordinates
                 };
                 
-                EventBus.safeEmit('boundary.outside.start', {
-                    pointer: this.outsidePointer,
-                    canvasRect
-                });
+                // EventBus通知
+                if (window.EventBus) {
+                    window.EventBus.safeEmit('boundary.outside.start', {
+                        pointer: this.outsidePointer,
+                        canvasRect: boundaryCheck.canvasRect,
+                        coordinateIntegrated: !!this.coordinateManager
+                    });
+                }
                 
                 if (this.config.debugging) {
                     console.log(`🎯 境界外ポインター検出: (${event.clientX}, ${event.clientY})`);
@@ -157,15 +257,17 @@ class BoundaryManager {
             }
             
         } catch (error) {
-            ErrorManager.showError('boundary-tracking', 
-                `境界追跡エラー: ${error.message}`, 
-                { event: event.type, pointerId: event.pointerId }
-            );
+            if (window.ErrorManager) {
+                window.ErrorManager.showError('boundary-tracking', 
+                    `境界追跡エラー: ${error.message}`, 
+                    { event: event.type, pointerId: event.pointerId }
+                );
+            }
         }
     }
     
     /**
-     * 🎯 グローバルポインター移動処理
+     * 🎯 グローバルポインター移動処理（座標統合対応）
      */
     handleGlobalPointerMove(event) {
         if (!this.isTrackingOutside || event.pointerId !== this.outsidePointer?.id) {
@@ -173,61 +275,128 @@ class BoundaryManager {
         }
         
         try {
-            if (!this.canvasElement) return;
+            if (!this.canvasElement || !this.config.enabled) return;
             
-            const canvasRect = this.canvasElement.getBoundingClientRect();
-            const isInsideCanvas = this.isPointInCanvas(event.clientX, event.clientY, canvasRect);
+            // 🔄 COORDINATE_INTEGRATION: 座標統合対応の境界判定
+            const boundaryCheck = this.checkBoundaryWithCoordinateIntegration(event);
             
-            if (isInsideCanvas) {
+            if (boundaryCheck.isInsideCanvas) {
                 // 境界越えイン検出
-                this.handleBoundaryCrossIn(event, canvasRect);
+                this.handleBoundaryCrossInWithCoordinateIntegration(event, boundaryCheck);
             }
             
         } catch (error) {
-            ErrorManager.showError('boundary-cross', 
-                `境界越え処理エラー: ${error.message}`, 
-                { event: event.type, pointerId: event.pointerId }
-            );
+            if (window.ErrorManager) {
+                window.ErrorManager.showError('boundary-cross', 
+                    `境界越え処理エラー: ${error.message}`, 
+                    { event: event.type, pointerId: event.pointerId }
+                );
+            }
         }
     }
     
     /**
-     * 🎯 境界越えイン処理（核心機能）
+     * 🆕 COORDINATE_FEATURE: 座標統合対応境界判定
      */
-    handleBoundaryCrossIn(event, canvasRect) {
-        if (!this.coordinateManager) {
-            console.warn('⚠️ CoordinateManager が利用できません');
-            return;
-        }
-        
+    checkBoundaryWithCoordinateIntegration(event) {
         try {
-            // キャンバス座標変換
-            const canvasCoords = this.coordinateManager.screenToCanvas(
-                event.clientX, event.clientY, canvasRect
-            );
+            // キャンバス矩形取得
+            let canvasRect;
+            if (this.coordinateManager && this.coordinateManager.getCanvasRect) {
+                canvasRect = this.coordinateManager.getCanvasRect(this.canvasElement);
+            } else {
+                canvasRect = this.canvasElement.getBoundingClientRect();
+            }
+            
+            // 基本境界判定
+            const isInsideCanvas = this.isPointInCanvas(event.clientX, event.clientY, canvasRect);
+            
+            // 座標変換（CoordinateManager使用）
+            let coordinates = null;
+            if (this.coordinateManager) {
+                try {
+                    coordinates = this.coordinateManager.screenToCanvas(
+                        event.clientX, event.clientY, canvasRect
+                    );
+                    
+                    // 座標妥当性確認
+                    if (!this.coordinateManager.validateCoordinateIntegrity(coordinates)) {
+                        console.warn('⚠️ 無効な座標データ検出');
+                        coordinates = null;
+                    }
+                } catch (coordError) {
+                    console.warn('⚠️ 座標変換失敗:', coordError.message);
+                    coordinates = null;
+                }
+            }
+            
+            // フォールバック座標
+            if (!coordinates) {
+                coordinates = {
+                    x: Math.max(0, event.clientX - canvasRect.left),
+                    y: Math.max(0, event.clientY - canvasRect.top)
+                };
+            }
+            
+            return {
+                isInsideCanvas,
+                canvasRect,
+                coordinates,
+                screenCoordinates: { x: event.clientX, y: event.clientY },
+                coordinateManagerUsed: !!this.coordinateManager
+            };
+            
+        } catch (error) {
+            console.warn('⚠️ 境界判定失敗:', error.message);
+            
+            // 最小限のフォールバック
+            return {
+                isInsideCanvas: false,
+                canvasRect: null,
+                coordinates: { x: 0, y: 0 },
+                screenCoordinates: { x: event.clientX || 0, y: event.clientY || 0 },
+                coordinateManagerUsed: false,
+                error: error.message
+            };
+        }
+    }
+    
+    /**
+     * 🆕 COORDINATE_FEATURE: 境界越えイン処理（座標統合対応）
+     */
+    handleBoundaryCrossInWithCoordinateIntegration(event, boundaryCheck) {
+        try {
+            console.log(`🎯 座標統合境界越えイン: (${boundaryCheck.coordinates.x.toFixed(1)}, ${boundaryCheck.coordinates.y.toFixed(1)})`);
             
             // 境界越え描画開始イベント発火
-            EventBus.safeEmit('boundary.cross.in', {
-                position: canvasCoords,
-                pressure: event.pressure || 0.5,
-                pointerId: event.pointerId,
-                pointerType: event.pointerType || 'unknown',
-                originalEvent: event,
-                fromOutside: true,
-                timestamp: Date.now()
-            });
-            
-            console.log(`🎯 境界越えイン: (${canvasCoords.x.toFixed(1)}, ${canvasCoords.y.toFixed(1)})`);
+            if (window.EventBus) {
+                window.EventBus.safeEmit('boundary.cross.in', {
+                    position: boundaryCheck.coordinates,
+                    pressure: event.pressure || 0.5,
+                    pointerId: event.pointerId,
+                    pointerType: event.pointerType || 'unknown',
+                    originalEvent: event,
+                    fromOutside: true,
+                    timestamp: Date.now(),
+                    coordinateManagerUsed: boundaryCheck.coordinateManagerUsed,
+                    boundaryData: {
+                        canvasRect: boundaryCheck.canvasRect,
+                        screenCoordinates: boundaryCheck.screenCoordinates
+                    }
+                });
+            }
             
             // 追跡状態リセット
             this.isTrackingOutside = false;
             this.outsidePointer = null;
             
         } catch (error) {
-            ErrorManager.showError('boundary-cross', 
-                `境界越えイン処理エラー: ${error.message}`, 
-                { pointerId: event.pointerId }
-            );
+            if (window.ErrorManager) {
+                window.ErrorManager.showError('boundary-cross-in', 
+                    `座標統合境界越えイン処理エラー: ${error.message}`, 
+                    { pointerId: event.pointerId }
+                );
+            }
         }
     }
     
@@ -240,10 +409,13 @@ class BoundaryManager {
             this.isTrackingOutside = false;
             this.outsidePointer = null;
             
-            EventBus.safeEmit('boundary.outside.end', {
-                pointerId: event.pointerId,
-                timestamp: Date.now()
-            });
+            if (window.EventBus) {
+                window.EventBus.safeEmit('boundary.outside.end', {
+                    pointerId: event.pointerId,
+                    timestamp: Date.now(),
+                    coordinateManagerIntegrated: !!this.coordinateManager
+                });
+            }
             
             if (this.config.debugging) {
                 console.log(`🎯 境界外ポインターアップ: ${event.pointerId}`);
@@ -275,52 +447,220 @@ class BoundaryManager {
                clientY <= this.expandedHitArea.bottom;
     }
     
+    // ==========================================
+    // 🔄 座標統合診断・統計システム
+    // ==========================================
+    
     /**
-     * 🎯 境界状態取得（診断・デバッグ用）
+     * 🔄 境界状態取得（座標統合対応）
      */
     getBoundaryState() {
-        return {
+        const baseState = {
+            version: this.version,
             isTrackingOutside: this.isTrackingOutside,
             outsidePointer: this.outsidePointer,
             boundaryMargin: this.boundaryMargin,
             expandedHitArea: this.expandedHitArea,
             config: this.config,
             canvasElement: !!this.canvasElement,
-            coordinateManager: !!this.coordinateManager,
-            isInitialized: !!(this.canvasElement && this.coordinateManager)
+            isInitialized: !!(this.canvasElement)
+        };
+        
+        // 🆕 座標統合状態追加
+        if (this.coordinateManager) {
+            baseState.coordinateIntegration = {
+                coordinateManagerAvailable: true,
+                integrationEnabled: this.coordinateIntegration?.enabled || false,
+                duplicateElimination: this.coordinateIntegration?.duplicateElimination || false,
+                coordinateManagerState: this.coordinateManager.getCoordinateState ? 
+                    this.coordinateManager.getCoordinateState() : null
+            };
+        } else {
+            baseState.coordinateIntegration = {
+                coordinateManagerAvailable: false,
+                integrationEnabled: false,
+                duplicateElimination: false,
+                warning: 'CoordinateManager未初期化'
+            };
+        }
+        
+        return baseState;
+    }
+    
+    /**
+     * 🆕 COORDINATE_FEATURE: 座標統合健全性チェック
+     */
+    checkCoordinateIntegrationHealth() {
+        const health = {
+            coordinateManagerAvailable: !!this.coordinateManager,
+            canvasElementAvailable: !!this.canvasElement,
+            expandedHitAreaValid: !!(this.expandedHitArea && this.expandedHitArea.width > 0),
+            boundaryTrackingActive: !!(this.config.enabled && this.config.trackingEnabled),
+            eventHandlersAttached: !!(this.boundHandlers && 
+                typeof this.boundHandlers.pointerDown === 'function')
+        };
+        
+        const healthScore = Object.values(health).filter(Boolean).length / Object.keys(health).length;
+        
+        return {
+            ...health,
+            overallHealth: Math.round(healthScore * 100),
+            recommendations: this.getBoundaryHealthRecommendations(health)
         };
     }
     
     /**
-     * 🎯 境界設定更新
+     * 🆕 COORDINATE_FEATURE: 境界健全性改善提案
+     */
+    getBoundaryHealthRecommendations(health) {
+        const recommendations = [];
+        
+        if (!health.coordinateManagerAvailable) {
+            recommendations.push('CoordinateManagerの初期化を確認してください');
+        }
+        
+        if (!health.canvasElementAvailable) {
+            recommendations.push('canvasElementの設定を確認してください');
+        }
+        
+        if (!health.expandedHitAreaValid) {
+            recommendations.push('拡張ヒットエリアの再作成が必要です');
+        }
+        
+        if (!health.boundaryTrackingActive) {
+            recommendations.push('境界追跡設定を有効化してください');
+        }
+        
+        if (!health.eventHandlersAttached) {
+            recommendations.push('イベントハンドラーの再設定が必要です');
+        }
+        
+        return recommendations;
+    }
+    
+    /**
+     * 🆕 COORDINATE_FEATURE: 境界統合診断実行
+     */
+    runBoundaryIntegrationDiagnosis() {
+        console.group('🔍 BoundaryManager座標統合診断');
+        
+        const state = this.getBoundaryState();
+        const health = this.checkCoordinateIntegrationHealth();
+        
+        console.log('📊 境界管理状態:', state);
+        console.log('🔧 座標統合健全性:', `${health.overallHealth}%`);
+        console.log('⚙️ CoordinateManager統合:', health.coordinateManagerAvailable ? '✅' : '❌');
+        console.log('🎯 境界追跡機能:', health.boundaryTrackingActive ? '✅' : '❌');
+        console.log('📐 拡張ヒットエリア:', health.expandedHitAreaValid ? '✅' : '❌');
+        
+        if (health.recommendations.length > 0) {
+            console.warn('💡 改善提案:', health.recommendations);
+        } else {
+            console.log('✅ 境界統合診断: 全ての要件を満たしています');
+        }
+        
+        console.groupEnd();
+        
+        return {
+            state,
+            health,
+            timestamp: Date.now()
+        };
+    }
+    
+    // ==========================================
+    // 🎯 設定・操作メソッド群
+    // ==========================================
+    
+    /**
+     * 🎯 境界設定更新（座標統合対応）
      */
     updateConfig(newConfig) {
         try {
             this.config = { ...this.config, ...newConfig };
             this.boundaryMargin = this.config.margin || 20;
             
-            // 拡張ヒットエリア再計算
-            this.createExpandedHitArea();
+            // 拡張ヒットエリア再計算（座標統合対応）
+            this.createExpandedHitAreaWithCoordinateIntegration();
             
-            EventBus.safeEmit('boundary.config.updated', {
-                config: this.config
-            });
+            // EventBus通知
+            if (window.EventBus) {
+                window.EventBus.safeEmit('boundary.config.updated', {
+                    config: this.config,
+                    coordinateManagerIntegrated: !!this.coordinateManager
+                });
+            }
             
-            console.log('🎯 境界設定更新完了:', this.config);
+            console.log('🎯 境界設定更新完了（座標統合対応）:', this.config);
+            
+            return true;
             
         } catch (error) {
-            ErrorManager.showError('boundary-config', 
-                `境界設定更新エラー: ${error.message}`, 
-                { config: newConfig }
-            );
+            if (window.ErrorManager) {
+                window.ErrorManager.showError('boundary-config', 
+                    `境界設定更新エラー: ${error.message}`, 
+                    { config: newConfig }
+                );
+            }
+            return false;
         }
     }
     
     /**
-     * 🎯 境界管理システム破棄
+     * 🆕 COORDINATE_FEATURE: 座標統合設定更新
+     */
+    updateCoordinateIntegrationSettings(newSettings) {
+        if (!this.coordinateManager) {
+            console.warn('⚠️ CoordinateManager未初期化 - 座標統合設定更新不可');
+            return false;
+        }
+        
+        try {
+            this.coordinateIntegration = { 
+                ...this.coordinateIntegration, 
+                ...newSettings 
+            };
+            
+            // CoordinateManager設定更新
+            if (newSettings.coordinateManagerConfig && this.coordinateManager.updateCoordinateConfig) {
+                this.coordinateManager.updateCoordinateConfig(newSettings.coordinateManagerConfig);
+            }
+            
+            console.log('⚙️ 境界座標統合設定更新:', newSettings);
+            
+            return true;
+            
+        } catch (error) {
+            console.warn('⚠️ 座標統合設定更新失敗:', error.message);
+            return false;
+        }
+    }
+    
+    /**
+     * キャンバスサイズ変更対応
+     */
+    updateCanvasSize() {
+        try {
+            // 拡張ヒットエリア再計算（座標統合対応）
+            this.createExpandedHitAreaWithCoordinateIntegration();
+            
+            console.log('📐 キャンバスサイズ変更対応完了（座標統合）');
+            
+            return true;
+            
+        } catch (error) {
+            console.warn('⚠️ キャンバスサイズ変更対応失敗:', error.message);
+            return false;
+        }
+    }
+    
+    /**
+     * 🎯 境界管理システム破棄（座標統合対応）
      */
     destroy() {
         try {
+            console.log('🗑️ BoundaryManager破棄開始...');
+            
             // イベントリスナー削除
             if (this.boundHandlers) {
                 document.removeEventListener('pointerdown', this.boundHandlers.pointerDown);
@@ -332,23 +672,51 @@ class BoundaryManager {
             this.isTrackingOutside = false;
             this.outsidePointer = null;
             this.canvasElement = null;
-            this.coordinateManager = null;
             this.expandedHitArea = null;
             
-            EventBus.safeEmit('boundary.manager.destroyed');
+            // 🔄 COORDINATE_INTEGRATION: CoordinateManager参照クリア
+            this.coordinateManager = null;
+            this.coordinateIntegration = null;
             
-            console.log('🎯 BoundaryManager 破棄完了');
+            // EventBus通知
+            if (window.EventBus) {
+                window.EventBus.safeEmit('boundary.manager.destroyed', {
+                    version: this.version,
+                    timestamp: Date.now()
+                });
+            }
+            
+            console.log('✅ BoundaryManager破棄完了（座標統合対応）');
+            
+            return true;
             
         } catch (error) {
-            ErrorManager.showError('boundary-destroy', 
-                `境界管理破棄エラー: ${error.message}`
-            );
+            if (window.ErrorManager) {
+                window.ErrorManager.showError('boundary-destroy', 
+                    `境界管理破棄エラー: ${error.message}`
+                );
+            }
+            return false;
         }
     }
 }
 
-// グローバル登録
+// ==========================================
+// 🎯 Pure JavaScript グローバル公開
+// ==========================================
+
 if (typeof window !== 'undefined') {
     window.BoundaryManager = BoundaryManager;
-    console.log('🎯 BoundaryManager グローバル登録完了');
+    console.log('✅ BoundaryManager 座標統合完全修正版 グローバル公開完了（Pure JavaScript）');
 }
+
+console.log('🔧 BoundaryManager Phase1.4 座標統合完全修正版 - 準備完了');
+console.log('📋 座標統合修正完了: CoordinateManager完全統合・重複排除・健全性診断');
+console.log('🔄 修正実装項目:');
+console.log('  - initialize()メソッドでCoordinateManager統合確立');
+console.log('  - 拡張ヒットエリア作成の座標統合対応');
+console.log('  - 境界判定処理の座標統合対応');
+console.log('  - 境界越えイン処理の座標統合対応');
+console.log('  - 座標統合診断・健全性チェックシステム');
+console.log('  - Phase2準備: レイヤー境界判定基盤完成');
+console.log('💡 使用例: const boundaryManager = new window.BoundaryManager(); boundaryManager.initialize(canvas, coordinateManager);');

@@ -1437,4 +1437,5 @@ window.addEventListener('DOMContentLoaded', async () => {
             `;
         }
     }
+
 });
