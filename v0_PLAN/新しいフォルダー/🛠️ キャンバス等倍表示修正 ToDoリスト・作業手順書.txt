@@ -1,0 +1,313 @@
+# 🛠️ キャンバス等倍表示修正 ToDoリスト・作業手順書
+
+## 📋 問題状況の分析
+
+### 現状確認
+- **設定値**: 400x400px
+- **実際の表示**: 800x800px（2倍表示）
+- **コード状態**: DPI関連設定は既に除去済み（resolution=1, autoDensity=false）
+- **原因**: CSSまたはPixiJSの内部バッファサイズ処理で倍加発生
+
+### 根本原因
+1. **PixiJS内部処理**: `devicePixelRatio`が内部で適用されている可能性
+2. **CSS倍加**: `image-rendering`やサイズ指定で予期しない拡大
+3. **DOM操作**: キャンバス要素のサイズ設定で二重処理発生
+
+---
+
+## 🎯 修正作業手順（実行順序）
+
+### STEP 1: PixiJSグローバル設定の強制適用 ✅ 実行中
+**ファイル**: `libs/pixi-extensions.js`
+**目的**: PixiJS内部のDPI処理を完全無効化
+
+#### 実行内容:
+PixiExtensionsManagerクラスのvalidateCoreLibraries()メソッド内にDPI無効化設定を追加:
+```javascript
+// PixiJS基本機能確認後に追加
+// 🛠️ DPI完全無効化: PixiJSグローバル設定
+PIXI.settings.RESOLUTION = 1;
+PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.NEAREST;
+console.log('🛠️ PixiJS DPI無効化設定適用: resolution=1, scaleMode=nearest');
+```
+
+**参考メソッド**: `PixiExtensionsManager.validateCoreLibraries()`, PIXI.settings
+**検証**: `console.log(PIXI.settings.RESOLUTION)` → 1
+
+---
+
+### STEP 2: CSS強制等倍設定の適用
+**ファイル**: `css/styles.css`
+**目的**: キャンバス要素の物理サイズを設定値と完全一致
+
+#### 作業内容:
+```css
+/* #drawing-canvas セレクタ内に追加・修正 */
+#drawing-canvas {
+    display: block;
+    cursor: crosshair;
+    border-radius: 0;
+    overflow: visible;
+    
+    /* 🛠️ 強制等倍設定 */
+    width: auto !important;
+    height: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    
+    /* 🛠️ DPI無視・ピクセルパーフェクト */
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: -webkit-crisp-edges;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    image-rendering: pixelated;
+    
+    /* 🛠️ ブラウザ拡大防止 */
+    transform: scale(1) !important;
+    zoom: 1 !important;
+}
+```
+
+**参考メソッド**: CSSプロパティ（標準）
+**検証**: ブラウザInspectorで`canvas.width`属性確認
+
+---
+
+### STEP 3: AppCore初期化処理の修正
+**ファイル**: `js/app-core.js`
+**目的**: PixiJS Application作成時のサイズ指定を明確化
+
+#### 作業内容:
+`initializePixiApp()` メソッド内を修正:
+```javascript
+// 🛠️ MODIFIED: PixiJS Application初期化（完全DPI無視版）
+async initializePixiApp() {
+    try {
+        const canvasConfig = this.configManager.getCanvasConfig();
+        const pixiConfig = this.configManager.getPixiConfig();
+        
+        // 🛠️ ADDED: DPI完全無視の強制設定
+        const pixiOptions = {
+            width: canvasConfig.width,
+            height: canvasConfig.height,
+            backgroundColor: canvasConfig.backgroundColor,
+            antialias: pixiConfig.antialias,
+            resolution: 1,
+            autoDensity: false,
+            // 🛠️ ADDED: DPI関連オプション明示的無効化
+            useContextAlpha: true,
+            powerPreference: 'default'
+        };
+        
+        this.app = new PIXI.Application(pixiOptions);
+        
+        const canvasElement = document.getElementById('drawing-canvas');
+        canvasElement.appendChild(this.app.view);
+        
+        // 🛠️ ADDED: キャンバス要素サイズ強制設定
+        this.app.view.width = canvasConfig.width;
+        this.app.view.height = canvasConfig.height;
+        this.app.view.style.width = canvasConfig.width + 'px';
+        this.app.view.style.height = canvasConfig.height + 'px';
+        
+        // 基本設定
+        this.app.view.style.cursor = pixiConfig.cursor || 'crosshair';
+        this.app.view.style.touchAction = 'none';
+        
+        console.log('✅ PixiJS完全等倍初期化完了');
+        console.log(`📐 設定サイズ: ${canvasConfig.width}×${canvasConfig.height}px`);
+        console.log(`📐 実際サイズ: ${this.app.view.width}×${this.app.view.height}px`);
+        
+    } catch (error) {
+        console.error('❌ PixiJS等倍初期化失敗:', error);
+        throw error;
+    }
+}
+```
+
+**参考メソッド**: `ConfigManager.getCanvasConfig()`, `PIXI.Application`
+**検証**: コンソール出力で設定値と実際値の一致確認
+
+---
+
+### STEP 4: ConfigManager設定の再確認
+**ファイル**: `js/utils/config-manager.js`
+**目的**: DPI関連設定が確実に無効化されていることを確認
+
+#### 作業内容:
+`getPixiConfig()` メソッドの確認・強化:
+```javascript
+// 🛠️ MODIFIED: PixiJS設定取得（DPI完全除去版）
+getPixiConfig() {
+    return {
+        antialias: this.get('pixi.antialias', true),
+        resolution: 1, // 🛠️ 固定値1（変更不可）
+        autoDensity: false, // 🛠️ 固定値false（変更不可）
+        cursor: this.get('pixi.cursor', 'crosshair'),
+        // 🛠️ ADDED: DPI無効化確認用フラグ
+        dpiDisabled: true,
+        forcePixelPerfect: true
+    };
+}
+```
+
+**参考メソッド**: `ConfigManager.get()`
+**検証**: `window.ConfigManager.getPixiConfig()` で設定確認
+
+---
+
+### STEP 5: リサイズ処理の修正
+**ファイル**: `js/app-core.js`
+**目的**: リサイズ時もDPI倍加を防ぐ
+
+#### 作業内容:
+`resize()` メソッド内を修正:
+```javascript
+// 🛠️ MODIFIED: リサイズ処理（DPI完全無視版）
+resize(newWidth, newHeight, centerContent = false) {
+    if (!this.app) {
+        console.warn('⚠️ PixiJSアプリが初期化されていません');
+        return;
+    }
+    
+    try {
+        // 🛠️ MODIFIED: レンダラーリサイズ（DPI考慮なし）
+        this.app.renderer.resize(newWidth, newHeight);
+        
+        // 🛠️ ADDED: キャンバス要素サイズ強制設定
+        this.app.view.width = newWidth;
+        this.app.view.height = newHeight;
+        this.app.view.style.width = newWidth + 'px';
+        this.app.view.style.height = newHeight + 'px';
+        
+        // プロパティ更新
+        this.canvasWidth = newWidth;
+        this.canvasHeight = newHeight;
+        
+        // ヒットエリア更新
+        this.app.stage.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
+        
+        console.log(`📐 等倍リサイズ完了: ${newWidth}×${newHeight}px`);
+        
+    } catch (error) {
+        console.error('❌ 等倍リサイズエラー:', error);
+    }
+}
+```
+
+**参考メソッド**: `PIXI.Application.renderer.resize()`, `PIXI.Rectangle`
+**検証**: リサイズ後のキャンバスサイズ確認
+
+---
+
+### STEP 6: 動作検証スクリプト
+**目的**: 修正後の動作を確認するためのテストスクリプト
+
+#### ブラウザコンソールで実行:
+```javascript
+// 🧪 等倍表示検証スクリプト
+function verifyCanvasScaling() {
+    console.group('🧪 キャンバス等倍表示検証');
+    
+    const canvas = document.querySelector('#drawing-canvas canvas');
+    if (!canvas) {
+        console.error('❌ キャンバス要素が見つかりません');
+        return;
+    }
+    
+    const results = {
+        // DOM属性
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+        // CSS Style
+        styleWidth: parseInt(canvas.style.width),
+        styleHeight: parseInt(canvas.style.height),
+        // 計算値
+        computedWidth: parseInt(getComputedStyle(canvas).width),
+        computedHeight: parseInt(getComputedStyle(canvas).height),
+        // PixiJS設定
+        pixiResolution: window.AppCore?.app?.renderer?.resolution || 'N/A',
+        // DPR
+        devicePixelRatio: window.devicePixelRatio
+    };
+    
+    console.table(results);
+    
+    // 判定
+    const expectedWidth = 400;
+    const expectedHeight = 400;
+    const isCorrect = (
+        results.canvasWidth === expectedWidth &&
+        results.canvasHeight === expectedHeight &&
+        results.styleWidth === expectedWidth &&
+        results.styleHeight === expectedHeight
+    );
+    
+    if (isCorrect) {
+        console.log('✅ 等倍表示成功！');
+    } else {
+        console.log('❌ まだ倍加されています');
+    }
+    
+    console.groupEnd();
+    return results;
+}
+
+// 実行
+verifyCanvasScaling();
+```
+
+**参考メソッド**: DOM標準API, `getComputedStyle()`
+**検証**: テーブル表示で各値が400x400であることを確認
+
+---
+
+## 🔧 作業後の確認事項
+
+### 必須確認項目
+1. **物理サイズ**: `canvas.width` = 400, `canvas.height` = 400
+2. **CSS サイズ**: `canvas.style.width` = '400px', `canvas.style.height` = '400px'  
+3. **計算サイズ**: `getComputedStyle(canvas).width` = '400px'
+4. **PixiJS設定**: `app.renderer.resolution` = 1
+5. **描画精度**: 座標クリック位置と描画位置の一致
+
+### 想定される結果
+- **Before**: 400x400設定 → 800x800表示（2倍）
+- **After**: 400x400設定 → 400x400表示（1倍）
+
+---
+
+## ⚠️ 注意事項・制約
+
+### 実装時の注意
+- **既存コード保持**: 他の機能に影響を与えない
+- **Pure JavaScript**: ESM禁止・グローバル参照のみ
+- **統一システム依存**: ConfigManager等の依存性維持
+- **架空メソッド禁止**: 実在するAPIのみ使用
+
+### 高DPIデバイスでの影響
+- **メリット**: キャンバスサイズが設定通りになる
+- **デメリット**: 高DPI画面でわずかにぼやける可能性
+- **対策**: CSSの`image-rendering`でピクセル化
+
+### Phase2移行への影響
+- **レイヤーシステム**: 座標変換が単純化される
+- **変形機能**: DPI考慮不要で実装が簡素化
+- **メモリ使用量**: バッファサイズが適正化される
+
+---
+
+## 🎯 Phase2準備効果
+
+この修正により以下の効果が期待されます：
+
+1. **座標系の単純化**: 1:1マッピングで複雑な変換処理が不要
+2. **メモリ効率向上**: 無駄なDPI倍のバッファ削減
+3. **描画精度向上**: ピクセル単位での正確な描画
+4. **レイヤー実装準備**: 座標計算の複雑性削減
+
+---
+
+**📝 実装順序**: STEP 1 → STEP 2 → STEP 3 → STEP 4 → STEP 5 → STEP 6
+**🧪 検証方法**: 各STEP後にブラウザコンソールで`verifyCanvasScaling()`実行
+**🔄 ロールバック**: 各ファイルの変更前バックアップを保持

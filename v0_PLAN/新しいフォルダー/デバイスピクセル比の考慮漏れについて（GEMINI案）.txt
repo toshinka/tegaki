@@ -1,0 +1,73 @@
+これは多くの場合、高解像度ディスプレイ（Retinaディスプレイなど）におけるデバイスピクセル比の考慮漏れが原因です。
+
+ディスプレイによっては、見た目の1px（CSSピクセル）を、実際には2x2ピクセルなどの複数の物理ピクセルで描画することで、文字やUIをくっきりと表示させています。この「物理ピクセル / CSSピクセル」の比率が window.devicePixelRatio です。
+
+現在のコードではこの比率が考慮されていないため、例えばdevicePixelRatioが2の環境では、400x400pxのキャンバスが物理的に800x800ピクセルで描画され、結果として意図したサイズの倍の大きさで見えてしまっている可能性が非常に高いです。
+
+🔧 改修案
+この問題を解決するために、PixiJSの初期化処理でデバイスのピクセル比を自動的に反映させる設定を追加します。
+
+1. canvas-manager.js の修正
+managers/canvas-manager.js 内にある init メソッドの PIXI.Application の初期化部分を以下のように変更してください。
+
+変更前のコード (managers/canvas-manager.js)
+
+JavaScript
+
+// managers/canvas-manager.js L.32あたり
+this.app = new PIXI.Application({
+  width: width,
+  height: height,
+  backgroundColor: 0xffffff,
+  antialias: true,
+});
+変更後のコード (managers/canvas-manager.js)
+
+JavaScript
+
+// managers/canvas-manager.js L.32あたり
+this.app = new PIXI.Application({
+  width: width,
+  height: height,
+  backgroundColor: 0xffffff,
+  antialias: true,
+  resolution: window.devicePixelRatio || 1, // ★追加: デバイスのピクセル比を設定
+  autoDensity: true,                      // ★追加: 解像度に合わせて自動でスタイルを調整
+});
+【解説】
+
+resolution: window.devicePixelRatio || 1:
+ブラウザが報告するデバイスのピクセル比をPixiJSの解像度として設定します。これにより、高解像度ディスプレイでもドットがぼやけることなく、くっきりと描画されるようになります。
+
+autoDensity: true:
+resolution の設定に合わせて、canvas要素のCSS（style.width, style.height）を自動的に調整してくれる便利なオプションです。これにより、canvasの見た目のサイズが意図した大きさ（この場合はwidthとheightで指定したCSSピクセル値）に保たれます。
+
+2. （任意）CSSの確認と調整
+css/styles.css を見ると、canvasを囲むコンテナのサイズが固定されています。
+
+現在のCSS (css/styles.css)
+
+CSS
+
+#canvas-container {
+    width: 800px;
+    height: 600px;
+    border: 1px solid #000;
+    position: relative;
+}
+もしキャンバスサイズを動的に変更する仕様の場合、このコンテナサイズもJavaScript側からキャンバスサイズに合わせて更新すると、より柔軟なレイアウトが実現できます。
+
+例：canvas-manager.js でコンテナサイズも変更する
+
+JavaScript
+
+// managers/canvas-manager.js の init メソッドの末尾に追加
+const container = document.getElementById('canvas-container');
+if (container) {
+  container.style.width = `${width}px`;
+  container.style.height = `${height}px`;
+}
+まとめ
+まずは canvas-manager.js への resolution と autoDensity の追加 をお試しください。これだけで、どのようなディスプレイ環境でもキャンバスが意図した通りの大きさで表示されるようになるはずです。
+
+この修正は、将来的に目指されている高機能なアニメーションツールへの発展においても、様々な解像度のデバイスに対応するための重要な基盤となります。ご不明な点があれば、お気軽にご質問ください。

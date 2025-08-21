@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Canvasシンプルお絵かき</title>
+  <style>
+    body { background:#eee; display:flex; flex-direction:column; align-items:center; }
+    #controls { margin:10px; }
+    canvas { border:1px solid #333; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <button id="toggleDPI">🔄 DPI切替</button>
+    <span id="dpiLabel"></span>
+  </div>
+  <canvas id="canvas" width="400" height="400"></canvas>
+
+  <script>
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const dpiLabel = document.getElementById("dpiLabel");
+
+    let useHiDPI = false;
+
+    function setupCanvas() {
+      const dpi = useHiDPI ? window.devicePixelRatio : 1;
+
+      // CSS上の見た目は常に400px
+      canvas.style.width = "400px";
+      canvas.style.height = "400px";
+
+      // 内部解像度だけ切替
+      canvas.width = 400 * dpi;
+      canvas.height = 400 * dpi;
+      ctx.scale(dpi, dpi);
+
+      dpiLabel.textContent =
+        `現在: ${useHiDPI ? "高DPI" : "低DPI"} / 内部:${canvas.width}x${canvas.height} / CSS:400x400`;
+
+      drawGrid();
+    }
+
+    function drawGrid() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.beginPath();
+      ctx.strokeStyle = "#999";
+      for (let x = 0; x <= 400; x += 100) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, 400);
+      }
+      for (let y = 0; y <= 400; y += 100) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(400, y);
+      }
+      ctx.stroke();
+    }
+
+    // 描画機能（シンプルな黒ペン）
+    let drawing = false;
+    canvas.addEventListener("pointerdown", (e) => {
+      drawing = true;
+      ctx.beginPath();
+      const rect = canvas.getBoundingClientRect();
+      ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (!drawing) return;

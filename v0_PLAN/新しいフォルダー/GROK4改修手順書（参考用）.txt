@@ -1,0 +1,92 @@
+以下は、ユーザーのクエリに基づいたPixiJS v7を使用したアプリケーションで、キャンバスを自然に1:1スケーリング（等倍）にするための改修手順書です。現在のコード構造（PixiJS v7 + JavaScript + fetch API分割 + node_modules統合）を考慮し、高DPI処理を「対抗」するのではなく、PixiJSの標準オプションを使って自然に無効化/調整します。原因はPixiJSのデフォルト動作（resolutionがwindow.devicePixelRatioに基づく）で、内部バッファサイズがDPR倍になるためです。これをresolution=1に固定し、autoDensityをfalseにすることで、キャンバスサイズを指定通り（例: 400x400）のままにします。ただし、高DPI画面では若干のぼやけが発生する可能性があります（ピクセルアート風にする場合、CSSでimage-rendering: pixelatedを追加して対応）。手順は、コードの最小変更を優先し、DRY原則を維持。テスト環境で改修後、ブラウザコンソールでcanvas.width/heightを確認してください（400x400になるはず）。変更ファイルは、提供された構造から関連するものを特定（canvas-manager.jsやapp-core.jsがPixi初期化の中心と推定）。前提確認PixiJS v7のApplicationコンストラクタでresolutionがデフォルト（window.devicePixelRatio）またはautoDensity=trueになっている可能性が高い。
+改修後、キャンバスは物理ピクセル等倍（1:1）になり、高DPI前提のスケーリングがオフになる。
+必要なツール: テキストエディタ、ブラウザデベロッパーツール（コンソールでPIXI.settings確認）。
+バックアップ: 改修前に全ファイルをコピー。
+
+ステップバイステップ手順グローバル設定の調整（PixiJSのデフォルトresolutionを1に固定）対象ファイル: libs/pixi-extensions.js（Pixi拡張ファイルなので、ここにグローバル設定を追加。なければjs/app-core.jsの先頭に挿入）。
+変更内容:ファイルの先頭（import後、クラス定義前）に以下を追加:
+
+import * as PIXI from 'pixi.js'; // 既にimportされている場合、重複しないよう確認
+PIXI.settings.RESOLUTION = 1; // グローバルにresolutionを1に固定（高DPIスケーリング無効）
+PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.NEAREST; // ピクセルアート風にNearest Neighborスケーリング（ぼやけ防止、オプション）
+
+理由: PixiJS v7ではPIXI.settings.RESOLUTIONがデフォルトでwindow.devicePixelRatioになるため、これを1にオーバーライド。すべてのレンダラーに適用され、自然に等倍化。
+
+テスト: ブラウザでロード後、コンソールでPIXI.settings.RESOLUTIONを確認（1になるはず）。
+
+Pixi Applicationコンストラクタのオプション修正（ローカルresolution固定）対象ファイル: managers/canvas-manager.js（キャンバス初期化担当と推定）またはjs/app-core.js（コア初期化）。検索キーワード: new PIXI.Application( または PIXI.Application({。
+
+変更内容:Application作成部分を以下のように修正（例: 既存オプションに追加/上書き）:
+
+const app = new PIXI.Application({
+  width: 400, // 既存のまま
+  height: 400, // 既存のまま
+  resolution: 1, // 追加/変更: 高DPIスケーリングを無効
+  autoDensity: false, // 追加: 自動DPR調整オフ（キャンバスサイズをスタイルサイズと一致）
+  backgroundColor: 0xffffff, // 既存オプション例
+  view: document.getElementById('drawing-canvas'), // 既存のまま（index.htmlのcanvas参照）
+  // 他のオプション（antialiasなど）はそのまま
+});
+
+もしApplicationがcanvas-manager.jsのinitializeCanvas()内にある場合: 同関数内で上記修正。
+理由: resolution=1で内部バッファを指定サイズ（400x400）に固定。autoDensity=falseでスタイルサイズと物理サイズを一致（800x800にならない）。
+
+テスト: 初期化後、コンソールでapp.renderer.resolutionを確認（1になる）。canvas要素のwidth/height属性が400x400のままかInspect。
+
+CSS調整（視覚的なぼやけ防止、自然な表示）対象ファイル: css/styles.css。
+変更内容:#drawing-canvasセレクタに以下を追加（または上書き）:
+
+#drawing-canvas {
+  width: 400px !important; /* 固定サイズ（高DPIで拡大されないよう） */
+  height: 400px !important;
+  image-rendering: pixelated; /* ピクセルアート風等倍表示（Chrome/Firefox対応） */
+  image-rendering: -moz-crisp-edges; /* Firefox追加 */
+  image-rendering: crisp-edges; /* Safari追加 */
+}
+
+理由: 高DPI画面でブラウザの自動スケーリングを防ぎ、自然にシャープ/ピクセル化。Pixiのresolution=1と組み合わせで等倍化。
+
+テスト: 高DPI画面で表示確認（ぼやけず、サイズが400x400ピクセル相当）。
+
+座標/イベント処理の調整（等倍化による影響対応）対象ファイル: js/utils/coordinate-manager.js（座標管理）またはmanagers/tool-manager.js（ツールイベント）。
+変更内容:座標取得関数（例: getCanvasCoordinates()やevent.clientX/Y処理）でDPR倍率を考慮している場合、無効化:
+
+// 例: 既存のDPR調整をコメントアウトまたは削除
+// const dpr = window.devicePixelRatio; // 削除
+// x = event.clientX * dpr; // → x = event.clientX;
+const bounds = canvas.getBoundingClientRect();
+const x = event.clientX - bounds.left; // DPR無視で等倍座標
+const y = event.clientY - bounds.top;
+
+Pixiのinteractionイベント（pointerdownなど）でdata.getLocalPosition()を使っている場合、resolution=1なので変更不要だが、確認。
+理由: 等倍化で座標スケーリングが不要になる。自然に1:1マッピング。
+
+テスト: マウスイベントで座標ログ出力（console.log）、キャンバス内が0-400範囲か確認。
+
+初期化シーケンスの確認と統合（全体整合）対象ファイル: js/main.js（メイン初期化）またはjs/app-core.js。
+変更内容:initialize()関数内でCanvasManager初期化前にグローバル設定を呼び出し:
+
+// 例: validateBasicDependencies()後などに追加
+PIXI.settings.RESOLUTION = 1; // ステップ1と重複回避（1箇所にまとめる）
+await this.appCore.initializeCanvasManager(); // 既存のまま、修正後確認
+
+EventBusやStateManagerで'canvas-resized'イベントがあれば、resolution変更をトリガー。
+理由: 初期化順序を維持し、fetch API分割（非同期ロード）でタイミングずれを防ぐ。
+
+テスト: アプリロード後、performance.now()で初期化時間測定（maxInitTime超えないか）。
+
+テストとデバッグ環境: 高DPI画面（Retina Macや4Kディスプレイ）でChrome/Firefoxテスト。DPR=2の場合、canvas.width=400（800でない）確認。
+デバッグポイント:コンソール: document.getElementById('drawing-canvas').width → 400。
+Inspector: キャンバス要素のcomputed style → 400x400px。
+エラー: ErrorManagerで'canvas-init-error'ログ確認。
+
+ロールバック: 問題時、resolutionをwindow.devicePixelRatioに戻す。
+パフォーマンス: utils/performance.jsでFPS/GPU監視（等倍化で向上するはず）。
+
+予想される影響と注意利点: キャンバスが自然に400x400等倍になり、高DPI前提の不自然さが解消。メモリ使用減（バッファサイズ小）。
+潜在問題: 高DPIでぼやけ→ステップ3のCSSで緩和。ベクター描画（ツール）がピクセル化→SCALE_MODE=NEARESTで調整。
+総行数影響: 追加5-10行程度（DRY維持）。
+バージョンアップ: PixiJS v8以降でsettingsが変わる可能性→公式ドキュメント確認（pixijs.com）。
+
+この手順で改修後、再ビルド/リロードして動作確認してください。
+

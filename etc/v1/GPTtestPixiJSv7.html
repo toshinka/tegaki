@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>PixiJS v7 DPI比較デモ</title>
+  <style>
+    body { background:#eee; display:flex; flex-direction:column; align-items:center; }
+    #controls { margin: 10px; }
+    canvas { border:1px solid #333; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <button id="toggleDPI">🔄 DPI切替</button>
+    <span id="dpiLabel"></span>
+  </div>
+  <div id="canvasWrapper"></div>
+
+  <script type="module">
+    import * as PIXI from "https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.mjs";
+
+    let useHiDPI = false; // 初期は低DPI
+    let app, graphics;
+
+    function initApp() {
+      if (app) {
+        app.destroy(true, { children: true, texture: true, baseTexture: true });
+        document.getElementById("canvasWrapper").innerHTML = "";
+      }
+
+      const resolution = useHiDPI ? window.devicePixelRatio : 1;
+
+      app = new PIXI.Application({
+        width: 400,
+        height: 400,
+        backgroundColor: 0xffffff,
+        resolution: resolution,
+        autoDensity: true // CSSサイズはwidth/heightで固定
+      });
+
+      document.getElementById("canvasWrapper").appendChild(app.view);
+
+      document.getElementById("dpiLabel").textContent =
+        `現在: ${useHiDPI ? "高DPI" : "低DPI"} / 内部: ${app.renderer.width}x${app.renderer.height} / CSS: ${app.view.style.width}x${app.view.style.height}`;
+
+      graphics = new PIXI.Graphics();
+      app.stage.addChild(graphics);
+
+      let drawing = false;
+
+      app.view.addEventListener("pointerdown", (e) => {
+        drawing = true;
+        const pos = app.renderer.plugins.interaction.mapPositionToPoint(
+          new PIXI.Point(),
+          e.clientX,
+          e.clientY
+        );
+        graphics.moveTo(pos.x, pos.y);
+      });
+
+      app.view.addEventListener("pointermove", (e) => {
+        if (!drawing) return;
+        const pos = app.renderer.plugins.interaction.mapPositionToPoint(
+          new PIXI.Point(),
+          e.clientX,
+          e.clientY
+        );
+        graphics.lineStyle(2, 0x000000, 1);
+        graphics.lineTo(pos.x, pos.y);
+        graphics.moveTo(pos.x, pos.y);
+      });
+
+      app.view.addEventListener("pointerup", () => { drawing = false; });
+      app.view.addEventListener("pointerleave", () => { drawing = false; });
+
+      // 内部サイズ可視化: グリッドを描く
+      graphics.lineStyle(1, 0x999999, 1);
+      for (let x = 0; x <= 400; x += 100) {
+        graphics.moveTo(x, 0).lineTo(x, 400);
+      }
+      for (let y = 0; y <= 400; y += 100) {
+        graphics.moveTo(0, y).lineTo(400, y);
+      }
+    }
+
+    initApp();
+
+    document.getElementById("toggleDPI").addEventListener("click", () => {
+      useHiDPI = !useHiDPI;
+      initApp();
+    });
+  </script>
+</body>
+</html>

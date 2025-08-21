@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>PixiJS vs Canvas サイズ比較</title>
+<style>
+  body { font-family: sans-serif; background:#eee; display:flex; flex-direction:column; align-items:center; gap:20px; padding:20px;}
+  .canvas-wrapper { display:flex; gap:20px; }
+  .canvas-container { display:flex; flex-direction:column; align-items:center; }
+  canvas { border:1px solid #333; display:block; }
+  .label { margin-top:8px; font-size:14px; }
+</style>
+<script src="https://pixijs.download/release/pixi.min.js"></script>
+</head>
+<body>
+<h2>PixiJS vs 素Canvas サイズ比較</h2>
+
+<div class="canvas-wrapper">
+  <div class="canvas-container">
+    <canvas id="canvas-plain" width="400" height="400"></canvas>
+    <div class="label">素Canvas 400x400</div>
+  </div>
+  <div class="canvas-container">
+    <div id="pixi-correct"></div>
+    <div class="label">PixiJS 正常 400x400</div>
+  </div>
+  <div class="canvas-container">
+    <div id="pixi-fail"></div>
+    <div class="label">PixiJS CSS引き伸ばし (失敗例)</div>
+  </div>
+</div>
+
+<script>
+/* ----------- 素Canvas ----------- */
+const canvasPlain = document.getElementById("canvas-plain");
+const ctx = canvasPlain.getContext("2d");
+ctx.fillStyle = "#aaf";
+ctx.fillRect(0,0,400,400);
+ctx.strokeStyle = "#000";
+ctx.strokeRect(0,0,400,400);
+
+/* ----------- PixiJS 正常 ----------- */
+const appCorrect = new PIXI.Application({
+  width: 400,
+  height: 400,
+  resolution: window.devicePixelRatio,
+  autoDensity: true,
+  backgroundColor: 0xaaffff
+});
+document.getElementById("pixi-correct").appendChild(appCorrect.view);
+const g1 = new PIXI.Graphics();
+g1.lineStyle(2, 0x000000);
+g1.drawRect(0,0,400,400);
+appCorrect.stage.addChild(g1);
+
+/* ----------- PixiJS 失敗例 ----------- */
+const appFail = new PIXI.Application({
+  width: 400,
+  height: 400,
+  resolution: 1,     // autoDensity OFF
+  autoDensity: false,
+  backgroundColor: 0xaaffff
+});
+document.getElementById("pixi-fail").appendChild(appFail.view);
+
+// CSSで意図的に引き伸ばして失敗
+appFail.view.style.width = "500px";
+appFail.view.style.height = "500px";
+
+const g2 = new PIXI.Graphics();
+g2.lineStyle(2, 0x000000);
+g2.drawRect(0,0,400,400);
+appFail.stage.addChild(g2);
+</script>
+</body>
+</html>

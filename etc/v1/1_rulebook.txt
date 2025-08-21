@@ -1,0 +1,23 @@
+## 1. 基本理念（実装現実対応版）
+
+### 1.1 核心方針（Phase1.4達成済み）
+- **統一システム基盤**: ConfigManager・ErrorManager・StateManager・EventBus - **完全実装済み**
+- **Manager群実装**: CoordinateManager・MemoryManager・BoundaryManager等 - **Phase1.4完了**
+- **循環依存完全排除**: EventBus疎結合設計 - **実装済み・動作確認済み**
+- **AI協働開発最適化**: 20+ファイル分割・明確な責任分界 - **達成済み**
+- **PixiJSエコシステム活用**により、車輪の再発明を避け、標準実装を採用する
+
+### 1.2 実装現実
+- **JavaScript Pure**: ✅ ESM/TypeScript混在禁止・Pure JavaScript維持達成
+- **統一システム必須**: ✅ 全Manager・ToolがConfigManager等経由で動作
+- **500行ファイル制限**: ✅ 平均300行以下・最大管理下
+- **責任分界明確**: ✅ utils/・managers/・tools/・ui/の明確分離達成、多重座標実装しない
+- **重複排除徹底**: DRY・SOLID原則による重複コード・重複関数の完全排除
+- **ES2023構文使用OK、OffscreenCanvasや最新Canvas APIも使用OK、後方互換は意識しない
+
+
+### 1.3 Phase現実（実装進捗）
+- **Phase1.4**: ✅ **完了** - 統一システム基盤・Manager群・描画機能基盤
+- **Phase2**: レイヤーシステム・高度描画機能（準備完了）
+- **Phase3**: アニメーション・GIF・高性能化
+- **Phase4**: PixiJS v8移行・WebGPU・120FPS

@@ -1,0 +1,418 @@
+# 🔧 デバイスピクセル比対応 修正作業手順書
+
+## 📋 問題分析
+
+### 🚨 現在の問題
+- キャンバスサイズが設定値より大きく表示される
+- 高解像度ディスプレイ（Retina等）でのデバイスピクセル比考慮漏れ
+- PixiJS初期化時の`resolution`と`autoDensity`オプション未設定
+
+### ✅ GEMINI提案の妥当性確認
+- **正確な原因特定**: `window.devicePixelRatio`の未考慮
+- **適切な解決方法**: PixiJS Application初期化時のオプション追加
+- **実装難易度**: 低（既存コード変更箇所が限定的）
+- **副作用リスク**: 非常に低（標準的なPixiJS機能）
+
+---
+
+## 🎯 作業対象ファイル
+
+### 📁 修正必要ファイル
+1. **`managers/canvas-manager.js`** - メイン修正対象
+2. **`css/styles.css`** - 任意のCSS調整
+
+### 📁 参照・依存ファイル
+- `js/utils/config-manager.js` - 設定値取得
+- `js/utils/error-manager.js` - エラーハンドリング
+- `js/utils/state-manager.js` - 状態管理
+
+---
+
+## 🔧 修正作業手順
+
+### 【STEP 1】 コード確認と準備
+
+#### 1.1 現在の初期化コードを特定
+```javascript
+// managers/canvas-manager.js の該当箇所を確認
+// 現在のPIXI.Application初期化部分を特定
+// 行数: 30-40行目付近（推定）
+```
+
+#### 1.2 バックアップ作成
+```bash
+# 作業前にファイルをバックアップ
+cp managers/canvas-manager.js managers/canvas-manager.js.backup
+```
+
+### 【STEP 2】 PixiJS初期化部分の修正
+
+#### 2.1 修正対象コードの特定
+**検索対象**: `new PIXI.Application({`
+
+**想定される現在のコード**:
+```javascript
+this.app = new PIXI.Application({
+  width: width,
+  height: height,
+  backgroundColor: 0xffffff,
+  antialias: true,
+});
+```
+
+#### 2.2 修正コードの適用
+**新しいコード** (デバイスピクセル比対応):
+```javascript
+this.app = new PIXI.Application({
+  width: width,
+  height: height,
+  backgroundColor: 0xffffff,
+  antialias: true,
+  resolution: window.devicePixelRatio || 1, // ★追加: デバイスピクセル比対応
+  autoDensity: true,                        // ★追加: CSS自動調整
+});
+```
+
+#### 2.3 コメント追加
+```javascript
+// 🔧 Phase1.4-デバイスピクセル比対応
+// resolution: 高解像度ディスプレイでの描画品質向上
+// autoDensity: CSS スタイル自動調整でサイズ保持
+// V8_MIGRATION: app.renderer.resolution に変更予定
+```
+
+### 【STEP 3】 設定管理との統合（推奨）
+
+#### 3.1 ConfigManagerとの連携
+```javascript
+// 設定値をConfigManagerから取得する場合
+const pixiConfig = this.configManager?.getPixiConfig() || {};
+const resolution = pixiConfig.resolution || window.devicePixelRatio || 1;
+const autoDensity = pixiConfig.autoDensity !== false; // デフォルト true
+
+this.app = new PIXI.Application({
+  width: width,
+  height: height,
+  backgroundColor: 0xffffff,
+  antialias: true,
+  resolution: resolution,
+  autoDensity: autoDensity,
+});
+```
+
+### 【STEP 4】 エラーハンドリング追加
+
+#### 4.1 デバイスピクセル比取得の安全化
+```javascript
+// デバイスピクセル比の安全な取得
+const getDevicePixelRatio = () => {
+  try {
+    return window.devicePixelRatio || 1;
+  } catch (error) {
+    console.warn('⚠️ デバイスピクセル比取得エラー:', error);
+    return 1; // フォールバック
+  }
+};
+
+const resolution = getDevicePixelRatio();
+```
+
+#### 4.2 初期化エラー対策
+```javascript
+try {
+  this.app = new PIXI.Application({
+    width: width,
+    height: height,
+    backgroundColor: 0xffffff,
+    antialias: true,
+    resolution: resolution,
+    autoDensity: true,
+  });
+  
+  console.log(`✅ PixiJS初期化完了 - resolution: ${resolution}`);
+  
+} catch (error) {
+  console.error('❌ PixiJS初期化エラー:', error);
+  
+  // ErrorManager連携
+  if (window.ErrorManager) {
+    window.ErrorManager.showCriticalError(
+      `キャンバス初期化に失敗しました: ${error.message}`
+    );
+  }
+  
+  throw error;
+}
+```
+
+### 【STEP 5】 CSS調整（任意）
+
+#### 5.1 コンテナサイズの動的調整
+```javascript
+// canvas-manager.js の初期化完了後に追加
+const updateContainerSize = (width, height) => {
+  const container = document.getElementById('canvas-container');
+  if (container) {
+    container.style.width = `${width}px`;
+    container.style.height = `${height}px`;
+    
+    // データ属性でサイズ情報を保持
+    container.setAttribute('data-canvas-size', `${width}×${height}`);
+    container.setAttribute('data-resolution', this.app.renderer.resolution);
+  }
+};
+
+// 初期化時に実行
+updateContainerSize(width, height);
+```
+
+#### 5.2 CSSでの解像度情報表示（デバッグ用）
+```css
+/* css/styles.css に追加（任意） */
+#canvas-container::before {
+  content: attr(data-canvas-size) " (×" attr(data-resolution) ")";
+  position: absolute;
+  top: -20px;
+  left: 0;
+  font-size: 12px;
+  color: #666;
+  font-family: monospace;
+}
+
+/* 開発モードでのみ表示 */
+.debug-mode #canvas-container::before {
+  display: block;
+}
+```
+
+### 【STEP 6】 テスト・検証
+
+#### 6.1 基本動作テスト
+```javascript
+// デバイスピクセル比情報を確認
+console.log('🔍 デバイス情報:');
+console.log('  devicePixelRatio:', window.devicePixelRatio);
+console.log('  app.renderer.resolution:', this.app.renderer.resolution);
+console.log('  canvas actual size:', this.app.view.width, '×', this.app.view.height);
+console.log('  canvas CSS size:', this.app.view.style.width, '×', this.app.view.style.height);
+```
+
+#### 6.2 異なる解像度でのテスト
+- **標準ディスプレイ** (devicePixelRatio: 1)
+- **Retinaディスプレイ** (devicePixelRatio: 2)
+- **高DPIディスプレイ** (devicePixelRatio: 1.5, 2.5等)
+
+#### 6.3 描画品質確認
+- 線の鮮明度
+- テキストの読みやすさ
+- UI要素のクリスピネス
+
+### 【STEP 7】 状態管理・診断機能追加
+
+#### 7.1 StateManager統合
+```javascript
+// StateManagerに解像度情報を追加
+if (window.StateManager) {
+  window.StateManager.updateSystemState('canvas', 'resolution', {
+    devicePixelRatio: window.devicePixelRatio,
+    pixiResolution: this.app.renderer.resolution,
+    autoDensity: true,
+    timestamp: Date.now()
+  });
+}
+```
+
+#### 7.2 診断コマンド追加
+```javascript
+// 解像度診断メソッド（canvas-manager.js に追加）
+runResolutionDiagnosis() {
+  console.group('🔍 解像度診断');
+  
+  const diagnosis = {
+    device: {
+      pixelRatio: window.devicePixelRatio,
+      screenSize: {
+        width: window.screen.width,
+        height: window.screen.height
+      },
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight
+      }
+    },
+    pixi: {
+      resolution: this.app.renderer.resolution,
+      autoDensity: this.app.renderer.plugins.interaction?.autoPreventDefault,
+      canvasSize: {
+        actual: {
+          width: this.app.view.width,
+          height: this.app.view.height
+        },
+        css: {
+          width: this.app.view.style.width,
+          height: this.app.view.style.height
+        }
+      }
+    },
+    expected: {
+      width: this.width,
+      height: this.height
+    }
+  };
+  
+  console.log('📊 診断結果:', diagnosis);
+  
+  // 問題検出
+  const issues = [];
+  
+  if (!diagnosis.pixi.resolution || diagnosis.pixi.resolution === 1) {
+    if (diagnosis.device.pixelRatio > 1) {
+      issues.push('高解像度ディスプレイでresolution未設定');
+    }
+  }
+  
+  if (diagnosis.pixi.canvasSize.actual.width !== this.width * diagnosis.pixi.resolution) {
+    issues.push('キャンバス実際サイズが期待値と不一致');
+  }
+  
+  if (issues.length > 0) {
+    console.warn('⚠️ 検出された問題:', issues);
+  } else {
+    console.log('✅ 解像度設定は正常です');
+  }
+  
+  console.groupEnd();
+  
+  return diagnosis;
+}
+```
+
+---
+
+## 📊 実装チェックリスト
+
+### ✅ 必須項目
+- [ ] PIXI.Application に `resolution` オプション追加
+- [ ] PIXI.Application に `autoDensity` オプション追加
+- [ ] エラーハンドリング実装
+- [ ] コメント追記（修正理由・V8移行対応）
+
+### 📋 推奨項目
+- [ ] ConfigManager連携
+- [ ] StateManager統合
+- [ ] CSS動的調整
+- [ ] 診断機能追加
+- [ ] テスト実装
+
+### 🧪 テスト項目
+- [ ] 標準ディスプレイでの表示確認
+- [ ] 高解像度ディスプレイでの表示確認
+- [ ] 描画品質の視覚確認
+- [ ] 既存機能の動作確認
+- [ ] エラー処理の動作確認
+
+---
+
+## 🚀 実装後の期待効果
+
+### ✅ 解決される問題
+- キャンバスサイズの表示不一致解消
+- 高解像度ディスプレイでの描画品質向上
+- 各種デバイスでの表示一貫性確保
+
+### 📈 副次的効果
+- PixiJS v8移行への準備完了
+- パフォーマンス最適化（適切な解像度設定）
+- 将来の解像度関連問題の予防
+
+### 🛡️ リスク対策
+- フォールバック値（resolution: 1）設定済み
+- エラーハンドリング実装
+- 既存コードへの影響最小化
+
+---
+
+## 💡 トラブルシューティング
+
+### 🔧 よくある問題と解決策
+
+#### 問題1: devicePixelRatio が undefined
+```javascript
+// 解決策: 安全な取得方法
+const resolution = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+```
+
+#### 問題2: 古いブラウザでの autoDensity 非対応
+```javascript
+// 解決策: 機能検出
+const autoDensity = 'autoDensity' in PIXI.Application.prototype ? true : false;
+```
+
+#### 問題3: CSS スタイルの上書き
+```javascript
+// 解決策: 明示的なスタイル設定
+this.app.view.style.width = `${width}px`;
+this.app.view.style.height = `${height}px`;
+```
+
+---
+
+## 📝 実装コードサンプル
+
+### 🎯 最終的な修正コード（完全版）
+```javascript
+// managers/canvas-manager.js の修正箇所
+
+// デバイスピクセル比対応の安全な初期化
+initializePixiApp(width, height) {
+  try {
+    // デバイス情報取得
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    
+    // ConfigManager連携（利用可能時）
+    const pixiConfig = this.configManager?.getPixiConfig() || {};
+    const resolution = pixiConfig.resolution || devicePixelRatio;
+    const autoDensity = pixiConfig.autoDensity !== false;
+    
+    console.log(`🎨 PixiJS初期化: ${width}×${height}, resolution=${resolution}`);
+    
+    // PixiJS Application 初期化
+    this.app = new PIXI.Application({
+      width: width,
+      height: height,
+      backgroundColor: 0xffffff,
+      antialias: true,
+      resolution: resolution,           // ★ デバイスピクセル比対応
+      autoDensity: autoDensity,         // ★ CSS自動調整
+    });
+    
+    // 状態管理更新
+    if (window.StateManager) {
+      window.StateManager.updateSystemState('canvas', 'resolution', {
+        devicePixelRatio: devicePixelRatio,
+        pixiResolution: resolution,
+        autoDensity: autoDensity,
+        timestamp: Date.now()
+      });
+    }
+    
+    // コンテナサイズ調整
+    this.updateContainerSize(width, height);
+    
+    console.log('✅ PixiJS初期化完了');
+    
+  } catch (error) {
+    console.error('❌ PixiJS初期化エラー:', error);
+    
+    if (window.ErrorManager) {
+      window.ErrorManager.showCriticalError(
+        `キャンバス初期化に失敗: ${error.message}`
+      );
+    }
+    
+    throw error;
+  }
+}
+```
+
+この手順書に従って修正を行えば、デバイスピクセル比の問題が解決され、すべての解像度のディスプレイで適切なキャンバスサイズが表示されるようになります。
