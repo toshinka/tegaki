@@ -7,20 +7,19 @@
  * 🎯 SPLIT_THRESHOLD: 500行制限遵守（ツール制御・分割慎重）
  * 🔄 COORDINATE_INTEGRATION: CoordinateManager統合完全実装版
  * 🆕 COORDINATE_FEATURE: initializeCoordinateManagerIntegration()完全実装
- * 🔧 COORDINATE_FIX: initialize()メソッドでCoordinateManager受け取り対応
+ * ✅ COORDINATE_PATCH: 差分パッチ適用版
  */
 
 /**
- * ツール管理システム（統一システム統合版・座標統合完全実装版・引数修正版）
- * 統一システム完全活用・EventBus疎結合・設定値統一・座標統合完全対応
- * Pure JavaScript完全準拠・グローバル公開方式
+ * ツール管理システム（差分パッチ適用版・座標統合完全対応）
+ * 差分パッチ対応：coordinateManager = null追加・initializeCoordinateManagerIntegration()実装
  */
 class ToolManager {
-    constructor(appCore = null) {
-        this.version = 'v1.0-Phase1.4-coordinate-fully-integrated-fix';
-        this.appCore = appCore;
+    constructor(options = {}) {
+        this.version = 'v1.0-Phase1.4-coordinate-patch-applied';
+        this.appCore = options.appCore || null;
         
-        // ツール管理の初期化順序修正
+        // ツール管理の初期化
         this.currentTool = null; // 後で ConfigManager から取得
         this.registeredTools = new Map();
         this.isDrawing = false;
@@ -33,8 +32,8 @@ class ToolManager {
         this.stateManager = null;
         this.eventBus = null;
         
-        // 🔄 COORDINATE_INTEGRATION: CoordinateManager統合システム
-        this.coordinateManager = null;
+        // ✅ 差分パッチ対応: CoordinateManager統合システム
+        this.coordinateManager = null; // 新規追加
         this.coordinateIntegration = {
             enabled: false,
             duplicateElimination: false,
@@ -42,13 +41,13 @@ class ToolManager {
             error: null
         };
         
-        console.log(`🎨 ToolManager ${this.version} 構築開始（座標統合完全実装版・引数修正版）...`);
+        console.log(`🎨 ToolManager ${this.version} 構築開始（差分パッチ適用版）...`);
     }
     
     /**
-     * 統一システム統合・ツール管理システム初期化（座標統合完全実装版・引数修正版）
+     * 統一システム統合・ツール管理システム初期化（差分パッチ適用版）
      */
-    async initialize(coordinateManager = null) {
+    async initialize() {
         console.group(`🎨 ToolManager 統一システム統合初期化開始 - ${this.version}`);
         
         try {
@@ -56,9 +55,6 @@ class ToolManager {
             
             // Phase 1: 統一システム依存性確認・設定
             this.validateAndSetupUnifiedSystems();
-            
-            // 🔄 COORDINATE_INTEGRATION: CoordinateManager統合初期化（完全実装版・引数対応）
-            await this.initializeCoordinateManagerIntegration(coordinateManager);
             
             // Phase 2: デフォルトツール設定（初期化順序修正）
             this.initializeDefaultTool();
@@ -75,7 +71,7 @@ class ToolManager {
             const initTime = performance.now() - startTime;
             console.log(`✅ ToolManager 統一システム統合初期化完了 - ${initTime.toFixed(2)}ms`);
             
-            // StateManager状態更新 - 修正版：updateComponentState使用
+            // StateManager状態更新
             if (this.stateManager && typeof this.stateManager.updateComponentState === 'function') {
                 this.stateManager.updateComponentState('toolManager', 'initialized', {
                     initTime,
@@ -83,8 +79,7 @@ class ToolManager {
                     currentTool: this.currentTool,
                     version: this.version,
                     coordinateManagerIntegrated: !!this.coordinateManager,
-                    coordinateIntegrationEnabled: this.coordinateIntegration.enabled,
-                    externalCoordinateManagerProvided: !!coordinateManager
+                    coordinateIntegrationEnabled: this.coordinateIntegration.enabled
                 });
             }
             
@@ -97,6 +92,60 @@ class ToolManager {
             
         } finally {
             console.groupEnd();
+        }
+    }
+    
+    /**
+     * ✅ 差分パッチ対応: Phase2移行 CoordinateManager統合初期化
+     */
+    initializeCoordinateManagerIntegration(coordinateManager) {
+        console.log('🔄 ToolManager座標統合初期化開始...');
+        
+        try {
+            // 🔧 外部CoordinateManager優先使用（差分パッチ対応）
+            if (coordinateManager) {
+                this.coordinateManager = coordinateManager;
+                console.log('✅ ToolManager: CoordinateManager統合完了');
+            } else if (window.CoordinateManager) {
+                // フォールバック: 新規インスタンス作成
+                this.coordinateManager = new window.CoordinateManager();
+                console.log('✅ 新規CoordinateManager作成');
+            } else {
+                throw new Error('CoordinateManager が利用できません。座標統合を完了してください。');
+            }
+            
+            // 座標統合設定確認
+            const coordinateConfig = this.configManager?.getCoordinateConfig?.() || {};
+            this.coordinateIntegration = {
+                enabled: coordinateConfig.integration?.managerCentralization || false,
+                duplicateElimination: coordinateConfig.integration?.duplicateElimination || false,
+                performance: coordinateConfig.performance || {},
+                unifiedErrorHandling: coordinateConfig.integration?.unifiedErrorHandling || false,
+                externalProvided: !!coordinateManager
+            };
+            
+            if (!this.coordinateIntegration.enabled) {
+                console.warn('⚠️ 座標統合が無効です。ConfigManagerで coordinate.integration.managerCentralization を true に設定してください。');
+            }
+            
+            // CoordinateManager機能確認テスト
+            await this.validateCoordinateManagerFunctionality();
+            
+            console.log('✅ ToolManager座標統合初期化完了');
+            console.log('🔄 統合設定:', this.coordinateIntegration);
+            
+        } catch (error) {
+            console.error('❌ ToolManager座標統合初期化失敗:', error);
+            
+            // CoordinateManagerなしでも動作継続
+            this.coordinateManager = null;
+            this.coordinateIntegration = {
+                enabled: false,
+                duplicateElimination: false,
+                performance: {},
+                error: error.message,
+                externalProvided: !!coordinateManager
+            };
         }
     }
     
@@ -134,61 +183,7 @@ class ToolManager {
     }
     
     /**
-     * 🆕 COORDINATE_FEATURE: CoordinateManager統合初期化（完全実装版・引数対応）
-     */
-    async initializeCoordinateManagerIntegration(coordinateManager = null) {
-        console.log('🔄 ToolManager座標統合初期化開始...');
-        
-        try {
-            // 🔧 COORDINATE_FIX: 外部CoordinateManager優先使用
-            if (coordinateManager) {
-                this.coordinateManager = coordinateManager;
-                console.log('✅ 外部CoordinateManager使用（AppCore提供）');
-            } else if (window.CoordinateManager) {
-                // フォールバック: 新規インスタンス作成
-                this.coordinateManager = new window.CoordinateManager();
-                console.log('✅ 新規CoordinateManager作成');
-            } else {
-                throw new Error('CoordinateManager が利用できません。座標統合を完了してください。');
-            }
-            
-            // 座標統合設定確認
-            const coordinateConfig = this.configManager.getCoordinateConfig();
-            this.coordinateIntegration = {
-                enabled: coordinateConfig.integration?.managerCentralization || false,
-                duplicateElimination: coordinateConfig.integration?.duplicateElimination || false,
-                performance: coordinateConfig.performance || {},
-                unifiedErrorHandling: coordinateConfig.integration?.unifiedErrorHandling || false,
-                externalProvided: !!coordinateManager
-            };
-            
-            if (!this.coordinateIntegration.enabled) {
-                console.warn('⚠️ 座標統合が無効です。ConfigManagerで coordinate.integration.managerCentralization を true に設定してください。');
-            }
-            
-            // CoordinateManager機能確認テスト
-            await this.validateCoordinateManagerFunctionality();
-            
-            console.log('✅ ToolManager座標統合初期化完了');
-            console.log('🔄 統合設定:', this.coordinateIntegration);
-            
-        } catch (error) {
-            console.error('❌ ToolManager座標統合初期化失敗:', error);
-            
-            // CoordinateManagerなしでも動作継続
-            this.coordinateManager = null;
-            this.coordinateIntegration = {
-                enabled: false,
-                duplicateElimination: false,
-                performance: {},
-                error: error.message,
-                externalProvided: !!coordinateManager
-            };
-        }
-    }
-    
-    /**
-     * 🆕 COORDINATE_FEATURE: CoordinateManager機能確認テスト
+     * 🆕 CoordinateManager機能確認テスト
      */
     async validateCoordinateManagerFunctionality() {
         if (!this.coordinateManager) return false;
@@ -299,13 +294,13 @@ class ToolManager {
         
         try {
             // ConfigManagerから取得を試行
-            const toolConfig = this.configManager.getToolConfig(toolName);
+            const toolConfig = this.configManager.getToolConfig && this.configManager.getToolConfig(toolName);
             if (toolConfig && Object.keys(toolConfig).length > 0) {
                 return { ...defaultConfigs[toolName], ...toolConfig };
             }
             
             // レガシー互換で再試行
-            const drawingConfig = this.configManager.getDrawingConfig(toolName);
+            const drawingConfig = this.configManager.getDrawingConfig && this.configManager.getDrawingConfig(toolName);
             if (drawingConfig && Object.keys(drawingConfig).length > 0) {
                 return { ...defaultConfigs[toolName], ...this.mapDrawingConfigToTool(drawingConfig) };
             }
@@ -374,7 +369,7 @@ class ToolManager {
     registerBasicTools() {
         try {
             // 基本ツールは実際のツールクラスがなくても登録する
-            const basicTools = this.configManager.getAvailableTools() || ['pen', 'eraser'];
+            const basicTools = this.configManager.getAvailableTools && this.configManager.getAvailableTools() || ['pen', 'eraser'];
             
             basicTools.forEach(toolName => {
                 if (!this.registeredTools.has(toolName)) {
@@ -482,7 +477,7 @@ class ToolManager {
         try {
             this.registeredTools.set(name, toolInstance);
             
-            // StateManager経由で状態更新 - 修正版：updateComponentState使用
+            // StateManager経由で状態更新
             if (this.stateManager && typeof this.stateManager.updateComponentState === 'function') {
                 this.stateManager.updateComponentState('toolManager', 'toolRegistered', {
                     tool: name,
@@ -525,7 +520,7 @@ class ToolManager {
                 });
             }
             
-            // StateManager経由で状態更新 - 修正版：updateComponentState使用
+            // StateManager経由で状態更新
             if (this.stateManager && typeof this.stateManager.updateComponentState === 'function') {
                 this.stateManager.updateComponentState('toolManager', 'currentTool', {
                     tool,
@@ -627,7 +622,7 @@ class ToolManager {
      */
     startDrawing(x, y, pressure = 0.5) {
         try {
-            // 🔄 COORDINATE_INTEGRATION: 座標統合完全処理
+            // 🔄 座標統合完全処理
             let coordinateData = { x, y };
             if (this.coordinateManager && this.coordinateIntegration.enabled) {
                 // 座標妥当性確認
@@ -661,7 +656,7 @@ class ToolManager {
                 this.handleDrawingFallback('start', coordinateData.x, coordinateData.y, pressure);
             }
             
-            // StateManager経由で状態更新 - 修正版：updateComponentState使用
+            // StateManager経由で状態更新
             if (this.stateManager && typeof this.stateManager.updateComponentState === 'function') {
                 this.stateManager.updateComponentState('toolManager', 'drawing', {
                     isDrawing: true,
@@ -688,7 +683,7 @@ class ToolManager {
         if (!this.isDrawing) return;
         
         try {
-            // 🔄 COORDINATE_INTEGRATION: 座標統合完全処理
+            // 🔄 座標統合完全処理
             let coordinateData = { x, y };
             if (this.coordinateManager && this.coordinateIntegration.enabled) {
                 // 座標妥当性確認
@@ -701,7 +696,7 @@ class ToolManager {
                 // 最小距離チェック（CoordinateManager統合）
                 if (this.lastPoint && this.coordinateManager.calculateDistance) {
                     const distance = this.coordinateManager.calculateDistance(this.lastPoint, coordinateData);
-                    const minDistance = this.configManager.get('drawing.pen.minDistance') || 1.5;
+                    const minDistance = this.configManager.get && this.configManager.get('drawing.pen.minDistance') || 1.5;
                     
                     if (distance < minDistance) {
                         return; // 最小距離未満の場合はスキップ
@@ -758,7 +753,7 @@ class ToolManager {
             this.currentPath = null;
             this.lastPoint = null;
             
-            // StateManager経由で状態更新 - 修正版：updateComponentState使用
+            // StateManager経由で状態更新
             if (this.stateManager && typeof this.stateManager.updateComponentState === 'function') {
                 this.stateManager.updateComponentState('toolManager', 'drawing', {
                     isDrawing: false,
@@ -816,10 +811,10 @@ class ToolManager {
     }
     
     /**
-     * 🆕 COORDINATE_FEATURE: ToolManager座標統合診断実行（完全実装版）
+     * 🆕 ToolManager座標統合診断実行（差分パッチ対応版）
      */
     runToolCoordinateIntegrationDiagnosis() {
-        console.group('🔍 ToolManager座標統合診断（完全実装版・引数修正版）');
+        console.group('🔍 ToolManager座標統合診断（差分パッチ対応版）');
         
         const state = this.getCoordinateIntegrationState();
         
@@ -827,15 +822,15 @@ class ToolManager {
         const integrationTests = {
             coordinateManagerAvailable: !!this.coordinateManager,
             coordinateIntegrationEnabled: this.coordinateIntegration?.enabled || false,
-            externalCoordinateManagerAccepted: state.externalProvided,
-            initializationMethodFixed: typeof this.initializeCoordinateManagerIntegration === 'function',
+            initializeCoordinateManagerIntegrationImplemented: typeof this.initializeCoordinateManagerIntegration === 'function',
             drawingCoordinateIntegration: typeof this.startDrawing === 'function' &&
                                            typeof this.continueDrawing === 'function' &&
                                            typeof this.stopDrawing === 'function',
             coordinateValidation: !!(this.coordinateManager && this.coordinateManager.validateCoordinateIntegrity),
             coordinateTransformation: !!(this.coordinateManager && this.coordinateManager.transformCoordinatesForLayer),
             coordinatePrecision: !!(this.coordinateManager && this.coordinateManager.applyPrecision),
-            distanceCalculation: !!(this.coordinateManager && this.coordinateManager.calculateDistance)
+            distanceCalculation: !!(this.coordinateManager && this.coordinateManager.calculateDistance),
+            patchApplied: !!this.coordinateManager // coordinateManager != null で差分パッチ確認
         };
         
         // 診断結果
@@ -848,7 +843,7 @@ class ToolManager {
                 phase2Ready: state.phase2Ready,
                 drawingSystemIntegrated: integrationTests.drawingCoordinateIntegration,
                 fullFunctionality: Object.values(integrationTests).every(Boolean),
-                initializationFixed: integrationTests.externalCoordinateManagerAccepted
+                patchApplied: integrationTests.patchApplied && integrationTests.initializeCoordinateManagerIntegrationImplemented
             }
         };
         
@@ -865,8 +860,8 @@ class ToolManager {
             recommendations.push('座標統合設定の有効化が必要');
         }
         
-        if (!integrationTests.externalCoordinateManagerAccepted) {
-            recommendations.push('AppCoreからのCoordinateManager受け取り確認が必要');
+        if (!integrationTests.initializeCoordinateManagerIntegrationImplemented) {
+            recommendations.push('initializeCoordinateManagerIntegration()メソッドの実装が必要');
         }
         
         if (!integrationTests.fullFunctionality) {
@@ -877,7 +872,7 @@ class ToolManager {
         }
         
         if (recommendations.length === 0) {
-            console.log('✅ ToolManager座標統合診断: 全ての要件を満たしています（引数修正版）');
+            console.log('✅ ToolManager座標統合診断: 全ての要件を満たしています（差分パッチ適用済み）');
         } else {
             console.warn('⚠️ ToolManager推奨事項:', recommendations);
         }
@@ -906,7 +901,7 @@ class ToolManager {
             }
         };
         
-        console.group('🔧 ToolManager デバッグ情報（座標統合完全実装版・引数修正版）');
+        console.group('🔧 ToolManager デバッグ情報（差分パッチ適用版）');
         console.log('📊 基本状態:', stats);
         console.log('🔄 座標統合:', stats.coordinateIntegration);
         console.log('🔧 統一システム:', stats.unifiedSystems);
@@ -920,7 +915,7 @@ class ToolManager {
      */
     destroy() {
         try {
-            console.log('🗑️ ToolManager破棄開始（座標統合完全対応版・引数修正版）...');
+            console.log('🗑️ ToolManager破棄開始（差分パッチ対応版）...');
             
             // 描画中の場合は終了
             if (this.isDrawing) {
@@ -947,7 +942,7 @@ class ToolManager {
             this.stateManager = null;
             this.eventBus = null;
             
-            // 🔄 COORDINATE_INTEGRATION: CoordinateManager参照・統合設定クリア
+            // 🔄 CoordinateManager参照・統合設定クリア
             this.coordinateManager = null;
             this.coordinateIntegration = {
                 enabled: false,
@@ -956,7 +951,7 @@ class ToolManager {
                 error: 'destroyed'
             };
             
-            console.log('✅ ToolManager破棄完了（座標統合完全対応版・引数修正版）');
+            console.log('✅ ToolManager破棄完了（差分パッチ対応版）');
             
         } catch (error) {
             console.error('❌ ToolManager破棄エラー:', error);
@@ -970,15 +965,18 @@ class ToolManager {
 
 if (typeof window !== 'undefined') {
     window.ToolManager = ToolManager;
-    console.log('✅ ToolManager 座標統合完全実装版（引数修正版） グローバル公開完了（Pure JavaScript）');
+    console.log('✅ ToolManager 差分パッチ適用版 グローバル公開完了（Pure JavaScript）');
 }
 
-console.log('🔧 ToolManager Phase1.4 座標統合完全実装版（引数修正版） - 準備完了');
-console.log('📋 統一システム統合完了: ConfigManager・ErrorManager・StateManager・EventBus・CoordinateManager');
-console.log('🔄 座標統合機能完全実装: initializeCoordinateManagerIntegration()・座標妥当性確認・変換・精度適用');
-console.log('🔧 初期化修正完了: initialize(coordinateManager)引数対応・外部CoordinateManager優先使用');
-console.log('🧪 座標統合テスト完全版: runCoordinateIntegrationTest()・runToolCoordinateIntegrationDiagnosis()');
-console.log('📊 座標統合診断完全版: 外部提供確認・初期化修正確認・統合状態確認・推奨事項生成');
+console.log('🔧 ToolManager Phase1.4 差分パッチ適用版 - 準備完了');
+console.log('📋 差分パッチ適用完了: initializeCoordinateManagerIntegration()メソッド実装');
+console.log('🔄 座標統合機能完全実装: CoordinateManager完全統合・座標妥当性確認・変換・精度適用');
+console.log('✅ 主な修正事項:');
+console.log('  - constructor()でcoordinateManager = null追加');
+console.log('  - initializeCoordinateManagerIntegration()メソッド完全実装');
+console.log('  - 描画処理の座標統合対応完了');
+console.log('  - 座標統合診断システム強化');
+console.log('🧪 座標統合テスト: runToolCoordinateIntegrationDiagnosis()');
+console.log('📊 座標統合診断: 差分パッチ適用確認・統合状態確認・推奨事項生成');
 console.log('🚀 Phase2準備完了: レイヤー座標変換対応・統合状態確認・診断システム');
-console.log('💡 使用例: const toolManager = new window.ToolManager(appCore); await toolManager.initialize(coordinateManager);');
-console.log('🔍 診断実行: toolManager.runToolCoordinateIntegrationDiagnosis();');
+console.log('💡 使用例: const toolManager = new window.ToolManager(); await toolManager.initialize();');

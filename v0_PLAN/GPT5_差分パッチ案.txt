@@ -1,0 +1,84 @@
+🎯 差分パッチ（Unified diff 形式）
+--- a/js/managers/canvas-manager.js
++++ b/js/managers/canvas-manager.js
+@@
+ import { EventBus } from "../utils/event-bus.js";
++import { CoordinateManager } from "../utils/coordinate-manager.js";
+ 
+ export class CanvasManager {
+   constructor(options) {
+     this.options = options;
++    this.coordinateManager = null; // 新規追加
+   }
+ 
++  /**
++   * Phase2 移行: CoordinateManager 統合初期化
++   */
++  initializeCoordinateIntegration() {
++    if (!this.coordinateManager) {
++      this.coordinateManager = new CoordinateManager();
++    }
++    console.info("✅ CanvasManager: CoordinateManager統合完了");
++  }
+ }
+
+--- a/js/managers/tool-manager.js
++++ b/js/managers/tool-manager.js
+@@
+ export class ToolManager {
+   constructor(options) {
+     this.options = options;
++    this.coordinateManager = null; // 新規追加
+   }
+ 
++  /**
++   * Phase2 移行: CoordinateManager を統合
++   */
++  initializeCoordinateManagerIntegration(coordinateManager) {
++    this.coordinateManager = coordinateManager;
++    console.info("✅ ToolManager: CoordinateManager統合完了");
++  }
+ }
+
+--- a/js/main.js
++++ b/js/main.js
+@@
+ async function initializeAppCore() {
+   // 既存の初期化処理
+   appCore = new AppCore();
+   canvasManager = new CanvasManager({ appCore });
+   toolManager = new ToolManager({ appCore });
+-  boundaryManager = new BoundaryManager({ appCore });
++  // Phase2移行: CoordinateManagerをCanvasManagerで生成 → 各Managerへ注入
++  canvasManager.initializeCoordinateIntegration();
++  toolManager.initializeCoordinateManagerIntegration(canvasManager.coordinateManager);
++  boundaryManager = new BoundaryManager(canvasManager.coordinateManager, { appCore });
+ 
+   await appCore.initialize();
+ }
+
+📌 BoundaryManager の変更点
+--- a/js/managers/boundary-manager.js
++++ b/js/managers/boundary-manager.js
+@@
+-export class BoundaryManager {
+-  constructor(options) {
+-    this.options = options;
+-  }
+-}
++export class BoundaryManager {
++  constructor(coordinateManager, options) {
++    this.coordinateManager = coordinateManager; // 新規必須引数
++    this.options = options;
++  }
++}
+
+✅ このパッチで解消できること
+
+CanvasManager が CoordinateManager を生成
+
+ToolManager と BoundaryManager が CoordinateManager を共有利用
+
+main.js 初期化フローに統合呼び出し追加
+
+これで coordinates.js の依存を完全削除可能（残る呼び出しを移行表に従って置換すればOK）

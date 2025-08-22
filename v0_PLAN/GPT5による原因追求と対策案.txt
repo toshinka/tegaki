@@ -1,0 +1,115 @@
+✅ 原因
+
+coordinates.js に依存する古い参照がまだ残っている
+
+ログの main.js:798 で「座標統合未完了」と警告。
+
+既存コードが window.CoordinateUtils / window.ColorUtils / window.MathUtils を参照している箇所が残っている。
+
+集中管理を呼び出す初期化処理が未実装
+
+ログに明示的に出ている：
+
+CanvasManagerでinitializeCoordinateIntegration()を呼び出してください
+
+ToolManagerでinitializeCoordinateManagerIntegration()を実装してください
+
+BoundaryManagerの初期化時にCoordinateManagerを渡してください
+
+つまり CanvasManager / ToolManager / BoundaryManager が CoordinateManager を受け取って使う設計にまだ切り替わっていない。
+
+CoordinateManager の導入はされているが接続不十分
+
+coordinate-manager.js がすでにあり、新しい統一座標系として使う設計。
+
+ただし既存モジュールが CoordinateManager を受け取らず、依然として旧ユーティリティを使おうとしている。
+
+🔧 対策案
+1. CanvasManager の改修
+
+修正ポイント: 初期化時に CoordinateManager を生成して保持。
+
+改修例:
+
+// canvas-manager.js
+import { CoordinateManager } from '../js/utils/coordinate-manager.js';
+
+export class CanvasManager {
+  constructor(options) {
+    this.options = options;
+    this.coordinateManager = null; // 新規追加
+  }
+
+  initializeCoordinateIntegration() {
+    if (!this.coordinateManager) {
+      this.coordinateManager = new CoordinateManager();
+    }
+    console.info('✅ CanvasManager: CoordinateManager統合完了');
+  }
+}
+
+2. ToolManager の改修
+
+修正ポイント: CoordinateManager を受け取り、ツール実行時に利用する。
+
+改修例:
+
+// tool-manager.js
+export class ToolManager {
+  constructor(options) {
+    this.options = options;
+    this.coordinateManager = null; // 新規追加
+  }
+
+  initializeCoordinateManagerIntegration(coordinateManager) {
+    this.coordinateManager = coordinateManager;
+    console.info('✅ ToolManager: CoordinateManager統合完了');
+  }
+}
+
+3. BoundaryManager の改修
+
+修正ポイント: 初期化時に CoordinateManager をコンストラクタ経由で受け取る。
+
+改修例:
+
+// boundary-manager.js
+export class BoundaryManager {
+  constructor(coordinateManager, options) {
+    this.coordinateManager = coordinateManager; // 受け取り必須化
+    this.options = options;
+  }
+}
+
+4. main.js の修正
+
+統合ポイント: 初期化フローに以下を追加。
+
+// main.js
+canvasManager.initializeCoordinateIntegration();
+toolManager.initializeCoordinateManagerIntegration(canvasManager.coordinateManager);
+boundaryManager = new BoundaryManager(canvasManager.coordinateManager, options);
+
+📋 移行確認チェックリスト
+
+ すべての window.CoordinateUtils / ColorUtils / MathUtils 呼び出しを削除
+
+ 代替呼び出しに置換
+
+CoordinateUtils.distance() → coordinateManager.calculateDistance()
+
+ColorUtils.getFutabaColor() → ConfigManager.getColors().futabaMaroon
+
+MathUtils.* → lodash または Math.*
+
+ CanvasManager → CoordinateManager を生成
+
+ ToolManager / BoundaryManager に注入
+
+ main.js 初期化順序を修正
+
+🎯 まとめ
+
+根本原因: 各マネージャークラスがまだ CoordinateManager を受け取っておらず、旧 coordinates.js のグローバル関数に依存。
+
+対策: CanvasManager で CoordinateManager を生成し、ToolManager と BoundaryManager に渡す。すべての呼び出しを統一座標系に切り替えれば coordinates.js を完全削除可能。
