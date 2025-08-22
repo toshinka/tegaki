@@ -3,17 +3,18 @@
  * 🚨 Task 1-B先行実装: 重複関数完全排除・統一システム完全統合版
  * 🎯 DRY・SOLID原則完全準拠・コード肥大化解決・初期化順序修正
  * 🔄 COORDINATE_INTEGRATION: 座標統合初期化処理完全統合版
+ * 🔧 BOUNDARY_FIX: BoundaryManager canvasElement引数修正対応版
  * 
  * 🎯 AI_WORK_SCOPE: アプリケーション統括・統一初期化・イベント協調
  * 🎯 DEPENDENCIES: ConfigManager, ErrorManager, StateManager, EventBus, AppCore
  * 🎯 SPLIT_THRESHOLD: 300行以下維持（重複排除により行数削減）
- * 📋 PHASE_TARGET: Phase1統一化完了版 + 座標統合初期化統合
+ * 📋 PHASE_TARGET: Phase1統一化完了版 + 座標統合初期化統合 + BoundaryManager修正
  * 🚨 重複排除内容: 旧エラー関数・旧状態取得・設定値統一・EventBus完全移行
  */
 
 class FutabaDrawingTool {
     constructor() {
-        console.log('🎨 FutabaDrawingTool 初期化開始（座標統合対応版）...');
+        console.log('🎨 FutabaDrawingTool 初期化開始（座標統合・BoundaryManager修正対応版）...');
         
         // 基本プロパティ初期化
         this.version = null; // ConfigManagerから取得
@@ -40,7 +41,7 @@ class FutabaDrawingTool {
      */
     async initialize() {
         try {
-            console.log('🚀 統一初期化シーケンス開始（座標統合対応版・DRY・SOLID準拠）');
+            console.log('🚀 統一初期化シーケンス開始（座標統合・BoundaryManager修正対応版・DRY・SOLID準拠）');
             this.isInitializing = true;
             
             // Phase 1: 統一システム依存性確認・設定
@@ -55,7 +56,7 @@ class FutabaDrawingTool {
             // Phase 4: AppCore初期化
             await this.initializeAppCore();
             
-            // Phase 5: Manager統合初期化（座標統合対応）
+            // Phase 5: Manager統合初期化（座標統合・BoundaryManager修正対応）
             await this.initializeManagersWithCoordinateIntegration();
             
             // Phase 6: システム統合
@@ -180,10 +181,10 @@ class FutabaDrawingTool {
     }
     
     /**
-     * 🆕 Manager統合初期化（座標統合対応）
+     * 🆕 Manager統合初期化（座標統合・BoundaryManager修正対応）
      */
     async initializeManagersWithCoordinateIntegration() {
-        console.group('🔄 Manager統合初期化（座標統合対応）');
+        console.group('🔄 Manager統合初期化（座標統合・BoundaryManager修正対応）');
         
         try {
             // CanvasManager取得・座標統合初期化
@@ -217,34 +218,35 @@ class FutabaDrawingTool {
                 console.warn('⚠️ ToolManager が利用できません（オプション）');
             }
             
-            // BoundaryManager初期化・座標統合対応
-            if (window.BoundaryManager) {
-                const boundaryOptions = { appCore: this.appCore };
-                
-                if (this.canvasManager?.coordinateManager) {
-                    // CoordinateManagerを渡してBoundaryManager初期化
-                    this.boundaryManager = new window.BoundaryManager(this.canvasManager.coordinateManager, boundaryOptions);
-                    console.log('✅ BoundaryManager: CoordinateManager統合初期化完了');
-                } else {
-                    // CoordinateManagerなしでBoundaryManager初期化
-                    this.boundaryManager = new window.BoundaryManager(boundaryOptions);
-                    console.warn('⚠️ BoundaryManager: CoordinateManager未提供 - 基本機能のみ提供');
-                }
-                
-                // BoundaryManager初期化実行
-                if (typeof this.boundaryManager.initialize === 'function') {
-                    this.boundaryManager.initialize();
-                }
-                
-                // AppCoreに設定
-                if (this.appCore) {
-                    this.appCore.boundaryManager = this.boundaryManager;
-                }
-            } else {
-                console.warn('⚠️ BoundaryManager クラスが見つかりません');
-            }
+// 🔧 BOUNDARY_FIX: BoundaryManager初期化・座標統合・canvasElement修正対応
+if (window.BoundaryManager) {
+    const boundaryOptions = { appCore: this.appCore };
+    
+    // canvasElement取得（drawingCanvas）
+    const canvasElement = document.getElementById("drawingCanvas");
+    if (this.canvasManager?.coordinateManager && canvasElement) {
+        // CoordinateManagerとcanvasElementを渡して初期化
+        this.boundaryManager = new window.BoundaryManager(
+            this.canvasManager.coordinateManager,
+            boundaryOptions
+        );
+        this.boundaryManager.initialize(canvasElement);
+        console.log('✅ BoundaryManager: CoordinateManager + canvasElement統合初期化完了');
+    } else {
+        this.boundaryManager = new window.BoundaryManager(boundaryOptions);
+        this.boundaryManager.initialize();
+        console.warn('⚠️ BoundaryManager: canvasElementまたはCoordinateManager未提供 - 基本機能のみ提供');
+    }
+    
+    // AppCoreに設定
+    if (this.appCore) {
+        this.appCore.boundaryManager = this.boundaryManager;
+    }
+} else {
+    console.warn('⚠️ BoundaryManager クラスが見つかりません');
+}
             
-            console.log('✅ Manager統合初期化完了（座標統合対応）');
+            console.log('✅ Manager統合初期化完了（座標統合・BoundaryManager修正対応）');
             this.initializationSteps.push('managers-coordinate-integration');
             
         } catch (error) {
@@ -407,7 +409,7 @@ class FutabaDrawingTool {
         this.isInitialized = true;
         
         const initTime = performance.now() - this.startTime;
-        console.log(`🎉 統一初期化完了（座標統合対応）！ 時間: ${initTime.toFixed(2)}ms`);
+        console.log(`🎉 統一初期化完了（座標統合・BoundaryManager修正対応）！ 時間: ${initTime.toFixed(2)}ms`);
         
         // 🚨 重複排除: EventBus経由での統一通知
         if (this.eventBus) {
@@ -610,6 +612,7 @@ class FutabaDrawingTool {
             initialized: this.isInitialized,
             unifiedSystemsIntegrated: true,
             coordinateIntegrationApplied: true,
+            boundaryManagerFixed: true,
             dryPrincipleCompliant: true,
             solidPrincipleCompliant: true,
             legacyFunctionsRemoved: true
@@ -783,7 +786,7 @@ class FutabaDrawingTool {
      * 🚨 重複排除: デバッグモード開始（統一システム統合版）
      */
     startDebugMode() {
-        console.log('🔍 統一デバッグモード開始（座標統合対応版・DRY・SOLID準拠版）');
+        console.log('🔍 統一デバッグモード開始（座標統合・BoundaryManager修正対応版・DRY・SOLID準拠版）');
         
         const debugInfo = {
             version: this.version,
@@ -799,6 +802,7 @@ class FutabaDrawingTool {
         console.log('  ✅ 重複関数完全排除: 完了');
         console.log('  ✅ 統一システム完全統合: 完了');
         console.log('  ✅ 座標統合初期化: 完了');
+        console.log('  ✅ BoundaryManager修正: 完了');
         console.log('  ✅ DRY原則準拠: 完了');
         console.log('  ✅ SOLID原則準拠: 完了');
         console.log('  ✅ コード肥大化解決: 完了');
@@ -921,20 +925,21 @@ console.log('  - window.checkCoordinateIntegration() - 基本統合確認');
 console.log('💡 統合確認実行: window.checkCoordinateIntegration()');
 
 /**
- * 🚨 重複排除: 統一アプリケーション起動（完全統合版・座標統合対応版）
+ * 🚨 重複排除: 統一アプリケーション起動（完全統合版・座標統合・BoundaryManager修正対応版）
  */
 window.addEventListener('DOMContentLoaded', async () => {
     try {
         console.log('🎨 ふたば☆ちゃんねる風ベクターお絵描きツール');
-        console.log('🚨 Task 1-B先行実装: 重複関数完全排除・DRY・SOLID原則準拠版（座標統合対応版）');
+        console.log('🚨 Task 1-B先行実装: 重複関数完全排除・DRY・SOLID原則準拠版（座標統合・BoundaryManager修正対応版）');
         console.log('🔧 統一システム: ConfigManager + ErrorManager + StateManager + EventBus');
         console.log('🔄 座標統合: CoordinateManager完全統合・Manager間連携');
-        console.log('🚀 統一アプリケーション起動開始（座標統合初期化対応版）...');
+        console.log('🔧 BoundaryManager修正: canvasElement引数修正・警告解消対応');
+        console.log('🚀 統一アプリケーション起動開始（座標統合・BoundaryManager修正初期化対応版）...');
         
         const app = new FutabaDrawingTool();
         await app.initialize();
         
-        console.log('🎉 統一アプリケーション起動完了！（座標統合対応版）');
+        console.log('🎉 統一アプリケーション起動完了！（座標統合・BoundaryManager修正対応版）');
         console.log('💡 操作方法:');
         console.log('  - キャンバス上でドラッグして描画');
         console.log('  - P キー: ペンツール / E キー: 消しゴム / Escape: ポップアップ閉じる');
@@ -944,6 +949,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         console.log('  - window.checkUnifiedHealth() 健全性チェック');
         console.log('  - window.getUnifiedMetrics() メトリクス取得');
         console.log('  - window.checkCoordinateIntegration() 座標統合確認');
+        console.log('  - window.boundaryManager.runBoundaryCoordinateIntegrationDiagnosis() BoundaryManager診断');
         console.log('📊 各統一システムの詳細:');
         console.log('  - window.ConfigManager.getDebugInfo() 設定情報表示');
         console.log('  - window.ErrorManager.getErrorStats() エラー統計表示');
@@ -956,19 +962,19 @@ window.addEventListener('DOMContentLoaded', async () => {
         if (window.ErrorManager) {
             window.ErrorManager.showCriticalError(error.message, {
                 showDebug: true,
-                additionalInfo: 'メインアプリケーション起動時のエラー（座標統合対応版）'
+                additionalInfo: 'メインアプリケーション起動時のエラー（座標統合・BoundaryManager修正対応版）'
             });
         } else {
             document.body.innerHTML = `
                 <div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#ffffee;font-family:system-ui,sans-serif;">
                     <div style="text-align:center;color:#800000;background:#f0e0d6;padding:32px;border:3px solid #cf9c97;border-radius:16px;max-width:500px;">
                         <h2 style="margin:0 0 16px 0;">🎨 ふたば☆お絵描きツール</h2>
-                        <p style="margin:0 0 16px 0;">統一システム（座標統合対応）の初期化に失敗しました。</p>
+                        <p style="margin:0 0 16px 0;">統一システム（座標統合・BoundaryManager修正対応）の初期化に失敗しました。</p>
                         <div style="background:#ffffee;padding:12px;border-radius:8px;margin:16px 0;font-family:monospace;font-size:12px;text-align:left;">
                             <strong>エラー:</strong> ${error.message}<br>
                             <strong>時刻:</strong> ${new Date().toLocaleString()}<br>
-                            <strong>Task:</strong> 1-B 重複関数完全排除（座標統合対応版）<br>
-                            <strong>バージョン:</strong> v1.0-Phase1.2step3-DRY-SOLID-coordinate-integrated
+                            <strong>Task:</strong> 1-B 重複関数完全排除（座標統合・BoundaryManager修正対応版）<br>
+                            <strong>バージョン:</strong> v1.0-Phase1.4-coordinate-boundary-integrated
                         </div>
                         <button onclick="location.reload()" 
                                 style="background:#800000;color:white;border:none;padding:12px 24px;border-radius:8px;cursor:pointer;font-weight:600;">
