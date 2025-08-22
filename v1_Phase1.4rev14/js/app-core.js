@@ -175,25 +175,49 @@ class AppCore {
         console.log('✅ Manager統合初期化完了（修正された順序・引数統一版）');
     }
     
-    /**
-     * 🔧 CanvasManager初期化（座標統合対応）
-     */
-    async initializeCanvasManager() {
-        if (window.CanvasManager) {
-            try {
-                this.canvasManager = new window.CanvasManager();
-                // 🔧 修正: appCoreとcanvasElementを適切に渡す
-                await this.canvasManager.initialize(this, this.app?.view);
-                console.log('✅ CanvasManager初期化完了（座標統合対応）');
-            } catch (error) {
-                console.warn('⚠️ CanvasManager初期化失敗:', error.message);
-                this.canvasManager = null;
-            }
-        } else {
-            console.warn('⚠️ CanvasManager利用不可');
+/**
+ * 🔧 CanvasManager初期化（座標統合対応・グローバル検出強化）
+ */
+async initializeCanvasManager() {
+    try {
+        // CanvasManagerコンストラクタの検出（window直下でなくても拾う）
+        const CanvasManagerCtor =
+            (typeof CanvasManager !== 'undefined' ? CanvasManager :
+             (window.CanvasManager || (window.Futaba && window.Futaba.CanvasManager)));
+
+        if (!CanvasManagerCtor) {
+            console.warn('⚠️ CanvasManager利用不可（クラス未登録 or スクリプト未読込）');
             this.canvasManager = null;
+            return;
         }
+
+        // canvasElement の取得（Pixi の view → #drawingCanvas → 最初の <canvas> の順でフォールバック）
+        const canvasElement =
+            (this.app && this.app.view) ||
+            document.getElementById('drawingCanvas') ||
+            document.querySelector('canvas');
+
+        if (!canvasElement) {
+            throw new Error('canvasElement を取得できませんでした');
+        }
+
+        // 初期化
+        this.canvasManager = new CanvasManagerCtor();
+        await this.canvasManager.initialize(this, canvasElement);
+
+        // 座標統合（あれば必ず呼ぶ）
+        if (typeof this.canvasManager.initializeCoordinateIntegration === 'function') {
+            this.canvasManager.initializeCoordinateIntegration();
+        }
+
+        console.log('✅ CanvasManager初期化完了（座標統合対応）');
+    } catch (error) {
+        console.warn('⚠️ CanvasManager初期化失敗:', error.message);
+        this.canvasManager = null;
     }
+}
+
+
     
     /**
      * 🔧 ToolManager初期化（CoordinateManager統合）

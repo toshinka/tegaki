@@ -70,62 +70,66 @@
         this.initializeBasicTools();
     }
     
-    /**
-     * 初期化
-     */
-    ToolManager.prototype.initialize = function(canvasManager, coordinateManager) {
-        console.group('🎯 ToolManager初期化開始 - ' + this.version);
-        
-        var self = this;
-        var startTime = performance.now();
-        
-        return new Promise(function(resolve, reject) {
-            try {
-                // CanvasManager統合設定
-                if (canvasManager) {
-                    self.setCanvasManager(canvasManager);
-                }
-                
-                // CoordinateManager統合設定
-                if (coordinateManager) {
-                    self.coordinateManager = coordinateManager;
-                }
-                
-                // ツール初期化
-                self.initializeTools()
-                    .then(function() {
-                        // イベント配信設定
-                        self.initializeEventDelegation();
-                        
-                        // 初期ツール設定
-                        return self.setActiveTool(self.currentToolName);
-                    })
-                    .then(function() {
-                        var initTime = performance.now() - startTime;
-                        console.log('✅ ToolManager初期化完了 - ' + initTime.toFixed(2) + 'ms');
-                        
-                        self.initialized = true;
-                        self.toolState.toolsInitialized = true;
-                        console.groupEnd();
-                        resolve(self);
-                    })
-                    .catch(function(error) {
-                        console.error('❌ ToolManager初期化エラー:', error);
-                        }
-                        console.groupEnd();
-                        reject(error);
-                    });
-                    
-            } catch (error) {
-                console.error('❌ ToolManager初期化エラー:', error);
-                if (window.ErrorManager) {
-                    window.ErrorManager.showError('error', 'ツール管理初期化失敗: ' + error.message);
-                }
-                console.groupEnd();
-                reject(error);
+/**
+ * 初期化
+ */
+ToolManager.prototype.initialize = function (canvasManager, coordinateManager) {
+    console.group('🎯 ToolManager初期化開始 - ' + this.version);
+
+    var self = this;
+    var startTime = performance.now();
+
+    return new Promise(function (resolve, reject) {
+        try {
+            // CanvasManager統合設定
+            if (canvasManager) {
+                self.setCanvasManager(canvasManager);
             }
-        });
-    };
+
+            // CoordinateManager統合設定
+            if (coordinateManager) {
+                self.coordinateManager = coordinateManager;
+            }
+
+            // ツール初期化
+            self.initializeTools()
+                .then(function () {
+                    // イベント配信設定
+                    self.initializeEventDelegation();
+
+                    // 初期ツール設定
+                    return self.setActiveTool(self.currentToolName);
+                })
+                .then(function () {
+                    var initTime = performance.now() - startTime;
+                    console.log(
+                        '✅ ToolManager初期化完了 - ' + initTime.toFixed(2) + 'ms'
+                    );
+
+                    self.initialized = true;
+                    self.toolState.toolsInitialized = true;
+                    console.groupEnd();
+                    resolve(self);
+                })
+                .catch(function (error) {
+                    console.error('❌ ToolManager初期化エラー:', error);
+                    console.groupEnd();
+                    reject(error);
+                });
+        } catch (error) {
+            console.error('❌ ToolManager初期化エラー:', error);
+            if (window.ErrorManager) {
+                window.ErrorManager.showError(
+                    'error',
+                    'ツール管理初期化失敗: ' + error.message
+                );
+            }
+            console.groupEnd();
+            reject(error);
+        }
+    });
+};
+
     
     /**
      * 基本ツール初期化
