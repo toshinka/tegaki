@@ -1,0 +1,44 @@
+改修作業書（Step by Step）
+Step 1. HTMLとスクリプトの読み込み確認
+
+index.html 内に <script src="...coordinates.js"> がないか再確認する。
+
+また、別ファイル（例：libs/pixi-extensions.js）が dynamic に読み込んでいないか確認。
+
+Step 2. スクリプトの参照検索
+
+プロジェクト全体で coordinates.js や CoordinateUtils の参照が残っていないか検索。
+
+残っている場合は、以下のように置換：
+
+window.CoordinateUtils.distance() → coordinateManager.calculateDistance()
+
+window.ColorUtils.getFutabaColor() → ConfigManager.getColors().futabaMaroon
+
+window.MathUtils.* → Math.* または lodash (window._.*)
+
+Step 3. 完全削除作業
+
+全参照を置換したのち、coordinates.js をプロジェクトから削除。
+
+削除後に再度、コンソール上に「削除警告」が出ないか確認。
+
+Step 4. テスト＆確認
+
+すべての機能（ペン描画、座標計算、Boundary機能など）が正常に動作するか確認。
+
+特に座標処理に関わる部分（ツール描画、ヒットエリア）を重点的にテスト。
+
+もし座標のズレや誤動作があれば、CoordinateManagerへの移行漏れや補間処理の誤実装の可能性。
+
+最終チェックリスト
+
+ coordinates.js の読み込みを HTML・スクリプト全体から完全に削除済み
+
+ 一切の参照（コード内、window オブジェクトなど）を CoordinateManager に置き換え
+
+ アプリ起動時に coordinates.js の警告ログが一切表示されない
+
+ BoundaryManager を含む座標機能が正常に動作する
+
+ その他ツール（ペン描画、線補正、UI表示など）も正常動作する
