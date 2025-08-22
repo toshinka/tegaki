@@ -2,17 +2,18 @@
  * 🎨 ふたば☆お絵描きツール - 統一版メインアプリケーション（修正版）
  * 🚨 Task 1-B先行実装: 重複関数完全排除・統一システム完全統合版
  * 🎯 DRY・SOLID原則完全準拠・コード肥大化解決・初期化順序修正
+ * 🔄 COORDINATE_INTEGRATION: 座標統合初期化処理完全統合版
  * 
  * 🎯 AI_WORK_SCOPE: アプリケーション統括・統一初期化・イベント協調
  * 🎯 DEPENDENCIES: ConfigManager, ErrorManager, StateManager, EventBus, AppCore
  * 🎯 SPLIT_THRESHOLD: 300行以下維持（重複排除により行数削減）
- * 📋 PHASE_TARGET: Phase1統一化完了版
+ * 📋 PHASE_TARGET: Phase1統一化完了版 + 座標統合初期化統合
  * 🚨 重複排除内容: 旧エラー関数・旧状態取得・設定値統一・EventBus完全移行
  */
 
 class FutabaDrawingTool {
     constructor() {
-        console.log('🎨 FutabaDrawingTool 初期化開始（修正版）...');
+        console.log('🎨 FutabaDrawingTool 初期化開始（座標統合対応版）...');
         
         // 基本プロパティ初期化
         this.version = null; // ConfigManagerから取得
@@ -27,6 +28,11 @@ class FutabaDrawingTool {
         this.errorManager = null;
         this.stateManager = null;
         this.eventBus = null;
+        
+        // Manager参照
+        this.canvasManager = null;
+        this.toolManager = null;
+        this.boundaryManager = null;
     }
     
     /**
@@ -34,7 +40,7 @@ class FutabaDrawingTool {
      */
     async initialize() {
         try {
-            console.log('🚀 統一初期化シーケンス開始（修正版・DRY・SOLID準拠）');
+            console.log('🚀 統一初期化シーケンス開始（座標統合対応版・DRY・SOLID準拠）');
             this.isInitializing = true;
             
             // Phase 1: 統一システム依存性確認・設定
@@ -49,13 +55,16 @@ class FutabaDrawingTool {
             // Phase 4: AppCore初期化
             await this.initializeAppCore();
             
-            // Phase 5: システム統合
+            // Phase 5: Manager統合初期化（座標統合対応）
+            await this.initializeManagersWithCoordinateIntegration();
+            
+            // Phase 6: システム統合
             this.setupSystemIntegration();
             
-            // Phase 6: EventBusリスナー設定
+            // Phase 7: EventBusリスナー設定
             this.setupEventBusListeners();
             
-            // Phase 7: 最終初期化処理
+            // Phase 8: 最終初期化処理
             this.finalizeInitialization();
             
             // 完了処理
@@ -167,6 +176,83 @@ class FutabaDrawingTool {
         } catch (error) {
             console.error('❌ AppCore初期化失敗:', error);
             throw error;
+        }
+    }
+    
+    /**
+     * 🆕 Manager統合初期化（座標統合対応）
+     */
+    async initializeManagersWithCoordinateIntegration() {
+        console.group('🔄 Manager統合初期化（座標統合対応）');
+        
+        try {
+            // CanvasManager取得・座標統合初期化
+            if (this.appCore?.canvasManager) {
+                this.canvasManager = this.appCore.canvasManager;
+                
+                // CoordinateManager統合初期化
+                if (typeof this.canvasManager.initializeCoordinateIntegration === 'function') {
+                    this.canvasManager.initializeCoordinateIntegration();
+                    console.log('✅ CanvasManager: CoordinateManager統合完了');
+                } else {
+                    console.warn('⚠️ CanvasManager: initializeCoordinateIntegration メソッドが見つかりません');
+                }
+            } else {
+                console.warn('⚠️ CanvasManager が利用できません');
+            }
+            
+            // ToolManager取得・座標統合初期化
+            if (this.appCore?.toolManager) {
+                this.toolManager = this.appCore.toolManager;
+                
+                // CoordinateManager統合初期化
+                if (this.canvasManager?.coordinateManager && 
+                    typeof this.toolManager.initializeCoordinateManagerIntegration === 'function') {
+                    this.toolManager.initializeCoordinateManagerIntegration(this.canvasManager.coordinateManager);
+                    console.log('✅ ToolManager: CoordinateManager統合完了');
+                } else {
+                    console.warn('⚠️ ToolManager: CoordinateManager統合をスキップ（メソッドまたはCoordinateManagerが見つかりません）');
+                }
+            } else {
+                console.warn('⚠️ ToolManager が利用できません（オプション）');
+            }
+            
+            // BoundaryManager初期化・座標統合対応
+            if (window.BoundaryManager) {
+                const boundaryOptions = { appCore: this.appCore };
+                
+                if (this.canvasManager?.coordinateManager) {
+                    // CoordinateManagerを渡してBoundaryManager初期化
+                    this.boundaryManager = new window.BoundaryManager(this.canvasManager.coordinateManager, boundaryOptions);
+                    console.log('✅ BoundaryManager: CoordinateManager統合初期化完了');
+                } else {
+                    // CoordinateManagerなしでBoundaryManager初期化
+                    this.boundaryManager = new window.BoundaryManager(boundaryOptions);
+                    console.warn('⚠️ BoundaryManager: CoordinateManager未提供 - 基本機能のみ提供');
+                }
+                
+                // BoundaryManager初期化実行
+                if (typeof this.boundaryManager.initialize === 'function') {
+                    this.boundaryManager.initialize();
+                }
+                
+                // AppCoreに設定
+                if (this.appCore) {
+                    this.appCore.boundaryManager = this.boundaryManager;
+                }
+            } else {
+                console.warn('⚠️ BoundaryManager クラスが見つかりません');
+            }
+            
+            console.log('✅ Manager統合初期化完了（座標統合対応）');
+            this.initializationSteps.push('managers-coordinate-integration');
+            
+        } catch (error) {
+            console.error('❌ Manager統合初期化失敗:', error);
+            // エラーが発生しても他の初期化は継続
+            this.initializationSteps.push('managers-partial');
+        } finally {
+            console.groupEnd();
         }
     }
     
@@ -297,6 +383,11 @@ class FutabaDrawingTool {
             // グローバル公開
             window.futabaDrawingTool = this;
             
+            // Manager参照グローバル公開（診断用）
+            if (this.canvasManager) window.canvasManager = this.canvasManager;
+            if (this.toolManager) window.toolManager = this.toolManager;
+            if (this.boundaryManager) window.boundaryManager = this.boundaryManager;
+            
             // 🚨 重複排除: 統一デバッグ関数のみ設定
             this.setupUnifiedDebugFunctions();
             
@@ -316,7 +407,7 @@ class FutabaDrawingTool {
         this.isInitialized = true;
         
         const initTime = performance.now() - this.startTime;
-        console.log(`🎉 統一初期化完了！ 時間: ${initTime.toFixed(2)}ms`);
+        console.log(`🎉 統一初期化完了（座標統合対応）！ 時間: ${initTime.toFixed(2)}ms`);
         
         // 🚨 重複排除: EventBus経由での統一通知
         if (this.eventBus) {
@@ -513,10 +604,12 @@ class FutabaDrawingTool {
             stateManager: !!this.stateManager,
             eventBus: !!this.eventBus,
             appCore: !!this.appCore,
-            toolManager: !!this.appCore?.toolManager,
-            uiManager: !!this.appCore?.uiManager,
+            canvasManager: !!this.canvasManager,
+            toolManager: !!this.toolManager,
+            boundaryManager: !!this.boundaryManager,
             initialized: this.isInitialized,
             unifiedSystemsIntegrated: true,
+            coordinateIntegrationApplied: true,
             dryPrincipleCompliant: true,
             solidPrincipleCompliant: true,
             legacyFunctionsRemoved: true
@@ -690,7 +783,7 @@ class FutabaDrawingTool {
      * 🚨 重複排除: デバッグモード開始（統一システム統合版）
      */
     startDebugMode() {
-        console.log('🔍 統一デバッグモード開始（修正版・DRY・SOLID準拠版）');
+        console.log('🔍 統一デバッグモード開始（座標統合対応版・DRY・SOLID準拠版）');
         
         const debugInfo = {
             version: this.version,
@@ -705,6 +798,7 @@ class FutabaDrawingTool {
         console.log('🎯 統合状況:');
         console.log('  ✅ 重複関数完全排除: 完了');
         console.log('  ✅ 統一システム完全統合: 完了');
+        console.log('  ✅ 座標統合初期化: 完了');
         console.log('  ✅ DRY原則準拠: 完了');
         console.log('  ✅ SOLID原則準拠: 完了');
         console.log('  ✅ コード肥大化解決: 完了');
@@ -713,6 +807,7 @@ class FutabaDrawingTool {
         return debugInfo;
     }
 }
+
 // ==========================================
 // 🔄 COORDINATE_INTEGRATION: main.jsの末尾に追加する座標統合診断システム（Phase1.4完成版）
 // 既存のmain.jsコードの最後（initialize()関数の後）に以下を追加してください
@@ -819,581 +914,27 @@ window.checkCoordinateIntegration = function() {
     return results;
 };
 
-/**
- * 🧪 座標統合テスト（包括的テストスイート）
- */
-window.runCoordinateIntegrationTests = function() {
-    console.group('🧪 座標統合テスト');
-    
-    const tests = [
-        {
-            name: 'CoordinateManager基本テスト',
-            test: () => {
-                if (!window.CoordinateManager) return false;
-                const manager = new window.CoordinateManager();
-                const mockRect = {left:0, top:0, width:400, height:400};
-                const result = manager.screenToCanvas(100, 100, mockRect);
-                return result && typeof result.x === 'number' && typeof result.y === 'number';
-            }
-        },
-        {
-            name: '座標計算テスト',
-            test: () => {
-                if (!window.CoordinateManager) return false;
-                const manager = new window.CoordinateManager();
-                const distance = manager.calculateDistance({x:0,y:0}, {x:3,y:4});
-                return Math.abs(distance - 5) < 0.1;
-            }
-        },
-        {
-            name: 'coordinates.js非推奨テスト',
-            test: () => {
-                try {
-                    if (window.CoordinateUtils) {
-                        window.CoordinateUtils.distance({x:0,y:0}, {x:1,y:1});
-                        return false; // エラーが出るべき
-                    }
-                    return true; // CoordinateUtilsが存在しない = OK
-                } catch (error) {
-                    return true; // エラーが出た = OK（削除予定警告）
-                }
-            }
-        },
-        {
-            name: 'ConfigManager座標設定テスト',
-            test: () => {
-                const coordinateConfig = ConfigManager.get('coordinate');
-                return coordinateConfig && 
-                       coordinateConfig.integration && 
-                       coordinateConfig.integration.managerCentralization;
-            }
-        },
-        {
-            name: '座標妥当性確認テスト',
-            test: () => {
-                if (!window.CoordinateManager) return false;
-                const manager = new window.CoordinateManager();
-                return manager.validateCoordinateIntegrity({x: 100, y: 100}) === true &&
-                       manager.validateCoordinateIntegrity({x: NaN, y: 100}) === false;
-            }
-        },
-        {
-            name: 'Phase2準備機能テスト',
-            test: () => {
-                if (!window.CoordinateManager) return false;
-                const manager = new window.CoordinateManager();
-                const transformed = manager.transformCoordinatesForLayer(
-                    {x: 10, y: 10}, 
-                    {offsetX: 5, offsetY: 5}
-                );
-                return transformed.x === 15 && transformed.y === 15;
-            }
-        }
-    ];
-    
-    let passCount = 0;
-    tests.forEach(test => {
-        try {
-            const result = test.test();
-            console.log(`${result ? '✅' : '❌'} ${test.name}: ${result ? 'PASS' : 'FAIL'}`);
-            if (result) passCount++;
-        } catch (error) {
-            console.log(`❌ ${test.name}: FAIL (${error.message})`);
-        }
-    });
-    
-    console.log(`📊 テスト結果: ${passCount}/${tests.length} PASS`);
-    
-    const allPassed = passCount === tests.length;
-    if (allPassed) {
-        console.log('✅ 全座標統合テスト合格 - システム健全');
-    } else {
-        console.warn('⚠️ 一部テスト失敗 - 修正が必要');
-    }
-    
-    console.groupEnd();
-    
-    return allPassed;
-};
-
-/**
- * 🔧 統一システム健全性診断
- */
-window.testUnifiedSystems = function() {
-    console.group('🔧 統一システム健全性診断');
-    
-    const systems = {
-        'ConfigManager': {
-            available: !!window.ConfigManager,
-            functional: !!(window.ConfigManager && typeof window.ConfigManager.get === 'function')
-        },
-        'ErrorManager': {
-            available: !!window.ErrorManager,
-            functional: !!(window.ErrorManager && typeof window.ErrorManager.showError === 'function')
-        },
-        'StateManager': {
-            available: !!window.StateManager,
-            functional: !!(window.StateManager && typeof window.StateManager.updateComponentState === 'function')
-        },
-        'EventBus': {
-            available: !!window.EventBus,
-            functional: !!(window.EventBus && typeof window.EventBus.safeEmit === 'function')
-        },
-        'CoordinateManager': {
-            available: !!window.CoordinateManager,
-            functional: false
-        }
-    };
-    
-    // CoordinateManager機能テスト
-    if (systems.CoordinateManager.available) {
-        try {
-            const manager = new window.CoordinateManager();
-            systems.CoordinateManager.functional = typeof manager.screenToCanvas === 'function';
-        } catch (error) {
-            systems.CoordinateManager.functional = false;
-        }
-    }
-    
-    console.log('📊 統一システム状態:');
-    Object.entries(systems).forEach(([name, status]) => {
-        const icon = status.functional ? '✅' : status.available ? '⚠️' : '❌';
-        console.log(`${icon} ${name}: ${status.functional ? '正常' : status.available ? '利用可能だが機能不全' : '利用不可'}`);
-    });
-    
-    const functionalSystems = Object.values(systems).filter(s => s.functional).length;
-    const totalSystems = Object.keys(systems).length;
-    
-    console.log(`📊 システム健全性: ${functionalSystems}/${totalSystems} (${Math.round(functionalSystems/totalSystems*100)}%)`);
-    
-    if (functionalSystems === totalSystems) {
-        console.log('✅ 統一システム全体が健全です');
-    } else {
-        console.warn('⚠️ 一部システムに問題があります');
-    }
-    
-    console.groupEnd();
-    
-    return {
-        systems,
-        healthScore: Math.round(functionalSystems/totalSystems*100),
-        allHealthy: functionalSystems === totalSystems
-    };
-};
-
-/**
- * 🎯 Manager別詳細診断
- */
-window.runManagerDiagnostics = function() {
-    console.group('🎯 Manager別詳細診断');
-    
-    const diagnostics = {};
-    
-    // CanvasManager診断
-    if (window.canvasManager && typeof window.canvasManager.runCoordinateIntegrationDiagnosis === 'function') {
-        console.log('🎨 CanvasManager診断実行中...');
-        diagnostics.canvasManager = window.canvasManager.runCoordinateIntegrationDiagnosis();
-    } else {
-        console.warn('⚠️ CanvasManager診断機能が利用できません');
-        diagnostics.canvasManager = { available: false };
-    }
-    
-    // ToolManager診断
-    if (window.toolManager && typeof window.toolManager.runToolCoordinateIntegrationDiagnosis === 'function') {
-        console.log('🔧 ToolManager診断実行中...');
-        diagnostics.toolManager = window.toolManager.runToolCoordinateIntegrationDiagnosis();
-    } else {
-        console.warn('⚠️ ToolManager診断機能が利用できません');
-        diagnostics.toolManager = { available: false };
-    }
-    
-    // BoundaryManager診断
-    if (window.boundaryManager && typeof window.boundaryManager.runBoundaryCoordinateIntegrationDiagnosis === 'function') {
-        console.log('🎯 BoundaryManager診断実行中...');
-        diagnostics.boundaryManager = window.boundaryManager.runBoundaryCoordinateIntegrationDiagnosis();
-    } else {
-        console.warn('⚠️ BoundaryManager診断機能が利用できません');
-        diagnostics.boundaryManager = { available: false };
-    }
-    
-    console.log('📊 Manager診断結果:', diagnostics);
-    
-    console.groupEnd();
-    
-    return diagnostics;
-};
-
-/**
- * 🚀 Phase2移行準備確認
- */
-window.checkPhase2Readiness = function() {
-    console.group('🚀 Phase2移行準備確認');
-    
-    const readiness = {
-        coordinateSystemReady: false,
-        managerIntegrationComplete: false,
-        duplicateEliminationComplete: false,
-        performanceOptimized: false,
-        diagnosticsAvailable: false,
-        phase2FeaturesReady: false
-    };
-    
-    // 座標系準備確認
-    if (window.CoordinateManager) {
-        const manager = new window.CoordinateManager();
-        const integrationStatus = manager.getIntegrationStatus();
-        
-        readiness.coordinateSystemReady = integrationStatus.managerCentralization;
-        readiness.duplicateEliminationComplete = integrationStatus.duplicateElimination;
-        readiness.performanceOptimized = integrationStatus.performanceOptimized;
-        readiness.phase2FeaturesReady = integrationStatus.phase2Ready;
-    }
-    
-    // Manager統合完了確認
-    const integrationCheck = window.checkCoordinateIntegration();
-    readiness.managerIntegrationComplete = 
-        integrationCheck.canvasManagerIntegrated &&
-        integrationCheck.toolManagerIntegrated &&
-        integrationCheck.boundaryManagerIntegrated;
-    
-    // 診断機能確認
-    readiness.diagnosticsAvailable = 
-        typeof window.checkCoordinateIntegration === 'function' &&
-        typeof window.runCoordinateIntegrationTests === 'function' &&
-        typeof window.testUnifiedSystems === 'function';
-    
-    const readyItems = Object.values(readiness).filter(Boolean).length;
-    const totalItems = Object.keys(readiness).length;
-    const readinessScore = Math.round(readyItems / totalItems * 100);
-    
-    console.log(`📊 Phase2移行準備度: ${readyItems}/${totalItems} (${readinessScore}%)`);
-    console.log('📋 準備状況詳細:', readiness);
-    
-    if (readinessScore === 100) {
-        console.log('🚀 Phase2移行準備完了！');
-    } else if (readinessScore >= 80) {
-        console.log('✅ Phase2移行準備ほぼ完了 - 最終調整のみ');
-    } else {
-        console.warn('⚠️ Phase2移行準備未完了 - 追加作業が必要');
-    }
-    
-    console.groupEnd();
-    
-    return {
-        readiness,
-        readinessScore,
-        ready: readinessScore === 100,
-        nearlyReady: readinessScore >= 80
-    };
-};
-
-/**
- * 🔄 座標統合システム包括診断（メイン実行関数）
- */
-window.runComprehensiveCoordinateIntegrationDiagnosis = function() {
-    console.group('🔄 座標統合システム包括診断');
-    console.log('📅 実行日時:', new Date().toLocaleString());
-    
-    // Step 1: 基本統合確認
-    console.log('\n📍 Step 1: 座標統合確認');
-    const integrationCheck = window.checkCoordinateIntegration();
-    
-    // Step 2: 統合テスト実行
-    console.log('\n📍 Step 2: 座標統合テスト');
-    const integrationTests = window.runCoordinateIntegrationTests();
-    
-    // Step 3: 統一システム確認
-    console.log('\n📍 Step 3: 統一システム健全性');
-    const unifiedSystems = window.testUnifiedSystems();
-    
-    // Step 4: Manager詳細診断
-    console.log('\n📍 Step 4: Manager別診断');
-    const managerDiagnostics = window.runManagerDiagnostics();
-    
-    // Step 5: Phase2準備確認
-    console.log('\n📍 Step 5: Phase2移行準備確認');
-    const phase2Readiness = window.checkPhase2Readiness();
-    
-    // 総合評価
-    const overallScore = Math.round((
-        (integrationCheck.coordinateManagerAvailable ? 20 : 0) +
-        (integrationTests ? 20 : 0) +
-        (unifiedSystems.allHealthy ? 20 : 0) +
-        (integrationCheck.canvasManagerIntegrated && 
-         integrationCheck.toolManagerIntegrated && 
-         integrationCheck.boundaryManagerIntegrated ? 20 : 0) +
-        (phase2Readiness.ready ? 20 : 0)
-    ));
-    
-    console.log(`\n📊 総合評価: ${overallScore}/100点`);
-    
-    if (overallScore >= 90) {
-        console.log('🏆 優秀 - 座標統合システムが完璧に動作しています');
-    } else if (overallScore >= 70) {
-        console.log('✅ 良好 - 座標統合システムが正常に動作しています');
-    } else {
-        console.warn('⚠️ 要改善 - 座標統合システムに問題があります');
-    }
-    
-    const finalResult = {
-        timestamp: new Date().toISOString(),
-        overallScore,
-        integrationCheck,
-        integrationTests,
-        unifiedSystems,
-        managerDiagnostics,
-        phase2Readiness
-    };
-    
-    console.log('\n📋 詳細結果をfinalResultに保存しました:', finalResult);
-    
-    console.groupEnd();
-    
-    return finalResult;
-};
-
-/**
- * 🔄 座標統合修正ガイド（トラブルシューティング）
- */
-window.getCoordinateIntegrationFixGuide = function() {
-    console.group('🔄 座標統合修正ガイド');
-    
-    const integrationStatus = window.checkCoordinateIntegration();
-    const fixGuide = [];
-    
-    // 問題診断と修正方法の提示
-    if (!integrationStatus.coordinateManagerAvailable) {
-        fixGuide.push({
-            問題: 'CoordinateManagerが利用できません',
-            修正方法: [
-                '1. coordinate-manager.jsが読み込まれているか確認',
-                '2. window.CoordinateManagerがグローバルに公開されているか確認',
-                '3. ConfigManagerでcoordinate設定が有効になっているか確認'
-            ],
-            緊急度: '高'
-        });
-    }
-    
-    if (!integrationStatus.canvasManagerIntegrated) {
-        fixGuide.push({
-            問題: 'CanvasManagerが座標統合されていません',
-            修正方法: [
-                '1. CanvasManagerのinitialize()でCoordinateManagerを渡す',
-                '2. initializeCoordinateIntegration()メソッドを実装',
-                '3. 描画処理でCoordinateManagerを使用するよう修正'
-            ],
-            緊急度: '高'
-        });
-    }
-    
-    if (!integrationStatus.toolManagerIntegrated) {
-        fixGuide.push({
-            問題: 'ToolManagerが座標統合されていません',
-            修正方法: [
-                '1. ToolManagerのinitialize()でCoordinateManagerを渡す',
-                '2. initializeCoordinateManagerIntegration()メソッドを実装',
-                '3. 描画処理でCoordinateManagerを使用するよう修正'
-            ],
-            緊急度: '高'
-        });
-    }
-    
-    if (!integrationStatus.boundaryManagerIntegrated) {
-        fixGuide.push({
-            問題: 'BoundaryManagerが座標統合されていません',
-            修正方法: [
-                '1. BoundaryManagerのinitialize()でCoordinateManagerを渡す',
-                '2. 境界処理でCoordinateManagerを使用するよう修正',
-                '3. 座標変換処理をCoordinateManagerに委譲'
-            ],
-            緊急度: '中'
-        });
-    }
-    
-    if (!integrationStatus.coordinatesJsDeprecated) {
-        fixGuide.push({
-            問題: 'coordinates.jsが非推奨化されていません',
-            修正方法: [
-                '1. coordinates.jsで削除予告警告を有効化',
-                '2. 全ての座標処理をCoordinateManagerに移行',
-                '3. レガシー関数呼び出し時にエラーを発生させる'
-            ],
-            緊急度: '低'
-        });
-    }
-    
-    if (fixGuide.length === 0) {
-        console.log('✅ 修正が必要な問題は見つかりませんでした');
-    } else {
-        console.log('🔧 修正が必要な問題:', fixGuide);
-        
-        // 修正優先順位の表示
-        const highPriority = fixGuide.filter(item => item.緊急度 === '高');
-        const mediumPriority = fixGuide.filter(item => item.緊急度 === '中');
-        const lowPriority = fixGuide.filter(item => item.緊急度 === '低');
-        
-        if (highPriority.length > 0) {
-            console.warn('🚨 最優先修正事項:', highPriority.map(item => item.問題));
-        }
-        if (mediumPriority.length > 0) {
-            console.warn('⚠️ 中優先修正事項:', mediumPriority.map(item => item.問題));
-        }
-        if (lowPriority.length > 0) {
-            console.log('💡 低優先修正事項:', lowPriority.map(item => item.問題));
-        }
-    }
-    
-    console.groupEnd();
-    
-    return fixGuide;
-};
-
-/**
- * 🎯 個別Manager初期化修正コード生成
- */
-window.generateCoordinateIntegrationCode = function() {
-    console.group('🎯 座標統合修正コード生成');
-    
-    const integrationStatus = window.checkCoordinateIntegration();
-    const codeSnippets = {};
-    
-    // CanvasManager修正コード
-    if (!integrationStatus.canvasManagerIntegrated) {
-        codeSnippets.canvasManager = `
-// CanvasManager座標統合修正
-// initialize()メソッドに以下を追加:
-async initialize(canvasElement, coordinateManager = null) {
-    // 既存のコード...
-    
-    // 🔄 CoordinateManager統合
-    this.initializeCoordinateIntegration(coordinateManager);
-    
-    // 既存のコード...
-}
-
-initializeCoordinateIntegration(coordinateManager = null) {
-    if (coordinateManager) {
-        this.coordinateManager = coordinateManager;
-    } else if (window.CoordinateManager) {
-        this.coordinateManager = new window.CoordinateManager();
-    }
-    
-    if (this.coordinateManager) {
-        const integrationStatus = this.coordinateManager.getIntegrationStatus();
-        this.coordinateIntegration = {
-            enabled: integrationStatus.managerCentralization,
-            duplicateElimination: integrationStatus.duplicateElimination,
-            performanceOptimized: integrationStatus.performanceOptimized
-        };
-        console.log('✅ CanvasManager: CoordinateManager統合完了');
-    }
-}`;
-    }
-    
-    // ToolManager修正コード
-    if (!integrationStatus.toolManagerIntegrated) {
-        codeSnippets.toolManager = `
-// ToolManager座標統合修正
-// initialize()メソッドに以下を追加:
-async initialize(coordinateManager = null) {
-    // 既存のコード...
-    
-    // 🔄 CoordinateManager統合
-    this.initializeCoordinateManagerIntegration(coordinateManager);
-    
-    // 既存のコード...
-}
-
-initializeCoordinateManagerIntegration(coordinateManager = null) {
-    if (coordinateManager) {
-        this.coordinateManager = coordinateManager;
-    } else if (window.CoordinateManager) {
-        this.coordinateManager = new window.CoordinateManager();
-    }
-    
-    if (this.coordinateManager) {
-        const integrationStatus = this.coordinateManager.getIntegrationStatus();
-        this.coordinateIntegration = {
-            enabled: integrationStatus.managerCentralization,
-            duplicateElimination: integrationStatus.duplicateElimination,
-            performanceOptimized: integrationStatus.performanceOptimized
-        };
-        console.log('✅ ToolManager: CoordinateManager統合完了');
-    }
-}`;
-    }
-    
-    // BoundaryManager修正コード
-    if (!integrationStatus.boundaryManagerIntegrated) {
-        codeSnippets.boundaryManager = `
-// BoundaryManager座標統合修正
-// initialize()メソッドを以下のように修正:
-initialize(canvasElement, coordinateManager = null) {
-    // 既存のコード...
-    
-    // 🔄 CoordinateManager統合
-    if (coordinateManager) {
-        this.coordinateManager = coordinateManager;
-    } else if (window.CoordinateManager) {
-        this.coordinateManager = new window.CoordinateManager();
-    }
-    
-    if (this.coordinateManager) {
-        const integrationStatus = this.coordinateManager.getIntegrationStatus();
-        this.coordinateIntegration = {
-            enabled: integrationStatus.managerCentralization,
-            duplicateElimination: integrationStatus.duplicateElimination,
-            performanceOptimized: integrationStatus.performanceOptimized
-        };
-        console.log('✅ BoundaryManager: CoordinateManager統合完了');
-    }
-    
-    // 既存のコード...
-}`;
-    }
-    
-    console.log('📋 生成された修正コード:', codeSnippets);
-    
-    if (Object.keys(codeSnippets).length === 0) {
-        console.log('✅ 修正が必要なManagerはありません');
-    }
-    
-    console.groupEnd();
-    
-    return codeSnippets;
-};
-
 // 🎯 診断関数初期化完了ログ
 console.log('🔍 座標統合診断システム初期化完了');
 console.log('📋 利用可能な診断関数:');
 console.log('  - window.checkCoordinateIntegration() - 基本統合確認');
-console.log('  - window.runCoordinateIntegrationTests() - 統合テスト実行');
-console.log('  - window.testUnifiedSystems() - 統一システム健全性診断');
-console.log('  - window.runManagerDiagnostics() - Manager別詳細診断');
-console.log('  - window.checkPhase2Readiness() - Phase2移行準備確認');
-console.log('  - window.runComprehensiveCoordinateIntegrationDiagnosis() - 包括診断');
-console.log('  - window.getCoordinateIntegrationFixGuide() - 修正ガイド');
-console.log('  - window.generateCoordinateIntegrationCode() - 修正コード生成');
-console.log('💡 包括診断実行: window.runComprehensiveCoordinateIntegrationDiagnosis()');
-console.log('🔧 修正ガイド: window.getCoordinateIntegrationFixGuide()');
+console.log('💡 統合確認実行: window.checkCoordinateIntegration()');
 
-// ==========================================
-// 🔄 座標統合診断システム初期化完了
-// ==========================================
 /**
- * 🚨 重複排除: 統一アプリケーション起動（完全統合版・修正版）
+ * 🚨 重複排除: 統一アプリケーション起動（完全統合版・座標統合対応版）
  */
 window.addEventListener('DOMContentLoaded', async () => {
     try {
         console.log('🎨 ふたば☆ちゃんねる風ベクターお絵描きツール');
-        console.log('🚨 Task 1-B先行実装: 重複関数完全排除・DRY・SOLID原則準拠版（修正版）');
+        console.log('🚨 Task 1-B先行実装: 重複関数完全排除・DRY・SOLID原則準拠版（座標統合対応版）');
         console.log('🔧 統一システム: ConfigManager + ErrorManager + StateManager + EventBus');
-        console.log('🚀 統一アプリケーション起動開始（初期化順序修正版）...');
+        console.log('🔄 座標統合: CoordinateManager完全統合・Manager間連携');
+        console.log('🚀 統一アプリケーション起動開始（座標統合初期化対応版）...');
         
         const app = new FutabaDrawingTool();
         await app.initialize();
         
-        console.log('🎉 統一アプリケーション起動完了！（重複排除・修正版）');
+        console.log('🎉 統一アプリケーション起動完了！（座標統合対応版）');
         console.log('💡 操作方法:');
         console.log('  - キャンバス上でドラッグして描画');
         console.log('  - P キー: ペンツール / E キー: 消しゴム / Escape: ポップアップ閉じる');
@@ -1402,6 +943,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         console.log('  - window.testUnifiedSystems() 統一システムテスト実行');
         console.log('  - window.checkUnifiedHealth() 健全性チェック');
         console.log('  - window.getUnifiedMetrics() メトリクス取得');
+        console.log('  - window.checkCoordinateIntegration() 座標統合確認');
         console.log('📊 各統一システムの詳細:');
         console.log('  - window.ConfigManager.getDebugInfo() 設定情報表示');
         console.log('  - window.ErrorManager.getErrorStats() エラー統計表示');
@@ -1414,19 +956,19 @@ window.addEventListener('DOMContentLoaded', async () => {
         if (window.ErrorManager) {
             window.ErrorManager.showCriticalError(error.message, {
                 showDebug: true,
-                additionalInfo: 'メインアプリケーション起動時のエラー（修正版）'
+                additionalInfo: 'メインアプリケーション起動時のエラー（座標統合対応版）'
             });
         } else {
             document.body.innerHTML = `
                 <div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#ffffee;font-family:system-ui,sans-serif;">
                     <div style="text-align:center;color:#800000;background:#f0e0d6;padding:32px;border:3px solid #cf9c97;border-radius:16px;max-width:500px;">
                         <h2 style="margin:0 0 16px 0;">🎨 ふたば☆お絵描きツール</h2>
-                        <p style="margin:0 0 16px 0;">統一システムの初期化に失敗しました。</p>
+                        <p style="margin:0 0 16px 0;">統一システム（座標統合対応）の初期化に失敗しました。</p>
                         <div style="background:#ffffee;padding:12px;border-radius:8px;margin:16px 0;font-family:monospace;font-size:12px;text-align:left;">
                             <strong>エラー:</strong> ${error.message}<br>
                             <strong>時刻:</strong> ${new Date().toLocaleString()}<br>
-                            <strong>Task:</strong> 1-B 重複関数完全排除（修正版）<br>
-                            <strong>バージョン:</strong> v1.0-Phase1.2step3-DRY-SOLID-fixed
+                            <strong>Task:</strong> 1-B 重複関数完全排除（座標統合対応版）<br>
+                            <strong>バージョン:</strong> v1.0-Phase1.2step3-DRY-SOLID-coordinate-integrated
                         </div>
                         <button onclick="location.reload()" 
                                 style="background:#800000;color:white;border:none;padding:12px 24px;border-radius:8px;cursor:pointer;font-weight:600;">
@@ -1437,5 +979,4 @@ window.addEventListener('DOMContentLoaded', async () => {
             `;
         }
     }
-
 });

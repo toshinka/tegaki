@@ -113,49 +113,259 @@ class CanvasManager {
     
     /**
      * ✅ 差分パッチ対応: Phase2移行 CoordinateManager統合初期化
-     */
-    initializeCoordinateIntegration() {
-        console.log('🔄 CanvasManager座標統合初期化開始...');
-        
-        try {
-            // CoordinateManager依存性確認
-            if (!window.CoordinateManager) {
-                throw new Error('CoordinateManager が必要です。座標統合を完了してください。');
-            }
-            
-            // CoordinateManagerインスタンス生成
-            if (!this.coordinateManager) {
-                this.coordinateManager = new window.CoordinateManager();
-            }
-            
-            // 座標統合設定確認
-            const coordinateConfig = ConfigManager.get('coordinate') || {};
-            this.coordinateIntegration = {
-                enabled: coordinateConfig.integration?.managerCentralization || false,
-                duplicateElimination: coordinateConfig.integration?.duplicateElimination || false,
-                performance: coordinateConfig.performance || {}
-            };
-            
-            if (!this.coordinateIntegration.enabled) {
-                console.warn('⚠️ 座標統合が無効です。ConfigManagerで coordinate.integration.managerCentralization を true に設定してください。');
-            }
-            
-            console.log('✅ CanvasManager: CoordinateManager統合完了');
-            console.log('🔄 統合設定:', this.coordinateIntegration);
-            
-        } catch (error) {
-            console.error('❌ CanvasManager座標統合初期化失敗:', error);
-            
-            // CoordinateManagerなしでも動作継続
-            this.coordinateManager = null;
-            this.coordinateIntegration = {
-                enabled: false,
-                duplicateElimination: false,
-                performance: {},
-                error: error.message
-            };
+ */
+initializeCoordinateIntegration() {
+    console.log('🔄 CanvasManager座標統合初期化開始...');
+    
+    try {
+        // CoordinateManager依存性確認
+        if (!window.CoordinateManager) {
+            throw new Error('CoordinateManager が必要です。座標統合を完了してください。');
         }
+        
+        // CoordinateManagerインスタンス生成
+        if (!this.coordinateManager) {
+            this.coordinateManager = new window.CoordinateManager();
+        }
+        
+        // 座標統合設定確認・更新
+        const coordinateConfig = ConfigManager.getCoordinateConfig();
+        this.coordinateIntegration = {
+            enabled: coordinateConfig.integration?.managerCentralization || false,
+            duplicateElimination: coordinateConfig.integration?.duplicateElimination || false,
+            performance: coordinateConfig.performance || {},
+            unifiedErrorHandling: coordinateConfig.integration?.unifiedErrorHandling || false,
+            phase2Ready: false
+        };
+        
+        if (!this.coordinateIntegration.enabled) {
+            console.warn('⚠️ 座標統合が無効です。ConfigManagerで coordinate.integration.managerCentralization を true に設定してください。');
+        }
+        
+        // CoordinateManager機能テスト
+        this.validateCoordinateManagerFunctionality();
+        
+        // キャンバスサイズ情報をCoordinateManagerに通知
+        if (this.coordinateManager.updateCanvasSize) {
+            this.coordinateManager.updateCanvasSize(this.width, this.height);
+        }
+        
+        // Phase2準備完了判定
+        this.coordinateIntegration.phase2Ready = !!(
+            this.coordinateManager &&
+            this.coordinateIntegration.enabled &&
+            this.coordinateIntegration.duplicateElimination
+        );
+        
+        console.log('✅ CanvasManager座標統合初期化完了');
+        console.log('🔄 統合設定:', this.coordinateIntegration);
+        
+        // EventBus通知
+        if (window.EventBus) {
+            window.EventBus.safeEmit('canvas.coordinate.integration.completed', {
+                canvasManager: 'CanvasManager',
+                coordinateManagerAvailable: !!this.coordinateManager,
+                integrationEnabled: this.coordinateIntegration.enabled,
+                phase2Ready: this.coordinateIntegration.phase2Ready,
+                timestamp: Date.now()
+            });
+        }
+        
+        return this.coordinateManager;
+        
+    } catch (error) {
+        console.error('❌ CanvasManager座標統合初期化失敗:', error);
+        
+        // CoordinateManagerなしでも動作継続
+        this.coordinateManager = null;
+        this.coordinateIntegration = {
+            enabled: false,
+            duplicateElimination: false,
+            performance: {},
+            error: error.message,
+            phase2Ready: false
+        };
+        
+        if (window.ErrorManager) {
+            window.ErrorManager.showError('canvas-coordinate-integration', 
+                `CanvasManager座標統合初期化失敗: ${error.message}`, 
+                { canvasSize: { width: this.width, height: this.height } }
+            );
+        }
+        
+        return null;
     }
+}
+
+/**
+ * 🆕 CoordinateManager機能テスト（完全実装版）
+ * 既存のcanvas-manager.jsに以下のメソッドを追加してください
+ */
+validateCoordinateManagerFunctionality() {
+    if (!this.coordinateManager) return false;
+    
+    try {
+        // 基本的な座標変換テスト
+        const testRect = { left: 0, top: 0, width: this.width, height: this.height };
+        const testResult = this.coordinateManager.screenToCanvas(100, 100, testRect);
+        
+        if (!testResult || typeof testResult.x !== 'number' || typeof testResult.y !== 'number') {
+            throw new Error('座標変換機能が正常に動作しません');
+        }
+        
+        // 座標妥当性確認テスト
+        const validityTest = this.coordinateManager.validateCoordinateIntegrity({ x: 100, y: 100 });
+        if (!validityTest) {
+            throw new Error('座標妥当性確認機能が正常に動作しません');
+        }
+        
+        // 距離計算テスト
+        if (this.coordinateManager.calculateDistance) {
+            const distance = this.coordinateManager.calculateDistance(
+                { x: 0, y: 0 }, 
+                { x: 3, y: 4 }
+            );
+            if (Math.abs(distance - 5) > 0.1) {
+                throw new Error('距離計算機能が正常に動作しません');
+            }
+        }
+        
+        // 精度適用テスト
+        if (this.coordinateManager.applyPrecision) {
+            const precisionTest = this.coordinateManager.applyPrecision(123.456789);
+            if (typeof precisionTest !== 'number') {
+                throw new Error('精度適用機能が正常に動作しません');
+            }
+        }
+        
+        console.log('✅ CanvasManager: CoordinateManager機能テスト合格');
+        return true;
+        
+    } catch (error) {
+        console.error('❌ CanvasManager: CoordinateManager機能テスト失敗:', error);
+        throw new Error(`CoordinateManager機能テスト失敗: ${error.message}`);
+    }
+}
+
+/**
+ * 🆕 座標統合診断実行（完全実装版）
+ * 既存のcanvas-manager.jsのrunCoordinateIntegrationDiagnosisメソッドを以下で置き換えるか、
+ * 存在しない場合は追加してください
+ */
+runCoordinateIntegrationDiagnosis() {
+    console.group('🔍 CanvasManager座標統合診断（完全実装版）');
+    
+    const state = this.getCoordinateIntegrationState() {
+    return {
+        coordinateManagerAvailable: !!this.coordinateManager,
+        integrationEnabled: this.coordinateIntegration?.enabled || false,
+        duplicateElimination: this.coordinateIntegration?.duplicateElimination || false,
+        unifiedErrorHandling: this.coordinateIntegration?.unifiedErrorHandling || false,
+        performanceOptimized: !!(this.coordinateIntegration?.performance?.coordinateCache || 
+                                this.coordinateIntegration?.performance?.batchProcessing),
+        currentSize: { width: this.width, height: this.height },
+        hasContent: this.paths?.length > 0,
+        coordinateManagerState: this.coordinateManager ? 
+            (this.coordinateManager.getCoordinateState ? this.coordinateManager.getCoordinateState() : 'available') : null,
+        phase2Ready: !!(this.coordinateManager && 
+                        this.coordinateIntegration?.enabled &&
+                        this.coordinateIntegration?.duplicateElimination),
+        initializationError: this.coordinateIntegration?.error || null,
+        methodsImplemented: {
+            initializeCoordinateIntegration: typeof this.initializeCoordinateIntegration === 'function',
+            getUnifiedCanvasCoordinates: typeof this.getUnifiedCanvasCoordinates === 'function',
+            executeResizeWithCoordinateIntegration: typeof this.executeResizeWithCoordinateIntegration === 'function',
+            startDrawingWithCoordinateIntegration: typeof this.startDrawingWithCoordinateIntegration === 'function'
+        }
+    };
+}rationState();
+    
+    // 統合機能テスト
+    const integrationTests = {
+        coordinateManagerAvailable: !!this.coordinateManager,
+        coordinateIntegrationEnabled: this.coordinateIntegration?.enabled || false,
+        initializeCoordinateIntegrationMethodExists: typeof this.initializeCoordinateIntegration === 'function',
+        unifiedCoordinateExtraction: typeof this.getUnifiedCanvasCoordinates === 'function',
+        resizeCoordinateIntegration: typeof this.executeResizeWithCoordinateIntegration === 'function',
+        drawingCoordinateIntegration: typeof this.startDrawingWithCoordinateIntegration === 'function',
+        eventHandlerIntegration: typeof this.handlePointerDownWithCoordinateIntegration === 'function',
+        contentBoundsIntegration: typeof this.getContentBoundsWithCoordinateManager === 'function',
+        centeringIntegration: typeof this.centerExistingContentWithCoordinateManager === 'function'
+    };
+    
+    // 診断結果
+    const diagnosis = {
+        state,
+        integrationTests,
+        compliance: {
+            coordinateUnified: integrationTests.coordinateManagerAvailable && 
+                             integrationTests.coordinateIntegrationEnabled,
+            duplicateEliminated: this.coordinateIntegration?.duplicateElimination || false,
+            phase2Ready: state.phase2Ready,
+            drawingSystemIntegrated: integrationTests.drawingCoordinateIntegration &&
+                                   integrationTests.eventHandlerIntegration,
+            resizeSystemIntegrated: integrationTests.resizeCoordinateIntegration &&
+                                  integrationTests.contentBoundsIntegration &&
+                                  integrationTests.centeringIntegration,
+            fullFunctionality: Object.values(integrationTests).every(Boolean),
+            initializationMethodReady: integrationTests.initializeCoordinateIntegrationMethodExists
+        }
+    };
+    
+    console.log('📊 CanvasManager座標統合診断結果:', diagnosis);
+    
+    // 診断結果表示
+    const passedTests = Object.values(integrationTests).filter(Boolean).length;
+    const totalTests = Object.keys(integrationTests).length;
+    
+    console.log(`📊 統合テスト: ${passedTests}/${totalTests} (${Math.round(passedTests/totalTests*100)}%)`);
+    console.log('⚙️ CoordinateManager統合:', integrationTests.coordinateManagerAvailable ? '✅' : '❌');
+    console.log('🔄 初期化メソッド:', integrationTests.initializeCoordinateIntegrationMethodExists ? '✅' : '❌');
+    console.log('🎨 描画システム統合:', diagnosis.compliance.drawingSystemIntegrated ? '✅' : '❌');
+    console.log('📐 リサイズシステム統合:', diagnosis.compliance.resizeSystemIntegrated ? '✅' : '❌');
+    console.log('🚀 Phase2準備:', state.phase2Ready ? '✅' : '❌');
+    
+    // 推奨事項
+    const recommendations = [];
+    
+    if (!integrationTests.coordinateManagerAvailable) {
+        recommendations.push('initializeCoordinateIntegration()を実行してCoordinateManagerを初期化');
+    }
+    
+    if (!integrationTests.coordinateIntegrationEnabled) {
+        recommendations.push('座標統合設定の有効化が必要 (coordinate.integration.managerCentralization)');
+    }
+    
+    if (!integrationTests.initializeCoordinateIntegrationMethodExists) {
+        recommendations.push('initializeCoordinateIntegration()メソッドの実装が必要');
+    }
+    
+    if (!diagnosis.compliance.drawingSystemIntegrated) {
+        const missingDrawing = ['unifiedCoordinateExtraction', 'drawingCoordinateIntegration', 'eventHandlerIntegration']
+            .filter(key => !integrationTests[key]);
+        recommendations.push(`描画システム統合が不完全: ${missingDrawing.join(', ')}`);
+    }
+    
+    if (!diagnosis.compliance.resizeSystemIntegrated) {
+        const missingResize = ['resizeCoordinateIntegration', 'contentBoundsIntegration', 'centeringIntegration']
+            .filter(key => !integrationTests[key]);
+        recommendations.push(`リサイズシステム統合が不完全: ${missingResize.join(', ')}`);
+    }
+    
+    if (!diagnosis.compliance.duplicateEliminated) {
+        recommendations.push('重複排除設定の有効化を推奨 (coordinate.integration.duplicateElimination)');
+    }
+    
+    if (recommendations.length === 0) {
+        console.log('✅ CanvasManager座標統合診断: 全ての要件を満たしています（完全実装版）');
+    } else {
+        console.warn('⚠️ CanvasManager推奨事項:', recommendations);
+    }
+    
+    console.groupEnd();
+    
+    return diagnosis;
+}
     
     /**
      * 設定読み込み

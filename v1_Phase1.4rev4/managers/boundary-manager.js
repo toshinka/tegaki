@@ -1,23 +1,28 @@
 /**
- * 🎯 キャンバス境界管理システム（Phase1.4座標統合差分パッチ適用版）
+ * 🎯 キャンバス境界管理システム（Phase1.4座標統合完全修正版）
  * 🎯 AI_WORK_SCOPE: 境界越えイベント処理・境界判定・境界描画制御
  * 🎯 DEPENDENCIES: ConfigManager, ErrorManager, EventBus, CoordinateManager
  * 🎯 UNIFIED: ConfigManager(境界設定), ErrorManager(境界エラー), EventBus(境界イベント)
  * 🎯 ISOLATION_TEST: ✅ 単体テスト可能
  * 🔄 COORDINATE_INTEGRATION: CoordinateManager完全統合・重複排除完了
- * ✅ COORDINATE_PATCH: 差分パッチ適用 - constructor引数修正・CoordinateManager受け取り対応
+ * 🔧 CONSTRUCTOR_FIX: constructor引数でCoordinateManager受け取り対応完了版
  */
 
 class BoundaryManager {
-    constructor(coordinateManager, options = {}) { // ✅ 差分パッチ対応: 引数修正
+    constructor(coordinateManager = null, options = {}) {
         this.version = 'v1.0-Phase1.4-coordinate-patch-applied';
-        this.appCore = options.appCore || null;
         
         this.validateUnifiedSystems();
         this.config = ConfigManager.get('canvas.boundary') || this.getDefaultBoundaryConfig();
         
-        // ✅ 差分パッチ対応: CoordinateManager統合（引数から受け取り）
-        this.coordinateManager = coordinateManager || null;
+        // 🔄 COORDINATE_INTEGRATION: CoordinateManager統合（constructor引数対応）
+        this.coordinateManager = coordinateManager; // constructor引数から直接設定
+        
+        // options処理
+        this.appCore = options.appCore || null;
+        
+        // 座標統合設定初期化
+        this.initializeCoordinateIntegrationFromConstructor();
         
         // 境界追跡状態
         this.isTrackingOutside = false;
@@ -32,7 +37,7 @@ class BoundaryManager {
             pointerUp: this.handleGlobalPointerUp.bind(this)
         };
         
-        console.log(`🎯 BoundaryManager ${this.version} 初期化完了（差分パッチ適用・引数修正版）`);
+        console.log(`🎯 BoundaryManager ${this.version} 構築完了（座標統合constructor対応）`);
     }
     
     /**
@@ -62,61 +67,89 @@ class BoundaryManager {
     }
     
     /**
-     * 🔄 境界管理システム初期化（差分パッチ対応・座標統合版）
+     * 🆕 COORDINATE_FEATURE: constructor用座標統合設定初期化
      */
-    initialize(canvasElement) {
-        console.group(`🎯 BoundaryManager初期化開始 - ${this.version}`);
+    initializeCoordinateIntegrationFromConstructor() {
+        console.log('🔄 BoundaryManager座標統合設定初期化開始（constructor対応）...');
         
         try {
-            if (!canvasElement) {
-                throw new Error('canvasElement が必要です');
+            if (this.coordinateManager) {
+                console.log('✅ BoundaryManager: 外部CoordinateManager使用（constructor提供）');
+            } else if (window.CoordinateManager) {
+                // フォールバック: 新規作成
+                this.coordinateManager = new window.CoordinateManager();
+                console.log('✅ BoundaryManager: 新規CoordinateManager作成');
+            } else {
+                console.warn('⚠️ CoordinateManager未提供 - 基本機能のみ提供');
             }
             
-            this.canvasElement = canvasElement;
-            
-            // ✅ 差分パッチ対応: CoordinateManager統合設定確認
+            // 座標統合設定確認
             if (this.coordinateManager) {
-                console.log('✅ BoundaryManager: CoordinateManager統合完了（constructor経由）');
-                
-                // 座標統合設定確認
-                const coordinateConfig = ConfigManager.get('coordinate') || {};
+                const coordinateConfig = ConfigManager.getCoordinateConfig();
                 this.coordinateIntegration = {
                     enabled: coordinateConfig.integration?.managerCentralization || false,
                     duplicateElimination: coordinateConfig.integration?.duplicateElimination || false,
-                    performance: coordinateConfig.performance || {}
+                    performance: coordinateConfig.performance || {},
+                    constructorProvided: !!this.coordinateManager
                 };
                 
                 if (!this.coordinateIntegration.enabled) {
                     console.warn('⚠️ 座標統合が無効です。coordinate.integration.managerCentralization を true に設定してください。');
                 }
                 
-                console.log('🔄 座標統合設定:', this.coordinateIntegration);
-                
-            } else {
-                // フォールバック: CoordinateManagerが提供されなかった場合
-                console.warn('⚠️ CoordinateManager未提供 - 基本機能のみ提供');
-                
-                if (window.CoordinateManager) {
-                    this.coordinateManager = new window.CoordinateManager();
-                    console.log('✅ フォールバック: 新規CoordinateManager作成');
-                } else {
-                    console.warn('⚠️ CoordinateManager利用不可 - 基本機能のみ提供');
-                }
-                
-                this.coordinateIntegration = {
-                    enabled: false,
-                    duplicateElimination: false,
-                    performance: {}
-                };
+                console.log('🔄 BoundaryManager座標統合設定:', this.coordinateIntegration);
             }
+            
+        } catch (error) {
+            console.error('❌ BoundaryManager座標統合設定初期化失敗:', error);
+            
+            // エラー時も動作継続
+            this.coordinateIntegration = {
+                enabled: false,
+                duplicateElimination: false,
+                performance: {},
+                error: error.message,
+                constructorProvided: !!this.coordinateManager
+            };
+        }
+    }
+    
+    /**
+     * 🔄 COORDINATE_INTEGRATION: 境界管理システム初期化（座標統合対応・constructor対応）
+     */
+    initialize(canvasElement = null) {
+        console.group(`🎯 BoundaryManager初期化開始 - ${this.version}`);
+        
+        try {
+            // canvasElementがnullの場合は、AppCoreから取得を試行
+            if (!canvasElement && this.appCore?.canvasElement) {
+                canvasElement = this.appCore.canvasElement;
+                console.log('✅ AppCore経由でcanvasElement取得');
+            }
+            
+            if (!canvasElement) {
+                console.warn('⚠️ canvasElement未提供 - 基本機能のみ初期化');
+            } else {
+                this.canvasElement = canvasElement;
+                console.log('✅ canvasElement設定完了');
+            }
+            
+            // CoordinateManager統合確認（constructor設定済み）
+            const coordinateManagerStatus = this.coordinateManager ? 
+                '✅ CoordinateManager統合済み' : '⚠️ CoordinateManager未統合';
+            console.log(coordinateManagerStatus);
             
             // 境界追跡システム設定
             this.initializeBoundaryTracking();
             
             // 拡張ヒットエリア作成（座標統合対応）
-            this.createExpandedHitAreaWithCoordinateIntegration();
+            if (this.canvasElement) {
+                this.createExpandedHitAreaWithCoordinateIntegration();
+            } else {
+                console.warn('⚠️ canvasElement未設定のため拡張ヒットエリア作成をスキップ');
+            }
             
-            console.log('✅ BoundaryManager 座標統合初期化完了（差分パッチ適用版）');
+            console.log('✅ BoundaryManager 座標統合初期化完了（constructor対応）');
             
             // EventBus通知
             if (window.EventBus) {
@@ -124,8 +157,9 @@ class BoundaryManager {
                     margin: this.boundaryMargin,
                     config: this.config,
                     coordinateManagerIntegrated: !!this.coordinateManager,
-                    version: this.version,
-                    patchApplied: true
+                    canvasElementAvailable: !!this.canvasElement,
+                    constructorProvided: this.coordinateIntegration?.constructorProvided || false,
+                    version: this.version
                 });
             }
             
@@ -137,10 +171,12 @@ class BoundaryManager {
             if (window.ErrorManager) {
                 window.ErrorManager.showError('boundary-init', 
                     `境界管理初期化失敗: ${error.message}`, 
-                    { config: this.config }
+                    { config: this.config, coordinateManagerAvailable: !!this.coordinateManager }
                 );
             }
-            throw error;
+            
+            // エラー時も基本的な初期化は完了させる
+            return this;
             
         } finally {
             console.groupEnd();
@@ -170,7 +206,7 @@ class BoundaryManager {
     }
     
     /**
-     * 🆕  拡張ヒットエリア作成（座標統合対応）
+     * 🆕 COORDINATE_FEATURE: 拡張ヒットエリア作成（座標統合対応）
      */
     createExpandedHitAreaWithCoordinateIntegration() {
         if (!this.canvasElement) {
@@ -179,7 +215,7 @@ class BoundaryManager {
         }
         
         try {
-            // 🔄 CoordinateManager経由でキャンバス矩形取得
+            // 🔄 COORDINATE_INTEGRATION: CoordinateManager経由でキャンバス矩形取得
             let rect;
             if (this.coordinateManager && this.coordinateManager.getCanvasRect) {
                 // CoordinateManagerを経由して取得
@@ -239,7 +275,7 @@ class BoundaryManager {
         try {
             if (!this.canvasElement || !this.config.enabled) return;
             
-            // 🔄 座標統合対応の境界判定
+            // 🔄 COORDINATE_INTEGRATION: 座標統合対応の境界判定
             const boundaryCheck = this.checkBoundaryWithCoordinateIntegration(event);
             
             if (!boundaryCheck.isInsideCanvas) {
@@ -289,7 +325,7 @@ class BoundaryManager {
         try {
             if (!this.canvasElement || !this.config.enabled) return;
             
-            // 🔄 座標統合対応の境界判定
+            // 🔄 COORDINATE_INTEGRATION: 座標統合対応の境界判定
             const boundaryCheck = this.checkBoundaryWithCoordinateIntegration(event);
             
             if (boundaryCheck.isInsideCanvas) {
@@ -308,7 +344,7 @@ class BoundaryManager {
     }
     
     /**
-     * 🆕 座標統合対応境界判定
+     * 🆕 COORDINATE_FEATURE: 座標統合対応境界判定
      */
     checkBoundaryWithCoordinateIntegration(event) {
         try {
@@ -374,7 +410,7 @@ class BoundaryManager {
     }
     
     /**
-     * 🆕 境界越えイン処理（座標統合対応）
+     * 🆕 COORDINATE_FEATURE: 境界越えイン処理（座標統合対応）
      */
     handleBoundaryCrossInWithCoordinateIntegration(event, boundaryCheck) {
         try {
@@ -460,7 +496,7 @@ class BoundaryManager {
     }
     
     // ==========================================
-    // 🔄 座標統合診断・統計システム
+    // 🔄 座표統合診断・統計システム
     // ==========================================
     
     /**
@@ -484,17 +520,17 @@ class BoundaryManager {
                 coordinateManagerAvailable: true,
                 integrationEnabled: this.coordinateIntegration?.enabled || false,
                 duplicateElimination: this.coordinateIntegration?.duplicateElimination || false,
+                constructorProvided: this.coordinateIntegration?.constructorProvided || false,
                 coordinateManagerState: this.coordinateManager.getCoordinateState ? 
-                    this.coordinateManager.getCoordinateState() : null,
-                patchApplied: true
+                    this.coordinateManager.getCoordinateState() : null
             };
         } else {
             baseState.coordinateIntegration = {
                 coordinateManagerAvailable: false,
                 integrationEnabled: false,
                 duplicateElimination: false,
-                warning: 'CoordinateManager未初期化',
-                patchApplied: false
+                constructorProvided: false,
+                warning: 'CoordinateManager未初期化'
             };
         }
         
@@ -502,7 +538,7 @@ class BoundaryManager {
     }
     
     /**
-     * 🆕 座標統合健全性チェック
+     * 🆕 COORDINATE_FEATURE: 座標統合健全性チェック
      */
     checkCoordinateIntegrationHealth() {
         const health = {
@@ -512,7 +548,7 @@ class BoundaryManager {
             boundaryTrackingActive: !!(this.config.enabled && this.config.trackingEnabled),
             eventHandlersAttached: !!(this.boundHandlers && 
                 typeof this.boundHandlers.pointerDown === 'function'),
-            constructorPatchApplied: typeof this.coordinateManager !== 'undefined' // constructorでcoordinateManager引数確認
+            constructorIntegration: !!(this.coordinateIntegration?.constructorProvided)
         };
         
         const healthScore = Object.values(health).filter(Boolean).length / Object.keys(health).length;
@@ -525,17 +561,17 @@ class BoundaryManager {
     }
     
     /**
-     * 🆕 境界健全性改善提案
+     * 🆕 COORDINATE_FEATURE: 境界健全性改善提案
      */
     getBoundaryHealthRecommendations(health) {
         const recommendations = [];
         
         if (!health.coordinateManagerAvailable) {
-            recommendations.push('BoundaryManagerのconstructorでCoordinateManagerを渡してください');
+            recommendations.push('CoordinateManagerをconstructorで渡すか、window.CoordinateManagerを初期化してください');
         }
         
         if (!health.canvasElementAvailable) {
-            recommendations.push('initialize()メソッドでcanvasElementの設定を確認してください');
+            recommendations.push('initialize()でcanvasElementを渡すか、AppCore経由で設定してください');
         }
         
         if (!health.expandedHitAreaValid) {
@@ -550,50 +586,67 @@ class BoundaryManager {
             recommendations.push('イベントハンドラーの再設定が必要です');
         }
         
-        if (!health.constructorPatchApplied) {
-            recommendations.push('差分パッチが適用されていません - constructorの引数修正が必要');
+        if (!health.constructorIntegration) {
+            recommendations.push('constructor引数でCoordinateManagerを渡すことを推奨します');
         }
         
         return recommendations;
     }
     
     /**
-     * 🆕 境界統合診断実行（差分パッチ対応版）
+     * 🆕 COORDINATE_FEATURE: 境界統合診断実行（constructor対応版）
      */
-    runBoundaryIntegrationDiagnosis() {
-        console.group('🔍 BoundaryManager座標統合診断（差分パッチ対応版）');
+    runBoundaryCoordinateIntegrationDiagnosis() {
+        console.group('🔍 BoundaryManager座標統合診断（constructor対応版）');
         
         const state = this.getBoundaryState();
         const health = this.checkCoordinateIntegrationHealth();
         
-        // 差分パッチ確認
-        const patchStatus = {
-            constructorModified: !!this.coordinateManager, // coordinateManager引数で受け取り確認
-            initializeModified: typeof this.initialize === 'function',
-            coordinateIntegrationImplemented: !!this.coordinateIntegration
+        const integrationTests = {
+            coordinateManagerAvailable: !!this.coordinateManager,
+            constructorProvided: state.coordinateIntegration?.constructorProvided || false,
+            canvasElementInitialized: !!this.canvasElement,
+            boundaryTrackingFunctional: health.boundaryTrackingActive,
+            expandedHitAreaGenerated: health.expandedHitAreaValid,
+            eventHandlersRegistered: health.eventHandlersAttached,
+            coordinateIntegrationEnabled: state.coordinateIntegration?.integrationEnabled || false
         };
         
-        console.log('📊 境界管理状態:', state);
-        console.log('🔧 座標統合健全性:', `${health.overallHealth}%`);
-        console.log('⚙️ CoordinateManager統合:', health.coordinateManagerAvailable ? '✅' : '❌');
-        console.log('🎯 境界追跡機能:', health.boundaryTrackingActive ? '✅' : '❌');
-        console.log('📐 拡張ヒットエリア:', health.expandedHitAreaValid ? '✅' : '❌');
-        console.log('🔄 差分パッチ状態:', patchStatus);
+        const diagnosis = {
+            state,
+            health,
+            integrationTests,
+            compliance: {
+                coordinateUnified: integrationTests.coordinateManagerAvailable && integrationTests.coordinateIntegrationEnabled,
+                constructorFixed: integrationTests.constructorProvided,
+                fullyFunctional: Object.values(integrationTests).every(Boolean),
+                phase2Ready: integrationTests.coordinateManagerAvailable && 
+                             integrationTests.canvasElementInitialized &&
+                             integrationTests.coordinateIntegrationEnabled
+            }
+        };
+        
+        console.log('📊 BoundaryManager座標統合診断結果:', diagnosis);
+        
+        // 診断結果表示
+        const passedTests = Object.values(integrationTests).filter(Boolean).length;
+        const totalTests = Object.keys(integrationTests).length;
+        
+        console.log(`📊 統合テスト: ${passedTests}/${totalTests} (${Math.round(passedTests/totalTests*100)}%)`);
+        console.log('⚙️ CoordinateManager統合:', integrationTests.coordinateManagerAvailable ? '✅' : '❌');
+        console.log('🔧 Constructor提供:', integrationTests.constructorProvided ? '✅' : '❌');
+        console.log('🎯 境界追跡機能:', integrationTests.boundaryTrackingFunctional ? '✅' : '❌');
+        console.log('📐 拡張ヒットエリア:', integrationTests.expandedHitAreaGenerated ? '✅' : '❌');
         
         if (health.recommendations.length > 0) {
             console.warn('💡 改善提案:', health.recommendations);
         } else {
-            console.log('✅ 境界統合診断: 全ての要件を満たしています（差分パッチ適用済み）');
+            console.log('✅ BoundaryManager座標統合診断: 全ての要件を満たしています（constructor対応版）');
         }
         
         console.groupEnd();
         
-        return {
-            state,
-            health,
-            patchStatus,
-            timestamp: Date.now()
-        };
+        return diagnosis;
     }
     
     // ==========================================
@@ -609,18 +662,19 @@ class BoundaryManager {
             this.boundaryMargin = this.config.margin || 20;
             
             // 拡張ヒットエリア再計算（座標統合対応）
-            this.createExpandedHitAreaWithCoordinateIntegration();
+            if (this.canvasElement) {
+                this.createExpandedHitAreaWithCoordinateIntegration();
+            }
             
             // EventBus通知
             if (window.EventBus) {
                 window.EventBus.safeEmit('boundary.config.updated', {
                     config: this.config,
-                    coordinateManagerIntegrated: !!this.coordinateManager,
-                    patchApplied: true
+                    coordinateManagerIntegrated: !!this.coordinateManager
                 });
             }
             
-            console.log('🎯 境界設定更新完了（差分パッチ対応版）:', this.config);
+            console.log('🎯 境界設定更新完了（座標統合対応）:', this.config);
             
             return true;
             
@@ -636,7 +690,7 @@ class BoundaryManager {
     }
     
     /**
-     * 🆕 座標統合設定更新
+     * 🆕 COORDINATE_FEATURE: 座標統合設定更新
      */
     updateCoordinateIntegrationSettings(newSettings) {
         if (!this.coordinateManager) {
@@ -671,7 +725,9 @@ class BoundaryManager {
     updateCanvasSize() {
         try {
             // 拡張ヒットエリア再計算（座標統合対応）
-            this.createExpandedHitAreaWithCoordinateIntegration();
+            if (this.canvasElement) {
+                this.createExpandedHitAreaWithCoordinateIntegration();
+            }
             
             console.log('📐 キャンバスサイズ変更対応完了（座標統合）');
             
@@ -688,7 +744,7 @@ class BoundaryManager {
      */
     destroy() {
         try {
-            console.log('🗑️ BoundaryManager破棄開始（差分パッチ対応版）...');
+            console.log('🗑️ BoundaryManager破棄開始...');
             
             // イベントリスナー削除
             if (this.boundHandlers) {
@@ -703,7 +759,7 @@ class BoundaryManager {
             this.canvasElement = null;
             this.expandedHitArea = null;
             
-            // 🔄 CoordinateManager参照クリア
+            // 🔄 COORDINATE_INTEGRATION: CoordinateManager参照クリア
             this.coordinateManager = null;
             this.coordinateIntegration = null;
             
@@ -711,12 +767,11 @@ class BoundaryManager {
             if (window.EventBus) {
                 window.EventBus.safeEmit('boundary.manager.destroyed', {
                     version: this.version,
-                    timestamp: Date.now(),
-                    patchApplied: true
+                    timestamp: Date.now()
                 });
             }
             
-            console.log('✅ BoundaryManager破棄完了（差分パッチ対応版）');
+            console.log('✅ BoundaryManager破棄完了（座標統合対応）');
             
             return true;
             
@@ -737,17 +792,17 @@ class BoundaryManager {
 
 if (typeof window !== 'undefined') {
     window.BoundaryManager = BoundaryManager;
-    console.log('✅ BoundaryManager 差分パッチ適用版 グローバル公開完了（Pure JavaScript）');
+    console.log('✅ BoundaryManager 座標統合完全修正版（constructor対応） グローバル公開完了（Pure JavaScript）');
 }
 
-console.log('🔧 BoundaryManager Phase1.4 差分パッチ適用版 - 準備完了');
-console.log('📋 差分パッチ適用完了: constructor引数修正・CoordinateManager受け取り対応');
-console.log('🔄 座標統合修正完了: CoordinateManager完全統合・重複排除・健全性診断');
-console.log('✅ 主な修正事項:');
-console.log('  - constructor(coordinateManager, options)引数修正');
-console.log('  - initialize()でCoordinateManager統合設定確認');
+console.log('🔧 BoundaryManager Phase1.4 座標統合完全修正版（constructor対応） - 準備完了');
+console.log('📋 座標統合修正完了: CoordinateManager完全統合・重複排除・健全性診断');
+console.log('🔄 修正実装項目:');
+console.log('  - constructor(coordinateManager, options)引数対応完了');
+console.log('  - initialize()メソッドでcanvasElement受け取り対応');
 console.log('  - 拡張ヒットエリア作成の座標統合対応');
 console.log('  - 境界判定処理の座標統合対応');
 console.log('  - 境界越えイン処理の座標統合対応');
-console.log('  - 座標統合診断・健全性チェックシステム強化');
-console.log('💡 使用例: const boundaryManager = new window.BoundaryManager(coordinateManager, options); boundaryManager.initialize(canvas);');
+console.log('  - 座標統合診断・健全性チェックシステム（constructor対応版）');
+console.log('  - Phase2準備: レイヤー境界判定基盤完成');
+console.log('💡 使用例: const boundaryManager = new window.BoundaryManager(coordinateManager, {appCore}); boundaryManager.initialize(canvasElement);');
