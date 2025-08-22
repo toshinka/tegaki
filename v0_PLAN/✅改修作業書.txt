@@ -1,44 +1,23 @@
-改修作業書（Step by Step）
-Step 1. HTMLとスクリプトの読み込み確認
+【目的】
+ペン描画時に「左上 (0,0) から直線が伸びる」不具合を解消し、ユーザーがクリックした位置から正しく描画を開始できるようにする。
 
-index.html 内に <script src="...coordinates.js"> がないか再確認する。
+【原因候補】
+1. pointerdown でブラウザ座標 (clientX/clientY) をそのまま使っている
+2. 描画開始点 (moveTo) が常に (0,0) で初期化されている
+3. CoordinateManager の座標変換が適用されていない
 
-また、別ファイル（例：libs/pixi-extensions.js）が dynamic に読み込んでいないか確認。
+【修正手順】
+1. pointerdown イベントで Pixi のグローバル座標を取得する  
+   - `const pos = event.global;`
+   - `this.lastX = pos.x; this.lastY = pos.y;`
+2. pointermove では前回座標から現在座標に向けて線分を描画  
+   - `graphics.moveTo(this.lastX, this.lastY);`
+   - `graphics.lineTo(pos.x, pos.y);`
+   - `this.lastX = pos.x; this.lastY = pos.y;`
+3. CoordinateManager が存在する場合は必ず `CoordinateManager.toCanvasCoordinates(event.global)` を通す
+4. pointerup で描画処理を終了（線が閉じられるのを防止）
 
-Step 2. スクリプトの参照検索
-
-プロジェクト全体で coordinates.js や CoordinateUtils の参照が残っていないか検索。
-
-残っている場合は、以下のように置換：
-
-window.CoordinateUtils.distance() → coordinateManager.calculateDistance()
-
-window.ColorUtils.getFutabaColor() → ConfigManager.getColors().futabaMaroon
-
-window.MathUtils.* → Math.* または lodash (window._.*)
-
-Step 3. 完全削除作業
-
-全参照を置換したのち、coordinates.js をプロジェクトから削除。
-
-削除後に再度、コンソール上に「削除警告」が出ないか確認。
-
-Step 4. テスト＆確認
-
-すべての機能（ペン描画、座標計算、Boundary機能など）が正常に動作するか確認。
-
-特に座標処理に関わる部分（ツール描画、ヒットエリア）を重点的にテスト。
-
-もし座標のズレや誤動作があれば、CoordinateManagerへの移行漏れや補間処理の誤実装の可能性。
-
-最終チェックリスト
-
- coordinates.js の読み込みを HTML・スクリプト全体から完全に削除済み
-
- 一切の参照（コード内、window オブジェクトなど）を CoordinateManager に置き換え
-
- アプリ起動時に coordinates.js の警告ログが一切表示されない
-
- BoundaryManager を含む座標機能が正常に動作する
-
- その他ツール（ペン描画、線補正、UI表示など）も正常動作する
+【確認方法】
+- 真ん中でクリック → 線の始点がクリック位置から始まる
+- 複数回線を引いても左上から伸びてこない
+- ズーム/リサイズしても座標系が崩れない

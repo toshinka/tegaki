@@ -77,7 +77,7 @@ class CoordinateManager {
                     ...(coordinateConfig.integration || {})
                 };
                 
-                console.log(⚙️ CoordinateManager設定読み込み完了');
+                console.log('⚙️ CoordinateManager設定読み込み完了');
             }
         } catch (error) {
             console.warn('⚠️ CoordinateManager設定読み込み失敗 - デフォルト設定使用:', error.message);
