@@ -8,15 +8,15 @@
  * 🔄 COORDINATE_INTEGRATION: CoordinateManager統合完全実装版
  * 🆕 COORDINATE_FEATURE: initializeCoordinateManagerIntegration()完全実装
  * ✅ COORDINATE_PATCH: 差分パッチ適用版
+ * 🔧 SYNTAX_FIX: await構文エラー修正版
  */
 
 /**
- * ツール管理システム（差分パッチ適用版・座標統合完全対応）
- * 差分パッチ対応：coordinateManager = null追加・initializeCoordinateManagerIntegration()実装
+ * ツール管理システム（差分パッチ適用版・座標統合完全対応・構文エラー修正版）
  */
 class ToolManager {
     constructor(options = {}) {
-        this.version = 'v1.0-Phase1.4-coordinate-patch-applied';
+        this.version = 'v1.0-Phase1.4-coordinate-patch-syntax-fixed';
         this.appCore = options.appCore || null;
         
         // ツール管理の初期化
@@ -41,11 +41,11 @@ class ToolManager {
             error: null
         };
         
-        console.log(`🎨 ToolManager ${this.version} 構築開始（差分パッチ適用版）...`);
+        console.log(`🎨 ToolManager ${this.version} 構築開始（差分パッチ適用版・構文修正版）...`);
     }
     
     /**
-     * 統一システム統合・ツール管理システム初期化（差分パッチ適用版）
+     * 統一システム統合・ツール管理システム初期化（差分パッチ適用版・構文エラー修正版）
      */
     async initialize() {
         console.group(`🎨 ToolManager 統一システム統合初期化開始 - ${this.version}`);
@@ -129,7 +129,7 @@ class ToolManager {
             }
             
             // CoordinateManager機能確認テスト
-            await this.validateCoordinateManagerFunctionality();
+            this.validateCoordinateManagerFunctionality();
             
             console.log('✅ ToolManager座標統合初期化完了');
             console.log('🔄 統合設定:', this.coordinateIntegration);
@@ -183,9 +183,9 @@ class ToolManager {
     }
     
     /**
-     * 🆕 CoordinateManager機能確認テスト
+     * 🆕 CoordinateManager機能確認テスト（構文エラー修正版 - 同期版）
      */
-    async validateCoordinateManagerFunctionality() {
+    validateCoordinateManagerFunctionality() {
         if (!this.coordinateManager) return false;
         
         try {
@@ -198,9 +198,11 @@ class ToolManager {
             }
             
             // 座標妥当性確認テスト
-            const validityTest = this.coordinateManager.validateCoordinateIntegrity({ x: 100, y: 100 });
-            if (!validityTest) {
-                throw new Error('座標妥当性確認機能が正常に動作しません');
+            if (typeof this.coordinateManager.validateCoordinateIntegrity === 'function') {
+                const validityTest = this.coordinateManager.validateCoordinateIntegrity({ x: 100, y: 100 });
+                if (!validityTest) {
+                    throw new Error('座標妥当性確認機能が正常に動作しません');
+                }
             }
             
             console.log('✅ CoordinateManager機能確認テスト合格');
@@ -965,15 +967,17 @@ class ToolManager {
 
 if (typeof window !== 'undefined') {
     window.ToolManager = ToolManager;
-    console.log('✅ ToolManager 差分パッチ適用版 グローバル公開完了（Pure JavaScript）');
+    console.log('✅ ToolManager 差分パッチ適用版 グローバル公開完了（Pure JavaScript・構文修正版）');
 }
 
-console.log('🔧 ToolManager Phase1.4 差分パッチ適用版 - 準備完了');
+console.log('🔧 ToolManager Phase1.4 差分パッチ適用版・構文修正版 - 準備完了');
 console.log('📋 差分パッチ適用完了: initializeCoordinateManagerIntegration()メソッド実装');
 console.log('🔄 座標統合機能完全実装: CoordinateManager完全統合・座標妥当性確認・変換・精度適用');
+console.log('🔧 構文エラー修正完了: await問題解決・同期版機能テスト実装');
 console.log('✅ 主な修正事項:');
 console.log('  - constructor()でcoordinateManager = null追加');
 console.log('  - initializeCoordinateManagerIntegration()メソッド完全実装');
+console.log('  - validateCoordinateManagerFunctionality()を同期版に修正');
 console.log('  - 描画処理の座標統合対応完了');
 console.log('  - 座標統合診断システム強化');
 console.log('🧪 座標統合テスト: runToolCoordinateIntegrationDiagnosis()');

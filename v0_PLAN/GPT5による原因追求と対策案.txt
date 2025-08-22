@@ -1,115 +1,147 @@
-✅ 原因
+❌ 主なエラー原因
 
-coordinates.js に依存する古い参照がまだ残っている
+tool-manager.js:132 Uncaught SyntaxError: await is only valid in async functions
 
-ログの main.js:798 で「座標統合未完了」と警告。
+await が通常関数内で使われている（async 修飾子不足）。
 
-既存コードが window.CoordinateUtils / window.ColorUtils / window.MathUtils を参照している箇所が残っている。
+Pure JS (ESM禁止) なので、トップレベル await も不可。
 
-集中管理を呼び出す初期化処理が未実装
+canvas-manager.js:258 Uncaught SyntaxError: Unexpected token '{'
 
-ログに明示的に出ている：
+構文エラー。たぶんオブジェクト展開や import 風記法が混じっている。
 
-CanvasManagerでinitializeCoordinateIntegration()を呼び出してください
+ESM記法 (import { ... }) や export { ... } が紛れ込んでいる可能性。
 
-ToolManagerでinitializeCoordinateManagerIntegration()を実装してください
+app-core.js / main.js
 
-BoundaryManagerの初期化時にCoordinateManagerを渡してください
+CanvasManager / ToolManager の初期化時に CoordinateManagerを正しく注入できていない。
 
-つまり CanvasManager / ToolManager / BoundaryManager が CoordinateManager を受け取って使う設計にまだ切り替わっていない。
+メッセージ：
 
-CoordinateManager の導入はされているが接続不十分
+⚠️ CanvasManager利用不可
+⚠️ ToolManager未初期化
+⚠️ BoundaryManager: CoordinateManager未提供
 
-coordinate-manager.js がすでにあり、新しい統一座標系として使う設計。
 
-ただし既存モジュールが CoordinateManager を受け取らず、依然として旧ユーティリティを使おうとしている。
+原因：CoordinateManager がグローバルに公開されていない or Manager間の依存渡し忘れ。
 
-🔧 対策案
-1. CanvasManager の改修
+boundary-manager.js
 
-修正ポイント: 初期化時に CoordinateManager を生成して保持。
+canvasElement未提供 → CanvasManager の初期化不全に連鎖。
 
-改修例:
+✅ 依存関係の整理
 
-// canvas-manager.js
-import { CoordinateManager } from '../js/utils/coordinate-manager.js';
+各マネージャの依存性をまとめると：
 
-export class CanvasManager {
-  constructor(options) {
-    this.options = options;
-    this.coordinateManager = null; // 新規追加
+CoordinateManager
+
+統一座標系の中心。全ての座標計算をここに集約。
+
+グローバル参照：window.CoordinateManager
+
+CanvasManager
+
+初期化時に CoordinateManager を受け取る必要あり。
+
+推奨：CanvasManager.initialize(coordinateManager, canvasElement)
+
+ToolManager
+
+座標関連ツールで CoordinateManager を利用。
+
+推奨：ToolManager.initialize(coordinateManager)
+
+BoundaryManager
+
+Canvasの拡張ヒットエリア計算で CoordinateManager 必須。
+
+CanvasManager が正しく初期化されれば自動連携。
+
+coordinates.js
+
+すべて削除予定。現在は警告を出すだけ。
+
+🛠 対策案
+1. CoordinateManagerをグローバル公開
+// coordinate-manager.js
+(function(global) {
+  function CoordinateManager() {
+    // 座標関連の処理
   }
 
-  initializeCoordinateIntegration() {
-    if (!this.coordinateManager) {
-      this.coordinateManager = new CoordinateManager();
-    }
-    console.info('✅ CanvasManager: CoordinateManager統合完了');
+  CoordinateManager.prototype.calculateDistance = function(p1, p2) { ... };
+  CoordinateManager.prototype.calculateAngle = function(p1, p2) { ... };
+
+  // グローバル公開
+  global.CoordinateManager = CoordinateManager;
+})(window);
+
+2. app-core.js: Manager統合時に注入
+function initializeManagers() {
+  try {
+    // ① 座標管理の統合
+    window.coordinateManager = new CoordinateManager();
+
+    // ② CanvasManager
+    window.canvasManager = new CanvasManager();
+    canvasManager.initialize(window.coordinateManager, document.getElementById("canvas"));
+
+    // ③ ToolManager
+    window.toolManager = new ToolManager();
+    toolManager.initialize(window.coordinateManager);
+
+    // ④ BoundaryManager
+    window.boundaryManager = new BoundaryManager();
+    boundaryManager.initialize(canvasManager.getCanvasElement(), window.coordinateManager);
+
+    console.log("✅ Managers initialized with CoordinateManager");
+  } catch (err) {
+    console.error("Manager init failed:", err);
   }
 }
 
-2. ToolManager の改修
+3. tool-manager.js 修正
+// NG: function 内で await
+// OK: async function にする
+ToolManager.prototype.initialize = async function(coordinateManager) {
+  this.coordinateManager = coordinateManager;
+  // await 使用可
+};
 
-修正ポイント: CoordinateManager を受け取り、ツール実行時に利用する。
+4. canvas-manager.js 構文エラー修正
 
-改修例:
+Unexpected token '{' の場所を確認し、ESM風記法を排除。
 
-// tool-manager.js
-export class ToolManager {
-  constructor(options) {
-    this.options = options;
-    this.coordinateManager = null; // 新規追加
-  }
+Pure JS形式に統一：
 
-  initializeCoordinateManagerIntegration(coordinateManager) {
-    this.coordinateManager = coordinateManager;
-    console.info('✅ ToolManager: CoordinateManager統合完了');
-  }
-}
+function CanvasManager() { ... }
+CanvasManager.prototype.initialize = function(coordinateManager, canvasElement) { ... };
+window.CanvasManager = CanvasManager;
 
-3. BoundaryManager の改修
+📌 今後の修正手順（AIが安全に作業できるようにまとめ）
 
-修正ポイント: 初期化時に CoordinateManager をコンストラクタ経由で受け取る。
+coordinate-manager.js をグローバルIIFEで公開 → window.CoordinateManager
 
-改修例:
+app-core.js の initializeManagers() で全Managerへ注入
 
-// boundary-manager.js
-export class BoundaryManager {
-  constructor(coordinateManager, options) {
-    this.coordinateManager = coordinateManager; // 受け取り必須化
-    this.options = options;
-  }
-}
+CanvasManager.initialize(coordinateManager, canvasElement)
 
-4. main.js の修正
+ToolManager.initialize(coordinateManager)
 
-統合ポイント: 初期化フローに以下を追加。
+BoundaryManager.initialize(canvasElement, coordinateManager)
 
-// main.js
-canvasManager.initializeCoordinateIntegration();
-toolManager.initializeCoordinateManagerIntegration(canvasManager.coordinateManager);
-boundaryManager = new BoundaryManager(canvasManager.coordinateManager, options);
+tool-manager.js
 
-📋 移行確認チェックリスト
+initialize() を async に変更（await 使うなら必須）。
 
- すべての window.CoordinateUtils / ColorUtils / MathUtils 呼び出しを削除
+canvas-manager.js
 
- 代替呼び出しに置換
+構文エラー箇所を修正（{ の前後を確認、ESM禁止）。
 
-CoordinateUtils.distance() → coordinateManager.calculateDistance()
+coordinates.js
 
-ColorUtils.getFutabaColor() → ConfigManager.getColors().futabaMaroon
+削除予定なので、「警告のみ残すダミー」にしておく。
 
-MathUtils.* → lodash または Math.*
+main.js
 
- CanvasManager → CoordinateManager を生成
-
- ToolManager / BoundaryManager に注入
-
- main.js 初期化順序を修正
-
-🎯 まとめ
-
-根本原因: 各マネージャークラスがまだ CoordinateManager を受け取っておらず、旧 coordinates.js のグローバル関数に依存。
-
-対策: CanvasManager で CoordinateManager を生成し、ToolManager と BoundaryManager に渡す。すべての呼び出しを統一座標系に切り替えれば coordinates.js を完全削除可能。
+initializeManagersWithCoordinateIntegration() が app-core.js の新ロジックを呼び出すよう修正。
