@@ -12,16 +12,19 @@
  * 📐 UNIFIED_COORDINATE: 座標処理完全集約・重複排除完了
  * 🎯 PHASE2_READY: レイヤーシステム座標変換基盤準備
  * 💡 PERFORMANCE: 座標処理パフォーマンス最適化
- * 🔧 SYNTAX_FIX: 構文エラー修正版
+ * 🔧 SYNTAX_FIX: 構文エラー修正版（Invalid or unexpected token 解決）
  */
 
 /**
  * Canvas Manager 座標統合完全実装版（構文エラー修正版）
  * 差分パッチ対応：initializeCoordinateIntegration()メソッド実装
  */
+(function(global) {
+    'use strict';
 
-class CanvasManager {
-    constructor(options = {}) {
+    function CanvasManager(options) {
+        options = options || {};
+        
         this.version = 'v1.0-Phase1.4-coordinate-patch-syntax-fixed';
         this.initialized = false;
         this.appCore = options.appCore || null;
@@ -59,63 +62,74 @@ class CanvasManager {
             layerCount: 0
         };
         
-        console.log(`🎨 CanvasManager ${this.version} 構築完了（差分パッチ適用済み・構文修正版）`);
+        console.log('🎨 CanvasManager ' + this.version + ' 構築完了（差分パッチ適用済み・構文修正版）');
     }
     
     /**
      * 初期化（座標統合対応）
      */
-    async initialize(appCore, canvasElement) {
-        console.group(`🎨 CanvasManager初期化開始 - ${this.version}`);
+    CanvasManager.prototype.initialize = function(appCore, canvasElement) {
+        console.group('🎨 CanvasManager初期化開始 - ' + this.version);
         
-        try {
-            const startTime = performance.now();
-            
-            // 基本初期化
-            this.appCore = appCore;
-            this.canvasElement = canvasElement;
-            
-            // 設定読み込み
-            await this.loadConfiguration();
-            
-            // ✅ 差分パッチ対応: Phase2移行 CoordinateManager統合初期化
-            this.initializeCoordinateIntegration();
-            
-            // PixiJS初期化
-            await this.initializePixiApplication();
-            
-            // レイヤー初期化
-            this.initializeLayers();
-            
-            // イベントハンドラー設定
-            this.setupEventHandlers();
-            
-            // 初期レンダリング
-            this.render();
-            
-            const initTime = performance.now() - startTime;
-            console.log(`✅ CanvasManager初期化完了 - ${initTime.toFixed(2)}ms`);
-            
-            this.initialized = true;
-            
-            return this;
-            
-        } catch (error) {
-            console.error('❌ CanvasManager初期化エラー:', error);
-            if (window.ErrorManager) {
-                window.ErrorManager.showError('error', 'キャンバス初期化失敗: ' + error.message);
+        var self = this;
+        var startTime = performance.now();
+        
+        return new Promise(function(resolve, reject) {
+            try {
+                // 基本初期化
+                self.appCore = appCore;
+                self.canvasElement = canvasElement;
+                
+                // 設定読み込み
+                self.loadConfiguration()
+                    .then(function() {
+                        // ✅ 差分パッチ対応: Phase2移行 CoordinateManager統合初期化
+                        self.initializeCoordinateIntegration();
+                        
+                        // PixiJS初期化
+                        return self.initializePixiApplication();
+                    })
+                    .then(function() {
+                        // レイヤー初期化
+                        self.initializeLayers();
+                        
+                        // イベントハンドラー設定
+                        self.setupEventHandlers();
+                        
+                        // 初期レンダリング
+                        self.render();
+                        
+                        var initTime = performance.now() - startTime;
+                        console.log('✅ CanvasManager初期化完了 - ' + initTime.toFixed(2) + 'ms');
+                        
+                        self.initialized = true;
+                        console.groupEnd();
+                        resolve(self);
+                    })
+                    .catch(function(error) {
+                        console.error('❌ CanvasManager初期化エラー:', error);
+                        if (window.ErrorManager) {
+                            window.ErrorManager.showError('error', 'キャンバス初期化失敗: ' + error.message);
+                        }
+                        console.groupEnd();
+                        reject(error);
+                    });
+                    
+            } catch (error) {
+                console.error('❌ CanvasManager初期化エラー:', error);
+                if (window.ErrorManager) {
+                    window.ErrorManager.showError('error', 'キャンバス初期化失敗: ' + error.message);
+                }
+                console.groupEnd();
+                reject(error);
             }
-            throw error;
-            
-        } finally {
-            console.groupEnd();
-        }
-    }
+        });
+    };
     
     /**
      * ✅ 差分パッチ対応: Phase2移行 CoordinateManager統合初期化
      */
-    initializeCoordinateIntegration() {
+    CanvasManager.prototype.initializeCoordinateIntegration = function() {
         console.log('🔄 CanvasManager座標統合初期化開始...');
         
         try {
@@ -130,17 +144,17 @@ class CanvasManager {
             }
             
             // 座標統合設定確認・更新
-            const coordinateConfig = ConfigManager.getCoordinateConfig();
+            var coordinateConfig = ConfigManager.getCoordinateConfig();
             this.coordinateIntegration = {
-                enabled: coordinateConfig.integration?.managerCentralization || false,
-                duplicateElimination: coordinateConfig.integration?.duplicateElimination || false,
+                enabled: coordinateConfig.integration && coordinateConfig.integration.managerCentralization || false,
+                duplicateElimination: coordinateConfig.integration && coordinateConfig.integration.duplicateElimination || false,
                 performance: coordinateConfig.performance || {},
-                unifiedErrorHandling: coordinateConfig.integration?.unifiedErrorHandling || false,
+                unifiedErrorHandling: coordinateConfig.integration && coordinateConfig.integration.unifiedErrorHandling || false,
                 phase2Ready: false
             };
             
             if (!this.coordinateIntegration.enabled) {
-                console.warn(⚠️ 座標統合が無効です。ConfigManagerで coordinate.integration.managerCentralization を true に設定してください。');
+                console.warn('⚠️ 座標統合が無効です。ConfigManagerで coordinate.integration.managerCentralization を true に設定してください。');
             }
             
             // CoordinateManager機能テスト
@@ -189,25 +203,25 @@ class CanvasManager {
             
             if (window.ErrorManager) {
                 window.ErrorManager.showError('canvas-coordinate-integration', 
-                    `CanvasManager座標統合初期化失敗: ${error.message}`, 
+                    'CanvasManager座標統合初期化失敗: ' + error.message, 
                     { canvasSize: { width: this.width, height: this.height } }
                 );
             }
             
             return null;
         }
-    }
+    };
 
     /**
      * 🆕 CoordinateManager機能テスト（完全実装版）
      */
-    validateCoordinateManagerFunctionality() {
+    CanvasManager.prototype.validateCoordinateManagerFunctionality = function() {
         if (!this.coordinateManager) return false;
         
         try {
             // 基本的な座標変換テスト
-            const testRect = { left: 0, top: 0, width: this.width, height: this.height };
-            const testResult = this.coordinateManager.screenToCanvas(100, 100, testRect);
+            var testRect = { left: 0, top: 0, width: this.width, height: this.height };
+            var testResult = this.coordinateManager.screenToCanvas(100, 100, testRect);
             
             if (!testResult || typeof testResult.x !== 'number' || typeof testResult.y !== 'number') {
                 throw new Error('座標変換機能が正常に動作しません');
@@ -215,7 +229,7 @@ class CanvasManager {
             
             // 座標妥当性確認テスト
             if (typeof this.coordinateManager.validateCoordinateIntegrity === 'function') {
-                const validityTest = this.coordinateManager.validateCoordinateIntegrity({ x: 100, y: 100 });
+                var validityTest = this.coordinateManager.validateCoordinateIntegrity({ x: 100, y: 100 });
                 if (!validityTest) {
                     throw new Error('座標妥当性確認機能が正常に動作しません');
                 }
@@ -223,7 +237,7 @@ class CanvasManager {
             
             // 距離計算テスト
             if (this.coordinateManager.calculateDistance) {
-                const distance = this.coordinateManager.calculateDistance(
+                var distance = this.coordinateManager.calculateDistance(
                     { x: 0, y: 0 }, 
                     { x: 3, y: 4 }
                 );
@@ -234,7 +248,7 @@ class CanvasManager {
             
             // 精度適用テスト
             if (this.coordinateManager.applyPrecision) {
-                const precisionTest = this.coordinateManager.applyPrecision(123.456789);
+                var precisionTest = this.coordinateManager.applyPrecision(123.456789);
                 if (typeof precisionTest !== 'number') {
                     throw new Error('精度適用機能が正常に動作しません');
                 }
@@ -245,49 +259,50 @@ class CanvasManager {
             
         } catch (error) {
             console.error('❌ CanvasManager: CoordinateManager機能テスト失敗:', error);
-            throw new Error(`CoordinateManager機能テスト失敗: ${error.message}`);
+            throw new Error('CoordinateManager機能テスト失敗: ' + error.message);
         }
-    }
+    };
 
     /**
      * 🔄 座標統合状態取得（修正版）
      */
-    getCoordinateIntegrationState() {
+    CanvasManager.prototype.getCoordinateIntegrationState = function() {
         return {
             coordinateManagerAvailable: !!this.coordinateManager,
-            integrationEnabled: this.coordinateIntegration?.enabled || false,
-            duplicateElimination: this.coordinateIntegration?.duplicateElimination || false,
-            unifiedErrorHandling: this.coordinateIntegration?.unifiedErrorHandling || false,
-            performanceOptimized: !!(this.coordinateIntegration?.performance?.coordinateCache || 
-                                    this.coordinateIntegration?.performance?.batchProcessing),
+            integrationEnabled: this.coordinateIntegration && this.coordinateIntegration.enabled || false,
+            duplicateElimination: this.coordinateIntegration && this.coordinateIntegration.duplicateElimination || false,
+            unifiedErrorHandling: this.coordinateIntegration && this.coordinateIntegration.unifiedErrorHandling || false,
+            performanceOptimized: !!(this.coordinateIntegration && 
+                                    (this.coordinateIntegration.performance && this.coordinateIntegration.performance.coordinateCache || 
+                                     this.coordinateIntegration.performance && this.coordinateIntegration.performance.batchProcessing)),
             currentSize: { width: this.width, height: this.height },
-            hasContent: this.paths?.length > 0,
+            hasContent: this.paths && this.paths.length > 0,
             coordinateManagerState: this.coordinateManager ? 
                 (this.coordinateManager.getCoordinateState ? this.coordinateManager.getCoordinateState() : 'available') : null,
             phase2Ready: !!(this.coordinateManager && 
-                            this.coordinateIntegration?.enabled &&
-                            this.coordinateIntegration?.duplicateElimination),
-            initializationError: this.coordinateIntegration?.error || null,
+                            this.coordinateIntegration && this.coordinateIntegration.enabled &&
+                            this.coordinateIntegration && this.coordinateIntegration.duplicateElimination),
+            initializationError: this.coordinateIntegration && this.coordinateIntegration.error || null,
             methodsImplemented: {
                 initializeCoordinateIntegration: typeof this.initializeCoordinateIntegration === 'function',
                 getUnifiedCanvasCoordinates: typeof this.getUnifiedCanvasCoordinates === 'function',
                 startDrawingWithCoordinateIntegration: typeof this.startDrawingWithCoordinateIntegration === 'function'
             }
         };
-    }
+    };
 
     /**
      * 🆕 座標統合診断実行（完全実装版・構文修正版）
      */
-    runCoordinateIntegrationDiagnosis() {
+    CanvasManager.prototype.runCoordinateIntegrationDiagnosis = function() {
         console.group('🔍 CanvasManager座標統合診断（完全実装版・構文修正版）');
         
-        const state = this.getCoordinateIntegrationState();
+        var state = this.getCoordinateIntegrationState();
         
         // 統合機能テスト
-        const integrationTests = {
+        var integrationTests = {
             coordinateManagerAvailable: !!this.coordinateManager,
-            coordinateIntegrationEnabled: this.coordinateIntegration?.enabled || false,
+            coordinateIntegrationEnabled: this.coordinateIntegration && this.coordinateIntegration.enabled || false,
             initializeCoordinateIntegrationMethodExists: typeof this.initializeCoordinateIntegration === 'function',
             unifiedCoordinateExtraction: typeof this.getUnifiedCanvasCoordinates === 'function',
             drawingCoordinateIntegration: typeof this.startDrawingWithCoordinateIntegration === 'function',
@@ -295,17 +310,17 @@ class CanvasManager {
         };
         
         // 診断結果
-        const diagnosis = {
-            state,
-            integrationTests,
+        var diagnosis = {
+            state: state,
+            integrationTests: integrationTests,
             compliance: {
                 coordinateUnified: integrationTests.coordinateManagerAvailable && 
                                  integrationTests.coordinateIntegrationEnabled,
-                duplicateEliminated: this.coordinateIntegration?.duplicateElimination || false,
+                duplicateEliminated: this.coordinateIntegration && this.coordinateIntegration.duplicateElimination || false,
                 phase2Ready: state.phase2Ready,
                 drawingSystemIntegrated: integrationTests.drawingCoordinateIntegration &&
                                        integrationTests.eventHandlerIntegration,
-                fullFunctionality: Object.values(integrationTests).every(Boolean),
+                fullFunctionality: Object.keys(integrationTests).every(function(key) { return integrationTests[key]; }),
                 initializationMethodReady: integrationTests.initializeCoordinateIntegrationMethodExists
             }
         };
@@ -313,17 +328,17 @@ class CanvasManager {
         console.log('📊 CanvasManager座標統合診断結果:', diagnosis);
         
         // 診断結果表示
-        const passedTests = Object.values(integrationTests).filter(Boolean).length;
-        const totalTests = Object.keys(integrationTests).length;
+        var passedTests = Object.keys(integrationTests).filter(function(key) { return integrationTests[key]; }).length;
+        var totalTests = Object.keys(integrationTests).length;
         
-        console.log(`📊 統合テスト: ${passedTests}/${totalTests} (${Math.round(passedTests/totalTests*100)}%)`);
+        console.log('📊 統合テスト: ' + passedTests + '/' + totalTests + ' (' + Math.round(passedTests/totalTests*100) + '%)');
         console.log('⚙️ CoordinateManager統合:', integrationTests.coordinateManagerAvailable ? '✅' : '❌');
         console.log('🔄 初期化メソッド:', integrationTests.initializeCoordinateIntegrationMethodExists ? '✅' : '❌');
         console.log('🎨 描画システム統合:', diagnosis.compliance.drawingSystemIntegrated ? '✅' : '❌');
         console.log('🚀 Phase2準備:', state.phase2Ready ? '✅' : '❌');
         
         // 推奨事項
-        const recommendations = [];
+        var recommendations = [];
         
         if (!integrationTests.coordinateManagerAvailable) {
             recommendations.push('initializeCoordinateIntegration()を実行してCoordinateManagerを初期化');
@@ -338,9 +353,9 @@ class CanvasManager {
         }
         
         if (!diagnosis.compliance.drawingSystemIntegrated) {
-            const missingDrawing = ['unifiedCoordinateExtraction', 'drawingCoordinateIntegration', 'eventHandlerIntegration']
-                .filter(key => !integrationTests[key]);
-            recommendations.push(`描画システム統合が不完全: ${missingDrawing.join(', ')}`);
+            var missingDrawing = ['unifiedCoordinateExtraction', 'drawingCoordinateIntegration', 'eventHandlerIntegration']
+                .filter(function(key) { return !integrationTests[key]; });
+            recommendations.push('描画システム統合が不完全: ' + missingDrawing.join(', '));
         }
         
         if (!diagnosis.compliance.duplicateEliminated) {
@@ -356,67 +371,77 @@ class CanvasManager {
         console.groupEnd();
         
         return diagnosis;
-    }
+    };
     
     /**
      * 設定読み込み
      */
-    async loadConfiguration() {
-        try {
-            const canvasConfig = ConfigManager.getCanvasConfig();
-            const pixiConfig = ConfigManager.getPixiConfig();
-            
-            this.width = canvasConfig.width;
-            this.height = canvasConfig.height;
-            this.backgroundColor = canvasConfig.backgroundColor;
-            this.pixiConfig = pixiConfig;
-            
-            console.log(`⚙️ 設定読み込み完了: ${this.width}×${this.height}`);
-            
-        } catch (error) {
-            console.warn('⚠️ 設定読み込み失敗 - デフォルト設定使用:', error.message);
-            
-            // フォールバック設定
-            this.width = 400;
-            this.height = 400;
-            this.backgroundColor = 0xf0e0d6;
-            this.pixiConfig = { antialias: true, resolution: 1 };
-        }
-    }
+    CanvasManager.prototype.loadConfiguration = function() {
+        var self = this;
+        return new Promise(function(resolve, reject) {
+            try {
+                var canvasConfig = ConfigManager.getCanvasConfig();
+                var pixiConfig = ConfigManager.getPixiConfig();
+                
+                self.width = canvasConfig.width;
+                self.height = canvasConfig.height;
+                self.backgroundColor = canvasConfig.backgroundColor;
+                self.pixiConfig = pixiConfig;
+                
+                console.log('⚙️ 設定読み込み完了: ' + self.width + '×' + self.height);
+                resolve();
+                
+            } catch (error) {
+                console.warn('⚠️ 設定読み込み失敗 - デフォルト設定使用:', error.message);
+                
+                // フォールバック設定
+                self.width = 400;
+                self.height = 400;
+                self.backgroundColor = 0xf0e0d6;
+                self.pixiConfig = { antialias: true, resolution: 1 };
+                resolve();
+            }
+        });
+    };
     
     /**
      * PixiJS初期化
      */
-    async initializePixiApplication() {
-        try {
-            // PixiJS Application作成
-            // 📋 V8_MIGRATION: await PIXI.Application.init() に変更予定
-            this.app = new PIXI.Application({
-                width: this.width,
-                height: this.height,
-                backgroundColor: this.backgroundColor,
-                view: this.canvasElement,
-                ...this.pixiConfig
-            });
-            
-            // 📋 V8_MIGRATION: background プロパティに変更予定
-            // this.app.background = this.backgroundColor;
-            
-            // ヒットエリア設定
-            this.app.stage.hitArea = new PIXI.Rectangle(0, 0, this.width, this.height);
-            this.app.stage.interactive = true;
-            
-            console.log('✅ PixiJS Application初期化完了');
-            
-        } catch (error) {
-            throw new Error('PixiJS初期化失敗: ' + error.message);
-        }
-    }
+    CanvasManager.prototype.initializePixiApplication = function() {
+        var self = this;
+        return new Promise(function(resolve, reject) {
+            try {
+                // PixiJS Application作成
+                // 📋 V8_MIGRATION: await PIXI.Application.init() に変更予定
+                self.app = new PIXI.Application({
+                    width: self.width,
+                    height: self.height,
+                    backgroundColor: self.backgroundColor,
+                    view: self.canvasElement,
+                    antialias: self.pixiConfig.antialias,
+                    resolution: self.pixiConfig.resolution
+                });
+                
+                // 📋 V8_MIGRATION: background プロパティに変更予定
+                // this.app.background = this.backgroundColor;
+                
+                // ヒットエリア設定
+                self.app.stage.hitArea = new PIXI.Rectangle(0, 0, self.width, self.height);
+                self.app.stage.interactive = true;
+                
+                console.log('✅ PixiJS Application初期化完了');
+                resolve();
+                
+            } catch (error) {
+                reject(new Error('PixiJS初期化失敗: ' + error.message));
+            }
+        });
+    };
     
     /**
      * レイヤー初期化
      */
-    initializeLayers() {
+    CanvasManager.prototype.initializeLayers = function() {
         try {
             // 背景レイヤー
             this.backgroundLayer = new PIXI.Container();
@@ -441,32 +466,33 @@ class CanvasManager {
         } catch (error) {
             throw new Error('レイヤー初期化失敗: ' + error.message);
         }
-    }
+    };
     
     /**
      * イベントハンドラー設定（座標統合対応）
      */
-    setupEventHandlers() {
+    CanvasManager.prototype.setupEventHandlers = function() {
+        var self = this;
         try {
             if (!this.app || !this.app.stage) {
                 throw new Error('PixiJS stage が利用できません');
             }
             
             // 🔄 COORDINATE_INTEGRATION: 座標統合イベントハンドラー
-            this.app.stage.on('pointerdown', (event) => {
-                this.handlePointerDownWithCoordinateIntegration(event);
+            this.app.stage.on('pointerdown', function(event) {
+                self.handlePointerDownWithCoordinateIntegration(event);
             });
             
-            this.app.stage.on('pointermove', (event) => {
-                this.handlePointerMoveWithCoordinateIntegration(event);
+            this.app.stage.on('pointermove', function(event) {
+                self.handlePointerMoveWithCoordinateIntegration(event);
             });
             
-            this.app.stage.on('pointerup', (event) => {
-                this.handlePointerUpWithCoordinateIntegration(event);
+            this.app.stage.on('pointerup', function(event) {
+                self.handlePointerUpWithCoordinateIntegration(event);
             });
             
-            this.app.stage.on('pointerupoutside', (event) => {
-                this.handlePointerUpWithCoordinateIntegration(event);
+            this.app.stage.on('pointerupoutside', function(event) {
+                self.handlePointerUpWithCoordinateIntegration(event);
             });
             
             console.log('✅ 座標統合イベントハンドラー設定完了');
@@ -474,7 +500,7 @@ class CanvasManager {
         } catch (error) {
             throw new Error('イベントハンドラー設定失敗: ' + error.message);
         }
-    }
+    };
     
     // ==========================================
     // 🔄 座標統合処理メソッド群
@@ -483,7 +509,7 @@ class CanvasManager {
     /**
      * 🔄 統合座標取得（getBoundingClientRect()の統一処理）
      */
-    getUnifiedCanvasCoordinates(event) {
+    CanvasManager.prototype.getUnifiedCanvasCoordinates = function(event) {
         if (!this.coordinateManager) {
             console.warn('⚠️ CoordinateManager未初期化 - フォールバック処理');
             return this.getFallbackCanvasCoordinates(event);
@@ -491,13 +517,13 @@ class CanvasManager {
         
         try {
             // キャンバス要素の矩形取得
-            const canvasRect = this.canvasElement?.getBoundingClientRect();
+            var canvasRect = this.canvasElement && this.canvasElement.getBoundingClientRect();
             if (!canvasRect) {
                 throw new Error('キャンバス要素が見つかりません');
             }
             
             // CoordinateManager経由で統一座標抽出
-            const coordinates = this.coordinateManager.extractPointerCoordinates(
+            var coordinates = this.coordinateManager.extractPointerCoordinates(
                 event, 
                 canvasRect, 
                 this.app // PixiJSアプリ
@@ -514,32 +540,32 @@ class CanvasManager {
         } catch (error) {
             if (window.ErrorManager) {
                 window.ErrorManager.showError('coordinate-canvas-unified', 
-                    `統一座標取得エラー: ${error.message}`, 
-                    { event: event?.type }
+                    '統一座標取得エラー: ' + error.message, 
+                    { event: event && event.type }
                 );
             }
             return this.getFallbackCanvasCoordinates(event);
         }
-    }
+    };
     
     /**
      * 🔄 フォールバック座標取得（緊急時用）
      */
-    getFallbackCanvasCoordinates(event) {
+    CanvasManager.prototype.getFallbackCanvasCoordinates = function(event) {
         console.warn('🔧 座標取得フォールバック処理実行');
         
         try {
-            const rect = this.canvasElement?.getBoundingClientRect();
+            var rect = this.canvasElement && this.canvasElement.getBoundingClientRect();
             if (!rect) {
                 return { screen: { x: 0, y: 0 }, canvas: { x: 0, y: 0 }, pressure: 0.5 };
             }
             
-            const clientX = event.clientX || 0;
-            const clientY = event.clientY || 0;
+            var clientX = event.clientX || 0;
+            var clientY = event.clientY || 0;
             
             // 基本的な座標変換（CoordinateManagerの簡易版）
-            const canvasX = Math.max(0, Math.min(this.width, clientX - rect.left));
-            const canvasY = Math.max(0, Math.min(this.height, clientY - rect.top));
+            var canvasX = Math.max(0, Math.min(this.width, clientX - rect.left));
+            var canvasY = Math.max(0, Math.min(this.height, clientY - rect.top));
             
             return {
                 screen: { x: clientX, y: clientY },
@@ -551,7 +577,7 @@ class CanvasManager {
             console.error('❌ フォールバック座標取得失敗:', error);
             return { screen: { x: 0, y: 0 }, canvas: { x: 0, y: 0 }, pressure: 0.5 };
         }
-    }
+    };
     
     // ==========================================
     // 🔄 描画処理メソッド群（座標統合対応）
@@ -560,22 +586,22 @@ class CanvasManager {
     /**
      * 🔄 統合描画開始処理
      */
-    startDrawingWithCoordinateIntegration(event) {
+    CanvasManager.prototype.startDrawingWithCoordinateIntegration = function(event) {
         try {
             // CoordinateManager経由で統一座標取得
-            const coordinates = this.getUnifiedCanvasCoordinates(event);
+            var coordinates = this.getUnifiedCanvasCoordinates(event);
             
             if (!coordinates) {
                 throw new Error('座標取得に失敗しました');
             }
             
             // 新しいパス開始
-            const pathId = `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            const graphics = new PIXI.Graphics();
+            var pathId = 'path_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            var graphics = new PIXI.Graphics();
             
             this.currentPath = {
                 id: pathId,
-                graphics,
+                graphics: graphics,
                 points: [coordinates.canvas],
                 startTime: Date.now(),
                 tool: 'pen' // 現在のツール
@@ -607,45 +633,45 @@ class CanvasManager {
                 });
             }
             
-            console.log(`🎨 CoordinateManager統合描画開始: (${coordinates.canvas.x.toFixed(1)}, ${coordinates.canvas.y.toFixed(1)})`);
+            console.log('🎨 CoordinateManager統合描画開始: (' + coordinates.canvas.x.toFixed(1) + ', ' + coordinates.canvas.y.toFixed(1) + ')');
             
             return coordinates;
             
         } catch (error) {
             if (window.ErrorManager) {
                 window.ErrorManager.showError('canvas-draw-start-coordinate', 
-                    `統合描画開始エラー: ${error.message}`, 
-                    { event: event?.type }
+                    '統合描画開始エラー: ' + error.message, 
+                    { event: event && event.type }
                 );
             }
             return null;
         }
-    }
+    };
     
     /**
      * 🔄 統合描画継続処理
      */
-    continueDrawingWithCoordinateIntegration(event) {
+    CanvasManager.prototype.continueDrawingWithCoordinateIntegration = function(event) {
         if (!this.isDrawing || !this.currentPath) return null;
         
         try {
             // CoordinateManager経由で統一座標取得
-            const coordinates = this.getUnifiedCanvasCoordinates(event);
+            var coordinates = this.getUnifiedCanvasCoordinates(event);
             
             if (!coordinates) {
                 throw new Error('座標取得に失敗しました');
             }
             
             // 前回座標との距離計算（CoordinateManager使用）
-            let shouldDraw = true;
+            var shouldDraw = true;
             if (this.lastDrawingPoint && this.coordinateManager) {
-                const distance = this.coordinateManager.calculateDistance(
+                var distance = this.coordinateManager.calculateDistance(
                     this.lastDrawingPoint, 
                     coordinates.canvas
                 );
                 
                 // 最小描画距離チェック
-                const minDistance = ConfigManager.get('drawing.pen.minDistance') || 1.5;
+                var minDistance = ConfigManager.get && ConfigManager.get('drawing.pen.minDistance') || 1.5;
                 shouldDraw = distance >= minDistance;
             }
             
@@ -663,18 +689,18 @@ class CanvasManager {
         } catch (error) {
             if (window.ErrorManager) {
                 window.ErrorManager.showError('canvas-draw-continue-coordinate', 
-                    `統合描画継続エラー: ${error.message}`, 
-                    { event: event?.type }
+                    '統合描画継続エラー: ' + error.message, 
+                    { event: event && event.type }
                 );
             }
             return null;
         }
-    }
+    };
     
     /**
      * 🔄 統合描画終了処理
      */
-    stopDrawingWithCoordinateIntegration() {
+    CanvasManager.prototype.stopDrawingWithCoordinateIntegration = function() {
         try {
             if (this.currentPath) {
                 this.currentPath.endTime = Date.now();
@@ -701,12 +727,12 @@ class CanvasManager {
         } catch (error) {
             if (window.ErrorManager) {
                 window.ErrorManager.showError('canvas-draw-stop-coordinate', 
-                    `統合描画終了エラー: ${error.message}`
+                    '統合描画終了エラー: ' + error.message
                 );
             }
             return false;
         }
-    }
+    };
     
     // ==========================================
     // 🔄 イベントハンドラー（座標統合対応）
@@ -715,16 +741,16 @@ class CanvasManager {
     /**
      * 🔄 統合ポインターダウンハンドラー
      */
-    handlePointerDownWithCoordinateIntegration(event) {
+    CanvasManager.prototype.handlePointerDownWithCoordinateIntegration = function(event) {
         try {
             // CoordinateManager統合描画開始
-            const coordinates = this.startDrawingWithCoordinateIntegration(event);
+            var coordinates = this.startDrawingWithCoordinateIntegration(event);
             
             if (coordinates) {
                 // EventBus通知
                 if (window.EventBus) {
                     window.EventBus.safeEmit('canvas.pointer.down', {
-                        coordinates,
+                        coordinates: coordinates,
                         event: event.type,
                         timestamp: Date.now()
                     });
@@ -734,27 +760,27 @@ class CanvasManager {
         } catch (error) {
             if (window.ErrorManager) {
                 window.ErrorManager.showError('canvas-pointer-down-coordinate', 
-                    `統合ポインターダウンエラー: ${error.message}`, 
-                    { event: event?.type }
+                    '統合ポインターダウンエラー: ' + error.message, 
+                    { event: event && event.type }
                 );
             }
         }
-    }
+    };
     
     /**
      * 🔄 統合ポインター移動ハンドラー
      */
-    handlePointerMoveWithCoordinateIntegration(event) {
+    CanvasManager.prototype.handlePointerMoveWithCoordinateIntegration = function(event) {
         try {
             if (this.isDrawing) {
                 // CoordinateManager統合描画継続
-                const coordinates = this.continueDrawingWithCoordinateIntegration(event);
+                var coordinates = this.continueDrawingWithCoordinateIntegration(event);
                 
                 if (coordinates) {
                     // EventBus通知
                     if (window.EventBus) {
                         window.EventBus.safeEmit('canvas.pointer.move', {
-                            coordinates,
+                            coordinates: coordinates,
                             isDrawing: true,
                             event: event.type,
                             timestamp: Date.now()
@@ -766,21 +792,21 @@ class CanvasManager {
         } catch (error) {
             if (window.ErrorManager) {
                 window.ErrorManager.showError('canvas-pointer-move-coordinate', 
-                    `統合ポインター移動エラー: ${error.message}`, 
-                    { event: event?.type }
+                    '統合ポインター移動エラー: ' + error.message, 
+                    { event: event && event.type }
                 );
             }
         }
-    }
+    };
     
     /**
      * 🔄 統合ポインターアップハンドラー
      */
-    handlePointerUpWithCoordinateIntegration(event) {
+    CanvasManager.prototype.handlePointerUpWithCoordinateIntegration = function(event) {
         try {
             if (this.isDrawing) {
                 // CoordinateManager統合描画終了
-                const success = this.stopDrawingWithCoordinateIntegration();
+                var success = this.stopDrawingWithCoordinateIntegration();
                 
                 if (success) {
                     // EventBus通知
@@ -797,12 +823,12 @@ class CanvasManager {
         } catch (error) {
             if (window.ErrorManager) {
                 window.ErrorManager.showError('canvas-pointer-up-coordinate', 
-                    `統合ポインターアップエラー: ${error.message}`, 
-                    { event: event?.type }
+                    '統合ポインターアップエラー: ' + error.message, 
+                    { event: event && event.type }
                 );
             }
         }
-    }
+    };
     
     // ==========================================
     // 🔄 基本機能メソッド群
@@ -811,9 +837,9 @@ class CanvasManager {
     /**
      * レンダリング
      */
-    render() {
+    CanvasManager.prototype.render = function() {
         try {
-            const startTime = performance.now();
+            var startTime = performance.now();
             
             // PixiJS自動レンダリング（通常は自動）
             // 手動レンダリングが必要な場合のみ
@@ -823,20 +849,21 @@ class CanvasManager {
         } catch (error) {
             console.error('❌ レンダリングエラー:', error);
         }
-    }
+    };
     
     /**
      * クリア
      */
-    clear() {
+    CanvasManager.prototype.clear = function() {
         try {
             // 全パスのグラフィクス削除
-            this.paths.forEach(path => {
+            for (var i = 0; i < this.paths.length; i++) {
+                var path = this.paths[i];
                 if (path.graphics && path.graphics.parent) {
                     path.graphics.parent.removeChild(path.graphics);
                     path.graphics.destroy();
                 }
-            });
+            }
             
             // パス配列クリア
             this.paths = [];
@@ -855,14 +882,15 @@ class CanvasManager {
             console.error('❌ クリアエラー:', error);
             return false;
         }
-    }
+    };
     
     /**
      * サイズ変更
      */
-    resize(newWidth, newHeight, centerContent = false) {
-        const oldWidth = this.width;
-        const oldHeight = this.height;
+    CanvasManager.prototype.resize = function(newWidth, newHeight, centerContent) {
+        centerContent = centerContent || false;
+        var oldWidth = this.width;
+        var oldHeight = this.height;
         
         try {
             // PixiJS Applicationリサイズ
@@ -889,58 +917,58 @@ class CanvasManager {
                 this.app.stage.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
             }
             
-            console.log(`📐 座標統合リサイズ: ${oldWidth}×${oldHeight} → ${newWidth}×${newHeight}`);
+            console.log('📐 座標統合リサイズ: ' + oldWidth + '×' + oldHeight + ' → ' + newWidth + '×' + newHeight);
             
             return true;
             
         } catch (error) {
             if (window.ErrorManager) {
                 window.ErrorManager.showError('canvas-resize-coordinate', 
-                    `座標統合リサイズエラー: ${error.message}`, 
-                    { newWidth, newHeight, centerContent }
+                    '座標統合リサイズエラー: ' + error.message, 
+                    { newWidth: newWidth, newHeight: newHeight, centerContent: centerContent }
                 );
             }
             return false;
         }
-    }
+    };
     
     /**
      * 統計取得
      */
-    getStats() {
+    CanvasManager.prototype.getStats = function() {
         return {
-            ...this.stats,
+            renderTime: this.stats.renderTime,
+            pathCount: this.stats.pathCount,
+            layerCount: this.stats.layerCount,
             initialized: this.initialized,
             canvasSize: { width: this.width, height: this.height },
-            layerCount: this.stats.layerCount,
-            pathCount: this.stats.pathCount,
             isDrawing: this.isDrawing,
             coordinateIntegration: this.getCoordinateIntegrationState()
         };
-    }
+    };
     
     /**
      * デバッグ情報
      */
-    getDebugInfo() {
-        const stats = this.getStats();
-        const diagnosis = this.getCoordinateIntegrationState();
+    CanvasManager.prototype.getDebugInfo = function() {
+        var stats = this.getStats();
+        var diagnosis = this.getCoordinateIntegrationState();
         
         return {
             version: this.version,
-            stats,
+            stats: stats,
             coordinateIntegration: diagnosis,
             pixiApp: {
-                stage: !!this.app?.stage,
-                renderer: !!this.app?.renderer
+                stage: !!(this.app && this.app.stage),
+                renderer: !!(this.app && this.app.renderer)
             }
         };
-    }
+    };
     
     /**
      * 破棄処理
      */
-    destroy() {
+    CanvasManager.prototype.destroy = function() {
         try {
             console.log('🗑️ CanvasManager破棄開始...');
             
@@ -973,26 +1001,28 @@ class CanvasManager {
         } catch (error) {
             console.error('❌ CanvasManager破棄エラー:', error);
         }
-    }
-}
+    };
 
-// ==========================================
-// 🎯 Pure JavaScript グローバル公開
-// ==========================================
+    // ==========================================
+    // 🎯 Pure JavaScript グローバル公開
+    // ==========================================
 
-if (typeof window !== 'undefined') {
-    window.CanvasManager = CanvasManager;
+    global.CanvasManager = CanvasManager;
     console.log('✅ CanvasManager 座標統合パッチ適用版 グローバル公開完了（Pure JavaScript・構文修正版）');
-}
+
+})(window);
 
 console.log('🔧 CanvasManager Phase1.4 座標統合パッチ適用版・構文修正版 - 準備完了');
 console.log('📋 差分パッチ適用完了: initializeCoordinateIntegration()メソッド実装');
 console.log('🔄 座標統合実装完了: CoordinateManager完全統合・重複排除・Phase2準備');
-console.log('🔧 構文エラー修正完了: Unexpected token エラー解決');
+console.log('🔧 構文エラー修正完了: Invalid or unexpected token エラー解決');
 console.log('✅ 主な修正事項:');
+console.log('  - ES6構文をES5互換に変更（class → function、arrow function → function）');
 console.log('  - constructor()でcoordinateManager = null追加');
 console.log('  - initialize()でinitializeCoordinateIntegration()呼び出し追加');
 console.log('  - initializeCoordinateIntegration()メソッド完全実装');
 console.log('  - getCoordinateIntegrationState()メソッド構文修正');
 console.log('  - 座標統合診断システム強化・構文エラー解決');
+console.log('  - Promise-based初期化に変更');
+console.log('  - IIFE (Immediately Invoked Function Expression) でグローバル公開');
 console.log('💡 使用例: const canvasManager = new window.CanvasManager(); await canvasManager.initialize(appCore, canvas);');

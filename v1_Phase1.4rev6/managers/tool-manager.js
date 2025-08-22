@@ -8,14 +8,18 @@
  * 🔄 COORDINATE_INTEGRATION: CoordinateManager統合完全実装版
  * 🆕 COORDINATE_FEATURE: initializeCoordinateManagerIntegration()完全実装
  * ✅ COORDINATE_PATCH: 差分パッチ適用版
- * 🔧 SYNTAX_FIX: await構文エラー修正版
+ * 🔧 SYNTAX_FIX: await構文エラー修正版（ES5互換）
  */
 
 /**
  * ツール管理システム（差分パッチ適用版・座標統合完全対応・構文エラー修正版）
  */
-class ToolManager {
-    constructor(options = {}) {
+(function(global) {
+    'use strict';
+
+    function ToolManager(options) {
+        options = options || {};
+        
         this.version = 'v1.0-Phase1.4-coordinate-patch-syntax-fixed';
         this.appCore = options.appCore || null;
         
@@ -41,64 +45,66 @@ class ToolManager {
             error: null
         };
         
-        console.log(`🎨 ToolManager ${this.version} 構築開始（差分パッチ適用版・構文修正版）...`);
+        console.log('🎨 ToolManager ' + this.version + ' 構築開始（差分パッチ適用版・構文修正版）...');
     }
     
     /**
      * 統一システム統合・ツール管理システム初期化（差分パッチ適用版・構文エラー修正版）
      */
-    async initialize() {
-        console.group(`🎨 ToolManager 統一システム統合初期化開始 - ${this.version}`);
+    ToolManager.prototype.initialize = function() {
+        console.group('🎨 ToolManager 統一システム統合初期化開始 - ' + this.version);
         
-        try {
-            const startTime = performance.now();
-            
-            // Phase 1: 統一システム依存性確認・設定
-            this.validateAndSetupUnifiedSystems();
-            
-            // Phase 2: デフォルトツール設定（初期化順序修正）
-            this.initializeDefaultTool();
-            
-            // Phase 3: 統一設定値取得・適用
-            this.loadConfigurationFromUnifiedSystem();
-            
-            // Phase 4: EventBus連携設定
-            this.setupEventBusIntegration();
-            
-            // Phase 5: 基本ツール登録
-            this.registerBasicTools();
-            
-            const initTime = performance.now() - startTime;
-            console.log(`✅ ToolManager 統一システム統合初期化完了 - ${initTime.toFixed(2)}ms`);
-            
-            // StateManager状態更新
-            if (this.stateManager && typeof this.stateManager.updateComponentState === 'function') {
-                this.stateManager.updateComponentState('toolManager', 'initialized', {
-                    initTime,
-                    unifiedSystemsEnabled: true,
-                    currentTool: this.currentTool,
-                    version: this.version,
-                    coordinateManagerIntegrated: !!this.coordinateManager,
-                    coordinateIntegrationEnabled: this.coordinateIntegration.enabled
-                });
+        var self = this;
+        var startTime = performance.now();
+        
+        return new Promise(function(resolve, reject) {
+            try {
+                // Phase 1: 統一システム依存性確認・設定
+                self.validateAndSetupUnifiedSystems();
+                
+                // Phase 2: デフォルトツール設定（初期化順序修正）
+                self.initializeDefaultTool();
+                
+                // Phase 3: 統一設定値取得・適用
+                self.loadConfigurationFromUnifiedSystem();
+                
+                // Phase 4: EventBus連携設定
+                self.setupEventBusIntegration();
+                
+                // Phase 5: 基本ツール登録
+                self.registerBasicTools();
+                
+                var initTime = performance.now() - startTime;
+                console.log('✅ ToolManager 統一システム統合初期化完了 - ' + initTime.toFixed(2) + 'ms');
+                
+                // StateManager状態更新
+                if (self.stateManager && typeof self.stateManager.updateComponentState === 'function') {
+                    self.stateManager.updateComponentState('toolManager', 'initialized', {
+                        initTime: initTime,
+                        unifiedSystemsEnabled: true,
+                        currentTool: self.currentTool,
+                        version: self.version,
+                        coordinateManagerIntegrated: !!self.coordinateManager,
+                        coordinateIntegrationEnabled: self.coordinateIntegration.enabled
+                    });
+                }
+                
+                console.groupEnd();
+                resolve(self);
+                
+            } catch (error) {
+                console.error('❌ ToolManager初期化エラー:', error);
+                self.handleInitializationError(error);
+                console.groupEnd();
+                resolve(self);
             }
-            
-            return this;
-            
-        } catch (error) {
-            console.error('❌ ToolManager初期化エラー:', error);
-            this.handleInitializationError(error);
-            return this;
-            
-        } finally {
-            console.groupEnd();
-        }
-    }
+        });
+    };
     
     /**
      * ✅ 差分パッチ対応: Phase2移行 CoordinateManager統合初期化
      */
-    initializeCoordinateManagerIntegration(coordinateManager) {
+    ToolManager.prototype.initializeCoordinateManagerIntegration = function(coordinateManager) {
         console.log('🔄 ToolManager座標統合初期化開始...');
         
         try {
@@ -115,12 +121,12 @@ class ToolManager {
             }
             
             // 座標統合設定確認
-            const coordinateConfig = this.configManager?.getCoordinateConfig?.() || {};
+            var coordinateConfig = this.configManager && this.configManager.getCoordinateConfig && this.configManager.getCoordinateConfig() || {};
             this.coordinateIntegration = {
-                enabled: coordinateConfig.integration?.managerCentralization || false,
-                duplicateElimination: coordinateConfig.integration?.duplicateElimination || false,
+                enabled: coordinateConfig.integration && coordinateConfig.integration.managerCentralization || false,
+                duplicateElimination: coordinateConfig.integration && coordinateConfig.integration.duplicateElimination || false,
                 performance: coordinateConfig.performance || {},
-                unifiedErrorHandling: coordinateConfig.integration?.unifiedErrorHandling || false,
+                unifiedErrorHandling: coordinateConfig.integration && coordinateConfig.integration.unifiedErrorHandling || false,
                 externalProvided: !!coordinateManager
             };
             
@@ -147,12 +153,12 @@ class ToolManager {
                 externalProvided: !!coordinateManager
             };
         }
-    }
+    };
     
     /**
      * 統一システム依存性確認・設定（修正版）
      */
-    validateAndSetupUnifiedSystems() {
+    ToolManager.prototype.validateAndSetupUnifiedSystems = function() {
         console.log('🔧 統一システム依存性確認開始...');
         
         // ConfigManager依存性確認
@@ -180,18 +186,18 @@ class ToolManager {
         }
         
         console.log('✅ 統一システム依存性確認完了');
-    }
+    };
     
     /**
      * 🆕 CoordinateManager機能確認テスト（構文エラー修正版 - 同期版）
      */
-    validateCoordinateManagerFunctionality() {
+    ToolManager.prototype.validateCoordinateManagerFunctionality = function() {
         if (!this.coordinateManager) return false;
         
         try {
             // 基本的な座標変換テスト
-            const testRect = { left: 0, top: 0, width: 400, height: 400 };
-            const testResult = this.coordinateManager.screenToCanvas(100, 100, testRect);
+            var testRect = { left: 0, top: 0, width: 400, height: 400 };
+            var testResult = this.coordinateManager.screenToCanvas(100, 100, testRect);
             
             if (!testResult || typeof testResult.x !== 'number' || typeof testResult.y !== 'number') {
                 throw new Error('座標変換機能が正常に動作しません');
@@ -199,7 +205,7 @@ class ToolManager {
             
             // 座標妥当性確認テスト
             if (typeof this.coordinateManager.validateCoordinateIntegrity === 'function') {
-                const validityTest = this.coordinateManager.validateCoordinateIntegrity({ x: 100, y: 100 });
+                var validityTest = this.coordinateManager.validateCoordinateIntegrity({ x: 100, y: 100 });
                 if (!validityTest) {
                     throw new Error('座標妥当性確認機能が正常に動作しません');
                 }
@@ -210,30 +216,30 @@ class ToolManager {
             
         } catch (error) {
             console.error('❌ CoordinateManager機能確認テスト失敗:', error);
-            throw new Error(`CoordinateManager機能テスト失敗: ${error.message}`);
+            throw new Error('CoordinateManager機能テスト失敗: ' + error.message);
         }
-    }
+    };
     
     /**
      * デフォルトツール設定（初期化順序修正）
      */
-    initializeDefaultTool() {
+    ToolManager.prototype.initializeDefaultTool = function() {
         try {
             // ConfigManagerからデフォルトツール取得（フォールバック付き）
-            this.currentTool = this.configManager.getDefaultTool() || 'pen';
-            console.log(`🎯 デフォルトツール設定: ${this.currentTool}`);
+            this.currentTool = this.configManager.getDefaultTool && this.configManager.getDefaultTool() || 'pen';
+            console.log('🎯 デフォルトツール設定: ' + this.currentTool);
             
         } catch (error) {
             // フォールバック
             this.currentTool = 'pen';
             console.warn('⚠️ デフォルトツール取得失敗、フォールバック: pen');
         }
-    }
+    };
     
     /**
      * 統一設定値取得・適用（修正版）
      */
-    loadConfigurationFromUnifiedSystem() {
+    ToolManager.prototype.loadConfigurationFromUnifiedSystem = function() {
         console.log('⚙️ 統一設定値取得開始...');
         
         try {
@@ -268,13 +274,13 @@ class ToolManager {
             
             console.warn('⚠️ フォールバック設定を使用');
         }
-    }
+    };
     
     /**
      * ツール設定読み込み（安全版）
      */
-    loadToolConfig(toolName) {
-        const defaultConfigs = {
+    ToolManager.prototype.loadToolConfig = function(toolName) {
+        var defaultConfigs = {
             pen: {
                 brushSize: 16.0,
                 brushColor: 0x800000,
@@ -296,28 +302,52 @@ class ToolManager {
         
         try {
             // ConfigManagerから取得を試行
-            const toolConfig = this.configManager.getToolConfig && this.configManager.getToolConfig(toolName);
+            var toolConfig = this.configManager.getToolConfig && this.configManager.getToolConfig(toolName);
             if (toolConfig && Object.keys(toolConfig).length > 0) {
-                return { ...defaultConfigs[toolName], ...toolConfig };
+                return this.mergeConfigs(defaultConfigs[toolName], toolConfig);
             }
             
             // レガシー互換で再試行
-            const drawingConfig = this.configManager.getDrawingConfig && this.configManager.getDrawingConfig(toolName);
+            var drawingConfig = this.configManager.getDrawingConfig && this.configManager.getDrawingConfig(toolName);
             if (drawingConfig && Object.keys(drawingConfig).length > 0) {
-                return { ...defaultConfigs[toolName], ...this.mapDrawingConfigToTool(drawingConfig) };
+                return this.mergeConfigs(defaultConfigs[toolName], this.mapDrawingConfigToTool(drawingConfig));
             }
             
         } catch (error) {
-            console.warn(`⚠️ ${toolName}設定読み込み失敗:`, error.message);
+            console.warn('⚠️ ' + toolName + '設定読み込み失敗:', error.message);
         }
         
         return defaultConfigs[toolName];
-    }
+    };
+    
+    /**
+     * 設定マージ（ES5互換）
+     */
+    ToolManager.prototype.mergeConfigs = function(defaultConfig, userConfig) {
+        var merged = {};
+        var key;
+        
+        // デフォルト設定をコピー
+        for (key in defaultConfig) {
+            if (defaultConfig.hasOwnProperty(key)) {
+                merged[key] = defaultConfig[key];
+            }
+        }
+        
+        // ユーザー設定で上書き
+        for (key in userConfig) {
+            if (userConfig.hasOwnProperty(key)) {
+                merged[key] = userConfig[key];
+            }
+        }
+        
+        return merged;
+    };
     
     /**
      * DrawingConfigをToolConfigにマッピング
      */
-    mapDrawingConfigToTool(drawingConfig) {
+    ToolManager.prototype.mapDrawingConfigToTool = function(drawingConfig) {
         return {
             brushSize: drawingConfig.defaultSize || drawingConfig.brushSize,
             brushColor: drawingConfig.defaultColor || drawingConfig.brushColor,
@@ -325,37 +355,38 @@ class ToolManager {
             pressure: drawingConfig.defaultPressure || drawingConfig.pressure,
             smoothing: drawingConfig.defaultSmoothing || drawingConfig.smoothing
         };
-    }
+    };
     
     /**
      * EventBus統合設定（修正版）
      */
-    setupEventBusIntegration() {
+    ToolManager.prototype.setupEventBusIntegration = function() {
         if (!this.eventBus) {
             console.warn('⚠️ EventBus統合スキップ（利用不可）');
             return;
         }
         
         console.log('🚌 EventBus統合設定開始...');
+        var self = this;
         
         try {
             // UI からのツール変更イベントリスナー
-            this.eventBus.on('ui:tool:activated', (data) => {
-                this.handleToolActivationFromUI(data.tool);
+            this.eventBus.on('ui:tool:activated', function(data) {
+                self.handleToolActivationFromUI(data.tool);
             });
             
             // 設定変更イベントリスナー
-            this.eventBus.on('config:changed', (data) => {
-                this.handleConfigChangeFromEventBus(data.key, data.value);
+            this.eventBus.on('config:changed', function(data) {
+                self.handleConfigChangeFromEventBus(data.key, data.value);
             });
             
             // ツール設定変更イベントリスナー
-            this.eventBus.on('tool:pen:size:changed', (data) => {
-                this.updateToolSetting('pen', 'brushSize', data.value);
+            this.eventBus.on('tool:pen:size:changed', function(data) {
+                self.updateToolSetting('pen', 'brushSize', data.value);
             });
             
-            this.eventBus.on('tool:pen:opacity:changed', (data) => {
-                this.updateToolSetting('pen', 'opacity', data.value / 100);
+            this.eventBus.on('tool:pen:opacity:changed', function(data) {
+                self.updateToolSetting('pen', 'opacity', data.value / 100);
             });
             
             console.log('✅ EventBus統合設定完了');
@@ -363,17 +394,18 @@ class ToolManager {
         } catch (error) {
             console.warn('⚠️ EventBus統合設定で問題発生:', error.message);
         }
-    }
+    };
     
     /**
      * 基本ツール登録（新規）
      */
-    registerBasicTools() {
+    ToolManager.prototype.registerBasicTools = function() {
         try {
             // 基本ツールは実際のツールクラスがなくても登録する
-            const basicTools = this.configManager.getAvailableTools && this.configManager.getAvailableTools() || ['pen', 'eraser'];
+            var basicTools = this.configManager.getAvailableTools && this.configManager.getAvailableTools() || ['pen', 'eraser'];
             
-            basicTools.forEach(toolName => {
+            for (var i = 0; i < basicTools.length; i++) {
+                var toolName = basicTools[i];
                 if (!this.registeredTools.has(toolName)) {
                     // プレースホルダーとしてツール名のみ登録
                     this.registeredTools.set(toolName, {
@@ -382,19 +414,19 @@ class ToolManager {
                         settings: this.globalSettings[toolName] || {}
                     });
                     
-                    console.log(`🔧 基本ツール登録: ${toolName}`);
+                    console.log('🔧 基本ツール登録: ' + toolName);
                 }
-            });
+            }
             
         } catch (error) {
             console.warn('⚠️ 基本ツール登録で問題発生:', error.message);
         }
-    }
+    };
     
     /**
      * 初期化エラー処理
      */
-    handleInitializationError(error) {
+    ToolManager.prototype.handleInitializationError = function(error) {
         if (this.errorManager) {
             this.errorManager.showError('error', 'ツール管理システム初期化失敗: ' + error.message, {
                 additionalInfo: 'ToolManager初期化時のエラー',
@@ -425,7 +457,7 @@ class ToolManager {
         }
         
         console.warn('⚠️ ToolManager フォールバックモードで動作');
-    }
+    };
     
     // ==========================================
     // 🎯 EventBusイベントハンドラー群
@@ -434,11 +466,11 @@ class ToolManager {
     /**
      * EventBus: UIからのツール変更処理
      */
-    handleToolActivationFromUI(tool) {
+    ToolManager.prototype.handleToolActivationFromUI = function(tool) {
         try {
             if (this.currentTool !== tool) {
                 this.setTool(tool);
-                console.log(`🚌 EventBus: UIからツール変更受信 - ${tool}`);
+                console.log('🚌 EventBus: UIからツール変更受信 - ' + tool);
             }
             
         } catch (error) {
@@ -446,17 +478,17 @@ class ToolManager {
                 this.errorManager.showError('warning', 'EventBus UIツール変更処理失敗: ' + error.message);
             }
         }
-    }
+    };
     
     /**
      * EventBus: 設定変更イベント処理
      */
-    handleConfigChangeFromEventBus(key, value) {
+    ToolManager.prototype.handleConfigChangeFromEventBus = function(key, value) {
         try {
             // ツール関連設定の場合のみ処理
-            if (key.startsWith('tools.')) {
+            if (key.indexOf('tools.') === 0) {
                 this.applyConfigChangeToTools(key, value);
-                console.log(`🚌 EventBus: ツール設定変更受信 - ${key}: ${value}`);
+                console.log('🚌 EventBus: ツール設定変更受信 - ' + key + ': ' + value);
             }
             
         } catch (error) {
@@ -464,7 +496,7 @@ class ToolManager {
                 this.errorManager.showError('warning', 'EventBus設定変更処理失敗: ' + error.message);
             }
         }
-    }
+    };
     
     // ==========================================
     // 🎯 ツール管理メソッド群（統一システム統合版）
@@ -475,7 +507,7 @@ class ToolManager {
      * @param {string} name - ツール名
      * @param {Object} toolInstance - ツールインスタンス
      */
-    registerTool(name, toolInstance) {
+    ToolManager.prototype.registerTool = function(name, toolInstance) {
         try {
             this.registeredTools.set(name, toolInstance);
             
@@ -487,35 +519,35 @@ class ToolManager {
                 });
             }
             
-            console.log(`🔧 ツール登録: ${name}`);
+            console.log('🔧 ツール登録: ' + name);
             
         } catch (error) {
             if (this.errorManager) {
                 this.errorManager.showError('warning', 'ツール登録失敗: ' + error.message);
             }
         }
-    }
+    };
     
     /**
      * ツール設定
      * @param {string} tool - ツール名
      */
-    setTool(tool) {
+    ToolManager.prototype.setTool = function(tool) {
         try {
             // ツールが存在するかチェック
             if (!this.isToolAvailable(tool)) {
-                console.warn(`⚠️ 未登録ツール: ${tool}`);
+                console.warn('⚠️ 未登録ツール: ' + tool);
                 return false;
             }
             
-            const oldTool = this.currentTool;
+            var oldTool = this.currentTool;
             this.currentTool = tool;
             
             // EventBus経由でツール変更通知
             if (this.eventBus && typeof this.eventBus.emit === 'function') {
                 this.eventBus.emit('tool:changed', {
-                    tool,
-                    oldTool,
+                    tool: tool,
+                    oldTool: oldTool,
                     settings: this.globalSettings[tool] || {},
                     timestamp: Date.now(),
                     source: 'ToolManager'
@@ -525,13 +557,13 @@ class ToolManager {
             // StateManager経由で状態更新
             if (this.stateManager && typeof this.stateManager.updateComponentState === 'function') {
                 this.stateManager.updateComponentState('toolManager', 'currentTool', {
-                    tool,
-                    oldTool,
+                    tool: tool,
+                    oldTool: oldTool,
                     timestamp: Date.now()
                 });
             }
             
-            console.log(`🎯 ツール変更: ${oldTool} → ${tool}`);
+            console.log('🎯 ツール変更: ' + oldTool + ' → ' + tool);
             return true;
             
         } catch (error) {
@@ -540,53 +572,53 @@ class ToolManager {
             }
             return false;
         }
-    }
+    };
     
     /**
      * ツール利用可能性確認
      */
-    isToolAvailable(tool) {
+    ToolManager.prototype.isToolAvailable = function(tool) {
         // 基本ツールは常に利用可能
-        if (['pen', 'eraser'].includes(tool)) {
+        if (tool === 'pen' || tool === 'eraser') {
             return true;
         }
         
         // 登録済みツールかチェック
         return this.registeredTools.has(tool);
-    }
+    };
     
     /**
      * 現在のツール取得
      */
-    getCurrentTool() {
+    ToolManager.prototype.getCurrentTool = function() {
         return this.currentTool;
-    }
+    };
     
     /**
      * ツール設定更新
      */
-    updateToolSetting(tool, setting, value) {
+    ToolManager.prototype.updateToolSetting = function(tool, setting, value) {
         try {
             if (!this.globalSettings[tool]) {
-                console.warn(`⚠️ 未知のツール: ${tool}`);
+                console.warn('⚠️ 未知のツール: ' + tool);
                 return false;
             }
             
             if (!(setting in this.globalSettings[tool])) {
-                console.warn(`⚠️ 未知の設定項目: ${tool}.${setting}`);
+                console.warn('⚠️ 未知の設定項目: ' + tool + '.' + setting);
                 return false;
             }
             
-            const oldValue = this.globalSettings[tool][setting];
+            var oldValue = this.globalSettings[tool][setting];
             this.globalSettings[tool][setting] = value;
             
             // 現在のツールに設定変更を通知
-            const currentToolInstance = this.registeredTools.get(this.currentTool);
+            var currentToolInstance = this.registeredTools.get(this.currentTool);
             if (currentToolInstance && currentToolInstance.updateSettings) {
                 currentToolInstance.updateSettings(this.globalSettings[this.currentTool]);
             }
             
-            console.log(`🔧 ツール設定更新: ${tool}.${setting} = ${value} (旧: ${oldValue})`);
+            console.log('🔧 ツール設定更新: ' + tool + '.' + setting + ' = ' + value + ' (旧: ' + oldValue + ')');
             return true;
             
         } catch (error) {
@@ -595,25 +627,25 @@ class ToolManager {
             }
             return false;
         }
-    }
+    };
     
     /**
      * 設定変更の適用
      */
-    applyConfigChangeToTools(configKey, value) {
+    ToolManager.prototype.applyConfigChangeToTools = function(configKey, value) {
         // Config設定からツール設定への変換処理
-        const keyMappings = {
+        var keyMappings = {
             'tools.pen.size': { tool: 'pen', setting: 'brushSize' },
             'tools.pen.opacity': { tool: 'pen', setting: 'opacity' },
             'tools.pen.color': { tool: 'pen', setting: 'brushColor' },
             'tools.eraser.size': { tool: 'eraser', setting: 'brushSize' }
         };
         
-        const mapping = keyMappings[configKey];
+        var mapping = keyMappings[configKey];
         if (mapping && this.globalSettings[mapping.tool]) {
             this.updateToolSetting(mapping.tool, mapping.setting, value);
         }
-    }
+    };
     
     // ==========================================
     // 🎯 描画処理メソッド群（座標統合完全対応）
@@ -622,10 +654,12 @@ class ToolManager {
     /**
      * 描画開始（座標統合完全対応）
      */
-    startDrawing(x, y, pressure = 0.5) {
+    ToolManager.prototype.startDrawing = function(x, y, pressure) {
+        pressure = pressure || 0.5;
+        
         try {
             // 🔄 座標統合完全処理
-            let coordinateData = { x, y };
+            var coordinateData = { x: x, y: y };
             if (this.coordinateManager && this.coordinateIntegration.enabled) {
                 // 座標妥当性確認
                 if (this.coordinateManager.validateCoordinateIntegrity && 
@@ -650,7 +684,7 @@ class ToolManager {
             this.lastPoint = coordinateData;
             
             // 現在のツールで描画開始
-            const currentToolInstance = this.registeredTools.get(this.currentTool);
+            var currentToolInstance = this.registeredTools.get(this.currentTool);
             if (currentToolInstance && typeof currentToolInstance.startDrawing === 'function') {
                 currentToolInstance.startDrawing(coordinateData.x, coordinateData.y, pressure);
             } else {
@@ -669,24 +703,26 @@ class ToolManager {
                 });
             }
             
-            console.log(`✏️ 描画開始（座標統合）: ${this.currentTool} at (${Math.round(coordinateData.x)}, ${Math.round(coordinateData.y)})`);
+            console.log('✏️ 描画開始（座標統合）: ' + this.currentTool + ' at (' + Math.round(coordinateData.x) + ', ' + Math.round(coordinateData.y) + ')');
             
         } catch (error) {
             if (this.errorManager) {
                 this.errorManager.showError('warning', '描画開始失敗: ' + error.message);
             }
         }
-    }
+    };
     
     /**
      * 描画継続（座標統合完全対応）
      */
-    continueDrawing(x, y, pressure = 0.5) {
+    ToolManager.prototype.continueDrawing = function(x, y, pressure) {
         if (!this.isDrawing) return;
+        
+        pressure = pressure || 0.5;
         
         try {
             // 🔄 座標統合完全処理
-            let coordinateData = { x, y };
+            var coordinateData = { x: x, y: y };
             if (this.coordinateManager && this.coordinateIntegration.enabled) {
                 // 座標妥当性確認
                 if (this.coordinateManager.validateCoordinateIntegrity && 
@@ -697,8 +733,8 @@ class ToolManager {
                 
                 // 最小距離チェック（CoordinateManager統合）
                 if (this.lastPoint && this.coordinateManager.calculateDistance) {
-                    const distance = this.coordinateManager.calculateDistance(this.lastPoint, coordinateData);
-                    const minDistance = this.configManager.get && this.configManager.get('drawing.pen.minDistance') || 1.5;
+                    var distance = this.coordinateManager.calculateDistance(this.lastPoint, coordinateData);
+                    var minDistance = this.configManager.get && this.configManager.get('drawing.pen.minDistance') || 1.5;
                     
                     if (distance < minDistance) {
                         return; // 最小距離未満の場合はスキップ
@@ -718,7 +754,7 @@ class ToolManager {
             }
             
             // 現在のツールで描画継続
-            const currentToolInstance = this.registeredTools.get(this.currentTool);
+            var currentToolInstance = this.registeredTools.get(this.currentTool);
             if (currentToolInstance && typeof currentToolInstance.continueDrawing === 'function') {
                 currentToolInstance.continueDrawing(coordinateData.x, coordinateData.y, pressure);
             } else {
@@ -733,17 +769,17 @@ class ToolManager {
                 this.errorManager.showError('warning', '描画継続失敗: ' + error.message);
             }
         }
-    }
+    };
     
     /**
      * 描画終了（座標統合対応）
      */
-    stopDrawing() {
+    ToolManager.prototype.stopDrawing = function() {
         if (!this.isDrawing) return;
         
         try {
             // 現在のツールで描画終了
-            const currentToolInstance = this.registeredTools.get(this.currentTool);
+            var currentToolInstance = this.registeredTools.get(this.currentTool);
             if (currentToolInstance && typeof currentToolInstance.stopDrawing === 'function') {
                 currentToolInstance.stopDrawing();
             } else {
@@ -764,28 +800,28 @@ class ToolManager {
                 });
             }
             
-            console.log(`✏️ 描画終了（座標統合）: ${this.currentTool}`);
+            console.log('✏️ 描画終了（座標統合）: ' + this.currentTool);
             
         } catch (error) {
             if (this.errorManager) {
                 this.errorManager.showError('warning', '描画終了失敗: ' + error.message);
             }
         }
-    }
+    };
     
     /**
      * 描画フォールバック処理
      */
-    handleDrawingFallback(action, x, y, pressure) {
+    ToolManager.prototype.handleDrawingFallback = function(action, x, y, pressure) {
         // AppCoreやCanvasManagerが利用可能な場合の基本描画処理
         if (this.appCore) {
-            console.log(`🔧 描画フォールバック: ${action} - AppCore経由`);
+            console.log('🔧 描画フォールバック: ' + action + ' - AppCore経由');
             // AppCore経由での基本描画処理
             // 実際の描画ロジックは別途実装が必要
         } else {
-            console.warn(`⚠️ 描画フォールバック: ${action} - 描画システム未接続`);
+            console.warn('⚠️ 描画フォールバック: ' + action + ' - 描画システム未接続');
         }
-    }
+    };
     
     // ==========================================
     // 🎯 座標統合診断・テストメソッド群（完全実装版）
@@ -794,36 +830,37 @@ class ToolManager {
     /**
      * 🔄 座標統合状態取得（完全実装版）
      */
-    getCoordinateIntegrationState() {
+    ToolManager.prototype.getCoordinateIntegrationState = function() {
         return {
             coordinateManagerAvailable: !!this.coordinateManager,
-            integrationEnabled: this.coordinateIntegration?.enabled || false,
-            duplicateElimination: this.coordinateIntegration?.duplicateElimination || false,
-            unifiedErrorHandling: this.coordinateIntegration?.unifiedErrorHandling || false,
-            performanceOptimized: !!(this.coordinateIntegration?.performance?.coordinateCache || 
-                                    this.coordinateIntegration?.performance?.batchProcessing),
+            integrationEnabled: this.coordinateIntegration && this.coordinateIntegration.enabled || false,
+            duplicateElimination: this.coordinateIntegration && this.coordinateIntegration.duplicateElimination || false,
+            unifiedErrorHandling: this.coordinateIntegration && this.coordinateIntegration.unifiedErrorHandling || false,
+            performanceOptimized: !!(this.coordinateIntegration && this.coordinateIntegration.performance && 
+                                    (this.coordinateIntegration.performance.coordinateCache || 
+                                     this.coordinateIntegration.performance.batchProcessing)),
             coordinateManagerState: this.coordinateManager ? 
-                this.coordinateManager.getCoordinateState() : null,
+                (this.coordinateManager.getCoordinateState && this.coordinateManager.getCoordinateState()) : null,
             phase2Ready: !!(this.coordinateManager && 
-                            this.coordinateIntegration?.enabled &&
-                            this.coordinateIntegration?.duplicateElimination),
-            initializationError: this.coordinateIntegration?.error || null,
-            externalProvided: this.coordinateIntegration?.externalProvided || false
+                            this.coordinateIntegration && this.coordinateIntegration.enabled &&
+                            this.coordinateIntegration && this.coordinateIntegration.duplicateElimination),
+            initializationError: this.coordinateIntegration && this.coordinateIntegration.error || null,
+            externalProvided: this.coordinateIntegration && this.coordinateIntegration.externalProvided || false
         };
-    }
+    };
     
     /**
      * 🆕 ToolManager座標統合診断実行（差分パッチ対応版）
      */
-    runToolCoordinateIntegrationDiagnosis() {
+    ToolManager.prototype.runToolCoordinateIntegrationDiagnosis = function() {
         console.group('🔍 ToolManager座標統合診断（差分パッチ対応版）');
         
-        const state = this.getCoordinateIntegrationState();
+        var state = this.getCoordinateIntegrationState();
         
         // 統合機能テスト
-        const integrationTests = {
+        var integrationTests = {
             coordinateManagerAvailable: !!this.coordinateManager,
-            coordinateIntegrationEnabled: this.coordinateIntegration?.enabled || false,
+            coordinateIntegrationEnabled: this.coordinateIntegration && this.coordinateIntegration.enabled || false,
             initializeCoordinateManagerIntegrationImplemented: typeof this.initializeCoordinateManagerIntegration === 'function',
             drawingCoordinateIntegration: typeof this.startDrawing === 'function' &&
                                            typeof this.continueDrawing === 'function' &&
@@ -836,15 +873,15 @@ class ToolManager {
         };
         
         // 診断結果
-        const diagnosis = {
-            state,
-            integrationTests,
+        var diagnosis = {
+            state: state,
+            integrationTests: integrationTests,
             compliance: {
                 coordinateUnified: integrationTests.coordinateManagerAvailable && integrationTests.coordinateIntegrationEnabled,
-                duplicateEliminated: this.coordinateIntegration?.duplicateElimination || false,
+                duplicateEliminated: this.coordinateIntegration && this.coordinateIntegration.duplicateElimination || false,
                 phase2Ready: state.phase2Ready,
                 drawingSystemIntegrated: integrationTests.drawingCoordinateIntegration,
-                fullFunctionality: Object.values(integrationTests).every(Boolean),
+                fullFunctionality: Object.keys(integrationTests).every(function(key) { return integrationTests[key]; }),
                 patchApplied: integrationTests.patchApplied && integrationTests.initializeCoordinateManagerIntegrationImplemented
             }
         };
@@ -852,7 +889,7 @@ class ToolManager {
         console.log('📊 ToolManager座標統合診断結果:', diagnosis);
         
         // 推奨事項
-        const recommendations = [];
+        var recommendations = [];
         
         if (!integrationTests.coordinateManagerAvailable) {
             recommendations.push('CoordinateManagerの初期化が必要');
@@ -867,10 +904,9 @@ class ToolManager {
         }
         
         if (!integrationTests.fullFunctionality) {
-            const missingFeatures = Object.entries(integrationTests)
-                .filter(([key, value]) => !value)
-                .map(([key]) => key);
-            recommendations.push(`不足機能の実装が必要: ${missingFeatures.join(', ')}`);
+            var missingFeatures = Object.keys(integrationTests)
+                .filter(function(key) { return !integrationTests[key]; });
+            recommendations.push('不足機能の実装が必要: ' + missingFeatures.join(', '));
         }
         
         if (recommendations.length === 0) {
@@ -882,17 +918,18 @@ class ToolManager {
         console.groupEnd();
         
         return diagnosis;
-    }
+    };
     
     /**
      * デバッグ情報出力（座標統合完全対応）
      */
-    debugInfo() {
-        const stats = {
+    ToolManager.prototype.debugInfo = function() {
+        var stats = {
             version: this.version,
             currentTool: this.currentTool,
             isDrawing: this.isDrawing,
-            registeredTools: Array.from(this.registeredTools.keys()),
+            registeredTools: Array.from ? Array.from(this.registeredTools.keys()) : 
+                            Object.keys(this.registeredTools).map(function(key) { return this.registeredTools[key]; }.bind(this)),
             coordinateIntegration: this.getCoordinateIntegrationState(),
             unifiedSystems: {
                 configManager: !!this.configManager,
@@ -910,12 +947,12 @@ class ToolManager {
         console.groupEnd();
         
         return stats;
-    }
+    };
     
     /**
      * 破棄処理（座標統合完全対応）
      */
-    destroy() {
+    ToolManager.prototype.destroy = function() {
         try {
             console.log('🗑️ ToolManager破棄開始（差分パッチ対応版）...');
             
@@ -958,28 +995,30 @@ class ToolManager {
         } catch (error) {
             console.error('❌ ToolManager破棄エラー:', error);
         }
-    }
-}
+    };
 
-// ==========================================
-// 🎯 Pure JavaScript グローバル公開
-// ==========================================
+    // ==========================================
+    // 🎯 Pure JavaScript グローバル公開
+    // ==========================================
 
-if (typeof window !== 'undefined') {
-    window.ToolManager = ToolManager;
+    global.ToolManager = ToolManager;
     console.log('✅ ToolManager 差分パッチ適用版 グローバル公開完了（Pure JavaScript・構文修正版）');
-}
+
+})(window);
 
 console.log('🔧 ToolManager Phase1.4 差分パッチ適用版・構文修正版 - 準備完了');
 console.log('📋 差分パッチ適用完了: initializeCoordinateManagerIntegration()メソッド実装');
 console.log('🔄 座標統合機能完全実装: CoordinateManager完全統合・座標妥当性確認・変換・精度適用');
-console.log('🔧 構文エラー修正完了: await問題解決・同期版機能テスト実装');
+console.log('🔧 構文エラー修正完了: await問題解決・ES5互換構文・同期版機能テスト実装');
 console.log('✅ 主な修正事項:');
+console.log('  - ES6構文をES5互換に変更（class → function、arrow function → function、const/let → var）');
 console.log('  - constructor()でcoordinateManager = null追加');
 console.log('  - initializeCoordinateManagerIntegration()メソッド完全実装');
 console.log('  - validateCoordinateManagerFunctionality()を同期版に修正');
 console.log('  - 描画処理の座標統合対応完了');
 console.log('  - 座標統合診断システム強化');
+console.log('  - Promise-based初期化に変更');
+console.log('  - IIFE (Immediately Invoked Function Expression) でグローバル公開');
 console.log('🧪 座標統合テスト: runToolCoordinateIntegrationDiagnosis()');
 console.log('📊 座標統合診断: 差分パッチ適用確認・統合状態確認・推奨事項生成');
 console.log('🚀 Phase2準備完了: レイヤー座標変換対応・統合状態確認・診断システム');
