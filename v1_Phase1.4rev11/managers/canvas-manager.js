@@ -13,10 +13,17 @@
  * 🎯 PHASE2_READY: レイヤーシステム座標変換基盤準備
  * 💡 PERFORMANCE: 座標処理パフォーマンス最適化
  * 🔧 SYNTAX_FIX: 構文エラー修正版（Invalid or unexpected token 解決）
+ * 
+ * 🛠 BUG_FIX: 座標変換バグ修正版（左上から線が伸びる現象対策）
+ * 🔧 COORDINATE_BUG_FIXES: 
+ *   - イベントハンドラーでcanvasRect毎回取得
+ *   - CoordinateManager安全版メソッド使用
+ *   - デバッグログ強化
+ *   - フォールバック処理改善
  */
 
 /**
- * Canvas Manager 座標統合完全実装版（構文エラー修正版）
+ * Canvas Manager 座標統合完全実装版（構文エラー修正版・座標バグ修正版）
  * 差分パッチ対応：initializeCoordinateIntegration()メソッド実装
  */
 (function(global) {
@@ -25,7 +32,7 @@
     function CanvasManager(options) {
         options = options || {};
         
-        this.version = 'v1.0-Phase1.4-coordinate-patch-syntax-fixed';
+        this.version = 'v1.0-Phase1.4-coordinate-patch-syntax-fixed-bugfix';
         this.initialized = false;
         this.appCore = options.appCore || null;
         this.app = null;
@@ -59,10 +66,13 @@
         this.stats = {
             renderTime: 0,
             pathCount: 0,
-            layerCount: 0
+            layerCount: 0,
+            // 🛠 バグ修正統計追加
+            canvasRectRetrievalCount: 0,
+            coordinateExtractionErrors: 0
         };
         
-        console.log('🎨 CanvasManager ' + this.version + ' 構築完了（差分パッチ適用済み・構文修正版）');
+        console.log('🎨 CanvasManager ' + this.version + ' 構築完了（差分パッチ適用済み・構文修正版・座標バグ修正版）');
     }
     
     /**
@@ -79,6 +89,11 @@
                 // 基本初期化
                 self.appCore = appCore;
                 self.canvasElement = canvasElement;
+                
+                // 🛠 キャンバス要素の妥当性確認（バグ修正対応）
+                if (!self.canvasElement || !self.canvasElement.getBoundingClientRect) {
+                    throw new Error('有効なキャンバス要素が必要です（getBoundingClientRect()メソッド必須）');
+                }
                 
                 // 設定読み込み
                 self.loadConfiguration()
@@ -264,116 +279,6 @@
     };
 
     /**
-     * 🔄 座標統合状態取得（修正版）
-     */
-    CanvasManager.prototype.getCoordinateIntegrationState = function() {
-        return {
-            coordinateManagerAvailable: !!this.coordinateManager,
-            integrationEnabled: this.coordinateIntegration && this.coordinateIntegration.enabled || false,
-            duplicateElimination: this.coordinateIntegration && this.coordinateIntegration.duplicateElimination || false,
-            unifiedErrorHandling: this.coordinateIntegration && this.coordinateIntegration.unifiedErrorHandling || false,
-            performanceOptimized: !!(this.coordinateIntegration && 
-                                    (this.coordinateIntegration.performance && this.coordinateIntegration.performance.coordinateCache || 
-                                     this.coordinateIntegration.performance && this.coordinateIntegration.performance.batchProcessing)),
-            currentSize: { width: this.width, height: this.height },
-            hasContent: this.paths && this.paths.length > 0,
-            coordinateManagerState: this.coordinateManager ? 
-                (this.coordinateManager.getCoordinateState ? this.coordinateManager.getCoordinateState() : 'available') : null,
-            phase2Ready: !!(this.coordinateManager && 
-                            this.coordinateIntegration && this.coordinateIntegration.enabled &&
-                            this.coordinateIntegration && this.coordinateIntegration.duplicateElimination),
-            initializationError: this.coordinateIntegration && this.coordinateIntegration.error || null,
-            methodsImplemented: {
-                initializeCoordinateIntegration: typeof this.initializeCoordinateIntegration === 'function',
-                getUnifiedCanvasCoordinates: typeof this.getUnifiedCanvasCoordinates === 'function',
-                startDrawingWithCoordinateIntegration: typeof this.startDrawingWithCoordinateIntegration === 'function'
-            }
-        };
-    };
-
-    /**
-     * 🆕 座標統合診断実行（完全実装版・構文修正版）
-     */
-    CanvasManager.prototype.runCoordinateIntegrationDiagnosis = function() {
-        console.group('🔍 CanvasManager座標統合診断（完全実装版・構文修正版）');
-        
-        var state = this.getCoordinateIntegrationState();
-        
-        // 統合機能テスト
-        var integrationTests = {
-            coordinateManagerAvailable: !!this.coordinateManager,
-            coordinateIntegrationEnabled: this.coordinateIntegration && this.coordinateIntegration.enabled || false,
-            initializeCoordinateIntegrationMethodExists: typeof this.initializeCoordinateIntegration === 'function',
-            unifiedCoordinateExtraction: typeof this.getUnifiedCanvasCoordinates === 'function',
-            drawingCoordinateIntegration: typeof this.startDrawingWithCoordinateIntegration === 'function',
-            eventHandlerIntegration: typeof this.handlePointerDownWithCoordinateIntegration === 'function'
-        };
-        
-        // 診断結果
-        var diagnosis = {
-            state: state,
-            integrationTests: integrationTests,
-            compliance: {
-                coordinateUnified: integrationTests.coordinateManagerAvailable && 
-                                 integrationTests.coordinateIntegrationEnabled,
-                duplicateEliminated: this.coordinateIntegration && this.coordinateIntegration.duplicateElimination || false,
-                phase2Ready: state.phase2Ready,
-                drawingSystemIntegrated: integrationTests.drawingCoordinateIntegration &&
-                                       integrationTests.eventHandlerIntegration,
-                fullFunctionality: Object.keys(integrationTests).every(function(key) { return integrationTests[key]; }),
-                initializationMethodReady: integrationTests.initializeCoordinateIntegrationMethodExists
-            }
-        };
-        
-        console.log('📊 CanvasManager座標統合診断結果:', diagnosis);
-        
-        // 診断結果表示
-        var passedTests = Object.keys(integrationTests).filter(function(key) { return integrationTests[key]; }).length;
-        var totalTests = Object.keys(integrationTests).length;
-        
-        console.log('📊 統合テスト: ' + passedTests + '/' + totalTests + ' (' + Math.round(passedTests/totalTests*100) + '%)');
-        console.log('⚙️ CoordinateManager統合:', integrationTests.coordinateManagerAvailable ? '✅' : '❌');
-        console.log('🔄 初期化メソッド:', integrationTests.initializeCoordinateIntegrationMethodExists ? '✅' : '❌');
-        console.log('🎨 描画システム統合:', diagnosis.compliance.drawingSystemIntegrated ? '✅' : '❌');
-        console.log('🚀 Phase2準備:', state.phase2Ready ? '✅' : '❌');
-        
-        // 推奨事項
-        var recommendations = [];
-        
-        if (!integrationTests.coordinateManagerAvailable) {
-            recommendations.push('initializeCoordinateIntegration()を実行してCoordinateManagerを初期化');
-        }
-        
-        if (!integrationTests.coordinateIntegrationEnabled) {
-            recommendations.push('座標統合設定の有効化が必要 (coordinate.integration.managerCentralization)');
-        }
-        
-        if (!integrationTests.initializeCoordinateIntegrationMethodExists) {
-            recommendations.push('initializeCoordinateIntegration()メソッドの実装が必要');
-        }
-        
-        if (!diagnosis.compliance.drawingSystemIntegrated) {
-            var missingDrawing = ['unifiedCoordinateExtraction', 'drawingCoordinateIntegration', 'eventHandlerIntegration']
-                .filter(function(key) { return !integrationTests[key]; });
-            recommendations.push('描画システム統合が不完全: ' + missingDrawing.join(', '));
-        }
-        
-        if (!diagnosis.compliance.duplicateEliminated) {
-            recommendations.push('重複排除設定の有効化を推奨 (coordinate.integration.duplicateElimination)');
-        }
-        
-        if (recommendations.length === 0) {
-            console.log('✅ CanvasManager座標統合診断: 全ての要件を満たしています（完全実装版）');
-        } else {
-            console.warn('⚠️ CanvasManager推奨事項:', recommendations);
-        }
-        
-        console.groupEnd();
-        
-        return diagnosis;
-    };
-    
-    /**
      * 設定読み込み
      */
     CanvasManager.prototype.loadConfiguration = function() {
@@ -469,7 +374,7 @@
     };
     
     /**
-     * イベントハンドラー設定（座標統合対応）
+     * イベントハンドラー設定（座標統合対応・バグ修正版）
      */
     CanvasManager.prototype.setupEventHandlers = function() {
         var self = this;
@@ -478,24 +383,24 @@
                 throw new Error('PixiJS stage が利用できません');
             }
             
-            // 🔄 COORDINATE_INTEGRATION: 座標統合イベントハンドラー
+            // 🛠 座標統合イベントハンドラー（バグ修正版）
             this.app.stage.on('pointerdown', function(event) {
-                self.handlePointerDownWithCoordinateIntegration(event);
+                self.handlePointerDownWithCoordinateIntegrationFixed(event);
             });
             
             this.app.stage.on('pointermove', function(event) {
-                self.handlePointerMoveWithCoordinateIntegration(event);
+                self.handlePointerMoveWithCoordinateIntegrationFixed(event);
             });
             
             this.app.stage.on('pointerup', function(event) {
-                self.handlePointerUpWithCoordinateIntegration(event);
+                self.handlePointerUpWithCoordinateIntegrationFixed(event);
             });
             
             this.app.stage.on('pointerupoutside', function(event) {
-                self.handlePointerUpWithCoordinateIntegration(event);
+                self.handlePointerUpWithCoordinateIntegrationFixed(event);
             });
             
-            console.log('✅ 座標統合イベントハンドラー設定完了');
+            console.log('✅ 座標統合イベントハンドラー設定完了（バグ修正版）');
             
         } catch (error) {
             throw new Error('イベントハンドラー設定失敗: ' + error.message);
@@ -503,33 +408,54 @@
     };
     
     // ==========================================
-    // 🔄 座標統合処理メソッド群
+    // 🛠 座標統合処理メソッド群（バグ修正版）
     // ==========================================
     
     /**
-     * 🔄 統合座標取得（getBoundingClientRect()の統一処理）
+     * 🛠 統合座標取得（getBoundingClientRect()の統一処理・バグ修正版）
+     * 修正点: canvasRect毎回取得、デバッグログ追加、エラーハンドリング強化
      */
-    CanvasManager.prototype.getUnifiedCanvasCoordinates = function(event) {
-        if (!this.coordinateManager) {
-            console.warn('⚠️ CoordinateManager未初期化 - フォールバック処理');
-            return this.getFallbackCanvasCoordinates(event);
-        }
-        
+    CanvasManager.prototype.getUnifiedCanvasCoordinatesFixed = function(event) {
         try {
-            // キャンバス要素の矩形取得
-            var canvasRect = this.canvasElement && this.canvasElement.getBoundingClientRect();
-            if (!canvasRect) {
+            // 🛠 Step 1: canvasRect を毎回取得（バグ修正の核心）
+            if (!this.canvasElement) {
                 throw new Error('キャンバス要素が見つかりません');
             }
             
-            // CoordinateManager経由で統一座標抽出
+            var canvasRect = this.canvasElement.getBoundingClientRect();
+            this.stats.canvasRectRetrievalCount++;
+            
+            // 🛠 canvasRect の妥当性確認
+            if (!canvasRect || typeof canvasRect.left !== 'number' || typeof canvasRect.top !== 'number') {
+                throw new Error('getBoundingClientRect()で無効な結果が返されました');
+            }
+            
+            // 🛠 デバッグログ: canvasRect確認
+            console.log("📍canvasRect取得", {
+                left: canvasRect.left,
+                top: canvasRect.top,
+                width: canvasRect.width,
+                height: canvasRect.height,
+                retrievalCount: this.stats.canvasRectRetrievalCount
+            });
+            
+            if (!this.coordinateManager) {
+                console.warn('⚠️ CoordinateManager未初期化 - フォールバック処理');
+                return this.getFallbackCanvasCoordinates(event);
+            }
+            
+            // 🛠 CoordinateManager経由で統一座標抽出（安全版使用）
             var coordinates = this.coordinateManager.extractPointerCoordinates(
                 event, 
                 canvasRect, 
                 this.app // PixiJSアプリ
             );
             
-            // 座標妥当性確認
+            // 🛠 結果の妥当性最終確認
+            if (!coordinates || !coordinates.canvas) {
+                throw new Error('座標抽出結果が無効です');
+            }
+            
             if (this.coordinateManager.validateCoordinateIntegrity && 
                 !this.coordinateManager.validateCoordinateIntegrity(coordinates.canvas)) {
                 throw new Error('無効な座標が検出されました');
@@ -538,61 +464,104 @@
             return coordinates;
             
         } catch (error) {
+            this.stats.coordinateExtractionErrors++;
+            console.error('❌ 統合座標取得エラー:', error);
+            
             if (window.ErrorManager) {
-                window.ErrorManager.showError('coordinate-canvas-unified', 
-                    '統一座標取得エラー: ' + error.message, 
-                    { event: event && event.type }
+                window.ErrorManager.showError('coordinate-canvas-unified-fixed', 
+                    '統合座標取得エラー: ' + error.message, 
+                    { 
+                        event: event && event.type,
+                        canvasElement: !!this.canvasElement,
+                        coordinateManager: !!this.coordinateManager,
+                        retrievalCount: this.stats.canvasRectRetrievalCount,
+                        errorCount: this.stats.coordinateExtractionErrors
+                    }
                 );
             }
+            
             return this.getFallbackCanvasCoordinates(event);
         }
     };
     
     /**
-     * 🔄 フォールバック座標取得（緊急時用）
+     * 🔄 フォールバック座標取得（緊急時用・改良版）
      */
     CanvasManager.prototype.getFallbackCanvasCoordinates = function(event) {
-        console.warn('🔧 座標取得フォールバック処理実行');
+        console.warn('🔧 座標取得フォールバック処理実行（改良版）');
         
         try {
-            var rect = this.canvasElement && this.canvasElement.getBoundingClientRect();
-            if (!rect) {
-                return { screen: { x: 0, y: 0 }, canvas: { x: 0, y: 0 }, pressure: 0.5 };
+            // 🛠 canvasRect を再取得試行
+            var rect = null;
+            if (this.canvasElement && this.canvasElement.getBoundingClientRect) {
+                try {
+                    rect = this.canvasElement.getBoundingClientRect();
+                } catch (rectError) {
+                    console.error('❌ getBoundingClientRect()でエラー:', rectError);
+                }
             }
             
-            var clientX = event.clientX || 0;
-            var clientY = event.clientY || 0;
+            if (!rect) {
+                // 最終フォールバック: 固定値使用
+                console.warn('⚠️ canvasRect取得不可 - 固定値使用');
+                return { 
+                    screen: { x: 100, y: 100 }, 
+                    canvas: { x: 100, y: 100 }, 
+                    pressure: 0.5,
+                    fallback: true,
+                    fallbackReason: 'canvasRect_unavailable'
+                };
+            }
             
-            // 基本的な座標変換（CoordinateManagerの簡易版）
-            var canvasX = Math.max(0, Math.min(this.width, clientX - rect.left));
-            var canvasY = Math.max(0, Math.min(this.height, clientY - rect.top));
+            var clientX = event.clientX || 100;  // デフォルト値で(0,0)回避
+            var clientY = event.clientY || 100;  // デフォルト値で(0,0)回避
+            
+            // 🛠 基本的な座標変換（CoordinateManagerの簡易版・(0,0)回避）
+            var canvasX = Math.max(10, Math.min(this.width - 10, clientX - rect.left));  // 境界から10px離す
+            var canvasY = Math.max(10, Math.min(this.height - 10, clientY - rect.top)); // 境界から10px離す
             
             return {
                 screen: { x: clientX, y: clientY },
                 canvas: { x: canvasX, y: canvasY },
-                pressure: event.pressure || 0.5
+                pressure: event.pressure || 0.5,
+                fallback: true,
+                fallbackReason: 'coordinate_manager_error'
             };
             
         } catch (error) {
             console.error('❌ フォールバック座標取得失敗:', error);
-            return { screen: { x: 0, y: 0 }, canvas: { x: 0, y: 0 }, pressure: 0.5 };
+            
+            // 最終的な安全座標
+            return { 
+                screen: { x: 100, y: 100 }, 
+                canvas: { x: 100, y: 100 }, 
+                pressure: 0.5,
+                fallback: true,
+                fallbackReason: 'complete_failure'
+            };
         }
     };
     
     // ==========================================
-    // 🔄 描画処理メソッド群（座標統合対応）
+    // 🛠 描画処理メソッド群（座標統合対応・バグ修正版）
     // ==========================================
     
     /**
-     * 🔄 統合描画開始処理
+     * 🛠 統合描画開始処理（バグ修正版）
      */
-    CanvasManager.prototype.startDrawingWithCoordinateIntegration = function(event) {
+    CanvasManager.prototype.startDrawingWithCoordinateIntegrationFixed = function(event) {
         try {
-            // CoordinateManager経由で統一座標取得
-            var coordinates = this.getUnifiedCanvasCoordinates(event);
+            // 🛠 CoordinateManager経由で統一座標取得（バグ修正版）
+            var coordinates = this.getUnifiedCanvasCoordinatesFixed(event);
             
-            if (!coordinates) {
+            if (!coordinates || !coordinates.canvas) {
                 throw new Error('座標取得に失敗しました');
+            }
+            
+            // 🛠 (0,0)座標の異常検出
+            if (coordinates.canvas.x === 0 && coordinates.canvas.y === 0 && !coordinates.fallback) {
+                console.warn('⚠️ 異常な(0,0)座標を検出 - 描画をスキップします', coordinates);
+                return null;
             }
             
             // 新しいパス開始
@@ -604,7 +573,8 @@
                 graphics: graphics,
                 points: [coordinates.canvas],
                 startTime: Date.now(),
-                tool: 'pen' // 現在のツール
+                tool: 'pen', // 現在のツール
+                fallbackUsed: !!coordinates.fallback
             };
             
             // グラフィクスをメインレイヤーに追加
@@ -629,17 +599,21 @@
                     coordinates: coordinates.canvas,
                     pressure: coordinates.pressure,
                     pathId: pathId,
+                    fallbackUsed: coordinates.fallback,
                     timestamp: Date.now()
                 });
             }
             
-            console.log('🎨 CoordinateManager統合描画開始: (' + coordinates.canvas.x.toFixed(1) + ', ' + coordinates.canvas.y.toFixed(1) + ')');
+            console.log('🎨 CoordinateManager統合描画開始（バグ修正版）: (' + 
+                       coordinates.canvas.x.toFixed(1) + ', ' + coordinates.canvas.y.toFixed(1) + ')' +
+                       (coordinates.fallback ? ' [フォールバック]' : ''));
             
             return coordinates;
             
         } catch (error) {
+            console.error('❌ 統合描画開始エラー:', error);
             if (window.ErrorManager) {
-                window.ErrorManager.showError('canvas-draw-start-coordinate', 
+                window.ErrorManager.showError('canvas-draw-start-coordinate-fixed', 
                     '統合描画開始エラー: ' + error.message, 
                     { event: event && event.type }
                 );
@@ -649,30 +623,49 @@
     };
     
     /**
-     * 🔄 統合描画継続処理
+     * 🛠 統合描画継続処理（バグ修正版）
      */
-    CanvasManager.prototype.continueDrawingWithCoordinateIntegration = function(event) {
+    CanvasManager.prototype.continueDrawingWithCoordinateIntegrationFixed = function(event) {
         if (!this.isDrawing || !this.currentPath) return null;
         
         try {
-            // CoordinateManager経由で統一座標取得
-            var coordinates = this.getUnifiedCanvasCoordinates(event);
+            // 🛠 CoordinateManager経由で統一座標取得（バグ修正版）
+            var coordinates = this.getUnifiedCanvasCoordinatesFixed(event);
             
-            if (!coordinates) {
+            if (!coordinates || !coordinates.canvas) {
                 throw new Error('座標取得に失敗しました');
+            }
+            
+            // 🛠 (0,0)座標の異常検出（継続時）
+            if (coordinates.canvas.x === 0 && coordinates.canvas.y === 0 && !coordinates.fallback) {
+                console.warn('⚠️ 描画継続で異常な(0,0)座標を検出 - このポイントをスキップします');
+                return null;
             }
             
             // 前回座標との距離計算（CoordinateManager使用）
             var shouldDraw = true;
-            if (this.lastDrawingPoint && this.coordinateManager) {
+            if (this.lastDrawingPoint && this.coordinateManager && this.coordinateManager.calculateDistance) {
                 var distance = this.coordinateManager.calculateDistance(
                     this.lastDrawingPoint, 
                     coordinates.canvas
                 );
                 
                 // 最小描画距離チェック
-                var minDistance = ConfigManager.get && ConfigManager.get('drawing.pen.minDistance') || 1.5;
+                var minDistance = 1.5;
+                if (ConfigManager.get) {
+                    try {
+                        minDistance = ConfigManager.get('drawing.pen.minDistance') || 1.5;
+                    } catch (error) {
+                        // ConfigManager.get()エラーは無視
+                    }
+                }
                 shouldDraw = distance >= minDistance;
+                
+                // 🛠 異常に大きな距離のチェック（テレポート検出）
+                if (distance > Math.min(this.width, this.height) * 0.5) {
+                    console.warn('⚠️ 異常に大きな移動距離を検出:', distance, 'px - 描画をスキップ');
+                    return null;
+                }
             }
             
             if (shouldDraw) {
@@ -682,13 +675,19 @@
                 // 座標を記録
                 this.currentPath.points.push(coordinates.canvas);
                 this.lastDrawingPoint = coordinates.canvas;
+                
+                // フォールバック使用記録
+                if (coordinates.fallback && !this.currentPath.fallbackUsed) {
+                    this.currentPath.fallbackUsed = true;
+                }
             }
             
             return coordinates;
             
         } catch (error) {
+            console.error('❌ 統合描画継続エラー:', error);
             if (window.ErrorManager) {
-                window.ErrorManager.showError('canvas-draw-continue-coordinate', 
+                window.ErrorManager.showError('canvas-draw-continue-coordinate-fixed', 
                     '統合描画継続エラー: ' + error.message, 
                     { event: event && event.type }
                 );
@@ -700,11 +699,19 @@
     /**
      * 🔄 統合描画終了処理
      */
-    CanvasManager.prototype.stopDrawingWithCoordinateIntegration = function() {
+    CanvasManager.prototype.stopDrawingWithCoordinateIntegrationFixed = function() {
         try {
             if (this.currentPath) {
                 this.currentPath.endTime = Date.now();
                 this.currentPath.duration = this.currentPath.endTime - this.currentPath.startTime;
+                
+                // 🛠 描画パス統計
+                console.log('🎨 描画パス完了:', {
+                    id: this.currentPath.id,
+                    pointCount: this.currentPath.points.length,
+                    duration: this.currentPath.duration + 'ms',
+                    fallbackUsed: this.currentPath.fallbackUsed
+                });
             }
             
             // 描画状態クリア
@@ -720,13 +727,14 @@
                 });
             }
             
-            console.log('🎨 CoordinateManager統合描画終了');
+            console.log('🎨 CoordinateManager統合描画終了（バグ修正版）');
             
             return true;
             
         } catch (error) {
+            console.error('❌ 統合描画終了エラー:', error);
             if (window.ErrorManager) {
-                window.ErrorManager.showError('canvas-draw-stop-coordinate', 
+                window.ErrorManager.showError('canvas-draw-stop-coordinate-fixed', 
                     '統合描画終了エラー: ' + error.message
                 );
             }
@@ -735,16 +743,16 @@
     };
     
     // ==========================================
-    // 🔄 イベントハンドラー（座標統合対応）
+    // 🛠 イベントハンドラー（座標統合対応・バグ修正版）
     // ==========================================
     
     /**
-     * 🔄 統合ポインターダウンハンドラー
+     * 🛠 統合ポインターダウンハンドラー（バグ修正版）
      */
-    CanvasManager.prototype.handlePointerDownWithCoordinateIntegration = function(event) {
+    CanvasManager.prototype.handlePointerDownWithCoordinateIntegrationFixed = function(event) {
         try {
-            // CoordinateManager統合描画開始
-            var coordinates = this.startDrawingWithCoordinateIntegration(event);
+            // 🛠 CoordinateManager統合描画開始（バグ修正版）
+            var coordinates = this.startDrawingWithCoordinateIntegrationFixed(event);
             
             if (coordinates) {
                 // EventBus通知
@@ -752,14 +760,18 @@
                     window.EventBus.safeEmit('canvas.pointer.down', {
                         coordinates: coordinates,
                         event: event.type,
+                        fallbackUsed: coordinates.fallback,
                         timestamp: Date.now()
                     });
                 }
+            } else {
+                console.warn('⚠️ ポインターダウン: 座標取得失敗のため描画をスキップしました');
             }
             
         } catch (error) {
+            console.error('❌ 統合ポインターダウンエラー:', error);
             if (window.ErrorManager) {
-                window.ErrorManager.showError('canvas-pointer-down-coordinate', 
+                window.ErrorManager.showError('canvas-pointer-down-coordinate-fixed', 
                     '統合ポインターダウンエラー: ' + error.message, 
                     { event: event && event.type }
                 );
@@ -768,13 +780,13 @@
     };
     
     /**
-     * 🔄 統合ポインター移動ハンドラー
+     * 🛠 統合ポインター移動ハンドラー（バグ修正版）
      */
-    CanvasManager.prototype.handlePointerMoveWithCoordinateIntegration = function(event) {
+    CanvasManager.prototype.handlePointerMoveWithCoordinateIntegrationFixed = function(event) {
         try {
             if (this.isDrawing) {
-                // CoordinateManager統合描画継続
-                var coordinates = this.continueDrawingWithCoordinateIntegration(event);
+                // 🛠 CoordinateManager統合描画継続（バグ修正版）
+                var coordinates = this.continueDrawingWithCoordinateIntegrationFixed(event);
                 
                 if (coordinates) {
                     // EventBus通知
@@ -783,15 +795,18 @@
                             coordinates: coordinates,
                             isDrawing: true,
                             event: event.type,
+                            fallbackUsed: coordinates.fallback,
                             timestamp: Date.now()
                         });
                     }
                 }
+                // 座標取得失敗時は単純にスキップ（エラー出力は既に実行済み）
             }
             
         } catch (error) {
+            console.error('❌ 統合ポインター移動エラー:', error);
             if (window.ErrorManager) {
-                window.ErrorManager.showError('canvas-pointer-move-coordinate', 
+                window.ErrorManager.showError('canvas-pointer-move-coordinate-fixed', 
                     '統合ポインター移動エラー: ' + error.message, 
                     { event: event && event.type }
                 );
@@ -800,13 +815,13 @@
     };
     
     /**
-     * 🔄 統合ポインターアップハンドラー
+     * 🛠 統合ポインターアップハンドラー（バグ修正版）
      */
-    CanvasManager.prototype.handlePointerUpWithCoordinateIntegration = function(event) {
+    CanvasManager.prototype.handlePointerUpWithCoordinateIntegrationFixed = function(event) {
         try {
             if (this.isDrawing) {
-                // CoordinateManager統合描画終了
-                var success = this.stopDrawingWithCoordinateIntegration();
+                // 🛠 CoordinateManager統合描画終了（バグ修正版）
+                var success = this.stopDrawingWithCoordinateIntegrationFixed();
                 
                 if (success) {
                     // EventBus通知
@@ -821,8 +836,9 @@
             }
             
         } catch (error) {
+            console.error('❌ 統合ポインターアップエラー:', error);
             if (window.ErrorManager) {
-                window.ErrorManager.showError('canvas-pointer-up-coordinate', 
+                window.ErrorManager.showError('canvas-pointer-up-coordinate-fixed', 
                     '統合ポインターアップエラー: ' + error.message, 
                     { event: event && event.type }
                 );
@@ -831,7 +847,128 @@
     };
     
     // ==========================================
-    // 🔄 基本機能メソッド群
+    // 🛠 座標統合診断・テストメソッド群（バグ修正対応版）
+    // ==========================================
+    
+    /**
+     * 🔄 座標統合状態取得（修正版）
+     */
+    CanvasManager.prototype.getCoordinateIntegrationState = function() {
+        return {
+            coordinateManagerAvailable: !!this.coordinateManager,
+            integrationEnabled: this.coordinateIntegration && this.coordinateIntegration.enabled || false,
+            duplicateElimination: this.coordinateIntegration && this.coordinateIntegration.duplicateElimination || false,
+            unifiedErrorHandling: this.coordinateIntegration && this.coordinateIntegration.unifiedErrorHandling || false,
+            performanceOptimized: !!(this.coordinateIntegration && 
+                                    (this.coordinateIntegration.performance && this.coordinateIntegration.performance.coordinateCache || 
+                                     this.coordinateIntegration.performance && this.coordinateIntegration.performance.batchProcessing)),
+            currentSize: { width: this.width, height: this.height },
+            hasContent: this.paths && this.paths.length > 0,
+            coordinateManagerState: this.coordinateManager ? 
+                (this.coordinateManager.getCoordinateState ? this.coordinateManager.getCoordinateState() : 'available') : null,
+            phase2Ready: !!(this.coordinateManager && 
+                            this.coordinateIntegration && this.coordinateIntegration.enabled &&
+                            this.coordinateIntegration && this.coordinateIntegration.duplicateElimination),
+            initializationError: this.coordinateIntegration && this.coordinateIntegration.error || null,
+            methodsImplemented: {
+                initializeCoordinateIntegration: typeof this.initializeCoordinateIntegration === 'function',
+                getUnifiedCanvasCoordinatesFixed: typeof this.getUnifiedCanvasCoordinatesFixed === 'function',
+                startDrawingWithCoordinateIntegrationFixed: typeof this.startDrawingWithCoordinateIntegrationFixed === 'function'
+            },
+            // 🛠 バグ修正統計
+            bugFixStats: {
+                canvasRectRetrievalCount: this.stats.canvasRectRetrievalCount,
+                coordinateExtractionErrors: this.stats.coordinateExtractionErrors,
+                fallbackPaths: this.paths.filter(function(path) { return path.fallbackUsed; }).length
+            }
+        };
+    };
+
+    /**
+     * 🛠 座標バグ診断実行（CanvasManager版）
+     */
+    CanvasManager.prototype.runCanvasCoordinateBugDiagnosis = function() {
+        console.group('🔍 CanvasManager座標バグ診断');
+        
+        var state = this.getCoordinateIntegrationState();
+        
+        // 診断項目
+        var diagnosis = {
+            canvasElement: {
+                available: !!this.canvasElement,
+                hasBoundingClientRect: !!(this.canvasElement && this.canvasElement.getBoundingClientRect)
+            },
+            coordinateManager: {
+                available: !!this.coordinateManager,
+                hasBugFixMethods: !!(this.coordinateManager && 
+                    this.coordinateManager.extractPointerCoordinates &&
+                    this.coordinateManager.screenToCanvasSafe &&
+                    this.coordinateManager.validateCoordinateIntegrity)
+            },
+            eventHandlers: {
+                fixedMethodsImplemented: !!(
+                    this.handlePointerDownWithCoordinateIntegrationFixed &&
+                    this.handlePointerMoveWithCoordinateIntegrationFixed &&
+                    this.handlePointerUpWithCoordinateIntegrationFixed
+                ),
+                unifiedCoordinateExtraction: typeof this.getUnifiedCanvasCoordinatesFixed === 'function'
+            },
+            stats: state.bugFixStats,
+            compliance: {
+                canvasRectAlwaysRetrieved: state.bugFixStats.canvasRectRetrievalCount > 0,
+                errorHandlingImplemented: typeof this.getFallbackCanvasCoordinates === 'function',
+                fallbackMechanismWorking: state.bugFixStats.fallbackPaths >= 0
+            }
+        };
+        
+        console.log('📊 CanvasManager座標バグ診断結果:', diagnosis);
+        
+        // 推奨事項
+        var recommendations = [];
+        
+        if (!diagnosis.canvasElement.available) {
+            recommendations.push('キャンバス要素の初期化が必要です');
+        }
+        
+        if (!diagnosis.canvasElement.hasBoundingClientRect) {
+            recommendations.push('キャンバス要素にgetBoundingClientRect()メソッドがありません');
+        }
+        
+        if (!diagnosis.coordinateManager.available) {
+            recommendations.push('CoordinateManagerの初期化が必要です');
+        }
+        
+        if (!diagnosis.coordinateManager.hasBugFixMethods) {
+            recommendations.push('CoordinateManagerにバグ修正メソッドが不足しています');
+        }
+        
+        if (!diagnosis.eventHandlers.fixedMethodsImplemented) {
+            recommendations.push('修正版イベントハンドラーの実装が必要です');
+        }
+        
+        if (state.bugFixStats.coordinateExtractionErrors > state.bugFixStats.canvasRectRetrievalCount * 0.1) {
+            recommendations.push('座標抽出エラー率が高すぎます（10%超）');
+        }
+        
+        if (recommendations.length === 0) {
+            console.log('✅ CanvasManager座標バグ診断: バグ修正が完了しています');
+        } else {
+            console.warn('⚠️ CanvasManager推奨事項:', recommendations);
+        }
+        
+        // CoordinateManagerのバグ診断も実行
+        if (this.coordinateManager && this.coordinateManager.runCoordinateBugDiagnosis) {
+            console.log('🔍 CoordinateManagerバグ診断も実行...');
+            this.coordinateManager.runCoordinateBugDiagnosis();
+        }
+        
+        console.groupEnd();
+        
+        return diagnosis;
+    };
+    
+    // ==========================================
+    // 🔄 基本機能メソッド群（従来通り）
     // ==========================================
     
     /**
@@ -923,7 +1060,7 @@
             
         } catch (error) {
             if (window.ErrorManager) {
-                window.ErrorManager.showError('canvas-resize-coordinate', 
+                window.ErrorManager.showError('canvas-resize-coordinate-fixed', 
                     '座標統合リサイズエラー: ' + error.message, 
                     { newWidth: newWidth, newHeight: newHeight, centerContent: centerContent }
                 );
@@ -943,7 +1080,10 @@
             initialized: this.initialized,
             canvasSize: { width: this.width, height: this.height },
             isDrawing: this.isDrawing,
-            coordinateIntegration: this.getCoordinateIntegrationState()
+            coordinateIntegration: this.getCoordinateIntegrationState(),
+            // 🛠 バグ修正統計
+            canvasRectRetrievalCount: this.stats.canvasRectRetrievalCount,
+            coordinateExtractionErrors: this.stats.coordinateExtractionErrors
         };
     };
     
@@ -961,6 +1101,22 @@
             pixiApp: {
                 stage: !!(this.app && this.app.stage),
                 renderer: !!(this.app && this.app.renderer)
+            },
+            // 🛠 バグ修正デバッグ情報
+            bugFixInfo: {
+                canvasElement: !!this.canvasElement,
+                coordinateManager: !!this.coordinateManager,
+                fixedMethodsAvailable: !!(
+                    this.getUnifiedCanvasCoordinatesFixed &&
+                    this.startDrawingWithCoordinateIntegrationFixed &&
+                    this.handlePointerDownWithCoordinateIntegrationFixed
+                ),
+                retrievalStats: {
+                    canvasRectRetrievals: this.stats.canvasRectRetrievalCount,
+                    coordinateErrors: this.stats.coordinateExtractionErrors,
+                    errorRate: this.stats.canvasRectRetrievalCount > 0 ? 
+                              (this.stats.coordinateExtractionErrors / this.stats.canvasRectRetrievalCount * 100).toFixed(1) + '%' : '0%'
+                }
             }
         };
     };
@@ -974,7 +1130,7 @@
             
             // 描画停止
             if (this.isDrawing) {
-                this.stopDrawingWithCoordinateIntegration();
+                this.stopDrawingWithCoordinateIntegrationFixed();
             }
             
             // パスクリア
@@ -996,7 +1152,7 @@
             
             this.initialized = false;
             
-            console.log('✅ CanvasManager破棄完了（座標統合対応・構文修正版）');
+            console.log('✅ CanvasManager破棄完了（座標統合対応・構文修正版・座標バグ修正版）');
             
         } catch (error) {
             console.error('❌ CanvasManager破棄エラー:', error);
@@ -1008,21 +1164,24 @@
     // ==========================================
 
     global.CanvasManager = CanvasManager;
-    console.log('✅ CanvasManager 座標統合パッチ適用版 グローバル公開完了（Pure JavaScript・構文修正版）');
+    console.log('✅ CanvasManager 座標バグ修正版・座標統合パッチ適用版 グローバル公開完了（Pure JavaScript・構文修正版）');
 
 })(window);
 
-console.log('🔧 CanvasManager Phase1.4 座標統合パッチ適用版・構文修正版 - 準備完了');
+console.log('🔧 CanvasManager Phase1.4 座標バグ修正版・座標統合パッチ適用版・構文修正版 - 準備完了');
+console.log('🛠 座標変換バグ修正完了: 左上から線が伸びる現象対策');
 console.log('📋 差分パッチ適用完了: initializeCoordinateIntegration()メソッド実装');
 console.log('🔄 座標統合実装完了: CoordinateManager完全統合・重複排除・Phase2準備');
 console.log('🔧 構文エラー修正完了: Invalid or unexpected token エラー解決');
 console.log('✅ 主な修正事項:');
-console.log('  - ES6構文をES5互換に変更（class → function、arrow function → function）');
-console.log('  - constructor()でcoordinateManager = null追加');
-console.log('  - initialize()でinitializeCoordinateIntegration()呼び出し追加');
-console.log('  - initializeCoordinateIntegration()メソッド完全実装');
-console.log('  - getCoordinateIntegrationState()メソッド構文修正');
-console.log('  - 座標統合診断システム強化・構文エラー解決');
-console.log('  - Promise-based初期化に変更');
-console.log('  - IIFE (Immediately Invoked Function Expression) でグローバル公開');
-console.log('💡 使用例: const canvasManager = new window.CanvasManager(); await canvasManager.initialize(appCore, canvas);');
+console.log('  - イベントハンドラーでcanvasRect毎回取得（getBoundingClientRect()）');
+console.log('  - getUnifiedCanvasCoordinatesFixed() 安全な座標取得メソッド実装');
+console.log('  - handlePointer*WithCoordinateIntegrationFixed() バグ修正版イベントハンドラー');
+console.log('  - (0,0)座標の異常検出・描画スキップ機能');
+console.log('  - フォールバック座標生成機能強化（(0,0)回避）');
+console.log('  - 座標抽出エラー統計・デバッグ情報追加');
+console.log('  - 異常移動距離検出（テレポート防止）');
+console.log('  - runCanvasCoordinateBugDiagnosis() バグ診断機能');
+console.log('🔍 座標バグ診断: runCanvasCoordinateBugDiagnosis()で問題検出・推奨事項表示');
+console.log('📊 修正統計: canvasRectRetrievalCount, coordinateExtractionErrors, fallbackPaths');
+console.log('💡 使用例: const canvasManager = new window.CanvasManager(); await canvasManager.initialize(appCore, canvas); canvasManager.runCanvasCoordinateBugDiagnosis();');

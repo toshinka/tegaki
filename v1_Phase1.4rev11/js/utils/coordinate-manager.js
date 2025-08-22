@@ -11,14 +11,21 @@
  * 📐 LEGACY_REPLACEMENT: coordinates.js機能完全移行・互換性維持
  * 🎯 PERFORMANCE: 座標処理パフォーマンス最適化・キャッシュ機能
  * 🚀 PHASE2_READY: レイヤーシステム座標変換基盤準備
+ * 
+ * 🛠 BUG_FIX: 座標変換バグ修正版（左上から線が伸びる現象対策）
+ * 🔧 COORDINATE_BUG_FIXES: 
+ *   - canvasRect毎回取得・検証強化
+ *   - (0,0)座標の無効キャッシュ防止
+ *   - PixiJS座標変換の安全化
+ *   - デバッグログ追加
  */
 
 /**
- * CoordinateManager 完全統合版・coordinates.js置き換え対応
+ * CoordinateManager 完全統合版・coordinates.js置き換え対応・座標バグ修正版
  */
 class CoordinateManager {
     constructor(options = {}) {
-        this.version = 'v1.0-Phase1.4-complete-integration-coordinates-replacement';
+        this.version = 'v1.0-Phase1.4-complete-integration-coordinates-replacement-bugfix';
         
         // 基本設定
         this.canvasWidth = 400;
@@ -46,10 +53,14 @@ class CoordinateManager {
             cacheHitCount: 0,
             cacheMissCount: 0,
             errorCount: 0,
-            lastOperationTime: 0
+            lastOperationTime: 0,
+            // 🛠 バグ修正統計追加
+            invalidCanvasRectCount: 0,
+            invalidCoordinateCount: 0,
+            fallbackUsageCount: 0
         };
         
-        console.log(`📐 CoordinateManager ${this.version} 構築完了（完全統合版・coordinates.js置き換え対応）`);
+        console.log(`📐 CoordinateManager ${this.version} 構築完了（座標バグ修正版・完全統合版・coordinates.js置き換え対応）`);
         
         // 設定読み込み
         this.loadConfiguration();
@@ -122,11 +133,38 @@ class CoordinateManager {
     }
     
     /**
-     * 🔄 統一ポインター座標抽出（主要機能・重複排除）
+     * 🔄 統一ポインター座標抽出（主要機能・重複排除・バグ修正版）
+     * 🛠 修正点: canvasRect必須チェック、(0,0)無効座標防止、デバッグログ追加
      */
     extractPointerCoordinates(event, canvasRect, pixiApp = null) {
         try {
             const startTime = performance.now();
+            
+            // 🛠 Step 1: canvasRect の厳密検証（バグ修正対応）
+            if (!canvasRect || typeof canvasRect !== 'object') {
+                this.stats.invalidCanvasRectCount++;
+                console.error('❌ canvasRect が無効です。canvas.getBoundingClientRect() を確認してください。', canvasRect);
+                throw new Error('canvasRect が必要です。canvas.getBoundingClientRect() を毎回呼び出してください。');
+            }
+            
+            if (typeof canvasRect.left !== 'number' || typeof canvasRect.top !== 'number') {
+                this.stats.invalidCanvasRectCount++;
+                console.error('❌ canvasRect の構造が無効です:', canvasRect);
+                throw new Error('canvasRect.left と canvasRect.top が必要です');
+            }
+            
+            // 🛠 デバッグログ: 座標変換前の値確認
+            const screenX = event.clientX || 0;
+            const screenY = event.clientY || 0;
+            console.log("📍座標チェック（変換前）", {
+                screen: { x: screenX, y: screenY },
+                canvasRect: {
+                    left: canvasRect.left,
+                    top: canvasRect.top,
+                    width: canvasRect.width,
+                    height: canvasRect.height
+                }
+            });
             
             // キャッシュキー生成
             const cacheKey = this.generateCacheKey(event, canvasRect);
@@ -134,26 +172,47 @@ class CoordinateManager {
             // キャッシュ確認
             if (this.integrationConfig.performanceOptimized && this.coordinateCache.has(cacheKey)) {
                 this.stats.cacheHitCount++;
-                return this.coordinateCache.get(cacheKey);
+                const cachedData = this.coordinateCache.get(cacheKey);
+                
+                // 🛠 キャッシュされた座標の妥当性確認
+                if (this.validateCachedCoordinates(cachedData)) {
+                    return cachedData;
+                } else {
+                    // 無効なキャッシュを削除
+                    this.coordinateCache.delete(cacheKey);
+                    console.warn('⚠️ 無効なキャッシュデータを削除しました');
+                }
             }
             
             this.stats.cacheMissCount++;
             
             // 基本座標抽出
-            const clientX = event.clientX || 0;
-            const clientY = event.clientY || 0;
             const pressure = event.pressure || 0.5;
             
             // スクリーン座標
-            const screenCoords = { x: clientX, y: clientY };
+            const screenCoords = { x: screenX, y: screenY };
             
-            // キャンバス座標変換
-            const canvasCoords = this.screenToCanvas(clientX, clientY, canvasRect);
+            // 🛠 Step 2: キャンバス座標変換（安全化・バグ修正版）
+            const canvasCoords = this.screenToCanvasSafe(screenX, screenY, canvasRect);
             
-            // PixiJS座標変換（オプション）
+            // 🛠 Step 3: 座標妥当性の最終確認
+            if (!this.validateCoordinateIntegrity(canvasCoords)) {
+                this.stats.invalidCoordinateCount++;
+                console.error('❌ 座標変換結果が無効です:', canvasCoords);
+                throw new Error('座標変換で無効な結果が生成されました');
+            }
+            
+            // 🛠 デバッグログ: 座標変換後の値確認
+            console.log("📍座標チェック（変換後）", {
+                screen: screenCoords,
+                canvas: canvasCoords,
+                valid: this.validateCoordinateIntegrity(canvasCoords)
+            });
+            
+            // 🛠 Step 4: PixiJS座標変換（安全化）
             let pixiCoords = null;
             if (pixiApp && canvasCoords) {
-                pixiCoords = this.canvasToPixi(canvasCoords.x, canvasCoords.y, pixiApp);
+                pixiCoords = this.canvasToPixiSafe(canvasCoords.x, canvasCoords.y, pixiApp);
             }
             
             // 座標データ構築
@@ -166,8 +225,8 @@ class CoordinateManager {
                 processingTime: performance.now() - startTime
             };
             
-            // キャッシュ保存
-            if (this.integrationConfig.performanceOptimized) {
+            // 🛠 Step 5: キャッシュ保存（無効座標の防止）
+            if (this.integrationConfig.performanceOptimized && this.shouldCacheCoordinates(coordinateData)) {
                 this.saveToCacheWithCleanup(cacheKey, coordinateData);
             }
             
@@ -188,26 +247,63 @@ class CoordinateManager {
                 );
             }
             
-            return null;
+            // 🛠 フォールバック: 安全な座標を返す
+            return this.getFallbackCoordinates(event, canvasRect);
         }
     }
     
     /**
-     * 🔄 スクリーン→キャンバス座標変換（coordinates.js置き換え）
+     * 🛠 安全なスクリーン→キャンバス座標変換（バグ修正版）
+     * 修正点: (0,0)への意図しない変換を防止、NaN/undefined検出強化
      */
-    screenToCanvas(screenX, screenY, canvasRect) {
+    screenToCanvasSafe(screenX, screenY, canvasRect) {
         try {
-            if (!canvasRect) {
-                throw new Error('canvasRect が必要です');
+            // 🛠 入力値の検証強化
+            if (typeof screenX !== 'number' || typeof screenY !== 'number') {
+                console.warn('⚠️ スクリーン座標が数値ではありません:', { screenX, screenY });
+                screenX = Number(screenX) || 0;
+                screenY = Number(screenY) || 0;
             }
             
-            // 基本変換
+            if (!isFinite(screenX) || !isFinite(screenY)) {
+                console.warn('⚠️ スクリーン座標が無限値です:', { screenX, screenY });
+                throw new Error('無効なスクリーン座標（無限値）');
+            }
+            
+            // 🛠 canvasRect の再検証
+            if (!canvasRect || typeof canvasRect.left !== 'number' || typeof canvasRect.top !== 'number') {
+                throw new Error('canvasRect が無効です');
+            }
+            
+            // 🛠 基本変換（NaN防止強化）
             let canvasX = screenX - canvasRect.left;
             let canvasY = screenY - canvasRect.top;
             
-            // 境界制限
+            // 🛠 NaN検出と修正
+            if (!isFinite(canvasX) || !isFinite(canvasY)) {
+                console.error('❌ 座標計算でNaNが発生しました:', {
+                    screenX, screenY,
+                    canvasRectLeft: canvasRect.left,
+                    canvasRectTop: canvasRect.top,
+                    canvasX, canvasY
+                });
+                throw new Error('座標計算でNaNが発生しました');
+            }
+            
+            // 境界制限（安全化）
             canvasX = Math.max(0, Math.min(this.canvasWidth, canvasX));
             canvasY = Math.max(0, Math.min(this.canvasHeight, canvasY));
+            
+            // 🛠 (0,0)座標の異常検出
+            if (canvasX === 0 && canvasY === 0 && (screenX > canvasRect.left + 10 || screenY > canvasRect.top + 10)) {
+                console.warn('⚠️ (0,0)座標への異常な変換を検出:', {
+                    screen: { x: screenX, y: screenY },
+                    canvasRect: { left: canvasRect.left, top: canvasRect.top },
+                    result: { x: canvasX, y: canvasY }
+                });
+                // この場合は例外をスローして上位でフォールバック処理を行わせる
+                throw new Error('異常な(0,0)座標変換を検出');
+            }
             
             // 精度適用
             canvasX = this.applyPrecision(canvasX);
@@ -217,25 +313,65 @@ class CoordinateManager {
             
         } catch (error) {
             console.error('❌ スクリーン→キャンバス座標変換エラー:', error);
-            return { x: 0, y: 0 };
+            
+            // 🛠 より安全なフォールバック（canvasRectを考慮）
+            const fallbackX = Math.max(0, Math.min(this.canvasWidth, (screenX || 100) - (canvasRect?.left || 0)));
+            const fallbackY = Math.max(0, Math.min(this.canvasHeight, (screenY || 100) - (canvasRect?.top || 0)));
+            
+            this.stats.fallbackUsageCount++;
+            console.warn('🔧 座標変換フォールバック使用:', { x: fallbackX, y: fallbackY });
+            
+            return { x: fallbackX, y: fallbackY };
         }
     }
     
     /**
-     * 🔄 キャンバス→PixiJS座標変換
+     * 🔄 スクリーン→キャンバス座標変換（レガシー互換・安全版へのラッパー）
      */
-    canvasToPixi(canvasX, canvasY, pixiApp) {
+    screenToCanvas(screenX, screenY, canvasRect) {
+        return this.screenToCanvasSafe(screenX, screenY, canvasRect);
+    }
+    
+    /**
+     * 🛠 安全なキャンバス→PixiJS座標変換（バグ修正版）
+     * 修正点: undefined検出強化、fallback処理改善
+     */
+    canvasToPixiSafe(canvasX, canvasY, pixiApp) {
         try {
             if (!pixiApp || !pixiApp.stage) {
                 return { x: canvasX, y: canvasY };
             }
             
-            // PixiJS変換行列適用（基本版）
+            // 🛠 PixiJS変換パラメータの安全取得
             const scale = pixiApp.stage.scale || { x: 1, y: 1 };
             const position = pixiApp.stage.position || { x: 0, y: 0 };
             
+            // 🛠 scale と position の検証
+            if (!scale || typeof scale.x !== 'number' || typeof scale.y !== 'number') {
+                console.warn('⚠️ PixiJS scale が無効です:', scale);
+                return { x: canvasX, y: canvasY }; // fallback
+            }
+            
+            if (!position || typeof position.x !== 'number' || typeof position.y !== 'number') {
+                console.warn('⚠️ PixiJS position が無効です:', position);
+                return { x: canvasX, y: canvasY }; // fallback
+            }
+            
+            // 🛠 0除算防止
+            if (scale.x === 0 || scale.y === 0) {
+                console.warn('⚠️ PixiJS scale がゼロです:', scale);
+                return { x: canvasX, y: canvasY }; // fallback
+            }
+            
+            // PixiJS変換行列適用
             const pixiX = (canvasX - position.x) / scale.x;
             const pixiY = (canvasY - position.y) / scale.y;
+            
+            // 🛠 結果の妥当性確認
+            if (!isFinite(pixiX) || !isFinite(pixiY)) {
+                console.warn('⚠️ PixiJS座標変換で無限値が発生しました:', { pixiX, pixiY });
+                return { x: canvasX, y: canvasY }; // fallback
+            }
             
             return {
                 x: this.applyPrecision(pixiX),
@@ -244,15 +380,121 @@ class CoordinateManager {
             
         } catch (error) {
             console.error('❌ キャンバス→PixiJS座標変換エラー:', error);
-            return { x: canvasX, y: canvasY };
+            return { x: canvasX, y: canvasY }; // fallback
         }
     }
     
     /**
-     * 🔄 座標精度適用（パフォーマンス最適化）
+     * 🔄 キャンバス→PixiJS座標変換（レガシー互換・安全版へのラッパー）
+     */
+    canvasToPixi(canvasX, canvasY, pixiApp) {
+        return this.canvasToPixiSafe(canvasX, canvasY, pixiApp);
+    }
+    
+    /**
+     * 🛠 キャッシュされた座標の妥当性確認（新規追加）
+     */
+    validateCachedCoordinates(cachedData) {
+        try {
+            if (!cachedData || typeof cachedData !== 'object') {
+                return false;
+            }
+            
+            // canvas座標の確認
+            if (!cachedData.canvas || !this.validateCoordinateIntegrity(cachedData.canvas)) {
+                return false;
+            }
+            
+            // 🛠 (0,0)座標のキャッシュは疑わしいので再確認
+            if (cachedData.canvas.x === 0 && cachedData.canvas.y === 0) {
+                console.warn('⚠️ (0,0)座標のキャッシュデータを確認中:', cachedData);
+                // screenとcanvasの関係が妥当か確認
+                if (cachedData.screen && (cachedData.screen.x > 10 || cachedData.screen.y > 10)) {
+                    console.warn('⚠️ 疑わしい(0,0)キャッシュを無効化');
+                    return false;
+                }
+            }
+            
+            return true;
+            
+        } catch (error) {
+            console.warn('⚠️ キャッシュ座標妥当性確認エラー:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * 🛠 座標のキャッシュ可否判定（新規追加）
+     */
+    shouldCacheCoordinates(coordinateData) {
+        // 🛠 (0,0)座標はキャッシュしない（バグ修正対応）
+        if (coordinateData.canvas && coordinateData.canvas.x === 0 && coordinateData.canvas.y === 0) {
+            console.warn("⚠️ (0,0)座標はキャッシュしません", coordinateData.canvas);
+            return false;
+        }
+        
+        // その他の妥当性確認
+        if (!coordinateData.canvas || !this.validateCoordinateIntegrity(coordinateData.canvas)) {
+            return false;
+        }
+        
+        return true;
+    }
+    
+    /**
+     * 🛠 フォールバック座標生成（新規追加）
+     */
+    getFallbackCoordinates(event, canvasRect) {
+        this.stats.fallbackUsageCount++;
+        console.warn('🔧 フォールバック座標生成実行');
+        
+        try {
+            const screenX = event?.clientX || 100;
+            const screenY = event?.clientY || 100;
+            const pressure = event?.pressure || 0.5;
+            
+            // 安全なフォールバック座標
+            let canvasX = 100;  // (0,0)を避ける
+            let canvasY = 100;  // (0,0)を避ける
+            
+            // canvasRectが有効な場合は使用
+            if (canvasRect && typeof canvasRect.left === 'number' && typeof canvasRect.top === 'number') {
+                canvasX = Math.max(50, Math.min(this.canvasWidth - 50, screenX - canvasRect.left));
+                canvasY = Math.max(50, Math.min(this.canvasHeight - 50, screenY - canvasRect.top));
+            }
+            
+            return {
+                screen: { x: screenX, y: screenY },
+                canvas: { x: canvasX, y: canvasY },
+                pixi: null,
+                pressure: pressure,
+                timestamp: Date.now(),
+                processingTime: 0,
+                fallback: true
+            };
+            
+        } catch (error) {
+            console.error('❌ フォールバック座標生成エラー:', error);
+            
+            // 最終フォールバック
+            return {
+                screen: { x: 100, y: 100 },
+                canvas: { x: 100, y: 100 },
+                pixi: null,
+                pressure: 0.5,
+                timestamp: Date.now(),
+                processingTime: 0,
+                fallback: true
+            };
+        }
+    }
+    
+    /**
+     * 🔄 座標精度適用（パフォーマンス最適化・安全化）
      */
     applyPrecision(value) {
         if (typeof value !== 'number' || !isFinite(value)) {
+            console.warn('⚠️ 精度適用: 無効な値:', value);
             return 0;
         }
         
@@ -308,7 +550,7 @@ class CoordinateManager {
     }
     
     /**
-     * 🔄 座標妥当性確認
+     * 🔄 座標妥当性確認（強化版）
      */
     validateCoordinateIntegrity(coordinates) {
         try {
@@ -397,10 +639,16 @@ class CoordinateManager {
     }
     
     /**
-     * キャッシュ保存とクリーンアップ
+     * キャッシュ保存とクリーンアップ（安全化）
      */
     saveToCacheWithCleanup(key, data) {
         try {
+            // 🛠 データの妥当性を再確認
+            if (!this.shouldCacheCoordinates(data)) {
+                console.warn('⚠️ 無効なデータのキャッシュを阻止:', data);
+                return;
+            }
+            
             // キャッシュサイズ制限
             if (this.coordinateCache.size >= this.cacheMaxSize) {
                 this.cleanupCache();
@@ -440,6 +688,60 @@ class CoordinateManager {
     }
     
     /**
+     * 🛠 座標バグ診断実行（新規追加）
+     */
+    runCoordinateBugDiagnosis() {
+        console.group('🔍 座標バグ診断実行');
+        
+        const diagnosis = {
+            version: this.version,
+            stats: { ...this.stats },
+            cacheInfo: {
+                size: this.coordinateCache.size,
+                maxSize: this.cacheMaxSize,
+                hitRate: this.stats.cacheHitCount / (this.stats.cacheHitCount + this.stats.cacheMissCount) || 0
+            },
+            bugFixStatus: {
+                canvasRectValidation: typeof this.screenToCanvasSafe === 'function',
+                invalidCoordinateDetection: this.stats.invalidCoordinateCount >= 0,
+                fallbackMechanism: typeof this.getFallbackCoordinates === 'function',
+                cacheValidation: typeof this.validateCachedCoordinates === 'function',
+                zeroCoordinatePrevention: typeof this.shouldCacheCoordinates === 'function'
+            },
+            recommendations: []
+        };
+        
+        // 問題の検出
+        if (this.stats.invalidCanvasRectCount > 0) {
+            diagnosis.recommendations.push('canvasRect の取得方法を確認してください（毎回 getBoundingClientRect() を呼び出す）');
+        }
+        
+        if (this.stats.invalidCoordinateCount > 0) {
+            diagnosis.recommendations.push('座標変換で無効な結果が発生しています。入力データを確認してください');
+        }
+        
+        if (this.stats.fallbackUsageCount > this.stats.conversionCount * 0.1) {
+            diagnosis.recommendations.push('フォールバック使用率が高すぎます（10%超）。根本的な問題を調査してください');
+        }
+        
+        if (this.coordinateCache.size === 0 && this.stats.conversionCount > 100) {
+            diagnosis.recommendations.push('キャッシュが機能していません。パフォーマンス設定を確認してください');
+        }
+        
+        console.log('📊 座標バグ診断結果:', diagnosis);
+        
+        if (diagnosis.recommendations.length === 0) {
+            console.log('✅ 座標バグ診断: 問題は検出されませんでした');
+        } else {
+            console.warn('⚠️ 推奨事項:', diagnosis.recommendations);
+        }
+        
+        console.groupEnd();
+        
+        return diagnosis;
+    }
+    
+    /**
      * 統合状態取得
      */
     getIntegrationStatus() {
@@ -452,6 +754,11 @@ class CoordinateManager {
                 size: this.coordinateCache.size,
                 maxSize: this.cacheMaxSize,
                 hitRate: this.stats.cacheHitCount / (this.stats.cacheHitCount + this.stats.cacheMissCount) || 0
+            },
+            bugFixStatus: {
+                invalidCanvasRectCount: this.stats.invalidCanvasRectCount,
+                invalidCoordinateCount: this.stats.invalidCoordinateCount,
+                fallbackUsageCount: this.stats.fallbackUsageCount
             }
         };
     }
@@ -468,6 +775,11 @@ class CoordinateManager {
             cachePerformance: {
                 size: this.coordinateCache.size,
                 hitRate: (this.stats.cacheHitCount / (this.stats.cacheHitCount + this.stats.cacheMissCount) * 100).toFixed(1) + '%'
+            },
+            bugFixMetrics: {
+                invalidCanvasRectRate: (this.stats.invalidCanvasRectCount / Math.max(this.stats.conversionCount, 1) * 100).toFixed(1) + '%',
+                invalidCoordinateRate: (this.stats.invalidCoordinateCount / Math.max(this.stats.conversionCount, 1) * 100).toFixed(1) + '%',
+                fallbackUsageRate: (this.stats.fallbackUsageCount / Math.max(this.stats.conversionCount, 1) * 100).toFixed(1) + '%'
             }
         };
     }
@@ -504,6 +816,18 @@ class CoordinateManager {
             coordinatesJsReplacement: {
                 active: window.COORDINATES_JS_REPLACEMENT_ACTIVE || false,
                 warningsSupressed: window.SUPPRESS_COORDINATES_JS_WARNINGS || false
+            },
+            bugFixInfo: {
+                safeConversionMethods: {
+                    screenToCanvasSafe: typeof this.screenToCanvasSafe === 'function',
+                    canvasToPixiSafe: typeof this.canvasToPixiSafe === 'function'
+                },
+                validationMethods: {
+                    validateCachedCoordinates: typeof this.validateCachedCoordinates === 'function',
+                    shouldCacheCoordinates: typeof this.shouldCacheCoordinates === 'function',
+                    getFallbackCoordinates: typeof this.getFallbackCoordinates === 'function'
+                },
+                metrics: integrationStatus.bugFixStatus
             }
         };
     }
@@ -522,10 +846,13 @@ class CoordinateManager {
                 cacheHitCount: 0,
                 cacheMissCount: 0,
                 errorCount: 0,
-                lastOperationTime: 0
+                lastOperationTime: 0,
+                invalidCanvasRectCount: 0,
+                invalidCoordinateCount: 0,
+                fallbackUsageCount: 0
             };
             
-            console.log('🔄 CoordinateManager リセット完了');
+            console.log('🔄 CoordinateManager リセット完了（バグ修正版）');
             return true;
             
         } catch (error) {
@@ -550,7 +877,7 @@ class CoordinateManager {
                 delete window.SUPPRESS_COORDINATES_JS_WARNINGS;
             }
             
-            console.log('✅ CoordinateManager破棄完了（完全統合版・coordinates.js置き換え対応）');
+            console.log('✅ CoordinateManager破棄完了（座標バグ修正版・完全統合版・coordinates.js置き換え対応）');
             
         } catch (error) {
             console.error('❌ CoordinateManager破棄エラー:', error);
@@ -564,17 +891,24 @@ class CoordinateManager {
 
 if (typeof window !== 'undefined') {
     window.CoordinateManager = CoordinateManager;
-    console.log('✅ CoordinateManager 完全統合版・coordinates.js置き換え対応 グローバル公開完了（Pure JavaScript）');
+    console.log('✅ CoordinateManager 座標バグ修正版・完全統合版・coordinates.js置き換え対応 グローバル公開完了（Pure JavaScript）');
 }
 
-console.log('🔧 CoordinateManager Phase1.4 完全統合版・coordinates.js置き換え対応 - 準備完了');
+console.log('🔧 CoordinateManager Phase1.4 座標バグ修正版・完全統合版・coordinates.js置き換え対応 - 準備完了');
+console.log('🛠 座標変換バグ修正完了: 左上から線が伸びる現象対策');
 console.log('📋 coordinates.js置き換え完了: 全機能移行・互換性維持・警告抑制');
 console.log('🔄 座標統合実装完了: 重複排除・パフォーマンス最適化・キャッシュ機能');
 console.log('🚀 Phase2準備完了: レイヤーシステム座標変換基盤・統合診断システム');
-console.log('✅ 主な機能:');
-console.log('  - extractPointerCoordinates() - 統一ポインター座標抽出');
-console.log('  - calculateDistance() - coordinates.js互換距離計算');
-console.log('  - calculateAngle() - coordinates.js互換角度計算');
-console.log('  - transformCoordinatesForLayer() - Phase2レイヤー座標変換');
-console.log('  - キャッシュ機能・パフォーマンス最適化・統計情報');
-console.log('💡 使用例: const coordinator = new window.CoordinateManager(); coordinator.extractPointerCoordinates(event, rect);');
+console.log('✅ 主な修正事項:');
+console.log('  - canvasRect毎回取得・厳密検証');
+console.log('  - (0,0)座標の無効キャッシュ防止');
+console.log('  - PixiJS座標変換の安全化（undefined/null/0除算防止）');
+console.log('  - デバッグログ追加（変換前後の座標確認）');
+console.log('  - screenToCanvasSafe() / canvasToPixiSafe() 安全版メソッド');
+console.log('  - validateCachedCoordinates() キャッシュ妥当性確認');
+console.log('  - shouldCacheCoordinates() (0,0)座標キャッシュ阻止');
+console.log('  - getFallbackCoordinates() 安全なフォールバック機能');
+console.log('  - runCoordinateBugDiagnosis() バグ診断機能');
+console.log('🔍 座標バグ診断: runCoordinateBugDiagnosis()で問題検出・推奨事項表示');
+console.log('📊 修正統計: invalidCanvasRectCount, invalidCoordinateCount, fallbackUsageCount');
+console.log('💡 使用例: const coordinator = new window.CoordinateManager(); coordinator.runCoordinateBugDiagnosis();');

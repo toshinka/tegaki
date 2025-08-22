@@ -1,0 +1,173 @@
+# 🖊️ ペン描画不具合修正 - 作業計画書
+
+## 🚨 確認された問題点
+
+### 1. 主要な問題
+- **0.0座標から直線が伸びる問題**: ペン描画時に(0,0)座標から描画位置へ不要な直線が描かれる
+- **筆圧反映なし**: 筆圧はモニタリングされているが実際の描画に反映されていない
+- **キャンバス周りの破線**: 画像にある破線の枠を削除したい
+
+### 2. 根本原因分析
+
+#### A. 0.0座標問題の原因
+- **CanvasManager**: `startDrawingWithCoordinateIntegration()`でPixiJS Graphicsの初期化時に不適切な描画開始
+- **PenTool**: `attachGraphics()`後の初期moveTo処理が不完全
+- **座標統合**: CoordinateManagerとPixiJSの座標系の不整合
+
+#### B. 筆圧反映問題の原因
+- **PenTool**: `calculatePressureLineWidth()`は実装済みだが、動的な線幅変更が機能していない
+- **CanvasManager**: PixiJS Graphicsの`lineStyle()`設定が毎回のストロークで適用されていない
+
+#### C. 破線枠問題
+- **CSS**: `styles.css`のキャンバス境界設定
+- **CanvasManager**: デバッグ用の境界表示設定
+
+## 📋 修正作業計画
+
+### Phase 1: 0.0座標問題修正（最優先）
+
+#### 🔧 作業1-1: CanvasManager修正
+**ファイル**: `managers/canvas-manager.js`
+**参考**: シンボル辞典のCanvasManager座標統合API
+
+**修正内容**:
+```javascript
+// startDrawingWithCoordinateIntegration()メソッド修正
+// 1. Graphics初期化時のmoveTo処理を適切に実行
+// 2. 座標取得後の妥当性確認を追加
+// 3. 描画開始前の状態クリア処理追加
+```
+
+#### 🔧 作業1-2: PenTool修正  
+**ファイル**: `tools/pen-tool.js`
+**参考**: シンボル辞典のPenTool Graphics統合API
+
+**修正内容**:
+```javascript
+// startDrawing()メソッド修正
+// 1. Graphics接続確認の強化
+// 2. moveTo前のクリア処理追加
+// 3. 座標妥当性確認追加
+```
+
+### Phase 2: 筆圧反映修正
+
+#### 🔧 作業2-1: 動的線幅変更修正
+**ファイル**: `tools/pen-tool.js`
+
+**修正内容**:
+```javascript
+// updateStroke()メソッド修正
+// 1. 筆圧による線幅計算の最適化
+// 2. Graphics.lineStyle()の動的更新確認
+// 3. 筆圧変化の閾値設定追加
+```
+
+#### 🔧 作業2-2: CanvasManager連携強化
+**ファイル**: `managers/canvas-manager.js`
+
+**修正内容**:
+```javascript
+// continueDrawingWithCoordinateIntegration()修正
+// 1. 筆圧データの正確な伝達確認
+// 2. Graphics更新タイミング最適化
+```
+
+### Phase 3: 破線枠削除
+
+#### 🔧 作業3-1: CSS修正
+**ファイル**: `css/styles.css`
+
+**修正内容**:
+```css
+/* キャンバス境界の破線削除 */
+/* デバッグ用境界表示の無効化 */
+```
+
+#### 🔧 作業3-2: CanvasManager境界設定修正
+**ファイル**: `managers/canvas-manager.js`
+
+**修正内容**:
+```javascript
+// 境界表示関連の設定削除または無効化
+```
+
+## 🛠️ 実装手順
+
+### Step 1: 問題箇所の特定と分析
+1. **座標処理フロー確認**: PointerEvent → CoordinateManager → CanvasManager → PenTool
+2. **Graphics初期化確認**: attachGraphics()実行タイミングとmoveTo処理
+3. **筆圧データフロー確認**: 筆圧取得から線幅適用までの流れ
+
+### Step 2: 修正実装
+1. **CanvasManager修正**:
+   - `startDrawingWithCoordinateIntegration()`の座標処理修正
+   - Graphics初期化時のクリア処理追加
+   - moveTo前の状態確認強化
+
+2. **PenTool修正**:
+   - `startDrawing()`の初期化処理修正
+   - `updateStroke()`の筆圧反映修正
+   - Graphics操作の最適化
+
+3. **CSS修正**:
+   - キャンバス境界の破線削除
+
+### Step 3: 統合テスト
+1. **基本描画テスト**: 0.0座標問題の解決確認
+2. **筆圧テスト**: 筆圧による線幅変化確認  
+3. **UI表示テスト**: 破線枠削除確認
+
+## 🔍 参考すべきシンボル定義・メソッド
+
+### CoordinateManager (js/utils/coordinate-manager.js)
+- `extractPointerCoordinates(event, rect, app)`: 統一座標抽出
+- `screenToCanvas(screenX, screenY, rect)`: 座標変換
+- `validateCoordinateIntegrity(coordinates)`: 座標妥当性確認
+
+### StateManager (js/utils/state-manager.js) 
+- `updateComponentState(component, state, data)`: 状態更新
+- `updateSystemState(system, state, data)`: システム状態更新
+
+### ErrorManager (js/utils/error-manager.js)
+- `showError(type, message, options)`: エラー表示
+
+### EventBus (js/utils/event-bus.js)
+- `safeEmit(eventType, data)`: 安全なイベント発行
+
+## ✅ 修正完了確認項目
+
+### 機能確認
+- [ ] 0.0座標からの直線が描画されない
+- [ ] ペン描画が正確な位置で開始される
+- [ ] 筆圧による線幅変化が機能する
+- [ ] キャンバス周りの破線が表示されない
+
+### 品質確認
+- [ ] 座標変換の精度が正しい
+- [ ] メモリリークが発生しない
+- [ ] エラー処理が適切に動作する
+- [ ] 統一システムとの連携が正常
+
+### パフォーマンス確認
+- [ ] 描画パフォーマンスが劣化しない
+- [ ] 筆圧処理のオーバーヘッドが許容範囲
+- [ ] CoordinateManagerの処理効率が良好
+
+## 💡 注意事項
+
+### 1. 既存コードの保持
+- 既存の統一システム統合を維持
+- ConfigManager、StateManager、EventBus、ErrorManagerとの連携を保持
+- レガシー互換性を維持
+
+### 2. 座標系の統一
+- CoordinateManagerを中心とした座標処理の集約を維持
+- 座標変換処理の重複を避ける
+- Phase2レイヤーシステムへの対応を考慮
+
+### 3. PixiJS v8対応の準備
+- コメントアウトで将来の変更箇所を明記
+- 非推奨APIの使用を最小限に抑制
+
+このプランに基づいて、問題箇所を特定し修正していくことで、ペン描画の不具合を解決できます。
