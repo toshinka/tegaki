@@ -22,7 +22,7 @@ class PenTool extends Tegaki.AbstractTool {
         // デフォルト設定でAbstractToolを初期化
         super('pen', {
             size: 3,
-            color: '#000000',
+            color: '#800000', // ふたばマルーン
             opacity: 1.0,
             pressureSensitive: true,
             smoothing: 0.5,
@@ -83,7 +83,11 @@ class PenTool extends Tegaki.AbstractTool {
 
             console.log(`[PenTool] Stroke started at (${point.x.toFixed(2)}, ${point.y.toFixed(2)})`);
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'PenTool._onStrokeStart');
+            if (Tegaki.ErrorManagerInstance) {
+                Tegaki.ErrorManagerInstance.handle(error, 'PenTool._onStrokeStart');
+            } else {
+                console.error('[PenTool._onStrokeStart]', error);
+            }
         }
     }
 
@@ -110,7 +114,11 @@ class PenTool extends Tegaki.AbstractTool {
                 this._flushBufferToGraphics();
             }
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'PenTool._onPointAdd');
+            if (Tegaki.ErrorManagerInstance) {
+                Tegaki.ErrorManagerInstance.handle(error, 'PenTool._onPointAdd');
+            } else {
+                console.error('[PenTool._onPointAdd]', error);
+            }
         }
     }
 
@@ -134,7 +142,11 @@ class PenTool extends Tegaki.AbstractTool {
 
             console.log(`[PenTool] Stroke ended with ${this.currentStroke.points.length} points`);
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'PenTool._onStrokeEnd');
+            if (Tegaki.ErrorManagerInstance) {
+                Tegaki.ErrorManagerInstance.handle(error, 'PenTool._onStrokeEnd');
+            } else {
+                console.error('[PenTool._onStrokeEnd]', error);
+            }
         }
     }
 
@@ -191,7 +203,11 @@ class PenTool extends Tegaki.AbstractTool {
             Object.assign(this.penOptions, options);
             console.log('[PenTool] Pen options updated:', this.penOptions);
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'PenTool.setPenOptions');
+            if (Tegaki.ErrorManagerInstance) {
+                Tegaki.ErrorManagerInstance.handle(error, 'PenTool.setPenOptions');
+            } else {
+                console.error('[PenTool.setPenOptions]', error);
+            }
         }
     }
 
@@ -284,7 +300,11 @@ class PenTool extends Tegaki.AbstractTool {
                 this.drawingBuffer = [];
             }
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'PenTool._flushBufferToGraphics');
+            if (Tegaki.ErrorManagerInstance) {
+                Tegaki.ErrorManagerInstance.handle(error, 'PenTool._flushBufferToGraphics');
+            } else {
+                console.error('[PenTool._flushBufferToGraphics]', error);
+            }
         }
     }
 
@@ -377,7 +397,11 @@ class PenTool extends Tegaki.AbstractTool {
             // 現在のGraphicsに合成
             this.currentStroke.graphics.addChild(taperGraphics);
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'PenTool._applyEndTapering');
+            if (Tegaki.ErrorManagerInstance) {
+                Tegaki.ErrorManagerInstance.handle(error, 'PenTool._applyEndTapering');
+            } else {
+                console.error('[PenTool._applyEndTapering]', error);
+            }
         }
     }
 
@@ -392,28 +416,14 @@ class PenTool extends Tegaki.AbstractTool {
 
         // 描画完了の確定（重要な処理）
         // PixiJS v8対応準備：Graphics.finalize() 相当処理
-        this.currentStroke.graphics.endFill();
+        try {
+            this.currentStroke.graphics.endFill();
+        } catch (error) {
+            // endFill()が存在しない場合はスキップ
+            console.log('[PenTool] endFill() not available, skipping');
+        }
         
         console.log('[PenTool] Graphics finalized');
-    }
-
-    /**
-     * 速度ベース線幅調整計算
-     * @private
-     */
-    _calculateVelocityAdjustment(currentPoint, previousPoint) {
-        if (!previousPoint || !this.penOptions.velocitySmoothing) {
-            return 1.0;
-        }
-
-        const distance = this._calculateDistance(currentPoint, previousPoint);
-        const timeDelta = currentPoint.timestamp - previousPoint.timestamp;
-        const velocity = timeDelta > 0 ? distance / timeDelta : 0;
-
-        // 速度が速いほど線を細く（0.5〜1.5の範囲）
-        const velocityFactor = Math.max(0.5, Math.min(1.5, 1.0 - velocity * 0.01));
-        
-        return velocityFactor;
     }
 
     /**
@@ -448,13 +458,8 @@ Tegaki.PenTool = PenTool;
 // 初期化レジストリ方式（Phase1.4stepEX準拠）
 Tegaki._registry = Tegaki._registry || [];
 Tegaki._registry.push(() => {
-    Tegaki.PenToolInstance = new PenTool();
-    console.log('[PenTool] Registered to Tegaki namespace');
+    Tegaki.PenToolInstance = new Tegaki.PenTool();
+    console.log('[PenTool] ✅ Tegaki.PenToolInstance 初期化完了');
 });
 
-// 🔄 PixiJS v8対応準備コメント
-// - PIXI.Graphics.lineStyle() → PIXI.Graphics.stroke() 移行準備
-// - Graphics.endFill() → Graphics.finalize() 移行準備
-// - 座標制御アルゴリズムはv8互換設計
-
-console.log('[PenTool] Loaded and ready for registry initialization');
+console.log('[PenTool] ✅ Tegaki名前空間統一・レジストリ登録完了');

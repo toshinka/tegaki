@@ -655,18 +655,11 @@ Tegaki.TegakiApplication = TegakiApplication;
 
 /**
  * DOM読み込み完了後の統合初期化（改修手順書準拠）
+ * 🚫 重複レジストリ実行を防止
  */
 document.addEventListener("DOMContentLoaded", async () => {
     try {
         console.log('📋 DOMContentLoaded - Tegaki Phase1.4stepEX 起動開始');
-        
-        // 改修手順書テンプレート：根幹Manager初期化レジストリ実行
-        if (Tegaki._registry) {
-            console.log('🔧 根幹Manager初期化レジストリ実行中...');
-            Tegaki._registry.forEach(init => init());
-            delete Tegaki._registry;
-            console.log('✅ 根幹Manager初期化レジストリ実行完了');
-        }
         
         // アプリケーション統合初期化
         const app = new Tegaki.TegakiApplication();
