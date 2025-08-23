@@ -1,0 +1,216 @@
+==========================
+🛠 改修手順書（Phase1.4stepEX）
+==========================
+
+目的:
+- グローバル依存の解消 → window.Tegaki 名前空間に統一
+- ロード順序依存の緩和 → 初期化レジストリ _registry 方式を導入
+- 構文完整性の担保 → catch 文修正と未定義参照対策
+
+対象ファイル:
+- js/utils/error-manager.js
+- js/utils/config-manager.js
+- js/utils/state-manager.js
+- js/utils/event-bus.js
+- js/utils/coordinate-manager.js
+- js/utils/icon-manager.js
+- js/utils/performance.js
+- managers/*.js
+- tools/abstract-tool.js
+- tools/pen-tool.js
+- tools/eraser-tool.js
+- js/main.js
+- index.html
+
+==========================
+ファイル雛形ルール
+==========================
+1. 各ファイルの冒頭に:
+   window.Tegaki = window.Tegaki || {};
+
+2. クラス定義は:
+   class ClassName { ... }
+   Tegaki.ClassName = ClassName;
+
+3. インスタンス化は初期化レジストリへ:
+   Tegaki._registry = Tegaki._registry || [];
+   Tegaki._registry.push(() => {
+     Tegaki.ClassNameInstance = new Tegaki.ClassName();
+   });
+
+==========================
+具体的な修正例
+==========================
+
+(1) error-manager.js
+--------------------------
+window.Tegaki = window.Tegaki || {};
+
+class ErrorManager {
+  handle(error) { console.error("[ErrorManager]", error); }
+  getLastError() { return this.lastError; }
+}
+Tegaki.ErrorManager = ErrorManager;
+
+Tegaki._registry = Tegaki._registry || [];
+Tegaki._registry.push(() => {
+  Tegaki.ErrorManagerInstance = new Tegaki.ErrorManager();
+});
+
+(2) config-manager.js
+--------------------------
+window.Tegaki = window.Tegaki || {};
+
+class ConfigManager {
+  getDebugInfo() { return { version: "Phase1.4EX", mode: "dev" }; }
+}
+Tegaki.ConfigManager = ConfigManager;
+
+Tegaki._registry = Tegaki._registry || [];
+Tegaki._registry.push(() => {
+  Tegaki.ConfigManagerInstance = new Tegaki.ConfigManager();
+});
+
+(3) abstract-tool.js
+--------------------------
+window.Tegaki = window.Tegaki || {};
+
+class AbstractTool {
+  onPointerDown() {}
+  onPointerMove() {}
+  onPointerUp() {}
+}
+Tegaki.AbstractTool = AbstractTool;
+
+// catch 修正済み
+try {
+  // ...
+} catch (e) {
+  // エラー処理
+}
+
+(4) pen-tool.js
+--------------------------
+window.Tegaki = window.Tegaki || {};
+
+class PenTool extends Tegaki.AbstractTool {
+  onPointerDown() {}
+  onPointerMove() {}
+  onPointerUp() {}
+  drawLine() {}
+}
+Tegaki.PenTool = PenTool;
+
+Tegaki._registry = Tegaki._registry || [];
+Tegaki._registry.push(() => {
+  Tegaki.PenToolInstance = new Tegaki.PenTool();
+});
+
+(5) eraser-tool.js
+--------------------------
+window.Tegaki = window.Tegaki || {};
+
+class EraserTool extends Tegaki.AbstractTool {
+  onPointerDown() {}
+  onPointerMove() {}
+  onPointerUp() {}
+}
+Tegaki.EraserTool = EraserTool;
+
+Tegaki._registry = Tegaki._registry || [];
+Tegaki._registry.push(() => {
+  Tegaki.EraserToolInstance = new Tegaki.EraserTool();
+});
+
+(6) main.js
+--------------------------
+window.Tegaki = window.Tegaki || {};
+
+class TegakiApplication {
+  async initialize() {
+    this.initializeCanvasSystem();
+    this.registerTools();
+    this.bindEvents();
+  }
+
+  initializeCanvasSystem() {
+    const container = document.querySelector("#canvas-container");
+    if (!container) throw new Error("Canvas container (#canvas-container) が見つかりません");
+    // CanvasManager を利用
+    Tegaki.CanvasManagerInstance.initialize(container);
+  }
+
+  registerTools() {
+    Tegaki.ToolManagerInstance.setTool("pen");
+  }
+
+  bindEvents() {
+    // 例: pointerdown を EventBus 経由で通知
+    container.addEventListener("pointerdown", e => {
+      Tegaki.EventBusInstance.emit("pointerdown", e);
+    });
+  }
+}
+Tegaki.TegakiApplication = TegakiApplication;
+
+document.addEventListener("DOMContentLoaded", async () => {
+  try {
+    if (Tegaki._registry) {
+      Tegaki._registry.forEach(init => init());
+      delete Tegaki._registry;
+    }
+    const app = new Tegaki.TegakiApplication();
+    await app.initialize();
+    Tegaki.AppInstance = app;
+  } catch (e) {
+    if (Tegaki.ErrorManagerInstance) {
+      Tegaki.ErrorManagerInstance.handle(e);
+    } else {
+      console.error("Fatal Error:", e);
+    }
+  }
+});
+
+(7) index.html
+--------------------------
+<body>
+  <div id="canvas-container"></div>
+
+  <!-- utils -->
+  <script src="js/utils/error-manager.js"></script>
+  <script src="js/utils/config-manager.js"></script>
+  <script src="js/utils/state-manager.js"></script>
+  <script src="js/utils/event-bus.js"></script>
+  <script src="js/utils/coordinate-manager.js"></script>
+  <script src="js/utils/icon-manager.js"></script>
+  <script src="js/utils/performance.js"></script>
+
+  <!-- managers -->
+  <script src="managers/canvas-manager.js"></script>
+  <script src="managers/tool-manager.js"></script>
+  <script src="managers/memory-manager.js"></script>
+  <script src="managers/settings-manager.js"></script>
+  <script src="managers/boundary-manager.js"></script>
+  <script src="managers/ui-manager.js"></script>
+
+  <!-- tools -->
+  <script src="tools/abstract-tool.js"></script>
+  <script src="tools/pen-tool.js"></script>
+  <script src="tools/eraser-tool.js"></script>
+
+  <!-- app core -->
+  <script src="js/app-core.js"></script>
+  <script src="js/main.js"></script>
+</body>
+
+==========================
+利用するシンボル一覧
+==========================
+Tegaki.ErrorManagerInstance.handle(error)
+Tegaki.ConfigManagerInstance.getDebugInfo()
+Tegaki.StateManagerInstance.getState(key), setState(key,val)
+Tegaki.EventBusInstance.on(event,cb), emit(event,data)
+Tegaki.CanvasManagerInstance.initialize(container), addLayer(name)
+Tegaki.ToolManagerInstance.setTool(name), apply(event)
+Tegaki.PenToolInstance.onPointerDown(), onPointerMove()
+Tegaki.EraserToolInstance.onPointerDown(), onPointerMove()
