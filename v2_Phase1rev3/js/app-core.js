@@ -1,22 +1,29 @@
 /**
- * 🎨 AppCore (Phase1完全修復版 - 依存性問題解決版)
+ * 🎨 AppCore (Phase1警告修復 + Phase2準備版)
  * 🎯 PHASE1修復内容:
  * 1. CanvasManager初期化引数統一修復
  * 2. CoordinateManager座標統合完全修復  
  * 3. ErrorManager + PopupManager統合修復
  * 4. EventBus safeEmit完全活用
  * 5. 初期化順序最適化
- * 6. 統一システム依存性問題解決
+ * 6. ✨ ConfigManager統合警告修復
+ * 7. ✨ AppCore提供不足警告修復
  * 
- * 🔧 キャンバス出現修復: CanvasManager.initialize(options)形式
+ * 🚀 PHASE2準備内容:
+ * 1. AbstractTool統合インターフェース対応
+ * 2. 責務分離完全強化（Tool → EventBus → CanvasManager）
+ * 3. StateManager描画履歴統合準備
+ * 4. Phase2移行診断機能強化
+ * 
+ * 🔧 警告修復: ConfigManager統合・AppCore提供完全対応
  * 📐 座標バグ修復: 0,0直線問題完全解消
  * 🚨 ポップアップ修復: ErrorManager-PopupManager統合
  * 🔄 依存性修復: 初期化順序による循環問題解決
  * 
  * 📋 参考定義:
- * - 手順書: Phase 1: 緊急修復（基本動作復旧）
+ * - 手順書: Phase 1: 緊急修復（基本動作復旧） → Phase 2: 責務分離・理想構造化
  * - ルールブック: 1.1 責務分離の絶対原則
- * - シンボル辞典: 統一システムAPI群
+ * - シンボル辞典: 統一システムAPI群・AbstractTool統一インターフェース
  */
 
 // Tegaki名前空間初期化
@@ -25,6 +32,12 @@ window.Tegaki = window.Tegaki || {};
 class AppCore {
     constructor() {
         // 🔧 修正: 統一システム依存性確認を初期化時に延期
+        this.configManager = null;
+        this.errorManager = null;
+        this.stateManager = null;
+        this.eventBus = null;
+        
+        this.initializeUnifiedSystemReferences();
         this.initializeConfig();
         
         // 基本プロパティ
@@ -38,7 +51,7 @@ class AppCore {
         this.toolManager = null;
         this.boundaryManager = null;
         this.uiManager = null;
-        this.popupManager = null; // 新追加
+        this.popupManager = null;
         
         // 状態管理
         this.isInitializing = false;
@@ -53,94 +66,100 @@ class AppCore {
             phase4: false  // 完了処理
         };
         
-        console.log('🎨 AppCore (Phase1修復版) インスタンス作成完了');
+        // 🚀 PHASE2準備: 責務分離診断
+        this.responsibilityMetrics = {
+            canvasManagerLayerOnly: false,
+            toolAbstractImplementation: false,
+            eventBusDecoupling: false,
+            stateManagerIntegration: false
+        };
+        
+        console.log('🎨 AppCore (Phase1警告修復 + Phase2準備版) インスタンス作成完了');
     }
     
     /**
-     * 🔧 修正: 統一システム依存性確認（初期化時実行版）
-     * コンストラクター時ではなく、初期化時に実行して循環問題を回避
+     * ✨ 新機能: 統一システム参照初期化（警告修復）
      */
-    validateUnifiedSystems() {
-        console.log('🔍 統一システム依存性確認開始...');
+    initializeUnifiedSystemReferences() {
+        // 優先順序: Tegaki名前空間 → グローバル → null
+        this.configManager = window.Tegaki?.ConfigManagerInstance || window.ConfigManager || null;
+        this.errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager || null;
+        this.stateManager = window.Tegaki?.StateManagerInstance || window.StateManager || null;
+        this.eventBus = window.Tegaki?.EventBusInstance || window.EventBus || null;
         
-        // Tegaki名前空間での確認を優先
-        const requiredSystems = [
-            { name: 'ConfigManager', paths: ['window.Tegaki.ConfigManagerInstance', 'window.ConfigManager'] },
-            { name: 'ErrorManager', paths: ['window.Tegaki.ErrorManagerInstance', 'window.ErrorManager'] },
-            { name: 'StateManager', paths: ['window.Tegaki.StateManagerInstance', 'window.StateManager'] },
-            { name: 'EventBus', paths: ['window.Tegaki.EventBusInstance', 'window.EventBus'] }
-        ];
+        const availableSystems = [];
+        if (this.configManager) availableSystems.push('ConfigManager');
+        if (this.errorManager) availableSystems.push('ErrorManager');
+        if (this.stateManager) availableSystems.push('StateManager');
+        if (this.eventBus) availableSystems.push('EventBus');
         
-        const missing = [];
-        const available = {};
+        console.log('🔧 統一システム参照初期化完了:', availableSystems.join(', '));
         
-        for (const system of requiredSystems) {
-            let found = false;
-            for (const path of system.paths) {
-                const parts = path.split('.');
-                let obj = window;
-                for (const part of parts.slice(1)) {
-                    obj = obj?.[part];
-                }
-                if (obj) {
-                    available[system.name] = path;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                missing.push(system.name);
-            }
-        }
-        
-        if (missing.length > 0) {
-            console.warn('⚠️ 統一システム未初期化:', missing.join(', '));
-            console.log('📊 利用可能システム:', available);
-            
-            // 致命的エラーとして扱わず、フォールバック対応
-            if (missing.length >= 3) {
-                throw new Error(`AppCore: 統一システム依存性エラー: ${missing.join(', ')}`);
-            } else {
-                console.warn('🛡️ 一部システム未初期化だが、フォールバック機能で継続');
-            }
+        if (availableSystems.length === 4) {
+            console.log('✅ 全統一システム利用可能');
         } else {
-            console.log('✅ AppCore: 統一システム依存性確認完了');
-            console.log('📊 利用システム:', available);
+            console.warn('⚠️ 一部統一システム未利用:', 4 - availableSystems.length, 'システム不足');
         }
-        
-        return { missing, available };
     }
     
     /**
-     * 設定初期化（修復版 - フォールバック強化）
+     * ✨ 設定初期化（警告修復版 - ConfigManager完全統合）
      */
     initializeConfig() {
         try {
-            // ConfigManagerがある場合は利用
-            const configManager = window.Tegaki?.ConfigManagerInstance || window.ConfigManager;
-            
-            if (configManager && typeof configManager.getCanvasConfig === 'function') {
-                const canvasConfig = configManager.getCanvasConfig();
+            if (this.configManager && typeof this.configManager.getCanvasConfig === 'function') {
+                const canvasConfig = this.configManager.getCanvasConfig();
                 this.canvasWidth = canvasConfig.width;
                 this.canvasHeight = canvasConfig.height;
                 this.backgroundColor = canvasConfig.backgroundColor;
                 
                 // 境界描画設定
-                this.boundaryConfig = configManager.get?.('canvas.boundary') || {
+                this.boundaryConfig = this.configManager.get?.('canvas.boundary') || {
                     enabled: true,
                     margin: 20,
                     trackingEnabled: true
                 };
                 
-                console.log('✅ AppCore: ConfigManager設定初期化完了');
+                console.log('✅ ConfigManager設定初期化完了（警告修復版）');
+                
+                // Phase2準備: 責務分離設定
+                this.initializePhase2Config();
+                
             } else {
-                console.warn('⚠️ ConfigManager未利用 - フォールバック設定使用');
+                console.warn('⚠️ ConfigManager未利用 - フォールバック設定使用（要確認）');
                 this.setFallbackConfig();
             }
             
         } catch (error) {
             console.warn('⚠️ AppCore: 設定初期化で問題発生、フォールバック使用:', error.message);
             this.setFallbackConfig();
+        }
+    }
+    
+    /**
+     * 🚀 Phase2準備: 責務分離設定初期化
+     */
+    initializePhase2Config() {
+        try {
+            // AbstractTool設定
+            this.toolConfig = this.configManager?.get('tools') || {
+                abstractToolEnabled: true,
+                coordinateUnification: true,
+                eventBusIntegration: true
+            };
+            
+            // 責務分離設定
+            this.responsibilityConfig = this.configManager?.get('responsibility') || {
+                canvasManagerLayerOnly: true,
+                toolDrawingAuthority: true,
+                eventBusDecoupling: true,
+                stateManagerCentralization: true
+            };
+            
+            console.log('🚀 Phase2責務分離設定初期化完了');
+            
+        } catch (error) {
+            console.warn('⚠️ Phase2設定初期化エラー:', error.message);
         }
     }
     
@@ -152,29 +171,40 @@ class AppCore {
         this.canvasHeight = 400;
         this.backgroundColor = 0xf0e0d6;
         this.boundaryConfig = { enabled: true, margin: 20, trackingEnabled: true };
-        console.log('🛡️ フォールバック設定適用完了');
+        
+        // Phase2準備用フォールバック
+        this.toolConfig = {
+            abstractToolEnabled: true,
+            coordinateUnification: true,
+            eventBusIntegration: true
+        };
+        this.responsibilityConfig = {
+            canvasManagerLayerOnly: true,
+            toolDrawingAuthority: true,
+            eventBusDecoupling: true,
+            stateManagerCentralization: true
+        };
+        
+        console.log('🛡️ フォールバック設定適用完了（Phase2準備対応）');
     }
     
     /**
-     * 🔧 PHASE1修復: 完全修復版初期化メソッド（依存性問題解決版）
-     * アプリケーション初期化（async修正版・Phase1修復統合）
+     * 🔧 PHASE1修復: 完全修復版初期化メソッド（警告修復版）
+     * アプリケーション初期化（ConfigManager統合強化版）
      */
     async initialize() {
         try {
-            console.log('🚀 AppCore (Phase1修復版) 初期化開始...');
+            console.log('🚀 AppCore (Phase1警告修復 + Phase2準備版) 初期化開始...');
             this.isInitializing = true;
             
-            // 🔧 修正: 統一システム依存性確認を初期化時に実行
-            const systemCheck = this.validateUnifiedSystems();
-            if (systemCheck.missing.length > 0) {
-                console.warn('⚠️ 一部統一システム未初期化、継続実行:', systemCheck.missing);
-            }
+            // 統一システム最新参照更新（初期化時点での再確認）
+            this.updateUnifiedSystemReferences();
             
             // Phase 1: 基盤システム初期化（修復版）
             await this.initializeBasicSystems();
             this.initializationProgress.phase1 = true;
             
-            // Phase 2: Manager初期化（完全修復版）
+            // Phase 2: Manager初期化（完全修復版・警告解消）
             await this.initializeManagersWithCompletefix();
             this.initializationProgress.phase2 = true;
             
@@ -186,11 +216,46 @@ class AppCore {
             await this.completeInitializationWithFix();
             this.initializationProgress.phase4 = true;
             
-            console.log('✅ AppCore (Phase1修復版) 初期化完了');
+            // 🚀 Phase2準備: 責務分離診断実行
+            this.runPhase2ReadinessDiagnostic();
+            
+            console.log('✅ AppCore (Phase1警告修復 + Phase2準備版) 初期化完了');
             
         } catch (error) {
             console.error('❌ AppCore 初期化失敗:', error);
             await this.handleInitializationError(error);
+        }
+    }
+    
+    /**
+     * ✨ 統一システム参照更新（初期化時最新化）
+     */
+    updateUnifiedSystemReferences() {
+        const before = {
+            configManager: !!this.configManager,
+            errorManager: !!this.errorManager,
+            stateManager: !!this.stateManager,
+            eventBus: !!this.eventBus
+        };
+        
+        this.initializeUnifiedSystemReferences();
+        
+        const after = {
+            configManager: !!this.configManager,
+            errorManager: !!this.errorManager,
+            stateManager: !!this.stateManager,
+            eventBus: !!this.eventBus
+        };
+        
+        const changes = [];
+        Object.keys(before).forEach(key => {
+            if (before[key] !== after[key]) {
+                changes.push(`${key}: ${before[key]} → ${after[key]}`);
+            }
+        });
+        
+        if (changes.length > 0) {
+            console.log('🔄 統一システム参照更新:', changes.join(', '));
         }
     }
     
@@ -228,12 +293,13 @@ class AppCore {
         console.log('📐 CoordinateManager初期化開始（修復版）...');
         
         try {
-            const CoordinateManagerCtor = window.Tegaki?.CoordinateManagerInstance?.constructor || 
-                                         window.CoordinateManager;
+            const CoordinateManagerCtor = window.Tegaki?.CoordinateManager || window.CoordinateManager;
             
             if (CoordinateManagerCtor) {
-                // インスタンスが既に存在する場合はそれを利用
-                this.coordinateManager = window.Tegaki?.CoordinateManagerInstance || new CoordinateManagerCtor();
+                // インスタンス優先取得
+                this.coordinateManager = window.Tegaki?.CoordinateManagerInstance || 
+                                         window.CoordinateManagerInstance ||
+                                         new CoordinateManagerCtor();
                 
                 // キャンバスサイズ情報を設定
                 if (typeof this.coordinateManager.updateCanvasSize === 'function') {
@@ -253,22 +319,23 @@ class AppCore {
             
         } catch (error) {
             console.error('❌ CoordinateManager初期化失敗:', error);
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            errorManager?.showError('warning', `CoordinateManager初期化エラー: ${error.message}`, {
-                context: 'AppCore.initializeCoordinateManager'
-            });
+            if (this.errorManager?.showError) {
+                this.errorManager.showError('warning', `CoordinateManager初期化エラー: ${error.message}`, {
+                    context: 'AppCore.initializeCoordinateManager'
+                });
+            }
             this.coordinateManager = null;
         }
     }
     
     /**
-     * 🔧 PHASE1修復: Manager初期化（完全修復版）
+     * ✨ PHASE1修復: Manager初期化（警告修復版・AppCore提供完全対応）
      */
     async initializeManagersWithCompletefix() {
-        console.log('🔧 Manager統合初期化（完全修復版）...');
+        console.log('🔧 Manager統合初期化（警告修復版）...');
         
         try {
-            // Step 1: CanvasManager初期化（修復版引数統一）
+            // Step 1: CanvasManager初期化（警告修復版・AppCore提供完全対応）
             await this.initializeCanvasManagerFixed();
             
             // Step 2: PopupManager初期化（新追加）
@@ -286,24 +353,26 @@ class AppCore {
             // Step 6: UIManager初期化
             await this.initializeUIManager();
             
-            console.log('✅ Manager統合初期化完了（完全修復版）');
+            // 🚀 Phase2準備: AbstractTool基底システム準備
+            await this.prepareAbstractToolSystem();
+            
+            console.log('✅ Manager統合初期化完了（警告修復版）');
             
         } catch (error) {
-            console.error('❌ Manager初期化エラー:', error);
+            console.error('❌ Manager初理化エラー:', error);
             throw error;
         }
     }
     
     /**
-     * 🔧 PHASE1修復: CanvasManager初期化（修復版・引数統一）
+     * ✨ PHASE1修復: CanvasManager初期化（AppCore提供警告修復版）
      */
     async initializeCanvasManagerFixed() {
         try {
-            console.log('🎨 CanvasManager初期化（修復版）...');
+            console.log('🎨 CanvasManager初期化（AppCore提供警告修復版）...');
             
             // CanvasManagerクラス取得
-            const CanvasManagerCtor = window.Tegaki?.CanvasManager || 
-                                     window.CanvasManager;
+            const CanvasManagerCtor = window.Tegaki?.CanvasManager || window.CanvasManager;
 
             if (!CanvasManagerCtor) {
                 throw new Error('CanvasManagerクラスが利用できません');
@@ -321,13 +390,16 @@ class AppCore {
             // 🔧 修復: CanvasManager初期化（引数統一）
             this.canvasManager = new CanvasManagerCtor();
             
-            // 🔧 修復: initialize(options)形式で呼び出し
+            // ✨ 警告修復: AppCore完全提供・ConfigManager統合
             const initSuccess = await this.canvasManager.initialize({
-                appCore: this,
+                appCore: this, // ← AppCore完全提供（警告修復）
                 canvasElement: canvasElement,
                 config: {
                     backgroundColor: this.backgroundColor,
-                    antialias: true
+                    antialias: true,
+                    configManager: this.configManager, // ← ConfigManager統合（警告修復）
+                    width: this.canvasWidth,
+                    height: this.canvasHeight
                 }
             });
 
@@ -341,15 +413,16 @@ class AppCore {
                 console.log('🎨 CanvasManager座標統合状態:', integrationState);
             }
 
-            console.log('✅ CanvasManager初期化完了（修復版）');
+            console.log('✅ CanvasManager初期化完了（AppCore提供警告修復版）');
 
         } catch (error) {
             console.error('❌ CanvasManager初期化エラー:', error);
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            errorManager?.showError('error', `CanvasManager初期化エラー: ${error.message}`, {
-                context: 'AppCore.initializeCanvasManagerFixed',
-                showReload: true
-            });
+            if (this.errorManager?.showError) {
+                this.errorManager.showError('error', `CanvasManager初期化エラー: ${error.message}`, {
+                    context: 'AppCore.initializeCanvasManagerFixed',
+                    showReload: true
+                });
+            }
             this.canvasManager = null;
         }
     }
@@ -375,10 +448,11 @@ class AppCore {
             
         } catch (error) {
             console.error('❌ PopupManager初期化エラー:', error);
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            errorManager?.showError('warning', `PopupManager初期化エラー: ${error.message}`, {
-                context: 'AppCore.initializePopupManager'
-            });
+            if (this.errorManager?.showError) {
+                this.errorManager.showError('warning', `PopupManager初期化エラー: ${error.message}`, {
+                    context: 'AppCore.initializePopupManager'
+                });
+            }
             this.popupManager = null;
         }
     }
@@ -390,13 +464,11 @@ class AppCore {
         try {
             console.log('🚨 ErrorManager-PopupManager統合...');
             
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            
-            if (errorManager && this.popupManager) {
+            if (this.errorManager && this.popupManager) {
                 // ErrorManagerのPopupManager統合を初期化
                 let integrationSuccess = false;
-                if (typeof errorManager.initializePopupIntegration === 'function') {
-                    integrationSuccess = errorManager.initializePopupIntegration(this.popupManager);
+                if (typeof this.errorManager.initializePopupIntegration === 'function') {
+                    integrationSuccess = this.errorManager.initializePopupIntegration(this.popupManager);
                 } else {
                     console.warn('⚠️ ErrorManager.initializePopupIntegration メソッドなし');
                 }
@@ -407,7 +479,7 @@ class AppCore {
                     // 統合テスト（オプション）
                     if (window.location.search.includes('debug=true')) {
                         setTimeout(() => {
-                            errorManager.showWarning('統合テスト: ポップアップ表示確認', {
+                            this.errorManager.showWarning('統合テスト: ポップアップ表示確認', {
                                 context: 'AppCore.integrateErrorManagerWithPopup',
                                 additionalInfo: 'これはテストメッセージです'
                             });
@@ -459,10 +531,11 @@ class AppCore {
             
         } catch (error) {
             console.error('❌ ToolManager初期化エラー:', error);
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            errorManager?.showError('warning', `ToolManager初期化エラー: ${error.message}`, {
-                context: 'AppCore.initializeToolManager'
-            });
+            if (this.errorManager?.showError) {
+                this.errorManager.showError('warning', `ToolManager初期化エラー: ${error.message}`, {
+                    context: 'AppCore.initializeToolManager'
+                });
+            }
             this.toolManager = null;
         }
     }
@@ -497,10 +570,11 @@ class AppCore {
             
         } catch (error) {
             console.error('❌ BoundaryManager初期化エラー:', error);
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            errorManager?.showError('warning', `BoundaryManager初期化エラー: ${error.message}`, {
-                context: 'AppCore.initializeBoundaryManager'
-            });
+            if (this.errorManager?.showError) {
+                this.errorManager.showError('warning', `BoundaryManager初期化エラー: ${error.message}`, {
+                    context: 'AppCore.initializeBoundaryManager'
+                });
+            }
             this.boundaryManager = null;
         }
     }
@@ -525,11 +599,49 @@ class AppCore {
             
         } catch (error) {
             console.error('❌ UIManager初期化エラー:', error);
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            errorManager?.showError('warning', `UIManager初期化エラー: ${error.message}`, {
-                context: 'AppCore.initializeUIManager'
-            });
+            if (this.errorManager?.showError) {
+                this.errorManager.showError('warning', `UIManager初期化エラー: ${error.message}`, {
+                    context: 'AppCore.initializeUIManager'
+                });
+            }
             this.uiManager = null;
+        }
+    }
+
+    /**
+     * 🚀 Phase2準備: AbstractTool基底システム準備
+     */
+    async prepareAbstractToolSystem() {
+        try {
+            console.log('🚀 AbstractTool基底システム準備...');
+            
+            // AbstractTool可用性確認
+            const AbstractToolCtor = window.Tegaki?.AbstractTool || window.AbstractTool;
+            
+            if (AbstractToolCtor) {
+                console.log('✅ AbstractTool基底クラス利用可能');
+                
+                // Tool統合インターフェース準備
+                this.toolIntegrationInterface = {
+                    coordinateManager: this.coordinateManager,
+                    canvasManager: this.canvasManager,
+                    eventBus: this.eventBus,
+                    stateManager: this.stateManager
+                };
+                
+                // Phase2責務分離メトリクス更新
+                this.responsibilityMetrics.toolAbstractImplementation = true;
+                this.responsibilityMetrics.eventBusDecoupling = !!this.eventBus;
+                
+                console.log('✅ AbstractTool基底システム準備完了');
+            } else {
+                console.warn('⚠️ AbstractTool基底クラス未利用 - Phase2準備未完了');
+                this.responsibilityMetrics.toolAbstractImplementation = false;
+            }
+            
+        } catch (error) {
+            console.error('❌ AbstractTool基底システム準備エラー:', error);
+            this.responsibilityMetrics.toolAbstractImplementation = false;
         }
     }
 
@@ -546,6 +658,9 @@ class AppCore {
             // PixiJS境界システム統合
             this.initializePixiBoundarySystem();
             
+            // 🚀 Phase2準備: EventBus疎結合設定
+            this.initializeEventBusDecoupling();
+            
             // 初期化検証
             this.verifyInitialization();
             
@@ -558,6 +673,51 @@ class AppCore {
     }
 
     /**
+     * 🚀 Phase2準備: EventBus疎結合設定
+     */
+    initializeEventBusDecoupling() {
+        try {
+            if (!this.eventBus?.on) {
+                console.warn('⚠️ EventBus利用不可 - Phase2疎結合準備スキップ');
+                return;
+            }
+            
+            // Tool → EventBus → CanvasManager フロー準備
+            this.eventBus.on('tool.drawing.start', (data) => {
+                if (this.canvasManager && typeof this.canvasManager.handleDrawingStart === 'function') {
+                    this.canvasManager.handleDrawingStart(data);
+                }
+            });
+            
+            this.eventBus.on('tool.drawing.continue', (data) => {
+                if (this.canvasManager && typeof this.canvasManager.handleDrawingContinue === 'function') {
+                    this.canvasManager.handleDrawingContinue(data);
+                }
+            });
+            
+            this.eventBus.on('tool.drawing.end', (data) => {
+                if (this.canvasManager && typeof this.canvasManager.handleDrawingEnd === 'function') {
+                    this.canvasManager.handleDrawingEnd(data);
+                }
+            });
+            
+            // StateManager履歴管理準備
+            this.eventBus.on('drawing.completed', (data) => {
+                if (this.stateManager && typeof this.stateManager.recordStroke === 'function') {
+                    this.stateManager.recordStroke(data);
+                }
+            });
+            
+            console.log('✅ EventBus疎結合設定完了 - Phase2準備済み');
+            this.responsibilityMetrics.eventBusDecoupling = true;
+            
+        } catch (error) {
+            console.error('❌ EventBus疎結合設定エラー:', error);
+            this.responsibilityMetrics.eventBusDecoupling = false;
+        }
+    }
+
+    /**
      * 🔧 PHASE1修復: 完了処理
      */
     async completeInitializationWithFix() {
@@ -566,15 +726,15 @@ class AppCore {
             this.initializationComplete = true;
             
             // EventBus safeEmit活用
-            const eventBus = window.Tegaki?.EventBusInstance || window.EventBus;
-            if (eventBus?.safeEmit) {
-                eventBus.safeEmit('appCore.initialized', {
+            if (this.eventBus?.safeEmit) {
+                this.eventBus.safeEmit('appCore.initialized', {
                     success: true,
                     components: this.getInitializationStats(),
                     progress: this.initializationProgress,
                     coordinateManagerIntegrated: !!this.coordinateManager,
                     canvasManagerIntegrated: !!this.canvasManager,
                     popupManagerIntegrated: !!this.popupManager,
+                    phase2Readiness: this.responsibilityMetrics,
                     timestamp: Date.now()
                 });
             }
@@ -588,7 +748,7 @@ class AppCore {
                 }, 1000);
             }
             
-            console.log('🎉 AppCore (Phase1修復版) 初期化完全完了');
+            console.log('🎉 AppCore (Phase1警告修復 + Phase2準備版) 初期化完全完了');
             
         } catch (error) {
             console.error('❌ 完了処理エラー:', error);
@@ -618,13 +778,11 @@ class AppCore {
      */
     async initializePixiApp() {
         try {
-            const configManager = window.Tegaki?.ConfigManagerInstance || window.ConfigManager;
-            
             let canvasConfig, pixiConfig;
             
-            if (configManager && typeof configManager.getCanvasConfig === 'function') {
-                canvasConfig = configManager.getCanvasConfig();
-                pixiConfig = configManager.getPixiConfig();
+            if (this.configManager && typeof this.configManager.getCanvasConfig === 'function') {
+                canvasConfig = this.configManager.getCanvasConfig();
+                pixiConfig = this.configManager.getPixiConfig();
             } else {
                 // フォールバック設定
                 canvasConfig = {
@@ -654,7 +812,7 @@ class AppCore {
             this.app.view.style.cursor = pixiConfig.cursor || 'crosshair';
             this.app.view.style.touchAction = 'none'; // タッチスクロール防止
             
-            console.log('✅ PixiJSアプリケーション初期化完了');
+            console.log('✅ PixiJSアプリケーション初理化完了');
             
         } catch (error) {
             console.error('❌ PixiJSアプリケーション初期化失敗:', error);
@@ -710,20 +868,20 @@ class AppCore {
             window.addEventListener('resize', this.handleResize.bind(this));
             
             // EventBus統合イベント
-            const eventBus = window.Tegaki?.EventBusInstance || window.EventBus;
-            if (eventBus?.on) {
-                eventBus.on('boundary.cross.in', this.handleBoundaryCrossIn.bind(this));
-                eventBus.on('tool.changed', this.handleToolChanged.bind(this));
+            if (this.eventBus?.on) {
+                this.eventBus.on('boundary.cross.in', this.handleBoundaryCrossIn.bind(this));
+                this.eventBus.on('tool.changed', this.handleToolChanged.bind(this));
             }
             
             console.log('✅ イベントリスナー設定完了（CanvasManager統合対応）');
             
         } catch (error) {
             console.error('❌ イベントリスナー設定エラー:', error);
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            errorManager?.showError('warning', `イベントリスナー設定エラー: ${error.message}`, {
-                context: 'AppCore.setupEventListeners'
-            });
+            if (this.errorManager?.showError) {
+                this.errorManager.showError('warning', `イベントリスナー設定エラー: ${error.message}`, {
+                    context: 'AppCore.setupEventListeners'
+                });
+            }
         }
     }
 
@@ -781,10 +939,11 @@ class AppCore {
             
         } catch (error) {
             console.error('❌ PixiJS境界システム統合エラー:', error);
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            errorManager?.showError('warning', `境界システム統合エラー: ${error.message}`, {
-                context: 'AppCore.initializePixiBoundarySystem'
-            });
+            if (this.errorManager?.showError) {
+                this.errorManager.showError('warning', `境界システム統合エラー: ${error.message}`, {
+                    context: 'AppCore.initializePixiBoundarySystem'
+                });
+            }
         }
     }
 
@@ -830,9 +989,8 @@ class AppCore {
             if (coords && this.toolManager.startDrawing) {
                 this.toolManager.startDrawing(coords.canvas.x, coords.canvas.y, coords.pressure);
                 
-                const eventBus = window.Tegaki?.EventBusInstance || window.EventBus;
-                if (eventBus?.safeEmit) {
-                    eventBus.safeEmit('drawing.started', {
+                if (this.eventBus?.safeEmit) {
+                    this.eventBus.safeEmit('drawing.started', {
                         position: coords.canvas,
                         pressure: coords.pressure,
                         tool: this.toolManager.getCurrentTool() || 'unknown',
@@ -843,10 +1001,11 @@ class AppCore {
             
         } catch (error) {
             console.error('❌ ポインターダウン処理エラー:', error);
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            errorManager?.showError('warning', `ポインターダウンエラー: ${error.message}`, {
-                context: 'AppCore.handlePointerDown'
-            });
+            if (this.errorManager?.showError) {
+                this.errorManager.showError('warning', `ポインターダウンエラー: ${error.message}`, {
+                    context: 'AppCore.handlePointerDown'
+                });
+            }
         }
     }
 
@@ -934,19 +1093,19 @@ class AppCore {
                 this.toolManager.stopDrawing();
             }
             
-            const eventBus = window.Tegaki?.EventBusInstance || window.EventBus;
-            if (eventBus?.safeEmit) {
-                eventBus.safeEmit('drawing.ended', {
+            if (this.eventBus?.safeEmit) {
+                this.eventBus.safeEmit('drawing.ended', {
                     timestamp: Date.now()
                 });
             }
             
         } catch (error) {
             console.error('❌ ポインターアップ処理エラー:', error);
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            errorManager?.showError('warning', `ポインターアップエラー: ${error.message}`, {
-                context: 'AppCore.handlePointerUp'
-            });
+            if (this.errorManager?.showError) {
+                this.errorManager.showError('warning', `ポインターアップエラー: ${error.message}`, {
+                    context: 'AppCore.handlePointerUp'
+                });
+            }
         }
     }
 
@@ -984,9 +1143,8 @@ class AppCore {
                 this.coordinateManager.updateCanvasSize(this.canvasWidth, this.canvasHeight);
             }
             
-            const eventBus = window.Tegaki?.EventBusInstance || window.EventBus;
-            if (eventBus?.safeEmit) {
-                eventBus.safeEmit('window.resized', {
+            if (this.eventBus?.safeEmit) {
+                this.eventBus.safeEmit('window.resized', {
                     width: this.canvasWidth,
                     height: this.canvasHeight,
                     coordinateManagerUpdated: !!this.coordinateManager,
@@ -997,10 +1155,11 @@ class AppCore {
             
         } catch (error) {
             console.error('❌ リサイズ処理エラー:', error);
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            errorManager?.showError('warning', `リサイズエラー: ${error.message}`, {
-                context: 'AppCore.handleResize'
-            });
+            if (this.errorManager?.showError) {
+                this.errorManager.showError('warning', `リサイズエラー: ${error.message}`, {
+                    context: 'AppCore.handleResize'
+                });
+            }
         }
     }
 
@@ -1041,10 +1200,11 @@ class AppCore {
             
         } catch (error) {
             console.error('❌ 境界越え処理エラー:', error);
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            errorManager?.showError('warning', `境界越え描画エラー: ${error.message}`, {
-                context: 'AppCore.handleBoundaryCrossIn'
-            });
+            if (this.errorManager?.showError) {
+                this.errorManager.showError('warning', `境界越え描画エラー: ${error.message}`, {
+                    context: 'AppCore.handleBoundaryCrossIn'
+                });
+            }
         }
     }
 
@@ -1064,9 +1224,8 @@ class AppCore {
         this.initializationFailed = true;
         this.isInitializing = false;
         
-        const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-        if (errorManager?.showCriticalError) {
-            errorManager.showCriticalError(`AppCore初期化失敗: ${error.message}`, {
+        if (this.errorManager?.showCriticalError) {
+            this.errorManager.showCriticalError(`AppCore初期化失敗: ${error.message}`, {
                 context: 'AppCore.initialize',
                 additionalInfo: 'アプリケーション初期化エラー',
                 showReload: true
@@ -1116,9 +1275,8 @@ class AppCore {
             
             console.warn('⚠️ 初期化未完了:', failed.join(', '));
             
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            if (errorManager?.showWarning) {
-                errorManager.showWarning(`初期化未完了: ${failed.join(', ')}`, {
+            if (this.errorManager?.showWarning) {
+                this.errorManager.showWarning(`初期化未完了: ${failed.join(', ')}`, {
                     context: 'AppCore.verifyInitialization'
                 });
             }
@@ -1140,7 +1298,14 @@ class AppCore {
             uiManager: !!this.uiManager,
             initializationComplete: this.initializationComplete,
             initializationFailed: this.initializationFailed,
-            progress: this.initializationProgress
+            progress: this.initializationProgress,
+            // ✨ 新追加: 統一システム統合状態
+            unifiedSystems: {
+                configManager: !!this.configManager,
+                errorManager: !!this.errorManager,
+                stateManager: !!this.stateManager,
+                eventBus: !!this.eventBus
+            }
         };
         
         // 座標統合状態を追加
@@ -1171,11 +1336,225 @@ class AppCore {
                 available: true,
                 totalPopups: popupStats.total,
                 visiblePopups: popupStats.visible,
-                errorIntegration: !!(window.Tegaki?.ErrorManagerInstance?.popupManager || window.ErrorManager?.popupManager)
+                errorIntegration: !!(this.errorManager?.popupManager)
             };
         }
         
         return stats;
+    }
+
+    /**
+     * 🚀 Phase2準備診断: 責務分離・理想構造化準備確認
+     */
+    runPhase2ReadinessDiagnostic() {
+        try {
+            console.log('🚀 Phase2準備診断開始...');
+            
+            const diagnostic = {
+                // 基本システム（Phase1継続）
+                phase1Status: {
+                    pixiAppInitialized: !!this.app,
+                    canvasManagerInitialized: !!(this.canvasManager && this.canvasManager.initialized),
+                    coordinateSystemIntegrated: !!this.coordinateManager,
+                    popupSystemIntegrated: !!(this.popupManager && this.errorManager)
+                },
+                
+                // 責務分離準備（Phase2重点）
+                responsibilitySeparation: {
+                    canvasManagerLayerOnly: this.checkCanvasManagerResponsibility(),
+                    toolAbstractImplementation: this.responsibilityMetrics.toolAbstractImplementation,
+                    eventBusDecoupling: this.responsibilityMetrics.eventBusDecoupling,
+                    stateManagerIntegration: this.checkStateManagerIntegration()
+                },
+                
+                // 統一システム統合度
+                unifiedSystemIntegration: {
+                    configManagerIntegrated: !!this.configManager,
+                    errorManagerIntegrated: !!this.errorManager,
+                    stateManagerIntegrated: !!this.stateManager,
+                    eventBusIntegrated: !!this.eventBus
+                },
+                
+                // Phase2移行準備度
+                phase2Readiness: {
+                    abstractToolReady: this.checkAbstractToolReadiness(),
+                    eventBusFlowReady: this.checkEventBusFlowReadiness(),
+                    stateManagerHistoryReady: this.checkStateManagerHistoryReadiness(),
+                    responsibilityMetricsComplete: this.checkResponsibilityMetricsComplete()
+                }
+            };
+            
+            // 診断結果評価
+            const phase1Score = this.calculateScore(diagnostic.phase1Status);
+            const responsibilityScore = this.calculateScore(diagnostic.responsibilitySeparation);
+            const systemScore = this.calculateScore(diagnostic.unifiedSystemIntegration);
+            const readinessScore = this.calculateScore(diagnostic.phase2Readiness);
+            
+            const overallScore = (phase1Score + responsibilityScore + systemScore + readinessScore) / 4;
+            
+            const result = {
+                phase1Complete: phase1Score >= 0.8,
+                responsibilitySeparationReady: responsibilityScore >= 0.7,
+                unifiedSystemsReady: systemScore >= 0.8,
+                phase2Ready: readinessScore >= 0.6,
+                overallScore,
+                scores: {
+                    phase1: phase1Score,
+                    responsibility: responsibilityScore,
+                    systems: systemScore,
+                    readiness: readinessScore
+                },
+                diagnostic,
+                recommendations: this.generatePhase2Recommendations(diagnostic),
+                timestamp: Date.now()
+            };
+            
+            console.log('📊 Phase2準備診断結果:', result);
+            
+            if (result.phase2Ready) {
+                console.log('🚀 Phase2移行準備完了 - 責務分離・理想構造化可能');
+            } else {
+                console.warn('⚠️ Phase2移行準備未完了 - 追加対応必要');
+                console.log('📋 推奨事項:', result.recommendations);
+            }
+            
+            // 責務分離メトリクス更新
+            this.responsibilityMetrics = {
+                canvasManagerLayerOnly: diagnostic.responsibilitySeparation.canvasManagerLayerOnly,
+                toolAbstractImplementation: diagnostic.responsibilitySeparation.toolAbstractImplementation,
+                eventBusDecoupling: diagnostic.responsibilitySeparation.eventBusDecoupling,
+                stateManagerIntegration: diagnostic.responsibilitySeparation.stateManagerIntegration
+            };
+            
+            return result;
+            
+        } catch (error) {
+            console.error('❌ Phase2準備診断エラー:', error);
+            return {
+                phase2Ready: false,
+                error: error.message,
+                recommendations: ['診断システムを確認してください'],
+                timestamp: Date.now()
+            };
+        }
+    }
+
+    /**
+     * 🔍 責務分離診断: CanvasManager責務確認
+     */
+    checkCanvasManagerResponsibility() {
+        if (!this.canvasManager) return false;
+        
+        // CanvasManagerが描画処理を持っていないか確認
+        const hasDrawingMethods = ['startDrawing', 'continueDrawing', 'moveTo', 'lineTo'].some(
+            method => typeof this.canvasManager[method] === 'function'
+        );
+        
+        // レイヤー管理メソッドが存在するか確認
+        const hasLayerMethods = ['addLayer', 'addGraphicsToLayer', 'getLayerForTool'].every(
+            method => typeof this.canvasManager[method] === 'function'
+        );
+        
+        return !hasDrawingMethods && hasLayerMethods;
+    }
+
+    /**
+     * 🔍 StateManager統合確認
+     */
+    checkStateManagerIntegration() {
+        if (!this.stateManager) return false;
+        
+        const hasRequiredMethods = ['updateComponentState', 'updateSystemState', 'getComponentState'].every(
+            method => typeof this.stateManager[method] === 'function'
+        );
+        
+        return hasRequiredMethods;
+    }
+
+    /**
+     * 🔍 AbstractTool準備確認
+     */
+    checkAbstractToolReadiness() {
+        const AbstractToolClass = window.Tegaki?.AbstractTool || window.AbstractTool;
+        return !!(AbstractToolClass && this.toolIntegrationInterface);
+    }
+
+    /**
+     * 🔍 EventBusフロー準備確認
+     */
+    checkEventBusFlowReadiness() {
+        if (!this.eventBus) return false;
+        
+        const hasRequiredMethods = ['on', 'emit', 'safeEmit'].every(
+            method => typeof this.eventBus[method] === 'function'
+        );
+        
+        return hasRequiredMethods && this.responsibilityMetrics.eventBusDecoupling;
+    }
+
+    /**
+     * 🔍 StateManager履歴管理準備確認
+     */
+    checkStateManagerHistoryReadiness() {
+        return !!(this.stateManager && 
+                 typeof this.stateManager.updateComponentState === 'function');
+    }
+
+    /**
+     * 🔍 責務分離メトリクス完全性確認
+     */
+    checkResponsibilityMetricsComplete() {
+        return Object.values(this.responsibilityMetrics).every(metric => metric === true);
+    }
+
+    /**
+     * 🔢 スコア計算（診断用）
+     */
+    calculateScore(diagnosticSection) {
+        const values = Object.values(diagnosticSection);
+        const trueCount = values.filter(v => v === true).length;
+        return values.length > 0 ? trueCount / values.length : 0;
+    }
+
+    /**
+     * 📋 Phase2推奨事項生成
+     */
+    generatePhase2Recommendations(diagnostic) {
+        const recommendations = [];
+        
+        if (!diagnostic.phase1Status.canvasManagerInitialized) {
+            recommendations.push('CanvasManager初期化を完了してください');
+        }
+        
+        if (!diagnostic.responsibilitySeparation.canvasManagerLayerOnly) {
+            recommendations.push('CanvasManagerから描画処理を除去し、レイヤー管理に特化してください');
+        }
+        
+        if (!diagnostic.responsibilitySeparation.toolAbstractImplementation) {
+            recommendations.push('AbstractTool基底クラスの実装を準備してください');
+        }
+        
+        if (!diagnostic.responsibilitySeparation.eventBusDecoupling) {
+            recommendations.push('EventBus疎結合設定を完了してください');
+        }
+        
+        if (!diagnostic.unifiedSystemIntegration.configManagerIntegrated) {
+            recommendations.push('ConfigManager統合を完了してください');
+        }
+        
+        if (!diagnostic.unifiedSystemIntegration.stateManagerIntegrated) {
+            recommendations.push('StateManager統合を完了してください');
+        }
+        
+        if (!diagnostic.phase2Readiness.abstractToolReady) {
+            recommendations.push('AbstractTool統合インターフェースを準備してください');
+        }
+        
+        if (!diagnostic.phase2Readiness.stateManagerHistoryReady) {
+            recommendations.push('StateManager履歴管理機能を準備してください');
+        }
+        
+        return recommendations;
     }
 
     /**
@@ -1211,9 +1590,9 @@ class AppCore {
             // 最低限のPixiJSアプリケーション作成
             if (!this.app) {
                 const fallbackConfig = {
-                    width: (window.Tegaki?.ConfigManagerInstance || window.ConfigManager)?.get?.('canvas.width') || 400,
-                    height: (window.Tegaki?.ConfigManagerInstance || window.ConfigManager)?.get?.('canvas.height') || 400,
-                    backgroundColor: (window.Tegaki?.ConfigManagerInstance || window.ConfigManager)?.get?.('canvas.backgroundColor') || 0xf0e0d6
+                    width: this.configManager?.get?.('canvas.width') || 400,
+                    height: this.configManager?.get?.('canvas.height') || 400,
+                    backgroundColor: this.configManager?.get?.('canvas.backgroundColor') || 0xf0e0d6
                 };
                 
                 this.app = new PIXI.Application(fallbackConfig);
@@ -1228,9 +1607,8 @@ class AppCore {
                 this.initializeContainers();
             }
             
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            if (errorManager?.showError) {
-                errorManager.showError('recovery', '基本描画機能は利用可能です', {
+            if (this.errorManager?.showError) {
+                this.errorManager.showError('recovery', '基本描画機能は利用可能です', {
                     context: 'AppCore.initializeFallbackMode',
                     additionalInfo: 'フォールバックモードで動作中'
                 });
@@ -1240,9 +1618,8 @@ class AppCore {
             
         } catch (fallbackError) {
             console.error('💀 フォールバックモード初期化失敗:', fallbackError);
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            if (errorManager?.showCriticalError) {
-                errorManager.showCriticalError(`フォールバック失敗: ${originalError.message}`, {
+            if (this.errorManager?.showCriticalError) {
+                this.errorManager.showCriticalError(`フォールバック失敗: ${originalError.message}`, {
                     context: 'AppCore.initializeFallbackMode',
                     additionalInfo: `フォールバックエラー: ${fallbackError.message}`,
                     showReload: true
@@ -1252,7 +1629,7 @@ class AppCore {
     }
 
     /**
-     * 🆕 Phase1修復完了診断
+     * 🆕 Phase1修復完了診断（警告修復対応版）
      */
     runPhase1DiagnosticCheck() {
         try {
@@ -1264,6 +1641,15 @@ class AppCore {
                     initialized: !!this.app,
                     canvasAttached: !!(this.app && document.contains(this.app.view)),
                     containers: !!this.drawingContainer && !!this.uiContainer
+                },
+                
+                // ✨ 統一システム統合状態（警告修復確認）
+                unifiedSystems: {
+                    configManagerIntegrated: !!this.configManager,
+                    errorManagerIntegrated: !!this.errorManager,
+                    stateManagerIntegrated: !!this.stateManager,
+                    eventBusIntegrated: !!this.eventBus,
+                    allSystemsAvailable: !!(this.configManager && this.errorManager && this.stateManager && this.eventBus)
                 },
                 
                 // 座標系修復確認
@@ -1280,10 +1666,11 @@ class AppCore {
                                this.coordinateManager.runCoordinateTest() : null
                 },
                 
-                // キャンバス修復確認
+                // ✨ キャンバス修復確認（AppCore提供警告修復）
                 canvasSystem: {
                     managerAvailable: !!this.canvasManager,
                     initialized: !!(this.canvasManager && this.canvasManager.initialized),
+                    appCoreProvided: !!(this.canvasManager && this.canvasManager.appCore === this),
                     coordinateIntegrated: !!(this.canvasManager && this.canvasManager.coordinateManager),
                     layerCount: this.canvasManager && this.canvasManager.layers ? 
                                this.canvasManager.layers.size : 0
@@ -1292,7 +1679,7 @@ class AppCore {
                 // ポップアップ修復確認
                 popupSystem: {
                     managerAvailable: !!this.popupManager,
-                    errorIntegration: !!(window.Tegaki?.ErrorManagerInstance?.popupManager || window.ErrorManager?.popupManager),
+                    errorIntegration: !!(this.errorManager?.popupManager),
                     popupCount: this.popupManager && typeof this.popupManager.getStats === 'function' ?
                                this.popupManager.getStats().total : 0
                 },
@@ -1301,8 +1688,8 @@ class AppCore {
                 integration: {
                     initializationProgress: this.initializationProgress,
                     allPhases: Object.values(this.initializationProgress).every(phase => phase),
-                    errorHandling: !!(window.Tegaki?.ErrorManagerInstance || window.ErrorManager),
-                    eventBus: !!(window.Tegaki?.EventBusInstance?.safeEmit || window.EventBus?.safeEmit)
+                    errorHandling: !!this.errorManager,
+                    eventBus: !!(this.eventBus?.safeEmit)
                 }
             };
             
@@ -1313,6 +1700,17 @@ class AppCore {
             if (!diagnostic.pixiApp.initialized) {
                 issues.push('PixiJSアプリケーション未初期化');
                 recommendations.push('AppCore.initialize()を実行してください');
+            }
+            
+            // ✨ 統一システム警告確認
+            if (!diagnostic.unifiedSystems.configManagerIntegrated) {
+                issues.push('ConfigManager未統合（警告原因）');
+                recommendations.push('ConfigManager統合を完了してください');
+            }
+            
+            if (!diagnostic.canvasSystem.appCoreProvided) {
+                issues.push('CanvasManager AppCore未提供（警告原因）');
+                recommendations.push('CanvasManager初期化時のAppCore提供を確認してください');
             }
             
             if (!diagnostic.coordinateSystem.managerAvailable) {
@@ -1336,20 +1734,26 @@ class AppCore {
             }
             
             const healthy = issues.length === 0;
+            const warningsResolved = diagnostic.unifiedSystems.configManagerIntegrated && 
+                                   diagnostic.canvasSystem.appCoreProvided;
             
             const result = {
                 healthy,
+                warningsResolved, // ✨ 新追加: 警告解消状態
                 issues,
                 recommendations,
                 diagnostic,
                 timestamp: Date.now(),
-                phase1Status: healthy ? 'COMPLETED' : 'INCOMPLETE'
+                phase1Status: healthy ? 'COMPLETED' : 'INCOMPLETE',
+                warningStatus: warningsResolved ? 'RESOLVED' : 'UNRESOLVED' // ✨ 新追加
             };
             
             console.log('📊 Phase1修復診断結果:', result);
             
-            if (healthy) {
-                console.log('🎉 Phase1修復完了 - 基本動作復旧成功');
+            if (healthy && warningsResolved) {
+                console.log('🎉 Phase1修復完了 - 警告解消・基本動作復旧成功');
+            } else if (healthy) {
+                console.log('✅ Phase1基本機能修復完了 - 一部警告残存');
             } else {
                 console.warn('⚠️ Phase1修復未完了 - 残課題あり:', issues);
             }
@@ -1360,6 +1764,7 @@ class AppCore {
             console.error('❌ Phase1診断エラー:', error);
             return {
                 healthy: false,
+                warningsResolved: false,
                 issues: ['診断実行エラー'],
                 recommendations: ['診断システムを確認してください'],
                 error: error.message,
@@ -1382,9 +1787,8 @@ class AppCore {
             }
             
             // ErrorManager PopupManager統合解除
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            if (errorManager && typeof errorManager.destroy === 'function') {
-                errorManager.destroy();
+            if (this.errorManager && typeof this.errorManager.destroy === 'function') {
+                this.errorManager.destroy();
             }
             
             // CanvasManager破棄
@@ -1429,13 +1833,18 @@ class AppCore {
             this.initializationComplete = false;
             this.initializationFailed = false;
             
-            console.log('🎨 AppCore 破棄完了（Phase1修復版）');
+            // 統一システム参照クリア
+            this.configManager = null;
+            this.errorManager = null;
+            this.stateManager = null;
+            this.eventBus = null;
+            
+            console.log('🎨 AppCore 破棄完了（Phase1警告修復 + Phase2準備版）');
             
         } catch (error) {
             console.error('❌ AppCore破棄エラー:', error);
-            const errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManager;
-            if (errorManager?.showError) {
-                errorManager.showError('warning', `AppCore破棄エラー: ${error.message}`, {
+            if (this.errorManager?.showError) {
+                this.errorManager.showError('warning', `AppCore破棄エラー: ${error.message}`, {
                     context: 'AppCore.destroy',
                     additionalInfo: 'AppCore破棄処理'
                 });
@@ -1463,8 +1872,11 @@ if (typeof window !== 'undefined') {
 // - PIXI.Application API基本継続
 // - Manager統合パターンはv8でも有効
 // - 座標系統合はv8でも継続利用可能
+// - AbstractTool基底システムはv8対応設計
 
-console.log('🎨 AppCore (Phase1完全修復版) Loaded - キャンバス出現・座標統合・ポップアップ修復完了');
-console.log('💡 Phase1修復内容: CanvasManager初期化・CoordinateManager統合・ErrorManager-PopupManager統合');
+console.log('🎨 AppCore (Phase1警告修復 + Phase2準備版) Loaded - ConfigManager統合・AppCore提供完全対応・責務分離準備完了');
+console.log('💡 Phase1修復内容: ConfigManager統合警告修復・AppCore提供警告修復・基本動作復旧');
+console.log('🚀 Phase2準備内容: AbstractTool統合準備・EventBus疎結合・StateManager履歴準備・責務分離診断');
 console.log('🔧 使用例: const appCore = new AppCore(); await appCore.initialize();');
-console.log('🔍 診断: appCore.runPhase1DiagnosticCheck() で修復状況確認');
+console.log('🔍 診断: appCore.runPhase1DiagnosticCheck() で警告修復状況確認');
+console.log('🚀 Phase2診断: appCore.runPhase2ReadinessDiagnostic() でPhase2移行準備確認');
