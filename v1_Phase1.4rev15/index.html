@@ -92,19 +92,19 @@
                 </svg>
             </div>
             
-<div class="tool-button disabled" id="gif-tool" title="GIFアニメーション">
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-      <rect x="4" y="4" width="16" height="16" rx="2" />
-      <line x1="8" y1="4" x2="8" y2="20" />
-      <line x1="16" y1="4" x2="16" y2="20" />
-      <line x1="4" y1="8" x2="8" y2="8" />
-      <line x1="4" y1="16" x2="8" y2="16" />
-      <line x1="4" y1="12" x2="20" y2="12" />
-      <line x1="16" y1="8" x2="20" y2="8" />
-      <line x1="16" y1="16" x2="20" y2="16" />
-    </svg>
-</div>
+            <div class="tool-button disabled" id="gif-tool" title="GIFアニメーション">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                  <rect x="4" y="4" width="16" height="16" rx="2" />
+                  <line x1="8" y1="4" x2="8" y2="20" />
+                  <line x1="16" y1="4" x2="16" y2="20" />
+                  <line x1="4" y1="8" x2="8" y2="8" />
+                  <line x1="4" y1="16" x2="8" y2="16" />
+                  <line x1="4" y1="12" x2="20" y2="12" />
+                  <line x1="16" y1="8" x2="20" y2="8" />
+                  <line x1="16" y1="16" x2="20" y2="16" />
+                </svg>
+            </div>
             
             <div class="tool-button disabled" id="settings-tool" title="設定">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -116,7 +116,7 @@
         
         <div class="canvas-area">
             <div class="canvas-container">
-                <!-- 🔧 修正: CanvasManagerが要求するcanvas-container要素を追加 -->
+                <!-- 🔧 修正: CanvasManager要求のcanvas-container要素追加 -->
                 <div id="canvas-container">
                     <div id="drawing-canvas"></div>
                 </div>
@@ -473,122 +473,4 @@
                 const script = document.createElement('script');
                 script.src = './node_modules/@pixi/gif/dist/pixi-gif.js';
                 script.onerror = () => console.log('⚠️ @pixi/gif 未検出 - スキップ');
-                document.head.appendChild(script);
-            } catch (e) {
-                console.log('⚠️ @pixi/gif 読み込みエラー - スキップ');
-            }
-        })();
-    </script>
-    
-    <!-- ========================================= -->
-    <!-- 🎯 統一システム読み込み（依存関係順序修正版） -->
-    <!-- ========================================= -->
-    
-    <!-- PHASE 1: 基盤ユーティリティ（依存なし） -->
-    <script src="js/utils/config-manager.js"></script>
-    <script src="js/utils/error-manager.js"></script>
-    <script src="js/utils/state-manager.js"></script>
-    <script src="js/utils/event-bus.js"></script>
-    
-    <!-- PHASE 2: 座標・境界システム（基盤システム依存） -->
-    <script src="js/utils/coordinate-manager.js"></script>
- 
-    
-    <!-- PHASE 3: 追加ユーティリティ -->
-    <script src="js/utils/performance.js"></script>
-    <script src="js/utils/icon-manager.js"></script>
-    
-<!-- PHASE 4: UI・管理システム -->
-<script src="js/ui/popup-manager.js"></script>
-<script src="js/ui/slider-manager.js"></script>
-<script src="managers/ui-manager.js"></script>
-<script src="managers/memory-manager.js"></script>
-<script src="managers/settings-manager.js"></script>
-
-<!-- PHASE 5: PixiJS拡張統合（CanvasManager依存のため先に読み込み） -->
-<script src="libs/pixi-extensions.js"></script>
-
-<!-- PHASE 6: Canvas・境界・ツール管理（PixiJS拡張後に読み込み） -->
-<script src="managers/canvas-manager.js"></script>
-<script src="managers/boundary-manager.js"></script>
-<script src="managers/tool-manager.js"></script>
-
-<!-- PHASE 7: ツール実装 -->
-<script src="tools/abstract-tool.js"></script>
-<script src="tools/pen-tool.js"></script>
-<script src="tools/eraser-tool.js"></script>
-
-<!-- PHASE 8: コアシステム（全依存関係完了後） -->
-<script src="js/app-core.js"></script>
-
-<!-- PHASE 9: メインアプリケーション（最終段階） -->
-<script src="js/main.js"></script>
-    
-    <!-- ========================================= -->
-    <!-- 🔍 統一版起動完了通知 -->
-    <!-- ========================================= -->
-    
-    <script>
-        // スクリプト読み込み確認（デバッグ用）
-        console.log('🔧 依存関係確認:');
-        console.log('  ✅ PHASE 1 基盤:', !!window.ConfigManager, !!window.ErrorManager, !!window.StateManager, !!window.EventBus);
-        console.log('  ✅ PHASE 2 座標:', !!window.CoordinateManager, !!window.BoundaryManager);
-        console.log('  ✅ PHASE 4 管理:', !!window.UIManager, !!window.ToolManager);
-        console.log('  ✅ PHASE 5 ツール:', !!window.PenTool, !!window.EraserTool);
-        console.log('  ✅ PHASE 7 コア:', !!window.AppCore);
-        
-        // 起動完了後の処理
-        window.addEventListener('load', () => {
-            console.log('🎉 統一版 HTML + JavaScript 読み込み完了');
-            console.log('🔧 統一システム状況:');
-            console.log(`  - ConfigManager: ${!!window.ConfigManager}`);
-            console.log(`  - ErrorManager: ${!!window.ErrorManager}`);
-            console.log(`  - StateManager: ${!!window.StateManager}`);
-            console.log(`  - EventBus: ${!!window.EventBus}`);
-            console.log(`  - CoordinateManager: ${!!window.CoordinateManager}`);
-            console.log(`  - BoundaryManager: ${!!window.BoundaryManager}`);
-            console.log(`  - PixiExtensions: ${!!window.PixiExtensions}`);
-            console.log(`  - AppCore: ${!!window.AppCore}`);
-            
-            if (window.ConfigManager) {
-                console.log(`📊 設定項目: ${window.ConfigManager.getDebugInfo().totalSettings}個`);
-            }
-            
-            if (window.EventBus) {
-                console.log(`📡 標準イベント: ${Object.keys(window.EventBus.Events).length}個`);
-            }
-            
-            // Phase1後期改修: アイコン更新処理
-            if (window.IconManager && window.iconManager) {
-                console.log('🎨 アイコンシステム更新開始...');
-                
-                // ツールボタンアイコン更新
-                const updateResult = window.iconManager.updateToolButtonIcons();
-                console.log(`✅ アイコン更新完了: ${updateResult}個更新`);
-                
-                // 新規ツールボタンのイベント登録
-                ['layers-tool', 'gif-tool'].forEach(toolId => {
-                    const element = document.getElementById(toolId);
-                    if (element) {
-                        element.addEventListener('click', function() {
-                            const panelId = toolId.replace('-tool', '-settings');
-                            const panel = document.getElementById(panelId);
-                            if (panel) {
-                                const isVisible = panel.style.display !== 'none';
-                                panel.style.display = isVisible ? 'none' : 'block';
-                                console.log(`📋 ${panelId} パネル ${isVisible ? '非表示' : '表示'}`);
-                            }
-                        });
-                    }
-                });
-            }
-            
-            console.log('💡 デバッグコマンド:');
-            console.log('  - window.getState() : 全状態取得');
-            console.log('  - window.healthCheck() : 健全性チェック');
-            console.log('  - window.startDebugMode() : デバッグモード開始');
-            console.log('  - window.iconManager.debug() : アイコンシステム診断');
-        });
-    </script>
-</body>
-</html>
+                document.head.appendChild(
