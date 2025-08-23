@@ -1,0 +1,241 @@
+1️⃣ SyntaxError: Unexpected identifier 'initializeCanvasManager'
+
+発生箇所：app-core.js:206
+
+原因：
+
+JavaScriptで Unexpected identifier が出る場合、関数宣言や変数宣言の文法が壊れていることが多いです。
+
+例えば以下のようなケースが多い：
+async initializeCanvasManager // ← 関数宣言なのに () や {} が欠落
+修正方法：
+// 正しい書き方
+async initializeCanvasManager() {
+    ...
+}
+
+もしくは既存コードの差し替え時に余計な文字が混入している可能性があります。
+
+2️⃣ TypeError: this.coordinateManager.initialize is not a function
+
+発生箇所：main.js:133
+
+原因：
+
+coordinateManager が AbstractCoordinateManager などを継承していない、もしくはインスタンス化されていない。
+
+あるいは v1_Phase1.4rev15 で initialize() メソッドが削除された、あるいは名前が変わった。
+
+つまり、this.coordinateManager が存在しても .initialize() が呼べない状態。
+
+修正方法：
+
+coordinate-manager.js のクラスを確認して、initialize() が存在するか確認。
+
+存在しない場合は initialize() 呼び出し部分を削除するか、正しい初期化メソッドに置き換える。
+
+// 例：initialize() がなく setup() なら
+await this.coordinateManager.setup();
+
+また、CanvasManager・CoordinateManagerの初期化順序が正しくなるように AppCore を調整する。
+
+CanvasManager → CoordinateManager → BoundaryManager → ToolManager
+
+🔧 改修手順書（v1_Phase1.4rev15 向け）
+ステップ 1: app-core.js 文法修正
+
+initializeCanvasManager 関数宣言を確認：
+
+// 修正版
+async initializeCanvasManager() {
+    if (window.CanvasManager) {
+        try {
+            this.canvasManager = new window.CanvasManager();
+            await this.canvasManager.initialize(this, this.app?.view);
+            console.log('✅ CanvasManager初期化完了');
+        } catch (error) {
+            console.warn('⚠️ CanvasManager初期化失敗:', error.message);
+            this.canvasManager = null;
+        }
+    } else {
+        console.warn('⚠️ CanvasManager利用不可');
+        this.canvasManager = null;
+    }
+}
+
+ステップ 2: CoordinateManager 初期化メソッド確認
+
+coordinate-manager.js に initialize() が存在するか確認。
+
+存在しない場合は initializeCoordinateSystems() 内の呼び出しを削除するか、正しいメソッド名に変更：
+
+// 例
+if (this.coordinateManager && this.coordinateManager.setup) {
+    await this.coordinateManager.setup();
+}
+
+ステップ 3: AppCore 初期化順序確認
+
+AppCore での初期化順序を以下にする：
+
+CanvasManager 初期化
+
+CoordinateManager 初期化
+
+BoundaryManager 初期化
+
+ToolManager 初期化
+
+順序が守られないと Canvas や描画が正しく機能しません。
+
+ステップ 4: ツール側接続確認
+
+PenTool / EraserTool は AbstractTool を継承。
+
+CanvasManager 接続：
+penTool.setCanvasManager(this.canvasManager);
+
+CoordinateManager 接続：
+penTool.setCoordinateManager(this.coordinateManager);
+
+ステップ 5: デバッグ
+
+コンソールに CanvasManager, CoordinateManager が生成・接続されているか確認。
+
+描画テストでキャンバス表示と描画が動作するか検証。
+
+左上直線バグや座標統合も同時確認。
+
+💡 ポイント
+
+文法エラー (Unexpected identifier) がまず致命的で、それを直さないと何も動かない。
+
+coordinateManager.initialize is not a function は初期化順序とメソッド名の不一致が原因。
+
+Canvasが消えているのは初期化エラーが連鎖して ToolManager が Canvas に接続できていないため。
+
+
+===============================
+🎨 FutabaDrawingTool 改修手順書 v1_Phase1.4rev15
+（左上直線バグ・責務分離・Canvas消失対応）
+===============================
+
+概要：
+- 現象：
+  1. app-core.js で SyntaxError: Unexpected identifier
+  2. main.js で TypeError: this.coordinateManager.initialize is not a function
+  3. キャンバスが表示されない／描画できない
+- 原因：
+  1. JavaScript関数宣言文法エラー
+  2. CoordinateManager の初期化メソッド呼び出し不一致
+  3. CanvasManager → CoordinateManager → BoundaryManager → ToolManager の初期化順序が守られていない
+
+-------------------------------
+STEP 1: app-core.js 文法修正
+-------------------------------
+対象：`initializeCanvasManager` 関数
+
+修正版：
+```js
+async initializeCanvasManager() {
+    if (window.CanvasManager) {
+        try {
+            this.canvasManager = new window.CanvasManager();
+            await this.canvasManager.initialize(this, this.app?.view);
+            console.log('✅ CanvasManager初期化完了');
+        } catch (error) {
+            console.warn('⚠️ CanvasManager初期化失敗:', error.message);
+            this.canvasManager = null;
+        }
+    } else {
+        console.warn('⚠️ CanvasManager利用不可');
+        this.canvasManager = null;
+    }
+}
+
+
+STEP 2: CoordinateManager 初期化確認
+
+対象：main.js の initializeCoordinateSystems() 内の呼び出し
+
+現状：
+await this.coordinateManager.initialize(); // ❌ 存在しないメソッド
+
+修正例：
+if (this.coordinateManager) {
+    // initialize() が存在する場合
+    if (this.coordinateManager.initialize) {
+        await this.coordinateManager.initialize();
+    }
+    // または setup() など正しい初期化メソッドに置き換え
+    else if (this.coordinateManager.setup) {
+        await this.coordinateManager.setup();
+    }
+    else {
+        console.warn('⚠️ CoordinateManager: 初期化メソッド未実装');
+    }
+}
+
+STEP 3: AppCore 初期化順序確認
+
+CanvasManager 初期化
+
+CoordinateManager 初期化
+
+BoundaryManager 初期化
+
+ToolManager 初期化
+
+※順序が崩れると Canvas表示・描画が正常に動作しません。
+
+STEP 4: ツール側接続
+
+PenTool / EraserTool は AbstractTool を継承。
+
+CanvasManager 接続：
+
+penTool.setCanvasManager(this.canvasManager);
+
+CoordinateManager 接続：
+
+penTool.setCoordinateManager(this.coordinateManager);
+
+STEP 5: ツール・描画統合確認
+
+PenTool / EraserTool の initializeIntegrations() で CoordinateManager が有効になっているか確認
+
+CanvasManager が接続され、Graphics作成・委譲が正しく行われるか確認
+
+EventBus による描画完了通知が行われるか確認
+
+STEP 6: デバッグ手順
+
+コンソール確認：
+
+CanvasManager: ✅ 初期化完了
+
+CoordinateManager: ✅ 初期化完了
+
+ToolManager: Canvas接続済
+
+描画テスト：
+
+ペン描画・消しゴム描画で正常に線が出るか
+
+左上直線バグが解消されているか
+
+座標統合と境界管理が正常動作するか
+
+💡 ポイント
+
+文法エラーが致命的なのでまず修正すること
+
+CoordinateManager の initialize() が存在しない場合は正しい初期化メソッドを呼ぶこと
+
+初期化順序を守ること（Canvas → Coordinate → Boundary → Tool）
+
+PenTool は CanvasManager と CoordinateManager に接続されていること
+
+EventBus の通知も確認して描画委譲が正しく動作すること
+
+

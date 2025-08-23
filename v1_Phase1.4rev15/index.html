@@ -115,8 +115,13 @@
         </div>
         
         <div class="canvas-area">
+            <!-- 🔧 修正: CanvasManager要求のDOM構造に統一 -->
             <div class="canvas-container">
-                <div id="drawing-canvas"></div>
+                <!-- ✅ CanvasManagerが要求する要素ID -->
+                <div id="canvas-container">
+                    <!-- 🔄 互換性維持のため既存ID保持 -->
+                    <div id="drawing-canvas"></div>
+                </div>
             </div>
         </div>
     </div>

@@ -120,7 +120,7 @@ class FutabaDrawingTool {
     }
 
     /**
-     * 座標・境界システム初期化
+     * 座標・境界システム初期化（✅ 修正版）
      * @returns {Promise<boolean>} 初期化成功可否
      */
     async initializeCoordinateSystems() {
@@ -130,7 +130,15 @@ class FutabaDrawingTool {
             // CoordinateManager初期化
             if (window.CoordinateManager) {
                 this.coordinateManager = new window.CoordinateManager();
-                await this.coordinateManager.initialize();
+                
+                // ✅ 修正: initialize() メソッドは存在しないため、代わりに updateCanvasSize を使用
+                // CoordinateManagerは constructor で自動的に初期化されるため、
+                // 必要に応じてキャンバスサイズを設定するのみ
+                if (typeof this.coordinateManager.updateCanvasSize === 'function') {
+                    const canvasConfig = window.ConfigManager?.getCanvasConfig() || { width: 400, height: 400 };
+                    this.coordinateManager.updateCanvasSize(canvasConfig.width, canvasConfig.height);
+                }
+                
                 this.initializationState.coordinateManager = true;
                 console.log('✅ CoordinateManager初期化完了');
             } else {
@@ -158,7 +166,16 @@ class FutabaDrawingTool {
             // STEP 1: CanvasManager初期化（最優先）
             if (window.CanvasManager) {
                 this.canvasManager = new window.CanvasManager();
-                await this.canvasManager.initialize();
+                
+                // CanvasManagerの初期化メソッドを確認して呼び出し
+                if (typeof this.canvasManager.initialize === 'function') {
+                    await this.canvasManager.initialize();
+                } else if (typeof this.canvasManager.init === 'function') {
+                    await this.canvasManager.init();
+                } else {
+                    console.warn('⚠️ CanvasManager: 初期化メソッドが見つかりません（続行）');
+                }
+                
                 this.initializationState.canvasManager = true;
                 console.log('✅ CanvasManager初期化完了');
             } else {
@@ -168,7 +185,18 @@ class FutabaDrawingTool {
             // STEP 2: BoundaryManager初期化（CanvasManager依存）
             if (window.BoundaryManager && this.canvasManager) {
                 this.boundaryManager = new window.BoundaryManager();
-                const canvasElement = this.canvasManager.getCanvasElement();
+                
+                // canvasElementの取得を試行
+                let canvasElement = null;
+                
+                if (typeof this.canvasManager.getCanvasElement === 'function') {
+                    canvasElement = this.canvasManager.getCanvasElement();
+                }
+                
+                // fallback: DOMから取得
+                if (!canvasElement) {
+                    canvasElement = document.getElementById('drawing-canvas')?.querySelector('canvas');
+                }
                 
                 if (canvasElement) {
                     await this.boundaryManager.initialize(canvasElement, this.coordinateManager);
@@ -184,23 +212,43 @@ class FutabaDrawingTool {
             // STEP 3: MemoryManager・SettingsManager初期化
             if (window.MemoryManager) {
                 this.memoryManager = new window.MemoryManager();
-                await this.memoryManager.initialize();
+                
+                if (typeof this.memoryManager.initialize === 'function') {
+                    await this.memoryManager.initialize();
+                } else if (typeof this.memoryManager.init === 'function') {
+                    await this.memoryManager.init();
+                }
+                
                 console.log('✅ MemoryManager初期化完了');
             }
 
             if (window.SettingsManager) {
                 this.settingsManager = new window.SettingsManager();
-                await this.settingsManager.initialize();
+                
+                if (typeof this.settingsManager.initialize === 'function') {
+                    await this.settingsManager.initialize();
+                } else if (typeof this.settingsManager.init === 'function') {
+                    await this.settingsManager.init();
+                }
+                
                 console.log('✅ SettingsManager初期化完了');
             }
 
             // STEP 4: ToolManager初期化（CanvasManager接続）
             if (window.ToolManager) {
                 this.toolManager = new window.ToolManager();
-                await this.toolManager.initialize();
+                
+                // ToolManagerの初期化
+                if (typeof this.toolManager.initialize === 'function') {
+                    await this.toolManager.initialize();
+                } else if (typeof this.toolManager.init === 'function') {
+                    await this.toolManager.init();
+                } else {
+                    console.warn('⚠️ ToolManager: 初期化メソッドが見つかりません（続行）');
+                }
                 
                 // CanvasManager接続
-                if (this.canvasManager) {
+                if (this.canvasManager && typeof this.toolManager.setCanvasManager === 'function') {
                     this.toolManager.setCanvasManager(this.canvasManager);
                     console.log('🔗 ToolManager: CanvasManager統合完了');
                 } else {
@@ -208,7 +256,7 @@ class FutabaDrawingTool {
                 }
                 
                 // CoordinateManager接続
-                if (this.coordinateManager) {
+                if (this.coordinateManager && typeof this.toolManager.setCoordinateManager === 'function') {
                     this.toolManager.setCoordinateManager(this.coordinateManager);
                     console.log('🔗 ToolManager: CoordinateManager統合完了');
                 } else {
@@ -224,7 +272,16 @@ class FutabaDrawingTool {
             // STEP 5: UIManager初期化
             if (window.UIManager) {
                 this.uiManager = new window.UIManager();
-                await this.uiManager.initialize();
+                
+                // UIManagerの初期化
+                if (typeof this.uiManager.initialize === 'function') {
+                    await this.uiManager.initialize();
+                } else if (typeof this.uiManager.init === 'function') {
+                    await this.uiManager.init();
+                } else {
+                    console.warn('⚠️ UIManager: 初期化メソッドが見つかりません（続行）');
+                }
+                
                 this.initializationState.uiManager = true;
                 console.log('✅ UIManager初期化完了');
             } else {
@@ -274,11 +331,14 @@ class FutabaDrawingTool {
             }
 
             // AppCore初期化実行
-            await this.appCore.initialize();
-            this.initializationState.appCore = true;
-
-            console.log('✅ AppCore初期化完了');
-            return true;
+            const initResult = await this.appCore.initialize();
+            if (initResult) {
+                this.initializationState.appCore = true;
+                console.log('✅ AppCore初期化完了');
+                return true;
+            } else {
+                throw new Error('AppCore初期化が失敗しました');
+            }
 
         } catch (error) {
             console.error('❌ AppCore初期化エラー:', error);
@@ -305,12 +365,17 @@ class FutabaDrawingTool {
             if (!this.toolManager) {
                 issues.push('ToolManager未初期化');
             } else {
-                const toolState = this.toolManager.getToolState();
-                if (!toolState.canvasManagerConnected) {
-                    issues.push('ToolManager: CanvasManager未接続');
-                }
-                if (!toolState.coordinateManagerConnected) {
-                    issues.push('ToolManager: CoordinateManager未接続');
+                // ToolManagerの状態確認メソッドが存在する場合のみ呼び出し
+                if (typeof this.toolManager.getToolState === 'function') {
+                    const toolState = this.toolManager.getToolState();
+                    if (!toolState.canvasManagerConnected) {
+                        issues.push('ToolManager: CanvasManager未接続');
+                    }
+                    if (!toolState.coordinateManagerConnected) {
+                        issues.push('ToolManager: CoordinateManager未接続');
+                    }
+                } else {
+                    console.warn('⚠️ ToolManager.getToolState() メソッドが見つかりません');
                 }
             }
 
@@ -352,10 +417,14 @@ class FutabaDrawingTool {
         };
 
         // ToolManager接続状態詳細確認
-        if (this.toolManager) {
-            const toolState = this.toolManager.getToolState();
-            integrationStatus.toolManagerCanvasConnected = toolState.canvasManagerConnected;
-            integrationStatus.toolManagerCoordinateConnected = toolState.coordinateManagerConnected;
+        if (this.toolManager && typeof this.toolManager.getToolState === 'function') {
+            try {
+                const toolState = this.toolManager.getToolState();
+                integrationStatus.toolManagerCanvasConnected = toolState.canvasManagerConnected || false;
+                integrationStatus.toolManagerCoordinateConnected = toolState.coordinateManagerConnected || false;
+            } catch (error) {
+                console.warn('⚠️ ToolManager状態取得エラー:', error.message);
+            }
         }
 
         // 統合完了判定
@@ -365,12 +434,13 @@ class FutabaDrawingTool {
                                  integrationStatus.toolManagerCanvasConnected && 
                                  integrationStatus.toolManagerCoordinateConnected;
 
+        const recommendations = [];
+
         if (isFullyIntegrated) {
             console.log('✅ 座標統合完了');
         } else {
             console.warn('⚠️ 座標統合未完了 - 修正が必要');
             
-            const recommendations = [];
             if (!integrationStatus.coordinateManager) {
                 recommendations.push('CoordinateManager を初期化してください');
             }
@@ -389,7 +459,7 @@ class FutabaDrawingTool {
         return {
             status: integrationStatus,
             isFullyIntegrated,
-            recommendations: recommendations || []
+            recommendations
         };
     }
 
@@ -423,24 +493,36 @@ class FutabaDrawingTool {
             console.log('🗑️ FutabaDrawingTool破棄開始');
 
             // 各Managerの破棄（逆順）
-            if (this.appCore && typeof this.appCore.dispose === 'function') {
-                await this.appCore.dispose();
+            if (this.appCore && typeof this.appCore.destroy === 'function') {
+                this.appCore.destroy();
             }
 
             if (this.uiManager && typeof this.uiManager.dispose === 'function') {
                 await this.uiManager.dispose();
+            } else if (this.uiManager && typeof this.uiManager.destroy === 'function') {
+                this.uiManager.destroy();
             }
 
             if (this.toolManager && typeof this.toolManager.dispose === 'function') {
                 await this.toolManager.dispose();
+            } else if (this.toolManager && typeof this.toolManager.destroy === 'function') {
+                this.toolManager.destroy();
             }
 
             if (this.boundaryManager && typeof this.boundaryManager.dispose === 'function') {
                 await this.boundaryManager.dispose();
+            } else if (this.boundaryManager && typeof this.boundaryManager.destroy === 'function') {
+                this.boundaryManager.destroy();
             }
 
             if (this.canvasManager && typeof this.canvasManager.dispose === 'function') {
                 await this.canvasManager.dispose();
+            } else if (this.canvasManager && typeof this.canvasManager.destroy === 'function') {
+                this.canvasManager.destroy();
+            }
+
+            if (this.coordinateManager && typeof this.coordinateManager.destroy === 'function') {
+                this.coordinateManager.destroy();
             }
 
             // 参照クリア
