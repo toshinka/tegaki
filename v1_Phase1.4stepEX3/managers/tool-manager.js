@@ -1,11 +1,16 @@
 /**
- * 🎯 ToolManager - 統合制御・配信管理専門
+ * 🎯 ToolManager - 統合制御・配信管理専門 (修正版)
  * 🔄 CORE_FUNCTION: ツール選択・イベント配信・統合制御
  * 📋 RESPONSIBILITY: 「ツール統合管理」の専門管理
  * 
  * 📏 DESIGN_PRINCIPLE: CanvasManager ← EventBus ← ToolManager → Tool
  * 🚫 PROHIBITION: 直接的な描画処理（Tool委譲必須）
  * ✅ PERMISSION: ツール管理・イベント配信・統合制御
+ * 
+ * 🔧 修正内容:
+ * - Tegaki名前空間からのツール検索追加
+ * - window/Tegakiブリッジ対応
+ * - 初期化順序修正
  * 
  * 座標バグ修正における役割:
  * - イベント配信の統一窓口として機能
@@ -32,14 +37,13 @@ class ToolManager {
             maxToolHistory: 5
         };
         
-        // デフォルトツール設定
+        // 🔧 修正1: デフォルトツール設定（Tegaki名前空間対応）
         this.defaultTools = [
             { name: 'pen', className: 'PenTool' },
             { name: 'eraser', className: 'EraserTool' }
         ];
         
-        // ✅ 統一システム依存（Phase1.4stepEX準拠）
-        // この段階では直接参照、レジストリ初期化後はTegaki経由に変更予定
+        console.log('[ToolManager] Constructor completed');
     }
 
     /**
@@ -50,8 +54,10 @@ class ToolManager {
      */
     initialize(canvasManager, coordinateManager) {
         try {
+            console.log('[ToolManager] Initialize開始...');
+            
             if (this.isInitialized) {
-                window.ErrorManager?.warn('ToolManager already initialized', 'ToolManager.initialize');
+                console.warn('[ToolManager] 既に初期化済みです');
                 return true;
             }
 
@@ -73,17 +79,22 @@ class ToolManager {
             this.isInitialized = true;
             
             // 統一システム経由での通知
-            if (window.EventBus) {
-                window.EventBus.emit('toolmanager:initialized', {
+            const eventBus = Tegaki.EventBusInstance || window.EventBus;
+            if (eventBus) {
+                eventBus.emit('toolmanager:initialized', {
                     toolCount: this.tools.size,
                     activeTool: this.toolState.currentTool
                 });
             }
             
-            console.log('[ToolManager] Successfully initialized - Tool integration ready');
+            console.log('[ToolManager] 初期化完了 - Tool integration ready');
             return true;
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'ToolManager.initialize', 'error', true);
+            console.error('[ToolManager] 初期化エラー:', error);
+            const errorManager = Tegaki.ErrorManagerInstance || window.ErrorManager;
+            if (errorManager) {
+                errorManager.handle(error, 'ToolManager.initialize');
+            }
             return false;
         }
     }
@@ -97,7 +108,7 @@ class ToolManager {
     registerTool(name, toolInstance) {
         try {
             if (this.tools.has(name)) {
-                window.ErrorManager?.warn(`Tool ${name} already registered`, 'ToolManager.registerTool');
+                console.warn(`[ToolManager] Tool ${name} 既に登録済み`);
                 return true;
             }
 
@@ -117,8 +128,9 @@ class ToolManager {
             this._integrateToolWithCanvas(name, toolInstance);
             
             // 統一システム経由での通知
-            if (window.EventBus) {
-                window.EventBus.emit('tool:registered', {
+            const eventBus = Tegaki.EventBusInstance || window.EventBus;
+            if (eventBus) {
+                eventBus.emit('tool:registered', {
                     toolName: name,
                     toolType: toolInstance.constructor.name
                 });
@@ -127,7 +139,11 @@ class ToolManager {
             console.log(`[ToolManager] Tool registered: ${name}`);
             return true;
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'ToolManager.registerTool');
+            console.error(`[ToolManager] ツール登録エラー (${name}):`, error);
+            const errorManager = Tegaki.ErrorManagerInstance || window.ErrorManager;
+            if (errorManager) {
+                errorManager.handle(error, 'ToolManager.registerTool');
+            }
             return false;
         }
     }
@@ -161,13 +177,15 @@ class ToolManager {
             this._updateToolHistory(toolName);
             
             // 統一システム経由での状態更新
-            if (window.StateManager) {
-                window.StateManager.set('tool.current', toolName);
-                window.StateManager.set('tool.isActive', true);
+            const stateManager = Tegaki.StateManagerInstance || window.StateManager;
+            if (stateManager) {
+                stateManager.set('tool.current', toolName);
+                stateManager.set('tool.isActive', true);
             }
             
-            if (window.EventBus) {
-                window.EventBus.emit('tool:changed', {
+            const eventBus = Tegaki.EventBusInstance || window.EventBus;
+            if (eventBus) {
+                eventBus.emit('tool:changed', {
                     previousTool: this.toolState.lastUsedTools[0] || null,
                     currentTool: toolName,
                     toolInstance: newTool
@@ -177,7 +195,11 @@ class ToolManager {
             console.log(`[ToolManager] Tool changed to: ${toolName}`);
             return true;
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'ToolManager.setTool');
+            console.error(`[ToolManager] ツール切り替えエラー (${toolName}):`, error);
+            const errorManager = Tegaki.ErrorManagerInstance || window.ErrorManager;
+            if (errorManager) {
+                errorManager.handle(error, 'ToolManager.setTool');
+            }
             return false;
         }
     }
@@ -191,7 +213,7 @@ class ToolManager {
     delegateToActiveTool(method, event) {
         try {
             if (!this.activeTool) {
-                console.warn('[ToolManager] No active tool for delegation');
+                console.warn('[ToolManager] アクティブツールがありません');
                 return null;
             }
 
@@ -203,8 +225,9 @@ class ToolManager {
             const result = this.activeTool[method](event, this.canvasManager, this.coordinateManager);
             
             // 統一システム経由での処理通知
-            if (window.EventBus) {
-                window.EventBus.emit('tool:method_delegated', {
+            const eventBus = Tegaki.EventBusInstance || window.EventBus;
+            if (eventBus) {
+                eventBus.emit('tool:method_delegated', {
                     toolName: this.toolState.currentTool,
                     method,
                     eventType: event?.type
@@ -213,44 +236,21 @@ class ToolManager {
 
             return result;
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'ToolManager.delegateToActiveTool');
+            console.error(`[ToolManager] ツールメソッド委譲エラー (${method}):`, error);
+            const errorManager = Tegaki.ErrorManagerInstance || window.ErrorManager;
+            if (errorManager) {
+                errorManager.handle(error, 'ToolManager.delegateToActiveTool');
+            }
             return null;
         }
     }
 
     /**
-     * ポインターイベント処理（統合イベント配信）
-     * @param {PointerEvent} event - ポインターイベント
-     * @param {string} eventType - イベントタイプ
-     * @returns {*}
+     * 登録済みツール一覧取得
+     * @returns {Array<string>}
      */
-    handlePointerEvent(event, eventType) {
-        try {
-            let methodName;
-            
-            switch (eventType) {
-                case 'pointerdown':
-                    methodName = 'onPointerDown';
-                    break;
-                case 'pointermove':
-                    methodName = 'onPointerMove';
-                    break;
-                case 'pointerup':
-                    methodName = 'onPointerUp';
-                    break;
-                case 'pointercancel':
-                    methodName = 'onPointerCancel';
-                    break;
-                default:
-                    console.warn(`[ToolManager] Unknown event type: ${eventType}`);
-                    return null;
-            }
-
-            return this.delegateToActiveTool(methodName, event);
-        } catch (error) {
-            window.ErrorManager?.handleError(error, 'ToolManager.handlePointerEvent');
-            return null;
-        }
+    getAvailableTools() {
+        return Array.from(this.tools.keys());
     }
 
     /**
@@ -278,105 +278,37 @@ class ToolManager {
         return this.tools.has(toolName);
     }
 
-    /**
-     * 登録済みツール一覧取得
-     * @returns {Array<string>}
-     */
-    getAvailableTools() {
-        return Array.from(this.tools.keys());
-    }
-
-    /**
-     * ツール設定更新
-     * @param {string} toolName - ツール名
-     * @param {string} setting - 設定項目名
-     * @param {*} value - 設定値
-     * @returns {boolean}
-     */
-    updateToolSetting(toolName, setting, value) {
-        try {
-            const tool = this.tools.get(toolName);
-            if (!tool) {
-                throw new Error(`Tool ${toolName} not found`);
-            }
-
-            if (typeof tool.updateSetting !== 'function') {
-                throw new Error(`Tool ${toolName} does not support setting updates`);
-            }
-
-            tool.updateSetting(setting, value);
-            
-            // 統一システム経由での通知
-            if (window.EventBus) {
-                window.EventBus.emit('tool:setting_updated', {
-                    toolName,
-                    setting,
-                    value
-                });
-            }
-
-            return true;
-        } catch (error) {
-            window.ErrorManager?.handleError(error, 'ToolManager.updateToolSetting');
-            return false;
-        }
-    }
-
-    /**
-     * ツール設定取得
-     * @param {string} toolName - ツール名
-     * @returns {object|null}
-     */
-    getToolConfig(toolName) {
-        try {
-            const tool = this.tools.get(toolName);
-            if (!tool) {
-                return null;
-            }
-
-            if (typeof tool.getSettings === 'function') {
-                return tool.getSettings();
-            }
-
-            return null;
-        } catch (error) {
-            window.ErrorManager?.handleError(error, 'ToolManager.getToolConfig');
-            return null;
-        }
-    }
-
-    /**
-     * ツール統計情報取得
-     * @returns {object}
-     */
-    getToolStats() {
-        return {
-            registeredTools: this.tools.size,
-            availableTools: this.getAvailableTools(),
-            currentTool: this.toolState.currentTool,
-            isActive: this.toolState.isActive,
-            toolHistory: [...this.toolState.lastUsedTools]
-        };
-    }
-
     // ========================================
     // 内部メソッド（統合制御専門）
     // ========================================
 
     /**
-     * デフォルトツール登録
+     * 🔧 修正2: デフォルトツール登録（Tegaki名前空間対応）
      * @private
      */
     _registerDefaultTools() {
+        console.log('[ToolManager] デフォルトツール登録開始...');
+        
         this.defaultTools.forEach(toolInfo => {
-            const ToolClass = window[toolInfo.className];
+            // 🔧 修正: window.* が無ければ Tegaki.* を探す
+            const ToolClass = 
+                window[toolInfo.className] ||
+                (window.Tegaki && window.Tegaki[toolInfo.className]);
+
             if (ToolClass) {
-                const toolInstance = new ToolClass();
-                this.registerTool(toolInfo.name, toolInstance);
+                try {
+                    const toolInstance = new ToolClass();
+                    this.registerTool(toolInfo.name, toolInstance);
+                    console.log(`[ToolManager] デフォルトツール登録成功: ${toolInfo.name}`);
+                } catch (error) {
+                    console.error(`[ToolManager] デフォルトツール作成エラー (${toolInfo.name}):`, error);
+                }
             } else {
                 console.warn(`[ToolManager] Default tool class not found: ${toolInfo.className}`);
             }
         });
+        
+        console.log(`[ToolManager] デフォルトツール登録完了 (${this.tools.size}個)`);
     }
 
     /**
@@ -385,26 +317,29 @@ class ToolManager {
      */
     _setupEventDelegation() {
         // EventBus経由での配信設定
-        if (window.EventBus) {
+        const eventBus = Tegaki.EventBusInstance || window.EventBus;
+        if (eventBus) {
             // CanvasManagerからのイベント受信
-            window.EventBus.on('canvas:pointerdown', (event) => {
+            eventBus.on('canvas:pointerdown', (event) => {
                 this.handlePointerEvent(event, 'pointerdown');
             });
 
-            window.EventBus.on('canvas:pointermove', (event) => {
+            eventBus.on('canvas:pointermove', (event) => {
                 this.handlePointerEvent(event, 'pointermove');
             });
 
-            window.EventBus.on('canvas:pointerup', (event) => {
+            eventBus.on('canvas:pointerup', (event) => {
                 this.handlePointerEvent(event, 'pointerup');
             });
 
-            window.EventBus.on('canvas:pointercancel', (event) => {
+            eventBus.on('canvas:pointercancel', (event) => {
                 this.handlePointerEvent(event, 'pointercancel');
             });
+            
+            console.log('[ToolManager] Event delegation system configured');
+        } else {
+            console.warn('[ToolManager] EventBus not available for delegation');
         }
-
-        console.log('[ToolManager] Event delegation system configured');
     }
 
     /**
@@ -413,10 +348,11 @@ class ToolManager {
      */
     _integrateWithUnifiedSystems() {
         // 初期状態設定
-        if (window.StateManager) {
-            window.StateManager.set('tool.current', null);
-            window.StateManager.set('tool.isActive', false);
-            window.StateManager.set('tool.availableTools', this.getAvailableTools());
+        const stateManager = Tegaki.StateManagerInstance || window.StateManager;
+        if (stateManager) {
+            stateManager.set('tool.current', null);
+            stateManager.set('tool.isActive', false);
+            stateManager.set('tool.availableTools', this.getAvailableTools());
         }
     }
 
@@ -425,7 +361,9 @@ class ToolManager {
      * @private
      */
     _setInitialTool() {
-        const defaultTool = window.ConfigManager?.get('tool.default', 'pen');
+        const configManager = Tegaki.ConfigManagerInstance || window.ConfigManager;
+        const defaultTool = configManager?.get('tool.default') || 'pen';
+        
         if (this.tools.has(defaultTool)) {
             this.setTool(defaultTool);
         } else if (this.tools.size > 0) {
@@ -464,7 +402,7 @@ class ToolManager {
                 const layer = this.canvasManager.getLayerForTool(toolName);
                 toolInstance.attachToCanvas(this.canvasManager, layer);
             } catch (error) {
-                console.warn(`[ToolManager] Failed to integrate ${toolName} with canvas:`, error.message);
+                console.warn(`[ToolManager] ${toolName} とCanvas統合失敗:`, error.message);
             }
         }
     }
@@ -490,58 +428,42 @@ class ToolManager {
     }
 
     /**
-     * CanvasManager接続設定
-     * @param {CanvasManager} canvasManager - CanvasManagerインスタンス
+     * ポインターイベント処理（統合イベント配信）
+     * @param {PointerEvent} event - ポインターイベント
+     * @param {string} eventType - イベントタイプ
+     * @returns {*}
      */
-    setCanvasManager(canvasManager) {
-        this.canvasManager = canvasManager;
-        console.log('[ToolManager] CanvasManager connection established');
-    }
+    handlePointerEvent(event, eventType) {
+        try {
+            let methodName;
+            
+            switch (eventType) {
+                case 'pointerdown':
+                    methodName = 'onPointerDown';
+                    break;
+                case 'pointermove':
+                    methodName = 'onPointerMove';
+                    break;
+                case 'pointerup':
+                    methodName = 'onPointerUp';
+                    break;
+                case 'pointercancel':
+                    methodName = 'onPointerCancel';
+                    break;
+                default:
+                    console.warn(`[ToolManager] Unknown event type: ${eventType}`);
+                    return null;
+            }
 
-    /**
-     * CoordinateManager接続設定
-     * @param {CoordinateManager} coordinateManager - CoordinateManagerインスタンス
-     */
-    setCoordinateManager(coordinateManager) {
-        this.coordinateManager = coordinateManager;
-        console.log('[ToolManager] CoordinateManager connection established');
-    }
-
-    /**
-     * Tool-Canvas統合初期化
-     */
-    initializeToolCanvasIntegration() {
-        if (!this.canvasManager) {
-            console.warn('[ToolManager] CanvasManager not available for integration');
-            return;
-        }
-
-        // 全登録ツールとCanvasManager統合
-        this.tools.forEach((tool, toolName) => {
-            this._integrateToolWithCanvas(toolName, tool);
-        });
-
-        console.log('[ToolManager] Tool-Canvas integration completed');
-    }
-
-    /**
-     * ツール用Graphics作成
-     * @param {string} toolName - ツール名
-     * @returns {PIXI.Graphics|null}
-     */
-    createToolGraphics(toolName) {
-        if (!this.canvasManager) {
+            return this.delegateToActiveTool(methodName, event);
+        } catch (error) {
+            console.error(`[ToolManager] ポインターイベント処理エラー (${eventType}):`, error);
+            const errorManager = Tegaki.ErrorManagerInstance || window.ErrorManager;
+            if (errorManager) {
+                errorManager.handle(error, 'ToolManager.handlePointerEvent');
+            }
             return null;
         }
-
-        const layer = this.canvasManager.getLayerForTool(toolName);
-        const graphics = new PIXI.Graphics();
-        
-        if (layer) {
-            layer.addChild(graphics);
-        }
-
-        return graphics;
     }
 }
 
@@ -560,4 +482,4 @@ Tegaki._registry.push(() => {
 // - Graphics生成部分のAPI更新対応準備済み
 // - モジュール化対応設計採用
 
-console.log('[ToolManager] Loaded and ready for registry initialization');
+console.log('[ToolManager] Loaded and ready for registry initialization (修正版)');

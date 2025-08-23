@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0 - 統一版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0 - 統一版 (修正版)</title>
     
     <!-- CSS分離 -->
     <link rel="stylesheet" href="css/styles.css">
@@ -115,9 +115,9 @@
         </div>
         
         <div class="canvas-area">
-            <!-- 🔧 修正1: DOM構造修正 - canvas-containerのIDを追加 -->
-            <div class="canvas-container" id="canvas-container">
-                <div id="drawing-canvas"></div>
+            <!-- 🔧 修正1: キャンバスコンテナの確実な設置 -->
+            <div id="canvas-container" style="width: 400px; height: 400px; margin: 0 auto; display: block; background-color: #ffffee; border: 1px solid #ccc;">
+                <!-- キャンバス描画用コンテナ（CanvasManagerが使用） -->
             </div>
         </div>
     </div>
@@ -396,11 +396,21 @@
     </div>
 
     <!-- ========================================= -->
-    <!-- 🔧 統一版スクリプト読み込み -->
+    <!-- 🔧 統一版スクリプト読み込み (修正版) -->
     <!-- ========================================= -->
     
     <!-- PixiJS v7 本体 - node_modules版 -->
     <script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
+    
+    <!-- 🔧 修正2: PIXI確実な初期化 -->
+    <script>
+        if (!window.PIXI) {
+            console.error('❌ PIXI読み込み失敗 - CDNフォールバック実行');
+            document.write('<script src="https://unpkg.com/pixi.js@7/dist/pixi.min.js"><\/script>');
+        } else {
+            console.log('✅ PIXI読み込み成功');
+        }
+    </script>
     
     <!-- 依存関係ポリフィル（@pixi/ui用） -->
     <script>
@@ -509,9 +519,10 @@
     <!-- PHASE 6: Canvas・境界・ツール管理（PixiJS拡張後に読み込み） -->
     <script src="managers/canvas-manager.js"></script>
     <script src="managers/boundary-manager.js"></script>
+    <!-- 🔧 修正3: ToolManager修正版を使用指示（実際のファイル配置は同じ） -->
     <script src="managers/tool-manager.js"></script>
 
-    <!-- PHASE 7: ツール実装 - 🔧 修正2: AbstractTool継承順序を保証 -->
+    <!-- PHASE 7: ツール実装 - 🔧 修正4: AbstractTool継承順序を保証 -->
     <script src="tools/abstract-tool.js"></script>
     <script src="tools/pen-tool.js"></script>
     <script src="tools/eraser-tool.js"></script>
@@ -520,73 +531,30 @@
     <script src="js/app-core.js"></script>
 
     <!-- PHASE 9: メインアプリケーション（最終段階） -->
+    <!-- 🔧 修正5: main.js修正版を使用指示（実際のファイル配置は同じ） -->
     <script src="js/main.js"></script>
     
     <!-- ========================================= -->
-    <!-- 🔍 統一版起動完了通知 -->
+    <!-- 🔍 統一版起動完了通知 (修正版) -->
     <!-- ========================================= -->
     
     <script>
-        // スクリプト読み込み確認（デバッグ用）
+        // 🔧 修正6: スクリプト読み込み確認（デバッグ用）
         console.log('🔧 依存関係確認:');
         console.log('  ✅ PHASE 1 基盤:', !!window.ConfigManager, !!window.ErrorManager, !!window.StateManager, !!window.EventBus);
         console.log('  ✅ PHASE 2 座標:', !!window.CoordinateManager, !!window.BoundaryManager);
         console.log('  ✅ PHASE 4 管理:', !!window.UIManager, !!window.ToolManager);
         console.log('  ✅ PHASE 5 ツール:', !!window.PenTool, !!window.EraserTool);
         console.log('  ✅ PHASE 7 コア:', !!window.AppCore);
+        console.log('  ✅ Tegaki名前空間:', !!window.Tegaki);
         
         // 起動完了後の処理
         window.addEventListener('load', () => {
-            console.log('🎉 統一版 HTML + JavaScript 読み込み完了');
+            console.log('🎉 統一版 HTML + JavaScript 読み込み完了 (修正版)');
             console.log('🔧 統一システム状況:');
             console.log(`  - ConfigManager: ${!!window.ConfigManager}`);
             console.log(`  - ErrorManager: ${!!window.ErrorManager}`);
             console.log(`  - StateManager: ${!!window.StateManager}`);
             console.log(`  - EventBus: ${!!window.EventBus}`);
             console.log(`  - CoordinateManager: ${!!window.CoordinateManager}`);
-            console.log(`  - BoundaryManager: ${!!window.BoundaryManager}`);
-            console.log(`  - PixiExtensions: ${!!window.PixiExtensions}`);
-            console.log(`  - AppCore: ${!!window.AppCore}`);
-            
-            if (window.ConfigManager) {
-                console.log(`📊 設定項目: ${window.ConfigManager.getDebugInfo().totalSettings}個`);
-            }
-            
-            if (window.EventBus) {
-                console.log(`📡 標準イベント: ${Object.keys(window.EventBus.Events).length}個`);
-            }
-            
-            // Phase1後期改修: アイコン更新処理
-            if (window.IconManager && window.iconManager) {
-                console.log('🎨 アイコンシステム更新開始...');
-                
-                // ツールボタンアイコン更新
-                const updateResult = window.iconManager.updateToolButtonIcons();
-                console.log(`✅ アイコン更新完了: ${updateResult}個更新`);
-                
-                // 新規ツールボタンのイベント登録
-                ['layers-tool', 'gif-tool'].forEach(toolId => {
-                    const element = document.getElementById(toolId);
-                    if (element) {
-                        element.addEventListener('click', function() {
-                            const panelId = toolId.replace('-tool', '-settings');
-                            const panel = document.getElementById(panelId);
-                            if (panel) {
-                                const isVisible = panel.style.display !== 'none';
-                                panel.style.display = isVisible ? 'none' : 'block';
-                                console.log(`📋 ${panelId} パネル ${isVisible ? '非表示' : '表示'}`);
-                            }
-                        });
-                    }
-                });
-            }
-            
-            console.log('💡 デバッグコマンド:');
-            console.log('  - window.getState() : 全状態取得');
-            console.log('  - window.healthCheck() : 健全性チェック');
-            console.log('  - window.startDebugMode() : デバッグモード開始');
-            console.log('  - window.iconManager.debug() : アイコンシステム診断');
-        });
-    </script>
-</body>
-</html>
+            console
