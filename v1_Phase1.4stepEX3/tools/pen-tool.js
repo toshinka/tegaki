@@ -4,6 +4,8 @@
  * 🔧 COORDINATE_CONTROL: 座標変換・moveTo/lineTo制御
  * 📋 RESPONSIBILITY: 「ペン」としての描画オブジェクト生成
  * 
+ * ⚡ v12修正: AbstractTool継承エラー修正・初期化順序調整
+ * 
  * 📏 DESIGN_PRINCIPLE: ユーザー入力 → Graphics生成 → CanvasManagerに渡す
  * 🎯 ARCHITECTURE: AbstractTool継承・1ファイル1ツール設計
  * 🚫 COORDINATE_BUG_NOTES: 0,0直線バグ等の座標問題対策済み
@@ -17,8 +19,13 @@
 // Tegaki名前空間初期化（Phase1.4stepEX準拠）
 window.Tegaki = window.Tegaki || {};
 
-class PenTool extends Tegaki.AbstractTool {
+class PenTool extends window.AbstractTool {
     constructor() {
+        // AbstractToolの存在確認（v12修正）
+        if (!window.AbstractTool) {
+            throw new Error('AbstractTool is not available. Ensure it is loaded before PenTool.');
+        }
+
         // デフォルト設定でAbstractToolを初期化
         super('pen', {
             size: 3,
@@ -50,6 +57,8 @@ class PenTool extends Tegaki.AbstractTool {
             currentPath: null,
             lastDrawnPoint: null
         };
+        
+        console.log('[PenTool] ✅ Constructor completed successfully');
     }
 
     // ========================================
@@ -83,11 +92,7 @@ class PenTool extends Tegaki.AbstractTool {
 
             console.log(`[PenTool] Stroke started at (${point.x.toFixed(2)}, ${point.y.toFixed(2)})`);
         } catch (error) {
-            if (Tegaki.ErrorManagerInstance) {
-                Tegaki.ErrorManagerInstance.handle(error, 'PenTool._onStrokeStart');
-            } else {
-                console.error('[PenTool._onStrokeStart]', error);
-            }
+            this._handleError(error, 'PenTool._onStrokeStart');
         }
     }
 
@@ -114,11 +119,7 @@ class PenTool extends Tegaki.AbstractTool {
                 this._flushBufferToGraphics();
             }
         } catch (error) {
-            if (Tegaki.ErrorManagerInstance) {
-                Tegaki.ErrorManagerInstance.handle(error, 'PenTool._onPointAdd');
-            } else {
-                console.error('[PenTool._onPointAdd]', error);
-            }
+            this._handleError(error, 'PenTool._onPointAdd');
         }
     }
 
@@ -142,11 +143,7 @@ class PenTool extends Tegaki.AbstractTool {
 
             console.log(`[PenTool] Stroke ended with ${this.currentStroke.points.length} points`);
         } catch (error) {
-            if (Tegaki.ErrorManagerInstance) {
-                Tegaki.ErrorManagerInstance.handle(error, 'PenTool._onStrokeEnd');
-            } else {
-                console.error('[PenTool._onStrokeEnd]', error);
-            }
+            this._handleError(error, 'PenTool._onStrokeEnd');
         }
     }
 
@@ -203,11 +200,7 @@ class PenTool extends Tegaki.AbstractTool {
             Object.assign(this.penOptions, options);
             console.log('[PenTool] Pen options updated:', this.penOptions);
         } catch (error) {
-            if (Tegaki.ErrorManagerInstance) {
-                Tegaki.ErrorManagerInstance.handle(error, 'PenTool.setPenOptions');
-            } else {
-                console.error('[PenTool.setPenOptions]', error);
-            }
+            this._handleError(error, 'PenTool.setPenOptions');
         }
     }
 
@@ -244,6 +237,20 @@ class PenTool extends Tegaki.AbstractTool {
     // ========================================
     // 内部描画制御メソッド（座標バグ修正の核心）
     // ========================================
+
+    /**
+     * エラーハンドリング（v12修正：統一システム対応）
+     * @private
+     */
+    _handleError(error, context) {
+        if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+            window.Tegaki.ErrorManagerInstance.handle(error, context);
+        } else if (window.ErrorManager) {
+            window.ErrorManager.handleError(error, context);
+        } else {
+            console.error(`[PenTool] Error in ${context}:`, error);
+        }
+    }
 
     /**
      * Graphics初期化（ペン用）
@@ -300,11 +307,7 @@ class PenTool extends Tegaki.AbstractTool {
                 this.drawingBuffer = [];
             }
         } catch (error) {
-            if (Tegaki.ErrorManagerInstance) {
-                Tegaki.ErrorManagerInstance.handle(error, 'PenTool._flushBufferToGraphics');
-            } else {
-                console.error('[PenTool._flushBufferToGraphics]', error);
-            }
+            this._handleError(error, 'PenTool._flushBufferToGraphics');
         }
     }
 
@@ -397,11 +400,7 @@ class PenTool extends Tegaki.AbstractTool {
             // 現在のGraphicsに合成
             this.currentStroke.graphics.addChild(taperGraphics);
         } catch (error) {
-            if (Tegaki.ErrorManagerInstance) {
-                Tegaki.ErrorManagerInstance.handle(error, 'PenTool._applyEndTapering');
-            } else {
-                console.error('[PenTool._applyEndTapering]', error);
-            }
+            this._handleError(error, 'PenTool._applyEndTapering');
         }
     }
 
@@ -456,10 +455,30 @@ class PenTool extends Tegaki.AbstractTool {
 Tegaki.PenTool = PenTool;
 
 // 初期化レジストリ方式（Phase1.4stepEX準拠）
+// ⚡ v12修正: AbstractTool依存関係を考慮したレジストリ実行
 Tegaki._registry = Tegaki._registry || [];
 Tegaki._registry.push(() => {
-    Tegaki.PenToolInstance = new Tegaki.PenTool();
-    console.log('[PenTool] ✅ Tegaki.PenToolInstance 初期化完了');
+    // AbstractToolの存在確認
+    if (!window.AbstractTool) {
+        console.error('[PenTool] AbstractTool not found. Cannot initialize PenTool.');
+        return;
+    }
+    
+    try {
+        Tegaki.PenToolInstance = new Tegaki.PenTool();
+        
+        // 下位互換のためwindowにも登録
+        window.PenTool = Tegaki.PenToolInstance;
+        
+        console.log('[PenTool] ✅ Initialized and registered as Tegaki.PenToolInstance');
+    } catch (error) {
+        console.error('[PenTool] ❌ Failed to initialize:', error.message);
+        
+        // ErrorManagerが利用可能な場合はそちらも使用
+        if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+            window.Tegaki.ErrorManagerInstance.handle(error, 'PenTool.initialization');
+        }
+    }
 });
 
 console.log('[PenTool] ✅ Tegaki名前空間統一・レジストリ登録完了');

@@ -1,6 +1,7 @@
 /**
  * EraserTool - 消しゴムツール
- * 🚨 v12修正: AbstractTool継承エラー解消・初期化順序調整
+ * 
+ * ⚡ v12修正: AbstractTool継承エラー修正・初期化順序調整
  * 
  * 責務:
  * - 消しゴム固有の消去処理
@@ -14,18 +15,11 @@
 // Tegaki名前空間初期化
 window.Tegaki = window.Tegaki || {};
 
-/**
- * 🚨 v12修正: AbstractTool継承エラーの解消
- * - window.AbstractTool の存在確認を追加
- * - 継承タイミングの調整
- * - エラーハンドリングの強化
- */
-class EraserTool extends (window.AbstractTool || class {}) {
+class EraserTool extends window.AbstractTool {
     constructor() {
-        // 🚨 v12修正: AbstractTool未定義時のエラー回避
+        // AbstractToolの存在確認（v12修正）
         if (!window.AbstractTool) {
-            console.error('[EraserTool] AbstractTool is not available. EraserTool cannot be initialized.');
-            return;
+            throw new Error('AbstractTool is not available. Ensure it is loaded before EraserTool.');
         }
 
         // デフォルト設定でAbstractToolを初期化
@@ -52,18 +46,7 @@ class EraserTool extends (window.AbstractTool || class {}) {
         // CanvasManager参照
         this.canvasManager = null;
         
-        console.log('[EraserTool] Constructor completed successfully');
-    }
-
-    /**
-     * 🚨 v12追加: クラス検証メソッド
-     */
-    static validateClass() {
-        if (!window.AbstractTool) {
-            console.error('[EraserTool] AbstractTool base class is not available');
-            return false;
-        }
-        return true;
+        console.log('[EraserTool] ✅ Constructor completed successfully');
     }
 
     /**
@@ -241,6 +224,32 @@ class EraserTool extends (window.AbstractTool || class {}) {
     // ========================================
     // 内部メソッド
     // ========================================
+
+    /**
+     * エラーハンドリング（v12修正：統一システム対応）
+     * @private
+     */
+    _handleError(error, context) {
+        if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+            window.Tegaki.ErrorManagerInstance.handle(error, context);
+        } else if (window.ErrorManager) {
+            window.ErrorManager.handleError(error, context);
+        } else {
+            console.error(`[EraserTool] Error in ${context}:`, error);
+        }
+    }
+
+    /**
+     * イベント発火（v12修正：統一システム対応）
+     * @private
+     */
+    _emitEvent(eventName, data) {
+        if (window.Tegaki && window.Tegaki.EventBusInstance) {
+            window.Tegaki.EventBusInstance.emit(eventName, data);
+        } else if (window.EventBus) {
+            window.EventBus.emit(eventName, data);
+        }
+    }
 
     /**
      * 消去バッファを処理
@@ -504,164 +513,36 @@ class EraserTool extends (window.AbstractTool || class {}) {
             this._handleError(error, 'EraserTool._performObjectErase');
         }
     }
-
-    /**
-     * 🚨 v12追加: 統一エラーハンドリング
-     * @private
-     */
-    _handleError(error, context) {
-        if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
-            window.Tegaki.ErrorManagerInstance.handle(error, context);
-        } else if (window.ErrorManager) {
-            window.ErrorManager.handleError(error, context);
-        } else {
-            console.error(`[EraserTool] Error in ${context}:`, error);
-        }
-    }
-
-    /**
-     * 🚨 v12追加: 統一イベント発火
-     * @private
-     */
-    _emitEvent(eventType, data) {
-        try {
-            if (window.Tegaki && window.Tegaki.EventBusInstance) {
-                window.Tegaki.EventBusInstance.emit(eventType, data);
-            } else if (window.EventBus) {
-                window.EventBus.emit(eventType, data);
-            }
-        } catch (error) {
-            console.warn('[EraserTool] Event emission failed:', error);
-        }
-    }
-
-    /**
-     * 🚨 v12追加: ツール健全性チェック
-     */
-    healthCheck() {
-        const report = {
-            toolName: 'eraser',
-            isHealthy: true,
-            issues: [],
-            recommendations: []
-        };
-
-        try {
-            // 基底クラス確認
-            if (!window.AbstractTool) {
-                report.isHealthy = false;
-                report.issues.push('AbstractTool base class not available');
-                report.recommendations.push('Ensure AbstractTool is loaded before EraserTool');
-            }
-
-            // 基本状態チェック
-            if (this.isDrawing && !this.currentStroke.graphics) {
-                report.isHealthy = false;
-                report.issues.push('Drawing state inconsistent');
-            }
-
-            // 統合チェック
-            if (!this.canvasManager) {
-                report.issues.push('CanvasManager not connected');
-                report.recommendations.push('Call attachToCanvas() method');
-            }
-
-            // 設定チェック
-            if (this.settings.size <= 0) {
-                report.issues.push('Invalid tool size');
-                report.recommendations.push('Set positive size value');
-            }
-
-            if (report.issues.length > 0 && report.isHealthy) {
-                report.isHealthy = false;
-            }
-
-        } catch (error) {
-            report.isHealthy = false;
-            report.issues.push(`Health check failed: ${error.message}`);
-        }
-
-        return report;
-    }
 }
 
-/**
- * 🚨 v12修正: 安全なインスタンス生成関数
- */
-function createEraserToolInstance() {
-    try {
-        // AbstractTool の存在確認
-        if (!window.AbstractTool) {
-            console.error('[EraserTool] Cannot create instance: AbstractTool not available');
-            return null;
-        }
-
-        // EraserTool クラス検証
-        if (!EraserTool.validateClass()) {
-            console.error('[EraserTool] Class validation failed');
-            return null;
-        }
-
-        const instance = new EraserTool();
-        console.log('[EraserTool] Instance created successfully');
-        return instance;
-
-    } catch (error) {
-        console.error('[EraserTool] Instance creation failed:', error);
-        return null;
-    }
-}
-
-// Tegaki名前空間に登録（Phase1.4stepEX準拠）
+// Tegaki名前空間にクラス登録
 Tegaki.EraserTool = EraserTool;
-Tegaki.createEraserToolInstance = createEraserToolInstance;
 
-/**
- * 🚨 v12修正: レジストリ方式の安全な初期化
- * AbstractTool の読み込み待機を追加
- */
+// 初期化レジストリ方式（Phase1.4stepEX準拠）
+// ⚡ v12修正: AbstractTool依存関係を考慮したレジストリ実行
 Tegaki._registry = Tegaki._registry || [];
 Tegaki._registry.push(() => {
+    // AbstractToolの存在確認
+    if (!window.AbstractTool) {
+        console.error('[EraserTool] AbstractTool not found. Cannot initialize EraserTool.');
+        return;
+    }
+    
     try {
-        // AbstractTool の存在確認（重要な修正点）
-        if (!window.AbstractTool) {
-            console.warn('[EraserTool] AbstractTool not yet loaded, deferring initialization');
-            
-            // AbstractTool読み込み待機
-            const checkAbstractTool = () => {
-                if (window.AbstractTool) {
-                    console.log('[EraserTool] AbstractTool detected, proceeding with initialization');
-                    const instance = createEraserToolInstance();
-                    if (instance) {
-                        Tegaki.EraserToolInstance = instance;
-                        console.log('[EraserTool] ✅ Tegaki.EraserToolInstance 初期化完了');
-                    }
-                } else {
-                    // 再試行（最大10回、1秒間隔）
-                    if ((checkAbstractTool.attempts || 0) < 10) {
-                        checkAbstractTool.attempts = (checkAbstractTool.attempts || 0) + 1;
-                        setTimeout(checkAbstractTool, 100);
-                    } else {
-                        console.error('[EraserTool] AbstractTool loading timeout - EraserTool disabled');
-                    }
-                }
-            };
-            checkAbstractTool();
-            return;
-        }
-
-        // 即座にインスタンス生成
-        const instance = createEraserToolInstance();
-        if (instance) {
-            Tegaki.EraserToolInstance = instance;
-            console.log('[EraserTool] ✅ Tegaki.EraserToolInstance 初期化完了');
-        } else {
-            console.error('[EraserTool] Instance creation failed during registry initialization');
-        }
-
+        Tegaki.EraserToolInstance = new EraserTool();
+        
+        // 下位互換のためwindowにも登録
+        window.EraserTool = Tegaki.EraserToolInstance;
+        
+        console.log('[EraserTool] ✅ Initialized and registered as Tegaki.EraserToolInstance');
     } catch (error) {
-        console.error('[EraserTool] Registry initialization failed:', error);
+        console.error('[EraserTool] ❌ Failed to initialize:', error.message);
+        
+        // ErrorManagerが利用可能な場合はそちらも使用
+        if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+            window.Tegaki.ErrorManagerInstance.handle(error, 'EraserTool.initialization');
+        }
     }
 });
 
-console.log('[EraserTool] ✅ Loaded with enhanced error handling and inheritance safety (v12)');
+console.log('[EraserTool] Loaded and ready for registry initialization');

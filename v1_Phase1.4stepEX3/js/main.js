@@ -5,11 +5,11 @@
  * 🚫 COORDINATE_BUG_FIX: 座標バグ完全対策版
  * 📋 RESPONSIBILITY: 「アプリケーション統合初期化・起動制御」専門
  * 
+ * ⚡ v12修正: async/await エラー修正・初期化タイミング調整
+ * 
  * 📏 DESIGN_PRINCIPLE: 改修手順書Phase1.4stepEX完全準拠
  * 🎯 BUG_PREVENTION: 堂々巡りエラー防止・依存関係順序保証
  * 🌈 UI_PRESERVATION: ふたばカラー・ポップアップ・レイアウト保持
- * 
- * 🚨 v12修正: async/await使用エラー解消・初期化順序保証強化
  * 
  * 依存: 全Tegakiシステム統合
  * 公開: Tegaki.TegakiApplication, Tegaki.AppInstance
@@ -40,9 +40,8 @@ class TegakiApplication {
 
     /**
      * アプリケーション統合初期化（改修手順書準拠）
-     * 🚨 v12修正: async/await問題解消・同期的初期化に変更
      */
-    initialize() {
+    async initialize() {
         try {
             console.log('🎨 Tegaki Phase1.4stepEX 初期化開始...');
 
@@ -50,10 +49,10 @@ class TegakiApplication {
             this.executeInitializationRegistry();
             
             // STEP 2: キャンバスシステム初期化
-            this.initializeCanvasSystem();
+            await this.initializeCanvasSystem();
             
             // STEP 3: ツール登録・統合
-            this.registerTools();
+            await this.registerTools();
             
             // STEP 4: イベント統合・座標バインド
             this.bindEvents();
@@ -68,8 +67,6 @@ class TegakiApplication {
             if (Tegaki.EventBusInstance) {
                 Tegaki.EventBusInstance.emit('app:initialized');
             }
-            
-            return true;
             
         } catch (error) {
             console.error('❌ Tegaki初期化エラー:', error);
@@ -123,7 +120,7 @@ class TegakiApplication {
     /**
      * STEP 2: キャンバスシステム初期化（座標バグ対策）
      */
-    initializeCanvasSystem() {
+    async initializeCanvasSystem() {
         console.log('🎯 キャンバスシステム初期化中...');
 
         // キャンバスコンテナ取得
@@ -134,19 +131,8 @@ class TegakiApplication {
 
         // CanvasManager利用（Tegaki統一API）
         if (Tegaki.CanvasManagerInstance) {
-            try {
-                Tegaki.CanvasManagerInstance.initialize(container, this.config.canvas);
-                console.log('✅ CanvasManagerInstance 初期化完了');
-            } catch (error) {
-                console.error('❌ CanvasManager初期化エラー:', error);
-                if (Tegaki.ErrorManagerInstance) {
-                    Tegaki.ErrorManagerInstance.handle(error, 'TegakiApplication.initializeCanvasSystem');
-                }
-                // 🚨 v12修正: CanvasManager初期化失敗時の適切な処理
-                throw new Error(`CanvasManager初期化失敗: ${error.message}`);
-            }
-        } else {
-            throw new Error('CanvasManagerInstance が利用できません');
+            await Tegaki.CanvasManagerInstance.initialize(container, this.config.canvas);
+            console.log('✅ CanvasManagerInstance 初期化完了');
         }
 
         // CoordinateManager設定（座標バグ対策の要）
@@ -163,32 +149,42 @@ class TegakiApplication {
 
     /**
      * STEP 3: ツール登録（改修手順書準拠）
-     * 🚨 v12修正: ツール登録エラーの適切な処理
      */
-    registerTools() {
+    async registerTools() {
         console.log('🔧 ツール登録中...');
 
         if (Tegaki.ToolManagerInstance) {
-            try {
-                // CanvasManager・CoordinateManagerとの統合
+            // ToolManagerの初期化（CanvasManager, CoordinateManagerとの連携）
+            if (Tegaki.CanvasManagerInstance && Tegaki.CoordinateManagerInstance) {
                 Tegaki.ToolManagerInstance.initialize(
-                    Tegaki.CanvasManagerInstance,
+                    Tegaki.CanvasManagerInstance, 
                     Tegaki.CoordinateManagerInstance
                 );
-                
-                // デフォルトツール設定
-                if (Tegaki.ToolManagerInstance.isToolAvailable('pen')) {
-                    Tegaki.ToolManagerInstance.setTool("pen");
-                    console.log('✅ デフォルトツール設定完了: pen');
-                } else {
-                    console.warn('⚠️ ペンツールが利用できません');
-                }
-            } catch (error) {
-                console.error('❌ ツール登録エラー:', error);
+            }
+            
+            // デフォルトツール設定
+            if (Tegaki.ToolManagerInstance.isToolAvailable("pen")) {
+                Tegaki.ToolManagerInstance.setTool("pen");
+                console.log('✅ デフォルトツール設定完了: pen');
+            } else {
+                console.warn('⚠️ ペンツールが利用できません');
+                // ErrorManagerでの警告表示
                 if (Tegaki.ErrorManagerInstance) {
-                    Tegaki.ErrorManagerInstance.handle(error, 'TegakiApplication.registerTools');
+                    Tegaki.ErrorManagerInstance.showWarning('ペンツールが利用できません', {
+                        context: 'TegakiApplication.registerTools'
+                    });
                 }
-                // ツール登録エラーは致命的ではないため継続
+            }
+            
+            // 消しゴムツール確認
+            if (!Tegaki.ToolManagerInstance.isToolAvailable("eraser")) {
+                console.warn('⚠️ 消しゴムツールが利用できません');
+                // ErrorManagerでの警告表示
+                if (Tegaki.ErrorManagerInstance) {
+                    Tegaki.ErrorManagerInstance.showWarning('消しゴムツールが利用できません', {
+                        context: 'TegakiApplication.registerTools'
+                    });
+                }
             }
         }
 
@@ -202,10 +198,7 @@ class TegakiApplication {
         console.log('🔗 イベント統合中...');
 
         const container = document.querySelector("#canvas-container");
-        if (!container || !Tegaki.EventBusInstance) {
-            console.warn('⚠️ イベント統合に必要な要素が不足');
-            return;
-        }
+        if (!container || !Tegaki.EventBusInstance) return;
 
         // ポインターイベント統合（座標バグの修正対象）
         container.addEventListener("pointerdown", (e) => {
@@ -225,7 +218,7 @@ class TegakiApplication {
                         timestamp: Date.now()
                     });
                     
-                    // ToolManager経由での処理委譲
+                    // ToolManagerに委譲
                     if (Tegaki.ToolManagerInstance) {
                         Tegaki.ToolManagerInstance.handlePointerEvent(e, 'pointerdown');
                     }
@@ -252,7 +245,7 @@ class TegakiApplication {
                         timestamp: Date.now()
                     });
 
-                    // ToolManager経由での処理委譲
+                    // ツールマネージャーに委譲
                     if (Tegaki.ToolManagerInstance) {
                         Tegaki.ToolManagerInstance.handlePointerEvent(e, 'pointermove');
                     }
@@ -282,7 +275,7 @@ class TegakiApplication {
                         timestamp: Date.now()
                     });
                     
-                    // ToolManager経由での処理委譲
+                    // ツールマネージャーに委譲
                     if (Tegaki.ToolManagerInstance) {
                         Tegaki.ToolManagerInstance.handlePointerEvent(e, 'pointerup');
                     }
@@ -320,25 +313,16 @@ class TegakiApplication {
 
     /**
      * ツールボタンイベント設定
-     * 🚨 v12修正: エラーハンドリング強化・ツール利用可能性確認
      */
     setupToolButtons() {
         // ペンツールボタン
         const penTool = document.getElementById('pen-tool');
         if (penTool) {
             penTool.addEventListener('click', () => {
-                try {
-                    if (Tegaki.ToolManagerInstance && Tegaki.ToolManagerInstance.isToolAvailable('pen')) {
-                        Tegaki.ToolManagerInstance.setTool('pen');
-                        this.setActiveToolButton('pen-tool');
-                    } else {
-                        console.warn('⚠️ ペンツールが利用できません');
-                    }
-                } catch (error) {
-                    if (Tegaki.ErrorManagerInstance) {
-                        Tegaki.ErrorManagerInstance.handle(error, 'TegakiApplication.setupToolButtons.pen');
-                    }
+                if (Tegaki.ToolManagerInstance) {
+                    Tegaki.ToolManagerInstance.setTool('pen');
                 }
+                this.setActiveToolButton('pen-tool');
             });
         }
 
@@ -346,21 +330,10 @@ class TegakiApplication {
         const eraserTool = document.getElementById('eraser-tool');
         if (eraserTool) {
             eraserTool.addEventListener('click', () => {
-                try {
-                    if (Tegaki.ToolManagerInstance && Tegaki.ToolManagerInstance.isToolAvailable('eraser')) {
-                        Tegaki.ToolManagerInstance.setTool('eraser');
-                        this.setActiveToolButton('eraser-tool');
-                    } else {
-                        console.warn('⚠️ 消しゴムツールが利用できません');
-                        if (Tegaki.ErrorManagerInstance) {
-                            Tegaki.ErrorManagerInstance.showWarning('消しゴムツールは現在利用できません。');
-                        }
-                    }
-                } catch (error) {
-                    if (Tegaki.ErrorManagerInstance) {
-                        Tegaki.ErrorManagerInstance.handle(error, 'TegakiApplication.setupToolButtons.eraser');
-                    }
+                if (Tegaki.ToolManagerInstance) {
+                    Tegaki.ToolManagerInstance.setTool('eraser');
                 }
+                this.setActiveToolButton('eraser-tool');
             });
         }
 
@@ -406,20 +379,14 @@ class TegakiApplication {
         const sizePresets = panel.querySelectorAll('.size-preset-item');
         sizePresets.forEach(preset => {
             preset.addEventListener('click', () => {
-                try {
-                    const size = parseFloat(preset.getAttribute('data-size'));
-                    if (size && Tegaki.PenToolInstance) {
-                        Tegaki.PenToolInstance.updateSetting('size', size);
-                    }
-                    
-                    // アクティブ表示切り替え
-                    sizePresets.forEach(p => p.classList.remove('active'));
-                    preset.classList.add('active');
-                } catch (error) {
-                    if (Tegaki.ErrorManagerInstance) {
-                        Tegaki.ErrorManagerInstance.handle(error, 'TegakiApplication.setupPenToolSettings');
-                    }
+                const size = parseFloat(preset.getAttribute('data-size'));
+                if (size && Tegaki.PenToolInstance) {
+                    Tegaki.PenToolInstance.updateSettings({ size });
                 }
+                
+                // アクティブ表示切り替え
+                sizePresets.forEach(p => p.classList.remove('active'));
+                preset.classList.add('active');
             });
         });
 
@@ -479,53 +446,45 @@ class TegakiApplication {
         
         let value, unit = '';
         
-        try {
-            switch (sliderId) {
-                case 'pen-size-slider':
-                    value = ((percentage / 100) * 32).toFixed(1); // 0-32px
-                    unit = 'px';
-                    if (Tegaki.PenToolInstance) {
-                        Tegaki.PenToolInstance.updateSetting('size', parseFloat(value));
-                    }
-                    break;
-                    
-                case 'pen-opacity-slider':
-                    value = (percentage).toFixed(1);
-                    unit = '%';
-                    if (Tegaki.PenToolInstance) {
-                        Tegaki.PenToolInstance.updateSetting('opacity', percentage / 100);
-                    }
-                    break;
-                    
-                case 'pen-pressure-slider':
-                    value = (percentage).toFixed(1);
-                    unit = '%';
-                    if (Tegaki.PenToolInstance) {
-                        // 筆圧感度設定
-                        const pressureSensitivity = percentage / 100;
-                        Tegaki.PenToolInstance.setPenOptions({ pressureMultiplier: pressureSensitivity * 3 });
-                    }
-                    break;
-                    
-                case 'pen-smoothing-slider':
-                    value = (percentage).toFixed(1);
-                    unit = '%';
-                    if (Tegaki.PenToolInstance) {
-                        Tegaki.PenToolInstance.updateSetting('smoothing', percentage / 100);
-                    }
-                    break;
-                    
-                default:
-                    value = percentage.toFixed(1);
-                    unit = '%';
-            }
-            
-            valueElement.textContent = `${value}${unit}`;
-        } catch (error) {
-            if (Tegaki.ErrorManagerInstance) {
-                Tegaki.ErrorManagerInstance.handle(error, 'TegakiApplication.updateSliderValue');
-            }
+        switch (sliderId) {
+            case 'pen-size-slider':
+                value = ((percentage / 100) * 32).toFixed(1); // 0-32px
+                unit = 'px';
+                if (Tegaki.PenToolInstance) {
+                    Tegaki.PenToolInstance.updateSettings({ size: parseFloat(value) });
+                }
+                break;
+                
+            case 'pen-opacity-slider':
+                value = (percentage).toFixed(1);
+                unit = '%';
+                if (Tegaki.PenToolInstance) {
+                    Tegaki.PenToolInstance.updateSettings({ opacity: percentage / 100 });
+                }
+                break;
+                
+            case 'pen-pressure-slider':
+                value = (percentage).toFixed(1);
+                unit = '%';
+                if (Tegaki.PenToolInstance) {
+                    Tegaki.PenToolInstance.updateSettings({ pressure: percentage / 100 });
+                }
+                break;
+                
+            case 'pen-smoothing-slider':
+                value = (percentage).toFixed(1);
+                unit = '%';
+                if (Tegaki.PenToolInstance) {
+                    Tegaki.PenToolInstance.updateSettings({ smoothing: percentage / 100 });
+                }
+                break;
+                
+            default:
+                value = percentage.toFixed(1);
+                unit = '%';
         }
+        
+        valueElement.textContent = `${value}${unit}`;
     }
 
     /**
@@ -536,17 +495,11 @@ class TegakiApplication {
         const resizeButtons = panel.querySelectorAll('.resize-button[data-size]');
         resizeButtons.forEach(button => {
             button.addEventListener('click', () => {
-                try {
-                    const size = button.getAttribute('data-size').split(',');
-                    const width = parseInt(size[0]);
-                    const height = parseInt(size[1]);
-                    
-                    this.resizeCanvas(width, height);
-                } catch (error) {
-                    if (Tegaki.ErrorManagerInstance) {
-                        Tegaki.ErrorManagerInstance.handle(error, 'TegakiApplication.setupResizeSettings');
-                    }
-                }
+                const size = button.getAttribute('data-size').split(',');
+                const width = parseInt(size[0]);
+                const height = parseInt(size[1]);
+                
+                this.resizeCanvas(width, height);
             });
         });
 
@@ -556,29 +509,17 @@ class TegakiApplication {
         
         if (applyResize) {
             applyResize.addEventListener('click', () => {
-                try {
-                    const width = parseInt(document.getElementById('canvas-width')?.value || 400);
-                    const height = parseInt(document.getElementById('canvas-height')?.value || 400);
-                    this.resizeCanvas(width, height, false);
-                } catch (error) {
-                    if (Tegaki.ErrorManagerInstance) {
-                        Tegaki.ErrorManagerInstance.handle(error, 'TegakiApplication.applyResize');
-                    }
-                }
+                const width = parseInt(document.getElementById('canvas-width')?.value || 400);
+                const height = parseInt(document.getElementById('canvas-height')?.value || 400);
+                this.resizeCanvas(width, height, false);
             });
         }
         
         if (applyResizeCenter) {
             applyResizeCenter.addEventListener('click', () => {
-                try {
-                    const width = parseInt(document.getElementById('canvas-width')?.value || 400);
-                    const height = parseInt(document.getElementById('canvas-height')?.value || 400);
-                    this.resizeCanvas(width, height, true);
-                } catch (error) {
-                    if (Tegaki.ErrorManagerInstance) {
-                        Tegaki.ErrorManagerInstance.handle(error, 'TegakiApplication.applyResizeCenter');
-                    }
-                }
+                const width = parseInt(document.getElementById('canvas-width')?.value || 400);
+                const height = parseInt(document.getElementById('canvas-height')?.value || 400);
+                this.resizeCanvas(width, height, true);
             });
         }
     }
@@ -758,47 +699,6 @@ class TegakiApplication {
             activeButton.classList.add('active');
         }
     }
-
-    /**
-     * 🚨 v12追加: 初期化状態診断メソッド
-     */
-    diagnoseInitialization() {
-        const report = {
-            timestamp: new Date().toISOString(),
-            initialized: this.initialized,
-            coreManagers: {},
-            canvasSystem: {},
-            toolSystem: {},
-            issues: []
-        };
-
-        // 根幹Manager確認
-        const coreManagers = ['ErrorManagerInstance', 'ConfigManagerInstance', 'StateManagerInstance', 'EventBusInstance'];
-        coreManagers.forEach(manager => {
-            report.coreManagers[manager] = !!Tegaki[manager];
-            if (!Tegaki[manager]) {
-                report.issues.push(`${manager} not initialized`);
-            }
-        });
-
-        // キャンバスシステム確認
-        report.canvasSystem.canvasManager = !!Tegaki.CanvasManagerInstance;
-        report.canvasSystem.coordinateManager = !!Tegaki.CoordinateManagerInstance;
-        report.canvasSystem.containerExists = !!document.querySelector("#canvas-container");
-
-        // ツールシステム確認
-        if (Tegaki.ToolManagerInstance) {
-            report.toolSystem.toolManager = true;
-            report.toolSystem.availableTools = Tegaki.ToolManagerInstance.getAvailableTools();
-            report.toolSystem.currentTool = Tegaki.ToolManagerInstance.getCurrentToolName();
-        } else {
-            report.toolSystem.toolManager = false;
-            report.issues.push('ToolManager not initialized');
-        }
-
-        console.log('🔍 Tegaki初期化診断レポート:', report);
-        return report;
-    }
 }
 
 // Tegaki名前空間にクラスを登録
@@ -806,34 +706,27 @@ Tegaki.TegakiApplication = TegakiApplication;
 
 /**
  * DOM読み込み完了後の統合初期化（改修手順書準拠）
- * 🚨 v12修正: async/await削除・同期的処理に変更・エラーハンドリング強化
+ * ⚡ v12修正: async関数ラッパーで安全なawait使用
  */
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
     try {
         console.log('📋 DOMContentLoaded - Tegaki Phase1.4stepEX 起動開始');
         
-        // アプリケーション統合初期化（同期的処理）
+        // アプリケーション統合初期化（async関数内で安全にawait使用）
         const app = new Tegaki.TegakiApplication();
-        const success = app.initialize();
+        await app.initialize();
         
-        if (success) {
-            // Tegaki名前空間にアプリインスタンス登録
-            Tegaki.AppInstance = app;
-            
-            console.log('🎉 Tegaki Phase1.4stepEX 起動完了');
-            console.log('根幹Manager初期化完了:', {
-                ErrorManager: !!Tegaki.ErrorManagerInstance,
-                ConfigManager: !!Tegaki.ConfigManagerInstance, 
-                StateManager: !!Tegaki.StateManagerInstance,
-                EventBus: !!Tegaki.EventBusInstance,
-                CoordinateManager: !!Tegaki.CoordinateManagerInstance
-            });
-
-            // 初期化診断実行
-            app.diagnoseInitialization();
-        } else {
-            throw new Error('Tegaki初期化処理が失敗しました');
-        }
+        // Tegaki名前空間にアプリインスタンス登録
+        Tegaki.AppInstance = app;
+        
+        console.log('🎉 Tegaki Phase1.4stepEX 起動完了');
+        console.log('根幹Manager初期化完了:', {
+            ErrorManager: !!Tegaki.ErrorManagerInstance,
+            ConfigManager: !!Tegaki.ConfigManagerInstance, 
+            StateManager: !!Tegaki.StateManagerInstance,
+            EventBus: !!Tegaki.EventBusInstance,
+            CoordinateManager: !!Tegaki.CoordinateManagerInstance
+        });
         
     } catch (error) {
         console.error('💥 Tegaki起動失敗:', error);
@@ -843,8 +736,6 @@ document.addEventListener("DOMContentLoaded", () => {
             Tegaki.ErrorManagerInstance.handle(error, 'DOMContentLoaded');
         } else {
             console.error("Fatal Error:", error);
-            // 🚨 v12追加: 致命的エラー時のユーザー通知
-            alert(`Tegaki初期化エラー: ${error.message}\n\nページをリロードしてください。`);
         }
     }
 });
@@ -869,17 +760,13 @@ window.addEventListener('beforeunload', () => {
 window.addEventListener('error', (event) => {
     if (Tegaki.ErrorManagerInstance) {
         Tegaki.ErrorManagerInstance.handle(event.error, 'Global Error Handler');
-    } else {
-        console.error('Global Error (ErrorManager not available):', event.error);
     }
 });
 
 window.addEventListener('unhandledrejection', (event) => {
     if (Tegaki.ErrorManagerInstance) {
         Tegaki.ErrorManagerInstance.handle(event.reason, 'Unhandled Promise Rejection');
-    } else {
-        console.error('Unhandled Promise Rejection (ErrorManager not available):', event.reason);
     }
 });
 
-console.log('[Main] ✅ Tegaki統合初期化スクリプト読み込み完了（v12修正版）');
+console.log('[Main] ✅ Tegaki統合初期化スクリプト読み込み完了');
