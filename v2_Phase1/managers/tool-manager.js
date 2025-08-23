@@ -63,6 +63,358 @@ class ToolManager {
         };
     }
 
+    /**
+     * ToolManagerを初期化
+     * @param {CanvasManager} canvasManager - CanvasManagerインスタンス
+     * @param {CoordinateManager} coordinateManager - CoordinateManagerインスタンス
+     * @returns {boolean}
+     */
+    initialize(canvasManager, coordinateManager) {
+        try {
+            if (this.isInitialized) {
+                this._warn('ToolManager already initialized', 'ToolManager.initialize');
+                return true;
+            }
+
+            this.canvasManager = canvasManager;
+            this.coordinateManager = coordinateManager;
+            
+            // デフォルトツール登録
+            this._registerDefaultTools();
+            
+            // イベント配信システム設定
+            this._setupEventDelegation();
+            
+            // 統一システム統合
+            this._integrateWithUnifiedSystems();
+            
+            // 初期ツール設定
+            this._setInitialTool();
+            
+            this.isInitialized = true;
+            
+            // 統一システム経由での通知
+            this._emitEvent('toolmanager:initialized', {
+                toolCount: this.tools.size,
+                activeTool: this.toolState.currentTool,
+                registrationStats: this.registrationStats
+            });
+            
+            console.log('[ToolManager] Successfully initialized - Tool integration ready');
+            console.log('[ToolManager] Registration stats:', this.registrationStats);
+            
+            return true;
+        } catch (error) {
+            this._handleError(error, 'ToolManager.initialize', 'error', true);
+            return false;
+        }
+    }
+
+    /**
+     * ツール登録（統合制御の主責務）
+     * 🚨 v12修正: エラーハンドリング強化・インスタンス検証追加
+     * @param {string} name - ツール名
+     * @param {AbstractTool} toolInstance - ツールインスタンス
+     * @returns {boolean}
+     */
+    registerTool(name, toolInstance) {
+        this.registrationStats.attempted++;
+        
+        try {
+            if (this.tools.has(name)) {
+                console.log(`[ToolManager] Tool ${name} 既に登録済み`);
+                return true;
+            }
+
+            // ツールインスタンス検証（重要な修正点）
+            if (!this._validateToolInstance(toolInstance, name)) {
+                this.registrationStats.failed++;
+                return false;
+            }
+
+            this.tools.set(name, toolInstance);
+            
+            // ツール用レイヤー作成
+            if (this.canvasManager) {
+                try {
+                    this.canvasManager.getLayerForTool(name);
+                } catch (layerError) {
+                    this._warn(`Layer creation failed for tool ${name}: ${layerError.message}`, 'ToolManager.registerTool');
+                    // レイヤー作成失敗は致命的ではないため続行
+                }
+            }
+            
+            // ツールとCanvasManager統合
+            this._integrateToolWithCanvas(name, toolInstance);
+            
+            this.registrationStats.successful++;
+            
+            // 統一システム経由での通知
+            this._emitEvent('tool:registered', {
+                toolName: name,
+                toolType: toolInstance.constructor.name,
+                registrationStats: this.registrationStats
+            });
+
+            console.log(`[ToolManager] Tool registered: ${name}`);
+            return true;
+        } catch (error) {
+            this.registrationStats.failed++;
+            this.registrationStats.errors.push({
+                toolName: name,
+                error: error.message,
+                timestamp: new Date().toISOString()
+            });
+            
+            this._handleError(error, 'ToolManager.registerTool', 'error', false);
+            return false;
+        }
+    }
+
+    /**
+     * 🚨 v12追加: 安全なツール登録メソッド
+     * @param {string} name - ツール名
+     * @param {string|Function} ToolClass - ツールクラスまたはクラス名
+     * @returns {boolean}
+     */
+    registerToolSafely(name, ToolClass) {
+        try {
+            let toolInstance = null;
+            
+            // ツールクラスの解決
+            if (typeof ToolClass === 'string') {
+                // 文字列の場合は対応するインスタンスを検索
+                const instancePath = this._resolveToolInstancePath(name, ToolClass);
+                toolInstance = this._getInstanceByPath(instancePath);
+                
+                if (!toolInstance) {
+                    throw new Error(`Tool instance not found: ${instancePath}`);
+                }
+            } else if (typeof ToolClass === 'function') {
+                // コンストラクタ関数の場合はインスタンス化
+                toolInstance = new ToolClass();
+            } else if (typeof ToolClass === 'object' && ToolClass !== null) {
+                // 既にインスタンス化済みオブジェクト
+                toolInstance = ToolClass;
+            } else {
+                throw new Error(`Invalid ToolClass type for ${name}: ${typeof ToolClass}`);
+            }
+
+            return this.registerTool(name, toolInstance);
+
+        } catch (error) {
+            console.error(`[ToolManager] Safe registration failed for ${name}:`, error);
+            this._handleError(error, 'ToolManager.registerToolSafely');
+            return false;
+        }
+    }
+
+    /**
+     * ツール切り替え（統合制御の主責務）
+     * @param {string} toolName - 切り替え先ツール名
+     * @returns {boolean}
+     */
+    setTool(toolName) {
+        try {
+            if (!this.tools.has(toolName)) {
+                throw new Error(`Tool ${toolName} not found`);
+            }
+
+            // 現在のツールを無効化
+            if (this.activeTool) {
+                this.activeTool.deactivate();
+            }
+
+            // 新しいツールを有効化
+            const newTool = this.tools.get(toolName);
+            newTool.activate();
+            
+            // 状態更新
+            this.activeTool = newTool;
+            this.toolState.currentTool = toolName;
+            this.toolState.isActive = true;
+            
+            // ツール履歴更新
+            this._updateToolHistory(toolName);
+            
+            // 統一システム経由での状態更新
+            this._updateState('tool.current', toolName);
+            this._updateState('tool.isActive', true);
+            
+            this._emitEvent('tool:changed', {
+                previousTool: this.toolState.lastUsedTools[0] || null,
+                currentTool: toolName,
+                toolInstance: newTool
+            });
+
+            console.log(`[ToolManager] Tool changed to: ${toolName}`);
+            return true;
+        } catch (error) {
+            console.error(`[ToolManager] ツール切り替えエラー (${toolName}): ${error.message}`);
+            this._handleError(error, 'ToolManager.setTool');
+            return false;
+        }
+    }
+
+    /**
+     * アクティブツールに処理を委譲（配信管理の主責務）
+     * @param {string} method - 実行メソッド名
+     * @param {object} event - イベントオブジェクト
+     * @returns {*} ツールの戻り値
+     */
+    delegateToActiveTool(method, event) {
+        try {
+            if (!this.activeTool) {
+                console.warn('[ToolManager] No active tool for delegation');
+                return null;
+            }
+
+            if (typeof this.activeTool[method] !== 'function') {
+                throw new Error(`Method ${method} not found in active tool`);
+            }
+
+            // Tool側に完全委譲（座標処理含む）
+            const result = this.activeTool[method](event, this.canvasManager, this.coordinateManager);
+            
+            // 統一システム経由での処理通知
+            this._emitEvent('tool:method_delegated', {
+                toolName: this.toolState.currentTool,
+                method,
+                eventType: event?.type
+            });
+
+            return result;
+        } catch (error) {
+            this._handleError(error, 'ToolManager.delegateToActiveTool');
+            return null;
+        }
+    }
+
+    /**
+     * ポインターイベント処理（統合イベント配信）
+     * @param {PointerEvent} event - ポインターイベント
+     * @param {string} eventType - イベントタイプ
+     * @returns {*}
+     */
+    handlePointerEvent(event, eventType) {
+        try {
+            let methodName;
+            
+            switch (eventType) {
+                case 'pointerdown':
+                    methodName = 'onPointerDown';
+                    break;
+                case 'pointermove':
+                    methodName = 'onPointerMove';
+                    break;
+                case 'pointerup':
+                    methodName = 'onPointerUp';
+                    break;
+                case 'pointercancel':
+                    methodName = 'onPointerCancel';
+                    break;
+                default:
+                    console.warn(`[ToolManager] Unknown event type: ${eventType}`);
+                    return null;
+            }
+
+            return this.delegateToActiveTool(methodName, event);
+        } catch (error) {
+            this._handleError(error, 'ToolManager.handlePointerEvent');
+            return null;
+        }
+    }
+
+    /**
+     * 現在のツールを取得
+     * @returns {AbstractTool|null}
+     */
+    getCurrentTool() {
+        return this.activeTool;
+    }
+
+    /**
+     * 現在のツール名を取得
+     * @returns {string|null}
+     */
+    getCurrentToolName() {
+        return this.toolState.currentTool;
+    }
+
+    /**
+     * ツール利用可能性確認
+     * @param {string} toolName - ツール名
+     * @returns {boolean}
+     */
+    isToolAvailable(toolName) {
+        return this.tools.has(toolName);
+    }
+
+    /**
+     * 登録済みツール一覧取得
+     * @returns {Array<string>}
+     */
+    getAvailableTools() {
+        return Array.from(this.tools.keys());
+    }
+
+    /**
+     * ツール設定更新
+     * @param {string} toolName - ツール名
+     * @param {string} setting - 設定項目名
+     * @param {*} value - 設定値
+     * @returns {boolean}
+     */
+    updateToolSetting(toolName, setting, value) {
+        try {
+            const tool = this.tools.get(toolName);
+            if (!tool) {
+                throw new Error(`Tool ${toolName} not found`);
+            }
+
+            if (typeof tool.updateSetting !== 'function') {
+                throw new Error(`Tool ${toolName} does not support setting updates`);
+            }
+
+            tool.updateSetting(setting, value);
+            
+            // 統一システム経由での通知
+            this._emitEvent('tool:setting_updated', {
+                toolName,
+                setting,
+                value
+            });
+
+            return true;
+        } catch (error) {
+            this._handleError(error, 'ToolManager.updateToolSetting');
+            return false;
+        }
+    }
+
+    /**
+     * ツール設定取得
+     * @param {string} toolName - ツール名
+     * @returns {object|null}
+     */
+    getToolConfig(toolName) {
+        try {
+            const tool = this.tools.get(toolName);
+            if (!tool) {
+                return null;
+            }
+
+            if (typeof tool.getSettings === 'function') {
+                return tool.getSettings();
+            }
+
+            return null;
+        } catch (error) {
+            this._handleError(error, 'ToolManager.getToolConfig');
+            return null;
+        }
+    }
+
     // ========================================
     // 内部メソッド（統合制御専門）
     // ========================================
@@ -565,17 +917,53 @@ class ToolManager {
         console.log(`[ToolManager] Retry completed: ${retryCount} tools successfully registered`);
         return retryCount;
     }
+
+    /**
+     * システム破棄
+     */
+    destroy() {
+        try {
+            // 全ツールの無効化
+            if (this.activeTool) {
+                this.activeTool.deactivate();
+            }
+
+            // ツール破棄
+            this.tools.forEach((tool, name) => {
+                if (typeof tool.destroy === 'function') {
+                    tool.destroy();
+                }
+            });
+
+            // プロパティクリア
+            this.tools.clear();
+            this.activeTool = null;
+            this.canvasManager = null;
+            this.coordinateManager = null;
+            this.isInitialized = false;
+
+            console.log('[ToolManager] 破棄完了');
+
+        } catch (error) {
+            console.error('[ToolManager] 破棄エラー:', error);
+        }
+    }
 }
 
 // Tegaki名前空間に登録（Phase1.4stepEX準拠）
-Tegaki.ToolManager = ToolManager;
+window.Tegaki.ToolManager = ToolManager;
 
 // 初期化レジストリ方式（Phase1.4stepEX準拠）
-Tegaki._registry = Tegaki._registry || [];
-Tegaki._registry.push(() => {
-    Tegaki.ToolManagerInstance = new ToolManager();
+window.Tegaki._registry = window.Tegaki._registry || [];
+window.Tegaki._registry.push(() => {
+    window.Tegaki.ToolManagerInstance = new ToolManager();
     console.log('[ToolManager] Registered to Tegaki namespace');
 });
+
+// グローバル登録（下位互換）
+if (typeof window !== 'undefined') {
+    window.ToolManager = ToolManager;
+}
 
 // 🔄 PixiJS v8対応準拠コメント
 // - イベント配信システムは変更不要
@@ -583,356 +971,3 @@ Tegaki._registry.push(() => {
 // - モジュール化対応設計採用
 
 console.log('[ToolManager] Loaded and ready for registry initialization (v12 enhanced)');
-    /**
-     * ToolManagerを初期化
-     * @param {CanvasManager} canvasManager - CanvasManagerインスタンス
-     * @param {CoordinateManager} coordinateManager - CoordinateManagerインスタンス
-     * @returns {boolean}
-     */
-    initialize(canvasManager, coordinateManager) {
-        try {
-            if (this.isInitialized) {
-                this._warn('ToolManager already initialized', 'ToolManager.initialize');
-                return true;
-            }
-
-            this.canvasManager = canvasManager;
-            this.coordinateManager = coordinateManager;
-            
-            // デフォルトツール登録
-            this._registerDefaultTools();
-            
-            // イベント配信システム設定
-            this._setupEventDelegation();
-            
-            // 統一システム統合
-            this._integrateWithUnifiedSystems();
-            
-            // 初期ツール設定
-            this._setInitialTool();
-            
-            this.isInitialized = true;
-            
-            // 統一システム経由での通知
-            this._emitEvent('toolmanager:initialized', {
-                toolCount: this.tools.size,
-                activeTool: this.toolState.currentTool,
-                registrationStats: this.registrationStats
-            });
-            
-            console.log('[ToolManager] Successfully initialized - Tool integration ready');
-            console.log('[ToolManager] Registration stats:', this.registrationStats);
-            
-            return true;
-        } catch (error) {
-            this._handleError(error, 'ToolManager.initialize', 'error', true);
-            return false;
-        }
-    }
-
-    /**
-     * ツール登録（統合制御の主責務）
-     * 🚨 v12修正: エラーハンドリング強化・インスタンス検証追加
-     * @param {string} name - ツール名
-     * @param {AbstractTool} toolInstance - ツールインスタンス
-     * @returns {boolean}
-     */
-    registerTool(name, toolInstance) {
-        this.registrationStats.attempted++;
-        
-        try {
-            if (this.tools.has(name)) {
-                console.log(`[ToolManager] Tool ${name} 既に登録済み`);
-                return true;
-            }
-
-            // ツールインスタンス検証（重要な修正点）
-            if (!this._validateToolInstance(toolInstance, name)) {
-                this.registrationStats.failed++;
-                return false;
-            }
-
-            this.tools.set(name, toolInstance);
-            
-            // ツール用レイヤー作成
-            if (this.canvasManager) {
-                try {
-                    this.canvasManager.getLayerForTool(name);
-                } catch (layerError) {
-                    this._warn(`Layer creation failed for tool ${name}: ${layerError.message}`, 'ToolManager.registerTool');
-                    // レイヤー作成失敗は致命的ではないため続行
-                }
-            }
-            
-            // ツールとCanvasManager統合
-            this._integrateToolWithCanvas(name, toolInstance);
-            
-            this.registrationStats.successful++;
-            
-            // 統一システム経由での通知
-            this._emitEvent('tool:registered', {
-                toolName: name,
-                toolType: toolInstance.constructor.name,
-                registrationStats: this.registrationStats
-            });
-
-            console.log(`[ToolManager] Tool registered: ${name}`);
-            return true;
-        } catch (error) {
-            this.registrationStats.failed++;
-            this.registrationStats.errors.push({
-                toolName: name,
-                error: error.message,
-                timestamp: new Date().toISOString()
-            });
-            
-            this._handleError(error, 'ToolManager.registerTool', 'error', false);
-            return false;
-        }
-    }
-
-    /**
-     * 🚨 v12追加: 安全なツール登録メソッド
-     * @param {string} name - ツール名
-     * @param {string|Function} ToolClass - ツールクラスまたはクラス名
-     * @returns {boolean}
-     */
-    registerToolSafely(name, ToolClass) {
-        try {
-            let toolInstance = null;
-            
-            // ツールクラスの解決
-            if (typeof ToolClass === 'string') {
-                // 文字列の場合は対応するインスタンスを検索
-                const instancePath = this._resolveToolInstancePath(name, ToolClass);
-                toolInstance = this._getInstanceByPath(instancePath);
-                
-                if (!toolInstance) {
-                    throw new Error(`Tool instance not found: ${instancePath}`);
-                }
-            } else if (typeof ToolClass === 'function') {
-                // コンストラクタ関数の場合はインスタンス化
-                toolInstance = new ToolClass();
-            } else if (typeof ToolClass === 'object' && ToolClass !== null) {
-                // 既にインスタンス化済みオブジェクト
-                toolInstance = ToolClass;
-            } else {
-                throw new Error(`Invalid ToolClass type for ${name}: ${typeof ToolClass}`);
-            }
-
-            return this.registerTool(name, toolInstance);
-
-        } catch (error) {
-            console.error(`[ToolManager] Safe registration failed for ${name}:`, error);
-            this._handleError(error, 'ToolManager.registerToolSafely');
-            return false;
-        }
-    }
-
-    /**
-     * ツール切り替え（統合制御の主責務）
-     * @param {string} toolName - 切り替え先ツール名
-     * @returns {boolean}
-     */
-    setTool(toolName) {
-        try {
-            if (!this.tools.has(toolName)) {
-                throw new Error(`Tool ${toolName} not found`);
-            }
-
-            // 現在のツールを無効化
-            if (this.activeTool) {
-                this.activeTool.deactivate();
-            }
-
-            // 新しいツールを有効化
-            const newTool = this.tools.get(toolName);
-            newTool.activate();
-            
-            // 状態更新
-            this.activeTool = newTool;
-            this.toolState.currentTool = toolName;
-            this.toolState.isActive = true;
-            
-            // ツール履歴更新
-            this._updateToolHistory(toolName);
-            
-            // 統一システム経由での状態更新
-            this._updateState('tool.current', toolName);
-            this._updateState('tool.isActive', true);
-            
-            this._emitEvent('tool:changed', {
-                previousTool: this.toolState.lastUsedTools[0] || null,
-                currentTool: toolName,
-                toolInstance: newTool
-            });
-
-            console.log(`[ToolManager] Tool changed to: ${toolName}`);
-            return true;
-        } catch (error) {
-            console.error(`[ToolManager] ツール切り替えエラー (${toolName}): ${error.message}`);
-            this._handleError(error, 'ToolManager.setTool');
-            return false;
-        }
-    }
-
-    /**
-     * アクティブツールに処理を委譲（配信管理の主責務）
-     * @param {string} method - 実行メソッド名
-     * @param {object} event - イベントオブジェクト
-     * @returns {*} ツールの戻り値
-     */
-    delegateToActiveTool(method, event) {
-        try {
-            if (!this.activeTool) {
-                console.warn('[ToolManager] No active tool for delegation');
-                return null;
-            }
-
-            if (typeof this.activeTool[method] !== 'function') {
-                throw new Error(`Method ${method} not found in active tool`);
-            }
-
-            // Tool側に完全委譲（座標処理含む）
-            const result = this.activeTool[method](event, this.canvasManager, this.coordinateManager);
-            
-            // 統一システム経由での処理通知
-            this._emitEvent('tool:method_delegated', {
-                toolName: this.toolState.currentTool,
-                method,
-                eventType: event?.type
-            });
-
-            return result;
-        } catch (error) {
-            this._handleError(error, 'ToolManager.delegateToActiveTool');
-            return null;
-        }
-    }
-
-    /**
-     * ポインターイベント処理（統合イベント配信）
-     * @param {PointerEvent} event - ポインターイベント
-     * @param {string} eventType - イベントタイプ
-     * @returns {*}
-     */
-    handlePointerEvent(event, eventType) {
-        try {
-            let methodName;
-            
-            switch (eventType) {
-                case 'pointerdown':
-                    methodName = 'onPointerDown';
-                    break;
-                case 'pointermove':
-                    methodName = 'onPointerMove';
-                    break;
-                case 'pointerup':
-                    methodName = 'onPointerUp';
-                    break;
-                case 'pointercancel':
-                    methodName = 'onPointerCancel';
-                    break;
-                default:
-                    console.warn(`[ToolManager] Unknown event type: ${eventType}`);
-                    return null;
-            }
-
-            return this.delegateToActiveTool(methodName, event);
-        } catch (error) {
-            this._handleError(error, 'ToolManager.handlePointerEvent');
-            return null;
-        }
-    }
-
-    /**
-     * 現在のツールを取得
-     * @returns {AbstractTool|null}
-     */
-    getCurrentTool() {
-        return this.activeTool;
-    }
-
-    /**
-     * 現在のツール名を取得
-     * @returns {string|null}
-     */
-    getCurrentToolName() {
-        return this.toolState.currentTool;
-    }
-
-    /**
-     * ツール利用可能性確認
-     * @param {string} toolName - ツール名
-     * @returns {boolean}
-     */
-    isToolAvailable(toolName) {
-        return this.tools.has(toolName);
-    }
-
-    /**
-     * 登録済みツール一覧取得
-     * @returns {Array<string>}
-     */
-    getAvailableTools() {
-        return Array.from(this.tools.keys());
-    }
-
-    /**
-     * ツール設定更新
-     * @param {string} toolName - ツール名
-     * @param {string} setting - 設定項目名
-     * @param {*} value - 設定値
-     * @returns {boolean}
-     */
-    updateToolSetting(toolName, setting, value) {
-        try {
-            const tool = this.tools.get(toolName);
-            if (!tool) {
-                throw new Error(`Tool ${toolName} not found`);
-            }
-
-            if (typeof tool.updateSetting !== 'function') {
-                throw new Error(`Tool ${toolName} does not support setting updates`);
-            }
-
-            tool.updateSetting(setting, value);
-            
-            // 統一システム経由での通知
-            this._emitEvent('tool:setting_updated', {
-                toolName,
-                setting,
-                value
-            });
-
-            return true;
-        } catch (error) {
-            this._handleError(error, 'ToolManager.updateToolSetting');
-            return false;
-        }
-    }
-
-    /**
-     * ツール設定取得
-     * @param {string} toolName - ツール名
-     * @returns {object|null}
-     */
-    getToolConfig(toolName) {
-        try {
-            const tool = this.tools.get(toolName);
-            if (!tool) {
-                return null;
-            }
-
-            if (typeof tool.getSettings === 'function') {
-                return tool.getSettings();
-            }
-
-            return null;
-        } catch (error) {
-            this._handleError(error, 'ToolManager.getToolConfig');
-            return null;
-        }
-    }
-
-    /**

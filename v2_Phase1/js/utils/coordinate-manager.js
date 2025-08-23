@@ -111,9 +111,8 @@ class CoordinateManager {
                 return this._createSafeCoordinateInfo(screenX, screenY);
             }
 
-            // 🔧 修正5: 座標変換（バグ修正重点）
-            const canvasCoords = this._screenToCan
-vassSafe(screenX, screenY, targetRect);
+            // 🔧 修正5: 座標変換（バグ修正重点・typo修正）
+            const canvasCoords = this._screenToCanvasSafe(screenX, screenY, targetRect);
             const pixiCoords = this._canvasToPixiSafe(canvasCoords.x, canvasCoords.y);
 
             // 🔧 修正6: 圧力・入力情報の安全な抽出
@@ -184,7 +183,7 @@ vassSafe(screenX, screenY, targetRect);
     }
 
     /**
-     * 🔧 PHASE1修復: 安全なスクリーン→キャンバス座標変換
+     * 🔧 PHASE1修復: 安全なスクリーン→キャンバス座標変換（typo修正）
      * @param {number} screenX - スクリーンX座標
      * @param {number} screenY - スクリーンY座標  
      * @param {DOMRect} rect - キャンバス矩形

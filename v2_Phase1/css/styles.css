@@ -2,6 +2,7 @@
  * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
  * CSS分離版 - 元HTMLからスタイル抽出
  * ふたば☆ちゃんねる風デザイン・配色完全維持
+ * 🚨 額縁削除版 - シンプルで見やすいキャンバス表示
  */
 
 * {
@@ -117,32 +118,34 @@ body {
     align-items: center;
 }
 
+/* 🚨 修正: 額縁完全削除 - シンプルで見やすく */
 .canvas-container {
     background: var(--futaba-cream);
     
-    /* 🚨 修正: 角丸完全除去 */
-    border: 1px solid var(--futaba-maroon);         /* 境界線を薄く・明確に */
-    border-radius: 0;                               /* 真四角化 */
+    /* 額縁削除 - 最小限の境界線のみ */
+    border: none;                               /* 境界線削除 */
+    border-radius: 0;                           /* 真四角維持 */
     
-    /* 実作業向け境界線強化 */
-    box-shadow: 
-        0 0 0 1px var(--futaba-light-medium) inset, /* 内側境界線 */
-        0 2px 8px rgba(128, 0, 0, 0.1);            /* 軽いドロップシャドウ */
+    /* シンプルな作業領域表示 */
+    box-shadow: none;                           /* ドロップシャドウ削除 */
     
-    overflow: visible;                              /* 描画範囲制限解除 */
+    overflow: visible;                          /* 描画範囲制限解除 */
     position: relative;
     
-    /* 作業領域明示用 */
-    outline: 1px solid var(--futaba-medium);
-    outline-offset: -1px;
+    /* 作業領域の明確化（微妙な境界線のみ） */
+    outline: 1px solid var(--futaba-light-medium);
+    outline-offset: 0;
+    opacity: 1.0;                               /* 完全不透明 */
 }
 
-/* キャンバス内部も真四角 */
+/* キャンバス内部も額縁なし */
 #drawing-canvas {
     display: block;
     cursor: crosshair;
-    border-radius: 0;           /* 内部キャンバスも真四角 */
-    overflow: visible;          /* 描画エリア制限解除 */
+    border: none;                               /* 内部境界線削除 */
+    border-radius: 0;                           /* 内部キャンバスも真四角 */
+    outline: none;                              /* アウトライン削除 */
+    overflow: visible;                          /* 描画エリア制限解除 */
     
     /* 高精度描画対応 */
     image-rendering: pixelated;
@@ -150,69 +153,32 @@ body {
 }
 
 /* ==========================================
- * 🎯 Phase1.2-STEP2: 作業領域明示システム
+ * 🎯 額縁削除: 疑似要素による額縁効果を完全無効化
  * ========================================== */
 
-.canvas-container::before {
-    content: '';
-    position: absolute;
-    top: -2px;
-    left: -2px;
-    right: -2px;
-    bottom: -2px;
-    border: 2px solid var(--futaba-maroon);
-    pointer-events: none;
-    opacity: 0.3;
-    z-index: 1;
-}
-
+/* 額縁効果の疑似要素を無効化 */
+.canvas-container::before,
 .canvas-container::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    border: 1px solid var(--futaba-light-maroon);
-    pointer-events: none;
-    opacity: 0.5;
-    z-index: 2;
-    box-shadow: 0 0 0 1px var(--futaba-cream) inset;
+    display: none;                              /* 疑似要素による額縁を完全削除 */
 }
 
 /* ==========================================
- * 🎯 Phase1.2-STEP2: 角測定・精度表示
+ * 🎯 作業モード対応（額縁なし版）
  * ========================================== */
 
-.canvas-container[data-precision="high"]::before {
-    border-color: var(--futaba-maroon);
-    opacity: 0.6;
-}
-
-.canvas-container[data-precision="pixel-perfect"]::before {
-    border: 1px solid var(--futaba-maroon);
-    opacity: 0.8;
-    border-style: dotted;
-}
-
-/* ==========================================
- * 🎯 Phase1.2-STEP2: 作業モード対応
- * ========================================== */
-
-/* 通常作業モード */
+/* 通常作業モード - 額縁なし */
 .canvas-container.work-mode {
-    border-width: 2px;
-    box-shadow: 
-        0 0 0 1px var(--futaba-maroon) inset,
-        0 4px 12px rgba(128, 0, 0, 0.15);
+    border: none;
+    box-shadow: none;
+    outline: 1px solid var(--futaba-light-medium);
 }
 
-/* 精密作業モード */
+/* 精密作業モード - 額縁なし */
 .canvas-container.precision-mode {
-    border: 1px solid var(--futaba-maroon);
-    background: var(--futaba-background);  /* 背景を明るく */
+    border: none;
+    background: var(--futaba-background);      /* 背景を明るく */
     
-    /* グリッド表示準備 */
+    /* グリッド表示準備（オプション） */
     background-image: 
         linear-gradient(to right, var(--futaba-light-medium) 1px, transparent 1px),
         linear-gradient(to bottom, var(--futaba-light-medium) 1px, transparent 1px);
@@ -228,82 +194,61 @@ body {
     outline: none;
 }
 
-.canvas-container.fullscreen-mode::before,
-.canvas-container.fullscreen-mode::after {
-    display: none;
-}
-
 /* ==========================================
- * 🎯 Phase1.2-STEP2: レスポンシブ・スケール対応
+ * 🎯 レスポンシブ・スケール対応（額縁なし）
  * ========================================== */
 
 /* 高DPI対応 */
 @media (min-resolution: 2dppx) {
     .canvas-container {
-        border-width: 0.5px;  /* 高DPIで境界線を細く */
-    }
-    
-    .canvas-container::before {
-        border-width: 1px;
+        outline-width: 0.5px;                   /* 高DPIで境界線を細く */
     }
 }
 
 /* タッチデバイス対応 */
 @media (pointer: coarse) {
     .canvas-container {
-        border-width: 2px;    /* タッチで境界線を太く */
+        outline-width: 1px;                     /* タッチで境界線標準 */
     }
     
     #drawing-canvas {
-        touch-action: none;   /* タッチスクロール防止 */
+        touch-action: none;                     /* タッチスクロール防止 */
     }
 }
 
 /* ==========================================
- * 🎯 Phase1.2-STEP2: ズーム・変形対応
+ * 🎯 ズーム・変形対応（額縁なし）
  * ========================================== */
 
 /* ズーム時の境界線調整 */
 .canvas-container[data-zoom-level="1"] {
     /* 等倍表示 */
-    border-width: 1px;
+    outline-width: 1px;
 }
 
 .canvas-container[data-zoom-level="2"] {
     /* 2倍ズーム */
-    border-width: 0.5px;
+    outline-width: 0.5px;
 }
 
 .canvas-container[data-zoom-level="high"] {
     /* 高倍率ズーム */
-    border: none;
-    outline: 1px solid var(--futaba-maroon);
-    outline-offset: 1px;
+    outline: none;
 }
 
 /* ==========================================
- * 🎯 Phase1.2-STEP2: デバッグ・開発支援
+ * 🎯 デバッグ・開発支援（額縁なし版）
  * ========================================== */
 
-/* デバッグモード: 境界線強調 */
+/* デバッグモード: 境界線強調（額縁なし） */
 .canvas-container.debug-mode {
-    border: 2px solid #ff0000;
+    outline: 2px solid #ff0000;
     background-color: rgba(255, 0, 0, 0.05);
 }
 
-.canvas-container.debug-mode::before {
-    border: 1px solid #00ff00;
-    opacity: 1;
-}
-
-.canvas-container.debug-mode::after {
-    border: 1px solid #0000ff;
-    opacity: 1;
-}
-
-/* 測定モード: 正確なピクセル境界 */
+/* 測定モード: 正確なピクセル境界（額縁なし） */
 .canvas-container.measurement-mode {
-    border: 1px solid var(--futaba-maroon);
+    outline: 1px solid var(--futaba-maroon);
     background: var(--futaba-background);
     position: relative;
 }
@@ -319,22 +264,18 @@ body {
     font-size: 12px;
     font-family: monospace;
     border-radius: 4px 4px 0 0;
+    display: block;                             /* 測定情報は表示 */
 }
 
 /* ==========================================
- * 🎯 Phase1.2-STEP2: アクセシビリティ対応
+ * 🎯 アクセシビリティ対応（額縁なし）
  * ========================================== */
 
 /* 高コントラストモード */
 @media (prefers-contrast: high) {
     .canvas-container {
-        border: 2px solid #000000;
+        outline: 2px solid #000000;
         background: #ffffff;
-    }
-    
-    .canvas-container::before {
-        border-color: #000000;
-        opacity: 1;
     }
 }
 
@@ -343,50 +284,33 @@ body {
     .canvas-container {
         transition: none;
     }
-    
-    .canvas-container::before,
-    .canvas-container::after {
-        transition: none;
-    }
 }
 
 /* ==========================================
- * 🎯 Phase1.2-STEP2: Phase1.3準備（非破壊変形対応）
+ * 🎯 変形操作対応（額縁なし版）
  * ========================================== */
 
-/* 変形操作時の境界線 */
+/* 変形操作時の境界線（額縁なし） */
 .canvas-container.transforming {
-    border-color: var(--futaba-light-maroon);
+    outline: 2px solid var(--futaba-maroon);
     box-shadow: 
-        0 0 0 2px var(--futaba-maroon),
-        0 0 0 4px rgba(128, 0, 0, 0.2),
-        0 4px 16px rgba(128, 0, 0, 0.3);
+        0 0 0 4px rgba(128, 0, 0, 0.2);
 }
 
-/* 変形プレビュー表示 */
+/* 変形プレビュー表示（額縁なし） */
 .canvas-container.transform-preview {
     outline: 2px dashed var(--futaba-maroon);
-    outline-offset: 4px;
-}
-
-.canvas-container.transform-preview::before {
-    border-style: dashed;
-    animation: dash-move 1s linear infinite;
-}
-
-@keyframes dash-move {
-    from { stroke-dashoffset: 0; }
-    to { stroke-dashoffset: 16; }
+    outline-offset: 2px;
 }
 
 /* ==========================================
- * 🎯 Phase1.2-STEP2: パフォーマンス最適化
+ * 🎯 パフォーマンス最適化
  * ========================================== */
 
 /* GPU加速対応 */
 .canvas-container {
     will-change: transform;
-    transform: translateZ(0);  /* GPU レイヤー作成 */
+    transform: translateZ(0);                   /* GPU レイヤー作成 */
 }
 
 #drawing-canvas {
@@ -400,10 +324,9 @@ body {
     isolation: isolate;
 }
 
-#drawing-canvas {
-    display: block;
-    cursor: crosshair;
-}
+/* ==========================================
+ * 🎯 UI要素（ポップアップ等）
+ * ========================================== */
 
 .popup-panel {
     position: fixed;
