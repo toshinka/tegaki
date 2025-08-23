@@ -127,8 +127,13 @@ class AbstractTool {
             this._onStrokeStart(point);
 
             // 統一システム経由での通知
-            if (Tegaki.EventBusInstance) {
-                Tegaki.EventBusInstance.safeEmit('tool:stroke_started', {
+            if (window.Tegaki && window.Tegaki.EventBusInstance) {
+                window.Tegaki.EventBusInstance.emit('tool:stroke_started', {
+                    toolName: this.toolName,
+                    point: point
+                });
+            } else if (window.EventBus) {
+                window.EventBus.emit('tool:stroke_started', {
                     toolName: this.toolName,
                     point: point
                 });
@@ -136,10 +141,12 @@ class AbstractTool {
 
             console.log(`[${this.toolName}Tool] Stroke started at (${point.x.toFixed(2)}, ${point.y.toFixed(2)})`);
         } catch (error) {
-            if (Tegaki.ErrorManagerInstance) {
-                Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.onPointerDown`);
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.onPointerDown`);
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, `${this.toolName}Tool.onPointerDown`);
             } else {
-                console.error(`[${this.toolName}Tool.onPointerDown]`, error);
+                console.error(`[${this.toolName}Tool] Error in onPointerDown:`, error);
             }
         }
     }
@@ -180,18 +187,26 @@ class AbstractTool {
             this._onPointAdd(point);
 
             // 統一システム経由での通知
-            if (Tegaki.EventBusInstance) {
-                Tegaki.EventBusInstance.safeEmit('tool:stroke_updated', {
+            if (window.Tegaki && window.Tegaki.EventBusInstance) {
+                window.Tegaki.EventBusInstance.emit('tool:stroke_updated', {
+                    toolName: this.toolName,
+                    point: point,
+                    totalPoints: this.currentStroke.points.length
+                });
+            } else if (window.EventBus) {
+                window.EventBus.emit('tool:stroke_updated', {
                     toolName: this.toolName,
                     point: point,
                     totalPoints: this.currentStroke.points.length
                 });
             }
         } catch (error) {
-            if (Tegaki.ErrorManagerInstance) {
-                Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.onPointerMove`);
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.onPointerMove`);
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, `${this.toolName}Tool.onPointerMove`);
             } else {
-                console.error(`[${this.toolName}Tool.onPointerMove]`, error);
+                console.error(`[${this.toolName}Tool] Error in onPointerMove:`, error);
             }
         }
     }
@@ -226,23 +241,31 @@ class AbstractTool {
             this._finalizeStrokeToCanvas();
 
             // 統一システム経由での通知
-            if (Tegaki.EventBusInstance) {
-                Tegaki.EventBusInstance.safeEmit('tool:stroke_completed', {
+            if (window.Tegaki && window.Tegaki.EventBusInstance) {
+                window.Tegaki.EventBusInstance.emit('tool:stroke_completed', {
+                    toolName: this.toolName,
+                    pointCount: this.currentStroke.points.length,
+                    duration: this.currentStroke.endTime - this.currentStroke.startTime
+                });
+            } else if (window.EventBus) {
+                window.EventBus.emit('tool:stroke_completed', {
                     toolName: this.toolName,
                     pointCount: this.currentStroke.points.length,
                     duration: this.currentStroke.endTime - this.currentStroke.startTime
                 });
             }
 
-            console.log(`[${this.toolName}Tool] Stroke completed with ${this.currentStroke.points.length} points`);
-
             // ストローク情報リセット
             this._resetStroke();
+
+            console.log(`[${this.toolName}Tool] Stroke completed with ${this.currentStroke.points.length} points`);
         } catch (error) {
-            if (Tegaki.ErrorManagerInstance) {
-                Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.onPointerUp`);
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.onPointerUp`);
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, `${this.toolName}Tool.onPointerUp`);
             } else {
-                console.error(`[${this.toolName}Tool.onPointerUp]`, error);
+                console.error(`[${this.toolName}Tool] Error in onPointerUp:`, error);
             }
         }
     }
@@ -266,8 +289,12 @@ class AbstractTool {
                 this._resetStroke();
                 
                 // 統一システム経由での通知
-                if (Tegaki.EventBusInstance) {
-                    Tegaki.EventBusInstance.safeEmit('tool:stroke_cancelled', {
+                if (window.Tegaki && window.Tegaki.EventBusInstance) {
+                    window.Tegaki.EventBusInstance.emit('tool:stroke_cancelled', {
+                        toolName: this.toolName
+                    });
+                } else if (window.EventBus) {
+                    window.EventBus.emit('tool:stroke_cancelled', {
                         toolName: this.toolName
                     });
                 }
@@ -275,10 +302,12 @@ class AbstractTool {
                 console.log(`[${this.toolName}Tool] Stroke cancelled`);
             }
         } catch (error) {
-            if (Tegaki.ErrorManagerInstance) {
-                Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.onPointerCancel`);
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.onPointerCancel`);
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, `${this.toolName}Tool.onPointerCancel`);
             } else {
-                console.error(`[${this.toolName}Tool.onPointerCancel]`, error);
+                console.error(`[${this.toolName}Tool] Error in onPointerCancel:`, error);
             }
         }
     }
@@ -301,10 +330,12 @@ class AbstractTool {
             
             console.log(`[${this.toolName}Tool] Tool activated`);
         } catch (error) {
-            if (Tegaki.ErrorManagerInstance) {
-                Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.activate`);
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.activate`);
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, `${this.toolName}Tool.activate`);
             } else {
-                console.error(`[${this.toolName}Tool.activate]`, error);
+                console.error(`[${this.toolName}Tool] Error in activate:`, error);
             }
         }
     }
@@ -327,45 +358,41 @@ class AbstractTool {
             
             console.log(`[${this.toolName}Tool] Tool deactivated`);
         } catch (error) {
-            if (Tegaki.ErrorManagerInstance) {
-                Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.deactivate`);
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.deactivate`);
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, `${this.toolName}Tool.deactivate`);
             } else {
-                console.error(`[${this.toolName}Tool.deactivate]`, error);
+                console.error(`[${this.toolName}Tool] Error in deactivate:`, error);
             }
         }
     }
 
     /**
      * 設定更新
-     * @param {object} newSettings - 新しい設定オブジェクト
-     */
-    updateSettings(newSettings = {}) {
-        try {
-            const oldSettings = { ...this.settings };
-            this.settings = { ...this.settings, ...newSettings };
-            
-            // 継承先の設定更新処理
-            if (typeof this._onSettingsUpdate === 'function') {
-                this._onSettingsUpdate(this.settings, oldSettings);
-            }
-            
-            console.log(`[${this.toolName}Tool] Settings updated:`, newSettings);
-        } catch (error) {
-            if (Tegaki.ErrorManagerInstance) {
-                Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.updateSettings`);
-            } else {
-                console.error(`[${this.toolName}Tool.updateSettings]`, error);
-            }
-        }
-    }
-
-    /**
-     * 単一設定更新
      * @param {string} key - 設定キー
      * @param {*} value - 設定値
      */
     updateSetting(key, value) {
-        this.updateSettings({ [key]: value });
+        try {
+            const oldValue = this.settings[key];
+            this.settings[key] = value;
+            
+            // 継承先の設定更新処理
+            if (typeof this._onSettingsUpdate === 'function') {
+                this._onSettingsUpdate(this.settings, { [key]: oldValue });
+            }
+            
+            console.log(`[${this.toolName}Tool] Setting updated: ${key} = ${value}`);
+        } catch (error) {
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.updateSetting`);
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, `${this.toolName}Tool.updateSetting`);
+            } else {
+                console.error(`[${this.toolName}Tool] Error in updateSetting:`, error);
+            }
+        }
     }
 
     /**
@@ -409,10 +436,12 @@ class AbstractTool {
 
             return coords;
         } catch (error) {
-            if (Tegaki.ErrorManagerInstance) {
-                Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.extractAndValidateCoordinates`);
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.extractAndValidateCoordinates`);
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, `${this.toolName}Tool.extractAndValidateCoordinates`);
             } else {
-                console.error(`[${this.toolName}Tool.extractAndValidateCoordinates]`, error);
+                console.error(`[${this.toolName}Tool] Error in extractAndValidateCoordinates:`, error);
             }
             return null;
         }
@@ -435,6 +464,26 @@ class AbstractTool {
         }
         
         return graphics;
+    }
+
+    /**
+     * レイヤー接続
+     * @param {PIXI.Graphics} graphics - Graphics
+     * @param {CanvasManager} canvasManager - CanvasManager
+     * @param {string} layerId - レイヤーID
+     */
+    attachToLayer(graphics, canvasManager, layerId) {
+        try {
+            canvasManager.addGraphicsToLayer(graphics, layerId);
+        } catch (error) {
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.attachToLayer`);
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, `${this.toolName}Tool.attachToLayer`);
+            } else {
+                console.error(`[${this.toolName}Tool] Error in attachToLayer:`, error);
+            }
+        }
     }
 
     /**
@@ -479,9 +528,8 @@ class AbstractTool {
         // 座標範囲チェック（キャンバス外座標を排除）
         if (this.canvasManager) {
             const viewInfo = this.canvasManager.getViewInfo();
-            if (viewInfo && (
-                coords.x < -1000 || coords.x > viewInfo.canvasWidth + 1000 ||
-                coords.y < -1000 || coords.y > viewInfo.canvasHeight + 1000)) {
+            if (coords.x < -1000 || coords.x > viewInfo.canvasWidth + 1000 ||
+                coords.y < -1000 || coords.y > viewInfo.canvasHeight + 1000) {
                 console.warn(`[${this.toolName}Tool] Coordinate out of reasonable range: (${coords.x}, ${coords.y})`);
                 return false;
             }
@@ -500,9 +548,12 @@ class AbstractTool {
             // （責務分離：配置はTool側が完了、CanvasManagerはレイヤー管理のみ）
             
             // 統一システム経由での状態更新
-            if (Tegaki.StateManagerInstance) {
-                Tegaki.StateManagerInstance.setState('canvas.hasContent', true);
-                Tegaki.StateManagerInstance.setState('canvas.isDirty', true);
+            if (window.Tegaki && window.Tegaki.StateManagerInstance) {
+                window.Tegaki.StateManagerInstance.set('canvas.hasContent', true);
+                window.Tegaki.StateManagerInstance.set('canvas.isDirty', true);
+            } else if (window.StateManager) {
+                window.StateManager.set('canvas.hasContent', true);
+                window.StateManager.set('canvas.isDirty', true);
             }
         }
     }
@@ -567,10 +618,12 @@ class AbstractTool {
             
             console.log(`[${this.toolName}Tool] Tool reset completed`);
         } catch (error) {
-            if (Tegaki.ErrorManagerInstance) {
-                Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.reset`);
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, `${this.toolName}Tool.reset`);
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, `${this.toolName}Tool.reset`);
             } else {
-                console.error(`[${this.toolName}Tool.reset]`, error);
+                console.error(`[${this.toolName}Tool] Error in reset:`, error);
             }
         }
     }
@@ -612,16 +665,109 @@ class AbstractTool {
     _onReset() {
         // 継承先で必要に応じて実装
     }
+
+    // ========================================
+    // デバッグ・診断メソッド
+    // ========================================
+
+    /**
+     * 座標変換テスト実行
+     * @param {object} testPoint - テスト座標 {x, y}
+     * @returns {object} テスト結果
+     */
+    runCoordinateTest(testPoint = { x: 100, y: 100 }) {
+        try {
+            if (!this.coordinateManager) {
+                return { error: 'CoordinateManager not available' };
+            }
+
+            // 模擬イベント作成
+            const mockEvent = {
+                clientX: testPoint.x,
+                clientY: testPoint.y,
+                pressure: 0.5
+            };
+
+            // 座標変換テスト
+            const result = this.coordinateManager.extractPointerCoordinates(mockEvent);
+            const isValid = this._validateCoordinateIntegrity(result);
+
+            return {
+                input: testPoint,
+                output: result,
+                isValid: isValid,
+                timestamp: performance.now()
+            };
+        } catch (error) {
+            return { error: error.message };
+        }
+    }
+
+    /**
+     * ツール健全性チェック
+     * @returns {object} 健全性レポート
+     */
+    healthCheck() {
+        const report = {
+            toolName: this.toolName,
+            isHealthy: true,
+            issues: [],
+            recommendations: []
+        };
+
+        try {
+            // 基本状態チェック
+            if (this.isDrawing && !this.currentStroke.graphics) {
+                report.isHealthy = false;
+                report.issues.push('Drawing state inconsistent: isDrawing=true but no graphics');
+            }
+
+            // 統合チェック
+            if (!this.canvasManager) {
+                report.issues.push('CanvasManager not connected');
+                report.recommendations.push('Call attachToCanvas() method');
+            }
+
+            if (!this.coordinateManager) {
+                report.issues.push('CoordinateManager not connected');
+                report.recommendations.push('Check ToolManager integration');
+            }
+
+            // 設定チェック
+            if (this.settings.size <= 0) {
+                report.issues.push('Invalid tool size');
+                report.recommendations.push('Set positive size value');
+            }
+
+            if (report.issues.length > 0) {
+                report.isHealthy = false;
+            }
+
+        } catch (error) {
+            report.isHealthy = false;
+            report.issues.push(`Health check failed: ${error.message}`);
+        }
+
+        return report;
+    }
 }
 
-// Tegaki名前空間に登録（Phase1.4stepEX準拠）
+// 🔧 修正3: 継承用にwindowに直接登録（最重要修正）
+window.AbstractTool = AbstractTool;
+
+// Tegaki名前空間にも登録（Phase1.4stepEX準拠）
 Tegaki.AbstractTool = AbstractTool;
 
 // 初期化レジストリ方式（Phase1.4stepEX準拠）
 Tegaki._registry = Tegaki._registry || [];
 Tegaki._registry.push(() => {
     // AbstractToolは基底クラスなのでインスタンス化はしない
-    console.log('[AbstractTool] ✅ Registered to Tegaki namespace as base class');
+    console.log('[AbstractTool] Registered to Tegaki namespace as base class');
 });
 
-console.log('[AbstractTool] ✅ Tegaki名前空間統一・レジストリ登録完了');
+// 🔄 PixiJS v8対応準拠コメント
+// - PIXI.Graphics生成部分は互換性維持
+// - イベント処理システムは変更不要
+// - 座標処理アルゴリズムは汎用設計
+
+console.log('[AbstractTool] ✅ Loaded and registered to window.AbstractTool for inheritance');

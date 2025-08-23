@@ -115,7 +115,8 @@
         </div>
         
         <div class="canvas-area">
-            <div class="canvas-container">
+            <!-- 🔧 修正1: DOM構造修正 - canvas-containerのIDを追加 -->
+            <div class="canvas-container" id="canvas-container">
                 <div id="drawing-canvas"></div>
             </div>
         </div>
@@ -495,31 +496,31 @@
     <script src="js/utils/performance.js"></script>
     <script src="js/utils/icon-manager.js"></script>
     
-<!-- PHASE 4: UI・管理システム -->
-<script src="js/ui/popup-manager.js"></script>
-<script src="js/ui/slider-manager.js"></script>
-<script src="managers/ui-manager.js"></script>
-<script src="managers/memory-manager.js"></script>
-<script src="managers/settings-manager.js"></script>
+    <!-- PHASE 4: UI・管理システム -->
+    <script src="js/ui/popup-manager.js"></script>
+    <script src="js/ui/slider-manager.js"></script>
+    <script src="managers/ui-manager.js"></script>
+    <script src="managers/memory-manager.js"></script>
+    <script src="managers/settings-manager.js"></script>
 
-<!-- PHASE 5: PixiJS拡張統合（CanvasManager依存のため先に読み込み） -->
-<script src="libs/pixi-extensions.js"></script>
+    <!-- PHASE 5: PixiJS拡張統合（CanvasManager依存のため先に読み込み） -->
+    <script src="libs/pixi-extensions.js"></script>
 
-<!-- PHASE 6: Canvas・境界・ツール管理（PixiJS拡張後に読み込み） -->
-<script src="managers/canvas-manager.js"></script>
-<script src="managers/boundary-manager.js"></script>
-<script src="managers/tool-manager.js"></script>
+    <!-- PHASE 6: Canvas・境界・ツール管理（PixiJS拡張後に読み込み） -->
+    <script src="managers/canvas-manager.js"></script>
+    <script src="managers/boundary-manager.js"></script>
+    <script src="managers/tool-manager.js"></script>
 
-<!-- PHASE 7: ツール実装 -->
-<script src="tools/abstract-tool.js"></script>
-<script src="tools/pen-tool.js"></script>
-<script src="tools/eraser-tool.js"></script>
+    <!-- PHASE 7: ツール実装 - 🔧 修正2: AbstractTool継承順序を保証 -->
+    <script src="tools/abstract-tool.js"></script>
+    <script src="tools/pen-tool.js"></script>
+    <script src="tools/eraser-tool.js"></script>
 
-<!-- PHASE 8: コアシステム（全依存関係完了後） -->
-<script src="js/app-core.js"></script>
+    <!-- PHASE 8: コアシステム（全依存関係完了後） -->
+    <script src="js/app-core.js"></script>
 
-<!-- PHASE 9: メインアプリケーション（最終段階） -->
-<script src="js/main.js"></script>
+    <!-- PHASE 9: メインアプリケーション（最終段階） -->
+    <script src="js/main.js"></script>
     
     <!-- ========================================= -->
     <!-- 🔍 統一版起動完了通知 -->

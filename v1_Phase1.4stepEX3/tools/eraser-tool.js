@@ -7,8 +7,11 @@
  * - 消去範囲の制御
  * 
  * 依存: AbstractTool, CanvasManager
- * 公開: window.EraserTool
+ * 公開: Tegaki.EraserToolInstance
  */
+
+// Tegaki名前空間初期化
+window.Tegaki = window.Tegaki || {};
 
 class EraserTool extends window.AbstractTool {
     constructor() {
@@ -34,7 +37,7 @@ class EraserTool extends window.AbstractTool {
         this.bufferSize = 2; // 消しゴムは描画より少ないバッファでOK
 
         // CanvasManager参照
-        this.canvasManager = window.CanvasManager;
+        this.canvasManager = null;
     }
 
     /**
@@ -53,7 +56,13 @@ class EraserTool extends window.AbstractTool {
 
             console.log(`[EraserTool] Erasure started at (${point.x.toFixed(2)}, ${point.y.toFixed(2)})`);
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'EraserTool._onStrokeStart');
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'EraserTool._onStrokeStart');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'EraserTool._onStrokeStart');
+            } else {
+                console.error('[EraserTool] Error in _onStrokeStart:', error);
+            }
         }
     }
 
@@ -76,7 +85,13 @@ class EraserTool extends window.AbstractTool {
                 this._flushErasureBuffer();
             }
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'EraserTool._onPointAdd');
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'EraserTool._onPointAdd');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'EraserTool._onPointAdd');
+            } else {
+                console.error('[EraserTool] Error in _onPointAdd:', error);
+            }
         }
     }
 
@@ -91,7 +106,13 @@ class EraserTool extends window.AbstractTool {
 
             console.log(`[EraserTool] Erasure ended with ${this.currentStroke.points.length} points`);
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'EraserTool._onStrokeEnd');
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'EraserTool._onStrokeEnd');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'EraserTool._onStrokeEnd');
+            } else {
+                console.error('[EraserTool] Error in _onStrokeEnd:', error);
+            }
         }
     }
 
@@ -159,7 +180,13 @@ class EraserTool extends window.AbstractTool {
 
             console.log('[EraserTool] Eraser options updated:', this.eraserOptions);
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'EraserTool.setEraserOptions');
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'EraserTool.setEraserOptions');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'EraserTool.setEraserOptions');
+            } else {
+                console.error('[EraserTool] Error in setEraserOptions:', error);
+            }
         }
     }
 
@@ -198,13 +225,27 @@ class EraserTool extends window.AbstractTool {
             if (this.canvasManager) {
                 this.canvasManager.erase([point], eraseSize);
                 
-                window.EventBus?.emit('eraser:point-erased', {
-                    point,
-                    size: eraseSize
-                });
+                // 統一システム経由でイベント発火
+                if (window.Tegaki && window.Tegaki.EventBusInstance) {
+                    window.Tegaki.EventBusInstance.emit('eraser:point-erased', {
+                        point,
+                        size: eraseSize
+                    });
+                } else if (window.EventBus) {
+                    window.EventBus.emit('eraser:point-erased', {
+                        point,
+                        size: eraseSize
+                    });
+                }
             }
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'EraserTool.eraseAtPoint');
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'EraserTool.eraseAtPoint');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'EraserTool.eraseAtPoint');
+            } else {
+                console.error('[EraserTool] Error in eraseAtPoint:', error);
+            }
         }
     }
 
@@ -238,7 +279,13 @@ class EraserTool extends window.AbstractTool {
                 this.erasureBuffer = [lastPoint];
             }
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'EraserTool._flushErasureBuffer');
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'EraserTool._flushErasureBuffer');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'EraserTool._flushErasureBuffer');
+            } else {
+                console.error('[EraserTool] Error in _flushErasureBuffer:', error);
+            }
         }
     }
 
@@ -255,7 +302,12 @@ class EraserTool extends window.AbstractTool {
                 this.canvasManager.erase([point], effectiveSize);
             }
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'EraserTool._performContinuousErase');
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'EraserTool._performContinuousErase');
+            } else if (window.ErrorManager) {
+            } else {
+                console.error('[EraserTool] Error in _performContinuousErase:', error);
+            }
         }
     }
 
@@ -275,7 +327,13 @@ class EraserTool extends window.AbstractTool {
 
             console.log('[EraserTool] Preview enabled');
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'EraserTool._enableEraserPreview');
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'EraserTool._enableEraserPreview');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'EraserTool._enableEraserPreview');
+            } else {
+                console.error('[EraserTool] Error in _enableEraserPreview:', error);
+            }
         }
     }
 
@@ -296,7 +354,13 @@ class EraserTool extends window.AbstractTool {
 
             console.log('[EraserTool] Preview disabled');
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'EraserTool._disableEraserPreview');
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'EraserTool._disableEraserPreview');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'EraserTool._disableEraserPreview');
+            } else {
+                console.error('[EraserTool] Error in _disableEraserPreview:', error);
+            }
         }
     }
 
@@ -310,12 +374,25 @@ class EraserTool extends window.AbstractTool {
                 return;
             }
 
-            const pointerInfo = window.CoordinateManager?.extractPointerInfo(event);
+            // CoordinateManagerを使用した座標抽出
+            let pointerInfo = null;
+            if (window.Tegaki && window.Tegaki.CoordinateManagerInstance) {
+                pointerInfo = window.Tegaki.CoordinateManagerInstance.extractPointerCoordinates(event);
+            } else if (window.CoordinateManager) {
+                pointerInfo = window.CoordinateManager.extractPointerInfo(event);
+            }
+            
             if (pointerInfo) {
                 this._updatePreviewGraphics(pointerInfo);
             }
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'EraserTool._handlePreviewMove');
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'EraserTool._handlePreviewMove');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'EraserTool._handlePreviewMove');
+            } else {
+                console.error('[EraserTool] Error in _handlePreviewMove:', error);
+            }
         }
     }
 
@@ -361,7 +438,13 @@ class EraserTool extends window.AbstractTool {
                 stage.addChild(this._previewGraphics);
             }
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'EraserTool._updatePreviewGraphics');
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'EraserTool._updatePreviewGraphics');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'EraserTool._updatePreviewGraphics');
+            } else {
+                console.error('[EraserTool] Error in _updatePreviewGraphics:', error);
+            }
         }
     }
 
@@ -380,7 +463,13 @@ class EraserTool extends window.AbstractTool {
                 this._previewGraphics = null;
             }
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'EraserTool._clearPreviewGraphics');
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'EraserTool._clearPreviewGraphics');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'EraserTool._clearPreviewGraphics');
+            } else {
+                console.error('[EraserTool] Error in _clearPreviewGraphics:', error);
+            }
         }
     }
 
@@ -445,7 +534,13 @@ class EraserTool extends window.AbstractTool {
                 this.canvasManager.erase([point], this.settings.size);
             }
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'EraserTool._performAlphaErase');
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'EraserTool._performAlphaErase');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'EraserTool._performAlphaErase');
+            } else {
+                console.error('[EraserTool] Error in _performAlphaErase:', error);
+            }
         }
     }
 
@@ -464,12 +559,29 @@ class EraserTool extends window.AbstractTool {
             
             console.log('[EraserTool] Object-based erasure not yet implemented');
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'EraserTool._performObjectErase');
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'EraserTool._performObjectErase');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'EraserTool._performObjectErase');
+            } else {
+                console.error('[EraserTool] Error in _performObjectErase:', error);
+            }
         }
     }
 }
 
-// グローバルインスタンスを作成・公開
-window.EraserTool = new EraserTool();
+// 🔧 修正4: Tegaki名前空間+レジストリ方式でインスタンス化
+Tegaki.EraserTool = EraserTool;
 
-console.log('[EraserTool] Initialized and registered to window.EraserTool');
+// 初期化レジストリ方式（Phase1.4stepEX準拠）
+Tegaki._registry = Tegaki._registry || [];
+Tegaki._registry.push(() => {
+    Tegaki.EraserToolInstance = new EraserTool();
+    
+    // 下位互換のためwindowにも登録
+    window.EraserTool = Tegaki.EraserToolInstance;
+    
+    console.log('[EraserTool] ✅ Initialized and registered as Tegaki.EraserToolInstance');
+});
+
+console.log('[EraserTool] Loaded and ready for registry initialization');

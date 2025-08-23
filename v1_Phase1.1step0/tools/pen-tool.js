@@ -1,1253 +1,500 @@
 /**
- * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
+ * 🖊️ PenTool - ペン描画専門ツール
+ * ✅ DRAWING_AUTHORITY: 描画処理の主導権保持
+ * 🔧 COORDINATE_CONTROL: 座標変換・moveTo/lineTo制御
+ * 📋 RESPONSIBILITY: 「ペン」としての描画オブジェクト生成
  * 
- * 🎯 AI_WORK_SCOPE: ベクターペン高度化・筆圧対応・線補正・設定統合・GPU加速準備
- * 🎯 DEPENDENCIES: js/managers/tool-manager.js, js/utils/coordinates.js, js/managers/memory-manager.js
- * 🎯 NODE_MODULES: lodash（線補正最適化）, pixi.js@^7.4.3
- * 🎯 PIXI_EXTENSIONS: lodash, gsap（スムースアニメーション）
- * 🎯 ISOLATION_TEST: ✅ 単体テスト可能
- * 🎯 SPLIT_THRESHOLD: 400行超過 → pen-settings.js, pen-pressure.js分割予定
+ * 📏 DESIGN_PRINCIPLE: ユーザー入力 → Graphics生成 → CanvasManagerに渡す
+ * 🎯 ARCHITECTURE: AbstractTool継承・1ファイル1ツール設計
+ * 🚫 COORDINATE_BUG_NOTES: 0,0直線バグ等の座標問題対策済み
  * 
- * 📋 PHASE_TARGET: Phase1.1ss5 - JavaScript機能分割完了・AI分業基盤確立
- * 📋 V8_MIGRATION: Graphics API変更対応・WebGPU最適化準備・120FPS対応
- * 📋 PERFORMANCE_TARGET: 描画応答性1ms以下・筆圧120Hz対応・GPU加速
- * 📋 DRY_COMPLIANCE: ✅ 共通処理Utils活用・重複コード排除
- * 📋 SOLID_COMPLIANCE: ✅ 単一責任・開放閉鎖・依存性逆転遵守
- * 
- * 🔄 UNIFIED_SYSTEMS: ConfigManager・ErrorManager・StateManager・EventBus統合済み
+ * 座標バグ完全修正:
+ * - moveTo/lineToの制御を完全にTool側で実行
+ * - 0,0座標からの直線問題を根本解決
+ * - CanvasManagerには完成したGraphicsのみを渡す
  */
 
-/**
- * プロ級ベクターペンツール（統一システム活用版）
- * 筆圧感度120Hz・高度な線補正・エッジスムージング・GPU加速準備
- * Pure JavaScript完全準拠・AI分業対応
- */
-class PenTool {
-    constructor(toolManager) {
-        this.toolManager = toolManager;
-        this.version = 'v1.0-Phase1.1ss5-unified';
-        this.name = 'pen';
-        this.displayName = 'ベクターペン';
-        
-        // 🔄 統一システム参照
-        this.configManager = window.ConfigManager;
-        this.errorManager = window.ErrorManager;
-        this.stateManager = window.StateManager;
-        this.eventBus = window.EventBus;
-        
-        // 🎯 STEP5: 描画状態管理強化
-        this.currentPath = null;
-        this.isDrawing = false;
-        this.isActive = false;
-        this.drawingSession = null;
-        
-        // 🎯 STEP5: 統一システム設定値取得
-        this.initializeSettingsFromConfig();
-        
-        // 🎯 STEP5: パフォーマンス監視
-        this.performance = {
-            drawCalls: 0,
-            averageLatency: 0,
-            maxPoints: 0,
-            smoothingTime: 0,
-            lastFrameTime: 0,
-            targetFPS: this.configManager ? this.configManager.get('performance.targetFPS') : 60
+// Tegaki名前空間初期化（Phase1.4stepEX準拠）
+window.Tegaki = window.Tegaki || {};
+
+class PenTool extends window.AbstractTool {
+    constructor() {
+        // デフォルト設定でAbstractToolを初期化
+        super('pen', {
+            size: 3,
+            color: '#000000',
+            opacity: 1.0,
+            pressureSensitive: true,
+            smoothing: 0.5,
+            minSize: 1,
+            maxSize: 50
+        });
+
+        // ペン固有設定
+        this.penOptions = {
+            pressureMultiplier: 2.0,
+            velocitySmoothing: true,
+            tapering: true,
+            taperStart: 0.8,
+            taperEnd: 0.6,
+            minDistance: 2.0 // 最小描画距離（0,0バグ対策）
         };
-        
-        // 🎯 STEP5: 拡張ライブラリ統合
-        this.lodashAvailable = false;
-        this.coordinatesUtil = null;
-        this.memoryManager = null;
-        this.performanceMonitor = null;
-        
-        console.log(`✒️ PenTool 統一システム版構築開始 - ${this.version}`);
-    }
-    
-    /**
-     * 🔄 統一システムからの設定初期化
-     */
-    initializeSettingsFromConfig() {
-        try {
-            const drawingConfig = this.configManager ? this.configManager.getDrawingConfig('pen') : {};
-            const uiConfig = this.configManager ? this.configManager.getUIConfig() : {};
-            const perfConfig = this.configManager ? this.configManager.getPerformanceConfig() : {};
-            
-            // 🎯 STEP5: 筆圧感度システム（120Hz対応）
-            this.pressureSystem = {
-                enabled: true,
-                samples: [],
-                maxSamples: 10, // 120Hz用バッファ
-                smoothingFactor: 0.7,
-                sensitivity: 1.0,
-                lastPressure: drawingConfig.defaultPressure || 0.5,
-                velocityTracking: true
-            };
-            
-            // 🎯 STEP5: 高度な線補正システム
-            this.strokeSmoothing = {
-                enabled: true,
-                algorithm: 'catmull-rom', // catmull-rom, bezier, kalman
-                bufferSize: 8,
-                pointBuffer: [],
-                threshold: 2.0,
-                adaptiveThreshold: true,
-                predictionEnabled: true
-            };
-            
-            // 🎯 STEP5: エッジスムージング
-            this.edgeSmoothing = {
-                enabled: true,
-                radius: 1.5,
-                intensity: 0.8,
-                antiAliasing: true,
-                subpixelRendering: true
-            };
-            
-            // 🎯 STEP5: GPU加速準備
-            this.gpuAcceleration = {
-                enabled: false, // V8移行時true
-                bufferMode: 'vertex', // vertex, texture, compute
-                batchSize: 1000,
-                shaderOptimization: true
-            };
-            
-            // 🔄 統一システム設定統合
-            this.settings = {
-                // ConfigManager基本設定
-                minSize: drawingConfig.minSize || 0.1,
-                maxSize: drawingConfig.maxSize || 100.0,
-                baseSize: drawingConfig.defaultSize || 16.0,
-                opacity: drawingConfig.defaultOpacity || 0.85,
-                color: drawingConfig.defaultColor || 0x800000,
-                
-                // 筆圧設定
-                pressureSensitivity: true,
-                pressureMultiplier: 1.0,
-                pressureCurve: 'linear', // linear, ease-in, ease-out, custom
-                minPressureSize: 0.3,
-                maxPressureSize: 2.0,
-                
-                // 線補正設定
-                smoothing: drawingConfig.defaultSmoothing || 0.3,
-                smoothingAlgorithm: 'catmull-rom',
-                adaptiveSmoothing: true,
-                strokePrediction: true,
-                minDistance: drawingConfig.minDistance || 1.5,
-                
-                // エッジ設定
-                edgeSmoothing: true,
-                antiAliasing: true,
-                subpixelPrecision: true,
-                
-                // GPU設定
-                gpuAcceleration: false, // V8移行時対応
-                hardwareAcceleration: true,
-                batchOptimization: true
-            };
-            
-        } catch (error) {
-            this.safeError(`設定初期化エラー: ${error.message}`, 'warning');
-            this.initializeFallbackSettings();
-        }
-    }
-    
-    /**
-     * 🛡️ フォールバック設定初期化
-     */
-    initializeFallbackSettings() {
-        this.settings = {
-            minSize: 0.1,
-            maxSize: 100.0,
-            baseSize: 16.0,
-            opacity: 0.85,
-            color: 0x800000,
-            pressureSensitivity: false,
-            smoothing: 0.3,
-            edgeSmoothing: false,
-            gpuAcceleration: false
+
+        // 描画バッファ（滑らか描画用）
+        this.drawingBuffer = [];
+        this.bufferSize = 3;
+
+        // 座標制御状態（重要な0,0バグ対策）
+        this.drawingState = {
+            hasFirstPoint: false,
+            currentPath: null,
+            lastDrawnPoint: null
         };
-        
-        this.pressureSystem = { enabled: false, samples: [], lastPressure: 0.5 };
-        this.strokeSmoothing = { enabled: false, pointBuffer: [] };
-        this.edgeSmoothing = { enabled: false };
-        this.gpuAcceleration = { enabled: false };
     }
-    
+
+    // ========================================
+    // AbstractTool必須実装メソッド
+    // ========================================
+
     /**
-     * 🎯 STEP5: ペンツール高度化初期化（統一システム版）
+     * ストローク開始時の処理
+     * @protected
+     * @param {object} point - 座標点 {x, y, pressure, timestamp}
      */
-    async initialize() {
-        console.group(`✒️ PenTool 統一システム版初期化開始 - ${this.version}`);
-        
+    _onStrokeStart(point) {
         try {
-            const startTime = performance.now();
+            // 描画バッファクリア
+            this.drawingBuffer = [];
             
-            // Phase 1: 統一システム依存確認
-            this.validateUnifiedSystems();
-            
-            // Phase 2: 拡張ライブラリ確認・統合
-            this.checkAndIntegrateExtensions();
-            
-            // Phase 3: 筆圧システム初期化
-            this.initializePressureSystem();
-            
-            // Phase 4: 線補正システム初期化
-            this.initializeStrokeSmoothing();
-            
-            // Phase 5: エッジスムージング初期化
-            this.initializeEdgeSmoothing();
-            
-            // Phase 6: GPU加速準備（V8移行用）
-            this.prepareGPUAcceleration();
-            
-            // Phase 7: パフォーマンス監視開始
-            this.startPerformanceMonitoring();
-            
-            // Phase 8: ToolManager登録
-            if (this.toolManager) {
-                this.toolManager.registerTool(this.name, this);
-            }
-            
-            // Phase 9: EventBus通知
-            this.emitEvent('TOOL_INITIALIZED', {
-                tool: this.name,
-                version: this.version,
-                unifiedSystems: true
-            });
-            
-            const initTime = performance.now() - startTime;
-            console.log(`✅ PenTool 統一システム版初期化完了 - ${initTime.toFixed(2)}ms`);
-            
-            return this;
-            
-        } catch (error) {
-            this.safeError(`初期化エラー: ${error.message}`, 'error');
-            
-            // 🛡️ STEP5: フォールバック初期化
-            await this.fallbackInitialization();
-            return this;
-            
-        } finally {
-            console.groupEnd();
-        }
-    }
-    
-    /**
-     * 🔄 統一システム依存確認
-     */
-    validateUnifiedSystems() {
-        const systems = {
-            ConfigManager: window.ConfigManager,
-            ErrorManager: window.ErrorManager,
-            StateManager: window.StateManager,
-            EventBus: window.EventBus
-        };
-        
-        const missing = Object.keys(systems).filter(name => !systems[name]);
-        
-        if (missing.length > 0) {
-            throw new Error(`統一システム未確認: ${missing.join(', ')}`);
-        }
-        
-        console.log('✅ 統一システム依存確認完了');
-    }
-    
-    /**
-     * 🎯 STEP5: 高度な描画開始（統一システム版）
-     */
-    startDrawing(x, y, pressure = 0.5, timestamp = performance.now()) {
-        if (!this.toolManager?.appCore) {
-            this.safeError('AppCore 未初期化', 'warning');
-            return null;
-        }
-        
-        const startTime = performance.now();
-        
-        try {
-            this.isDrawing = true;
-            
-            // 描画セッション開始
-            this.drawingSession = {
-                id: this.generateSessionId(),
-                startTime: timestamp,
-                points: [],
-                totalDistance: 0,
-                averagePressure: pressure,
-                smoothedPoints: []
+            // 描画状態リセット（重要な0,0バグ対策）
+            this.drawingState = {
+                hasFirstPoint: true,
+                currentPath: null,
+                lastDrawnPoint: { ...point }
             };
-            
-            // 筆圧初期化
-            this.pressureSystem.lastPressure = pressure;
-            this.pressureSystem.samples = [{ pressure, timestamp, velocity: 0 }];
-            
-            // 点バッファ初期化
-            this.strokeSmoothing.pointBuffer = [{ x, y, pressure, timestamp }];
-            
-            // パス作成（メモリ管理統合）
-            this.currentPath = this.createAdvancedPath(x, y, pressure);
-            
-            // メモリ管理への記録
-            if (this.memoryManager) {
-                this.memoryManager.recordAction('DRAW_START', {
-                    tool: this.name,
-                    startPoint: { x, y, pressure },
-                    sessionId: this.drawingSession.id
-                });
+
+            // Graphics初期化
+            if (this.currentStroke.graphics) {
+                this._initializeGraphicsForPen(this.currentStroke.graphics);
+                
+                // 開始点を明示的にmoveTo（重要な座標制御）
+                this.currentStroke.graphics.moveTo(point.x, point.y);
             }
-            
-            // EventBus通知
-            this.emitEvent('DRAWING_STARTED', {
-                tool: this.name,
-                position: { x, y },
-                pressure,
-                sessionId: this.drawingSession.id
-            });
-            
-            const processTime = performance.now() - startTime;
-            this.updateLatencyStats(processTime);
-            
-            console.log(`✒️ 統一システム版描画開始: (${x.toFixed(2)}, ${y.toFixed(2)}) P:${pressure.toFixed(3)} [${processTime.toFixed(2)}ms]`);
-            
-            return this.currentPath;
-            
+
+            console.log(`[PenTool] Stroke started at (${point.x.toFixed(2)}, ${point.y.toFixed(2)})`);
         } catch (error) {
-            this.safeError(`描画開始エラー: ${error.message}`, 'error');
-            this.isDrawing = false;
-            return null;
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'PenTool._onStrokeStart');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'PenTool._onStrokeStart');
+            } else {
+                console.error('[PenTool] Error in _onStrokeStart:', error);
+            }
         }
     }
-    
+
     /**
-     * 🎯 STEP5: 高度な描画継続（統一システム版）
+     * 点追加時の処理
+     * @protected
+     * @param {object} point - 座標点
      */
-    continueDrawing(x, y, pressure = 0.5, timestamp = performance.now()) {
-        if (!this.isDrawing || !this.currentPath || !this.drawingSession) {
-            return false;
-        }
-        
-        const startTime = performance.now();
-        
+    _onPointAdd(point) {
         try {
-            // 新しい点を追加
-            const newPoint = { x, y, pressure, timestamp };
-            this.strokeSmoothing.pointBuffer.push(newPoint);
-            
-            // バッファサイズ制限
-            if (this.strokeSmoothing.pointBuffer.length > this.strokeSmoothing.bufferSize) {
-                this.strokeSmoothing.pointBuffer.shift();
-            }
-            
-            // 筆圧更新
-            const adjustedPressure = this.updatePressure(pressure, timestamp);
-            
-            // 距離計算
-            const lastPoint = this.drawingSession.points[this.drawingSession.points.length - 1];
-            if (lastPoint) {
-                const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
-                this.drawingSession.totalDistance += distance;
-                
-                // 閾値チェック（ConfigManager設定活用）
-                const minDistance = this.settings.minDistance;
-                if (distance < minDistance) {
-                    return true; // スキップ
+            // 距離チェック（微小移動フィルタ・0,0バグ対策）
+            if (this.drawingState.lastDrawnPoint) {
+                const distance = this._calculateDistance(point, this.drawingState.lastDrawnPoint);
+                if (distance < this.penOptions.minDistance) {
+                    return; // 微小移動は無視
                 }
             }
-            
-            // 線補正適用
-            const smoothedPoints = this.applyStrokeSmoothing(newPoint);
-            
-            // 描画実行
-            if (smoothedPoints.length > 0) {
-                this.executeAdvancedDrawing(smoothedPoints);
+
+            // バッファに追加
+            this.drawingBuffer.push(point);
+
+            // バッファが溜まったら描画実行
+            if (this.drawingBuffer.length >= this.bufferSize) {
+                this._flushBufferToGraphics();
             }
-            
-            // セッション情報更新
-            this.drawingSession.points.push(newPoint);
-            this.drawingSession.averagePressure = this.calculateAveragePressure();
-            
-            // EventBus通知（間引き）
-            if (this.drawingSession.points.length % 5 === 0) {
-                this.emitEvent('DRAWING_CONTINUED', {
-                    tool: this.name,
-                    position: { x, y },
-                    pressure: adjustedPressure,
-                    sessionId: this.drawingSession.id,
-                    totalPoints: this.drawingSession.points.length
-                });
-            }
-            
-            const processTime = performance.now() - startTime;
-            this.updateLatencyStats(processTime);
-            
-            return true;
-            
         } catch (error) {
-            this.safeError(`描画継続エラー: ${error.message}`, 'warning');
-            return false;
-        }
-    }
-    
-    /**
-     * 🎯 STEP5: 高度な描画終了（統一システム版）
-     */
-    stopDrawing(timestamp = performance.now()) {
-        if (!this.isDrawing || !this.currentPath || !this.drawingSession) {
-            return false;
-        }
-        
-        const startTime = performance.now();
-        
-        try {
-            // 残りバッファの描画
-            this.flushDrawingBuffer();
-            
-            // パス最適化
-            this.optimizePath(this.currentPath);
-            
-            // セッション統計
-            const sessionStats = this.calculateSessionStats(timestamp);
-            
-            // メモリ管理への記録
-            if (this.memoryManager) {
-                this.memoryManager.recordAction('DRAW_END', {
-                    tool: this.name,
-                    sessionId: this.drawingSession.id,
-                    pathId: this.currentPath.id,
-                    stats: sessionStats
-                });
-            }
-            
-            // EventBus通知
-            this.emitEvent('DRAWING_ENDED', {
-                tool: this.name,
-                sessionId: this.drawingSession.id,
-                pathId: this.currentPath.id,
-                stats: sessionStats
-            });
-            
-            this.emitEvent('PATH_CREATED', {
-                tool: this.name,
-                path: this.currentPath,
-                stats: sessionStats
-            });
-            
-            // クリーンアップ
-            this.isDrawing = false;
-            const completedPath = this.currentPath;
-            this.currentPath = null;
-            this.drawingSession = null;
-            this.strokeSmoothing.pointBuffer = [];
-            
-            const processTime = performance.now() - startTime;
-            this.updateLatencyStats(processTime);
-            
-            console.log(`✒️ 統一システム版描画終了: ${sessionStats.totalPoints}pts, ${sessionStats.totalDistance.toFixed(2)}px [${processTime.toFixed(2)}ms]`);
-            
-            return completedPath;
-            
-        } catch (error) {
-            this.safeError(`描画終了エラー: ${error.message}`, 'error');
-            this.isDrawing = false;
-            return null;
-        }
-    }
-    
-    // ==========================================
-    // 🔄 統一システム活用メソッド群
-    // ==========================================
-    
-    /**
-     * 統一エラー処理
-     */
-    safeError(message, type = 'error') {
-        if (this.errorManager) {
-            this.errorManager.showError(type, message);
-        } else {
-            console.error(`PenTool ${type}:`, message);
-        }
-    }
-    
-    /**
-     * 統一イベント発行
-     */
-    emitEvent(eventType, data) {
-        if (this.eventBus) {
-            this.eventBus.safeEmit(eventType, data);
-        }
-    }
-    
-    /**
-     * 統一状態取得
-     */
-    getApplicationState() {
-        if (this.stateManager) {
-            return this.stateManager.getApplicationState();
-        }
-        return null;
-    }
-    
-    /**
-     * 設定値更新（統一システム連携）
-     */
-    updateSettings(newSettings) {
-        if (!newSettings) return;
-        
-        try {
-            // 安全な設定マージ
-            if (this.lodashAvailable) {
-                this.settings = window._.merge({}, this.settings, newSettings);
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'PenTool._onPointAdd');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'PenTool._onPointAdd');
             } else {
-                this.settings = { ...this.settings, ...newSettings };
+                console.error('[PenTool] Error in _onPointAdd:', error);
             }
-            
-            // ConfigManagerに反映
-            if (this.configManager) {
-                Object.keys(newSettings).forEach(key => {
-                    const configPath = `drawing.pen.${key}`;
-                    if (this.configManager.validate(configPath, newSettings[key])) {
-                        this.configManager.set(configPath, newSettings[key]);
-                    }
-                });
+        }
+    }
+
+    /**
+     * ストローク終了時の処理
+     * @protected
+     * @param {object} point - 座標点
+     */
+    _onStrokeEnd(point) {
+        try {
+            // 残りのバッファを描画
+            this._flushBufferToGraphics(true);
+
+            // テーパリング処理（末尾）
+            if (this.penOptions.tapering && this.currentStroke.points.length > 2) {
+                this._applyEndTapering();
             }
-            
-            // 依存システム更新
-            this.updateDependentSystems();
-            
-            // EventBus通知
-            this.emitEvent('BRUSH_SIZE_CHANGED', { size: this.settings.baseSize });
-            this.emitEvent('BRUSH_COLOR_CHANGED', { color: this.settings.color });
-            this.emitEvent('OPACITY_CHANGED', { opacity: this.settings.opacity });
-            
-            console.log('✒️ ペンツール設定更新完了（統一システム連携）:', newSettings);
-            
+
+            // 最終的なGraphicsの完成確認
+            this._finalizeGraphics();
+
+            console.log(`[PenTool] Stroke ended with ${this.currentStroke.points.length} points`);
         } catch (error) {
-            this.safeError(`設定更新エラー: ${error.message}`, 'warning');
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'PenTool._onStrokeEnd');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'PenTool._onStrokeEnd');
+            } else {
+                console.error('[PenTool] Error in _onStrokeEnd:', error);
+            }
         }
     }
-    
+
     /**
-     * ツールアクティベート（統一システム版）
+     * ツール有効化時の処理
+     * @protected
      */
-    activate() {
-        this.isActive = true;
-        
-        // EventBus通知
-        this.emitEvent('TOOL_CHANGED', {
-            previousTool: null,
-            currentTool: this.name,
-            displayName: this.displayName
-        });
-        
-        console.log(`✒️ ${this.displayName} アクティブ化 - 統一システム版`);
+    _onActivate() {
+        console.log('[PenTool] Pen tool activated with settings:', this.settings);
     }
-    
+
     /**
-     * ツール非アクティベート（統一システム版）
+     * ツール無効化時の処理
+     * @protected
      */
-    deactivate() {
-        if (this.isDrawing) {
-            this.stopDrawing();
-        }
-        
-        this.isActive = false;
-        
-        // EventBus通知
-        this.emitEvent('TOOL_CHANGED', {
-            previousTool: this.name,
-            currentTool: null,
-            displayName: null
-        });
-        
-        console.log(`✒️ ${this.displayName} 非アクティブ化 - 統一システム版`);
-    }
-    
-    // ==========================================
-    // 🎯 既存の高度な機能メソッド群（継続）
-    // ==========================================
-    
-    checkAndIntegrateExtensions() {
-        console.log('🔧 拡張ライブラリ統合開始...');
-        
-        this.lodashAvailable = typeof window._ !== 'undefined';
-        if (this.lodashAvailable) {
-            console.log('✅ Lodash 統合完了 - 線補正最適化');
-        }
-        
-        this.coordinatesUtil = window.CoordinatesUtil;
-        if (this.coordinatesUtil) {
-            console.log('✅ CoordinatesUtil 統合完了');
-        }
-        
-        this.memoryManager = this.toolManager?.memoryManager;
-        if (this.memoryManager) {
-            console.log('✅ MemoryManager 統合完了');
-        }
-        
-        console.log('🔧 拡張ライブラリ統合完了');
-    }
-    
-    initializePressureSystem() {
-        console.log('📊 筆圧システム初期化（120Hz対応）...');
-        
-        this.pressureInterpolation = {
-            enabled: true,
-            method: 'cubic-spline',
-            lookAhead: 3,
-            smoothingWindow: 5
+    _onDeactivate() {
+        // バッファクリア
+        this.drawingBuffer = [];
+        this.drawingState = {
+            hasFirstPoint: false,
+            currentPath: null,
+            lastDrawnPoint: null
         };
-        
-        this.pressureCurves = {
-            linear: (p) => p,
-            'ease-in': (p) => p * p,
-            'ease-out': (p) => 1 - (1 - p) * (1 - p),
-            custom: (p) => p * (2 - p)
-        };
-        
-        if (typeof PointerEvent !== 'undefined') {
-            this.setupPointerPressureEvents();
-        }
-        
-        console.log('📊 筆圧システム初期化完了');
+        console.log('[PenTool] Pen tool deactivated');
     }
-    
-    setupPointerPressureEvents() {
-        const canvas = this.toolManager?.appCore?.app?.view;
-        if (!canvas) return;
-        
-        canvas.addEventListener('pointermove', (e) => {
-            if (this.isDrawing && e.pressure !== undefined) {
-                this.updatePressure(e.pressure, e.timeStamp);
+
+    /**
+     * 設定更新時の処理
+     * @protected
+     */
+    _onSettingsUpdate(newSettings, oldSettings) {
+        // 圧力感知設定の変更をログ出力
+        if (newSettings.pressureSensitive !== oldSettings.pressureSensitive) {
+            console.log(`[PenTool] Pressure sensitivity ${newSettings.pressureSensitive ? 'enabled' : 'disabled'}`);
+        }
+
+        // サイズ制限の適用
+        if (newSettings.size !== undefined) {
+            this.settings.size = Math.max(this.settings.minSize, 
+                                Math.min(this.settings.maxSize, newSettings.size));
+        }
+    }
+
+    // ========================================
+    // ペン固有の公開メソッド
+    // ========================================
+
+    /**
+     * ペン固有オプション設定
+     * @param {object} options - ペンオプション
+     */
+    setPenOptions(options) {
+        try {
+            Object.assign(this.penOptions, options);
+            console.log('[PenTool] Pen options updated:', this.penOptions);
+        } catch (error) {
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'PenTool.setPenOptions');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'PenTool.setPenOptions');
+            } else {
+                console.error('[PenTool] Error in setPenOptions:', error);
             }
-        });
-        
-        canvas.addEventListener('pointerdown', (e) => {
-            if (e.pressure !== undefined) {
-                this.pressureSystem.lastPressure = e.pressure;
-            }
-        });
-        
-        console.log('✅ Pointer圧力イベント設定完了');
-    }
-    
-    initializeStrokeSmoothing() {
-        console.log('🎨 線補正システム初期化...');
-        
-        this.smoothingAlgorithms = {
-            'catmull-rom': this.catmullRomSmoothing.bind(this),
-            'bezier': this.bezierSmoothing.bind(this),
-            'kalman': this.kalmanSmoothing.bind(this),
-            'douglas-peucker': this.douglasPeuckerSmoothing.bind(this)
-        };
-        
-        this.adaptiveSmoothing = {
-            enabled: this.settings.adaptiveSmoothing,
-            speedThreshold: 50,
-            distanceThreshold: 5,
-            angleThreshold: Math.PI / 6
-        };
-        
-        console.log('🎨 線補正システム初期化完了');
-    }
-    
-    initializeEdgeSmoothing() {
-        console.log('✨ エッジスムージング初期化...');
-        
-        this.subpixelRendering = {
-            enabled: this.settings.subpixelPrecision,
-            precision: 4,
-            filterType: 'lanczos',
-            sharpening: 0.2
-        };
-        
-        this.antiAliasing = {
-            enabled: this.settings.antiAliasing,
-            samples: 4,
-            quality: 'high',
-            edgeDetection: true
-        };
-        
-        console.log('✨ エッジスムージング初期化完了');
-    }
-    
-    prepareGPUAcceleration() {
-        console.log('🚀 GPU加速準備（V8移行用）...');
-        
-        this.webgpuAvailable = typeof navigator !== 'undefined' && 
-                               navigator.gpu !== undefined;
-        
-        if (this.webgpuAvailable) {
-            console.log('✅ WebGPU利用可能 - V8移行時対応予定');
         }
-        
-        this.gpuOptimization = {
-            batchDrawing: true,
-            vertexCaching: true,
-            textureAtlas: false,
-            shaderCompilation: 'async',
-            memoryPooling: true
-        };
-        
-        console.log('🚀 GPU加速準備完了');
     }
-    
-    startPerformanceMonitoring() {
-        console.log('📊 ペンツールパフォーマンス監視開始...');
-        
-        this.performanceMonitor = {
-            frameCount: 0,
-            totalTime: 0,
-            lastUpdate: performance.now(),
-            maxLatency: 0,
-            minLatency: Infinity
-        };
-        
-        setInterval(() => {
-            this.updatePerformanceStats();
-        }, 5000);
-        
-        console.log('📊 ペンツールパフォーマンス監視開始完了');
+
+    /**
+     * ペン固有オプション取得
+     * @returns {object}
+     */
+    getPenOptions() {
+        return { ...this.penOptions };
     }
-    
-    // ==========================================
-    // 🎯 継続する機能メソッド群（省略版）
-    // ==========================================
-    
-    createAdvancedPath(x, y, pressure) {
-        const pathId = this.generatePathId();
-        const size = this.calculateEffectiveSize(pressure);
-        
-        const path = {
-            id: pathId,
-            tool: this.name,
-            version: this.version,
-            startTime: performance.now(),
-            points: [{ x, y, pressure, size, timestamp: performance.now() }],
-            settings: { ...this.settings },
-            graphics: null,
-            optimized: false,
-            metadata: {
-                sessionId: this.drawingSession?.id,
-                unifiedSystems: true,
-                gpuAccelerated: this.gpuAcceleration.enabled
-            }
+
+    /**
+     * ブラシプレビュー取得
+     * @param {object} point - プレビュー用点
+     * @returns {object}
+     */
+    getBrushPreview(point = {}) {
+        const previewPoint = {
+            x: 0,
+            y: 0,
+            pressure: 0.5,
+            ...point
         };
+
+        const style = this._calculatePenStyle(previewPoint);
         
-        path.graphics = this.createPixiGraphics(path);
-        
-        if (this.toolManager.appCore.drawingContainer) {
-            this.toolManager.appCore.drawingContainer.addChild(path.graphics);
-            this.toolManager.appCore.paths.push(path);
-        }
-        
-        return path;
+        return {
+            size: style.width,
+            color: style.color,
+            alpha: style.alpha
+        };
     }
-    
-    createPixiGraphics(path) {
-        const graphics = new PIXI.Graphics();
-        
-        const color = this.settings.color;
-        const alpha = this.settings.opacity;
+
+    // ========================================
+    // 内部描画制御メソッド（座標バグ修正の核心）
+    // ========================================
+
+    /**
+     * Graphics初期化（ペン用）
+     * @private
+     */
+    _initializeGraphicsForPen(graphics) {
+        const style = this._calculatePenStyle();
         
         graphics.lineStyle({
-            width: this.settings.baseSize,
-            color: color,
-            alpha: alpha,
-            cap: PIXI.LINE_CAP.ROUND,
-            join: PIXI.LINE_JOIN.ROUND
+            width: style.width,
+            color: style.color,
+            alpha: style.alpha,
+            cap: 'round',
+            join: 'round'
         });
-        
-        if (this.settings.edgeSmoothing && graphics.filters) {
-            graphics.filters = [this.createSmoothingFilter()];
-        }
-        
-        return graphics;
     }
-    
-    // ==========================================
-    // 🎯 線補正アルゴリズム群（継続）
-    // ==========================================
-    
-    applyStrokeSmoothing(newPoint) {
-        if (!this.strokeSmoothing.enabled || this.strokeSmoothing.pointBuffer.length < 3) {
-            return [newPoint];
-        }
-        
-        const algorithm = this.settings.smoothingAlgorithm;
-        const smoothingFunction = this.smoothingAlgorithms[algorithm];
-        
-        if (smoothingFunction) {
-            return smoothingFunction(this.strokeSmoothing.pointBuffer);
-        }
-        
-        return [newPoint];
-    }
-    
-    catmullRomSmoothing(points) {
-        if (points.length < 4) return [points[points.length - 1]];
-        
-        const result = [];
-        const segments = 10;
-        
-        const p0 = points[points.length - 4];
-        const p1 = points[points.length - 3];
-        const p2 = points[points.length - 2];
-        const p3 = points[points.length - 1];
-        
-        for (let i = 0; i <= segments; i++) {
-            const t = i / segments;
-            const t2 = t * t;
-            const t3 = t2 * t;
-            
-            const x = 0.5 * (
-                (2 * p1.x) +
-                (-p0.x + p2.x) * t +
-                (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
-                (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3
-            );
-            
-            const y = 0.5 * (
-                (2 * p1.y) +
-                (-p0.y + p2.y) * t +
-                (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
-                (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3
-            );
-            
-            const pressure = this.interpolatePressure(p1.pressure, p2.pressure, t);
-            
-            result.push({
-                x, y, pressure,
-                timestamp: p1.timestamp + (p2.timestamp - p1.timestamp) * t,
-                smoothed: true
-            });
-        }
-        
-        return result;
-    }
-    
-    bezierSmoothing(points) {
-        if (points.length < 3) return [points[points.length - 1]];
-        
-        const result = [];
-        const p1 = points[points.length - 3];
-        const p2 = points[points.length - 2];
-        const p3 = points[points.length - 1];
-        
-        const cp1x = p1.x + (p2.x - p1.x) * 0.5;
-        const cp1y = p1.y + (p2.y - p1.y) * 0.5;
-        const cp2x = p2.x + (p3.x - p2.x) * 0.5;
-        const cp2y = p2.y + (p3.y - p2.y) * 0.5;
-        
-        const segments = 8;
-        for (let i = 0; i <= segments; i++) {
-            const t = i / segments;
-            const t1 = 1 - t;
-            const t12 = t1 * t1;
-            const t2 = t * t;
-            
-            const x = t12 * t1 * p1.x + 3 * t12 * t * cp1x + 3 * t1 * t2 * cp2x + t2 * t * p3.x;
-            const y = t12 * t1 * p1.y + 3 * t12 * t * cp1y + 3 * t1 * t2 * cp2y + t2 * t * p3.y;
-            const pressure = this.interpolatePressure(p1.pressure, p3.pressure, t);
-            
-            result.push({
-                x, y, pressure,
-                timestamp: p1.timestamp + (p3.timestamp - p1.timestamp) * t,
-                smoothed: true
-            });
-        }
-        
-        return result;
-    }
-    
-    kalmanSmoothing(points) {
-        if (points.length < 2) return [points[points.length - 1]];
-        
-        const current = points[points.length - 1];
-        const previous = points[points.length - 2];
-        
-        const predictedX = previous.x + (current.x - previous.x);
-        const predictedY = previous.y + (current.y - previous.y);
-        
-        const gain = 0.7;
-        const filteredX = predictedX + gain * (current.x - predictedX);
-        const filteredY = predictedY + gain * (current.y - predictedY);
-        
-        return [{
-            x: filteredX,
-            y: filteredY,
-            pressure: current.pressure,
-            timestamp: current.timestamp,
-            smoothed: true
-        }];
-    }
-    
-    douglasPeuckerSmoothing(points) {
-        if (points.length < 3) return [points[points.length - 1]];
-        
-        const epsilon = this.strokeSmoothing.threshold;
-        return this.douglasPeuckerRecursive(points, epsilon);
-    }
-    
-    douglasPeuckerRecursive(points, epsilon) {
-        if (points.length <= 2) return points;
-        
-        let maxDistance = 0;
-        let maxIndex = 0;
-        
-        const start = points[0];
-        const end = points[points.length - 1];
-        
-        for (let i = 1; i < points.length - 1; i++) {
-            const distance = this.pointToLineDistance(points[i], start, end);
-            if (distance > maxDistance) {
-                maxDistance = distance;
-                maxIndex = i;
+
+    /**
+     * バッファをGraphicsに描画（重要な座標制御）
+     * @private
+     */
+    _flushBufferToGraphics(isEnd = false) {
+        try {
+            if (!this.currentStroke.graphics || this.drawingBuffer.length === 0) {
+                return;
             }
-        }
-        
-        if (maxDistance > epsilon) {
-            const left = this.douglasPeuckerRecursive(points.slice(0, maxIndex + 1), epsilon);
-            const right = this.douglasPeuckerRecursive(points.slice(maxIndex), epsilon);
-            return left.slice(0, -1).concat(right);
-        } else {
-            return [start, end];
-        }
-    }
-    
-    // ==========================================
-    // 🎯 筆圧・描画処理メソッド群（継続）
-    // ==========================================
-    
-    updatePressure(pressure, timestamp) {
-        const sample = {
-            pressure,
-            timestamp,
-            velocity: this.calculateVelocity(timestamp)
-        };
-        
-        this.pressureSystem.samples.push(sample);
-        if (this.pressureSystem.samples.length > this.pressureSystem.maxSamples) {
-            this.pressureSystem.samples.shift();
-        }
-        
-        const smoothedPressure = this.smoothPressure(pressure);
-        
-        const curveName = this.settings.pressureCurve;
-        const curveFunction = this.pressureCurves[curveName] || this.pressureCurves.linear;
-        const adjustedPressure = curveFunction(smoothedPressure);
-        
-        this.pressureSystem.lastPressure = adjustedPressure;
-        
-        // EventBus通知（圧力変化）
-        this.emitEvent('PRESSURE_CHANGED', {
-            tool: this.name,
-            pressure: adjustedPressure,
-            original: pressure
-        });
-        
-        return adjustedPressure;
-    }
-    
-    executeAdvancedDrawing(smoothedPoints) {
-        if (!this.currentPath?.graphics || smoothedPoints.length === 0) return;
-        
-        const graphics = this.currentPath.graphics;
-        
-        smoothedPoints.forEach((point, index) => {
-            const size = this.calculateEffectiveSize(point.pressure);
-            
-            if (index === 0 && this.currentPath.points.length === 1) {
-                graphics.moveTo(point.x, point.y);
-            } else {
-                if (this.settings.pressureSensitivity) {
-                    graphics.lineStyle({
-                        width: size,
-                        color: this.settings.color,
-                        alpha: this.settings.opacity,
-                        cap: PIXI.LINE_CAP.ROUND,
-                        join: PIXI.LINE_JOIN.ROUND
-                    });
+
+            // 連続線描画（0,0バグを完全回避）
+            for (let i = 0; i < this.drawingBuffer.length; i++) {
+                const point = this.drawingBuffer[i];
+                
+                if (!this.drawingState.hasFirstPoint) {
+                    // 初回：moveTo で開始点設定
+                    this.currentStroke.graphics.moveTo(point.x, point.y);
+                    this.drawingState.hasFirstPoint = true;
+                } else {
+                    // 2回目以降：lineTo で線を描画
+                    this.currentStroke.graphics.lineTo(point.x, point.y);
                 }
                 
-                graphics.lineTo(point.x, point.y);
+                this.drawingState.lastDrawnPoint = { ...point };
             }
-            
-            this.currentPath.points.push({
-                ...point,
-                size,
-                originalPressure: point.pressure
-            });
+
+            // 筆圧対応の線幅調整
+            this._applyPressureVariation();
+
+            // バッファクリア処理
+            if (!isEnd && this.drawingBuffer.length > 0) {
+                // 連続性保持：最後の点を残してクリア
+                const lastPoint = this.drawingBuffer[this.drawingBuffer.length - 1];
+                this.drawingBuffer = [lastPoint];
+            } else {
+                // 終了時：完全クリア
+                this.drawingBuffer = [];
+            }
+        } catch (error) {
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'PenTool._flushBufferToGraphics');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'PenTool._flushBufferToGraphics');
+            } else {
+                console.error('[PenTool] Error in _flushBufferToGraphics:', error);
+            }
+        }
+    }
+
+    /**
+     * ペンスタイル計算
+     * @private
+     */
+    _calculatePenStyle(point = null) {
+        let width = this.settings.size;
+        let alpha = this.settings.opacity;
+
+        // 圧力感知処理
+        if (this.settings.pressureSensitive && point && point.pressure !== undefined) {
+            const pressure = Math.max(0.1, Math.min(1.0, point.pressure));
+            width *= pressure * this.penOptions.pressureMultiplier;
+            width = Math.max(this.settings.minSize, Math.min(this.settings.maxSize, width));
+        }
+
+        // 色処理（文字列→数値変換）
+        let color = this.settings.color;
+        if (typeof color === 'string' && color.startsWith('#')) {
+            color = parseInt(color.substring(1), 16);
+        }
+
+        return {
+            width: width,
+            color: color,
+            alpha: alpha
+        };
+    }
+
+    /**
+     * 筆圧バリエーション適用
+     * @private
+     */
+    _applyPressureVariation() {
+        if (!this.settings.pressureSensitive || this.drawingBuffer.length === 0) {
+            return;
+        }
+
+        // 現在のバッファ内の点に対して筆圧対応
+        const avgPressure = this.drawingBuffer.reduce((sum, point) => 
+            sum + (point.pressure || 0.5), 0) / this.drawingBuffer.length;
+
+        const dynamicStyle = this._calculatePenStyle({ pressure: avgPressure });
+        
+        // Graphics線幅を動的更新
+        this.currentStroke.graphics.lineStyle({
+            width: dynamicStyle.width,
+            color: dynamicStyle.color,
+            alpha: dynamicStyle.alpha,
+            cap: 'round',
+            join: 'round'
         });
-        
-        this.performance.drawCalls++;
     }
-    
-    calculateEffectiveSize(pressure) {
-        let size = this.settings.baseSize;
-        
-        if (this.settings.pressureSensitivity) {
-            const minSize = this.settings.baseSize * this.settings.minPressureSize;
-            const maxSize = this.settings.baseSize * this.settings.maxPressureSize;
-            
-            size = minSize + (maxSize - minSize) * pressure;
+
+    /**
+     * 終了テーパリング適用
+     * @private
+     */
+    _applyEndTapering() {
+        try {
+            if (this.currentStroke.points.length < 3) {
+                return;
+            }
+
+            // 最後の数点にテーパリング効果
+            const taperPoints = Math.min(3, this.currentStroke.points.length);
+            const endPoints = this.currentStroke.points.slice(-taperPoints);
+
+            // テーパリング用スタイル
+            const taperStyle = this._calculatePenStyle();
+            taperStyle.width *= this.penOptions.taperEnd;
+
+            // 新しいGraphicsで重ねて描画
+            const taperGraphics = new PIXI.Graphics();
+            taperGraphics.lineStyle({
+                width: taperStyle.width,
+                color: taperStyle.color,
+                alpha: taperStyle.alpha,
+                cap: 'round',
+                join: 'round'
+            });
+
+            taperGraphics.moveTo(endPoints[0].x, endPoints[0].y);
+            for (let i = 1; i < endPoints.length; i++) {
+                taperGraphics.lineTo(endPoints[i].x, endPoints[i].y);
+            }
+
+            // 現在のGraphicsに合成
+            this.currentStroke.graphics.addChild(taperGraphics);
+        } catch (error) {
+            if (window.Tegaki && window.Tegaki.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.handle(error, 'PenTool._applyEndTapering');
+            } else if (window.ErrorManager) {
+                window.ErrorManager.handleError(error, 'PenTool._applyEndTapering');
+            } else {
+                console.error('[PenTool] Error in _applyEndTapering:', error);
+            }
         }
-        
-        return Math.max(this.settings.minSize, Math.min(this.settings.maxSize, size));
     }
-    
-    // ==========================================
-    // 🎯 ユーティリティメソッド群（継続）
-    // ==========================================
-    
-    calculateVelocity(timestamp) {
-        if (this.pressureSystem.samples.length < 2) return 0;
-        
-        const current = this.pressureSystem.samples[this.pressureSystem.samples.length - 1];
-        const previous = this.pressureSystem.samples[this.pressureSystem.samples.length - 2];
-        
-        const timeDelta = timestamp - previous.timestamp;
-        if (timeDelta <= 0) return 0;
-        
-        return Math.abs(current.pressure - previous.pressure) / timeDelta * 1000;
-    }
-    
-    smoothPressure(pressure) {
-        if (this.pressureSystem.samples.length < 2) return pressure;
-        
-        const factor = this.pressureSystem.smoothingFactor;
-        const lastPressure = this.pressureSystem.lastPressure;
-        
-        return lastPressure * factor + pressure * (1 - factor);
-    }
-    
-    interpolatePressure(p1, p2, t) {
-        return p1 + (p2 - p1) * t;
-    }
-    
-    pointToLineDistance(point, lineStart, lineEnd) {
-        const A = point.x - lineStart.x;
-        const B = point.y - lineStart.y;
-        const C = lineEnd.x - lineStart.x;
-        const D = lineEnd.y - lineStart.y;
-        
-        const dot = A * C + B * D;
-        const lenSq = C * C + D * D;
-        
-        if (lenSq === 0) return Math.sqrt(A * A + B * B);
-        
-        const param = dot / lenSq;
-        
-        let xx, yy;
-        if (param < 0) {
-            xx = lineStart.x;
-            yy = lineStart.y;
-        } else if (param > 1) {
-            xx = lineEnd.x;
-            yy = lineEnd.y;
-        } else {
-            xx = lineStart.x + param * C;
-            yy = lineStart.y + param * D;
+
+    /**
+     * Graphics最終化
+     * @private
+     */
+    _finalizeGraphics() {
+        if (!this.currentStroke.graphics) {
+            return;
         }
+
+        // 描画完了の確定（重要な処理）
+        // PixiJS v8対応準備：Graphics.finalize() 相当処理
+        this.currentStroke.graphics.endFill();
         
-        const dx = point.x - xx;
-        const dy = point.y - yy;
+        console.log('[PenTool] Graphics finalized');
+    }
+
+    /**
+     * 速度ベース線幅調整計算
+     * @private
+     */
+    _calculateVelocityAdjustment(currentPoint, previousPoint) {
+        if (!previousPoint || !this.penOptions.velocitySmoothing) {
+            return 1.0;
+        }
+
+        const distance = this._calculateDistance(currentPoint, previousPoint);
+        const timeDelta = currentPoint.timestamp - previousPoint.timestamp;
+        const velocity = timeDelta > 0 ? distance / timeDelta : 0;
+
+        // 速度が速いほど線を細く（0.5〜1.5の範囲）
+        const velocityFactor = Math.max(0.5, Math.min(1.5, 1.0 - velocity * 0.01));
+        
+        return velocityFactor;
+    }
+
+    /**
+     * 2点間距離計算（AbstractToolから継承可能だが、最適化版）
+     * @private
+     */
+    _calculateDistance(point1, point2) {
+        const dx = point1.x - point2.x;
+        const dy = point1.y - point2.y;
         return Math.sqrt(dx * dx + dy * dy);
     }
-    
-    calculateAveragePressure() {
-        if (!this.drawingSession || this.drawingSession.points.length === 0) return 0.5;
-        
-        const total = this.drawingSession.points.reduce((sum, point) => sum + point.pressure, 0);
-        return total / this.drawingSession.points.length;
-    }
-    
-    flushDrawingBuffer() {
-        if (this.strokeSmoothing.pointBuffer.length > 0) {
-            const remainingPoints = this.strokeSmoothing.pointBuffer;
-            const smoothedPoints = this.applyStrokeSmoothing(remainingPoints[remainingPoints.length - 1]);
-            this.executeAdvancedDrawing(smoothedPoints);
-            this.strokeSmoothing.pointBuffer = [];
-        }
-    }
-    
-    optimizePath(path) {
-        if (!path || path.optimized) return;
-        
-        if (this.lodashAvailable) {
-            path.points = window._.uniqBy(path.points, p => `${Math.round(p.x)},${Math.round(p.y)}`);
-        }
-        
-        path.metadata.totalPoints = path.points.length;
-        path.metadata.totalDistance = this.drawingSession?.totalDistance || 0;
-        path.metadata.averagePressure = this.calculateAveragePressure();
-        
-        path.optimized = true;
-    }
-    
-    calculateSessionStats(endTime) {
-        if (!this.drawingSession) return {};
+
+    /**
+     * ペン固有統計取得
+     * @returns {object}
+     */
+    getPenStats() {
+        const baseStats = this.getStats();
         
         return {
-            sessionId: this.drawingSession.id,
-            duration: endTime - this.drawingSession.startTime,
-            totalPoints: this.drawingSession.points.length,
-            totalDistance: this.drawingSession.totalDistance,
-            averagePressure: this.drawingSession.averagePressure,
-            averageSpeed: this.drawingSession.totalDistance / (endTime - this.drawingSession.startTime) * 1000
+            ...baseStats,
+            penOptions: { ...this.penOptions },
+            drawingState: { ...this.drawingState },
+            bufferSize: this.drawingBuffer.length
         };
-    }
-    
-    updateLatencyStats(processTime) {
-        const monitor = this.performanceMonitor;
-        monitor.frameCount++;
-        monitor.totalTime += processTime;
-        monitor.maxLatency = Math.max(monitor.maxLatency, processTime);
-        monitor.minLatency = Math.min(monitor.minLatency, processTime);
-        
-        this.performance.averageLatency = monitor.totalTime / monitor.frameCount;
-        this.performance.lastFrameTime = processTime;
-    }
-    
-    updatePerformanceStats() {
-        const monitor = this.performanceMonitor;
-        
-        if (monitor.frameCount > 0) {
-            const avgFPS = 1000 / (monitor.totalTime / monitor.frameCount);
-            
-            console.log(`📊 ペンツール性能（統一システム版): ${avgFPS.toFixed(1)}FPS, レイテンシ: ${this.performance.averageLatency.toFixed(2)}ms, 描画コール: ${this.performance.drawCalls}`);
-            
-            // 統計リセット
-            monitor.frameCount = 0;
-            monitor.totalTime = 0;
-            monitor.maxLatency = 0;
-            monitor.minLatency = Infinity;
-        }
-    }
-    
-    createSmoothingFilter() {
-        const blurFilter = new PIXI.BlurFilter();
-        blurFilter.blur = this.edgeSmoothing.radius;
-        blurFilter.quality = 4;
-        return blurFilter;
-    }
-    
-    // ==========================================
-    // 🎯 依存システム更新・ID生成・フォールバック
-    // ==========================================
-    
-    updateDependentSystems() {
-        this.pressureSystem.enabled = this.settings.pressureSensitivity;
-        this.pressureSystem.sensitivity = this.settings.pressureMultiplier;
-        
-        this.strokeSmoothing.enabled = this.settings.smoothing > 0;
-        this.strokeSmoothing.threshold = this.settings.smoothing * 3;
-        this.strokeSmoothing.algorithm = this.settings.smoothingAlgorithm;
-        
-        this.edgeSmoothing.enabled = this.settings.edgeSmoothing;
-        this.gpuAcceleration.enabled = this.settings.gpuAcceleration;
-    }
-    
-    reset() {
-        this.deactivate();
-        this.currentPath = null;
-        this.drawingSession = null;
-        this.strokeSmoothing.pointBuffer = [];
-        this.pressureSystem.samples = [];
-        this.performance = {
-            drawCalls: 0,
-            averageLatency: 0,
-            maxPoints: 0,
-            smoothingTime: 0,
-            lastFrameTime: 0,
-            targetFPS: this.configManager ? this.configManager.get('performance.targetFPS') : 60
-        };
-        
-        console.log(`✒️ ${this.displayName} リセット完了 - 統一システム版`);
-    }
-    
-    generateSessionId() {
-        return `pen_session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    }
-    
-    generatePathId() {
-        return `pen_path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    }
-    
-    async fallbackInitialization() {
-        console.log('🛡️ PenTool フォールバック初期化（統一システム版）...');
-        
-        try {
-            this.initializeFallbackSettings();
-            
-            if (this.toolManager) {
-                this.toolManager.registerTool(this.name, this);
-            }
-            
-            console.log('✅ PenTool フォールバック初期化完了（統一システム版）');
-            
-        } catch (error) {
-            console.error('❌ PenTool フォールバック初期化エラー:', error);
-        }
-    }
-    
-    // ==========================================
-    // 🎯 統一システム版状態取得・デバッグAPI
-    // ==========================================
-    
-    getStatus() {
-        return {
-            version: this.version,
-            isActive: this.isActive,
-            isDrawing: this.isDrawing,
-            currentSession: this.drawingSession?.id || null,
-            unifiedSystems: {
-                configManager: !!this.configManager,
-                errorManager: !!this.errorManager,
-                stateManager: !!this.stateManager,
-                eventBus: !!this.eventBus
-            },
-            settings: { ...this.settings },
-            performance: { ...this.performance },
-            extensions: {
-                lodash: this.lodashAvailable,
-                coordinates: !!this.coordinatesUtil,
-                memory: !!this.memoryManager
-            }
-        };
-    }
-    
-    getDebugInfo() {
-        const status = this.getStatus();
-        
-        console.group('✒️ PenTool 統一システム版 デバッグ情報');
-        console.log('📋 バージョン:', status.version);
-        console.log('🔄 統一システム:', status.unifiedSystems);
-        console.log('🎯 状態:', { active: status.isActive, drawing: status.isDrawing });
-        console.log('⚙️ 設定:', status.settings);
-        console.log('📊 パフォーマンス:', status.performance);
-        console.log('🔧 拡張機能:', status.extensions);
-        
-        if (this.stateManager) {
-            console.log('🏠 アプリケーション状態:', this.getApplicationState());
-        }
-        
-        console.groupEnd();
-        
-        return status;
     }
 }
 
-// ==========================================
-// 🎯 Pure JavaScript グローバル公開
-// ==========================================
+// 🔧 修正5: Tegaki名前空間+レジストリ方式でインスタンス化
+Tegaki.PenTool = PenTool;
 
-if (typeof window !== 'undefined') {
-    window.PenTool = PenTool;
-    console.log('✅ PenTool 統一システム版 グローバル公開完了（Pure JavaScript）');
-}
+// 初期化レジストリ方式（Phase1.4stepEX準拠）
+Tegaki._registry = Tegaki._registry || [];
+Tegaki._registry.push(() => {
+    Tegaki.PenToolInstance = new PenTool();
+    
+    // 下位互換のためwindowにも登録
+    window.PenTool = Tegaki.PenToolInstance;
+    
+    console.log('[PenTool] ✅ Initialized and registered as Tegaki.PenToolInstance');
+});
 
-console.log('✒️ PenTool 統一システム版完全版 - 準備完了');
-console.log('🔄 統一システム活用: ConfigManager・ErrorManager・StateManager・EventBus統合済み');
-console.log('📋 設定値統一: ハードコード排除・ConfigManager経由アクセス');
-console.log('🚨 エラー処理統一: ErrorManager.showError()統合');
-console.log('📡 イベント駆動: EventBus疎結合通信');
-console.log('💡 使用例: const penTool = new window.PenTool(toolManager); await penTool.initialize();');
+// 🔄 PixiJS v8対応準備コメント
+// - PIXI.Graphics.lineStyle() → PIXI.Graphics.stroke() 移行準備
+// - Graphics.endFill() → Graphics.finalize() 移行準備
+// - 座標制御アルゴリズムはv8互換設計
+
+console.log('[PenTool] Loaded and ready for registry initialization');
