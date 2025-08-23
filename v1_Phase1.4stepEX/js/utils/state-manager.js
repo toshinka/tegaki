@@ -1,14 +1,18 @@
 /**
- * StateManager - アプリケーション状態管理システム
+ * 📊 StateManager - アプリケーション状態管理システム
+ * ✅ UNIFIED_SYSTEM: 統一状態管理・変更追跡システム
+ * 📋 RESPONSIBILITY: 「現在状態・一時状態の統一管理」専門
  * 
- * 責務:
- * - 現在状態管理（アクティブツール、描画中フラグなど）
- * - 状態変更の通知・追跡
- * - 一時的な状態管理（ConfigManagerとは責務分離）
+ * 📏 DESIGN_PRINCIPLE: EventBus疎結合・ErrorManager安全処理
+ * 🎯 TEGAKI_NAMESPACE: Tegaki名前空間統一対応済み
+ * 🔧 REGISTRY_READY: 初期化レジストリ対応済み
  * 
  * 依存: EventBus, ErrorManager
- * 公開: window.StateManager
+ * 公開: Tegaki.StateManager, Tegaki.StateManagerInstance
  */
+
+// Tegaki名前空間初期化
+window.Tegaki = window.Tegaki || {};
 
 class StateManager {
     constructor() {
@@ -16,54 +20,136 @@ class StateManager {
         this.history = [];
         this.maxHistorySize = 50;
         this.subscribers = new Map();
-        
-        // EventBus連携
-        this.eventBus = window.EventBus;
     }
 
     /**
-     * 状態値を取得
+     * 状態値を取得（改修手順書対応）
      * @param {string} key - 状態キー（ドット記法対応）
      * @param {*} defaultValue - デフォルト値
      * @returns {*} 状態値
      */
-    get(key, defaultValue = null) {
+    getState(key, defaultValue = null) {
         try {
             const value = this._getNestedValue(this.state, key);
             return value !== undefined ? value : defaultValue;
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'StateManager.get');
+            if (Tegaki.ErrorManagerInstance) {
+                Tegaki.ErrorManagerInstance.handle(error, 'StateManager.getState');
+            } else {
+                console.error('[StateManager.getState]', error);
+            }
             return defaultValue;
         }
     }
 
     /**
-     * 状態値を設定
-     * @param {string|object} key - 状態キーまたは状態オブジェクト
+     * 状態値を設定（改修手順書対応）
+     * @param {string} key - 状態キー
      * @param {*} value - 状態値
      * @param {boolean} notify - 変更通知を送るか
      * @returns {boolean} 成功/失敗
      */
-    set(key, value = undefined, notify = true) {
+    setState(key, value, notify = true) {
         try {
+            const oldValue = this.getState(key);
             const oldState = { ...this.state };
             
-            if (typeof key === 'object' && key !== null) {
-                // オブジェクト一括設定
-                this._setMultiple(key, notify);
-            } else {
-                // 単一設定
-                this._setSingle(key, value, notify);
-            }
+            this._setNestedValue(this.state, key, value);
             
             // 履歴に追加
             this._addToHistory(oldState, { ...this.state });
             
+            if (notify && oldValue !== value) {
+                this._notifyChange(key, value, oldValue);
+            }
+            
             return true;
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'StateManager.set');
+            if (Tegaki.ErrorManagerInstance) {
+                Tegaki.ErrorManagerInstance.handle(error, 'StateManager.setState');
+            } else {
+                console.error('[StateManager.setState]', error);
+            }
             return false;
         }
+    }
+
+    /**
+     * 旧get互換メソッド（下位互換）
+     */
+    get(key, defaultValue = null) {
+        return this.getState(key, defaultValue);
+    }
+
+    /**
+     * 旧set互換メソッド（下位互換）
+     */
+    set(key, value = undefined, notify = true) {
+        if (typeof key === 'object' && key !== null) {
+            // オブジェクト一括設定
+            return this._setMultiple(key, notify);
+        } else {
+            // 単一設定
+            return this.setState(key, value, notify);
+        }
+    }
+
+    /**
+     * コンポーネント状態を更新（拡張API）
+     * @param {string} component - コンポーネント名
+     * @param {string} state - 状態名  
+     * @param {*} data - 状態データ
+     * @returns {boolean} 成功/失敗
+     */
+    updateComponentState(component, state, data) {
+        const key = `components.${component}.${state}`;
+        return this.setState(key, data);
+    }
+
+    /**
+     * システム状態を更新（拡張API）
+     * @param {string} system - システム名
+     * @param {string} state - 状態名
+     * @param {*} data - 状態データ  
+     * @returns {boolean} 成功/失敗
+     */
+    updateSystemState(system, state, data) {
+        const key = `systems.${system}.${state}`;
+        return this.setState(key, data);
+    }
+
+    /**
+     * コンポーネント状態を取得（拡張API）
+     * @param {string} component - コンポーネント名
+     * @returns {object} コンポーネント状態
+     */
+    getComponentState(component) {
+        return this.getState(`components.${component}`, {});
+    }
+
+    /**
+     * システム状態を取得（拡張API）
+     * @param {string} system - システム名
+     * @returns {object} システム状態
+     */
+    getSystemState(system) {
+        return this.getState(`systems.${system}`, {});
+    }
+
+    /**
+     * 全コンポーネント状態を取得（拡張API）
+     * @returns {object} 全コンポーネント状態
+     */
+    getAllComponentStates() {
+        return this.getState('components', {});
+    }
+
+    /**
+     * 全システム状態を取得（拡張API）
+     * @returns {object} 全システム状態
+     */
+    getAllSystemStates() {
+        return this.getState('systems', {});
     }
 
     /**
@@ -75,7 +161,11 @@ class StateManager {
         try {
             return this._getNestedValue(this.state, key) !== undefined;
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'StateManager.has');
+            if (Tegaki.ErrorManagerInstance) {
+                Tegaki.ErrorManagerInstance.handle(error, 'StateManager.has');
+            } else {
+                console.error('[StateManager.has]', error);
+            }
             return false;
         }
     }
@@ -108,14 +198,18 @@ class StateManager {
             
             // immediate オプションで即座に実行
             if (immediate) {
-                const currentValue = this.get(key);
+                const currentValue = this.getState(key);
                 callback(currentValue, undefined, key);
             }
             
             // 監視解除関数を返す
             return () => this.unwatch(key, subscriber.id);
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'StateManager.watch');
+            if (Tegaki.ErrorManagerInstance) {
+                Tegaki.ErrorManagerInstance.handle(error, 'StateManager.watch');
+            } else {
+                console.error('[StateManager.watch]', error);
+            }
             return () => {};
         }
     }
@@ -145,18 +239,12 @@ class StateManager {
             }
             return false;
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'StateManager.unwatch');
+            if (Tegaki.ErrorManagerInstance) {
+                Tegaki.ErrorManagerInstance.handle(error, 'StateManager.unwatch');
+            } else {
+                console.error('[StateManager.unwatch]', error);
+            }
             return false;
-        }
-    }
-
-    /**
-     * 特定キーの全監視を解除
-     * @param {string} key - 状態キー
-     */
-    unwatchAll(key) {
-        if (this.subscribers.has(key)) {
-            this.subscribers.delete(key);
         }
     }
 
@@ -179,12 +267,52 @@ class StateManager {
             
             if (notify) {
                 this._notifyChange('*', this.state, oldState);
-                this.eventBus?.emit('state:reset', this.state);
+                // EventBus は初期化後に利用
+                if (Tegaki.EventBusInstance) {
+                    Tegaki.EventBusInstance.emit('state:reset', this.state);
+                }
             }
             
             console.log('[StateManager] State reset to initial values');
         } catch (error) {
-            window.ErrorManager?.handleError(error, 'StateManager.reset');
+            if (Tegaki.ErrorManagerInstance) {
+                Tegaki.ErrorManagerInstance.handle(error, 'StateManager.reset');
+            } else {
+                console.error('[StateManager.reset]', error);
+            }
+        }
+    }
+
+    /**
+     * 健全性チェック（拡張API）
+     * @returns {object} チェック結果
+     */
+    healthCheck() {
+        try {
+            const issues = [];
+            
+            // 基本状態チェック
+            if (!this.state.app) issues.push('Missing app state');
+            if (!this.state.tool) issues.push('Missing tool state');
+            if (!this.state.canvas) issues.push('Missing canvas state');
+            
+            // サブスクライバー整合性チェック
+            let orphanedSubscribers = 0;
+            this.subscribers.forEach((subs, key) => {
+                if (subs.length === 0) orphanedSubscribers++;
+            });
+            
+            return {
+                healthy: issues.length === 0,
+                issues,
+                stats: this.getStats(),
+                orphanedSubscribers
+            };
+        } catch (error) {
+            if (Tegaki.ErrorManagerInstance) {
+                Tegaki.ErrorManagerInstance.handle(error, 'StateManager.healthCheck');
+            }
+            return { healthy: false, issues: ['Health check failed'] };
         }
     }
 
@@ -195,15 +323,6 @@ class StateManager {
      */
     getHistory(limit = 10) {
         return this.history.slice(-limit);
-    }
-
-    /**
-     * 状態履歴をクリア
-     */
-    clearHistory() {
-        const count = this.history.length;
-        this.history = [];
-        console.log(`[StateManager] Cleared ${count} state history entries`);
     }
 
     /**
@@ -221,6 +340,10 @@ class StateManager {
             }))
         };
     }
+
+    // ========================================
+    // 内部メソッド
+    // ========================================
 
     /**
      * 初期状態を定義
@@ -243,15 +366,15 @@ class StateManager {
                 currentStroke: null
             },
             
-            // キャンバス状態
+            // キャンバス状態（UI画像対応400x400）
             canvas: {
                 isDirty: false,
                 hasContent: false,
                 zoom: 1.0,
                 panX: 0,
                 panY: 0,
-                width: 1920,
-                height: 1080,
+                width: 400,    // UI画像に合わせて
+                height: 400,   // UI画像に合わせて
                 isTransforming: false
             },
             
@@ -286,12 +409,14 @@ class StateManager {
                 isSaving: false
             },
             
-            // パフォーマンス状態
+            // パフォーマンス状態（UI画像対応）
             performance: {
-                fps: 60,
+                fps: 60,           // UI画像対応
                 renderTime: 0,
                 drawCalls: 0,
-                isThrottling: false
+                isThrottling: false,
+                gpuUsage: 45,      // UI画像対応
+                memoryUsage: 1.2   // UI画像対応（GB）
             },
             
             // 将来拡張用
@@ -304,21 +429,14 @@ class StateManager {
             shortcuts: {
                 enabled: true,
                 activeModifiers: []
-            }
+            },
+            
+            // コンポーネント状態（拡張API用）
+            components: {},
+            
+            // システム状態（拡張API用）
+            systems: {}
         };
-    }
-
-    /**
-     * 単一状態の設定
-     * @private
-     */
-    _setSingle(key, value, notify) {
-        const oldValue = this.get(key);
-        this._setNestedValue(this.state, key, value);
-        
-        if (notify && oldValue !== value) {
-            this._notifyChange(key, value, oldValue);
-        }
     }
 
     /**
@@ -329,7 +447,7 @@ class StateManager {
         const changes = {};
         
         for (const [key, value] of Object.entries(stateObject)) {
-            const oldValue = this.get(key);
+            const oldValue = this.getState(key);
             this._setNestedValue(this.state, key, value);
             
             if (oldValue !== value) {
@@ -356,25 +474,31 @@ class StateManager {
                 try {
                     subscriber.callback(newValue, oldValue, key);
                 } catch (error) {
-                    window.ErrorManager?.handleError(error, 'StateManager.notifyChange');
+                    if (Tegaki.ErrorManagerInstance) {
+                        Tegaki.ErrorManagerInstance.handle(error, 'StateManager.notifyChange');
+                    } else {
+                        console.error('[StateManager.notifyChange]', error);
+                    }
                 }
             });
         }
         
-        // EventBusに通知
-        this.eventBus?.emit('state:change', {
-            key,
-            newValue,
-            oldValue,
-            timestamp: Date.now()
-        });
-        
-        // 特定のイベントも発火
-        this.eventBus?.emit(`state:change:${key}`, {
-            newValue,
-            oldValue,
-            timestamp: Date.now()
-        });
+        // EventBusに通知（初期化後）
+        if (Tegaki.EventBusInstance) {
+            Tegaki.EventBusInstance.emit('state:change', {
+                key,
+                newValue,
+                oldValue,
+                timestamp: Date.now()
+            });
+            
+            // 特定のイベントも発火
+            Tegaki.EventBusInstance.emit(`state:change:${key}`, {
+                newValue,
+                oldValue,
+                timestamp: Date.now()
+            });
+        }
     }
 
     /**
@@ -430,7 +554,14 @@ class StateManager {
     }
 }
 
-// グローバルインスタンスを作成・公開
-window.StateManager = new StateManager();
+// Tegaki名前空間にクラスを登録
+Tegaki.StateManager = StateManager;
 
-console.log('[StateManager] Initialized and registered to window.StateManager');
+// 初期化レジストリに追加（根幹Manager）
+Tegaki._registry = Tegaki._registry || [];
+Tegaki._registry.push(() => {
+    Tegaki.StateManagerInstance = new Tegaki.StateManager();
+    console.log('[StateManager] ✅ Tegaki.StateManagerInstance 初期化完了');
+});
+
+console.log('[StateManager] ✅ Tegaki名前空間統一・レジストリ登録完了');

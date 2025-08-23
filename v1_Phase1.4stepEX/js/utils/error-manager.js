@@ -1,14 +1,18 @@
 /**
- * ErrorManager - アプリケーション全体のエラー処理システム
+ * 🚨 ErrorManager - アプリケーション全体のエラー処理システム
+ * ✅ UNIFIED_SYSTEM: 統一エラー処理・通知システム
+ * 📋 RESPONSIBILITY: 「エラー・例外の統一管理」専門
  * 
- * 責務:
- * - エラー・例外の統一処理
- * - 開発者用とユーザー用のエラー通知分離
- * - エラーログの収集・管理
+ * 📏 DESIGN_PRINCIPLE: 基盤システム・依存関係なし
+ * 🎯 TEGAKI_NAMESPACE: Tegaki名前空間統一対応済み
+ * 🔧 REGISTRY_READY: 初期化レジストリ対応済み
  * 
  * 依存: なし（基盤クラス）
- * 公開: window.ErrorManager
+ * 公開: Tegaki.ErrorManager, Tegaki.ErrorManagerInstance
  */
+
+// Tegaki名前空間初期化
+window.Tegaki = window.Tegaki || {};
 
 class ErrorManager {
     constructor() {
@@ -28,7 +32,7 @@ class ErrorManager {
      * @param {string} level - エラーレベル ('error', 'warn', 'info')
      * @param {boolean} notifyUser - ユーザーに通知するか
      */
-    handleError(error, context = 'Unknown', level = 'error', notifyUser = false) {
+    handle(error, context = 'Unknown', level = 'error', notifyUser = false) {
         const errorInfo = this._createErrorInfo(error, context, level);
         
         // エラー履歴に追加
@@ -60,13 +64,20 @@ class ErrorManager {
     }
 
     /**
+     * 旧handleError互換メソッド（下位互換）
+     */
+    handleError(error, context = 'Unknown', level = 'error', notifyUser = false) {
+        return this.handle(error, context, level, notifyUser);
+    }
+
+    /**
      * 警告を処理
      * @param {string} message - 警告メッセージ
      * @param {string} context - コンテキスト
      * @param {boolean} notifyUser - ユーザー通知
      */
     warn(message, context = 'Unknown', notifyUser = false) {
-        return this.handleError(message, context, 'warn', notifyUser);
+        return this.handle(message, context, 'warn', notifyUser);
     }
 
     /**
@@ -75,7 +86,7 @@ class ErrorManager {
      * @param {string} context - コンテキスト
      */
     info(message, context = 'Unknown') {
-        return this.handleError(message, context, 'info', false);
+        return this.handle(message, context, 'info', false);
     }
 
     /**
@@ -89,7 +100,7 @@ class ErrorManager {
         try {
             return fn();
         } catch (error) {
-            this.handleError(error, context, 'error', notifyUser);
+            this.handle(error, context, 'error', notifyUser);
             return null;
         }
     }
@@ -105,7 +116,7 @@ class ErrorManager {
         try {
             return await promise;
         } catch (error) {
-            this.handleError(error, context, 'error', notifyUser);
+            this.handle(error, context, 'error', notifyUser);
             return null;
         }
     }
@@ -149,6 +160,14 @@ class ErrorManager {
     }
 
     /**
+     * 最後のエラーを取得
+     * @returns {object|null}
+     */
+    getLastError() {
+        return this.errors.length > 0 ? this.errors[this.errors.length - 1] : null;
+    }
+
+    /**
      * エラー統計を取得
      * @returns {object}
      */
@@ -180,6 +199,10 @@ class ErrorManager {
         this.errors = [];
         console.log(`[ErrorManager] Cleared ${count} errors from history`);
     }
+
+    // ========================================
+    // 内部メソッド
+    // ========================================
 
     /**
      * エラー情報オブジェクトを作成
@@ -260,7 +283,7 @@ class ErrorManager {
     _setupGlobalHandlers() {
         // 未処理のエラー
         window.addEventListener('error', (event) => {
-            this.handleError(
+            this.handle(
                 event.error || event.message,
                 'GlobalError',
                 'error',
@@ -270,7 +293,7 @@ class ErrorManager {
 
         // 未処理のPromise rejection
         window.addEventListener('unhandledrejection', (event) => {
-            this.handleError(
+            this.handle(
                 event.reason,
                 'UnhandledPromiseRejection',
                 'error',
@@ -283,12 +306,20 @@ class ErrorManager {
     }
 }
 
-// グローバルインスタンスを作成・公開
-window.ErrorManager = new ErrorManager();
+// Tegaki名前空間にクラスを登録
+Tegaki.ErrorManager = ErrorManager;
 
-// 開発時のデバッグ用
-if (typeof window !== 'undefined' && window.location && window.location.search.includes('debug=true')) {
-    window.ErrorManager.setDebugMode(true);
-}
+// 初期化レジストリに追加（根幹Manager最優先）
+Tegaki._registry = Tegaki._registry || [];
+Tegaki._registry.push(() => {
+    Tegaki.ErrorManagerInstance = new Tegaki.ErrorManager();
+    
+    // 開発時のデバッグ設定
+    if (typeof window !== 'undefined' && window.location && window.location.search.includes('debug=true')) {
+        Tegaki.ErrorManagerInstance.setDebugMode(true);
+    }
+    
+    console.log('[ErrorManager] ✅ Tegaki.ErrorManagerInstance 初期化完了');
+});
 
-console.log('[ErrorManager] Initialized and registered to window.ErrorManager');
+console.log('[ErrorManager] ✅ Tegaki名前空間統一・レジストリ登録完了');
