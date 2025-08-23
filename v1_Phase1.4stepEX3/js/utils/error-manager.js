@@ -7,6 +7,8 @@
  * 🎯 TEGAKI_NAMESPACE: Tegaki名前空間統一対応済み
  * 🔧 REGISTRY_READY: 初期化レジストリ対応済み
  * 
+ * ⚡ v12修正: showWarning/showError/showCriticalErrorメソッド追加
+ * 
  * 依存: なし（基盤クラス）
  * 公開: Tegaki.ErrorManager, Tegaki.ErrorManagerInstance
  */
@@ -68,6 +70,37 @@ class ErrorManager {
      */
     handleError(error, context = 'Unknown', level = 'error', notifyUser = false) {
         return this.handle(error, context, level, notifyUser);
+    }
+
+    /**
+     * エラーを表示（v12新規追加）
+     * @param {string} type - エラータイプ
+     * @param {string} message - エラーメッセージ
+     * @param {object} options - オプション
+     */
+    showError(type, message, options = {}) {
+        const errorMessage = `[${type}] ${message}`;
+        return this.handle(errorMessage, type, 'error', options.notifyUser || false);
+    }
+
+    /**
+     * 警告を表示（v12新規追加）
+     * @param {string} message - 警告メッセージ
+     * @param {object} options - オプション
+     */
+    showWarning(message, options = {}) {
+        const context = options.context || 'Warning';
+        return this.handle(message, context, 'warn', options.notifyUser || false);
+    }
+
+    /**
+     * 致命的エラーを表示（v12新規追加）
+     * @param {string} message - 致命的エラーメッセージ
+     * @param {object} options - オプション
+     */
+    showCriticalError(message, options = {}) {
+        const context = options.context || 'CriticalError';
+        return this.handle(message, context, 'error', true); // 致命的エラーは常にユーザー通知
     }
 
     /**
@@ -157,6 +190,14 @@ class ErrorManager {
         }
 
         return filtered;
+    }
+
+    /**
+     * エラー統計を取得（v12修正：getErrorStats→getStatsに統一）
+     * @returns {object}
+     */
+    getErrorStats() {
+        return this.getStats();
     }
 
     /**

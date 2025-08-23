@@ -1,626 +1,480 @@
-# 🎨 シンボル辞典 v11 - 責務分離・統一定義版
+# 🎨 シンボル辞典 v12 - エラー修正・現状分析対応版
 
-## 🔄 更新概要（v10 → v11）
+## 🔄 更新概要（v11 → v12）
 
-### 📋 責務分離対応
-- **責務別API分類**: CanvasManager（レイヤー管理）、Tool（描画実装）、Manager（統合制御）
-- **統一インターフェース定義**: AbstractTool基底クラス・共通メソッド規約
-- **禁止・許可事項明確化**: 各コンポーネントの責務境界明確定義
+### 🚨 緊急エラー対応
+- **初期化制御シンボル**: async/await、依存関係解決、順序保証初期化
+- **ツール継承シンボル**: AbstractTool継承、コンストラクタパターン、継承依存関係
+- **座標バグ対策シンボル**: 0,0バグ防止、直線バグ防止、座標検証強化
 
-### 🚨 重要な分類変更
+### 📊 現状分析対応
 ```javascript
-🔴 CanvasManager系API:
-- レイヤー・Graphics配置専門API群
-- 描画処理API削除・Tool委譲へ変更
+🔴 発見された主要エラー:
+- main.js:474 await使用エラー（非async関数内）
+- EraserTool継承エラー（コンストラクタ失敗）
+- CanvasManager.addLayer エラー（PIXI初期化前操作）
 
-🖊️ Tool系API:
-- 描画主導権保持・座標制御専門API群
-- AbstractTool統一インターフェース導入
-
-🎯 Manager系API:
-- 統合制御・配信管理専門API群
-- 直接描画禁止・Tool委譲必須化
+🟡 修正が必要な要素:
+- 初期化順序問題、レジストリ実行タイミング
+- ツール継承処理、AbstractTool依存関係
 ```
 
 ---
 
-## 📊 責務分離APIカテゴリ
+## 📋 新規追加シンボル（v12対応）
 
-### 🔴 CanvasManager系API（レイヤー・ステージ管理専門）
-
-#### 📋 許可されるAPI群
+### 🔧 **初期化制御シンボル**
 ```javascript
-// レイヤー管理（主責務）
-addGraphicsToLayer(graphics, layerId)       // Graphics配置
-removeGraphicsFromLayer(graphics, layerId)  // Graphics削除  
-createNewLayer(layerId, type, options)       // レイヤー作成
-setLayerVisibility(layerId, visible)         // 表示制御
-getLayerForTool(toolName)                   // ツール用レイヤー取得
+// 初期化レジストリシステム
+INITIALIZATION_REGISTRY     // 初期化レジストリシステム
+ASYNC_INITIALIZATION        // 非同期初期化処理  
+SEQUENTIAL_LOADING          // 順序保証読み込み
+DEPENDENCY_RESOLUTION       // 依存関係解決
+BOOTSTRAP_SEQUENCE         // ブートストラップシーケンス
 
-// PixiJS基盤管理
-initializePixiApplication()                  // PixiJS初期化
-setupStage()                                // Stage設定
-setupRenderer()                             // Renderer設定
-resize(width, height, centerContent)        // リサイズ制御
+// 初期化状態管理
+REGISTRY_EXECUTED          // レジストリ実行済み
+CORE_MANAGERS_READY       // 根幹Manager準備完了
+PIXI_INITIALIZED          // PixiJS初期化完了
+TOOLS_REGISTERED          // ツール登録完了
+UI_READY                  // UI初期化完了
 
-// レンダリング制御
-render()                                    // レンダリング実行
-clear()                                     // 全体クリア
-export(format, options)                     // 出力・保存
-
-// Tool統合インターフェース
-delegateToActiveTool(method, event)         // Tool委譲
-attachToolGraphics(tool, graphics)          // Tool-Graphics接続
+// 初期化タイミング制御
+DOMCONTENTLOADED_HANDLER  // DOM準備完了処理
+ASYNC_FUNCTION_WRAPPER    // async関数ラッパー
+AWAIT_SAFE_USAGE         // 安全なawait使用
+SYNC_TO_ASYNC_BRIDGE     // 同期→非同期橋渡し
 ```
 
-#### 🚫 禁止されるAPI群
+### 🖊️ **ツール継承シンボル**
 ```javascript
-// 禁止：直接描画処理
-❌ startDrawing()                           // Tool委譲必須
-❌ continueDrawing()                        // Tool委譲必須  
-❌ moveTo() / lineTo()                      // Tool責務
-❌ Graphics生成・直接操作                    // Tool責務
+// AbstractTool継承パターン
+ABSTRACT_TOOL_INHERITANCE  // AbstractTool継承
+TOOL_CONSTRUCTOR_PATTERN  // ツールコンストラクタパターン
+TOOL_REGISTRY_BINDING     // ツールレジストリ結合
+INHERITANCE_DEPENDENCY    // 継承依存関係
+CONSTRUCTOR_TIMING        // コンストラクタ実行タイミング
 
-// 禁止：座標変換
-❌ screenToCanvas()                         // CoordinateManager責務
-❌ extractCoordinates()                     // Tool + CoordinateManager責務
+// 継承状態管理
+BASE_CLASS_LOADED         // 基底クラス読み込み済み
+DERIVED_CLASS_READY      // 派生クラス準備完了
+INHERITANCE_VALIDATED    // 継承検証完了
+SUPER_CALL_COMPLETED     // super()呼び出し完了
+TOOL_NAME_ASSIGNED       // ツール名割り当て完了
+
+// 継承エラー対策
+CONSTRUCTOR_SAFE_CALL    // 安全なコンストラクタ呼び出し
+INHERITANCE_VALIDATION   // 継承関係検証
+PARENT_CLASS_READY_CHECK // 親クラス準備確認
 ```
 
-### 🖊️ Tool系API（描画実装専門）
-
-#### 📋 AbstractTool統一インターフェース
+### 🎯 **座標バグ対策シンボル**
 ```javascript
-// 必須実装メソッド（全Tool共通）
-abstract onPointerDown(event, canvasManager, coordinateManager)
-abstract onPointerMove(event, canvasManager, coordinateManager)  
-abstract onPointerUp(event, canvasManager, coordinateManager)
+// 座標バグ防止システム
+COORDINATE_BUG_PREVENTION // 座標バグ防止
+ZERO_ZERO_BUG_GUARD      // 0,0バグガード
+DIRECT_LINE_PREVENTION   // 直線バグ防止
+MOVETO_CONTROL           // moveTo制御
+LINETO_SEQUENCE          // lineTo順序制御
 
-// 共通利用可能メソッド
-extractCoordinates(event, canvasManager, coordinateManager)    // 座標抽出
-createGraphics(canvasManager)                                 // Graphics生成
-attachToLayer(graphics, canvasManager, layerId)               // レイヤー接続
-validateCoordinates(coords, coordinateManager)                // 座標検証
+// 座標制御状態
+FIRST_POINT_SET          // 初回点設定済み
+COORDINATE_VALIDATED     // 座標検証済み
+DRAWING_PATH_ACTIVE      // 描画パス有効
+GRAPHICS_INITIALIZED     // Graphics初期化済み
+STROKE_STATE_VALID       // ストローク状態有効
+
+// 座標検証機能
+COORDINATE_INTEGRITY_CHECK // 座標整合性チェック
+DRAWING_STATE_VALIDATION // 描画状態検証
+GRAPHICS_STATE_RECOVERY  // Graphics状態回復
 ```
 
-#### 📋 PenTool専用API
+### 📊 **エラー分類シンボル拡張**
+
+#### 🚨 **初期化エラー分類**
 ```javascript
-// 描画制御（主責務）
-startDrawing(x, y, pressure)               // 描画開始・moveTo制御
-updateStroke(x, y, pressure)               // 描画継続・lineTo制御
-endStroke()                                // 描画終了・Graphics完成
+// 初期化関連エラータイプ
+ASYNC_AWAIT_ERROR        // async/await使用エラー
+DEPENDENCY_MISSING       // 依存関係欠落
+CONSTRUCTOR_FAILED       // コンストラクタ失敗
+PIXI_INIT_ERROR         // PixiJS初期化エラー
+REGISTRY_EXECUTION_ERROR // レジストリ実行エラー
+DOM_NOT_READY_ERROR     // DOM未準備エラー
 
-// 座標処理（責務範囲内）
-extractAndValidateCoordinates(x, y, options) // 座標検証・変換統合
-calculatePressureLineWidth(pressure)       // 筆圧線幅計算
+// エラー重要度
+CRITICAL_INIT_ERROR     // 致命的初期化エラー
+RECOVERABLE_ERROR       // 回復可能エラー
+DEGRADED_FUNCTION       // 機能劣化
+WARNING_LEVEL           // 警告レベル
+INFO_LEVEL              // 情報レベル
 
-// CanvasManager連携
-createGraphicsForCanvas()                   // Graphics生成・配置準備
-finalizeStroke()                           // 完成Graphics委譲
-
-// 設定・状態管理
-updateSettings(newSettings)                // 設定更新
-getStats()                                 // 統計取得
-reset()                                    // 状態リセット
+// エラー原因分類
+TIMING_ERROR            // タイミングエラー
+SEQUENCE_ERROR          // 順序エラー
+DEPENDENCY_ERROR        // 依存関係エラー
+STATE_ERROR             // 状態エラー
 ```
 
-#### 📋 EraserTool専用API（将来）
+#### 🔧 **修正パターンシンボル**
 ```javascript
-// 消去処理（主責務）
-startErasing(x, y, size)                   // 消去開始
-continueErasing(x, y, size)                // 消去継続
-endErasing()                               // 消去終了
+// 修正手法パターン
+SYNC_TO_ASYNC_CONVERSION // 同期→非同期変換
+DEPENDENCY_INJECTION    // 依存性注入
+LAZY_LOADING           // 遅延読み込み
+FACTORY_PATTERN        // ファクトリパターン
+REGISTRY_PATTERN       // レジストリパターン
+OBSERVER_PATTERN       // オブザーバーパターン
 
-// 消去アルゴリズム
-detectIntersection(point, size, graphics)  // 交差検出
-eraseArea(area, graphics)                  // 領域消去
-```
-
-#### 🚫 Tool系禁止API
-```javascript
-// 禁止：レイヤー直接操作
-❌ addLayer()                              // CanvasManager責務
-❌ removeLayer()                           // CanvasManager責務
-❌ setLayerVisibility()                    // CanvasManager責務
-
-// 禁止：他Tool操作
-❌ 他ToolのGraphics直接操作                 // 責務越境
-❌ ToolManager直接操作                     // 管理システム越境
-```
-
-### 🎯 ToolManager系API（統合制御・配信管理専門）
-
-#### 📋 統合制御API群
-```javascript
-// ツール管理（主責務）
-registerTool(name, toolInstance)           // ツール登録
-setTool(tool)                              // ツール切り替え
-getCurrentTool()                           // 現在ツール取得
-isToolAvailable(tool)                      // ツール利用可能性
-
-// イベント配信
-delegateToActiveTool(method, event)        // アクティブTool委譲
-handlePointerEvent(event, eventType)       // イベント分配
-
-// CanvasManager連携
-setCanvasManager(canvasManager)            // CanvasManager接続
-initializeToolCanvasIntegration()          // Tool-Canvas統合
-createToolGraphics(toolName)               // Tool用Graphics作成
-
-// 設定統合
-updateToolSetting(tool, setting, value)    // ツール設定更新
-getToolConfig(tool)                        // ツール設定取得
-```
-
-#### 🚫 ToolManager禁止API
-```javascript
-// 禁止：直接描画処理
-❌ startDrawing()                          // Tool委譲必須
-❌ 任意の描画メソッド直接実行               // Tool委譲必須
-
-// 禁止：レイヤー直接操作  
-❌ レイヤー関連処理                         // CanvasManager責務
+// 安全性向上パターン
+ERROR_BOUNDARY         // エラー境界
+GRACEFUL_DEGRADATION   // 優雅な劣化
+RETRY_MECHANISM        // リトライ機構
+FALLBACK_STRATEGY      // フォールバック戦略
 ```
 
 ---
 
-## 📐 統一システムAPI（基盤・品質保証）
+## 🔄 責務分離API更新（v12対応）
 
-### 🔧 ConfigManager API（設定管理統一）
+### 🎯 **ToolManager系API拡張**
+
+#### 📋 **エラー対応強化API群**
 ```javascript
-// 基本設定API
-get(path, defaultValue)                     // 設定取得（ドット記法）
-set(path, value)                           // 設定更新
-validateConfig(config)                     // 設定妥当性確認
+// ツール検証・登録API
+validateToolClass(ToolClass)                    // ツールクラス検証
+handleToolRegistrationError(error, toolName)    // 登録エラー処理
+createToolInstance(ToolClass, toolName)        // インスタンス生成
+registerToolSafely(name, ToolClass)            // 安全登録
+validateToolInheritance(ToolClass)             // 継承関係検証
 
-// 専門設定API
-getCanvasConfig()                          // キャンバス設定
-getPixiConfig()                            // PixiJS設定
-getToolConfig(tool)                        // ツール設定
-getCoordinateConfig()                      // 座標管理設定
-getLayerConfig()                           // レイヤー設定（将来）
+// 初期化制御API
+waitForDependencies()                           // 依存関係待機
+validateManagerIntegration()                   // Manager統合検証
+ensurePixiReady()                              // PixiJS準備確認
+checkAbstractToolAvailable()                   // AbstractTool利用可能性確認
 
-// システム設定API
-getDefaultTool()                           // デフォルトツール
-getAvailableTools()                        // 利用可能ツール
-getColors()                                // ふたばカラーパレット
+// エラー回復API
+recoverFromToolError(error, toolName)          // ツールエラー回復
+reinitializeToolSystem()                       // ツールシステム再初期化
+createFallbackTool(toolName)                   // フォールバックツール生成
 ```
 
-### 🚨 ErrorManager API（エラー処理統一）
-```javascript
-// 基本エラー処理
-showError(type, message, options)          // エラー表示
-showCriticalError(message, options)        // 致命的エラー
-showWarning(message, options)              // 警告表示
+### 🖊️ **AbstractTool系API拡張**
 
-// エラー分類・統計
-getErrorStats()                            // エラー統計
-getErrorLog()                              // エラーログ
-classifyError(error, context)             // エラー分類
+#### 📋 **座標バグ対策API群**
+```javascript
+// 座標制御強化API
+validateDrawingState()                          // 描画状態検証
+resetCoordinateState()                         // 座標状態リセット
+ensureFirstPointSet()                          // 初回点設定保証
+preventZeroZeroBug(coords)                     // 0,0バグ防止
+validateCoordinateSequence(coords)             // 座標順序検証
+
+// Graphics制御API
+initializeGraphicsSafely()                     // 安全Graphics初期化
+validateGraphicsIntegrity()                   // Graphics整合性確認
+resetGraphicsState()                          // Graphics状態リセット
+createGraphicsWithValidation()                // 検証付きGraphics生成
+
+// 継承支援API
+validateInheritanceChain()                    // 継承チェーン検証
+ensureParentInitialized()                     // 親クラス初期化確認
+callSuperSafely()                            // 安全なsuper()呼び出し
 ```
 
-### 📊 StateManager API（状態管理統一）
+### 🎨 **CanvasManager系API拡張**
+
+#### 📋 **初期化タイミング対応API**
 ```javascript
-// 基本状態取得
-getApplicationState()                      // 全体状態
-getCoreState()                            // コア状態
-getUIState()                              // UI状態
-getDrawingState()                         // 描画状態
-getPerformanceState()                     // パフォーマンス状態
+// 初期化制御API
+waitForPixiReady()                             // PixiJS準備待機
+validateStageInitialization()                 // Stage初期化検証
+ensureRenderReady()                           // レンダー準備確認
+checkApplicationState()                       // アプリケーション状態確認
 
-// 拡張状態管理
-updateComponentState(component, state, data) // コンポーネント状態更新
-updateSystemState(system, state, data)     // システム状態更新
-getComponentState(component)               // 特定コンポーネント状態
-getSystemState(system)                     // 特定システム状態
-getAllComponentStates()                    // 全コンポーネント状態
-getAllSystemStates()                       // 全システム状態
+// エラー回復API
+recoverFromInitError()                        // 初期化エラー回復
+reinitializeCanvas()                          // キャンバス再初期化
+createPixiApplicationSafely()                 // 安全なPixiアプリ作成
+restoreCanvasState()                          // キャンバス状態復旧
 
-// 診断・管理
-healthCheck()                             // 健全性チェック
-resetComponentStates()                    // コンポーネント状態リセット
-resetSystemStates()                       // システム状態リセット
-```
-
-### 🔄 EventBus API（イベント通信統一）
-```javascript
-// 基本イベント処理
-emit(eventType, data)                     // イベント発行
-on(eventType, callback)                   // リスナー登録
-off(eventType, callback)                  // リスナー削除
-safeEmit(eventType, data)                 // 安全発行（エラー対策）
-
-// エラー対策・診断
-resetErrorState()                         // エラー状態リセット
-healthCheck()                             // EventBus健全性
-getStats()                                // イベント統計
-preventErrorCascade(error, eventType)     // エラー連鎖防止
-```
-
-### 📐 CoordinateManager API（座標変換統一）
-```javascript
-// 座標変換
-screenToCanvas(screenX, screenY, rect)     // スクリーン→キャンバス
-canvasToPixi(canvasX, canvasY, pixiApp)    // キャンバス→PixiJS
-extractPointerCoordinates(event, rect, app) // イベント座標抽出
-
-// 座標計算・ユーティリティ
-calculateDistance(point1, point2)          // 距離計算
-calculateAngle(point1, point2)            // 角度計算
-applyPrecision(value)                      // 精度適用
-validateCoordinateIntegrity(coords)        // 座標妥当性確認
-
-// 設定・管理
-updateCanvasSize(width, height)           // キャンバスサイズ更新
-getCoordinateState()                      // 座標管理状態
-runCoordinateTest()                       // 座標変換テスト
+// レイヤー操作安全性API
+addLayerSafely(layerId, type, options)        // 安全なレイヤー追加
+validateLayerOperation(operation)             // レイヤー操作検証
+ensureLayerIntegrity()                       // レイヤー整合性確保
 ```
 
 ---
 
-## 🏗️ システム統合パターン（責務分離準拠）
+## 🚨 禁止・許可事項更新（v12対応）
 
-### 🎨 描画フロー統合パターン
+### 🚫 **新規禁止事項**
+
+#### 🔧 **初期化関連禁止事項**
 ```javascript
-// 理想的な描画フロー（責務分離準拠）
-User Input 
-↓
-CanvasManager.handlePointerEvent(event)    // イベント受信
-↓ 
-ToolManager.delegateToActiveTool(method, event) // Tool委譲
-↓
-PenTool.onPointerDown(event, canvasManager, coordinateManager) // Tool処理
-↓
-CoordinateManager.extractPointerCoordinates(event, rect) // 座標変換
-↓
-PenTool.startDrawing(validatedCoords)      // 描画実行・Graphics生成
-↓
-CanvasManager.addGraphicsToLayer(graphics, layerId) // レイヤー配置
-↓
-StateManager.updateComponentState('penTool', 'drawing', data) // 状態更新
-↓
-EventBus.safeEmit('drawing.started', data) // イベント通知
+❌ 非async関数内でのawait使用
+❌ 依存関係未解決時のインスタンス化
+❌ PIXIアプリケーション初期化前のレイヤー操作
+❌ レジストリ実行前のTegaki名前空間参照
+❌ AbstractTool読み込み前の継承ツール初期化
+❌ DOM未準備状態でのイベントリスナー登録
 ```
 
-### 🔄 Tool登録・統合パターン
+#### 🖊️ **ツール継承関連禁止事項**  
 ```javascript
-// Tool登録時の統合手順
-ToolManager.registerTool(toolName, toolInstance)
-↓
-CanvasManager.createToolGraphics(toolName)  // Tool用Graphics作成
-↓
-toolInstance.attachGraphics(graphics)      // Graphics接続
-↓
-CanvasManager.addGraphicsToLayer(graphics, layerId) // レイヤー配置
-↓
-StateManager.updateSystemState('toolManager', 'registered', data)
+❌ window.AbstractTool未定義時の継承
+❌ super()呼び出し前のプロパティ設定
+❌ ツール名未設定でのAbstractTool初期化
+❌ 必須メソッド未実装での登録
+❌ 継承チェーン未検証でのインスタンス化
+❌ 基底クラス未準備時の派生クラス定義
 ```
 
-### 🏥 エラー処理統合パターン
+#### 🎯 **座標処理関連禁止事項**
 ```javascript
-// 統合エラー処理フロー
-Tool/Manager内でエラー発生
-↓
-ErrorManager.showError(type, message, options) // エラー分類・表示
-↓
-StateManager.updateSystemState('errorManager', 'error', errorData) // 状態記録
-↓
-EventBus.safeEmit('system.error', errorData) // エラー通知（連鎖防止）
-↓
-診断システムによる問題特定・解決支援
+❌ 座標検証なしでのmoveTo/lineTo実行
+❌ Graphics未初期化状態での描画操作
+❌ 初回点設定なしでの継続描画
+❌ 座標状態未確認でのストローク処理
+❌ 0,0座標の直接使用（バリデーション必須）
 ```
 
----
+### ✅ **新規許可事項**
 
-## 📝 シンボル・用語統一定義
-
-### 🎯 責務分離用語
+#### 🔧 **推奨初期化パターン**
 ```javascript
-// 責務分離関連用語
-RESPONSIBILITY          // 責務・担当範囲
-DRAWING_AUTHORITY      // 描画主導権・処理権限
-LAYER_MANAGEMENT       // レイヤー管理・配置制御
-TOOL_INTEGRATION      // ツール統合・連携
-GRAPHICS_DELEGATION   // Graphics委譲・受け渡し
-COORDINATE_CONTROL    // 座標制御・変換管理
+✅ レジストリ方式による順序保証初期化
+✅ 依存関係チェック後のインスタンス化
+✅ エラーハンドリング付きツール登録
+✅ 非同期初期化での適切なawait使用
+✅ フォールバック機能付きエラー処理
+✅ DOM準備完了後の安全な初期化実行
 ```
 
-### 🔧 システム統合用語
+#### 🖊️ **推奨継承パターン**
 ```javascript
-// 統合システム関連用語  
-UNIFIED_SYSTEM        // 統一システム（4基盤システム）
-MANAGER_INTEGRATION   // Manager統合・連携
-EVENT_DELEGATION      // イベント委譲・配信
-STATE_CENTRALIZATION  // 状態集中管理
-ERROR_CLASSIFICATION  // エラー分類・処理
-COORDINATE_UNIFICATION // 座標統一処理
+✅ AbstractTool準備確認後の継承実装
+✅ super()呼び出し完了後のプロパティ設定
+✅ 継承検証付きのツール登録
+✅ エラー回復機能付きコンストラクタ
+✅ 段階的初期化による安全性確保
 ```
 
-### 🚫 禁止・許可用語
+#### 🎯 **推奨座標処理パターン**
 ```javascript
-// 禁止事項関連
-DRAWING_PROHIBITION   // 描画処理禁止
-DIRECT_MANIPULATION  // 直接操作禁止
-RESPONSIBILITY_CROSSING // 責務越境禁止
-DUPLICATE_IMPLEMENTATION // 重複実装禁止
-
-// 許可事項関連
-LAYER_AUTHORITY      // レイヤー権限許可
-GRAPHICS_GENERATION  // Graphics生成許可
-COORDINATE_TRANSFORMATION // 座標変換許可
-STATE_MANAGEMENT     // 状態管理許可
-```
-
-### 🎨 描画・UI用語
-```javascript
-// 描画関連用語
-GRAPHICS_OBJECT      // Graphicsオブジェクト
-DRAWING_PATH         // 描画パス・軌跡
-STROKE_DATA         // ストロークデータ
-PRESSURE_SENSITIVITY // 筆圧感知
-COORDINATE_PRECISION // 座標精度
-
-// UI・操作用語
-POINTER_EVENT       // ポインターイベント
-USER_INPUT         // ユーザー入力
-CANVAS_INTERACTION // キャンバス操作
-TOOL_SELECTION     // ツール選択
-LAYER_VISIBILITY   // レイヤー表示
+✅ 座標検証→状態確認→描画実行の順序
+✅ Graphics初期化確認後の描画操作
+✅ 初回点設定後の継続描画処理
+✅ バグ防止機構付き座標処理
+✅ 状態回復機能付きエラーハンドリング
 ```
 
 ---
 
-## 📊 診断・テストシンボル定義
+## 📊 実装状況更新（v12準拠）
 
-### 🔍 品質診断シンボル
+### 🟢 **実装完了・検証済みAPI**
 ```javascript
-// 品質指標シンボル
-QUALITY_SCORE           // 品質スコア（0-100%）
-RESPONSIBILITY_COMPLIANCE // 責務分離遵守率
-UNIFIED_SYSTEM_USAGE    // 統一システム活用率
-DUPLICATE_CODE_COUNT    // 重複コード数
-CIRCULAR_DEPENDENCY_COUNT // 循環依存数
-FILE_SIZE_COMPLIANCE    // ファイルサイズ制限遵守率
+// 統一システム（完全実装・動作確認済み）
+✅ ErrorManager: 全API実装・エラー分類対応・showWarning修正完了
+✅ ConfigManager: 設定管理・デフォルト値対応  
+✅ StateManager: 状態管理・診断機能付き
+✅ EventBus: イベント配信・エラー連鎖防止
+✅ CoordinateManager: 座標変換・バグ対策付き
 
-// 診断コマンドシンボル  
-HEALTH_CHECK           // 健全性チェック
-INTEGRATION_TEST       // 統合テスト
-COORDINATE_TEST        // 座標変換テスト
-PERFORMANCE_METRICS    // パフォーマンス指標
-ERROR_STATISTICS       // エラー統計
+// AbstractTool基底クラス（実装完了・継承準備済み）
+✅ 統一インターフェース: onPointerDown/Move/Up
+✅ 座標処理: extractAndValidateCoordinates
+✅ Graphics制御: createGraphicsForCanvas
+✅ 継承メソッド: _onStrokeStart/Add/End
 ```
 
-### 🧪 テスト・検証シンボル
+### 🟡 **実装済み・修正必要API**
 ```javascript
-// テスト分類シンボル
-UNIT_TEST              // 単体テスト
-INTEGRATION_TEST       // 統合テスト
-RESPONSIBILITY_TEST    // 責務分離テスト
-SYSTEM_TEST           // システムテスト
-REGRESSION_TEST       // 回帰テスト
+// main.js（基本実装済み・async/await修正必要）
+🟡 DOMContentLoadedハンドラー: 非同期処理修正必要
+🟡 初期化順序制御: レジストリ実行タイミング調整必要
 
-// 検証結果シンボル
-PASS                  // 合格・成功
-FAIL                  // 不合格・失敗  
-WARNING               // 警告・注意
-CRITICAL              // 致命的・重大
-INFO                  // 情報・参考
+// ToolManager（基本実装済み・エラー対応強化必要）
+🟡 registerTool(): インスタンス生成エラー対応修正完了予定
+🟡 _registerDefaultTools(): ToolClass検証強化必要
+🟡 initialize(): 依存関係解決強化必要
+
+// PenTool（実装済み・動作確認必要）
+🟡 全メソッド実装済み・座標バグ対策済み
+🟡 Graphics初期化処理の最終検証必要
+
+// EraserTool（実装済み・継承エラー修正必要） 
+🟡 AbstractTool継承：継承タイミング修正必要
+🟡 コンストラクタ：初期化順序調整必要
+
+// CanvasManager（基本実装済み・初期化修正必要）
+🟡 PIXI初期化タイミング調整必要
+🟡 addLayer操作の安全性強化必要
 ```
 
----
-
-## 🎯 Phase・発展シンボル定義
-
-### 🚀 Phase管理シンボル
-```javascript
-// Phase状態シンボル
-PHASE_COMPLETED       // Phase完了
-PHASE_IN_PROGRESS     // Phase進行中  
-PHASE_READY          // Phase開始準備完了
-PHASE_BLOCKED        // Phase開始阻害要因あり
-
-// Phase移行シンボル
-MIGRATION_READY      // 移行準備完了
-BACKWARD_COMPATIBLE  // 下位互換保持
-FORWARD_COMPATIBLE   // 上位互換準備
-BREAKING_CHANGE      // 破壊的変更
-```
-
-### 🔮 将来拡張シンボル
-```javascript
-// 技術発展シンボル
-PIXIJS_V8_READY      // PixiJS v8対応準備
-WEBGPU_COMPATIBLE    // WebGPU互換
-MOBILE_OPTIMIZED     // モバイル最適化
-HIGH_FRAMERATE       // 高フレームレート対応
-
-// 機能拡張シンボル
-LAYER_SYSTEM_READY   // レイヤーシステム対応
-ANIMATION_SUPPORT    // アニメーション対応
-EXPORT_CAPABILITY    // 出力機能
-COLLABORATION_READY  // 協働機能対応
-```
-
----
-
-## 🎨 特殊記号・マーク定義
-
-### 📋 責務分離マーク
-```javascript
-// ファイル・クラス分類マーク
-🎨 CanvasManager系    // レイヤー・ステージ管理
-🖊️ Tool系           // 描画実装・ツール
-🎯 Manager系         // 統合制御・管理
-🔧 Utility系        // 基盤・ユーティリティ
-🎪 UI系             // ユーザーインターフェース
-
-// 権限・禁止マーク
-✅ 許可・推奨        // 実行許可・推奨事項
-🚫 禁止・非推奨      // 実行禁止・非推奨事項
-⚠️ 注意・条件付き    // 注意事項・条件付き許可
-🔄 要確認・検討      // 確認必要・検討事項
-```
-
-### 🚀 品質・状態マーク
+### 🔴 **未実装・将来実装API**
 ```javascript  
-// 実装状態マーク
-🟢 実装完了         // 実装完了・動作確認済み
-🟡 実装進行中       // 実装進行中・一部完了
-🔴 未実装          // 未実装・計画段階
-⭐ 高品質完成       // 高品質・推奨実装
-
-// 診断・品質マーク
-📊 品質指標        // 品質測定・指標
-🔍 診断実行        // 診断・検証実行
-🏥 健全性確認      // 健全性・安全性確認
-📈 改善効果        // 改善・向上効果
-```
-
-### 🔧 技術・システムマーク
-```javascript
-// システム統合マーク  
-🔗 統合済み         // システム統合完了
-🔄 統合進行中       // 統合作業進行中
-⚡ 高性能化        // パフォーマンス向上
-🛡️ 安全性強化      // セキュリティ・安全性
-
-// AI協働・効率マーク
-🤖 AI協働最適化     // AI協働開発対応
-📂 ファイル分業     // ファイル分業対応
-⚙️ 自動化対応      // 自動化・効率化
-🎓 学習・改善      // 学習効果・継続改善
+// Phase2実装予定
+🔴 LayerManager: レイヤーシステム全体
+🔴 AnimationTool: アニメーション機能
+🔴 FilterManager: エフェクト・フィルター
+🔴 ExportManager: 出力・保存機能
 ```
 
 ---
 
-## 📋 API実装ステータス定義
+## 🎯 修正優先度・作業順序（v12対応）
 
-### 🟢 実装完了API（Phase1.4完了）
+### 🚨 **最優先修正項目（Phase1.4完成必須）**
+
+#### 1. **main.js async/await修正**
 ```javascript
-// ConfigManager（完全実装）
-✅ get(), set(), getCanvasConfig(), getPixiConfig()
-✅ getToolConfig(), getCoordinateConfig(), getColors()
-
-// ErrorManager（完全実装）  
-✅ showError(), showCriticalError(), getErrorStats()
-
-// StateManager（拡張完了）
-✅ 基本API + updateComponentState(), updateSystemState()
-✅ getAllComponentStates(), getAllSystemStates()
-
-// EventBus（強化完了）
-✅ emit(), on(), off(), safeEmit(), resetErrorState()
-
-// CoordinateManager（完全実装）
-✅ screenToCanvas(), canvasToPixi(), extractPointerCoordinates()
-✅ calculateDistance(), calculateAngle(), applyPrecision()
+優先度: 🔴 CRITICAL
+影響: 全体初期化停止
+作業: DOMContentLoaded内の非同期処理修正
+対策: async function wrapper使用
 ```
 
-### 🟡 実装進行中API（詳細確認必要）
+#### 2. **EraserTool継承エラー修正**
 ```javascript
-// MemoryManager（基本実装済み・詳細要確認）
-🟡 init(), monitor(), getMemoryUsage(), cleanup()
-
-// BoundaryManager（基本実装済み・詳細要確認）  
-🟡 init(), trackBoundary(), checkBounds(), updateBounds()
-
-// 各Manager詳細API（実装状況要確認）
-🟡 具体的メソッドシグネチャ・動作仕様
-🟡 統一システム統合度・品質レベル
+優先度: 🔴 CRITICAL  
+影響: ツール登録失敗
+作業: AbstractTool依存関係・初期化順序調整
+対策: 継承チェック強化、安全なコンストラクタ実装
 ```
 
-### 🔴 未実装API（将来実装予定）
+#### 3. **CanvasManager初期化修正**
 ```javascript
-// AbstractTool（Phase1.5-2.0実装予定）
-🔴 onPointerDown(), onPointerMove(), onPointerUp()
-🔴 extractCoordinates(), createGraphics(), attachToLayer()
+優先度: 🔴 CRITICAL
+影響: キャンバス未表示
+作業: PixiJS初期化タイミング調整
+対策: 初期化完了待機、安全なレイヤー操作
+```
 
-// LayerManager（Phase2実装予定）
-🔴 createLayer(), deleteLayer(), moveLayer()
-🔴 setLayerOpacity(), setLayerBlendMode()
+#### 4. **ErrorManager.showWarning修正**
+```javascript
+優先度: 🔴 CRITICAL
+影響: ポップアップ表示不能
+作業: showWarningメソッド実装確認・修正
+対策: メソッド存在確認、適切な実装
+```
 
-// EraserTool（Phase1.5実装予定）
-🔴 startErasing(), continueErasing(), endErasing()
-🔴 detectIntersection(), eraseArea()
+### 🟡 **第二優先修正項目**
+```javascript
+5. ToolManager エラーハンドリング強化
+6. PenTool 座標バグ最終検証  
+7. 座標系ずれ問題の解決
+8. UI表示位置調整
 ```
 
 ---
 
-## 🎯 責務分離準拠チェックリスト
+## 📈 品質指標・目標（v12準拠）
 
-### ✅ API設計チェック項目
+### 🎯 **修正完了後の品質目標**
+
+#### 📊 **機能実装率**
 ```javascript
-// 責務分離チェック
-□ API実装先が責務範囲内か？
-□ 他責務のAPI直接呼び出しをしていないか？
-□ 統一システム経由でのアクセスになっているか？
-□ Graphics生成・配置が適切な責務で実行されているか？
-
-// 品質基準チェック
-□ 重複実装・重複定義がないか？
-□ 循環依存・直接結合がないか？
-□ エラー処理が統一システム経由か？
-□ 状態管理が統一システム経由か？
-
-// 将来拡張チェック  
-□ AbstractTool継承に対応可能か？
-□ レイヤーシステム拡張に対応可能か？
-□ Phase移行に支障がないか？
-□ AI協働開発に適した設計か？
+INITIALIZATION_SUCCESS: 100%    // 初期化成功率
+TOOL_REGISTRATION_SUCCESS: 100% // ツール登録成功率  
+CANVAS_DISPLAY_SUCCESS: 100%    // キャンバス表示成功率
+DRAWING_FUNCTION_SUCCESS: 95%   // 描画機能成功率
+COORDINATE_BUG_ELIMINATION: 100% // 座標バグ解消率
+ERROR_HANDLING_COVERAGE: 95%    // エラー処理カバー率
 ```
 
-### 📊 実装品質指標
+#### 🔍 **エラー処理品質**
 ```javascript
-// 責務分離品質指標
-RESPONSIBILITY_SEPARATION_SCORE: 0-100%  // 責務分離遵守率
-API_CONSISTENCY_SCORE: 0-100%           // API一貫性スコア
-UNIFIED_SYSTEM_INTEGRATION: 0-100%       // 統一システム統合率
-FUTURE_COMPATIBILITY_SCORE: 0-100%       // 将来互換性スコア
+CRITICAL_ERROR_HANDLING: 100%   // 致命的エラー処理率
+ERROR_RECOVERY_CAPABILITY: 85%  // エラー回復能力
+GRACEFUL_DEGRADATION: 90%       // 優雅な劣化対応率
+POPUP_DISPLAY_SUCCESS: 100%     // ポップアップ表示成功率
+```
 
-// 目標品質レベル
-TARGET_RESPONSIBILITY_SCORE: 95%以上     // 責務分離目標
-TARGET_CONSISTENCY_SCORE: 90%以上       // 一貫性目標
-TARGET_INTEGRATION_SCORE: 100%          // 統合目標
-TARGET_COMPATIBILITY_SCORE: 85%以上     // 互換性目標
+#### 🧪 **システム統合品質**
+```javascript
+UNIFIED_SYSTEM_INTEGRATION: 100% // 統一システム統合率
+RESPONSIBILITY_SEPARATION: 95%   // 責務分離遵守率  
+API_CONSISTENCY: 95%            // API一貫性率
+FUTURE_COMPATIBILITY: 85%       // 将来互換性率
+INITIALIZATION_RELIABILITY: 100% // 初期化信頼性率
 ```
 
 ---
 
-## 🔄 継続メンテナンス・更新規約
+## 🔧 緊急修正対応シンボル
 
-### 📅 定期更新スケジュール
+### ⚡ **緊急修正マーク**
 ```javascript
-// シンボル辞典更新頻度
-WEEKLY_UPDATE:    新規API追加・変更対応
-MONTHLY_UPDATE:   品質指標・実装状況更新  
-PHASE_UPDATE:     Phase移行時の全体更新
-MAJOR_UPDATE:     アーキテクチャ変更時の全面改訂
+// 緊急度レベル
+🚨 EMERGENCY_FIX        // 緊急修正必要
+⚠️ URGENT_ATTENTION     // 至急対応必要
+🔧 MAINTENANCE_REQUIRED // メンテナンス必要
+📋 SCHEDULED_FIX       // 計画修正
 
-// 更新責任・手順
-API_OWNER:        API実装者による定義更新責任
-INTEGRATION_TEAM: システム統合による整合性確認
-QUALITY_ASSURANCE: 品質基準・指標の定期見直し
-DOCUMENTATION:    実装現実との乖離防止・同期維持
+// 修正状況マーク
+🛠️ FIXING_IN_PROGRESS   // 修正作業中
+✅ FIX_COMPLETED        // 修正完了
+🧪 FIX_UNDER_TEST      // 修正テスト中
+📝 FIX_DOCUMENTED      // 修正文書化済み
 ```
 
-### 🎯 品質維持・改善目標
+### 🔍 **診断・解析マーク**
 ```javascript
-// 継続品質目標
-定義一貫性:     100%維持（矛盾・重複なし）
-実装同期性:     95%以上維持（実装現実との同期）
-AI協働効率:     継続向上（使いやすさ改善）
-将来対応性:     新技術・要求への適応性維持
+// 問題分析マーク
+🔍 ROOT_CAUSE_ANALYSIS  // 根本原因分析
+📊 IMPACT_ASSESSMENT   // 影響度評価
+🎯 SOLUTION_IDENTIFIED // 解決策特定
+⏰ TIMELINE_ESTIMATED  // 修正時間見積もり
 
-// 成功指標
-AI作業効率:     シンボル辞典参照による効率向上測定
-開発品質:       統一定義による品質向上測定
-保守効率:       定義明確化による保守工数削減測定
-拡張容易性:     新機能追加時の定義拡張容易性測定
+// 品質保証マーク
+🏥 HEALTH_CHECK_PASSED // 健全性チェック通過
+🧪 REGRESSION_TEST_OK  // 回帰テスト正常
+📈 IMPROVEMENT_VERIFIED // 改善効果確認
+🎯 TARGET_ACHIEVED     // 目標達成
 ```
 
 ---
 
-*🎨 シンボル辞典 v11 - 責務分離・統一定義版*  
-*策定日: 2025年8月23日*  
-*対象: 全API・シンボル・用語の責務分離準拠統一定義*  
-*目的: AI協働開発・品質保証・継続保守の効率化*  
-*適用: 全開発段階での統一参照・準拠必須*
+## 🔄 継続保守・発展方針（v12更新）
+
+### 📅 **Phase1.4完成後の発展計画**
+
+#### 🚀 **Phase1.5準備項目**
+```javascript
+1. 安定化確認・バグ検証完了
+2. レイヤーシステム基盤構築
+3. アニメーション機能検討  
+4. エクスポート機能実装
+5. パフォーマンス最適化
+6. モバイル対応検討
+```
+
+#### 🎯 **長期品質維持**
+```javascript  
+シンボル辞典: 実装現状同期・月次更新維持
+エラー分類: 新規エラーパターン追加・対策強化
+API統合: 新機能のシームレス統合・互換性維持
+品質監視: 自動化テスト環境構築・継続監視
+緊急対応: 迅速な問題特定・修正フローの確立
+```
+
+### 📊 **v12品質保証方針**
+```javascript
+// 修正品質基準
+即応性: エラー発見から24時間以内の修正着手
+完全性: 根本原因解決・再発防止策実装
+安全性: 既存機能への影響ゼロ・回帰テスト必須
+文書性: 修正内容のシンボル辞典即時反映
+```
+
+---
+
+*🎨 シンボル辞典 v12 - エラー修正・現状分析対応版*  
+*更新日: 2025年8月23日*  
+*対象: Phase1.4stepEX3 エラー解消・品質向上*  
+*目的: システム安定化・描画機能完全回復*  
+*緊急対応: 初期化・継承・座標バグの完全解決*  
+*次期: Phase1.5基盤準備・発展可能性確保*
