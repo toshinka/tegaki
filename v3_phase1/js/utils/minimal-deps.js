@@ -1,16 +1,27 @@
+/**
+ * 📦 Minimal Dependencies - 最小限依存関係（怪物撲滅版）
+ * 📋 RESPONSIBILITY: 必要最小限クラスの提供のみ
+ * 🚫 PROHIBITION: 複雑な機能・エラー処理・UI操作
+ * ✅ PERMISSION: 空の実装・コンストラクタのみ・例外throw
+ * 
+ * 📏 DESIGN_PRINCIPLE: 怪物化防止・最小限実装
+ */
+
 // ========================================
 // js/utils/state-manager.js - 最小限
 // ========================================
 window.Tegaki = window.Tegaki || {};
 class StateManager {
-    constructor() { this.state = {}; }
+    constructor() { 
+        console.log('📊 StateManager Minimal');
+        this.state = {}; 
+    }
     updateComponentState(component, key, value) { 
         console.log(`State: ${component}.${key} = ${value}`);
     }
 }
 window.Tegaki.StateManager = StateManager;
 window.Tegaki.StateManagerInstance = new StateManager();
-console.log('📊 StateManager Minimal Loaded');
 
 // ========================================
 // js/utils/coordinate-manager.js - 最小限
@@ -29,14 +40,6 @@ class Performance {
     constructor() { console.log('⚡ Performance Minimal'); }
 }
 window.Tegaki.Performance = Performance;
-
-// ========================================
-// js/utils/icon-manager.js - 最小限
-// ========================================
-class IconManager {
-    constructor() { console.log('🎨 IconManager Minimal'); }
-}
-window.Tegaki.IconManager = IconManager;
 
 // ========================================  
 // js/ui/popup-manager.js - 最小限
@@ -89,7 +92,7 @@ console.log('🎮 PixiJS Extensions Minimal - No extensions loaded');
 // managers/boundary-manager.js - 最小限
 // ========================================
 class BoundaryManager {
-    constructor() { console.log('🔲 BoundaryManager Minimal'); }
+    constructor() { console.log('📲 BoundaryManager Minimal'); }
 }
 window.Tegaki.BoundaryManager = BoundaryManager;
 
@@ -135,27 +138,4 @@ class AppCore {
 }
 window.Tegaki.AppCore = AppCore;
 
-console.log('📦 All minimal dependencies loaded');
-
-// ========================================
-// 使用方法説明
-// ========================================
-
-/*
-使用方法:
-
-1. 各ファイルを個別に作成する場合:
-   - 上記のコードを該当ファイルに分割して配置
-
-2. 一時的に全部をひとつのファイルとして使用:
-   - このコード全体をjs/utils/minimal-deps.jsとして保存
-   - bootstrap-simple.jsの依存関係リストから個別ファイルを削除し、
-     'js/utils/minimal-deps.js'を追加
-
-3. 段階的に本格実装に置き換え:
-   - 必要な機能から順次、本格的な実装に置き換え
-   - 最終的には全て個別ファイルに分離
-
-注意: これは怪物コード撲滅のための最小限実装です。
-     機能を追加する際は、シンプル構造を維持してください。
-*/
+console.log('📦 Minimal Dependencies Loaded - 怪物撲滅版');
