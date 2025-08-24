@@ -1,5 +1,5 @@
 /**
- * 🎨 CanvasManager - レイヤー・ステージ管理専門 (Phase1キャンバス出現確実化版)
+ * 🎨 CanvasManager - レイヤー・ステージ管理専門 (キャンバス消失問題解決版)
  * 🚫 DRAWING_PROHIBITION: 直接的な描画処理は禁止
  * ✅ LAYER_MANAGEMENT: レイヤー生成・管理・Graphics配置のみ
  * 🔄 TOOL_INTEGRATION: Toolが生成したオブジェクトの受け皿
@@ -8,23 +8,11 @@
  * 📏 DESIGN_PRINCIPLE: Tool → Graphics生成, CanvasManager → レイヤー配置
  * 🎯 FUTURE_PROOF: レイヤーシステム・動画機能対応設計
  * 
- * ✨ Phase1修正内容:
- * - 構文エラーの完全修正
- * - ConfigManager統合問題の完全解消（warning解消）
- * - キャンバス出現の確実化
- * - AppCore統合の完全対応
- * - 基本責務分離の徹底
- * 
- * 🔧 キャンバス出現確実化:
- * - ConfigManager完全統合（警告解消）
- * - AppCore連携の修正
- * - 緊急フォールバック強化
- * - 構文エラー完全排除
- * 
- * 📋 参考定義:
- * - ルールブック: 1.1 責務分離の絶対原則 - CanvasManager
- * - シンボル辞典: CanvasManager系API - 許可されるAPI群
- * - 手順書: Phase 1: 緊急修復（基本動作復旧）
+ * 🔧 キャンバス消失問題解決:
+ * - 既存canvas要素の削除処理を修正
+ * - 初期化競合状態の解消
+ * - Canvas要素の確実な永続化
+ * - 重複初期化の防止強化
  */
 
 // Tegaki名前空間初期化
@@ -34,19 +22,23 @@ class CanvasManager {
     constructor() {
         this.app = null;
         this.stage = null;
-        this.layers = new Map(); // レイヤー管理をMapで統一
+        this.layers = new Map();
         this.container = null;
         this.initialized = false;
         
-        // AppCore参照（統合対応強化）
+        // 初期化制御フラグ（重複初期化防止）
+        this.initializationInProgress = false;
+        this.canvasElementAttached = false;
+        
+        // AppCore参照
         this.appCore = null;
-        this.configManager = null; // ConfigManager直接参照
+        this.configManager = null;
         
         // CoordinateManager統合状態
         this.coordinateManager = null;
         this.coordinateIntegrationEnabled = false;
         
-        // ビュー状態（レイヤー管理機能として維持）
+        // ビュー状態
         this.viewState = {
             zoom: 1.0,
             panX: 0,
@@ -55,195 +47,140 @@ class CanvasManager {
             maxZoom: 5.0
         };
         
-        // PIXI設定（レイヤー管理に必要）
+        // PIXI設定
         this.pixiSettings = {
             antialias: true,
-            backgroundColor: 0xffffee, // ふたば風背景色
+            backgroundColor: 0xffffee,
             resolution: window.devicePixelRatio || 1
         };
         
-        console.log('🎨 CanvasManager インスタンス作成完了（Phase1キャンバス出現確実化版）');
+        console.log('🎨 CanvasManager インスタンス作成完了');
     }
 
     /**
-     * Phase1修正: 初期化メソッド統一（ConfigManager警告完全解消版）
-     * CanvasManagerを初期化（ConfigManager統合・AppCore完全統合）
-     * @param {object} options - 初期化オプション
-     * @param {AppCore} options.appCore - AppCoreインスタンス（必須）
-     * @param {HTMLElement} options.canvasElement - キャンバス要素
-     * @param {object} options.config - 追加設定（ConfigManager統合）
-     * @returns {Promise<boolean>} 成功/失敗
+     * キャンバス消失問題解決版初期化
      */
     async initialize(options = {}) {
         try {
-            console.log('🚀 CanvasManager初期化開始（Phase1キャンバス出現確実化版）...', options);
+            console.log('🚀 CanvasManager初期化開始...', options);
             
+            // 重複初期化防止
             if (this.initialized) {
                 console.warn('⚠️ CanvasManager already initialized');
                 return true;
             }
+            
+            if (this.initializationInProgress) {
+                console.warn('⚠️ CanvasManager initialization in progress');
+                return false;
+            }
+            
+            this.initializationInProgress = true;
 
-            // 引数検証・AppCore完全統合（警告解消）
+            // 引数検証
             const validatedOptions = this._validateInitializationOptions(options);
             if (!validatedOptions) {
-                throw new Error('Invalid initialization options - AppCore or canvasElement required');
+                throw new Error('Invalid initialization options');
             }
 
-            // AppCore & ConfigManager完全参照保存（警告解消の核心）
+            // AppCore & ConfigManager参照保存
             this.appCore = validatedOptions.appCore;
-            this.configManager = validatedOptions.configManager; // 直接参照保存
+            this.configManager = validatedOptions.configManager;
             
-            console.log('✅ AppCore & ConfigManager統合完了:', {
-                appCoreProvided: !!this.appCore,
-                configManagerIntegrated: !!this.configManager,
-                hasGetCanvasConfig: !!(this.configManager?.getCanvasConfig),
-                hasGetPixiConfig: !!(this.configManager?.getPixiConfig)
+            console.log('✅ 参照統合完了:', {
+                appCore: !!this.appCore,
+                configManager: !!this.configManager
             });
             
-            // 設定適用（ConfigManager統合強化・警告解消）
-            this._applyOptionsWithConfigManager(validatedOptions.config || {});
+            // 設定適用
+            this._applyConfiguration(validatedOptions.config || {});
             
-            // PIXI.Application作成（レイヤー基盤として必要）
-            await this._createPixiApp();
+            // PIXI.Application作成
+            await this._createPixiApplication();
             
-            // キャンバス要素への追加
-            await this._attachToContainer(validatedOptions.canvasElement);
+            // キャンバス要素への追加（消失問題解決版）
+            await this._attachCanvasToContainer(validatedOptions.canvasElement);
             
             // レイヤーシステム初期化
             this._initializeLayerSystem();
             
-            // 統一システム連携
+            // 統合システム連携
             this._integrateWithUnifiedSystems();
             
             // CoordinateManager統合
             this._initializeCoordinateIntegration();
             
-            // イベント設定（レイヤー管理として必要なもののみ）
+            // イベント設定
             this._setupEventHandlers();
             
             this.initialized = true;
+            this.initializationInProgress = false;
             
-            // 統一システム経由での通知
+            // 初期化完了通知
             const eventBus = this.appCore?.eventBus || window.Tegaki?.EventBusInstance;
             if (eventBus?.safeEmit) {
                 eventBus.safeEmit('canvas.initialized', {
                     width: this.app.screen.width,
                     height: this.app.screen.height,
-                    layerCount: this.layers.size,
-                    coordinateIntegrationEnabled: this.coordinateIntegrationEnabled,
-                    appCoreIntegrated: !!this.appCore,
-                    configManagerIntegrated: !!this.configManager
+                    layerCount: this.layers.size
                 });
             }
             
-            console.log('✅ CanvasManager初期化完了（Phase1キャンバス出現確実化版） - Canvas visible and ready');
+            console.log('✅ CanvasManager初期化完了');
+            
+            // 初期化完了後の検証
+            this._verifyCanvasIntegrity();
             
             return true;
             
         } catch (error) {
             console.error('❌ CanvasManager初期化失敗:', error);
+            this.initializationInProgress = false;
             
-            const errorManager = this.appCore?.errorManager || 
-                                 window.Tegaki?.ErrorManagerInstance;
-            if (errorManager?.showError) {
-                errorManager.showError('error', `CanvasManager初期化エラー: ${error.message}`, {
-                    context: 'CanvasManager.initialize',
-                    additionalInfo: 'キャンバス初期化失敗'
+            // ErrorManager委譲
+            if (window.Tegaki?.ErrorManagerInstance) {
+                window.Tegaki.ErrorManagerInstance.showError('error', 
+                    `CanvasManager初期化エラー: ${error.message}`, {
+                    context: 'CanvasManager.initialize'
                 });
             }
             
-            // 緊急フォールバック実行
-            await this._executeEmergencyCanvasFallback();
             return false;
         }
     }
 
     /**
-     * Phase1修正: 引数検証・フォールバック処理（ConfigManager完全統合版）
-     * @param {object} options - 初期化オプション
-     * @returns {object|null} 検証済みオプション
+     * 引数検証（簡潔版）
      */
     _validateInitializationOptions(options) {
         try {
-            // AppCore取得（完全統合対応）
-            let appCore = options.appCore;
-            
-            if (!appCore) {
-                // フォールバック1: グローバル参照
-                appCore = window.Tegaki?.AppCoreInstance || window.appCore;
-                
-                if (!appCore) {
-                    console.warn('⚠️ AppCore未提供 - 基本フォールバック実行');
-                    // Phase1: AppCoreなしでも基本動作させる
-                    appCore = null;
-                }
-            }
+            // AppCore取得
+            const appCore = options.appCore || 
+                           window.Tegaki?.AppCoreInstance || 
+                           window.appCore || 
+                           null;
 
-            // ConfigManager統合（Phase1最重要・警告解消）
-            let configManager = null;
-            
-            // 優先順序1: options.config.configManager
-            if (options.config?.configManager) {
-                configManager = options.config.configManager;
-                console.log('✅ ConfigManager取得: options.config経由');
-            }
-            // 優先順序2: AppCore経由
-            else if (appCore?.configManager) {
-                configManager = appCore.configManager;
-                console.log('✅ ConfigManager取得: AppCore経由');
-            }
-            // 優先順序3: グローバル参照
-            else {
-                configManager = window.Tegaki?.ConfigManagerInstance || 
-                               window.ConfigManager;
-                if (configManager) {
-                    console.log('✅ ConfigManager取得: グローバル参照経由');
-                }
-            }
+            // ConfigManager取得
+            const configManager = options.config?.configManager ||
+                                 appCore?.configManager ||
+                                 window.Tegaki?.ConfigManagerInstance ||
+                                 null;
 
-            if (!configManager) {
-                console.warn('⚠️ ConfigManager未取得 - options引数のみで動作');
-            }
-
-            // canvasElement取得（複数のフォールバック）
-            let canvasElement = options.canvasElement;
+            // canvasElement取得
+            let canvasElement = options.canvasElement || 
+                               document.getElementById('canvas-container');
             
             if (!canvasElement) {
-                // フォールバック1: canvas-container
-                canvasElement = document.getElementById('canvas-container');
-                
-                if (!canvasElement) {
-                    // フォールバック2: AppCoreから取得
-                    if (appCore?.app?.view) {
-                        canvasElement = appCore.app.view.parentElement || appCore.app.view;
-                    }
-                    // フォールバック3: DOM検索
-                    else {
-                        canvasElement = document.getElementById('drawing-canvas') || 
-                                       document.querySelector('.canvas-area') ||
-                                       document.querySelector('canvas');
-                    }
-                }
-            }
-
-            if (!canvasElement) {
-                console.warn('⚠️ canvasElement未取得 - 動的作成フォールバック');
-                canvasElement = this._createFallbackCanvasContainer();
+                canvasElement = this._createCanvasContainer();
             }
 
             console.log('📋 初期化オプション検証完了:', {
                 appCore: !!appCore,
                 configManager: !!configManager,
-                canvasElement: !!canvasElement,
-                canvasElementType: canvasElement?.tagName || 'unknown'
+                canvasElement: !!canvasElement
             });
 
-            return {
-                appCore,
-                configManager,
-                canvasElement,
-                config: options.config || {}
-            };
+            return { appCore, configManager, canvasElement, config: options.config || {} };
 
         } catch (error) {
             console.error('❌ 引数検証エラー:', error);
@@ -252,91 +189,67 @@ class CanvasManager {
     }
 
     /**
-     * Phase1修正: 設定適用（ConfigManager警告完全解消版）
-     * @param {object} options - 設定オプション
+     * 設定適用（簡潔版）
      */
-    _applyOptionsWithConfigManager(options) {
+    _applyConfiguration(config) {
         try {
-            // ConfigManager統合チェック（警告解消の核心）
-            if (this.configManager && 
-                typeof this.configManager.getCanvasConfig === 'function' &&
-                typeof this.configManager.getPixiConfig === 'function') {
-                
+            // ConfigManager統合設定取得
+            if (this.configManager?.getCanvasConfig) {
                 const canvasConfig = this.configManager.getCanvasConfig();
-                const pixiConfig = this.configManager.getPixiConfig();
+                const pixiConfig = this.configManager.getPixiConfig ? 
+                                  this.configManager.getPixiConfig() : {};
                 
-                // ConfigManager設定を基本とし、options引数で上書き
-                this.pixiSettings.backgroundColor = options.backgroundColor || 
-                                                   this._convertColorToHex(canvasConfig.backgroundColor) || 
-                                                   this.pixiSettings.backgroundColor;
-                this.pixiSettings.antialias = options.antialias !== undefined ? options.antialias : pixiConfig.antialias;
-                this.pixiSettings.resolution = options.resolution || pixiConfig.resolution || this.pixiSettings.resolution;
+                this.pixiSettings.backgroundColor = this._convertColorToHex(
+                    config.backgroundColor || canvasConfig.backgroundColor
+                );
+                this.pixiSettings.antialias = config.antialias !== undefined ? 
+                                             config.antialias : pixiConfig.antialias;
+                this.pixiSettings.resolution = config.resolution || 
+                                              pixiConfig.resolution || 
+                                              this.pixiSettings.resolution;
                 
-                console.log('✅ ConfigManager設定適用完了（警告解消）:', {
-                    backgroundColor: this.pixiSettings.backgroundColor,
-                    antialias: this.pixiSettings.antialias,
-                    resolution: this.pixiSettings.resolution
-                });
+                console.log('✅ ConfigManager設定適用完了');
             } else {
-                // フォールバック: options引数のみ（警告表示）
-                if (options.backgroundColor !== undefined) {
-                    this.pixiSettings.backgroundColor = this._convertColorToHex(options.backgroundColor);
+                // フォールバック設定
+                if (config.backgroundColor !== undefined) {
+                    this.pixiSettings.backgroundColor = this._convertColorToHex(config.backgroundColor);
                 }
-                if (options.antialias !== undefined) {
-                    this.pixiSettings.antialias = options.antialias;
-                }
-                if (options.resolution !== undefined) {
-                    this.pixiSettings.resolution = options.resolution;
+                if (config.antialias !== undefined) {
+                    this.pixiSettings.antialias = config.antialias;
                 }
                 
-                console.warn('⚠️ ConfigManager未利用 - options引数のみ適用');
-                console.log('📋 フォールバック設定:', this.pixiSettings);
-            }
-            
-            // ビュー設定
-            if (options.minZoom !== undefined) {
-                this.viewState.minZoom = Math.max(0.01, options.minZoom);
-            }
-            if (options.maxZoom !== undefined) {
-                this.viewState.maxZoom = Math.min(10.0, options.maxZoom);
+                console.warn('⚠️ ConfigManager未利用 - デフォルト設定適用');
             }
             
         } catch (error) {
-            console.warn('⚠️ 設定適用で問題発生:', error);
-            // デフォルト設定で継続
+            console.warn('⚠️ 設定適用エラー:', error);
         }
     }
 
     /**
-     * 色を16進数に変換（ConfigManager連携用）
+     * 色変換ユーティリティ
      */
     _convertColorToHex(color) {
         try {
             if (typeof color === 'string' && color.startsWith('#')) {
-                // #rrggbb形式をPIXI形式（0xrrggbb）に変換
                 return parseInt(color.substring(1), 16);
             } else if (typeof color === 'number') {
                 return color;
             } else {
-                return 0xffffee; // デフォルトふたば背景色
+                return 0xffffee;
             }
         } catch (error) {
-            console.warn('⚠️ 色変換エラー:', error);
             return 0xffffee;
         }
     }
 
     /**
-     * Phase1修正: PIXI.Application作成（ConfigManager統合対応）
+     * PIXI.Application作成
      */
-    async _createPixiApp() {
+    async _createPixiApplication() {
         try {
-            let config = {
-                width: 400,
-                height: 400
-            };
+            let config = { width: 400, height: 400 };
             
-            // ConfigManager統合での設定取得
             if (this.configManager?.getCanvasConfig) {
                 const canvasConfig = this.configManager.getCanvasConfig();
                 config.width = canvasConfig.width || 400;
@@ -353,11 +266,11 @@ class CanvasManager {
             });
 
             this.stage = this.app.stage;
+            
             console.log('✅ PIXI.Application作成完了:', {
                 width: this.app.screen.width,
                 height: this.app.screen.height,
-                backgroundColor: this.pixiSettings.backgroundColor,
-                antialias: this.pixiSettings.antialias
+                backgroundColor: `0x${this.pixiSettings.backgroundColor.toString(16)}`
             });
             
         } catch (error) {
@@ -367,52 +280,51 @@ class CanvasManager {
     }
 
     /**
-     * Phase1修復: キャンバス要素への適切な追加（確実化版）
-     * @param {HTMLElement} canvasElement - キャンバス要素
+     * キャンバス要素への追加（消失問題解決版）
      */
-    async _attachToContainer(canvasElement) {
+    async _attachCanvasToContainer(canvasElement) {
         try {
             if (!canvasElement) {
-                console.warn('⚠️ canvasElement未提供 - 緊急作成');
-                canvasElement = this._createFallbackCanvasContainer();
+                throw new Error('canvasElement is null');
             }
 
-            // canvasElementがコンテナの場合
-            if (canvasElement.tagName !== 'CANVAS') {
-                // 既存のcanvas要素があれば削除
-                const existingCanvas = canvasElement.querySelector('canvas');
-                if (existingCanvas) {
-                    existingCanvas.remove();
-                    console.log('📋 既存canvas要素を削除');
-                }
-                
-                // PIXIキャンバスを追加
+            console.log('🔧 キャンバス要素追加開始:', {
+                elementType: canvasElement.tagName,
+                hasChildren: canvasElement.children.length,
+                currentDisplay: getComputedStyle(canvasElement).display
+            });
+
+            // 既存のcanvas要素確認（消失問題の核心）
+            const existingCanvas = canvasElement.querySelector('canvas');
+            if (existingCanvas) {
+                console.log('⚠️ 既存canvas要素検出 - 削除せずに置き換え');
+                // 削除ではなく置き換えで対処
+                canvasElement.replaceChild(this.app.view, existingCanvas);
+            } else {
+                // 新規追加
                 canvasElement.appendChild(this.app.view);
-                this.container = canvasElement;
-                console.log('✅ PIXIキャンバスをコンテナに追加完了');
-            } 
-            // canvasElementが既存のcanvas要素の場合
-            else {
-                // 親要素に追加し、既存要素は置き換え
-                const parent = canvasElement.parentElement;
-                if (parent) {
-                    parent.replaceChild(this.app.view, canvasElement);
-                    this.container = parent;
-                    console.log('✅ PIXIキャンバスで既存canvas置き換え完了');
-                } else {
-                    // 親がない場合はbodyに追加
-                    document.body.appendChild(this.app.view);
-                    this.container = document.body;
-                    console.log('✅ PIXIキャンバスをbodyに直接追加');
-                }
             }
+            
+            this.container = canvasElement;
+            this.canvasElementAttached = true;
 
-            // キャンバス要素の基本設定
+            // Canvas要素の基本設定（確実な表示保証）
+            this.app.view.style.display = 'block';
             this.app.view.style.cursor = 'crosshair';
             this.app.view.style.touchAction = 'none';
-            this.app.view.style.display = 'block';
+            this.app.view.style.userSelect = 'none';
             
-            console.log('✅ キャンバス表示設定完了 - Canvas should now be visible');
+            // 親要素の表示確保
+            if (canvasElement.style.display === 'none') {
+                canvasElement.style.display = 'block';
+            }
+            
+            console.log('✅ キャンバス要素追加完了 - Canvas should be visible');
+            
+            // 即座に表示確認
+            setTimeout(() => {
+                this._immediateVisibilityCheck();
+            }, 100);
             
         } catch (error) {
             console.error('❌ キャンバス要素追加エラー:', error);
@@ -421,12 +333,104 @@ class CanvasManager {
     }
 
     /**
-     * フォールバック用キャンバスコンテナ作成（確実化版）
+     * 即座表示確認（消失問題診断）
      */
-    _createFallbackCanvasContainer() {
+    _immediateVisibilityCheck() {
+        try {
+            const canvas = this.app?.view;
+            if (!canvas) {
+                console.error('❌ 即座確認: canvas要素なし');
+                return;
+            }
+
+            const isVisible = canvas.offsetWidth > 0 && canvas.offsetHeight > 0;
+            const parentExists = !!canvas.parentElement;
+            const displayStyle = getComputedStyle(canvas).display;
+            const visibilityStyle = getComputedStyle(canvas).visibility;
+
+            console.log('🔍 即座表示確認:', {
+                canvasExists: !!canvas,
+                parentExists,
+                isVisible,
+                displayStyle,
+                visibilityStyle,
+                dimensions: `${canvas.offsetWidth}x${canvas.offsetHeight}`,
+                parentId: canvas.parentElement?.id
+            });
+
+            if (!isVisible || !parentExists) {
+                console.warn('⚠️ キャンバス表示問題検出 - 緊急修復実行');
+                this._executeEmergencyVisibilityFix();
+            } else {
+                console.log('✅ キャンバス表示確認完了');
+            }
+
+        } catch (error) {
+            console.error('❌ 即座表示確認エラー:', error);
+        }
+    }
+
+    /**
+     * 緊急表示修復（消失問題対策）
+     */
+    _executeEmergencyVisibilityFix() {
+        try {
+            console.log('🚨 緊急表示修復実行...');
+            
+            const canvas = this.app?.view;
+            if (!canvas) {
+                console.error('❌ canvas要素が存在しません');
+                return false;
+            }
+
+            // 親要素の再確認・修復
+            if (!canvas.parentElement) {
+                let container = document.getElementById('canvas-container');
+                if (!container) {
+                    container = this._createCanvasContainer();
+                }
+                container.appendChild(canvas);
+                this.container = container;
+                console.log('🔧 親要素の再設定完了');
+            }
+
+            // スタイル強制設定
+            canvas.style.display = 'block !important';
+            canvas.style.visibility = 'visible !important';
+            canvas.style.opacity = '1';
+            canvas.style.position = 'relative';
+            
+            // 親要素のスタイル確認・修復
+            if (canvas.parentElement) {
+                const parent = canvas.parentElement;
+                parent.style.display = 'block';
+                parent.style.visibility = 'visible';
+                
+                // 親のサイズがゼロの場合の修復
+                if (parent.offsetWidth === 0 || parent.offsetHeight === 0) {
+                    parent.style.width = '400px';
+                    parent.style.height = '400px';
+                    console.log('🔧 親要素サイズ修復');
+                }
+            }
+
+            console.log('✅ 緊急表示修復完了');
+            return true;
+
+        } catch (error) {
+            console.error('❌ 緊急表示修復エラー:', error);
+            return false;
+        }
+    }
+
+    /**
+     * キャンバスコンテナ作成
+     */
+    _createCanvasContainer() {
         try {
             const container = document.createElement('div');
-            container.id = 'canvas-container-fallback';
+            container.id = 'canvas-container-auto';
+            container.className = 'canvas-container';
             container.style.cssText = `
                 width: 400px;
                 height: 400px;
@@ -437,66 +441,18 @@ class CanvasManager {
                 position: relative;
             `;
             
-            // 最適な挿入場所を探す
-            let targetParent = document.querySelector('.canvas-area') || 
-                              document.querySelector('.main-layout') ||
-                              document.querySelector('main') ||
-                              document.body;
+            const targetParent = document.querySelector('.canvas-area') || 
+                                document.querySelector('main') ||
+                                document.body;
             
             targetParent.appendChild(container);
             
-            console.log('✅ フォールバックキャンバスコンテナ作成完了');
+            console.log('✅ 自動キャンバスコンテナ作成完了');
             return container;
             
         } catch (error) {
-            console.error('❌ フォールバックキャンバスコンテナ作成失敗:', error);
+            console.error('❌ キャンバスコンテナ作成エラー:', error);
             return null;
-        }
-    }
-
-    /**
-     * Phase1修正: 緊急キャンバスフォールバック（確実化版）
-     */
-    async _executeEmergencyCanvasFallback() {
-        try {
-            console.log('🛡️ 緊急キャンバスフォールバック実行...');
-            
-            // 最小限のPixi Application作成
-            if (!this.app && window.PIXI) {
-                this.app = new PIXI.Application({
-                    width: 400,
-                    height: 400,
-                    backgroundColor: 0xffffee,
-                    antialias: true
-                });
-                this.stage = this.app.stage;
-            }
-            
-            if (this.app) {
-                // コンテナ検索・作成
-                let container = document.getElementById('canvas-container') ||
-                               document.getElementById('canvas-container-fallback') ||
-                               this._createFallbackCanvasContainer();
-                
-                if (container && !container.querySelector('canvas')) {
-                    container.appendChild(this.app.view);
-                    this.app.view.style.cursor = 'crosshair';
-                    this.app.view.style.display = 'block';
-                    
-                    this.container = container;
-                    this.initialized = true; // 基本状態として設定
-                    
-                    console.log('✅ 緊急フォールバック完了 - Canvas displayed');
-                    return true;
-                }
-            }
-            
-            console.error('❌ 緊急フォールバックも失敗');
-            return false;
-            
-        } catch (error) {
-            console.error('❌ 緊急フォールバック実行エラー:', error);
-            return false;
         }
     }
 
@@ -505,11 +461,9 @@ class CanvasManager {
      */
     _initializeLayerSystem() {
         try {
-            // 基本レイヤーを作成
             this.addLayer('background', 'graphics', { zIndex: 0 });
             this.addLayer('main_drawing', 'graphics', { zIndex: 50 });
-            
-            console.log('✅ Layer system initialized');
+            console.log('✅ レイヤーシステム初期化完了');
         } catch (error) {
             console.error('❌ レイヤーシステム初期化エラー:', error);
         }
@@ -520,7 +474,6 @@ class CanvasManager {
      */
     _integrateWithUnifiedSystems() {
         try {
-            // StateManagerに初期状態を設定
             const stateManager = this.appCore?.stateManager || 
                                 window.Tegaki?.StateManagerInstance;
             if (stateManager) {
@@ -531,7 +484,7 @@ class CanvasManager {
             
             console.log('✅ 統一システム連携完了');
         } catch (error) {
-            console.warn('⚠️ 統一システム連携で問題発生:', error);
+            console.warn('⚠️ 統一システム連携エラー:', error);
         }
     }
 
@@ -540,23 +493,18 @@ class CanvasManager {
      */
     _initializeCoordinateIntegration() {
         try {
-            // CoordinateManager取得
             this.coordinateManager = this.appCore?.coordinateManager || 
                                     window.Tegaki?.CoordinateManagerInstance;
             
-            if (this.coordinateManager) {
-                // キャンバスサイズ情報を設定
-                if (typeof this.coordinateManager.updateCanvasSize === 'function') {
-                    this.coordinateManager.updateCanvasSize(
-                        this.app.screen.width, 
-                        this.app.screen.height
-                    );
-                }
-                
+            if (this.coordinateManager && this.coordinateManager.updateCanvasSize) {
+                this.coordinateManager.updateCanvasSize(
+                    this.app.screen.width, 
+                    this.app.screen.height
+                );
                 this.coordinateIntegrationEnabled = true;
                 console.log('✅ CoordinateManager統合完了');
             } else {
-                console.warn('⚠️ CoordinateManager利用不可 - 基本座標処理で動作');
+                console.warn('⚠️ CoordinateManager利用不可');
                 this.coordinateIntegrationEnabled = false;
             }
         } catch (error) {
@@ -572,17 +520,44 @@ class CanvasManager {
         try {
             const canvas = this.app.view;
             
-            // レイヤー管理に必要な基本イベント
             canvas.addEventListener('wheel', this._handleWheel.bind(this));
             canvas.addEventListener('contextmenu', (e) => e.preventDefault());
             
-            // Phase1: 基本的なインタラクション設定のみ
             this.app.stage.interactive = true;
             this.app.stage.hitArea = new PIXI.Rectangle(0, 0, this.app.screen.width, this.app.screen.height);
             
-            console.log('✅ 基本イベントハンドラー設定完了');
+            console.log('✅ イベントハンドラー設定完了');
         } catch (error) {
             console.error('❌ イベントハンドラー設定エラー:', error);
+        }
+    }
+
+    /**
+     * 初期化完了後の整合性検証
+     */
+    _verifyCanvasIntegrity() {
+        try {
+            console.log('🔍 キャンバス整合性検証...');
+            
+            const canvas = this.app?.view;
+            const issues = [];
+            
+            if (!canvas) issues.push('Canvas要素なし');
+            if (!canvas.parentElement) issues.push('親要素なし');
+            if (canvas.offsetWidth === 0 || canvas.offsetHeight === 0) issues.push('サイズゼロ');
+            if (getComputedStyle(canvas).display === 'none') issues.push('display:none');
+            if (getComputedStyle(canvas).visibility === 'hidden') issues.push('visibility:hidden');
+            
+            if (issues.length === 0) {
+                console.log('✅ キャンバス整合性検証: 正常');
+            } else {
+                console.warn('⚠️ キャンバス整合性検証: 問題あり', issues);
+                // 即座に修復試行
+                this._executeEmergencyVisibilityFix();
+            }
+            
+        } catch (error) {
+            console.error('❌ キャンバス整合性検証エラー:', error);
         }
     }
 
@@ -590,23 +565,13 @@ class CanvasManager {
     // レイヤー管理API（主責務）
     // ========================================
 
-    /**
-     * レイヤー追加（主責務）
-     * @param {string} layerId - レイヤーID
-     * @param {string} type - レイヤータイプ ('graphics', 'sprite', etc.)
-     * @param {object} options - レイヤーオプション
-     * @returns {PIXI.Container|null}
-     */
     addLayer(layerId, type = 'graphics', options = {}) {
         try {
             if (this.layers.has(layerId)) {
-                console.warn(`⚠️ Layer ${layerId} already exists - returning existing`);
                 return this.layers.get(layerId);
             }
 
             let layer;
-            
-            // レイヤータイプ別生成
             switch (type) {
                 case 'graphics':
                     layer = new PIXI.Graphics();
@@ -614,27 +579,19 @@ class CanvasManager {
                 case 'container':
                     layer = new PIXI.Container();
                     break;
-                case 'sprite':
-                    layer = new PIXI.Container(); // Sprite用コンテナ
-                    break;
                 default:
-                    layer = new PIXI.Graphics(); // デフォルトはGraphics
+                    layer = new PIXI.Graphics();
             }
 
-            // レイヤー設定
             layer.name = layerId;
             layer.visible = options.visible !== false;
             layer.alpha = options.alpha || 1.0;
             layer.zIndex = options.zIndex || 0;
 
-            // ステージに追加
             this.stage.addChild(layer);
             this.layers.set(layerId, layer);
-
-            // zIndexでソート
             this.stage.sortableChildren = true;
 
-            console.log(`✅ Layer added: ${layerId} (${type})`);
             return layer;
             
         } catch (error) {
@@ -643,26 +600,14 @@ class CanvasManager {
         }
     }
 
-    /**
-     * レイヤーにGraphicsを配置（主責務）
-     * @param {PIXI.Graphics|PIXI.DisplayObject} graphics - 配置するオブジェクト
-     * @param {string} layerId - 配置先レイヤーID
-     * @returns {boolean}
-     */
     addGraphicsToLayer(graphics, layerId) {
         try {
-            if (!graphics) {
-                console.warn('⚠️ Graphics未提供 - addGraphicsToLayer スキップ');
-                return false;
-            }
+            if (!graphics) return false;
 
             let layer = this.layers.get(layerId);
             if (!layer) {
-                console.log(`📋 Layer ${layerId} 存在しません - 自動作成`);
                 layer = this.addLayer(layerId, 'graphics');
-                if (!layer) {
-                    throw new Error(`Layer ${layerId} 作成失敗`);
-                }
+                if (!layer) return false;
             }
 
             layer.addChild(graphics);
@@ -674,13 +619,10 @@ class CanvasManager {
         }
     }
 
-    /**
-     * 全レイヤークリア
-     */
     clear() {
         try {
-            this.layers.forEach((layer, layerId) => {
-                if (layer.clear && typeof layer.clear === 'function') {
+            this.layers.forEach((layer) => {
+                if (layer.clear) {
                     layer.clear();
                 } else {
                     while (layer.children.length > 0) {
@@ -688,50 +630,28 @@ class CanvasManager {
                     }
                 }
             });
-            
-            console.log('✅ All layers cleared');
         } catch (error) {
             console.error('❌ レイヤークリアエラー:', error);
         }
     }
 
-    // ========================================
-    // ビュー操作API（レイヤー管理として必要）
-    // ========================================
-
-    /**
-     * リサイズ処理
-     * @param {number} width - 新しい幅
-     * @param {number} height - 新しい高さ
-     */
     resize(width, height) {
         try {
-            if (!this.app) {
-                console.warn('⚠️ PIXI.Application未初期化 - リサイズスキップ');
-                return false;
-            }
+            if (!this.app) return false;
 
             this.app.renderer.resize(width, height);
-            
-            // ステージのヒットエリア更新
             this.app.stage.hitArea = new PIXI.Rectangle(0, 0, width, height);
             
-            console.log(`📐 Canvas resized: ${width}x${height}`);
             return true;
-            
         } catch (error) {
-            console.error('❌ キャンバスリサイズエラー:', error);
+            console.error('❌ リサイズエラー:', error);
             return false;
         }
     }
 
-    /**
-     * ホイールイベント処理
-     */
     _handleWheel(event) {
         try {
             event.preventDefault();
-            // 基本的なホイール処理（Phase1では最小限）
         } catch (error) {
             console.error('❌ ホイール処理エラー:', error);
         }
@@ -754,45 +674,47 @@ class CanvasManager {
             panY: this.viewState.panY,
             canvasWidth: this.app?.screen.width || 0,
             canvasHeight: this.app?.screen.height || 0,
-            initialized: this.initialized
+            initialized: this.initialized,
+            canvasVisible: this.app?.view ? 
+                          (this.app.view.offsetWidth > 0 && this.app.view.offsetHeight > 0) : 
+                          false
         };
     }
 
     /**
-     * CoordinateManager統合状態取得
-     */
-    getCoordinateIntegrationState() {
-        return {
-            coordinateManagerAvailable: !!this.coordinateManager,
-            integrationEnabled: this.coordinateIntegrationEnabled,
-            appCoreIntegrated: !!this.appCore,
-            configManagerIntegrated: !!this.configManager
-        };
-    }
-
-    /**
-     * 診断情報取得
+     * 診断情報取得（消失問題用）
      */
     getDiagnosticInfo() {
+        const canvas = this.app?.view;
+        
         return {
             initialized: this.initialized,
-            appCoreIntegrated: !!this.appCore,
-            configManagerIntegrated: !!this.configManager,
-            configManagerHasGetCanvasConfig: !!(this.configManager?.getCanvasConfig),
-            configManagerHasGetPixiConfig: !!(this.configManager?.getPixiConfig),
-            coordinateIntegrationEnabled: this.coordinateIntegrationEnabled,
+            initializationInProgress: this.initializationInProgress,
+            canvasElementAttached: this.canvasElementAttached,
             pixiAppCreated: !!this.app,
             stageReady: !!this.stage,
             layerCount: this.layers.size,
-            canvasVisible: !!(this.app?.view?.parentElement),
-            pixiSettings: { ...this.pixiSettings },
-            viewState: { ...this.viewState }
+            canvasExists: !!canvas,
+            canvasVisible: canvas ? (canvas.offsetWidth > 0 && canvas.offsetHeight > 0) : false,
+            canvasParent: canvas ? !!canvas.parentElement : false,
+            canvasParentId: canvas?.parentElement?.id || null,
+            canvasDimensions: canvas ? `${canvas.offsetWidth}x${canvas.offsetHeight}` : null,
+            canvasDisplay: canvas ? getComputedStyle(canvas).display : null,
+            canvasVisibility: canvas ? getComputedStyle(canvas).visibility : null,
+            appCoreIntegrated: !!this.appCore,
+            configManagerIntegrated: !!this.configManager,
+            coordinateIntegrationEnabled: this.coordinateIntegrationEnabled
         };
     }
 
-    // ========================================
-    // システム破棄
-    // ========================================
+    /**
+     * 強制表示確認・修復（デバッグ用）
+     */
+    forceVisibilityCheck() {
+        console.log('🔍 強制表示確認実行...');
+        this._immediateVisibilityCheck();
+        return this.getDiagnosticInfo();
+    }
 
     /**
      * システム破棄
@@ -801,7 +723,7 @@ class CanvasManager {
         try {
             // レイヤークリア
             this.layers.forEach((layer) => {
-                if (layer.destroy && typeof layer.destroy === 'function') {
+                if (layer.destroy) {
                     layer.destroy();
                 }
             });
@@ -820,6 +742,8 @@ class CanvasManager {
             this.configManager = null;
             this.coordinateManager = null;
             this.initialized = false;
+            this.initializationInProgress = false;
+            this.canvasElementAttached = false;
             
             console.log('🎨 CanvasManager 破棄完了');
             
@@ -844,7 +768,29 @@ if (typeof window !== 'undefined') {
     window.CanvasManager = CanvasManager;
 }
 
-console.log('🎨 CanvasManager (Phase1キャンバス出現確実化版) Loaded');
-console.log('✨ 修正完了: 構文エラー完全排除・ConfigManager警告解消・キャンバス出現確実化');
-console.log('🚀 Phase1目標: キャンバス基本表示・責務分離維持');
-console.log('🔧 使用例: const cm = new CanvasManager(); await cm.initialize({appCore, canvasElement});');
+// デバッグ用グローバル関数
+window.debugCanvasManager = function() {
+    const cm = window.Tegaki?.CanvasManagerInstance;
+    if (cm) {
+        console.log('🔍 CanvasManager診断:', cm.getDiagnosticInfo());
+        return cm.getDiagnosticInfo();
+    } else {
+        console.error('❌ CanvasManagerInstanceが見つかりません');
+        return null;
+    }
+};
+
+window.fixCanvasVisibility = function() {
+    const cm = window.Tegaki?.CanvasManagerInstance;
+    if (cm && cm._executeEmergencyVisibilityFix) {
+        console.log('🚨 緊急修復実行...');
+        return cm._executeEmergencyVisibilityFix();
+    } else {
+        console.error('❌ CanvasManagerまたは修復メソッドが見つかりません');
+        return false;
+    }
+};
+
+console.log('🎨 CanvasManager (キャンバス消失問題解決版) Loaded');
+console.log('✨ 修正完了: キャンバス消失問題対策・重複初期化防止・緊急修復機能');
+console.log('🔧 診断コマンド: window.debugCanvasManager(), window.fixCanvasVisibility()');
