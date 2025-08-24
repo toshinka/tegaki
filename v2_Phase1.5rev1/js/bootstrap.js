@@ -1,16 +1,17 @@
 /**
- * 🚀 Tegaki Bootstrap - 依存関係管理・初期化制御（構文エラー解決版）
- * 📋 RESPONSIBILITY: スクリプト依存関係の順序管理・読み込み制御
+ * 🚀 Tegaki Bootstrap - 依存関係管理・初期化制御 (REV系・初期化トリガー確実化版)
+ * 📋 RESPONSIBILITY: スクリプト依存関係の順序管理・読み込み制御・main.js初期化確実実行
  * 🚫 PROHIBITION: UI処理・初期化ロジック・エラー表示
- * ✅ PERMISSION: 依存関係解決・順序制御・main.js委譲
+ * ✅ PERMISSION: 依存関係解決・順序制御・main.js委譲・トリガー確実発火
  * 
  * 📏 DESIGN_PRINCIPLE: 責任分界（依存管理専門）
  * 🔄 INTEGRATION: main.js初期化への確実な委譲
  * 
- * 🔧 Phase1.5修正内容:
- * - main.js読み込み順序修正（TegakiApplication定義後のイベント発火保証）
- * - 依存関係完了後の確実なアプリケーション初期化
- * - エラー処理の完全委譲（UI処理排除）
+ * 🔧 REV系修正内容:
+ * 1. main.js読み込み確認強化
+ * 2. TegakiApplication定義確認
+ * 3. 初期化トリガー確実発火
+ * 4. タイムアウト処理追加
  */
 
 (function() {
@@ -18,7 +19,7 @@
     
     console.log('🚀 Tegaki Bootstrap 開始');
     
-    // 依存関係定義（main.js除く - 最後に別途処理）
+    // 依存関係定義（現在のPHASE1～9を統合・最適化）
     const dependencies = [
         // Phase 1: 基盤ユーティリティ（依存なし）
         'js/utils/config-manager.js',
@@ -56,11 +57,15 @@
         // Phase 8: コアシステム
         'js/app-core.js'
         
-        // Phase 9: main.js は最後に別途読み込み（重要）
+        // Phase 9: メインアプリケーションは分離（確実読み込み保証）
     ];
     
+    // main.jsは別途確実読み込み
+    const mainScript = 'js/main.js';
+    
     let loadedCount = 0;
-    const totalCount = dependencies.length + 1; // +1 for main.js
+    const totalCount = dependencies.length;
+    let mainScriptLoaded = false;
     
     // 順序保証読み込み関数
     function loadScript(src) {
@@ -84,57 +89,125 @@
         });
     }
     
-    // main.js読み込み（TegakiApplication定義）
-    async function loadMainJS() {
-        try {
-            await loadScript('js/main.js');
-            console.log('✅ main.js読み込み完了 - TegakiApplication定義済み');
-            return true;
-        } catch (error) {
-            console.error('❌ main.js読み込み失敗:', error);
-            return false;
-        }
+    // main.js専用読み込み関数
+    function loadMainScript() {
+        return new Promise((resolve, reject) => {
+            console.log('🎯 main.js読み込み開始...');
+            
+            const script = document.createElement('script');
+            script.src = mainScript;
+            script.defer = false;
+            
+            script.onload = () => {
+                mainScriptLoaded = true;
+                console.log('✅ main.js読み込み完了');
+                
+                // TegakiApplication定義確認
+                if (window.Tegaki?.TegakiApplication) {
+                    console.log('✅ TegakiApplication定義確認');
+                    resolve();
+                } else {
+                    console.error('❌ TegakiApplication定義されていません');
+                    reject(new Error('TegakiApplication not defined'));
+                }
+            };
+            
+            script.onerror = (error) => {
+                console.error('❌ main.js読み込み失敗:', error);
+                reject(new Error('Failed to load main.js'));
+            };
+            
+            document.head.appendChild(script);
+        });
     }
     
-    // 依存関係＋main.js順次読み込み実行
-    async function loadAllDependencies() {
+    // 初期化トリガー確実発火
+    function triggerMainInitialization() {
+        console.log('🎯 初期化トリガー発火試行...');
+        
+        // TegakiApplication存在確認
+        if (!window.Tegaki?.TegakiApplication) {
+            console.error('❌ TegakiApplication が見つかりません - 5秒後に再試行');
+            setTimeout(triggerMainInitialization, 5000);
+            return;
+        }
+        
+        // インスタンス存在確認
+        if (!window.Tegaki.AppInstance) {
+            console.log('⚠️ AppInstance未作成 - DOM待機中');
+            
+            // DOM完了待機
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', triggerMainInitialization);
+                return;
+            }
+        }
+        
+        console.log('🚀 依存関係完了イベント発火');
+        
+        // 依存関係完了イベント発火
+        try {
+            const event = new CustomEvent('tegaki:dependencies:loaded', {
+                detail: { 
+                    totalDependencies: totalCount + 1,
+                    loadTime: performance.now()
+                }
+            });
+            window.dispatchEvent(event);
+            console.log('✅ 依存関係完了イベント発火成功');
+        } catch (error) {
+            console.error('❌ イベント発火エラー:', error);
+        }
+        
+        // 追加確認: AppInstanceが作成されているか3秒後に確認
+        setTimeout(() => {
+            if (window.Tegaki?.AppInstance) {
+                console.log('✅ AppInstance作成確認完了');
+            } else {
+                console.warn('⚠️ AppInstance未作成 - 手動作成試行');
+                try {
+                    const app = new window.Tegaki.TegakiApplication();
+                    window.Tegaki.AppInstance = app;
+                    console.log('✅ AppInstance手動作成完了');
+                } catch (error) {
+                    console.error('❌ AppInstance手動作成エラー:', error);
+                }
+            }
+        }, 3000);
+    }
+    
+    // 順次読み込み実行
+    async function loadDependencies() {
         try {
             console.log(`📦 ${totalCount}個の依存関係を順次読み込み中...`);
             
-            // Step 1: main.js以外の依存関係読み込み
+            // Step 1: 基盤依存関係読み込み
             for (const dependency of dependencies) {
                 await loadScript(dependency);
             }
+            
             console.log('✅ 基盤依存関係読み込み完了');
             
-            // Step 2: main.js読み込み（TegakiApplication定義）
-            const mainSuccess = await loadMainJS();
-            if (!mainSuccess) {
-                throw new Error('main.js読み込み失敗');
-            }
+            // Step 2: main.js確実読み込み
+            await loadMainScript();
             
             console.log('✅ 全依存関係読み込み完了');
             
-            // Step 3: 依存関係完了後のアプリケーション初期化トリガー
-            setTimeout(() => {
-                if (window.Tegaki?.TegakiApplication) {
-                    console.log('🎯 TegakiApplication初期化トリガー発火');
-                    window.dispatchEvent(new CustomEvent('tegaki:dependencies:loaded'));
-                } else {
-                    console.error('❌ TegakiApplication未定義 - 初期化トリガー失敗');
-                    window.dispatchEvent(new CustomEvent('tegaki:dependencies:error', {
-                        detail: { error: 'TegakiApplication not found after main.js load' }
-                    }));
-                }
-            }, 50); // 50ms待機でTegakiApplication定義確実化
+            // Step 3: 初期化トリガー確実発火
+            triggerMainInitialization();
             
         } catch (error) {
             console.error('❌ 依存関係読み込み失敗:', error);
             
             // エラー処理はmain.jsのErrorManager委譲へ
-            window.dispatchEvent(new CustomEvent('tegaki:dependencies:error', {
-                detail: { error: error.message }
-            }));
+            try {
+                const errorEvent = new CustomEvent('tegaki:dependencies:error', {
+                    detail: { error: error.message }
+                });
+                window.dispatchEvent(errorEvent);
+            } catch (eventError) {
+                console.error('❌ エラーイベント発火失敗:', eventError);
+            }
         }
     }
     
@@ -142,19 +215,47 @@
     function checkPixiAndStart() {
         if (window.PIXI) {
             console.log('✅ PIXI.js 読み込み確認');
-            loadAllDependencies();
+            loadDependencies();
         } else {
             console.warn('⚠️ PIXI.js 未読み込み - 100ms後に再確認');
             setTimeout(checkPixiAndStart, 100);
         }
     }
     
-    // DOM読み込み後に開始
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', checkPixiAndStart);
-    } else {
-        checkPixiAndStart();
+    // DOM読み込み状態確認・開始
+    function startBootstrap() {
+        console.log(`📋 DOM状態: ${document.readyState}`);
+        
+        if (document.readyState === 'loading') {
+            console.log('📋 DOM読み込み待機中...');
+            document.addEventListener('DOMContentLoaded', () => {
+                console.log('📋 DOMContentLoaded - Bootstrap開始');
+                checkPixiAndStart();
+            });
+        } else {
+            console.log('📋 DOM読み込み完了 - Bootstrap開始');
+            checkPixiAndStart();
+        }
     }
+    
+    // Bootstrap開始
+    startBootstrap();
+    
+    // 緊急時タイムアウト処理（30秒）
+    setTimeout(() => {
+        if (!mainScriptLoaded) {
+            console.error('🆘 Bootstrap タイムアウト - main.js読み込み未完了');
+            
+            try {
+                const timeoutEvent = new CustomEvent('tegaki:dependencies:error', {
+                    detail: { error: 'Bootstrap timeout - main.js loading failed' }
+                });
+                window.dispatchEvent(timeoutEvent);
+            } catch (error) {
+                console.error('❌ タイムアウトイベント発火失敗:', error);
+            }
+        }
+    }, 30000);
     
 })();
 

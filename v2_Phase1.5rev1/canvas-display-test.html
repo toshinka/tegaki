@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 キャンバス表示確認・診断ツール</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: #1a1a1a;
+            color: #00ff00;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.4;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .section {
+            background-color: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+        }
+        
+        .section h2 {
+            color: #00ccff;
+            border-bottom: 2px solid #00ccff;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        
+        .status-good { color: #00ff00; }
+        .status-warn { color: #ffaa00; }
+        .status-error { color: #ff4444; }
+        
+        .code-block {
+            background-color: #1a1a1a;
+            border: 1px solid #666;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+            overflow-x: auto;
+        }
+        
+        .button {
+            background-color: #0066cc;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        
+        .button:hover {
+            background-color: #0088ee;
+        }
+        
+        .button.danger {
+            background-color: #cc3333;
+        }
+        
+        .button.danger:hover {
+            background-color: #ee4444;
+        }
+        
+        .log-output {
+            background-color: #1a1a1a;
+            border: 1px solid #666;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Consolas', monospace;
+            white-space: pre-wrap;
+        }
+        
+        .canvas-preview {
+            border: 2px solid #00ccff;
+            background-color: #ffffee;
+            margin: 10px 0;
+            display: inline-block;
+        }
+        
+        .flex-row {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .flex-col {
+            flex: 1;
+            min-width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Tegaki キャンバス表示確認・診断ツール</h1>
+        
+        <div class="section">
+            <h2>🎯 即座実行診断</h2>
+            <button class="button" onclick="runQuickDiagnosis()">🚀 クイック診断実行</button>
+            <button class="button" onclick="runFullDiagnosis()">🔧 完全診断実行</button>
+            <button class="button" onclick="testCanvasCreation()">🎨 キャンバス作成テスト</button>
+            <button class="button danger" onclick="clearLogs()">🗑️ ログクリア</button>
+            
+            <div id="quick-results" class="log-output"></div>
+        </div>
+        
+        <div class="flex-row">
+            <div class="flex-col">
+                <div class="section">
+                    <h2>🏗️ DOM要素確認</h2>
+                    <button class="button" onclick="checkDOMElements()">DOM要素確認</button>
+                    <div id="dom-results" class="log-output"></div>
+                </div>
+                
+                <div class="section">
+                    <h2>📦 依存関係確認</h2>
+                    <button class="button" onclick="checkDependencies()">依存関係確認</button>
+                    <div id="dependencies-results" class="log-output"></div>
+                </div>
+            </div>
+            
+            <div class="flex-col">
+                <div class="section">
+                    <h2>🎨 キャンバス状態確認</h2>
+                    <button class="button" onclick="checkCanvasState()">キャンバス状態確認</button>
+                    <div id="canvas-results" class="log-output"></div>
+                </div>
+                
+                <div class="section">
+                    <h2>⚙️ Manager状態確認</h2>
+                    <button class="button" onclick="checkManagerStates()">Manager状態確認</button>
+                    <div id="manager-results" class="log-output"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>🧪 キャンバス作成テスト</h2>
+            <button class="button" onclick="createTestCanvas()">テストキャンバス作成</button>
+            <button class="button" onclick="createPixiTest()">PixiJS直接テスト</button>
+            <button class="button" onclick="simulateTegakiInit()">Tegaki初期化シミュレーション</button>
+            
+            <div id="test-canvas-container"></div>
+            <div id="test-results" class="log-output"></div>
+        </div>
+        
+        <div class="section">
+            <h2>🔧 修復コマンド</h2>
+            <div class="code-block">
+                <strong>// ブラウザコンソールでの診断コマンド</strong><br>
+                window.debugREVSystem(); // REV系統合デバッグ<br>
+                window.checkTegakiHealth(); // 健全性チェック<br>
+                window.checkCoordinateIntegration(); // 座標統合確認<br>
+                window.checkPhase2Readiness(); // Phase2移行準備度<br>
+                <br>
+                <strong>// 手動初期化コマンド</strong><br>
+                const app = new window.Tegaki.TegakiApplication();<br>
+                app.initialize(); // 手動初期化<br>
+                <br>
+                <strong>// CanvasManager直接テスト</strong><br>
+                const cm = window.Tegaki.CanvasManagerInstance;<br>
+                cm.getDiagnosticInfo(); // CanvasManager診断<br>
+            </div>
+            
+            <button class="button" onclick="executeManualFix()">手動修復試行</button>
+            <div id="manual-fix-results" class="log-output"></div>
+        </div>
+    </div>
+
+    <script>
+        let logCounter = 0;
+
+        function log(element, message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'warn' ? '⚠️' : '✅';
+            const className = type === 'error' ? 'status-error' : type === 'warn' ? 'status-warn' : 'status-good';
+            
+            const logElement = document.getElementById(element);
+            if (logElement) {
+                logElement.innerHTML += `<span class="${className}">[${timestamp}] ${prefix} ${message}</span>\n`;
+                logElement.scrollTop = logElement.scrollHeight;
+            }
+            
+            console.log(`[${timestamp}] ${message}`);
+        }
+
+        function clearLogs() {
+            const logElements = document.querySelectorAll('.log-output');
+            logElements.forEach(el => el.innerHTML = '');
+            console.clear();
+            log('quick-results', 'ログクリア完了', 'info');
+        }
+
+        function runQuickDiagnosis() {
+            log('quick-results', '🚀 クイック診断開始...', 'info');
+            
+            // 基本要素確認
+            const container = document.getElementById('canvas-container');
+            if (container) {
+                log('quick-results', `✅ #canvas-container 発見: ${container.offsetWidth}x${container.offsetHeight}px`, 'info');
+            } else {
+                log('quick-results', '❌ #canvas-container が見つかりません', 'error');
+            }
+            
+            // Canvas要素確認
+            const canvas = container?.querySelector('canvas');
+            if (canvas) {
+                log('quick-results', `✅ Canvas要素 発見: ${canvas.width}x${canvas.height}px`, 'info');
+            } else {
+                log('quick-results', '❌ Canvas要素が見つかりません', 'error');
+            }
+            
+            // PixiJS確認
+            if (window.PIXI) {
+                log('quick-results', `✅ PIXI.js 利用可能: v${PIXI.VERSION}`, 'info');
+            } else {
+                log('quick-results', '❌ PIXI.js が利用できません', 'error');
+            }
+            
+            // Tegakiアプリ確認
+            if (window.Tegaki?.AppInstance) {
+                const status = window.Tegaki.AppInstance.getApplicationStatus();
+                log('quick-results', `✅ TegakiApp: ${status.initialized ? '初期化済み' : '未初期化'}`, status.initialized ? 'info' : 'warn');
+            } else {
+                log('quick-results', '❌ TegakiApplication インスタンスが見つかりません', 'error');
+            }
+            
+            // 総合判定
+            const canvasExists = !!canvas;
+            const pixiReady = !!window.PIXI;
+            const appReady = !!(window.Tegaki?.AppInstance?.initialized);
+            
+            if (canvasExists && pixiReady && appReady) {
+                log('quick-results', '🎉 クイック診断結果: 良好 - キャンバス表示問題なし', 'info');
+            } else {
+                log('quick-results', '⚠️ クイック診断結果: 問題検出 - 詳細診断を実行してください', 'warn');
+            }
+        }
+
+        function runFullDiagnosis() {
+            log('quick-results', '🔧 完全診断開始...', 'info');
+            
+            try {
+                // REV系統合診断
+                if (typeof window.debugREVSystem === 'function') {
+                    const revResults = window.debugREVSystem();
+                    log('quick-results', `REV系診断: ${revResults.healthy ? '良好' : '問題あり'}`, revResults.healthy ? 'info' : 'warn');
+                    if (revResults.issues && revResults.issues.length > 0) {
+                        revResults.issues.forEach(issue => log('quick-results', `  - ${issue}`, 'warn'));
+                    }
+                } else {
+                    log('quick-results', '❌ window.debugREVSystem が利用できません', 'error');
+                }
+                
+                // Tegaki健全性チェック
+                if (window.Tegaki?.AppInstance?.healthCheck) {
+                    const health = window.Tegaki.AppInstance.healthCheck();
+                    log('quick-results', `健全性スコア: ${health.score}%`, health.score > 80 ? 'info' : 'warn');
+                    if (health.issues.length > 0) {
+                        health.issues.forEach(issue => log('quick-results', `  - 問題: ${issue}`, 'error'));
+                    }
+                    if (health.warnings.length > 0) {
+                        health.warnings.forEach(warn => log('quick-results', `  - 警告: ${warn}`, 'warn'));
+                    }
+                } else {
+                    log('quick-results', '❌ healthCheck メソッドが利用できません', 'error');
+                }
+                
+                // Phase2移行準備度
+                if (typeof window.checkPhase2Readiness === 'function') {
+                    const readiness = window.checkPhase2Readiness();
+                    log('quick-results', `Phase2移行準備度: ${readiness.score.toFixed(1)}%`, readiness.score > 90 ? 'info' : 'warn');
+                }
+                
+            } catch (error) {
+                log('quick-results', `完全診断エラー: ${error.message}`, 'error');
+            }
+            
+            log('quick-results', '🔧 完全診断完了', 'info');
+        }
+
+        function checkDOMElements() {
+            log('dom-results', 'DOM要素確認開始...', 'info');
+            
+            const elements = [
+                'canvas-container',
+                'main-layout', 
+                'sidebar',
+                'canvas-area'
+            ];
+            
+            elements.forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    const rect = element.getBoundingClientRect();
+                    log('dom-results', `✅ #${id}: ${rect.width}x${rect.height}px`, 'info');
+                } else {
+                    log('dom-results', `❌ #${id} が見つかりません`, 'error');
+                }
+            });
+            
+            // Canvas要素の詳細確認
+            const container = document.getElementById('canvas-container');
+            if (container) {
+                const canvases = container.querySelectorAll('canvas');
+                log('dom-results', `Canvas要素数: ${canvases.length}`, 'info');
+                canvases.forEach((canvas, i) => {
+                    log('dom-results', `  Canvas[${i}]: ${canvas.width}x${canvas.height}, style: ${canvas.style.cssText}`, 'info');
+                });
+            }
+        }
+
+        function checkDependencies() {
+            log('dependencies-results', '依存関係確認開始...', 'info');
+            
+            const dependencies = [
+                { name: 'PIXI', obj: window.PIXI, required: true },
+                { name: 'GSAP', obj: window.gsap, required: false },
+                { name: 'Lodash', obj: window._, required: false },
+                { name: 'Hammer', obj: window.Hammer, required: false },
+                { name: 'Tegaki', obj: window.Tegaki, required: true },
+                { name: 'TegakiApplication', obj: window.Tegaki?.TegakiApplication, required: true },
+                { name: 'AppInstance', obj: window.Tegaki?.AppInstance, required: true },
+                { name: 'ConfigManager', obj: window.Tegaki?.ConfigManagerInstance, required: true },
+                { name: 'ErrorManager', obj: window.Tegaki?.ErrorManagerInstance, required: true },
+                { name: 'CanvasManager', obj: window.Tegaki?.CanvasManagerInstance, required: true }
+            ];
+            
+            let missingRequired = 0;
+            dependencies.forEach(dep => {
+                if (dep.obj) {
+                    log('dependencies-results', `✅ ${dep.name} 利用可能`, 'info');
+                } else {
+                    const type = dep.required ? 'error' : 'warn';
+                    log('dependencies-results', `${dep.required ? '❌' : '⚠️'} ${dep.name} 未利用`, type);
+                    if (dep.required) missingRequired++;
+                }
+            });
+            
+            if (missingRequired === 0) {
+                log('dependencies-results', '🎉 必須依存関係すべて利用可能', 'info');
+            } else {
+                log('dependencies-results', `❌ ${missingRequired}個の必須依存関係が不足`, 'error');
+            }
+        }
+
+        function checkCanvasState() {
+            log('canvas-results', 'キャンバス状態確認開始...', 'info');
+            
+            try {
+                const container = document.getElementById('canvas-container');
+                if (!container) {
+                    log('canvas-results', '❌ キャンバスコンテナが見つかりません', 'error');
+                    return;
+                }
+                
+                // コンテナ状態
+                const containerRect = container.getBoundingClientRect();
+                log('canvas-results', `コンテナサイズ: ${containerRect.width}x${containerRect.height}px`, 'info');
+                log('canvas-results', `コンテナ表示: ${container.offsetWidth > 0 ? 'Yes' : 'No'}`, container.offsetWidth > 0 ? 'info' : 'error');
+                
+                // Canvas要素状態
+                const canvas = container.querySelector('canvas');
+                if (canvas) {
+                    log('canvas-results', `Canvas実サイズ: ${canvas.width}x${canvas.height}px`, 'info');
+                    log('canvas-results', `Canvas表示サイズ: ${canvas.offsetWidth}x${canvas.offsetHeight}px`, 'info');
+                    log('canvas-results', `CanvasスタイルCSS: ${canvas.style.cssText}`, 'info');
+                    
+                    // WebGLコンテキスト確認
+                    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                    log('canvas-results', `WebGLサポート: ${gl ? 'Yes' : 'No'}`, gl ? 'info' : 'warn');
+                } else {
+                    log('canvas-results', '❌ Canvas要素が見つかりません', 'error');
+                }
+                
+                // CanvasManager状態
+                const canvasManager = window.Tegaki?.CanvasManagerInstance;
+                if (canvasManager) {
+                    log('canvas-results', `CanvasManager初期化: ${canvasManager.initialized ? 'Yes' : 'No'}`, canvasManager.initialized ? 'info' : 'warn');
+                    
+                    if (canvasManager.getDiagnosticInfo) {
+                        const diagnostic = canvasManager.getDiagnosticInfo();
+                        Object.entries(diagnostic).forEach(([key, value]) => {
+                            log('canvas-results', `  ${key}: ${JSON.stringify(value)}`, 'info');
+                        });
+                    }
+                } else {
+                    log('canvas-results', '❌ CanvasManager インスタンスが見つかりません', 'error');
+                }
+                
+            } catch (error) {
+                log('canvas-results', `キャンバス状態確認エラー: ${error.message}`, 'error');
+            }
+        }
+
+        function checkManagerStates() {
+            log('manager-results', 'Manager状態確認開始...', 'info');
+            
+            const managers = [
+                'ConfigManagerInstance',
+                'ErrorManagerInstance', 
+                'StateManagerInstance',
+                'EventBusInstance',
+                'CanvasManagerInstance',
+                'ToolManagerInstance',
+                'CoordinateManagerInstance'
+            ];
+            
+            managers.forEach(managerName => {
+                const manager = window.Tegaki?.[managerName];
+                if (manager) {
+                    const initialized = manager.initialized;
+                    log('manager-results', `✅ ${managerName}: ${initialized ? '初期化済み' : '未初期化'}`, initialized ? 'info' : 'warn');
+                    
+                    // 追加情報があれば表示
+                    if (manager.getStatus) {
+                        const status = manager.getStatus();
+                        log('manager-results', `  状態: ${JSON.stringify(status)}`, 'info');
+                    }
+                } else {
+                    log('manager-results', `❌ ${managerName} が見つかりません`, 'error');
+                }
+            });
+        }
+
+        function createTestCanvas() {
+            log('test-results', 'テストキャンバス作成開始...', 'info');
+            
+            try {
+                const testContainer = document.getElementById('test-canvas-container');
+                testContainer.innerHTML = ''; // クリア
+                
+                // 単純なCanvas作成
+                const canvas = document.createElement('canvas');
+                canvas.width = 300;
+                canvas.height = 200;
+                canvas.style.border = '2px solid #00ccff';
+                canvas.style.backgroundColor = '#ffffee';
+                canvas.style.display = 'block';
+                canvas.style.margin = '10px 0';
+                
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#800000';
+                ctx.font = '16px serif';
+                ctx.fillText('テストCanvas - 表示確認', 10, 30);
+                
+                ctx.strokeStyle = '#800000';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(10, 50);
+                ctx.lineTo(290, 50);
+                ctx.stroke();
+                
+                testContainer.appendChild(canvas);
+                log('test-results', '✅ テストCanvas作成完了', 'info');
+                
+            } catch (error) {
+                log('test-results', `テストCanvas作成エラー: ${error.message}`, 'error');
+            }
+        }
+
+        function createPixiTest() {
+            log('test-results', 'PixiJS直接テスト開始...', 'info');
+            
+            try {
+                if (!window.PIXI) {
+                    log('test-results', '❌ PIXI.js が利用できません', 'error');
+                    return;
+                }
+                
+                const testContainer = document.getElementById('test-canvas-container');
+                
+                // PixiJS Application作成
+                const app = new PIXI.Application({
+                    width: 300,
+                    height: 200,
+                    backgroundColor: '#ffffee',
+                    antialias: true
+                });
+                
+                // 要素追加
+                app.view.style.border = '2px solid #00ccff';
+                app.view.style.display = 'block';
+                app.view.style.margin = '10px 0';
+                testContainer.appendChild(app.view);
+                
+                // テスト描画
+                const graphics = new PIXI.Graphics();
+                graphics.lineStyle(3, 0x800000);
+                graphics.drawRect(10, 10, 280, 180);
+                graphics.beginFill(0x800000);
+                graphics.drawCircle(150, 100, 30);
+                graphics.endFill();
+                
+                app.stage.addChild(graphics);
+                
+                // テキスト追加
+                const style = new PIXI.TextStyle({
+                    fontFamily: 'Arial',
+                    fontSize: 16,
+                    fill: '#800000'
+                });
+                const text = new PIXI.Text('PixiJS直接テスト - 成功', style);
+                text.x = 10;
+                text.y = 160;
+                app.stage.addChild(text);
+                
+                log('test-results', '✅ PixiJS直接テスト成功', 'info');
+                log('test-results', `Canvas要素: ${app.view.width}x${app.view.height}px`, 'info');
+                
+            } catch (error) {
+                log('test-results', `PixiJS直接テストエラー: ${error.message}`, 'error');
+            }
+        }
+
+        function simulateTegakiInit() {
+            log('test-results', 'Tegaki初期化シミュレーション開始...', 'info');
+            
+            try {
+                // 現在のTegakiアプリの状態確認
+                if (window.Tegaki?.AppInstance) {
+                    const status = window.Tegaki.AppInstance.getApplicationStatus();
+                    log('test-results', `現在の初期化状態: ${status.initialized}`, 'info');
+                    
+                    if (!status.initialized) {
+                        log('test-results', '手動初期化を試行...', 'info');
+                        window.Tegaki.AppInstance.initialize().then(success => {
+                            log('test-results', `初期化結果: ${success ? '成功' : '失敗'}`, success ? 'info' : 'error');
+                            
+                            if (success) {
+                                // 初期化成功後のキャンバス確認
+                                const container = document.getElementById('canvas-container');
+                                const canvas = container?.querySelector('canvas');
+                                if (canvas) {
+                                    log('test-results', '✅ 初期化後キャンバス確認成功', 'info');
+                                } else {
+                        log('manual-fix-results', '❌ TegakiApplicationクラスが利用できません', 'error');
+                    }
+                }
+                
+                // Step 3: CanvasManager直接初期化試行
+                if (window.Tegaki?.CanvasManagerInstance && !window.Tegaki.CanvasManagerInstance.initialized) {
+                    log('manual-fix-results', 'CanvasManager直接初期化試行...', 'info');
+                    
+                    const canvasManager = window.Tegaki.CanvasManagerInstance;
+                    const appCore = window.Tegaki.AppCoreInstance;
+                    
+                    if (appCore) {
+                        canvasManager.initialize({
+                            appCore: appCore,
+                            canvasElement: container,
+                            config: {
+                                configManager: window.Tegaki.ConfigManagerInstance
+                            }
+                        }).then(success => {
+                            log('manual-fix-results', `CanvasManager初期化結果: ${success ? '成功' : '失敗'}`, success ? 'info' : 'error');
+                            
+                            if (success) {
+                                const canvas = container.querySelector('canvas');
+                                if (canvas) {
+                                    log('manual-fix-results', '🎉 CanvasManager初期化成功 - キャンバス表示確認', 'info');
+                                } else {
+                                    log('manual-fix-results', '⚠️ CanvasManager初期化成功もキャンバス未表示', 'warn');
+                                }
+                            }
+                        }).catch(error => {
+                            log('manual-fix-results', `CanvasManager初期化エラー: ${error.message}`, 'error');
+                        });
+                    } else {
+                        log('manual-fix-results', '❌ AppCore インスタンスが見つかりません', 'error');
+                    }
+                }
+                
+                log('manual-fix-results', '🔧 手動修復試行完了', 'info');
+                
+            } catch (error) {
+                log('manual-fix-results', `手動修復エラー: ${error.message}`, 'error');
+            }
+        }
+
+        // ページ読み込み後の自動診断
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                console.log('🔍 自動診断開始...');
+                runQuickDiagnosis();
+            }, 2000);
+        });
+
+        // デバッグ用グローバル関数
+        window.canvasDebug = {
+            runQuickDiagnosis,
+            runFullDiagnosis,
+            checkDOMElements,
+            checkDependencies,
+            checkCanvasState,
+            checkManagerStates,
+            createTestCanvas,
+            createPixiTest,
+            simulateTegakiInit,
+            executeManualFix,
+            
+            // 即座実行用
+            quickCheck: () => {
+                console.log('=== Canvas Quick Check ===');
+                const container = document.getElementById('canvas-container');
+                const canvas = container?.querySelector('canvas');
+                console.log('Container:', !!container, container?.offsetWidth + 'x' + container?.offsetHeight);
+                console.log('Canvas:', !!canvas, canvas?.width + 'x' + canvas?.height);
+                console.log('PIXI:', !!window.PIXI);
+                console.log('TegakiApp:', !!window.Tegaki?.AppInstance?.initialized);
+                return { container: !!container, canvas: !!canvas, pixi: !!window.PIXI, app: !!window.Tegaki?.AppInstance?.initialized };
+            }
+        };
+        
+        console.log('🔍 キャンバス診断ツール準備完了');
+        console.log('使用方法: window.canvasDebug.quickCheck() でクイック確認');
+
+    </script>
+</body>
+</html>
+                                    log('test-results', '❌ 初期化後もキャンバスが見つかりません', 'error');
+                                }
+                            }
+                        }).catch(error => {
+                            log('test-results', `初期化エラー: ${error.message}`, 'error');
+                        });
+                    } else {
+                        log('test-results', '✅ 既に初期化済み', 'info');
+                    }
+                } else {
+                    log('test-results', '❌ TegakiApplication インスタンスが見つかりません', 'error');
+                }
+                
+            } catch (error) {
+                log('test-results', `シミュレーションエラー: ${error.message}`, 'error');
+            }
+        }
+
+        function testCanvasCreation() {
+            log('quick-results', '🎨 キャンバス作成テスト開始...', 'info');
+            
+            // 基本Canvas作成テスト
+            createTestCanvas();
+            
+            // PixiJS直接テスト
+            if (window.PIXI) {
+                createPixiTest();
+                log('quick-results', '✅ PixiJS直接テスト完了', 'info');
+            } else {
+                log('quick-results', '❌ PixiJS利用不可のためスキップ', 'error');
+            }
+            
+            log('quick-results', '🎨 キャンバス作成テスト完了', 'info');
+        }
+
+        function executeManualFix() {
+            log('manual-fix-results', '🔧 手動修復試行開始...', 'info');
+            
+            try {
+                // Step 1: DOM要素確認・修復
+                let container = document.getElementById('canvas-container');
+                if (!container) {
+                    log('manual-fix-results', 'キャンバスコンテナを作成中...', 'warn');
+                    container = document.createElement('div');
+                    container.id = 'canvas-container';
+                    container.className = 'canvas-container';
+                    container.style.cssText = 'width: 400px; height: 400px; margin: 0 auto; display: block; background-color: #ffffee; border: 1px solid #ccc;';
+                    
+                    const canvasArea = document.querySelector('.canvas-area');
+                    if (canvasArea) {
+                        canvasArea.appendChild(container);
+                        log('manual-fix-results', '✅ キャンバスコンテナ作成完了', 'info');
+                    } else {
+                        document.body.appendChild(container);
+                        log('manual-fix-results', '⚠️ キャンバスコンテナをbodyに作成', 'warn');
+                    }
+                }
+                
+                // Step 2: Tegakiアプリ手動初期化
+                if (window.Tegaki?.AppInstance) {
+                    if (!window.Tegaki.AppInstance.initialized) {
+                        log('manual-fix-results', 'TegakiApplication初期化試行...', 'info');
+                        window.Tegaki.AppInstance.initialize().then(success => {
+                            if (success) {
+                                log('manual-fix-results', '✅ TegakiApplication初期化成功', 'info');
+                                
+                                // 初期化後確認
+                                setTimeout(() => {
+                                    const canvas = container.querySelector('canvas');
+                                    if (canvas) {
+                                        log('manual-fix-results', '🎉 手動修復成功 - キャンバス表示確認', 'info');
+                                    } else {
+                                        log('manual-fix-results', '⚠️ 初期化成功もキャンバス未表示', 'warn');
+                                    }
+                                }, 1000);
+                            } else {
+                                log('manual-fix-results', '❌ TegakiApplication初期化失敗', 'error');
+                            }
+                        }).catch(error => {
+                            log('manual-fix-results', `初期化エラー: ${error.message}`, 'error');
+                        });
+                    } else {
+                        log('manual-fix-results', '✅ 既に初期化済み', 'info');
+                    }
+                } else {
+                    // TegakiApplication再作成試行
+                    log('manual-fix-results', 'TegakiApplication再作成試行...', 'warn');
+                    if (window.Tegaki?.TegakiApplication) {
+                        const newApp = new window.Tegaki.TegakiApplication();
+                        window.Tegaki.AppInstance = newApp;
+                        log('manual-fix-results', '✅ TegakiApplication再作成完了', 'info');
+                        
+                        newApp.initialize().then(success => {
+                            log('manual-fix-results', `再作成・初期化結果: ${success ? '成功' : '失敗'}`, success ? 'info' : 'error');
+                        });
+                    } else {
+                        

@@ -1,16 +1,18 @@
 /**
- * 🎨 Tegaki Project - Main Application Entry Point (Bootstrap待機・キャンバス初理化改善版)
+ * 🎨 Tegaki Project - Main Application Entry Point (REV系・キャンバス表示問題解決版)
+ * 📋 RESPONSIBILITY: アプリケーション初期化・統合・診断機能
+ * 🚫 PROHIBITION: UI処理・描画処理・座標処理・エラー表示
+ * ✅ PERMISSION: 初期化統合・Manager委譲・診断情報提供・Bootstrap連携
  * 
- * ✨ Phase1.5修正内容:
- * 1. Bootstrap依存関係完了待機システム強化
+ * 🔧 REV系追加修正:
+ * 1. Bootstrap依存関係完了待機システム
  * 2. キャンバスコンテナDOM確実性保証
- * 3. CanvasManager初期化引数修正・DOM要素確実渡し
+ * 3. CanvasManager初期化引数修正
  * 4. エラー処理完全委譲システム
- * 5. 初期化診断・健全性チェック機能
+ * 5. 診断機能完備・デバッグ支援強化
  * 
- * 📋 RESPONSIBILITY: 初期化統合・統一システム委譲・診断機能
- * 🚫 PROHIBITION: 直接描画・UI操作・依存関係管理・スタイル処理
- * ✅ PERMISSION: AppCore委譲・統一システム統合・健全性チェック
+ * 📏 DESIGN_PRINCIPLE: 責任分界（初期化・統合専門）
+ * 🔄 INTEGRATION: Bootstrap→main.js→AppCore→各Manager
  */
 
 // Tegaki名前空間初期化
@@ -22,10 +24,11 @@ class TegakiApplication {
         this.appCore = null;
         this.initializationError = null;
         
-        // Bootstrap依存関係待機状態
+        // REV系: Bootstrap依存関係待機フラグ
         this.dependenciesLoaded = false;
         this.canvasElementReady = false;
-        this.bootstrapStartTime = performance.now();
+        this.bootTime = null;
+        this.initStartTime = performance.now();
         
         // 基本設定
         this.config = {
@@ -40,29 +43,29 @@ class TegakiApplication {
             }
         };
         
-        console.log('🎨 TegakiApplication インスタンス作成完了（Bootstrap待機・キャンバス初期化改善版）');
+        console.log('🎨 TegakiApplication インスタンス作成完了');
+        console.log(`⏱️ 初期化開始時刻: ${this.initStartTime.toFixed(2)}ms`);
         
-        // Bootstrap依存関係完了待機
+        // REV系: Bootstrap依存関係完了待機
         this.setupBootstrapListeners();
     }
 
     /**
-     * Bootstrap依存関係完了待機システム
+     * REV系: Bootstrap依存関係完了待機システム
      */
     setupBootstrapListeners() {
-        // 依存関係読み込み完了イベント
         window.addEventListener('tegaki:dependencies:loaded', () => {
+            this.bootTime = performance.now() - this.initStartTime;
             console.log('📦 Bootstrap依存関係読み込み完了');
+            console.log(`⏱️ Bootstrap時間: ${this.bootTime.toFixed(2)}ms`);
             this.dependenciesLoaded = true;
             this.tryInitialize();
         });
 
-        // 依存関係読み込みエラーイベント
         window.addEventListener('tegaki:dependencies:error', (event) => {
             console.error('❌ Bootstrap依存関係エラー:', event.detail.error);
             this.initializationError = new Error(`Dependencies: ${event.detail.error}`);
             
-            // ErrorManager経由でのエラー表示
             if (window.Tegaki?.ErrorManagerInstance) {
                 window.Tegaki.ErrorManagerInstance.showError('error', 
                     `依存関係読み込みエラー: ${event.detail.error}`, {
@@ -74,102 +77,60 @@ class TegakiApplication {
     }
 
     /**
-     * キャンバスコンテナ確実性チェック（拡張版）
+     * REV系: キャンバスコンテナ確実性チェック
      */
     checkCanvasContainerReady() {
-        try {
-            // 最優先: #canvas-container
-            let container = document.getElementById('canvas-container');
-            
-            if (!container) {
-                // フォールバック検索
-                const fallbackSelectors = [
-                    '#drawing-canvas',
-                    '.canvas-area',
-                    '.canvas-container',
-                    'canvas'
-                ];
-                
-                for (const selector of fallbackSelectors) {
-                    container = document.querySelector(selector);
-                    if (container) {
-                        console.log(`✅ フォールバックコンテナ発見: ${selector}`);
-                        break;
-                    }
-                }
-            }
-            
-            if (!container) {
-                console.warn('⚠️ キャンバスコンテナが見つかりません');
-                return false;
-            }
-            
-            // DOM要素の基本プロパティ確認
-            const rect = container.getBoundingClientRect();
-            const isVisible = container.offsetParent !== null;
-            
-            console.log(`✅ キャンバスコンテナ確認:`, {
-                id: container.id || 'no-id',
-                tagName: container.tagName,
-                size: `${rect.width}x${rect.height}`,
-                visible: isVisible,
-                hasParent: !!container.parentElement
-            });
-            
-            this.canvasElementReady = true;
-            return true;
-            
-        } catch (error) {
-            console.error('❌ キャンバスコンテナ確認エラー:', error);
+        const container = document.getElementById('canvas-container');
+        
+        if (!container) {
+            console.error('❌ #canvas-container が見つかりません');
             return false;
         }
+        
+        // DOM要素の基本プロパティ確認
+        if (!container.offsetWidth || !container.offsetHeight) {
+            console.warn('⚠️ キャンバスコンテナのサイズが0です');
+            // サイズが0でも要素は存在するので継続
+        }
+        
+        console.log(`✅ キャンバスコンテナ確認: ${container.offsetWidth}x${container.offsetHeight}px`);
+        this.canvasElementReady = true;
+        return true;
     }
 
     /**
-     * 初期化条件確認・実行システム
+     * REV系: 初期化条件確認・実行システム
      */
     async tryInitialize() {
-        if (this.initialized) return;
+        if (this.initialized) {
+            console.log('⚠️ 既に初期化済み - スキップ');
+            return;
+        }
         
         console.log('🔍 初期化条件確認中...');
         console.log(`  - 依存関係: ${this.dependenciesLoaded}`);
         console.log(`  - DOM準備: ${document.readyState}`);
         console.log(`  - キャンバス要素: ${this.checkCanvasContainerReady()}`);
         
-        const allReady = this.dependenciesLoaded && 
-                        document.readyState !== 'loading' && 
-                        this.canvasElementReady;
-        
-        if (allReady) {
+        if (this.dependenciesLoaded && 
+            document.readyState === 'complete' && 
+            this.canvasElementReady) {
+            
             console.log('✅ 全初期化条件満足 - 初期化開始');
             await this.initialize();
         } else {
             console.log('⏳ 初期化条件未満足 - 待機継続');
-            
-            // DOM準備完了待機
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', () => {
-                    console.log('📋 DOMContentLoaded - 再確認');
-                    this.tryInitialize();
-                });
-            }
-            
-            // window.load完了待機
-            if (document.readyState !== 'complete') {
-                window.addEventListener('load', () => {
-                    console.log('📋 Window Load完了 - 再確認');
-                    this.tryInitialize();
-                });
-            }
+            // 条件が満たされない場合は500ms後に再試行
+            setTimeout(() => this.tryInitialize(), 500);
         }
     }
 
     /**
-     * アプリケーション初期化（Bootstrap待機・キャンバス改善版）
+     * アプリケーション初期化（REV系・委譲専門版）
      */
     async initialize() {
         try {
-            console.log('🎨 Tegaki初期化開始（Bootstrap待機・キャンバス改善版）...');
+            console.log('🎨 Tegaki REV系 初期化開始...');
 
             if (this.initialized) {
                 console.warn('⚠️ TegakiApplication already initialized');
@@ -179,27 +140,19 @@ class TegakiApplication {
             // STEP 1: 初期化レジストリ実行
             this.executeInitializationRegistry();
             
-            // STEP 2: AppCore初期化委譲（キャンバス改善版）
-            const appCoreSuccess = await this.initializeAppCore();
-            if (!appCoreSuccess) {
-                throw new Error('AppCore初期化失敗');
-            }
+            // STEP 2: AppCore初期化委譲
+            await this.initializeAppCore();
             
-            // STEP 3: キャンバス表示確認・診断
+            // STEP 3: キャンバス表示最終確認
             this.verifyCanvasDisplay();
             
             // STEP 4: 基本状態設定
             this.initialized = true;
-            
-            console.log('✅ Tegaki初期化完了（Bootstrap待機・キャンバス改善版）');
+            console.log('✅ Tegaki REV系 初期化完了');
             
             // 初期化完了イベント発火
             if (window.Tegaki?.EventBusInstance) {
-                window.Tegaki.EventBusInstance.safeEmit('app:initialized', {
-                    initializationTime: performance.now() - this.bootstrapStartTime,
-                    canvasVisible: !!document.querySelector('canvas'),
-                    managersReady: this.getManagerStatus()
-                });
+                window.Tegaki.EventBusInstance.safeEmit('app:initialized');
             }
             
             // 成功通知（ErrorManager委譲）
@@ -209,6 +162,9 @@ class TegakiApplication {
                     autoClose: true
                 });
             }
+            
+            // 初期化完了後の診断実行
+            this.runPostInitializationDiagnostics();
             
             return true;
             
@@ -229,7 +185,7 @@ class TegakiApplication {
     }
 
     /**
-     * STEP 1: 初理化レジストリ実行
+     * STEP 1: 初期化レジストリ実行
      */
     executeInitializationRegistry() {
         console.log('📡 初期化レジストリ実行中...');
@@ -269,29 +225,76 @@ class TegakiApplication {
     }
 
     /**
-     * STEP 2: AppCore初期化委譲（キャンバス表示問題修正版）
+     * REV系: AppCore初期化委譲（キャンバス表示問題修正版）
      */
     async initializeAppCore() {
         console.log('🎯 AppCore初期化中...');
 
         try {
+            // REV系: キャンバスコンテナ確実取得
+            const canvasContainer = document.getElementById('canvas-container');
+            if (!canvasContainer) {
+                throw new Error('キャンバスコンテナ#canvas-containerが見つかりません');
+            }
+
+            console.log('📦 キャンバスコンテナ確認完了:', {
+                width: canvasContainer.offsetWidth,
+                height: canvasContainer.offsetHeight,
+                display: getComputedStyle(canvasContainer).display,
+                visibility: getComputedStyle(canvasContainer).visibility
+            });
+
             // AppCore取得または作成
             if (window.Tegaki?.AppCoreInstance) {
                 this.appCore = window.Tegaki.AppCoreInstance;
-                console.log('✅ 既存AppCoreInstance使用');
+                console.log('✅ 既存AppCoreインスタンス使用');
             } else if (window.Tegaki?.AppCore) {
                 this.appCore = new window.Tegaki.AppCore();
                 window.Tegaki.AppCoreInstance = this.appCore;
-                console.log('✅ 新規AppCoreInstance作成');
+                console.log('✅ Tegaki名前空間からAppCore作成');
             } else if (window.AppCore) {
                 this.appCore = new window.AppCore();
                 window.Tegaki.AppCoreInstance = this.appCore;
-                console.log('✅ グローバルAppCore使用');
+                console.log('✅ グローバルからAppCore作成');
             } else {
                 throw new Error('AppCoreが利用できません');
             }
 
-            // AppCore初期化実行
+            // REV系: CanvasManager事前初期化確認
+            if (this.appCore.canvasManager) {
+                console.log('🔧 CanvasManager初期化（キャンバス表示問題修正版）');
+                
+                // 初期化前の状態確認
+                console.log('🔍 CanvasManager初期化前状態:', {
+                    initialized: this.appCore.canvasManager.initialized,
+                    hasPixiApp: !!this.appCore.canvasManager.app,
+                    containerChildren: canvasContainer.children.length
+                });
+                
+                const initSuccess = await this.appCore.canvasManager.initialize({
+                    appCore: this.appCore,
+                    canvasElement: canvasContainer,
+                    config: {
+                        configManager: window.Tegaki.ConfigManagerInstance || null
+                    }
+                });
+                
+                if (!initSuccess) {
+                    console.error('❌ CanvasManager初期化失敗');
+                    throw new Error('CanvasManager初期化失敗');
+                }
+                
+                console.log('✅ CanvasManager初期化完了');
+                
+                // 初期化後の即座確認
+                this.immediateCanvasCheck(canvasContainer);
+                
+            } else {
+                console.warn('⚠️ AppCore.canvasManager が見つかりません');
+            }
+
+            // AppCore本体初期化実行
+            console.log('🚀 AppCore本体初期化開始...');
             const success = await this.appCore.initialize();
             
             if (!success) {
@@ -300,119 +303,115 @@ class TegakiApplication {
             
             console.log('✅ AppCore初期化完了');
             
-            // CanvasManager初期化状態確認（重要）
-            await this.verifyCanvasManagerInitialization();
-            
-            return true;
-            
         } catch (error) {
             console.error('❌ AppCore初期化エラー:', error);
-            throw error;
+            throw error; // 上位に再スロー
         }
     }
 
     /**
-     * CanvasManager初期化状態確認（キャンバス表示問題対策）
+     * 初期化後の即座キャンバス確認
      */
-    async verifyCanvasManagerInitialization() {
-        try {
-            const canvasManager = this.appCore?.canvasManager || window.Tegaki?.CanvasManagerInstance;
+    immediateCanvasCheck(container) {
+        console.log('🔍 初期化後即座キャンバス確認開始...');
+        
+        // Canvas要素の確認
+        const canvas = container.querySelector('canvas');
+        if (canvas) {
+            console.log('🎨 キャンバス要素確認成功:', {
+                width: canvas.width,
+                height: canvas.height,
+                offsetWidth: canvas.offsetWidth,
+                offsetHeight: canvas.offsetHeight,
+                style: canvas.style.cssText,
+                parentNode: canvas.parentNode === container
+            });
             
-            if (!canvasManager) {
-                console.warn('⚠️ CanvasManager未取得');
-                return false;
-            }
+            // WebGLコンテキスト確認
+            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            console.log('🔧 WebGLコンテキスト:', gl ? '利用可能' : '利用不可');
             
-            if (!canvasManager.initialized) {
-                console.warn('⚠️ CanvasManager未初期化 - 手動初期化実行');
-                
-                // キャンバス要素を確実に取得
-                const canvasElement = document.getElementById('canvas-container') ||
-                                     document.querySelector('.canvas-area') ||
-                                     document.querySelector('canvas');
-                
-                if (canvasElement) {
-                    const initSuccess = await canvasManager.initialize({
-                        appCore: this.appCore,
-                        canvasElement: canvasElement,
-                        config: {
-                            configManager: window.Tegaki?.ConfigManagerInstance
-                        }
-                    });
-                    
-                    if (initSuccess) {
-                        console.log('✅ CanvasManager手動初期化成功');
-                    } else {
-                        console.error('❌ CanvasManager手動初期化失敗');
-                    }
-                } else {
-                    console.error('❌ キャンバス要素が見つかりません');
-                }
-            } else {
-                console.log('✅ CanvasManager初期化済み');
-            }
+        } else {
+            console.warn('⚠️ キャンバス要素が見つかりません');
             
+            // コンテナの詳細確認
+            console.log('📦 コンテナ詳細:', {
+                id: container.id,
+                className: container.className,
+                children: container.children.length,
+                innerHTML: container.innerHTML.substring(0, 100) + '...'
+            });
+        }
+    }
+
+    /**
+     * STEP 3: キャンバス表示最終確認
+     */
+    verifyCanvasDisplay() {
+        console.log('🎯 キャンバス表示最終確認開始...');
+        
+        const container = document.getElementById('canvas-container');
+        if (!container) {
+            console.error('❌ 最終確認: キャンバスコンテナなし');
+            return false;
+        }
+        
+        const canvas = container.querySelector('canvas');
+        if (!canvas) {
+            console.error('❌ 最終確認: キャンバス要素なし');
+            return false;
+        }
+        
+        // 表示状態の確認
+        const isVisible = canvas.offsetWidth > 0 && canvas.offsetHeight > 0;
+        const computedStyle = getComputedStyle(canvas);
+        const isDisplayed = computedStyle.display !== 'none';
+        const isVisibleCSS = computedStyle.visibility !== 'hidden';
+        
+        console.log('🎨 キャンバス表示状態確認:', {
+            element: !!canvas,
+            dimensions: `${canvas.width}x${canvas.height}`,
+            visible: isVisible,
+            displayed: isDisplayed,
+            visibleCSS: isVisibleCSS,
+            overall: isVisible && isDisplayed && isVisibleCSS
+        });
+        
+        if (isVisible && isDisplayed && isVisibleCSS) {
+            console.log('🎉 キャンバス表示最終確認: 成功');
             return true;
-            
-        } catch (error) {
-            console.error('❌ CanvasManager初期化確認エラー:', error);
+        } else {
+            console.warn('⚠️ キャンバス表示最終確認: 問題あり');
             return false;
         }
     }
 
     /**
-     * STEP 3: キャンバス表示確認・診断
+     * 初期化完了後の診断実行
      */
-    verifyCanvasDisplay() {
-        try {
-            console.log('🎨 キャンバス表示確認・診断実行...');
-            
-            // DOM要素確認
-            const container = document.getElementById('canvas-container') ||
-                             document.querySelector('.canvas-area');
-            const canvas = document.querySelector('canvas');
-            
-            console.log('📋 キャンバス要素確認:', {
-                container: !!container,
-                canvas: !!canvas,
-                containerId: container?.id || 'no-id',
-                canvasSize: canvas ? `${canvas.width}x${canvas.height}` : 'none'
-            });
-            
-            // CanvasManager状態確認
-            const canvasManager = this.appCore?.canvasManager || window.Tegaki?.CanvasManagerInstance;
-            if (canvasManager) {
-                const diagnostic = canvasManager.getDiagnosticInfo();
-                console.log('📊 CanvasManager診断:', diagnostic);
+    runPostInitializationDiagnostics() {
+        console.log('🔍 初期化完了後診断開始...');
+        
+        setTimeout(() => {
+            try {
+                // 健全性チェック実行
+                const health = this.healthCheck();
+                console.log('📊 健全性チェック結果:', health);
                 
-                if (diagnostic.canvasVisible) {
-                    console.log('✅ キャンバス表示確認成功');
-                } else {
-                    console.warn('⚠️ キャンバス非表示状態');
-                }
+                // 座標統合状態確認
+                const coordState = this.getCoordinateIntegrationState();
+                console.log('📐 座標統合状態:', coordState);
+                
+                // アプリケーション状態確認
+                const appStatus = this.getApplicationStatus();
+                console.log('📋 アプリケーション状態:', appStatus);
+                
+                console.log('✅ 初期化完了後診断完了');
+                
+            } catch (error) {
+                console.error('❌ 初期化完了後診断エラー:', error);
             }
-            
-        } catch (error) {
-            console.error('❌ キャンバス表示確認エラー:', error);
-        }
-    }
-
-    /**
-     * Manager状態取得
-     */
-    getManagerStatus() {
-        return {
-            configManager: !!window.Tegaki?.ConfigManagerInstance,
-            errorManager: !!window.Tegaki?.ErrorManagerInstance,
-            stateManager: !!window.Tegaki?.StateManagerInstance,
-            eventBus: !!window.Tegaki?.EventBusInstance,
-            coordinateManager: !!window.Tegaki?.CoordinateManagerInstance,
-            canvasManager: !!window.Tegaki?.CanvasManagerInstance,
-            toolManager: !!window.Tegaki?.ToolManagerInstance,
-            uiManager: !!window.Tegaki?.UIManagerInstance,
-            appCore: !!this.appCore,
-            appCoreInitialized: !!this.appCore?.initialized
-        };
+        }, 1000); // 1秒後に診断実行
     }
 
     /**
@@ -420,16 +419,16 @@ class TegakiApplication {
      */
     getApplicationStatus() {
         return {
-            version: 'Phase1.5-Bootstrap待機・キャンバス改善版',
+            version: 'Phase1.5-REV',
             initialized: this.initialized,
             dependenciesLoaded: this.dependenciesLoaded,
             canvasElementReady: this.canvasElementReady,
+            bootTime: this.bootTime,
             appCore: this.appCore ? {
                 initialized: this.appCore.initialized,
                 managers: this.appCore.getManagerStatus ? this.appCore.getManagerStatus() : null
             } : null,
-            initializationError: this.initializationError,
-            bootstrapTime: performance.now() - this.bootstrapStartTime,
+            initializationError: this.initializationError?.message || null,
             lastCheck: new Date().toISOString()
         };
     }
@@ -444,35 +443,16 @@ class TegakiApplication {
             appCoreInitialized: !!(this.appCore && this.appCore.initialized),
             coordinateManager: !!(this.appCore?.coordinateManager || window.Tegaki?.CoordinateManagerInstance),
             canvasManager: !!(this.appCore?.canvasManager || window.Tegaki?.CanvasManagerInstance),
-            canvasManagerInitialized: !!(this.appCore?.canvasManager?.initialized || window.Tegaki?.CanvasManagerInstance?.initialized),
             toolManager: !!(this.appCore?.toolManager || window.Tegaki?.ToolManagerInstance),
             pixiAvailable: !!window.PIXI,
             canvasPresent: !!document.querySelector('canvas'),
-            canvasVisible: this.checkCanvasVisibility(),
+            canvasVisible: (() => {
+                const canvas = document.querySelector('canvas');
+                return canvas ? canvas.offsetWidth > 0 && canvas.offsetHeight > 0 : false;
+            })(),
             initialized: this.initialized,
             initializationError: this.initializationError?.message || null
         };
-    }
-
-    /**
-     * キャンバス可視性確認
-     */
-    checkCanvasVisibility() {
-        try {
-            const canvas = document.querySelector('canvas');
-            if (!canvas) return false;
-            
-            const rect = canvas.getBoundingClientRect();
-            const style = getComputedStyle(canvas);
-            
-            return rect.width > 0 && 
-                   rect.height > 0 && 
-                   style.display !== 'none' && 
-                   style.visibility !== 'hidden' && 
-                   parseFloat(style.opacity) > 0;
-        } catch (error) {
-            return false;
-        }
     }
 
     /**
@@ -486,13 +466,11 @@ class TegakiApplication {
             // 基本機能チェック
             if (!this.initialized) issues.push('Application not initialized');
             if (!window.PIXI) issues.push('PIXI.js not available');
-            if (!this.dependenciesLoaded) issues.push('Dependencies not loaded');
             
             const canvas = document.querySelector('canvas');
-            if (!canvas) {
-                issues.push('Canvas element not present');
-            } else if (!this.checkCanvasVisibility()) {
-                warnings.push('Canvas not visible');
+            if (!canvas) issues.push('Canvas element not present');
+            else if (canvas.offsetWidth === 0 || canvas.offsetHeight === 0) {
+                warnings.push('Canvas element has zero dimensions');
             }
             
             // AppCoreチェック
@@ -502,12 +480,18 @@ class TegakiApplication {
                 warnings.push('AppCore not initialized');
             }
             
-            // ManagerCheckチェック
-            const managers = this.getManagerStatus();
-            const coreManagers = ['configManager', 'errorManager', 'stateManager', 'eventBus'];
-            const missingCore = coreManagers.filter(m => !managers[m]);
-            if (missingCore.length > 0) {
-                warnings.push(`Missing core managers: ${missingCore.join(', ')}`);
+            // 根幹Managerチェック
+            const coreManagers = [
+                'ConfigManagerInstance',
+                'ErrorManagerInstance', 
+                'StateManagerInstance',
+                'EventBusInstance',
+                'CanvasManagerInstance'
+            ];
+            
+            const missingManagers = coreManagers.filter(manager => !window.Tegaki?.[manager]);
+            if (missingManagers.length > 0) {
+                warnings.push(`Missing managers: ${missingManagers.join(', ')}`);
             }
             
             return {
@@ -515,8 +499,12 @@ class TegakiApplication {
                 functional: issues.length === 0 && warnings.length < 3,
                 issues,
                 warnings,
-                canvasVisible: this.checkCanvasVisibility(),
-                score: Math.max(0, 100 - (issues.length * 30) - (warnings.length * 10))
+                score: Math.max(0, 100 - (issues.length * 30) - (warnings.length * 10)),
+                canvas: {
+                    present: !!canvas,
+                    visible: canvas ? canvas.offsetWidth > 0 && canvas.offsetHeight > 0 : false,
+                    dimensions: canvas ? `${canvas.width}x${canvas.height}` : 'N/A'
+                }
             };
             
         } catch (error) {
@@ -530,39 +518,247 @@ class TegakiApplication {
             };
         }
     }
+
+    /**
+     * 強制初期化（緊急用）
+     */
+    async forceInitialize() {
+        console.log('🆘 強制初期化開始...');
+        
+        this.initialized = false;
+        this.initializationError = null;
+        
+        // 条件無視で初期化実行
+        return await this.initialize();
+    }
 }
 
 // Tegaki名前空間にクラス登録
 window.Tegaki.TegakiApplication = TegakiApplication;
 
 /**
- * DOM準備完了時の初期化システム（Bootstrap連携）
+ * REV系診断関数（グローバル公開）
+ */
+window.debugREVSystem = function() {
+    console.log('🔧 REV系統合デバッグ開始');
+    
+    // 1. Bootstrap状態確認
+    console.log('1️⃣ Bootstrap状態:');
+    console.log('  - 依存関係完了:', !!window.Tegaki?.AppInstance?.dependenciesLoaded);
+    console.log('  - DOM準備完了:', document.readyState);
+    console.log('  - キャンバス要素:', !!document.getElementById('canvas-container'));
+    
+    // 2. 初期化状態確認
+    console.log('2️⃣ 初期化状態:');
+    console.log('  - アプリ初期化:', !!window.Tegaki?.AppInstance?.initialized);
+    console.log('  - AppCore初期化:', !!window.Tegaki?.AppCoreInstance?.initialized);
+    console.log('  - CanvasManager:', !!window.Tegaki?.CanvasManagerInstance?.initialized);
+    
+    // 3. キャンバス表示確認
+    console.log('3️⃣ キャンバス表示:');
+    const container = document.getElementById('canvas-container');
+    const canvas = container?.querySelector('canvas');
+    console.log('  - コンテナサイズ:', container ? `${container.offsetWidth}x${container.offsetHeight}` : 'なし');
+    console.log('  - キャンバス要素:', !!canvas);
+    console.log('  - キャンバスサイズ:', canvas ? `${canvas.width}x${canvas.height}` : 'なし');
+    console.log('  - 表示状態:', canvas ? (canvas.offsetWidth > 0 && canvas.offsetHeight > 0) : false);
+    
+    // 4. 統一システム確認
+    console.log('4️⃣ 統一システム:');
+    const systems = ['ConfigManagerInstance', 'ErrorManagerInstance', 'StateManagerInstance', 'EventBusInstance'];
+    systems.forEach(system => {
+        console.log(`  - ${system}:`, !!window.Tegaki?.[system]);
+    });
+    
+    // 5. 問題診断
+    const issues = [];
+    if (!window.Tegaki?.AppInstance?.dependenciesLoaded) issues.push('依存関係未完了');
+    if (!document.getElementById('canvas-container')) issues.push('キャンバスコンテナなし');
+    if (!canvas) issues.push('キャンバス要素なし');
+    if (!window.Tegaki?.CanvasManagerInstance?.initialized) issues.push('CanvasManager未初期化');
+    if (canvas && !(canvas.offsetWidth > 0 && canvas.offsetHeight > 0)) issues.push('キャンバス非表示');
+    
+    console.log('5️⃣ 問題診断:', issues.length > 0 ? issues : '問題なし');
+    
+    return {
+        healthy: issues.length === 0,
+        issues,
+        canvasVisible: !!(canvas && canvas.offsetWidth > 0 && canvas.offsetHeight > 0),
+        systemReady: !!window.Tegaki?.AppInstance?.initialized
+    };
+};
+
+window.checkTegakiHealth = function() {
+    console.log('🏥 Tegaki健全性チェック開始');
+    
+    if (window.Tegaki?.AppInstance?.healthCheck) {
+        const health = window.Tegaki.AppInstance.healthCheck();
+        console.log('📊 健全性結果:', health);
+        return health;
+    } else {
+        console.error('❌ TegakiApplication.healthCheck が利用できません');
+        return { healthy: false, error: 'healthCheck method not available' };
+    }
+};
+
+window.checkCoordinateIntegration = function() {
+    console.log('📐 座標統合確認開始');
+    
+    if (window.Tegaki?.AppInstance?.getCoordinateIntegrationState) {
+        const state = window.Tegaki.AppInstance.getCoordinateIntegrationState();
+        console.log('📐 座標統合状態:', state);
+        return state;
+    } else {
+        console.error('❌ getCoordinateIntegrationState メソッドが利用できません');
+        return { error: 'getCoordinateIntegrationState method not available' };
+    }
+};
+
+window.checkPhase2Readiness = function() {
+    console.log('🔍 Phase2移行準備度確認');
+    
+    const checkList = {
+        // 基盤システム
+        unifiedSystems: !!(
+            window.Tegaki?.ConfigManagerInstance && 
+            window.Tegaki?.ErrorManagerInstance && 
+            window.Tegaki?.StateManagerInstance && 
+            window.Tegaki?.EventBusInstance
+        ),
+        
+        // キャンバス・描画システム
+        canvasSystem: !!(
+            window.Tegaki?.CanvasManagerInstance?.initialized &&
+            document.querySelector('canvas')
+        ),
+        
+        // ツール・座標システム
+        toolSystem: !!(
+            window.Tegaki?.ToolManagerInstance &&
+            window.Tegaki?.CoordinateManagerInstance
+        ),
+        
+        // 責任分界
+        responsibilitySeparation: {
+            htmlStructureOnly: !document.querySelector('style[data-inline]'),
+            cssConsolidated: !!document.querySelector('link[href*="styles.css"]'),
+            bootstrapDelegation: !!window.Tegaki?.AppInstance?.dependenciesLoaded,
+            mainInitialization: !!window.Tegaki?.AppInstance?.initialized
+        }
+    };
+    
+    const score = Object.values(checkList).reduce((acc, val) => {
+        if (typeof val === 'boolean') return acc + (val ? 25 : 0);
+        if (typeof val === 'object') {
+            const subScore = Object.values(val).filter(v => v === true).length;
+            return acc + (subScore * 6.25);
+        }
+        return acc;
+    }, 0);
+    
+    console.log('📊 Phase2移行準備度:', `${score.toFixed(1)}%`);
+    console.log('📋 詳細:', checkList);
+    
+    if (score >= 95) {
+        console.log('✅ Phase2移行準備完了');
+    } else if (score >= 80) {
+        console.log('⚠️ Phase2移行準備概ね完了（軽微な課題あり）');
+    } else {
+        console.log('❌ Phase2移行準備未完了（重要な課題あり）');
+    }
+    
+    return { score, checkList };
+};
+
+/**
+ * 緊急修復関数（デバッグ用）
+ */
+window.emergencyCanvasFix = function() {
+    console.log('🆘 緊急キャンバス修復開始...');
+    
+    try {
+        // 1. コンテナ確認・作成
+        let container = document.getElementById('canvas-container');
+        if (!container) {
+            console.log('📦 キャンバスコンテナ作成中...');
+            container = document.createElement('div');
+            container.id = 'canvas-container';
+            container.className = 'canvas-container';
+            container.style.cssText = 'width: 400px; height: 400px; margin: 0 auto; display: block; background-color: #ffffee; border: 1px solid #ccc;';
+            
+            const canvasArea = document.querySelector('.canvas-area') || document.body;
+            canvasArea.appendChild(container);
+            console.log('✅ キャンバスコンテナ作成完了');
+        }
+        
+        // 2. Canvas要素確認
+        let canvas = container.querySelector('canvas');
+        if (!canvas) {
+            console.log('🎨 キャンバス要素直接作成中...');
+            
+            if (window.PIXI) {
+                // PixiJS Application作成
+                const app = new PIXI.Application({
+                    width: 400,
+                    height: 400,
+                    backgroundColor: '#ffffee',
+                    antialias: true
+                });
+                
+                container.appendChild(app.view);
+                canvas = app.view;
+                
+                console.log('✅ PixiJSキャンバス作成完了');
+            } else {
+                // 通常Canvas作成
+                canvas = document.createElement('canvas');
+                canvas.width = 400;
+                canvas.height = 400;
+                canvas.style.cssText = 'display: block; background-color: #ffffee;';
+                
+                container.appendChild(canvas);
+                console.log('✅ 通常キャンバス作成完了');
+            }
+        }
+        
+        // 3. 強制初期化試行
+        if (window.Tegaki?.AppInstance && !window.Tegaki.AppInstance.initialized) {
+            console.log('🚀 アプリケーション強制初期化...');
+            window.Tegaki.AppInstance.forceInitialize().then(success => {
+                console.log(`強制初期化結果: ${success ? '成功' : '失敗'}`);
+            });
+        }
+        
+        console.log('🎉 緊急修復完了');
+        return true;
+        
+    } catch (error) {
+        console.error('❌ 緊急修復エラー:', error);
+        return false;
+    }
+};
+
+/**
+ * REV系: DOM完了待機＋Bootstrap連携初期化システム
  */
 document.addEventListener("DOMContentLoaded", function() {
-    console.log('📋 DOMContentLoaded - Bootstrap連携初期化開始');
+    console.log('📋 DOMContentLoaded - REV系初期化準備開始');
     
-    // TegakiApplication作成
+    // アプリケーション作成
     const app = new window.Tegaki.TegakiApplication();
     window.Tegaki.AppInstance = app;
     
-    // Bootstrap依存関係完了待機（自動的に開始）
-    console.log('⏳ Bootstrap依存関係完了待機中...');
-});
-
-/**
- * window.load完了時の補完チェック
- */
-window.addEventListener('load', () => {
-    console.log('📋 Window Load完了 - 補完チェック実行');
+    console.log('🎨 TegakiApplication インスタンス作成・登録完了');
     
-    if (window.Tegaki?.AppInstance && !window.Tegaki.AppInstance.initialized) {
-        console.log('🔄 Window Load時点で未初期化 - 再試行');
-        window.Tegaki.AppInstance.tryInitialize();
-    }
+    // REV系: window load完了待機
+    window.addEventListener('load', () => {
+        console.log('📋 Window Load完了 - 補完チェック実行');
+        app.tryInitialize();
+    });
 });
 
 /**
- * ページ離脱時のクリーンアップ
+ * ページ離脱時のクリーンアップ（委譲専門）
  */
 window.addEventListener('beforeunload', () => {
     if (window.Tegaki?.AppInstance?.initialized) {
@@ -611,187 +807,7 @@ window.addEventListener('unhandledrejection', (event) => {
     }
 });
 
-// ========================================
-// 診断・デバッグAPI（グローバル公開）
-// ========================================
-
-/**
- * Tegaki全体健全性チェック
- */
-window.checkTegakiHealth = function() {
-    console.log('🔍 Tegaki全体健全性チェック開始');
-    
-    const app = window.Tegaki?.AppInstance;
-    if (!app) {
-        console.error('❌ TegakiApplication未初期化');
-        return {
-            healthy: false,
-            error: 'TegakiApplication not found'
-        };
-    }
-    
-    const health = app.healthCheck();
-    console.log('📊 健全性チェック結果:', health);
-    
-    if (health.healthy) {
-        console.log('✅ Tegakiシステム健全');
-    } else if (health.functional) {
-        console.log('⚠️ Tegakiシステム機能的（軽微な問題あり）');
-    } else {
-        console.log('❌ Tegakiシステム問題あり');
-    }
-    
-    return health;
-};
-
-/**
- * 座標統合状態チェック
- */
-window.checkCoordinateIntegration = function() {
-    console.log('🔍 座標統合状態チェック開始');
-    
-    const app = window.Tegaki?.AppInstance;
-    if (!app) {
-        console.error('❌ TegakiApplication未初期化');
-        return { error: 'TegakiApplication not found' };
-    }
-    
-    const integration = app.getCoordinateIntegrationState();
-    console.log('📊 座標統合状態:', integration);
-    
-    const score = Object.values(integration).filter(v => v === true).length;
-    const total = Object.values(integration).length - 1; // error除く
-    const percentage = (score / total * 100).toFixed(1);
-    
-    console.log(`📈 座標統合完成度: ${percentage}%`);
-    
-    if (percentage >= 80) {
-        console.log('✅ 座標統合良好');
-    } else {
-        console.log('⚠️ 座標統合に課題あり');
-    }
-    
-    return { ...integration, score: percentage };
-};
-
-/**
- * Phase2移行準備度チェック
- */
-window.checkPhase2Readiness = function() {
-    console.log('🔍 Phase2移行準備度チェック開始');
-    
-    const checkList = {
-        // 基盤システム
-        unifiedSystems: !!(
-            window.Tegaki?.ConfigManagerInstance && 
-            window.Tegaki?.ErrorManagerInstance && 
-            window.Tegaki?.StateManagerInstance && 
-            window.Tegaki?.EventBusInstance
-        ),
-        
-        // キャンバス・描画システム
-        canvasSystem: !!(
-            window.Tegaki?.CanvasManagerInstance?.initialized &&
-            document.querySelector('canvas')
-        ),
-        
-        // ツール・座標システム
-        toolSystem: !!(
-            window.Tegaki?.ToolManagerInstance &&
-            window.Tegaki?.CoordinateManagerInstance
-        ),
-        
-        // Bootstrap・初期化システム
-        bootstrapSystem: !!(
-            window.Tegaki?.AppInstance?.dependenciesLoaded &&
-            window.Tegaki?.AppInstance?.initialized
-        ),
-        
-        // キャンバス表示確認
-        canvasVisible: !!(
-            document.querySelector('canvas') &&
-            window.Tegaki?.AppInstance?.checkCanvasVisibility()
-        )
-    };
-    
-    const score = Object.values(checkList).filter(v => v === true).length;
-    const percentage = (score / Object.keys(checkList).length * 100);
-    
-    console.log('📊 Phase2移行準備度:', `${percentage.toFixed(1)}%`);
-    console.log('📋 詳細チェック:', checkList);
-    
-    if (percentage >= 95) {
-        console.log('✅ Phase2移行準備完了');
-    } else if (percentage >= 80) {
-        console.log('⚠️ Phase2移行準備概ね完了（軽微な課題あり）');
-    } else {
-        console.log('❌ Phase2移行準備未完了（重要な課題あり）');
-    }
-    
-    return { score: percentage, checkList, ready: percentage >= 95 };
-};
-
-/**
- * REV系統合デバッグ
- */
-window.debugREVSystem = function() {
-    console.log('🔧 REV系統合デバッグ開始');
-    
-    // 1. Bootstrap状態確認
-    console.log('1️⃣ Bootstrap状態:');
-    console.log('  - 依存関係完了:', !!window.Tegaki?.AppInstance?.dependenciesLoaded);
-    console.log('  - DOM準備完了:', document.readyState);
-    console.log('  - キャンバス要素:', !!document.getElementById('canvas-container'));
-    
-    // 2. 初期化状態確認
-    console.log('2️⃣ 初期化状態:');
-    console.log('  - アプリ初期化:', !!window.Tegaki?.AppInstance?.initialized);
-    console.log('  - AppCore初期化:', !!window.Tegaki?.AppCoreInstance?.initialized);
-    console.log('  - CanvasManager:', !!window.Tegaki?.CanvasManagerInstance?.initialized);
-    
-    // 3. キャンバス表示確認
-    console.log('3️⃣ キャンバス表示:');
-    const container = document.getElementById('canvas-container');
-    const canvas = container?.querySelector('canvas') || document.querySelector('canvas');
-    console.log('  - コンテナサイズ:', container ? `${container.offsetWidth}x${container.offsetHeight}` : 'なし');
-    console.log('  - キャンバス要素:', !!canvas);
-    console.log('  - キャンバスサイズ:', canvas ? `${canvas.width}x${canvas.height}` : 'なし');
-    console.log('  - 表示状態:', window.Tegaki?.AppInstance?.checkCanvasVisibility() || false);
-    
-    // 4. 統一システム確認
-    console.log('4️⃣ 統一システム:');
-    const systems = ['ConfigManagerInstance', 'ErrorManagerInstance', 'StateManagerInstance', 'EventBusInstance'];
-    systems.forEach(system => {
-        console.log(`  - ${system}:`, !!window.Tegaki?.[system]);
-    });
-    
-    // 5. CSS統合確認
-    console.log('5️⃣ CSS統合確認:');
-    const cssVars = getComputedStyle(document.documentElement);
-    console.log('  - CSS変数:', cssVars.getPropertyValue('--futaba-bg') || '未定義');
-    console.log('  - キャンバスクラス:', container?.className || 'クラスなし');
-    
-    // 6. 問題診断
-    const issues = [];
-    if (!window.Tegaki?.AppInstance?.dependenciesLoaded) issues.push('依存関係未完了');
-    if (!document.getElementById('canvas-container')) issues.push('キャンバスコンテナなし');
-    if (!canvas) issues.push('キャンバス要素なし');
-    if (!window.Tegaki?.CanvasManagerInstance?.initialized) issues.push('CanvasManager未初期化');
-    if (!cssVars.getPropertyValue('--futaba-bg')) issues.push('CSS変数未適用');
-    if (!window.Tegaki?.AppInstance?.checkCanvasVisibility()) issues.push('キャンバス非表示');
-    
-    console.log('6️⃣ 問題診断:', issues.length > 0 ? issues : '問題なし');
-    
-    return {
-        healthy: issues.length === 0,
-        issues,
-        canvasVisible: !!canvas && (window.Tegaki?.AppInstance?.checkCanvasVisibility() || false),
-        systemReady: !!window.Tegaki?.AppInstance?.initialized,
-        cssIntegrated: !!cssVars.getPropertyValue('--futaba-bg')
-    };
-};
-
-console.log('🎨 Tegaki Main (Bootstrap待機・キャンバス初期化改善版) Loaded');
+console.log('🎨 Tegaki Main (REV系・責任分界・キャンバス表示問題修正版) Loaded');
 console.log('✨ 修正完了: Bootstrap依存関係待機・DOM要素確実化・キャンバス表示確認');
 console.log('🚀 Phase1.5目標: キャンバス100%表示・初期化信頼性・診断機能完備');
 console.log('🔧 診断コマンド: window.checkTegakiHealth(), window.debugREVSystem()');
