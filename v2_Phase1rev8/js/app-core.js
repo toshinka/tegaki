@@ -1,5 +1,5 @@
 /**
- * 🎯 AppCore - アプリケーションコア統合システム (Phase1修正版)
+ * 🎯 AppCore - アプリケーションコア統合システム (Phase1 ConfigManager統合確実化版)
  * 🔄 CORE_FUNCTION: 統合管理・初期化・統一システム調整
  * 📋 RESPONSIBILITY: 「アプリケーション全体」の統合管理
  * 
@@ -8,10 +8,10 @@
  * ✅ INTEGRATION_AUTHORITY: Manager間統合・初期化順序制御
  * 
  * ✨ Phase1修正内容:
- * - 初期化順序の修正（UIManager依存関係解消）
+ * - ConfigManager → CanvasManager 統合の確実化
+ * - キャンバス出現警告の完全解消
+ * - 初期化順序の最適化
  * - エラーループ防止機能強化
- * - 基本フォールバック強化
- * - canvas-container要素対応
  * 
  * 📋 参考定義:
  * - ルールブック: 統合システム運用規約
@@ -53,7 +53,7 @@ class AppCore {
             complete: false
         };
         
-        console.log('🎯 AppCore インスタンス作成完了（Phase1修正版）');
+        console.log('🎯 AppCore インスタンス作成完了（Phase1 ConfigManager統合確実化版）');
     }
 
     /**
@@ -61,7 +61,7 @@ class AppCore {
      */
     async initialize() {
         try {
-            console.log('🎯 AppCore初期化開始（Phase1修正版）...');
+            console.log('🎯 AppCore初期化開始（Phase1 ConfigManager統合確実化版）...');
             
             if (this.initializationAttempted) {
                 console.warn('⚠️ AppCore初期化は既に試行済み - 重複実行防止');
@@ -69,7 +69,7 @@ class AppCore {
             }
             this.initializationAttempted = true;
 
-            // STEP 1: 統一システム初期化
+            // STEP 1: 統一システム初期化（ConfigManager優先）
             await this.initializeUnifiedSystems();
             
             // STEP 2: 専門Manager初期化（UIManagerを後回しに）
@@ -78,7 +78,7 @@ class AppCore {
             // STEP 3: PixiJS Application作成
             await this.initializePixiApplication();
             
-            // STEP 4: キャンバス統合
+            // STEP 4: キャンバス統合（ConfigManager統合確実化）
             await this.integrateCanvas();
             
             // STEP 5: ツール登録
@@ -98,7 +98,7 @@ class AppCore {
                 });
             }
             
-            console.log('✅ AppCore初期化完了（Phase1修正版）');
+            console.log('✅ AppCore初期化完了（Phase1 ConfigManager統合確実化版）');
             return true;
             
         } catch (error) {
@@ -126,17 +126,32 @@ class AppCore {
     }
 
     /**
-     * STEP 1: 統一システム初期化
+     * STEP 1: 統一システム初期化（ConfigManager優先強化版）
      */
     async initializeUnifiedSystems() {
         try {
             console.log('🔧 統一システム初期化中...');
             
-            // ConfigManager
+            // ConfigManager（最優先・確実な初期化）
             this.configManager = window.Tegaki?.ConfigManagerInstance;
             if (!this.configManager && window.Tegaki?.ConfigManager) {
                 this.configManager = new window.Tegaki.ConfigManager();
                 window.Tegaki.ConfigManagerInstance = this.configManager;
+                console.log('✅ ConfigManager新規作成完了');
+            } else if (this.configManager) {
+                console.log('✅ ConfigManager既存インスタンス取得');
+            }
+
+            // ConfigManager機能確認（Phase1重要）
+            if (this.configManager) {
+                const hasCanvasConfig = typeof this.configManager.getCanvasConfig === 'function';
+                const hasPixiConfig = typeof this.configManager.getPixiConfig === 'function';
+                
+                console.log('🔧 ConfigManager機能確認:', {
+                    hasCanvasConfig,
+                    hasPixiConfig,
+                    ready: hasCanvasConfig && hasPixiConfig
+                });
             }
 
             // ErrorManager
@@ -163,6 +178,7 @@ class AppCore {
             this.initializationState.unifiedSystems = true;
             console.log('✅ 統一システム初期化完了:', {
                 configManager: !!this.configManager,
+                configManagerFunctions: !!(this.configManager?.getCanvasConfig && this.configManager?.getPixiConfig),
                 errorManager: !!this.errorManager,
                 stateManager: !!this.stateManager,
                 eventBus: !!this.eventBus
@@ -218,7 +234,7 @@ class AppCore {
     }
 
     /**
-     * STEP 3: PixiJS Application初理化
+     * STEP 3: PixiJS Application初期化
      */
     async initializePixiApplication() {
         try {
@@ -228,7 +244,7 @@ class AppCore {
                 throw new Error('PIXIライブラリが利用できません');
             }
 
-            // 設定取得
+            // ConfigManagerから設定取得（Phase1重要）
             let config = {
                 width: 400,
                 height: 400,
@@ -238,39 +254,46 @@ class AppCore {
 
             if (this.configManager?.getCanvasConfig) {
                 const canvasConfig = this.configManager.getCanvasConfig();
-                config = { ...config, ...canvasConfig };
+                const pixiConfig = this.configManager.getPixiConfig();
+                
+                config = {
+                    width: canvasConfig.width || 400,
+                    height: canvasConfig.height || 400,
+                    backgroundColor: pixiConfig.backgroundColor || 0xffffee,
+                    antialias: pixiConfig.antialias !== undefined ? pixiConfig.antialias : true,
+                    resolution: pixiConfig.resolution || window.devicePixelRatio || 1,
+                    autoDensity: pixiConfig.autoDensity !== undefined ? pixiConfig.autoDensity : true
+                };
+                
+                console.log('✅ ConfigManager設定適用:', config);
+            } else {
+                console.warn('⚠️ ConfigManager設定取得不可 - デフォルト設定使用');
             }
 
             // PIXI.Application作成
-            this.app = new PIXI.Application({
-                width: config.width,
-                height: config.height,
-                backgroundColor: config.backgroundColor,
-                antialias: config.antialias,
-                resolution: window.devicePixelRatio || 1,
-                autoDensity: true
-            });
+            this.app = new PIXI.Application(config);
 
             this.initializationState.pixiApplication = true;
             console.log('✅ PixiJS Application作成完了:', {
                 width: this.app.screen.width,
-                height: this.app.screen.height
+                height: this.app.screen.height,
+                backgroundColor: config.backgroundColor
             });
 
         } catch (error) {
-            console.error('❌ PixiJS Application初期化エラー:', error);
+            console.error('❌ PixiJS Application初理化エラー:', error);
             throw new Error(`PixiJS Application初期化失敗: ${error.message}`);
         }
     }
 
     /**
-     * STEP 4: キャンバス統合（canvas-container対応版）
+     * STEP 4: キャンバス統合（ConfigManager統合確実化版）
      */
     async integrateCanvas() {
         try {
-            console.log('🎨 キャンバス統合中...');
+            console.log('🎨 キャンバス統合中（ConfigManager統合確実化版）...');
 
-            // Phase1修正: canvas-container要素を優先使用
+            // canvas-container要素を優先使用
             let canvasElement = document.getElementById('canvas-container');
             
             if (!canvasElement) {
@@ -289,21 +312,26 @@ class AppCore {
                 throw new Error('キャンバス要素の作成に失敗しました');
             }
 
-            // CanvasManager初期化
+            // CanvasManager初期化（ConfigManager統合確実化）
             if (this.canvasManager && typeof this.canvasManager.initialize === 'function') {
+                console.log('🔧 CanvasManager初期化開始 - ConfigManager統合付き');
+                
                 const success = await this.canvasManager.initialize({
-                    appCore: this,
-                    canvasElement: canvasElement,
+                    appCore: this,                    // AppCore参照
+                    canvasElement: canvasElement,     // キャンバス要素
                     config: {
-                        configManager: this.configManager
+                        configManager: this.configManager,  // ConfigManager直接渡し（重要）
+                        // 追加設定があれば here
                     }
                 });
 
                 if (!success) {
                     throw new Error('CanvasManager初期化に失敗しました');
                 }
+                
+                console.log('✅ CanvasManager初理化完了 - ConfigManager統合済み');
             } else {
-                console.warn('⚠️ CanvasManager利用不可 - 基本キャンバス作成');
+                console.warn('⚠️ CanvasManager利用不可 - 緊急フォールバック実行');
                 await this.executeCanvasEmergencyFallback(canvasElement);
             }
 
@@ -507,6 +535,7 @@ class AppCore {
     getManagerStatus() {
         return {
             configManager: !!this.configManager,
+            configManagerFunctions: !!(this.configManager?.getCanvasConfig && this.configManager?.getPixiConfig),
             errorManager: !!this.errorManager,
             stateManager: !!this.stateManager,
             eventBus: !!this.eventBus,
@@ -526,16 +555,18 @@ class AppCore {
     }
 
     /**
-     * 座標統合状態取得
+     * ConfigManager統合状態取得（Phase1診断）
      */
-    getCoordinateIntegrationState() {
+    getConfigManagerIntegrationState() {
         return {
-            appCoreInitialized: this.initialized,
-            coordinateManagerAvailable: !!this.coordinateManager,
+            configManagerAvailable: !!this.configManager,
+            hasGetCanvasConfig: !!(this.configManager?.getCanvasConfig),
+            hasGetPixiConfig: !!(this.configManager?.getPixiConfig),
             canvasManagerIntegrated: !!this.canvasManager,
-            pixiApplicationReady: !!this.app,
-            canvasElementAttached: !!document.querySelector('canvas'),
-            coordinateIntegrationEnabled: !!(this.coordinateManager && this.canvasManager)
+            integrationReady: !!(this.configManager?.getCanvasConfig && 
+                                this.configManager?.getPixiConfig && 
+                                this.canvasManager),
+            pixiAppWithConfigApplied: !!(this.app && this.configManager?.getCanvasConfig)
         };
     }
 
@@ -548,7 +579,7 @@ class AppCore {
             initializationAttempted: this.initializationAttempted,
             initializationState: this.getInitializationState(),
             managerStatus: this.getManagerStatus(),
-            coordinateIntegration: this.getCoordinateIntegrationState(),
+            configManagerIntegration: this.getConfigManagerIntegrationState(),
             pixiInfo: {
                 available: !!window.PIXI,
                 appCreated: !!this.app,
@@ -606,7 +637,7 @@ if (typeof window !== 'undefined') {
     window.AppCore = AppCore;
 }
 
-console.log('🎯 AppCore (Phase1修正版) Loaded');
-console.log('✨ 修正完了: 初期化順序修正・UIManager依存関係解消・canvas-container対応');
-console.log('🛡️ エラーループ防止機能強化・基本フォールバック改善');
+console.log('🎯 AppCore (Phase1 ConfigManager統合確実化版) Loaded');
+console.log('✨ 修正完了: ConfigManager → CanvasManager統合確実化・キャンバス出現警告解消');
+console.log('🛡️ エラーループ防止機能強化・緊急フォールバック改善');
 console.log('🔧 使用例: const appCore = new AppCore(); await appCore.initialize();');
