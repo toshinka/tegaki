@@ -1,5 +1,5 @@
 /**
- * 🎯 AppCore - アプリケーションコア統合システム (Phase1キャンバス要素修正版)
+ * 🎯 AppCore - アプリケーションコア統合システム (Phase1修正版)
  * 🔄 CORE_FUNCTION: 統合管理・初期化・統一システム調整
  * 📋 RESPONSIBILITY: 「アプリケーション全体」の統合管理
  * 
@@ -7,10 +7,11 @@
  * 🚫 DRAWING_PROHIBITION: 直接描画処理は禁止 - CanvasManager/Tool委譲
  * ✅ INTEGRATION_AUTHORITY: Manager間統合・初期化順序制御
  * 
- * ✨ 修正内容:
- * - drawing-canvas → canvas-container 要素名修正
- * - エラーループ防止機能追加
+ * ✨ Phase1修正内容:
+ * - 初期化順序の修正（UIManager依存関係解消）
+ * - エラーループ防止機能強化
  * - 基本フォールバック強化
+ * - canvas-container要素対応
  * 
  * 📋 参考定義:
  * - ルールブック: 統合システム運用規約
@@ -24,7 +25,8 @@ window.Tegaki = window.Tegaki || {};
 class AppCore {
     constructor() {
         this.initialized = false;
-        this.initializationAttempted = false; // エラーループ防止フラグ
+        this.initializationAttempted = false;
+        this.errorLoopPrevention = false;
         
         // 統一システム参照
         this.configManager = null;
@@ -55,7 +57,7 @@ class AppCore {
     }
 
     /**
-     * AppCore初期化（Phase1集中修正版）
+     * AppCore初期化（Phase1修正版）
      */
     async initialize() {
         try {
@@ -70,17 +72,20 @@ class AppCore {
             // STEP 1: 統一システム初期化
             await this.initializeUnifiedSystems();
             
-            // STEP 2: 専門Manager初理化
+            // STEP 2: 専門Manager初期化（UIManagerを後回しに）
             await this.initializeSpecializedManagers();
             
-            // STEP 3: PixiJS Application作成（修正版）
+            // STEP 3: PixiJS Application作成
             await this.initializePixiApplication();
             
-            // STEP 4: キャンバス統合（要素名修正版）
+            // STEP 4: キャンバス統合
             await this.integrateCanvas();
             
             // STEP 5: ツール登録
             await this.registerTools();
+            
+            // STEP 6: UI初期化（最後に実行）
+            await this.initializeUI();
             
             this.initialized = true;
             this.initializationState.complete = true;
@@ -100,16 +105,17 @@ class AppCore {
             console.error('❌ AppCore初期化失敗:', error);
             
             // エラー表示（ループ防止付き）
-            if (this.errorManager?.showError && !this._errorLoopPrevention) {
-                this._errorLoopPrevention = true;
+            if (this.errorManager?.showError && !this.errorLoopPrevention) {
+                this.errorLoopPrevention = true;
                 this.errorManager.showError('error', `AppCore初期化失敗: ${error.message}`, {
                     context: 'AppCore.initialize',
-                    showReload: true
+                    showReload: true,
+                    nonCritical: false
                 });
                 
                 // 5秒後にループ防止フラグをリセット
                 setTimeout(() => {
-                    this._errorLoopPrevention = false;
+                    this.errorLoopPrevention = false;
                 }, 5000);
             }
             
@@ -127,39 +133,31 @@ class AppCore {
             console.log('🔧 統一システム初期化中...');
             
             // ConfigManager
-            this.configManager = window.Tegaki?.ConfigManagerInstance || window.ConfigManagerInstance;
-            if (!this.configManager) {
-                const ConfigManagerCtor = window.Tegaki?.ConfigManager || window.ConfigManager;
-                if (ConfigManagerCtor) {
-                    this.configManager = new ConfigManagerCtor();
-                }
+            this.configManager = window.Tegaki?.ConfigManagerInstance;
+            if (!this.configManager && window.Tegaki?.ConfigManager) {
+                this.configManager = new window.Tegaki.ConfigManager();
+                window.Tegaki.ConfigManagerInstance = this.configManager;
             }
 
             // ErrorManager
-            this.errorManager = window.Tegaki?.ErrorManagerInstance || window.ErrorManagerInstance;
-            if (!this.errorManager) {
-                const ErrorManagerCtor = window.Tegaki?.ErrorManager || window.ErrorManager;
-                if (ErrorManagerCtor) {
-                    this.errorManager = new ErrorManagerCtor();
-                }
+            this.errorManager = window.Tegaki?.ErrorManagerInstance;
+            if (!this.errorManager && window.Tegaki?.ErrorManager) {
+                this.errorManager = new window.Tegaki.ErrorManager();
+                window.Tegaki.ErrorManagerInstance = this.errorManager;
             }
 
             // StateManager
-            this.stateManager = window.Tegaki?.StateManagerInstance || window.StateManagerInstance;
-            if (!this.stateManager) {
-                const StateManagerCtor = window.Tegaki?.StateManager || window.StateManager;
-                if (StateManagerCtor) {
-                    this.stateManager = new StateManagerCtor();
-                }
+            this.stateManager = window.Tegaki?.StateManagerInstance;
+            if (!this.stateManager && window.Tegaki?.StateManager) {
+                this.stateManager = new window.Tegaki.StateManager();
+                window.Tegaki.StateManagerInstance = this.stateManager;
             }
 
             // EventBus
-            this.eventBus = window.Tegaki?.EventBusInstance || window.EventBusInstance;
-            if (!this.eventBus) {
-                const EventBusCtor = window.Tegaki?.EventBus || window.EventBus;
-                if (EventBusCtor) {
-                    this.eventBus = new EventBusCtor();
-                }
+            this.eventBus = window.Tegaki?.EventBusInstance;
+            if (!this.eventBus && window.Tegaki?.EventBus) {
+                this.eventBus = new window.Tegaki.EventBus();
+                window.Tegaki.EventBusInstance = this.eventBus;
             }
 
             this.initializationState.unifiedSystems = true;
@@ -177,54 +175,40 @@ class AppCore {
     }
 
     /**
-     * STEP 2: 専門Manager初期化
+     * STEP 2: 専門Manager初期化（UIManager除く）
      */
     async initializeSpecializedManagers() {
         try {
             console.log('🎯 専門Manager初期化中...');
 
             // CoordinateManager
-            this.coordinateManager = window.Tegaki?.CoordinateManagerInstance || window.CoordinateManagerInstance;
-            if (!this.coordinateManager) {
-                const CoordinateManagerCtor = window.Tegaki?.CoordinateManager || window.CoordinateManager;
-                if (CoordinateManagerCtor) {
-                    this.coordinateManager = new CoordinateManagerCtor();
-                }
+            this.coordinateManager = window.Tegaki?.CoordinateManagerInstance;
+            if (!this.coordinateManager && window.Tegaki?.CoordinateManager) {
+                this.coordinateManager = new window.Tegaki.CoordinateManager();
+                window.Tegaki.CoordinateManagerInstance = this.coordinateManager;
             }
 
             // CanvasManager（後で統合するため、インスタンスのみ取得）
-            this.canvasManager = window.Tegaki?.CanvasManagerInstance || window.CanvasManagerInstance;
-            if (!this.canvasManager) {
-                const CanvasManagerCtor = window.Tegaki?.CanvasManager || window.CanvasManager;
-                if (CanvasManagerCtor) {
-                    this.canvasManager = new CanvasManagerCtor();
-                }
+            this.canvasManager = window.Tegaki?.CanvasManagerInstance;
+            if (!this.canvasManager && window.Tegaki?.CanvasManager) {
+                this.canvasManager = new window.Tegaki.CanvasManager();
+                window.Tegaki.CanvasManagerInstance = this.canvasManager;
             }
 
             // ToolManager
-            this.toolManager = window.Tegaki?.ToolManagerInstance || window.ToolManagerInstance;
-            if (!this.toolManager) {
-                const ToolManagerCtor = window.Tegaki?.ToolManager || window.ToolManager;
-                if (ToolManagerCtor) {
-                    this.toolManager = new ToolManagerCtor();
-                }
+            this.toolManager = window.Tegaki?.ToolManagerInstance;
+            if (!this.toolManager && window.Tegaki?.ToolManager) {
+                this.toolManager = new window.Tegaki.ToolManager();
+                window.Tegaki.ToolManagerInstance = this.toolManager;
             }
 
-            // UIManager
-            this.uiManager = window.Tegaki?.UIManagerInstance || window.UIManagerInstance;
-            if (!this.uiManager) {
-                const UIManagerCtor = window.Tegaki?.UIManager || window.UIManager;
-                if (UIManagerCtor) {
-                    this.uiManager = new UIManagerCtor();
-                }
-            }
+            // UIManagerは後で初期化（STEP 6）
 
             this.initializationState.specializedManagers = true;
             console.log('✅ 専門Manager初期化完了:', {
                 coordinateManager: !!this.coordinateManager,
                 canvasManager: !!this.canvasManager,
-                toolManager: !!this.toolManager,
-                uiManager: !!this.uiManager
+                toolManager: !!this.toolManager
             });
 
         } catch (error) {
@@ -234,7 +218,7 @@ class AppCore {
     }
 
     /**
-     * STEP 3: PixiJS Application初期化（修正版）
+     * STEP 3: PixiJS Application初理化
      */
     async initializePixiApplication() {
         try {
@@ -280,21 +264,24 @@ class AppCore {
     }
 
     /**
-     * STEP 4: キャンバス統合（要素名修正版）
+     * STEP 4: キャンバス統合（canvas-container対応版）
      */
     async integrateCanvas() {
         try {
             console.log('🎨 キャンバス統合中...');
 
-            // ✨ 修正: canvas-container要素を使用
-            let canvasElement = document.getElementById('canvas-container') || 
-                               document.getElementById('drawing-canvas') || // フォールバック
+            // Phase1修正: canvas-container要素を優先使用
+            let canvasElement = document.getElementById('canvas-container');
+            
+            if (!canvasElement) {
+                // フォールバック検索
+                canvasElement = document.getElementById('drawing-canvas') ||
                                document.querySelector('canvas') ||
                                document.querySelector('.canvas-area');
+            }
 
             if (!canvasElement) {
                 console.warn('⚠️ キャンバス要素が見つかりません - 動的作成');
-                // 動的要素作成
                 canvasElement = this.createFallbackCanvasContainer();
             }
 
@@ -302,10 +289,10 @@ class AppCore {
                 throw new Error('キャンバス要素の作成に失敗しました');
             }
 
-            // CanvasManager初期化（修正版）
+            // CanvasManager初期化
             if (this.canvasManager && typeof this.canvasManager.initialize === 'function') {
                 const success = await this.canvasManager.initialize({
-                    appCore: this, // AppCore参照を提供
+                    appCore: this,
                     canvasElement: canvasElement,
                     config: {
                         configManager: this.configManager
@@ -317,8 +304,7 @@ class AppCore {
                 }
             } else {
                 console.warn('⚠️ CanvasManager利用不可 - 基本キャンバス作成');
-                // 基本フォールバック
-                canvasElement.appendChild(this.app.view);
+                await this.executeCanvasEmergencyFallback(canvasElement);
             }
 
             this.initializationState.canvasIntegration = true;
@@ -339,14 +325,22 @@ class AppCore {
         try {
             const container = document.createElement('div');
             container.id = 'canvas-container';
-            container.style.width = '400px';
-            container.style.height = '400px';
-            container.style.margin = '0 auto';
-            container.style.backgroundColor = '#ffffee';
-            container.style.border = '1px solid #ccc';
+            container.style.cssText = `
+                width: 400px;
+                height: 400px;
+                margin: 0 auto;
+                background-color: #ffffee;
+                border: 1px solid #ccc;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                position: relative;
+            `;
             
             // メイン領域を探して挿入
-            const canvasArea = document.querySelector('.canvas-area') || document.body;
+            const canvasArea = document.querySelector('.canvas-area') || 
+                              document.querySelector('.main-layout') ||
+                              document.body;
             canvasArea.appendChild(container);
             
             console.log('✅ フォールバックキャンバスコンテナ作成完了');
@@ -361,18 +355,26 @@ class AppCore {
     /**
      * キャンバス緊急フォールバック
      */
-    async executeCanvasEmergencyFallback() {
+    async executeCanvasEmergencyFallback(targetElement = null) {
         try {
             console.log('🛡️ キャンバス緊急フォールバック実行...');
             
             // 最小限のキャンバス表示
-            let container = document.getElementById('canvas-container') || 
+            let container = targetElement || 
+                           document.getElementById('canvas-container') || 
                            this.createFallbackCanvasContainer();
             
             if (container && this.app) {
+                // 既存のcanvasがあれば削除
+                const existingCanvas = container.querySelector('canvas');
+                if (existingCanvas) {
+                    existingCanvas.remove();
+                }
+                
                 // PIXIキャンバスを直接追加
                 container.appendChild(this.app.view);
                 this.app.view.style.cursor = 'crosshair';
+                this.app.view.style.display = 'block';
                 
                 this.initializationState.canvasIntegration = true;
                 console.log('✅ キャンバス緊急フォールバック完了');
@@ -398,8 +400,10 @@ class AppCore {
             }
 
             // ペンツール登録
-            if (window.PenTool) {
-                const penTool = new window.PenTool();
+            if (window.Tegaki?.PenTool || window.PenTool) {
+                const PenToolClass = window.Tegaki?.PenTool || window.PenTool;
+                const penTool = new PenToolClass();
+                
                 if (typeof this.toolManager.registerTool === 'function') {
                     this.toolManager.registerTool('pen', penTool);
                     console.log('✅ ペンツール登録完了');
@@ -407,8 +411,10 @@ class AppCore {
             }
 
             // 消しゴムツール登録
-            if (window.EraserTool) {
-                const eraserTool = new window.EraserTool();
+            if (window.Tegaki?.EraserTool || window.EraserTool) {
+                const EraserToolClass = window.Tegaki?.EraserTool || window.EraserTool;
+                const eraserTool = new EraserToolClass();
+                
                 if (typeof this.toolManager.registerTool === 'function') {
                     this.toolManager.registerTool('eraser', eraserTool);
                     console.log('✅ 消しゴムツール登録完了');
@@ -430,13 +436,40 @@ class AppCore {
     }
 
     /**
+     * STEP 6: UI初期化（最後に実行）
+     */
+    async initializeUI() {
+        try {
+            console.log('🎨 UI初期化中...');
+
+            // UIManager初期化（依存関係が整った後に実行）
+            this.uiManager = window.Tegaki?.UIManagerInstance;
+            if (!this.uiManager && window.Tegaki?.UIManager) {
+                this.uiManager = new window.Tegaki.UIManager();
+                window.Tegaki.UIManagerInstance = this.uiManager;
+            }
+
+            if (this.uiManager && typeof this.uiManager.initialize === 'function') {
+                this.uiManager.initialize();
+                console.log('✅ UIManager初期化完了');
+            } else {
+                console.warn('⚠️ UIManager利用不可 - 基本UI機能のみ');
+            }
+
+        } catch (error) {
+            console.error('❌ UI初期化エラー:', error);
+            // UI初期化は非致命的なので継続
+        }
+    }
+
+    /**
      * 緊急フォールバック実行
      */
     async executeEmergencyFallback() {
         try {
             console.log('🛡️ 緊急フォールバック実行...');
             
-            // 最小限のキャンバス表示のみ実行
+            // 最小限のPixi Applicationとキャンバス表示のみ実行
             if (window.PIXI && !this.app) {
                 this.app = new PIXI.Application({
                     width: 400,
@@ -447,8 +480,10 @@ class AppCore {
             }
             
             if (this.app) {
-                const container = document.getElementById('canvas-container') || 
-                                 this.createFallbackCanvasContainer();
+                let container = document.getElementById('canvas-container');
+                if (!container) {
+                    container = this.createFallbackCanvasContainer();
+                }
                 
                 if (container && !container.querySelector('canvas')) {
                     container.appendChild(this.app.view);
@@ -546,6 +581,7 @@ class AppCore {
             // 状態リセット
             this.initialized = false;
             this.initializationAttempted = false;
+            this.errorLoopPrevention = false;
             
             console.log('🎯 AppCore破棄完了');
 
@@ -570,7 +606,7 @@ if (typeof window !== 'undefined') {
     window.AppCore = AppCore;
 }
 
-console.log('🎯 AppCore (Phase1キャンバス要素修正版) Loaded');
-console.log('✨ 修正完了: drawing-canvas → canvas-container 要素名対応');
-console.log('🛡️ エラーループ防止機能追加');
+console.log('🎯 AppCore (Phase1修正版) Loaded');
+console.log('✨ 修正完了: 初期化順序修正・UIManager依存関係解消・canvas-container対応');
+console.log('🛡️ エラーループ防止機能強化・基本フォールバック改善');
 console.log('🔧 使用例: const appCore = new AppCore(); await appCore.initialize();');
