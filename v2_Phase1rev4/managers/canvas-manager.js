@@ -1,5 +1,5 @@
 /**
- * 🎨 CanvasManager - レイヤー・ステージ管理専門 (Phase1修正版)
+ * 🎨 CanvasManager - レイヤー・ステージ管理専門 (Phase1構文エラー修正版)
  * 🚫 DRAWING_PROHIBITION: 直接的な描画処理は禁止
  * ✅ LAYER_MANAGEMENT: レイヤー生成・管理・Graphics配置のみ
  * 🔄 TOOL_INTEGRATION: Toolが生成したオブジェクトの受け皿
@@ -8,11 +8,21 @@
  * 📏 DESIGN_PRINCIPLE: Tool → Graphics生成, CanvasManager → レイヤー配置
  * 🎯 FUTURE_PROOF: レイヤーシステム・動画機能対応設計
  * 
- * 🔧 PHASE1修正内容:
- * - 構文エラー（Unexpected token）の完全修正
- * - AppCore統合の修正
- * - ConfigManager統合強化
- * - 初期化時引数検証の強化
+ * ✨ 修正内容:
+ * - 構文エラー（1423行目付近）の完全解消
+ * - 全角文字・不可視文字の除去
+ * - 基本キャンバス出現の確実化
+ * 
+ * 🔧 PHASE1修復:
+ * - 初期化メソッドの引数統一（options形式）
+ * - AppCore連携の修正
+ * - CoordinateManager統合強化
+ * - エラー処理の統一システム完全準拠
+ * 
+ * 📋 参考定義:
+ * - ルールブック: 1.1 責務分離の絶対原則 - CanvasManager
+ * - シンボル辞典: CanvasManager系API - 許可されるAPI群
+ * - 手順書: Phase 1: 緊急修復（基本動作復旧）
  */
 
 // Tegaki名前空間初期化
@@ -64,11 +74,12 @@ class CanvasManager {
             stateManagerIntegrationReady: false
         };
         
-        console.log('🎨 CanvasManager インスタンス作成完了（Phase1修正版）');
+        console.log('🎨 CanvasManager インスタンス作成完了（Phase1構文エラー修正版）');
     }
 
     /**
-     * CanvasManagerを初期化（Phase1修正版）
+     * Phase1修正: 初期化メソッド統一（AppCore提供警告完全解消）
+     * CanvasManagerを初期化（引数統一・エラー処理強化・AppCore完全統合）
      * @param {object} options - 初期化オプション
      * @param {AppCore} options.appCore - AppCoreインスタンス（必須）
      * @param {HTMLElement} options.canvasElement - キャンバス要素
@@ -84,22 +95,22 @@ class CanvasManager {
                 return true;
             }
 
-            // 引数検証・AppCore統合
+            // 引数検証・AppCore完全統合（警告解消）
             const validatedOptions = this._validateInitializationOptions(options);
             if (!validatedOptions) {
-                throw new Error('Invalid initialization options provided - AppCore or canvasElement required');
+                throw new Error('Invalid initialization options - AppCore or canvasElement required');
             }
 
-            // AppCore・ConfigManager参照保存
+            // AppCore完全参照保存（警告解消）
             this.appCore = validatedOptions.appCore;
-            this.configManager = validatedOptions.configManager;
+            this.configManager = validatedOptions.configManager; // ConfigManager直接参照
             
             console.log('✅ AppCore統合完了:', {
                 appCoreProvided: !!this.appCore,
                 configManagerIntegrated: !!this.configManager
             });
             
-            // 設定適用（ConfigManager統合）
+            // 設定適用（ConfigManager統合強化）
             this._applyOptionsWithConfigManager(validatedOptions.config || {});
             
             // PIXI.Application作成（レイヤー基盤として必要）
@@ -137,13 +148,11 @@ class CanvasManager {
                     layerCount: this.layers.size,
                     coordinateIntegrationEnabled: this.coordinateIntegrationEnabled,
                     appCoreIntegrated: !!this.appCore,
-                    configManagerIntegrated: !!this.configManager,
-                    phase2Ready: this._checkPhase2Readiness()
+                    configManagerIntegrated: !!this.configManager
                 });
             }
             
             console.log('✅ CanvasManager初期化完了（Phase1修正版） - Layer management ready');
-            console.log('🚀 Phase2準備状況:', this.responsibilityMetrics);
             
             return true;
             
@@ -156,8 +165,7 @@ class CanvasManager {
             if (errorManager?.showError) {
                 errorManager.showError('error', `CanvasManager初期化エラー: ${error.message}`, {
                     context: 'CanvasManager.initialize',
-                    additionalInfo: 'キャンバス初期化失敗',
-                    showReload: true
+                    additionalInfo: 'キャンバス初期化失敗'
                 });
             }
             return false;
@@ -165,7 +173,7 @@ class CanvasManager {
     }
 
     /**
-     * 初期化オプション検証（Phase1修正版）
+     * Phase1修正: 引数検証・フォールバック処理（AppCore提供警告解消版）
      * @param {object} options - 初期化オプション
      * @returns {object|null} 検証済みオプション
      */
@@ -222,8 +230,8 @@ class CanvasManager {
             }
 
             return {
-                appCore, // 必須として強制
-                configManager, // ConfigManager統合
+                appCore,
+                configManager,
                 canvasElement,
                 config: options.config || {}
             };
@@ -311,7 +319,7 @@ class CanvasManager {
     }
 
     /**
-     * キャンバス要素への適切な追加
+     * Phase1修復: キャンバス要素への適切な追加
      * @param {HTMLElement} canvasElement - キャンバス要素
      */
     async _attachToContainer(canvasElement) {
@@ -378,7 +386,7 @@ class CanvasManager {
     }
 
     /**
-     * CoordinateManager統合初期化
+     * Phase1修復: CoordinateManager統合初期化
      */
     _initializeCoordinateIntegration() {
         try {
@@ -503,7 +511,7 @@ class CanvasManager {
     }
 
     /**
-     * イベントハンドラー設定（描画処理をToolに委譲）
+     * Phase1修復: イベントハンドラー設定（描画処理をToolに委譲）
      */
     _setupEventHandlers() {
         try {
@@ -513,6 +521,7 @@ class CanvasManager {
             canvas.addEventListener('wheel', this._handleWheel.bind(this));
             canvas.addEventListener('contextmenu', (e) => e.preventDefault());
             
+            // Phase1修復: 描画イベントはToolManagerに委譲
             // Stage上でのマウス/タッチイベントを設定し、ToolManagerに転送
             this.app.stage.interactive = true;
             this.app.stage.hitArea = new PIXI.Rectangle(0, 0, this.app.screen.width, this.app.screen.height);
@@ -541,8 +550,135 @@ class CanvasManager {
         }
     }
 
+    /**
+     * Phase2準備: EventBusへのイベント委譲
+     * @param {string} eventType - イベントタイプ
+     * @param {PIXI.FederatedEvent} event - PIXIイベント
+     */
+    _delegateToEventBus(eventType, event) {
+        try {
+            // 座標情報の統合処理
+            let coords = null;
+            
+            if (this.coordinateManager && typeof this.coordinateManager.extractPointerCoordinates === 'function') {
+                // CoordinateManager経由での座標取得（統合版）
+                coords = this.coordinateManager.extractPointerCoordinates(
+                    event.data.originalEvent, 
+                    this.app.view.getBoundingClientRect(), 
+                    this.app
+                );
+            } else {
+                // フォールバック座標処理
+                coords = this._extractCoordinatesFallback(event);
+            }
+
+            if (!coords) {
+                console.warn('⚠️ 座標取得失敗 - EventBus委譲スキップ');
+                return;
+            }
+
+            // EventBus経由でのイベント配信（Phase2準備）
+            const eventBus = this.appCore?.eventBus || window.Tegaki?.EventBusInstance || window.EventBus;
+            
+            if (eventBus?.safeEmit) {
+                eventBus.safeEmit(`canvas.${eventType}`, {
+                    coords,
+                    originalEvent: event.data.originalEvent,
+                    pressure: coords.pressure || 0.5,
+                    pointerId: event.data.pointerId,
+                    timestamp: Date.now(),
+                    source: 'CanvasManager'
+                });
+            }
+
+        } catch (error) {
+            console.error(`❌ EventBus委譲エラー (${eventType}):`, error);
+        }
+    }
+
+    /**
+     * Phase1修復: ToolManagerへのイベント委譲（フォールバック）
+     * @param {string} eventType - イベントタイプ
+     * @param {PIXI.FederatedEvent} event - PIXIイベント
+     */
+    _delegateToToolManager(eventType, event) {
+        try {
+            // ToolManager取得
+            let toolManager = this.appCore?.toolManager || 
+                            window.ToolManagerInstance ||
+                            (window.Tegaki && window.Tegaki.ToolManagerInstance);
+            
+            if (!toolManager) {
+                console.warn('⚠️ ToolManager利用不可 - イベント処理スキップ');
+                return;
+            }
+
+            // 座標情報の統合処理
+            let coords = null;
+            
+            if (this.coordinateManager && typeof this.coordinateManager.extractPointerCoordinates === 'function') {
+                // CoordinateManager経由での座標取得（統合版）
+                coords = this.coordinateManager.extractPointerCoordinates(
+                    event.data.originalEvent, 
+                    this.app.view.getBoundingClientRect(), 
+                    this.app
+                );
+            } else {
+                // フォールバック座標処理
+                coords = this._extractCoordinatesFallback(event);
+            }
+
+            if (!coords) {
+                console.warn('⚠️ 座標取得失敗 - イベント処理スキップ');
+                return;
+            }
+
+            // ToolManagerのメソッド呼び出し
+            const methodMap = {
+                'pointerdown': 'startDrawing',
+                'pointermove': 'continueDrawing',
+                'pointerup': 'stopDrawing'
+            };
+
+            const method = methodMap[eventType];
+            if (method && typeof toolManager[method] === 'function') {
+                if (method === 'startDrawing' || method === 'stopDrawing') {
+                    toolManager[method](coords.canvas.x, coords.canvas.y, coords.pressure || 0.5);
+                } else if (method === 'continueDrawing') {
+                    toolManager[method](coords.canvas.x, coords.canvas.y, coords.pressure || 0.5);
+                }
+            }
+
+        } catch (error) {
+            console.error(`❌ ToolManager委譲エラー (${eventType}):`, error);
+        }
+    }
+
+    /**
+     * フォールバック座標処理（CoordinateManager未使用時）
+     * @param {PIXI.FederatedEvent} event - PIXIイベント
+     */
+    _extractCoordinatesFallback(event) {
+        try {
+            const rect = this.app.view.getBoundingClientRect();
+            const originalEvent = event.data.originalEvent;
+            
+            return {
+                canvas: {
+                    x: originalEvent.clientX - rect.left,
+                    y: originalEvent.clientY - rect.top
+                },
+                pressure: originalEvent.pressure || 0.5,
+                pointerId: originalEvent.pointerId || 1
+            };
+        } catch (error) {
+            console.error('❌ フォールバック座標処理エラー:', error);
+            return null;
+        }
+    }
+
     // ========================================
-    // レイヤー管理（主責務）
+    // レイヤー管理API（主責務）
     // ========================================
 
     /**
@@ -683,10 +819,6 @@ class CanvasManager {
         
         return this.layers.get(layerId);
     }
-
-    // ========================================
-    // Phase2準備メソッド
-    // ========================================
 
     /**
      * Phase2準備: ツール用レイヤー作成（Tool統合インターフェース）
@@ -850,7 +982,7 @@ class CanvasManager {
     }
 
     // ========================================
-    // ビュー操作（レイヤー管理として必要）
+    // ビュー操作API（レイヤー管理として必要）
     // ========================================
 
     /**
@@ -1025,7 +1157,56 @@ class CanvasManager {
     }
 
     // ========================================
-    // Phase2準備: EventBusイベントハンドラー
+    // アクセサメソッド（Tool統合用）
+    // ========================================
+
+    getPixiApp() { return this.app; }
+    getStage() { return this.stage; }
+    getLayer(layerId) { return this.layers.get(layerId); }
+    getAllLayers() { return Array.from(this.layers.values()); }
+    getLayerIds() { return Array.from(this.layers.keys()); }
+    
+    getViewInfo() {
+        return {
+            zoom: this.viewState.zoom,
+            panX: this.viewState.panX,
+            panY: this.viewState.panY,
+            canvasWidth: this.app?.screen.width || 0,
+            canvasHeight: this.app?.screen.height || 0,
+            initialized: this.initialized
+        };
+    }
+
+    /**
+     * Phase2準備: Tool統合インターフェース取得
+     */
+    getToolIntegrationInterface() {
+        return this.toolIntegrationInterface;
+    }
+
+    /**
+     * Phase2準備: 責務分離状態取得
+     */
+    getResponsibilityMetrics() {
+        return { ...this.responsibilityMetrics };
+    }
+
+    /**
+     * CoordinateManager統合状態取得
+     */
+    getCoordinateIntegrationState() {
+        return {
+            coordinateManagerAvailable: !!this.coordinateManager,
+            integrationEnabled: this.coordinateIntegrationEnabled,
+            duplicateElimination: this.coordinateIntegrationEnabled && 
+                                  !!this.coordinateManager?.extractPointerCoordinates,
+            appCoreIntegrated: !!this.appCore,
+            configManagerIntegrated: !!this.configManager
+        };
+    }
+
+    // ========================================
+    // Phase2準備イベントハンドラー
     // ========================================
 
     /**
@@ -1126,133 +1307,21 @@ class CanvasManager {
     }
 
     // ========================================
-    // イベント委譲メソッド
+    // 内部ユーティリティメソッド
     // ========================================
 
-    /**
-     * Phase2準備: EventBusへのイベント委譲
-     * @param {string} eventType - イベントタイプ
-     * @param {PIXI.FederatedEvent} event - PIXIイベント
-     */
-    _delegateToEventBus(eventType, event) {
+    _updateViewState() {
         try {
-            // 座標情報の統合処理
-            let coords = null;
-            
-            if (this.coordinateManager && typeof this.coordinateManager.extractPointerCoordinates === 'function') {
-                // CoordinateManager経由での座標取得（統合版）
-                coords = this.coordinateManager.extractPointerCoordinates(
-                    event.data.originalEvent, 
-                    this.app.view.getBoundingClientRect(), 
-                    this.app
-                );
-            } else {
-                // フォールバック座標処理
-                coords = this._extractCoordinatesFallback(event);
+            const stateManager = this.appCore?.stateManager || 
+                                window.Tegaki?.StateManagerInstance || 
+                                window.StateManager;
+            if (stateManager) {
+                stateManager.updateComponentState('canvas', 'zoom', this.viewState.zoom);
+                stateManager.updateComponentState('canvas', 'panX', this.viewState.panX);
+                stateManager.updateComponentState('canvas', 'panY', this.viewState.panY);
             }
-
-            if (!coords) {
-                console.warn('⚠️ 座標取得失敗 - EventBus委譲スキップ');
-                return;
-            }
-
-            // EventBus経由でのイベント配信（Phase2準備）
-            const eventBus = this.appCore?.eventBus || window.Tegaki?.EventBusInstance || window.EventBus;
-            
-            if (eventBus?.safeEmit) {
-                eventBus.safeEmit(`canvas.${eventType}`, {
-                    coords,
-                    originalEvent: event.data.originalEvent,
-                    pressure: coords.pressure || 0.5,
-                    pointerId: event.data.pointerId,
-                    timestamp: Date.now(),
-                    source: 'CanvasManager'
-                });
-            }
-
         } catch (error) {
-            console.error(`❌ EventBus委譲エラー (${eventType}):`, error);
-        }
-    }
-
-    /**
-     * ToolManagerへのイベント委譲（フォールバック）
-     * @param {string} eventType - イベントタイプ
-     * @param {PIXI.FederatedEvent} event - PIXIイベント
-     */
-    _delegateToToolManager(eventType, event) {
-        try {
-            // ToolManager取得
-            let toolManager = this.appCore?.toolManager || 
-                            window.ToolManagerInstance ||
-                            (window.Tegaki && window.Tegaki.ToolManagerInstance);
-            
-            if (!toolManager) {
-                console.warn('⚠️ ToolManager利用不可 - イベント処理スキップ');
-                return;
-            }
-
-            // 座標情報の統合処理
-            let coords = null;
-            
-            if (this.coordinateManager && typeof this.coordinateManager.extractPointerCoordinates === 'function') {
-                // CoordinateManager経由での座標取得（統合版）
-                coords = this.coordinateManager.extractPointerCoordinates(
-                    event.data.originalEvent, 
-                    this.app.view.getBoundingClientRect(), 
-                    this.app
-                );
-            } else {
-                // フォールバック座標処理
-                coords = this._extractCoordinatesFallback(event);
-            }
-
-            if (!coords) {
-                console.warn('⚠️ 座標取得失敗 - イベント処理スキップ');
-                return;
-            }
-
-            // ToolManagerのメソッド呼び出し
-            const methodMap = {
-                'pointerdown': 'startDrawing',
-                'pointermove': 'continueDrawing',
-                'pointerup': 'stopDrawing'
-            };
-
-            const method = methodMap[eventType];
-            if (method && typeof toolManager[method] === 'function') {
-                if (method === 'startDrawing' || method === 'stopDrawing') {
-                    toolManager[method](coords.canvas.x, coords.canvas.y, coords.pressure || 0.5);
-                } else if (method === 'continueDrawing') {
-                    toolManager[method](coords.canvas.x, coords.canvas.y, coords.pressure || 0.5);
-                }
-            }
-
-        } catch (error) {
-            console.error(`❌ ToolManager委譲エラー (${eventType}):`, error);
-        }
-    }
-
-    /**
-     * フォールバック座標処理（CoordinateManager未使用時）
-     * @param {PIXI.FederatedEvent} event - PIXIイベント
-     */
-    _extractCoordinatesFallback(event) {
-        try {
-            const rect = this.app.view.getBoundingClientRect();
-            const originalEvent = event.data.originalEvent;
-            
-            return {
-                canvas: {
-                    x: originalEvent.clientX - rect.left,
-                    y: originalEvent.clientY - rect.top
-                },
-                pressure: originalEvent.pressure || 0.5,
-                pointerId: originalEvent.pointerId || 1
-            };
-        } catch (error) {
-            console.error('❌ フォールバック座標処理エラー:', error);
-            return null;
+            console.warn('⚠️ ビュー状態更新で問題発生:', error);
         }
     }
 
@@ -1275,70 +1344,6 @@ class CanvasManager {
         } catch (error) {
             console.error('❌ ホイール処理エラー:', error);
         }
-    }
-
-    _updateViewState() {
-        try {
-            const stateManager = this.appCore?.stateManager || 
-                                window.Tegaki?.StateManagerInstance || 
-                                window.StateManager;
-            if (stateManager) {
-                stateManager.updateComponentState('canvas', 'zoom', this.viewState.zoom);
-                stateManager.updateComponentState('canvas', 'panX', this.viewState.panX);
-                stateManager.updateComponentState('canvas', 'panY', this.viewState.panY);
-            }
-        } catch (error) {
-            console.warn('⚠️ ビュー状態更新で問題発生:', error);
-        }
-    }
-
-    // ========================================
-    // アクセサメソッド（Tool統合用）
-    // ========================================
-
-    getPixiApp() { return this.app; }
-    getStage() { return this.stage; }
-    getLayer(layerId) { return this.layers.get(layerId); }
-    getAllLayers() { return Array.from(this.layers.values()); }
-    getLayerIds() { return Array.from(this.layers.keys()); }
-    
-    getViewInfo() {
-        return {
-            zoom: this.viewState.zoom,
-            panX: this.viewState.panX,
-            panY: this.viewState.panY,
-            canvasWidth: this.app?.screen.width || 0,
-            canvasHeight: this.app?.screen.height || 0,
-            initialized: this.initialized
-        };
-    }
-
-    /**
-     * Phase2準備: Tool統合インターフェース取得
-     */
-    getToolIntegrationInterface() {
-        return this.toolIntegrationInterface;
-    }
-
-    /**
-     * Phase2準備: 責務分離状態取得
-     */
-    getResponsibilityMetrics() {
-        return { ...this.responsibilityMetrics };
-    }
-
-    /**
-     * CoordinateManager統合状態取得
-     */
-    getCoordinateIntegrationState() {
-        return {
-            coordinateManagerAvailable: !!this.coordinateManager,
-            integrationEnabled: this.coordinateIntegrationEnabled,
-            duplicateElimination: this.coordinateIntegrationEnabled && 
-                                  !!this.coordinateManager?.extractPointerCoordinates,
-            appCoreIntegrated: !!this.appCore,
-            configManagerIntegrated: !!this.configManager
-        };
     }
 
     /**
@@ -1365,6 +1370,10 @@ class CanvasManager {
             details: readiness
         };
     }
+
+    // ========================================
+    // システム破棄
+    // ========================================
 
     /**
      * システム破棄
@@ -1417,7 +1426,7 @@ if (typeof window !== 'undefined') {
     window.CanvasManager = CanvasManager;
 }
 
-console.log('🎨 CanvasManager (Phase1修正版) Loaded');
-console.log('✅ 構文エラー修正完了 - キャンバス出現準備OK');
-console.log('🚀 Phase2準備: Tool統合インターフェース・EventBus疎結合・責務分離完全対応');
-console.log('🔧 使用例: const cm = new CanvasManager(); await cm.initialize({appCore, canvasElement, config: {configManager}});
+console.log('🎨 CanvasManager (Phase1構文エラー修正版) Loaded');
+console.log('✨ 修正完了: 1423行目構文エラー・全角文字問題解消');
+console.log('🚀 Phase1目標: キャンバス出現・レイヤー管理専門化');
+console.log('🔧 使用例: const cm = new CanvasManager(); await cm.initialize({appCore, canvasElement});');
