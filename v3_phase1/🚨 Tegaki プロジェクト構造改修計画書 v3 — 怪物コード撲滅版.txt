@@ -1,0 +1,224 @@
+# 🚨 Tegaki プロジェクト構造改修計画書 v3 — 怪物コード撲滅版
+
+## 🎯 現状問題の徹底分析
+
+### 💀 怪物化した箇所（AI把握困難レベル）
+
+**1️⃣ Bootstrap.js（4,400文字）- エラー監視過多**
+- 依存関係待機システム（158行）
+- タイムアウト処理・リトライ機構
+- カスタムイベント複数発火
+- 確実性保証のための過度な検証
+→ **単純な順次読み込みで済む話を巨大化**
+
+**2️⃣ main.js（5,800文字）- 初期化地獄**
+- REV系修正による段階分岐
+- tryInitialize()による条件分岐地獄
+- immediateCanvasCheck()等の過度な検証
+- 5段階の初期化ステップ
+→ **キャンバス作成＋PixiJS初期化で済む話を巨大化**
+
+**3️⃣ 分散したエラー処理**
+- 各ファイルで独自のtry/catch
+- ErrorManager委譲の形だけ整えて実質肥大化
+- フォールバック処理の積み重ね
+→ **本来はthrow一本で済む処理を複雑化**
+
+## 🔥 撲滅方針：「動くゴミ」から「理解可能な構造」へ
+
+### ⚔️ 作戦1：Bootstrap完全シンプル化
+```javascript
+// 【現在】158行の複雑なBootstrap 
+// 【修正後】15行のシンプルBootstrap
+
+(function() {
+    const scripts = [
+        // 基盤3つだけで開始
+        'js/utils/error-manager.js',
+        'js/utils/config-manager.js', 
+        'js/utils/event-bus.js',
+        // 残りは即座読み込み
+        'js/main.js'
+    ];
+    
+    scripts.reduce((promise, script) => 
+        promise.then(() => loadScript(script)), 
+        Promise.resolve()
+    ).then(() => new window.Tegaki.TegakiApplication());
+    
+    function loadScript(src) {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = resolve;
+            script.onerror = reject; // 握りつぶし禁止
+            document.head.appendChild(script);
+        });
+    }
+})();
+```
+
+### ⚔️ 作戦2：Main.js を骨太化
+```javascript
+// 【現在】200行のTegakiApplication + 初期化地獄
+// 【修正後】50行の骨太Main
+
+class TegakiApplication {
+    constructor() {
+        this.createCanvas();
+        this.initializePixi();
+        this.setupTools();
+        console.log('🎨 Tegaki準備完了');
+    }
+    
+    createCanvas() {
+        const container = document.getElementById('canvas-container');
+        if (!container) throw new Error('Canvas container not found');
+        
+        this.app = new PIXI.Application({
+            width: 400, height: 400,
+            backgroundColor: '#ffffee'
+        });
+        
+        container.appendChild(this.app.view);
+        // キャンバス完成。以上。
+    }
+    
+    // 以下同様にシンプル化
+}
+```
+
+### ⚔️ 作戦3：Manager責務明確化
+```javascript
+// 各Managerは「エラー処理なし」「単機能」「例外throw」
+class CanvasManager {
+    constructor(pixiApp) {
+        this.app = pixiApp; // 受け取るだけ
+        this.layers = new Map();
+    }
+    
+    createLayer(name) {
+        if (this.layers.has(name)) throw new Error(`Layer ${name} exists`);
+        
+        const layer = new PIXI.Container();
+        this.layers.set(name, layer);
+        this.app.stage.addChild(layer);
+        return layer; // 例外throwかreturnのみ
+    }
+    // エラー処理は一切なし。例外は上位に委ね
+}
+```
+
+## 🪓 具体的撲滅計画
+
+### Phase A：怪物ファイル分解（1-2日）
+
+**1. Bootstrap.js → bootstrap-simple.js（15行）**
+- 依存関係待機システム削除
+- タイムアウト・リトライ削除  
+- カスタムイベント削除
+- 純粋なスクリプト順次読み込みのみ
+
+**2. main.js → main-simple.js（50行）**  
+- REV系修正による複雑化削除
+- tryInitialize()削除
+- immediateCanvasCheck()削除
+- 診断機能削除
+- Constructor内で全初期化完了
+
+**3. canvas-manager.js（現在未確認）**
+- PixiJS Application受取専用
+- レイヤー管理のみ
+- エラー処理完全削除
+
+### Phase B：責務分界厳格化（2-3日）
+
+**4. Tool群の単純化**
+- AbstractTool → 10行の骨格のみ
+- PenTool → draw()メソッドのみ
+- ErraserTool → erase()メソッドのみ
+
+**5. Manager群の単機能化** 
+- 各Manager50行以内
+- 1Manager = 1責務
+- エラー処理禁止（throw必須）
+
+**6. Error-Manager専任化**
+- 全エラーはErrorManagerのみ処理
+- UI通知・ログ・停止制御を一元化
+- 他ファイルからのエラー表示禁止
+
+### Phase C：「素人でも追える」確認（1日）
+
+**7. ファイルツリー整理**
+```
+js/
+├── simple-bootstrap.js    (15行)
+├── main-simple.js         (50行)
+├── utils/
+│   ├── error-manager.js   (専任・100行以内)
+│   ├── config-manager.js  (30行以内)
+│   └── event-bus.js       (30行以内)
+├── managers/
+│   ├── canvas-manager.js  (40行以内)
+│   └── tool-manager.js    (30行以内) 
+└── tools/
+    ├── pen-tool.js        (25行以内)
+    └── eraser-tool.js     (25行以内)
+```
+
+**8. コメント日本語化**
+- 全関数に「何を」「なぜ」コメント
+- 処理の流れが一目でわかる
+- AIが書いた部分の明確化
+
+## 🔚 成功定義：「怪物退治完了」基準
+
+### ✅ 定量基準
+- Bootstrap: 158行 → 15行（90%削減）  
+- Main: 200行 → 50行（75%削減）
+- ファイル平均行数: 50行以内
+- try/catch箇所: main.js以外は0箇所
+
+### ✅ 定性基準  
+- 初心者が全ファイル読み通せる
+- 処理の流れが明確に追える
+- エラーが出たら即座に原因特定可能
+- 「なぜこうなってるか」が日本語で説明済み
+
+### ✅ 動作基準
+- HTML直開きでキャンバス即表示
+- エラー出力は隠さず正直に表示  
+- クラッシュ上等・隠蔽処理一切なし
+
+---
+
+## 🚨 実装ルール（怪物化防止）
+
+### 🚫 絶対禁止
+- try/catchでのエラー握りつぶし
+- 「とりあえず動く」防御処理
+- 複数段階の初期化シーケンス
+- フォールバック・リトライ機構
+- ブラックボックス化した便利関数
+
+### ✅ 必須遵守  
+- エラーは必ずthrowして上位委譲
+- 1関数=1機能・50行以内
+- 日本語コメント必須
+- 処理は直線的・分岐最小
+- 素人が読んで理解できる構造
+
+---
+
+## 🎯 修正優先順位
+
+**Priority 1（即実行）**: Bootstrap → Main のシンプル化
+**Priority 2（翌日）**: Canvas-Manager の確認・修正  
+**Priority 3（その後）**: Tool・Manager群の単純化
+
+この計画により「一週間キャンバスが出ない」状況を **「30分でキャンバス表示」** に変革します。
+
+**「誤魔化して安定風に見せるくらいなら、クラッシュさせろ」**
+
+バグを隠すくらいなら、目の前で燃やして見せろ。それを直す手を人間とAIが一緒に動かすのです。
