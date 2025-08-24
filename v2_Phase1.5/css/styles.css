@@ -1,0 +1,833 @@
+/**
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0 - REV系統合版
+ * 📋 RESPONSIBILITY: スタイル管理統一・CSS変数・レスポンシブ対応
+ * 🔧 REV.3対応: インラインスタイル統合・CSS変数導入・責任分界
+ * 
+ * 📏 DESIGN_PRINCIPLE: スタイル管理専門・構造との分離
+ * 🎯 FUTURE_PROOF: テーマ変更・UI改善への柔軟対応
+ */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* ==========================================
+ * 🎨 REV.3: CSS変数統合・テーマ対応
+ * ========================================== */
+
+:root {
+    /* ふたば基本色 */
+    --futaba-maroon: #800000;
+    --futaba-light-maroon: #aa5a56;
+    --futaba-medium: #cf9c97;
+    --futaba-light-medium: #e9c2ba;
+    --futaba-cream: #f0e0d6;
+    --futaba-background: #ffffee;
+    --futaba-bg: #ffffee;                      /* REV.3: 統一エイリアス */
+    
+    --text-primary: #2c1810;
+    --text-secondary: #5d4037;
+    --text-inverse: #ffffff;
+    
+    /* REV.3: 新規追加CSS変数 */
+    --canvas-default-size: 400px;
+    --border-color: #ccc;
+    --tool-button-size: 36px;
+    --popup-panel-bg: #ffffff;
+    --popup-shadow: rgba(0, 0, 0, 0.15);
+    
+    /* 拡張ライブラリ統合用拡張色 */
+    --futaba-ui: var(--futaba-medium);         /* @pixi/ui要素 */
+    --futaba-tool: var(--futaba-maroon);       /* ツール系 */
+    --futaba-layer: var(--futaba-light-medium); /* レイヤー系 */
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+    background: var(--futaba-background);
+    margin: 0;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.main-layout {
+    display: grid;
+    grid-template-columns: 50px 1fr;
+    height: 100vh;
+    width: 100vw;
+    gap: 0;
+}
+
+.sidebar {
+    background: var(--futaba-cream);
+    border-right: 2px solid var(--futaba-light-medium);
+    display: flex;
+    flex-direction: column;
+    padding: 12px 6px;
+    gap: 4px;
+    overflow-y: auto;
+    position: relative;
+    z-index: 100;
+}
+
+/* ==========================================
+ * 🔧 REV.3: ツールボタン共通クラス統合
+ * ========================================== */
+
+.tool-button {
+    width: var(--tool-button-size);
+    height: var(--tool-button-size);
+    border: 2px solid var(--futaba-light-medium);
+    background: var(--futaba-background);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    color: var(--futaba-maroon);
+    position: relative;
+    user-select: none;
+}
+
+.tool-button svg {
+    width: 20px;
+    height: 20px;
+}
+
+.tool-button:hover {
+    background: var(--futaba-medium);
+    border-color: var(--futaba-light-maroon);
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+}
+
+.tool-button.active {
+    background: var(--futaba-maroon);
+    color: var(--text-inverse);
+    border-color: var(--futaba-maroon);
+    box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+}
+
+.tool-button.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.tool-button.disabled:hover {
+    transform: none;
+    box-shadow: none;
+}
+
+.tool-separator {
+    height: 1px;
+    background: var(--futaba-light-medium);
+    margin: 4px 2px;
+}
+
+.canvas-area {
+    background: var(--futaba-background);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* ==========================================
+ * 🔧 REV.3: キャンバスコンテナ統合クラス
+ * ========================================== */
+
+.canvas-container {
+    width: var(--canvas-default-size);
+    height: var(--canvas-default-size);
+    margin: 0 auto;
+    display: block;
+    background-color: var(--futaba-bg);
+    border: 1px solid var(--border-color);
+    position: relative;
+    
+    /* REV.3: 追加プロパティ */
+    overflow: visible;
+    outline: none;
+    
+    /* パフォーマンス最適化 */
+    will-change: transform;
+    transform: translateZ(0);
+    contain: layout style paint;
+    isolation: isolate;
+}
+
+/* 動的サイズ変更対応 */
+.canvas-container.resizing {
+    transition: width 0.3s ease, height 0.3s ease;
+}
+
+/* キャンバス内部要素 */
+#drawing-canvas {
+    display: block;
+    cursor: crosshair;
+    border: none;
+    border-radius: 0;
+    outline: none;
+    overflow: visible;
+    
+    /* 高精度描画対応 */
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    
+    /* GPU加速対応 */
+    will-change: transform;
+    backface-visibility: hidden;
+}
+
+/* ==========================================
+ * 🎨 REV.3: ふたば☆ちゃんねる風色彩クラス
+ * ========================================== */
+
+.futaba-maroon-bg {
+    background-color: var(--futaba-maroon);
+}
+
+.futaba-bg {
+    background-color: var(--futaba-bg);
+}
+
+.futaba-cream-bg {
+    background-color: var(--futaba-cream);
+}
+
+.futaba-text-primary {
+    color: var(--text-primary);
+}
+
+.futaba-text-inverse {
+    color: var(--text-inverse);
+}
+
+/* ==========================================
+ * 🔧 REV.3: レスポンシブ対応
+ * ========================================== */
+
+@media (max-width: 768px) {
+    .canvas-container {
+        width: min(var(--canvas-default-size), 90vw);
+        height: min(var(--canvas-default-size), 90vw);
+    }
+    
+    .main-layout {
+        grid-template-columns: 40px 1fr;
+    }
+    
+    .tool-button {
+        width: 32px;
+        height: 32px;
+    }
+    
+    .tool-button svg {
+        width: 16px;
+        height: 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    .canvas-container {
+        width: min(var(--canvas-default-size), 95vw);
+        height: min(var(--canvas-default-size), 95vw);
+    }
+}
+
+/* ==========================================
+ * 🔧 REV.3: 作業モード対応
+ * ========================================== */
+
+/* 通常作業モード */
+.canvas-container.work-mode {
+    border: 1px solid var(--border-color);
+}
+
+/* 精密作業モード */
+.canvas-container.precision-mode {
+    background: var(--futaba-background);
+    
+    /* グリッド表示準備 */
+    background-image: 
+        linear-gradient(to right, var(--futaba-light-medium) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--futaba-light-medium) 1px, transparent 1px);
+    background-size: 20px 20px;
+    background-position: 0 0;
+}
+
+.canvas-container.precision-mode::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: inherit;
+    opacity: 0.05;
+    pointer-events: none;
+}
+
+/* フルスクリーンモード対応 */
+.canvas-container.fullscreen-mode {
+    border: none;
+    box-shadow: none;
+    outline: none;
+}
+
+/* ==========================================
+ * 🔧 REV.3: 高DPI・タッチデバイス対応
+ * ========================================== */
+
+/* 高DPI対応 */
+@media (min-resolution: 2dppx) {
+    .canvas-container {
+        border-width: 0.5px;
+    }
+}
+
+/* タッチデバイス対応 */
+@media (pointer: coarse) {
+    .canvas-container {
+        border-width: 1px;
+    }
+    
+    #drawing-canvas {
+        touch-action: none;
+    }
+}
+
+/* ==========================================
+ * 🔧 REV.3: ズーム・変形対応
+ * ========================================== */
+
+.canvas-container[data-zoom-level="1"] {
+    border-width: 1px;
+}
+
+.canvas-container[data-zoom-level="2"] {
+    border-width: 0.5px;
+}
+
+.canvas-container[data-zoom-level="high"] {
+    border: none;
+}
+
+/* 変形操作時 */
+.canvas-container.transforming {
+    border: 2px solid var(--futaba-maroon);
+    box-shadow: 0 0 0 4px rgba(128, 0, 0, 0.2);
+}
+
+.canvas-container.transform-preview {
+    border: 2px dashed var(--futaba-maroon);
+    border-style: dashed;
+}
+
+/* ==========================================
+ * 🔧 REV.3: デバッグ・開発支援
+ * ========================================== */
+
+.canvas-container.debug-mode {
+    border: 2px solid #ff0000;
+    background-color: rgba(255, 0, 0, 0.05);
+}
+
+.canvas-container.measurement-mode {
+    border: 1px solid var(--futaba-maroon);
+    background: var(--futaba-background);
+    position: relative;
+}
+
+.canvas-container.measurement-mode::before {
+    content: attr(data-dimensions);
+    position: absolute;
+    top: -30px;
+    left: 0;
+    background: var(--futaba-maroon);
+    color: var(--text-inverse);
+    padding: 4px 8px;
+    font-size: 12px;
+    font-family: monospace;
+    border-radius: 4px 4px 0 0;
+    display: block;
+}
+
+/* ==========================================
+ * 🔧 REV.3: アクセシビリティ対応
+ * ========================================== */
+
+@media (prefers-contrast: high) {
+    .canvas-container {
+        border: 2px solid #000000;
+        background: #ffffff;
+    }
+    
+    :root {
+        --futaba-maroon: #000000;
+        --futaba-background: #ffffff;
+        --border-color: #000000;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .canvas-container,
+    .canvas-container.resizing {
+        transition: none;
+    }
+    
+    .tool-button {
+        transition: none;
+    }
+}
+
+/* ==========================================
+ * 🎯 UI要素（ポップアップ等）- REV.3統合版
+ * ========================================== */
+
+.popup-panel {
+    position: fixed;
+    background: var(--futaba-cream);
+    border: 2px solid var(--futaba-maroon);
+    border-radius: 16px;
+    box-shadow: 0 12px 32px var(--popup-shadow);
+    padding: 20px;
+    z-index: 2000;
+    backdrop-filter: blur(12px);
+    display: none;
+    user-select: none;
+}
+
+.popup-panel.show {
+    display: block;
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.9); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+.pen-settings {
+    width: 320px;
+    min-height: 400px;
+}
+
+.resize-settings {
+    width: 280px;
+}
+
+.layers-settings {
+    width: 300px;
+    min-height: 350px;
+}
+
+.gif-settings {
+    width: 320px;
+    min-height: 280px;
+}
+
+.popup-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--futaba-maroon);
+    margin-bottom: 16px;
+    text-align: center;
+    border-bottom: 2px solid var(--futaba-light-medium);
+    padding-bottom: 8px;
+}
+
+.setting-group {
+    margin-bottom: 16px;
+}
+
+.setting-label {
+    font-size: 14px;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.size-presets {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 16px;
+    padding: 12px;
+    background: var(--futaba-background);
+    border-radius: 8px;
+    border: 1px solid var(--futaba-light-medium);
+}
+
+.size-preset-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    padding: 6px 4px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    min-width: 40px;
+}
+
+.size-preset-item:hover {
+    background: var(--futaba-medium);
+}
+
+.size-preset-item.active {
+    background: var(--futaba-maroon);
+    color: var(--text-inverse);
+}
+
+.size-preview-circle {
+    background: var(--futaba-maroon);
+    border-radius: 50%;
+    transition: all 0.2s ease;
+    min-width: 0.5px;
+    min-height: 0.5px;
+}
+
+.size-preview-label {
+    font-size: 10px;
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+.size-preview-percent {
+    font-size: 8px;
+    font-weight: 400;
+    margin-top: 1px;
+    opacity: 0.8;
+}
+
+.slider-container {
+    position: relative;
+    margin-bottom: 16px;
+}
+
+.slider-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.slider-button {
+    width: 24px;
+    height: 24px;
+    border: 1px solid var(--futaba-medium);
+    background: var(--futaba-background);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--futaba-maroon);
+    font-size: 10px;
+    user-select: none;
+    transition: all 0.2s ease;
+}
+
+.slider-button.small {
+    width: 20px;
+    height: 20px;
+    font-size: 8px;
+}
+
+.slider-button:hover {
+    background: var(--futaba-medium);
+}
+
+.slider-button:active {
+    transform: scale(0.9);
+}
+
+.slider {
+    width: 100%;
+    height: 6px;
+    background: var(--futaba-light-medium);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+    position: relative;
+    flex: 1;
+}
+
+.slider-track {
+    height: 100%;
+    background: var(--futaba-maroon);
+    border-radius: 3px;
+    transition: width 0.1s ease;
+}
+
+.slider-handle {
+    width: 16px;
+    height: 16px;
+    background: var(--futaba-maroon);
+    border: 2px solid var(--futaba-background);
+    border-radius: 50%;
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    cursor: grab;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.slider-handle:active {
+    cursor: grabbing;
+    transform: translate(-50%, -50%) scale(1.2);
+}
+
+.slider-value {
+    position: absolute;
+    right: 0;
+    top: -20px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-family: monospace;
+    min-width: 40px;
+    text-align: right;
+}
+
+.checkbox-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: background 0.2s ease;
+}
+
+.checkbox-container:hover {
+    background: var(--futaba-light-medium);
+}
+
+.checkbox-left {
+    display: flex;
+    align-items: center;
+}
+
+.checkbox {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--futaba-medium);
+    border-radius: 3px;
+    margin-right: 8px;
+    position: relative;
+    background: var(--futaba-background);
+    cursor: pointer;
+}
+
+.checkbox.checked {
+    background: var(--futaba-maroon);
+    border-color: var(--futaba-maroon);
+}
+
+.checkbox.checked::after {
+    content: "✓";
+    position: absolute;
+    color: white;
+    font-size: 12px;
+    left: 1px;
+    top: -2px;
+}
+
+.checkbox-label {
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.checkbox-status {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-family: monospace;
+}
+
+.size-input-group {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.size-input-field {
+    flex: 1;
+}
+
+.size-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 2px solid var(--futaba-light-medium);
+    border-radius: 6px;
+    background: var(--futaba-background);
+    font-family: monospace;
+    font-size: 14px;
+    text-align: center;
+}
+
+.size-input:focus {
+    outline: none;
+    border-color: var(--futaba-maroon);
+}
+
+.size-multiply {
+    color: var(--futaba-maroon);
+    font-weight: bold;
+    font-size: 16px;
+}
+
+.resize-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.resize-button {
+    flex: 1;
+    padding: 10px;
+    border: 2px solid var(--futaba-maroon);
+    border-radius: 8px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.resize-button:hover {
+    background: var(--futaba-maroon);
+    color: var(--text-inverse);
+}
+
+.resize-button.primary {
+    background: var(--futaba-maroon);
+    color: var(--text-inverse);
+}
+
+.resize-button.primary:hover {
+    background: var(--futaba-light-maroon);
+}
+
+/* REV.3: レイヤー管理UI */
+.layers-list {
+    background: var(--futaba-background);
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 8px;
+    padding: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.layer-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.layer-item:hover {
+    background: var(--futaba-light-medium);
+}
+
+.layer-item.active {
+    background: var(--futaba-medium);
+}
+
+.layer-preview {
+    width: 24px;
+    height: 24px;
+    background: var(--futaba-cream);
+    border: 1px solid var(--futaba-medium);
+    border-radius: 4px;
+}
+
+.layer-info {
+    flex: 1;
+}
+
+.layer-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.layer-opacity {
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-family: monospace;
+}
+
+.layer-controls {
+    display: flex;
+    gap: 4px;
+}
+
+.layer-visible {
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 2px;
+    transition: background 0.2s ease;
+}
+
+.layer-visible:hover {
+    background: var(--futaba-light-medium);
+}
+
+.status-panel {
+    position: fixed;
+    bottom: 20px;
+    left: 70px;
+    right: 20px;
+    background: var(--futaba-cream);
+    border: 2px solid var(--futaba-medium);
+    border-radius: 12px;
+    padding: 8px 16px;
+    font-family: monospace;
+    font-size: 11px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+    z-index: 50;
+}
+
+.status-group {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.popup-panel.draggable {
+    cursor: move;
+}
+
+.popup-panel.dragging {
+    cursor: grabbing;
+    transform: scale(1.02);
+}
+
+@media (max-width: 1200px) {
+    .popup-panel {
+        max-width: 90vw;
+    }
+    
+    .status-panel {
+        left: 50px;
+        font-size: 10px;
+    }
+}
