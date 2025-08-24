@@ -1,10 +1,11 @@
 /**
  * 🎨 Tegaki Project - Main Application Entry Point (Phase1修正版)
  * 🎯 修正内容:
- * 1. ツール登録エラーの修正
- * 2. 初期化順序の整理・簡素化
- * 3. AppCore連携の修正
- * 4. エラー処理の改善
+ * 1. 構文エラー（Unexpected token）の修正
+ * 2. ツール登録エラーの修正
+ * 3. 初期化順序の整理・簡素化
+ * 4. AppCore連携の修正
+ * 5. エラー処理の改善
  * 
  * 📋 Phase1重点:
  * - キャンバス出現の確実化
@@ -34,19 +35,10 @@ class TegakiApplication {
                 backgroundColor: '#ffffee', // ふたば背景色
                 antialias: true,
                 preserveDrawingBuffer: true
-            },
-            drawing: {
-                defaultTool: 'pen',
-                smoothing: true,
-                pressureSupport: true
             }
-        };
-        
-        console.log('🎨 TegakiApplication インスタンス作成完了');
-    }
 
     /**
-     * アプリケーション初理化（Phase1集中版）
+     * アプリケーション初期化（Phase1集中版）
      */
     async initialize() {
         try {
@@ -115,7 +107,7 @@ class TegakiApplication {
         
         const missingManagers = coreManagers.filter(manager => !window.Tegaki?.[manager]);
         if (missingManagers.length > 0) {
-            console.warn('⚠️ 一部根幹Manager未初期化:', missingManagers.join(', '));
+            console.warn('⚠️ 一部根幹Manager未初理化:', missingManagers.join(', '));
         } else {
             console.log('✅ 根幹Manager初期化確認完了');
         }
@@ -609,6 +601,14 @@ window.checkCoordinateIntegration = function() {
     return state;
 };
 
-console.log('🎨 Tegaki Main (Phase1修正版) Loaded - ツールエラー修正・初期化順序改善・構造整理完了');
+console.log('🎨 Tegaki Main (Phase1修正版) Loaded - 構文エラー修正・ツールエラー修正・初期化順序改善・構造整理完了');
 console.log('🔧 使用例: 自動起動（DOMContentLoaded後）');
-console.log('🔍 診断: checkCoordinateIntegration() で座標統合状況確認');)
+console.log('🔍 診断: checkCoordinateIntegration() で座標統合状況確認');,
+            drawing: {
+                defaultTool: 'pen',
+                smoothing: true,
+                pressureSupport: true
+            }
+        };
+        
+        console.log('🎨 TegakiApplication インスタンス作成完了');
