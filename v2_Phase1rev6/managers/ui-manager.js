@@ -1,639 +1,856 @@
 /**
- * 🚨 ErrorManager - エラー処理・ポップアップ表示統一システム (Phase1修正版)
- * ✅ UNIFIED_SYSTEM: エラー分類・統一表示・ログ記録システム
- * 📋 RESPONSIBILITY: 「エラー処理・分類・表示・記録」専門
+ * 🎨 UIManager - ユーザーインターフェース管理システム (Phase1修正版)
+ * 📋 RESPONSIBILITY: 「UI要素・イベント・表示状態」管理専門
+ * 🔄 INTEGRATION: ツールボタン・ステータス表示・設定パネル統合管理
  * 
- * 📏 DESIGN_PRINCIPLE: 基盤システム・循環依存なし
- * 🎯 TEGAKI_NAMESPACE: Tegaki名前空間統一対応済み
- * 🔧 REGISTRY_READY: 初期化レジストリ対応済み
- * 🛡️ LOOP_PREVENTION: エラーループ防止機能実装
+ * 📏 DESIGN_PRINCIPLE: UI管理専門・他システムとの疎結合
+ * 🚫 DRAWING_PROHIBITION: 直接描画処理は禁止 - ToolManagerに委譲
+ * ✅ UI_AUTHORITY: UI表示・操作イベントの統一管理
  * 
  * 🔧 Phase1修正内容:
- * - ポップアップループ防止機能追加
- * - showError呼び出し制限機能
- * - UI統合改善
- * - Tegaki名前空間統一対応
+ * - ErrorManagerの重複宣言問題解消
+ * - UIManager本来の責務に集中
+ * - キャンバス境界線の透明化対応
+ * - 統一システム連携強化
  * 
- * 依存: なし（基盤クラス）
- * 公開: Tegaki.ErrorManager, Tegaki.ErrorManagerInstance
+ * 📋 参考定義:
+ * - ルールブック: 1.1 責務分離の絶対原則 - UIManager
+ * - シンボル辞典: UIManager系API - UI管理API群
+ * - 手順書: Phase 1: 緊急修復（基本動作復旧）
  */
 
 // Tegaki名前空間初期化
 window.Tegaki = window.Tegaki || {};
 
-class ErrorManager {
+class UIManager {
     constructor() {
-        this.version = 'v11-phase1-fix';
-        this.errors = [];
-        this.maxErrors = 100;
+        this.initialized = false;
+        this.version = 'v1-phase1-fix';
         
-        // Phase1修正: ポップアップループ防止
-        this.popupLoopPrevention = {
-            lastErrorTime: 0,
-            sameErrorCount: 0,
-            maxSameErrors: 3,
-            cooldownTime: 5000,
-            blockedUntil: 0
+        // 統一システム参照
+        this.configManager = null;
+        this.errorManager = null;
+        this.stateManager = null;
+        this.eventBus = null;
+        
+        // UI要素参照
+        this.toolButtons = new Map();
+        this.statusElements = new Map();
+        this.settingPanels = new Map();
+        this.popupPanels = new Map();
+        
+        // UI状態管理
+        this.uiState = {
+            activeToolId: 'pen-tool',
+            panelsVisible: new Set(),
+            statusDisplayEnabled: true,
+            interfaceMode: 'desktop' // desktop, mobile, tablet
         };
         
-        // エラー分類カウンター
-        this.errorCounts = {
-            info: 0,
-            warning: 0,
-            error: 0,
-            critical: 0
-        };
+        // イベントハンドラー管理
+        this.eventHandlers = new Map();
         
-        // PopupManager参照（後で初期化）
-        this.popupManager = null;
-        this.popupInitialized = false;
-        
-        console.log('🚨 ErrorManager v11-phase1-fix 構築完了');
+        console.log('🎨 UIManager インスタンス作成完了（Phase1修正版）');
     }
 
     /**
-     * Phase1修正: PopupManager統合（遅延初期化対応）
+     * UIManager初期化
      */
-    initializePopupManager() {
-        if (this.popupInitialized) return;
-        
+    initialize() {
         try {
-            // PopupManager取得（複数のフォールバック）
-            this.popupManager = window.Tegaki?.PopupManagerInstance ||
-                               window.PopupManagerInstance ||
-                               window.PopupManager;
+            console.log('🎨 UIManager初期化開始...');
             
-            if (!this.popupManager && window.Tegaki?.PopupManager) {
-                this.popupManager = new window.Tegaki.PopupManager();
+            if (this.initialized) {
+                console.warn('⚠️ UIManager already initialized');
+                return true;
             }
-            
-            this.popupInitialized = true;
-            
-            if (this.popupManager) {
-                console.log('✅ ErrorManager - PopupManager統合完了');
-            } else {
-                console.warn('⚠️ ErrorManager - PopupManager未利用（基本表示のみ）');
-            }
-            
-        } catch (error) {
-            console.warn('⚠️ PopupManager統合エラー:', error);
-            this.popupInitialized = true; // 無限ループを防ぐ
-        }
-    }
 
-    /**
-     * Phase1修正: エラー表示（ループ防止機能付き）
-     * @param {string} type - エラータイプ ('info', 'warning', 'error', 'critical')
-     * @param {string} message - エラーメッセージ
-     * @param {object} options - オプション
-     */
-    showError(type = 'error', message = '', options = {}) {
-        try {
-            // Phase1修正: ポップアップループ防止チェック
-            if (this.isErrorBlocked(message)) {
-                console.warn('⚠️ ErrorManager - ポップアップループ防止のため表示をブロック:', message);
-                return false;
+            // 統一システム参照取得
+            this._initializeSystemReferences();
+            
+            // UI要素検索・登録
+            this._initializeUIElements();
+            
+            // ツールボタン設定
+            this._setupToolButtons();
+            
+            // ステータス表示設定
+            this._setupStatusDisplay();
+            
+            // 設定パネル設定
+            this._setupSettingPanels();
+            
+            // ポップアップ設定
+            this._setupPopupPanels();
+            
+            // キーボードショートカット設定
+            this._setupKeyboardShortcuts();
+            
+            // レスポンシブ対応
+            this._setupResponsiveHandling();
+            
+            // Phase1修正: キャンバス境界線透明化
+            this._fixCanvasBorderTransparency();
+            
+            this.initialized = true;
+            
+            // EventBus通知
+            if (this.eventBus?.safeEmit) {
+                this.eventBus.safeEmit('ui.initialized', {
+                    toolButtons: this.toolButtons.size,
+                    statusElements: this.statusElements.size,
+                    panels: this.settingPanels.size
+                });
             }
             
-            // エラー記録
-            this.recordError(type, message, options);
-            
-            // Phase1修正: 表示方法の決定（PopupManager優先、フォールバック対応）
-            this.initializePopupManager();
-            
-            if (this.popupManager && typeof this.popupManager.showPopup === 'function') {
-                // PopupManager経由での表示
-                this.showViaPopupManager(type, message, options);
-            } else {
-                // フォールバック表示
-                this.showFallbackError(type, message, options);
-            }
-            
-            // Phase1修正: ループ防止カウンター更新
-            this.updateLoopPrevention(message);
-            
+            console.log('✅ UIManager初期化完了');
             return true;
             
         } catch (error) {
-            // ErrorManager内でのエラーは最小限の処理
-            console.error('❌ ErrorManager.showError内部エラー:', error);
-            this.showEmergencyError(type, message);
+            console.error('❌ UIManager初期化失敗:', error);
+            
+            if (this.errorManager?.showError) {
+                this.errorManager.showError('error', `UIManager初期化エラー: ${error.message}`, {
+                    context: 'UIManager.initialize',
+                    nonCritical: true
+                });
+            }
+            
             return false;
         }
     }
 
     /**
-     * Phase1修正: エラーブロック判定
-     * @param {string} message - エラーメッセージ
-     * @returns {boolean} ブロック対象かどうか
+     * 統一システム参照初期化
      */
-    isErrorBlocked(message) {
-        const now = Date.now();
-        
-        // クールダウン中チェック
-        if (now < this.popupLoopPrevention.blockedUntil) {
-            return true;
-        }
-        
-        // 同じエラーの連続チェック
-        const timeDiff = now - this.popupLoopPrevention.lastErrorTime;
-        if (timeDiff < 1000) { // 1秒以内
-            this.popupLoopPrevention.sameErrorCount++;
-            
-            if (this.popupLoopPrevention.sameErrorCount >= this.popupLoopPrevention.maxSameErrors) {
-                // ブロック期間設定
-                this.popupLoopPrevention.blockedUntil = now + this.popupLoopPrevention.cooldownTime;
-                console.warn('⚠️ ErrorManager - エラーループ検出。' + this.popupLoopPrevention.cooldownTime + 'ms間ブロック');
-                return true;
-            }
-        } else {
-            // 時間が空いているのでカウンターリセット
-            this.popupLoopPrevention.sameErrorCount = 1;
-        }
-        
-        return false;
-    }
-
-    /**
-     * Phase1修正: ループ防止カウンター更新
-     * @param {string} message - エラーメッセージ
-     */
-    updateLoopPrevention(message) {
-        this.popupLoopPrevention.lastErrorTime = Date.now();
-    }
-
-    /**
-     * PopupManager経由でのエラー表示
-     * @param {string} type - エラータイプ
-     * @param {string} message - エラーメッセージ
-     * @param {object} options - オプション
-     */
-    showViaPopupManager(type, message, options) {
+    _initializeSystemReferences() {
         try {
-            const popupData = {
-                type: type,
-                title: this.getErrorTitle(type),
-                message: message,
-                buttons: this.getErrorButtons(type, options),
-                autoClose: options.autoClose !== false,
-                duration: options.duration || this.getDefaultDuration(type)
-            };
-
-            this.popupManager.showPopup(popupData);
+            // ConfigManager
+            this.configManager = window.Tegaki?.ConfigManagerInstance || 
+                                 window.ConfigManager;
             
-        } catch (error) {
-            console.error('❌ PopupManager表示エラー:', error);
-            this.showFallbackError(type, message, options);
-        }
-    }
-
-    /**
-     * フォールバック表示（PopupManager未使用時）
-     * @param {string} type - エラータイプ
-     * @param {string} message - エラーメッセージ
-     * @param {object} options - オプション
-     */
-    showFallbackError(type, message, options) {
-        try {
-            // console表示
-            const consoleMethod = this.getConsoleMethod(type);
-            console[consoleMethod](`[${type.toUpperCase()}] ${message}`, options);
-
-            // ブラウザ通知（critical時）
-            if (type === 'critical' || options.showAlert) {
-                if (options.nonCritical) {
-                    // 非致命的エラーは控えめに
-                    console.warn('非致命的エラー:', message);
-                } else {
-                    alert(`${this.getErrorTitle(type)}\n\n${message}`);
-                }
-            }
-
-            // UI通知作成（簡易版）
-            this.showSimpleNotification(type, message, options);
+            // ErrorManager
+            this.errorManager = window.Tegaki?.ErrorManagerInstance || 
+                               window.ErrorManager;
             
-        } catch (error) {
-            console.error('❌ フォールバック表示エラー:', error);
-        }
-    }
-
-    /**
-     * 簡易通知表示
-     * @param {string} type - エラータイプ
-     * @param {string} message - エラーメッセージ
-     * @param {object} options - オプション
-     */
-    showSimpleNotification(type, message, options) {
-        try {
-            // 既存の通知を削除
-            const existing = document.querySelector('.error-notification');
-            if (existing) {
-                existing.remove();
-            }
-
-            // 通知要素作成
-            const notification = document.createElement('div');
-            notification.className = `error-notification ${type}`;
-            notification.innerHTML = `
-                <div class="error-icon">${this.getErrorIcon(type)}</div>
-                <div class="error-content">
-                    <div class="error-title">${this.getErrorTitle(type)}</div>
-                    <div class="error-message">${message}</div>
-                </div>
-                <div class="error-close" onclick="this.parentElement.remove()">×</div>
-            `;
-
-            // スタイル設定
-            notification.style.cssText = `
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                max-width: 400px;
-                background: #fff;
-                border: 2px solid ${this.getErrorColor(type)};
-                border-radius: 8px;
-                padding: 16px;
-                z-index: 10000;
-                opacity: 0;
-                transform: translateX(20px);
-                transition: all 0.3s ease;
-                font-family: sans-serif;
-                font-size: 14px;
-                box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-                display: flex;
-                align-items: flex-start;
-                gap: 12px;
-            `;
-
-            // 内部スタイル
-            const style = document.createElement('style');
-            style.textContent = `
-                .error-icon {
-                    font-size: 24px;
-                    flex-shrink: 0;
-                }
-                .error-content {
-                    flex: 1;
-                }
-                .error-title {
-                    font-weight: bold;
-                    color: ${this.getErrorColor(type)};
-                    margin-bottom: 4px;
-                }
-                .error-message {
-                    color: #333;
-                    line-height: 1.4;
-                }
-                .error-close {
-                    cursor: pointer;
-                    font-size: 20px;
-                    color: #999;
-                    flex-shrink: 0;
-                    line-height: 1;
-                }
-                .error-close:hover {
-                    color: #666;
-                }
-            `;
-            document.head.appendChild(style);
-
-            document.body.appendChild(notification);
-
-            // アニメーション表示
-            requestAnimationFrame(() => {
-                notification.style.opacity = '1';
-                notification.style.transform = 'translateX(0)';
+            // StateManager
+            this.stateManager = window.Tegaki?.StateManagerInstance || 
+                               window.StateManager;
+            
+            // EventBus
+            this.eventBus = window.Tegaki?.EventBusInstance || 
+                           window.EventBus;
+            
+            console.log('✅ UIManager - 統一システム参照取得完了:', {
+                configManager: !!this.configManager,
+                errorManager: !!this.errorManager,
+                stateManager: !!this.stateManager,
+                eventBus: !!this.eventBus
             });
+            
+        } catch (error) {
+            console.warn('⚠️ 統一システム参照取得で問題発生:', error);
+        }
+    }
 
-            // 自動消去
-            if (options.autoClose !== false) {
-                const duration = options.duration || this.getDefaultDuration(type);
-                setTimeout(() => {
-                    if (notification.parentElement) {
-                        notification.style.opacity = '0';
-                        notification.style.transform = 'translateX(20px)';
-                        setTimeout(() => {
-                            if (notification.parentElement) {
-                                notification.remove();
-                            }
-                        }, 300);
+    /**
+     * UI要素検索・登録
+     */
+    _initializeUIElements() {
+        try {
+            // ツールボタン検索
+            const toolButtons = document.querySelectorAll('.tool-button');
+            toolButtons.forEach(button => {
+                const toolId = button.id || button.dataset.tool;
+                if (toolId) {
+                    this.toolButtons.set(toolId, button);
+                }
+            });
+            
+            // ステータス要素検索
+            const statusElements = document.querySelectorAll('.status-item');
+            statusElements.forEach(element => {
+                const statusId = element.id || element.dataset.status;
+                if (statusId) {
+                    this.statusElements.set(statusId, element);
+                }
+            });
+            
+            // 設定パネル検索
+            const settingPanels = document.querySelectorAll('.setting-panel, .popup-panel');
+            settingPanels.forEach(panel => {
+                const panelId = panel.id;
+                if (panelId) {
+                    this.settingPanels.set(panelId, panel);
+                }
+            });
+            
+            console.log('✅ UI要素登録完了:', {
+                toolButtons: this.toolButtons.size,
+                statusElements: this.statusElements.size,
+                settingPanels: this.settingPanels.size
+            });
+            
+        } catch (error) {
+            console.error('❌ UI要素登録エラー:', error);
+        }
+    }
+
+    /**
+     * ツールボタン設定
+     */
+    _setupToolButtons() {
+        try {
+            this.toolButtons.forEach((button, toolId) => {
+                // クリックイベント
+                const clickHandler = (event) => {
+                    event.preventDefault();
+                    this._handleToolButtonClick(toolId, button);
+                };
+                
+                button.addEventListener('click', clickHandler);
+                this.eventHandlers.set(`${toolId}_click`, clickHandler);
+                
+                // ダブルクリックイベント（設定パネル表示）
+                const dblclickHandler = (event) => {
+                    event.preventDefault();
+                    this._handleToolButtonDoubleClick(toolId, button);
+                };
+                
+                button.addEventListener('dblclick', dblclickHandler);
+                this.eventHandlers.set(`${toolId}_dblclick`, dblclickHandler);
+                
+                // ホバーイベント（ツールチップ）
+                const mouseenterHandler = () => {
+                    this._showToolTooltip(toolId, button);
+                };
+                
+                const mouseleaveHandler = () => {
+                    this._hideToolTooltip();
+                };
+                
+                button.addEventListener('mouseenter', mouseenterHandler);
+                button.addEventListener('mouseleave', mouseleaveHandler);
+                this.eventHandlers.set(`${toolId}_mouseenter`, mouseenterHandler);
+                this.eventHandlers.set(`${toolId}_mouseleave`, mouseleaveHandler);
+            });
+            
+            // デフォルトツール設定
+            this._setActiveToolButton(this.uiState.activeToolId);
+            
+            console.log('✅ ツールボタン設定完了');
+            
+        } catch (error) {
+            console.error('❌ ツールボタン設定エラー:', error);
+        }
+    }
+
+    /**
+     * ツールボタンクリックハンドラー
+     */
+    _handleToolButtonClick(toolId, buttonElement) {
+        try {
+            // アクティブツール設定
+            this._setActiveToolButton(toolId);
+            
+            // ToolManagerに通知
+            const toolManager = window.Tegaki?.ToolManagerInstance || 
+                               window.ToolManager;
+            
+            if (toolManager?.setTool) {
+                const toolName = this._getToolNameFromId(toolId);
+                toolManager.setTool(toolName);
+            }
+            
+            // EventBus通知
+            if (this.eventBus?.safeEmit) {
+                this.eventBus.safeEmit('ui.tool.selected', {
+                    toolId,
+                    toolName: this._getToolNameFromId(toolId),
+                    timestamp: Date.now()
+                });
+            }
+            
+            console.log(`🔧 ツール選択: ${toolId}`);
+            
+        } catch (error) {
+            console.error('❌ ツールボタンクリックエラー:', error);
+            
+            if (this.errorManager?.showError) {
+                this.errorManager.showError('warning', `ツール選択エラー: ${error.message}`, {
+                    context: 'UIManager.toolButtonClick',
+                    toolId,
+                    nonCritical: true
+                });
+            }
+        }
+    }
+
+    /**
+     * ツールボタンダブルクリックハンドラー（設定パネル表示）
+     */
+    _handleToolButtonDoubleClick(toolId, buttonElement) {
+        try {
+            const settingPanelId = this._getSettingPanelIdFromToolId(toolId);
+            
+            if (settingPanelId && this.settingPanels.has(settingPanelId)) {
+                this.togglePanel(settingPanelId);
+            }
+            
+            console.log(`⚙️ ツール設定表示: ${toolId}`);
+            
+        } catch (error) {
+            console.error('❌ ツール設定表示エラー:', error);
+        }
+    }
+
+    /**
+     * アクティブツールボタン設定
+     */
+    _setActiveToolButton(toolId) {
+        try {
+            // 全ボタンのアクティブ状態解除
+            this.toolButtons.forEach((button) => {
+                button.classList.remove('active');
+            });
+            
+            // 指定ボタンをアクティブに
+            const activeButton = this.toolButtons.get(toolId);
+            if (activeButton) {
+                activeButton.classList.add('active');
+                this.uiState.activeToolId = toolId;
+                
+                // ステータス表示更新
+                this._updateToolStatus(toolId);
+            }
+            
+        } catch (error) {
+            console.error('❌ アクティブツールボタン設定エラー:', error);
+        }
+    }
+
+    /**
+     * ステータス表示設定
+     */
+    _setupStatusDisplay() {
+        try {
+            // FPS表示更新
+            this._startFPSMonitoring();
+            
+            // メモリ使用量表示更新
+            this._startMemoryMonitoring();
+            
+            // 座標表示設定
+            this._setupCoordinateDisplay();
+            
+            // キャンバス情報表示
+            this._updateCanvasInfo();
+            
+            console.log('✅ ステータス表示設定完了');
+            
+        } catch (error) {
+            console.error('❌ ステータス表示設定エラー:', error);
+        }
+    }
+
+    /**
+     * FPS監視開始
+     */
+    _startFPSMonitoring() {
+        let lastTime = performance.now();
+        let frameCount = 0;
+        
+        const updateFPS = () => {
+            frameCount++;
+            const currentTime = performance.now();
+            
+            if (currentTime - lastTime >= 1000) {
+                const fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+                this._updateStatusElement('fps', `${fps}`);
+                
+                frameCount = 0;
+                lastTime = currentTime;
+            }
+            
+            if (this.uiState.statusDisplayEnabled) {
+                requestAnimationFrame(updateFPS);
+            }
+        };
+        
+        requestAnimationFrame(updateFPS);
+    }
+
+    /**
+     * メモリ監視開始
+     */
+    _startMemoryMonitoring() {
+        const updateMemory = () => {
+            try {
+                if (performance.memory) {
+                    const memory = (performance.memory.usedJSHeapSize / 1048576).toFixed(1);
+                    this._updateStatusElement('memory-usage', `${memory}MB`);
+                }
+            } catch (error) {
+                // メモリ監視エラーは無視
+            }
+        };
+        
+        updateMemory();
+        setInterval(updateMemory, 2000);
+    }
+
+    /**
+     * 座標表示設定
+     */
+    _setupCoordinateDisplay() {
+        try {
+            // キャンバス要素での座標表示
+            const canvas = document.querySelector('canvas');
+            if (canvas) {
+                const mousemoveHandler = (event) => {
+                    const rect = canvas.getBoundingClientRect();
+                    const x = Math.round(event.clientX - rect.left);
+                    const y = Math.round(event.clientY - rect.top);
+                    this._updateStatusElement('coordinates', `x: ${x}, y: ${y}`);
+                };
+                
+                canvas.addEventListener('mousemove', mousemoveHandler);
+                this.eventHandlers.set('canvas_mousemove', mousemoveHandler);
+            }
+            
+        } catch (error) {
+            console.error('❌ 座標表示設定エラー:', error);
+        }
+    }
+
+    /**
+     * 設定パネル設定
+     */
+    _setupSettingPanels() {
+        try {
+            this.settingPanels.forEach((panel, panelId) => {
+                // ドラッグ可能設定
+                if (panel.classList.contains('draggable')) {
+                    this._makePanelDraggable(panel, panelId);
+                }
+                
+                // 閉じるボタン設定
+                const closeButton = panel.querySelector('.close-button, .popup-close');
+                if (closeButton) {
+                    const closeHandler = () => this.hidePanel(panelId);
+                    closeButton.addEventListener('click', closeHandler);
+                    this.eventHandlers.set(`${panelId}_close`, closeHandler);
+                }
+                
+                // 初期状態を非表示に
+                panel.style.display = 'none';
+            });
+            
+            console.log('✅ 設定パネル設定完了');
+            
+        } catch (error) {
+            console.error('❌ 設定パネル設定エラー:', error);
+        }
+    }
+
+    /**
+     * パネルをドラッグ可能にする
+     */
+    _makePanelDraggable(panel, panelId) {
+        try {
+            const titleElement = panel.querySelector('.popup-title, .panel-title');
+            if (!titleElement) return;
+            
+            let isDragging = false;
+            let startX, startY, startLeft, startTop;
+            
+            const pointerdownHandler = (e) => {
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                
+                const rect = panel.getBoundingClientRect();
+                startLeft = rect.left;
+                startTop = rect.top;
+                
+                titleElement.setPointerCapture(e.pointerId);
+                panel.style.zIndex = '1000';
+                e.preventDefault();
+            };
+            
+            const pointermoveHandler = (e) => {
+                if (!isDragging) return;
+                
+                const deltaX = e.clientX - startX;
+                const deltaY = e.clientY - startY;
+                
+                panel.style.left = `${startLeft + deltaX}px`;
+                panel.style.top = `${startTop + deltaY}px`;
+                panel.style.position = 'fixed';
+                
+                e.preventDefault();
+            };
+            
+            const pointerupHandler = (e) => {
+                isDragging = false;
+                titleElement.releasePointerCapture(e.pointerId);
+                panel.style.zIndex = '';
+                e.preventDefault();
+            };
+            
+            titleElement.addEventListener('pointerdown', pointerdownHandler);
+            document.addEventListener('pointermove', pointermoveHandler);
+            titleElement.addEventListener('pointerup', pointerupHandler);
+            
+            this.eventHandlers.set(`${panelId}_drag_down`, pointerdownHandler);
+            this.eventHandlers.set(`${panelId}_drag_move`, pointermoveHandler);
+            this.eventHandlers.set(`${panelId}_drag_up`, pointerupHandler);
+            
+        } catch (error) {
+            console.error('❌ パネルドラッグ設定エラー:', error);
+        }
+    }
+
+    /**
+     * ポップアップパネル設定
+     */
+    _setupPopupPanels() {
+        try {
+            // PopupManager連携設定
+            this.popupPanels = this.settingPanels;
+            
+            console.log('✅ ポップアップパネル設定完了');
+            
+        } catch (error) {
+            console.error('❌ ポップアップパネル設定エラー:', error);
+        }
+    }
+
+    /**
+     * キーボードショートカット設定
+     */
+    _setupKeyboardShortcuts() {
+        try {
+            const keydownHandler = (event) => {
+                // Escキー: 全パネル閉じる
+                if (event.key === 'Escape') {
+                    this.hideAllPanels();
+                    event.preventDefault();
+                }
+                
+                // ツールショートカット
+                if (event.key >= '1' && event.key <= '9') {
+                    const toolIndex = parseInt(event.key) - 1;
+                    const toolButtons = Array.from(this.toolButtons.keys());
+                    if (toolButtons[toolIndex]) {
+                        this._setActiveToolButton(toolButtons[toolIndex]);
+                        event.preventDefault();
                     }
-                }, duration);
-            }
-
-        } catch (error) {
-            console.error('❌ 簡易通知表示エラー:', error);
-        }
-    }
-
-    /**
-     * 緊急エラー表示（最後の手段）
-     * @param {string} type - エラータイプ
-     * @param {string} message - エラーメッセージ
-     */
-    showEmergencyError(type, message) {
-        try {
-            console.error(`[EMERGENCY ${type.toUpperCase()}]`, message);
+                }
+            };
             
-            // 致命的エラーのみalert表示
-            if (type === 'critical') {
-                alert(`緊急エラー:\n${message}`);
-            }
+            document.addEventListener('keydown', keydownHandler);
+            this.eventHandlers.set('global_keydown', keydownHandler);
+            
+            console.log('✅ キーボードショートカット設定完了');
+            
         } catch (error) {
-            // 最後の手段でもエラーの場合、何もしない
-            console.error('Fatal error in emergency display:', error);
+            console.error('❌ キーボードショートカット設定エラー:', error);
         }
     }
 
     /**
-     * エラー記録
-     * @param {string} type - エラータイプ
-     * @param {string} message - エラーメッセージ
-     * @param {object} options - オプション
+     * レスポンシブ対応設定
      */
-    recordError(type, message, options) {
+    _setupResponsiveHandling() {
         try {
-            const errorRecord = {
-                type,
-                message,
-                options,
-                timestamp: new Date().toISOString(),
-                context: options.context || 'unknown',
-                id: this.generateErrorId()
+            const resizeHandler = () => {
+                const width = window.innerWidth;
+                
+                if (width <= 768) {
+                    this.uiState.interfaceMode = 'mobile';
+                } else if (width <= 1024) {
+                    this.uiState.interfaceMode = 'tablet';
+                } else {
+                    this.uiState.interfaceMode = 'desktop';
+                }
+                
+                // UI適応
+                this._adaptUIForMode();
             };
-
-            this.errors.push(errorRecord);
-            this.errorCounts[type] = (this.errorCounts[type] || 0) + 1;
-
-            // 最大記録数を超えた場合は古いものを削除
-            if (this.errors.length > this.maxErrors) {
-                this.errors.shift();
-            }
-
-            // StateManager経由での状態更新（利用可能時）
-            if (window.Tegaki?.StateManagerInstance) {
-                window.Tegaki.StateManagerInstance.updateSystemState('errorManager', 'errorCounts', this.errorCounts);
-            }
-
+            
+            window.addEventListener('resize', resizeHandler);
+            this.eventHandlers.set('window_resize', resizeHandler);
+            
+            // 初期設定
+            resizeHandler();
+            
+            console.log('✅ レスポンシブ対応設定完了');
+            
         } catch (error) {
-            console.warn('⚠️ エラー記録失敗:', error);
+            console.error('❌ レスポンシブ対応設定エラー:', error);
         }
     }
 
     /**
-     * エラーID生成
-     * @returns {string} エラーID
+     * Phase1修正: キャンバス境界線透明化
      */
-    generateErrorId() {
-        return `err_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    _fixCanvasBorderTransparency() {
+        try {
+            // キャンバス要素の境界線を透明化
+            const canvas = document.querySelector('canvas');
+            if (canvas) {
+                canvas.style.border = 'none';
+                canvas.style.outline = 'none';
+            }
+            
+            // キャンバスコンテナの境界線も透明化
+            const canvasContainer = document.getElementById('canvas-container');
+            if (canvasContainer) {
+                canvasContainer.style.border = 'none';
+                canvasContainer.style.outline = 'none';
+            }
+            
+            // 描画エリア全体の境界線も確認
+            const canvasArea = document.querySelector('.canvas-area');
+            if (canvasArea) {
+                const computedStyle = window.getComputedStyle(canvasArea);
+                if (computedStyle.border && computedStyle.border !== 'none') {
+                    canvasArea.style.border = 'none';
+                }
+            }
+            
+            console.log('✅ キャンバス境界線透明化完了');
+            
+        } catch (error) {
+            console.warn('⚠️ キャンバス境界線透明化で問題発生:', error);
+        }
     }
 
     // ========================================
-    // ヘルパーメソッド
+    // パブリックAPI
     // ========================================
 
     /**
-     * エラータイトル取得
-     * @param {string} type - エラータイプ
-     * @returns {string} タイトル
+     * パネル表示
      */
-    getErrorTitle(type) {
-        const titles = {
-            info: '情報',
-            warning: '警告',
-            error: 'エラー',
-            critical: '致命的エラー'
-        };
-        return titles[type] || 'エラー';
+    showPanel(panelId) {
+        try {
+            const panel = this.settingPanels.get(panelId);
+            if (panel) {
+                panel.style.display = 'block';
+                this.uiState.panelsVisible.add(panelId);
+                
+                if (this.eventBus?.safeEmit) {
+                    this.eventBus.safeEmit('ui.panel.shown', { panelId });
+                }
+            }
+        } catch (error) {
+            console.error('❌ パネル表示エラー:', error);
+        }
     }
 
     /**
-     * エラーアイコン取得
-     * @param {string} type - エラータイプ
-     * @returns {string} アイコン
+     * パネル非表示
      */
-    getErrorIcon(type) {
-        const icons = {
-            info: 'ℹ️',
-            warning: '⚠️',
-            error: '❌',
-            critical: '🚨'
-        };
-        return icons[type] || '❌';
+    hidePanel(panelId) {
+        try {
+            const panel = this.settingPanels.get(panelId);
+            if (panel) {
+                panel.style.display = 'none';
+                this.uiState.panelsVisible.delete(panelId);
+                
+                if (this.eventBus?.safeEmit) {
+                    this.eventBus.safeEmit('ui.panel.hidden', { panelId });
+                }
+            }
+        } catch (error) {
+            console.error('❌ パネル非表示エラー:', error);
+        }
     }
 
     /**
-     * エラー色取得
-     * @param {string} type - エラータイプ
-     * @returns {string} 色コード
+     * パネル表示切り替え
      */
-    getErrorColor(type) {
-        const colors = {
-            info: '#2196f3',
-            warning: '#ff9800',
-            error: '#f44336',
-            critical: '#d32f2f'
-        };
-        return colors[type] || '#f44336';
+    togglePanel(panelId) {
+        try {
+            if (this.uiState.panelsVisible.has(panelId)) {
+                this.hidePanel(panelId);
+            } else {
+                this.showPanel(panelId);
+            }
+        } catch (error) {
+            console.error('❌ パネル切り替えエラー:', error);
+        }
     }
 
     /**
-     * コンソールメソッド取得
-     * @param {string} type - エラータイプ
-     * @returns {string} コンソールメソッド名
+     * 全パネル非表示
      */
-    getConsoleMethod(type) {
-        const methods = {
-            info: 'info',
-            warning: 'warn',
-            error: 'error',
-            critical: 'error'
-        };
-        return methods[type] || 'error';
-    }
-
-    /**
-     * デフォルト表示時間取得
-     * @param {string} type - エラータイプ
-     * @returns {number} 表示時間（ms）
-     */
-    getDefaultDuration(type) {
-        const durations = {
-            info: 3000,
-            warning: 5000,
-            error: 7000,
-            critical: 10000
-        };
-        return durations[type] || 5000;
-    }
-
-    /**
-     * エラーボタン取得
-     * @param {string} type - エラータイプ
-     * @param {object} options - オプション
-     * @returns {Array} ボタン配列
-     */
-    getErrorButtons(type, options) {
-        const buttons = [{ text: 'OK', action: 'close' }];
-
-        if (options.showReload) {
-            buttons.push({ 
-                text: 'リロード', 
-                action: () => window.location.reload() 
+    hideAllPanels() {
+        try {
+            this.uiState.panelsVisible.forEach(panelId => {
+                this.hidePanel(panelId);
             });
+        } catch (error) {
+            console.error('❌ 全パネル非表示エラー:', error);
         }
+    }
 
-        if (options.showDetails) {
-            buttons.push({ 
-                text: '詳細', 
-                action: () => this.showErrorDetails() 
-            });
-        }
-
-        return buttons;
+    /**
+     * ステータス要素更新
+     */
+    updateStatus(statusId, value) {
+        this._updateStatusElement(statusId, value);
     }
 
     // ========================================
-    // 便利メソッド
+    // 内部メソッド
     // ========================================
 
     /**
-     * 情報表示
-     * @param {string} message - メッセージ
-     * @param {object} options - オプション
+     * ステータス要素更新（内部）
      */
-    showInfo(message, options = {}) {
-        return this.showError('info', message, options);
+    _updateStatusElement(statusId, value) {
+        try {
+            const element = this.statusElements.get(statusId) || 
+                           document.getElementById(statusId);
+            
+            if (element) {
+                element.textContent = value;
+            }
+        } catch (error) {
+            // ステータス更新エラーは無視（非致命的）
+        }
     }
 
     /**
-     * 警告表示
-     * @param {string} message - メッセージ
-     * @param {object} options - オプション
+     * ツール名取得
      */
-    showWarning(message, options = {}) {
-        return this.showError('warning', message, options);
+    _getToolNameFromId(toolId) {
+        const toolMap = {
+            'pen-tool': 'pen',
+            'eraser-tool': 'eraser',
+            'brush-tool': 'brush',
+            'spray-tool': 'spray'
+        };
+        return toolMap[toolId] || toolId.replace('-tool', '');
     }
 
     /**
-     * 致命的エラー表示
-     * @param {string} message - メッセージ
-     * @param {object} options - オプション
+     * 設定パネルID取得
      */
-    showCriticalError(message, options = {}) {
-        return this.showError('critical', message, options);
+    _getSettingPanelIdFromToolId(toolId) {
+        const panelMap = {
+            'pen-tool': 'pen-settings',
+            'resize-tool': 'resize-settings',
+            'brush-tool': 'brush-settings'
+        };
+        return panelMap[toolId];
     }
 
     /**
-     * エラー統計取得
-     * @returns {object} エラー統計
+     * ツール状態更新
      */
-    getErrorStats() {
+    _updateToolStatus(toolId) {
+        try {
+            const toolName = this._getToolNameFromId(toolId);
+            this._updateStatusElement('current-tool', toolName);
+            
+            // StateManager更新
+            if (this.stateManager) {
+                this.stateManager.updateComponentState('ui', 'activeTool', toolName);
+            }
+        } catch (error) {
+            console.error('❌ ツール状態更新エラー:', error);
+        }
+    }
+
+    /**
+     * キャンバス情報更新
+     */
+    _updateCanvasInfo() {
+        try {
+            const canvas = document.querySelector('canvas');
+            if (canvas) {
+                const width = canvas.width || 400;
+                const height = canvas.height || 400;
+                this._updateStatusElement('canvas-info', `${width}×${height}px`);
+            }
+        } catch (error) {
+            console.error('❌ キャンバス情報更新エラー:', error);
+        }
+    }
+
+    /**
+     * ツールチップ表示
+     */
+    _showToolTooltip(toolId, buttonElement) {
+        try {
+            const toolName = this._getToolNameFromId(toolId);
+            // TODO: ツールチップ実装
+        } catch (error) {
+            // ツールチップエラーは無視
+        }
+    }
+
+    /**
+     * ツールチップ非表示
+     */
+    _hideToolTooltip() {
+        // TODO: ツールチップ実装
+    }
+
+    /**
+     * インターフェースモード適応
+     */
+    _adaptUIForMode() {
+        try {
+            document.body.dataset.interfaceMode = this.uiState.interfaceMode;
+            
+            if (this.eventBus?.safeEmit) {
+                this.eventBus.safeEmit('ui.mode.changed', {
+                    mode: this.uiState.interfaceMode
+                });
+            }
+        } catch (error) {
+            console.error('❌ インターフェースモード適応エラー:', error);
+        }
+    }
+
+    // ========================================
+    // 状態取得・診断
+    // ========================================
+
+    /**
+     * UI状態取得
+     */
+    getUIState() {
         return {
-            total: this.errors.length,
-            counts: { ...this.errorCounts },
-            recent: this.errors.slice(-10),
-            loopPreventionStatus: { ...this.popupLoopPrevention }
+            ...this.uiState,
+            initialized: this.initialized,
+            toolButtonCount: this.toolButtons.size,
+            statusElementCount: this.statusElements.size,
+            panelCount: this.settingPanels.size
         };
     }
 
     /**
-     * エラーログ取得
-     * @param {number} limit - 取得件数制限
-     * @returns {Array} エラーログ
+     * 診断情報取得
      */
-    getErrorLog(limit = 50) {
-        return this.errors.slice(-limit);
-    }
-
-    /**
-     * エラー詳細表示
-     */
-    showErrorDetails() {
-        const stats = this.getErrorStats();
-        console.group('🚨 ErrorManager 詳細情報');
-        console.log('📊 統計:', stats.counts);
-        console.log('📋 最近のエラー:', stats.recent);
-        console.log('🛡️ ループ防止状況:', stats.loopPreventionStatus);
-        console.groupEnd();
-    }
-
-    /**
-     * エラーログクリア
-     */
-    clearErrorLog() {
-        this.errors = [];
-        this.errorCounts = { info: 0, warning: 0, error: 0, critical: 0 };
-        this.popupLoopPrevention.sameErrorCount = 0;
-        console.log('🗑️ ErrorManager - エラーログクリア完了');
-    }
-
-    /**
-     * 健全性チェック
-     * @returns {object} チェック結果
-     */
-    healthCheck() {
-        try {
-            const stats = this.getErrorStats();
-            const issues = [];
-
-            // 高エラー率チェック
-            if (stats.total > 50) {
-                issues.push(`High error count: ${stats.total}`);
-            }
-
-            // ループ状態チェック
-            if (Date.now() < this.popupLoopPrevention.blockedUntil) {
-                issues.push('Currently in error loop prevention mode');
-            }
-
-            // PopupManager統合チェック
-            if (!this.popupManager) {
-                issues.push('PopupManager not integrated');
-            }
-
-            return {
-                healthy: issues.length === 0,
-                issues,
-                stats: stats.counts,
-                popupManagerIntegrated: !!this.popupManager
-            };
-        } catch (error) {
-            return { 
-                healthy: false, 
-                issues: ['Health check failed'],
-                error: error.message 
-            };
-        }
-    }
-
-    /**
-     * デバッグ情報取得
-     * @returns {object} デバッグ情報
-     */
-    getDebugInfo() {
-        const info = {
+    getDiagnosticInfo() {
+        return {
             version: this.version,
-            errorCounts: { ...this.errorCounts },
-            totalErrors: this.errors.length,
-            popupManagerIntegrated: !!this.popupManager,
-            loopPreventionActive: Date.now() < this.popupLoopPrevention.blockedUntil,
-            recentErrors: this.errors.slice(-5).map(err => ({
-                type: err.type,
-                message: err.message.substring(0, 50),
-                timestamp: err.timestamp
-            }))
+            initialized: this.initialized,
+            uiState: this.getUIState(),
+            systemReferences: {
+                configManager: !!this.configManager,
+                errorManager: !!this.errorManager,
+                stateManager: !!this.stateManager,
+                eventBus: !!this.eventBus
+            },
+            eventHandlers: this.eventHandlers.size
         };
-
-        console.group('🚨 ErrorManager デバッグ情報');
-        console.log('📋 バージョン:', info.version);
-        console.log('📊 エラー統計:', info.errorCounts);
-        console.log('🔗 PopupManager統合:', info.popupManagerIntegrated);
-        console.log('🛡️ ループ防止状態:', info.loopPreventionActive);
-        console.log('📋 最近のエラー:', info.recentErrors);
-        console.groupEnd();
-
-        return info;
     }
 
     /**
@@ -641,37 +858,54 @@ class ErrorManager {
      */
     destroy() {
         try {
-            // 通知削除
-            const notifications = document.querySelectorAll('.error-notification');
-            notifications.forEach(notification => notification.remove());
-
+            // イベントハンドラー削除
+            this.eventHandlers.forEach((handler, key) => {
+                const [elementId, eventType] = key.split('_');
+                const element = this.toolButtons.get(elementId) || 
+                               document.getElementById(elementId) || 
+                               (eventType === 'keydown' ? document : null);
+                if (element) {
+                    element.removeEventListener(eventType, handler);
+                }
+            });
+            
             // 参照クリア
-            this.popupManager = null;
-            this.errors = [];
-            this.errorCounts = { info: 0, warning: 0, error: 0, critical: 0 };
-
-            console.log('🗑️ ErrorManager破棄完了');
+            this.toolButtons.clear();
+            this.statusElements.clear();
+            this.settingPanels.clear();
+            this.popupPanels.clear();
+            this.eventHandlers.clear();
+            
+            this.configManager = null;
+            this.errorManager = null;
+            this.stateManager = null;
+            this.eventBus = null;
+            
+            this.initialized = false;
+            
+            console.log('🎨 UIManager破棄完了');
+            
         } catch (error) {
-            console.error('❌ ErrorManager破棄エラー:', error);
+            console.error('❌ UIManager破棄エラー:', error);
         }
     }
 }
 
-// Tegaki名前空間にクラスを登録
-window.Tegaki.ErrorManager = ErrorManager;
+// Tegaki名前空間に登録
+window.Tegaki.UIManager = UIManager;
 
-// 初期化レジストリに追加（根幹Manager）
+// 初期化レジストリ方式
 window.Tegaki._registry = window.Tegaki._registry || [];
 window.Tegaki._registry.push(() => {
-    window.Tegaki.ErrorManagerInstance = new window.Tegaki.ErrorManager();
-    console.log('🚨 ErrorManager registered to Tegaki namespace');
+    window.Tegaki.UIManagerInstance = new UIManager();
+    console.log('🎨 UIManager registered to Tegaki namespace');
 });
 
 // グローバル登録（下位互換）
 if (typeof window !== 'undefined') {
-    window.ErrorManager = ErrorManager;
+    window.UIManager = UIManager;
 }
 
-console.log('🚨 ErrorManager v11-phase1-fix Loaded');
-console.log('✨ Phase1修正完了: ポップアップループ防止・UI統合改善・エラー表示制限機能');
-console.log('🔧 使用例: const errorManager = new ErrorManager(); errorManager.showError("error", "メッセージ");');
+console.log('🎨 UIManager (Phase1修正版) Loaded');
+console.log('✨ 修正完了: ErrorManager重複宣言解消・UIManager本来責務集中・境界線透明化');
+console.log('🔧 使用例: const uiManager = new UIManager(); uiManager.initialize();');
