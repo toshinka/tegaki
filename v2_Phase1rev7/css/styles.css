@@ -1,0 +1,689 @@
+/**
+ * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v1.0
+ * CSS分離版 - 元HTMLからスタイル抽出
+ * ふたば☆ちゃんねる風デザイン・配色完全維持
+ * 🚨 額縁削除版 - シンプルで見やすいキャンバス表示
+ */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    /* ふたば基本色 */
+    --futaba-maroon: #800000;
+    --futaba-light-maroon: #aa5a56;
+    --futaba-medium: #cf9c97;
+    --futaba-light-medium: #e9c2ba;
+    --futaba-cream: #f0e0d6;
+    --futaba-background: #ffffee;
+    
+    --text-primary: #2c1810;
+    --text-secondary: #5d4037;
+    --text-inverse: #ffffff;
+    
+    /* 拡張ライブラリ統合用拡張色 */
+    --futaba-ui: var(--futaba-medium);     /* @pixi/ui要素 */
+    --futaba-tool: var(--futaba-maroon);   /* ツール系 */
+    --futaba-layer: var(--futaba-light-medium); /* レイヤー系 */
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+    background: var(--futaba-background);
+    margin: 0;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.main-layout {
+    display: grid;
+    grid-template-columns: 50px 1fr;
+    height: 100vh;
+    width: 100vw;
+    gap: 0;
+}
+
+.sidebar {
+    background: var(--futaba-cream);
+    border-right: 2px solid var(--futaba-light-medium);
+    display: flex;
+    flex-direction: column;
+    padding: 12px 6px;
+    gap: 4px;
+    overflow-y: auto;
+    position: relative;
+    z-index: 100;
+}
+
+.tool-button {
+    width: 36px;
+    height: 36px;
+    border: 2px solid var(--futaba-light-medium);
+    background: var(--futaba-background);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    color: var(--futaba-maroon);
+    position: relative;
+    user-select: none;
+}
+
+.tool-button svg {
+    width: 20px;
+    height: 20px;
+}
+
+.tool-button:hover {
+    background: var(--futaba-medium);
+    border-color: var(--futaba-light-maroon);
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+}
+
+.tool-button.active {
+    background: var(--futaba-maroon);
+    color: var(--text-inverse);
+    border-color: var(--futaba-maroon);
+    box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+}
+
+.tool-button.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.tool-button.disabled:hover {
+    transform: none;
+    box-shadow: none;
+}
+
+.tool-separator {
+    height: 1px;
+    background: var(--futaba-light-medium);
+    margin: 4px 2px;
+}
+
+.canvas-area {
+    background: var(--futaba-background);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* 🚨 修正: 額縁完全削除 - シンプルで見やすく */
+.canvas-container {
+    background: var(--futaba-cream);
+    
+    /* 額縁削除 - 最小限の境界線のみ */
+    border: none;                               /* 境界線削除 */
+    border-radius: 0;                           /* 真四角維持 */
+    
+    /* シンプルな作業領域表示 */
+    box-shadow: none;                           /* ドロップシャドウ削除 */
+    
+    overflow: visible;                          /* 描画範囲制限解除 */
+    position: relative;
+    
+    /* 作業領域の明確化（微妙な境界線のみ） */
+    outline: 1px solid var(--futaba-light-medium);
+    outline-offset: 0;
+    opacity: 1.0;                               /* 完全不透明 */
+}
+
+/* キャンバス内部も額縁なし */
+#drawing-canvas {
+    display: block;
+    cursor: crosshair;
+    border: none;                               /* 内部境界線削除 */
+    border-radius: 0;                           /* 内部キャンバスも真四角 */
+    outline: none;                              /* アウトライン削除 */
+    overflow: visible;                          /* 描画エリア制限解除 */
+    
+    /* 高精度描画対応 */
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}
+
+/* ==========================================
+ * 🎯 額縁削除: 疑似要素による額縁効果を完全無効化
+ * ========================================== */
+
+/* 額縁効果の疑似要素を無効化 */
+.canvas-container::before,
+.canvas-container::after {
+    display: none;                              /* 疑似要素による額縁を完全削除 */
+}
+
+/* ==========================================
+ * 🎯 作業モード対応（額縁なし版）
+ * ========================================== */
+
+/* 通常作業モード - 額縁なし */
+.canvas-container.work-mode {
+    border: none;
+    box-shadow: none;
+    outline: 1px solid var(--futaba-light-medium);
+}
+
+/* 精密作業モード - 額縁なし */
+.canvas-container.precision-mode {
+    border: none;
+    background: var(--futaba-background);      /* 背景を明るく */
+    
+    /* グリッド表示準備（オプション） */
+    background-image: 
+        linear-gradient(to right, var(--futaba-light-medium) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--futaba-light-medium) 1px, transparent 1px);
+    background-size: 20px 20px;
+    background-position: 0 0;
+    opacity: 0.05;
+}
+
+/* フルスクリーンモード対応 */
+.canvas-container.fullscreen-mode {
+    border: none;
+    box-shadow: none;
+    outline: none;
+}
+
+/* ==========================================
+ * 🎯 レスポンシブ・スケール対応（額縁なし）
+ * ========================================== */
+
+/* 高DPI対応 */
+@media (min-resolution: 2dppx) {
+    .canvas-container {
+        outline-width: 0.5px;                   /* 高DPIで境界線を細く */
+    }
+}
+
+/* タッチデバイス対応 */
+@media (pointer: coarse) {
+    .canvas-container {
+        outline-width: 1px;                     /* タッチで境界線標準 */
+    }
+    
+    #drawing-canvas {
+        touch-action: none;                     /* タッチスクロール防止 */
+    }
+}
+
+/* ==========================================
+ * 🎯 ズーム・変形対応（額縁なし）
+ * ========================================== */
+
+/* ズーム時の境界線調整 */
+.canvas-container[data-zoom-level="1"] {
+    /* 等倍表示 */
+    outline-width: 1px;
+}
+
+.canvas-container[data-zoom-level="2"] {
+    /* 2倍ズーム */
+    outline-width: 0.5px;
+}
+
+.canvas-container[data-zoom-level="high"] {
+    /* 高倍率ズーム */
+    outline: none;
+}
+
+/* ==========================================
+ * 🎯 デバッグ・開発支援（額縁なし版）
+ * ========================================== */
+
+/* デバッグモード: 境界線強調（額縁なし） */
+.canvas-container.debug-mode {
+    outline: 2px solid #ff0000;
+    background-color: rgba(255, 0, 0, 0.05);
+}
+
+/* 測定モード: 正確なピクセル境界（額縁なし） */
+.canvas-container.measurement-mode {
+    outline: 1px solid var(--futaba-maroon);
+    background: var(--futaba-background);
+    position: relative;
+}
+
+.canvas-container.measurement-mode::before {
+    content: attr(data-dimensions);
+    position: absolute;
+    top: -30px;
+    left: 0;
+    background: var(--futaba-maroon);
+    color: var(--text-inverse);
+    padding: 4px 8px;
+    font-size: 12px;
+    font-family: monospace;
+    border-radius: 4px 4px 0 0;
+    display: block;                             /* 測定情報は表示 */
+}
+
+/* ==========================================
+ * 🎯 アクセシビリティ対応（額縁なし）
+ * ========================================== */
+
+/* 高コントラストモード */
+@media (prefers-contrast: high) {
+    .canvas-container {
+        outline: 2px solid #000000;
+        background: #ffffff;
+    }
+}
+
+/* 動作軽減モード */
+@media (prefers-reduced-motion: reduce) {
+    .canvas-container {
+        transition: none;
+    }
+}
+
+/* ==========================================
+ * 🎯 変形操作対応（額縁なし版）
+ * ========================================== */
+
+/* 変形操作時の境界線（額縁なし） */
+.canvas-container.transforming {
+    outline: 2px solid var(--futaba-maroon);
+    box-shadow: 
+        0 0 0 4px rgba(128, 0, 0, 0.2);
+}
+
+/* 変形プレビュー表示（額縁なし） */
+.canvas-container.transform-preview {
+    outline: 2px dashed var(--futaba-maroon);
+    outline-offset: 2px;
+}
+
+/* ==========================================
+ * 🎯 パフォーマンス最適化
+ * ========================================== */
+
+/* GPU加速対応 */
+.canvas-container {
+    will-change: transform;
+    transform: translateZ(0);                   /* GPU レイヤー作成 */
+}
+
+#drawing-canvas {
+    will-change: transform;
+    backface-visibility: hidden;
+}
+
+/* 描画最適化 */
+.canvas-container.optimized {
+    contain: layout style paint;
+    isolation: isolate;
+}
+
+/* ==========================================
+ * 🎯 UI要素（ポップアップ等）
+ * ========================================== */
+
+.popup-panel {
+    position: fixed;
+    background: var(--futaba-cream);
+    border: 2px solid var(--futaba-maroon);
+    border-radius: 16px;
+    box-shadow: 0 12px 32px rgba(128, 0, 0, 0.3);
+    padding: 20px;
+    z-index: 2000;
+    backdrop-filter: blur(12px);
+    display: none;
+    user-select: none;
+}
+
+.popup-panel.show {
+    display: block;
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.9); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+.pen-settings {
+    width: 320px;
+    min-height: 400px;
+}
+
+.resize-settings {
+    width: 280px;
+}
+
+.popup-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--futaba-maroon);
+    margin-bottom: 16px;
+    text-align: center;
+    border-bottom: 2px solid var(--futaba-light-medium);
+    padding-bottom: 8px;
+}
+
+.setting-group {
+    margin-bottom: 16px;
+}
+
+.setting-label {
+    font-size: 14px;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.size-presets {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 16px;
+    padding: 12px;
+    background: var(--futaba-background);
+    border-radius: 8px;
+    border: 1px solid var(--futaba-light-medium);
+}
+
+.size-preset-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    padding: 6px 4px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    min-width: 40px;
+}
+
+.size-preset-item:hover {
+    background: var(--futaba-medium);
+}
+
+.size-preset-item.active {
+    background: var(--futaba-maroon);
+    color: var(--text-inverse);
+}
+
+.size-preview-circle {
+    background: #800000;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+    min-width: 0.5px;
+    min-height: 0.5px;
+}
+
+.size-preview-label {
+    font-size: 10px;
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+.size-preview-percent {
+    font-size: 8px;
+    font-weight: 400;
+    margin-top: 1px;
+    opacity: 0.8;
+}
+
+.slider-container {
+    position: relative;
+    margin-bottom: 16px;
+}
+
+.slider-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.slider-button {
+    width: 24px;
+    height: 24px;
+    border: 1px solid var(--futaba-medium);
+    background: var(--futaba-background);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--futaba-maroon);
+    font-size: 10px;
+    user-select: none;
+    transition: all 0.2s ease;
+}
+
+.slider-button.small {
+    width: 20px;
+    height: 20px;
+    font-size: 8px;
+}
+
+.slider-button:hover {
+    background: var(--futaba-medium);
+}
+
+.slider-button:active {
+    transform: scale(0.9);
+}
+
+.slider {
+    width: 100%;
+    height: 6px;
+    background: var(--futaba-light-medium);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+    position: relative;
+    flex: 1;
+}
+
+.slider-track {
+    height: 100%;
+    background: var(--futaba-maroon);
+    border-radius: 3px;
+    transition: width 0.1s ease;
+}
+
+.slider-handle {
+    width: 16px;
+    height: 16px;
+    background: var(--futaba-maroon);
+    border: 2px solid var(--futaba-background);
+    border-radius: 50%;
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    cursor: grab;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.slider-handle:active {
+    cursor: grabbing;
+    transform: translate(-50%, -50%) scale(1.2);
+}
+
+.slider-value {
+    position: absolute;
+    right: 0;
+    top: -20px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-family: monospace;
+    min-width: 40px;
+    text-align: right;
+}
+
+.checkbox-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: background 0.2s ease;
+}
+
+.checkbox-container:hover {
+    background: var(--futaba-light-medium);
+}
+
+.checkbox-left {
+    display: flex;
+    align-items: center;
+}
+
+.checkbox {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--futaba-medium);
+    border-radius: 3px;
+    margin-right: 8px;
+    position: relative;
+    background: var(--futaba-background);
+    cursor: pointer;
+}
+
+.checkbox.checked {
+    background: var(--futaba-maroon);
+    border-color: var(--futaba-maroon);
+}
+
+.checkbox.checked::after {
+    content: "✓";
+    position: absolute;
+    color: white;
+    font-size: 12px;
+    left: 1px;
+    top: -2px;
+}
+
+.checkbox-label {
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.checkbox-status {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-family: monospace;
+}
+
+.size-input-group {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.size-input-field {
+    flex: 1;
+}
+
+.size-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 2px solid var(--futaba-light-medium);
+    border-radius: 6px;
+    background: var(--futaba-background);
+    font-family: monospace;
+    font-size: 14px;
+    text-align: center;
+}
+
+.size-input:focus {
+    outline: none;
+    border-color: var(--futaba-maroon);
+}
+
+.size-multiply {
+    color: var(--futaba-maroon);
+    font-weight: bold;
+    font-size: 16px;
+}
+
+.resize-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.resize-button {
+    flex: 1;
+    padding: 10px;
+    border: 2px solid var(--futaba-maroon);
+    border-radius: 8px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.resize-button:hover {
+    background: var(--futaba-maroon);
+    color: var(--text-inverse);
+}
+
+.resize-button.primary {
+    background: var(--futaba-maroon);
+    color: var(--text-inverse);
+}
+
+.resize-button.primary:hover {
+    background: var(--futaba-light-maroon);
+}
+
+.status-panel {
+    position: fixed;
+    bottom: 20px;
+    left: 70px;
+    right: 20px;
+    background: var(--futaba-cream);
+    border: 2px solid var(--futaba-medium);
+    border-radius: 12px;
+    padding: 8px 16px;
+    font-family: monospace;
+    font-size: 11px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+    z-index: 50;
+}
+
+.status-group {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.popup-panel.draggable {
+    cursor: move;
+}
+
+.popup-panel.dragging {
+    cursor: grabbing;
+    transform: scale(1.02);
+}
+
+@media (max-width: 1200px) {
+    .popup-panel {
+        max-width: 90vw;
+    }
+}
