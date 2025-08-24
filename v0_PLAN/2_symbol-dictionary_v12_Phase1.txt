@@ -1,0 +1,871 @@
+# 🎨 シンボル辞典 v12 - Phase1.5 REV系対応版
+
+## 🔄 更新概要（v11 → v12）
+
+### 📋 Phase1.5 REV系対応
+- **Bootstrap依存関係管理**: 新規bootstrap.js追加・依存関係統合管理
+- **責任分界明確化**: index.html（構造）・bootstrap.js（依存管理）・main.js（初期化）分離
+- **キャンバス表示問題対応**: CanvasManager初期化プロセス強化
+- **スタイル統合**: CSS変数・共通クラス統合
+
+### 🚨 重要な構造変更
+```javascript
+🔄 新規追加システム:
+- Bootstrap依存関係管理システム
+- REV系責任分界対応
+
+🎯 強化されたシステム:
+- CanvasManager初期化プロセス
+- main.js初期化待機システム
+- CSS統合・変数システム
+
+🚫 削除・統合システム:
+- index.html内インラインスタイル（CSS統合）
+- 分散した依存関係管理（Bootstrap統合）
+```
+
+---
+
+## 📊 REV系責任分界APIカテゴリ
+
+### 🚀 Bootstrap系API（依存関係管理専門）
+
+#### 📋 Bootstrap専用API群
+```javascript
+// 依存関係管理（主責務）
+loadScript(src)                             // スクリプト順序読み込み
+loadDependencies()                          // 全依存関係順次読み込み
+checkPixiAndStart()                         // PixiJS確認・開始制御
+
+// 初期化制御
+setupBootstrapListeners()                   // イベントリスナー設定
+tryInitialize()                            // 初期化条件確認・実行
+delegateToMain()                           // main.js初期化委譲
+
+// 状態管理
+getDependencyLoadStatus()                   // 依存関係読み込み状況
+getBootstrapState()                        // Bootstrap状態取得
+```
+
+#### 🚫 Bootstrap禁止API
+```javascript
+// 禁止：UI・エラー処理
+❌ showError()                             // ErrorManager責務
+❌ updateUI()                              // UIManager責務
+❌ initializeCanvas()                      // main.js責務
+
+// 禁止：初期化ロジック
+❌ createPixiApplication()                 // AppCore責務
+❌ setupTools()                           // ToolManager責務
+```
+
+### 🔧 REV系Main.js強化API（初期化統合専門）
+
+#### 📋 REV系初期化API群
+```javascript
+// REV系初期化制御（強化済み）
+setupBootstrapListeners()                  // Bootstrap依存関係待機
+checkCanvasContainerReady()                // キャンバス要素確実性確認
+tryInitialize()                            // 初期化条件確認・実行
+executeInitializationRegistry()            // 初期化レジストリ実行
+
+// REV系AppCore初期化（キャンバス表示問題修正）
+initializeAppCore()                        // AppCore初期化委譲（修正版）
+ensureCanvasManagerInitialization()       // CanvasManager確実初期化
+validateCanvasPresence()                   // キャンバス存在確認
+
+// REV系状態管理・診断
+getApplicationStatus()                     // アプリケーション状態取得
+getCoordinateIntegrationState()           // 座標統合状態取得
+healthCheck()                             // 健全性チェック
+```
+
+### 🎨 REV系CanvasManager強化API（レイヤー管理専門）
+
+#### 📋 REV系CanvasManager修正API
+```javascript
+// REV系初期化修正（キャンバス表示問題対応）
+initialize(options)                       // 初期化（引数統一・修正版）
+validateInitializationOptions(options)    // 初期化引数検証
+ensureCanvasElementAttachment()           // キャンバス要素確実接続
+
+// REV系診断・確認
+getDiagnosticInfo()                       // 診断情報取得（REV系追加）
+validateCanvasState()                     // キャンバス状態検証
+getCanvasPresenceStatus()                 // キャンバス存在状況確認
+```
+
+---
+
+## 📐 REV系統一システムAPI強化
+
+### 🔧 ConfigManager REV系強化API
+```javascript
+// REV系CSS変数統合設定
+getCSSVariables()                         // CSS変数設定取得
+getCanvasContainerConfig()                // キャンバスコンテナ設定
+getFutabaThemeConfig()                    // ふたば☆ちゃんねる風テーマ
+
+// REV系Bootstrap設定
+getBootstrapConfig()                      // Bootstrap設定
+getDependencyConfig()                     // 依存関係設定
+getLoadOrderConfig()                      // 読み込み順序設定
+```
+
+### 🚨 ErrorManager REV系強化API
+```javascript
+// REV系Bootstrap・初期化エラー
+showBootstrapError(error, options)        // Bootstrap依存関係エラー
+showInitializationError(error, options)   // 初期化エラー
+showCanvasError(error, options)           // キャンバス表示エラー
+
+// REV系エラー分類強化
+classifyBootstrapError(error)             // Bootstrapエラー分類
+classifyInitializationError(error)        // 初期化エラー分類
+classifyCanvasError(error)                // キャンバスエラー分類
+```
+
+### 📊 StateManager REV系強化API
+```javascript
+// REV系初期化状態管理
+updateBootstrapState(state, data)         // Bootstrap状態更新
+updateInitializationState(state, data)    // 初期化状態更新
+updateCanvasState(state, data)            // キャンバス状態更新
+
+// REV系状態取得
+getBootstrapState()                       // Bootstrap状態
+getInitializationState()                  // 初期化状態
+getCanvasReadyState()                     // キャンバス準備状態
+```
+
+### 🔄 EventBus REV系強化API
+```javascript
+// REV系イベント定義
+'tegaki:dependencies:loaded'              // 依存関係読み込み完了
+'tegaki:dependencies:error'               // 依存関係エラー
+'tegaki:canvas:ready'                     // キャンバス準備完了
+'tegaki:canvas:error'                     // キャンバスエラー
+'tegaki:initialization:complete'          // 初期化完了
+
+// REV系安全発行
+safeEmitBootstrap(eventType, data)        // Bootstrap安全発行
+safeEmitInitialization(eventType, data)   // 初期化安全発行
+safeEmitCanvas(eventType, data)           // キャンバス安全発行
+```
+
+---
+
+## 🏗️ REV系システム統合パターン
+
+### 🚀 REV系Bootstrap→Main初期化フロー
+```javascript
+// REV系責任分界準拠初期化フロー
+Browser Load
+↓
+index.html構造定義のみ（スタイル・スクリプト管理なし）
+↓
+bootstrap.js依存関係管理開始
+↓
+Bootstrap.loadDependencies()              // 順序保証読み込み
+↓
+window.dispatchEvent('tegaki:dependencies:loaded') // main.js通知
+↓
+main.js.setupBootstrapListeners()        // 依存関係完了待機
+↓
+main.js.tryInitialize()                  // 初期化条件確認
+↓
+main.js.initializeAppCore()              // AppCore委譲初期化
+↓
+CanvasManager.initialize({canvasElement}) // 確実DOM要素渡し
+↓
+StateManager.updateInitializationState() // 状態更新
+↓
+EventBus.safeEmit('tegaki:initialization:complete')
+```
+
+### 🎨 REV系キャンバス表示保証フロー
+```javascript
+// REV系キャンバス表示問題解決フロー
+main.js.checkCanvasContainerReady()
+↓
+DOM要素存在確認 (#canvas-container)
+↓
+要素サイズ確認 (offsetWidth/Height > 0)
+↓
+CanvasManager.initialize({
+  appCore: this.appCore,
+  canvasElement: canvasContainer  // 確実なDOM要素渡し
+})
+↓
+PixiJS Application生成・DOM接続
+↓
+Canvas要素確認 (canvas = container.querySelector('canvas'))
+↓
+キャンバス表示成功確認・ログ出力
+```
+
+### 🔧 REV系CSS統合・スタイル管理フロー
+```javascript
+// REV系CSS統合フロー
+index.html構造定義（インラインスタイル削除）
+↓
+css/styles.css統合読み込み
+↓
+CSS変数定義適用 (:root variables)
+↓
+共通クラス適用 (.canvas-container等)
+↓
+レスポンシブ対応 (@media queries)
+↓
+テーマ対応準備 (Futaba色彩変数)
+```
+
+---
+
+## 📝 REV系シンボル・用語統一定義
+
+### 🚀 REV系責任分界用語
+```javascript
+// REV系責任分界関連用語
+BOOTSTRAP_RESPONSIBILITY     // Bootstrap依存関係管理責務
+MAIN_INITIALIZATION         // main.js初期化統合責務
+CANVAS_DISPLAY_ASSURANCE   // キャンバス表示保証
+CSS_INTEGRATION            // CSS統合・スタイル統一
+DEPENDENCY_ORDER_MANAGEMENT // 依存関係順序管理
+
+// REV系問題解決用語
+CANVAS_VISIBILITY_ISSUE    // キャンバス表示問題
+INITIALIZATION_RELIABILITY // 初期化信頼性
+DOM_ELEMENT_CERTAINTY     // DOM要素確実性
+RESPONSIBILITY_BOUNDARY   // 責任境界
+```
+
+### 🔧 REV系システム統合用語
+```javascript
+// REV系統合システム関連用語
+BOOTSTRAP_DELEGATION      // Bootstrap委譲システム
+CANVAS_MANAGER_RELIABILITY // CanvasManager信頼性
+INITIALIZATION_FLOW       // 初期化フロー制御
+CSS_VARIABLE_SYSTEM      // CSS変数システム
+THEME_INTEGRATION        // テーマ統合システム
+
+// REV系品質保証用語
+DISPLAY_GUARANTEE        // 表示保証
+INITIALIZATION_SUCCESS   // 初期化成功率
+DEPENDENCY_RESOLUTION    // 依存関係解決
+INTEGRATION_RELIABILITY  // 統合信頼性
+```
+
+---
+
+## 📊 REV系実装ステータス定義
+
+### 🟢 REV系実装完了API
+```javascript
+// Bootstrap依存関係管理（完全実装）
+✅ loadScript(), loadDependencies(), checkPixiAndStart()
+✅ Bootstrap依存関係順序保証読み込み
+✅ main.js初期化委譲システム
+
+// main.js REV系初期化（修正完了）
+✅ setupBootstrapListeners(), tryInitialize()
+✅ checkCanvasContainerReady(), initializeAppCore()
+✅ キャンバス表示問題修正済み
+
+// CSS統合・スタイル管理（統合完了）
+✅ CSS変数定義、共通クラス統合
+✅ インラインスタイル削除、レスポンシブ準備
+✅ ふたば☆ちゃんねる風テーマ変数
+```
+
+### 🟡 REV系検証・調整必要API
+```javascript
+// CanvasManager初期化改修（動作確認必要）
+🟡 initialize(options) 引数統一修正
+🟡 DOM要素確実渡し・接続確認
+🟡 PixiJS Application配置確認
+
+// 統一システム統合（詳細確認必要）
+🟡 ErrorManager Bootstrap・初期化エラー対応
+🟡 StateManager REV系状態管理統合
+🟡 EventBus REV系イベント統合
+```
+
+### 🔴 REV系将来実装予定
+```javascript
+// Phase2移行準備API（Phase1.5完了後）
+🔴 AbstractTool継承システム完全統合
+🔴 レイヤーシステム拡張対応
+🔴 PixiJS v8移行準備システム
+
+// 高度なREV系機能（Phase2以降）
+🔴 動的テーマ変更システム
+🔴 高度な依存関係管理（条件分岐読み込み）
+🔴 パフォーマンス監視統合
+```
+
+---
+
+## 📋 REV系ファイル構成・役割定義
+
+### 📂 REV系新規・修正ファイル
+```javascript
+// 新規作成ファイル
+📁 js/bootstrap.js (新規)
+├── 依存関係順序管理専門
+├── main.js初期化委譲
+└── UI・エラー処理禁止
+
+// 大幅修正ファイル
+📁 index.html (簡素化)
+├── 構造定義専門
+├── インラインスタイル削除
+└── Bootstrap委譲
+
+📁 css/styles.css (統合拡張)
+├── CSS変数統合
+├── 共通クラス定義
+└── テーマ対応準備
+
+📁 js/main.js (REV系強化)
+├── Bootstrap待機システム
+├── キャンバス表示問題修正
+└── 初期化信頼性向上
+```
+
+### 🎯 REV系責任境界明確化
+```javascript
+// ファイル別責務定義
+index.html:     構造定義のみ（HTML要素・基本構造）
+bootstrap.js:   依存関係管理のみ（スクリプト読み込み順序制御）
+main.js:        初期化統合のみ（システム初期化・統合制御）
+styles.css:     スタイル管理のみ（CSS・テーマ・レスポンシブ）
+
+// 禁止事項明確化
+index.html:     ❌ インラインスタイル・スクリプト管理・初期化処理
+bootstrap.js:   ❌ UI処理・エラー表示・初期化ロジック
+main.js:        ❌ 直接描画・UI操作・スタイル処理
+styles.css:     ❌ JavaScript・初期化処理・動的処理
+```
+
+---
+
+## 🔍 REV系品質指標・診断システム
+
+### 📊 REV系品質指標
+```javascript
+// REV系責任分界品質
+RESPONSIBILITY_SEPARATION_REV: 0-100%     // REV系責任分界遵守率
+CSS_INTEGRATION_SCORE: 0-100%            // CSS統合完成度
+BOOTSTRAP_RELIABILITY: 0-100%            // Bootstrap依存関係信頼性
+CANVAS_DISPLAY_SUCCESS: 0-100%           // キャンバス表示成功率
+
+// REV系初期化品質
+INITIALIZATION_RELIABILITY: 0-100%        // 初期化信頼性
+DEPENDENCY_RESOLUTION_RATE: 0-100%       // 依存関係解決率
+DOM_ELEMENT_CERTAINTY: 0-100%            // DOM要素確実性
+SYSTEM_INTEGRATION_HEALTH: 0-100%        // システム統合健全性
+```
+
+### 🔧 REV系診断コマンド
+```javascript
+// REV系診断システム
+window.debugREVSystem()                   // REV系統合デバッグ
+window.checkTegakiHealth()                // Tegaki健全性確認
+window.checkCoordinateIntegration()       // 座標統合確認
+window.checkPhase2Readiness()             // Phase2移行準備度
+
+// REV系パフォーマンス確認
+window.checkREVPerformance()              // REV系パフォーマンス
+window.measureBootstrapTime()             // Bootstrap時間測定
+window.measureCanvasInitTime()            // キャンバス初期化時間
+```
+
+---
+
+## 🚀 Phase2移行準備・将来拡張
+
+### 🎯 Phase2移行準備完了条件
+```javascript
+// REV系完了条件
+✅ キャンバス表示問題解決（100%表示保証）
+✅ 責任分界明確化（4ファイル役割分離）
+✅ Bootstrap依存関係管理統合
+✅ CSS統合・スタイル一元管理
+
+// Phase2移行可能状態
+✅ AbstractTool継承準備完了
+✅ レイヤーシステム基盤準備
+✅ 座標システム統合完了
+✅ 統一システム100%活用
+```
+
+### 🔮 REV系将来拡張計画
+```javascript
+// 技術発展対応
+PIXIJS_V8_BOOTSTRAP_READY               // PixiJS v8 Bootstrap対応
+WEBGPU_INITIALIZATION                   // WebGPU初期化対応
+MOBILE_RESPONSIVE_BOOTSTRAP             // モバイルBootstrap対応
+
+// 機能拡張対応
+DYNAMIC_THEME_SYSTEM                    // 動的テーマシステム
+CONDITIONAL_DEPENDENCY_LOADING          // 条件分岐依存読み込み
+PROGRESSIVE_ENHANCEMENT                 // プログレッシブエンハンスメント
+```
+
+---
+
+## 🎨 REV系特殊記号・マーク定義
+
+### 🚀 REV系ファイル分類マーク
+```javascript
+// REV系ファイル分類マーク
+🚀 Bootstrap系       // 依存関係管理専門
+🔧 Main初期化系      // 初期化統合専門
+🎨 Canvas表示系      // キャンバス表示保証
+🎪 CSS統合系         // スタイル統合管理
+
+// REV系問題解決マーク
+✅ 表示保証済み      // キャンバス表示問題解決
+🔧 初期化修正済み    // 初期化プロセス修正
+🎨 統合済み         // システム統合完了
+📦 依存解決済み      // 依存関係問題解決
+```
+
+### 🔍 REV系品質・検証マーク
+```javascript
+// REV系品質マーク
+🟢 REV完了          // REV系改修完了
+🟡 REV調整中        // REV系調整・検証中
+🔴 REV未対応        // REV系未対応・将来対応
+⭐ REV高品質        // REV系高品質完成
+
+// REV系診断・検証マーク
+📊 REV品質指標      // REV系品質測定
+🔍 REV診断実行      // REV系診断・検証
+🏥 REV健全性       // REV系健全性確認
+📈 REV改善効果     // REV系改善・向上
+```
+
+---
+
+## 📋 REV系API実装チェックリスト
+
+### ✅ REV系実装チェック項目
+```javascript
+// Bootstrap責任分界チェック
+□ 依存関係管理のみ実装されているか？
+□ UI処理・エラー表示を含んでいないか？
+□ main.js委譲システムが正しく動作するか？
+□ 順序保証読み込みが機能しているか？
+
+// main.js初期化強化チェック
+□ Bootstrap待機システムが動作するか？
+□ キャンバス要素確実性確認が機能するか？
+□ CanvasManager初期化引数が正しく渡されるか？
+□ 診断・健全性チェックが利用可能か？
+
+// CSS統合・責任分界チェック
+□ インラインスタイルが完全削除されているか？
+□ CSS変数・共通クラスが正しく適用されるか？
+□ レスポンシブ対応基盤が準備されているか？
+□ テーマ変更への対応基盤があるか？
+
+// 統一システム統合チェック
+□ ErrorManager経由でエラー処理されているか？
+□ StateManager経由で状態管理されているか？
+□ EventBus経由でイベント通信されているか？
+□ ConfigManager経由で設定管理されているか？
+```
+
+### 📊 REV系品質達成目標
+```javascript
+// REV系目標品質レベル
+TARGET_CANVAS_DISPLAY_SUCCESS: 100%      // キャンバス表示成功率
+TARGET_INITIALIZATION_RELIABILITY: 95%   // 初期化信頼性
+TARGET_RESPONSIBILITY_SEPARATION: 100%   // 責任分界遵守率
+TARGET_CSS_INTEGRATION: 100%             // CSS統合完成度
+TARGET_BOOTSTRAP_RELIABILITY: 95%        // Bootstrap信頼性
+
+// Phase2移行可能基準
+PHASE2_READINESS_THRESHOLD: 95%          // Phase2移行可能閾値
+SYSTEM_INTEGRATION_MINIMUM: 90%          // システム統合最低基準
+COORDINATE_SYSTEM_HEALTH: 95%            // 座標システム健全性
+UNIFIED_SYSTEM_USAGE: 100%               // 統一システム活用率
+```
+
+---
+
+## 🔄 REV系継続メンテナンス・更新規約
+
+### 📅 REV系更新スケジュール
+```javascript
+// REV系シンボル辞典更新
+IMMEDIATE_UPDATE:     REV系改修反映・問題修正対応
+WEEKLY_UPDATE:        REV系品質指標・実装状況確認
+PHASE_TRANSITION:     Phase2移行時のREV系検証・最適化
+MAJOR_REVISION:       REV系アーキテクチャ変更時の全面更新
+
+// REV系品質維持責任
+BOOTSTRAP_MAINTAINER:    Bootstrap依存関係管理保守
+MAIN_MAINTAINER:         main.js初期化システム保守
+CSS_MAINTAINER:          CSS統合・スタイル管理保守
+INTEGRATION_MAINTAINER:  REV系統合システム保守
+```
+
+### 🎯 REV系継続改善目標
+```javascript
+// REV系継続品質目標
+キャンバス表示信頼性:   100%維持（表示問題根絶）
+初期化プロセス安定性:   95%以上維持（エラー率5%以下）
+責任分界遵守徹底:      100%維持（混在・越境なし）
+CSS統合・保守効率:     継続向上（スタイル管理効率化）
+
+// REV系成功指標
+Bootstrap効率:         依存関係管理による開発効率向上測定
+初期化信頼性:          キャンバス表示問題解決による安定性向上
+保守効率向上:          責任分界による保守工数削減測定
+Phase2移行準備:        REV系基盤による移行効率向上測定
+```
+
+---
+
+## 🛠️ REV系トラブルシューティング・デバッグ
+
+### 🚨 REV系問題分類・対応
+```javascript
+// Bootstrap依存関係問題
+DEPENDENCY_LOAD_ERROR:     依存関係読み込みエラー
+SCRIPT_ORDER_VIOLATION:    スクリプト順序違反
+PIXI_AVAILABILITY_ISSUE:   PixiJS利用不可問題
+
+// 初期化プロセス問題
+CANVAS_CONTAINER_MISSING:  キャンバスコンテナなし
+DOM_ELEMENT_UNCERTAINTY:   DOM要素不確実性
+INITIALIZATION_TIMEOUT:    初期化タイムアウト
+
+// CSS統合・スタイル問題
+INLINE_STYLE_REMAINING:    インラインスタイル残存
+CSS_VARIABLE_UNDEFINED:    CSS変数未定義
+RESPONSIVE_BREAKDOWN:      レスポンシブ破綻
+
+// システム統合問題
+UNIFIED_SYSTEM_BYPASS:     統一システム迂回
+RESPONSIBILITY_CROSSING:   責任境界越境
+EVENT_BUS_DISCONNECTION:   EventBus接続問題
+```
+
+### 🔧 REV系デバッグコマンド詳細
+```javascript
+// REV系統合デバッグ
+window.debugREVSystem = function() {
+    console.log('🔧 REV系統合デバッグ開始');
+    
+    // 1. Bootstrap状態確認
+    console.log('1️⃣ Bootstrap状態:');
+    console.log('  - 依存関係完了:', !!window.Tegaki?.AppInstance?.dependenciesLoaded);
+    console.log('  - DOM準備完了:', document.readyState);
+    console.log('  - キャンバス要素:', !!document.getElementById('canvas-container'));
+    
+    // 2. 初期化状態確認
+    console.log('2️⃣ 初期化状態:');
+    console.log('  - アプリ初期化:', !!window.Tegaki?.AppInstance?.initialized);
+    console.log('  - AppCore初期化:', !!window.Tegaki?.AppCoreInstance?.initialized);
+    console.log('  - CanvasManager:', !!window.Tegaki?.CanvasManagerInstance?.initialized);
+    
+    // 3. キャンバス表示確認
+    console.log('3️⃣ キャンバス表示:');
+    const container = document.getElementById('canvas-container');
+    const canvas = container?.querySelector('canvas');
+    console.log('  - コンテナサイズ:', container ? `${container.offsetWidth}x${container.offsetHeight}` : 'なし');
+    console.log('  - キャンバス要素:', !!canvas);
+    console.log('  - キャンバスサイズ:', canvas ? `${canvas.width}x${canvas.height}` : 'なし');
+    
+    // 4. 統一システム確認
+    console.log('4️⃣ 統一システム:');
+    const systems = ['ConfigManagerInstance', 'ErrorManagerInstance', 'StateManagerInstance', 'EventBusInstance'];
+    systems.forEach(system => {
+        console.log(`  - ${system}:`, !!window.Tegaki?.[system]);
+    });
+    
+    // 5. CSS統合確認
+    console.log('5️⃣ CSS統合確認:');
+    const cssVars = getComputedStyle(document.documentElement);
+    console.log('  - CSS変数:', cssVars.getPropertyValue('--futaba-bg') || '未定義');
+    console.log('  - キャンバスクラス:', container?.className || 'クラスなし');
+    
+    // 6. 問題診断
+    const issues = [];
+    if (!window.Tegaki?.AppInstance?.dependenciesLoaded) issues.push('依存関係未完了');
+    if (!document.getElementById('canvas-container')) issues.push('キャンバスコンテナなし');
+    if (!canvas) issues.push('キャンバス要素なし');
+    if (!window.Tegaki?.CanvasManagerInstance?.initialized) issues.push('CanvasManager未初期化');
+    if (!cssVars.getPropertyValue('--futaba-bg')) issues.push('CSS変数未適用');
+    
+    console.log('6️⃣ 問題診断:', issues.length > 0 ? issues : '問題なし');
+    
+    return {
+        healthy: issues.length === 0,
+        issues,
+        canvasVisible: !!canvas,
+        systemReady: !!window.Tegaki?.AppInstance?.initialized,
+        cssIntegrated: !!cssVars.getPropertyValue('--futaba-bg')
+    };
+};
+
+// REV系Phase2移行準備度確認
+window.checkPhase2Readiness = function() {
+    console.log('🔍 Phase2移行準備度確認');
+    
+    const checkList = {
+        // 基盤システム
+        unifiedSystems: !!(
+            window.Tegaki?.ConfigManagerInstance && 
+            window.Tegaki?.ErrorManagerInstance && 
+            window.Tegaki?.StateManagerInstance && 
+            window.Tegaki?.EventBusInstance
+        ),
+        
+        // キャンバス・描画システム
+        canvasSystem: !!(
+            window.Tegaki?.CanvasManagerInstance?.initialized &&
+            document.querySelector('canvas')
+        ),
+        
+        // ツール・座標システム
+        toolSystem: !!(
+            window.Tegaki?.ToolManagerInstance &&
+            window.Tegaki?.CoordinateManagerInstance
+        ),
+        
+        // REV系責任分界
+        revResponsibilitySeparation: {
+            htmlStructureOnly: !document.querySelector('style[data-inline]'),
+            cssConsolidated: !!document.querySelector('link[href*="styles.css"]'),
+            bootstrapDelegation: !!window.Tegaki?.AppInstance?.dependenciesLoaded,
+            mainInitialization: !!window.Tegaki?.AppInstance?.initialized
+        },
+        
+        // REV系キャンバス表示保証
+        revCanvasDisplay: {
+            containerPresent: !!document.getElementById('canvas-container'),
+            canvasElement: !!document.querySelector('canvas'),
+            cssVariables: !!getComputedStyle(document.documentElement).getPropertyValue('--futaba-bg'),
+            responsiveReady: !!document.querySelector('.canvas-container')
+        }
+    };
+    
+    // スコア計算
+    let score = 0;
+    if (checkList.unifiedSystems) score += 25;
+    if (checkList.canvasSystem) score += 25;
+    if (checkList.toolSystem) score += 20;
+    
+    // REV系責任分界スコア
+    const revSepCount = Object.values(checkList.revResponsibilitySeparation).filter(v => v === true).length;
+    score += (revSepCount / 4) * 15;
+    
+    // REV系キャンバス表示スコア
+    const revCanvasCount = Object.values(checkList.revCanvasDisplay).filter(v => v === true).length;
+    score += (revCanvasCount / 4) * 15;
+    
+    console.log('📊 Phase2移行準備度:', `${score.toFixed(1)}%`);
+    console.log('📋 詳細:', checkList);
+    
+    if (score >= 95) {
+        console.log('✅ Phase2移行準備完了');
+    } else if (score >= 80) {
+        console.log('⚠️ Phase2移行準備概ね完了（軽微な課題あり）');
+    } else {
+        console.log('❌ Phase2移行準備未完了（重要な課題あり）');
+    }
+    
+    return { score, checkList };
+};
+
+// REV系パフォーマンス確認
+window.checkREVPerformance = function() {
+    console.log('🔍 REV系パフォーマンス確認開始');
+    
+    const startTime = performance.now();
+    
+    // Bootstrap時間確認
+    const bootTime = window.Tegaki?.AppInstance?.bootTime || 'Unknown';
+    console.log(`⏱️ Bootstrap時間: ${bootTime}ms`);
+    
+    // キャンバス初期化時間確認
+    const canvasManager = window.Tegaki?.CanvasManagerInstance;
+    if (canvasManager?.initializeTime) {
+        console.log(`🎨 CanvasManager初期化時間: ${canvasManager.initializeTime}ms`);
+    }
+    
+    // CSS適用確認
+    const cssStart = performance.now();
+    const container = document.getElementById('canvas-container');
+    const computedStyle = container ? getComputedStyle(container) : null;
+    const cssEnd = performance.now();
+    console.log(`🎪 CSS適用時間: ${(cssEnd - cssStart).toFixed(2)}ms`);
+    
+    // メモリ使用量確認
+    if (performance.memory) {
+        console.log('💾 メモリ使用量:', {
+            used: `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(1)}MB`,
+            total: `${(performance.memory.totalJSHeapSize / 1024 / 1024).toFixed(1)}MB`,
+            limit: `${(performance.memory.jsHeapSizeLimit / 1024 / 1024).toFixed(1)}MB`
+        });
+    }
+    
+    // 総合確認時間
+    const checkTime = performance.now() - startTime;
+    console.log(`✅ 確認完了時間: ${checkTime.toFixed(2)}ms`);
+    
+    return {
+        bootTime,
+        canvasManager: !!canvasManager?.initialized,
+        cssApplied: !!computedStyle?.getPropertyValue('background-color'),
+        memoryHealthy: performance.memory ? 
+            (performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit) < 0.7 : true,
+        checkTime
+    };
+};
+```
+
+---
+
+## 📚 REV系実装ガイドライン・ベストプラクティス
+
+### 🏆 REV系実装ベストプラクティス
+```javascript
+// Bootstrap.js実装時の注意点
+✅ 依存関係順序の厳格遵守
+✅ エラー処理のmain.js委譲（UI処理禁止）
+✅ PixiJS確認後の安全な開始制御
+✅ Promise-based順次読み込み実装
+
+// main.js REV系初期化の注意点
+✅ Bootstrap依存関係完了待機必須
+✅ DOM要素確実性確認（offsetWidth/Height確認）
+✅ CanvasManager初期化時の確実なDOM要素渡し
+✅ 診断・健全性チェック機能実装
+
+// CSS統合時の注意点
+✅ インラインスタイル完全削除
+✅ CSS変数によるテーマ対応基盤
+✅ レスポンシブ対応の基盤準備
+✅ クラス名の統一・命名規約遵守
+```
+
+### 🚫 REV系実装時の絶対禁止事項
+```javascript
+// Bootstrap.js禁止事項
+❌ UI処理・エラー表示の直接実装
+❌ 初期化ロジックの混入（main.js責務）
+❌ 非同期処理の無秩序実装
+❌ グローバル変数の無制限使用
+
+// main.js禁止事項
+❌ Bootstrap機能の重複実装
+❌ 直接的な描画処理（Tool委譲必須）
+❌ CSS・スタイル処理の混入
+❌ 応急処置的なフォールバック肥大化
+
+// CSS統合禁止事項
+❌ JavaScript処理の混入
+❌ インラインスタイルの残存
+❌ ハードコード値の使用（変数必須）
+❌ 非レスポンシブなスタイル実装
+```
+
+---
+
+## 🎯 REV系最終チェックリスト・完了条件
+
+### ✅ REV系完了条件チェックリスト
+```javascript
+// 🚀 Bootstrap依存関係管理完了
+□ bootstrap.js新規作成・構文エラー修正完了
+□ 依存関係順序保証読み込み実装
+□ main.js委譲システム実装
+□ UI処理・エラー表示禁止遵守
+
+// 🔧 main.js初期化強化完了
+□ Bootstrap依存関係待機システム実装
+□ キャンバス要素確実性確認実装
+□ CanvasManager初期化引数修正
+□ 診断・健全性チェック実装
+
+// 🎨 キャンバス表示問題解決完了
+□ #canvas-container DOM要素確実存在確認
+□ CanvasManager.initialize()確実成功
+□ Pixi.Application.view適切配置確認
+□ キャンバス表示100%保証達成
+
+// 🎪 CSS統合・責任分界完了
+□ index.htmlインラインスタイル完全削除
+□ CSS変数・共通クラス統合実装
+□ レスポンシブ対応基盤準備
+□ テーマ変更対応基盤準備
+
+// 🔄 統一システム統合完了
+□ ErrorManager経由エラー処理100%
+□ StateManager経由状態管理100%
+□ EventBus経由イベント通信100%
+□ ConfigManager経由設定管理100%
+```
+
+### 📊 REV系品質達成基準
+```javascript
+// 必須達成品質指標
+TARGET_CANVAS_DISPLAY_SUCCESS: 100%      // キャンバス表示成功率
+TARGET_BOOTSTRAP_RELIABILITY: 95%+      // Bootstrap依存関係信頼性
+TARGET_INITIALIZATION_SUCCESS: 95%+     // 初期化成功率
+TARGET_CSS_INTEGRATION: 100%            // CSS統合完成度
+TARGET_RESPONSIBILITY_SEPARATION: 100%   // 責任分界遵守率
+
+// Phase2移行可能基準
+PHASE2_READINESS_MINIMUM: 95%           // Phase2移行最低基準
+COORDINATE_SYSTEM_HEALTH: 95%+          // 座標システム健全性
+UNIFIED_SYSTEM_USAGE: 100%              // 統一システム活用率
+ARCHITECTURE_COMPLIANCE: 100%           // アーキテクチャ原則遵守率
+```
+
+---
+
+*🎨 シンボル辞典 v12 - Phase1.5 REV系対応版*  
+*策定日: 2025年8月24日*  
+*対象: REV系責任分界改修・キャンバス表示問題解決対応*  
+*目的: Bootstrap統合・初期化信頼性・責任境界明確化*  
+*適用: Phase1.5 REV系改修完了・Phase2移行準備*
+
+---
+
+## 📎 REV系実装完了後の確認手順
+
+### 🔍 段階的確認プロセス
+```javascript
+// Stage 1: Bootstrap動作確認
+1. ブラウザでindex.html開く
+2. コンソールで「🚀 Bootstrap スクリプト登録完了」確認
+3. 依存関係読み込みログ確認（✅ [n/total] fileName.js）
+4. 「✅ 全依存関係読み込み完了」確認
+
+// Stage 2: 初期化プロセス確認
+5. window.debugREVSystem() 実行
+6. 全項目「問題なし」確認
+7. window.checkTegakiHealth() 実行・健全性確認
+8. キャンバス要素目視確認
+
+// Stage 3: システム統合確認
+9. window.checkCoordinateIntegration() 実行
+10. window.checkPhase2Readiness() 実行・95%以上確認
+11. window.checkREVPerformance() 実行・性能確認
+12. エラーコンソール0件確認
+
+// Stage 4: Phase2移行判定
+13. 全品質指標95%以上達成確認
+14. 責任分界100%遵守確認
+15. キャンバス表示100%保証確認
+16. Phase2移行準備完了宣言
+```
+
+この更新により、Phase1.5 REV系改修に完全対応したシンボル辞典v12が完成しました。Bootstrap.js構文エラー修正と合わせて、キャンバス表示問題の根本解決とPhase2移行準備が整います。

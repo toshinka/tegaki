@@ -110,7 +110,7 @@
             console.log('✅ PIXI.js 読み込み確認');
             loadDependencies();
         } else {
-            console.warn(⚠️ PIXI.js 未読み込み - 100ms後に再確認');
+            console.warn('⚠️ PIXI.js 未読み込み - 100ms後に再確認');
             setTimeout(checkPixiAndStart, 100);
         }
     }
