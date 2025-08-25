@@ -1,72 +1,142 @@
-原因（即断）
-
-bootstrap.js が グローバル直下の window.TegakiApplication を探しにいっているのに対し、実装は 名前空間付きの window.Tegaki.TegakiApplication（＝Appクラス）として公開されています。
-この参照先ミスマッチがそのままエラーの原因です（TegakiApplication class not available）。 
-GitHub
-
-どこが食い違っているか
-
-bootstrap.js
-window.TegakiApplication が未定義なら即 throw し、new window.TegakiApplication() で起動しようとしている。
-（＝非名前空間を前提にしている） 
-GitHub
-
-app-core.js
-アプリ本体クラスを window.Tegaki.TegakiApplication として登録している。
-（＝名前空間に統一されている）
-
-そのため、Bootstrap 側からは「クラスが存在しない」ように見えて落ちています。
-
-ルール文書側の矛盾・違反ポイント（要修正）
-
-名前空間統一ルールの逸脱
-　計画書は「Tegaki名前空間へ統一」を強く求めていますが、実コードの bootstrap.js は非名前空間参照です。計画書の趣旨に対し Bootstrap が違反しています。 
-GitHub
-
-「どこを探すか」の記述ブレ
-　1_tegaki_rulebook_v1.1.txt／2_tegaki_symbol_dictionary_v1.1.txt は、TegakiApplication の所在を名前空間付きで示す記述があり、一方 bootstrap.js は非名前空間で探す実装。文書と実装で前提がズレているため、以後の修正作業で「直したのに動かない」症状を誘発します。 
-GitHub
-
-（補足）文書中で「TegakiApplication を app-core.js が定義する」旨は正しいですが、参照方法（名前空間有無）の指示が曖昧です。結果、Bootstrap が単独でルールから外れています。 
-GitHub
-
-いまのコードで他に怪しい点は？
-
-main.js／マネージャ群（Canvas/Tool）／ツール群（Pen/Eraser）は、いずれも window.Tegaki.* へ登録しており、名前空間の方針に沿っています。（良い） 
-GitHub
-+4
-GitHub
-+4
-GitHub
-+4
-
-よって、今回の起動失敗は Bootstrap 単独の参照ミスがトリガーです。
-
-即効パッチ（どちらか一つでOK）
-方式A（推奨）：Bootstrapをルール準拠に直す
-
-bootstrap.js を次のように修正（擬似差分）：
-
-- if (!window.TegakiApplication) {
-+ if (!window.Tegaki || !window.Tegaki.TegakiApplication) {
-     const error = new Error('TegakiApplication class not available');
-     ...
-- const tegakiApp = new window.TegakiApplication();
-+ const tegakiApp = new window.Tegaki.TegakiApplication();
+🛠 現象と直接原因
+main.js:71 ❌ TegakiApplication 初期化エラー: Error: AppCore class not available
 
 
-※ これで「名前空間統一」ルールに準拠し、文書とも整合します。 
-GitHub
+main.js の TegakiApplication.initializeAppCore 内で
+AppCore クラスを参照しているが、ロードされていない or 定義が存在しない。
 
-方式B：エイリアスで一時吸収する（応急処置）
+app-core.js を見たところ クラス宣言の不足や export/import の齟齬 が疑われる。
 
-app-core.js のクラス登録直後に1行追加：
+また bootstrap.js → main.js → app-core.js の 読み込み順序 が崩れている可能性もある。
 
-  window.Tegaki.TegakiApplication = TegakiApplication;
-+ window.TegakiApplication = window.Tegaki.TegakiApplication; // alias for legacy bootstrap
+👉 このレイヤーの改修で済むなら app-core.js 内で class AppCore { ... } を明示し、グローバル公開 (window.AppCore = AppCore) をする必要あり。
 
 
-※ 将来的には 方式A で Bootstrap を正す方が健全です。
+📚 ルールブック & シンボル辞典 点検観点
+
+依頼の趣旨は 実装と設計文書の乖離 を検出すること。以下の観点で精査します：
+
+1.存在チェック
+
+ルールブックに書かれたクラス / メソッド / プロパティが実装に存在するか。
+
+実装にあるがルールブックに無い「野良実装」がないか。
+
+2.重複・誤用
+
+同一メソッド名が異なる責務で使われていないか。
+
+シンボル（イベント名・エラーコードなど）が辞典と一致しているか。
+
+3.架空参照
+
+ルールブックや辞典にしか存在しないメソッドを実装が呼び出していないか。
+
+今回の AppCore class not available がまさに「ルールにはあるが実装が未整備」ケース。
+
+4.進化計画 (phase evolution plan)
+
+現行フェーズ (phase1rev6) と計画書の段階が一致しているか。
+
+未着手のフェーズ要素を呼んでいないか。
+
+
+🔍 乖離の例（調査サマリ）
+一致しない点
+
+AppCore → ルールブックには「初期化中枢クラス」として記載あり。
+しかし実装では定義されていないか、window.AppCore に公開されていない。
+
+EventBus / ErrorManager / ConfigManager は utils に存在し、ルールにも記載あり → 一致。
+
+ToolManager / CanvasManager もルールと一致。
+
+PenTool / EraserTool → シンボル辞典で定義済み、実装もある → 一致。
+
+危うい点
+
+ルールブック側の「Application → Core → Managers → Tools」階層の説明にある
+LifecycleManager が現状実装に見当たらない。
+
+シンボル辞典内の一部イベントキー（例：app:ready, canvas:updated）が
+実装の event-bus.js 内に未定義。
+
+👉 つまり「ルール > 実装」のズレが発生している。
+
+🩹 改修案（2レイヤー）
+1. 実装修正パッチ
+app-core.js にクラス追加
+
+// js/app-core.js
+(function(window) {
+  'use strict';
+
+  class AppCore {
+    constructor(config) {
+      this.config = config || {};
+      this.managers = {};
+    }
+
+    initialize() {
+      // 各種マネージャの初期化
+      this.managers.error = new window.ErrorManager();
+      this.managers.config = new window.ConfigManager(this.config);
+      this.managers.events = new window.EventBus();
+      this.managers.canvas = new window.CanvasManager();
+      this.managers.tool = new window.ToolManager();
+      return this;
+    }
+  }
+
+  // グローバル公開
+  window.AppCore = AppCore;
+})(window);
+
+これで main.js から new AppCore() が利用可能になる。
+
+
+2. ルールブック / 辞典修正パッチ
+ルールブック (1_tegaki_rulebook_v1.1.txt)
+
+AppCore クラスを「必須基盤クラス」として明記。
+
+未実装の LifecycleManager は Phase2 移行に移動。
+
+修正例：
+[Core Layer]
+- AppCore : アプリ中枢。ErrorManager, ConfigManager, EventBus, CanvasManager, ToolManager を統括。
+- LifecycleManager : フェーズ2以降に導入予定。Phase1 では未使用。
+
+
+シンボル辞典 (2_tegaki_symbol_dictionary_v1.1.txt)
+app:ready / canvas:updated を Phase2 シンボルに移動。
+
+Phase1 の必須イベントシンボルのみ残す（例：app:init, tool:select, canvas:draw）。
+
+修正例：
+
+[Phase1 イベント]
+- app:init
+- tool:select
+- canvas:draw
+- error:occurred
+
+[Phase2 予定イベント]
+- app:ready
+- canvas:updated
+
+✅ 提案の流れ
+
+実装修正（AppCore クラスを定義し、window に公開）
+
+ルールブック修正（LifecycleManager をPhase2に移す / AppCore を明記）
+
+辞典修正（Phase未着手のシンボルを整理）
+
+進化計画との同期（phase evolution plan で「現在はPhase1rev6」の注記を追加）
+
+
+※前回改修時の所見
 
 ドキュメント（v1.1）に対する検査所見
 
@@ -81,43 +151,8 @@ GitHub
 
 アイコン内製化の呼び出し規約
 icons.js の公開ポイントは window.Tegaki.TegakiIcons。
-呼び出し例：window.Tegaki.TegakiIcons.replaceAllToolIcons() とし、非名前空間呼び出しは禁止を明記するのが安全です。 
-GitHub
-
-追加で見直すと良いチェックリスト
-
-読み込み順（index.html）
-
-pixi.min.js（CDN でもローカルでも）
-
-utils/*（event-bus, error-manager, config-manager, minimal-deps）
-
-managers/*（canvas-manager → tool-manager）
-
-tools/*（pen-tool → eraser-tool）
-
-app-core.js（＝TegakiApplication 定義）
-
-main.js（AppCore ヘルパ）
-
-bootstrap.js（最後）
-※ Bootstrap は最後。名前空間が揃った後に起動させる。
-（index.html はここでは中身を確認できませんでしたが、順序ミスでも同様の症状になります）
+呼び出し例：window.Tegaki.TegakiIcons.replaceAllToolIcons() とし、非名前空間呼び出しは禁止を明記するのが安全です。
 
 グローバル公開ポリシー
 すべて window.Tegaki.* に統一。例外（直下公開）は禁止。
 互換のために一時的に alias を置く場合も、計画書に「暫定」扱いで明記を。
-
-まとめ（アクション）
-
-最優先：方式Aのパッチで bootstrap.js を名前空間参照に変更。
-
-ドキュメント：
-
-「起動側（Bootstrap）が参照するクラスは window.Tegaki.TegakiApplication 固定」を追記。
-
-「非名前空間直下の公開は禁止（互換は alias で暫定対応可）」を追記。
-
-再発防止：index.html の読み込み順ガード（コメントや簡易チェック）を入れる。
-
-この対応で、今回の 💀 Bootstrap失敗: TegakiApplication class not available は解消できます。必要なら、私の方で bootstrap.js の修正版スニペットを丸ごとお渡しします。
