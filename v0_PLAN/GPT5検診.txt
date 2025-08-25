@@ -1,158 +1,164 @@
-🛠 現象と直接原因
-main.js:71 ❌ TegakiApplication 初期化エラー: Error: AppCore class not available
+問題の本質
 
+前回見た PenTool 実装では onPointerDown に moveTo(x, y) を呼んでいますが、その後の onPointerMove が **「現在の座標に lineTo するだけ」**になっているのが問題です。
 
-main.js の TegakiApplication.initializeAppCore 内で
-AppCore クラスを参照しているが、ロードされていない or 定義が存在しない。
+PixiJS の Graphics は状態を保持しているため、もし最初の moveTo がイベント処理順序やタイミングで効いていないと、デフォルト位置 (0,0) から最初の lineTo(x,y) が走ってしまうのです。
+これが「中央から描いたつもりが左上から斜め線になる」原因。
 
-app-core.js を見たところ クラス宣言の不足や export/import の齟齬 が疑われる。
+🔧 修正ポイント（PenTool 側）
+修正案 1: onPointerMove で必ず「前の点から moveTo」
+onPointerMove(x, y, event) {
+    if (!this.isDrawing || !this.currentPath) return;
 
-また bootstrap.js → main.js → app-core.js の 読み込み順序 が崩れている可能性もある。
+    const prev = this.points[this.points.length - 1];
+    this.points.push({x, y});
 
-👉 このレイヤーの改修で済むなら app-core.js 内で class AppCore { ... } を明示し、グローバル公開 (window.AppCore = AppCore) をする必要あり。
-
-
-📚 ルールブック & シンボル辞典 点検観点
-
-依頼の趣旨は 実装と設計文書の乖離 を検出すること。以下の観点で精査します：
-
-1.存在チェック
-
-ルールブックに書かれたクラス / メソッド / プロパティが実装に存在するか。
-
-実装にあるがルールブックに無い「野良実装」がないか。
-
-2.重複・誤用
-
-同一メソッド名が異なる責務で使われていないか。
-
-シンボル（イベント名・エラーコードなど）が辞典と一致しているか。
-
-3.架空参照
-
-ルールブックや辞典にしか存在しないメソッドを実装が呼び出していないか。
-
-今回の AppCore class not available がまさに「ルールにはあるが実装が未整備」ケース。
-
-4.進化計画 (phase evolution plan)
-
-現行フェーズ (phase1rev6) と計画書の段階が一致しているか。
-
-未着手のフェーズ要素を呼んでいないか。
-
-
-🔍 乖離の例（調査サマリ）
-一致しない点
-
-AppCore → ルールブックには「初期化中枢クラス」として記載あり。
-しかし実装では定義されていないか、window.AppCore に公開されていない。
-
-EventBus / ErrorManager / ConfigManager は utils に存在し、ルールにも記載あり → 一致。
-
-ToolManager / CanvasManager もルールと一致。
-
-PenTool / EraserTool → シンボル辞典で定義済み、実装もある → 一致。
-
-危うい点
-
-ルールブック側の「Application → Core → Managers → Tools」階層の説明にある
-LifecycleManager が現状実装に見当たらない。
-
-シンボル辞典内の一部イベントキー（例：app:ready, canvas:updated）が
-実装の event-bus.js 内に未定義。
-
-👉 つまり「ルール > 実装」のズレが発生している。
-
-🩹 改修案（2レイヤー）
-1. 実装修正パッチ
-app-core.js にクラス追加
-
-// js/app-core.js
-(function(window) {
-  'use strict';
-
-  class AppCore {
-    constructor(config) {
-      this.config = config || {};
-      this.managers = {};
+    if (prev) {
+        this.currentPath.moveTo(prev.x, prev.y); // ← 直前点を明示
     }
 
-    initialize() {
-      // 各種マネージャの初期化
-      this.managers.error = new window.ErrorManager();
-      this.managers.config = new window.ConfigManager(this.config);
-      this.managers.events = new window.EventBus();
-      this.managers.canvas = new window.CanvasManager();
-      this.managers.tool = new window.ToolManager();
-      return this;
+    if (this.smoothing && this.points.length > 2) {
+        this.drawSmoothLine();
+    } else {
+        this.currentPath.lineTo(x, y);
     }
-  }
 
-  // グローバル公開
-  window.AppCore = AppCore;
-})(window);
+    this.currentPath.beginFill(this.color, this.opacity);
+    this.currentPath.drawCircle(x, y, this.lineWidth / 2);
+    this.currentPath.endFill();
+}
 
-これで main.js から new AppCore() が利用可能になる。
+修正案 2: drawSmoothLine() 内でも moveTo を補正
+drawSmoothLine() {
+    if (this.points.length < 3) return;
 
+    const len = this.points.length;
+    const p1 = this.points[len - 3];
+    const p2 = this.points[len - 2];
+    const p3 = this.points[len - 1];
 
-2. ルールブック / 辞典修正パッチ
-ルールブック (1_tegaki_rulebook_v1.1.txt)
+    this.currentPath.moveTo(p2.x, p2.y); // ← ここで始点を補正
 
-AppCore クラスを「必須基盤クラス」として明記。
+    const cp1x = p1.x + (p2.x - p1.x) * 0.5;
+    const cp1y = p1.y + (p2.y - p1.y) * 0.5;
+    const cp2x = p2.x + (p3.x - p2.x) * 0.5;
+    const cp2y = p2.y + (p3.y - p2.y) * 0.5;
 
-未実装の LifecycleManager は Phase2 移行に移動。
+    this.currentPath.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p3.x, p3.y);
+}
 
-修正例：
-[Core Layer]
-- AppCore : アプリ中枢。ErrorManager, ConfigManager, EventBus, CanvasManager, ToolManager を統括。
-- LifecycleManager : フェーズ2以降に導入予定。Phase1 では未使用。
+✅ まとめ
 
+原因: PenTool が pointermove 時に始点を保証していないため (0,0) から線が引かれる。
 
-シンボル辞典 (2_tegaki_symbol_dictionary_v1.1.txt)
-app:ready / canvas:updated を Phase2 シンボルに移動。
-
-Phase1 の必須イベントシンボルのみ残す（例：app:init, tool:select, canvas:draw）。
-
-修正例：
-
-[Phase1 イベント]
-- app:init
-- tool:select
-- canvas:draw
-- error:occurred
-
-[Phase2 予定イベント]
-- app:ready
-- canvas:updated
-
-✅ 提案の流れ
-
-実装修正（AppCore クラスを定義し、window に公開）
-
-ルールブック修正（LifecycleManager をPhase2に移す / AppCore を明記）
-
-辞典修正（Phase未着手のシンボルを整理）
-
-進化計画との同期（phase evolution plan で「現在はPhase1rev6」の注記を追加）
+対策: onPointerMove / drawSmoothLine 内で必ず moveTo を呼び、前回の座標を明示する。
 
 
-※前回改修時の所見
+*************************
 
-ドキュメント（v1.1）に対する検査所見
+消しゴム (EraserTool) は ペンと違って線分を引かずに「円スタンプを連続で置く」方式を採用しているため、先ほどのペンの (0,0) 直線問題は発生しにくいです。
 
-名前空間方針は妥当。ただし Bootstrap の参照規約が明記不足。
-→ 「起動側は window.Tegaki.TegakiApplication を必ず参照すること」を明文化してください。 
-GitHub
+✅ 良い点
 
-メソッドの存在性
-v1_phase1rev5 の app-core.js には初期化・連携・起動のためのメソッド群（initialize*, setPixiApp, start, performBasicChecks 他）が実装済み。
-「架空メソッドを要求している」類の問題は現状確認できません。 
-GitHub
+drawEraseCircle(x, y) で必ず「座標を中心とした円」を描くので、moveTo / lineTo の扱いに依存しない。
 
-アイコン内製化の呼び出し規約
-icons.js の公開ポイントは window.Tegaki.TegakiIcons。
-呼び出し例：window.Tegaki.TegakiIcons.replaceAllToolIcons() とし、非名前空間呼び出しは禁止を明記するのが安全です。
+onPointerMove でスムーズ補間処理が入り、座標が飛んでも穴があかない。
 
-グローバル公開ポリシー
-すべて window.Tegaki.* に統一。例外（直下公開）は禁止。
-互換のために一時的に alias を置く場合も、計画書に「暫定」扱いで明記を。
+blendMode = PIXI.BLEND_MODES.ERASE を後から適用しているのも正しい（beginFill の前にやると描画結果がおかしくなることがある）。
+
+背景レイヤー (layer0) への消去を禁止しているのも 👍
+
+🔍 気になる点・改善提案
+
+blendMode の適用タイミング
+
+現在は onPointerDown のあとに一度だけ this.currentErasePath.blendMode = ERASE を設定しています。
+
+問題はありませんが、より安全のために drawEraseCircle 内でも blendMode を再保証しておくと、不意に Graphics の状態が変わっても確実に消去動作します。
+
+drawEraseCircle(x, y) {
+    if (!this.currentErasePath) return;
+    this.currentErasePath.blendMode = PIXI.BLEND_MODES.ERASE; // 再保証
+    this.currentErasePath.beginFill(0xffffff, this.eraserOpacity);
+    this.currentErasePath.drawCircle(x, y, this.eraserSize / 2);
+    this.currentErasePath.endFill();
+}
+
+
+大きい消しゴムサイズでの補間ステップ数
+
+今は steps = Math.ceil(distance / (this.eraserSize / 4)) ですが、大きなサイズを設定すると「補間が粗くて消し跡が途切れる」可能性があります。
+
+距離に応じたスムーズさを保ちたいなら、/ 2 くらいにするとより自然に。
+
+パフォーマンス最適化
+
+今のやり方だと PIXI.Graphics に円を都度追加していくため、長い消去経路ではオブジェクトが膨れ上がります。
+
+後で最適化するなら PIXI.SimpleRope + テクスチャ筆方式（ブラシテクスチャを並べる）にすると軽量化できます。
+
+
+********************
+
+
+座標管理が整理されているかを気にしているんですね 👍
+
+現状コード（pen-tool.js・eraser-tool.js・canvas-manager.js をざっと見た範囲）だと、以下の状態です：
+
+✅ 良い点
+
+イベント座標 (event.data.global) を直接使っている
+→ PixiJS の InteractionManager は global をキャンバス全体の座標系に変換してくれるので、ズレにくい。
+
+レイヤー（layer0, currentLayer）ごとに描画している
+→ 将来レイヤーを増やす際に分離しやすい。
+
+ペンと消しゴムが同じ座標管理フロー
+→ 一貫性があるので不具合が混在しにくい。
+
+⚠️ 問題になりそうな点
+
+キャンバス移動（パン・ズーム）を入れると座標変換が破綻する可能性
+
+今は event.data.global をそのまま使っていますが、
+canvasContainer に scale や position をかけたとき、ツール側がズーム・移動を考慮できない。
+
+本来は toLocal を通して「レイヤー座標」に変換してから描画すべき。
+
+const pos = this.canvasManager.currentLayer.toLocal(event.data.global);
+
+
+こうすれば、キャンバスを動かしてもツール側は常に「レイヤーのローカル座標」で扱える。
+
+座標管理がツール側に散らばっている
+
+PenTool と EraserTool それぞれで event.data.global を参照していて、
+将来「タッチ補正」「座標変換」「グリッドスナップ」などを入れると重複改修が必要になる。
+
+💡 改善提案
+
+CoordinateManager（仮）を作る
+→ すべてのツールは「ローカル座標変換済みの値」だけを受け取る。
+例：
+
+// utils/coordinate-manager.js
+class CoordinateManager {
+    constructor(canvasManager) {
+        this.canvasManager = canvasManager;
+    }
+    getLocalPosition(event) {
+        return this.canvasManager.currentLayer.toLocal(event.data.global);
+    }
+}
+window.Tegaki.CoordinateManager = CoordinateManager;
+
+
+これを PenTool / EraserTool で使えば、将来ズームやパンを入れてもツール修正が不要になります。
+
+描画ロジックと座標ロジックを分離
+
+ツールは「点を受け取って描く」だけに集中。
+
+座標系は CoordinateManager か CanvasManager が責任を持つ。
+
+ToolManager 側は問題なし。そのままでOK。

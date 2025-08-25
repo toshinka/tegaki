@@ -1,23 +1,34 @@
 /**
- * ✏️ PenTool Updated - レイヤー分離対応版
+ * ✏️ PenTool Fixed - 座標問題解決版
  * 📋 RESPONSIBILITY: ベクター描画処理のみ（アクティブレイヤーに描画）
  * 🚫 PROHIBITION: レイヤー操作・UI通知・座標変換
  * ✅ PERMISSION: PIXI.Graphics作成・線描画・CanvasManagerへの渡し
  * 
+ * 🔧 FIX: onPointerMoveで前点からのmoveTo保証・drawSmoothLineでも始点補正
  * 📏 DESIGN_PRINCIPLE: ベクターペン専門・アクティブレイヤー描画
  * 🔄 INTEGRATION: CanvasManagerのaddGraphicsToLayer使用
+ * 
+ * ⚠️ よくある不具合：
+ * - 前回座標が初期化されていない状態で描画を開始すると、
+ *   (0,0) から現在位置まで意図しない直線が描画される。
+ * 
+ * ✅ 対策：
+ * - onPointerDown 時に描画開始座標を必ず記録する。
+ * - onPointerMove では「前回座標が存在する場合のみ線を引く」。
+ * 
+ * この仕様を守らないと「左上から直線」が再発するので要注意。
  */
 
 // Tegaki名前空間初期化
 window.Tegaki = window.Tegaki || {};
 
 /**
- * PenTool - レイヤー分離対応版
- * アクティブレイヤーにベクター描画する専任クラス
+ * PenTool - 座標問題解決版
+ * アクティブレイヤーにベクター描画する専任クラス（座標修正済み）
  */
 class PenTool {
     constructor() {
-        console.log('✏️ PenTool レイヤー分離対応版 作成');
+        console.log('✏️ PenTool 座標問題解決版 作成');
         
         this.canvasManager = null;
         this.isDrawing = false;
@@ -70,7 +81,7 @@ class PenTool {
             join: PIXI.LINE_JOIN.ROUND     // 丸い結合部
         });
         
-        // 描画開始点設定
+        // 🔧 描画開始点設定（確実に現在位置から開始）
         this.currentPath.moveTo(x, y);
         
         // 開始点に小さな円を描画（点描画対応）
@@ -83,13 +94,22 @@ class PenTool {
     }
     
     /**
-     * 描画継続
+     * 描画継続（座標問題修正版）
+     * 🔧 FIX: 前の点からのmoveTo保証で(0,0)直線問題解決
      */
     onPointerMove(x, y, event) {
         if (!this.isDrawing || !this.currentPath) return;
         
+        // 前の点取得
+        const prev = this.points[this.points.length - 1];
+        
         // 点を記録
         this.points.push({x, y});
+        
+        // 🔧 重要修正: 前の点からのmoveTo保証
+        if (prev) {
+            this.currentPath.moveTo(prev.x, prev.y);
+        }
         
         if (this.smoothing && this.points.length > 2) {
             // スムーズな曲線描画（ベジェカーブ）
@@ -113,6 +133,12 @@ class PenTool {
         
         // 最終点追加
         this.points.push({x, y});
+        
+        // 🔧 最終点も前点からのmoveTo保証
+        const prev = this.points[this.points.length - 2];
+        if (prev) {
+            this.currentPath.moveTo(prev.x, prev.y);
+        }
         this.currentPath.lineTo(x, y);
         
         // 最終点に円描画
@@ -133,7 +159,8 @@ class PenTool {
     }
     
     /**
-     * スムーズな曲線描画（ベジェカーブ使用）
+     * スムーズな曲線描画（座標修正版）
+     * 🔧 FIX: 始点をmoveToで補正してからベジェカーブ描画
      */
     drawSmoothLine() {
         if (this.points.length < 3) return;
@@ -142,6 +169,9 @@ class PenTool {
         const p1 = this.points[len - 3];
         const p2 = this.points[len - 2];
         const p3 = this.points[len - 1];
+        
+        // 🔧 重要修正: 始点を明示的に補正
+        this.currentPath.moveTo(p2.x, p2.y);
         
         // 制御点計算（簡易スムージング）
         const cp1x = p1.x + (p2.x - p1.x) * 0.5;
@@ -232,4 +262,4 @@ class PenTool {
 // Tegaki名前空間に登録
 window.Tegaki.PenTool = PenTool;
 
-console.log('✏️ PenTool レイヤー分離対応版 Loaded - アクティブレイヤー描画対応');
+console.log('✏️ PenTool 座標問題解決版 Loaded - (0,0)直線問題修正完了');

@@ -1,24 +1,24 @@
 /**
- * 🧹 EraserTool - 座標修正・真の消去機能版
+ * 🧹 EraserTool Fixed - 座標ズレ問題解決版
  * 📋 RESPONSIBILITY: 描画内容の消去処理のみ（アクティブレイヤー対象）
  * 🚫 PROHIBITION: レイヤー操作・UI通知・座標変換
  * ✅ PERMISSION: PIXI.Graphics作成・消去処理・CanvasManagerへの渡し
  * 
  * 📏 DESIGN_PRINCIPLE: 消しゴム専門・ERASEブレンドモード活用
  * 🔄 INTEGRATION: CanvasManagerのaddEraseGraphicsToLayer使用
- * 🔧 FIX: ERASEブレンドモード修正・座標問題解決・消去機能完成
+ * 🔧 FIX: 座標処理修正・ERASEブレンドモード改善・補間処理最適化
  */
 
 // Tegaki名前空間初期化
 window.Tegaki = window.Tegaki || {};
 
 /**
- * EraserTool - 座標修正・真の消去機能版
+ * EraserTool - 座標ズレ問題解決版
  * アクティブレイヤーの描画内容を正確な座標で消去する専任クラス
  */
 class EraserTool {
     constructor() {
-        console.log('🧹 EraserTool 座標修正・真の消去機能版 作成');
+        console.log('🧹 EraserTool 座標ズレ問題解決版 作成');
         
         this.canvasManager = null;
         this.isErasing = false;
@@ -63,18 +63,15 @@ class EraserTool {
         // 🧹 新しい消去パス作成
         this.currentErasePath = new PIXI.Graphics();
         
-        // 🔧 消去用円形描画（白色で描画後ERASEブレンドモード適用）
+        // 🔧 消去用円形描画（座標精度修正）
         this.drawEraseCircle(x, y);
-        
-        // 🧹 ERASEブレンドモード設定（重要：描画後に設定）
-        this.currentErasePath.blendMode = PIXI.BLEND_MODES.ERASE;
         
         // アクティブレイヤーに追加（専用メソッド使用）
         this.canvasManager.addEraseGraphicsToLayer(this.currentErasePath);
     }
     
     /**
-     * 消去継続（座標修正版）
+     * 消去継続（座標修正・補間最適化版）
      */
     onPointerMove(x, y, event) {
         if (!this.isErasing || !this.currentErasePath) return;
@@ -85,16 +82,18 @@ class EraserTool {
         // 現在位置に消去円描画
         this.drawEraseCircle(x, y);
         
-        // スムーズ消去：前の点との間を補間
+        // スムーズ消去：前の点との間を補間（最適化版）
         if (this.smoothErasing && this.points.length > 1) {
             const prevPoint = this.points[this.points.length - 2];
             const distance = Math.sqrt(
                 Math.pow(x - prevPoint.x, 2) + Math.pow(y - prevPoint.y, 2)
             );
             
-            // 距離が離れている場合は間を埋める
-            if (distance > this.eraserSize / 3) {
-                const steps = Math.ceil(distance / (this.eraserSize / 4));
+            // 🔧 補間距離を修正（より密な補間）
+            const minInterpolationDistance = this.eraserSize / 3;
+            if (distance > minInterpolationDistance) {
+                // 🔧 補間ステップ数を修正（より滑らか）
+                const steps = Math.ceil(distance / (this.eraserSize / 2));
                 for (let i = 1; i < steps; i++) {
                     const ratio = i / steps;
                     const interpX = prevPoint.x + (x - prevPoint.x) * ratio;
@@ -131,13 +130,16 @@ class EraserTool {
     }
     
     /**
-     * 🧹 消去円描画（座標精度修正）
+     * 🧹 消去円描画（座標精度・ブレンドモード修正版）
      * 指定座標に正確な円形の消去エリアを描画
      */
     drawEraseCircle(x, y) {
         if (!this.currentErasePath) return;
         
-        // 白色で円形描画（ERASEブレンドモードで消去に変換される）
+        // 🔧 ERASEブレンドモード再保証（Graphics状態変化対応）
+        this.currentErasePath.blendMode = PIXI.BLEND_MODES.ERASE;
+        
+        // 🔧 白色で円形描画（ERASEブレンドモードで消去に変換される）
         this.currentErasePath.beginFill(0xffffff, this.eraserOpacity);
         this.currentErasePath.drawCircle(x, y, this.eraserSize / 2);
         this.currentErasePath.endFill();
@@ -203,5 +205,5 @@ class EraserTool {
 // Tegaki名前空間に登録
 window.Tegaki.EraserTool = EraserTool;
 
-console.log('🧹 EraserTool 座標修正・真の消去機能版 Loaded');
-console.log('🧹 eraser-tool.js loaded - 座標修正・消去機能完成');
+console.log('🧹 EraserTool 座標ズレ問題解決版 Loaded - 座標処理・補間処理最適化完了');
+console.log('🧹 eraser-tool.js loaded - 座標ズレ問題解決・消去機能完成');

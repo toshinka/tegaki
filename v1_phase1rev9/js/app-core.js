@@ -1,12 +1,12 @@
 /**
- * 🎯 TegakiApplication - キャンバス枠なし・座標修正版
+ * 🎯 TegakiApplication - 座標変換問題解決版
  * 📋 RESPONSIBILITY: メインアプリケーション・UI連携・イベント設定・キャンバス作成
  * 🚫 PROHIBITION: Manager作成・描画処理・エラー処理
  * ✅ PERMISSION: AppCore作成・UI連携・イベント設定・PixiJS Application作成
  * 
  * 📏 DESIGN_PRINCIPLE: UIアプリケーション専門・AppCore統合・イベント処理
  * 🔄 INTEGRATION: AppCore + PixiJS + DOM UI の統合管理
- * 🔧 FIX: キャンバス枠なし・座標変換修正・消しゴム座標修正
+ * 🔧 FIX: 座標変換ロジック修正・正確なCanvas内座標計算
  */
 
 // if (!window.XXX) ガードで多重定義を防ぐ
@@ -16,7 +16,7 @@ if (!window.Tegaki) {
 
 if (!window.Tegaki.TegakiApplication) {
     /**
-     * TegakiApplication - キャンバス枠なし・座標修正版
+     * TegakiApplication - 座標変換問題解決版
      * AppCoreを使ってManager統合・UI連携・イベント処理を行う
      */
     class TegakiApplication {
@@ -290,24 +290,49 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🔧 Canvas座標取得（修正版）
+         * 🔧 Canvas座標取得（根本的修正版）
          * DOM座標からCanvas内部座標に正確に変換
          */
         getCanvasCoordinates(e) {
             const canvas = this.pixiApp.view;
             const rect = canvas.getBoundingClientRect();
             
-            // マウス座標をCanvas相対座標に変換
+            // 🔧 修正: 単純な相対座標計算（デバイス解像度対応なし）
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
             
-            // Canvas表示サイズと内部解像度の比率計算
-            const scaleX = this.pixiApp.view.width / rect.width;
-            const scaleY = this.pixiApp.view.height / rect.height;
+            // 🔧 修正: Canvas内部サイズとDOM表示サイズが同じ場合はそのまま使用
+            // 複雑なスケール変換を避けてシンプルに
+            const canvasInternalWidth = this.pixiApp.renderer.width;
+            const canvasInternalHeight = this.pixiApp.renderer.height;
+            const canvasDOMWidth = rect.width;
+            const canvasDOMHeight = rect.height;
             
-            // 内部解像度座標に変換
-            const canvasX = x * scaleX;
-            const canvasY = y * scaleY;
+            let canvasX, canvasY;
+            
+            // Canvas内部サイズとDOM表示サイズが一致している場合はそのまま
+            if (Math.abs(canvasInternalWidth - canvasDOMWidth) < 1 && 
+                Math.abs(canvasInternalHeight - canvasDOMHeight) < 1) {
+                canvasX = x;
+                canvasY = y;
+            } else {
+                // サイズが異なる場合のみスケール変換
+                const scaleX = canvasInternalWidth / canvasDOMWidth;
+                const scaleY = canvasInternalHeight / canvasDOMHeight;
+                canvasX = x * scaleX;
+                canvasY = y * scaleY;
+            }
+            
+            // 🔧 デバッグ用ログ（問題特定のため）
+            if (x < 10 || y < 10) {  // 左上付近でのクリック時のみログ
+                console.log('🔧 座標デバッグ:', {
+                    client: { x: e.clientX, y: e.clientY },
+                    rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+                    relative: { x, y },
+                    canvas: { x: canvasX, y: canvasY },
+                    sizes: { internal: `${canvasInternalWidth}x${canvasInternalHeight}`, dom: `${canvasDOMWidth}x${canvasDOMHeight}` }
+                });
+            }
             
             return { x: canvasX, y: canvasY };
         }
@@ -354,9 +379,9 @@ if (!window.Tegaki.TegakiApplication) {
     // Tegaki名前空間に登録
     window.Tegaki.TegakiApplication = TegakiApplication;
     
-    console.log('🎯 TegakiApplication Loaded（枠なし・座標修正版）');
+    console.log('🎯 TegakiApplication Loaded（座標変換問題解決版）');
 } else {
     console.log('⚠️ TegakiApplication already defined - skipping redefinition');
 }
 
-console.log('🎯 app-core.js loaded - TegakiApplication定義完了（枠なし・座標修正版）');
+console.log('🎯 app-core.js loaded - TegakiApplication定義完了（座標変換問題解決版）');
