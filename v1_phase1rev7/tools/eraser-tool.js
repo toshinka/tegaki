@@ -1,24 +1,24 @@
 /**
- * 🧹 EraserTool - 真の消去機能修正版
+ * 🧹 EraserTool - 座標修正・真の消去機能版
  * 📋 RESPONSIBILITY: 描画内容の消去処理のみ（アクティブレイヤー対象）
  * 🚫 PROHIBITION: レイヤー操作・UI通知・座標変換
  * ✅ PERMISSION: PIXI.Graphics作成・消去処理・CanvasManagerへの渡し
  * 
  * 📏 DESIGN_PRINCIPLE: 消しゴム専門・ERASEブレンドモード活用
  * 🔄 INTEGRATION: CanvasManagerのaddEraseGraphicsToLayer使用
- * 🔧 FIX: ERASEブレンドモード修正・座標問題解決
+ * 🔧 FIX: ERASEブレンドモード修正・座標問題解決・消去機能完成
  */
 
 // Tegaki名前空間初期化
 window.Tegaki = window.Tegaki || {};
 
 /**
- * EraserTool - 真の消去機能修正版
- * アクティブレイヤーの描画内容を消去する専任クラス
+ * EraserTool - 座標修正・真の消去機能版
+ * アクティブレイヤーの描画内容を正確な座標で消去する専任クラス
  */
 class EraserTool {
     constructor() {
-        console.log('🧹 EraserTool 真の消去機能版 作成');
+        console.log('🧹 EraserTool 座標修正・真の消去機能版 作成');
         
         this.canvasManager = null;
         this.isErasing = false;
@@ -40,7 +40,7 @@ class EraserTool {
     }
     
     /**
-     * 消去開始
+     * 消去開始（座標修正版）
      */
     onPointerDown(x, y, event) {
         if (!this.canvasManager) {
@@ -55,18 +55,16 @@ class EraserTool {
             return;
         }
         
-        console.log(`🧹 消去開始: layer=${activeLayerId}, pos=(${x}, ${y}), size=${this.eraserSize}`);
+        console.log(`🧹 消去開始: layer=${activeLayerId}, pos=(${Math.round(x)}, ${Math.round(y)}), size=${this.eraserSize}`);
         
         this.isErasing = true;
         this.points = [{x, y}];
         
-        // 🧹 新しい消去パス作成（白い円で描画→ERASEブレンドモードで消去）
+        // 🧹 新しい消去パス作成
         this.currentErasePath = new PIXI.Graphics();
         
-        // 🔧 消去用スタイル設定（白色で描画後ERASEブレンドモード適用）
-        this.currentErasePath.beginFill(0xffffff, this.eraserOpacity); // 白色で塗りつぶし
-        this.currentErasePath.drawCircle(x, y, this.eraserSize / 2); // 円形消しゴム
-        this.currentErasePath.endFill();
+        // 🔧 消去用円形描画（白色で描画後ERASEブレンドモード適用）
+        this.drawEraseCircle(x, y);
         
         // 🧹 ERASEブレンドモード設定（重要：描画後に設定）
         this.currentErasePath.blendMode = PIXI.BLEND_MODES.ERASE;
@@ -76,7 +74,7 @@ class EraserTool {
     }
     
     /**
-     * 消去継続
+     * 消去継続（座標修正版）
      */
     onPointerMove(x, y, event) {
         if (!this.isErasing || !this.currentErasePath) return;
@@ -84,10 +82,8 @@ class EraserTool {
         // 点を記録
         this.points.push({x, y});
         
-        // 連続する円で消去パスを作成（軌跡全体を消去）
-        this.currentErasePath.beginFill(0xffffff, this.eraserOpacity);
-        this.currentErasePath.drawCircle(x, y, this.eraserSize / 2);
-        this.currentErasePath.endFill();
+        // 現在位置に消去円描画
+        this.drawEraseCircle(x, y);
         
         // スムーズ消去：前の点との間を補間
         if (this.smoothErasing && this.points.length > 1) {
@@ -97,23 +93,21 @@ class EraserTool {
             );
             
             // 距離が離れている場合は間を埋める
-            if (distance > this.eraserSize / 2) {
+            if (distance > this.eraserSize / 3) {
                 const steps = Math.ceil(distance / (this.eraserSize / 4));
                 for (let i = 1; i < steps; i++) {
                     const ratio = i / steps;
                     const interpX = prevPoint.x + (x - prevPoint.x) * ratio;
                     const interpY = prevPoint.y + (y - prevPoint.y) * ratio;
                     
-                    this.currentErasePath.beginFill(0xffffff, this.eraserOpacity);
-                    this.currentErasePath.drawCircle(interpX, interpY, this.eraserSize / 2);
-                    this.currentErasePath.endFill();
+                    this.drawEraseCircle(interpX, interpY);
                 }
             }
         }
     }
     
     /**
-     * 消去終了
+     * 消去終了（座標修正版）
      */
     onPointerUp(x, y, event) {
         if (!this.isErasing || !this.currentErasePath) return;
@@ -122,9 +116,7 @@ class EraserTool {
         this.points.push({x, y});
         
         // 最終点に消去円追加
-        this.currentErasePath.beginFill(0xffffff, this.eraserOpacity);
-        this.currentErasePath.drawCircle(x, y, this.eraserSize / 2);
-        this.currentErasePath.endFill();
+        this.drawEraseCircle(x, y);
         
         // 消去完了処理
         this.isErasing = false;
@@ -136,6 +128,19 @@ class EraserTool {
         // リセット
         this.currentErasePath = null;
         this.points = [];
+    }
+    
+    /**
+     * 🧹 消去円描画（座標精度修正）
+     * 指定座標に正確な円形の消去エリアを描画
+     */
+    drawEraseCircle(x, y) {
+        if (!this.currentErasePath) return;
+        
+        // 白色で円形描画（ERASEブレンドモードで消去に変換される）
+        this.currentErasePath.beginFill(0xffffff, this.eraserOpacity);
+        this.currentErasePath.drawCircle(x, y, this.eraserSize / 2);
+        this.currentErasePath.endFill();
     }
     
     /**
@@ -198,5 +203,5 @@ class EraserTool {
 // Tegaki名前空間に登録
 window.Tegaki.EraserTool = EraserTool;
 
-console.log('🧹 EraserTool 真の消去機能版 Loaded');
-console.log('🧹 eraser-tool.js loaded - 真の消去機能完成');
+console.log('🧹 EraserTool 座標修正・真の消去機能版 Loaded');
+console.log('🧹 eraser-tool.js loaded - 座標修正・消去機能完成');

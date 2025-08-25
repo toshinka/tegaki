@@ -1,12 +1,12 @@
 /**
- * 🎯 TegakiApplication - キャンバス配置・背景色修正版
+ * 🎯 TegakiApplication - キャンバス枠なし・座標修正版
  * 📋 RESPONSIBILITY: メインアプリケーション・UI連携・イベント設定・キャンバス作成
  * 🚫 PROHIBITION: Manager作成・描画処理・エラー処理
  * ✅ PERMISSION: AppCore作成・UI連携・イベント設定・PixiJS Application作成
  * 
  * 📏 DESIGN_PRINCIPLE: UIアプリケーション専門・AppCore統合・イベント処理
  * 🔄 INTEGRATION: AppCore + PixiJS + DOM UI の統合管理
- * 🔧 FIX: Canvas配置修正・背景色設定修正・座標変換修正
+ * 🔧 FIX: キャンバス枠なし・座標変換修正・消しゴム座標修正
  */
 
 // if (!window.XXX) ガードで多重定義を防ぐ
@@ -16,7 +16,7 @@ if (!window.Tegaki) {
 
 if (!window.Tegaki.TegakiApplication) {
     /**
-     * TegakiApplication - キャンバス配置・背景色修正版
+     * TegakiApplication - キャンバス枠なし・座標修正版
      * AppCoreを使ってManager統合・UI連携・イベント処理を行う
      */
     class TegakiApplication {
@@ -90,7 +90,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * PixiJS Application作成・DOM配置（修正版）
+         * PixiJS Application作成・DOM配置（修正版：枠なし・真四角）
          */
         createCanvas() {
             if (!window.PIXI) {
@@ -110,19 +110,19 @@ if (!window.Tegaki.TegakiApplication) {
                 autoDensity: true
             });
             
-            // 🎨 DOM配置（Canvas要素に正しいスタイル適用）
+            // 🎨 DOM配置（Canvas要素に枠なしスタイル適用）
             const container = document.getElementById('canvas-container');
             if (!container) {
                 throw new Error('Canvas container not found');
             }
             
-            // Canvas要素のスタイル設定
+            // 🔧 Canvas要素のスタイル設定（枠なし・真四角）
             const canvasElement = this.pixiApp.view;
             canvasElement.style.width = config.width + 'px';
             canvasElement.style.height = config.height + 'px';
-            canvasElement.style.border = '2px solid #cf9c97'; // ふたば風ボーダー
-            canvasElement.style.borderRadius = '8px';
-            canvasElement.style.backgroundColor = '#f0e0d6';  // ふたばクリーム（フォールバック）
+            canvasElement.style.border = 'none';              // 枠なし
+            canvasElement.style.borderRadius = '0';           // 角丸なし
+            canvasElement.style.backgroundColor = 'transparent'; // 背景透明
             canvasElement.style.cursor = 'crosshair';
             canvasElement.style.display = 'block';
             
@@ -131,7 +131,7 @@ if (!window.Tegaki.TegakiApplication) {
             // AppCoreのCanvasManagerにPixiApp設定
             this.appCore.setPixiApp(this.pixiApp);
             
-            console.log('✅ PixiJS Canvas作成・配置・CanvasManager設定完了');
+            console.log('✅ PixiJS Canvas作成・配置・CanvasManager設定完了（枠なし・真四角）');
         }
         
         /**
@@ -260,50 +260,56 @@ if (!window.Tegaki.TegakiApplication) {
         
         /**
          * ポインターイベント処理（座標変換修正版）
+         * 🔧 座標計算を正確に修正
          */
         handlePointerDown(e) {
-            // 🔧 Canvas相対座標取得（修正版）
-            const rect = this.pixiApp.view.getBoundingClientRect();
-            const scaleX = this.pixiApp.view.width / rect.width;   // Canvas内部解像度 / DOM表示幅
-            const scaleY = this.pixiApp.view.height / rect.height; // Canvas内部解像度 / DOM表示高さ
-            
-            const x = (e.clientX - rect.left) * scaleX;
-            const y = (e.clientY - rect.top) * scaleY;
+            const coords = this.getCanvasCoordinates(e);
             
             // 座標表示更新
-            this.updateCoordinates(x, y);
+            this.updateCoordinates(coords.x, coords.y);
             
             // ツールに転送
-            this.appCore?.getToolManager()?.handlePointerDown(x, y, e);
+            this.appCore?.getToolManager()?.handlePointerDown(coords.x, coords.y, e);
         }
         
         handlePointerMove(e) {
-            // 🔧 Canvas相対座標取得（修正版）
-            const rect = this.pixiApp.view.getBoundingClientRect();
-            const scaleX = this.pixiApp.view.width / rect.width;
-            const scaleY = this.pixiApp.view.height / rect.height;
-            
-            const x = (e.clientX - rect.left) * scaleX;
-            const y = (e.clientY - rect.top) * scaleY;
+            const coords = this.getCanvasCoordinates(e);
             
             // 座標表示更新
-            this.updateCoordinates(x, y);
+            this.updateCoordinates(coords.x, coords.y);
             
             // ツールに転送
-            this.appCore?.getToolManager()?.handlePointerMove(x, y, e);
+            this.appCore?.getToolManager()?.handlePointerMove(coords.x, coords.y, e);
         }
         
         handlePointerUp(e) {
-            // 🔧 Canvas相対座標取得（修正版）
-            const rect = this.pixiApp.view.getBoundingClientRect();
+            const coords = this.getCanvasCoordinates(e);
+            
+            // ツールに転送
+            this.appCore?.getToolManager()?.handlePointerUp(coords.x, coords.y, e);
+        }
+        
+        /**
+         * 🔧 Canvas座標取得（修正版）
+         * DOM座標からCanvas内部座標に正確に変換
+         */
+        getCanvasCoordinates(e) {
+            const canvas = this.pixiApp.view;
+            const rect = canvas.getBoundingClientRect();
+            
+            // マウス座標をCanvas相対座標に変換
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            // Canvas表示サイズと内部解像度の比率計算
             const scaleX = this.pixiApp.view.width / rect.width;
             const scaleY = this.pixiApp.view.height / rect.height;
             
-            const x = (e.clientX - rect.left) * scaleX;
-            const y = (e.clientY - rect.top) * scaleY;
+            // 内部解像度座標に変換
+            const canvasX = x * scaleX;
+            const canvasY = y * scaleY;
             
-            // ツールに転送
-            this.appCore?.getToolManager()?.handlePointerUp(x, y, e);
+            return { x: canvasX, y: canvasY };
         }
         
         /**
@@ -348,9 +354,9 @@ if (!window.Tegaki.TegakiApplication) {
     // Tegaki名前空間に登録
     window.Tegaki.TegakiApplication = TegakiApplication;
     
-    console.log('🎯 TegakiApplication Loaded（初期化順序修正版）');
+    console.log('🎯 TegakiApplication Loaded（枠なし・座標修正版）');
 } else {
     console.log('⚠️ TegakiApplication already defined - skipping redefinition');
 }
 
-console.log('🎯 app-core.js loaded - TegakiApplication定義完了（初期化順序修正版）');
+console.log('🎯 app-core.js loaded - TegakiApplication定義完了（枠なし・座標修正版）');
