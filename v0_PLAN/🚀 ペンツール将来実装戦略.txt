@@ -1,0 +1,71 @@
+🚀 ペンツール将来実装戦略
+📋 実装タイミング推奨
+Phase1.5（キャンバス移動・非破壊編集基盤）で実装すべき理由：
+
+1.Undo/Redoとの相性: ストローク単位記録が理想的
+2.後戻り困難: レイヤー実装後の変更は大規模改修が必要
+3.基盤の重要性: キャンバス移動・非破壊編集は全機能の土台
+
+🎨 ペンツール発展戦略
+Phase1（現在）: シンプル描画
+├── PixiJS Graphics直描画
+├── 基本的な座標管理
+└── lineStyle復元対応 ✅完了
+
+Phase1.5（推奨次期実装）: 非破壊編集基盤
+├── ベクターデータ完全保持 ✅準備完了
+├── RecordManager連携でUndo/Redo
+├── NavigationManager連携でキャンバス変形
+└── ストローク単位操作履歴
+
+Phase2: レイヤー・変形対応
+├── レイヤー間ストローク移動
+├── ストローク変形（移動・回転・拡縮）
+├── 範囲選択連携
+└── レイヤー統合時のベクター結合
+
+Phase3: AI・高度機能
+├── AI補正・認識（ストローク解析）
+├── SVG完全互換出力 ✅基盤準備完了
+├── 物理ブラシ・SDF（Signed Distance Field）
+└── WebGL2/WebGPU最適化
+🤔 別途ベクターペン提案
+現在のペンツールを発展させるのが最適です。理由：
+
+1.隔離不可: レイヤー管理・Undo/Redoと密結合が必要
+2.重複リスク: 別実装は機能分裂・保守負担増大
+3.段階進化: 現在の基盤を活かした漸進的改善が安全
+
+🔮 Phase3での尖った機能例
+javascript// 🎨 物理ブラシ（Phase3）
+class PhysicalBrushRenderer {
+    renderStroke(strokeData, brushType) {
+        // SDF（Signed Distance Field）による高品質ブラシ
+        // 筆圧・傾き・速度による動的変形
+        // WebGL2シェーダー活用
+    }
+}
+
+// 🤖 AI補正（Phase3）
+class AIStrokeProcessor {
+    correctStroke(strokeData) {
+        // 手ぶれ補正・線認識・自動整形
+        // ストローク→ベクター図形認識
+        // 座標配列→SVG Path最適化
+    }
+}
+🎯 WebGL2/WebGPU導入戦略
+段階的導入でバランス確保：
+
+1.Phase1-2: PixiJS基盤で安定性確保
+2.Phase3: 高度機能のみWebGL2/WebGPU活用
+3.フォールバック: 常にPixiJS版を保持
+
+💡 当面の推奨アプローチ
+
+1.Phase1完了: 消しゴム実装・基本UI完成
+2.Phase1.5実装: キャンバス移動・Undo/Redo（根幹）
+3.ペンツール連携: RecordManager・NavigationManagerと統合
+4.Phase2準備: レイヤー変形基盤確認
+
+この戦略により「足元を疎かにせず将来性も確保」できます。現在のpen-tool.jsはPhase1.5対応の準備が整っているため、RecordManager等の実装と同時に機能拡張していくのが理想的です。
