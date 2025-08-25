@@ -1,0 +1,30 @@
+📝 コーディングルール
+・構文完整性とDRY・SOLID原則を遵守、ファイルの明確な責任分界化。
+・PixiJSv7 + JavaScript + fetch API 分割でコーディング
+・Vite / TypeScript / ESM 禁止（HTML直開きで動くことが必須）
+・全てのクラス・関数は window または window.Tegaki 名前空間に公開
+・モダン構文（ES2023）の積極利用、後方互換の考慮は必要なし。
+・依存は Tegaki.ConfigManagerInstance / Tegaki.ErrorManagerInstance / Tegaki.StateManagerInstance / Tegaki.EventBusInstance に統一
+・描画処理は Tool 側に集約、CanvasManager はレイヤー・キャンバス管理に徹底分離
+・車輪の再発明を避け、ライブラリを積極活用
+・全てのモジュール（Tool, Manager, Util 等）はエラー処理を内包せず、例外は呼び出し元へスローする。UI表示やユーザー通知は必ず ErrorManager を経由する。error-manager.jsを通さないエラー処理は原則禁止。入れる場合は作業を中断して、理由を報告書で発行を厳守。
+・各モジュール呼び出しは実際に定義されているクラス・メソッドに厳密に準拠、架空メソッドは生成禁止
+・初期化順序は _registry に積む方式で保証
+・初期発火の混在を禁止。半端なエラー回避よりシンプルな構造を重視。
+🚨応急処置的なフォールバック構造で無駄にファイルを肥大化させ多責務になるのは重大違反。正しい構造でのみツールは起動させるように。
+🚨むしろフォールバック・フェイルセーフは無しでエラーはそのまま受け入れ正道を作ることにリソースを割く事。
+
+
+
+他注意事項
+〇エラー処理が「仕方なく入る」のが正しいファイル
+・js/main.js　グローバルハンドラ登録（window.onerror / unhandledrejection）と ErrorManager への委譲のみ行うのが正しい。
+・js/utils/error-manager.js　専任の責務。UI通知・ログ・ループ防止など、すべてここに一本化されるべき。
+●本来は「エラー処理を入れるべきでない」＝無駄に入りやすいファイル
+状態管理・UI管理　try/catch で直接 alert や console.error してしまうケース。正しくは throw して呼び出し元へ返す。
+・managers/ (canvas-manager.js, tool-manager.js, memory-manager.js, settings-manager.js, boundary-manager.js, ui-manager.js)
+補助処理　内部で console.error や UI呼び出しを仕込むのは責務違反。単純に例外を投げるべき。
+・js/utils/ (event-bus.js, config-manager.js, state-manager.js, coordinate-manager.js, icon-manager.js, performance.js)
+描画処理　エラー時に自分でUI通知するのは NG。例外 throw で止め、上位（EventBus→ErrorManager）に流す。
+・tools/ (abstract-tool.js, pen-tool.js, eraser-tool.js)
+※そもそも通知も必要最低限で良いし何なら要らない。
