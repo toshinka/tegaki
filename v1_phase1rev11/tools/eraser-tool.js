@@ -6,7 +6,7 @@
  * 
  * 📏 DESIGN_PRINCIPLE: 消しゴム専門・ERASEブレンドモード活用
  * 🔄 INTEGRATION: CanvasManagerのaddEraseGraphicsToLayer使用
- * 🔧 FIX: 座標処理完全修正・ERASEブレンドモード改善・補間処理最適化・デバッグ情報充実
+ * 🔧 FIX: 座標処理完全修正・ERASEブレンドモード改善・補間処理最適化・デバッグ情報充実・末尾エラー除去
  */
 
 // Tegaki名前空間初期化
@@ -360,7 +360,4 @@ class EraserTool {
 window.Tegaki.EraserTool = EraserTool;
 
 console.log('🧹 EraserTool 座標ズレ問題完全解決版 Loaded - 座標処理・補間処理・デバッグ情報完全最適化完了');
-console.log('🧹 eraser-tool.js loaded - 座標ズレ問題完全解決・消去機能・統計情報・デバッグ機能完成');点追加
-        this.points.push({x, y, timestamp: Date.now()});
-        
-        // 最終
+console.log('🧹 eraser-tool.js loaded - 座標ズレ問題完全解決・消去機能・統計情報・デバッグ機能完成・軽微エラー修正済み');
