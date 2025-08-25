@@ -113,11 +113,11 @@
         }
         
         .canvas-container {
-            background: var(--futaba-cream);
-            border: 3px solid var(--futaba-medium);
-            border-radius: 12px;
-            box-shadow: 0 8px 24px rgba(128, 0, 0, 0.15);
-            overflow: hidden;
+            background: transparent;
+            border: none;
+            border-radius: 0;
+            box-shadow: none;
+            overflow: visible;
             position: relative;
         }
         
@@ -268,7 +268,28 @@
     <!-- PixiJS CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
     
-    <!-- Bootstrap Script -->
+    <!-- 計画書通りの読み込み順序 -->
+    <!-- js/utils/*.js -->
+    <script src="js/utils/error-manager.js"></script>
+    <script src="js/utils/config-manager.js"></script>
+    <script src="js/utils/event-bus.js"></script>
+    <script src="js/utils/minimal-deps.js"></script>
+    
+    <!-- managers/*.js -->
+    <script src="managers/canvas-manager.js"></script>
+    <script src="managers/tool-manager.js"></script>
+    
+    <!-- tools/*.js -->
+    <script src="tools/pen-tool.js"></script>
+    <script src="tools/eraser-tool.js"></script>
+    
+    <!-- js/app-core.js -->
+    <script src="js/app-core.js"></script>
+    
+    <!-- js/main.js -->
+    <script src="js/main.js"></script>
+    
+    <!-- js/bootstrap.js -->
     <script src="js/bootstrap.js"></script>
 </body>
 </html>

@@ -1,135 +1,84 @@
 /**
- * 🚀 Tegaki Simple Bootstrap - 怪物コード撲滅版
- * 📋 RESPONSIBILITY: 必要最小限の順次スクリプト読み込みのみ
- * 🚫 PROHIBITION: エラー監視・フォールバック・複雑な待機システム
- * ✅ PERMISSION: 順次読み込み・例外throw・main.js委譲
+ * 🚀 Bootstrap - 計画書準拠修正版
+ * 📋 RESPONSIBILITY: DOMContentLoaded でAppCoreを確認しインスタンス化のみ
+ * 🚫 PROHIBITION: 複雑な読み込み制御・エラー隠蔽・フォールバック
+ * ✅ PERMISSION: AppCore確認・例外throw・start呼び出し
  * 
- * 📏 DESIGN_PRINCIPLE: シンプル・直線的・素人でも読める
- * 🔄 INTEGRATION: 必要最小限の依存関係のみ
+ * 📏 DESIGN_PRINCIPLE: 計画書準拠・最小限責任・Bootstrap自身は公開しない
+ * 🔄 INTEGRATION: index.htmlの読み込み順序により全依存完了後に実行
  */
 
 (function() {
     'use strict';
     
-    console.log('🚀 Tegaki Simple Bootstrap 開始');
-    
-    // 実際に存在するファイルのみに修正
-    const scripts = [
-        // Phase 1: 基盤ユーティリティ
-        'js/utils/error-manager.js',
-        'js/utils/config-manager.js', 
-        'js/utils/event-bus.js',
-        'js/utils/minimal-deps.js',
-        
-        // Phase 2: マネージャー
-        'managers/canvas-manager.js',
-        'managers/tool-manager.js',
-        
-        // Phase 3: ツール
-        'tools/pen-tool.js',
-        'tools/eraser-tool.js',
-        
-        // Phase 4: アプリケーションコア
-        'js/app-core.js',
-        
-        // Phase 5: メインアプリケーション
-        'js/main.js'
-    ];
+    console.log('🚀 Bootstrap Simple - 計画書準拠版');
     
     /**
-     * スクリプト読み込み関数（例外隠蔽禁止）
+     * Bootstrap実行（計画書準拠）
      */
-    function loadScript(src) {
-        return new Promise((resolve, reject) => {
-            console.log(`📦 Loading: ${src}`);
-            
-            const script = document.createElement('script');
-            script.src = src;
-            script.defer = false; // 順序保証
-            
-            script.onload = () => {
-                console.log(`✅ Loaded: ${src}`);
-                resolve();
-            };
-            
-            // エラー隠蔽禁止・即座にthrow
-            script.onerror = (error) => {
-                console.error(`❌ Failed: ${src}`);
-                reject(new Error(`Script load failed: ${src}`));
-            };
-            
-            document.head.appendChild(script);
-        });
-    }
-    
-    /**
-     * 順次読み込み実行（フォールバック禁止）
-     */
-    async function loadAll() {
+    async function executeBootstrap() {
+        console.log('🔧 Bootstrap実行開始...');
+        
+        // window.TegakiApplication確認（存在しない場合は例外throw）
+        if (!window.TegakiApplication) {
+            const error = new Error('TegakiApplication class not available');
+            console.error('💀 Bootstrap失敗:', error.message);
+            throw error;
+        }
+        
         try {
-            // 順次実行・エラー時即停止
-            for (const script of scripts) {
-                await loadScript(script);
-            }
+            // TegakiApplication インスタンス化（自動で初期化される）
+            console.log('🎨 TegakiApplication インスタンス化開始...');
+            const tegakiApp = new window.TegakiApplication();
             
-            console.log('✅ 全スクリプト読み込み完了');
+            // グローバル参照設定（デバッグ用）
+            window.TegakiAppInstance = tegakiApp;
             
-            // main.js読み込み完了後にTegakiApplication作成
-            if (window.Tegaki?.TegakiApplication) {
-                console.log('🎨 TegakiApplication作成開始');
-                const app = new window.Tegaki.TegakiApplication();
-                window.Tegaki.AppInstance = app;
-                console.log('✅ TegakiApplication作成完了');
-            } else {
-                throw new Error('TegakiApplication class not available');
-            }
+            console.log('✅ Bootstrap完了 - Tegakiアプリケーション開始完了');
             
         } catch (error) {
             console.error('💀 Bootstrap失敗:', error);
             
             // エラー隠蔽禁止・画面に表示
             document.body.innerHTML = `
-                <div style="padding: 20px; color: red; font-family: monospace;">
-                    <h2>🔥 Tegaki Bootstrap Error</h2>
+                <div style="padding: 20px; color: red; font-family: monospace; background: #ffe6e6; border: 2px solid #ff9999;">
+                    <h2>🔥 Bootstrap Error</h2>
                     <p><strong>Error:</strong> ${error.message}</p>
-                    <p><strong>Cause:</strong> Script loading failed</p>
-                    <p><strong>Action:</strong> Check browser console and file paths</p>
-                    <button onclick="location.reload()">Reload</button>
+                    <p><strong>Location:</strong> bootstrap.js</p>
+                    <p><strong>Cause:</strong> ${error.name}</p>
+                    <p><strong>Time:</strong> ${new Date().toISOString()}</p>
+                    <button onclick="location.reload()" style="padding: 10px; margin-top: 10px;">
+                        🔄 Reload Application
+                    </button>
+                    <details style="margin-top: 10px;">
+                        <summary>Stack Trace</summary>
+                        <pre style="background: #f5f5f5; padding: 10px; margin-top: 5px;">${error.stack || 'No stack trace available'}</pre>
+                    </details>
                 </div>
             `;
             
-            // 例外隠蔽禁止
+            // 例外隠蔽禁止・明示的throw
             throw error;
         }
     }
     
     /**
-     * DOM準備完了後に実行
+     * DOMContentLoaded イベント待機（計画書準拠）
      */
-    function start() {
+    function waitForDOMReady() {
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', loadAll);
+            console.log('⏳ DOM Loading - DOMContentLoaded待機中...');
+            document.addEventListener('DOMContentLoaded', executeBootstrap);
         } else {
-            loadAll();
+            console.log('✅ DOM Ready - Bootstrap実行');
+            executeBootstrap();
         }
     }
     
-    // PixiJS確認後に開始
-    if (window.PIXI) {
-        console.log('✅ PIXI.js available');
-        start();
-    } else {
-        console.warn('⚠️ PIXI.js not loaded - waiting...');
-        // フォールバック禁止・単純待機のみ
-        setTimeout(() => {
-            if (window.PIXI) {
-                start();
-            } else {
-                throw new Error('PIXI.js not available');
-            }
-        }, 100);
-    }
+    // DOM準備確認後にBootstrap実行
+    waitForDOMReady();
     
 })();
 
-console.log('🎯 Simple Bootstrap registered - 怪物コード撲滅・直線的読み込み');
+// Bootstrap自身は公開しない（計画書準拠）
+console.log('🎯 Bootstrap registered - 計画書準拠・最小限責任');
