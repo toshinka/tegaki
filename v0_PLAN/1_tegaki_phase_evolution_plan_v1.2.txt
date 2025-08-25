@@ -1,16 +1,37 @@
-# 🚀 Tegaki Phase段階進化計画 - Phase1.5統合版
+# 🚀 Tegaki Phase段階進化計画 - Phase1.5統合版 v1.5
 
-> **段階的書き直し戦略** - 実装が先、文書が後の順序厳守
-> **Phase1.5重点:** キャンバス外描画対応・ペンツール戦略統合・剛直構造維持
+> **Phase1.5進行中** - CoordinateManager統合・キャンバス外描画対応・非破壊編集基盤
+> **実装主導原則** - 動作するコードが正解、文書は実装に追従
 
-## 📋 Phase管理方針
+## 📋 Rulebook - Phase1.5対応版
 
-### 🎯 「今決めない勇気」の原則
-- **必要になったら定義** - 時期尚早な複雄化を避ける
-- **実装主導** - 動作するコードが正解、文書は後から合わせる
-- **段階的複雑化** - 車輪の再発明防止
-- **AI開発最適化** - 混乱しない文書構造
+### 🎯 基本開発指針
+- **「今決めない勇気」原則**: 必要時に定義・早期複雑化回避
+- **実装主導**: 動作コード優先・文書後追い
+- **段階的複雑化**: 車輪の再発明防止
+- **AI開発最適化**: Claude管理に最適化された構造
 
+### 📚 品質基準
+- **動作する**: 全機能がスムーズに動作
+- **理解できる**: AI Claudeが各ファイル役割を即座理解
+- **拡張できる**: 次Phase実装時の確実な基盤
+- **保守できる**: バグ修正・機能改善が容易
+
+### 🏗️ 構造ガイドライン
+- **単一責任原則**: 各クラス・ファイルが明確な責任
+- **剛直構造**: 予測可能な動作・修正容易な設計
+- **統一API**: 一貫した命名・使用方法
+- **レイヤー分離**: UI・Logic・Data の明確分離
+
+### 💀 怪物コード撲滅継続
+1. **座標変換複雑化禁止** - CoordinateManagerに集約
+2. **状態散在禁止** - 各Managerに責任集約
+3. **早期機能実装禁止** - Phase完了まで厳禁
+4. **重複処理禁止** - 共通処理の統一化
+
+## 📖 Symbol Dictionary - Phase1.5拡張版
+
+###
 ### 📚 文書更新戦略
 ```
 Phase1: 現在特化版（今すぐ作成）✅完了
@@ -189,7 +210,111 @@ AbstractTool {
     }
 }
 ```
+Phase1.5進行中 - CoordinateManager統合・キャンバス外描画対応・非破壊編集基盤
+実装主導原則 - 動作するコードが正解、文書は実装に追従
 
+📋 Rulebook - Phase1.5対応版
+🔧 Phase1.5 新規シンボル
+CoordinateManager
+
+screenToCanvas(screenX, screenY) - スクリーン→キャンバス座標変換
+canvasToScreen(canvasX, canvasY) - キャンバス→スクリーン座標変換
+clampToDrawableArea(x, y) - 描画可能エリアへのクランプ
+isInsideCanvas(x, y) - キャンバス内判定
+isInExtendedDrawArea(x, y) - 拡張描画エリア判定
+getExtendedDrawArea() - 拡張描画エリア情報取得
+setCanvasElement(element) - Canvas要素設定
+getCanvasTransform() - 現在の変形状態取得
+resetTransform() - 変形リセット
+
+NavigationManager（Phase1.5 Step2で実装予定）
+
+panCanvas(deltaX, deltaY) - キャンバス移動
+zoomCanvas(scale, centerX, centerY) - ズーム操作
+rotateCanvas(angle, centerX, centerY) - 回転操作
+resetCanvasTransform() - 変形リセット
+startPan/updatePan/endPan() - パン操作管理
+
+RecordManager（Phase1.5 Step3で実装予定）
+
+recordOperation(operation) - 操作記録
+undo() - 操作取り消し
+redo() - 操作やり直し
+canUndo()/canRedo() - Undo/Redo可能判定
+getHistory() - 操作履歴取得
+clearHistory() - 履歴クリア
+
+ShortcutManager（Phase1.5 Step4で実装予定）
+
+registerShortcut(key, action, context) - ショートカット登録
+handleKeydown/Keyup(event) - キーボードイベント処理
+setActivePhase(phase) - アクティブPhase設定
+pushContext/popContext() - コンテキスト管理
+
+🎯 既存シンボル（Phase1完成済み）
+AppCore
+
+initializeCanvasManager() - CanvasManager初期化
+initializeToolManager() - ToolManager初期化
+setPixiApp(pixiApp) - PixiJS Application設定
+start() - システム開始
+isReady() - 初期化完了判定
+
+TegakiApplication
+
+initialize() - アプリケーション初期化
+createCanvas() - PixiJS Canvas作成
+setupUI() - UI設定
+selectTool(toolName) - ツール選択
+getCanvasCoordinates(event) - Canvas座標取得
+
+CanvasManager
+
+setPixiApp(pixiApp) - PixiJS設定
+getLayer(layerId) - レイヤー取得
+getActiveLayerId() - アクティブレイヤーID取得
+addGraphicsToLayer(graphics) - 描画追加
+addEraseGraphicsToLayer(graphics) - 消去追加
+clear() - キャンバスクリア
+
+ToolManager
+
+selectTool(toolName) - ツール選択
+getCurrentTool() - 現在ツール取得
+getCurrentToolName() - 現在ツール名取得
+setCanvasManager(canvasManager) - CanvasManager設定
+
+PenTool
+
+onPointerDown/Move/Up(x, y, event) - 描画処理
+setPenColor/Width/Opacity(value) - ペン設定
+getSettings() - 設定取得
+
+EraserTool
+
+onPointerDown/Move/Up(x, y, event) - 消去処理
+setEraserSize/Opacity(value) - 消しゴム設定
+setSmoothErasing(enabled) - スムーズ消去設定
+
+🎨 UI・状態シンボル
+ツール状態
+
+active - アクティブツールCSSクラス
+disabled - 無効ツールCSSクラス
+tool-button - ツールボタンCSSクラス
+
+Phase識別
+
+Phase1 - 基本描画機能完成段階
+Phase1.5 - 座標系・非破壊編集基盤段階
+Phase2 - レイヤー機能段階
+Phase3 - アニメーション・GIF段階
+
+座標系タイプ
+
+screenCoordinate - スクリーン座標系
+canvasCoordinate - キャンバス内部座標系
+extendedDrawArea - 拡張描画エリア座標系
 #### ⌨️ ショートカット・入力システム
 ```javascript
 // ShortcutManager（キーボード・ショートカット専任）
