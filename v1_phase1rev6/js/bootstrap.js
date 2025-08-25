@@ -1,35 +1,38 @@
 /**
- * 🚀 Bootstrap - 計画書準拠修正版
- * 📋 RESPONSIBILITY: DOMContentLoaded でAppCoreを確認しインスタンス化のみ
+ * 🚀 Bootstrap - 計画書準拠修正版（名前空間統一対応）
+ * 📋 RESPONSIBILITY: DOMContentLoaded でTegakiApplicationを確認しインスタンス化のみ
  * 🚫 PROHIBITION: 複雑な読み込み制御・エラー隠蔽・フォールバック
- * ✅ PERMISSION: AppCore確認・例外throw・start呼び出し
+ * ✅ PERMISSION: TegakiApplication確認・例外throw・start呼び出し
  * 
  * 📏 DESIGN_PRINCIPLE: 計画書準拠・最小限責任・Bootstrap自身は公開しない
  * 🔄 INTEGRATION: index.htmlの読み込み順序により全依存完了後に実行
+ * 🎯 FIX: window.Tegaki.TegakiApplication参照に修正（名前空間統一準拠）
  */
 
 (function() {
     'use strict';
     
-    console.log('🚀 Bootstrap Simple - 計画書準拠版');
+    console.log('🚀 Bootstrap Simple - 計画書準拠版（名前空間修正）');
     
     /**
-     * Bootstrap実行（計画書準拠）
+     * Bootstrap実行（計画書準拠・名前空間対応）
      */
     async function executeBootstrap() {
         console.log('🔧 Bootstrap実行開始...');
         
-        // window.TegakiApplication確認（存在しない場合は例外throw）
-        if (!window.TegakiApplication) {
+        // window.Tegaki.TegakiApplication確認（存在しない場合は例外throw）
+        if (!window.Tegaki || !window.Tegaki.TegakiApplication) {
             const error = new Error('TegakiApplication class not available');
             console.error('💀 Bootstrap失敗:', error.message);
+            console.error('🔍 確認対象: window.Tegaki.TegakiApplication');
+            console.error('🔍 window.Tegaki:', window.Tegaki);
             throw error;
         }
         
         try {
             // TegakiApplication インスタンス化（自動で初期化される）
             console.log('🎨 TegakiApplication インスタンス化開始...');
-            const tegakiApp = new window.TegakiApplication();
+            const tegakiApp = new window.Tegaki.TegakiApplication();
             
             // グローバル参照設定（デバッグ用）
             window.TegakiAppInstance = tegakiApp;
@@ -47,6 +50,8 @@
                     <p><strong>Location:</strong> bootstrap.js</p>
                     <p><strong>Cause:</strong> ${error.name}</p>
                     <p><strong>Time:</strong> ${new Date().toISOString()}</p>
+                    <p><strong>Expected:</strong> window.Tegaki.TegakiApplication</p>
+                    <p><strong>Available:</strong> ${Object.keys(window.Tegaki || {}).join(', ') || 'undefined'}</p>
                     <button onclick="location.reload()" style="padding: 10px; margin-top: 10px;">
                         🔄 Reload Application
                     </button>
@@ -81,4 +86,4 @@
 })();
 
 // Bootstrap自身は公開しない（計画書準拠）
-console.log('🎯 Bootstrap registered - 計画書準拠・最小限責任');
+console.log('🎯 Bootstrap registered - 計画書準拠・最小限責任（名前空間修正版）');

@@ -1,0 +1,123 @@
+原因（即断）
+
+bootstrap.js が グローバル直下の window.TegakiApplication を探しにいっているのに対し、実装は 名前空間付きの window.Tegaki.TegakiApplication（＝Appクラス）として公開されています。
+この参照先ミスマッチがそのままエラーの原因です（TegakiApplication class not available）。 
+GitHub
+
+どこが食い違っているか
+
+bootstrap.js
+window.TegakiApplication が未定義なら即 throw し、new window.TegakiApplication() で起動しようとしている。
+（＝非名前空間を前提にしている） 
+GitHub
+
+app-core.js
+アプリ本体クラスを window.Tegaki.TegakiApplication として登録している。
+（＝名前空間に統一されている）
+
+そのため、Bootstrap 側からは「クラスが存在しない」ように見えて落ちています。
+
+ルール文書側の矛盾・違反ポイント（要修正）
+
+名前空間統一ルールの逸脱
+　計画書は「Tegaki名前空間へ統一」を強く求めていますが、実コードの bootstrap.js は非名前空間参照です。計画書の趣旨に対し Bootstrap が違反しています。 
+GitHub
+
+「どこを探すか」の記述ブレ
+　1_tegaki_rulebook_v1.1.txt／2_tegaki_symbol_dictionary_v1.1.txt は、TegakiApplication の所在を名前空間付きで示す記述があり、一方 bootstrap.js は非名前空間で探す実装。文書と実装で前提がズレているため、以後の修正作業で「直したのに動かない」症状を誘発します。 
+GitHub
+
+（補足）文書中で「TegakiApplication を app-core.js が定義する」旨は正しいですが、参照方法（名前空間有無）の指示が曖昧です。結果、Bootstrap が単独でルールから外れています。 
+GitHub
+
+いまのコードで他に怪しい点は？
+
+main.js／マネージャ群（Canvas/Tool）／ツール群（Pen/Eraser）は、いずれも window.Tegaki.* へ登録しており、名前空間の方針に沿っています。（良い） 
+GitHub
++4
+GitHub
++4
+GitHub
++4
+
+よって、今回の起動失敗は Bootstrap 単独の参照ミスがトリガーです。
+
+即効パッチ（どちらか一つでOK）
+方式A（推奨）：Bootstrapをルール準拠に直す
+
+bootstrap.js を次のように修正（擬似差分）：
+
+- if (!window.TegakiApplication) {
++ if (!window.Tegaki || !window.Tegaki.TegakiApplication) {
+     const error = new Error('TegakiApplication class not available');
+     ...
+- const tegakiApp = new window.TegakiApplication();
++ const tegakiApp = new window.Tegaki.TegakiApplication();
+
+
+※ これで「名前空間統一」ルールに準拠し、文書とも整合します。 
+GitHub
+
+方式B：エイリアスで一時吸収する（応急処置）
+
+app-core.js のクラス登録直後に1行追加：
+
+  window.Tegaki.TegakiApplication = TegakiApplication;
++ window.TegakiApplication = window.Tegaki.TegakiApplication; // alias for legacy bootstrap
+
+
+※ 将来的には 方式A で Bootstrap を正す方が健全です。
+
+ドキュメント（v1.1）に対する検査所見
+
+名前空間方針は妥当。ただし Bootstrap の参照規約が明記不足。
+→ 「起動側は window.Tegaki.TegakiApplication を必ず参照すること」を明文化してください。 
+GitHub
+
+メソッドの存在性
+v1_phase1rev5 の app-core.js には初期化・連携・起動のためのメソッド群（initialize*, setPixiApp, start, performBasicChecks 他）が実装済み。
+「架空メソッドを要求している」類の問題は現状確認できません。 
+GitHub
+
+アイコン内製化の呼び出し規約
+icons.js の公開ポイントは window.Tegaki.TegakiIcons。
+呼び出し例：window.Tegaki.TegakiIcons.replaceAllToolIcons() とし、非名前空間呼び出しは禁止を明記するのが安全です。 
+GitHub
+
+追加で見直すと良いチェックリスト
+
+読み込み順（index.html）
+
+pixi.min.js（CDN でもローカルでも）
+
+utils/*（event-bus, error-manager, config-manager, minimal-deps）
+
+managers/*（canvas-manager → tool-manager）
+
+tools/*（pen-tool → eraser-tool）
+
+app-core.js（＝TegakiApplication 定義）
+
+main.js（AppCore ヘルパ）
+
+bootstrap.js（最後）
+※ Bootstrap は最後。名前空間が揃った後に起動させる。
+（index.html はここでは中身を確認できませんでしたが、順序ミスでも同様の症状になります）
+
+グローバル公開ポリシー
+すべて window.Tegaki.* に統一。例外（直下公開）は禁止。
+互換のために一時的に alias を置く場合も、計画書に「暫定」扱いで明記を。
+
+まとめ（アクション）
+
+最優先：方式Aのパッチで bootstrap.js を名前空間参照に変更。
+
+ドキュメント：
+
+「起動側（Bootstrap）が参照するクラスは window.Tegaki.TegakiApplication 固定」を追記。
+
+「非名前空間直下の公開は禁止（互換は alias で暫定対応可）」を追記。
+
+再発防止：index.html の読み込み順ガード（コメントや簡易チェック）を入れる。
+
+この対応で、今回の 💀 Bootstrap失敗: TegakiApplication class not available は解消できます。必要なら、私の方で bootstrap.js の修正版スニペットを丸ごとお渡しします。
