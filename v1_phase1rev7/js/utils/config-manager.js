@@ -69,7 +69,7 @@ class ConfigManager {
             futabaLightMaroon: 0xaa5a56,  // #aa5a56 - ライトマルーン
             futabaMedium: 0xcf9c97,       // #cf9c97 - ミディアム
             futabaLightMedium: 0xe9c2ba,  // #e9c2ba - ライトミディアム
-            futabaCream: 0xf0e0d6,        // #f0e0d6 - クリーム
+            futabaCream: 0xf0e0d6,        // #f0e0d6 - クリーム　キャンバス背景レイヤー０
             futabaBackground: 0xffffee,   // #ffffee - 背景
             textPrimary: 0x2c1810,        // #2c1810 - メインテキスト
             textSecondary: 0x5d4037,      // #5d4037 - セカンダリテキスト
