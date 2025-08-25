@@ -1,195 +1,202 @@
 /**
- * 🧹 EraserTool - 真の消去機能版（修正版）
- * 📋 RESPONSIBILITY: 描画レイヤーから真に消去する処理のみ
- * 🚫 PROHIBITION: 背景レイヤー操作・複雑な範囲計算・レイヤー跨ぎ操作
- * ✅ PERMISSION: PIXI.BLEND_MODES.ERASE使用・アクティブレイヤーのみ消去
+ * 🧹 EraserTool - 真の消去機能修正版
+ * 📋 RESPONSIBILITY: 描画内容の消去処理のみ（アクティブレイヤー対象）
+ * 🚫 PROHIBITION: レイヤー操作・UI通知・座標変換
+ * ✅ PERMISSION: PIXI.Graphics作成・消去処理・CanvasManagerへの渡し
  * 
- * 📏 DESIGN_PRINCIPLE: PixiJSのERASEブレンドモード活用・真の消去実現
- * 🔄 INTEGRATION: CanvasManagerのaddGraphicsToLayer使用・背景保護
+ * 📏 DESIGN_PRINCIPLE: 消しゴム専門・ERASEブレンドモード活用
+ * 🔄 INTEGRATION: CanvasManagerのaddEraseGraphicsToLayer使用
+ * 🔧 FIX: ERASEブレンドモード修正・座標問題解決
  */
 
 // Tegaki名前空間初期化
 window.Tegaki = window.Tegaki || {};
 
-if (!window.Tegaki.EraserTool) {
+/**
+ * EraserTool - 真の消去機能修正版
+ * アクティブレイヤーの描画内容を消去する専任クラス
+ */
+class EraserTool {
+    constructor() {
+        console.log('🧹 EraserTool 真の消去機能版 作成');
+        
+        this.canvasManager = null;
+        this.isErasing = false;
+        this.currentErasePath = null;
+        this.points = [];
+        
+        // 消しゴム設定
+        this.eraserSize = 20;         // デフォルト消しゴムサイズ
+        this.eraserOpacity = 1.0;     // 消去強度（完全消去）
+        this.smoothErasing = true;    // スムーズ消去
+    }
+    
     /**
-     * EraserTool - 真の消去機能版
-     * PixiJS ERASEブレンドモードによる真の消去処理
+     * CanvasManager設定
      */
-    class EraserTool {
-        constructor() {
-            console.log('🧹 EraserTool 真の消去機能版 作成');
-            
-            this.canvasManager = null;
-            this.isErasing = false;
-            this.currentGraphics = null;
-            this.eraserPath = [];
-            
-            // 消しゴム設定
-            this.eraserSize = 20;
-            this.eraserOpacity = 1.0;
+    setCanvasManager(canvasManager) {
+        this.canvasManager = canvasManager;
+        console.log('🧹 EraserTool - CanvasManager設定完了');
+    }
+    
+    /**
+     * 消去開始
+     */
+    onPointerDown(x, y, event) {
+        if (!this.canvasManager) {
+            console.warn('⚠️ CanvasManager not set');
+            return;
         }
         
-        /**
-         * CanvasManager設定
-         */
-        setCanvasManager(canvasManager) {
-            this.canvasManager = canvasManager;
-            console.log('🧹 EraserTool - CanvasManager設定完了');
+        // アクティブレイヤー確認（背景レイヤーは保護）
+        const activeLayerId = this.canvasManager.getActiveLayerId();
+        if (activeLayerId === 'layer0') {
+            console.warn('⚠️ 背景レイヤーへの消去は禁止されています');
+            return;
         }
         
-        /**
-         * 消去開始 - 真の消去モード
-         */
-        onPointerDown(x, y, event) {
-            if (!this.canvasManager) {
-                console.warn('⚠️ CanvasManager not set');
-                return;
+        console.log(`🧹 消去開始: layer=${activeLayerId}, pos=(${x}, ${y}), size=${this.eraserSize}`);
+        
+        this.isErasing = true;
+        this.points = [{x, y}];
+        
+        // 🧹 新しい消去パス作成（白い円で描画→ERASEブレンドモードで消去）
+        this.currentErasePath = new PIXI.Graphics();
+        
+        // 🔧 消去用スタイル設定（白色で描画後ERASEブレンドモード適用）
+        this.currentErasePath.beginFill(0xffffff, this.eraserOpacity); // 白色で塗りつぶし
+        this.currentErasePath.drawCircle(x, y, this.eraserSize / 2); // 円形消しゴム
+        this.currentErasePath.endFill();
+        
+        // 🧹 ERASEブレンドモード設定（重要：描画後に設定）
+        this.currentErasePath.blendMode = PIXI.BLEND_MODES.ERASE;
+        
+        // アクティブレイヤーに追加（専用メソッド使用）
+        this.canvasManager.addEraseGraphicsToLayer(this.currentErasePath);
+    }
+    
+    /**
+     * 消去継続
+     */
+    onPointerMove(x, y, event) {
+        if (!this.isErasing || !this.currentErasePath) return;
+        
+        // 点を記録
+        this.points.push({x, y});
+        
+        // 連続する円で消去パスを作成（軌跡全体を消去）
+        this.currentErasePath.beginFill(0xffffff, this.eraserOpacity);
+        this.currentErasePath.drawCircle(x, y, this.eraserSize / 2);
+        this.currentErasePath.endFill();
+        
+        // スムーズ消去：前の点との間を補間
+        if (this.smoothErasing && this.points.length > 1) {
+            const prevPoint = this.points[this.points.length - 2];
+            const distance = Math.sqrt(
+                Math.pow(x - prevPoint.x, 2) + Math.pow(y - prevPoint.y, 2)
+            );
+            
+            // 距離が離れている場合は間を埋める
+            if (distance > this.eraserSize / 2) {
+                const steps = Math.ceil(distance / (this.eraserSize / 4));
+                for (let i = 1; i < steps; i++) {
+                    const ratio = i / steps;
+                    const interpX = prevPoint.x + (x - prevPoint.x) * ratio;
+                    const interpY = prevPoint.y + (y - prevPoint.y) * ratio;
+                    
+                    this.currentErasePath.beginFill(0xffffff, this.eraserOpacity);
+                    this.currentErasePath.drawCircle(interpX, interpY, this.eraserSize / 2);
+                    this.currentErasePath.endFill();
+                }
             }
-            
-            // アクティブレイヤー確認（背景レイヤー保護）
-            const activeLayerId = this.canvasManager.getActiveLayerId();
-            if (activeLayerId === 'layer0') {
-                console.warn('⚠️ 背景レイヤーの消去は禁止されています');
-                return;
-            }
-            
-            this.isErasing = true;
-            this.eraserPath = [{x, y}];
-            
-            // 消去用Graphics作成（ERASEブレンドモード使用）
-            this.currentGraphics = new PIXI.Graphics();
-            this.currentGraphics.blendMode = PIXI.BLEND_MODES.ERASE; // 真の消去モード
-            
-            // 消去線のスタイル設定
-            this.currentGraphics.lineStyle({
-                width: this.eraserSize,
-                color: 0x000000, // 色は関係ない（ERASEモードなので）
-                alpha: this.eraserOpacity,
-                cap: PIXI.LINE_CAP.ROUND,
-                join: PIXI.LINE_JOIN.ROUND
-            });
-            
-            // 消去開始点設定
-            this.currentGraphics.moveTo(x, y);
-            
-            // 消去開始点に円描画（点消去対応）
-            this.currentGraphics.beginFill(0x000000, this.eraserOpacity);
-            this.currentGraphics.drawCircle(x, y, this.eraserSize / 2);
-            this.currentGraphics.endFill();
-            
-            // アクティブレイヤーに追加（消去処理）
-            this.canvasManager.addGraphicsToLayer(this.currentGraphics);
-            
-            console.log(`🧹 消去開始: layer=${activeLayerId}, pos=(${x}, ${y}), size=${this.eraserSize}`);
-        }
-        
-        /**
-         * 消去継続
-         */
-        onPointerMove(x, y, event) {
-            if (!this.isErasing || !this.currentGraphics) return;
-            
-            // パス記録
-            this.eraserPath.push({x, y});
-            
-            // 消去線を描画
-            this.currentGraphics.lineTo(x, y);
-            
-            // 消去円を描画（線の隙間を埋める）
-            this.currentGraphics.beginFill(0x000000, this.eraserOpacity);
-            this.currentGraphics.drawCircle(x, y, this.eraserSize / 2);
-            this.currentGraphics.endFill();
-            
-            // 連続する点同士も線で結ぶ（滑らかな消去）
-            if (this.eraserPath.length > 1) {
-                const prevPoint = this.eraserPath[this.eraserPath.length - 2];
-                this.currentGraphics.moveTo(prevPoint.x, prevPoint.y);
-                this.currentGraphics.lineTo(x, y);
-            }
-        }
-        
-        /**
-         * 消去終了
-         */
-        onPointerUp(x, y, event) {
-            if (!this.isErasing || !this.currentGraphics) return;
-            
-            // 最終消去点
-            this.eraserPath.push({x, y});
-            this.currentGraphics.lineTo(x, y);
-            
-            // 最終点に円描画
-            this.currentGraphics.beginFill(0x000000, this.eraserOpacity);
-            this.currentGraphics.drawCircle(x, y, this.eraserSize / 2);
-            this.currentGraphics.endFill();
-            
-            // 消去処理完了
-            this.isErasing = false;
-            const pathLength = this.eraserPath.length;
-            const activeLayerId = this.canvasManager.getActiveLayerId();
-            
-            console.log(`✅ 消去完了: layer=${activeLayerId}, pathPoints=${pathLength}, size=${this.eraserSize}`);
-            
-            // リセット
-            this.currentGraphics = null;
-            this.eraserPath = [];
-        }
-        
-        /**
-         * 消しゴムサイズ設定
-         */
-        setEraserSize(size) {
-            if (size > 0 && size <= 100) {
-                this.eraserSize = size;
-                console.log(`🧹 消しゴムサイズ変更: ${size}px`);
-            } else {
-                console.warn(`⚠️ 無効な消しゴムサイズ: ${size} (1-100の範囲で指定してください)`);
-            }
-        }
-        
-        /**
-         * 消しゴム透明度設定
-         */
-        setEraserOpacity(opacity) {
-            if (opacity >= 0 && opacity <= 1) {
-                this.eraserOpacity = opacity;
-                console.log(`🧹 消しゴム透明度変更: ${opacity}`);
-            } else {
-                console.warn(`⚠️ 無効な透明度: ${opacity} (0.0-1.0の範囲で指定してください)`);
-            }
-        }
-        
-        /**
-         * 設定取得
-         */
-        getSettings() {
-            return {
-                eraserSize: this.eraserSize,
-                eraserOpacity: this.eraserOpacity
-            };
-        }
-        
-        /**
-         * デバッグ情報取得
-         */
-        getDebugInfo() {
-            return {
-                isErasing: this.isErasing,
-                canvasManagerSet: !!this.canvasManager,
-                hasCurrentGraphics: !!this.currentGraphics,
-                pathLength: this.eraserPath.length,
-                settings: this.getSettings()
-            };
         }
     }
     
-    // Tegaki名前空間に登録
-    window.Tegaki.EraserTool = EraserTool;
+    /**
+     * 消去終了
+     */
+    onPointerUp(x, y, event) {
+        if (!this.isErasing || !this.currentErasePath) return;
+        
+        // 最終点追加
+        this.points.push({x, y});
+        
+        // 最終点に消去円追加
+        this.currentErasePath.beginFill(0xffffff, this.eraserOpacity);
+        this.currentErasePath.drawCircle(x, y, this.eraserSize / 2);
+        this.currentErasePath.endFill();
+        
+        // 消去完了処理
+        this.isErasing = false;
+        const pathLength = this.points.length;
+        const activeLayerId = this.canvasManager.getActiveLayerId();
+        
+        console.log(`✅ 消去完了: layer=${activeLayerId}, pathPoints=${pathLength}, size=${this.eraserSize}`);
+        
+        // リセット
+        this.currentErasePath = null;
+        this.points = [];
+    }
     
-    console.log('🧹 EraserTool 真の消去機能版 Loaded');
-} else {
-    console.log('⚠️ EraserTool already defined - skipping redefinition');
+    /**
+     * 消しゴムサイズ設定
+     */
+    setEraserSize(size) {
+        if (size > 0 && size <= 200) {
+            this.eraserSize = size;
+            console.log(`🧹 消しゴムサイズ変更: ${size}px`);
+        } else {
+            console.warn(`⚠️ 無効な消しゴムサイズ: ${size} (1-200の範囲で指定してください)`);
+        }
+    }
+    
+    /**
+     * 消しゴム透明度（消去強度）設定
+     */
+    setEraserOpacity(opacity) {
+        if (opacity >= 0 && opacity <= 1) {
+            this.eraserOpacity = opacity;
+            console.log(`🧹 消去強度変更: ${opacity}`);
+        } else {
+            console.warn(`⚠️ 無効な消去強度: ${opacity} (0.0-1.0の範囲で指定してください)`);
+        }
+    }
+    
+    /**
+     * スムーズ消去設定
+     */
+    setSmoothErasing(enabled) {
+        this.smoothErasing = enabled;
+        console.log(`🧹 スムーズ消去: ${enabled ? '有効' : '無効'}`);
+    }
+    
+    /**
+     * 設定取得
+     */
+    getSettings() {
+        return {
+            eraserSize: this.eraserSize,
+            eraserOpacity: this.eraserOpacity,
+            smoothErasing: this.smoothErasing
+        };
+    }
+    
+    /**
+     * デバッグ情報取得
+     */
+    getDebugInfo() {
+        return {
+            isErasing: this.isErasing,
+            canvasManagerSet: !!this.canvasManager,
+            hasCurrentPath: !!this.currentErasePath,
+            pathLength: this.points.length,
+            settings: this.getSettings()
+        };
+    }
 }
 
+// Tegaki名前空間に登録
+window.Tegaki.EraserTool = EraserTool;
+
+console.log('🧹 EraserTool 真の消去機能版 Loaded');
 console.log('🧹 eraser-tool.js loaded - 真の消去機能完成');

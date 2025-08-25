@@ -1,12 +1,12 @@
 /**
- * 🎯 TegakiApplication - メインアプリケーション・UI連携専任（初期化順序修正版）
+ * 🎯 TegakiApplication - キャンバス配置・背景色修正版
  * 📋 RESPONSIBILITY: メインアプリケーション・UI連携・イベント設定・キャンバス作成
  * 🚫 PROHIBITION: Manager作成・描画処理・エラー処理
  * ✅ PERMISSION: AppCore作成・UI連携・イベント設定・PixiJS Application作成
  * 
  * 📏 DESIGN_PRINCIPLE: UIアプリケーション専門・AppCore統合・イベント処理
  * 🔄 INTEGRATION: AppCore + PixiJS + DOM UI の統合管理
- * 🔧 FIX: AppCore初期化 → Canvas作成・設定 → UI設定の正しい順序
+ * 🔧 FIX: Canvas配置修正・背景色設定修正・座標変換修正
  */
 
 // if (!window.XXX) ガードで多重定義を防ぐ
@@ -16,7 +16,7 @@ if (!window.Tegaki) {
 
 if (!window.Tegaki.TegakiApplication) {
     /**
-     * TegakiApplication - メインアプリケーション
+     * TegakiApplication - キャンバス配置・背景色修正版
      * AppCoreを使ってManager統合・UI連携・イベント処理を行う
      */
     class TegakiApplication {
@@ -90,7 +90,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * PixiJS Application作成・DOM配置
+         * PixiJS Application作成・DOM配置（修正版）
          */
         createCanvas() {
             if (!window.PIXI) {
@@ -99,21 +99,34 @@ if (!window.Tegaki.TegakiApplication) {
             
             const config = window.Tegaki.ConfigManagerInstance.getCanvasConfig();
             
-            // PixiJS Application作成
+            // 🔧 PixiJS Application作成（背景透明化）
             this.pixiApp = new PIXI.Application({
                 width: config.width,
                 height: config.height,
-                backgroundColor: config.backgroundColor,
+                backgroundColor: 0x000000,    // 黒（後で透明化）
+                backgroundAlpha: 0,           // 完全透明
                 antialias: true,
-                resolution: window.devicePixelRatio || 1
+                resolution: window.devicePixelRatio || 1,
+                autoDensity: true
             });
             
-            // DOM配置
+            // 🎨 DOM配置（Canvas要素に正しいスタイル適用）
             const container = document.getElementById('canvas-container');
             if (!container) {
                 throw new Error('Canvas container not found');
             }
-            container.appendChild(this.pixiApp.view);
+            
+            // Canvas要素のスタイル設定
+            const canvasElement = this.pixiApp.view;
+            canvasElement.style.width = config.width + 'px';
+            canvasElement.style.height = config.height + 'px';
+            canvasElement.style.border = '2px solid #cf9c97'; // ふたば風ボーダー
+            canvasElement.style.borderRadius = '8px';
+            canvasElement.style.backgroundColor = '#f0e0d6';  // ふたばクリーム（フォールバック）
+            canvasElement.style.cursor = 'crosshair';
+            canvasElement.style.display = 'block';
+            
+            container.appendChild(canvasElement);
             
             // AppCoreのCanvasManagerにPixiApp設定
             this.appCore.setPixiApp(this.pixiApp);
@@ -144,7 +157,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * キャンバスイベント設定
+         * キャンバスイベント設定（修正版）
          */
         setupCanvasEvents() {
             if (!this.pixiApp?.view) {
@@ -153,7 +166,7 @@ if (!window.Tegaki.TegakiApplication) {
             
             const canvas = this.pixiApp.view;
             
-            // ポインターイベント設定
+            // 🔧 ポインターイベント設定（座標変換修正）
             canvas.addEventListener('pointerdown', (e) => this.handlePointerDown(e));
             canvas.addEventListener('pointermove', (e) => this.handlePointerMove(e));
             canvas.addEventListener('pointerup', (e) => this.handlePointerUp(e));
@@ -162,6 +175,9 @@ if (!window.Tegaki.TegakiApplication) {
             canvas.addEventListener('touchstart', (e) => e.preventDefault());
             canvas.addEventListener('touchmove', (e) => e.preventDefault());
             canvas.addEventListener('touchend', (e) => e.preventDefault());
+            
+            // コンテキストメニュー無効化
+            canvas.addEventListener('contextmenu', (e) => e.preventDefault());
             
             console.log('✅ キャンバスイベント設定完了');
         }
@@ -243,12 +259,16 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * ポインターイベント処理
+         * ポインターイベント処理（座標変換修正版）
          */
         handlePointerDown(e) {
+            // 🔧 Canvas相対座標取得（修正版）
             const rect = this.pixiApp.view.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
+            const scaleX = this.pixiApp.view.width / rect.width;   // Canvas内部解像度 / DOM表示幅
+            const scaleY = this.pixiApp.view.height / rect.height; // Canvas内部解像度 / DOM表示高さ
+            
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
             
             // 座標表示更新
             this.updateCoordinates(x, y);
@@ -258,9 +278,13 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         handlePointerMove(e) {
+            // 🔧 Canvas相対座標取得（修正版）
             const rect = this.pixiApp.view.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
+            const scaleX = this.pixiApp.view.width / rect.width;
+            const scaleY = this.pixiApp.view.height / rect.height;
+            
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
             
             // 座標表示更新
             this.updateCoordinates(x, y);
@@ -270,9 +294,13 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         handlePointerUp(e) {
+            // 🔧 Canvas相対座標取得（修正版）
             const rect = this.pixiApp.view.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
+            const scaleX = this.pixiApp.view.width / rect.width;
+            const scaleY = this.pixiApp.view.height / rect.height;
+            
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
             
             // ツールに転送
             this.appCore?.getToolManager()?.handlePointerUp(x, y, e);
