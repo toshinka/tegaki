@@ -1,0 +1,79 @@
+error-manager.js:20 🚨 ErrorManager Simple 作成
+error-manager.js:132 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
+config-manager.js:20 🔧 ConfigManager Simple 作成
+config-manager.js:150 🔧 ConfigManager Simple Loaded - シンプル設定管理
+event-bus.js:20 🔄 EventBus Simple 作成
+event-bus.js:97 🔄 EventBus Simple Loaded - シンプルイベント通信
+canvas-manager.js:417 🎨 CanvasManager レイヤー分離版（確認強化版） Loaded
+canvas-manager.js:422 🎨 canvas-manager.js loaded - レイヤー分離構造完成（確認強化版）
+tool-manager.js:318 🖊️ ToolManager シンプル版（レイヤー確認強化版） Loaded
+tool-manager.js:323 🖊️ tool-manager.js loaded - シンプルツール管理完了（レイヤー確認強化版）
+pen-tool.js:235 ✏️ PenTool レイヤー分離対応版 Loaded - アクティブレイヤー描画対応
+eraser-tool.js:190 🧹 EraserTool 真の消去機能版 Loaded
+eraser-tool.js:195 🧹 eraser-tool.js loaded - 真の消去機能完成
+main.js:266 🎯 AppCore システム基盤 Loaded
+main.js:271 🎯 main.js loaded - AppCore基盤システム完成
+app-core.js:323 🎯 TegakiApplication Loaded（初期化順序修正版）
+app-core.js:328 🎯 app-core.js loaded - TegakiApplication定義完了（初期化順序修正版）
+bootstrap.js:15 🚀 Bootstrap Simple - 計画書準拠版（名前空間修正）
+bootstrap.js:75 ⏳ DOM Loading - DOMContentLoaded待機中...
+bootstrap.js:89 🎯 Bootstrap registered - 計画書準拠・最小限責任（名前空間修正版）
+bootstrap.js:21 🔧 Bootstrap実行開始...
+bootstrap.js:34 🎨 TegakiApplication インスタンス化開始...
+app-core.js:24 🎯 TegakiApplication 作成・自動初期化開始
+app-core.js:48 🚀 TegakiApplication 初期化開始
+main.js:24 🎯 AppCore 基盤システム作成
+canvas-manager.js:25 🎨 CanvasManager レイヤー分離版作成（確認強化版）
+main.js:44 ✅ CanvasManager 作成完了
+bootstrap.js:40 ✅ Bootstrap完了 - Tegakiアプリケーション開始完了
+app-core.js:89 ✅ AppCore初期化完了（CanvasManagerのみ）
+canvas-manager.js:86 ✅ 背景レイヤー (layer0) 作成完了: {name: 'layer0', zIndex: 0, parent: true}
+canvas-manager.js:100 ✅ 描画レイヤー (layer1) 作成完了: {name: 'layer1', zIndex: 1, sortableChildren: true, parent: true}
+canvas-manager.js:163 ✅ レイヤー作成確認完了: {totalLayers: 2, layer0Exists: true, layer1Exists: true, layer0InStage: true, layer1InStage: true, …}
+canvas-manager.js:56 🎨 PixiJS Application Info: {width: 400, height: 400, renderer: 1, view: true, stage: true, …}
+canvas-manager.js:65 ✅ CanvasManager - レイヤー分離構造完成・確認済み
+main.js:90 ✅ レイヤー構造確認完了: {layer0: true, layer1: true, activeLayer: 'layer1'}
+main.js:67 ✅ AppCore - PixiJS Application設定・レイヤー確認完了
+app-core.js:121 ✅ PixiJS Canvas作成・配置・CanvasManager設定完了
+tool-manager.js:24 🖊️ ToolManager シンプル版作成（レイヤー確認強化版）
+tool-manager.js:86 ✅ 必要レイヤー確認完了: {layer0Exists: true, layer1Exists: true, layer0InStage: true, layer1InStage: true}
+tool-manager.js:51 🖊️ ToolManager - CanvasManager設定・レイヤー確認完了
+pen-tool.js:20 ✏️ PenTool レイヤー分離対応版 作成
+pen-tool.js:42 ✏️ PenTool - CanvasManager設定完了
+tool-manager.js:109 ✅ PenTool 作成・設定完了
+eraser-tool.js:21 🧹 EraserTool 真の消去機能版 作成
+eraser-tool.js:38 🧹 EraserTool - CanvasManager設定完了
+tool-manager.js:119 ✅ EraserTool 作成・設定完了
+canvas-manager.js:249 🎯 Active layer set to: layer1
+tool-manager.js:193 ✅ ツール選択成功: pen (アクティブレイヤー: layer1)
+tool-manager.js:136 ✅ ToolManager - 全ツール作成完了 (2個)
+main.js:123 ✅ ToolManager 作成・初期化完了
+app-core.js:131 ✅ ToolManager初期化完了（PixiJS設定後）
+app-core.js:166 ✅ キャンバスイベント設定完了
+app-core.js:177 ✅ ツールボタンイベント設定完了
+icons.js:176 ✅ Icon replaced: download-tool → download
+icons.js:176 ✅ Icon replaced: resize-tool → resize
+icons.js:176 ✅ Icon replaced: palette-tool → palette
+icons.js:176 ✅ Icon replaced: pen-tool → pen
+icons.js:176 ✅ Icon replaced: eraser-tool → eraser
+icons.js:176 ✅ Icon replaced: fill-tool → fill
+icons.js:176 ✅ Icon replaced: select-tool → select
+icons.js:176 ✅ Icon replaced: layers-tool → layers
+icons.js:176 ✅ Icon replaced: settings-tool → settings
+icons.js:197 🎨 Icon internalization completed: 9 success, 0 errors
+app-core.js:187 ✅ アイコン適用完了
+app-core.js:143 ✅ UI設定完了
+main.js:136 ✅ AppCore システム開始完了
+error-manager.js:38 💡 INFO: Tegakiアプリケーション起動完了！ TegakiApplication.showSuccessMessage
+app-core.js:68 ✅ TegakiApplication 初期化完了
+pen-tool.js:56 ✏️ 描画開始: layer=layer1, pos=(277.5, 434.5)
+canvas-manager.js:221 ✅ Graphics added to layer: layer1 (layer children: 1)
+canvas-manager.js:224 🔧 Graphics Info: {visible: true, alpha: 1, x: 0, y: 0, width: 7.9945181390182825, …}
+pen-tool.js:128 ✅ 描画完了: layer=layer1, pathPoints=26, color=0x800000
+canvas-manager.js:249 🎯 Active layer set to: layer1
+tool-manager.js:193 ✅ ツール選択成功: eraser (アクティブレイヤー: layer1)
+app-core.js:205 🎯 ツール選択: eraser
+canvas-manager.js:221 ✅ Graphics added to layer: layer1 (layer children: 2)
+canvas-manager.js:224 🔧 Graphics Info: {visible: true, alpha: 1, x: 0, y: 0, width: 39.99433589386257, …}
+eraser-tool.js:84 🧹 消去開始: layer=layer1, pos=(457.5, 365), size=20
+eraser-tool.js:132 ✅ 消去完了: layer=layer1, pathPoints=20, size=20

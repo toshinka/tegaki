@@ -1,12 +1,12 @@
 /**
- * 🎯 TegakiApplication - UI連携・初期化専任（正しい初期化順序版）
- * 📋 RESPONSIBILITY: UI連携・イベント設定・Canvas作成・AppCore統合
- * 🚫 PROHIBITION: Manager作成・描画処理・エラー処理（ErrorManager経由のみ）
+ * 🎯 TegakiApplication - メインアプリケーション・UI連携専任（初期化順序修正版）
+ * 📋 RESPONSIBILITY: メインアプリケーション・UI連携・イベント設定・キャンバス作成
+ * 🚫 PROHIBITION: Manager作成・描画処理・エラー処理
  * ✅ PERMISSION: AppCore作成・UI連携・イベント設定・PixiJS Application作成
  * 
- * 📏 DESIGN_PRINCIPLE: UI統合専門・AppCore活用・イベント処理
+ * 📏 DESIGN_PRINCIPLE: UIアプリケーション専門・AppCore統合・イベント処理
  * 🔄 INTEGRATION: AppCore + PixiJS + DOM UI の統合管理
- * 🔧 FIX: AppCore → Canvas作成 → UI設定の正しい順序
+ * 🔧 FIX: AppCore初期化 → Canvas作成・設定 → UI設定の正しい順序
  */
 
 // if (!window.XXX) ガードで多重定義を防ぐ
@@ -16,7 +16,7 @@ if (!window.Tegaki) {
 
 if (!window.Tegaki.TegakiApplication) {
     /**
-     * TegakiApplication - UIアプリケーション統合クラス
+     * TegakiApplication - メインアプリケーション
      * AppCoreを使ってManager統合・UI連携・イベント処理を行う
      */
     class TegakiApplication {
@@ -27,7 +27,7 @@ if (!window.Tegaki.TegakiApplication) {
             this.pixiApp = null;
             this.appCore = null;
             
-            // 自動初期化実行（正しい順序）
+            // 自動初期化実行
             this.initialize().catch(error => {
                 console.error('💀 TegakiApplication 初期化失敗:', error);
                 if (window.Tegaki?.ErrorManagerInstance) {
@@ -41,20 +41,20 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 初期化（正しい順序：AppCore → Canvas → UI）
+         * 初期化（修正版：正しい順序での初期化）
          */
         async initialize() {
             try {
-                console.log('🚀 TegakiApplication 初期化開始（正しい順序）');
+                console.log('🚀 TegakiApplication 初期化開始');
                 
-                // 1. AppCore作成・基本初期化（CanvasManagerのみ）
+                // 1. AppCore初期化（CanvasManagerのみ作成）
                 await this.initializeAppCore();
                 
-                // 2. PixiJS Application作成・DOM配置
+                // 2. PixiJS Application作成・CanvasManagerに設定
                 this.createCanvas();
                 
-                // 3. AppCoreにPixiJS設定・ToolManager初期化
-                await this.completeAppCoreInitialization();
+                // 3. ToolManager初期化（PixiJS設定後に実行）
+                await this.initializeToolManager();
                 
                 // 4. UI設定（イベント・アイコン・ボタン）
                 this.setupUI();
@@ -65,7 +65,7 @@ if (!window.Tegaki.TegakiApplication) {
                 this.initialized = true;
                 this.showSuccessMessage();
                 
-                console.log('✅ TegakiApplication 初期化完了（正しい順序）');
+                console.log('✅ TegakiApplication 初期化完了');
                 
             } catch (error) {
                 console.error('❌ TegakiApplication 初期化エラー:', error);
@@ -74,7 +74,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * AppCore作成・基本初期化
+         * AppCore初期化（CanvasManagerのみ）
          */
         async initializeAppCore() {
             if (!window.Tegaki.AppCore) {
@@ -83,10 +83,10 @@ if (!window.Tegaki.TegakiApplication) {
             
             this.appCore = new window.Tegaki.AppCore();
             
-            // CanvasManagerのみ初期化（PixiJS設定前）
+            // CanvasManagerのみ初期化（ToolManagerは後で）
             await this.appCore.initializeCanvasManager();
             
-            console.log('✅ AppCore作成・CanvasManager初期化完了');
+            console.log('✅ AppCore初期化完了（CanvasManagerのみ）');
         }
         
         /**
@@ -115,23 +115,20 @@ if (!window.Tegaki.TegakiApplication) {
             }
             container.appendChild(this.pixiApp.view);
             
-            console.log('✅ PixiJS Application作成・DOM配置完了');
+            // AppCoreのCanvasManagerにPixiApp設定
+            this.appCore.setPixiApp(this.pixiApp);
+            
+            console.log('✅ PixiJS Canvas作成・配置・CanvasManager設定完了');
         }
         
         /**
-         * AppCore完全初期化（PixiJS設定後）
+         * ToolManager初期化（PixiJS設定後）
          */
-        async completeAppCoreInitialization() {
-            // AppCoreにPixiJS Application設定
-            this.appCore.setPixiApp(this.pixiApp);
-            
-            // ToolManager初期化（PixiJS設定後）
+        async initializeToolManager() {
+            // PixiJS設定後にToolManager初期化
             await this.appCore.initializeToolManager();
             
-            // AppCore全体初期化完了
-            await this.appCore.initialize();
-            
-            console.log('✅ AppCore完全初期化完了（PixiJS設定・ToolManager初期化）');
+            console.log('✅ ToolManager初期化完了（PixiJS設定後）');
         }
         
         /**
@@ -189,7 +186,7 @@ if (!window.Tegaki.TegakiApplication) {
                     window.Tegaki.TegakiIcons.replaceAllToolIcons();
                     console.log('✅ アイコン適用完了');
                 } else {
-                    console.warn('⚠️ TegakiIcons not available - アイコン適用スキップ');
+                    console.warn('⚠️ TegakiIcons not available');
                 }
             } catch (error) {
                 console.error('❌ アイコン設定エラー:', error);
@@ -201,7 +198,7 @@ if (!window.Tegaki.TegakiApplication) {
          * ツール選択・UI更新
          */
         selectTool(toolName) {
-            const success = this.appCore?.selectTool(toolName);
+            const success = this.appCore?.getToolManager()?.selectTool(toolName);
             if (success) {
                 this.updateToolButtons(toolName);
                 this.updateStatusDisplay();
@@ -304,29 +301,6 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * AppCore便利メソッドのプロキシ
-         */
-        clearCanvas() {
-            this.appCore?.clearCanvas();
-        }
-        
-        setColor(color) {
-            this.appCore?.setColor(color);
-        }
-        
-        setLineWidth(width) {
-            this.appCore?.setLineWidth(width);
-        }
-        
-        setOpacity(opacity) {
-            this.appCore?.setOpacity(opacity);
-        }
-        
-        setEraserSize(size) {
-            this.appCore?.setEraserSize(size);
-        }
-        
-        /**
          * デバッグ情報取得
          */
         getDebugInfo() {
@@ -338,8 +312,7 @@ if (!window.Tegaki.TegakiApplication) {
                 canvasSize: this.pixiApp ? {
                     width: this.pixiApp.screen.width,
                     height: this.pixiApp.screen.height
-                } : null,
-                appCoreDebug: this.appCore ? this.appCore.getDebugInfo() : null
+                } : null
             };
         }
     }
@@ -347,9 +320,9 @@ if (!window.Tegaki.TegakiApplication) {
     // Tegaki名前空間に登録
     window.Tegaki.TegakiApplication = TegakiApplication;
     
-    console.log('🎯 TegakiApplication Loaded（UI連携専任・正しい初期化順序版）');
+    console.log('🎯 TegakiApplication Loaded（初期化順序修正版）');
 } else {
     console.log('⚠️ TegakiApplication already defined - skipping redefinition');
 }
 
-console.log('🎯 app-core.js loaded - TegakiApplication定義完了（正しい初期化順序版）');
+console.log('🎯 app-core.js loaded - TegakiApplication定義完了（初期化順序修正版）');

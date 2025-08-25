@@ -1,12 +1,12 @@
 /**
- * 🎯 AppCore - Manager統合専任（正しい役割分担版）
- * 📋 RESPONSIBILITY: Manager作成・統合・連携専任
- * 🚫 PROHIBITION: UI操作・描画処理・エラー処理・DOM操作
- * ✅ PERMISSION: Manager作成・Manager間連携・PixiJS設定・統合管理
+ * 🎯 AppCore - Manager束ね専任（基盤システム）
+ * 📋 RESPONSIBILITY: Manager作成・Manager間連携・システム統合
+ * 🚫 PROHIBITION: UI操作・描画処理・エラー処理・直接DOM操作
+ * ✅ PERMISSION: CanvasManager作成・ToolManager作成・設定連携
  * 
- * 📏 DESIGN_PRINCIPLE: Manager束ね専門・UI分離・単一責務
+ * 📏 DESIGN_PRINCIPLE: Manager統合専門・システム基盤・シンプル
  * 🔄 INTEGRATION: CanvasManager + ToolManager の統合管理
- * 🎯 FIX: main.jsの正しい役割（AppCore定義）に修正
+ * 🔧 FIX: CanvasManager → PixiJS設定 → ToolManager の正しい順序
  */
 
 // if (!window.XXX) ガードで多重定義を防ぐ
@@ -16,210 +16,213 @@ if (!window.Tegaki) {
 
 if (!window.Tegaki.AppCore) {
     /**
-     * AppCore - Manager統合専任クラス
-     * CanvasManager・ToolManager を作成・連携する
+     * AppCore - Manager統合システム
+     * CanvasManager と ToolManager の作成・連携を管理する基盤クラス
      */
     class AppCore {
         constructor() {
-            console.log('🎯 AppCore 作成開始');
+            console.log('🎯 AppCore 基盤システム作成');
             
-            this.managers = {};
-            this.initialized = false;
+            this.canvasManager = null;
+            this.toolManager = null;
             this.pixiApp = null;
             
-            console.log('✅ AppCore インスタンス作成完了');
+            this.initialized = false;
+            this.ready = false;
         }
         
         /**
-         * 全Manager初期化（正しい順序）
-         */
-        async initialize() {
-            try {
-                console.log('🚀 AppCore 初期化開始');
-                
-                // 1. CanvasManager作成（PixiJS設定前）
-                await this.initializeCanvasManager();
-                
-                // 2. PixiJS設定後にToolManager作成
-                if (this.pixiApp) {
-                    await this.initializeToolManager();
-                }
-                
-                this.initialized = true;
-                console.log('✅ AppCore 初期化完了');
-                
-            } catch (error) {
-                console.error('❌ AppCore 初期化エラー:', error);
-                throw error;
-            }
-        }
-        
-        /**
-         * CanvasManager初期化のみ
+         * CanvasManager初期化（単体）
          */
         async initializeCanvasManager() {
             if (!window.Tegaki.CanvasManager) {
                 throw new Error('CanvasManager class not available');
             }
             
-            this.managers.canvas = new window.Tegaki.CanvasManager();
+            this.canvasManager = new window.Tegaki.CanvasManager();
+            
             console.log('✅ CanvasManager 作成完了');
         }
         
         /**
-         * ToolManager初期化（PixiJS設定後）
-         */
-        async initializeToolManager() {
-            if (!window.Tegaki.ToolManager) {
-                throw new Error('ToolManager class not available');
-            }
-            
-            this.managers.tool = new window.Tegaki.ToolManager();
-            
-            // CanvasManagerとの連携設定
-            this.managers.tool.setCanvasManager(this.managers.canvas);
-            
-            // Tool作成
-            await this.managers.tool.createTools();
-            
-            console.log('✅ ToolManager 作成・連携完了');
-        }
-        
-        /**
-         * PixiJS Application設定（TegakiApplicationから呼ばれる）
+         * PixiJS Application設定（CanvasManagerに転送）
          */
         setPixiApp(pixiApp) {
             if (!pixiApp) {
                 throw new Error('PixiJS Application is required');
             }
             
-            this.pixiApp = pixiApp;
-            
-            // CanvasManagerにPixiApp設定
-            if (this.managers.canvas) {
-                this.managers.canvas.setPixiApp(pixiApp);
-                console.log('✅ AppCore: CanvasManager に PixiJS Application 設定完了');
-            } else {
+            if (!this.canvasManager) {
                 throw new Error('CanvasManager not initialized');
             }
+            
+            this.pixiApp = pixiApp;
+            
+            // CanvasManagerに設定（レイヤー構造も作成される）
+            this.canvasManager.setPixiApp(pixiApp);
+            
+            // レイヤー作成確認
+            this.verifyLayerStructure();
+            
+            console.log('✅ AppCore - PixiJS Application設定・レイヤー確認完了');
         }
         
         /**
-         * アプリケーション開始
+         * レイヤー構造確認（重要：ToolManager初期化前に実行）
+         */
+        verifyLayerStructure() {
+            if (!this.canvasManager) {
+                throw new Error('CanvasManager not available');
+            }
+            
+            // レイヤー存在確認
+            const layer0 = this.canvasManager.getLayer('layer0');
+            const layer1 = this.canvasManager.getLayer('layer1');
+            
+            if (!layer0) {
+                throw new Error('Background layer (layer0) not created');
+            }
+            
+            if (!layer1) {
+                throw new Error('Drawing layer (layer1) not created');
+            }
+            
+            console.log('✅ レイヤー構造確認完了:', {
+                layer0: !!layer0,
+                layer1: !!layer1,
+                activeLayer: this.canvasManager.getActiveLayerId()
+            });
+        }
+        
+        /**
+         * ToolManager初期化（PixiJS・レイヤー設定後）
+         */
+        async initializeToolManager() {
+            if (!this.canvasManager) {
+                throw new Error('CanvasManager not initialized');
+            }
+            
+            if (!this.canvasManager.isReady()) {
+                throw new Error('CanvasManager not ready');
+            }
+            
+            if (!window.Tegaki.ToolManager) {
+                throw new Error('ToolManager class not available');
+            }
+            
+            this.toolManager = new window.Tegaki.ToolManager();
+            
+            // CanvasManager設定（ツール作成も実行される）
+            this.toolManager.setCanvasManager(this.canvasManager);
+            
+            if (!this.toolManager.isReady()) {
+                throw new Error('ToolManager initialization failed');
+            }
+            
+            this.initialized = true;
+            console.log('✅ ToolManager 作成・初期化完了');
+        }
+        
+        /**
+         * アプリケーション開始（全初期化完了後）
          */
         start() {
             if (!this.initialized) {
-                throw new Error('AppCore not initialized');
+                throw new Error('AppCore not fully initialized');
             }
             
-            console.log('🚀 AppCore: アプリケーション開始');
+            this.ready = true;
             
-            // 初期ツール選択
-            if (this.managers.tool) {
-                this.managers.tool.selectTool('pen');
-                console.log('🎯 AppCore: 初期ツール選択完了（ペン）');
-            }
+            console.log('✅ AppCore システム開始完了');
         }
         
         /**
-         * Manager取得メソッド
+         * CanvasManager取得
          */
         getCanvasManager() {
-            return this.managers.canvas;
-        }
-        
-        getToolManager() {
-            return this.managers.tool;
+            return this.canvasManager;
         }
         
         /**
-         * 準備状態確認
+         * ToolManager取得
+         */
+        getToolManager() {
+            return this.toolManager;
+        }
+        
+        /**
+         * 初期化状態確認
          */
         isReady() {
-            return this.initialized && 
-                   this.pixiApp && 
-                   this.managers.canvas && 
-                   this.managers.tool &&
-                   this.managers.canvas.isReady();
+            return this.ready && 
+                   !!this.canvasManager && 
+                   !!this.toolManager && 
+                   this.canvasManager.isReady() && 
+                   this.toolManager.isReady();
         }
         
         /**
-         * 便利メソッド（TegakiApplicationから呼ばれる）
+         * 便利メソッド：ツール選択
          */
         selectTool(toolName) {
-            if (this.managers.tool) {
-                return this.managers.tool.selectTool(toolName);
+            if (!this.toolManager) {
+                console.warn('⚠️ ToolManager not available');
+                return false;
             }
-            return false;
+            
+            return this.toolManager.selectTool(toolName);
         }
         
+        /**
+         * 便利メソッド：キャンバスクリア
+         */
         clearCanvas() {
-            if (this.managers.canvas) {
-                this.managers.canvas.clear();
-                console.log('🧹 AppCore: キャンバスクリア完了');
+            if (!this.canvasManager) {
+                console.warn('⚠️ CanvasManager not available');
+                return;
             }
+            
+            this.canvasManager.clear();
         }
         
+        /**
+         * 便利メソッド：色変更
+         */
         setColor(color) {
-            if (this.managers.tool) {
-                const currentTool = this.managers.tool.getCurrentTool();
-                if (currentTool && currentTool.setPenColor) {
-                    currentTool.setPenColor(color);
-                    console.log(`🎨 AppCore: 色変更 ${color}`);
-                }
-            }
-        }
-        
-        setLineWidth(width) {
-            if (this.managers.tool) {
-                const currentTool = this.managers.tool.getCurrentTool();
-                if (currentTool && currentTool.setPenWidth) {
-                    currentTool.setPenWidth(width);
-                    console.log(`📏 AppCore: 線幅変更 ${width}`);
-                }
-            }
-        }
-        
-        setOpacity(opacity) {
-            if (this.managers.tool) {
-                const currentTool = this.managers.tool.getCurrentTool();
-                if (currentTool && currentTool.setPenOpacity) {
-                    currentTool.setPenOpacity(opacity);
-                    console.log(`👻 AppCore: 透明度変更 ${opacity}`);
-                }
-            }
-        }
-        
-        setEraserSize(size) {
-            if (this.managers.tool) {
-                const currentTool = this.managers.tool.getCurrentTool();
-                if (currentTool && currentTool.setEraserSize) {
-                    currentTool.setEraserSize(size);
-                    console.log(`🧹 AppCore: 消しゴムサイズ変更 ${size}`);
-                }
+            const currentTool = this.toolManager?.getCurrentTool();
+            if (currentTool && currentTool.setPenColor) {
+                currentTool.setPenColor(color);
             }
         }
         
         /**
-         * クリーンアップ
+         * 便利メソッド：線幅変更
          */
-        destroy() {
-            console.log('💀 AppCore クリーンアップ開始');
-            
-            // Manager破棄
-            if (this.managers.tool) {
-                // Tool個別破棄は各ToolManagerに任せる
-                this.managers.tool = null;
+        setLineWidth(width) {
+            const currentTool = this.toolManager?.getCurrentTool();
+            if (currentTool && currentTool.setPenWidth) {
+                currentTool.setPenWidth(width);
             }
-            
-            if (this.managers.canvas) {
-                this.managers.canvas = null;
+        }
+        
+        /**
+         * 便利メソッド：透明度変更
+         */
+        setOpacity(opacity) {
+            const currentTool = this.toolManager?.getCurrentTool();
+            if (currentTool && currentTool.setPenOpacity) {
+                currentTool.setPenOpacity(opacity);
             }
-            
-            this.pixiApp = null;
-            this.initialized = false;
-            
-            console.log('✅ AppCore クリーンアップ完了');
+        }
+        
+        /**
+         * 便利メソッド：消しゴムサイズ変更
+         */
+        setEraserSize(size) {
+            const currentTool = this.toolManager?.getCurrentTool();
+            if (currentTool && currentTool.setEraserSize) {
+                currentTool.setEraserSize(size);
+            }
         }
         
         /**
@@ -228,25 +231,41 @@ if (!window.Tegaki.AppCore) {
         getDebugInfo() {
             return {
                 initialized: this.initialized,
+                ready: this.ready,
                 hasPixiApp: !!this.pixiApp,
-                managers: {
-                    canvas: !!this.managers.canvas,
-                    tool: !!this.managers.tool
-                },
-                isReady: this.isReady(),
-                canvasReady: this.managers.canvas ? this.managers.canvas.isReady() : false,
-                toolReady: this.managers.tool ? this.managers.tool.isReady() : false,
-                currentTool: this.managers.tool ? this.managers.tool.getCurrentToolName() : 'none'
+                canvasManager: this.canvasManager?.getDebugInfo() || null,
+                toolManager: this.toolManager?.getDebugInfo() || null
             };
+        }
+        
+        /**
+         * クリーンアップ
+         */
+        destroy() {
+            if (this.toolManager) {
+                // ToolManager のクリーンアップ（実装されていれば）
+                this.toolManager = null;
+            }
+            
+            if (this.canvasManager) {
+                // CanvasManager のクリーンアップ（実装されていれば）
+                this.canvasManager = null;
+            }
+            
+            this.pixiApp = null;
+            this.initialized = false;
+            this.ready = false;
+            
+            console.log('✅ AppCore クリーンアップ完了');
         }
     }
     
     // Tegaki名前空間に登録
     window.Tegaki.AppCore = AppCore;
     
-    console.log('🎯 AppCore Loaded（Manager統合専任・正しい役割分担版）');
+    console.log('🎯 AppCore システム基盤 Loaded');
 } else {
     console.log('⚠️ AppCore already defined - skipping redefinition');
 }
 
-console.log('🎯 main.js loaded - AppCore定義完了（正しい役割分担版）');
+console.log('🎯 main.js loaded - AppCore基盤システム完成');

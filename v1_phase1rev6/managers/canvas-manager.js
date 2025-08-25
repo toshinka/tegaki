@@ -1,11 +1,12 @@
 /**
- * 🎨 CanvasManager - レイヤー分離版
+ * 🎨 CanvasManager - レイヤー分離版（レイヤー作成確認強化）
  * 📋 RESPONSIBILITY: PixiJS Application管理とレイヤー管理のみ
  * 🚫 PROHIBITION: 描画処理・座標変換・複雑な初期化
  * ✅ PERMISSION: PixiJS受け取り・レイヤー作成・Graphics配置
  * 
  * 📏 DESIGN_PRINCIPLE: 背景レイヤー(0) + 描画レイヤー(1) の分離構造
  * 🔄 INTEGRATION: 車輪の再発明回避・PixiJSの標準機能活用
+ * 🔧 FIX: レイヤー作成確認の強化・エラー詳細化
  */
 
 // if (!window.XXX) ガードで多重定義を防ぐ
@@ -15,13 +16,13 @@ if (!window.Tegaki) {
 
 if (!window.Tegaki.CanvasManager) {
     /**
-     * CanvasManager - レイヤー分離版
+     * CanvasManager - レイヤー分離版（確認強化版）
      * レイヤー0: 背景専用（消しゴムで消去されない）
      * レイヤー1: 描画専用（ペン描画・消しゴム対象）
      */
     class CanvasManager {
         constructor() {
-            console.log('🎨 CanvasManager レイヤー分離版作成');
+            console.log('🎨 CanvasManager レイヤー分離版作成（確認強化版）');
             
             this.pixiApp = null;
             this.layers = new Map();
@@ -30,7 +31,7 @@ if (!window.Tegaki.CanvasManager) {
         }
         
         /**
-         * PixiJS Application設定（レイヤー分離対応）
+         * PixiJS Application設定（レイヤー作成確認強化版）
          */
         setPixiApp(pixiApp) {
             if (!pixiApp) {
@@ -42,10 +43,14 @@ if (!window.Tegaki.CanvasManager) {
             }
             
             this.pixiApp = pixiApp;
-            this.initialized = true;
             
             // レイヤー分離構造作成
             this.createLayerStructure();
+            
+            // レイヤー作成確認（重要：エラーで停止）
+            this.verifyLayerCreation();
+            
+            this.initialized = true;
             
             // PixiJSの設定確認
             console.log('🎨 PixiJS Application Info:', {
@@ -57,11 +62,11 @@ if (!window.Tegaki.CanvasManager) {
                 stageChildren: pixiApp.stage.children.length
             });
             
-            console.log('✅ CanvasManager - レイヤー分離構造完成');
+            console.log('✅ CanvasManager - レイヤー分離構造完成・確認済み');
         }
         
         /**
-         * レイヤー分離構造作成
+         * レイヤー分離構造作成（確認強化版）
          * layer0: 背景専用（固定、消去対象外）
          * layer1: 描画専用（ペン・消しゴム対象）
          */
@@ -70,25 +75,100 @@ if (!window.Tegaki.CanvasManager) {
                 throw new Error('PixiJS Application not set');
             }
             
-            // レイヤー0: 背景レイヤー（消去されない）
-            const backgroundLayer = new PIXI.Container();
-            backgroundLayer.name = 'layer0';
-            backgroundLayer.zIndex = 0; // 背景なので最背面
-            this.pixiApp.stage.addChild(backgroundLayer);
-            this.layers.set('layer0', backgroundLayer);
+            try {
+                // レイヤー0: 背景レイヤー（消去されない）
+                const backgroundLayer = new PIXI.Container();
+                backgroundLayer.name = 'layer0';
+                backgroundLayer.zIndex = 0; // 背景なので最背面
+                this.pixiApp.stage.addChild(backgroundLayer);
+                this.layers.set('layer0', backgroundLayer);
+                
+                console.log('✅ 背景レイヤー (layer0) 作成完了:', {
+                    name: backgroundLayer.name,
+                    zIndex: backgroundLayer.zIndex,
+                    parent: backgroundLayer.parent === this.pixiApp.stage
+                });
+                
+                // レイヤー1: アクティブ描画レイヤー（消去対象）
+                const activeLayer = new PIXI.Container();
+                activeLayer.name = 'layer1';
+                activeLayer.zIndex = 1; // 描画なので前面
+                activeLayer.sortableChildren = true; // 描画順序管理
+                this.pixiApp.stage.addChild(activeLayer);
+                this.layers.set('layer1', activeLayer);
+                
+                console.log('✅ 描画レイヤー (layer1) 作成完了:', {
+                    name: activeLayer.name,
+                    zIndex: activeLayer.zIndex,
+                    sortableChildren: activeLayer.sortableChildren,
+                    parent: activeLayer.parent === this.pixiApp.stage
+                });
+                
+                // ステージの子要素ソート有効化
+                this.pixiApp.stage.sortableChildren = true;
+                
+            } catch (error) {
+                console.error('❌ レイヤー構造作成エラー:', error);
+                throw new Error(`Layer structure creation failed: ${error.message}`);
+            }
+        }
+        
+        /**
+         * レイヤー作成確認（重要：ToolManager初期化前に実行）
+         */
+        verifyLayerCreation() {
+            // Map確認
+            if (this.layers.size !== 2) {
+                throw new Error(`Expected 2 layers, got ${this.layers.size}`);
+            }
             
-            // レイヤー1: アクティブ描画レイヤー（消去対象）
-            const activeLayer = new PIXI.Container();
-            activeLayer.name = 'layer1';
-            activeLayer.zIndex = 1; // 描画なので前面
-            activeLayer.sortableChildren = true; // 描画順序管理
-            this.pixiApp.stage.addChild(activeLayer);
-            this.layers.set('layer1', activeLayer);
+            // layer0確認
+            const layer0 = this.layers.get('layer0');
+            if (!layer0) {
+                throw new Error('Background layer (layer0) not found in layers Map');
+            }
             
-            // ステージの子要素ソート有効化
-            this.pixiApp.stage.sortableChildren = true;
+            if (layer0.parent !== this.pixiApp.stage) {
+                throw new Error('Background layer (layer0) not attached to stage');
+            }
             
-            console.log('✅ レイヤー分離構造作成完了: layer0(背景) + layer1(描画)');
+            // layer1確認
+            const layer1 = this.layers.get('layer1');
+            if (!layer1) {
+                throw new Error('Drawing layer (layer1) not found in layers Map');
+            }
+            
+            if (layer1.parent !== this.pixiApp.stage) {
+                throw new Error('Drawing layer (layer1) not attached to stage');
+            }
+            
+            // Stage子要素確認
+            const stageChildren = this.pixiApp.stage.children;
+            if (stageChildren.length < 2) {
+                throw new Error(`Stage should have at least 2 children, got ${stageChildren.length}`);
+            }
+            
+            // レイヤー順序確認
+            const layer0Index = stageChildren.indexOf(layer0);
+            const layer1Index = stageChildren.indexOf(layer1);
+            
+            if (layer0Index === -1) {
+                throw new Error('Background layer (layer0) not found in stage children');
+            }
+            
+            if (layer1Index === -1) {
+                throw new Error('Drawing layer (layer1) not found in stage children');
+            }
+            
+            console.log('✅ レイヤー作成確認完了:', {
+                totalLayers: this.layers.size,
+                layer0Exists: !!layer0,
+                layer1Exists: !!layer1,
+                layer0InStage: layer0Index !== -1,
+                layer1InStage: layer1Index !== -1,
+                stageChildren: stageChildren.length,
+                activeLayerId: this.activeLayerId
+            });
         }
         
         /**
@@ -153,11 +233,16 @@ if (!window.Tegaki.CanvasManager) {
         }
         
         /**
-         * アクティブレイヤー設定
+         * アクティブレイヤー設定（存在確認強化）
          */
         setActiveLayer(layerId) {
             if (!this.layers.has(layerId)) {
                 throw new Error(`Layer ${layerId} does not exist`);
+            }
+            
+            const layer = this.layers.get(layerId);
+            if (!layer.parent) {
+                throw new Error(`Layer ${layerId} is not attached to stage`);
             }
             
             this.activeLayerId = layerId;
@@ -291,6 +376,13 @@ if (!window.Tegaki.CanvasManager) {
                 layerNames: Array.from(this.layers.keys()),
                 activeLayer: this.activeLayerId,
                 stageChildren: this.pixiApp?.stage.children.length || 0,
+                layerDetails: Array.from(this.layers.entries()).map(([id, layer]) => ({
+                    id,
+                    name: layer.name,
+                    zIndex: layer.zIndex,
+                    children: layer.children.length,
+                    attached: layer.parent === this.pixiApp?.stage
+                })),
                 canvasSize: this.pixiApp ? {
                     width: this.pixiApp.screen.width,
                     height: this.pixiApp.screen.height
@@ -306,19 +398,25 @@ if (!window.Tegaki.CanvasManager) {
         }
         
         /**
-         * 初期化状態確認
+         * 初期化状態確認（強化版）
          */
         isReady() {
-            return this.initialized && !!this.pixiApp && !!this.pixiApp.stage;
+            return this.initialized && 
+                   !!this.pixiApp && 
+                   !!this.pixiApp.stage &&
+                   this.layers.has('layer0') &&
+                   this.layers.has('layer1') &&
+                   this.layers.get('layer0').parent === this.pixiApp.stage &&
+                   this.layers.get('layer1').parent === this.pixiApp.stage;
         }
     }
     
     // Tegaki名前空間に登録
     window.Tegaki.CanvasManager = CanvasManager;
     
-    console.log('🎨 CanvasManager レイヤー分離版 Loaded');
+    console.log('🎨 CanvasManager レイヤー分離版（確認強化版） Loaded');
 } else {
     console.log('⚠️ CanvasManager already defined - skipping redefinition');
 }
 
-console.log('🎨 canvas-manager.js loaded - レイヤー分離構造完成');
+console.log('🎨 canvas-manager.js loaded - レイヤー分離構造完成（確認強化版）');
