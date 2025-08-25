@@ -1,5 +1,5 @@
 /**
- * 🎯 AppCore + TegakiApplication - 計画書準拠版
+ * 🎯 AppCore + TegakiApplication - 計画書準拠版（アイコン内製化対応）
  * 📋 RESPONSIBILITY: TegakiApplicationクラス定義とAppCoreクラス定義
  * 🚫 PROHIBITION: 複雑な段階制御・診断機能・エラー処理
  * ✅ PERMISSION: クラス定義・インスタンス登録・例外throw
@@ -113,7 +113,7 @@ if (!window.TegakiApplication) {
         }
         
         /**
-         * UI連携
+         * UI連携（アイコン内製化統合版）
          */
         setupUI() {
             console.log('🖥️ UI連携開始...');
@@ -123,6 +123,29 @@ if (!window.TegakiApplication) {
             
             // ツールボタン設定
             this.setupToolButtons();
+            
+            // アイコン内製化処理追加（シンプル1行呼び出し）
+            try {
+                console.log('🎨 Replacing tool icons with internalized SVGs');
+                if (window.Tegaki?.TegakiIcons) {
+                    window.Tegaki.TegakiIcons.replaceAllToolIcons();
+                    console.log('✅ Icon internalization completed');
+                } else {
+                    console.warn('⚠️ TegakiIcons not available, skipping icon replacement');
+                }
+            } catch (error) {
+                console.error('❌ Icon internalization failed:', error);
+                // ErrorManager経由で通知
+                if (window.Tegaki?.ErrorManagerInstance) {
+                    window.Tegaki.ErrorManagerInstance.showError(
+                        'ICON_LOAD_ERROR', 
+                        'アイコン読み込みに失敗しました',
+                        { technical: error.message }
+                    );
+                }
+                // エラーは隠さず上位に委譲
+                throw error;
+            }
             
             // ステータス表示更新
             this.updateStatusDisplay();
@@ -264,4 +287,4 @@ if (!window.TegakiApplication) {
 // 計画書により app-core.js では定義しない
 // （main.js で AppCore を定義する）
 
-console.log('🎯 app-core.js loaded - TegakiApplication定義完了');
+console.log('🎯 app-core.js loaded - TegakiApplication定義完了（アイコン内製化対応）');

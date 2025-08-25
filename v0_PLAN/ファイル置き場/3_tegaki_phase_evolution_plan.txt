@@ -1,0 +1,337 @@
+# 🚀 Tegaki Phase段階進化計画 - 統合版
+
+> **段階的書き直し戦略** - 実装が先、文書が後の順序厳守
+
+## 📋 Phase管理方針
+
+### 🎯 「今決めない勇気」の原則
+- **必要になったら定義** - 時期尚早な複雄化を避ける
+- **実装主導** - 動作するコードが正解、文書は後から合わせる
+- **段階的複雑化** - 車輪の再発明防止
+- **AI開発最適化** - 混乱しない文書構造
+
+### 📚 文書更新戦略
+```
+Phase1: 現在特化版（今すぐ作成）✅完了
+├── ルールブック v1-Current
+├── シンボル辞典 v1-Current  
+└── コーディングルール v1-剛直版（ルールブックに吸収合併済み）
+
+Phase2: レイヤー拡張版（レイヤー実装時）
+├── ルールブック v2-Layer（v1に追記）
+├── シンボル辞典 v2-Layer（レイヤーメソッド追加）
+└── コーディングルール v2-Layer（レイヤー管理追加）
+
+Phase3: GIF対応版（最終段階）  
+├── ルールブック v3-Complete（全機能統合）
+├── シンボル辞典 v3-Complete（全メソッド完備）
+└── コーディングルール v3-Complete（最終規約）
+```
+
+## 🏗️ Phase1-Current（現在）✅完了
+
+### ✅ 実装済み機能
+- **PixiJS基盤**: キャンバス作成・表示・イベント処理
+- **ベクターペン**: 基本線描画（直線・円）
+- **ツール切り替え**: ペン・消しゴムボタン（消しゴム未実装）
+- **エラーシステム**: ErrorManager による一元化
+- **UI基盤**: ふたば風デザイン・ステータス表示
+
+### 📋 Phase1 成功指標
+- [x] 基本描画成功（ペンで線が引ける）
+- [x] エラー透明性（エラー発生時に詳細表示）
+- [x] コード可読性（ファイル見て役割理解可能）
+- [x] 拡張準備（Phase2追加の基盤完成）
+- [x] AI改修対応（構造明確で千日手化しない）
+
+### 🎯 Phase1 残作業
+- **消しゴム実装**: EraserTool の onPointer* メソッド実装
+- **基本設定**: 色・線幅変更UI（簡易版）
+- **安定化**: 描画品質向上・ブラッシュアップ
+
+## 📦 Phase1.5-Navigation（キャンバス・非破壊基盤）⚠️重要
+
+### 🎯 Phase1拡張機能（根幹システム）
+- **キャンバス移動**: パン・ズーム・回転（PixiJS Camera/Transform活用）
+- **非破壊編集基盤**: RecordManager・Undo/Redo システム
+- **記憶系基盤**: 操作履歴・状態保存システム
+- **ショートカット基盤**: キーボード操作システム
+
+### 🔧 Phase1.5 実装計画（根幹）
+```javascript
+// 新規追加（Phase1.5で必須）
+window.Tegaki.NavigationManager    // キャンバス移動専任
+window.Tegaki.RecordManager        // 操作履歴・Undo/Redo専任
+window.Tegaki.MemoryManager        // 状態記憶・復元専任
+window.Tegaki.ShortcutManager      // キーボード操作専任
+
+// 拡張（既存クラス）
+CanvasManager {
+    // キャンバス変形
+    panCanvas(deltaX, deltaY)
+    zoomCanvas(scale, centerX, centerY)
+    rotateCanvas(angle, centerX, centerY)
+    resetCanvasTransform()
+    
+    // 変形状態取得
+    getCanvasTransform()
+    setCanvasTransform(transform)
+}
+
+// 全Tool共通拡張
+AbstractTool {
+    // 非破壊操作
+    recordOperation(operation)     // 操作記録
+    canUndo()                     // Undo可能確認
+    undo()                        // 操作取り消し
+}
+```
+
+### ⚠️ Phase1.5 重要性
+- **Phase2の前提**: レイヤー変形・移動には必須基盤
+- **根幹システム**: 後から追加困難・最初に固める必要
+- **拡張性確保**: 範囲選択・レイヤー操作の基盤
+
+## 📦 Phase2-Layer（レイヤー機能）
+
+### 🎯 追加機能スコープ
+- **複数レイヤー**: レイヤー作成・削除・表示/非表示
+- **レイヤーパネル**: UI操作・順序変更・命名
+- **レイヤー変形**: レイヤー内容の移動・回転・拡縮・反転
+- **レイヤー描画**: 選択レイヤーに描画・レイヤー間移動
+- **範囲選択**: 選択ツール・部分移動（Phase2後半）
+
+### 🔧 実装計画
+```javascript
+// 新規追加予定（Phase2）
+window.Tegaki.LayerManager          // レイヤー管理専任
+window.Tegaki.LayerPanel           // レイヤーUI専任  
+window.Tegaki.TransformTool        // レイヤー変形専任
+window.Tegaki.SelectTool           // 範囲選択専任（Phase2後半）
+
+// 拡張予定（既存クラス）
+CanvasManager {
+    // レイヤー管理機能追加
+    createNamedLayer(name, index)
+    deleteLayer(layerId)  
+    setLayerVisibility(layerId, visible)
+    moveLayerOrder(layerId, newIndex)
+    
+    // レイヤー変形（Phase1.5基盤使用）
+    transformLayer(layerId, transform)
+    moveLayerContent(layerId, deltaX, deltaY)
+    rotateLayerContent(layerId, angle)
+    scaleLayerContent(layerId, scaleX, scaleY)
+    flipLayerContent(layerId, horizontal, vertical)
+}
+
+ToolManager {
+    // 描画先・変形対象レイヤー指定
+    setTargetLayer(layerId)
+    getTargetLayer()
+    setTransformMode(enabled)      // 変形モード切り替え
+}
+
+// レイヤー変形ツール
+TransformTool {
+    onPointerDown/Move/Up()        // 変形操作
+    setTransformType(type)         // move/rotate/scale/flip
+    applyTransform()               // 変形確定
+    cancelTransform()              // 変形キャンセル
+}
+```
+
+### 📋 Phase2 成功指標
+- [ ] 複数レイヤー作成・削除・順序変更
+- [ ] レイヤーパネルUI動作（ドラッグ移動含む）
+- [ ] レイヤー全体の移動・回転・拡縮・反転
+- [ ] レイヤー選択して描画
+- [ ] 範囲選択ツール基本動作（Phase2後半）
+- [ ] Phase1.5非破壊編集との連携
+
+## 🎬 Phase3-Complete（アニメーション・GIF）
+
+### 🎯 追加機能スコープ
+- **アニメーション**: フレーム管理・再生・プレビュー
+- **GIF出力**: 作画内容をシーケンス化・エクスポート
+- **高度UI**: GSAP/TweedleによるアニメーションUI
+- **最適化**: パフォーマンス向上・メモリ管理
+
+### 🔧 実装計画
+```javascript
+// 新規追加予定（Phase3）
+window.Tegaki.AnimationManager     // アニメーション管理
+window.Tegaki.FrameManager         // フレーム管理
+window.Tegaki.GIFExporter         // GIF出力専任
+window.Tegaki.PerformanceManager  // パフォーマンス監視
+
+// 拡張予定（既存クラス）
+CanvasManager {
+    // アニメーション機能
+    createAnimationSequence()
+    playAnimation(sequence)
+    exportToGIF(options)
+}
+```
+
+### 📋 Phase3 成功指標
+- [ ] フレーム作成・管理
+- [ ] アニメーション再生
+- [ ] GIFエクスポート成功
+- [ ] 60FPS滑らか描画
+- [ ] 全Phase機能統合完了
+
+## 🔄 Phase間移行戦略
+
+### 📝 文書更新手順
+1. **新機能実装完了**
+2. **動作確認・デバッグ完了**  
+3. **ルールブック更新**: 新機能のルール追記
+4. **シンボル辞典更新**: 新メソッド・クラス追加
+5. **コーディングルール更新**: 新パターン・制約追記
+
+### 🧹 リファクタリング方針
+```
+Phase1→2移行時：
+✅ DO: 新機能追加・既存機能拡張
+🚫 DON'T: 既存構造の大幅変更
+
+Phase2→3移行時：  
+✅ DO: アニメーション機能追加・パフォーマンス最適化
+🚫 DON'T: 基本描画システムの変更
+```
+
+### 🔒 互換性保証
+- **Phase1機能**: 全Phase通して動作保証
+- **API安定性**: 既存メソッドの引数・戻り値維持
+- **UI一貫性**: 基本操作方法の維持
+
+## ⚠️ 各Phase注意事項
+
+### 🎯 Phase1（現在）
+- **✅ DO**: 基本描画の安定化・エラー処理改善・UI改善
+- **🚫 DON'T**: レイヤー機能・アニメーション機能への早期着手
+
+### 📦 Phase2（レイヤー）
+- **✅ DO**: レイヤー管理・非破壊編集・UI拡張
+- **🚫 DON'T**: GIF・アニメーション・複雑な最適化
+
+### 🎬 Phase3（完成）
+- **✅ DO**: アニメーション・GIF・最終UI・最適化
+- **🚫 DON'T**: 基本アーキテクチャの大幅変更
+
+## 🚨 怪物コード撲滅継続
+
+### 💀 各Phase共通禁止事項
+1. **エラー握りつぶし** - Phase関係なく絶対禁止
+2. **フォールバック構造** - 安直な防御コード禁止
+3. **責務混在** - 新機能も1ファイル1責務厳守
+4. **ブラックボックス** - 新機能も日本語コメント必須
+
+### 🎯 各Phase品質基準
+- **Phase1**: 動作する・理解できる・拡張できる
+- **Phase2**: レイヤー管理・非破壊編集・UI統合
+- **Phase3**: アニメーション・最終UI・パフォーマンス
+
+## 📅 開発ロードマップ（更新版）
+
+### 🎯 Phase1完了（現在→Phase1.5準備）
+```
+Step1: 消しゴム実装完了
+├── EraserTool.onPointer* メソッド実装
+├── 消去処理のPixiJS Graphics操作
+└── ツール切り替え動作確認
+
+Step2: 基本設定UI  
+├── 色選択パレット（簡易版）
+├── 線幅スライダー
+└── 設定値のツール連携
+
+Step3: Phase1.5基盤準備
+├── NavigationManager実装準備
+├── RecordManager設計
+├── MemoryManager設計
+└── ShortcutManager設計
+```
+
+### ⚡ Phase1.5実装（根幹システム）
+```
+Step1: キャンバス移動システム
+├── NavigationManager実装
+├── パン・ズーム・回転機能
+├── PixiJS Transform活用
+└── マウス・タッチ・ショートカット対応
+
+Step2: 非破壊編集基盤
+├── RecordManager実装
+├── 操作履歴システム
+├── Undo/Redo基本機能
+└── 全Tool共通化（AbstractTool拡張）
+
+Step3: 記憶・ショートカット
+├── MemoryManager実装
+├── 状態保存・復元システム
+├── ShortcutManager実装
+└── キーボード操作基盤
+
+Step4: Phase2準備
+├── レイヤー変形基盤確認
+├── UI拡張準備
+└── 統合テスト
+```
+
+### 📦 Phase2実装（レイヤー機能）
+```
+Step1: レイヤー基本機能
+├── LayerManager実装
+├── 複数レイヤー作成・削除
+├── レイヤーパネルUI
+└── レイヤー順序変更・ドラッグ
+
+Step2: レイヤー変形機能
+├── TransformTool実装
+├── レイヤー移動・回転・拡縮・反転
+├── Phase1.5基盤との連携
+└── リアルタイム変形プレビュー
+
+Step3: 範囲選択（Phase2後半）
+├── SelectTool実装
+├── 矩形・自由選択
+├── 選択範囲の移動・変形
+└── クリップボード連携準備
+
+Step4: Phase3準備
+├── アニメーション基盤設計
+├── GIF出力準備
+└── パフォーマンス最適化準備
+```
+
+### 📋 各Step成功指標（更新版）
+- **Phase1完了**: 消しゴム・基本設定UI・Phase1.5準備完了
+- **Phase1.5完了**: キャンバス移動・Undo/Redo・ショートカット動作
+- **Phase2-Step1完了**: レイヤー作成・UI・順序変更動作  
+- **Phase2-Step2完了**: レイヤー変形（移動・回転・拡縮・反転）
+- **Phase2完了**: 範囲選択・部分変形・Phase3準備完了
+
+### ⚠️ Phase1.5の重要性再確認
+- **後戻り困難**: レイヤー実装後の基盤変更は大規模改修になる
+- **Phase2の前提**: レイヤー変形にはキャンバス変形・非破壊編集が必須
+- **拡張性**: 範囲選択・アニメーション機能の基盤
+- **ユーザビリティ**: キャンバス移動・Undo/Redoは基本機能
+
+### 🔄 Phase間依存関係
+```
+Phase1 → Phase1.5（必須）→ Phase2 → Phase3
+   ↓         ↓               ↓        ↓
+基本描画 → 変形基盤 → レイヤー機能 → アニメーション
+   ↓         ↓               ↓        ↓  
+ツール → 非破壊編集 → 範囲選択 → GIF出力
+   ↓         ↓               ↓        ↓
+   UI  → ショートカット → 変形UI → 最終UI
+```
+
+---
+
+📝 **継続更新方針**: 各Phase完了時に本計画書も更新
+🎯 **成功の鍵**: 実装→動作確認→文書更新の順序厳守
+💀 **基本原則**: 怪物コード撲滅を各Phase通して継続

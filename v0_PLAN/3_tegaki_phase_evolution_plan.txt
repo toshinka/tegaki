@@ -1,337 +1,361 @@
-# 🚀 Tegaki Phase段階進化計画 - 統合版
+# 🚀 Tegaki Phase移行計画 Phase1-rev4更新版
 
-> **段階的書き直し戦略** - 実装が先、文書が後の順序厳守
+> **剛直設計維持** - SettingsManager早期実装の反省・Phase1.5への正しい準備
 
-## 📋 Phase管理方針
+## 📋 Phase1-rev4 現状整理
 
-### 🎯 「今決めない勇気」の原則
-- **必要になったら定義** - 時期尚早な複雄化を避ける
-- **実装主導** - 動作するコードが正解、文書は後から合わせる
-- **段階的複雑化** - 車輪の再発明防止
-- **AI開発最適化** - 混乱しない文書構造
+### ✅ 実装完了（剛直設計維持）
+- **レイヤー分離**: layer0(背景・保護) + layer1(描画・消去対象)
+- **真の消去**: PIXI.BLEND_MODES.ERASE による真の消去機能
+- **背景保護**: 背景レイヤーの消去・クリア禁止システム
+- **シンプル設定**: AppCore経由の基本設定変更（色・線幅・透明度）
+- **エラー透明性**: ErrorManager による一元的エラー処理
 
-### 📚 文書更新戦略
-```
-Phase1: 現在特化版（今すぐ作成）✅完了
-├── ルールブック v1-Current
-├── シンボル辞典 v1-Current  
-└── コーディングルール v1-剛直版（ルールブックに吸収合併済み）
+### 🔧 設計方針の再確認
+- **剛直原則**: 1ファイル1責務・エラー隠蔽禁止・架空メソッド禁止
+- **シンプル第一**: 複雑な設定管理はPhase1.5に延期
+- **実装優先**: 動作するコードが正解・文書は後追い
 
-Phase2: レイヤー拡張版（レイヤー実装時）
-├── ルールブック v2-Layer（v1に追記）
-├── シンボル辞典 v2-Layer（レイヤーメソッド追加）
-└── コーディングルール v2-Layer（レイヤー管理追加）
+### ❌ 反省点
+- **SettingsManager早期実装**: Phase1には複雑すぎた
+- **依存関係増加**: Manager間の連携が複雑化した
+- **見通し悪化**: 剛直設計の原則に違反した
 
-Phase3: GIF対応版（最終段階）  
-├── ルールブック v3-Complete（全機能統合）
-├── シンボル辞典 v3-Complete（全メソッド完備）
-└── コーディングルール v3-Complete（最終規約）
-```
+## 🎯 Phase1残作業（最小限）
 
-## 🏗️ Phase1-Current（現在）✅完了
-
-### ✅ 実装済み機能
-- **PixiJS基盤**: キャンバス作成・表示・イベント処理
-- **ベクターペン**: 基本線描画（直線・円）
-- **ツール切り替え**: ペン・消しゴムボタン（消しゴム未実装）
-- **エラーシステム**: ErrorManager による一元化
-- **UI基盤**: ふたば風デザイン・ステータス表示
-
-### 📋 Phase1 成功指標
-- [x] 基本描画成功（ペンで線が引ける）
-- [x] エラー透明性（エラー発生時に詳細表示）
-- [x] コード可読性（ファイル見て役割理解可能）
-- [x] 拡張準備（Phase2追加の基盤完成）
-- [x] AI改修対応（構造明確で千日手化しない）
-
-### 🎯 Phase1 残作業
-- **消しゴム実装**: EraserTool の onPointer* メソッド実装
-- **基本設定**: 色・線幅変更UI（簡易版）
-- **安定化**: 描画品質向上・ブラッシュアップ
-
-## 📦 Phase1.5-Navigation（キャンバス・非破壊基盤）⚠️重要
-
-### 🎯 Phase1拡張機能（根幹システム）
-- **キャンバス移動**: パン・ズーム・回転（PixiJS Camera/Transform活用）
-- **非破壊編集基盤**: RecordManager・Undo/Redo システム
-- **記憶系基盤**: 操作履歴・状態保存システム
-- **ショートカット基盤**: キーボード操作システム
-
-### 🔧 Phase1.5 実装計画（根幹）
+### Step1: 基本設定UI（簡易版）
 ```javascript
-// 新規追加（Phase1.5で必須）
-window.Tegaki.NavigationManager    // キャンバス移動専任
-window.Tegaki.RecordManager        // 操作履歴・Undo/Redo専任
-window.Tegaki.MemoryManager        // 状態記憶・復元専任
-window.Tegaki.ShortcutManager      // キーボード操作専任
+// 実装予定: AppCoreに設定UI連携機能追加
+setColorFromUI(colorString)           // UI色選択との連携
+setLineWidthFromUI(widthValue)        // UIスライダーとの連携
+setOpacityFromUI(opacityValue)        // UI透明度との連携
 
-// 拡張（既存クラス）
-CanvasManager {
-    // キャンバス変形
-    panCanvas(deltaX, deltaY)
-    zoomCanvas(scale, centerX, centerY)
-    rotateCanvas(angle, centerX, centerY)
-    resetCanvasTransform()
-    
-    // 変形状態取得
-    getCanvasTransform()
-    setCanvasTransform(transform)
-}
-
-// 全Tool共通拡張
-AbstractTool {
-    // 非破壊操作
-    recordOperation(operation)     // 操作記録
-    canUndo()                     // Undo可能確認
-    undo()                        // 操作取り消し
-}
+// HTML追加予定: 基本的な設定UI
+<div class="simple-settings">
+    <input type="color" id="color-picker" value="#800000">
+    <input type="range" id="line-width" min="1" max="20" value="4">
+    <input type="range" id="opacity" min="0" max="100" value="100">
+</div>
 ```
 
-### ⚠️ Phase1.5 重要性
-- **Phase2の前提**: レイヤー変形・移動には必須基盤
-- **根幹システム**: 後から追加困難・最初に固める必要
-- **拡張性確保**: 範囲選択・レイヤー操作の基盤
-
-## 📦 Phase2-Layer（レイヤー機能）
-
-### 🎯 追加機能スコープ
-- **複数レイヤー**: レイヤー作成・削除・表示/非表示
-- **レイヤーパネル**: UI操作・順序変更・命名
-- **レイヤー変形**: レイヤー内容の移動・回転・拡縮・反転
-- **レイヤー描画**: 選択レイヤーに描画・レイヤー間移動
-- **範囲選択**: 選択ツール・部分移動（Phase2後半）
-
-### 🔧 実装計画
+### Step2: 描画品質向上
 ```javascript
-// 新規追加予定（Phase2）
-window.Tegaki.LayerManager          // レイヤー管理専任
-window.Tegaki.LayerPanel           // レイヤーUI専任  
-window.Tegaki.TransformTool        // レイヤー変形専任
-window.Tegaki.SelectTool           // 範囲選択専任（Phase2後半）
+// PenTool改善
+- アンチエイリアス強化
+- 描画パフォーマンス向上
+- 点描画の品質向上
 
-// 拡張予定（既存クラス）
-CanvasManager {
-    // レイヤー管理機能追加
-    createNamedLayer(name, index)
-    deleteLayer(layerId)  
-    setLayerVisibility(layerId, visible)
-    moveLayerOrder(layerId, newIndex)
-    
-    // レイヤー変形（Phase1.5基盤使用）
-    transformLayer(layerId, transform)
-    moveLayerContent(layerId, deltaX, deltaY)
-    rotateLayerContent(layerId, angle)
-    scaleLayerContent(layerId, scaleX, scaleY)
-    flipLayerContent(layerId, horizontal, vertical)
-}
-
-ToolManager {
-    // 描画先・変形対象レイヤー指定
-    setTargetLayer(layerId)
-    getTargetLayer()
-    setTransformMode(enabled)      // 変形モード切り替え
-}
-
-// レイヤー変形ツール
-TransformTool {
-    onPointerDown/Move/Up()        // 変形操作
-    setTransformType(type)         // move/rotate/scale/flip
-    applyTransform()               // 変形確定
-    cancelTransform()              // 変形キャンセル
-}
+// EraserTool改善  
+- 消去精度向上
+- 消去範囲の視覚フィードバック
+- 消去パフォーマンス最適化
 ```
 
-### 📋 Phase2 成功指標
-- [ ] 複数レイヤー作成・削除・順序変更
-- [ ] レイヤーパネルUI動作（ドラッグ移動含む）
-- [ ] レイヤー全体の移動・回転・拡縮・反転
-- [ ] レイヤー選択して描画
-- [ ] 範囲選択ツール基本動作（Phase2後半）
-- [ ] Phase1.5非破壊編集との連携
-
-## 🎬 Phase3-Complete（アニメーション・GIF）
-
-### 🎯 追加機能スコープ
-- **アニメーション**: フレーム管理・再生・プレビュー
-- **GIF出力**: 作画内容をシーケンス化・エクスポート
-- **高度UI**: GSAP/TweedleによるアニメーションUI
-- **最適化**: パフォーマンス向上・メモリ管理
-
-### 🔧 実装計画
+### Step3: Phase1.5準備
 ```javascript
-// 新規追加予定（Phase3）
-window.Tegaki.AnimationManager     // アニメーション管理
-window.Tegaki.FrameManager         // フレーム管理
-window.Tegaki.GIFExporter         // GIF出力専任
-window.Tegaki.PerformanceManager  // パフォーマンス監視
-
-// 拡張予定（既存クラス）
-CanvasManager {
-    // アニメーション機能
-    createAnimationSequence()
-    playAnimation(sequence)
-    exportToGIF(options)
-}
+// 基盤システム設計（実装はPhase1.5）
+NavigationManager設計     // キャンバス移動・ズーム
+RecordManager設計        // 操作履歴・Undo/Redo
+MemoryManager設計        // 状態保存・復元
+ShortcutManager設計      // キーボード操作
 ```
 
-### 📋 Phase3 成功指標
-- [ ] フレーム作成・管理
-- [ ] アニメーション再生
-- [ ] GIFエクスポート成功
-- [ ] 60FPS滑らか描画
-- [ ] 全Phase機能統合完了
+## ⚡ Phase1.5実装計画（根幹システム）
 
-## 🔄 Phase間移行戦略
+### 📦 Phase1.5の重要性
+- **根幹システム**: 後から変更困難な基盤機能
+- **Phase2の前提**: レイヤー変形・移動には必須
+- **拡張性確保**: 範囲選択・アニメーション機能の基盤
 
-### 📝 文書更新手順
-1. **新機能実装完了**
-2. **動作確認・デバッグ完了**  
-3. **ルールブック更新**: 新機能のルール追記
-4. **シンボル辞典更新**: 新メソッド・クラス追加
-5. **コーディングルール更新**: 新パターン・制約追記
-
-### 🧹 リファクタリング方針
+### 🔧 実装優先順序
 ```
-Phase1→2移行時：
-✅ DO: 新機能追加・既存機能拡張
-🚫 DON'T: 既存構造の大幅変更
+1. NavigationManager（最優先）
+├── キャンバス移動（パン）
+├── ズーム機能  
+├── 回転機能
+└── PixiJS Transform活用
 
-Phase2→3移行時：  
-✅ DO: アニメーション機能追加・パフォーマンス最適化
-🚫 DON'T: 基本描画システムの変更
+2. RecordManager（重要）
+├── 操作履歴システム
+├── Undo/Redo基本機能
+├── 全Tool共通化
+└── AbstractTool基底クラス
+
+3. MemoryManager（必要）
+├── 状態保存システム
+├── 設定値記憶
+├── セッション管理
+└── 復元機能
+
+4. ShortcutManager（便利）
+├── キーボード操作
+├── ショートカット登録
+├── 操作効率化
+└── アクセシビリティ
 ```
 
-### 🔒 互換性保証
-- **Phase1機能**: 全Phase通して動作保証
-- **API安定性**: 既存メソッドの引数・戻り値維持
-- **UI一貫性**: 基本操作方法の維持
+### 🚫 Phase1.5で避けるべきこと
+- **複雑なUI**: ポップアップ・モーダル・高度なパネル
+- **高度な設定管理**: 細かい設定項目・プリセット機能
+- **パフォーマンス最適化**: 描画最適化・メモリ管理
+- **レイヤー機能**: 複数レイヤー・レイヤーUI・レイヤー変形
 
-## ⚠️ 各Phase注意事項
+## 📦 Phase2実装計画（レイヤー機能）
 
-### 🎯 Phase1（現在）
-- **✅ DO**: 基本描画の安定化・エラー処理改善・UI改善
-- **🚫 DON'T**: レイヤー機能・アニメーション機能への早期着手
+### 🎯 Phase2で実装する機能
+```
+1. LayerManager（Phase1.5基盤使用）
+├── 複数レイヤー管理
+├── レイヤー作成・削除
+├── レイヤー順序変更
+└── レイヤー表示/非表示
 
-### 📦 Phase2（レイヤー）
-- **✅ DO**: レイヤー管理・非破壊編集・UI拡張
-- **🚫 DON'T**: GIF・アニメーション・複雑な最適化
+2. LayerPanel（UI）
+├── レイヤー一覧表示
+├── ドラッグ&ドロップ
+├── レイヤー名変更
+└── レイヤー設定
 
-### 🎬 Phase3（完成）
-- **✅ DO**: アニメーション・GIF・最終UI・最適化
-- **🚫 DON'T**: 基本アーキテクチャの大幅変更
+3. TransformTool（Phase1.5 Navigation活用）
+├── レイヤー移動
+├── レイヤー回転
+├── レイヤー拡縮
+└── レイヤー反転
 
-## 🚨 怪物コード撲滅継続
+4. SelectTool（Phase2後半）
+├── 範囲選択
+├── 選択範囲移動
+├── 選択範囲変形
+└── クリップボード連携
+```
+
+## 🎬 Phase3実装計画（完成版）
+
+### 🎯 最終機能実装
+```
+1. AnimationManager
+├── フレーム管理
+├── アニメーション再生
+├── タイムライン
+└── フレーム間補間
+
+2. GIFExporter  
+├── GIF出力
+├── 最適化
+├── プレビュー
+└── 設定調整
+
+3. FinalUI
+├── GSAP/Tweedleアニメーション
+├── 高度なパネルシステム
+├── プリセット管理
+└── エクスポート機能
+```
+
+## 📝 文書更新方針
+
+### 🔄 Phase1-rev4→Phase1.5移行時
+```
+更新対象:
+1. ルールブック: NavigationManager・RecordManager等のルール追記
+2. シンボル辞典: 新クラス・メソッド追加
+3. 移行計画: Phase1.5実装完了・Phase2詳細化
+
+更新方法: 差分パッチ（追記形式）
+```
+
+### 🔄 Phase1.5→Phase2移行時
+```
+更新対象:  
+1. ルールブック: レイヤー管理・UI拡張ルール
+2. シンボル辞典: LayerManager・TransformTool等追加
+3. 移行計画: Phase2実装完了・Phase3詳細化
+
+更新方法: 一括置換（大幅変更のため）
+```
+
+## 🚨 剛直設計継続ルール
 
 ### 💀 各Phase共通禁止事項
 1. **エラー握りつぶし** - Phase関係なく絶対禁止
 2. **フォールバック構造** - 安直な防御コード禁止
 3. **責務混在** - 新機能も1ファイル1責務厳守
 4. **ブラックボックス** - 新機能も日本語コメント必須
+5. **早期複雑化** - 必要になってから実装
 
-### 🎯 各Phase品質基準
-- **Phase1**: 動作する・理解できる・拡張できる
-- **Phase2**: レイヤー管理・非破壊編集・UI統合
-- **Phase3**: アニメーション・最終UI・パフォーマンス
+### ✅ 剛直設計成功例（Phase1-rev4）
+```javascript
+// ✅ 正しい: シンプルな責務分離
+class EraserTool {
+    // 消去処理のみ
+    onPointerDown(x, y, event) {
+        // ERASE blend mode による真の消去
+        this.currentGraphics.blendMode = PIXI.BLEND_MODES.ERASE;
+        activeLayer.addChild(this.currentGraphics);
+    }
+}
 
-## 📅 開発ロードマップ（更新版）
-
-### 🎯 Phase1完了（現在→Phase1.5準備）
+// ✅ 正しい: 背景保護のシンプル実装
+clearLayer(layerId) {
+    if (layerId === 'layer0') {
+        console.warn('⚠️ 背景レイヤーのクリア禁止');
+        return; // シンプルな保護
+    }
+    layer.removeChildren();
+}
 ```
-Step1: 消しゴム実装完了
-├── EraserTool.onPointer* メソッド実装
-├── 消去処理のPixiJS Graphics操作
-└── ツール切り替え動作確認
 
-Step2: 基本設定UI  
-├── 色選択パレット（簡易版）
-├── 線幅スライダー
-└── 設定値のツール連携
+### 🚫 避けるべき複雑化例
+```javascript
+// ❌ 避けるべき: 早期複雑化
+class AdvancedSettingsManager {
+    // Phase1には不要な複雑な設定管理
+    applySettingsWithValidation() { /* 複雑な処理 */ }
+    createSettingsHierarchy() { /* 早期複雑化 */ }
+    manageSettingsPresets() { /* Phase1対象外 */ }
+}
 
-Step3: Phase1.5基盤準備
-├── NavigationManager実装準備
-├── RecordManager設計
-├── MemoryManager設計
-└── ShortcutManager設計
+// ❌ 避けるべき: 責務混在
+class SuperCanvasManager {
+    // NG: Canvas管理 + Tool管理 + 設定管理 + UI管理
+    drawWithTool() { /* ToolManagerの責務 */ }
+    showSettingsPanel() { /* UI層の責務 */ }
+    manageSettings() { /* SettingsManagerの責務 */ }
+}
+```
+
+## 🎯 実装チェックリスト
+
+### Phase1-rev4 品質確認
+- [x] レイヤー分離構造動作確認
+- [x] 真の消去機能動作確認  
+- [x] 背景保護システム動作確認
+- [x] ツール切り替え動作確認
+- [x] エラー処理透明性確認
+- [x] コード可読性確認（日本語コメント）
+- [x] 剛直設計原則遵守確認
+
+### Phase1完了要件
+- [ ] 基本設定UI実装
+- [ ] 描画品質向上
+- [ ] 全機能安定動作確認
+- [ ] Phase1.5設計完了
+
+### Phase1.5実装要件
+- [ ] NavigationManager実装・動作確認
+- [ ] RecordManager実装・Undo/Redo動作確認
+- [ ] MemoryManager実装・状態保存確認
+- [ ] ShortcutManager実装・キーボード操作確認
+
+## 📅 実装ロードマップ（更新版）
+
+### 🎯 Phase1完了まで（今すぐ）
+```
+Week1: 基本設定UI
+├── HTMLに簡易設定パネル追加
+├── AppCoreの設定UI連携メソッド追加
+├── ツール設定の視覚的フィードバック
+└── 動作確認・バグ修正
+
+Week2: 描画品質向上  
+├── PenTool描画アルゴリズム改善
+├── EraserTool消去精度向上
+├── PixiJS設定最適化
+└── パフォーマンス測定
+
+Week3: Phase1.5設計
+├── NavigationManager設計・API定義
+├── RecordManager設計・履歴構造定義
+├── MemoryManager設計・保存形式定義
+└── ShortcutManager設計・操作定義
 ```
 
 ### ⚡ Phase1.5実装（根幹システム）
 ```
-Step1: キャンバス移動システム
+Month1: Navigation基盤
 ├── NavigationManager実装
-├── パン・ズーム・回転機能
-├── PixiJS Transform活用
-└── マウス・タッチ・ショートカット対応
+├── キャンバス移動・ズーム・回転
+├── マウス・タッチ・キーボード操作
+└── PixiJS Transform活用
 
-Step2: 非破壊編集基盤
-├── RecordManager実装
+Month2: 非破壊編集基盤
+├── RecordManager実装  
 ├── 操作履歴システム
 ├── Undo/Redo基本機能
-└── 全Tool共通化（AbstractTool拡張）
+└── AbstractTool基底クラス
 
-Step3: 記憶・ショートカット
+Month3: 記憶・ショートカット
 ├── MemoryManager実装
-├── 状態保存・復元システム
+├── 状態保存・復元
 ├── ShortcutManager実装
-└── キーボード操作基盤
-
-Step4: Phase2準備
-├── レイヤー変形基盤確認
-├── UI拡張準備
-└── 統合テスト
+└── Phase2準備完了
 ```
 
 ### 📦 Phase2実装（レイヤー機能）
 ```
-Step1: レイヤー基本機能
+Month4-5: レイヤー基本機能
 ├── LayerManager実装
-├── 複数レイヤー作成・削除
-├── レイヤーパネルUI
-└── レイヤー順序変更・ドラッグ
+├── 複数レイヤー・レイヤーパネル
+├── レイヤー順序・表示切り替え
+└── レイヤー選択描画
 
-Step2: レイヤー変形機能
+Month6: レイヤー変形
 ├── TransformTool実装
 ├── レイヤー移動・回転・拡縮・反転
-├── Phase1.5基盤との連携
+├── Phase1.5 Navigation基盤活用
 └── リアルタイム変形プレビュー
 
-Step3: 範囲選択（Phase2後半）
+Month7: 範囲選択
 ├── SelectTool実装
 ├── 矩形・自由選択
-├── 選択範囲の移動・変形
-└── クリップボード連携準備
-
-Step4: Phase3準備
-├── アニメーション基盤設計
-├── GIF出力準備
-└── パフォーマンス最適化準備
+├── 選択範囲移動・変形
+└── Phase3準備完了
 ```
 
-### 📋 各Step成功指標（更新版）
-- **Phase1完了**: 消しゴム・基本設定UI・Phase1.5準備完了
-- **Phase1.5完了**: キャンバス移動・Undo/Redo・ショートカット動作
-- **Phase2-Step1完了**: レイヤー作成・UI・順序変更動作  
-- **Phase2-Step2完了**: レイヤー変形（移動・回転・拡縮・反転）
-- **Phase2完了**: 範囲選択・部分変形・Phase3準備完了
+## 🔄 設計進化の教訓
 
-### ⚠️ Phase1.5の重要性再確認
-- **後戻り困難**: レイヤー実装後の基盤変更は大規模改修になる
-- **Phase2の前提**: レイヤー変形にはキャンバス変形・非破壊編集が必須
-- **拡張性**: 範囲選択・アニメーション機能の基盤
-- **ユーザビリティ**: キャンバス移動・Undo/Redoは基本機能
+### 📚 Phase1-rev4で学んだこと
+1. **複雑さの罠**: SettingsManagerは時期尚早だった
+2. **剛直の価値**: シンプルな設計の方が理解しやすい
+3. **段階的成長**: 必要になってから実装する方が良い
+4. **依存管理**: Manager間の依存は最小限に抑える
 
-### 🔄 Phase間依存関係
+### 🎯 今後の設計方針
+1. **実装主導**: 文書より動作するコードを優先
+2. **段階的複雑化**: Phaseを跨いだ早期実装は避ける
+3. **責務純化**: 1ファイル1責務を更に徹底
+4. **エラー透明性**: エラー隠蔽は絶対に行わない
+
+### 🚀 成功への道筋
 ```
-Phase1 → Phase1.5（必須）→ Phase2 → Phase3
-   ↓         ↓               ↓        ↓
-基本描画 → 変形基盤 → レイヤー機能 → アニメーション
-   ↓         ↓               ↓        ↓  
-ツール → 非破壊編集 → 範囲選択 → GIF出力
-   ↓         ↓               ↓        ↓
-   UI  → ショートカット → 変形UI → 最終UI
+Phase1完了 → Phase1.5基盤 → Phase2機能 → Phase3完成
+    ↓           ↓           ↓         ↓
+剛直設計 → 根幹システム → 機能拡張 → 最終完成
+    ↓           ↓           ↓         ↓
+理解しやすい → 変更しやすい → 使いやすい → 完璧
 ```
+
+## 📋 文書管理方針
+
+### 🔄 更新タイミング
+- **Phase完了時**: ルールブック・シンボル辞典・移行計画の全更新
+- **重大変更時**: 剛直設計違反・アーキテクチャ変更時の緊急更新
+- **機能追加時**: シンボル辞典への新メソッド追記
+
+### 📝 更新方法選択基準
+```
+差分パッチ: 新機能追加・メソッド追加（変更箇所5か所未満）
+一括置換: アーキテクチャ変更・大幅リファクタリング（変更箇所5か所以上）
+```
+
+### 🎯 文書品質基準
+- **正確性**: 実装と文書の完全一致
+- **実用性**: AI開発・人間理解両方に役立つ
+- **簡潔性**: 必要最小限・冗長表現排除
+- **一貫性**: 用語・形式・構造の統一
 
 ---
 
-📝 **継続更新方針**: 各Phase完了時に本計画書も更新
-🎯 **成功の鍵**: 実装→動作確認→文書更新の順序厳守
-💀 **基本原則**: 怪物コード撲滅を各Phase通して継続
+📝 **継続原則**: Phase1剛直設計の成功を各Phaseで継続
+🎯 **成功指標**: 理解しやすい・変更しやすい・拡張しやすい
+💀 **基本方針**: エラーを隠すな・構造を透けさせろ・素人が読める構造にしろ

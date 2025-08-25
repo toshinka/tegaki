@@ -1,0 +1,430 @@
+# 📚 Tegaki シンボル辞典 Phase1-Current（アイコン内製化対応版）
+
+> **現在実装分のみ** - 架空メソッド呼び出し防止・二重実装防止
+
+## 🌐 グローバル名前空間
+
+### window.Tegaki.*（必須）
+```javascript
+window.Tegaki = {
+    // クラス定義
+    TegakiApplication,          // app-core.js で定義
+    AppCore,                    // main.js で定義  
+    CanvasManager,              // canvas-manager.js で定義
+    ToolManager,                // tool-manager.js で定義
+    PenTool,                    // pen-tool.js で定義
+    EraserTool,                 // eraser-tool.js で定義
+    ErrorManager,               // error-manager.js で定義
+    ConfigManager,              // config-manager.js で定義
+    EventBus,                   // event-bus.js で定義
+    TegakiIcons,               // assets/icons.js で定義（新規追加）
+    
+    // インスタンス（自動作成）
+    ErrorManagerInstance,       // error-manager.js で作成
+    ConfigManagerInstance,      // config-manager.js で作成
+    EventBusInstance,          // event-bus.js で作成
+    CanvasManagerInstance,     // main.js で作成
+    ToolManagerInstance        // main.js で作成
+};
+
+// デバッグ用グローバル参照
+window.TegakiAppInstance;      // bootstrap.js で作成
+```
+
+## 🎯 TegakiApplication（app-core.js）
+
+### プロパティ
+```javascript
+class TegakiApplication {
+    initialized: boolean        // 初期化状態
+    pixiApp: PIXI.Application  // PixiJS Application
+    appCore: AppCore           // AppCore インスタンス
+}
+```
+
+### メソッド（実装済みのみ）
+```javascript
+// 初期化
+constructor()                           // インスタンス化・自動初期化
+async initialize()                      // 基本初期化実行
+async initializeAppCore()              // AppCore作成・初期化
+createCanvas()                         // PixiJS Application作成・DOM配置
+setupUI()                             // UIイベント設定（アイコン内製化対応）
+
+// イベント処理  
+setupCanvasEvents()                    // キャンバスイベント設定
+setupToolButtons()                     // ツールボタンイベント
+selectTool(toolName: string)           // ツール選択
+updateToolButtons(activeToolName)      // ツールボタンUI更新
+updateStatusDisplay()                  // ステータス表示更新
+
+// ポインターイベント
+handlePointerDown(e: PointerEvent)     // ポインター押下
+handlePointerMove(e: PointerEvent)     // ポインター移動  
+handlePointerUp(e: PointerEvent)       // ポインター解放
+
+// ユーティリティ
+showSuccessMessage()                   // 起動完了通知
+```
+
+## 🖊️ AppCore（main.js）
+
+### プロパティ
+```javascript
+class AppCore {
+    initialized: boolean       // 初期化状態
+    canvasManager: CanvasManager    // CanvasManager参照
+    toolManager: ToolManager   // ToolManager参照
+}
+```
+
+### メソッド（実装済みのみ）
+```javascript
+// 初期化
+constructor()                          // インスタンス作成
+async initialize()                     // Manager作成・連携設定
+
+// Manager管理
+setPixiApp(pixiApp: PIXI.Application) // CanvasManagerにPixiApp設定
+getCanvasManager()                     // CanvasManager取得
+getToolManager()                       // ToolManager取得
+
+// 状態確認
+isReady(): boolean                     // 初期化完了確認
+performBasicChecks()                   // 基本機能確認
+
+// ライフサイクル
+start()                               // アプリケーション開始
+destroy()                             // クリーンアップ
+getDebugInfo()                        // デバッグ情報取得
+```
+
+## 🎨 CanvasManager（managers/canvas-manager.js）
+
+### プロパティ
+```javascript
+class CanvasManager {
+    pixiApp: PIXI.Application          // PixiJS Application参照
+    layers: Map<string, PIXI.Container> // レイヤーMap
+    initialized: boolean               // 初期化状態
+}
+```
+
+### メソッド（実装済みのみ）  
+```javascript
+// PixiJS管理
+setPixiApp(pixiApp: PIXI.Application) // PixiJS Application設定
+getPixiApp(): PIXI.Application        // PixiJS Application取得
+
+// レイヤー管理
+createLayer(layerId: string): PIXI.Container    // レイヤー作成
+getLayer(layerId: string): PIXI.Container       // レイヤー取得  
+getMainLayer(): PIXI.Container                  // メインレイヤー取得
+addGraphicsToLayer(graphics, layerId)           // Graphics配置
+
+// キャンバス操作
+clear()                               // 全レイヤークリア
+clearLayer(layerId: string)           // 特定レイヤークリア
+resizeCanvas(width: number, height: number)     // サイズ変更
+
+// ユーティリティ
+isReady(): boolean                    // 準備状態確認
+getDebugInfo()                        // デバッグ情報
+```
+
+## 🖊️ ToolManager（managers/tool-manager.js）
+
+### プロパティ
+```javascript
+class ToolManager {
+    canvasManager: CanvasManager       // CanvasManager参照
+    currentTool: Tool                  // 現在選択ツール
+    currentToolName: string            // 現在ツール名
+    tools: Map<string, Tool>           // ツールMap
+}
+```
+
+### メソッド（実装済みのみ）
+```javascript
+// Manager連携
+setCanvasManager(canvasManager)        // CanvasManager設定
+
+// ツール管理
+createTools()                          // ツール作成（内部）
+selectTool(toolName: string)           // ツール選択
+getCurrentTool(): Tool                 // 現在ツール取得
+getCurrentToolName(): string           // 現在ツール名取得
+
+// イベント転送
+handlePointerDown(x: number, y: number, event) // ポインター押下転送
+handlePointerMove(x: number, y: number, event) // ポインター移動転送  
+handlePointerUp(x: number, y: number, event)   // ポインター解放転送
+```
+
+## ✏️ PenTool（tools/pen-tool.js）
+
+### プロパティ
+```javascript
+class PenTool {
+    canvasManager: CanvasManager       // CanvasManager参照
+    isDrawing: boolean                 // 描画状態
+    currentPath: PIXI.Graphics         // 現在の描画パス
+    points: Array<{x, y}>             // 描画点配列
+    
+    // 描画設定
+    color: number                      // 線色（16進数）
+    lineWidth: number                  // 線幅
+    opacity: number                    // 不透明度
+}
+```
+
+### メソッド（実装済みのみ）
+```javascript
+// Manager連携
+setCanvasManager(canvasManager)        // CanvasManager設定
+
+// 描画イベント（実装済み）
+onPointerDown(x: number, y: number, event) // 描画開始
+onPointerMove(x: number, y: number, event) // 描画継続
+onPointerUp(x: number, y: number, event)   // 描画終了
+
+// 設定変更
+setPenColor(color: string|number)      // 色変更
+setPenWidth(width: number)             // 線幅変更  
+setPenOpacity(opacity: number)         // 不透明度変更
+
+// ユーティリティ
+getSettings()                          // 現在設定取得
+getDebugInfo()                         // デバッグ情報
+```
+
+## 🧹 EraserTool（tools/eraser-tool.js）
+
+### メソッド（定義のみ・未実装）
+```javascript
+// Manager連携
+setCanvasManager(canvasManager)        // CanvasManager設定
+
+// 消去イベント（未実装）
+onPointerDown(x: number, y: number, event) // 消去開始
+onPointerMove(x: number, y: number, event) // 消去継続  
+onPointerUp(x: number, y: number, event)   // 消去終了
+```
+
+## 🎨 TegakiIcons（assets/icons.js）- **新規追加**
+
+### プロパティ
+```javascript
+TegakiIcons = {
+    svgData: Object                    // SVG定義データ（9アイコン）
+    buttonMappings: Object             // ボタンID→アイコン名マッピング
+}
+```
+
+### メソッド（実装済み）
+```javascript
+// アイコン生成
+createIcon(iconName: string, options?: Object): SVGElement     // SVGアイコン要素作成
+
+// アイコン配置
+replaceButtonIcon(buttonId: string, iconName: string)          // 特定ボタンアイコン置換
+replaceAllToolIcons()                                         // 全ツールボタン一括置換（メイン機能）
+
+// ユーティリティ
+getDebugInfo(): Object                                        // デバッグ情報取得
+```
+
+### 対応アイコン（9種類）
+```javascript
+// SVG定義済みアイコン
+'download'   // ダウンロード（@tabler/icons）
+'resize'     // リサイズ（@tabler/icons） 
+'palette'    // カラーパレット（lucide-static）
+'pen'        // ベクターペン（lucide-static）
+'eraser'     // 消しゴム（lucide-static）
+'fill'       // 塗りつぶし（lucide-static）
+'select'     // 範囲選択（lucide-static）
+'layers'     // レイヤー（lucide-static）
+'settings'   // 設定（@tabler/icons）
+```
+
+### ボタンマッピング
+```javascript
+// ボタンID → アイコン名マッピング
+'download-tool' → 'download'
+'resize-tool'   → 'resize'
+'palette-tool'  → 'palette'
+'pen-tool'      → 'pen'
+'eraser-tool'   → 'eraser'
+'fill-tool'     → 'fill'
+'select-tool'   → 'select'
+'layers-tool'   → 'layers'
+'settings-tool' → 'settings'
+```
+
+## 🚨 ErrorManager（js/utils/error-manager.js）
+
+### プロパティ
+```javascript
+class ErrorManager {
+    errors: Array<ErrorRecord>         // エラー記録配列
+}
+```
+
+### メソッド（実装済み）
+```javascript
+// エラー表示（専任責務）
+showError(type: string, message: string, options?) // エラー表示
+showVisualNotification(type, message, options)     // 視覚通知
+
+// ショートカット
+showInfo(message: string, options?)    // 情報表示
+showWarning(message: string, options?) // 警告表示
+showCritical(message: string, options?) // 重要エラー表示
+
+// ユーティリティ
+getErrors(): Array                     // エラー記録取得
+clear()                               // エラー記録クリア
+
+// 内部（色設定）
+getBackgroundColor(type): string       // 背景色取得
+getTextColor(type): string            // テキスト色取得  
+getBorderColor(type): string          // ボーダー色取得
+```
+
+## 📡 EventBus（js/utils/event-bus.js）
+
+### メソッド（基本実装想定）
+```javascript
+// イベント配信（実装状況確認要）
+on(eventName: string, callback)       // イベント登録
+emit(eventName: string, data)         // イベント発火
+off(eventName: string, callback)      // イベント削除
+```
+
+## ⚙️ ConfigManager（js/utils/config-manager.js）
+
+### メソッド（基本実装想定）  
+```javascript
+// 設定管理（実装状況確認要）
+getCanvasConfig()                     // キャンバス設定取得
+getToolConfig(toolName: string)      // ツール設定取得
+```
+
+## 🔄 Phase1 アイコン内製化統合フロー
+
+### 🚀 初期化順序（HTML読み込み順序準拠）
+1. **PixiJS CDN** → PixiJS利用可能
+2. **error-manager.js** → ErrorManagerInstance 作成
+3. **config-manager.js** → ConfigManagerInstance 作成  
+4. **event-bus.js** → EventBusInstance 作成
+5. **minimal-deps.js** → 最小依存関係処理
+6. **assets/icons.js** → TegakiIcons 定義・利用可能 ★新規
+7. **canvas-manager.js** → CanvasManager クラス定義
+8. **tool-manager.js** → ToolManager クラス定義
+9. **pen-tool.js** → PenTool クラス定義
+10. **eraser-tool.js** → EraserTool クラス定義
+11. **app-core.js** → TegakiApplication クラス定義
+12. **main.js** → AppCore クラス定義
+13. **bootstrap.js** → TegakiApplication インスタンス化
+
+### 🎮 アイコン内製化フロー（新規追加）
+1. **TegakiApplication.setupUI()** → アイコン内製化開始
+2. **TegakiIcons.replaceAllToolIcons()** → 全ボタンアイコン一括置換
+3. **TegakiIcons.replaceButtonIcon()** × 9回 → 個別アイコン置換
+4. **TegakiIcons.createIcon()** × 9回 → SVG要素生成・DOM配置
+5. **ふたば風CSS適用** → `.futaba-icon` クラス統一デザイン
+6. **エラーハンドリング** → ErrorManager経由での通知
+
+### 🎨 アイコン生成・配置プロセス
+```javascript
+// 内部実行フロー
+TegakiIcons.replaceAllToolIcons()
+  ├── buttonMappings を反復処理
+  ├── TegakiIcons.replaceButtonIcon(buttonId, iconName) 
+  │   ├── document.getElementById(buttonId) でボタン取得
+  │   ├── 既存SVG削除 button.querySelector('svg').remove()
+  │   ├── TegakiIcons.createIcon(iconName) でSVG生成
+  │   │   ├── svgData[iconName] から定義取得
+  │   │   ├── document.createElementNS() でSVG要素作成
+  │   │   ├── viewBox・stroke・fill等の属性設定
+  │   │   ├── paths配列からpath要素生成・追加
+  │   │   └── .futaba-icon クラス適用
+  │   └── button.appendChild(iconSvg) でDOM配置
+  └── 成功・エラーカウント記録・ログ出力
+```
+
+## 🚫 Phase1 対象外（定義禁止・架空メソッド）
+
+### ❌ 未実装・Phase2以降
+```javascript
+// レイヤー管理（Phase2）
+LayerManager, LayerObject, LayerPanel
+
+// 非破壊編集（Phase2）  
+RecordManager, UndoRedoSystem, HistoryManager
+
+// アニメーション（Phase3）
+AnimationSequence, FrameManager, GIFExporter
+
+// 高度描画（Phase2-3）
+BrushTool, TextureTool, VectorPath
+
+// アイコン関連架空機能（禁止）
+IconAnimationManager, DynamicIconLoader, IconThemeManager
+```
+
+## 🔧 デバッグ・検証用シンボル
+
+### 🚨 実行時確認用
+```javascript
+// グローバル名前空間検証
+console.assert(window.Tegaki.TegakiIcons, 'TegakiIcons not available');
+console.assert(window.Tegaki.TegakiApplication, 'TegakiApplication not available');
+
+// アイコン機能検証
+const debugInfo = window.Tegaki.TegakiIcons.getDebugInfo();
+console.log('🎨 Icons Debug:', debugInfo);
+
+// SVG要素確認
+const testIcon = window.Tegaki.TegakiIcons.createIcon('pen');
+console.assert(testIcon.tagName === 'svg', 'Icon creation failed');
+```
+
+### 📊 デバッグ情報構造
+```javascript
+// TegakiIcons.getDebugInfo() 戻り値
+{
+    iconCount: 9,                    // 定義済みアイコン数
+    buttonMappingCount: 9,           // マッピング数
+    availableIcons: [                // 利用可能アイコンリスト
+        'download', 'resize', 'palette', 'pen', 'eraser', 
+        'fill', 'select', 'layers', 'settings'
+    ],
+    buttonMappings: {                // ボタン→アイコンマッピング
+        'download-tool': 'download',
+        'resize-tool': 'resize',
+        // ... 他7つ
+    }
+}
+```
+
+## 📚 実装完了確認チェックリスト
+
+### ✅ Phase1アイコン内製化 確認項目
+- [x] **assets/icons.js** 作成・9アイコン定義完了
+- [x] **window.Tegaki.TegakiIcons** グローバル登録完了
+- [x] **TegakiApplication.setupUI()** 統合完了
+- [x] **index.html** 読み込み順序追加完了
+- [x] **シンボル辞典** 更新完了
+- [ ] **動作確認** 全ボタンアイコン置換成功
+- [ ] **エラーハンドリング** ErrorManager経由通知確認
+- [ ] **デザイン統一** ふたば風スタイル適用確認
+- [ ] **オフライン動作** 外部依存なし確認
+
+---
+
+📝 **更新方針**: 実装完了後に本辞典に追加・架空メソッド呼び出し厳禁
+🎯 **検証方法**: 各ファイルで `window.Tegaki.XXX` が存在することを確認
+💀 **基本原則**: 実装されていないメソッドは呼び出し禁止・二重実装禁止
+🎨 **アイコン内製化**: node_modules完全排除・静的リソース・1ファイル完結
