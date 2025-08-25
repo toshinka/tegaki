@@ -1,11 +1,11 @@
 /**
- * 🖊️ AppCore Simple - シンプル版（剛直設計）
+ * 🖊️ AppCore - Manager束ね専用（剛直設計）
  * 📋 RESPONSIBILITY: Manager束ね・Manager間連携のみ
  * 🚫 PROHIBITION: 描画処理・UI操作・エラー処理・複雑な設定管理
  * ✅ PERMISSION: Manager作成・連携設定・初期化制御
  * 
  * 📏 DESIGN_PRINCIPLE: Manager統合専門・シンプル・直線的
- * 🔄 INTEGRATION: CanvasManager + ToolManager のみ（Phase1剛直版）
+ * 🔄 INTEGRATION: TegakiApplication から呼び出され・CanvasManager + ToolManager を束ねる
  */
 
 // if (!window.XXX) ガードで多重定義を防ぐ
@@ -15,12 +15,12 @@ if (!window.Tegaki) {
 
 if (!window.Tegaki.AppCore) {
     /**
-     * AppCore - シンプル版（Phase1剛直設計）
+     * AppCore - Manager統合専用クラス
      * CanvasManager + ToolManager の統合管理のみ
      */
     class AppCore {
         constructor() {
-            console.log('🖊️ AppCore シンプル版作成');
+            console.log('🖊️ AppCore Manager統合専用版作成');
             
             this.initialized = false;
             this.canvasManager = null;
@@ -32,7 +32,7 @@ if (!window.Tegaki.AppCore) {
          */
         async initialize() {
             try {
-                console.log('🚀 AppCore - シンプル初期化開始');
+                console.log('🚀 AppCore - Manager統合初期化開始');
                 
                 // 1. CanvasManager作成
                 await this.initializeCanvasManager();
@@ -42,7 +42,7 @@ if (!window.Tegaki.AppCore) {
                 
                 // 3. 初期化完了
                 this.initialized = true;
-                console.log('✅ AppCore - シンプル初期化完了');
+                console.log('✅ AppCore - Manager統合初期化完了');
                 
                 return true;
                 
@@ -78,7 +78,7 @@ if (!window.Tegaki.AppCore) {
             
             this.toolManager = new window.Tegaki.ToolManager();
             
-            // 依存関係設定（シンプル）
+            // 依存関係設定（CanvasManager注入）
             this.toolManager.setCanvasManager(this.canvasManager);
             
             // グローバル参照作成（デバッグ用）
@@ -126,8 +126,7 @@ if (!window.Tegaki.AppCore) {
             return this.initialized && 
                    !!this.canvasManager && 
                    this.canvasManager.isReady() &&
-                   !!this.toolManager &&
-                   this.toolManager.isReady();
+                   !!this.toolManager;
         }
         
         /**
@@ -138,7 +137,7 @@ if (!window.Tegaki.AppCore) {
             
             const checks = {
                 canvasManagerReady: this.canvasManager?.isReady() || false,
-                toolManagerReady: this.toolManager?.isReady() || false,
+                toolManagerReady: !!this.toolManager,
                 pixiAppSet: !!this.canvasManager?.getPixiApp(),
                 layersCreated: (this.canvasManager?.layers?.size || 0) > 0,
                 toolsCreated: (this.toolManager?.tools?.size || 0) > 0
@@ -174,75 +173,6 @@ if (!window.Tegaki.AppCore) {
         }
         
         /**
-         * ツール選択（便利メソッド）
-         */
-        selectTool(toolName) {
-            return this.toolManager?.selectTool(toolName) || false;
-        }
-        
-        /**
-         * キャンバスクリア（便利メソッド）
-         */
-        clearCanvas() {
-            if (this.canvasManager) {
-                this.canvasManager.clear();
-                return true;
-            }
-            return false;
-        }
-        
-        /**
-         * 色変更（シンプル版）
-         */
-        setColor(color) {
-            const currentTool = this.toolManager?.getCurrentTool();
-            if (currentTool && currentTool.setPenColor) {
-                currentTool.setPenColor(color);
-                return true;
-            }
-            return false;
-        }
-        
-        /**
-         * 線幅変更（シンプル版）
-         */
-        setLineWidth(width) {
-            const currentTool = this.toolManager?.getCurrentTool();
-            if (currentTool && currentTool.setPenWidth) {
-                currentTool.setPenWidth(width);
-                return true;
-            }
-            return false;
-        }
-        
-        /**
-         * 透明度変更（シンプル版）
-         */
-        setOpacity(opacity) {
-            const currentTool = this.toolManager?.getCurrentTool();
-            if (currentTool && currentTool.setPenOpacity) {
-                currentTool.setPenOpacity(opacity);
-                return true;
-            } else if (currentTool && currentTool.setEraserOpacity) {
-                currentTool.setEraserOpacity(opacity);
-                return true;
-            }
-            return false;
-        }
-        
-        /**
-         * 消しゴムサイズ変更（シンプル版）
-         */
-        setEraserSize(size) {
-            const currentTool = this.toolManager?.getCurrentTool();
-            if (currentTool && currentTool.setEraserSize) {
-                currentTool.setEraserSize(size);
-                return true;
-            }
-            return false;
-        }
-        
-        /**
          * クリーンアップ
          */
         destroy() {
@@ -257,7 +187,7 @@ if (!window.Tegaki.AppCore) {
         }
         
         /**
-         * デバッグ情報取得
+         * デバッグ情報取得（必須実装）
          */
         getDebugInfo() {
             return {
@@ -272,9 +202,9 @@ if (!window.Tegaki.AppCore) {
     // Tegaki名前空間に登録
     window.Tegaki.AppCore = AppCore;
     
-    console.log('🖊️ AppCore シンプル版 Loaded');
+    console.log('🖊️ AppCore Manager統合版 Loaded');
 } else {
     console.log('⚠️ AppCore already defined - skipping redefinition');
 }
 
-console.log('🖊️ main.js loaded - シンプル統合管理完了');
+console.log('🖊️ main.js loaded - Manager統合管理完了');
