@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --futaba-maroon: #800000;
+            --futaba-light-maroon: #aa5a56;
+            --futaba-medium: #cf9c97;
+            --futaba-light-medium: #e9c2ba;
+            --futaba-cream: #f0e0d6;
+            --futaba-background: #ffffee;
+            
+            --text-primary: #2c1810;
+            --text-secondary: #5d4037;
+            --text-inverse: #ffffff;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+            background: var(--futaba-background);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .main-layout {
+            display: grid;
+            grid-template-columns: 50px 1fr;
+            height: 100vh;
+            width: 100vw;
+            gap: 0;
+        }
+        
+        .sidebar {
+            background: var(--futaba-cream);
+            border-right: 2px solid var(--futaba-light-medium);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 6px;
+            gap: 4px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 100;
+        }
+        
+        .tool-button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid var(--futaba-light-medium);
+            background: var(--futaba-background);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--futaba-maroon);
+            position: relative;
+            user-select: none;
+        }
+        
+        .tool-button svg {
+            width: 20px;
+            height: 20px;
+        }
+        
+        /* ふたば風統一アイコンスタイル */
+        .futaba-icon {
+            width: 20px;
+            height: 20px;
+            stroke: var(--futaba-maroon);
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            fill: none;
+        }
+        
+        .tool-button:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-light-maroon);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+        }
+        
+        .tool-button.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+            border-color: var(--futaba-maroon);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+        
+        /* アクティブ状態のアイコンスタイル */
+        .tool-button.active .futaba-icon {
+            stroke: var(--text-inverse);
+        }
+        
+        .tool-button.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        
+        /* 無効状態のアイコンスタイル */
+        .tool-button.disabled .futaba-icon {
+            opacity: 0.4;
+        }
+        
+        .tool-button.disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .tool-separator {
+            height: 1px;
+            background: var(--futaba-light-medium);
+            margin: 4px 2px;
+        }
+        
+        .canvas-area {
+            background: var(--futaba-background);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .canvas-container {
+            background: transparent;
+            border: none;
+            border-radius: 0;
+            box-shadow: none;
+            overflow: visible;
+            position: relative;
+        }
+        
+        #canvas-container {
+            display: block;
+        }
+        
+        #canvas-container canvas {
+            display: block;
+            cursor: crosshair;
+        }
+        
+        .status-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 70px;
+            right: 20px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-medium);
+            border-radius: 12px;
+            padding: 8px 16px;
+            font-family: monospace;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            z-index: 50;
+        }
+        
+        .status-group {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-layout">
+        <div class="sidebar">
+            <!-- アイコンはJavaScriptで動的に生成・配置 -->
+            <div class="tool-button disabled" id="download-tool" title="ダウンロード"></div>
+            <div class="tool-button disabled" id="resize-tool" title="リサイズ"></div>
+            
+            <div class="tool-separator"></div>
+                   
+            <div class="tool-button disabled" id="palette-tool" title="カラーパレット"></div>
+            <div class="tool-button active" id="pen-tool" title="ベクターペン"></div>
+            <div class="tool-button" id="eraser-tool" title="消しゴム"></div>
+            
+            <div class="tool-separator"></div>
+            
+            <div class="tool-button disabled" id="fill-tool" title="塗りつぶし"></div>
+            <div class="tool-button disabled" id="select-tool" title="範囲選択"></div>
+            
+            <div class="tool-separator"></div>
+            
+            <div class="tool-button" id="layers-tool" title="レイヤー"></div>
+            <div class="tool-button disabled" id="settings-tool" title="設定"></div>
+        </div>
+        
+        <div class="canvas-area">
+            <div class="canvas-container">
+                <div id="canvas-container"></div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
+            <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
+            <div class="status-item">Color: <span id="current-color">#800000</span></div>
+            <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
+            <div class="status-item">筆圧: <span id="pressure-monitor">0.0%</span></div>
+        </div>
+        
+        <div class="status-group">
+            <div class="status-item">FPS: <span id="fps">60</span></div>
+            <div class="status-item">GPU: <span id="gpu-usage">45%</span></div>
+            <div class="status-item">Memory: <span id="memory-usage">1.2GB</span></div>
+            <div class="status-item">Layers: <span id="layer-count">2</span></div>
+        </div>
+    </div>
+
+    <!-- PixiJS CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
+    
+    <!-- 📋 修正版読み込み順序（依存関係準拠・競合回避） -->
+    
+    <!-- 1. Utils（依存なし・インスタンス自動作成） -->
+    <script src="js/utils/error-manager.js"></script>
+    <script src="js/utils/config-manager.js"></script>
+    <script src="js/utils/event-bus.js"></script>
+    
+    <!-- 2. Assets（UIリソース） -->
+    <script src="assets/icons.js"></script>
+    
+    <!-- 3. Managers（Utils依存） -->
+    <script src="managers/canvas-manager.js"></script>
+    <script src="managers/tool-manager.js"></script>
+    
+    <!-- 4. Tools（Managers依存） -->
+    <script src="tools/pen-tool.js"></script>
+    <script src="tools/eraser-tool.js"></script>
+    
+    <!-- 5. App（全依存・順序重要） -->
+    <script src="js/main.js"></script>         <!-- AppCore定義 -->
+    <script src="js/app-core.js"></script>     <!-- TegakiApplication定義 -->
+    
+    <!-- 6. Bootstrap（App依存） -->
+    <script src="js/bootstrap.js"></script>
+    
+    <!-- 7. 名前倉庫（競合回避のため最後・Phase1では不要） -->
+    <!-- <script src="js/utils/minimal-deps.js"></script> -->
+    
+</body>
+</html>
