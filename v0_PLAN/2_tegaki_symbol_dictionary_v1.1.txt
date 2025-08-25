@@ -1,15 +1,26 @@
-# 📚 Tegaki シンボル辞典 Phase1-rev4 レイヤー分離版
+# 📚 Tegaki シンボル辞典 v1.1 - 現実準拠版
 
-> **レイヤー分離実装分** - 真の消去機能・背景保護・剛直設計維持
+> **実際に存在するクラス・メソッドのみ記載** - 架空メソッド記載厳禁
 
-## 🌐 グローバル名前空間
+## 🚨 重要な注意：現実との乖離を修正
 
-### window.Tegaki.*（必須）
+### ❌ 前版の問題
+- **架空メソッド記載**: 実装されていないメソッドを「実装済み」と記載
+- **クラス重複無視**: `AppCore`が3ファイルで定義されている問題を記載せず
+- **TegakiIcons無視**: 実装済みの`TegakiIcons`が辞典に記載されていない
+
+### ✅ 修正方針
+- **実装確認済みのみ記載**
+- **重複問題明記**
+- **現実のファイル構造反映**
+
+## 🌐 グローバル名前空間（現実版）
+
+### window.Tegaki.*（実際に存在）
 ```javascript
 window.Tegaki = {
-    // クラス定義
-    TegakiApplication,          // app-core.js で定義
-    AppCore,                    // main.js で定義  
+    // クラス定義（実在確認済み）
+    AppCore,                    // main.js で定義（Manager束ね版）
     CanvasManager,              // canvas-manager.js で定義
     ToolManager,                // tool-manager.js で定義
     PenTool,                    // pen-tool.js で定義
@@ -17,446 +28,210 @@ window.Tegaki = {
     ErrorManager,               // error-manager.js で定義
     ConfigManager,              // config-manager.js で定義
     EventBus,                   // event-bus.js で定義
+    TegakiIcons,               // icons.js で定義（重要：前版で記載漏れ）
     
     // インスタンス（自動作成）
     ErrorManagerInstance,       // error-manager.js で作成
     ConfigManagerInstance,      // config-manager.js で作成
     EventBusInstance,          // event-bus.js で作成
-    CanvasManagerInstance,     // main.js で作成
-    ToolManagerInstance        // main.js で作成
+    
+    // 注意：以下は動的に作成される
+    CanvasManagerInstance,     // main.js AppCore.initialize()で作成
+    ToolManagerInstance        // main.js AppCore.initialize()で作成
 };
-
-// デバッグ用グローバル参照
-window.TegakiAppInstance;      // bootstrap.js で作成
 ```
 
-## 🎯 TegakiApplication（app-core.js）
-
-### プロパティ
+### ❌ 存在しないが参照されているクラス
 ```javascript
-class TegakiApplication {
-    initialized: boolean        // 初期化状態
-    pixiApp: PIXI.Application  // PixiJS Application
-    appCore: AppCore           // AppCore インスタンス
-}
+// bootstrap.jsが探しているが存在しない
+window.Tegaki.TegakiApplication    // app-core.jsで定義すべきだが現在はAppCore
 ```
 
-### メソッド（実装済みのみ）
+### ⚠️ 重複定義問題
 ```javascript
-// 初期化
-constructor()                           // インスタンス化・自動初期化
-async initialize()                      // 基本初期化実行
-async initializeAppCore()              // AppCore作成・初期化
-createCanvas()                         // PixiJS Application作成・DOM配置
-setupUI()                             // UIイベント設定
-
-// イベント処理  
-setupCanvasEvents()                    // キャンバスイベント設定
-setupToolButtons()                     // ツールボタンイベント
-selectTool(toolName: string)           // ツール選択
-updateToolButtons(activeToolName)      // ツールボタンUI更新
-updateStatusDisplay()                  // ステータス表示更新
-
-// ポインターイベント
-handlePointerDown(e: PointerEvent)     // ポインター押下
-handlePointerMove(e: PointerEvent)     // ポインター移動  
-handlePointerUp(e: PointerEvent)       // ポインター解放
-
-// ユーティリティ
-showSuccessMessage()                   // 起動完了通知
+// 同じAppCoreが3ファイルで定義されている
+main.js:         window.Tegaki.AppCore = AppCore;      // Manager束ね版
+app-core.js:     window.Tegaki.AppCore = AppCore;      // 同名で上書き
+minimal-deps.js: window.Tegaki.AppCore = AppCore;      // 最小限版で上書き
 ```
 
-## 🖊️ AppCore（main.js）- レイヤー分離対応版
+## 🖊️ AppCore（main.js版）- 実装確認済み
 
-### プロパティ
+### 実装済みメソッド
 ```javascript
-class AppCore {
-    initialized: boolean       // 初期化状態
-    canvasManager: CanvasManager    // CanvasManager参照
-    toolManager: ToolManager   // ToolManager参照
-}
-```
-
-### メソッド（実装済みのみ）
-```javascript
-// 初期化
 constructor()                          // インスタンス作成
 async initialize()                     // Manager作成・連携設定
-async initializeCanvasManager()        // CanvasManager初期化
-async initializeToolManager()          // ToolManager初期化
-
-// Manager管理
-setPixiApp(pixiApp: PIXI.Application) // CanvasManagerにPixiApp設定
+setPixiApp(pixiApp)                   // CanvasManagerにPixiApp設定
 getCanvasManager()                     // CanvasManager取得
 getToolManager()                       // ToolManager取得
-
-// 状態確認
-isReady(): boolean                     // 初期化完了確認
-performBasicChecks()                   // 基本機能確認
-
-// ライフサイクル
+isReady()                             // 初期化完了確認
 start()                               // アプリケーション開始
-destroy()                             // クリーンアップ
 getDebugInfo()                        // デバッグ情報取得
 
-// 便利メソッド（シンプル設定変更）
-selectTool(toolName: string)          // ツール選択
+// 便利メソッド（main.js版で追加確認）
+selectTool(toolName)                  // ツール選択
 clearCanvas()                         // キャンバスクリア
-setColor(color: string|number)        // 色変更
-setLineWidth(width: number)           // 線幅変更
-setOpacity(opacity: number)           // 透明度変更
-setEraserSize(size: number)           // 消しゴムサイズ変更
+setColor(color)                       // 色変更
+setLineWidth(width)                   // 線幅変更
+setOpacity(opacity)                   // 透明度変更
+setEraserSize(size)                   // 消しゴムサイズ変更
+destroy()                             // クリーンアップ
 ```
 
-## 🎨 CanvasManager（managers/canvas-manager.js）- レイヤー分離版
+## ❌ AppCore（app-core.js版）- 重複問題
 
-### プロパティ
+### 問題
+- **同じクラス名**: `main.js`と競合
+- **役割不明**: TegakiApplicationを定義すべきだが名前が違う
+- **修正必要**: `TegakiApplication`に名前変更
+
+## 🎨 CanvasManager（managers/canvas-manager.js）- 実装確認済み
+
+### 実装済みメソッド
 ```javascript
-class CanvasManager {
-    pixiApp: PIXI.Application          // PixiJS Application参照
-    layers: Map<string, PIXI.Container> // レイヤーMap
-    activeLayerId: string              // アクティブレイヤーID
-    initialized: boolean               // 初期化状態
-}
-```
-
-### メソッド（実装済みのみ）  
-```javascript
-// PixiJS管理
-setPixiApp(pixiApp: PIXI.Application) // PixiJS Application設定
-getPixiApp(): PIXI.Application        // PixiJS Application取得
-
-// レイヤー分離構造
-createLayerStructure()                // layer0(背景) + layer1(描画) 作成
-createLayer(layerId: string): PIXI.Container    // 汎用レイヤー作成
-getLayer(layerId: string): PIXI.Container       // レイヤー取得  
-
-// レイヤー操作
-setActiveLayer(layerId: string)       // アクティブレイヤー設定
-getActiveLayer(): PIXI.Container      // アクティブレイヤー取得
-getActiveLayerId(): string            // アクティブレイヤーID取得
-getMainLayer(): PIXI.Container        // メインレイヤー取得（互換性）
-getBackgroundLayer(): PIXI.Container  // 背景レイヤー取得
-getDrawingLayer(): PIXI.Container     // 描画レイヤー取得
-
-// Graphics配置
-addGraphicsToLayer(graphics, layerId) // Graphics配置（アクティブレイヤー優先）
-eraseFromActiveLayer(graphics)        // アクティブレイヤーから消去
-
-// キャンバス操作
-clear()                               // アクティブレイヤークリア（背景保護）
-clearAllDrawingLayers()               // 全描画レイヤークリア（背景保護）
-clearLayer(layerId: string)           // 特定レイヤークリア（背景保護）
-resizeCanvas(width: number, height: number)     // サイズ変更
-
-// ユーティリティ
-isReady(): boolean                    // 準備状態確認
+constructor()                          // インスタンス作成
+setPixiApp(pixiApp)                   // PixiJS Application設定
+createLayerStructure()                // layer0(背景) + layer1(描画)作成
+createLayer(layerId)                  // レイヤー作成
+addGraphicsToLayer(graphics, layerId) // Graphics配置
+setActiveLayer(layerId)               // アクティブレイヤー設定
+getActiveLayer()                      // アクティブレイヤー取得
+getActiveLayerId()                    // アクティブレイヤーID取得
+getLayer(layerId)                     // レイヤー取得
+getMainLayer()                        // メインレイヤー取得
+clear()                               // アクティブレイヤークリア
+clearLayer(layerId)                   // 特定レイヤークリア
+resizeCanvas(width, height)           // サイズ変更
+getPixiApp()                          // PixiJS Application取得
+isReady()                             // 準備状態確認
 getDebugInfo()                        // デバッグ情報
 ```
 
-## 🖊️ ToolManager（managers/tool-manager.js）- シンプル版
+## 🖊️ ToolManager（managers/tool-manager.js）- 実装確認済み
 
-### プロパティ
+### 実装済みメソッド
 ```javascript
-class ToolManager {
-    canvasManager: CanvasManager       // CanvasManager参照
-    currentTool: Tool                  // 現在選択ツール
-    currentToolName: string            // 現在ツール名
-    tools: Map<string, Tool>           // ツールMap
-    initialized: boolean               // 初期化状態
-}
-```
-
-### メソッド（実装済みのみ）
-```javascript
-// Manager連携
+constructor()                          // インスタンス作成
 setCanvasManager(canvasManager)        // CanvasManager設定
-
-// ツール管理
-createTools()                          // ツール作成（内部）
-selectTool(toolName: string)           // ツール選択
-getCurrentTool(): Tool                 // 現在ツール取得
-getCurrentToolName(): string           // 現在ツール名取得
-
-// イベント転送
-handlePointerDown(x: number, y: number, event) // ポインター押下転送
-handlePointerMove(x: number, y: number, event) // ポインター移動転送  
-handlePointerUp(x: number, y: number, event)   // ポインター解放転送
-
-// ユーティリティ
-getAvailableTools(): Array<string>     // 利用可能ツール一覧
-getToolInfo(toolName: string)          // ツール情報取得
-isReady(): boolean                     // 初期化状態確認
+createTools()                          // ツール作成
+selectTool(toolName)                   // ツール選択
+getCurrentTool()                       // 現在ツール取得
+getCurrentToolName()                   // 現在ツール名取得
+handlePointerDown(x, y, event)        // ポインター押下転送
+handlePointerMove(x, y, event)         // ポインター移動転送
+handlePointerUp(x, y, event)          // ポインター解放転送
+getAvailableTools()                    // 利用可能ツール一覧
+getToolInfo(toolName)                  // ツール情報取得
+isReady()                             // 準備状態確認
 getDebugInfo()                        // デバッグ情報
 ```
 
-## ✏️ PenTool（tools/pen-tool.js）- レイヤー分離対応版
+## ✏️ PenTool（tools/pen-tool.js）- 実装確認済み
 
-### プロパティ
+### 実装済みメソッド
 ```javascript
-class PenTool {
-    canvasManager: CanvasManager       // CanvasManager参照
-    isDrawing: boolean                 // 描画状態
-    currentPath: PIXI.Graphics         // 現在の描画パス
-    points: Array<{x, y}>             // 描画点配列
-    
-    // 描画設定
-    color: number                      // 線色（16進数）
-    lineWidth: number                  // 線幅
-    opacity: number                    // 不透明度
-    smoothing: boolean                 // スムージング
-    pressureSensitive: boolean         // 筆圧感度
-}
-```
-
-### メソッド（実装済みのみ）
-```javascript
-// Manager連携
+constructor()                          // インスタンス作成
 setCanvasManager(canvasManager)        // CanvasManager設定
-
-// 描画イベント（実装済み）
-onPointerDown(x: number, y: number, event) // 描画開始
-onPointerMove(x: number, y: number, event) // 描画継続
-onPointerUp(x: number, y: number, event)   // 描画終了
-
-// 内部処理
-drawSmoothLine()                      // スムーズな曲線描画
-
-// 設定変更
-setPenColor(color: string|number)      // 色変更
-setPenWidth(width: number)             // 線幅変更  
-setPenOpacity(opacity: number)         // 不透明度変更
-setSmoothing(enabled: boolean)         // スムージング設定
-
-// ユーティリティ
-getSettings()                          // 現在設定取得
-getDebugInfo()                         // デバッグ情報
-```
-
-## 🧹 EraserTool（tools/eraser-tool.js）- 真の消去機能版
-
-### プロパティ
-```javascript
-class EraserTool {
-    canvasManager: CanvasManager       // CanvasManager参照
-    isErasing: boolean                 // 消去状態
-    currentGraphics: PIXI.Graphics     // 現在の消去Graphics
-    eraserPath: Array<{x, y}>         // 消去パス配列
-    
-    // 消去設定
-    eraserSize: number                 // 消しゴムサイズ
-    eraserOpacity: number              // 消しゴム透明度
-}
-```
-
-### メソッド（実装済み）
-```javascript
-// Manager連携
-setCanvasManager(canvasManager)        // CanvasManager設定
-
-// 消去イベント（実装済み）
-onPointerDown(x: number, y: number, event) // 消去開始
-onPointerMove(x: number, y: number, event) // 消去継続  
-onPointerUp(x: number, y: number, event)   // 消去終了
-
-// 設定変更
-setEraserSize(size: number)           // 消しゴムサイズ変更
-setEraserOpacity(opacity: number)     // 消しゴム透明度変更
-
-// ユーティリティ
-getSettings()                         // 現在設定取得
+onPointerDown(x, y, event)            // 描画開始
+onPointerMove(x, y, event)            // 描画継続
+onPointerUp(x, y, event)              // 描画終了
+drawSmoothLine()                      // スムーズ曲線描画
+setPenColor(color)                    // 色設定
+setPenWidth(width)                    // 線幅設定
+setPenOpacity(opacity)                // 透明度設定
+setSmoothing(enabled)                 // スムージング設定
+getSettings()                         // 設定取得
 getDebugInfo()                        // デバッグ情報
 ```
 
-## 🚨 ErrorManager（js/utils/error-manager.js）
+## 🧹 EraserTool（tools/eraser-tool.js）- 実装確認済み
 
-### プロパティ
+### 実装済みメソッド
 ```javascript
-class ErrorManager {
-    errors: Array<ErrorRecord>         // エラー記録配列
+constructor()                          // インスタンス作成
+setCanvasManager(canvasManager)        // CanvasManager設定
+onPointerDown(x, y, event)            // 消去開始（ERASE blend mode）
+onPointerMove(x, y, event)            // 消去継続
+onPointerUp(x, y, event)              // 消去終了
+setEraserSize(size)                   // 消しゴムサイズ設定
+setEraserOpacity(opacity)             // 消しゴム透明度設定
+getSettings()                         // 設定取得
+getDebugInfo()                        // デバッグ情報
+```
+
+## 🎯 TegakiIcons（assets/icons.js）- 実装確認済み
+
+### 重要：前版で記載漏れのクラス
+```javascript
+window.Tegaki.TegakiIcons = {
+    svgData: { ... }                      // SVG定義データ
+    buttonMappings: { ... }               // ボタンID→アイコン名マッピング
+    createIcon(iconName, options)         // SVGアイコン要素作成
+    replaceButtonIcon(buttonId, iconName) // 特定ボタンアイコン置換
+    replaceAllToolIcons()                 // 全ツールボタンアイコン一括置換★重要
+    getDebugInfo()                        // デバッグ情報
 }
 ```
 
-### メソッド（実装済み）
+## 🚨 ErrorManager（js/utils/error-manager.js）- 実装確認済み
+
+### 実装済みメソッド
 ```javascript
-// エラー表示（専任責務）
-showError(type: string, message: string, options?) // エラー表示
-showVisualNotification(type, message, options)     // 視覚通知
-
-// ショートカット
-showInfo(message: string, options?)    // 情報表示
-showWarning(message: string, options?) // 警告表示
-showCritical(message: string, options?) // 重要エラー表示
-
-// ユーティリティ
-getErrors(): Array                     // エラー記録取得
+constructor()                          // インスタンス作成
+showError(type, message, options)      // エラー表示
+showVisualNotification(type, message, options) // 視覚通知
+showInfo(message, options)             // 情報表示
+showWarning(message, options)          // 警告表示
+showCritical(message, options)         // 重要エラー表示
+getBackgroundColor(type)              // 背景色取得
+getTextColor(type)                    // テキスト色取得
+getBorderColor(type)                  // ボーダー色取得
+getErrors()                           // エラー記録取得
 clear()                               // エラー記録クリア
-
-// 内部（色設定）
-getBackgroundColor(type): string       // 背景色取得
-getTextColor(type): string            // テキスト色取得  
-getBorderColor(type): string          // ボーダー色取得
 ```
 
-## 📡 EventBus（js/utils/event-bus.js）
+## ❌ 存在しないクラス（要修正）
 
-### メソッド（基本実装想定）
+### 🚨 bootstrap.jsが探しているが存在しない
 ```javascript
-// イベント配信（実装状況確認要）
-on(eventName: string, callback)       // イベント登録
-emit(eventName: string, data)         // イベント発火
-off(eventName: string, callback)      // イベント削除
+window.Tegaki.TegakiApplication        // app-core.jsで定義すべき
 ```
 
-## ⚙️ ConfigManager（js/utils/config-manager.js）
-
-### メソッド（基本実装想定）  
+### ⚠️ minimal-deps.jsで定義されているが不要
 ```javascript
-// 設定管理（実装状況確認要）
-getCanvasConfig()                     // キャンバス設定取得
-getToolConfig(toolName: string)      // ツール設定取得
+// 実際の実装と競合するため削除すべき
+StateManager, CoordinateManager, Performance, PopupManager,
+SliderManager, UIManager, MemoryManager, SettingsManager,
+BoundaryManager, AbstractTool
 ```
 
-## 🎨 レイヤー構造（Phase1レイヤー分離版）
+## 🔧 緊急修正項目
 
-### レイヤー分離構造
+### 1. **app-core.js修正**
 ```javascript
-// layer0: 背景レイヤー（固定・消去対象外）
-const backgroundLayer = {
-    id: 'layer0',
-    zIndex: 0,
-    type: 'background',
-    protected: true,           // 消去・クリア禁止
-    description: 'キャンバス背景専用'
-};
-
-// layer1: 描画レイヤー（アクティブ・消去対象）
-const drawingLayer = {
-    id: 'layer1', 
-    zIndex: 1,
-    type: 'drawing',
-    protected: false,          // 描画・消去可能
-    description: 'ペン描画・消しゴム対象'
-};
+// 現在: class AppCore { ... }
+// 修正: class TegakiApplication { ... }
 ```
 
-### レイヤー操作ルール
+### 2. **minimal-deps.js対処**
 ```javascript
-// ✅ 許可される操作
-canvasManager.setActiveLayer('layer1');        // 描画レイヤーをアクティブ
-canvasManager.addGraphicsToLayer(graphics);    // アクティブレイヤーに追加
-canvasManager.clearLayer('layer1');            // 描画レイヤーのクリア
-canvasManager.eraseFromActiveLayer(graphics);  // アクティブレイヤーから消去
-
-// 🚫 禁止される操作
-canvasManager.setActiveLayer('layer0');        // 背景レイヤーはアクティブ禁止
-canvasManager.clearLayer('layer0');            // 背景レイヤーのクリア禁止
+// AppCoreなど競合クラス定義を削除
+// 未実装クラスのみ残す
 ```
 
-## 🧹 消去機能（ERASE blend mode）
-
-### 真の消去システム
+### 3. **アイコン呼び出し追加**
 ```javascript
-// EraserTool の消去処理
-const eraseGraphics = new PIXI.Graphics();
-eraseGraphics.blendMode = PIXI.BLEND_MODES.ERASE;  // 真の消去モード
-eraseGraphics.lineStyle(eraserSize, 0x000000);     // 色は関係なし
-eraseGraphics.drawCircle(x, y, eraserSize / 2);    // 消去範囲
-
-// アクティブレイヤーに追加（消去実行）
-activeLayer.addChild(eraseGraphics);
+// TegakiApplication.setupUI()に追加
+window.Tegaki.TegakiIcons.replaceAllToolIcons();
 ```
 
-### 消去保護システム
-```javascript
-// 背景レイヤー保護
-if (activeLayerId === 'layer0') {
-    console.warn('⚠️ 背景レイヤーの消去は禁止されています');
-    return; // 消去処理中止
-}
+### 4. **HTML読み込み順序修正**
+```html
+<!-- minimal-deps.jsを削除 or 最後に移動 -->
 ```
-
-## 🎮 設定変更システム（Phase1シンプル版）
-
-### AppCore経由の設定変更
-```javascript
-// 色変更（現在ツールに適用）
-appCore.setColor('#ff0000');          // 文字列色
-appCore.setColor(0xff0000);           // 数値色
-
-// 線幅変更
-appCore.setLineWidth(8);              // ペン線幅
-
-// 透明度変更
-appCore.setOpacity(0.5);              // 半透明
-
-// 消しゴムサイズ変更（消しゴム選択時）
-appCore.setEraserSize(30);            // 消しゴムサイズ
-```
-
-### ツール直接の設定変更
-```javascript
-// PenTool設定
-const penTool = toolManager.getCurrentTool();
-penTool.setPenColor('#800000');       // 色変更
-penTool.setPenWidth(4);               // 線幅変更
-penTool.setPenOpacity(1.0);           // 透明度変更
-penTool.setSmoothing(true);           // スムージング
-
-// EraserTool設定
-const eraserTool = toolManager.getCurrentTool();
-eraserTool.setEraserSize(20);         // サイズ変更
-eraserTool.setEraserOpacity(1.0);     // 透明度変更
-```
-
-## 🚫 Phase1 対象外（定義禁止・架空メソッド）
-
-### ❌ 未実装・Phase1.5以降
-```javascript
-// 設定管理（Phase1.5）
-SettingsManager, SettingsPanel, ConfigStore
-
-// キャンバス移動（Phase1.5）
-NavigationManager, CameraManager, TransformSystem
-
-// 非破壊編集（Phase1.5）
-RecordManager, UndoRedoSystem, HistoryManager
-
-// レイヤー管理（Phase2）
-LayerManager, LayerObject, LayerPanel
-
-// アニメーション（Phase3）
-AnimationSequence, FrameManager, GIFExporter
-
-// 高度描画（Phase2-3）
-BrushTool, TextureTool, VectorPath
-```
-
-## 📋 Phase1 実装状況確認
-
-### ✅ 実装完了
-- [x] PixiJS キャンバス作成・表示
-- [x] レイヤー分離構造（layer0背景 + layer1描画）
-- [x] ベクターペン描画（スムージング・設定変更対応）
-- [x] 真の消去機能（ERASE blend mode・背景保護）
-- [x] ツール切り替え（ペン・消しゴム）
-- [x] ポインターイベント処理（マウス・タッチ）
-- [x] エラー表示システム（視覚通知）
-- [x] 基本UI（ふたば風デザイン・ステータス表示）
-- [x] シンプル設定変更（色・線幅・透明度・消しゴムサイズ）
-
-### ❌ Phase1残作業
-- [ ] 基本設定UI（簡易カラーピッカー・スライダー）
-- [ ] 描画品質向上（アンチエイリアス・パフォーマンス）
-- [ ] エラーハンドリング改善
-
-### ⚡ Phase1.5準備完了
-- [x] レイヤー分離基盤（キャンバス移動の前提）
-- [x] 真の消去システム（非破壊編集の前提）
-- [x] シンプル設定システム（設定管理拡張の前提）
 
 ---
 
-📝 **設計方針維持**: Phase1は剛直・シンプル・直線的設計を維持
-🎯 **次期実装**: Phase1.5でNavigationManager・RecordManager追加
-💀 **基本原則**: エラーを隠すな・構造を透けさせろ・素人が読める構造にしろ
+📝 **現実準拠の原則**: 実装されていないメソッドは記載しない
+🚨 **重複トラップ解消**: クラス重複・架空メソッド・読み込み順序を全て修正
+🎯 **信頼性確保**: 後続Claudeが混乱しない正確な文書作成

@@ -233,31 +233,33 @@
     <!-- PixiJS CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
     
-    <!-- 計画書通りの読み込み順序（Phase1剛直版） -->
-    <!-- js/utils/*.js -->
+    <!-- 📋 修正版読み込み順序（依存関係準拠・競合回避） -->
+    
+    <!-- 1. Utils（依存なし・インスタンス自動作成） -->
     <script src="js/utils/error-manager.js"></script>
     <script src="js/utils/config-manager.js"></script>
     <script src="js/utils/event-bus.js"></script>
-    <script src="js/utils/minimal-deps.js"></script>
     
-    <!-- アイコン内製化追加 -->
+    <!-- 2. Assets（UIリソース） -->
     <script src="assets/icons.js"></script>
     
-    <!-- managers/*.js -->
+    <!-- 3. Managers（Utils依存） -->
     <script src="managers/canvas-manager.js"></script>
     <script src="managers/tool-manager.js"></script>
     
-    <!-- tools/*.js -->
+    <!-- 4. Tools（Managers依存） -->
     <script src="tools/pen-tool.js"></script>
     <script src="tools/eraser-tool.js"></script>
     
-    <!-- js/app-core.js -->
-    <script src="js/app-core.js"></script>
+    <!-- 5. App（全依存・順序重要） -->
+    <script src="js/main.js"></script>         <!-- AppCore定義 -->
+    <script src="js/app-core.js"></script>     <!-- TegakiApplication定義 -->
     
-    <!-- js/main.js -->
-    <script src="js/main.js"></script>
-    
-    <!-- js/bootstrap.js -->
+    <!-- 6. Bootstrap（App依存） -->
     <script src="js/bootstrap.js"></script>
+    
+    <!-- 7. 名前倉庫（競合回避のため最後・Phase1では不要） -->
+    <!-- <script src="js/utils/minimal-deps.js"></script> -->
+    
 </body>
 </html>

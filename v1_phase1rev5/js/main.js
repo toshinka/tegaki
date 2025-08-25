@@ -1,11 +1,11 @@
 /**
- * 🖊️ AppCore - Manager束ね専用（剛直設計）
- * 📋 RESPONSIBILITY: Manager束ね・Manager間連携のみ
- * 🚫 PROHIBITION: 描画処理・UI操作・エラー処理・複雑な設定管理
- * ✅ PERMISSION: Manager作成・連携設定・初期化制御
+ * 🖊️ AppCore - Manager束ね専任（main.js版）
+ * 📋 RESPONSIBILITY: Manager作成・Manager間連携のみ
+ * 🚫 PROHIBITION: UI操作・描画処理・エラー処理・PixiJS Application作成
+ * ✅ PERMISSION: Manager作成・連携設定・初期化制御・便利メソッド
  * 
  * 📏 DESIGN_PRINCIPLE: Manager統合専門・シンプル・直線的
- * 🔄 INTEGRATION: TegakiApplication から呼び出され・CanvasManager + ToolManager を束ねる
+ * 🔄 INTEGRATION: CanvasManager + ToolManager の統合管理
  */
 
 // if (!window.XXX) ガードで多重定義を防ぐ
@@ -15,12 +15,12 @@ if (!window.Tegaki) {
 
 if (!window.Tegaki.AppCore) {
     /**
-     * AppCore - Manager統合専用クラス
+     * AppCore - Manager束ね専任版
      * CanvasManager + ToolManager の統合管理のみ
      */
     class AppCore {
         constructor() {
-            console.log('🖊️ AppCore Manager統合専用版作成');
+            console.log('🖊️ AppCore - Manager束ね版作成');
             
             this.initialized = false;
             this.canvasManager = null;
@@ -32,7 +32,7 @@ if (!window.Tegaki.AppCore) {
          */
         async initialize() {
             try {
-                console.log('🚀 AppCore - Manager統合初期化開始');
+                console.log('🚀 AppCore 初期化開始');
                 
                 // 1. CanvasManager作成
                 await this.initializeCanvasManager();
@@ -42,7 +42,7 @@ if (!window.Tegaki.AppCore) {
                 
                 // 3. 初期化完了
                 this.initialized = true;
-                console.log('✅ AppCore - Manager統合初期化完了');
+                console.log('✅ AppCore 初期化完了');
                 
                 return true;
                 
@@ -78,7 +78,7 @@ if (!window.Tegaki.AppCore) {
             
             this.toolManager = new window.Tegaki.ToolManager();
             
-            // 依存関係設定（CanvasManager注入）
+            // 依存関係設定
             this.toolManager.setCanvasManager(this.canvasManager);
             
             // グローバル参照作成（デバッグ用）
@@ -126,7 +126,24 @@ if (!window.Tegaki.AppCore) {
             return this.initialized && 
                    !!this.canvasManager && 
                    this.canvasManager.isReady() &&
-                   !!this.toolManager;
+                   !!this.toolManager &&
+                   this.toolManager.isReady();
+        }
+        
+        /**
+         * アプリケーション開始
+         */
+        start() {
+            if (!this.isReady()) {
+                throw new Error('AppCore not ready for start');
+            }
+            
+            console.log('🚀 AppCore アプリケーション開始');
+            
+            // 基本機能確認
+            this.performBasicChecks();
+            
+            console.log('✅ AppCore アプリケーション開始完了');
         }
         
         /**
@@ -137,7 +154,7 @@ if (!window.Tegaki.AppCore) {
             
             const checks = {
                 canvasManagerReady: this.canvasManager?.isReady() || false,
-                toolManagerReady: !!this.toolManager,
+                toolManagerReady: this.toolManager?.isReady() || false,
                 pixiAppSet: !!this.canvasManager?.getPixiApp(),
                 layersCreated: (this.canvasManager?.layers?.size || 0) > 0,
                 toolsCreated: (this.toolManager?.tools?.size || 0) > 0
@@ -157,19 +174,72 @@ if (!window.Tegaki.AppCore) {
         }
         
         /**
-         * アプリケーション開始
+         * ツール選択（便利メソッド）
          */
-        start() {
-            if (!this.isReady()) {
-                throw new Error('AppCore not ready for start');
+        selectTool(toolName) {
+            return this.toolManager?.selectTool(toolName) || false;
+        }
+        
+        /**
+         * キャンバスクリア（便利メソッド）
+         */
+        clearCanvas() {
+            if (this.canvasManager) {
+                this.canvasManager.clear();
+                return true;
             }
-            
-            console.log('🚀 AppCore - アプリケーション開始');
-            
-            // 基本機能確認
-            this.performBasicChecks();
-            
-            console.log('✅ AppCore - アプリケーション開始完了');
+            return false;
+        }
+        
+        /**
+         * 色変更（便利メソッド）
+         */
+        setColor(color) {
+            const currentTool = this.toolManager?.getCurrentTool();
+            if (currentTool && currentTool.setPenColor) {
+                currentTool.setPenColor(color);
+                return true;
+            }
+            return false;
+        }
+        
+        /**
+         * 線幅変更（便利メソッド）
+         */
+        setLineWidth(width) {
+            const currentTool = this.toolManager?.getCurrentTool();
+            if (currentTool && currentTool.setPenWidth) {
+                currentTool.setPenWidth(width);
+                return true;
+            }
+            return false;
+        }
+        
+        /**
+         * 透明度変更（便利メソッド）
+         */
+        setOpacity(opacity) {
+            const currentTool = this.toolManager?.getCurrentTool();
+            if (currentTool && currentTool.setPenOpacity) {
+                currentTool.setPenOpacity(opacity);
+                return true;
+            } else if (currentTool && currentTool.setEraserOpacity) {
+                currentTool.setEraserOpacity(opacity);
+                return true;
+            }
+            return false;
+        }
+        
+        /**
+         * 消しゴムサイズ変更（便利メソッド）
+         */
+        setEraserSize(size) {
+            const currentTool = this.toolManager?.getCurrentTool();
+            if (currentTool && currentTool.setEraserSize) {
+                currentTool.setEraserSize(size);
+                return true;
+            }
+            return false;
         }
         
         /**
@@ -187,7 +257,7 @@ if (!window.Tegaki.AppCore) {
         }
         
         /**
-         * デバッグ情報取得（必須実装）
+         * デバッグ情報取得
          */
         getDebugInfo() {
             return {
@@ -202,9 +272,9 @@ if (!window.Tegaki.AppCore) {
     // Tegaki名前空間に登録
     window.Tegaki.AppCore = AppCore;
     
-    console.log('🖊️ AppCore Manager統合版 Loaded');
+    console.log('🖊️ AppCore Manager束ね版 Loaded');
 } else {
     console.log('⚠️ AppCore already defined - skipping redefinition');
 }
 
-console.log('🖊️ main.js loaded - Manager統合管理完了');
+console.log('🖊️ main.js loaded - Manager束ね専任完了');
