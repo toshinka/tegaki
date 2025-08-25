@@ -73,6 +73,7 @@ ShortcutManager設計      // キーボード操作
 ├── キャンバス移動（パン）
 ├── ズーム機能  
 ├── 回転機能
+├── 反転機能（左右・上下）
 └── PixiJS Transform活用
 
 2. RecordManager（重要）
