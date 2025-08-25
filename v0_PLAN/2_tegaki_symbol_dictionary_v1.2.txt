@@ -1,0 +1,385 @@
+# 📚 Tegakiシンボル辞典 v1.2-Final - 実装現状完全準拠版
+
+> **実装確認済みクラス・メソッドのみ記載** - Phase1rev10現状分析完了・緊急修正項目明記
+
+## 🚨 Phase1rev10の現状問題
+
+### ✅ 動作しているもの
+- **PixiJS基盤**: 正常動作
+- **レイヤー構造**: layer0(背景)・layer1(描画)の分離完成
+- **アイコンシステム**: TegakiIcons完全実装・未活用
+- **エラー管理**: ErrorManager実装済み
+- **設定管理**: ConfigManager実装済み
+
+### 🚨 緊急修正必要
+1. **TegakiApplication**: 実装されているが座標ズレ問題あり
+2. **座標変換**: カーソル位置から約200px右下で描画される
+3. **アイコン呼び出し**: setupIcons()実装済みだが問題の可能性
+4. **EraserTool**: 実装済みだが動作確認要
+
+## 🌐 グローバル名前空間（実装確認済み）
+
+### window.Tegaki.*（実在確認済み）
+```javascript
+window.Tegaki = {
+    // ===== クラス定義（実在確認済み） =====
+    AppCore,                    // main.js - Manager束ね専任
+    TegakiApplication,          // app-core.js - UI連携・座標変換専任
+    CanvasManager,              // canvas-manager.js - PixiJS・レイヤー管理
+    ToolManager,                // tool-manager.js - ツール選択・イベント転送
+    PenTool,                    // pen-tool.js - ベクター描画
+    EraserTool,                 // eraser-tool.js - 消しゴム
+    ErrorManager,               // error-manager.js - エラー処理
+    ConfigManager,              // config-manager.js - 設定管理
+    EventBus,                   // event-bus.js - イベント配信
+    TegakiIcons,               // icons.js - SVG生成・アイコン適用
+    
+    // ===== インスタンス（自動作成） =====
+    ErrorManagerInstance,       // error-manager.js で自動作成
+    ConfigManagerInstance,      // config-manager.js で自動作成
+    EventBusInstance,          // event-bus.js で自動作成
+    
+    // ===== 動的インスタンス（実行時作成） =====
+    // TegakiApplicationInstance  // bootstrap.js で作成（app起動時）
+    // AppCoreInstance           // TegakiApplication内で作成
+    // CanvasManagerInstance     // AppCore内で作成
+    // ToolManagerInstance       // AppCore内で作成
+};
+```
+
+## 🎯 TegakiApplication（app-core.js）- 座標ズレ問題あり
+
+### 実装済みメソッド
+```javascript
+constructor()                          // 自動初期化実行
+async initialize()                     // AppCore作成・Canvas・UI設定
+async initializeAppCore()              // AppCore初期化（CanvasManagerのみ）
+createCanvas()                         // PixiJS Application作成・DOM配置
+async initializeToolManager()          // ToolManager初期化（PixiJS設定後）
+setupUI()                             // イベント・アイコン・ボタン設定
+setupCanvasEvents()                   // Canvas イベント設定
+setupToolButtons()                    // ツールボタンイベント設定
+setupIcons()                          // アイコン適用（TegakiIcons使用）
+selectTool(toolName)                  // ツール選択・UI更新
+updateToolButtons(activeToolName)     // ツールボタンUI更新
+updateStatusDisplay()                 // ステータス表示更新
+
+// ===== ポインターイベント処理（🚨座標ズレ問題） =====
+handlePointerDown(e)                  // ポインター押下・座標変換・転送
+handlePointerMove(e)                  // ポインター移動・座標変換・転送
+handlePointerUp(e)                    // ポインター解放・座標変換・転送
+getCanvasCoordinates(e)               // 🚨 DOM→Canvas座標変換（問題箇所）
+updateCoordinates(x, y)               // 座標表示更新
+
+// ===== その他 =====
+showSuccessMessage()                  // 成功メッセージ表示
+getDebugInfo()                        // デバッグ情報取得
+```
+
+### 🚨 座標ズレ問題の詳細（緊急修正必要）
+```javascript
+// 問題症状: カーソル位置から約200px右下で描画される
+// 問題箇所: getCanvasCoordinates(e) メソッド
+// 原因候補:
+// 1. Canvas DOM配置とPixiJS内部座標の不一致
+// 2. devicePixelRatio・スケール計算の誤用
+// 3. getBoundingClientRect()の結果とCanvas実座標の乖離
+// 4. CSS transform・positioning による座標オフセット
+```
+
+## 🖊️ AppCore（main.js）- Manager束ね専任（正常動作）
+
+### 実装済みメソッド
+```javascript
+constructor()                          // インスタンス作成
+async initializeCanvasManager()        // CanvasManager単体初期化
+setPixiApp(pixiApp)                   // PixiJS Application設定・転送
+verifyLayerStructure()                // レイヤー構造確認
+async initializeToolManager()          // ToolManager初期化（PixiJS設定後）
+start()                               // アプリケーション開始
+getCanvasManager()                     // CanvasManager取得
+getToolManager()                       // ToolManager取得
+isReady()                             // 初期化完了確認
+
+// ===== 便利メソッド（ツール連携） =====
+selectTool(toolName)                  // ツール選択
+clearCanvas()                         // キャンバスクリア
+setColor(color)                       // 色変更
+setLineWidth(width)                   // 線幅変更
+setOpacity(opacity)                   // 透明度変更
+setEraserSize(size)                   // 消しゴムサイズ変更
+getDebugInfo()                        // デバッグ情報取得
+destroy()                             // クリーンアップ
+```
+
+## 🎨 CanvasManager（managers/canvas-manager.js）- レイヤー分離完成
+
+### 実装済みメソッド
+```javascript
+constructor()                          // インスタンス作成
+setPixiApp(pixiApp)                   // PixiJS設定・レイヤー分離構造作成
+createLayerStructure()                // layer0(背景) + layer1(描画) 作成
+createLayer(layerId)                  // レイヤー作成（汎用）
+
+// ===== Graphics配置（描画の実行責任） =====
+addGraphicsToLayer(graphics, layerId) // Graphics配置（アクティブレイヤー優先）
+addEraseGraphicsToLayer(graphics, layerId) // 消去Graphics配置（ERASEブレンドモード）
+
+// ===== レイヤー管理 =====
+setActiveLayer(layerId)               // アクティブレイヤー設定
+getActiveLayer()                      // アクティブレイヤー取得
+getActiveLayerId()                    // アクティブレイヤーID取得
+getLayer(layerId)                     // レイヤー取得
+getMainLayer()                        // メインレイヤー取得（互換性）
+getBackgroundLayer()                  // 背景レイヤー取得
+getDrawingLayer()                     // 描画レイヤー取得
+
+// ===== クリア処理 =====
+clear()                               // アクティブレイヤークリア（背景保護）
+clearAllDrawingLayers()               // 全描画レイヤークリア（背景保護）
+clearLayer(layerId)                   // 特定レイヤークリア
+
+// ===== その他 =====
+resizeCanvas(width, height)           // キャンバスサイズ変更（背景更新付き）
+getPixiApp()                          // PixiJS Application取得
+isReady()                             // 準備状態確認
+getDebugInfo()                        // デバッグ情報取得
+```
+
+### 🎨 レイヤー構造（実装完成）
+```javascript
+// layer0: 背景レイヤー（保護対象）
+// - ふたばクリーム色（#f0e0d6）で塗りつぶし
+// - zIndex: 0（最背面）
+// - 消しゴム対象外・クリア禁止
+
+// layer1: 描画レイヤー（アクティブ）
+// - 透明・描画対象
+// - zIndex: 1（前面）
+// - ペン・消しゴム対象
+```
+
+## 🖊️ ToolManager（managers/tool-manager.js）- ツール選択・イベント転送
+
+### 実装済みメソッド
+```javascript
+constructor()                          // インスタンス作成
+setCanvasManager(canvasManager)        // CanvasManager設定
+createTools()                          // ツール作成（PenTool・EraserTool）
+selectTool(toolName)                   // ツール選択（'pen'/'eraser'）
+getCurrentTool()                       // 現在ツール取得
+getCurrentToolName()                   // 現在ツール名取得
+
+// ===== イベント転送（座標はそのまま転送） =====
+handlePointerDown(x, y, event)        // ポインター押下転送
+handlePointerMove(x, y, event)         // ポインター移動転送
+handlePointerUp(x, y, event)          // ポインター解放転送
+
+// ===== その他 =====
+getAvailableTools()                    // 利用可能ツール一覧
+getToolInfo(toolName)                  // ツール情報取得
+isReady()                             // 準備状態確認
+getDebugInfo()                        // デバッグ情報取得
+```
+
+## ✏️ PenTool（tools/pen-tool.js）- ベクター描画
+
+### 実装済みメソッド
+```javascript
+constructor()                          // インスタンス作成
+setCanvasManager(canvasManager)        // CanvasManager設定
+
+// ===== 描画処理（座標はそのまま使用） =====
+onPointerDown(x, y, event)            // 描画開始・Graphics作成・配置
+onPointerMove(x, y, event)            // 描画継続・線・円描画
+onPointerUp(x, y, event)              // 描画終了・完成処理
+
+// ===== Graphics描画 =====
+drawPointCircle(x, y)                 // 点描画（円）
+updateGraphicsStyle()                 // Graphics スタイル更新
+drawSmoothLine()                      // スムーズ曲線描画（ベジェカーブ）
+
+// ===== 設定メソッド =====
+setPenColor(color)                    // 色設定
+setPenWidth(width)                    // 線幅設定
+setPenOpacity(opacity)                // 透明度設定
+setSmoothing(enabled)                 // スムージング設定
+
+// ===== Phase1.5準備（将来拡張） =====
+getStrokeHistory()                    // ストローク履歴取得
+redrawStroke(strokeData)              // ストローク再描画
+removeLastStroke()                    // ストローク削除
+toSVGData()                           // SVG変換用データ取得
+strokeToSVGPath(stroke)               // SVGパス文字列変換
+enablePhase15Features()               // Phase1.5機能有効化
+enablePhase2Features()                // Phase2機能有効化
+
+// ===== その他 =====
+getSettings()                         // 設定取得
+getDebugInfo()                        // デバッグ情報取得
+```
+
+## 🧹 EraserTool（tools/eraser-tool.js）- 消しゴム（要動作確認）
+
+### 実装済みメソッド
+```javascript
+constructor()                          // インスタンス作成
+setCanvasManager(canvasManager)        // CanvasManager設定
+
+// ===== 消去処理（実装済み・要動作確認） =====
+onPointerDown(x, y, event)            // 消去開始（ERASEブレンドモード）
+onPointerMove(x, y, event)            // 消去継続
+onPointerUp(x, y, event)              // 消去終了
+
+// ===== 設定メソッド =====
+setEraserSize(size)                   // 消しゴムサイズ設定
+setEraserOpacity(opacity)             // 消しゴム透明度設定
+getSettings()                         // 設定取得
+getDebugInfo()                        // デバッグ情報取得
+```
+
+## 🎯 TegakiIcons（assets/icons.js）- SVG生成・アイコン適用（完全実装済み）
+
+### 実装済みメソッド
+```javascript
+// ===== 静的データ =====
+svgData: { ... }                      // SVG定義データ（9種類のアイコン）
+buttonMappings: { ... }               // ボタンID→アイコン名マッピング
+
+// ===== アイコン生成・適用 =====
+createIcon(iconName, options)         // SVGアイコン要素作成
+replaceButtonIcon(buttonId, iconName) // 特定ボタンアイコン置換
+replaceAllToolIcons()                 // ★重要：全ツールボタンアイコン一括置換
+getDebugInfo()                        // デバッグ情報取得
+```
+
+### 🎨 対応アイコン（実装済み）
+```javascript
+// 完全実装済みのアイコン
+download, resize, palette, pen, eraser, fill, select, layers, settings
+
+// ボタンマッピング
+'download-tool' → 'download'
+'resize-tool' → 'resize'  
+'palette-tool' → 'palette'
+'pen-tool' → 'pen'
+'eraser-tool' → 'eraser'
+'fill-tool' → 'fill'
+'select-tool' → 'select'
+'layers-tool' → 'layers'
+'settings-tool' → 'settings'
+```
+
+## 🚨 ErrorManager（js/utils/error-manager.js）- エラー処理専任
+
+### 実装済みメソッド
+```javascript
+constructor()                          // インスタンス作成
+showError(type, message, options)      // エラー表示
+showVisualNotification(type, message, options) // 視覚通知
+showInfo(message, options)             // 情報表示
+showWarning(message, options)          // 警告表示
+showCritical(message, options)         // 重要エラー表示
+getBackgroundColor(type)              // 背景色取得
+getTextColor(type)                    // テキスト色取得
+getBorderColor(type)                  // ボーダー色取得
+getErrors()                           // エラー記録取得
+clear()                               // エラー記録クリア
+```
+
+## ⚙️ ConfigManager（js/utils/config-manager.js）- 設定管理
+
+### 実装済みメソッド
+```javascript
+constructor()                          // インスタンス作成
+getCanvasConfig()                     // キャンバス設定取得
+getPenConfig()                        // ペン設定取得
+getEraserConfig()                     // 消しゴム設定取得
+getUIConfig()                         // UI設定取得
+updateConfig(section, updates)        // 設定更新
+resetToDefaults()                     // デフォルト設定復元
+getDebugInfo()                        // デバッグ情報取得
+```
+
+## 📡 EventBus（js/utils/event-bus.js）- イベント配信
+
+### 実装済みメソッド
+```javascript
+constructor()                          // インスタンス作成
+on(eventName, callback)               // イベントリスナー登録
+off(eventName, callback)              // イベントリスナー削除
+emit(eventName, data)                 // イベント発火
+once(eventName, callback)             // 一回限りリスナー登録
+getListeners(eventName)               // リスナー一覧取得
+clear()                               // 全リスナー削除
+getDebugInfo()                        // デバッグ情報取得
+```
+
+## 🚀 Bootstrap（js/bootstrap.js）- アプリ起動
+
+### 実装済み機能
+```javascript
+// DOMContentLoaded待機後に以下を実行
+new window.Tegaki.TegakiApplication()  // TegakiApplication インスタンス化
+// window.TegakiAppInstance に格納    // デバッグ用グローバル参照
+```
+
+## 🔧 緊急修正項目（Phase1rev10 → Phase1rev11）
+
+### 1. 🚨 座標ズレ問題（最優先）
+**症状**: カーソル位置から約200px右下で描画される
+**修正箇所**: `TegakiApplication.getCanvasCoordinates(e)`
+**修正方法**: 
+- CSS positioning・transform の影響確認
+- getBoundingClientRect() の結果検証
+- devicePixelRatio 処理の簡素化
+- Canvas要素のスタイル設定確認
+
+### 2. ⚠️ EraserTool動作確認
+**確認項目**: ERASEブレンドモードが正常動作するか
+**テスト方法**: ペンで描画後、消しゴムで消去テスト
+
+### 3. 🎨 アイコン呼び出し確認
+**確認項目**: `TegakiIcons.replaceAllToolIcons()` が正常実行されるか
+**エラー箇所**: setupIcons() メソッドでのアイコン適用
+
+### 4. 📋 設定値検証
+**確認項目**: ConfigManager の設定値が適切か
+**特に**: Canvas サイズ・座標系設定
+
+## 🎯 動作フロー（Phase1rev10現在）
+
+### 正常な起動フロー
+1. **HTML読み込み** → 全スクリプト読み込み完了
+2. **Bootstrap** → `new TegakiApplication()`
+3. **TegakiApplication.initialize()** 
+   - AppCore作成
+   - Canvas作成・DOM配置
+   - ToolManager初期化
+   - UI設定（**アイコン適用含む**）
+4. **描画テスト** → ポインターイベント → 座標変換 → ツール処理
+
+### 問題発生箇所
+- **座標変換**: `getCanvasCoordinates()` でのズレ計算
+- **アイコン**: setupIcons() 実行時のエラー可能性
+- **消しゴム**: ERASEブレンドモード動作確認要
+
+---
+
+## 📝 Phase1rev11修正計画
+
+### Step1: 座標ズレ根本修正
+- `getCanvasCoordinates()` の座標計算ロジック見直し
+- Canvas配置・スタイルの確認・修正
+
+### Step2: 機能動作確認
+- アイコン適用の成功確認
+- EraserTool の消去動作確認
+- 全体的な動作安定性確認
+
+### Step3: 品質向上
+- エラーハンドリング改善
+- デバッグ情報充実
+- パフォーマンス最適化
+
+**この辞典はPhase1rev10の実装現状に基づく正確な記録です。座標ズレ問題の早急な修正が必要です。**
