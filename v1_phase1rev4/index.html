@@ -235,29 +235,1191 @@
     
     <!-- 計画書通りの読み込み順序（Phase1剛直版） -->
     <!-- js/utils/*.js -->
-    <script src="js/utils/error-manager.js"></script>
-    <script src="js/utils/config-manager.js"></script>
-    <script src="js/utils/event-bus.js"></script>
-    <script src="js/utils/minimal-deps.js"></script>
-    
-    <!-- アイコン内製化追加 -->
-    <script src="assets/icons.js"></script>
-    
-    <!-- managers/*.js -->
-    <script src="managers/canvas-manager.js"></script>
-    <script src="managers/tool-manager.js"></script>
-    
-    <!-- tools/*.js -->
-    <script src="tools/pen-tool.js"></script>
-    <script src="tools/eraser-tool.js"></script>
-    
-    <!-- js/app-core.js -->
-    <script src="js/app-core.js"></script>
-    
-    <!-- js/main.js -->
-    <script src="js/main.js"></script>
-    
-    <!-- js/bootstrap.js -->
-    <script src="js/bootstrap.js"></script>
+    <script>
+        /**
+         * 🚨 ErrorManager - 全エラー処理専任（剛直版）
+         * 📋 RESPONSIBILITY: エラー表示・UI通知・ログ・記録のみ
+         * 🚫 PROHIBITION: 複雑な分類・統計・設定管理・フォールバック処理
+         * ✅ PERMISSION: 視覚通知・HTML挿入・エラー記録・色設定
+         * 
+         * 📏 DESIGN_PRINCIPLE: エラー隠蔽撲滅・透明性確保・1ファイル1責務
+         * 🔄 INTEGRATION: 全クラスからshowError()経由でのみ使用
+         */
+
+        window.Tegaki = window.Tegaki || {};
+
+        class ErrorManager {
+            constructor() {
+                console.log('🚨 ErrorManager 剛直版作成');
+                this.errors = [];
+            }
+            
+            /**
+             * エラー表示（専任責務）
+             */
+            showError(type, message, options = {}) {
+                const timestamp = new Date().toISOString();
+                const errorRecord = { type, message, timestamp, options };
+                
+                this.errors.push(errorRecord);
+                console.error(`🔥 ERROR[${type}]:`, message, options);
+                
+                this.showVisualNotification(type, message, options);
+            }
+            
+            /**
+             * 視覚通知
+             */
+            showVisualNotification(type, message, options) {
+                const bgColor = this.getBackgroundColor(type);
+                const textColor = this.getTextColor(type);
+                const borderColor = this.getBorderColor(type);
+                
+                const notificationHTML = `
+                    <div style="
+                        position: fixed; 
+                        top: 20px; 
+                        right: 20px; 
+                        z-index: 9999;
+                        background: ${bgColor}; 
+                        color: ${textColor};
+                        border: 2px solid ${borderColor};
+                        padding: 12px 16px; 
+                        border-radius: 8px;
+                        font-family: monospace;
+                        font-size: 12px;
+                        max-width: 400px;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                    ">
+                        <strong>${type.toUpperCase()}:</strong> ${message}
+                        <br><small>${new Date().toLocaleTimeString()}</small>
+                        ${options.context ? `<br><small>Context: ${options.context}</small>` : ''}
+                    </div>
+                `;
+                
+                document.body.insertAdjacentHTML('beforeend', notificationHTML);
+                
+                setTimeout(() => {
+                    const notifications = document.querySelectorAll('[style*="position: fixed"][style*="top: 20px"]');
+                    if (notifications.length > 0) {
+                        notifications[0].remove();
+                    }
+                }, 5000);
+            }
+            
+            showInfo(message, options = {}) {
+                this.showError('info', message, options);
+            }
+            
+            showWarning(message, options = {}) {
+                this.showError('warning', message, options);
+            }
+            
+            showCritical(message, options = {}) {
+                this.showError('critical', message, options);
+            }
+            
+            getBackgroundColor(type) {
+                switch(type) {
+                    case 'error': case 'critical': return '#ffe6e6';
+                    case 'warning': return '#fff3cd';
+                    case 'info': return '#e6f3ff';
+                    default: return '#f8f9fa';
+                }
+            }
+            
+            getTextColor(type) {
+                switch(type) {
+                    case 'error': case 'critical': return '#d32f2f';
+                    case 'warning': return '#f57c00';
+                    case 'info': return '#1976d2';
+                    default: return '#333';
+                }
+            }
+            
+            getBorderColor(type) {
+                switch(type) {
+                    case 'error': case 'critical': return '#ff9999';
+                    case 'warning': return '#ffcc80';
+                    case 'info': return '#90caf9';
+                    default: return '#ddd';
+                }
+            }
+            
+            getErrors() {
+                return this.errors;
+            }
+            
+            clear() {
+                this.errors = [];
+            }
+        }
+
+        window.Tegaki.ErrorManager = ErrorManager;
+        window.Tegaki.ErrorManagerInstance = new ErrorManager();
+        console.log('🚨 ErrorManager 剛直版 Loaded');
+    </script>
+
+    <script>
+        /**
+         * ⚙️ ConfigManager - 設定管理（シンプル版）
+         */
+        window.Tegaki = window.Tegaki || {};
+
+        class ConfigManager {
+            constructor() {
+                console.log('⚙️ ConfigManager シンプル版作成');
+            }
+            
+            getCanvasConfig() {
+                return {
+                    width: 800,
+                    height: 600,
+                    backgroundColor: 0xffffee
+                };
+            }
+            
+            getToolConfig(toolName) {
+                const configs = {
+                    pen: {
+                        color: 0x800000,
+                        width: 4,
+                        opacity: 1.0
+                    },
+                    eraser: {
+                        size: 20,
+                        opacity: 1.0
+                    }
+                };
+                return configs[toolName] || {};
+            }
+        }
+
+        window.Tegaki.ConfigManager = ConfigManager;
+        window.Tegaki.ConfigManagerInstance = new ConfigManager();
+        console.log('⚙️ ConfigManager シンプル版 Loaded');
+    </script>
+
+    <script>
+        /**
+         * 📡 EventBus - イベント配信（シンプル版）
+         */
+        window.Tegaki = window.Tegaki || {};
+
+        class EventBus {
+            constructor() {
+                console.log('📡 EventBus シンプル版作成');
+                this.events = new Map();
+            }
+            
+            on(eventName, callback) {
+                if (!this.events.has(eventName)) {
+                    this.events.set(eventName, []);
+                }
+                this.events.get(eventName).push(callback);
+            }
+            
+            emit(eventName, data) {
+                const callbacks = this.events.get(eventName);
+                if (callbacks) {
+                    callbacks.forEach(callback => callback(data));
+                }
+            }
+            
+            off(eventName, callback) {
+                const callbacks = this.events.get(eventName);
+                if (callbacks) {
+                    const index = callbacks.indexOf(callback);
+                    if (index !== -1) {
+                        callbacks.splice(index, 1);
+                    }
+                }
+            }
+        }
+
+        window.Tegaki.EventBus = EventBus;
+        window.Tegaki.EventBusInstance = new EventBus();
+        console.log('📡 EventBus シンプル版 Loaded');
+    </script>
+
+    <script>
+        /**
+         * 🎨 CanvasManager - レイヤー分離版（修正版）
+         */
+        window.Tegaki = window.Tegaki || {};
+
+        class CanvasManager {
+            constructor() {
+                console.log('🎨 CanvasManager レイヤー分離版作成');
+                
+                this.pixiApp = null;
+                this.layers = new Map();
+                this.initialized = false;
+                this.activeLayerId = 'layer1'; // デフォルトアクティブレイヤー
+            }
+            
+            setPixiApp(pixiApp) {
+                if (!pixiApp) {
+                    throw new Error('PixiJS Application is required');
+                }
+                
+                this.pixiApp = pixiApp;
+                this.initialized = true;
+                
+                // レイヤー分離構造作成
+                this.createLayerStructure();
+                
+                console.log('✅ CanvasManager - レイヤー分離構造完成');
+            }
+            
+            createLayerStructure() {
+                if (!this.pixiApp) {
+                    throw new Error('PixiJS Application not set');
+                }
+                
+                // レイヤー0: 背景レイヤー（消去されない）
+                const backgroundLayer = new PIXI.Container();
+                backgroundLayer.name = 'layer0';
+                backgroundLayer.zIndex = 0;
+                this.pixiApp.stage.addChild(backgroundLayer);
+                this.layers.set('layer0', backgroundLayer);
+                
+                // レイヤー1: アクティブ描画レイヤー（消去対象）
+                const activeLayer = new PIXI.Container();
+                activeLayer.name = 'layer1';
+                activeLayer.zIndex = 1;
+                activeLayer.sortableChildren = true;
+                this.pixiApp.stage.addChild(activeLayer);
+                this.layers.set('layer1', activeLayer);
+                
+                this.pixiApp.stage.sortableChildren = true;
+                
+                console.log('✅ レイヤー分離構造作成完了: layer0(背景) + layer1(描画)');
+            }
+            
+            createLayer(layerId) {
+                if (!this.pixiApp) {
+                    throw new Error('PixiJS Application not set');
+                }
+                
+                if (this.layers.has(layerId)) {
+                    return this.layers.get(layerId);
+                }
+                
+                const layer = new PIXI.Container();
+                layer.name = layerId;
+                layer.sortableChildren = true;
+                layer.zIndex = this.layers.size;
+                
+                this.pixiApp.stage.addChild(layer);
+                this.layers.set(layerId, layer);
+                
+                console.log(`✅ Layer created: ${layerId}`);
+                return layer;
+            }
+            
+            addGraphicsToLayer(graphics, layerId = null) {
+                if (!graphics) {
+                    throw new Error('Graphics object is required');
+                }
+                
+                const targetLayerId = layerId || this.activeLayerId;
+                
+                let layer = this.layers.get(targetLayerId);
+                if (!layer) {
+                    layer = this.createLayer(targetLayerId);
+                }
+                
+                layer.addChild(graphics);
+                console.log(`✅ Graphics added to layer: ${targetLayerId}`);
+            }
+            
+            setActiveLayer(layerId) {
+                if (!this.layers.has(layerId)) {
+                    throw new Error(`Layer ${layerId} does not exist`);
+                }
+                this.activeLayerId = layerId;
+                console.log(`🎯 Active layer set to: ${layerId}`);
+            }
+            
+            getActiveLayer() {
+                return this.layers.get(this.activeLayerId);
+            }
+            
+            getActiveLayerId() {
+                return this.activeLayerId;
+            }
+            
+            getLayer(layerId) {
+                return this.layers.get(layerId) || null;
+            }
+            
+            getMainLayer() {
+                return this.getLayer('layer1') || this.getActiveLayer();
+            }
+            
+            clear() {
+                const activeLayer = this.getActiveLayer();
+                if (activeLayer && this.activeLayerId !== 'layer0') {
+                    activeLayer.removeChildren();
+                    console.log(`🧹 Active layer cleared: ${this.activeLayerId}`);
+                } else {
+                    console.log('⚠️ 背景レイヤーのクリアは禁止されています');
+                }
+            }
+            
+            clearLayer(layerId) {
+                if (layerId === 'layer0') {
+                    console.warn('⚠️ 背景レイヤー(layer0)のクリアは禁止されています');
+                    return;
+                }
+                
+                const layer = this.layers.get(layerId);
+                if (layer) {
+                    layer.removeChildren();
+                    console.log(`🧹 Layer cleared: ${layerId}`);
+                }
+            }
+            
+            resizeCanvas(width, height) {
+                if (!this.pixiApp) {
+                    throw new Error('PixiJS Application not set');
+                }
+                
+                this.pixiApp.renderer.resize(width, height);
+                console.log(`📏 Canvas resized: ${width}x${height}`);
+            }
+            
+            getPixiApp() {
+                return this.pixiApp;
+            }
+            
+            isReady() {
+                return this.initialized && !!this.pixiApp && !!this.pixiApp.stage;
+            }
+            
+            getDebugInfo() {
+                return {
+                    initialized: this.initialized,
+                    hasPixiApp: !!this.pixiApp,
+                    layerCount: this.layers.size,
+                    layerNames: Array.from(this.layers.keys()),
+                    activeLayer: this.activeLayerId,
+                    stageChildren: this.pixiApp?.stage.children.length || 0
+                };
+            }
+        }
+
+        window.Tegaki.CanvasManager = CanvasManager;
+        console.log('🎨 CanvasManager Loaded');
+    </script>
+
+    <script>
+        /**
+         * 🖊️ ToolManager - ツール選択・イベント転送専任
+         */
+        window.Tegaki = window.Tegaki || {};
+
+        class ToolManager {
+            constructor() {
+                console.log('🖊️ ToolManager 作成');
+                
+                this.canvasManager = null;
+                this.currentTool = null;
+                this.currentToolName = 'pen';
+                this.tools = new Map();
+            }
+            
+            setCanvasManager(canvasManager) {
+                this.canvasManager = canvasManager;
+                this.createTools();
+            }
+            
+            createTools() {
+                if (!this.canvasManager) {
+                    throw new Error('CanvasManager not set');
+                }
+                
+                // PenTool作成
+                if (window.Tegaki.PenTool) {
+                    const penTool = new window.Tegaki.PenTool();
+                    penTool.setCanvasManager(this.canvasManager);
+                    this.tools.set('pen', penTool);
+                }
+                
+                // EraserTool作成
+                if (window.Tegaki.EraserTool) {
+                    const eraserTool = new window.Tegaki.EraserTool();
+                    eraserTool.setCanvasManager(this.canvasManager);
+                    this.tools.set('eraser', eraserTool);
+                }
+                
+                // デフォルトツール選択
+                this.selectTool('pen');
+                
+                console.log('✅ Tools created:', Array.from(this.tools.keys()));
+            }
+            
+            selectTool(toolName) {
+                const tool = this.tools.get(toolName);
+                if (tool) {
+                    this.currentTool = tool;
+                    this.currentToolName = toolName;
+                    console.log(`🎯 Tool selected: ${toolName}`);
+                    return true;
+                }
+                console.warn(`⚠️ Tool not found: ${toolName}`);
+                return false;
+            }
+            
+            getCurrentTool() {
+                return this.currentTool;
+            }
+            
+            getCurrentToolName() {
+                return this.currentToolName;
+            }
+            
+            handlePointerDown(x, y, event) {
+                if (this.currentTool?.onPointerDown) {
+                    this.currentTool.onPointerDown(x, y, event);
+                }
+            }
+            
+            handlePointerMove(x, y, event) {
+                if (this.currentTool?.onPointerMove) {
+                    this.currentTool.onPointerMove(x, y, event);
+                }
+            }
+            
+            handlePointerUp(x, y, event) {
+                if (this.currentTool?.onPointerUp) {
+                    this.currentTool.onPointerUp(x, y, event);
+                }
+            }
+            
+            isReady() {
+                return !!this.canvasManager && this.tools.size > 0;
+            }
+            
+            getDebugInfo() {
+                return {
+                    currentTool: this.currentToolName,
+                    toolCount: this.tools.size,
+                    canvasManagerSet: !!this.canvasManager,
+                    tools: Array.from(this.tools.keys())
+                };
+            }
+        }
+
+        window.Tegaki.ToolManager = ToolManager;
+        console.log('🖊️ ToolManager Loaded');
+    </script>
+
+    <script>
+        /**
+         * ✏️ PenTool - ベクター描画専任（修正版）
+         */
+        window.Tegaki = window.Tegaki || {};
+
+        class PenTool {
+            constructor() {
+                console.log('✏️ PenTool 作成');
+                
+                this.canvasManager = null;
+                this.isDrawing = false;
+                this.currentPath = null;
+                this.points = [];
+                
+                // 描画設定
+                this.color = 0x800000;
+                this.lineWidth = 4;
+                this.opacity = 1.0;
+            }
+            
+            setCanvasManager(canvasManager) {
+                this.canvasManager = canvasManager;
+            }
+            
+            onPointerDown(x, y, event) {
+                if (!this.canvasManager) {
+                    console.warn('⚠️ CanvasManager not set');
+                    return;
+                }
+                
+                this.isDrawing = true;
+                this.points = [{x, y}];
+                
+                // 新しいパス作成
+                this.currentPath = new PIXI.Graphics();
+                this.currentPath.lineStyle({
+                    width: this.lineWidth,
+                    color: this.color,
+                    alpha: this.opacity,
+                    cap: PIXI.LINE_CAP.ROUND,
+                    join: PIXI.LINE_JOIN.ROUND
+                });
+                
+                this.currentPath.moveTo(x, y);
+                
+                // 点描画（クリック単体対応）
+                this.currentPath.beginFill(this.color, this.opacity);
+                this.currentPath.drawCircle(x, y, this.lineWidth / 2);
+                this.currentPath.endFill();
+                
+                // アクティブレイヤーに追加
+                this.canvasManager.addGraphicsToLayer(this.currentPath);
+                
+                console.log(`✏️ 描画開始: pos=(${x}, ${y}), color=${this.color.toString(16)}, width=${this.lineWidth}`);
+            }
+            
+            onPointerMove(x, y, event) {
+                if (!this.isDrawing || !this.currentPath) return;
+                
+                this.points.push({x, y});
+                this.currentPath.lineTo(x, y);
+            }
+            
+            onPointerUp(x, y, event) {
+                if (!this.isDrawing || !this.currentPath) return;
+                
+                this.points.push({x, y});
+                this.currentPath.lineTo(x, y);
+                
+                this.isDrawing = false;
+                const pathLength = this.points.length;
+                
+                console.log(`✅ 描画完了: pathPoints=${pathLength}, totalDistance=${this.calculatePathLength()}px`);
+                
+                this.currentPath = null;
+                this.points = [];
+            }
+            
+            calculatePathLength() {
+                if (this.points.length < 2) return 0;
+                
+                let totalLength = 0;
+                for (let i = 1; i < this.points.length; i++) {
+                    const prev = this.points[i - 1];
+                    const curr = this.points[i];
+                    const dx = curr.x - prev.x;
+                    const dy = curr.y - prev.y;
+                    totalLength += Math.sqrt(dx * dx + dy * dy);
+                }
+                return Math.round(totalLength);
+            }
+            
+            setPenColor(color) {
+                if (typeof color === 'string') {
+                    this.color = parseInt(color.replace('#', ''), 16);
+                } else {
+                    this.color = color;
+                }
+                console.log(`✏️ ペン色変更: ${this.color.toString(16)}`);
+            }
+            
+            setPenWidth(width) {
+                if (width > 0 && width <= 50) {
+                    this.lineWidth = width;
+                    console.log(`✏️ ペン幅変更: ${width}px`);
+                }
+            }
+            
+            setPenOpacity(opacity) {
+                if (opacity >= 0 && opacity <= 1) {
+                    this.opacity = opacity;
+                    console.log(`✏️ ペン透明度変更: ${opacity}`);
+                }
+            }
+            
+            getSettings() {
+                return {
+                    color: this.color,
+                    lineWidth: this.lineWidth,
+                    opacity: this.opacity
+                };
+            }
+            
+            getDebugInfo() {
+                return {
+                    isDrawing: this.isDrawing,
+                    canvasManagerSet: !!this.canvasManager,
+                    hasCurrentPath: !!this.currentPath,
+                    pointCount: this.points.length,
+                    settings: this.getSettings()
+                };
+            }
+        }
+
+        window.Tegaki.PenTool = PenTool;
+        console.log('✏️ PenTool Loaded');
+    </script>
+
+    <script>
+        /**
+         * 🧹 EraserTool - 真の消去機能版（修正版）
+         */
+        window.Tegaki = window.Tegaki || {};
+
+        class EraserTool {
+            constructor() {
+                console.log('🧹 EraserTool 真の消去機能版 作成');
+                
+                this.canvasManager = null;
+                this.isErasing = false;
+                this.currentGraphics = null;
+                this.eraserPath = [];
+                
+                // 消しゴム設定
+                this.eraserSize = 20;
+                this.eraserOpacity = 1.0;
+            }
+            
+            setCanvasManager(canvasManager) {
+                this.canvasManager = canvasManager;
+            }
+            
+            onPointerDown(x, y, event) {
+                if (!this.canvasManager) {
+                    console.warn('⚠️ CanvasManager not set');
+                    return;
+                }
+                
+                // アクティブレイヤーが背景レイヤーの場合は消去しない
+                const activeLayerId = this.canvasManager.getActiveLayerId();
+                if (activeLayerId === 'layer0') {
+                    console.warn('⚠️ 背景レイヤーの消去は禁止されています');
+                    return;
+                }
+                
+                this.isErasing = true;
+                this.eraserPath = [{x, y}];
+                
+                // 消去用Graphics作成（ERASEブレンドモード使用）
+                this.currentGraphics = new PIXI.Graphics();
+                this.currentGraphics.blendMode = PIXI.BLEND_MODES.ERASE; // 真の消去モード
+                
+                // 消去線のスタイル設定
+                this.currentGraphics.lineStyle({
+                    width: this.eraserSize,
+                    color: 0x000000, // 色は関係ない（ERASEモードなので）
+                    alpha: this.eraserOpacity,
+                    cap: PIXI.LINE_CAP.ROUND,
+                    join: PIXI.LINE_JOIN.ROUND
+                });
+                
+                // 消去開始点設定
+                this.currentGraphics.moveTo(x, y);
+                
+                // 消去開始点に円描画（点消去対応）
+                this.currentGraphics.beginFill(0x000000, this.eraserOpacity);
+                this.currentGraphics.drawCircle(x, y, this.eraserSize / 2);
+                this.currentGraphics.endFill();
+                
+                // アクティブレイヤーに追加（消去処理）
+                this.canvasManager.addGraphicsToLayer(this.currentGraphics);
+                
+                console.log(`🧹 消去開始: layer=${activeLayerId}, pos=(${x}, ${y}), size=${this.eraserSize}`);
+            }
+            
+            onPointerMove(x, y, event) {
+                if (!this.isErasing || !this.currentGraphics) return;
+                
+                this.eraserPath.push({x, y});
+                
+                // 消去線を描画
+                this.currentGraphics.lineTo(x, y);
+                
+                // 消去円を描画（線の隙間を埋める）
+                this.currentGraphics.beginFill(0x000000, this.eraserOpacity);
+                this.currentGraphics.drawCircle(x, y, this.eraserSize / 2);
+                this.currentGraphics.endFill();
+                
+                // 連続する点同士も線で結ぶ（滑らかな消去）
+                if (this.eraserPath.length > 1) {
+                    const prevPoint = this.eraserPath[this.eraserPath.length - 2];
+                    this.currentGraphics.moveTo(prevPoint.x, prevPoint.y);
+                    this.currentGraphics.lineTo(x, y);
+                }
+            }
+            
+            onPointerUp(x, y, event) {
+                if (!this.isErasing || !this.currentGraphics) return;
+                
+                this.eraserPath.push({x, y});
+                this.currentGraphics.lineTo(x, y);
+                
+                // 最終点に円描画
+                this.currentGraphics.beginFill(0x000000, this.eraserOpacity);
+                this.currentGraphics.drawCircle(x, y, this.eraserSize / 2);
+                this.currentGraphics.endFill();
+                
+                // 消去処理完了
+                this.isErasing = false;
+                const pathLength = this.eraserPath.length;
+                const activeLayerId = this.canvasManager.getActiveLayerId();
+                
+                console.log(`✅ 消去完了: layer=${activeLayerId}, pathPoints=${pathLength}, size=${this.eraserSize}`);
+                
+                // リセット
+                this.currentGraphics = null;
+                this.eraserPath = [];
+            }
+            
+            setEraserSize(size) {
+                if (size > 0 && size <= 100) {
+                    this.eraserSize = size;
+                    console.log(`🧹 消しゴムサイズ変更: ${size}px`);
+                } else {
+                    console.warn(`⚠️ 無効な消しゴムサイズ: ${size}`);
+                }
+            }
+            
+            setEraserOpacity(opacity) {
+                if (opacity >= 0 && opacity <= 1) {
+                    this.eraserOpacity = opacity;
+                    console.log(`🧹 消しゴム透明度変更: ${opacity}`);
+                } else {
+                    console.warn(`⚠️ 無効な透明度: ${opacity}`);
+                }
+            }
+            
+            getSettings() {
+                return {
+                    eraserSize: this.eraserSize,
+                    eraserOpacity: this.eraserOpacity
+                };
+            }
+            
+            getDebugInfo() {
+                return {
+                    isErasing: this.isErasing,
+                    canvasManagerSet: !!this.canvasManager,
+                    hasCurrentGraphics: !!this.currentGraphics,
+                    pathLength: this.eraserPath.length,
+                    settings: this.getSettings()
+                };
+            }
+        }
+
+        window.Tegaki.EraserTool = EraserTool;
+        console.log('🧹 EraserTool Loaded');
+    </script>
+
+    <script>
+        /**
+         * 🖊️ AppCore - Manager束ね専任（main.js版）
+         * 📋 RESPONSIBILITY: Manager作成・Manager間連携のみ
+         * 🚫 PROHIBITION: UI操作・描画処理・エラー処理
+         * ✅ PERMISSION: Manager作成・連携設定・初期化制御
+         */
+        window.Tegaki = window.Tegaki || {};
+
+        class AppCore {
+            constructor() {
+                console.log('🖊️ AppCore - Manager束ね版作成');
+                
+                this.initialized = false;
+                this.canvasManager = null;
+                this.toolManager = null;
+            }
+            
+            async initialize() {
+                try {
+                    console.log('🚀 AppCore 初期化開始');
+                    
+                    // CanvasManager作成
+                    if (!window.Tegaki.CanvasManager) {
+                        throw new Error('CanvasManager class not available');
+                    }
+                    this.canvasManager = new window.Tegaki.CanvasManager();
+                    window.Tegaki.CanvasManagerInstance = this.canvasManager;
+                    
+                    // ToolManager作成
+                    if (!window.Tegaki.ToolManager) {
+                        throw new Error('ToolManager class not available');
+                    }
+                    this.toolManager = new window.Tegaki.ToolManager();
+                    window.Tegaki.ToolManagerInstance = this.toolManager;
+                    
+                    // Manager間連携設定
+                    this.toolManager.setCanvasManager(this.canvasManager);
+                    
+                    this.initialized = true;
+                    console.log('✅ AppCore 初期化完了');
+                    
+                    return true;
+                    
+                } catch (error) {
+                    console.error('❌ AppCore初期化エラー:', error);
+                    throw error;
+                }
+            }
+            
+            setPixiApp(pixiApp) {
+                if (!pixiApp) {
+                    throw new Error('PixiJS Application is required');
+                }
+                
+                if (!this.canvasManager) {
+                    throw new Error('CanvasManager not initialized');
+                }
+                
+                this.canvasManager.setPixiApp(pixiApp);
+                console.log('✅ AppCore - PixiApp設定完了');
+            }
+            
+            getCanvasManager() {
+                return this.canvasManager;
+            }
+            
+            getToolManager() {
+                return this.toolManager;
+            }
+            
+            isReady() {
+                return this.initialized && 
+                       !!this.canvasManager && 
+                       this.canvasManager.isReady() &&
+                       !!this.toolManager &&
+                       this.toolManager.isReady();
+            }
+            
+            start() {
+                if (!this.isReady()) {
+                    throw new Error('AppCore not ready for start');
+                }
+                
+                console.log('🚀 AppCore アプリケーション開始');
+                return true;
+            }
+            
+            getDebugInfo() {
+                return {
+                    initialized: this.initialized,
+                    ready: this.isReady(),
+                    canvasManager: this.canvasManager?.getDebugInfo() || null,
+                    toolManager: this.toolManager?.getDebugInfo() || null
+                };
+            }
+        }
+
+        window.Tegaki.AppCore = AppCore;
+        console.log('🖊️ AppCore Loaded');
+    </script>
+
+    <script>
+        /**
+         * 🎯 TegakiApplication - メインアプリケーション・UI連携専任（app-core.js版）
+         * 📋 RESPONSIBILITY: メインアプリケーション・UI連携・イベント設定
+         * 🚫 PROHIBITION: Manager作成・描画処理・エラー処理
+         * ✅ PERMISSION: AppCore作成・UI連携・イベント設定・PixiJS Application作成
+         */
+        window.Tegaki = window.Tegaki || {};
+
+        class TegakiApplication {
+            constructor() {
+                console.log('🎯 TegakiApplication 作成・自動初期化開始');
+                
+                this.initialized = false;
+                this.pixiApp = null;
+                this.appCore = null;
+                
+                // 自動初期化実行
+                this.initialize().catch(error => {
+                    console.error('💀 TegakiApplication 初期化失敗:', error);
+                    if (window.Tegaki?.ErrorManagerInstance) {
+                        window.Tegaki.ErrorManagerInstance.showCritical(
+                            `TegakiApplication初期化失敗: ${error.message}`,
+                            { context: 'TegakiApplication.constructor' }
+                        );
+                    }
+                    throw error;
+                });
+            }
+            
+            async initialize() {
+                try {
+                    console.log('🚀 TegakiApplication 初期化開始');
+                    
+                    // AppCore初期化
+                    await this.initializeAppCore();
+                    
+                    // PixiJS Application作成
+                    this.createCanvas();
+                    
+                    // UI設定
+                    this.setupUI();
+                    
+                    // アプリケーション開始
+                    this.appCore.start();
+                    
+                    this.initialized = true;
+                    this.showSuccessMessage();
+                    
+                    console.log('✅ TegakiApplication 初期化完了');
+                    
+                } catch (error) {
+                    console.error('❌ TegakiApplication 初期化エラー:', error);
+                    throw error;
+                }
+            }
+            
+            async initializeAppCore() {
+                if (!window.Tegaki.AppCore) {
+                    throw new Error('AppCore class not available');
+                }
+                
+                this.appCore = new window.Tegaki.AppCore();
+                await this.appCore.initialize();
+                
+                console.log('✅ AppCore初期化完了');
+            }
+            
+            createCanvas() {
+                if (!window.PIXI) {
+                    throw new Error('PixiJS not loaded');
+                }
+                
+                const config = window.Tegaki.ConfigManagerInstance.getCanvasConfig();
+                
+                // PixiJS Application作成
+                this.pixiApp = new PIXI.Application({
+                    width: config.width,
+                    height: config.height,
+                    backgroundColor: config.backgroundColor,
+                    antialias: true,
+                    resolution: window.devicePixelRatio || 1
+                });
+                
+                // DOM配置
+                const container = document.getElementById('canvas-container');
+                if (!container) {
+                    throw new Error('Canvas container not found');
+                }
+                container.appendChild(this.pixiApp.view);
+                
+                // AppCoreにPixiApp設定
+                this.appCore.setPixiApp(this.pixiApp);
+                
+                console.log('✅ PixiJS Canvas作成・配置完了');
+            }
+            
+            setupUI() {
+                this.setupCanvasEvents();
+                this.setupToolButtons();
+                this.setupIcons();
+                this.updateStatusDisplay();
+                
+                console.log('✅ UI設定完了');
+            }
+            
+            setupCanvasEvents() {
+                if (!this.pixiApp?.view) {
+                    throw new Error('Canvas view not available');
+                }
+                
+                const canvas = this.pixiApp.view;
+                
+                // ポインターイベント設定
+                canvas.addEventListener('pointerdown', (e) => this.handlePointerDown(e));
+                canvas.addEventListener('pointermove', (e) => this.handlePointerMove(e));
+                canvas.addEventListener('pointerup', (e) => this.handlePointerUp(e));
+                
+                // タッチ操作のデフォルト無効化
+                canvas.addEventListener('touchstart', (e) => e.preventDefault());
+                canvas.addEventListener('touchmove', (e) => e.preventDefault());
+                canvas.addEventListener('touchend', (e) => e.preventDefault());
+                
+                console.log('✅ キャンバスイベント設定完了');
+            }
+            
+            setupToolButtons() {
+                // ツールボタンイベント設定
+                document.getElementById('pen-tool')?.addEventListener('click', () => this.selectTool('pen'));
+                document.getElementById('eraser-tool')?.addEventListener('click', () => this.selectTool('eraser'));
+                
+                console.log('✅ ツールボタンイベント設定完了');
+            }
+            
+            setupIcons() {
+                // アイコン設定（シンプル版）
+                const penButton = document.getElementById('pen-tool');
+                if (penButton) {
+                    penButton.innerHTML = '<svg class="futaba-icon"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L18 13z"/><path d="m2 2 7.586 7.586"/></svg>';
+                }
+                
+                const eraserButton = document.getElementById('eraser-tool');
+                if (eraserButton) {
+                    eraserButton.innerHTML = '<svg class="futaba-icon"><rect width="18" height="12" x="3" y="8" rx="1"/><path d="m14 8-5 5"/></svg>';
+                }
+                
+                console.log('✅ アイコン設定完了');
+            }
+            
+            selectTool(toolName) {
+                const success = this.appCore?.getToolManager()?.selectTool(toolName);
+                if (success) {
+                    this.updateToolButtons(toolName);
+                    this.updateStatusDisplay();
+                    console.log(`🎯 ツール選択: ${toolName}`);
+                } else {
+                    console.warn(`⚠️ ツール選択失敗: ${toolName}`);
+                }
+            }
+            
+            updateToolButtons(activeToolName) {
+                // 全ボタンのactiveクラス削除
+                document.querySelectorAll('.tool-button').forEach(button => {
+                    button.classList.remove('active');
+                });
+                
+                // アクティブボタンにactiveクラス追加
+                const activeButton = document.getElementById(`${activeToolName}-tool`);
+                if (activeButton) {
+                    activeButton.classList.add('active');
+                }
+            }
+            
+            updateStatusDisplay() {
+                const toolManager = this.appCore?.getToolManager();
+                if (toolManager) {
+                    const currentToolName = toolManager.getCurrentToolName();
+                    const toolElement = document.getElementById('current-tool');
+                    if (toolElement) {
+                        const toolNames = {
+                            pen: 'ベクターペン',
+                            eraser: '消しゴム'
+                        };
+                        toolElement.textContent = toolNames[currentToolName] || currentToolName;
+                    }
+                }
+            }
+            
+            handlePointerDown(e) {
+                const rect = this.pixiApp.view.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                // 座標表示更新
+                this.updateCoordinates(x, y);
+                
+                // ツールに転送
+                this.appCore?.getToolManager()?.handlePointerDown(x, y, e);
+            }
+            
+            handlePointerMove(e) {
+                const rect = this.pixiApp.view.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                // 座標表示更新
+                this.updateCoordinates(x, y);
+                
+                // ツールに転送
+                this.appCore?.getToolManager()?.handlePointerMove(x, y, e);
+            }
+            
+            handlePointerUp(e) {
+                const rect = this.pixiApp.view.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                // ツールに転送
+                this.appCore?.getToolManager()?.handlePointerUp(x, y, e);
+            }
+            
+            updateCoordinates(x, y) {
+                const coordElement = document.getElementById('coordinates');
+                if (coordElement) {
+                    coordElement.textContent = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
+                }
+            }
+            
+            showSuccessMessage() {
+                if (window.Tegaki?.ErrorManagerInstance) {
+                    window.Tegaki.ErrorManagerInstance.showInfo(
+                        'Tegakiアプリケーション起動完了！',
+                        { context: 'TegakiApplication.showSuccessMessage' }
+                    );
+                }
+            }
+        }
+
+        window.Tegaki.TegakiApplication = TegakiApplication;
+        console.log('🎯 TegakiApplication Loaded');
+    </script>
+
+    <script>
+        /**
+         * 🚀 Bootstrap - 修正版
+         * 📋 RESPONSIBILITY: DOMContentLoaded でTegakiApplicationをインスタンス化のみ
+         */
+        (function() {
+            'use strict';
+            
+            console.log('🚀 Bootstrap 修正版');
+            
+            async function executeBootstrap() {
+                console.log('🔧 Bootstrap実行開始...');
+                
+                // TegakiApplication確認
+                if (!window.Tegaki?.TegakiApplication) {
+                    const error = new Error('TegakiApplication class not available');
+                    console.error('💀 Bootstrap失敗:', error.message);
+                    throw error;
+                }
+                
+                try {
+                    // TegakiApplication インスタンス化
+                    console.log('🎨 TegakiApplication インスタンス化開始...');
+                    const tegakiApp = new window.Tegaki.TegakiApplication();
+                    
+                    // グローバル参照設定（デバッグ用）
+                    window.TegakiAppInstance = tegakiApp;
+                    
+                    console.log('✅ Bootstrap完了 - Tegakiアプリケーション開始完了');
+                    
+                } catch (error) {
+                    console.error('💀 Bootstrap失敗:', error);
+                    
+                    // エラー隠蔽禁止・画面に表示
+                    document.body.innerHTML = `
+                        <div style="padding: 20px; color: red; font-family: monospace; background: #ffe6e6; border: 2px solid #ff9999;">
+                            <h2>🔥 Bootstrap Error</h2>
+                            <p><strong>Error:</strong> ${error.message}</p>
+                            <p><strong>Location:</strong> bootstrap.js</p>
+                            <p><strong>Time:</strong> ${new Date().toISOString()}</p>
+                            <button onclick="location.reload()" style="padding: 10px; margin-top: 10px;">
+                                🔄 Reload Application
+                            </button>
+                            <details style="margin-top: 10px;">
+                                <summary>Stack Trace</summary>
+                                <pre style="background: #f5f5f5; padding: 10px; margin-top: 5px;">${error.stack || 'No stack trace available'}</pre>
+                            </details>
+                        </div>
+                    `;
+                    
+                    throw error;
+                }
+            }
+            
+            function waitForDOMReady() {
+                if (document.readyState === 'loading') {
+                    console.log('⏳ DOM Loading - DOMContentLoaded待機中...');
+                    document.addEventListener('DOMContentLoaded', executeBootstrap);
+                } else {
+                    console.log('✅ DOM Ready - Bootstrap実行');
+                    executeBootstrap();
+                }
+            }
+            
+            // DOM準備確認後にBootstrap実行
+            waitForDOMReady();
+            
+        })();
+        
+        console.log('🚀 Bootstrap registered');
+    </script>
 </body>
 </html>
