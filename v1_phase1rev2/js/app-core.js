@@ -110,46 +110,6 @@ if (!window.TegakiApplication) {
             }
             
             console.log('✅ キャンバス作成完了');
-            
-            // 描画テスト
-            this.drawTestGraphics();
-        }
-        
-        /**
-         * 描画テスト
-         */
-        drawTestGraphics() {
-            console.log('🔧 描画テスト開始...');
-            
-            // テスト用Graphics作成
-            const testGraphics = new PIXI.Graphics();
-            
-            // 背景
-            testGraphics.beginFill(0xf0e0d6);
-            testGraphics.drawRect(0, 0, 400, 400);
-            testGraphics.endFill();
-            
-            // 中央に円
-            testGraphics.beginFill(0x800000);
-            testGraphics.drawCircle(200, 200, 30);
-            testGraphics.endFill();
-            
-            // テキスト
-            const testText = new PIXI.Text('🎨 Tegaki Ready!', {
-                fontFamily: 'Arial, sans-serif',
-                fontSize: 18,
-                fill: 0x800000,
-                align: 'center'
-            });
-            testText.x = 200;
-            testText.y = 260;
-            testText.anchor.set(0.5);
-            
-            // ステージに追加
-            this.pixiApp.stage.addChild(testGraphics);
-            this.pixiApp.stage.addChild(testText);
-            
-            console.log('✅ 描画テスト完了');
         }
         
         /**
