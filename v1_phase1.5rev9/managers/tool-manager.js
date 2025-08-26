@@ -185,17 +185,17 @@ if (!window.Tegaki.ToolManager) {
             if (window.Tegaki.PenTool) {
                 const penTool = new window.Tegaki.PenTool();
                 
-                // 🔧 修正：従来のsetCanvasManager（互換性維持）
-                if (typeof penTool.setCanvasManager === 'function') {
-                    penTool.setCanvasManager(this.canvasManager);
-                }
-                
-                // 🆕 AbstractToolベース初期化（Manager群提供・修正版）
+                // 🔧 修正：AbstractToolベース初期化を先に実行
                 if (typeof penTool.initialize === 'function') {
                     penTool.initialize(managerConfig);
                     console.log('✅ PenTool - Phase1.5 Manager統合初期化完了（修正版）');
                 } else {
                     console.warn('⚠️ PenTool.initialize メソッドが利用できません');
+                }
+                
+                // 🔧 修正：従来のsetCanvasManager（互換性維持・必要時のみ）
+                if (typeof penTool.setCanvasManager === 'function' && !penTool.canvasManager) {
+                    penTool.setCanvasManager(this.canvasManager);
                 }
                 
                 this.tools.set('pen', penTool);
@@ -208,17 +208,17 @@ if (!window.Tegaki.ToolManager) {
             if (window.Tegaki.EraserTool) {
                 const eraserTool = new window.Tegaki.EraserTool();
                 
-                // 🔧 修正：従来のsetCanvasManager（互換性維持）
-                if (typeof eraserTool.setCanvasManager === 'function') {
-                    eraserTool.setCanvasManager(this.canvasManager);
-                }
-                
-                // 🆕 AbstractToolベース初期化（Manager群提供・修正版）
+                // 🔧 修正：AbstractToolベース初期化を先に実行
                 if (typeof eraserTool.initialize === 'function') {
                     eraserTool.initialize(managerConfig);
                     console.log('✅ EraserTool - Phase1.5 Manager統合初期化完了（修正版）');
                 } else {
                     console.warn('⚠️ EraserTool.initialize メソッドが利用できません');
+                }
+                
+                // 🔧 修正：従来のsetCanvasManager（互換性維持・必要時のみ）
+                if (typeof eraserTool.setCanvasManager === 'function' && !eraserTool.canvasManager) {
+                    eraserTool.setCanvasManager(this.canvasManager);
                 }
                 
                 this.tools.set('eraser', eraserTool);

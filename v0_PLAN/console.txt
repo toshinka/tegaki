@@ -125,46 +125,18 @@ tool-manager.js:170 🔧 Manager設定状況: {canvasManager: true, coordinateMa
 abstract-tool.js:20 🎯 AbstractTool Phase1.5スタブ実装 - pen 初期化開始
 abstract-tool.js:57 🎯 AbstractTool pen スタブ実装完了
 pen-tool.js:32 ✏️ PenTool Phase1.5 非破壊編集対応版 作成（AbstractTool継承）
-pen-tool.js:47 ✏️ PenTool - setCanvasManager 呼び出し（互換性メソッド）
-abstract-tool.js:64 🎯 AbstractTool pen 初期化 - Phase1.5スタブ版
-abstract-tool.js:78 ⚠️ AbstractTool pen: CoordinateManager未提供 - Phase1.5開発中
-initialize @ abstract-tool.js:78
-setCanvasManager @ pen-tool.js:50
-createTools @ tool-manager.js:190
-initializeToolManager @ app-core.js:271
-await in initializeToolManager
-initialize @ app-core.js:69
-await in initialize
-TegakiApplication @ app-core.js:38
-executeBootstrap @ bootstrap.js:98
-abstract-tool.js:96 🎯 AbstractTool pen EventBus連携設定 - Phase1.5スタブ
-abstract-tool.js:85 ✅ AbstractTool pen 初期化完了 - Phase1.5スタブ版
 abstract-tool.js:64 🎯 AbstractTool pen 初期化 - Phase1.5スタブ版
 abstract-tool.js:96 🎯 AbstractTool pen EventBus連携設定 - Phase1.5スタブ
 abstract-tool.js:85 ✅ AbstractTool pen 初期化完了 - Phase1.5スタブ版
-tool-manager.js:196 ✅ PenTool - Phase1.5 Manager統合初期化完了（修正版）
+tool-manager.js:191 ✅ PenTool - Phase1.5 Manager統合初期化完了（修正版）
 tool-manager.js:202 ✅ PenTool 作成・設定完了（Phase1.5対応・修正版）
 abstract-tool.js:20 🎯 AbstractTool Phase1.5スタブ実装 - eraser 初期化開始
 abstract-tool.js:57 🎯 AbstractTool eraser スタブ実装完了
 eraser-tool.js:30 🧹 EraserTool Phase1.5 非破壊編集対応版 作成（AbstractTool継承）
-eraser-tool.js:46 🧹 EraserTool - setCanvasManager 呼び出し（互換性メソッド）
-abstract-tool.js:64 🎯 AbstractTool eraser 初期化 - Phase1.5スタブ版
-abstract-tool.js:78 ⚠️ AbstractTool eraser: CoordinateManager未提供 - Phase1.5開発中
-initialize @ abstract-tool.js:78
-setCanvasManager @ eraser-tool.js:49
-createTools @ tool-manager.js:213
-initializeToolManager @ app-core.js:271
-await in initializeToolManager
-initialize @ app-core.js:69
-await in initialize
-TegakiApplication @ app-core.js:38
-executeBootstrap @ bootstrap.js:98
-abstract-tool.js:96 🎯 AbstractTool eraser EventBus連携設定 - Phase1.5スタブ
-abstract-tool.js:85 ✅ AbstractTool eraser 初期化完了 - Phase1.5スタブ版
 abstract-tool.js:64 🎯 AbstractTool eraser 初期化 - Phase1.5スタブ版
 abstract-tool.js:96 🎯 AbstractTool eraser EventBus連携設定 - Phase1.5スタブ
 abstract-tool.js:85 ✅ AbstractTool eraser 初期化完了 - Phase1.5スタブ版
-tool-manager.js:219 ✅ EraserTool - Phase1.5 Manager統合初期化完了（修正版）
+tool-manager.js:214 ✅ EraserTool - Phase1.5 Manager統合初期化完了（修正版）
 tool-manager.js:225 ✅ EraserTool 作成・設定完了（Phase1.5対応・修正版）
 canvas-manager.js:190 🎯 Active layer set to: layer1
 tool-manager.js:323 ✅ ツール選択成功: pen (アクティブレイヤー: layer1)
@@ -219,9 +191,9 @@ app-core.js:756 ⌨️ ShortcutManager統合完了 - キーボードショート
 app-core.js:757 🎯 Phase1.5新Manager統合基盤確立完了（完全修正版）
 error-manager.js:38 💡 INFO: Phase1.5新Manager統合初期化完了 - 全機能統合完了（完全修正版） TegakiApplication.initialize
 app-core.js:83 ✅ TegakiApplication Phase1.5 新Manager統合初期化完了（完全修正版）
-tool-manager.js:350 🖊️ PointerDown [pen]: {x: 3, y: 2.5}
-tool-manager.js:385 🖊️ PointerUp [pen]: {x: 3, y: 2.5}
-tool-manager.js:350 🖊️ PointerDown [pen]: {x: 189, y: 191}
-tool-manager.js:385 🖊️ PointerUp [pen]: {x: 189, y: 191}
-tool-manager.js:350 🖊️ PointerDown [pen]: {x: 384.5, y: 385}
-tool-manager.js:385 🖊️ PointerUp [pen]: {x: 384.5, y: 385}
+tool-manager.js:350 🖊️ PointerDown [pen]: {x: 2.5, y: 1.5}
+tool-manager.js:385 🖊️ PointerUp [pen]: {x: 3, y: 1.5}
+tool-manager.js:350 🖊️ PointerDown [pen]: {x: 209, y: 205.5}
+tool-manager.js:385 🖊️ PointerUp [pen]: {x: 209, y: 205.5}
+tool-manager.js:350 🖊️ PointerDown [pen]: {x: 388, y: 388}
+tool-manager.js:385 🖊️ PointerUp [pen]: {x: 388, y: 388}
