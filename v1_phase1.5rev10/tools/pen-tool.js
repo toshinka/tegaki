@@ -18,9 +18,9 @@
  * ✏️ PEN_DRAWING_FLOW: ペン描画の正しい流れ
  * 1. ToolManager.selectTool('pen') → PenTool.activate() → this.active = true
  * 2. Canvas DOM Event → ToolManager.handlePointerDown → PenTool.onPointerDown
- * 3. PenTool.handleMouseDown → this.active確認 → 描画開始
- * 4. PIXI.Graphics作成 → lineStyle設定 → CanvasManager.addGraphicsToLayer
- * 5. PointerMove → 継続描画 → lineTo/drawCircle → 座標記録
+ * 3. PenTool.onPointerDown → CoordinateManager座標変換 → 描画開始
+ * 4. PIXI.Graphics作成 → lineStyle設定 → moveTo開始点 → lineTo描画
+ * 5. PointerMove → 継続描画 → lineTo追加 → 座標記録
  * 6. PointerUp → 描画終了 → ストローク完了 → 操作記録保存
  */
 
@@ -78,7 +78,7 @@ if (!window.Tegaki.PenTool) {
         }
         
         /**
-         * 🔧 CRITICAL FIX: PointerイベントでのisActive確認を修正
+         * 🔧 CRITICAL FIX: PointerイベントでのisActive確認と座標変換修正
          */
         onPointerDown(x, y, event) {
             // activeフラグの明示的確認とログ出力
@@ -90,43 +90,33 @@ if (!window.Tegaki.PenTool) {
                 return false;
             }
             
-            // AbstractToolのhandleMouseDownを呼び出し
-            return this.handleMouseDown({ clientX: x, clientY: y, pressure: event?.pressure });
+            // 直接描画開始（座標はすでに変換済み）
+            this.startDrawing(x, y, event);
+            return true;
         }
         
         onPointerMove(x, y, event) {
             if (!this.active || !this.isDrawing) return false;
-            return this.handleMouseMove({ clientX: x, clientY: y, pressure: event?.pressure });
+            this.continueDrawing(x, y, event);
+            return true;
         }
         
         onPointerUp(x, y, event) {
             if (!this.active || !this.isDrawing) return false;
-            return this.handleMouseUp({ clientX: x, clientY: y, pressure: event?.pressure });
+            this.endDrawing(x, y, event);
+            return true;
         }
         
         /**
-         * デフォルト設定取得（AbstractTool実装）
+         * 描画開始処理（直接実装）
          */
-        getDefaultSettings() {
-            return {
-                color: 0x800000,           // ふたば風マルーン
-                lineWidth: 4,              // デフォルト線幅
-                opacity: 1.0,              // 不透明度
-                smoothing: true,           // スムージング有効
-                pressureSensitive: false   // 筆圧感度（Phase3で実装）
-            };
-        }
-        
-        /**
-         * 描画開始処理（AbstractTool実装）
-         */
-        onDrawStart(point, event) {
+        startDrawing(x, y, event) {
             if (!this.canvasManager) {
                 console.warn('⚠️ CanvasManager not set');
                 return;
             }
             
-            const { x, y } = point;
+            this.isDrawing = true;
             
             // アクティブレイヤー確認
             const activeLayerId = this.canvasManager.getActiveLayerId();
@@ -141,19 +131,21 @@ if (!window.Tegaki.PenTool) {
             
             // Graphics作成（表示レンダラー）
             this.currentPath = new PIXI.Graphics();
-            this.updateGraphicsStyle();
             
-            // 🆕 currentActionにGraphics設定（Undo/Redo用）
-            if (this.currentAction) {
-                this.currentAction.graphics = this.currentPath;
-                this.currentAction.type = 'pen'; // 操作タイプ設定
-            }
+            // lineStyleを最初に設定
+            this.currentPath.lineStyle({
+                width: this.settings.lineWidth,
+                color: this.settings.color,
+                alpha: this.settings.opacity,
+                cap: PIXI.LINE_CAP.ROUND,
+                join: PIXI.LINE_JOIN.ROUND
+            });
             
             // 描画開始点設定
             this.currentPath.moveTo(x, y);
             
-            // 開始点に小さな円を描画
-            this.drawPointCircle(x, y);
+            // 開始点に小さな円を描画（実際に見える線を作る）
+            this.currentPath.drawCircle(x, y, this.settings.lineWidth / 2);
             
             // アクティブレイヤーに追加
             try {
@@ -165,22 +157,30 @@ if (!window.Tegaki.PenTool) {
                     window.Tegaki.ErrorManagerInstance.showError(
                         'technical',
                         `ペンGraphics追加失敗: ${error.message}`,
-                        { context: 'PenTool.onDrawStart' }
+                        { context: 'PenTool.startDrawing' }
                     );
                 }
+            }
+            
+            // 操作記録開始
+            if (this.recordManager) {
+                this.currentAction = this.recordManager.startOperation({
+                    tool: this.name,
+                    type: 'pen',
+                    data: {
+                        startPoint: { x, y },
+                        settings: { ...this.settings },
+                        layerId: activeLayerId
+                    }
+                });
             }
         }
         
         /**
-         * 描画更新処理（AbstractTool実装）
+         * 描画継続処理（直接実装）
          */
-        onDrawMove(point, event) {
+        continueDrawing(x, y, event) {
             if (!this.currentPath) return;
-            
-            const { x, y } = point;
-            
-            // 前の点取得
-            const prev = this.points[this.points.length - 1];
             
             // 点を記録（ベクターデータ）
             const pointData = {
@@ -190,32 +190,25 @@ if (!window.Tegaki.PenTool) {
             };
             this.points.push(pointData);
             
-            // 前の点からのmoveTo保証
-            if (prev) {
-                this.currentPath.moveTo(prev.x, prev.y);
-            }
-            
             // 線描画
-            if (this.settings.smoothing && this.points.length > 2) {
-                this.drawSmoothLine();
-            } else {
-                this.currentPath.lineTo(x, y);
+            this.currentPath.lineTo(x, y);
+            
+            // 線の隙間を円で埋める（太い線で重要）
+            this.currentPath.drawCircle(x, y, this.settings.lineWidth / 2);
+            
+            // コンソールログ（デバッグ用・頻度制限）
+            if (this.points.length % 5 === 0) {
+                console.log(`✏️ 描画継続: 点数=${this.points.length}, 座標=(${Math.round(x)}, ${Math.round(y)})`);
             }
-            
-            // 線の隙間を円で埋める
-            this.drawPointCircle(x, y);
-            
-            // 🔧 重要修正: 円描画後にlineStyleを復元
-            this.updateGraphicsStyle();
         }
         
         /**
-         * 描画終了処理（AbstractTool実装）
+         * 描画終了処理（直接実装）
          */
-        onDrawEnd(point, event) {
+        endDrawing(x, y, event) {
             if (!this.currentPath) return;
             
-            const { x, y } = point;
+            this.isDrawing = false;
             
             // 最終点追加
             const finalPoint = {
@@ -226,17 +219,11 @@ if (!window.Tegaki.PenTool) {
             this.points.push(finalPoint);
             
             // 最終線描画
-            const prev = this.points[this.points.length - 2];
-            if (prev) {
-                this.currentPath.moveTo(prev.x, prev.y);
-            }
             this.currentPath.lineTo(x, y);
+            this.currentPath.drawCircle(x, y, this.settings.lineWidth / 2);
             
-            // 最終点に円描画
-            this.drawPointCircle(x, y);
-            
-            // 🆕 ストロークデータをローカル履歴に保存
-            if (this.vectorDataEnabled && this.currentAction) {
+            // ストロークデータをローカル履歴に保存
+            if (this.vectorDataEnabled) {
                 const strokeData = {
                     id: `pen_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                     layerId: this.canvasManager?.getActiveLayerId() || 'default',
@@ -256,6 +243,21 @@ if (!window.Tegaki.PenTool) {
                 console.log(`💾 ペンストローク保存: id=${strokeData.id}, points=${strokeData.points.length}`);
             }
             
+            // 操作記録終了
+            if (this.currentAction && this.recordManager) {
+                this.currentAction.data.endPoint = { x, y };
+                this.currentAction.data.points = [...this.points];
+                this.currentAction.graphics = this.currentPath;
+                
+                this.recordManager.endOperation(this.currentAction.id, {
+                    success: true,
+                    graphics: this.currentPath,
+                    strokeData: this.strokeHistory[this.strokeHistory.length - 1]
+                });
+                
+                this.currentAction = null;
+            }
+            
             // 描画完了処理
             const pathLength = this.points.length;
             const activeLayerId = this.canvasManager?.getActiveLayerId();
@@ -265,6 +267,19 @@ if (!window.Tegaki.PenTool) {
             // リセット
             this.currentPath = null;
             this.points = [];
+        }
+        
+        /**
+         * デフォルト設定取得（AbstractTool実装）
+         */
+        getDefaultSettings() {
+            return {
+                color: 0x800000,           // ふたば風マルーン
+                lineWidth: 4,              // デフォルト線幅
+                opacity: 1.0,              // 不透明度
+                smoothing: true,           // スムージング有効
+                pressureSensitive: false   // 筆圧感度（Phase3で実装）
+            };
         }
         
         /**
@@ -322,60 +337,7 @@ if (!window.Tegaki.PenTool) {
             // 状態リセット
             this.currentPath = null;
             this.points = [];
-        }
-        
-        /**
-         * 点描画（円）+ lineStyle復元
-         * 🔧 FIX: beginFill/endFill後のlineStyle復元
-         */
-        drawPointCircle(x, y) {
-            this.currentPath.beginFill(this.settings.color, this.settings.opacity);
-            this.currentPath.drawCircle(x, y, this.settings.lineWidth / 2);
-            this.currentPath.endFill();
-            
-            // 🔧 重要修正: 円描画後にlineStyleを再設定
-            this.updateGraphicsStyle();
-        }
-        
-        /**
-         * Graphics スタイル更新（lineStyle復元用）
-         * 🔧 FIX: endFill後のlineStyle消失問題対策
-         */
-        updateGraphicsStyle() {
-            if (!this.currentPath) return;
-            
-            this.currentPath.lineStyle({
-                width: this.settings.lineWidth,
-                color: this.settings.color,
-                alpha: this.settings.opacity,
-                cap: PIXI.LINE_CAP.ROUND,
-                join: PIXI.LINE_JOIN.ROUND
-            });
-        }
-        
-        /**
-         * スムーズな曲線描画（座標修正版）
-         * 📏 設計: ベジェカーブによるスムージング
-         */
-        drawSmoothLine() {
-            if (this.points.length < 3) return;
-            
-            const len = this.points.length;
-            const p1 = this.points[len - 3];
-            const p2 = this.points[len - 2];
-            const p3 = this.points[len - 1];
-            
-            // 始点を明示的に補正
-            this.currentPath.moveTo(p2.x, p2.y);
-            
-            // 制御点計算（簡易スムージング）
-            const cp1x = p1.x + (p2.x - p1.x) * 0.5;
-            const cp1y = p1.y + (p2.y - p1.y) * 0.5;
-            const cp2x = p2.x + (p3.x - p2.x) * 0.5;
-            const cp2y = p2.y + (p3.y - p2.y) * 0.5;
-            
-            // ベジェカーブ描画
-            this.currentPath.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p3.x, p3.y);
+            this.isDrawing = false;
         }
         
         /**
@@ -399,23 +361,11 @@ if (!window.Tegaki.PenTool) {
             const points = strokeData.points;
             if (points.length > 0) {
                 graphics.moveTo(points[0].x, points[0].y);
+                graphics.drawCircle(points[0].x, points[0].y, strokeData.style.lineWidth / 2);
                 
                 for (let i = 1; i < points.length; i++) {
                     graphics.lineTo(points[i].x, points[i].y);
-                    
-                    // 点も再描画
-                    graphics.beginFill(strokeData.style.color, strokeData.style.opacity);
                     graphics.drawCircle(points[i].x, points[i].y, strokeData.style.lineWidth / 2);
-                    graphics.endFill();
-                    
-                    // lineStyle復元
-                    graphics.lineStyle({
-                        width: strokeData.style.lineWidth,
-                        color: strokeData.style.color,
-                        alpha: strokeData.style.opacity,
-                        cap: PIXI.LINE_CAP.ROUND,
-                        join: PIXI.LINE_JOIN.ROUND
-                    });
                 }
             }
             
@@ -440,7 +390,7 @@ if (!window.Tegaki.PenTool) {
                 return;
             }
             
-            this.updateSetting('color', colorValue);
+            this.settings.color = colorValue;
             console.log(`✏️ ペン色変更: 0x${colorValue.toString(16)}`);
         }
         
@@ -449,7 +399,7 @@ if (!window.Tegaki.PenTool) {
          */
         setPenWidth(width) {
             if (width > 0 && width <= 100) {
-                this.updateSetting('lineWidth', width);
+                this.settings.lineWidth = width;
                 console.log(`✏️ ペン線幅変更: ${width}px`);
             } else {
                 console.warn(`⚠️ 無効な線幅: ${width} (1-100の範囲で指定してください)`);
@@ -461,7 +411,7 @@ if (!window.Tegaki.PenTool) {
          */
         setPenOpacity(opacity) {
             if (opacity >= 0 && opacity <= 1) {
-                this.updateSetting('opacity', opacity);
+                this.settings.opacity = opacity;
                 console.log(`✏️ ペン透明度変更: ${opacity}`);
             } else {
                 console.warn(`⚠️ 無効な透明度: ${opacity} (0.0-1.0の範囲で指定してください)`);
@@ -472,7 +422,7 @@ if (!window.Tegaki.PenTool) {
          * スムージング設定
          */
         setSmoothing(enabled) {
-            this.updateSetting('smoothing', enabled);
+            this.settings.smoothing = enabled;
             console.log(`✏️ スムージング: ${enabled ? '有効' : '無効'}`);
         }
         
@@ -521,10 +471,12 @@ if (!window.Tegaki.PenTool) {
          * 🆕 Phase1.5デバッグ情報取得（AbstractTool拡張）
          */
         getDebugInfo() {
-            const baseInfo = super.getToolState ? super.getToolState() : {};
-            
             return {
-                ...baseInfo,
+                // 基本状態
+                active: this.active,
+                enabled: this.enabled,
+                isDrawing: this.isDrawing,
+                
                 // ペン固有情報
                 pen: {
                     hasCurrentPath: !!this.currentPath,
@@ -538,6 +490,14 @@ if (!window.Tegaki.PenTool) {
                     opacity: this.settings.opacity,
                     smoothing: this.settings.smoothing,
                     pressureSensitive: this.settings.pressureSensitive
+                },
+                
+                // Manager接続状況
+                managers: {
+                    canvasManager: !!this.canvasManager,
+                    coordinateManager: !!this.coordinateManager,
+                    recordManager: !!this.recordManager,
+                    eventBus: !!this.eventBus
                 },
                 
                 // 最新ストローク情報
@@ -562,6 +522,7 @@ if (!window.Tegaki.PenTool) {
                 testGraphics.lineStyle(2, 0xff0000);
                 testGraphics.moveTo(0, 0);
                 testGraphics.lineTo(10, 10);
+                testGraphics.drawCircle(5, 5, 1);
                 
                 results.success.push('PenTool: PIXI.Graphics描画機能正常');
                 

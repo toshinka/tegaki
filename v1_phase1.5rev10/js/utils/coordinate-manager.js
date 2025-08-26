@@ -7,6 +7,17 @@
  * 📏 DESIGN_PRINCIPLE: シンプル座標変換・AI管理最適化・剛直構造
  * 🔄 INTEGRATION: TegakiApplication・全ツール・NavigationManagerとの連携
  * 🎯 FEATURE: キャンバス外20px描画許可・正確な座標変換・クランプ処理
+ * 
+ * 🖼️ キャンバス表示の流れ:
+ * 1. HTML Canvas要素 → PixiJS Application.view
+ * 2. CanvasManager → レイヤー管理・PixiJS Stage構築
+ * 3. CoordinateManager → スクリーン座標⇔キャンバス座標変換
+ * 4. Tools → 描画・座標変換利用
+ * 
+ * 🖊️ ペンツール描画・記録の流れ:
+ * 1. PointerEvent → CoordinateManager.clientToCanvas → キャンバス座標
+ * 2. PenTool → 座標でGraphics描画 → CanvasManager.activeLayer追加
+ * 3. RecordManager → 操作記録・Undo/Redo対応
  */
 
 // Tegaki名前空間初期化
@@ -69,6 +80,13 @@ class CoordinateManager {
         this.canvasHeight = rect.height;
         
         console.log(`📐 Canvas情報更新: ${this.canvasWidth}x${this.canvasHeight}px`);
+    }
+    
+    /**
+     * 🎯 メイン機能: クライアント座標→キャンバス座標変換（AbstractToolで使用）
+     */
+    clientToCanvas(clientX, clientY) {
+        return this.screenToCanvas(clientX, clientY);
     }
     
     /**
