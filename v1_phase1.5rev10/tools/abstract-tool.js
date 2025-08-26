@@ -7,6 +7,13 @@
  * 📏 DESIGN_PRINCIPLE: 単一継承・共通処理統一・操作記録統合・状態管理
  * 🔄 INTEGRATION: Phase1.5基盤・RecordManager連携・CoordinateManager活用
  * 🎯 Phase1.5: ツール基底・操作記録・Phase2変形準備
+ * 
+ * 🔄 TOOL_ACTIVATION_FLOW: ツール有効化の正しい流れ
+ * 1. ToolManager.selectTool(toolName) → currentTool設定
+ * 2. ToolManager → currentTool.activate() 呼び出し
+ * 3. AbstractTool.activate() → this.active = true + onActivate()
+ * 4. PointerEvent → ツール.onPointerDown() → this.active確認 → 描画開始
+ * 5. 前ツールがある場合は deactivate() → this.active = false
  */
 
 (function() {
@@ -23,10 +30,10 @@
             this.id = options.id || name.toLowerCase();
             this.displayName = options.displayName || name;
             
-            // ツール状態（Phase1.5基盤）
-            this.active = false;
-            this.enabled = true;
-            this.busy = false;
+            // 🔧 CRITICAL: ツール状態（Phase1.5基盤）
+            this.active = false;      // 🚨 アクティブ状態 - activate()で true, deactivate()で false
+            this.enabled = true;      // 有効/無効状態
+            this.busy = false;        // 処理中フラグ
             
             // Manager参照（Phase1.5基盤）
             this.canvasManager = null;
@@ -111,14 +118,17 @@
         }
         
         /**
-         * ツールアクティベート（Phase1.5スタブ実装）
+         * 🔧 CRITICAL FIX: ツールアクティベート（Phase1.5スタブ実装）
          */
         activate() {
-            if (this.active) return;
+            if (this.active) {
+                console.log(`🎯 AbstractTool ${this.name} 既にアクティブ`);
+                return;
+            }
             
             console.log(`🎯 AbstractTool ${this.name} アクティベート - Phase1.5スタブ`);
             
-            this.active = true;
+            this.active = true; // 🚨 重要: アクティブフラグ設定
             this.onActivate();
             
             // Phase1.5: EventBus通知（スタブ）
@@ -131,10 +141,13 @@
         }
         
         /**
-         * ツールデアクティベート（Phase1.5スタブ実装）
+         * 🔧 CRITICAL FIX: ツールデアクティベート（Phase1.5スタブ実装）
          */
         deactivate() {
-            if (!this.active) return;
+            if (!this.active) {
+                console.log(`🎯 AbstractTool ${this.name} 既に非アクティブ`);
+                return;
+            }
             
             console.log(`🎯 AbstractTool ${this.name} デアクティベート - Phase1.5スタブ`);
             
@@ -143,7 +156,7 @@
                 this.finishDrawing();
             }
             
-            this.active = false;
+            this.active = false; // 🚨 重要: アクティブフラグ解除
             this.onDeactivate();
             
             // Phase1.5: EventBus通知（スタブ）
@@ -159,7 +172,14 @@
          * マウスダウン処理（Phase1.5スタブ実装）
          */
         handleMouseDown(event) {
-            if (!this.active || !this.enabled || this.busy) {
+            // 🔧 CRITICAL: アクティブ状態確認を最優先
+            if (!this.active) {
+                console.warn(`⚠️ AbstractTool ${this.name} not active, ignoring mouse down`);
+                return false;
+            }
+            
+            if (!this.enabled || this.busy) {
+                console.warn(`⚠️ AbstractTool ${this.name} not enabled or busy, ignoring mouse down`);
                 return false;
             }
             
@@ -487,4 +507,4 @@
     console.log('🎯 AbstractTool Phase1.5スタブ実装 - 名前空間登録完了');
     console.log('🔧 次のステップ: 詳細実装・RecordManager統合・CoordinateManager活用・継承ツール更新');
     
-})();
+})()

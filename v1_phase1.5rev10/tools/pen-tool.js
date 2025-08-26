@@ -1,5 +1,5 @@
 /**
- * ✏️ PenTool Phase1.5 修正版 - 描画機能修復・AbstractTool継承・RecordManager統合
+ * ✏️ PenTool Phase1.5 非破壊編集対応版 - AbstractTool継承・RecordManager統合
  * 📋 RESPONSIBILITY: ベクター描画処理・座標データ管理・非破壊編集対応
  * 🚫 PROHIBITION: レイヤー操作・UI通知・座標変換・直接Manager作成
  * ✅ PERMISSION: PIXI.Graphics作成・線描画・CanvasManagerへの渡し・操作記録
@@ -7,12 +7,21 @@
  * 📏 DESIGN_PRINCIPLE: AbstractTool継承・非破壊編集・座標データ主体・Graphics表示従
  * 🔄 INTEGRATION: Phase1.5非破壊編集・RecordManager・CoordinateManager統合
  * 🎯 FEATURE: Undo/Redo対応・操作履歴記録・キャンバス外描画対応
+ * 🆕 Phase1.5: AbstractTool継承・RecordManager統合・非破壊編集完全対応
  * 
- * 🔧 Phase1.5 修正内容:
- * - PointerイベントからMouseイベントへの座標変換を修正
- * - AbstractToolの座標変換重複を回避
- * - 描画開始・継続・終了の明確化
- * - CanvasManager連携の最適化
+ * 🎨 CANVAS_DISPLAY: キャンバス表示の流れ
+ * 1. bootstrap.js → DOM読み込み完了後にTegakiApplicationを作成
+ * 2. app-core.js → CanvasManagerでPixiJS初期化・レイヤー作成・DOM配置
+ * 3. CanvasManager → 背景レイヤー(layer0) + 描画レイヤー(layer1)作成
+ * 4. HTML DOM → PixiJSのcanvas要素をdivコンテナに配置
+ * 
+ * ✏️ PEN_DRAWING_FLOW: ペン描画の正しい流れ
+ * 1. ToolManager.selectTool('pen') → PenTool.activate() → this.active = true
+ * 2. Canvas DOM Event → ToolManager.handlePointerDown → PenTool.onPointerDown
+ * 3. PenTool.handleMouseDown → this.active確認 → 描画開始
+ * 4. PIXI.Graphics作成 → lineStyle設定 → CanvasManager.addGraphicsToLayer
+ * 5. PointerMove → 継続描画 → lineTo/drawCircle → 座標記録
+ * 6. PointerUp → 描画終了 → ストローク完了 → 操作記録保存
  */
 
 // Tegaki名前空間初期化
@@ -20,7 +29,7 @@ window.Tegaki = window.Tegaki || {};
 
 if (!window.Tegaki.PenTool) {
     /**
-     * PenTool - Phase1.5 修正版（AbstractTool継承）
+     * PenTool - Phase1.5 非破壊編集対応版（AbstractTool継承）
      * AbstractToolを継承してベクター描画・非破壊編集・操作記録を行う
      */
     class PenTool extends window.Tegaki.AbstractTool {
@@ -43,9 +52,6 @@ if (!window.Tegaki.PenTool) {
             
             // ベクター設定
             this.vectorDataEnabled = true;  // ベクターデータ保持（常に有効）
-            
-            // 描画状態管理
-            this.isDrawing = false;
         }
         
         /**
@@ -64,6 +70,41 @@ if (!window.Tegaki.PenTool) {
         }
         
         /**
+         * 🔧 CRITICAL FIX: アクティベート処理を明示的に実装
+         * AbstractToolのactivateを確実に呼び出してthis.active = trueにする
+         */
+        onActivate() {
+            console.log(`✏️ PenTool アクティベート完了 - 描画可能状態`);
+        }
+        
+        /**
+         * 🔧 CRITICAL FIX: PointerイベントでのisActive確認を修正
+         */
+        onPointerDown(x, y, event) {
+            // activeフラグの明示的確認とログ出力
+            console.log(`✏️ PenTool onPointerDown: active=${this.active}, enabled=${this.enabled}, coords=(${x}, ${y})`);
+            
+            // 非アクティブ時は即座に中断
+            if (!this.active) {
+                console.warn('⚠️ PenTool not active, ignoring pointer down');
+                return false;
+            }
+            
+            // AbstractToolのhandleMouseDownを呼び出し
+            return this.handleMouseDown({ clientX: x, clientY: y, pressure: event?.pressure });
+        }
+        
+        onPointerMove(x, y, event) {
+            if (!this.active || !this.isDrawing) return false;
+            return this.handleMouseMove({ clientX: x, clientY: y, pressure: event?.pressure });
+        }
+        
+        onPointerUp(x, y, event) {
+            if (!this.active || !this.isDrawing) return false;
+            return this.handleMouseUp({ clientX: x, clientY: y, pressure: event?.pressure });
+        }
+        
+        /**
          * デフォルト設定取得（AbstractTool実装）
          */
         getDefaultSettings() {
@@ -77,73 +118,6 @@ if (!window.Tegaki.PenTool) {
         }
         
         /**
-         * 🔧 FIX: PointerイベントをMouseイベントに変換（座標変換修正版）
-         * 
-         * PointerEventからMouseEventに変換する際の座標処理を修正:
-         * 1. ToolManagerから既に変換済みの座標(x, y)が渡される
-         * 2. これをAbstractToolの座標変換システムに正しく渡す
-         * 3. 重複座標変換を防ぐ
-         */
-        onPointerDown(x, y, event) {
-            if (!this.active) {
-                console.log(`⚠️ PenTool not active, ignoring pointer down`);
-                return false;
-            }
-            
-            console.log(`✏️ PenTool PointerDown: (${x}, ${y})`);
-            
-            // 🔧 FIX: 座標はすでに変換済みのため、そのまま使用
-            const mockEvent = {
-                clientX: x,
-                clientY: y,
-                pressure: event?.pressure || 1.0
-            };
-            
-            return this.handleMouseDown(mockEvent);
-        }
-        
-        onPointerMove(x, y, event) {
-            if (!this.active || !this.isDrawing) {
-                return false;
-            }
-            
-            // 🔧 FIX: 座標はすでに変換済みのため、そのまま使用
-            const mockEvent = {
-                clientX: x,
-                clientY: y,
-                pressure: event?.pressure || 1.0
-            };
-            
-            return this.handleMouseMove(mockEvent);
-        }
-        
-        onPointerUp(x, y, event) {
-            if (!this.active) {
-                return false;
-            }
-            
-            console.log(`✏️ PenTool PointerUp: (${x}, ${y})`);
-            
-            // 🔧 FIX: 座標はすでに変換済みのため、そのまま使用
-            const mockEvent = {
-                clientX: x,
-                clientY: y,
-                pressure: event?.pressure || 1.0
-            };
-            
-            return this.handleMouseUp(mockEvent);
-        }
-        
-        /**
-         * 🔧 FIX: AbstractToolの座標変換をオーバーライド
-         * ToolManagerから既に変換済みの座標が渡されるため、そのまま返す
-         */
-        transformPoint(clientX, clientY) {
-            // 🔧 重要修正: ToolManagerからの座標はすでに変換済み
-            return { x: clientX, y: clientY };
-        }
-        
-        /**
          * 描画開始処理（AbstractTool実装）
          */
         onDrawStart(point, event) {
@@ -154,7 +128,9 @@ if (!window.Tegaki.PenTool) {
             
             const { x, y } = point;
             
-            console.log(`✏️ ペン描画開始: pos=(${Math.round(x)}, ${Math.round(y)})`);
+            // アクティブレイヤー確認
+            const activeLayerId = this.canvasManager.getActiveLayerId();
+            console.log(`✏️ ペン描画開始: layer=${activeLayerId}, pos=(${Math.round(x)}, ${Math.round(y)})`);
             
             // 座標配列初期化
             this.points = [{
@@ -182,7 +158,7 @@ if (!window.Tegaki.PenTool) {
             // アクティブレイヤーに追加
             try {
                 this.canvasManager.addGraphicsToLayer(this.currentPath);
-                console.log(`✅ ペンGraphics追加成功`);
+                console.log(`✅ ペンGraphics追加成功: layer=${activeLayerId}`);
             } catch (error) {
                 console.error('❌ ペンGraphics追加失敗:', error);
                 if (window.Tegaki?.ErrorManagerInstance) {
@@ -241,8 +217,6 @@ if (!window.Tegaki.PenTool) {
             
             const { x, y } = point;
             
-            console.log(`✅ ペン描画終了: pos=(${Math.round(x)}, ${Math.round(y)}) pathPoints=${this.points.length}`);
-            
             // 最終点追加
             const finalPoint = {
                 x, y, 
@@ -265,7 +239,7 @@ if (!window.Tegaki.PenTool) {
             if (this.vectorDataEnabled && this.currentAction) {
                 const strokeData = {
                     id: `pen_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                    layerId: this.canvasManager?.getActiveLayerId() || 'layer1',
+                    layerId: this.canvasManager?.getActiveLayerId() || 'default',
                     points: [...this.points],
                     style: {
                         color: this.settings.color,
@@ -281,6 +255,12 @@ if (!window.Tegaki.PenTool) {
                 this.strokeHistory.push(strokeData);
                 console.log(`💾 ペンストローク保存: id=${strokeData.id}, points=${strokeData.points.length}`);
             }
+            
+            // 描画完了処理
+            const pathLength = this.points.length;
+            const activeLayerId = this.canvasManager?.getActiveLayerId();
+            
+            console.log(`✅ ペン描画完了: layer=${activeLayerId}, pathPoints=${pathLength}, color=0x${this.settings.color.toString(16)}`);
             
             // リセット
             this.currentPath = null;
@@ -501,6 +481,40 @@ if (!window.Tegaki.PenTool) {
          */
         getStrokeHistory() {
             return [...this.strokeHistory];
+        }
+        
+        /**
+         * SVG変換用データ取得（Phase3：エクスポート用）
+         */
+        toSVGData() {
+            return this.strokeHistory.map(stroke => ({
+                type: 'path',
+                id: stroke.id,
+                d: this.strokeToSVGPath(stroke),
+                style: {
+                    stroke: `#${stroke.style.color.toString(16).padStart(6, '0')}`,
+                    strokeWidth: stroke.style.lineWidth,
+                    strokeOpacity: stroke.style.opacity,
+                    fill: 'none',
+                    strokeLinecap: 'round',
+                    strokeLinejoin: 'round'
+                }
+            }));
+        }
+        
+        /**
+         * ストロークをSVGパス文字列に変換（Phase3：内部処理）
+         */
+        strokeToSVGPath(stroke) {
+            if (!stroke.points || stroke.points.length === 0) return '';
+            
+            let path = `M ${stroke.points[0].x} ${stroke.points[0].y}`;
+            
+            for (let i = 1; i < stroke.points.length; i++) {
+                path += ` L ${stroke.points[i].x} ${stroke.points[i].y}`;
+            }
+            
+            return path;
         }
         
         /**
