@@ -1,7 +1,7 @@
 /**
- * 🎯 TegakiApplication - Phase1.5 新Manager統合版（修正版）
+ * 🎯 TegakiApplication - Phase1.5 新Manager統合版（完全修正版）
  * 📋 RESPONSIBILITY: メインアプリケーション・UI連携・イベント設定・キャンバス作成・座標管理統合・新Manager初期化
- * 🚫 PROHIBITION: Manager作成・描画処理・エラー処理・直接座標変換
+ * 🚫 PROHIBITION: Manager作成・描画処理・エラー処理・直接座標変換・フォールバック・フェイルセーフ
  * ✅ PERMISSION: AppCore作成・UI連携・イベント設定・PixiJS Application作成・新Manager活用
  * 
  * 📏 DESIGN_PRINCIPLE: UIアプリケーション専門・AppCore統合・新Manager統合・Phase1.5基盤確立
@@ -22,7 +22,7 @@ if (!window.Tegaki.TegakiApplication) {
      */
     class TegakiApplication {
         constructor() {
-            console.log('🎯 TegakiApplication Phase1.5 新Manager統合版（修正版） 作成・自動初期化開始');
+            console.log('🎯 TegakiApplication Phase1.5 新Manager統合版（完全修正版） 作成・自動初期化開始');
             
             this.initialized = false;
             this.pixiApp = null;
@@ -51,58 +51,36 @@ if (!window.Tegaki.TegakiApplication) {
          * 初期化（Phase1.5版：新Manager統合）
          */
         async initialize() {
-            try {
-                console.log('🚀 TegakiApplication Phase1.5 新Manager統合初期化開始（修正版）');
-                
-                // 🆕 0. Phase1.5新Manager初期化（順序重要）
-                this.initializePhase15Managers();
-                
-                // 1. AppCore初期化（CanvasManagerのみ作成）
-                await this.initializeAppCore();
-                
-                // 2. PixiJS Application作成・CanvasManagerに設定
-                this.createCanvas();
-                
-                // 🆕 3. 新ManagerにCanvas要素設定
-                this.setupPhase15ManagersWithCanvas();
-                
-                // 4. ToolManager初期化（PixiJS設定後に実行）
-                await this.initializeToolManager();
-                
-                // 🆕 5. Phase1.5機能統合（修正版：ShortcutManager連携修正）
-                this.integratePhase15Features();
-                
-                // 6. UI設定（イベント・アイコン・ボタン）
-                this.setupUI();
-                
-                // 7. アプリケーション開始
-                this.appCore.start();
-                
-                this.initialized = true;
-                this.showSuccessMessage();
-                
-                console.log('✅ 統合成功:', results.success);
-            console.log('⚠️ 統合警告:', results.warning);
-            console.log('❌ 統合エラー:', results.error);
+            console.log('🚀 TegakiApplication Phase1.5 新Manager統合初期化開始（完全修正版）');
             
-            return results;
-        }
-    }
-    
-    // Tegaki名前空間に登録
-    window.Tegaki.TegakiApplication = TegakiApplication;
-}
-
-console.log('🎯 TegakiApplication Phase1.5 新Manager統合版（修正版） Loaded');
-console.log('📏 キャンバス外描画・ナビゲーション・非破壊編集・ショートカット統合');
-console.log('🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統合対応');
-console.log('🔧 ShortcutManager連携修正完了 - setupPhase15Shortcuts・enable メソッド対応');
-console.log('🚀 app-core.js Phase1.5 新Manager統合版（修正版） 完成'); TegakiApplication Phase1.5 新Manager統合初期化完了（修正版）');
-                
-            } catch (error) {
-                console.error('❌ TegakiApplication 初期化エラー:', error);
-                throw error;
-            }
+            // 🆕 0. Phase1.5新Manager初期化（順序重要）
+            this.initializePhase15Managers();
+            
+            // 1. AppCore初期化（CanvasManagerのみ作成）
+            await this.initializeAppCore();
+            
+            // 2. PixiJS Application作成・CanvasManagerに設定
+            this.createCanvas();
+            
+            // 🆕 3. 新ManagerにCanvas要素設定
+            this.setupPhase15ManagersWithCanvas();
+            
+            // 4. ToolManager初期化（PixiJS設定後に実行）
+            await this.initializeToolManager();
+            
+            // 🆕 5. Phase1.5機能統合（修正版：ShortcutManager連携修正）
+            this.integratePhase15Features();
+            
+            // 6. UI設定（イベント・アイコン・ボタン）
+            this.setupUI();
+            
+            // 7. アプリケーション開始
+            this.appCore.start();
+            
+            this.initialized = true;
+            this.showSuccessMessage();
+            
+            console.log('✅ TegakiApplication Phase1.5 新Manager統合初期化完了（完全修正版）');
         }
         
         /**
@@ -525,9 +503,11 @@ console.log('🚀 app-core.js Phase1.5 新Manager統合版（修正版） 完成
             if (!this.coordinateManager || typeof this.coordinateManager.screenToCanvas !== 'function') {
                 console.warn('⚠️ CoordinateManager not available - fallback to basic conversion');
                 
-                // フォールバック：基本的な座標変換
+                // 基本的な座標変換（フォールバック削除：正しい構造でのみ動作）
                 const canvas = this.pixiApp?.view;
-                if (!canvas) return null;
+                if (!canvas) {
+                    throw new Error('Canvas element not available for coordinate conversion');
+                }
                 
                 const rect = canvas.getBoundingClientRect();
                 return {
@@ -542,8 +522,8 @@ console.log('🚀 app-core.js Phase1.5 新Manager統合版（修正版） 完成
             const result = this.coordinateManager.screenToCanvas(event.clientX, event.clientY);
             
             if (!result.isValid) {
-                console.warn('⚠️ 座標変換失敗');
-                return null;
+                console.error('❌ 座標変換失敗:', result);
+                throw new Error('Coordinate conversion failed');
             }
             
             // キャンバス外でも描画許可エリア内なら描画可能
@@ -616,22 +596,16 @@ console.log('🚀 app-core.js Phase1.5 新Manager統合版（修正版） 完成
          * 🔧 修正：アイコン設定（正しいTegakiIcons呼び出し）
          */
         setupIcons() {
-            try {
-                if (window.Tegaki?.TegakiIcons) {
-                    // 🔧 修正：正しいメソッド呼び出し
-                    window.Tegaki.TegakiIcons.replaceAllToolIcons();
-                    console.log('✅ アイコン設定完了（TegakiIcons.replaceAllToolIcons）');
-                } else if (window.TegakiIcons) {
-                    // 🔧 追加：グローバルTegakiIconsの場合
-                    window.TegakiIcons.replaceAllToolIcons();
-                    console.log('✅ アイコン設定完了（グローバルTegakiIcons）');
-                } else {
-                    console.warn('⚠️ TegakiIcons not available - アイコンは後で表示されます');
-                }
-            } catch (error) {
-                console.error('❌ アイコン設定エラー:', error);
-                // アイコンエラーでアプリ停止させない
-                console.warn('⚠️ アイコン設定をスキップして続行します');
+            if (window.Tegaki?.TegakiIcons) {
+                // 🔧 修正：正しいメソッド呼び出し
+                window.Tegaki.TegakiIcons.replaceAllToolIcons();
+                console.log('✅ アイコン設定完了（TegakiIcons.replaceAllToolIcons）');
+            } else if (window.TegakiIcons) {
+                // 🔧 追加：グローバルTegakiIconsの場合
+                window.TegakiIcons.replaceAllToolIcons();
+                console.log('✅ アイコン設定完了（グローバルTegakiIcons）');
+            } else {
+                throw new Error('TegakiIcons not available - icons are required');
             }
         }
         
@@ -742,17 +716,17 @@ console.log('🚀 app-core.js Phase1.5 新Manager統合版（修正版） 完成
          * 成功メッセージ表示
          */
         showSuccessMessage() {
-            console.log('🎉 TegakiApplication Phase1.5 新Manager統合初期化成功（修正版）！');
+            console.log('🎉 TegakiApplication Phase1.5 新Manager統合初期化成功（完全修正版）！');
             console.log('📏 CoordinateManager統合完了 - キャンバス外描画対応');
             console.log('🧭 NavigationManager統合完了 - パン・ズーム対応');
             console.log('🔄 RecordManager統合完了 - Undo/Redo対応');
-            console.log('⌨️ ShortcutManager統合完了 - キーボードショートカット対応（修正版）');
-            console.log('🎯 Phase1.5新Manager統合基盤確立完了（修正版）');
+            console.log('⌨️ ShortcutManager統合完了 - キーボードショートカット対応（完全修正版）');
+            console.log('🎯 Phase1.5新Manager統合基盤確立完了（完全修正版）');
             
             // 成功通知（UI）
             if (window.Tegaki?.ErrorManagerInstance) {
                 window.Tegaki.ErrorManagerInstance.showInfo(
-                    'Phase1.5新Manager統合初期化完了 - 全機能統合完了（修正版）',
+                    'Phase1.5新Manager統合初期化完了 - 全機能統合完了（完全修正版）',
                     { 
                         context: 'TegakiApplication.initialize'
                     }
@@ -781,51 +755,35 @@ console.log('🚀 app-core.js Phase1.5 新Manager統合版（修正版） 完成
             
             // CoordinateManager機能テスト
             if (this.coordinateManager) {
-                try {
-                    if (typeof this.coordinateManager.screenToCanvas === 'function') {
-                        const testCoord = this.coordinateManager.screenToCanvas(100, 100);
-                        testResults.coordinateConversion = testCoord.isValid;
-                    }
-                    
-                    if (typeof this.coordinateManager.getExtendedDrawArea === 'function') {
-                        const extendedArea = this.coordinateManager.getExtendedDrawArea();
-                        testResults.extendedDrawArea = !!extendedArea;
-                    }
-                    
-                    if (typeof this.coordinateManager.getCanvasTransform === 'function') {
-                        const transform = this.coordinateManager.getCanvasTransform();
-                        testResults.canvasTransform = transform !== null;
-                    }
-                } catch (error) {
-                    console.error('❌ CoordinateManager機能テストエラー:', error);
+                if (typeof this.coordinateManager.screenToCanvas === 'function') {
+                    const testCoord = this.coordinateManager.screenToCanvas(100, 100);
+                    testResults.coordinateConversion = testCoord.isValid;
+                }
+                
+                if (typeof this.coordinateManager.getExtendedDrawArea === 'function') {
+                    const extendedArea = this.coordinateManager.getExtendedDrawArea();
+                    testResults.extendedDrawArea = !!extendedArea;
+                }
+                
+                if (typeof this.coordinateManager.getCanvasTransform === 'function') {
+                    const transform = this.coordinateManager.getCanvasTransform();
+                    testResults.canvasTransform = transform !== null;
                 }
             }
             
             // RecordManager機能テスト
             if (this.recordManager) {
-                try {
-                    testResults.undoRedo = typeof this.recordManager.canUndo === 'function';
-                } catch (error) {
-                    console.error('❌ RecordManager機能テストエラー:', error);
-                }
+                testResults.undoRedo = typeof this.recordManager.canUndo === 'function';
             }
             
             // NavigationManager機能テスト
             if (this.navigationManager) {
-                try {
-                    testResults.navigation = typeof this.navigationManager.panCanvas === 'function';
-                } catch (error) {
-                    console.error('❌ NavigationManager機能テストエラー:', error);
-                }
+                testResults.navigation = typeof this.navigationManager.panCanvas === 'function';
             }
             
             // ShortcutManager機能テスト
             if (this.shortcutManager) {
-                try {
-                    testResults.shortcuts = typeof this.shortcutManager.setupPhase15Shortcuts === 'function';
-                } catch (error) {
-                    console.error('❌ ShortcutManager機能テストエラー:', error);
-                }
+                testResults.shortcuts = typeof this.shortcutManager.setupPhase15Shortcuts === 'function';
             }
             
             console.log('🧪 Phase1.5新Manager統合機能テスト結果:', testResults);
@@ -965,4 +923,20 @@ console.log('🚀 app-core.js Phase1.5 新Manager統合版（修正版） 完成
                 results.error.push('Canvas要素設定: 失敗');
             }
             
-            console.log('✅
+            console.log('✅ 統合成功:', results.success);
+            console.log('⚠️ 統合警告:', results.warning);
+            console.log('❌ 統合エラー:', results.error);
+            
+            return results;
+        }
+    }
+    
+    // Tegaki名前空間に登録
+    window.Tegaki.TegakiApplication = TegakiApplication;
+}
+
+console.log('🎯 TegakiApplication Phase1.5 新Manager統合版（完全修正版） Loaded');
+console.log('📏 キャンバス外描画・ナビゲーション・非破壊編集・ショートカット統合');
+console.log('🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統合対応');
+console.log('🔧 構文エラー完全修正・フォールバック削除・正しい構造でのみ動作');
+console.log('🚀 app-core.js Phase1.5 新Manager統合版（完全修正版） 完成');
