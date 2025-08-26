@@ -1,0 +1,35 @@
+フローは少し複雑化している → 入力→描画→記録のシンプル 3 ステップにすべき。
+
+車輪の再発明回避 → PixiJS の Graphics や pixi-graphics-smooth を使えばよい。
+
+モダンベクターペン → PixiJSの補間＋ベクターパス保持で十分。。
+
+📌 推奨ロードマップ
+
+今すぐ描けるベクターペンを実装する
+→ PixiJS.Graphics + pixi-graphics-smooth を使う
+"\node_modules\@pixi\graphics"
+（Pixi がすでに WebGL2 を活用してる）
+
+pixi-graphics-smooth × GSAP → 相性かなり良い（補間制御が楽になる）
+
+
+  <!-- node_modules統合・ローカル読み込み - CORS制限回避 -->
+
+    <!-- PixiJS v7 本体 -->
+    <script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
+    
+    <!-- @pixi/ui: UIコンポーネント -->
+    <script src="./node_modules/@pixi/ui/dist/ui.min.js"></script>
+    
+    <!-- @pixi/layers: レイヤー機能 -->
+    <script src="./node_modules/@pixi/layers/dist/layers.min.js"></script>
+    
+    <!-- @pixi/gif: GIF機能 -->
+    <script src="./node_modules/@pixi/gif/dist/gif.min.js"></script>
+    
+    <!-- GSAP: アニメーション -->
+    <script src="./node_modules/gsap/dist/gsap.min.js"></script>
+
+<!-- pixi-graphics-smooth: ペンスムーシング -->
+ <script src="./node_modules/@pixi/graphics-smooth/dist/pixi-graphics-smooth.js"></script>

@@ -1,564 +1,661 @@
 /**
- * 📐 CoordinateManager - キャンバス外描画対応座標変換システム（軽量版）
- * 📋 RESPONSIBILITY: 座標変換・キャンバス外描画判定・座標精度管理のみ
- * 🚫 PROHIBITION: 描画処理・UI操作・レイヤー管理・イベント処理・過度なデバッグログ
- * ✅ PERMISSION: 座標計算・境界判定・変換処理・必要最小限のログ
+ * 🎨 CanvasManager - Graphics削除メソッド追加版
  * 
- * 📏 DESIGN_PRINCIPLE: シンプル座標変換・軽量実装・剛直構造・Rulebook準拠
- * 🔄 INTEGRATION: TegakiApplication・全ツール・NavigationManagerとの連携
- * 🎯 FEATURE: キャンバス外20px描画許可・正確な座標変換・クランプ処理
+ * 📋 使用メソッド一覧（依存確認済み ✅）
+ * - new PIXI.Container() - PixiJS標準コンテナ
+ * - new PIXI.Graphics() - PixiJS標準Graphics
+ * - container.addChild() - PixiJS標準子要素追加
+ * - container.removeChild() - PixiJS標準子要素削除
+ * - pixiApp.stage.addChild() - PixiJS標準ステージ追加
+ * - graphics.beginFill() / endFill() - PixiJS標準塗りつぶし
  * 
- * 🔧 使用メソッド一覧:
- * - HTMLElement: getBoundingClientRect (DOM座標取得)
- * - Math: round, max, min, pow, cos, sin (数値計算)
- * - console: log, warn, error (必要最小限ログ)
- * - typeof, isNaN: 型チェック・NaN判定
+ * 📋 RESPONSIBILITY: PixiJS Application管理とレイヤー管理・Graphics操作
+ * 🚫 PROHIBITION: 描画処理・座標変換・複雑な初期化・フォールバック
+ * ✅ PERMISSION: PixiJS受け取り・レイヤー作成・Graphics配置・Graphics削除
  * 
- * 🔄 処理フロー:
- * 1. Canvas要素設定 → 座標情報初期化 → サイズ取得
- * 2. 座標変換要求 → DOM Rect取得 → 基本変換計算
- * 3. 変形適用 → 精度調整 → 範囲判定
- * 4. 結果返却 → エラーチェック（必要最小限ログ）
+ * 📏 DESIGN_PRINCIPLE: 背景レイヤー(0) + 描画レイヤー(1) の分離構造
+ * 🔄 INTEGRATION: RecordManager連携・PenTool連携・PixiJS標準機能活用
  * 
- * 🔗 依存Manager: なし（独立動作）
- * 📦 連携Tool: AbstractTool, PenTool, EraserTool, NavigationManager
+ * 🎨 CANVAS_DISPLAY: キャンバス表示の流れ
+ * 1. bootstrap.js → TegakiApplication作成 → CanvasManager初期化
+ * 2. CanvasManager.setPixiApp() → PixiJS設定・レイヤー作成
+ * 3. createLayerStructure() → layer0(背景) + layer1(描画) 作成
+ * 4. addGraphicsToLayer() → 即座に画面表示
+ * 5. removeGraphicsFromLayer() → Undo/Redo用削除
  */
 
 // Tegaki名前空間初期化
 window.Tegaki = window.Tegaki || {};
 
-/**
- * CoordinateManager - キャンバス外描画対応座標変換システム（軽量版）
- */
-class CoordinateManager {
-    constructor() {
-        console.log('📐 CoordinateManager Phase1.5 座標系強化版 作成');
-        
-        // キャンバス情報
-        this.canvasElement = null;
-        this.canvasWidth = 0;
-        this.canvasHeight = 0;
-        
-        // 座標変換設定
-        this.extendedDrawMargin = 20;     // キャンバス外描画許可範囲（px）
-        this.coordinatePrecision = 1;     // 座標精度（小数点以下桁数）
-        
-        // 変形状態（Phase1.5基本・Phase2で拡張）
-        this.canvasTransform = {
-            translateX: 0,
-            translateY: 0,
-            scaleX: 1,
-            scaleY: 1,
-            rotation: 0
-        };
-        
-        // 統計情報（軽量版）
-        this.transformCount = 0;
-        this.nanCount = 0;
-        
-        console.log('✅ CoordinateManager初期化完了');
-    }
-    
+if (!window.Tegaki.CanvasManager) {
     /**
-     * キャンバス要素設定・情報取得
+     * CanvasManager - Graphics削除メソッド追加版
+     * レイヤー0: 背景専用（消しゴムで消去されない）
+     * レイヤー1: 描画専用（ペン描画・消しゴム対象）
      */
-    setCanvasElement(canvasElement) {
-        if (!canvasElement) {
-            throw new Error('CoordinateManager: Canvas element is required');
-        }
-        
-        this.canvasElement = canvasElement;
-        this.updateCanvasInfo();
-        
-        console.log(`📐 CoordinateManager - Canvas要素設定: ${this.canvasWidth}x${this.canvasHeight}px`);
-    }
-    
-    /**
-     * キャンバス情報更新（リサイズ対応）
-     */
-    updateCanvasInfo() {
-        if (!this.canvasElement) return;
-        
-        const rect = this.canvasElement.getBoundingClientRect();
-        this.canvasWidth = rect.width;
-        this.canvasHeight = rect.height;
-        
-        console.log(`📐 Canvas情報更新: ${this.canvasWidth}x${this.canvasHeight}px`);
-    }
-    
-    /**
-     * 🎯 メイン機能: スクリーン座標→キャンバス座標変換（キャンバス外対応）
-     */
-    screenToCanvas(screenX, screenY) {
-        // 入力値検証（NaN対策）
-        if (isNaN(screenX) || isNaN(screenY)) {
-            console.error('❌ CoordinateManager: Input NaN detected');
-            this.nanCount++;
-            return { x: 0, y: 0, isValid: false, error: 'input_nan' };
-        }
-        
-        if (!this.canvasElement) {
-            console.warn('⚠️ CoordinateManager: Canvas element not set');
-            return { x: screenX, y: screenY, isValid: false, error: 'no_canvas_element' };
-        }
-        
-        this.transformCount++;
-        
-        // 基本座標変換（DOMからキャンバス内部座標）
-        const rect = this.canvasElement.getBoundingClientRect();
-        
-        if (!rect || isNaN(rect.left) || isNaN(rect.top)) {
-            console.error('❌ CoordinateManager: Invalid canvas rect');
-            return { x: 0, y: 0, isValid: false, error: 'invalid_rect' };
-        }
-        
-        let canvasX = screenX - rect.left;
-        let canvasY = screenY - rect.top;
-        
-        // 中間計算結果検証（NaN対策）
-        if (isNaN(canvasX) || isNaN(canvasY)) {
-            console.error('❌ CoordinateManager: NaN in basic transform');
-            this.nanCount++;
-            return { x: 0, y: 0, isValid: false, error: 'basic_transform_nan' };
-        }
-        
-        // Phase1.5: シンプル変形対応
-        if (this.hasTransform()) {
-            const transformed = this.applyInverseTransform(canvasX, canvasY);
+    class CanvasManager {
+        constructor() {
+            console.log('🎨 CanvasManager Graphics削除メソッド追加版 作成');
             
-            if (isNaN(transformed.x) || isNaN(transformed.y)) {
-                console.error('❌ CoordinateManager: NaN in transform');
-                this.nanCount++;
-                return { x: 0, y: 0, isValid: false, error: 'transform_nan' };
+            this.pixiApp = null;
+            this.layers = new Map();
+            this.initialized = false;
+            this.activeLayerId = 'layer1'; // デフォルトアクティブレイヤー
+            
+            // 🔧 背景レイヤー用の背景色設定
+            this.backgroundColor = 0xf0e0d6; // ふたば風クリーム色 #f0e0d6
+        }
+        
+        /**
+         * PixiJS Application設定（レイヤー分離対応）
+         */
+        setPixiApp(pixiApp) {
+            if (!pixiApp) {
+                throw new Error('PixiJS Application is required');
             }
             
-            canvasX = transformed.x;
-            canvasY = transformed.y;
-        }
-        
-        // 座標精度調整
-        const preciseX = this.adjustPrecision(canvasX);
-        const preciseY = this.adjustPrecision(canvasY);
-        
-        if (isNaN(preciseX) || isNaN(preciseY)) {
-            console.error('❌ CoordinateManager: NaN in precision adjustment');
-            this.nanCount++;
-            return { x: 0, y: 0, isValid: false, error: 'precision_nan' };
-        }
-        
-        // キャンバス内外判定
-        const isInsideCanvas = this.isInsideCanvas(preciseX, preciseY);
-        const isInExtendedArea = this.isInExtendedDrawArea(preciseX, preciseY);
-        
-        const result = {
-            x: preciseX,
-            y: preciseY,
-            isValid: true,
-            isInsideCanvas: isInsideCanvas,
-            isInExtendedArea: isInExtendedArea,
-            canDraw: isInExtendedArea
-        };
-        
-        // 最終結果検証（NaN対策）
-        if (isNaN(result.x) || isNaN(result.y)) {
-            console.error('❌ CoordinateManager: Final result contains NaN');
-            this.nanCount++;
-            return { x: 0, y: 0, isValid: false, error: 'final_result_nan' };
-        }
-        
-        return result;
-    }
-    
-    /**
-     * 🎯 クライアント座標→キャンバス座標変換（AbstractTool互換性メソッド）
-     */
-    clientToCanvas(clientX, clientY) {
-        return this.screenToCanvas(clientX, clientY);
-    }
-    
-    /**
-     * 🎯 PointerEvent座標→キャンバス座標変換（AbstractTool互換性メソッド）
-     */
-    pointerToCanvas(pointerEvent) {
-        if (!pointerEvent || typeof pointerEvent.clientX !== 'number' || typeof pointerEvent.clientY !== 'number') {
-            console.error('❌ CoordinateManager: Invalid PointerEvent');
-            return { x: 0, y: 0, isValid: false, error: 'invalid_event' };
-        }
-        
-        return this.screenToCanvas(pointerEvent.clientX, pointerEvent.clientY);
-    }
-    
-    /**
-     * 🎯 座標変換（AbstractTool互換性メソッド・複数形式対応）
-     */
-    toCanvasCoords(eventOrX, y) {
-        if (typeof eventOrX === 'object' && eventOrX !== null && eventOrX.clientX !== undefined) {
-            // PointerEvent形式
-            return this.pointerToCanvas(eventOrX);
-        } else if (typeof eventOrX === 'number' && typeof y === 'number') {
-            // (x, y) 座標形式
-            return this.screenToCanvas(eventOrX, y);
-        } else {
-            console.error('❌ CoordinateManager: Invalid toCanvasCoords arguments');
-            return { x: 0, y: 0, isValid: false, error: 'invalid_arguments' };
-        }
-    }
-    
-    /**
-     * 🎯 キャンバス座標→スクリーン座標変換（逆変換）
-     */
-    canvasToScreen(canvasX, canvasY) {
-        if (isNaN(canvasX) || isNaN(canvasY)) {
-            console.error('❌ CoordinateManager: Input NaN in canvasToScreen');
-            return { x: 0, y: 0, isValid: false, error: 'input_nan' };
-        }
-        
-        if (!this.canvasElement) {
-            console.warn('⚠️ CoordinateManager: Canvas element not set');
-            return { x: canvasX, y: canvasY, isValid: false, error: 'no_canvas_element' };
-        }
-        
-        let transformedX = canvasX;
-        let transformedY = canvasY;
-        
-        if (this.hasTransform()) {
-            const transformed = this.applyTransform(canvasX, canvasY);
-            
-            if (isNaN(transformed.x) || isNaN(transformed.y)) {
-                console.error('❌ CoordinateManager: NaN in reverse transform');
-                return { x: 0, y: 0, isValid: false, error: 'reverse_transform_nan' };
+            if (!pixiApp.stage) {
+                throw new Error('PixiJS Application has no stage');
             }
             
-            transformedX = transformed.x;
-            transformedY = transformed.y;
-        }
-        
-        const rect = this.canvasElement.getBoundingClientRect();
-        
-        if (!rect || isNaN(rect.left) || isNaN(rect.top)) {
-            console.error('❌ CoordinateManager: Invalid rect in reverse transform');
-            return { x: 0, y: 0, isValid: false, error: 'invalid_rect' };
-        }
-        
-        const screenX = transformedX + rect.left;
-        const screenY = transformedY + rect.top;
-        
-        if (isNaN(screenX) || isNaN(screenY)) {
-            console.error('❌ CoordinateManager: NaN in final reverse transform result');
-            return { x: 0, y: 0, isValid: false, error: 'final_reverse_nan' };
-        }
-        
-        return {
-            x: this.adjustPrecision(screenX),
-            y: this.adjustPrecision(screenY),
-            isValid: true
-        };
-    }
-    
-    /**
-     * 🎯 キャンバス座標→クライアント座標変換（AbstractTool互換性メソッド）
-     */
-    canvasToClient(canvasX, canvasY) {
-        return this.canvasToScreen(canvasX, canvasY);
-    }
-    
-    /**
-     * 🎯 描画可能エリアへのクランプ（キャンバス外描画対応）
-     */
-    clampToDrawableArea(x, y) {
-        if (isNaN(x) || isNaN(y)) {
-            console.error('❌ CoordinateManager: Input NaN in clampToDrawableArea');
-            return { x: 0, y: 0, wasClamped: true, original: { x, y }, error: 'input_nan' };
-        }
-        
-        const minX = -this.extendedDrawMargin;
-        const maxX = this.canvasWidth + this.extendedDrawMargin;
-        const minY = -this.extendedDrawMargin;
-        const maxY = this.canvasHeight + this.extendedDrawMargin;
-        
-        const clampedX = Math.max(minX, Math.min(maxX, x));
-        const clampedY = Math.max(minY, Math.min(maxY, y));
-        
-        if (isNaN(clampedX) || isNaN(clampedY)) {
-            console.error('❌ CoordinateManager: NaN in clamp result');
-            return { x: 0, y: 0, wasClamped: true, original: { x, y }, error: 'clamp_nan' };
-        }
-        
-        const wasClamped = (clampedX !== x || clampedY !== y);
-        
-        return {
-            x: this.adjustPrecision(clampedX),
-            y: this.adjustPrecision(clampedY),
-            wasClamped: wasClamped,
-            original: { x, y }
-        };
-    }
-    
-    /**
-     * キャンバス内判定
-     */
-    isInsideCanvas(x, y) {
-        if (isNaN(x) || isNaN(y)) return false;
-        return x >= 0 && x <= this.canvasWidth && y >= 0 && y <= this.canvasHeight;
-    }
-    
-    /**
-     * 拡張描画エリア判定（キャンバス外描画許可範囲）
-     */
-    isInExtendedDrawArea(x, y) {
-        if (isNaN(x) || isNaN(y)) return false;
-        const margin = this.extendedDrawMargin;
-        return x >= -margin && x <= this.canvasWidth + margin && 
-               y >= -margin && y <= this.canvasHeight + margin;
-    }
-    
-    /**
-     * 座標精度調整（NaN対策）
-     */
-    adjustPrecision(coordinate) {
-        if (typeof coordinate !== 'number' || isNaN(coordinate)) {
-            return 0;
-        }
-        
-        const factor = Math.pow(10, this.coordinatePrecision);
-        const result = Math.round(coordinate * factor) / factor;
-        
-        return isNaN(result) ? 0 : result;
-    }
-    
-    /**
-     * 変形状態確認
-     */
-    hasTransform() {
-        const t = this.canvasTransform;
-        return t.translateX !== 0 || t.translateY !== 0 || 
-               t.scaleX !== 1 || t.scaleY !== 1 || t.rotation !== 0;
-    }
-    
-    /**
-     * 変形適用（順変換）
-     */
-    applyTransform(x, y) {
-        if (isNaN(x) || isNaN(y)) {
-            return { x: 0, y: 0 };
-        }
-        
-        const t = this.canvasTransform;
-        
-        if (isNaN(t.scaleX) || isNaN(t.scaleY) || isNaN(t.translateX) || isNaN(t.translateY) || isNaN(t.rotation)) {
-            return { x: 0, y: 0 };
-        }
-        
-        let transformedX = (x * t.scaleX) + t.translateX;
-        let transformedY = (y * t.scaleY) + t.translateY;
-        
-        if (isNaN(transformedX) || isNaN(transformedY)) {
-            return { x: 0, y: 0 };
-        }
-        
-        // 回転処理（Phase1.5基本）
-        if (t.rotation !== 0) {
-            const cos = Math.cos(t.rotation);
-            const sin = Math.sin(t.rotation);
+            this.pixiApp = pixiApp;
             
-            if (!isNaN(cos) && !isNaN(sin)) {
-                const rotatedX = transformedX * cos - transformedY * sin;
-                const rotatedY = transformedX * sin + transformedY * cos;
+            // 🔧 背景色を透明に設定（背景レイヤーで管理）
+            this.pixiApp.renderer.backgroundColor = 0x000000; // 完全透明（アルファ0）
+            this.pixiApp.renderer.backgroundAlpha = 0;
+            
+            this.initialized = true;
+            
+            // レイヤー分離構造作成
+            this.createLayerStructure();
+            
+            // PixiJSの設定確認
+            console.log('🎨 PixiJS Application Info:', {
+                width: pixiApp.screen.width,
+                height: pixiApp.screen.height,
+                renderer: pixiApp.renderer.type,
+                view: !!pixiApp.view,
+                stage: !!pixiApp.stage,
+                stageChildren: pixiApp.stage.children.length
+            });
+            
+            console.log('✅ CanvasManager - レイヤー分離構造完成・Graphics操作対応');
+        }
+        
+        /**
+         * レイヤー分離構造作成（背景色修正版）
+         * layer0: 背景専用（固定、消去対象外、ふたばクリーム色）
+         * layer1: 描画専用（ペン・消しゴム対象、透明）
+         */
+        createLayerStructure() {
+            if (!this.pixiApp) {
+                throw new Error('PixiJS Application not set');
+            }
+            
+            // 🎨 レイヤー0: 背景レイヤー（ふたばクリーム色で塗りつぶし）
+            const backgroundLayer = new PIXI.Container();
+            backgroundLayer.name = 'layer0';
+            backgroundLayer.zIndex = 0; // 背景なので最背面
+            
+            // 背景用のGraphicsを作成してふたばクリーム色で塗りつぶし
+            const backgroundGraphics = new PIXI.Graphics();
+            backgroundGraphics.beginFill(this.backgroundColor, 1.0); // ふたばクリーム #f0e0d6
+            backgroundGraphics.drawRect(0, 0, this.pixiApp.screen.width, this.pixiApp.screen.height);
+            backgroundGraphics.endFill();
+            backgroundLayer.addChild(backgroundGraphics);
+            
+            this.pixiApp.stage.addChild(backgroundLayer);
+            this.layers.set('layer0', backgroundLayer);
+            
+            console.log('✅ 背景レイヤー (layer0) 作成完了: {name: \'layer0\', zIndex: 0, parent: true}');
+            
+            // 🎨 レイヤー1: アクティブ描画レイヤー（透明、描画対象）
+            const activeLayer = new PIXI.Container();
+            activeLayer.name = 'layer1';
+            activeLayer.zIndex = 1; // 描画なので前面
+            activeLayer.sortableChildren = true; // 描画順序管理
+            this.pixiApp.stage.addChild(activeLayer);
+            this.layers.set('layer1', activeLayer);
+            
+            console.log('✅ 描画レイヤー (layer1) 作成完了: {name: \'layer1\', zIndex: 1, sortableChildren: true, parent: true}');
+            
+            // ステージの子要素ソート有効化
+            this.pixiApp.stage.sortableChildren = true;
+            
+            // 🔧 レイヤー作成確認ログ（強化版）
+            const layer0Exists = this.layers.has('layer0');
+            const layer1Exists = this.layers.has('layer1');
+            const layer0InStage = this.pixiApp.stage.children.includes(this.layers.get('layer0'));
+            const layer1InStage = this.pixiApp.stage.children.includes(this.layers.get('layer1'));
+            
+            console.log('✅ レイヤー作成確認完了: {totalLayers: ' + this.layers.size + ', layer0Exists: ' + layer0Exists + ', layer1Exists: ' + layer1Exists + ', layer0InStage: ' + layer0InStage + ', layer1InStage: ' + layer1InStage + ', stageChildren: ' + this.pixiApp.stage.children.length + '}');
+        }
+        
+        /**
+         * レイヤー作成（汎用）
+         */
+        createLayer(layerId) {
+            if (!this.pixiApp) {
+                throw new Error('PixiJS Application not set');
+            }
+            
+            if (this.layers.has(layerId)) {
+                console.log(`⚠️ Layer ${layerId} already exists - returning existing`);
+                return this.layers.get(layerId);
+            }
+            
+            // Container作成（Graphics用コンテナ）
+            const layer = new PIXI.Container();
+            layer.name = layerId;
+            layer.sortableChildren = true; // 描画順序管理
+            layer.zIndex = this.layers.size; // 作成順にzIndex設定
+            
+            // ステージに追加
+            this.pixiApp.stage.addChild(layer);
+            this.layers.set(layerId, layer);
+            
+            console.log(`✅ Layer created: ${layerId} (zIndex: ${layer.zIndex})`);
+            return layer;
+        }
+        
+        /**
+         * 🎯 Graphicsをレイヤーに配置（即時表示・PenTool用）
+         * 
+         * @param {PIXI.Graphics} graphics - 追加するGraphics
+         * @param {string} layerId - 対象レイヤーID（省略時はアクティブレイヤー）
+         */
+        addGraphicsToLayer(graphics, layerId = null) {
+            if (!graphics) {
+                throw new Error('Graphics object is required');
+            }
+            
+            if (!(graphics instanceof PIXI.Graphics)) {
+                throw new Error('Must be PIXI.Graphics instance');
+            }
+            
+            // layerIdが指定されていない場合はアクティブレイヤーを使用
+            const targetLayerId = layerId || this.activeLayerId;
+            
+            let layer = this.layers.get(targetLayerId);
+            if (!layer) {
+                console.log(`📦 Layer ${targetLayerId} not found - creating...`);
+                layer = this.createLayer(targetLayerId);
+            }
+            
+            // Graphics を Layer に追加（即座に画面表示）
+            layer.addChild(graphics);
+            
+            console.log(`✅ Graphics added to layer: ${targetLayerId} (layer children: ${layer.children.length})`);
+            
+            // デバッグ情報
+            console.log('🔧 Graphics Info:', {
+                visible: graphics.visible,
+                alpha: graphics.alpha,
+                x: graphics.x,
+                y: graphics.y,
+                width: graphics.width,
+                height: graphics.height
+            });
+        }
+        
+        /**
+         * 🎯 Graphicsをレイヤーから削除（Undo/Redo用）
+         * 
+         * @param {PIXI.Graphics} graphics - 削除するGraphics
+         * @param {string} layerId - 対象レイヤーID（省略時は全レイヤーから検索）
+         * @returns {boolean} 削除成功フラグ
+         */
+        removeGraphicsFromLayer(graphics, layerId = null) {
+            if (!graphics) {
+                console.warn('⚠️ Graphics object is required for removal');
+                return false;
+            }
+            
+            if (!(graphics instanceof PIXI.Graphics)) {
+                console.warn('⚠️ Must be PIXI.Graphics instance for removal');
+                return false;
+            }
+            
+            let targetLayers = [];
+            
+            if (layerId) {
+                // 特定レイヤーから削除
+                const layer = this.layers.get(layerId);
+                if (layer) {
+                    targetLayers = [{ id: layerId, layer }];
+                }
+            } else {
+                // 全レイヤーから検索して削除
+                targetLayers = Array.from(this.layers.entries()).map(([id, layer]) => ({ id, layer }));
+            }
+            
+            let removed = false;
+            
+            for (const { id, layer } of targetLayers) {
+                // 背景レイヤーからの削除は禁止
+                if (id === 'layer0') {
+                    continue;
+                }
                 
-                if (!isNaN(rotatedX) && !isNaN(rotatedY)) {
-                    transformedX = rotatedX;
-                    transformedY = rotatedY;
+                try {
+                    // Graphicsが実際にこのレイヤーの子かチェック
+                    if (layer.children.includes(graphics)) {
+                        layer.removeChild(graphics);
+                        console.log(`🗑️ Graphics removed from layer: ${id} (remaining children: ${layer.children.length})`);
+                        removed = true;
+                        break; // 1つのレイヤーから削除したら終了
+                    }
+                } catch (error) {
+                    console.warn(`⚠️ Failed to remove Graphics from layer ${id}:`, error.message);
                 }
             }
-        }
-        
-        return { x: transformedX, y: transformedY };
-    }
-    
-    /**
-     * 逆変形適用（逆変換）
-     */
-    applyInverseTransform(x, y) {
-        if (isNaN(x) || isNaN(y)) {
-            return { x: 0, y: 0 };
-        }
-        
-        const t = this.canvasTransform;
-        
-        if (isNaN(t.scaleX) || isNaN(t.scaleY) || isNaN(t.translateX) || isNaN(t.translateY) || isNaN(t.rotation)) {
-            return { x: 0, y: 0 };
-        }
-        
-        let transformedX = x;
-        let transformedY = y;
-        
-        // 逆回転
-        if (t.rotation !== 0) {
-            const cos = Math.cos(-t.rotation);
-            const sin = Math.sin(-t.rotation);
             
-            if (!isNaN(cos) && !isNaN(sin)) {
-                const rotatedX = transformedX * cos - transformedY * sin;
-                const rotatedY = transformedX * sin + transformedY * cos;
+            if (!removed) {
+                console.warn('⚠️ Graphics not found in any layer for removal');
+            }
+            
+            return removed;
+        }
+        
+        /**
+         * アクティブレイヤー設定
+         */
+        setActiveLayer(layerId) {
+            if (!this.layers.has(layerId)) {
+                throw new Error(`Layer ${layerId} does not exist`);
+            }
+            
+            this.activeLayerId = layerId;
+            console.log(`🎯 Active layer set to: ${layerId}`);
+        }
+        
+        /**
+         * アクティブレイヤー取得
+         */
+        getActiveLayer() {
+            return this.layers.get(this.activeLayerId);
+        }
+        
+        /**
+         * アクティブレイヤーID取得
+         */
+        getActiveLayerId() {
+            return this.activeLayerId;
+        }
+        
+        /**
+         * レイヤー取得
+         */
+        getLayer(layerId) {
+            return this.layers.get(layerId) || null;
+        }
+        
+        /**
+         * メインレイヤー取得（互換性維持）
+         */
+        getMainLayer() {
+            return this.getLayer('layer1') || this.getActiveLayer();
+        }
+        
+        /**
+         * 背景レイヤー取得
+         */
+        getBackgroundLayer() {
+            return this.getLayer('layer0');
+        }
+        
+        /**
+         * 描画レイヤー取得
+         */
+        getDrawingLayer() {
+            return this.getLayer('layer1');
+        }
+        
+        /**
+         * アクティブレイヤークリア（背景は保護）
+         */
+        clear() {
+            const activeLayer = this.getActiveLayer();
+            if (activeLayer && this.activeLayerId !== 'layer0') {
+                activeLayer.removeChildren();
+                console.log(`🧹 Active layer cleared: ${this.activeLayerId}`);
+            } else {
+                console.log('⚠️ 背景レイヤーのクリアは禁止されています');
+            }
+        }
+        
+        /**
+         * 全描画レイヤークリア（背景は保護）
+         */
+        clearAllDrawingLayers() {
+            this.layers.forEach((layer, layerId) => {
+                if (layerId !== 'layer0') { // 背景レイヤーは保護
+                    layer.removeChildren();
+                    console.log(`🧹 Drawing layer cleared: ${layerId}`);
+                }
+            });
+            
+            console.log('✅ All drawing layers cleared (background protected)');
+        }
+        
+        /**
+         * 特定レイヤークリア
+         */
+        clearLayer(layerId) {
+            if (layerId === 'layer0') {
+                console.warn('⚠️ 背景レイヤー(layer0)のクリアは禁止されています');
+                return;
+            }
+            
+            const layer = this.layers.get(layerId);
+            if (layer) {
+                layer.removeChildren();
+                console.log(`🧹 Layer cleared: ${layerId}`);
+            } else {
+                console.warn(`⚠️ Layer not found: ${layerId}`);
+            }
+        }
+        
+        /**
+         * 消去用Graphics配置（ERASEブレンドモード専用）
+         */
+        addEraseGraphicsToLayer(graphics, layerId = null) {
+            if (!graphics) {
+                throw new Error('Erase Graphics object is required');
+            }
+            
+            // layerIdが指定されていない場合はアクティブレイヤーを使用
+            const targetLayerId = layerId || this.activeLayerId;
+            
+            // 背景レイヤーへの消去は禁止
+            if (targetLayerId === 'layer0') {
+                console.warn('⚠️ 背景レイヤーへの消去は禁止されています');
+                return;
+            }
+            
+            let layer = this.layers.get(targetLayerId);
+            if (!layer) {
+                console.log(`📦 Layer ${targetLayerId} not found - creating...`);
+                layer = this.createLayer(targetLayerId);
+            }
+            
+            // 🧹 ERASEブレンドモード設定（必須）
+            graphics.blendMode = PIXI.BLEND_MODES.ERASE;
+            
+            // Graphics を Layer に追加
+            layer.addChild(graphics);
+            
+            console.log(`🧹 Erase Graphics added to layer: ${targetLayerId} (layer children: ${layer.children.length})`);
+            
+            // デバッグ情報
+            console.log('🔧 Erase Graphics Info:', {
+                visible: graphics.visible,
+                alpha: graphics.alpha,
+                blendMode: graphics.blendMode,
+                x: graphics.x,
+                y: graphics.y,
+                width: graphics.width,
+                height: graphics.height
+            });
+        }
+        
+        /**
+         * レイヤー内Graphics数取得
+         */
+        getLayerGraphicsCount(layerId) {
+            const layer = this.layers.get(layerId);
+            return layer ? layer.children.length : 0;
+        }
+        
+        /**
+         * 全レイヤーGraphics数取得
+         */
+        getTotalGraphicsCount() {
+            let total = 0;
+            this.layers.forEach((layer, layerId) => {
+                if (layerId !== 'layer0') { // 背景レイヤーは除外
+                    total += layer.children.length;
+                }
+            });
+            return total;
+        }
+        
+        /**
+         * レイヤー内の全Graphics取得
+         */
+        getLayerGraphics(layerId) {
+            const layer = this.layers.get(layerId);
+            return layer ? [...layer.children] : [];
+        }
+        
+        /**
+         * Graphics検索（レイヤー横断）
+         */
+        findGraphicsInLayers(predicate) {
+            const results = [];
+            
+            this.layers.forEach((layer, layerId) => {
+                if (layerId !== 'layer0') { // 背景レイヤーは除外
+                    layer.children.forEach(child => {
+                        if (child instanceof PIXI.Graphics && predicate(child)) {
+                            results.push({
+                                graphics: child,
+                                layerId: layerId,
+                                layer: layer
+                            });
+                        }
+                    });
+                }
+            });
+            
+            return results;
+        }
+        
+        /**
+         * キャンバスサイズ変更（背景レイヤー更新付き）
+         */
+        resizeCanvas(width, height) {
+            if (!this.pixiApp) {
+                throw new Error('PixiJS Application not set');
+            }
+            
+            this.pixiApp.renderer.resize(width, height);
+            
+            // 背景レイヤーのサイズも更新
+            const backgroundLayer = this.getBackgroundLayer();
+            if (backgroundLayer && backgroundLayer.children.length > 0) {
+                const backgroundGraphics = backgroundLayer.children[0];
+                if (backgroundGraphics instanceof PIXI.Graphics) {
+                    backgroundGraphics.clear();
+                    backgroundGraphics.beginFill(this.backgroundColor, 1.0);
+                    backgroundGraphics.drawRect(0, 0, width, height);
+                    backgroundGraphics.endFill();
+                }
+            }
+            
+            console.log(`📏 Canvas resized: ${width}x${height}`);
+        }
+        
+        /**
+         * 背景色変更
+         */
+        setBackgroundColor(color) {
+            if (typeof color === 'string') {
+                this.backgroundColor = parseInt(color.replace('#', ''), 16);
+            } else if (typeof color === 'number') {
+                this.backgroundColor = color;
+            } else {
+                console.warn('⚠️ Invalid background color:', color);
+                return;
+            }
+            
+            // 背景レイヤーの色を更新
+            const backgroundLayer = this.getBackgroundLayer();
+            if (backgroundLayer && backgroundLayer.children.length > 0) {
+                const backgroundGraphics = backgroundLayer.children[0];
+                if (backgroundGraphics instanceof PIXI.Graphics) {
+                    backgroundGraphics.clear();
+                    backgroundGraphics.beginFill(this.backgroundColor, 1.0);
+                    backgroundGraphics.drawRect(0, 0, this.pixiApp.screen.width, this.pixiApp.screen.height);
+                    backgroundGraphics.endFill();
+                }
+            }
+            
+            console.log(`🎨 Background color changed: 0x${this.backgroundColor.toString(16)}`);
+        }
+        
+        /**
+         * レイヤー可視性設定
+         */
+        setLayerVisibility(layerId, visible) {
+            const layer = this.layers.get(layerId);
+            if (layer) {
+                layer.visible = visible;
+                console.log(`👁️ Layer ${layerId} visibility: ${visible}`);
+            } else {
+                console.warn(`⚠️ Layer not found: ${layerId}`);
+            }
+        }
+        
+        /**
+         * レイヤー透明度設定
+         */
+        setLayerAlpha(layerId, alpha) {
+            if (alpha < 0 || alpha > 1) {
+                console.warn(`⚠️ Invalid alpha value: ${alpha} (must be 0-1)`);
+                return;
+            }
+            
+            const layer = this.layers.get(layerId);
+            if (layer) {
+                layer.alpha = alpha;
+                console.log(`🔅 Layer ${layerId} alpha: ${alpha}`);
+            } else {
+                console.warn(`⚠️ Layer not found: ${layerId}`);
+            }
+        }
+        
+        /**
+         * デバッグ情報取得
+         */
+        getDebugInfo() {
+            const layerDetails = {};
+            this.layers.forEach((layer, layerId) => {
+                layerDetails[layerId] = {
+                    childrenCount: layer.children.length,
+                    visible: layer.visible,
+                    alpha: layer.alpha,
+                    zIndex: layer.zIndex,
+                    sortableChildren: layer.sortableChildren
+                };
+            });
+            
+            return {
+                initialized: this.initialized,
+                hasPixiApp: !!this.pixiApp,
+                layerCount: this.layers.size,
+                layerNames: Array.from(this.layers.keys()),
+                activeLayer: this.activeLayerId,
+                stageChildren: this.pixiApp?.stage.children.length || 0,
+                backgroundColor: '0x' + this.backgroundColor.toString(16),
+                canvasSize: this.pixiApp ? {
+                    width: this.pixiApp.screen.width,
+                    height: this.pixiApp.screen.height
+                } : null,
+                layerDetails,
+                totalGraphicsCount: this.getTotalGraphicsCount()
+            };
+        }
+        
+        /**
+         * PixiJS Application取得（他クラス用）
+         */
+        getPixiApp() {
+            return this.pixiApp;
+        }
+        
+        /**
+         * 初期化状態確認
+         */
+        isReady() {
+            return this.initialized && !!this.pixiApp && !!this.pixiApp.stage;
+        }
+        
+        /**
+         * 🆕 Phase1.5機能テスト
+         */
+        testCanvasManagerFeatures() {
+            const results = { success: [], error: [], warning: [] };
+            
+            try {
+                // レイヤー作成テスト
+                if (this.layers.has('layer0') && this.layers.has('layer1')) {
+                    results.success.push('CanvasManager: 基本レイヤー存在確認');
+                } else {
+                    results.error.push('CanvasManager: 基本レイヤー不足');
+                }
                 
-                if (!isNaN(rotatedX) && !isNaN(rotatedY)) {
-                    transformedX = rotatedX;
-                    transformedY = rotatedY;
+                // Graphics追加・削除テスト
+                const testGraphics = new PIXI.Graphics();
+                testGraphics.beginFill(0xff0000);
+                testGraphics.drawCircle(0, 0, 5);
+                testGraphics.endFill();
+                
+                try {
+                    this.addGraphicsToLayer(testGraphics);
+                    const layerGraphicsCount = this.getLayerGraphicsCount(this.activeLayerId);
+                    
+                    if (layerGraphicsCount > 0) {
+                        results.success.push('CanvasManager: Graphics追加機能正常');
+                        
+                        // 削除テスト
+                        const removeSuccess = this.removeGraphicsFromLayer(testGraphics);
+                        if (removeSuccess) {
+                            results.success.push('CanvasManager: Graphics削除機能正常');
+                        } else {
+                            results.error.push('CanvasManager: Graphics削除機能異常');
+                        }
+                    } else {
+                        results.error.push('CanvasManager: Graphics追加機能異常');
+                    }
+                } catch (error) {
+                    results.error.push(`CanvasManager: Graphics操作エラー: ${error.message}`);
                 }
-            }
-        }
-        
-        // 逆拡縮・逆平行移動（ゼロ除算対策）
-        if (t.scaleX === 0 || t.scaleY === 0) {
-            return { x: 0, y: 0 };
-        }
-        
-        transformedX = (transformedX - t.translateX) / t.scaleX;
-        transformedY = (transformedY - t.translateY) / t.scaleY;
-        
-        if (isNaN(transformedX) || isNaN(transformedY)) {
-            return { x: 0, y: 0 };
-        }
-        
-        return { x: transformedX, y: transformedY };
-    }
-    
-    /**
-     * 平行移動設定
-     */
-    setTranslation(deltaX, deltaY) {
-        if (isNaN(deltaX) || isNaN(deltaY)) {
-            console.error('❌ CoordinateManager: NaN in setTranslation');
-            return;
-        }
-        
-        this.canvasTransform.translateX = this.adjustPrecision(deltaX);
-        this.canvasTransform.translateY = this.adjustPrecision(deltaY);
-        
-        console.log(`📐 平行移動設定: (${deltaX.toFixed(1)}, ${deltaY.toFixed(1)})`);
-    }
-    
-    /**
-     * 拡縮設定
-     */
-    setScale(scaleX, scaleY = null) {
-        if (isNaN(scaleX)) {
-            console.error('❌ CoordinateManager: NaN in setScale');
-            return;
-        }
-        
-        if (scaleY === null) scaleY = scaleX;
-        if (isNaN(scaleY)) return;
-        
-        const minScale = 0.1;
-        const maxScale = 10.0;
-        
-        this.canvasTransform.scaleX = Math.max(minScale, Math.min(maxScale, scaleX));
-        this.canvasTransform.scaleY = Math.max(minScale, Math.min(maxScale, scaleY));
-        
-        console.log(`📐 拡縮設定: (${this.canvasTransform.scaleX.toFixed(2)}, ${this.canvasTransform.scaleY.toFixed(2)})`);
-    }
-    
-    /**
-     * 回転設定
-     */
-    setRotation(angle) {
-        if (isNaN(angle)) {
-            console.error('❌ CoordinateManager: NaN in setRotation');
-            return;
-        }
-        
-        this.canvasTransform.rotation = angle % (2 * Math.PI);
-        console.log(`📐 回転設定: ${(this.canvasTransform.rotation * 180 / Math.PI).toFixed(1)}度`);
-    }
-    
-    /**
-     * 変形状態取得
-     */
-    getCanvasTransform() {
-        return { ...this.canvasTransform };
-    }
-    
-    /**
-     * 変形リセット
-     */
-    resetTransform() {
-        this.canvasTransform = {
-            translateX: 0,
-            translateY: 0,
-            scaleX: 1,
-            scaleY: 1,
-            rotation: 0
-        };
-        console.log('📐 変形リセット完了');
-    }
-    
-    /**
-     * 拡張描画エリア情報取得
-     */
-    getExtendedDrawArea() {
-        const margin = this.extendedDrawMargin;
-        return {
-            left: -margin,
-            top: -margin,
-            right: this.canvasWidth + margin,
-            bottom: this.canvasHeight + margin,
-            width: this.canvasWidth + (margin * 2),
-            height: this.canvasHeight + (margin * 2),
-            margin: margin
-        };
-    }
-    
-    /**
-     * キャンバス情報取得
-     */
-    getCanvasInfo() {
-        return {
-            width: this.canvasWidth,
-            height: this.canvasHeight,
-            element: this.canvasElement,
-            hasElement: !!this.canvasElement
-        };
-    }
-    
-    /**
-     * 統計情報取得
-     */
-    getStats() {
-        return {
-            transformCount: this.transformCount,
-            nanCount: this.nanCount,
-            nanRatio: this.transformCount > 0 ? (this.nanCount / this.transformCount) : 0
-        };
-    }
-    
-    /**
-     * デバッグ情報取得（軽量版）
-     */
-    getDebugInfo() {
-        return {
-            canvasSet: !!this.canvasElement,
-            canvasInfo: this.getCanvasInfo(),
-            transform: this.getCanvasTransform(),
-            hasTransform: this.hasTransform(),
-            extendedArea: this.getExtendedDrawArea(),
-            stats: this.getStats(),
-            phase: {
-                current: '1.5',
-                features: {
-                    basicTransform: true,
-                    extendedDrawArea: true,
-                    coordinatePrecision: true,
-                    nanProtection: true,
-                    advancedTransform: false
+                
+                // レイヤー管理テスト
+                const originalLayerId = this.activeLayerId;
+                try {
+                    this.setActiveLayer('layer1');
+                    if (this.getActiveLayerId() === 'layer1') {
+                        results.success.push('CanvasManager: アクティブレイヤー設定正常');
+                    } else {
+                        results.error.push('CanvasManager: アクティブレイヤー設定異常');
+                    }
+                } finally {
+                    this.setActiveLayer(originalLayerId); // 復元
                 }
+                
+                // PixiJS連携テスト
+                if (this.pixiApp && this.pixiApp.stage && this.pixiApp.renderer) {
+                    results.success.push('CanvasManager: PixiJS連携正常');
+                } else {
+                    results.error.push('CanvasManager: PixiJS連携異常');
+                }
+                
+            } catch (error) {
+                results.error.push(`CanvasManager機能テストエラー: ${error.message}`);
             }
-        };
+            
+            return results;
+        }
     }
+    
+    // Tegaki名前空間に登録
+    window.Tegaki.CanvasManager = CanvasManager;
+    
+    console.log('🎨 CanvasManager Graphics削除メソッド追加版 Loaded - RecordManager連携・Undo/Redo対応');
+} else {
+    console.log('⚠️ CanvasManager already defined - skipping redefinition');
 }
 
-// Tegaki名前空間に登録
-window.Tegaki.CoordinateManager = CoordinateManager;
-
-console.log('📐 CoordinateManager Phase1.5 Loaded（軽量版） - デバッグログ削減・Rulebook準拠・機能完全対応');
-console.log('📐 coordinate-manager.js loaded - NaN対策・AbstractTool互換性・軽量実装完了');
+console.log('🎨 canvas-manager.js loaded - Graphics削除メソッド・Phase1.5完全対応・レイヤー管理強化完了');
