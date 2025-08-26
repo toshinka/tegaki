@@ -227,23 +227,36 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * ToolManager初期化（PixiJS設定後・Phase1.5 Manager統合版）
+         * ToolManager初期化（PixiJS設定後・Phase1.5 Manager統合版）- CoordinateManager修正版
          */
         async initializeToolManager() {
+            // 🔧 修正：Phase1.5 Manager群を事前に設定してからToolManager初期化
+            console.log('🔧 Phase1.5 Manager群事前設定開始...');
+            
             // PixiJS設定後にToolManager初期化
             await this.appCore.initializeToolManager();
             
-            // 🆕 Phase1.5 Manager群をToolManagerに設定
+            // 🆕 Phase1.5 Manager群をToolManagerに設定（修正版：正しい順序）
             const toolManager = this.appCore.getToolManager();
             if (toolManager) {
-                // Phase1.5 Manager群設定
+                // 🔧 修正：Phase1.5 Manager群設定（ツール作成前に実行）
                 if (typeof toolManager.setPhase15Managers === 'function') {
-                    toolManager.setPhase15Managers({
+                    const managerConfig = {
                         coordinateManager: this.coordinateManager,
                         recordManager: this.recordManager,
                         eventBus: window.Tegaki?.EventBusInstance
+                    };
+                    
+                    console.log('🔧 Phase1.5 Manager群設定:', {
+                        coordinateManager: !!this.coordinateManager,
+                        recordManager: !!this.recordManager,
+                        eventBus: !!window.Tegaki?.EventBusInstance
                     });
-                    console.log('✅ ToolManager - Phase1.5 Manager群設定完了');
+                    
+                    toolManager.setPhase15Managers(managerConfig);
+                    console.log('✅ ToolManager - Phase1.5 Manager群設定完了（修正版）');
+                } else {
+                    console.warn('⚠️ ToolManager.setPhase15Managers メソッドが利用できません');
                 }
                 
                 // 従来のRecordManager設定（互換性維持）
@@ -252,16 +265,36 @@ if (!window.Tegaki.TegakiApplication) {
                     console.log('✅ ToolManager - RecordManager接続完了（互換性）');
                 }
                 
-                // ツール作成（Manager設定後）
+                // 🔧 修正：ツール作成（Manager設定後に実行）
                 if (typeof toolManager.createTools === 'function') {
+                    console.log('🔧 ツール作成開始（Phase1.5 Manager統合後）...');
                     toolManager.createTools();
                     console.log('✅ ToolManager - ツール作成完了（Phase1.5対応）');
+                } else {
+                    console.error('❌ ToolManager.createTools メソッドが利用できません');
                 }
+                
+                // 🔧 追加：ツール作成後の確認
+                const availableTools = toolManager.getAvailableTools();
+                const currentTool = toolManager.getCurrentTool();
+                console.log('🔧 ツール作成確認:', {
+                    availableTools: availableTools,
+                    currentToolName: toolManager.getCurrentToolName(),
+                    currentToolExists: !!currentTool
+                });
+                
+                // 🔧 追加：現在ツールのCoordinateManager設定確認
+                if (currentTool && typeof currentTool.getPhase15Status === 'function') {
+                    const toolStatus = currentTool.getPhase15Status();
+                    console.log('🔧 現在ツールのPhase1.5状況:', toolStatus);
+                }
+                
             } else {
                 console.error('❌ ToolManager取得失敗 - Phase1.5 Manager統合不可');
+                throw new Error('ToolManager not available');
             }
             
-            console.log('✅ ToolManager初期化完了（Phase1.5 Manager統合版）');
+            console.log('✅ ToolManager初期化完了（Phase1.5 Manager統合版・修正版）');
         }
         
         /**

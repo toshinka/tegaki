@@ -1,12 +1,12 @@
 /**
- * 🖊️ ToolManager Phase1.5修正版 - Manager連携対応
+ * 🖊️ ToolManager Phase1.5修正版 - CoordinateManager連携修正版
  * 📋 RESPONSIBILITY: ツール選択・イベント転送・Phase1.5 Manager統合
- * 🚫 PROHIBITION: 描画処理・座標変換・複雑な状態管理・設定管理
+ * 🚫 PROHIBITION: 描画処理・座標変換・複雑な状態管理・設定管理・フォールバック・フェイルセーフ
  * ✅ PERMISSION: ツール切り替え・PointerEvent転送・基本的なツール作成・Manager連携
  * 
- * 📏 DESIGN_PRINCIPLE: ツール管理専門・シンプル・直線的・Phase1.5 Manager統合
+ * 📏 DESIGN_PRINCIPLE: ツール管理専門・シンプル・直線的・Phase1.5 Manager統合・正しい構造でのみ動作
  * 🔄 INTEGRATION: CanvasManager・CoordinateManager・RecordManager・EventBus連携
- * 🔧 FIX: Phase1.5 Manager連携・CoordinateManager提供・AbstractTool初期化修正
+ * 🔧 FIX: Phase1.5 Manager連携・CoordinateManager提供・AbstractTool初期化修正・二重作成防止
  */
 
 // if (!window.XXX) ガードで多重定義を防ぐ
@@ -16,12 +16,12 @@ if (!window.Tegaki) {
 
 if (!window.Tegaki.ToolManager) {
     /**
-     * ToolManager - Phase1.5修正版（Manager連携対応）
+     * ToolManager - Phase1.5修正版（CoordinateManager連携修正版）
      * ツール切り替えとイベント転送・Phase1.5 Manager統合
      */
     class ToolManager {
         constructor() {
-            console.log('🖊️ ToolManager Phase1.5修正版作成（Manager連携対応）');
+            console.log('🖊️ ToolManager Phase1.5修正版作成（CoordinateManager連携修正版）');
             
             // 基本Manager
             this.canvasManager = null;
@@ -37,6 +37,7 @@ if (!window.Tegaki.ToolManager) {
             this.tools = new Map();
             
             this.initialized = false;
+            this.phase15ManagersSet = false; // 🔧 Phase1.5 Manager設定フラグ
         }
         
         /**
@@ -60,10 +61,10 @@ if (!window.Tegaki.ToolManager) {
         }
         
         /**
-         * 🆕 Phase1.5 Manager群設定
+         * 🆕 Phase1.5 Manager群設定（修正版：先に設定）
          */
         setPhase15Managers(managers = {}) {
-            console.log('🆕 ToolManager Phase1.5 Manager群設定開始...');
+            console.log('🆕 ToolManager Phase1.5 Manager群設定開始（修正版）...');
             
             // CoordinateManager設定
             if (managers.coordinateManager) {
@@ -89,7 +90,8 @@ if (!window.Tegaki.ToolManager) {
                 console.warn('⚠️ EventBus未提供 - イベント通信に影響する可能性');
             }
             
-            console.log('🆕 ToolManager Phase1.5 Manager群設定完了');
+            this.phase15ManagersSet = true;
+            console.log('🆕 ToolManager Phase1.5 Manager群設定完了（修正版）');
         }
         
         /**
@@ -143,84 +145,108 @@ if (!window.Tegaki.ToolManager) {
         }
         
         /**
-         * ツール作成（Phase1.5 Manager統合版）
+         * ツール作成（Phase1.5 Manager統合版・修正版）
          */
         createTools() {
             if (!this.canvasManager) {
-                console.warn('⚠️ CanvasManager not set - tools creation postponed');
+                throw new Error('CanvasManager not set - cannot create tools');
+            }
+            
+            console.log('🔧 ツール作成開始 - Phase1.5 Manager統合版（修正版）');
+            
+            // 🔧 修正：Phase1.5 Manager群設定確認
+            if (!this.phase15ManagersSet) {
+                console.warn('⚠️ Phase1.5 Manager群が未設定 - 基本機能のみで作成');
+            }
+            
+            // Phase1.5 Manager群準備
+            const managerConfig = {
+                canvasManager: this.canvasManager,
+                coordinateManager: this.coordinateManager,
+                recordManager: this.recordManager,
+                eventBus: this.eventBus
+            };
+            
+            console.log('🔧 Manager設定状況:', {
+                canvasManager: !!managerConfig.canvasManager,
+                coordinateManager: !!managerConfig.coordinateManager,
+                recordManager: !!managerConfig.recordManager,
+                eventBus: !!managerConfig.eventBus
+            });
+            
+            // 🔧 修正：ツールが既に存在する場合は再作成しない
+            if (this.tools.size > 0) {
+                console.warn('⚠️ ツール既存 - Manager設定のみ更新');
+                this.updateToolManagers();
                 return;
             }
             
-            try {
-                console.log('🔧 ツール作成開始 - Phase1.5 Manager統合版');
+            // PenTool作成
+            if (window.Tegaki.PenTool) {
+                const penTool = new window.Tegaki.PenTool();
                 
-                // Phase1.5 Manager群準備
-                const managerConfig = {
-                    canvasManager: this.canvasManager,
-                    coordinateManager: this.coordinateManager,
-                    recordManager: this.recordManager,
-                    eventBus: this.eventBus
-                };
-                
-                // PenTool作成
-                if (window.Tegaki.PenTool) {
-                    const penTool = new window.Tegaki.PenTool();
+                // 🔧 修正：従来のsetCanvasManager（互換性維持）
+                if (typeof penTool.setCanvasManager === 'function') {
                     penTool.setCanvasManager(this.canvasManager);
-                    
-                    // 🆕 AbstractToolベース初期化（Manager群提供）
-                    if (typeof penTool.initialize === 'function') {
-                        penTool.initialize(managerConfig);
-                        console.log('✅ PenTool - Phase1.5 Manager統合初期化完了');
-                    }
-                    
-                    this.tools.set('pen', penTool);
-                    console.log('✅ PenTool 作成・設定完了（Phase1.5対応）');
+                }
+                
+                // 🆕 AbstractToolベース初期化（Manager群提供・修正版）
+                if (typeof penTool.initialize === 'function') {
+                    penTool.initialize(managerConfig);
+                    console.log('✅ PenTool - Phase1.5 Manager統合初期化完了（修正版）');
                 } else {
-                    console.warn('⚠️ PenTool class not available');
+                    console.warn('⚠️ PenTool.initialize メソッドが利用できません');
                 }
                 
-                // EraserTool作成
-                if (window.Tegaki.EraserTool) {
-                    const eraserTool = new window.Tegaki.EraserTool();
-                    eraserTool.setCanvasManager(this.canvasManager);
-                    
-                    // 🆕 AbstractToolベース初期化（Manager群提供）
-                    if (typeof eraserTool.initialize === 'function') {
-                        eraserTool.initialize(managerConfig);
-                        console.log('✅ EraserTool - Phase1.5 Manager統合初期化完了');
-                    }
-                    
-                    this.tools.set('eraser', eraserTool);
-                    console.log('✅ EraserTool 作成・設定完了（Phase1.5対応）');
-                } else {
-                    console.warn('⚠️ EraserTool class not available');
-                }
-                
-                // ツール作成確認
-                if (this.tools.size === 0) {
-                    throw new Error('No tools were created - tool classes not available');
-                }
-                
-                // 初期ツール選択
-                const initialToolSelected = this.selectTool(this.currentToolName);
-                if (!initialToolSelected) {
-                    console.warn(`⚠️ 初期ツール選択失敗: ${this.currentToolName}`);
-                }
-                
-                this.initialized = true;
-                console.log(`✅ ToolManager - 全ツール作成完了（Phase1.5対応） (${this.tools.size}個)`);
-                
-            } catch (error) {
-                console.error('❌ ツール作成エラー:', error);
-                throw error;
+                this.tools.set('pen', penTool);
+                console.log('✅ PenTool 作成・設定完了（Phase1.5対応・修正版）');
+            } else {
+                throw new Error('PenTool class not available');
             }
+            
+            // EraserTool作成
+            if (window.Tegaki.EraserTool) {
+                const eraserTool = new window.Tegaki.EraserTool();
+                
+                // 🔧 修正：従来のsetCanvasManager（互換性維持）
+                if (typeof eraserTool.setCanvasManager === 'function') {
+                    eraserTool.setCanvasManager(this.canvasManager);
+                }
+                
+                // 🆕 AbstractToolベース初期化（Manager群提供・修正版）
+                if (typeof eraserTool.initialize === 'function') {
+                    eraserTool.initialize(managerConfig);
+                    console.log('✅ EraserTool - Phase1.5 Manager統合初期化完了（修正版）');
+                } else {
+                    console.warn('⚠️ EraserTool.initialize メソッドが利用できません');
+                }
+                
+                this.tools.set('eraser', eraserTool);
+                console.log('✅ EraserTool 作成・設定完了（Phase1.5対応・修正版）');
+            } else {
+                throw new Error('EraserTool class not available');
+            }
+            
+            // ツール作成確認
+            if (this.tools.size === 0) {
+                throw new Error('No tools were created - tool classes not available');
+            }
+            
+            // 初期ツール選択
+            const initialToolSelected = this.selectTool(this.currentToolName);
+            if (!initialToolSelected) {
+                throw new Error(`初期ツール選択失敗: ${this.currentToolName}`);
+            }
+            
+            this.initialized = true;
+            console.log(`✅ ToolManager - 全ツール作成完了（Phase1.5対応・修正版） (${this.tools.size}個)`);
         }
         
         /**
-         * 🆕 既存ツールのManager設定更新
+         * 🆕 既存ツールのManager設定更新（修正版）
          */
         updateToolManagers() {
-            console.log('🔄 既存ツールのManager設定更新開始...');
+            console.log('🔄 既存ツールのManager設定更新開始（修正版）...');
             
             const managerConfig = {
                 canvasManager: this.canvasManager,
@@ -233,14 +259,16 @@ if (!window.Tegaki.ToolManager) {
                 if (typeof tool.initialize === 'function') {
                     try {
                         tool.initialize(managerConfig);
-                        console.log(`✅ ${toolName} - Manager設定更新完了`);
+                        console.log(`✅ ${toolName} - Manager設定更新完了（修正版）`);
                     } catch (error) {
                         console.error(`❌ ${toolName} - Manager設定更新エラー:`, error);
                     }
+                } else {
+                    console.warn(`⚠️ ${toolName}.initialize メソッドが利用できません`);
                 }
             }
             
-            console.log('🔄 既存ツールのManager設定更新完了');
+            console.log('🔄 既存ツールのManager設定更新完了（修正版）');
         }
         
         /**
@@ -311,7 +339,7 @@ if (!window.Tegaki.ToolManager) {
         }
         
         /**
-         * PointerDown イベント転送
+         * PointerDown イベント転送（修正版）
          */
         handlePointerDown(x, y, event) {
             if (!this.currentTool) {
@@ -319,11 +347,14 @@ if (!window.Tegaki.ToolManager) {
                 return;
             }
             
+            console.log(`🖊️ PointerDown [${this.currentToolName}]:`, { x, y });
+            
             if (this.currentTool.onPointerDown) {
                 try {
                     this.currentTool.onPointerDown(x, y, event);
                 } catch (error) {
                     console.error(`❌ PointerDown処理エラー [${this.currentToolName}]:`, error);
+                    throw error;
                 }
             } else {
                 console.warn(`⚠️ ツール ${this.currentToolName} は onPointerDown をサポートしていません`);
@@ -331,7 +362,7 @@ if (!window.Tegaki.ToolManager) {
         }
         
         /**
-         * PointerMove イベント転送
+         * PointerMove イベント転送（修正版）
          */
         handlePointerMove(x, y, event) {
             if (!this.currentTool) return;
@@ -346,16 +377,19 @@ if (!window.Tegaki.ToolManager) {
         }
         
         /**
-         * PointerUp イベント転送
+         * PointerUp イベント転送（修正版）
          */
         handlePointerUp(x, y, event) {
             if (!this.currentTool) return;
+            
+            console.log(`🖊️ PointerUp [${this.currentToolName}]:`, { x, y });
             
             if (this.currentTool.onPointerUp) {
                 try {
                     this.currentTool.onPointerUp(x, y, event);
                 } catch (error) {
                     console.error(`❌ PointerUp処理エラー [${this.currentToolName}]:`, error);
+                    throw error;
                 }
             }
         }
@@ -385,18 +419,19 @@ if (!window.Tegaki.ToolManager) {
         }
         
         /**
-         * 初期化状態確認（強化版）
+         * 初期化状態確認（強化版・修正版）
          */
         isReady() {
             return this.initialized && 
                    !!this.canvasManager && 
                    this.canvasManager.isReady() &&
                    this.tools.size > 0 &&
-                   !!this.currentTool;
+                   !!this.currentTool &&
+                   this.phase15ManagersSet; // 🔧 Phase1.5 Manager設定確認追加
         }
         
         /**
-         * デバッグ情報取得（Phase1.5対応版）
+         * デバッグ情報取得（Phase1.5対応版・修正版）
          */
         getDebugInfo() {
             return {
@@ -405,11 +440,12 @@ if (!window.Tegaki.ToolManager) {
                 canvasManagerSet: !!this.canvasManager,
                 canvasManagerReady: this.canvasManager?.isReady() || false,
                 
-                // 🆕 Phase1.5 Manager状態
+                // 🆕 Phase1.5 Manager状態（修正版）
                 phase15Managers: {
                     coordinateManager: !!this.coordinateManager,
                     recordManager: !!this.recordManager,
-                    eventBus: !!this.eventBus
+                    eventBus: !!this.eventBus,
+                    managersSet: this.phase15ManagersSet
                 },
                 
                 // ツール状態
@@ -428,17 +464,28 @@ if (!window.Tegaki.ToolManager) {
                 // Phase情報
                 phase: {
                     current: '1.5',
-                    managerIntegration: 'active',
+                    managerIntegration: this.phase15ManagersSet ? 'complete' : 'incomplete',
                     toolIntegration: 'active'
+                },
+                
+                // 🔧 詳細診断情報
+                diagnostics: {
+                    coordinateManagerType: this.coordinateManager?.constructor.name || 'none',
+                    recordManagerType: this.recordManager?.constructor.name || 'none',
+                    eventBusType: this.eventBus?.constructor.name || 'none',
+                    toolTypes: Array.from(this.tools.entries()).map(([name, tool]) => ({
+                        name,
+                        type: tool?.constructor.name || 'unknown'
+                    }))
                 }
             };
         }
         
         /**
-         * 🆕 Phase1.5統合状況確認
+         * 🆕 Phase1.5統合状況確認（修正版）
          */
         checkPhase15Integration() {
-            console.log('🔍 ToolManager Phase1.5統合状況確認');
+            console.log('🔍 ToolManager Phase1.5統合状況確認（修正版）');
             
             const results = {
                 success: [],
@@ -471,6 +518,13 @@ if (!window.Tegaki.ToolManager) {
                 results.warning.push('EventBus: 未設定');
             }
             
+            // Phase1.5 Manager設定フラグ確認
+            if (this.phase15ManagersSet) {
+                results.success.push('Phase1.5 Manager設定: 完了');
+            } else {
+                results.error.push('Phase1.5 Manager設定: 未完了');
+            }
+            
             // ツール統合確認
             if (this.tools.size > 0) {
                 results.success.push(`ツール作成: ${this.tools.size}個完了`);
@@ -498,9 +552,9 @@ if (!window.Tegaki.ToolManager) {
     // Tegaki名前空間に登録
     window.Tegaki.ToolManager = ToolManager;
     
-    console.log('🖊️ ToolManager Phase1.5修正版（Manager連携対応） Loaded');
+    console.log('🖊️ ToolManager Phase1.5修正版（CoordinateManager連携修正版） Loaded');
 } else {
     console.log('⚠️ ToolManager already defined - skipping redefinition');
 }
 
-console.log('🖊️ tool-manager.js Phase1.5修正版 loaded - Manager連携・AbstractTool統合完了');
+console.log('🖊️ tool-manager.js Phase1.5修正版（CoordinateManager連携修正版） loaded - Manager連携・AbstractTool統合・二重作成防止完了');
