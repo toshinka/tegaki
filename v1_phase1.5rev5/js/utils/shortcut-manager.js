@@ -43,6 +43,31 @@
         }
         
         /**
+         * 初期化（Phase1.5スタブ - EventBus連携準備）
+         */
+        initialize(eventBus) {
+            console.log('⌨️ ShortcutManager 初期化 - Phase1.5スタブ版');
+            
+            if (!eventBus) {
+                console.warn('⚠️ ShortcutManager: EventBus未提供 - Phase1.5開発中');
+                return false;
+            }
+            
+            this.eventBus = eventBus;
+            
+            // Phase1.5: 基本キーボードイベント準備（スタブ）
+            this.setupEventListeners();
+            
+            // Phase1.5: EventBus連携準備（スタブ）
+            this.setupEventBusListeners();
+            
+            this.initializeComplete = true;
+            console.log('✅ ShortcutManager 初期化完了 - Phase1.5スタブ版');
+            
+            return true;
+        }
+        
+        /**
          * Phase1.5基本ショートカット定義（スタブ実装）
          */
         initializePhase15Shortcuts() {
@@ -347,29 +372,3 @@
     console.log('🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応');
     
 })();
-        /**
-         * 初期化（Phase1.5スタブ - EventBus連携準備）
-         */
-        initialize(eventBus) {
-            console.log('⌨️ ShortcutManager 初期化 - Phase1.5スタブ版');
-            
-            if (!eventBus) {
-                console.warn('⚠️ ShortcutManager: EventBus未提供 - Phase1.5開発中');
-                return false;
-            }
-            
-            this.eventBus = eventBus;
-            
-            // Phase1.5: 基本キーボードイベント準備（スタブ）
-            this.setupEventListeners();
-            
-            // Phase1.5: EventBus連携準備（スタブ）
-            this.setupEventBusListeners();
-            
-            this.initializeComplete = true;
-            console.log('✅ ShortcutManager 初期化完了 - Phase1.5スタブ版');
-            
-            return true;
-        }
-        
-        /**

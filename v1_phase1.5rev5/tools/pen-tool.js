@@ -1,42 +1,43 @@
 /**
- * 🧹 EraserTool Phase1.5 非破壊編集対応版 - AbstractTool継承・RecordManager統合
- * 📋 RESPONSIBILITY: 描画内容の消去処理・非破壊編集対応・操作記録
+ * ✏️ PenTool Phase1.5 非破壊編集対応版 - AbstractTool継承・RecordManager統合
+ * 📋 RESPONSIBILITY: ベクター描画処理・座標データ管理・非破壊編集対応
  * 🚫 PROHIBITION: レイヤー操作・UI通知・座標変換・直接Manager作成
- * ✅ PERMISSION: PIXI.Graphics作成・消去処理・CanvasManagerへの渡し・操作記録
+ * ✅ PERMISSION: PIXI.Graphics作成・線描画・CanvasManagerへの渡し・操作記録
  * 
- * 📏 DESIGN_PRINCIPLE: AbstractTool継承・非破壊編集・ERASEブレンドモード活用
- * 🔄 INTEGRATION: CanvasManager・RecordManager・CoordinateManager統合
- * 🎯 FEATURE: Undo/Redo対応・操作履歴記録・キャンバス外描画対応・座標ズレ完全解決
+ * 📏 DESIGN_PRINCIPLE: AbstractTool継承・非破壊編集・座標データ主体・Graphics表示従
+ * 🔄 INTEGRATION: Phase1.5非破壊編集・RecordManager・CoordinateManager統合
+ * 🎯 FEATURE: Undo/Redo対応・操作履歴記録・キャンバス外描画対応
  * 🆕 Phase1.5: AbstractTool継承・RecordManager統合・非破壊編集完全対応
  */
 
 // Tegaki名前空間初期化
 window.Tegaki = window.Tegaki || {};
 
-if (!window.Tegaki.EraserTool) {
+if (!window.Tegaki.PenTool) {
     /**
-     * EraserTool - Phase1.5 非破壊編集対応版（AbstractTool継承）
-     * AbstractToolを継承して消去処理・非破壊編集・操作記録を行う
+     * PenTool - Phase1.5 非破壊編集対応版（AbstractTool継承）
+     * AbstractToolを継承してベクター描画・非破壊編集・操作記録を行う
      */
-    class EraserTool extends window.Tegaki.AbstractTool {
+    class PenTool extends window.Tegaki.AbstractTool {
         constructor() {
             // AbstractTool継承（ツール名とデフォルト設定）
-            super('eraser', {
-                eraserSize: 20,         // デフォルト消しゴムサイズ
-                eraserOpacity: 1.0,     // 消去強度（完全消去）
-                smoothErasing: true     // スムーズ消去
+            super('pen', {
+                color: 0x800000,           // ふたば風マルーン
+                lineWidth: 4,              // デフォルト線幅
+                opacity: 1.0,              // 不透明度
+                smoothing: true,           // スムージング有効
+                pressureSensitive: false   // 筆圧感度（Phase3で実装）
             });
             
-            console.log('🧹 EraserTool Phase1.5 非破壊編集対応版 作成（AbstractTool継承）');
+            console.log('✏️ PenTool Phase1.5 非破壊編集対応版 作成（AbstractTool継承）');
             
-            // 消しゴム固有の状態
-            this.currentErasePath = null;  // 現在の消去Graphics
-            this.points = [];              // 現在消去パスの座標配列
-            this.eraseHistory = [];        // 消去操作履歴（ローカル参照用）
+            // ペン固有の状態
+            this.currentPath = null;      // 現在の描画Graphics
+            this.points = [];             // 現在ストロークの座標配列
+            this.strokeHistory = [];      // 全ストローク履歴（ローカル参照用）
             
-            // 統計情報
-            this.eraseCount = 0;           // 消去実行回数
-            this.lastEraseInfo = null;     // 最後の消去情報
+            // ベクター設定
+            this.vectorDataEnabled = true;  // ベクターデータ保持（常に有効）
         }
         
         /**
@@ -45,164 +46,155 @@ if (!window.Tegaki.EraserTool) {
         getDefaultSettings() {
             return {
                 ...super.getDefaultSettings(),
-                eraserSize: 20,         // デフォルト消しゴムサイズ
-                eraserOpacity: 1.0,     // 消去強度（完全消去）
-                smoothErasing: true     // スムーズ消去
+                color: 0x800000,           // ふたば風マルーン
+                lineWidth: 4,              // デフォルト線幅
+                opacity: 1.0,              // 不透明度
+                smoothing: true,           // スムージング有効
+                pressureSensitive: false   // 筆圧感度（Phase3で実装）
             };
         }
         
         /**
-         * 消去開始処理（AbstractTool実装）
+         * 描画開始処理（AbstractTool実装）
          */
         onDrawStart(x, y, event) {
             if (!this.canvasManager) {
-                console.warn('⚠️ EraserTool: CanvasManager not set');
+                console.warn('⚠️ CanvasManager not set');
                 return;
             }
             
-            // アクティブレイヤー確認（背景レイヤーは保護）
+            // アクティブレイヤー確認
             const activeLayerId = this.canvasManager.getActiveLayerId();
-            if (activeLayerId === 'layer0') {
-                console.warn('⚠️ EraserTool: 背景レイヤーへの消去は禁止されています');
-                if (window.Tegaki?.ErrorManagerInstance) {
-                    window.Tegaki.ErrorManagerInstance.showWarning(
-                        '背景レイヤーは消去できません',
-                        { context: 'EraserTool.onDrawStart' }
-                    );
-                }
-                return;
-            }
-            
-            console.log(`🧹 消去開始: layer=${activeLayerId}, pos=(${Math.round(x)}, ${Math.round(y)}), size=${this.settings.eraserSize}`);
+            console.log(`✏️ ペン描画開始: layer=${activeLayerId}, pos=(${Math.round(x)}, ${Math.round(y)})`);
             
             // 座標配列初期化
-            this.points = [{x, y, timestamp: Date.now()}];
-            this.eraseCount++;
+            this.points = [{
+                x, y, 
+                pressure: event.pressure || 1.0, 
+                timestamp: Date.now()
+            }];
             
-            // 消去Graphics作成
-            this.currentErasePath = new PIXI.Graphics();
-            
-            // ERASEブレンドモード設定（初期設定で確実に）
-            this.currentErasePath.blendMode = PIXI.BLEND_MODES.ERASE;
+            // Graphics作成（表示レンダラー）
+            this.currentPath = new PIXI.Graphics();
+            this.updateGraphicsStyle();
             
             // 🆕 currentOperationにGraphics設定（Undo/Redo用）
             if (this.currentOperation) {
-                this.currentOperation.graphics = this.currentErasePath;
-                this.currentOperation.type = 'erase'; // 操作タイプ設定
+                this.currentOperation.graphics = this.currentPath;
+                this.currentOperation.type = 'pen'; // 操作タイプ設定
             }
             
-            // 消去用円形描画
-            this.drawEraseCircle(x, y);
+            // 描画開始点設定
+            this.currentPath.moveTo(x, y);
             
-            // アクティブレイヤーに追加（専用メソッド使用）
+            // 開始点に小さな円を描画
+            this.drawPointCircle(x, y);
+            
+            // アクティブレイヤーに追加
             try {
-                this.canvasManager.addEraseGraphicsToLayer(this.currentErasePath);
-                console.log(`✅ 消去Graphics追加成功: layer=${activeLayerId}`);
+                this.canvasManager.addGraphicsToLayer(this.currentPath);
+                console.log(`✅ ペンGraphics追加成功: layer=${activeLayerId}`);
             } catch (error) {
-                console.error('❌ 消去Graphics追加失敗:', error);
+                console.error('❌ ペンGraphics追加失敗:', error);
                 if (window.Tegaki?.ErrorManagerInstance) {
                     window.Tegaki.ErrorManagerInstance.showError(
                         'technical',
-                        `消去Graphics追加失敗: ${error.message}`,
-                        { context: 'EraserTool.onDrawStart' }
+                        `ペンGraphics追加失敗: ${error.message}`,
+                        { context: 'PenTool.onDrawStart' }
                     );
                 }
             }
         }
         
         /**
-         * 消去更新処理（AbstractTool実装）
+         * 描画更新処理（AbstractTool実装）
          */
         onDrawMove(x, y, event) {
-            if (!this.currentErasePath) return;
+            if (!this.currentPath) return;
             
-            // 点を記録（タイムスタンプ付き）
-            this.points.push({x, y, timestamp: Date.now()});
+            // 前の点取得
+            const prev = this.points[this.points.length - 1];
             
-            // 現在位置に消去円描画
-            this.drawEraseCircle(x, y);
+            // 点を記録（ベクターデータ）
+            const pointData = {
+                x, y, 
+                pressure: event.pressure || 1.0, 
+                timestamp: Date.now()
+            };
+            this.points.push(pointData);
             
-            // スムーズ消去：前の点との間を補間
-            if (this.settings.smoothErasing && this.points.length > 1) {
-                const prevPoint = this.points[this.points.length - 2];
-                const distance = Math.sqrt(
-                    Math.pow(x - prevPoint.x, 2) + Math.pow(y - prevPoint.y, 2)
-                );
-                
-                // 補間距離を完全修正（より密で滑らかな補間）
-                const minInterpolationDistance = this.settings.eraserSize / 4;
-                if (distance > minInterpolationDistance) {
-                    // 補間ステップ数を完全修正（滑らかさ向上）
-                    const steps = Math.max(2, Math.ceil(distance / (this.settings.eraserSize / 3)));
-                    for (let i = 1; i < steps; i++) {
-                        const ratio = i / steps;
-                        const interpX = prevPoint.x + (x - prevPoint.x) * ratio;
-                        const interpY = prevPoint.y + (y - prevPoint.y) * ratio;
-                        
-                        this.drawEraseCircle(interpX, interpY);
-                    }
-                }
+            // 前の点からのmoveTo保証
+            if (prev) {
+                this.currentPath.moveTo(prev.x, prev.y);
             }
             
-            // パフォーマンス監視
-            if (this.points.length > 1000) {
-                console.warn(`⚠️ EraserTool: 消去パスが長すぎます (${this.points.length} points)`);
+            // 線描画
+            if (this.settings.smoothing && this.points.length > 2) {
+                this.drawSmoothLine();
+            } else {
+                this.currentPath.lineTo(x, y);
             }
+            
+            // 線の隙間を円で埋める
+            this.drawPointCircle(x, y);
+            
+            // 🔧 重要修正: 円描画後にlineStyleを復元
+            this.updateGraphicsStyle();
         }
         
         /**
-         * 消去終了処理（AbstractTool実装）
+         * 描画終了処理（AbstractTool実装）
          */
         onDrawEnd(x, y, event) {
-            if (!this.currentErasePath) return;
+            if (!this.currentPath) return;
             
-            // 最終点に消去円追加
-            this.drawEraseCircle(x, y);
+            // 最終点追加
+            const finalPoint = {
+                x, y, 
+                pressure: event.pressure || 1.0, 
+                timestamp: Date.now()
+            };
+            this.points.push(finalPoint);
             
-            // 最終点記録
-            this.points.push({x, y, timestamp: Date.now()});
+            // 最終線描画
+            const prev = this.points[this.points.length - 2];
+            if (prev) {
+                this.currentPath.moveTo(prev.x, prev.y);
+            }
+            this.currentPath.lineTo(x, y);
             
-            // 🆕 消去データをローカル履歴に保存
-            if (this.currentOperation) {
-                const eraseData = {
+            // 最終点に円描画
+            this.drawPointCircle(x, y);
+            
+            // 🆕 ストロークデータをローカル履歴に保存
+            if (this.vectorDataEnabled && this.currentOperation) {
+                const strokeData = {
                     id: this.currentOperation.id,
                     layerId: this.canvasManager?.getActiveLayerId() || 'default',
                     points: [...this.points],
-                    settings: {
-                        eraserSize: this.settings.eraserSize,
-                        eraserOpacity: this.settings.eraserOpacity,
-                        smoothErasing: this.settings.smoothErasing
+                    style: {
+                        color: this.settings.color,
+                        lineWidth: this.settings.lineWidth,
+                        opacity: this.settings.opacity,
+                        smoothing: this.settings.smoothing
                     },
                     createdAt: Date.now(),
-                    type: 'erase',
-                    graphics: this.currentErasePath
+                    type: 'pen',
+                    graphics: this.currentPath
                 };
                 
-                this.eraseHistory.push(eraseData);
-                console.log(`💾 消去操作保存: id=${eraseData.id}, points=${eraseData.points.length}`);
+                this.strokeHistory.push(strokeData);
+                console.log(`💾 ペンストローク保存: id=${strokeData.id}, points=${strokeData.points.length}`);
             }
             
-            // 統計情報記録
+            // 描画完了処理
             const pathLength = this.points.length;
             const activeLayerId = this.canvasManager?.getActiveLayerId();
-            const startTime = this.points[0]?.timestamp || Date.now();
-            const endTime = Date.now();
-            const duration = endTime - startTime;
             
-            this.lastEraseInfo = {
-                layerId: activeLayerId,
-                pathLength: pathLength,
-                duration: duration,
-                eraserSize: this.settings.eraserSize,
-                smoothErasing: this.settings.smoothErasing,
-                startPos: { x: this.points[0]?.x || 0, y: this.points[0]?.y || 0 },
-                endPos: { x, y }
-            };
-            
-            console.log(`✅ 消去完了: layer=${activeLayerId}, pathPoints=${pathLength}, duration=${duration}ms, size=${this.settings.eraserSize}`);
+            console.log(`✅ ペン描画完了: layer=${activeLayerId}, pathPoints=${pathLength}, color=0x${this.settings.color.toString(16)}`);
             
             // リセット
-            this.currentErasePath = null;
+            this.currentPath = null;
             this.points = [];
         }
         
@@ -210,13 +202,13 @@ if (!window.Tegaki.EraserTool) {
          * 🆕 操作取り消し処理（AbstractTool実装）
          */
         onUndo(operationData) {
-            console.log(`↶ 消去操作取り消し: ${operationData.id}`);
+            console.log(`↶ ペンストローク取り消し: ${operationData.id}`);
             
             // ローカル履歴からも削除
-            const index = this.eraseHistory.findIndex(erase => erase.id === operationData.id);
+            const index = this.strokeHistory.findIndex(stroke => stroke.id === operationData.id);
             if (index !== -1) {
-                this.eraseHistory.splice(index, 1);
-                console.log(`🗑️ ローカル消去履歴削除: index=${index}`);
+                this.strokeHistory.splice(index, 1);
+                console.log(`🗑️ ローカルストローク履歴削除: index=${index}`);
             }
         }
         
@@ -224,26 +216,26 @@ if (!window.Tegaki.EraserTool) {
          * 🆕 操作やり直し処理（AbstractTool実装）
          */
         onRedo(operationData) {
-            console.log(`↷ 消去操作復元: ${operationData.id}`);
+            console.log(`↷ ペンストローク復元: ${operationData.id}`);
             
             // Graphics再作成（必要に応じて）
             if (!operationData.graphics && operationData.data) {
-                const eraseData = operationData.data;
-                operationData.graphics = this.redrawErase(eraseData);
+                const strokeData = operationData.data;
+                operationData.graphics = this.redrawStroke(strokeData);
                 
                 if (operationData.graphics && this.canvasManager) {
-                    this.canvasManager.addEraseGraphicsToLayer(operationData.graphics);
+                    this.canvasManager.addGraphicsToLayer(operationData.graphics, operationData.data.layerId);
                 }
             }
             
             // ローカル履歴にも復元
-            if (operationData.data && !this.eraseHistory.find(e => e.id === operationData.id)) {
-                const eraseData = {
+            if (operationData.data && !this.strokeHistory.find(s => s.id === operationData.id)) {
+                const strokeData = {
                     ...operationData.data,
                     graphics: operationData.graphics
                 };
-                this.eraseHistory.push(eraseData);
-                console.log(`📥 ローカル消去履歴復元: id=${eraseData.id}`);
+                this.strokeHistory.push(strokeData);
+                console.log(`📥 ローカルストローク履歴復元: id=${strokeData.id}`);
             }
         }
         
@@ -251,63 +243,111 @@ if (!window.Tegaki.EraserTool) {
          * 未完了操作強制終了処理（AbstractTool実装）
          */
         onOperationForceEnd(operationData) {
-            console.log(`⚠️ 消去操作強制終了: ${operationData.id}`);
+            console.log(`⚠️ ペン描画強制終了: ${operationData.id}`);
             
             // 未完了のGraphicsがあれば削除
-            if (this.currentErasePath && this.canvasManager) {
-                this.canvasManager.removeGraphicsFromLayer(this.currentErasePath);
+            if (this.currentPath && this.canvasManager) {
+                this.canvasManager.removeGraphicsFromLayer(this.currentPath);
             }
             
             // 状態リセット
-            this.currentErasePath = null;
+            this.currentPath = null;
             this.points = [];
         }
         
         /**
-         * 消去円描画（座標精度・ブレンドモード完全修正版）
+         * 点描画（円）+ lineStyle復元
+         * 🔧 FIX: beginFill/endFill後のlineStyle復元
          */
-        drawEraseCircle(x, y) {
-            if (!this.currentErasePath) return;
+        drawPointCircle(x, y) {
+            this.currentPath.beginFill(this.settings.color, this.settings.opacity);
+            this.currentPath.drawCircle(x, y, this.settings.lineWidth / 2);
+            this.currentPath.endFill();
             
-            // ERASEブレンドモード再保証
-            this.currentErasePath.blendMode = PIXI.BLEND_MODES.ERASE;
-            
-            // 座標精度確保
-            const preciseX = Math.round(x * 10) / 10;
-            const preciseY = Math.round(y * 10) / 10;
-            const preciseRadius = Math.round((this.settings.eraserSize / 2) * 10) / 10;
-            
-            // 白色で円形描画（ERASEブレンドモードで消去に変換される）
-            this.currentErasePath.beginFill(0xffffff, this.settings.eraserOpacity);
-            this.currentErasePath.drawCircle(preciseX, preciseY, preciseRadius);
-            this.currentErasePath.endFill();
-            
-            // デバッグ: 最初の数回の描画をログ出力
-            if (this.points.length <= 3) {
-                console.log(`🧹 消去円描画: pos=(${preciseX}, ${preciseY}), radius=${preciseRadius}, opacity=${this.settings.eraserOpacity}`);
-            }
+            // 🔧 重要修正: 円描画後にlineStyleを再設定
+            this.updateGraphicsStyle();
         }
         
         /**
-         * 消去操作再描画（Undo/Redo用）
+         * Graphics スタイル更新（lineStyle復元用）
+         * 🔧 FIX: endFill後のlineStyle消失問題対策
          */
-        redrawErase(eraseData) {
-            if (!eraseData || !eraseData.points) return null;
+        updateGraphicsStyle() {
+            if (!this.currentPath) return;
+            
+            this.currentPath.lineStyle({
+                width: this.settings.lineWidth,
+                color: this.settings.color,
+                alpha: this.settings.opacity,
+                cap: PIXI.LINE_CAP.ROUND,
+                join: PIXI.LINE_JOIN.ROUND
+            });
+        }
+        
+        /**
+         * スムーズな曲線描画（座標修正版）
+         * 📏 設計: ベジェカーブによるスムージング
+         */
+        drawSmoothLine() {
+            if (this.points.length < 3) return;
+            
+            const len = this.points.length;
+            const p1 = this.points[len - 3];
+            const p2 = this.points[len - 2];
+            const p3 = this.points[len - 1];
+            
+            // 始点を明示的に補正
+            this.currentPath.moveTo(p2.x, p2.y);
+            
+            // 制御点計算（簡易スムージング）
+            const cp1x = p1.x + (p2.x - p1.x) * 0.5;
+            const cp1y = p1.y + (p2.y - p1.y) * 0.5;
+            const cp2x = p2.x + (p3.x - p2.x) * 0.5;
+            const cp2y = p2.y + (p3.y - p2.y) * 0.5;
+            
+            // ベジェカーブ描画
+            this.currentPath.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p3.x, p3.y);
+        }
+        
+        /**
+         * ストローク再描画（Undo/Redo用）
+         */
+        redrawStroke(strokeData) {
+            if (!strokeData || !strokeData.points) return null;
             
             const graphics = new PIXI.Graphics();
-            graphics.blendMode = PIXI.BLEND_MODES.ERASE;
             
-            // 消去パス再描画
-            const points = eraseData.points;
-            for (let i = 0; i < points.length; i++) {
-                const point = points[i];
-                const preciseX = Math.round(point.x * 10) / 10;
-                const preciseY = Math.round(point.y * 10) / 10;
-                const preciseRadius = Math.round((eraseData.settings.eraserSize / 2) * 10) / 10;
+            // スタイル適用
+            graphics.lineStyle({
+                width: strokeData.style.lineWidth,
+                color: strokeData.style.color,
+                alpha: strokeData.style.opacity,
+                cap: PIXI.LINE_CAP.ROUND,
+                join: PIXI.LINE_JOIN.ROUND
+            });
+            
+            // ストローク再描画
+            const points = strokeData.points;
+            if (points.length > 0) {
+                graphics.moveTo(points[0].x, points[0].y);
                 
-                graphics.beginFill(0xffffff, eraseData.settings.eraserOpacity);
-                graphics.drawCircle(preciseX, preciseY, preciseRadius);
-                graphics.endFill();
+                for (let i = 1; i < points.length; i++) {
+                    graphics.lineTo(points[i].x, points[i].y);
+                    
+                    // 点も再描画
+                    graphics.beginFill(strokeData.style.color, strokeData.style.opacity);
+                    graphics.drawCircle(points[i].x, points[i].y, strokeData.style.lineWidth / 2);
+                    graphics.endFill();
+                    
+                    // lineStyle復元
+                    graphics.lineStyle({
+                        width: strokeData.style.lineWidth,
+                        color: strokeData.style.color,
+                        alpha: strokeData.style.opacity,
+                        cap: PIXI.LINE_CAP.ROUND,
+                        join: PIXI.LINE_JOIN.ROUND
+                    });
+                }
             }
             
             return graphics;
@@ -318,91 +358,94 @@ if (!window.Tegaki.EraserTool) {
         // ========================================
         
         /**
-         * 消しゴムサイズ設定
+         * ペン色設定
          */
-        setEraserSize(size) {
-            const minSize = 1;
-            const maxSize = 200;
-            const validSize = Math.max(minSize, Math.min(maxSize, Math.round(size)));
-            
-            if (validSize !== size) {
-                console.warn(`⚠️ 消しゴムサイズ調整: ${size} → ${validSize} (範囲: ${minSize}-${maxSize})`);
+        setPenColor(color) {
+            let colorValue;
+            if (typeof color === 'string') {
+                colorValue = parseInt(color.replace('#', ''), 16);
+            } else if (typeof color === 'number') {
+                colorValue = color;
+            } else {
+                console.warn('⚠️ 無効な色指定:', color);
+                return;
             }
             
-            this.updateSettings({ eraserSize: validSize });
-            console.log(`🧹 消しゴムサイズ設定: ${validSize}px`);
+            this.updateSettings({ color: colorValue });
+            console.log(`✏️ ペン色変更: 0x${colorValue.toString(16)}`);
         }
         
         /**
-         * 消しゴム透明度（消去強度）設定
+         * ペン線幅設定
          */
-        setEraserOpacity(opacity) {
-            const minOpacity = 0.1;
-            const maxOpacity = 1.0;
-            const validOpacity = Math.max(minOpacity, Math.min(maxOpacity, opacity));
+        setPenWidth(width) {
+            if (width > 0 && width <= 100) {
+                this.updateSettings({ lineWidth: width });
+                console.log(`✏️ ペン線幅変更: ${width}px`);
+            } else {
+                console.warn(`⚠️ 無効な線幅: ${width} (1-100の範囲で指定してください)`);
+            }
+        }
+        
+        /**
+         * ペン透明度設定
+         */
+        setPenOpacity(opacity) {
+            if (opacity >= 0 && opacity <= 1) {
+                this.updateSettings({ opacity });
+                console.log(`✏️ ペン透明度変更: ${opacity}`);
+            } else {
+                console.warn(`⚠️ 無効な透明度: ${opacity} (0.0-1.0の範囲で指定してください)`);
+            }
+        }
+        
+        /**
+         * スムージング設定
+         */
+        setSmoothing(enabled) {
+            this.updateSettings({ smoothing: enabled });
+            console.log(`✏️ スムージング: ${enabled ? '有効' : '無効'}`);
+        }
+        
+        /**
+         * ストローク履歴取得
+         */
+        getStrokeHistory() {
+            return [...this.strokeHistory];
+        }
+        
+        /**
+         * SVG変換用データ取得（Phase3：エクスポート用）
+         */
+        toSVGData() {
+            return this.strokeHistory.map(stroke => ({
+                type: 'path',
+                id: stroke.id,
+                d: this.strokeToSVGPath(stroke),
+                style: {
+                    stroke: `#${stroke.style.color.toString(16).padStart(6, '0')}`,
+                    strokeWidth: stroke.style.lineWidth,
+                    strokeOpacity: stroke.style.opacity,
+                    fill: 'none',
+                    strokeLinecap: 'round',
+                    strokeLinejoin: 'round'
+                }
+            }));
+        }
+        
+        /**
+         * ストロークをSVGパス文字列に変換（Phase3：内部処理）
+         */
+        strokeToSVGPath(stroke) {
+            if (!stroke.points || stroke.points.length === 0) return '';
             
-            if (Math.abs(validOpacity - opacity) > 0.001) {
-                console.warn(`⚠️ 消去強度調整: ${opacity} → ${validOpacity} (範囲: ${minOpacity}-${maxOpacity})`);
+            let path = `M ${stroke.points[0].x} ${stroke.points[0].y}`;
+            
+            for (let i = 1; i < stroke.points.length; i++) {
+                path += ` L ${stroke.points[i].x} ${stroke.points[i].y}`;
             }
             
-            this.updateSettings({ eraserOpacity: validOpacity });
-            console.log(`🧹 消去強度設定: ${validOpacity}`);
-        }
-        
-        /**
-         * スムーズ消去設定
-         */
-        setSmoothErasing(enabled) {
-            this.updateSettings({ smoothErasing: !!enabled });
-            console.log(`🧹 スムーズ消去: ${this.settings.smoothErasing ? '有効' : '無効'}`);
-        }
-        
-        /**
-         * 消去履歴取得
-         */
-        getEraseHistory() {
-            return [...this.eraseHistory];
-        }
-        
-        /**
-         * 統計情報取得
-         */
-        getStats() {
-            return {
-                totalEraseCount: this.eraseCount,
-                lastEraseInfo: this.lastEraseInfo,
-                currentlyErasing: this.isDrawing,
-                currentPathLength: this.points.length
-            };
-        }
-        
-        /**
-         * ブレンドモード名取得（デバッグ用）
-         */
-        getBlendModeName(blendMode) {
-            const blendModeNames = {
-                [PIXI.BLEND_MODES.NORMAL]: 'NORMAL',
-                [PIXI.BLEND_MODES.ADD]: 'ADD',
-                [PIXI.BLEND_MODES.MULTIPLY]: 'MULTIPLY',
-                [PIXI.BLEND_MODES.SCREEN]: 'SCREEN',
-                [PIXI.BLEND_MODES.OVERLAY]: 'OVERLAY',
-                [PIXI.BLEND_MODES.DARKEN]: 'DARKEN',
-                [PIXI.BLEND_MODES.LIGHTEN]: 'LIGHTEN',
-                [PIXI.BLEND_MODES.COLOR_DODGE]: 'COLOR_DODGE',
-                [PIXI.BLEND_MODES.COLOR_BURN]: 'COLOR_BURN',
-                [PIXI.BLEND_MODES.HARD_LIGHT]: 'HARD_LIGHT',
-                [PIXI.BLEND_MODES.SOFT_LIGHT]: 'SOFT_LIGHT',
-                [PIXI.BLEND_MODES.DIFFERENCE]: 'DIFFERENCE',
-                [PIXI.BLEND_MODES.EXCLUSION]: 'EXCLUSION',
-                [PIXI.BLEND_MODES.HUE]: 'HUE',
-                [PIXI.BLEND_MODES.SATURATION]: 'SATURATION',
-                [PIXI.BLEND_MODES.COLOR]: 'COLOR',
-                [PIXI.BLEND_MODES.LUMINOSITY]: 'LUMINOSITY',
-                [PIXI.BLEND_MODES.ERASE]: 'ERASE',
-                [PIXI.BLEND_MODES.XOR]: 'XOR'
-            };
-            
-            return blendModeNames[blendMode] || `UNKNOWN(${blendMode})`;
+            return path;
         }
         
         /**
@@ -413,38 +456,27 @@ if (!window.Tegaki.EraserTool) {
             
             return {
                 ...baseInfo,
-                // 消しゴム固有情報
-                eraser: {
-                    hasCurrentPath: !!this.currentErasePath,
+                // ペン固有情報
+                pen: {
+                    hasCurrentPath: !!this.currentPath,
                     currentPathPoints: this.points.length,
-                    eraseHistoryCount: this.eraseHistory.length,
-                    totalEraseCount: this.eraseCount,
+                    strokeHistoryCount: this.strokeHistory.length,
+                    vectorDataEnabled: this.vectorDataEnabled,
                     
                     // 現在の設定
-                    eraserSize: this.settings.eraserSize,
-                    eraserOpacity: this.settings.eraserOpacity,
-                    smoothErasing: this.settings.smoothErasing
+                    color: `0x${this.settings.color.toString(16)}`,
+                    lineWidth: this.settings.lineWidth,
+                    opacity: this.settings.opacity,
+                    smoothing: this.settings.smoothing,
+                    pressureSensitive: this.settings.pressureSensitive
                 },
                 
-                // PIXI Graphics情報
-                graphics: this.currentErasePath ? {
-                    hasGraphics: true,
-                    blendMode: this.currentErasePath.blendMode,
-                    blendModeName: this.getBlendModeName(this.currentErasePath.blendMode),
-                    childrenCount: this.currentErasePath.children.length,
-                    visible: this.currentErasePath.visible,
-                    alpha: this.currentErasePath.alpha
-                } : { hasGraphics: false },
-                
-                // 統計情報
-                stats: this.getStats(),
-                
-                // パフォーマンス情報
-                performance: {
-                    maxRecommendedPathLength: 1000,
-                    currentPathLength: this.points.length,
-                    pathLengthStatus: this.points.length > 1000 ? 'warning' : 'ok'
-                }
+                // 最新ストローク情報
+                lastStroke: this.strokeHistory.length > 0 ? {
+                    id: this.strokeHistory[this.strokeHistory.length - 1].id,
+                    pointCount: this.strokeHistory[this.strokeHistory.length - 1].points.length,
+                    layerId: this.strokeHistory[this.strokeHistory.length - 1].layerId
+                } : null
             };
         }
         
@@ -454,43 +486,35 @@ if (!window.Tegaki.EraserTool) {
         testPhase15Features() {
             const results = super.checkPhase15Features();
             
-            // 消しゴム固有機能テスト
+            // ペン固有機能テスト
             try {
                 // Graphics作成テスト
                 const testGraphics = new PIXI.Graphics();
-                testGraphics.blendMode = PIXI.BLEND_MODES.ERASE;
-                testGraphics.beginFill(0xffffff);
-                testGraphics.drawCircle(10, 10, 5);
-                testGraphics.endFill();
+                testGraphics.lineStyle(2, 0xff0000);
+                testGraphics.moveTo(0, 0);
+                testGraphics.lineTo(10, 10);
                 
-                results.success.push('EraserTool: PIXI.Graphics消去機能正常');
+                results.success.push('PenTool: PIXI.Graphics描画機能正常');
                 
                 // 設定変更テスト
-                const originalSize = this.settings.eraserSize;
-                this.setEraserSize(30);
-                if (this.settings.eraserSize === 30) {
-                    results.success.push('EraserTool: 設定変更機能正常');
-                    this.setEraserSize(originalSize); // 復元
+                const originalColor = this.settings.color;
+                this.setPenColor(0x00ff00);
+                if (this.settings.color === 0x00ff00) {
+                    results.success.push('PenTool: 設定変更機能正常');
+                    this.setPenColor(originalColor); // 復元
                 } else {
-                    results.error.push('EraserTool: 設定変更機能異常');
+                    results.error.push('PenTool: 設定変更機能異常');
                 }
                 
-                // 消去履歴テスト
-                if (Array.isArray(this.eraseHistory)) {
-                    results.success.push('EraserTool: 消去履歴管理正常');
+                // ストローク履歴テスト
+                if (Array.isArray(this.strokeHistory)) {
+                    results.success.push('PenTool: ストローク履歴管理正常');
                 } else {
-                    results.error.push('EraserTool: 消去履歴管理異常');
-                }
-                
-                // ブレンドモード確認
-                if (PIXI.BLEND_MODES.ERASE !== undefined) {
-                    results.success.push('EraserTool: ERASEブレンドモード利用可能');
-                } else {
-                    results.error.push('EraserTool: ERASEブレンドモード未対応');
+                    results.error.push('PenTool: ストローク履歴管理異常');
                 }
                 
             } catch (error) {
-                results.error.push(`EraserTool機能テストエラー: ${error.message}`);
+                results.error.push(`PenTool機能テストエラー: ${error.message}`);
             }
             
             return results;
@@ -498,9 +522,9 @@ if (!window.Tegaki.EraserTool) {
     }
     
     // Tegaki名前空間に登録
-    window.Tegaki.EraserTool = EraserTool;
+    window.Tegaki.PenTool = PenTool;
 }
 
-console.log('🧹 EraserTool Phase1.5 非破壊編集対応版 Loaded（AbstractTool継承）');
-console.log('📏 RecordManager統合・Undo/Redo対応・操作記録・ERASEブレンドモード・座標ズレ完全解決');
+console.log('✏️ PenTool Phase1.5 非破壊編集対応版 Loaded（AbstractTool継承）');
+console.log('📏 RecordManager統合・Undo/Redo対応・操作記録・キャンバス外描画対応');
 console.log('🔄 非破壊編集基盤・AbstractTool継承・Phase1.5完全対応完了');

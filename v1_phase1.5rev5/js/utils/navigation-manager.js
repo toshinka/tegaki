@@ -21,6 +21,7 @@
             
             this.coordinateManager = null;
             this.eventBus = null;
+            this.canvasElement = null;  // Canvas要素の参照
             
             // ナビゲーション状態（Phase1.5基盤）
             this.isPanning = false;
@@ -71,6 +72,60 @@
         }
         
         /**
+         * Canvas要素設定（Phase1.5対応）
+         */
+        setCanvasElement(canvasElement) {
+            if (!canvasElement) {
+                console.warn('⚠️ NavigationManager: Canvas要素が未提供');
+                return false;
+            }
+            
+            this.canvasElement = canvasElement;
+            console.log('✅ NavigationManager: Canvas要素設定完了');
+            
+            // Canvas固有のイベントリスナーを設定
+            this.setupCanvasEventListeners();
+            
+            return true;
+        }
+        
+        /**
+         * Canvas固有のイベントリスナー設定
+         */
+        setupCanvasEventListeners() {
+            if (!this.canvasElement) return;
+            
+            console.log('🧭 NavigationManager Canvas固有イベントリスナー設定');
+            
+            // マウスホイールズーム
+            this.canvasElement.addEventListener('wheel', (e) => {
+                this.handleMouseWheelZoom(e);
+            });
+            
+            // 中ボタンパン
+            this.canvasElement.addEventListener('pointerdown', (e) => {
+                if (e.button === 1) { // 中ボタン
+                    e.preventDefault();
+                    this.startPan(e.clientX, e.clientY);
+                }
+            });
+            
+            this.canvasElement.addEventListener('pointermove', (e) => {
+                if (this.isPanning) {
+                    this.updatePan(e.clientX, e.clientY);
+                }
+            });
+            
+            this.canvasElement.addEventListener('pointerup', (e) => {
+                if (e.button === 1 && this.isPanning) {
+                    this.endPan();
+                }
+            });
+            
+            console.log('✅ NavigationManager Canvas固有イベントリスナー設定完了');
+        }
+        
+        /**
          * イベントリスナー設定（Phase1.5スタブ実装）
          */
         setupEventListeners() {
@@ -84,9 +139,6 @@
             document.addEventListener('keyup', (e) => {
                 this.handleKeyUp(e);
             });
-            
-            // Phase1.5: マウスパンイベント準備（スタブ）
-            // 詳細実装は次のステップで追加予定
             
             console.log('🧭 NavigationManager イベントリスナー設定完了 - Phase1.5スタブ');
         }
@@ -173,6 +225,22 @@
             if (this.eventBus) {
                 this.eventBus.emit('navigation:pan', { deltaX, deltaY, source: 'keyboard' });
             }
+        }
+        
+        /**
+         * マウスホイールズーム処理（Phase1.5スタブ実装）
+         */
+        handleMouseWheelZoom(event) {
+            if (!event) return;
+            
+            event.preventDefault();
+            
+            const delta = event.deltaY > 0 ? -1 : 1;
+            const rect = this.canvasElement.getBoundingClientRect();
+            const centerX = event.clientX - rect.left;
+            const centerY = event.clientY - rect.top;
+            
+            this.handleZoom(delta, centerX, centerY);
         }
         
         /**
@@ -272,6 +340,22 @@
         }
         
         /**
+         * ナビゲーション有効化
+         */
+        enable() {
+            this.enabled = true;
+            console.log('✅ NavigationManager 有効化完了');
+        }
+        
+        /**
+         * ナビゲーション無効化
+         */
+        disable() {
+            this.enabled = false;
+            console.log('⚠️ NavigationManager 無効化完了');
+        }
+        
+        /**
          * 現在の状態取得（Phase1.5スタブ実装）
          */
         getNavigationState() {
@@ -279,7 +363,34 @@
                 isPanning: this.isPanning,
                 zoomLevel: this.zoomLevel,
                 panPosition: { ...this.panAccumulator },
-                initialized: this.initializeComplete
+                initialized: this.initializeComplete,
+                hasCanvasElement: !!this.canvasElement,
+                enabled: this.enabled || true
+            };
+        }
+        
+        /**
+         * デバッグ情報取得
+         */
+        getDebugInfo() {
+            return {
+                phase: 'Phase1.5',
+                implementation: 'stub',
+                state: this.getNavigationState(),
+                features: {
+                    keyboardPan: 'stub',
+                    mousePan: 'stub',
+                    zoom: 'stub',
+                    coordinateManager: this.coordinateManager ? 'connected' : 'disconnected',
+                    eventBus: this.eventBus ? 'connected' : 'disconnected',
+                    canvasElement: this.canvasElement ? 'connected' : 'disconnected'
+                },
+                config: {
+                    zoomMin: this.zoomMin,
+                    zoomMax: this.zoomMax,
+                    zoomStep: this.zoomStep,
+                    keyboardPanSpeed: this.keyboardPanSpeed
+                }
             };
         }
         
