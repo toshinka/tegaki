@@ -1,5 +1,5 @@
 /**
- * ⌨️ ShortcutManager - Phase1.5スタブ実装版
+ * ⌨️ ShortcutManager - Phase1.5スタブ実装版（修正版）
  * 📋 RESPONSIBILITY: キーボードショートカット・アクセラレーション・効率化UI
  * 🚫 PROHIBITION: 描画処理・座標変換・レイヤー管理・ツール実装
  * ✅ PERMISSION: EventBus通信・Manager連携・コンテキスト管理・UI統合
@@ -16,15 +16,16 @@
      * ShortcutManager - キーボードショートカット管理
      */
     class ShortcutManager {
-        constructor() {
+        constructor(config = {}) {
             console.log('⌨️ ShortcutManager Phase1.5スタブ実装 - 初期化開始');
             
             this.eventBus = null;
+            this.config = config;
             
             // ショートカット状態（Phase1.5基盤）
             this.keys = new Set();
             this.activeContext = 'default';
-            this.enabled = true;
+            this.enabled = false;  // 初期は無効
             
             // ショートカット定義（Phase1.5基盤・段階的実装予定）
             this.shortcuts = new Map();
@@ -35,9 +36,7 @@
             this.preventDefaults = new Set();
             
             this.initializeComplete = false;
-            
-            // Phase1.5基本ショートカット定義（スタブ）
-            this.initializePhase15Shortcuts();
+            this.isSetup = false;
             
             console.log('⌨️ ShortcutManager スタブ実装完了');
         }
@@ -68,29 +67,35 @@
         }
         
         /**
-         * Phase1.5基本ショートカット定義（スタブ実装）
+         * 🆕 Phase1.5ショートカット設定（app-core.jsからの呼び出し用）
          */
-        initializePhase15Shortcuts() {
-            console.log('⌨️ ShortcutManager Phase1.5基本ショートカット定義 - スタブ');
+        setupPhase15Shortcuts() {
+            console.log('⌨️ ShortcutManager Phase1.5ショートカット設定開始');
             
-            // Phase1.5: 基本編集ショートカット（スタブ定義）
+            if (this.isSetup) {
+                console.log('⚠️ Phase1.5ショートカット既に設定済み - スキップ');
+                return;
+            }
+            
+            // Phase1.5: 基本編集ショートカット設定
             this.defineShortcut('default', 'Ctrl+Z', 'undo', 'アンドゥ');
             this.defineShortcut('default', 'Ctrl+Y', 'redo', 'リドゥ');
             
-            // Phase1.5: 基本ツールショートカット（スタブ定義）
+            // Phase1.5: 基本ツールショートカット設定
             this.defineShortcut('default', 'KeyP', 'tool:pen', 'ペンツール');
             this.defineShortcut('default', 'KeyE', 'tool:eraser', '消しゴムツール');
             
-            // Phase1.5: 基本ナビゲーションショートカット（スタブ定義）
+            // Phase1.5: 基本ナビゲーションショートカット設定
             this.defineShortcut('default', 'Space', 'navigation:pan', 'パンモード');
             this.defineShortcut('default', 'Ctrl+Digit0', 'navigation:reset', 'ビューリセット');
             
-            // Phase1.5: ブラウザ競合回避設定（スタブ）
+            // Phase1.5: ブラウザ競合回避設定
             this.preventDefaults.add('Ctrl+Z');
             this.preventDefaults.add('Ctrl+Y');
             this.preventDefaults.add('Space');
             
-            console.log('⌨️ ShortcutManager Phase1.5基本ショートカット定義完了 - スタブ');
+            this.isSetup = true;
+            console.log('✅ ShortcutManager Phase1.5ショートカット設定完了');
         }
         
         /**
@@ -105,6 +110,28 @@
             contextShortcuts.set(keyCombo, { action, description });
             
             console.log(`⌨️ ShortcutManager ショートカット定義: [${context}] ${keyCombo} -> ${action} (${description})`);
+        }
+        
+        /**
+         * 🆕 ショートカット機能有効化（app-core.jsからの呼び出し用）
+         */
+        enable() {
+            if (!this.initializeComplete) {
+                console.warn('⚠️ ShortcutManager: 初期化未完了 - 有効化をスキップ');
+                return false;
+            }
+            
+            this.enabled = true;
+            console.log('✅ ShortcutManager 機能有効化完了');
+            return true;
+        }
+        
+        /**
+         * ショートカット機能無効化
+         */
+        disable() {
+            this.enabled = false;
+            console.log('⚠️ ShortcutManager 機能無効化');
         }
         
         /**
@@ -334,7 +361,8 @@
                 canvasHasFocus: this.canvasHasFocus,
                 activeKeys: Array.from(this.keys),
                 availableContexts: Array.from(this.contexts.keys()),
-                initialized: this.initializeComplete
+                initialized: this.initializeComplete,
+                setupCompleted: this.isSetup
             };
         }
         
@@ -346,7 +374,7 @@
                 phase: 'Phase1.5',
                 implementation: 'stub',
                 features: {
-                    basicShortcuts: 'stub',
+                    basicShortcuts: this.isSetup ? 'setup' : 'not_setup',
                     contextManagement: 'stub',
                     eventBusIntegration: this.eventBus ? 'connected' : 'disconnected',
                     browserConflictAvoidance: 'stub'
@@ -359,6 +387,23 @@
                 nextStep: 'DetailedImplementation - Phase別ショートカット・UI統合・アクセシビリティ対応'
             };
         }
+        
+        /**
+         * 🆕 デバッグ情報取得
+         */
+        getDebugInfo() {
+            return {
+                enabled: this.enabled,
+                initialized: this.initializeComplete,
+                setupCompleted: this.isSetup,
+                eventBusConnected: !!this.eventBus,
+                activeContext: this.activeContext,
+                shortcutCount: Array.from(this.contexts.values()).reduce((sum, ctx) => sum + ctx.size, 0),
+                contextCount: this.contexts.size,
+                canvasHasFocus: this.canvasHasFocus,
+                activeKeys: Array.from(this.keys).length
+            };
+        }
     }
     
     // Tegaki名前空間にShortcutManagerを公開
@@ -368,7 +413,8 @@
     
     window.Tegaki.ShortcutManager = ShortcutManager;
     
-    console.log('⌨️ ShortcutManager Phase1.5スタブ実装 - 名前空間登録完了');
+    console.log('⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了');
+    console.log('🔧 setupPhase15Shortcuts・enableメソッド追加済み');
     console.log('🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応');
     
 })();
