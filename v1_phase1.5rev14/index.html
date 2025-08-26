@@ -257,13 +257,17 @@
         })();
     </script>
     
+    <!-- 🔧 Phase1.5修正版読み込み順序（CoordinateManager修正対応） -->
+    
     <!-- 3. Utils（依存なし・インスタンス自動作成） -->
     <script src="js/utils/error-manager.js"></script>
     <script src="js/utils/config-manager.js"></script>
     <script src="js/utils/event-bus.js"></script>
+    
+    <!-- 🔧 修正：CoordinateManager（正式実装版） -->
     <script src="js/utils/coordinate-manager.js"></script>
     
-    <!-- 4. Phase1.5 新Manager（Utils依存） -->
+    <!-- 4. Phase1.5 新Manager（Utils + CoordinateManager依存） -->
     <script src="js/utils/navigation-manager.js"></script>
     <script src="js/utils/record-manager.js"></script>
     <script src="js/utils/shortcut-manager.js"></script>
@@ -285,9 +289,17 @@
     <!-- 9. 統合テスト（開発時のみ） -->
     <script src="debug/phase15-integration-test.js"></script>
     
-    <!-- 10. App（全依存・順序重要） -->
-    <script src="js/main.js"></script>         <!-- AppCore定義 -->
-    <script src="js/app-core.js"></script>     <!-- TegakiApplication Phase1.5版 -->
+    <!-- 🔧 修正：App層（正しいクラス分離） -->
+    <!-- 10.1 AppCore（システム基盤） -->
+    <script src="js/main.js"></script>
     
-    <!-- 11. Bootstrap（App依存） -->
+    <!-- 10.2 AppCore（Phase1.5対応版） - main.jsから分離 -->
+    <script src="js/app-core.js"></script>
+    
+    <!-- 10.3 TegakiApplication（メインアプリケーション） -->
+    <script src="js/tegaki-application.js"></script>
+    
+    <!-- 11. Bootstrap（App依存・最後に実行） -->
     <script src="js/bootstrap.js"></script>
+</body>
+</html>
