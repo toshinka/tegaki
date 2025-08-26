@@ -1,552 +1,328 @@
 /**
- * 🎯 AbstractTool - Phase1.5 ツール基底クラス（非破壊編集対応）
- * 📋 RESPONSIBILITY: 全ツール共通処理・非破壊編集・座標処理・RecordManager連携
- * 🚫 PROHIBITION: 具体的な描画実装・UI操作・Manager作成
- * ✅ PERMISSION: 共通処理・抽象メソッド定義・RecordManager活用・CoordinateManager活用
+ * 🎯 AbstractTool - ツール基底クラス（Phase1.5スタブ版）
+ * 📋 RESPONSIBILITY: 全ツール共通処理・非破壊編集基盤・RecordManager連携
+ * 🚫 PROHIBITION: 具体的描画処理・UI操作・Manager管理
+ * ✅ PERMISSION: 共通処理・操作記録・座標処理・基底機能
  * 
- * 📏 DESIGN_PRINCIPLE: 抽象基底クラス・共通処理集約・非破壊編集基盤・Phase1.5対応
- * 🔄 INTEGRATION: RecordManager + CoordinateManager との連携
- * 🎯 FEATURE: Undo/Redo対応・操作履歴管理・座標処理統合・Phase1.5基盤
- * 🆕 Phase1.5: 非破壊編集・操作記録・座標変換統合・ツール基底クラス確立
+ * 📏 DESIGN_PRINCIPLE: 継承基盤・共通処理集約・非破壊編集対応
+ * 🔄 INTEGRATION: RecordManager・CoordinateManager連携・全ツール継承
+ * 🎯 Phase1.5: 基本基底機能・操作記録基盤（詳細実装は後続Phase1.5で完成）
  */
 
-// if (!window.XXX) ガードで多重定義を防ぐ
-if (!window.Tegaki) {
-    window.Tegaki = {};
-}
+// Tegaki名前空間初期化
+window.Tegaki = window.Tegaki || {};
 
-if (!window.Tegaki.AbstractTool) {
-    /**
-     * AbstractTool - Phase1.5 ツール基底クラス（非破壊編集対応）
-     * 全ツールが継承する基底クラス・共通処理・非破壊編集・座標処理を提供
-     */
-    class AbstractTool {
-        constructor(name, options = {}) {
-            this.toolName = name;
-            this.isActive = false;
-            this.isDrawing = false;
-            
-            // Phase1.5 新Manager参照
-            this.recordManager = null;      // 非破壊編集・Undo/Redo
-            this.coordinateManager = null;  // 座標変換
-            this.canvasManager = null;      // Canvas操作
-            
-            // 操作状態管理
-            this.currentOperation = null;   // 現在の操作（ストローク等）
-            this.operationId = 0;          // 操作ID生成用
-            
-            // 設定
-            this.settings = {
-                ...this.getDefaultSettings(),
-                ...options
-            };
-            
-            console.log(`🎯 AbstractTool "${name}" 作成完了（Phase1.5非破壊編集対応）`);
-        }
+/**
+ * AbstractTool - ツール基底クラス（スタブ版）
+ * 全ツールが継承する共通基盤・Phase1.5で段階的に実装予定
+ */
+class AbstractTool {
+    constructor(toolName) {
+        console.log(`🎯 AbstractTool Phase1.5 スタブ版 - ${toolName} 基底クラス作成`);
         
-        /**
-         * 🆕 Phase1.5 Manager設定（必須）
-         */
-        setManagers(managers) {
-            this.recordManager = managers.recordManager || null;
-            this.coordinateManager = managers.coordinateManager || null;
-            this.canvasManager = managers.canvasManager || null;
-            
-            console.log(`🔧 ${this.toolName}Tool Manager設定完了:`, {
-                recordManager: !!this.recordManager,
-                coordinateManager: !!this.coordinateManager,
-                canvasManager: !!this.canvasManager
-            });
-        }
+        // 基本情報
+        this.toolName = toolName || 'unknown';
+        this.isInitialized = false;
         
-        /**
-         * 🆕 RecordManager設定（単独）
-         */
-        setRecordManager(recordManager) {
-            this.recordManager = recordManager;
-            console.log(`🔄 ${this.toolName}Tool RecordManager設定完了`);
-        }
+        // Manager参照
+        this.canvasManager = null;
+        this.coordinateManager = null;
+        this.recordManager = null;
         
-        /**
-         * 🆕 CoordinateManager設定（単独）
-         */
-        setCoordinateManager(coordinateManager) {
-            this.coordinateManager = coordinateManager;
-            console.log(`📐 ${this.toolName}Tool CoordinateManager設定完了`);
-        }
+        // 操作状態
+        this.isActive = false;
+        this.isDrawing = false;
+        this.currentOperation = null;
         
-        /**
-         * CanvasManager設定（既存）
-         */
-        setCanvasManager(canvasManager) {
-            this.canvasManager = canvasManager;
-            console.log(`🎨 ${this.toolName}Tool CanvasManager設定完了`);
-        }
+        // 設定
+        this.settings = {};
         
-        /**
-         * ツール有効化
-         */
-        activate() {
-            this.isActive = true;
-            this.onActivate();
-            console.log(`✅ ${this.toolName}Tool 有効化`);
-        }
-        
-        /**
-         * ツール無効化
-         */
-        deactivate() {
-            this.isActive = false;
-            this.isDrawing = false;
-            
-            // 描画中の操作を強制終了
-            if (this.currentOperation) {
-                this.forceEndOperation();
-            }
-            
-            this.onDeactivate();
-            console.log(`⏹️ ${this.toolName}Tool 無効化`);
-        }
-        
-        /**
-         * 🆕 ポインターダウン処理（非破壊編集対応）
-         */
-        onPointerDown(x, y, event) {
-            if (!this.isActive) return;
-            
-            // 座標検証（CoordinateManager使用）
-            if (!this.isValidCoordinate(x, y)) {
-                console.warn(`⚠️ ${this.toolName}Tool: 無効な座標 (${x}, ${y})`);
-                return;
-            }
-            
-            // 描画開始処理
-            this.isDrawing = true;
-            
-            // 🆕 操作開始記録
-            this.startOperation(x, y, event);
-            
-            // 具体的な描画開始処理（継承クラスで実装）
-            this.onDrawStart(x, y, event);
-            
-            console.log(`🎯 ${this.toolName}Tool 描画開始: (${Math.round(x)}, ${Math.round(y)})`);
-        }
-        
-        /**
-         * 🆕 ポインタームーブ処理（非破壊編集対応）
-         */
-        onPointerMove(x, y, event) {
-            if (!this.isActive || !this.isDrawing) return;
-            
-            // 座標検証
-            if (!this.isValidCoordinate(x, y)) {
-                return; // 無効座標は無視（描画継続）
-            }
-            
-            // 🆕 操作更新記録
-            this.updateOperation(x, y, event);
-            
-            // 具体的な描画更新処理（継承クラスで実装）
-            this.onDrawMove(x, y, event);
-        }
-        
-        /**
-         * 🆕 ポインターアップ処理（非破壊編集対応）
-         */
-        onPointerUp(x, y, event) {
-            if (!this.isActive) return;
-            
-            if (this.isDrawing) {
-                // 🆕 操作完了記録
-                this.endOperation(x, y, event);
-                
-                // 具体的な描画終了処理（継承クラスで実装）
-                this.onDrawEnd(x, y, event);
-                
-                console.log(`🏁 ${this.toolName}Tool 描画終了`);
-            }
-            
-            this.isDrawing = false;
-        }
-        
-        /**
-         * 🆕 操作開始記録
-         */
-        startOperation(x, y, event) {
-            if (!this.recordManager) {
-                console.warn(`⚠️ ${this.toolName}Tool: RecordManager未設定 - 操作記録スキップ`);
-                return;
-            }
-            
-            // 操作ID生成
-            this.operationId++;
-            
-            // 操作データ作成
-            this.currentOperation = {
-                id: `${this.toolName}_${this.operationId}_${Date.now()}`,
-                tool: this.toolName,
-                type: 'draw',
-                startTime: Date.now(),
-                startPoint: { x, y },
-                points: [{ x, y, timestamp: Date.now() }],
-                settings: { ...this.settings },
-                graphics: null,  // 描画オブジェクト（後で設定）
-                layerId: this.canvasManager?.getActiveLayerId() || 'default'
-            };
-            
-            console.log(`🔄 ${this.toolName}Tool 操作開始記録:`, this.currentOperation.id);
-        }
-        
-        /**
-         * 🆕 操作更新記録
-         */
-        updateOperation(x, y, event) {
-            if (!this.currentOperation) return;
-            
-            // ポイント追加（間引き処理付き）
-            const lastPoint = this.currentOperation.points[this.currentOperation.points.length - 1];
-            const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
-            
-            // 最小距離フィルタ（パフォーマンス向上）
-            if (distance > 2) {  // 2px以上移動時のみ記録
-                this.currentOperation.points.push({
-                    x, y,
-                    timestamp: Date.now()
-                });
-            }
-        }
-        
-        /**
-         * 🆕 操作完了記録
-         */
-        endOperation(x, y, event) {
-            if (!this.currentOperation || !this.recordManager) return;
-            
-            // 最終ポイント追加
-            this.currentOperation.points.push({
-                x, y,
-                timestamp: Date.now()
-            });
-            
-            // 操作完了
-            this.currentOperation.endTime = Date.now();
-            this.currentOperation.duration = this.currentOperation.endTime - this.currentOperation.startTime;
-            
-            // 🆕 RecordManagerに操作記録
-            const operation = {
-                id: this.currentOperation.id,
-                type: 'tool_operation',
-                toolName: this.toolName,
-                data: { ...this.currentOperation },
-                timestamp: Date.now(),
-                
-                // Undo/Redo関数
-                undo: () => this.undoOperation(this.currentOperation),
-                redo: () => this.redoOperation(this.currentOperation)
-            };
-            
-            this.recordManager.recordOperation(operation);
-            
-            console.log(`📝 ${this.toolName}Tool 操作記録完了:`, operation.id);
-            
-            // 操作クリア
-            this.currentOperation = null;
-        }
-        
-        /**
-         * 🆕 操作強制終了（ツール切り替え時等）
-         */
-        forceEndOperation() {
-            if (!this.currentOperation) return;
-            
-            console.log(`⚠️ ${this.toolName}Tool 操作強制終了:`, this.currentOperation.id);
-            
-            // 未完了操作の処理（継承クラスで実装）
-            this.onOperationForceEnd(this.currentOperation);
-            
-            // 操作クリア
-            this.currentOperation = null;
-        }
-        
-        /**
-         * 🆕 操作取り消し（Undo）
-         */
-        undoOperation(operationData) {
-            console.log(`↶ ${this.toolName}Tool 操作取り消し:`, operationData.id);
-            
-            // 描画オブジェクト削除
-            if (operationData.graphics && this.canvasManager) {
-                this.canvasManager.removeGraphicsFromLayer(operationData.graphics, operationData.layerId);
-            }
-            
-            // 継承クラス固有のUndo処理
-            this.onUndo(operationData);
-        }
-        
-        /**
-         * 🆕 操作やり直し（Redo）
-         */
-        redoOperation(operationData) {
-            console.log(`↷ ${this.toolName}Tool 操作やり直し:`, operationData.id);
-            
-            // 描画オブジェクト復元
-            if (operationData.graphics && this.canvasManager) {
-                this.canvasManager.addGraphicsToLayer(operationData.graphics, operationData.layerId);
-            }
-            
-            // 継承クラス固有のRedo処理
-            this.onRedo(operationData);
-        }
-        
-        /**
-         * 🆕 座標検証（CoordinateManager使用）
-         */
-        isValidCoordinate(x, y) {
-            // null/undefined チェック
-            if (x == null || y == null) return false;
-            
-            // NaN チェック
-            if (isNaN(x) || isNaN(y)) return false;
-            
-            // CoordinateManager使用の詳細検証（利用可能時）
-            if (this.coordinateManager) {
-                // キャンバス内または拡張描画エリア内かチェック
-                return this.coordinateManager.isInsideCanvas(x, y) || 
-                       this.coordinateManager.isInExtendedDrawArea(x, y);
-            }
-            
-            // フォールバック：基本範囲チェック
-            return x >= -50 && y >= -50 && x <= 850 && y <= 650;  // 拡張エリア含む
-        }
-        
-        // =====================================
-        // 抽象メソッド（継承クラスで実装必須）
-        // =====================================
-        
-        /**
-         * ツール有効化時の処理（抽象）
-         */
-        onActivate() {
-            // 継承クラスで実装
-        }
-        
-        /**
-         * ツール無効化時の処理（抽象）
-         */
-        onDeactivate() {
-            // 継承クラスで実装
-        }
-        
-        /**
-         * 描画開始処理（抽象）
-         */
-        onDrawStart(x, y, event) {
-            throw new Error(`${this.toolName}Tool: onDrawStart must be implemented`);
-        }
-        
-        /**
-         * 描画更新処理（抽象）
-         */
-        onDrawMove(x, y, event) {
-            throw new Error(`${this.toolName}Tool: onDrawMove must be implemented`);
-        }
-        
-        /**
-         * 描画終了処理（抽象）
-         */
-        onDrawEnd(x, y, event) {
-            throw new Error(`${this.toolName}Tool: onDrawEnd must be implemented`);
-        }
-        
-        /**
-         * 未完了操作強制終了処理（抽象）
-         */
-        onOperationForceEnd(operationData) {
-            // 継承クラスで必要に応じて実装
-            console.log(`⚠️ ${this.toolName}Tool: 未完了操作強制終了`);
-        }
-        
-        /**
-         * Undo固有処理（抽象）
-         */
-        onUndo(operationData) {
-            // 継承クラスで必要に応じて実装
-        }
-        
-        /**
-         * Redo固有処理（抽象）
-         */
-        onRedo(operationData) {
-            // 継承クラスで必要に応じて実装
-        }
-        
-        /**
-         * デフォルト設定取得（抽象）
-         */
-        getDefaultSettings() {
-            return {
-                // 基本設定（継承クラスでオーバーライド）
-                enabled: true,
-                visible: true
-            };
-        }
-        
-        // =====================================
-        // ユーティリティメソッド
-        // =====================================
-        
-        /**
-         * 設定取得
-         */
-        getSettings() {
-            return { ...this.settings };
-        }
-        
-        /**
-         * 設定更新
-         */
-        updateSettings(newSettings) {
-            this.settings = { ...this.settings, ...newSettings };
-            this.onSettingsUpdate(this.settings);
-            console.log(`⚙️ ${this.toolName}Tool 設定更新:`, newSettings);
-        }
-        
-        /**
-         * 設定更新時の処理（オーバーライド可能）
-         */
-        onSettingsUpdate(settings) {
-            // 継承クラスで必要に応じて実装
-        }
-        
-        /**
-         * ツール状態取得
-         */
-        getState() {
-            return {
-                toolName: this.toolName,
-                isActive: this.isActive,
-                isDrawing: this.isDrawing,
-                hasCurrentOperation: !!this.currentOperation,
-                settings: this.getSettings(),
-                
-                // Manager状態
-                managers: {
-                    recordManager: !!this.recordManager,
-                    coordinateManager: !!this.coordinateManager,
-                    canvasManager: !!this.canvasManager
-                }
-            };
-        }
-        
-        /**
-         * 🆕 操作統計取得
-         */
-        getOperationStats() {
-            if (!this.recordManager) return null;
-            
-            const history = this.recordManager.getHistory();
-            const toolOperations = history.filter(op => op.toolName === this.toolName);
-            
-            return {
-                totalOperations: toolOperations.length,
-                averageDuration: toolOperations.length > 0 
-                    ? toolOperations.reduce((sum, op) => sum + (op.data.duration || 0), 0) / toolOperations.length 
-                    : 0,
-                totalPoints: toolOperations.reduce((sum, op) => sum + (op.data.points?.length || 0), 0),
-                lastOperation: toolOperations[toolOperations.length - 1]?.timestamp || null
-            };
-        }
-        
-        /**
-         * デバッグ情報取得
-         */
-        getDebugInfo() {
-            return {
-                // 基本情報
-                toolName: this.toolName,
-                className: this.constructor.name,
-                isActive: this.isActive,
-                isDrawing: this.isDrawing,
-                
-                // 操作状態
-                currentOperation: this.currentOperation ? {
-                    id: this.currentOperation.id,
-                    type: this.currentOperation.type,
-                    pointCount: this.currentOperation.points.length,
-                    duration: Date.now() - this.currentOperation.startTime
-                } : null,
-                
-                // Manager接続状態
-                managers: {
-                    recordManager: !!this.recordManager,
-                    coordinateManager: !!this.coordinateManager,
-                    canvasManager: !!this.canvasManager
-                },
-                
-                // 設定
-                settings: this.getSettings(),
-                
-                // 統計
-                operationStats: this.getOperationStats(),
-                
-                // Phase情報
-                phase: '1.5',
-                features: {
-                    nonDestructiveEdit: !!this.recordManager,
-                    coordinateTransform: !!this.coordinateManager,
-                    operationRecording: true,
-                    undoRedo: !!this.recordManager
-                }
-            };
-        }
-        
-        /**
-         * 🆕 Phase1.5機能確認
-         */
-        checkPhase15Features() {
-            const results = {
-                success: [],
-                warning: [],
-                error: []
-            };
-            
-            // RecordManager確認
-            if (this.recordManager) {
-                if (typeof this.recordManager.recordOperation === 'function') {
-                    results.success.push('RecordManager: 操作記録機能利用可能');
-                } else {
-                    results.error.push('RecordManager: recordOperation メソッド未実装');
-                }
-            } else {
-                results.warning.push('RecordManager: 未設定（非破壊編集無効）');
-            }
-            
-            // CoordinateManager確認
-            if (this.coordinateManager) {
-                if (typeof this.coordinateManager.isInsideCanvas === 'function') {
-                    results.success.push('CoordinateManager: 座標変換機能利用可能');
-                } else {
-                    results.error.push('CoordinateManager: 座標変換メソッド未実装');
-                }
-            } else {
-                results.warning.push('CoordinateManager: 未設定（基本座標処理使用）');
-            }
-            
-            // CanvasManager確認
-            if (this.canvasManager) {
-                results.success.push('CanvasManager: 描画機能利用可能');
-            } else {
-                results.error.push('CanvasManager: 未設定（描画不可能）');
-            }
-            
-            return results;
-        }
+        console.log(`🎯 AbstractTool ${toolName} スタブ作成完了 - Phase1.5で詳細実装予定`);
     }
     
-    // Tegaki名前空間に登録
-    window.Tegaki.AbstractTool = AbstractTool;
+    /**
+     * 初期化（Manager連携）
+     */
+    initialize(managers = {}) {
+        this.canvasManager = managers.canvasManager || null;
+        this.coordinateManager = managers.coordinateManager || null;
+        this.recordManager = managers.recordManager || null;
+        
+        this.isInitialized = true;
+        
+        console.log(`🎯 ${this.toolName} AbstractTool 初期化完了`);
+        return true;
+    }
+    
+    /**
+     * ツール有効化
+     */
+    activate() {
+        if (!this.isInitialized) {
+            console.warn('⚠️ Tool not initialized');
+            return false;
+        }
+        
+        this.isActive = true;
+        console.log(`🎯 ${this.toolName} ツール有効化（スタブ）`);
+        return true;
+    }
+    
+    /**
+     * ツール無効化
+     */
+    deactivate() {
+        this.isActive = false;
+        this.isDrawing = false;
+        this.currentOperation = null;
+        
+        console.log(`🎯 ${this.toolName} ツール無効化（スタブ）`);
+        return true;
+    }
+    
+    /**
+     * ポインター押下処理（基底・オーバーライド推奨）
+     */
+    onPointerDown(x, y, event) {
+        if (!this.isActive) return false;
+        
+        // 座標有効性確認
+        if (!this.isValidCoordinate(x, y)) {
+            console.warn(`⚠️ Invalid coordinates: (${x}, ${y})`);
+            return false;
+        }
+        
+        this.isDrawing = true;
+        
+        // 操作開始記録（スタブ）
+        this.startOperation('pointer_down', { x, y, tool: this.toolName });
+        
+        console.log(`🎯 ${this.toolName} ポインター押下（基底処理）: (${x.toFixed(1)}, ${y.toFixed(1)})`);
+        return true;
+    }
+    
+    /**
+     * ポインター移動処理（基底・オーバーライド推奨）
+     */
+    onPointerMove(x, y, event) {
+        if (!this.isActive || !this.isDrawing) return false;
+        
+        // 座標有効性確認
+        if (!this.isValidCoordinate(x, y)) {
+            return false; // 無効座標は無視
+        }
+        
+        console.log(`🎯 ${this.toolName} ポインター移動（基底処理）: (${x.toFixed(1)}, ${y.toFixed(1)})`);
+        return true;
+    }
+    
+    /**
+     * ポインター離上処理（基底・オーバーライド推奨）
+     */
+    onPointerUp(x, y, event) {
+        if (!this.isActive) return false;
+        
+        this.isDrawing = false;
+        
+        // 操作終了記録（スタブ）
+        this.endOperation('pointer_up', { x, y, tool: this.toolName });
+        
+        console.log(`🎯 ${this.toolName} ポインター離上（基底処理）`);
+        return true;
+    }
+    
+    /**
+     * 座標有効性確認
+     */
+    isValidCoordinate(x, y) {
+        return x !== null && y !== null && 
+               typeof x === 'number' && typeof y === 'number' &&
+               !isNaN(x) && !isNaN(y);
+    }
+    
+    /**
+     * 操作開始記録（RecordManager連携・スタブ）
+     */
+    startOperation(operationType, data = {}) {
+        if (!this.recordManager) {
+            console.log(`🎯 ${this.toolName} 操作開始（RecordManager未接続）: ${operationType}`);
+            return null;
+        }
+        
+        const operationData = {
+            type: operationType,
+            tool: this.toolName,
+            startTime: Date.now(),
+            data: { ...data },
+            undo: null, // 具体的ツールで設定
+            redo: null  // 具体的ツールで設定
+        };
+        
+        this.currentOperation = operationData;
+        
+        console.log(`🎯 ${this.toolName} 操作開始記録（スタブ）: ${operationType}`);
+        return operationData;
+    }
+    
+    /**
+     * 操作終了記録（RecordManager連携・スタブ）
+     */
+    endOperation(operationType, data = {}) {
+        if (!this.currentOperation) {
+            console.log(`🎯 ${this.toolName} 操作終了（操作未開始）: ${operationType}`);
+            return null;
+        }
+        
+        this.currentOperation.endTime = Date.now();
+        this.currentOperation.duration = this.currentOperation.endTime - this.currentOperation.startTime;
+        
+        // RecordManagerに記録（実装されている場合のみ）
+        if (this.recordManager && typeof this.recordManager.recordOperation === 'function') {
+            const recordId = this.recordManager.recordOperation(this.currentOperation);
+            console.log(`🎯 ${this.toolName} 操作記録完了: ${recordId}`);
+        } else {
+            console.log(`🎯 ${this.toolName} 操作終了（RecordManager未接続）: ${operationType}`);
+        }
+        
+        const completedOperation = this.currentOperation;
+        this.currentOperation = null;
+        
+        return completedOperation;
+    }
+    
+    /**
+     * 操作記録（直接記録用・スタブ）
+     */
+    recordOperation(operation) {
+        if (!this.recordManager) {
+            console.log(`🎯 ${this.toolName} 操作記録（RecordManager未接続）`);
+            return null;
+        }
+        
+        const operationData = {
+            tool: this.toolName,
+            timestamp: Date.now(),
+            ...operation
+        };
+        
+        if (typeof this.recordManager.recordOperation === 'function') {
+            return this.recordManager.recordOperation(operationData);
+        }
+        
+        console.log(`🎯 ${this.toolName} 操作記録（スタブ）:`, operationData.type || 'unknown');
+        return null;
+    }
+    
+    /**
+     * 設定管理
+     */
+    getSettings() {
+        return { ...this.settings };
+    }
+    
+    setSetting(key, value) {
+        this.settings[key] = value;
+        console.log(`🎯 ${this.toolName} 設定変更: ${key} = ${value}`);
+        return true;
+    }
+    
+    /**
+     * CanvasManager設定
+     */
+    setCanvasManager(canvasManager) {
+        this.canvasManager = canvasManager;
+        console.log(`🎯 ${this.toolName} CanvasManager設定完了`);
+        return true;
+    }
+    
+    /**
+     * CoordinateManager設定
+     */
+    setCoordinateManager(coordinateManager) {
+        this.coordinateManager = coordinateManager;
+        console.log(`🎯 ${this.toolName} CoordinateManager設定完了`);
+        return true;
+    }
+    
+    /**
+     * RecordManager設定
+     */
+    setRecordManager(recordManager) {
+        this.recordManager = recordManager;
+        console.log(`🎯 ${this.toolName} RecordManager設定完了`);
+        return true;
+    }
+    
+    /**
+     * デバッグ情報取得
+     */
+    getDebugInfo() {
+        return {
+            // 基本情報
+            toolName: this.toolName,
+            isInitialized: this.isInitialized,
+            isActive: this.isActive,
+            isDrawing: this.isDrawing,
+            
+            // Manager連携状態
+            managers: {
+                canvasManager: !!this.canvasManager,
+                coordinateManager: !!this.coordinateManager,
+                recordManager: !!this.recordManager
+            },
+            
+            // 操作状態
+            currentOperation: this.currentOperation ? {
+                type: this.currentOperation.type,
+                startTime: this.currentOperation.startTime,
+                duration: this.currentOperation.duration || null
+            } : null,
+            
+            // 設定
+            settings: this.getSettings(),
+            
+            // Phase情報
+            phase: {
+                current: '1.5',
+                implementationStatus: 'stub', // スタブ実装
+                features: {
+                    baseToolFunctions: true,
+                    operationRecording: 'stub',
+                    coordinateIntegration: 'stub',
+                    advancedFeatures: false // Phase2で実装
+                }
+            }
+        };
+    }
+    
+    /**
+     * Phase1.5準備完了判定
+     */
+    isReadyForPhase15() {
+        return this.isInitialized && this.isActive;
+    }
+    
+    /**
+     * Phase2準備機能（将来実装用プレースホルダー）
+     */
+    enableAdvancedRecording() {
+        console.log(`🎯 ${this.toolName} 高度記録機能（Phase2で実装予定）`);
+        return false; // Phase2で実装
+    }
+    
+    setPerformanceMode(enabled) {
+        console.log(`🎯 ${this.toolName} パフォーマンスモード（Phase2で実装予定）`);
+        return false; // Phase2で実装
+    }
+    
+    enablePressureSupport() {
+        console.log(`🎯 ${this.toolName} 筆圧サポート（Phase2で実装予定）`);
+        return false; // Phase2で実装
+    }
 }
 
-console.log('🎯 AbstractTool Phase1.5 非破壊編集対応版 Loaded');
-console.log('📏 全ツール共通基底クラス・RecordManager統合・CoordinateManager統合');
-console.log('🔄 操作記録・Undo/Redo・座標変換・Phase1.5基盤確立完了');
+// Tegaki名前空間に登録
+window.Tegaki.AbstractTool = AbstractTool;
+
+console.log('🎯 AbstractTool Phase1.5 Loaded - スタブ版・ツール基底クラス準備完了');
+console.log('🎯 abstract-tool.js loaded - Phase1.5基本クラス・全ツール継承基盤準備');

@@ -233,13 +233,17 @@
     <!-- PixiJS CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
     
-    <!-- 📋 Phase1.5対応版読み込み順序（CoordinateManager追加） -->
+    <!-- Phase1.5対応版読み込み順序（修正版：重複削除） -->
     
     <!-- 1. Utils（依存なし・インスタンス自動作成） -->
     <script src="js/utils/error-manager.js"></script>
     <script src="js/utils/config-manager.js"></script>
     <script src="js/utils/event-bus.js"></script>
-    <script src="js/utils/coordinate-manager.js"></script> <!-- 🆕 Phase1.5: CoordinateManager追加 -->
+    <script src="js/utils/coordinate-manager.js"></script>
+    <!-- Phase1.5新規Manager（未実装の場合もエラーなし） -->
+    <script src="js/utils/navigation-manager.js"></script>
+    <script src="js/utils/record-manager.js"></script>
+    <script src="js/utils/shortcut-manager.js"></script>
     
     <!-- 2. Assets（UIリソース） -->
     <script src="assets/icons.js"></script>
@@ -248,31 +252,22 @@
     <script src="managers/canvas-manager.js"></script>
     <script src="managers/tool-manager.js"></script>
 
-<!-- Phase1.5 新Manager（AbstractToolより先に読み込み） -->
-<script src="js/utils/coordinate-manager.js"></script>
-<script src="js/utils/navigation-manager.js"></script>
-<script src="js/utils/record-manager.js"></script>
-<script src="js/utils/shortcut-manager.js"></script>
-
-<!-- AbstractTool（ツールより先に読み込み） -->
-<script src="tools/abstract-tool.js"></script>
+    <!-- 4. AbstractTool（ツールより先に読み込み） -->
+    <script src="tools/abstract-tool.js"></script>
     
-    <!-- 4. Tools（Managers依存） -->
+    <!-- 5. Tools（Managers・AbstractTool依存） -->
     <script src="tools/pen-tool.js"></script>
     <script src="tools/eraser-tool.js"></script>
 
-<!-- 統合テスト（開発時のみ） -->
-<script src="debug/phase15-integration-test.js"></script>
+    <!-- 6. 統合テスト（開発時のみ・未実装でもOK） -->
+    <script src="debug/phase15-integration-test.js"></script>
     
-    <!-- 5. App（全依存・順序重要） -->
+    <!-- 7. App（全依存・順序重要） -->
     <script src="js/main.js"></script>         <!-- AppCore定義 -->
     <script src="js/app-core.js"></script>     <!-- TegakiApplication Phase1.5版 -->
     
-    <!-- 6. Bootstrap（App依存） -->
+    <!-- 8. Bootstrap（App依存・最後に実行） -->
     <script src="js/bootstrap.js"></script>
-    
-    <!-- 7. 名前倉庫（競合回避のため最後・Phase1では不要） -->
-    <!-- <script src="js/utils/minimal-deps.js"></script> -->
     
 </body>
 </html>

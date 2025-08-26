@@ -50,7 +50,7 @@
                 console.log(`✅ ${className}: 利用可能`);
             } else {
                 missingClasses.push(className);
-                console.warn(⚠️ ${className}: 未定義または無効`);
+                console.warn(`⚠️ ${className}: 未定義または無効`);
             }
         }
         
