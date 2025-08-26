@@ -19,12 +19,9 @@ tool-manager.js:555 🖊️ ToolManager Phase1.5修正版（CoordinateManager連
 tool-manager.js:560 🖊️ tool-manager.js Phase1.5修正版（CoordinateManager連携修正版） loaded - Manager連携・AbstractTool統合・二重作成防止完了
 abstract-tool.js:487 🎯 AbstractTool Phase1.5スタブ実装 - 名前空間登録完了
 abstract-tool.js:488 🔧 次のステップ: 詳細実装・RecordManager統合・CoordinateManager活用・継承ツール更新
-pen-tool.js:564 ✏️ PenTool Phase1.5 非破壊編集対応版 Loaded（AbstractTool継承・互換性修正済み）
-pen-tool.js:565 📏 RecordManager統合・Undo/Redo対応・操作記録・キャンバス外描画対応
-pen-tool.js:566 🔄 非破壊編集基盤・AbstractTool継承・Phase1.5完全対応完了
-pen-tool.js:1129 ✏️ PenTool Phase1.5 非破壊編集対応版 Loaded（AbstractTool継承・互換性修正済み）
-pen-tool.js:1130 📏 RecordManager統合・Undo/Redo対応・操作記録・キャンバス外描画対応
-pen-tool.js:1131 🔄 非破壊編集基盤・AbstractTool継承・Phase1.5完全対応完了
+pen-tool.js:583 ✏️ PenTool Phase1.5 修正版 Loaded - 描画機能修復完了
+pen-tool.js:584 🔧 座標変換重複修正・PointerEvent対応・AbstractTool連携最適化
+pen-tool.js:585 📏 RecordManager統合・Undo/Redo対応・操作記録・キャンバス外描画対応
 eraser-tool.js:549 🧹 EraserTool Phase1.5 非破壊編集対応版 Loaded（AbstractTool継承・互換性修正済み）
 eraser-tool.js:550 📏 RecordManager統合・Undo/Redo対応・操作記録・ERASEブレンドモード・座標ズレ完全解決
 eraser-tool.js:551 🔄 非破壊編集基盤・AbstractTool継承・Phase1.5完全対応完了
@@ -124,7 +121,7 @@ tool-manager.js:155 🔧 ツール作成開始 - Phase1.5 Manager統合版（修
 tool-manager.js:170 🔧 Manager設定状況: {canvasManager: true, coordinateManager: true, recordManager: true, eventBus: true}
 abstract-tool.js:20 🎯 AbstractTool Phase1.5スタブ実装 - pen 初期化開始
 abstract-tool.js:57 🎯 AbstractTool pen スタブ実装完了
-pen-tool.js:32 ✏️ PenTool Phase1.5 非破壊編集対応版 作成（AbstractTool継承）
+pen-tool.js:37 ✏️ PenTool Phase1.5 修正版 作成（AbstractTool継承）
 abstract-tool.js:64 🎯 AbstractTool pen 初期化 - Phase1.5スタブ版
 abstract-tool.js:96 🎯 AbstractTool pen EventBus連携設定 - Phase1.5スタブ
 abstract-tool.js:85 ✅ AbstractTool pen 初期化完了 - Phase1.5スタブ版
@@ -191,9 +188,12 @@ app-core.js:756 ⌨️ ShortcutManager統合完了 - キーボードショート
 app-core.js:757 🎯 Phase1.5新Manager統合基盤確立完了（完全修正版）
 error-manager.js:38 💡 INFO: Phase1.5新Manager統合初期化完了 - 全機能統合完了（完全修正版） TegakiApplication.initialize
 app-core.js:83 ✅ TegakiApplication Phase1.5 新Manager統合初期化完了（完全修正版）
-tool-manager.js:350 🖊️ PointerDown [pen]: {x: 2.5, y: 1.5}
-tool-manager.js:385 🖊️ PointerUp [pen]: {x: 3, y: 1.5}
-tool-manager.js:350 🖊️ PointerDown [pen]: {x: 209, y: 205.5}
-tool-manager.js:385 🖊️ PointerUp [pen]: {x: 209, y: 205.5}
-tool-manager.js:350 🖊️ PointerDown [pen]: {x: 388, y: 388}
-tool-manager.js:385 🖊️ PointerUp [pen]: {x: 388, y: 388}
+tool-manager.js:350 🖊️ PointerDown [pen]: {x: 3.5, y: 3}
+pen-tool.js:89 ⚠️ PenTool not active, ignoring pointer down
+tool-manager.js:385 🖊️ PointerUp [pen]: {x: 3.5, y: 3}
+tool-manager.js:350 🖊️ PointerDown [pen]: {x: 190.5, y: 193.5}
+pen-tool.js:89 ⚠️ PenTool not active, ignoring pointer down
+tool-manager.js:385 🖊️ PointerUp [pen]: {x: 190.5, y: 193.5}
+tool-manager.js:350 🖊️ PointerDown [pen]: {x: 391.5, y: 389.5}
+pen-tool.js:89 ⚠️ PenTool not active, ignoring pointer down
+tool-manager.js:385 🖊️ PointerUp [pen]: {x: 391.5, y: 389.5}
