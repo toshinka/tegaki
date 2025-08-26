@@ -1,168 +1,168 @@
-error-manager.js:20 🚨 ErrorManager Simple 作成
-error-manager.js:132 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
-config-manager.js:20 🔧 ConfigManager Simple 作成
-config-manager.js:229 🔧 ConfigManager Simple Loaded - シンプル設定管理
-event-bus.js:20 🔄 EventBus Simple 作成
-event-bus.js:97 🔄 EventBus Simple Loaded - シンプルイベント通信
-coordinate-manager.js:466 📐 CoordinateManager Phase1.5 Loaded - キャンバス外描画・座標変換・変形基盤完成
-coordinate-manager.js:467 📐 coordinate-manager.js loaded - シンプル座標変換・AI管理最適化・剛直構造実現
-navigation-manager.js:423 🧭 NavigationManager Phase1.5スタブ実装 - 名前空間登録完了
-navigation-manager.js:424 🔧 次のステップ: 詳細実装・CoordinateManager完全連携・パフォーマンス最適化
-record-manager.js:430 🔄 RecordManager Phase1.5スタブ実装 - 名前空間登録完了
-record-manager.js:431 🔧 次のステップ: 詳細実装・状態スナップショット・AbstractTool統合・メモリ最適化
-shortcut-manager.js:416 ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
-shortcut-manager.js:417 🔧 setupPhase15Shortcuts・enableメソッド追加済み
-shortcut-manager.js:418 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
-canvas-manager.js:385 🎨 CanvasManager レイヤー分離版（確認強化版） Loaded
-canvas-manager.js:390 🎨 canvas-manager.js loaded - レイヤー分離構造完成（確認強化版）
-tool-manager.js:638 🖊️ ToolManager Phase1.5完全修正版（ツール有効化処理修正） Loaded
-tool-manager.js:643 🖊️ tool-manager.js Phase1.5完全修正版（ツール有効化処理修正） loaded - ツール有効化・Manager連携・剛直構造完了
-abstract-tool.js:532 🎯 AbstractTool Phase1.5完全実装 - 名前空間登録完了
-abstract-tool.js:533 🔧 修正完了: ツール有効化フロー・座標処理・剛直構造実装
-pen-tool.js:597 ✏️ PenTool Phase1.5 修正版 Loaded - 描画機能修復完了
-pen-tool.js:598 🔧 座標変換重複修正・PointerEvent対応・AbstractTool連携最適化
-pen-tool.js:599 📏 RecordManager統合・Undo/Redo対応・操作記録・キャンバス外描画対応
-eraser-tool.js:549 🧹 EraserTool Phase1.5 非破壊編集対応版 Loaded（AbstractTool継承・互換性修正済み）
-eraser-tool.js:550 📏 RecordManager統合・Undo/Redo対応・操作記録・ERASEブレンドモード・座標ズレ完全解決
-eraser-tool.js:551 🔄 非破壊編集基盤・AbstractTool継承・Phase1.5完全対応完了
-eraser-tool.js:1099 🧹 EraserTool Phase1.5 非破壊編集対応版 Loaded（AbstractTool継承・互換性修正済み）
-eraser-tool.js:1100 📏 RecordManager統合・Undo/Redo対応・操作記録・ERASEブレンドモード・座標ズレ完全解決
-eraser-tool.js:1101 🔄 非破壊編集基盤・AbstractTool継承・Phase1.5完全対応完了
-phase15-integration-test.js:593 🧪 Phase1.5統合テスト Loaded
-phase15-integration-test.js:594 📏 新Manager統合状況確認・機能テスト・レポート生成・Phase1.5完全対応
-phase15-integration-test.js:595 🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
-main.js:330 🎯 AppCore システム基盤 Loaded（ToolManager初期化修正版）
-main.js:335 🎯 main.js loaded - AppCore基盤システム完成（ToolManager初期化修正版）
-app-core.js:971 🎯 TegakiApplication Phase1.5 新Manager統合版（完全修正版） Loaded
-app-core.js:972 📏 キャンバス外描画・ナビゲーション・非破壊編集・ショートカット統合
-app-core.js:973 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統合対応
-app-core.js:974 🔧 構文エラー完全修正・フォールバック削除・正しい構造でのみ動作
-app-core.js:975 🚀 app-core.js Phase1.5 新Manager統合版（完全修正版） 完成
-bootstrap.js:15 🚀 Bootstrap Phase1.5 - 新Manager統合対応版
-bootstrap.js:168 ⏳ DOM Loading - DOMContentLoaded待機中...
-bootstrap.js:182 🎯 Bootstrap Phase1.5 registered - 新Manager統合対応版
-bootstrap.js:75 🔧 Bootstrap Phase1.5 実行開始...
-bootstrap.js:21 🔍 Phase1.5 依存関係確認開始...
-bootstrap.js:50 ✅ TegakiApplication: 利用可能
-bootstrap.js:50 ✅ AppCore: 利用可能
-bootstrap.js:50 ✅ CanvasManager: 利用可能
-bootstrap.js:50 ✅ ToolManager: 利用可能
-bootstrap.js:50 ✅ ErrorManager: 利用可能
-bootstrap.js:50 ✅ ConfigManager: 利用可能
-bootstrap.js:50 ✅ EventBus: 利用可能
-bootstrap.js:50 ✅ CoordinateManager: 利用可能
-bootstrap.js:50 ✅ NavigationManager: 利用可能
-bootstrap.js:50 ✅ RecordManager: 利用可能
-bootstrap.js:50 ✅ ShortcutManager: 利用可能
-bootstrap.js:50 ✅ PenTool: 利用可能
-bootstrap.js:50 ✅ EraserTool: 利用可能
-bootstrap.js:57 📊 依存関係確認結果: 13/13 クラス利用可能
-bootstrap.js:97 🎨 TegakiApplication インスタンス化開始...
-app-core.js:25 🎯 TegakiApplication Phase1.5 新Manager統合版（完全修正版） 作成・自動初期化開始
-app-core.js:54 🚀 TegakiApplication Phase1.5 新Manager統合初期化開始（完全修正版）
-app-core.js:90 🆕 Phase1.5新Manager初期化開始...
-coordinate-manager.js:21 📐 CoordinateManager Phase1.5 座標系強化版 作成
-app-core.js:95 ✅ CoordinateManager初期化完了
-record-manager.js:20 🔄 RecordManager Phase1.5スタブ実装 - 初期化開始
-record-manager.js:43 🔄 RecordManager スタブ実装完了
-app-core.js:103 ✅ RecordManager初期化完了
-navigation-manager.js:20 🧭 NavigationManager Phase1.5スタブ実装 - 初期化開始
-navigation-manager.js:43 🧭 NavigationManager スタブ実装完了
-app-core.js:115 ✅ NavigationManager初期化完了
-shortcut-manager.js:20 ⌨️ ShortcutManager Phase1.5スタブ実装 - 初期化開始
-shortcut-manager.js:41 ⌨️ ShortcutManager スタブ実装完了
-app-core.js:128 ✅ ShortcutManager初期化完了
-app-core.js:133 🆕 Phase1.5新Manager初期化完了
-main.js:24 🎯 AppCore 基盤システム作成（ToolManager初期化修正版）
-canvas-manager.js:25 🎨 CanvasManager レイヤー分離版作成（確認強化版）
-main.js:44 ✅ CanvasManager 作成完了
-bootstrap.js:105 ✅ Phase1.5 完全版 - 全Manager統合済み
-bootstrap.js:112 ✅ Bootstrap完了 - Tegakiアプリケーション開始完了
-app-core.js:149 ✅ AppCore初期化完了（CanvasManagerのみ）
-canvas-manager.js:97 ✅ 背景レイヤー (layer0) 作成完了: {name: 'layer0', zIndex: 0, parent: true}
-canvas-manager.js:107 ✅ 描画レイヤー (layer1) 作成完了: {name: 'layer1', zIndex: 1, sortableChildren: true, parent: true}
-canvas-manager.js:118 ✅ レイヤー作成確認完了: {totalLayers: 2, layer0Exists: true, layer1Exists: true, layer0InStage: true, layer1InStage: true, stageChildren: 2}
-canvas-manager.js:60 🎨 PixiJS Application Info: {width: 400, height: 400, renderer: 1, view: true, stage: true, …}
-canvas-manager.js:69 ✅ CanvasManager - レイヤー分離構造完成・確認済み
-main.js:90 ✅ レイヤー構造確認完了: {layer0: true, layer1: true, activeLayer: 'layer1'}
-main.js:67 ✅ AppCore - PixiJS Application設定・レイヤー確認完了
-app-core.js:202 ✅ PixiJS Canvas作成・配置・CanvasManager設定完了（Phase1.5座標ズレ防止強化版）
-app-core.js:203 📏 Canvas設定: 400x400px, resolution=1, autoDensity=false
-app-core.js:210 🆕 Phase1.5新ManagerにCanvas要素設定開始...
-coordinate-manager.js:71 📐 Canvas情報更新: 400x400px
-coordinate-manager.js:58 📐 CoordinateManager - Canvas要素設定: 400x400px
-app-core.js:217 ✅ CoordinateManager - Canvas要素設定完了
-navigation-manager.js:84 ✅ NavigationManager: Canvas要素設定完了
-navigation-manager.js:98 🧭 NavigationManager Canvas固有イベントリスナー設定
-navigation-manager.js:125 ✅ NavigationManager Canvas固有イベントリスナー設定完了
-app-core.js:223 ✅ NavigationManager - Canvas要素設定完了
-app-core.js:226 🆕 Phase1.5新Manager Canvas設定完了
-app-core.js:234 🔧 Phase1.5 Manager群事前設定開始...
-main.js:113 🔧 ToolManager初期化開始（Phase1.5 Manager統合修正版）...
-tool-manager.js:30 🖊️ ToolManager Phase1.5完全修正版作成（ツール有効化処理修正）
-tool-manager.js:145 ✅ 必要レイヤー確認完了: {layer0Exists: true, layer1Exists: true, layer0InStage: true, layer1InStage: true}
-tool-manager.js:66 🖊️ ToolManager - CanvasManager設定・レイヤー確認完了
-main.js:119 ✅ ToolManager - CanvasManager設定完了
-main.js:123 🔧 ToolManager基本設定完了 - Phase1.5 Manager統合はapp-coreで実行予定
-main.js:138 🔍 ToolManager基本初期化確認開始...
-main.js:152 ✅ ToolManager基本初期化確認完了
-main.js:131 ✅ ToolManager 基本初期化完了（Phase1.5 Manager統合修正版）
-app-core.js:250 🔧 Phase1.5 Manager群設定: {coordinateManager: true, recordManager: true, eventBus: true}
-tool-manager.js:73 🆕 ToolManager Phase1.5 Manager群設定開始...
-tool-manager.js:78 ✅ ToolManager - CoordinateManager設定完了
-tool-manager.js:86 ✅ ToolManager - RecordManager設定完了
-tool-manager.js:94 ✅ ToolManager - EventBus設定完了
-tool-manager.js:100 🆕 ToolManager Phase1.5 Manager群設定完了
-app-core.js:257 ✅ ToolManager - Phase1.5 Manager群設定完了（修正版）
-tool-manager.js:108 🔄 ToolManager - RecordManager設定完了（app-core経由）
-app-core.js:265 ✅ ToolManager - RecordManager接続完了（互換性）
-app-core.js:270 🔧 ツール作成開始（Phase1.5 Manager統合後）...
-tool-manager.js:161 🔧 ツール作成開始 - Phase1.5完全実装版
-tool-manager.js:176 🔧 Manager設定状況: {canvasManager: true, coordinateManager: true, recordManager: true, eventBus: true}
-abstract-tool.js:26 🎯 AbstractTool Phase1.5完全実装 - pen 初期化開始
-abstract-tool.js:63 🎯 AbstractTool pen 完全実装完了
-pen-tool.js:46 ✏️ PenTool Phase1.5 修正版 作成（AbstractTool継承）
-pen-tool.js:61 ✏️ PenTool - setCanvasManager 呼び出し（互換性メソッド）
-abstract-tool.js:70 🎯 AbstractTool pen 初期化 - Phase1.5完全実装版
-abstract-tool.js:98 🎯 AbstractTool pen EventBus連携設定 - Phase1.5完全実装
-abstract-tool.js:87 ✅ AbstractTool pen 初期化完了 - Phase1.5完全実装版
-abstract-tool.js:70 🎯 AbstractTool pen 初期化 - Phase1.5完全実装版
-abstract-tool.js:98 🎯 AbstractTool pen EventBus連携設定 - Phase1.5完全実装
-abstract-tool.js:87 ✅ AbstractTool pen 初期化完了 - Phase1.5完全実装版
-tool-manager.js:202 ✅ PenTool - Phase1.5 Manager統合初期化完了
-tool-manager.js:208 ✅ PenTool 作成・設定完了（Phase1.5対応）
-abstract-tool.js:26 🎯 AbstractTool Phase1.5完全実装 - eraser 初期化開始
-abstract-tool.js:63 🎯 AbstractTool eraser 完全実装完了
-eraser-tool.js:30 🧹 EraserTool Phase1.5 非破壊編集対応版 作成（AbstractTool継承）
-eraser-tool.js:46 🧹 EraserTool - setCanvasManager 呼び出し（互換性メソッド）
-abstract-tool.js:70 🎯 AbstractTool eraser 初期化 - Phase1.5完全実装版
-abstract-tool.js:98 🎯 AbstractTool eraser EventBus連携設定 - Phase1.5完全実装
-abstract-tool.js:87 ✅ AbstractTool eraser 初期化完了 - Phase1.5完全実装版
-abstract-tool.js:70 🎯 AbstractTool eraser 初期化 - Phase1.5完全実装版
-abstract-tool.js:98 🎯 AbstractTool eraser EventBus連携設定 - Phase1.5完全実装
-abstract-tool.js:87 ✅ AbstractTool eraser 初期化完了 - Phase1.5完全実装版
-tool-manager.js:225 ✅ EraserTool - Phase1.5 Manager統合初期化完了
-tool-manager.js:231 ✅ EraserTool 作成・設定完了（Phase1.5対応）
-tool-manager.js:327 🎯 新しいツール pen を有効化
-abstract-tool.js:124 🎯 AbstractTool pen アクティベート - Phase1.5完全実装
-pen-tool.js:77 ✏️ PenTool アクティベート完了 - 描画可能状態
-abstract-tool.js:137 ✅ AbstractTool pen アクティベート完了
-canvas-manager.js:190 🎯 Active layer set to: layer1
-tool-manager.js:343 ✅ ツール選択成功: pen (アクティブレイヤー: layer1, 有効化: true)
-tool-manager.js:248 ✅ ToolManager - 全ツール作成完了（Phase1.5完全実装版） (2個)
-app-core.js:272 ✅ ToolManager - ツール作成完了（Phase1.5対応）
-app-core.js:280 🔧 ツール作成確認: {availableTools: Array(2), currentToolName: 'pen', currentToolExists: true}
-app-core.js:289 🔧 現在ツールのPhase1.5状況: {phase: 'Phase1.5', implementation: 'complete', tool: 'pen', features: {…}, state: {…}, …}
-app-core.js:297 ✅ ToolManager初期化完了（Phase1.5 Manager統合版・修正版）
-app-core.js:304 🆕 Phase1.5機能統合開始（修正版）...
-navigation-manager.js:347 ✅ NavigationManager 有効化完了
-app-core.js:309 ✅ ナビゲーション機能有効化完了
-shortcut-manager.js:48 ⌨️ ShortcutManager 初期化 - Phase1.5スタブ版
-shortcut-manager.js:141 ⌨️ ShortcutManager イベントリスナー設定 - Phase1.5スタブ
-shortcut-manager.js:161 ⌨️ ShortcutManager イベントリスナー設定完了 - Phase1.5スタブ
-shortcut-manager.js:170 ⌨️ ShortcutManager EventBus連携設定 - Phase1.5スタブ
-shortcut-manager.js:182 ⌨️ ShortcutManager EventBus連携設定完了 - Phase1.5スタブ
-shortcut-manager.js:64 ✅ ShortcutManager 初期化完了 - Phase1.5スタブ版
+ 🚨 ErrorManager Simple 作成
+ 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
+ 🔧 ConfigManager Simple 作成
+ 🔧 ConfigManager Simple Loaded - シンプル設定管理
+ 🔄 EventBus Simple 作成
+ 🔄 EventBus Simple Loaded - シンプルイベント通信
+ 📐 CoordinateManager Phase1.5 Loaded - キャンバス外描画・座標変換・変形基盤完成
+ 📐 coordinate-manager.js loaded - シンプル座標変換・AI管理最適化・剛直構造実現
+ 🧭 NavigationManager Phase1.5スタブ実装 - 名前空間登録完了
+ 🔧 次のステップ: 詳細実装・CoordinateManager完全連携・パフォーマンス最適化
+ 🔄 RecordManager Phase1.5スタブ実装 - 名前空間登録完了
+ 🔧 次のステップ: 詳細実装・状態スナップショット・AbstractTool統合・メモリ最適化
+ ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
+ 🔧 setupPhase15Shortcuts・enableメソッド追加済み
+ 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
+ 🎨 CanvasManager レイヤー分離版（確認強化版） Loaded
+ 🎨 canvas-manager.js loaded - レイヤー分離構造完成（確認強化版）
+ 🖊️ ToolManager Phase1.5完全修正版（ツール有効化処理修正） Loaded
+ 🖊️ tool-manager.js Phase1.5完全修正版（ツール有効化処理修正） loaded - ツール有効化・Manager連携・剛直構造完了
+ 🎯 AbstractTool Phase1.5完全実装 - 名前空間登録完了
+ 🔧 修正完了: ツール有効化フロー・座標処理・剛直構造実装
+ ✏️ PenTool Phase1.5 修正版 Loaded - 描画機能修復完了
+ 🔧 座標変換重複修正・PointerEvent対応・AbstractTool連携最適化
+ 📏 RecordManager統合・Undo/Redo対応・操作記録・キャンバス外描画対応
+ 🧹 EraserTool Phase1.5 非破壊編集対応版 Loaded（AbstractTool継承・互換性修正済み）
+ 📏 RecordManager統合・Undo/Redo対応・操作記録・ERASEブレンドモード・座標ズレ完全解決
+ 🔄 非破壊編集基盤・AbstractTool継承・Phase1.5完全対応完了
+ 🧹 EraserTool Phase1.5 非破壊編集対応版 Loaded（AbstractTool継承・互換性修正済み）
+ 📏 RecordManager統合・Undo/Redo対応・操作記録・ERASEブレンドモード・座標ズレ完全解決
+ 🔄 非破壊編集基盤・AbstractTool継承・Phase1.5完全対応完了
+ 🧪 Phase1.5統合テスト Loaded
+ 📏 新Manager統合状況確認・機能テスト・レポート生成・Phase1.5完全対応
+ 🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
+ 🎯 AppCore システム基盤 Loaded（ToolManager初期化修正版）
+ 🎯 main.js loaded - AppCore基盤システム完成（ToolManager初期化修正版）
+ 🎯 TegakiApplication Phase1.5 新Manager統合版（完全修正版） Loaded
+ 📏 キャンバス外描画・ナビゲーション・非破壊編集・ショートカット統合
+ 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統合対応
+ 🔧 構文エラー完全修正・フォールバック削除・正しい構造でのみ動作
+ 🚀 app-core.js Phase1.5 新Manager統合版（完全修正版） 完成
+ 🚀 Bootstrap Phase1.5 - 新Manager統合対応版
+ ⏳ DOM Loading - DOMContentLoaded待機中...
+ 🎯 Bootstrap Phase1.5 registered - 新Manager統合対応版
+ 🔧 Bootstrap Phase1.5 実行開始...
+ 🔍 Phase1.5 依存関係確認開始...
+ ✅ TegakiApplication: 利用可能
+ ✅ AppCore: 利用可能
+ ✅ CanvasManager: 利用可能
+ ✅ ToolManager: 利用可能
+ ✅ ErrorManager: 利用可能
+ ✅ ConfigManager: 利用可能
+ ✅ EventBus: 利用可能
+ ✅ CoordinateManager: 利用可能
+ ✅ NavigationManager: 利用可能
+ ✅ RecordManager: 利用可能
+ ✅ ShortcutManager: 利用可能
+ ✅ PenTool: 利用可能
+ ✅ EraserTool: 利用可能
+ 📊 依存関係確認結果: 13/13 クラス利用可能
+ 🎨 TegakiApplication インスタンス化開始...
+ 🎯 TegakiApplication Phase1.5 新Manager統合版（完全修正版） 作成・自動初期化開始
+ 🚀 TegakiApplication Phase1.5 新Manager統合初期化開始（完全修正版）
+ 🆕 Phase1.5新Manager初期化開始...
+ 📐 CoordinateManager Phase1.5 座標系強化版 作成
+ ✅ CoordinateManager初期化完了
+ 🔄 RecordManager Phase1.5スタブ実装 - 初期化開始
+ 🔄 RecordManager スタブ実装完了
+ ✅ RecordManager初期化完了
+ 🧭 NavigationManager Phase1.5スタブ実装 - 初期化開始
+ 🧭 NavigationManager スタブ実装完了
+ ✅ NavigationManager初期化完了
+ ⌨️ ShortcutManager Phase1.5スタブ実装 - 初期化開始
+ ⌨️ ShortcutManager スタブ実装完了
+ ✅ ShortcutManager初期化完了
+ 🆕 Phase1.5新Manager初期化完了
+ 🎯 AppCore 基盤システム作成（ToolManager初期化修正版）
+ 🎨 CanvasManager レイヤー分離版作成（確認強化版）
+ ✅ CanvasManager 作成完了
+ ✅ Phase1.5 完全版 - 全Manager統合済み
+ ✅ Bootstrap完了 - Tegakiアプリケーション開始完了
+ ✅ AppCore初期化完了（CanvasManagerのみ）
+ ✅ 背景レイヤー (layer0) 作成完了: {name: 'layer0', zIndex: 0, parent: true}
+ ✅ 描画レイヤー (layer1) 作成完了: {name: 'layer1', zIndex: 1, sortableChildren: true, parent: true}
+ ✅ レイヤー作成確認完了: {totalLayers: 2, layer0Exists: true, layer1Exists: true, layer0InStage: true, layer1InStage: true, stageChildren: 2}
+ 🎨 PixiJS Application Info: Object
+ ✅ CanvasManager - レイヤー分離構造完成・確認済み
+ ✅ レイヤー構造確認完了: Object
+ ✅ AppCore - PixiJS Application設定・レイヤー確認完了
+ ✅ PixiJS Canvas作成・配置・CanvasManager設定完了（Phase1.5座標ズレ防止強化版）
+ 📏 Canvas設定: 400x400px, resolution=1, autoDensity=false
+ 🆕 Phase1.5新ManagerにCanvas要素設定開始...
+ 📐 Canvas情報更新: 400x400px
+ 📐 CoordinateManager - Canvas要素設定: 400x400px
+ ✅ CoordinateManager - Canvas要素設定完了
+ ✅ NavigationManager: Canvas要素設定完了
+ 🧭 NavigationManager Canvas固有イベントリスナー設定
+ ✅ NavigationManager Canvas固有イベントリスナー設定完了
+ ✅ NavigationManager - Canvas要素設定完了
+ 🆕 Phase1.5新Manager Canvas設定完了
+ 🔧 Phase1.5 Manager群事前設定開始...
+ 🔧 ToolManager初期化開始（Phase1.5 Manager統合修正版）...
+ 🖊️ ToolManager Phase1.5完全修正版作成（ツール有効化処理修正）
+ ✅ 必要レイヤー確認完了: Object
+ 🖊️ ToolManager - CanvasManager設定・レイヤー確認完了
+ ✅ ToolManager - CanvasManager設定完了
+ 🔧 ToolManager基本設定完了 - Phase1.5 Manager統合はapp-coreで実行予定
+ 🔍 ToolManager基本初期化確認開始...
+ ✅ ToolManager基本初期化確認完了
+ ✅ ToolManager 基本初期化完了（Phase1.5 Manager統合修正版）
+ 🔧 Phase1.5 Manager群設定: Object
+ 🆕 ToolManager Phase1.5 Manager群設定開始...
+ ✅ ToolManager - CoordinateManager設定完了
+ ✅ ToolManager - RecordManager設定完了
+ ✅ ToolManager - EventBus設定完了
+ 🆕 ToolManager Phase1.5 Manager群設定完了
+ ✅ ToolManager - Phase1.5 Manager群設定完了（修正版）
+ 🔄 ToolManager - RecordManager設定完了（app-core経由）
+ ✅ ToolManager - RecordManager接続完了（互換性）
+ 🔧 ツール作成開始（Phase1.5 Manager統合後）...
+ 🔧 ツール作成開始 - Phase1.5完全実装版
+ 🔧 Manager設定状況: Object
+ 🎯 AbstractTool Phase1.5完全実装 - pen 初期化開始
+ 🎯 AbstractTool pen 完全実装完了
+ ✏️ PenTool Phase1.5 修正版 作成（AbstractTool継承）
+ ✏️ PenTool - setCanvasManager 呼び出し（互換性メソッド）
+ 🎯 AbstractTool pen 初期化 - Phase1.5完全実装版
+ 🎯 AbstractTool pen EventBus連携設定 - Phase1.5完全実装
+ ✅ AbstractTool pen 初期化完了 - Phase1.5完全実装版
+ 🎯 AbstractTool pen 初期化 - Phase1.5完全実装版
+ 🎯 AbstractTool pen EventBus連携設定 - Phase1.5完全実装
+ ✅ AbstractTool pen 初期化完了 - Phase1.5完全実装版
+ ✅ PenTool - Phase1.5 Manager統合初期化完了
+ ✅ PenTool 作成・設定完了（Phase1.5対応）
+ 🎯 AbstractTool Phase1.5完全実装 - eraser 初期化開始
+ 🎯 AbstractTool eraser 完全実装完了
+ 🧹 EraserTool Phase1.5 非破壊編集対応版 作成（AbstractTool継承）
+ 🧹 EraserTool - setCanvasManager 呼び出し（互換性メソッド）
+ 🎯 AbstractTool eraser 初期化 - Phase1.5完全実装版
+ 🎯 AbstractTool eraser EventBus連携設定 - Phase1.5完全実装
+ ✅ AbstractTool eraser 初期化完了 - Phase1.5完全実装版
+ 🎯 AbstractTool eraser 初期化 - Phase1.5完全実装版
+ 🎯 AbstractTool eraser EventBus連携設定 - Phase1.5完全実装
+ ✅ AbstractTool eraser 初期化完了 - Phase1.5完全実装版
+ ✅ EraserTool - Phase1.5 Manager統合初期化完了
+ ✅ EraserTool 作成・設定完了（Phase1.5対応）
+ 🎯 新しいツール pen を有効化
+ 🎯 AbstractTool pen アクティベート - Phase1.5完全実装
+ ✏️ PenTool アクティベート完了 - 描画可能状態
+ ✅ AbstractTool pen アクティベート完了
+ 🎯 Active layer set to: layer1
+ ✅ ツール選択成功: pen (アクティブレイヤー: layer1, 有効化: true)
+ ✅ ToolManager - 全ツール作成完了（Phase1.5完全実装版） (2個)
+ ✅ ToolManager - ツール作成完了（Phase1.5対応）
+ 🔧 ツール作成確認: Object
+ 🔧 現在ツールのPhase1.5状況: Object
+ ✅ ToolManager初期化完了（Phase1.5 Manager統合版・修正版）
+ 🆕 Phase1.5機能統合開始（修正版）...
+ ✅ NavigationManager 有効化完了
+ ✅ ナビゲーション機能有効化完了
+ ⌨️ ShortcutManager 初期化 - Phase1.5スタブ版
+ ⌨️ ShortcutManager イベントリスナー設定 - Phase1.5スタブ
+ ⌨️ ShortcutManager イベントリスナー設定完了 - Phase1.5スタブ
+ ⌨️ ShortcutManager EventBus連携設定 - Phase1.5スタブ
+ ⌨️ ShortcutManager EventBus連携設定完了 - Phase1.5スタブ
+ ✅ ShortcutManager 初期化完了 - Phase1.5スタブ版
 app-core.js:319 ✅ ShortcutManager - EventBus接続完了
 shortcut-manager.js:73 ⌨️ ShortcutManager Phase1.5ショートカット設定開始
 shortcut-manager.js:112 ⌨️ ShortcutManager ショートカット定義: [default] Ctrl+Z -> undo (アンドゥ)
@@ -200,273 +200,27 @@ app-core.js:756 ⌨️ ShortcutManager統合完了 - キーボードショート
 app-core.js:757 🎯 Phase1.5新Manager統合基盤確立完了（完全修正版）
 error-manager.js:38 💡 INFO: Phase1.5新Manager統合初期化完了 - 全機能統合完了（完全修正版） TegakiApplication.initialize
 app-core.js:83 ✅ TegakiApplication Phase1.5 新Manager統合初期化完了（完全修正版）
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
-tool-manager.js:422 ❌ PointerMove処理エラー [pen]: TypeError: this.coordinateManager.clientToCanvas is not a function
-    at PenTool.transformPoint (abstract-tool.js:274:47)
-    at PenTool.handleMouseMove (abstract-tool.js:218:30)
-    at ToolManager.handlePointerMove (tool-manager.js:420:38)
-    at TegakiApplication.handlePointerMove (app-core.js:505:29)
-    at HTMLCanvasElement.<anonymous> (app-core.js:429:64)
-handlePointerMove @ tool-manager.js:422
-handlePointerMove @ app-core.js:505
-(anonymous) @ app-core.js:429
+tool-manager.js:370 🖊️ PointerDown [pen]: {x: 191, y: 250.5}
+abstract-tool.js:196 🎯 AbstractTool pen マウスダウン: (-95, 154) - Phase1.5完全実装
+pen-tool.js:123 ✏️ ペン描画開始: layer=layer1, pos=(NaN, NaN)
+canvas-manager.js:168 ✅ Graphics added to layer: layer1 (layer children: 1)
+canvas-manager.js:171 🔧 Graphics Info: {visible: true, alpha: 1, x: 0, y: 0, width: 0, …}
+pen-tool.js:153 ✅ ペンGraphics追加成功: layer=layer1
+tool-manager.js:386 ❌ PointerDown処理エラー [pen]: TypeError: this.recordManager.startOperation is not a function
+    at PenTool.startDrawing (pen-tool.js:167:57)
+    at PenTool.handleMouseDown (abstract-tool.js:199:18)
+    at ToolManager.handlePointerDown (tool-manager.js:384:38)
+    at TegakiApplication.handlePointerDown (app-core.js:480:29)
+    at HTMLCanvasElement.<anonymous> (app-core.js:428:64)
+handlePointerDown @ tool-manager.js:386
+handlePointerDown @ app-core.js:480
+(anonymous) @ app-core.js:428
+tool-manager.js:387 Uncaught TypeError: this.recordManager.startOperation is not a function
+startDrawing @ pen-tool.js:167
+handleMouseDown @ abstract-tool.js:199
+handlePointerDown @ tool-manager.js:384
+handlePointerDown @ app-core.js:480
+(anonymous) @ app-core.js:428
+tool-manager.js:440 🖊️ PointerUp [pen]: {x: 190.5, y: 251}
+abstract-tool.js:257 🎯 AbstractTool pen マウスアップ: (-96, 154) - Phase1.5完全実装
+abstract-tool.js:313 🎯 AbstractTool pen 描画終了 - Phase1.5完全実装
