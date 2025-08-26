@@ -1,5 +1,5 @@
 /**
- * 🔄 RecordManager - Phase1.5スタブ実装版
+ * 🔄 RecordManager - Phase1.5スタブ実装版（PenTool対応修正版）
  * 📋 RESPONSIBILITY: Undo/Redo・操作履歴・非破壊編集・状態管理
  * 🚫 PROHIBITION: 描画処理・座標変換・UI制御・ツール実装
  * ✅ PERMISSION: 操作記録・状態スナップショット・EventBus通信・メモリ管理
@@ -7,6 +7,23 @@
  * 📏 DESIGN_PRINCIPLE: 非破壊編集・状態不変性・メモリ効率・EventBus連携
  * 🔄 INTEGRATION: Phase1.5基盤・EventBus必須・AbstractTool連携・全Manager対応
  * 🎯 Phase1.5: 基本Undo/Redo・操作記録基盤・Phase2準備
+ * 
+ * 🔧 使用メソッド一覧:
+ * - EventBus: on, emit (イベント通信)
+ * - console: log, warn, error (ログ出力)
+ * - Date: now (タイムスタンプ)
+ * - Array: push, splice, slice, map (履歴管理)
+ * - Math: max (履歴制限計算)
+ * 
+ * 🔄 処理フロー:
+ * 1. 初期化 → EventBus連携 → 初期状態記録
+ * 2. 操作開始 → startOperation → 操作記録開始
+ * 3. 操作実行 → recordAction → 履歴追加
+ * 4. 操作終了 → endOperation → 操作記録終了
+ * 5. Undo/Redo → 履歴移動 → EventBus通知
+ * 
+ * 🔗 依存Manager: EventBus（イベント通信）
+ * 📦 連携Tool: AbstractTool, PenTool, EraserTool
  */
 
 (function() {
@@ -29,6 +46,10 @@
             // 操作グループ管理（複数操作の束ね）
             this.currentGroup = null;
             this.grouping = false;
+            
+            // 現在進行中の操作管理（PenTool対応）
+            this.currentOperation = null;
+            this.operationInProgress = false;
             
             // 記録設定（Phase1.5基盤）
             this.enabled = true;
@@ -66,6 +87,95 @@
             console.log('✅ RecordManager 初期化完了 - Phase1.5スタブ版');
             
             return true;
+        }
+        
+        /**
+         * 操作開始記録（PenTool対応 - Phase1.5スタブ）
+         * @param {Object} operation - 操作情報
+         * @param {string} operation.type - 操作タイプ
+         * @param {string} operation.tool - ツール名
+         * @param {Object} operation.data - 操作データ
+         */
+        startOperation(operation) {
+            if (!this.enabled) {
+                console.warn('🔄 RecordManager.startOperation: 記録無効 - スキップ');
+                return;
+            }
+            
+            console.warn('🔄 RecordManager.startOperation stub called', operation);
+            
+            // Phase1.5スタブ実装 - 基本的な操作開始記録
+            this.currentOperation = {
+                id: `op_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                type: operation?.type || 'unknown',
+                tool: operation?.tool || 'unknown',
+                startTime: Date.now(),
+                startData: operation?.data || {},
+                completed: false
+            };
+            
+            this.operationInProgress = true;
+            
+            // Phase1.5: EventBus通知（スタブ）
+            if (this.eventBus) {
+                this.eventBus.emit('record:operation:started', {
+                    operation: this.currentOperation
+                });
+            }
+            
+            console.log('🔄 RecordManager 操作開始記録:', this.currentOperation.type, '- Phase1.5スタブ');
+        }
+        
+        /**
+         * 操作終了記録（PenTool対応 - Phase1.5スタブ）
+         * @param {Object} endData - 終了データ
+         */
+        endOperation(endData) {
+            if (!this.operationInProgress || !this.currentOperation) {
+                console.warn('🔄 RecordManager.endOperation: 進行中操作なし - スキップ');
+                return;
+            }
+            
+            console.warn('🔄 RecordManager.endOperation stub called', endData);
+            
+            // Phase1.5スタブ実装 - 基本的な操作終了記録
+            this.currentOperation.endTime = Date.now();
+            this.currentOperation.duration = this.currentOperation.endTime - this.currentOperation.startTime;
+            this.currentOperation.endData = endData || {};
+            this.currentOperation.completed = true;
+            
+            // 操作を履歴に追加
+            const historyRecord = {
+                type: 'operation',
+                timestamp: this.currentOperation.startTime,
+                description: `${this.currentOperation.tool}: ${this.currentOperation.type}`,
+                data: {
+                    operation: this.currentOperation,
+                    startData: this.currentOperation.startData,
+                    endData: this.currentOperation.endData
+                },
+                undoData: {
+                    // Phase2で実装予定: 実際のUndo情報
+                    operationId: this.currentOperation.id,
+                    type: this.currentOperation.type
+                }
+            };
+            
+            this.addToHistory(historyRecord);
+            
+            // Phase1.5: EventBus通知（スタブ）
+            if (this.eventBus) {
+                this.eventBus.emit('record:operation:completed', {
+                    operation: this.currentOperation,
+                    historyRecord
+                });
+            }
+            
+            console.log('🔄 RecordManager 操作終了記録:', this.currentOperation.type, '- Phase1.5スタブ');
+            
+            // 現在の操作をクリア
+            this.currentOperation = null;
+            this.operationInProgress = false;
         }
         
         /**
@@ -347,6 +457,20 @@
         }
         
         /**
+         * 現在の操作情報取得（PenTool対応）
+         */
+        getCurrentOperation() {
+            return this.currentOperation;
+        }
+        
+        /**
+         * 操作進行状況確認（PenTool対応）
+         */
+        isOperationInProgress() {
+            return this.operationInProgress;
+        }
+        
+        /**
          * 履歴情報取得（Phase1.5スタブ実装）
          */
         getHistoryInfo() {
@@ -358,7 +482,8 @@
                 memoryUsage: this.currentMemoryUsage,
                 memoryThreshold: this.memoryThreshold,
                 grouping: this.grouping,
-                enabled: this.enabled
+                enabled: this.enabled,
+                operationInProgress: this.operationInProgress
             };
         }
         
@@ -386,6 +511,8 @@
                 recording: this.recording,
                 grouping: this.grouping,
                 currentGroup: this.currentGroup,
+                currentOperation: this.currentOperation,
+                operationInProgress: this.operationInProgress,
                 historyLength: this.history.length,
                 currentIndex: this.currentIndex,
                 canUndo: this.canUndo(),
@@ -401,10 +528,11 @@
         getPhase15Status() {
             return {
                 phase: 'Phase1.5',
-                implementation: 'stub',
+                implementation: 'stub_with_pentool_support',
                 features: {
                     basicUndoRedo: 'stub',
-                    operationRecording: 'stub',
+                    operationRecording: 'stub_implemented',
+                    startEndOperation: 'implemented',
                     groupOperations: 'stub',
                     memoryManagement: 'stub',
                     eventBusIntegration: this.eventBus ? 'connected' : 'disconnected'
@@ -414,6 +542,10 @@
                     current: this.currentIndex,
                     maxSize: this.maxHistorySize,
                     memoryUsage: `${(this.currentMemoryUsage / 1024 / 1024).toFixed(2)}MB`
+                },
+                operations: {
+                    current: this.currentOperation?.type || 'none',
+                    inProgress: this.operationInProgress
                 },
                 nextStep: 'DetailedImplementation - 状態スナップショット・非破壊編集・メモリ最適化'
             };
@@ -427,7 +559,8 @@
     
     window.Tegaki.RecordManager = RecordManager;
     
-    console.log('🔄 RecordManager Phase1.5スタブ実装 - 名前空間登録完了');
-    console.log('🔧 次のステップ: 詳細実装・状態スナップショット・AbstractTool統合・メモリ最適化');
+    console.log('🔄 RecordManager Phase1.5スタブ実装（PenTool対応修正版） - 名前空間登録完了');
+    console.log('🔧 startOperation/endOperationメソッド実装完了 - PenToolエラー解決');
+    console.log('🔧 次のステップ: CoordinateManager NaN問題解決・詳細実装・AbstractTool統合・メモリ最適化');
     
 })();
