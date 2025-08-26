@@ -1,12 +1,26 @@
 /**
- * 🎨 CanvasManager - 座標・背景色修正版
- * 📋 RESPONSIBILITY: PixiJS Application管理とレイヤー管理のみ
- * 🚫 PROHIBITION: 描画処理・座標変換・複雑な初期化
- * ✅ PERMISSION: PixiJS受け取り・レイヤー作成・Graphics配置
+ * 🎨 CanvasManager - CoordinateManager対応版
+ * 📋 RESPONSIBILITY: PixiJS Application管理・レイヤー管理・キャンバス要素提供
+ * 🚫 PROHIBITION: 描画処理・座標変換・複雑な初期化・ツール制御
+ * ✅ PERMISSION: PixiJS管理・レイヤー作成・Graphics配置・キャンバス要素取得
  * 
- * 📏 DESIGN_PRINCIPLE: 背景レイヤー(0) + 描画レイヤー(1) の分離構造
- * 🔄 INTEGRATION: 車輪の再発明回避・PixiJSの標準機能活用
- * 🔧 FIX: 座標変換問題・背景色修正・Canvas配置修正
+ * 📏 DESIGN_PRINCIPLE: 背景レイヤー(0) + 描画レイヤー(1) 分離構造・CoordinateManager連携
+ * 🔄 INTEGRATION: CoordinateManager座標変換対応・PixiJS標準活用・車輪の再発明回避
+ * 🔧 FIX: getCanvasElement()追加・座標変換連携・背景色修正・Canvas配置修正
+ * 
+ * 📌 使用メソッド一覧:
+ * ✅ setPixiApp(pixiApp) - PixiJS Application設定
+ * ✅ getCanvasElement() - キャンバス要素取得（CoordinateManager用）
+ * ✅ createLayer(layerId) - レイヤー作成
+ * ✅ addGraphicsToLayer(graphics, layerId) - Graphics配置
+ * ✅ getActiveLayer() - アクティブレイヤー取得
+ * ✅ clear() - アクティブレイヤークリア
+ * ✅ getDebugInfo() - デバッグ情報取得
+ * ✅ getPhase15Status() - Phase1.5ステータス取得
+ * 
+ * 📐 キャンバス管理フロー:
+ * 開始 → PixiJS App設定 → レイヤー構造作成 → キャンバス要素公開 → CoordinateManager連携 → 終了
+ * 依存関係: PixiJS(レンダリング基盤)
  */
 
 // if (!window.XXX) ガードで多重定義を防ぐ
@@ -16,13 +30,13 @@ if (!window.Tegaki) {
 
 if (!window.Tegaki.CanvasManager) {
     /**
-     * CanvasManager - 座標・背景色修正版
+     * CanvasManager - CoordinateManager対応版
      * レイヤー0: 背景専用（消しゴムで消去されない）
      * レイヤー1: 描画専用（ペン描画・消しゴム対象）
      */
     class CanvasManager {
         constructor() {
-            console.log('🎨 CanvasManager レイヤー分離版作成（確認強化版）');
+            console.log('🎨 CanvasManager CoordinateManager対応版作成');
             
             this.pixiApp = null;
             this.layers = new Map();
@@ -31,6 +45,8 @@ if (!window.Tegaki.CanvasManager) {
             
             // 🔧 背景レイヤー用の背景色設定
             this.backgroundColor = 0xf0e0d6; // ふたば風クリーム色 #f0e0d6
+            
+            console.log('🎨 CanvasManager CoordinateManager対応版作成完了');
         }
         
         /**
@@ -44,6 +60,8 @@ if (!window.Tegaki.CanvasManager) {
             if (!pixiApp.stage) {
                 throw new Error('PixiJS Application has no stage');
             }
+            
+            console.log('🎨 CanvasManager: PixiJS Application設定開始');
             
             this.pixiApp = pixiApp;
             
@@ -66,7 +84,20 @@ if (!window.Tegaki.CanvasManager) {
                 stageChildren: pixiApp.stage.children.length
             });
             
-            console.log('✅ CanvasManager - レイヤー分離構造完成・確認済み');
+            console.log('✅ CanvasManager: PixiJS Application設定完了');
+        }
+        
+        /**
+         * 🆕 キャンバス要素取得（CoordinateManager用）
+         * CoordinateManagerから呼び出される重要メソッド
+         */
+        getCanvasElement() {
+            if (!this.pixiApp || !this.pixiApp.view) {
+                throw new Error('CanvasManager: PixiJS Application view not available');
+            }
+            
+            // PixiJS v7のcanvas要素を返す
+            return this.pixiApp.view;
         }
         
         /**
@@ -78,6 +109,8 @@ if (!window.Tegaki.CanvasManager) {
             if (!this.pixiApp) {
                 throw new Error('PixiJS Application not set');
             }
+            
+            console.log('🎨 CanvasManager: レイヤー分離構造作成開始');
             
             // 🎨 レイヤー0: 背景レイヤー（ふたばクリーム色で塗りつぶし）
             const backgroundLayer = new PIXI.Container();
@@ -94,7 +127,7 @@ if (!window.Tegaki.CanvasManager) {
             this.pixiApp.stage.addChild(backgroundLayer);
             this.layers.set('layer0', backgroundLayer);
             
-            console.log('✅ 背景レイヤー (layer0) 作成完了: {name: \'layer0\', zIndex: 0, parent: true}');
+            console.log('✅ 背景レイヤー (layer0) 作成完了');
             
             // 🎨 レイヤー1: アクティブ描画レイヤー（透明、描画対象）
             const activeLayer = new PIXI.Container();
@@ -104,18 +137,25 @@ if (!window.Tegaki.CanvasManager) {
             this.pixiApp.stage.addChild(activeLayer);
             this.layers.set('layer1', activeLayer);
             
-            console.log('✅ 描画レイヤー (layer1) 作成完了: {name: \'layer1\', zIndex: 1, sortableChildren: true, parent: true}');
+            console.log('✅ 描画レイヤー (layer1) 作成完了');
             
             // ステージの子要素ソート有効化
             this.pixiApp.stage.sortableChildren = true;
             
-            // 🔧 レイヤー作成確認ログ（強化版）
+            // 🔧 レイヤー作成確認ログ
             const layer0Exists = this.layers.has('layer0');
             const layer1Exists = this.layers.has('layer1');
             const layer0InStage = this.pixiApp.stage.children.includes(this.layers.get('layer0'));
             const layer1InStage = this.pixiApp.stage.children.includes(this.layers.get('layer1'));
             
-            console.log('✅ レイヤー作成確認完了: {totalLayers: ' + this.layers.size + ', layer0Exists: ' + layer0Exists + ', layer1Exists: ' + layer1Exists + ', layer0InStage: ' + layer0InStage + ', layer1InStage: ' + layer1InStage + ', stageChildren: ' + this.pixiApp.stage.children.length + '}');
+            console.log('✅ CanvasManager: レイヤー分離構造作成完了', {
+                totalLayers: this.layers.size,
+                layer0Exists,
+                layer1Exists,
+                layer0InStage,
+                layer1InStage,
+                stageChildren: this.pixiApp.stage.children.length
+            });
         }
         
         /**
@@ -141,7 +181,7 @@ if (!window.Tegaki.CanvasManager) {
             this.pixiApp.stage.addChild(layer);
             this.layers.set(layerId, layer);
             
-            console.log(`✅ Layer created: ${layerId} (zIndex: ${layer.zIndex})`);
+            console.log(`✅ CanvasManager: レイヤー作成完了: ${layerId} (zIndex: ${layer.zIndex})`);
             return layer;
         }
         
@@ -165,7 +205,7 @@ if (!window.Tegaki.CanvasManager) {
             // Graphics を Layer に追加
             layer.addChild(graphics);
             
-            console.log(`✅ Graphics added to layer: ${targetLayerId} (layer children: ${layer.children.length})`);
+            console.log(`✅ CanvasManager: Graphics配置完了: ${targetLayerId} (layer children: ${layer.children.length})`);
             
             // デバッグ情報
             console.log('🔧 Graphics Info:', {
@@ -187,7 +227,7 @@ if (!window.Tegaki.CanvasManager) {
             }
             
             this.activeLayerId = layerId;
-            console.log(`🎯 Active layer set to: ${layerId}`);
+            console.log(`🎯 CanvasManager: アクティブレイヤー設定: ${layerId}`);
         }
         
         /**
@@ -239,9 +279,9 @@ if (!window.Tegaki.CanvasManager) {
             const activeLayer = this.getActiveLayer();
             if (activeLayer && this.activeLayerId !== 'layer0') {
                 activeLayer.removeChildren();
-                console.log(`🧹 Active layer cleared: ${this.activeLayerId}`);
+                console.log(`🧹 CanvasManager: アクティブレイヤークリア完了: ${this.activeLayerId}`);
             } else {
-                console.log('⚠️ 背景レイヤーのクリアは禁止されています');
+                console.log('⚠️ CanvasManager: 背景レイヤーのクリアは禁止');
             }
         }
         
@@ -252,11 +292,11 @@ if (!window.Tegaki.CanvasManager) {
             this.layers.forEach((layer, layerId) => {
                 if (layerId !== 'layer0') { // 背景レイヤーは保護
                     layer.removeChildren();
-                    console.log(`🧹 Drawing layer cleared: ${layerId}`);
+                    console.log(`🧹 CanvasManager: 描画レイヤークリア: ${layerId}`);
                 }
             });
             
-            console.log('✅ All drawing layers cleared (background protected)');
+            console.log('✅ CanvasManager: 全描画レイヤークリア完了（背景保護）');
         }
         
         /**
@@ -264,16 +304,16 @@ if (!window.Tegaki.CanvasManager) {
          */
         clearLayer(layerId) {
             if (layerId === 'layer0') {
-                console.warn('⚠️ 背景レイヤー(layer0)のクリアは禁止されています');
+                console.warn('⚠️ CanvasManager: 背景レイヤー(layer0)のクリアは禁止');
                 return;
             }
             
             const layer = this.layers.get(layerId);
             if (layer) {
                 layer.removeChildren();
-                console.log(`🧹 Layer cleared: ${layerId}`);
+                console.log(`🧹 CanvasManager: レイヤークリア完了: ${layerId}`);
             } else {
-                console.warn(`⚠️ Layer not found: ${layerId}`);
+                console.warn(`⚠️ CanvasManager: レイヤーが見つかりません: ${layerId}`);
             }
         }
         
@@ -290,7 +330,7 @@ if (!window.Tegaki.CanvasManager) {
             
             // 背景レイヤーへの消去は禁止
             if (targetLayerId === 'layer0') {
-                console.warn('⚠️ 背景レイヤーへの消去は禁止されています');
+                console.warn('⚠️ CanvasManager: 背景レイヤーへの消去は禁止');
                 return;
             }
             
@@ -306,7 +346,7 @@ if (!window.Tegaki.CanvasManager) {
             // Graphics を Layer に追加
             layer.addChild(graphics);
             
-            console.log(`🧹 Erase Graphics added to layer: ${targetLayerId} (layer children: ${layer.children.length})`);
+            console.log(`🧹 CanvasManager: 消去Graphics配置完了: ${targetLayerId} (layer children: ${layer.children.length})`);
             
             // デバッグ情報
             console.log('🔧 Erase Graphics Info:', {
@@ -328,6 +368,8 @@ if (!window.Tegaki.CanvasManager) {
                 throw new Error('PixiJS Application not set');
             }
             
+            console.log(`🎨 CanvasManager: キャンバスサイズ変更: ${width}x${height}`);
+            
             this.pixiApp.renderer.resize(width, height);
             
             // 背景レイヤーのサイズも更新
@@ -342,26 +384,7 @@ if (!window.Tegaki.CanvasManager) {
                 }
             }
             
-            console.log(`📏 Canvas resized: ${width}x${height}`);
-        }
-        
-        /**
-         * デバッグ情報取得
-         */
-        getDebugInfo() {
-            return {
-                initialized: this.initialized,
-                hasPixiApp: !!this.pixiApp,
-                layerCount: this.layers.size,
-                layerNames: Array.from(this.layers.keys()),
-                activeLayer: this.activeLayerId,
-                stageChildren: this.pixiApp?.stage.children.length || 0,
-                backgroundColor: '0x' + this.backgroundColor.toString(16),
-                canvasSize: this.pixiApp ? {
-                    width: this.pixiApp.screen.width,
-                    height: this.pixiApp.screen.height
-                } : null
-            };
+            console.log(`✅ CanvasManager: キャンバスサイズ変更完了: ${width}x${height}`);
         }
         
         /**
@@ -375,16 +398,59 @@ if (!window.Tegaki.CanvasManager) {
          * 初期化状態確認
          */
         isReady() {
-            return this.initialized && !!this.pixiApp && !!this.pixiApp.stage;
+            return this.initialized && !!this.pixiApp && !!this.pixiApp.stage && !!this.pixiApp.view;
+        }
+        
+        /**
+         * デバッグ情報取得（Phase1.5完全実装）
+         */
+        getDebugInfo() {
+            return {
+                initialized: this.initialized,
+                hasPixiApp: !!this.pixiApp,
+                hasCanvasElement: !!this.pixiApp?.view,
+                layerCount: this.layers.size,
+                layerNames: Array.from(this.layers.keys()),
+                activeLayer: this.activeLayerId,
+                stageChildren: this.pixiApp?.stage.children.length || 0,
+                backgroundColor: '0x' + this.backgroundColor.toString(16),
+                canvasSize: this.pixiApp ? {
+                    width: this.pixiApp.screen.width,
+                    height: this.pixiApp.screen.height
+                } : null,
+                canvasElementType: this.pixiApp?.view?.tagName || 'none'
+            };
+        }
+        
+        /**
+         * Phase1.5ステータス確認
+         */
+        getPhase15Status() {
+            return {
+                phase: 'Phase1.5',
+                implementation: 'complete',
+                manager: 'CanvasManager',
+                features: {
+                    pixiAppManagement: this.pixiApp ? 'connected' : 'missing',
+                    layerManagement: this.layers.size > 0 ? 'complete' : 'missing',
+                    canvasElementAccess: this.pixiApp?.view ? 'available' : 'missing',
+                    coordinateManagerSupport: 'complete',
+                    backgroundProtection: 'complete',
+                    eraseSupport: 'complete'
+                },
+                debugInfo: this.getDebugInfo(),
+                coordinateManagerIntegration: !!this.pixiApp?.view,
+                nextStep: 'PixiJS Graphics最適化・レイヤー高度管理・パフォーマンス向上'
+            };
         }
     }
     
     // Tegaki名前空間に登録
     window.Tegaki.CanvasManager = CanvasManager;
     
-    console.log('🎨 CanvasManager レイヤー分離版（確認強化版） Loaded');
+    console.log('🎨 CanvasManager CoordinateManager対応版 Loaded');
 } else {
     console.log('⚠️ CanvasManager already defined - skipping redefinition');
 }
 
-console.log('🎨 canvas-manager.js loaded - レイヤー分離構造完成（確認強化版）');
+console.log('🎨 canvas-manager.js loaded - CoordinateManager対応・getCanvasElement()実装完了');

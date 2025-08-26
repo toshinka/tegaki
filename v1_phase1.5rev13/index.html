@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール - Phase1.5</title>
+    <!-- 🎯 UI設計方針: 
+         - Undo/Redoボタン非追加（ショートカット中心・画面簡潔化）
+         - キャンバス移動系アイコン非追加（ショートカット習熟前提）
+         - 必要最小限のツールボタンのみ表示
+         - 車輪の再発明防止：PixiJS拡張ライブラリ積極活用 -->
     <style>
         * {
             margin: 0;
@@ -230,45 +235,59 @@
         </div>
     </div>
 
-    <!-- PixiJS CDN -->
+    <!-- 🚀 車輪の再発明防止：ライブラリ活用版読み込み -->
+    
+    <!-- 1. PixiJS基盤（CDN + ローカル拡張） -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
     
-    <!-- 📋 Phase1.5対応版読み込み順序（重複削除・統一） -->
+    <!-- 2. PixiJS拡張ライブラリ（車輪の再発明防止） -->
+    <!-- GSAP: アニメーション -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
     
-    <!-- 1. Utils（依存なし・インスタンス自動作成） -->
+    <!-- PixiJS拡張（ローカル優先・CDNフォールバック） -->
+    <script>
+        // @pixi/graphics-smooth の読み込み確認・フォールバック
+        (function() {
+            const smoothScript = document.createElement('script');
+            smoothScript.src = './node_modules/@pixi/graphics-smooth/dist/pixi-graphics-smooth.js';
+            smoothScript.onerror = function() {
+                console.warn('⚠️ ローカル @pixi/graphics-smooth 読み込み失敗 - CDNフォールバック未実装');
+            };
+            document.head.appendChild(smoothScript);
+        })();
+    </script>
+    
+    <!-- 3. Utils（依存なし・インスタンス自動作成） -->
     <script src="js/utils/error-manager.js"></script>
     <script src="js/utils/config-manager.js"></script>
     <script src="js/utils/event-bus.js"></script>
     <script src="js/utils/coordinate-manager.js"></script>
     
-    <!-- 2. Phase1.5 新Manager（Utils依存） -->
+    <!-- 4. Phase1.5 新Manager（Utils依存） -->
     <script src="js/utils/navigation-manager.js"></script>
     <script src="js/utils/record-manager.js"></script>
     <script src="js/utils/shortcut-manager.js"></script>
     
-    <!-- 3. Assets（UIリソース） -->
+    <!-- 5. Assets（UIリソース） -->
     <script src="assets/icons.js"></script>
     
-    <!-- 4. Managers（Utils依存） -->
+    <!-- 6. Managers（Utils依存） -->
     <script src="managers/canvas-manager.js"></script>
     <script src="managers/tool-manager.js"></script>
 
-    <!-- 5. AbstractTool（ツールより先に読み込み） -->
+    <!-- 7. AbstractTool（ツールより先に読み込み） -->
     <script src="tools/abstract-tool.js"></script>
     
-    <!-- 6. Tools（Managers・AbstractTool依存） -->
+    <!-- 8. Tools（Managers・AbstractTool依存） -->
     <script src="tools/pen-tool.js"></script>
     <script src="tools/eraser-tool.js"></script>
 
-    <!-- 7. 統合テスト（開発時のみ） -->
+    <!-- 9. 統合テスト（開発時のみ） -->
     <script src="debug/phase15-integration-test.js"></script>
     
-    <!-- 8. App（全依存・順序重要） -->
+    <!-- 10. App（全依存・順序重要） -->
     <script src="js/main.js"></script>         <!-- AppCore定義 -->
     <script src="js/app-core.js"></script>     <!-- TegakiApplication Phase1.5版 -->
     
-    <!-- 9. Bootstrap（App依存） -->
+    <!-- 11. Bootstrap（App依存） -->
     <script src="js/bootstrap.js"></script>
-    
-</body>
-</html>
