@@ -4,13 +4,10 @@ config-manager.js:20 🔧 ConfigManager Simple 作成
 config-manager.js:229 🔧 ConfigManager Simple Loaded - シンプル設定管理
 event-bus.js:20 🔄 EventBus Simple 作成
 event-bus.js:97 🔄 EventBus Simple Loaded - シンプルイベント通信
-coordinate-manager.js:889 🎯 TegakiApplication Phase1.5 CoordinateManager完全修正版 Loaded
-coordinate-manager.js:892 🎯 TegakiApplication Phase1.5 CoordinateManager完全修正版 Loaded
-coordinate-manager.js:893 📏 CoordinateManager完全統合・座標変換修正・ペン描画修正
-coordinate-manager.js:894 🧭 ナビゲーション・非破壊編集・ショートカット統合
-coordinate-manager.js:895 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統合対応
-coordinate-manager.js:896 🔧 座標変換エラー完全修正・剛直構造実装・フォールバック削除
-coordinate-manager.js:897 🚀 app-core.js Phase1.5 CoordinateManager完全修正版 完成
+coordinate-manager.js:358 🎯 CoordinateManager Phase1.5 完全実装版 Loaded
+coordinate-manager.js:359 📏 機能: クライアント↔Canvas座標変換・境界判定・キャッシュ最適化
+coordinate-manager.js:360 🔧 特徴: 剛直構造・エラー隠蔽禁止・PixiJS標準活用・パフォーマンス最適化
+coordinate-manager.js:361 ✅ 準備完了: setCanvasManager()でCanvasManager設定後に利用可能
 navigation-manager.js:423 🧭 NavigationManager Phase1.5スタブ実装 - 名前空間登録完了
 navigation-manager.js:424 🔧 次のステップ: 詳細実装・CoordinateManager完全連携・パフォーマンス最適化
 record-manager.js:38 🔄 RecordManager Phase1.5 実用実装版 - 初期化開始
@@ -39,12 +36,22 @@ phase15-integration-test.js:594 📏 新Manager統合状況確認・機能テス
 phase15-integration-test.js:595 🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
 main.js:330 🎯 AppCore システム基盤 Loaded（ToolManager初期化修正版）
 main.js:335 🎯 main.js loaded - AppCore基盤システム完成（ToolManager初期化修正版）
-app-core.js:935 🎯 TegakiApplication Phase1.5 新Manager統合版（CoordinateManager修正版） Loaded
-app-core.js:936 📏 CoordinateManager完全統合・座標変換修正・ペン描画修正
-app-core.js:937 🧭 ナビゲーション・非破壊編集・ショートカット統合
-app-core.js:938 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統合対応
-app-core.js:939 🔧 座標変換エラー完全修正・剛直構造実装・フォールバック削除
-app-core.js:940 🚀 app-core.js Phase1.5 新Manager統合版（CoordinateManager修正版） 完成
+app-core.js:502 🎯 AppCore Phase1.5基盤システム Loaded - Manager統合基盤・初期化順序制御・CoordinateManager修正対応
+app-core.js:503 📏 機能: CanvasManager作成・ToolManager作成・PixiJS統合・Phase1.5Manager連携・システム基盤
+app-core.js:504 🔧 Phase1.5対応: CoordinateManager統合基盤・Manager連携・剛直構造・エラー隠蔽禁止
+app-core.js:505 🚀 システム基盤確立完了 - Manager統合・初期化順序制御・Phase1.5完全対応
+tegaki-application.js:900 🎯 TegakiApplication Phase1.5 メインアプリケーション Loaded
+tegaki-application.js:901 📏 CoordinateManager完全統合・座標変換修正・ペン描画修正
+tegaki-application.js:902 🧭 ナビゲーション・非破壊編集・ショートカット統合
+tegaki-application.js:903 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統合対応
+tegaki-application.js:904 🔧 座標変換エラー完全修正・剛直構造実装・フォールバック削除
+tegaki-application.js:905 🚀 TegakiApplication Phase1.5 メインアプリケーション 完成
+tegaki-application.js:908 🎯 TegakiApplication Phase1.5 メインアプリケーション Loaded
+tegaki-application.js:909 📏 CoordinateManager完全統合・座標変換修正・ペン描画修正
+tegaki-application.js:910 🧭 ナビゲーション・非破壊編集・ショートカット統合
+tegaki-application.js:911 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統合対応
+tegaki-application.js:912 🔧 座標変換エラー完全修正・剛直構造実装・フォールバック削除
+tegaki-application.js:913 🚀 TegakiApplication Phase1.5 メインアプリケーション 完成
 bootstrap.js:15 🚀 Bootstrap Phase1.5 - 新Manager統合対応版
 bootstrap.js:168 ⏳ DOM Loading - DOMContentLoaded待機中...
 bootstrap.js:182 🎯 Bootstrap Phase1.5 registered - 新Manager統合対応版
@@ -57,46 +64,121 @@ bootstrap.js:50 ✅ ToolManager: 利用可能
 bootstrap.js:50 ✅ ErrorManager: 利用可能
 bootstrap.js:50 ✅ ConfigManager: 利用可能
 bootstrap.js:50 ✅ EventBus: 利用可能
-bootstrap.js:53 ⚠️ CoordinateManager: 未定義または無効
-validatePhase15Dependencies @ bootstrap.js:53
-executeBootstrap @ bootstrap.js:93
+bootstrap.js:50 ✅ CoordinateManager: 利用可能
 bootstrap.js:50 ✅ NavigationManager: 利用可能
 bootstrap.js:50 ✅ RecordManager: 利用可能
 bootstrap.js:50 ✅ ShortcutManager: 利用可能
 bootstrap.js:50 ✅ PenTool: 利用可能
 bootstrap.js:50 ✅ EraserTool: 利用可能
-bootstrap.js:57 📊 依存関係確認結果: 12/13 クラス利用可能
-bootstrap.js:60 ⚠️ 未完成のManagerクラス: CoordinateManager
-validatePhase15Dependencies @ bootstrap.js:60
-executeBootstrap @ bootstrap.js:93
-bootstrap.js:61 🔧 Phase1.5実装途中の場合は正常です
-validatePhase15Dependencies @ bootstrap.js:61
-executeBootstrap @ bootstrap.js:93
+bootstrap.js:57 📊 依存関係確認結果: 13/13 クラス利用可能
 bootstrap.js:97 🎨 TegakiApplication インスタンス化開始...
-coordinate-manager.js:37 🎯 TegakiApplication Phase1.5 CoordinateManager完全修正版 作成・自動初期化開始
-coordinate-manager.js:66 🚀 TegakiApplication Phase1.5 CoordinateManager完全修正版初期化開始
-coordinate-manager.js:102 🆕 Phase1.5新Manager初期化開始...
-coordinate-manager.js:109 ❌ CoordinateManager未実装 - Phase1.5で必須
-initializePhase15Managers @ coordinate-manager.js:109
-initialize @ coordinate-manager.js:69
-TegakiApplication @ coordinate-manager.js:50
-executeBootstrap @ bootstrap.js:98
-bootstrap.js:107 🔧 Phase1.5 開発版 - 一部Manager実装中
-bootstrap.js:108 📋 実装済み: TegakiApplication, AppCore, CanvasManager, ToolManager, ErrorManager, ConfigManager, EventBus, NavigationManager, RecordManager, ShortcutManager, PenTool, EraserTool
-bootstrap.js:109 ⚠️ 未実装: CoordinateManager
+tegaki-application.js:47 🎯 TegakiApplication Phase1.5 メインアプリケーション 作成・自動初期化開始
+tegaki-application.js:76 🚀 TegakiApplication Phase1.5 CoordinateManager完全修正版初期化開始
+tegaki-application.js:112 🆕 Phase1.5新Manager初期化開始...
+coordinate-manager.js:40 🎯 CoordinateManager Phase1.5 完全実装版 作成開始
+coordinate-manager.js:50 ✅ CoordinateManager Phase1.5 完全実装版 作成完了
+coordinate-manager.js:52 🎯 CoordinateManager Phase1.5 完全実装版 - 自動デバッグテスト実行
+tegaki-application.js:117 ✅ CoordinateManager初期化完了
+record-manager.js:38 🔄 RecordManager Phase1.5 実用実装版 - 初期化開始
+record-manager.js:58 🔄 RecordManager 実用実装完了
+tegaki-application.js:126 ✅ RecordManager初期化完了
+navigation-manager.js:20 🧭 NavigationManager Phase1.5スタブ実装 - 初期化開始
+navigation-manager.js:43 🧭 NavigationManager スタブ実装完了
+tegaki-application.js:138 ✅ NavigationManager初期化完了
+shortcut-manager.js:20 ⌨️ ShortcutManager Phase1.5スタブ実装 - 初期化開始
+shortcut-manager.js:41 ⌨️ ShortcutManager スタブ実装完了
+tegaki-application.js:151 ✅ ShortcutManager初期化完了
+tegaki-application.js:156 🆕 Phase1.5新Manager初期化完了
+main.js:24 🎯 AppCore 基盤システム作成（ToolManager初期化修正版）
+canvas-manager.js:39 🎨 CanvasManager CoordinateManager対応版作成
+canvas-manager.js:49 🎨 CanvasManager CoordinateManager対応版作成完了
+main.js:44 ✅ CanvasManager 作成完了
+bootstrap.js:105 ✅ Phase1.5 完全版 - 全Manager統合済み
 bootstrap.js:112 ✅ Bootstrap完了 - Tegakiアプリケーション開始完了
-coordinate-manager.js:51 💀 TegakiApplication 初期化失敗: Error: CoordinateManager not available - required for Phase1.5
-    at TegakiApplication.initializePhase15Managers (coordinate-manager.js:110:23)
-    at TegakiApplication.initialize (coordinate-manager.js:69:18)
-    at new TegakiApplication (coordinate-manager.js:50:18)
-    at HTMLDocument.executeBootstrap (bootstrap.js:98:31)
-(anonymous) @ coordinate-manager.js:51
-Promise.catch
-TegakiApplication @ coordinate-manager.js:50
-executeBootstrap @ bootstrap.js:98
-error-manager.js:38 🔥 CRITICAL: TegakiApplication初期化失敗: CoordinateManager not available - required for Phase1.5 TegakiApplication.constructor
-coordinate-manager.js:110 Uncaught (in promise) Error: CoordinateManager not available - required for Phase1.5
-initializePhase15Managers @ coordinate-manager.js:110
-initialize @ coordinate-manager.js:69
-TegakiApplication @ coordinate-manager.js:50
-executeBootstrap @ bootstrap.js:98
+tegaki-application.js:172 ✅ AppCore初期化完了（CanvasManagerのみ）
+canvas-manager.js:64 🎨 CanvasManager: PixiJS Application設定開始
+canvas-manager.js:113 🎨 CanvasManager: レイヤー分離構造作成開始
+canvas-manager.js:130 ✅ 背景レイヤー (layer0) 作成完了
+canvas-manager.js:140 ✅ 描画レイヤー (layer1) 作成完了
+canvas-manager.js:151 ✅ CanvasManager: レイヤー分離構造作成完了 {totalLayers: 2, layer0Exists: true, layer1Exists: true, layer0InStage: true, layer1InStage: true, …}
+canvas-manager.js:78 🎨 PixiJS Application Info: {width: 400, height: 400, renderer: 1, view: true, stage: true, …}
+canvas-manager.js:87 ✅ CanvasManager: PixiJS Application設定完了
+main.js:90 ✅ レイヤー構造確認完了: {layer0: true, layer1: true, activeLayer: 'layer1'}
+main.js:67 ✅ AppCore - PixiJS Application設定・レイヤー確認完了
+tegaki-application.js:225 ✅ PixiJS Canvas作成・配置・CanvasManager設定完了
+tegaki-application.js:226 📏 Canvas設定: 400x400px, resolution=1, autoDensity=false
+tegaki-application.js:233 🆕 Phase1.5新ManagerにCanvasManager設定開始...
+coordinate-manager.js:86 🔧 CoordinateManager - CanvasManager設定開始
+coordinate-manager.js:95 ✅ CoordinateManager - CanvasManager設定完了
+tegaki-application.js:246 ✅ CoordinateManager - CanvasManager設定完了
+tegaki-application.js:262 🆕 Phase1.5新Manager CanvasManager設定完了
+tegaki-application.js:269 🔧 ToolManager初期化開始 - Phase1.5 Manager統合版
+main.js:113 🔧 ToolManager初期化開始（Phase1.5 Manager統合修正版）...
+tool-manager.js:30 🖊️ ToolManager Phase1.5完全修正版作成（ツール有効化処理修正）
+tool-manager.js:145 ✅ 必要レイヤー確認完了: {layer0Exists: true, layer1Exists: true, layer0InStage: true, layer1InStage: true}
+tool-manager.js:66 🖊️ ToolManager - CanvasManager設定・レイヤー確認完了
+main.js:119 ✅ ToolManager - CanvasManager設定完了
+main.js:123 🔧 ToolManager基本設定完了 - Phase1.5 Manager統合はapp-coreで実行予定
+main.js:138 🔍 ToolManager基本初期化確認開始...
+main.js:152 ✅ ToolManager基本初期化確認完了
+main.js:131 ✅ ToolManager 基本初期化完了（Phase1.5 Manager統合修正版）
+tegaki-application.js:285 🔧 Phase1.5 Manager群設定: {coordinateManager: true, recordManager: true, eventBus: true}
+tool-manager.js:73 🆕 ToolManager Phase1.5 Manager群設定開始...
+tool-manager.js:78 ✅ ToolManager - CoordinateManager設定完了
+tool-manager.js:86 ✅ ToolManager - RecordManager設定完了
+tool-manager.js:94 ✅ ToolManager - EventBus設定完了
+tool-manager.js:100 🆕 ToolManager Phase1.5 Manager群設定完了
+tegaki-application.js:292 ✅ ToolManager - Phase1.5 Manager群設定完了
+tool-manager.js:108 🔄 ToolManager - RecordManager設定完了（app-core経由）
+tegaki-application.js:300 ✅ ToolManager - RecordManager接続完了（互換性）
+tegaki-application.js:307 ✅ ToolManager初期化完了（Phase1.5 Manager統合版・CoordinateManager完全修正）
+tegaki-application.js:314 🆕 Phase1.5機能統合開始...
+navigation-manager.js:347 ✅ NavigationManager 有効化完了
+tegaki-application.js:319 ✅ ナビゲーション機能有効化完了
+shortcut-manager.js:48 ⌨️ ShortcutManager 初期化 - Phase1.5スタブ版
+shortcut-manager.js:141 ⌨️ ShortcutManager イベントリスナー設定 - Phase1.5スタブ
+shortcut-manager.js:161 ⌨️ ShortcutManager イベントリスナー設定完了 - Phase1.5スタブ
+shortcut-manager.js:170 ⌨️ ShortcutManager EventBus連携設定 - Phase1.5スタブ
+shortcut-manager.js:182 ⌨️ ShortcutManager EventBus連携設定完了 - Phase1.5スタブ
+shortcut-manager.js:64 ✅ ShortcutManager 初期化完了 - Phase1.5スタブ版
+tegaki-application.js:327 ✅ ShortcutManager - EventBus接続完了
+shortcut-manager.js:73 ⌨️ ShortcutManager Phase1.5ショートカット設定開始
+shortcut-manager.js:112 ⌨️ ShortcutManager ショートカット定義: [default] Ctrl+Z -> undo (アンドゥ)
+shortcut-manager.js:112 ⌨️ ShortcutManager ショートカット定義: [default] Ctrl+Y -> redo (リドゥ)
+shortcut-manager.js:112 ⌨️ ShortcutManager ショートカット定義: [default] KeyP -> tool:pen (ペンツール)
+shortcut-manager.js:112 ⌨️ ShortcutManager ショートカット定義: [default] KeyE -> tool:eraser (消しゴムツール)
+shortcut-manager.js:112 ⌨️ ShortcutManager ショートカット定義: [default] Space -> navigation:pan (パンモード)
+shortcut-manager.js:112 ⌨️ ShortcutManager ショートカット定義: [default] Ctrl+Digit0 -> navigation:reset (ビューリセット)
+shortcut-manager.js:98 ✅ ShortcutManager Phase1.5ショートカット設定完了
+tegaki-application.js:333 ✅ ShortcutManager - Phase1.5ショートカット設定完了
+shortcut-manager.js:125 ✅ ShortcutManager 機能有効化完了
+tegaki-application.js:339 ✅ ShortcutManager - 機能有効化完了
+tegaki-application.js:343 🆕 Phase1.5機能統合完了
+tegaki-application.js:401 ✅ Canvasイベント設定完了（Phase1.5・CoordinateManager完全修正）
+tegaki-application.js:556 ✅ ツールボタン設定完了
+tegaki-application.js:592 ✅ Undo/Redoボタン設定完了
+icons.js:176 ✅ Icon replaced: download-tool → download
+icons.js:176 ✅ Icon replaced: resize-tool → resize
+icons.js:176 ✅ Icon replaced: palette-tool → palette
+icons.js:176 ✅ Icon replaced: pen-tool → pen
+icons.js:176 ✅ Icon replaced: eraser-tool → eraser
+icons.js:176 ✅ Icon replaced: fill-tool → fill
+icons.js:176 ✅ Icon replaced: select-tool → select
+icons.js:176 ✅ Icon replaced: layers-tool → layers
+icons.js:176 ✅ Icon replaced: settings-tool → settings
+icons.js:197 🎨 Icon internalization completed: 9 success, 0 errors
+tegaki-application.js:623 ✅ アイコン設定完了（TegakiIcons.replaceAllToolIcons）
+tegaki-application.js:356 ✅ UI設定完了
+main.js:166 ✅ AppCore システム開始完了
+tegaki-application.js:739 🎉 TegakiApplication Phase1.5 CoordinateManager完全修正版初期化成功！
+tegaki-application.js:740 📏 CoordinateManager完全統合完了 - 座標変換・ペン描画修正
+tegaki-application.js:741 🧭 NavigationManager統合完了 - パン・ズーム対応
+tegaki-application.js:742 🔄 RecordManager統合完了 - Undo/Redo対応
+tegaki-application.js:743 ⌨️ ShortcutManager統合完了 - キーボードショートカット対応
+tegaki-application.js:744 🎯 Phase1.5新Manager統合基盤確立完了（CoordinateManager完全修正版）
+error-manager.js:38 💡 INFO: Phase1.5完全修正版初期化完了 - CoordinateManager修正・ペン描画修正完了 TegakiApplication.initialize
+tegaki-application.js:105 ✅ TegakiApplication Phase1.5 CoordinateManager完全修正版初期化完了
+tool-manager.js:366 ⚠️ アクティブツールがありません
+handlePointerDown @ tool-manager.js:366
+handlePointerDown @ tegaki-application.js:423
+(anonymous) @ tegaki-application.js:370

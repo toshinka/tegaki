@@ -1,0 +1,249 @@
+# 🚀 Phase1.5 Evolution Plan v7 - 根本構造修正版
+
+> **現状問題**: CoordinateManager未実装・ファイル構造混乱・キャンバス描画不可  
+> **修正方針**: 根本構造修正・シンプル化・動作優先
+
+## 🚨 現状問題分析（console.txtより）
+
+### 💀 致命的問題
+1. **CoordinateManager未実装** - `coordinate-manager.js`に`TegakiApplication`が混入
+2. **ファイル構造混乱** - 同じクラスが複数ファイルに存在
+3. **キャンバス未表示** - 基本描画機能が動作しない
+4. **過度な複雑化** - シンプルなペン描画が複雑な構造に
+
+### ⚠️ 構造問題
+- `js/utils/coordinate-manager.js` ← TegakiApplicationが定義されている（間違い）
+- `js/tegaki-application.js` ← 正しいTegakiApplicationがある
+- Phase1.5新Managerが実装途中で依存関係が破綻
+
+## 🎯 修正戦略（v7版）
+
+### 📋 修正優先順位
+1. **🔥 緊急修正**: CoordinateManager正しい実装
+2. **🔧 構造修正**: ファイル配置整理・重複削除
+3. **✅ 動作確認**: 基本ペン描画復旧
+4. **🚀 機能統合**: Phase1.5新Manager段階的統合
+
+### 🏗️ 新アーキテクチャ（簡素化）
+
+```
+📁 v1_phase1.5rev16/ （修正版）
+├── 🎯 基本システム（動作必須）
+│   ├── js/bootstrap.js （初期化制御）
+│   ├── js/main.js （エントリーポイント）
+│   ├── js/app-core.js （システム基盤）
+│   └── js/tegaki-application.js （メインアプリ）
+│
+├── 🔧 ユーティリティ（基盤）
+│   ├── js/utils/error-manager.js
+│   ├── js/utils/config-manager.js
+│   ├── js/utils/event-bus.js
+│   └── js/utils/coordinate-manager.js （✅修正：CoordinateManagerのみ）
+│
+├── 🎨 基本Manager（必須）
+│   ├── managers/canvas-manager.js
+│   └── managers/tool-manager.js
+│
+├── 🖊️ 基本ツール（必須）
+│   ├── tools/abstract-tool.js
+│   ├── tools/pen-tool.js
+│   └── tools/eraser-tool.js
+│
+└── 🆕 Phase1.5 Manager（段階実装）
+    ├── js/utils/navigation-manager.js （スタブ→実装）
+    ├── js/utils/record-manager.js （実装済み）
+    └── js/utils/shortcut-manager.js （スタブ→実装）
+```
+
+## 🔧 修正手順（段階的アプローチ）
+
+### Phase A: 緊急修正（CoordinateManager実装）
+1. **✅ 完了**: `coordinate-manager.js`の正しい実装
+2. **🔄 実行中**: ファイル構造確認・重複削除
+3. **📋 次**: 基本動作確認
+
+### Phase B: 基本機能復旧
+1. Canvas表示確認
+2. ペン描画機能確認
+3. ツール切り替え確認
+4. エラー処理確認
+
+### Phase C: Phase1.5機能統合
+1. NavigationManager実装
+2. ShortcutManager実装
+3. 機能統合テスト
+
+## 📌 修正ファイル一覧
+
+### 🔥 緊急修正ファイル
+
+#### ✅ `js/utils/coordinate-manager.js`
+**現状**: TegakiApplicationクラスが定義されている（間違い）  
+**修正**: CoordinateManagerクラスのみ実装  
+**機能**: クライアント↔Canvas座標変換・境界判定
+
+```javascript
+class CoordinateManager {
+    setCanvasManager(canvasManager)
+    clientToCanvas(clientX, clientY)
+    canvasToClient(canvasX, canvasY) 
+    isInsideCanvas(canvasX, canvasY)
+    getCanvasBounds()
+    getDebugInfo()
+}
+```
+
+#### 🔧 `js/tegaki-application.js`（確認・調整）
+**現状**: 正しいTegakiApplicationが実装済み  
+**確認**: CoordinateManager依存部分の動作確認
+
+#### 🔧 `js/bootstrap.js`（確認）
+**現状**: Phase1.5依存関係確認済み  
+**確認**: CoordinateManager利用可能性確認
+
+### 📋 段階実装ファイル
+
+#### 🆕 NavigationManagerスタブ→実装
+```javascript
+class NavigationManager {
+    constructor(config) // coordinateManager, recordManager
+    enable()
+    handleMouseWheelZoom(event)
+    startPan(x, y)
+    setCanvasManager(canvasManager)
+    getDebugInfo()
+}
+```
+
+#### 🆕 ShortcutManagerスタブ→実装
+```javascript
+class ShortcutManager {
+    constructor(config) // navigationManager, recordManager, appInstance
+    initialize(eventBus)
+    setupPhase15Shortcuts()
+    enable()
+    getDebugInfo()
+}
+```
+
+## 🧪 動作確認チェックリスト
+
+### ✅ Phase A: 基本動作確認
+- [ ] CoordinateManagerクラスが正しく定義されている
+- [ ] bootstrap.jsでCoordinateManager利用可能確認
+- [ ] TegakiApplication初期化成功
+- [ ] Canvasが画面に表示される
+
+### ✅ Phase B: 描画機能確認
+- [ ] マウス座標が正しく変換される
+- [ ] ペンツールで描画できる
+- [ ] 消しゴムツールで消去できる
+- [ ] ツール切り替えが動作する
+
+### ✅ Phase C: Phase1.5機能確認
+- [ ] NavigationManager機能動作
+- [ ] RecordManager Undo/Redo動作
+- [ ] ShortcutManager ショートカット動作
+
+## 🎨 UI/UX改善項目
+
+### 基本UI（Phase1.5完成目標）
+- ✅ Canvas表示・描画
+- ✅ ツールボタン・切り替え
+- ✅ 座標表示・ステータス
+- ⚠️ Undo/Redoやキャンバス操作のボタンはUI簡素化の為ショートカットのみ運用
+- 🆕 ズーム・パン操作
+- 🆕 キーボードショートカット
+
+### デバッグ・開発支援
+- ✅ 統合テスト機能（`window.Tegaki.runPhase15Test()`）
+- ✅ デバッグ情報取得
+- 🔧 エラー処理・ログ
+
+## 📚 技術方針（v7修正）
+
+### ✅ 継続方針（変更なし）
+- **PixiJS v7**: 描画基盤
+- **ES2023**: モダンJavaScript
+- **HTML直開き**: ビルドプロセスなし
+- **剛直原則**: エラー隠蔽禁止
+
+### 🔄 修正方針（v7新規）
+- **段階実装**: 動作優先・機能追加は後
+- **構造簡素化**: 過度な抽象化を避ける
+- **依存関係明確化**: Manager間の依存を明示
+- **フォールバック削除**: 正常動作のみ実装
+
+### 🚫 禁止事項（強化）
+- **車輪の再発明**: PixiJS標準機能を積極活用
+- **ファイル構造混乱**: 1ファイル1クラス厳守
+- **フォールバック**: 異常動作時は明確にエラー
+- **責務混在**: Manager・Tool・UIの責務分離
+
+## 🗓️ 実装スケジュール
+
+### Week 1: 緊急修正（現在）
+- [x] CoordinateManager正しい実装
+- [ ] ファイル構造修正
+- [ ] 基本動作確認
+
+### Week 2: 機能復旧
+- [ ] Canvas描画確認
+- [ ] ペン・消しゴム動作確認
+- [ ] UI操作確認
+
+### Week 3: Phase1.5完成
+- [ ] NavigationManager実装
+- [ ] ShortcutManager実装
+- [ ] 統合テスト完了
+
+## 🔍 品質保証
+
+### コード品質
+- **ESLint準拠**: モダンJavaScript構文
+- **JSDoc完備**: 全メソッドにドキュメント
+- **デバッグ対応**: getDebugInfo実装必須
+
+### 動作品質
+- **ブラウザテスト**: Chrome/Firefox/Safari
+- **パフォーマンス**: 60fps描画維持
+- **エラー処理**: 適切な例外処理・ログ
+
+### 開発品質
+- **段階的実装**: 動作確認しながら機能追加
+- **依存関係管理**: Manager初期化順序厳守
+- **統合テスト**: phase15-integration-test.js活用
+
+## 📈 次Phase準備（Phase2.0展望）
+
+### Phase2.0目標機能
+- **レイヤー機能**: LayerManager実装
+- **選択ツール**: SelectTool・TransformTool
+- **高度な編集**: 変形・フィルター
+
+### 技術基盤準備
+- **レイヤー管理**: PixiJS Container活用
+- **変形機能**: PixiJS Transform活用
+- **ファイル入出力**: 画像読み込み・保存
+
+---
+
+## 📋 修正作業メモ
+
+### ✅ 完了作業
+- CoordinateManagerクラス実装（正しい座標変換機能）
+
+### 🔄 実行中作業
+- ファイル構造確認
+- 重複削除作業
+
+### 📋 次回作業予定
+1. 修正されたcoordinate-manager.jsでの動作確認
+2. Canvas表示・描画機能テスト
+3. 必要に応じてNavigationManager・ShortcutManagerスタブ実装
+
+---
+
+**🎯 最終目標**: シンプルで動作するペン描画アプリケーション  
+**📏 品質基準**: エラーなし・60fps描画・直感的操作  
+**🔧 開発方針**: 段階的実装・動作優先・品質重視
