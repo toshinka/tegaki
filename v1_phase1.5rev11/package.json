@@ -11,6 +11,7 @@
   "description": "",
   "dependencies": {
     "@pixi/gif": "^2.1.1",
+    "@pixi/graphics-smooth": "^1.1.1",
     "@pixi/layers": "^2.1.0",
     "@pixi/text-bitmap": "^7.4.3",
     "@pixi/ui": "^1.2.4",
