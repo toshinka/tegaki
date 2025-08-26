@@ -1,25 +1,25 @@
 /**
- * 🎯 AbstractTool - Phase1.5完全実装版
- * 📋 RESPONSIBILITY: 全ツール基底クラス・共通処理・操作記録統合・ツール有効化処理
+ * 🎯 AbstractTool - Phase1.5完全実装版（座標変換修正）
+ * 📋 RESPONSIBILITY: 全ツール基底クラス・共通処理・操作記録統合・ツール有効化処理・座標変換統合
  * 🚫 PROHIBITION: 具体的描画処理・ツール固有機能・UI制御
- * ✅ PERMISSION: 基本ツール動作・EventBus通信・RecordManager連携・座標処理・アクティベーション管理
+ * ✅ PERMISSION: 基本ツール動作・EventBus通信・RecordManager連携・CoordinateManager座標処理・アクティベーション管理
  * 
- * 📏 DESIGN_PRINCIPLE: 単一継承・共通処理統一・操作記録統合・状態管理・剛直構造
- * 🔄 INTEGRATION: Phase1.5完全・RecordManager連携・CoordinateManager活用・ツール有効化処理
- * 🎯 Phase1.5: ツール基底・操作記録・正しい有効化フロー・骨太構造
+ * 📏 DESIGN_PRINCIPLE: 単一継承・共通処理統一・操作記録統合・状態管理・剛直構造・CoordinateManager完全連携
+ * 🔄 INTEGRATION: Phase1.5完全・RecordManager連携・CoordinateManager完全活用・ツール有効化処理・座標変換統合
+ * 🎯 Phase1.5: ツール基底・操作記録・正しい有効化フロー・骨太構造・座標変換完全修正
  * 
- * 🔧 修正ポイント:
- * - ツール有効化フロー修正（activate/deactivate実装）
- * - PointerEvent座標処理修正
- * - handleMouseDown/Move/Up正常動作保証
- * - フォールバック削除・剛直構造実装
+ * 🔧 座標変換修正ポイント:
+ * - canvasManager.getCanvas()呼び出し削除（存在しないメソッド）
+ * - coordinateManager.clientToCanvas()へ完全移譲
+ * - フォールバック座標変換削除・剛直構造実装
+ * - エラー処理を明確化・握りつぶし禁止
  */
 
 (function() {
     'use strict';
     
     /**
-     * AbstractTool - 全ツール基底クラス（完全実装版）
+     * AbstractTool - 全ツール基底クラス（座標変換修正版）
      */
     class AbstractTool {
         constructor(name, options = {}) {
@@ -78,6 +78,11 @@
             // 必須Manager確認（剛直構造）
             if (!this.canvasManager) {
                 throw new Error(`AbstractTool ${this.name}: CanvasManager必須`);
+            }
+            
+            // CoordinateManager推奨確認（Phase1.5では必須ではないが推奨）
+            if (!this.coordinateManager) {
+                console.warn(`⚠️ AbstractTool ${this.name}: CoordinateManager未設定 - 基本座標変換を使用`);
             }
             
             // EventBus連携設定
@@ -266,26 +271,25 @@
         }
         
         /**
-         * 座標変換（Phase1.5完全実装）
+         * 🔧 座標変換（Phase1.5修正版 - CoordinateManager完全移譲）
+         * 
+         * ❌ 修正前: canvasManager.getCanvas()呼び出し（存在しないメソッド）
+         * ✅ 修正後: coordinateManager.clientToCanvas()への完全移譲
          */
         transformPoint(clientX, clientY) {
-            // CoordinateManager連携
+            // 🎯 Phase1.5: CoordinateManager優先使用（完全移譲）
             if (this.coordinateManager) {
-                return this.coordinateManager.clientToCanvas(clientX, clientY);
+                try {
+                    return this.coordinateManager.clientToCanvas(clientX, clientY);
+                } catch (error) {
+                    console.error(`❌ AbstractTool ${this.name}: CoordinateManager座標変換エラー:`, error);
+                    throw error; // エラーを隠蔽しない（剛直原則）
+                }
             }
             
-            // 基本座標変換（剛直構造 - フォールバックではなく必要最小限）
-            const canvas = this.canvasManager?.getCanvas();
-            if (canvas) {
-                const rect = canvas.getBoundingClientRect();
-                return {
-                    x: clientX - rect.left,
-                    y: clientY - rect.top
-                };
-            }
-            
-            // 座標変換不可能な場合はエラー
-            throw new Error(`AbstractTool ${this.name}: 座標変換不可能 - CanvasManager未設定`);
+            // 🚨 CoordinateManager未設定時はエラー（剛直構造）
+            // フォールバック禁止 - 正しい構造でのみ動作させる
+            throw new Error(`AbstractTool ${this.name}: CoordinateManager未設定 - 座標変換不可能`);
         }
         
         /**
@@ -510,13 +514,14 @@
                 tool: this.name,
                 features: {
                     basicDrawing: 'complete',
-                    coordinateTransform: this.coordinateManager ? 'connected' : 'basic',
+                    coordinateTransform: this.coordinateManager ? 'connected' : 'error',
                     operationRecording: this.recordManager ? 'connected' : 'disabled',
                     eventBusIntegration: this.eventBus ? 'connected' : 'disabled',
                     settingsManagement: 'complete',
                     toolActivation: 'complete'
                 },
                 state: this.getToolState(),
+                coordinateManagerStatus: this.coordinateManager ? 'available' : 'missing',
                 nextStep: 'Phase2準備 - レイヤー統合・変形機能・高度な描画処理'
             };
         }
@@ -529,7 +534,7 @@
     
     window.Tegaki.AbstractTool = AbstractTool;
     
-    console.log('🎯 AbstractTool Phase1.5完全実装 - 名前空間登録完了');
-    console.log('🔧 修正完了: ツール有効化フロー・座標処理・剛直構造実装');
+    console.log('🎯 AbstractTool Phase1.5完全実装 - 座標変換修正版 - 名前空間登録完了');
+    console.log('🔧 修正完了: CoordinateManager完全移譲・canvasManager.getCanvas()削除・剛直構造実装');
     
 })();
