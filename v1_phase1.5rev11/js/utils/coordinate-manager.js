@@ -1,31 +1,34 @@
 /**
- * 📐 CoordinateManager - キャンバス外描画対応座標変換システム
+ * 📐 CoordinateManager - キャンバス外描画対応座標変換システム（軽量版）
  * 📋 RESPONSIBILITY: 座標変換・キャンバス外描画判定・座標精度管理のみ
- * 🚫 PROHIBITION: 描画処理・UI操作・レイヤー管理・イベント処理
- * ✅ PERMISSION: 座標計算・境界判定・変換処理・デバッグ情報
+ * 🚫 PROHIBITION: 描画処理・UI操作・レイヤー管理・イベント処理・過度なデバッグログ
+ * ✅ PERMISSION: 座標計算・境界判定・変換処理・必要最小限のログ
  * 
- * 📏 DESIGN_PRINCIPLE: シンプル座標変換・AI管理最適化・剛直構造
+ * 📏 DESIGN_PRINCIPLE: シンプル座標変換・軽量実装・剛直構造・Rulebook準拠
  * 🔄 INTEGRATION: TegakiApplication・全ツール・NavigationManagerとの連携
  * 🎯 FEATURE: キャンバス外20px描画許可・正確な座標変換・クランプ処理
  * 
- * 🖼️ キャンバス表示の流れ:
- * 1. HTML Canvas要素 → PixiJS Application.view
- * 2. CanvasManager → レイヤー管理・PixiJS Stage構築
- * 3. CoordinateManager → スクリーン座標⇔キャンバス座標変換
- * 4. Tools → 描画・座標変換利用
+ * 🔧 使用メソッド一覧:
+ * - HTMLElement: getBoundingClientRect (DOM座標取得)
+ * - Math: round, max, min, pow, cos, sin (数値計算)
+ * - console: log, warn, error (必要最小限ログ)
+ * - typeof, isNaN: 型チェック・NaN判定
  * 
- * 🖊️ ペンツール描画・記録の流れ:
- * 1. PointerEvent → CoordinateManager.clientToCanvas → キャンバス座標
- * 2. PenTool → 座標でGraphics描画 → CanvasManager.activeLayer追加
- * 3. RecordManager → 操作記録・Undo/Redo対応
+ * 🔄 処理フロー:
+ * 1. Canvas要素設定 → 座標情報初期化 → サイズ取得
+ * 2. 座標変換要求 → DOM Rect取得 → 基本変換計算
+ * 3. 変形適用 → 精度調整 → 範囲判定
+ * 4. 結果返却 → エラーチェック（必要最小限ログ）
+ * 
+ * 🔗 依存Manager: なし（独立動作）
+ * 📦 連携Tool: AbstractTool, PenTool, EraserTool, NavigationManager
  */
 
 // Tegaki名前空間初期化
 window.Tegaki = window.Tegaki || {};
 
 /**
- * CoordinateManager - キャンバス外描画対応座標変換システム
- * シンプルで確実な座標変換・AI管理に最適化された剛直構造
+ * CoordinateManager - キャンバス外描画対応座標変換システム（軽量版）
  */
 class CoordinateManager {
     constructor() {
@@ -49,10 +52,11 @@ class CoordinateManager {
             rotation: 0
         };
         
-        // デバッグ・統計情報
-        this.transformCount = 0;          // 座標変換実行回数
-        this.outOfBoundsCount = 0;        // 範囲外座標処理回数
-        this.lastTransformInfo = null;    // 最後の変換情報
+        // 統計情報（軽量版）
+        this.transformCount = 0;
+        this.nanCount = 0;
+        
+        console.log('✅ CoordinateManager初期化完了');
     }
     
     /**
@@ -83,31 +87,51 @@ class CoordinateManager {
     }
     
     /**
-     * 🎯 メイン機能: クライアント座標→キャンバス座標変換（AbstractToolで使用）
-     */
-    clientToCanvas(clientX, clientY) {
-        return this.screenToCanvas(clientX, clientY);
-    }
-    
-    /**
      * 🎯 メイン機能: スクリーン座標→キャンバス座標変換（キャンバス外対応）
      */
     screenToCanvas(screenX, screenY) {
+        // 入力値検証（NaN対策）
+        if (isNaN(screenX) || isNaN(screenY)) {
+            console.error('❌ CoordinateManager: Input NaN detected');
+            this.nanCount++;
+            return { x: 0, y: 0, isValid: false, error: 'input_nan' };
+        }
+        
         if (!this.canvasElement) {
             console.warn('⚠️ CoordinateManager: Canvas element not set');
-            return { x: screenX, y: screenY, isValid: false };
+            return { x: screenX, y: screenY, isValid: false, error: 'no_canvas_element' };
         }
         
         this.transformCount++;
         
         // 基本座標変換（DOMからキャンバス内部座標）
         const rect = this.canvasElement.getBoundingClientRect();
+        
+        if (!rect || isNaN(rect.left) || isNaN(rect.top)) {
+            console.error('❌ CoordinateManager: Invalid canvas rect');
+            return { x: 0, y: 0, isValid: false, error: 'invalid_rect' };
+        }
+        
         let canvasX = screenX - rect.left;
         let canvasY = screenY - rect.top;
         
-        // 🔧 Phase1.5: シンプル変形対応（基本のみ・Phase2で拡張）
+        // 中間計算結果検証（NaN対策）
+        if (isNaN(canvasX) || isNaN(canvasY)) {
+            console.error('❌ CoordinateManager: NaN in basic transform');
+            this.nanCount++;
+            return { x: 0, y: 0, isValid: false, error: 'basic_transform_nan' };
+        }
+        
+        // Phase1.5: シンプル変形対応
         if (this.hasTransform()) {
             const transformed = this.applyInverseTransform(canvasX, canvasY);
+            
+            if (isNaN(transformed.x) || isNaN(transformed.y)) {
+                console.error('❌ CoordinateManager: NaN in transform');
+                this.nanCount++;
+                return { x: 0, y: 0, isValid: false, error: 'transform_nan' };
+            }
+            
             canvasX = transformed.x;
             canvasY = transformed.y;
         }
@@ -116,61 +140,113 @@ class CoordinateManager {
         const preciseX = this.adjustPrecision(canvasX);
         const preciseY = this.adjustPrecision(canvasY);
         
+        if (isNaN(preciseX) || isNaN(preciseY)) {
+            console.error('❌ CoordinateManager: NaN in precision adjustment');
+            this.nanCount++;
+            return { x: 0, y: 0, isValid: false, error: 'precision_nan' };
+        }
+        
         // キャンバス内外判定
         const isInsideCanvas = this.isInsideCanvas(preciseX, preciseY);
         const isInExtendedArea = this.isInExtendedDrawArea(preciseX, preciseY);
         
-        // デバッグ情報記録（範囲外の場合）
-        if (!isInsideCanvas) {
-            this.outOfBoundsCount++;
-            this.lastTransformInfo = {
-                screen: { x: screenX, y: screenY },
-                canvas: { x: preciseX, y: preciseY },
-                isInsideCanvas: isInsideCanvas,
-                isInExtendedArea: isInExtendedArea,
-                boundingRect: {
-                    left: rect.left,
-                    top: rect.top,
-                    width: rect.width,
-                    height: rect.height
-                },
-                timestamp: Date.now()
-            };
-        }
-        
-        return {
+        const result = {
             x: preciseX,
             y: preciseY,
             isValid: true,
             isInsideCanvas: isInsideCanvas,
             isInExtendedArea: isInExtendedArea,
-            canDraw: isInExtendedArea  // 描画可能判定
+            canDraw: isInExtendedArea
         };
+        
+        // 最終結果検証（NaN対策）
+        if (isNaN(result.x) || isNaN(result.y)) {
+            console.error('❌ CoordinateManager: Final result contains NaN');
+            this.nanCount++;
+            return { x: 0, y: 0, isValid: false, error: 'final_result_nan' };
+        }
+        
+        return result;
+    }
+    
+    /**
+     * 🎯 クライアント座標→キャンバス座標変換（AbstractTool互換性メソッド）
+     */
+    clientToCanvas(clientX, clientY) {
+        return this.screenToCanvas(clientX, clientY);
+    }
+    
+    /**
+     * 🎯 PointerEvent座標→キャンバス座標変換（AbstractTool互換性メソッド）
+     */
+    pointerToCanvas(pointerEvent) {
+        if (!pointerEvent || typeof pointerEvent.clientX !== 'number' || typeof pointerEvent.clientY !== 'number') {
+            console.error('❌ CoordinateManager: Invalid PointerEvent');
+            return { x: 0, y: 0, isValid: false, error: 'invalid_event' };
+        }
+        
+        return this.screenToCanvas(pointerEvent.clientX, pointerEvent.clientY);
+    }
+    
+    /**
+     * 🎯 座標変換（AbstractTool互換性メソッド・複数形式対応）
+     */
+    toCanvasCoords(eventOrX, y) {
+        if (typeof eventOrX === 'object' && eventOrX !== null && eventOrX.clientX !== undefined) {
+            // PointerEvent形式
+            return this.pointerToCanvas(eventOrX);
+        } else if (typeof eventOrX === 'number' && typeof y === 'number') {
+            // (x, y) 座標形式
+            return this.screenToCanvas(eventOrX, y);
+        } else {
+            console.error('❌ CoordinateManager: Invalid toCanvasCoords arguments');
+            return { x: 0, y: 0, isValid: false, error: 'invalid_arguments' };
+        }
     }
     
     /**
      * 🎯 キャンバス座標→スクリーン座標変換（逆変換）
      */
     canvasToScreen(canvasX, canvasY) {
-        if (!this.canvasElement) {
-            console.warn('⚠️ CoordinateManager: Canvas element not set');
-            return { x: canvasX, y: canvasY, isValid: false };
+        if (isNaN(canvasX) || isNaN(canvasY)) {
+            console.error('❌ CoordinateManager: Input NaN in canvasToScreen');
+            return { x: 0, y: 0, isValid: false, error: 'input_nan' };
         }
         
-        // 🔧 Phase1.5: 変形適用（Phase2で拡張）
+        if (!this.canvasElement) {
+            console.warn('⚠️ CoordinateManager: Canvas element not set');
+            return { x: canvasX, y: canvasY, isValid: false, error: 'no_canvas_element' };
+        }
+        
         let transformedX = canvasX;
         let transformedY = canvasY;
         
         if (this.hasTransform()) {
             const transformed = this.applyTransform(canvasX, canvasY);
+            
+            if (isNaN(transformed.x) || isNaN(transformed.y)) {
+                console.error('❌ CoordinateManager: NaN in reverse transform');
+                return { x: 0, y: 0, isValid: false, error: 'reverse_transform_nan' };
+            }
+            
             transformedX = transformed.x;
             transformedY = transformed.y;
         }
         
-        // DOM座標に変換
         const rect = this.canvasElement.getBoundingClientRect();
+        
+        if (!rect || isNaN(rect.left) || isNaN(rect.top)) {
+            console.error('❌ CoordinateManager: Invalid rect in reverse transform');
+            return { x: 0, y: 0, isValid: false, error: 'invalid_rect' };
+        }
+        
         const screenX = transformedX + rect.left;
         const screenY = transformedY + rect.top;
+        
+        if (isNaN(screenX) || isNaN(screenY)) {
+            console.error('❌ CoordinateManager: NaN in final reverse transform result');
+            return { x: 0, y: 0, isValid: false, error: 'final_reverse_nan' };
+        }
         
         return {
             x: this.adjustPrecision(screenX),
@@ -180,10 +256,21 @@ class CoordinateManager {
     }
     
     /**
+     * 🎯 キャンバス座標→クライアント座標変換（AbstractTool互換性メソッド）
+     */
+    canvasToClient(canvasX, canvasY) {
+        return this.canvasToScreen(canvasX, canvasY);
+    }
+    
+    /**
      * 🎯 描画可能エリアへのクランプ（キャンバス外描画対応）
      */
     clampToDrawableArea(x, y) {
-        // 拡張描画エリア範囲でクランプ
+        if (isNaN(x) || isNaN(y)) {
+            console.error('❌ CoordinateManager: Input NaN in clampToDrawableArea');
+            return { x: 0, y: 0, wasClamped: true, original: { x, y }, error: 'input_nan' };
+        }
+        
         const minX = -this.extendedDrawMargin;
         const maxX = this.canvasWidth + this.extendedDrawMargin;
         const minY = -this.extendedDrawMargin;
@@ -192,11 +279,12 @@ class CoordinateManager {
         const clampedX = Math.max(minX, Math.min(maxX, x));
         const clampedY = Math.max(minY, Math.min(maxY, y));
         
-        // クランプが発生した場合の情報記録
-        const wasClamped = (clampedX !== x || clampedY !== y);
-        if (wasClamped) {
-            console.log(`📐 座標クランプ実行: (${x.toFixed(1)}, ${y.toFixed(1)}) → (${clampedX.toFixed(1)}, ${clampedY.toFixed(1)})`);
+        if (isNaN(clampedX) || isNaN(clampedY)) {
+            console.error('❌ CoordinateManager: NaN in clamp result');
+            return { x: 0, y: 0, wasClamped: true, original: { x, y }, error: 'clamp_nan' };
         }
+        
+        const wasClamped = (clampedX !== x || clampedY !== y);
         
         return {
             x: this.adjustPrecision(clampedX),
@@ -210,6 +298,7 @@ class CoordinateManager {
      * キャンバス内判定
      */
     isInsideCanvas(x, y) {
+        if (isNaN(x) || isNaN(y)) return false;
         return x >= 0 && x <= this.canvasWidth && y >= 0 && y <= this.canvasHeight;
     }
     
@@ -217,22 +306,25 @@ class CoordinateManager {
      * 拡張描画エリア判定（キャンバス外描画許可範囲）
      */
     isInExtendedDrawArea(x, y) {
+        if (isNaN(x) || isNaN(y)) return false;
         const margin = this.extendedDrawMargin;
         return x >= -margin && x <= this.canvasWidth + margin && 
                y >= -margin && y <= this.canvasHeight + margin;
     }
     
     /**
-     * 座標精度調整
+     * 座標精度調整（NaN対策）
      */
     adjustPrecision(coordinate) {
+        if (typeof coordinate !== 'number' || isNaN(coordinate)) {
+            return 0;
+        }
+        
         const factor = Math.pow(10, this.coordinatePrecision);
-        return Math.round(coordinate * factor) / factor;
+        const result = Math.round(coordinate * factor) / factor;
+        
+        return isNaN(result) ? 0 : result;
     }
-    
-    /**
-     * 🔧 Phase1.5基本変形機能（Phase2で大幅拡張）
-     */
     
     /**
      * 変形状態確認
@@ -247,20 +339,37 @@ class CoordinateManager {
      * 変形適用（順変換）
      */
     applyTransform(x, y) {
+        if (isNaN(x) || isNaN(y)) {
+            return { x: 0, y: 0 };
+        }
+        
         const t = this.canvasTransform;
         
-        // 🔧 Phase1.5: 基本的な平行移動・拡縮のみ（回転はPhase2）
+        if (isNaN(t.scaleX) || isNaN(t.scaleY) || isNaN(t.translateX) || isNaN(t.translateY) || isNaN(t.rotation)) {
+            return { x: 0, y: 0 };
+        }
+        
         let transformedX = (x * t.scaleX) + t.translateX;
         let transformedY = (y * t.scaleY) + t.translateY;
         
-        // 回転処理（Phase2で完全実装・Phase1.5は基本のみ）
+        if (isNaN(transformedX) || isNaN(transformedY)) {
+            return { x: 0, y: 0 };
+        }
+        
+        // 回転処理（Phase1.5基本）
         if (t.rotation !== 0) {
             const cos = Math.cos(t.rotation);
             const sin = Math.sin(t.rotation);
-            const rotatedX = transformedX * cos - transformedY * sin;
-            const rotatedY = transformedX * sin + transformedY * cos;
-            transformedX = rotatedX;
-            transformedY = rotatedY;
+            
+            if (!isNaN(cos) && !isNaN(sin)) {
+                const rotatedX = transformedX * cos - transformedY * sin;
+                const rotatedY = transformedX * sin + transformedY * cos;
+                
+                if (!isNaN(rotatedX) && !isNaN(rotatedY)) {
+                    transformedX = rotatedX;
+                    transformedY = rotatedY;
+                }
+            }
         }
         
         return { x: transformedX, y: transformedY };
@@ -270,36 +379,59 @@ class CoordinateManager {
      * 逆変形適用（逆変換）
      */
     applyInverseTransform(x, y) {
+        if (isNaN(x) || isNaN(y)) {
+            return { x: 0, y: 0 };
+        }
+        
         const t = this.canvasTransform;
+        
+        if (isNaN(t.scaleX) || isNaN(t.scaleY) || isNaN(t.translateX) || isNaN(t.translateY) || isNaN(t.rotation)) {
+            return { x: 0, y: 0 };
+        }
         
         let transformedX = x;
         let transformedY = y;
         
-        // 逆回転（Phase2で完全実装）
+        // 逆回転
         if (t.rotation !== 0) {
             const cos = Math.cos(-t.rotation);
             const sin = Math.sin(-t.rotation);
-            const rotatedX = transformedX * cos - transformedY * sin;
-            const rotatedY = transformedX * sin + transformedY * cos;
-            transformedX = rotatedX;
-            transformedY = rotatedY;
+            
+            if (!isNaN(cos) && !isNaN(sin)) {
+                const rotatedX = transformedX * cos - transformedY * sin;
+                const rotatedY = transformedX * sin + transformedY * cos;
+                
+                if (!isNaN(rotatedX) && !isNaN(rotatedY)) {
+                    transformedX = rotatedX;
+                    transformedY = rotatedY;
+                }
+            }
         }
         
-        // 逆拡縮・逆平行移動
+        // 逆拡縮・逆平行移動（ゼロ除算対策）
+        if (t.scaleX === 0 || t.scaleY === 0) {
+            return { x: 0, y: 0 };
+        }
+        
         transformedX = (transformedX - t.translateX) / t.scaleX;
         transformedY = (transformedY - t.translateY) / t.scaleY;
+        
+        if (isNaN(transformedX) || isNaN(transformedY)) {
+            return { x: 0, y: 0 };
+        }
         
         return { x: transformedX, y: transformedY };
     }
     
     /**
-     * 🔧 Phase1.5基本変形操作（NavigationManager連携用）
-     */
-    
-    /**
      * 平行移動設定
      */
     setTranslation(deltaX, deltaY) {
+        if (isNaN(deltaX) || isNaN(deltaY)) {
+            console.error('❌ CoordinateManager: NaN in setTranslation');
+            return;
+        }
+        
         this.canvasTransform.translateX = this.adjustPrecision(deltaX);
         this.canvasTransform.translateY = this.adjustPrecision(deltaY);
         
@@ -310,9 +442,14 @@ class CoordinateManager {
      * 拡縮設定
      */
     setScale(scaleX, scaleY = null) {
-        if (scaleY === null) scaleY = scaleX; // 均等拡縮
+        if (isNaN(scaleX)) {
+            console.error('❌ CoordinateManager: NaN in setScale');
+            return;
+        }
         
-        // 拡縮範囲制限（Phase1.5基本制限）
+        if (scaleY === null) scaleY = scaleX;
+        if (isNaN(scaleY)) return;
+        
         const minScale = 0.1;
         const maxScale = 10.0;
         
@@ -323,12 +460,15 @@ class CoordinateManager {
     }
     
     /**
-     * 回転設定（Phase1.5基本・Phase2で拡張）
+     * 回転設定
      */
     setRotation(angle) {
-        // 角度正規化（0-2π）
-        this.canvasTransform.rotation = angle % (2 * Math.PI);
+        if (isNaN(angle)) {
+            console.error('❌ CoordinateManager: NaN in setRotation');
+            return;
+        }
         
+        this.canvasTransform.rotation = angle % (2 * Math.PI);
         console.log(`📐 回転設定: ${(this.canvasTransform.rotation * 180 / Math.PI).toFixed(1)}度`);
     }
     
@@ -350,16 +490,14 @@ class CoordinateManager {
             scaleY: 1,
             rotation: 0
         };
-        
         console.log('📐 変形リセット完了');
     }
     
     /**
-     * 🎯 拡張描画エリア情報取得
+     * 拡張描画エリア情報取得
      */
     getExtendedDrawArea() {
         const margin = this.extendedDrawMargin;
-        
         return {
             left: -margin,
             top: -margin,
@@ -384,102 +522,43 @@ class CoordinateManager {
     }
     
     /**
-     * 設定取得・変更
-     */
-    getSettings() {
-        return {
-            extendedDrawMargin: this.extendedDrawMargin,
-            coordinatePrecision: this.coordinatePrecision
-        };
-    }
-    
-    setExtendedDrawMargin(margin) {
-        const minMargin = 0;
-        const maxMargin = 100;
-        this.extendedDrawMargin = Math.max(minMargin, Math.min(maxMargin, margin));
-        
-        console.log(`📐 拡張描画マージン設定: ${this.extendedDrawMargin}px`);
-    }
-    
-    setCoordinatePrecision(precision) {
-        const minPrecision = 0;
-        const maxPrecision = 3;
-        this.coordinatePrecision = Math.max(minPrecision, Math.min(maxPrecision, precision));
-        
-        console.log(`📐 座標精度設定: 小数点以下${this.coordinatePrecision}桁`);
-    }
-    
-    /**
-     * 統計・デバッグ情報取得
+     * 統計情報取得
      */
     getStats() {
         return {
             transformCount: this.transformCount,
-            outOfBoundsCount: this.outOfBoundsCount,
-            outOfBoundsRatio: this.transformCount > 0 ? (this.outOfBoundsCount / this.transformCount) : 0,
-            lastTransformInfo: this.lastTransformInfo
+            nanCount: this.nanCount,
+            nanRatio: this.transformCount > 0 ? (this.nanCount / this.transformCount) : 0
         };
     }
     
     /**
-     * デバッグ情報取得（完全版）
+     * デバッグ情報取得（軽量版）
      */
     getDebugInfo() {
         return {
-            // 基本状態
             canvasSet: !!this.canvasElement,
             canvasInfo: this.getCanvasInfo(),
-            
-            // 座標変換設定
-            settings: this.getSettings(),
             transform: this.getCanvasTransform(),
             hasTransform: this.hasTransform(),
-            
-            // 拡張描画エリア
             extendedArea: this.getExtendedDrawArea(),
-            
-            // 統計情報
             stats: this.getStats(),
-            
-            // パフォーマンス情報
-            performance: {
-                avgTransformsPerSecond: this.calculateTransformRate(),
-                memoryUsage: this.estimateMemoryUsage()
-            },
-            
-            // Phase情報
             phase: {
                 current: '1.5',
                 features: {
                     basicTransform: true,
                     extendedDrawArea: true,
                     coordinatePrecision: true,
-                    advancedTransform: false  // Phase2で追加
+                    nanProtection: true,
+                    advancedTransform: false
                 }
             }
         };
-    }
-    
-    /**
-     * パフォーマンス計算（デバッグ用）
-     */
-    calculateTransformRate() {
-        // 簡易的な変換レート計算（実装省略・概算値）
-        return this.transformCount > 0 ? Math.min(this.transformCount, 60) : 0;
-    }
-    
-    estimateMemoryUsage() {
-        // 簡易的なメモリ使用量推定（実装省略・概算値）
-        const baseSize = 1024; // 基本サイズ
-        const transformDataSize = 256; // 変形データサイズ
-        const debugDataSize = this.lastTransformInfo ? 512 : 0;
-        
-        return baseSize + transformDataSize + debugDataSize;
     }
 }
 
 // Tegaki名前空間に登録
 window.Tegaki.CoordinateManager = CoordinateManager;
 
-console.log('📐 CoordinateManager Phase1.5 Loaded - キャンバス外描画・座標変換・変形基盤完成');
-console.log('📐 coordinate-manager.js loaded - シンプル座標変換・AI管理最適化・剛直構造実現');
+console.log('📐 CoordinateManager Phase1.5 Loaded（軽量版） - デバッグログ削減・Rulebook準拠・機能完全対応');
+console.log('📐 coordinate-manager.js loaded - NaN対策・AbstractTool互換性・軽量実装完了');
