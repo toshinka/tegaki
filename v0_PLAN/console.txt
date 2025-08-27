@@ -1,67 +1,64 @@
- 🚨 ErrorManager Simple 作成
- 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
- 🔧 ConfigManager Simple 作成
- 🔧 ConfigManager Simple Loaded - シンプル設定管理
- 🔄 EventBus Simple 作成
- 🔄 EventBus Simple Loaded - シンプルイベント通信
- 🎯 CoordinateManager Phase1.5 完全実装版 Loaded
- 📏 機能: クライアント↔Canvas座標変換・境界判定・キャッシュ最適化
- 🔧 特徴: 剛直構造・エラー隠蔽禁止・PixiJS標準活用・パフォーマンス最適化
- ✅ 準備完了: setCanvasManager()でCanvasManager設定後に利用可能
- 🧭 NavigationManager Phase1.5スタブ実装 - 名前空間登録完了
- 🔧 次のステップ: 詳細実装・CoordinateManager完全連携・パフォーマンス最適化
- 🔄 RecordManager Phase1.5 実用実装版 - 初期化開始
- 🔄 RecordManager 実用実装完了
- 🔄 RecordManager Phase1.5 実用実装版 Loaded - Undo/Redo・操作履歴・非破壊編集完全対応
- 🔄 record-manager.js loaded - 実用実装・スタブ→実装変換・Phase1.5完全対応完了
- ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
- 🔧 setupPhase15Shortcuts・enableメソッド追加済み
- 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
- 🎨 CanvasManager CoordinateManager対応版 Loaded
- 🎨 canvas-manager.js loaded - CoordinateManager対応・getCanvasElement()実装完了
-tool-manager.js:294 Uncaught SyntaxError: await is only valid in async functions and the top level bodies of modules
- 🎯 TegakiApplication Phase1.5 メインアプリケーション Loaded（確実な初期ツール選択修正版）
- 📏 CoordinateManager完全統合・座標変換修正・ペン描画修正
- 🧭 ナビゲーション・非破壊編集・ショートカット統合
- 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統合対応
- 🔧 座標変換エラー完全修正・剛直構造実装・フォールバック削除
- 🎯 確実な初期ツール選択実装・複数回試行・強制選択対応
- 🚀 TegakiApplication Phase1.5 メインアプリケーション 完成（確実な初期ツール選択修正版）
- 🎯 TegakiApplication Phase1.5 メインアプリケーション Loaded（確実な初期ツール選択修正版）
- 📏 CoordinateManager完全統合・座標変換修正・ペン描画修正
- 🧭 ナビゲーション・非破壊編集・ショートカット統合
- 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統合対応
- 🔧 座標変換エラー完全修正・剛直構造実装・フォールバック削除
- 🎯 確実な初期ツール選択実装・複数回試行・強制選択対応
- 🚀 TegakiApplication Phase1.5 メインアプリケーション 完成（確実な初期ツール選択修正版）
-pen-tool.js:48 Uncaught TypeError: Class extends value undefined is not a constructor or null
-eraser-tool.js:21 Uncaught TypeError: Class extends value undefined is not a constructor or null
- 🧪 Phase1.5統合テスト Loaded
+error-manager.js:20 🚨 ErrorManager Simple 作成
+error-manager.js:132 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
+config-manager.js:20 🔧 ConfigManager Simple 作成
+config-manager.js:229 🔧 ConfigManager Simple Loaded - シンプル設定管理
+event-bus.js:20 🔄 EventBus Simple 作成
+event-bus.js:97 🔄 EventBus Simple Loaded - シンプルイベント通信
+coordinate-manager.js:358 🎯 CoordinateManager Phase1.5 完全実装版 Loaded
+coordinate-manager.js:359 📏 機能: クライアント↔Canvas座標変換・境界判定・キャッシュ最適化
+coordinate-manager.js:360 🔧 特徴: 剛直構造・エラー隠蔽禁止・PixiJS標準活用・パフォーマンス最適化
+coordinate-manager.js:361 ✅ 準備完了: setCanvasManager()でCanvasManager設定後に利用可能
+navigation-manager.js:423 🧭 NavigationManager Phase1.5スタブ実装 - 名前空間登録完了
+navigation-manager.js:424 🔧 次のステップ: 詳細実装・CoordinateManager完全連携・パフォーマンス最適化
+record-manager.js:38 🔄 RecordManager Phase1.5 実用実装版 - 初期化開始
+record-manager.js:58 🔄 RecordManager 実用実装完了
+record-manager.js:638 🔄 RecordManager Phase1.5 実用実装版 Loaded - Undo/Redo・操作履歴・非破壊編集完全対応
+record-manager.js:643 🔄 record-manager.js loaded - 実用実装・スタブ→実装変換・Phase1.5完全対応完了
+shortcut-manager.js:416 ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
+shortcut-manager.js:417 🔧 setupPhase15Shortcuts・enableメソッド追加済み
+shortcut-manager.js:418 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
+minimal-deps.js:11 📦 Minimal Dependencies - 名前倉庫版（競合クラス削除済み）
+minimal-deps.js:176 📦 Minimal Dependencies 名前倉庫版 Loaded - 競合クラス削除・将来クラス名予約のみ
+canvas-manager.js:451 🎨 CanvasManager CoordinateManager対応版 Loaded
+canvas-manager.js:456 🎨 canvas-manager.js loaded - CoordinateManager対応・getCanvasElement()実装完了
+abstract-tool.js:1 Uncaught SyntaxError: Identifier 'AbstractTool' has already been declared
+pen-tool.js:309 🖊️ PenTool Phase1.5 Loaded - AbstractTool継承確実版
+eraser-tool.js:395 🧹 EraserTool Phase1.5 Loaded - AbstractTool継承確実版
+tool-manager.js:273 🔧 ToolManager Phase1.5 Loaded - await削除・Promise対応版
+app-core.js:496 🎯 AppCore Phase1.5基盤システム Loaded - Manager統合基盤・初期化順序制御・CoordinateManager修正対応
+app-core.js:497 📏 機能: CanvasManager作成・ToolManager作成・PixiJS統合・Phase1.5Manager連携・システム基盤
+app-core.js:498 🔧 Phase1.5対応: CoordinateManager統合基盤・Manager連携・剛直構造・エラー隠蔽禁止
+app-core.js:499 🚀 システム基盤確立完了 - Manager統合・初期化順序制御・Phase1.5完全対応
+app-core.js:502 🎯 AppCore Phase1.5基盤システム Loaded - Manager統合基盤・初期化順序制御・CoordinateManager修正対応
+app-core.js:503 📏 機能: CanvasManager作成・ToolManager作成・PixiJS統合・Phase1.5Manager連携・システム基盤
+app-core.js:504 🔧 Phase1.5対応: CoordinateManager統合基盤・Manager連携・剛直構造・エラー隠蔽禁止
+app-core.js:505 🚀 システム基盤確立完了 - Manager統合・初期化順序制御・Phase1.5完全対応
+tegaki-application.js:900 🎯 TegakiApplication Phase1.5 メインアプリケーション Loaded
+tegaki-application.js:901 📏 CoordinateManager完全統合・座標変換修正・ペン描画修正
+tegaki-application.js:902 🧭 ナビゲーション・非破壊編集・ショートカット統合
+tegaki-application.js:903 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統合対応
+tegaki-application.js:904 🔧 座標変換エラー完全修正・剛直構造実装・フォールバック削除
+tegaki-application.js:905 🚀 TegakiApplication Phase1.5 メインアプリケーション 完成
+tegaki-application.js:908 🎯 TegakiApplication Phase1.5 メインアプリケーション Loaded
+tegaki-application.js:909 📏 CoordinateManager完全統合・座標変換修正・ペン描画修正
+tegaki-application.js:910 🧭 ナビゲーション・非破壊編集・ショートカット統合
+tegaki-application.js:911 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統合対応
+tegaki-application.js:912 🔧 座標変換エラー完全修正・剛直構造実装・フォールバック削除
+tegaki-application.js:913 🚀 TegakiApplication Phase1.5 メインアプリケーション 完成
+main.js:332 ⚠️ AppCore already defined - skipping redefinition
+main.js:335 🎯 main.js loaded - AppCore基盤システム完成（ToolManager初期化修正版）
+phase15-integration-test.js:593 🧪 Phase1.5統合テスト Loaded
  📏 新Manager統合状況確認・機能テスト・レポート生成・Phase1.5完全対応
  🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
- 🎯 AppCore システム基盤 Loaded（ToolManager初期化修正版）
- 🎯 main.js loaded - AppCore基盤システム完成（ToolManager初期化修正版）
- 🎯 AppCore Phase1.5基盤システム Loaded - Manager統合基盤・初期化順序制御・CoordinateManager修正対応
- 📏 機能: CanvasManager作成・ToolManager作成・PixiJS統合・Phase1.5Manager連携・システム基盤
- 🔧 Phase1.5対応: CoordinateManager統合基盤・Manager連携・剛直構造・エラー隠蔽禁止
- 🚀 システム基盤確立完了 - Manager統合・初期化順序制御・Phase1.5完全対応
- 🎯 TegakiApplication Phase1.5 メインアプリケーション Loaded
- 📏 CoordinateManager完全統合・座標変換修正・ペン描画修正
- 🧭 ナビゲーション・非破壊編集・ショートカット統合
- 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統合対応
- 🔧 座標変換エラー完全修正・剛直構造実装・フォールバック削除
- 🚀 TegakiApplication Phase1.5 メインアプリケーション 完成
  🚀 Bootstrap Phase1.5 - 新Manager統合対応版
  ⏳ DOM Loading - DOMContentLoaded待機中...
  🎯 Bootstrap Phase1.5 registered - 新Manager統合対応版
- ✅ @pixi/graphics-smooth ローカル読み込み成功
  🔧 Bootstrap Phase1.5 実行開始...
  🔍 Phase1.5 依存関係確認開始...
  ✅ TegakiApplication: 利用可能
  ✅ AppCore: 利用可能
  ✅ CanvasManager: 利用可能
- ⚠️ ToolManager: 未定義または無効
-validatePhase15Dependencies @ bootstrap.js:53
+ ✅ ToolManager: 利用可能
  ✅ ErrorManager: 利用可能
  ✅ ConfigManager: 利用可能
  ✅ EventBus: 利用可能
@@ -69,65 +66,28 @@ validatePhase15Dependencies @ bootstrap.js:53
  ✅ NavigationManager: 利用可能
  ✅ RecordManager: 利用可能
  ✅ ShortcutManager: 利用可能
- ⚠️ PenTool: 未定義または無効
-validatePhase15Dependencies @ bootstrap.js:53
-bootstrap.js:53 ⚠️ EraserTool: 未定義または無効
-validatePhase15Dependencies @ bootstrap.js:53
-bootstrap.js:57 📊 依存関係確認結果: 10/13 クラス利用可能
-bootstrap.js:60 ⚠️ 未完成のManagerクラス: ToolManager, PenTool, EraserTool
-validatePhase15Dependencies @ bootstrap.js:60
-bootstrap.js:61 🔧 Phase1.5実装途中の場合は正常です
-validatePhase15Dependencies @ bootstrap.js:61
-bootstrap.js:97 🎨 TegakiApplication インスタンス化開始...
-abstract-tool.js:50 🎯 TegakiApplication Phase1.5 メインアプリケーション 作成・自動初期化開始（確実な初期ツール選択修正版）
-abstract-tool.js:79 🚀 TegakiApplication Phase1.5 確実な初期ツール選択修正版初期化開始
-abstract-tool.js:118 🆕 Phase1.5新Manager初期化開始...
-coordinate-manager.js:40 🎯 CoordinateManager Phase1.5 完全実装版 作成開始
-coordinate-manager.js:50 ✅ CoordinateManager Phase1.5 完全実装版 作成完了
-coordinate-manager.js:52 🎯 CoordinateManager Phase1.5 完全実装版 - 自動デバッグテスト実行
-abstract-tool.js:123 ✅ CoordinateManager初期化完了
-record-manager.js:38 🔄 RecordManager Phase1.5 実用実装版 - 初期化開始
-record-manager.js:58 🔄 RecordManager 実用実装完了
-abstract-tool.js:132 ✅ RecordManager初期化完了
-navigation-manager.js:20 🧭 NavigationManager Phase1.5スタブ実装 - 初期化開始
-navigation-manager.js:43 🧭 NavigationManager スタブ実装完了
-abstract-tool.js:144 ✅ NavigationManager初期化完了
-shortcut-manager.js:20 ⌨️ ShortcutManager Phase1.5スタブ実装 - 初期化開始
-shortcut-manager.js:41 ⌨️ ShortcutManager スタブ実装完了
-abstract-tool.js:157 ✅ ShortcutManager初期化完了
-abstract-tool.js:162 🆕 Phase1.5新Manager初期化完了
-main.js:24 🎯 AppCore 基盤システム作成（ToolManager初期化修正版）
-canvas-manager.js:39 🎨 CanvasManager CoordinateManager対応版作成
-canvas-manager.js:49 🎨 CanvasManager CoordinateManager対応版作成完了
-main.js:44 ✅ CanvasManager 作成完了
-bootstrap.js:107 🔧 Phase1.5 開発版 - 一部Manager実装中
-bootstrap.js:108 📋 実装済み: TegakiApplication, AppCore, CanvasManager, ErrorManager, ConfigManager, EventBus, CoordinateManager, NavigationManager, RecordManager, ShortcutManager
-bootstrap.js:109 ⚠️ 未実装: ToolManager, PenTool, EraserTool
-bootstrap.js:112 ✅ Bootstrap完了 - Tegakiアプリケーション開始完了
-abstract-tool.js:178 ✅ AppCore初期化完了（CanvasManagerのみ）
-canvas-manager.js:64 🎨 CanvasManager: PixiJS Application設定開始
-canvas-manager.js:113 🎨 CanvasManager: レイヤー分離構造作成開始
-canvas-manager.js:130 ✅ 背景レイヤー (layer0) 作成完了
-canvas-manager.js:140 ✅ 描画レイヤー (layer1) 作成完了
-canvas-manager.js:151 ✅ CanvasManager: レイヤー分離構造作成完了 Object
-canvas-manager.js:78 🎨 PixiJS Application Info: Object
-canvas-manager.js:87 ✅ CanvasManager: PixiJS Application設定完了
-main.js:90 ✅ レイヤー構造確認完了: Object
-main.js:67 ✅ AppCore - PixiJS Application設定・レイヤー確認完了
-abstract-tool.js:231 ✅ PixiJS Canvas作成・配置・CanvasManager設定完了
-abstract-tool.js:232 📏 Canvas設定: 400x400px, resolution=1, autoDensity=false
-abstract-tool.js:239 🆕 Phase1.5新ManagerにCanvasManager設定開始...
-coordinate-manager.js:86 🔧 CoordinateManager - CanvasManager設定開始
-coordinate-manager.js:95 ✅ CoordinateManager - CanvasManager設定完了
-abstract-tool.js:252 ✅ CoordinateManager - CanvasManager設定完了
-abstract-tool.js:268 🆕 Phase1.5新Manager CanvasManager設定完了
-abstract-tool.js:275 🔧 ToolManager初期化開始 - Phase1.5 Manager統合版（確実な初期ツール選択）
-abstract-tool.js:64 💀 TegakiApplication 初期化失敗: Error: ToolManager class not available
-    at AppCore.initializeToolManager (main.js:110:23)
-    at TegakiApplication.initializeToolManager (abstract-tool.js:278:32)
-    at TegakiApplication.initialize (abstract-tool.js:94:24)
-(anonymous) @ abstract-tool.js:64
-error-manager.js:38 🔥 CRITICAL: TegakiApplication初期化失敗: ToolManager class not available TegakiApplication.constructor
-main.js:110 Uncaught (in promise) Error: ToolManager class not available
-index.html:408 ⚠️ TegakiApplication初期化未完了
-(anonymous) @ index.html:408
+ ✅ PenTool: 利用可能
+ ✅ EraserTool: 利用可能
+ 📊 依存関係確認結果: 13/13 クラス利用可能
+ 🎨 TegakiApplication インスタンス化開始...
+ 🎯 TegakiApplication Phase1.5 メインアプリケーション 作成・自動初期化開始
+ 🚀 TegakiApplication Phase1.5 CoordinateManager完全修正版初期化開始
+ 🆕 Phase1.5新Manager初期化開始...
+ 🎯 CoordinateManager Phase1.5 完全実装版 作成開始
+ ✅ CoordinateManager Phase1.5 完全実装版 作成完了
+ 🎯 CoordinateManager Phase1.5 完全実装版 - 自動デバッグテスト実行
+ ✅ CoordinateManager初期化完了
+ 📝 RecordManager - Phase1.5実装予定
+ ✅ Phase1.5 完全版 - 全Manager統合済み
+ ✅ Bootstrap完了 - Tegakiアプリケーション開始完了
+tegaki-application.js:61 💀 TegakiApplication 初期化失敗: Error: RecordManager not implemented - Phase1.5で実装予定
+    at new RecordManager (minimal-deps.js:37:15)
+    at TegakiApplication.initializePhase15Managers (tegaki-application.js:125:38)
+    at TegakiApplication.initialize (tegaki-application.js:79:18)
+    at new TegakiApplication (tegaki-application.js:60:18)
+    at HTMLDocument.executeBootstrap (bootstrap.js:98:31)
+(anonymous) @ tegaki-application.js:61
+ 🔥 CRITICAL: TegakiApplication初期化失敗: RecordManager not implemented - Phase1.5で実装予定 TegakiApplication.constructor
+minimal-deps.js:37 Uncaught (in promise) Error: RecordManager not implemented - Phase1.5で実装予定
+index.html:396 ⚠️ TegakiApplication初期化未完了
+(anonymous) @ index.html:396

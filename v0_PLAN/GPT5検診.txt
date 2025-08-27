@@ -1,57 +1,113 @@
-🔍 原因
+エラーログを見た感じ、主に3系統の問題が絡んでいます。整理すると以下の通りです。
 
-CoordinateManager のロード順問題
+1. await is only valid in async functions and the top level bodies of modules
 
-index.html の <script> 読み込み順で coordinate-manager.js が遅れている/読み込まれていない可能性。
+tool-manager.js:294 Uncaught SyntaxError: await is only valid in async functions and the top level bodies of modules
 
-CoordinateManager 内部の初期化が未完
 
-ログ上では「CoordinateManager完全修正版 Loaded」と出ているが、実際に TegakiApplication.initializePhase15Managers() 呼び出し時に window.CoordinateManager が undefined 扱いされている。
 
-つまり ファイルはロードされているが export/名前空間登録がされていない。
+原因
 
-コードのスタブ残り
+await が関数外（トップレベル）に書かれているが、type="module" で読み込んでいない。
 
-coordinate-manager.js:109 ❌ CoordinateManager未実装 - Phase1.5で必須
-→ 開発中のスタブが残っており、あえて throw するように書かれている可能性。
+Tegakiのルール上「ESM禁止（HTML直開き必須）」となっているため、グローバルスクリプトとして読み込まれている状態では await は使用不可。
 
-✅ 対策案
-① 一時回避（開発中でも動作確認したい場合）
+対策案
 
-coordinate-manager.js の 109 行目付近の throw をコメントアウト/try-catch化して「未実装でも起動だけできる」状態にする。
+await を使いたい箇所を async function 内に閉じ込める。
 
-// coordinate-manager.js 内 initializePhase15Managers()
-if (!this.CoordinateManager) {
-    console.warn("⚠️ CoordinateManager 未実装ですがスキップします");
-    return; // throwを止める
+例えば:
+
+// NG
+const result = await doSomething();
+
+// OK
+async function init() {
+    const result = await doSomething();
+    return result;
 }
+init();
 
-② 根本解決（正式実装）
+または「Promise.then」で書き換える:
 
-coordinate-manager.js に 最低限のダミークラス を実装して、Phase1.5 以降の仕様に沿って存在確認を通す。
+doSomething().then(result => {
+    // 処理
+});
+
+
+2. Class extends value undefined is not a constructor or null
+
+pen-tool.js:48 Uncaught TypeError: Class extends value undefined is not a constructor or null
+eraser-tool.js:21 Uncaught TypeError: Class extends value undefined is not a constructor or null
+
+原因
+
+PenTool / EraserTool が extends AbstractTool のように継承しているが、AbstractTool が未ロード or 未定義。
+
+読み込み順（<script> タグの順序）が崩れている可能性が高い。
+
+index.html の <script src="..."> の並びで abstract-tool.js より先に pen-tool.js や eraser-tool.js が実行されているとこのエラーになる。
+
+対策案
+
+scriptの順序を修正
+
+abstract-tool.js → pen-tool.js → eraser-tool.js の順に読み込む。
+
+さらにそれらを利用する tool-manager.js は最後に読み込む。
+
+念のため グローバル公開確認
+
+各ツールの末尾で必ず window.Tegaki.AbstractTool = AbstractTool; のように公開する。
+
+
+3. ToolManager / PenTool / EraserTool 未定義
+
+
+bootstrap.js:53 ⚠️ ToolManager: 未定義または無効
+bootstrap.js:53 ⚠️ PenTool: 未定義または無効
+bootstrap.js:53 ⚠️ EraserTool: 未定義または無効
+
+原因
+
+上記2の継承エラーでクラス定義が失敗 → 以降の bootstrap.js で参照できず警告が出ている。
+
+そのため TegakiApplication の初期化も失敗している。
+
+対策案
+
+根本はロード順とクラス定義の失敗なので、まずAbstractToolを確実にロードしてからツール系を読み込む。
+
+ToolManager も PenTool / EraserTool の定義後に初期化すべき。
+
+✅ 修正指針まとめ
+
+await の使用箇所を async 関数に閉じ込める（または Promise.then に書き換え）。
+
+script読み込み順を整理
+
+index.html の最後に近い部分で以下の順にする：
+
+utils/*
+abstract-tool.js
+pen-tool.js
+eraser-tool.js
+managers/tool-manager.js
+bootstrap.js
+main.js
+
+グローバル公開を保証
+
+各クラスの末尾で window.Tegaki 名前空間に必ずアタッチする。
 
 例:
-// coordinate-manager.js
-class CoordinateManager {
-  constructor() {
-    console.log("🧪 Dummy CoordinateManager initialized");
-  }
-  // 必須APIだけ仮実装
-  toCanvasCoords(x, y) { return { x, y }; }
-  toScreenCoords(x, y) { return { x, y }; }
-}
-window.CoordinateManager = CoordinateManager;
 
-③ 読み込み順の保証
+window.Tegaki = window.Tegaki || {};
+window.Tegaki.PenTool = PenTool;
 
-index.html の <script> タグで coordinate-manager.js を bootstrap.js より前 に読み込む。
 
-現在 bootstrap.js で依存関係チェックをしているため、順序不備で undefined になると必ず失敗する。
+これで ToolManager class not available → 解消され、TegakiApplication.initialize が正常に進むはず。
 
-🎯 提案フロー
 
-短期: throw を外すかダミーを置いてテスト環境で統合確認を進める。
 
-中期: coordinate-manager.js を正式実装。少なくとも toCanvasCoords, toScreenCoords が必須。
 
-長期: NavigationManager・RecordManager・ShortcutManager と完全連携して Phase1.5 仕様を満たす。
