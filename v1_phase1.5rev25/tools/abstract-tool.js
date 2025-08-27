@@ -1,24 +1,29 @@
 /**
- * 🎯 AbstractTool Manager統一注入方式・フォールバック削除版
+ * 🎯 AbstractTool Manager統一注入方式・RecordManager連携修正版
  * 📋 RESPONSIBILITY: 全ツールの基底クラス・共通イベント処理・座標変換・統一Manager管理
  * 🚫 PROHIBITION: 描画処理・複雑初期化・エラー隠蔽・Manager未設定時無視・フォールバック・個別Manager設定
  * ✅ PERMISSION: イベントハンドリング・座標変換・統一Manager注入受け取り・基底メソッド・厳密検証
  * 
  * 📏 DESIGN_PRINCIPLE: 継承ベース・共通処理集約・Manager統一注入・エラー隠蔽完全禁止・フェイルファスト
  * 🔄 INTEGRATION: setManagers()統一注入・Manager存在厳密確認・EventBus通信・ErrorManager報告
- * 🔧 FIX: setManagers()統一・getManager()便利・validateManagers()厳密・フォールバック完全削除
+ * 🔧 FIX: RecordManager連携修正・startOperation/endOperation方式対応・架空メソッド削除
  * 
  * 📌 使用メソッド一覧:
  * ✅ window.Tegaki.ErrorManagerInstance.showError() - エラー表示（error-manager.js確認済み）
  * ✅ window.Tegaki.EventBusInstance.emit() - イベント発火（event-bus.js確認済み）
  * ✅ managers.coordinate.clientToCanvas() - 座標変換（coordinate-manager.js確認済み）
  * ✅ managers.canvas.getCanvasElement() - Canvas要素取得（canvas-manager.js確認済み）
+ * ✅ managers.record.startOperation() - 操作開始記録（record-manager.js実装済み）
+ * ✅ managers.record.endOperation() - 操作終了記録（record-manager.js実装済み）
+ * ✅ managers.record.undo() - Undo実行（record-manager.js実装済み）
+ * ✅ managers.record.redo() - Redo実行（record-manager.js実装済み）
  * ✅ canvas.getBoundingClientRect() - 要素位置取得（DOM標準）
  * ✅ canvas.addEventListener/removeEventListener() - イベント管理（DOM標準）
  * ✅ event.preventDefault() - デフォルト動作防止（DOM標準）
- * 🆕 this.setManagers(managers) - Manager統一注入（新規実装）
- * 🆕 this.getManager(type) - Manager取得便利メソッド（新規実装）
- * 🆕 this.validateManagers() - Manager存在厳密確認（修正強化）
+ * 🆕 this.setManagers(managers) - Manager統一注入（実装済み）
+ * 🆕 this.getManager(type) - Manager取得便利メソッド（実装済み）
+ * 🔧 this.validateManagers() - Manager存在厳密確認（RecordManager修正済み）
+ * ❌ managers.record.recordDraw() - **削除済み**（startOperation/endOperationに統合）
  * ❌ 全てのsetXXXManager()個別メソッド削除 - 統一注入に変更
  * ❌ フォールバック処理全て削除 - Manager未設定時は即座にエラー
  * 
@@ -26,21 +31,22 @@
  * 開始 → 継承・作成 → setManagers()統一注入 → validateManagers()確認 → 有効化・イベント登録 → 
  * 座標変換・描画委譲 → 無効化・リセット → 終了
  * 依存関係: CanvasManager(Canvas要素・必須)・CoordinateManager(座標変換・必須)・
- * RecordManager(記録・必須)・NavigationManager(ナビ・オプション)・
+ * RecordManager(startOperation/endOperation・必須)・NavigationManager(ナビ・オプション)・
  * EventBusInstance(通信)・ErrorManagerInstance(報告)
  * 
  * 🚨 CRITICAL_DEPENDENCIES: 重要依存関係（動作に必須）
  * - managers.canvas !== null - Canvas管理Manager必須
  * - managers.coordinate !== null - 座標変換Manager必須
  * - managers.record !== null - 記録Manager必須
+ * - managers.record.startOperation() - 操作開始記録必須
+ * - managers.record.endOperation() - 操作終了記録必須
  * - managers.canvas.getCanvasElement() !== null - Canvas要素存在必須
  * 
- * 🔧 INITIALIZATION_ORDER: 初期化順序（厳守必要）
- * 1. AbstractTool作成・CanvasManager仮設定
- * 2. setManagers()で全Manager統一注入
- * 3. validateManagers()で設定確認・検証
- * 4. ツール有効化・イベント設定
- * 5. 座標変換・描画処理可能
+ * 🔄 RECORDMANAGER_INTEGRATION: RecordManager連携方式（修正済み）
+ * - startOperation({ tool, type, data }) - 操作開始記録
+ * - endOperation(operationId, { success, graphics, strokeData }) - 操作終了記録
+ * - undo() / redo() - 履歴操作
+ * - ❌ recordDraw() - 削除済み（上記方式に統合）
  * 
  * 🚫 ABSOLUTE_PROHIBITIONS: 絶対禁止事項
  * - Manager未設定時の無視処理（エラーthrow必須）
@@ -48,12 +54,13 @@
  * - try/catch握りつぶし（詳細ログ+throw必須）
  * - Manager設定前のツール使用（validateManagers()で防止）
  * - フォールバック・デフォルト値使用（正しい構造でのみ動作）
+ * - 架空メソッド参照（実装済みメソッドのみ）
  */
 
 window.Tegaki = window.Tegaki || {};
 
 /**
- * AbstractTool - 全ツールの基底クラス（Manager統一注入版）
+ * AbstractTool - 全ツールの基底クラス（RecordManager連携修正版）
  */
 class AbstractTool {
     constructor(canvasManager, toolName = 'abstract') {
@@ -168,7 +175,7 @@ class AbstractTool {
     }
     
     /**
-     * 🔧 Manager設定厳密確認（修正強化・詳細デバッグ）
+     * 🔧 Manager設定厳密確認（RecordManager修正版・startOperation/endOperation対応）
      */
     validateManagers() {
         const errors = [];
@@ -195,11 +202,18 @@ class AbstractTool {
             initialized: this.managers.coordinate?.initialized || false
         };
         
-        // 詳細なRecordManager状態チェック
+        // 🔧 詳細なRecordManager状態チェック（修正版・実装済みメソッドのみ）
         managerStatus.record = {
             exists: !!this.managers.record,
-            hasRecordDraw: typeof this.managers.record?.recordDraw === 'function',
-            hasCanUndo: typeof this.managers.record?.canUndo === 'function'
+            hasStartOperation: typeof this.managers.record?.startOperation === 'function',
+            hasEndOperation: typeof this.managers.record?.endOperation === 'function',
+            hasUndo: typeof this.managers.record?.undo === 'function',
+            hasRedo: typeof this.managers.record?.redo === 'function',
+            hasCanUndo: typeof this.managers.record?.canUndo === 'function',
+            hasCanRedo: typeof this.managers.record?.canRedo === 'function',
+            hasSetCanvasManager: typeof this.managers.record?.setCanvasManager === 'function',
+            isReady: typeof this.managers.record?.isReady === 'function' ? 
+                     this.managers.record.isReady() : 'unknown'
         };
         
         // オプションManager状態チェック
@@ -213,7 +227,7 @@ class AbstractTool {
             hasSetup: typeof this.managers.shortcut?.setupPhase15Shortcuts === 'function'
         };
         
-        // エラー収集（必須Managerのみ）
+        // エラー収集（必須Managerのみ・実装済みメソッドのみ確認）
         if (!managerStatus.canvas.exists) {
             errors.push('CanvasManager not set');
         } else if (!managerStatus.canvas.hasGetCanvasElement) {
@@ -230,10 +244,34 @@ class AbstractTool {
             errors.push('CoordinateManager not initialized');
         }
         
+        // 🔧 RecordManager検証修正（実装済みメソッドのみ確認）
         if (!managerStatus.record.exists) {
             errors.push('RecordManager not set');
-        } else if (!managerStatus.record.hasRecordDraw) {
-            errors.push('RecordManager.recordDraw method not found');
+        } else {
+            // 必須メソッドの存在確認
+            if (!managerStatus.record.hasStartOperation) {
+                errors.push('RecordManager.startOperation method not found');
+            }
+            if (!managerStatus.record.hasEndOperation) {
+                errors.push('RecordManager.endOperation method not found');
+            }
+            if (!managerStatus.record.hasUndo) {
+                errors.push('RecordManager.undo method not found');
+            }
+            if (!managerStatus.record.hasRedo) {
+                errors.push('RecordManager.redo method not found');
+            }
+            if (!managerStatus.record.hasCanUndo) {
+                errors.push('RecordManager.canUndo method not found');
+            }
+            if (!managerStatus.record.hasCanRedo) {
+                errors.push('RecordManager.canRedo method not found');
+            }
+            
+            // RecordManager準備状態確認
+            if (managerStatus.record.isReady !== true && managerStatus.record.isReady !== 'unknown') {
+                errors.push('RecordManager not ready for operation');
+            }
         }
         
         if (errors.length > 0) {
@@ -607,7 +645,7 @@ class AbstractTool {
     }
     
     /**
-     * デバッグ情報取得（強化版）
+     * デバッグ情報取得（RecordManager対応版）
      */
     getDebugInfo() {
         return {
@@ -628,9 +666,17 @@ class AbstractTool {
                     hasClientToCanvas: typeof this.managers?.coordinate?.clientToCanvas === 'function',
                     initialized: this.managers?.coordinate?.initialized || false
                 },
+                // 🔧 RecordManager状態（修正版）
                 record: {
                     exists: !!this.managers?.record,
-                    hasRecordDraw: typeof this.managers?.record?.recordDraw === 'function'
+                    hasStartOperation: typeof this.managers?.record?.startOperation === 'function',
+                    hasEndOperation: typeof this.managers?.record?.endOperation === 'function',
+                    hasUndo: typeof this.managers?.record?.undo === 'function',
+                    hasRedo: typeof this.managers?.record?.redo === 'function',
+                    hasCanUndo: typeof this.managers?.record?.canUndo === 'function',
+                    hasCanRedo: typeof this.managers?.record?.canRedo === 'function',
+                    isReady: typeof this.managers?.record?.isReady === 'function' ? 
+                             this.managers.record.isReady() : 'unknown'
                 },
                 navigation: {
                     exists: !!this.managers?.navigation
@@ -754,4 +800,4 @@ class AbstractTool {
 
 // グローバル公開
 window.Tegaki.AbstractTool = AbstractTool;
-console.log('🎯 AbstractTool Manager統一注入方式・フォールバック削除版 Loaded - setManagers()統一・getManager()便利・validateManagers()厳密・フォールバック完全削除');
+console.log('🎯 AbstractTool Phase1.5 RecordManager連携修正版 Loaded - startOperation/endOperation方式対応・架空メソッド削除・Manager統一注入完成');

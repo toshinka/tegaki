@@ -1,56 +1,63 @@
 /**
- * 🖊️ PenTool Phase1.5 - ペン描画ツール（RecordManager連携強化版）
- * 📋 RESPONSIBILITY: ペン描画機能・PIXI.Graphics管理・非破壊編集対応
- * 🚫 PROHIBITION: Canvas管理・座標変換・Manager管理・エラー隠蔽
- * ✅ PERMISSION: 描画処理・PixiJS活用・RecordManager連携・設定管理
+ * 🖊️ PenTool Phase1.5 - ペン描画ツール（RecordManager連携修正版）
+ * 📋 RESPONSIBILITY: ペン描画機能・PIXI.Graphics管理・RecordManager操作記録
+ * 🚫 PROHIBITION: Canvas管理・座標変換・Manager管理・エラー隠蔽・架空メソッド使用
+ * ✅ PERMISSION: 描画処理・PixiJS活用・RecordManager正規連携・設定管理
  * 
- * 📏 DESIGN_PRINCIPLE: AbstractTool継承・PixiJS標準機能最大活用・非破壊編集対応
+ * 📏 DESIGN_PRINCIPLE: AbstractTool継承・PixiJS標準機能最大活用・RecordManager startOperation/endOperation方式
  * 🔄 INTEGRATION: AbstractTool継承・CanvasManager連携・RecordManager記録・EventBus通信
- * 🔧 FIX: AbstractTool継承確実化・RecordManager連携強化・PixiJS v7標準活用
+ * 🔧 FIX: RecordManager連携修正・startOperation/endOperation方式対応・架空メソッド削除
  * 
  * 📌 使用メソッド一覧:
- * ✅ window.Tegaki.AbstractTool(constructor) - 基底クラス継承（abstract-tool.js確認済み）
- * ✅ window.Tegaki.RecordManagerInstance.recordDraw() - 描画記録（record-manager.js確認済み）
- * ✅ this.canvasManager.getLayer() - レイヤー取得（canvas-manager.js確認済み）
+ * ✅ window.Tegaki.AbstractTool(constructor) - 基底クラス継承（abstract-tool.js実装済み）
+ * ✅ this.managers.record.startOperation(operationData) - 操作開始記録（record-manager.js実装済み）
+ * ✅ this.managers.record.endOperation(operationId, endData) - 操作終了記録（record-manager.js実装済み）
+ * ✅ this.managers.canvas.getLayer() - レイヤー取得（canvas-manager.js実装済み）
  * ✅ new PIXI.Graphics() - 描画オブジェクト作成（PixiJS v7標準）
  * ✅ graphics.lineStyle() - 線スタイル設定（PixiJS v7標準）
  * ✅ graphics.moveTo() - 描画開始点設定（PixiJS v7標準）
  * ✅ graphics.lineTo() - 線描画（PixiJS v7標準）
  * ✅ layer.addChild() - レイヤー追加（PixiJS Container標準）
  * ✅ super.onPointerDown/Move/Up() - 基底クラスメソッド（AbstractTool継承）
+ * ❌ recordManager.recordDraw() - **削除済み**（startOperation/endOperationに統合）
  * 
- * 📐 ペン描画フロー:
- * 描画開始 → PointerDown処理 → Path作成・PixiJS描画開始 → PointerMove継続描画 → 
- * PointerUp完了 → RecordManager記録 → レイヤー配置 → 終了
- * 依存関係: AbstractTool(基底)・CanvasManager(レイヤー)・RecordManagerInstance(記録)・PIXI.Graphics(描画)
+ * 📐 ペン描画フロー（修正版・RecordManager連携強化）:
+ * 開始 → PointerDown・startOperation記録 → Path作成・PixiJS描画開始 → 
+ * PointerMove継続描画 → PointerUp・endOperation記録 → レイヤー配置 → 終了
+ * 依存関係: AbstractTool(基底)・CanvasManager(レイヤー)・RecordManager(startOperation/endOperation)・PIXI.Graphics(描画)
+ * 
+ * 🔄 RecordManager連携フロー（修正版）:
+ * 1. onPointerDown → startOperation({ tool: 'pen', type: 'draw', data: {} }) → 操作ID取得
+ * 2. onPointerMove → 描画継続（記録なし・軽量化）
+ * 3. onPointerUp → endOperation(operationId, { success: true, graphics, strokeData }) → 履歴保存
+ * 4. Undo/Redo → RecordManager側で自動処理
  * 
  * 🚫 絶対禁止事項:
  * - try/catchでの握りつぶし（throw必須）
  * - 独自座標変換（AbstractTool委譲必須）
  * - 独自Canvas管理（CanvasManager委譲必須）
- * - 描画記録の省略（RecordManager連携必須）
+ * - 架空メソッド呼び出し（実装済みメソッドのみ使用）
+ * - recordDraw()使用（削除済み・startOperation/endOperationのみ）
  */
 
 window.Tegaki = window.Tegaki || {};
 
 /**
- * PenTool - ペン描画ツール（RecordManager連携強化版）
+ * PenTool - ペン描画ツール（RecordManager連携修正版）
  */
 class PenTool extends window.Tegaki.AbstractTool {
     constructor(canvasManager) {
         super(canvasManager, 'pen');
-        console.log('🖊️ PenTool Phase1.5 作成開始 - RecordManager連携強化版');
+        console.log('🖊️ PenTool Phase1.5 作成開始 - RecordManager連携修正版');
         
         // ペン固有プロパティ
         this.currentPath = null;
         this.points = [];
         this.isDrawing = false;
         
-        // RecordManager参照
-        this.recordManager = window.Tegaki.RecordManagerInstance;
-        if (!this.recordManager) {
-            console.warn('⚠️ RecordManagerInstance not available - Undo/Redo機能が制限されます');
-        }
+        // 🔧 RecordManager操作管理（修正版）
+        this.currentOperation = null;  // 進行中操作の参照
+        this.operationStartTime = null;
         
         // ペン設定（PixiJS v7対応）
         this.penSettings = {
@@ -64,7 +71,6 @@ class PenTool extends window.Tegaki.AbstractTool {
         console.log('✅ PenTool 作成完了:', {
             toolName: this.toolName,
             hasCanvasManager: !!this.canvasManager,
-            hasRecordManager: !!this.recordManager,
             penSettings: this.penSettings
         });
     }
@@ -76,11 +82,14 @@ class PenTool extends window.Tegaki.AbstractTool {
         try {
             console.log(`🖊️ PenTool 描画開始: (${x}, ${y})`);
             
+            // 🔧 RecordManager操作開始記録（修正版）
+            this.startDrawOperation(x, y);
+            
             // 新しい描画パス開始
             this.startNewPath(x, y);
             this.isDrawing = true;
             
-            console.log(`✅ PenTool 描画開始完了: pathId=${this.currentPath ? 'created' : 'null'}`);
+            console.log(`✅ PenTool 描画開始完了: pathId=${this.currentPath ? 'created' : 'null'}, operationId=${this.currentOperation?.id || 'none'}`);
             
         } catch (error) {
             console.error('💀 PenTool 描画開始エラー:', error);
@@ -133,6 +142,9 @@ class PenTool extends window.Tegaki.AbstractTool {
             // 描画を確定・記録
             this.finalizePath();
             
+            // 🔧 RecordManager操作終了記録（修正版）
+            this.endDrawOperation();
+            
             this.isDrawing = false;
             console.log(`✅ PenTool 描画終了完了: points=${this.points.length}`);
             
@@ -145,9 +157,97 @@ class PenTool extends window.Tegaki.AbstractTool {
                 });
             }
             
-            this.isDrawing = false;
-            this.currentPath = null;
+            // エラー時の操作終了処理
+            this.endDrawOperation(false);
+            this.resetDrawingState();
+            
             throw error;
+        }
+    }
+    
+    /**
+     * 🔧 RecordManager操作開始記録（修正版・startOperation使用）
+     */
+    startDrawOperation(x, y) {
+        const recordManager = this.getManager('record');
+        
+        if (typeof recordManager.startOperation !== 'function') {
+            const error = new Error('RecordManager.startOperation method not available');
+            console.error('💀 操作開始記録失敗:', error);
+            throw error;
+        }
+        
+        try {
+            this.operationStartTime = Date.now();
+            
+            // 操作開始記録
+            this.currentOperation = recordManager.startOperation({
+                tool: 'pen',
+                type: 'draw',
+                data: {
+                    layerId: 'main',
+                    startPoint: { x, y },
+                    startTime: this.operationStartTime,
+                    penSettings: { ...this.penSettings }
+                }
+            });
+            
+            if (!this.currentOperation || !this.currentOperation.id) {
+                throw new Error('RecordManager.startOperation returned invalid operation');
+            }
+            
+            console.log(`✅ RecordManager操作開始記録完了: ${this.currentOperation.id}`);
+            
+        } catch (error) {
+            console.error('💀 RecordManager操作開始記録エラー:', error);
+            this.currentOperation = null;
+            throw error;
+        }
+    }
+    
+    /**
+     * 🔧 RecordManager操作終了記録（修正版・endOperation使用）
+     */
+    endDrawOperation(success = true) {
+        if (!this.currentOperation) {
+            console.warn('⚠️ 操作終了記録スキップ - currentOperationが空');
+            return;
+        }
+        
+        const recordManager = this.getManager('record');
+        
+        if (typeof recordManager.endOperation !== 'function') {
+            console.error('💀 RecordManager.endOperation method not available');
+            this.currentOperation = null;
+            return;
+        }
+        
+        try {
+            const endTime = Date.now();
+            const duration = this.operationStartTime ? endTime - this.operationStartTime : 0;
+            
+            // 操作終了記録
+            recordManager.endOperation(this.currentOperation.id, {
+                success: success,
+                graphics: this.currentPath,
+                strokeData: {
+                    points: [...this.points],
+                    pointCount: this.points.length,
+                    duration: duration,
+                    penSettings: { ...this.penSettings }
+                },
+                layerId: 'main',
+                endTime: endTime
+            });
+            
+            console.log(`✅ RecordManager操作終了記録完了: ${this.currentOperation.id} (${duration}ms, success=${success})`);
+            
+        } catch (error) {
+            console.error('💀 RecordManager操作終了記録エラー:', error);
+        } finally {
+            // クリーンアップ
+            this.currentOperation = null;
+            this.operationStartTime = null;
         }
     }
     
@@ -192,14 +292,16 @@ class PenTool extends window.Tegaki.AbstractTool {
     }
     
     /**
-     * パスを確定・レイヤー配置・記録
+     * パスを確定・レイヤー配置
      */
     finalizePath() {
         if (!this.currentPath) return;
         
         try {
             // メインレイヤーに追加
-            const mainLayer = this.canvasManager.getLayer('main');
+            const canvasManager = this.getManager('canvas');
+            const mainLayer = canvasManager.getLayer('main');
+            
             if (!mainLayer) {
                 throw new Error('Main layer not found');
             }
@@ -207,28 +309,17 @@ class PenTool extends window.Tegaki.AbstractTool {
             mainLayer.addChild(this.currentPath);
             console.log(`✅ パスをメインレイヤーに追加完了`);
             
-            // RecordManagerに記録（Undo/Redo対応）
-            if (this.recordManager && typeof this.recordManager.recordDraw === 'function') {
-                this.recordManager.recordDraw(this.currentPath, 'main');
-                console.log(`✅ RecordManager記録完了 - Undo/Redo対応`);
-            } else {
-                console.warn('⚠️ RecordManager記録スキップ - Undo/Redo機能が制限されます');
-            }
-            
             // 描画完了イベント発火
             if (this.eventBus && this.eventBus.emit) {
                 this.eventBus.emit('pen:drawComplete', {
                     pathId: this.currentPath.id || 'unknown',
                     pointCount: this.points.length,
-                    layerId: 'main'
+                    layerId: 'main',
+                    operationId: this.currentOperation?.id
                 });
             }
             
-            // クリーンアップ
-            this.currentPath = null;
-            this.points = [];
-            
-            console.log(`✅ パス確定・記録完了`);
+            console.log(`✅ パス確定完了`);
             
         } catch (error) {
             console.error('💀 パス確定エラー:', error);
@@ -237,8 +328,6 @@ class PenTool extends window.Tegaki.AbstractTool {
             if (this.currentPath && this.currentPath.parent) {
                 this.currentPath.parent.removeChild(this.currentPath);
             }
-            this.currentPath = null;
-            this.points = [];
             
             throw error;
         }
@@ -328,8 +417,10 @@ class PenTool extends window.Tegaki.AbstractTool {
         if (this.isDrawing && this.currentPath) {
             try {
                 this.finalizePath();
+                this.endDrawOperation(true); // 成功として記録
             } catch (error) {
                 console.error('💀 PenTool 無効化時の描画中断エラー:', error);
+                this.endDrawOperation(false); // 失敗として記録
                 this.resetDrawingState();
             }
         }
@@ -342,6 +433,12 @@ class PenTool extends window.Tegaki.AbstractTool {
      */
     onReset() {
         console.log('🖊️ PenTool リセット - 描画状態クリア');
+        
+        // 進行中操作があれば強制終了
+        if (this.currentOperation) {
+            this.endDrawOperation(false);
+        }
+        
         this.resetDrawingState();
     }
     
@@ -350,8 +447,18 @@ class PenTool extends window.Tegaki.AbstractTool {
      */
     resetDrawingState() {
         this.isDrawing = false;
+        
+        // 未確定パスのクリーンアップ
+        if (this.currentPath && !this.currentPath.parent) {
+            // まだレイヤーに追加されていない場合は破棄
+            this.currentPath.destroy();
+        }
+        
         this.currentPath = null;
         this.points = [];
+        this.currentOperation = null;
+        this.operationStartTime = null;
+        
         console.log('✅ PenTool 描画状態リセット完了');
     }
     
@@ -361,33 +468,97 @@ class PenTool extends window.Tegaki.AbstractTool {
     onDestroy() {
         console.log('🖊️ PenTool 破棄処理開始');
         
+        // 進行中操作を安全に終了
+        if (this.currentOperation) {
+            this.endDrawOperation(false);
+        }
+        
         // 描画中の処理を安全に終了
         this.resetDrawingState();
-        
-        // RecordManager参照をクリア
-        this.recordManager = null;
         
         console.log('✅ PenTool 破棄処理完了');
     }
     
     /**
-     * デバッグ情報取得
+     * 🆕 Undo対応処理（RecordManagerから呼び出し）
+     */
+    onUndo(operation) {
+        console.log(`↶ PenTool Undo処理: ${operation.id}`);
+        
+        try {
+            // Graphics削除はRecordManagerで実行済み
+            // Tool固有の追加処理があればここで実行
+            
+            console.log(`✅ PenTool Undo処理完了: ${operation.id}`);
+        } catch (error) {
+            console.error(`💀 PenTool Undo処理エラー:`, error);
+        }
+    }
+    
+    /**
+     * 🆕 Redo対応処理（RecordManagerから呼び出し）
+     */
+    onRedo(operation) {
+        console.log(`↷ PenTool Redo処理: ${operation.id}`);
+        
+        try {
+            // Graphics復元はRecordManagerで実行済み
+            // Tool固有の追加処理があればここで実行
+            
+            console.log(`✅ PenTool Redo処理完了: ${operation.id}`);
+        } catch (error) {
+            console.error(`💀 PenTool Redo処理エラー:`, error);
+        }
+    }
+    
+    /**
+     * 🆕 操作強制終了処理（RecordManagerから呼び出し）
+     */
+    onOperationForceEnd(operation) {
+        console.log(`⚠️ PenTool 操作強制終了: ${operation.id}`);
+        
+        try {
+            // 現在の操作と一致する場合のみ処理
+            if (this.currentOperation && this.currentOperation.id === operation.id) {
+                this.resetDrawingState();
+            }
+            
+            console.log(`✅ PenTool 操作強制終了処理完了: ${operation.id}`);
+        } catch (error) {
+            console.error(`💀 PenTool 操作強制終了エラー:`, error);
+        }
+    }
+    
+    /**
+     * デバッグ情報取得（RecordManager対応版）
      */
     getDebugInfo() {
+        const baseDebugInfo = super.getDebugInfo ? super.getDebugInfo() : {};
+        
         return {
+            ...baseDebugInfo,
             className: 'PenTool',
             toolName: this.toolName,
             isActive: this.isActive,
             isDrawing: this.isDrawing,
             hasCurrentPath: !!this.currentPath,
             pointCount: this.points.length,
-            hasCanvasManager: !!this.canvasManager,
-            hasRecordManager: !!this.recordManager,
-            penSettings: this.penSettings
+            penSettings: this.penSettings,
+            
+            // RecordManager連携状況
+            recordManagerIntegration: {
+                hasCurrentOperation: !!this.currentOperation,
+                operationId: this.currentOperation?.id || null,
+                operationStartTime: this.operationStartTime,
+                hasRecordManager: !!this.managers?.record,
+                recordManagerReady: this.managers?.record ? 
+                    (typeof this.managers.record.isReady === 'function' ? 
+                     this.managers.record.isReady() : 'unknown') : false
+            }
         };
     }
 }
 
 // グローバル公開
 window.Tegaki.PenTool = PenTool;
-console.log('🖊️ PenTool Phase1.5 Loaded - RecordManager連携強化版・PixiJS v7標準活用・非破壊編集対応');
+console.log('🖊️ PenTool Phase1.5 RecordManager連携修正版 Loaded - startOperation/endOperation方式対応・架空メソッド削除・Undo/Redo連携完成');
