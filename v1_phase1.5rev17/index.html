@@ -5,10 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール - Phase1.5</title>
     <!-- 🎯 UI設計方針: 
-         - Undo/Redoボタン非追加（ショートカット中心・画面簡潔化）
-         - キャンバス移動系アイコン非追加（ショートカット習熟前提）
+         - Undo/Redoボタン削除（Ctrl+Z/Ctrl+Yショートカットのみ）
+         - キャンバス移動系ボタン削除（Space/Ctrl+0ショートカットのみ）
          - 必要最小限のツールボタンのみ表示
-         - 車輪の再発明防止：PixiJS拡張ライブラリ積極活用 -->
+         - 車輪の再発明防止：PixiJS拡張ライブラリ積極活用
+         - @pixi/graphics-smooth対応で滑らかな線描画 -->
     <style>
         * {
             margin: 0;
@@ -185,6 +186,43 @@
             align-items: center;
             gap: 4px;
         }
+        
+        /* ショートカットヒント表示（Phase1.5追加） */
+        .shortcut-hints {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-medium);
+            border-radius: 8px;
+            padding: 12px;
+            font-family: monospace;
+            font-size: 10px;
+            color: var(--text-secondary);
+            z-index: 60;
+            max-width: 200px;
+            opacity: 0.8;
+            transition: opacity 0.3s;
+        }
+        
+        .shortcut-hints:hover {
+            opacity: 1;
+        }
+        
+        .shortcut-hint {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 2px;
+        }
+        
+        .shortcut-hint:last-child {
+            margin-bottom: 0;
+        }
+        
+        .shortcut-key {
+            font-weight: bold;
+            color: var(--futaba-maroon);
+        }
     </style>
 </head>
 <body>
@@ -197,8 +235,8 @@
             <div class="tool-separator"></div>
                    
             <div class="tool-button disabled" id="palette-tool" title="カラーパレット"></div>
-            <div class="tool-button active" id="pen-tool" title="ベクターペン"></div>
-            <div class="tool-button" id="eraser-tool" title="消しゴム"></div>
+            <div class="tool-button active" id="pen-tool" title="ベクターペン (P)"></div>
+            <div class="tool-button" id="eraser-tool" title="消しゴム (E)"></div>
             
             <div class="tool-separator"></div>
             
@@ -218,20 +256,47 @@
         </div>
     </div>
     
+    <!-- ショートカットヒント表示（Phase1.5追加） -->
+    <div class="shortcut-hints">
+        <div class="shortcut-hint">
+            <span>ペン:</span>
+            <span class="shortcut-key">P</span>
+        </div>
+        <div class="shortcut-hint">
+            <span>消しゴム:</span>
+            <span class="shortcut-key">E</span>
+        </div>
+        <div class="shortcut-hint">
+            <span>パン:</span>
+            <span class="shortcut-key">Space</span>
+        </div>
+        <div class="shortcut-hint">
+            <span>リセット:</span>
+            <span class="shortcut-key">Ctrl+0</span>
+        </div>
+        <div class="shortcut-hint">
+            <span>取消:</span>
+            <span class="shortcut-key">Ctrl+Z</span>
+        </div>
+        <div class="shortcut-hint">
+            <span>やり直し:</span>
+            <span class="shortcut-key">Ctrl+Y</span>
+        </div>
+    </div>
+    
     <div class="status-panel">
         <div class="status-group">
             <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
             <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
             <div class="status-item">Color: <span id="current-color">#800000</span></div>
             <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
-            <div class="status-item">筆圧: <span id="pressure-monitor">0.0%</span></div>
         </div>
         
         <div class="status-group">
-            <div class="status-item">FPS: <span id="fps">60</span></div>
-            <div class="status-item">GPU: <span id="gpu-usage">45%</span></div>
-            <div class="status-item">Memory: <span id="memory-usage">1.2GB</span></div>
+            <div class="status-item">Phase: <span id="phase-info">1.5</span></div>
+            <div class="status-item">Smooth: <span id="smooth-graphics">Auto</span></div>
             <div class="status-item">Layers: <span id="layer-count">2</span></div>
+            <div class="status-item">Tools: <span id="tool-count">2</span></div>
         </div>
     </div>
 
@@ -250,8 +315,12 @@
         (function() {
             const smoothScript = document.createElement('script');
             smoothScript.src = './node_modules/@pixi/graphics-smooth/dist/pixi-graphics-smooth.js';
+            smoothScript.onload = function() {
+                console.log('✅ @pixi/graphics-smooth ローカル読み込み成功');
+            };
             smoothScript.onerror = function() {
                 console.warn('⚠️ ローカル @pixi/graphics-smooth 読み込み失敗 - CDNフォールバック未実装');
+                // 必要に応じてCDNフォールバック実装
             };
             document.head.appendChild(smoothScript);
         })();
@@ -301,5 +370,45 @@
     
     <!-- 11. Bootstrap（App依存・最後に実行） -->
     <script src="js/bootstrap.js"></script>
+
+    <!-- Phase1.5デバッグ用（開発時のみ・本番では削除推奨） -->
+    <script>
+        // ブラウザコンソールからの手動デバッグ関数
+        window.debugTegaki = function() {
+            if (window.Tegaki?.TegakiApplicationInstance) {
+                const app = window.Tegaki.TegakiApplicationInstance;
+                console.log('🧪 Phase1.5デバッグ情報:', app.getPhase15DebugInfo());
+                console.log('🧪 Phase1.5機能テスト:', app.testPhase15Features());
+                
+                // 初期ツール強制選択テスト
+                if (typeof app.forceSelectInitialTool === 'function') {
+                    console.log('🔧 初期ツール強制選択テスト:', app.forceSelectInitialTool());
+                }
+            } else {
+                console.warn('⚠️ TegakiApplication未初期化');
+            }
+        };
+        
+        // Phase1.5統合テスト実行
+        window.runPhase15Test = function() {
+            if (window.Tegaki?.runPhase15Test) {
+                return window.Tegaki.runPhase15Test();
+            } else {
+                console.warn('⚠️ Phase1.5統合テスト未利用可能');
+            }
+        };
+        
+        // 初期化完了後の自動状況確認
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(function() {
+                if (window.Tegaki?.TegakiApplicationInstance) {
+                    console.log('📊 Phase1.5初期化後状況確認');
+                    window.debugTegaki();
+                } else {
+                    console.warn('⚠️ TegakiApplication初期化未完了');
+                }
+            }, 2000); // 2秒後に自動確認
+        });
+    </script>
 </body>
 </html>

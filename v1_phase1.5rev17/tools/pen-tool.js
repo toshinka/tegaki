@@ -1,26 +1,38 @@
 /**
- * ✏️ PenTool Phase1.5 直接描画修正版 - AbstractTool継承・即時描画対応
+ * ✏️ PenTool Phase1.5 完全修正版 - pixi-graphics-smooth対応・AbstractTool継承・確実な初期化
  * 
- * 📋 使用メソッド一覧（依存確認済み ✅）
- * - new PIXI.Graphics() - PixiJS標準描画クラス
- * - graphics.lineStyle() - PixiJS線設定
- * - graphics.moveTo() / lineTo() - PixiJS線描画
- * - canvasManager.addGraphicsToLayer() - CanvasManager標準メソッド
- * - coordinateManager.toCanvas() - CoordinateManager座標変換
- * - recordManager.startOperation() - RecordManager操作記録
+ * 📌 使用メソッド一覧（他ファイル依存）:
+ * ✅ new PIXI.smooth.SmoothGraphics() - @pixi/graphics-smooth滑らか描画クラス
+ * ✅ smoothGraphics.lineStyle() - PixiJS標準線設定
+ * ✅ smoothGraphics.moveTo() / lineTo() - PixiJS線描画
+ * ✅ canvasManager.addGraphicsToLayer() - CanvasManager標準メソッド  
+ * ✅ canvasManager.removeGraphicsFromLayer() - Graphics削除メソッド
+ * ✅ canvasManager.getActiveLayerId() - アクティブレイヤー名取得
+ * ✅ coordinateManager.clientToCanvas() - 座標変換メソッド
+ * ✅ recordManager.startOperation() - 操作記録開始
+ * ✅ recordManager.endOperation() - 操作記録終了
+ * ✅ window.Tegaki.AbstractTool - 基底ツールクラス継承
  * 
- * 📋 RESPONSIBILITY: ベクター描画処理・座標データ管理・即時描画実行
+ * 📌 提供メソッド一覧（外部向け）:
+ * ✅ activate() - ツール有効化
+ * ✅ deactivate() - ツール無効化  
+ * ✅ handleMouseDown/Move/Up() - AbstractTool標準マウスイベント
+ * ✅ setCanvasManager() - CanvasManager設定（互換性）
+ * ✅ setPenColor/Width/Opacity() - ペン設定変更
+ * ✅ getDebugInfo() - デバッグ情報取得
+ * 
+ * 📋 RESPONSIBILITY: ベクター描画処理・座標データ管理・即時描画実行・滑らか線描画
  * 🚫 PROHIBITION: レイヤー操作・UI通知・座標変換重複・直接Manager作成・フォールバック
- * ✅ PERMISSION: PIXI.Graphics作成・線描画・CanvasManagerへの渡し・操作記録
+ * ✅ PERMISSION: SmoothGraphics作成・線描画・CanvasManagerへの渡し・操作記録・滑らか化
  * 
- * 📏 DESIGN_PRINCIPLE: AbstractTool継承・直接描画・RecordManager記録・PixiJS活用
- * 🔄 INTEGRATION: Phase1.5 Manager統合・AbstractTool標準準拠・PixiJS Graphics活用
+ * 📏 DESIGN_PRINCIPLE: AbstractTool継承・直接描画・RecordManager記録・pixi-graphics-smooth活用
+ * 🔄 INTEGRATION: Phase1.5 Manager統合・AbstractTool標準準拠・@pixi/graphics-smooth活用
  * 
- * ✏️ PEN_DRAWING_FLOW: ペン描画の修正版フロー
- * 1. PointerDown → CoordinateManager.toCanvas() → 座標確定（NaNエラー時は中断）
- * 2. PIXI.Graphics作成 → lineStyle設定 → moveTo開始点
+ * ✏️ PEN_DRAWING_FLOW: ペン描画の修正版フロー（pixi-graphics-smooth）
+ * 1. PointerDown → CoordinateManager.clientToCanvas() → 座標確定（NaNエラー時は中断）
+ * 2. PIXI.smooth.SmoothGraphics作成 → lineStyle設定 → moveTo開始点
  * 3. CanvasManager.addGraphicsToLayer() → 即座に画面表示
- * 4. PointerMove → lineTo描画 → 即座に画面更新
+ * 4. PointerMove → lineTo描画 → 滑らか線描画 → 即座に画面更新
  * 5. PointerUp → RecordManager記録 → 描画完了
  * 6. Graphics表示とRecordManager記録を並行処理（ブロックしない）
  */
@@ -30,8 +42,8 @@ window.Tegaki = window.Tegaki || {};
 
 if (!window.Tegaki.PenTool) {
     /**
-     * PenTool - Phase1.5 直接描画修正版（AbstractTool継承）
-     * AbstractToolを継承してベクター描画・即時表示・操作記録を行う
+     * PenTool - Phase1.5 完全修正版（pixi-graphics-smooth対応・AbstractTool継承）
+     * AbstractToolを継承してベクター描画・滑らか線・即時表示・操作記録を行う
      */
     class PenTool extends window.Tegaki.AbstractTool {
         constructor() {
@@ -40,14 +52,14 @@ if (!window.Tegaki.PenTool) {
                 color: 0x800000,           // ふたば風マルーン
                 lineWidth: 4,              // デフォルト線幅
                 opacity: 1.0,              // 不透明度
-                smoothing: true,           // スムージング有効
+                smoothing: true,           // スムージング有効（@pixi/graphics-smooth活用）
                 pressureSensitive: false   // 筆圧感度（Phase3で実装）
             });
             
-            console.log('✏️ PenTool Phase1.5 直接描画修正版 作成（AbstractTool継承）');
+            console.log('✏️ PenTool Phase1.5 完全修正版 作成（pixi-graphics-smooth対応・AbstractTool継承）');
             
             // ペン固有の状態
-            this.currentPath = null;      // 現在の描画Graphics
+            this.currentPath = null;      // 現在の描画SmoothGraphics
             this.points = [];             // 現在ストロークの座標配列
             this.strokeHistory = [];      // 全ストローク履歴（ローカル参照用）
             this.lastDrawPoint = null;    // 前回描画点（距離計算用）
@@ -55,6 +67,15 @@ if (!window.Tegaki.PenTool) {
             // 描画設定
             this.minDrawDistance = 2;     // 最小描画距離（滑らか化）
             this.vectorDataEnabled = true;  // ベクターデータ保持（常に有効）
+            
+            // pixi-graphics-smooth利用可能性確認
+            this.smoothGraphicsAvailable = !!(window.PIXI && window.PIXI.smooth && window.PIXI.smooth.SmoothGraphics);
+            
+            if (this.smoothGraphicsAvailable) {
+                console.log('✅ @pixi/graphics-smooth 利用可能 - 滑らかな線描画を使用');
+            } else {
+                console.warn('⚠️ @pixi/graphics-smooth 未利用可能 - 標準PIXI.Graphicsを使用');
+            }
         }
         
         /**
@@ -66,21 +87,40 @@ if (!window.Tegaki.PenTool) {
             // AbstractToolのinitializeメソッドを呼び出す
             this.initialize({
                 canvasManager: canvasManager,
-                coordinateManager: window.Tegaki?.CoordinateManagerInstance,
-                recordManager: window.Tegaki?.RecordManagerInstance,
-                eventBus: window.Tegaki?.EventBusInstance
+                coordinateManager: this.coordinateManager,
+                recordManager: this.recordManager,
+                eventBus: this.eventBus
             });
         }
         
         /**
-         * 🔧 アクティベート処理
+         * 🔧 アクティベート処理（強化版）
          */
         onActivate() {
             console.log(`✏️ PenTool アクティベート完了 - 描画可能状態`);
+            console.log(`   SmoothGraphics利用: ${this.smoothGraphicsAvailable}`);
+            console.log(`   設定: 色=0x${this.settings.color.toString(16)}, 線幅=${this.settings.lineWidth}px`);
+            
+            // アクティブ状態を確実に設定
+            this.active = true;
+            this.enabled = true;
         }
         
         /**
-         * 🎯 PointerDown処理（NaN対策・直接描画）
+         * 🔧 デアクティベート処理
+         */
+        onDeactivate() {
+            console.log('✏️ PenTool デアクティベート');
+            
+            // 進行中の描画があれば強制終了
+            if (this.isDrawing && this.currentPath) {
+                console.log('⚠️ PenTool - 描画中にデアクティベート、強制終了実行');
+                this.forceEndDrawing();
+            }
+        }
+        
+        /**
+         * 🎯 PointerDown処理（NaN対策・確実な座標変換）
          */
         onPointerDown(x, y, event) {
             console.log(`✏️ PenTool onPointerDown: active=${this.active}, enabled=${this.enabled}, input=(${x}, ${y})`);
@@ -91,14 +131,14 @@ if (!window.Tegaki.PenTool) {
                 return false;
             }
             
-            // 座標変換（NaN対策済みCoordinateManagerを使用）
+            // 座標変換（確実なCoordinateManager使用）
             let canvasPoint;
             try {
-                if (this.coordinateManager) {
-                    canvasPoint = this.coordinateManager.toCanvas({ x, y });
+                if (this.coordinateManager && typeof this.coordinateManager.clientToCanvas === 'function') {
+                    canvasPoint = this.coordinateManager.clientToCanvas(x, y);
+                    console.log(`✅ 座標変換成功: (${Math.round(x)}, ${Math.round(y)}) → (${Math.round(canvasPoint.x)}, ${Math.round(canvasPoint.y)})`);
                 } else {
-                    // フォールバック禁止 - 必須Manager未設定はエラー
-                    throw new Error('CoordinateManager not set');
+                    throw new Error('CoordinateManager.clientToCanvas not available');
                 }
             } catch (error) {
                 console.error('❌ 座標変換エラー:', error);
@@ -118,15 +158,13 @@ if (!window.Tegaki.PenTool) {
                 return false;
             }
             
-            console.log(`✏️ 座標変換成功: (${Math.round(x)}, ${Math.round(y)}) → (${Math.round(canvasPoint.x)}, ${Math.round(canvasPoint.y)})`);
-            
             // 描画開始
             this.startDrawing(canvasPoint.x, canvasPoint.y, event);
             return true;
         }
         
         /**
-         * PointerMove処理
+         * PointerMove処理（確実な座標変換）
          */
         onPointerMove(x, y, event) {
             if (!this.active || !this.isDrawing) return false;
@@ -134,7 +172,11 @@ if (!window.Tegaki.PenTool) {
             // 座標変換
             let canvasPoint;
             try {
-                canvasPoint = this.coordinateManager.toCanvas({ x, y });
+                if (this.coordinateManager && typeof this.coordinateManager.clientToCanvas === 'function') {
+                    canvasPoint = this.coordinateManager.clientToCanvas(x, y);
+                } else {
+                    throw new Error('CoordinateManager.clientToCanvas not available');
+                }
             } catch (error) {
                 console.warn('⚠️ Move座標変換エラー:', error.message);
                 return false;
@@ -150,7 +192,7 @@ if (!window.Tegaki.PenTool) {
         }
         
         /**
-         * PointerUp処理
+         * PointerUp処理（確実な座標変換）
          */
         onPointerUp(x, y, event) {
             if (!this.active || !this.isDrawing) return false;
@@ -158,7 +200,11 @@ if (!window.Tegaki.PenTool) {
             // 座標変換
             let canvasPoint;
             try {
-                canvasPoint = this.coordinateManager.toCanvas({ x, y });
+                if (this.coordinateManager && typeof this.coordinateManager.clientToCanvas === 'function') {
+                    canvasPoint = this.coordinateManager.clientToCanvas(x, y);
+                } else {
+                    throw new Error('CoordinateManager.clientToCanvas not available');
+                }
             } catch (error) {
                 console.warn('⚠️ Up座標変換エラー:', error.message);
                 canvasPoint = this.lastDrawPoint || { x: 0, y: 0 };
@@ -173,7 +219,7 @@ if (!window.Tegaki.PenTool) {
         }
         
         /**
-         * 🎨 描画開始処理（直接実装・即時表示）
+         * 🎨 描画開始処理（pixi-graphics-smooth対応・即時表示）
          */
         startDrawing(x, y, event) {
             if (!this.canvasManager) {
@@ -186,7 +232,7 @@ if (!window.Tegaki.PenTool) {
             
             // アクティブレイヤー確認
             const activeLayerId = this.canvasManager.getActiveLayerId();
-            console.log(`✏️ ペン描画開始: layer=${activeLayerId}, pos=(${Math.round(x)}, ${Math.round(y)})`);
+            console.log(`✏️ ペン描画開始: layer=${activeLayerId}, pos=(${Math.round(x)}, ${Math.round(y)}), smooth=${this.smoothGraphicsAvailable}`);
             
             // 座標配列初期化
             this.points = [{
@@ -195,10 +241,16 @@ if (!window.Tegaki.PenTool) {
                 timestamp: Date.now()
             }];
             
-            // 🎨 PIXI.Graphics作成（即時表示用）
-            this.currentPath = new PIXI.Graphics();
+            // 🎨 SmoothGraphics または Graphics作成（即時表示用）
+            if (this.smoothGraphicsAvailable) {
+                this.currentPath = new PIXI.smooth.SmoothGraphics();
+                console.log('✅ PIXI.smooth.SmoothGraphics 作成完了');
+            } else {
+                this.currentPath = new PIXI.Graphics();
+                console.log('⚠️ 標準PIXI.Graphics 作成（SmoothGraphics利用不可）');
+            }
             
-            // lineStyle設定（PixiJS標準）
+            // lineStyle設定（PixiJS標準・pixi-graphics-smooth互換）
             this.currentPath.lineStyle({
                 width: this.settings.lineWidth,
                 color: this.settings.color,
@@ -214,7 +266,7 @@ if (!window.Tegaki.PenTool) {
             // 🎯 即座にCanvasに追加（画面表示）
             try {
                 this.canvasManager.addGraphicsToLayer(this.currentPath);
-                console.log(`✅ ペンGraphics即座追加: layer=${activeLayerId}`);
+                console.log(`✅ ペンGraphics即座追加: layer=${activeLayerId}, smooth=${this.smoothGraphicsAvailable}`);
             } catch (error) {
                 console.error('❌ ペンGraphics追加失敗:', error);
                 if (window.Tegaki?.ErrorManagerInstance) {
@@ -236,7 +288,8 @@ if (!window.Tegaki.PenTool) {
                         data: {
                             startPoint: { x, y },
                             settings: { ...this.settings },
-                            layerId: activeLayerId
+                            layerId: activeLayerId,
+                            smoothGraphics: this.smoothGraphicsAvailable
                         }
                     });
                 } catch (error) {
@@ -247,7 +300,7 @@ if (!window.Tegaki.PenTool) {
         }
         
         /**
-         * 🎨 描画継続処理（滑らか化・即時表示）
+         * 🎨 描画継続処理（pixi-graphics-smooth滑らか化・即時表示）
          */
         continueDrawing(x, y, event) {
             if (!this.currentPath) return;
@@ -273,15 +326,15 @@ if (!window.Tegaki.PenTool) {
             this.points.push(pointData);
             this.lastDrawPoint = { x, y };
             
-            // 🎨 即座に線描画（PixiJS標準機能）
+            // 🎨 即座に線描画（SmoothGraphics または標準Graphics）
             this.currentPath.lineTo(x, y);
             
-            // 線の隙間を円で埋める（太い線で重要）
+            // 線の隙間を円で埋める（太い線で重要・滑らか線でも適用）
             this.currentPath.drawCircle(x, y, this.settings.lineWidth / 2);
             
             // デバッグログ（頻度制限）
-            if (this.points.length % 5 === 0) {
-                console.log(`✏️ 描画継続: 点数=${this.points.length}, 座標=(${Math.round(x)}, ${Math.round(y)})`);
+            if (this.points.length % 10 === 0) {
+                console.log(`✏️ 描画継続: 点数=${this.points.length}, 座標=(${Math.round(x)}, ${Math.round(y)}), smooth=${this.smoothGraphicsAvailable}`);
             }
         }
         
@@ -316,7 +369,8 @@ if (!window.Tegaki.PenTool) {
                         color: this.settings.color,
                         lineWidth: this.settings.lineWidth,
                         opacity: this.settings.opacity,
-                        smoothing: this.settings.smoothing
+                        smoothing: this.settings.smoothing,
+                        smoothGraphics: this.smoothGraphicsAvailable
                     },
                     createdAt: Date.now(),
                     type: 'pen',
@@ -324,7 +378,7 @@ if (!window.Tegaki.PenTool) {
                 };
                 
                 this.strokeHistory.push(strokeData);
-                console.log(`💾 ペンストローク保存: id=${strokeData.id}, points=${strokeData.points.length}`);
+                console.log(`💾 ペンストローク保存: id=${strokeData.id}, points=${strokeData.points.length}, smooth=${this.smoothGraphicsAvailable}`);
             }
             
             // RecordManager記録終了（非ブロッキング）
@@ -350,11 +404,50 @@ if (!window.Tegaki.PenTool) {
             const pathLength = this.points.length;
             const activeLayerId = this.canvasManager?.getActiveLayerId();
             
-            console.log(`✅ ペン描画完了: layer=${activeLayerId}, pathPoints=${pathLength}, color=0x${this.settings.color.toString(16)}`);
+            console.log(`✅ ペン描画完了: layer=${activeLayerId}, pathPoints=${pathLength}, color=0x${this.settings.color.toString(16)}, smooth=${this.smoothGraphicsAvailable}`);
             
             // リセット
             this.currentPath = null;
             this.points = [];
+        }
+        
+        /**
+         * 🔧 新規：描画強制終了（デアクティベート時など）
+         */
+        forceEndDrawing() {
+            if (!this.isDrawing || !this.currentPath) return;
+            
+            console.log('⚠️ PenTool - 描画強制終了実行');
+            
+            // 未完了Graphicsを削除
+            if (this.canvasManager) {
+                try {
+                    this.canvasManager.removeGraphicsFromLayer(this.currentPath);
+                    console.log('🗑️ 未完了Graphics削除完了');
+                } catch (error) {
+                    console.warn('⚠️ 強制終了Graphics削除失敗:', error.message);
+                }
+            }
+            
+            // RecordManager記録キャンセル
+            if (this.currentAction && this.recordManager) {
+                try {
+                    this.recordManager.endOperation(this.currentAction.id, {
+                        success: false,
+                        cancelled: true,
+                        reason: 'force_end'
+                    });
+                } catch (error) {
+                    console.warn('⚠️ RecordManager記録キャンセル失敗:', error.message);
+                }
+                this.currentAction = null;
+            }
+            
+            // 状態リセット
+            this.currentPath = null;
+            this.points = [];
+            this.isDrawing = false;
+            this.lastDrawPoint = null;
         }
         
         /**
@@ -431,30 +524,26 @@ if (!window.Tegaki.PenTool) {
          */
         onOperationForceEnd(operationData) {
             console.log(`⚠️ ペン描画強制終了: ${operationData.id}`);
-            
-            // 未完了のGraphicsがあれば削除
-            if (this.currentPath && this.canvasManager) {
-                try {
-                    this.canvasManager.removeGraphicsFromLayer(this.currentPath);
-                } catch (error) {
-                    console.warn('⚠️ 強制終了Graphics削除失敗:', error.message);
-                }
-            }
-            
-            // 状態リセット
-            this.currentPath = null;
-            this.points = [];
-            this.isDrawing = false;
-            this.lastDrawPoint = null;
+            this.forceEndDrawing();
         }
         
         /**
-         * ストローク再描画（Undo/Redo用）
+         * ストローク再描画（Undo/Redo用・pixi-graphics-smooth対応）
          */
         redrawStroke(strokeData) {
             if (!strokeData || !strokeData.points) return null;
             
-            const graphics = new PIXI.Graphics();
+            // SmoothGraphicsまたは標準Graphics作成
+            let graphics;
+            const useSmoothGraphics = strokeData.style?.smoothGraphics && this.smoothGraphicsAvailable;
+            
+            if (useSmoothGraphics) {
+                graphics = new PIXI.smooth.SmoothGraphics();
+                console.log('✅ ストローク再描画: SmoothGraphics使用');
+            } else {
+                graphics = new PIXI.Graphics();
+                console.log('⚠️ ストローク再描画: 標準Graphics使用');
+            }
             
             // スタイル適用
             graphics.lineStyle({
@@ -531,7 +620,7 @@ if (!window.Tegaki.PenTool) {
          */
         setSmoothing(enabled) {
             this.settings.smoothing = enabled;
-            console.log(`✏️ スムージング: ${enabled ? '有効' : '無効'}`);
+            console.log(`✏️ スムージング: ${enabled ? '有効' : '無効'} (SmoothGraphics利用可能: ${this.smoothGraphicsAvailable})`);
         }
         
         /**
@@ -596,7 +685,7 @@ if (!window.Tegaki.PenTool) {
         }
         
         /**
-         * 🆕 Phase1.5デバッグ情報取得（AbstractTool拡張）
+         * 🆕 Phase1.5デバッグ情報取得（AbstractTool拡張・pixi-graphics-smooth対応）
          */
         getDebugInfo() {
             return {
@@ -614,6 +703,10 @@ if (!window.Tegaki.PenTool) {
                     lastDrawPoint: this.lastDrawPoint,
                     minDrawDistance: this.minDrawDistance,
                     
+                    // pixi-graphics-smooth情報
+                    smoothGraphicsAvailable: this.smoothGraphicsAvailable,
+                    currentPathType: this.currentPath ? this.currentPath.constructor.name : null,
+                    
                     // 現在の設定
                     color: `0x${this.settings.color.toString(16)}`,
                     lineWidth: this.settings.lineWidth,
@@ -630,30 +723,55 @@ if (!window.Tegaki.PenTool) {
                     eventBus: !!this.eventBus
                 },
                 
+                // 座標変換機能確認
+                coordinateManagerMethods: this.coordinateManager ? {
+                    hasClientToCanvas: typeof this.coordinateManager.clientToCanvas === 'function',
+                    hasToCanvas: typeof this.coordinateManager.toCanvas === 'function',
+                    managerType: this.coordinateManager.constructor.name
+                } : null,
+                
                 // 最新ストローク情報
                 lastStroke: this.strokeHistory.length > 0 ? {
                     id: this.strokeHistory[this.strokeHistory.length - 1].id,
                     pointCount: this.strokeHistory[this.strokeHistory.length - 1].points.length,
-                    layerId: this.strokeHistory[this.strokeHistory.length - 1].layerId
+                    layerId: this.strokeHistory[this.strokeHistory.length - 1].layerId,
+                    smoothGraphics: this.strokeHistory[this.strokeHistory.length - 1].style?.smoothGraphics
                 } : null
             };
         }
         
         /**
-         * 🆕 Phase1.5機能テスト
+         * 🆕 Phase1.5機能テスト（pixi-graphics-smooth対応）
          */
         testPhase15Features() {
             const results = { success: [], error: [], warning: [] };
             
             try {
-                // Graphics作成テスト
+                // SmoothGraphics作成テスト
+                if (this.smoothGraphicsAvailable) {
+                    try {
+                        const testSmoothGraphics = new PIXI.smooth.SmoothGraphics();
+                        testSmoothGraphics.lineStyle(2, 0xff0000);
+                        testSmoothGraphics.moveTo(0, 0);
+                        testSmoothGraphics.lineTo(10, 10);
+                        testSmoothGraphics.drawCircle(5, 5, 1);
+                        
+                        results.success.push('PenTool: PIXI.smooth.SmoothGraphics作成・描画機能正常');
+                    } catch (error) {
+                        results.error.push(`PenTool: SmoothGraphics機能異常: ${error.message}`);
+                    }
+                } else {
+                    results.warning.push('PenTool: @pixi/graphics-smooth利用不可、標準Graphicsを使用');
+                }
+                
+                // 標準Graphics作成テスト（フォールバック）
                 const testGraphics = new PIXI.Graphics();
                 testGraphics.lineStyle(2, 0xff0000);
                 testGraphics.moveTo(0, 0);
                 testGraphics.lineTo(10, 10);
                 testGraphics.drawCircle(5, 5, 1);
                 
-                results.success.push('PenTool: PIXI.Graphics描画機能正常');
+                results.success.push('PenTool: PIXI.Graphics標準描画機能正常');
                 
                 // 設定変更テスト
                 const originalColor = this.settings.color;
@@ -675,11 +793,15 @@ if (!window.Tegaki.PenTool) {
                 // 座標変換テスト（CoordinateManager必要）
                 if (this.coordinateManager) {
                     try {
-                        const testPoint = this.coordinateManager.toCanvas({ x: 100, y: 100 });
-                        if (Number.isFinite(testPoint.x) && Number.isFinite(testPoint.y)) {
-                            results.success.push('PenTool: 座標変換連携正常');
+                        if (typeof this.coordinateManager.clientToCanvas === 'function') {
+                            const testPoint = this.coordinateManager.clientToCanvas(100, 100);
+                            if (Number.isFinite(testPoint.x) && Number.isFinite(testPoint.y)) {
+                                results.success.push('PenTool: clientToCanvas座標変換連携正常');
+                            } else {
+                                results.error.push('PenTool: clientToCanvas座標変換結果がNaN');
+                            }
                         } else {
-                            results.error.push('PenTool: 座標変換結果がNaN');
+                            results.warning.push('PenTool: CoordinateManager.clientToCanvas メソッド未対応');
                         }
                     } catch (error) {
                         results.warning.push(`PenTool: 座標変換テストエラー: ${error.message}`);
@@ -688,20 +810,61 @@ if (!window.Tegaki.PenTool) {
                     results.warning.push('PenTool: CoordinateManager未設定');
                 }
                 
+                // アクティブ状態テスト
+                if (this.active) {
+                    results.success.push('PenTool: アクティブ状態正常');
+                } else {
+                    results.warning.push('PenTool: 非アクティブ状態');
+                }
+                
             } catch (error) {
                 results.error.push(`PenTool機能テストエラー: ${error.message}`);
             }
             
             return results;
         }
+        
+        /**
+         * 🆕 Phase1.5状況取得（pixi-graphics-smooth対応）
+         */
+        getPhase15Status() {
+            return {
+                phase: '1.5',
+                toolName: this.name,
+                abstractToolInheritance: true,
+                managerIntegration: {
+                    canvasManager: !!this.canvasManager,
+                    coordinateManager: !!this.coordinateManager,
+                    recordManager: !!this.recordManager,
+                    eventBus: !!this.eventBus
+                },
+                features: {
+                    smoothGraphics: this.smoothGraphicsAvailable,
+                    vectorData: this.vectorDataEnabled,
+                    undoRedo: true,
+                    coordinateConversion: !!this.coordinateManager,
+                    immediateDrawing: true
+                },
+                settings: {
+                    ...this.settings,
+                    smoothGraphicsAvailable: this.smoothGraphicsAvailable
+                },
+                status: {
+                    active: this.active,
+                    enabled: this.enabled,
+                    drawing: this.isDrawing,
+                    ready: !!(this.canvasManager && this.coordinateManager)
+                }
+            };
+        }
     }
     
     // Tegaki名前空間に登録
     window.Tegaki.PenTool = PenTool;
     
-    console.log('✏️ PenTool Phase1.5 直接描画修正版 Loaded - 即時描画・NaN対策・AbstractTool完全準拠');
+    console.log('✏️ PenTool Phase1.5 完全修正版 Loaded - pixi-graphics-smooth対応・確実な初期化・AbstractTool完全準拠');
 } else {
     console.log('⚠️ PenTool already defined - skipping redefinition');
 }
 
-console.log('✏️ pen-tool.js loaded - 直接描画・座標変換修正・RecordManager非ブロッキング対応完了');
+console.log('✏️ pen-tool.js Phase1.5完全修正版 loaded - pixi-graphics-smooth対応・座標変換修正・確実なツール初期化完了');
