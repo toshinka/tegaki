@@ -1,22 +1,30 @@
 /**
- * AbstractTool Phase1.5 - 基底ツールクラス（確実なロード版）
+ * 🎯 AbstractTool Phase1.5 - 基底ツールクラス（架空メソッド完全修正版）
+ * 📋 RESPONSIBILITY: 全ツールの基底クラス・共通イベント処理・座標変換
+ * 🚫 PROHIBITION: 具体的な描画処理・Manager管理・複雑な初期化
+ * ✅ PERMISSION: イベントハンドリング・座標変換・基底メソッド提供
  * 
- * 使用メソッド一覧:
- * ✅ window.Tegaki.ErrorManager.handleError() (error-manager.js)
- * ✅ window.Tegaki.EventBus.emit() (event-bus.js)
- * ✅ window.Tegaki.CoordinateManager.clientToCanvas() (coordinate-manager.js)
+ * 📏 DESIGN_PRINCIPLE: 継承ベース・共通処理集約・子クラス実装委譲
+ * 🔄 INTEGRATION: CanvasManager連携・CoordinateManager座標変換・EventBus通信・ErrorManager報告
+ * 🔧 FIX: EventBus・ErrorManagerインスタンス参照修正・架空メソッド削除・エラー隠蔽禁止
  * 
- * 処理フロー:
- * 1. 継承 → 子クラスが基本メソッドを実装
- * 2. 有効化 → イベントリスナー登録 → 描画準備
- * 3. 描画 → 座標変換 → Canvas操作 → 履歴記録
- * 4. 無効化 → イベントリスナー削除 → 状態リセット
+ * 📌 使用メソッド一覧:
+ * ✅ window.Tegaki.ErrorManagerInstance.showError() - エラー表示（実在メソッド）
+ * ✅ window.Tegaki.EventBusInstance.emit() - イベント発火（実在メソッド）
+ * ✅ window.Tegaki.CoordinateManagerInstance.clientToCanvas() - 座標変換（実在メソッド）
+ * ✅ canvasManager.getCanvasElement() - Canvas要素取得（実在メソッド）
+ * ❌ handleError() - 削除（架空メソッド）
  * 
- * 依存関係: ErrorManager, EventBus, CoordinateManager
+ * 📐 基底ツールフロー:
+ * 開始 → 継承・作成 → 有効化・イベント登録 → 座標変換・描画委譲 → 無効化・リセット → 終了
+ * 依存関係: CanvasManager(Canvas要素)・EventBusInstance(通信)・ErrorManagerInstance(報告)・CoordinateManagerInstance(座標変換)
  */
 
 window.Tegaki = window.Tegaki || {};
 
+/**
+ * AbstractTool - 全ツールの基底クラス（架空メソッド完全修正版）
+ */
 class AbstractTool {
     constructor(canvasManager, toolName = 'abstract') {
         console.log(`🎯 AbstractTool 作成: ${toolName}`);
@@ -26,10 +34,10 @@ class AbstractTool {
         this.isActive = false;
         this.isDrawing = false;
         
-        // イベント参照
-        this.eventBus = window.Tegaki.EventBus;
-        this.errorManager = window.Tegaki.ErrorManager;
-        this.coordinateManager = window.Tegaki.CoordinateManager;
+        // 🔧 修正: インスタンス参照（クラス参照ではなく）
+        this.eventBus = window.Tegaki.EventBusInstance;
+        this.errorManager = window.Tegaki.ErrorManagerInstance;
+        this.coordinateManager = window.Tegaki.CoordinateManagerInstance;
         
         // 描画設定
         this.settings = {
@@ -62,8 +70,8 @@ class AbstractTool {
             this.onActivate();
         }
         
-        // イベント発火
-        if (this.eventBus) {
+        // 🔧 修正: 実在メソッド使用
+        if (this.eventBus && this.eventBus.emit) {
             this.eventBus.emit('tool:activated', {
                 toolName: this.toolName,
                 tool: this
@@ -89,8 +97,8 @@ class AbstractTool {
             this.onDeactivate();
         }
         
-        // イベント発火
-        if (this.eventBus) {
+        // 🔧 修正: 実在メソッド使用
+        if (this.eventBus && this.eventBus.emit) {
             this.eventBus.emit('tool:deactivated', {
                 toolName: this.toolName,
                 tool: this
@@ -104,7 +112,14 @@ class AbstractTool {
     addEventListeners() {
         const canvas = this.getCanvasElement();
         if (!canvas) {
-            console.warn('🎯 Canvas要素が見つかりません');
+            console.error('❌ AbstractTool: Canvas要素が取得できません');
+            
+            // 🔧 修正: 実在メソッド使用（架空のhandleErrorではなく）
+            if (this.errorManager && this.errorManager.showError) {
+                this.errorManager.showError('error', 'Canvas要素が取得できません', {
+                    context: `${this.toolName}.addEventListeners`
+                });
+            }
             return;
         }
         
@@ -117,6 +132,8 @@ class AbstractTool {
         canvas.addEventListener('touchstart', this.preventDefaultTouch);
         canvas.addEventListener('touchmove', this.preventDefaultTouch);
         canvas.addEventListener('touchend', this.preventDefaultTouch);
+        
+        console.log(`✅ ${this.toolName} イベントリスナー登録完了`);
     }
     
     /**
@@ -134,6 +151,8 @@ class AbstractTool {
         canvas.removeEventListener('touchstart', this.preventDefaultTouch);
         canvas.removeEventListener('touchmove', this.preventDefaultTouch);
         canvas.removeEventListener('touchend', this.preventDefaultTouch);
+        
+        console.log(`✅ ${this.toolName} イベントリスナー削除完了`);
     }
     
     /**
@@ -144,12 +163,26 @@ class AbstractTool {
     }
     
     /**
-     * Canvas要素取得
+     * Canvas要素取得（実在メソッド確認済み）
      */
     getCanvasElement() {
-        if (this.canvasManager && this.canvasManager.getCanvasElement) {
-            return this.canvasManager.getCanvasElement();
+        if (this.canvasManager && typeof this.canvasManager.getCanvasElement === 'function') {
+            try {
+                return this.canvasManager.getCanvasElement();
+            } catch (error) {
+                console.error('❌ AbstractTool: Canvas要素取得エラー:', error);
+                
+                // 🔧 修正: 実在メソッド使用
+                if (this.errorManager && this.errorManager.showError) {
+                    this.errorManager.showError('error', `Canvas要素取得エラー: ${error.message}`, {
+                        context: `${this.toolName}.getCanvasElement`
+                    });
+                }
+                return null;
+            }
         }
+        
+        console.warn('⚠️ AbstractTool: CanvasManagerまたはgetCanvasElementメソッドがありません');
         return null;
     }
     
@@ -157,11 +190,25 @@ class AbstractTool {
      * 座標変換（クライアント → Canvas）
      */
     getCanvasCoordinates(clientX, clientY) {
-        if (this.coordinateManager && this.coordinateManager.clientToCanvas) {
-            return this.coordinateManager.clientToCanvas(clientX, clientY);
+        if (this.coordinateManager && typeof this.coordinateManager.clientToCanvas === 'function') {
+            try {
+                return this.coordinateManager.clientToCanvas(clientX, clientY);
+            } catch (error) {
+                console.error('❌ AbstractTool: 座標変換エラー:', error);
+                
+                // フォールバック座標変換（エラー隠蔽ではなく、基本機能提供）
+                const canvas = this.getCanvasElement();
+                if (!canvas) return { x: 0, y: 0 };
+                
+                const rect = canvas.getBoundingClientRect();
+                return {
+                    x: clientX - rect.left,
+                    y: clientY - rect.top
+                };
+            }
         }
         
-        // フォールバック: 基本的な座標変換
+        // 基本座標変換（CoordinateManagerが無い場合）
         const canvas = this.getCanvasElement();
         if (!canvas) return { x: 0, y: 0 };
         
@@ -187,7 +234,18 @@ class AbstractTool {
         
         // 子クラスの描画開始処理
         if (this.onDrawStart) {
-            this.onDrawStart(coords.x, coords.y, event);
+            try {
+                this.onDrawStart(coords.x, coords.y, event);
+            } catch (error) {
+                console.error(`❌ ${this.toolName} onDrawStart エラー:`, error);
+                
+                // 🔧 修正: 実在メソッド使用
+                if (this.errorManager && this.errorManager.showError) {
+                    this.errorManager.showError('error', `描画開始エラー: ${error.message}`, {
+                        context: `${this.toolName}.handlePointerDown`
+                    });
+                }
+            }
         }
     }
     
@@ -204,12 +262,27 @@ class AbstractTool {
         if (this.isDrawing) {
             // 描画中
             if (this.onDraw) {
-                this.onDraw(coords.x, coords.y, event);
+                try {
+                    this.onDraw(coords.x, coords.y, event);
+                } catch (error) {
+                    console.error(`❌ ${this.toolName} onDraw エラー:`, error);
+                    
+                    // 🔧 修正: 実在メソッド使用
+                    if (this.errorManager && this.errorManager.showError) {
+                        this.errorManager.showError('error', `描画エラー: ${error.message}`, {
+                            context: `${this.toolName}.handlePointerMove`
+                        });
+                    }
+                }
             }
         } else {
             // ホバー
             if (this.onHover) {
-                this.onHover(coords.x, coords.y, event);
+                try {
+                    this.onHover(coords.x, coords.y, event);
+                } catch (error) {
+                    console.error(`❌ ${this.toolName} onHover エラー:`, error);
+                }
             }
         }
     }
@@ -229,7 +302,18 @@ class AbstractTool {
         
         // 子クラスの描画終了処理
         if (this.onDrawEnd) {
-            this.onDrawEnd(coords.x, coords.y, event);
+            try {
+                this.onDrawEnd(coords.x, coords.y, event);
+            } catch (error) {
+                console.error(`❌ ${this.toolName} onDrawEnd エラー:`, error);
+                
+                // 🔧 修正: 実在メソッド使用
+                if (this.errorManager && this.errorManager.showError) {
+                    this.errorManager.showError('error', `描画終了エラー: ${error.message}`, {
+                        context: `${this.toolName}.handlePointerUp`
+                    });
+                }
+            }
         }
     }
     
@@ -250,7 +334,11 @@ class AbstractTool {
         
         // 子クラスの設定更新処理
         if (this.onSettingsUpdate) {
-            this.onSettingsUpdate(this.settings);
+            try {
+                this.onSettingsUpdate(this.settings);
+            } catch (error) {
+                console.error(`❌ ${this.toolName} 設定更新エラー:`, error);
+            }
         }
         
         console.log(`🎯 ${this.toolName} 設定更新:`, this.settings);
@@ -284,7 +372,11 @@ class AbstractTool {
         this.isDrawing = false;
         
         if (this.onReset) {
-            this.onReset();
+            try {
+                this.onReset();
+            } catch (error) {
+                console.error(`❌ ${this.toolName} リセットエラー:`, error);
+            }
         }
         
         console.log(`🎯 ${this.toolName} リセット完了`);
@@ -299,7 +391,11 @@ class AbstractTool {
         this.deactivate();
         
         if (this.onDestroy) {
-            this.onDestroy();
+            try {
+                this.onDestroy();
+            } catch (error) {
+                console.error(`❌ ${this.toolName} 破棄エラー:`, error);
+            }
         }
         
         // 参照をクリア
@@ -379,4 +475,4 @@ class AbstractTool {
 
 // グローバル公開（最重要）
 window.Tegaki.AbstractTool = AbstractTool;
-console.log('🎯 AbstractTool Phase1.5 Loaded - 基底ツールクラス確実ロード版');
+console.log('🎯 AbstractTool Phase1.5 Loaded - 基底ツールクラス架空メソッド完全修正版');
