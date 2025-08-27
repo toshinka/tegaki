@@ -1,113 +1,74 @@
-エラーログを見た感じ、主に3系統の問題が絡んでいます。整理すると以下の通りです。
+consoleログ
+を精査すると、CoordinateManager自体は正常に初期化され、CanvasManagerとの接続も完了しているのに、ToolManager → AbstractTool → PenTool のバリデーションで「CoordinateManager not set」エラーが出ています。
 
-1. await is only valid in async functions and the top level bodies of modules
+原因分析
 
-tool-manager.js:294 Uncaught SyntaxError: await is only valid in async functions and the top level bodies of modules
+初期化順序の不整合
 
+CoordinateManagerは setCanvasManager() によりCanvasManagerと結び付いている。
 
+しかしToolManager生成時にPenToolをアクティブ化する直前、AbstractTool.validateManagersが走る。
 
-原因
+この時、PenToolが参照するManager群にCoordinateManagerが渡っていない。
 
-await が関数外（トップレベル）に書かれているが、type="module" で読み込んでいない。
+Managerの接続ループ懸念
 
-Tegakiのルール上「ESM禁止（HTML直開き必須）」となっているため、グローバルスクリプトとして読み込まれている状態では await は使用不可。
+TegakiApplication → AppCore → ToolManager初期化 → AbstractToolがManagerをチェック。
 
-対策案
+だがCoordinateManagerへの接続は「AppCoreレイヤ」で止まっており、ツールへ伝搬していない。
 
-await を使いたい箇所を async function 内に閉じ込める。
+Manager依存関係が循環している可能性（CoordinateManagerはCanvasManagerに依存、ToolはCoordinateManagerに依存）。
 
-例えば:
+@pixi/layers導入の必要性について
 
-// NG
-const result = await doSomething();
+console出力ではCanvasManagerがすでに「レイヤー問題完全修正版」で main layer を確実化している。
 
-// OK
-async function init() {
-    const result = await doSomething();
-    return result;
-}
-init();
+したがって今回のエラーはPixiのレイヤー不足ではなく、Manager注入不足が原因。
 
-または「Promise.then」で書き換える:
-
-doSomething().then(result => {
-    // 処理
-});
-
-
-2. Class extends value undefined is not a constructor or null
-
-pen-tool.js:48 Uncaught TypeError: Class extends value undefined is not a constructor or null
-eraser-tool.js:21 Uncaught TypeError: Class extends value undefined is not a constructor or null
-
-原因
-
-PenTool / EraserTool が extends AbstractTool のように継承しているが、AbstractTool が未ロード or 未定義。
-
-読み込み順（<script> タグの順序）が崩れている可能性が高い。
-
-index.html の <script src="..."> の並びで abstract-tool.js より先に pen-tool.js や eraser-tool.js が実行されているとこのエラーになる。
+よって、@pixi/layers導入はエラー解決の直接条件ではない。将来的な高度なレイヤー分離には必要になるが、現状の「CoordinateManager not set」問題には無関係。
 
 対策案
+短期修正
 
-scriptの順序を修正
+ToolManager初期化前に、全Manager参照を確実に注入する処理を追加する。
 
-abstract-tool.js → pen-tool.js → eraser-tool.js の順に読み込む。
+AppCore.initializeToolManager内で
 
-さらにそれらを利用する tool-manager.js は最後に読み込む。
+tool.setManager("coordinate", CoordinateManager)
 
-念のため グローバル公開確認
+tool.setManager("canvas", CanvasManager)
 
-各ツールの末尾で必ず window.Tegaki.AbstractTool = AbstractTool; のように公開する。
+tool.setManager("record", RecordManager)
+などを明示的に実行する。
 
+これによりAbstractTool.validateManagersで失敗しなくなる。
 
-3. ToolManager / PenTool / EraserTool 未定義
+中期修正
 
+Manager DI（依存性注入）を統一化
 
-bootstrap.js:53 ⚠️ ToolManager: 未定義または無効
-bootstrap.js:53 ⚠️ PenTool: 未定義または無効
-bootstrap.js:53 ⚠️ EraserTool: 未定義または無効
+TegakiApplicationが ManagerRegistry（連想配列）を保持し、ToolManagerはそこから必要なManagerをまとめて受け取る方式に統一。
 
-原因
+各Toolは「必須Managerキーリスト」を宣言し、Registryから取得する。
 
-上記2の継承エラーでクラス定義が失敗 → 以降の bootstrap.js で参照できず警告が出ている。
+これで「CoordinateManagerだけ未設定」という片寄りを防止できる。
 
-そのため TegakiApplication の初期化も失敗している。
+長期修正
 
-対策案
+レイヤー戦略の整理
 
-根本はロード順とクラス定義の失敗なので、まずAbstractToolを確実にロードしてからツール系を読み込む。
+@pixi/layersは将来的に複雑な描画管理をする際（背景・ガイド・描画・UIなどのレイヤー分離）には導入すべき。
 
-ToolManager も PenTool / EraserTool の定義後に初期化すべき。
+ただし現在のエラーは座標変換系の接続不良が原因であるため、先にDIルートの整理を優先。
 
-✅ 修正指針まとめ
+レイヤー導入は「描画結果の重なり制御・フィルタ適用・非破壊編集用レイヤー設計」の段階で組み込むのが望ましい。
 
-await の使用箇所を async 関数に閉じ込める（または Promise.then に書き換え）。
+結論
 
-script読み込み順を整理
+現在のconsoleエラーの原因は CoordinateManagerがPenToolに注入されない初期化順序の不整合。
 
-index.html の最後に近い部分で以下の順にする：
+@pixi/layersの有無は今回の問題解決に関与しない。
 
-utils/*
-abstract-tool.js
-pen-tool.js
-eraser-tool.js
-managers/tool-manager.js
-bootstrap.js
-main.js
+解決策は、ToolManager初期化前に全ManagerをToolへ明示的に渡す仕組みを徹底すること。
 
-グローバル公開を保証
-
-各クラスの末尾で window.Tegaki 名前空間に必ずアタッチする。
-
-例:
-
-window.Tegaki = window.Tegaki || {};
-window.Tegaki.PenTool = PenTool;
-
-
-これで ToolManager class not available → 解消され、TegakiApplication.initialize が正常に進むはず。
-
-
-
-
+将来的なレイヤー管理強化時に@pixi/layersを導入すればよい。

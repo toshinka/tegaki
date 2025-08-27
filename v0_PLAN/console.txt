@@ -27,7 +27,7 @@
  ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
  📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
  🎨 CanvasManager レイヤー問題完全修正版 Loaded - main layer対応・エラー隠蔽禁止・レイヤー存在確実化
- 🎯 AbstractTool CoordinateManager連携修正版 Loaded - clientToCanvas使用・Manager確実設定・座標変換エラー完全throw・デバッグ強化
+ 🎯 AbstractTool Manager統一注入方式・フォールバック削除版 Loaded - setManagers()統一・getManager()便利・validateManagers()厳密・フォールバック完全削除
  🖊️ PenTool Phase1.5 Loaded - RecordManager連携強化版・PixiJS v7標準活用・非破壊編集対応
  🧹 EraserTool Phase1.5 Loaded - シンプル実装版・RecordManager連携・PixiJS hit-test活用
  🔧 ToolManager Phase1.5 Loaded - 完全修正版・ツール初期化確実化・Phase1.5Manager連携対応・エラー隠蔽禁止
@@ -124,36 +124,36 @@ app-core.js:117 🖊️ AppCore - ToolManager初期化開始（Phase1.5対応版
 tool-manager.js:47 🔧 ToolManager Phase1.5 作成開始 - 完全修正版
 tool-manager.js:115 ✅ 全依存関係確認完了 - PenTool・EraserTool・CanvasManager利用可能
 tool-manager.js:122 🔧 ツール作成開始...
-abstract-tool.js:57 🎯 AbstractTool 作成開始: pen
-abstract-tool.js:99 ✅ pen AbstractTool 作成完了
+abstract-tool.js:66 🎯 AbstractTool 作成開始: pen
+abstract-tool.js:111 ✅ pen AbstractTool 作成完了
 pen-tool.js:42 🖊️ PenTool Phase1.5 作成開始 - RecordManager連携強化版
 pen-tool.js:64 ✅ PenTool 作成完了: Object
 tool-manager.js:132 ✅ PenTool 作成完了
-abstract-tool.js:57 🎯 AbstractTool 作成開始: eraser
-abstract-tool.js:99 ✅ eraser AbstractTool 作成完了
+abstract-tool.js:66 🎯 AbstractTool 作成開始: eraser
+abstract-tool.js:111 ✅ eraser AbstractTool 作成完了
 eraser-tool.js:40 🧹 EraserTool Phase1.5 作成開始 - シンプル実装版
 eraser-tool.js:58 ✅ EraserTool 作成完了: Object
 tool-manager.js:142 ✅ EraserTool 作成完了
 tool-manager.js:144 ✅ 全ツール作成完了: Array(2)
 tool-manager.js:145 📊 ツール数: 2
 tool-manager.js:213 🔧 ツール選択開始: pen
-abstract-tool.js:210 🎯 pen 有効化開始
-abstract-tool.js:185 💀 Manager設定検証失敗: Error: pen Manager validation failed: CoordinateManager not set
-    at PenTool.validateManagers (abstract-tool.js:184:27)
-    at PenTool.activate (abstract-tool.js:213:14)
+abstract-tool.js:263 🎯 pen 有効化開始
+abstract-tool.js:238 💀 Manager設定検証失敗: Error: pen Manager validation failed: CoordinateManager not set
+    at PenTool.validateManagers (abstract-tool.js:237:27)
+    at PenTool.activate (abstract-tool.js:266:14)
     at ToolManager.selectTool (tool-manager.js:238:30)
     at new ToolManager (tool-manager.js:90:14)
     at AppCore.initializeToolManager (app-core.js:135:36)
     at TegakiApplication.initializeToolManager (tegaki-application.js:338:32)
     at TegakiApplication.initialize (tegaki-application.js:90:24)
-validateManagers @ abstract-tool.js:185
-abstract-tool.js:186 📊 詳細Manager設定状況: Object
-validateManagers @ abstract-tool.js:186
-abstract-tool.js:189 📊 基盤システム状況: Object
-validateManagers @ abstract-tool.js:189
+validateManagers @ abstract-tool.js:238
+abstract-tool.js:239 📊 詳細Manager設定状況: Object
+validateManagers @ abstract-tool.js:239
+abstract-tool.js:242 📊 基盤システム状況: Object
+validateManagers @ abstract-tool.js:242
 app-core.js:142 ❌ AppCore - ToolManager初期化エラー: Error: pen Manager validation failed: CoordinateManager not set
-    at PenTool.validateManagers (abstract-tool.js:184:27)
-    at PenTool.activate (abstract-tool.js:213:14)
+    at PenTool.validateManagers (abstract-tool.js:237:27)
+    at PenTool.activate (abstract-tool.js:266:14)
     at ToolManager.selectTool (tool-manager.js:238:30)
     at new ToolManager (tool-manager.js:90:14)
     at AppCore.initializeToolManager (app-core.js:135:36)
