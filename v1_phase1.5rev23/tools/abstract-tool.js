@@ -1,65 +1,59 @@
 /**
- * 🎯 AbstractTool - Manager統一注入方式・フォールバック削除版
- * 📋 RESPONSIBILITY: 全ツールの基底クラス・共通イベント処理・座標変換・Manager統一管理
- * 🚫 PROHIBITION: 具体的な描画処理・複雑な初期化・エラー隠蔽・Manager未設定時の無視・フォールバック処理
- * ✅ PERMISSION: イベントハンドリング・座標変換・Manager統一設定・基底メソッド提供・厳密検証
+ * 🎯 AbstractTool Manager統一注入方式・フォールバック削除版
+ * 📋 RESPONSIBILITY: 全ツールの基底クラス・共通イベント処理・座標変換・統一Manager管理
+ * 🚫 PROHIBITION: 描画処理・複雑初期化・エラー隠蔽・Manager未設定時無視・フォールバック・個別Manager設定
+ * ✅ PERMISSION: イベントハンドリング・座標変換・統一Manager注入受け取り・基底メソッド・厳密検証
  * 
  * 📏 DESIGN_PRINCIPLE: 継承ベース・共通処理集約・Manager統一注入・エラー隠蔽完全禁止・フェイルファスト
- * 🔄 INTEGRATION: CanvasManager連携・CoordinateManager座標変換・RecordManager記録・EventBus通信・ErrorManager報告
- * 🔧 FIX: setManagers()統一注入・getManager()統一取得・validateManagers()厳密確認・フォールバック完全削除
+ * 🔄 INTEGRATION: setManagers()統一注入・Manager存在厳密確認・EventBus通信・ErrorManager報告
+ * 🔧 FIX: setManagers()統一・getManager()便利・validateManagers()厳密・フォールバック完全削除
  * 
  * 📌 使用メソッド一覧:
  * ✅ window.Tegaki.ErrorManagerInstance.showError() - エラー表示（error-manager.js確認済み）
  * ✅ window.Tegaki.EventBusInstance.emit() - イベント発火（event-bus.js確認済み）
- * ✅ this.managers.coordinate.clientToCanvas() - 座標変換（coordinate-manager.js確認済み）
- * ✅ this.managers.canvas.getCanvasElement() - Canvas要素取得（canvas-manager.js確認済み）
- * ✅ this.managers.record?.recordDraw() - 操作記録（record-manager.js確認済み・オプション）
+ * ✅ managers.coordinate.clientToCanvas() - 座標変換（coordinate-manager.js確認済み）
+ * ✅ managers.canvas.getCanvasElement() - Canvas要素取得（canvas-manager.js確認済み）
  * ✅ canvas.getBoundingClientRect() - 要素位置取得（DOM標準）
  * ✅ canvas.addEventListener/removeEventListener() - イベント管理（DOM標準）
  * ✅ event.preventDefault() - デフォルト動作防止（DOM標準）
  * 🆕 this.setManagers(managers) - Manager統一注入（新規実装）
- * 🆕 this.getManager(type) - Manager統一取得（新規実装）
- * 🆕 this.validateManagers() - Manager設定厳密確認（修正実装）
+ * 🆕 this.getManager(type) - Manager取得便利メソッド（新規実装）
+ * 🆕 this.validateManagers() - Manager存在厳密確認（修正強化）
+ * ❌ 全てのsetXXXManager()個別メソッド削除 - 統一注入に変更
  * ❌ フォールバック処理全て削除 - Manager未設定時は即座にエラー
- * ❌ 個別Manager設定メソッド削除 - setManagers()に統一
  * 
  * 📐 基底ツールフロー:
- * 開始 → 継承・作成(CanvasManager) → setManagers()統一注入 → validateManagers()検証 → 
- * activate()有効化・イベント登録 → 座標変換・描画委譲 → deactivate()無効化・リセット → 終了
+ * 開始 → 継承・作成 → setManagers()統一注入 → validateManagers()確認 → 有効化・イベント登録 → 
+ * 座標変換・描画委譲 → 無効化・リセット → 終了
  * 依存関係: CanvasManager(Canvas要素・必須)・CoordinateManager(座標変換・必須)・
- * RecordManager(記録・オプション)・EventBusInstance(通信)・ErrorManagerInstance(報告)
+ * RecordManager(記録・必須)・NavigationManager(ナビ・オプション)・
+ * EventBusInstance(通信)・ErrorManagerInstance(報告)
  * 
  * 🚨 CRITICAL_DEPENDENCIES: 重要依存関係（動作に必須）
- * - this.managers.canvas !== null - Canvas管理Manager必須
- * - this.managers.coordinate !== null - 座標変換Manager必須
- * - this.managers.canvas.getCanvasElement() !== null - Canvas要素存在必須
- * - this.managers.coordinate.clientToCanvas() - 座標変換メソッド必須
+ * - managers.canvas !== null - Canvas管理Manager必須
+ * - managers.coordinate !== null - 座標変換Manager必須
+ * - managers.record !== null - 記録Manager必須
+ * - managers.canvas.getCanvasElement() !== null - Canvas要素存在必須
  * 
- * 🔧 MANAGER_INJECTION: Manager注入パターン（統一方式）
- * 1. AbstractTool作成(canvasManager) - 従来互換
- * 2. setManagers({canvas, coordinate, record, navigation}) - 統一注入
- * 3. validateManagers() - 必須Manager存在確認・エラー隠蔽禁止
- * 4. activate() - ツール有効化・イベント設定
+ * 🔧 INITIALIZATION_ORDER: 初期化順序（厳守必要）
+ * 1. AbstractTool作成・CanvasManager仮設定
+ * 2. setManagers()で全Manager統一注入
+ * 3. validateManagers()で設定確認・検証
+ * 4. ツール有効化・イベント設定
  * 5. 座標変換・描画処理可能
  * 
  * 🚫 ABSOLUTE_PROHIBITIONS: 絶対禁止事項
  * - Manager未設定時の無視処理（エラーthrow必須）
- * - CoordinateManager未設定時の基本座標変換フォールバック（削除）
+ * - Manager個別設定メソッド使用（setManagers()統一のみ）
  * - try/catch握りつぶし（詳細ログ+throw必須）
  * - Manager設定前のツール使用（validateManagers()で防止）
- * - 個別Manager設定メソッド使用（統一方式に変更）
- * 
- * 🆕 MANAGER_TYPES: サポートManagerタイプ
- * - 'canvas': CanvasManager（必須）
- * - 'coordinate': CoordinateManager（必須）
- * - 'record': RecordManager（オプション）
- * - 'navigation': NavigationManager（オプション・Phase1.5）
+ * - フォールバック・デフォルト値使用（正しい構造でのみ動作）
  */
 
 window.Tegaki = window.Tegaki || {};
 
 /**
- * AbstractTool - 全ツールの基底クラス（Manager統一注入方式）
+ * AbstractTool - 全ツールの基底クラス（Manager統一注入版）
  */
 class AbstractTool {
     constructor(canvasManager, toolName = 'abstract') {
@@ -72,16 +66,18 @@ class AbstractTool {
             throw error;
         }
         
+        this.canvasManager = canvasManager;
         this.toolName = toolName;
         this.isActive = false;
         this.isDrawing = false;
         
-        // 🆕 Manager統一管理（旧個別プロパティを統一）
+        // 🆕 Manager統一管理オブジェクト（setManagers()で設定）
         this.managers = {
-            canvas: canvasManager,      // 必須・コンストラクタ引数から
-            coordinate: null,           // 必須・setManagers()で設定
-            record: null,               // オプション・setManagers()で設定
-            navigation: null            // オプション・Phase1.5で追加
+            canvas: canvasManager,  // コンストラクタで受け取った分
+            coordinate: null,
+            record: null,
+            navigation: null,
+            shortcut: null
         };
         
         // 基盤システム依存関係
@@ -112,59 +108,58 @@ class AbstractTool {
     }
     
     /**
-     * 🆕 Manager統一注入（新方式・必須メソッド）
-     * @param {Object} managers - Manager集合 {canvas, coordinate, record?, navigation?}
+     * 🆕 Manager統一注入（必須・全Managerを一度に設定）
      */
     setManagers(managers) {
         if (!managers || typeof managers !== 'object') {
-            const error = new Error(`${this.toolName}: managers must be an object`);
+            const error = new Error(`${this.toolName}: managers object is required`);
             console.error('💀 Manager統一注入失敗:', error);
             throw error;
         }
         
-        console.log(`🔧 ${this.toolName} Manager統一注入開始`);
+        console.log(`🔧 ${this.toolName} Manager統一注入開始...`);
         
-        // 必須Manager確認（canvas, coordinate）
-        if (!managers.canvas) {
-            const error = new Error(`${this.toolName}: managers.canvas is required`);
-            console.error('💀 Manager統一注入失敗:', error);
-            throw error;
-        }
-        if (!managers.coordinate) {
-            const error = new Error(`${this.toolName}: managers.coordinate is required`);
-            console.error('💀 Manager統一注入失敗:', error);
-            throw error;
+        // 必須Manager確認
+        const requiredManagers = ['canvas', 'coordinate', 'record'];
+        const missingManagers = [];
+        
+        for (const required of requiredManagers) {
+            if (!managers[required]) {
+                missingManagers.push(required);
+            }
         }
         
-        // Manager設定（null上書き可・オプションManager対応）
-        this.managers.canvas = managers.canvas;
-        this.managers.coordinate = managers.coordinate;
-        this.managers.record = managers.record || null;
-        this.managers.navigation = managers.navigation || null;
+        if (missingManagers.length > 0) {
+            const error = new Error(`${this.toolName}: Missing required managers: ${missingManagers.join(', ')}`);
+            console.error('💀 必須Manager不足:', error);
+            throw error;
+        }
+        
+        // Manager設定
+        this.managers = {
+            canvas: managers.canvas,
+            coordinate: managers.coordinate,
+            record: managers.record,
+            navigation: managers.navigation || null,  // オプション
+            shortcut: managers.shortcut || null       // オプション
+        };
         
         console.log(`✅ ${this.toolName} Manager統一注入完了`);
-        console.log(`📊 注入Manager状況:`, {
+        console.log(`📊 注入されたManager:`, {
             canvas: !!this.managers.canvas,
             coordinate: !!this.managers.coordinate,
             record: !!this.managers.record,
-            navigation: !!this.managers.navigation
+            navigation: !!this.managers.navigation,
+            shortcut: !!this.managers.shortcut
         });
     }
     
     /**
-     * 🆕 Manager統一取得（新方式・便利メソッド）
-     * @param {string} type - Managerタイプ('canvas', 'coordinate', 'record', 'navigation')
-     * @returns {Object|null} Manager または null
+     * 🆕 Manager取得便利メソッド（type指定で取得）
      */
     getManager(type) {
-        if (!type || typeof type !== 'string') {
-            const error = new Error(`${this.toolName}: getManager() requires type string`);
-            console.error('💀 Manager取得失敗:', error);
-            throw error;
-        }
-        
-        if (!this.managers.hasOwnProperty(type)) {
-            const error = new Error(`${this.toolName}: unknown manager type '${type}'. Available: canvas, coordinate, record, navigation`);
+        if (!this.managers[type]) {
+            const error = new Error(`${this.toolName}: ${type}Manager not set`);
             console.error('💀 Manager取得失敗:', error);
             throw error;
         }
@@ -173,7 +168,7 @@ class AbstractTool {
     }
     
     /**
-     * 🔧 Manager設定厳密確認（修正版・エラー隠蔽禁止）
+     * 🔧 Manager設定厳密確認（修正強化・詳細デバッグ）
      */
     validateManagers() {
         const errors = [];
@@ -200,21 +195,25 @@ class AbstractTool {
             initialized: this.managers.coordinate?.initialized || false
         };
         
-        // 詳細なRecordManager状態チェック（オプション）
+        // 詳細なRecordManager状態チェック
         managerStatus.record = {
             exists: !!this.managers.record,
             hasRecordDraw: typeof this.managers.record?.recordDraw === 'function',
             hasCanUndo: typeof this.managers.record?.canUndo === 'function'
         };
         
-        // 詳細なNavigationManager状態チェック（オプション・Phase1.5）
+        // オプションManager状態チェック
         managerStatus.navigation = {
             exists: !!this.managers.navigation,
-            hasPanCanvas: typeof this.managers.navigation?.panCanvas === 'function',
-            hasZoomCanvas: typeof this.managers.navigation?.zoomCanvas === 'function'
+            hasNavigate: typeof this.managers.navigation?.navigate === 'function'
         };
         
-        // エラー収集（必須Manager）
+        managerStatus.shortcut = {
+            exists: !!this.managers.shortcut,
+            hasSetup: typeof this.managers.shortcut?.setupPhase15Shortcuts === 'function'
+        };
+        
+        // エラー収集（必須Managerのみ）
         if (!managerStatus.canvas.exists) {
             errors.push('CanvasManager not set');
         } else if (!managerStatus.canvas.hasGetCanvasElement) {
@@ -231,7 +230,11 @@ class AbstractTool {
             errors.push('CoordinateManager not initialized');
         }
         
-        // recordManager・navigationManagerはnull許可（オプション）
+        if (!managerStatus.record.exists) {
+            errors.push('RecordManager not set');
+        } else if (!managerStatus.record.hasRecordDraw) {
+            errors.push('RecordManager.recordDraw method not found');
+        }
         
         if (errors.length > 0) {
             const error = new Error(`${this.toolName} Manager validation failed: ${errors.join(', ')}`);
@@ -386,22 +389,18 @@ class AbstractTool {
     }
     
     /**
-     * Canvas要素取得（統一Manager使用・エラー隠蔽禁止）
+     * Canvas要素取得（エラー隠蔽禁止）
      */
     getCanvasElement() {
-        if (!this.managers.canvas) {
-            const error = new Error(`${this.toolName}: CanvasManager not set`);
-            console.error('💀 Canvas要素取得失敗:', error);
-            throw error;
-        }
+        const canvasManager = this.getManager('canvas');
         
-        if (typeof this.managers.canvas.getCanvasElement !== 'function') {
+        if (typeof canvasManager.getCanvasElement !== 'function') {
             const error = new Error(`${this.toolName}: CanvasManager.getCanvasElement method not available`);
             console.error('💀 Canvas要素取得失敗:', error);
             throw error;
         }
         
-        const canvas = this.managers.canvas.getCanvasElement();
+        const canvas = canvasManager.getCanvasElement();
         if (!canvas) {
             const error = new Error(`${this.toolName}: CanvasManager.getCanvasElement() returned null`);
             console.error('💀 Canvas要素取得失敗:', error);
@@ -412,25 +411,20 @@ class AbstractTool {
     }
     
     /**
-     * 🔧 座標変換（クライアント座標 → Canvas座標）- 統一Manager使用
+     * 🔧 座標変換（クライアント座標 → Canvas座標）- CoordinateManager.clientToCanvas使用
      */
     getCanvasCoordinates(clientX, clientY) {
-        // CoordinateManager必須確認（フォールバック禁止）
-        if (!this.managers.coordinate) {
-            const error = new Error(`${this.toolName}: CoordinateManager not set - coordinate conversion impossible`);
-            console.error('💀 座標変換失敗:', error);
-            throw error;
-        }
+        const coordinateManager = this.getManager('coordinate');
         
-        if (typeof this.managers.coordinate.clientToCanvas !== 'function') {
+        if (typeof coordinateManager.clientToCanvas !== 'function') {
             const error = new Error(`${this.toolName}: CoordinateManager.clientToCanvas method not available`);
             console.error('💀 座標変換失敗:', error);
             throw error;
         }
         
-        // 🔧 座標変換実行（clientToCanvas使用・エラー隠蔽禁止）
+        // 座標変換実行（エラー隠蔽禁止）
         try {
-            const result = this.managers.coordinate.clientToCanvas(clientX, clientY);
+            const result = coordinateManager.clientToCanvas(clientX, clientY);
             
             if (!result || typeof result.x !== 'number' || typeof result.y !== 'number') {
                 const error = new Error(`${this.toolName}: CoordinateManager returned invalid coordinates`);
@@ -605,12 +599,7 @@ class AbstractTool {
         }
         
         // 参照をクリア
-        this.managers = {
-            canvas: null,
-            coordinate: null,
-            record: null,
-            navigation: null
-        };
+        this.managers = null;
         this.eventBus = null;
         this.errorManager = null;
         
@@ -618,7 +607,7 @@ class AbstractTool {
     }
     
     /**
-     * デバッグ情報取得（統一Manager対応版）
+     * デバッグ情報取得（強化版）
      */
     getDebugInfo() {
         return {
@@ -626,31 +615,29 @@ class AbstractTool {
             toolName: this.toolName,
             isActive: this.isActive,
             isDrawing: this.isDrawing,
-            hasRequiredDeps: !!(this.managers.canvas && this.managers.coordinate),
+            hasRequiredDeps: !!(this.managers?.canvas && this.managers?.coordinate && this.managers?.record),
             
-            // 詳細Manager状態（統一方式）
+            // 詳細Manager状態
             managers: {
                 canvas: {
-                    exists: !!this.managers.canvas,
-                    hasGetCanvasElement: typeof this.managers.canvas?.getCanvasElement === 'function'
+                    exists: !!this.managers?.canvas,
+                    hasGetCanvasElement: typeof this.managers?.canvas?.getCanvasElement === 'function'
                 },
                 coordinate: {
-                    exists: !!this.managers.coordinate,
-                    hasClientToCanvas: typeof this.managers.coordinate?.clientToCanvas === 'function',
-                    initialized: this.managers.coordinate?.initialized || false
+                    exists: !!this.managers?.coordinate,
+                    hasClientToCanvas: typeof this.managers?.coordinate?.clientToCanvas === 'function',
+                    initialized: this.managers?.coordinate?.initialized || false
                 },
                 record: {
-                    exists: !!this.managers.record,
-                    hasRecordDraw: typeof this.managers.record?.recordDraw === 'function'
+                    exists: !!this.managers?.record,
+                    hasRecordDraw: typeof this.managers?.record?.recordDraw === 'function'
                 },
                 navigation: {
-                    exists: !!this.managers.navigation,
-                    hasPanCanvas: typeof this.managers.navigation?.panCanvas === 'function'
-                }
-            },
-            
-            // 基盤システム状況
-            systems: {
+                    exists: !!this.managers?.navigation
+                },
+                shortcut: {
+                    exists: !!this.managers?.shortcut
+                },
                 eventBus: !!this.eventBus,
                 errorManager: !!this.errorManager
             },
@@ -679,7 +666,7 @@ class AbstractTool {
             // 座標変換テスト
             coordinateTest: (() => {
                 try {
-                    if (this.managers.coordinate && typeof this.managers.coordinate.clientToCanvas === 'function') {
+                    if (this.managers?.coordinate && typeof this.managers.coordinate.clientToCanvas === 'function') {
                         const testResult = this.getCanvasCoordinates(100, 100);
                         return {
                             success: true,
@@ -694,24 +681,6 @@ class AbstractTool {
                 }
             })()
         };
-    }
-    
-    // === 旧互換メソッド（非推奨・削除予定） ===
-    
-    /**
-     * @deprecated - setManagers()を使用してください
-     */
-    setCoordinateManager(coordinateManager) {
-        console.warn(`⚠️ ${this.toolName}: setCoordinateManager() is deprecated. Use setManagers({coordinate: manager}) instead.`);
-        this.managers.coordinate = coordinateManager;
-    }
-    
-    /**
-     * @deprecated - setManagers()を使用してください
-     */
-    setRecordManager(recordManager) {
-        console.warn(`⚠️ ${this.toolName}: setRecordManager() is deprecated. Use setManagers({record: manager}) instead.`);
-        this.managers.record = recordManager;
     }
     
     // === 子クラスでオーバーライドする抽象メソッド ===

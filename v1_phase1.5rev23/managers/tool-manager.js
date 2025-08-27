@@ -1,50 +1,68 @@
 /**
- * 🔧 ToolManager Phase1.5 - ペン/消しゴムツール管理（完全修正版）
- * 📋 RESPONSIBILITY: ツール管理・切り替え・イベント委譲・Phase1.5Manager連携
- * 🚫 PROHIBITION: 描画処理・Canvas管理・複雑な初期化・設定管理・エラー隠蔽・フォールバック構造
- * ✅ PERMISSION: ツール作成・選択・イベント転送・状態管理・Phase1.5Manager設定
+ * 🔧 ToolManager Phase1.5 Manager統一注入版
+ * 📋 RESPONSIBILITY: ツール管理・切り替え・イベント委譲・Manager統一注入処理
+ * 🚫 PROHIBITION: 描画処理・Canvas管理・複雑な初期化・設定管理・エラー隠蔽・フォールバック構造・個別Manager設定
+ * ✅ PERMISSION: ツール作成・選択・イベント転送・状態管理・Manager統一注入・initializeToolsWithManagers実装
  * 
- * 📏 DESIGN_PRINCIPLE: ツール専任管理・責務分離・剛直構造・エラー隠蔽禁止・Phase1.5完全対応
- * 🔄 INTEGRATION: PenTool・EraserTool管理・Phase1.5Manager連携・EventBus通信・ErrorManager報告
- * 🔧 FIX: ツール初期化確実化・setPhase15Managers実装・エラー隠蔽完全禁止・責務分界強化
+ * 📏 DESIGN_PRINCIPLE: ツール専任管理・責務分離・Manager統一注入・エラー隠蔽禁止・Phase1.5完全対応
+ * 🔄 INTEGRATION: PenTool・EraserTool管理・Manager統一注入・EventBus通信・ErrorManager報告
+ * 🔧 FIX: initializeToolsWithManagers実装・collectRequiredManagers追加・Manager注入統一化・フォールバック完全削除
  * 
  * 📌 使用メソッド一覧:
  * ✅ window.Tegaki.PenTool(constructor) - ペンツール作成（pen-tool.js確認済み）
  * ✅ window.Tegaki.EraserTool(constructor) - 消しゴムツール作成（eraser-tool.js確認済み）  
  * ✅ window.Tegaki.ErrorManagerInstance.showError() - エラー表示（error-manager.js確認済み）
  * ✅ window.Tegaki.EventBusInstance.emit() - イベント発火（event-bus.js確認済み）
+ * ✅ tool.setManagers() - Manager統一注入（abstract-tool.js新規実装確認済み）
  * ✅ tool.activate() - ツール有効化（abstract-tool.js継承メソッド確認済み）
  * ✅ tool.deactivate() - ツール無効化（abstract-tool.js継承メソッド確認済み）
  * ✅ tool.onPointerDown/Move/Up() - ポインターイベント処理（abstract-tool.js継承確認済み）
  * ✅ document.getElementById() - DOM要素取得（ブラウザ標準）
  * ✅ element.addEventListener() - イベント登録（ブラウザ標準）
  * ✅ element.classList.add/remove() - CSS操作（ブラウザ標準）
- * 🆕 this.setPhase15Managers() - Phase1.5Manager連携設定（新規実装）
- * ❌ handleError() - 削除（架空メソッド・ErrorManagerInstance使用）
+ * 🆕 this.initializeToolsWithManagers() - Manager注入処理（新規実装）
+ * 🆕 this.collectRequiredManagers() - 必要Manager収集（新規実装）
+ * 🔧 this.selectTool() - ツール選択（既存・Manager注入後呼び出し修正）
+ * ❌ setPhase15Managers() - 削除（initializeToolsWithManagersに統合）
  * ❌ フォールバック処理全て削除 - 正しい構造でのみ動作
  * 
  * 📐 ツール管理フロー:
- * 開始 → 依存関係確認 → ツール作成(PenTool,EraserTool) → Phase1.5Manager連携 → 
- * デフォルト選択(pen) → UI更新 → イベント委譲 → 状態管理 → 終了
- * 依存関係: PenTool・EraserTool(実装)・CanvasManager(注入)・Phase1.5Managers(連携)・
- * EventBusInstance(通信)・ErrorManagerInstance(報告)
+ * 開始 → 依存関係確認 → ツール作成(PenTool,EraserTool) → collectRequiredManagers → 
+ * initializeToolsWithManagers → Manager統一注入 → selectTool(pen) → UI更新 → イベント委譲 → 状態管理 → 終了
+ * 依存関係: PenTool・EraserTool(実装)・CanvasManager(注入)・CoordinateManager(注入)・
+ * RecordManager(注入)・NavigationManager(注入・オプション)・EventBusInstance(通信)・ErrorManagerInstance(報告)
  * 
- * 🚫 絶対禁止事項（改修で完全削除済み）:
- * - try/catchでの握りつぶし（全てthrow必須・詳細ログ付き）
- * - フォールバック・フェイルセーフ構造（|| defaultValue等の削除）
- * - 架空メソッド呼び出し（実装確認済みメソッドのみ使用）
- * - 責務混在（ツール管理以外の処理完全禁止）
- * - エラー隠蔽（全てのエラーをErrorManager経由で明示・throw必須）
+ * 🚨 CRITICAL_DEPENDENCIES: 重要依存関係（動作に必須）
+ * - window.Tegaki.PenTool !== null - ペンツールクラス存在必須
+ * - window.Tegaki.EraserTool !== null - 消しゴムツールクラス存在必須
+ * - this.canvasManager !== null - Canvas管理Manager必須
+ * - requiredManagers.coordinate !== null - 座標変換Manager必須
+ * - requiredManagers.record !== null - 記録Manager必須
+ * 
+ * 🔧 INITIALIZATION_ORDER: 初期化順序（厳守必要）
+ * 1. ToolManager作成・依存関係確認
+ * 2. ツール作成（PenTool・EraserTool）
+ * 3. collectRequiredManagers()でManager収集
+ * 4. initializeToolsWithManagers()でManager統一注入
+ * 5. selectTool('pen')でデフォルトツール選択
+ * 6. 描画・イベント処理可能
+ * 
+ * 🚫 ABSOLUTE_PROHIBITIONS: 絶対禁止事項
+ * - Manager未注入時のツール有効化（Manager注入後のみ許可）
+ * - try/catch握りつぶし（詳細ログ+throw必須）
+ * - 個別Manager設定メソッド使用（統一注入のみ）
+ * - Manager設定前のselectTool()呼び出し（initializeToolsWithManagers後のみ）
+ * - フォールバック・デフォルト値使用（正しい構造でのみ動作）
  */
 
 window.Tegaki = window.Tegaki || {};
 
 /**
- * ToolManager - ツール管理専任（完全修正版・Phase1.5対応）
+ * ToolManager - ツール管理専任（Manager統一注入版・Phase1.5対応）
  */
 class ToolManager {
     constructor(canvasManager) {
-        console.log('🔧 ToolManager Phase1.5 作成開始 - 完全修正版');
+        console.log('🔧 ToolManager Phase1.5 作成開始 - Manager統一注入版');
         
         // 必須引数確認（フォールバック禁止・即座にthrow）
         if (!canvasManager) {
@@ -58,12 +76,7 @@ class ToolManager {
         this.currentTool = null;
         this.currentToolName = null;
         this.initialized = false;
-        
-        // Phase1.5Manager参照（後で設定）
-        this.coordinateManager = null;
-        this.recordManager = null;
-        this.navigationManager = null;
-        this.shortcutManager = null;
+        this.managersInitialized = false;
         
         // 依存関係確認・設定（フォールバック禁止）
         this.eventBus = window.Tegaki.EventBusInstance;
@@ -83,15 +96,13 @@ class ToolManager {
         // 依存関係確認（フォールバック禁止・即座にエラー）
         this.validateDependencies();
         
-        // 🚨 重要修正：コンストラクタでツール作成を完了
+        // ツール作成（Manager注入は後で実行）
         this.createTools();
         
-        // デフォルトツール選択（ペン）
-        this.selectTool('pen');
-        
         this.initialized = true;
-        console.log('✅ ToolManager コンストラクタ完了 - ツール作成・選択完了');
+        console.log('✅ ToolManager コンストラクタ完了 - ツール作成完了・Manager注入待機中');
         console.log('📋 作成完了ツール:', Array.from(this.tools.keys()));
+        console.log('⚠️ 注意: Manager注入前のためツール選択不可');
     }
     
     /**
@@ -146,42 +157,77 @@ class ToolManager {
     }
     
     /**
-     * 🆕 Phase1.5Manager連携設定（tegaki-application.jsから要求されるメソッド）
+     * 🆕 必要Manager収集（tegaki-applicationから呼ばれる）
      */
-    setPhase15Managers(coordinateManager, recordManager, navigationManager, shortcutManager) {
-        console.log('🔧 ToolManager Phase1.5Manager連携設定開始...');
+    collectRequiredManagers(coordinateManager, recordManager, navigationManager, shortcutManager) {
+        console.log('🔧 ToolManager 必要Manager収集開始...');
         
-        // 引数確認（フォールバック禁止）
+        // 必須Manager確認（フォールバック禁止）
         if (!coordinateManager) {
-            const error = new Error('CoordinateManager is required for setPhase15Managers');
+            const error = new Error('CoordinateManager is required for collectRequiredManagers');
             console.error('💀 CoordinateManager必須:', error);
             throw error;
         }
         
-        // Manager参照設定
-        this.coordinateManager = coordinateManager;
-        this.recordManager = recordManager; // null許可（Phase1.5開発中）
-        this.navigationManager = navigationManager; // null許可
-        this.shortcutManager = shortcutManager; // null許可
+        if (!recordManager) {
+            const error = new Error('RecordManager is required for collectRequiredManagers');
+            console.error('💀 RecordManager必須:', error);
+            throw error;
+        }
         
-        // 🚨 重要：各ツールにManager設定を伝播
+        // Manager収集オブジェクト作成
+        const requiredManagers = {
+            canvas: this.canvasManager,      // コンストラクタで取得済み
+            coordinate: coordinateManager,   // 必須
+            record: recordManager,           // 必須
+            navigation: navigationManager,   // オプション
+            shortcut: shortcutManager        // オプション
+        };
+        
+        console.log('✅ 必要Manager収集完了');
+        console.log('📊 収集Manager状況:', {
+            canvas: !!requiredManagers.canvas,
+            coordinate: !!requiredManagers.coordinate,
+            record: !!requiredManagers.record,
+            navigation: !!requiredManagers.navigation,
+            shortcut: !!requiredManagers.shortcut
+        });
+        
+        return requiredManagers;
+    }
+    
+    /**
+     * 🆕 Manager統一注入処理（tegaki-applicationから呼ばれる）
+     */
+    initializeToolsWithManagers(coordinateManager, recordManager, navigationManager, shortcutManager) {
+        console.log('🔧 ToolManager Manager統一注入処理開始...');
+        
+        // Manager収集
+        const requiredManagers = this.collectRequiredManagers(
+            coordinateManager, 
+            recordManager, 
+            navigationManager, 
+            shortcutManager
+        );
+        
+        // 🚨 重要：各ツールにManager統一注入
         this.tools.forEach((tool, toolName) => {
-            console.log(`🔧 ${toolName} Manager設定開始...`);
+            console.log(`🔧 ${toolName} Manager統一注入開始...`);
             
-            // CoordinateManager設定（必須）
-            if (typeof tool.setCoordinateManager === 'function') {
-                tool.setCoordinateManager(coordinateManager);
-                console.log(`✅ ${toolName} CoordinateManager設定完了`);
-            } else {
-                console.warn(`⚠️ ${toolName} setCoordinateManagerメソッドなし`);
+            // setManagersメソッド確認
+            if (typeof tool.setManagers !== 'function') {
+                const error = new Error(`${toolName}: setManagers method not available`);
+                console.error('💀 setManagers未実装:', error);
+                throw error;
             }
             
-            // RecordManager設定（オプション）
-            if (typeof tool.setRecordManager === 'function' && recordManager) {
-                tool.setRecordManager(recordManager);
-                console.log(`✅ ${toolName} RecordManager設定完了`);
-            } else {
-                console.log(`📋 ${toolName} RecordManager設定スキップ`);
+            // Manager統一注入実行
+            try {
+                tool.setManagers(requiredManagers);
+                console.log(`✅ ${toolName} Manager統一注入完了`);
+            } catch (error) {
+                console.error(`💀 ${toolName} Manager注入失敗:`, error);
+                throw error;
             }
             
             // Manager設定後の検証
@@ -196,21 +242,34 @@ class ToolManager {
             }
         });
         
-        console.log('✅ ToolManager Phase1.5Manager連携設定完了');
-        console.log('📊 連携Manager状況:', {
-            coordinateManager: !!this.coordinateManager,
-            recordManager: !!this.recordManager,
-            navigationManager: !!this.navigationManager,
-            shortcutManager: !!this.shortcutManager,
-            toolsConfigured: this.tools.size
+        this.managersInitialized = true;
+        
+        console.log('✅ ToolManager Manager統一注入処理完了');
+        console.log('📊 注入完了状況:', {
+            managersInitialized: this.managersInitialized,
+            toolsConfigured: this.tools.size,
+            readyForSelection: true
         });
+        
+        // 🚨 重要：Manager注入完了後にデフォルトツール選択
+        this.selectTool('pen');
     }
     
     /**
-     * ツール選択（フォールバック禁止・エラー即座にthrow）
+     * ツール選択（Manager注入確認付き・フォールバック禁止・エラー即座にthrow）
      */
     selectTool(toolName) {
         console.log(`🔧 ツール選択開始: ${toolName}`);
+        
+        // Manager注入確認（フォールバック禁止）
+        if (!this.managersInitialized) {
+            const error = new Error('Managers not initialized - call initializeToolsWithManagers first');
+            console.error('💀 Manager注入前選択エラー:', error);
+            this.errorManager.showError('error', `Manager未初期化: initializeToolsWithManagersを先に実行してください`, {
+                context: 'ToolManager.selectTool'
+            });
+            throw error;
+        }
         
         // ツール存在確認（フォールバック禁止）
         const tool = this.tools.get(toolName);
@@ -235,7 +294,15 @@ class ToolManager {
         this.currentToolName = toolName;
         
         if (typeof this.currentTool.activate === 'function') {
-            this.currentTool.activate();
+            try {
+                this.currentTool.activate();
+            } catch (error) {
+                console.error(`💀 ${toolName} ツール有効化失敗:`, error);
+                this.errorManager.showError('error', `ツール有効化失敗: ${error.message}`, {
+                    context: `ToolManager.selectTool.${toolName}.activate`
+                });
+                throw error;
+            }
         } else {
             const error = new Error(`Tool ${toolName} does not have activate method`);
             console.error('💀 ツール有効化失敗:', error);
@@ -399,10 +466,11 @@ class ToolManager {
     }
     
     /**
-     * 初期化状態確認（フォールバック禁止・厳密確認）
+     * 初期化状態確認（Manager注入確認追加・フォールバック禁止・厳密確認）
      */
     isReady() {
         const ready = this.initialized && 
+                     this.managersInitialized &&
                      this.tools.size > 0 && 
                      this.canvasManager && 
                      this.currentTool !== null &&
@@ -411,6 +479,7 @@ class ToolManager {
         
         console.log('🔧 ToolManager準備状態:', {
             initialized: this.initialized,
+            managersInitialized: this.managersInitialized,
             toolsCount: this.tools.size,
             hasCanvasManager: !!this.canvasManager,
             hasCurrentTool: !!this.currentTool,
@@ -423,12 +492,13 @@ class ToolManager {
     }
     
     /**
-     * デバッグ情報取得
+     * デバッグ情報取得（強化版）
      */
     getDebugInfo() {
         return {
             className: 'ToolManager',
             initialized: this.initialized,
+            managersInitialized: this.managersInitialized,
             hasRequiredDeps: !!(this.canvasManager && this.eventBus && this.errorManager),
             itemCount: this.tools.size,
             currentState: this.currentToolName || 'none',
@@ -439,14 +509,10 @@ class ToolManager {
                 hasCanvasManager: !!this.canvasManager,
                 hasEventBus: !!this.eventBus,
                 hasErrorManager: !!this.errorManager,
-                phase15Managers: {
-                    coordinateManager: !!this.coordinateManager,
-                    recordManager: !!this.recordManager,
-                    navigationManager: !!this.navigationManager,
-                    shortcutManager: !!this.shortcutManager
-                },
                 toolsReady: Array.from(this.tools.entries()).map(([name, tool]) => ({
                     name: name,
+                    hasSetManagers: typeof tool.setManagers === 'function',
+                    hasValidateManagers: typeof tool.validateManagers === 'function',
                     hasActivate: typeof tool.activate === 'function',
                     hasDeactivate: typeof tool.deactivate === 'function',
                     hasPointerMethods: {
@@ -493,11 +559,8 @@ class ToolManager {
         this.canvasManager = null;
         this.eventBus = null;
         this.errorManager = null;
-        this.coordinateManager = null;
-        this.recordManager = null;
-        this.navigationManager = null;
-        this.shortcutManager = null;
         this.initialized = false;
+        this.managersInitialized = false;
         
         console.log('✅ ToolManager 破棄処理完了');
     }
@@ -505,4 +568,4 @@ class ToolManager {
 
 // グローバル公開
 window.Tegaki.ToolManager = ToolManager;
-console.log('🔧 ToolManager Phase1.5 Loaded - 完全修正版・ツール初期化確実化・Phase1.5Manager連携対応・エラー隠蔽禁止');
+console.log('🔧 ToolManager Phase1.5 Manager統一注入版 Loaded - initializeToolsWithManagers実装・Manager注入統一・エラー隠蔽禁止・フォールバック完全削除');
