@@ -328,8 +328,8 @@ if (!window.Tegaki.TegakiApplication) {
             console.log('🆕 Phase1.5新Manager CanvasManager設定完了');
         }
         
-        /**
-         * ToolManager初期化（Phase1.5 Manager統合版）
+/**
+         * ToolManager初期化（Phase1.5 Manager統合版・修正版）
          */
         async initializeToolManager() {
             console.log('🔧 ToolManager初期化開始 - Phase1.5 Manager統合版');
@@ -337,46 +337,66 @@ if (!window.Tegaki.TegakiApplication) {
             // PixiJS設定後にToolManager初期化
             await this.appCore.initializeToolManager();
             
-            // 🆕 Phase1.5 Manager群をToolManagerに設定
+            // 🆕 Phase1.5 Manager群をToolManagerに設定（修正版）
             const toolManager = this.appCore.getToolManager();
             if (toolManager) {
-                // Phase1.5 Manager群設定（ツール作成前に実行）
+                // Phase1.5 Manager群設定（修正：individual参数で呼び出し）
                 if (typeof toolManager.setPhase15Managers === 'function') {
-                    const managerConfig = {
-                        coordinateManager: this.coordinateManager,
-                        recordManager: this.recordManager,
-                        eventBus: window.Tegaki?.EventBusInstance
-                    };
-                    
-                    console.log('🔧 Phase1.5 Manager群設定:', {
-                        coordinateManager: !!this.coordinateManager,
-                        recordManager: !!this.recordManager,
-                        eventBus: !!window.Tegaki?.EventBusInstance
-                    });
-                    
-                    toolManager.setPhase15Managers(managerConfig);
-                    console.log('✅ ToolManager - Phase1.5 Manager群設定完了');
-                } else {
-                    console.warn('⚠️ ToolManager.setPhase15Managers メソッドが利用できません');
-                }
-                
-                // 従来のRecordManager設定（互換性維持・安全処理）
-                if (this.recordManager && typeof toolManager.setRecordManager === 'function') {
                     try {
-                        toolManager.setRecordManager(this.recordManager);
-                        console.log('✅ ToolManager - RecordManager接続完了（互換性）');
+                        toolManager.setPhase15Managers(
+                            this.coordinateManager,  // coordinateManager
+                            this.recordManager,      // recordManager  
+                            this.navigationManager,  // navigationManager
+                            this.shortcutManager     // shortcutManager
+                        );
+                        
+                        console.log('✅ ToolManager - Phase1.5 Manager群設定完了');
+                        console.log('📊 設定されたManager:', {
+                            coordinateManager: !!this.coordinateManager,
+                            recordManager: !!this.recordManager,
+                            navigationManager: !!this.navigationManager,
+                            shortcutManager: !!this.shortcutManager
+                        });
+                        
                     } catch (error) {
-                        console.warn('⚠️ ToolManager RecordManager接続失敗:', error.message);
+                        console.error('💀 ToolManager Phase1.5Manager設定エラー:', error);
+                        if (window.Tegaki?.ErrorManagerInstance) {
+                            window.Tegaki.ErrorManagerInstance.showError(
+                                'error', 
+                                `ToolManager Phase1.5Manager設定失敗: ${error.message}`,
+                                { context: 'TegakiApplication.initializeToolManager' }
+                            );
+                        }
+                        // エラーをthrowして上位に伝播（エラー隠蔽禁止）
+                        throw error;
                     }
+                } else {
+                    console.error('💀 ToolManager.setPhase15Managers メソッドが利用できません');
+                    const error = new Error('ToolManager.setPhase15Managers method not available');
+                    if (window.Tegaki?.ErrorManagerInstance) {
+                        window.Tegaki.ErrorManagerInstance.showError(
+                            'error',
+                            'ToolManagerでsetPhase15Managersメソッドが見つかりません',
+                            { context: 'TegakiApplication.initializeToolManager' }
+                        );
+                    }
+                    throw error;
                 }
             } else {
                 console.error('❌ ToolManager取得失敗 - Phase1.5 Manager統合不可');
-                throw new Error('ToolManager not available');
+                const error = new Error('ToolManager not available');
+                if (window.Tegaki?.ErrorManagerInstance) {
+                    window.Tegaki.ErrorManagerInstance.showError(
+                        'error',
+                        'ToolManagerが取得できません',
+                        { context: 'TegakiApplication.initializeToolManager' }
+                    );
+                }
+                throw error;
             }
             
             console.log('✅ ToolManager初期化完了（Phase1.5 Manager統合版）');
-        }
-        
+        }        
         /**
          * 🆕 Phase1.5機能統合
          */
