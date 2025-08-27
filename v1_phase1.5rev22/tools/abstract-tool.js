@@ -1,17 +1,17 @@
 /**
- * 🎯 AbstractTool - Manager設定・エラー隠蔽禁止完全修正版
+ * 🎯 AbstractTool - CoordinateManager連携修正版（screenToCanvas→clientToCanvas修正）
  * 📋 RESPONSIBILITY: 全ツールの基底クラス・共通イベント処理・座標変換・Manager管理
  * 🚫 PROHIBITION: 具体的な描画処理・複雑な初期化・エラー隠蔽・Manager未設定時の無視・フォールバック
  * ✅ PERMISSION: イベントハンドリング・座標変換・Manager設定・基底メソッド提供・厳密検証
  * 
  * 📏 DESIGN_PRINCIPLE: 継承ベース・共通処理集約・Manager確実設定・エラー隠蔽完全禁止・フェイルファスト
  * 🔄 INTEGRATION: CanvasManager連携・CoordinateManager座標変換・RecordManager記録・EventBus通信・ErrorManager報告
- * 🔧 FIX: Manager設定メソッド追加・座標変換エラー完全throw・Manager未設定時エラー・フォールバック削除
+ * 🔧 FIX: CoordinateManager.clientToCanvas()使用・座標変換エラー完全throw・Manager未設定時エラー・フォールバック削除
  * 
  * 📌 使用メソッド一覧:
  * ✅ window.Tegaki.ErrorManagerInstance.showError() - エラー表示（error-manager.js確認済み）
  * ✅ window.Tegaki.EventBusInstance.emit() - イベント発火（event-bus.js確認済み）
- * ✅ this.coordinateManager.screenToCanvas() - 座標変換（coordinate-manager.js確認済み）
+ * ✅ this.coordinateManager.clientToCanvas() - 座標変換（coordinate-manager.js確認済み・修正）
  * ✅ this.canvasManager.getCanvasElement() - Canvas要素取得（canvas-manager.js確認済み）
  * ✅ canvas.getBoundingClientRect() - 要素位置取得（DOM標準）
  * ✅ canvas.addEventListener/removeEventListener() - イベント管理（DOM標準）
@@ -20,6 +20,7 @@
  * 🆕 this.setRecordManager() - RecordManager設定（新規実装）
  * 🆕 this.validateManagers() - Manager設定確認（新規実装）
  * ❌ フォールバック処理全て削除 - Manager未設定時は即座にエラー
+ * 🔧 screenToCanvas → clientToCanvas に修正（CoordinateManager実装に合わせる）
  * 
  * 📐 基底ツールフロー:
  * 開始 → 継承・作成 → Manager設定(Coordinate,Record) → 有効化・イベント登録 → 
@@ -49,7 +50,7 @@
 window.Tegaki = window.Tegaki || {};
 
 /**
- * AbstractTool - 全ツールの基底クラス（Manager設定・エラー隠蔽禁止完全修正版）
+ * AbstractTool - 全ツールの基底クラス（CoordinateManager連携修正版）
  */
 class AbstractTool {
     constructor(canvasManager, toolName = 'abstract') {
@@ -126,33 +127,75 @@ class AbstractTool {
     }
     
     /**
-     * 🆕 Manager設定確認（エラー隠蔽禁止）
+     * 🆕 Manager設定確認（エラー隠蔽禁止・詳細デバッグ強化）
      */
     validateManagers() {
         const errors = [];
+        const managerStatus = {};
         
-        if (!this.canvasManager) {
+        // 詳細なCanvasManager状態チェック
+        managerStatus.canvasManager = {
+            exists: !!this.canvasManager,
+            hasGetCanvasElement: typeof this.canvasManager?.getCanvasElement === 'function',
+            canvasElementReady: (() => {
+                try {
+                    return !!this.canvasManager?.getCanvasElement();
+                } catch (error) {
+                    return { error: error.message };
+                }
+            })()
+        };
+        
+        // 詳細なCoordinateManager状態チェック
+        managerStatus.coordinateManager = {
+            exists: !!this.coordinateManager,
+            hasClientToCanvas: typeof this.coordinateManager?.clientToCanvas === 'function',
+            hasCanvasToClient: typeof this.coordinateManager?.canvasToClient === 'function',
+            initialized: this.coordinateManager?.initialized || false
+        };
+        
+        // 詳細なRecordManager状態チェック（オプション）
+        managerStatus.recordManager = {
+            exists: !!this.recordManager,
+            hasRecordDraw: typeof this.recordManager?.recordDraw === 'function',
+            hasCanUndo: typeof this.recordManager?.canUndo === 'function'
+        };
+        
+        // エラー収集
+        if (!managerStatus.canvasManager.exists) {
             errors.push('CanvasManager not set');
+        } else if (!managerStatus.canvasManager.hasGetCanvasElement) {
+            errors.push('CanvasManager.getCanvasElement method not found');
+        } else if (!managerStatus.canvasManager.canvasElementReady) {
+            errors.push('CanvasManager.getCanvasElement() returns null');
         }
-        if (!this.coordinateManager) {
+        
+        if (!managerStatus.coordinateManager.exists) {
             errors.push('CoordinateManager not set');
+        } else if (!managerStatus.coordinateManager.hasClientToCanvas) {
+            errors.push('CoordinateManager.clientToCanvas method not found');
+        } else if (!managerStatus.coordinateManager.initialized) {
+            errors.push('CoordinateManager not initialized');
         }
+        
         // recordManagerはnull許可（Phase1.5開発中のため）
         
         if (errors.length > 0) {
             const error = new Error(`${this.toolName} Manager validation failed: ${errors.join(', ')}`);
             console.error('💀 Manager設定検証失敗:', error);
-            console.error('📊 Manager設定状況:', {
-                canvasManager: !!this.canvasManager,
-                coordinateManager: !!this.coordinateManager,
-                recordManager: !!this.recordManager,
+            console.error('📊 詳細Manager設定状況:', managerStatus);
+            
+            // EventBus・ErrorManager状態も追加表示
+            console.error('📊 基盤システム状況:', {
                 eventBus: !!this.eventBus,
                 errorManager: !!this.errorManager
             });
+            
             throw error;
         }
         
         console.log(`✅ ${this.toolName} Manager設定確認完了`);
+        console.log(`📊 Manager設定状況:`, managerStatus);
     }
     
     /**
@@ -316,9 +359,9 @@ class AbstractTool {
     }
     
     /**
-     * 座標変換（スクリーン座標 → Canvas座標）- エラー隠蔽完全禁止
+     * 🔧 座標変換（クライアント座標 → Canvas座標）- CoordinateManager.clientToCanvas使用修正版
      */
-    getCanvasCoordinates(screenX, screenY) {
+    getCanvasCoordinates(clientX, clientY) {
         // CoordinateManager必須確認（フォールバック禁止）
         if (!this.coordinateManager) {
             const error = new Error(`${this.toolName}: CoordinateManager not set - coordinate conversion impossible`);
@@ -326,21 +369,27 @@ class AbstractTool {
             throw error;
         }
         
-        if (typeof this.coordinateManager.screenToCanvas !== 'function') {
-            const error = new Error(`${this.toolName}: CoordinateManager.screenToCanvas method not available`);
+        if (typeof this.coordinateManager.clientToCanvas !== 'function') {
+            const error = new Error(`${this.toolName}: CoordinateManager.clientToCanvas method not available`);
             console.error('💀 座標変換失敗:', error);
             throw error;
         }
         
-        // 座標変換実行（エラー隠蔽禁止）
-        const result = this.coordinateManager.screenToCanvas(screenX, screenY);
-        if (!result || typeof result.x !== 'number' || typeof result.y !== 'number') {
-            const error = new Error(`${this.toolName}: CoordinateManager returned invalid coordinates`);
-            console.error('💀 座標変換失敗:', error);
-            throw error;
+        // 🔧 座標変換実行（clientToCanvas使用・エラー隠蔽禁止）
+        try {
+            const result = this.coordinateManager.clientToCanvas(clientX, clientY);
+            
+            if (!result || typeof result.x !== 'number' || typeof result.y !== 'number') {
+                const error = new Error(`${this.toolName}: CoordinateManager returned invalid coordinates`);
+                console.error('💀 座標変換失敗:', error);
+                throw error;
+            }
+            
+            return result;
+        } catch (error) {
+            console.error(`💀 ${this.toolName} 座標変換エラー:`, error);
+            throw error; // エラーを隠蔽せずに上位に伝播
         }
-        
-        return result;
     }
     
     /**
@@ -513,7 +562,7 @@ class AbstractTool {
     }
     
     /**
-     * デバッグ情報取得
+     * デバッグ情報取得（強化版）
      */
     getDebugInfo() {
         return {
@@ -522,14 +571,29 @@ class AbstractTool {
             isActive: this.isActive,
             isDrawing: this.isDrawing,
             hasRequiredDeps: !!(this.canvasManager && this.coordinateManager),
+            
+            // 詳細Manager状態
             managers: {
-                canvasManager: !!this.canvasManager,
-                coordinateManager: !!this.coordinateManager,
-                recordManager: !!this.recordManager,
+                canvasManager: {
+                    exists: !!this.canvasManager,
+                    hasGetCanvasElement: typeof this.canvasManager?.getCanvasElement === 'function'
+                },
+                coordinateManager: {
+                    exists: !!this.coordinateManager,
+                    hasClientToCanvas: typeof this.coordinateManager?.clientToCanvas === 'function',
+                    initialized: this.coordinateManager?.initialized || false
+                },
+                recordManager: {
+                    exists: !!this.recordManager,
+                    hasRecordDraw: typeof this.recordManager?.recordDraw === 'function'
+                },
                 eventBus: !!this.eventBus,
                 errorManager: !!this.errorManager
             },
+            
             settings: this.settings,
+            
+            // Canvas要素状態
             canvasElement: (() => {
                 try {
                     const canvas = this.getCanvasElement();
@@ -537,13 +601,32 @@ class AbstractTool {
                         available: true,
                         tagName: canvas.tagName,
                         width: canvas.width,
-                        height: canvas.height
+                        height: canvas.height,
+                        hasPointerEvents: canvas.style.pointerEvents !== 'none'
                     };
                 } catch (error) {
                     return {
                         available: false,
                         error: error.message
                     };
+                }
+            })(),
+            
+            // 座標変換テスト
+            coordinateTest: (() => {
+                try {
+                    if (this.coordinateManager && typeof this.coordinateManager.clientToCanvas === 'function') {
+                        const testResult = this.getCanvasCoordinates(100, 100);
+                        return {
+                            success: true,
+                            testInput: { x: 100, y: 100 },
+                            testOutput: testResult
+                        };
+                    } else {
+                        return { success: false, reason: 'CoordinateManager not available' };
+                    }
+                } catch (error) {
+                    return { success: false, error: error.message };
                 }
             })()
         };
@@ -620,4 +703,4 @@ class AbstractTool {
 
 // グローバル公開
 window.Tegaki.AbstractTool = AbstractTool;
-console.log('🎯 AbstractTool Manager設定・エラー隠蔽禁止完全修正版 Loaded - Manager確実設定・座標変換エラー完全throw・フォールバック削除');
+console.log('🎯 AbstractTool CoordinateManager連携修正版 Loaded - clientToCanvas使用・Manager確実設定・座標変換エラー完全throw・デバッグ強化');
