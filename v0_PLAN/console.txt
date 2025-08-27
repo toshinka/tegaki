@@ -30,21 +30,21 @@
  🎯 AbstractTool Manager統一注入方式・フォールバック削除版 Loaded - setManagers()統一・getManager()便利・validateManagers()厳密・フォールバック完全削除
  🖊️ PenTool Phase1.5 Loaded - RecordManager連携強化版・PixiJS v7標準活用・非破壊編集対応
  🧹 EraserTool Phase1.5 Loaded - シンプル実装版・RecordManager連携・PixiJS hit-test活用
- 🔧 ToolManager Phase1.5 Loaded - 完全修正版・ツール初期化確実化・Phase1.5Manager連携対応・エラー隠蔽禁止
+ 🔧 ToolManager Phase1.5 Manager統一注入版 Loaded - initializeToolsWithManagers実装・Manager注入統一・エラー隠蔽禁止・フォールバック完全削除
  🎯 AppCore Phase1.5基盤システム Loaded - Manager統合基盤・初期化順序制御・架空メソッド完全修正版
  🎯 AppCore Phase1.5基盤システム Loaded - Manager統合基盤・初期化順序制御・架空メソッド完全修正版
- 🎯 TegakiApplication Phase1.5 メインアプリケーション（修正版・RecordManager安全初期化） Loaded
+ 🎯 TegakiApplication Phase1.5 メインアプリケーション（修正版・Manager統一注入修正） Loaded
  📏 CoordinateManager統合・座標変換修正・ペン描画修正
  🧭 ナビゲーション・非破壊編集・ショートカット統合
- 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager安全統合対応
- 🔧 RecordManager初期化エラー完全修正・安全初期化実装・エラー隠蔽禁止
- 🚀 TegakiApplication Phase1.5 メインアプリケーション（修正版） 完成
- 🎯 TegakiApplication Phase1.5 メインアプリケーション（修正版・RecordManager安全初期化） Loaded
+ 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統一注入修正対応
+ 🔧 Manager統一注入修正・initializeToolsWithManagers使用・エラー隠蔽禁止
+ 🚀 TegakiApplication Phase1.5 メインアプリケーション（Manager統一注入修正版） 完成
+ 🎯 TegakiApplication Phase1.5 メインアプリケーション（修正版・Manager統一注入修正） Loaded
  📏 CoordinateManager統合・座標変換修正・ペン描画修正
  🧭 ナビゲーション・非破壊編集・ショートカット統合
- 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager安全統合対応
- 🔧 RecordManager初期化エラー完全修正・安全初期化実装・エラー隠蔽禁止
- 🚀 TegakiApplication Phase1.5 メインアプリケーション（修正版） 完成
+ 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統一注入修正対応
+ 🔧 Manager統一注入修正・initializeToolsWithManagers使用・エラー隠蔽禁止
+ 🚀 TegakiApplication Phase1.5 メインアプリケーション（Manager統一注入修正版） 完成
  ⚠️ AppCore already defined - skipping redefinition
  🎯 main.js loaded - AppCore基盤システム完成（ToolManager初期化修正版）
  🧪 Phase1.5統合テスト Loaded
@@ -71,7 +71,7 @@
  📊 依存関係確認結果: 13/13 クラス利用可能
  🎨 TegakiApplication インスタンス化開始...
  🎯 TegakiApplication Phase1.5 メインアプリケーション 作成・自動初期化開始
- 🚀 TegakiApplication Phase1.5 RecordManager安全初期化修正版初期化開始
+ 🚀 TegakiApplication Phase1.5 Manager統一注入修正版初期化開始
  🆕 Phase1.5新Manager安全初期化開始...
  🎯 CoordinateManager Phase1.5 完全実装版 作成開始
  ✅ CoordinateManager Phase1.5 完全実装版 作成完了
@@ -94,78 +94,99 @@
  ✅ AppCore - CanvasManager作成完了
  ✅ Phase1.5 完全版 - 全Manager統合済み
  ✅ Bootstrap完了 - Tegakiアプリケーション開始完了
-tegaki-application.js:228 ✅ AppCore初期化完了（CanvasManagerのみ）
-app-core.js:85 🚀 AppCore - PixiJS Application設定開始
-canvas-manager.js:86 🎨 CanvasManager: PixiJS Application設定開始
-canvas-manager.js:119 🔧 CanvasManager: 必須レイヤー作成開始
-canvas-manager.js:130 ✅ 背景レイヤー (layer0) 作成完了
-canvas-manager.js:135 ✅ 描画レイヤー (layer1) 作成完了
-canvas-manager.js:139 ✅ メインレイヤー (main) エイリアス設定完了 → layer1
-canvas-manager.js:144 🔧 CanvasManager: 必須レイヤー作成完了
-canvas-manager.js:145 📊 レイヤー作成状況: Object
-canvas-manager.js:192 🔧 CanvasManager: 必須レイヤー存在検証開始
-canvas-manager.js:221 ✅ CanvasManager: 必須レイヤー存在検証完了
-canvas-manager.js:222 📊 検証結果: Object
-canvas-manager.js:103 🎨 PixiJS Application Info: Object
-canvas-manager.js:112 ✅ CanvasManager: PixiJS Application設定完了
+ ✅ AppCore初期化完了（CanvasManagerのみ）
+ 🚀 AppCore - PixiJS Application設定開始
+ 🎨 CanvasManager: PixiJS Application設定開始
+ 🔧 CanvasManager: 必須レイヤー作成開始
+ ✅ 背景レイヤー (layer0) 作成完了
+ ✅ 描画レイヤー (layer1) 作成完了
+ ✅ メインレイヤー (main) エイリアス設定完了 → layer1
+ 🔧 CanvasManager: 必須レイヤー作成完了
+ 📊 レイヤー作成状況: Object
+ 🔧 CanvasManager: 必須レイヤー存在検証開始
+ ✅ CanvasManager: 必須レイヤー存在検証完了
+ 📊 検証結果: Object
+ 🎨 PixiJS Application Info: Object
+ ✅ CanvasManager: PixiJS Application設定完了
 app-core.js:102 ✅ AppCore - PixiJS Application設定完了
 app-core.js:103 📏 PixiJS設定: 400x400px
-tegaki-application.js:281 ✅ PixiJS Canvas作成・配置・CanvasManager設定完了
-tegaki-application.js:282 📏 Canvas設定: 400x400px, resolution=1, autoDensity=false
-tegaki-application.js:289 🆕 Phase1.5新ManagerにCanvasManager設定開始...
+tegaki-application.js:287 ✅ PixiJS Canvas作成・配置・CanvasManager設定完了
+tegaki-application.js:288 📏 Canvas設定: 400x400px, resolution=1, autoDensity=false
+tegaki-application.js:295 🆕 Phase1.5新ManagerにCanvasManager設定開始...
 coordinate-manager.js:100 🔧 CoordinateManager - CanvasManager設定開始
 coordinate-manager.js:109 ✅ CoordinateManager - CanvasManager設定完了
-tegaki-application.js:301 ✅ CoordinateManager - CanvasManager設定完了
+tegaki-application.js:307 ✅ CoordinateManager - CanvasManager設定完了
 record-manager.js:66 🔄 RecordManager - CanvasManager設定完了
-tegaki-application.js:312 ✅ RecordManager - CanvasManager設定完了
-tegaki-application.js:328 🆕 Phase1.5新Manager CanvasManager設定完了
-tegaki-application.js:335 🔧 ToolManager初期化開始 - Phase1.5 Manager統合版
+tegaki-application.js:318 ✅ RecordManager - CanvasManager設定完了
+tegaki-application.js:334 🆕 Phase1.5新Manager CanvasManager設定完了
+tegaki-application.js:341 🔧 ToolManager初期化開始 - Phase1.5 Manager統一注入修正版
 app-core.js:117 🖊️ AppCore - ToolManager初期化開始（Phase1.5対応版）
-tool-manager.js:47 🔧 ToolManager Phase1.5 作成開始 - 完全修正版
-tool-manager.js:115 ✅ 全依存関係確認完了 - PenTool・EraserTool・CanvasManager利用可能
-tool-manager.js:122 🔧 ツール作成開始...
-abstract-tool.js:66 🎯 AbstractTool 作成開始: pen
-abstract-tool.js:111 ✅ pen AbstractTool 作成完了
+tool-manager.js:65 🔧 ToolManager Phase1.5 作成開始 - Manager統一注入版
+tool-manager.js:126 ✅ 全依存関係確認完了 - PenTool・EraserTool・CanvasManager利用可能
+tool-manager.js:133 🔧 ツール作成開始...
+abstract-tool.js:60 🎯 AbstractTool 作成開始: pen
+abstract-tool.js:107 ✅ pen AbstractTool 作成完了
 pen-tool.js:42 🖊️ PenTool Phase1.5 作成開始 - RecordManager連携強化版
 pen-tool.js:64 ✅ PenTool 作成完了: Object
-tool-manager.js:132 ✅ PenTool 作成完了
-abstract-tool.js:66 🎯 AbstractTool 作成開始: eraser
-abstract-tool.js:111 ✅ eraser AbstractTool 作成完了
+tool-manager.js:143 ✅ PenTool 作成完了
+abstract-tool.js:60 🎯 AbstractTool 作成開始: eraser
+abstract-tool.js:107 ✅ eraser AbstractTool 作成完了
 eraser-tool.js:40 🧹 EraserTool Phase1.5 作成開始 - シンプル実装版
 eraser-tool.js:58 ✅ EraserTool 作成完了: Object
-tool-manager.js:142 ✅ EraserTool 作成完了
-tool-manager.js:144 ✅ 全ツール作成完了: Array(2)
-tool-manager.js:145 📊 ツール数: 2
-tool-manager.js:213 🔧 ツール選択開始: pen
-abstract-tool.js:263 🎯 pen 有効化開始
-abstract-tool.js:238 💀 Manager設定検証失敗: Error: pen Manager validation failed: CoordinateManager not set
-    at PenTool.validateManagers (abstract-tool.js:237:27)
-    at PenTool.activate (abstract-tool.js:266:14)
-    at ToolManager.selectTool (tool-manager.js:238:30)
-    at new ToolManager (tool-manager.js:90:14)
-    at AppCore.initializeToolManager (app-core.js:135:36)
-    at TegakiApplication.initializeToolManager (tegaki-application.js:338:32)
-    at TegakiApplication.initialize (tegaki-application.js:90:24)
-validateManagers @ abstract-tool.js:238
-abstract-tool.js:239 📊 詳細Manager設定状況: Object
-validateManagers @ abstract-tool.js:239
-abstract-tool.js:242 📊 基盤システム状況: Object
+tool-manager.js:153 ✅ EraserTool 作成完了
+tool-manager.js:155 ✅ 全ツール作成完了: Array(2)
+tool-manager.js:156 📊 ツール数: 2
+tool-manager.js:103 ✅ ToolManager コンストラクタ完了 - ツール作成完了・Manager注入待機中
+tool-manager.js:104 📋 作成完了ツール: Array(2)
+tool-manager.js:105 ⚠️ 注意: Manager注入前のためツール選択不可
+app-core.js:138 ✅ AppCore - ToolManager初期化完了（Phase1.5対応版）
+tool-manager.js:203 🔧 ToolManager Manager統一注入処理開始...
+tool-manager.js:163 🔧 ToolManager 必要Manager収集開始...
+tool-manager.js:187 ✅ 必要Manager収集完了
+tool-manager.js:188 📊 収集Manager状況: Object
+tool-manager.js:215 🔧 pen Manager統一注入開始...
+abstract-tool.js:120 🔧 pen Manager統一注入開始...
+abstract-tool.js:147 ✅ pen Manager統一注入完了
+abstract-tool.js:148 📊 注入されたManager: Object
+tool-manager.js:227 ✅ pen Manager統一注入完了
+abstract-tool.js:241 💀 Manager設定検証失敗: Error: pen Manager validation failed: RecordManager.recordDraw method not found
+    at PenTool.validateManagers (abstract-tool.js:240:27)
+    at tool-manager.js:236:26
+    at Map.forEach (<anonymous>)
+    at ToolManager.initializeToolsWithManagers (tool-manager.js:214:20)
+    at TegakiApplication.initializeToolManager (tegaki-application.js:353:37)
+    at async TegakiApplication.initialize (tegaki-application.js:96:13)
+validateManagers @ abstract-tool.js:241
+abstract-tool.js:242 📊 詳細Manager設定状況: Object
 validateManagers @ abstract-tool.js:242
-app-core.js:142 ❌ AppCore - ToolManager初期化エラー: Error: pen Manager validation failed: CoordinateManager not set
-    at PenTool.validateManagers (abstract-tool.js:237:27)
-    at PenTool.activate (abstract-tool.js:266:14)
-    at ToolManager.selectTool (tool-manager.js:238:30)
-    at new ToolManager (tool-manager.js:90:14)
-    at AppCore.initializeToolManager (app-core.js:135:36)
-    at TegakiApplication.initializeToolManager (tegaki-application.js:338:32)
-    at TegakiApplication.initialize (tegaki-application.js:90:24)
-initializeToolManager @ app-core.js:142
-tegaki-application.js:60 💀 TegakiApplication 初期化失敗: Error: ToolManager initialization failed: pen Manager validation failed: CoordinateManager not set
-    at AppCore.initializeToolManager (app-core.js:143:23)
-    at TegakiApplication.initializeToolManager (tegaki-application.js:338:32)
-    at TegakiApplication.initialize (tegaki-application.js:90:24)
-(anonymous) @ tegaki-application.js:60
-error-manager.js:38 🔥 CRITICAL: TegakiApplication初期化失敗: ToolManager initialization failed: pen Manager validation failed: CoordinateManager not set TegakiApplication.constructor
-app-core.js:143 Uncaught (in promise) Error: ToolManager initialization failed: pen Manager validation failed: CoordinateManager not set
+abstract-tool.js:245 📊 基盤システム状況: Object
+validateManagers @ abstract-tool.js:245
+tool-manager.js:239 💀 pen Manager設定検証失敗: Error: pen Manager validation failed: RecordManager.recordDraw method not found
+    at PenTool.validateManagers (abstract-tool.js:240:27)
+    at tool-manager.js:236:26
+    at Map.forEach (<anonymous>)
+    at ToolManager.initializeToolsWithManagers (tool-manager.js:214:20)
+    at TegakiApplication.initializeToolManager (tegaki-application.js:353:37)
+    at async TegakiApplication.initialize (tegaki-application.js:96:13)
+(anonymous) @ tool-manager.js:239
+tegaki-application.js:369 💀 ToolManager Manager統一注入エラー: Error: pen Manager validation failed: RecordManager.recordDraw method not found
+    at PenTool.validateManagers (abstract-tool.js:240:27)
+    at tool-manager.js:236:26
+    at Map.forEach (<anonymous>)
+    at ToolManager.initializeToolsWithManagers (tool-manager.js:214:20)
+    at TegakiApplication.initializeToolManager (tegaki-application.js:353:37)
+    at async TegakiApplication.initialize (tegaki-application.js:96:13)
+initializeToolManager @ tegaki-application.js:369
+error-manager.js:38 ❌ ERROR: ToolManager Manager統一注入失敗: pen Manager validation failed: RecordManager.recordDraw method not found TegakiApplication.initializeToolManager
+tegaki-application.js:66 💀 TegakiApplication 初期化失敗: Error: pen Manager validation failed: RecordManager.recordDraw method not found
+    at PenTool.validateManagers (abstract-tool.js:240:27)
+    at tool-manager.js:236:26
+    at Map.forEach (<anonymous>)
+    at ToolManager.initializeToolsWithManagers (tool-manager.js:214:20)
+    at TegakiApplication.initializeToolManager (tegaki-application.js:353:37)
+    at async TegakiApplication.initialize (tegaki-application.js:96:13)
+(anonymous) @ tegaki-application.js:66
+error-manager.js:38 🔥 CRITICAL: TegakiApplication初期化失敗: pen Manager validation failed: RecordManager.recordDraw method not found TegakiApplication.constructor
+abstract-tool.js:240 Uncaught (in promise) Error: pen Manager validation failed: RecordManager.recordDraw method not found
 index.html:396 ⚠️ TegakiApplication初期化未完了
 (anonymous) @ index.html:396

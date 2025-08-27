@@ -1,34 +1,40 @@
 /**
- * 🎯 TegakiApplication - Phase1.5 メインアプリケーション（修正版・RecordManager安全初期化）
+ * 🎯 TegakiApplication - Phase1.5 メインアプリケーション（修正版・ToolManager統一注入対応）
  * 
- * 📋 使用メソッド一覧（依存確認済み ✅）
- * - window.Tegaki.AppCore() - app-core.js システム基盤クラス作成
- * - window.Tegaki.CoordinateManager() - coordinate-manager.js 座標変換管理クラス作成
- * - window.Tegaki.NavigationManager() - navigation-manager.js ナビゲーション管理クラス作成
- * - window.Tegaki.RecordManager() - record-manager.js 記録管理クラス作成
- * - window.Tegaki.ShortcutManager() - shortcut-manager.js ショートカット管理クラス作成
- * - window.Tegaki.ConfigManagerInstance.getCanvasConfig() - config-manager.js Canvas設定取得
- * - window.Tegaki.ErrorManagerInstance.showCritical() - error-manager.js エラー通知
- * - window.Tegaki.EventBusInstance - event-bus.js イベント配信システム
- * - window.Tegaki.TegakiIcons.replaceAllToolIcons() - assets/icons.js アイコン適用
- * - PIXI.Application() - pixi.js メインアプリケーションクラス
- * - document.getElementById() - JavaScript標準DOM取得
- * - Element.addEventListener() - JavaScript標準イベント登録
- * - console.log/error/warn() - JavaScript標準ログ出力
+ * 📌 使用メソッド一覧:
+ * ✅ window.Tegaki.AppCore() - app-core.js システム基盤クラス作成（確認済み）
+ * ✅ window.Tegaki.CoordinateManager() - coordinate-manager.js 座標変換管理クラス作成（確認済み）
+ * ✅ window.Tegaki.NavigationManager() - navigation-manager.js ナビゲーション管理クラス作成（確認済み）
+ * ✅ window.Tegaki.RecordManager() - record-manager.js 記録管理クラス作成（確認済み）
+ * ✅ window.Tegaki.ShortcutManager() - shortcut-manager.js ショートカット管理クラス作成（確認済み）
+ * ✅ window.Tegaki.ConfigManagerInstance.getCanvasConfig() - config-manager.js Canvas設定取得（確認済み）
+ * ✅ window.Tegaki.ErrorManagerInstance.showCritical() - error-manager.js エラー通知（確認済み）
+ * ✅ window.Tegaki.EventBusInstance - event-bus.js イベント配信システム（確認済み）
+ * ✅ window.Tegaki.TegakiIcons.replaceAllToolIcons() - assets/icons.js アイコン適用（確認済み）
+ * ✅ toolManager.initializeToolsWithManagers() - tool-manager.js Manager統一注入メソッド（修正対応）
+ * ✅ PIXI.Application() - pixi.js メインアプリケーションクラス（確認済み）
+ * ✅ document.getElementById() - JavaScript標準DOM取得（確認済み）
+ * ✅ Element.addEventListener() - JavaScript標準イベント登録（確認済み）
+ * ❌ setPhase15Managers() - 削除（initializeToolsWithManagersに統合済み）
  * 
- * 📋 RESPONSIBILITY: メインアプリケーション・UI連携・イベント設定・キャンバス作成・座標管理統合・新Manager初期化
- * 🚫 PROHIBITION: Manager作成・描画処理・エラー処理・直接座標変換・フォールバック・フェイルセーフ
- * ✅ PERMISSION: AppCore作成・UI連携・イベント設定・PixiJS Application作成・新Manager活用
+ * 📋 RESPONSIBILITY: メインアプリケーション・UI連携・イベント設定・キャンバス作成・座標管理統合・新Manager初期化・ToolManager統一注入
+ * 🚫 PROHIBITION: Manager作成・描画処理・エラー処理・直接座標変換・フォールバック・フェイルセーフ・架空メソッド呼び出し
+ * ✅ PERMISSION: AppCore作成・UI連携・イベント設定・PixiJS Application作成・新Manager活用・正しいメソッド呼び出し
  * 
- * 📏 DESIGN_PRINCIPLE: UIアプリケーション専門・AppCore統合・新Manager統合・Phase1.5基盤確立・エラー隠蔽禁止
- * 🔄 INTEGRATION: AppCore + PixiJS + DOM UI + 新Manager(Coordinate/Navigation/Record/Shortcut) の統合管理
+ * 📏 DESIGN_PRINCIPLE: UIアプリケーション専門・AppCore統合・新Manager統合・Phase1.5基盤確立・エラー隠蔽禁止・Manager統一注入対応
+ * 🔄 INTEGRATION: AppCore + PixiJS + DOM UI + 新Manager(Coordinate/Navigation/Record/Shortcut) + ToolManager統一注入
  * 
- * 🔄 APPLICATION_FLOW: アプリケーション初期化フロー
+ * 🔄 APPLICATION_FLOW: アプリケーション初期化フロー（修正版）
  * 1. 開始 → Phase1.5Manager安全作成 → AppCore初期化 
  * 2. Canvas作成 → CoordinateManager設定 → ToolManager初期化
- * 3. UI設定 → イベント登録 → 機能統合 → 完了
+ * 3. Manager統一注入実行(initializeToolsWithManagers) → UI設定 → イベント登録 → 機能統合 → 完了
  * 
- * 依存関係: AppCore(基盤システム) + CoordinateManager(座標変換) + 新Manager群(安全初期化)
+ * 🚨 FIX_NOTES: setPhase15Managers → initializeToolsWithManagers メソッド名修正
+ * - ToolManagerで実装済みの正しいメソッドを使用
+ * - Manager注入統一化・フォールバック削除対応
+ * - エラー隠蔽禁止・剛直構造維持
+ * 
+ * 依存関係: AppCore(基盤システム) + CoordinateManager(座標変換) + ToolManager(統一注入対応) + 新Manager群(安全初期化)
  */
 
 // 多重定義防止
@@ -38,8 +44,8 @@ if (!window.Tegaki) {
 
 if (!window.Tegaki.TegakiApplication) {
     /**
-     * TegakiApplication - Phase1.5 メインアプリケーション（修正版・RecordManager安全初期化）
-     * AppCoreを使ってManager統合・UI連携・座標管理統合・新Manager安全統合を行う
+     * TegakiApplication - Phase1.5 メインアプリケーション（修正版・ToolManager統一注入対応）
+     * AppCoreを使ってManager統合・UI連携・座標管理統合・新Manager安全統合・ToolManager統一注入を行う
      */
     class TegakiApplication {
         constructor() {
@@ -69,10 +75,10 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 初期化（Phase1.5版：RecordManager安全初期化修正）
+         * 初期化（Phase1.5版：Manager統一注入修正）
          */
         async initialize() {
-            console.log('🚀 TegakiApplication Phase1.5 RecordManager安全初期化修正版初期化開始');
+            console.log('🚀 TegakiApplication Phase1.5 Manager統一注入修正版初期化開始');
             
             // 🆕 0. Phase1.5新Manager安全初期化（順序重要・エラー処理改善）
             this.initializePhase15ManagersSafely();
@@ -86,7 +92,7 @@ if (!window.Tegaki.TegakiApplication) {
             // 🆕 3. 新ManagerにCanvasManager設定
             this.setupPhase15ManagersWithCanvas();
             
-            // 4. ToolManager初期化（PixiJS設定後に実行）
+            // 4. ToolManager初期化・Manager統一注入（修正版）
             await this.initializeToolManager();
             
             // 🆕 5. Phase1.5機能統合
@@ -101,7 +107,7 @@ if (!window.Tegaki.TegakiApplication) {
             this.initialized = true;
             this.showSuccessMessage();
             
-            console.log('✅ TegakiApplication Phase1.5 RecordManager安全初期化修正版初期化完了');
+            console.log('✅ TegakiApplication Phase1.5 Manager統一注入修正版初期化完了');
         }
         
         /**
@@ -328,30 +334,31 @@ if (!window.Tegaki.TegakiApplication) {
             console.log('🆕 Phase1.5新Manager CanvasManager設定完了');
         }
         
-/**
-         * ToolManager初期化（Phase1.5 Manager統合版・修正版）
+        /**
+         * 🔧 ToolManager初期化（Phase1.5 Manager統一注入修正版）
          */
         async initializeToolManager() {
-            console.log('🔧 ToolManager初期化開始 - Phase1.5 Manager統合版');
+            console.log('🔧 ToolManager初期化開始 - Phase1.5 Manager統一注入修正版');
             
             // PixiJS設定後にToolManager初期化
             await this.appCore.initializeToolManager();
             
-            // 🆕 Phase1.5 Manager群をToolManagerに設定（修正版）
+            // 🆕 Phase1.5 Manager群をToolManagerに統一注入（修正版）
             const toolManager = this.appCore.getToolManager();
             if (toolManager) {
-                // Phase1.5 Manager群設定（修正：individual参数で呼び出し）
-                if (typeof toolManager.setPhase15Managers === 'function') {
+                // 🚨 修正：initializeToolsWithManagersメソッドを使用（setPhase15Managersは存在しない）
+                if (typeof toolManager.initializeToolsWithManagers === 'function') {
                     try {
-                        toolManager.setPhase15Managers(
-                            this.coordinateManager,  // coordinateManager
-                            this.recordManager,      // recordManager  
-                            this.navigationManager,  // navigationManager
-                            this.shortcutManager     // shortcutManager
+                        // Manager統一注入実行（個別パラメータで呼び出し）
+                        toolManager.initializeToolsWithManagers(
+                            this.coordinateManager,  // coordinateManager (必須)
+                            this.recordManager,      // recordManager (必須)
+                            this.navigationManager,  // navigationManager (オプション)
+                            this.shortcutManager     // shortcutManager (オプション)
                         );
                         
-                        console.log('✅ ToolManager - Phase1.5 Manager群設定完了');
-                        console.log('📊 設定されたManager:', {
+                        console.log('✅ ToolManager - Manager統一注入完了（修正版）');
+                        console.log('📊 注入完了Manager:', {
                             coordinateManager: !!this.coordinateManager,
                             recordManager: !!this.recordManager,
                             navigationManager: !!this.navigationManager,
@@ -359,11 +366,11 @@ if (!window.Tegaki.TegakiApplication) {
                         });
                         
                     } catch (error) {
-                        console.error('💀 ToolManager Phase1.5Manager設定エラー:', error);
+                        console.error('💀 ToolManager Manager統一注入エラー:', error);
                         if (window.Tegaki?.ErrorManagerInstance) {
                             window.Tegaki.ErrorManagerInstance.showError(
                                 'error', 
-                                `ToolManager Phase1.5Manager設定失敗: ${error.message}`,
+                                `ToolManager Manager統一注入失敗: ${error.message}`,
                                 { context: 'TegakiApplication.initializeToolManager' }
                             );
                         }
@@ -371,12 +378,12 @@ if (!window.Tegaki.TegakiApplication) {
                         throw error;
                     }
                 } else {
-                    console.error('💀 ToolManager.setPhase15Managers メソッドが利用できません');
-                    const error = new Error('ToolManager.setPhase15Managers method not available');
+                    console.error('💀 ToolManager.initializeToolsWithManagers メソッドが利用できません');
+                    const error = new Error('ToolManager.initializeToolsWithManagers method not available');
                     if (window.Tegaki?.ErrorManagerInstance) {
                         window.Tegaki.ErrorManagerInstance.showError(
                             'error',
-                            'ToolManagerでsetPhase15Managersメソッドが見つかりません',
+                            'ToolManagerでinitializeToolsWithManagersメソッドが見つかりません',
                             { context: 'TegakiApplication.initializeToolManager' }
                         );
                     }
@@ -395,8 +402,9 @@ if (!window.Tegaki.TegakiApplication) {
                 throw error;
             }
             
-            console.log('✅ ToolManager初期化完了（Phase1.5 Manager統合版）');
-        }        
+            console.log('✅ ToolManager初期化完了（Phase1.5 Manager統一注入修正版）');
+        }
+        
         /**
          * 🆕 Phase1.5機能統合
          */
@@ -859,12 +867,12 @@ if (!window.Tegaki.TegakiApplication) {
          * 成功メッセージ表示
          */
         showSuccessMessage() {
-            console.log('🎉 TegakiApplication Phase1.5 RecordManager安全初期化修正版初期化成功！');
+            console.log('🎉 TegakiApplication Phase1.5 Manager統一注入修正版初期化成功！');
             console.log('📏 CoordinateManager統合完了 - 座標変換・ペン描画修正');
             console.log('🧭 NavigationManager統合完了 - パン・ズーム対応');
             console.log('🔄 RecordManager安全統合完了 - Undo/Redo対応（安全初期化）');
             console.log('⌨️ ShortcutManager統合完了 - キーボードショートカット対応');
-            console.log('🎯 Phase1.5新Manager統合基盤確立完了（RecordManager安全初期化修正版）');
+            console.log('🎯 Phase1.5新Manager統合基盤確立完了（Manager統一注入修正版）');
             
             // Manager初期化状況の詳細レポート
             console.log('📊 Manager統合状況レポート:', {
@@ -877,7 +885,7 @@ if (!window.Tegaki.TegakiApplication) {
             // 成功通知（UI）
             if (window.Tegaki?.ErrorManagerInstance) {
                 window.Tegaki.ErrorManagerInstance.showInfo(
-                    'Phase1.5修正版初期化完了 - RecordManager安全初期化・Manager統合完了',
+                    'Phase1.5修正版初期化完了 - Manager統一注入修正・Manager統合完了',
                     { 
                         context: 'TegakiApplication.initialize'
                     }
@@ -889,7 +897,7 @@ if (!window.Tegaki.TegakiApplication) {
          * 🆕 Phase1.5機能テスト（デバッグ用）
          */
         testPhase15Features() {
-            console.log('🧪 Phase1.5機能テスト開始（RecordManager安全初期化修正版）');
+            console.log('🧪 Phase1.5機能テスト開始（Manager統一注入修正版）');
             
             const testResults = {
                 coordinateManager: !!this.coordinateManager,
@@ -945,12 +953,12 @@ if (!window.Tegaki.TegakiApplication) {
                 }
             }
             
-            console.log('🧪 Phase1.5機能テスト結果（RecordManager安全初期化修正版）:', testResults);
+            console.log('🧪 Phase1.5機能テスト結果（Manager統一注入修正版）:', testResults);
             return testResults;
         }
         
         /**
-         * 🆕 Phase1.5デバッグ情報取得（RecordManager安全初期化修正版）
+         * 🆕 Phase1.5デバッグ情報取得（Manager統一注入修正版）
          */
         getPhase15DebugInfo() {
             return {
@@ -959,7 +967,7 @@ if (!window.Tegaki.TegakiApplication) {
                 pixiAppReady: !!this.pixiApp,
                 appCoreReady: !!this.appCore,
                 
-                // Phase1.5新Manager状態（安全初期化修正版）
+                // Phase1.5新Manager状態（統一注入修正版）
                 managers: {
                     coordinateManager: !!this.coordinateManager,
                     navigationManager: !!this.navigationManager,
@@ -999,6 +1007,7 @@ if (!window.Tegaki.TegakiApplication) {
                     return toolManager ? {
                         ready: toolManager.isReady?.() || false,
                         currentTool: toolManager.getCurrentToolName?.() || 'unknown',
+                        managersInitialized: toolManager.managersInitialized || false,
                         coordinateManagerConnected: !!(currentTool && currentTool.coordinateManager)
                     } : null;
                 })(),
@@ -1012,10 +1021,10 @@ if (!window.Tegaki.TegakiApplication) {
                     redoButton: !!document.getElementById('redo-button')
                 },
                 
-                // Phase情報（RecordManager安全初期化修正版）
+                // Phase情報（Manager統一注入修正版）
                 phase: {
                     current: '1.5',
-                    safeInitializationApplied: true,
+                    managerInjectionFixed: true,
                     features: {
                         coordinateManager: !!this.coordinateManager,
                         navigationManager: !!this.navigationManager,
@@ -1043,17 +1052,17 @@ if (!window.Tegaki.TegakiApplication) {
     // Tegaki名前空間に登録
     window.Tegaki.TegakiApplication = TegakiApplication;
     
-    console.log('🎯 TegakiApplication Phase1.5 メインアプリケーション（修正版・RecordManager安全初期化） Loaded');
+    console.log('🎯 TegakiApplication Phase1.5 メインアプリケーション（修正版・Manager統一注入修正） Loaded');
     console.log('📏 CoordinateManager統合・座標変換修正・ペン描画修正');
     console.log('🧭 ナビゲーション・非破壊編集・ショートカット統合');
-    console.log('🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager安全統合対応');
-    console.log('🔧 RecordManager初期化エラー完全修正・安全初期化実装・エラー隠蔽禁止');
-    console.log('🚀 TegakiApplication Phase1.5 メインアプリケーション（修正版） 完成');
+    console.log('🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統一注入修正対応');
+    console.log('🔧 Manager統一注入修正・initializeToolsWithManagers使用・エラー隠蔽禁止');
+    console.log('🚀 TegakiApplication Phase1.5 メインアプリケーション（Manager統一注入修正版） 完成');
 }
 
-console.log('🎯 TegakiApplication Phase1.5 メインアプリケーション（修正版・RecordManager安全初期化） Loaded');
+console.log('🎯 TegakiApplication Phase1.5 メインアプリケーション（修正版・Manager統一注入修正） Loaded');
 console.log('📏 CoordinateManager統合・座標変換修正・ペン描画修正');
 console.log('🧭 ナビゲーション・非破壊編集・ショートカット統合');  
-console.log('🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager安全統合対応');
-console.log('🔧 RecordManager初期化エラー完全修正・安全初期化実装・エラー隠蔽禁止');
-console.log('🚀 TegakiApplication Phase1.5 メインアプリケーション（修正版） 完成');
+console.log('🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統一注入修正対応');
+console.log('🔧 Manager統一注入修正・initializeToolsWithManagers使用・エラー隠蔽禁止');
+console.log('🚀 TegakiApplication Phase1.5 メインアプリケーション（Manager統一注入修正版） 完成');
