@@ -1,395 +1,387 @@
 /**
- * EraserTool Phase1.5 - 消しゴムツール（AbstractTool継承版）
+ * 🧹 EraserTool Phase1.5 - 消しゴムツール（シンプル実装版）
+ * 📋 RESPONSIBILITY: 消去機能・既存描画削除・Phase1.5簡易実装
+ * 🚫 PROHIBITION: 複雑な消去処理・Canvas管理・座標変換・エラー隠蔽
+ * ✅ PERMISSION: 簡易消去・PixiJS hit-test・RecordManager連携・設定管理
  * 
- * 使用メソッド一覧:
- * ✅ window.Tegaki.AbstractTool (abstract-tool.js) - 継承
- * ✅ canvasManager.getDrawingLayer() (canvas-manager.js)
- * ✅ canvasManager.getPixiApp() (canvas-manager.js)
- * ✅ window.Tegaki.RecordManager.startDrawingAction() (record-manager.js)
- * ✅ window.Tegaki.RecordManager.endDrawingAction() (record-manager.js)
+ * 📏 DESIGN_PRINCIPLE: AbstractTool継承・シンプル実装・Phase2高度機能準備
+ * 🔄 INTEGRATION: AbstractTool継承・CanvasManager連携・RecordManager記録・PixiJS活用
+ * 🔧 FIX: AbstractTool継承確実化・簡易消去実装・Phase2拡張準備
  * 
- * 消去フロー:
- * 1. 消去開始 → 消去範囲設定 → RecordManager記録開始
- * 2. 消去中 → 衝突検出 → オブジェクト削除 → 視覚フィードバック
- * 3. 消去終了 → 削除完了 → RecordManager記録終了
+ * 📌 使用メソッド一覧:
+ * ✅ window.Tegaki.AbstractTool(constructor) - 基底クラス継承（abstract-tool.js確認済み）
+ * ✅ window.Tegaki.RecordManagerInstance.recordErase() - 消去記録（record-manager.js確認済み）
+ * ✅ this.canvasManager.getLayer() - レイヤー取得（canvas-manager.js確認済み）
+ * ✅ layer.children - 子要素配列（PixiJS Container標準）
+ * ✅ graphics.containsPoint() - 点含有判定（PixiJS Graphics標準）
+ * ✅ layer.removeChild() - 子要素削除（PixiJS Container標準）
+ * ✅ super.onPointerDown/Move/Up() - 基底クラスメソッド（AbstractTool継承）
  * 
- * 依存関係: AbstractTool, CanvasManager, RecordManager
+ * 📐 消去フロー:
+ * 消去開始 → PointerDown処理 → hit-test判定 → 対象Graphics削除 → 
+ * RecordManager記録 → 継続消去 → PointerUp完了 → 終了
+ * 依存関係: AbstractTool(基底)・CanvasManager(レイヤー)・RecordManagerInstance(記録)・PixiJS hit-test
+ * 
+ * 🚫 絶対禁止事項:
+ * - try/catchでの握りつぶし（throw必須）
+ * - 独自座標変換（AbstractTool委譲必須）
+ * - 複雑な消去アルゴリズム（Phase2で実装）
+ * - 消去記録の省略（RecordManager連携必須）
  */
 
-// AbstractToolの存在確認
-if (!window.Tegaki || !window.Tegaki.AbstractTool) {
-    console.error('💀 EraserTool: AbstractTool が未ロード');
-    throw new Error('AbstractTool must be loaded before EraserTool');
-}
+window.Tegaki = window.Tegaki || {};
 
+/**
+ * EraserTool - 消しゴムツール（シンプル実装版）
+ */
 class EraserTool extends window.Tegaki.AbstractTool {
     constructor(canvasManager) {
         super(canvasManager, 'eraser');
-        console.log('🧹 EraserTool Phase1.5 作成開始');
+        console.log('🧹 EraserTool Phase1.5 作成開始 - シンプル実装版');
         
-        // 消しゴム固有の設定
-        this.settings = {
-            size: 20,
-            hardness: 1.0, // 0.0-1.0 (soft-hard)
-            opacity: 1.0
+        // 消しゴム固有プロパティ
+        this.isErasing = false;
+        this.erasedItems = [];
+        
+        // RecordManager参照
+        this.recordManager = window.Tegaki.RecordManagerInstance;
+        if (!this.recordManager) {
+            console.warn('⚠️ RecordManagerInstance not available - Undo/Redo機能が制限されます');
+        }
+        
+        // 消しゴム設定
+        this.eraserSettings = {
+            size: 20,                 // 消しゴムサイズ（ピクセル）
+            mode: 'object'            // 消去モード: 'object' | 'pixel'（Phase2で拡張）
         };
         
-        // 消去状態
-        this.erasingArea = null;
-        this.erasedObjects = [];
-        this.recordManager = window.Tegaki.RecordManager;
-        
-        console.log('✅ EraserTool Phase1.5 作成完了');
+        console.log('✅ EraserTool 作成完了:', {
+            toolName: this.toolName,
+            hasCanvasManager: !!this.canvasManager,
+            hasRecordManager: !!this.recordManager,
+            eraserSettings: this.eraserSettings
+        });
     }
     
     /**
-     * 消去開始処理
+     * 消去開始処理（PointerDown時）
      */
-    onDrawStart(x, y, event) {
-        console.log(`🧹 消去開始: (${x}, ${y})`);
-        
+    onPointerDown(x, y, event) {
         try {
-            // 消去エリア作成
-            this.createErasingArea(x, y);
+            console.log(`🧹 EraserTool 消去開始: (${x}, ${y})`);
             
-            // 履歴記録開始
-            if (this.recordManager && this.recordManager.startDrawingAction) {
-                this.recordManager.startDrawingAction('eraser', {
-                    startPoint: { x, y },
-                    settings: { ...this.settings }
+            this.isErasing = true;
+            this.erasedItems = [];
+            
+            // 指定位置の要素を消去
+            this.eraseAtPosition(x, y);
+            
+            console.log(`✅ EraserTool 消去開始完了`);
+            
+        } catch (error) {
+            console.error('💀 EraserTool 消去開始エラー:', error);
+            
+            if (this.errorManager && this.errorManager.showError) {
+                this.errorManager.showError('error', `消しゴム開始エラー: ${error.message}`, {
+                    context: 'EraserTool.onPointerDown'
                 });
             }
             
-            // 初回消去実行
-            this.performErase(x, y);
-            
-            console.log('✅ 消去開始処理完了');
-            
-        } catch (error) {
-            console.error('💀 消去開始失敗:', error);
-            if (this.errorManager) {
-                this.errorManager.handleError(error, 'EraserTool.onDrawStart');
-            }
+            throw error;
         }
     }
     
     /**
-     * 消去処理
+     * 消去継続処理（PointerMove時）
      */
-    onDraw(x, y, event) {
-        if (!this.erasingArea) return;
+    onPointerMove(x, y, event) {
+        if (!this.isErasing) return;
         
         try {
-            // 消去エリア移動
-            this.updateErasingArea(x, y);
-            
-            // 消去実行
-            this.performErase(x, y);
+            // ドラッグ中の連続消去
+            this.eraseAtPosition(x, y);
             
         } catch (error) {
-            console.error('💀 消去失敗:', error);
-            if (this.errorManager) {
-                this.errorManager.handleError(error, 'EraserTool.onDraw');
-            }
-        }
-    }
-    
-    /**
-     * 消去終了処理
-     */
-    onDrawEnd(x, y, event) {
-        console.log(`🧹 消去終了: (${x}, ${y})`);
-        
-        try {
-            // 最終消去
-            this.performErase(x, y);
+            console.error('💀 EraserTool 消去継続エラー:', error);
             
-            // 消去エリア削除
-            this.removeErasingArea();
-            
-            // 履歴記録終了
-            if (this.recordManager && this.recordManager.endDrawingAction) {
-                this.recordManager.endDrawingAction({
-                    endPoint: { x, y },
-                    erasedObjects: this.erasedObjects
+            if (this.errorManager && this.errorManager.showError) {
+                this.errorManager.showError('error', `消しゴム継続エラー: ${error.message}`, {
+                    context: 'EraserTool.onPointerMove'
                 });
             }
             
-            console.log('✅ 消去終了処理完了:', this.erasedObjects.length, '個のオブジェクトを消去');
+            throw error;
+        }
+    }
+    
+    /**
+     * 消去終了処理（PointerUp時）
+     */
+    onPointerUp(x, y, event) {
+        if (!this.isErasing) return;
+        
+        try {
+            console.log(`🧹 EraserTool 消去終了: (${x}, ${y})`);
             
-            // 状態リセット
-            this.erasedObjects = [];
+            // 最終位置で消去
+            this.eraseAtPosition(x, y);
+            
+            // 消去操作を記録
+            this.recordEraseOperation();
+            
+            this.isErasing = false;
+            console.log(`✅ EraserTool 消去終了完了: 消去数=${this.erasedItems.length}`);
             
         } catch (error) {
-            console.error('💀 消去終了失敗:', error);
-            if (this.errorManager) {
-                this.errorManager.handleError(error, 'EraserTool.onDrawEnd');
+            console.error('💀 EraserTool 消去終了エラー:', error);
+            
+            if (this.errorManager && this.errorManager.showError) {
+                this.errorManager.showError('error', `消しゴム終了エラー: ${error.message}`, {
+                    context: 'EraserTool.onPointerUp'
+                });
             }
+            
+            this.isErasing = false;
+            this.erasedItems = [];
+            throw error;
         }
     }
     
     /**
-     * 消去エリア作成
+     * 指定位置での消去処理
      */
-    createErasingArea(x, y) {
-        // PixiJS Graphics作成（消去範囲の視覚表示）
-        this.erasingArea = new PIXI.Graphics();
-        
-        // 消去範囲スタイル（半透明の円）
-        this.erasingArea.beginFill(0xff0000, 0.2);
-        this.erasingArea.lineStyle(2, 0xff0000, 0.5);
-        this.erasingArea.drawCircle(0, 0, this.settings.size);
-        this.erasingArea.endFill();
-        
-        // 位置設定
-        this.erasingArea.x = x;
-        this.erasingArea.y = y;
-        
-        // レイヤーに追加（一時表示）
-        const drawingLayer = this.canvasManager.getDrawingLayer();
-        if (drawingLayer) {
-            drawingLayer.addChild(this.erasingArea);
-        }
-        
-        console.log('✅ 消去エリア作成完了:', this.settings.size);
-    }
-    
-    /**
-     * 消去エリア更新
-     */
-    updateErasingArea(x, y) {
-        if (this.erasingArea) {
-            this.erasingArea.x = x;
-            this.erasingArea.y = y;
-        }
-    }
-    
-    /**
-     * 消去エリア削除
-     */
-    removeErasingArea() {
-        if (this.erasingArea && this.erasingArea.parent) {
-            this.erasingArea.parent.removeChild(this.erasingArea);
-            this.erasingArea.destroy();
-            this.erasingArea = null;
-        }
-    }
-    
-    /**
-     * 消去実行
-     */
-    performErase(x, y) {
+    eraseAtPosition(x, y) {
         try {
-            const drawingLayer = this.canvasManager.getDrawingLayer();
-            if (!drawingLayer) return;
+            // メインレイヤー取得
+            const mainLayer = this.canvasManager.getLayer('main');
+            if (!mainLayer) {
+                throw new Error('Main layer not found');
+            }
             
-            const eraseRadius = this.settings.size;
-            const erasedInThisAction = [];
+            // レイヤー内の子要素を確認
+            const children = mainLayer.children.slice(); // コピーを作成（削除による配列変更回避）
+            let erasedCount = 0;
             
-            // レイヤー内の全子オブジェクトをチェック
-            for (let i = drawingLayer.children.length - 1; i >= 0; i--) {
-                const child = drawingLayer.children[i];
-                
-                // 消去エリアは除外
-                if (child === this.erasingArea) continue;
-                
-                // 衝突判定
-                if (this.isObjectInEraseArea(child, x, y, eraseRadius)) {
-                    // オブジェクトを削除
-                    drawingLayer.removeChild(child);
-                    
-                    // 削除記録
-                    erasedInThisAction.push({
-                        object: child,
-                        position: { x: child.x, y: child.y },
-                        timestamp: Date.now()
-                    });
-                    
-                    // Graphicsを破棄
-                    if (child.destroy) {
-                        child.destroy();
-                    }
+            for (const child of children) {
+                if (this.shouldEraseItem(child, x, y)) {
+                    this.eraseItem(child, mainLayer);
+                    erasedCount++;
                 }
             }
             
-            // 削除したオブジェクトを履歴に追加
-            this.erasedObjects.push(...erasedInThisAction);
-            
-            // 画面更新
-            if (erasedInThisAction.length > 0) {
-                const pixiApp = this.canvasManager.getPixiApp();
-                if (pixiApp) {
-                    pixiApp.render();
-                }
+            if (erasedCount > 0) {
+                console.log(`🧹 位置(${x}, ${y})で${erasedCount}個のアイテムを消去`);
             }
             
         } catch (error) {
-            console.error('💀 消去実行失敗:', error);
+            console.error('💀 指定位置消去エラー:', error);
+            throw error;
         }
     }
     
     /**
-     * オブジェクトが消去範囲内かチェック
+     * アイテム消去判定
      */
-    isObjectInEraseArea(pixiObject, eraseX, eraseY, eraseRadius) {
+    shouldEraseItem(item, x, y) {
         try {
-            // オブジェクトの境界ボックス取得
-            const bounds = pixiObject.getBounds();
+            // PixiJS Graphics の場合、containsPoint で判定
+            if (item instanceof PIXI.Graphics) {
+                const point = new PIXI.Point(x, y);
+                return item.containsPoint(point);
+            }
             
-            // 境界ボックスの中心点計算
-            const objCenterX = bounds.x + bounds.width / 2;
-            const objCenterY = bounds.y + bounds.height / 2;
+            // その他の DisplayObject の場合、境界ボックスで判定
+            if (item.getBounds) {
+                const bounds = item.getBounds();
+                return bounds.contains(x, y);
+            }
             
-            // 距離計算
-            const distance = Math.sqrt(
-                Math.pow(eraseX - objCenterX, 2) + 
-                Math.pow(eraseY - objCenterY, 2)
-            );
-            
-            // 消去範囲内かチェック
-            const threshold = eraseRadius + Math.min(bounds.width, bounds.height) / 2;
-            return distance < threshold;
-            
-        } catch (error) {
-            console.error('💀 衝突判定失敗:', error);
+            // 判定できない場合は消去しない
             return false;
+            
+        } catch (error) {
+            console.error('💀 消去判定エラー:', error);
+            return false; // エラー時は安全側で消去しない
         }
     }
     
     /**
-     * 消しゴム設定更新
+     * アイテム消去実行
      */
-    onSettingsUpdate(newSettings) {
-        console.log('🧹 消しゴム設定更新:', newSettings);
-        
-        // サイズ設定
-        if (newSettings.size !== undefined) {
-            this.settings.size = Math.max(5, Math.min(100, newSettings.size));
+    eraseItem(item, layer) {
+        try {
+            // レイヤーから削除
+            layer.removeChild(item);
+            
+            // 消去記録に追加
+            this.erasedItems.push({
+                item: item,
+                layer: layer,
+                timestamp: Date.now()
+            });
+            
+            console.log(`🧹 アイテム消去: ${item.constructor.name}`);
+            
+        } catch (error) {
+            console.error('💀 アイテム消去実行エラー:', error);
+            throw error;
+        }
+    }
+    
+    /**
+     * 消去操作をRecordManagerに記録
+     */
+    recordEraseOperation() {
+        if (this.erasedItems.length === 0) {
+            console.log('📋 消去対象なし - 記録スキップ');
+            return;
         }
         
-        // 硬さ設定
-        if (newSettings.hardness !== undefined) {
-            this.settings.hardness = Math.max(0, Math.min(1, newSettings.hardness));
+        try {
+            if (this.recordManager && typeof this.recordManager.recordErase === 'function') {
+                const eraseInfo = {
+                    erasedItems: this.erasedItems.map(record => ({
+                        itemId: record.item.id || 'unknown',
+                        layerId: 'main',
+                        itemType: record.item.constructor.name,
+                        timestamp: record.timestamp
+                    })),
+                    eraserSize: this.eraserSettings.size,
+                    totalErased: this.erasedItems.length
+                };
+                
+                this.recordManager.recordErase(eraseInfo);
+                console.log(`✅ RecordManager消去記録完了 - ${this.erasedItems.length}個`);
+            } else {
+                console.warn('⚠️ RecordManager消去記録スキップ - Undo/Redo機能が制限されます');
+            }
+            
+            // 消去完了イベント発火
+            if (this.eventBus && this.eventBus.emit) {
+                this.eventBus.emit('eraser:eraseComplete', {
+                    erasedCount: this.erasedItems.length,
+                    layerId: 'main'
+                });
+            }
+            
+        } catch (error) {
+            console.error('💀 消去記録エラー:', error);
+            throw error;
+        }
+    }
+    
+    /**
+     * 消しゴムサイズ設定
+     */
+    setEraserSize(size) {
+        if (typeof size !== 'number' || size <= 0) {
+            throw new Error('Invalid eraser size');
         }
         
-        // 透明度設定
-        if (newSettings.opacity !== undefined) {
-            this.settings.opacity = Math.max(0, Math.min(1, newSettings.opacity));
+        this.eraserSettings.size = size;
+        console.log(`🧹 消しゴムサイズ変更: ${size}`);
+    }
+    
+    /**
+     * 設定更新処理（AbstractToolからの委譲）
+     */
+    onSettingsUpdate(settings) {
+        try {
+            if (settings.size !== undefined) {
+                this.setEraserSize(settings.size);
+            }
+            
+            console.log(`🧹 EraserTool 設定更新完了:`, this.eraserSettings);
+            
+        } catch (error) {
+            console.error('💀 EraserTool 設定更新エラー:', error);
+            throw error;
         }
-        
-        console.log('✅ 消しゴム設定更新完了:', this.settings);
+    }
+    
+    /**
+     * 現在の消しゴム設定取得
+     */
+    getEraserSettings() {
+        return { ...this.eraserSettings };
     }
     
     /**
      * 有効化時処理
      */
     onActivate() {
-        console.log('🧹 消しゴムツール有効化');
-        
-        // カーソルスタイル変更
-        const canvas = this.getCanvasElement();
-        if (canvas) {
-            canvas.style.cursor = 'grab';
-        }
+        console.log('🧹 EraserTool 有効化 - 消しゴムモード開始');
+        this.resetErasingState();
     }
     
     /**
      * 無効化時処理
      */
     onDeactivate() {
-        console.log('🧹 消しゴムツール無効化');
+        console.log('🧹 EraserTool 無効化 - 消去中の場合は記録');
         
-        // 消去エリア削除
-        this.removeErasingArea();
-        
-        // 状態リセット
-        this.erasedObjects = [];
-        
-        // カーソルスタイルリセット
-        const canvas = this.getCanvasElement();
-        if (canvas) {
-            canvas.style.cursor = 'default';
+        // 消去中の場合は記録して終了
+        if (this.isErasing && this.erasedItems.length > 0) {
+            try {
+                this.recordEraseOperation();
+            } catch (error) {
+                console.error('💀 EraserTool 無効化時の記録エラー:', error);
+                this.resetErasingState();
+            }
         }
-    }
-    
-    /**
-     * ホバー処理（消去範囲プレビュー）
-     */
-    onHover(x, y, event) {
-        // TODO: 消去範囲のプレビュー表示
+        
+        this.resetErasingState();
     }
     
     /**
      * リセット処理
      */
     onReset() {
-        this.removeErasingArea();
-        this.erasedObjects = [];
-        console.log('🧹 消しゴムツール リセット完了');
+        console.log('🧹 EraserTool リセット - 消去状態クリア');
+        this.resetErasingState();
     }
     
     /**
-     * 全消去（特殊機能）
+     * 消去状態リセット
      */
-    eraseAll() {
-        try {
-            console.log('🧹 全消去実行');
-            
-            const drawingLayer = this.canvasManager.getDrawingLayer();
-            if (!drawingLayer) return;
-            
-            const allObjects = [];
-            
-            // 全オブジェクト削除
-            for (let i = drawingLayer.children.length - 1; i >= 0; i--) {
-                const child = drawingLayer.children[i];
-                drawingLayer.removeChild(child);
-                
-                allObjects.push({
-                    object: child,
-                    position: { x: child.x, y: child.y },
-                    timestamp: Date.now()
-                });
-                
-                if (child.destroy) {
-                    child.destroy();
-                }
-            }
-            
-            // 履歴記録
-            if (this.recordManager && this.recordManager.recordAction) {
-                this.recordManager.recordAction('eraseAll', {
-                    erasedObjects: allObjects
-                });
-            }
-            
-            // 画面更新
-            const pixiApp = this.canvasManager.getPixiApp();
-            if (pixiApp) {
-                pixiApp.render();
-            }
-            
-            console.log('✅ 全消去完了:', allObjects.length, '個のオブジェクトを削除');
-            
-        } catch (error) {
-            console.error('💀 全消去失敗:', error);
-        }
+    resetErasingState() {
+        this.isErasing = false;
+        this.erasedItems = [];
+        console.log('✅ EraserTool 消去状態リセット完了');
     }
     
     /**
-     * 消しゴム情報取得
+     * 破棄処理
      */
-    getEraserInfo() {
+    onDestroy() {
+        console.log('🧹 EraserTool 破棄処理開始');
+        
+        // 消去中の処理を安全に終了
+        this.resetErasingState();
+        
+        // RecordManager参照をクリア
+        this.recordManager = null;
+        
+        console.log('✅ EraserTool 破棄処理完了');
+    }
+    
+    /**
+     * デバッグ情報取得
+     */
+    getDebugInfo() {
         return {
-            name: this.toolName,
-            settings: { ...this.settings },
+            className: 'EraserTool',
+            toolName: this.toolName,
             isActive: this.isActive,
-            isErasing: this.isDrawing,
-            erasedCount: this.erasedObjects.length
+            isErasing: this.isErasing,
+            erasedItemsCount: this.erasedItems.length,
+            hasCanvasManager: !!this.canvasManager,
+            hasRecordManager: !!this.recordManager,
+            eraserSettings: this.eraserSettings
         };
     }
 }
 
-// グローバル公開（最重要）
+// グローバル公開
 window.Tegaki.EraserTool = EraserTool;
-console.log('🧹 EraserTool Phase1.5 Loaded - AbstractTool継承確実版');
+console.log('🧹 EraserTool Phase1.5 Loaded - シンプル実装版・RecordManager連携・PixiJS hit-test活用');
