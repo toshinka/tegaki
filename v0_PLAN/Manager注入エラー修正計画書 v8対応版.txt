@@ -1,0 +1,132 @@
+# Manager注入エラー修正計画書 v8対応版
+
+## 🔍 問題分析
+
+### 現状のエラー
+```
+pen: Missing required managers: canvas, coordinate, record
+```
+
+### 問題の原因
+1. **Manager登録キー不一致**: AppCoreで作成したManagerとAbstractToolが要求するキーが不一致
+2. **Manager注入タイミング問題**: ToolManager作成時にManagerがまだ注入されていない
+3. **Manager参照方式の不統一**: Mapとobjectの混在使用
+
+## 📋 現在のManager登録状況
+
+### AppCore登録キー (app-core.js:369)
+```javascript
+managers.set('coordinate', coordinateManager);
+managers.set('record', recordManager);  
+managers.set('config', configManager);
+managers.set('error', errorManager);
+managers.set('event', eventBus);
+managers.set('shortcut', shortcutManager);
+managers.set('navigation', navigationManager);
+managers.set('canvas', canvasManager); // ← この順序
+```
+
+### AbstractTool要求キー (abstract-tool.js:141)
+```javascript
+const requiredManagers = ['canvas', 'coordinate', 'record'];
+```
+
+## 🎯 修正方針
+
+### 1. Manager初期化順序保証
+```
+1. CanvasManager → 最初に作成（描画基盤）
+2. その他Manager → 順次作成
+3. ToolManager → Manager群注入後に作成
+4. Tool群 → 依存Manager確認後に初期化
+```
+
+### 2. Manager注入の統一化
+```javascript
+// AppCore → ToolManager
+toolManager.setManagers(this.managers); // Map<string, Manager>
+
+// ToolManager → AbstractTool  
+tool.setManagers(managersObject); // object形式に変換
+```
+
+### 3. 依存関係チェック強化
+```javascript
+// 必須Manager存在確認
+const requiredKeys = ['canvas', 'coordinate', 'record'];
+const availableKeys = Object.keys(managers);
+const missing = requiredKeys.filter(key => !availableKeys.includes(key));
+```
+
+## 🔧 修正対象ファイル
+
+### 1. app-core.js
+- **修正内容**: Manager登録順序の整理、ToolManagerへの注入方法修正
+- **影響範囲**: initializeV8Managers()メソッド
+
+### 2. tool-manager.js  
+- **修正内容**: Manager注入受信方法の修正、Tool初期化タイミング調整
+- **影響範囲**: コンストラクタ、initializeV8Tools()メソッド
+
+### 3. abstract-tool.js
+- **修正内容**: Manager存在確認の詳細化、エラーメッセージ改善
+- **影響範囲**: setManagers()メソッド
+
+## 📊 Manager登録キー統一表
+
+| Manager名 | 登録キー | 説明 |
+|-----------|----------|------|
+| CanvasManager | `canvas` | 描画基盤・Container管理 |
+| CoordinateManager | `coordinate` | 座標変換・変形処理 |
+| RecordManager | `record` | 操作履歴・undo/redo |
+| ConfigManager | `config` | 設定管理 |
+| ErrorManager | `error` | エラー処理 |
+| EventBus | `event` | イベント通信 |
+| ShortcutManager | `shortcut` | ショートカット処理 |
+| NavigationManager | `navigation` | パン・ズーム処理 |
+
+## 🚀 修正実装順序
+
+### Phase 1: AppCore修正
+1. Manager登録順序の整理
+2. ToolManagerへの注入方法統一
+3. デバッグログの詳細化
+
+### Phase 2: ToolManager修正  
+1. Manager注入受信方法の統一
+2. Tool初期化前の依存チェック
+3. エラーハンドリング改善
+
+### Phase 3: AbstractTool修正
+1. Manager存在確認の詳細化
+2. エラーメッセージの具体化
+3. デバッグ情報の充実
+
+## 📝 期待される結果
+
+### 修正後のフロー
+```
+1. AppCore: Manager群作成・登録
+2. AppCore: ToolManagerにManager群注入
+3. ToolManager: 注入されたManager群を確認
+4. ToolManager: Tool作成時にManager群を渡す  
+5. AbstractTool: 必須Manager存在確認・成功
+6. Tool: 正常初期化完了
+```
+
+### 成功ログ例
+```
+✅ AppCore: Manager群作成完了 (8個)
+✅ ToolManager: Manager群注入完了  
+✅ AbstractTool: 必須Manager確認完了
+✅ PenTool: 初期化完了
+```
+
+## 🔍 検証方法
+
+1. **Manager注入確認**: console.logでManager群の内容確認
+2. **依存関係チェック**: 必須Managerの存在確認
+3. **初期化順序確認**: 各段階でのManager状態確認
+4. **Tool動作確認**: 描画機能の正常動作確認
+
+この計画に基づいて、順次ファイルを修正していきます。
