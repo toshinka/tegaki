@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール - Phase1.5</title>
-    <!-- 🎯 UI設計方針: 
-         - Undo/Redoボタン削除（Ctrl+Z/Ctrl+Yショートカットのみ）
-         - キャンバス移動系ボタン削除（Space/Ctrl+0ショートカットのみ）
-         - 必要最小限のツールボタンのみ表示
-         - 車輪の再発明防止：PixiJS拡張ライブラリ積極活用
-         - @pixi/graphics-smooth対応で滑らかな線描画 -->
+    <title>🚀 ふたば☆ちゃんねる風ベクターお絵描きツール - PixiJS v8</title>
+    <!-- 🚀 v8移行方針: 
+         - WebGPU対応・リアルタイム描画実現
+         - Container階層によるレイヤー管理
+         - 初回クリック問題解決・遅延なし描画
+         - フォールバック削除・v8機能フル活用
+         - @pixi/graphics-smooth削除（v8統合済み）
+         - @pixi/layers削除（v8 Container代替） -->
     <style>
         * {
             margin: 0;
@@ -187,7 +188,7 @@
             gap: 4px;
         }
         
-        /* ショートカットヒント表示（Phase1.5追加） */
+        /* ショートカットヒント表示 */
         .shortcut-hints {
             position: fixed;
             top: 20px;
@@ -223,6 +224,43 @@
             font-weight: bold;
             color: var(--futaba-maroon);
         }
+        
+        /* v8専用デバッグ情報表示 */
+        .v8-status {
+            position: fixed;
+            top: 20px;
+            left: 70px;
+            background: var(--futaba-medium);
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-family: monospace;
+            font-size: 10px;
+            color: var(--text-primary);
+            z-index: 70;
+            opacity: 0.9;
+        }
+        
+        .v8-status .v8-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .v8-status .v8-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4CAF50;
+        }
+        
+        .v8-status .v8-dot.webgpu {
+            background: #2196F3;
+        }
+        
+        .v8-status .v8-dot.error {
+            background: #F44336;
+        }
     </style>
 </head>
 <body>
@@ -235,8 +273,8 @@
             <div class="tool-separator"></div>
                    
             <div class="tool-button disabled" id="palette-tool" title="カラーパレット"></div>
-            <div class="tool-button active" id="pen-tool" title="ベクターペン (P)"></div>
-            <div class="tool-button" id="eraser-tool" title="消しゴム (E)"></div>
+            <div class="tool-button active" id="pen-tool" title="v8ベクターペン (P)"></div>
+            <div class="tool-button" id="eraser-tool" title="v8消しゴム (E)"></div>
             
             <div class="tool-separator"></div>
             
@@ -245,8 +283,8 @@
             
             <div class="tool-separator"></div>
             
-            <div class="tool-button" id="layers-tool" title="レイヤー"></div>
-            <div class="tool-button disabled" id="settings-tool" title="設定"></div>
+            <div class="tool-button" id="layers-tool" title="v8レイヤー"></div>
+            <div class="tool-button disabled" id="settings-tool" title="v8設定"></div>
         </div>
         
         <div class="canvas-area">
@@ -256,14 +294,22 @@
         </div>
     </div>
     
-    <!-- ショートカットヒント表示（Phase1.5追加） -->
+    <!-- v8専用ステータス表示 -->
+    <div class="v8-status" id="v8-status">
+        <div class="v8-indicator">
+            <span class="v8-dot" id="v8-dot"></span>
+            <span id="v8-renderer-type">v8 Loading...</span>
+        </div>
+    </div>
+    
+    <!-- ショートカットヒント表示 -->
     <div class="shortcut-hints">
         <div class="shortcut-hint">
-            <span>ペン:</span>
+            <span>v8ペン:</span>
             <span class="shortcut-key">P</span>
         </div>
         <div class="shortcut-hint">
-            <span>消しゴム:</span>
+            <span>v8消しゴム:</span>
             <span class="shortcut-key">E</span>
         </div>
         <div class="shortcut-hint">
@@ -287,44 +333,31 @@
     <div class="status-panel">
         <div class="status-group">
             <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
-            <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
+            <div class="status-item">Tool: <span id="current-tool">v8ベクターペン</span></div>
             <div class="status-item">Color: <span id="current-color">#800000</span></div>
             <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
         </div>
         
         <div class="status-group">
-            <div class="status-item">Phase: <span id="phase-info">1.5</span></div>
-            <div class="status-item">Smooth: <span id="smooth-graphics">Auto</span></div>
-            <div class="status-item">Layers: <span id="layer-count">2</span></div>
-            <div class="status-item">Tools: <span id="tool-count">2</span></div>
+            <div class="status-item">Phase: <span id="phase-info">v8</span></div>
+            <div class="status-item">Renderer: <span id="renderer-info">WebGPU/WebGL</span></div>
+            <div class="status-item">Layers: <span id="layer-count">Container</span></div>
+            <div class="status-item">Mode: <span id="realtime-mode">Realtime</span></div>
         </div>
     </div>
 
-    
-  <!-- node_modules統合・ローカル読み込み - CORS制限回避 -->
+    <!-- PixiJS v8.4.0 CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/8.4.0/pixi.min.js"></script>
 
-    <!-- PixiJS v7 本体 -->
-    <script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
-    
-    <!-- @pixi/ui: UIコンポーネント -->
-    <script src="./node_modules/@pixi/ui/dist/ui.min.js"></script>
-    
-    <!-- @pixi/layers: レイヤー機能 -->
-    <script src="./node_modules/@pixi/layers/dist/layers.min.js"></script>
-    
-    <!-- @pixi/gif: GIF機能 -->
-    <script src="./node_modules/@pixi/gif/dist/gif.min.js"></script>
-    
-    <!-- GSAP: アニメーション -->
-    <script src="./node_modules/gsap/dist/gsap.min.js"></script>
+    <!-- @pixi/ui v8対応版 -->
+    <script src="https://cdn.jsdelivr.net/npm/@pixi/ui@2.1.0/dist/ui.min.js"></script>
 
-　　<!-- pixi-graphics-smooth: ペンスムーシング -->
-　　<script src="./node_modules/@pixi/graphics-smooth/dist/pixi-graphics-smooth.js"></script>
+    <!-- GSAP: アニメーション（継続使用） -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
 
-
-  <!-- 🔧 Phase1.5修正版読み込み順序（CoordinateManager修正対応） -->
+    <!-- 🚀 v8対応読み込み順序 -->
  
-    <!-- Base Utilities -->
+    <!-- Base Utilities (v8対応) -->
     <script src="./js/utils/error-manager.js"></script>
     <script src="./js/utils/config-manager.js"></script>
     <script src="./js/utils/event-bus.js"></script>
@@ -334,68 +367,119 @@
     <script src="./js/utils/shortcut-manager.js"></script>
     <script src="./js/utils/minimal-deps.js"></script>
     
-    <!-- Managers -->
+    <!-- Managers (v8対応) -->
     <script src="./managers/canvas-manager.js"></script>
     
-    <!-- Tools (正しい順序で読み込み) -->
+    <!-- Tools (v8対応) -->
     <script src="./tools/abstract-tool.js"></script>
     <script src="./tools/pen-tool.js"></script>
     <script src="./tools/eraser-tool.js"></script>
     
-    <!-- Tool Manager (ツール定義後) -->
+    <!-- Tool Manager (v8対応) -->
     <script src="./managers/tool-manager.js"></script>
     
-    <!-- Application Core -->
+    <!-- Application Core (v8対応) -->
     <script src="./js/app-core.js"></script>
     <script src="./js/tegaki-application.js"></script>
     <script src="./js/main.js"></script>
     
-    <!-- Assets -->
+    <!-- Assets (継続使用) -->
     <script src="./assets/icons.js"></script>
     
-    <!-- Debug (開発用) -->
+    <!-- Debug (v8対応) -->
     <script src="./debug/phase15-integration-test.js"></script>
     
-    <!-- Bootstrap (最後) -->
+    <!-- Bootstrap (v8対応・最後) -->
     <script src="./js/bootstrap.js"></script>
 
-    <!-- Phase1.5デバッグ用（開発時のみ・本番では削除推奨） -->
+    <!-- v8デバッグ用（開発時のみ） -->
     <script>
-        // ブラウザコンソールからの手動デバッグ関数
-        window.debugTegaki = function() {
+        // v8対応デバッグ関数
+        window.debugTegakiV8 = function() {
             if (window.Tegaki?.TegakiApplicationInstance) {
                 const app = window.Tegaki.TegakiApplicationInstance;
-                console.log('🧪 Phase1.5デバッグ情報:', app.getPhase15DebugInfo());
-                console.log('🧪 Phase1.5機能テスト:', app.testPhase15Features());
+                console.log('🚀 v8デバッグ情報:', app.getDebugInfo());
+                console.log('🎯 v8機能状況:', app.getV8FeatureStatus());
                 
-                // 初期ツール強制選択テスト
-                if (typeof app.forceSelectInitialTool === 'function') {
-                    console.log('🔧 初期ツール強制選択テスト:', app.forceSelectInitialTool());
-                }
+                // v8レンダラー情報
+                console.log('🖥️ レンダラー:', {
+                    type: app.pixiApp?.renderer?.type,
+                    webgpu: app.pixiApp?.renderer?.type === 'webgpu',
+                    version: PIXI.VERSION
+                });
+                
+                // v8Manager状況
+                const managers = ['NavigationManager', 'RecordManager', 'CoordinateManager'];
+                managers.forEach(name => {
+                    const instance = window.Tegaki[`${name}Instance`];
+                    if (instance?.getDebugInfo) {
+                        console.log(`🔧 ${name}:`, instance.getDebugInfo());
+                    }
+                });
             } else {
                 console.warn('⚠️ TegakiApplication未初期化');
             }
         };
+
+        // v8統合テスト実行
+        window.runV8IntegrationTest = function() {
+            console.log('🧪 v8統合テスト開始');
+            
+            // v8基盤テスト
+            const v8Tests = [
+                () => !!window.PIXI && PIXI.VERSION.startsWith('8.'),
+                () => !!window.Tegaki?.TegakiApplicationInstance?.pixiApp,
+                () => !!window.Tegaki?.TegakiApplicationInstance?.pixiApp?.renderer,
+                () => window.Tegaki.TegakiApplicationInstance.isV8Ready?.() === true
+            ];
+            
+            v8Tests.forEach((test, i) => {
+                const result = test();
+                console.log(`Test ${i+1}:`, result ? '✅ PASS' : '❌ FAIL');
+            });
+            
+            // v8描画テスト
+            if (window.Tegaki?.TegakiApplicationInstance?.getToolManager?.()?.getCurrentTool?.()) {
+                const tool = window.Tegaki.TegakiApplicationInstance.getToolManager().getCurrentTool();
+                console.log('🖊️ 現在ツール v8状況:', tool.getDebugInfo?.());
+            }
+        };
         
-        // Phase1.5統合テスト実行
-        window.runPhase15Test = function() {
-            if (window.Tegaki?.runPhase15Test) {
-                return window.Tegaki.runPhase15Test();
-            } else {
-                console.warn('⚠️ Phase1.5統合テスト未利用可能');
+        // v8ステータス表示更新
+        window.updateV8Status = function(rendererType, isWebGPU) {
+            const statusEl = document.getElementById('v8-renderer-type');
+            const dotEl = document.getElementById('v8-dot');
+            
+            if (statusEl && dotEl) {
+                statusEl.textContent = `v8 ${rendererType}`;
+                if (isWebGPU) {
+                    dotEl.className = 'v8-dot webgpu';
+                } else {
+                    dotEl.className = 'v8-dot';
+                }
             }
         };
         
         // 初期化完了後の自動状況確認
         document.addEventListener('DOMContentLoaded', function() {
+            // PixiJS v8読み込み確認
+            if (window.PIXI) {
+                console.log(`🚀 PixiJS v${PIXI.VERSION} loaded`);
+                if (PIXI.VERSION.startsWith('8.')) {
+                    console.log('✅ PixiJS v8 confirmed');
+                } else {
+                    console.error('❌ PixiJS v8 required, got v' + PIXI.VERSION);
+                }
+            }
+            
             setTimeout(function() {
                 if (window.Tegaki?.TegakiApplicationInstance) {
-                    console.log('📊 Phase1.5初期化後状況確認');
-                    window.debugTegaki();
+                    console.log('📊 v8初期化後状況確認');
+                    window.debugTegakiV8();
                 } else {
-                    console.warn('⚠️ TegakiApplication初期化未完了');
+                    console.warn('⚠️ TegakiApplication v8初期化未完了');
                 }
-            }, 2000); // 2秒後に自動確認
+            }, 2000);
         });
     </script>
 </body>

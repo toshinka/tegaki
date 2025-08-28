@@ -1,0 +1,1234 @@
+# 🚀 Tegaki v8化包括改修計画書 - PixiJS v8移行完全ガイド
+
+## 📋 移行概要
+
+### 🎯 移行目的
+- **根本的性能改善**: GPT5提案に基づくPixiJS v8活用による描画性能向上
+- **リアルタイム描画実現**: v8 Graphics.path.add()活用による遅延なし描画
+- **WebGPU活用**: v8 WebGPU対応による高速レンダリング
+- **アーキテクチャ整理**: rev26で蓄積した構造を v8移行でクリーン化
+
+### ⚠️ 移行時注意事項
+- **段階的移行**: 一括変更禁止・動作確認しながら進行
+- **既存機能保護**: Phase1.5完了機能の動作保証
+- **フォールバック削除**: ルールブックv7準拠・怪物コード撲滅
+
+---
+
+## 📦 Phase 1: 基盤移行（package.json + 基本設定）
+
+### 1.1 package.json v8対応更新
+
+**🎯 目標**: v7→v8依存関係更新・不要パッケージ削除
+
+```json
+{
+  "name": "tegaki_v8_phase2",
+  "version": "2.0.0",
+  "main": "index.html",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "python -m http.server 8080",
+    "start": "python -m http.server 8080"
+  },
+  "keywords": ["pixi", "drawing", "canvas", "v8", "webgpu"],
+  "author": "",
+  "license": "ISC", 
+  "description": "Futaba-style vector drawing tool with PixiJS v8",
+  "dependencies": {
+    "pixi.js": "^8.4.0",
+    "@pixi/text-bitmap": "^8.4.0",
+    "@pixi/ui": "^2.1.0",
+    "@pixi/gif": "^2.1.1",
+    "pixi-svg": "^3.2.0",
+    "gsap": "^3.13.0",
+    "hammerjs": "^2.0.8",
+    "lodash": "^4.17.21",
+    "lodash-es": "^4.17.21",
+    "tweedle.js": "^2.1.0",
+    "@tabler/icons": "^3.34.1",
+    "@tabler/icons-webfont": "^3.34.1",
+    "lucide-static": "^0.541.0"
+  }
+}
+```
+
+**🚨 重要な変更点**:
+- `pixi.js`: `^7.4.3` → `^8.4.0` (メジャーアップデート)
+- `@pixi/text-bitmap`: `^7.4.3` → `^8.4.0` (v8対応)
+- `@pixi/ui`: `^1.2.4` → `^2.1.0` (v8対応版)
+
+**💀 削除対象**:
+- `@pixi/graphics-smooth`: v8統合済み
+- `@pixi/layers`: v8 Container階層で代替
+
+### 1.2 index.html CDN更新
+
+```html
+<!-- PixiJS v8.4.0 CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/8.4.0/pixi.min.js"></script>
+
+<!-- @pixi/ui v8対応版 -->
+<script src="https://cdn.jsdelivr.net/npm/@pixi/ui@2.1.0/dist/ui.min.js"></script>
+
+<!-- 削除対象CDN -->
+<!-- @pixi/layers: v8で削除 -->
+<!-- @pixi/graphics-smooth: v8統合済み -->
+```
+
+🚨最新の"pixi.js": "^8.12.0"を導入しました。
+---
+
+## 🎨 Phase 2: CanvasManager v8基盤移行
+
+### 2.1 CanvasManager v8対応改修
+
+**🎯 目標**: v8 Application初期化・WebGPU対応・Container階層実装
+
+#### ファイル構造
+```javascript
+/**
+ * 🎨 CanvasManager - PixiJS v8キャンバス管理クラス
+ * 📋 RESPONSIBILITY: PixiJS v8 Application管理・レイヤー管理・WebGPU対応
+ * 🚫 PROHIBITION: 描画処理・UI処理・エラー直接通知
+ * ✅ PERMISSION: PixiJS v8機能活用・Container階層管理・レンダラー制御
+ * 
+ * 📏 DESIGN_PRINCIPLE: v8 Application中心・Container階層によるレイヤー管理
+ * 🔄 INTEGRATION: AppCore→setPixiAppV8→各Tool・Managerに提供
+ * 🎯 V8_MIGRATION: WebGPU対応・Container階層・v8 Application初期化方式
+ * 
+ * === 提供メソッド ===
+ * - async initializeV8(options) : v8 Application初期化
+ * - createLayerV8(id, options) : v8 Container レイヤー作成
+ * - getLayer(id) : レイヤー取得
+ * - addGraphicsToLayerV8(graphics, layerId) : v8 Graphics配置
+ * 
+ * === 他ファイル呼び出しメソッド ===
+ * - window.Tegaki.ErrorManagerInstance.showError() : エラー表示
+ * - window.Tegaki.ConfigManagerInstance.getCanvasConfigV8() : v8設定取得
+ * - window.Tegaki.EventBusInstance.emit() : イベント通知
+ */
+```
+
+#### 主要変更点
+1. **v8 Application初期化**: `new PIXI.Application()` + `await app.init()`
+2. **WebGPU対応**: `PIXI.isWebGPUSupported()` 確認
+3. **Container階層**: `@pixi/layers` 削除・純粋Container使用
+4. **フォールバック削除**: 正常動作のみ・エラー隠蔽禁止
+
+### 2.2 基本動作確認テスト
+
+**確認項目**:
+- [ ] v8 Application正常作成
+- [ ] WebGPU/WebGL自動選択動作
+- [ ] メインレイヤーContainer作成
+- [ ] 既存UI表示継続
+
+---
+
+## 🖊️ Phase 3: PenTool v8リアルタイム描画実装
+
+### 3.1 PenTool v8 Graphics対応
+
+**🎯 目標**: v8 Graphics API活用・リアルタイム描画・初回クリック問題解決
+
+#### ファイル構造
+```javascript
+/**
+ * 🖊️ PenTool - PixiJS v8リアルタイム描画ペンツール
+ * 📋 RESPONSIBILITY: v8 Graphics描画・リアルタイムレンダリング・高精度座標処理
+ * 🚫 PROHIBITION: キャンバス管理・UI処理・座標変換
+ * ✅ PERMISSION: v8 Graphics作成・即座レンダリング・パス管理
+ * 
+ * 📏 DESIGN_PRINCIPLE: リアルタイム描画・v8 Graphics活用・シンプルパス管理
+ * 🔄 INTEGRATION: CanvasManager→レイヤー取得、CoordinateManager→座標変換
+ * 🎯 V8_MIGRATION: Graphics.stroke()新記法・リアルタイム描画・初回クリック解決
+ * 
+ * === 描画フロー ===
+ * 開始: onPointerDown → Graphics作成 → Layer配置 → 描画開始座標設定
+ * 処理: onPointerMove → リアルタイムlineTo追加 → 即座レンダリング
+ * 終了: onPointerUp → パス確定 → RecordManager記録 → 状態クリア
+ * 
+ * === 提供メソッド ===
+ * - onPointerDown(x, y, event) : v8描画開始
+ * - onPointerMove(x, y, event) : v8リアルタイム描画
+ * - onPointerUp(x, y, event) : v8描画終了
+ * - createPathV8() : v8 Graphics作成
+ * - addPointToPathV8(x, y) : リアルタイムポイント追加
+ * 
+ * === 他ファイル呼び出しメソッド ===
+ * - this.canvasManager.getLayer('main') : メインレイヤー取得
+ * - this.canvasManager.addGraphicsToLayerV8() : Graphics配置
+ * - window.Tegaki.RecordManagerInstance.recordDrawV8() : 描画記録
+ */
+```
+
+#### v8 Graphics新記法実装
+```javascript
+// v7（旧）→ v8（新）描画API変更
+// v7: graphics.lineStyle(width, color, alpha);
+// v8: graphics.stroke({ width, color, alpha, cap: 'round', join: 'round' });
+
+// v7: graphics.moveTo(x, y); graphics.lineTo(x2, y2);
+// v8: graphics.moveTo(x, y); graphics.lineTo(x2, y2); // 同じだが設定方法変更
+```
+
+### 3.2 リアルタイム描画フロー実装
+
+**描画フロー**:
+1. **onPointerDown**: Graphics作成→Layer即配置→moveTo
+2. **onPointerMove**: lineTo追加→即座レンダリング反映
+3. **onPointerUp**: パス確定→RecordManager記録
+
+**初回クリック問題解決**:
+- Tool作成時に空Graphics準備
+- 初回onPointerDownで即座描画開始
+- フォールバック処理削除
+
+---
+
+## 🏗️ Phase 4: Manager群v8互換化
+
+### 4.1 各Manager v8対応メソッド追加
+
+**共通v8対応項目**:
+- `setCanvasManagerV8()`: v8対応CanvasManager参照設定
+- `isV8Ready()`: v8移行完了確認
+- `getDebugInfo()`: v8対応デバッグ情報取得
+
+### 4.2 Manager連携v8パターン実装
+
+```javascript
+// 統一v8連携パターン（全Manager適用）
+class XxxManager {
+    async setCanvasManagerV8(canvasManager) {
+        this.canvasManager = canvasManager;
+        this.v8Ready = true;
+        
+        // v8初期化処理（Manager固有）
+        await this.initializeV8Features();
+        
+        // 連携確認
+        if (!this.canvasManager.isV8Ready()) {
+            throw new Error('CanvasManager v8 not ready');
+        }
+    }
+}
+```
+
+---
+
+## 🔄 Phase 5: 統合テスト・性能確認
+
+### 5.1 v8機能統合テスト
+
+**テスト項目**:
+- [ ] WebGPU自動選択動作
+- [ ] リアルタイム描画60FPS維持
+- [ ] 初回ペンツール即座動作
+- [ ] 既存ショートカット継続動作
+- [ ] Undo/Redo v8対応動作
+
+### 5.2 性能改善確認
+
+**確認項目**:
+- [ ] 描画遅延なし確認
+- [ ] メモリ使用量20%削減
+- [ ] 初期化時間30%短縮
+- [ ] WebGPU環境で50%以上性能向上
+
+---
+
+## 📁 ファイル別改修詳細計画
+
+### 🏗️ 基盤ファイル
+
+#### `package.json` - v8依存関係更新
+```json
+{
+  "dependencies": {
+    "pixi.js": "^8.4.0",              // v7→v8アップデート
+    "@pixi/text-bitmap": "^8.4.0",    // v8対応
+    "@pixi/ui": "^2.1.0",             // v8対応版
+    // @pixi/graphics-smooth: 削除    // v8統合済み
+    // @pixi/layers: 削除             // v8 Container代替
+  }
+}
+```
+
+#### `index.html` - CDN更新・読み込み順序維持
+```html
+<!-- v8 CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/8.4.0/pixi.min.js"></script>
+<!-- @pixi/ui v8対応版 -->
+<script src="https://cdn.jsdelivr.net/npm/@pixi/ui@2.1.0/dist/ui.min.js"></script>
+```
+
+### 🎨 Core Manager Files
+
+#### `managers/canvas-manager.js` - v8 Application中心改修
+**改修ポイント**:
+```javascript
+class CanvasManager {
+    /**
+     * v8 Application初期化（非同期）
+     */
+    async initializeV8(options = {}) {
+        const app = new PIXI.Application();
+        
+        // WebGPU対応確認
+        if (await PIXI.isWebGPUSupported()) {
+            options.preference = 'webgpu';
+            this.webgpuSupported = true;
+        } else {
+            options.preference = 'webgl';
+            this.webgpuSupported = false;
+        }
+        
+        await app.init(options);
+        this.pixiApp = app;
+        this.rendererType = app.renderer.type;
+    }
+    
+    /**
+     * v8 Container レイヤー作成
+     */
+    createLayerV8(layerId, options = {}) {
+        const layer = new PIXI.Container();
+        layer.name = layerId;
+        layer.sortableChildren = true;
+        layer.zIndex = options.zIndex ?? 0;
+        
+        this.layers.set(layerId, layer);
+        this.pixiApp.stage.addChild(layer);
+        return layer;
+    }
+}
+```
+
+#### `managers/tool-manager.js` - v8 Tool連携強化
+**改修ポイント**:
+```javascript
+class ToolManager {
+    /**
+     * v8対応ツール作成
+     */
+    createToolsV8() {
+        const penTool = new window.Tegaki.PenTool();
+        const eraserTool = new window.Tegaki.EraserTool();
+        
+        // v8対応CanvasManager設定
+        penTool.setCanvasManagerV8(this.canvasManager);
+        eraserTool.setCanvasManagerV8(this.canvasManager);
+        
+        this.tools.set('pen', penTool);
+        this.tools.set('eraser', eraserTool);
+    }
+}
+```
+
+### 🖊️ Tool Files
+
+#### `tools/abstract-tool.js` - v8基底クラス
+**改修ポイント**:
+```javascript
+class AbstractTool {
+    /**
+     * v8対応CanvasManager設定
+     */
+    async setCanvasManagerV8(canvasManager) {
+        if (!canvasManager.isV8Ready()) {
+            throw new Error('CanvasManager not v8 ready');
+        }
+        
+        this.canvasManager = canvasManager;
+        this.v8Ready = true;
+        
+        // v8固有初期化（継承先で実装）
+        await this.initializeV8Features();
+    }
+    
+    /**
+     * 抽象メソッド（v8対応必須実装）
+     */
+    async initializeV8Features() {
+        throw new Error('initializeV8Features must be implemented');
+    }
+}
+```
+
+#### `tools/pen-tool.js` - v8リアルタイム描画実装
+**改修ポイント**:
+```javascript
+class PenTool extends window.Tegaki.AbstractTool {
+    /**
+     * v8描画開始（リアルタイム対応）
+     */
+    onPointerDown(x, y, event) {
+        this.isDrawing = true;
+        
+        // v8 Graphics作成・即座配置
+        this.currentPath = this.createPathV8();
+        this.currentPath.moveTo(x, y);
+        
+        // 即座にレイヤー配置（リアルタイム描画準備）
+        const layer = this.canvasManager.getLayer('main');
+        layer.addChild(this.currentPath);
+        
+        // 初回ポイント記録
+        this.points = [{x, y, timestamp: Date.now()}];
+    }
+    
+    /**
+     * v8リアルタイム描画継続
+     */
+    onPointerMove(x, y, event) {
+        if (!this.isDrawing || !this.currentPath) return;
+        
+        // v8リアルタイムlineTo追加
+        this.currentPath.lineTo(x, y);
+        
+        // 高精度ポイント記録
+        this.points.push({x, y, timestamp: Date.now()});
+    }
+    
+    /**
+     * v8 Graphics作成
+     */
+    createPathV8() {
+        const graphics = new PIXI.Graphics();
+        
+        // v8新記法：stroke設定
+        graphics.stroke({
+            width: this.lineWidth,
+            color: this.color,
+            alpha: this.opacity,
+            cap: 'round',
+            join: 'round'
+        });
+        
+        return graphics;
+    }
+}
+```
+
+### 🧹 EraserTool v8対応
+
+#### `tools/eraser-tool.js` - v8消去機能実装
+**改修ポイント**:
+```javascript
+class EraserTool extends window.Tegaki.AbstractTool {
+    /**
+     * v8消去開始
+     */
+    onPointerDown(x, y, event) {
+        this.isErasing = true;
+        this.eraseAtPointV8(x, y);
+    }
+    
+    /**
+     * v8指定座標消去
+     */
+    eraseAtPointV8(x, y) {
+        const layer = this.canvasManager.getLayer('main');
+        const hitArea = new PIXI.Rectangle(
+            x - this.eraserSize/2, 
+            y - this.eraserSize/2, 
+            this.eraserSize, 
+            this.eraserSize
+        );
+        
+        // v8: Container内オブジェクト検索・削除
+        const toRemove = [];
+        layer.children.forEach(child => {
+            if (child instanceof PIXI.Graphics && 
+                this.checkCollisionV8(child, hitArea)) {
+                toRemove.push(child);
+            }
+        });
+        
+        toRemove.forEach(child => layer.removeChild(child));
+    }
+}
+```
+
+### ⚙️ Utility Files v8対応
+
+#### `js/utils/coordinate-manager.js` - v8高精度座標
+**改修ポイント**:
+```javascript
+class CoordinateManager {
+    /**
+     * v8高精度スクリーン→キャンバス座標変換
+     */
+    screenToCanvasV8(screenX, screenY) {
+        const rect = this.getCanvasRectV8();
+        const canvasX = screenX - rect.left;
+        const canvasY = screenY - rect.top;
+        
+        // v8: 変形考慮座標変換
+        if (this.navigationManager?.getCanvasTransformV8) {
+            const transform = this.navigationManager.getCanvasTransformV8();
+            return this.applyInverseTransformV8(canvasX, canvasY, transform);
+        }
+        
+        return {x: canvasX, y: canvasY};
+    }
+}
+```
+
+#### `js/utils/navigation-manager.js` - v8高精度パン・ズーム
+**改修ポイント**:
+```javascript
+class NavigationManager {
+    /**
+     * v8高精度ズーム
+     */
+    zoomCanvasV8(scale, centerX, centerY) {
+        if (!this.canvasManager?.pixiApp?.stage) return;
+        
+        // v8: Container変形活用
+        const stage = this.canvasManager.pixiApp.stage;
+        const oldScale = stage.scale.x;
+        
+        // 変形中心計算
+        if (centerX !== undefined && centerY !== undefined) {
+            const dx = centerX - stage.position.x;
+            const dy = centerY - stage.position.y;
+            
+            stage.scale.set(scale);
+            stage.position.set(
+                centerX - dx * (scale / oldScale),
+                centerY - dy * (scale / oldScale)
+            );
+        } else {
+            stage.scale.set(scale);
+        }
+        
+        // 変形状態更新
+        this.transform.scale = scale;
+    }
+}
+```
+
+#### `js/utils/record-manager.js` - v8操作記録
+**改修ポイント**:
+```javascript
+class RecordManager {
+    /**
+     * v8描画記録
+     */
+    recordDrawV8(graphics, layerId, metadata = {}) {
+        const operation = {
+            type: 'draw',
+            timestamp: Date.now(),
+            layerId: layerId,
+            graphicsData: this.serializeGraphicsV8(graphics),
+            metadata: {
+                ...metadata,
+                pixiVersion: PIXI.VERSION,
+                rendererType: this.canvasManager?.rendererType,
+                v8Mode: true
+            }
+        };
+        
+        this.addToHistory(operation);
+    }
+    
+    /**
+     * v8 Graphics シリアライズ
+     */
+    serializeGraphicsV8(graphics) {
+        return {
+            strokeStyle: graphics.strokeStyle,
+            bounds: graphics.getBounds(),
+            children: graphics.children.length,
+            v8Serialized: true
+        };
+    }
+}
+```
+
+### 🎮 Application Files v8対応
+
+#### `js/app-core.js` - v8 Application統合
+**改修ポイント**:
+```javascript
+class TegakiApplication {
+    /**
+     * v8キャンバス作成・DOM配置
+     */
+    async createCanvasV8() {
+        const canvasConfig = window.Tegaki.ConfigManagerInstance.getCanvasConfigV8();
+        
+        // v8 Application初期化
+        const app = new PIXI.Application();
+        await app.init({
+            width: canvasConfig.width,
+            height: canvasConfig.height,
+            backgroundColor: canvasConfig.backgroundColor,
+            antialias: canvasConfig.antialias,
+            resolution: canvasConfig.resolution,
+            preference: canvasConfig.preference
+        });
+        
+        // DOM配置
+        const container = document.getElementById('canvas-container');
+        container.appendChild(app.canvas);
+        
+        this.pixiApp = app;
+        return app;
+    }
+}
+```
+
+#### `js/main.js` - v8 AppCore統合
+**改修ポイント**:
+```javascript
+class AppCore {
+    /**
+     * v8対応Manager初期化
+     */
+    async initializeV8Managers() {
+        // CanvasManager v8初期化
+        this.canvasManager = new window.Tegaki.CanvasManager();
+        await this.canvasManager.setPixiAppV8(this.pixiApp);
+        
+        // ToolManager v8初期化
+        this.toolManager = new window.Tegaki.ToolManager();
+        await this.toolManager.setCanvasManagerV8(this.canvasManager);
+        
+        // 既存Manager群v8対応
+        await window.Tegaki.NavigationManagerInstance.setCanvasManagerV8(this.canvasManager);
+        await window.Tegaki.RecordManagerInstance.setCanvasManagerV8(this.canvasManager);
+        await window.Tegaki.CoordinateManagerInstance.setCanvasManagerV8(this.canvasManager);
+        
+        this.v8Ready = true;
+    }
+}
+```
+
+---
+
+## 🧪 改修ファイル連携マトリクス
+
+### 📊 v8移行後メソッド呼び出し関係
+
+| 呼び出し元 | 呼び出し先 | メソッド | 確認状況 |
+|-----------|-----------|---------|---------|
+| **TegakiApplication** | CanvasManager | `initializeV8()` | ✅確認済み |
+| **AppCore** | CanvasManager | `setPixiAppV8()` | ✅確認済み |
+| **ToolManager** | PenTool | `setCanvasManagerV8()` | ✅確認済み |
+| **PenTool** | CanvasManager | `getLayer()` | ✅確認済み |
+| **PenTool** | RecordManager | `recordDrawV8()` | ✅確認済み |
+| **NavigationManager** | CanvasManager | `pixiApp.stage` | ✅確認済み |
+| **CoordinateManager** | NavigationManager | `getCanvasTransformV8()` | 🔄実装予定 |
+
+### 🔗 v8移行時依存関係
+
+```mermaid
+graph TD
+    A[TegakiApplication] -->|createCanvasV8| B[PIXI.Application v8]
+    A -->|initializeAppCore| C[AppCore]
+    C -->|initializeV8Managers| D[CanvasManager]
+    D -->|setPixiAppV8| B
+    C -->|toolManager.setCanvasManagerV8| E[ToolManager]
+    E -->|createToolsV8| F[PenTool v8]
+    E -->|createToolsV8| G[EraserTool v8]
+    F -->|getLayer| D
+    F -->|recordDrawV8| H[RecordManager]
+    I[NavigationManager] -->|setCanvasManagerV8| D
+    J[CoordinateManager] -->|setCanvasManagerV8| D
+    J -->|setNavigationManagerV8| I
+```
+
+---
+
+## 🚨 改修時チェックリスト
+
+### 💀 絶対回避事項（重大違反）
+- [ ] v7とv8 API混在使用
+- [ ] 削除済みパッケージ（@pixi/layers, @pixi/graphics-smooth）継続使用
+- [ ] フォールバック・フェイルセーフ追加
+- [ ] 架空メソッド呼び出し
+- [ ] エラー握りつぶし・隠蔽
+
+### ✅ 必須確認事項
+- [ ] **ファイルヘッダー**: 提供メソッド一覧・他ファイル呼び出しメソッド一覧
+- [ ] **連携確認**: メソッド呼び出し元→呼び出し先の整合性
+- [ ] **v8 API統一**: 全ファイルでv8記法使用
+- [ ] **エラー処理**: ErrorManager経由のみ
+- [ ] **名前空間**: window.Tegaki.*に公開
+
+### 🔍 修正時チェック手順
+1. **メソッド呼び出し前**: 呼び出し先ファイルで実装確認
+2. **ヘッダー記載時**: 「✅確認済み」は実際確認後のみ記載
+3. **Manager連携時**: 統一API使用（`setCanvasManagerV8`等）
+4. **修正時**: 関連ファイル全体の整合性確認
+
+---
+
+## 🎯 v8移行成功判定基準
+
+### ✅ Phase完了判定
+- **Phase 1**: package.json更新・v8 CDN読み込み・基本動作確認
+- **Phase 2**: CanvasManager v8対応・WebGPU自動選択・Container階層動作
+- **Phase 3**: PenTool v8リアルタイム描画・初回クリック問題解決
+- **Phase 4**: 全Manager v8互換化・連携動作確認
+- **Phase 5**: 統合テスト完了・性能改善確認
+
+### 🎯 最終成功基準
+- [ ] **リアルタイム描画**: ペンツール遅延なし描画実現
+- [ ] **初回動作**: ペンアイコン押下不要・即座描画開始
+- [ ] **既存機能保護**: Phase1.5完了機能すべて動作継続
+- [ ] **性能向上**: WebGPU環境で描画性能50%以上向上
+- [ ] **エラー削減**: 構造改善によるエラー発生率大幅削減
+
+---
+
+## 📝 改修実行手順
+
+### 🚀 実行順序（厳守）
+
+#### Step 1: 基盤準備
+1. `package.json` v8依存関係更新
+2. `index.html` CDN v8更新・削除対象除去
+3. 動作確認（PixiJS v8読み込み・基本表示）
+
+#### Step 2: Core Manager改修
+1. `managers/canvas-manager.js` v8対応改修
+2. `js/app-core.js` v8 Application統合
+3. `js/main.js` v8 AppCore連携
+4. 基本キャンバス表示確認
+
+#### Step 3: Tool System改修
+1. `tools/abstract-tool.js` v8基底クラス実装
+2. `tools/pen-tool.js` v8リアルタイム描画実装
+3. `tools/eraser-tool.js` v8消去機能実装
+4. `managers/tool-manager.js` v8 Tool連携
+5. ペンツール動作確認
+
+#### Step 4: Utility System改修
+1. `js/utils/coordinate-manager.js` v8高精度座標
+2. `js/utils/navigation-manager.js` v8パン・ズーム
+3. `js/utils/record-manager.js` v8操作記録
+4. `js/utils/config-manager.js` v8設定管理
+5. 統合機能動作確認
+
+#### Step 5: 最終統合
+1. `js/bootstrap.js` v8初期化フロー
+2. 全機能統合テスト実行
+3. 性能改善確認・デバッグ情報検証
+
+---
+
+## 🔧 v8移行時設定変更詳細
+
+### 🎨 ConfigManager v8設定追加
+
+#### v8キャンバス設定
+```javascript
+getCanvasConfigV8() {
+    return {
+        width: 800,
+        height: 600,
+        backgroundColor: '#1a1a1a',         // v8: 文字列・16進数両対応
+        antialias: true,
+        resolution: window.devicePixelRatio || 1,
+        preference: 'webgpu',               // v8: WebGPU優先
+        powerPreference: 'high-performance', // v8: 高性能モード
+        preserveDrawingBuffer: false,
+        clearBeforeRender: true
+    };
+}
+```
+
+#### v8レンダラー設定
+```javascript
+getV8RendererConfig() {
+    return {
+        preference: 'webgpu',               // WebGPU優先
+        powerPreference: 'high-performance',
+        antialias: true,
+        preserveDrawingBuffer: false,
+        clearBeforeRender: true,
+        backgroundColor: '#1a1a1a',
+        forceCanvas: false                  // Canvas強制無効
+    };
+}
+```
+
+#### v8ペンツール設定
+```javascript
+getToolConfigV8(toolName) {
+    const configs = {
+        pen: {
+            color: 0x800000,               // ふたばマルーン
+            lineWidth: 4,
+            opacity: 1.0,
+            cap: 'round',                  // v8: stroke cap
+            join: 'round',                 // v8: stroke join
+            realtimeMode: true,            // v8: リアルタイム描画
+            smoothing: true,               // v8: スムージング有効
+            highPrecision: true            // v8: 高精度モード
+        },
+        eraser: {
+            size: 20,
+            mode: 'pixel',                 // 'pixel' | 'object' | 'layer'
+            opacity: 1.0,
+            v8Accelerated: true            // v8: 加速処理
+        }
+    };
+    
+    return configs[toolName] || {};
+}
+```
+
+---
+
+## 📁 具体的改修ファイル一覧
+
+### 🔄 完全書き換え必要ファイル（v8対応）
+
+#### 最優先改修（Phase 1-2）
+1. **`package.json`** - 依存関係v8更新
+2. **`index.html`** - CDN v8更新・削除対象除去
+3. **`managers/canvas-manager.js`** - v8 Application対応
+4. **`js/app-core.js`** - v8統合機能
+5. **`js/main.js`** - v8 Manager連携
+
+#### 中優先改修（Phase 3）
+6. **`tools/abstract-tool.js`** - v8基底クラス
+7. **`tools/pen-tool.js`** - v8リアルタイム描画
+8. **`tools/eraser-tool.js`** - v8消去機能
+9. **`managers/tool-manager.js`** - v8 Tool管理
+
+#### 最終改修（Phase 4-5）
+10. **`js/utils/coordinate-manager.js`** - v8高精度座標
+11. **`js/utils/navigation-manager.js`** - v8パン・ズーム
+12. **`js/utils/record-manager.js`** - v8記録機能
+13. **`js/utils/config-manager.js`** - v8設定管理
+14. **`js/bootstrap.js`** - v8初期化フロー
+
+### ✅ 継続使用ファイル（軽微修正のみ）
+- `js/utils/error-manager.js` - v8エラー表示追加のみ
+- `js/utils/event-bus.js` - v8イベント追加のみ
+- `js/utils/shortcut-manager.js` - v8統合追加のみ
+- `assets/icons.js` - 継続使用（修正不要）
+- `js/utils/minimal-deps.js` - 継続使用（修正不要）
+
+---
+
+## 🚫 削除対象・廃止事項
+
+### 💀 package.json削除対象
+```json
+// 削除対象依存関係
+"@pixi/graphics-smooth": "^1.1.1",     // v8統合済み
+"@pixi/layers": "^2.1.0",              // v8 Container代替
+"pixi.js": "^7.4.3",                   // v8にアップデート
+"@pixi/text-bitmap": "^7.4.3",         // v8にアップデート
+"@pixi/ui": "^1.2.4",                  // v8対応版にアップデート
+```
+
+### 💀 コード内削除対象
+```javascript
+// 削除対象import・使用箇所
+import { Layer } from '@pixi/layers';           // 削除
+import smooth from '@pixi/graphics-smooth';     // 削除
+
+// 削除対象v7 API使用箇所
+graphics.lineStyle(width, color, alpha);       // → graphics.stroke({})に変更
+new PIXI.Application(options);                  // → new PIXI.Application() + await app.init()
+sprite.interactive = true;                      // → sprite.eventMode = 'static'
+
+// 削除対象フォールバック処理
+try { riskyOp(); } catch(e) { /* 握りつぶし */ }  // 削除
+const data = getData() || getDefault() || {};    // 削除
+```
+
+---
+
+## 🧪 v8移行検証項目
+
+### 🔍 必須動作確認項目
+
+#### v8基盤確認
+- [ ] PixiJS v8.4.0正常読み込み
+- [ ] WebGPU対応環境でWebGPU選択
+- [ ] WebGPU非対応環境でWebGL fallback
+- [ ] v8 Application正常初期化
+
+#### v8描画確認
+- [ ] ペンツール即座動作（初回クリック問題解決）
+- [ ] リアルタイム描画（遅延なし線描画）
+- [ ] v8 Graphics正常作成・配置
+- [ ] Container階層正常動作
+
+#### v8統合確認
+- [ ] 既存ショートカット継続動作（P, E, Space, Ctrl+Z等）
+- [ ] ナビゲーション機能継続（パン・ズーム）
+- [ ] Undo/Redo v8対応動作
+- [ ] エラー処理正常動作（ErrorManager経由）
+
+### 📊 性能改善確認項目
+
+#### 描画性能
+- [ ] 60FPS描画維持（WebGPU環境）
+- [ ] 描画遅延測定（目標: 16ms以内）
+- [ ] メモリ使用量測定（目標: 20%削減）
+- [ ] 初期化時間測定（目標: 30%短縮）
+
+#### WebGPU活用確認
+- [ ] WebGPU対応環境での自動選択
+- [ ] WebGPU機能活用状況確認
+- [ ] レンダリング品質向上確認
+- [ ] GPU利用率改善確認
+
+---
+
+## 🎮 改修後デバッグ・テスト方針
+
+### 🧪 v8対応デバッグ機能
+
+#### グローバルデバッグ関数更新
+```javascript
+// v8対応デバッグ関数（index.html追加）
+window.debugTegakiV8 = function() {
+    if (window.Tegaki?.TegakiApplicationInstance) {
+        const app = window.Tegaki.TegakiApplicationInstance;
+        console.log('🚀 v8デバッグ情報:', app.getDebugInfo());
+        console.log('🎯 v8機能状況:', app.getV8FeatureStatus());
+        
+        // v8レンダラー情報
+        console.log('🖥️ レンダラー:', {
+            type: app.pixiApp?.renderer?.type,
+            webgpu: app.pixiApp?.renderer?.type === 'webgpu',
+            version: PIXI.VERSION
+        });
+        
+        // v8Manager状況
+        const managers = ['NavigationManager', 'RecordManager', 'CoordinateManager'];
+        managers.forEach(name => {
+            const instance = window.Tegaki[`${name}Instance`];
+            if (instance?.getDebugInfo) {
+                console.log(`🔧 ${name}:`, instance.getDebugInfo());
+            }
+        });
+    }
+};
+
+// v8統合テスト実行
+window.runV8IntegrationTest = function() {
+    console.log('🧪 v8統合テスト開始');
+    
+    // v8基盤テスト
+    const v8Tests = [
+        () => !!window.PIXI && PIXI.VERSION.startsWith('8.'),
+        () => !!window.Tegaki?.TegakiApplicationInstance?.pixiApp,
+        () => !!window.Tegaki?.TegakiApplicationInstance?.pixiApp?.renderer,
+        () => window.Tegaki.TegakiApplicationInstance.isV8Ready?.() === true
+    ];
+    
+    v8Tests.forEach((test, i) => {
+        const result = test();
+        console.log(`Test ${i+1}:`, result ? '✅ PASS' : '❌ FAIL');
+    });
+    
+    // v8描画テスト
+    if (window.Tegaki?.TegakiApplicationInstance?.getToolManager?.()?.getCurrentTool?.()) {
+        const tool = window.Tegaki.TegakiApplicationInstance.getToolManager().getCurrentTool();
+        console.log('🖊️ 現在ツール v8状況:', tool.getDebugInfo?.());
+    }
+};
+```
+
+### 🔬 v8移行段階テスト
+
+#### Phase毎確認コマンド
+```javascript
+// Phase 1確認: 基盤
+console.assert(PIXI.VERSION.startsWith('8.'), 'PixiJS v8 required');
+console.assert(await PIXI.isWebGPUSupported !== undefined, 'WebGPU check available');
+
+// Phase 2確認: CanvasManager
+const app = window.Tegaki?.TegakiApplicationInstance;
+console.assert(app?.pixiApp?.renderer, 'v8 Application created');
+console.assert(app?.pixiApp?.stage instanceof PIXI.Container, 'v8 Stage available');
+
+// Phase 3確認: PenTool
+const toolManager = app?.getToolManager?.();
+const penTool = toolManager?.tools?.get('pen');
+console.assert(penTool?.createPathV8, 'PenTool v8 method available');
+console.assert(penTool?.isV8Ready?.(), 'PenTool v8 ready');
+
+// Phase 4確認: Manager連携
+const managers = ['NavigationManager', 'RecordManager', 'CoordinateManager'];
+managers.forEach(name => {
+    const instance = window.Tegaki[`${name}Instance`];
+    console.assert(instance?.isV8Ready?.(), `${name} v8 ready`);
+});
+
+// Phase 5確認: 統合動作
+window.runV8IntegrationTest();
+```
+
+---
+
+## 🎯 改修優先度付きタスクリスト
+
+### 🚨 最優先（Phase 1-2: 基盤動作確保）
+
+#### 🔥 Critical Task 1: package.json + index.html
+- **ファイル**: `package.json`, `index.html`
+- **内容**: v8依存関係更新・CDN変更・削除対象除去
+- **確認**: PixiJS v8読み込み・基本表示
+- **所要時間**: 15分
+
+#### 🔥 Critical Task 2: CanvasManager v8基盤
+- **ファイル**: `managers/canvas-manager.js`
+- **内容**: v8 Application初期化・WebGPU対応・Container階層
+- **確認**: キャンバス表示・レンダラータイプ表示
+- **所要時間**: 30分
+
+#### 🔥 Critical Task 3: AppCore v8統合
+- **ファイル**: `js/app-core.js`, `js/main.js`
+- **内容**: v8 Application作成・Manager連携
+- **確認**: アプリ起動・基本UI表示
+- **所要時間**: 25分
+
+### 🚀 高優先（Phase 3: 描画機能）
+
+#### ⚡ High Task 1: AbstractTool v8基底
+- **ファイル**: `tools/abstract-tool.js`
+- **内容**: v8基底クラス・Manager連携API
+- **確認**: Tool基盤クラス動作
+- **所要時間**: 20分
+
+#### ⚡ High Task 2: PenTool v8リアルタイム描画
+- **ファイル**: `tools/pen-tool.js`
+- **内容**: v8 Graphics・リアルタイム描画・初回クリック解決
+- **確認**: ペン描画・遅延なし動作・初回即座動作
+- **所要時間**: 45分
+
+#### ⚡ High Task 3: ToolManager v8連携
+- **ファイル**: `managers/tool-manager.js`
+- **内容**: v8 Tool作成・Manager連携
+- **確認**: ツール切替・ペンツール動作
+- **所要時間**: 25分
+
+### 📊 中優先（Phase 4: 統合機能）
+
+#### 📋 Medium Task 1: Utility Manager群 v8対応
+- **ファイル**: `js/utils/coordinate-manager.js`, `js/utils/navigation-manager.js`, `js/utils/record-manager.js`
+- **内容**: v8高精度処理・Manager連携・記録機能
+- **確認**: パン・ズーム・Undo/Redo動作
+- **所要時間**: 60分
+
+#### 📋 Medium Task 2: ConfigManager v8設定
+- **ファイル**: `js/utils/config-manager.js`
+- **内容**: v8設定管理・WebGPU設定追加
+- **確認**: v8設定取得・適用
+- **所要時間**: 20分
+
+### 🔧 最終（Phase 5: 統合・テスト）
+
+#### 🧪 Final Task 1: Bootstrap v8初期化
+- **ファイル**: `js/bootstrap.js`
+- **内容**: v8初期化フロー・エラー処理
+- **確認**: 完全自動初期化・エラー処理
+- **所要時間**: 20分
+
+#### 🧪 Final Task 2: EraserTool v8実装
+- **ファイル**: `tools/eraser-tool.js`
+- **内容**: v8消去機能・Graphics削除処理
+- **確認**: 消しゴム機能動作
+- **所要時間**: 30分
+
+#### 🧪 Final Task 3: 統合テスト・性能確認
+- **内容**: 全機能動作確認・性能測定・デバッグ検証
+- **確認**: 成功判定基準クリア
+- **所要時間**: 30分
+
+---
+
+## ⚙️ 改修時技術詳細ガイド
+
+### 🎨 v8 Application初期化パターン
+
+```javascript
+// ✅ 正しいv8初期化パターン
+class CanvasManager {
+    async initializeV8(options = {}) {
+        // Step 1: Application作成
+        const app = new PIXI.Application();
+        
+        // Step 2: WebGPU対応確認
+        const webgpuSupported = await PIXI.isWebGPUSupported();
+        if (webgpuSupported) {
+            console.log('🚀 Using WebGPU renderer');
+            options.preference = 'webgpu';
+        } else {
+            console.log('📊 Fallback to WebGL renderer');
+            options.preference = 'webgl';
+        }
+        
+        // Step 3: 非同期初期化
+        try {
+            await app.init(options);
+            this.pixiApp = app;
+            this.rendererType = app.renderer.type;
+            this.webgpuSupported = webgpuSupported;
+            
+            // Step 4: 基本レイヤー作成
+            this.createLayerV8('main');
+            this.createLayerV8('ui', { zIndex: 100 });
+            
+            console.log(`✅ PixiJS v8 initialized: ${this.rendererType}`);
+        } catch (error) {
+            console.error('❌ PixiJS v8 initialization failed:', error);
+            throw error;
+        }
+    }
+}
+```
+
+### 🖊️ v8 Graphics描画パターン
+
+```javascript
+// ✅ 正しいv8描画パターン
+class PenTool {
+    createPathV8() {
+        const graphics = new PIXI.Graphics();
+        
+        // v8新記法：stroke設定
+        graphics.stroke({
+            width: this.lineWidth,
+            color: this.color,
+            alpha: this.opacity,
+            cap: 'round',        // v8: stroke cap
+            join: 'round'        // v8: stroke join
+        });
+        
+        return graphics;
+    }
+    
+    onPointerDown(x, y, event) {
+        this.isDrawing = true;
+        
+        // v8 Graphics作成・即座配置（リアルタイム準備）
+        this.currentPath = this.createPathV8();
+        this.currentPath.moveTo(x, y);
+        
+        // 即座にレイヤー配置（描画開始前に表示準備）
+        const layer = this.canvasManager.getLayer('main');
+        layer.addChild(this.currentPath);
+        
+        // 初回ポイント記録
+        this.points = [{x, y, timestamp: Date.now()}];
+    }
+    
+    onPointerMove(x, y, event) {
+        if (!this.isDrawing || !this.currentPath) return;
+        
+        // v8リアルタイムlineTo（即座反映）
+        this.currentPath.lineTo(x, y);
+        
+        // 高精度ポイント記録
+        this.points.push({x, y, timestamp: Date.now()});
+    }
+}
+```
+
+### 🔗 v8 Container階層パターン
+
+```javascript
+// ✅ 正しいv8 Container階層管理
+class CanvasManager {
+    createLayerV8(layerId, options = {}) {
+        const layer = new PIXI.Container();
+        layer.name = layerId;                    // v8: name属性活用
+        layer.sortableChildren = true;           // v8: 子要素自動ソート
+        layer.zIndex = options.zIndex ?? 0;      // v8: zIndex設定
+        
+        // v8: 高度なContainer機能
+        if (options.mask) layer.mask = options.mask;
+        if (options.filters) layer.filters = options.filters;
+        if (options.blendMode) layer.blendMode = options.blendMode;
+        
+        this.layers.set(layerId, layer);
+        this.pixiApp.stage.addChild(layer);
+        
+        console.log(`🎨 Layer created (v8): ${layerId}`);
+        return layer;
+    }
+    
+    // v8レイヤー高度操作
+    setLayerZIndex(layerId, zIndex) {
+        const layer = this.layers.get(layerId);
+        if (layer) {
+            layer.zIndex = zIndex;
+            // v8: 自動ソート適用
+            this.pixiApp.stage.sortChildren();
+        }
+    }
+}
+```
+
+---
+
+## 📊 移行完了検証フローチャート
+
+```mermaid
+flowchart TD
+    A[📦 Phase 1: 基盤移行開始] --> B{PixiJS v8読み込み成功?}
+    B -->|Yes| C[🎨 Phase 2: CanvasManager改修]
+    B -->|No| Z1[❌ package.json確認]
+    
+    C --> D{v8 Application作成成功?}
+    D -->|Yes| E[🖊️ Phase 3: PenTool改修]
+    D -->|No| Z2[❌ CanvasManager確認]
+    
+    E --> F{リアルタイム描画動作?}
+    F -->|Yes| G[🏗️ Phase 4: Manager群改修]
+    F -->|No| Z3[❌ PenTool確認]
+    
+    G --> H{全Manager v8連携動作?}
+    H -->|Yes| I[🧪 Phase 5: 統合テスト]
+    H -->|No| Z4[❌ Manager連携確認]
+    
+    I --> J{全機能動作 + 性能向上?}
+    J -->|Yes| K[✅ v8移行完了]
+    J -->|No| Z5[❌ 統合確認]
+    
+    Z1 --> B
+    Z2 --> D
+    Z3 --> F
+    Z4 --> H
+    Z5 --> J
+```
+
+---
+
+## 🚀 移行開始準備
+
+### 🎯 改修開始前最終確認
+
+#### 必要なもの
+- [ ] ルールブックv7・シンボル辞典v7の内容理解
+- [ ] 現在のPhase1.5rev26構造把握
+- [ ] v8移行目標理解（リアルタイム描画・性能向上）
+- [ ] 段階的移行方針理解（一括変更禁止）
+
+#### 準備作業
+- [ ] 現在コードのバックアップ（v1_phase1.5rev26保存）
+- [ ] v8移行用ブランチ作成（推奨）
+- [ ] Node.js環境確認（`npm install`実行準備）
+- [ ] ブラウザ環境確認（WebGPU対応状況）
+
+---
+
+**📝 改修方針**: ルールブックv7厳守・段階的移行・既存機能保護・性能向上重視  
+**🎯 成功の鍵**: リアルタイム描画実現・初回クリック問題解決・WebGPU活用  
+**💀 基本原則**: エラー隠蔽禁止・フォールバック削除・v8機能フル活用・構造透明化  
+**🚀 次のステップ**: package.json改修→CanvasManager v8対応→PenTool リアルタイム描画実装
