@@ -1,74 +1,135 @@
-consoleログ
-を精査すると、CoordinateManager自体は正常に初期化され、CanvasManagerとの接続も完了しているのに、ToolManager → AbstractTool → PenTool のバリデーションで「CoordinateManager not set」エラーが出ています。
+1. 「線が離したときだけ描かれる」問題
 
-原因分析
+これは mousemove / pointermove イベントで線を逐次描いていない のが原因です。
+現状の pen-tool.js を追うと、
 
-初期化順序の不整合
+mousedown / pointerdown → 座標を記録開始
 
-CoordinateManagerは setCanvasManager() によりCanvasManagerと結び付いている。
+mousemove / pointermove → ほとんど処理していない or 座標蓄積だけ
 
-しかしToolManager生成時にPenToolをアクティブ化する直前、AbstractTool.validateManagersが走る。
+mouseup / pointerup → 蓄積した座標をまとめて描画
 
-この時、PenToolが参照するManager群にCoordinateManagerが渡っていない。
+という構造になっています。
+そのため「離した瞬間に一気に描かれる」状態。
 
-Managerの接続ループ懸念
+改善案
 
-TegakiApplication → AppCore → ToolManager初期化 → AbstractToolがManagerをチェック。
+pointermove で 最後の点から現在点までの線分をリアルタイムに追加描画 する
 
-だがCoordinateManagerへの接続は「AppCoreレイヤ」で止まっており、ツールへ伝搬していない。
+ただし毎フレーム PixiJS に描かせると負荷が大きいので、requestAnimationFrame + バッファリングした座標を処理する形にするとスムーズになります。
 
-Manager依存関係が循環している可能性（CoordinateManagerはCanvasManagerに依存、ToolはCoordinateManagerに依存）。
+PixiJS の Graphics は高速だけど「長いパスを逐次更新」には弱いので、graphics.lineTo() を直接積むより、
+path を保持して geometry に反映させる か、
+pixi-graphics-smooth のような補助ライブラリを使うと綺麗に引けます。
 
-@pixi/layers導入の必要性について
+2. データ構造は「非破壊・ベクター」になっているか？
 
-console出力ではCanvasManagerがすでに「レイヤー問題完全修正版」で main layer を確実化している。
+現状は Graphics に直接描き込む方式が中心なので、キャンバスにピクセルを焼き付けているのとほぼ同義です。
+このままだと「Undo」「レイヤー移動」で壊れやすい。
 
-したがって今回のエラーはPixiのレイヤー不足ではなく、Manager注入不足が原因。
+改善案
 
-よって、@pixi/layers導入はエラー解決の直接条件ではない。将来的な高度なレイヤー分離には必要になるが、現状の「CoordinateManager not set」問題には無関係。
+RecordManager / CoordinateManager を活用し、
 
-対策案
-短期修正
+各ストロークを「パス（座標列 + スタイル情報）」として保存
 
-ToolManager初期化前に、全Manager参照を確実に注入する処理を追加する。
+表示は「保存されたパスを PixiJS.Graphics に再レンダリング」
 
-AppCore.initializeToolManager内で
+これにより Undo は「最後のパスを削除して再描画」で実現でき、
+レイヤー移動も「所属レイヤーの Container を切り替える」で壊れません。
 
-tool.setManager("coordinate", CoordinateManager)
+つまり「ベクターデータ管理をアプリ側」「描画はPixiJSが担当」という役割分担にするとよいです。
 
-tool.setManager("canvas", CanvasManager)
+3. 現状の package.json に入っているライブラリと活用状況
 
-tool.setManager("record", RecordManager)
-などを明示的に実行する。
+package.json を拝見しました。主要なものは：
 
-これによりAbstractTool.validateManagersで失敗しなくなる。
+pixi.js v7 系 → コア描画
 
-中期修正
+pixi-graphics-smooth → 線をアンチエイリアスして滑らかに描く（ただ現状 main.js/pen-tool.js では import していないか、活用が薄い）
 
-Manager DI（依存性注入）を統一化
+gsap / tweedle.js → アニメーション系（UI用には使えるが、ペンでは未使用）
 
-TegakiApplicationが ManagerRegistry（連想配列）を保持し、ToolManagerはそこから必要なManagerをまとめて受け取る方式に統一。
+pixi-layers → レイヤー分け（本来ペン描画を Container レイヤーごとに分ければ有効）
 
-各Toolは「必須Managerキーリスト」を宣言し、Registryから取得する。
+gif.js / gif-encoder → エクスポート用（まだ統合していないっぽい）
 
-これで「CoordinateManagerだけ未設定」という片寄りを防止できる。
+👉 ペン周りに直接効いているのは「pixi.js」だけで、他はほぼ未活用に近いです。
 
-長期修正
+4. PixiJS と相性の良いモダンなペンツール候補
 
-レイヤー戦略の整理
+PixiJS の生の Graphics はシンプルですが、線のクオリティや編集性を考えると以下が候補です：
 
-@pixi/layersは将来的に複雑な描画管理をする際（背景・ガイド・描画・UIなどのレイヤー分離）には導入すべき。
+pixi-graphics-smooth
 
-ただし現在のエラーは座標変換系の接続不良が原因であるため、先にDIルートの整理を優先。
+ストロークをアンチエイリアス付きで綺麗に描ける
 
-レイヤー導入は「描画結果の重なり制御・フィルタ適用・非破壊編集用レイヤー設計」の段階で組み込むのが望ましい。
+適度に軽量で現状と互換性あり
 
-結論
+pixi-pen-tool / pixi-draw-shape 系の拡張（コミュニティ製）
 
-現在のconsoleエラーの原因は CoordinateManagerがPenToolに注入されない初期化順序の不整合。
+パス管理を前提にしたプラグイン（ただし開発更新が止まっていることが多い）
 
-@pixi/layersの有無は今回の問題解決に関与しない。
+Paper.js (別ライブラリ)
 
-解決策は、ToolManager初期化前に全ManagerをToolへ明示的に渡す仕組みを徹底すること。
+ベクターペンとしては超強力（パス編集・ベジエ曲線・Undo/Redoが標準）
 
-将来的なレイヤー管理強化時に@pixi/layersを導入すればよい。
+ただし PixiJS とは別枠で統合が難しい → 描画は Pixi、編集は Paper.js のロジックという二層構造もあり
+
+Rough.js + Pixi.js
+
+手書き風レンダリングが可能（アート系に寄せる場合）
+
+まとめると
+
+線が離したときだけ描かれる問題は → pointermoveで逐次描画するように修正
+
+Undo/レイヤー耐性のために → パスを「アプリ内データ」として管理し、Pixi はレンダリング専用にする
+
+package.jsonのライブラリはペンにほぼ未活用 → pixi-graphics-smooth を積極導入すべき
+
+モダンな選択肢としては Paper.js を参考に「パス管理 + PixiJS描画」方式がベストバランス
+
+
+導入の流れ（AIに渡す指示例）
+
+インポート部分
+pen-tool.js 内で PIXI.Graphics を使っている箇所を
+
+new PIXI.Graphics();
+
+
+から
+
+new PIXI.smooth.SmoothGraphics();
+
+
+に差し替え。
+
+線の描画
+普通の graphics.lineTo() などのAPIは SmoothGraphics でも互換があります。
+
+例:
+
+this.graphics.lineStyle({ width: 2, color: 0x000000 });
+this.graphics.moveTo(prevX, prevY);
+this.graphics.lineTo(x, y);
+
+
+→ そのままスムーズに描かれるようになります。
+
+逐次描画対応
+
+pointerdown で moveTo
+
+pointermove で lineTo（＋requestAnimationFrame でまとめると良い）
+
+pointerup でストローク確定
+
+こうすると「離した時にしか線が出ない」問題も解消します。
+
+注意点
+
+pixi-graphics-smooth はアンチエイリアス処理を内部でやってくれるので、太い線や拡大時にギザギザが少なく見えます。
+
+パフォーマンス面では 長大なストロークを Graphics に直接積むと重いので、必ず ストロークごとにオブジェクトを分けて Container に追加する設計がベターです（Undo/Redoやレイヤー管理もしやすい）。

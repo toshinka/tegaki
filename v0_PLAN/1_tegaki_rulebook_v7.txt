@@ -1,0 +1,560 @@
+# 📏 Tegaki Rulebook v7 - PixiJS v8対応剛直基本方針
+
+> **骨太で剛直な開発方針** - エラーを隠すな、構造を透けさせろ、素人が読める構造にしろ  
+> **v8移行方針**: GPT5提案を受けたPixiJS v8化による根本的性能改善
+
+## 🚫 絶対不変原則（改定・削除禁止）
+
+### 💀 重大違反事項（例外なし）
+1. **try/catch での握りつぶし禁止** - 必ず `throw` か `console.error` + 詳細ログ
+2. **フォールバック・フェイルセーフ禁止** - 正しい構造でのみ動作させる
+3. **架空メソッド呼び出し禁止** - 実装されていないメソッドを呼ぶな
+4. **二重責務禁止** - 1ファイル＝1責務、似た処理のコピペ禁止
+5. **ブラックボックス化禁止** - 全処理に日本語コメント必須
+
+### ✅ 必須遵守事項（全Phase共通）
+1. **エラーは ErrorManager 経由のみ** - 他ファイルでの直接通知禁止
+2. **名前空間統一** - 全て `window.Tegaki.*` に公開
+3. **初期化順序厳守** - HTML読み込み順序通りの依存関係
+4. **構文完整性確保** - ES2023準拠、後方互換考慮なし
+5. **車輪の再発明禁止** - PixiJS標準機能を最大活用
+
+## 🏗️ アーキテクチャ基本原則
+
+### 📦 責務分離原則（SOLID基盤）
+```javascript
+// ✅ 正しい：単一責務
+class CanvasManager {
+    // PixiJS管理のみ
+    async initializeV8(options) { /* PixiJS v8設定 */ }
+    createLayer(id) { /* レイヤー作成 */ }
+}
+
+// ❌ 間違い：多重責務
+class SuperManager {
+    // NG：PixiJS管理 + 描画処理 + UI管理 + エラー処理
+    initializeV8() { /* */ }
+    drawLine() { /* */ }
+    showDialog() { /* */ }
+    handleError() { /* */ }
+}
+```
+
+### 🔗 依存性管理原則
+```javascript
+// ✅ 正しい：依存性注入
+class ToolManager {
+    setCanvasManager(canvasManager) {
+        this.canvasManager = canvasManager; // 外部から注入
+    }
+}
+
+// ❌ 間違い：内部依存
+class ToolManager {
+    constructor() {
+        this.canvasManager = new CanvasManager(); // 内部で直接作成（結合度高）
+    }
+}
+```
+
+### 🔄 DRY原則（Don't Repeat Yourself）
+```javascript
+// ✅ 正しい：共通化
+class ToolBase {
+    validateCanvas() {
+        if (!this.canvasManager) {
+            throw new Error('CanvasManager not set');
+        }
+    }
+}
+
+// ❌ 間違い：重複コード
+class PenTool {
+    onPointerDown(x, y) {
+        if (!this.canvasManager) {
+            throw new Error('CanvasManager not set'); // 重複
+        }
+    }
+}
+class EraserTool {
+    onPointerDown(x, y) {
+        if (!this.canvasManager) {
+            throw new Error('CanvasManager not set'); // 重複
+        }
+    }
+}
+```
+
+## 🚨 エラー処理ポリシー（剛直版）
+
+### ✅ 推奨エラー処理
+```javascript
+// ✅ 正しい：ErrorManager経由
+if (!requiredData) {
+    throw new Error('Required data not available');  // 上位でキャッチしてErrorManagerへ
+}
+
+// ✅ 正しい：詳細ログ付きthrow
+try {
+    riskyOperation();
+} catch (error) {
+    console.error('❌ Operation failed:', error, { context: 'MyClass.method' });
+    throw error; // 隠蔽しない
+}
+```
+
+### 💀 禁止エラー処理（絶対禁止）
+```javascript
+// ❌ 絶対禁止：握りつぶし
+try {
+    riskyOperation();  
+} catch (e) {
+    // 何もしない - 握りつぶし
+}
+
+// ❌ 絶対禁止：曖昧なフォールバック
+const data = getData() || getDefaultData() || {};
+
+// ❌ 絶対禁止：直接UI通知（ErrorManager以外）
+catch (error) {
+    alert('エラーが発生しました'); // NG：ErrorManagerを通せ
+    console.error(error); // NG：throwして上位に委譲
+}
+```
+
+### 📂 ファイル別エラー処理方針
+- **🚨 error-manager.js** - エラー処理専任・UI通知・ログ・記録
+- **🎨 managers/\*.js** - 例外throw専門・直接通知禁止
+- **🖊️ tools/\*.js** - 例外throw専門・上位委譲
+- **⚙️ js/utils/\*.js** - 例外throw・console.errorやUI呼び出し禁止
+
+## 📝 コメント規則（ブラックボックス撲滅）
+
+### ✅ 必須コメント
+```javascript
+/**
+ * 🎨 ClassName - 役割簡潔説明
+ * 📋 RESPONSIBILITY: このクラスの責務
+ * 🚫 PROHIBITION: やってはいけないこと
+ * ✅ PERMISSION: やっても良いこと
+ * 
+ * 📏 DESIGN_PRINCIPLE: 設計思想
+ * 🔄 INTEGRATION: 他クラスとの連携方法
+ * 🎯 V8_MIGRATION: v8対応状況・変更点
+ */
+class MyClass {
+    /**
+     * メソッドの目的説明（何を・なぜ）
+     * @param {type} param - パラメータ説明
+     * @returns {type} - 戻り値説明
+     * @throws {Error} - 例外説明
+     * @v8 - v8固有の変更・注意点
+     */
+    myMethod(param) {
+        // 処理の意図を日本語で説明
+        const result = complexOperation(param);
+        
+        // なぜこの判定が必要かを説明
+        if (!result.isValid) {
+            throw new Error('Validation failed: invalid result');
+        }
+        
+        return result;
+    }
+}
+```
+
+### 🚫 不要なコメント（書くな）
+```javascript
+// ❌ 不要：コードを読めば分かる
+let x = 10; // x に 10 を代入
+
+// ❌ 不要：意味のない説明
+function getData() {
+    return this.data; // データを返す
+}
+```
+
+## 🏗️ 技術スタック（v8移行対応）
+
+### ✅ v8移行後使用技術
+- **PixiJS v8.4.0** - 描画・キャンバス基盤（WebGPU対応）
+- **JavaScript ES2023** - モダン構文積極利用
+- **fetch API** - HTTP通信（必要時）
+- **HTML直開き** - ローカルファイル直接実行可能（継続）
+
+### 🔄 v8移行で変更される技術
+```javascript
+// 統合削除（v8統合済み）
+// "@pixi/graphics-smooth" → v8ネイティブサポート
+// "@pixi/layers" → Container階層で代替
+
+// バージョン更新必須
+"@pixi/text-bitmap": "^8.4.0"     // v7→v8
+"@pixi/ui": "^2.1.0"              // v8対応版
+
+// 互換性確認要
+"@pixi/gif": "^2.1.1"             // v8対応状況確認
+"pixi-svg": "^3.2.0"              // v8互換性調査要
+```
+
+### 🚫 禁止技術（継続）
+- **Vite / TypeScript / ESM** - HTML直開きで動くことが必須
+- **webpack / Babel** - ビルドプロセス禁止
+- **jQuery** - モダン構文で代替
+- **後方互換** - 古いブラウザ考慮なし
+
+### 📦 依存関係管理（v8対応）
+```javascript
+// 全モジュールは以下に依存（必須）
+window.Tegaki.ConfigManagerInstance    // 設定管理
+window.Tegaki.ErrorManagerInstance     // エラー処理  
+window.Tegaki.EventBusInstance         // イベント配信
+
+// v8追加確認項目
+window.PIXI                            // PixiJS v8利用可能
+await PIXI.isWebGPUSupported()         // WebGPU対応確認
+```
+
+## 🎯 PixiJS v8活用方針（車輪の再発明禁止強化）
+
+### ✅ PixiJS v8新機能積極活用
+```javascript
+// ✅ 正しい：v8 Application初期化
+const app = new PIXI.Application();
+await app.init({
+    width: 800,
+    height: 600,
+    backgroundColor: '#1a1a1a',
+    resolution: window.devicePixelRatio || 1,
+    antialias: true,
+    preference: 'webgpu' // WebGPU優先
+});
+
+// ✅ 正しい：v8 Graphics新記法
+const graphics = new PIXI.Graphics();
+graphics.stroke({
+    width: 4,
+    color: 0x800000,
+    alpha: 1.0,
+    cap: 'round',
+    join: 'round'
+});
+graphics.moveTo(x, y);
+graphics.lineTo(x2, y2);
+
+// ✅ 正しい：v8 Container階層活用
+const layer = new PIXI.Container();
+layer.name = 'main-layer';               // v8: name属性活用
+layer.sortableChildren = true;
+stage.addChild(layer);
+```
+
+### 🔄 v7→v8 Breaking Changes対応
+```javascript
+// 🚨 v7→v8 必須変更項目
+// 1. Application初期化方式
+// v7（旧）: const app = new PIXI.Application(options);
+// v8（新）: const app = new PIXI.Application(); await app.init(options);
+
+// 2. Graphics描画API
+// v7（旧）: graphics.lineStyle(width, color, alpha);
+// v8（新）: graphics.stroke({ width, color, alpha });
+
+// 3. Container階層管理
+// v7（旧）: @pixi/layers依存でz-index管理
+// v8（新）: Container.sortableChildren = true; child.zIndex = n;
+
+// 4. イベントシステム
+// v7（旧）: sprite.interactive = true; sprite.on('click', handler);
+// v8（新）: sprite.eventMode = 'static'; sprite.on('click', handler);
+```
+
+### 🚫 v8移行時禁止事項
+```javascript
+// ❌ 禁止：v7とv8の混在使用
+class BadManager {
+    initializeV7() {
+        const app = new PIXI.Application({ width: 800 }); // v7方式
+    }
+    useV8Graphics() {
+        graphics.stroke({ width: 4 }); // v8方式 ← 混在でエラー
+    }
+}
+
+// ❌ 禁止：削除予定パッケージ継続使用
+import { Layer } from '@pixi/layers';  // v8で削除済み
+import smooth from '@pixi/graphics-smooth'; // v8統合済み
+
+// ❌ 禁止：WebGPU未確認での決め打ち
+app.renderer.type; // 'webgpu'決め打ち（Canvas fallbackを考慮せよ）
+```
+
+### ✅ v8推奨パターン（新規作成時）
+```javascript
+// ✅ 正しい：WebGPU対応確認付き初期化
+class CanvasManagerV8 {
+    async initializePixiV8(options) {
+        const app = new PIXI.Application();
+        
+        // WebGPU対応確認
+        if (await PIXI.isWebGPUSupported()) {
+            console.log('🚀 Using WebGPU renderer');
+            options.preference = 'webgpu';
+        } else {
+            console.log('📊 Fallback to Canvas renderer');
+            options.preference = 'webgl';
+        }
+        
+        await app.init(options);
+        this.pixiApp = app;
+    }
+    
+    // v8: Container階層最適化
+    createLayerV8(id, options = {}) {
+        const layer = new PIXI.Container();
+        layer.name = id;
+        layer.sortableChildren = true;
+        layer.zIndex = options.zIndex ?? 0;
+        
+        // v8: 高度なContainer機能活用
+        if (options.mask) layer.mask = options.mask;
+        if (options.filters) layer.filters = options.filters;
+        
+        this.pixiApp.stage.addChild(layer);
+        return layer;
+    }
+}
+```
+
+## 🎮 イベント処理パターン（v8対応）
+
+### ✅ v8推奨イベント処理パターン
+```javascript
+// UI層：イベント受信・座標変換（v8対応）
+handlePointerDown(e) {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    // v8: 座標変換強化
+    const canvasPoint = this.coordinateManager.screenToCanvasV8(x, y);
+    
+    // Manager層に委譲
+    this.toolManager.handlePointerDown(canvasPoint.x, canvasPoint.y, e);
+}
+
+// Manager層：ツール選択・イベント転送（v8統合）
+handlePointerDown(x, y, event) {
+    if (this.currentTool?.onPointerDown) {
+        // v8: 高精度座標で処理
+        this.currentTool.onPointerDown(x, y, event);
+    }
+}
+
+// Tool層：v8 Graphics活用実際処理
+onPointerDown(x, y, event) {
+    this.isDrawing = true;
+    
+    // v8: 新Graphics API使用
+    this.currentPath = new PIXI.Graphics();
+    this.currentPath.stroke({
+        width: this.lineWidth,
+        color: this.color,
+        alpha: this.opacity,
+        cap: 'round',
+        join: 'round'
+    });
+    this.currentPath.moveTo(x, y);
+    
+    // v8: レイヤーに即追加（リアルタイム描画準備）
+    const layer = this.canvasManager.getLayer('main');
+    layer.addChild(this.currentPath);
+}
+```
+
+### 🚫 v8移行時禁止パターン
+```javascript
+// ❌ 禁止：v7 API混在
+onPointerDown(x, y, event) {
+    // v7方式とv8方式混在
+    this.graphics.lineStyle(4, 0x800000);    // v7 API
+    this.graphics.stroke({ width: 4 });      // v8 API ← エラー発生
+}
+
+// ❌ 禁止：削除済みパッケージ依存
+import { Layer } from '@pixi/layers';        // 削除済み
+const layer = new Layer();                   // 動作しない
+
+// ❌ 禁止：WebGPU前提コード
+app.renderer.gl.getExtension('...');         // WebGPUでは存在しない
+```
+
+## 🧪 デバッグ・品質保証方針（v8対応）
+
+### 📊 v8対応デバッグ情報必須
+```javascript
+class MyManagerV8 {
+    /**
+     * デバッグ情報取得（v8対応版必須実装）
+     */
+    getDebugInfo() {
+        return {
+            initialized: this.initialized,
+            pixiVersion: PIXI.VERSION,                    // v8バージョン確認
+            rendererType: this.pixiApp?.renderer?.type,   // webgpu/webgl/canvas
+            webgpuSupported: this.webgpuSupported,        // WebGPU対応状況
+            hasRequiredDeps: !!this.dependency,
+            itemCount: this.items.size,
+            currentState: this.state,
+            lastError: this.lastError?.message || 'none',
+            v8Features: this.getV8FeatureStatus()         // v8機能利用状況
+        };
+    }
+    
+    getV8FeatureStatus() {
+        return {
+            containerHierarchy: true,      // Container階層使用
+            advancedGraphics: true,        // v8 Graphics使用
+            webgpuRenderer: this.pixiApp?.renderer?.type === 'webgpu'
+        };
+    }
+}
+```
+
+### 🔍 v8移行時実行時検証
+```javascript
+// v8環境確認（開発時必須）
+console.assert(window.PIXI, 'PixiJS not loaded');
+console.assert(PIXI.VERSION.startsWith('8.'), `PixiJS v8 required, got ${PIXI.VERSION}`);
+console.assert(window.Tegaki.ErrorManagerInstance, 'ErrorManager not available');
+
+// v8機能対応確認
+if (await PIXI.isWebGPUSupported()) {
+    console.log('🚀 WebGPU supported - high performance rendering available');
+} else {
+    console.log('📊 WebGPU not supported - using WebGL/Canvas fallback');
+}
+
+// デバッグログ（v8対応状況表示）
+console.log('🎨 Manager created (v8):', this.getDebugInfo());
+```
+
+## 🔄 v8移行段階的実行方針
+
+### 📋 移行段階（必須順序）
+```javascript
+// Phase 1: 基盤移行
+// 1. package.json依存関係更新
+// 2. CanvasManager v8対応（基本動作確保）
+// 3. 基本描画復旧確認
+
+// Phase 2: 描画機能移行  
+// 4. PenTool v8 Graphics対応
+// 5. リアルタイム描画実装
+// 6. EraserTool v8対応
+
+// Phase 3: 統合機能移行
+// 7. 全Manager v8互換性確認
+// 8. イベント処理v8対応
+// 9. 統合テスト・性能確認
+```
+
+### ⚠️ 移行時安全確保
+```javascript
+// ✅ 段階的移行（一括更新禁止）
+class MigrationSafeManager {
+    async migrateToV8Gradually() {
+        try {
+            // Step 1: v8初期化テスト
+            await this.testV8Initialization();
+            
+            // Step 2: 基本機能移行
+            await this.migrateBasicFeatures();
+            
+            // Step 3: 既存機能動作確認
+            await this.verifyExistingFeatures();
+            
+        } catch (error) {
+            console.error('❌ v8 migration failed:', error);
+            throw error; // 移行失敗は隠蔽しない
+        }
+    }
+}
+
+// 🚫 一括移行禁止
+class BadMigration {
+    migrateAllAtOnce() {
+        // 全部一気に変更（危険）
+        this.updatePackageJson();
+        this.convertAllManagers();
+        this.updateAllTools();
+        // ← どこで失敗したか分からない
+    }
+}
+```
+
+## 🎯 v8活用による性能改善目標
+
+### 📊 性能改善目標値
+- **ペン描画応答性**: 遅延なしリアルタイム描画
+- **描画フレームレート**: 60FPS維持（WebGPU環境）
+- **メモリ使用量**: Container階層最適化で20%削減
+- **初期化時間**: WebGPU活用で30%短縮
+
+### ✅ v8機能活用項目
+```javascript
+// 1. WebGPU高速レンダリング
+// 2. Container階層による効率的レイヤー管理
+// 3. 改善されたGraphics APIによる滑らか描画
+// 4. EventSystem統合による高精度イベント処理
+// 5. RenderTexture活用による高品質出力
+```
+
+## 📄 文書管理方針（v8対応）
+
+### 📚 3冊構造の役割分担（継続）
+- **📏 Rulebook（本書v7）**: v8対応基本方針・構造ガイドライン・品質基準
+- **📚 Symbol Dictionary v7**: v8対応API定義・確定した用語（段階的更新）  
+- **🚀 Evolution Plan v7**: v8移行具体的手順・Phase2-3簡略計画
+
+### 🔒 v8移行時更新ルール
+- **Rulebook**: v8対応基本方針追加・v7との差分明記
+- **Symbol Dictionary**: v8 API確定後に段階的更新
+- **Evolution Plan**: v8移行進捗に合わせて随時更新
+
+### ⚠️ v8移行冗長化防止
+- v7との差分のみ記載・重複内容回避
+- v8固有機能は別セクション化
+- 移行完了後にv7記述は削除・整理
+
+---
+
+## 🚨 **v8移行時厳守事項**
+
+### 💀 移行時絶対禁止（重大違反）
+1. **v7とv8 API混在使用** - 必ずどちらか統一
+2. **削除済みパッケージ継続使用** - @pixi/layers, @pixi/graphics-smooth等
+3. **WebGPU決め打ちコード** - 必ずfallback考慮
+4. **一括移行実行** - 必ず段階的移行
+5. **移行失敗隠蔽** - エラーは必ずthrow・握りつぶし禁止
+
+### ✅ v8移行時必須遵守
+1. **段階的移行実行** - Phase分割・動作確認しながら進行
+2. **WebGPU対応確認** - isWebGPUSupported()必須チェック
+3. **既存機能保護** - Phase1.5完了機能の動作保証
+4. **性能改善確認** - v8移行効果の定量的確認
+5. **エラー処理強化** - v8移行時のエラーも ErrorManager 経由
+
+### 🎯 v8移行成功基準
+- [ ] ペンツールリアルタイム描画実現
+- [ ] 初回ペンアイコン押下不要化
+- [ ] 既存Phase1.5機能すべて動作継続
+- [ ] WebGPU環境で描画性能50%以上向上
+- [ ] エラー発生率大幅削減
+
+---
+
+**📝 更新方針**: v8対応基本方針・v7との差分明記・移行完了後整理  
+**🎯 品質の鍵**: エラーを隠すな・構造を透けさせろ・v8機能をフル活用しろ  
+**💀 基本原則**: 怪物コード撲滅・v8移行でも剛直構造継続・段階的移行厳守

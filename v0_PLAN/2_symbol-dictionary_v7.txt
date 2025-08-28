@@ -1,0 +1,809 @@
+# 📚 Tegaki Symbol Dictionary v7 - PixiJS v8対応API定義
+
+> **v8移行対応確定API仕様・用語・記号統一定義** - v8移行完了後の確定事項のみ記載
+
+## 🌐 グローバル名前空間（v8対応）
+
+### window.Tegaki.*（v8移行後必須登録）
+```javascript
+window.Tegaki = {
+    // === v8対応確定クラス ===
+    TegakiApplication,          // app-core.js で定義（v8対応）
+    AppCore,                    // main.js で定義（v8対応）
+    CanvasManager,              // canvas-manager.js で定義（v8対応）
+    ToolManager,                // tool-manager.js で定義（v8対応）
+    PenTool,                    // pen-tool.js で定義（v8リアルタイム描画対応）
+    EraserTool,                 // eraser-tool.js で定義（v8対応）
+    AbstractTool,               // abstract-tool.js で定義（v8対応）
+    
+    // === Phase1.5継続クラス（v8互換化） ===
+    NavigationManager,          // navigation-manager.js で定義（v8対応）
+    RecordManager,              // record-manager.js で定義（v8対応）
+    CoordinateManager,          // coordinate-manager.js で定義（v8対応）
+    ShortcutManager,            // shortcut-manager.js で定義（v8対応）
+    
+    // === ユーティリティクラス（v8対応） ===
+    ErrorManager,               // error-manager.js で定義（継続）
+    ConfigManager,              // config-manager.js で定義（v8設定追加）
+    EventBus,                   // event-bus.js で定義（継続）
+    TegakiIcons,               // icons.js で定義（継続）
+    
+    // === v8対応インスタンス（自動作成） ===
+    ErrorManagerInstance,       // error-manager.js で作成
+    ConfigManagerInstance,      // config-manager.js で作成（v8設定追加）
+    EventBusInstance,          // event-bus.js で作成
+    NavigationManagerInstance, // navigation-manager.js で作成（v8対応）
+    RecordManagerInstance,     // record-manager.js で作成（v8対応）
+    CoordinateManagerInstance, // coordinate-manager.js で作成（v8対応）
+    ShortcutManagerInstance,   // shortcut-manager.js で作成
+    
+    // === v8対応共通インスタンス ===
+    CanvasManagerInstance,     // main.js で作成（v8対応）
+    ToolManagerInstance        // main.js で作成（v8対応）
+};
+
+// デバッグ用グローバル参照（v8対応）
+window.TegakiAppInstance;      // bootstrap.js で作成（v8対応）
+```
+
+## 🎯 TegakiApplication（app-core.js）- v8対応
+
+### プロパティ（v8対応確定）
+```javascript
+class TegakiApplication {
+    initialized: boolean        // 初期化状態
+    pixiApp: PIXI.Application  // PixiJS v8 Application
+    appCore: AppCore           // AppCore インスタンス
+    v8Features: Object         // v8機能利用状況
+}
+```
+
+### メソッド（v8対応実装確定）
+```javascript
+// v8初期化系
+constructor()                           // インスタンス化・v8自動初期化
+async initialize()                      // v8基本初期化実行
+async initializeAppCore()              // AppCore作成・v8初期化
+async createCanvasV8()                 // PixiJS v8 Application作成・DOM配置
+setupUI()                             // UIイベント設定（継続）
+
+// v8キャンバス作成系
+async initializePixiV8(options)        // v8 Application初期化
+checkWebGPUSupport(): Promise<boolean> // WebGPU対応確認
+setupV8Renderer(options): Object      // v8レンダラー設定
+
+// イベント処理系（v8対応）
+setupCanvasEvents()                    // v8キャンバスイベント設定
+setupToolButtons()                     // ツールボタンイベント（継続）
+selectTool(toolName: string)           // ツール選択（継続）
+updateToolButtons(activeToolName)      // ツールボタンUI更新（継続）
+updateStatusDisplay()                  // ステータス表示更新（継続）
+
+// v8ポインターイベント系
+handlePointerDown(e: PointerEvent)     // v8高精度ポインター押下
+handlePointerMove(e: PointerEvent)     // v8高精度ポインター移動  
+handlePointerUp(e: PointerEvent)       // v8高精度ポインター解放
+
+// v8ユーティリティ系
+showSuccessMessage()                   // 起動完了通知（v8対応状況表示）
+getDebugInfo()                        // v8対応デバッグ情報取得
+getV8FeatureStatus()                  // v8機能利用状況取得
+```
+
+## 🖊️ AppCore（main.js）- v8対応
+
+### プロパティ（v8対応確定）
+```javascript
+class AppCore {
+    initialized: boolean       // 初期化状態
+    canvasManager: CanvasManager    // v8対応CanvasManager参照
+    toolManager: ToolManager   // v8対応ToolManager参照
+    v8Ready: boolean          // v8移行完了状態
+}
+```
+
+### メソッド（v8対応実装確定）
+```javascript
+// v8初期化系
+constructor()                          // インスタンス作成
+async initialize()                     // v8対応Manager作成・連携設定
+async initializeV8Managers()           // v8対応Manager初期化
+
+// v8Manager管理系
+setPixiAppV8(pixiApp: PIXI.Application) // v8 CanvasManagerにPixiApp設定
+getCanvasManager()                     // v8対応CanvasManager取得
+getToolManager()                       // v8対応ToolManager取得
+
+// v8状態確認系
+isReady(): boolean                     // v8初期化完了確認
+isV8Ready(): boolean                   // v8移行完了確認
+performV8BasicChecks()                 // v8基本機能確認
+
+// ライフサイクル系（v8対応）
+start()                               // v8アプリケーション開始
+destroy()                             // v8クリーンアップ
+getDebugInfo()                        // v8対応デバッグ情報取得
+```
+
+## 🎨 CanvasManager（managers/canvas-manager.js）- v8対応
+
+### プロパティ（v8対応確定）
+```javascript
+class CanvasManager {
+    pixiApp: PIXI.Application          // PixiJS v8 Application参照
+    layers: Map<string, PIXI.Container> // v8 Container レイヤーMap
+    initialized: boolean               // 初期化状態
+    v8Ready: boolean                   // v8移行完了状態
+    rendererType: string               // 'webgpu' | 'webgl' | 'canvas'
+    webgpuSupported: boolean           // WebGPU対応状況
+}
+```
+
+### メソッド（v8対応実装確定）  
+```javascript
+// v8 PixiJS管理系
+async setPixiAppV8(pixiApp: PIXI.Application) // v8 PixiJS Application設定
+getPixiApp(): PIXI.Application        // v8 PixiJS Application取得
+async initializeV8Features()          // v8固有機能初期化
+
+// v8レイヤー管理系
+createLayerV8(layerId: string, options?: Object): PIXI.Container    // v8 Container レイヤー作成
+getLayer(layerId: string): PIXI.Container       // v8 Container レイヤー取得  
+getMainLayer(): PIXI.Container                  // v8メインレイヤー取得
+addGraphicsToLayerV8(graphics, layerId, options?) // v8 Graphics配置
+
+// v8レイヤー高度管理
+setLayerZIndex(layerId: string, zIndex: number) // v8 zIndex設定
+setLayerBlendMode(layerId: string, blendMode)   // v8ブレンドモード
+setLayerMask(layerId: string, mask)             // v8マスク設定
+
+// v8キャンバス操作系
+clear()                               // 全レイヤークリア（v8対応）
+clearLayer(layerId: string)           // 特定レイヤークリア（v8対応）
+resizeCanvasV8(width: number, height: number)  // v8サイズ変更
+
+// v8ユーティリティ系
+isReady(): boolean                    // 準備状態確認
+isV8Ready(): boolean                  // v8移行完了確認
+getRendererType(): string             // レンダラータイプ取得
+getDebugInfo()                        // v8対応デバッグ情報
+```
+
+## 🖊️ ToolManager（managers/tool-manager.js）- v8対応
+
+### プロパティ（v8対応確定）
+```javascript
+class ToolManager {
+    canvasManager: CanvasManager       // v8対応CanvasManager参照
+    currentTool: Tool                  // 現在選択ツール（v8対応）
+    currentToolName: string            // 現在ツール名
+    tools: Map<string, Tool>           // v8対応ツールMap
+    v8Ready: boolean                   // v8移行完了状態
+}
+```
+
+### メソッド（v8対応実装確定）
+```javascript
+// v8 Manager連携系
+setCanvasManagerV8(canvasManager)      // v8対応CanvasManager設定
+
+// v8ツール管理系
+createToolsV8()                        // v8対応ツール作成（内部）
+selectTool(toolName: string)           // ツール選択（v8対応）
+getCurrentTool(): Tool                 // 現在ツール取得（v8対応）
+getCurrentToolName(): string           // 現在ツール名取得
+
+// v8イベント転送系
+handlePointerDown(x: number, y: number, event) // v8高精度ポインター押下転送
+handlePointerMove(x: number, y: number, event) // v8高精度ポインター移動転送  
+handlePointerUp(x: number, y: number, event)   // v8高精度ポインター解放転送
+
+// v8ユーティリティ系
+isV8Ready(): boolean                   // v8移行完了確認
+getDebugInfo()                        // v8対応デバッグ情報取得
+```
+
+## 🔧 AbstractTool（tools/abstract-tool.js）- v8対応
+
+### プロパティ（v8対応基底クラス）
+```javascript
+class AbstractTool {
+    canvasManager: CanvasManager       // v8対応CanvasManager参照（共通）
+    toolName: string                   // ツール名（個別設定）
+    v8Ready: boolean                   // v8移行完了状態（共通）
+}
+```
+
+### メソッド（v8対応基底実装）
+```javascript
+// v8 Manager連携系（共通）
+setCanvasManagerV8(canvasManager)      // v8対応CanvasManager設定
+
+// 抽象メソッド（継承先でv8対応実装必須）
+onPointerDown(x: number, y: number, event) // v8高精度ポインター押下処理
+onPointerMove(x: number, y: number, event) // v8高精度ポインター移動処理
+onPointerUp(x: number, y: number, event)   // v8高精度ポインター解放処理
+
+// v8共通ユーティリティ系
+validateCanvasManagerV8()             // v8対応CanvasManager存在確認
+getDebugInfo()                        // v8対応デバッグ情報取得（基底実装）
+isV8Ready(): boolean                  // v8移行完了確認（基底実装）
+```
+
+## ✏️ PenTool（tools/pen-tool.js）- v8リアルタイム描画対応
+
+### プロパティ（v8対応確定）
+```javascript
+class PenTool extends AbstractTool {
+    isDrawing: boolean                 // 描画状態
+    currentPath: PIXI.Graphics         // 現在の描画パス（v8 Graphics）
+    points: Array<{x, y, timestamp}>   // v8高精度描画点配列
+    
+    // v8描画設定
+    color: number                      // 線色（16進数）
+    lineWidth: number                  // 線幅
+    opacity: number                    // 不透明度
+    
+    // v8リアルタイム描画用
+    realtimeMode: boolean             // リアルタイム描画モード
+    smoothingEnabled: boolean         // v8スムージング有効
+}
+```
+
+### メソッド（v8対応実装確定）
+```javascript
+// v8リアルタイム描画イベント系（AbstractTool実装）
+onPointerDown(x: number, y: number, event) // v8描画開始・即座レンダリング
+onPointerMove(x: number, y: number, event) // v8リアルタイム描画継続
+onPointerUp(x: number, y: number, event)   // v8描画終了・最終化
+
+// v8 Graphics作成・管理系
+createPathV8(): PIXI.Graphics          // v8 Graphics作成
+initializePathV8(x: number, y: number) // v8パス初期化
+addPointToPathV8(x: number, y: number) // v8リアルタイムポイント追加
+finalizePathV8()                       // v8パス最終化
+
+// v8描画設定系
+setPenColorV8(color: string|number)    // v8色変更
+setPenWidthV8(width: number)           // v8線幅変更  
+setPenOpacityV8(opacity: number)       // v8不透明度変更
+setRealtimeMode(enabled: boolean)      // リアルタイムモード切替
+
+// v8スムージング系
+enableSmoothingV8()                    // v8スムージング有効化
+applySmoothingV8()                     // v8スムージング適用
+
+// v8ユーティリティ系
+getSettingsV8()                        // v8現在設定取得
+getDebugInfo()                         // v8対応デバッグ情報
+```
+
+## 🧹 EraserTool（tools/eraser-tool.js）- v8対応
+
+### プロパティ（v8対応確定）
+```javascript
+class EraserTool extends AbstractTool {
+    isErasing: boolean                 // 消去状態
+    eraserSize: number                 // 消しゴムサイズ
+    v8EraseMode: string                // 'pixel' | 'object' | 'layer'
+}
+```
+
+### メソッド（v8対応実装状況）
+```javascript
+// v8 Manager連携系（AbstractTool継承）
+setCanvasManagerV8(canvasManager)      // v8対応CanvasManager設定
+
+// v8消去イベント系（実装予定）
+onPointerDown(x: number, y: number, event) // v8消去開始
+onPointerMove(x: number, y: number, event) // v8消去継続  
+onPointerUp(x: number, y: number, event)   // v8消去終了
+
+// v8消去機能系
+eraseAtPointV8(x: number, y: number)   // v8指定座標消去
+eraseObjectV8(target: PIXI.DisplayObject) // v8オブジェクト消去
+eraseLayerAreaV8(layerId: string, area: Rectangle) // v8レイヤー範囲消去
+
+// v8設定変更系
+setEraserSizeV8(size: number)          // v8消しゴムサイズ変更
+setEraseModeV8(mode: string)           // v8消去モード設定
+
+// v8ユーティリティ系
+getDebugInfo()                         // v8対応デバッグ情報取得
+```
+
+## 🧭 NavigationManager（js/utils/navigation-manager.js）- v8対応
+
+### プロパティ（v8対応確定）
+```javascript
+class NavigationManager {
+    canvasManager: CanvasManager       // v8対応CanvasManager参照
+    transform: Object                  // 変形状態 {x, y, scale, rotation}
+    isDragging: boolean               // ドラッグ状態
+    lastPointerPosition: {x, y}       // 最後のポインター位置
+    v8TransformMode: boolean          // v8高精度変形モード
+    webgpuAccelerated: boolean        // WebGPU加速利用状況
+}
+```
+
+### メソッド（v8対応実装確定）
+```javascript
+// v8 Manager連携系
+setCanvasManagerV8(canvasManager)      // v8対応CanvasManager設定
+
+// v8キャンバス変形系
+panCanvasV8(deltaX: number, deltaY: number)     // v8高精度パン（移動）
+zoomCanvasV8(scale: number, centerX?: number, centerY?: number) // v8高精度ズーム
+rotateCanvasV8(angle: number, centerX?: number, centerY?: number) // v8高精度回転
+resetCanvasTransformV8()               // v8変形リセット
+
+// v8変形状態管理系
+getCanvasTransformV8(): Object         // v8現在の変形状態取得
+setCanvasTransformV8(transform: Object) // v8変形状態設定
+saveTransformStateV8()                 // v8変形状態保存
+restoreTransformStateV8()              // v8変形状態復元
+
+// v8イベント処理系
+handlePanStartV8(x: number, y: number) // v8高精度パン開始
+handlePanMoveV8(x: number, y: number)  // v8高精度パン移動
+handlePanEndV8()                       // v8パン終了
+handleWheelV8(event: WheelEvent)       // v8マウスホイール
+
+// v8ユーティリティ系
+isReady(): boolean                     // 準備状態確認
+isV8Ready(): boolean                   // v8移行完了確認
+getDebugInfo()                         // v8対応デバッグ情報取得
+```
+
+## 📝 RecordManager（js/utils/record-manager.js）- v8対応
+
+### プロパティ（v8対応確定）
+```javascript
+class RecordManager {
+    canvasManager: CanvasManager       // v8対応CanvasManager参照
+    history: Array<OperationRecord>    // 操作履歴
+    currentIndex: number               // 現在位置
+    maxHistorySize: number            // 最大履歴サイズ
+    v8RecordMode: boolean             // v8高精度記録モード
+    webgpuOptimized: boolean          // WebGPU最適化記録
+}
+```
+
+### メソッド（v8対応実装確定）
+```javascript
+// v8 Manager連携系
+setCanvasManagerV8(canvasManager)      // v8対応CanvasManager設定
+
+// v8操作記録系
+recordOperationV8(operation: Object)   // v8高精度操作記録
+recordDrawV8(graphics: PIXI.Graphics, layerId: string, metadata?: Object) // v8描画記録
+recordEraseV8(targetInfo: Object)      // v8消去記録
+recordTransformV8(transformData: Object) // v8変形記録
+
+// v8 Undo/Redo系
+canUndo(): boolean                     // Undo可能確認
+canRedo(): boolean                     // Redo可能確認
+undoV8(): boolean                      // v8 Undo実行
+redoV8(): boolean                      // v8 Redo実行
+
+// v8履歴管理系
+clearHistory()                         // 履歴クリア
+getHistoryInfoV8(): Object            // v8履歴情報取得
+setMaxHistorySize(size: number)       // 最大履歴サイズ設定
+
+// v8ユーティリティ系
+isReady(): boolean                     // 準備状態確認
+isV8Ready(): boolean                   // v8移行完了確認
+getDebugInfo()                         // v8対応デバッグ情報取得
+```
+
+## 📐 CoordinateManager（js/utils/coordinate-manager.js）- v8対応
+
+### プロパティ（v8対応確定）
+```javascript
+class CoordinateManager {
+    canvasManager: CanvasManager       // v8対応CanvasManager参照
+    navigationManager: NavigationManager // v8対応NavigationManager参照
+    v8PrecisionMode: boolean          // v8高精度モード
+    webgpuAccelerated: boolean        // WebGPU座標計算加速
+}
+```
+
+### メソッド（v8対応実装確定）
+```javascript
+// v8 Manager連携系
+setCanvasManagerV8(canvasManager)      // v8対応CanvasManager設定
+setNavigationManagerV8(navigationManager) // v8対応NavigationManager設定
+
+// v8座標変換系
+screenToCanvasV8(screenX: number, screenY: number): {x, y} // v8高精度スクリーン→キャンバス
+canvasToScreenV8(canvasX: number, canvasY: number): {x, y} // v8高精度キャンバス→スクリーン
+getCanvasRectV8(): DOMRect            // v8キャンバス要素位置取得
+getTransformedCoordinatesV8(x: number, y: number): {x, y} // v8変形考慮座標
+
+// v8イベント座標系
+extractPointerCoordinatesV8(event: PointerEvent): {x, y} // v8高精度イベント座標抽出
+normalizeCoordinatesV8(x: number, y: number): {x, y} // v8座標正規化
+
+// v8ユーティリティ系
+isReady(): boolean                     // 準備状態確認
+isV8Ready(): boolean                   // v8移行完了確認
+getDebugInfo()                         // v8対応デバッグ情報取得
+```
+
+## ⌨️ ShortcutManager（js/utils/shortcut-manager.js）- v8対応
+
+### プロパティ（v8対応確定）
+```javascript
+class ShortcutManager {
+    shortcuts: Map<string, Function>   // ショートカットMap
+    keyState: Set<string>             // 押下中キー状態
+    enabled: boolean                  // ショートカット有効状態
+    v8Integration: boolean            // v8統合機能利用
+}
+```
+
+### メソッド（v8対応実装確定）
+```javascript
+// ショートカット登録系（v8対応）
+registerShortcutV8(key: string, callback: Function) // v8対応ショートカット登録
+registerComboV8(keys: string[], callback: Function) // v8対応組み合わせ登録
+unregisterShortcut(key: string)       // ショートカット削除
+
+// ショートカット制御系
+enable()                              // ショートカット有効化
+disable()                             // ショートカット無効化
+isEnabled(): boolean                  // 有効状態確認
+
+// v8イベント処理系
+handleKeyDownV8(event: KeyboardEvent) // v8キー押下処理
+handleKeyUpV8(event: KeyboardEvent)   // v8キー解放処理
+
+// v8デフォルトショートカット系
+registerV8DefaultShortcuts()          // v8対応デフォルト登録
+// Ctrl+Z: Undo, Ctrl+Y: Redo, Space: Pan Mode, +/-: Zoom等
+
+// v8ユーティリティ系
+getDebugInfo()                        // v8対応デバッグ情報取得
+```
+
+## 🚨 ErrorManager（js/utils/error-manager.js）- 継続
+
+### プロパティ（継続・v8エラー対応追加）
+```javascript
+class ErrorManager {
+    errors: Array<ErrorRecord>         // エラー記録配列
+    maxErrors: number                 // 最大記録数
+    v8ErrorTracking: boolean          // v8エラー追跡
+}
+```
+
+### メソッド（v8エラー対応実装確定）
+```javascript
+// エラー表示系（専任責務継続）
+showError(type: string, message: string, options?) // エラー表示
+showVisualNotification(type, message, options)     // 視覚通知
+
+// v8エラー専用系
+showV8Error(message: string, v8Context: Object)    // v8エラー表示
+showV8MigrationError(error: Error, phase: string)  // v8移行エラー表示
+
+// ショートカット系（継続）
+showInfo(message: string, options?)    // 情報表示
+showWarning(message: string, options?) // 警告表示
+showCritical(message: string, options?) // 重要エラー表示
+
+// 記録管理系（v8エラー追加）
+getErrors(): Array                     // エラー記録取得
+getV8Errors(): Array                   // v8エラー専用取得
+clear()                               // エラー記録クリア
+setMaxErrors(count: number)           // 最大記録数設定
+
+// 内部処理系（色設定継続）
+getBackgroundColor(type): string       // 背景色取得
+getTextColor(type): string            // テキスト色取得  
+getBorderColor(type): string          // ボーダー色取得
+
+// v8ユーティリティ系
+getDebugInfo()                        // v8対応デバッグ情報取得
+```
+
+## ⚙️ ConfigManager（js/utils/config-manager.js）- v8設定追加
+
+### メソッド（v8対応実装確定）  
+```javascript
+// v8設定管理系
+getCanvasConfigV8(): Object           // v8キャンバス設定取得
+getToolConfigV8(toolName: string): Object // v8ツール設定取得
+getNavigationConfigV8(): Object       // v8ナビゲーション設定取得
+getShortcutConfig(): Object           // ショートカット設定取得（継続）
+
+// v8専用設定系
+getV8RendererConfig(): Object         // v8レンダラー設定取得
+getWebGPUConfig(): Object             // WebGPU設定取得
+getV8PerformanceConfig(): Object      // v8性能設定取得
+
+// v8設定更新系
+updateCanvasConfigV8(config: Object)  // v8キャンバス設定更新
+updateToolConfigV8(toolName: string, config: Object) // v8ツール設定更新
+updateV8RendererConfig(config: Object) // v8レンダラー設定更新
+
+// v8ユーティリティ系
+getDebugInfo()                        // v8対応デバッグ情報取得
+```
+
+## 📡 EventBus（js/utils/event-bus.js）- 継続
+
+### メソッド（継続実装・v8イベント追加）
+```javascript
+// イベント配信系（継続）
+on(eventName: string, callback: Function) // イベント登録
+emit(eventName: string, data?: any)   // イベント発火
+off(eventName: string, callback?: Function) // イベント削除
+once(eventName: string, callback: Function) // 一回限りイベント
+
+// v8専用イベント系
+onV8(eventName: string, callback: Function) // v8イベント登録
+emitV8(eventName: string, data?: any) // v8イベント発火
+
+// イベント管理系（継続）
+listEvents(): string[]                // 登録イベント一覧
+hasListeners(eventName: string): boolean // リスナー存在確認
+clear()                              // 全イベント削除
+
+// v8ユーティリティ系
+getDebugInfo()                       // v8対応デバッグ情報取得
+```
+
+## 🎨 TegakiIcons（assets/icons.js）- 継続
+
+### プロパティ（継続確定）
+```javascript
+TegakiIcons = {
+    svgData: Object                    // SVG定義データ（9アイコン継続）
+    buttonMappings: Object             // ボタンID→アイコン名マッピング
+}
+```
+
+### メソッド（継続実装）
+```javascript
+// アイコン生成系（継続）
+createIcon(iconName: string, options?: Object): SVGElement // SVGアイコン要素作成
+
+// アイコン配置系（継続）
+replaceButtonIcon(buttonId: string, iconName: string) // 特定ボタンアイコン置換
+replaceAllToolIcons()              // 全ツールボタン一括置換（メイン機能）
+
+// ユーティリティ系（継続）
+getDebugInfo(): Object             // デバッグ情報取得
+```
+
+### 対応アイコン（9種類継続）
+```javascript
+// SVG定義済みアイコン（継続）
+'download'   // ダウンロード（@tabler/icons）
+'resize'     // リサイズ（@tabler/icons） 
+'palette'    // カラーパレット（lucide-static）
+'pen'        // ベクターペン（lucide-static）
+'eraser'     // 消しゴム（lucide-static）
+'fill'       // 塗りつぶし（lucide-static）
+'select'     // 範囲選択（lucide-static）
+'layers'     // レイヤー（lucide-static）
+'settings'   // 設定（@tabler/icons）
+```
+
+## 🔄 v8移行完了初期化フロー
+
+### 🚀 HTML読み込み順序（v8対応）
+1. **PixiJS v8.4.0 CDN** → PixiJS v8利用可能
+2. **error-manager.js** → ErrorManagerInstance 作成（継続）
+3. **config-manager.js** → ConfigManagerInstance 作成（v8設定追加）
+4. **event-bus.js** → EventBusInstance 作成（v8イベント追加）
+5. **coordinate-manager.js** → CoordinateManagerInstance 作成（v8対応）
+6. **navigation-manager.js** → NavigationManagerInstance 作成（v8対応）
+7. **record-manager.js** → RecordManagerInstance 作成（v8対応）
+8. **shortcut-manager.js** → ShortcutManagerInstance 作成（v8対応）
+9. **minimal-deps.js** → 最小依存関係処理（継続）
+10. **assets/icons.js** → TegakiIcons 定義・利用可能（継続）
+11. **canvas-manager.js** → CanvasManager クラス定義（v8対応）
+12. **tool-manager.js** → ToolManager クラス定義（v8対応）
+13. **abstract-tool.js** → AbstractTool クラス定義（v8対応）
+14. **pen-tool.js** → PenTool クラス定義（v8リアルタイム描画対応）
+15. **eraser-tool.js** → EraserTool クラス定義（v8対応）
+16. **app-core.js** → TegakiApplication クラス定義（v8対応）
+17. **main.js** → AppCore クラス定義（v8対応）
+18. **bootstrap.js** → TegakiApplication インスタンス化（v8対応）
+
+## 🎮 v8統合フロー（完了パターン）
+
+### 🔄 v8 Manager連携（確定パターン）
+```javascript
+// AppCore初期化時のv8連携設定
+const canvasManager = new CanvasManager();
+const toolManager = new ToolManager();
+const navigationManager = window.Tegaki.NavigationManagerInstance;
+const recordManager = window.Tegaki.RecordManagerInstance;
+const coordinateManager = window.Tegaki.CoordinateManagerInstance;
+
+// v8相互依存設定
+await toolManager.setCanvasManagerV8(canvasManager);
+await navigationManager.setCanvasManagerV8(canvasManager);
+await recordManager.setCanvasManagerV8(canvasManager);
+await coordinateManager.setCanvasManagerV8(canvasManager);
+await coordinateManager.setNavigationManagerV8(navigationManager);
+
+// v8機能初期化
+await canvasManager.initializeV8Features();
+await this.verifyV8Integration();
+```
+
+### 🖊️ v8リアルタイム描画連携
+```javascript
+// PenTool v8リアルタイム描画時の記録連携
+onPointerMove(x, y, event) {
+    if (this.isDrawing && this.currentPath) {
+        // v8: リアルタイムポイント追加
+        this.addPointToPathV8(x, y);
+        
+        // v8: 即座にレンダリング反映
+        this.currentPath.render();
+        
+        // 高精度座標記録
+        this.points.push({x, y, timestamp: Date.now()});
+    }
+}
+
+onPointerUp(x, y, event) {
+    if (this.currentPath && this.isDrawing) {
+        // v8描画完了をRecordManagerに記録
+        window.Tegaki.RecordManagerInstance.recordDrawV8(
+            this.currentPath, 
+            'main',
+            { realtimePoints: this.points, v8Mode: true }
+        );
+        
+        this.finalizePathV8();
+        this.isDrawing = false;
+    }
+}
+```
+
+## 🚫 v8移行後対象外（未実装・Phase2以降）
+
+### ❌ レイヤー管理（Phase2前倒し予定）
+```javascript
+// Phase2前倒し実装予定
+LayerManagerV8, LayerObjectV8, LayerPanelV8
+MultiLayerManagerV8, LayerTransformToolV8
+```
+
+### ❌ 高度機能（Phase3）
+```javascript
+// 未実装・呼び出し禁止
+AnimationSequence, FrameManager, GIFExporter
+BrushTool, TextureTool, VectorPath, PhysicalBrushRenderer
+AIStrokeProcessor, PerformanceManager
+```
+
+## 🔧 v8デバッグ・検証用確定シンボル
+
+### 🚨 v8実行時確認用
+```javascript
+// v8グローバル名前空間検証
+console.assert(window.PIXI, 'PixiJS not loaded');
+console.assert(PIXI.VERSION.startsWith('8.'), `PixiJS v8 required, got ${PIXI.VERSION}`);
+console.assert(window.Tegaki.NavigationManagerInstance, 'NavigationManager not available');
+console.assert(window.Tegaki.RecordManagerInstance, 'RecordManager not available');
+console.assert(window.Tegaki.CoordinateManagerInstance, 'CoordinateManager not available');
+console.assert(window.Tegaki.ShortcutManagerInstance, 'ShortcutManager not available');
+
+// v8機能検証
+const v8Supported = await PIXI.isWebGPUSupported();
+console.log(v8Supported ? '🚀 WebGPU supported' : '📊 WebGPU not supported');
+
+// v8機能検証
+const debugInfo = window.TegakiAppInstance.getDebugInfo();
+console.log('🎨 App Debug (v8):', debugInfo);
+
+// v8機能検証
+const navDebug = window.Tegaki.NavigationManagerInstance.getDebugInfo();
+console.log('🧭 Navigation Debug (v8):', navDebug);
+```
+
+## 📊 v8デバッグ情報構造（確定フォーマット）
+
+### 🎯 v8共通デバッグ情報フォーマット
+```javascript
+// 全Manager・Tool共通のgetDebugInfo()戻り値構造（v8対応）
+{
+    className: string,                 // クラス名
+    initialized: boolean,              // 初期化状態
+    v8Ready: boolean,                  // v8移行完了状態
+    pixiVersion: string,               // PixiJS バージョン（v8.x.x）
+    rendererType: string,              // 'webgpu' | 'webgl' | 'canvas'
+    webgpuSupported: boolean,          // WebGPU対応状況
+    hasRequiredDeps: boolean,          // 必要依存関係存在確認
+    itemCount: number,                // 管理アイテム数
+    currentState: string,             // 現在状態
+    lastError: string || null,        // 最後のエラー
+    v8Features: Object,               // v8機能利用状況
+    additionalInfo: Object            // クラス固有情報
+}
+```
+
+## ⚙️ v8確定設定構造
+
+### 🎨 v8キャンバス設定
+```javascript
+// ConfigManager.getCanvasConfigV8() 戻り値
+{
+    width: 800,
+    height: 600,
+    backgroundColor: '#1a1a1a',         // v8: 文字列指定対応
+    antialias: true,
+    resolution: window.devicePixelRatio || 1,
+    preference: 'webgpu',               // v8: WebGPU優先設定
+    powerPreference: 'high-performance' // v8: 高性能モード
+}
+```
+
+### 🖊️ v8ツール設定
+```javascript
+// ConfigManager.getToolConfigV8('pen') 戻り値
+{
+    color: 0x800000,
+    lineWidth: 4,
+    opacity: 1.0,
+    cap: 'round',                       // v8: stroke設定
+    join: 'round',                      // v8: stroke設定
+    realtimeMode: true,                 // v8: リアルタイム描画
+    smoothing: true                     // v8: スムージング有効
+}
+```
+
+### 🧭 v8ナビゲーション設定
+```javascript
+// ConfigManager.getNavigationConfigV8() 戻り値
+{
+    panSensitivity: 1.0,
+    zoomSensitivity: 0.1,
+    minZoom: 0.1,
+    maxZoom: 10.0,
+    smoothPan: true,
+    smoothZoom: true,
+    v8Precision: true,                  // v8: 高精度モード
+    webgpuAcceleration: true            // v8: WebGPU加速
+}
+```
+
+### 🚀 v8レンダラー設定
+```javascript
+// ConfigManager.getV8RendererConfig() 戻り値
+{
+    preference: 'webgpu',
+    powerPreference: 'high-performance',
+    antialias: true,
+    preserveDrawingBuffer: false,
+    clearBeforeRender: true,
+    backgroundColor: '#1a1a1a'
+}
+```
+
+### ⚡ WebGPU設定
+```javascript
+// ConfigManager.getWebGPUConfig() 戻り値
+{
+    enabled: true,
+    requiredFeatures: [],
+    requiredLimits: {},
+    fallbackToWebGL: true,
+    powerPreference: 'high-performance'
+}
+```
+
+---
+
+📝 **更新方針**: v8移行完了後に本辞典に確定事項追加・v7記述は段階的削除  
+🎯 **検証方法**: 各ファイルで `window.Tegaki.XXX` + v8機能が存在することを確認  
+💀 **基本原則**: v8未実装メソッド定義禁止・v7とv8混在禁止・段階的移行厳守  
+🚀 **v8移行**: リアルタイム描画・WebGPU活用・Container階層・高精度座標が核心機能
