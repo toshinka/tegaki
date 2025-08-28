@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚀 ふたば☆ちゃんねる風ベクターお絵描きツール - PixiJS v8</title>
-    <!-- 🚀 v8移行方針: 
+    <title>🚀 ふたば☆ちゃんねる風ベクターお絵描きツール - PixiJS v8.12.0</title>
+    <!-- 🚀 v8.12.0移行方針: 
          - WebGPU対応・リアルタイム描画実現
          - Container階層によるレイヤー管理
          - 初回クリック問題解決・遅延なし描画
          - フォールバック削除・v8機能フル活用
-         - @pixi/graphics-smooth削除（v8統合済み）
-         - @pixi/layers削除（v8 Container代替） -->
+         - node_modules読み込み・ローカル運用対応 -->
     <style>
         * {
             margin: 0;
@@ -261,9 +260,58 @@
         .v8-status .v8-dot.error {
             background: #F44336;
         }
+        
+        /* ローディング表示 */
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--futaba-background);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            font-family: monospace;
+        }
+        
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid var(--futaba-light-medium);
+            border-top: 4px solid var(--futaba-maroon);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 16px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            color: var(--futaba-maroon);
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        
+        .loading-version {
+            color: var(--text-secondary);
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
+    <!-- ローディング画面 -->
+    <div class="loading-screen" id="loading-screen">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">🚀 PixiJS v8.12.0 Loading...</div>
+        <div class="loading-version">WebGPU・Container階層・リアルタイム描画準備中</div>
+    </div>
+
     <div class="main-layout">
         <div class="sidebar">
             <!-- アイコンはJavaScriptで動的に生成・配置 -->
@@ -339,21 +387,38 @@
         </div>
         
         <div class="status-group">
-            <div class="status-item">Phase: <span id="phase-info">v8</span></div>
+            <div class="status-item">Phase: <span id="phase-info">v8.12.0</span></div>
             <div class="status-item">Renderer: <span id="renderer-info">WebGPU/WebGL</span></div>
             <div class="status-item">Layers: <span id="layer-count">Container</span></div>
             <div class="status-item">Mode: <span id="realtime-mode">Realtime</span></div>
         </div>
     </div>
 
-    <!-- PixiJS v8.4.0 CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/8.4.0/pixi.min.js"></script>
+    <!-- 🚀 node_modules統合・ローカル読み込み - CORS制限回避 -->
 
-    <!-- @pixi/ui v8対応版 -->
-    <script src="https://cdn.jsdelivr.net/npm/@pixi/ui@2.1.0/dist/ui.min.js"></script>
+    <!-- PixiJS v8.12.0 本体 - node_modules読み込み -->
+    <script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
+
+    <!-- @pixi/ui: UIコンポーネント -->
+    <script src="./node_modules/@pixi/ui/dist/ui.min.js"></script>
 
     <!-- GSAP: アニメーション（継続使用） -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+    <script src="./node_modules/gsap/dist/gsap.min.js"></script>
+
+    <!-- CDNフォールバック（node_modules読み込み失敗時） -->
+    <script>
+        // PixiJS v8.12.0 読み込み確認・CDNフォールバック
+        if (typeof PIXI === 'undefined') {
+            console.warn('⚠️ node_modules/pixi.js 読み込み失敗 - CDNフォールバック実行');
+            document.write('<script src="https://unpkg.com/pixi.js@8.12.0/dist/pixi.min.js"><\/script>');
+        }
+        
+        // GSAP 読み込み確認・CDNフォールバック
+        if (typeof gsap === 'undefined') {
+            console.warn('⚠️ node_modules/gsap 読み込み失敗 - CDNフォールバック実行');
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"><\/script>');
+        }
+    </script>
 
     <!-- 🚀 v8対応読み込み順序 -->
  
@@ -394,19 +459,32 @@
 
     <!-- v8デバッグ用（開発時のみ） -->
     <script>
+        // ローディング画面制御
+        window.hideLoadingScreen = function() {
+            const loadingScreen = document.getElementById('loading-screen');
+            if (loadingScreen) {
+                loadingScreen.style.opacity = '0';
+                setTimeout(() => {
+                    loadingScreen.style.display = 'none';
+                }, 500);
+            }
+        };
+        
         // v8対応デバッグ関数
         window.debugTegakiV8 = function() {
             if (window.Tegaki?.TegakiApplicationInstance) {
                 const app = window.Tegaki.TegakiApplicationInstance;
-                console.log('🚀 v8デバッグ情報:', app.getDebugInfo());
+                console.log('🚀 v8.12.0デバッグ情報:', app.getDebugInfo());
                 console.log('🎯 v8機能状況:', app.getV8FeatureStatus());
                 
                 // v8レンダラー情報
-                console.log('🖥️ レンダラー:', {
-                    type: app.pixiApp?.renderer?.type,
+                const rendererInfo = {
+                    type: app.pixiApp?.renderer?.type || 'unknown',
                     webgpu: app.pixiApp?.renderer?.type === 'webgpu',
-                    version: PIXI.VERSION
-                });
+                    version: window.PIXI ? PIXI.VERSION : 'not loaded',
+                    canvas: app.pixiApp?.canvas || null
+                };
+                console.log('🖥️ レンダラー:', rendererInfo);
                 
                 // v8Manager状況
                 const managers = ['NavigationManager', 'RecordManager', 'CoordinateManager'];
@@ -416,33 +494,59 @@
                         console.log(`🔧 ${name}:`, instance.getDebugInfo());
                     }
                 });
+                
+                return rendererInfo;
             } else {
                 console.warn('⚠️ TegakiApplication未初期化');
+                return null;
             }
         };
 
         // v8統合テスト実行
         window.runV8IntegrationTest = function() {
-            console.log('🧪 v8統合テスト開始');
+            console.log('🧪 v8.12.0統合テスト開始');
             
             // v8基盤テスト
             const v8Tests = [
-                () => !!window.PIXI && PIXI.VERSION.startsWith('8.'),
-                () => !!window.Tegaki?.TegakiApplicationInstance?.pixiApp,
-                () => !!window.Tegaki?.TegakiApplicationInstance?.pixiApp?.renderer,
-                () => window.Tegaki.TegakiApplicationInstance.isV8Ready?.() === true
+                {
+                    name: 'PixiJS v8.12.0 読み込み',
+                    test: () => !!window.PIXI && PIXI.VERSION.startsWith('8.')
+                },
+                {
+                    name: 'TegakiApplication初期化',
+                    test: () => !!window.Tegaki?.TegakiApplicationInstance?.pixiApp
+                },
+                {
+                    name: 'レンダラー初期化',
+                    test: () => !!window.Tegaki?.TegakiApplicationInstance?.pixiApp?.renderer
+                },
+                {
+                    name: 'v8準備完了',
+                    test: () => window.Tegaki.TegakiApplicationInstance?.isV8Ready?.() === true
+                },
+                {
+                    name: 'Canvas表示',
+                    test: () => !!document.querySelector('#canvas-container canvas')
+                }
             ];
             
-            v8Tests.forEach((test, i) => {
-                const result = test();
-                console.log(`Test ${i+1}:`, result ? '✅ PASS' : '❌ FAIL');
+            let passCount = 0;
+            v8Tests.forEach((testCase, i) => {
+                const result = testCase.test();
+                const status = result ? '✅ PASS' : '❌ FAIL';
+                console.log(`Test ${i+1} (${testCase.name}):`, status);
+                if (result) passCount++;
             });
+            
+            console.log(`📊 テスト結果: ${passCount}/${v8Tests.length} PASS`);
             
             // v8描画テスト
             if (window.Tegaki?.TegakiApplicationInstance?.getToolManager?.()?.getCurrentTool?.()) {
                 const tool = window.Tegaki.TegakiApplicationInstance.getToolManager().getCurrentTool();
-                console.log('🖊️ 現在ツール v8状況:', tool.getDebugInfo?.());
+                console.log('🖊️ 現在ツール v8状況:', tool.getDebugInfo?.() || 'デバッグ情報なし');
             }
+            
+            return { passCount, totalTests: v8Tests.length };
         };
         
         // v8ステータス表示更新
@@ -451,7 +555,7 @@
             const dotEl = document.getElementById('v8-dot');
             
             if (statusEl && dotEl) {
-                statusEl.textContent = `v8 ${rendererType}`;
+                statusEl.textContent = `v8.12.0 ${rendererType}`;
                 if (isWebGPU) {
                     dotEl.className = 'v8-dot webgpu';
                 } else {
@@ -462,22 +566,40 @@
         
         // 初期化完了後の自動状況確認
         document.addEventListener('DOMContentLoaded', function() {
-            // PixiJS v8読み込み確認
+            // PixiJS v8.12.0読み込み確認
             if (window.PIXI) {
-                console.log(`🚀 PixiJS v${PIXI.VERSION} loaded`);
+                console.log(`🚀 PixiJS v${PIXI.VERSION} loaded from node_modules`);
                 if (PIXI.VERSION.startsWith('8.')) {
-                    console.log('✅ PixiJS v8 confirmed');
+                    console.log('✅ PixiJS v8.12.0 confirmed');
                 } else {
-                    console.error('❌ PixiJS v8 required, got v' + PIXI.VERSION);
+                    console.error('❌ PixiJS v8.12.0 required, got v' + PIXI.VERSION);
                 }
+            } else {
+                console.error('❌ PixiJS not loaded - check node_modules/pixi.js installation');
             }
             
+            // 初期化完了後のテスト実行
             setTimeout(function() {
                 if (window.Tegaki?.TegakiApplicationInstance) {
-                    console.log('📊 v8初期化後状況確認');
-                    window.debugTegakiV8();
+                    console.log('📊 v8.12.0初期化後状況確認');
+                    const debugInfo = window.debugTegakiV8();
+                    
+                    // ローディング画面を隠す
+                    window.hideLoadingScreen();
+                    
+                    // ステータス表示を更新
+                    if (debugInfo) {
+                        window.updateV8Status(debugInfo.type, debugInfo.webgpu);
+                    }
                 } else {
-                    console.warn('⚠️ TegakiApplication v8初期化未完了');
+                    console.warn('⚠️ TegakiApplication v8.12.0初期化未完了');
+                    
+                    // 初期化失敗時もローディング画面を隠す（エラー状態で）
+                    setTimeout(() => {
+                        window.hideLoadingScreen();
+                        window.updateV8Status('Error', false);
+                        document.getElementById('v8-dot').className = 'v8-dot error';
+                    }, 1000);
                 }
             }, 2000);
         });

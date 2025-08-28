@@ -1,0 +1,222 @@
+# 📋 Tegaki v8.12.0 包括的改修計画書 - 依存関係・初期化順序・描画フロー完全修正
+
+## 🚨 根本問題分析
+
+### 主要エラー原因
+```
+Error: v8 CanvasManager is required for ToolManager
+```
+
+### 🔍 依存関係破綻の構造
+1. **ToolManager** → CanvasManagerインスタンス必要
+2. **AppCore.initializeV8Managers()** → ToolManagerを先に初期化
+3. **CanvasManager** → 初期化タイミングが遅い
+4. **循環依存** → Manager間の相互参照エラー
+
+## 📊 現在のファイル構造・メソッド整理マトリクス
+
+### 🔴 Core Application Files
+
+#### 1. bootstrap.js
+**提供メソッド**:
+- `waitForPixiJSV8()` - PixiJS読み込み待機
+- `executeBootstrap()` - Bootstrap実行
+- `checkPhase15Dependencies()` - 依存関係確認
+
+**依存メソッド**:
+- `window.Tegaki.TegakiApplication()` - メインアプリ初期化
+- `window.PIXI` - PixiJS本体
+
+**問題**: CanvasManager初期化確認不足
+
+#### 2. app-core.js
+**提供メソッド**:
+- `initializeV8Managers()` - Manager群初期化（問題箇所）
+- `getCanvasManager()` - CanvasManager取得
+
+**依存メソッド**:
+- `window.Tegaki.CanvasManager()` - CanvasManager初期化
+- `window.Tegaki.ToolManager(canvasManager)` - ToolManager初期化
+
+**問題**: 初期化順序が間違い（ToolManager→CanvasManagerの順）
+
+#### 3. tegaki-application.js
+**提供メソッド**:
+- `initialize()` - アプリケーション初期化
+- `initializeV8Managers()` - Manager統合初期化
+- `isV8Ready()` - v8準備完了確認
+
+**依存メソッド**:
+- `this.appCore.initializeV8Managers()` - AppCore経由Manager初期化
+
+**問題**: AppCoreからのエラー伝播受信
+
+### 🟡 Manager Files
+
+#### 4. canvas-manager.js
+**提供メソッド**:
+- `initializeV8Application(pixiApp)` - PIXI App設定
+- `createV8DrawingContainer()` - 描画Container作成
+- `getV8DrawingContainer()` - 描画Container取得
+- `resizeV8Canvas(width, height)` - キャンバスリサイズ
+- `getV8DebugInfo()` - デバッグ情報
+
+**依存メソッド**:
+- `PIXI.Application()` - PixiJS Application作成
+- `PIXI.Container()` - Container作成
+
+**問題**: サイズ倍加処理・DPR問題
+
+#### 5. tool-manager.js
+**提供メソッド**:
+- `switchTool(toolName)` - ツール切り替え
+- `getCurrentTool()` - 現在ツール取得
+- `initializeV8Tools()` - v8ツール初期化
+
+**依存メソッド**:
+- `this.canvasManager.getV8DrawingContainer()` - 描画Container取得
+- `window.Tegaki.PenTool()` - PenTool初期化
+
+**問題**: CanvasManager必須だが初期化順序で受け取れない
+
+### 🟢 Tool Files
+
+#### 6. pen-tool.js
+**提供メソッド**:
+- `handlePointerDown(event)` - ポインタ押下処理
+- `handlePointerMove(event)` - ポインタ移動処理
+- `handlePointerUp(event)` - ポインタ離脱処理
+- `startStroke()` - ストローク開始
+- `continueStroke(point)` - ストローク継続
+- `endStroke()` - ストローク終了
+
+**依存メソッド**:
+- `this.canvasManager.getV8DrawingContainer()` - 描画Container取得
+- `PIXI.Graphics()` - Graphics作成
+- `this.recordManager.startOperation()` - 記録開始
+
+**問題**: Manager依存関係の注入タイミング
+
+## 🚀 修正実行計画
+
+### Phase 1: 初期化順序修正（緊急）
+
+#### 1-1. app-core.js修正
+```javascript
+// 現在（間違い）
+async initializeV8Managers() {
+    this.toolManager = new window.Tegaki.ToolManager(this.canvasManager); // ❌CanvasManager未初期化
+    this.canvasManager = new window.Tegaki.CanvasManager();
+}
+
+// 修正後（正しい）
+async initializeV8Managers() {
+    // 1. CanvasManager先行初期化
+    this.canvasManager = new window.Tegaki.CanvasManager();
+    await this.canvasManager.initializeV8Features();
+    
+    // 2. ToolManager後続初期化
+    this.toolManager = new window.Tegaki.ToolManager(this.canvasManager);
+    await this.toolManager.initializeV8Tools();
+}
+```
+
+#### 1-2. canvas-manager.js DPR修正
+```javascript
+// キャンバスサイズ倍加問題修正
+resizeV8Canvas(width, height) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2); // DPR制限
+    this.pixiApp.renderer.resize(width, height); // 論理サイズ
+    // 物理サイズは自動調整される
+}
+```
+
+### Phase 2: 描画フロー整備
+
+#### 2-1. キャンバス表示フロー
+```
+1. bootstrap.js → PixiJS読み込み確認
+2. app-core.js → CanvasManager初期化
+3. canvas-manager.js → PIXI Application作成
+4. canvas-manager.js → Drawing Container作成
+5. tool-manager.js → ツール初期化（CanvasManager注入）
+6. pen-tool.js → 描画準備完了
+```
+
+#### 2-2. ペン描画フロー
+```
+入力 → 描画 → 記録 (シンプル3ステップ)
+
+1. 入力: pen-tool.js handlePointerDown()
+2. 描画: PIXI.Graphics.lineTo() (リアルタイム)
+3. 記録: record-manager.js.startOperation()
+```
+
+### Phase 3: UI統合修正
+
+#### 3-1. アイコン表示修正
+- `assets/icons.js` の読み込みタイミング調整
+- ツールボタンの動的アイコン生成実行
+
+#### 3-2. ステータス表示修正
+- キャンバスサイズ正確表示
+- v8.12.0バージョン表示
+
+## 📋 修正ファイル一覧・優先順位
+
+### 🔴 最優先修正（Phase 1）
+1. **app-core.js** - Manager初期化順序修正
+2. **canvas-manager.js** - DPR・サイズ問題修正
+3. **tool-manager.js** - 依存関係注入修正
+
+### 🟡 中優先修正（Phase 2）
+4. **tegaki-application.js** - エラー処理改善
+5. **bootstrap.js** - 初期化確認強化
+
+### 🟢 低優先修正（Phase 3）
+6. **assets/icons.js** - アイコン表示修正
+7. **main.js** - デバッグ機能改善
+
+## 🔧 各ファイル修正内容詳細
+
+### app-core.js 修正内容
+- `initializeV8Managers()` メソッドの初期化順序修正
+- CanvasManager → ToolManager の順序確保
+- 非同期初期化のawait処理追加
+
+### canvas-manager.js 修正内容
+- `resizeV8Canvas()` のDPR制限追加
+- 物理サイズ・論理サイズの分離
+- デバッグ情報の正確化
+
+### tool-manager.js 修正内容
+- コンストラクタでのCanvasManager存在確認
+- v8ツール初期化の非同期化
+- エラーハンドリング強化
+
+## ⚡ 期待効果
+
+### 修正後の正常動作
+1. ✅ CanvasManager正常初期化
+2. ✅ 400x400pxキャンバス正確表示
+3. ✅ ツールアイコン表示
+4. ✅ ペンツール描画機能
+5. ✅ v8.12.0機能フル活用
+
+### パフォーマンス改善
+- WebGPU自動選択機能
+- Container階層活用
+- リアルタイム描画対応
+
+## 🚫 修正時注意事項
+
+1. **フォールバック禁止** - エラー隠蔽処理追加禁止
+2. **初期化順序厳守** - CanvasManager → ToolManager順序必須
+3. **DPR制限必須** - 巨大キャンバス防止
+4. **非同期処理統一** - async/await使用
+
+---
+
+**修正実行順序**: app-core.js → canvas-manager.js → tool-manager.js
+**確認方法**: コンソールエラーゼロ・400x400キャンバス表示・ペン描画動作
+**次ステップ**: v8.12.0機能フル活用・WebGPU対応完了
