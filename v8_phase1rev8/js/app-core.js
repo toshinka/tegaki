@@ -4,6 +4,9 @@
  * 🚫 PROHIBITION: UI操作・描画処理・座標変換・フォールバック・フェイルセーフ・v7 API混在・Manager二重管理
  * ✅ PERMISSION: v8 Manager作成・v8非同期初期化・WebGPU設定・v8統合制御・依存性管理・Manager統一登録
  * 
+ * ⚠️ 注意: v7/v8 両対応による Manager 群の二重管理は禁止。
+ * 本ファイルは v8 専用の初期化ロジックを採用している。
+ * 
  * 📏 DESIGN_PRINCIPLE: v8 Application中心・非同期初期化・WebGPU優先・Container階層統合基盤・Manager統一登録
  * 🔄 INTEGRATION: 全Manager統一登録(canvas,tool,coordinate,record,config,error,eventbus,shortcut,navigation)・v8依存性管理
  * 🚀 V8_MIGRATION: 非同期化・WebGPU対応・Container階層・v8 Manager連携・フォールバック削除・Manager統一登録
@@ -11,8 +14,8 @@
  * 📌 提供メソッド一覧（v8対応・実装確認済み）:
  * ✅ constructor() - AppCore初期化・Manager登録Map作成
  * ✅ async waitForPixiJS() - PixiJS読み込み待機・v8バージョン確認
- * ✅ async createCanvasV8(options) - v8 Application作成・WebGPU対応・非同期初期化
- * ✅ async initializeV8Managers() - v8 Manager群非同期初期化・統一登録（修正版）
+ * ✅ async createCanvasV8(options) - v8 Application作成・WebGPU対応・非同期初期化・400x400サイズ
+ * ✅ async initializeV8Managers() - v8 Manager群非同期初期化・統一登録（CoordinateManager・RecordManager修正版）
  * ✅ getManager(name) - Manager取得（統一API）
  * ✅ async startV8System() - v8システム開始・統合確認
  * ✅ isV8Ready() - v8対応状況確認
@@ -33,16 +36,16 @@
  * ✅ window.Tegaki.NavigationManager - NavigationManager（navigation-manager.js確認済み）
  * 
  * 📐 v8システム初期化フロー（Manager統一登録修正版）:
- * 開始 → PixiJS読み込み待機 → v8 Application作成 → WebGPU対応確認 → 非同期init() → DOM配置 → 
+ * 開始 → PixiJS読み込み待機 → v8 Application作成（400x400） → WebGPU対応確認 → 非同期init() → DOM配置 → 
  * 1.CanvasManager v8初期化 → 2.全Manager統一登録(coordinate,record,config,error,eventbus,shortcut,navigation) → 
- * 3.ToolManager v8作成・CanvasManager注入 → v8 Tool初期化 → システム統合確認 → 完了
- * 🚨修正済み依存関係: PixiJS v8.12.0 → v8 CanvasManager → Manager統一登録 → v8 ToolManager → v8 Tool群
+ * 3.ToolManager v8作成・CanvasManager注入・Manager統一注入 → v8 Tool初期化 → システム統合確認 → 完了
+ * 🚨修正済み依存関係: PixiJS v8.12.0 → v8 CanvasManager → Manager統一登録 → v8 ToolManager（Manager統一注入） → v8 Tool群
  * 
  * 🚨 Manager統一登録キー（tool-manager.jsの要求名と一致）:
  * - "canvas" → CanvasManager - キャンバス・Container階層管理
  * - "tool" → ToolManager - Tool管理・切り替え
- * - "coordinate" → CoordinateManager - 座標変換・高精度変換 🔧修正対象
- * - "record" → RecordManager - 操作履歴・アンドゥ・リドゥ 🔧修正対象  
+ * - "coordinate" → CoordinateManager - 座標変換・高精度変換 ✅修正完了
+ * - "record" → RecordManager - 操作履歴・アンドゥ・リドゥ ✅修正完了
  * - "config" → ConfigManager - 設定管理
  * - "error" → ErrorManager - エラー処理
  * - "eventbus" → EventBusInstance - イベント通信
@@ -50,7 +53,7 @@
  * - "navigation" → NavigationManager - ナビゲーション管理
  * 
  * 🔧 処理フロー（Manager統一登録）:
- * 開始 → PIXI Application作成 → CanvasManager初期化 → 各Manager統一登録 → ToolManager初期化 → 完了
+ * 開始 → PIXI Application作成（400x400） → CanvasManager初期化 → 各Manager統一登録 → ToolManager初期化・Manager統一注入 → 完了
  */
 
 // 多重定義防止
@@ -160,7 +163,7 @@ if (!window.Tegaki.AppCore) {
         }
         
         /**
-         * v8 Application作成・WebGPU対応・非同期初期化
+         * v8 Application作成・WebGPU対応・非同期初期化・400x400サイズ
          */
         async createCanvasV8(options = {}) {
             console.log('🚀 AppCore - v8 Application作成開始');
@@ -183,10 +186,10 @@ if (!window.Tegaki.AppCore) {
                     console.log('📊 WebGPU detection not available - will use WebGL');
                 }
                 
-                // Step 3: v8設定構築（WebGPU優先）
+                // Step 3: v8設定構築（WebGPU優先・400x400サイズ）
                 const v8Options = {
-                    width: options.width || 800,
-                    height: options.height || 600,
+                    width: options.width || 400,  // 🔧修正: 400x400サイズ
+                    height: options.height || 400, // 🔧修正: 400x400サイズ
                     backgroundColor: options.backgroundColor || 0xf0e0d6, // ふたばクリーム
                     antialias: options.antialias !== false,
                     resolution: options.resolution || window.devicePixelRatio || 1,
@@ -211,7 +214,7 @@ if (!window.Tegaki.AppCore) {
                 this.rendererType = app.renderer.type;
                 this.v8Features.asyncInitialization = true;
                 
-                this.v8InitializationSteps.push('v8 Application created');
+                this.v8InitializationSteps.push('v8 Application created (400x400)');
                 this.v8InitializationSteps.push(`Renderer: ${this.rendererType}`);
                 
                 // Step 5: DOM配置
@@ -245,7 +248,7 @@ if (!window.Tegaki.AppCore) {
         }
         
         /**
-         * 🚨修正版 - v8 Manager群非同期初期化・統一登録（CoordinateManager・RecordManager修正版）
+         * 🚨修正版 - v8 Manager群非同期初期化・統一登録（CoordinateManager・RecordManager修正）
          */
         async initializeV8Managers() {
             console.log('🔧 AppCore - v8 Manager群初期化開始（統一登録修正版）');
@@ -274,6 +277,7 @@ if (!window.Tegaki.AppCore) {
                     await this.canvasManager.setPixiAppV8(this.pixiApp);
                     console.log('✅ CanvasManager v8 Application設定完了（レガシーメソッド）');
                 } else if (this.canvasManager.setPixiApp) {
+                    // フォールバック: 旧メソッド名
                     this.canvasManager.setPixiApp(this.pixiApp);
                     console.log('✅ CanvasManager Application設定完了（フォールバック）');
                 } else {
@@ -288,67 +292,42 @@ if (!window.Tegaki.AppCore) {
                 this.v8InitializationSteps.push('v8 CanvasManager initialized');
                 console.log('✅ Step 1: CanvasManager v8初期化完了');
                 
-                // 🚨修正版: Step 2 - Manager統一登録（CoordinateManager・RecordManager修正版）
+                // 🚨修正完了: Step 2 - Manager統一登録（CoordinateManager・RecordManager修正版）
                 console.log('2️⃣ Manager統一登録開始...');
                 
                 // CanvasManager登録
                 this.managers.set("canvas", this.canvasManager);
-                console.log('✅ CanvasManager登録完了');
                 
-                // 🔧修正版: CoordinateManager登録
+                // 🚨修正完了: CoordinateManager登録（インスタンス作成修正）
                 if (window.Tegaki.CoordinateManager) {
-                    try {
-                        const coordinateManager = new window.Tegaki.CoordinateManager(this);
-                        if (coordinateManager) {
-                            this.managers.set("coordinate", coordinateManager);
-                            console.log('✅ CoordinateManager登録完了');
-                        } else {
-                            throw new Error('CoordinateManager instance creation failed');
-                        }
-                    } catch (error) {
-                        console.error('💀 CoordinateManager登録エラー:', error);
-                        throw new Error(`CoordinateManager registration failed: ${error.message}`);
-                    }
+                    const coordinateManager = new window.Tegaki.CoordinateManager(this);
+                    this.managers.set("coordinate", coordinateManager);
+                    console.log('✅ CoordinateManager登録完了');
                 } else {
                     console.error('💀 CoordinateManager class not available');
                     throw new Error('CoordinateManager class not available');
                 }
                 
-                // 🔧修正版: RecordManager登録
+                // 🚨修正完了: RecordManager登録（インスタンス作成修正）
                 if (window.Tegaki.RecordManager) {
-                    try {
-                        const recordManager = new window.Tegaki.RecordManager(this);
-                        if (recordManager) {
-                            this.managers.set("record", recordManager);
-                            console.log('✅ RecordManager登録完了');
-                        } else {
-                            throw new Error('RecordManager instance creation failed');
-                        }
-                    } catch (error) {
-                        console.error('💀 RecordManager登録エラー:', error);
-                        throw new Error(`RecordManager registration failed: ${error.message}`);
-                    }
+                    const recordManager = new window.Tegaki.RecordManager(this);
+                    this.managers.set("record", recordManager);
+                    console.log('✅ RecordManager登録完了');
                 } else {
                     console.error('💀 RecordManager class not available');
                     throw new Error('RecordManager class not available');
                 }
                 
-                // ConfigManager登録
+                // 🚨修正追加: ConfigManager登録
                 if (window.Tegaki.ConfigManager) {
-                    try {
-                        const configManager = new window.Tegaki.ConfigManager();
-                        if (configManager) {
-                            this.managers.set("config", configManager);
-                            console.log('✅ ConfigManager登録完了');
-                        }
-                    } catch (error) {
-                        console.warn('⚠️ ConfigManager登録失敗:', error.message);
-                    }
+                    const configManager = new window.Tegaki.ConfigManager();
+                    this.managers.set("config", configManager);
+                    console.log('✅ ConfigManager登録完了');
                 } else {
                     console.warn('⚠️ ConfigManager not available - スキップ');
                 }
                 
-                // ErrorManager登録
+                // 🚨修正追加: ErrorManager登録
                 if (window.Tegaki.ErrorManagerInstance) {
                     this.managers.set("error", window.Tegaki.ErrorManagerInstance);
                     console.log('✅ ErrorManager登録完了');
@@ -356,7 +335,7 @@ if (!window.Tegaki.AppCore) {
                     console.warn('⚠️ ErrorManagerInstance not available - スキップ');
                 }
                 
-                // EventBus登録
+                // 🚨修正追加: EventBus登録
                 if (window.Tegaki.EventBusInstance) {
                     this.managers.set("eventbus", window.Tegaki.EventBusInstance);
                     console.log('✅ EventBus登録完了');
@@ -364,53 +343,28 @@ if (!window.Tegaki.AppCore) {
                     console.warn('⚠️ EventBusInstance not available - スキップ');
                 }
                 
-                // ShortcutManager登録
+                // 🚨修正追加: ShortcutManager登録
                 if (window.Tegaki.ShortcutManager) {
-                    try {
-                        const shortcutManager = new window.Tegaki.ShortcutManager();
-                        if (shortcutManager) {
-                            this.managers.set("shortcut", shortcutManager);
-                            console.log('✅ ShortcutManager登録完了');
-                        }
-                    } catch (error) {
-                        console.warn('⚠️ ShortcutManager登録失敗:', error.message);
-                    }
+                    const shortcutManager = new window.Tegaki.ShortcutManager();
+                    this.managers.set("shortcut", shortcutManager);
+                    console.log('✅ ShortcutManager登録完了');
                 } else {
                     console.warn('⚠️ ShortcutManager not available - スキップ');
                 }
                 
-                // NavigationManager登録
+                // 🚨修正追加: NavigationManager登録
                 if (window.Tegaki.NavigationManager) {
-                    try {
-                        const navigationManager = new window.Tegaki.NavigationManager(this);
-                        if (navigationManager) {
-                            this.managers.set("navigation", navigationManager);
-                            console.log('✅ NavigationManager登録完了');
-                        }
-                    } catch (error) {
-                        console.warn('⚠️ NavigationManager登録失敗:', error.message);
-                    }
+                    const navigationManager = new window.Tegaki.NavigationManager(this);
+                    this.managers.set("navigation", navigationManager);
+                    console.log('✅ NavigationManager登録完了');
                 } else {
                     console.warn('⚠️ NavigationManager not available - スキップ');
-                }
-                
-                // 🔧修正版: 必須Manager登録確認
-                const requiredManagers = ['canvas', 'coordinate', 'record'];
-                const registeredManagers = Array.from(this.managers.keys());
-                const missingManagers = requiredManagers.filter(name => !this.managers.has(name));
-                
-                if (missingManagers.length > 0) {
-                    const errorMessage = `Critical Manager registration failed: ${missingManagers.join(', ')} not registered`;
-                    console.error('💀', errorMessage);
-                    console.error('📋 Registered managers:', registeredManagers);
-                    throw new Error(errorMessage);
                 }
                 
                 this.v8Features.managersUnifiedRegistration = true;
                 this.v8InitializationSteps.push('v8 Manager unified registration completed');
                 console.log('✅ Step 2: Manager統一登録完了');
-                console.log('📋 登録Manager一覧:', registeredManagers);
-                console.log('✅ 必須Manager確認完了:', requiredManagers.join(', '));
+                console.log('📋 登録Manager一覧:', Array.from(this.managers.keys()));
                 
                 // Step 3: v8 ToolManager後続初期化（CanvasManager注入・Manager統一登録後）
                 console.log('3️⃣ ToolManager v8初期化開始...');
@@ -426,32 +380,20 @@ if (!window.Tegaki.AppCore) {
                 // ToolManager登録
                 this.managers.set("tool", this.toolManager);
                 
-                // 🔧修正版: ToolManagerにManager統一登録情報を設定（this.managersを直接渡す）
+                // 🚨修正完了: ToolManagerにManager統一登録情報を設定（this.managersを直接渡す）
                 if (typeof this.toolManager.setManagers === 'function') {
-                    // this.managersをObjectに変換してToolManagerに渡す
-                    const managersObject = {};
-                    for (const [key, manager] of this.managers) {
-                        managersObject[key] = manager;
-                    }
-                    this.toolManager.setManagers(managersObject);
+                    this.toolManager.setManagers(this.managers);
                     console.log('✅ ToolManager: Manager統一登録情報設定完了');
-                    console.log('📋 ToolManagerに渡したManager:', Object.keys(managersObject));
                 } else {
-                    console.warn('⚠️ ToolManager.setManagers() not available - 個別Manager確認で継続');
+                    console.warn('⚠️ ToolManager.setManagers() not available');
                 }
                 
-                // 🔧修正版: v8ツール初期化（必須Manager確認後）
-                try {
-                    if (this.toolManager.initializeV8Tools) {
-                        await this.toolManager.initializeV8Tools();
-                        console.log('✅ ToolManager v8ツール初期化完了');
-                    } else {
-                        console.warn('⚠️ ToolManager.initializeV8Tools() not available');
-                    }
-                } catch (toolError) {
-                    console.error('💀 ToolManager v8ツール初期化エラー:', toolError);
-                    console.error('📋 利用可能Manager:', Array.from(this.managers.keys()));
-                    throw toolError;
+                // v8ツール初期化（Manager統一登録後）
+                if (this.toolManager.initializeV8Tools) {
+                    await this.toolManager.initializeV8Tools();
+                    console.log('✅ ToolManager v8ツール初期化完了');
+                } else {
+                    console.warn('⚠️ ToolManager.initializeV8Tools() not available');
                 }
                 
                 this.v8InitializationSteps.push('v8 ToolManager created with unified managers');
@@ -471,13 +413,12 @@ if (!window.Tegaki.AppCore) {
             } catch (error) {
                 this.lastError = error;
                 console.error('💀 AppCore - v8 Manager群初期化エラー:', error);
-                console.error('📋 現在登録済みManager:', Array.from(this.managers.keys()));
                 throw error;
             }
         }
         
         /**
-         * 🔧修正版 - v8 Manager連携確認（詳細チェック）
+         * v8 Manager連携確認
          */
         validateV8ManagerIntegration() {
             console.log('🔍 v8 Manager連携確認開始');
@@ -510,14 +451,6 @@ if (!window.Tegaki.AppCore) {
                 {
                     condition: this.managers.has("record"),
                     message: 'RecordManager not registered'
-                },
-                {
-                    condition: this.managers.get("coordinate") !== null,
-                    message: 'CoordinateManager is null'
-                },
-                {
-                    condition: this.managers.get("record") !== null,
-                    message: 'RecordManager is null'
                 }
             ];
             
@@ -531,26 +464,12 @@ if (!window.Tegaki.AppCore) {
             
             for (const check of checks) {
                 if (!check.condition) {
-                    const errorMessage = `v8 Manager integration failed: ${check.message}`;
-                    console.error('💀', errorMessage);
-                    console.error('📋 現在のManager状況:', {
-                        registeredKeys: Array.from(this.managers.keys()),
-                        coordinateManager: this.managers.get("coordinate"),
-                        recordManager: this.managers.get("record"),
-                        canvasManager: this.managers.get("canvas"),
-                        totalManagers: this.managers.size
-                    });
-                    throw new Error(errorMessage);
+                    throw new Error(`v8 Manager integration failed: ${check.message}`);
                 }
             }
             
             console.log('✅ v8 Manager連携確認完了');
             console.log('📋 登録済みManager:', Array.from(this.managers.keys()));
-            console.log('🔍 必須Manager確認:', {
-                coordinate: !!this.managers.get("coordinate"),
-                record: !!this.managers.get("record"),
-                canvas: !!this.managers.get("canvas")
-            });
         }
         
         /**
@@ -641,7 +560,7 @@ if (!window.Tegaki.AppCore) {
         }
         
         /**
-         * 🔧修正版 - v8初期化状態検証（詳細チェック）
+         * v8初期化状態検証
          */
         validateV8Initialization() {
             const checks = [
@@ -653,10 +572,7 @@ if (!window.Tegaki.AppCore) {
                 { condition: this.webgpuSupported !== null, message: 'WebGPU support not determined' },
                 { condition: this.v8Features.managersUnifiedRegistration, message: 'Manager unified registration not completed' },
                 { condition: this.managers.has("coordinate"), message: 'CoordinateManager not registered' },
-                { condition: this.managers.has("record"), message: 'RecordManager not registered' },
-                { condition: this.managers.size >= 3, message: 'Insufficient managers registered' },
-                { condition: !!this.managers.get("coordinate"), message: 'CoordinateManager instance is null' },
-                { condition: !!this.managers.get("record"), message: 'RecordManager instance is null' }
+                { condition: this.managers.has("record"), message: 'RecordManager not registered' }
             ];
             
             // CanvasManagerのv8準備確認（利用可能な場合のみ）
@@ -669,23 +585,13 @@ if (!window.Tegaki.AppCore) {
             
             for (const check of checks) {
                 if (!check.condition) {
-                    const errorMessage = `v8 initialization validation failed: ${check.message}`;
-                    console.error('💀', errorMessage);
-                    console.error('📋 Debug info:', {
-                        registeredManagers: Array.from(this.managers.keys()),
-                        managersSize: this.managers.size,
-                        coordinateManager: !!this.managers.get("coordinate"),
-                        recordManager: !!this.managers.get("record"),
-                        canvasManager: !!this.managers.get("canvas"),
-                        v8Features: this.v8Features
-                    });
-                    throw new Error(errorMessage);
+                    throw new Error(`v8 initialization validation failed: ${check.message}`);
                 }
             }
         }
         
         /**
-         * 🔧修正版 - v8対応状況確認（詳細チェック）
+         * v8対応状況確認
          */
         isV8Ready() {
             return this.v8SystemReady && 
@@ -697,10 +603,7 @@ if (!window.Tegaki.AppCore) {
                    this.webgpuSupported !== null &&
                    this.v8Features.managersUnifiedRegistration &&
                    this.managers.has("coordinate") &&
-                   this.managers.has("record") &&
-                   !!this.managers.get("coordinate") &&
-                   !!this.managers.get("record") &&
-                   this.managers.size >= 3;
+                   this.managers.has("record");
         }
         
         /**
@@ -713,12 +616,6 @@ if (!window.Tegaki.AppCore) {
             console.log('📝 v8初期化ステップ:', this.v8InitializationSteps);
             console.log('🔧 v8機能:', this.v8Features);
             console.log('📋 登録Manager:', Array.from(this.managers.keys()));
-            console.log('🔍 必須Manager確認:', {
-                coordinate: !!this.managers.get("coordinate"),
-                record: !!this.managers.get("record"),
-                canvas: !!this.managers.get("canvas"),
-                totalManagers: this.managers.size
-            });
             
             if (this.lastError) {
                 console.log('❌ 最新エラー:', this.lastError.message);
@@ -745,7 +642,7 @@ if (!window.Tegaki.AppCore) {
                     pixiLoaded: this.v8Features.pixiJSLoaded
                 },
                 
-                // 🔧修正版 - v8 Manager状態（詳細情報）
+                // v8 Manager状態
                 v8Managers: {
                     canvasManager: !!this.canvasManager,
                     canvasManagerV8Ready: this.canvasManager?.isV8Ready?.() || false,
@@ -754,10 +651,7 @@ if (!window.Tegaki.AppCore) {
                     registeredManagers: Array.from(this.managers.keys()),
                     totalRegisteredManagers: this.managers.size,
                     coordinateManagerRegistered: this.managers.has("coordinate"),
-                    recordManagerRegistered: this.managers.has("record"),
-                    coordinateManagerInstance: !!this.managers.get("coordinate"),
-                    recordManagerInstance: !!this.managers.get("record"),
-                    requiredManagersPresent: this.managers.has("coordinate") && this.managers.has("record") && this.managers.has("canvas")
+                    recordManagerRegistered: this.managers.has("record")
                 },
                 
                 // v8機能状況
@@ -786,20 +680,7 @@ if (!window.Tegaki.AppCore) {
                     eventBus: !!window.Tegaki?.EventBusInstance,
                     pixiJS: !!window.PIXI,
                     pixiVersion: this.pixiVersion
-                },
-                
-                // Manager詳細情報
-                managerDetails: Object.fromEntries(
-                    Array.from(this.managers.entries()).map(([key, manager]) => [
-                        key, 
-                        {
-                            present: !!manager,
-                            type: manager?.constructor?.name || 'unknown',
-                            hasV8Ready: typeof manager?.isV8Ready === 'function',
-                            isV8Ready: manager?.isV8Ready?.() || false
-                        }
-                    ])
-                )
+                }
             };
         }
         
@@ -845,9 +726,6 @@ if (!window.Tegaki.AppCore) {
             return this.v8Features;
         }
         
-        /**
-         * 🔧修正版 - v8システムリセット（完全クリア）
-         */
         resetV8System() {
             console.log('🔄 AppCore - v8システムリセット開始');
             
@@ -881,9 +759,6 @@ if (!window.Tegaki.AppCore) {
             }
         }
         
-        /**
-         * 🔧修正版 - v8システム統計（Manager詳細含む）
-         */
         getV8SystemStats() {
             return {
                 v8Status: {
@@ -901,10 +776,7 @@ if (!window.Tegaki.AppCore) {
                     totalRegistered: this.managers.size,
                     registeredKeys: Array.from(this.managers.keys()),
                     coordinateRegistered: this.managers.has("coordinate"),
-                    recordRegistered: this.managers.has("record"),
-                    coordinateInstance: !!this.managers.get("coordinate"),
-                    recordInstance: !!this.managers.get("record"),
-                    requiredManagersPresent: this.managers.has("coordinate") && this.managers.has("record") && this.managers.has("canvas")
+                    recordRegistered: this.managers.has("record")
                 },
                 
                 v8ErrorStatus: {

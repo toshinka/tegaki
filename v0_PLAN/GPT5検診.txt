@@ -1,42 +1,108 @@
-# 改修計画 - v8_phase1rev7 初期化エラー対応
+🔎 主なエラー内容の整理
 
-## 現況
-- Windows 環境で WebGPU `powerPreference` が無視される警告が出ているが致命的エラーではない。
-- v8 Tool 初期化時に `coordinate-manager` と `record-manager` が未登録エラーを起こしている。
-- v7/v8 両対応コードを残すと「Manager群の二重管理」になり見通しが悪化し、AI コーディング時に誤認識が発生する危険性がある。
+Required managers missing for v8 Tool initialization: coordinate, record
 
-## 問題点
-1. **AppCore.initializeV8Managers** 内で `CoordinateManager` と `RecordManager` を `this.managers` に登録していない。
-2. `tool-manager.js` が要求する Manager 名と、`app-core.js` 側のキー名が一致していない可能性。
-3. v7/v8 互換コードが混在しているため、修正箇所が曖昧になりやすい。
+ToolManager.initializeV8Tools() 内で、必要な Manager (coordinate, record) が見つからず落ちている
 
-## 提案
-- `app-core.js` の `initializeV8Managers` に以下を追加する：
-  ```js
-  import CoordinateManager from "./utils/coordinate-manager.js";
-  import RecordManager from "./utils/record-manager.js";
+AppCore / TegakiApplication も連鎖的に失敗して初期化未完了になっている
 
-  this.managers.set("coordinate", new CoordinateManager(this));
-  this.managers.set("record", new RecordManager(this));
-すでに登録済みの tool, canvas, shortcut, config などと同様の形式で統一。
+利用可能Managerの一覧には9個出ているが、その中に coordinate / record が含まれていない
 
-tool-manager.js 側の requires 配列に定義されている Manager 名と必ず一致させること。
+つまり Manager 登録の順序 or 存在チェックに不整合 がある
 
-v7 互換レイヤーは廃止する。
+✅ 考えられる原因
 
-実装計画
-app-core.js を修正し、coordinate-manager と record-manager を登録する。
+Manager 登録漏れ
 
-tool-manager.js の requires リストとキー名を照合・修正。
+coordinate-manager.js, record-manager.js はファイルとして存在するが、
+AppCore.initializeV8Managers() で this.managers に登録していない可能性。
 
-デバッグログを残し、Manager 群がすべて正常に登録されているか確認。
+→ 他の Manager (canvas, tool, config...) は登録されているが、この2つだけ抜けている。
 
-powerPreference 警告は既知の仕様につき放置。ただし、ログ抑制が必要なら console.warn ラップで対応。
+キー名の不一致
 
-v7 互換コードを段階的に削除し、「v7/v8 両対応で二重管理を行うとコードの見通しが悪化する」 旨を app-core.js および tool-manager.js のファイルヘッダーに明記する。
+ToolManager は "coordinate", "record" を要求しているが、
+実際に AppCore 側では "coordinateManager", "recordManager" など別名で登録しているケース。
 
-ヘッダー記述指示
-各ファイルのヘッダーに以下を必ず記載する：
+つまり lookup 名のズレ がある。
 
-⚠️ 注意: v7/v8 両対応による Manager 群の二重管理は禁止。
-本ファイルは v8 専用の初期化ロジックを採用している。
+初期化順序の問題
+
+ToolManager が Manager 群を要求する時点で coordinate-manager / record-manager がまだ initialize() されていない。
+
+そのため存在チェックで弾かれている。
+
+utils/minimal-deps.js の不具合
+
+Manager 群のロードリストを返す場所（恐らくここか bootstrap.js 経由）が不完全で、
+coordinate-manager と record-manager が列挙から漏れている可能性。
+
+🛠 対策案
+1. AppCore 側の Manager 登録を確認
+
+app-core.js の Manager 初期化部分（initializeV8Managers 内 or その前）に、以下のような登録があるか確認：
+
+this.managers.set("coordinate", new CoordinateManager(this));
+this.managers.set("record", new RecordManager(this));
+
+
+なければ追加してください。
+
+2. ToolManager が要求するキーと統一
+
+tool-manager.js の initializeV8Tools() 内で
+
+const required = ["coordinate", "record"];
+
+
+としているなら、AppCore 側も必ず "coordinate" / "record" で登録すること。
+もし CoordinateManager 側でクラス名やキーを "coordinateManager" にしていたら修正が必要です。
+
+3. Manager のロード順序を保証
+
+canvas-manager や tool-manager よりも前に、coordinate-manager / record-manager を登録するようにしてください。
+（特に record は描画履歴に関わるので、ペンや消しゴムの初期化前に存在している必要があります）
+
+4. minimal-deps.js のリストを点検
+
+このファイルで MANAGERS などの配列があれば、次のように追加確認：
+
+export const MANAGERS = [
+  "config",
+  "error",
+  "event",
+  "navigation",
+  "shortcut",
+  "canvas",
+  "tool",
+  "coordinate",   // ←抜けてないか？
+  "record"        // ←抜けてないか？
+];
+
+⚠️ エラーに出ないけど怪しい点
+
+ペンツールと消しゴムツール
+
+Tool 初期化で coordinate / record を必ず参照する設計なら、今のままでは正常に描画履歴が残らないはず。
+
+app-core.js のエラー処理
+
+⚠️ ToolManager.setManagers() not available - 個別Manager確認で継続
+→ ここで continue しているのは危険。実際は 初期化中断すべきエラー。
+
+メソッドの順序不整合
+
+TegakiApplication.initialize → AppCore.initializeV8Managers → ToolManager.initializeV8Tools
+の順に走っているが、Manager群の整合性が取れる前に ToolManager に処理を渡している可能性あり。
+
+🚑 修正計画（短期）
+
+app-core.js にて coordinate と record を明示的に登録
+
+tool-manager.js の requiredManagers とキー名が一致しているか確認
+
+minimal-deps.js に2つの Manager を追加
+
+初期化順序を整理（ペン・消しゴムが動作する前に2 Manager を登録）
+
+👉 これを直せば「Required managers missing for v8 Tool initialization」エラーは解消するはずです。
