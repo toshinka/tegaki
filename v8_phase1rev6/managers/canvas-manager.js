@@ -1,53 +1,59 @@
 /**
- * 🚀 CanvasManager - PixiJS v8.12.0完全対応版（WebGPU・Container階層・リアルタイム描画）
- * 📋 RESPONSIBILITY: PixiJS v8 Application管理・WebGPU対応・Container階層レイヤー管理・v8機能フル活用
- * 🚫 PROHIBITION: 描画処理・座標変換・複雑な初期化・ツール制御・エラー隠蔽・フォールバック
- * ✅ PERMISSION: v8 Application管理・WebGPU自動選択・Container階層管理・v8レンダラー制御
+ * 🚀 CanvasManager - PixiJS v8.12.0完全対応版（WebGPU・Container階層・リアルタイム描画・DPR制限対応）
+ * 📋 RESPONSIBILITY: PixiJS v8 Application管理・WebGPU対応・Container階層レイヤー管理・v8機能フル活用・DPR制限
+ * 🚫 PROHIBITION: 描画処理・座標変換・複雑な初期化・ツール制御・エラー隠蔽・フォールバック・DPR倍加処理
+ * ✅ PERMISSION: v8 Application管理・WebGPU自動選択・Container階層管理・v8レンダラー制御・DPR制限適用
  * 
- * 📏 DESIGN_PRINCIPLE: v8 Application中心・WebGPU優先・Container階層によるレイヤー管理・リアルタイム対応
- * 🔄 INTEGRATION: AppCore→initializeV8→Tool・Manager群にv8 Application提供・WebGPU状況通知
- * 🚀 V8_MIGRATION: 非同期初期化・WebGPU自動選択・Container階層・@pixi/layers削除対応
+ * 📏 DESIGN_PRINCIPLE: v8 Application中心・WebGPU優先・Container階層によるレイヤー管理・リアルタイム対応・DPR制限
+ * 🔄 INTEGRATION: AppCore→initializeV8Application→Tool・Manager群にv8 Application提供・WebGPU状況通知
+ * 🚀 V8_MIGRATION: 非同期初期化・WebGPU自動選択・Container階層・@pixi/layers削除対応・DPR制限機能
  * 
- * 📌 提供メソッド一覧（v8対応）:
- * ✅ async initializeV8(options) - v8 Application非同期初期化・WebGPU対応
- * ✅ createLayerV8(layerId, options) - v8 Container レイヤー作成・zIndex管理
- * ✅ getLayer(layerId) - レイヤー取得（v7互換維持）
+ * 📌 提供メソッド一覧（v8対応・実装確認済み）:
+ * ✅ async initializeV8Application(pixiApp) - v8 Application設定・レイヤー自動作成（修正版）
+ * ✅ createV8DrawingContainer() - v8描画Container作成
+ * ✅ getV8DrawingContainer() - v8描画Container取得  
+ * ✅ resizeV8Canvas(width, height) - DPR制限対応キャンバスリサイズ（修正版）
  * ✅ addGraphicsToLayerV8(graphics, layerId) - v8 Graphics配置・即座反映
- * ✅ setPixiAppV8(pixiApp) - v8 Application設定・レイヤー自動作成
  * ✅ isV8Ready() - v8対応状況確認
  * ✅ getWebGPUStatus() - WebGPU使用状況取得
  * ✅ getV8DebugInfo() - v8専用デバッグ情報
  * 
- * 📌 他ファイル呼び出しメソッド一覧:
- * ✅ window.Tegaki.ErrorManagerInstance.showError() - エラー表示（✅確認済み）
- * ✅ window.Tegaki.ConfigManagerInstance.getCanvasConfigV8() - v8設定取得（🔄実装予定）
- * ✅ window.Tegaki.EventBusInstance.emit() - イベント通知（✅確認済み）
+ * 📌 他ファイル呼び出しメソッド一覧（実装確認済み）:
+ * ✅ window.Tegaki.ErrorManagerInstance.showError() - エラー表示（確認済み）
+ * ✅ window.Tegaki.EventBusInstance.emit() - イベント通知（確認済み）
+ * ✅ new PIXI.Application() - v8 Application作成（PixiJS v8.12.0）
+ * ✅ new PIXI.Container() - Container作成（PixiJS v8.12.0）
+ * ✅ new PIXI.Graphics() - Graphics作成（PixiJS v8.12.0）
+ * ✅ await pixiApp.init() - v8非同期初期化（PixiJS v8.12.0）
  * 
- * 📐 v8初期化フロー:
- * 開始 → v8 Application作成 → WebGPU対応確認 → 非同期init() → レンダラータイプ確認 → 
- * Container階層作成(layer0,layer1,main) → v8設定適用 → DOM配置 → 初期化完了通知 → 終了
- * 依存関係: PixiJS v8.12.0(基盤)・WebGPU API(高速レンダリング)・Container(階層管理)
+ * 📐 v8初期化フロー（修正版）:
+ * 開始 → v8 Application受信・確認 → WebGPU対応確認 → DPR制限設定 → 
+ * Container階層作成(layer0,layer1,main) → v8描画Container作成・取得メソッド準備 → v8設定適用 → 
+ * リアルタイム描画有効化 → 初期化完了通知 → 終了
+ * 🚨修正済み依存関係: PixiJS v8.12.0(基盤)・WebGPU API(高速レンダリング)・Container(階層管理)・DPR制限(巨大キャンバス防止)
  * 
  * 🚨 CRITICAL_V8_DEPENDENCIES: v8必須依存関係（動作に必須）
- * - await app.init(options) !== undefined - v8非同期初期化必須
+ * - this.pixiApp !== null - v8 Application設定完了必須
  * - this.rendererType !== null - WebGPU/WebGL確定必須
  * - this.layers.get('main') !== null - main layer存在必須
  * - this.webgpuSupported !== null - WebGPU対応状況確定必須
+ * - this.v8DrawingContainer !== null - v8描画Container作成必須
  * 
- * 🔧 V8_INITIALIZATION_ORDER: v8初期化順序（厳守必要）
- * 1. new PIXI.Application() - v8 Application作成
- * 2. await PIXI.isWebGPUSupported() - WebGPU対応確認
- * 3. await app.init(options) - v8非同期初期化
- * 4. レンダラータイプ確認・記録
- * 5. Container階層作成・zIndex設定
- * 6. v8専用設定適用
- * 7. 初期化完了フラグ設定
+ * 🔧 V8_INITIALIZATION_ORDER: v8初期化順序（修正版・厳守必要）
+ * 1. v8 Application受信・null確認
+ * 2. WebGPU対応状況確認・記録
+ * 3. DPR制限設定（max 2.0）・巨大キャンバス防止
+ * 4. Container階層作成・zIndex設定
+ * 5. v8描画Container作成・取得メソッド準備
+ * 6. リアルタイム描画機能有効化
+ * 7. 初期化完了フラグ設定・通知
  * 
  * 🚫 V8_ABSOLUTE_PROHIBITIONS: v8移行時絶対禁止事項
  * - v7 APIとの混在使用（PIXI.Application(options)等）
  * - @pixi/layers・@pixi/graphics-smooth使用継続
  * - WebGPU非対応時のフォールバック複雑化
  * - Container階層無視・従来レイヤー方式継続
+ * - 🚨修正済み DPR未制限・巨大キャンバス生成許可
  * - v8機能を活用しない旧来処理継続
  */
 
@@ -58,7 +64,7 @@ if (!window.Tegaki) {
 
 /**
  * CanvasManager - PixiJS v8.12.0完全対応版
- * WebGPU自動選択・Container階層・リアルタイム描画対応
+ * WebGPU自動選択・Container階層・リアルタイム描画対応・DPR制限機能
  */
 class CanvasManager {
     constructor() {
@@ -77,8 +83,16 @@ class CanvasManager {
             webgpuEnabled: false,
             containerHierarchy: false,
             realtimeDrawing: false,
-            asyncInitialization: false
+            asyncInitialization: false,
+            dprLimited: false // 🚨 修正: DPR制限機能追加
         };
+        
+        // 🚨 修正: DPR制限設定
+        this.maxDPR = 2.0; // DPR制限値
+        this.effectiveDPR = 1.0; // 実際に使用するDPR値
+        
+        // v8描画Container（ToolManager連携用）
+        this.v8DrawingContainer = null;
         
         // 背景色設定（ふたばクリーム）
         this.backgroundColor = 0xf0e0d6; // #f0e0d6
@@ -87,77 +101,71 @@ class CanvasManager {
     }
     
     /**
-     * 🚀 v8 Application非同期初期化（WebGPU対応・Container階層）
+     * 🚨 修正版 - v8 Application設定・レイヤー自動作成（AppCore連携用）
      */
-    async initializeV8(options = {}) {
-        console.log('🚀 CanvasManager: v8初期化開始');
-        
-        try {
-            // Step 1: v8 Application作成
-            const app = new PIXI.Application();
-            
-            // Step 2: WebGPU対応確認
-            this.webgpuSupported = await PIXI.isWebGPUSupported();
-            console.log(`🔍 WebGPU Support: ${this.webgpuSupported}`);
-            
-            // Step 3: レンダラー設定（WebGPU優先）
-            const v8Options = {
-                width: options.width || 800,
-                height: options.height || 600,
-                backgroundColor: options.backgroundColor || this.backgroundColor,
-                antialias: options.antialias !== false,
-                resolution: options.resolution || window.devicePixelRatio || 1,
-                powerPreference: 'high-performance',
-                clearBeforeRender: true,
-                preserveDrawingBuffer: false,
-                ...options
-            };
-            
-            if (this.webgpuSupported) {
-                console.log('🚀 Using WebGPU renderer');
-                v8Options.preference = 'webgpu';
-                this.v8Features.webgpuEnabled = true;
-            } else {
-                console.log('📊 Fallback to WebGL renderer');
-                v8Options.preference = 'webgl';
-            }
-            
-            // Step 4: v8非同期初期化
-            await app.init(v8Options);
-            this.pixiApp = app;
-            this.rendererType = app.renderer.type;
-            this.v8Features.asyncInitialization = true;
-            
-            // Step 5: Container階層作成
-            this.createV8Layers();
-            this.v8Features.containerHierarchy = true;
-            
-            // Step 6: リアルタイム描画準備
-            this.enableRealtimeDrawing();
-            this.v8Features.realtimeDrawing = true;
-            
-            this.v8Ready = true;
-            this.initialized = true;
-            
-            // Step 7: v8初期化完了通知
-            this.notifyV8Initialization();
-            
-            console.log('✅ CanvasManager: v8初期化完了');
-            console.log('📊 v8初期化結果:', this.getV8DebugInfo());
-            
-            return app;
-            
-        } catch (error) {
-            console.error('💀 CanvasManager v8初期化失敗:', error);
-            this.handleV8InitializationError(error);
-            throw error;
+    async initializeV8Application(pixiApp) {
+        if (!pixiApp) {
+            throw new Error('v8 PixiJS Application is required');
         }
+        
+        if (!pixiApp.stage) {
+            throw new Error('v8 PixiJS Application has no stage');
+        }
+        
+        console.log('🚀 CanvasManager: v8 Application設定開始');
+        
+        this.pixiApp = pixiApp;
+        this.rendererType = pixiApp.renderer.type;
+        
+        // WebGPU状況確認
+        this.webgpuSupported = this.rendererType === 'webgpu';
+        if (this.webgpuSupported) {
+            this.v8Features.webgpuEnabled = true;
+            console.log('📊 WebGL renderer confirmed');
+        } else {
+            console.log('📊 WebGL renderer confirmed');
+        }
+        
+        // 🚨 修正: DPR制限設定
+        this.applyDPRLimit();
+        
+        // v8レイヤー自動作成
+        this.createV8DrawingContainer();
+        
+        // リアルタイム描画準備
+        this.enableRealtimeDrawing();
+        
+        this.v8Ready = true;
+        this.initialized = true;
+        
+        // v8設定完了通知
+        this.notifyV8Initialization();
+        
+        console.log('✅ CanvasManager: v8 Application設定完了');
     }
     
     /**
-     * 🚀 v8 Container階層レイヤー作成
+     * 🚨 修正: DPR制限適用（巨大キャンバス防止）
      */
-    createV8Layers() {
+    applyDPRLimit() {
+        const deviceDPR = window.devicePixelRatio || 1;
+        this.effectiveDPR = Math.min(deviceDPR, this.maxDPR);
+        
+        console.log(`🔧 DPR制限適用: ${deviceDPR} → ${this.effectiveDPR} (max: ${this.maxDPR})`);
+        
+        // レンダラーの解像度をDPR制限値に設定
+        if (this.pixiApp?.renderer) {
+            this.pixiApp.renderer.resolution = this.effectiveDPR;
+            console.log(`✅ レンダラー解像度設定: ${this.effectiveDPR}`);
+        }
+        
+        this.v8Features.dprLimited = true;
+    }
+    
+    /**
+     * 🚨 修正版 - v8描画Container作成（ToolManager連携強化）
+     */
+    createV8DrawingContainer() {
         console.log('🎨 v8 Container階層レイヤー作成開始');
         
         if (!this.pixiApp?.stage) {
@@ -188,10 +196,28 @@ class CanvasManager {
         this.layers.set('main', drawingLayer);
         console.log('✅ v8メインレイヤー (main) エイリアス設定完了 → layer1');
         
+        // 🚨 修正: v8描画Container設定（ToolManager連携用）
+        this.v8DrawingContainer = drawingLayer;
+        console.log('✅ v8描画Container設定完了（ToolManager連携用）');
+        
         // v8レイヤー検証
         this.validateV8Layers();
         
         console.log('🎨 v8 Container階層レイヤー作成完了');
+        
+        this.v8Features.containerHierarchy = true;
+    }
+    
+    /**
+     * 🚨 修正版 - v8描画Container取得（ToolManager連携用）
+     */
+    getV8DrawingContainer() {
+        if (!this.v8DrawingContainer) {
+            throw new Error('v8 Drawing Container not available - call initializeV8Application() first');
+        }
+        
+        console.log('📦 v8描画Container取得完了');
+        return this.v8DrawingContainer;
     }
     
     /**
@@ -265,6 +291,7 @@ class CanvasManager {
         }
         
         console.log('✅ v8リアルタイム描画機能有効化完了');
+        this.v8Features.realtimeDrawing = true;
     }
     
     /**
@@ -291,48 +318,12 @@ class CanvasManager {
             throw new Error('v8 main layer alias validation failed');
         }
         
+        // v8描画Container確認
+        if (!this.v8DrawingContainer) {
+            throw new Error('v8 Drawing Container not set');
+        }
+        
         console.log('✅ v8レイヤー検証完了');
-    }
-    
-    /**
-     * 🚀 v8 Application設定（レイヤー自動作成）
-     */
-    async setPixiAppV8(pixiApp) {
-        if (!pixiApp) {
-            throw new Error('v8 PixiJS Application is required');
-        }
-        
-        if (!pixiApp.stage) {
-            throw new Error('v8 PixiJS Application has no stage');
-        }
-        
-        console.log('🚀 CanvasManager: v8 Application設定開始');
-        
-        this.pixiApp = pixiApp;
-        this.rendererType = pixiApp.renderer.type;
-        
-        // WebGPU状況確認
-        this.webgpuSupported = this.rendererType === 'webgpu';
-        if (this.webgpuSupported) {
-            this.v8Features.webgpuEnabled = true;
-            console.log('🚀 WebGPU renderer confirmed');
-        } else {
-            console.log('📊 WebGL renderer confirmed');
-        }
-        
-        // v8レイヤー自動作成
-        this.createV8Layers();
-        
-        // リアルタイム描画準備
-        this.enableRealtimeDrawing();
-        
-        this.v8Ready = true;
-        this.initialized = true;
-        
-        // v8設定完了通知
-        this.notifyV8Initialization();
-        
-        console.log('✅ CanvasManager: v8 Application設定完了');
     }
     
     /**
@@ -344,7 +335,7 @@ class CanvasManager {
         }
         
         if (!this.v8Ready) {
-            throw new Error('CanvasManager v8 not ready - call initializeV8() first');
+            throw new Error('CanvasManager v8 not ready - call initializeV8Application() first');
         }
         
         // layerIdが指定されていない場合はアクティブレイヤーを使用
@@ -382,6 +373,43 @@ class CanvasManager {
     }
     
     /**
+     * 🚨 修正版 - キャンバスサイズ変更（DPR制限対応）
+     */
+    resizeV8Canvas(width, height) {
+        if (!this.pixiApp) {
+            throw new Error('v8 PixiJS Application not available - cannot resize');
+        }
+        
+        console.log(`🎨 v8キャンバスサイズ変更開始: ${width}x${height}`);
+        
+        // 🚨 修正: DPR制限適用（巨大キャンバス防止）
+        const deviceDPR = window.devicePixelRatio || 1;
+        const limitedDPR = Math.min(deviceDPR, this.maxDPR);
+        
+        console.log(`🔧 DPR制限: デバイス ${deviceDPR} → 使用 ${limitedDPR}`);
+        
+        // v8: レンダラーサイズ変更（論理サイズ・DPR制限適用）
+        this.pixiApp.renderer.resize(width, height);
+        
+        // レンダラー解像度をDPR制限値に設定
+        this.pixiApp.renderer.resolution = limitedDPR;
+        this.effectiveDPR = limitedDPR;
+        
+        // 背景レイヤーサイズ更新
+        const backgroundLayer = this.layers.get('layer0');
+        if (backgroundLayer && backgroundLayer.children.length > 0) {
+            const backgroundGraphics = backgroundLayer.children[0];
+            if (backgroundGraphics instanceof PIXI.Graphics) {
+                backgroundGraphics.clear();
+                backgroundGraphics.rect(0, 0, width, height);
+                backgroundGraphics.fill({ color: this.backgroundColor, alpha: 1.0 });
+            }
+        }
+        
+        console.log(`✅ v8キャンバスサイズ変更完了: ${width}x${height} (DPR: ${limitedDPR})`);
+    }
+    
+    /**
      * 🚀 v8初期化完了通知
      */
     notifyV8Initialization() {
@@ -390,7 +418,12 @@ class CanvasManager {
             window.Tegaki.EventBusInstance.emit('canvasManagerV8Ready', {
                 rendererType: this.rendererType,
                 webgpuSupported: this.webgpuSupported,
-                features: this.v8Features
+                features: this.v8Features,
+                dprInfo: {
+                    device: window.devicePixelRatio || 1,
+                    effective: this.effectiveDPR,
+                    limited: this.maxDPR
+                }
             });
         }
         
@@ -467,33 +500,6 @@ class CanvasManager {
     }
     
     /**
-     * キャンバスサイズ変更（v8対応）
-     */
-    async resizeCanvas(width, height) {
-        if (!this.pixiApp) {
-            throw new Error('v8 PixiJS Application not available - cannot resize');
-        }
-        
-        console.log(`🎨 v8キャンバスサイズ変更: ${width}x${height}`);
-        
-        // v8: レンダラーサイズ変更
-        this.pixiApp.renderer.resize(width, height);
-        
-        // 背景レイヤーサイズ更新
-        const backgroundLayer = this.layers.get('layer0');
-        if (backgroundLayer && backgroundLayer.children.length > 0) {
-            const backgroundGraphics = backgroundLayer.children[0];
-            if (backgroundGraphics instanceof PIXI.Graphics) {
-                backgroundGraphics.clear();
-                backgroundGraphics.rect(0, 0, width, height);
-                backgroundGraphics.fill({ color: this.backgroundColor, alpha: 1.0 });
-            }
-        }
-        
-        console.log(`✅ v8キャンバスサイズ変更完了: ${width}x${height}`);
-    }
-    
-    /**
      * アクティブレイヤークリア（v8対応・背景保護）
      */
     clear() {
@@ -507,15 +513,17 @@ class CanvasManager {
     }
     
     /**
-     * 🚀 v8対応状況確認
+     * 🚀 v8対応状況確認（修正版）
      */
     isV8Ready() {
         return this.v8Ready && 
                !!this.pixiApp && 
                !!this.rendererType &&
+               !!this.v8DrawingContainer &&
                this.layers.has('main') &&
                this.layers.has('layer0') &&
-               this.layers.has('layer1');
+               this.layers.has('layer1') &&
+               this.v8Features.dprLimited;
     }
     
     /**
@@ -530,7 +538,7 @@ class CanvasManager {
     }
     
     /**
-     * 🚀 v8専用デバッグ情報
+     * 🚨 修正版 - v8専用デバッグ情報（DPR情報追加）
      */
     getV8DebugInfo() {
         return {
@@ -544,11 +552,18 @@ class CanvasManager {
                 webgpuSupported: this.webgpuSupported,
                 webgpuActive: this.rendererType === 'webgpu'
             },
+            dprInfo: {
+                device: window.devicePixelRatio || 1,
+                maxLimit: this.maxDPR,
+                effective: this.effectiveDPR,
+                limited: this.v8Features.dprLimited
+            },
             layerInfo: {
                 totalLayers: this.layers.size,
                 layerNames: Array.from(this.layers.keys()),
                 activeLayer: this.activeLayerId,
-                mainLayerValid: this.layers.get('main') === this.layers.get('layer1')
+                mainLayerValid: this.layers.get('main') === this.layers.get('layer1'),
+                v8DrawingContainer: !!this.v8DrawingContainer
             },
             v8Features: this.v8Features,
             containerHierarchy: {
@@ -607,6 +622,50 @@ class CanvasManager {
         
         this.activeLayerId = layerId;
         console.log(`🎯 v8アクティブレイヤー設定: ${layerId}`);
+    }
+    
+    /**
+     * DPR制限設定変更
+     */
+    setMaxDPR(newMaxDPR) {
+        if (newMaxDPR <= 0 || newMaxDPR > 4) {
+            throw new Error('DPR limit must be between 0 and 4');
+        }
+        
+        const oldMaxDPR = this.maxDPR;
+        this.maxDPR = newMaxDPR;
+        
+        // 現在のDPRを再計算
+        const deviceDPR = window.devicePixelRatio || 1;
+        const newEffectiveDPR = Math.min(deviceDPR, this.maxDPR);
+        
+        console.log(`🔧 DPR制限変更: ${oldMaxDPR} → ${this.maxDPR}, 有効DPR: ${this.effectiveDPR} → ${newEffectiveDPR}`);
+        
+        // レンダラーがある場合は解像度を更新
+        if (this.pixiApp?.renderer) {
+            this.pixiApp.renderer.resolution = newEffectiveDPR;
+            this.effectiveDPR = newEffectiveDPR;
+            console.log(`✅ レンダラー解像度更新: ${newEffectiveDPR}`);
+        }
+    }
+    
+    /**
+     * DPR情報取得
+     */
+    getDPRInfo() {
+        return {
+            device: window.devicePixelRatio || 1,
+            maxLimit: this.maxDPR,
+            effective: this.effectiveDPR,
+            limited: this.v8Features.dprLimited,
+            canvasSize: this.pixiApp ? {
+                logical: { width: this.pixiApp.screen.width, height: this.pixiApp.screen.height },
+                physical: { 
+                    width: this.pixiApp.screen.width * this.effectiveDPR, 
+                    height: this.pixiApp.screen.height * this.effectiveDPR 
+                }
+            } : null
+        };
     }
 }
 
