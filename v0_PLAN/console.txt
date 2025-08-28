@@ -1,126 +1,152 @@
-error-manager.js:20 🚨 ErrorManager Simple 作成
-error-manager.js:132 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
-config-manager.js:71 🔧 ConfigManager v8対応版 作成
-config-manager.js:495 🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
-event-bus.js:20 🔄 EventBus Simple 作成
-event-bus.js:97 🔄 EventBus Simple Loaded - シンプルイベント通信
-coordinate-manager.js:581 🎯 CoordinateManager PixiJS v8対応版 Loaded
-coordinate-manager.js:582 📏 v8機能: 高精度座標変換・Container変形対応・WebGPU最適化・リアルタイム変換
-coordinate-manager.js:583 🚀 v8特徴: 高精度変換・Matrix活用・NavigationManager統合・60fps+対応
-coordinate-manager.js:584 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
-coordinate-manager.js:587 🎯 CoordinateManager PixiJS v8対応版 Loaded - 高精度座標変換・Container変形・WebGPU対応完了
-navigation-manager.js:718 🧭 NavigationManager PixiJS v8対応版 Loaded
-navigation-manager.js:719 📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
-navigation-manager.js:720 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
-navigation-manager.js:721 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
-navigation-manager.js:724 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
-record-manager.js:899 🔄 RecordManager PixiJS v8対応版 Loaded
-record-manager.js:900 📏 v8機能: Graphics記録・WebGPU最適化・高精度操作履歴・Container階層対応
-record-manager.js:901 🚀 v8特徴: 非破壊編集・v8 Graphics活用・高性能メモリ管理・WebGPU加速
-record-manager.js:902 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
-record-manager.js:905 🔄 RecordManager PixiJS v8対応版 Loaded - Graphics記録・WebGPU最適化・高精度履歴管理完了
-shortcut-manager.js:416 ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
-shortcut-manager.js:417 🔧 setupPhase15Shortcuts・enableメソッド追加済み
-shortcut-manager.js:418 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
-minimal-deps.js:22 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
-minimal-deps.js:168 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
-minimal-deps.js:169 ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
-minimal-deps.js:170 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
-canvas-manager.js:674 🚀 CanvasManager v8.12.0完全対応版 Loaded - WebGPU・Container階層・リアルタイム描画対応
-abstract-tool.js:803 🎯 AbstractTool Phase1.5 RecordManager連携修正版 Loaded - startOperation/endOperation方式対応・架空メソッド削除・Manager統一注入完成
-pen-tool.js:901 🚀 PenTool v8.12.0完全対応版 Loaded - リアルタイム描画・WebGPU対応・初回クリック問題解決・Container階層・フォールバック削除
-eraser-tool.js:727 🧹 EraserTool PixiJS v8対応版 Loaded
-eraser-tool.js:728 📏 v8機能: Graphics削除・Container階層対応・WebGPU最適化・高精度hit-test
-eraser-tool.js:729 🚀 v8特徴: RecordManager v8統合・高精度消去・WebGPU加速・Container階層活用
-eraser-tool.js:730 ✅ v8準備完了: initializeV8Features()でv8機能初期化後に利用可能
-tool-manager.js:1062 🚀 ToolManager v8.12.0完全対応版 Loaded - CanvasManager注入修正・v8 Tool連携・WebGPU対応・非同期初期化・Container階層・リアルタイム切り替え・Manager統一注入修正
-app-core.js:812 🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤・Manager統一登録修正版
-app-core.js:817 🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤・Manager統一登録修正版
-tegaki-application.js:806 🚀 TegakiApplication PixiJS v8対応版 Loaded - WebGPU対応・非同期初期化・Container階層・リアルタイム描画
-tegaki-application.js:811 🚀 TegakiApplication PixiJS v8対応版 Loaded - WebGPU対応・非同期初期化・Container階層・リアルタイム描画
-main.js:330 🚀 main.js v8統合エントリーポイント Loaded - グローバル関数・デバッグ機能・WebGPU対応
-main.js:338 ✅ PixiJS v8確認完了 - v8統合機能利用可能
-phase15-integration-test.js:593 🧪 Phase1.5統合テスト Loaded
-phase15-integration-test.js:594 📏 新Manager統合状況確認・機能テスト・レポート生成・Phase1.5完全対応
-phase15-integration-test.js:595 🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
-bootstrap.js:55 🚀 Bootstrap PixiJS v8対応版 - 読み込み確認強化・新Manager統合対応版
-bootstrap.js:351 ⏳ DOM Loading - DOMContentLoaded待機中...
-bootstrap.js:365 🎯 Bootstrap PixiJS v8対応版 registered - 読み込み確認強化・新Manager統合対応版
-bootstrap.js:213 🔧 Bootstrap PixiJS v8対応版 実行開始...
-bootstrap.js:61 ⏳ PixiJS v8読み込み確認開始...
-bootstrap.js:69 ✅ PixiJS発見 (試行 1/100)
-bootstrap.js:89 🚀 PixiJS v8確認完了: 8.12.0
-bootstrap.js:107 🔍 PixiJS v8環境確認開始...
-index.html:571 🚀 PixiJS v8.12.0 loaded from node_modules
-index.html:573 ✅ PixiJS v8.12.0 confirmed
-bootstrap.js:114 🔍 WebGPU Support: true
-bootstrap.js:129 ✅ PIXI.Application: 利用可能
-bootstrap.js:129 ✅ PIXI.Container: 利用可能
-bootstrap.js:129 ✅ PIXI.Graphics: 利用可能
-bootstrap.js:140 ✅ PixiJS v8環境確認完了
-bootstrap.js:220 📋 PixiJS v8環境情報: Object
-bootstrap.js:159 🔍 Phase1.5 依存関係確認開始...
-bootstrap.js:188 ✅ TegakiApplication: 利用可能
-bootstrap.js:188 ✅ AppCore: 利用可能
-bootstrap.js:188 ✅ CanvasManager: 利用可能
-bootstrap.js:188 ✅ ToolManager: 利用可能
-bootstrap.js:188 ✅ ErrorManager: 利用可能
-bootstrap.js:188 ✅ ConfigManager: 利用可能
-bootstrap.js:188 ✅ EventBus: 利用可能
-bootstrap.js:188 ✅ CoordinateManager: 利用可能
-bootstrap.js:188 ✅ NavigationManager: 利用可能
-bootstrap.js:188 ✅ RecordManager: 利用可能
-bootstrap.js:188 ✅ ShortcutManager: 利用可能
-bootstrap.js:188 ✅ PenTool: 利用可能
-bootstrap.js:188 ✅ EraserTool: 利用可能
-bootstrap.js:195 📊 依存関係確認結果: 13/13 クラス利用可能
-bootstrap.js:240 🎨 TegakiApplication v8対応版 インスタンス化開始...
-tegaki-application.js:71 🚀 TegakiApplication v8対応版 作成・自動初期化開始
-tegaki-application.js:124 🚀 TegakiApplication v8システム初期化開始
-tegaki-application.js:170 🚀 v8 AppCore作成開始
-app-core.js:71 🚀 AppCore v8統合基盤システム 作成開始
-app-core.js:105 🚀 AppCore v8統合基盤システム 作成完了
-tegaki-application.js:178 ✅ v8 AppCore作成完了
-bootstrap.js:253 ✅ Phase1.5 完全版 - 全Manager統合済み・PixiJS v8対応
-bootstrap.js:260 ✅ Bootstrap完了 - Tegaki v8アプリケーション開始完了
-bootstrap.js:261 🚀 使用中レンダラー: WebGPU対応・PixiJS 8.12.0
-tegaki-application.js:185 🚀 v8 Application作成開始
-app-core.js:169 🚀 AppCore - v8 Application作成開始
-app-core.js:124 ⏳ PixiJS読み込み確認開始...
-app-core.js:132 ✅ PixiJS発見 (試行 1/50)
-app-core.js:152 🚀 PixiJS v8確認完了: 8.12.0
-app-core.js:183 🔍 WebGPU Support: true
-app-core.js:203 🚀 Using WebGPU renderer
-pixi.min.js:2121 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
+ 🚨 ErrorManager Simple 作成
+ 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
+ 🔧 ConfigManager v8対応版 作成
+ 🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
+ 🔄 EventBus Simple 作成
+ 🔄 EventBus Simple Loaded - シンプルイベント通信
+ 🎯 CoordinateManager PixiJS v8対応版 Loaded
+ 📏 v8機能: 高精度座標変換・Container変形対応・WebGPU最適化・リアルタイム変換
+ 🚀 v8特徴: 高精度変換・Matrix活用・NavigationManager統合・60fps+対応
+ ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
+ 🎯 CoordinateManager PixiJS v8対応版 Loaded - 高精度座標変換・Container変形・WebGPU対応完了
+ 🧭 NavigationManager PixiJS v8対応版 Loaded
+ 📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
+ 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
+ ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
+ 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
+ 🔄 RecordManager PixiJS v8対応版 Loaded
+ 📏 v8機能: Graphics記録・WebGPU最適化・高精度操作履歴・Container階層対応
+ 🚀 v8特徴: 非破壊編集・v8 Graphics活用・高性能メモリ管理・WebGPU加速
+ ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
+ 🔄 RecordManager PixiJS v8対応版 Loaded - Graphics記録・WebGPU最適化・高精度履歴管理完了
+ ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
+ 🔧 setupPhase15Shortcuts・enableメソッド追加済み
+ 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
+ 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
+ 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
+ ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
+ 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
+ 🚀 CanvasManager v8.12.0完全対応版 Loaded - WebGPU・Container階層・リアルタイム描画対応
+abstract-tool.js:258 Uncaught SyntaxError: Unexpected token '*'
+pen-tool.js:64 Uncaught TypeError: Class extends value undefined is not a constructor or null
+(anonymous) @ pen-tool.js:64
+eraser-tool.js:39 Uncaught TypeError: Class extends value undefined is not a constructor or null
+(anonymous) @ eraser-tool.js:39
+ 🚀 ToolManager v8.12.0完全対応版 Loaded - Manager注入エラー修正版
+ 📏 修正内容: Map→Object確実変換・デバッグ強化・型安全性向上
+ 🚀 特徴: v8 Tool連携・WebGPU対応・非同期初期化・Container階層・リアルタイム切り替え・Manager統一注入修正
+ 🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤・Manager統一登録修正版
+ 🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤・Manager統一登録修正版
+ 🚀 TegakiApplication PixiJS v8対応版 Loaded - WebGPU対応・非同期初期化・Container階層・リアルタイム描画
+ 🚀 TegakiApplication PixiJS v8対応版 Loaded - WebGPU対応・非同期初期化・Container階層・リアルタイム描画
+ 🚀 main.js v8統合エントリーポイント Loaded - グローバル関数・デバッグ機能・WebGPU対応
+ ✅ PixiJS v8確認完了 - v8統合機能利用可能
+ 🧪 Phase1.5統合テスト Loaded
+ 📏 新Manager統合状況確認・機能テスト・レポート生成・Phase1.5完全対応
+ 🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
+ 🚀 Bootstrap PixiJS v8対応版 - 読み込み確認強化・新Manager統合対応版
+ ⏳ DOM Loading - DOMContentLoaded待機中...
+ 🎯 Bootstrap PixiJS v8対応版 registered - 読み込み確認強化・新Manager統合対応版
+ 🔧 Bootstrap PixiJS v8対応版 実行開始...
+ ⏳ PixiJS v8読み込み確認開始...
+ ✅ PixiJS発見 (試行 1/100)
+ 🚀 PixiJS v8確認完了: 8.12.0
+ 🔍 PixiJS v8環境確認開始...
+ 🚀 PixiJS v8.12.0 loaded from node_modules
+ ✅ PixiJS v8.12.0 confirmed
+ 🔍 WebGPU Support: true
+ ✅ PIXI.Application: 利用可能
+ ✅ PIXI.Container: 利用可能
+ ✅ PIXI.Graphics: 利用可能
+ ✅ PixiJS v8環境確認完了
+ 📋 PixiJS v8環境情報: {version: '8.12.0', webgpuSupported: true, webglSupported: true}
+ 🔍 Phase1.5 依存関係確認開始...
+ ✅ TegakiApplication: 利用可能
+ ✅ AppCore: 利用可能
+ ✅ CanvasManager: 利用可能
+ ✅ ToolManager: 利用可能
+ ✅ ErrorManager: 利用可能
+ ✅ ConfigManager: 利用可能
+ ✅ EventBus: 利用可能
+ ✅ CoordinateManager: 利用可能
+ ✅ NavigationManager: 利用可能
+ ✅ RecordManager: 利用可能
+ ✅ ShortcutManager: 利用可能
+bootstrap.js:191 ⚠️ PenTool: 未定義または無効
+validatePhase15Dependencies @ bootstrap.js:191
+executeBootstrap @ bootstrap.js:237
+bootstrap.js:191 ⚠️ EraserTool: 未定義または無効
+validatePhase15Dependencies @ bootstrap.js:191
+executeBootstrap @ bootstrap.js:237
+ 📊 依存関係確認結果: 11/13 クラス利用可能
+bootstrap.js:198 ⚠️ 未完成のManagerクラス: PenTool, EraserTool
+validatePhase15Dependencies @ bootstrap.js:198
+executeBootstrap @ bootstrap.js:237
+bootstrap.js:199 🔧 Phase1.5実装途中の場合は正常です
+validatePhase15Dependencies @ bootstrap.js:199
+executeBootstrap @ bootstrap.js:237
+ 🎨 TegakiApplication v8対応版 インスタンス化開始...
+ 🚀 TegakiApplication v8対応版 作成・自動初期化開始
+ 🚀 TegakiApplication v8システム初期化開始
+ 🚀 v8 AppCore作成開始
+ 🚀 AppCore v8統合基盤システム 作成開始
+ 🚀 AppCore v8統合基盤システム 作成完了
+ ✅ v8 AppCore作成完了
+ 🔧 Phase1.5 開発版 - 一部Manager実装中・PixiJS v8対応
+ 📋 実装済み: TegakiApplication, AppCore, CanvasManager, ToolManager, ErrorManager, ConfigManager, EventBus, CoordinateManager, NavigationManager, RecordManager, ShortcutManager
+ ⚠️ 未実装: PenTool, EraserTool
+ ✅ Bootstrap完了 - Tegaki v8アプリケーション開始完了
+ 🚀 使用中レンダラー: WebGPU対応・PixiJS 8.12.0
+ 🚀 v8 Application作成開始
+ 🚀 AppCore - v8 Application作成開始
+ ⏳ PixiJS読み込み確認開始...
+ ✅ PixiJS発見 (試行 1/50)
+ 🚀 PixiJS v8確認完了: 8.12.0
+ 🔍 WebGPU Support: true
+ 🚀 Using WebGPU renderer
+app-core.js:212 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
 _createDeviceAndAdaptor @ pixi.min.js:2121
-app-core.js:229 ✅ AppCore - v8 Application作成完了
-app-core.js:230 📊 v8レンダラー: 2
-tegaki-application.js:199 ✅ v8 Application作成完了
-tegaki-application.js:200 📊 v8レンダラー: 2 (WebGPU: true)
-tegaki-application.js:212 🔧 v8 Manager群統合初期化開始
-app-core.js:254 🔧 AppCore - v8 Manager群初期化開始（統一登録修正版）
-app-core.js:263 1️⃣ CanvasManager v8初期化開始...
-canvas-manager.js:71 🚀 CanvasManager v8.12.0対応版作成開始
-canvas-manager.js:100 🚀 CanvasManager v8.12.0対応版作成完了
-app-core.js:270 ✅ CanvasManager インスタンス作成完了
-canvas-manager.js:115 🚀 CanvasManager: v8 Application設定開始
-canvas-manager.js:126 📊 WebGL renderer confirmed
-canvas-manager.js:154 🔧 DPR制限適用: 2 → 2 (max: 2)
-canvas-manager.js:159 ✅ レンダラー解像度設定: 2
-canvas-manager.js:169 🎨 v8 Container階層レイヤー作成開始
-canvas-manager.js:227 🎨 v8レイヤー作成: layer0
-canvas-manager.js:255 ✅ v8レイヤー作成完了: layer0 (zIndex: 0)
-canvas-manager.js:185 ✅ v8背景レイヤー (layer0) 作成完了
-canvas-manager.js:227 🎨 v8レイヤー作成: layer1
-canvas-manager.js:255 ✅ v8レイヤー作成完了: layer1 (zIndex: 1)
-canvas-manager.js:193 ✅ v8描画レイヤー (layer1) 作成完了
-canvas-manager.js:197 ✅ v8メインレイヤー (main) エイリアス設定完了 → layer1
-canvas-manager.js:201 ✅ v8描画Container設定完了（ToolManager連携用）
-canvas-manager.js:301 🔍 v8レイヤー検証開始
-canvas-manager.js:326 ✅ v8レイヤー検証完了
-canvas-manager.js:206 🎨 v8 Container階層レイヤー作成完了
-canvas-manager.js:276 ⚡ v8リアルタイム描画機能有効化
-canvas-manager.js:293 ✅ v8リアルタイム描画機能有効化完了
+init @ pixi.min.js:2121
+init @ pixi.min.js:585
+await in init
+Sm @ pixi.min.js:585
+await in Sm
+init @ pixi.min.js:585
+createCanvasV8 @ app-core.js:212
+await in createCanvasV8
+createCanvasV8 @ tegaki-application.js:192
+initialize @ tegaki-application.js:132
+await in initialize
+TegakiApplication @ tegaki-application.js:99
+executeBootstrap @ bootstrap.js:241
+ ✅ AppCore - v8 Application作成完了
+ 📊 v8レンダラー: 2
+ ✅ v8 Application作成完了
+ 📊 v8レンダラー: 2 (WebGPU: true)
+ 🔧 v8 Manager群統合初期化開始
+ 🔧 AppCore - v8 Manager群初期化開始（統一登録修正版）
+ 1️⃣ CanvasManager v8初期化開始...
+ 🚀 CanvasManager v8.12.0対応版作成開始
+ 🚀 CanvasManager v8.12.0対応版作成完了
+ ✅ CanvasManager インスタンス作成完了
+ 🚀 CanvasManager: v8 Application設定開始
+ 📊 WebGL renderer confirmed
+ 🔧 DPR制限適用: 2 → 2 (max: 2)
+ ✅ レンダラー解像度設定: 2
+ 🎨 v8 Container階層レイヤー作成開始
+ 🎨 v8レイヤー作成: layer0
+ ✅ v8レイヤー作成完了: layer0 (zIndex: 0)
+ ✅ v8背景レイヤー (layer0) 作成完了
+ 🎨 v8レイヤー作成: layer1
+ ✅ v8レイヤー作成完了: layer1 (zIndex: 1)
+ ✅ v8描画レイヤー (layer1) 作成完了
+ ✅ v8メインレイヤー (main) エイリアス設定完了 → layer1
+ ✅ v8描画Container設定完了（ToolManager連携用）
+ 🔍 v8レイヤー検証開始
+ ✅ v8レイヤー検証完了
+ 🎨 v8 Container階層レイヤー作成完了
+ ⚡ v8リアルタイム描画機能有効化
+ ✅ v8リアルタイム描画機能有効化完了
 canvas-manager.js:435 📡 v8初期化完了通知送信
 canvas-manager.js:144 ✅ CanvasManager: v8 Application設定完了
 app-core.js:275 ✅ CanvasManager v8 Application設定完了
@@ -145,94 +171,62 @@ navigation-manager.js:44 🧭 NavigationManager v8対応版 初期化開始
 navigation-manager.js:77 ✅ NavigationManager v8対応版 初期化完了
 app-core.js:361 ✅ NavigationManager登録完了
 app-core.js:368 ✅ Step 2: Manager統一登録完了
-app-core.js:369 📋 登録Manager一覧: Array(8)
+app-core.js:369 📋 登録Manager一覧: (8) ['canvas', 'coordinate', 'record', 'config', 'error', 'eventbus', 'shortcut', 'navigation']
 app-core.js:372 3️⃣ ToolManager v8初期化開始...
-tool-manager.js:81 🚀 ToolManager v8.12.0対応版作成開始 - v8 Tool連携・WebGPU対応
-canvas-manager.js:219 📦 v8描画Container取得完了
-tool-manager.js:110 📦 v8描画Container取得完了
-tool-manager.js:225 🔍 v8依存関係確認開始
-tool-manager.js:249 ✅ v8依存関係確認完了
-tool-manager.js:250 🔧 WebGPU対応状況: 非対応
-tool-manager.js:155 ✅ ToolManager v8.12.0対応版作成完了 - v8 Tool初期化待機中
-canvas-manager.js:219 📦 v8描画Container取得完了
-tool-manager.js:156 🔧 CanvasManager注入状況: Object
-app-core.js:380 📦 v8描画Container取得完了
-app-core.js:381 🔧 CanvasManager注入状況: object
-app-core.js:382 ✅ ToolManager インスタンス作成完了（CanvasManager注入済み）
-tool-manager.js:168 🔧 ToolManager - Manager統一注入開始
-tool-manager.js:178 ✅ ToolManager: Manager統一注入完了（Map形式）
-tool-manager.js:179 📋 利用可能Manager: Array(9)
-tool-manager.js:213 ✅ ToolManager: 必須Manager確認完了: Object
-app-core.js:390 ✅ ToolManager: Manager統一登録情報設定完了
-app-core.js:404 🚀 v8 Tool初期化開始
-tool-manager.js:257 🚀 v8 Tool初期化開始
-tool-manager.js:307 ✅ Manager統一注入準備完了: Object
-tool-manager.js:316 1️⃣ v8 PenTool作成開始...
-abstract-tool.js:67 🎯 AbstractTool 作成開始: pen
-abstract-tool.js:114 ✅ pen AbstractTool 作成完了
-pen-tool.js:67 🖊️ PenTool v8.12.0対応版作成開始 - リアルタイム描画・WebGPU対応
-pen-tool.js:118 🚀 PenTool: v8 CanvasManager設定開始
-pen-tool.js:133 🔧 PenTool: v8機能初期化開始
-pen-tool.js:141 📊 PenTool: WebGL互換モード
-pen-tool.js:155 ⚡ v8リアルタイム描画準備開始
-pen-tool.js:162 ✅ v8リアルタイム描画準備完了
-pen-tool.js:148 ✅ PenTool: v8機能初期化完了
-pen-tool.js:99 ✅ PenTool v8.12.0対応版作成完了: Object
-tool-manager.js:320 ✅ PenTool作成完了 - CanvasManager注入済み
-abstract-tool.js:127 🔧 pen Manager統一注入開始...
-abstract-tool.js:141 💀 必須Manager不足: Error: pen: Missing required managers: canvas, coordinate, record
-    at PenTool.setManagers (abstract-tool.js:140:27)
-    at ToolManager.initializeV8Tools (tool-manager.js:324:25)
-    at AppCore.initializeV8Managers (app-core.js:405:44)
-    at async TegakiApplication.initializeV8Managers (tegaki-application.js:216:17)
-    at async TegakiApplication.initialize (tegaki-application.js:136:17)
-setManagers @ abstract-tool.js:141
-tool-manager.js:419 💀 v8 Tool初期化エラー: Error: pen: Missing required managers: canvas, coordinate, record
-    at PenTool.setManagers (abstract-tool.js:140:27)
-    at ToolManager.initializeV8Tools (tool-manager.js:324:25)
-    at AppCore.initializeV8Managers (app-core.js:405:44)
-    at async TegakiApplication.initializeV8Managers (tegaki-application.js:216:17)
-    at async TegakiApplication.initialize (tegaki-application.js:136:17)
-initializeV8Tools @ tool-manager.js:419
-tool-manager.js:621 💀 v8 Tool作成エラー: Error: pen: Missing required managers: canvas, coordinate, record
-    at PenTool.setManagers (abstract-tool.js:140:27)
-    at ToolManager.initializeV8Tools (tool-manager.js:324:25)
-    at AppCore.initializeV8Managers (app-core.js:405:44)
-    at async TegakiApplication.initializeV8Managers (tegaki-application.js:216:17)
-    at async TegakiApplication.initialize (tegaki-application.js:136:17)
-handleV8ToolCreationError @ tool-manager.js:621
-error-manager.js:38 ❌ V8 TOOL作成失敗: pen: Missing required managers: canvas, coordinate, record 
-pen-tool.js:126 ✅ PenTool: v8 CanvasManager設定完了
-app-core.js:427 💀 AppCore - v8 Manager群初期化エラー: Error: pen: Missing required managers: canvas, coordinate, record
-    at PenTool.setManagers (abstract-tool.js:140:27)
-    at ToolManager.initializeV8Tools (tool-manager.js:324:25)
-    at AppCore.initializeV8Managers (app-core.js:405:44)
+tool-manager.js:45 🚀 ToolManager v8.12.0対応版作成開始 - Manager注入エラー修正版
+app-core.js:427 💀 AppCore - v8 Manager群初期化エラー: Error: ToolManager: 有効なCanvasManagerが必要です
+    at new ToolManager (tool-manager.js:49:19)
+    at AppCore.initializeV8Managers (app-core.js:379:36)
     at async TegakiApplication.initializeV8Managers (tegaki-application.js:216:17)
     at async TegakiApplication.initialize (tegaki-application.js:136:17)
 initializeV8Managers @ app-core.js:427
-tegaki-application.js:226 💀 v8 Manager群統合初期化エラー: Error: pen: Missing required managers: canvas, coordinate, record
-    at PenTool.setManagers (abstract-tool.js:140:27)
-    at ToolManager.initializeV8Tools (tool-manager.js:324:25)
-    at AppCore.initializeV8Managers (app-core.js:405:44)
+await in initializeV8Managers
+initializeV8Managers @ tegaki-application.js:216
+initialize @ tegaki-application.js:136
+await in initialize
+TegakiApplication @ tegaki-application.js:99
+executeBootstrap @ bootstrap.js:241
+tegaki-application.js:226 💀 v8 Manager群統合初期化エラー: Error: ToolManager: 有効なCanvasManagerが必要です
+    at new ToolManager (tool-manager.js:49:19)
+    at AppCore.initializeV8Managers (app-core.js:379:36)
     at async TegakiApplication.initializeV8Managers (tegaki-application.js:216:17)
     at async TegakiApplication.initialize (tegaki-application.js:136:17)
 initializeV8Managers @ tegaki-application.js:226
-tegaki-application.js:161 💀 TegakiApplication v8システム初期化エラー: Error: pen: Missing required managers: canvas, coordinate, record
-    at PenTool.setManagers (abstract-tool.js:140:27)
-    at ToolManager.initializeV8Tools (tool-manager.js:324:25)
-    at AppCore.initializeV8Managers (app-core.js:405:44)
+await in initializeV8Managers
+initialize @ tegaki-application.js:136
+await in initialize
+TegakiApplication @ tegaki-application.js:99
+executeBootstrap @ bootstrap.js:241
+tegaki-application.js:161 💀 TegakiApplication v8システム初期化エラー: Error: ToolManager: 有効なCanvasManagerが必要です
+    at new ToolManager (tool-manager.js:49:19)
+    at AppCore.initializeV8Managers (app-core.js:379:36)
     at async TegakiApplication.initializeV8Managers (tegaki-application.js:216:17)
     at async TegakiApplication.initialize (tegaki-application.js:136:17)
 initialize @ tegaki-application.js:161
-tegaki-application.js:100 💀 TegakiApplication v8初期化失敗: Error: pen: Missing required managers: canvas, coordinate, record
-    at PenTool.setManagers (abstract-tool.js:140:27)
-    at ToolManager.initializeV8Tools (tool-manager.js:324:25)
-    at AppCore.initializeV8Managers (app-core.js:405:44)
+await in initialize
+TegakiApplication @ tegaki-application.js:99
+executeBootstrap @ bootstrap.js:241
+tegaki-application.js:100 💀 TegakiApplication v8初期化失敗: Error: ToolManager: 有効なCanvasManagerが必要です
+    at new ToolManager (tool-manager.js:49:19)
+    at AppCore.initializeV8Managers (app-core.js:379:36)
     at async TegakiApplication.initializeV8Managers (tegaki-application.js:216:17)
     at async TegakiApplication.initialize (tegaki-application.js:136:17)
 (anonymous) @ tegaki-application.js:100
-error-manager.js:38 ❌ TEGAKIAPPLICATION V8初期化失敗: PEN: MISSING REQUIRED MANAGERS: CANVAS, COORDINATE, RECORD: [object Object] 
-abstract-tool.js:140 Uncaught (in promise) Error: pen: Missing required managers: canvas, coordinate, record
+Promise.catch
+TegakiApplication @ tegaki-application.js:99
+executeBootstrap @ bootstrap.js:241
+error-manager.js:38 ❌ TEGAKIAPPLICATION V8初期化失敗: TOOLMANAGER: 有効なCANVASMANAGERが必要です: [object Object] 
+tool-manager.js:49 Uncaught (in promise) Error: ToolManager: 有効なCanvasManagerが必要です
+ToolManager @ tool-manager.js:49
+initializeV8Managers @ app-core.js:379
+await in initializeV8Managers
+initializeV8Managers @ tegaki-application.js:216
+initialize @ tegaki-application.js:136
+await in initialize
+TegakiApplication @ tegaki-application.js:99
+executeBootstrap @ bootstrap.js:241
 index.html:595 ⚠️ TegakiApplication v8.12.0初期化未完了
 (anonymous) @ index.html:595
+setTimeout
+(anonymous) @ index.html:582
 main.js:346 ⚠️ TegakiApplication v8初期化未完了

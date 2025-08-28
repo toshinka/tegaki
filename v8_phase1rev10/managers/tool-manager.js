@@ -1,1062 +1,354 @@
 /**
- * 🔧 ToolManager v8 - PixiJS v8.12.0完全対応版（CanvasManager注入修正・v8 Tool連携・WebGPU対応・Manager統一注入修正）
- * 📋 RESPONSIBILITY: v8 Tool管理・v8切り替え・v8イベント委譲・v8 Manager統一注入処理・WebGPU対応Tool作成
- * 🚫 PROHIBITION: 描画処理・Canvas管理・複雑な初期化・設定管理・エラー隠蔽・フォールバック・v7 API混在
- * ✅ PERMISSION: v8 Tool作成・選択・イベント転送・状態管理・v8 Manager統一注入・非同期初期化対応・依存関係確認
+ * 🚀 ToolManager v8.12.0完全対応版 - Manager注入エラー修正版
  * 
- * 📏 DESIGN_PRINCIPLE: v8 Tool専任管理・責務分離・v8 Manager統一注入・エラー隠蔽禁止・WebGPU対応Tool作成・依存関係厳守
- * 🔄 INTEGRATION: v8 PenTool・v8 EraserTool管理・v8 Manager統一注入・EventBus通信・ErrorManager報告
- * 🚀 V8_MIGRATION: v8 Tool作成・setCanvasManagerV8連携・WebGPU対応状況通知・非同期初期化対応・依存関係修正
- * 🔧 CRITICAL_FIX: new PenTool(canvasManager)でCanvasManager注入・AbstractTool必須引数対応・Manager統一注入修正
+ * 【提供するメソッド一覧】
+ * - constructor(canvasManager) - v8対応ToolManager初期化
+ * - setManagers(managers) - Manager統一注入（Map→Object確実変換）
+ * - initializeV8Tools() - v8 Tool群初期化
+ * - switchTool(toolName) - アクティブTool切り替え
+ * - getActiveTool() - 現在のアクティブTool取得
+ * - getDrawContainer() - v8描画Container取得
+ * - handleV8ToolCreationError(toolName, error) - v8 Toolエラー処理
  * 
- * 📌 提供メソッド一覧（v8対応・実装確認済み）:
- * ✅ constructor(canvasManager) - v8 CanvasManager必須注入（修正版）
- * ✅ setManagers(managers) - 🚨修正版 Manager統一注入（AppCoreから受け取り）
- * ✅ async initializeV8Tools() - v8 Tool初期化・CanvasManager注入修正・非同期対応・Manager統一注入修正
- * ✅ async selectV8Tool(toolName) - v8 Tool選択・即座反映・WebGPU状況通知
- * ✅ handleV8PointerEvents(x, y, event) - v8高精度イベント委譲・リアルタイム対応
- * ✅ isV8Ready() - v8対応状況確認・WebGPU対応Tool確認
- * ✅ getV8DebugInfo() - v8専用デバッグ情報・WebGPU状況・Tool v8状態
+ * 【他ファイルから呼び出すメソッド一覧】
+ * - CanvasManager.getDrawContainer() - v8描画Container取得
+ * - AbstractTool.setManagers() - Tool Manager注入
+ * - PenTool.constructor() - PenTool初期化
+ * - EraserTool.constructor() - EraserTool初期化
+ * - ErrorManager.logError() - エラー記録
  * 
- * 📌 他ファイル呼び出しメソッド一覧（実装確認済み）:
- * ✅ new window.Tegaki.PenTool(canvasManager) - 🔧修正 CanvasManager注入（pen-tool.js v8版確認済み）
- * ✅ new window.Tegaki.EraserTool(canvasManager) - 🔧修正 CanvasManager注入（eraser-tool.js実装予定）
- * ✅ tool.setManagers(managers) - Manager統一注入（AbstractTool継承確認済み）
- * ✅ tool.activate() / tool.deactivate() - v8 Tool有効無効化（AbstractTool確認済み）
- * ✅ tool.onPointerDown/Move/Up() - v8ポインターイベント処理（v8 PenTool確認済み）
- * ✅ window.Tegaki.ErrorManagerInstance.showError() - エラー表示（error-manager.js確認済み）
- * ✅ window.Tegaki.EventBusInstance.emit() - イベント通知（event-bus.js確認済み）
- * ✅ canvasManager.isV8Ready() - v8準備確認（canvas-manager.js確認済み）
- * ✅ canvasManager.getV8DrawingContainer() - v8描画Container取得（canvas-manager.js確認済み）
+ * 【Manager登録キー】
+ * - canvas - CanvasManager
+ * - coordinate - CoordinateManager  
+ * - record - RecordManager
+ * - config - ConfigManager
+ * - error - ErrorManager
+ * - event - EventBus
+ * - shortcut - ShortcutManager
+ * - navigation - NavigationManager
  * 
- * 📐 v8 Tool管理フロー（修正版）:
- * 開始 → CanvasManager注入確認・v8準備確認 → Manager統一注入受け取り(AppCoreから) → 
- * v8 Tool作成(PenTool(canvasManager),EraserTool(canvasManager)) → ✅修正済み Manager統一注入・setManagers()呼び出し → 
- * WebGPU対応確認 → selectV8Tool(pen) → UI更新 → v8イベント委譲 → 状態管理 → 終了
- * 🚨修正済み依存関係: v8 CanvasManager(先行初期化) → AppCore Manager統一登録 → v8 ToolManager(後続初期化・Manager受け取り) → v8 Tool群(Manager統一注入)
+ * 【ツール切り替えフロー】
+ * 1. switchTool(toolName) - ツール名指定
+ * 2. 現在ツールの非アクティブ化
+ * 3. 新ツールのアクティブ化
+ * 4. UI更新・イベント通知
  * 
- * 🚨 CRITICAL_V8_DEPENDENCIES: v8必須依存関係（修正版）
- * - canvasManager !== null - v8 CanvasManagerコンストラクタ注入必須
- * - canvasManager.isV8Ready() === true - v8 CanvasManager準備完了必須
- * - setManagers(managers) - 🚨修正 AppCoreからManager統一注入受け取り必須
- * - managers.get("coordinate") !== null - CoordinateManager必須
- * - managers.get("record") !== null - RecordManager必須
- * - new PenTool(canvasManager) - 🔧修正 AbstractTool必須引数対応
- * - tool.setManagers(managers) - Manager統一注入対応
- * - this.webgpuSupported !== null - WebGPU対応状況確定必須
- * 
- * 🔧 V8_INITIALIZATION_ORDER: v8初期化順序（修正版・厳守必要）
- * 1. 🚨修正 CanvasManager注入・null確認・v8準備確認
- * 2. ToolManager作成・v8依存関係確認
- * 3. 🚨修正 AppCoreからManager統一注入受け取り・setManagers()呼び出し
- * 4. 🔧修正 v8 Tool作成（new PenTool(canvasManager)・new EraserTool(canvasManager)）
- * 5. 🔧修正 各ToolにManager統一注入・setManagers()呼び出し
- * 6. WebGPU対応状況確認・Tool最適化
- * 7. v8 Tool有効化・非同期対応
- * 8. selectV8Tool('pen')でv8デフォルトツール選択
- * 9. v8描画・イベント処理可能
- * 
- * 🚫 V8_ABSOLUTE_PROHIBITIONS: v8移行時絶対禁止事項
- * - v7 Tool作成方式継続・v8機能無視
- * - new PenTool()引数なし呼び出し（AbstractTool必須引数無視）
- * - window.Tegaki.CoordinateManagerInstance参照（存在しないInstance参照）
- * - window.Tegaki.RecordManagerInstance参照（存在しないInstance参照）
- * - setManagers()統一注入無視・個別Manager設定継続
- * - WebGPU対応状況無視・従来方式継続
- * - フォールバック・フェイルセーフ複雑化
- * - v8非同期初期化無視・同期的処理継続
+ * 【Manager注入フロー】
+ * 1. AppCore: Map形式でManager群作成
+ * 2. ToolManager.setManagers(): Map受信→Object確実変換
+ * 3. Tool初期化時: プレーンObject形式でManager注入
+ * 4. AbstractTool: Object前提でManager存在確認
  */
 
-// 多重定義防止
-if (!window.Tegaki) {
-    window.Tegaki = {};
-}
-
-/**
- * ToolManager v8 - PixiJS v8.12.0完全対応版
- * CanvasManager注入修正・v8 Tool連携・WebGPU対応・非同期初期化・依存関係修正・Manager統一注入修正
- */
 class ToolManager {
     constructor(canvasManager) {
-        console.log('🚀 ToolManager v8.12.0対応版作成開始 - v8 Tool連携・WebGPU対応');
+        console.log('🚀 ToolManager v8.12.0対応版作成開始 - Manager注入エラー修正版');
         
-        // 🚨 Phase 1 修正: v8必須引数確認（フォールバック禁止）
-        if (!canvasManager) {
-            const errorMessage = 'v8 CanvasManager is required for ToolManager';
-            console.error('💀', errorMessage);
-            throw new Error(errorMessage);
+        // v8描画Container取得・検証
+        if (!canvasManager || typeof canvasManager.getDrawContainer !== 'function') {
+            throw new Error('ToolManager: 有効なCanvasManagerが必要です');
         }
         
-        // 🚨 Phase 1 修正: CanvasManager v8準備状況確認
-        if (typeof canvasManager.isV8Ready !== 'function') {
-            const errorMessage = 'CanvasManager.isV8Ready() method not available - invalid v8 CanvasManager';
-            console.error('💀', errorMessage);
-            throw new Error(errorMessage);
+        const drawContainer = canvasManager.getDrawContainer();
+        if (!drawContainer) {
+            throw new Error('ToolManager: v8描画Containerの取得に失敗しました');
         }
+        console.log('📦 v8描画Container取得完了');
         
-        if (!canvasManager.isV8Ready()) {
-            const errorMessage = 'CanvasManager not v8 ready - call initializeV8Application() first';
-            console.error('💀', errorMessage);
-            console.error('🔍 CanvasManager debug info:', canvasManager.getV8DebugInfo?.() || 'debug info not available');
-            throw new Error(errorMessage);
-        }
-        
-        // 🚨 Phase 1 修正: v8描画Container存在確認
-        try {
-            const drawingContainer = canvasManager.getV8DrawingContainer();
-            if (!drawingContainer) {
-                throw new Error('v8 Drawing Container not available from CanvasManager');
-            }
-            console.log('📦 v8描画Container取得完了');
-        } catch (error) {
-            const errorMessage = `v8 Drawing Container validation failed: ${error.message}`;
-            console.error('💀', errorMessage);
-            throw new Error(errorMessage);
-        }
-        
+        // 基本プロパティ
         this.canvasManager = canvasManager;
+        this.drawContainer = drawContainer;
         this.tools = new Map();
-        this.currentTool = null;
-        this.currentToolName = null;
-        this.initialized = false;
-        this.v8Ready = false;
-        this.managersInitialized = false;
+        this.activeTool = null;
         
-        // 🚨修正追加: Manager統一注入用プロパティ
-        this.managers = null; // AppCoreから設定される
-        this.managersMap = null; // フォールバック用
+        // Manager管理（修正版）
+        this.managers = null;           // Map形式で受信・保持
+        this.managersObject = null;     // Object形式で変換・Tool注入用
         
-        // v8専用プロパティ
-        this.webgpuSupported = null;
-        this.v8Features = {
-            webgpuToolOptimization: false,
-            realtimeToolSwitching: false,
-            containerHierarchyTools: false,
-            v8ToolsCreated: false,
-            canvasManagerInjected: true, // 🚨 修正: 注入完了フラグ追加
-            managersUnifiedInjection: false // 🚨修正追加: Manager統一注入フラグ
+        // v8機能対応状況
+        this.isWebGPUSupported = false;
+        this.v8FeaturesEnabled = false;
+        
+        // デバッグ情報
+        this.debugInfo = {
+            managerInjectionStatus: 'pending',
+            toolInitializationStatus: 'pending',
+            lastError: null
         };
         
-        // v8依存関係確認・設定
-        this.eventBus = window.Tegaki.EventBusInstance;
-        this.errorManager = window.Tegaki.ErrorManagerInstance;
-        
-        if (!this.eventBus) {
-            console.warn('⚠️ EventBusInstance not available - some features may be limited');
-        }
-        if (!this.errorManager) {
-            console.warn('⚠️ ErrorManagerInstance not available - error handling may be limited');
-        }
-        
-        // v8初期化準備
-        this.validateV8Dependencies();
-        
-        this.initialized = true;
-        console.log('✅ ToolManager v8.12.0対応版作成完了 - v8 Tool初期化待機中');
-        console.log('🔧 CanvasManager注入状況:', {
-            injected: true,
-            v8Ready: canvasManager.isV8Ready(),
-            drawingContainer: !!canvasManager.getV8DrawingContainer?.(),
-            webgpuStatus: canvasManager.getWebGPUStatus?.() || 'not available'
-        });
+        console.log('🔧 CanvasManager注入状況:', typeof canvasManager);
+        console.log('✅ ToolManager v8.12.0対応版作成完了 - Manager注入エラー修正版');
     }
     
     /**
-     * 🚨修正版 - Manager統一注入API（AppCoreから呼び出される）
+     * Manager統一注入（Map→Object確実変換修正版）
+     * @param {Map} managers - AppCoreから受信するManagerのMap
      */
     setManagers(managers) {
-        console.log('🔧 ToolManager - Manager統一注入開始');
+        console.log('🔧 ToolManager - Manager統一注入開始（修正版）');
         
-        if (!managers) {
-            console.error('💀 Manager統一注入失敗: managers is null or undefined');
-            throw new Error('Managers object is required for setManagers()');
+        // 受信データ型確認・デバッグ
+        console.log('📦 受信Manager型:', managers?.constructor?.name || 'undefined');
+        console.log('📦 受信Manager内容:', managers);
+        
+        // Map形式での受信確認
+        if (!managers || !(managers instanceof Map)) {
+            const errorMsg = `ToolManager: ManagerはMap形式で受信する必要があります（受信型: ${managers?.constructor?.name || 'undefined'}）`;
+            console.error('💀 Manager注入エラー:', errorMsg);
+            this.debugInfo.managerInjectionStatus = 'failed - invalid type';
+            throw new Error(errorMsg);
         }
         
-        // 🚨修正: Mapオブジェクト or プレーンオブジェクト対応
-        if (managers instanceof Map) {
-            this.managers = managers;
-            console.log('✅ ToolManager: Manager統一注入完了（Map形式）');
-            console.log('📋 利用可能Manager:', Array.from(managers.keys()));
-        } else if (typeof managers === 'object') {
-            // プレーンオブジェクトの場合、Mapに変換
-            this.managers = new Map(Object.entries(managers));
-            console.log('✅ ToolManager: Manager統一注入完了（Object→Map変換）');
-            console.log('📋 利用可能Manager:', Array.from(this.managers.keys()));
-        } else {
-            console.error('💀 Invalid managers type:', typeof managers);
-            throw new Error('Managers must be a Map or plain object');
-        }
+        // Map形式で保存
+        this.managers = managers;
+        console.log('✅ ToolManager: Manager群をMap形式で保存完了');
+        console.log('📋 Map Manager キー一覧:', Array.from(managers.keys()));
         
-        this.v8Features.managersUnifiedInjection = true;
-        this.managersInitialized = true;
+        // Map→Object確実変換（修正版）
+        try {
+            this.managersObject = Object.fromEntries(managers);
+            
+            // 変換確認・デバッグ
+            console.log('📦 Map→Object変換完了');
+            console.log('📦 変換後Object型:', this.managersObject?.constructor?.name || 'undefined');
+            console.log('📦 変換後Object キー一覧:', Object.keys(this.managersObject || {}));
+            console.log('📦 変換後Object内容確認:', this.managersObject);
+            
+            // 変換成功確認
+            if (!this.managersObject || Object.keys(this.managersObject).length === 0) {
+                throw new Error('Map→Object変換は成功したが、Objectが空です');
+            }
+            
+            this.debugInfo.managerInjectionStatus = 'success';
+            console.log('✅ ToolManager: Manager統一注入完了（Map→Object変換成功）');
+            
+        } catch (error) {
+            const errorMsg = `Map→Object変換エラー: ${error.message}`;
+            console.error('💀 変換エラー:', errorMsg);
+            this.debugInfo.managerInjectionStatus = 'failed - conversion error';
+            this.debugInfo.lastError = errorMsg;
+            throw new Error(errorMsg);
+        }
         
         // 必須Manager存在確認
-        const requiredManagers = ['coordinate', 'record'];
-        const availableManagers = Array.from(this.managers.keys());
-        const missingManagers = [];
-        
-        for (const required of requiredManagers) {
-            if (!this.managers.has(required)) {
-                missingManagers.push(required);
-            }
-        }
+        const requiredManagers = ['canvas', 'coordinate', 'record'];
+        const availableKeys = Object.keys(this.managersObject);
+        const missingManagers = requiredManagers.filter(key => !availableKeys.includes(key));
         
         if (missingManagers.length > 0) {
-            console.error('💀 必須Manager不足:', {
-                missing: missingManagers,
-                available: availableManagers,
-                total: availableManagers.length
-            });
-            throw new Error(`Required managers missing: ${missingManagers.join(', ')} - Available: ${availableManagers.join(', ')}`);
+            const errorMsg = `ToolManager: 必須Manager不足: ${missingManagers.join(', ')}`;
+            console.error('💀 必須Manager確認エラー:', errorMsg);
+            console.error('📋 利用可能Manager:', availableKeys);
+            this.debugInfo.managerInjectionStatus = 'failed - missing required';
+            throw new Error(errorMsg);
         }
         
-        console.log('✅ ToolManager: 必須Manager確認完了:', {
-            coordinate: !!this.managers.get('coordinate'),
-            record: !!this.managers.get('record'),
-            canvas: !!this.managers.get('canvas'),
-            total: this.managers.size
-        });
+        console.log('✅ ToolManager: 必須Manager確認完了:', requiredManagers);
+        console.log('📋 利用可能Manager:', availableKeys);
     }
     
     /**
-     * 🚨修正版 - v8依存関係確認（CanvasManager注入済み前提）
+     * v8依存関係確認
      */
-    validateV8Dependencies() {
+    checkV8Dependencies() {
         console.log('🔍 v8依存関係確認開始');
         
-        const v8Dependencies = [
-            { name: 'v8 PenTool', ref: window.Tegaki.PenTool },
-            { name: 'v8 EraserTool', ref: window.Tegaki.EraserTool, optional: true },
-            { name: 'v8 CanvasManager', ref: this.canvasManager },
-            { name: 'v8 CanvasManager.isV8Ready', ref: this.canvasManager.isV8Ready },
-            { name: 'v8 CanvasManager.getV8DrawingContainer', ref: this.canvasManager.getV8DrawingContainer }
+        // PixiJS v8確認
+        if (!window.PIXI || !window.PIXI.Application) {
+            throw new Error('PixiJS v8が利用できません');
+        }
+        
+        // WebGPU対応確認
+        this.isWebGPUSupported = !!window.PIXI.WebGPURenderer;
+        
+        // v8機能確認
+        const v8Features = [
+            'Container',
+            'Graphics', 
+            'Application'
         ];
         
-        for (const dep of v8Dependencies) {
-            if (!dep.ref && !dep.optional) {
-                const errorMessage = `v8 dependency missing: ${dep.name}`;
-                console.error('💀', errorMessage);
-                throw new Error(errorMessage);
-            } else if (!dep.ref && dep.optional) {
-                console.warn(`⚠️ v8 optional dependency missing: ${dep.name}`);
+        for (const feature of v8Features) {
+            if (!window.PIXI[feature]) {
+                throw new Error(`PixiJS v8機能不足: ${feature}`);
             }
         }
         
-        // WebGPU対応状況確認
-        const webgpuStatus = this.canvasManager.getWebGPUStatus();
-        this.webgpuSupported = webgpuStatus.supported;
-        
+        this.v8FeaturesEnabled = true;
         console.log('✅ v8依存関係確認完了');
-        console.log(`🔧 WebGPU対応状況: ${this.webgpuSupported ? 'サポート済み' : '非対応'}`);
+        console.log('🔧 WebGPU対応状況:', this.isWebGPUSupported ? '対応' : '非対応');
     }
     
     /**
-     * 🔧 修正版 - v8 Tool初期化（Manager統一注入修正・必須Manager確認修正）
+     * v8 Tool初期化（修正版）
      */
     async initializeV8Tools() {
-        console.log('🚀 v8 Tool初期化開始');
+        console.log('🚀 v8 Tool初期化開始（修正版）');
         
         try {
-            // 前提条件再確認
-            if (!this.canvasManager.isV8Ready()) {
-                throw new Error('CanvasManager not v8 ready during tool initialization');
+            // Manager注入状況確認
+            if (!this.managersObject) {
+                throw new Error('Manager統一注入が未完了です。先にsetManagers()を実行してください。');
             }
             
-            // 🚨修正: Manager統一注入確認
-            if (!this.managers && !this.managersMap) {
-                throw new Error('Managers not injected - call setManagers() first');
-            }
+            console.log('✅ Manager統一注入準備完了:', typeof this.managersObject);
+            console.log('📋 注入予定Manager キー:', Object.keys(this.managersObject));
             
-            // 🚨修正: Managersソース決定（setManagers優先、フォールバック対応）
-            const managersSource = this.managers || this.managersMap;
-            if (!managersSource) {
-                throw new Error('No managers source available');
-            }
+            // v8 Tool作成・Manager注入
+            await this.createV8PenTool();
+            await this.createV8EraserTool();
             
-            // 🚨修正: 必須Manager存在確認（AppCoreから受け取ったManagersを使用）
-            const requiredManagers = ['coordinate', 'record'];
-            const missingManagers = [];
+            // デフォルトツール設定
+            this.switchTool('pen');
             
-            for (const required of requiredManagers) {
-                let hasManager = false;
-                
-                if (managersSource instanceof Map) {
-                    hasManager = managersSource.has(required);
-                } else if (typeof managersSource === 'object') {
-                    hasManager = !!managersSource[required];
-                }
-                
-                if (!hasManager) {
-                    missingManagers.push(required);
-                }
-            }
+            this.debugInfo.toolInitializationStatus = 'success';
+            console.log('🚀 v8 Tool初期化完了');
             
-            if (missingManagers.length > 0) {
-                const availableManagersList = managersSource instanceof Map ? 
-                    Array.from(managersSource.keys()) : 
-                    Object.keys(managersSource);
-                
-                console.error('💀 必須Manager不足:', {
-                    missing: missingManagers,
-                    available: availableManagersList,
-                    total: availableManagersList.length
-                });
-                throw new Error(`Required managers missing for v8 Tool initialization: ${missingManagers.join(', ')}`);
-            }
-            
-            console.log('✅ Manager統一注入準備完了:', {
-                canvas: !!(managersSource instanceof Map ? managersSource.get('canvas') : managersSource.canvas),
-                coordinate: !!(managersSource instanceof Map ? managersSource.get('coordinate') : managersSource.coordinate),
-                record: !!(managersSource instanceof Map ? managersSource.get('record') : managersSource.record),
-                navigation: !!(managersSource instanceof Map ? managersSource.get('navigation') : managersSource.navigation),
-                shortcut: !!(managersSource instanceof Map ? managersSource.get('shortcut') : managersSource.shortcut)
-            });
-            
-            // Step 1: 🔧修正 v8 PenTool作成・CanvasManager注入・Manager統一設定
-            console.log('1️⃣ v8 PenTool作成開始...');
-            
-            // 🔧 CRITICAL_FIX: new PenTool(canvasManager)でCanvasManager注入
-            const penTool = new window.Tegaki.PenTool(this.canvasManager);
+        } catch (error) {
+            this.debugInfo.toolInitializationStatus = 'failed';
+            this.debugInfo.lastError = error.message;
+            console.error('💀 v8 Tool初期化エラー:', error);
+            throw error;
+        }
+    }
+    
+    /**
+     * v8 PenTool作成（修正版）
+     */
+    async createV8PenTool() {
+        console.log('1️⃣ v8 PenTool作成開始...（修正版）');
+        
+        try {
+            // PenTool作成・CanvasManager注入
+            const penTool = new window.Tegaki.PenTool();
+            penTool.setCanvasManager(this.canvasManager);
             console.log('✅ PenTool作成完了 - CanvasManager注入済み');
             
-            // 🔧 Manager統一注入（setManagers方式）
-            if (typeof penTool.setManagers === 'function') {
-                penTool.setManagers(managersSource);
-                console.log('✅ PenTool: Manager統一注入完了');
-            } else {
-                console.warn('⚠️ PenTool: setManagers method not available - 個別設定にフォールバック');
-                // 個別設定フォールバック（AbstractToolが古い場合）
-                penTool.canvasManager = this.canvasManager;
-            }
+            // Manager統一注入（Object形式で注入）
+            console.log('🔧 PenTool Manager注入開始 - Object形式');
+            console.log('📦 注入予定Object:', this.managersObject);
+            console.log('📦 注入予定キー:', Object.keys(this.managersObject));
             
-            // Manager設定検証
-            if (typeof penTool.validateManagers === 'function') {
-                try {
-                    penTool.validateManagers();
-                    console.log('✅ PenTool: Manager設定検証完了');
-                } catch (validationError) {
-                    console.error('💀 PenTool: Manager設定検証失敗:', validationError);
-                    throw validationError;
-                }
-            } else {
-                console.warn('⚠️ PenTool: validateManagers method not available - 検証スキップ');
-            }
+            penTool.setManagers(this.managersObject);  // Object形式で注入
+            console.log('✅ PenTool Manager統一注入完了');
             
-            // v8描画Container確認
-            try {
-                const drawingContainer = this.canvasManager.getV8DrawingContainer();
-                if (!drawingContainer) {
-                    throw new Error('PenTool: v8 Drawing Container not accessible');
-                }
-                console.log('✅ PenTool: v8描画Container確認完了');
-            } catch (error) {
-                console.error('💀 PenTool: v8描画Container確認失敗:', error);
-                throw error;
-            }
-            
+            // Tool登録
             this.tools.set('pen', penTool);
-            console.log('✅ v8 PenTool作成・設定完了');
-            
-            // Step 2: 🔧修正 v8 EraserTool作成・設定（オプション）
-            if (window.Tegaki.EraserTool) {
-                console.log('2️⃣ v8 EraserTool作成開始...');
-                
-                try {
-                    // 🔧 CRITICAL_FIX: new EraserTool(canvasManager)でCanvasManager注入
-                    const eraserTool = new window.Tegaki.EraserTool(this.canvasManager);
-                    console.log('✅ EraserTool作成完了 - CanvasManager注入済み');
-                    
-                    // Manager統一注入
-                    if (typeof eraserTool.setManagers === 'function') {
-                        eraserTool.setManagers(managersSource);
-                        console.log('✅ EraserTool: Manager統一注入完了');
-                    } else {
-                        console.warn('⚠️ EraserTool: setManagers method not available - 個別設定にフォールバック');
-                        eraserTool.canvasManager = this.canvasManager;
-                    }
-                    
-                    // Manager設定検証
-                    if (typeof eraserTool.validateManagers === 'function') {
-                        try {
-                            eraserTool.validateManagers();
-                            console.log('✅ EraserTool: Manager設定検証完了');
-                        } catch (validationError) {
-                            console.warn('⚠️ EraserTool: Manager設定検証失敗 - 継続:', validationError.message);
-                        }
-                    }
-                    
-                    this.tools.set('eraser', eraserTool);
-                    console.log('✅ v8 EraserTool作成・設定完了');
-                    
-                } catch (eraserError) {
-                    console.warn('⚠️ v8 EraserTool作成失敗 - PenToolのみで継続:', eraserError.message);
-                }
-            } else {
-                console.warn('⚠️ EraserTool利用不可 - PenToolのみ対応');
-            }
-            
-            // Step 3: WebGPU対応状況確認・Tool最適化
-            await this.optimizeV8ToolsForWebGPU();
-            
-            this.v8Features.v8ToolsCreated = true;
-            this.v8Features.containerHierarchyTools = true;
-            
-            console.log('✅ v8 Tool初期化完了');
-            console.log('📊 作成v8 Tool:', Array.from(this.tools.keys()));
-            
-            // デフォルトツール選択
-            if (this.tools.has('pen')) {
-                await this.selectV8Tool('pen');
-                console.log('✅ デフォルトv8ツール選択完了: pen');
-            }
-            
-            this.v8Ready = true;
-            
-            // v8Tool初期化完了通知
-            this.notifyV8ToolsReady();
+            console.log('✅ PenTool登録完了');
             
         } catch (error) {
-            console.error('💀 v8 Tool初期化エラー:', error);
-            this.handleV8ToolCreationError(error);
+            console.error('💀 PenTool作成エラー:', error);
+            this.handleV8ToolCreationError('pen', error);
             throw error;
         }
     }
     
     /**
-     * 🚀 WebGPU対応Tool最適化
+     * v8 EraserTool作成（修正版）
      */
-    async optimizeV8ToolsForWebGPU() {
-        console.log('🚀 WebGPU対応Tool最適化開始');
-        
-        const webgpuStatus = this.canvasManager.getWebGPUStatus();
-        
-        if (webgpuStatus.active) {
-            console.log('🚀 WebGPU最適化モード有効');
-            
-            // WebGPU対応Tool最適化
-            this.tools.forEach((tool, toolName) => {
-                if (typeof tool.enableWebGPUOptimization === 'function') {
-                    tool.enableWebGPUOptimization();
-                    console.log(`🚀 ${toolName}: WebGPU最適化有効化`);
-                } else {
-                    console.log(`📊 ${toolName}: WebGPU最適化非対応`);
-                }
-            });
-            
-            this.v8Features.webgpuToolOptimization = true;
-            
-        } else {
-            console.log('📊 WebGL互換モード - 標準設定継続');
-        }
-        
-        console.log('✅ WebGPU対応Tool最適化完了');
-    }
-    
-    /**
-     * 🚀 v8Tools準備完了通知
-     */
-    notifyV8ToolsReady() {
-        // EventBusにv8Tools準備完了を通知
-        if (this.eventBus?.emit) {
-            this.eventBus.emit('toolManagerV8Ready', {
-                v8Ready: this.v8Ready,
-                webgpuSupported: this.webgpuSupported,
-                v8Features: this.v8Features,
-                toolsCreated: Array.from(this.tools.keys()),
-                currentTool: this.currentToolName,
-                canvasManagerV8Ready: this.canvasManager.isV8Ready()
-            });
-        }
-        
-        console.log('📡 v8Tools準備完了通知送信');
-    }
-    
-    /**
-     * 🚀 v8 Tool選択・即座反映・WebGPU状況通知
-     */
-    async selectV8Tool(toolName) {
-        console.log(`🚀 v8 Tool選択開始: ${toolName}`);
-        
-        // v8準備確認
-        if (!this.v8Ready && !this.v8Features.v8ToolsCreated) {
-            console.warn('⚠️ ToolManager v8未準備 - initializeV8Tools()を先に実行');
-            throw new Error('ToolManager v8 not ready - call initializeV8Tools() first');
-        }
-        
-        // v8 Tool存在確認
-        const v8Tool = this.tools.get(toolName);
-        if (!v8Tool) {
-            const availableTools = Array.from(this.tools.keys()).join(', ');
-            throw new Error(`v8 Tool not found: ${toolName} - Available: ${availableTools}`);
-        }
-        
-        // v8 Tool準備確認
-        if (typeof v8Tool.isV8Ready === 'function' && !v8Tool.isV8Ready()) {
-            console.warn(`⚠️ v8 Tool準備未完了: ${toolName} - 処理継続`);
-        }
+    async createV8EraserTool() {
+        console.log('2️⃣ v8 EraserTool作成開始...（修正版）');
         
         try {
-            // 現在のv8 Tool無効化
-            if (this.currentTool && typeof this.currentTool.deactivate === 'function') {
-                this.currentTool.deactivate();
-                this.updateV8ToolButtonState(this.currentToolName, false);
-                console.log(`📋 前のv8 Tool無効化: ${this.currentToolName}`);
-            }
+            // EraserTool作成・CanvasManager注入
+            const eraserTool = new window.Tegaki.EraserTool();
+            eraserTool.setCanvasManager(this.canvasManager);
+            console.log('✅ EraserTool作成完了 - CanvasManager注入済み');
             
-            // 新しいv8 Tool有効化
-            this.currentTool = v8Tool;
-            this.currentToolName = toolName;
+            // Manager統一注入（Object形式で注入）
+            console.log('🔧 EraserTool Manager注入開始 - Object形式');
+            eraserTool.setManagers(this.managersObject);  // Object形式で注入
+            console.log('✅ EraserTool Manager統一注入完了');
             
-            if (typeof this.currentTool.activate === 'function') {
-                this.currentTool.activate();
-            } else {
-                console.warn(`⚠️ v8 Tool ${toolName}: activate method not available`);
-            }
-            
-            this.updateV8ToolButtonState(toolName, true);
-            
-            console.log(`✅ v8 Tool選択完了: ${toolName}`);
-            
-            // v8 Tool変更イベント発火
-            if (this.eventBus?.emit) {
-                this.eventBus.emit('toolManagerV8:toolChanged', {
-                    previousTool: this.currentToolName,
-                    newTool: toolName,
-                    tool: this.currentTool,
-                    v8Ready: this.currentTool.isV8Ready?.() || false,
-                    webgpuOptimized: this.webgpuSupported && this.v8Features.webgpuToolOptimization
-                });
-            }
-            
-            this.v8Features.realtimeToolSwitching = true;
+            // Tool登録
+            this.tools.set('eraser', eraserTool);
+            console.log('✅ EraserTool登録完了');
             
         } catch (error) {
-            console.error('💀 v8 Tool選択エラー:', error);
-            this.handleV8ToolSelectionError(error, toolName);
+            console.error('💀 EraserTool作成エラー:', error);
+            this.handleV8ToolCreationError('eraser', error);
             throw error;
         }
     }
     
     /**
-     * 🚀 v8 ToolButton状態更新
+     * アクティブTool切り替え
      */
-    updateV8ToolButtonState(toolName, isActive) {
-        const button = document.getElementById(`${toolName}-tool`);
-        if (!button) {
-            console.warn(`⚠️ v8 ToolButton要素未発見: #${toolName}-tool`);
-            return;
+    switchTool(toolName) {
+        console.log(`🔄 Tool切り替え: ${toolName}`);
+        
+        if (!this.tools.has(toolName)) {
+            throw new Error(`未知のTool: ${toolName}`);
         }
         
-        if (isActive) {
-            button.classList.add('active');
-            // v8アクティブ状態の追加表示
-            const title = button.getAttribute('title') || '';
-            if (!title.includes('v8')) {
-                button.setAttribute('title', `v8 ${title}`);
+        // 現在のTool非アクティブ化
+        if (this.activeTool) {
+            if (typeof this.activeTool.deactivate === 'function') {
+                this.activeTool.deactivate();
             }
-            console.log(`📋 v8 ToolButton有効化: ${toolName}`);
-        } else {
-            button.classList.remove('active');
-            console.log(`📋 v8 ToolButton無効化: ${toolName}`);
-        }
-    }
-    
-    /**
-     * 🚀 v8高精度ポインターイベント委譲
-     */
-    handleV8PointerDown(x, y, event) {
-        if (!this.currentTool) {
-            throw new Error('v8 No current tool selected for pointer down event');
         }
         
-        if (typeof this.currentTool.onPointerDown !== 'function') {
-            throw new Error(`v8 Current tool ${this.currentToolName} does not have onPointerDown method`);
+        // 新しいTool アクティブ化
+        this.activeTool = this.tools.get(toolName);
+        if (typeof this.activeTool.activate === 'function') {
+            this.activeTool.activate();
         }
         
-        console.log(`🚀 v8 PointerDown委譲: ${this.currentToolName} (${x}, ${y})`);
-        
-        try {
-            this.currentTool.onPointerDown(x, y, event);
-        } catch (error) {
-            console.error('💀 v8 PointerDown委譲エラー:', error);
-            this.handleV8PointerEventError(error, 'onPointerDown');
-            throw error;
-        }
+        console.log(`✅ アクティブTool設定完了: ${toolName}`);
     }
     
-    handleV8PointerMove(x, y, event) {
-        if (!this.currentTool || typeof this.currentTool.onPointerMove !== 'function') {
-            return;
-        }
-        
-        try {
-            this.currentTool.onPointerMove(x, y, event);
-        } catch (error) {
-            console.error('💀 v8 PointerMove委譲エラー:', error);
-            this.handleV8PointerEventError(error, 'onPointerMove');
-            throw error;
-        }
+    /**
+     * 現在のアクティブTool取得
+     */
+    getActiveTool() {
+        return this.activeTool;
     }
     
-    handleV8PointerUp(x, y, event) {
-        if (!this.currentTool || typeof this.currentTool.onPointerUp !== 'function') {
-            return;
+    /**
+     * v8描画Container取得
+     */
+    getDrawContainer() {
+        return this.drawContainer;
+    }
+    
+    /**
+     * v8 Toolエラー処理
+     */
+    handleV8ToolCreationError(toolName, error) {
+        console.error(`💀 v8 Tool作成エラー: ${toolName}:`, error);
+        
+        // エラー情報記録
+        if (window.Tegaki?.ErrorManager) {
+            window.Tegaki.ErrorManager.logError(`V8 TOOL作成失敗`, `${toolName}: ${error.message}`);
         }
         
-        console.log(`🏁 v8 PointerUp委譲: ${this.currentToolName} (${x}, ${y})`);
-        
-        try {
-            this.currentTool.onPointerUp(x, y, event);
-        } catch (error) {
-            console.error('💀 v8 PointerUp委譲エラー:', error);
-            this.handleV8PointerEventError(error, 'onPointerUp');
-            throw error;
+        // Tool削除（作成済みの場合）
+        if (this.tools.has(toolName)) {
+            this.tools.delete(toolName);
+            console.log(`🧹 失敗Tool削除完了: ${toolName}`);
         }
     }
     
     /**
-     * 🚀 v8エラーハンドリング
-     */
-    handleV8ToolCreationError(error) {
-        console.error('💀 v8 Tool作成エラー:', error);
-        
-        if (this.errorManager?.showError) {
-            this.errorManager.showError(
-                'v8 Tool作成失敗', 
-                error.message
-            );
-        }
-        
-        // v8 Tool作成失敗状態マーク
-        this.v8Features.v8ToolsCreated = false;
-        this.v8Ready = false;
-    }
-    
-    handleV8ToolSelectionError(error, toolName) {
-        console.error(`💀 v8 Tool選択エラー (${toolName}):`, error);
-        
-        if (this.errorManager?.showError) {
-            this.errorManager.showError(
-                `v8 Tool選択失敗: ${toolName}`, 
-                error.message
-            );
-        }
-    }
-    
-    handleV8PointerEventError(error, eventType) {
-        console.error(`💀 v8 PointerEvent委譲エラー (${eventType}):`, error);
-        
-        if (this.errorManager?.showError) {
-            this.errorManager.showError(
-                `v8 PointerEvent処理失敗: ${eventType}`, 
-                error.message
-            );
-        }
-    }
-    
-    /**
-     * 🚨 修正版 - v8対応状況確認（Manager統一注入状況含む）
-     */
-    isV8Ready() {
-        return this.v8Ready && 
-               this.initialized && 
-               this.tools.size > 0 && 
-               this.canvasManager && 
-               this.canvasManager.isV8Ready() &&
-               this.v8Features.canvasManagerInjected &&
-               this.v8Features.managersUnifiedInjection &&
-               this.v8Features.v8ToolsCreated &&
-               this.currentTool !== null;
-    }
-    
-    /**
-     * v7互換ポインターイベント委譲
-     */
-    handlePointerDown(x, y, event) {
-        return this.handleV8PointerDown(x, y, event);
-    }
-    
-    handlePointerMove(x, y, event) {
-        return this.handleV8PointerMove(x, y, event);
-    }
-    
-    handlePointerUp(x, y, event) {
-        return this.handleV8PointerUp(x, y, event);
-    }
-    
-    /**
-     * v7互換ツール選択
-     */
-    async selectTool(toolName) {
-        return this.selectV8Tool(toolName);
-    }
-    
-    /**
-     * 現在のv8 Tool取得
-     */
-    getCurrentTool() {
-        return this.currentTool;
-    }
-    
-    /**
-     * 現在のv8 Tool名取得
-     */
-    getCurrentToolName() {
-        return this.currentToolName;
-    }
-    
-    /**
-     * 利用可能v8 Tool一覧取得
-     */
-    getAvailableTools() {
-        return Array.from(this.tools.keys());
-    }
-    
-    /**
-     * v8 Tool設定更新
-     */
-    updateV8ToolSettings(toolName, settings) {
-        const tool = this.tools.get(toolName);
-        if (!tool) {
-            throw new Error(`v8 Tool not found for settings update: ${toolName}`);
-        }
-        
-        if (typeof tool.onSettingsUpdate === 'function') {
-            tool.onSettingsUpdate(settings);
-            console.log(`🔧 ${toolName} v8設定更新完了:`, settings);
-            
-            // v8設定更新イベント発火
-            if (this.eventBus?.emit) {
-                this.eventBus.emit('toolV8:settingsUpdated', {
-                    toolName: toolName,
-                    settings: settings,
-                    v8Mode: true,
-                    webgpuOptimized: this.v8Features.webgpuToolOptimization
-                });
-            }
-        } else {
-            console.log(`📋 ${toolName} v8設定更新スキップ - onSettingsUpdateメソッドなし`);
-        }
-    }
-    
-    /**
-     * v7互換ツール設定更新
-     */
-    updateToolSettings(toolName, settings) {
-        return this.updateV8ToolSettings(toolName, settings);
-    }
-    
-    /**
-     * 全v8 Toolリセット
-     */
-    resetAllV8Tools() {
-        console.log('🔄 全v8 Toolリセット開始');
-        
-        this.tools.forEach((tool, toolName) => {
-            if (typeof tool.onReset === 'function') {
-                try {
-                    tool.onReset();
-                    console.log(`✅ ${toolName} v8リセット完了`);
-                } catch (error) {
-                    console.error(`💀 ${toolName} v8リセットエラー:`, error);
-                    this.handleV8ToolResetError(error, toolName);
-                }
-            }
-        });
-        
-        console.log('✅ 全v8 Toolリセット完了');
-    }
-    
-    handleV8ToolResetError(error, toolName) {
-        if (this.errorManager?.showError) {
-            this.errorManager.showError(
-                `v8 Tool リセットエラー: ${toolName}`, 
-                error.message
-            );
-        }
-    }
-    
-    /**
-     * v7互換全ツールリセット
-     */
-    resetAllTools() {
-        return this.resetAllV8Tools();
-    }
-    
-    /**
-     * WebGPU対応状況取得
-     */
-    getWebGPUStatus() {
-        return {
-            supported: this.webgpuSupported,
-            toolOptimization: this.v8Features.webgpuToolOptimization,
-            canvasManagerWebGPU: this.canvasManager?.getWebGPUStatus() || null
-        };
-    }
-    
-    /**
-     * v8システム統計取得
-     */
-    getV8SystemStats() {
-        return {
-            // v8 Tool統計
-            v8ToolStats: {
-                totalTools: this.tools.size,
-                v8Ready: this.isV8Ready(),
-                currentTool: this.currentToolName,
-                webgpuOptimized: this.v8Features.webgpuToolOptimization
-            },
-            
-            // v8機能統計
-            v8FeatureStats: {
-                featuresEnabled: Object.values(this.v8Features).filter(Boolean).length,
-                v8FeaturesTotal: Object.keys(this.v8Features).length,
-                webgpuSupported: this.webgpuSupported
-            },
-            
-            // v8初期化統計
-            v8InitializationStats: {
-                initialized: this.initialized,
-                v8Ready: this.v8Ready,
-                canvasManagerV8Ready: this.canvasManager?.isV8Ready() || false,
-                canvasManagerInjected: this.v8Features.canvasManagerInjected,
-                managersUnifiedInjection: this.v8Features.managersUnifiedInjection
-            }
-        };
-    }
-    
-    /**
-     * 🚨 修正版 - v8専用デバッグ情報取得（Manager統一注入状況含む）
-     */
-    getV8DebugInfo() {
-        return {
-            className: 'ToolManager',
-            version: 'v8.12.0',
-            
-            // v8状態
-            v8Status: {
-                v8Ready: this.v8Ready,
-                initialized: this.initialized,
-                canvasManagerV8Ready: this.canvasManager?.isV8Ready() || false,
-                canvasManagerInjected: this.v8Features.canvasManagerInjected,
-                managersUnifiedInjection: this.v8Features.managersUnifiedInjection
-            },
-            
-            // CanvasManager注入状況
-            canvasManagerInjection: {
-                injected: !!this.canvasManager,
-                v8Ready: this.canvasManager?.isV8Ready() || false,
-                drawingContainer: this.canvasManager?.getV8DrawingContainer ? 'available' : 'not available',
-                webgpuStatus: this.canvasManager?.getWebGPUStatus?.() || 'not available'
-            },
-            
-            // 🚨修正追加: Manager統一注入状況
-            managersUnifiedInjection: {
-                injected: !!this.managers || !!this.managersMap,
-                managersType: this.managers ? 'Map' : (this.managersMap ? 'Object' : 'none'),
-                managersInitialized: this.managersInitialized,
-                availableManagers: this.managers ? 
-                    Array.from(this.managers.keys()) : 
-                    (this.managersMap ? Object.keys(this.managersMap) : []),
-                totalManagers: this.managers ? 
-                    this.managers.size : 
-                    (this.managersMap ? Object.keys(this.managersMap).length : 0),
-                coordinateManager: this.managers ? 
-                    !!this.managers.get('coordinate') : 
-                    !!(this.managersMap?.coordinate),
-                recordManager: this.managers ? 
-                    !!this.managers.get('record') : 
-                    !!(this.managersMap?.record)
-            },
-            
-            // WebGPU状況
-            webgpuStatus: this.getWebGPUStatus(),
-            
-            // v8 Tool状況
-            v8ToolStatus: {
-                totalTools: this.tools.size,
-                availableTools: Array.from(this.tools.keys()),
-                currentTool: this.currentToolName,
-                currentToolV8Ready: this.currentTool?.isV8Ready?.() || false
-            },
-            
-            // v8機能状況
-            v8Features: this.v8Features,
-            
-            // v8 Tool詳細状況
-            v8ToolDetails: Array.from(this.tools.entries()).map(([name, tool]) => ({
-                name: name,
-                hasSetCanvasManagerV8: typeof tool.setCanvasManagerV8 === 'function',
-                hasSetManagers: typeof tool.setManagers === 'function',
-                hasValidateManagers: typeof tool.validateManagers === 'function',
-                hasActivate: typeof tool.activate === 'function',
-                hasDeactivate: typeof tool.deactivate === 'function',
-                hasV8PointerMethods: {
-                    onPointerDown: typeof tool.onPointerDown === 'function',
-                    onPointerMove: typeof tool.onPointerMove === 'function',
-                    onPointerUp: typeof tool.onPointerUp === 'function'
-                },
-                isV8Ready: typeof tool.isV8Ready === 'function' ? tool.isV8Ready() : 'unknown',
-                v8DebugInfo: typeof tool.getV8DebugInfo === 'function' ? 'available' : 'not available'
-            })),
-            
-            // v8システム情報
-            v8SystemInfo: {
-                pixiVersion: typeof PIXI !== 'undefined' ? PIXI.VERSION : 'unknown',
-                v8ApiAvailable: typeof PIXI !== 'undefined' && PIXI.VERSION.startsWith('8.'),
-                eventBus: !!this.eventBus,
-                errorManager: !!this.errorManager
-            },
-            
-            // v8依存関係状況
-            v8Dependencies: {
-                pixiTool: !!window.Tegaki.PenTool,
-                eraserTool: !!window.Tegaki.EraserTool,
-                canvasManager: !!this.canvasManager,
-                eventBus: !!this.eventBus,
-                errorManager: !!this.errorManager,
-                // 🚨修正: Instance参照ではなく、注入されたManagersから確認
-                coordinateManager: this.managers ? 
-                    !!this.managers.get('coordinate') : 
-                    !!(this.managersMap?.coordinate),
-                recordManager: this.managers ? 
-                    !!this.managers.get('record') : 
-                    !!(this.managersMap?.record),
-                navigationManager: this.managers ? 
-                    !!this.managers.get('navigation') : 
-                    !!(this.managersMap?.navigation),
-                shortcutManager: this.managers ? 
-                    !!this.managers.get('shortcut') : 
-                    !!(this.managersMap?.shortcut)
-            }
-        };
-    }
-    
-    /**
-     * v7互換デバッグ情報取得
+     * デバッグ情報取得
      */
     getDebugInfo() {
-        return this.getV8DebugInfo();
-    }
-    
-    /**
-     * v7互換準備状態確認
-     */
-    isReady() {
-        return this.isV8Ready();
-    }
-    
-    /**
-     * v8破棄処理
-     */
-    destroyV8() {
-        console.log('💥 ToolManager v8破棄処理開始');
-        
-        try {
-            // 現在のv8 Tool無効化
-            if (this.currentTool && typeof this.currentTool.deactivate === 'function') {
-                this.currentTool.deactivate();
-            }
-            
-            // 全v8 Tool破棄
-            this.tools.forEach((tool, toolName) => {
-                if (typeof tool.onDestroy === 'function') {
-                    try {
-                        tool.onDestroy();
-                        console.log(`✅ ${toolName} v8破棄完了`);
-                    } catch (error) {
-                        console.error(`💀 ${toolName} v8破棄エラー:`, error);
-                    }
-                }
-            });
-            
-            // v8状態クリア
-            this.tools.clear();
-            this.currentTool = null;
-            this.currentToolName = null;
-            this.canvasManager = null;
-            this.eventBus = null;
-            this.errorManager = null;
-            this.managers = null;
-            this.managersMap = null;
-            this.initialized = false;
-            this.v8Ready = false;
-            this.managersInitialized = false;
-            this.webgpuSupported = null;
-            this.v8Features = {
-                webgpuToolOptimization: false,
-                realtimeToolSwitching: false,
-                containerHierarchyTools: false,
-                v8ToolsCreated: false,
-                canvasManagerInjected: false,
-                managersUnifiedInjection: false
-            };
-            
-            console.log('✅ ToolManager v8破棄処理完了');
-            
-        } catch (error) {
-            console.error('💀 ToolManager v8破棄処理エラー:', error);
-        }
-    }
-    
-    /**
-     * v7互換破棄処理
-     */
-    destroy() {
-        return this.destroyV8();
-    }
-    
-    /**
-     * 🚨 修正版 - CanvasManager再設定（緊急時用）
-     */
-    setCanvasManager(canvasManager) {
-        console.log('🔄 CanvasManager再設定開始');
-        
-        if (!canvasManager) {
-            throw new Error('CanvasManager is required');
-        }
-        
-        if (typeof canvasManager.isV8Ready !== 'function' || !canvasManager.isV8Ready()) {
-            throw new Error('CanvasManager must be v8 ready');
-        }
-        
-        this.canvasManager = canvasManager;
-        this.v8Features.canvasManagerInjected = true;
-        
-        console.log('✅ CanvasManager再設定完了');
-        
-        // 既存Toolsに新しいCanvasManagerを設定
-        if (this.tools.size > 0) {
-            console.log('🔄 既存Tools CanvasManager更新開始');
-            this.tools.forEach(async (tool, toolName) => {
-                if (typeof tool.setCanvasManagerV8 === 'function') {
-                    try {
-                        await tool.setCanvasManagerV8(canvasManager);
-                        console.log(`✅ ${toolName}: CanvasManager更新完了`);
-                    } catch (error) {
-                        console.error(`💀 ${toolName}: CanvasManager更新エラー:`, error);
-                    }
-                } else if (typeof tool.setManagers === 'function') {
-                    // setManagers方式でのCanvasManager更新
-                    try {
-                        const managersSource = this.managers || this.managersMap;
-                        if (managersSource instanceof Map) {
-                            managersSource.set('canvas', canvasManager);
-                            tool.setManagers(managersSource);
-                        } else if (managersSource) {
-                            managersSource.canvas = canvasManager;
-                            tool.setManagers(managersSource);
-                        }
-                        console.log(`✅ ${toolName}: Manager統一更新完了`);
-                    } catch (error) {
-                        console.error(`💀 ${toolName}: Manager統一更新エラー:`, error);
-                    }
-                }
-            });
-        }
+        return {
+            ...this.debugInfo,
+            toolsCount: this.tools.size,
+            toolNames: Array.from(this.tools.keys()),
+            activeToolName: this.activeTool ? 'unknown' : null,
+            managersAvailable: this.managersObject ? Object.keys(this.managersObject) : [],
+            isWebGPUSupported: this.isWebGPUSupported,
+            v8FeaturesEnabled: this.v8FeaturesEnabled
+        };
     }
 }
 
-// グローバル公開
+// グローバル登録
+if (!window.Tegaki) window.Tegaki = {};
 window.Tegaki.ToolManager = ToolManager;
-console.log('🚀 ToolManager v8.12.0完全対応版 Loaded - CanvasManager注入修正・v8 Tool連携・WebGPU対応・非同期初期化・Container階層・リアルタイム切り替え・Manager統一注入修正');
+
+console.log('🚀 ToolManager v8.12.0完全対応版 Loaded - Manager注入エラー修正版');
+console.log('📏 修正内容: Map→Object確実変換・デバッグ強化・型安全性向上');
+console.log('🚀 特徴: v8 Tool連携・WebGPU対応・非同期初期化・Container階層・リアルタイム切り替え・Manager統一注入修正');
