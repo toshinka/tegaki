@@ -1,135 +1,42 @@
-1. 「線が離したときだけ描かれる」問題
+# 改修計画 - v8_phase1rev7 初期化エラー対応
 
-これは mousemove / pointermove イベントで線を逐次描いていない のが原因です。
-現状の pen-tool.js を追うと、
+## 現況
+- Windows 環境で WebGPU `powerPreference` が無視される警告が出ているが致命的エラーではない。
+- v8 Tool 初期化時に `coordinate-manager` と `record-manager` が未登録エラーを起こしている。
+- v7/v8 両対応コードを残すと「Manager群の二重管理」になり見通しが悪化し、AI コーディング時に誤認識が発生する危険性がある。
 
-mousedown / pointerdown → 座標を記録開始
+## 問題点
+1. **AppCore.initializeV8Managers** 内で `CoordinateManager` と `RecordManager` を `this.managers` に登録していない。
+2. `tool-manager.js` が要求する Manager 名と、`app-core.js` 側のキー名が一致していない可能性。
+3. v7/v8 互換コードが混在しているため、修正箇所が曖昧になりやすい。
 
-mousemove / pointermove → ほとんど処理していない or 座標蓄積だけ
+## 提案
+- `app-core.js` の `initializeV8Managers` に以下を追加する：
+  ```js
+  import CoordinateManager from "./utils/coordinate-manager.js";
+  import RecordManager from "./utils/record-manager.js";
 
-mouseup / pointerup → 蓄積した座標をまとめて描画
+  this.managers.set("coordinate", new CoordinateManager(this));
+  this.managers.set("record", new RecordManager(this));
+すでに登録済みの tool, canvas, shortcut, config などと同様の形式で統一。
 
-という構造になっています。
-そのため「離した瞬間に一気に描かれる」状態。
+tool-manager.js 側の requires 配列に定義されている Manager 名と必ず一致させること。
 
-改善案
+v7 互換レイヤーは廃止する。
 
-pointermove で 最後の点から現在点までの線分をリアルタイムに追加描画 する
+実装計画
+app-core.js を修正し、coordinate-manager と record-manager を登録する。
 
-ただし毎フレーム PixiJS に描かせると負荷が大きいので、requestAnimationFrame + バッファリングした座標を処理する形にするとスムーズになります。
+tool-manager.js の requires リストとキー名を照合・修正。
 
-PixiJS の Graphics は高速だけど「長いパスを逐次更新」には弱いので、graphics.lineTo() を直接積むより、
-path を保持して geometry に反映させる か、
-pixi-graphics-smooth のような補助ライブラリを使うと綺麗に引けます。
+デバッグログを残し、Manager 群がすべて正常に登録されているか確認。
 
-2. データ構造は「非破壊・ベクター」になっているか？
+powerPreference 警告は既知の仕様につき放置。ただし、ログ抑制が必要なら console.warn ラップで対応。
 
-現状は Graphics に直接描き込む方式が中心なので、キャンバスにピクセルを焼き付けているのとほぼ同義です。
-このままだと「Undo」「レイヤー移動」で壊れやすい。
+v7 互換コードを段階的に削除し、「v7/v8 両対応で二重管理を行うとコードの見通しが悪化する」 旨を app-core.js および tool-manager.js のファイルヘッダーに明記する。
 
-改善案
+ヘッダー記述指示
+各ファイルのヘッダーに以下を必ず記載する：
 
-RecordManager / CoordinateManager を活用し、
-
-各ストロークを「パス（座標列 + スタイル情報）」として保存
-
-表示は「保存されたパスを PixiJS.Graphics に再レンダリング」
-
-これにより Undo は「最後のパスを削除して再描画」で実現でき、
-レイヤー移動も「所属レイヤーの Container を切り替える」で壊れません。
-
-つまり「ベクターデータ管理をアプリ側」「描画はPixiJSが担当」という役割分担にするとよいです。
-
-3. 現状の package.json に入っているライブラリと活用状況
-
-package.json を拝見しました。主要なものは：
-
-pixi.js v7 系 → コア描画
-
-pixi-graphics-smooth → 線をアンチエイリアスして滑らかに描く（ただ現状 main.js/pen-tool.js では import していないか、活用が薄い）
-
-gsap / tweedle.js → アニメーション系（UI用には使えるが、ペンでは未使用）
-
-pixi-layers → レイヤー分け（本来ペン描画を Container レイヤーごとに分ければ有効）
-
-gif.js / gif-encoder → エクスポート用（まだ統合していないっぽい）
-
-👉 ペン周りに直接効いているのは「pixi.js」だけで、他はほぼ未活用に近いです。
-
-4. PixiJS と相性の良いモダンなペンツール候補
-
-PixiJS の生の Graphics はシンプルですが、線のクオリティや編集性を考えると以下が候補です：
-
-pixi-graphics-smooth
-
-ストロークをアンチエイリアス付きで綺麗に描ける
-
-適度に軽量で現状と互換性あり
-
-pixi-pen-tool / pixi-draw-shape 系の拡張（コミュニティ製）
-
-パス管理を前提にしたプラグイン（ただし開発更新が止まっていることが多い）
-
-Paper.js (別ライブラリ)
-
-ベクターペンとしては超強力（パス編集・ベジエ曲線・Undo/Redoが標準）
-
-ただし PixiJS とは別枠で統合が難しい → 描画は Pixi、編集は Paper.js のロジックという二層構造もあり
-
-Rough.js + Pixi.js
-
-手書き風レンダリングが可能（アート系に寄せる場合）
-
-まとめると
-
-線が離したときだけ描かれる問題は → pointermoveで逐次描画するように修正
-
-Undo/レイヤー耐性のために → パスを「アプリ内データ」として管理し、Pixi はレンダリング専用にする
-
-package.jsonのライブラリはペンにほぼ未活用 → pixi-graphics-smooth を積極導入すべき
-
-モダンな選択肢としては Paper.js を参考に「パス管理 + PixiJS描画」方式がベストバランス
-
-
-導入の流れ（AIに渡す指示例）
-
-インポート部分
-pen-tool.js 内で PIXI.Graphics を使っている箇所を
-
-new PIXI.Graphics();
-
-
-から
-
-new PIXI.smooth.SmoothGraphics();
-
-
-に差し替え。
-
-線の描画
-普通の graphics.lineTo() などのAPIは SmoothGraphics でも互換があります。
-
-例:
-
-this.graphics.lineStyle({ width: 2, color: 0x000000 });
-this.graphics.moveTo(prevX, prevY);
-this.graphics.lineTo(x, y);
-
-
-→ そのままスムーズに描かれるようになります。
-
-逐次描画対応
-
-pointerdown で moveTo
-
-pointermove で lineTo（＋requestAnimationFrame でまとめると良い）
-
-pointerup でストローク確定
-
-こうすると「離した時にしか線が出ない」問題も解消します。
-
-注意点
-
-pixi-graphics-smooth はアンチエイリアス処理を内部でやってくれるので、太い線や拡大時にギザギザが少なく見えます。
-
-パフォーマンス面では 長大なストロークを Graphics に直接積むと重いので、必ず ストロークごとにオブジェクトを分けて Container に追加する設計がベターです（Undo/Redoやレイヤー管理もしやすい）。
+⚠️ 注意: v7/v8 両対応による Manager 群の二重管理は禁止。
+本ファイルは v8 専用の初期化ロジックを採用している。

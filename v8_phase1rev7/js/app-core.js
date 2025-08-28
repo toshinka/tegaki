@@ -1,66 +1,56 @@
 /**
- * 🚀 AppCore - PixiJS v8統合基盤システム（WebGPU対応・非同期初期化・PIXI読み込み確認強化）
- * 📋 RESPONSIBILITY: v8 Manager統合基盤・v8 Application作成・v8初期化順序管理・WebGPU対応・PIXI読み込み確認
- * 🚫 PROHIBITION: UI操作・描画処理・座標変換・フォールバック・フェイルセーフ・v7 API混在
- * ✅ PERMISSION: v8 Manager作成・v8非同期初期化・WebGPU設定・v8統合制御・依存性管理・PIXI読み込み待機
+ * 🚀 AppCore - PixiJS v8統合基盤システム（WebGPU対応・非同期初期化・Manager統一登録修正版）
+ * 📋 RESPONSIBILITY: v8 Manager統合基盤・v8 Application作成・v8初期化順序管理・WebGPU対応・Manager統一登録
+ * 🚫 PROHIBITION: UI操作・描画処理・座標変換・フォールバック・フェイルセーフ・v7 API混在・Manager二重管理
+ * ✅ PERMISSION: v8 Manager作成・v8非同期初期化・WebGPU設定・v8統合制御・依存性管理・Manager統一登録
  * 
- * 📏 DESIGN_PRINCIPLE: v8 Application中心・非同期初期化・WebGPU優先・Container階層統合基盤・PIXI読み込み確認
- * 🔄 INTEGRATION: v8 CanvasManager + v8 ToolManager 統合基盤・v8依存性管理・非同期初期化順序制御
- * 🚀 V8_MIGRATION: 非同期化・WebGPU対応・Container階層・v8 Manager連携・フォールバック削除・PIXI確認強化
+ * 📏 DESIGN_PRINCIPLE: v8 Application中心・非同期初期化・WebGPU優先・Container階層統合基盤・Manager統一登録
+ * 🔄 INTEGRATION: 全Manager統一登録(canvas,tool,coordinate,record,config,error,eventbus,shortcut,navigation)・v8依存性管理
+ * 🚀 V8_MIGRATION: 非同期化・WebGPU対応・Container階層・v8 Manager連携・フォールバック削除・Manager統一登録
  * 
  * 📌 提供メソッド一覧（v8対応・実装確認済み）:
+ * ✅ constructor() - AppCore初期化・Manager登録Map作成
  * ✅ async waitForPixiJS() - PixiJS読み込み待機・v8バージョン確認
  * ✅ async createCanvasV8(options) - v8 Application作成・WebGPU対応・非同期初期化
- * ✅ async initializeV8Managers() - v8 Manager群非同期初期化・連携設定（修正版）
+ * ✅ async initializeV8Managers() - v8 Manager群非同期初期化・統一登録（修正版）
+ * ✅ getManager(name) - Manager取得（統一API）
  * ✅ async startV8System() - v8システム開始・統合確認
  * ✅ isV8Ready() - v8対応状況確認
  * ✅ getV8DebugInfo() - v8専用デバッグ情報取得
- * ✅ selectToolV8(toolName) - v8ツール選択・即座反映
- * ✅ validateV8ManagerIntegration() - v8 Manager連携確認
- * ✅ notifyV8SystemReady() - v8システム開始通知
  * 
  * 📌 他ファイル呼び出しメソッド一覧（実装確認済み）:
  * ✅ window.PIXI - PixiJS v8ライブラリ（CDN読み込み確認）
- * ✅ new PIXI.Application() - v8 Application作成（PixiJS v8.4.0+）
- * ✅ await app.init(options) - v8非同期初期化（PixiJS v8.4.0+）
- * ✅ await PIXI.isWebGPUSupported() - WebGPU対応確認（PixiJS v8.4.0+）
- * ✅ window.Tegaki.CanvasManager - v8 CanvasManager（実装確認済み）
- * ✅ window.Tegaki.ToolManager - v8 ToolManager（実装確認済み）
- * ✅ window.Tegaki.ErrorManagerInstance.showError() - エラー表示（確認済み）
- * ✅ window.Tegaki.EventBusInstance.emit() - イベント通知（確認済み）
- * ✅ document.getElementById() - DOM要素取得（Browser API）
+ * ✅ new PIXI.Application() - v8 Application作成（PixiJS v8.12.0）
+ * ✅ await app.init(options) - v8非同期初期化（PixiJS v8.12.0）
+ * ✅ window.Tegaki.CanvasManager - v8 CanvasManager（canvas-manager.js確認済み）
+ * ✅ window.Tegaki.ToolManager - v8 ToolManager（tool-manager.js確認済み）
+ * ✅ window.Tegaki.CoordinateManager - v8 CoordinateManager（coordinate-manager.js確認済み）
+ * ✅ window.Tegaki.RecordManager - v8 RecordManager（record-manager.js確認済み）
+ * ✅ window.Tegaki.ConfigManager - ConfigManager（config-manager.js確認済み）
+ * ✅ window.Tegaki.ErrorManager - ErrorManager（error-manager.js確認済み）
+ * ✅ window.Tegaki.EventBusInstance.emit() - イベント通知（event-bus.js確認済み）
+ * ✅ window.Tegaki.ShortcutManager - ShortcutManager（shortcut-manager.js確認済み）
+ * ✅ window.Tegaki.NavigationManager - NavigationManager（navigation-manager.js確認済み）
  * 
- * 📐 v8システム初期化フロー（修正版）:
- * 開始 → PixiJS読み込み待機・v8バージョン確認 → v8 Application作成 → WebGPU対応確認 → 
- * 非同期init() → DOM配置 → 1.CanvasManager v8初期化・Application設定 → 2.ToolManager v8作成・CanvasManager注入 → 
- * Manager連携設定 → システム統合確認 → v8システム開始 → 完了
- * 🚨 修正済み依存関係: PixiJS v8.4.0+(基盤) → WebGPU API(高速化) → v8 CanvasManager(階層管理・先行初期化) → v8 ToolManager(描画・後続初期化)
+ * 📐 v8システム初期化フロー（Manager統一登録修正版）:
+ * 開始 → PixiJS読み込み待機 → v8 Application作成 → WebGPU対応確認 → 非同期init() → DOM配置 → 
+ * 1.CanvasManager v8初期化 → 2.全Manager統一登録(coordinate,record,config,error,eventbus,shortcut,navigation) → 
+ * 3.ToolManager v8作成・CanvasManager注入 → v8 Tool初期化 → システム統合確認 → 完了
+ * 🚨修正済み依存関係: PixiJS v8.12.0 → v8 CanvasManager → Manager統一登録 → v8 ToolManager → v8 Tool群
  * 
- * 🚨 CRITICAL_V8_DEPENDENCIES: v8必須依存関係（動作に必須）
- * - window.PIXI !== undefined - PixiJS v8読み込み必須
- * - PIXI.VERSION.startsWith('8.') - v8バージョン必須
- * - await app.init(options) !== undefined - v8非同期初期化必須
- * - this.canvasManager.isV8Ready() === true - v8 CanvasManager準備必須
- * - this.webgpuSupported !== null - WebGPU対応状況確定必須
- * - this.v8SystemReady === true - v8システム統合完了必須
+ * 🚨 Manager統一登録キー（tool-manager.jsの要求名と一致）:
+ * - "canvas" → CanvasManager - キャンバス・Container階層管理
+ * - "tool" → ToolManager - Tool管理・切り替え
+ * - "coordinate" → CoordinateManager - 座標変換・高精度変換 ⚠️修正対象
+ * - "record" → RecordManager - 操作履歴・アンドゥ・リドゥ ⚠️修正対象  
+ * - "config" → ConfigManager - 設定管理
+ * - "error" → ErrorManager - エラー処理
+ * - "eventbus" → EventBusInstance - イベント通信
+ * - "shortcut" → ShortcutManager - ショートカット管理
+ * - "navigation" → NavigationManager - ナビゲーション管理
  * 
- * 🔧 V8_INITIALIZATION_ORDER: v8初期化順序（厳守必要・修正版）
- * 1. PixiJS読み込み確認・v8バージョン検証
- * 2. new PIXI.Application() - v8 Application作成
- * 3. WebGPU対応確認・設定
- * 4. await app.init(options) - v8非同期初期化
- * 5. DOM配置・canvas要素確保
- * 6. 🚨 修正 CanvasManager先行初期化・v8 Application設定・v8機能有効化
- * 7. 🚨 修正 ToolManager後続初期化・CanvasManager注入・v8ツール初期化
- * 8. v8システム統合確認・開始
- * 
- * 🚫 V8_ABSOLUTE_PROHIBITIONS: v8移行時絶対禁止事項
- * - PixiJS読み込み確認なし・v7決め打ち継続
- * - v7 PIXI.Application(options)同期作成継続
- * - v8非同期初期化無視・同期的処理継続
- * - WebGPU機能無視・従来WebGL固定継続
- * - 🚨 修正済み Manager初期化順序間違い（ToolManager→CanvasManagerの順序）
- * - フォールバック・フェイルセーフ複雑化
+ * 🔧 処理フロー（Manager統一登録）:
+ * 開始 → PIXI Application作成 → CanvasManager初期化 → 各Manager統一登録 → ToolManager初期化 → 完了
  */
 
 // 多重定義防止
@@ -70,8 +60,8 @@ if (!window.Tegaki) {
 
 if (!window.Tegaki.AppCore) {
     /**
-     * AppCore - PixiJS v8統合基盤システム
-     * WebGPU対応・非同期初期化・Container階層統合基盤・PIXI読み込み確認強化
+     * AppCore - PixiJS v8統合基盤システム（Manager統一登録修正版）
+     * WebGPU対応・非同期初期化・Container階層統合基盤・Manager統一登録
      */
     class AppCore {
         constructor() {
@@ -81,6 +71,9 @@ if (!window.Tegaki.AppCore) {
             this.initialized = false;
             this.started = false;
             this.v8SystemReady = false;
+            
+            // 🚨修正追加: Manager統一登録Map
+            this.managers = new Map();
             
             // v8基盤Manager群
             this.canvasManager = null;
@@ -98,7 +91,8 @@ if (!window.Tegaki.AppCore) {
                 webgpuEnabled: false,
                 asyncInitialization: false,
                 containerHierarchy: false,
-                realtimeDrawing: false
+                realtimeDrawing: false,
+                managersUnifiedRegistration: false // 🚨修正追加
             };
             
             // エラー・初期化状態
@@ -106,6 +100,18 @@ if (!window.Tegaki.AppCore) {
             this.v8InitializationSteps = [];
             
             console.log('🚀 AppCore v8統合基盤システム 作成完了');
+        }
+        
+        /**
+         * 🚨修正追加: Manager統一取得API
+         */
+        getManager(name) {
+            const manager = this.managers.get(name);
+            if (!manager) {
+                console.warn(`⚠️ Manager not found: ${name}. Available: ${Array.from(this.managers.keys()).join(', ')}`);
+                return null;
+            }
+            return manager;
         }
         
         /**
@@ -239,10 +245,10 @@ if (!window.Tegaki.AppCore) {
         }
         
         /**
-         * 🚨 修正版 - v8 Manager群非同期初期化・連携設定（正しい初期化順序）
+         * 🚨修正版 - v8 Manager群非同期初期化・統一登録（CoordinateManager・RecordManager追加）
          */
         async initializeV8Managers() {
-            console.log('🔧 AppCore - v8 Manager群初期化開始（修正版）');
+            console.log('🔧 AppCore - v8 Manager群初期化開始（統一登録修正版）');
             
             try {
                 // 前提条件確認
@@ -250,7 +256,7 @@ if (!window.Tegaki.AppCore) {
                     throw new Error('v8 PixiJS Application not created - call createCanvasV8() first');
                 }
                 
-                // 🚨 Phase 1 修正: Step 1 - v8 CanvasManager先行初期化
+                // Step 1: v8 CanvasManager先行初期化
                 console.log('1️⃣ CanvasManager v8初期化開始...');
                 
                 if (!window.Tegaki.CanvasManager) {
@@ -283,8 +289,82 @@ if (!window.Tegaki.AppCore) {
                 this.v8InitializationSteps.push('v8 CanvasManager initialized');
                 console.log('✅ Step 1: CanvasManager v8初期化完了');
                 
-                // 🚨 Phase 1 修正: Step 2 - v8 ToolManager後続初期化（CanvasManager注入）
-                console.log('2️⃣ ToolManager v8初期化開始...');
+                // 🚨修正追加: Step 2 - Manager統一登録（CoordinateManager・RecordManager含む）
+                console.log('2️⃣ Manager統一登録開始...');
+                
+                // CanvasManager登録
+                this.managers.set("canvas", this.canvasManager);
+                
+                // 🚨修正追加: CoordinateManager登録
+                if (window.Tegaki.CoordinateManager) {
+                    const coordinateManager = new window.Tegaki.CoordinateManager(this);
+                    this.managers.set("coordinate", coordinateManager);
+                    console.log('✅ CoordinateManager登録完了');
+                } else {
+                    console.error('💀 CoordinateManager class not available');
+                    throw new Error('CoordinateManager class not available');
+                }
+                
+                // 🚨修正追加: RecordManager登録
+                if (window.Tegaki.RecordManager) {
+                    const recordManager = new window.Tegaki.RecordManager(this);
+                    this.managers.set("record", recordManager);
+                    console.log('✅ RecordManager登録完了');
+                } else {
+                    console.error('💀 RecordManager class not available');
+                    throw new Error('RecordManager class not available');
+                }
+                
+                // 🚨修正追加: ConfigManager登録
+                if (window.Tegaki.ConfigManager) {
+                    const configManager = new window.Tegaki.ConfigManager();
+                    this.managers.set("config", configManager);
+                    console.log('✅ ConfigManager登録完了');
+                } else {
+                    console.warn('⚠️ ConfigManager not available - スキップ');
+                }
+                
+                // 🚨修正追加: ErrorManager登録
+                if (window.Tegaki.ErrorManagerInstance) {
+                    this.managers.set("error", window.Tegaki.ErrorManagerInstance);
+                    console.log('✅ ErrorManager登録完了');
+                } else {
+                    console.warn('⚠️ ErrorManagerInstance not available - スキップ');
+                }
+                
+                // 🚨修正追加: EventBus登録
+                if (window.Tegaki.EventBusInstance) {
+                    this.managers.set("eventbus", window.Tegaki.EventBusInstance);
+                    console.log('✅ EventBus登録完了');
+                } else {
+                    console.warn('⚠️ EventBusInstance not available - スキップ');
+                }
+                
+                // 🚨修正追加: ShortcutManager登録
+                if (window.Tegaki.ShortcutManager) {
+                    const shortcutManager = new window.Tegaki.ShortcutManager();
+                    this.managers.set("shortcut", shortcutManager);
+                    console.log('✅ ShortcutManager登録完了');
+                } else {
+                    console.warn('⚠️ ShortcutManager not available - スキップ');
+                }
+                
+                // 🚨修正追加: NavigationManager登録
+                if (window.Tegaki.NavigationManager) {
+                    const navigationManager = new window.Tegaki.NavigationManager(this);
+                    this.managers.set("navigation", navigationManager);
+                    console.log('✅ NavigationManager登録完了');
+                } else {
+                    console.warn('⚠️ NavigationManager not available - スキップ');
+                }
+                
+                this.v8Features.managersUnifiedRegistration = true;
+                this.v8InitializationSteps.push('v8 Manager unified registration completed');
+                console.log('✅ Step 2: Manager統一登録完了');
+                console.log('📋 登録Manager一覧:', Array.from(this.managers.keys()));
+                
+                // Step 3: v8 ToolManager後続初期化（CanvasManager注入・Manager統一登録後）
+                console.log('3️⃣ ToolManager v8初期化開始...');
                 
                 if (!window.Tegaki.ToolManager) {
                     throw new Error('ToolManager class not available');
@@ -294,6 +374,17 @@ if (!window.Tegaki.AppCore) {
                 this.toolManager = new window.Tegaki.ToolManager(this.canvasManager);
                 console.log('✅ ToolManager インスタンス作成完了（CanvasManager注入済み）');
                 
+                // ToolManager登録
+                this.managers.set("tool", this.toolManager);
+                
+                // 🚨修正追加: ToolManagerにManager統一登録情報を設定
+                if (typeof this.toolManager.setManagers === 'function') {
+                    this.toolManager.setManagers(this.managers);
+                    console.log('✅ ToolManager: Manager統一登録情報設定完了');
+                } else {
+                    console.warn('⚠️ ToolManager.setManagers() not available');
+                }
+                
                 // v8ツール初期化
                 if (this.toolManager.initializeV8Tools) {
                     await this.toolManager.initializeV8Tools();
@@ -302,19 +393,19 @@ if (!window.Tegaki.AppCore) {
                     console.warn('⚠️ ToolManager.initializeV8Tools() not available');
                 }
                 
-                this.v8InitializationSteps.push('v8 ToolManager created with CanvasManager');
-                console.log('✅ Step 2: ToolManager v8初期化完了');
+                this.v8InitializationSteps.push('v8 ToolManager created with unified managers');
+                console.log('✅ Step 3: ToolManager v8初期化完了');
                 
-                // Step 3: v8 Manager連携確認
+                // Step 4: v8 Manager連携確認
                 this.validateV8ManagerIntegration();
                 this.v8InitializationSteps.push('v8 Manager integration validated');
-                console.log('✅ Step 3: Manager連携確認完了');
+                console.log('✅ Step 4: Manager連携確認完了');
                 
-                // Step 4: v8機能有効化
+                // Step 5: v8機能有効化
                 this.v8Features.containerHierarchy = true;
                 this.v8Features.realtimeDrawing = true;
                 
-                console.log('✅ AppCore - v8 Manager群初期化完了（修正版）');
+                console.log('✅ AppCore - v8 Manager群初期化完了（統一登録修正版）');
                 
             } catch (error) {
                 this.lastError = error;
@@ -345,6 +436,18 @@ if (!window.Tegaki.AppCore) {
                 {
                     condition: this.v8Features.pixiJSLoaded,
                     message: 'PixiJS v8 not properly loaded'
+                },
+                {
+                    condition: this.v8Features.managersUnifiedRegistration,
+                    message: 'Manager unified registration not completed'
+                },
+                {
+                    condition: this.managers.has("coordinate"),
+                    message: 'CoordinateManager not registered'
+                },
+                {
+                    condition: this.managers.has("record"),
+                    message: 'RecordManager not registered'
                 }
             ];
             
@@ -363,6 +466,7 @@ if (!window.Tegaki.AppCore) {
             }
             
             console.log('✅ v8 Manager連携確認完了');
+            console.log('📋 登録済みManager:', Array.from(this.managers.keys()));
         }
         
         /**
@@ -405,10 +509,10 @@ if (!window.Tegaki.AppCore) {
                     rendererType: this.rendererType,
                     webgpuSupported: this.webgpuSupported,
                     features: this.v8Features,
-                    managers: {
-                        canvasManager: !!this.canvasManager,
-                        toolManager: !!this.toolManager
-                    }
+                    managers: Object.fromEntries(
+                        Array.from(this.managers.entries()).map(([key, manager]) => [key, !!manager])
+                    ),
+                    registeredManagers: Array.from(this.managers.keys())
                 });
             }
             
@@ -462,7 +566,10 @@ if (!window.Tegaki.AppCore) {
                 { condition: !!this.rendererType, message: 'v8 renderer type not determined' },
                 { condition: !!this.canvasManager, message: 'v8 CanvasManager not initialized' },
                 { condition: !!this.toolManager, message: 'v8 ToolManager not initialized' },
-                { condition: this.webgpuSupported !== null, message: 'WebGPU support not determined' }
+                { condition: this.webgpuSupported !== null, message: 'WebGPU support not determined' },
+                { condition: this.v8Features.managersUnifiedRegistration, message: 'Manager unified registration not completed' },
+                { condition: this.managers.has("coordinate"), message: 'CoordinateManager not registered' },
+                { condition: this.managers.has("record"), message: 'RecordManager not registered' }
             ];
             
             // CanvasManagerのv8準備確認（利用可能な場合のみ）
@@ -490,7 +597,10 @@ if (!window.Tegaki.AppCore) {
                    !!this.rendererType &&
                    !!this.canvasManager &&
                    !!this.toolManager &&
-                   this.webgpuSupported !== null;
+                   this.webgpuSupported !== null &&
+                   this.v8Features.managersUnifiedRegistration &&
+                   this.managers.has("coordinate") &&
+                   this.managers.has("record");
         }
         
         /**
@@ -502,6 +612,7 @@ if (!window.Tegaki.AppCore) {
             console.log(`🖥️ PixiJS: v${this.pixiVersion} | レンダラー: ${this.rendererType} | WebGPU: ${this.webgpuSupported}`);
             console.log('📝 v8初期化ステップ:', this.v8InitializationSteps);
             console.log('🔧 v8機能:', this.v8Features);
+            console.log('📋 登録Manager:', Array.from(this.managers.keys()));
             
             if (this.lastError) {
                 console.log('❌ 最新エラー:', this.lastError.message);
@@ -533,7 +644,11 @@ if (!window.Tegaki.AppCore) {
                     canvasManager: !!this.canvasManager,
                     canvasManagerV8Ready: this.canvasManager?.isV8Ready?.() || false,
                     toolManager: !!this.toolManager,
-                    toolManagerReady: this.toolManager?.isReady?.() || false
+                    toolManagerReady: this.toolManager?.isReady?.() || false,
+                    registeredManagers: Array.from(this.managers.keys()),
+                    totalRegisteredManagers: this.managers.size,
+                    coordinateManagerRegistered: this.managers.has("coordinate"),
+                    recordManagerRegistered: this.managers.has("record")
                 },
                 
                 // v8機能状況
@@ -617,6 +732,7 @@ if (!window.Tegaki.AppCore) {
                 this.started = false;
                 this.canvasManager = null;
                 this.toolManager = null;
+                this.managers.clear();
                 this.pixiApp = null;
                 this.rendererType = null;
                 this.webgpuSupported = null;
@@ -626,7 +742,8 @@ if (!window.Tegaki.AppCore) {
                     webgpuEnabled: false,
                     asyncInitialization: false,
                     containerHierarchy: false,
-                    realtimeDrawing: false
+                    realtimeDrawing: false,
+                    managersUnifiedRegistration: false
                 };
                 this.lastError = null;
                 this.v8InitializationSteps = [];
@@ -652,7 +769,11 @@ if (!window.Tegaki.AppCore) {
                 v8Managers: {
                     canvas: !!this.canvasManager,
                     canvasV8Ready: this.canvasManager?.isV8Ready?.() || false,
-                    tool: !!this.toolManager
+                    tool: !!this.toolManager,
+                    totalRegistered: this.managers.size,
+                    registeredKeys: Array.from(this.managers.keys()),
+                    coordinateRegistered: this.managers.has("coordinate"),
+                    recordRegistered: this.managers.has("record")
                 },
                 
                 v8ErrorStatus: {
@@ -663,7 +784,8 @@ if (!window.Tegaki.AppCore) {
                 v8InitializationStats: {
                     stepsCompleted: this.v8InitializationSteps.length,
                     fullyInitialized: this.isV8Ready(),
-                    featuresEnabled: Object.values(this.v8Features).filter(Boolean).length
+                    featuresEnabled: Object.values(this.v8Features).filter(Boolean).length,
+                    managersUnifiedRegistration: this.v8Features.managersUnifiedRegistration
                 }
             };
         }
@@ -672,9 +794,9 @@ if (!window.Tegaki.AppCore) {
     // Tegaki名前空間に登録
     window.Tegaki.AppCore = AppCore;
     
-    console.log('🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤・PIXI読み込み確認強化');
+    console.log('🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤・Manager統一登録修正版');
 } else {
     console.log('⚠️ AppCore already defined - skipping redefinition');
 }
 
-console.log('🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤・PIXI読み込み確認強化');
+console.log('🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤・Manager統一登録修正版');
