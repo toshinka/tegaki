@@ -1,5 +1,5 @@
 /**
- * 🔧 ToolManager v8 - PixiJS v8.12.0完全対応版（v8 Tool連携・WebGPU対応・非同期初期化・依存関係修正）
+ * 🔧 ToolManager v8 - PixiJS v8.12.0完全対応版（CanvasManager注入修正・v8 Tool連携・WebGPU対応）
  * 📋 RESPONSIBILITY: v8 Tool管理・v8切り替え・v8イベント委譲・v8 Manager統一注入処理・WebGPU対応Tool作成
  * 🚫 PROHIBITION: 描画処理・Canvas管理・複雑な初期化・設定管理・エラー隠蔽・フォールバック・v7 API混在
  * ✅ PERMISSION: v8 Tool作成・選択・イベント転送・状態管理・v8 Manager統一注入・非同期初期化対応・依存関係確認
@@ -7,19 +7,19 @@
  * 📏 DESIGN_PRINCIPLE: v8 Tool専任管理・責務分離・v8 Manager統一注入・エラー隠蔽禁止・WebGPU対応Tool作成・依存関係厳守
  * 🔄 INTEGRATION: v8 PenTool・v8 EraserTool管理・v8 Manager統一注入・EventBus通信・ErrorManager報告
  * 🚀 V8_MIGRATION: v8 Tool作成・setCanvasManagerV8連携・WebGPU対応状況通知・非同期初期化対応・依存関係修正
+ * 🔧 CRITICAL_FIX: new PenTool(canvasManager)でCanvasManager注入・AbstractTool必須引数対応
  * 
  * 📌 提供メソッド一覧（v8対応・実装確認済み）:
  * ✅ constructor(canvasManager) - v8 CanvasManager必須注入（修正版）
- * ✅ async initializeV8Tools() - v8 Tool初期化・非同期対応（修正版）
+ * ✅ async initializeV8Tools() - v8 Tool初期化・CanvasManager注入修正・非同期対応
  * ✅ async selectV8Tool(toolName) - v8 Tool選択・即座反映・WebGPU状況通知
  * ✅ handleV8PointerEvents(x, y, event) - v8高精度イベント委譲・リアルタイム対応
  * ✅ isV8Ready() - v8対応状況確認・WebGPU対応Tool確認
  * ✅ getV8DebugInfo() - v8専用デバッグ情報・WebGPU状況・Tool v8状態
  * 
  * 📌 他ファイル呼び出しメソッド一覧（実装確認済み）:
- * ✅ new window.Tegaki.PenTool() - v8 PenTool作成（pen-tool.js v8版確認済み）
- * ✅ new window.Tegaki.EraserTool() - v8 EraserTool作成（eraser-tool.js実装予定）
- * ✅ tool.setCanvasManagerV8(canvasManager) - v8 CanvasManager設定（AbstractTool v8確認済み）
+ * ✅ new window.Tegaki.PenTool(canvasManager) - 🔧修正 CanvasManager注入（pen-tool.js v8版確認済み）
+ * ✅ new window.Tegaki.EraserTool(canvasManager) - 🔧修正 CanvasManager注入（eraser-tool.js実装予定）
  * ✅ tool.setManagers(managers) - Manager統一注入（AbstractTool継承確認済み）
  * ✅ tool.activate() / tool.deactivate() - v8 Tool有効無効化（AbstractTool確認済み）
  * ✅ tool.onPointerDown/Move/Up() - v8ポインターイベント処理（v8 PenTool確認済み）
@@ -29,34 +29,33 @@
  * ✅ canvasManager.getV8DrawingContainer() - v8描画Container取得（canvas-manager.js確認済み）
  * 
  * 📐 v8 Tool管理フロー（修正版）:
- * 開始 → CanvasManager注入確認・v8準備確認 → v8 Tool作成(PenTool,EraserTool) → 
- * CanvasManager設定・描画Container確認 → WebGPU対応確認 → v8 Manager統一注入 → 
+ * 開始 → CanvasManager注入確認・v8準備確認 → v8 Tool作成(PenTool(canvasManager),EraserTool(canvasManager)) → 
+ * ✅修正済み Manager統一注入・setManagers()呼び出し → WebGPU対応確認 → 
  * selectV8Tool(pen) → UI更新 → v8イベント委譲 → 状態管理 → 終了
- * 🚨修正済み依存関係: v8 CanvasManager(先行初期化) → v8 ToolManager(後続初期化・注入) → v8 Tool群
+ * 🚨修正済み依存関係: v8 CanvasManager(先行初期化) → v8 ToolManager(後続初期化・注入) → v8 Tool群(CanvasManager注入)
  * 
  * 🚨 CRITICAL_V8_DEPENDENCIES: v8必須依存関係（修正版）
  * - canvasManager !== null - v8 CanvasManagerコンストラクタ注入必須
  * - canvasManager.isV8Ready() === true - v8 CanvasManager準備完了必須
- * - canvasManager.getV8DrawingContainer() !== null - v8描画Container存在必須
- * - window.Tegaki.PenTool !== null - v8 PenToolクラス存在必須
- * - tool.setCanvasManagerV8 !== undefined - v8 Tool連携メソッド必須
+ * - new PenTool(canvasManager) - 🔧修正 AbstractTool必須引数対応
+ * - tool.setManagers(managers) - Manager統一注入対応
  * - this.webgpuSupported !== null - WebGPU対応状況確定必須
  * 
  * 🔧 V8_INITIALIZATION_ORDER: v8初期化順序（修正版・厳守必要）
  * 1. 🚨修正 CanvasManager注入・null確認・v8準備確認
  * 2. ToolManager作成・v8依存関係確認
- * 3. v8 Tool作成（PenTool・EraserTool）
- * 4. 🚨修正 各ToolにCanvasManager設定・描画Container確認
+ * 3. 🔧修正 v8 Tool作成（new PenTool(canvasManager)・new EraserTool(canvasManager)）
+ * 4. 🔧修正 各ToolにManager統一注入・setManagers()呼び出し
  * 5. WebGPU対応状況確認・Tool最適化
- * 6. v8 Manager統一注入・非同期対応
+ * 6. v8 Tool有効化・非同期対応
  * 7. selectV8Tool('pen')でv8デフォルトツール選択
  * 8. v8描画・イベント処理可能
  * 
  * 🚫 V8_ABSOLUTE_PROHIBITIONS: v8移行時絶対禁止事項
  * - v7 Tool作成方式継続・v8機能無視
- * - setCanvasManagerV8無視・v7連携方式継続
+ * - new PenTool()引数なし呼び出し（AbstractTool必須引数無視）
+ * - setManagers()統一注入無視・個別Manager設定継続
  * - WebGPU対応状況無視・従来方式継続
- * - 🚨修正済み CanvasManager未注入・null許可・未準備許可
  * - フォールバック・フェイルセーフ複雑化
  * - v8非同期初期化無視・同期的処理継続
  */
@@ -68,7 +67,7 @@ if (!window.Tegaki) {
 
 /**
  * ToolManager v8 - PixiJS v8.12.0完全対応版
- * v8 Tool連携・WebGPU対応・非同期初期化・依存関係修正
+ * CanvasManager注入修正・v8 Tool連携・WebGPU対応・非同期初期化・依存関係修正
  */
 class ToolManager {
     constructor(canvasManager) {
@@ -183,7 +182,7 @@ class ToolManager {
     }
     
     /**
-     * 🚨 修正版 - v8 Tool初期化（非同期対応・CanvasManager注入確認強化）
+     * 🔧 修正版 - v8 Tool初期化（CanvasManager注入修正・Manager統一注入対応）
      */
     async initializeV8Tools() {
         console.log('🚀 v8 Tool初期化開始');
@@ -194,22 +193,70 @@ class ToolManager {
                 throw new Error('CanvasManager not v8 ready during tool initialization');
             }
             
-            // Step 1: v8 PenTool作成・設定
-            console.log('1️⃣ v8 PenTool作成開始...');
-            const penTool = new window.Tegaki.PenTool();
+            // Manager統一注入用オブジェクト準備
+            const managers = {
+                canvas: this.canvasManager,
+                coordinate: window.Tegaki.CoordinateManagerInstance,
+                record: window.Tegaki.RecordManagerInstance,
+                navigation: window.Tegaki.NavigationManagerInstance, // オプション
+                shortcut: window.Tegaki.ShortcutManagerInstance      // オプション
+            };
             
-            // CanvasManager設定
-            if (typeof penTool.setCanvasManagerV8 === 'function') {
-                await penTool.setCanvasManagerV8(this.canvasManager);
-                console.log('✅ PenTool: v8 CanvasManager設定完了');
+            // 必須Manager存在確認
+            const requiredManagers = ['canvas', 'coordinate', 'record'];
+            const missingManagers = [];
+            
+            for (const required of requiredManagers) {
+                if (!managers[required]) {
+                    missingManagers.push(required);
+                }
+            }
+            
+            if (missingManagers.length > 0) {
+                throw new Error(`Required managers missing for v8 Tool initialization: ${missingManagers.join(', ')}`);
+            }
+            
+            console.log('✅ Manager統一注入準備完了:', {
+                canvas: !!managers.canvas,
+                coordinate: !!managers.coordinate,
+                record: !!managers.record,
+                navigation: !!managers.navigation,
+                shortcut: !!managers.shortcut
+            });
+            
+            // Step 1: 🔧修正 v8 PenTool作成・CanvasManager注入・Manager統一設定
+            console.log('1️⃣ v8 PenTool作成開始...');
+            
+            // 🔧 CRITICAL_FIX: new PenTool(canvasManager)でCanvasManager注入
+            const penTool = new window.Tegaki.PenTool(this.canvasManager);
+            console.log('✅ PenTool作成完了 - CanvasManager注入済み');
+            
+            // 🔧 Manager統一注入（setManagers方式）
+            if (typeof penTool.setManagers === 'function') {
+                penTool.setManagers(managers);
+                console.log('✅ PenTool: Manager統一注入完了');
             } else {
-                console.warn('⚠️ PenTool: setCanvasManagerV8 method not available - using fallback');
+                console.warn('⚠️ PenTool: setManagers method not available - 個別設定にフォールバック');
+                // 個別設定フォールバック（AbstractToolが古い場合）
                 penTool.canvasManager = this.canvasManager;
+            }
+            
+            // Manager設定検証
+            if (typeof penTool.validateManagers === 'function') {
+                try {
+                    penTool.validateManagers();
+                    console.log('✅ PenTool: Manager設定検証完了');
+                } catch (validationError) {
+                    console.error('💀 PenTool: Manager設定検証失敗:', validationError);
+                    throw validationError;
+                }
+            } else {
+                console.warn('⚠️ PenTool: validateManagers method not available - 検証スキップ');
             }
             
             // v8描画Container確認
             try {
-                const drawingContainer = penTool.getV8DrawingContainer?.() || this.canvasManager.getV8DrawingContainer();
+                const drawingContainer = this.canvasManager.getV8DrawingContainer();
                 if (!drawingContainer) {
                     throw new Error('PenTool: v8 Drawing Container not accessible');
                 }
@@ -222,21 +269,40 @@ class ToolManager {
             this.tools.set('pen', penTool);
             console.log('✅ v8 PenTool作成・設定完了');
             
-            // Step 2: v8 EraserTool作成・設定（オプション）
+            // Step 2: 🔧修正 v8 EraserTool作成・設定（オプション）
             if (window.Tegaki.EraserTool) {
                 console.log('2️⃣ v8 EraserTool作成開始...');
-                const eraserTool = new window.Tegaki.EraserTool();
                 
-                if (typeof eraserTool.setCanvasManagerV8 === 'function') {
-                    await eraserTool.setCanvasManagerV8(this.canvasManager);
-                    console.log('✅ EraserTool: v8 CanvasManager設定完了');
-                } else {
-                    console.warn('⚠️ EraserTool: v8対応未完了 - 基本設定のみ');
-                    eraserTool.canvasManager = this.canvasManager;
+                try {
+                    // 🔧 CRITICAL_FIX: new EraserTool(canvasManager)でCanvasManager注入
+                    const eraserTool = new window.Tegaki.EraserTool(this.canvasManager);
+                    console.log('✅ EraserTool作成完了 - CanvasManager注入済み');
+                    
+                    // Manager統一注入
+                    if (typeof eraserTool.setManagers === 'function') {
+                        eraserTool.setManagers(managers);
+                        console.log('✅ EraserTool: Manager統一注入完了');
+                    } else {
+                        console.warn('⚠️ EraserTool: setManagers method not available - 個別設定にフォールバック');
+                        eraserTool.canvasManager = this.canvasManager;
+                    }
+                    
+                    // Manager設定検証
+                    if (typeof eraserTool.validateManagers === 'function') {
+                        try {
+                            eraserTool.validateManagers();
+                            console.log('✅ EraserTool: Manager設定検証完了');
+                        } catch (validationError) {
+                            console.warn('⚠️ EraserTool: Manager設定検証失敗 - 継続:', validationError.message);
+                        }
+                    }
+                    
+                    this.tools.set('eraser', eraserTool);
+                    console.log('✅ v8 EraserTool作成・設定完了');
+                    
+                } catch (eraserError) {
+                    console.warn('⚠️ v8 EraserTool作成失敗 - PenToolのみで継続:', eraserError.message);
                 }
-                
-                this.tools.set('eraser', eraserTool);
-                console.log('✅ v8 EraserTool作成・設定完了');
             } else {
                 console.warn('⚠️ EraserTool利用不可 - PenToolのみ対応');
             }
@@ -738,7 +804,11 @@ class ToolManager {
                 eraserTool: !!window.Tegaki.EraserTool,
                 canvasManager: !!this.canvasManager,
                 eventBus: !!this.eventBus,
-                errorManager: !!this.errorManager
+                errorManager: !!this.errorManager,
+                coordinateManager: !!window.Tegaki.CoordinateManagerInstance,
+                recordManager: !!window.Tegaki.RecordManagerInstance,
+                navigationManager: !!window.Tegaki.NavigationManagerInstance,
+                shortcutManager: !!window.Tegaki.ShortcutManagerInstance
             }
         };
     }
@@ -844,6 +914,21 @@ class ToolManager {
                     } catch (error) {
                         console.error(`💀 ${toolName}: CanvasManager更新エラー:`, error);
                     }
+                } else if (typeof tool.setManagers === 'function') {
+                    // setManagers方式でのCanvasManager更新
+                    try {
+                        const managers = {
+                            canvas: canvasManager,
+                            coordinate: window.Tegaki.CoordinateManagerInstance,
+                            record: window.Tegaki.RecordManagerInstance,
+                            navigation: window.Tegaki.NavigationManagerInstance,
+                            shortcut: window.Tegaki.ShortcutManagerInstance
+                        };
+                        tool.setManagers(managers);
+                        console.log(`✅ ${toolName}: Manager統一更新完了`);
+                    } catch (error) {
+                        console.error(`💀 ${toolName}: Manager統一更新エラー:`, error);
+                    }
                 }
             });
         }
@@ -852,4 +937,4 @@ class ToolManager {
 
 // グローバル公開
 window.Tegaki.ToolManager = ToolManager;
-console.log('🚀 ToolManager v8.12.0完全対応版 Loaded - v8 Tool連携・WebGPU対応・非同期初期化・Container階層・リアルタイム切り替え');
+console.log('🚀 ToolManager v8.12.0完全対応版 Loaded - CanvasManager注入修正・v8 Tool連携・WebGPU対応・非同期初期化・Container階層・リアルタイム切り替え');
