@@ -1,0 +1,488 @@
+==================================================
+📋 Tegaki: キャンバス外描画 / カメラ分離 機能計画書
+==================================================
+
+■ 現況
+- ペンツールは「キャンバス＝表示範囲」として動作
+- カメラ外での入力は無視され、外から線を引くと切れてしまう
+- キャンバスとカメラの概念が混同されており、
+  レイヤー移動・パン・ズーム・アニメーション展開に不整合が生じる恐れがある
+- アニメ機能を見据えると、表示範囲と描画データの分離が必須
+
+--------------------------------------------------
+■ 問題提起
+1. 外から描き込めないと「自然な描画体験」が失われる
+2. キャンバス＝表示範囲とすると、レイヤー移動時にデータが消える/切れるリスク
+3. アニメーションのパン・ズーム・ティルト実装が困難
+4. GIFアニメやタイムライン機能で「カメラ外の素材をどう扱うか」が未整理
+
+--------------------------------------------------
+■ 提案
+1. 「描画キャンバス」と「表示カメラ」の分離
+   - 描画キャンバス（= レイヤー）は無限拡張可能
+   - 表示はカメラ（NavigationManager）で制御
+
+2. 外部入力対応
+   - Pointer入力をキャンバス外でも監視
+   - ストロークは「仮バッファ」に蓄積
+   - カメラ範囲に入った瞬間にストローク記録開始
+
+3. データ保持戦略
+   - RecordManagerに「レイヤー座標系」でストロークを保存
+   - カメラ範囲に依存しない
+   - バウンディングボックスを記録し、最適化・保存範囲に活用
+
+4. アニメーション対応
+   - 「描画ストローク」と「カメラワーク」を別々に記録
+   - レイヤー移動でカメラ外に出てもデータは保持
+   - 将来的に9画面分などの制限を設けず、無限キャンバス思想で統一
+
+--------------------------------------------------
+■ 実装計画（Phase位置付け）
+- Phase1.5
+  - 外部入力対応（Pointerバッファリング方式）
+  - RecordManagerに「カメラ非依存座標」で記録
+  - NavigationManagerでパン/ズームを確立（カメラの概念を導入）
+
+- Phase2
+  - レイヤー管理強化
+  - レイヤー移動・カメラ外保持を実装
+  - バウンディングボックス記録で最適化
+  - パン・ズーム・ティルトに適応
+
+- Phase3
+  - アニメーション機能（タイムライン・カメラワーク記録）
+  - GIFアニメ出力
+  - 描画ストロークとカメラモーションを分離記録
+  - Pathfinder/WebGPU描画導入と連携
+
+--------------------------------------------------
+■ 結論
+- 「外から描いても繋がるペン入力」＝ Phase1.5で必須
+- 「カメラとキャンバスの分離」＝ Phase1.5〜Phase2で基盤化
+- 「無限キャンバス＋カメラワーク」＝ Phase3でアニメ機能に発展
+
+==================================================
+
+// ================================
+// ✏️ 外部入力対応ペンツール スケルトン
+// ================================
+
+// 仮バッファ（画面外ストローク保持用）
+let tempStroke = [];
+
+// ストロークが正式に開始されたか
+let isRecording = false;
+
+// PointerDown: 外でも必ず監視
+window.addEventListener("pointerdown", (e) => {
+  tempStroke = [];
+  isRecording = false;
+
+  // 開始座標を仮バッファに追加
+  tempStroke.push(getCanvasCoords(e));
+});
+
+// PointerMove: 外でも追跡
+window.addEventListener("pointermove", (e) => {
+  const pt = getCanvasCoords(e);
+  tempStroke.push(pt);
+
+  if (!isRecording && isInsideCamera(pt)) {
+    // カメラ内に入った瞬間に正式ストローク開始
+    isRecording = true;
+
+    // 仮バッファごとRecordManagerに送る
+    RecordManager.startStroke(tempStroke);
+  } else if (isRecording) {
+    // 以降は通常記録
+    RecordManager.addPoint(pt);
+  }
+});
+
+// PointerUp: ストローク確定
+window.addEventListener("pointerup", (e) => {
+  if (isRecording) {
+    RecordManager.endStroke();
+  }
+  // バッファ初期化
+  tempStroke = [];
+  isRecording = false;
+});
+
+// ================================
+// ユーティリティ
+// ================================
+
+// マウス/タッチ座標をキャンバス座標に変換
+function getCanvasCoords(e) {
+  // CoordinateManager利用（カメラ変換を考慮）
+  return CoordinateManager.toCanvasCoords(e.clientX, e.clientY);
+}
+
+// カメラ範囲判定
+function isInsideCamera(pt) {
+  const view = NavigationManager.getCameraBounds();
+  return (
+    pt.x >= view.x &&
+    pt.y >= view.y &&
+    pt.x <= view.x + view.width &&
+    pt.y <= view.y + view.height
+  );
+}
+
+// ================================
+// 🧹 外部入力対応エラーツール スケルトン
+// ================================
+
+// 仮バッファ（画面外ストローク保持用）
+let tempEraseStroke = [];
+
+// ストロークが正式に開始されたか
+let isErasing = false;
+
+// PointerDown: 外でも監視
+window.addEventListener("pointerdown", (e) => {
+  tempEraseStroke = [];
+  isErasing = false;
+
+  // 仮バッファに追加
+  tempEraseStroke.push(getCanvasCoords(e));
+});
+
+// PointerMove: 外でも追跡
+window.addEventListener("pointermove", (e) => {
+  const pt = getCanvasCoords(e);
+  tempEraseStroke.push(pt);
+
+  if (!isErasing && isInsideCamera(pt)) {
+    // カメラ内に入った瞬間に正式消去開始
+    isErasing = true;
+
+    // 仮バッファごとRecordManagerに送信
+    RecordManager.startErase(tempEraseStroke);
+  } else if (isErasing) {
+    // 以降は通常消去処理
+    RecordManager.addErasePoint(pt);
+  }
+});
+
+// PointerUp: 消去確定
+window.addEventListener("pointerup", (e) => {
+  if (isErasing) {
+    RecordManager.endErase();
+  }
+  // 初期化
+  tempEraseStroke = [];
+  isErasing = false;
+});
+
+// ================================
+// ユーティリティ（ペンと共通）
+// ================================
+
+// キャンバス座標変換
+function getCanvasCoords(e) {
+  return CoordinateManager.toCanvasCoords(e.clientX, e.clientY);
+}
+
+// カメラ範囲判定
+function isInsideCamera(pt) {
+  const view = NavigationManager.getCameraBounds();
+  return (
+    pt.x >= view.x &&
+    pt.y >= view.y &&
+    pt.x <= view.x + view.width &&
+    pt.y <= view.y + view.height
+  );
+}
+
+// =========================================
+// 🔄 RecordManager API設計（描画・消去両対応）
+// =========================================
+
+class RecordManager {
+  constructor() {
+    this.history = [];       // 操作履歴スタック
+    this.redoStack = [];     // Redo用スタック
+    this.currentOp = null;   // 現在の操作
+  }
+
+  // --------------------------
+  // 共通API
+  // --------------------------
+
+  startOperation(type, points = []) {
+    // type = "stroke" | "erase" | "transform" など
+    this.currentOp = {
+      type: type,
+      points: [...points],   // 初期座標（仮バッファ込み）
+      timestamp: Date.now(),
+      layer: LayerManager.getActiveLayerId()
+    };
+  }
+
+  addPoint(pt) {
+    if (!this.currentOp) return;
+    this.currentOp.points.push(pt);
+  }
+
+  endOperation() {
+    if (!this.currentOp) return;
+
+    // 履歴に追加
+    this.history.push(this.currentOp);
+
+    // Redoスタックはクリア（新操作が入ったため）
+    this.redoStack = [];
+
+    // レイヤーに反映
+    this.applyToLayer(this.currentOp);
+
+    this.currentOp = null;
+  }
+
+  // --------------------------
+  // ショートカット用
+  // --------------------------
+
+  undo() {
+    if (this.history.length === 0) return;
+    const op = this.history.pop();
+    this.redoStack.push(op);
+
+    this.rebuildCanvas();
+  }
+
+  redo() {
+    if (this.redoStack.length === 0) return;
+    const op = this.redoStack.pop();
+    this.history.push(op);
+
+    this.rebuildCanvas();
+  }
+
+  // --------------------------
+  // 内部処理
+  // --------------------------
+
+  applyToLayer(op) {
+    const layer = LayerManager.getLayer(op.layer);
+    if (!layer) return;
+
+    if (op.type === "stroke") {
+      layer.drawStroke(op.points);
+    } else if (op.type === "erase") {
+      layer.eraseStroke(op.points);
+    } else if (op.type === "transform") {
+      layer.applyTransform(op);
+    }
+  }
+
+  rebuildCanvas() {
+    // 全レイヤーを初期化して履歴を再適用
+    LayerManager.clearAll();
+    for (const op of this.history) {
+      this.applyToLayer(op);
+    }
+  }
+}
+
+//＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+PenTool / EraserTool からの呼び出し例
+
+// ペン開始
+RecordManager.startOperation("stroke", tempStroke);
+
+// ペン移動
+RecordManager.addPoint(pt);
+
+// ペン終了
+RecordManager.endOperation();
+
+
+// 消しゴム開始
+RecordManager.startOperation("erase", tempEraseStroke);
+
+// 消しゴム移動
+RecordManager.addPoint(pt);
+
+// 消しゴム終了
+RecordManager.endOperation();
+
+
+// =========================================
+// 🎨 LayerManager スケルトン
+// =========================================
+
+class LayerManager {
+  constructor() {
+    this.layers = new Map();      // レイヤーID → PIXI.Container
+    this.activeLayerId = null;    // 現在のアクティブレイヤー
+  }
+
+  // レイヤー作成
+  createLayer(id) {
+    const container = new PIXI.Container();
+    container.name = `layer-${id}`;
+    this.layers.set(id, container);
+
+    // CanvasManagerのメインステージに追加
+    CanvasManager.getStage().addChild(container);
+
+    if (!this.activeLayerId) {
+      this.activeLayerId = id;
+    }
+    return container;
+  }
+
+  // レイヤー取得
+  getLayer(id) {
+    return this.layers.get(id);
+  }
+
+  // アクティブレイヤー取得
+  getActiveLayerId() {
+    return this.activeLayerId;
+  }
+
+  setActiveLayer(id) {
+    if (this.layers.has(id)) {
+      this.activeLayerId = id;
+    }
+  }
+
+  // 全レイヤー削除（Undo/Redo時に再構築するため）
+  clearAll() {
+    for (const [id, layer] of this.layers) {
+      layer.removeChildren();
+    }
+  }
+
+  // =========================================
+  // ストローク描画処理
+  // =========================================
+
+  drawStroke(points) {
+    const layer = this.getLayer(this.activeLayerId);
+    if (!layer) return;
+
+    const g = new PIXI.Graphics();
+    g.lineStyle(2, 0x000000, 1.0); // TODO: 色・太さをRecordManagerから受け取る
+    g.moveTo(points[0].x, points[0].y);
+
+    for (let i = 1; i < points.length; i++) {
+      g.lineTo(points[i].x, points[i].y);
+    }
+
+    layer.addChild(g);
+  }
+
+  // =========================================
+  // ストローク消去処理
+  // =========================================
+
+  eraseStroke(points) {
+    const layer = this.getLayer(this.activeLayerId);
+    if (!layer) return;
+
+    // シンプル版：ヒットテストでGraphicsを削除
+    for (const child of [...layer.children]) {
+      if (this.hitTestStroke(child, points)) {
+        layer.removeChild(child);
+      }
+    }
+  }
+
+  // ヒットテスト（非常に簡易的な例）
+  hitTestStroke(graphicsObj, erasePoints) {
+    const bounds = graphicsObj.getBounds();
+
+    for (const pt of erasePoints) {
+      if (
+        pt.x >= bounds.x &&
+        pt.x <= bounds.x + bounds.width &&
+        pt.y >= bounds.y &&
+        pt.y <= bounds.y + bounds.height
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+}
+
+==================================================
+📋 TegakiPathFormat (TPF) - サンプル設計
+==================================================
+
+■ 基本方針
+- SVG Path 互換の "d" 属性形式で曲線を保持
+- 点列データも保持し、筆圧・速度・傾きなど拡張情報に対応
+- レイヤーや描画モードを含め、描画/消去/変形すべてに対応可能
+
+--------------------------------------------------
+■ JSON サンプル
+--------------------------------------------------
+
+{
+  "id": "stroke_00123",          // 一意のID
+  "type": "stroke",              // "stroke" | "erase" | "transform"
+  "layer": "layer_01",           // 所属レイヤー
+  "color": "#800000",            // 色
+  "width": 2.0,                  // 線の太さ
+  "opacity": 1.0,                // 不透明度
+  "blendMode": "normal",         // 合成モード
+
+  "path": "M10 10 L20 20 L30 15", // SVG Path文字列（互換性のため）
+
+  "points": [                     // 生ストロークデータ
+    { "x": 10, "y": 10, "pressure": 0.5, "tilt": 0, "time": 0 },
+    { "x": 20, "y": 20, "pressure": 0.6, "tilt": 5, "time": 16 },
+    { "x": 30, "y": 15, "pressure": 0.4, "tilt": -3, "time": 33 }
+  ],
+
+  "bounds": { "x": 10, "y": 10, "w": 20, "h": 10 }, // バウンディングボックス
+
+  "meta": {
+    "created": "2025-08-28T15:00:00Z",
+    "tool": "pen",               // "pen" | "eraser" | "brush" etc.
+    "engine": "pixi",            // "pixi" | "pathfinder"
+    "user": "default"
+  }
+}
+
+--------------------------------------------------
+■ 設計ポイント
+--------------------------------------------------
+
+1. SVG互換
+   - "path" フィールドで SVG Path として出力可能
+   - 互換性を保つことで外部ツール（Illustrator等）との連携が容易
+
+2. 高精度ストローク
+   - "points" で圧力・傾き・タイムスタンプ付きの座標を保持
+   - Pathfinderや物理ブラシ描画に利用可能
+
+3. 描画/消去/変形の統一
+   - "type" によって stroke / erase / transform を区別
+   - Undo/Redoやアニメーションにも統一的に利用できる
+
+4. 最適化の布石
+   - "bounds" を保持することで、再描画や保存範囲の高速判定に利用可能
+   - フレーム単位のレンダリング最適化に有効
+
+5. レンダリングエンジン切替
+   - "engine" を指定することで、PixiJS版 / Pathfinder版を切替可能
+   - ハイブリッド描画戦略に対応
+
+--------------------------------------------------
+■ 将来拡張例
+--------------------------------------------------
+- "velocity": 筆速を記録し、ブラシシミュレーションに反映
+- "sdf": SDF（Signed Distance Field）情報を保持して物理ブラシに対応
+- "aiHints": AI補正用メタデータ（認識候補や修正提案）
+
+==================================================
+
+
