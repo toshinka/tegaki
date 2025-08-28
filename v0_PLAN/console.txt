@@ -1,321 +1,107 @@
- 🚨 ErrorManager Simple 作成
- 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
- 🔧 ConfigManager Simple 作成
- 🔧 ConfigManager Simple Loaded - シンプル設定管理
- 🔄 EventBus Simple 作成
- 🔄 EventBus Simple Loaded - シンプルイベント通信
- 🎯 CoordinateManager Phase1.5 完全実装版 Loaded
- 📏 機能: クライアント↔Canvas座標変換・境界判定・キャッシュ最適化・互換性メソッド
- 🔧 特徴: 剛直構造・エラー隠蔽禁止・PixiJS標準活用・パフォーマンス最適化
- 🔄 互換性: screenToCanvas/canvasToScreen メソッド追加（エイリアス）
- ✅ 準備完了: setCanvasManager()でCanvasManager設定後に利用可能
- 🎯 CoordinateManager Phase1.5 完全実装版 Loaded
- 📏 機能: クライアント↔Canvas座標変換・境界判定・キャッシュ最適化
- 🔧 特徴: 剛直構造・エラー隠蔽禁止・PixiJS標準活用・パフォーマンス最適化
- ✅ 準備完了: setCanvasManager()でCanvasManager設定後に利用可能
- 🧭 NavigationManager Phase1.5スタブ実装 - 名前空間登録完了
- 🔧 次のステップ: 詳細実装・CoordinateManager完全連携・パフォーマンス最適化
- 🔄 RecordManager Phase1.5 実用実装版 - 初期化開始
- 🔄 RecordManager 実用実装完了
- 🔄 RecordManager Phase1.5 実用実装版 Loaded - Undo/Redo・操作履歴・非破壊編集完全対応
- 🔄 record-manager.js loaded - 実用実装・スタブ→実装変換・Phase1.5完全対応完了
- ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
- 🔧 setupPhase15Shortcuts・enableメソッド追加済み
- 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
- 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
- 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
- ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
- 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
- 🎨 CanvasManager レイヤー問題完全修正版 Loaded - main layer対応・エラー隠蔽禁止・レイヤー存在確実化
- 🎯 AbstractTool Phase1.5 RecordManager連携修正版 Loaded - startOperation/endOperation方式対応・架空メソッド削除・Manager統一注入完成
- 🖊️ PenTool Phase1.5 RecordManager連携修正版 Loaded - startOperation/endOperation方式対応・架空メソッド削除・Undo/Redo連携完成
- 🧹 EraserTool Phase1.5 Loaded - シンプル実装版・RecordManager連携・PixiJS hit-test活用
- 🔧 ToolManager Phase1.5 Manager統一注入版 Loaded - initializeToolsWithManagers実装・Manager注入統一・エラー隠蔽禁止・フォールバック完全削除
- 🎯 AppCore Phase1.5基盤システム Loaded - Manager統合基盤・初期化順序制御・架空メソッド完全修正版
- 🎯 AppCore Phase1.5基盤システム Loaded - Manager統合基盤・初期化順序制御・架空メソッド完全修正版
- 🎯 TegakiApplication Phase1.5 メインアプリケーション（修正版・Manager統一注入修正） Loaded
- 📏 CoordinateManager統合・座標変換修正・ペン描画修正
- 🧭 ナビゲーション・非破壊編集・ショートカット統合
- 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統一注入修正対応
- 🔧 Manager統一注入修正・initializeToolsWithManagers使用・エラー隠蔽禁止
- 🚀 TegakiApplication Phase1.5 メインアプリケーション（Manager統一注入修正版） 完成
- 🎯 TegakiApplication Phase1.5 メインアプリケーション（修正版・Manager統一注入修正） Loaded
- 📏 CoordinateManager統合・座標変換修正・ペン描画修正
- 🧭 ナビゲーション・非破壊編集・ショートカット統合
- 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統一注入修正対応
- 🔧 Manager統一注入修正・initializeToolsWithManagers使用・エラー隠蔽禁止
- 🚀 TegakiApplication Phase1.5 メインアプリケーション（Manager統一注入修正版） 完成
+error-manager.js:20 🚨 ErrorManager Simple 作成
+error-manager.js:132 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
+config-manager.js:20 🔧 ConfigManager Simple 作成
+config-manager.js:229 🔧 ConfigManager Simple Loaded - シンプル設定管理
+event-bus.js:20 🔄 EventBus Simple 作成
+event-bus.js:97 🔄 EventBus Simple Loaded - シンプルイベント通信
+coordinate-manager.js:581 🎯 CoordinateManager PixiJS v8対応版 Loaded
+coordinate-manager.js:582 📏 v8機能: 高精度座標変換・Container変形対応・WebGPU最適化・リアルタイム変換
+coordinate-manager.js:583 🚀 v8特徴: 高精度変換・Matrix活用・NavigationManager統合・60fps+対応
+coordinate-manager.js:584 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
+coordinate-manager.js:587 🎯 CoordinateManager PixiJS v8対応版 Loaded - 高精度座標変換・Container変形・WebGPU対応完了
+navigation-manager.js:718 🧭 NavigationManager PixiJS v8対応版 Loaded
+navigation-manager.js:719 📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
+navigation-manager.js:720 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
+navigation-manager.js:721 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
+navigation-manager.js:724 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
+record-manager.js:899 🔄 RecordManager PixiJS v8対応版 Loaded
+record-manager.js:900 📏 v8機能: Graphics記録・WebGPU最適化・高精度操作履歴・Container階層対応
+record-manager.js:901 🚀 v8特徴: 非破壊編集・v8 Graphics活用・高性能メモリ管理・WebGPU加速
+record-manager.js:902 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
+record-manager.js:905 🔄 RecordManager PixiJS v8対応版 Loaded - Graphics記録・WebGPU最適化・高精度履歴管理完了
+shortcut-manager.js:416 ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
+shortcut-manager.js:417 🔧 setupPhase15Shortcuts・enableメソッド追加済み
+shortcut-manager.js:418 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
+minimal-deps.js:22 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
+minimal-deps.js:168 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
+minimal-deps.js:169 ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
+minimal-deps.js:170 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
+canvas-manager.js:615 🚀 CanvasManager v8.12.0完全対応版 Loaded - WebGPU・Container階層・リアルタイム描画対応
+abstract-tool.js:803 🎯 AbstractTool Phase1.5 RecordManager連携修正版 Loaded - startOperation/endOperation方式対応・架空メソッド削除・Manager統一注入完成
+pen-tool.js:901 🚀 PenTool v8.12.0完全対応版 Loaded - リアルタイム描画・WebGPU対応・初回クリック問題解決・Container階層・フォールバック削除
+eraser-tool.js:727 🧹 EraserTool PixiJS v8対応版 Loaded
+eraser-tool.js:728 📏 v8機能: Graphics削除・Container階層対応・WebGPU最適化・高精度hit-test
+eraser-tool.js:729 🚀 v8特徴: RecordManager v8統合・高精度消去・WebGPU加速・Container階層活用
+eraser-tool.js:730 ✅ v8準備完了: initializeV8Features()でv8機能初期化後に利用可能
+tool-manager.js:802 🚀 ToolManager v8.12.0完全対応版 Loaded - v8 Tool連携・WebGPU対応・非同期初期化・Container階層・リアルタイム切り替え
+app-core.js:563 🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤
+app-core.js:568 🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤
+tegaki-application.js:1055 🎯 TegakiApplication Phase1.5 メインアプリケーション（修正版・Manager統一注入修正） Loaded
+tegaki-application.js:1056 📏 CoordinateManager統合・座標変換修正・ペン描画修正
+tegaki-application.js:1057 🧭 ナビゲーション・非破壊編集・ショートカット統合
+tegaki-application.js:1058 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統一注入修正対応
+tegaki-application.js:1059 🔧 Manager統一注入修正・initializeToolsWithManagers使用・エラー隠蔽禁止
+tegaki-application.js:1060 🚀 TegakiApplication Phase1.5 メインアプリケーション（Manager統一注入修正版） 完成
+tegaki-application.js:1063 🎯 TegakiApplication Phase1.5 メインアプリケーション（修正版・Manager統一注入修正） Loaded
+tegaki-application.js:1064 📏 CoordinateManager統合・座標変換修正・ペン描画修正
+tegaki-application.js:1065 🧭 ナビゲーション・非破壊編集・ショートカット統合
+tegaki-application.js:1066 🆕 CoordinateManager・NavigationManager・RecordManager・ShortcutManager統一注入修正対応
+tegaki-application.js:1067 🔧 Manager統一注入修正・initializeToolsWithManagers使用・エラー隠蔽禁止
+tegaki-application.js:1068 🚀 TegakiApplication Phase1.5 メインアプリケーション（Manager統一注入修正版） 完成
  ⚠️ AppCore already defined - skipping redefinition
-main.js:335 🎯 main.js loaded - AppCore基盤システム完成（ToolManager初期化修正版）
-phase15-integration-test.js:593 🧪 Phase1.5統合テスト Loaded
-phase15-integration-test.js:594 📏 新Manager統合状況確認・機能テスト・レポート生成・Phase1.5完全対応
-phase15-integration-test.js:595 🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
-bootstrap.js:15 🚀 Bootstrap Phase1.5 - 新Manager統合対応版
-bootstrap.js:168 ⏳ DOM Loading - DOMContentLoaded待機中...
-bootstrap.js:182 🎯 Bootstrap Phase1.5 registered - 新Manager統合対応版
-bootstrap.js:75 🔧 Bootstrap Phase1.5 実行開始...
-bootstrap.js:21 🔍 Phase1.5 依存関係確認開始...
-bootstrap.js:50 ✅ TegakiApplication: 利用可能
-bootstrap.js:50 ✅ AppCore: 利用可能
-bootstrap.js:50 ✅ CanvasManager: 利用可能
-bootstrap.js:50 ✅ ToolManager: 利用可能
-bootstrap.js:50 ✅ ErrorManager: 利用可能
-bootstrap.js:50 ✅ ConfigManager: 利用可能
-bootstrap.js:50 ✅ EventBus: 利用可能
-bootstrap.js:50 ✅ CoordinateManager: 利用可能
-bootstrap.js:50 ✅ NavigationManager: 利用可能
-bootstrap.js:50 ✅ RecordManager: 利用可能
-bootstrap.js:50 ✅ ShortcutManager: 利用可能
-bootstrap.js:50 ✅ PenTool: 利用可能
-bootstrap.js:50 ✅ EraserTool: 利用可能
-bootstrap.js:57 📊 依存関係確認結果: 13/13 クラス利用可能
-bootstrap.js:97 🎨 TegakiApplication インスタンス化開始...
-tegaki-application.js:52 🎯 TegakiApplication Phase1.5 メインアプリケーション 作成・自動初期化開始
-tegaki-application.js:81 🚀 TegakiApplication Phase1.5 Manager統一注入修正版初期化開始
-tegaki-application.js:117 🆕 Phase1.5新Manager安全初期化開始...
-coordinate-manager.js:47 🎯 CoordinateManager Phase1.5 完全実装版 作成開始
-coordinate-manager.js:57 ✅ CoordinateManager Phase1.5 完全実装版 作成完了
-coordinate-manager.js:59 🎯 CoordinateManager Phase1.5 完全実装版 - 自動デバッグテスト実行
-tegaki-application.js:123 ✅ CoordinateManager初期化完了
-tegaki-application.js:137 ✅ RecordManager初期化完了（既存インスタンス使用）
-navigation-manager.js:20 🧭 NavigationManager Phase1.5スタブ実装 - 初期化開始
-navigation-manager.js:43 🧭 NavigationManager スタブ実装完了
-tegaki-application.js:173 ✅ NavigationManager初期化完了
-shortcut-manager.js:20 ⌨️ ShortcutManager Phase1.5スタブ実装 - 初期化開始
-shortcut-manager.js:41 ⌨️ ShortcutManager スタブ実装完了
-tegaki-application.js:197 ✅ ShortcutManager初期化完了
-tegaki-application.js:212 🆕 Phase1.5新Manager安全初期化完了
-tegaki-application.js:213 📊 Manager初期化状況: {coordinateManager: true, recordManager: true, navigationManager: true, shortcutManager: true}
-app-core.js:36 🎯 AppCore Phase1.5基盤システム 作成開始
-app-core.js:53 🎯 AppCore Phase1.5基盤システム 作成完了
-app-core.js:60 🎨 AppCore - CanvasManager初期化開始
-canvas-manager.js:57 🎨 CanvasManager レイヤー問題完全修正版作成開始
-canvas-manager.js:67 🎨 CanvasManager レイヤー問題完全修正版作成完了
-app-core.js:71 ✅ AppCore - CanvasManager作成完了
-bootstrap.js:105 ✅ Phase1.5 完全版 - 全Manager統合済み
-bootstrap.js:112 ✅ Bootstrap完了 - Tegakiアプリケーション開始完了
-tegaki-application.js:234 ✅ AppCore初期化完了（CanvasManagerのみ）
-app-core.js:85 🚀 AppCore - PixiJS Application設定開始
- 🎨 CanvasManager: PixiJS Application設定開始
- 🔧 CanvasManager: 必須レイヤー作成開始
- ✅ 背景レイヤー (layer0) 作成完了
- ✅ 描画レイヤー (layer1) 作成完了
- ✅ メインレイヤー (main) エイリアス設定完了 → layer1
- 🔧 CanvasManager: 必須レイヤー作成完了
- 📊 レイヤー作成状況: {totalLayers: 3, layerKeys: Array(3), stageChildren: 2}
- 🔧 CanvasManager: 必須レイヤー存在検証開始
- ✅ CanvasManager: 必須レイヤー存在検証完了
- 📊 検証結果: {requiredLayers: Array(3), createdLayers: Array(3), mainLayerAliasValid: true, allLayersValid: true}
- 🎨 PixiJS Application Info: {width: 400, height: 400, renderer: 1, view: true, stage: true, …}
- ✅ CanvasManager: PixiJS Application設定完了
- ✅ AppCore - PixiJS Application設定完了
- 📏 PixiJS設定: 400x400px
- ✅ PixiJS Canvas作成・配置・CanvasManager設定完了
- 📏 Canvas設定: 400x400px, resolution=1, autoDensity=false
- 🆕 Phase1.5新ManagerにCanvasManager設定開始...
- 🔧 CoordinateManager - CanvasManager設定開始
- ✅ CoordinateManager - CanvasManager設定完了
- ✅ CoordinateManager - CanvasManager設定完了
- 🔄 RecordManager - CanvasManager設定完了
- ✅ RecordManager - CanvasManager設定完了
- 🆕 Phase1.5新Manager CanvasManager設定完了
- 🔧 ToolManager初期化開始 - Phase1.5 Manager統一注入修正版
- 🖊️ AppCore - ToolManager初期化開始（Phase1.5対応版）
- 🔧 ToolManager Phase1.5 作成開始 - Manager統一注入版
- ✅ 全依存関係確認完了 - PenTool・EraserTool・CanvasManager利用可能
- 🔧 ツール作成開始...
- 🎯 AbstractTool 作成開始: pen
- ✅ pen AbstractTool 作成完了
- 🖊️ PenTool Phase1.5 作成開始 - RecordManager連携修正版
- ✅ PenTool 作成完了: {toolName: 'pen', hasCanvasManager: true, penSettings: {…}}
- ✅ PenTool 作成完了
- 🎯 AbstractTool 作成開始: eraser
- ✅ eraser AbstractTool 作成完了
- 🧹 EraserTool Phase1.5 作成開始 - シンプル実装版
- ✅ EraserTool 作成完了: {toolName: 'eraser', hasCanvasManager: true, hasRecordManager: true, eraserSettings: {…}}
- ✅ EraserTool 作成完了
- ✅ 全ツール作成完了: (2) ['pen', 'eraser']
- 📊 ツール数: 2
- ✅ ToolManager コンストラクタ完了 - ツール作成完了・Manager注入待機中
- 📋 作成完了ツール: (2) ['pen', 'eraser']
- ⚠️ 注意: Manager注入前のためツール選択不可
- ✅ AppCore - ToolManager初期化完了（Phase1.5対応版）
- 🔧 ToolManager Manager統一注入処理開始...
- 🔧 ToolManager 必要Manager収集開始...
- ✅ 必要Manager収集完了
- 📊 収集Manager状況: {canvas: true, coordinate: true, record: true, navigation: true, shortcut: true}
- 🔧 pen Manager統一注入開始...
- 🔧 pen Manager統一注入開始...
- ✅ pen Manager統一注入完了
- 📊 注入されたManager: {canvas: true, coordinate: true, record: true, navigation: true, shortcut: true}
- ✅ pen Manager統一注入完了
- ✅ pen Manager設定確認完了
- 📊 Manager設定状況: {canvas: {…}, coordinate: {…}, record: {…}, navigation: {…}, shortcut: {…}}
- ✅ pen Manager設定検証完了
- 🔧 eraser Manager統一注入開始...
- 🔧 eraser Manager統一注入開始...
- ✅ eraser Manager統一注入完了
- 📊 注入されたManager: {canvas: true, coordinate: true, record: true, navigation: true, shortcut: true}
- ✅ eraser Manager統一注入完了
- ✅ eraser Manager設定確認完了
- 📊 Manager設定状況: {canvas: {…}, coordinate: {…}, record: {…}, navigation: {…}, shortcut: {…}}
- ✅ eraser Manager設定検証完了
- ✅ ToolManager Manager統一注入処理完了
- 📊 注入完了状況: {managersInitialized: true, toolsConfigured: 2, readyForSelection: true}
- 🔧 ツール選択開始: pen
- 🎯 pen 有効化開始
- ✅ pen Manager設定確認完了
- 📊 Manager設定状況: {canvas: {…}, coordinate: {…}, record: {…}, navigation: {…}, shortcut: {…}}
- ✅ pen イベントリスナー登録完了
- 🖊️ PenTool 有効化 - ペン描画モード開始
- ✅ PenTool 描画状態リセット完了
- ✅ pen 有効化完了
- 📋 ツールボタン有効化: pen
- ✅ ツール選択完了: pen
- ✅ ToolManager - Manager統一注入完了（修正版）
- 📊 注入完了Manager: {coordinateManager: true, recordManager: true, navigationManager: true, shortcutManager: true}
- ✅ ToolManager初期化完了（Phase1.5 Manager統一注入修正版）
- 🆕 Phase1.5機能統合開始...
-navigation-manager.js:347 ✅ NavigationManager 有効化完了
-tegaki-application.js:418 ✅ ナビゲーション機能有効化完了
-shortcut-manager.js:48 ⌨️ ShortcutManager 初期化 - Phase1.5スタブ版
-shortcut-manager.js:141 ⌨️ ShortcutManager イベントリスナー設定 - Phase1.5スタブ
-shortcut-manager.js:161 ⌨️ ShortcutManager イベントリスナー設定完了 - Phase1.5スタブ
-shortcut-manager.js:170 ⌨️ ShortcutManager EventBus連携設定 - Phase1.5スタブ
-shortcut-manager.js:182 ⌨️ ShortcutManager EventBus連携設定完了 - Phase1.5スタブ
-shortcut-manager.js:64 ✅ ShortcutManager 初期化完了 - Phase1.5スタブ版
-tegaki-application.js:430 ✅ ShortcutManager - EventBus接続完了
-shortcut-manager.js:73 ⌨️ ShortcutManager Phase1.5ショートカット設定開始
-shortcut-manager.js:112 ⌨️ ShortcutManager ショートカット定義: [default] Ctrl+Z -> undo (アンドゥ)
-shortcut-manager.js:112 ⌨️ ShortcutManager ショートカット定義: [default] Ctrl+Y -> redo (リドゥ)
-shortcut-manager.js:112 ⌨️ ShortcutManager ショートカット定義: [default] KeyP -> tool:pen (ペンツール)
-shortcut-manager.js:112 ⌨️ ShortcutManager ショートカット定義: [default] KeyE -> tool:eraser (消しゴムツール)
-shortcut-manager.js:112 ⌨️ ShortcutManager ショートカット定義: [default] Space -> navigation:pan (パンモード)
-shortcut-manager.js:112 ⌨️ ShortcutManager ショートカット定義: [default] Ctrl+Digit0 -> navigation:reset (ビューリセット)
-shortcut-manager.js:98 ✅ ShortcutManager Phase1.5ショートカット設定完了
-tegaki-application.js:440 ✅ ShortcutManager - Phase1.5ショートカット設定完了
-shortcut-manager.js:125 ✅ ShortcutManager 機能有効化完了
-tegaki-application.js:450 ✅ ShortcutManager - 機能有効化完了
-tegaki-application.js:457 🆕 Phase1.5機能統合完了
-tegaki-application.js:515 ✅ Canvasイベント設定完了（Phase1.5版）
-tegaki-application.js:670 ✅ ツールボタン設定完了
-tegaki-application.js:714 ✅ Undo/Redoボタン設定完了（安全処理）
-icons.js:176 ✅ Icon replaced: download-tool → download
-icons.js:176 ✅ Icon replaced: resize-tool → resize
-icons.js:176 ✅ Icon replaced: palette-tool → palette
-icons.js:176 ✅ Icon replaced: pen-tool → pen
-icons.js:176 ✅ Icon replaced: eraser-tool → eraser
-icons.js:176 ✅ Icon replaced: fill-tool → fill
-icons.js:176 ✅ Icon replaced: select-tool → select
-icons.js:176 ✅ Icon replaced: layers-tool → layers
-icons.js:176 ✅ Icon replaced: settings-tool → settings
-icons.js:197 🎨 Icon internalization completed: 9 success, 0 errors
-tegaki-application.js:755 ✅ アイコン設定完了（TegakiIcons.replaceAllToolIcons）
-tegaki-application.js:470 ✅ UI設定完了
-app-core.js:151 🚀 AppCore - システム開始
-app-core.js:162 ✅ AppCore - システム開始完了
-app-core.js:257 📋 AppCore 初期化サマリー:
-app-core.js:258 🎯 基盤システム: ✅ 完了
-app-core.js:259 📝 初期化ステップ: (4) ['CanvasManager created', 'PixiJS Application set', 'ToolManager created with CanvasManager', 'System started']
-tegaki-application.js:870 🎉 TegakiApplication Phase1.5 Manager統一注入修正版初期化成功！
-tegaki-application.js:871 📏 CoordinateManager統合完了 - 座標変換・ペン描画修正
-tegaki-application.js:872 🧭 NavigationManager統合完了 - パン・ズーム対応
-tegaki-application.js:873 🔄 RecordManager安全統合完了 - Undo/Redo対応（安全初期化）
-tegaki-application.js:874 ⌨️ ShortcutManager統合完了 - キーボードショートカット対応
-tegaki-application.js:875 🎯 Phase1.5新Manager統合基盤確立完了（Manager統一注入修正版）
-tegaki-application.js:878 📊 Manager統合状況レポート: {CoordinateManager: '✅ 正常', RecordManager: '✅ 正常', NavigationManager: '✅ 正常', ShortcutManager: '✅ 正常'}
-error-manager.js:38 💡 INFO: Phase1.5修正版初期化完了 - Manager統一注入修正・Manager統合完了 TegakiApplication.initialize
-tegaki-application.js:110 ✅ TegakiApplication Phase1.5 Manager統一注入修正版初期化完了
-app-core.js:178 🔧 AppCore - ツール選択: pen
-tool-manager.js:262 🔧 ツール選択開始: pen
-abstract-tool.js:351 🎯 pen 無効化開始
-abstract-tool.js:416 ✅ pen イベントリスナー削除完了
-pen-tool.js:414 🖊️ PenTool 無効化 - 描画中の場合は中断
-pen-tool.js:462 ✅ PenTool 描画状態リセット完了
-abstract-tool.js:375 ✅ pen 無効化完了
-tool-manager.js:339 📋 ツールボタン無効化: pen
-tool-manager.js:289 📋 前のツール無効化: pen
-abstract-tool.js:304 🎯 pen 有効化開始
-abstract-tool.js:291 ✅ pen Manager設定確認完了
-abstract-tool.js:292 📊 Manager設定状況: {canvas: {…}, coordinate: {…}, record: {…}, navigation: {…}, shortcut: {…}}
-abstract-tool.js:395 ✅ pen イベントリスナー登録完了
-pen-tool.js:404 🖊️ PenTool 有効化 - ペン描画モード開始
-pen-tool.js:462 ✅ PenTool 描画状態リセット完了
-abstract-tool.js:339 ✅ pen 有効化完了
-tool-manager.js:336 📋 ツールボタン有効化: pen
-tool-manager.js:314 ✅ ツール選択完了: pen
-app-core.js:192 ✅ AppCore - ツール選択成功: pen
-tegaki-application.js:816 🔧 ツール選択完了: pen
-index.html:396 ⚠️ TegakiApplication初期化未完了
-(anonymous) @ index.html:396
-setTimeout
-(anonymous) @ index.html:391
-tool-manager.js:365 🔧 PointerDown委譲: pen (373.5, 347.5)
-pen-tool.js:83 🖊️ PenTool 描画開始: (373.5, 347.5)
-record-manager.js:115 🔄 RecordManager 操作開始記録: pen - Phase1.5実用版
-pen-tool.js:199 ✅ RecordManager操作開始記録完了: op_1756306918349_0
-pen-tool.js:276 🖊️ 新規パス作成完了: 開始点(373.5, 347.5)
-pen-tool.js:92 ✅ PenTool 描画開始完了: pathId=created, operationId=op_1756306918349_0
-abstract-tool.js:488 🎯 pen PointerDown
-pen-tool.js:83 🖊️ PenTool 描画開始: (373.5, 347.5)
-record-manager.js:115 🔄 RecordManager 操作開始記録: pen - Phase1.5実用版
-pen-tool.js:199 ✅ RecordManager操作開始記録完了: op_1756306918351_1
-pen-tool.js:276 🖊️ 新規パス作成完了: 開始点(373.5, 347.5)
-pen-tool.js:92 ✅ PenTool 描画開始完了: pathId=created, operationId=op_1756306918351_1
-pen-tool.js:291 🖊️ 点追加: (373, 347.5) - 総点数: 2
-pen-tool.js:291 🖊️ 点追加: (373, 347.5) - 総点数: 3
-pen-tool.js:291 🖊️ 点追加: (372.5, 347) - 総点数: 4
-pen-tool.js:291 🖊️ 点追加: (372.5, 347) - 総点数: 5
-pen-tool.js:291 🖊️ 点追加: (371.5, 347) - 総点数: 6
-pen-tool.js:291 🖊️ 点追加: (371.5, 347) - 総点数: 7
-pen-tool.js:291 🖊️ 点追加: (369.5, 347) - 総点数: 8
-pen-tool.js:291 🖊️ 点追加: (369.5, 347) - 総点数: 9
-pen-tool.js:291 🖊️ 点追加: (368, 346.5) - 総点数: 10
-pen-tool.js:291 🖊️ 点追加: (368, 346.5) - 総点数: 11
-pen-tool.js:291 🖊️ 点追加: (366, 346.5) - 総点数: 12
-pen-tool.js:291 🖊️ 点追加: (366, 346.5) - 総点数: 13
-pen-tool.js:291 🖊️ 点追加: (364.5, 346.5) - 総点数: 14
-pen-tool.js:291 🖊️ 点追加: (364.5, 346.5) - 総点数: 15
-pen-tool.js:291 🖊️ 点追加: (363, 346) - 総点数: 16
-pen-tool.js:291 🖊️ 点追加: (363, 346) - 総点数: 17
-pen-tool.js:291 🖊️ 点追加: (361, 346) - 総点数: 18
-pen-tool.js:291 🖊️ 点追加: (361, 346) - 総点数: 19
-pen-tool.js:291 🖊️ 点追加: (359.5, 346) - 総点数: 20
-pen-tool.js:291 🖊️ 点追加: (359.5, 346) - 総点数: 21
-pen-tool.js:291 🖊️ 点追加: (357.5, 346) - 総点数: 22
-pen-tool.js:291 🖊️ 点追加: (357.5, 346) - 総点数: 23
-pen-tool.js:291 🖊️ 点追加: (352.5, 346) - 総点数: 24
-pen-tool.js:291 🖊️ 点追加: (352.5, 346) - 総点数: 25
-pen-tool.js:291 🖊️ 点追加: (351, 346) - 総点数: 26
-pen-tool.js:291 🖊️ 点追加: (351, 346) - 総点数: 27
-pen-tool.js:291 🖊️ 点追加: (348.5, 346) - 総点数: 28
-pen-tool.js:291 🖊️ 点追加: (348.5, 346) - 総点数: 29
-pen-tool.js:291 🖊️ 点追加: (347, 346) - 総点数: 30
-pen-tool.js:291 🖊️ 点追加: (347, 346) - 総点数: 31
-pen-tool.js:291 🖊️ 点追加: (345, 346) - 総点数: 32
-pen-tool.js:291 🖊️ 点追加: (345, 346) - 総点数: 33
-pen-tool.js:291 🖊️ 点追加: (343.5, 346) - 総点数: 34
-pen-tool.js:291 🖊️ 点追加: (343.5, 346) - 総点数: 35
-pen-tool.js:291 🖊️ 点追加: (342.5, 345.5) - 総点数: 36
-pen-tool.js:291 🖊️ 点追加: (342.5, 345.5) - 総点数: 37
-pen-tool.js:291 🖊️ 点追加: (340.5, 345.5) - 総点数: 38
-pen-tool.js:291 🖊️ 点追加: (340.5, 345.5) - 総点数: 39
-pen-tool.js:291 🖊️ 点追加: (339.5, 345.5) - 総点数: 40
-pen-tool.js:291 🖊️ 点追加: (339.5, 345.5) - 総点数: 41
-pen-tool.js:291 🖊️ 点追加: (338.5, 345.5) - 総点数: 42
-pen-tool.js:291 🖊️ 点追加: (338.5, 345.5) - 総点数: 43
-pen-tool.js:291 🖊️ 点追加: (338, 345.5) - 総点数: 44
-pen-tool.js:291 🖊️ 点追加: (338, 345.5) - 総点数: 45
-pen-tool.js:291 🖊️ 点追加: (337, 345.5) - 総点数: 46
-pen-tool.js:291 🖊️ 点追加: (337, 345.5) - 総点数: 47
-pen-tool.js:291 🖊️ 点追加: (336.5, 345.5) - 総点数: 48
-pen-tool.js:291 🖊️ 点追加: (336.5, 345.5) - 総点数: 49
-tool-manager.js:394 🔧 PointerUp委譲: pen (336.5, 345.5)
-pen-tool.js:137 🖊️ PenTool 描画終了: (336.5, 345.5)
-pen-tool.js:291 🖊️ 点追加: (336.5, 345.5) - 総点数: 50
-pen-tool.js:310 ✅ パスをメインレイヤーに追加完了
-pen-tool.js:322 ✅ パス確定完了
-record-manager.js:213 📚 履歴追加: op_1756306918351_1 (総履歴: 1)
-record-manager.js:173 ✅ 操作完了記録: pen・draw (287ms)
-pen-tool.js:243 ✅ RecordManager操作終了記録完了: op_1756306918351_1 (287ms, success=true)
-pen-tool.js:149 ✅ PenTool 描画終了完了: points=50
+ 🎯 main.js loaded - AppCore基盤システム完成（ToolManager初期化修正版）
+ 🧪 Phase1.5統合テスト Loaded
+ 📏 新Manager統合状況確認・機能テスト・レポート生成・Phase1.5完全対応
+ 🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
+ 🚀 Bootstrap Phase1.5 - 新Manager統合対応版
+ ⏳ DOM Loading - DOMContentLoaded待機中...
+ 🎯 Bootstrap Phase1.5 registered - 新Manager統合対応版
+ 🔧 Bootstrap Phase1.5 実行開始...
+ 🔍 Phase1.5 依存関係確認開始...
+ ✅ TegakiApplication: 利用可能
+ ✅ AppCore: 利用可能
+ ✅ CanvasManager: 利用可能
+ ✅ ToolManager: 利用可能
+ ✅ ErrorManager: 利用可能
+ ✅ ConfigManager: 利用可能
+ ✅ EventBus: 利用可能
+ ✅ CoordinateManager: 利用可能
+ ✅ NavigationManager: 利用可能
+ ✅ RecordManager: 利用可能
+ ✅ ShortcutManager: 利用可能
+ ✅ PenTool: 利用可能
+ ✅ EraserTool: 利用可能
+ 📊 依存関係確認結果: 13/13 クラス利用可能
+ 🎨 TegakiApplication インスタンス化開始...
+ 🎯 TegakiApplication Phase1.5 メインアプリケーション 作成・自動初期化開始
+ 🚀 TegakiApplication Phase1.5 Manager統一注入修正版初期化開始
+ 🆕 Phase1.5新Manager安全初期化開始...
+ 🎯 CoordinateManager v8対応版 作成開始
+ ✅ CoordinateManager v8対応版 作成完了
+ ✅ CoordinateManager初期化完了
+ 🔄 RecordManager v8対応版 初期化開始
+ ✅ RecordManager v8対応版 初期化完了
+tegaki-application.js:148 ⚠️ RecordManager実装未完了 - Phase1.5開発中
+initializePhase15ManagersSafely @ tegaki-application.js:148
+ 🧭 NavigationManager v8対応版 初期化開始
+ ✅ NavigationManager v8対応版 初期化完了
+ ✅ NavigationManager初期化完了
+ ⌨️ ShortcutManager Phase1.5スタブ実装 - 初期化開始
+ ⌨️ ShortcutManager スタブ実装完了
+ ✅ ShortcutManager初期化完了
+ 🆕 Phase1.5新Manager安全初期化完了
+ 📊 Manager初期化状況: Object
+ 🚀 AppCore v8統合基盤システム 作成開始
+ 🚀 AppCore v8統合基盤システム 作成完了
+ ✅ Phase1.5 完全版 - 全Manager統合済み
+ ✅ Bootstrap完了 - Tegakiアプリケーション開始完了
+tegaki-application.js:66 💀 TegakiApplication 初期化失敗: TypeError: this.appCore.initializeCanvasManager is not a function
+    at TegakiApplication.initializeAppCore (tegaki-application.js:232:32)
+    at TegakiApplication.initialize (tegaki-application.js:87:24)
+    at new TegakiApplication (tegaki-application.js:65:18)
+    at HTMLDocument.executeBootstrap (bootstrap.js:98:31)
+(anonymous) @ tegaki-application.js:66
+ 🔥 CRITICAL: TegakiApplication初期化失敗: this.appCore.initializeCanvasManager is not a function TegakiApplication.constructor
+tegaki-application.js:232 Uncaught (in promise) TypeError: this.appCore.initializeCanvasManager is not a function
+index.html:480 ⚠️ TegakiApplication v8初期化未完了
+(anonymous) @ index.html:480

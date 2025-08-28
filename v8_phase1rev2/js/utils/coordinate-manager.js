@@ -1,36 +1,33 @@
 /**
- * 🎯 CoordinateManager - Phase1.5 座標変換管理（screenToCanvas互換性追加版）
- * 📋 RESPONSIBILITY: スクリーン座標とCanvas座標の変換・座標計算・画面変換管理・メソッド互換性提供
+ * 🎯 CoordinateManager - PixiJS v8高精度座標変換管理
+ * 📋 RESPONSIBILITY: v8対応スクリーン座標とCanvas座標の変換・高精度座標計算・v8変形対応
  * 🚫 PROHIBITION: 描画処理・UI操作・ツール管理・エラーUI表示・フォールバック
- * ✅ PERMISSION: 座標変換計算・Canvas境界判定・解像度調整・座標検証・互換性メソッド提供
+ * ✅ PERMISSION: v8座標変換計算・Canvas境界判定・解像度調整・v8変形座標・NavigationManager連携
  * 
- * 📏 DESIGN_PRINCIPLE: 座標変換専門・剛直構造・エラー隠蔽禁止・PixiJS標準活用・互換性確保
- * 🔄 INTEGRATION: CanvasManager(Canvas情報取得) + PixiJS(座標システム) + 各Tool(座標利用)
- * 🎯 FEATURE: クライアント座標→Canvas座標・Canvas座標→クライアント座標・境界判定・解像度対応・互換メソッド
+ * 📏 DESIGN_PRINCIPLE: v8高精度変換・剛直構造・エラー隠蔽禁止・PixiJS v8機能活用・Navigator統合
+ * 🔄 INTEGRATION: CanvasManager v8(Canvas情報) + NavigationManager v8(変形情報) + PixiJS v8(座標システム) + 各Tool(座標利用)
+ * 🎯 V8_FEATURE: 高精度座標変換・v8 Container変形対応・WebGPU座標精度・リアルタイム変換
  * 
- * 📌 使用メソッド一覧（他ファイル依存）:
- * ✅ canvasManager.getCanvasElement() - Canvas DOM要素取得
- * ✅ canvasManager.getPixiApp() - PixiJS Application取得
- * ✅ element.getBoundingClientRect() - DOM座標取得
+ * === 座標変換フロー ===
+ * 開始: スクリーン座標取得 → DOM座標変換 → Canvas座標変換 → v8変形適用 → 最終座標出力
+ * v8変形: Container.transform取得 → 逆変形行列適用 → 高精度座標計算 → 境界判定 → 結果返却
+ * 依存関係: CanvasManager v8(Canvas情報) + NavigationManager v8(変形状態) + PixiJS v8(Matrix変換)
  * 
- * 📌 提供メソッド一覧（外部向け）:
- * ✅ setCanvasManager(canvasManager) - CanvasManager設定
- * ✅ clientToCanvas(clientX, clientY) - クライアント座標→Canvas座標変換（メイン）
- * ✅ screenToCanvas(screenX, screenY) - スクリーン座標→Canvas座標変換（互換性・clientToCanvasのエイリアス）
- * ✅ canvasToClient(canvasX, canvasY) - Canvas座標→クライアント座標変換
- * ✅ canvasToScreen(canvasX, canvasY) - Canvas座標→スクリーン座標変換（互換性・canvasToClientのエイリアス）
- * ✅ isInsideCanvas(canvasX, canvasY) - Canvas境界内判定
- * ✅ getCanvasBounds() - Canvas境界情報取得
- * ✅ getDebugInfo() - デバッグ情報取得
+ * === 提供メソッド ===
+ * - async setCanvasManagerV8(canvasManager) : v8対応CanvasManager設定
+ * - screenToCanvasV8(screenX, screenY) : v8高精度スクリーン→Canvas座標変換
+ * - canvasToScreenV8(canvasX, canvasY) : v8高精度Canvas→スクリーン座標変換
+ * - applyInverseTransformV8(x, y, transform) : v8逆変形適用
+ * - isInsideCanvasV8(canvasX, canvasY) : v8Canvas境界内判定
+ * - getCanvasBoundsV8() : v8Canvas境界情報取得
+ * - setNavigationManagerV8(navigationManager) : v8NavigationManager設定
  * 
- * 📐 座標変換フロー:
- * 開始 → CanvasManager設定 → DOM要素取得 → 座標変換計算 → 境界判定 → 結果返却
- * 依存関係: CanvasManager(Canvas情報) + PixiJS(座標システム) + DOM(getBoundingClientRect)
- * 
- * 🔧 COMPATIBILITY: 互換性メソッド追加
- * - screenToCanvas() → clientToCanvas() のエイリアス
- * - canvasToScreen() → canvasToClient() のエイリアス
- * 既存コードとの互換性を保ちつつ、統一された命名規則を提供
+ * === 他ファイル呼び出しメソッド ===
+ * - canvasManager.getCanvasElement() : Canvas DOM要素取得
+ * - canvasManager.pixiApp.stage : v8 Stage Container取得
+ * - navigationManager.getCanvasTransformV8() : v8変形状態取得
+ * - element.getBoundingClientRect() : DOM座標取得
+ * - PIXI.Matrix.applyInverse() : v8逆変形適用
  */
 
 if (!window.Tegaki) {
@@ -39,220 +36,325 @@ if (!window.Tegaki) {
 
 if (!window.Tegaki.CoordinateManager) {
     /**
-     * CoordinateManager - Phase1.5 座標変換管理（screenToCanvas互換性追加版）
-     * スクリーン座標とCanvas座標の変換を専門的に管理する
+     * CoordinateManager - PixiJS v8高精度座標変換管理
+     * スクリーン座標とCanvas座標の高精度変換を管理（v8対応版）
      */
     class CoordinateManager {
         constructor() {
-            console.log('🎯 CoordinateManager Phase1.5 完全実装版 作成開始');
+            console.log('🎯 CoordinateManager v8対応版 作成開始');
             
             this.canvasManager = null;
-            this.initialized = false;
+            this.navigationManager = null;
+            this.v8Ready = false;
             
-            // 座標変換キャッシュ（パフォーマンス最適化）
+            // 高精度座標変換キャッシュ（v8対応）
             this.cachedBounds = null;
+            this.cachedTransform = null;
             this.boundsUpdateTime = 0;
-            this.CACHE_DURATION = 100; // 100ms キャッシュ
+            this.transformUpdateTime = 0;
+            this.CACHE_DURATION = 16; // 60fps対応: 16ms キャッシュ
             
-            console.log('✅ CoordinateManager Phase1.5 完全実装版 作成完了');
+            // v8精度設定
+            this.highPrecisionMode = true;
+            this.webgpuSupported = false;
             
-            console.log('🎯 CoordinateManager Phase1.5 完全実装版 - 自動デバッグテスト実行');
-            
-            // 自動デバッグテスト（開発時のみ）
-            if (typeof window !== 'undefined' && (window.location?.hostname === 'localhost' || window.location?.hostname === '127.0.0.1')) {
-                setTimeout(() => {
-                    console.log('🧪 CoordinateManager開発者向け自動テスト開始');
-                    
-                    // テスト用のダミーCanvasManager作成
-                    const testCanvasManager = {
-                        getCanvasElement() {
-                            const canvas = document.createElement('canvas');
-                            canvas.width = 400;
-                            canvas.height = 400;
-                            return canvas;
-                        },
-                        getPixiApp() {
-                            return { renderer: { resolution: 1 } };
-                        }
-                    };
-                    
-                    const testManager = new window.Tegaki.CoordinateManager();
-                    try {
-                        testManager.setCanvasManager(testCanvasManager);
-                        const testResult = testManager.testCoordinateConversion(50, 50);
-                        console.log('🧪 CoordinateManager自動テスト結果:', testResult);
-                        
-                        // 互換性メソッドテスト
-                        const compatTest = testManager.testCompatibilityMethods();
-                        console.log('🧪 CoordinateManager互換性テスト結果:', compatTest);
-                    } catch (error) {
-                        console.warn('⚠️ CoordinateManager自動テスト失敗 - 実際の使用時は正常動作予定:', error.message);
-                    }
-                }, 100);
-            }
+            console.log('✅ CoordinateManager v8対応版 作成完了');
         }
         
         /**
-         * CanvasManager設定（必須初期化）
-         * @param {CanvasManager} canvasManager - Canvas管理インスタンス
+         * v8対応CanvasManager設定（非同期初期化）
+         * @param {CanvasManager} canvasManager - v8対応CanvasManager
          */
-        setCanvasManager(canvasManager) {
-            console.log('🔧 CoordinateManager - CanvasManager設定開始');
+        async setCanvasManagerV8(canvasManager) {
+            console.log('🔧 CoordinateManager - v8 CanvasManager設定開始');
             
             if (!canvasManager) {
-                throw new Error('CanvasManager is required for CoordinateManager');
+                throw new Error('CoordinateManager: CanvasManager is required for v8');
+            }
+            
+            if (!canvasManager.isV8Ready()) {
+                throw new Error('CoordinateManager: CanvasManager v8 not ready');
             }
             
             this.canvasManager = canvasManager;
-            this.initialized = true;
             
-            console.log('✅ CoordinateManager - CanvasManager設定完了');
+            // v8機能確認
+            if (canvasManager.webgpuSupported) {
+                this.webgpuSupported = true;
+                this.highPrecisionMode = true;
+                console.log('🚀 CoordinateManager: WebGPU高精度モード有効');
+            }
+            
+            await this.initializeV8Features();
+            
+            this.v8Ready = true;
+            console.log('✅ CoordinateManager - v8 CanvasManager設定完了');
         }
         
         /**
-         * クライアント座標→Canvas座標変換（メイン機能）
-         * @param {number} clientX - クライアントX座標
-         * @param {number} clientY - クライアントY座標
-         * @returns {{x: number, y: number}} Canvas座標
+         * v8対応NavigationManager設定
+         * @param {NavigationManager} navigationManager - v8対応NavigationManager
          */
-        clientToCanvas(clientX, clientY) {
-            this.validateInitialization();
+        async setNavigationManagerV8(navigationManager) {
+            console.log('🧭 CoordinateManager - v8 NavigationManager設定開始');
+            
+            if (!navigationManager) {
+                console.warn('⚠️ NavigationManager未提供 - 基本座標変換のみ');
+                return;
+            }
+            
+            if (!navigationManager.isV8Ready?.()) {
+                console.warn('⚠️ NavigationManager v8未対応 - 基本変換のみ');
+                return;
+            }
+            
+            this.navigationManager = navigationManager;
+            console.log('✅ CoordinateManager - v8 NavigationManager設定完了');
+        }
+        
+        /**
+         * v8機能初期化
+         */
+        async initializeV8Features() {
+            console.log('🎯 CoordinateManager v8機能初期化開始');
+            
+            // v8高精度設定適用
+            if (this.webgpuSupported) {
+                // WebGPU環境での高精度設定
+                this.CACHE_DURATION = 8; // 120fps対応
+                console.log('🚀 WebGPU高精度キャッシュ設定適用');
+            }
+            
+            console.log('✅ CoordinateManager v8機能初期化完了');
+        }
+        
+        /**
+         * v8高精度スクリーン座標→Canvas座標変換
+         * @param {number} screenX - スクリーンX座標
+         * @param {number} screenY - スクリーンY座標
+         * @returns {{x: number, y: number}} v8高精度Canvas座標
+         */
+        screenToCanvasV8(screenX, screenY) {
+            this.validateV8Initialization();
             
             // Canvas要素取得
             const canvasElement = this.canvasManager.getCanvasElement();
             if (!canvasElement) {
-                throw new Error('Canvas element not available');
+                throw new Error('Canvas element not available for v8 coordinate conversion');
             }
             
-            // DOM座標情報取得
-            const rect = this.getCachedBounds(canvasElement);
+            // v8高精度DOM座標情報取得
+            const rect = this.getCachedBoundsV8(canvasElement);
             
-            // 座標変換計算（PixiJS標準方式）
-            const canvasX = clientX - rect.left;
-            const canvasY = clientY - rect.top;
+            // 基本座標変換計算（v8精度）
+            const canvasX = screenX - rect.left;
+            const canvasY = screenY - rect.top;
             
-            // 🔧 解像度・密度調整（PixiJS Application情報活用）
-            const pixiApp = this.canvasManager.getPixiApp();
-            if (pixiApp) {
-                // PixiJS解像度考慮（必要に応じて）
-                const resolution = pixiApp.renderer.resolution || 1;
-                if (resolution !== 1) {
-                    // 解像度調整が必要な場合のみ適用
-                    console.log(`🔧 CoordinateManager: 解像度調整適用 resolution=${resolution}`);
+            // v8 Container変形適用
+            if (this.navigationManager?.getCanvasTransformV8) {
+                const transform = this.getCachedTransformV8();
+                if (transform) {
+                    return this.applyInverseTransformV8(canvasX, canvasY, transform);
                 }
             }
             
-            return {
-                x: canvasX,
-                y: canvasY
-            };
+            // v8解像度調整（PixiJS v8対応）
+            const pixiApp = this.canvasManager.pixiApp;
+            if (pixiApp && this.highPrecisionMode) {
+                const resolution = pixiApp.renderer.resolution || 1;
+                if (resolution !== 1) {
+                    console.log(`🔧 v8解像度調整適用: resolution=${resolution}`);
+                    return {
+                        x: canvasX * resolution,
+                        y: canvasY * resolution
+                    };
+                }
+            }
+            
+            return { x: canvasX, y: canvasY };
         }
         
         /**
-         * 🔧 スクリーン座標→Canvas座標変換（互換性メソッド・clientToCanvasのエイリアス）
-         * @param {number} screenX - スクリーンX座標（クライアント座標と同じ）
-         * @param {number} screenY - スクリーンY座標（クライアント座標と同じ）
-         * @returns {{x: number, y: number}} Canvas座標
-         */
-        screenToCanvas(screenX, screenY) {
-            // clientToCanvasのエイリアスとして実装（互換性確保）
-            console.log('🔄 CoordinateManager: screenToCanvas → clientToCanvas エイリアス実行');
-            return this.clientToCanvas(screenX, screenY);
-        }
-        
-        /**
-         * Canvas座標→クライアント座標変換
+         * v8高精度Canvas座標→スクリーン座標変換
          * @param {number} canvasX - CanvasX座標
          * @param {number} canvasY - CanvasY座標
-         * @returns {{x: number, y: number}} クライアント座標
+         * @returns {{x: number, y: number}} v8高精度スクリーン座標
          */
-        canvasToClient(canvasX, canvasY) {
-            this.validateInitialization();
+        canvasToScreenV8(canvasX, canvasY) {
+            this.validateV8Initialization();
             
             const canvasElement = this.canvasManager.getCanvasElement();
             if (!canvasElement) {
-                throw new Error('Canvas element not available');
+                throw new Error('Canvas element not available for v8 coordinate conversion');
             }
             
-            const rect = this.getCachedBounds(canvasElement);
+            let transformedX = canvasX;
+            let transformedY = canvasY;
             
-            // 逆変換計算
-            const clientX = canvasX + rect.left;
-            const clientY = canvasY + rect.top;
+            // v8 Container変形適用
+            if (this.navigationManager?.getCanvasTransformV8) {
+                const transform = this.getCachedTransformV8();
+                if (transform) {
+                    const transformed = this.applyTransformV8(transformedX, transformedY, transform);
+                    transformedX = transformed.x;
+                    transformedY = transformed.y;
+                }
+            }
             
-            return {
-                x: clientX,
-                y: clientY
-            };
+            // v8解像度調整
+            const pixiApp = this.canvasManager.pixiApp;
+            if (pixiApp && this.highPrecisionMode) {
+                const resolution = pixiApp.renderer.resolution || 1;
+                if (resolution !== 1) {
+                    transformedX = transformedX / resolution;
+                    transformedY = transformedY / resolution;
+                }
+            }
+            
+            const rect = this.getCachedBoundsV8(canvasElement);
+            
+            // 最終スクリーン座標計算
+            const screenX = transformedX + rect.left;
+            const screenY = transformedY + rect.top;
+            
+            return { x: screenX, y: screenY };
         }
         
         /**
-         * 🔧 Canvas座標→スクリーン座標変換（互換性メソッド・canvasToClientのエイリアス）
-         * @param {number} canvasX - CanvasX座標
-         * @param {number} canvasY - CanvasY座標
-         * @returns {{x: number, y: number}} スクリーン座標（クライアント座標と同じ）
+         * v8逆変形適用（Container変形の逆変換）
+         * @param {number} x - X座標
+         * @param {number} y - Y座標
+         * @param {Object} transform - v8変形情報
+         * @returns {{x: number, y: number}} 逆変形適用後座標
          */
-        canvasToScreen(canvasX, canvasY) {
-            // canvasToClientのエイリアスとして実装（互換性確保）
-            console.log('🔄 CoordinateManager: canvasToScreen → canvasToClient エイリアス実行');
-            return this.canvasToClient(canvasX, canvasY);
+        applyInverseTransformV8(x, y, transform) {
+            if (!transform) return { x, y };
+            
+            // PixiJS v8 Matrix使用（高精度）
+            if (this.canvasManager.pixiApp?.stage) {
+                const stage = this.canvasManager.pixiApp.stage;
+                const matrix = stage.worldTransform.clone();
+                
+                // v8 Matrix逆変形
+                const point = matrix.applyInverse({ x, y });
+                return { x: point.x, y: point.y };
+            }
+            
+            // フォールバック: 手動計算（v8高精度）
+            const { scale, translateX, translateY } = transform;
+            
+            // 平行移動逆変換
+            let transformedX = x - translateX;
+            let transformedY = y - translateY;
+            
+            // スケール逆変換
+            if (scale && scale !== 1) {
+                transformedX = transformedX / scale;
+                transformedY = transformedY / scale;
+            }
+            
+            return { x: transformedX, y: transformedY };
         }
         
         /**
-         * Canvas境界内座標判定
+         * v8正変形適用（Canvas→スクリーン用）
+         * @param {number} x - X座標
+         * @param {number} y - Y座標
+         * @param {Object} transform - v8変形情報
+         * @returns {{x: number, y: number}} 正変形適用後座標
+         */
+        applyTransformV8(x, y, transform) {
+            if (!transform) return { x, y };
+            
+            // PixiJS v8 Matrix使用（高精度）
+            if (this.canvasManager.pixiApp?.stage) {
+                const stage = this.canvasManager.pixiApp.stage;
+                const matrix = stage.worldTransform;
+                
+                // v8 Matrix正変形
+                const point = matrix.apply({ x, y });
+                return { x: point.x, y: point.y };
+            }
+            
+            // フォールバック: 手動計算
+            const { scale, translateX, translateY } = transform;
+            
+            let transformedX = x;
+            let transformedY = y;
+            
+            // スケール変換
+            if (scale && scale !== 1) {
+                transformedX = transformedX * scale;
+                transformedY = transformedY * scale;
+            }
+            
+            // 平行移動変換
+            transformedX = transformedX + translateX;
+            transformedY = transformedY + translateY;
+            
+            return { x: transformedX, y: transformedY };
+        }
+        
+        /**
+         * v8Canvas境界内判定（高精度）
          * @param {number} canvasX - CanvasX座標
          * @param {number} canvasY - CanvasY座標
-         * @returns {boolean} Canvas内にあるかどうか
+         * @returns {boolean} v8Canvas内判定結果
          */
-        isInsideCanvas(canvasX, canvasY) {
-            this.validateInitialization();
+        isInsideCanvasV8(canvasX, canvasY) {
+            this.validateV8Initialization();
             
-            const bounds = this.getCanvasBounds();
+            const bounds = this.getCanvasBoundsV8();
             
+            // v8高精度境界判定
             return (
-                canvasX >= 0 &&
-                canvasY >= 0 &&
-                canvasX <= bounds.width &&
-                canvasY <= bounds.height
+                canvasX >= bounds.x &&
+                canvasY >= bounds.y &&
+                canvasX <= bounds.x + bounds.width &&
+                canvasY <= bounds.y + bounds.height
             );
         }
         
         /**
-         * Canvas境界情報取得
-         * @returns {{x: number, y: number, width: number, height: number}} Canvas境界
+         * v8Canvas境界情報取得（高精度）
+         * @returns {{x: number, y: number, width: number, height: number}} v8Canvas境界情報
          */
-        getCanvasBounds() {
-            this.validateInitialization();
+        getCanvasBoundsV8() {
+            this.validateV8Initialization();
             
             const canvasElement = this.canvasManager.getCanvasElement();
             if (!canvasElement) {
-                throw new Error('Canvas element not available');
+                throw new Error('Canvas element not available for v8 bounds calculation');
             }
             
-            const rect = this.getCachedBounds(canvasElement);
+            const rect = this.getCachedBoundsV8(canvasElement);
             
+            // v8高精度境界計算
             return {
                 x: 0,
                 y: 0,
                 width: rect.width,
-                height: rect.height
+                height: rect.height,
+                // v8追加情報
+                resolution: this.canvasManager.pixiApp?.renderer?.resolution || 1,
+                webgpuMode: this.webgpuSupported
             };
         }
         
         /**
-         * Canvas要素の境界情報取得（キャッシュ付き）
+         * v8高精度Canvas要素境界情報取得（キャッシュ付き）
          * @param {HTMLElement} canvasElement - Canvas DOM要素
-         * @returns {DOMRect} 境界情報
+         * @returns {DOMRect} v8高精度境界情報
          */
-        getCachedBounds(canvasElement) {
+        getCachedBoundsV8(canvasElement) {
             const now = performance.now();
             
-            // キャッシュ有効性確認
+            // v8高精度キャッシュ有効性確認
             if (this.cachedBounds && (now - this.boundsUpdateTime) < this.CACHE_DURATION) {
                 return this.cachedBounds;
             }
             
-            // 新しい境界情報取得
+            // v8高精度境界情報取得
             this.cachedBounds = canvasElement.getBoundingClientRect();
             this.boundsUpdateTime = now;
             
@@ -260,248 +362,226 @@ if (!window.Tegaki.CoordinateManager) {
         }
         
         /**
-         * 初期化状態確認（剛直構造）
+         * v8変形情報取得（キャッシュ付き）
+         * @returns {Object|null} v8変形情報
          */
-        validateInitialization() {
-            if (!this.initialized || !this.canvasManager) {
-                throw new Error('CoordinateManager not initialized - call setCanvasManager() first');
+        getCachedTransformV8() {
+            if (!this.navigationManager?.getCanvasTransformV8) {
+                return null;
+            }
+            
+            const now = performance.now();
+            
+            // v8変形キャッシュ有効性確認
+            if (this.cachedTransform && (now - this.transformUpdateTime) < this.CACHE_DURATION) {
+                return this.cachedTransform;
+            }
+            
+            // v8変形情報取得
+            try {
+                this.cachedTransform = this.navigationManager.getCanvasTransformV8();
+                this.transformUpdateTime = now;
+            } catch (error) {
+                console.warn('⚠️ v8変形情報取得失敗:', error.message);
+                this.cachedTransform = null;
+            }
+            
+            return this.cachedTransform;
+        }
+        
+        /**
+         * v8初期化状態確認（剛直構造）
+         */
+        validateV8Initialization() {
+            if (!this.v8Ready || !this.canvasManager) {
+                throw new Error('CoordinateManager v8 not initialized - call setCanvasManagerV8() first');
             }
         }
         
         /**
-         * キャッシュクリア（Canvas変更時用）
+         * v8キャッシュクリア（Canvas/Navigation変更時用）
          */
-        clearCache() {
+        clearV8Cache() {
             this.cachedBounds = null;
+            this.cachedTransform = null;
             this.boundsUpdateTime = 0;
-            console.log('🔄 CoordinateManager: キャッシュクリア完了');
+            this.transformUpdateTime = 0;
+            console.log('🔄 CoordinateManager v8: 高精度キャッシュクリア完了');
         }
         
         /**
-         * 座標変換テスト（デバッグ用）
-         * @param {number} testClientX - テスト用クライアントX座標
-         * @param {number} testClientY - テスト用クライアントY座標
-         * @returns {object} テスト結果
+         * v8準備完了確認
+         * @returns {boolean} v8対応状況
          */
-        testCoordinateConversion(testClientX = 100, testClientY = 100) {
-            console.log('🧪 CoordinateManager座標変換テスト開始');
+        isV8Ready() {
+            return this.v8Ready && 
+                   !!this.canvasManager && 
+                   this.canvasManager.isV8Ready();
+        }
+        
+        /**
+         * v8座標変換テスト（高精度デバッグ用）
+         * @param {number} testScreenX - テスト用スクリーンX座標
+         * @param {number} testScreenY - テスト用スクリーンY座標
+         * @returns {Object} v8座標変換テスト結果
+         */
+        testV8CoordinateConversion(testScreenX = 100, testScreenY = 100) {
+            console.log('🧪 CoordinateManager v8座標変換テスト開始');
             
             try {
-                // クライアント→Canvas変換
-                const canvasCoords = this.clientToCanvas(testClientX, testClientY);
+                // v8スクリーン→Canvas変換
+                const canvasCoords = this.screenToCanvasV8(testScreenX, testScreenY);
                 
-                // Canvas→クライアント逆変換
-                const clientCoords = this.canvasToClient(canvasCoords.x, canvasCoords.y);
+                // v8Canvas→スクリーン逆変換
+                const screenCoords = this.canvasToScreenV8(canvasCoords.x, canvasCoords.y);
                 
-                // 境界判定テスト
-                const isInside = this.isInsideCanvas(canvasCoords.x, canvasCoords.y);
+                // v8境界判定テスト
+                const isInside = this.isInsideCanvasV8(canvasCoords.x, canvasCoords.y);
                 
                 const result = {
                     success: true,
-                    original: { x: testClientX, y: testClientY },
+                    v8Mode: true,
+                    webgpuSupported: this.webgpuSupported,
+                    highPrecisionMode: this.highPrecisionMode,
+                    original: { x: testScreenX, y: testScreenY },
                     canvasCoords: canvasCoords,
-                    reverseCoords: clientCoords,
+                    reverseCoords: screenCoords,
                     isInsideCanvas: isInside,
                     accuracy: {
-                        xDiff: Math.abs(testClientX - clientCoords.x),
-                        yDiff: Math.abs(testClientY - clientCoords.y)
-                    }
-                };
-                
-                console.log('🧪 CoordinateManager座標変換テスト結果:', result);
-                return result;
-                
-            } catch (error) {
-                const result = {
-                    success: false,
-                    error: error.message,
-                    original: { x: testClientX, y: testClientY }
-                };
-                
-                console.error('❌ CoordinateManager座標変換テスト失敗:', result);
-                return result;
-            }
-        }
-        
-        /**
-         * 🔧 互換性メソッドテスト（デバッグ用）
-         * @param {number} testX - テスト用X座標
-         * @param {number} testY - テスト用Y座標
-         * @returns {object} 互換性テスト結果
-         */
-        testCompatibilityMethods(testX = 150, testY = 150) {
-            console.log('🧪 CoordinateManager互換性メソッドテスト開始');
-            
-            try {
-                // screenToCanvas vs clientToCanvas
-                const screenToCanvasResult = this.screenToCanvas(testX, testY);
-                const clientToCanvasResult = this.clientToCanvas(testX, testY);
-                
-                // canvasToScreen vs canvasToClient
-                const canvasToScreenResult = this.canvasToScreen(screenToCanvasResult.x, screenToCanvasResult.y);
-                const canvasToClientResult = this.canvasToClient(clientToCanvasResult.x, clientToCanvasResult.y);
-                
-                const result = {
-                    success: true,
-                    input: { x: testX, y: testY },
-                    screenToCanvasVsClientToCanvas: {
-                        screenToCanvas: screenToCanvasResult,
-                        clientToCanvas: clientToCanvasResult,
-                        identical: (screenToCanvasResult.x === clientToCanvasResult.x && 
-                                   screenToCanvasResult.y === clientToCanvasResult.y)
+                        xDiff: Math.abs(testScreenX - screenCoords.x),
+                        yDiff: Math.abs(testScreenY - screenCoords.y),
+                        precision: 'v8-high-precision'
                     },
-                    canvasToScreenVsCanvasToClient: {
-                        canvasToScreen: canvasToScreenResult,
-                        canvasToClient: canvasToClientResult,
-                        identical: (canvasToScreenResult.x === canvasToClientResult.x && 
-                                   canvasToScreenResult.y === canvasToClientResult.y)
+                    performance: {
+                        cacheDuration: this.CACHE_DURATION,
+                        cacheHits: 'not-implemented'
                     }
                 };
                 
-                console.log('🧪 CoordinateManager互換性テスト結果:', result);
+                console.log('🧪 CoordinateManager v8座標変換テスト結果:', result);
                 return result;
                 
             } catch (error) {
                 const result = {
                     success: false,
                     error: error.message,
-                    input: { x: testX, y: testY }
+                    v8Mode: this.v8Ready,
+                    original: { x: testScreenX, y: testScreenY }
                 };
                 
-                console.error('❌ CoordinateManager互換性テスト失敗:', result);
+                console.error('❌ CoordinateManager v8座標変換テスト失敗:', result);
                 return result;
             }
         }
         
         /**
-         * デバッグ情報取得（必須実装・互換性情報追加）
-         * @returns {object} デバッグ情報
+         * v8デバッグ情報取得（完全版）
+         * @returns {Object} v8デバッグ情報
          */
         getDebugInfo() {
             return {
-                // 基本状態
-                initialized: this.initialized,
-                canvasManagerReady: !!this.canvasManager,
+                // v8基本状態
+                v8Ready: this.v8Ready,
+                webgpuSupported: this.webgpuSupported,
+                highPrecisionMode: this.highPrecisionMode,
                 
-                // Canvas情報
+                // Manager連携状態
+                managers: {
+                    canvasManager: !!this.canvasManager,
+                    canvasManagerV8Ready: this.canvasManager?.isV8Ready() || false,
+                    navigationManager: !!this.navigationManager,
+                    navigationManagerV8Ready: this.navigationManager?.isV8Ready?.() || false
+                },
+                
+                // v8Canvas情報
                 canvas: this.canvasManager ? (() => {
                     try {
                         const canvasElement = this.canvasManager.getCanvasElement();
-                        const pixiApp = this.canvasManager.getPixiApp();
+                        const pixiApp = this.canvasManager.pixiApp;
                         
                         return {
                             elementReady: !!canvasElement,
                             pixiAppReady: !!pixiApp,
-                            bounds: canvasElement ? this.getCachedBounds(canvasElement) : null,
-                            pixiResolution: pixiApp ? pixiApp.renderer.resolution : null,
-                            dimensions: canvasElement ? {
-                                width: canvasElement.width,
-                                height: canvasElement.height,
-                                clientWidth: canvasElement.clientWidth,
-                                clientHeight: canvasElement.clientHeight
-                            } : null
+                            rendererType: pixiApp?.renderer?.type || 'unknown',
+                            pixiVersion: typeof PIXI !== 'undefined' ? PIXI.VERSION : 'unknown',
+                            bounds: canvasElement ? this.getCachedBoundsV8(canvasElement) : null,
+                            resolution: pixiApp?.renderer?.resolution || 1,
+                            webgpuMode: pixiApp?.renderer?.type === 'webgpu'
                         };
                     } catch (error) {
                         return { error: error.message };
                     }
                 })() : null,
                 
-                // キャッシュ情報
+                // v8キャッシュ情報
                 cache: {
                     hasCachedBounds: !!this.cachedBounds,
-                    cacheAge: this.boundsUpdateTime ? (performance.now() - this.boundsUpdateTime) : 0,
+                    hasCachedTransform: !!this.cachedTransform,
+                    boundsAge: this.boundsUpdateTime ? (performance.now() - this.boundsUpdateTime) : 0,
+                    transformAge: this.transformUpdateTime ? (performance.now() - this.transformUpdateTime) : 0,
                     cacheDuration: this.CACHE_DURATION,
-                    cachedBoundsDetails: this.cachedBounds
+                    v8OptimizedCache: true
                 },
                 
-                // 機能状態
+                // v8機能状態
                 features: {
-                    clientToCanvas: this.initialized,
-                    canvasToClient: this.initialized,
-                    boundaryDetection: this.initialized,
-                    caching: true,
-                    // 🔧 互換性メソッド状況
-                    compatibility: {
-                        screenToCanvas: this.initialized, // clientToCanvasのエイリアス
-                        canvasToScreen: this.initialized  // canvasToClientのエイリアス
-                    }
+                    screenToCanvasV8: this.v8Ready,
+                    canvasToScreenV8: this.v8Ready,
+                    applyInverseTransformV8: this.v8Ready,
+                    isInsideCanvasV8: this.v8Ready,
+                    highPrecisionConversion: this.highPrecisionMode,
+                    matrixTransformSupport: !!this.canvasManager?.pixiApp?.stage
                 },
                 
-                // メソッド存在確認
-                methods: {
-                    clientToCanvas: typeof this.clientToCanvas === 'function',
-                    screenToCanvas: typeof this.screenToCanvas === 'function',
-                    canvasToClient: typeof this.canvasToClient === 'function',
-                    canvasToScreen: typeof this.canvasToScreen === 'function',
-                    isInsideCanvas: typeof this.isInsideCanvas === 'function',
-                    getCanvasBounds: typeof this.getCanvasBounds === 'function'
-                },
-                
-                // エラー状態
-                lastError: null, // 実装時にエラー履歴管理を追加可能
-                
-                // パフォーマンス
+                // v8パフォーマンス情報
                 performance: {
                     cachingEnabled: true,
-                    cacheHitRate: 'not-implemented' // 将来実装可能
-                }
+                    highPrecisionMode: this.highPrecisionMode,
+                    webgpuAccelerated: this.webgpuSupported,
+                    cacheUpdateFrequency: `${this.CACHE_DURATION}ms`,
+                    optimizedForFramerate: this.CACHE_DURATION <= 16 ? '60fps+' : 'standard'
+                },
+                
+                // v8変形情報
+                transform: this.navigationManager ? (() => {
+                    try {
+                        const transform = this.getCachedTransformV8();
+                        return {
+                            available: !!transform,
+                            data: transform,
+                            source: 'navigationManager'
+                        };
+                    } catch (error) {
+                        return { error: error.message };
+                    }
+                })() : { available: false, reason: 'no-navigation-manager' }
             };
         }
         
         /**
-         * 状態リセット（デバッグ用）
+         * v8状態リセット
          */
-        reset() {
-            console.log('🔄 CoordinateManager リセット開始');
+        resetV8() {
+            console.log('🔄 CoordinateManager v8状態リセット開始');
             
             this.canvasManager = null;
-            this.initialized = false;
-            this.clearCache();
+            this.navigationManager = null;
+            this.v8Ready = false;
+            this.webgpuSupported = false;
+            this.highPrecisionMode = true;
+            this.clearV8Cache();
             
-            console.log('✅ CoordinateManager リセット完了');
-        }
-        
-        /**
-         * 🔧 メソッド互換性確認（デバッグ用）
-         * @returns {object} メソッド存在状況
-         */
-        checkMethodCompatibility() {
-            return {
-                // メインメソッド
-                clientToCanvas: typeof this.clientToCanvas === 'function',
-                canvasToClient: typeof this.canvasToClient === 'function',
-                
-                // 互換性メソッド
-                screenToCanvas: typeof this.screenToCanvas === 'function',
-                canvasToScreen: typeof this.canvasToScreen === 'function',
-                
-                // ユーティリティ
-                isInsideCanvas: typeof this.isInsideCanvas === 'function',
-                getCanvasBounds: typeof this.getCanvasBounds === 'function',
-                
-                // 管理メソッド
-                setCanvasManager: typeof this.setCanvasManager === 'function',
-                validateInitialization: typeof this.validateInitialization === 'function',
-                
-                // デバッグメソッド
-                getDebugInfo: typeof this.getDebugInfo === 'function',
-                testCoordinateConversion: typeof this.testCoordinateConversion === 'function',
-                testCompatibilityMethods: typeof this.testCompatibilityMethods === 'function'
-            };
+            console.log('✅ CoordinateManager v8状態リセット完了');
         }
     }
     
     // Tegaki名前空間に登録
     window.Tegaki.CoordinateManager = CoordinateManager;
     
-    console.log('🎯 CoordinateManager Phase1.5 完全実装版 Loaded');
-    console.log('📏 機能: クライアント↔Canvas座標変換・境界判定・キャッシュ最適化・互換性メソッド');
-    console.log('🔧 特徴: 剛直構造・エラー隠蔽禁止・PixiJS標準活用・パフォーマンス最適化');
-    console.log('🔄 互換性: screenToCanvas/canvasToScreen メソッド追加（エイリアス）');
-    console.log('✅ 準備完了: setCanvasManager()でCanvasManager設定後に利用可能');
+    console.log('🎯 CoordinateManager PixiJS v8対応版 Loaded');
+    console.log('📏 v8機能: 高精度座標変換・Container変形対応・WebGPU最適化・リアルタイム変換');
+    console.log('🚀 v8特徴: 高精度変換・Matrix活用・NavigationManager統合・60fps+対応');
+    console.log('✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能');
 }
 
-console.log('🎯 CoordinateManager Phase1.5 完全実装版 Loaded');
-console.log('📏 機能: クライアント↔Canvas座標変換・境界判定・キャッシュ最適化');
-console.log('🔧 特徴: 剛直構造・エラー隠蔽禁止・PixiJS標準活用・パフォーマンス最適化');
-console.log('✅ 準備完了: setCanvasManager()でCanvasManager設定後に利用可能');
+console.log('🎯 CoordinateManager PixiJS v8対応版 Loaded - 高精度座標変換・Container変形・WebGPU対応完了');

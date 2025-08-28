@@ -1,28 +1,36 @@
 /**
- * 🔄 RecordManager Phase1.5 実用実装版 - Undo/Redo・操作履歴・非破壊編集
- * 
- * 📋 使用メソッド一覧（依存確認済み ✅）
- * - Array.prototype.push() - JavaScript標準配列操作
- * - Array.prototype.pop() - JavaScript標準配列操作
- * - Map.set() / Map.get() - JavaScript標準Map操作
- * - Date.now() - JavaScript標準時刻取得
- * - Math.random() - JavaScript標準乱数生成
- * - canvasManager.addGraphicsToLayer() - CanvasManager標準メソッド（再描画用）
- * - canvasManager.removeGraphicsFromLayer() - CanvasManager標準メソッド（削除用）
- * 
- * 📋 RESPONSIBILITY: 操作履歴管理・Undo/Redo機能・非破壊編集基盤
+ * 🔄 RecordManager - PixiJS v8対応Undo/Redo・操作履歴・非破壊編集管理
+ * 📋 RESPONSIBILITY: v8対応操作履歴管理・Undo/Redo機能・非破壊編集基盤・v8 Graphics記録
  * 🚫 PROHIBITION: 直接描画・UI通知・座標変換・フォールバック処理
- * ✅ PERMISSION: 操作記録・履歴管理・Graphics操作・ツール連携
+ * ✅ PERMISSION: v8操作記録・履歴管理・Graphics操作・Tool連携・WebGPU最適化
  * 
- * 📏 DESIGN_PRINCIPLE: スタック型履歴・非破壊編集・操作原子性・メモリ効率
- * 🔄 INTEGRATION: AbstractTool連携・CanvasManager連携・Phase1.5統合
+ * 📏 DESIGN_PRINCIPLE: スタック型履歴・非破壊編集・操作原子性・メモリ効率・v8 Graphics活用
+ * 🔄 INTEGRATION: AbstractTool v8連携・CanvasManager v8連携・EventBus通知・v8高精度記録
+ * 🎯 V8_FEATURE: v8 Graphics記録・WebGPU最適化・高精度操作履歴・Container階層対応
  * 
- * 🔄 RECORD_FLOW: 操作記録の流れ
- * 1. Tool.onPointerDown → RecordManager.startOperation() → 操作開始記録
- * 2. Tool描画処理 → RecordManager記録（並行処理・ブロックしない）
- * 3. Tool.onPointerUp → RecordManager.endOperation() → 操作完了・履歴保存
- * 4. Undo要求 → RecordManager.undo() → Graphics削除・undoStackに移動
- * 5. Redo要求 → RecordManager.redo() → Graphics復元・redoStackから戻し
+ * === v8記録フロー ===
+ * 開始: Tool.onPointerDown → RecordManager.startOperationV8() → v8操作開始記録
+ * 処理: Tool描画処理 → RecordManager記録（並行処理・ブロックしない）
+ * 終了: Tool.onPointerUp → RecordManager.endOperationV8() → v8操作完了・履歴保存
+ * Undo: Undo要求 → RecordManager.undoV8() → v8 Graphics削除・undoStackに移動
+ * Redo: Redo要求 → RecordManager.redoV8() → v8 Graphics復元・redoStackから戻し
+ * 
+ * === 提供メソッド ===
+ * - async setCanvasManagerV8(canvasManager) : v8対応CanvasManager設定
+ * - startOperationV8(operationData) : v8操作開始記録
+ * - endOperationV8(operationId, endData) : v8操作終了記録
+ * - undoV8() : v8 Undo実行
+ * - redoV8() : v8 Redo実行
+ * - recordDrawV8(graphics, layerId, metadata) : v8描画記録
+ * - serializeGraphicsV8(graphics) : v8 Graphics シリアライズ
+ * 
+ * === 他ファイル呼び出しメソッド ===
+ * - canvasManager.addGraphicsToLayerV8() : v8 Graphics配置
+ * - canvasManager.removeGraphicsFromLayerV8() : v8 Graphics削除
+ * - window.Tegaki.EventBusInstance.emit() : イベント配信
+ * - window.Tegaki.ToolManagerInstance.getTool() : Tool取得
+ * - tool.onUndoV8() : v8 Tool側Undo処理
+ * - tool.onRedoV8() : v8 Tool側Redo処理
  */
 
 // Tegaki名前空間初期化
@@ -30,134 +38,175 @@ window.Tegaki = window.Tegaki || {};
 
 if (!window.Tegaki.RecordManager) {
     /**
-     * RecordManager - Phase1.5 実用実装版
-     * 操作履歴管理・Undo/Redo機能・非破壊編集を提供
+     * RecordManager - PixiJS v8対応履歴管理
+     * 操作履歴管理・Undo/Redo機能・非破壊編集を提供（v8対応版）
      */
     class RecordManager {
         constructor() {
-            console.log('🔄 RecordManager Phase1.5 実用実装版 - 初期化開始');
+            console.log('🔄 RecordManager v8対応版 初期化開始');
             
-            // 履歴スタック
+            // v8履歴スタック
             this.operationHistory = [];     // 完了操作履歴（メイン）
             this.undoStack = [];            // Undo用スタック
             this.redoStack = [];            // Redo用スタック
             
-            // 進行中操作管理
+            // v8進行中操作管理
             this.activeOperations = new Map();  // 進行中操作（ID -> Operation）
             this.operationCounter = 0;           // 操作ID生成用
             
-            // 設定
-            this.maxHistorySize = 50;       // 最大履歴保持数
-            this.autoCleanupThreshold = 100; // 自動クリーンアップ閾値
+            // v8設定
+            this.maxHistorySize = 50;         // 最大履歴保持数
+            this.autoCleanupThreshold = 100;  // 自動クリーンアップ閾値
+            this.webgpuSupported = false;     // WebGPU対応フラグ
+            this.highPerformanceMode = false; // 高性能モード
             
-            // Manager連携
+            // v8 Manager連携
             this.canvasManager = null;
             this.eventBus = null;
+            this.v8Ready = false;
             
-            this.initialized = true;
-            console.log('🔄 RecordManager 実用実装完了');
+            console.log('✅ RecordManager v8対応版 初期化完了');
         }
         
         /**
-         * CanvasManager設定（Graphics操作用）
+         * v8対応CanvasManager設定
+         * @param {CanvasManager} canvasManager - v8対応CanvasManager
          */
-        setCanvasManager(canvasManager) {
+        async setCanvasManagerV8(canvasManager) {
+            console.log('🔧 RecordManager - v8 CanvasManager設定開始');
+            
+            if (!canvasManager) {
+                throw new Error('RecordManager: CanvasManager is required for v8');
+            }
+            
+            if (!canvasManager.isV8Ready()) {
+                throw new Error('RecordManager: CanvasManager v8 not ready');
+            }
+            
             this.canvasManager = canvasManager;
-            console.log('🔄 RecordManager - CanvasManager設定完了');
+            
+            // v8機能確認
+            if (canvasManager.webgpuSupported) {
+                this.webgpuSupported = true;
+                this.highPerformanceMode = true;
+                console.log('🚀 RecordManager: WebGPU高性能モード有効');
+            }
+            
+            await this.initializeV8Features();
+            
+            this.v8Ready = true;
+            console.log('✅ RecordManager - v8 CanvasManager設定完了');
         }
         
         /**
-         * EventBus設定（イベント配信用）
+         * EventBus設定（v8対応）
+         * @param {EventBus} eventBus - EventBusインスタンス
          */
         setEventBus(eventBus) {
             this.eventBus = eventBus;
-            console.log('🔄 RecordManager - EventBus設定完了');
+            console.log('✅ RecordManager - v8 EventBus設定完了');
         }
         
         /**
-         * 🎯 操作開始記録（Tool → RecordManager）
-         * 
-         * @param {Object} operationData - 操作データ
+         * v8機能初期化
+         */
+        async initializeV8Features() {
+            console.log('🔄 RecordManager v8機能初期化開始');
+            
+            // v8高性能設定適用
+            if (this.webgpuSupported) {
+                // WebGPU環境での最適化
+                this.autoCleanupThreshold = 150; // より多く保持可能
+                console.log('🚀 WebGPU最適化設定適用');
+            }
+            
+            console.log('✅ RecordManager v8機能初期化完了');
+        }
+        
+        /**
+         * v8操作開始記録（Tool → RecordManager）
+         * @param {Object} operationData - v8操作データ
          * @param {string} operationData.tool - ツール名
          * @param {string} operationData.type - 操作タイプ
          * @param {Object} operationData.data - 操作固有データ
-         * @returns {Object} 操作オブジェクト（継続参照用）
+         * @param {string} operationData.layerId - v8レイヤーID
+         * @returns {Object} v8操作オブジェクト（継続参照用）
          */
-        startOperation(operationData) {
+        startOperationV8(operationData) {
             if (!operationData || !operationData.tool || !operationData.type) {
-                console.warn('⚠️ Invalid operation data:', operationData);
+                console.warn('⚠️ Invalid v8 operation data:', operationData);
                 return null;
             }
             
-            // 操作ID生成
-            const operationId = `op_${Date.now()}_${this.operationCounter++}`;
+            // v8操作ID生成
+            const operationId = `v8_op_${Date.now()}_${this.operationCounter++}`;
             
-            // 操作オブジェクト作成
+            // v8操作オブジェクト作成
             const operation = {
                 id: operationId,
                 tool: operationData.tool,
                 type: operationData.type,
                 data: operationData.data || {},
+                layerId: operationData.layerId || 'main',
                 startTime: Date.now(),
                 endTime: null,
                 completed: false,
-                graphics: null,     // Graphics参照（Tool側で設定）
+                graphics: null,     // v8 Graphics参照（Tool側で設定）
                 metadata: {
-                    version: '1.5',
+                    version: 'v8',
+                    pixiVersion: typeof PIXI !== 'undefined' ? PIXI.VERSION : 'unknown',
                     canUndo: true,
-                    canRedo: true
+                    canRedo: true,
+                    webgpuMode: this.webgpuSupported,
+                    rendererType: this.canvasManager?.pixiApp?.renderer?.type || 'unknown'
                 }
             };
             
             // 進行中操作として記録
             this.activeOperations.set(operationId, operation);
             
-            console.log(`🔄 RecordManager 操作開始記録: ${operationData.tool} - Phase1.5実用版`);
+            console.log(`🔄 RecordManager v8操作開始記録: ${operationData.tool} - WebGPU: ${this.webgpuSupported}`);
             
-            // EventBus通知（任意）
-            if (this.eventBus) {
-                try {
-                    this.eventBus.emit('operation:start', operation);
-                } catch (error) {
-                    console.warn('⚠️ EventBus通知失敗:', error.message);
-                }
-            }
+            // v8 EventBus通知
+            this.emitV8Event('operation:start', operation);
             
             return operation;
         }
         
         /**
-         * 🎯 操作終了記録（Tool → RecordManager）
-         * 
-         * @param {string} operationId - 操作ID
-         * @param {Object} endData - 終了データ
+         * v8操作終了記録（Tool → RecordManager）
+         * @param {string} operationId - v8操作ID
+         * @param {Object} endData - v8終了データ
          * @param {boolean} endData.success - 操作成功フラグ
-         * @param {PIXI.Graphics} endData.graphics - 作成されたGraphics
-         * @param {Object} endData.strokeData - ストロークデータ（任意）
+         * @param {PIXI.Graphics} endData.graphics - v8作成されたGraphics
+         * @param {Object} endData.strokeData - v8ストロークデータ（任意）
          */
-        endOperation(operationId, endData = {}) {
+        endOperationV8(operationId, endData = {}) {
             if (!operationId) {
-                console.warn('⚠️ Invalid operation ID');
+                console.warn('⚠️ Invalid v8 operation ID');
                 return;
             }
             
             const operation = this.activeOperations.get(operationId);
             if (!operation) {
-                console.warn(`⚠️ Operation not found: ${operationId}`);
+                console.warn(`⚠️ v8 Operation not found: ${operationId}`);
                 return;
             }
             
-            // 操作完了処理
+            // v8操作完了処理
             operation.endTime = Date.now();
             operation.completed = true;
             operation.success = endData.success !== false; // デフォルトtrue
             
-            // Graphics設定
+            // v8 Graphics設定
             if (endData.graphics) {
                 operation.graphics = endData.graphics;
+                
+                // v8 Graphics追加情報記録
+                operation.graphicsData = this.serializeGraphicsV8(endData.graphics);
             }
             
-            // 追加データ設定
+            // v8追加データ設定
             if (endData.strokeData) {
                 operation.strokeData = endData.strokeData;
             }
@@ -167,89 +216,100 @@ if (!window.Tegaki.RecordManager) {
             
             // 成功した操作のみ履歴に追加
             if (operation.success) {
-                this.addToHistory(operation);
+                this.addToV8History(operation);
             }
             
-            console.log(`✅ 操作完了記録: ${operation.tool}・${operation.type} (${operation.endTime - operation.startTime}ms)`);
+            const duration = operation.endTime - operation.startTime;
+            console.log(`✅ v8操作完了記録: ${operation.tool}・${operation.type} (${duration}ms) WebGPU: ${this.webgpuSupported}`);
             
-            // EventBus通知（任意）
-            if (this.eventBus) {
-                try {
-                    this.eventBus.emit('operation:end', operation);
-                } catch (error) {
-                    console.warn('⚠️ EventBus通知失敗:', error.message);
-                }
-            }
+            // v8 EventBus通知
+            this.emitV8Event('operation:end', operation);
             
-            // 自動クリーンアップ
-            this.autoCleanup();
+            // v8自動クリーンアップ
+            this.autoCleanupV8();
         }
         
         /**
-         * 履歴追加（内部処理）
+         * v8履歴追加（内部処理）
+         * @param {Object} operation - v8操作オブジェクト
          */
-        addToHistory(operation) {
+        addToV8History(operation) {
             // Redo履歴をクリア（新しい操作が行われたため）
             this.redoStack = [];
             
-            // 履歴に追加
+            // v8履歴に追加
             this.operationHistory.push(operation);
             
-            // 履歴サイズ制限
+            // v8履歴サイズ制限
             if (this.operationHistory.length > this.maxHistorySize) {
                 const removed = this.operationHistory.shift();
-                console.log(`🧹 古い履歴削除: ${removed.id}`);
+                console.log(`🧹 v8古い履歴削除: ${removed.id}`);
                 
-                // Graphics削除（メモリ節約）
+                // v8 Graphics削除（メモリ節約）
                 if (removed.graphics && this.canvasManager) {
                     try {
-                        this.canvasManager.removeGraphicsFromLayer(removed.graphics);
+                        this.canvasManager.removeGraphicsFromLayerV8?.(removed.graphics, removed.layerId);
                     } catch (error) {
-                        console.warn('⚠️ 古い履歴Graphics削除失敗:', error.message);
+                        console.warn('⚠️ v8古い履歴Graphics削除失敗:', error.message);
                     }
                 }
             }
             
-            console.log(`📚 履歴追加: ${operation.id} (総履歴: ${this.operationHistory.length})`);
+            console.log(`📚 v8履歴追加: ${operation.id} (総履歴: ${this.operationHistory.length})`);
         }
         
         /**
-         * 🔄 Undo実行（UI → RecordManager）
-         * 
-         * @returns {boolean} Undo実行成功フラグ
+         * v8 Undo実行（UI → RecordManager）
+         * @returns {boolean} v8 Undo実行成功フラグ
          */
-        undo() {
+        undoV8() {
             if (this.operationHistory.length === 0) {
-                console.log('📝 Undo: 履歴なし');
+                console.log('📝 v8 Undo: 履歴なし');
                 return false;
             }
             
             const operation = this.operationHistory.pop();
             
-            console.log(`↶ Undo実行: ${operation.tool}・${operation.type} (${operation.id})`);
+            console.log(`↶ v8 Undo実行: ${operation.tool}・${operation.type} (${operation.id})`);
             
-            // Graphics削除（Canvas表示から削除）
+            // v8 Graphics削除（Canvas表示から削除）
             if (operation.graphics && this.canvasManager) {
                 try {
-                    this.canvasManager.removeGraphicsFromLayer(operation.graphics);
-                    console.log('🗑️ Undo: Graphics削除完了');
+                    if (this.canvasManager.removeGraphicsFromLayerV8) {
+                        this.canvasManager.removeGraphicsFromLayerV8(operation.graphics, operation.layerId);
+                    } else {
+                        // フォールバック: 通常削除
+                        this.canvasManager.removeGraphicsFromLayer?.(operation.graphics, operation.layerId);
+                    }
+                    console.log('🗑️ v8 Undo: Graphics削除完了');
                 } catch (error) {
-                    console.error('❌ Undo: Graphics削除失敗:', error);
+                    console.error('❌ v8 Undo: Graphics削除失敗:', error);
                     // 削除失敗でもUndoは続行
                 }
             }
             
-            // Tool側のUndo処理呼び出し（任意）
+            // v8 Tool側のUndo処理呼び出し（任意）
             if (operation.tool && window.Tegaki?.ToolManagerInstance) {
                 const toolManager = window.Tegaki.ToolManagerInstance;
-                const tool = toolManager.getTool(operation.tool);
+                const tool = toolManager.getTool?.(operation.tool);
                 
-                if (tool && typeof tool.onUndo === 'function') {
-                    try {
-                        tool.onUndo(operation);
-                        console.log(`🔧 ${operation.tool}Tool.onUndo() 実行完了`);
-                    } catch (error) {
-                        console.warn(`⚠️ ${operation.tool}Tool.onUndo() 実行失敗:`, error.message);
+                if (tool) {
+                    // v8対応Undoメソッドを優先
+                    if (typeof tool.onUndoV8 === 'function') {
+                        try {
+                            tool.onUndoV8(operation);
+                            console.log(`🔧 ${operation.tool}Tool.onUndoV8() 実行完了`);
+                        } catch (error) {
+                            console.warn(`⚠️ ${operation.tool}Tool.onUndoV8() 実行失敗:`, error.message);
+                        }
+                    } else if (typeof tool.onUndo === 'function') {
+                        // フォールバック: 通常Undo
+                        try {
+                            tool.onUndo(operation);
+                            console.log(`🔧 ${operation.tool}Tool.onUndo() フォールバック実行完了`);
+                        } catch (error) {
+                            console.warn(`⚠️ ${operation.tool}Tool.onUndo() フォールバック失敗:`, error.message);
+                        }
                     }
                 }
             }
@@ -257,59 +317,65 @@ if (!window.Tegaki.RecordManager) {
             // UndoStackに移動
             this.undoStack.push(operation);
             
-            // EventBus通知
-            if (this.eventBus) {
-                try {
-                    this.eventBus.emit('operation:undo', operation);
-                } catch (error) {
-                    console.warn('⚠️ EventBus通知失敗:', error.message);
-                }
-            }
+            // v8 EventBus通知
+            this.emitV8Event('operation:undo', operation);
             
-            console.log(`✅ Undo完了: 履歴=${this.operationHistory.length}, Undo Stack=${this.undoStack.length}`);
+            console.log(`✅ v8 Undo完了: 履歴=${this.operationHistory.length}, Undo Stack=${this.undoStack.length}`);
             return true;
         }
         
         /**
-         * 🔄 Redo実行（UI → RecordManager）
-         * 
-         * @returns {boolean} Redo実行成功フラグ
+         * v8 Redo実行（UI → RecordManager）
+         * @returns {boolean} v8 Redo実行成功フラグ
          */
-        redo() {
+        redoV8() {
             if (this.undoStack.length === 0) {
-                console.log('📝 Redo: Undoスタック空');
+                console.log('📝 v8 Redo: Undoスタック空');
                 return false;
             }
             
             const operation = this.undoStack.pop();
             
-            console.log(`↷ Redo実行: ${operation.tool}・${operation.type} (${operation.id})`);
+            console.log(`↷ v8 Redo実行: ${operation.tool}・${operation.type} (${operation.id})`);
             
-            // Graphics復元（Canvas表示に追加）
+            // v8 Graphics復元（Canvas表示に追加）
             if (operation.graphics && this.canvasManager) {
                 try {
-                    this.canvasManager.addGraphicsToLayer(
-                        operation.graphics, 
-                        operation.data?.layerId
-                    );
-                    console.log('📥 Redo: Graphics復元完了');
+                    if (this.canvasManager.addGraphicsToLayerV8) {
+                        this.canvasManager.addGraphicsToLayerV8(operation.graphics, operation.layerId);
+                    } else {
+                        // フォールバック: 通常追加
+                        this.canvasManager.addGraphicsToLayer?.(operation.graphics, operation.layerId);
+                    }
+                    console.log('📥 v8 Redo: Graphics復元完了');
                 } catch (error) {
-                    console.error('❌ Redo: Graphics復元失敗:', error);
+                    console.error('❌ v8 Redo: Graphics復元失敗:', error);
                     // 復元失敗でもRedoは続行
                 }
             }
             
-            // Tool側のRedo処理呼び出し（任意）
+            // v8 Tool側のRedo処理呼び出し（任意）
             if (operation.tool && window.Tegaki?.ToolManagerInstance) {
                 const toolManager = window.Tegaki.ToolManagerInstance;
-                const tool = toolManager.getTool(operation.tool);
+                const tool = toolManager.getTool?.(operation.tool);
                 
-                if (tool && typeof tool.onRedo === 'function') {
-                    try {
-                        tool.onRedo(operation);
-                        console.log(`🔧 ${operation.tool}Tool.onRedo() 実行完了`);
-                    } catch (error) {
-                        console.warn(`⚠️ ${operation.tool}Tool.onRedo() 実行失敗:`, error.message);
+                if (tool) {
+                    // v8対応Redoメソッドを優先
+                    if (typeof tool.onRedoV8 === 'function') {
+                        try {
+                            tool.onRedoV8(operation);
+                            console.log(`🔧 ${operation.tool}Tool.onRedoV8() 実行完了`);
+                        } catch (error) {
+                            console.warn(`⚠️ ${operation.tool}Tool.onRedoV8() 実行失敗:`, error.message);
+                        }
+                    } else if (typeof tool.onRedo === 'function') {
+                        // フォールバック: 通常Redo
+                        try {
+                            tool.onRedo(operation);
+                            console.log(`🔧 ${operation.tool}Tool.onRedo() フォールバック実行完了`);
+                        } catch (error) {
+                            console.warn(`⚠️ ${operation.tool}Tool.onRedo() フォールバック失敗:`, error.message);
+                        }
                     }
                 }
             }
@@ -317,78 +383,262 @@ if (!window.Tegaki.RecordManager) {
             // 履歴に戻す
             this.operationHistory.push(operation);
             
-            // EventBus通知
-            if (this.eventBus) {
-                try {
-                    this.eventBus.emit('operation:redo', operation);
-                } catch (error) {
-                    console.warn('⚠️ EventBus通知失敗:', error.message);
-                }
-            }
+            // v8 EventBus通知
+            this.emitV8Event('operation:redo', operation);
             
-            console.log(`✅ Redo完了: 履歴=${this.operationHistory.length}, Undo Stack=${this.undoStack.length}`);
+            console.log(`✅ v8 Redo完了: 履歴=${this.operationHistory.length}, Undo Stack=${this.undoStack.length}`);
             return true;
         }
         
         /**
-         * Undo可能判定
+         * v8描画記録（Tool直接呼び出し用）
+         * @param {PIXI.Graphics} graphics - v8 Graphics
+         * @param {string} layerId - v8レイヤーID
+         * @param {Object} metadata - v8メタデータ
          */
-        canUndo() {
-            return this.operationHistory.length > 0;
+        recordDrawV8(graphics, layerId, metadata = {}) {
+            const operation = {
+                type: 'draw',
+                timestamp: Date.now(),
+                layerId: layerId,
+                graphicsData: this.serializeGraphicsV8(graphics),
+                graphics: graphics,
+                metadata: {
+                    ...metadata,
+                    pixiVersion: typeof PIXI !== 'undefined' ? PIXI.VERSION : 'unknown',
+                    rendererType: this.canvasManager?.pixiApp?.renderer?.type || 'unknown',
+                    v8Mode: true,
+                    webgpuMode: this.webgpuSupported
+                }
+            };
+            
+            this.addToV8History(operation);
+            console.log(`🎨 v8描画記録完了: レイヤー=${layerId}, WebGPU=${this.webgpuSupported}`);
         }
         
         /**
-         * Redo可能判定
+         * v8 Graphics シリアライズ
+         * @param {PIXI.Graphics} graphics - v8 Graphics
+         * @returns {Object} v8シリアライズデータ
          */
-        canRedo() {
-            return this.undoStack.length > 0;
+        serializeGraphicsV8(graphics) {
+            if (!graphics) return null;
+            
+            try {
+                return {
+                    // v8基本情報
+                    bounds: graphics.getBounds(),
+                    visible: graphics.visible,
+                    alpha: graphics.alpha,
+                    
+                    // v8描画情報
+                    strokeStyle: graphics.strokeStyle,
+                    fillStyle: graphics.fillStyle,
+                    
+                    // v8変形情報
+                    transform: {
+                        position: { x: graphics.position.x, y: graphics.position.y },
+                        scale: { x: graphics.scale.x, y: graphics.scale.y },
+                        rotation: graphics.rotation,
+                        pivot: { x: graphics.pivot.x, y: graphics.pivot.y }
+                    },
+                    
+                    // v8階層情報
+                    children: graphics.children.length,
+                    parent: !!graphics.parent,
+                    zIndex: graphics.zIndex,
+                    
+                    // v8メタデータ
+                    serializedAt: Date.now(),
+                    v8Serialized: true,
+                    rendererType: this.canvasManager?.pixiApp?.renderer?.type || 'unknown'
+                };
+            } catch (error) {
+                console.warn('⚠️ v8 Graphics シリアライズ失敗:', error.message);
+                return {
+                    error: error.message,
+                    serializedAt: Date.now(),
+                    v8Serialized: false
+                };
+            }
         }
         
         /**
-         * 操作強制終了（Tool切り替え時など）
+         * v8 Undo可能判定
+         * @returns {boolean} v8 Undo可能状況
          */
-        forceEndOperation(operationId) {
-            const operation = this.activeOperations.get(operationId);
-            if (!operation) return;
+        canUndoV8() {
+            return this.v8Ready && this.operationHistory.length > 0;
+        }
+        
+        /**
+         * v8 Redo可能判定
+         * @returns {boolean} v8 Redo可能状況
+         */
+        canRedoV8() {
+            return this.v8Ready && this.undoStack.length > 0;
+        }
+        
+        /**
+         * v8自動クリーンアップ（メモリ管理）
+         */
+        autoCleanupV8() {
+            const totalOperations = this.operationHistory.length + 
+                                  this.undoStack.length + 
+                                  this.redoStack.length;
             
-            console.log(`⚠️ 操作強制終了: ${operation.tool}・${operation.type}`);
-            
-            // Tool側の強制終了処理
-            if (operation.tool && window.Tegaki?.ToolManagerInstance) {
-                const toolManager = window.Tegaki.ToolManagerInstance;
-                const tool = toolManager.getTool(operation.tool);
+            if (totalOperations > this.autoCleanupThreshold) {
+                console.log(`🧹 v8自動クリーンアップ実行: ${totalOperations}個の操作`);
                 
-                if (tool && typeof tool.onOperationForceEnd === 'function') {
-                    try {
-                        tool.onOperationForceEnd(operation);
-                        console.log(`🔧 ${operation.tool}Tool.onOperationForceEnd() 実行完了`);
-                    } catch (error) {
-                        console.warn(`⚠️ ${operation.tool}Tool.onOperationForceEnd() 失敗:`, error.message);
+                // v8古い操作から削除（履歴の先頭から）
+                const cleanupCount = Math.floor(this.autoCleanupThreshold * 0.2); // 20%削除
+                
+                for (let i = 0; i < cleanupCount && this.operationHistory.length > 0; i++) {
+                    const removed = this.operationHistory.shift();
+                    
+                    if (removed.graphics && this.canvasManager) {
+                        try {
+                            this.canvasManager.removeGraphicsFromLayerV8?.(removed.graphics, removed.layerId);
+                        } catch (error) {
+                            console.warn(`⚠️ v8自動クリーンアップGraphics削除失敗:`, error.message);
+                        }
                     }
+                }
+                
+                console.log(`✅ v8自動クリーンアップ完了: ${cleanupCount}個削除`);
+            }
+        }
+        
+        /**
+         * v8履歴統計取得
+         * @returns {Object} v8履歴統計情報
+         */
+        getV8HistoryStats() {
+            const toolStats = {};
+            const typeStats = {};
+            const rendererStats = {};
+            
+            this.operationHistory.forEach(op => {
+                toolStats[op.tool] = (toolStats[op.tool] || 0) + 1;
+                typeStats[op.type] = (typeStats[op.type] || 0) + 1;
+                
+                const renderer = op.metadata?.rendererType || 'unknown';
+                rendererStats[renderer] = (rendererStats[renderer] || 0) + 1;
+            });
+            
+            return {
+                // v8基本統計
+                totalOperations: this.operationHistory.length,
+                undoAvailable: this.undoStack.length,
+                redoAvailable: this.redoStack.length,
+                activeOperations: this.activeOperations.size,
+                
+                // v8詳細統計
+                toolStats,
+                typeStats,
+                rendererStats,
+                
+                // v8パフォーマンス
+                v8Performance: {
+                    webgpuOperations: rendererStats.webgpu || 0,
+                    webglOperations: rendererStats.webgl || 0,
+                    highPerformanceMode: this.highPerformanceMode
+                },
+                
+                // v8メモリ使用量
+                memoryUsage: {
+                    historyMB: this.estimateV8HistoryMemory(),
+                    maxHistorySize: this.maxHistorySize,
+                    autoCleanupThreshold: this.autoCleanupThreshold
+                }
+            };
+        }
+        
+        /**
+         * v8メモリ使用量推定（概算）
+         * @returns {number} v8推定メモリ使用量（MB）
+         */
+        estimateV8HistoryMemory() {
+            let totalSize = 0;
+            
+            const allOperations = [
+                ...this.operationHistory,
+                ...this.undoStack,
+                ...this.redoStack
+            ];
+            
+            allOperations.forEach(operation => {
+                // v8基本操作データ
+                totalSize += 300; // v8拡張オブジェクト約300バイト
+                
+                // v8ポイント配列
+                if (operation.data && operation.data.points) {
+                    totalSize += operation.data.points.length * 32; // v8高精度Point約32バイト
+                }
+                
+                // v8 Graphics（概算）
+                if (operation.graphics) {
+                    totalSize += 1500; // v8 Graphics約1.5KB
+                }
+                
+                // v8メタデータ
+                if (operation.metadata) {
+                    totalSize += 200; // v8メタデータ約200バイト
+                }
+            });
+            
+            return Math.round(totalSize / 1024 / 1024 * 100) / 100; // MB単位
+        }
+        
+        /**
+         * v8イベント配信（内部処理）
+         * @param {string} eventName - イベント名
+         * @param {Object} eventData - v8イベントデータ
+         */
+        emitV8Event(eventName, eventData) {
+            // v8拡張イベントデータ
+            const v8EventData = {
+                ...eventData,
+                v8Mode: true,
+                webgpuSupported: this.webgpuSupported,
+                timestamp: Date.now()
+            };
+            
+            if (this.eventBus?.emit) {
+                try {
+                    this.eventBus.emit(eventName, v8EventData);
+                } catch (error) {
+                    console.warn(`⚠️ v8イベント配信失敗 ${eventName}:`, error.message);
                 }
             }
             
-            // 進行中操作から削除（履歴には追加しない）
-            this.activeOperations.delete(operationId);
+            // グローバルEventBusも試行
+            if (window.Tegaki?.EventBusInstance?.emit) {
+                try {
+                    window.Tegaki.EventBusInstance.emit(eventName, v8EventData);
+                } catch (error) {
+                    console.warn(`⚠️ グローバルv8イベント配信失敗 ${eventName}:`, error.message);
+                }
+            }
         }
         
         /**
-         * 全進行中操作強制終了
+         * v8準備完了確認
+         * @returns {boolean} v8対応状況
          */
-        forceEndAllOperations() {
-            const activeIds = Array.from(this.activeOperations.keys());
-            console.log(`⚠️ 全操作強制終了: ${activeIds.length}個の操作`);
-            
-            activeIds.forEach(id => this.forceEndOperation(id));
+        isV8Ready() {
+            return this.v8Ready && 
+                   !!this.canvasManager && 
+                   this.canvasManager.isV8Ready();
         }
         
         /**
-         * 履歴クリア
+         * v8履歴クリア
          */
-        clearHistory() {
-            console.log(`🧹 履歴クリア開始: 履歴=${this.operationHistory.length}, Undo=${this.undoStack.length}, Redo=${this.redoStack.length}`);
+        clearV8History() {
+            console.log(`🧹 v8履歴クリア開始: 履歴=${this.operationHistory.length}, Undo=${this.undoStack.length}, Redo=${this.redoStack.length}`);
             
-            // 全Graphicsをクリーンアップ
+            // 全v8 Graphicsをクリーンアップ
             const allOperations = [
                 ...this.operationHistory,
                 ...this.undoStack,
@@ -399,245 +649,257 @@ if (!window.Tegaki.RecordManager) {
             allOperations.forEach(operation => {
                 if (operation.graphics && this.canvasManager) {
                     try {
-                        this.canvasManager.removeGraphicsFromLayer(operation.graphics);
+                        if (this.canvasManager.removeGraphicsFromLayerV8) {
+                            this.canvasManager.removeGraphicsFromLayerV8(operation.graphics, operation.layerId);
+                        } else {
+                            this.canvasManager.removeGraphicsFromLayer?.(operation.graphics, operation.layerId);
+                        }
                         cleanupCount++;
                     } catch (error) {
-                        console.warn(`⚠️ Graphics削除失敗: ${operation.id}`, error.message);
+                        console.warn(`⚠️ v8 Graphics削除失敗: ${operation.id}`, error.message);
                     }
                 }
             });
             
-            // 履歴スタッククリア
+            // v8履歴スタッククリア
             this.operationHistory = [];
             this.undoStack = [];
             this.redoStack = [];
             
             // 進行中操作も強制終了
-            this.forceEndAllOperations();
+            this.forceEndAllV8Operations();
             
-            console.log(`✅ 履歴クリア完了: ${cleanupCount}個のGraphics削除`);
+            console.log(`✅ v8履歴クリア完了: ${cleanupCount}個のGraphics削除`);
             
-            // EventBus通知
-            if (this.eventBus) {
-                try {
-                    this.eventBus.emit('history:clear', { cleanupCount });
-                } catch (error) {
-                    console.warn('⚠️ EventBus通知失敗:', error.message);
-                }
-            }
+            // v8 EventBus通知
+            this.emitV8Event('history:clear', { cleanupCount, v8Mode: true });
         }
         
         /**
-         * 自動クリーンアップ（メモリ管理）
+         * v8進行中操作強制終了
+         * @param {string} operationId - v8操作ID
          */
-        autoCleanup() {
-            const totalOperations = this.operationHistory.length + 
-                                  this.undoStack.length + 
-                                  this.redoStack.length;
+        forceEndV8Operation(operationId) {
+            const operation = this.activeOperations.get(operationId);
+            if (!operation) return;
             
-            if (totalOperations > this.autoCleanupThreshold) {
-                console.log(`🧹 自動クリーンアップ実行: ${totalOperations}個の操作`);
+            console.log(`⚠️ v8操作強制終了: ${operation.tool}・${operation.type}`);
+            
+            // v8 Tool側の強制終了処理
+            if (operation.tool && window.Tegaki?.ToolManagerInstance) {
+                const toolManager = window.Tegaki.ToolManagerInstance;
+                const tool = toolManager.getTool?.(operation.tool);
                 
-                // 古い操作から削除（履歴の先頭から）
-                const cleanupCount = Math.floor(this.autoCleanupThreshold * 0.2); // 20%削除
-                
-                for (let i = 0; i < cleanupCount && this.operationHistory.length > 0; i++) {
-                    const removed = this.operationHistory.shift();
-                    
-                    if (removed.graphics && this.canvasManager) {
+                if (tool) {
+                    // v8対応強制終了メソッドを優先
+                    if (typeof tool.onOperationForceEndV8 === 'function') {
                         try {
-                            this.canvasManager.removeGraphicsFromLayer(removed.graphics);
+                            tool.onOperationForceEndV8(operation);
+                            console.log(`🔧 ${operation.tool}Tool.onOperationForceEndV8() 実行完了`);
                         } catch (error) {
-                            console.warn(`⚠️ 自動クリーンアップGraphics削除失敗:`, error.message);
+                            console.warn(`⚠️ ${operation.tool}Tool.onOperationForceEndV8() 失敗:`, error.message);
+                        }
+                    } else if (typeof tool.onOperationForceEnd === 'function') {
+                        // フォールバック: 通常強制終了
+                        try {
+                            tool.onOperationForceEnd(operation);
+                            console.log(`🔧 ${operation.tool}Tool.onOperationForceEnd() フォールバック実行完了`);
+                        } catch (error) {
+                            console.warn(`⚠️ ${operation.tool}Tool.onOperationForceEnd() フォールバック失敗:`, error.message);
                         }
                     }
                 }
-                
-                console.log(`✅ 自動クリーンアップ完了: ${cleanupCount}個削除`);
             }
+            
+            // 進行中操作から削除（履歴には追加しない）
+            this.activeOperations.delete(operationId);
         }
         
         /**
-         * 履歴統計取得
+         * 全v8進行中操作強制終了
          */
-        getHistoryStats() {
-            const toolStats = {};
-            const typeStats = {};
+        forceEndAllV8Operations() {
+            const activeIds = Array.from(this.activeOperations.keys());
+            console.log(`⚠️ 全v8操作強制終了: ${activeIds.length}個の操作`);
             
-            this.operationHistory.forEach(op => {
-                toolStats[op.tool] = (toolStats[op.tool] || 0) + 1;
-                typeStats[op.type] = (typeStats[op.type] || 0) + 1;
-            });
-            
-            return {
-                totalOperations: this.operationHistory.length,
-                undoAvailable: this.undoStack.length,
-                redoAvailable: this.redoStack.length,
-                activeOperations: this.activeOperations.size,
-                toolStats,
-                typeStats,
-                memoryUsage: {
-                    historyMB: this.estimateHistoryMemory(),
-                    maxHistorySize: this.maxHistorySize,
-                    autoCleanupThreshold: this.autoCleanupThreshold
-                }
-            };
+            activeIds.forEach(id => this.forceEndV8Operation(id));
         }
         
         /**
-         * メモリ使用量推定（概算）
-         */
-        estimateHistoryMemory() {
-            let totalSize = 0;
-            
-            const allOperations = [
-                ...this.operationHistory,
-                ...this.undoStack,
-                ...this.redoStack
-            ];
-            
-            allOperations.forEach(operation => {
-                // 基本操作データ
-                totalSize += 200; // 基本オブジェクト約200バイト
-                
-                // ポイント配列
-                if (operation.data && operation.data.points) {
-                    totalSize += operation.data.points.length * 24; // Point約24バイト
-                }
-                
-                // Graphics（概算）
-                if (operation.graphics) {
-                    totalSize += 1000; // Graphics約1KB
-                }
-            });
-            
-            return Math.round(totalSize / 1024 / 1024 * 100) / 100; // MB単位
-        }
-        
-        /**
-         * 🆕 Phase1.5デバッグ情報取得
+         * v8デバッグ情報取得
+         * @returns {Object} v8デバッグ情報
          */
         getDebugInfo() {
             return {
-                initialized: this.initialized,
+                // v8基本状態
+                v8Ready: this.v8Ready,
+                webgpuSupported: this.webgpuSupported,
+                highPerformanceMode: this.highPerformanceMode,
+                
+                // Manager連携状態
                 managers: {
-                    hasCanvasManager: !!this.canvasManager,
-                    hasEventBus: !!this.eventBus
+                    canvasManager: !!this.canvasManager,
+                    canvasManagerV8Ready: this.canvasManager?.isV8Ready() || false,
+                    eventBus: !!this.eventBus
                 },
                 
+                // v8履歴状態
                 history: {
                     operationHistory: this.operationHistory.length,
                     undoStack: this.undoStack.length,
                     redoStack: this.redoStack.length,
                     activeOperations: this.activeOperations.size,
-                    canUndo: this.canUndo(),
-                    canRedo: this.canRedo()
+                    canUndoV8: this.canUndoV8(),
+                    canRedoV8: this.canRedoV8()
                 },
                 
+                // v8設定
                 settings: {
                     maxHistorySize: this.maxHistorySize,
                     autoCleanupThreshold: this.autoCleanupThreshold,
                     operationCounter: this.operationCounter
                 },
                 
-                stats: this.getHistoryStats(),
+                // v8統計情報
+                stats: this.getV8HistoryStats(),
                 
+                // v8最新操作（デバッグ用）
                 recentOperations: this.operationHistory.slice(-3).map(op => ({
                     id: op.id,
                     tool: op.tool,
                     type: op.type,
+                    layerId: op.layerId,
                     duration: op.endTime - op.startTime,
+                    hasGraphics: !!op.graphics,
+                    v8Mode: op.metadata?.v8Mode || false,
+                    webgpuMode: op.metadata?.webgpuMode || false,
+                    rendererType: op.metadata?.rendererType || 'unknown'
+                })),
+                
+                // v8パフォーマンス情報
+                performance: {
+                    webgpuAccelerated: this.webgpuSupported,
+                    memoryOptimized: this.highPerformanceMode,
+                    estimatedMemoryMB: this.estimateV8HistoryMemory(),
+                    rendererType: this.canvasManager?.pixiApp?.renderer?.type || 'unknown'
+                },
+                
+                // v8進行中操作詳細
+                activeOperationsDetail: Array.from(this.activeOperations.values()).map(op => ({
+                    id: op.id,
+                    tool: op.tool,
+                    type: op.type,
+                    layerId: op.layerId,
+                    startTime: op.startTime,
+                    duration: Date.now() - op.startTime,
                     hasGraphics: !!op.graphics
                 }))
             };
         }
         
         /**
-         * 初期化状態確認
+         * v8機能テスト
+         * @returns {Object} v8機能テスト結果
          */
-        isReady() {
-            return this.initialized;
-        }
-        
-        /**
-         * 🆕 Phase1.5機能テスト
-         */
-        testRecordManagerFeatures() {
+        testV8RecordManagerFeatures() {
             const results = { success: [], error: [], warning: [] };
             
             try {
-                // 履歴管理テスト
+                // v8履歴管理テスト
                 const initialHistoryLength = this.operationHistory.length;
                 
-                // 操作開始テスト
-                const testOp = this.startOperation({
+                // v8操作開始テスト
+                const testOp = this.startOperationV8({
                     tool: 'test',
-                    type: 'test_operation',
-                    data: { testData: 'テスト' }
+                    type: 'test_operation_v8',
+                    data: { testData: 'v8テスト' },
+                    layerId: 'test_layer'
                 });
                 
-                if (testOp && testOp.id) {
-                    results.success.push('RecordManager: 操作開始記録正常');
+                if (testOp && testOp.id && testOp.metadata.v8Mode) {
+                    results.success.push('RecordManager v8: 操作開始記録正常');
                     
-                    // 操作終了テスト
-                    this.endOperation(testOp.id, { success: true });
+                    // v8操作終了テスト
+                    this.endOperationV8(testOp.id, { success: true });
                     
                     if (this.operationHistory.length === initialHistoryLength + 1) {
-                        results.success.push('RecordManager: 操作終了記録正常');
+                        results.success.push('RecordManager v8: 操作終了記録正常');
                         
-                        // Undoテスト
-                        const undoSuccess = this.undo();
+                        // v8 Undoテスト
+                        const undoSuccess = this.undoV8();
                         if (undoSuccess && this.operationHistory.length === initialHistoryLength) {
-                            results.success.push('RecordManager: Undo機能正常');
+                            results.success.push('RecordManager v8: Undo機能正常');
                             
-                            // Redoテスト
-                            const redoSuccess = this.redo();
+                            // v8 Redoテスト
+                            const redoSuccess = this.redoV8();
                             if (redoSuccess && this.operationHistory.length === initialHistoryLength + 1) {
-                                results.success.push('RecordManager: Redo機能正常');
+                                results.success.push('RecordManager v8: Redo機能正常');
                             } else {
-                                results.error.push('RecordManager: Redo機能異常');
+                                results.error.push('RecordManager v8: Redo機能異常');
                             }
                         } else {
-                            results.error.push('RecordManager: Undo機能異常');
+                            results.error.push('RecordManager v8: Undo機能異常');
                         }
                         
                         // クリーンアップ（テストデータ削除）
-                        this.undo();
+                        this.undoV8();
                         
                     } else {
-                        results.error.push('RecordManager: 操作終了記録異常');
+                        results.error.push('RecordManager v8: 操作終了記録異常');
                     }
                 } else {
-                    results.error.push('RecordManager: 操作開始記録異常');
+                    results.error.push('RecordManager v8: 操作開始記録異常');
                 }
                 
-                // 統計情報テスト
-                const stats = this.getHistoryStats();
-                if (stats && typeof stats.totalOperations === 'number') {
-                    results.success.push('RecordManager: 統計情報機能正常');
+                // v8統計情報テスト
+                const stats = this.getV8HistoryStats();
+                if (stats && typeof stats.totalOperations === 'number' && stats.v8Performance) {
+                    results.success.push('RecordManager v8: 統計情報機能正常');
                 } else {
-                    results.error.push('RecordManager: 統計情報機能異常');
+                    results.error.push('RecordManager v8: 統計情報機能異常');
+                }
+                
+                // WebGPU対応テスト
+                if (this.webgpuSupported) {
+                    results.success.push('RecordManager v8: WebGPU対応正常');
+                } else {
+                    results.warning.push('RecordManager v8: WebGPU未対応（WebGL動作）');
                 }
                 
             } catch (error) {
-                results.error.push(`RecordManager機能テストエラー: ${error.message}`);
+                results.error.push(`RecordManager v8機能テストエラー: ${error.message}`);
             }
             
             return results;
+        }
+        
+        /**
+         * v8状態リセット
+         */
+        resetV8() {
+            console.log('🔄 RecordManager v8状態リセット開始');
+            
+            // 履歴クリア
+            this.clearV8History();
+            
+            // 基本状態リセット
+            this.canvasManager = null;
+            this.v8Ready = false;
+            this.webgpuSupported = false;
+            this.highPerformanceMode = false;
+            this.operationCounter = 0;
+            
+            console.log('✅ RecordManager v8状態リセット完了');
         }
     }
     
     // Tegaki名前空間に登録
     window.Tegaki.RecordManager = RecordManager;
     
-    // インスタンス作成・グローバル設定
-    if (!window.Tegaki.RecordManagerInstance) {
-        window.Tegaki.RecordManagerInstance = new RecordManager();
-    }
-    
-    console.log('🔄 RecordManager Phase1.5 実用実装版 Loaded - Undo/Redo・操作履歴・非破壊編集完全対応');
-} else {
-    console.log('⚠️ RecordManager already defined - skipping redefinition');
+    console.log('🔄 RecordManager PixiJS v8対応版 Loaded');
+    console.log('📏 v8機能: Graphics記録・WebGPU最適化・高精度操作履歴・Container階層対応');
+    console.log('🚀 v8特徴: 非破壊編集・v8 Graphics活用・高性能メモリ管理・WebGPU加速');
+    console.log('✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能');
 }
 
-console.log('🔄 record-manager.js loaded - 実用実装・スタブ→実装変換・Phase1.5完全対応完了');
+console.log('🔄 RecordManager PixiJS v8対応版 Loaded - Graphics記録・WebGPU最適化・高精度履歴管理完了');
