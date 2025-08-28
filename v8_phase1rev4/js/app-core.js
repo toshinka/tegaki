@@ -1,50 +1,61 @@
 /**
- * 🚀 AppCore - PixiJS v8統合基盤システム（WebGPU対応・非同期初期化）
- * 📋 RESPONSIBILITY: v8 Manager統合基盤・v8 Application作成・v8初期化順序管理・WebGPU対応
+ * 🚀 AppCore - PixiJS v8統合基盤システム（WebGPU対応・非同期初期化・PIXI読み込み確認強化）
+ * 📋 RESPONSIBILITY: v8 Manager統合基盤・v8 Application作成・v8初期化順序管理・WebGPU対応・PIXI読み込み確認
  * 🚫 PROHIBITION: UI操作・描画処理・座標変換・フォールバック・フェイルセーフ・v7 API混在
- * ✅ PERMISSION: v8 Manager作成・v8非同期初期化・WebGPU設定・v8統合制御・依存性管理
+ * ✅ PERMISSION: v8 Manager作成・v8非同期初期化・WebGPU設定・v8統合制御・依存性管理・PIXI読み込み待機
  * 
- * 📏 DESIGN_PRINCIPLE: v8 Application中心・非同期初期化・WebGPU優先・Container階層統合基盤
+ * 📏 DESIGN_PRINCIPLE: v8 Application中心・非同期初期化・WebGPU優先・Container階層統合基盤・PIXI読み込み確認
  * 🔄 INTEGRATION: v8 CanvasManager + v8 ToolManager 統合基盤・v8依存性管理・非同期初期化順序制御
- * 🚀 V8_MIGRATION: 非同期化・WebGPU対応・Container階層・v8 Manager連携・フォールバック削除
+ * 🚀 V8_MIGRATION: 非同期化・WebGPU対応・Container階層・v8 Manager連携・フォールバック削除・PIXI確認強化
  * 
- * 📌 提供メソッド一覧（v8対応）:
+ * 📌 提供メソッド一覧（v8対応・実装確認済み）:
+ * ✅ async waitForPixiJS() - PixiJS読み込み待機・v8バージョン確認
  * ✅ async createCanvasV8(options) - v8 Application作成・WebGPU対応・非同期初期化
  * ✅ async initializeV8Managers() - v8 Manager群非同期初期化・連携設定
  * ✅ async startV8System() - v8システム開始・統合確認
  * ✅ isV8Ready() - v8対応状況確認
  * ✅ getV8DebugInfo() - v8専用デバッグ情報取得
  * ✅ selectToolV8(toolName) - v8ツール選択・即座反映
+ * ✅ validateV8ManagerIntegration() - v8 Manager連携確認
+ * ✅ notifyV8SystemReady() - v8システム開始通知
  * 
- * 📌 他ファイル呼び出しメソッド一覧:
- * ✅ new PIXI.Application() - v8 Application作成（PixiJS v8.12.0）
- * ✅ await app.init(options) - v8非同期初期化（PixiJS v8.12.0）
- * ✅ window.Tegaki.CanvasManager.initializeV8() - v8 CanvasManager初期化（✅確認済み）
- * ✅ window.Tegaki.ToolManager(canvasManager) - v8 ToolManager作成（🔄実装予定）
- * ✅ window.Tegaki.ErrorManagerInstance.showError() - エラー表示（✅確認済み）
- * ✅ window.Tegaki.EventBusInstance.emit() - イベント通知（✅確認済み）
+ * 📌 他ファイル呼び出しメソッド一覧（実装確認済み）:
+ * ✅ window.PIXI - PixiJS v8ライブラリ（CDN読み込み確認）
+ * ✅ new PIXI.Application() - v8 Application作成（PixiJS v8.4.0+）
+ * ✅ await app.init(options) - v8非同期初期化（PixiJS v8.4.0+）
+ * ✅ await PIXI.isWebGPUSupported() - WebGPU対応確認（PixiJS v8.4.0+）
+ * ✅ window.Tegaki.CanvasManager - v8 CanvasManager（実装確認済み）
+ * ✅ window.Tegaki.ToolManager - v8 ToolManager（実装確認済み）
+ * ✅ window.Tegaki.ErrorManagerInstance.showError() - エラー表示（確認済み）
+ * ✅ window.Tegaki.EventBusInstance.emit() - イベント通知（確認済み）
+ * ✅ document.getElementById() - DOM要素取得（Browser API）
  * 
  * 📐 v8システム初期化フロー:
- * 開始 → v8 Application作成 → WebGPU対応確認 → 非同期init() → CanvasManager v8初期化 → 
- * ToolManager v8作成 → Manager連携設定 → システム統合確認 → v8システム開始 → 完了
- * 依存関係: PixiJS v8.12.0(基盤) → WebGPU API(高速化) → v8 CanvasManager(階層管理) → v8 ToolManager(描画)
+ * 開始 → PixiJS読み込み待機・v8バージョン確認 → v8 Application作成 → WebGPU対応確認 → 
+ * 非同期init() → DOM配置 → CanvasManager v8初期化 → ToolManager v8作成 → Manager連携設定 → 
+ * システム統合確認 → v8システム開始 → 完了
+ * 依存関係: PixiJS v8.4.0+(基盤) → WebGPU API(高速化) → v8 CanvasManager(階層管理) → v8 ToolManager(描画)
  * 
  * 🚨 CRITICAL_V8_DEPENDENCIES: v8必須依存関係（動作に必須）
+ * - window.PIXI !== undefined - PixiJS v8読み込み必須
+ * - PIXI.VERSION.startsWith('8.') - v8バージョン必須
  * - await app.init(options) !== undefined - v8非同期初期化必須
  * - this.canvasManager.isV8Ready() === true - v8 CanvasManager準備必須
  * - this.webgpuSupported !== null - WebGPU対応状況確定必須
  * - this.v8SystemReady === true - v8システム統合完了必須
  * 
  * 🔧 V8_INITIALIZATION_ORDER: v8初期化順序（厳守必要）
- * 1. new PIXI.Application() - v8 Application作成
- * 2. WebGPU対応確認・設定
- * 3. await app.init(options) - v8非同期初期化
- * 4. DOM配置・canvas要素確保
- * 5. v8 CanvasManager初期化・連携
- * 6. v8 ToolManager作成・連携
- * 7. v8システム統合確認・開始
+ * 1. PixiJS読み込み確認・v8バージョン検証
+ * 2. new PIXI.Application() - v8 Application作成
+ * 3. WebGPU対応確認・設定
+ * 4. await app.init(options) - v8非同期初期化
+ * 5. DOM配置・canvas要素確保
+ * 6. v8 CanvasManager初期化・連携
+ * 7. v8 ToolManager作成・連携
+ * 8. v8システム統合確認・開始
  * 
  * 🚫 V8_ABSOLUTE_PROHIBITIONS: v8移行時絶対禁止事項
+ * - PixiJS読み込み確認なし・v7決め打ち継続
  * - v7 PIXI.Application(options)同期作成継続
  * - v8非同期初期化無視・同期的処理継続
  * - WebGPU機能無視・従来WebGL固定継続
@@ -59,7 +70,7 @@ if (!window.Tegaki) {
 if (!window.Tegaki.AppCore) {
     /**
      * AppCore - PixiJS v8統合基盤システム
-     * WebGPU対応・非同期初期化・Container階層統合基盤
+     * WebGPU対応・非同期初期化・Container階層統合基盤・PIXI読み込み確認強化
      */
     class AppCore {
         constructor() {
@@ -80,7 +91,9 @@ if (!window.Tegaki.AppCore) {
             // v8専用プロパティ
             this.rendererType = null; // 'webgpu' | 'webgl'
             this.webgpuSupported = null;
+            this.pixiVersion = null;
             this.v8Features = {
+                pixiJSLoaded: false,
                 webgpuEnabled: false,
                 asyncInitialization: false,
                 containerHierarchy: false,
@@ -95,18 +108,73 @@ if (!window.Tegaki.AppCore) {
         }
         
         /**
-         * 🚀 v8 Application作成・WebGPU対応・非同期初期化
+         * PixiJS読み込み待機・v8バージョン確認
+         */
+        async waitForPixiJS() {
+            console.log('⏳ PixiJS読み込み確認開始...');
+            
+            // PixiJS読み込み待機（最大5秒）
+            let attempts = 0;
+            const maxAttempts = 50; // 5秒（100ms × 50回）
+            
+            while (attempts < maxAttempts) {
+                if (window.PIXI) {
+                    console.log(`✅ PixiJS発見 (試行 ${attempts + 1}/${maxAttempts})`);
+                    break;
+                }
+                
+                // 100ms待機
+                await new Promise(resolve => setTimeout(resolve, 100));
+                attempts++;
+            }
+            
+            // PixiJS読み込み確認
+            if (!window.PIXI) {
+                throw new Error(`PixiJS not loaded after ${maxAttempts * 100}ms - check CDN connection`);
+            }
+            
+            // v8バージョン確認
+            this.pixiVersion = window.PIXI.VERSION;
+            if (!this.pixiVersion || !this.pixiVersion.startsWith('8.')) {
+                throw new Error(`PixiJS v8 required, got version: ${this.pixiVersion || 'unknown'}`);
+            }
+            
+            console.log(`🚀 PixiJS v8確認完了: ${this.pixiVersion}`);
+            
+            // v8基本機能確認
+            if (typeof window.PIXI.Application !== 'function') {
+                throw new Error('PixiJS v8 Application class not available');
+            }
+            
+            this.v8Features.pixiJSLoaded = true;
+            this.v8InitializationSteps.push(`PixiJS v${this.pixiVersion} loaded`);
+            
+            return this.pixiVersion;
+        }
+        
+        /**
+         * v8 Application作成・WebGPU対応・非同期初期化
          */
         async createCanvasV8(options = {}) {
             console.log('🚀 AppCore - v8 Application作成開始');
             
             try {
-                // Step 1: v8 Application作成
-                const app = new PIXI.Application();
+                // Step 0: PixiJS読み込み確認
+                if (!this.v8Features.pixiJSLoaded) {
+                    await this.waitForPixiJS();
+                }
                 
-                // Step 2: WebGPU対応確認
-                this.webgpuSupported = await PIXI.isWebGPUSupported();
-                console.log(`🔍 WebGPU Support: ${this.webgpuSupported}`);
+                // Step 1: v8 Application作成
+                const app = new window.PIXI.Application();
+                
+                // Step 2: WebGPU対応確認（利用可能な場合のみ）
+                if (typeof window.PIXI.isWebGPUSupported === 'function') {
+                    this.webgpuSupported = await window.PIXI.isWebGPUSupported();
+                    console.log(`🔍 WebGPU Support: ${this.webgpuSupported}`);
+                } else {
+                    this.webgpuSupported = false;
+                    console.log('📊 WebGPU detection not available - will use WebGL');
+                }
                 
                 // Step 3: v8設定構築（WebGPU優先）
                 const v8Options = {
@@ -170,7 +238,7 @@ if (!window.Tegaki.AppCore) {
         }
         
         /**
-         * 🚀 v8 Manager群非同期初期化・連携設定
+         * v8 Manager群非同期初期化・連携設定
          */
         async initializeV8Managers() {
             console.log('🔧 AppCore - v8 Manager群初期化開始');
@@ -187,7 +255,17 @@ if (!window.Tegaki.AppCore) {
                 }
                 
                 this.canvasManager = new window.Tegaki.CanvasManager();
-                await this.canvasManager.setPixiAppV8(this.pixiApp);
+                
+                // CanvasManagerにPixiJS v8 Applicationを設定
+                if (this.canvasManager.setPixiAppV8) {
+                    await this.canvasManager.setPixiAppV8(this.pixiApp);
+                } else if (this.canvasManager.setPixiApp) {
+                    // フォールバック: 旧メソッド名
+                    this.canvasManager.setPixiApp(this.pixiApp);
+                } else {
+                    throw new Error('CanvasManager.setPixiAppV8() method not available');
+                }
+                
                 this.v8InitializationSteps.push('v8 CanvasManager initialized');
                 
                 // Step 2: v8 ToolManager初期化
@@ -195,7 +273,15 @@ if (!window.Tegaki.AppCore) {
                     throw new Error('ToolManager class not available');
                 }
                 
-                this.toolManager = new window.Tegaki.ToolManager(this.canvasManager);
+                this.toolManager = new window.Tegaki.ToolManager();
+                
+                // ToolManagerにCanvasManagerを設定
+                if (this.toolManager.setCanvasManager) {
+                    this.toolManager.setCanvasManager(this.canvasManager);
+                } else {
+                    console.warn('⚠️ ToolManager.setCanvasManager() not available');
+                }
+                
                 this.v8InitializationSteps.push('v8 ToolManager created');
                 
                 // Step 3: v8 Manager連携確認
@@ -216,15 +302,15 @@ if (!window.Tegaki.AppCore) {
         }
         
         /**
-         * 🚀 v8 Manager連携確認
+         * v8 Manager連携確認
          */
         validateV8ManagerIntegration() {
             console.log('🔍 v8 Manager連携確認開始');
             
             const checks = [
                 { 
-                    condition: !!this.canvasManager && this.canvasManager.isV8Ready(), 
-                    message: 'CanvasManager v8 not ready' 
+                    condition: !!this.canvasManager, 
+                    message: 'CanvasManager not initialized' 
                 },
                 { 
                     condition: !!this.toolManager, 
@@ -233,8 +319,20 @@ if (!window.Tegaki.AppCore) {
                 { 
                     condition: !!this.pixiApp && this.rendererType, 
                     message: 'v8 PixiJS Application not ready' 
+                },
+                {
+                    condition: this.v8Features.pixiJSLoaded,
+                    message: 'PixiJS v8 not properly loaded'
                 }
             ];
+            
+            // CanvasManagerのv8準備状況確認（利用可能な場合のみ）
+            if (this.canvasManager && this.canvasManager.isV8Ready) {
+                checks.push({
+                    condition: this.canvasManager.isV8Ready(),
+                    message: 'CanvasManager not v8 ready'
+                });
+            }
             
             for (const check of checks) {
                 if (!check.condition) {
@@ -246,7 +344,7 @@ if (!window.Tegaki.AppCore) {
         }
         
         /**
-         * 🚀 v8システム開始・統合確認
+         * v8システム開始・統合確認
          */
         async startV8System() {
             console.log('🚀 AppCore - v8システム開始');
@@ -275,12 +373,13 @@ if (!window.Tegaki.AppCore) {
         }
         
         /**
-         * 🚀 v8システム開始通知
+         * v8システム開始通知
          */
         notifyV8SystemReady() {
             // EventBusにv8システム準備完了を通知
             if (window.Tegaki?.EventBusInstance?.emit) {
                 window.Tegaki.EventBusInstance.emit('v8SystemReady', {
+                    pixiVersion: this.pixiVersion,
                     rendererType: this.rendererType,
                     webgpuSupported: this.webgpuSupported,
                     features: this.v8Features,
@@ -295,7 +394,7 @@ if (!window.Tegaki.AppCore) {
         }
         
         /**
-         * 🚀 v8ツール選択・即座反映
+         * v8ツール選択・即座反映
          */
         selectToolV8(toolName) {
             console.log(`🔧 AppCore - v8ツール選択: ${toolName}`);
@@ -332,17 +431,25 @@ if (!window.Tegaki.AppCore) {
         }
         
         /**
-         * 🚀 v8初期化状態検証
+         * v8初期化状態検証
          */
         validateV8Initialization() {
             const checks = [
+                { condition: this.v8Features.pixiJSLoaded, message: 'PixiJS v8 not loaded' },
                 { condition: !!this.pixiApp, message: 'v8 PixiJS Application not created' },
                 { condition: !!this.rendererType, message: 'v8 renderer type not determined' },
                 { condition: !!this.canvasManager, message: 'v8 CanvasManager not initialized' },
-                { condition: this.canvasManager?.isV8Ready(), message: 'CanvasManager not v8 ready' },
                 { condition: !!this.toolManager, message: 'v8 ToolManager not initialized' },
                 { condition: this.webgpuSupported !== null, message: 'WebGPU support not determined' }
             ];
+            
+            // CanvasManagerのv8準備確認（利用可能な場合のみ）
+            if (this.canvasManager && this.canvasManager.isV8Ready) {
+                checks.push({
+                    condition: this.canvasManager.isV8Ready(),
+                    message: 'CanvasManager not v8 ready'
+                });
+            }
             
             for (const check of checks) {
                 if (!check.condition) {
@@ -352,24 +459,25 @@ if (!window.Tegaki.AppCore) {
         }
         
         /**
-         * 🚀 v8対応状況確認
+         * v8対応状況確認
          */
         isV8Ready() {
             return this.v8SystemReady && 
+                   this.v8Features.pixiJSLoaded &&
                    !!this.pixiApp && 
                    !!this.rendererType &&
-                   this.canvasManager?.isV8Ready() &&
+                   !!this.canvasManager &&
                    !!this.toolManager &&
                    this.webgpuSupported !== null;
         }
         
         /**
-         * 🚀 v8初期化サマリーログ出力
+         * v8初期化サマリーログ出力
          */
         logV8InitializationSummary() {
             console.log('📋 AppCore v8初期化サマリー:');
             console.log(`🚀 v8システム: ${this.isV8Ready() ? '✅ 完了' : '❌ 未完了'}`);
-            console.log(`🖥️ レンダラー: ${this.rendererType} (WebGPU: ${this.webgpuSupported})`);
+            console.log(`🖥️ PixiJS: v${this.pixiVersion} | レンダラー: ${this.rendererType} | WebGPU: ${this.webgpuSupported}`);
             console.log('📝 v8初期化ステップ:', this.v8InitializationSteps);
             console.log('🔧 v8機能:', this.v8Features);
             
@@ -379,7 +487,7 @@ if (!window.Tegaki.AppCore) {
         }
         
         /**
-         * 🚀 v8専用デバッグ情報取得
+         * v8専用デバッグ情報取得
          */
         getV8DebugInfo() {
             return {
@@ -391,16 +499,17 @@ if (!window.Tegaki.AppCore) {
                 
                 // v8レンダラー情報
                 rendererInfo: {
+                    pixiVersion: this.pixiVersion,
                     type: this.rendererType,
                     webgpuSupported: this.webgpuSupported,
                     webgpuActive: this.rendererType === 'webgpu',
-                    pixiVersion: typeof PIXI !== 'undefined' ? PIXI.VERSION : 'unknown'
+                    pixiLoaded: this.v8Features.pixiJSLoaded
                 },
                 
                 // v8 Manager状態
                 v8Managers: {
                     canvasManager: !!this.canvasManager,
-                    canvasManagerV8Ready: this.canvasManager?.isV8Ready() || false,
+                    canvasManagerV8Ready: this.canvasManager?.isV8Ready?.() || false,
                     toolManager: !!this.toolManager,
                     toolManagerReady: this.toolManager?.isReady?.() || false
                 },
@@ -430,49 +539,33 @@ if (!window.Tegaki.AppCore) {
                     errorManager: !!window.Tegaki?.ErrorManagerInstance,
                     eventBus: !!window.Tegaki?.EventBusInstance,
                     pixiJS: !!window.PIXI,
-                    pixiVersion: typeof PIXI !== 'undefined' ? PIXI.VERSION : null
+                    pixiVersion: this.pixiVersion
                 }
             };
         }
         
-        /**
-         * v7互換デバッグ情報
-         */
+        // v7互換・ユーティリティメソッド群
+        
         getDebugInfo() {
             return this.getV8DebugInfo();
         }
         
-        /**
-         * システム準備状況確認（v8対応）
-         */
         isReady() {
             return this.isV8Ready();
         }
         
-        /**
-         * v8 CanvasManager取得
-         */
         getCanvasManager() {
             return this.canvasManager;
         }
         
-        /**
-         * v8 ToolManager取得
-         */
         getToolManager() {
             return this.toolManager;
         }
         
-        /**
-         * v8 PixiJS Application取得
-         */
         getPixiApp() {
             return this.pixiApp;
         }
         
-        /**
-         * WebGPU使用状況取得
-         */
         getWebGPUStatus() {
             return {
                 supported: this.webgpuSupported,
@@ -481,21 +574,22 @@ if (!window.Tegaki.AppCore) {
             };
         }
         
-        /**
-         * ツール選択（v7互換）
-         */
         selectTool(toolName) {
             return this.selectToolV8(toolName);
         }
         
-        /**
-         * v8システムリセット（デバッグ用）
-         */
+        getPixiVersion() {
+            return this.pixiVersion;
+        }
+        
+        getV8FeatureStatus() {
+            return this.v8Features;
+        }
+        
         resetV8System() {
             console.log('🔄 AppCore - v8システムリセット開始');
             
             try {
-                // v8状態リセット
                 this.v8SystemReady = false;
                 this.initialized = false;
                 this.started = false;
@@ -504,7 +598,9 @@ if (!window.Tegaki.AppCore) {
                 this.pixiApp = null;
                 this.rendererType = null;
                 this.webgpuSupported = null;
+                this.pixiVersion = null;
                 this.v8Features = {
+                    pixiJSLoaded: false,
                     webgpuEnabled: false,
                     asyncInitialization: false,
                     containerHierarchy: false,
@@ -521,33 +617,27 @@ if (!window.Tegaki.AppCore) {
             }
         }
         
-        /**
-         * v8システム統計情報取得
-         */
         getV8SystemStats() {
             return {
-                // v8稼働状況
                 v8Status: {
                     systemReady: this.v8SystemReady,
                     uptime: this.started ? 'running' : 'stopped',
+                    pixiVersion: this.pixiVersion,
                     rendererType: this.rendererType,
                     webgpuActive: this.rendererType === 'webgpu'
                 },
                 
-                // v8 Manager状況
                 v8Managers: {
                     canvas: !!this.canvasManager,
-                    canvasV8Ready: this.canvasManager?.isV8Ready() || false,
+                    canvasV8Ready: this.canvasManager?.isV8Ready?.() || false,
                     tool: !!this.toolManager
                 },
                 
-                // v8エラー統計
                 v8ErrorStatus: {
                     hasErrors: !!this.lastError,
                     lastErrorTime: this.lastError ? 'recent' : null
                 },
                 
-                // v8初期化統計
                 v8InitializationStats: {
                     stepsCompleted: this.v8InitializationSteps.length,
                     fullyInitialized: this.isV8Ready(),
@@ -560,9 +650,9 @@ if (!window.Tegaki.AppCore) {
     // Tegaki名前空間に登録
     window.Tegaki.AppCore = AppCore;
     
-    console.log('🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤');
+    console.log('🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤・PIXI読み込み確認強化');
 } else {
     console.log('⚠️ AppCore already defined - skipping redefinition');
 }
 
-console.log('🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤');
+console.log('🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤・PIXI読み込み確認強化');

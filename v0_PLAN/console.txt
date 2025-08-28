@@ -1,40 +1,41 @@
- 🚨 ErrorManager Simple 作成
- 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
-config-manager.js:487 Uncaught SyntaxError: Unexpected token '*'
- 🔄 EventBus Simple 作成
- 🔄 EventBus Simple Loaded - シンプルイベント通信
- 🎯 CoordinateManager PixiJS v8対応版 Loaded
- 📏 v8機能: 高精度座標変換・Container変形対応・WebGPU最適化・リアルタイム変換
- 🚀 v8特徴: 高精度変換・Matrix活用・NavigationManager統合・60fps+対応
- ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
- 🎯 CoordinateManager PixiJS v8対応版 Loaded - 高精度座標変換・Container変形・WebGPU対応完了
- 🧭 NavigationManager PixiJS v8対応版 Loaded
- 📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
- 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
- ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
- 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
- 🔄 RecordManager PixiJS v8対応版 Loaded
- 📏 v8機能: Graphics記録・WebGPU最適化・高精度操作履歴・Container階層対応
- 🚀 v8特徴: 非破壊編集・v8 Graphics活用・高性能メモリ管理・WebGPU加速
- ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
- 🔄 RecordManager PixiJS v8対応版 Loaded - Graphics記録・WebGPU最適化・高精度履歴管理完了
- ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
- 🔧 setupPhase15Shortcuts・enableメソッド追加済み
- 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
- 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
- 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
- ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
- 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
- 🚀 CanvasManager v8.12.0完全対応版 Loaded - WebGPU・Container階層・リアルタイム描画対応
- 🎯 AbstractTool Phase1.5 RecordManager連携修正版 Loaded - startOperation/endOperation方式対応・架空メソッド削除・Manager統一注入完成
- 🚀 PenTool v8.12.0完全対応版 Loaded - リアルタイム描画・WebGPU対応・初回クリック問題解決・Container階層・フォールバック削除
- 🧹 EraserTool PixiJS v8対応版 Loaded
- 📏 v8機能: Graphics削除・Container階層対応・WebGPU最適化・高精度hit-test
- 🚀 v8特徴: RecordManager v8統合・高精度消去・WebGPU加速・Container階層活用
+error-manager.js:20 🚨 ErrorManager Simple 作成
+error-manager.js:132 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
+config-manager.js:71 🔧 ConfigManager v8対応版 作成
+config-manager.js:495 🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
+event-bus.js:20 🔄 EventBus Simple 作成
+event-bus.js:97 🔄 EventBus Simple Loaded - シンプルイベント通信
+coordinate-manager.js:581 🎯 CoordinateManager PixiJS v8対応版 Loaded
+coordinate-manager.js:582 📏 v8機能: 高精度座標変換・Container変形対応・WebGPU最適化・リアルタイム変換
+coordinate-manager.js:583 🚀 v8特徴: 高精度変換・Matrix活用・NavigationManager統合・60fps+対応
+coordinate-manager.js:584 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
+coordinate-manager.js:587 🎯 CoordinateManager PixiJS v8対応版 Loaded - 高精度座標変換・Container変形・WebGPU対応完了
+navigation-manager.js:718 🧭 NavigationManager PixiJS v8対応版 Loaded
+navigation-manager.js:719 📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
+navigation-manager.js:720 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
+navigation-manager.js:721 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
+navigation-manager.js:724 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
+record-manager.js:899 🔄 RecordManager PixiJS v8対応版 Loaded
+record-manager.js:900 📏 v8機能: Graphics記録・WebGPU最適化・高精度操作履歴・Container階層対応
+record-manager.js:901 🚀 v8特徴: 非破壊編集・v8 Graphics活用・高性能メモリ管理・WebGPU加速
+record-manager.js:902 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
+record-manager.js:905 🔄 RecordManager PixiJS v8対応版 Loaded - Graphics記録・WebGPU最適化・高精度履歴管理完了
+shortcut-manager.js:416 ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
+shortcut-manager.js:417 🔧 setupPhase15Shortcuts・enableメソッド追加済み
+shortcut-manager.js:418 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
+minimal-deps.js:22 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
+minimal-deps.js:168 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
+minimal-deps.js:169 ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
+minimal-deps.js:170 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
+canvas-manager.js:615 🚀 CanvasManager v8.12.0完全対応版 Loaded - WebGPU・Container階層・リアルタイム描画対応
+abstract-tool.js:803 🎯 AbstractTool Phase1.5 RecordManager連携修正版 Loaded - startOperation/endOperation方式対応・架空メソッド削除・Manager統一注入完成
+pen-tool.js:901 🚀 PenTool v8.12.0完全対応版 Loaded - リアルタイム描画・WebGPU対応・初回クリック問題解決・Container階層・フォールバック削除
+eraser-tool.js:727 🧹 EraserTool PixiJS v8対応版 Loaded
+eraser-tool.js:728 📏 v8機能: Graphics削除・Container階層対応・WebGPU最適化・高精度hit-test
+eraser-tool.js:729 🚀 v8特徴: RecordManager v8統合・高精度消去・WebGPU加速・Container階層活用
 eraser-tool.js:730 ✅ v8準備完了: initializeV8Features()でv8機能初期化後に利用可能
 tool-manager.js:802 🚀 ToolManager v8.12.0完全対応版 Loaded - v8 Tool連携・WebGPU対応・非同期初期化・Container階層・リアルタイム切り替え
-app-core.js:563 🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤
-app-core.js:568 🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤
+app-core.js:653 🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤・PIXI読み込み確認強化
+app-core.js:658 🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤・PIXI読み込み確認強化
 tegaki-application.js:806 🚀 TegakiApplication PixiJS v8対応版 Loaded - WebGPU対応・非同期初期化・Container階層・リアルタイム描画
 tegaki-application.js:811 🚀 TegakiApplication PixiJS v8対応版 Loaded - WebGPU対応・非同期初期化・Container階層・リアルタイム描画
 main.js:330 🚀 main.js v8統合エントリーポイント Loaded - グローバル関数・デバッグ機能・WebGPU対応
@@ -42,65 +43,34 @@ main.js:350 ⚠️ PixiJS v8未確認 - v8機能制限あり
 phase15-integration-test.js:593 🧪 Phase1.5統合テスト Loaded
 phase15-integration-test.js:594 📏 新Manager統合状況確認・機能テスト・レポート生成・Phase1.5完全対応
 phase15-integration-test.js:595 🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
-bootstrap.js:15 🚀 Bootstrap Phase1.5 - 新Manager統合対応版
-bootstrap.js:168 ⏳ DOM Loading - DOMContentLoaded待機中...
-bootstrap.js:182 🎯 Bootstrap Phase1.5 registered - 新Manager統合対応版
-bootstrap.js:75 🔧 Bootstrap Phase1.5 実行開始...
-bootstrap.js:21 🔍 Phase1.5 依存関係確認開始...
-bootstrap.js:50 ✅ TegakiApplication: 利用可能
-bootstrap.js:50 ✅ AppCore: 利用可能
-bootstrap.js:50 ✅ CanvasManager: 利用可能
-bootstrap.js:50 ✅ ToolManager: 利用可能
-bootstrap.js:50 ✅ ErrorManager: 利用可能
-bootstrap.js:53 ⚠️ ConfigManager: 未定義または無効
-validatePhase15Dependencies @ bootstrap.js:53
-bootstrap.js:50 ✅ EventBus: 利用可能
-bootstrap.js:50 ✅ CoordinateManager: 利用可能
-bootstrap.js:50 ✅ NavigationManager: 利用可能
-bootstrap.js:50 ✅ RecordManager: 利用可能
-bootstrap.js:50 ✅ ShortcutManager: 利用可能
-bootstrap.js:50 ✅ PenTool: 利用可能
-bootstrap.js:50 ✅ EraserTool: 利用可能
-bootstrap.js:57 📊 依存関係確認結果: 12/13 クラス利用可能
-bootstrap.js:60 ⚠️ 未完成のManagerクラス: ConfigManager
-validatePhase15Dependencies @ bootstrap.js:60
-bootstrap.js:61 🔧 Phase1.5実装途中の場合は正常です
-validatePhase15Dependencies @ bootstrap.js:61
-bootstrap.js:97 🎨 TegakiApplication インスタンス化開始...
-tegaki-application.js:71 🚀 TegakiApplication v8対応版 作成・自動初期化開始
-tegaki-application.js:124 🚀 TegakiApplication v8システム初期化開始
-tegaki-application.js:170 🚀 v8 AppCore作成開始
-app-core.js:66 🚀 AppCore v8統合基盤システム 作成開始
-app-core.js:94 🚀 AppCore v8統合基盤システム 作成完了
-tegaki-application.js:178 ✅ v8 AppCore作成完了
-bootstrap.js:107 🔧 Phase1.5 開発版 - 一部Manager実装中
-bootstrap.js:108 📋 実装済み: TegakiApplication, AppCore, CanvasManager, ToolManager, ErrorManager, EventBus, CoordinateManager, NavigationManager, RecordManager, ShortcutManager, PenTool, EraserTool
-bootstrap.js:109 ⚠️ 未実装: ConfigManager
-bootstrap.js:112 ✅ Bootstrap完了 - Tegakiアプリケーション開始完了
-tegaki-application.js:185 🚀 v8 Application作成開始
-app-core.js:101 🚀 AppCore - v8 Application作成開始
-app-core.js:158 💀 AppCore - v8 Application作成エラー: ReferenceError: PIXI is not defined
-    at AppCore.createCanvasV8 (app-core.js:105:29)
-    at TegakiApplication.createCanvasV8 (tegaki-application.js:192:51)
-    at TegakiApplication.initialize (tegaki-application.js:132:28)
-createCanvasV8 @ app-core.js:158
-error-manager.js:38 ❌ PIXIJS V8初期化失敗: PIXI is not defined 
-tegaki-application.js:203 💀 v8 Application作成エラー: ReferenceError: PIXI is not defined
-    at AppCore.createCanvasV8 (app-core.js:105:29)
-    at TegakiApplication.createCanvasV8 (tegaki-application.js:192:51)
-    at TegakiApplication.initialize (tegaki-application.js:132:28)
-createCanvasV8 @ tegaki-application.js:203
-tegaki-application.js:161 💀 TegakiApplication v8システム初期化エラー: ReferenceError: PIXI is not defined
-    at AppCore.createCanvasV8 (app-core.js:105:29)
-    at TegakiApplication.createCanvasV8 (tegaki-application.js:192:51)
-    at TegakiApplication.initialize (tegaki-application.js:132:28)
-initialize @ tegaki-application.js:161
-tegaki-application.js:100 💀 TegakiApplication v8初期化失敗: ReferenceError: PIXI is not defined
-    at AppCore.createCanvasV8 (app-core.js:105:29)
-    at TegakiApplication.createCanvasV8 (tegaki-application.js:192:51)
-    at TegakiApplication.initialize (tegaki-application.js:132:28)
-(anonymous) @ tegaki-application.js:100
-error-manager.js:38 ❌ TEGAKIAPPLICATION V8初期化失敗: PIXI IS NOT DEFINED: [object Object] 
-app-core.js:105 Uncaught (in promise) ReferenceError: PIXI is not defined
+bootstrap.js:55 🚀 Bootstrap PixiJS v8対応版 - 読み込み確認強化・新Manager統合対応版
+bootstrap.js:351 ⏳ DOM Loading - DOMContentLoaded待機中...
+bootstrap.js:365 🎯 Bootstrap PixiJS v8対応版 registered - 読み込み確認強化・新Manager統合対応版
+bootstrap.js:213 🔧 Bootstrap PixiJS v8対応版 実行開始...
+bootstrap.js:61 ⏳ PixiJS v8読み込み確認開始...
 index.html:480 ⚠️ TegakiApplication v8初期化未完了
 (anonymous) @ index.html:480
+bootstrap.js:264 💀 Bootstrap失敗: Error: PixiJS not loaded after 10 seconds - check CDN connection
+    at waitForPixiJSV8 (bootstrap.js:80:19)
+    at async HTMLDocument.executeBootstrap (bootstrap.js:217:33)
+executeBootstrap @ bootstrap.js:264
+setTimeout
+pixiVersion @ bootstrap.js:74
+waitForPixiJSV8 @ bootstrap.js:74
+bootstrap.js:159 🔍 Phase1.5 依存関係確認開始...
+bootstrap.js:188 ✅ TegakiApplication: 利用可能
+bootstrap.js:188 ✅ AppCore: 利用可能
+bootstrap.js:188 ✅ CanvasManager: 利用可能
+bootstrap.js:188 ✅ ToolManager: 利用可能
+bootstrap.js:188 ✅ ErrorManager: 利用可能
+bootstrap.js:188 ✅ ConfigManager: 利用可能
+bootstrap.js:188 ✅ EventBus: 利用可能
+bootstrap.js:188 ✅ CoordinateManager: 利用可能
+bootstrap.js:188 ✅ NavigationManager: 利用可能
+bootstrap.js:188 ✅ RecordManager: 利用可能
+bootstrap.js:188 ✅ ShortcutManager: 利用可能
+bootstrap.js:188 ✅ PenTool: 利用可能
+bootstrap.js:188 ✅ EraserTool: 利用可能
+bootstrap.js:195 📊 依存関係確認結果: 13/13 クラス利用可能
+bootstrap.js:80 Uncaught (in promise) Error: PixiJS not loaded after 10 seconds - check CDN connection
+waitForPixiJSV8 @ bootstrap.js:80
