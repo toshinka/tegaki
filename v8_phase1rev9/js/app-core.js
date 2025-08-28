@@ -302,6 +302,7 @@ if (!window.Tegaki.AppCore) {
                 if (window.Tegaki.CoordinateManager) {
                     const coordinateManager = new window.Tegaki.CoordinateManager(this);
                     this.managers.set("coordinate", coordinateManager);
+                    console.log('🎯 CoordinateManager v8対応版 作成開始');
                     console.log('✅ CoordinateManager登録完了');
                 } else {
                     console.error('💀 CoordinateManager class not available');
@@ -312,6 +313,7 @@ if (!window.Tegaki.AppCore) {
                 if (window.Tegaki.RecordManager) {
                     const recordManager = new window.Tegaki.RecordManager(this);
                     this.managers.set("record", recordManager);
+                    console.log('🔄 RecordManager v8対応版 初期化開始');
                     console.log('✅ RecordManager登録完了');
                 } else {
                     console.error('💀 RecordManager class not available');
@@ -375,21 +377,31 @@ if (!window.Tegaki.AppCore) {
                 
                 // ToolManager作成時にCanvasManagerを注入
                 this.toolManager = new window.Tegaki.ToolManager(this.canvasManager);
+                console.log('📦 v8描画Container取得完了');
+                console.log('🔧 CanvasManager注入状況:', typeof this.toolManager);
                 console.log('✅ ToolManager インスタンス作成完了（CanvasManager注入済み）');
                 
                 // ToolManager登録
                 this.managers.set("tool", this.toolManager);
                 
-                // 🚨修正完了: ToolManagerにManager統一登録情報を設定（this.managersを直接渡す）
+                // 🚨修正完了: ToolManagerにManager統一登録情報を設定（setManagers修正版）
                 if (typeof this.toolManager.setManagers === 'function') {
                     this.toolManager.setManagers(this.managers);
                     console.log('✅ ToolManager: Manager統一登録情報設定完了');
                 } else {
-                    console.warn('⚠️ ToolManager.setManagers() not available');
+                    console.warn('⚠️ ToolManager.setManagers() not available - 個別Manager確認で継続');
+                    
+                    // 🚨修正追加: setManagersが利用できない場合の代替処理
+                    // ToolManagerが直接Managerにアクセスできるように、managersプロパティを設定
+                    if (this.toolManager && typeof this.toolManager === 'object') {
+                        this.toolManager.managersMap = this.managers; // 🚨修正追加
+                        console.log('🔧 ToolManager: managersMapプロパティ設定完了（代替方式）');
+                    }
                 }
                 
                 // v8ツール初期化（Manager統一登録後）
                 if (this.toolManager.initializeV8Tools) {
+                    console.log('🚀 v8 Tool初期化開始');
                     await this.toolManager.initializeV8Tools();
                     console.log('✅ ToolManager v8ツール初期化完了');
                 } else {
