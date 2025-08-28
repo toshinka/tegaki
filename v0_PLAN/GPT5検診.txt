@@ -1,0 +1,94 @@
+🔎 原因分析
+
+初期化順序の問題
+AppCore.initializeV8Managers 内で
+
+const canvasManager = new CanvasManager(...);
+const toolManager = new ToolManager(canvasManager, ...);
+
+
+みたいに渡す設計のはずが、実際には
+
+canvasManager が未生成
+
+あるいは null/undefined のまま
+で ToolManager に渡してしまっている。
+
+依存性の循環
+
+ToolManager が CanvasManager を要求
+
+CanvasManager 側で ToolManager を参照している
+→ 生成順がぐちゃぐちゃになって、どちらかが undefined のまま渡る。
+
+ヘッダー対策は効いているが局所的
+「このファイル単体の責務」は明示できているけど、全体の初期化シーケンスまでは保証されないので、改修時にAIが片方しか直さずループしやすい。
+
+✅ 改修案
+1. 初期化シーケンスを 1か所で集中管理
+
+AppCore を「マネージャー生成オーケストレーター」として一本化し、
+CanvasManager → ToolManager の順番を保証する。
+
+// app-core.js
+async initializeV8Managers() {
+  this.canvasManager = new CanvasManager({ app: this.app });
+  this.toolManager = new ToolManager({
+    canvasManager: this.canvasManager,
+    eventBus: this.eventBus
+  });
+  // 他のマネージャーも順次
+}
+
+2. ToolManager 側は DI前提を徹底
+// tool-manager.js
+constructor({ canvasManager, eventBus }) {
+  if (!canvasManager) {
+    throw new Error("ToolManager: 有効なCanvasManagerが必要です");
+  }
+  this.canvasManager = canvasManager;
+  this.eventBus = eventBus;
+}
+
+
+これで責務が明確化され「CanvasManager が必須」だと明示できる。
+
+3. 循環参照を避ける
+
+もし CanvasManager 側で ToolManager を参照しているなら、それは設計的に危険。
+→ 双方向参照をやめ、EventBus経由でやりとり させるのが正解。
+例:
+
+CanvasManager が「描画完了」を EventBus で publish
+
+ToolManager がそれを subscribe
+
+🧭 AIコーディングの「ループ脱出」方法
+
+今のように
+
+AppCore で CanvasManager / ToolManager の初期化順を直す
+
+ToolManager 側で null チェックを強化する
+
+という2点を両方触る必要があるのに、AIが片方ずつしか直さない → 往復ループになってるわけです。
+
+👉 脱出法は
+
+初期化フローをテキスト化して指示に含める
+例:
+
+// 初期化順序は必ず以下を守ること:
+// 1. CanvasManager
+// 2. ToolManager
+// 3. 他のManager群
+
+
+責務と依存関係をDIコンストラクタで統一
+
+ToolManager には { canvasManager } が必須
+
+逆に CanvasManager から ToolManager を直接参照しない
+
+EventBus を中継点に固定
+→ 双方向参照を回避することで「AIが片方だけ直して矛盾する」状況を防げる。
