@@ -21,7 +21,7 @@
             --futaba-maroon: #800000;
             --futaba-light-maroon: #aa5a56;
             --futaba-medium: #cf9c97;
-            --futaba-light-medium: #e9c2ba;
+            --futaba-light-medium: #e9c2ba;      
             --futaba-cream: #f0e0d6;
             --futaba-background: #ffffee;
             
@@ -457,7 +457,7 @@
     <!-- Bootstrap (v8対応・最後) -->
     <script src="./js/bootstrap.js"></script>
 
-    <!-- v8デバッグ用（開発時のみ） -->
+    <!-- v8デバッグ用（開発時のみ・修正版） -->
     <script>
         // ローディング画面制御
         window.hideLoadingScreen = function() {
@@ -470,12 +470,17 @@
             }
         };
         
-        // v8対応デバッグ関数
+        // v8対応デバッグ関数（修正版・getV8FeatureStatusエラー修正）
         window.debugTegakiV8 = function() {
             if (window.Tegaki?.TegakiApplicationInstance) {
                 const app = window.Tegaki.TegakiApplicationInstance;
-                console.log('🚀 v8.12.0デバッグ情報:', app.getDebugInfo());
-                console.log('🎯 v8機能状況:', app.getV8FeatureStatus());
+                
+                // 🚨修正：安全なメソッド呼び出し
+                const debugInfo = app.getDebugInfo?.() || {};
+                const v8FeatureStatus = app.getV8FeatureStatus?.() || {};
+                
+                console.log('🚀 v8デバッグ情報:', debugInfo);
+                console.log('🎯 v8機能状況:', v8FeatureStatus);
                 
                 // v8レンダラー情報
                 const rendererInfo = {
@@ -522,7 +527,7 @@
                 },
                 {
                     name: 'v8準備完了',
-                    test: () => window.Tegaki.TegakiApplicationInstance?.isV8Ready?.() === true
+                    test: () => window.Tegaki.TegakiApplicationInstance?.isReady?.() === true
                 },
                 {
                     name: 'Canvas表示',
@@ -541,8 +546,9 @@
             console.log(`📊 テスト結果: ${passCount}/${v8Tests.length} PASS`);
             
             // v8描画テスト
-            if (window.Tegaki?.TegakiApplicationInstance?.getToolManager?.()?.getCurrentTool?.()) {
-                const tool = window.Tegaki.TegakiApplicationInstance.getToolManager().getCurrentTool();
+            const toolManager = window.Tegaki?.TegakiApplicationInstance?.getToolManager?.();
+            if (toolManager?.getCurrentTool?.()) {
+                const tool = toolManager.getCurrentTool();
                 console.log('🖊️ 現在ツール v8状況:', tool.getDebugInfo?.() || 'デバッグ情報なし');
             }
             
@@ -564,7 +570,7 @@
             }
         };
         
-        // 初期化完了後の自動状況確認
+        // 初期化完了後の自動状況確認（修正版・エラー処理強化）
         document.addEventListener('DOMContentLoaded', function() {
             // PixiJS v8.12.0読み込み確認
             if (window.PIXI) {
@@ -578,27 +584,40 @@
                 console.error('❌ PixiJS not loaded - check node_modules/pixi.js installation');
             }
             
-            // 初期化完了後のテスト実行
+            // 初期化完了後のテスト実行（修正版・エラー処理強化）
             setTimeout(function() {
                 if (window.Tegaki?.TegakiApplicationInstance) {
                     console.log('📊 v8.12.0初期化後状況確認');
-                    const debugInfo = window.debugTegakiV8();
                     
-                    // ローディング画面を隠す
-                    window.hideLoadingScreen();
-                    
-                    // ステータス表示を更新
-                    if (debugInfo) {
-                        window.updateV8Status(debugInfo.type, debugInfo.webgpu);
+                    // 🚨修正：安全なデバッグ呼び出し
+                    try {
+                        const debugResult = window.debugTegakiV8();
+                        
+                        // ローディング画面を隠す
+                        window.hideLoadingScreen();
+                        
+                        // ステータス表示を更新
+                        if (debugResult) {
+                            window.updateV8Status(debugResult.type, debugResult.webgpu);
+                        }
+                    } catch (debugError) {
+                        console.error('❌ デバッグ情報取得エラー:', debugError);
+                        
+                        // エラーでもローディング画面を隠す
+                        window.hideLoadingScreen();
+                        window.updateV8Status('Error', false);
+                        const dotEl = document.getElementById('v8-dot');
+                        if (dotEl) dotEl.className = 'v8-dot error';
                     }
                 } else {
-                    console.warn('⚠️ TegakiApplication v8.12.0初期化未完了');
+                    console.warn('⚠️ TegakiApplication v8初期化未完了');
                     
                     // 初期化失敗時もローディング画面を隠す（エラー状態で）
                     setTimeout(() => {
                         window.hideLoadingScreen();
                         window.updateV8Status('Error', false);
-                        document.getElementById('v8-dot').className = 'v8-dot error';
+                        const dotEl = document.getElementById('v8-dot');
+                        if (dotEl) dotEl.className = 'v8-dot error';
                     }, 1000);
                 }
             }, 2000);

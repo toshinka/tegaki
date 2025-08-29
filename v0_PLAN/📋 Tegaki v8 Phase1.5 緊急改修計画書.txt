@@ -1,0 +1,173 @@
+# 📋 Tegaki v8 Phase1.5 緊急改修計画書
+**PixiJS v8.12.0 エラー解決・包括的改修実施**
+
+## 🚨 現状分析（Critical Issues）
+
+### 主要エラー
+1. **`TypeError: app.getV8FeatureStatus is not a function`** (index.html:478)
+   - 原因：TegakiApplication に getV8FeatureStatus() メソッドが未実装
+   - 影響：デバッグフックエラーで初期化停止
+
+2. **WebGPU警告** (app-core.js:170)
+   - `powerPreference option is currently ignored when calling requestAdapter() on Windows`
+   - 影響：致命的ではないが冗長ログ
+
+3. **初期化フロー不完全**
+   - CanvasManager/ToolManager は正常動作
+   - デバッグAPIとの不整合で表示停止
+
+## 🎯 改修方針
+
+### Phase1: 緊急修正（即時実施）
+1. **index.html デバッグAPI修正**
+   - 未実装メソッド呼び出し削除
+   - Manager経由での安全なアクセス実装
+
+2. **TegakiApplication API拡張**
+   - getV8FeatureStatus() メソッド実装
+   - getDebugInfo() 統合API提供
+
+3. **AppCore WebGPU警告抑制**
+   - try-catch による警告ログ制御
+
+### Phase2: 構造改善（改修ループ防止）
+1. **ヘッダー完全整備**
+   - @provides/@uses 完全一致検証
+   - @manager-key 統一
+
+2. **依存関係明確化**
+   - Manager間依存の明示
+   - 循環依存排除
+
+3. **初期化順序固定化**
+   - AppCore中央集約
+   - 失敗時即時throw実装
+
+## 📋 ファイル改修優先順位
+
+### 🔥 緊急度MAX（即時改修）
+1. **index.html** - デバッグAPI修正
+2. **tegaki-application.js** - API実装・ヘッダー整備
+3. **app-core.js** - 警告制御・初期化順序修正
+
+### 🟡 重要度HIGH（順次改修）
+4. **bootstrap.js** - 初期化フロー確定
+5. **canvas-manager.js** - v8対応確認
+6. **tool-manager.js** - 依存注入検証
+
+### 🟢 標準改修（後続実施）  
+7. **各ツール類** - ヘッダー整備
+8. **utils系** - API整合性確認
+
+## 🛠️ 具体的改修内容
+
+### TegakiApplication 拡張API
+```javascript
+getV8FeatureStatus() {
+    return {
+        pixiVersion: window.PIXI?.VERSION || 'not loaded',
+        webgpuEnabled: this.pixiApp?.renderer?.type === 'webgpu',
+        rendererType: this.pixiApp?.renderer?.type || 'unknown',
+        containerSupport: !!window.PIXI?.Container,
+        graphicsSupport: !!window.PIXI?.Graphics,
+        systemReady: this.isReady
+    };
+}
+
+getDebugInfo() {
+    const v8Status = this.getV8FeatureStatus();
+    return {
+        ...v8Status,
+        initializationSteps: this.initSteps || [],
+        currentTool: this.toolManager?.getCurrentTool?.()?.constructor?.name,
+        canvasSize: this.canvasManager?.getCurrentSize?.(),
+        managerCount: Object.keys(this.managers || {}).length
+    };
+}
+```
+
+### index.html デバッグ修正
+```javascript
+window.debugTegakiV8 = function() {
+    const app = window.Tegaki?.TegakiApplicationInstance;
+    if (!app) {
+        console.warn('⚠️ TegakiApplication未初期化');
+        return null;
+    }
+    
+    // 安全なAPI呼び出し
+    const debugInfo = app.getDebugInfo?.() || {};
+    const v8Status = app.getV8FeatureStatus?.() || {};
+    
+    console.log('🚀 v8デバッグ情報:', debugInfo);
+    console.log('🎯 v8機能状況:', v8Status);
+    
+    return { debugInfo, v8Status };
+};
+```
+
+## 📊 改修後検証項目
+
+### ✅ Phase1完了基準
+- [ ] index.html エラー解消
+- [ ] TegakiApplication.getV8FeatureStatus() 動作確認
+- [ ] デバッグAPI正常動作
+- [ ] キャンバス表示・描画機能動作
+
+### ✅ Phase2完了基準  
+- [ ] 全ファイルヘッダー完全整備
+- [ ] Manager間依存関係明確化
+- [ ] 循環依存完全排除
+- [ ] 初期化順序100%固定
+
+## 🚫 改修時厳守事項
+
+### 禁止行為
+- 複数ファイル同時変更（必ず単一ファイルずつ）
+- フォールバック・暫定処理追加
+- v7互換コード残存
+- 未確認API呼び出し
+
+### 必須確認
+- @provides に記載されたメソッドの実装確認
+- @uses に記載されたメソッドの存在確認  
+- @manager-key の実装との一致確認
+- 初期化順序の前後依存関係確認
+
+## 🔄 改修実施手順
+
+### Step1: 緊急修正
+1. index.html デバッグAPI修正
+2. tegaki-application.js API実装
+3. 動作確認・エラー解消
+
+### Step2: 構造改善
+4. 各Managerヘッダー整備
+5. 依存関係明確化  
+6. 循環依存排除
+
+### Step3: 最終検証
+7. Phase1.5完了条件確認
+8. 描画・Undo/Redo動作確認
+9. リサイズ・外部入力対応確認
+
+## 📈 成功指標
+
+- エラーログ0件（Warning除く）
+- ペン描画100%動作
+- Undo/Redo正常動作  
+- デバッグAPI全機能動作
+- 初期化時間2秒以内
+
+## 🎯 改修完了後の到達点
+
+- **安定したPixiJS v8.12.0基盤**
+- **完全なManager間連携**  
+- **エラー0の描画システム**
+- **将来拡張可能な構造**
+- **Phase2準備完了状態**
+
+---
+
+**重要**: 改修は必ず単一ファイルずつ実施し、各改修後に動作確認を行う。
+改修ループ防止のため、関連ファイルとの整合性を事前に確認すること。

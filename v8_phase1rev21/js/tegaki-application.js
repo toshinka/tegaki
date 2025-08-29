@@ -10,7 +10,9 @@
  *   - setupV8UI(): void（UI設定・イベント登録）
  *   - selectToolV8(toolName): boolean（ツール選択）
  *   - isReady(): boolean（初期化完了確認・強化版）
- *   - getV8DebugInfo(): Object（デバッグ情報）
+ *   - getDebugInfo(): Object（v7互換デバッグ情報）
+ *   - getV8DebugInfo(): Object（v8デバッグ情報）
+ *   - getV8FeatureStatus(): Object（v8機能状況）🚨追加
  *   - handleV8PointerEvents(): void（高精度ポインター処理）
  *
  * @uses
@@ -48,7 +50,7 @@
  * @method-naming-rules
  *   初期化系: initializeV8xxx() / createCanvasV8()
  *   UI系: setupV8xxx() / handleV8xxx()
- *   状態系: isReady() / getV8DebugInfo()
+ *   状態系: isReady() / getV8DebugInfo() / getV8FeatureStatus()
  *   ツール系: selectToolV8()
  *
  * @error-handling
@@ -825,6 +827,32 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
+         * 🚨 v8機能状況取得メソッド（追加：index.htmlエラー修正）
+         */
+        getV8FeatureStatus() {
+            return {
+                pixiVersion: window.PIXI?.VERSION || 'not loaded',
+                webgpuEnabled: this.v8Features.webgpuEnabled,
+                webgpuSupported: this.webgpuSupported,
+                rendererType: this.rendererType || 'unknown',
+                containerSupport: !!window.PIXI?.Container,
+                graphicsSupport: !!window.PIXI?.Graphics,
+                systemReady: this.isReady(),
+                asyncInitialization: this.v8Features.asyncInitialization,
+                containerHierarchy: this.v8Features.containerHierarchy,
+                realtimeDrawing: this.v8Features.realtimeDrawing,
+                managerIntegration: this.v8Features.managerIntegration,
+                uiIntegration: this.v8Features.uiIntegration,
+                eventsConfigured: this.v8Features.eventsConfigured,
+                toolsReady: this.v8Features.toolsReady,
+                systemValidated: this.v8Features.systemValidated,
+                initialized: this.initialized,
+                fullyReady: this.fullyReady,
+                initializationComplete: this.initializationComplete
+            };
+        }
+        
+        /**
          * 🚀 v8デバッグ情報取得（修正強化版）
          */
         getV8DebugInfo() {
@@ -909,6 +937,20 @@ if (!window.Tegaki.TegakiApplication) {
          */
         getPixiApp() {
             return this.pixiApp;
+        }
+        
+        /**
+         * ToolManager取得（便利メソッド）
+         */
+        getToolManager() {
+            return this.appCore?.getToolManager() || null;
+        }
+        
+        /**
+         * CanvasManager取得（便利メソッド）
+         */
+        getCanvasManager() {
+            return this.appCore?.getCanvasManager() || null;
         }
         
         /**
