@@ -1,0 +1,242 @@
+**原因**: CanvasManagerからToolManagerへの注入プロセスで、getDrawContainer()メソッドの取得タイミング不整合
+
+### 初期化順序の問題
+1. CanvasManager初期化 → DrawContainer生成未完了
+2. ToolManager初期化 → CanvasManager.getDrawContainer()取得失敗
+3. 初期化チェーンの崩壊
+
+### 描画機能の停止
+- PenTool/EraserTool → DrawContainer参照不能
+- RecordManager → ストローク保存機能停止
+- キャンバス外描画 → 未実装のためPointer入力が制限範囲のみ
+
+---
+
+## 🎯 統合改修戦略（AI改修ループ対策）
+
+### Phase1: 基盤修正（必須）
+**目標**: 初期化順序の確立とDrawContainer取得の確実化
+
+### Phase2: 描画機能復旧（必須）
+**目標**: ペン/エラーツールの動作回復とTPF形式対応
+- Pathfinder描画スケルトン導入
+- TPF形式との紐付け明確化
+- PixiJSフォールバックとの切替条件明示
+
+### Phase3: 外部描画対応（拡張）
+**目標**: キャンバス外描画・カメラ分離・NavigationManager統合
+- 仮バッファ統合ルール明示
+- 複数ポインタ(タッチ)対応確認
+- Undo/Redo座標系整合性確保
+
+---
+
+## 📁 改修対象ファイル一覧と優先順位
+
+### 🔥 Phase1 - 基盤修正
+1. **managers/canvas-manager.js**
+   - DrawContainer生成の確実化
+   - getDrawContainer()メソッドの安定化
+   - 初期化完了フラグとRendererチェック追加
+2. **js/app-core.js**
+   - Manager初期化順序修正
+   - CanvasManager完全初期化後にToolManager初期化
+3. **managers/tool-manager.js**
+   - CanvasManager注入確認の修正
+   - フォールバック削除・エラーメッセージ明確化
+   - ログ出力＋ユーザー通知推奨
+
+### 🚀 Phase2 - 描画機能復旧
+4. **tools/pen-tool.js**
+   - TPF形式ストローク対応
+   - Pathfinder描画スケルトン
+   - RecordManager連携
+5. **tools/eraser-tool.js**
+   - DrawContainer取得エラー修正
+   - TPF形式消去対応
+6. **js/utils/record-manager.js**
+   - Undo/Redo安定化
+   - レイヤー座標系対応
+   - Phase3用仮バッファ統合ルールの明示
+
+### 🌟 Phase3 - 外部描画対応
+7. **js/utils/coordinate-manager.js**
+   - カメラ座標変換機能
+   - キャンバス外座標の処理
+8. **js/utils/navigation-manager.js**
+   - カメラ範囲管理
+   - パン/ズーム機能
+   - タッチ入力複数対応確認
+
+---
+
+## 🔧 改修手順（AI改修ループ防止）
+
+### Step1: CanvasManager完全修正
+```javascript
+class CanvasManager {
+  constructor() {
+    this.drawContainer = null;
+    this.isV8Ready = false;
+  }
+  
+  async initialize() {
+    // PIXI.Application完全初期化まで待機
+    await this.app.init();
+    
+    // DrawContainer確実生成
+    this.createDrawContainer();
+
+    // Renderer・Stage確認
+    if (!this.app.renderer || !this.app.stage) {
+      throw new Error('PIXI.Application not fully ready');
+    }
+
+    this.isV8Ready = true;
+  }
+  
+  getDrawContainer() {
+    if (!this.isV8Ready || !this.drawContainer) {
+      throw new Error('CanvasManager not fully initialized');
+    }
+    return this.drawContainer;
+  }
+}
+Step2: AppCore初期化順序修正
+javascript
+コードをコピーする
+async initializeV8Managers() {
+  await this.canvasManager.initialize();
+
+  if (!this.canvasManager.isV8Ready) {
+    throw new Error('CanvasManager initialization failed');
+  }
+
+  this.toolManager = new ToolManager({ canvasManager: this.canvasManager });
+  console.log('ToolManager initialized with CanvasManager injection');
+}
+Step3: ToolManager注入確認修正
+javascript
+コードをコピーする
+class ToolManager {
+  constructor(managers) {
+    if (!managers?.canvasManager) {
+      throw new Error('CanvasManager injection required');
+    }
+
+    try {
+      const container = managers.canvasManager.getDrawContainer();
+      if (!container) throw new Error('DrawContainer not available');
+      this.canvasManager = managers.canvasManager;
+    } catch (error) {
+      console.error('ToolManager injection failed:', error);
+      alert('ToolManager初期化失敗: CanvasManager未準備');
+      throw error;
+    }
+  }
+}
+📋 TPF (TegakiPathFormat) 実装仕様
+javascript
+コードをコピーする
+const tpfStroke = {
+  id: 'stroke_' + Date.now(),
+  type: 'stroke', // 'stroke' | 'erase' | 'transform'
+  layer: 'layer_01',
+  color: '#800000',
+  width: 2.0,
+  opacity: 1.0,
+  path: 'M10 10 L20 20 L30 15',
+  points: [
+    { x: 10, y: 10, pressure: 0.5, time: 0 },
+    { x: 20, y: 20, pressure: 0.6, time: 16 },
+    { x: 30, y: 15, pressure: 0.4, time: 33 }
+  ],
+  bounds: { x: 10, y: 10, w: 20, h: 10 },
+  meta: {
+    created: new Date().toISOString(),
+    tool: 'pen',
+    engine: 'pixi'
+  }
+};
+Phase1.5ではTPF形式保存＋Undo/Redo対応
+
+Pathfinder描画スケルトンとの紐付け準備
+
+PixiJSフォールバックとの切替条件明示
+
+🎨 キャンバス外描画実装方針
+javascript
+コードをコピーする
+window.addEventListener('pointermove', (e) => {
+  const pt = CoordinateManager.toCanvasCoords(e.clientX, e.clientY);
+
+  if (NavigationManager.isInsideCamera(pt)) {
+    RecordManager.addPoint(pt);
+    // 仮バッファ統合
+    if (tempBuffer.length) {
+      tempBuffer.forEach(p => RecordManager.addPoint(p));
+      tempBuffer = [];
+    }
+  } else {
+    tempBuffer.push(pt); // 複数ポインタ対応注意
+  }
+});
+📝 必須ヘッダー追記（全ファイル統一）
+javascript
+コードをコピーする
+/**
+ * @provides [外部公開メソッド一覧]
+ * @uses [他ファイル利用メソッド一覧]
+ * @initflow [1. CanvasManager → 2. ToolManager → 3. 他Manager]
+ * @forbids 💀双方向依存禁止 🚫フォールバック禁止 🚫v7/v8二重管理禁止
+ * @manager-key window.Tegaki.XxxManagerInstance
+ * @dependencies-strict [必須/オプション/禁止の明示]
+ * @integration-flow [どのManagerから初期化されるか]
+ * @method-naming-rules startOperation()/endOperation()統一
+ * @phase-update-rule Phase2/3進行時に必ず更新
+ */
+⚠️ AI改修ループ対策
+単一ファイル集中改修
+
+依存関係事前確認（@provides/@uses）
+
+段階的テスト + Unit Test/ストローク自動生成
+
+ロールバック準備
+
+改修チェックリスト
+ CanvasManager: DrawContainer確実生成 + Renderer/Stage確認
+
+ AppCore: 初期化順序修正
+
+ ToolManager: 注入確認 + ログ/通知
+
+ PenTool: TPF形式対応 + Pathfinderスケルトン
+
+ EraserTool: TPF形式消去対応
+
+ RecordManager: Undo/Redo安定化 + レイヤー座標系 + 仮バッファ統合
+
+🎯 成功指標
+Phase1完了条件
+✅ TegakiApplication初期化成功
+
+✅ CanvasManager.getDrawContainer()正常
+
+✅ ToolManager注入成功
+
+Phase2完了条件
+✅ ペンツール描画復旧
+
+✅ TPF形式ストローク保存
+
+✅ Undo/Redo動作安定
+
+Phase3完了条件
+✅ キャンバス外描画対応
+
+✅ カメラ分離実装
+
+✅ NavigationManager統合 + 複数ポインタ対応
+
+改修実行時は必ずこの改訂版計画書を参照し、段階的かつ安全に進めること。
