@@ -1,0 +1,35 @@
+{
+  "name": "tegaki_v8_phase2",
+  "version": "2.0.0",
+  "main": "index.html",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "python -m http.server 8080",
+    "start": "python -m http.server 8080"
+  },
+  "keywords": [
+    "pixi",
+    "drawing",
+    "canvas",
+    "v8",
+    "webgpu"
+  ],
+  "author": "",
+  "license": "ISC",
+  "description": "Futaba-style vector drawing tool with PixiJS v8",
+  "dependencies": {
+    "@pixi/gif": "^2.1.1",
+    "@pixi/text-bitmap": "^8.4.0",
+    "@pixi/ui": "^2.1.0",
+    "@tabler/icons": "^3.34.1",
+    "@tabler/icons-webfont": "^3.34.1",
+    "gsap": "^3.13.0",
+    "hammerjs": "^2.0.8",
+    "lodash": "^4.17.21",
+    "lodash-es": "^4.17.21",
+    "lucide-static": "^0.541.0",
+    "pixi-svg": "^3.2.0",
+    "pixi.js": "^8.12.0",
+    "tweedle.js": "^2.1.0"
+  }
+}
