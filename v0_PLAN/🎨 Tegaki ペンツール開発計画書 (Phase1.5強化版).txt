@@ -1,0 +1,541 @@
+==================================================
+🎨 Tegaki ペンツール開発計画書 (Phase1.5強化版)
+==================================================
+
+■ 目的
+PixiJS v8 + Pathfinder を段階的に導入し、
+現行 Phase1.5 の非破壊編集基盤を完成させる。
+ペン描画・Undo/Redo・RecordManager連携を安定化し、
+Phase2以降のレイヤー管理・高速描画への橋渡しとする。
+
+--------------------------------------------------
+■ 現状 Phase1.5 機能
+--------------------------------------------------
+- PixiJS Graphics 直描画によるストローク描画
+- 基本座標管理（CoordinateManager）
+- 描画記録の雛形（RecordManager）
+- NavigationManagerは未導入（後段階）
+- Undo/Redoは簡易形態で動作
+
+--------------------------------------------------
+■ 改修対象・重点
+--------------------------------------------------
+1. ペン描画の安定化
+   - RecordManagerへのTPF形式保存を完全化
+   - Pathfinder描画関数を PenTool に追加（PixiJSフォールバックあり）
+   - Canvasサイズ初期値 400x400、内部リサイズ対応
+
+2. 描画データ管理
+   - TPF (JSONベース)形式を中心に統一
+   - ストローク単位でUndo/Redo可能に
+   - ストローク履歴はPhase2以降のレイヤー管理に備えてContainer単位でも保持
+
+3. Pathfinder導入準備
+   - PixiJS Graphics描画に加え、Pathfinder描画呼び出しを追加
+   - Pathfinder未対応環境では自動フォールバック
+   - 座標・スケーリングはTPF基準で統一
+
+4. 初期化・Manager連携
+   - ToolManager・CanvasManager・RecordManagerとの連携を明示化
+   - @manager-key・@provides・@uses・@initflowをヘッダーに追記
+   - CanvasManager.getDrawContainer()の取得失敗時は警告表示
+
+5. フォールバックとエラー処理
+   - Pathfinder描画不可時は PixiJS Graphics に切替
+   - ストローク保存失敗時は console.error + false return
+   - Manager未注入時の詳細メッセージを出力
+
+--------------------------------------------------
+■ 実装ステップ案 (Phase1.5完了まで)
+--------------------------------------------------
+Step 1: TPF形式完全対応
+   - RecordManager連携でストローク保存/復元
+   - Undo/Redoを安定化
+
+Step 2: Pathfinder描画導入
+   - PenToolに描画モード追加
+   - PixiJS Graphicsフォールバック維持
+   - 初期Canvasサイズ 400x400、内部リサイズ対応
+
+Step 3: 初期化・Manager統合確認
+   - ToolManager・CanvasManager・RecordManager
+   - @manager-key, @initflow, @provides, @usesヘッダーを追記
+
+Step 4: テスト・デバッグ
+   - getDebugInfo(), __testMode などテスト用フックで描画確認
+   - ストローク履歴、Undo/Redo、Canvas描画確認
+
+--------------------------------------------------
+■ Phase2以降の簡易展望
+--------------------------------------------------
+- レイヤー管理・ストローク変形
+- Pathfinder描画の高速化と統合
+- AI補正・PhysicalBrushRenderer導入
+- PixiJSフォールバック維持、WebGPU描画標準化
+
+--------------------------------------------------
+■ 注意点
+--------------------------------------------------
+- 現時点ではペン描画中心に改修
+- キャンバス移動・ショートカット・キャンバス外描画は別途実装
+- Phase2以降機能は簡潔に示すのみで詳細実装は後段階
+- 座標系統一・TPF形式の保持・Manager連携を最優先
+==================================================
+
+==================================================
+🎨 Tegaki ペンツール改修ステップ表 (Phase1.5中心)
+==================================================
+
+■ 改修対象ファイルと目的
+--------------------------------------------------
+1. js/tools/pen-tool.js
+   - Pathfinder描画関数追加
+   - PixiJS Graphicsフォールバック維持
+   - TPF形式でのストローク管理
+   - Undo/Redo連携（RecordManager）
+   - @manager-key, @provides, @uses, @initflowヘッダー追記
+
+2. js/tools/eraser-tool.js
+   - Pathfinder描画対応（消去時）
+   - RecordManager連携
+   - CanvasManager.getDrawContainer()取得エラー対応
+   - @manager-key, @provides, @uses, @initflowヘッダー追記
+
+3. js/managers/tool-manager.js
+   - CanvasManager・RecordManager注入確認強化
+   - @manager-key, @provides, @uses, @initflowヘッダー追記
+   - Pathfinder描画モード切替対応
+
+4. js/managers/canvas-manager.js
+   - Canvas初期サイズ400x400、内部リサイズ対応
+   - PixiJS Container生成・DrawContainer管理
+   - Pathfinder描画用Container準備
+   - @manager-key, @provides, @uses, @initflowヘッダー追記
+
+5. js/utils/record-manager.js
+   - ストローク単位でTPF形式保持
+   - Undo/Redo履歴安定化
+   - Pathfinder描画呼び出し用データ供給
+   - @manager-key, @provides, @uses, @initflowヘッダー追記
+
+6. js/utils/coordinate-manager.js
+   - ストローク座標統一（TPF基準）
+   - Pathfinder描画用スケーリング対応
+   - @manager-key, @provides, @uses, @initflowヘッダー追記
+
+7. js/utils/event-bus.js / js/utils/config-manager.js / js/utils/navigation-manager.js / js/utils/shortcut-manager.js
+   - Phase1.5では軽微改修
+   - 必要に応じて @manager-key / @provides / @uses を整備
+
+--------------------------------------------------
+■ 改修タスク詳細
+--------------------------------------------------
+[PenTool / EraserTool]
+- Pathfinder描画関数を導入
+- PixiJS Graphicsフォールバック
+- RecordManager連携（ストローク保存・Undo/Redo）
+- CanvasManager.getDrawContainer()未取得時は警告出力
+- @manager-key, @provides, @uses, @initflowを追記
+- 初期Canvasサイズ400x400、内部リサイズ対応
+- ストローク単位でTPF形式保存（points + color + width）
+
+[ToolManager]
+- Manager注入確認を厳密化
+- Pathfinder描画モード切替対応
+- @manager-key, @provides, @uses, @initflowを追記
+
+[CanvasManager]
+- Canvas初期化・Container生成
+- DrawContainer管理、Pathfinder用Container準備
+- 内部リサイズ対応
+- @manager-key, @provides, @uses, @initflowを追記
+
+[RecordManager]
+- TPF形式保持を完全化
+- Undo/Redo安定化
+- Pathfinder描画データ供給
+- @manager-key, @provides, @uses, @initflowを追記
+
+[CoordinateManager]
+- ストローク座標統一
+- Pathfinder描画用スケーリング対応
+- @manager-key, @provides, @uses, @initflowを追記
+
+--------------------------------------------------
+■ 実装ステップ (Phase1.5完了まで)
+--------------------------------------------------
+Step 1: TPF形式完全対応
+  - RecordManager連携でストローク保存/復元
+  - Undo/Redoを安定化
+  - PenTool / EraserToolの描画関数修正
+
+Step 2: Pathfinder描画導入
+  - PenTool / EraserToolに描画モード追加
+  - PixiJS Graphicsフォールバック維持
+  - CanvasManager内部リサイズ対応
+  - 座標・スケーリング統一
+
+Step 3: 初期化・Manager統合確認
+  - ToolManager・CanvasManager・RecordManager注入確認
+  - @manager-key, @initflow, @provides, @usesヘッダー整備
+
+Step 4: テスト・デバッグ
+  - getDebugInfo(), __testModeなどで描画確認
+  - ストローク履歴、Undo/Redo、Canvas描画確認
+  - Pathfinder描画とPixiJS描画切替確認
+
+--------------------------------------------------
+■ Phase2以降簡易展望
+--------------------------------------------------
+- レイヤー管理・ストローク変形
+- Pathfinder描画高速化と統合
+- AI補正・PhysicalBrushRenderer導入
+- PixiJSフォールバック維持、WebGPU描画標準化
+- キャンバス移動・ショートカット・キャンバス外描画は別途実装
+==================================================
+
+==================================================
+🎨 Tegaki ペン機能改修タスク一覧（Phase1.5中心・優先度順）
+==================================================
+
+■ 高優先度タスク（Phase1.5完成必須）
+--------------------------------------------------
+[Ticket 001] TPF形式ストローク対応
+- RecordManagerでストローク保存・復元
+- Undo/Redo履歴安定化
+- PenTool / EraserToolでTPF形式読み書き対応
+
+[Ticket 002] Pathfinder描画導入
+- PenTool / EraserToolに描画モード追加
+- PixiJS Graphicsフォールバック維持
+- 座標・スケーリング統一
+- CanvasManager内部リサイズ対応
+
+[Ticket 003] CanvasManager初期化・Container管理
+- Canvas初期サイズ400x400、内部リサイズ対応
+- DrawContainer生成・Pathfinder描画用Container準備
+- @manager-key, @provides, @uses, @initflow追記
+
+[Ticket 004] Manager注入・統合確認
+- ToolManager・CanvasManager・RecordManager注入確認
+- Pathfinder描画モード切替対応
+- @manager-key, @provides, @uses, @initflow追記
+
+[Ticket 005] ペン描画機能テスト
+- getDebugInfo(), __testModeなどで描画確認
+- Undo/Redo・Canvas描画・Pathfinder描画切替確認
+
+--------------------------------------------------
+■ 中優先度タスク（Phase1.5安定化向け）
+--------------------------------------------------
+[Ticket 006] EraserTool描画修正
+- Pathfinder描画対応
+- RecordManager連携
+- CanvasManager.getDrawContainer()未取得時の警告対応
+
+[Ticket 007] CoordinateManager座標統一
+- TPF基準で座標変換・スケーリング対応
+- Pathfinder描画用座標調整
+- @manager-key, @provides, @uses, @initflow追記
+
+[Ticket 008] ヘッダー追記整備
+- PenTool / EraserTool / ToolManager / CanvasManager / RecordManager / CoordinateManager
+- @manager-key, @provides, @uses, @initflow
+- Phase1.5改修に合わせた内容更新
+
+--------------------------------------------------
+■ 低優先度タスク（Phase2準備・後続機能）
+--------------------------------------------------
+[Ticket 009] Pathfinder描画最適化
+- 描画速度・メモリ管理
+- WebGPU利用最適化（後続）
+
+[Ticket 010] Phase2展望準備
+- レイヤー管理・ストローク変形構想
+- AI補正・PhysicalBrushRenderer統合構想
+- PixiJSフォールバック維持
+
+[Ticket 011] Phase1.5拡張UI準備
+- キャンバスリサイズ用内部API整備
+- Sidebarアイコン・ブラシ設定ポップアップ準備（実装は後）
+
+--------------------------------------------------
+■ 注意事項
+- Phase1.5中心の優先度は Ticket001～Ticket005
+- 他タスクはPhase1.5安定後に順次対応
+- 全ファイルヘッダー追記はPhase1.5改修と同時に完了
+- Pathfinder導入は PixiJS フォールバックを常に維持
+- Undo/Redo, RecordManager連携は必須
+==================================================
+
+==================================================
+🎨 Tegaki ペン機能改修タスク詳細（Phase1.5中心）
+==================================================
+
+■ 高優先度タスク（Phase1.5完成必須）
+--------------------------------------------------
+[Ticket 001] TPF形式ストローク対応
+- ファイル: js/tools/pen-tool.js, js/tools/eraser-tool.js, js/utils/record-manager.js
+- 関数/箇所:
+  * PenTool.drawStroke()
+  * EraserTool.eraseStroke()
+  * RecordManager.saveStroke()
+  * RecordManager.undo(), RecordManager.redo()
+- 目的:
+  * TPF形式で座標・圧力・色・幅を保存
+  * Undo/Redoの安定化
+- 注釈:
+  * Pathfinder描画対応用の座標形式に統一
+
+[Ticket 002] Pathfinder描画導入
+- ファイル: js/tools/pen-tool.js, js/tools/eraser-tool.js, js/managers/canvas-manager.js
+- 関数/箇所:
+  * PenTool.renderPathfinderStroke()
+  * EraserTool.renderPathfinderErase()
+  * CanvasManager.getDrawContainer()
+- 目的:
+  * Pathfinderモード描画切替
+  * PixiJS Graphicsフォールバック維持
+  * 座標・スケーリング統一
+- 注釈:
+  * CanvasManager内部リサイズ対応
+
+[Ticket 003] CanvasManager初期化・Container管理
+- ファイル: js/managers/canvas-manager.js
+- 関数/箇所:
+  * CanvasManager.initialize()
+  * CanvasManager.createDrawContainer()
+- 目的:
+  * 初期サイズ400x400、内部リサイズ対応
+  * Pathfinder描画用Container準備
+  * @manager-key, @provides, @uses, @initflow追記
+
+[Ticket 004] Manager注入・統合確認
+- ファイル: js/managers/tool-manager.js, js/app-core.js
+- 関数/箇所:
+  * ToolManager.setManagers()
+  * AppCore.initializeV8Managers()
+- 目的:
+  * ToolManager・CanvasManager・RecordManager注入確認
+  * Pathfinder描画モード切替対応
+  * @manager-key, @provides, @uses, @initflow追記
+
+[Ticket 005] ペン描画機能テスト
+- ファイル: debug/phase15-integration-test.js
+- 関数/箇所:
+  * テストスクリプト内の描画テストケース
+- 目的:
+  * getDebugInfo(), __testModeなどで描画確認
+  * Undo/Redo・Canvas描画・Pathfinder描画切替確認
+
+--------------------------------------------------
+■ 中優先度タスク（Phase1.5安定化向け）
+--------------------------------------------------
+[Ticket 006] EraserTool描画修正
+- ファイル: js/tools/eraser-tool.js
+- 関数/箇所:
+  * EraserTool.eraseStroke()
+  * EraserTool.activate()
+- 目的:
+  * Pathfinder描画対応
+  * RecordManager連携
+  * CanvasManager.getDrawContainer()未取得時の警告対応
+
+[Ticket 007] CoordinateManager座標統一
+- ファイル: js/utils/coordinate-manager.js
+- 関数/箇所:
+  * CoordinateManager.transformPoint()
+  * CoordinateManager.getLocalCoordinates()
+- 目的:
+  * TPF基準で座標変換・スケーリング対応
+  * Pathfinder描画用座標調整
+  * @manager-key, @provides, @uses, @initflow追記
+
+[Ticket 008] ヘッダー追記整備
+- ファイル: 全関連ファイル
+  * js/tools/pen-tool.js
+  * js/tools/eraser-tool.js
+  * js/managers/tool-manager.js
+  * js/managers/canvas-manager.js
+  * js/utils/record-manager.js
+  * js/utils/coordinate-manager.js
+- 関数/箇所:
+  * ファイル冒頭
+- 目的:
+  * @manager-key, @provides, @uses, @initflow追記
+  * Phase1.5改修に合わせた内容更新
+
+--------------------------------------------------
+■ 低優先度タスク（Phase2準備・後続機能）
+--------------------------------------------------
+[Ticket 009] Pathfinder描画最適化
+- ファイル: js/tools/pen-tool.js, js/tools/eraser-tool.js
+- 関数/箇所:
+  * renderPathfinderStroke(), renderPathfinderErase()
+- 目的:
+  * 描画速度・メモリ管理
+  * WebGPU利用最適化（後続）
+
+[Ticket 010] Phase2展望準備
+- ファイル: js/tools/pen-tool.js, js/managers/tool-manager.js
+- 関数/箇所:
+  * レイヤー管理・ストローク変形
+- 目的:
+  * AI補正・PhysicalBrushRenderer統合構想
+  * PixiJSフォールバック維持
+
+[Ticket 011] Phase1.5拡張UI準備
+- ファイル: js/managers/canvas-manager.js, js/tools/pen-tool.js
+- 関数/箇所:
+  * CanvasManager.resizeCanvas()
+  * Sidebarアイコン / ブラシ設定API準備
+- 目的:
+  * 内部リサイズAPI整備
+  * 設定ポップアップ準備（実装は後）
+
+--------------------------------------------------
+■ 注意事項
+- Phase1.5中心の優先度は Ticket001～Ticket005
+- 他タスクはPhase1.5安定後に順次対応
+- 全ファイルヘッダー追記はPhase1.5改修と同時に完了
+- Pathfinder導入は PixiJS フォールバックを常に維持
+- Undo/Redo, RecordManager連携は必須
+==================================================
+==================================================
+🎨 Tegaki ペン機能改修タスク詳細（Phase1.5中心）
+==================================================
+
+■ 高優先度タスク（Phase1.5完成必須）
+--------------------------------------------------
+[Ticket 001] TPF形式ストローク対応
+- ファイル: js/tools/pen-tool.js, js/tools/eraser-tool.js, js/utils/record-manager.js
+- 関数/箇所:
+  * PenTool.drawStroke()
+  * EraserTool.eraseStroke()
+  * RecordManager.saveStroke()
+  * RecordManager.undo(), RecordManager.redo()
+- 目的:
+  * TPF形式で座標・圧力・色・幅を保存
+  * Undo/Redoの安定化
+- 注釈:
+  * Pathfinder描画対応用の座標形式に統一
+
+[Ticket 002] Pathfinder描画導入
+- ファイル: js/tools/pen-tool.js, js/tools/eraser-tool.js, js/managers/canvas-manager.js
+- 関数/箇所:
+  * PenTool.renderPathfinderStroke()
+  * EraserTool.renderPathfinderErase()
+  * CanvasManager.getDrawContainer()
+- 目的:
+  * Pathfinderモード描画切替
+  * PixiJS Graphicsフォールバック維持
+  * 座標・スケーリング統一
+- 注釈:
+  * CanvasManager内部リサイズ対応
+
+[Ticket 003] CanvasManager初期化・Container管理
+- ファイル: js/managers/canvas-manager.js
+- 関数/箇所:
+  * CanvasManager.initialize()
+  * CanvasManager.createDrawContainer()
+- 目的:
+  * 初期サイズ400x400、内部リサイズ対応
+  * Pathfinder描画用Container準備
+  * @manager-key, @provides, @uses, @initflow追記
+
+[Ticket 004] Manager注入・統合確認
+- ファイル: js/managers/tool-manager.js, js/app-core.js
+- 関数/箇所:
+  * ToolManager.setManagers()
+  * AppCore.initializeV8Managers()
+- 目的:
+  * ToolManager・CanvasManager・RecordManager注入確認
+  * Pathfinder描画モード切替対応
+  * @manager-key, @provides, @uses, @initflow追記
+
+[Ticket 005] ペン描画機能テスト
+- ファイル: debug/phase15-integration-test.js
+- 関数/箇所:
+  * テストスクリプト内の描画テストケース
+- 目的:
+  * getDebugInfo(), __testModeなどで描画確認
+  * Undo/Redo・Canvas描画・Pathfinder描画切替確認
+
+--------------------------------------------------
+■ 中優先度タスク（Phase1.5安定化向け）
+--------------------------------------------------
+[Ticket 006] EraserTool描画修正
+- ファイル: js/tools/eraser-tool.js
+- 関数/箇所:
+  * EraserTool.eraseStroke()
+  * EraserTool.activate()
+- 目的:
+  * Pathfinder描画対応
+  * RecordManager連携
+  * CanvasManager.getDrawContainer()未取得時の警告対応
+
+[Ticket 007] CoordinateManager座標統一
+- ファイル: js/utils/coordinate-manager.js
+- 関数/箇所:
+  * CoordinateManager.transformPoint()
+  * CoordinateManager.getLocalCoordinates()
+- 目的:
+  * TPF基準で座標変換・スケーリング対応
+  * Pathfinder描画用座標調整
+  * @manager-key, @provides, @uses, @initflow追記
+
+[Ticket 008] ヘッダー追記整備
+- ファイル: 全関連ファイル
+  * js/tools/pen-tool.js
+  * js/tools/eraser-tool.js
+  * js/managers/tool-manager.js
+  * js/managers/canvas-manager.js
+  * js/utils/record-manager.js
+  * js/utils/coordinate-manager.js
+- 関数/箇所:
+  * ファイル冒頭
+- 目的:
+  * @manager-key, @provides, @uses, @initflow追記
+  * Phase1.5改修に合わせた内容更新
+
+--------------------------------------------------
+■ 低優先度タスク（Phase2準備・後続機能）
+--------------------------------------------------
+[Ticket 009] Pathfinder描画最適化
+- ファイル: js/tools/pen-tool.js, js/tools/eraser-tool.js
+- 関数/箇所:
+  * renderPathfinderStroke(), renderPathfinderErase()
+- 目的:
+  * 描画速度・メモリ管理
+  * WebGPU利用最適化（後続）
+
+[Ticket 010] Phase2展望準備
+- ファイル: js/tools/pen-tool.js, js/managers/tool-manager.js
+- 関数/箇所:
+  * レイヤー管理・ストローク変形
+- 目的:
+  * AI補正・PhysicalBrushRenderer統合構想
+  * PixiJSフォールバック維持
+
+[Ticket 011] Phase1.5拡張UI準備
+- ファイル: js/managers/canvas-manager.js, js/tools/pen-tool.js
+- 関数/箇所:
+  * CanvasManager.resizeCanvas()
+  * Sidebarアイコン / ブラシ設定API準備
+- 目的:
+  * 内部リサイズAPI整備
+  * 設定ポップアップ準備（実装は後）
+
+--------------------------------------------------
+■ 注意事項
+- Phase1.5中心の優先度は Ticket001～Ticket005
+- 他タスクはPhase1.5安定後に順次対応
+- 全ファイルヘッダー追記はPhase1.5改修と同時に完了
+- Pathfinder導入は PixiJS フォールバックを常に維持
+- Undo/Redo, RecordManager連携は必須
+==================================================
+
+
+
+
+
