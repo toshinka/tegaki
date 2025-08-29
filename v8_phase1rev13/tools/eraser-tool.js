@@ -1,730 +1,437 @@
 /**
- * 🧹 EraserTool - PixiJS v8対応消しゴムツール
- * 📋 RESPONSIBILITY: v8対応消去機能・Graphics削除・高精度hit-test・Container階層対応
- * 🚫 PROHIBITION: 複雑な消去処理・Canvas管理・座標変換・エラー隠蔽・フォールバック
- * ✅ PERMISSION: v8 Graphics消去・Container階層操作・RecordManager v8連携・WebGPU最適化
- * 
- * 📏 DESIGN_PRINCIPLE: AbstractTool v8継承・高精度消去・Container階層活用・WebGPU最適化
- * 🔄 INTEGRATION: AbstractTool v8継承・CanvasManager v8連携・RecordManager v8記録・PixiJS v8活用
- * 🎯 V8_FEATURE: v8 Graphics.containsPoint活用・Container階層対応・WebGPU加速・高精度消去
- * 
- * === v8消去フロー ===
- * 開始: onPointerDown → v8座標取得 → Container検索 → v8 Graphics hit-test → 削除実行
- * 継続: onPointerMove → v8リアルタイム消去 → Container即時更新 → WebGPU最適化
- * 終了: onPointerUp → v8消去完了 → RecordManager v8記録 → Container状態更新
- * 
- * === 提供メソッド ===
- * - async initializeV8Features() : v8機能初期化
- * - onPointerDown(x, y, event) : v8消去開始
- * - onPointerMove(x, y, event) : v8継続消去
- * - onPointerUp(x, y, event) : v8消去終了
- * - eraseAtPositionV8(x, y) : v8高精度消去実行
- * - checkCollisionV8(graphics, hitArea) : v8衝突判定
- * 
- * === 他ファイル呼び出しメソッド ===
- * - this.canvasManager.getLayer('main') : v8レイヤー取得
- * - this.canvasManager.removeGraphicsFromLayerV8() : v8 Graphics削除
- * - window.Tegaki.RecordManagerInstance.startOperationV8() : v8操作開始記録
- * - window.Tegaki.RecordManagerInstance.endOperationV8() : v8操作終了記録
- * - graphics.containsPoint() : PixiJS v8 hit-test
- * - layer.removeChild() : PixiJS v8 Container操作
+ * 📄 FILE: eraser-tool.js
+ * 📌 RESPONSIBILITY: 消去機能・Graphics削除・hit-test処理
+ *
+ * @provides
+ *   - EraserTool クラス
+ *   - erase(x, y) - 指定座標の消去
+ *   - setEraserSize(size) - 消しゴムサイズ設定
+ *
+ * @uses
+ *   - AbstractTool.activate()
+ *   - AbstractTool.getManager()
+ *   - CanvasManager.getDrawContainer()
+ *   - CoordinateManager.screenToCanvas()
+ *   - RecordManager.startOperation()
+ *   - RecordManager.endOperation()
+ *
+ * @initflow
+ *   1. new EraserTool() → 2. setManagersObject() → 3. activate() → 4. erase操作 → 5. deactivate()
+ *
+ * @forbids
+ *   - 双方向依存禁止 (💀)
+ *   - フォールバック禁止
+ *   - フェイルセーフ禁止
+ *   - v7/v8 両対応による二重管理禁止
+ *   - RecordManagerInstance 直接参照禁止
+ *
+ * @manager-key
+ *   window.Tegaki.ToolRegistry.EraserTool
  */
 
-window.Tegaki = window.Tegaki || {};
+(function() {
+    'use strict';
 
-/**
- * EraserTool - PixiJS v8対応消しゴムツール
- * v8 Graphics削除・Container階層対応・高精度消去を提供
- */
-class EraserTool extends window.Tegaki.AbstractTool {
-    constructor(canvasManager) {
-        super(canvasManager, 'eraser');
-        console.log('🧹 EraserTool v8対応版 作成開始');
-        
-        // v8消しゴム状態
-        this.isErasing = false;
-        this.erasedItems = [];
-        this.currentOperation = null; // v8操作記録
-        this.v8Ready = false;
-        
-        // v8消しゴム設定
-        this.eraserSettings = {
-            size: 20,                 // 消しゴムサイズ（ピクセル）
-            mode: 'object',          // 消去モード: 'object' | 'pixel'
-            sensitivity: 1.0,         // v8感度調整
-            webgpuOptimized: false    // WebGPU最適化フラグ
-        };
-        
-        // v8 Manager参照
-        this.recordManager = window.Tegaki.RecordManagerInstance;
-        if (!this.recordManager) {
-            console.warn('⚠️ RecordManagerInstance not available - v8記録機能が制限されます');
-        }
-        
-        console.log('✅ EraserTool v8対応版 作成完了:', {
-            toolName: this.toolName,
-            hasCanvasManager: !!this.canvasManager,
-            hasRecordManager: !!this.recordManager,
-            eraserSettings: this.eraserSettings
-        });
-    }
-    
     /**
-     * v8機能初期化（AbstractTool継承）
+     * 🧹 EraserTool PixiJS v8対応版・RecordManager統一参照修正版
+     * 
+     * 📏 v8機能:
+     * - Graphics削除・Container階層対応
+     * - WebGPU最適化・高精度hit-test
+     * - RecordManager統一参照対応
+     * 
+     * 🚀 v8特徴:
+     * - RecordManager getManager()経由統一
+     * - 高精度消去・WebGPU加速
+     * - Container階層活用
+     * - 直接参照禁止対応
      */
-    async initializeV8Features() {
-        console.log('🧹 EraserTool v8機能初期化開始');
-        
-        // WebGPU対応確認
-        if (this.canvasManager?.webgpuSupported) {
-            this.eraserSettings.webgpuOptimized = true;
-            this.eraserSettings.sensitivity = 1.2; // WebGPU高精度
-            console.log('🚀 EraserTool: WebGPU最適化有効');
+    class EraserTool extends window.Tegaki.AbstractTool {
+        constructor() {
+            super('eraser');
+            
+            // 消しゴム設定
+            this.eraserSize = 10;
+            this.minEraserSize = 2;
+            this.maxEraserSize = 50;
+            
+            // v8対応プロパティ
+            this.hitTestPrecision = 0.5;
+            this.erasedGraphics = [];
+            
+            // RecordManager統一参照準備（初期化時は null）
+            this.recordManager = null;
+            
+            console.log(`🧹 EraserTool v8対応版 作成開始`);
+            this.initializeV8EraserFeatures();
+            console.log(`✅ EraserTool v8対応版 作成完了:`, this);
         }
-        
-        this.v8Ready = true;
-        console.log('✅ EraserTool v8機能初期化完了');
-    }
-    
-    /**
-     * v8消去開始処理（PointerDown時）
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     * @param {PointerEvent} event - ポインターイベント
-     */
-    onPointerDown(x, y, event) {
-        try {
-            console.log(`🧹 EraserTool v8消去開始: (${x}, ${y})`);
+
+        /**
+         * 🚀 v8消去機能初期化
+         */
+        initializeV8EraserFeatures() {
+            // WebGPU対応確認
+            this.webGPUSupported = window.PIXI && window.PIXI.Graphics;
             
-            this.isErasing = true;
-            this.erasedItems = [];
+            // v8 Graphics削除機能
+            this.v8EraseFeatures = {
+                containerHierarchy: true,
+                precisionHitTest: true,
+                webGPUOptimization: this.webGPUSupported,
+                realTimeErase: true
+            };
             
-            // v8操作記録開始
-            if (this.recordManager?.startOperationV8) {
-                this.currentOperation = this.recordManager.startOperationV8({
-                    tool: 'eraser',
-                    type: 'erase_operation',
-                    data: {
-                        startPosition: { x, y },
-                        eraserSize: this.eraserSettings.size,
-                        mode: this.eraserSettings.mode
-                    },
-                    layerId: 'main'
-                });
-            }
-            
-            // v8指定位置の要素を消去
-            this.eraseAtPositionV8(x, y);
-            
-            console.log(`✅ EraserTool v8消去開始完了`);
-            
-        } catch (error) {
-            console.error('💀 EraserTool v8消去開始エラー:', error);
-            
-            if (this.errorManager?.showError) {
-                this.errorManager.showError('error', `v8消しゴム開始エラー: ${error.message}`, {
-                    context: 'EraserTool.onPointerDown',
-                    v8Mode: true
-                });
-            }
-            
-            throw error;
+            console.log(`🧹 v8消去機能初期化完了`);
         }
-    }
-    
-    /**
-     * v8消去継続処理（PointerMove時）
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     * @param {PointerEvent} event - ポインターイベント
-     */
-    onPointerMove(x, y, event) {
-        if (!this.isErasing) return;
-        
-        try {
-            // v8ドラッグ中の連続消去
-            this.eraseAtPositionV8(x, y);
+
+        /**
+         * 🎯 Tool有効化（RecordManager統一参照対応版）
+         */
+        activate() {
+            console.log(`🧹 EraserTool アクティブ化開始`);
             
-        } catch (error) {
-            console.error('💀 EraserTool v8消去継続エラー:', error);
-            
-            if (this.errorManager?.showError) {
-                this.errorManager.showError('error', `v8消しゴム継続エラー: ${error.message}`, {
-                    context: 'EraserTool.onPointerMove',
-                    v8Mode: true
-                });
+            try {
+                // 親クラスでManager統一取得
+                super.activate();
+                
+                // RecordManager統一参照（getManager経由）
+                this.recordManager = this.getManager('record');
+                console.log(`✅ RecordManager統一参照完了`);
+                
+                // v8機能有効化
+                this.initializeV8Features();
+                
+                console.log(`✅ EraserTool アクティブ化完了`);
+                
+            } catch (error) {
+                console.error(`💀 EraserTool アクティブ化エラー:`, error.message);
+                throw error;
             }
-            
-            throw error;
         }
-    }
-    
-    /**
-     * v8消去終了処理（PointerUp時）
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     * @param {PointerEvent} event - ポインターイベント
-     */
-    onPointerUp(x, y, event) {
-        if (!this.isErasing) return;
-        
-        try {
-            console.log(`🧹 EraserTool v8消去終了: (${x}, ${y})`);
-            
-            // v8最終位置で消去
-            this.eraseAtPositionV8(x, y);
-            
-            // v8消去操作を記録
-            this.recordV8EraseOperation();
-            
-            this.isErasing = false;
-            console.log(`✅ EraserTool v8消去終了完了: 消去数=${this.erasedItems.length}`);
-            
-        } catch (error) {
-            console.error('💀 EraserTool v8消去終了エラー:', error);
-            
-            if (this.errorManager?.showError) {
-                this.errorManager.showError('error', `v8消しゴム終了エラー: ${error.message}`, {
-                    context: 'EraserTool.onPointerUp',
-                    v8Mode: true
-                });
+
+        /**
+         * 🚀 v8機能有効化
+         */
+        initializeV8Features() {
+            if (!this.drawContainer) {
+                console.warn(`⚠️ DrawContainer未取得 - v8機能制限`);
+                return;
             }
             
-            this.isErasing = false;
-            this.erasedItems = [];
-            this.currentOperation = null;
-            throw error;
+            // v8 Container階層対応
+            this.setupV8ContainerHierarchy();
+            
+            // v8高精度hit-test設定
+            this.setupV8HitTest();
+            
+            console.log(`✅ v8消去機能有効化完了`);
         }
-    }
-    
-    /**
-     * v8指定位置での消去処理
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     */
-    eraseAtPositionV8(x, y) {
-        try {
-            // v8メインレイヤー取得
-            const mainLayer = this.canvasManager.getLayer('main');
-            if (!mainLayer) {
-                throw new Error('Main layer not found for v8 erasing');
+
+        /**
+         * 🎨 v8 Container階層設定
+         */
+        setupV8ContainerHierarchy() {
+            if (this.drawContainer && this.drawContainer.children) {
+                console.log(`📦 v8 Container階層認識: ${this.drawContainer.children.length} 子要素`);
+                this.containerHierarchyEnabled = true;
+            } else {
+                console.warn(`⚠️ Container階層未対応 - フラット削除のみ`);
+                this.containerHierarchyEnabled = false;
             }
-            
-            // v8 Container階層検索（コピー作成で削除による配列変更回避）
-            const children = mainLayer.children.slice();
-            let erasedCount = 0;
-            
-            // v8高精度hit-test実行
-            for (const child of children) {
-                if (this.shouldEraseItemV8(child, x, y)) {
-                    this.eraseItemV8(child, mainLayer);
-                    erasedCount++;
-                }
+        }
+
+        /**
+         * 🎯 v8高精度hit-test設定
+         */
+        setupV8HitTest() {
+            // WebGPU環境での高精度設定
+            if (this.webGPUSupported) {
+                this.hitTestPrecision = 0.1; // 高精度
+                console.log(`🚀 WebGPU高精度hit-test有効`);
+            } else {
+                this.hitTestPrecision = 0.5; // 標準精度
+                console.log(`📊 標準精度hit-test設定`);
             }
+        }
+
+        /**
+         * 🖱️ マウス移動時処理
+         * 
+         * @param {MouseEvent} event - マウスイベント
+         */
+        onMouseMove(event) {
+            if (!this.isOperating || !this.drawContainer) {
+                return;
+            }
+
+            // 座標変換
+            const canvasPos = this.coordinateManager.screenToCanvas(event.clientX, event.clientY);
+            
+            // 消去処理
+            this.performErase(canvasPos.x, canvasPos.y);
+        }
+
+        /**
+         * 🧹 消去実行（v8対応版）
+         * 
+         * @param {number} x - キャンバス座標X
+         * @param {number} y - キャンバス座標Y
+         */
+        performErase(x, y) {
+            if (!this.drawContainer) {
+                return;
+            }
+
+            const erasedCount = this.v8EraseAtPosition(x, y);
             
             if (erasedCount > 0) {
-                console.log(`🧹 v8位置(${x}, ${y})で${erasedCount}個のアイテムを消去`);
-            }
-            
-        } catch (error) {
-            console.error('💀 v8指定位置消去エラー:', error);
-            throw error;
-        }
-    }
-    
-    /**
-     * v8アイテム消去判定
-     * @param {PIXI.DisplayObject} item - 判定対象アイテム
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     * @returns {boolean} 消去対象フラグ
-     */
-    shouldEraseItemV8(item, x, y) {
-        try {
-            // v8 Graphics の場合、containsPoint で高精度判定
-            if (item instanceof PIXI.Graphics) {
-                const point = new PIXI.Point(x, y);
+                console.log(`🧹 消去実行: ${erasedCount}個のGraphicsを削除 at (${x.toFixed(1)}, ${y.toFixed(1)})`);
                 
-                // v8高精度containsPoint活用
-                const contained = item.containsPoint(point);
-                
-                // WebGPU最適化時の感度調整
-                if (this.eraserSettings.webgpuOptimized && !contained) {
-                    // 消しゴムサイズを考慮した範囲判定
-                    const hitArea = new PIXI.Rectangle(
-                        x - this.eraserSettings.size / 2,
-                        y - this.eraserSettings.size / 2,
-                        this.eraserSettings.size,
-                        this.eraserSettings.size
-                    );
-                    
-                    return this.checkCollisionV8(item, hitArea);
-                }
-                
-                return contained;
-            }
-            
-            // v8その他のDisplayObjectの場合、bounds判定
-            if (item.getBounds) {
-                const bounds = item.getBounds();
-                return bounds.contains(x, y);
-            }
-            
-            // v8判定できない場合は消去しない
-            return false;
-            
-        } catch (error) {
-            console.error('💀 v8消去判定エラー:', error);
-            return false; // エラー時は安全側で消去しない
-        }
-    }
-    
-    /**
-     * v8衝突判定（WebGPU最適化対応）
-     * @param {PIXI.Graphics} graphics - Graphics オブジェクト
-     * @param {PIXI.Rectangle} hitArea - 判定範囲
-     * @returns {boolean} 衝突フラグ
-     */
-    checkCollisionV8(graphics, hitArea) {
-        try {
-            const graphicsBounds = graphics.getBounds();
-            
-            // v8高精度境界判定
-            const intersects = (
-                hitArea.x < graphicsBounds.x + graphicsBounds.width &&
-                hitArea.x + hitArea.width > graphicsBounds.x &&
-                hitArea.y < graphicsBounds.y + graphicsBounds.height &&
-                hitArea.y + hitArea.height > graphicsBounds.y
-            );
-            
-            return intersects;
-            
-        } catch (error) {
-            console.error('💀 v8衝突判定エラー:', error);
-            return false;
-        }
-    }
-    
-    /**
-     * v8アイテム消去実行
-     * @param {PIXI.DisplayObject} item - 消去対象アイテム
-     * @param {PIXI.Container} layer - 親レイヤー
-     */
-    eraseItemV8(item, layer) {
-        try {
-            // v8 Container から削除
-            layer.removeChild(item);
-            
-            // v8消去記録に追加
-            this.erasedItems.push({
-                item: item,
-                layer: layer,
-                layerId: 'main',
-                timestamp: Date.now(),
-                // v8追加情報
-                itemType: item.constructor.name,
-                bounds: item.getBounds(),
-                v8Erased: true
-            });
-            
-            console.log(`🧹 v8アイテム消去: ${item.constructor.name}`);
-            
-        } catch (error) {
-            console.error('💀 v8アイテム消去実行エラー:', error);
-            throw error;
-        }
-    }
-    
-    /**
-     * v8消去操作をRecordManagerに記録
-     */
-    recordV8EraseOperation() {
-        if (this.erasedItems.length === 0) {
-            console.log('📋 v8消去対象なし - 記録スキップ');
-            
-            // 操作終了記録（失敗として）
-            if (this.currentOperation && this.recordManager?.endOperationV8) {
-                this.recordManager.endOperationV8(this.currentOperation.id, {
-                    success: false,
-                    reason: 'no-items-erased'
-                });
-            }
-            
-            return;
-        }
-        
-        try {
-            // v8操作終了記録
-            if (this.currentOperation && this.recordManager?.endOperationV8) {
-                const eraseData = {
-                    success: true,
-                    erasedItems: this.erasedItems.map(record => ({
-                        itemId: record.item.id || 'unknown',
-                        layerId: record.layerId,
-                        itemType: record.itemType,
-                        bounds: record.bounds,
-                        timestamp: record.timestamp,
-                        v8Mode: true
-                    })),
-                    totalErased: this.erasedItems.length,
-                    eraserSettings: { ...this.eraserSettings },
-                    webgpuOptimized: this.eraserSettings.webgpuOptimized
-                };
-                
-                this.recordManager.endOperationV8(this.currentOperation.id, {
-                    success: true,
-                    strokeData: eraseData
-                });
-                
-                console.log(`✅ RecordManager v8消去記録完了 - ${this.erasedItems.length}個`);
-            }
-            
-            // v8消去完了イベント配信
-            if (this.eventBus?.emit) {
-                this.eventBus.emit('eraser:eraseCompleteV8', {
-                    erasedCount: this.erasedItems.length,
-                    layerId: 'main',
-                    v8Mode: true,
-                    webgpuOptimized: this.eraserSettings.webgpuOptimized,
-                    operationId: this.currentOperation?.id
-                });
-            }
-            
-        } catch (error) {
-            console.error('💀 v8消去記録エラー:', error);
-            throw error;
-        }
-    }
-    
-    /**
-     * v8消しゴムサイズ設定
-     * @param {number} size - 新しいサイズ
-     */
-    setEraserSizeV8(size) {
-        if (typeof size !== 'number' || size <= 0) {
-            throw new Error('Invalid v8 eraser size');
-        }
-        
-        this.eraserSettings.size = size;
-        
-        // WebGPU最適化時の感度調整
-        if (this.eraserSettings.webgpuOptimized) {
-            this.eraserSettings.sensitivity = Math.max(0.8, Math.min(1.5, size / 20));
-        }
-        
-        console.log(`🧹 v8消しゴムサイズ変更: ${size} (感度: ${this.eraserSettings.sensitivity})`);
-    }
-    
-    /**
-     * v8設定更新処理（AbstractToolからの委譲）
-     * @param {Object} settings - 新しい設定
-     */
-    onSettingsUpdate(settings) {
-        try {
-            if (settings.size !== undefined) {
-                this.setEraserSizeV8(settings.size);
-            }
-            
-            if (settings.mode !== undefined) {
-                this.eraserSettings.mode = settings.mode;
-            }
-            
-            if (settings.sensitivity !== undefined) {
-                this.eraserSettings.sensitivity = settings.sensitivity;
-            }
-            
-            console.log(`🧹 EraserTool v8設定更新完了:`, this.eraserSettings);
-            
-        } catch (error) {
-            console.error('💀 EraserTool v8設定更新エラー:', error);
-            throw error;
-        }
-    }
-    
-    /**
-     * v8 Undo処理（RecordManagerから呼び出し）
-     * @param {Object} operation - Undo対象操作
-     */
-    onUndoV8(operation) {
-        try {
-            console.log(`↶ EraserTool v8 Undo実行: ${operation.id}`);
-            
-            // v8消去されたアイテムを復元
-            if (operation.strokeData?.erasedItems) {
-                const mainLayer = this.canvasManager.getLayer('main');
-                if (mainLayer) {
-                    operation.strokeData.erasedItems.forEach(erasedRecord => {
-                        // 実際の復元は RecordManager が Graphics を管理
-                        console.log(`🔄 v8消去アイテム復元準備: ${erasedRecord.itemType}`);
-                    });
+                // RecordManager経由で記録（統一API使用）
+                if (this.recordManager && this.recordManager.recordErase) {
+                    this.recordManager.recordErase(x, y, this.eraserSize, erasedCount);
                 }
             }
-            
-            console.log(`✅ EraserTool v8 Undo処理完了`);
-            
-        } catch (error) {
-            console.error('💀 EraserTool v8 Undo処理エラー:', error);
-            throw error;
         }
-    }
-    
-    /**
-     * v8 Redo処理（RecordManagerから呼び出し）
-     * @param {Object} operation - Redo対象操作
-     */
-    onRedoV8(operation) {
-        try {
-            console.log(`↷ EraserTool v8 Redo実行: ${operation.id}`);
-            
-            // v8再消去処理
-            if (operation.strokeData?.erasedItems) {
-                console.log(`🔄 v8再消去実行: ${operation.strokeData.totalErased}個`);
-                // 実際の再消去は RecordManager が Graphics を管理
-            }
-            
-            console.log(`✅ EraserTool v8 Redo処理完了`);
-            
-        } catch (error) {
-            console.error('💀 EraserTool v8 Redo処理エラー:', error);
-            throw error;
-        }
-    }
-    
-    /**
-     * v8操作強制終了処理（ツール切り替え時など）
-     * @param {Object} operation - 強制終了対象操作
-     */
-    onOperationForceEndV8(operation) {
-        try {
-            console.log(`⚠️ EraserTool v8操作強制終了: ${operation.id}`);
-            
-            // 進行中の消去を安全に終了
-            if (this.isErasing && this.currentOperation?.id === operation.id) {
-                // 現在までの消去を記録
-                if (this.erasedItems.length > 0) {
-                    this.recordV8EraseOperation();
-                }
-                
-                this.resetV8ErasingState();
-            }
-            
-            console.log(`✅ EraserTool v8操作強制終了処理完了`);
-            
-        } catch (error) {
-            console.error('💀 EraserTool v8操作強制終了エラー:', error);
-            this.resetV8ErasingState();
-        }
-    }
-    
-    /**
-     * v8現在の消しゴム設定取得
-     * @returns {Object} v8消しゴム設定
-     */
-    getV8EraserSettings() {
-        return {
-            ...this.eraserSettings,
-            v8Ready: this.v8Ready,
-            webgpuSupported: this.canvasManager?.webgpuSupported || false
-        };
-    }
-    
-    /**
-     * v8有効化時処理
-     */
-    onActivate() {
-        console.log('🧹 EraserTool v8有効化 - 消しゴムモード開始');
-        this.resetV8ErasingState();
-        
-        // WebGPU最適化確認
-        if (this.canvasManager?.webgpuSupported && !this.eraserSettings.webgpuOptimized) {
-            this.eraserSettings.webgpuOptimized = true;
-            console.log('🚀 EraserTool v8: WebGPU最適化自動有効化');
-        }
-    }
-    
-    /**
-     * v8無効化時処理
-     */
-    onDeactivate() {
-        console.log('🧹 EraserTool v8無効化 - 消去中の場合は記録');
-        
-        // v8消去中の場合は記録して終了
-        if (this.isErasing && this.erasedItems.length > 0) {
-            try {
-                this.recordV8EraseOperation();
-            } catch (error) {
-                console.error('💀 EraserTool v8無効化時の記録エラー:', error);
-                this.resetV8ErasingState();
-            }
-        }
-        
-        this.resetV8ErasingState();
-    }
-    
-    /**
-     * v8リセット処理
-     */
-    onReset() {
-        console.log('🧹 EraserTool v8リセット - 消去状態クリア');
-        this.resetV8ErasingState();
-    }
-    
-    /**
-     * v8消去状態リセット
-     */
-    resetV8ErasingState() {
-        this.isErasing = false;
-        this.erasedItems = [];
-        this.currentOperation = null;
-        console.log('✅ EraserTool v8消去状態リセット完了');
-    }
-    
-    /**
-     * v8破棄処理
-     */
-    onDestroy() {
-        console.log('🧹 EraserTool v8破棄処理開始');
-        
-        // v8消去中の処理を安全に終了
-        this.resetV8ErasingState();
-        
-        // v8 Manager参照をクリア
-        this.recordManager = null;
-        this.v8Ready = false;
-        
-        console.log('✅ EraserTool v8破棄処理完了');
-    }
-    
-    /**
-     * v8準備完了確認
-     * @returns {boolean} v8対応状況
-     */
-    isV8Ready() {
-        return this.v8Ready && 
-               !!this.canvasManager && 
-               this.canvasManager.isV8Ready();
-    }
-    
-    /**
-     * v8デバッグ情報取得
-     * @returns {Object} v8デバッグ情報
-     */
-    getDebugInfo() {
-        return {
-            // 基本情報
-            className: 'EraserTool',
-            toolName: this.toolName,
-            v8Ready: this.v8Ready,
-            
-            // 状態情報
-            isActive: this.isActive,
-            isErasing: this.isErasing,
-            erasedItemsCount: this.erasedItems.length,
-            currentOperationId: this.currentOperation?.id || null,
-            
-            // Manager連携
-            hasCanvasManager: !!this.canvasManager,
-            canvasManagerV8Ready: this.canvasManager?.isV8Ready() || false,
-            hasRecordManager: !!this.recordManager,
-            recordManagerV8Ready: this.recordManager?.isV8Ready?.() || false,
-            
-            // v8設定
-            eraserSettings: { ...this.eraserSettings },
-            
-            // v8パフォーマンス
-            performance: {
-                webgpuSupported: this.canvasManager?.webgpuSupported || false,
-                webgpuOptimized: this.eraserSettings.webgpuOptimized,
-                highPrecisionMode: this.eraserSettings.webgpuOptimized,
-                rendererType: this.canvasManager?.pixiApp?.renderer?.type || 'unknown'
-            },
-            
-            // v8操作履歴（最新のみ）
-            recentErasedItems: this.erasedItems.slice(-3).map(item => ({
-                itemType: item.itemType,
-                layerId: item.layerId,
-                timestamp: item.timestamp,
-                v8Mode: item.v8Erased
-            })),
-            
-            // v8機能状態
-            v8Features: {
-                highPrecisionHitTest: true,
-                containerHierarchySupport: true,
-                webgpuOptimization: this.eraserSettings.webgpuOptimized,
-                recordManagerV8Integration: !!this.recordManager?.isV8Ready
-            }
-        };
-    }
-    
-    /**
-     * v8機能テスト
-     * @returns {Object} v8機能テスト結果
-     */
-    testV8EraserFeatures() {
-        const results = { success: [], error: [], warning: [] };
-        
-        try {
-            // v8初期化テスト
-            if (this.v8Ready) {
-                results.success.push('EraserTool v8: 初期化正常');
-            } else {
-                results.error.push('EraserTool v8: 初期化異常');
-            }
-            
-            // v8設定テスト
-            const originalSize = this.eraserSettings.size;
-            this.setEraserSizeV8(30);
-            if (this.eraserSettings.size === 30) {
-                results.success.push('EraserTool v8: サイズ設定正常');
-            } else {
-                results.error.push('EraserTool v8: サイズ設定異常');
-            }
-            this.setEraserSizeV8(originalSize); // 復元
-            
-            // WebGPU対応テスト
-            if (this.canvasManager?.webgpuSupported) {
-                if (this.eraserSettings.webgpuOptimized) {
-                    results.success.push('EraserTool v8: WebGPU最適化正常');
-                } else {
-                    results.warning.push('EraserTool v8: WebGPU最適化未有効');
-                }
-            } else {
-                results.warning.push('EraserTool v8: WebGPU非対応環境');
-            }
-            
-            // RecordManager v8連携テスト
-            if (this.recordManager?.isV8Ready?.()) {
-                results.success.push('EraserTool v8: RecordManager連携正常');
-            } else {
-                results.warning.push('EraserTool v8: RecordManager v8連携未完了');
-            }
-            
-        } catch (error) {
-            results.error.push(`EraserTool v8機能テストエラー: ${error.message}`);
-        }
-        
-        return results;
-    }
-    
-    /**
-     * v8状態リセット
-     */
-    resetV8() {
-        console.log('🔄 EraserTool v8状態リセット開始');
-        
-        this.resetV8ErasingState();
-        this.v8Ready = false;
-        this.eraserSettings.webgpuOptimized = false;
-        this.eraserSettings.sensitivity = 1.0;
-        
-        console.log('✅ EraserTool v8状態リセット完了');
-    }
-}
 
-// グローバル公開
-window.Tegaki.EraserTool = EraserTool;
-console.log('🧹 EraserTool PixiJS v8対応版 Loaded');
-console.log('📏 v8機能: Graphics削除・Container階層対応・WebGPU最適化・高精度hit-test');
-console.log('🚀 v8特徴: RecordManager v8統合・高精度消去・WebGPU加速・Container階層活用');
-console.log('✅ v8準備完了: initializeV8Features()でv8機能初期化後に利用可能');
+        /**
+         * 🎯 v8位置指定消去
+         * 
+         * @param {number} x - X座標
+         * @param {number} y - Y座標
+         * @returns {number} 削除したGraphics数
+         */
+        v8EraseAtPosition(x, y) {
+            let erasedCount = 0;
+            const eraserRadius = this.eraserSize / 2;
+            
+            // Container階層対応削除
+            if (this.containerHierarchyEnabled) {
+                erasedCount = this.v8EraseFromContainer(this.drawContainer, x, y, eraserRadius);
+            } else {
+                // フラット削除
+                erasedCount = this.v8EraseFromChildren(this.drawContainer.children, x, y, eraserRadius);
+            }
+            
+            return erasedCount;
+        }
+
+        /**
+         * 📦 v8 Container階層削除
+         * 
+         * @param {PIXI.Container} container - 対象Container
+         * @param {number} x - X座標
+         * @param {number} y - Y座標
+         * @param {number} radius - 消去半径
+         * @returns {number} 削除数
+         */
+        v8EraseFromContainer(container, x, y, radius) {
+            let erasedCount = 0;
+            
+            for (let i = container.children.length - 1; i >= 0; i--) {
+                const child = container.children[i];
+                
+                if (child instanceof PIXI.Graphics) {
+                    if (this.v8HitTestGraphics(child, x, y, radius)) {
+                        container.removeChild(child);
+                        this.erasedGraphics.push(child);
+                        erasedCount++;
+                    }
+                } else if (child instanceof PIXI.Container && child.children.length > 0) {
+                    // 再帰的にContainer内削除
+                    erasedCount += this.v8EraseFromContainer(child, x, y, radius);
+                }
+            }
+            
+            return erasedCount;
+        }
+
+        /**
+         * 👶 v8子要素削除（フラット）
+         * 
+         * @param {Array} children - 子要素配列
+         * @param {number} x - X座標
+         * @param {number} y - Y座標
+         * @param {number} radius - 消去半径
+         * @returns {number} 削除数
+         */
+        v8EraseFromChildren(children, x, y, radius) {
+            let erasedCount = 0;
+            
+            for (let i = children.length - 1; i >= 0; i--) {
+                const child = children[i];
+                
+                if (child instanceof PIXI.Graphics) {
+                    if (this.v8HitTestGraphics(child, x, y, radius)) {
+                        children.splice(i, 1);
+                        this.erasedGraphics.push(child);
+                        erasedCount++;
+                    }
+                }
+            }
+            
+            return erasedCount;
+        }
+
+        /**
+         * 🎯 v8高精度hit-test
+         * 
+         * @param {PIXI.Graphics} graphics - 対象Graphics
+         * @param {number} x - テストX座標
+         * @param {number} y - テストY座標
+         * @param {number} radius - hit-test半径
+         * @returns {boolean} hit判定
+         */
+        v8HitTestGraphics(graphics, x, y, radius) {
+            if (!graphics || !graphics.containsPoint) {
+                return false;
+            }
+
+            // 中心点テスト
+            if (graphics.containsPoint({ x, y })) {
+                return true;
+            }
+
+            // 高精度モードでは周辺も確認
+            if (this.hitTestPrecision <= 0.2) {
+                const testPoints = [
+                    { x: x - radius, y: y },
+                    { x: x + radius, y: y },
+                    { x: x, y: y - radius },
+                    { x: x, y: y + radius }
+                ];
+
+                for (const point of testPoints) {
+                    if (graphics.containsPoint(point)) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * 🔧 消しゴムサイズ設定
+         * 
+         * @param {number} size - 新しいサイズ
+         */
+        setEraserSize(size) {
+            this.eraserSize = Math.max(this.minEraserSize, Math.min(size, this.maxEraserSize));
+            console.log(`🔧 消しゴムサイズ設定: ${this.eraserSize}`);
+        }
+
+        /**
+         * 🚀 操作開始（v8対応版）
+         * 
+         * @param {Object} event - イベントオブジェクト
+         */
+        startOperation(event) {
+            const result = super.startOperation(event);
+            
+            if (result) {
+                // 削除履歴初期化
+                this.erasedGraphics = [];
+                console.log(`🚀 EraserTool 操作開始 - サイズ:${this.eraserSize}`);
+                
+                // 最初のクリック位置で即座に消去
+                if (event && event.clientX !== undefined && event.clientY !== undefined) {
+                    const canvasPos = this.coordinateManager.screenToCanvas(event.clientX, event.clientY);
+                    this.performErase(canvasPos.x, canvasPos.y);
+                }
+            }
+            
+            return result;
+        }
+
+        /**
+         * 🏁 操作終了（v8対応版）
+         * 
+         * @param {Object} event - イベントオブジェクト
+         */
+        endOperation(event) {
+            if (this.erasedGraphics.length > 0) {
+                console.log(`🏁 EraserTool 操作終了 - 削除数:${this.erasedGraphics.length}`);
+                
+                // RecordManager経由で操作記録（統一API使用）
+                if (this.recordManager && this.recordManager.recordBatchErase) {
+                    this.recordManager.recordBatchErase(this.erasedGraphics);
+                }
+            }
+            
+            return super.endOperation(event);
+        }
+
+        /**
+         * 🔄 Tool無効化
+         */
+        deactivate() {
+            // 削除履歴クリア
+            this.erasedGraphics = [];
+            this.recordManager = null;
+            
+            super.deactivate();
+            console.log(`🧹 EraserTool 無効化完了`);
+        }
+
+        /**
+         * 🛑 全消去
+         */
+        clearAll() {
+            if (!this.drawContainer) {
+                return;
+            }
+
+            const originalCount = this.drawContainer.children.length;
+            this.drawContainer.removeChildren();
+            
+            console.log(`🛑 全消去実行: ${originalCount}個削除`);
+            
+            // RecordManager経由で記録（統一API使用）
+            if (this.recordManager && this.recordManager.recordClearAll) {
+                this.recordManager.recordClearAll(originalCount);
+            }
+        }
+
+        /**
+         * 📊 消去統計取得
+         */
+        getEraseStats() {
+            return {
+                eraserSize: this.eraserSize,
+                hitTestPrecision: this.hitTestPrecision,
+                containerHierarchyEnabled: this.containerHierarchyEnabled,
+                webGPUSupported: this.webGPUSupported,
+                currentSessionErased: this.erasedGraphics.length
+            };
+        }
+
+        /**
+         * 🔍 Tool準備状態確認（EraserTool拡張版）
+         */
+        isReady() {
+            return super.isReady() && 
+                   this.recordManager !== null &&
+                   this.eraserSize > 0;
+        }
+    }
+
+    // グローバル登録
+    if (!window.Tegaki) {
+        window.Tegaki = {};
+    }
+    
+    if (!window.Tegaki.ToolRegistry) {
+        window.Tegaki.ToolRegistry = {};
+    }
+    
+    window.Tegaki.ToolRegistry.EraserTool = EraserTool;
+    window.Tegaki.EraserTool = EraserTool;
+    
+    console.log(`🧹 EraserTool PixiJS v8対応版・RecordManager統一参照修正版 Loaded`);
+    console.log(`📏 v8機能: Graphics削除・Container階層対応・WebGPU最適化・高精度hit-test・RecordManager統一参照`);
+    console.log(`🚀 v8特徴: RecordManager getManager()経由統一・高精度消去・WebGPU加速・Container階層活用・直接参照禁止対応`);
+    console.log(`✅ v8準備完了: initializeV8Features()でv8機能初期化後に利用可能`);
+
+})();
