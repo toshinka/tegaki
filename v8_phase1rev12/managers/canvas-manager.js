@@ -1,17 +1,18 @@
 /**
- * 🚀 CanvasManager - PixiJS v8.12.0完全対応版（WebGPU・Container階層・リアルタイム描画・DPR制限対応）
- * 📋 RESPONSIBILITY: PixiJS v8 Application管理・WebGPU対応・Container階層レイヤー管理・v8機能フル活用・DPR制限
- * 🚫 PROHIBITION: 描画処理・座標変換・複雑な初期化・ツール制御・エラー隠蔽・フォールバック・DPR倍加処理
- * ✅ PERMISSION: v8 Application管理・WebGPU自動選択・Container階層管理・v8レンダラー制御・DPR制限適用
+ * 🚀 CanvasManager - PixiJS v8.12.0完全対応版（WebGPU・Container階層・リアルタイム描画・DPR制限対応・getDrawContainer追加）
+ * 📋 RESPONSIBILITY: PixiJS v8 Application管理・WebGPU対応・Container階層レイヤー管理・v8機能フル活用・DPR制限・ToolManager連携
+ * 🚫 PROHIBITION: 描画処理・座標変換・複雑な初期化・ツール制御・エラー隠蔽・フォールバック・DPR倍加処理・ToolManager逆参照
+ * ✅ PERMISSION: v8 Application管理・WebGPU自動選択・Container階層管理・v8レンダラー制御・DPR制限適用・描画Container提供
  * 
- * 📏 DESIGN_PRINCIPLE: v8 Application中心・WebGPU優先・Container階層によるレイヤー管理・リアルタイム対応・DPR制限
- * 🔄 INTEGRATION: AppCore→initializeV8Application→Tool・Manager群にv8 Application提供・WebGPU状況通知
- * 🚀 V8_MIGRATION: 非同期初期化・WebGPU自動選択・Container階層・@pixi/layers削除対応・DPR制限機能
+ * 📏 DESIGN_PRINCIPLE: v8 Application中心・WebGPU優先・Container階層によるレイヤー管理・リアルタイム対応・DPR制限・単方向依存
+ * 🔄 INTEGRATION: AppCore→initializeV8Application→getDrawContainer提供→ToolManager連携・EventBus通知のみ
+ * 🚀 V8_MIGRATION: 非同期初期化・WebGPU自動選択・Container階層・@pixi/layers削除対応・DPR制限機能・ToolManager単方向連携
  * 
  * 📌 提供メソッド一覧（v8対応・実装確認済み）:
  * ✅ async initializeV8Application(pixiApp) - v8 Application設定・レイヤー自動作成（修正版）
  * ✅ createV8DrawingContainer() - v8描画Container作成
- * ✅ getV8DrawingContainer() - v8描画Container取得  
+ * ✅ getV8DrawingContainer() - v8描画Container取得（レガシー）
+ * ✅ getDrawContainer() - v8描画Container取得（AppCore連携用・新規追加）🚨修正
  * ✅ resizeV8Canvas(width, height) - DPR制限対応キャンバスリサイズ（修正版）
  * ✅ addGraphicsToLayerV8(graphics, layerId) - v8 Graphics配置・即座反映
  * ✅ isV8Ready() - v8対応状況確認
@@ -28,23 +29,24 @@
  * 
  * 📐 v8初期化フロー（修正版）:
  * 開始 → v8 Application受信・確認 → WebGPU対応確認 → DPR制限設定 → 
- * Container階層作成(layer0,layer1,main) → v8描画Container作成・取得メソッド準備 → v8設定適用 → 
+ * Container階層作成(layer0,layer1,main) → v8描画Container作成・getDrawContainer準備🚨修正 → v8設定適用 → 
  * リアルタイム描画有効化 → 初期化完了通知 → 終了
- * 🚨修正済み依存関係: PixiJS v8.12.0(基盤)・WebGPU API(高速レンダリング)・Container(階層管理)・DPR制限(巨大キャンバス防止)
+ * 🚨修正済み依存関係: PixiJS v8.12.0(基盤)→CanvasManager完全初期化→getDrawContainer利用可能→AppCore→ToolManager連携
  * 
  * 🚨 CRITICAL_V8_DEPENDENCIES: v8必須依存関係（動作に必須）
  * - this.pixiApp !== null - v8 Application設定完了必須
  * - this.rendererType !== null - WebGPU/WebGL確定必須
  * - this.layers.get('main') !== null - main layer存在必須
  * - this.webgpuSupported !== null - WebGPU対応状況確定必須
- * - this.v8DrawingContainer !== null - v8描画Container作成必須
+ * - this.v8DrawingContainer !== null - v8描画Container作成必須🚨修正
+ * - getDrawContainer() method available - AppCore連携必須🚨新規追加
  * 
  * 🔧 V8_INITIALIZATION_ORDER: v8初期化順序（修正版・厳守必要）
  * 1. v8 Application受信・null確認
  * 2. WebGPU対応状況確認・記録
  * 3. DPR制限設定（max 2.0）・巨大キャンバス防止
  * 4. Container階層作成・zIndex設定
- * 5. v8描画Container作成・取得メソッド準備
+ * 5. v8描画Container作成・getDrawContainer準備🚨修正
  * 6. リアルタイム描画機能有効化
  * 7. 初期化完了フラグ設定・通知
  * 
@@ -55,6 +57,9 @@
  * - Container階層無視・従来レイヤー方式継続
  * - 🚨修正済み DPR未制限・巨大キャンバス生成許可
  * - v8機能を活用しない旧来処理継続
+ * - ToolManagerへの逆参照・双方向依存🚨新規追加
+ * 
+ * 🔑 Manager登録キー: "canvas"（AppCore統一登録用）
  */
 
 // 多重定義防止
@@ -64,7 +69,7 @@ if (!window.Tegaki) {
 
 /**
  * CanvasManager - PixiJS v8.12.0完全対応版
- * WebGPU自動選択・Container階層・リアルタイム描画対応・DPR制限機能
+ * WebGPU自動選択・Container階層・リアルタイム描画対応・DPR制限機能・AppCore連携強化
  */
 class CanvasManager {
     constructor() {
@@ -84,7 +89,8 @@ class CanvasManager {
             containerHierarchy: false,
             realtimeDrawing: false,
             asyncInitialization: false,
-            dprLimited: false // 🚨 修正: DPR制限機能追加
+            dprLimited: false, // 🚨 修正: DPR制限機能追加
+            drawContainerReady: false // 🚨 新規追加: getDrawContainer準備状況
         };
         
         // 🚨 修正: DPR制限設定
@@ -121,7 +127,7 @@ class CanvasManager {
         this.webgpuSupported = this.rendererType === 'webgpu';
         if (this.webgpuSupported) {
             this.v8Features.webgpuEnabled = true;
-            console.log('📊 WebGL renderer confirmed');
+            console.log('📊 WebGPU renderer confirmed');
         } else {
             console.log('📊 WebGL renderer confirmed');
         }
@@ -163,7 +169,7 @@ class CanvasManager {
     }
     
     /**
-     * 🚨 修正版 - v8描画Container作成（ToolManager連携強化）
+     * 🚨 修正版 - v8描画Container作成（ToolManager連携強化・getDrawContainer準備）
      */
     createV8DrawingContainer() {
         console.log('🎨 v8 Container階層レイヤー作成開始');
@@ -196,9 +202,10 @@ class CanvasManager {
         this.layers.set('main', drawingLayer);
         console.log('✅ v8メインレイヤー (main) エイリアス設定完了 → layer1');
         
-        // 🚨 修正: v8描画Container設定（ToolManager連携用）
+        // 🚨 修正: v8描画Container設定（ToolManager連携用・getDrawContainer準備）
         this.v8DrawingContainer = drawingLayer;
-        console.log('✅ v8描画Container設定完了（ToolManager連携用）');
+        this.v8Features.drawContainerReady = true;
+        console.log('✅ v8描画Container設定完了（ToolManager連携用・getDrawContainer準備完了）');
         
         // v8レイヤー検証
         this.validateV8Layers();
@@ -209,15 +216,27 @@ class CanvasManager {
     }
     
     /**
-     * 🚨 修正版 - v8描画Container取得（ToolManager連携用）
+     * 🚨 新規追加 - v8描画Container取得（AppCore連携用・標準メソッド名）
      */
-    getV8DrawingContainer() {
+    getDrawContainer() {
         if (!this.v8DrawingContainer) {
             throw new Error('v8 Drawing Container not available - call initializeV8Application() first');
         }
         
-        console.log('📦 v8描画Container取得完了');
+        if (!this.v8Features.drawContainerReady) {
+            throw new Error('v8 Drawing Container not ready - initialization in progress');
+        }
+        
+        console.log('📦 v8描画Container取得完了（AppCore連携用）');
         return this.v8DrawingContainer;
+    }
+    
+    /**
+     * 🚨 修正版 - v8描画Container取得（ToolManager連携用・レガシー名維持）
+     */
+    getV8DrawingContainer() {
+        // 新しいgetDrawContainer()に委譲
+        return this.getDrawContainer();
     }
     
     /**
@@ -295,7 +314,7 @@ class CanvasManager {
     }
     
     /**
-     * 🚀 v8レイヤー検証
+     * 🚀 v8レイヤー検証（getDrawContainer準備確認追加）
      */
     validateV8Layers() {
         console.log('🔍 v8レイヤー検証開始');
@@ -321,6 +340,22 @@ class CanvasManager {
         // v8描画Container確認
         if (!this.v8DrawingContainer) {
             throw new Error('v8 Drawing Container not set');
+        }
+        
+        // 🚨 新規追加: getDrawContainer()メソッド利用可能確認
+        if (typeof this.getDrawContainer !== 'function') {
+            throw new Error('getDrawContainer() method not available');
+        }
+        
+        // 🚨 新規追加: getDrawContainer()実行確認
+        try {
+            const testContainer = this.getDrawContainer();
+            if (!testContainer) {
+                throw new Error('getDrawContainer() returns null');
+            }
+            console.log('✅ getDrawContainer()メソッド動作確認完了');
+        } catch (error) {
+            throw new Error(`getDrawContainer() validation failed: ${error.message}`);
         }
         
         console.log('✅ v8レイヤー検証完了');
@@ -423,7 +458,8 @@ class CanvasManager {
                     device: window.devicePixelRatio || 1,
                     effective: this.effectiveDPR,
                     limited: this.maxDPR
-                }
+                },
+                drawContainerReady: this.v8Features.drawContainerReady
             });
         }
         
@@ -513,7 +549,7 @@ class CanvasManager {
     }
     
     /**
-     * 🚀 v8対応状況確認（修正版）
+     * 🚀 v8対応状況確認（修正版・getDrawContainer確認追加）
      */
     isV8Ready() {
         return this.v8Ready && 
@@ -523,7 +559,9 @@ class CanvasManager {
                this.layers.has('main') &&
                this.layers.has('layer0') &&
                this.layers.has('layer1') &&
-               this.v8Features.dprLimited;
+               this.v8Features.dprLimited &&
+               this.v8Features.drawContainerReady &&
+               typeof this.getDrawContainer === 'function';
     }
     
     /**
@@ -538,7 +576,7 @@ class CanvasManager {
     }
     
     /**
-     * 🚨 修正版 - v8専用デバッグ情報（DPR情報追加）
+     * 🚨 修正版 - v8専用デバッグ情報（getDrawContainer情報追加）
      */
     getV8DebugInfo() {
         return {
@@ -557,6 +595,12 @@ class CanvasManager {
                 maxLimit: this.maxDPR,
                 effective: this.effectiveDPR,
                 limited: this.v8Features.dprLimited
+            },
+            drawContainerInfo: {
+                v8DrawingContainer: !!this.v8DrawingContainer,
+                drawContainerReady: this.v8Features.drawContainerReady,
+                getDrawContainerMethod: typeof this.getDrawContainer === 'function',
+                getV8DrawingContainerMethod: typeof this.getV8DrawingContainer === 'function'
             },
             layerInfo: {
                 totalLayers: this.layers.size,

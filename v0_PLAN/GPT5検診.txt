@@ -92,3 +92,345 @@ ToolManager には { canvasManager } が必須
 
 EventBus を中継点に固定
 → 双方向参照を回避することで「AIが片方だけ直して矛盾する」状況を防げる。
+
+
+📋 改修計画（v8_phase1rev12 用）
+
+以下、各ファイルの責務・提供メソッド・依存関係を整理した上で、改修すべき点を明示します。
+
+1. app-core.js
+
+責務: Manager群のオーケストレーション（生成・初期化順序統一）
+
+提供メソッド:
+
+initializeV8Managers()
+
+getManager(key)
+
+呼び出し先:
+
+CanvasManager（先に生成必須）
+
+ToolManager（CanvasManagerを依存として渡す）
+
+ErrorManager, ConfigManager, EventBus, CoordinateManager, NavigationManager, RecordManager, ShortcutManager
+
+改修ポイント:
+
+初期化順を明文化: CanvasManager → ToolManager → その他
+
+getManager("canvas") / getManager("tool") のキーを全体で統一
+
+ToolManager への引数に必ず canvasManager を渡す
+
+2. bootstrap.js
+
+責務: アプリの起動前準備（依存読み込み）
+
+提供メソッド:
+
+bootstrapApplication()
+
+呼び出し先:
+
+main.js（エントリーポイント呼び出し）
+
+改修ポイント:
+
+AppCore の初期化呼び出しが 正しい順序で走るか 確認
+
+3. main.js
+
+責務: エントリーポイント
+
+提供メソッド:
+
+main()
+
+呼び出し先:
+
+TegakiApplication.initialize()
+
+改修ポイント:
+
+TegakiApplication の初期化が await で保証されているか確認
+
+4. tegaki-application.js
+
+責務: アプリ全体の初期化とライフサイクル管理
+
+提供メソッド:
+
+initialize()
+
+initializeV8Managers()（AppCore経由呼び出し）
+
+呼び出し先:
+
+AppCore.initializeV8Managers()
+
+改修ポイント:
+
+ここで AppCoreの初期化順序を壊さない
+
+Manager呼び出しは必ず AppCore.getManager(key) を介する
+
+5. 各 utils/*
+
+責務: 補助機能
+
+提供メソッド例:
+
+ErrorManager.logError()
+
+ConfigManager.loadConfig()
+
+EventBus.subscribe/publish()
+
+CoordinateManager.toCanvasCoordinates()
+
+NavigationManager.navigate()
+
+RecordManager.start/end()
+
+ShortcutManager.register()
+
+呼び出し先:
+
+他ManagerやToolから利用される
+
+改修ポイント:
+
+Managerキーの統一 ("error", "config", "event", "coordinate", "navigation", "record", "shortcut")
+
+EventBus を必須経由点にする（双方向参照排除）
+
+6. canvas-manager.js
+
+責務: PixiJSベースのCanvas制御
+
+提供メソッド:
+
+createCanvas()
+
+getCanvas()
+
+resizeCanvas()
+
+呼び出し先:
+
+AppCore.initializeV8Managers()（最初に生成）
+
+改修ポイント:
+
+ToolManager への逆参照を削除
+
+必要なら EventBus 経由で通知
+
+7. tool-manager.js
+
+責務: ツール群管理（ペン・消しゴムなど）
+
+提供メソッド:
+
+registerTool()
+
+selectTool(name)
+
+useTool(action)
+
+呼び出し先:
+
+CanvasManager（必須依存 → コンストラクタ引数で渡す）
+
+改修ポイント:
+
+constructor({ canvasManager, eventBus }) に変更
+
+if (!canvasManager) throw new Error("有効なCanvasManagerが必要") を維持
+
+ただし双方向依存は避ける → CanvasManagerからToolManagerを呼ばない
+
+8. tools/* (abstract-tool.js, pen-tool.js, eraser-tool.js)
+
+責務: 各描画ツール
+
+提供メソッド:
+
+onPointerDown()
+
+onPointerMove()
+
+onPointerUp()
+
+呼び出し先:
+
+ToolManager
+
+CanvasManager（描画時に利用）
+
+改修ポイント:
+
+CanvasManager への参照は ToolManager 経由に制限
+
+直接 new CanvasManager() しない
+
+9. debug/phase15-integration-test.js
+
+責務: 統合テスト
+
+提供メソッド: テスト実行関数
+
+呼び出し先:
+
+TegakiApplication.initialize()
+
+改修ポイント:
+
+初期化順序違反があれば早期に検出
+
+✅ 改修計画まとめ
+
+初期化順序を AppCore に集約
+
+CanvasManager → ToolManager → その他Manager の順で必ず生成
+
+ToolManager のコンストラクタ改修
+
+constructor({ canvasManager, eventBus }) {
+  if (!canvasManager) throw new Error("ToolManager: 有効なCanvasManagerが必要です");
+  this.canvasManager = canvasManager;
+  this.eventBus = eventBus;
+}
+
+
+CanvasManager 側の逆参照削除
+
+ToolManager を参照しない
+
+連携は EventBus 経由
+
+Managerキーを全体で統一
+
+"canvas", "tool", "error", "config", "event", "coordinate", "navigation", "record", "shortcut"
+
+呼び出し関係マトリクス更新
+
+呼び出し元 → 呼び出し先をヘッダーに明記
+
+双方向依存は削除
+
+これで ToolManager: 有効なCanvasManagerが必要です エラーは確実に解消できます。
+（今は ToolManager に undefined が渡ってるのが原因）
+
+👉 ご確認ですが、canvas-manager.js に ToolManagerへの参照って残ってますか？
+もし残ってるならまずそこを削除しないと、また「往復ループ」に入る可能性が高いです。
+
+🔎 改修計画（v8全体整合性）
+1. 初期化フロー全体の統一
+
+bootstrap.js
+
+PixiJS v8 Application (new PIXI.Application() → await app.init(options)) を生成し、
+CanvasManager.initializeV8Application(app) に渡す形に修正。
+
+v7風の PIXI.Application(options) は全面禁止。
+
+Manager登録キー（window.Tegaki.CanvasManagerInstance など）を統一。
+
+app-core.js
+
+各 Manager の生成順序を固定化（CanvasManager → ToolManager → 他Manager群）。
+
+initializeManagers() 内で CanvasManager の v8初期化完了を待ってから ToolManager に渡す 流れに修正。
+
+main.js
+
+v7依存の Tegaki.init() や直接 PIXI.Application を触る処理を禁止。
+
+bootstrap.js に集約された Pixi 初期化結果を利用する。
+
+2. Manager群の依存関係整理
+
+ToolManager
+
+CanvasManager.getV8DrawingContainer() を必須依存にする。
+
+getMainLayer() や v7風 getLayer('main') には移行時注意。
+
+イベント通知は EventBus 経由のみ許可。
+
+ErrorManager / ConfigManager / RecordManager / ShortcutManager
+
+CanvasManager や ToolManager に直接アクセス禁止。
+
+EventBus → Manager 呼び出しに一本化。
+
+NavigationManager / CoordinateManager
+
+Canvas要素取得は CanvasManager.getCanvasElement() を利用。
+
+旧来の pixiApp.view や app.renderer.view は廃止。
+
+3. ツール群の対応
+
+abstract-tool.js
+
+描画先は必ず CanvasManager.getV8DrawingContainer() 経由。
+
+PIXI.Graphics の生成は v8記法に統一（rect+fill）。
+
+pen-tool.js / eraser-tool.js
+
+ToolManager から Container を受け取り、直接 CanvasManager を叩かない。
+
+v7の beginFill → v8の graphics.fill({color}) に修正済みか確認。
+
+4. テスト・デバッグ関連
+
+phase15-integration-test.js
+
+CanvasManager.isV8Ready() を利用して「初期化完了」を確認。
+
+v7の app.renderer.plugins.interaction などは削除。
+
+デバッグ出力は CanvasManager.getV8DebugInfo() に統一。
+
+5. 共通ルール（全ファイルにヘッダー追記必須）
+
+提供メソッド一覧
+
+他ファイル呼び出しメソッド一覧
+
+初期化順序フロー（開始→処理→終了）
+
+依存禁止事項（双方向禁止・フォールバック禁止）
+
+Manager登録キー（例: window.Tegaki.CanvasManagerInstance）
+
+✅ 改修着手優先度
+
+bootstrap.js
+
+Pixi v8 Application初期化を正規フローに統一。
+
+ここが直らないと他Managerが全部巻き込まれてエラー化します。
+
+app-core.js
+
+Manager生成順序と依存関係整理。
+
+ToolManager / abstract-tool.js
+
+getV8DrawingContainer() 経由でしか描画しないように。
+
+main.js / integration-test.js
+
+旧v7依存コード削除・統一フローで動作確認。
+
+📌つまり今回の「CanvasManager単独改修」だけではダメで、
+bootstrap.js → app-core.js → ToolManager → tool群 → テスト の順に他ファイルも揃えていく必要があります。
+
+👉 ご確認ですが、次のステップとしては
+「bootstrap.js と app-core.js の改修ヘッダー＋骨格」をまず作って、全体フローを動かすのが一番効率的」だと思います。
