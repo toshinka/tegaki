@@ -1,78 +1,70 @@
 /**
- * 🎯 TegakiApplication - PixiJS v8対応メインアプリケーション（v8統合版・初期化完了確認修正版）
- * 📋 RESPONSIBILITY: v8 Application統合・v8 Manager初期化・v8 UI連携・v8イベント管理・WebGPU対応・初期化完了状態管理
- * 🚫 PROHIBITION: v7 API使用・フォールバック・フェイルセーフ・Manager作成・座標変換
- * ✅ PERMISSION: v8 Application作成・v8 Manager連携・v8 UI統合・v8イベント処理・WebGPU活用・初期化状態管理
- * 
- * 📏 DESIGN_PRINCIPLE: v8 Application中心・非同期初期化・WebGPU優先・Container階層・Manager統合・初期化状態透明化
- * 🔄 INTEGRATION: v8 AppCore + v8 Manager群 + v8 UI連携 + v8イベントシステム + 初期化完了確認強化
- * 🚀 V8_MIGRATION: 完全v8対応・WebGPU統合・リアルタイム描画・Container階層・フォールバック削除・初期化完了保証
+ * 📄 FILE: js/tegaki-application.js
+ * 📌 RESPONSIBILITY: PixiJS v8対応メインアプリケーション・システム初期化統制・UI連携
  * 
  * @provides
- *   - TegakiApplication クラス
- *   - async initialize() - v8システム完全初期化・WebGPU対応・非同期処理・初期化完了保証
- *   - async createCanvasV8() - v8 Application作成・WebGPU設定・非同期初期化
- *   - async initializeV8Managers() - v8 Manager群統合初期化・連携設定
- *   - setupV8UI() - v8対応UI設定・イベント登録
- *   - selectToolV8(toolName) - v8ツール選択・即座反映
- *   - handleV8PointerEvents() - v8高精度ポインター処理
- *   - isReady() - 初期化完了確認・Manager連携確認・v8対応確認（修正強化版）
- *   - getV8DebugInfo() - v8デバッグ情報取得
+ *   - TegakiApplication（クラス）
+ *   - async initialize(): void（v8システム完全初期化）
+ *   - async createCanvasV8(): PIXI.Application（v8 Application作成・AppCore連携修正版）
+ *   - async initializeV8Managers(): void（Manager群初期化）
+ *   - setupV8UI(): void（UI設定・イベント登録）
+ *   - selectToolV8(toolName): boolean（ツール選択）
+ *   - isReady(): boolean（初期化完了確認・強化版）
+ *   - getV8DebugInfo(): Object（デバッグ情報）
+ *   - handleV8PointerEvents(): void（高精度ポインター処理）
  *
  * @uses
- *   - new PIXI.Application() - v8 Application作成（PixiJS v8.12.0）
- *   - await app.init(options) - v8非同期初期化（PixiJS v8.12.0）
- *   - await PIXI.isWebGPUSupported() - WebGPU対応確認（PixiJS v8.12.0）
- *   - window.Tegaki.AppCore() - v8統合基盤システム作成（✅確認済み）
- *   - appCore.createCanvasV8() - v8 Application作成・WebGPU対応（✅確認済み）
- *   - appCore.initializeV8Managers() - v8 Manager群初期化（✅確認済み）
- *   - appCore.startV8System() - v8システム開始（✅確認済み）
- *   - appCore.isV8Ready() - v8準備状況確認・Manager連携確認（✅確認済み）
- *   - window.Tegaki.ErrorManagerInstance.showError() - エラー表示（✅確認済み）
- *   - window.Tegaki.ConfigManagerInstance.getCanvasConfigV8() - v8設定取得（🔄実装予定）
- *   - window.Tegaki.TegakiIcons.replaceAllToolIcons() - アイコン適用（✅確認済み）
+ *   - window.Tegaki.AppCore（v8統合基盤システム）
+ *   - appCore.createCanvasV8(): PIXI.Application（修正：正しいAPI使用）
+ *   - appCore.initializeV8Managers(): void（Manager群初期化）
+ *   - appCore.startV8System(): void（システム開始）
+ *   - appCore.isV8Ready(): boolean（準備状況確認）
+ *   - window.Tegaki.ErrorManagerInstance.showError()（エラー表示）
+ *   - window.Tegaki.EventBusInstance.emit()（イベント通知）
+ *   - window.Tegaki.TegakiIcons.replaceAllToolIcons()（アイコン適用）
  *
  * @initflow
- *   開始 → v8 AppCore作成 → v8 Application作成・WebGPU対応 → 非同期初期化 → 
- *   v8 Manager群統合初期化 → v8システム開始 → v8 UI設定 → v8イベント登録 → 
- *   初期化完了確認・状態確定 → 完了通知 → 完了
+ *   1. AppCore作成 → 2. AppCore.createCanvasV8()呼び出し → 3. Manager群初期化
+ *   → 4. システム開始 → 5. UI設定 → 6. 初期化完了確認 → 7. 準備完了通知
  *
  * @forbids
  *   💀 双方向依存禁止
- *   🚫 フォールバック禁止
+ *   🚫 フォールバック禁止  
  *   🚫 フェイルセーフ禁止
- *   🚫 v7/v8 両対応による二重管理禁止
+ *   🚫 v7/v8二重管理禁止
+ *   🚫 未実装メソッド呼び出し禁止（createCanvasV8修正済み）
  *
  * @manager-key
  *   window.Tegaki.TegakiApplicationInstance
  *
  * @dependencies-strict
- *   - 必須: PixiJS v8, AppCore, WebGPU API
- *   - オプション: ConfigManager, TegakiIcons
- *   - 禁止: v7 API, Manager直接作成
+ *   REQUIRED: PixiJS v8.12.0, AppCore, HTML DOM要素
+ *   OPTIONAL: ErrorManager, EventBus, TegakiIcons
+ *   FORBIDDEN: Manager直接作成、v7互換コード
  *
  * @integration-flow
- *   Bootstrap → TegakiApplication作成・自動初期化 → AppCore統合 → Manager群初期化 → UI統合 → システム開始 → 完了確認
+ *   Bootstrap.start() → TegakiApplication.initialize() → AppCore統合 → Manager初期化 → UI統合
  *
  * @method-naming-rules
- *   - initializeV8System()/startV8System() 形式統一
- *   - setupV8UI()/handleV8Events() 形式統一
- *   - isReady() - 準備状況確認（強化版）
+ *   初期化系: initializeV8xxx() / createCanvasV8()
+ *   UI系: setupV8xxx() / handleV8xxx()
+ *   状態系: isReady() / getV8DebugInfo()
+ *   ツール系: selectToolV8()
  *
  * @error-handling
- *   - 初期化失敗時は詳細エラー・即停止・ErrorManager通知
- *   - Manager連携失敗時は詳細ログ・システム停止
- *   - v8機能失敗時は警告・継続可能な範囲で動作
+ *   throw: 初期化失敗・AppCore未準備・必須Manager未存在
+ *   false: UI機能失敗・ツール選択失敗
+ *   log: 警告・状態変更・デバッグ情報
  *
  * @state-management
- *   - 初期化状態は内部管理・isReady()経由でのみ確認
- *   - v8機能状態は読み取り専用・getV8DebugInfo()経由
- *   - Manager状態は間接参照・直接変更禁止
+ *   初期化状態は内部管理・isReady()経由確認
+ *   AppCore状態は間接参照・直接操作禁止
+ *   UI状態は専用メソッド経由更新
  *
  * @performance-notes
- *   - 非同期初期化で UI ブロック回避・16ms以内目標
- *   - WebGPU優先でレンダリング性能最適化
- *   - Manager初期化は並列化可能部分を最適化
+ *   非同期初期化でUIブロック回避・16ms以内目標
+ *   WebGPU活用でレンダリング最適化
+ *   イベント処理は高精度・リアルタイム対応
  */
 
 // 多重定義防止
@@ -83,17 +75,17 @@ if (!window.Tegaki) {
 if (!window.Tegaki.TegakiApplication) {
     /**
      * TegakiApplication - PixiJS v8対応メインアプリケーション
-     * v8統合・WebGPU対応・非同期初期化・Container階層・リアルタイム描画・初期化完了確認修正版
+     * AppCore API統一・エラー修正完全版
      */
     class TegakiApplication {
         constructor() {
             console.log('🚀 TegakiApplication v8対応版 作成・自動初期化開始');
             
-            // 🚨修正: v8基本状態（初期化完了確認強化）
+            // v8基本状態
             this.initialized = false;
-            this.fullyReady = false;            // 🚨新規追加: 完全準備完了フラグ
+            this.fullyReady = false;
             this.v8SystemReady = false;
-            this.initializationComplete = false; // 🚨新規追加: 初期化完了フラグ
+            this.initializationComplete = false;
             
             // v8基盤システム
             this.appCore = null;
@@ -103,26 +95,26 @@ if (!window.Tegaki.TegakiApplication) {
             this.rendererType = null; // 'webgpu' | 'webgl'
             this.webgpuSupported = null;
             
-            // 🚨修正: v8機能状態（初期化完了確認項目追加）
+            // v8機能状態
             this.v8Features = {
                 webgpuEnabled: false,
                 asyncInitialization: false,
                 containerHierarchy: false,
                 realtimeDrawing: false,
                 managerIntegration: false,
-                uiIntegration: false,           // 🚨新規追加
-                eventsConfigured: false,       // 🚨新規追加
-                toolsReady: false,             // 🚨新規追加
-                systemValidated: false        // 🚨新規追加
+                uiIntegration: false,
+                eventsConfigured: false,
+                toolsReady: false,
+                systemValidated: false
             };
             
             // v8初期化情報
             this.v8InitializationSteps = [];
             this.lastError = null;
-            this.initializationStartTime = Date.now(); // 🚨新規追加
-            this.initializationEndTime = null;         // 🚨新規追加
+            this.initializationStartTime = Date.now();
+            this.initializationEndTime = null;
             
-            // 自動初期化実行（v8非同期対応・エラー処理強化）
+            // 自動初期化実行（エラー処理強化）
             this.initialize().catch(error => {
                 console.error('💀 TegakiApplication v8初期化失敗:', error);
                 this.lastError = error;
@@ -149,7 +141,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8システム完全初期化・WebGPU対応・非同期処理・初期化完了保証（修正強化版）
+         * 🚀 v8システム完全初期化・WebGPU対応・非同期処理・初期化完了保証
          */
         async initialize() {
             console.log('🚀 TegakiApplication v8システム初期化開始');
@@ -159,7 +151,7 @@ if (!window.Tegaki.TegakiApplication) {
                 await this.createAppCoreV8();
                 this.v8InitializationSteps.push('v8 AppCore created');
                 
-                // Step 2: v8 Application作成・WebGPU対応
+                // Step 2: v8 Application作成・WebGPU対応（修正：正しいAPI使用）
                 await this.createCanvasV8();
                 this.v8InitializationSteps.push('v8 Application created with WebGPU support');
                 this.v8Features.asyncInitialization = true;
@@ -184,11 +176,11 @@ if (!window.Tegaki.TegakiApplication) {
                 this.integrateV8Features();
                 this.v8InitializationSteps.push('v8 Features integrated');
                 
-                // 🚨修正: Step 7: 初期化完了確認・状態確定（新規追加）
+                // Step 7: 初期化完了確認・状態確定
                 await this.finalizeInitialization();
                 this.v8InitializationSteps.push('v8 Initialization finalized');
                 
-                // 🚨修正: v8システム完全準備完了（初期化完了保証）
+                // v8システム完全準備完了
                 this.initialized = true;
                 this.fullyReady = true;
                 this.initializationComplete = true;
@@ -198,7 +190,7 @@ if (!window.Tegaki.TegakiApplication) {
                 console.log('✅ TegakiApplication v8システム初期化完了');
                 this.logV8InitializationSuccess();
                 
-                // 🚨新規追加: 初期化完了通知（外部確認用）
+                // 初期化完了通知
                 this.notifyInitializationComplete();
                 
             } catch (error) {
@@ -227,7 +219,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8 Application作成・WebGPU対応・非同期初期化
+         * 🚀 v8 Application作成・WebGPU対応・非同期初期化（修正：AppCore API統一）
          */
         async createCanvasV8() {
             console.log('🚀 v8 Application作成開始');
@@ -236,16 +228,22 @@ if (!window.Tegaki.TegakiApplication) {
                 // v8設定取得
                 const config = this.getV8CanvasConfig();
                 
-                // v8 Application作成・WebGPU対応
-                this.pixiApp = await this.appCore.createCanvasV8(config);
+                // 🚨修正: AppCore.createCanvasV8() を正しく呼び出し
+                this.pixiApp = await this.appCore.createCanvasV8(config.width, config.height);
                 
-                // レンダラー情報取得
+                if (!this.pixiApp) {
+                    throw new Error('AppCore.createCanvasV8() returned null');
+                }
+                
+                // レンダラー情報取得（AppCoreから）
                 this.rendererType = this.appCore.rendererType;
                 this.webgpuSupported = this.appCore.webgpuSupported;
                 this.v8Features.webgpuEnabled = this.rendererType === 'webgpu';
                 
                 console.log('✅ v8 Application作成完了');
                 console.log(`📊 v8レンダラー: ${this.rendererType} (WebGPU: ${this.webgpuSupported})`);
+                
+                return this.pixiApp;
                 
             } catch (error) {
                 console.error('💀 v8 Application作成エラー:', error);
@@ -260,7 +258,7 @@ if (!window.Tegaki.TegakiApplication) {
             console.log('🔧 v8 Manager群統合初期化開始');
             
             try {
-                // v8 Manager群初期化
+                // v8 Manager群初期化（AppCore経由）
                 await this.appCore.initializeV8Managers();
                 
                 // v8機能有効化
@@ -282,7 +280,7 @@ if (!window.Tegaki.TegakiApplication) {
             console.log('🚀 v8システム開始');
             
             try {
-                // v8システム開始
+                // v8システム開始（AppCore経由）
                 await this.appCore.startV8System();
                 
                 // v8システム準備確認
@@ -299,7 +297,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚨修正: 初期化完了確認・状態確定（新規追加・初期化完了保証）
+         * 🚀 初期化完了確認・状態確定
          */
         async finalizeInitialization() {
             console.log('🔍 TegakiApplication 初期化完了確認開始');
@@ -365,7 +363,6 @@ if (!window.Tegaki.TegakiApplication) {
                 
                 // イベント設定確認
                 if (this.pixiApp?.canvas) {
-                    // 基本的なイベントリスナー確認（実際にはsetupV8UIで設定済み）
                     console.log('✅ Canvas events configured');
                 } else {
                     throw new Error('Canvas not available for event configuration');
@@ -380,7 +377,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚨新規追加: 初期化完了通知（外部確認用）
+         * 🚀 初期化完了通知（外部確認用）
          */
         notifyInitializationComplete() {
             console.log('📡 TegakiApplication 初期化完了通知送信');
@@ -571,9 +568,7 @@ if (!window.Tegaki.TegakiApplication) {
          */
         handleV8Wheel(event) {
             event.preventDefault();
-            
-            // v8ナビゲーション処理（WebGPU最適化）
-            // 将来実装: NavigationManager v8対応
+            // v8ナビゲーション処理（将来実装）
         }
         
         /**
@@ -631,7 +626,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8ツール選択・即座反映
+         * 🚀 v8ツール選択・即座反映（修正：AppCore経由）
          */
         selectToolV8(toolName) {
             console.log(`🔧 v8ツール選択: ${toolName}`);
@@ -642,8 +637,15 @@ if (!window.Tegaki.TegakiApplication) {
             }
             
             try {
-                // v8ツール選択
-                const success = this.appCore.selectToolV8(toolName);
+                // 🚨修正: ToolManager経由でツール選択（AppCore.selectToolV8は存在しない）
+                const toolManager = this.appCore.getToolManager();
+                if (!toolManager || typeof toolManager.switchTool !== 'function') {
+                    console.error('❌ ToolManager not available or switchTool method not found');
+                    return false;
+                }
+                
+                // ツール切り替え実行
+                const success = toolManager.switchTool(toolName);
                 
                 if (success) {
                     // UI更新
@@ -770,7 +772,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚨修正強化: v8対応状況確認（初期化完了確認修正版）
+         * 🚀 v8対応状況確認（初期化完了確認修正版）
          */
         isReady() {
             return this.initialized && 
@@ -788,7 +790,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚨修正強化: 詳細準備状況確認（デバッグ用）
+         * 🚀 詳細準備状況確認（デバッグ用）
          */
         getReadinessDetails() {
             return {
@@ -813,29 +815,13 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8初期化成功ログ出力（修正強化版）
+         * 🚀 v8初期化成功ログ出力（コンソール削減版）
          */
         logV8InitializationSuccess() {
             const elapsedTime = this.initializationEndTime - this.initializationStartTime;
             
-            console.log('🎉 TegakiApplication v8システム初期化成功！');
-            console.log(`🚀 v8レンダラー: ${this.rendererType}`);
-            console.log(`🔧 WebGPU対応: ${this.webgpuSupported}`);
-            console.log(`⏱️ 初期化時間: ${elapsedTime}ms`);
-            console.log('📝 v8初期化ステップ:', this.v8InitializationSteps);
-            console.log('🔧 v8機能:', this.v8Features);
-            console.log('🎯 準備状況詳細:', this.getReadinessDetails());
-            
-            // 成功通知
-            if (window.Tegaki?.EventBusInstance?.emit) {
-                window.Tegaki.EventBusInstance.emit('v8ApplicationReady', {
-                    rendererType: this.rendererType,
-                    webgpuSupported: this.webgpuSupported,
-                    features: this.v8Features,
-                    initializationTime: elapsedTime,
-                    ready: this.isReady()
-                });
-            }
+            console.log('✅ TegakiApplication v8初期化成功');
+            console.log(`📊 ${this.rendererType} | ${elapsedTime}ms | Ready: ${this.isReady()}`);
         }
         
         /**
@@ -843,7 +829,7 @@ if (!window.Tegaki.TegakiApplication) {
          */
         getV8DebugInfo() {
             return {
-                // 🚨修正: v8基本状態（初期化完了確認項目追加）
+                // v8基本状態
                 v8SystemReady: this.v8SystemReady,
                 initialized: this.initialized,
                 fullyReady: this.fullyReady,
@@ -862,7 +848,7 @@ if (!window.Tegaki.TegakiApplication) {
                 // v8 AppCore状態
                 appCore: this.appCore ? this.appCore.getV8DebugInfo() : null,
                 
-                // 🚨修正: v8機能状況（初期化完了確認項目追加）
+                // v8機能状況
                 v8Features: this.v8Features,
                 
                 // v8 PixiJS Application状態
@@ -874,7 +860,7 @@ if (!window.Tegaki.TegakiApplication) {
                     stageChildren: this.pixiApp.stage.children.length
                 } : null,
                 
-                // 🚨修正: v8初期化情報（初期化時間・完了状況追加）
+                // v8初期化情報
                 v8Initialization: {
                     steps: this.v8InitializationSteps,
                     stepsCompleted: this.v8InitializationSteps.length,
@@ -943,7 +929,7 @@ if (!window.Tegaki.TegakiApplication) {
             console.log('🔄 TegakiApplication v8システムリセット開始');
             
             try {
-                // 🚨修正: v8状態リセット（初期化完了フラグ追加）
+                // v8状態リセット
                 this.v8SystemReady = false;
                 this.initialized = false;
                 this.fullyReady = false;
@@ -987,7 +973,7 @@ if (!window.Tegaki.TegakiApplication) {
          */
         getV8SystemStats() {
             return {
-                // 🚨修正: v8稼働状況（初期化完了確認項目追加）
+                // v8稼働状況
                 v8Status: {
                     systemReady: this.v8SystemReady,
                     initialized: this.initialized,
@@ -999,7 +985,7 @@ if (!window.Tegaki.TegakiApplication) {
                     ready: this.isReady()
                 },
                 
-                // 🚨修正: v8機能統計（初期化完了確認項目追加）
+                // v8機能統計
                 v8Features: {
                     enabled: Object.values(this.v8Features).filter(Boolean).length,
                     total: Object.keys(this.v8Features).length,
@@ -1012,7 +998,7 @@ if (!window.Tegaki.TegakiApplication) {
                     lastErrorTime: this.lastError ? 'recent' : null
                 },
                 
-                // 🚨修正: v8初期化統計（初期化時間・完了状況追加）
+                // v8初期化統計
                 v8InitializationStats: {
                     stepsCompleted: this.v8InitializationSteps.length,
                     fullyInitialized: this.isReady(),
@@ -1027,9 +1013,9 @@ if (!window.Tegaki.TegakiApplication) {
     // Tegaki名前空間に登録
     window.Tegaki.TegakiApplication = TegakiApplication;
     
-    console.log('🚀 TegakiApplication PixiJS v8対応版 Loaded - WebGPU対応・非同期初期化・Container階層・リアルタイム描画');
+    console.log('🚀 TegakiApplication PixiJS v8対応版 Loaded - AppCore API統一・エラー修正完全版');
 } else {
     console.log('⚠️ TegakiApplication already defined - skipping redefinition');
 }
 
-console.log('🚀 TegakiApplication PixiJS v8対応版 Loaded - WebGPU対応・非同期初期化・Container階層・リアルタイム描画');
+console.log('🚀 TegakiApplication PixiJS v8対応版 Loaded - AppCore API統一・エラー修正完全版');

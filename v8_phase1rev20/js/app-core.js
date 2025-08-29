@@ -1,19 +1,66 @@
 /**
- * 🚀 AppCore - PixiJS v8統合基盤システム（400x400キャンバス・コンソール削減修正版）
+ * 📄 FILE: js/app-core.js
+ * 📌 RESPONSIBILITY: PixiJS v8統合基盤システム・Manager群統一初期化・システム制御
  * 
- * @provides AppCore, createV8Application, initializeV8Managers, startV8System, 
- *           getManagerInstance, registerManager, getV8DebugInfo
- * @uses PIXI.Application, window.Tegaki.CanvasManager, window.Tegaki.ToolManager, 
- *       各種Manager (CoordinateManager, NavigationManager, RecordManager等)
- * @initflow 1. createV8Application → 2. CanvasManager初期化 → 3. Manager群登録 → 
- *           4. ToolManager初期化 → 5. startV8System → 6. 準備完了通知
- * @forbids 💀双方向依存禁止 🚫フォールバック禁止 🚫フェイルセーフ禁止 🚫v7/v8両対応二重管理禁止
- * @manager-key window.Tegaki.AppCoreInstance
- * @dependencies-strict PixiJS v8.12.0(必須), 全Manager群(必須), ErrorManager(オプション)
- * @integration-flow TegakiApplication → AppCore.initialize → Manager群初期化 → システム開始
- * @method-naming-rules createV8Application()/initializeV8Managers()/startV8System()統一
- * @error-handling 初期化失敗時は例外スロー、Manager注入失敗は即停止
- * @performance-notes WebGPU対応、DPR制限、リアルタイム描画、60fps対応
+ * @provides
+ *   - AppCore（クラス）
+ *   - createV8Application(): PIXI.Application
+ *   - createCanvasV8(width, height): PIXI.Application ✅NEW
+ *   - initializeV8Managers(): void  
+ *   - startV8System(): void
+ *   - getManagerInstance(key): Manager
+ *   - registerManager(key, instance): void
+ *   - getV8DebugInfo(): Object
+ *   - isV8Ready(): boolean
+ *
+ * @uses
+ *   - PIXI.Application（PixiJS v8 コアAPI）
+ *   - window.Tegaki.CanvasManager（キャンバス管理）
+ *   - window.Tegaki.ToolManager（ツール管理）
+ *   - window.Tegaki.CoordinateManager（座標管理）
+ *   - window.Tegaki.NavigationManager（ナビゲーション）
+ *   - window.Tegaki.RecordManager（記録管理）
+ *   - window.Tegaki.EventBusInstance（イベント通信）
+ *   - window.Tegaki.ErrorManagerInstance（エラー処理）
+ *
+ * @initflow
+ *   1. createV8Application() → PixiJS Application生成
+ *   2. createCanvasV8() → TegakiApplication互換API ✅NEW
+ *   3. initializeV8Managers() → Manager群順次初期化
+ *   4. startV8System() → システム開始・準備完了通知
+ *
+ * @forbids
+ *   💀 双方向依存禁止
+ *   🚫 フォールバック禁止
+ *   🚫 フェイルセーフ禁止
+ *   🚫 v7/v8二重管理禁止
+ *   🚫 未実装メソッド呼び出し禁止 ✅NEW
+ *
+ * @manager-key
+ *   window.Tegaki.AppCoreInstance
+ *
+ * @dependencies-strict
+ *   REQUIRED: PixiJS v8.12.0, 全Manager群（CanvasManager, ToolManager等）
+ *   OPTIONAL: ErrorManager, EventBus
+ *   FORBIDDEN: 他AppCoreインスタンス、v7互換コード
+ *
+ * @integration-flow
+ *   TegakiApplication.initialize() → AppCore.createCanvasV8() → AppCore.initializeV8Managers() → 完了
+ *
+ * @method-naming-rules
+ *   初期化系: createV8xxx() / initializeV8xxx()
+ *   取得系: getManagerInstance() / getV8DebugInfo()
+ *   状態系: isV8Ready() / startV8System()
+ *   
+ * @error-handling
+ *   throw: 初期化失敗・必須Manager未存在・PixiJS未読み込み
+ *   false: オプション機能失敗・設定更新失敗
+ *   log: 警告レベル・デバッグ情報
+ *
+ * @testing-hooks
+ *   - getV8DebugInfo(): Object（システム状況詳細）
+ *   - isV8Ready(): boolean（準備完了状態）
+ *   - getManagerInstance(key): Manager（Manager取得）
  */
 
 (function() {
@@ -21,7 +68,7 @@
 
     /**
      * AppCore - PixiJS v8統合基盤システム
-     * 400x400キャンバス・コンソール削減修正版
+     * createCanvasV8メソッド追加完全修正版
      */
     class AppCore {
         constructor() {
@@ -59,10 +106,40 @@
         }
         
         /**
-         * 🚀 v8 Application作成（400x400デフォルトサイズ）
+         * 🎨 キャンバス生成（TegakiApplication互換API）✅NEW
+         * tegaki-application.js の createCanvasV8() 呼び出し対応
+         * @param {number} width - キャンバス幅（デフォルト400）
+         * @param {number} height - キャンバス高さ（デフォルト400）
+         * @returns {Promise<PIXI.Application>} PixiJS Application
          */
-        async createV8Application() {
-            console.log('🚀 AppCore - v8 Application作成開始');
+        async createCanvasV8(width = 400, height = 400) {
+            console.log(`🎨 AppCore.createCanvasV8(${width}, ${height}) - TegakiApplication互換API`);
+            
+            try {
+                // 既存のcreateV8Application()に委譲
+                const app = await this.createV8Application(width, height);
+                
+                if (!app) {
+                    throw new Error('createV8Application() returned null');
+                }
+                
+                console.log(`✅ AppCore.createCanvasV8完了 - ${width}x${height}キャンバス生成`);
+                return app;
+                
+            } catch (error) {
+                console.error('💀 AppCore.createCanvasV8エラー:', error);
+                throw error;
+            }
+        }
+        
+        /**
+         * 🚀 v8 Application作成（内部実装・サイズ指定対応修正版）
+         * @param {number} width - キャンバス幅（デフォルト400）
+         * @param {number} height - キャンバス高さ（デフォルト400）
+         * @returns {Promise<PIXI.Application>}
+         */
+        async createV8Application(width = 400, height = 400) {
+            console.log(`🚀 AppCore - v8 Application作成開始 (${width}x${height})`);
             
             try {
                 // PixiJS読み込み確認
@@ -78,7 +155,7 @@
                 this.webGPUSupported = !!window.PIXI.WebGPURenderer;
                 console.log('🔍 WebGPU Support:', this.webGPUSupported);
                 
-                // Renderer選択とApplication作成（400x400固定）
+                // Renderer選択とApplication作成
                 let rendererPreference;
                 if (this.webGPUSupported) {
                     rendererPreference = 'webgpu';
@@ -88,11 +165,11 @@
                     console.log('🔄 Using WebGL renderer');
                 }
                 
-                // PixiJS Application作成（400x400サイズ指定）
+                // PixiJS Application作成（指定サイズ）
                 this.pixiApp = new PIXI.Application();
                 await this.pixiApp.init({
-                    width: 400,
-                    height: 400,
+                    width: width,
+                    height: height,
                     backgroundColor: 0xf0e0d6, // ふたばクリーム
                     resolution: Math.min(window.devicePixelRatio || 1, 2.0), // DPR制限
                     autoDensity: true,
@@ -103,9 +180,9 @@
                 this.rendererType = this.pixiApp.renderer.type;
                 this.v8Features.webgpuEnabled = this.rendererType === 'webgpu';
                 
-                console.log('✅ AppCore - v8 Application作成完了');
+                console.log(`✅ AppCore - v8 Application作成完了 (${width}x${height})`);
                 console.log('📊 v8レンダラー:', this.rendererType);
-                this.initializationSteps.push('v8 Application作成');
+                this.initializationSteps.push(`v8 Application作成 (${width}x${height})`);
                 
                 return this.pixiApp;
                 
@@ -136,7 +213,7 @@
             console.log('🔧 AppCore - v8 Manager群初期化開始（統一登録・初期化順序修正・依存注入検証強化版）');
             
             if (!this.pixiApp) {
-                throw new Error('v8 Application not created - call createV8Application() first');
+                throw new Error('v8 Application not created - call createCanvasV8() first');
             }
             
             try {
@@ -337,7 +414,7 @@
                 
                 console.log('✅ AppCore - v8システム開始完了');
                 
-                // 初期化サマリー出力
+                // 初期化サマリー出力（過剰ログ削減版）
                 this.outputInitializationSummary();
                 
             } catch (error) {
@@ -347,16 +424,11 @@
         }
         
         /**
-         * 📋 初期化サマリー出力
+         * 📋 初期化サマリー出力（コンソール過剰表示削減版）
          */
         outputInitializationSummary() {
-            console.log('📋 AppCore v8初期化サマリー:');
-            console.log('🚀 v8システム: ✅ 完了');
-            console.log(`🖥️ PixiJS: ${window.PIXI.VERSION} | レンダラー: ${this.rendererType} | WebGPU: ${this.v8Features.webgpuEnabled}`);
-            console.log('🔍 依存注入検証: ✅ PASS');
-            console.log('📝 v8初期化ステップ:', this.initializationSteps);
-            console.log('🔧 v8機能:', this.v8Features);
-            console.log('📋 登録Manager:', Array.from(this.managers.keys()));
+            console.log('✅ AppCore v8システム完了');
+            console.log(`📊 PixiJS ${window.PIXI.VERSION} | ${this.rendererType} | Manager数: ${this.managers.size}`);
         }
         
         /**
@@ -442,6 +514,6 @@
     }
     
     window.Tegaki.AppCore = AppCore;
-    console.log('🚀 AppCore v8統合基盤システム Loaded - 400x400キャンバス・コンソール削減・描画修正版');
+    console.log('🚀 AppCore v8統合基盤システム Loaded - createCanvasV8メソッド追加完全修正版');
 
 })();

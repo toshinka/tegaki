@@ -1,134 +1,94 @@
-※下記改修計画書ははふたばチャンネルカラーを無視してる箇所があるので注意
-※資料
-ふたばチャンネルカラー
---futaba-maroon: #800000;     （アクティブペンカラー：デフォルト色）
---futaba-light-maroon: #aa5a56;     
---futaba-medium: #cf9c97;
---futaba-light-medium: #e9c2ba;      
---futaba-cream: #f0e0d6;  （キャンバス背景レイヤー0：デフォルト色）
---futaba-background: #ffffee;
-＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+*************************************
+包括的改修計画（v8 phase1rev20）
+*************************************
 
-📝 Tegaki Phase1.5 状況確認・原因究明・改修計画（キャンバスリサイズ対応版）
-1. 現状の確認
-実装済み（Phase1ベース）
+■ 問題の概要
+- エラー: this.appCore.createCanvasV8 is not a function
+- 原因: app-core.js に createCanvasV8() が未実装、または名前空間公開されていない
+- 結果: 
+  ・キャンバス生成が失敗 → ペン描画できない
+  ・サイドバーアイコンも初期化されない（ToolManager 未登録）
 
-PixiJS v8 による描画処理の土台あり
+■ 根本原因
+1. tegaki-application.js は this.appCore.createCanvasV8() を呼ぶが、app-core.js に定義なし
+2. CanvasManager の create メソッドを呼び出すべきなのに、中間レイヤー(appCore)が橋渡し未実装
+3. Manager / Tool の初期化順が曖昧
+   - Bootstrap → TegakiApplication → AppCore → Manager の流れが崩れている
+4. 名前空間公開不足
+   - window.Tegaki 内に公開が揃っていない
 
-ToolManager から Pen / Eraser 切替 UI 一応可能
+■ 正しい初期化フロー
+1. index.html  
+   → Bootstrap.start()
+2. bootstrap.js  
+   → new TegakiApplication().initialize()
+3. tegaki-application.js  
+   → this.appCore.initialize()  
+   → this.appCore.createCanvasV8() （キャンバス生成）  
+   → Manager登録 (CanvasManager, ToolManager)  
+   → Sidebarアイコン生成
+4. app-core.js  
+   → createCanvasV8() 内で CanvasManager.createCanvas() を呼ぶ  
+   → window.Tegaki.CanvasManagerInstance に保持
+5. canvas-manager.js  
+   → 実際の <canvas> DOM 要素を生成し Pixi.Application に接続
+6. tool-manager.js  
+   → PenTool / EraserTool を登録し、サイドバーアイコンを生成
+7. pen-tool.js / eraser-tool.js  
+   → Tool の描画処理を提供
 
-CoordinateManager による座標取得
+■ 包括的改修計画
+1. app-core.js に createCanvasV8() を追加  
+   - 内部で CanvasManagerInstance.createCanvas(width, height) を呼ぶ  
+   - デフォルトサイズ 400x400  
+   - window.Tegaki 名前空間に公開
+2. tegaki-application.js の createCanvasV8() 呼び出しをそのまま活かす  
+   - ただし AppCore に確実に橋渡し実装があることを前提とする
+3. manager 系ファイルに @manager-key を付与し、window.Tegaki 内のキーと一致させる  
+   - 例: window.Tegaki.CanvasManagerInstance
+4. tool-manager.js 初期化時に PenTool/EraserTool を登録  
+   - アイコンも icons.js から取得して表示
+5. 全ファイルにヘッダーコメントを追加（以下必須タグ入り）  
+   - @provides / @uses / @initflow / @forbids / @manager-key / @dependencies-strict / @integration-flow / @method-naming-rules
+6. Manager系には @error-handling / @testing-hooks を追加  
+   Tool系には @state-management / @performance-notes を追加
+7. エラーハンドリング強化  
+   - createCanvasV8() が失敗したら ErrorManager で捕捉し、Bootstrap 側に伝搬
 
-RecordManager に履歴保存の雛形あり
+■ 改修後の呼び出し例
+- index.html  
+  → Bootstrap.start()  
+- bootstrap.js  
+  → app.initialize()  
+- tegaki-application.js  
+  → this.appCore.createCanvasV8(400,400) ✅  
+- app-core.js  
+  → CanvasManagerInstance.createCanvas(400,400) ✅  
+- canvas-manager.js  
+  → <canvas id="tegaki-canvas"> DOM追加 / Pixi.Application生成 ✅  
+- tool-manager.js  
+  → PenTool / EraserTool 登録、アイコン生成 ✅  
+- user操作  
+  → サイドバーからペン選択 → PenTool が Canvas に描画 ✅
 
-発生している問題
+■ 実装タスク一覧
+- [ ] app-core.js: createCanvasV8() 実装
+- [ ] canvas-manager.js: createCanvas() 確認（400x400デフォルト）
+- [ ] tegaki-application.js: appCore 呼び出しフロー整備
+- [ ] tool-manager.js: PenTool/EraserTool/Sidebar初期化
+- [ ] 各ファイルにヘッダー追記（@provides 等必須タグ）
+- [ ] Managerキーの整合確認
+- [ ] ErrorManager 連携
 
-⚠️ powerPreference 警告
-→ 環境依存で実害なし（PixiJS 側仕様）
+■ 今回の改修で期待される結果
+- エラー消失 (createCanvasV8 実装済み)
+- 起動時に 400x400 キャンバスが生成される
+- サイドバーにペン/消しゴムアイコンが表示される
+- ペンツールで正常に描画できる
+- ファイル間の依存関係が明示され、二重管理や循環依存を回避できる
 
-⚠️ 描画されない問題
-→ PenTool / EraserTool が drawContainer を取得できず、線が出力されない。
-
-⚠️ 初期化未完了フラグ
-→ TegakiApplication.initialize() 内で Manager 群の依存順序が乱れている。
-
-⚠️ キャンバスサイズ不一致
-→ Pixi.Application がデフォルト 800x600 を生成しており、HTML <canvas> の width="400" height="400" が反映されていない。
-
-2. 原因分析
-
-描画できない件
-
-CanvasManager 側で drawContainer を生成・登録していない。
-
-PenTool / EraserTool は drawContainer 前提で動いており不整合。
-
-初期化未完了件
-
-ToolManager が CanvasManager.getDrawContainer() を要求するが、CanvasManager 側の初期化順序が遅いため失敗。
-
-双方向依存禁止ルールに反して、初期化が循環している。
-
-キャンバスサイズ問題
-
-new PIXI.Application() に width / height を指定していない。
-
-HTML 側の <canvas> 設定は無視されるため、想定外サイズで生成される。
-
-3. 改修方針
-(A) CanvasManager
-
-初期サイズを明示的に 400x400 に指定する。
-
-this.app = new PIXI.Application({
-  width: options.width || 400,
-  height: options.height || 400,
-  backgroundColor: 0xffffff
-});
-
-
-this.drawContainer = new PIXI.Container(); を生成し this.app.stage.addChild(this.drawContainer) で登録。
-
-resize(width, height) メソッドを追加し、this.app.renderer.resize(width, height) を呼び出せるようにする。
-
-Manager 登録キーは window.Tegaki.CanvasManagerInstance として統一。
-
-(B) ToolManager
-
-canvasManager.getDrawContainer() を取得してから PenTool / EraserTool に注入。
-
-直接参照禁止、依存逆流防止。
-
-(C) PenTool
-
-pointerdown: 新規 PIXI.Graphics() を生成 → drawContainer.addChild()
-
-pointermove: graphics.lineTo(x, y) でストローク追加
-
-pointerup: RecordManager に保存（将来的に SVG path / JSON TPF 対応）
-
-(D) EraserTool
-
-当面は「未実装警告」に格上げ。
-
-Phase1.5 では「ストローク削除方式」に備える。
-
-(E) 初期化順序
-
-bootstrap.js にて以下の順序を固定化
-
-ConfigManager → EventBus → CanvasManager → ToolManager → Application
-
-4. 拡張方針（リサイズ対応）
-
-CanvasManager.resize(width, height) でサイズ変更可能にする。
-
-変更時は CoordinateManager に通知し、座標系をリセット。
-
-将来的に RecordManager に「リサイズ履歴」を追加できる余地を残す。
-
-デフォルトは 400x400、ユーザー操作で拡張可能。
-
-5. 改修チェックリスト
-
- CanvasManager に drawContainer を追加し、Pen/Eraser が取得可能にする
-
- PenTool を drawContainer に描画する方式に改修
-
- EraserTool は未実装機能として警告表示
-
- 初期化順序を再定義し、循環依存を解消
-
- CanvasManager.resize(width, height) を導入し、将来のカメラ・リサイズ機能に備える
-
-6. 次アクション
-
-canvas-manager.js を全面改修し、初期化時点で 400x400 のキャンバスと drawContainer を保証する。
-
-pen-tool.js を drawContainer 経由の描画に切替。
-
-bootstrap.js で初期化順序を整理。
-
-eraser-tool.js を「未実装」警告に切替。
-
-将来対応として、resize(width, height) を設計に組み込み。
+*************************************
+次ステップ
+*************************************
+→ app-core.js 全体を改修して createCanvasV8 を追加し、CanvasManager へ橋渡しを実装する必要があります。
+その上で tegaki-application.js, bootstrap.js, tool-manager.js のヘッダー整備を進めます。
