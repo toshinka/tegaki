@@ -1,11 +1,14 @@
 /**
  * 📄 FILE: js/app-core.js
  * 📌 RESPONSIBILITY: PixiJS v8統合基盤システム・Manager群統一初期化・システム制御
+ * 🚨 修正内容: Canvas要素取得メソッド追加・DOM挿入支援・400x400サイズ確実適用
  * 
  * @provides
  *   - AppCore（クラス）
  *   - createV8Application(): PIXI.Application
- *   - createCanvasV8(width, height): PIXI.Application ✅NEW
+ *   - createCanvasV8(width, height): PIXI.Application ✅既存
+ *   - getCanvasElement(): HTMLCanvasElement🚨NEW
+ *   - ensureCanvasDOMPlacement(): void🚨NEW
  *   - initializeV8Managers(): void  
  *   - startV8System(): void
  *   - getManagerInstance(key): Manager
@@ -22,12 +25,15 @@
  *   - window.Tegaki.RecordManager（記録管理）
  *   - window.Tegaki.EventBusInstance（イベント通信）
  *   - window.Tegaki.ErrorManagerInstance（エラー処理）
+ *   - document.getElementById()（DOM操作）🚨NEW
  *
  * @initflow
  *   1. createV8Application() → PixiJS Application生成
- *   2. createCanvasV8() → TegakiApplication互換API ✅NEW
- *   3. initializeV8Managers() → Manager群順次初期化
- *   4. startV8System() → システム開始・準備完了通知
+ *   2. createCanvasV8() → TegakiApplication互換API
+ *   3. getCanvasElement() → Canvas要素取得🚨NEW
+ *   4. ensureCanvasDOMPlacement() → DOM挿入確認🚨NEW
+ *   5. initializeV8Managers() → Manager群順次初期化
+ *   6. startV8System() → システム開始・準備完了通知
  *
  * @forbids
  *   💀 双方向依存禁止
@@ -35,26 +41,29 @@
  *   🚫 フェイルセーフ禁止
  *   🚫 v7/v8二重管理禁止
  *   🚫 未実装メソッド呼び出し禁止
- *   🚫 WebGPU警告垂れ流し禁止 ✅NEW
+ *   🚫 WebGPU警告垂れ流し禁止
+ *   🚫 Canvas DOM挿入責任分散禁止🚨NEW
  *
  * @manager-key
  *   window.Tegaki.AppCoreInstance
  *
  * @dependencies-strict
- *   REQUIRED: PixiJS v8.12.0, 全Manager群（CanvasManager, ToolManager等）
+ *   REQUIRED: PixiJS v8.12.0, 全Manager群（CanvasManager, ToolManager等）, DOM要素（canvas-container）🚨UPDATE
  *   OPTIONAL: ErrorManager, EventBus
  *   FORBIDDEN: 他AppCoreインスタンス、v7互換コード
  *
  * @integration-flow
- *   TegakiApplication.initialize() → AppCore.createCanvasV8() → AppCore.initializeV8Managers() → 完了
+ *   TegakiApplication.initialize() → AppCore.createCanvasV8() → AppCore.getCanvasElement()🚨NEW 
+ *   → TegakiApplication.setupCanvas() → AppCore.initializeV8Managers() → 完了
  *
  * @method-naming-rules
  *   初期化系: createV8xxx() / initializeV8xxx()
- *   取得系: getManagerInstance() / getV8DebugInfo()
+ *   取得系: getManagerInstance() / getV8DebugInfo() / getCanvasElement()🚨NEW
  *   状態系: isV8Ready() / startV8System()
+ *   DOM系: ensureCanvasDOMPlacement()🚨NEW
  *   
  * @error-handling
- *   throw: 初期化失敗・必須Manager未存在・PixiJS未読み込み
+ *   throw: 初期化失敗・必須Manager未存在・PixiJS未読み込み・Canvas要素未生成🚨UPDATE
  *   false: オプション機能失敗・設定更新失敗
  *   log: 警告レベル・デバッグ情報（過剰ログ削減）
  *
@@ -62,10 +71,12 @@
  *   - getV8DebugInfo(): Object（システム状況詳細）
  *   - isV8Ready(): boolean（準備完了状態）
  *   - getManagerInstance(key): Manager（Manager取得）
+ *   - getCanvasElement(): HTMLCanvasElement（Canvas要素取得）🚨NEW
  *
  * @performance-notes
  *   WebGPU警告抑制・初期化時間最適化
  *   16ms以内目標・メモリリーク防止
+ *   400x400固定サイズで高速描画🚨NEW
  */
 
 (function() {
@@ -73,7 +84,7 @@
 
     /**
      * AppCore - PixiJS v8統合基盤システム
-     * WebGPU警告抑制・初期化順序修正版
+     * DOM挿入支援・Canvas要素取得修正版
      */
     class AppCore {
         constructor() {
@@ -93,6 +104,7 @@
             this.systemStarted = false;
             this.webgpuSupported = false;
             this.rendererType = null;
+            this.canvasElementReady = false; // 🚨NEW: Canvas要素準備状態
             
             // 初期化ステップ管理
             this.initializationSteps = [];
@@ -104,15 +116,16 @@
                 realtimeDrawing: false,
                 asyncInitialization: false,
                 managerIntegration: false,
-                toolSystemReady: false
+                toolSystemReady: false,
+                canvasElementReady: false // 🚨NEW
             };
             
             console.log('🚀 AppCore v8統合基盤システム 作成完了');
         }
         
         /**
-         * 🎨 キャンバス生成（TegakiApplication互換API）✅NEW
-         * tegaki-application.js の createCanvasV8() 呼び出し対応
+         * 🎨 キャンバス生成（TegakiApplication互換API）
+         * 🚨修正：Canvas要素準備状態の確実管理
          * @param {number} width - キャンバス幅（デフォルト400）
          * @param {number} height - キャンバス高さ（デフォルト400）
          * @returns {Promise<PIXI.Application>} PixiJS Application
@@ -128,6 +141,15 @@
                     throw new Error('createV8Application() returned null');
                 }
                 
+                // Canvas要素準備確認
+                if (app.canvas) {
+                    this.canvasElementReady = true;
+                    this.v8Features.canvasElementReady = true;
+                    console.log('✅ Canvas要素準備完了');
+                } else {
+                    throw new Error('Canvas element not created by PIXI Application');
+                }
+                
                 console.log(`✅ AppCore.createCanvasV8完了 - ${width}x${height}キャンバス生成`);
                 return app;
                 
@@ -138,7 +160,80 @@
         }
         
         /**
+         * 🚨NEW: Canvas要素取得（TegakiApplication.setupCanvas()用）
+         * @returns {HTMLCanvasElement} Canvas DOM要素
+         */
+        getCanvasElement() {
+            if (!this.pixiApp) {
+                throw new Error('PixiJS Application not created - call createCanvasV8() first');
+            }
+            
+            if (!this.pixiApp.canvas) {
+                throw new Error('Canvas element not available in PIXI Application');
+            }
+            
+            if (!this.canvasElementReady) {
+                throw new Error('Canvas element not ready - initialization incomplete');
+            }
+            
+            return this.pixiApp.canvas;
+        }
+        
+        /**
+         * 🚨NEW: Canvas DOM配置確認・支援メソッド（TegakiApplication用）
+         * @returns {boolean} DOM配置成功状態
+         */
+        ensureCanvasDOMPlacement() {
+            try {
+                // Canvas要素確認
+                const canvas = this.getCanvasElement();
+                
+                // DOM container確認
+                const container = document.getElementById('canvas-container');
+                if (!container) {
+                    console.error('❌ canvas-container element not found in DOM');
+                    return false;
+                }
+                
+                // 既にDOM内に配置されているか確認
+                if (container.contains(canvas)) {
+                    console.log('✅ Canvas already properly placed in DOM');
+                    return true;
+                }
+                
+                // DOM配置が必要な場合は警告（TegakiApplicationが責任を持つ）
+                console.warn('⚠️ Canvas not found in DOM - TegakiApplication.setupCanvas() should handle insertion');
+                return false;
+                
+            } catch (error) {
+                console.error('❌ Canvas DOM配置確認エラー:', error);
+                return false;
+            }
+        }
+        
+        /**
+         * 🚨NEW: Canvas準備状況詳細確認（デバッグ用）
+         * @returns {Object} Canvas状態詳細
+         */
+        getCanvasStatus() {
+            return {
+                pixiAppExists: !!this.pixiApp,
+                canvasElementExists: !!this.pixiApp?.canvas,
+                canvasElementReady: this.canvasElementReady,
+                canvasInDOM: !!document.querySelector('#canvas-container canvas'),
+                canvasSize: this.pixiApp?.canvas ? {
+                    width: this.pixiApp.canvas.width,
+                    height: this.pixiApp.canvas.height,
+                    styleWidth: this.pixiApp.canvas.style.width,
+                    styleHeight: this.pixiApp.canvas.style.height
+                } : null,
+                containerExists: !!document.getElementById('canvas-container')
+            };
+        }
+        
+        /**
          * 🚀 v8 Application作成（WebGPU警告抑制・エラー処理強化版）
+         * 🚨修正：400x400サイズ確実適用・Canvas要素確認強化
          * @param {number} width - キャンバス幅（デフォルト400）
          * @param {number} height - キャンバス高さ（デフォルト400）
          * @returns {Promise<PIXI.Application>}
@@ -187,17 +282,30 @@
                 };
                 
                 try {
-                    // PixiJS Application作成（指定サイズ・警告抑制）
+                    // 🚨修正：400x400サイズ確実適用・DPR制限
+                    const effectiveWidth = 400; // 固定値
+                    const effectiveHeight = 400; // 固定値
+                    const maxDPR = 2.0;
+                    const effectiveDPR = Math.min(window.devicePixelRatio || 1, maxDPR);
+                    
+                    // PixiJS Application作成（400x400固定・警告抑制）
                     this.pixiApp = new PIXI.Application();
                     await this.pixiApp.init({
-                        width: width,
-                        height: height,
+                        width: effectiveWidth,
+                        height: effectiveHeight,
                         backgroundColor: 0xf0e0d6, // ふたばクリーム
-                        resolution: Math.min(window.devicePixelRatio || 1, 2.0), // DPR制限
+                        resolution: effectiveDPR,
                         autoDensity: true,
                         preference: rendererPreference,
                         powerPreference: 'high-performance'
                     });
+                    
+                    // Canvas要素のサイズ確実設定
+                    if (this.pixiApp.canvas) {
+                        this.pixiApp.canvas.style.width = effectiveWidth + 'px';
+                        this.pixiApp.canvas.style.height = effectiveHeight + 'px';
+                    }
+                    
                 } finally {
                     // console.warnを復元
                     console.warn = originalWarn;
@@ -211,8 +319,17 @@
                 this.rendererType = this.pixiApp.renderer.type;
                 this.v8Features.webgpuEnabled = this.rendererType === 'webgpu';
                 
+                // Canvas要素確認
+                if (!this.pixiApp.canvas) {
+                    throw new Error('PIXI Application did not create canvas element');
+                }
+                
+                this.canvasElementReady = true;
+                this.v8Features.canvasElementReady = true;
+                
                 console.log(`✅ AppCore - v8 Application作成完了 (${width}x${height})`);
                 console.log('📊 v8レンダラー:', this.rendererType);
+                console.log('✅ Canvas要素生成確認完了');
                 this.initializationSteps.push(`v8 Application作成 (${width}x${height})`);
                 
                 return this.pixiApp;
@@ -239,12 +356,17 @@
         
         /**
          * 🔧 v8 Manager群初期化（統一登録・初期化順序修正・依存注入検証強化版）
+         * 🚨修正：Canvas要素準備確認を追加
          */
         async initializeV8Managers() {
             console.log('🔧 AppCore - v8 Manager群初期化開始（統一登録・初期化順序修正・依存注入検証強化版）');
             
             if (!this.pixiApp) {
                 throw new Error('v8 Application not created - call createCanvasV8() first');
+            }
+            
+            if (!this.canvasElementReady) {
+                throw new Error('Canvas element not ready - call createCanvasV8() first');
             }
             
             try {
@@ -449,6 +571,10 @@
                 throw new Error('Managers not initialized - call initializeV8Managers() first');
             }
             
+            if (!this.canvasElementReady) {
+                throw new Error('Canvas element not ready - system cannot start');
+            }
+            
             try {
                 // 最終依存注入検証
                 console.log('🔍 ToolManager依存注入検証開始...');
@@ -462,7 +588,8 @@
                         rendererType: this.rendererType,
                         webgpuSupported: this.webgpuSupported,
                         managers: Array.from(this.managers.keys()),
-                        features: this.v8Features
+                        features: this.v8Features,
+                        canvasElementReady: this.canvasElementReady
                     });
                 }
                 
@@ -518,13 +645,21 @@
         
         /**
          * 🔍 システム準備状況確認
+         * 🚨修正：Canvas要素準備確認を追加
          */
         isV8Ready() {
-            return this.v8Ready && this.systemStarted && this.pixiApp && this.canvasManager && this.toolManager;
+            return this.v8Ready && 
+                   this.systemStarted && 
+                   this.pixiApp && 
+                   this.canvasManager && 
+                   this.toolManager &&
+                   this.canvasElementReady &&
+                   this.v8Features.canvasElementReady;
         }
         
         /**
          * 🧪 v8デバッグ情報取得
+         * 🚨修正：Canvas要素状態を追加
          */
         getV8DebugInfo() {
             return {
@@ -534,43 +669,10 @@
                     v8Ready: this.v8Ready,
                     systemStarted: this.systemStarted,
                     pixiAppReady: !!this.pixiApp,
+                    canvasElementReady: this.canvasElementReady,
                     canvasManagerReady: this.canvasManager ? this.canvasManager.isV8Ready() : false,
                     toolManagerReady: this.toolManager ? this.toolManager.isReady() : false
                 },
                 rendererInfo: {
                     type: this.rendererType,
                     webgpuSupported: this.webgpuSupported,
-                    webgpuActive: this.v8Features.webgpuEnabled
-                },
-                managers: {
-                    totalCount: this.managers.size,
-                    registeredKeys: Array.from(this.managers.keys())
-                },
-                v8Features: this.v8Features,
-                initializationSteps: this.initializationSteps,
-                pixiInfo: this.pixiApp ? {
-                    width: this.pixiApp.screen.width,
-                    height: this.pixiApp.screen.height,
-                    resolution: this.pixiApp.renderer.resolution,
-                    rendererType: this.pixiApp.renderer.type
-                } : null
-            };
-        }
-        
-        /**
-         * v7互換デバッグ情報
-         */
-        getDebugInfo() {
-            return this.getV8DebugInfo();
-        }
-    }
-    
-    // グローバル登録
-    if (!window.Tegaki) {
-        window.Tegaki = {};
-    }
-    
-    window.Tegaki.AppCore = AppCore;
-    console.log('🚀 AppCore v8統合基盤システム Loaded - WebGPU警告抑制・初期化順序修正版');
-
-})();

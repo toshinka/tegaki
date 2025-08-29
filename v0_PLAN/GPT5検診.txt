@@ -1,106 +1,25 @@
-【包括的原因究明・改修計画書】
+/* ============================
+   原因推定（簡潔）
+   - 表示されている警告:
+     "The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127"
+     -> Chromium 側の WebGPU 実装に関する警告。単体では致命的ではないが、環境によっては app の WebGPU 初期化コードが失敗（あるいは未対応のAPI呼び出しを行う）し、そのままレンダラ生成を止めてしまう実装になっている。
+   - 追加でキャンバスが出ない/座標が拾えない理由:
+     1) WebGPU 初期化失敗時にフォールバック処理（WebGL）を適切に行っていない。
+     2) Canvas DOM の挿入箇所や append/replace ロジックが期待と異なる（既存 canvas を上書きしてしまう、または CSS で非表示にしている）。
+     3) ポインタイベントの登録が canvas ではなく別要素に付与されている（サイドバーアイコンのみ反応している）。
+     4) Manager の初期化順序が分散しており、Canvasより先にToolがイベント購読してしまう等のレースがある。
+   ============================
 
-==================================================
-■ 発生しているエラーの確認
-==================================================
-1. app-core.js:170
-   The powerPreference option is currently ignored when calling requestAdapter() on Windows.
-   → これは Chromium / WebGPU 実装の仕様上の警告であり、致命的ではない。
-   → 無視して良いが、冗長ログを suppress するためラッパー側で try-catch して通知を抑える。
-
-2. index.html:478
-   Uncaught TypeError: app.getV8FeatureStatus is not a function
-   at window.debugTegakiV8
-   → 「app」インスタンスに getV8FeatureStatus() が存在しない。
-   → bootstrap.js → tegaki-application.js → app-core.js の初期化フローにおいて未実装メソッドを参照している。
-
-   ✅ 原因：
-   ・app-core.js 内 createV8Application() が返す Pixi.Application 相当のインスタンスには getV8FeatureStatus() が存在しない。
-   ・index.html 内 debug 用フックが未対応メソッドを呼び出しているためクラッシュ。
-   ・結果として「描画準備中」で停止。
-
-==================================================
-■ キャンバス生成フローの正誤確認
-==================================================
-1. bootstrap.js → runBootstrap() → start() → initializeTegakiApplication()
-2. tegaki-application.js → TegakiApplication.initialize() → createCanvasV8()
-3. app-core.js → createV8Application() → Pixi.Application を生成
-4. managers/canvas-manager.js にインスタンス登録
-5. managers/tool-manager.js が PenTool 等をロード
-
-🔴 問題点：
-- bootstrap.js → tegaki-application.js → app-core.js の呼び出しは正しいが、app-core.js 側が返すオブジェクトと index.html デバッグフックの期待 API が不整合。
-- getV8FeatureStatus() のような「統合層で定義すべき拡張メソッド」が未実装。
-- Manager 群の登録キー定義と index.html の直接呼び出しがズレている。
-
-==================================================
-■ ペン描画フローの正誤確認
-==================================================
-1. tool-manager.js が pen-tool.js をロード
-2. pen-tool.js が abstract-tool.js を継承
-3. input イベントを event-bus.js 経由で購読
-4. canvas-manager.js に描画命令を送信
-5. coordinate-manager.js で座標変換
-6. record-manager.js がストロークを記録
-
-⚠️ 状態管理と描画自体は正しい設計フロー。
-⚠️ ただしキャンバスが生成されていないため描画ループに入れず「描画準備中」で固まる。
-
-==================================================
-■ 包括的改修計画
-==================================================
-1. index.html 側デバッグ呼び出し修正
-   - window.debugTegakiV8 内の app.getV8FeatureStatus() を削除
-   - または tegaki-application.js 内に getV8FeatureStatus() を実装し、Pixi.Application インスタンスにラップして返す。
-
-2. app-core.js 改修
-   - createV8Application() で返却するオブジェクトに必須 API を定義。
-   - 例：app.getV8FeatureStatus = () => { return { webgpu: true, pixiVersion: PIXI.VERSION }; };
-
-3. 初期化順序の明示化
-   - bootstrap.js が TegakiApplication を生成
-   - TegakiApplication.initialize() → app-core.createV8Application()
-   - 戻り値を canvas-manager.js に登録
-   - tool-manager.js で初期ツールをバインド
-   - index.html 側デバッグフックは必ず Manager 経由で参照する（直参照禁止）。
-
-4. Manager/API 整合性の強化
-   - @manager-key を全ファイルで明記する。
-   - 例: window.Tegaki.CanvasManagerInstance など。
-   - 直接 app インスタンスを参照せず Manager 経由でアクセス。
-
-5. 禁止事項の徹底
-   - 双方向依存禁止（bootstrap.js ↔ tegaki-application.js の参照逆流を避ける）
-   - v7/v8 両対応コード削除（現在 v8 のみに統一）
-   - 未実装メソッド呼び出し禁止（今回のエラー原因）
-
-==================================================
-■ 改修タスク一覧
-==================================================
-- [ ] index.html 内 debugTegakiV8() 修正（不要な未実装メソッド呼び出し削除 or Manager 経由呼び出し）
-- [ ] app-core.js 内 createV8Application() に getV8FeatureStatus() を追加
-- [ ] tegaki-application.js 内 initialize() 完了後に Manager 登録を保証
-- [ ] 各ファイルに必須ヘッダー追記（@provides, @uses, @initflow 等）
-- [ ] Manager の @manager-key を統一
-- [ ] symbol-dictionary 自動抽出対象を更新（未実装 API 排除）
-
-==================================================
-■ 改修後の初期化フロー（最終版）
-==================================================
-1. bootstrap.js → runBootstrap()
-2. TegakiApplication.initialize()
-3. app-core.js → createV8Application()
-   → { PixiApp, getV8FeatureStatus() } を返す
-4. canvas-manager.js 登録
-5. tool-manager.js 登録
-6. index.html debug フック
-   → window.debugTegakiV8() → CanvasManager 経由で状態取得
-
-==================================================
-■ 改修ポリシーまとめ
-==================================================
-- デバッグ API と本体 API を分離する
-- Manager 経由でのみキャンバス・ツールへアクセスする
-- 未実装メソッドの呼び出しは禁止し、必ず @provides に明記する
-- bootstrap.js の順序制御を厳格化する
-- すべてのファイルに @タグヘッダーを追記し、循環依存防止を徹底する
+/* ============================
+   推奨包括改修方針（要点）
+   1) 初期化を AppCore に集中化（上記コード）。AppCore は renderer 選定方針を決め、CanvasManager に一度だけ生成命令を渡す。
+   2) 双方向依存は全て EventBus に置換。各 Manager/Tool は EventBus を使って通信する。
+   3) WebGPU は明示的に無効化（現時点では WebGL を使う）。WebGPU が必要なら opt-in フラグと十分なフォールバック実装を追加する。
+   4) Canvas は CanvasManager が sole owner。Canvas の DOM 追加/削除/スタイルは CanvasManager のみが行う。
+   5) ポインタ座標取得は CanvasManager が正しい boundingClientRect を使って正規化して EventBus 経由で配信する。
+   6) Tool は Graphics レイヤを作り、そのレイヤに描画。Tool は CanvasManager.stage を直接参照せず、app を介してステージに追加する（責務分離）。
+   7) Console の冗長出力は AppCore の debug フラグを用いて制御。
+   8) v7/v8 両対応コードは即刻排除。v8 前提でリファクタする。
+   9) ファイルヘッダー（@provides, @uses, @initflow, @forbids 等）を必ず付与し、手作業での二重管理を避ける（CI チェック推奨）。
+   10) 最小統合テストとして debug/phase15-integration-test.js を用意し、Pen/Eraser 切替、描画、座標取得を自動または手動で確認する。
+   ============================
