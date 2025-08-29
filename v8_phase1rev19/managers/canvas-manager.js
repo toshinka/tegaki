@@ -1,5 +1,5 @@
 /**
- * 🚀 CanvasManager - PixiJS v8.12.0完全対応版（初期化タイミング修正・DrawContainer確実化）
+ * 🚀 CanvasManager - PixiJS v8.12.0完全対応版（400x400デフォルト・コンソール出力削減版）
  * 
  * @provides getDrawContainer, initializeV8Application, createV8DrawingContainer, 
  *           addGraphicsToLayerV8, resizeV8Canvas, isV8Ready, getV8DebugInfo, 
@@ -24,11 +24,11 @@ if (!window.Tegaki) {
 
 /**
  * CanvasManager - PixiJS v8.12.0完全対応版
- * 初期化タイミング修正・DrawContainer確実化・ToolManager注入対応強化
+ * 400x400デフォルトサイズ・コンソール出力削減・描画機能修正版
  */
 class CanvasManager {
     constructor() {
-        console.log('🚀 CanvasManager v8.12.0対応版作成開始');
+        console.log('CanvasManager: constructed (v8 friendly)');
         
         // 基本プロパティ
         this.pixiApp = null;
@@ -37,7 +37,11 @@ class CanvasManager {
         this.v8Ready = false;
         this.activeLayerId = 'layer1';
         
-        // 初期化状態管理（修正版）
+        // デフォルトキャンバスサイズ（400x400固定）
+        this.defaultWidth = 400;
+        this.defaultHeight = 400;
+        
+        // 初期化状態管理
         this.initializationSteps = {
             applicationSet: false,
             layersCreated: false,
@@ -67,15 +71,10 @@ class CanvasManager {
         
         // 背景色設定（ふたばクリーム）
         this.backgroundColor = 0xf0e0d6; // #f0e0d6
-        
-        console.log('🚀 CanvasManager v8.12.0対応版作成完了');
     }
     
     /**
-     * v8 Application設定・完全初期化（修正版）
-     * - 同期的な初期化完了を保証
-     * - 各ステップの完了確認
-     * - DrawContainer利用可能まで確実に実行
+     * v8 Application設定・完全初期化（400x400サイズ対応）
      */
     async initializeV8Application(pixiApp) {
         if (!pixiApp) {
@@ -86,8 +85,6 @@ class CanvasManager {
             throw new Error('v8 PixiJS Application has no stage');
         }
         
-        console.log('🚀 CanvasManager: v8 Application設定開始');
-        
         try {
             // Step 1: Application設定
             this.pixiApp = pixiApp;
@@ -95,54 +92,45 @@ class CanvasManager {
             this.webgpuSupported = this.rendererType === 'webgpu';
             this.initializationSteps.applicationSet = true;
             
-            if (this.webgpuSupported) {
-                this.v8Features.webgpuEnabled = true;
-                console.log('📊 WebGPU renderer confirmed');
-            } else {
-                console.log('📊 WebGL renderer confirmed');
-            }
-            
             // Step 2: DPR制限設定
             this.applyDPRLimit();
             
-            // Step 3: Container階層作成（同期実行）
+            // Step 3: キャンバスサイズを400x400に設定
+            this.resizeV8Canvas(this.defaultWidth, this.defaultHeight);
+            
+            // Step 4: Container階層作成
             this.createV8DrawingContainer();
             this.initializationSteps.layersCreated = true;
             
-            // Step 4: DrawContainer準備完了
+            // Step 5: DrawContainer準備完了確認
             if (!this.v8DrawingContainer) {
                 throw new Error('DrawContainer creation failed');
             }
             this.v8Features.drawContainerReady = true;
             this.initializationSteps.drawContainerReady = true;
             
-            // Step 5: レイヤー検証
+            // Step 6: レイヤー検証
             this.validateV8Layers();
             this.initializationSteps.validated = true;
             
-            // Step 6: リアルタイム描画設定
+            // Step 7: リアルタイム描画設定
             this.enableRealtimeDrawing();
             
-            // Step 7: 完全初期化完了
+            // Step 8: 完全初期化完了
             this.v8Ready = true;
             this.initialized = true;
             this.initializationSteps.complete = true;
             
-            // Step 8: 初期化完了通知
-            this.notifyV8Initialization();
-            
-            console.log('✅ CanvasManager: v8 Application設定完了');
-            console.log('✅ CanvasManager完全準備確認開始...');
-            
             // 最終確認
             this.verifyFullInitialization();
             
-            console.log('✅ CanvasManager.getDrawContainer() method available');
-            const testContainer = this.getDrawContainer();
-            console.log('📦 v8描画Container取得完了（AppCore連携用）');
-            console.log('✅ CanvasManager.getDrawContainer() execution successful');
-            console.log('✅ v8描画Container validation successful');
-            console.log('✅ CanvasManager.isV8Ready() confirmed');
+            // DOM要素のサイズも確実に設定
+            if (this.pixiApp.canvas) {
+                this.pixiApp.canvas.style.width = this.defaultWidth + 'px';
+                this.pixiApp.canvas.style.height = this.defaultHeight + 'px';
+            }
+            
+            console.log(`CanvasManager: initialization complete (logical ${this.defaultWidth}x${this.defaultHeight}, DPR ${this.effectiveDPR})`);
             
         } catch (error) {
             console.error('💀 CanvasManager初期化エラー:', error);
@@ -176,8 +164,6 @@ class CanvasManager {
         if (failedChecks.length > 0) {
             throw new Error(`CanvasManager initialization incomplete: ${failedChecks.join(', ')}`);
         }
-        
-        console.log('✅ CanvasManager完全初期化確認完了');
     }
     
     /**
@@ -187,11 +173,8 @@ class CanvasManager {
         const deviceDPR = window.devicePixelRatio || 1;
         this.effectiveDPR = Math.min(deviceDPR, this.maxDPR);
         
-        console.log(`🔧 DPR制限適用: ${deviceDPR} → ${this.effectiveDPR} (max: ${this.maxDPR})`);
-        
         if (this.pixiApp?.renderer) {
             this.pixiApp.renderer.resolution = this.effectiveDPR;
-            console.log(`✅ レンダラー解像度設定: ${this.effectiveDPR}`);
         }
         
         this.v8Features.dprLimited = true;
@@ -201,7 +184,7 @@ class CanvasManager {
      * v8描画Container作成（確実化版）
      */
     createV8DrawingContainer() {
-        console.log('🎨 v8 Container階層レイヤー作成開始');
+        console.log('CanvasManager: layers created (layer0, layer1, interactionOverlay)');
         
         if (!this.pixiApp?.stage) {
             throw new Error('v8 Application stage not available for layer creation');
@@ -217,7 +200,6 @@ class CanvasManager {
             background: true,
             color: this.backgroundColor
         });
-        console.log('✅ v8背景レイヤー (layer0) 作成完了');
         
         // layer1: 描画レイヤー
         const drawingLayer = this.createLayerV8('layer1', { 
@@ -225,11 +207,15 @@ class CanvasManager {
             drawing: true,
             sortableChildren: true
         });
-        console.log('✅ v8描画レイヤー (layer1) 作成完了');
+        
+        // interactionOverlay: インタラクション用レイヤー
+        const interactionLayer = this.createLayerV8('interactionOverlay', {
+            zIndex: 2,
+            interactive: true
+        });
         
         // main: layer1のエイリアス
         this.layers.set('main', drawingLayer);
-        console.log('✅ v8メインレイヤー (main) エイリアス設定完了 → layer1');
         
         // v8描画Container設定（確実化）
         this.v8DrawingContainer = drawingLayer;
@@ -238,12 +224,9 @@ class CanvasManager {
             throw new Error('v8DrawingContainer assignment failed');
         }
         
-        console.log('✅ v8描画Container設定完了（ToolManager連携用・getDrawContainer準備完了）');
-        
         // レイヤー検証（基本）
         this.validateLayerCreation();
         
-        console.log('🎨 v8 Container階層レイヤー作成完了');
         this.v8Features.containerHierarchy = true;
     }
     
@@ -263,8 +246,6 @@ class CanvasManager {
         if (this.layers.get('main') !== this.layers.get('layer1')) {
             throw new Error('main layer alias verification failed');
         }
-        
-        console.log('✅ レイヤー作成検証完了');
     }
     
     /**
@@ -273,10 +254,10 @@ class CanvasManager {
     getDrawContainer() {
         // 初期化状態確認
         if (!this.initializationSteps.complete) {
-            const incompletSteps = Object.entries(this.initializationSteps)
+            const incompleteSteps = Object.entries(this.initializationSteps)
                 .filter(([key, value]) => !value)
                 .map(([key]) => key);
-            throw new Error(`CanvasManager not fully initialized. Incomplete steps: ${incompletSteps.join(', ')}`);
+            throw new Error(`CanvasManager not fully initialized. Incomplete steps: ${incompleteSteps.join(', ')}`);
         }
         
         if (!this.v8DrawingContainer) {
@@ -296,18 +277,9 @@ class CanvasManager {
     }
     
     /**
-     * レガシー名維持（v8DrawingContainer取得）
-     */
-    getV8DrawingContainer() {
-        return this.getDrawContainer();
-    }
-    
-    /**
-     * v8 Containerレイヤー作成
+     * v8 Containerレイヤー作成（400x400サイズ対応）
      */
     createLayerV8(layerId, options = {}) {
-        console.log(`🎨 v8レイヤー作成: ${layerId}`);
-        
         const layer = new PIXI.Container();
         layer.name = layerId;
         layer.sortableChildren = options.sortableChildren !== false;
@@ -321,14 +293,10 @@ class CanvasManager {
         if (options.alpha !== undefined) layer.alpha = options.alpha;
         if (options.visible !== undefined) layer.visible = options.visible;
         
-        // 背景レイヤーの場合は背景Graphics作成
+        // 背景レイヤーの場合は背景Graphics作成（400x400固定）
         if (options.background && options.color !== undefined) {
-            // キャンバスサイズを400x400に固定
-            const canvasWidth = 400;
-            const canvasHeight = 400;
-            
             const backgroundGraphics = new PIXI.Graphics();
-            backgroundGraphics.rect(0, 0, canvasWidth, canvasHeight);
+            backgroundGraphics.rect(0, 0, this.defaultWidth, this.defaultHeight);
             backgroundGraphics.fill({ color: options.color, alpha: 1.0 });
             
             layer.addChild(backgroundGraphics);
@@ -341,7 +309,6 @@ class CanvasManager {
         // Container階層自動ソート
         this.pixiApp.stage.sortChildren();
         
-        console.log(`✅ v8レイヤー作成完了: ${layerId} (zIndex: ${layer.zIndex})`);
         return layer;
     }
     
@@ -349,8 +316,6 @@ class CanvasManager {
      * リアルタイム描画機能有効化
      */
     enableRealtimeDrawing() {
-        console.log('⚡ v8リアルタイム描画機能有効化');
-        
         if (!this.pixiApp?.ticker) {
             console.warn('⚠️ PixiJS Ticker not available');
             return;
@@ -364,7 +329,6 @@ class CanvasManager {
             this.pixiApp.renderer.preserveDrawingBuffer = false;
         }
         
-        console.log('✅ v8リアルタイム描画機能有効化完了');
         this.v8Features.realtimeDrawing = true;
     }
     
@@ -372,8 +336,6 @@ class CanvasManager {
      * v8レイヤー検証（完全版）
      */
     validateV8Layers() {
-        console.log('🔍 v8レイヤー検証開始');
-        
         const requiredLayers = ['layer0', 'layer1', 'main'];
         const missingLayers = [];
         
@@ -401,8 +363,6 @@ class CanvasManager {
         if (typeof this.getDrawContainer !== 'function') {
             throw new Error('getDrawContainer() method not available');
         }
-        
-        console.log('✅ v8レイヤー検証完了');
     }
     
     /**
@@ -425,7 +385,6 @@ class CanvasManager {
                 throw new Error('v8 main layer not found - initialization failed');
             }
             
-            console.log(`📦 v8レイヤー自動作成: ${targetLayerId}`);
             layer = this.createLayerV8(targetLayerId);
         }
         
@@ -434,19 +393,15 @@ class CanvasManager {
         if (layer.sortableChildren) {
             layer.sortChildren();
         }
-        
-        console.log(`✅ v8 Graphics配置完了: ${targetLayerId} (children: ${layer.children.length})`);
     }
     
     /**
-     * キャンバスサイズ変更（DPR制限対応・デフォルト400x400）
+     * キャンバスサイズ変更（400x400デフォルト・DPR制限対応）
      */
     resizeV8Canvas(width = 400, height = 400) {
         if (!this.pixiApp) {
             throw new Error('v8 PixiJS Application not available - cannot resize');
         }
-        
-        console.log(`🎨 v8キャンバスサイズ変更開始: ${width}x${height}`);
         
         const deviceDPR = window.devicePixelRatio || 1;
         const limitedDPR = Math.min(deviceDPR, this.maxDPR);
@@ -466,24 +421,11 @@ class CanvasManager {
             }
         }
         
-        console.log(`✅ v8キャンバスサイズ変更完了: ${width}x${height} (DPR: ${limitedDPR})`);
-    }
-    
-    /**
-     * v8初期化完了通知
-     */
-    notifyV8Initialization() {
-        if (window.Tegaki?.EventBusInstance?.emit) {
-            window.Tegaki.EventBusInstance.emit('canvasManagerV8Ready', {
-                rendererType: this.rendererType,
-                webgpuSupported: this.webgpuSupported,
-                features: this.v8Features,
-                initializationSteps: this.initializationSteps,
-                drawContainerReady: this.v8Features.drawContainerReady
-            });
+        // DOM要素のサイズも更新
+        if (this.pixiApp.canvas) {
+            this.pixiApp.canvas.style.width = width + 'px';
+            this.pixiApp.canvas.style.height = height + 'px';
         }
-        
-        console.log('📡 v8初期化完了通知送信');
     }
     
     /**
@@ -559,7 +501,6 @@ class CanvasManager {
         const activeLayer = this.layers.get(this.activeLayerId);
         if (activeLayer && this.activeLayerId !== 'layer0') {
             activeLayer.removeChildren();
-            console.log(`🧹 v8アクティブレイヤークリア完了: ${this.activeLayerId}`);
         }
     }
     
@@ -575,7 +516,7 @@ class CanvasManager {
     }
     
     /**
-     * v8専用デバッグ情報
+     * v8専用デバッグ情報（簡略版）
      */
     getV8DebugInfo() {
         return {
@@ -583,7 +524,6 @@ class CanvasManager {
             version: 'v8.12.0',
             v8Ready: this.v8Ready,
             initialized: this.initialized,
-            initializationSteps: this.initializationSteps,
             pixiVersion: typeof PIXI !== 'undefined' ? PIXI.VERSION : 'unknown',
             rendererInfo: {
                 type: this.rendererType,
@@ -601,12 +541,12 @@ class CanvasManager {
                 activeLayer: this.activeLayerId,
                 mainLayerValid: this.layers.get('main') === this.layers.get('layer1')
             },
-            v8Features: this.v8Features,
             canvasInfo: this.pixiApp ? {
                 width: this.pixiApp.screen.width,
                 height: this.pixiApp.screen.height,
                 resolution: this.pixiApp.renderer.resolution,
-                backgroundColor: '0x' + this.backgroundColor.toString(16)
+                backgroundColor: '0x' + this.backgroundColor.toString(16),
+                defaultSize: `${this.defaultWidth}x${this.defaultHeight}`
             } : null
         };
     }
@@ -635,4 +575,4 @@ class CanvasManager {
 
 // グローバル公開
 window.Tegaki.CanvasManager = CanvasManager;
-console.log('🚀 CanvasManager v8.12.0完全対応版 Loaded - WebGPU・Container階層・リアルタイム描画対応');
+console.log('🚀 CanvasManager v8.12.0完全対応版 Loaded - 400x400デフォルト・コンソール削減・描画修正版');

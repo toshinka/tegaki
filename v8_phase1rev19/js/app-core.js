@@ -1,1213 +1,447 @@
 /**
- * 🚀 AppCore - PixiJS v8統合基盤システム（WebGPU対応・非同期初期化・Manager統一登録修正版・初期化順序修正・依存注入検証強化版）
- * 📋 RESPONSIBILITY: v8 Manager統合基盤・v8 Application作成・v8初期化順序管理・WebGPU対応・Manager統一登録・双方向依存排除・依存注入検証
- * 🚫 PROHIBITION: UI操作・描画処理・座標変換・フォールバック・フェイルセーフ・v7 API混在・Manager二重管理・双方向依存・循環参照
- * ✅ PERMISSION: v8 Manager作成・v8非同期初期化・WebGPU設定・v8統合制御・依存性管理・Manager統一登録・EventBus通信・依存注入検証
+ * 🚀 AppCore - PixiJS v8統合基盤システム（400x400キャンバス・コンソール削減修正版）
  * 
- * ⚠️ 注意: v7/v8 両対応による Manager 群の二重管理は禁止。
- * 本ファイルは v8 専用の初期化ロジックを採用している。
- * 
- * 📏 DESIGN_PRINCIPLE: v8 Application中心・非同期初期化・WebGPU優先・Container階層統合基盤・Manager統一登録・単方向依存・依存注入検証
- * 🔄 INTEGRATION: 全Manager統一登録(canvas,tool,coordinate,record,config,error,eventbus,shortcut,navigation)・v8依存性管理・EventBus中心通信・依存注入検証
- * 🚀 V8_MIGRATION: 非同期化・WebGPU対応・Container階層・v8 Manager連携・フォールバック削除・Manager統一登録・双方向依存排除・依存注入検証強化
- * 
- * @provides
- *   - AppCore クラス
- *   - async waitForPixiJS() - PixiJS読み込み待機・v8バージョン確認
- *   - async createCanvasV8(options) - v8 Application作成・WebGPU対応・非同期初期化・400x400サイズ
- *   - async initializeV8Managers() - v8 Manager群非同期初期化・統一登録・依存注入検証強化
- *   - getManager(name) - Manager取得（統一API）
- *   - async startV8System() - v8システム開始・統合確認
- *   - isV8Ready() - v8対応状況確認
- *   - getV8DebugInfo() - v8専用デバッグ情報取得
- *
- * @uses
- *   - window.PIXI - PixiJS v8ライブラリ（CDN読み込み確認）
- *   - new PIXI.Application() - v8 Application作成（PixiJS v8.12.0）
- *   - await app.init(options) - v8非同期初期化（PixiJS v8.12.0）
- *   - window.Tegaki.CanvasManager - v8 CanvasManager
- *   - canvasManager.initializeV8Application(app) - CanvasManager v8初期化
- *   - canvasManager.getDrawContainer() - v8描画Container取得
- *   - window.Tegaki.ToolManager - v8 ToolManager
- *   - toolManager.setManagers() - Manager統一注入
- *   - toolManager.verifyInjection() - 注入検証
- *   - window.Tegaki.CoordinateManager - v8 CoordinateManager
- *   - window.Tegaki.RecordManager - v8 RecordManager
- *   - window.Tegaki.ConfigManager - ConfigManager
- *   - window.Tegaki.ErrorManager - ErrorManager
- *   - window.Tegaki.EventBusInstance.emit() - イベント通知
- *   - window.Tegaki.ShortcutManager - ShortcutManager
- *   - window.Tegaki.NavigationManager - NavigationManager
- *
- * @initflow
- *   開始 → PixiJS読み込み待機 → v8 Application作成（400x400） → WebGPU対応確認 → 非同期init() → DOM配置 → 
- *   1.CanvasManager v8初期化・v8Application設定・getDrawContainer利用可能確認 → 
- *   2.全Manager統一登録 → 
- *   3.ToolManager作成・setManagers()・verifyInjection()・Manager統一注入確認 → 
- *   v8 Tool初期化 → システム統合確認 → 完了
- *
- * @forbids
- *   💀 双方向依存禁止
- *   🚫 フォールバック禁止
- *   🚫 フェイルセーフ禁止
- *   🚫 v7/v8 両対応による二重管理禁止
- *
- * @manager-key
- *   なし（AppCoreは他Managerから参照されない・EventBus経由通信）
- *
- * @dependencies-strict
- *   - 必須: PixiJS v8, window.Tegaki名前空間
- *   - オプション: 各種Manager（動的読み込み）
- *   - 禁止: 他AppCore, UI直接操作
- *
- * @integration-flow
- *   Bootstrap → AppCore → PixiJS読み込み確認 → v8Application作成 → CanvasManager初期化 → Manager統一登録 → ToolManager初期化・依存注入・検証 → システム開始
- *
- * @method-naming-rules
- *   - startV8System()/stopV8System() 形式統一
- *   - initializeV8Managers() - Manager初期化
- *   - verifyV8Integration() - 統合検証
- *
- * @error-handling
- *   - Manager初期化失敗時は詳細エラー出力・システム停止
- *   - 依存注入検証失敗時は即座にエラー
- *   - ErrorManager連携でエラー通知
+ * @provides AppCore, createV8Application, initializeV8Managers, startV8System, 
+ *           getManagerInstance, registerManager, getV8DebugInfo
+ * @uses PIXI.Application, window.Tegaki.CanvasManager, window.Tegaki.ToolManager, 
+ *       各種Manager (CoordinateManager, NavigationManager, RecordManager等)
+ * @initflow 1. createV8Application → 2. CanvasManager初期化 → 3. Manager群登録 → 
+ *           4. ToolManager初期化 → 5. startV8System → 6. 準備完了通知
+ * @forbids 💀双方向依存禁止 🚫フォールバック禁止 🚫フェイルセーフ禁止 🚫v7/v8両対応二重管理禁止
+ * @manager-key window.Tegaki.AppCoreInstance
+ * @dependencies-strict PixiJS v8.12.0(必須), 全Manager群(必須), ErrorManager(オプション)
+ * @integration-flow TegakiApplication → AppCore.initialize → Manager群初期化 → システム開始
+ * @method-naming-rules createV8Application()/initializeV8Managers()/startV8System()統一
+ * @error-handling 初期化失敗時は例外スロー、Manager注入失敗は即停止
+ * @performance-notes WebGPU対応、DPR制限、リアルタイム描画、60fps対応
  */
 
-// 多重定義防止
-if (!window.Tegaki) {
-    window.Tegaki = {};
-}
+(function() {
+    'use strict';
 
-if (!window.Tegaki.AppCore) {
     /**
-     * AppCore - PixiJS v8統合基盤システム（Manager統一登録・初期化順序修正・依存注入検証強化版）
-     * WebGPU対応・非同期初期化・Container階層統合基盤・Manager統一登録・双方向依存排除・依存注入検証
+     * AppCore - PixiJS v8統合基盤システム
+     * 400x400キャンバス・コンソール削減修正版
      */
     class AppCore {
         constructor() {
             console.log('🚀 AppCore v8統合基盤システム 作成開始');
             
             // 基本状態
-            this.initialized = false;
-            this.started = false;
-            this.v8SystemReady = false;
-            
-            // 🚨修正追加: Manager統一登録Map
-            this.managers = new Map();
-            
-            // v8基盤Manager群
+            this.pixiApp = null;
             this.canvasManager = null;
             this.toolManager = null;
             
-            // v8 PixiJS Application
-            this.pixiApp = null;
+            // Manager統一登録
+            this.managers = new Map();
+            this.managerInstances = new Map();
             
-            // v8専用プロパティ
-            this.rendererType = null; // 'webgpu' | 'webgl'
-            this.webgpuSupported = null;
-            this.pixiVersion = null;
+            // v8システム状態
+            this.v8Ready = false;
+            this.systemStarted = false;
+            this.webGPUSupported = false;
+            this.rendererType = null;
+            
+            // 初期化ステップ管理
+            this.initializationSteps = [];
+            
+            // v8機能フラグ
             this.v8Features = {
-                pixiJSLoaded: false,
                 webgpuEnabled: false,
-                asyncInitialization: false,
                 containerHierarchy: false,
                 realtimeDrawing: false,
-                managersUnifiedRegistration: false, // 🚨修正追加
-                canvasManagerReady: false, // 🚨新規追加
-                drawContainerReady: false, // 🚨新規追加
-                toolManagerInjectionVerified: false // 🚨新規追加
+                asyncInitialization: false,
+                managerIntegration: false,
+                toolSystemReady: false
             };
-            
-            // エラー・初期化状態
-            this.lastError = null;
-            this.v8InitializationSteps = [];
             
             console.log('🚀 AppCore v8統合基盤システム 作成完了');
         }
         
         /**
-         * 🚨修正追加: Manager統一取得API
+         * 🚀 v8 Application作成（400x400デフォルトサイズ）
          */
-        getManager(name) {
-            const manager = this.managers.get(name);
-            if (!manager) {
-                console.warn(`⚠️ Manager not found: ${name}. Available: ${Array.from(this.managers.keys()).join(', ')}`);
-                return null;
-            }
-            return manager;
-        }
-        
-        /**
-         * PixiJS読み込み待機・v8バージョン確認
-         */
-        async waitForPixiJS() {
-            console.log('⏳ PixiJS読み込み確認開始...');
-            
-            // PixiJS読み込み待機（最大5秒）
-            let attempts = 0;
-            const maxAttempts = 50; // 5秒（100ms × 50回）
-            
-            while (attempts < maxAttempts) {
-                if (window.PIXI) {
-                    console.log(`✅ PixiJS発見 (試行 ${attempts + 1}/${maxAttempts})`);
-                    break;
-                }
-                
-                // 100ms待機
-                await new Promise(resolve => setTimeout(resolve, 100));
-                attempts++;
-            }
-            
-            // PixiJS読み込み確認
-            if (!window.PIXI) {
-                throw new Error(`PixiJS not loaded after ${maxAttempts * 100}ms - check CDN connection`);
-            }
-            
-            // v8バージョン確認
-            this.pixiVersion = window.PIXI.VERSION;
-            if (!this.pixiVersion || !this.pixiVersion.startsWith('8.')) {
-                throw new Error(`PixiJS v8 required, got version: ${this.pixiVersion || 'unknown'}`);
-            }
-            
-            console.log(`🚀 PixiJS v8確認完了: ${this.pixiVersion}`);
-            
-            // v8基本機能確認
-            if (typeof window.PIXI.Application !== 'function') {
-                throw new Error('PixiJS v8 Application class not available');
-            }
-            
-            this.v8Features.pixiJSLoaded = true;
-            this.v8InitializationSteps.push(`PixiJS v${this.pixiVersion} loaded`);
-            
-            return this.pixiVersion;
-        }
-        
-        /**
-         * v8 Application作成・WebGPU対応・非同期初期化・400x400サイズ
-         */
-        async createCanvasV8(options = {}) {
+        async createV8Application() {
             console.log('🚀 AppCore - v8 Application作成開始');
             
             try {
-                // Step 0: PixiJS読み込み確認
-                if (!this.v8Features.pixiJSLoaded) {
-                    await this.waitForPixiJS();
+                // PixiJS読み込み確認
+                if (!window.PIXI) {
+                    throw new Error('PixiJS not loaded');
                 }
                 
-                // Step 1: v8 Application作成
-                const app = new window.PIXI.Application();
+                console.log('⏳ PixiJS読み込み確認開始...');
+                await this.waitForPixiJS();
+                console.log('🚀 PixiJS v8確認完了:', window.PIXI.VERSION);
                 
-                // Step 2: WebGPU対応確認（利用可能な場合のみ）
-                if (typeof window.PIXI.isWebGPUSupported === 'function') {
-                    this.webgpuSupported = await window.PIXI.isWebGPUSupported();
-                    console.log(`🔍 WebGPU Support: ${this.webgpuSupported}`);
-                } else {
-                    this.webgpuSupported = false;
-                    console.log('📊 WebGPU detection not available - will use WebGL');
-                }
+                // WebGPU対応確認
+                this.webGPUSupported = !!window.PIXI.WebGPURenderer;
+                console.log('🔍 WebGPU Support:', this.webGPUSupported);
                 
-                // Step 3: v8設定構築（WebGPU優先・400x400サイズ）
-                const v8Options = {
-                    width: options.width || 400,  // 🔧修正: 400x400サイズ
-                    height: options.height || 400, // 🔧修正: 400x400サイズ
-                    backgroundColor: options.backgroundColor || 0xf0e0d6, // ふたばクリーム
-                    antialias: options.antialias !== false,
-                    resolution: options.resolution || window.devicePixelRatio || 1,
-                    powerPreference: 'high-performance',
-                    clearBeforeRender: true,
-                    preserveDrawingBuffer: false,
-                    ...options
-                };
-                
-                if (this.webgpuSupported) {
+                // Renderer選択とApplication作成（400x400固定）
+                let rendererPreference;
+                if (this.webGPUSupported) {
+                    rendererPreference = 'webgpu';
                     console.log('🚀 Using WebGPU renderer');
-                    v8Options.preference = 'webgpu';
-                    this.v8Features.webgpuEnabled = true;
                 } else {
-                    console.log('📊 Fallback to WebGL renderer');
-                    v8Options.preference = 'webgl';
+                    rendererPreference = 'webgl';
+                    console.log('🔄 Using WebGL renderer');
                 }
                 
-                // Step 4: v8非同期初期化
-                await app.init(v8Options);
-                this.pixiApp = app;
-                this.rendererType = app.renderer.type;
-                this.v8Features.asyncInitialization = true;
+                // PixiJS Application作成（400x400サイズ指定）
+                this.pixiApp = new PIXI.Application();
+                await this.pixiApp.init({
+                    width: 400,
+                    height: 400,
+                    backgroundColor: 0xf0e0d6, // ふたばクリーム
+                    resolution: Math.min(window.devicePixelRatio || 1, 2.0), // DPR制限
+                    autoDensity: true,
+                    preference: rendererPreference,
+                    powerPreference: 'high-performance'
+                });
                 
-                this.v8InitializationSteps.push('v8 Application created (400x400)');
-                this.v8InitializationSteps.push(`Renderer: ${this.rendererType}`);
-                
-                // Step 5: DOM配置
-                const container = document.getElementById('canvas-container');
-                if (container) {
-                    container.appendChild(app.canvas);
-                    this.v8InitializationSteps.push('DOM placement completed');
-                } else {
-                    console.warn('⚠️ canvas-container not found - manual DOM placement required');
-                }
+                this.rendererType = this.pixiApp.renderer.type;
+                this.v8Features.webgpuEnabled = this.rendererType === 'webgpu';
                 
                 console.log('✅ AppCore - v8 Application作成完了');
-                console.log(`📊 v8レンダラー: ${this.rendererType}`);
+                console.log('📊 v8レンダラー:', this.rendererType);
+                this.initializationSteps.push('v8 Application作成');
                 
-                return app;
+                return this.pixiApp;
                 
             } catch (error) {
-                this.lastError = error;
-                console.error('💀 AppCore - v8 Application作成エラー:', error);
-                
-                // ErrorManagerにエラー通知
-                if (window.Tegaki?.ErrorManagerInstance?.showError) {
-                    window.Tegaki.ErrorManagerInstance.showError(
-                        'PixiJS v8初期化失敗', 
-                        error.message
-                    );
-                }
-                
+                console.error('💀 v8 Application作成エラー:', error);
                 throw error;
             }
         }
         
         /**
-         * 🚨修正強化版 - v8 Manager群非同期初期化・統一登録・依存注入検証強化版（初期化順序修正・getDrawContainer確認強化・依存注入検証追加）
+         * ⏳ PixiJS読み込み待機
+         */
+        async waitForPixiJS(maxAttempts = 50, interval = 100) {
+            for (let i = 0; i < maxAttempts; i++) {
+                if (window.PIXI && window.PIXI.VERSION) {
+                    console.log(`✅ PixiJS発見 (試行 ${i + 1}/${maxAttempts})`);
+                    return true;
+                }
+                await new Promise(resolve => setTimeout(resolve, interval));
+            }
+            throw new Error(`PixiJS読み込みタイムアウト (${maxAttempts * interval}ms)`);
+        }
+        
+        /**
+         * 🔧 v8 Manager群初期化（統一登録・初期化順序修正・依存注入検証強化版）
          */
         async initializeV8Managers() {
             console.log('🔧 AppCore - v8 Manager群初期化開始（統一登録・初期化順序修正・依存注入検証強化版）');
             
+            if (!this.pixiApp) {
+                throw new Error('v8 Application not created - call createV8Application() first');
+            }
+            
             try {
-                // 前提条件確認
-                if (!this.pixiApp) {
-                    throw new Error('v8 PixiJS Application not created - call createCanvasV8() first');
-                }
-                
-                // 🚨修正: Step 1 - v8 CanvasManager完全初期化（先行・getDrawContainer確認強化）
+                // Step 1: CanvasManager v8初期化
                 console.log('1️⃣ CanvasManager v8初期化開始...');
-                
-                if (!window.Tegaki.CanvasManager) {
-                    throw new Error('CanvasManager class not available');
-                }
-                
                 this.canvasManager = new window.Tegaki.CanvasManager();
                 console.log('✅ CanvasManager インスタンス作成完了');
-                
-                // CanvasManagerにPixiJS v8 Applicationを設定（完全初期化）
-                if (typeof this.canvasManager.initializeV8Application !== 'function') {
-                    throw new Error('CanvasManager.initializeV8Application() method not available');
-                }
                 
                 await this.canvasManager.initializeV8Application(this.pixiApp);
                 console.log('✅ CanvasManager v8 Application設定完了');
                 
-                // 🚨修正強化: CanvasManager完全準備確認（getDrawContainer重点確認）
+                // CanvasManager完全準備確認
                 console.log('🔍 CanvasManager完全準備確認開始...');
-                
-                // getDrawContainerメソッド利用可能確認
                 if (typeof this.canvasManager.getDrawContainer !== 'function') {
-                    throw new Error('CanvasManager.getDrawContainer() method not available - CanvasManager not fully initialized');
-                }
-                console.log('✅ CanvasManager.getDrawContainer() method available');
-                
-                // getDrawContainer実行・結果確認
-                let drawContainer;
-                try {
-                    drawContainer = this.canvasManager.getDrawContainer();
-                } catch (error) {
-                    throw new Error(`CanvasManager.getDrawContainer() execution failed: ${error.message}`);
+                    throw new Error('CanvasManager.getDrawContainer() method not available');
                 }
                 
-                if (!drawContainer) {
-                    throw new Error('CanvasManager.getDrawContainer() returned null - v8描画Container未作成');
-                }
-                console.log('✅ CanvasManager.getDrawContainer() execution successful');
-                
-                // Container型確認（PixiJS Container確認）
-                if (!drawContainer.addChild || typeof drawContainer.addChild !== 'function') {
-                    throw new Error('CanvasManager.getDrawContainer() returned invalid Container - missing addChild method');
-                }
-                console.log('✅ v8描画Container validation successful');
-                
-                // isV8Ready()確認（利用可能な場合のみ）
-                if (typeof this.canvasManager.isV8Ready === 'function') {
-                    if (!this.canvasManager.isV8Ready()) {
-                        throw new Error('CanvasManager.isV8Ready() returned false - initialization incomplete');
-                    }
-                    console.log('✅ CanvasManager.isV8Ready() confirmed');
+                const testContainer = this.canvasManager.getDrawContainer();
+                if (!testContainer) {
+                    throw new Error('CanvasManager.getDrawContainer() returned null');
                 }
                 
-                this.v8Features.canvasManagerReady = true;
-                this.v8Features.drawContainerReady = true;
-                this.v8InitializationSteps.push('v8 CanvasManager fully initialized with getDrawContainer');
+                if (!this.canvasManager.isV8Ready()) {
+                    throw new Error('CanvasManager not ready');
+                }
+                
                 console.log('✅ Step 1: CanvasManager v8完全初期化完了（getDrawContainer確認済み）');
+                this.initializationSteps.push('CanvasManager v8完全初期化');
                 
-                // 🚨修正完了: Step 2 - Manager統一登録（CoordinateManager・RecordManager修正版）
+                // Step 2: Manager統一登録
                 console.log('2️⃣ Manager統一登録開始...');
                 
                 // CanvasManager登録
-                this.managers.set("canvas", this.canvasManager);
+                this.registerManager('canvas', this.canvasManager);
                 console.log('✅ CanvasManager統一登録完了');
                 
-                // 🚨修正完了: CoordinateManager登録（インスタンス作成修正）
-                if (window.Tegaki.CoordinateManager) {
-                    const coordinateManager = new window.Tegaki.CoordinateManager(this);
-                    this.managers.set("coordinate", coordinateManager);
-                    console.log('🎯 CoordinateManager v8対応版 統一登録完了');
-                } else {
-                    console.warn('⚠️ CoordinateManager class not available - スキップ');
-                }
+                // 他Manager群作成・登録
+                this.createAndRegisterManagers();
                 
-                // 🚨修正完了: RecordManager登録（インスタンス作成修正）
-                if (window.Tegaki.RecordManager) {
-                    const recordManager = new window.Tegaki.RecordManager(this);
-                    this.managers.set("record", recordManager);
-                    console.log('🔄 RecordManager v8対応版 統一登録完了');
-                } else {
-                    console.warn('⚠️ RecordManager class not available - スキップ');
-                }
-                
-                // 🚨修正追加: ConfigManager登録
-                if (window.Tegaki.ConfigManager) {
-                    const configManager = new window.Tegaki.ConfigManager();
-                    this.managers.set("config", configManager);
-                    console.log('✅ ConfigManager統一登録完了');
-                } else {
-                    console.warn('⚠️ ConfigManager not available - スキップ');
-                }
-                
-                // 🚨修正追加: ErrorManager登録
-                if (window.Tegaki.ErrorManagerInstance) {
-                    this.managers.set("error", window.Tegaki.ErrorManagerInstance);
-                    console.log('✅ ErrorManager統一登録完了');
-                } else {
-                    console.warn('⚠️ ErrorManagerInstance not available - スキップ');
-                }
-                
-                // 🚨修正追加: EventBus登録
-                if (window.Tegaki.EventBusInstance) {
-                    this.managers.set("eventbus", window.Tegaki.EventBusInstance);
-                    console.log('✅ EventBus統一登録完了');
-                } else {
-                    console.warn('⚠️ EventBusInstance not available - スキップ');
-                }
-                
-                // 🚨修正追加: ShortcutManager登録
-                if (window.Tegaki.ShortcutManager) {
-                    const shortcutManager = new window.Tegaki.ShortcutManager();
-                    this.managers.set("shortcut", shortcutManager);
-                    console.log('✅ ShortcutManager統一登録完了');
-                } else {
-                    console.warn('⚠️ ShortcutManager not available - スキップ');
-                }
-                
-                // 🚨修正追加: NavigationManager登録
-                if (window.Tegaki.NavigationManager) {
-                    const navigationManager = new window.Tegaki.NavigationManager(this);
-                    this.managers.set("navigation", navigationManager);
-                    console.log('✅ NavigationManager統一登録完了');
-                } else {
-                    console.warn('⚠️ NavigationManager not available - スキップ');
-                }
-                
-                this.v8Features.managersUnifiedRegistration = true;
-                this.v8InitializationSteps.push('v8 Manager unified registration completed');
                 console.log('✅ Step 2: Manager統一登録完了');
                 console.log('📋 登録Manager一覧:', Array.from(this.managers.keys()));
+                this.initializationSteps.push('Manager統一登録');
                 
-                // 🚨修正強化: Step 3 - v8 ToolManager後続初期化（CanvasManager完全準備後・Manager統一登録後・依存注入検証強化）
+                // Step 3: ToolManager v8初期化（依存注入検証強化版）
                 console.log('3️⃣ ToolManager v8初期化開始（依存注入検証強化版）...');
                 
-                if (!window.Tegaki.ToolManager) {
-                    throw new Error('ToolManager class not available');
-                }
-                
-                // 🚨修正: ToolManager作成前にCanvasManagerを最終確認（getDrawContainer重点確認）
+                // ToolManager作成前最終確認
                 console.log('🔧 ToolManager作成前最終確認開始...');
-                
-                if (!this.canvasManager) {
-                    throw new Error('ToolManager初期化: CanvasManagerが未作成');
+                if (!this.canvasManager.isV8Ready()) {
+                    throw new Error('CanvasManager not ready for ToolManager initialization');
                 }
-                
-                if (typeof this.canvasManager.getDrawContainer !== 'function') {
-                    throw new Error('ToolManager初期化: CanvasManager.getDrawContainer()が利用不可');
-                }
-                
-                let finalDrawContainer;
-                try {
-                    finalDrawContainer = this.canvasManager.getDrawContainer();
-                } catch (error) {
-                    throw new Error(`ToolManager初期化: CanvasManager.getDrawContainer()実行エラー: ${error.message}`);
-                }
-                
-                if (!finalDrawContainer) {
-                    throw new Error('ToolManager初期化: v8描画Container取得失敗');
-                }
-                
-                if (!finalDrawContainer.addChild || typeof finalDrawContainer.addChild !== 'function') {
-                    throw new Error('ToolManager初期化: 無効なContainer - addChildメソッドなし');
-                }
-                
                 console.log('✅ CanvasManager最終確認完了 - ToolManager初期化可能');
-                console.log('📦 注入予定CanvasManager:', !!this.canvasManager);
-                console.log('📦 getDrawContainer利用可能:', typeof this.canvasManager.getDrawContainer);
-                console.log('📦 描画Container検証完了:', !!finalDrawContainer);
                 
-                // 🚨修正強化: ToolManager作成・CanvasManager注入・Manager統一注入・依存注入検証
+                // CanvasManager参照情報（ToolManager用）
+                const canvasManagerForTool = this.canvasManager;
+                console.log('📦 注入予定CanvasManager:', !!canvasManagerForTool);
+                console.log('📦 getDrawContainer利用可能:', typeof canvasManagerForTool.getDrawContainer);
+                console.log('📦 描画Container検証完了:', !!canvasManagerForTool.getDrawContainer());
+                
+                // ToolManager作成・CanvasManager注入
                 console.log('🔧 ToolManager作成・CanvasManager注入開始...');
-                
-                // ToolManagerコンストラクタでの注入
-                let toolManager;
-                try {
-                    // DI Object形式で作成
-                    toolManager = new window.Tegaki.ToolManager({
-                        canvasManager: this.canvasManager 
-                    });
-                    console.log('✅ ToolManager作成成功（DI Object形式）');
-                } catch (error) {
-                    console.log('⚠️ DI Object形式失敗、レガシー形式で再試行:', error.message);
-                    
-                    try {
-                        // レガシー形式で再試行
-                        toolManager = new window.Tegaki.ToolManager(this.canvasManager);
-                        console.log('✅ ToolManager作成成功（レガシー形式）');
-                    } catch (legacyError) {
-                        console.log('⚠️ レガシー形式も失敗、空コンストラクタで作成:', legacyError.message);
-                        
-                        // 空コンストラクタで作成
-                        toolManager = new window.Tegaki.ToolManager();
-                        console.log('✅ ToolManager作成成功（空コンストラクタ形式）');
-                    }
-                }
-                
-                this.toolManager = toolManager;
+                this.toolManager = new window.Tegaki.ToolManager(canvasManagerForTool);
+                console.log('✅ ToolManager作成成功（DI Object形式）');
                 console.log('✅ ToolManager インスタンス作成完了');
                 
-                // ToolManager登録
-                this.managers.set("tool", this.toolManager);
+                this.registerManager('tool', this.toolManager);
                 console.log('✅ ToolManager統一登録完了');
                 
-                // 🚨新規追加: ToolManager Manager統一注入・依存注入検証
+                // ToolManager Manager統一注入・検証
                 console.log('🔧 ToolManager Manager統一注入・検証開始...');
-                console.log('📦 注入予定Manager Map:', this.managers);
-                console.log('📦 注入予定キー:', Array.from(this.managers.keys()));
+                const managersForInjection = this.managers;
+                console.log('📦 注入予定Manager Map:', managersForInjection);
+                console.log('📦 注入予定キー:', Array.from(managersForInjection.keys()));
                 
-                // setManagers()でManager注入
-                if (typeof this.toolManager.setManagers === 'function') {
-                    try {
-                        // Map形式で注入試行
-                        const injectionResult = this.toolManager.setManagers(this.managers);
-                        if (injectionResult) {
-                            console.log('✅ ToolManager.setManagers() 成功（Map形式）');
-                        } else {
-                            console.warn('⚠️ ToolManager.setManagers() 戻り値false - 注入失敗');
-                        }
-                    } catch (mapError) {
-                        console.warn('⚠️ Map形式失敗、Object形式で再試行:', mapError.message);
-                        
-                        try {
-                            // Object形式に変換して再試行
-                            const managersObject = Object.fromEntries(this.managers);
-                            const objInjectionResult = this.toolManager.setManagers(managersObject);
-                            if (objInjectionResult) {
-                                console.log('✅ ToolManager.setManagers() 成功（Object形式）');
-                            } else {
-                                console.warn('⚠️ ToolManager.setManagers() Object形式も戻り値false');
-                            }
-                        } catch (objError) {
-                            console.error('❌ ToolManager.setManagers() 両形式失敗:', objError.message);
-                            throw new Error(`ToolManager.setManagers() failed: Map形式「${mapError.message}」, Object形式「${objError.message}」`);
-                        }
-                    }
-                } else {
-                    console.error('❌ ToolManager.setManagers() method not available');
-                    throw new Error('ToolManager.setManagers() method not available - ToolManager not properly loaded');
+                const injectionResult = this.toolManager.setManagers(managersForInjection);
+                if (!injectionResult) {
+                    throw new Error('ToolManager Manager統一注入失敗');
                 }
+                console.log('✅ ToolManager.setManagers() 成功（Map形式）');
                 
-                // 🚨新規追加: 依存注入検証（重要）
+                // 依存注入検証実行
                 console.log('🔍 ToolManager依存注入検証開始...');
+                this.toolManager.verifyInjection();
+                console.log('✅ ToolManager依存注入検証PASS');
                 
-                if (typeof this.toolManager.verifyInjection === 'function') {
-                    try {
-                        this.toolManager.verifyInjection();
-                        console.log('✅ ToolManager依存注入検証PASS');
-                        this.v8Features.toolManagerInjectionVerified = true;
-                    } catch (verifyError) {
-                        console.error('❌ ToolManager依存注入検証FAILED:', verifyError.message);
-                        throw new Error(`ToolManager依存注入検証失敗: ${verifyError.message}`);
-                    }
-                } else {
-                    console.warn('⚠️ ToolManager.verifyInjection() method not available - 手動検証実行');
-                    
-                    // 手動検証
-                    if (!this.toolManager.canvasManager) {
-                        throw new Error('ToolManager.canvasManager injection verification failed: canvasManager not set');
-                    }
-                    
-                    if (typeof this.toolManager.canvasManager.getDrawContainer !== 'function') {
-                        throw new Error('ToolManager.canvasManager injection verification failed: getDrawContainer method not available');
-                    }
-                    
-                    try {
-                        const verifyDrawContainer = this.toolManager.canvasManager.getDrawContainer();
-                        if (!verifyDrawContainer) {
-                            throw new Error('ToolManager.canvasManager injection verification failed: getDrawContainer returned null');
-                        }
-                    } catch (error) {
-                        throw new Error(`ToolManager.canvasManager injection verification failed: getDrawContainer execution error: ${error.message}`);
-                    }
-                    
-                    console.log('✅ ToolManager手動依存注入検証PASS');
-                    this.v8Features.toolManagerInjectionVerified = true;
+                // v8 Tool初期化
+                console.log('🚀 v8 Tool初期化開始（依存注入検証完了後）');
+                const toolInitResult = await this.toolManager.initializeV8Tools();
+                if (!toolInitResult) {
+                    throw new Error('v8 Tool初期化失敗');
                 }
+                console.log('✅ ToolManager v8ツール初期化完了');
                 
-                // v8ツール初期化（Manager統一登録後・CanvasManager準備完了後・依存注入検証完了後）
-                if (typeof this.toolManager.initializeV8Tools === 'function') {
-                    console.log('🚀 v8 Tool初期化開始（依存注入検証完了後）');
-                    try {
-                        await this.toolManager.initializeV8Tools();
-                        console.log('✅ ToolManager v8ツール初期化完了');
-                    } catch (toolInitError) {
-                        console.warn('⚠️ v8 Tool初期化失敗:', toolInitError.message);
-                        // 🚨修正: ツール初期化失敗でもシステム初期化は継続（警告のみ）
-                    }
-                } else {
-                    console.warn('⚠️ ToolManager.initializeV8Tools() not available');
+                // ToolManager準備状態確認
+                if (!this.toolManager.isReady()) {
+                    throw new Error('ToolManager not ready after initialization');
                 }
+                console.log('✅ ToolManager.isReady() confirmed');
                 
-                // 🚨修正追加: ToolManager最終検証
-                if (typeof this.toolManager.isReady === 'function') {
-                    if (!this.toolManager.isReady()) {
-                        console.warn('⚠️ ToolManager.isReady() returned false - but continuing');
-                    } else {
-                        console.log('✅ ToolManager.isReady() confirmed');
-                    }
-                }
-                
-                this.v8InitializationSteps.push('v8 ToolManager created with unified managers, injection verified and validated');
                 console.log('✅ Step 3: ToolManager v8初期化完了（依存注入検証強化版）');
+                this.initializationSteps.push('ToolManager v8初期化');
                 
-                // Step 4: v8 Manager連携確認
-                this.validateV8ManagerIntegration();
-                this.v8InitializationSteps.push('v8 Manager integration validated');
+                // Step 4: Manager連携確認
+                console.log('🔍 v8 Manager連携確認開始（依存注入検証強化版）');
+                this.toolManager.verifyInjection();
+                console.log('✅ v8 Manager連携確認完了（依存注入検証強化版）');
+                
+                console.log('📋 登録済みManager:', Array.from(this.managers.keys()));
+                console.log('✅ ToolManager依存注入検証状態:', true);
                 console.log('✅ Step 4: Manager連携確認完了');
+                this.initializationSteps.push('Manager連携確認');
                 
-                // Step 5: v8機能有効化
-                this.v8Features.containerHierarchy = true;
-                this.v8Features.realtimeDrawing = true;
+                this.v8Features.managerIntegration = true;
+                this.v8Features.toolSystemReady = true;
                 
                 console.log('✅ AppCore - v8 Manager群初期化完了（統一登録・初期化順序修正・依存注入検証強化版）');
                 
             } catch (error) {
-                this.lastError = error;
-                console.error('💀 AppCore - v8 Manager群初期化エラー:', error);
+                console.error('💀 v8 Manager群初期化エラー:', error);
                 throw error;
             }
         }
         
         /**
-         * v8 Manager連携確認（依存注入検証強化版）
+         * 🔧 他Manager群作成・登録
          */
-        validateV8ManagerIntegration() {
-            console.log('🔍 v8 Manager連携確認開始（依存注入検証強化版）');
+        createAndRegisterManagers() {
+            // CoordinateManager
+            const coordinateManager = new window.Tegaki.CoordinateManager();
+            this.registerManager('coordinate', coordinateManager);
             
-            const checks = [
-                { 
-                    condition: !!this.canvasManager, 
-                    message: 'CanvasManager not initialized' 
-                },
-                { 
-                    condition: !!this.toolManager, 
-                    message: 'ToolManager not initialized' 
-                },
-                { 
-                    condition: !!this.pixiApp && this.rendererType, 
-                    message: 'v8 PixiJS Application not ready' 
-                },
-                {
-                    condition: this.v8Features.pixiJSLoaded,
-                    message: 'PixiJS v8 not properly loaded'
-                },
-                {
-                    condition: this.v8Features.managersUnifiedRegistration,
-                    message: 'Manager unified registration not completed'
-                },
-                {
-                    condition: this.v8Features.canvasManagerReady,
-                    message: 'CanvasManager not ready'
-                },
-                {
-                    condition: this.v8Features.drawContainerReady,
-                    message: 'DrawContainer not ready'
-                },
-                {
-                    condition: this.v8Features.toolManagerInjectionVerified,
-                    message: 'ToolManager injection not verified'
-                },
-                {
-                    condition: this.managers.has("coordinate"),
-                    message: 'CoordinateManager not registered'
-                },
-                {
-                    condition: this.managers.has("record"),
-                    message: 'RecordManager not registered'
-                },
-                {
-                    condition: this.managers.has("canvas"),
-                    message: 'CanvasManager not registered in unified registry'
-                },
-                {
-                    condition: this.managers.has("tool"),
-                    message: 'ToolManager not registered in unified registry'
-                }
-            ];
+            // RecordManager
+            const recordManager = new window.Tegaki.RecordManager();
+            this.registerManager('record', recordManager);
             
-            // CanvasManagerのv8準備状況確認（利用可能な場合のみ）
-            if (this.canvasManager && typeof this.canvasManager.isV8Ready === 'function') {
-                checks.push({
-                    condition: this.canvasManager.isV8Ready(),
-                    message: 'CanvasManager not v8 ready'
-                });
+            // ConfigManager
+            const configManager = new window.Tegaki.ConfigManager();
+            this.registerManager('config', configManager);
+            
+            // ErrorManager
+            if (window.Tegaki.ErrorManagerInstance) {
+                this.registerManager('error', window.Tegaki.ErrorManagerInstance);
             }
             
-            // 🚨修正強化: CanvasManager.getDrawContainer()確認（重要・詳細確認）
-            if (this.canvasManager) {
-                checks.push({
-                    condition: typeof this.canvasManager.getDrawContainer === 'function',
-                    message: 'CanvasManager.getDrawContainer() method not available'
-                });
-                
-                if (typeof this.canvasManager.getDrawContainer === 'function') {
-                    try {
-                        const drawContainer = this.canvasManager.getDrawContainer();
-                        checks.push({
-                            condition: !!drawContainer,
-                            message: 'CanvasManager.getDrawContainer() returns null'
-                        });
-                        
-                        if (drawContainer) {
-                            checks.push({
-                                condition: typeof drawContainer.addChild === 'function',
-                                message: 'DrawContainer lacks addChild method - not a valid PixiJS Container'
-                            });
-                        }
-                    } catch (error) {
-                        checks.push({
-                            condition: false,
-                            message: `CanvasManager.getDrawContainer() execution failed: ${error.message}`
-                        });
-                    }
-                }
+            // EventBus
+            if (window.Tegaki.EventBusInstance) {
+                this.registerManager('eventbus', window.Tegaki.EventBusInstance);
             }
             
-            // 🚨修正強化: ToolManager連携確認（依存注入検証詳細確認）
-            if (this.toolManager) {
-                checks.push({
-                    condition: !!this.toolManager.canvasManager,
-                    message: 'ToolManager.canvasManager not injected'
-                });
-                
-                if (this.toolManager.canvasManager) {
-                    checks.push({
-                        condition: this.toolManager.canvasManager === this.canvasManager,
-                        message: 'ToolManager.canvasManager injection mismatch'
-                    });
-                    
-                    checks.push({
-                        condition: typeof this.toolManager.canvasManager.getDrawContainer === 'function',
-                        message: 'ToolManager.canvasManager.getDrawContainer() method not available'
-                    });
-                }
-                
-                checks.push({
-                    condition: !!this.toolManager.drawContainer,
-                    message: 'ToolManager.drawContainer not available'
-                });
-                
-                checks.push({
-                    condition: !!(this.toolManager.managersObject || this.toolManager.managers),
-                    message: 'ToolManager managers not injected'
-                });
-                
-                // 🚨新規追加: 依存注入検証状態確認
-                if (typeof this.toolManager.verifyInjection === 'function') {
-                    try {
-                        // 再検証実行（エラーが出ればチェック失敗）
-                        this.toolManager.verifyInjection();
-                        checks.push({
-                            condition: true,
-                            message: 'ToolManager.verifyInjection() passed'
-                        });
-                    } catch (verifyError) {
-                        checks.push({
-                            condition: false,
-                            message: `ToolManager.verifyInjection() failed: ${verifyError.message}`
-                        });
-                    }
-                }
-            }
+            // ShortcutManager
+            const shortcutManager = new window.Tegaki.ShortcutManager();
+            this.registerManager('shortcut', shortcutManager);
             
-            for (const check of checks) {
-                if (!check.condition) {
-                    throw new Error(`v8 Manager integration failed: ${check.message}`);
-                }
-            }
-            
-            console.log('✅ v8 Manager連携確認完了（依存注入検証強化版）');
-            console.log('📋 登録済みManager:', Array.from(this.managers.keys()));
-            console.log('✅ ToolManager依存注入検証状態:', this.v8Features.toolManagerInjectionVerified);
+            // NavigationManager
+            const navigationManager = new window.Tegaki.NavigationManager();
+            this.registerManager('navigation', navigationManager);
         }
         
         /**
-         * v8システム開始・統合確認
+         * 📝 Manager登録
+         */
+        registerManager(key, instance) {
+            this.managers.set(key, instance);
+            this.managerInstances.set(key, instance);
+            
+            // グローバル登録
+            const managerKey = `${key.charAt(0).toUpperCase() + key.slice(1)}ManagerInstance`;
+            window.Tegaki[managerKey] = instance;
+        }
+        
+        /**
+         * 🚀 v8システム開始
          */
         async startV8System() {
             console.log('🚀 AppCore - v8システム開始');
             
+            if (!this.canvasManager || !this.toolManager) {
+                throw new Error('Managers not initialized - call initializeV8Managers() first');
+            }
+            
             try {
-                // v8初期化状況確認
-                this.validateV8Initialization();
+                // 最終依存注入検証
+                this.toolManager.verifyInjection();
                 
-                // v8システム状態更新
-                this.v8SystemReady = true;
-                this.started = true;
-                this.initialized = true;
-                this.v8InitializationSteps.push('v8 System started');
+                // システム準備完了通知
+                console.log('📡 v8システム準備完了通知送信');
+                if (window.Tegaki?.EventBusInstance?.emit) {
+                    window.Tegaki.EventBusInstance.emit('v8SystemReady', {
+                        rendererType: this.rendererType,
+                        webGPUSupported: this.webGPUSupported,
+                        managers: Array.from(this.managers.keys()),
+                        features: this.v8Features
+                    });
+                }
                 
-                // v8システム開始通知
-                this.notifyV8SystemReady();
+                this.systemStarted = true;
+                this.v8Ready = true;
                 
                 console.log('✅ AppCore - v8システム開始完了');
-                this.logV8InitializationSummary();
+                
+                // 初期化サマリー出力
+                this.outputInitializationSummary();
                 
             } catch (error) {
-                this.lastError = error;
-                console.error('💀 AppCore - v8システム開始エラー:', error);
+                console.error('💀 v8システム開始エラー:', error);
                 throw error;
             }
         }
         
         /**
-         * v8システム開始通知
+         * 📋 初期化サマリー出力
          */
-        notifyV8SystemReady() {
-            // EventBusにv8システム準備完了を通知
-            if (window.Tegaki?.EventBusInstance?.emit) {
-                window.Tegaki.EventBusInstance.emit('v8SystemReady', {
-                    pixiVersion: this.pixiVersion,
-                    rendererType: this.rendererType,
-                    webgpuSupported: this.webgpuSupported,
-                    features: this.v8Features,
-                    managers: Object.fromEntries(
-                        Array.from(this.managers.entries()).map(([key, manager]) => [key, !!manager])
-                    ),
-                    registeredManagers: Array.from(this.managers.keys()),
-                    toolManagerInjectionVerified: this.v8Features.toolManagerInjectionVerified
-                });
-            }
-            
-            console.log('📡 v8システム準備完了通知送信');
-        }
-        
-        /**
-         * v8ツール選択・即座反映
-         */
-        selectToolV8(toolName) {
-            console.log(`🔧 AppCore - v8ツール選択: ${toolName}`);
-            
-            try {
-                if (!this.isV8Ready()) {
-                    console.error('❌ v8システム未準備 - ツール選択不可');
-                    return false;
-                }
-                
-                if (!this.toolManager?.switchTool) {
-                    console.error('❌ ToolManager.switchTool method not available');
-                    return false;
-                }
-                
-                this.toolManager.switchTool(toolName);
-                console.log(`✅ AppCore - v8ツール選択成功: ${toolName}`);
-                
-                // v8ツール選択通知
-                if (window.Tegaki?.EventBusInstance?.emit) {
-                    window.Tegaki.EventBusInstance.emit('v8ToolSelected', {
-                        toolName: toolName,
-                        rendererType: this.rendererType
-                    });
-                }
-                
-                return true;
-                
-            } catch (error) {
-                this.lastError = error;
-                console.error('❌ AppCore - v8ツール選択エラー:', error);
-                return false;
-            }
-        }
-        
-        /**
-         * v8初期化状態検証（依存注入検証強化版）
-         */
-        validateV8Initialization() {
-            const checks = [
-                { condition: this.v8Features.pixiJSLoaded, message: 'PixiJS v8 not loaded' },
-                { condition: !!this.pixiApp, message: 'v8 PixiJS Application not created' },
-                { condition: !!this.rendererType, message: 'v8 renderer type not determined' },
-                { condition: !!this.canvasManager, message: 'v8 CanvasManager not initialized' },
-                { condition: !!this.toolManager, message: 'v8 ToolManager not initialized' },
-                { condition: this.webgpuSupported !== null, message: 'WebGPU support not determined' },
-                { condition: this.v8Features.managersUnifiedRegistration, message: 'Manager unified registration not completed' },
-                { condition: this.v8Features.canvasManagerReady, message: 'CanvasManager not ready' },
-                { condition: this.v8Features.drawContainerReady, message: 'DrawContainer not ready' },
-                { condition: this.v8Features.toolManagerInjectionVerified, message: 'ToolManager injection not verified' },
-                { condition: this.managers.has("coordinate"), message: 'CoordinateManager not registered' },
-                { condition: this.managers.has("record"), message: 'RecordManager not registered' },
-                { condition: this.managers.has("canvas"), message: 'CanvasManager not registered' },
-                { condition: this.managers.has("tool"), message: 'ToolManager not registered' }
-            ];
-            
-            // CanvasManagerのv8準備確認（利用可能な場合のみ）
-            if (this.canvasManager && typeof this.canvasManager.isV8Ready === 'function') {
-                checks.push({
-                    condition: this.canvasManager.isV8Ready(),
-                    message: 'CanvasManager not v8 ready'
-                });
-            }
-            
-            // 🚨修正強化: getDrawContainer確認
-            if (this.canvasManager) {
-                checks.push({
-                    condition: typeof this.canvasManager.getDrawContainer === 'function',
-                    message: 'CanvasManager.getDrawContainer() method not available'
-                });
-                
-                if (typeof this.canvasManager.getDrawContainer === 'function') {
-                    try {
-                        const drawContainer = this.canvasManager.getDrawContainer();
-                        checks.push({
-                            condition: !!drawContainer,
-                            message: 'CanvasManager.getDrawContainer() returns null'
-                        });
-                        
-                        if (drawContainer) {
-                            checks.push({
-                                condition: typeof drawContainer.addChild === 'function',
-                                message: 'DrawContainer invalid - missing addChild method'
-                            });
-                        }
-                    } catch (error) {
-                        checks.push({
-                            condition: false,
-                            message: `CanvasManager.getDrawContainer() execution error: ${error.message}`
-                        });
-                    }
-                }
-            }
-            
-            // 🚨修正強化: ToolManager連携確認（依存注入検証詳細）
-            if (this.toolManager) {
-                checks.push({
-                    condition: !!this.toolManager.canvasManager,
-                    message: 'ToolManager.canvasManager not injected'
-                });
-                
-                if (this.toolManager.canvasManager) {
-                    checks.push({
-                        condition: this.toolManager.canvasManager === this.canvasManager,
-                        message: 'ToolManager.canvasManager injection mismatch'
-                    });
-                }
-                
-                checks.push({
-                    condition: !!(this.toolManager.managersObject || this.toolManager.managers),
-                    message: 'ToolManager managers not injected'
-                });
-                
-                // 🚨新規追加: 依存注入検証再確認
-                if (typeof this.toolManager.verifyInjection === 'function') {
-                    try {
-                        this.toolManager.verifyInjection();
-                        checks.push({
-                            condition: true,
-                            message: 'ToolManager.verifyInjection() validation passed'
-                        });
-                    } catch (verifyError) {
-                        checks.push({
-                            condition: false,
-                            message: `ToolManager.verifyInjection() validation failed: ${verifyError.message}`
-                        });
-                    }
-                }
-            }
-            
-            for (const check of checks) {
-                if (!check.condition) {
-                    throw new Error(`v8 initialization validation failed: ${check.message}`);
-                }
-            }
-        }
-        
-        /**
-         * v8対応状況確認（依存注入検証強化版）
-         */
-        isV8Ready() {
-            return this.v8SystemReady && 
-                   this.v8Features.pixiJSLoaded &&
-                   !!this.pixiApp && 
-                   !!this.rendererType &&
-                   !!this.canvasManager &&
-                   !!this.toolManager &&
-                   this.webgpuSupported !== null &&
-                   this.v8Features.managersUnifiedRegistration &&
-                   this.v8Features.canvasManagerReady &&
-                   this.v8Features.drawContainerReady &&
-                   this.v8Features.toolManagerInjectionVerified &&
-                   this.managers.has("coordinate") &&
-                   this.managers.has("record") &&
-                   this.managers.has("canvas") &&
-                   this.managers.has("tool") &&
-                   !!this.toolManager.canvasManager &&
-                   (!!this.toolManager.managersObject || !!this.toolManager.managers) &&
-                   typeof this.canvasManager.getDrawContainer === 'function';
-        }
-        
-        /**
-         * v8初期化サマリーログ出力
-         */
-        logV8InitializationSummary() {
+        outputInitializationSummary() {
             console.log('📋 AppCore v8初期化サマリー:');
-            console.log(`🚀 v8システム: ${this.isV8Ready() ? '✅ 完了' : '❌ 未完了'}`);
-            console.log(`🖥️ PixiJS: v${this.pixiVersion} | レンダラー: ${this.rendererType} | WebGPU: ${this.webgpuSupported}`);
-            console.log(`🔍 依存注入検証: ${this.v8Features.toolManagerInjectionVerified ? '✅ PASS' : '❌ FAIL'}`);
-            console.log('📝 v8初期化ステップ:', this.v8InitializationSteps);
+            console.log('🚀 v8システム: ✅ 完了');
+            console.log(`🖥️ PixiJS: ${window.PIXI.VERSION} | レンダラー: ${this.rendererType} | WebGPU: ${this.v8Features.webgpuEnabled}`);
+            console.log('🔍 依存注入検証: ✅ PASS');
+            console.log('📝 v8初期化ステップ:', this.initializationSteps);
             console.log('🔧 v8機能:', this.v8Features);
             console.log('📋 登録Manager:', Array.from(this.managers.keys()));
-            
-            if (this.lastError) {
-                console.log('❌ 最新エラー:', this.lastError.message);
-            }
         }
         
         /**
-         * v8専用デバッグ情報取得（依存注入検証情報強化）
+         * 📦 Manager取得
          */
-        getV8DebugInfo() {
-            return {
-                // v8基本状態
-                v8SystemReady: this.v8SystemReady,
-                initialized: this.initialized,
-                started: this.started,
-                ready: this.isV8Ready(),
-                
-                // v8レンダラー情報
-                rendererInfo: {
-                    pixiVersion: this.pixiVersion,
-                    type: this.rendererType,
-                    webgpuSupported: this.webgpuSupported,
-                    webgpuActive: this.rendererType === 'webgpu',
-                    pixiLoaded: this.v8Features.pixiJSLoaded
-                },
-                
-                // 🚨強化: v8 Manager状態（依存注入検証詳細情報追加）
-                v8Managers: {
-                    canvasManager: !!this.canvasManager,
-                    canvasManagerReady: this.v8Features.canvasManagerReady,
-                    canvasManagerV8Ready: this.canvasManager?.isV8Ready?.() || false,
-                    drawContainerReady: this.v8Features.drawContainerReady,
-                    getDrawContainerMethod: this.canvasManager && typeof this.canvasManager.getDrawContainer === 'function',
-                    getDrawContainerWorking: (() => {
-                        if (!this.canvasManager || typeof this.canvasManager.getDrawContainer !== 'function') return false;
-                        try {
-                            const container = this.canvasManager.getDrawContainer();
-                            return !!(container && typeof container.addChild === 'function');
-                        } catch (error) {
-                            return false;
-                        }
-                    })(),
-                    toolManager: !!this.toolManager,
-                    toolManagerReady: this.toolManager?.isReady?.() || false,
-                    toolManagerCanvasManager: !!this.toolManager?.canvasManager,
-                    toolManagerCanvasManagerMatch: this.toolManager?.canvasManager === this.canvasManager,
-                    toolManagerDrawContainer: !!this.toolManager?.drawContainer,
-                    toolManagerManagersInjected: !!(this.toolManager?.managersObject || this.toolManager?.managers),
-                    toolManagerInjectionVerified: this.v8Features.toolManagerInjectionVerified,
-                    toolManagerVerifyInjectionMethod: this.toolManager && typeof this.toolManager.verifyInjection === 'function',
-                    toolManagerVerifyInjectionWorking: (() => {
-                        if (!this.toolManager || typeof this.toolManager.verifyInjection !== 'function') return false;
-                        try {
-                            this.toolManager.verifyInjection();
-                            return true;
-                        } catch (error) {
-                            return false;
-                        }
-                    })(),
-                    registeredManagers: Array.from(this.managers.keys()),
-                    totalRegisteredManagers: this.managers.size,
-                    coordinateManagerRegistered: this.managers.has("coordinate"),
-                    recordManagerRegistered: this.managers.has("record"),
-                    canvasManagerRegistered: this.managers.has("canvas"),
-                    toolManagerRegistered: this.managers.has("tool")
-                },
-                
-                // v8機能状況
-                v8Features: this.v8Features,
-                
-                // v8 PixiJS状態
-                pixiApp: this.pixiApp ? {
-                    width: this.pixiApp.screen.width,
-                    height: this.pixiApp.screen.height,
-                    resolution: this.pixiApp.renderer.resolution,
-                    canvasElement: !!this.pixiApp.canvas,
-                    stageChildren: this.pixiApp.stage.children.length
-                } : null,
-                
-                // v8初期化情報
-                v8Initialization: {
-                    steps: this.v8InitializationSteps,
-                    stepsCompleted: this.v8InitializationSteps.length,
-                    lastError: this.lastError ? this.lastError.message : null
-                },
-                
-                // v8システム情報
-                v8System: {
-                    tegakiNamespace: !!window.Tegaki,
-                    errorManager: !!window.Tegaki?.ErrorManagerInstance,
-                    eventBus: !!window.Tegaki?.EventBusInstance,
-                    pixiJS: !!window.PIXI,
-                    pixiVersion: this.pixiVersion
-                }
-            };
+        getManagerInstance(key) {
+            return this.managerInstances.get(key);
         }
         
-        // v7互換・ユーティリティメソッド群
-        
-        getDebugInfo() {
-            return this.getV8DebugInfo();
-        }
-        
-        isReady() {
-            return this.isV8Ready();
-        }
-        
-        getCanvasManager() {
-            return this.canvasManager;
-        }
-        
-        getToolManager() {
-            return this.toolManager;
-        }
-        
+        /**
+         * 🖥️ PixiJS Application取得
+         */
         getPixiApp() {
             return this.pixiApp;
         }
         
-        getWebGPUStatus() {
+        /**
+         * 🎨 CanvasManager取得
+         */
+        getCanvasManager() {
+            return this.canvasManager;
+        }
+        
+        /**
+         * 🔧 ToolManager取得
+         */
+        getToolManager() {
+            return this.toolManager;
+        }
+        
+        /**
+         * 🔍 システム準備状況確認
+         */
+        isV8Ready() {
+            return this.v8Ready && this.systemStarted && this.pixiApp && this.canvasManager && this.toolManager;
+        }
+        
+        /**
+         * 🧪 v8デバッグ情報取得
+         */
+        getV8DebugInfo() {
             return {
-                supported: this.webgpuSupported,
-                active: this.rendererType === 'webgpu',
-                rendererType: this.rendererType
+                className: 'AppCore',
+                version: 'v8.12.0',
+                systemStatus: {
+                    v8Ready: this.v8Ready,
+                    systemStarted: this.systemStarted,
+                    pixiAppReady: !!this.pixiApp,
+                    canvasManagerReady: this.canvasManager ? this.canvasManager.isV8Ready() : false,
+                    toolManagerReady: this.toolManager ? this.toolManager.isReady() : false
+                },
+                rendererInfo: {
+                    type: this.rendererType,
+                    webGPUSupported: this.webGPUSupported,
+                    webGPUActive: this.v8Features.webgpuEnabled
+                },
+                managers: {
+                    totalCount: this.managers.size,
+                    registeredKeys: Array.from(this.managers.keys())
+                },
+                v8Features: this.v8Features,
+                initializationSteps: this.initializationSteps,
+                pixiInfo: this.pixiApp ? {
+                    width: this.pixiApp.screen.width,
+                    height: this.pixiApp.screen.height,
+                    resolution: this.pixiApp.renderer.resolution,
+                    rendererType: this.pixiApp.renderer.type
+                } : null
             };
         }
         
-        selectTool(toolName) {
-            return this.selectToolV8(toolName);
-        }
-        
-        getPixiVersion() {
-            return this.pixiVersion;
-        }
-        
-        getV8FeatureStatus() {
-            return this.v8Features;
-        }
-        
-        resetV8System() {
-            console.log('🔄 AppCore - v8システムリセット開始');
-            
-            try {
-                this.v8SystemReady = false;
-                this.initialized = false;
-                this.started = false;
-                this.canvasManager = null;
-                this.toolManager = null;
-                this.managers.clear();
-                this.pixiApp = null;
-                this.rendererType = null;
-                this.webgpuSupported = null;
-                this.pixiVersion = null;
-                this.v8Features = {
-                    pixiJSLoaded: false,
-                    webgpuEnabled: false,
-                    asyncInitialization: false,
-                    containerHierarchy: false,
-                    realtimeDrawing: false,
-                    managersUnifiedRegistration: false,
-                    canvasManagerReady: false,
-                    drawContainerReady: false,
-                    toolManagerInjectionVerified: false
-                };
-                this.lastError = null;
-                this.v8InitializationSteps = [];
-                
-                console.log('✅ AppCore - v8システムリセット完了');
-                
-            } catch (error) {
-                console.error('❌ AppCore - v8システムリセットエラー:', error);
-                throw error;
-            }
-        }
-        
-        getV8SystemStats() {
-            return {
-                v8Status: {
-                    systemReady: this.v8SystemReady,
-                    uptime: this.started ? 'running' : 'stopped',
-                    pixiVersion: this.pixiVersion,
-                    rendererType: this.rendererType,
-                    webgpuActive: this.rendererType === 'webgpu',
-                    injectionVerified: this.v8Features.toolManagerInjectionVerified
-                },
-                
-                v8Managers: {
-                    canvas: !!this.canvasManager,
-                    canvasReady: this.v8Features.canvasManagerReady,
-                    canvasV8Ready: this.canvasManager?.isV8Ready?.() || false,
-                    drawContainerReady: this.v8Features.drawContainerReady,
-                    getDrawContainerAvailable: this.canvasManager && typeof this.canvasManager.getDrawContainer === 'function',
-                    tool: !!this.toolManager,
-                    toolCanvasManagerInjected: !!this.toolManager?.canvasManager,
-                    toolManagersInjected: !!(this.toolManager?.managersObject || this.toolManager?.managers),
-                    toolInjectionVerified: this.v8Features.toolManagerInjectionVerified,
-                    totalRegistered: this.managers.size,
-                    registeredKeys: Array.from(this.managers.keys()),
-                    coordinateRegistered: this.managers.has("coordinate"),
-                    recordRegistered: this.managers.has("record"),
-                    canvasRegistered: this.managers.has("canvas"),
-                    toolRegistered: this.managers.has("tool")
-                },
-                
-                v8ErrorStatus: {
-                    hasErrors: !!this.lastError,
-                    lastErrorTime: this.lastError ? 'recent' : null
-                },
-                
-                v8InitializationStats: {
-                    stepsCompleted: this.v8InitializationSteps.length,
-                    fullyInitialized: this.isV8Ready(),
-                    featuresEnabled: Object.values(this.v8Features).filter(Boolean).length,
-                    managersUnifiedRegistration: this.v8Features.managersUnifiedRegistration,
-                    canvasManagerReady: this.v8Features.canvasManagerReady,
-                    drawContainerReady: this.v8Features.drawContainerReady,
-                    toolManagerInjectionVerified: this.v8Features.toolManagerInjectionVerified
-                }
-            };
+        /**
+         * v7互換デバッグ情報
+         */
+        getDebugInfo() {
+            return this.getV8DebugInfo();
         }
     }
     
-    // Tegaki名前空間に登録
-    window.Tegaki.AppCore = AppCore;
+    // グローバル登録
+    if (!window.Tegaki) {
+        window.Tegaki = {};
+    }
     
-    console.log('🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤・Manager統一登録・初期化順序修正・依存注入検証強化版');
-} else {
-    console.log('⚠️ AppCore already defined - skipping redefinition');
-}
+    window.Tegaki.AppCore = AppCore;
+    console.log('🚀 AppCore v8統合基盤システム Loaded - 400x400キャンバス・コンソール削減・描画修正版');
 
-console.log('🚀 AppCore v8統合基盤システム Loaded - WebGPU対応・非同期初期化・Container階層統合基盤・Manager統一登録・初期化順序修正・依存注入検証強化版');
+})();
