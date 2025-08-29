@@ -1,96 +1,256 @@
-# 🚀 Tegaki Phase2-3計画書 v7 - PixiJS v8基盤高度機能実装
+# 🚀 Tegaki Phase1.5+ 統合進化計画書
+**PixiJS v8基盤 - プロ級ペンツール・ナビゲーション・Phase2-3統合版**
 
-> **v8移行完了後の高度機能実装計画** - レイヤー・変形・アニメーション・出力機能
-
-## 🎯 前提条件
-
-### ✅ Phase1.8完了必須
-- PixiJS v8移行完了・WebGPU対応
-- ペンツールリアルタイム描画実現
-- v8 Container階層基盤構築
-- 全既存機能v8対応完了
-
-### 🚫 Phase2開始前禁止事項
-- Phase1.8未完了での着手
-- v7とv8混在状態での機能追加
-- WebGPU未対応環境での高度機能実装
+> **Rev.2025-08-29-統合版** - Phase1.5完了後の包括的機能実装計画
 
 ---
 
-## 🎨 **Phase2 - レイヤー・変形・高度描画（v8基盤）**
+## 📋 **前提条件・スコープ**
 
-### 🎯 Phase2目標
-- マルチレイヤー編集環境構築
-- 選択・変形ツール実装
-- 高度描画ツール追加
-- 非破壊編集強化
+### ✅ **Phase1.5完了必須事項**
+- PixiJS v8完全移行・WebGPU対応完了
+- TPF（TegakiPathFormat v0.2）非破壊データ保持確立
+- キャンバス外描画・カメラ分離実装完了
+- 初期化順序確立・エラー即停止原則徹底
+- 400×400初期キャンバス・リサイズ対応完了
 
-### 📋 Phase2.1 - レイヤー管理システム
+### 🎯 **統合計画目標**
+1. **Phase1.6**: プロ級ペンツール・120Hz対応・筆圧感知
+2. **Phase1.7**: キャンバスナビゲーション・ショートカット統合
+3. **Phase1.8**: 基盤完成・Phase2準備完了
+4. **Phase2**: レイヤー管理・選択変形・高度描画
+5. **Phase3**: アニメーション・出力・最適化・プラグイン
+
+---
+
+## 🖊️ **Phase1.6 - プロ級ペンツール実装**
+
+### 🔧 **新規Manager追加**
+
+#### 1. PressureManager（筆圧管理）
+```javascript
+/**
+ * 🖊️ PressureManager - 筆圧感知・正規化・補正
+ * @provides: getPressure(), calibratePressure(), setPressureCurve()
+ * @uses: PointerEvent.pressure, pressure.js, ConfigManagerInstance
+ * @initflow: 1.デバイス検出 → 2.キャリブレーション → 3.感度曲線設定
+ * @forbids: 💀双方向依存 🚫フォールバック 🚫v7/v8二重管理
+ * @manager-key: window.Tegaki.PressureManagerInstance
+ * @dependencies-strict: REQUIRED[ConfigManager], OPTIONAL[pressure.js]
+ * @integration-flow: AppCore → CanvasManager → PressureManager
+ */
+class PressureManager {
+    // Apple Pencil/Surface Pen/Wacom自動認識
+    // 感度曲線（リニア/二次/カスタム）
+    // デバイス差異自動吸収
+    initialize(): Promise<void>
+    detectPressureDevice(): {type, capabilities}
+    calibratePressure(samples): void
+    getPressure(event): number  // 0-1正規化
+    setPressureCurve(type): void
+}
+```
+
+#### 2. StrokeEngine（高速描画エンジン）
+```javascript
+/**
+ * 🎨 StrokeEngine - 120Hz対応・予測描画・WebGPU最適化
+ * @provides: startStroke(), addStrokePoint(), endStroke()
+ * @uses: PressureManagerInstance, CanvasManagerInstance
+ * @initflow: 1.エンジン初期化 → 2.WebGPUバッファ準備 → 3.描画パイプライン構築
+ * @forbids: 💀双方向依存 🚫直接Pixi操作 🚫同期ブロッキング
+ * @manager-key: window.Tegaki.StrokeEngineInstance
+ * @performance-notes: 16ms目標・120Hz対応・WebGPU活用
+ */
+class StrokeEngine {
+    // 予測描画・差分更新システム
+    // 120Hz高頻度イベント処理
+    // WebGPU最適化パイプライン
+    initialize(): Promise<void>
+    startStroke(startPoint, pressure): void
+    addStrokePoint(point, pressure): void
+    endStroke(): void
+    enablePredictiveRendering(): void
+}
+```
+
+#### 3. BrushRenderer（ブラシレンダラー）
+```javascript
+/**
+ * 🖌️ BrushRenderer - ブラシ形状・テクスチャ・リアルタイム変形
+ * @provides: setBrushShape(), setTexture(), renderBrushPoint()
+ * @uses: StrokeEngineInstance, TextureManager（新規）
+ * @initflow: 1.ブラシライブラリ読み込み → 2.シェーダー準備 → 3.レンダーパイプライン
+ * @forbids: 💀重複テクスチャ読み込み 🚫メモリリーク 🚫直接Graphics操作
+ * @manager-key: window.Tegaki.BrushRendererInstance
+ * @state-management: テクスチャは必ずcreateTexture()経由で管理
+ */
+class BrushRenderer {
+    // 円形・楕円・カスタム形状対応
+    // テクスチャブラシ・プロシージャル生成
+    // リアルタイム筆圧連動変形
+    initialize(): Promise<void>
+    setBrushShape(type, params): void
+    setTexture(textureId): void
+    renderBrushPoint(point, pressure, size): void
+}
+```
+
+### 🛠️ **PenTool大幅拡張**
+```javascript
+/**
+ * 🖊️ PenTool - プロ級ペン機能統合
+ * 【Phase1.6新機能】
+ * - 筆圧感知描画（0-1024段階）
+ * - 120Hz高速レスポンス（8ms以下）
+ * - 線補正・スムージング・手ブレ補正
+ * - 予測描画・遅延削減
+ * - ブラシエンジン統合
+ * @uses: PressureManagerInstance, StrokeEngineInstance, BrushRendererInstance
+ */
+class PenTool extends AbstractTool {
+    // 筆圧→線幅・透明度変換
+    // 座標・筆圧スムージング
+    // 120Hz対応イベント処理
+}
+```
+
+---
+
+## 🗺️ **Phase1.7 - キャンバスナビゲーション・ショートカット統合**
+
+### 🧭 **NavigationManager拡張**
+```javascript
+/**
+ * 🗺️ NavigationManager - 拡張版（GPU加速・120Hz対応）
+ * 【Phase1.7拡張機能】
+ * - GPU Transform加速移動・拡縮・回転
+ * - 120Hz滑らかナビゲーション
+ * - キーボード・マウス・ジェスチャー統合
+ * - 慣性スクロール・スムーズズーム
+ * @uses: CoordinateManagerInstance, ShortcutManagerInstance
+ * @performance-notes: WebGPU Transform・60-120FPS維持
+ */
+class NavigationManager {
+    // GPU加速カメラ変形
+    // 慣性・イージング付きナビゲーション
+    // マルチタッチ・ジェスチャー対応
+    panCanvas(deltaX, deltaY, smooth?): void
+    zoomCanvas(scale, centerPoint?, smooth?): void  
+    rotateCanvas(angle, centerPoint?, smooth?): void
+    resetView(smooth?): void
+    enableInertialScrolling(): void
+}
+```
+
+### ⌨️ **ShortcutManager統合**
+```javascript
+/**
+ * ⌨️ ShortcutManager - 包括的ショートカット管理
+ * 【基本操作】Ctrl+Z/Y（GPU加速Undo/Redo）、DEL（WebGPU最適化消去）
+ * 【ナビゲーション】Space+ドラッグ（120Hz追従移動）、ホイール（GPU拡縮）
+ * 【ツール】P/E/I/G/M/T（0ms切り替え）、[/]（プリセット移動）
+ * 【レイヤー】↑/↓（GPU滑らか移動）、H/Shift+H（瞬間反転）
+ * @uses: ToolManagerInstance, NavigationManagerInstance, LayerManager
+ * @integration-flow: bootstrap → ShortcutManager → 全Manager連携
+ */
+class ShortcutManager {
+    // Chrome Scheduling API高優先度処理
+    // 複合キー・ジェスチャー認識
+    // 操作競合回避・優先度制御
+    initializeShortcuts(): void
+    registerShortcut(keys, action, priority): void
+    handleKeyDown(event): void
+    handlePointerGesture(event): void
+}
+```
+
+### 🎛️ **専用ポップアップUI**
+```javascript
+/**
+ * 🎛️ UnifiedPopup - TAB統合ポップアップ
+ * 【統合UI】色・ペンサイズ・ツールアイコン・レイヤー一覧
+ * 【GPU最適化】Chrome API・滑らかアニメーション
+ * @uses: ToolManagerInstance, LayerManager, ConfigManagerInstance
+ */
+class UnifiedPopup {
+    // TABキー一発表示・非表示
+    // 色・サイズ・ツール統合インターフェース
+    // GPU加速アニメーション
+    showPopup(): void
+    hidePopup(): void
+    updateToolSettings(): void
+}
+```
+
+---
+
+## 🎨 **Phase2 - レイヤー・変形・高度描画（v8最適化基盤）**
+
+### 📋 **Phase2.1 - レイヤー管理システム**
 
 #### 🎨 LayerManager（新規実装）
 ```javascript
 /**
  * 🎨 LayerManager - v8 Container階層活用レイヤー管理
- * 📋 RESPONSIBILITY: レイヤー作成・管理・操作・順序制御
- * 🚫 PROHIBITION: v7 @pixi/layers依存・直接Container操作
- * ✅ PERMISSION: v8 Container機能フル活用・WebGPU最適化
+ * @provides: createLayer(), deleteLayer(), reorderLayers(), setLayerProperties()
+ * @uses: CanvasManagerInstance, EventBusInstance
+ * @initflow: 1.Container階層構築 → 2.レイヤー管理API → 3.UI連携
+ * @forbids: 💀双方向依存 🚫v7 @pixi/layers依存 🚫直接Container操作
+ * @manager-key: window.Tegaki.LayerManagerInstance
+ * @dependencies-strict: REQUIRED[CanvasManager], OPTIONAL[UnifiedPopup]
+ * @integration-flow: AppCore → CanvasManager → LayerManager → LayerPanel
  */
 class LayerManager {
-    // 使用ファイル・メソッド・シンボル定義
-    // 📄 managers/layer-manager.js
-    // 🔗 依存: CanvasManagerInstance, EventBusInstance
-    // 📤 提供: createLayer, deleteLayer, reorderLayers, setLayerProperties
-    
-    // 実装予定メソッド（詳細コードはPhase1.8完了後策定）
+    // v8 Container機能フル活用
+    // WebGPU最適化レイヤー描画
+    // ブレンドモード・不透明度制御
     createLayer(id, options): PIXI.Container
     deleteLayer(id): boolean
     duplicateLayer(sourceId, newId): PIXI.Container
     reorderLayers(layerIds): boolean
     setLayerBlendMode(id, mode): boolean
     setLayerOpacity(id, opacity): boolean
-    setLayerVisible(id, visible): boolean
     mergeLayersDown(layerId): PIXI.Container
 }
 ```
 
-#### 🖼️ LayerPanel（新規実装）
-```javascript  
+#### 🖼️ LayerPanel（ポップアップ統合）
+```javascript
 /**
- * 🖼️ LayerPanel - レイヤーUI管理
- * 📋 RESPONSIBILITY: レイヤー一覧表示・操作UI・ドラッグ&ドロップ
- * 🚫 PROHIBITION: 直接レイヤー操作・Manager経由せずDOM操作
- * ✅ PERMISSION: LayerManager連携・視覚的フィードバック
+ * 🖼️ LayerPanel - UnifiedPopup統合レイヤーUI
+ * @uses: LayerManagerInstance, UnifiedPopup
+ * @integration-flow: TAB → UnifiedPopup → LayerPanel表示
  */
 class LayerPanel {
-    // 📄 ui/layer-panel.js（新規作成）
-    // 🔗 依存: LayerManager, EventBusInstance
-    // 📤 提供: showLayerPanel, updateLayerList, handleLayerDrag
+    // TABポップアップ内でレイヤー管理
+    // ドラッグ&ドロップ順序変更
+    // 視覚的フィードバック・GPU加速
 }
 ```
 
-### 📋 Phase2.2 - 選択・変形システム
+### 📋 **Phase2.2 - 選択・変形システム**
 
 #### ✂️ SelectionManager（新規実装）
 ```javascript
 /**
  * ✂️ SelectionManager - オブジェクト選択管理
- * 📋 RESPONSIBILITY: 矩形・楕円・自由選択・選択範囲管理
- * 🚫 PROHIBITION: 直接Graphics操作・Manager経由せず変形
- * ✅ PERMISSION: v8高精度座標・マルチ選択・選択範囲保存
+ * @provides: selectRectangle(), selectEllipse(), selectLasso(), getSelectedObjects()
+ * @uses: CanvasManagerInstance, CoordinateManagerInstance
+ * @initflow: 1.選択ツール初期化 → 2.選択範囲算出 → 3.TransformTool連携
+ * @forbids: 💀直接Graphics操作 🚫Manager経由せず変形 🚫選択状態不整合
+ * @manager-key: window.Tegaki.SelectionManagerInstance
+ * @state-management: 選択状態は必ずupdateSelection()経由で変更
  */
 class SelectionManager {
-    // 📄 managers/selection-manager.js（新規作成）
-    // 🔗 依存: CanvasManagerInstance, CoordinateManagerInstance
-    // 📤 提供: selectRectangle, selectEllipse, selectLasso, getSelectedObjects
-    
-    // 実装予定メソッド
+    // v8高精度座標選択
+    // マルチ選択・選択範囲保存
+    // GPU加速選択フィードバック
     selectRectangle(x1, y1, x2, y2): Array<PIXI.DisplayObject>
-    selectEllipse(centerX, centerY, radiusX, radiusY): Array<PIXI.DisplayObject>  
+    selectEllipse(centerX, centerY, radiusX, radiusY): Array<PIXI.DisplayObject>
     selectLasso(points): Array<PIXI.DisplayObject>
     selectAll(): Array<PIXI.DisplayObject>
     clearSelection(): boolean
-    addToSelection(object): boolean
-    removeFromSelection(object): boolean
     getSelectionBounds(): PIXI.Rectangle
 }
 ```
@@ -99,54 +259,49 @@ class SelectionManager {
 ```javascript
 /**
  * 🔄 TransformTool - 選択オブジェクト変形
- * 📋 RESPONSIBILITY: 移動・回転・拡大縮小・ハンドル操作
- * 🚫 PROHIBITION: 直接transform操作・座標計算ミス
- * ✅ PERMISSION: v8高精度変形・WebGPU加速・リアルタイム変形
+ * @provides: transformSelected(), showTransformHandles(), applyTransform()
+ * @uses: SelectionManagerInstance, CoordinateManagerInstance
+ * @forbids: 🚫直接transform操作 🚫座標計算ミス 🚫変形状態不整合
+ * @manager-key: window.Tegaki.TransformToolInstance
+ * @performance-notes: v8高精度変形・WebGPU加速・リアルタイム変形
  */
 class TransformTool extends AbstractTool {
-    // 📄 tools/transform-tool.js（新規作成）
-    // 🔗 依存: SelectionManager, CoordinateManagerInstance
-    // 📤 提供: transformSelected, showTransformHandles, applyTransform
-    
-    // 実装予定メソッド
+    // v8高精度変形・WebGPU加速
+    // 移動・回転・拡大縮小ハンドル
+    // リアルタイム変形プレビュー
     showTransformHandles(selection): void
-    hideTransformHandles(): void
     startTransform(handleType, startPoint): void
     updateTransform(currentPoint): void
     applyTransform(): void
-    resetTransform(): void
 }
 ```
 
-### 📋 Phase2.3 - 高度描画ツール
+### 📋 **Phase2.3 - 高度描画ツール**
 
 #### 🖌️ BrushTool（新規実装）
 ```javascript
 /**
- * 🖌️ BrushTool - テクスチャ対応ブラシ
- * 📋 RESPONSIBILITY: テクスチャブラシ・圧力感知・ブラシ設定
- * 🚫 PROHIBITION: 重複テクスチャ読み込み・メモリリーク
- * ✅ PERMISSION: v8 RenderTexture活用・圧力感知対応
+ * 🖌️ BrushTool - テクスチャ対応ブラシ（PenTool拡張版）
+ * @uses: BrushRendererInstance, PressureManagerInstance
+ * @integration-flow: BrushRenderer → PenTool拡張 → BrushTool独立
  */
 class BrushTool extends AbstractTool {
-    // 📄 tools/brush-tool.js（新規作成）
-    // 🔗 依存: CanvasManagerInstance, TextureManager（新規）
-    // 📤 提供: setBrushTexture, setPressureSensitivity, drawBrushStroke
+    // テクスチャブラシ・圧力感知
+    // プロシージャル生成・パーティクル
+    // リアルタイム変形
 }
 ```
 
-#### 🔺 ShapeTool（新規実装） 
+#### 🔺 ShapeTool（新規実装）
 ```javascript
 /**
  * 🔺 ShapeTool - 図形描画ツール
- * 📋 RESPONSIBILITY: 矩形・楕円・多角形・直線描画
- * 🚫 PROHIBITION: 重複図形作成・座標計算エラー
- * ✅ PERMISSION: v8 Graphics活用・グリッドスナップ・比例維持
+ * @uses: CanvasManagerInstance, CoordinateManagerInstance
  */
 class ShapeTool extends AbstractTool {
-    // 📄 tools/shape-tool.js（新規作成）
-    // 🔗 依存: CanvasManagerInstance, CoordinateManagerInstance  
-    // 📤 提供: drawRectangle, drawEllipse, drawPolygon, drawLine
+    // v8 Graphics活用図形描画
+    // グリッドスナップ・比例維持
+    // 矩形・楕円・多角形・直線
 }
 ```
 
@@ -154,31 +309,12 @@ class ShapeTool extends AbstractTool {
 ```javascript
 /**
  * 🎨 FillTool - 塗りつぶし・グラデーション
- * 📋 RESPONSIBILITY: 塗りつぶし・グラデーション・パターン塗り
- * 🚫 PROHIBITION: 無限ループ・メモリ過剰使用
- * ✅ PERMISSION: フラッドフィル・グラデーション・v8最適化
+ * @uses: CanvasManagerInstance, ColorManager（新規）
  */
 class FillTool extends AbstractTool {
-    // 📄 tools/fill-tool.js（新規作成）
-    // 🔗 依存: CanvasManagerInstance, ColorManager（新規）
-    // 📤 提供: floodFill, gradientFill, patternFill
-}
-```
-
-### 📋 Phase2.4 - UI強化・パネル統合
-
-#### 🎛️ ToolPanel（拡張実装）
-```javascript
-/**
- * 🎛️ ToolPanel - ツールパネル拡張
- * 📋 RESPONSIBILITY: 全ツール統合UI・設定パネル・ショートカット表示
- * 🚫 PROHIBITION: ツール直接操作・設定値直接変更
- * ✅ PERMISSION: ToolManager経由操作・動的UI更新
- */
-class ToolPanel {
-    // 📄 ui/tool-panel.js（拡張）
-    // 🔗 依存: ToolManagerInstance, ConfigManagerInstance
-    // 📤 提供: showAdvancedTools, updateToolSettings, showShortcuts
+    // フラッドフィル・グラデーション
+    // パターン塗り・WebGPU最適化
+    // 無限ループ防止・メモリ管理
 }
 ```
 
@@ -186,51 +322,45 @@ class ToolPanel {
 
 ## 🚀 **Phase3 - アニメーション・出力・最適化（v8最適化）**
 
-### 🎯 Phase3目標  
-- フレームベースアニメーション
-- 高品質出力機能
-- パフォーマンス最適化
-- プラグイン機能
-
-### 📋 Phase3.1 - アニメーション機能
+### 📋 **Phase3.1 - アニメーション機能**
 
 #### 🎬 AnimationManager（新規実装）
 ```javascript
 /**
  * 🎬 AnimationManager - フレームアニメーション管理
- * 📋 RESPONSIBILITY: フレーム管理・タイムライン・オニオンスキン
- * 🚫 PROHIBITION: フレーム重複作成・メモリリーク
- * ✅ PERMISSION: v8 RenderTexture活用・フレーム最適化
+ * @provides: createFrame(), deleteFrame(), playAnimation(), exportGIF()
+ * @uses: CanvasManagerInstance, RecordManagerInstance, @esotericsoftware/spine-pixi-v8
+ * @initflow: 1.フレーム管理システム → 2.タイムライン → 3.Spine物理統合
+ * @forbids: 💀フレーム重複作成 🚫メモリリーク 🚫同期ブロッキング
+ * @manager-key: window.Tegaki.AnimationManagerInstance
+ * @performance-notes: v8 RenderTexture活用・フレーム最適化・60-120FPS
  */
 class AnimationManager {
-    // 📄 managers/animation-manager.js（新規作成）
-    // 🔗 依存: CanvasManagerInstance, RecordManagerInstance
-    // 📤 提供: createFrame, deleteFrame, playAnimation, exportGIF
-    
-    // 実装予定メソッド（詳細はPhase2完了後策定）
+    // フレーム管理・タイムライン制御
+    // オニオンスキン・Spine統合基盤
+    // GIF・WebM出力
     createFrame(index): AnimationFrame
     duplicateFrame(sourceIndex, targetIndex): AnimationFrame
-    deleteFrame(index): boolean
-    setFrameRate(fps): void
     playAnimation(startFrame?, endFrame?): void
-    pauseAnimation(): void
-    stopAnimation(): void
     exportToGIF(options): Blob
+    initializeSpineSupport(): Promise<void>  // Spine統合
 }
 ```
 
-#### 🎞️ Timeline（新規実装）
+#### 🎞️ Timeline（ショートカット統合）
 ```javascript
 /**
- * 🎞️ Timeline - タイムライン UI
- * 📋 RESPONSIBILITY: フレーム表示・スクラブ・キーフレーム管理
- * 🚫 PROHIBITION: 直接フレーム操作・UI状態とデータ不整合
- * ✅ PERMISSION: AnimationManager連携・視覚的操作
+ * 🎞️ Timeline - タイムラインUI（ショートカット統合）
+ * 【アニメーション専用ショートカット】
+ * - ←/→（カット移動）、Shift+←/→（5カット飛ばし）
+ * - ALT+Space（120FPS再生/停止）、ALT+J/L（シャトル）
+ * - ALT+←/→（フレーム移動）、ALT+O（オニオンスキン）
+ * @uses: AnimationManagerInstance, ShortcutManagerInstance
  */
 class Timeline {
-    // 📄 ui/timeline.js（新規作成）
-    // 🔗 依存: AnimationManager, EventBusInstance
-    // 📤 提供: showTimeline, updateFrameList, handleFrameDrag
+    // フレーム表示・スクラブ・キーフレーム
+    // WebCodecs統合・120FPS精密制御
+    // ショートカット統合・視覚的操作
 }
 ```
 
@@ -238,242 +368,178 @@ class Timeline {
 ```javascript
 /**
  * 🧅 OnionSkin - 前後フレーム表示
- * 📋 RESPONSIBILITY: 前後フレーム半透明表示・設定管理
- * 🚫 PROHIBITION: 過度なフレーム表示・描画パフォーマンス劣化
- * ✅ PERMISSION: v8半透明レンダリング・動的表示切替
- */  
+ * @uses: AnimationManagerInstance, CanvasManagerInstance
+ */
 class OnionSkin {
-    // 📄 animation/onion-skin.js（新規作成）
-    // 🔗 依存: AnimationManager, CanvasManagerInstance
-    // 📤 提供: showOnionSkin, setOnionSkinFrames, setOpacity
+    // v8半透明レンダリング
+    // 前後フレーム半透明表示
+    // 動的表示切替・設定管理
 }
 ```
 
-### 📋 Phase3.2 - 高品質出力機能
+### 📋 **Phase3.2 - 高品質出力・Spine統合**
 
-#### 📤 ExportManager（新規実装）
+#### 📤 ExportManager（Spine統合）
 ```javascript
 /**
- * 📤 ExportManager - 高品質出力管理
- * 📋 RESPONSIBILITY: PNG・JPEG・GIF・SVG出力・品質設定
- * 🚫 PROHIBITION: 低品質出力・メタデータ欠落
- * ✅ PERMISSION: v8 RenderTexture活用・高解像度出力
+ * 📤 ExportManager - 高品質出力・Spine統合
+ * @uses: CanvasManagerInstance, AnimationManagerInstance, @esotericsoftware/spine-pixi-v8
+ * @integration-flow: 描画→TPF→Spine変換→物理演算→出力
  */
 class ExportManager {
-    // 📄 managers/export-manager.js（新規作成）
-    // 🔗 依存: CanvasManagerInstance, AnimationManager
-    // 📤 提供: exportPNG, exportJPEG, exportGIF, exportSVG
-    
-    // 実装予定メソッド
+    // PNG・JPEG・GIF・SVG出力
+    // Spine形式出力・物理演算統合
+    // 高解像度・バッチ出力
     exportPNG(options): Blob
-    exportJPEG(quality, options): Blob  
-    exportGIF(animationOptions): Blob
-    exportSVG(options): string
-    exportHighRes(scale, format): Blob
-    batchExport(frames, format): Array<Blob>
+    exportSpineProject(options): {skeleton, atlas, animations}
+    exportWithPhysics(options): Blob  // 物理演算統合
 }
 ```
 
-#### 🎨 RenderOptimizer（新規実装）
+#### 🦴 SpineIntegration（新規実装）
 ```javascript
 /**
- * 🎨 RenderOptimizer - レンダリング最適化
- * 📋 RESPONSIBILITY: WebGPU最適化・メモリ管理・描画効率化
- * 🚫 PROHIBITION: 過度な最適化・機能犠牲・デバッグ困難化
- * ✅ PERMISSION: WebGPU活用・適応的品質調整
+ * 🦴 SpineIntegration - Spine物理演算統合
+ * @uses: @esotericsoftware/spine-pixi-v8, AnimationManagerInstance
  */
-class RenderOptimizer {
-    // 📄 utils/render-optimizer.js（新規作成）
-    // 🔗 依存: CanvasManagerInstance, ConfigManagerInstance
-    // 📤 提供: optimizeForWebGPU, adaptiveQuality, memoryManagement
+class SpineIntegration {
+    // 描画ストローク→ボーン変換
+    // 物理演算対応データ構造
+    // アニメーション制御点生成
+    convertStrokesToSkeleton(strokes): SpineSkeleton
+    applyPhysicsSimulation(skeleton, params): void
+    exportSpineAnimation(skeleton, timeline): SpineAnimation
 }
 ```
 
-### 📋 Phase3.3 - パフォーマンス最適化
+### 📋 **Phase3.3 - パフォーマンス最適化**
 
-#### ⚡ PerformanceMonitor（新規実装）
+#### ⚡ PerformanceMonitor（統合監視）
 ```javascript
 /**
- * ⚡ PerformanceMonitor - パフォーマンス監視
- * 📋 RESPONSIBILITY: FPS監視・メモリ使用量・描画時間計測
- * 🚫 PROHIBITION: 過度な監視・パフォーマンス劣化
- * ✅ PERMISSION: リアルタイム監視・最適化提案
+ * ⚡ PerformanceMonitor - 包括的性能監視
+ * 【監視項目】FPS・メモリ・描画時間・WebGPU使用率・筆圧レスポンス
+ * 【ショートカット】Ctrl+Shift+P（性能監視表示）
+ * @uses: なし（独立監視）
  */
 class PerformanceMonitor {
-    // 📄 debug/performance-monitor.js（新規作成）
-    // 🔗 依存: なし（独立監視）
-    // 📤 提供: startMonitoring, getPerformanceReport, suggestOptimizations
-}
-```
-
-#### 🧠 MemoryManager（新規実装）
-```javascript  
-/**
- * 🧠 MemoryManager - メモリ管理最適化
- * 📋 RESPONSIBILITY: テクスチャ管理・オブジェクト破棄・GC最適化
- * 🚫 PROHIBITION: 手動メモリ操作・強制GC・メモリリーク
- * ✅ PERMISSION: 自動最適化・適応的管理・監視機能
- */
-class MemoryManager {
-    // 📄 utils/memory-manager.js（新規作成）
-    // 🔗 依存: PerformanceMonitor, ConfigManagerInstance
-    // 📤 提供: optimizeMemory, cleanupTextures, monitorUsage
-}
-```
-
-### 📋 Phase3.4 - プラグイン・拡張機能
-
-#### 🔌 PluginManager（新規実装）
-```javascript
-/**
- * 🔌 PluginManager - プラグイン管理
- * 📋 RESPONSIBILITY: プラグイン読み込み・API提供・サンドボックス
- * 🚫 PROHIBITION: 不正プラグイン・セキュリティ穴・API破綻
- * ✅ PERMISSION: 安全なAPI・プラグイン検証・動的読み込み
- */
-class PluginManager {
-    // 📄 core/plugin-manager.js（新規作成）
-    // 🔗 依存: ErrorManagerInstance, SecurityManager（新規）
-    // 📤 提供: loadPlugin, unloadPlugin, validatePlugin, getPluginAPI
+    // リアルタイム監視・最適化提案
+    // WebGPU使用率・メモリ使用量
+    // 120Hz対応パフォーマンス計測
+    startMonitoring(): void
+    getPerformanceReport(): PerformanceReport
+    suggestOptimizations(): Array<OptimizationSuggestion>
 }
 ```
 
 ---
 
-## 🔄 **実装順序・依存関係**
+## 🔄 **実装順序・統合フロー**
 
-### 📋 Phase2実装順序
+### 📋 **Phase1.6-1.8 実装順序**
 ```
-Phase2.1: LayerManager → LayerPanel
+Phase1.6: PressureManager → StrokeEngine → BrushRenderer → PenTool拡張
     ↓
-Phase2.2: SelectionManager → TransformTool  
+Phase1.7: NavigationManager拡張 → ShortcutManager → UnifiedPopup
+    ↓  
+Phase1.8: 統合テスト・最適化・Phase2準備完了
+```
+
+### 📋 **Phase2-3 実装順序**
+```
+Phase2.1: LayerManager → LayerPanel統合
+    ↓
+Phase2.2: SelectionManager → TransformTool
     ↓
 Phase2.3: BrushTool → ShapeTool → FillTool
     ↓
-Phase2.4: ToolPanel拡張・統合テスト
-```
-
-### 📋 Phase3実装順序
-```
 Phase3.1: AnimationManager → Timeline → OnionSkin
     ↓
-Phase3.2: ExportManager → RenderOptimizer
-    ↓  
-Phase3.3: PerformanceMonitor → MemoryManager
+Phase3.2: ExportManager → SpineIntegration
     ↓
-Phase3.4: PluginManager・最終統合
-```
-
-### ⚠️ 架空メソッド対策・整合性確認
-
-#### 🔍 Phase2開始前チェックリスト
-- [ ] Phase1.8完了・v8移行完全終了確認
-- [ ] 全既存Manager v8対応動作確認
-- [ ] WebGPU対応・フォールバック動作確認
-- [ ] リアルタイム描画・座標精度確認
-
-#### 🔍 各Phase完了チェックリスト
-- [ ] **メソッド実装確認**: 全定義メソッド実装完了
-- [ ] **依存関係確認**: 呼び出し先メソッド実在確認
-- [ ] **Manager連携確認**: 統一API使用確認
-- [ ] **エラー処理確認**: ErrorManager経由確認
-- [ ] **デバッグ情報確認**: getDebugInfo実装確認
-
-#### 📝 ファイルヘッダー記載必須項目
-```javascript
-/**
- * 🎨 ClassName - 役割説明
- * 📋 RESPONSIBILITY: このクラスの責務
- * 🚫 PROHIBITION: やってはいけないこと  
- * ✅ PERMISSION: やっても良いこと
- * 
- * 📄 FILE: ファイルパス
- * 🔗 DEPENDENCIES: 依存するManager/Class一覧
- * 📤 PROVIDES: 他ファイルから呼び出されるメソッド一覧
- * 🔄 INTEGRATION: 他クラスとの連携フロー
- * 
- * 🎯 PHASE: Phase2/Phase3実装段階
- * ⚠️ PREREQUISITES: 前提条件・依存Phase
- */
+Phase3.3: PerformanceMonitor → 最終統合
 ```
 
 ---
 
-## 🚨 **Phase2-3共通禁止事項**
+## 🎯 **技術仕様・成功基準**
 
-### 💀 絶対禁止（重大違反）
-1. **Phase1.8未完了での着手** - v8移行完了が前提
-2. **架空メソッド呼び出し** - 実装前メソッド呼び出し禁止
-3. **Manager経由しない直接操作** - PixiJS直接操作禁止
-4. **エラー握りつぶし** - try/catch握りつぶし継続禁止
-5. **フォールバック・フェイルセーフ** - 正しい構造のみで動作
-
-### ✅ Phase2-3必須遵守
-1. **段階的実装** - Phase内でも機能単位で段階実装
-2. **既存機能保護** - Phase1機能の動作保証継続
-3. **v8機能活用** - WebGPU・Container階層・高精度座標
-4. **統合テスト実施** - Phase完了時の全機能動作確認  
-5. **性能監視継続** - 機能追加による性能劣化監視
-
----
-
-## 🎯 **成功基準**
-
-### ✅ Phase2完了基準
-- [ ] マルチレイヤー編集環境完全動作
-- [ ] 選択・変形ツール全機能動作  
-- [ ] 高度描画ツール実装・動作確認
-- [ ] UI統合・操作性向上確認
-- [ ] 既存Phase1機能すべて動作継続
-
-### 🚀 Phase3完了基準
-- [ ] フレームアニメーション完全動作
-- [ ] 高品質出力（PNG・JPEG・GIF）動作
-- [ ] パフォーマンス最適化効果確認
-- [ ] プラグイン機能基本動作
-- [ ] 総合性能・安定性確認
-
-### 📊 定量的目標
-- **メモリ使用量**: Phase2で+50%以下・Phase3で+100%以下
-- **描画性能**: 60FPS維持（WebGPU環境）
+### ⚡ **パフォーマンス目標**
+- **筆圧レスポンス**: 8ms以下（120Hz環境）
+- **描画フレームレート**: 安定60FPS、120Hz環境で120FPS
+- **メモリ使用量**: Phase2で+50%以下、Phase3で+100%以下
 - **起動時間**: Phase3完了後も5秒以内
-- **エラー発生率**: Phase追加機能でのエラー1%以下
+
+### 🎨 **品質目標**
+- **筆圧精度**: 1024段階滑らかな変化
+- **線補正**: 手ブレ80%以上削減
+- **操作レスポンス**: 遅延を感じない反応速度
+- **長時間安定性**: 連続描画でも性能劣化なし
+
+### 📊 **機能達成基準**
+- **Phase1.8**: プロペン・ナビゲーション・ショートカット完全動作
+- **Phase2**: レイヤー・選択変形・高度描画完全動作
+- **Phase3**: アニメーション・Spine統合・出力機能完全動作
 
 ---
 
-## 🔧 **使用予定技術・ライブラリ**
+## 🚨 **実装原則・禁止事項**
 
-### ✅ Phase2追加予定
+### 💀 **絶対禁止（継続）**
+- Phase未完了での次Phase着手
+- 架空メソッド呼び出し（実装前メソッド使用禁止）
+- Manager経由しない直接操作
+- エラー握りつぶし・フォールバック・フェイルセーフ
+- v7/v8二重管理
+
+### ✅ **必須遵守（継続）**
+- 段階的実装・既存機能保護
+- v8機能フル活用・WebGPU最適化
+- 統合テスト実施・性能監視継続
+- TPF v0.2データ形式統一
+- 全クラス・関数のwindow.Tegaki名前空間公開
+
+---
+
+## 📦 **依存関係・ライブラリ構成**
+
+### ✅ **既存package.json活用**
+```json
+{
+  "dependencies": {
+    "pixi.js": "^8.0.0",
+    "pressure": "^2.2.0"  // 筆圧検出強化
+  }
+}
+```
+
+### 🚀 **Phase別追加ライブラリ**
 ```javascript
-// レイヤー・変形用
-// 全てv8対応版・CDN経由
+// Phase1.6-1.7: プロペン・ナビゲーション
+// pressure.js: PointerEvent.pressure強化（既存package.json対応）
+
+// Phase2: レイヤー・変形・高度描画
 "@pixi/graphics-extras": "v8対応版"  // 高度図形
 "@pixi/math-extras": "v8対応版"      // 数学計算強化
+"@pixi/ui": "^2.1.0"                // UI コンポーネント拡張
 
-// UI強化用  
-"@pixi/ui": "v2.1.0"                // UI コンポーネント拡張
+// Phase3: アニメーション・Spine統合・出力
+"@esotericsoftware/spine-pixi-v8": "^4.2.89"  // 公式Spine v8対応
+"gif.js": "^0.2.0"                            // GIF生成最適化
+"stats.js": "^0.17.0"                         // FPS/メモリ監視
 ```
 
-### 🚀 Phase3追加予定
-```javascript
-// アニメーション・出力用
-"@pixi/gif": "^2.1.1"               // GIF出力（v8互換確認済み）
-"gif.js": "^0.2.0"                  // GIF生成最適化
-"canvas-to-blob": "^1.0.0"          // 高品質出力
-
-// パフォーマンス・監視用
-"stats.js": "^0.17.0"               // FPS/メモリ監視
-```
-
-### 🚫 使用禁止（継続）
+### 🚫 **使用禁止（継続）**
 - TypeScript・ESM・ビルドツール
 - jQuery・古いライブラリ
-- セキュリティリスクあるライブラリ
 - v8非対応ライブラリ
 
 ---
 
-**📝 更新方針**: Phase1.8完了後に詳細実装計画・具体的コード例追加  
-**🎯 重点方針**: v8機能フル活用・WebGPU最適化・段階的実装・品質保証  
-**💀 基本原則**: 怪物コード撲滅継続・エラー隠蔽禁止・架空メソッド撲滅  
-**🚀 最終目標**: プロ品質描画ツール・60FPS・高品質出力・拡張性確保
+**🎯 統合目標**: プロクリエイト級描画体験をWebで実現し、Spine物理演算アニメーションへの完全対応を達成する
+
+**📝 実装方針**: 段階的品質向上・既存機能保護・パフォーマンス監視・エラー撲滅継続
+
+**💀 基本原則**: 怪物コード撲滅・架空メソッド撲滅・エラー隠蔽禁止・Manager統一API
+
+**🚀 最終成果**: プロ品質Webベース描画・アニメーションツール
