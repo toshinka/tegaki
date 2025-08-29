@@ -63,20 +63,20 @@
     'use strict';
 
     /**
-     * 🔧 ToolManager v8.12.0完全対応版・依存注入検証修正版
+     * 🔧 ToolManager v8.12.0完全対応版・PenTool作成修正版
      * 
      * 📏 修正内容:
-     * - verifyInjection()追加・setManagersObject()防御強化
-     * - CanvasManager注入保証・エラー詳細化
+     * - PenTool作成エラー修正・Manager注入方法改善
+     * - コンソール出力削減・重要ログのみ保持
      * 
      * 🚀 特徴:
      * - 防御的依存注入・検証強化
      * - CanvasManager.getDrawContainer()保証
-     * - エラー隠蔽完全禁止
+     * - Tool作成時の適切なManager注入
      */
     class ToolManager {
         constructor(canvasManagerDI = null) {
-            console.log(`🚀 ToolManager v8.12.0対応版作成開始 - 依存注入検証修正版`);
+            console.log(`🚀 ToolManager v8.12.0作成開始 - PenTool作成修正版`);
             
             // 基本状態初期化
             this.canvasManager = null;
@@ -94,8 +94,6 @@
             
             // DI注入確認（コンストラクタでの注入をサポート）
             if (canvasManagerDI) {
-                console.log(`🔧 DI Object形式で受信 - 後続で詳細検証`);
-                
                 if (typeof canvasManagerDI === 'object' && canvasManagerDI !== null) {
                     if (canvasManagerDI.canvasManager) {
                         // {canvasManager: instance} 形式
@@ -107,15 +105,13 @@
                 }
                 
                 if (this.canvasManager && this.canvasManager.getDrawContainer) {
-                    console.log(`✅ CanvasManager注入成功 - getDrawContainerメソッド確認済み`);
+                    console.log(`✅ CanvasManager注入成功`);
                 } else {
                     console.warn(`⚠️ CanvasManager.getDrawContainer() not available`);
                 }
-            } else {
-                console.log(`📦 DI なし - 後続でsetManagers()実行予定`);
             }
             
-            console.log(`✅ ToolManager v8.12.0対応版作成完了 - 依存注入検証修正版`);
+            console.log(`✅ ToolManager v8.12.0作成完了 - PenTool作成修正版`);
         }
 
         /**
@@ -124,8 +120,7 @@
          * @param {Object|Map} managers - 注入するManager群
          */
         setManagers(managers) {
-            console.log(`🔧 ToolManager - Manager統一注入開始（防御強化版）`);
-            console.log(`📦 受信Manager型:`, typeof managers);
+            console.log(`🔧 ToolManager - Manager統一注入開始`);
             
             if (!managers) {
                 console.error(`❌ ToolManager: null/undefined managers received`);
@@ -147,7 +142,6 @@
             
             // Map保存
             this.managers = managersMap;
-            console.log(`📋 受信Manager キー:`, Array.from(managersMap.keys()));
             
             // CanvasManager特別処理（最重要）
             if (managersMap.has("canvas")) {
@@ -167,14 +161,12 @@
                 }
             } else {
                 console.warn(`⚠️ CanvasManager（"canvas"キー）が見つかりません`);
-                console.log(`📋 利用可能キー:`, Array.from(managersMap.keys()));
             }
             
             // Object形式も併用保存（Tool注入用）
             this.managersObject = Object.fromEntries(managersMap);
-            console.log(`📦 Map→Object変換完了 - Tool注入準備完了`);
             
-            console.log(`✅ ToolManager: Manager統一注入完了（防御強化版）`);
+            console.log(`✅ ToolManager: Manager統一注入完了`);
             return true;
         }
 
@@ -249,12 +241,7 @@
                 return false;
             }
             
-            console.log(`✅ Manager統一注入準備完了:`, typeof this.managersObject);
-            console.log(`✅ DrawContainer準備完了:`, !!this.drawContainer);
-            console.log(`📋 注入予定Manager キー:`, Object.keys(this.managersObject));
-            
             // v8依存関係確認
-            console.log(`🔍 v8依存関係確認開始`);
             if (!window.Tegaki || !window.Tegaki.AbstractTool) {
                 console.error(`❌ AbstractTool未ロード`);
                 return false;
@@ -307,18 +294,28 @@
          */
         async createV8PenTool() {
             try {
+                // PenTool作成（引数なしコンストラクタ）
                 const penTool = new window.Tegaki.PenTool();
                 
                 // Manager統一注入（修正版）
-                console.log(`🔧 PenTool Manager注入開始 - Object形式`);
-                console.log(`📦 注入予定Object:`, this.managersObject);
-                console.log(`📦 注入予定キー:`, Object.keys(this.managersObject));
+                console.log(`🔧 PenTool Manager注入開始`);
                 
-                const injectionResult = penTool.setManagersObject(this.managersObject);
-                if (!injectionResult) {
+                // setManagers方式で注入（setManagersObjectは後方互換）
+                let injectionResult;
+                if (typeof penTool.setManagers === 'function') {
+                    injectionResult = penTool.setManagers(this.managersObject);
+                } else if (typeof penTool.setManagersObject === 'function') {
+                    injectionResult = penTool.setManagersObject(this.managersObject);
+                } else {
+                    console.error(`❌ PenTool Manager注入メソッドが見つかりません`);
+                    return null;
+                }
+                
+                if (injectionResult === false) {
                     console.error(`❌ PenTool Manager注入失敗`);
                     return null;
                 }
+                
                 console.log(`✅ PenTool Manager統一注入完了`);
                 
                 return penTool;
@@ -337,13 +334,24 @@
                 const eraserTool = new window.Tegaki.EraserTool();
                 
                 // Manager統一注入（修正版）
-                console.log(`🔧 EraserTool Manager注入開始 - Object形式`);
+                console.log(`🔧 EraserTool Manager注入開始`);
                 
-                const injectionResult = eraserTool.setManagersObject(this.managersObject);
-                if (!injectionResult) {
+                // setManagers方式で注入
+                let injectionResult;
+                if (typeof eraserTool.setManagers === 'function') {
+                    injectionResult = eraserTool.setManagers(this.managersObject);
+                } else if (typeof eraserTool.setManagersObject === 'function') {
+                    injectionResult = eraserTool.setManagersObject(this.managersObject);
+                } else {
+                    console.error(`❌ EraserTool Manager注入メソッドが見つかりません`);
+                    return null;
+                }
+                
+                if (injectionResult === false) {
                     console.error(`❌ EraserTool Manager注入失敗`);
                     return null;
                 }
+                
                 console.log(`✅ EraserTool Manager統一注入完了`);
                 
                 return eraserTool;
@@ -376,7 +384,6 @@
             
             try {
                 // Tool有効化
-                console.log(`🎯 ${toolName} Tool アクティブ化`);
                 await newTool.activate();
                 console.log(`✅ ${toolName} Tool アクティブ化完了`);
                 
@@ -423,109 +430,109 @@
             const hasCurrentTool = this.currentTool !== null;
             
             console.log(`🔍 ToolManager準備状態確認:`);
-            console.log(`  - CanvasManager: ${hasCanvasManager}`);
-            console.log(`  - getDrawContainer method: ${hasGetDrawContainer}`);
-            console.log(`  - DrawContainer: ${hasDrawContainer}`);
-            console.log(`  - Managers: ${hasManagers}`);
-            console.log(`  - Tools: ${hasTools} (${this.tools.size}個)`);
-            console.log(`  - CurrentTool: ${hasCurrentTool} (${this.currentToolName})`);
-            
-            return hasCanvasManager && hasGetDrawContainer && hasDrawContainer && hasManagers && hasTools;
-        }
+        console.log(`  - CanvasManager: ${hasCanvasManager}`);
+        console.log(`  - getDrawContainer method: ${hasGetDrawContainer}`);
+        console.log(`  - DrawContainer: ${hasDrawContainer}`);
+        console.log(`  - Managers: ${hasManagers}`);
+        console.log(`  - Tools: ${hasTools} (${this.tools.size}個)`);
+        console.log(`  - CurrentTool: ${hasCurrentTool} (${this.currentToolName})`);
+        
+        return hasCanvasManager && hasGetDrawContainer && hasDrawContainer && hasManagers && hasTools;
+    }
 
-        /**
-         * 📊 ToolManager状態取得
-         */
-        getState() {
-            return {
-                currentToolName: this.currentToolName,
-                toolCount: this.tools.size,
-                v8Ready: this.v8Ready,
-                webGPUSupported: this.webGPUSupported,
-                hasCanvasManager: !!this.canvasManager,
-                hasGetDrawContainer: this.canvasManager && typeof this.canvasManager.getDrawContainer === 'function',
-                hasDrawContainer: !!this.drawContainer,
-                hasManagers: !!this.managersObject,
-                isReady: this.isReady()
-            };
-        }
+    /**
+     * 📊 ToolManager状態取得
+     */
+    getState() {
+        return {
+            currentToolName: this.currentToolName,
+            toolCount: this.tools.size,
+            v8Ready: this.v8Ready,
+            webGPUSupported: this.webGPUSupported,
+            hasCanvasManager: !!this.canvasManager,
+            hasGetDrawContainer: this.canvasManager && typeof this.canvasManager.getDrawContainer === 'function',
+            hasDrawContainer: !!this.drawContainer,
+            hasManagers: !!this.managersObject,
+            isReady: this.isReady()
+        };
+    }
 
-        /**
-         * 🎨 描画Container取得
-         */
-        getDrawContainer() {
-            return this.drawContainer;
-        }
+    /**
+     * 🎨 描画Container取得
+     */
+    getDrawContainer() {
+        return this.drawContainer;
+    }
 
-        /**
-         * 🔧 Tool設定更新
-         * 
-         * @param {string} toolName - Tool名
-         * @param {Object} settings - 設定オブジェクト
-         */
-        updateToolSettings(toolName, settings) {
-            const tool = this.tools.get(toolName);
-            if (tool && tool.updateSettings) {
-                tool.updateSettings(settings);
-                console.log(`🔧 Tool設定更新: ${toolName}`, settings);
-            }
-        }
-
-        /**
-         * 🧪 デバッグ情報取得
-         */
-        getDebugInfo() {
-            const toolInfo = {};
-            for (const [name, tool] of this.tools) {
-                toolInfo[name] = {
-                    isActive: tool.isActive || false,
-                    isReady: tool.isReady ? tool.isReady() : false,
-                    state: tool.getState ? tool.getState() : 'unavailable'
-                };
-            }
-            
-            return {
-                currentTool: this.currentToolName,
-                tools: toolInfo,
-                managers: this.managersObject ? Object.keys(this.managersObject) : [],
-                canvasManager: !!this.canvasManager,
-                getDrawContainerMethod: this.canvasManager && typeof this.canvasManager.getDrawContainer === 'function',
-                drawContainer: !!this.drawContainer,
-                v8Ready: this.v8Ready,
-                injectionVerified: this.canvasManager && this.drawContainer && this.managersObject
-            };
-        }
-
-        // 🚨修正追加: AppCoreとの互換性メソッド
-        setManagersObject(managers) {
-            return this.setManagers(managers);
-        }
-
-        setManagerRegistrationInfo(managers) {
-            console.log(`✅ ToolManager: Manager統一登録情報設定完了（互換性メソッド）`);
-            this.managerRegistrationInfo = managers;
-        }
-
-        initializeDrawContainer() {
-            if (this.canvasManager && this.canvasManager.getDrawContainer && !this.drawContainer) {
-                try {
-                    this.drawContainer = this.canvasManager.getDrawContainer();
-                    console.log(`✅ DrawContainer初期化完了（互換性メソッド）`);
-                } catch (error) {
-                    console.warn(`⚠️ DrawContainer初期化失敗:`, error.message);
-                }
-            }
+    /**
+     * 🔧 Tool設定更新
+     * 
+     * @param {string} toolName - Tool名
+     * @param {Object} settings - 設定オブジェクト
+     */
+    updateToolSettings(toolName, settings) {
+        const tool = this.tools.get(toolName);
+        if (tool && tool.updateSettings) {
+            tool.updateSettings(settings);
+            console.log(`🔧 Tool設定更新: ${toolName}`, settings);
         }
     }
 
-    // グローバル登録
-    if (!window.Tegaki) {
-        window.Tegaki = {};
+    /**
+     * 🧪 デバッグ情報取得
+     */
+    getDebugInfo() {
+        const toolInfo = {};
+        for (const [name, tool] of this.tools) {
+            toolInfo[name] = {
+                isActive: tool.isActive || false,
+                isReady: tool.isReady ? tool.isReady() : false,
+                state: tool.getState ? tool.getState() : 'unavailable'
+            };
+        }
+        
+        return {
+            currentTool: this.currentToolName,
+            tools: toolInfo,
+            managers: this.managersObject ? Object.keys(this.managersObject) : [],
+            canvasManager: !!this.canvasManager,
+            getDrawContainerMethod: this.canvasManager && typeof this.canvasManager.getDrawContainer === 'function',
+            drawContainer: !!this.drawContainer,
+            v8Ready: this.v8Ready,
+            injectionVerified: this.canvasManager && this.drawContainer && this.managersObject
+        };
     }
-    
-    window.Tegaki.ToolManager = ToolManager;
-    console.log(`🚀 ToolManager v8.12.0完全対応版・依存注入検証修正版 Loaded`);
-    console.log(`📏 修正内容: verifyInjection()追加・setManagersObject()防御強化・CanvasManager注入保証・エラー詳細化`);
-    console.log(`🚀 特徴: 防御的依存注入・検証強化・CanvasManager.getDrawContainer()保証・エラー隠蔽完全禁止`);
 
-})();
+    // 🚨修正追加: AppCoreとの互換性メソッド
+    setManagersObject(managers) {
+        return this.setManagers(managers);
+    }
+
+    setManagerRegistrationInfo(managers) {
+        console.log(`✅ ToolManager: Manager統一登録情報設定完了（互換性メソッド）`);
+        this.managerRegistrationInfo = managers;
+    }
+
+    initializeDrawContainer() {
+        if (this.canvasManager && this.canvasManager.getDrawContainer && !this.drawContainer) {
+            try {
+                this.drawContainer = this.canvasManager.getDrawContainer();
+                console.log(`✅ DrawContainer初期化完了（互換性メソッド）`);
+            } catch (error) {
+                console.warn(`⚠️ DrawContainer初期化失敗:`, error.message);
+            }
+        }
+    }
+}
+
+// グローバル登録
+if (!window.Tegaki) {
+    window.Tegaki = {};
+}
+
+window.Tegaki.ToolManager = ToolManager;
+console.log(`🚀 ToolManager v8.12.0完全対応版・PenTool作成修正版 Loaded`);
+console.log(`📏 修正内容: PenTool作成エラー修正・Manager注入方法改善・コンソール出力削減`);
+console.log(`🚀 特徴: 防御的依存注入・検証強化・CanvasManager.getDrawContainer()保証・Tool作成時適切Manager注入`);
+
+})()
