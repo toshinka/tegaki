@@ -1,242 +1,204 @@
-**原因**: CanvasManagerからToolManagerへの注入プロセスで、getDrawContainer()メソッドの取得タイミング不整合
+==================================================
+📝 Tegaki Phase1.5 包括的改修計画書
+— PixiJS v8対応・キャンバス外描画・TPF統合版（Pathfinder等なし）
+Rev.2025-08-29-r3
+==================================================
 
-### 初期化順序の問題
-1. CanvasManager初期化 → DrawContainer生成未完了
-2. ToolManager初期化 → CanvasManager.getDrawContainer()取得失敗
-3. 初期化チェーンの崩壊
+■ スコープ / 前提
+- 目的：Phase1.5 を完成させ、描画の安定化・非破壊データ保持・外部入力対応（カメラ分離）を達成する
+- ランタイム：PixiJS v8（HTML直開き / ES2023 / fetch分割 / 後方互換なし）
+- 禁止：Vite/TS/ESM、未確認ライブラリ（Pathfinder等）、暗黙フォールバック
+- 実装対象：Pen/Eraser + RecordManager + Navigation/Coordinate + CanvasManager 初期化順序の確立
+- 既知：WebGPU は Pixi 側にレンダラーとして存在（採用は現状不要）。当面は Pixi の Graphics ベース（非依存で進行）
 
-### 描画機能の停止
-- PenTool/EraserTool → DrawContainer参照不能
-- RecordManager → ストローク保存機能停止
-- キャンバス外描画 → 未実装のためPointer入力が制限範囲のみ
+--------------------------------------------------
+■ 現状の主問題（要再発防止）
+1) 初期化順序崩壊で DrawContainer 未取得 → ToolManager 注入検証失敗
+2) ペン描画がキャンバスに反映されない（ステージ/コンテナ不整合・イベント配線/座標変換）
+3) キャンバス外描画が不可（カメラ概念が未分離）
+4) 記録（TPF）と描画の責務分離が未徹底（Undo/Redoの再構成コストが高い）
 
----
+--------------------------------------------------
+■ 目標（Phase1.5 完了条件）
+A. TegakiApplication 初期化完了（isReady=true）/ DrawContainer 取得 100%
+B. Pen/Eraser が Pixi コンテナへ実描画し、画面に即時反映
+C. TPF（TegakiPathFormat v0.2）で非破壊ストローク保存・復元・Undo/Redo が安定
+D. カメラとキャンバス（描画空間）の分離：外部入力（カメラ外）→バッファ→カメラ内で確定
+E. リサイズ対応：内部は任意サイズ（初期 400×400、固定でなく可変）、UIは後追い
 
-## 🎯 統合改修戦略（AI改修ループ対策）
+--------------------------------------------------
+■ アーキテクチャ決定（Phase1.5）
+- Renderer：PixiJS v8 の Graphics を既定（WebGPU/GL の差異を意識しない設計）
+- データ：描画は常に「TPFに追記 → レンダラに反映」。Graphics を唯一の真実にしない
+- コンポーネント責務
+  - CanvasManager：PIXI.Application / Stage / DrawContainer の生成と取得を一元化
+  - ToolManager：ActiveTool の切替・Pointer配線・操作開始/終了のライフサイクル
+  - PenTool/EraserTool：入力→TPFストローク生成→RecordManagerへ通知→描画命令
+  - RecordManager：TPF の履歴・Undo/Redo・再構成（必要最小限の再描画）
+  - CoordinateManager：画面座標⇔キャンバス座標、カメラ変換の単一責務
+  - NavigationManager：カメラ（位置/スケール）管理・表示矩形の提供
+- キャンバス外描画：仮ストロークバッファ（tempStroke）を採用、カメラ内侵入時に正式開始
+- リサイズ：CanvasManager.resize(w,h) を唯一の入口。描画空間/カメラ/座標系を同期
 
-### Phase1: 基盤修正（必須）
-**目標**: 初期化順序の確立とDrawContainer取得の確実化
+--------------------------------------------------
+■ 初期化順序（厳守）
+1) new CanvasManager() → await initialize() → createDrawContainer() 完了→ isV8Ready=true
+2) new NavigationManager() / CoordinateManager()（CanvasManagerを参照）
+3) new RecordManager()（空履歴）
+4) new ToolManager({ canvasManager, navigationManager, coordinateManager, recordManager })
+5) ToolManager.initializeV8Tools() → Pen/Eraser に Manager 群を注入
+6) TegakiApplication.isReady=true → UI 有効化
 
-### Phase2: 描画機能復旧（必須）
-**目標**: ペン/エラーツールの動作回復とTPF形式対応
-- Pathfinder描画スケルトン導入
-- TPF形式との紐付け明確化
-- PixiJSフォールバックとの切替条件明示
+※ 途中でのフォールバック・暫定処理は禁止。失敗は即 throw して上位で停止・ログ。
 
-### Phase3: 外部描画対応（拡張）
-**目標**: キャンバス外描画・カメラ分離・NavigationManager統合
-- 仮バッファ統合ルール明示
-- 複数ポインタ(タッチ)対応確認
-- Undo/Redo座標系整合性確保
+--------------------------------------------------
+■ API 契約（抜粋）
+- CanvasManager
+  - initialize(): Promise<void>
+  - getStage(): PIXI.Container
+  - getDrawContainer(): PIXI.Container   // 取得できない時は throw
+  - resize(w:number, h:number): void     // 400×400 を初期値として設定
+- NavigationManager
+  - setCamera(x:number, y:number, scale:number): void
+  - getCameraBounds(): {x,y,width,height}
+  - worldToView(pt): {x,y} / viewToWorld(pt): {x,y}
+- CoordinateManager
+  - toCanvasCoords(clientX:number, clientY:number): {x,y}
+- ToolManager
+  - switchTool(name:'pen'|'eraser'): void
+  - onPointerDown/Move/Up(e:PointerEvent): void
+- RecordManager
+  - startOperation(kind:'stroke'|'erase', seedPoints?:Point[]): void
+  - addPoint(pt:Point): void
+  - endOperation(meta?:Partial<TPFStroke>): void
+  - undo(): void / redo(): void
+  - rebuild(fromHistory?:TPFStroke[]): void
 
----
-
-## 📁 改修対象ファイル一覧と優先順位
-
-### 🔥 Phase1 - 基盤修正
-1. **managers/canvas-manager.js**
-   - DrawContainer生成の確実化
-   - getDrawContainer()メソッドの安定化
-   - 初期化完了フラグとRendererチェック追加
-2. **js/app-core.js**
-   - Manager初期化順序修正
-   - CanvasManager完全初期化後にToolManager初期化
-3. **managers/tool-manager.js**
-   - CanvasManager注入確認の修正
-   - フォールバック削除・エラーメッセージ明確化
-   - ログ出力＋ユーザー通知推奨
-
-### 🚀 Phase2 - 描画機能復旧
-4. **tools/pen-tool.js**
-   - TPF形式ストローク対応
-   - Pathfinder描画スケルトン
-   - RecordManager連携
-5. **tools/eraser-tool.js**
-   - DrawContainer取得エラー修正
-   - TPF形式消去対応
-6. **js/utils/record-manager.js**
-   - Undo/Redo安定化
-   - レイヤー座標系対応
-   - Phase3用仮バッファ統合ルールの明示
-
-### 🌟 Phase3 - 外部描画対応
-7. **js/utils/coordinate-manager.js**
-   - カメラ座標変換機能
-   - キャンバス外座標の処理
-8. **js/utils/navigation-manager.js**
-   - カメラ範囲管理
-   - パン/ズーム機能
-   - タッチ入力複数対応確認
-
----
-
-## 🔧 改修手順（AI改修ループ防止）
-
-### Step1: CanvasManager完全修正
-```javascript
-class CanvasManager {
-  constructor() {
-    this.drawContainer = null;
-    this.isV8Ready = false;
-  }
-  
-  async initialize() {
-    // PIXI.Application完全初期化まで待機
-    await this.app.init();
-    
-    // DrawContainer確実生成
-    this.createDrawContainer();
-
-    // Renderer・Stage確認
-    if (!this.app.renderer || !this.app.stage) {
-      throw new Error('PIXI.Application not fully ready');
-    }
-
-    this.isV8Ready = true;
-  }
-  
-  getDrawContainer() {
-    if (!this.isV8Ready || !this.drawContainer) {
-      throw new Error('CanvasManager not fully initialized');
-    }
-    return this.drawContainer;
-  }
+--------------------------------------------------
+■ TPF（TegakiPathFormat v0.2）仕様（簡約）
+TPFStroke = {
+  id: string,
+  kind: 'stroke'|'erase',
+  layer: string,                // Phase1.5は 'default'
+  color: string,                // '#rrggbb'
+  width: number,                // px
+  opacity: number,              // 0..1
+  points: [{x,y,pressure?,time?}, ...], // 生ストローク
+  path?: string,                // SVG互換 'd' （将来の曲線近似/最適化用）
+  bounds?: {x,y,w,h},           // 再描画最適化用
+  meta?: {created, tool:'pen'|'eraser', engine:'pixi'}
 }
-Step2: AppCore初期化順序修正
-javascript
-コードをコピーする
-async initializeV8Managers() {
-  await this.canvasManager.initialize();
 
-  if (!this.canvasManager.isV8Ready) {
-    throw new Error('CanvasManager initialization failed');
-  }
+・保存原則
+  - 入力時：points に逐次追加、endOperationでbounds確定
+  - path は任意（Phase1.5は省略可、Phase2以降で追加）
+・描画原則
+  - Pen：Graphics.lineStyle(width,color,opacity) → moveTo → lineTo...
+  - Erase：Phase1.5は簡易（ヒット/削除 or マスク方式のどちらかに統一）
+・再構成
+  - rebuild() は履歴を上から順に適用、必要最小限の領域のみ再描画（bounds活用は段階導入）
 
-  this.toolManager = new ToolManager({ canvasManager: this.canvasManager });
-  console.log('ToolManager initialized with CanvasManager injection');
-}
-Step3: ToolManager注入確認修正
-javascript
-コードをコピーする
-class ToolManager {
-  constructor(managers) {
-    if (!managers?.canvasManager) {
-      throw new Error('CanvasManager injection required');
-    }
+--------------------------------------------------
+■ キャンバス外描画 / カメラ分離（Phase1.5）
+- tempStroke: Point[] をツール内で保持
+- isRecording=false で開始、PointerMove で toCanvasCoords → tempStroke.push
+- NavigationManager.getCameraBounds() に入った瞬間に startOperation('stroke', tempStroke) 実行
+- 以降は addPoint(pt)、PointerUp で endOperation()
+- Eraser も同様（'erase' 種別）
+- UIなしで内部動作のみ導入（パン/ズームUI・ショートカットは別冊計画に準拠）
 
-    try {
-      const container = managers.canvasManager.getDrawContainer();
-      if (!container) throw new Error('DrawContainer not available');
-      this.canvasManager = managers.canvasManager;
-    } catch (error) {
-      console.error('ToolManager injection failed:', error);
-      alert('ToolManager初期化失敗: CanvasManager未準備');
-      throw error;
-    }
-  }
-}
-📋 TPF (TegakiPathFormat) 実装仕様
-javascript
-コードをコピーする
-const tpfStroke = {
-  id: 'stroke_' + Date.now(),
-  type: 'stroke', // 'stroke' | 'erase' | 'transform'
-  layer: 'layer_01',
-  color: '#800000',
-  width: 2.0,
-  opacity: 1.0,
-  path: 'M10 10 L20 20 L30 15',
-  points: [
-    { x: 10, y: 10, pressure: 0.5, time: 0 },
-    { x: 20, y: 20, pressure: 0.6, time: 16 },
-    { x: 30, y: 15, pressure: 0.4, time: 33 }
-  ],
-  bounds: { x: 10, y: 10, w: 20, h: 10 },
-  meta: {
-    created: new Date().toISOString(),
-    tool: 'pen',
-    engine: 'pixi'
-  }
-};
-Phase1.5ではTPF形式保存＋Undo/Redo対応
+【疑似コード（ペン）】
+  onPointerDown:
+    tempStroke=[]; isRecording=false; tempStroke.push(toCanvas(e))
+  onPointerMove:
+    pt=toCanvas(e); tempStroke.push(pt)
+    if (!isRecording && insideCamera(pt)) { isRecording=true; RM.startOperation('stroke', tempStroke) }
+    else if (isRecording) { RM.addPoint(pt) }
+  onPointerUp:
+    if (isRecording) RM.endOperation()
 
-Pathfinder描画スケルトンとの紐付け準備
+--------------------------------------------------
+■ リサイズ対応（UIなしの内部フロー）
+- 初期 400×400 を index.html → CanvasManager.initialize で適用
+- 外部から resize(w,h) を呼ぶと：
+  (1) Pixi Renderer/Canvas をリサイズ
+  (2) NavigationManager のカメラ幅高を更新
+  (3) CoordinateManager の変換係数を更新
+  (4) 画面再描画（必要最小限）
+- 既存の 800×600 等を見直し、Phase1.5 既定値を 400×400 に
 
-PixiJSフォールバックとの切替条件明示
+--------------------------------------------------
+■ 実装順（AI改修ループ最短）
+Step 0: すべてのファイルヘッダー更新（@provides/@uses/@initflow/@forbids/@manager-key/他）
+Step 1: CanvasManager（initialize/getDrawContainer/resize の完全化）
+Step 2: AppCore/TegakiApplication（初期化順序の固定・検証ログ強化・失敗即停止）
+Step 3: CoordinateManager / NavigationManager（最小APIだけ確実化）
+Step 4: RecordManager（TPF v0.2 + Undo/Redo + rebuild）
+Step 5: ToolManager（Pointer配線を単一集約・ActiveTool切替）
+Step 6: PenTool / EraserTool（外部入力バッファ → カメラ内確定 → RecordManager）
+Step 7: 再描画最適化（bounds 算出・部分再構成は段階導入）
+Step 8: リサイズAPI導入（初期値 400×400、UIなし）
 
-🎨 キャンバス外描画実装方針
-javascript
-コードをコピーする
-window.addEventListener('pointermove', (e) => {
-  const pt = CoordinateManager.toCanvasCoords(e.clientX, e.clientY);
+※ 各Step完了ごとに smoke test（手描き→Undo/Redo→リサイズ→再描画）
 
-  if (NavigationManager.isInsideCamera(pt)) {
-    RecordManager.addPoint(pt);
-    // 仮バッファ統合
-    if (tempBuffer.length) {
-      tempBuffer.forEach(p => RecordManager.addPoint(p));
-      tempBuffer = [];
-    }
-  } else {
-    tempBuffer.push(pt); // 複数ポインタ対応注意
-  }
-});
-📝 必須ヘッダー追記（全ファイル統一）
-javascript
-コードをコピーする
-/**
- * @provides [外部公開メソッド一覧]
- * @uses [他ファイル利用メソッド一覧]
- * @initflow [1. CanvasManager → 2. ToolManager → 3. 他Manager]
- * @forbids 💀双方向依存禁止 🚫フォールバック禁止 🚫v7/v8二重管理禁止
- * @manager-key window.Tegaki.XxxManagerInstance
- * @dependencies-strict [必須/オプション/禁止の明示]
- * @integration-flow [どのManagerから初期化されるか]
- * @method-naming-rules startOperation()/endOperation()統一
- * @phase-update-rule Phase2/3進行時に必ず更新
- */
-⚠️ AI改修ループ対策
-単一ファイル集中改修
+--------------------------------------------------
+■ 失敗しやすいポイントと対策
+- getDrawContainer() が null：
+  → CanvasManager.isV8Ready を確認、未完なら必ず throw（フォールバック禁止）
+- Pointer座標のズレ：
+  → 必ず CoordinateManager.toCanvasCoords() 経由。DOM座標を生で使わない
+- Undo/Redo で遅い：
+  → Phase1.5 は全再構成でも可。bounds による部分再描画は後半で導入
+- Eraser の仕様ブレ：
+  → Phase1.5 は「Graphics単位の削除」または「マスク方式」のどちらかに統一し、両採用しない
 
-依存関係事前確認（@provides/@uses）
+--------------------------------------------------
+■ ヘッダー必須タグ（最終版）
+@provides         外部公開メソッド/クラス
+@uses             他ファイル呼び出しAPI
+@initflow         初期化順序（1→2→3）
+@forbids          💀双方向依存 🚫フォールバック 🚫フェイルセーフ 🚫v7/v8二重管理
+@manager-key      window.Tegaki.XxxManagerInstance（実装と厳密一致）
+@integration-flow 上位からの呼出し経路（AppCore → XxxManager.initialize → ...）
+@dependencies-strict  REQUIRED/OPTIONAL/FORBIDDEN を明示
+@error-handling   throw/false/ログ基準を明記
+@method-naming-rules  startOperation/endOperation 等の統一
+@state-management 直プロパティ変更禁止・ゲッター経由
+@performance-notes 16ms目安・deactivateで解放
+@testing-hooks    getDebugInfo()/isReady() 等
 
-段階的テスト + Unit Test/ストローク自動生成
+--------------------------------------------------
+■ 検収チェックリスト（Phase1.5）
+[ ] TegakiApplication 初期化成功・isReady=true
+[ ] CanvasManager.getDrawContainer() 常に取得可能
+[ ] 400×400 初期キャンバスで線が描ける（描画=目視OK）
+[ ] Undo/Redo が履歴順に正しく動く
+[ ] カメラ外から描いて内部へ入ると「つながって」記録される
+[ ] リサイズ(例: 400×400→640×480) 後も新規ストロークが正しく記録/表示
+[ ] Eraser が仕様通り（選択した方式で統一）に動作
+[ ] 重大ログは throw、禁止事項（双方向/フォールバック/二重管理）なし
 
-ロールバック準備
+--------------------------------------------------
+■ Phase2/3 の簡潔な到達点（詳細は別冊）
+- Phase2：レイヤー管理（TPFのlayer運用開始）/ ストローク変形 / 選択 / 最適化された部分再描画
+- Phase3：アニメ系（タイムライン・カメラワーク分離記録・GIF出力）/ ブラシ高度化
+※ 外部大型ライブラリの採否は Phase1.5 完了後に再評価（現時点では不要）
 
-改修チェックリスト
- CanvasManager: DrawContainer確実生成 + Renderer/Stage確認
+--------------------------------------------------
+■ リスクと回避
+- 複数箇所の同時修正 → ファイル単位・Step順で厳守
+- 隠れフォールバック → エラーは必ず顕在化（throw）し、暫定黙殺禁止
+- データ定義の揺れ → TPF v0.2 を唯一のストローク仕様としてヘッダーに常置
 
- AppCore: 初期化順序修正
+--------------------------------------------------
+■ 付録：最小テスト・スクリプト（目視確認用順序）
+1) 起動 → 初期化ログOK → 画面に 400×400 キャンバス表示
+2) ペンで線 → 見える
+3) Undo → 消える、Redo → 戻る
+4) 画面外から描き始め → 中へ → つながる線
+5) リサイズ(640×480) → 新規線が正しく座標に乗る
+6) Eraser → 仕様通りに消える
+7) 再起動 → 履歴初期化（永続化はPhase2+）
 
- ToolManager: 注入確認 + ログ/通知
-
- PenTool: TPF形式対応 + Pathfinderスケルトン
-
- EraserTool: TPF形式消去対応
-
- RecordManager: Undo/Redo安定化 + レイヤー座標系 + 仮バッファ統合
-
-🎯 成功指標
-Phase1完了条件
-✅ TegakiApplication初期化成功
-
-✅ CanvasManager.getDrawContainer()正常
-
-✅ ToolManager注入成功
-
-Phase2完了条件
-✅ ペンツール描画復旧
-
-✅ TPF形式ストローク保存
-
-✅ Undo/Redo動作安定
-
-Phase3完了条件
-✅ キャンバス外描画対応
-
-✅ カメラ分離実装
-
-✅ NavigationManager統合 + 複数ポインタ対応
-
-改修実行時は必ずこの改訂版計画書を参照し、段階的かつ安全に進めること。
+==================================================
+（以上）
