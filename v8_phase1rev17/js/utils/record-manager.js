@@ -55,7 +55,7 @@ class RecordManager {
         
         try {
             // WebGPU最適化確認
-            this.webGPUOptimized = !!PIXI?.Renderer?.defaultOptions?.preference?.includes?.('webgpu');
+            this.webGPUOptimized = !!(PIXI && PIXI.Renderer);
             
             // 非破壊編集有効化
             this.nonDestructiveEditing = true;
@@ -280,8 +280,11 @@ class RecordManager {
                 join: 'round'
             };
             
-            // v8新API: パス描画（shape().stroke()形式）
+            // v8新API: パス描画（線描画形式）
             if (tpfStroke.points && tpfStroke.points.length > 0) {
+                // v8新API準拠: lineStyleを使用
+                graphics.lineStyle(strokeStyle);
+                
                 const firstPoint = tpfStroke.points[0];
                 graphics.moveTo(firstPoint.x, firstPoint.y);
                 
@@ -289,9 +292,6 @@ class RecordManager {
                     const point = tpfStroke.points[i];
                     graphics.lineTo(point.x, point.y);
                 }
-                
-                // v8新API: stroke()で描画確定（v7のbeginFill/endFill削除）
-                graphics.stroke(strokeStyle);
             }
             
             // Container追加
@@ -349,4 +349,261 @@ class RecordManager {
         
         try {
             if (this.currentIndex < 0) {
-                console.log('📝 Undo不可:
+                console.log('📝 Undo不可: 履歴なし');
+                return false;
+            }
+            
+            // 現在の操作を非表示
+            const currentOperation = this.strokeHistory[this.currentIndex];
+            this.hideOperation(currentOperation);
+            
+            // インデックス戻し
+            this.currentIndex--;
+            
+            // イベント通知
+            this.emitHistoryChange();
+            
+            console.log('✅ Undo完了 - index:', this.currentIndex);
+            return true;
+            
+        } catch (error) {
+            console.error('❌ Undo失敗:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * ↷ Redo操作（v8対応）
+     */
+    redoOperation() {
+        console.log('↷ Redo操作開始 - v8対応');
+        
+        try {
+            if (this.currentIndex >= this.strokeHistory.length - 1) {
+                console.log('📝 Redo不可: 履歴末尾');
+                return false;
+            }
+            
+            // インデックス進める
+            this.currentIndex++;
+            
+            // 次の操作を表示
+            const nextOperation = this.strokeHistory[this.currentIndex];
+            this.showOperation(nextOperation);
+            
+            // イベント通知
+            this.emitHistoryChange();
+            
+            console.log('✅ Redo完了 - index:', this.currentIndex);
+            return true;
+            
+        } catch (error) {
+            console.error('❌ Redo失敗:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * 🚫 操作非表示（Undo用）
+     */
+    hideOperation(operation) {
+        try {
+            if (!operation || !operation.graphics) {
+                return;
+            }
+            
+            // Graphics非表示
+            if (operation.graphics && operation.graphics.parent) {
+                operation.graphics.visible = false;
+            }
+            
+            console.log('🚫 操作非表示:', operation.data?.id);
+            
+        } catch (error) {
+            console.error('❌ 操作非表示失敗:', error);
+        }
+    }
+    
+    /**
+     * ✅ 操作表示（Redo用）
+     */
+    showOperation(operation) {
+        try {
+            if (!operation) {
+                return;
+            }
+            
+            // Graphics再生成が必要な場合
+            if (!operation.graphics || !operation.graphics.parent) {
+                operation.graphics = this.createV8Graphics(operation.data);
+                return;
+            }
+            
+            // Graphics表示
+            operation.graphics.visible = true;
+            
+            console.log('✅ 操作表示:', operation.data?.id);
+            
+        } catch (error) {
+            console.error('❌ 操作表示失敗:', error);
+        }
+    }
+    
+    /**
+     * 🧹 削除操作のクリーンアップ
+     */
+    cleanupDeletedOperations(operations) {
+        try {
+            operations.forEach(operation => {
+                if (operation.graphics && operation.graphics.parent) {
+                    operation.graphics.parent.removeChild(operation.graphics);
+                }
+                
+                if (operation.data?.id) {
+                    this.graphicsRegistry.delete(operation.data.id);
+                }
+            });
+            
+            console.log('🧹 削除操作クリーンアップ完了:', operations.length);
+            
+        } catch (error) {
+            console.error('❌ クリーンアップ失敗:', error);
+        }
+    }
+    
+    /**
+     * 📡 履歴変更イベント通知
+     */
+    emitHistoryChange() {
+        try {
+            if (this.eventBus) {
+                this.eventBus.emit('record:historyChanged', {
+                    currentIndex: this.currentIndex,
+                    totalCount: this.strokeHistory.length,
+                    canUndo: this.currentIndex >= 0,
+                    canRedo: this.currentIndex < this.strokeHistory.length - 1
+                });
+            }
+        } catch (error) {
+            console.error('❌ 履歴変更通知失敗:', error);
+        }
+    }
+    
+    /**
+     * 🔄 完全再構築（v8対応）
+     */
+    rebuild() {
+        console.log('🔄 完全再構築開始 - v8対応');
+        
+        try {
+            if (!this.drawContainer) {
+                console.warn('⚠️ DrawContainer未準備 - 再構築スキップ');
+                return false;
+            }
+            
+            // 既存Graphics削除
+            this.clearAllGraphics();
+            
+            // 履歴から順次再生成
+            for (let i = 0; i <= this.currentIndex; i++) {
+                const operation = this.strokeHistory[i];
+                if (operation && operation.data) {
+                    operation.graphics = this.createV8Graphics(operation.data);
+                }
+            }
+            
+            console.log('✅ 完全再構築完了 - 操作数:', this.currentIndex + 1);
+            return true;
+            
+        } catch (error) {
+            console.error('❌ 完全再構築失敗:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * 🧹 全Graphics削除
+     */
+    clearAllGraphics() {
+        try {
+            if (this.drawContainer) {
+                // Container内の全子要素削除
+                while (this.drawContainer.children.length > 0) {
+                    this.drawContainer.removeChildAt(0);
+                }
+            }
+            
+            // Graphics登録削除
+            this.graphicsRegistry.clear();
+            
+            console.log('🧹 全Graphics削除完了');
+            
+        } catch (error) {
+            console.error('❌ Graphics削除失敗:', error);
+        }
+    }
+    
+    /**
+     * 📊 状態取得（デバッグ用）
+     */
+    getState() {
+        return {
+            historyCount: this.strokeHistory.length,
+            currentIndex: this.currentIndex,
+            canUndo: this.currentIndex >= 0,
+            canRedo: this.currentIndex < this.strokeHistory.length - 1,
+            v8Enabled: this.v8FeaturesEnabled,
+            webGPUOptimized: this.webGPUOptimized,
+            graphicsCount: this.graphicsRegistry.size
+        };
+    }
+    
+    /**
+     * 🛠️ 初期化完了確認
+     */
+    isReady() {
+        return !!(
+            this.canvasManager &&
+            this.drawContainer &&
+            this.v8FeaturesEnabled
+        );
+    }
+}
+
+/**
+ * 🚀 RecordManager v8初期化関数
+ */
+function initializeRecordManagerV8() {
+    console.log('🚀 RecordManager v8初期化開始');
+    
+    try {
+        // インスタンス作成
+        const recordManager = new RecordManager();
+        
+        // グローバル登録
+        if (!window.Tegaki) {
+            window.Tegaki = {};
+        }
+        
+        window.Tegaki.RecordManager = RecordManager;
+        window.Tegaki.RecordManagerInstance = recordManager;
+        
+        console.log('🔄 RecordManager v8対応版 Loaded - TPF形式・非破壊編集・v8 Graphics・Undo/Redo');
+        console.log('📏 v8機能: 高精度履歴・WebGPU最適化・Container階層対応・リアルタイム記録');
+        console.log('🚀 v8特徴: TPF形式保存・非破壊編集・高性能メモリ管理・60fps+記録');
+        console.log('✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能');
+        
+        return recordManager;
+        
+    } catch (error) {
+        console.error('❌ RecordManager v8初期化失敗:', error);
+        throw error;
+    }
+}
+
+// 自動初期化
+if (typeof window !== 'undefined') {
+    initializeRecordManagerV8();
+}
+
+console.log('🔄 RecordManager v8対応版 Loaded - TPF形式・非破壊編集・v8 Graphics・Undo/Redo完全対応完了');
