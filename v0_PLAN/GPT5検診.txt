@@ -1,98 +1,201 @@
-🚨 エラーの要点
+🐛 原因分析
 
-PixiJS warning
+CanvasManager.getDrawContainer() が未定義 or 未初期化
 
-The powerPreference option is currently ignored when calling requestAdapter() on Windows.
+エラーログ:
 
-
-→ これはPixiJS側の仕様で無視してよい（性能選択はWindows環境では反映されない）。
-
-EraserTool 警告
-
-⚠️ RecordManagerInstance not available - v8記録機能が制限されます
+tool-manager.js:73 ⚠️ CanvasManager.getDrawContainer() not available
 
 
-→ EraserTool が RecordManager に依存しているが、初期化の順序または Manager 登録キーが不一致。
-原因候補:
+→ CanvasManager が ToolManager に渡される前に getDrawContainer() を呼んでいる。
+→ つまり 初期化順序の問題 か CanvasManager 側にメソッド未定義。
 
-record-manager.js が先に初期化されていない
+ToolManager.setManagers() が呼ばれていない / 呼んでも canvasManager が無い
 
-window.Tegaki.RecordManagerInstance の登録がない
+app-core.js のログ:
 
-EraserTool 内での呼び出し名が v7 残骸（RecordManagerInstance 直参照）になっている
-
-ToolManager / PenTool 初期化エラー
-
-💀 v8 Tool初期化エラー: Manager 'event' が見つかりません。利用可能: canvas, coordinate, record, config, error, eventbus, shortcut, navigation, tool
+⚠️ ToolManager.setManagers() not available - 代替処理実行
 
 
-→ abstract-tool.js の getManager("event") 呼び出しが存在するが、実際の登録は eventbus 名義。
-不整合:
+→ AppCore.initializeV8Managers() 内で ToolManager.setManagers() を呼んでいるが、ToolManager が CanvasManager をまだ持っていない。
 
-旧称: event
+依存注入の検証で落ちる
 
-現行: eventbus
+app-core.js:519:
 
-これにより ToolManager が全体的に初期化失敗。
+throw new Error("ToolManager.canvasManager injection verification failed");
 
-🔎 原因まとめ
 
-Manager 名称の不一致: event → eventbus に変わっているが、ツール側が古い呼び名を維持。
+→ ToolManager 側に this.canvasManager が無いため強制エラー。
 
-RecordManager 初期化順序・参照不整合: EraserTool が RecordManagerInstance を直接要求しているが、Manager 経由に統一されていない。
+✅ 改修案
+1. CanvasManager.getDrawContainer() の定義確認
 
-二重管理のリスク: v7 と v8 の呼び出しキーが混在（RecordManager の参照が直参照 vs Manager経由）。
+managers/canvas-manager.js に以下があるか確認。なければ追加:
 
-🛠️ 改修案
-1. Manager呼び出し名統一
+getDrawContainer() {
+    return this.drawContainer || null;
+}
 
-abstract-tool.js の getManager("event") を → getManager("eventbus") に修正。
 
-PenTool, EraserTool など Manager 参照箇所を全て確認。
+※ drawContainer の初期化が bootstrap.js → main.js → AppCore.initializeCanvasManager() で行われる順序になっているかもチェック。
 
-// 修正前
-this.eventManager = this.getManager("event");
+2. ToolManager 側の初期化を遅延
 
-// 修正後
-this.eventManager = this.getManager("eventbus");
+現在は ToolManager コンストラクタ内で CanvasManager に依存している 可能性が高い。
+以下のように修正：
 
-2. RecordManager の参照統一
+// tool-manager.js
+export class ToolManager {
+    constructor() {
+        this.canvasManager = null; // 後から注入
+        this.tools = new Map();
+    }
 
-EraserTool 内で RecordManagerInstance を直接参照せず、getManager("record") を使用。
+    setManagers(managers) {
+        if (managers.canvasManager) {
+            this.canvasManager = managers.canvasManager;
+        }
+        if (!this.canvasManager || !this.canvasManager.getDrawContainer) {
+            console.warn("⚠️ ToolManager.canvasManager not properly injected");
+        }
+    }
 
-Manager登録キーを統一:
+    verifyInjection() {
+        if (!this.canvasManager || !this.canvasManager.getDrawContainer) {
+            throw new Error("ToolManager.canvasManager injection verification failed");
+        }
+    }
+}
 
-window.Tegaki.RecordManagerInstance // ❌ 廃止
-this.getManager("record")           // ✅ 推奨
+3. AppCore.initializeV8Managers() の修正
 
-3. 初期化順序の明文化
+setManagers() を CanvasManager 初期化後に必ず呼ぶよう保証する。
 
-app-core.js → TegakiApplication.initializeV8Managers() 内で、
-必ず record → tool → 各ツール の順序を保証。
+// app-core.js (initializeV8Managers 内)
+this.toolManager.setManagers({
+    canvasManager: this.canvasManager,
+    // 他のManagerも必要なら追加
+});
 
-修正イメージ:
+this.toolManager.verifyInjection();
 
-await this.initializeV8Manager("record");
-await this.initializeV8Manager("tool");
-await this.initializeV8Tools();
+🛠️ 改修計画
 
-4. ヘッダー指示追加（再発防止）
+CanvasManager に getDrawContainer() を保証する。
 
-各ファイルヘッダーに以下を追記:
+ToolManager は コンストラクタで依存を使わず、setManagers() 後に使う。
 
-⚠️ Manager呼び出しは必ず getManager("xxx") 経由とする
-　- event → eventbus に統一
-　- RecordManagerInstance 直参照禁止
-　- v7/v8 両対応による二重管理禁止
+AppCore.initializeV8Managers() は
 
-✅ 次のステップ
+CanvasManager → ToolManager の順で初期化する。
 
-abstract-tool.js を最優先で修正（event → eventbus）
+最後に verifyInjection() を呼んで確実に検証。
 
-eraser-tool.js の RecordManagerInstance 呼び出しを Manager経由に統一
+📌 結論:
+エラー原因は 初期化順序の不整合 と CanvasManager に依存する呼び出しをコンストラクタでやっていること。
+修正は ToolManager に遅延注入 (DI) + CanvasManager のメソッド保証 で解決できます。
 
-app-core.js の初期化順序を見直し
+👉 この修正、まずは tool-manager.js に verifyInjection() + setManagers() 対応 を入れて試すのが最小手直しになります。
+次に canvas-manager.js を点検して getDrawContainer() を補強するのが安全ルート。
 
-全Manager登録キーをヘッダーに一覧化し、呼び出し名の整合性を確認
+🛑 原因分析
 
-👉 ご希望なら、私の方で 修正パッチ（差分形式） を提示できますが、まずは event / eventbus の呼び名修正を一括で行うのが最優先です。
+エラーの本質は次の通りです。
+
+Error: ToolManager.canvasManager injection verification failed
+
+
+これに関連してログでは
+
+tool-manager.js:73 ⚠️ CanvasManager.getDrawContainer() not available
+
+app-core.js:499 ⚠️ ToolManager.setManagers() not available - 代替処理実行
+
+が出ています。
+
+つまり ToolManager が CanvasManager を参照する段階で正しく注入されていない ことが直接原因です。
+
+🔍 詳細な原因
+
+依存関係の注入順序不整合
+
+AppCore.initializeV8Managers() で ToolManager の setManagers() が呼ばれる前に、CanvasManager が初期化されていないか、参照のリンクが切れている。
+
+ToolManager の実装側での堅牢性不足
+
+canvasManager が null / undefined の場合に getDrawContainer() を即座に呼び出してしまいエラー。
+
+例外を潰す代替処理 (app-core.js:499) はあるが、verify check が落ちている。
+
+Claudの改修で tool-manager.js だけ修正
+
+他の関連ファイル（特に canvas-manager.js と app-core.js）との整合性が取れていない。
+
+結果として「注入されるはずの canvasManager が存在しない」状態に。
+
+✅ 改修案
+1. tool-manager.js 側の防御的対応
+// tool-manager.js
+setManagers(managers) {
+    if (managers.canvasManager) {
+        this.canvasManager = managers.canvasManager;
+        if (typeof this.canvasManager.getDrawContainer === "function") {
+            this.drawContainer = this.canvasManager.getDrawContainer();
+        } else {
+            console.warn("⚠️ CanvasManager.getDrawContainer() not available");
+            this.drawContainer = null;
+        }
+    } else {
+        console.error("💀 ToolManager: canvasManager injection missing");
+        this.canvasManager = null;
+    }
+}
+
+2. app-core.js 側での注入保証
+
+AppCore.initializeV8Managers() にて CanvasManager → ToolManager の順序保証を明文化する。
+
+// app-core.js
+initializeV8Managers() {
+    this.canvasManager = new CanvasManager(this); 
+    this.toolManager = new ToolManager(this);
+
+    this.toolManager.setManagers({
+        canvasManager: this.canvasManager,
+        eventBus: this.eventBus,
+        recordManager: this.recordManager
+    });
+
+    if (!this.toolManager.canvasManager) {
+        throw new Error("ToolManager.canvasManager injection verification failed");
+    }
+}
+
+3. canvas-manager.js 側のAPI保証
+
+getDrawContainer() を最低限の実装で必ず返すよう保証。
+
+// canvas-manager.js
+getDrawContainer() {
+    return this.drawContainer || null;
+}
+
+🚀 フェーズ適用位置
+
+Phase 1.5（Integration Test準備段階）
+
+今回の修正は 「Manager群の依存注入の順序保証」と「防御的コーディング」。
+
+これは Phase 1（基盤実装） と Phase 2（拡張処理） の橋渡しに相当するため、phase15-integration-test.js に沿った フェーズ1.5 と位置づけるのが適切。
+
+📝 次のステップ
+
+tool-manager.js に 防御的実装 を入れる
+
+app-core.js で 依存注入の順序を保証
+
+canvas-manager.js に API保証 を追加
+
+phase15-integration-test.js で再検証
+
