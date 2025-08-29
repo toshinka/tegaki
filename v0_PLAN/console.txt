@@ -1,40 +1,40 @@
-error-manager.js:20 🚨 ErrorManager Simple 作成
-error-manager.js:132 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
-config-manager.js:71 🔧 ConfigManager v8対応版 作成
-config-manager.js:495 🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
-event-bus.js:20 🔄 EventBus Simple 作成
-event-bus.js:97 🔄 EventBus Simple Loaded - シンプルイベント通信
-coordinate-manager.js:581 🎯 CoordinateManager PixiJS v8対応版 Loaded
-coordinate-manager.js:582 📏 v8機能: 高精度座標変換・Container変形対応・WebGPU最適化・リアルタイム変換
-coordinate-manager.js:583 🚀 v8特徴: 高精度変換・Matrix活用・NavigationManager統合・60fps+対応
-coordinate-manager.js:584 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
-coordinate-manager.js:587 🎯 CoordinateManager PixiJS v8対応版 Loaded - 高精度座標変換・Container変形・WebGPU対応完了
-navigation-manager.js:718 🧭 NavigationManager PixiJS v8対応版 Loaded
-navigation-manager.js:719 📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
-navigation-manager.js:720 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
-navigation-manager.js:721 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
-navigation-manager.js:724 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
-record-manager.js:884 🔄 RecordManager v8対応版 Loaded - TPF形式・非破壊編集・v8 Graphics・Undo/Redo完全対応完了
-record-manager.js:889 🔄 RecordManager v8対応版 Loaded - TPF形式・非破壊編集・v8 Graphics・Undo/Redo完全対応完了
-shortcut-manager.js:416 ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
-shortcut-manager.js:417 🔧 setupPhase15Shortcuts・enableメソッド追加済み
-shortcut-manager.js:418 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
-minimal-deps.js:22 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
-minimal-deps.js:168 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
-minimal-deps.js:169 ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
-minimal-deps.js:170 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
-canvas-manager.js:578 🚀 CanvasManager v8.12.0完全対応版 Loaded - 400x400デフォルト・コンソール削減・描画修正版
-abstract-tool.js:329 🎯 AbstractTool Phase1.5 Manager統一注入・Manager名称統一修正版 Loaded
-abstract-tool.js:330 📏 修正内容: event → eventbus統一・Object形式前提・Map対策・型安全性確保・詳細デバッグ
-abstract-tool.js:331 🚀 特徴: startOperation/endOperation方式対応・Manager統一注入完成・架空メソッド削除・Manager名称統一対応
-pen-tool.js:461 🖊️ PenTool v8.12.0コンストラクタエラー修正版 Loaded
-eraser-tool.js:598 🧹 EraserTool v8.12.0完全対応版 Loaded - Graphics API v8準拠・消去機能修正版
-eraser-tool.js:599 📏 修正内容: v8新API準拠・v7 API完全削除・高精度hit-test・TPF形式保存・マスク消去
-eraser-tool.js:600 🚀 特徴: shape().fill()新API・WebGPU対応・Container階層消去・v7互換削除・Manager統一注入完全対応
-tool-manager.js:534 🚀 ToolManager v8.12.0完全対応版・PenTool作成修正版 Loaded
+ 🚨 ErrorManager Simple 作成
+ 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
+ 🔧 ConfigManager v8対応版 作成
+ 🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
+ 🔄 EventBus Simple 作成
+ 🔄 EventBus Simple Loaded - シンプルイベント通信
+ 🎯 CoordinateManager PixiJS v8対応版 Loaded
+ 📏 v8機能: 高精度座標変換・Container変形対応・WebGPU最適化・リアルタイム変換
+ 🚀 v8特徴: 高精度変換・Matrix活用・NavigationManager統合・60fps+対応
+ ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
+ 🎯 CoordinateManager PixiJS v8対応版 Loaded - 高精度座標変換・Container変形・WebGPU対応完了
+ 🧭 NavigationManager PixiJS v8対応版 Loaded
+ 📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
+ 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
+ ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
+ 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
+ 🔄 RecordManager v8対応版 Loaded - TPF形式・非破壊編集・v8 Graphics・Undo/Redo完全対応完了
+ 🔄 RecordManager v8対応版 Loaded - TPF形式・非破壊編集・v8 Graphics・Undo/Redo完全対応完了
+ ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
+ 🔧 setupPhase15Shortcuts・enableメソッド追加済み
+ 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
+ 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
+ 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
+ ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
+ 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
+ 🚀 CanvasManager v8.12.0完全対応版 Loaded - 400x400デフォルト・コンソール削減・描画修正版
+ 🎯 AbstractTool Phase1.5 Manager統一注入・Manager名称統一修正版 Loaded
+ 📏 修正内容: event → eventbus統一・Object形式前提・Map対策・型安全性確保・詳細デバッグ
+ 🚀 特徴: startOperation/endOperation方式対応・Manager統一注入完成・架空メソッド削除・Manager名称統一対応
+ 🖊️ PenTool v8.12.0コンストラクタエラー修正版 Loaded
+ 🧹 EraserTool v8.12.0完全対応版 Loaded - Graphics API v8準拠・消去機能修正版
+ 📏 修正内容: v8新API準拠・v7 API完全削除・高精度hit-test・TPF形式保存・マスク消去
+ 🚀 特徴: shape().fill()新API・WebGPU対応・Container階層消去・v7互換削除・Manager統一注入完全対応
+ 🚀 ToolManager v8.12.0完全対応版・PenTool作成修正版 Loaded
  📏 修正内容: PenTool作成エラー修正・Manager注入方法改善・コンソール出力削減
  🚀 特徴: 防御的依存注入・検証強化・CanvasManager.getDrawContainer()保証・Tool作成時適切Manager注入
-app-core.js:678 Uncaught SyntaxError: Unexpected end of input
+app-core.js:448 Uncaught SyntaxError: Unexpected end of input
  🚀 TegakiApplication PixiJS v8対応版 Loaded - Canvas DOM挿入修正・座標取得修正・400x400サイズ確実適用版
  🚀 TegakiApplication PixiJS v8対応版 Loaded - Canvas DOM挿入修正・座標取得修正・400x400サイズ確実適用版
  🚀 main.js v8統合エントリーポイント Loaded - グローバル関数・デバッグ機能・WebGPU対応
@@ -43,35 +43,35 @@ app-core.js:678 Uncaught SyntaxError: Unexpected end of input
  📏 新Manager統合状況確認・機能テスト・レポート生成・Phase1.5完全対応
  🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
  ⏳ DOM Loading - DOMContentLoaded待機中...
- 🚀 Bootstrap PixiJS v8対応版 - コンソール削減・初期化フロー修正版 Loaded
- 🎯 Bootstrap PixiJS v8対応版 registered - 読み込み確認強化・新Manager統合対応版
- 🔧 Bootstrap PixiJS v8対応版 実行開始...
- ⏳ PixiJS v8読み込み確認開始...
- ✅ PixiJS発見 (試行 1/100)
- 🚀 PixiJS v8確認完了: 8.12.0
- 🔍 WebGPU Support: true
- 🚀 PixiJS v8.12.0 loaded from node_modules
- ✅ PixiJS v8.12.0 confirmed
- ✅ PIXI.Application: 利用可能
- ✅ PIXI.Container: 利用可能
- ✅ PIXI.Graphics: 利用可能
- ✅ PixiJS v8環境確認完了
- 🔍 Phase1.5 依存関係確認開始...
- ✅ TegakiApplication: 利用可能
+bootstrap.js:326 🚀 Bootstrap PixiJS v8対応版 - コンソール削減・初期化フロー修正版 Loaded
+bootstrap.js:308 🎯 Bootstrap PixiJS v8対応版 registered - 読み込み確認強化・新Manager統合対応版
+bootstrap.js:37 🔧 Bootstrap PixiJS v8対応版 実行開始...
+bootstrap.js:65 ⏳ PixiJS v8読み込み確認開始...
+bootstrap.js:99 ✅ PixiJS発見 (試行 1/100)
+bootstrap.js:76 🚀 PixiJS v8確認完了: 8.12.0
+bootstrap.js:85 🔍 WebGPU Support: true
+bootstrap.js:111 🚀 PixiJS v8.12.0 loaded from node_modules
+bootstrap.js:112 ✅ PixiJS v8.12.0 confirmed
+bootstrap.js:113 ✅ PIXI.Application: 利用可能
+bootstrap.js:114 ✅ PIXI.Container: 利用可能
+bootstrap.js:115 ✅ PIXI.Graphics: 利用可能
+bootstrap.js:116 ✅ PixiJS v8環境確認完了
+bootstrap.js:123 🔍 Phase1.5 依存関係確認開始...
+bootstrap.js:146 ✅ TegakiApplication: 利用可能
 bootstrap.js:149 ❌ AppCore: 未ロード
 checkDependencies @ bootstrap.js:149
- ✅ CanvasManager: 利用可能
- ✅ ToolManager: 利用可能
- ✅ ErrorManager: 利用可能
- ✅ ConfigManager: 利用可能
- ✅ EventBus: 利用可能
- ✅ CoordinateManager: 利用可能
- ✅ NavigationManager: 利用可能
- ✅ RecordManager: 利用可能
- ✅ ShortcutManager: 利用可能
- ✅ PenTool: 利用可能
- ✅ EraserTool: 利用可能
- 📊 依存関係確認結果: 12/13 クラス利用可能
+bootstrap.js:146 ✅ CanvasManager: 利用可能
+bootstrap.js:146 ✅ ToolManager: 利用可能
+bootstrap.js:146 ✅ ErrorManager: 利用可能
+bootstrap.js:146 ✅ ConfigManager: 利用可能
+bootstrap.js:146 ✅ EventBus: 利用可能
+bootstrap.js:146 ✅ CoordinateManager: 利用可能
+bootstrap.js:146 ✅ NavigationManager: 利用可能
+bootstrap.js:146 ✅ RecordManager: 利用可能
+bootstrap.js:146 ✅ ShortcutManager: 利用可能
+bootstrap.js:146 ✅ PenTool: 利用可能
+bootstrap.js:146 ✅ EraserTool: 利用可能
+bootstrap.js:154 📊 依存関係確認結果: 12/13 クラス利用可能
 bootstrap.js:56 💀 Bootstrap エラー: Error: 必須クラス未ロード: AppCore
     at Bootstrap.checkDependencies (bootstrap.js:157:23)
     at Bootstrap.start (bootstrap.js:44:28)
@@ -84,9 +84,9 @@ bootstrap.js:235 💀 Bootstrap 初期化失敗: Error: 必須クラス未ロー
     at async runBootstrap (bootstrap.js:294:13)
     at async HTMLDocument.<anonymous> (bootstrap.js:310:17)
 handleInitializationError @ bootstrap.js:235
- ❌ TEGAKI V8初期化失敗: 必須クラス未ロード: AppCore 
- 🚀 PixiJS v8.12.0 loaded from node_modules
- ✅ PixiJS v8.12.0 confirmed
+error-manager.js:38 ❌ TEGAKI V8初期化失敗: 必須クラス未ロード: AppCore 
+index.html:577 🚀 PixiJS v8.12.0 loaded from node_modules
+index.html:579 ✅ PixiJS v8.12.0 confirmed
 index.html:613 ⚠️ TegakiApplication v8初期化未完了
 (anonymous) @ index.html:613
- ⚠️ TegakiApplication v8初期化未完了
+main.js:346 ⚠️ TegakiApplication v8初期化未完了
